@@ -27,12 +27,15 @@ import { KIT_PIECES } from '../../src/lib/kit/index.js';
 const SPECS = KIT_PIECES.map((r) => r.piece.spec);
 
 describe('templates', () => {
-	it('three: a script, a Markdown note, a JSON document', () => {
+	it('four: a script, a Markdown note, a JSON document, plain text (81 X1)', () => {
 		expect(FILE_TEMPLATES.map((t) => [t.key, t.ext])).toEqual([
 			['script', 'js'],
 			['note', 'md'],
-			['json', 'json']
+			['json', 'json'],
+			['text', 'txt']
 		]);
+		expect(templateText('text', 'a.txt')).toBe('');
+		expect(fileNameFor('readme', 'text')).toBe('readme.txt');
 	});
 	it('the script is a clean behaviour with the lifecycle handlers stubbed', () => {
 		const code = templateText('script', 'door_switch.js');

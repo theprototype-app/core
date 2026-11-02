@@ -4,6 +4,8 @@
 	import { safeHtml } from '$lib/sandbox/sanitize.js';
 	import Icon from '../ui/Icon.svelte';
 	import EmptyState from '../ui/EmptyState.svelte';
+	import { FILE_TEMPLATES } from '$lib/codeFilesCore.js';
+	import { isViewer } from '$lib/objectPermissions';
 	// Explorer (95, tree v2 in 106): dockable asset browser — real file-manager
 	// tree on the left (inline create/rename, expand/collapse, drag re-parent,
 	// cascade delete, resizable), thumbnail grid on the right (subfolder cards
@@ -1644,14 +1646,17 @@
 	 * as well (a folder can be deleted between here and there); this is the cheap half.
 	 */
 	function activeLibraryFolder(): string | null {
-		const a = $activeFolder;
+		return activeLibraryFolderOf($activeFolder);
+	}
+	/** the library folder a key names, or null (the root, a mount, the bin, a derived view) @param {string | null} a */
+	function activeLibraryFolderOf(a: string | null | undefined): string | null {
 		if (typeof a !== 'string' || !a) return null;
 		// R22 round 13: the two DELETED views belong here as well. They were missing, which
 		// was only unreachable rather than harmless — neither view offers Save scene, so
 		// nothing could ask; a scene written with folderId 'deleted' would be an orphan.
 		// R22 round 36: and a bin NODE is not a place either — the folder it names has been
 		// deleted, so writing a scene into it would mint an orphan with a plausible id.
-		if (binScope.inBin) return null;
+		if (a === 'deleted' || a === 'deletedlog' || a.startsWith('deleted:')) return null;
 		if (a === 'prefabs' || a === 'packs' || a.startsWith('pack:') || a.startsWith('scene')) return null;
 		// P3: a MOUNT is not a place in this library either — a scene saved while browsing
 		// one must not be written with a folderId no library folder holds (which is an
@@ -2358,6 +2363,9 @@
 	function gridKeydown(e: KeyboardEvent) {
 		const tag = (e.target as HTMLElement)?.tagName;
 		if (tag === 'INPUT' || tag === 'TEXTAREA') return; // don't hijack typing
+		// 81 X1: a BUTTON in the grid (the empty view's "Add files…", Install pack) keeps its own
+		// Enter / Space — the grid's Enter opened the selection and swallowed the press
+		if (tag === 'BUTTON' && (e.key === 'Enter' || e.key === ' ')) return;
 		// 21-H3: the selection keys. `stopPropagation` as well as `preventDefault`,
 		// because shortcuts.js listens on WINDOW — svelte delegates this handler to the
 		// app root, which is BELOW window, so stopping here is what keeps Ctrl+A from
@@ -3188,6 +3196,7 @@
 			y: e.clientY,
 			items: [
 				{ label: 'Open', icon: 'folder', action: () => openFolder(volumeKey(vol.id)) },
+				...(canAddFilesAt(volumeKey(vol.id)) ? [addFilesItem(volumeKey(vol.id))] : []),
 				{
 					label: 'Refresh',
 					icon: 'refresh-cw',
@@ -3692,6 +3701,7 @@
 				items: [
 					{ label: 'Open', icon: 'folder', action: () => openFolder(folder.id) },
 					{ label: 'New folder', icon: 'folder-plus', action: () => startCreate(folder.id, !inTree) },
+					...(canAddFilesAt(folder.id) ? [addFilesItem(folder.id)] : []),
 					{ label: 'Rename', icon: 'pencil', action: () => startRename(folder, !inTree) },
 					{
 						label: 'Remove',
@@ -3752,6 +3762,9 @@
 									}
 						]),
 				{ label: 'Properties', icon: 'info', action: () => showProperties({ kind: 'folder', folder }) },
+				// 81 X1: into THIS folder, routed like a drop on it
+				addFilesItem(folder.id),
+				newFileItem(folder.id),
 				// 24-C1: a folder copies as new records (new folder id — network identity is
 				// minted here), and pastes INTO it land in it
 				{
@@ -5521,6 +5534,8 @@
 						tooltip: 'Inside this mounted project — buffered until you press Save',
 						action: () => startCreate($activeFolder ?? null, true)
 					},
+					// 81 X1: buffered like a drop into the mount
+					...(canAddFilesAt($activeFolder ?? null) ? [addFilesItem($activeFolder ?? null)] : []),
 					{ section: vol?.name ?? 'Mounted project' },
 					{
 						label: 'Refresh',
@@ -5625,6 +5640,8 @@
 							action: () => void pasteClipboard()
 						},
 						{ label: 'New folder', icon: 'folder-plus', action: () => startCreate($activeFolder ?? null, true) },
+						// 81 X1: the phone / Quest way in (no drag and drop there), and a text file from a template
+						...(canAddFilesAt($activeFolder ?? null) ? [addFilesItem($activeFolder ?? null), newFileItem(activeLibraryFolder())] : []),
 						// 21-F4: a saved scene is an ordinary content-hashed .tpscene item —
 						// a Travel node loads it by hash. 21-G1: the `Scenes` folder is only
 						// where a save LANDS; discovery is BY KIND, so that folder can be
@@ -5726,7 +5743,17 @@
 		e.preventDefault();
 		const files = e.dataTransfer?.files;
 		if (!files?.length) return;
-		const folder = $activeFolder;
+		routeIncomingFiles(files, $activeFolder);
+	}
+
+	/**
+	 * 81 X1: THE ONE ROUTER for files arriving from the device — a drop on the Explorer and
+	 * "Add files…" (the file picker phones and the Quest browser need: they have no drag and
+	 * drop) both land here, so a picked file goes exactly where the same file dropped there
+	 * would. `folder` is an `activeFolder`-style key: a library folder id, null (the root), a
+	 * mount key, `packs`/`pack:<name>`, a scene view.
+	 */
+	function routeIncomingFiles(files: FileList | File[], folder: string | null) {
 		// P3b: files dropped straight into a mount are a BUFFERED import — the same act as
 		// copying one in from the library, so it goes through the same store and the same
 		// Save. Nothing about the live library is touched on the way.
@@ -5807,6 +5834,52 @@
 			parentId: activeLibraryFolder()
 		});
 	}
+	// 81 X1: "Add files…" — a real file picker into `addFilesTarget`, routed like a drop
+	let addFilesInput: HTMLInputElement | undefined = $state();
+	let addFilesTarget: string | null = null;
+	/** open the device's file picker for files that land in `target` (an activeFolder-style key) */
+	function pickFiles(target: string | null) {
+		addFilesTarget = target;
+		if (!addFilesInput) return;
+		addFilesInput.value = '';
+		addFilesInput.click();
+	}
+	function onAddFiles(e: Event) {
+		const input = e.currentTarget as HTMLInputElement;
+		const files = input?.files ? Array.from(input.files) : [];
+		if (files.length) routeIncomingFiles(files, addFilesTarget);
+		if (input) input.value = '';
+	}
+	/** can files be added at this key (the drop's own refusals: packs take zips, scene views and the bin are read-only) */
+	function canAddFilesAt(key: string | null) {
+		if (key == null) return true;
+		const vol = volumeOf(key);
+		if (vol) return !sessionReadOnly(vol.volumeId);
+		return activeLibraryFolderOf(key) !== null;
+	}
+	const addFilesItem = (target: string | null) => ({
+		label: 'Add files…',
+		icon: 'upload',
+		tooltip: 'Pick files from this device into here — the same as dropping them',
+		action: () => pickFiles(target)
+	});
+	/** 81 X1: New file ▸ Script / Note / JSON / Text — the Code tab's own templates, into a library folder */
+	function newFileItem(folderId: string | null) {
+		const viewer = isViewer();
+		return {
+			label: 'New file',
+			icon: 'file-plus',
+			disabled: viewer,
+			tooltip: viewer ? 'View only — files can be changed by editors' : 'A text file from a template, opened in the code editor',
+			children: FILE_TEMPLATES.map((t) => ({
+				label: t.label,
+				icon: t.icon,
+				tooltip: t.tooltip,
+				action: () => void import('$lib/codeFiles.js').then((m) => m.createCodeFile({ template: t.key, folderId }))
+			}))
+		};
+	}
+
 	async function onImportTpFile(e: Event) {
 		const input = e.currentTarget as HTMLInputElement; // capture BEFORE any await
 		const file = input?.files?.[0];
@@ -8039,7 +8112,10 @@
 						? 'No prefabs yet — right-click an object and Save as prefab.'
 						: $activeFolder === 'packs' ? 'No packs. Right-click here to import a pack (.zip) or load one from a URL.'
 						: typeof $activeFolder === 'string' && $activeFolder.startsWith('pack:') ? 'This pack has no items.'
-						: typeof $activeFolder === 'string' && $activeFolder.startsWith('scene') ? 'No shared assets in this scene group yet.' : 'Drop images, audio, text or 3D files here to import them.'}
+						: typeof $activeFolder === 'string' && $activeFolder.startsWith('scene') ? 'No shared assets in this scene group yet.' : 'Drop images, audio, text or 3D files here, or add them from this device.'}
+					actionLabel={canAddFilesAt($activeFolder ?? null) && !volume?.missing ? 'Add files…' : ''}
+					onaction={() => pickFiles($activeFolder ?? null)}
+					data-testid="explorer-empty"
 				/>
 				{/if}
 			{:else}
@@ -8738,6 +8814,8 @@
 	<!-- 21-G8: the "Import project as folder (.tp)…" picker — mounted whenever the
 	     Explorer is open (the menu entry that clicks it can open from any view) -->
 	<input bind:this={tpImportInput} type="file" accept=".tp" class="hidden" onchange={onImportTpFile} />
+	<!-- 81 X1: "Add files…" (menus + the empty view) — routed like a drop (routeIncomingFiles) -->
+	<input bind:this={addFilesInput} id="explorer-add-files" type="file" multiple class="hidden" aria-label="Add files" onchange={onAddFiles} />
 	<!-- R22 round 13: the MOUNT picker's own .tp picker — a different intent (import into
 	     Sessions, then mount) and therefore a different input; see `importRow` -->
 	<input bind:this={tpMountInput} type="file" accept=".tp" class="hidden" onchange={onImportTpMount} />

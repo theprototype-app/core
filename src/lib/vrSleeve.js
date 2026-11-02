@@ -17,26 +17,43 @@ import { createGeometry } from './geometries.svelte';
 import { customGeometryBuilders } from './customGeometries';
 import {
 	controllerIndexFor,
-	rigidGrabPose,
+	grabStickAdjust,
 	hapticPulse,
 	registerNavSuppressor,
 	registerPanelGroupProvider,
 	registerVRTriggerHooks,
+	registerGripHooks,
 	registerGripDropHook,
 	registerVRFrameHook
 } from './vrControls';
+import { axesForSlot } from './vr/input.js';
 import { resumeAnimation } from './flowRuntime';
 import { instantiatePrefab } from './prefabs';
-import { getInput } from './inputRuntime';
 import { idbGet, idbPut } from './idb';
 import { disposeTree } from './disposeTree.js';
+import { motionMs } from './motion';
+import {
+	GROW_FAR,
+	CONTACT_RANGE,
+	FLY_BACK_MS,
+	growthTarget,
+	stepGrowth,
+	growthFactor,
+	clampedOffset,
+	viewAngleDeg,
+	cancelStep,
+	flyBackProgress,
+	placementScale,
+	originRadius
+} from './vrSleeveMath.js';
 
 // K (roadmap 13): VR sleeve palette — a FLAT STRIP of ghost mini-primitives
 // riding up the sleeve-hand forearm like a bracer (slots wrist → elbow).
-// Point + TRIGGER on a ghost detaches a held preview that rigid-follows the
-// grabbing controller (stick-Y scales it, wrist motion rotates 1:1); releasing
-// the trigger creates the primitive at the preview's world pose with the same
-// vrSnapMode rules as a grip-grab drop, as ONE undo batch. K2 adds CUSTOM
+// Point + TRIGGER (a pinch on hands) on a ghost, or GRIP with the other hand AT
+// a slot, takes it: the preview grows from ghost to true size as the hand moves
+// away from the wrist and latches (roadmap 82 P1-P4, see the hold section);
+// releasing a latched preview creates the primitive at its world pose with the
+// same vrSnapMode rules as a grip-grab drop, as ONE undo batch. K2 adds CUSTOM
 // slots: grip-carry an object and drop it ONTO the strip to capture a prefab
 // snapshot (LOCAL idb persistence, never replicated); trigger-drag the custom
 // ghost out to instantiate it. Everything is SCENE-GRAPH ONLY — the strip and
@@ -51,8 +68,6 @@ export const SLEEVE_MAX_SLOTS = 8;
 const GHOST_SIZE = 0.032; // max extent of a ghost mesh on the strip
 const STRIP_BASE = { x: 0, y: 0.025, z: 0.1 }; // first slot, controller-local (near the wrist)
 const CUSTOM_ROW_X = -0.05; // custom slots ride a parallel row beside the primitives
-const HOLD_SCALE_MIN = 0.2;
-const HOLD_SCALE_MAX = 5;
 const CAPTURE_RANGE = 0.06; // grip-drop within this of the strip captures a slot
 const SLOTS_KEY = 'vrsleeve-slots-v1';
 
@@ -72,7 +87,7 @@ export const sleeveSlots = writable([]);
 
 /** @type {any} the strip group (child of the sleeve-hand controller in VR) */
 let sleeveGroup = null;
-/** @type {any} held preview: {mesh, kind?, slot?, hand, index, relPos, relQuat, scale} */
+/** @type {any} held preview (beginHoldEntry has the fields) */
 let hold = null;
 /** trailing-'select' swallow stamp (a pick/place/clear just handled the trigger) */
 let handledAt = 0;
@@ -204,7 +219,13 @@ function sleeveNodeOf(object) {
 	return null;
 }
 
-// ---- K1: hold / place ---------------------------------------------------------
+// ---- K1: hold / place (roadmap 82 P1-P4: grow, latch, reel, cancel) ----------------
+// A taken ghost rides the taking hand and GROWS with that hand's distance from the sleeve wrist
+// (vrSleeveMath: ghost size at 6 cm, true size × the world's scale at 40 cm), pushed out along the
+// hand's ray so it never covers more than ~50° of the view. Full size LATCHES (a detent tick): it is
+// then an ordinary grab — the grip-move sticks reel (Y) and scale (X) it through grabStickAdjust. The
+// hand back within 10 cm of the wrist cancels: the preview shrinks and flies back into its slot. A
+// release before the latch is a cancel too. The per-frame path allocates nothing (Quest budget).
 
 /** Preview mesh for a hold entry ({kind} or {slot}). @param {any} entry */
 function previewFor(entry) {
@@ -224,36 +245,72 @@ function previewFor(entry) {
 	return object;
 }
 
+// per-frame scratch (no allocations in the frame path)
+const _handPos = new THREE.Vector3();
+const _handQuat = new THREE.Quaternion();
+const _wristPos = new THREE.Vector3();
+const _headPos = new THREE.Vector3();
+const _slotPos = new THREE.Vector3();
+const _groupScale = new THREE.Vector3();
+const _dir = new THREE.Vector3();
+/** the objectsGroup, kept by a subscription while registered (a get() per frame allocates) @type {any} */
+let liveGroup = null;
+/** @type {any} the shrinking preview flying back into its slot (P3) */
+let flyBack = null;
+/** latch count, for the suites (each latch = one detent) */
+let latches = 0;
+
+/** the objects' world scale (the world rig shrinks it in miniature mode) */
+function groupWorldScale() {
+	const group = liveGroup ?? get(objectsGroup);
+	if (!group) return 1;
+	group.getWorldScale(_groupScale);
+	return _groupScale.x || 1;
+}
+
 /**
- * Detach a ghost into a held preview. Pure state + scene-root mesh work so
- * headless tests can drive it with synthetic controller poses.
+ * Detach a ghost into a held preview at GHOST size on the taking hand. Pure state + scene-root mesh work
+ * so headless tests can drive it with synthetic controller poses.
  * @param {{kind?: string, slot?: any}} entry
- * @param {{position: any, quaternion: any}} controllerPose world pose of the grabbing controller
- * @param {{hand?: 'left'|'right', index?: number}} [source]
+ * @param {{position: any, quaternion: any}} controllerPose world pose of the taking controller
+ * @param {{hand?: 'left'|'right'|null, index?: number, slotNode?: any, contact?: boolean}} [source]
  * @returns {boolean}
  */
 export function beginHoldEntry(entry, controllerPose, source = {}) {
 	if (!get(vrSleeveEnabled) || hold) return false;
 	const scene = get(globalScene);
 	if (!scene) return false;
+	if (flyBack) finishFlyBack();
 	const mesh = previewFor(entry);
-	// the preview appears ~0.9 m along the grabbing controller's ray and
-	// rigid-follows it from there (wrist motion rotates it 1:1)
-	const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(controllerPose.quaternion);
-	mesh.position.copy(controllerPose.position).add(dir.multiplyScalar(0.9));
-	mesh.quaternion.copy(controllerPose.quaternion);
-	scene.add(mesh);
-	const invQuat = controllerPose.quaternion.clone().invert();
+	// measure at the object's own origin: true size (its own scale), radius about the origin
+	mesh.position.set(0, 0, 0);
+	mesh.quaternion.identity();
+	mesh.updateMatrixWorld(true);
+	const box = new THREE.Box3().setFromObject(mesh);
+	const extent = box.getSize(new THREE.Vector3());
+	const maxExtent = Math.max(extent.x, extent.y, extent.z, 1e-6);
 	hold = {
 		mesh,
 		kind: entry.kind ?? null,
 		slot: entry.slot ?? null,
 		hand: source.hand ?? null,
 		index: source.index ?? -1,
-		relPos: mesh.position.clone().sub(controllerPose.position).applyQuaternion(invQuat),
-		relQuat: invQuat.clone().multiply(mesh.quaternion),
-		scale: 1
+		slotNode: source.slotNode ?? null,
+		contact: !!source.contact,
+		baseScale: mesh.scale.clone(),
+		trueRadius: originRadius(box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z),
+		ghostFactor: GHOST_SIZE / maxExtent,
+		factor: GHOST_SIZE / maxExtent,
+		t: 0,
+		latched: false,
+		armed: false,
+		offset: 0,
+		userScale: 1,
+		viewDeg: 0,
+		lastAt: 0
 	};
+	scene.add(mesh);
+	poseHeld(controllerPose.position, controllerPose.quaternion, null);
 	hapticPulse(0.3, 30);
 	return true;
 }
@@ -263,25 +320,115 @@ export function sleeveHoldActive() {
 	return !!hold;
 }
 
+/** place the held preview from the hand pose (factor already set) @param {any} handPos @param {any} handQuat @param {any} headPos */
+function poseHeld(handPos, handQuat, headPos) {
+	const radius = hold.trueRadius * hold.factor;
+	_dir.set(0, 0, -1).applyQuaternion(handQuat);
+	const e = headPos ?? handPos; // no head known: only the in-front-of-the-hand gap applies
+	const offset = headPos
+		? clampedOffset(handPos.x, handPos.y, handPos.z, _dir.x, _dir.y, _dir.z, e.x, e.y, e.z, radius, hold.latched ? hold.offset : 0)
+		: Math.max(hold.latched ? hold.offset : 0, radius + 0.04);
+	if (hold.latched && offset > hold.offset) hold.offset = offset; // the clamp is the reel's floor
+	hold.mesh.position.copy(handPos).addScaledVector(_dir, offset);
+	hold.mesh.quaternion.copy(handQuat);
+	hold.mesh.scale.copy(hold.baseScale).multiplyScalar(hold.factor);
+	if (headPos) hold.viewDeg = viewAngleDeg(radius, hold.mesh.position.distanceTo(headPos));
+	return offset;
+}
+
 /**
- * One frame of the held preview: rigid-follow the controller pose; the
- * grabbing hand's stick Y scales the preview (deadzone 0.15, clamp 0.2–5).
- * @param {any} controllerPos world @param {any} controllerQuat world
- * @param {number} [stickY]
+ * One frame of the held preview (P1-P3). Growth follows the taking hand's distance from the sleeve
+ * WRIST; full size latches (a detent tick) and from then on the grabbing hand's stick reels (Y) and
+ * scales (X) it through grip-move's own grabStickAdjust; the hand back at the wrist cancels.
+ * @param {any} handPos world @param {any} handQuat world
+ * @param {{wrist?: any, head?: any, axes?: ArrayLike<number> | null, dt?: number, groupScale?: number}} [frame]
+ *   wrist = the sleeve wrist (no wrist: grows straight to full), head = the eye (the 50° clamp),
+ *   axes = the taking hand's gamepad axes (xr-standard: [2] X, [3] Y), dt seconds, groupScale = the world's scale
+ * @returns {'hold' | 'latched' | 'cancel' | null}
  */
-export function updateHeldPose(controllerPos, controllerQuat, stickY = 0) {
-	if (!hold) return;
-	const pose = rigidGrabPose(controllerPos, controllerQuat, hold.relPos, hold.relQuat);
-	hold.mesh.position.copy(pose.position);
-	hold.mesh.quaternion.copy(pose.quaternion);
-	const y = Math.abs(stickY) > 0.15 ? stickY : 0;
-	if (y) hold.scale = Math.min(Math.max(hold.scale * (1 - y * 0.02), HOLD_SCALE_MIN), HOLD_SCALE_MAX);
-	hold.mesh.scale.setScalar(hold.scale);
+export function updateHeldPose(handPos, handQuat, frame = {}) {
+	if (!hold) return null;
+	const wrist = frame.wrist ?? null;
+	const d = wrist ? handPos.distanceTo(wrist) : GROW_FAR;
+	if (wrist) {
+		const step = cancelStep(d, hold.armed);
+		if (step === 1) hold.armed = true;
+		else if (step === 2) {
+			cancelSleeveHold();
+			return 'cancel';
+		}
+	}
+	const now = performance.now();
+	const dt = frame.dt ?? (hold.lastAt ? (now - hold.lastAt) / 1000 : 1 / 72);
+	hold.lastAt = now;
+	const worldScale = frame.groupScale ?? groupWorldScale();
+	if (!hold.latched) {
+		hold.t = stepGrowth(hold.t, growthTarget(d), dt);
+		if (hold.t >= 1) {
+			hold.latched = true;
+			latches++;
+			// the detent: forced, the one pulse an Edit-mode feature gives (the mode-switch tick's rule)
+			hapticPulse(0.5, 14, hold.hand ?? undefined, true);
+		}
+	} else {
+		const axes = frame.axes;
+		if (axes && (axes.length ?? 0) > 3) {
+			const adjusted = grabStickAdjust({ length: Math.max(hold.offset, 0.05), scale: hold.userScale, x: axes[2] ?? 0, y: axes[3] ?? 0 });
+			hold.offset = adjusted.length;
+			hold.userScale = adjusted.scale;
+		}
+	}
+	hold.factor = growthFactor(hold.t, hold.ghostFactor, worldScale * hold.userScale);
+	poseHeld(handPos, handQuat, frame.head ?? null);
+	return hold.latched ? 'latched' : 'hold';
+}
+
+/** P3: cancel the hold — the preview shrinks and flies back into its slot (nothing is created) */
+export function cancelSleeveHold() {
+	if (!hold) return false;
+	const { mesh, slotNode, baseScale, ghostFactor } = hold;
+	hold = null;
+	handledAt = Date.now();
+	flyBack = {
+		mesh,
+		slotNode,
+		from: mesh.position.clone(),
+		fromScale: mesh.scale.clone(),
+		toScale: baseScale.clone().multiplyScalar(ghostFactor),
+		startedAt: performance.now(),
+		ms: motionMs(FLY_BACK_MS)
+	};
+	stepFlyBack(flyBack.startedAt);
+	return true;
+}
+
+/** one frame of the fly-back @param {number} now ms */
+function stepFlyBack(now) {
+	if (!flyBack) return;
+	const p = flyBackProgress(now - flyBack.startedAt, flyBack.ms);
+	if (p >= 1) {
+		finishFlyBack();
+		return;
+	}
+	const { mesh } = flyBack;
+	if (flyBack.slotNode?.parent) flyBack.slotNode.getWorldPosition(_slotPos);
+	else _slotPos.copy(flyBack.from);
+	mesh.position.copy(flyBack.from).lerp(_slotPos, p);
+	mesh.scale.copy(flyBack.fromScale).lerp(flyBack.toScale, p);
+}
+
+function finishFlyBack() {
+	if (!flyBack) return;
+	const { mesh } = flyBack;
+	flyBack = null;
+	mesh.parent?.remove(mesh);
+	disposeTree(mesh);
 }
 
 /** Apply the release pose to a freshly created object: world → objectsGroup
  * local, snap per vrSnapMode (grid rounds x/z, surface rests it), then ONE
- * final replicated transform + undo entry. @param {any} object @param {any} pose @param {number} scale */
+ * final replicated transform + undo entry. `scale` multiplies the object's own
+ * scale and is already in objectsGroup-local terms. @param {any} object @param {any} pose @param {number} scale */
 function applyPlacement(object, pose, scale) {
 	const group = get(objectsGroup);
 	if (!group) return;
@@ -328,14 +475,16 @@ function applyPlacement(object, pose, scale) {
 
 /**
  * Release the held preview. place=true creates the primitive (or instantiates
- * the slot prefab) at the preview's world pose — create + transform commit as
- * ONE undo batch; place=false just cancels.
+ * the slot prefab) at the preview's world pose AND world size (true size × the
+ * world's scale × the stick scale — so it lands at true size in a miniature world
+ * too); create + transform commit as ONE undo batch. place=false cancels with no
+ * fly-back (teardown).
  * @param {boolean} [place]
  * @returns {any|null} the created object (or null)
  */
 export function releaseSleeveHold(place = true) {
 	if (!hold) return null;
-	const { mesh, kind, slot, scale } = hold;
+	const { mesh, kind, slot, factor } = hold;
 	hold = null;
 	handledAt = Date.now();
 	const pose = {
@@ -343,7 +492,10 @@ export function releaseSleeveHold(place = true) {
 		quaternion: mesh.getWorldQuaternion(new THREE.Quaternion())
 	};
 	mesh.parent?.remove(mesh);
+	disposeTree(mesh);
 	if (!place) return null;
+	// the preview lives at the scene root; the objects under the (maybe shrunk) world rig
+	const scale = placementScale(factor, groupWorldScale());
 	/** @type {any} */
 	const peer = get(peers);
 	let created = null;
@@ -369,6 +521,13 @@ export function releaseSleeveHold(place = true) {
 	}
 	if (created) hapticPulse(0.35, 40);
 	return created;
+}
+
+/** the end of a take's button (trigger, pinch or grip): a latched hold places, an unlatched one cancels */
+function finishHold() {
+	if (!hold) return;
+	if (hold.latched) releaseSleeveHold(true);
+	else cancelSleeveHold();
 }
 
 /** Scene.svelte guard: the trailing 'select' click of a pick/place/clear must
@@ -405,36 +564,92 @@ function controllerPose(index) {
 	};
 }
 
-/** selectstart hook: a trigger press on a sleeve node picks it up (or clears a
- * slot). Returns true when consumed. @param {number} index */
+/** the sleeve's takeable nodes (primitive ghosts + custom slot holders) */
+function slotNodes() {
+	return sleeveGroup ? sleeveGroup.children.filter((/** @type {any} */ c) => c.userData.sleeveKind || c.name.startsWith('vrsleeve-slot:')) : [];
+}
+
+/**
+ * P4: the slot a hand at `point` (world) is touching — the nearest within CONTACT_RANGE, else null.
+ * @param {any} point
+ */
+export function sleeveSlotAt(point) {
+	if (!sleeveGroup?.parent || !sleeveGroup.visible) return null;
+	let best = null;
+	let bestD = CONTACT_RANGE;
+	for (const node of slotNodes()) {
+		const d = node.getWorldPosition(_slotPos).distanceTo(point);
+		if (d < bestD) {
+			bestD = d;
+			best = node;
+		}
+	}
+	return best;
+}
+
+/** take `node` with controller slot `index` @param {any} node @param {number} index @param {boolean} contact */
+function takeNode(node, index, contact) {
+	const pose = controllerPose(index);
+	if (!pose) return false;
+	const source = { hand: pose.hand, index, slotNode: node, contact };
+	if (node.name.startsWith('vrsleeve-slot:')) {
+		const slot = get(sleeveSlots).find((s) => s.id === node.userData.sleeveSlotId);
+		return slot ? beginHoldEntry({ slot }, pose, source) : false;
+	}
+	const kind = node.userData.sleeveKind;
+	return kind ? beginHoldEntry({ kind }, pose, source) : false;
+}
+
+/** the hand that is NOT wearing the sleeve may take from it @param {number} index */
+function isTakingHand(index) {
+	return index >= 0 && index !== controllerIndexFor(sleeveHand());
+}
+
+/** selectstart hook (a trigger press, or a PINCH on a tracked hand): the ray on a sleeve node takes it
+ * from a distance (or clears a slot), the hand AT a slot takes it directly. Returns true when consumed.
+ * @param {number} index */
 export function vrSleeveTriggerStart(index) {
 	if (!get(vrSleeveEnabled) || !sleeveGroup?.parent || hold) return false;
 	const ray = controllerRay(index);
 	if (!ray) return false;
-	const hits = ray.intersectObject(sleeveGroup, true);
+	const hits = sleeveGroup.visible ? ray.intersectObject(sleeveGroup, true) : [];
 	const node = hits.length ? sleeveNodeOf(hits[0].object) : null;
-	if (!node) return false;
-	if (node.name.startsWith('vrsleeve-clear:')) {
+	if (node?.name.startsWith('vrsleeve-clear:')) {
 		clearSlot(node.name.slice('vrsleeve-clear:'.length));
 		handledAt = Date.now();
 		hapticPulse(0.25, 30);
 		return true;
 	}
-	const pose = controllerPose(index);
-	if (!pose) return false;
-	if (node.name.startsWith('vrsleeve-slot:')) {
-		const slot = get(sleeveSlots).find((s) => s.id === node.userData.sleeveSlotId);
-		return slot ? beginHoldEntry({ slot }, pose, { hand: pose.hand, index }) : false;
-	}
-	const kind = node.userData.sleeveKind;
-	return kind ? beginHoldEntry({ kind }, pose, { hand: pose.hand, index }) : false;
+	if (node) return takeNode(node, index, false);
+	// P4: no ray hit — a hand (a pinch) AT a slot takes it directly
+	if (!isTakingHand(index)) return false;
+	const touched = sleeveSlotAt(ray.ray.origin);
+	return touched ? takeNode(touched, index, true) : false;
 }
 
-/** selectend hook: releasing the trigger places the held preview. @param {number} index */
+/** selectend hook: releasing the trigger places a latched preview, cancels an unlatched one. @param {number} index */
 export function vrSleeveTriggerEnd(index) {
 	if (!hold) return false;
 	if (hold.index >= 0 && index >= 0 && hold.index !== index) return false;
-	releaseSleeveHold(true);
+	finishHold();
+	return true;
+}
+
+/** P4 grip hook: a grip with the taking hand AT a slot (< 4 cm) is a direct take — claimed BEFORE any
+ * grab or the 52 V5 world grab sees the squeeze (the contact zone wins). @param {number} index */
+export function vrSleeveGripStart(index) {
+	if (!get(vrSleeveEnabled) || !sleeveGroup?.parent || hold || !isTakingHand(index)) return false;
+	const renderer = get(globalRenderer);
+	const controller = renderer?.xr?.getController(index);
+	if (!controller) return false;
+	const touched = sleeveSlotAt(controller.getWorldPosition(new THREE.Vector3()));
+	return touched ? takeNode(touched, index, true) : false;
+}
+
+/** the grip's release ends a grip take (place when latched, else cancel) @param {number} index */
+export function vrSleeveGripEnd(index) {
+	if (!hold || hold.index !== index) return false;
+	finishHold();
 	return true;
 }
 
@@ -533,15 +748,17 @@ export function sleeveGripDrop(object, before) {
 // ---- lifecycle ------------------------------------------------------------------
 
 /** Per-frame: anchor the strip to the live sleeve-hand controller, hide it
- * while the radial owns that hand, and drive the held preview. */
+ * while the radial owns that hand, and drive the held preview (no allocations). */
 export function updateVRSleeve() {
 	const renderer = get(globalRenderer);
 	const presenting = !!renderer?.xr?.isPresenting;
 	if (!presenting || !get(vrSleeveEnabled)) {
 		if (sleeveGroup?.parent) sleeveGroup.parent.remove(sleeveGroup);
 		if (hold) releaseSleeveHold(false);
+		finishFlyBack();
 		return;
 	}
+	if (flyBack) stepFlyBack(performance.now());
 	const hand = sleeveHand();
 	const index = controllerIndexFor(hand);
 	if (index < 0) return;
@@ -553,14 +770,22 @@ export function updateVRSleeve() {
 		controller.add(sleeveGroup);
 	}
 	sleeveGroup.visible = !(get(vrMenuOpen) && get(vrMenuHand) === hand);
-	if (hold) {
-		const pose = hold.index >= 0 ? controllerPose(hold.index) : null;
-		if (!pose) return;
-		const axes = getInput().axes ?? {};
-		const stickY = (pose.hand ?? hold.hand) === 'left' ? (axes.ly ?? 0) : (axes.ry ?? 0);
-		updateHeldPose(pose.position, pose.quaternion, stickY);
-	}
+	if (!hold || hold.index < 0) return;
+	const taker = renderer.xr.getController(hold.index);
+	if (!taker) return;
+	taker.getWorldPosition(_handPos);
+	taker.getWorldQuaternion(_handQuat);
+	controller.getWorldPosition(_wristPos);
+	const cam = renderer.xr.getCamera();
+	cam.getWorldPosition(_headPos);
+	frameInput.wrist = _wristPos;
+	frameInput.head = _headPos;
+	// P2: grip-move's sticks, read the grip way (axesForSlot), only once it is a grab
+	frameInput.axes = hold.latched ? axesForSlot(hold.index) : null;
+	updateHeldPose(_handPos, _handQuat, frameInput);
 }
+/** the frame's reused input record @type {{wrist: any, head: any, axes: any}} */
+const frameInput = { wrist: null, head: null, axes: null };
 
 /** Debug/test view. */
 export function sleeveState() {
@@ -568,7 +793,23 @@ export function sleeveState() {
 		enabled: get(vrSleeveEnabled),
 		attached: !!sleeveGroup?.parent,
 		ghosts: sleeveGroup ? sleeveGroup.children.filter((/** @type {any} */ c) => c.name.startsWith('vrsleeve-')).map((/** @type {any} */ c) => c.name) : [],
-		holding: hold ? { kind: hold.kind, slot: hold.slot?.id ?? null, scale: hold.scale } : null,
+		holding: hold
+			? {
+					kind: hold.kind,
+					slot: hold.slot?.id ?? null,
+					t: hold.t,
+					latched: hold.latched,
+					armed: hold.armed,
+					contact: hold.contact,
+					factor: hold.factor,
+					userScale: hold.userScale,
+					offset: hold.offset,
+					viewDeg: hold.viewDeg,
+					index: hold.index
+				}
+			: null,
+		flyingBack: !!flyBack,
+		latches,
 		slots: get(sleeveSlots).map((s) => s.id)
 	};
 }
@@ -591,8 +832,10 @@ export function registerVRSleeve() {
 			end: vrSleeveTriggerEnd,
 			swallow: vrSleeveSwallowSelect
 		}),
+		registerGripHooks({ start: vrSleeveGripStart, end: vrSleeveGripEnd }),
 		registerGripDropHook(sleeveGripDrop),
-		registerVRFrameHook(updateVRSleeve)
+		registerVRFrameHook(updateVRSleeve),
+		objectsGroup.subscribe((group) => (liveGroup = group))
 	];
 	loadSleeveSlots();
 	return () => {
@@ -600,6 +843,8 @@ export function registerVRSleeve() {
 		registered = false;
 		offs.forEach((off) => off());
 		releaseSleeveHold(false);
+		finishFlyBack();
+		liveGroup = null;
 		if (sleeveGroup) {
 			sleeveGroup.parent?.remove(sleeveGroup);
 			disposeTree(sleeveGroup);

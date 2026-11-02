@@ -116,6 +116,8 @@ h.run(async () => {
 		s.objectsGroup.subscribe((v) => (group = v))();
 		group.children.find((c) => c.isMesh).userData.anAssetReference = x;
 	}, f.referenced);
+	// the answerer re-reads its scene at most every 5 s, and the refusals above have just read it
+	await H.page.waitForTimeout(5500);
 	await ask(G, H, f.referenced);
 	await h.eventually(() => holds(G, f.referenced), (x) => x === true, 'None: a file the scene references still travels, read from the scene itself', 20000);
 	const byHandId = await H.page.evaluate((x) => {

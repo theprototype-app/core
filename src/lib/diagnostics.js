@@ -1,5 +1,6 @@
 import { writable } from 'svelte/store';
 import { APP_VERSION, COMMIT_SHA, IS_DEV } from './version.js';
+import { describeReason } from './errorReportCore.js';
 
 // 27-B (hardening audit H4) — THE ONE PLACE A FAILURE LEAVES A TRACE.
 //
@@ -15,7 +16,7 @@ import { APP_VERSION, COMMIT_SHA, IS_DEV } from './version.js';
 //     (the P-A connect dance, B5's mesh formation, the R22 room rounds) was diagnosed by
 //     adding logs AFTER a report and asking the user to reproduce it.
 //
-// A ZERO-DEPENDENCY LEAF, deliberately: `version.js` (itself import-free) and
+// A ZERO-DEPENDENCY LEAF, deliberately: `version.js` + `errorReportCore.js` (both import-free) and
 // svelte/store are the only imports, so ANY module can log without thinking about
 // cycles — and the modules that most need to log (peerHandler, flowRuntime, autosave,
 // moduleSDK) are exactly the ones sitting inside the documented import cycles.
@@ -285,7 +286,8 @@ export function startDiagnostics() {
 
 	window.addEventListener('unhandledrejection', (event) => {
 		const reason = /** @type {any} */ (event).reason;
-		const message = reason?.message ?? String(reason ?? 'unknown rejection');
+		// 54i b: a non-Error reason is named by constructor + a safe JSON (errorReportCore, a leaf)
+		const message = describeReason(reason).message || 'unknown rejection';
 		log('error', 'promise', message, reason?.stack);
 		lastUncaught.set({ message, at: Date.now() });
 	});

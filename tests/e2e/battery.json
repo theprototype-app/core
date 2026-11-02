@@ -14,7 +14,8 @@
 		"game-race": "two peers on the self-hosted signaling box (ci.yml: a public runner is not pointed at it)",
 		"net-stress": "multi-peer stress on the self-hosted signaling box",
 		"perf-beacon": "reads a hosts-mapped preview origin",
-		"timeline-export": "needs the built app (scripts/serve-build.cjs), not the dev server"
+		"timeline-export": "needs the built app (scripts/serve-build.cjs), not the dev server",
+		"stale-chunk": "needs the built app (scripts/serve-build.cjs): vite's preload helper is build-only, so it only SKIPs on a dev server"
 	},
 	"optional": {
 		"agent-bridge": "red on the GitHub runner (SwiftShader, no retry) with unchanged code: deps-auto run 5, 2026-10-24",
@@ -270,6 +271,8 @@
 		"import-file": "agent"
 	},
 	"suites": {
+		"no-webgl": 120,
+		"stale-chunk": 150,
 		"model-replace": 540,
 		"sky-cdn": 180,
 		"tools-connections": 180,

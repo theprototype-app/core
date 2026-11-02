@@ -223,6 +223,8 @@ export function requestAsset(hash) {
 /** Receive pushed bytes -> Shared folder (content-hash dedup) @param {any} data @param {string} [from] */
 export async function applyAssetFile(data, from) {
 	if (!data?.hash || !data?.buffer) return;
+	// 54i: a whole file answering a pull that was cancelled stays out of the Library
+	if (pullCancelled(String(data.hash))) return;
 	const pull = volumePulls.get(data.hash);
 	if (pull && from && from !== pull.peer) return; // this pull is from one peer
 	pendingRequests.delete(data.hash);
@@ -234,6 +236,7 @@ export async function applyAssetFile(data, from) {
 		raw instanceof ArrayBuffer ? raw : raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength);
 	// a volume pull gets the file it asked for, as the chunked path already checks
 	if (pull && (buffer.byteLength > pull.max || (await hashBytes(buffer)) !== data.hash)) return refuseVolumePull(data.hash);
+	if (pullCancelled(String(data.hash))) return; // cancelled during the check
 	// R22-R8: the single-shot path still gets a ledger row, so a small file and an older
 	// peer's whole-file answer both appear in the log rather than arriving invisibly
 	// ...and the same on the single-shot path, for the same reason
@@ -488,6 +491,37 @@ const deadHashes = new Map();
 /** how long a dead hash stays dead. Long enough to stop a loop, short enough that a peer
  * who arrives WITH the file is not locked out for the session. */
 const DEAD_MS = 45000;
+/**
+ * 54i (F11 follow-up): hashes the person CANCELLED, and when. `deadHashes` alone only stops the
+ * NEXT ask; a cancel also has to refuse what is already on its way — the sender may start the
+ * file after the cancel (its send queue reached our request late), or finish the last slice while
+ * we hash it — or the cancelled file lands anyway. Lifted by any new ask (a retry, a volume open)
+ * and after DEAD_MS, like a dead hash.
+ * @type {Map<string, number>} */
+const cancelledPulls = new Map();
+
+/** Was this hash cancelled (and not asked for again since)? @param {string} hash */
+function pullCancelled(hash) {
+	const at = cancelledPulls.get(hash);
+	if (at === undefined) return false;
+	if (Date.now() - at > DEAD_MS) {
+		cancelledPulls.delete(hash);
+		return false;
+	}
+	return true;
+}
+
+/** Tell one peer to stop sending us `hash` (it drops a queued send and ends a running one at its
+ * next slice — sessionVolumes answers `volcancel` with `stopSendingTo`, whatever the pull was).
+ * @param {string} peerId @param {string} hash */
+function askToStop(peerId, hash) {
+	/** @type {any} */
+	const conn = /** @type {any} */ (get(peers))?.connections?.[peerId];
+	if (!conn?.open) return;
+	try {
+		conn.send({ type: 'volcancel', hash });
+	} catch {}
+}
 /** keep the DataChannel buffer under this before queueing another slice */
 const BUFFER_HIGH = 4 * 1024 * 1024;
 
@@ -508,7 +542,7 @@ const BUFFER_HIGH = 4 * 1024 * 1024;
 const SEND_CONCURRENCY = 3;
 
 /** hash -> reassembly state @type {Map<string, {name: string, size: number, chunks: number,
- *  parts: (Uint8Array|null)[], have: number, bytes: number, tx: string, at: number}>} */
+ *  parts: (Uint8Array|null)[], have: number, bytes: number, tx: string, at: number, from?: string}>} */
 const incoming = new Map();
 
 /**
@@ -611,6 +645,12 @@ export function applyAssetStart(data, from) {
 	const chunks = Number(data?.chunks) || 0;
 	const size = Number(data?.size) || 0;
 	if (!hash || !Number.isInteger(chunks) || chunks <= 0 || chunks > MAX_CHUNKS || size <= 0) return;
+	// 54i: a file that starts after its pull was cancelled is not wanted — and say so, or the
+	// sender streams every slice into nothing
+	if (pullCancelled(hash)) {
+		if (from) askToStop(from, hash);
+		return;
+	}
 	const pull = volumePulls.get(hash);
 	if (pull && from && from !== pull.peer) return; // this pull is from one peer
 	if (itemByHash(hash) && !pull) return; // already here; the sender is behind, not wrong
@@ -637,7 +677,8 @@ export function applyAssetStart(data, from) {
 		have: 0,
 		bytes: 0,
 		tx,
-		at: Date.now()
+		at: Date.now(),
+		...(from ? { from: String(from) } : {})
 	});
 	activateTransfer(tx, size);
 }
@@ -681,6 +722,8 @@ export async function applyAssetChunk(data) {
 	// were promised, or this is not the file and storing it would poison every peer that
 	// later pulls it from us
 	const digest = await hashBytes(whole.buffer);
+	// 54i: cancelled while the last slice was being checked — the row already says so
+	if (pullCancelled(hash)) return;
 	if (digest !== hash) {
 		failTransfer(state.tx, 'content hash did not match');
 		return;
@@ -722,6 +765,7 @@ export function sweepStalledTransfers() {
 		}
 	}
 	for (const [hash, at] of [...deadHashes]) if (now - at > DEAD_MS) deadHashes.delete(hash);
+	for (const [hash, at] of [...cancelledPulls]) if (now - at > DEAD_MS) cancelledPulls.delete(hash);
 }
 
 /** One pull resolved (or died). @param {string} hash */
@@ -761,6 +805,7 @@ function askFor(hash) {
 		([, c]) => /** @type {any} */ (c)?.open
 	);
 	if (!open.length) return false;
+	cancelledPulls.delete(hash); // a new ask wants the file again
 	const row = sharedRowFor(hash);
 	const tx = beginTransfer({
 		hash,
@@ -876,6 +921,7 @@ export function enqueuePull(hash) {
  * whatever happened last time. @param {string} hash */
 export function reviveHash(hash) {
 	deadHashes.delete(String(hash ?? '').trim());
+	cancelledPulls.delete(String(hash ?? '').trim());
 	pendingRequests.delete(String(hash ?? '').trim());
 }
 
@@ -890,6 +936,7 @@ export function retryPull(hash) {
 	const h = String(hash ?? '').trim();
 	if (!h || itemByHash(h)) return false;
 	deadHashes.delete(h);
+	cancelledPulls.delete(h);
 	pendingRequests.delete(h);
 	unavailableHashes.update((u) => {
 		if (!u.has(h)) return u;
@@ -913,17 +960,29 @@ export function cancelPull(hash) {
 	const h = String(hash ?? '').trim();
 	if (!h) return false;
 	let stopped = false;
+	// 54i (F11 follow-up): the peers that may be sending it. A library pull never told them, so a
+	// cancelled 20 MB file kept streaming — and, once it had started, kept LANDING: the next
+	// announcement or a late single-shot answer opened a fresh transfer. They are asked to stop
+	// (a session-volume pull's own Cancel already sends this), and `cancelledPulls` refuses the rest.
+	/** @type {Set<string>} */
+	const senders = new Set();
 	// mid-reassembly: free the buffers
 	const partial = incoming.get(h);
 	if (partial) {
 		incoming.delete(h);
 		failTransfer(partial.tx, 'cancelled');
+		if (partial.from) senders.add(partial.from);
 		stopped = true;
 	}
 	const waiting = pullsInFlight.get(h);
 	if (waiting) {
 		failTransfer(waiting.tx, 'cancelled');
+		for (const id of waiting.waiting) senders.add(id);
 		stopped = true;
+	}
+	if (stopped) {
+		cancelledPulls.set(h, Date.now());
+		if (!volumeSinks.has(h)) for (const id of senders) askToStop(id, h);
 	}
 	pendingRequests.delete(h);
 	settlePull(h);
@@ -998,6 +1057,7 @@ export async function pullVolumeBytes(peerId, hash, meta = {}) {
 	const tx = beginTransfer({ hash: h, name: String(meta.name ?? h), dir: 'in', size: Number(meta.size) || 0, peer: peerId });
 	pullsInFlight.set(h, { tx, waiting: new Set([String(peerId)]) });
 	deadHashes.delete(h);
+	cancelledPulls.delete(h);
 	return new Promise((resolve) => {
 		volumeSinks.set(h, resolve);
 		volumePulls.set(h, { peer: String(peerId), max: Math.min(MAX_SHARED_BYTES, Number(meta.size) || MAX_SHARED_BYTES) });

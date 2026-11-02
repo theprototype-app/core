@@ -293,7 +293,9 @@ h.run(async () => {
 					D.quiet[k] = (D.quiet[k] ?? 0) + 1;
 					return;
 				}
-				D.note(`APP ${dir} ${t} ${dir === 'out' ? 'to' : 'from'} ${c.peer} on ${c.connectionId}${c.open ? '' : ' (NOT OPEN)'}`);
+				// which objects a full-state reply / a create carried (54-net: did the during-drop edit ride it?)
+				const ids = t === 'object' || t === 'loading' ? ' [' + (d.uuids ?? []).map((/** @type {string} */ u) => String(u).slice(0, 8)).join(' ') + ']' : '';
+				D.note(`APP ${dir} ${t} ${dir === 'out' ? 'to' : 'from'} ${c.peer} on ${c.connectionId}${c.open ? '' : ' (NOT OPEN)'}${ids}`);
 			};
 			const send = proto.send;
 			proto.send = function (/** @type {any} */ d, /** @type {any[]} */ ...rest) {

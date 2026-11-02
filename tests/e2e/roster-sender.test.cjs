@@ -4,10 +4,10 @@
 // with whatever a connected peer sends:
 //   1. G names X in a roster: H does not add X, and X's dial takes the approval card;
 //   2. G names Y in a mesh list: H does not dial Y, and H's scene does not reach Y;
-//   3. a guest's own row still updates (a name change).
+//   3. a guest's own row still updates (a name change);
 //   4. G approves W: W is in with G, and H gets its own card;
 //   5. H removes Q while Q says it is reloading: Q takes the card when it dials back;
-//   6. H joins N, who has a guest P: G asks N, N decides, G and P mesh.
+// (H joining a peer that has guests of its own: roster-merge.)
 // First, on clean peers: H approves Z, G hears it from the host, Z and G link with no card on G.
 //
 // Run: APP_URL='https://localhost:5980/' npm run e2e -- roster-sender
@@ -112,22 +112,6 @@ h.run(async () => {
 	h.check(!(await inRoster(H, Q.id)), 'and is not back in the roster');
 	await h.closePeer(Q);
 	await inPage(H, `s.pendingApprovals.set([]);`);
-
-	// 6. A host joins somebody who has guests: its guest asks too, that peer decides, the two sides mesh
-	const N = await h.setupPageQuiet(browser, 'N', [H, G]);
-	const P = await h.setupPageQuiet(browser, 'P', [H, G, N]);
-	await h.connect(P, N, 3000);
-	await inPage(H, `await s.peerApproval.requestConnect(arg);`, N.id);
-	await h.approveButton(N.page).click({ timeout: 30000 });
-	h.check(await until(N, () => linked(N, H.id)), 'the host links to the peer it joined');
-	h.check(await until(G, () => inRoster(G, N.id)), 'its guest hears that peer from the host');
-	const asked = await until(N, () => card(N, G.id), 30000);
-	h.check(asked, 'the peer joined is asked about the guest');
-	// the store path: the page's input stalls under the load of this many browsers (the button has its own suites)
-	if (asked) await inPage(N, `s.peerApproval.approvePeer(arg);`, G.id);
-	h.check(await until(N, async () => (await linked(N, G.id)) && (await linked(G, N.id)), 60000), 'and once it says yes they link');
-	h.check(await until(G, async () => (await linked(G, P.id)) && (await linked(P, G.id)), 60000), "the guests of both sides link");
-	h.check(!(await card(P, G.id)) && !(await card(G, P.id)), 'with no card between them');
 
 	await h.finish(browser);
 });

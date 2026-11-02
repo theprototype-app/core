@@ -1,3 +1,4 @@
+// @ts-nocheck -- fixture test: stubbed modules and loose mocks
 // 54i (fix-batch-3 a): @threlte/xr's headset task must SKIP a frame when three has no XR frame
 // (getFrame() === null after the session ended) instead of throwing
 // "Cannot read properties of null (reading 'getViewerPose')". Runs the REAL dist file through the

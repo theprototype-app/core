@@ -54,6 +54,7 @@
 	import { derived } from 'svelte/store';
 	import { dictation, startDictation, stopDictation } from '$lib/ai/sttCapture';
 	import { panelAway } from '$lib/windows/panelPlaces.js';
+	import { phoneFirstDetents } from '$lib/ui/phoneShell.js';
 
 	let prompt = $state('');
 	/** 56 C8: pictures for the next message, ready for a request's `images` (56-chat's send path reads it) */
@@ -90,6 +91,18 @@
 	});
 	const welcome = $derived(needsSetup && !$aiMessages.length && !agentId);
 	const headerSignIn = $derived(!!$connectorSignInSlot && !$connectorAvailable && !welcome);
+	// 54i: the welcome fits without an inner scroll — the floating window grows to it (h-auto, capped by the
+	// room below its top), and on a phone the sheet opens at full height until the person moves it
+	$effect(() => {
+		const want = welcome ? 'full' : '';
+		phoneFirstDetents.update((m) => {
+			if ((m.ai ?? '') === want) return m;
+			const next = { ...m };
+			if (want) next.ai = want;
+			else delete next.ai;
+			return next;
+		});
+	});
 
 	function submit() {
 		const text = prompt.trim();
@@ -262,7 +275,8 @@
 		use:bottomDockable={{ key: 'aiAssistant' }}
 		use:focusStack
 		use:tabbable={{ key: 'aiAssistant', title: 'AI assistant', openStore: aiAssistantHidden, isOpen: (v: string) => v === '', close: () => aiAssistantHidden.set('hidden') }}
-		class="ui-panel tp-ui tp-window flex h-[440px] w-[min(500px,90vw)] flex-col overflow-hidden"
+		class="ui-panel tp-ui tp-window flex w-[min(500px,90vw)] flex-col overflow-hidden {welcome ? '' : 'h-[440px]'}"
+		class:ai-fit={welcome}
 		style="z-index: var(--z-window)"
 		data-target={agentId ? 'agent' : 'provider'}
 		role="region"
@@ -456,6 +470,11 @@
 	}
 	.ai-signin-short {
 		display: none;
+	}
+	/* 54i: the welcome's height is its content, never more than the room below the window's top */
+	.ai-fit {
+		height: auto;
+		max-height: calc(100dvh - var(--dw-top, 0px) - 8px);
 	}
 	@container (max-width: 440px) {
 		.ai-signin-long {

@@ -195,6 +195,17 @@ h.run(async () => {
 			const hit = box ? await P.page.evaluate(([x, y, s]) => !!document.elementFromPoint(x, y)?.closest(s), [box.x + box.width / 2, box.y + box.height / 2, sel]) : false;
 			return { ok: !!box && box.x >= 0 && box.x + box.width <= viewport.width && box.y + box.height <= viewport.height && box.height >= 32 && hit, box, hit };
 		};
+		// 54i x: the whole welcome fits, no inner scroll — the own-provider card included (the folded sheet opens
+		// at full height, the floating window grows to its content)
+		await P.page.waitForTimeout(600); // the sheet's height transition / the window's re-clamp
+		const fit = await P.page.evaluate(() => {
+			const win = document.querySelector('#ai-assistant-window');
+			const sc = document.querySelector('#ai-welcome')?.closest('.overflow-y-auto');
+			const w = win.getBoundingClientRect();
+			const own = document.querySelector('#ai-welcome-own').getBoundingClientRect();
+			return { sh: sc?.scrollHeight, ch: sc?.clientHeight, ownB: Math.round(own.bottom), winB: Math.round(w.bottom), vh: innerHeight };
+		});
+		h.check(fit.sh <= fit.ch + 1 && fit.ownB <= fit.winB && fit.winB <= fit.vh, `N6 ${name}: the welcome fits without an inner scroll, own provider card in view (${JSON.stringify(fit)})`);
 		// 54i f: no window header under the top chrome (the bell cluster, the profile circle, the Connect bar);
 		// the Debugger stands for every toolbox that opens at the top right
 		await P.page.evaluate(() => window.__stores.flowDebug.setDebugOpen(true));

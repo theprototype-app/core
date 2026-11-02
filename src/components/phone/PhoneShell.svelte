@@ -28,6 +28,7 @@
 		phoneSheet,
 		phoneDetents,
 		detentOf,
+		phoneFirstDetents,
 		setPhoneDetent,
 		phoneDetentHeights,
 		phoneShellActive,
@@ -189,7 +190,7 @@
 	});
 	const top = $derived(order.length ? order[order.length - 1] : null);
 	// NOTES-38 #15: each window's sheet reopens at the height it was left at (half the first time)
-	const detent = $derived(detentOf($phoneDetents, top));
+	const detent = $derived(detentOf($phoneDetents, top, $phoneFirstDetents));
 	/** @param {string} d */
 	const setDetent = (d) => top && setPhoneDetent(top, d);
 

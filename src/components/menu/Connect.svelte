@@ -516,7 +516,9 @@
 			// build default (fallback / explicit public / custom) so the joiner lands
 			// on the SAME server.
 			navigator.clipboard
-				.writeText(window.location.origin + '#' + myidcap + inviteServerParam(srv))
+				// a guest's link names the session host: the host decides who joins, so a joiner dialing
+				// the guest would be asked again by the host anyway
+				.writeText(window.location.origin + '#' + ($sessionHost ? String($sessionHost).toUpperCase() : myidcap) + inviteServerParam(srv))
 				.then(function () {
 					// 76 FW1: the first-win quest's last step waits for this
 					// (the funnel first: the signal can end the quest, whose own event follows it)
@@ -604,7 +606,7 @@
 			aria-label={$connectionStatus.words}
 		></span>
 		<!-- your invite id (click to copy the share link) — the FIRST button in the pill -->
-		<button type="button" class="cx-id" onclick={copy} title="Copy your invite link"
+		<button type="button" class="cx-id" onclick={copy} title={$sessionHost ? "Copy the session's invite link (it names the host)" : 'Copy your invite link'}
 			><span class="cx-id-text">{myidcap}</span><Icon name="copy" size={16} aria-hidden="true" /></button
 		>
 		{#if canInvite}

@@ -5,6 +5,11 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.53.2 — session checks 🔒
+
+- **Shared assets follow the current sharing setting.**
+- **Role checks wait for the session's roles.**
+
 ## 1.53.1 — Claude connector fixes 🔧
 
 - **"What can you do?" works** through the Claude connector, and so does *save_scene*. Saves keep older versions, and an AI save cannot write over another scene.

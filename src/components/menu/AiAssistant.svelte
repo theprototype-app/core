@@ -276,14 +276,17 @@
 			bare
 			body={false}
 			title="AI assistant"
-			headerClass="ui-panel-header move-handle cursor-move select-none"
+			headerClass="ui-panel-header move-handle cursor-move select-none ai-head"
 			onclose={() => aiAssistantHidden.set('hidden')}
 		>
 			{#snippet actions()}
 				<!-- FW-AI (76): signed out on a cloud build, working with a provider of your own: connecting stays one press away.
 				     With no provider the welcome below carries this button instead. -->
 				{#if headerSignIn}
-					<Button id="ai-header-signin" variant="secondary" size="sm" onclick={requestSignIn}>Sign in to connect</Button>
+					<!-- 54i: a narrow window (the folded N6 sheet) says "Sign in", so the title keeps its words; the name stays whole -->
+					<Button id="ai-header-signin" variant="secondary" size="sm" aria-label="Sign in to connect" title="Sign in to connect" onclick={requestSignIn}
+						><span class="ai-signin-long">Sign in to connect</span><span class="ai-signin-short">Sign in</span></Button
+					>
 				{/if}
 				<!-- 56 C11: the scene's chats, and a fresh one -->
 				<button
@@ -446,6 +449,21 @@
 <style>
 	#ai-assistant.hidden {
 		display: none;
+	}
+	/* 54i: the header measures its own width (a sheet, a docked column or a floating window alike) */
+	:global(#ai-assistant-window .ai-head) {
+		container-type: inline-size;
+	}
+	.ai-signin-short {
+		display: none;
+	}
+	@container (max-width: 440px) {
+		.ai-signin-long {
+			display: none;
+		}
+		.ai-signin-short {
+			display: inline;
+		}
 	}
 	/* 38 R6: the body in the tokens — your prompt on the accent tint, replies on surface-2 */
 	.ai-msg {

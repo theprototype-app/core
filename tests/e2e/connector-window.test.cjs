@@ -233,6 +233,13 @@ h.run(async () => {
 		await installSignIn(P.page);
 		await P.page.locator('#ai-header-signin').waitFor({ state: 'visible', timeout: 10000 });
 		const hb = await fits('#ai-header-signin');
+		// 54i: the title keeps its words beside the button (the folded sheet says "Sign in")
+		const title = await P.page.evaluate(() => {
+			const t = document.querySelector('#ai-assistant-window .wc-title');
+			const b = document.querySelector('#ai-header-signin');
+			return { sw: t.scrollWidth, cw: t.clientWidth, text: t.textContent.trim(), name: b.getAttribute('aria-label') || b.textContent.trim() };
+		});
+		h.check(title.sw <= title.cw && title.name === 'Sign in to connect', `N6 ${name}: the header title is not cut short and the button keeps its name (${JSON.stringify(title)})`);
 		const closeFits = await fits('#ai-assistant-window .wc-close');
 		h.check(hb.ok && closeFits.hit && closeFits.box.x + closeFits.box.width <= viewport.width, `N6 ${name}: the header button fits and the close button stays on screen and pressable (${JSON.stringify(hb.box)}, hit ${hb.hit}/${closeFits.hit})`);
 		await P.page.screenshot({ path: path.join(OUT, `fw-ai-n6-${name}.png`) }).catch(() => {});

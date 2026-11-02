@@ -4,7 +4,7 @@ import { describe, it, expect } from 'vitest';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { classify } = require('../../scripts/ci/deps-policy.cjs');
+const { classify, manifestDir } = require('../../scripts/ci/deps-policy.cjs');
 const { assign, shardCount, counts } = require('../../scripts/ci/battery.cjs');
 
 /** @param {string} name @param {string} type @param {string} up @param {string} [dir] @param {string} [eco] */
@@ -47,6 +47,16 @@ describe('deps-policy: one class per PR, the most careful part wins', () => {
 		expect(classify([dep('ws', 'direct:production', 'minor', '/tools/agent')]).battery).toBe(false);
 		expect(classify([dep('ws', 'direct:production', 'patch', '/tools/agent'), dep('three', 'direct:production', 'patch')]).battery).toBe(true);
 		expect(classify([]).battery).toBe(true);
+	});
+	it('reads the manifest directory without the target branch fetch-metadata glues on', () => {
+		const into = (/** @type {string} */ name, /** @type {string} */ up, /** @type {string} */ dir) => ({ ...dep(name, 'direct:production', up, dir), targetBranch: 'deps' });
+		expect(manifestDir({ directory: '/deps', targetBranch: 'deps' })).toBe('/');
+		expect(manifestDir({ directory: '/tools/agent/deps', targetBranch: 'deps' })).toBe('/tools/agent');
+		expect(manifestDir({ directory: '/', targetBranch: 'main' })).toBe('/');
+		expect(manifestDir({ directory: '/tools/agent' })).toBe('/tools/agent');
+		// the 2026-11-01 round: @lucide/svelte 1.61 → 1.63 came in as "/deps" and skipped battery + PC
+		expect(classify([into('@lucide/svelte', 'minor', '/deps')])).toMatchObject({ cls: 'ready', needsPc: true, battery: true });
+		expect(classify([into('ws', 'patch', '/tools/agent/deps')])).toMatchObject({ cls: 'auto', needsPc: false, battery: false });
 	});
 });
 

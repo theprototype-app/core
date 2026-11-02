@@ -523,7 +523,8 @@ h.run(async () => {
 		h.check((await disconnectToasts(A, toastsA)) === 0 && (await disconnectToasts(B, toastsB)) === 0, `${tag} no "disconnected" toast on either side`);
 		await h.eventually(() => has(B, duringA), (v) => v, `${tag} A's edit made during the drop reaches B`, 15000);
 		// 54-net: an edit that never left A — a creation made while A read itself a viewer is kept local
-		// (objectPermissions.gateCreationBroadcast) and out of every full-state reply
+		// (objectPermissions.gateCreationBroadcast) and out of every full-state reply — or one that
+		// arrived and still sits in B's ingest queue (a throttled drain landed one object per second)
 		if (!(await has(B, duringA))) {
 			console.log(`  ${tag} A's during-drop object ${duringA.slice(0, 8)}: at creation ${madeA}, now ${await made(A, duringA)}`);
 			for (const [name, p] of [['A', A], ['B', B]])
@@ -539,18 +540,6 @@ h.run(async () => {
 							})
 							.catch((/** @type {any} */ e) => 'err ' + String(e?.message ?? e).slice(0, 60)))
 				);
-			// TEMP 54-net diag: is B's ingest queue throttled (a nested setTimeout chain) or stuck?
-			const probe = await B.page
-				.evaluate(async () => {
-					const t = performance.now();
-					for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0));
-					return `vis=${document.visibilityState} focus=${document.hasFocus()} 10 nested setTimeout(0)=${Math.round(performance.now() - t)}ms`;
-				})
-				.catch((/** @type {any} */ e) => 'err ' + String(e?.message ?? e).slice(0, 60));
-			console.log(`  ${tag} B timers: ${probe}`);
-			const t1 = Date.now();
-			while (Date.now() - t1 < 90000 && !(await has(B, duringA))) await A.page.waitForTimeout(1000);
-			console.log(`  ${tag} A's during-drop object on B ${(await has(B, duringA)) ? 'arrived ' + Math.round((Date.now() - t1) / 1000) + ' s later' : 'still missing after 90 s'}`);
 		}
 		if (!TRACE && !(await has(B, duringA))) await wireTrace(tag, "A's edit never reached B");
 		await h.eventually(() => has(A, duringB), (v) => v, `${tag} B's edit made during the drop reaches A`, 15000);

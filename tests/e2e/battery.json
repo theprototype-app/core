@@ -270,6 +270,7 @@
 		"import-file": "agent"
 	},
 	"suites": {
+		"no-webgl": 120,
 		"model-replace": 540,
 		"sky-cdn": 180,
 		"tools-connections": 180,

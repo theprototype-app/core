@@ -98,6 +98,9 @@
   // 27-G: the one overlay that must sit above everything, because nothing else on
   // screen is usable while the graphics context is gone.
   import ContextLostOverlay from './components/ContextLostOverlay.svelte'
+  // 54i c: no WebGL 2 context at boot → this screen instead of the <Canvas> (and one report)
+  import NoWebGLScreen from './components/NoWebGLScreen.svelte'
+  import { probeWebGL2, reportNoWebGL } from '$lib/webglSupport.js'
   // 26-G: the frame-freeze half of Stage 4 (the context-loss half is the overlay above)
   import RenderPausedOverlay from './components/RenderPausedOverlay.svelte'
   import './lib/overloadGuard'
@@ -206,6 +209,10 @@ import { startMusicToolbox } from './lib/musicToolbox'
   // flow editor and runtime first look them up
   initModules(coreModules.filter((mod) => !get(disabledModules).includes(mod.id)))
 
+  // 54i c: asked BEFORE the markup mounts — three throws inside <Canvas> without a context, which
+  // took the whole page down. The prerender (no document) answers yes.
+  const webglOk = probeWebGL2()
+
   // node graph animations keep running even when the flow drawer is closed
   onMount(() => {
     // 27-B: FIRST, so a failure during the rest of this boot is already recorded.
@@ -213,6 +220,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
     startWireErrors()
     // 48 O1: anonymous error + crash reports (default on, Settings ▸ Privacy; inert without VITE_ERROR_REPORTS_URL)
     startErrorReports()
+    if (!webglOk) reportNoWebGL()
     // 26-A: one rAF loop, ~2 samples a second. Started here rather than inside Scene so
     // it keeps measuring while the canvas is remounting — which is exactly when a
     // report about the app freezing tends to be written.
@@ -575,10 +583,13 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <!-- 53 A3: #viewport is the skip link's target; it takes focus only when the keyboard asks
      (keyboardNav.focusViewport lends it a tabindex), so a mouse press still focuses <body> -->
 <div id="viewport" role="region" aria-label="3D viewport" class="viewport" class:viewport-inset={$viewPrefs.dockPushesViewport && !$embedMode}>
+  {#if webglOk}
   <Canvas shadows={PCFShadowMap}>
     <Scene />
   </Canvas>
+  {/if}
 </div>
+{#if !webglOk}<NoWebGLScreen />{/if}
 
 <style>
   .viewport {

@@ -39,6 +39,11 @@ export function ignoredMessage(message) {
 	return !m || IGNORE.some((re) => re.test(m));
 }
 
+/** 54i c: the renderer could not get a WebGL context (three's two wordings + the browser's event) */
+export const WEBGL_CREATE_RE = /Error creating WebGL context|WebGL could not be created|WebGL context could not be created|WebGL 1 is not supported|WebGL(?:2)? (?:is )?(?:not supported|unavailable)/i;
+/** the ONE message every WebGL create failure files under, whichever seam caught it */
+export const WEBGL_CREATE_MSG = 'WebGL could not be created';
+
 /** an out-of-memory failure, whatever the engine calls it @param {string} message */
 export function looksLikeOom(message) {
 	return /out of memory|allocation failed|Array buffer allocation|Cannot allocate|insufficient memory|GL_OUT_OF_MEMORY|OOM\b/i.test(String(message ?? ''));
@@ -133,7 +138,9 @@ export function fnv1a(s) {
  * @param {{kind: string, msg: string, frames: string[]}} r
  */
 export function signatureOf(r) {
-	const top = (r.frames[0] || '').replace(/:\d+$/, '');
+	// 54i c: a graphics failure is one failure whichever seam (error, rejection, the boot probe)
+	// and whichever frame caught it — so it dedupes to one report
+	const top = r.kind === 'webgl' ? '' : (r.frames[0] || '').replace(/:\d+$/, '');
 	return fnv1a(r.kind + '|' + r.msg + '|' + top);
 }
 
@@ -321,10 +328,12 @@ export function buildReport(caught, ctx) {
 	const raw = String(caught.message ?? '');
 	if ((kind === 'error' || kind === 'rejection') && ignoredMessage(raw)) return null;
 	if ((kind === 'error' || kind === 'rejection') && looksLikeOom(raw)) kind = 'oom';
+	const webglCreate = (kind === 'error' || kind === 'rejection' || kind === 'webgl') && WEBGL_CREATE_RE.test(raw);
+	if (webglCreate) kind = 'webgl';
 	const frames = ownFrames(caught.stack, ctx.origin);
 	// an uncaught error thrown from another origin's script (an extension) with none of ours in it
 	if (kind === 'error' && !frames.length && caught.filename && ctx.origin && !String(caught.filename).startsWith(ctx.origin)) return null;
-	const msg = scrubMessage(raw) || kind;
+	const msg = webglCreate ? WEBGL_CREATE_MSG : scrubMessage(raw) || kind;
 	const report = {
 		v: 1,
 		kind,

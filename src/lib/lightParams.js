@@ -63,31 +63,16 @@ export function shadowsDisabled() {
 	return get(shadowQuality) === 'off' || get(qualityOverrides).shadowsOff;
 }
 
-/**
- * The ONE writer of `renderer.shadowMap.enabled` (54i u). three bakes the shadow-map state into
- * each material's PROGRAM and does not re-check it per draw, so a flip without `needsUpdate`
- * leaves programs compiled for the old state — measured: kit-instancing's member floors (clone
- * materials warmed while the suite turned shadows off) stayed missing from the canvas until
- * `material.needsUpdate = true`. A no-op when the state is unchanged.
- * @param {any} renderer @param {boolean} on @param {any} [scene] defaults to the global scene
- */
-export function setShadowMapEnabled(renderer, on, scene = get(globalScene)) {
-	if (!renderer?.shadowMap || renderer.shadowMap.enabled === on) return false;
-	renderer.shadowMap.enabled = on;
-	renderer.shadowMap.needsUpdate = true;
-	scene?.traverse?.((/** @type {any} */ node) => {
-		const m = node.material;
-		if (!m) return;
-		for (const mat of Array.isArray(m) ? m : [m]) if (mat) mat.needsUpdate = true;
-	});
-	return true;
-}
-
 export function applyShadowQualityCap() {
 	const off = shadowsDisabled();
 	/** @type {any} */
 	const renderer = get(globalRenderer);
-	setShadowMapEnabled(renderer, !off);
+	if (renderer?.shadowMap) {
+		if (renderer.shadowMap.enabled === off) {
+			renderer.shadowMap.enabled = !off;
+			renderer.shadowMap.needsUpdate = true;
+		}
+	}
 	const apply = (/** @type {any} */ node) => {
 		if (!node.isLight || !node.shadow) return;
 		const wanted = node.userData.shadowMapSize ?? node.shadow.mapSize.x;

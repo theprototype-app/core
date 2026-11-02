@@ -3,7 +3,7 @@ import { backoffDelay } from '$lib/netBackoff';
 import { sceneCommand, lockRestore, checkLocks, createObject, sendObjects, deleteObject, colorObject, createLoader, userData, handleDisconnected, specator, cameraSettings, objectParameters, applyClearScene, ROSTER_GRACE_MS } from './commandsHandler.svelte';
 import { gateCreationBroadcast } from './objectPermissions';
 import { createGeometry, createLight, createGroup, changeName, moveGeometry, lockGeometry, moveCamera } from '$lib/geometries.svelte';
-import { sendNodes, applyNodesSnapshot, applyNodeSync, noteNodesSnapshot, forgetNodeSyncPeer, createFlowNode, moveFlowNode, updateFlowNodeData, deleteFlowNodes, createFlowEdge, deleteFlowEdges, applyFlowCursor } from '$lib/nodesHandler';
+import { sendNodes, applyNodesSnapshot, applyNodeSync, noteNodesSnapshot, noteNodeSyncHandshake, forgetNodeSyncPeer, createFlowNode, moveFlowNode, updateFlowNodeData, deleteFlowNodes, createFlowEdge, deleteFlowEdges, applyFlowCursor } from '$lib/nodesHandler';
 import { preloadSandboxFor } from '$lib/sandbox/preload.js';
 import { applyGraphCreate, applyGraphDelete } from '$lib/flowGraphs';
 import { applyNodeTrigger } from '$lib/flowRuntime';
@@ -1959,6 +1959,7 @@ export class PeerConnection {
 		noteSnapshotAsked(conn.peer)
 		conn.send({type: 'gettriggers', sender: this.peer.id})
 		conn.send({type: 'getnodes', sender: this.peer.id})
+		noteNodeSyncHandshake(conn.peer) // 54i row g: a deferred ask re-arms the nodesync join window
 		conn.send({type: 'getannotations', sender: this.peer.id})
 		conn.send({type: 'getjoints', sender: this.peer.id})
 		conn.send({type: 'getanim', sender: this.peer.id})
@@ -1980,6 +1981,7 @@ export class PeerConnection {
 	/** @param {any} conn @param {string} peerId @param {boolean} getobjects @param {string} id
 	 * @param {{heal?: boolean}} [opts] heal: this conn REPLACES one that dropped (the reconnect window) */
 	sendHandshake(conn, peerId, getobjects, id, opts = {}) {
+		noteNodeSyncHandshake(peerId) // 54i row g: the nodesync join window runs from the link, not a later first nodesync
 		// 25-F: an approval dial-back SAYS it is one, ahead of everything else (the roadmap's
 		// "first message"). The metadata already carried it; this is the same answer for a
 		// peer that reads messages rather than metadata, and it is idempotent on a joiner

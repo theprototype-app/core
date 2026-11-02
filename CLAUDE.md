@@ -3629,6 +3629,13 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   eventually through nodesync's periodic hash compare, which makes this fail SLOWLY and
   RACILY rather than cleanly — a Counter pulsed before the peer held the graph read 2
   where the author read 3. Push with `sendNodes(peerId)` and wait for the peer to hold it.
+- **The nodesync join hold is timed from the LINK, not from the peer's first nodesync**
+  (54i row g). A peer with no graphs at the join sends no snapshot and no nodesync (count 0
+  is never broadcast), so its first nodesync arrives with its first object graph, maybe
+  minutes later — and the host never asks a joiner for graphs at all. Timed from that,
+  `NODESYNC_HANDSHAKE_MS` held a real change back and the graph reached the peer after ~26 s
+  (cloud build, timeline red). `noteNodeSyncHandshake` runs in `sendHandshake` and again at
+  the `getnodes` ask; a nodesync that beats both still starts the window.
 - **`setNodeData` is not throttled, but its write chain is heavy enough to look like it
   is**: mirror -> flowGraphs -> autosave markDirty -> serializeGraphs on every call, so
   only ~5 of 50 calls at 40ms intervals landed in 2s. Never use it to drive anything

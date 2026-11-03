@@ -295,7 +295,7 @@ export const CONNECTOR_STANDALONE = Object.freeze([
 export function familyNames() {
 	const out = new Map();
 	for (const [family, f] of Object.entries(CONNECTOR_FAMILIES))
-		for (const [action, tool] of Object.entries(f.actions)) out.set(tool, family + ' {action: "' + action + '"}');
+		for (const [action, tool] of Object.entries(f.actions)) out.set(tool, family + " {action: '" + action + "'}");
 	return out;
 }
 

@@ -74,7 +74,7 @@ check('join_session (86-fix N2) is listed as an edit that asks the person', c.to
 	check('TB: a family lists only the actions whose tool exists', JSON.stringify(v.families.create_shape) === '{"lathe":"create_lathe"}' && Object.keys(v.families.set_look).join() === 'material,get_material');
 	const look = v.tools.find((t) => t.name === 'set_look');
 	check('TB: the action is required and an enum; each action carries its tool\'s own schema', look.inputSchema.required.join() === 'action' && look.inputSchema.properties.action.enum.join() === 'material,get_material' && look.inputSchema.properties.material.properties.x.type === 'number');
-	check('TB: fine names inside a family say the connector\'s way', /edit_shape \{action: "pivot"\}/.test(look.inputSchema.properties.material.description) && !/\bset_pivot\b/.test(look.inputSchema.properties.material.description));
+	check('TB: fine names inside a family say the connector\'s way', /edit_shape \{action: 'pivot'\}/.test(look.inputSchema.properties.material.description) && !/\bset_pivot\b/.test(look.inputSchema.properties.material.description));
 	check('TB: a family is an edit; read-only only when every action is (it never is)', look.annotations.readOnlyHint === false && typeof look.annotations.destructiveHint === 'boolean');
 	check('TB: the connector view has its own instructions and no guidance gap', typeof v.instructions === 'string' && guidanceGaps(v).length === 0);
 	let stray = '';
@@ -94,7 +94,7 @@ check('join_session (86-fix N2) is listed as an edit that asks the person', c.to
 		const all = Object.values(CONNECTOR_FAMILIES).flatMap((f) => Object.values(f.actions));
 		return new Set(all).size === all.length && !all.some((t) => CONNECTOR_STANDALONE.includes(t));
 	})());
-	check('TB: sayFamilyNames leaves other words alone', sayFamilyNames('use set_material, not set_materials or list_scene') === 'use set_look {action: "material"}, not set_materials or list_scene');
+	check('TB: sayFamilyNames leaves other words alone', sayFamilyNames('use set_material, not set_materials or list_scene') === "use set_look {action: 'material'}, not set_materials or list_scene");
 }
 
 // the committed catalog (written by core scripts/agent-tool-catalog.cjs) parses and has the instructions

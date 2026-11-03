@@ -3659,7 +3659,7 @@
 							"required": [
 								"profile"
 							],
-							"description": "A lathed (turned) object — vase, bowl, bottle, column, lamp shade: revolve a 2D profile around the Y axis. profile = [[radius, height], …] from bottom to top (radius ≥ 0; start and end at radius 0 to close the bottom / top). Editable afterwards with edit_shape {action: \"params\"} (segments, phiLength). Returns the uuid."
+							"description": "A lathed (turned) object — vase, bowl, bottle, column, lamp shade: revolve a 2D profile around the Y axis. profile = [[radius, height], …] from bottom to top (radius ≥ 0; start and end at radius 0 to close the bottom / top). Editable afterwards with edit_shape {action: 'params'} (segments, phiLength). Returns the uuid."
 						},
 						"tube": {
 							"type": "object",
@@ -3714,7 +3714,7 @@
 							"required": [
 								"path"
 							],
-							"description": "A tube swept along a smooth 3D path — rail, pipe, cable, handrail, tentacle. path = [[x, y, z], …] in SCENE space (the object is placed at the path's centre); radius for all points or radii per point (tapers). Editable with edit_shape {action: \"params\"} (path, radii, closed). Returns the uuid."
+							"description": "A tube swept along a smooth 3D path — rail, pipe, cable, handrail, tentacle. path = [[x, y, z], …] in SCENE space (the object is placed at the path's centre); radius for all points or radii per point (tapers). Editable with edit_shape {action: 'params'} (path, radii, closed). Returns the uuid."
 						},
 						"extrude": {
 							"type": "object",
@@ -3825,7 +3825,7 @@
 							"required": [
 								"points"
 							],
-							"description": "A solid from a 2D outline — sign, letter, logo, floor plan, gear, cookie: points = [[x, y], …] (x right, y up), extruded along +Z by depth and centred on it, so it stands upright facing +Z (rotate [-1.5708, 0, 0] to lay it flat). holes = outlines cut through it (a window, the inside of an O). bevel rounds the edges. Editable with edit_shape {action: \"params\"} (depth, bevel …). Returns the uuid."
+							"description": "A solid from a 2D outline — sign, letter, logo, floor plan, gear, cookie: points = [[x, y], …] (x right, y up), extruded along +Z by depth and centred on it, so it stands upright facing +Z (rotate [-1.5708, 0, 0] to lay it flat). holes = outlines cut through it (a window, the inside of an O). bevel rounds the edges. Editable with edit_shape {action: 'params'} (depth, bevel …). Returns the uuid."
 						},
 						"mesh": {
 							"type": "object",
@@ -3915,7 +3915,7 @@
 								"vertices",
 								"faces"
 							],
-							"description": "A mesh from raw data: vertices [[x, y, z], …] and faces [[i, j, k] or [i, j, k, l] …] (indices into vertices, counter-clockwise seen from outside; polygons of up to 32 corners are fanned, so keep them convex), optional uvs (one [u, v] per vertex). Up to 20000 vertices and 20000 faces; normals are computed (smooth: true for smooth shading). Edit it afterwards with edit_shape {action: \"mesh\"}. Returns the uuid."
+							"description": "A mesh from raw data: vertices [[x, y, z], …] and faces [[i, j, k] or [i, j, k, l] …] (indices into vertices, counter-clockwise seen from outside; polygons of up to 32 corners are fanned, so keep them convex), optional uvs (one [u, v] per vertex). Up to 20000 vertices and 20000 faces; normals are computed (smooth: true for smooth shading). Edit it afterwards with edit_shape {action: 'mesh'}. Returns the uuid."
 						}
 					},
 					"required": [
@@ -4034,7 +4034,7 @@
 							"required": [
 								"updates"
 							],
-							"description": "Reshape existing objects in place (they keep uuid, transform, material and flows): change a primitive's params (the keys list_scene shows under geometry, e.g. {width, height, depth} for a Box, {radiusTop, radiusBottom, height, radialSegments} for a Cylinder, {segments, phiLength} for a Lathe, {depth, bevel} for an extrusion), or its TYPE (box → Cylinder) with params on top of the new type's defaults. A tube (create_shape {action: \"tube\"}) takes path, radius / radii, closed. An object whose vertices were hand-edited refuses unless force: true (the rebuild replaces those edits). Up to 100 objects per call, one undo step."
+							"description": "Reshape existing objects in place (they keep uuid, transform, material and flows): change a primitive's params (the keys list_scene shows under geometry, e.g. {width, height, depth} for a Box, {radiusTop, radiusBottom, height, radialSegments} for a Cylinder, {segments, phiLength} for a Lathe, {depth, bevel} for an extrusion), or its TYPE (box → Cylinder) with params on top of the new type's defaults. A tube (create_shape {action: 'tube'}) takes path, radius / radii, closed. An object whose vertices were hand-edited refuses unless force: true (the rebuild replaces those edits). Up to 100 objects per call, one undo step."
 						},
 						"mesh": {
 							"type": "object",
@@ -4213,7 +4213,7 @@
 							"required": [
 								"object"
 							],
-							"description": "Model an existing mesh like Edit Mesh does: run ops on a selection of its faces or vertices. Face ops: extrude {distance}, inset {amount 0-1}, move {distance} along the normal, bevel {width, segments, profile}, subdivide, delete, flip. Vertex ops: weld (to their centre), move {offset [x,y,z]}, smooth {factor, iterations}, dissolve, bevel {width}, delete, connect (2 vertices), create_face (3-4 vertices). An op without its own select goes on with what the previous face op left selected (after extrude / inset / move / flip: the cap, the inset's inner face), like Edit Mesh; otherwise the select is read again on the mesh as it is at that op (indices too). Call with ops: [] first to preview faces / vertices (index, normal, centre). Afterwards the object counts as hand-edited (edit_shape {action: \"params\"} then needs force). One undo step per call."
+							"description": "Model an existing mesh like Edit Mesh does: run ops on a selection of its faces or vertices. Face ops: extrude {distance}, inset {amount 0-1}, move {distance} along the normal, bevel {width, segments, profile}, subdivide, delete, flip. Vertex ops: weld (to their centre), move {offset [x,y,z]}, smooth {factor, iterations}, dissolve, bevel {width}, delete, connect (2 vertices), create_face (3-4 vertices). An op without its own select goes on with what the previous face op left selected (after extrude / inset / move / flip: the cap, the inset's inner face), like Edit Mesh; otherwise the select is read again on the mesh as it is at that op (indices too). Call with ops: [] first to preview faces / vertices (index, normal, centre). Afterwards the object counts as hand-edited (edit_shape {action: 'params'} then needs force). One undo step per call."
 						},
 						"pivot": {
 							"type": "object",
@@ -4291,7 +4291,7 @@
 								"objects",
 								"at"
 							],
-							"description": "Make a group at a point and put objects in it, so turning the group swings them about that point: arm parts about a shoulder, several parts of a lamp about one joint. The objects stay where they are. For one object, edit_shape {action: \"pivot\"} needs no extra group. Returns groupUuid."
+							"description": "Make a group at a point and put objects in it, so turning the group swings them about that point: arm parts about a shoulder, several parts of a lamp about one joint. The objects stay where they are. For one object, edit_shape {action: 'pivot'} needs no extra group. Returns groupUuid."
 						}
 					},
 					"required": [
@@ -4529,7 +4529,7 @@
 									"description": "with confirmId: seconds to wait for the answer (up to 60)"
 								}
 							},
-							"description": "Give objects a node shader, written as text like flow graphs: one line per node (id = type {param: value}), one per edge (source[.output] -> target.input), ending at a \"surface\" node. Example: c = color {value: \"#ff8800\"}\\nout = surface\\nc -> out.emissive. Call set_look {action: \"shader_nodes\"} for the types. Each object gets its own copy. Compiler errors come back in the result and nothing is written. Returns the graph key and its uniforms: a float one (u_<nodeId>_<param>) can be driven by a flow \"setuniform\" node on that object. scene: true makes the default for every object, which asks the host first."
+							"description": "Give objects a node shader, written as text like flow graphs: one line per node (id = type {param: value}), one per edge (source[.output] -> target.input), ending at a \"surface\" node. Example: c = color {value: \"#ff8800\"}\\nout = surface\\nc -> out.emissive. Call set_look {action: 'shader_nodes'} for the types. Each object gets its own copy. Compiler errors come back in the result and nothing is written. Returns the graph key and its uniforms: a float one (u_<nodeId>_<param>) can be driven by a flow \"setuniform\" node on that object. scene: true makes the default for every object, which asks the host first."
 						},
 						"edit_shader": {
 							"type": "object",
@@ -4683,7 +4683,7 @@
 									"description": "with confirmId: seconds to wait for the answer (up to 60)"
 								}
 							},
-							"description": "The scene's post effects (bloom, huesaturation, brightnesscontrast, tonemapping, vignette, grain, chromaticaberration, ao, lut, pixelation, scanlines, dotscreen, smaa; set_look {action: \"get_post\"} lists every param). effects: [{kind, params, enabled, at, remove}], matched to what is there by id or kind, so repeating a call does not stack a second bloom; replace: true drops the rest; the stack order is the order of effect. This changes the whole scene's look: the first call returns needsConfirm and the host is asked; repeat it with confirmId. One undo step."
+							"description": "The scene's post effects (bloom, huesaturation, brightnesscontrast, tonemapping, vignette, grain, chromaticaberration, ao, lut, pixelation, scanlines, dotscreen, smaa; set_look {action: 'get_post'} lists every param). effects: [{kind, params, enabled, at, remove}], matched to what is there by id or kind, so repeating a call does not stack a second bloom; replace: true drops the rest; the stack order is the order of effect. This changes the whole scene's look: the first call returns needsConfirm and the host is asked; repeat it with confirmId. One undo step."
 						},
 						"get_post": {
 							"type": "object",
@@ -4719,7 +4719,7 @@
 									"description": "with confirmId: seconds to wait for the answer (up to 60)"
 								}
 							},
-							"description": "A custom post effect: a preset, or a shader graph as text ending at a \"postOutput\" node (set_look {action: \"shader_nodes\"} domain post), added to the look. Changes the whole scene's look, so it asks the host first like set_look {action: \"post\"}. Compiler errors come back in the result."
+							"description": "A custom post effect: a preset, or a shader graph as text ending at a \"postOutput\" node (set_look {action: 'shader_nodes'} domain post), added to the look. Changes the whole scene's look, so it asks the host first like set_look {action: 'post'}. Compiler errors come back in the result."
 						},
 						"unwrap": {
 							"type": "object",
@@ -4811,7 +4811,7 @@
 							"required": [
 								"objects"
 							],
-							"description": "Tile, shift or rotate a material slot's textures (tiling: 4 repeats a floor texture four times). maps limits it to some slots. With faces it maps only those faces instead: they are projected flat so the image fills them once (a label on one side of a box), with tiling / offset / rotation on top; pair it with set_look {action: \"material\"} faces for an image only on that face. One undo step."
+							"description": "Tile, shift or rotate a material slot's textures (tiling: 4 repeats a floor texture four times). maps limits it to some slots. With faces it maps only those faces instead: they are projected flat so the image fills them once (a label on one side of a box), with tiling / offset / rotation on top; pair it with set_look {action: 'material'} faces for an image only on that face. One undo step."
 						}
 					},
 					"required": [
@@ -4950,7 +4950,7 @@
 									"description": "the card: height in metres"
 								}
 							},
-							"description": "Put an image into the shared library (Explorer) and get its hash, for texture slots (update_objects materialParams.map, set_look {action: \"material\"}) and image nodes. Give exactly one source: `url` (https, the site must allow other origins), `data` (base64, also how to pass an image you generated), or `canvas` (draw one from shapes, gradients, checkers and noise: textures, signs, labels). It is re-encoded here, so nothing in the file survives but its pixels. Limits: 16 MB in, 4096 px on the long side (larger is scaled down), a canvas 2048 px and 500 ops. One undo step; editors and admins only."
+							"description": "Put an image into the shared library (Explorer) and get its hash, for texture slots (update_objects materialParams.map, set_look {action: 'material'}) and image nodes. Give exactly one source: `url` (https, the site must allow other origins), `data` (base64, also how to pass an image you generated), or `canvas` (draw one from shapes, gradients, checkers and noise: textures, signs, labels). It is re-encoded here, so nothing in the file survives but its pixels. Limits: 16 MB in, 4096 px on the long side (larger is scaled down), a canvas 2048 px and 500 ops. One undo step; editors and admins only."
 						}
 					},
 					"required": [

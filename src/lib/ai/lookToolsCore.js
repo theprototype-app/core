@@ -1,6 +1,7 @@
-// Roadmap 85 L1-L5 — the PURE half of the look tools (imports nothing; the unit layer runs it):
+// Roadmap 85 L1-L5 — the PURE half of the look tools (imports only the pure add_image core; the unit layer runs it):
 // what a texture source may be, how a `materials` payload takes a map or new sampler state, a shader
 // graph checked against the node catalog, a post stack request checked against the effect registry.
+import { isPrivateHost } from './imageToolCore.js';
 
 /** the texture slots L1 names → three's material key; both spellings are accepted */
 export const MAP_SLOTS = /** @type {Record<string, string>} */ (
@@ -58,10 +59,8 @@ export function checkTextureUrl(url) {
 	}
 	if (u.protocol !== 'https:') return { ok: false, error: 'https URLs only' };
 	if (u.username || u.password) return { ok: false, error: 'a URL with a user name or password is refused' };
-	const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, '');
-	const privateV4 = /^(127\.|10\.|192\.168\.|169\.254\.|0\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host);
-	if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || privateV4 || host.includes(':'))
-		return { ok: false, error: 'a local or private address is refused' };
+	// 85a-int: ONE private-host rule for every agent URL fetch (add_image's), so the two cannot drift
+	if (isPrivateHost(u.hostname)) return { ok: false, error: 'a local or private address is refused' };
 	return { ok: true, url: u.href };
 }
 

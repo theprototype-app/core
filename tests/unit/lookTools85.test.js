@@ -103,6 +103,40 @@ describe('texture sources', () => {
 		expect(ok.type).toBe('image/png');
 		expect(ok.name).toBe('wood top.png');
 	});
+	// 85a-int security look: the texture fetch keeps add_image's rules (each red before the 85a-int fix)
+	it('refuses an address it LANDED on after a redirect into the local network', async () => {
+		const landed = Object.defineProperty(res(PNG), 'url', { value: 'https://192.168.1.10/cam.png' });
+		expect((await fetchTextureUrl('https://example.com/a.png', async () => landed)).error).toMatch(/redirected/);
+		const fine = Object.defineProperty(res(PNG), 'url', { value: 'https://cdn.example.com/a.png' });
+		expect((await fetchTextureUrl('https://example.com/a.png', async () => fine)).type).toBe('image/png');
+	});
+	it('gives up on a server that never answers, and sends no referrer', async () => {
+		vi.useFakeTimers();
+		try {
+			/** @type {any} */
+			let init;
+			const hang = (_u, i) => {
+				init = i;
+				return new Promise((_ok, no) => i.signal.addEventListener('abort', () => no(Object.assign(new Error('aborted'), { name: 'AbortError' }))));
+			};
+			const pending = fetchTextureUrl('https://example.com/a.png', hang);
+			await vi.advanceTimersByTimeAsync(21_000);
+			expect((await pending).error).toMatch(/took over 20 s/);
+			expect(init.referrerPolicy).toBe('no-referrer');
+			expect(init.credentials).toBe('omit');
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+	it('one private-host rule with add_image: .internal and the carrier-grade NAT range are refused too', () => {
+		for (const u of ['https://metadata.google.internal/x.png', 'https://100.64.0.1/x.png', 'https://[::1]/x.png', 'https://2130706433/x.png', 'https://printer.local/x.png'])
+			expect(core.checkTextureUrl(u).ok, u).toBe(false);
+		expect(core.checkTextureUrl('https://100.128.0.1/x.png').ok).toBe(true);
+	});
+	it('a stray % in the file name does not throw', async () => {
+		const ok = await fetchTextureUrl('https://example.com/100%25%zz.png', async () => res(PNG));
+		expect(ok.type).toBe('image/png');
+	});
 	it('lights a map that three would multiply to nothing, unless the call says otherwise', () => {
 		expect(core.fieldsForMaps(['metalnessMap'], { metalness: 0 }, {})).toEqual({ metalness: 1 });
 		expect(core.fieldsForMaps(['metalnessMap'], { metalness: 0 }, { metalness: 0.2 })).toEqual({});

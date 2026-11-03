@@ -35,8 +35,10 @@ import {
 	projectFaceUvs,
 	setPayloadTransform,
 	sniffImageType,
+	checkTextureUrl,
 	uniformsOf
 } from './lookToolsCore.js';
+import { FETCH_TIMEOUT_MS } from './imageToolCore.js';
 
 /** the tool names this module answers */
 export const LOOK_TOOL_NAMES = [
@@ -98,14 +100,34 @@ function colorOf(v) {
  * @param {string} url @param {typeof fetch} [fetcher] @returns {Promise<{bytes: Uint8Array, type: string, name: string} | {error: string}>}
  */
 export async function fetchTextureUrl(url, fetcher = fetch) {
+	// 85a-int security look: the same fetch rules as add_image — a time limit, no referrer, and the address it
+	// LANDED on after redirects is checked again (a public URL may redirect into the local network)
+	const abort = new AbortController();
+	const timer = setTimeout(() => abort.abort(), FETCH_TIMEOUT_MS);
+	try {
+		return await readTexture(url, fetcher, abort.signal);
+	} catch (e) {
+		return { error: /** @type {any} */ (e)?.name === 'AbortError' ? 'it took over ' + FETCH_TIMEOUT_MS / 1000 + ' s' : 'could not read it' };
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
+/** @param {string} url @param {typeof fetch} fetcher @param {AbortSignal} signal @returns {Promise<{bytes: Uint8Array, type: string, name: string} | {error: string}>} */
+async function readTexture(url, fetcher, signal) {
 	/** @type {Response} */
 	let res;
 	try {
-		res = await fetcher(url, { mode: 'cors', credentials: 'omit', redirect: 'follow' });
-	} catch {
+		res = await fetcher(url, { mode: 'cors', credentials: 'omit', redirect: 'follow', referrerPolicy: 'no-referrer', signal });
+	} catch (e) {
+		if (/** @type {any} */ (e)?.name === 'AbortError') throw e;
 		return { error: 'could not fetch it (the server must allow cross-origin requests — CORS — and be reachable)' };
 	}
 	if (!res.ok) return { error: 'the server answered ' + res.status };
+	if (res.url) {
+		const landed = checkTextureUrl(res.url);
+		if (!landed.ok) return { error: 'it redirected somewhere that is not fetched: ' + landed.error };
+	}
 	const declared = Number(res.headers.get('content-length'));
 	if (declared > URL_MAX_BYTES) return { error: 'it is ' + Math.round(declared / 1048576) + ' MB — the limit is ' + URL_MAX_BYTES / 1048576 + ' MB' };
 	const reader = res.body?.getReader?.();
@@ -138,7 +160,13 @@ export async function fetchTextureUrl(url, fetcher = fetch) {
 	const type = sniffImageType(bytes);
 	if (!type || !URL_IMAGE_TYPES.includes(type)) return { error: 'it is not an image this app reads (PNG, JPEG, WebP, GIF, AVIF)' };
 	const tail = new URL(res.url || url).pathname.split('/').pop() || 'texture';
-	const name = decodeURIComponent(tail).replace(/[^\w.\- ]+/g, '_').slice(0, 80) || 'texture';
+	let plain = tail;
+	try {
+		plain = decodeURIComponent(tail);
+	} catch {
+		/* a stray % in the path: keep it as it is */
+	}
+	const name = plain.replace(/[^\w.\- ]+/g, '_').slice(0, 80) || 'texture';
 	return { bytes, type, name: /\.[a-z0-9]{2,5}$/i.test(name) ? name : name + '.' + type.split('/')[1] };
 }
 
@@ -169,15 +197,17 @@ async function resolveImage(source, seen) {
 			seen.set(key, out);
 			return out;
 		}
-		// make sure it decodes before it becomes a library item (a truncated file is not a texture)
-		try {
-			(await createImageBitmap(new Blob([/** @type {any} */ (got.bytes)], { type: got.type }))).close();
-		} catch {
-			const out = { error: source.url.slice(0, 60) + ': the image could not be decoded' };
+		// 85a-int security look: re-encoded like add_image (decode → canvas → PNG / WebP), so nothing of the file but
+		// its pixels reaches the library and every peer; a file that does not decode is refused here
+		const { reencodeImage } = await import('./imageTool.js');
+		const clean = await reencodeImage(got.bytes, got.type);
+		if ('error' in clean) {
+			const out = { error: source.url.slice(0, 60) + ': ' + clean.error };
 			seen.set(key, out);
 			return out;
 		}
-		item = await ex.addItemFromBytes(/** @type {ArrayBuffer} */ (got.bytes.buffer), got.name);
+		const ext = (sniffImageType(clean.bytes) ?? 'image/png').split('/')[1];
+		item = await ex.addItemFromBytes(/** @type {ArrayBuffer} */ (clean.bytes.slice().buffer), got.name.replace(/\.[a-z0-9]{2,5}$/i, '') + '.' + ext);
 		from = 'url';
 		if (!item) {
 			const out = { error: source.url.slice(0, 60) + ': the library refused it' };

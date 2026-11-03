@@ -117,6 +117,16 @@ async function reencode(bytes, mime) {
 	}
 }
 
+/**
+ * 85a-int: the same clean-up for set_material's URL textures — the pixel cap, then the re-encode.
+ * @param {Uint8Array} bytes @param {string} mime @returns {Promise<{bytes: Uint8Array, scaled: boolean} | {error: string}>}
+ */
+export async function reencodeImage(bytes, mime) {
+	const big = pixelRefusal(bytes, mime);
+	if (big) return { error: big };
+	return await reencode(bytes, mime);
+}
+
 /** PNG for what is flat or lossless, WebP for a photo, whichever fits @param {HTMLCanvasElement} canvas @param {boolean} preferPng */
 async function encodeCanvas(canvas, preferPng) {
 	if (!preferPng) return (await encode(canvas, 'image/webp', 0.9)) ?? encode(canvas, 'image/png');

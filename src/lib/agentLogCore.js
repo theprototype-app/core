@@ -14,7 +14,7 @@ export const AGENT_LOG_HANDSHAKE = 50;
 export const TEXT_MAX = 160;
 
 /** tools that only read: no line */
-const READ_ONLY = new Set(['list_scene', 'status', 'screenshot', 'wait_for_edit', 'tools', 'snapshot']);
+const READ_ONLY = new Set(['list_scene', 'status', 'screenshot', 'wait_for_edit', 'tools', 'snapshot', 'list_materials', 'get_material', 'describe_shader_nodes', 'get_post']);
 
 /** @param {number} n @param {string} one @param {string} [many] */
 const count = (n, one, many = one + 's') => n + ' ' + (n === 1 ? one : many);
@@ -46,6 +46,7 @@ export function touchedUuids(tool, args, result) {
 	add(result?.groupUuid);
 	if (tool === 'import_file') add(result?.uuid); // 66 S4b: the placed card
 	for (const u of arr(result?.members)) add(u);
+	if (tool === 'add_image') add(result?.uuid); // a placed card
 	for (const u of arr(args?.updates)) add(u?.uuid);
 	if (tool === 'delete_objects') return out; // deleted things cannot be selected
 	for (const u of arr(args?.uuids)) add(u);
@@ -68,6 +69,7 @@ export function touchedUuids(tool, args, result) {
 export function summarizeToolCall(tool, args, result, nameOf = () => '') {
 	if (READ_ONLY.has(tool)) return null;
 	if (tool === 'import_file' && result?.partial) return null; // 66 S4b: a chunk of an upload is not an action
+	if (result?.needsConfirm || result?.alreadyApplied) return null; // 85: a question so far, or a repeat of an answered one — the call that applied it has the line
 	const failed = !result || typeof result !== 'object' || (result.error && !result.created && !result.updated);
 	if (failed) return 'tried ' + tool.replace(/_/g, ' ') + ' — ' + String(result?.error ?? 'it failed').slice(0, 80);
 	switch (tool) {
@@ -125,6 +127,77 @@ export function summarizeToolCall(tool, args, result, nameOf = () => '') {
 			const file = String(result?.file?.name ?? 'a file');
 			return 'imported ' + file + (result?.spec ? ' + its spec' : '') + (result?.uuid ? ' and placed it in the scene' : ' into the Explorer');
 		}
+		// 85 G1-G6
+		case 'set_geometry': {
+			const done = arr(result.updated).filter((r) => r && r.ok);
+			const names = nameList(done.map((r) => nameOf(r.uuid)));
+			const types = [...new Set(done.filter((r) => r.from).map((r) => r.geometry?.type).filter(Boolean))];
+			return (types.length ? 'turned ' + count(done.length, 'object') + ' into ' + types.join(', ') : 'reshaped ' + count(done.length, 'object')) + (names ? ' (' + names + ')' : '');
+		}
+		case 'create_lathe':
+		case 'create_tube':
+		case 'extrude_shape':
+		case 'create_mesh': {
+			const made = arr(result.created).filter((r) => r && !r.error);
+			const what = { create_lathe: 'a lathe', create_tube: 'a tube', extrude_shape: 'an extrusion', create_mesh: 'a mesh' }[tool];
+			const name = nameList(made.map((r) => r.name));
+			return 'made ' + what + (name ? ' (' + name + ')' : '');
+		}
+		case 'edit_mesh': {
+			const row = arr(result.updated)[0];
+			if (!row) return null; // ops: [] is a preview — a read
+			const ops = nameList(arr(row?.ops).map((o) => String(o?.op ?? '').replace(/_/g, ' ')));
+			const on = nameOf(String(row?.uuid ?? args?.object ?? ''));
+			return 'edited the mesh' + (on ? ' of ' + on : '') + (ops ? ' (' + ops + ')' : '');
+		}
+		// 85 L1-L5
+		case 'set_material': {
+			const done = arr(result.updated).filter((r) => r && r.ok);
+			const names = nameList(done.map((r) => nameOf(r.uuid)));
+			const maps = [...new Set(done.flatMap((r) => arr(r.maps)))];
+			const what = result.preset ? 'put ' + String(result.preset).slice(0, 40) + ' on' : maps.length ? 'textured' : 'changed the material of';
+			return what + ' ' + count(done.length, 'object') + (names ? ' (' + names + ')' : '') + (maps.length ? ': ' + nameList(maps) : '');
+		}
+		case 'create_shader': {
+			const made = arr(result.created);
+			if (made[0]?.scene) return 'set the scene\'s default shader';
+			const names = nameList(made.map((r) => nameOf(r.uuid)));
+			return 'gave ' + count(made.length, 'object') + ' a shader' + (names ? ' (' + names + ')' : '');
+		}
+		case 'edit_shader': {
+			const on = nameOf(String(arr(result.updated)[0]?.uuid ?? ''));
+			return 'edited a shader' + (on ? ' (' + on + ')' : '');
+		}
+		case 'assign_shader': {
+			const done = arr(result.updated).filter((r) => r && r.ok);
+			return (args?.shader === null ? 'took the shader off ' : 'copied a shader onto ') + count(done.length, 'object');
+		}
+		case 'set_post': {
+			const effects = nameList(arr(result.effects).map((e) => String(e?.kind ?? '')));
+			return 'changed the scene\'s look' + (effects ? ' (' + effects + ')' : '');
+		}
+		case 'create_post_graph':
+			return 'added a custom post effect to the look';
+		case 'uv_unwrap':
+			return 'unwrapped the UVs of ' + count(arr(result.updated).length, 'object') + ' (' + String(args?.method ?? 'smart') + ')';
+		case 'set_uv':
+			return (args?.faces !== undefined ? 'mapped faces of ' : 'set the tiling on ') + count(arr(result.updated).length, 'object');
+		// 85 R6, pivots, images
+		case 'undo_last': {
+			const done = arr(result.undone);
+			if (!done.length) return null; // nothing to undo changed nothing
+			return 'undid ' + (done.length === 1 ? '“' + String(done[0]?.text ?? 'a step').slice(0, 100) + '”' : done.length + ' of its calls');
+		}
+		case 'set_pivot': {
+			const done = arr(result.updated).filter((r) => r && r.ok);
+			const names = nameList(done.map((r) => nameOf(r.uuid)));
+			return 'set the pivot of ' + count(done.length, 'object') + (names ? ' (' + names + ')' : '');
+		}
+		case 'create_pivot':
+			return 'made a pivot' + (result.name ? ' (' + String(result.name).slice(0, 60) + ')' : '') + ' for ' + count(arr(result.members).length, 'object');
+		case 'add_image':
+			if (result.partial) return null;
+			return (result.existed ? 'reused the image ' : 'added the image ') + String(result.name ?? '').slice(0, 80);
 		case 'install_modules':
 			return 'installed ' + count(arr(args?.ids ?? args?.modules).length, 'module');
 		default:

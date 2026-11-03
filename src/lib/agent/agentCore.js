@@ -15,7 +15,7 @@
 import { TP_AGENT_VERSION } from './contract.js';
 
 /** Tools that change nothing in the shared scene, so a viewer may run them. */
-export const READ_ONLY_TOOLS = new Set(['list_scene', 'describe_node_types', 'what_can_you_do']);
+export const READ_ONLY_TOOLS = new Set(['list_scene', 'describe_node_types', 'what_can_you_do', 'list_materials', 'get_material', 'describe_shader_nodes', 'get_post']);
 
 /** Longest waitForEdit (ms). */
 export const MAX_WAIT_MS = 10 * 60 * 1000;
@@ -265,19 +265,22 @@ export function createAgentCore(deps) {
 		if (!READ_ONLY_TOOLS.has(real) && room && !room.withHost)
 			return { error: leftBehindRefusal(room.hostScene, room.following), refused: true, withHost: false };
 		const readOnly = READ_ONLY_TOOLS.has(real);
-		if (!readOnly) {
-			selfEditing++;
-			deps.beginBatch();
-		}
+		// 85 R6: undo_last takes steps back and makes none, and an open batch would keep the line of the
+		// call just before it from settling (agentLogRecorder waits for "no batch open")
+		const batched = !readOnly && real !== 'undo_last';
+		if (!readOnly) selfEditing++;
+		if (batched) deps.beginBatch();
 		try {
 			return await deps.runTool(String(name ?? ''), args ?? {});
 		} catch (e) {
 			return { error: e instanceof Error ? e.message : String(e) };
 		} finally {
 			if (!readOnly) {
-				try {
-					deps.endBatch('Agent: ' + real);
-				} catch {}
+				if (batched) {
+					try {
+						deps.endBatch('Agent: ' + real);
+					} catch {}
+				}
 				// the scene-change signal can land a beat after the call (a store poke, a debounced
 				// subscriber); hold the self-edit window open one more turn of the loop
 				setTimer(() => selfEditing--, 0);

@@ -15,12 +15,19 @@
 	import { connectorSignInSlot } from '$lib/cloudHooks';
 	import { settingsOpen, settingsSection, showToast } from '../../stores/appStore';
 	import { requestSignIn } from '$lib/connector/connectorSignIn.js';
+	import { tipShown, dismissTip, TIP_AGENT_SHAPES, AGENT_TIP_TOOLS } from '$lib/tips.js';
 
 	let { welcome = false }: { welcome?: boolean } = $props();
 	const signIn = $derived(welcome && !$connectorAvailable && !!$connectorSignInSlot);
 
 	const s = $derived($connectorState);
 	const live = $derived(s.phase === 'connected' || s.phase === 'reconnecting' || s.phase === 'pairing' || s.phase === 'connecting');
+	/** 85a: the first-use hint for the shape, look and undo tools, until Claude has used one of them */
+	const shapesTip = tipShown(TIP_AGENT_SHAPES);
+	$effect(() => {
+		const c = s.lastCall;
+		if (c?.ok && AGENT_TIP_TOOLS.has(c.tool) && $shapesTip) dismissTip(TIP_AGENT_SHAPES);
+	});
 	const tone = $derived(s.phase === 'connected' ? 'ok' : s.phase === 'reconnecting' || s.throttled ? 'warn' : s.phase === 'closed' || s.phase === 'error' ? 'bad' : 'idle');
 
 	let copied = $state(false);
@@ -113,6 +120,11 @@
 				{/if}
 				<button type="button" class="cc-link" onclick={openConnectedApps}>Connected apps</button>
 			</p>
+			{#if s.phase === 'connected' && $shapesTip}
+				<p class="cc-hint cc-new" id="connect-claude-tip" role="note">
+					New: ask Claude for a curvy vase, a handrail or a star-shaped sign, a wood or glass look — or say “undo that”.
+				</p>
+			{/if}
 		{/if}
 	</section>
 {/if}
@@ -234,6 +246,9 @@
 	}
 	.cc-busy {
 		color: var(--text-muted);
+	}
+	.cc-new {
+		color: var(--accent-text);
 	}
 	.cc-hint {
 		display: flex;

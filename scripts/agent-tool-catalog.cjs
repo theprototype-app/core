@@ -66,6 +66,8 @@ async function main() {
 	}
 	// 86-fix B4: claude.ai drops server instructions — a line only the instructions carry never reaches it
 	const gaps = guidanceGaps(catalog);
+	// 85a TB: the connector's grouped view carries its own instructions, held to the same rule
+	if (catalog.connector) gaps.push(...guidanceGaps(catalog.connector).map((l) => 'connector: ' + l));
 	if (gaps.length) {
 		console.error('guidance only in the instructions (put it in a tool description — tools/agent/src/catalog.js GUIDANCE):\n  ' + gaps.join('\n  '));
 		return 1;

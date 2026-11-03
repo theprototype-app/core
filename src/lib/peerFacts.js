@@ -74,7 +74,8 @@ const logs = {};
 export function notePeerActivity(peerId, data, now = Date.now()) {
 	const verb = ACTIVITY_VERBS[data?.type];
 	if (!verb || !peerId) return false;
-	const uuid = typeof data.uuid === 'string' ? data.uuid : '';
+	// node messages name their object by the graph they edit (85 R6: undo_last reads this)
+	const uuid = typeof data.uuid === 'string' ? data.uuid : typeof data.graphId === 'string' ? data.graphId : '';
 	const log = (logs[peerId] ??= []);
 	const top = log[0];
 	if (top && top.verb === verb && top.uuid === uuid) {
@@ -90,6 +91,11 @@ export function notePeerActivity(peerId, data, now = Date.now()) {
 /** @param {string} peerId */
 export function peerActivity(peerId) {
 	return (logs[peerId] ?? []).map((e) => ({ ...e }));
+}
+
+/** 85 R6: every peer's log, by reference (read at once, never kept) */
+export function peerEditLog() {
+	return logs;
 }
 
 /** @param {string} peerId */

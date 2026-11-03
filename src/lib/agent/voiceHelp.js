@@ -11,9 +11,12 @@ const CAN = /** @type {[string, string][]} */ ([
 	['create_behaviour', 'write small game rules'],
 	['set_physics', 'add physics like gravity, bounce and hinges, and run the simulation'],
 	['generate_mesh', 'generate a 3D model from a description'],
+	['create_lathe', 'make shapes like vases, pipes and signs'],
+	['set_material', 'change materials, textures and the look of the scene'],
 	['where_are_users', 'build right where you are standing or looking'],
 	['attach_to_user', 'hand you props, like a flashlight'],
 	['save_scene', 'save this scene to your library'],
+	['undo_last', 'undo what I just did when you say so'],
 	['screenshot', 'look at the scene to check my work']
 ]);
 

@@ -44,6 +44,19 @@ export function originWorld(object, target = new THREE.Vector3()) {
 	return target.fromArray(local).applyMatrix4(object.matrixWorld);
 }
 
+/**
+ * 85 set_pivot: after an object's rotation / scale were written directly, put it back so its origin stays
+ * where it was: an object with a pivot turns ABOUT the pivot (a head nods at the neck), which is what the
+ * gizmo does. No origin = nothing moves. Mutates `object.position`.
+ * @param {any} object @param {THREE.Quaternion} hadQuat @param {THREE.Vector3} hadScale
+ */
+export function aboutOriginPosition(object, hadQuat, hadScale) {
+	const local = originOf(object);
+	if (!local) return;
+	const offset = (/** @type {THREE.Quaternion} */ q, /** @type {THREE.Vector3} */ s) => new THREE.Vector3().fromArray(local).multiply(s).applyQuaternion(q);
+	object.position.add(offset(hadQuat, hadScale)).sub(offset(object.quaternion, object.scale));
+}
+
 /** The object's LOCAL-space bounding box (geometry when it has one, else its
  * subtree measured in world and brought back). @param {any} object */
 function localBounds(object) {

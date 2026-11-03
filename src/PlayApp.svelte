@@ -84,6 +84,7 @@
   import { startGamePresence } from '$lib/gamePresence';
   import { startGameShell } from '$lib/gameShellWire';
   import { startPlayEntry } from '$lib/play/playBoot.js';
+  import { PROOF_BLOB } from '$lib/play/proofBlob.js'; // 94 SP3 PROOF: +200 KB gz on the play boot path
   // the peer layer: the editor's Connect bar creates it on mount, before the Canvas mounts <Scene>
   // (whose self row and camera sends need a peer id); the play entry has no Connect bar, so it
   // creates the same PeerConnection here, during its own init. An invite hash is read by the
@@ -146,6 +147,7 @@
     startGameShell();
     // `?scene=<url>`, `window.tpPlay`, the frame's postMessage events (src/lib/play/playBoot.js)
     startPlayEntry();
+    /** @type {any} */ (window).__tpProof = PROOF_BLOB;
     // the hook table is ~300 lazy loaders: a play link pays for it only when a test asks
     if (safeStorage.getItem('debugStores')) import('$lib/debugHooks').then((m) => m.installDebugHooks());
   });

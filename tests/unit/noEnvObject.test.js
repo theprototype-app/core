@@ -5,6 +5,7 @@ import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
+/** @param {string} dir @param {string[]} [out] @returns {string[]} */
 function files(dir, out = []) {
 	for (const n of readdirSync(dir)) {
 		const p = join(dir, n);
@@ -16,6 +17,7 @@ function files(dir, out = []) {
 
 describe('no whole import.meta.env object in src/', () => {
 	it('every import.meta.env use names a key', () => {
+		/** @type {string[]} */
 		const bad = [];
 		for (const f of files('src')) {
 			const lines = readFileSync(f, 'utf8').split('\n');

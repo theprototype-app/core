@@ -20,7 +20,7 @@
 import { writable, get } from 'svelte/store';
 import { safeStorage } from './safeStorage';
 import { APP_VERSION, COMMIT_SHA, IS_DEV } from './version.js';
-import { buildReport, browserOf, deviceClassOf, envOf, releaseLabel, MAX_PER_SESSION } from './errorReportCore.js';
+import { buildReport, describeReason, browserOf, deviceClassOf, envOf, releaseLabel, MAX_PER_SESSION } from './errorReportCore.js';
 
 const SEND_KEY = 'errorReports:send';
 const URL_OVERRIDE_KEY = 'errorReports:url';
@@ -34,14 +34,15 @@ const ALIVE_KEY = 'tp.errorReports.alive';
  * @returns {string | null}
  */
 export function errorReportsUrl() {
-	/** @type {any} */
-	const env = import.meta.env ?? {};
+	// 54 X7: the literal key, never the whole env object (vite inlines that object, every VITE_
+	// key, into the chunk — and an exported game zip carries it)
+	const url = import.meta.env.VITE_ERROR_REPORTS_URL;
 	if (safeStorage.getItem('debugStores') === 'true') {
 		const o = safeStorage.getItem(URL_OVERRIDE_KEY);
 		if (o) return o === 'off' ? null : o;
 	}
 	if (IS_DEV) return null;
-	return typeof env.VITE_ERROR_REPORTS_URL === 'string' && env.VITE_ERROR_REPORTS_URL ? env.VITE_ERROR_REPORTS_URL : null;
+	return typeof url === 'string' && url ? url : null;
 }
 
 /** Is the feature in this build at all (the Settings row reads it). */
@@ -136,7 +137,7 @@ function staticContext() {
 	return {
 		origin: typeof location !== 'undefined' ? location.origin : '',
 		// 49 J3: a preview files under its own label, never the release it was branched from
-		release: releaseLabel(APP_VERSION, typeof location !== 'undefined' ? location.hostname : '', /** @type {any} */ (import.meta.env ?? {}).VITE_RELEASE_LABEL),
+		release: releaseLabel(APP_VERSION, typeof location !== 'undefined' ? location.hostname : '', import.meta.env.VITE_RELEASE_LABEL),
 		build: COMMIT_SHA,
 		device: deviceClassOf({ ua, coarse, minSide }),
 		browser,
@@ -231,11 +232,13 @@ export function startErrorReports() {
 	window.addEventListener('error', (event) => {
 		// a resource load failure (img/script 404) has no `error` and is not a code failure
 		if (!event.error && !event.message) return;
-		reportError({ kind: 'error', message: event.error?.message ?? event.message ?? '', stack: event.error?.stack, filename: event.filename });
+		// 54i b: a thrown non-Error (an object, a string) is described, not stringified
+		const thrown = event.error != null ? describeReason(event.error) : { message: event.message ?? '' };
+		reportError({ kind: 'error', message: thrown.message || event.message || '', stack: thrown.stack, filename: event.filename });
 	});
 	window.addEventListener('unhandledrejection', (event) => {
-		const reason = /** @type {any} */ (event).reason;
-		reportError({ kind: 'rejection', message: reason?.message ?? String(reason ?? ''), stack: reason?.stack });
+		// 54i b: constructor name + a safe JSON for a non-Error reason (the opaque iPad "Ma")
+		reportError({ kind: 'rejection', ...describeReason(/** @type {any} */ (event).reason) });
 	});
 
 	const onVisibility = () => (document.visibilityState === 'visible' ? markAlive() : session.remove(ALIVE_KEY));

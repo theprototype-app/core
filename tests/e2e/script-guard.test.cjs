@@ -132,20 +132,27 @@ h.run(async () => {
 	h.check(!(await badge(A, 'healthy')), 'and it carries no error badge of its own');
 
 	// ---- 4. a SLOW node is paused, and only after a sustained run ------------------------
+	// The runaway has made its point (sections 1-3); it burns its loop limit on every frame, which
+	// on a ~4 fps runner makes the 30 slow runs below take minutes (54 X10), so it goes first.
+	await A.page.evaluate(() => {
+		window.__stores.flowNodes.update((n) => n.filter((x) => x.id !== 'runaway' && x.id !== 'runaway-sel'));
+		window.__stores.flowEdges.update((e) => e.filter((x) => x.id !== 'e-runaway'));
+	});
 	const uuid3 = await makeBox(A);
 	// Slow but TERMINATING, so only the time budget can catch it — the loop counter never
 	// trips. That constrains the fixture in a way worth stating: the guard stops every
 	// script at a million iterations, so it cannot buy time by looping MORE, it has to do
 	// more work per iteration. 900k plain additions measured about a millisecond here and
 	// the check failed for the fixture's sake rather than the feature's.
-	// (the counter on window is test-health-1's: when the badge never comes, it tells "the node did
-	// not run" from "it ran and was never paused")
+	// The run counter rides the target box's position.z: since 69 T1 a script runs in the sandbox
+	// guest, whose globalThis is not the page's, while `object` is diffed back onto the real box.
+	// It tells "the node did not run" from "it ran and was never paused" when the badge never comes.
 	const SLOW_SRC =
-		'let s = 0; for (let i = 0; i < 500000; i++) { s += Math.sin(i) * Math.cos(i); } data.s = s; globalThis.__slowRuns = (globalThis.__slowRuns || 0) + 1;';
+		'let s = 0; for (let i = 0; i < 500000; i++) { s += Math.sin(i) * Math.cos(i); } data.s = s; object.position.z += 1;';
 	const bodyMs = await A.page.evaluate((src) => {
-		const fn = new Function('data', src);
+		const fn = new Function('object', 'data', src);
 		const t0 = performance.now();
-		fn({});
+		fn({ position: { z: 0 } }, {});
 		return performance.now() - t0;
 	}, SLOW_SRC);
 	h.check(
@@ -153,18 +160,25 @@ h.run(async () => {
 		`premise: the slow fixture really is over the 8ms budget on this machine (${bodyMs.toFixed(1)}ms)`
 	);
 	await addScript(A, 'slow', SLOW_SRC, uuid3);
+	const slowStarted = Date.now();
 	const slowBadge = await A.page
 		.waitForFunction(
-			() => {
+			(id) => {
 				let v = {};
 				window.__stores.scriptErrors.subscribe((m) => (v = m))();
 				if (/too slow/i.test(String(v['slow'] ?? ''))) return v['slow'];
 				// 40 runs and still no badge is a real red (a run under 8 ms resets the streak, so not 31)
-				return /** @type {any} */ (globalThis).__slowRuns >= 40 ? 'NO BADGE' : false;
+				let g;
+				window.__stores.objectsGroup.subscribe((x) => (g = x))();
+				const runs = Math.round(g?.getObjectByProperty('uuid', id)?.position.z ?? 0);
+				return runs >= 40 ? 'NO BADGE' : false;
 			},
+			uuid3,
 			// the guard pauses on the 30th slow RUN in a row (SLOW_FRAMES), so the wait counts runs: a time
 			// estimate from the measured frame rate ended at exactly 29 runs twice on a GitHub runner (this
 			// node slows the frames it is measured by). Badge, or the node has run well past 30 — bounded.
+			// The options are the THIRD argument: in the second they were the page function's arg and the
+			// wait ended at Playwright's 30 s default (red on main CI since 1.44.0 at runs ≈ 20, 54 X10).
 			{ timeout: 180000 }
 		)
 		.then((r) => r.jsonValue())
@@ -174,16 +188,19 @@ h.run(async () => {
 		? slowBadge
 		: JSON.stringify(
 				await A.page
-					.evaluate(() => {
+					.evaluate((/** @type {string} */ id) => {
 						/** @type {any} */ let errs = {};
 						/** @type {any} */ let paused = null;
 						window.__stores.scriptErrors.subscribe((/** @type {any} */ m) => (errs = m))();
 						window.__stores.flowPaused.subscribe((/** @type {any} */ p) => (paused = p))();
-						return { runs: /** @type {any} */ (globalThis).__slowRuns ?? 0, errs, paused, visible: document.visibilityState };
-					})
+						/** @type {any} */ let g;
+						window.__stores.objectsGroup.subscribe((/** @type {any} */ x) => (g = x))();
+						const runs = Math.round(g?.getObjectByProperty('uuid', id)?.position.z ?? 0);
+						return { runs, errs, paused, visible: document.visibilityState };
+					}, uuid3)
 					.catch((/** @type {any} */ e) => String(e))
 			);
-	h.check(badged, `a slow node is paused rather than left to eat the frame (${slowWhy})`);
+	h.check(badged, `a slow node is paused rather than left to eat the frame (${slowWhy}, ${Math.round((Date.now() - slowStarted) / 1000)} s)`);
 	h.check(
 		await A.page.evaluate(() => 1 + 1).then((v) => v === 2),
 		'and the page is still responsive after it'

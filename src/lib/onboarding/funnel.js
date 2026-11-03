@@ -236,11 +236,11 @@ export function funnelDevice() {
 }
 
 function release() {
-	const env = /** @type {any} */ (import.meta.env ?? {});
+	// read the key directly (54 X7): `import.meta.env` as a value makes vite inline the whole env object
 	return releaseLabel(
 		APP_VERSION,
 		typeof location !== 'undefined' ? location.hostname : '',
-		env.VITE_RELEASE_LABEL
+		import.meta.env.VITE_RELEASE_LABEL
 	);
 }
 

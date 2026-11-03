@@ -93,13 +93,26 @@ h.run(async () => {
 		const quat = new THREE.Quaternion();
 		if (!lib.beginHoldEntry({ kind: 'Box' }, { position: pos, quaternion: quat })) return { error: 'no hold' };
 		const suppressed = window.__stores.vrControls.vrNavigationSuppressed();
-		// 10 frames of stick-forward (-1) grows the preview ~1.219x
-		for (let i = 0; i < 10; i++) lib.updateHeldPose(pos, quat, -1);
+		// 82 P1: the take starts at GHOST size; no wrist = grown straight out, latching in a few frames
+		const ghostFactor = lib.sleeveState().holding.factor;
+		let frames = 0;
+		while (!lib.sleeveState().holding.latched && frames < 20) {
+			lib.updateHeldPose(pos, quat, { dt: 0.1 });
+			frames++;
+		}
+		const latched = lib.sleeveState().holding;
+		// 82 P2: after the latch the grip-move sticks drive it — 10 frames of stick-right scale it 1.025^10
+		for (let i = 0; i < 10; i++) lib.updateHeldPose(pos, quat, { dt: 0.016, axes: [0, 0, 1, 0] });
 		const holding = lib.sleeveState().holding;
 		const object = lib.releaseSleeveHold(true);
 		return {
 			suppressed,
-			holdScale: holding?.scale,
+			ghostFactor,
+			latchedFactor: latched.factor,
+			latched: latched.latched,
+			frames,
+			userScale: holding?.userScale,
+			offset: holding?.offset,
 			swallow: lib.vrSleeveSwallowSelect(),
 			suppressedAfter: window.__stores.vrControls.vrNavigationSuppressed(),
 			uuid: object?.uuid ?? null,
@@ -111,13 +124,16 @@ h.run(async () => {
 	h.check(placed.suppressed === true, 'stick navigation suppressed while holding');
 	h.check(placed.suppressedAfter === false, 'suppression released with the hold');
 	h.check(placed.swallow === true, 'trailing select click is swallowed after the place');
-	h.check(Math.abs((placed.holdScale ?? 0) - Math.pow(1.02, 10)) < 0.01, 'stick-Y scaled the preview (' + placed.holdScale + ')');
-	// preview spawned 0.9m along -Z from (0.13, 1, 0) -> (0.13, 1, -0.9); grid rounds x/z by 0.5
+	h.check(Math.abs(placed.ghostFactor - 0.016) < 1e-6, 'the take starts at ghost size (factor ' + placed.ghostFactor + ' = 3.2 cm of a 2 m box)');
+	h.check(placed.latched && Math.abs(placed.latchedFactor - 1) < 1e-6 && placed.frames > 1, 'it grows to TRUE size and latches (' + placed.frames + ' frames)');
+	h.check(Math.abs((placed.userScale ?? 0) - Math.pow(1.025, 10)) < 0.01, 'stick-X scaled the latched preview (' + placed.userScale + ')');
+	// the preview rides offset metres along -Z from (0.13, 1, 0); grid rounds x/z by 0.5
+	const wantZ = Math.round(-placed.offset / 0.5) * 0.5;
 	h.check(
-		placed.position && placed.position[0] === 0 && Math.abs(placed.position[1] - 1) < 1e-6 && placed.position[2] === -1,
-		'grid snap rounded the release position (' + JSON.stringify(placed.position) + ')'
+		placed.position && placed.position[0] === 0 && Math.abs(placed.position[1] - 1) < 1e-6 && Math.abs(placed.position[2] - wantZ) < 1e-9,
+		'grid snap rounded the release position (' + JSON.stringify(placed.position) + ', offset ' + placed.offset + ')'
 	);
-	h.check(Math.abs((placed.scale?.[0] ?? 0) - Math.pow(1.02, 10)) < 0.01, 'held scale applied to the created object');
+	h.check(Math.abs((placed.scale?.[0] ?? 0) - Math.pow(1.025, 10)) < 0.01, 'held scale applied to the created object');
 	await h.eventually(() => count(A), (n) => n === base0 + 1, 'objectsGroup gained the primitive');
 	const undoInfo = await A.page.evaluate(
 		() => new Promise((r) => window.__stores.history.undoStack.subscribe((s) => r({ length: s.length, topKind: s[s.length - 1]?.kind }))())
@@ -127,6 +143,21 @@ h.run(async () => {
 	h.check(sent.includes('create') && sent.includes('move'), 'replicated create + final move broadcast');
 	await A.page.evaluate(() => window.__stores.history.undo());
 	await h.eventually(() => count(A), (n) => n === base0, 'one undo reverted the placed primitive');
+
+	// ---- 82 P3: a release BEFORE the latch is a cancel — nothing is created ------------------
+	const early = await A.page.evaluate(() => {
+		const THREE = window.__stores.THREE;
+		const lib = window.__stores.vrSleeve;
+		const pos = new THREE.Vector3(0, 1, 0);
+		const quat = new THREE.Quaternion();
+		lib.beginHoldEntry({ kind: 'Box' }, { position: pos, quaternion: quat });
+		lib.updateHeldPose(pos, quat, { dt: 0.05 });
+		const t = lib.sleeveState().holding.t;
+		const consumed = lib.vrSleeveTriggerEnd(-1);
+		return { t, consumed, holding: lib.sleeveState().holding, flying: lib.sleeveState().flyingBack };
+	});
+	h.check(early.t > 0 && early.t < 1 && early.consumed && !early.holding && early.flying, 'an unlatched release cancels and flies back (' + JSON.stringify(early) + ')');
+	h.check((await count(A)) === base0, 'the cancelled take created nothing');
 
 	// ---- K1: surface snap rests the release on scenery --------------------------------
 	await A.page.evaluate(() => {
@@ -140,7 +171,7 @@ h.run(async () => {
 		const pos = new THREE.Vector3(0, 3.9, 0.9); // preview lands at (0, 3.9, 0) above the platform
 		const quat = new THREE.Quaternion();
 		lib.beginHoldEntry({ kind: 'Sphere' }, { position: pos, quaternion: quat });
-		lib.updateHeldPose(pos, quat, 0);
+		for (let i = 0; i < 5; i++) lib.updateHeldPose(pos, quat, { dt: 0.1 });
 		const object = lib.releaseSleeveHold(true);
 		return object ? { y: object.position.y } : null;
 	});
@@ -225,16 +256,17 @@ h.run(async () => {
 		const pos = new THREE.Vector3(2, 1.5, 2);
 		const quat = new THREE.Quaternion();
 		if (!lib.beginHoldEntry({ slot }, { position: pos, quaternion: quat })) return null;
-		lib.updateHeldPose(pos, quat, 0);
+		for (let i = 0; i < 5; i++) lib.updateHeldPose(pos, quat, { dt: 0.1 });
+		const offset = lib.sleeveState().holding.offset;
 		const object = lib.releaseSleeveHold(true);
-		return object ? { name: object.name, position: object.position.toArray() } : null;
+		return object ? { name: object.name, position: object.position.toArray(), offset } : null;
 	});
 	h.check(!!spawned, 'slot ghost spawned an instance');
 	await h.eventually(() => count(A), (n) => n === baseSpawn + 1, 'objectsGroup gained the prefab instance');
 	sent = await A.page.evaluate(() => window.__sent);
 	h.check(sent.includes('object'), 'prefab instance replicated (object message)');
 	h.check(
-		!!spawned && Math.abs(spawned.position[0] - 2) < 1e-6 && Math.abs(spawned.position[2] - (2 - 0.9)) < 1e-6,
+		!!spawned && Math.abs(spawned.position[0] - 2) < 1e-6 && Math.abs(spawned.position[2] - (2 - spawned.offset)) < 1e-6,
 		'instance landed at the release pose (' + JSON.stringify(spawned && spawned.position) + ')'
 	);
 

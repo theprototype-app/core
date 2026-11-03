@@ -54,6 +54,7 @@
 	import { derived } from 'svelte/store';
 	import { dictation, startDictation, stopDictation } from '$lib/ai/sttCapture';
 	import { panelAway } from '$lib/windows/panelPlaces.js';
+	import { phoneFirstDetents } from '$lib/ui/phoneShell.js';
 
 	let prompt = $state('');
 	/** 56 C8: pictures for the next message, ready for a request's `images` (56-chat's send path reads it) */
@@ -90,6 +91,18 @@
 	});
 	const welcome = $derived(needsSetup && !$aiMessages.length && !agentId);
 	const headerSignIn = $derived(!!$connectorSignInSlot && !$connectorAvailable && !welcome);
+	// 54i: the welcome fits without an inner scroll — the floating window grows to it (h-auto, capped by the
+	// room below its top), and on a phone the sheet opens at full height until the person moves it
+	$effect(() => {
+		const want = welcome ? 'full' : '';
+		phoneFirstDetents.update((m) => {
+			if ((m.ai ?? '') === want) return m;
+			const next = { ...m };
+			if (want) next.ai = want;
+			else delete next.ai;
+			return next;
+		});
+	});
 
 	function submit() {
 		const text = prompt.trim();
@@ -258,11 +271,12 @@
 <div id="ai-assistant" class={$aiAssistantHidden}>
 	<div
 		id="ai-assistant-window"
-		use:dragWindow={{ key: 'aiAssistant', defaultRect: { right: 15, bottom: 460 }, clearAvatar: true }}
+		use:dragWindow={{ key: 'aiAssistant', defaultRect: { right: 15, bottom: 460 } }}
 		use:bottomDockable={{ key: 'aiAssistant' }}
 		use:focusStack
 		use:tabbable={{ key: 'aiAssistant', title: 'AI assistant', openStore: aiAssistantHidden, isOpen: (v: string) => v === '', close: () => aiAssistantHidden.set('hidden') }}
-		class="ui-panel tp-ui tp-window flex h-[440px] w-[min(500px,90vw)] flex-col overflow-hidden"
+		class="ui-panel tp-ui tp-window flex w-[min(500px,90vw)] flex-col overflow-hidden {welcome ? '' : 'h-[440px]'}"
+		class:ai-fit={welcome}
 		style="z-index: var(--z-window)"
 		data-target={agentId ? 'agent' : 'provider'}
 		role="region"
@@ -276,14 +290,17 @@
 			bare
 			body={false}
 			title="AI assistant"
-			headerClass="ui-panel-header move-handle cursor-move select-none"
+			headerClass="ui-panel-header move-handle cursor-move select-none ai-head"
 			onclose={() => aiAssistantHidden.set('hidden')}
 		>
 			{#snippet actions()}
 				<!-- FW-AI (76): signed out on a cloud build, working with a provider of your own: connecting stays one press away.
 				     With no provider the welcome below carries this button instead. -->
 				{#if headerSignIn}
-					<Button id="ai-header-signin" variant="secondary" size="sm" onclick={requestSignIn}>Sign in to connect</Button>
+					<!-- 54i: a narrow window (the folded N6 sheet) says "Sign in", so the title keeps its words; the name stays whole -->
+					<Button id="ai-header-signin" variant="secondary" size="sm" aria-label="Sign in to connect" title="Sign in to connect" onclick={requestSignIn}
+						><span class="ai-signin-long">Sign in to connect</span><span class="ai-signin-short">Sign in</span></Button
+					>
 				{/if}
 				<!-- 56 C11: the scene's chats, and a fresh one -->
 				<button
@@ -446,6 +463,26 @@
 <style>
 	#ai-assistant.hidden {
 		display: none;
+	}
+	/* 54i: the header measures its own width (a sheet, a docked column or a floating window alike) */
+	:global(#ai-assistant-window .ai-head) {
+		container-type: inline-size;
+	}
+	.ai-signin-short {
+		display: none;
+	}
+	/* 54i: the welcome's height is its content, never more than the room below the window's top */
+	.ai-fit {
+		height: auto;
+		max-height: calc(100dvh - var(--dw-top, 0px) - 8px);
+	}
+	@container (max-width: 440px) {
+		.ai-signin-long {
+			display: none;
+		}
+		.ai-signin-short {
+			display: inline;
+		}
 	}
 	/* 38 R6: the body in the tokens — your prompt on the accent tint, replies on surface-2 */
 	.ai-msg {

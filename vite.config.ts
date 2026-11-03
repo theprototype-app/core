@@ -26,6 +26,43 @@ function commitSha(): string {
 // input handling was rewritten (setupInputSources keyed map) and the unguarded
 // handedness indexing no longer exists anywhere in the dist.
 
+// 54i (fix-batch-3 a): guardThrelteXr is BACK for a different crash — @threlte/xr 1.6's headset
+// (and hit-test) task reads `xr.getFrame().getViewerPose(...)` with no null check, and three's
+// getFrame() is null outside an XR animation frame (Quest error report: "Cannot read properties of
+// null (reading 'getViewerPose')" after the session ended). The rewrite lives in
+// scripts/guard-threlte-xr.cjs (unit-tested against the real dist file); @threlte/xr is served as
+// SOURCE (optimizeDeps.exclude) so the transform reaches it in dev as well as the build.
+function guardThrelteXr(): Plugin {
+	const { guardThrelteXrSource } = createRequire(import.meta.url)('./scripts/guard-threlte-xr.cjs');
+	return {
+		name: 'tp:guard-threlte-xr',
+		enforce: 'pre',
+		transform(code: string, id: string) {
+			const res = guardThrelteXrSource(code, id);
+			if (!res) return null;
+			for (const m of res.missing) console.warn('[guard-threlte-xr] anchor not found in ' + id + ': ' + m);
+			return res.code === code ? null : { code: res.code, map: null };
+		}
+	};
+}
+
+// 54i (fix-batch-3 aa): ONE retry for a lazy chunk that failed to load, spliced into vite's preload
+// helper (every lazy import goes through it). The splice + why: scripts/import-retry.cjs; the retry
+// and the "A new version is ready" notice: src/lib/chunkReload.js.
+function importRetry(): Plugin {
+	const { addImportRetry } = createRequire(import.meta.url)('./scripts/import-retry.cjs');
+	return {
+		name: 'tp:import-retry',
+		apply: 'build',
+		transform(code: string, id: string) {
+			const res = addImportRetry(code, id);
+			if (!res) return null;
+			if (!res.matched) console.warn('[import-retry] anchor not found in vite\'s preload helper — lazy chunks will not be retried');
+			return res.matched ? { code: res.code, map: null } : null;
+		}
+	};
+}
+
 // SH0 COSTING PROBE — @shaderfrog/core 3.2.0 drops the ARRAY DIMENSION when it
 // re-emits a varying. `dedupeQualifiedStatements` (graph/shader-sections.js) rebuilds
 // every in/out statement from a TEMPLATE STRING using only the type token and bare
@@ -195,6 +232,8 @@ export default defineConfig({
 	// as a file before the postcss plugin can claim it (build-time ENOENT).
 	plugins: [
 			fixShaderfrogArrayVaryings(),
+			guardThrelteXr(), // 54i: null XR frame guard (see the function)
+			importRetry(), // 54i aa: one retry for a failed lazy chunk (see the function)
 			tailwindcss(),
 			a11yCss(), // 53 A1/A5: after tailwindcss() — see the function
 			devAssetProxy(),
@@ -208,7 +247,8 @@ export default defineConfig({
 		optimizeDeps: {
 			// 46: ktx2-encoder fetches its Basis wasm from `new URL('../basis/…', import.meta.url)`, which a
 			// pre-bundle would move away from the wasm — so it is served as source
-			exclude: ['@shaderfrog/core', 'ktx2-encoder'],
+			// 54i: @threlte/xr as source too, so guardThrelteXr reaches it in dev
+			exclude: ['@shaderfrog/core', 'ktx2-encoder', '@threlte/xr'],
 			// ...but excluding it stops vite pre-bundling its CJS dep too, and
 			// `import groupBy from 'lodash.groupby'` then has no default export. Pre-bundle
 			// that one explicitly so the interop wrapper still exists.

@@ -47,13 +47,13 @@ const OFFER_TOAST = 'perf-reports-offer';
  * @returns {string | null}
  */
 export function reportsUrl() {
-	/** @type {any} */
-	const env = import.meta.env ?? {};
+	// 54 X7: the literal key, never the whole env object (see errorReports.js)
+	const url = import.meta.env.VITE_PERF_REPORTS_URL;
 	if (safeStorage.getItem('debugStores') === 'true') {
 		const o = safeStorage.getItem(URL_OVERRIDE_KEY);
 		if (o) return o === 'off' ? null : o;
 	}
-	return typeof env.VITE_PERF_REPORTS_URL === 'string' && env.VITE_PERF_REPORTS_URL ? env.VITE_PERF_REPORTS_URL : null;
+	return typeof url === 'string' && url ? url : null;
 }
 
 /** Is the feature in this build at all. */
@@ -237,10 +237,8 @@ function stop() {
 export function maybeOffer() {
 	if (!reportsUrl() || get(perfReportsOn)) return false;
 	if (safeStorage.getItem(OFFERED_KEY)) return false;
-	/** @type {any} */
-	const env = import.meta.env ?? {};
 	const host = typeof location !== 'undefined' ? location.hostname : '';
-	if (!isPreviewHost(host, env.VITE_PERF_REPORTS_OFFER)) return false;
+	if (!isPreviewHost(host, import.meta.env.VITE_PERF_REPORTS_OFFER)) return false;
 	const decide = (/** @type {boolean} */ on) => {
 		safeStorage.setItem(OFFERED_KEY, on ? 'yes' : 'no');
 		perfReportsOn.set(on);

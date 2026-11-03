@@ -156,3 +156,25 @@ export function registerSizeReset(node, fn) {
 export function sizeResetOf(node) {
 	return sizeResets.get(node) ?? null;
 }
+
+/** 54i (N6 unfolded): the TOP chrome no window header may sit under. It is drawn above the window
+ * tier (--z-chrome-top), so a header there is covered and cannot be grabbed: the Connect pill (the
+ * full-width bar when docked), the notes / notifications / people cluster and the profile circle.
+ * 76 FW-AI cleared the profile circle for the AI window alone; a docked Connect bar on a tablet-wide
+ * screen pushes the whole cluster down, so every window that opens at the top right (the AI window,
+ * the Debugger, module toolboxes) slid its header under the bell row. */
+export const TOP_CHROME = ['.connect-pill', '#hud-tr', '#avatar-trigger'];
+
+/** The lowest top a window `left..left+width` may take: just under every chrome rect it overlaps
+ * horizontally (an empty rect — hidden chrome — never counts). 0 when it overlaps none.
+ * @param {number} left @param {number} width
+ * @param {Array<{left: number, right: number, bottom: number, width: number, height: number} | null>} rects
+ * @param {number} [gap] */
+export function topChromeFloor(left, width, rects, gap = 4) {
+	let floor = 0;
+	for (const r of rects) {
+		if (!r || !(r.width > 0) || !(r.height > 0)) continue;
+		if (left < r.right && left + width > r.left) floor = Math.max(floor, Math.round(r.bottom) + gap);
+	}
+	return floor;
+}

@@ -35,8 +35,9 @@ const store = (page, path) =>
 /** @param {any} page */
 async function touchApi(page) {
 	const cdp = await page.context().newCDPSession(page);
-	const send = (type, x, y) =>
-		cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 1, radiusX: 4, radiusY: 4 }] });
+	/** @param {string} type @param {number} x @param {number} y @param {number} [timestamp] seconds since the epoch (the input's own time) */
+	const send = (type, x, y, timestamp) =>
+		cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 1, radiusX: 4, radiusY: 4 }], ...(timestamp ? { timestamp } : {}) });
 	const tap = async (x, y) => {
 		await send('touchStart', x, y);
 		await new Promise((r) => setTimeout(r, 60));
@@ -450,9 +451,14 @@ h.run(async () => {
 		const note = (/** @type {string} */ t) => {
 			let tc;
 			w.__stores.TControls?.subscribe?.((/** @type {any} */ v) => (tc = v))?.();
-			w.__gz.push([t, tc?.axis ?? null, !!tc?.dragging]);
+			w.__gz.push([t, tc?.axis ?? null, !!tc?.dragging, Date.now(), Math.round(performance.timeOrigin + (w.__gzEv?.timeStamp ?? 0))]);
 		};
-		for (const t of ['pointerdown', 'pointerup']) window.addEventListener(t, () => note(t), { capture: true, once: true });
+		// 54 X4: the handler clock (Date.now) beside the input's own time (timeStamp) — a tap is a
+		// click only while pointerdown -> pointerup stays under 400 ms, and the 'up+' entry runs
+		// AFTER Scene's own window pointerup
+		for (const t of ['pointerdown', 'pointerup'])
+			window.addEventListener(t, (e) => { w.__gzEv = e; note(t); }, { capture: true, once: true });
+		window.addEventListener('pointerup', (e) => { w.__gzEv = e; note('up+'); }, { once: true });
 	});
 	await touchU.tap(at.x, at.y);
 	await Q.waitForTimeout(700);
@@ -466,6 +472,30 @@ h.run(async () => {
 	h.check((await store(Q, 'editorMode')) === 'interact' && (await sel(Q)).length === 0, 'G13 (unfolded) Interact deselects');
 	await tapEl(Q, touchU, modeCell);
 	h.check(JSON.stringify(await sel(Q)) === JSON.stringify([ua]), `G13 (unfolded) and Edit restores (${JSON.stringify(await sel(Q))})`);
+	// 54 X4: a long frame BETWEEN finger down and finger up. Scene timed the tap on Date.now() in
+	// its handlers, so a 600 ms stall made a 60 ms tap a hold and the click was dropped (the red
+	// under load); the input's own timeStamp still says 60 ms. Red on v1.45.1, green after
+	await Q.evaluate(() => window.__stores.objectActions?.deselectObject?.() ?? window.__stores.selectedObjects.set([]));
+	await pastDoubleTap();
+	await Q.evaluate(() => {
+		const w = /** @type {any} */ (window);
+		w.__stall = {};
+		window.addEventListener('pointerdown', (e) => (w.__stall.down = [Date.now(), e.timeStamp]), { capture: true, once: true });
+		window.addEventListener('pointerup', (e) => (w.__stall.up = [Date.now(), e.timeStamp]), { capture: true, once: true });
+	});
+	// what a busy main thread hands the page: the finger left 60 ms after it landed (the input's
+	// own time), but the event is dispatched 600 ms later. A busy loop in the page cannot stage
+	// this — CDP acks touchStart only once the page is idle, so touchEnd would leave late too
+	const t0 = (await Q.evaluate(() => Date.now())) / 1000; // the BROWSER's clock (a pc slot's is another machine's)
+	await touchU.send('touchStart', at.x, at.y, t0);
+	await new Promise((r) => setTimeout(r, 600));
+	await touchU.send('touchEnd', at.x, at.y, t0 + 0.06);
+	await Q.waitForTimeout(900);
+	const stall = await Q.evaluate(() => /** @type {any} */ (window).__stall);
+	const handlerGap = stall.up && stall.down ? stall.up[0] - stall.down[0] : null;
+	const inputGap = stall.up && stall.down ? Math.round(stall.up[1] - stall.down[1]) : null;
+	h.check(handlerGap !== null && handlerGap > 450 && inputGap < 400, `(premise) the stall lands between down and up (handlers ${handlerGap} ms apart, input ${inputGap} ms)`);
+	h.check(JSON.stringify(await sel(Q)) === JSON.stringify([ua]), `G14 (unfolded) a tap selects though a 600 ms frame lands between finger down and up (${JSON.stringify(await sel(Q))})`);
 	await U.ctx.close();
 
 	// =============================================================== desktop

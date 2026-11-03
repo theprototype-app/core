@@ -5,6 +5,46 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.54.3 — Stability: sessions that keep up, friendlier failures, small wins 🛠️
+
+### 🤝 Sessions
+- **A new object's logic shows up for everyone within seconds**, instead of after about half a minute.
+- **A button that toggles a shared variable flips it exactly once** for everybody, even with several players connected.
+- **Cancelling a library download stops it**, even once it has started, and the file no longer appears afterwards.
+- Accepting a proposed scene load on a busy machine is given the time it needs.
+
+### 🛟 When something goes wrong
+- **A browser that can't run 3D now says what to try** (hardware acceleration, an update, another browser) instead of showing a blank page.
+- **A tab left open across an update** retries a missing piece once, then offers **A new version is ready – Reload** instead of doing nothing.
+- Leaving VR on Quest no longer throws an error after the session ends.
+- Error reports say what kind of value an unexplained failure was, so those reports can be fixed.
+
+### 🎮 Play
+- **Possess: Space or gamepad A jumps** (Jump height on the Possess Object node).
+- **Pausing the game pauses behaviour timers** (`this.after`), so a countdown no longer runs out during a pause.
+- **Wander keeps objects on the ground** (new Ground toggle).
+- Dungeon Realms: players no longer start inside the entrance arch.
+
+### 📁 Explorer and windows
+- **Add files…** in the Explorer's right-click menus and on empty folders: a file picker for phones and the Quest browser.
+  **New file ▸ Script / Note / JSON / Text** creates one from a template.
+- No window opens under the bell and profile buttons on tablet-wide screens, and folded phones keep the AI assistant title whole.
+- The Connect Claude welcome fits on a folded or unfolded phone without scrolling.
+- Shortcuts work right after adding a node, and the "ResizeObserver loop" error toast is gone.
+- A quick finger tap selects or deselects on large phones and foldables, even while the page is busy.
+- VR Measure shows one "Pick up a controller" note at your hand, without a toast as well.
+- Exported games no longer carry the app's build settings in their code.
+
+### 🥽 VR sleeve (experimental)
+- A shape you pull out **grows from a ghost to true size** as you draw your hand away, latches with a click, and reels or
+  scales with the grip sticks; bring it back to your wrist to cancel. Grip or pinch at a slot takes too, and miniature
+  worlds get true-size objects.
+
+<!-- maintainer: CI/tests in 1.54.3 — perf-budget runs as three parallel parts; script-guard slow-node check fixed for the
+     sandboxed scripts; net-handshake third-peer check polls (out of quarantine); sessions accepted-load window 60 s (X2,
+     test-only); select-41 G13/G14 out of quarantine; kit-instancing "same picture" quarantined (row u, not fixed);
+     possess back in the battery; node-ux-keys off desk.software. Not in 1.54.3: X1 deployed heal (parked). -->
+
 ## 1.54.2 — session fixes 🔒
 
 - **Peers can only change their own name and avatar**, and what each one says and shows in a session is always shown as theirs.

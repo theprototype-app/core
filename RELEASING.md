@@ -129,6 +129,8 @@ released version instead of drifting (it carried a stale 1.8.0 before 1.11.0).
 ## After tagging
 
 - Update `CHANGELOG.md` (the in-app What's new window renders it).
+- Docs shots current? `APP_URL=<preview url> E2E_PC= e2e-slot -- bash <docs checkout>/tools/shots/reshoot.sh` — exit 1
+  lists stale shots + a before/after sheet; re-shoot them in the release's docs PR.
 - Deploy the cloud site FROM THE TAG (cloud repo):
   `npm run deploy -- --target=cloud --env=production --core-ref=vX.Y.Z`, or bump
   `CORE_REF=vX.Y.Z` in its `.env.deploy` (the pin its prompt defaults to) and run

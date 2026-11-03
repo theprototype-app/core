@@ -33,8 +33,9 @@ import { sessionHost } from '../connectionState';
 import { sceneLoad } from '../sceneLoader';
 import { log } from '../diagnostics';
 import { kit, kitAuthorityId } from '../kit/runtime.js';
+import { gameState } from '../gameState';
 import { track, disposeRegistrations, registrationsOf } from '../sdk/lifecycle.js';
-import { createBehaviourRuntime, BHV } from './core.js';
+import { createBehaviourRuntime, BHV, behaviourPausedSince } from './core.js';
 import { compileBehaviourInGuest } from '../sandbox/behaviours.js';
 import { analyze } from './analyze.js';
 import { globMatch } from './events.js';
@@ -118,8 +119,12 @@ export const runtime = createBehaviourRuntime({
 		});
 		return out;
 	},
-	warn: (msg, detail) => log('warn', 'behaviour', msg, detail ? String(detail?.message ?? detail) : undefined)
+	warn: (msg, detail) => log('warn', 'behaviour', msg, detail ? String(detail?.message ?? detail) : undefined),
+	// 54i F15: a paused game (the pause menu, a Set Game State node, kit.round.pause — it drives
+	// the game singleton) holds every `this.after` timer; the shared stamp, so a handover agrees
+	pausedSince: () => behaviourPausedSince(get(gameState), kit.doc()?.slices?.round)
 });
+
 
 /**
  * What the UI shows per behaviour node: `{status, name, errors, lint, model}` —

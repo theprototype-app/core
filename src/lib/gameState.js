@@ -43,6 +43,7 @@ export const GAME_STATES = ['menu', 'playing', 'paused', 'over'];
  *   outcome: string,
  *   vars: Record<string, any>,
  *   varsAt?: Record<string, number>,
+ *   varOps?: string[],
  *   changedAt: number
  * }} GameState
  */
@@ -65,7 +66,7 @@ function num(v, fallback) {
  * @param {any} data @returns {GameState}
  */
 export function normalizeGameState(data) {
-	return {
+	const out = {
 		...(data ?? {}),
 		// NOT clamped to GAME_STATES: a newer build's state is kept and simply matches
 		// nothing here, which is a behaviour decision rather than silent data loss
@@ -82,6 +83,11 @@ export function normalizeGameState(data) {
 		vars: data?.vars && typeof data.vars === 'object' ? { ...data.vars } : {},
 		changedAt: num(data?.changedAt, 0)
 	};
+	// 54i: the shared Set Variable events already applied (see applyGameVarOp); absent when none
+	const ops = cleanVarOps(data?.varOps);
+	if (ops.length) out.varOps = ops;
+	else delete out.varOps;
+	return out;
 }
 
 // ---- the seams gameSync fills ---------------------------------------------------
@@ -240,6 +246,26 @@ export function setGameVar(name, value) {
  * `game` message. The last GAMEVAR_RID_WINDOW rids are remembered.
  */
 export const GAMEVAR_RID_WINDOW = 128;
+/**
+ * 54i (row n, the toggle that still double-fired on 1.51): the rids travel IN the singleton too.
+ * The authority is each peer's OWN reading (`kitAuthorityId`: a physics initiator, the kit
+ * document's writer, the open links), and two peers can read it differently for a while — a
+ * stale initiator after a VR peer stops its run, a partial mesh, a roster not caught up. Then
+ * each sends the event to a different peer, BOTH apply it, and the second one, which has already
+ * received the first one's write, applies it on top: an Add 1 counted twice, and a toggle built on
+ * it (or on a value read after the first write) flipped back. A write now carries the last
+ * GAMEVAR_RID_SHARED rids it applied, a receiver unions them (mergeGameState), and an event whose
+ * rid is in the state is never applied again — by anyone. Two writers that apply one event at
+ * the same moment, neither having seen the other, both write from the same value, and the
+ * per-variable stamps keep one of the two identical results.
+ */
+export const GAMEVAR_RID_SHARED = 32;
+
+/** @param {any} ops @returns {string[]} */
+function cleanVarOps(ops) {
+	if (!Array.isArray(ops)) return [];
+	return ops.filter((r) => typeof r === 'string' && r.length > 0 && r.length <= 200).slice(-GAMEVAR_RID_SHARED);
+}
 /** @type {string[]} */
 const appliedVarOps = [];
 
@@ -250,12 +276,15 @@ const appliedVarOps = [];
  */
 export function applyGameVarOp(req) {
 	if (!req || typeof req.rid !== 'string' || !req.rid || !req.name) return false;
-	if (appliedVarOps.includes(req.rid)) return false;
+	const held = get(gameState);
+	// 54i: applied here already, or by another writer whose write we hold
+	if (appliedVarOps.includes(req.rid) || (held.varOps ?? []).includes(req.rid)) return false;
 	appliedVarOps.push(req.rid);
 	if (appliedVarOps.length > GAMEVAR_RID_WINDOW) appliedVarOps.shift();
 	const v = Number(req.value) || 0;
-	const current = Number(get(gameState).vars?.[req.name]) || 0;
-	setGameVar(req.name, req.op === 'add' ? current + v : req.op === 'subtract' ? current - v : v);
+	const current = Number(held.vars?.[req.name]) || 0;
+	const value = req.op === 'add' ? current + v : req.op === 'subtract' ? current - v : v;
+	commitGameState({ vars: { ...held.vars, [req.name]: value }, varOps: [...(held.varOps ?? []), req.rid].slice(-GAMEVAR_RID_SHARED) });
 	return true;
 }
 
@@ -312,8 +341,11 @@ export function mergeGameState(local, data) {
 		if (Math.max(inAt, loAt) >= 0) varsAt[name] = Math.max(inAt, loAt);
 	}
 	const base = theirs ? incoming : local;
-	if (!theirs && JSON.stringify(vars) === JSON.stringify(local.vars ?? {})) return null;
-	return { ...base, vars, varsAt, changedAt: base.changedAt };
+	// 54i: the events either side applied, so neither applies one of them again
+	const had = local.varOps ?? [];
+	const varOps = [...had, ...(incoming.varOps ?? []).filter((r) => !had.includes(r))].slice(-GAMEVAR_RID_SHARED);
+	if (!theirs && JSON.stringify(vars) === JSON.stringify(local.vars ?? {}) && varOps.length === had.length && varOps.every((r, i) => r === had[i])) return null;
+	return { ...base, vars, varsAt, changedAt: base.changedAt, ...(varOps.length ? { varOps } : {}) };
 }
 
 /** @param {string} name @param {any} [fallback] */

@@ -195,6 +195,36 @@ h.run(async () => {
 			const hit = box ? await P.page.evaluate(([x, y, s]) => !!document.elementFromPoint(x, y)?.closest(s), [box.x + box.width / 2, box.y + box.height / 2, sel]) : false;
 			return { ok: !!box && box.x >= 0 && box.x + box.width <= viewport.width && box.y + box.height <= viewport.height && box.height >= 32 && hit, box, hit };
 		};
+		// 54i x: the whole welcome fits, no inner scroll — the own-provider card included (the folded sheet opens
+		// at full height, the floating window grows to its content)
+		await P.page.waitForTimeout(600); // the sheet's height transition / the window's re-clamp
+		const fit = await P.page.evaluate(() => {
+			const win = document.querySelector('#ai-assistant-window');
+			const sc = document.querySelector('#ai-welcome')?.closest('.overflow-y-auto');
+			const w = win.getBoundingClientRect();
+			const own = document.querySelector('#ai-welcome-own').getBoundingClientRect();
+			return { sh: sc?.scrollHeight, ch: sc?.clientHeight, ownB: Math.round(own.bottom), winB: Math.round(w.bottom), vh: innerHeight };
+		});
+		h.check(fit.sh <= fit.ch + 1 && fit.ownB <= fit.winB && fit.winB <= fit.vh, `N6 ${name}: the welcome fits without an inner scroll, own provider card in view (${JSON.stringify(fit)})`);
+		// 54i f: no window header under the top chrome (the bell cluster, the profile circle, the Connect bar);
+		// the Debugger stands for every toolbox that opens at the top right
+		await P.page.evaluate(() => window.__stores.flowDebug.setDebugOpen(true));
+		await P.page.locator('#flow-debugger').waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+		await P.page.waitForTimeout(300);
+		const under = await P.page.evaluate(() => {
+			const R = (el) => el?.getBoundingClientRect();
+			const chrome = ['#hud-tr', '#avatar-trigger', '.connect-pill'].map((s) => [s, R(document.querySelector(s))]).filter(([, r]) => r && r.width && r.height);
+			const out = [];
+			for (const sel of ['#ai-assistant-window', '#flow-debugger']) {
+				const el = document.querySelector(sel);
+				if (!el || el.closest('[data-ps-host]') || el.hasAttribute('data-ps-host') || el.classList.contains('tbx-sheet')) continue; // a phone sheet is placed by the shell
+				const w = R(el);
+				for (const [c, r] of chrome) if (w.left < r.right && w.right > r.left && w.top < r.bottom && w.bottom > r.top) out.push(`${sel} top ${Math.round(w.top)} under ${c} (bottom ${Math.round(r.bottom)})`);
+			}
+			return out;
+		});
+		h.check(under.length === 0, `N6 ${name}: no window header under the top chrome (${under.join('; ') || 'none'})`);
+		await P.page.evaluate(() => window.__stores.flowDebug.setDebugOpen(false));
 		const c = await fits('#connect-claude-button');
 		const o = await fits('#ai-welcome-settings');
 		h.check(c.ok && o.ok, `N6 ${name}: both choices are on screen and pressable (${JSON.stringify(c.box)} ${JSON.stringify(o.box)}, hit ${c.hit}/${o.hit})`);
@@ -214,6 +244,13 @@ h.run(async () => {
 		await installSignIn(P.page);
 		await P.page.locator('#ai-header-signin').waitFor({ state: 'visible', timeout: 10000 });
 		const hb = await fits('#ai-header-signin');
+		// 54i: the title keeps its words beside the button (the folded sheet says "Sign in")
+		const title = await P.page.evaluate(() => {
+			const t = document.querySelector('#ai-assistant-window .wc-title');
+			const b = document.querySelector('#ai-header-signin');
+			return { sw: t.scrollWidth, cw: t.clientWidth, text: t.textContent.trim(), name: b.getAttribute('aria-label') || b.textContent.trim() };
+		});
+		h.check(title.sw <= title.cw && title.name === 'Sign in to connect', `N6 ${name}: the header title is not cut short and the button keeps its name (${JSON.stringify(title)})`);
 		const closeFits = await fits('#ai-assistant-window .wc-close');
 		h.check(hb.ok && closeFits.hit && closeFits.box.x + closeFits.box.width <= viewport.width, `N6 ${name}: the header button fits and the close button stays on screen and pressable (${JSON.stringify(hb.box)}, hit ${hb.hit}/${closeFits.hit})`);
 		await P.page.screenshot({ path: path.join(OUT, `fw-ai-n6-${name}.png`) }).catch(() => {});

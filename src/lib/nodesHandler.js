@@ -210,11 +210,22 @@ let lastResyncRequest = 0;
  * sent — the two conns of a pair are not ordered against each other), and the joiner then
  * logged "Node graph differs ... requesting a snapshot" and pulled the graphs a second time.
  * Until a peer's full `nodes` snapshot has reached us, its nodesync is not compared for
- * NODESYNC_HANDSHAKE_MS from the first one; after that (a snapshot that never came) it pulls
- * as before, and once a snapshot has arrived drift detection is unchanged.
+ * NODESYNC_HANDSHAKE_MS from the start of the handshake; after that (a snapshot that never came)
+ * it pulls as before, and once a snapshot has arrived drift detection is unchanged.
+ *
+ * 54i row g: THE HANDSHAKE STARTS WITH THE LINK, not with the peer's first nodesync. A peer whose
+ * graphs were EMPTY at the join sends no snapshot (sendNodes has nothing to send) and no nodesync
+ * (a count of 0 is not broadcast), so the first nodesync it ever sent came minutes later, with its
+ * first object graph. Timed from THAT, the window held a real change back for 15 s, two more 10 s
+ * rounds went by, and the graph reached the peer after ~25-30 s (measured 26.5 s on a cloud build;
+ * the timeline suite's "B has the graph" premise red). The host side never asks a joiner for its
+ * graphs at all, so there was no snapshot to wait for in the first place. `noteNodeSyncHandshake`
+ * starts the window when the link opens (sendHandshake) and again when we ask (`getnodes` in
+ * requestFullState, which a share-or-stash decision can defer), so that late nodesync is compared
+ * at once; a nodesync that beats both still starts the window itself.
  */
 export const NODESYNC_HANDSHAKE_MS = 15000;
-/** @type {Map<string, number>} peerId -> when its first nodesync arrived before any snapshot */
+/** @type {Map<string, number>} peerId -> when the handshake began: the link / our getnodes, else its first nodesync */
 const handshakeSyncs = new Map();
 /** @type {Set<string>} peers whose full `nodes` snapshot has reached us */
 const snapshotFrom = new Set();
@@ -224,6 +235,12 @@ let handshakeSkips = 0;
 export function noteNodesSnapshot(peerId) {
 	if (peerId) snapshotFrom.add(peerId);
 	handshakeSyncs.delete(peerId);
+}
+
+/** a handshake with `peerId` starts now (the link opened, or we asked for its graphs): the window
+ * runs from here. Nothing to hold once its snapshot has arrived. @param {string} peerId */
+export function noteNodeSyncHandshake(peerId) {
+	if (peerId && !snapshotFrom.has(peerId)) handshakeSyncs.set(peerId, Date.now());
 }
 
 /** forget a departed peer (no argument: everyone, on leaving the session) @param {string} [peerId] */

@@ -8,7 +8,7 @@
 	import ShaderVectorInput from './nodes/ShaderVectorInput.svelte';
 	import { showToast } from '../../stores/appStore.js';
 	import { objectsGroup } from '../../stores/sceneStore.js';
-	import { setShaderGraphFor, shaderGraphOf, shaderCodeRunState, retryShaderCodeFor, runForeignShaderCodeFor } from '$lib/shaderGraph';
+	import { setShaderGraphFor, shaderGraphOf, shaderCodeRunState, retryShaderCodeFor, runForeignShaderCodeFor, shaderErrors } from '$lib/shaderGraph';
 	import { shaderCodeHeld, markShaderCodeMine, setCustomShadersOnQuest } from '$lib/shaderCodeReach.js'; // 73 AI9
 	import { beginShaderGesture, endShaderGesture } from '$lib/shaderSync';
 	import { compileShaderGraphToIR, compilePostGraphToIR } from '$lib/shaderCompile';
@@ -96,6 +96,12 @@
 	const refusal = $derived($shaderCodeBlocked[hash] || $shaderCodeSuspended || '');
 	// 73 AI9: held on this device for where it came from (someone else's, untested) or Quest's default
 	const held = $derived(refusal ? null : $shaderCodeHeld[hash] ?? null);
+	// 73 AI4: a compile error shows HERE, by the text, with its stage and line (the refusals have their own line)
+	const codeErrors = $derived(
+		code.use && !refusal && !held ? /** @type {string[]} */ (/** @type {any} */ ($shaderErrors)[scope] ?? []) : []
+	);
+	/** an error's stage, so a press goes to it @param {string} e */
+	const stageOf = (e) => (/^vertex/i.test(e) ? 'vertex' : 'fragment');
 	const runState = $derived.by(() => {
 		void $objectsGroup; // a THREE tree is not reactive; the install pokes this
 		return doc ? shaderCodeRunState(scope) : 'off';
@@ -151,7 +157,7 @@
 	{#if shownTab === 'glsl'}
 		<div class="scp-editor" id="shader-code-glsl">
 			{#if doc}
-				<CodeEditor value={generated} readOnly />
+				<CodeEditor value={generated} readOnly label="Generated GLSL, read-only" />
 			{:else}
 				<p class="scp-note">No shader here yet. Create a graph, or write Your GLSL.</p>
 			{/if}
@@ -160,7 +166,7 @@
 		{#if jsonError}<div class="scp-error" id="shader-json-error">{jsonError}</div>{/if}
 		<div class="scp-editor" id="shader-code-json">
 			{#if doc}
-				<CodeEditor value={jsonText} onChange={(v) => { jsonText = v; jsonDirty = v !== liveJson; }} />
+				<CodeEditor value={jsonText} label="Graph JSON" onChange={(v) => { jsonText = v; jsonDirty = v !== liveJson; }} />
 			{:else}
 				<p class="scp-note">No shader here yet.</p>
 			{/if}
@@ -218,9 +224,17 @@
 			</div>
 			<span class="scp-hint">Loops must count to a constant. Up to 64 KB per stage.</span>
 		</div>
+		{#if codeErrors.length}
+			<ul class="scp-errors" id="shader-own-errors" role="alert" aria-label="Shader errors">
+				{#each codeErrors as e, i (i)}
+					<li><button type="button" class="scp-error-line" title="Show this stage" onclick={() => (stage = stageOf(e))}>{e}</button></li>
+				{/each}
+			</ul>
+		{/if}
 		<div class="scp-editor" id="shader-own-editor" data-stage={stage}>
 			{#key stage}
 				<CodeEditor
+					label={stage === 'vertex' ? 'Your GLSL, vertex shader' : 'Your GLSL, fragment shader'}
 					value={stage === 'vertex' ? vertexText : fragmentText}
 					onChange={(v) => {
 						if (stage === 'vertex') vertexText = v;
@@ -265,6 +279,20 @@
 	.scp-hint {
 		color: var(--text-faint);
 		padding: var(--space-1) var(--space-2);
+	}
+	.scp-errors {
+		flex: 0 0 auto;
+		margin: 0;
+		padding: var(--space-1) var(--space-2);
+		list-style: none;
+		color: var(--ink-bad);
+		font-family: var(--font-ui-mono);
+		font-size: var(--fs-desc);
+	}
+	.scp-error-line {
+		text-align: left;
+		color: inherit;
+		text-decoration: underline dotted;
 	}
 	.scp-error {
 		flex: 0 0 auto;

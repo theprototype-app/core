@@ -173,6 +173,7 @@
 {#if offered && !open}
 	<button
 		id="game-shell-menu-button"
+		data-play-chrome
 		type="button"
 		class="gs-corner"
 		class:gs-corner-play={playing}

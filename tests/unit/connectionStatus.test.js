@@ -32,7 +32,7 @@ describe('connectionLabel', () => {
 		expect(connectionLabel(connectionStatusOf({ ...base, open: 1, hosting: false }).tone)).toBe('Connected');
 		expect(connectionLabel(connectionStatusOf({ ...base, pending: 'AB12C' }).tone)).toBe('Connecting…');
 		expect(connectionLabel(connectionStatusOf({ ...base, signalingOpen: false }).tone)).toBe('Connecting…');
-		expect(connectionLabel(connectionStatusOf(base).tone)).toBe('Offline');
+		expect(connectionLabel(connectionStatusOf(base).tone)).toBe('Connect');
 		expect(connectionLabel(connectionStatusOf({ ...base, retrying: true, attempt: GIVE_UP_ATTEMPTS }).tone)).toBe('Offline');
 	});
 });

@@ -1287,13 +1287,20 @@
 					 is how that gets filed as a bug. Invite's transport belongs to the
 					 plugin; the button renders only when it provides one. -->
 				{#if crossRooms.length}
-					<div class="mt-1 border-t border-border pt-1" id="cross-scene-presence">
+					<!-- 94 SP6: under their OWN heading. These are the project's listed (public) live rooms,
+						 not people in your session — on a fresh page they used to read as your session's
+						 roster (83-batch3 finding 1). -->
+					<div class="mt-1 border-t border-border pt-1" id="cross-scene-presence" role="group" aria-labelledby="cross-scene-heading">
+						<h3 id="cross-scene-heading" class="cross-scene-heading px-1.5 pt-1 text-xs font-semibold text-text-2">Public rooms</h3>
+						<p class="px-1.5 pb-1 text-xs text-text-faint">Live rooms anyone can join — not part of your session.</p>
 						{#each crossRooms as room (room.id)}
 							<div class="px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-text-faint">
 								in {room.scene || room.name || 'another scene'}
 							</div>
 							{#each room.members ?? [] as m (m.peerId)}
-								<div class="peers-row flex items-center gap-2 rounded px-1.5 py-1">
+								<!-- 94 SP6: its own row, not `.peers-row` — that is the roster's 3-column grid
+									 (avatar | info | actions), which put the mode chip in the stretching column -->
+								<div class="cross-scene-row flex items-center gap-2 rounded px-1.5 py-1">
 									<span class="min-w-0 flex-1 truncate text-sm" title={m.name || m.peerId}
 										>{m.name || String(m.peerId ?? '').slice(0, 6)}</span
 									>

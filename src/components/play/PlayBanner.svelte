@@ -29,7 +29,7 @@
 </script>
 
 {#if shown}
-	<div id="play-banner" class="tp-ui hud-glass play-banner" data-game={game ? 'true' : 'false'} role="status">
+	<div id="play-banner" data-play-chrome class="tp-ui hud-glass play-banner" data-game={game ? 'true' : 'false'} role="status">
 		<Badge tone="live" text="Playing" />
 		{#if custom}
 			<span class="pb-hint" data-custom="true">{custom}</span>

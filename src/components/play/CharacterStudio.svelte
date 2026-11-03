@@ -10,7 +10,7 @@
 	import { avatarPreview, studioIsolating, studioPingUntil } from '$lib/avatars/avatarState';
 	import { buildStudio, joinStudioLayer, STUDIO_LAYER } from '$lib/avatars/characterStudio';
 	import { feetBelowHead } from '$lib/avatars/catalog';
-	import { registerDebugHook } from '$lib/debugHooks';
+	import { registerDebugHook } from '$lib/debugHookRegistry.js';
 
 	const { scene, camera } = useThrelte();
 	const studio = buildStudio();

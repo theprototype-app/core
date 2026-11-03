@@ -83,6 +83,8 @@ function handle(req, res) {
 		return res.end();
 	}
 	if (fs.existsSync(file) && fs.statSync(file).isDirectory()) file = path.join(file, 'index.html');
+	// 94 SP1: `/play` is `play.html` — what Cloudflare Pages does for every prerendered page
+	if (!fs.existsSync(file) && !path.extname(file) && fs.existsSync(file + '.html')) file = file + '.html';
 	if (!fs.existsSync(file)) {
 		res.writeHead(404, { 'Content-Type': 'text/plain' });
 		return res.end('not found');

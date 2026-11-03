@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
 
 // LIGHTS IN THE AUTOSAVE (fix-agenttest item 1). The autosave scene goes through a GLTF
 // round trip, and glTF only knows KHR_lights_punctual: a Hemisphere, Ambient or RectArea
@@ -11,11 +10,32 @@ import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUnifo
 
 // RectAreaLight renders black on Standard/Physical materials until the uniforms lib
 // initializes — once per session is enough (79). Shared by createLight and every restore.
-let rectAreaReady = false;
-export function ensureRectAreaUniforms() {
-	if (rectAreaReady) return;
-	rectAreaReady = true;
-	RectAreaLightUniformsLib.init();
+// 94 SP1: the lib carries ~240 KB of LTC lookup tables, so it loads the first time a RectAreaLight
+// exists rather than with every boot. three reads the tables when it sets the lights up each frame,
+// so a light drawn before the chunk lands is dark for those frames and right from then on.
+// BUT three wires a material's `ltc_1`/`ltc_2` only when it sets the material's program up, so a
+// program built while the tables were still loading keeps null textures: once they land, every
+// lit material under the light's root is refreshed once (`needsUpdate`).
+/** @type {Promise<void> | null} */
+let rectAreaReady = null;
+let rectAreaLoaded = false;
+/** @param {THREE.Object3D} [light] the RectAreaLight (its root's materials refresh if it beat the load) @returns {Promise<void>} */
+export function ensureRectAreaUniforms(light) {
+	rectAreaReady ??= import('three/addons/lights/RectAreaLightUniformsLib.js').then(({ RectAreaLightUniformsLib }) => {
+		RectAreaLightUniformsLib.init();
+		rectAreaLoaded = true;
+	});
+	if (!rectAreaLoaded && light) {
+		void rectAreaReady.then(() => {
+			/** @type {THREE.Object3D} */
+			let root = light;
+			while (root.parent) root = root.parent;
+			root.traverse((/** @type {any} */ o) => {
+				for (const m of Array.isArray(o.material) ? o.material : o.material ? [o.material] : []) m.needsUpdate = true;
+			});
+		});
+	}
+	return rectAreaReady;
 }
 
 /**
@@ -83,7 +103,7 @@ export function restoreLights(root, entries, onError = () => {}) {
 			continue;
 		}
 		if (!light?.isLight) continue;
-		if (light.isRectAreaLight) ensureRectAreaUniforms();
+		if (light.isRectAreaLight) ensureRectAreaUniforms(light);
 		light.uuid = entry.uuid;
 		// the GLTF twin carries the parked pose and the latest userData (extras); the
 		// sidecar is the light itself

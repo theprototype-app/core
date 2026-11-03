@@ -92,22 +92,14 @@
 	import { vrMenuOpen } from '../stores/sceneStore';
 	import VRMenu from './play/VRMenu.svelte';
 	import VRStats from './play/VRStats.svelte';
-	import VRObjectsPanel from './play/VRObjectsPanel.svelte';
-	import VRColorPalette from './play/VRColorPalette.svelte';
-	import VRPropertiesPanel from './play/VRPropertiesPanel.svelte';
-	import VRPrefabsPanel from './play/VRPrefabsPanel.svelte';
 	import VRKeyboard from './play/VRKeyboard.svelte';
 	import VRChatPanel from './play/VRChatPanel.svelte';
-	import VRAiPanel from './play/VRAiPanel.svelte';
-	import VREditMenu from './play/VREditMenu.svelte';
-	import VRSnapMenu from './play/VRSnapMenu.svelte';
+	import { playEntry } from '$lib/play/playEntry.js';
 	import VRSettingsPanel from './play/VRSettingsPanel.svelte';
 	import VRPeerApprove from './play/VRPeerApprove.svelte';
 	import VRSelectionShell from './play/VRSelectionShell.svelte';
 	// 36 U3b: the VR welcome tour's world-space panel
 	import TourVRPanel from './tours/TourVRPanel.svelte';
-	import VRAssetBrowser from './play/VRAssetBrowser.svelte'; // 52-browser: the wrist Asset Browser
-	import VRLogicPanel from './play/VRLogicPanel.svelte'; // 74 VH1: the logic graph as a VR panel + wrist pad
 	// 36 A2: the headset browser's own "Enter VR" offer — decided by us, not threlte's default
 	import { xrOfferMode } from '$lib/xrOffer';
 	import MeasureOverlay from './MeasureOverlay.svelte';
@@ -1924,21 +1916,31 @@ position={[0, 2, 3]}
 
 <VRMenu />
 <VRStats />
-<VRObjectsPanel />
-<VRColorPalette />
-<VRPropertiesPanel />
-<VRPrefabsPanel />
+<!-- 94 SP1: the editor's VR panels load when they open, never with a play link's boot. Each one's
+     markup sat entirely inside its own open store already, and none has script side effects, so
+     mounting it on open is the same panel. -->
+{#if $vrObjectsPanelOpen}{#await import('./play/VRObjectsPanel.svelte') then m}<m.default />{/await}{/if}
+{#if $vrPaletteOpen}{#await import('./play/VRColorPalette.svelte') then m}<m.default />{/await}{/if}
+{#if $vrPropsPanelOpen}{#await import('./play/VRPropertiesPanel.svelte') then m}<m.default />{/await}{/if}
+{#if $vrPrefabsPanelOpen}{#await import('./play/VRPrefabsPanel.svelte') then m}<m.default />{/await}{/if}
 <VRChatPanel />
-<VRAiPanel />
-<VREditMenu />
-<VRSnapMenu />
+<!-- 94 SP1 (94-routes Q2 F2): the VR AI panel is an editing tool — a lazy chunk in the editor (it still
+     mounts at boot: it registers the VR menu's AI entry) and absent from the play entry, whose boot it
+     filled with the whole AI stack (providers, speech-to-text) -->
+{#if !playEntry}{#await import('./play/VRAiPanel.svelte') then m}<m.default />{/await}{/if}
+{#if $vrEditMenuOpen}{#await import('./play/VREditMenu.svelte') then m}<m.default />{/await}{/if}
+{#if $vrSnapMenuOpen}{#await import('./play/VRSnapMenu.svelte') then m}<m.default />{/await}{/if}
 <VRSettingsPanel />
 <VRPeerApprove />
 <VRKeyboard />
 <VRSelectionShell />
 <TourVRPanel />
-<VRAssetBrowser />
-<VRLogicPanel />
+<!-- the wrist Asset Browser (52) and the logic panel (74 VH1) only add radial entries + their
+     planes inside an XR session, so they mount with the session -->
+{#if $isVRMode}
+	{#await import('./play/VRAssetBrowser.svelte') then m}<m.default />{/await}
+	{#await import('./play/VRLogicPanel.svelte') then m}<m.default />{/await}
+{/if}
 
 <XR
 	offerSession={$xrOfferMode}

@@ -12,6 +12,8 @@ import { pushState } from '$app/navigation';
 // 36-export: an exported game is an embed for its whole life too (a leaf, read once at eval)
 import { exportMode } from './export/exportBoot.js';
 import { onPlayOrigin, appUrl } from './playOrigin.js';
+// 94 SP1: the slim play entry (`/play`) is player-only for its whole life too (a leaf)
+import { playEntry } from './play/playEntry.js';
 import { safeStorage } from './safeStorage';
 // 50 R1: a LEAF (svelte/store only) — the AR table's session is not a Play press
 import { arTableActive } from './arTableState.js';
@@ -109,7 +111,7 @@ const embedBoot = readEmbedBoot();
 /** true for the whole life of a page opened with `?embed=1` — or of an EXPORTED game (36-export),
  *  which hides the same editor chrome and draws the same player chrome — or of any page on the
  *  separate play origin (69 T4: it is player-only, `$lib/playOrigin`) */
-export const embedMode = writable(embedBoot.on || exportMode || onPlayOrigin);
+export const embedMode = writable(embedBoot.on || exportMode || onPlayOrigin || playEntry);
 /** the `?s=<id>` the embed opened with ('' when none) — the corner link's target */
 export const embedSceneId = embedBoot.scene;
 /** 36-community (C4): the visit source and published build the frame was opened with ('' when none) */

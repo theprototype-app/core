@@ -132,6 +132,8 @@ const realProbeWorker = () => new Worker(new URL('./shaderCodeProbe.worker.js', 
 let makeProbeWorker = realProbeWorker;
 
 let probeSeq = 0;
+/** how many probes this tab has started (73 AI9's "not even the worker test" check) */
+let probeRuns = 0;
 
 /** @param {any} code @param {string} hash @returns {Promise<any>} */
 function runProbe(code, hash) {
@@ -145,6 +147,7 @@ function runProbe(code, hash) {
 			return;
 		}
 		const id = ++probeSeq;
+		probeRuns++;
 		active.add(hash);
 		journalAdd(hash);
 		const finish = (/** @type {any} */ verdict) => {
@@ -296,5 +299,6 @@ export const shaderCodeGuardForTest = {
 	resetMakeProbeWorker: () => void (makeProbeWorker = realProbeWorker),
 	noteContextLoss,
 	forgetVerdicts: () => verdicts.clear(),
+	probeRuns: () => probeRuns,
 	activeHashes: () => [...active]
 };

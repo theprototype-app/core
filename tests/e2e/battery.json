@@ -291,6 +291,7 @@
 		"ai-vision": 420,
 		"shader-own-glsl": 420,
 		"shader-own-glsl-sync": 360,
+		"shader-reach": 360,
 		"connector-relay": 240,
 		"connector-physics": 150,
 		"connector-window": 150,

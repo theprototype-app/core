@@ -357,6 +357,7 @@ export const DEBUG_HOOKS = [
 	['shaderBackends', () => import('./shaderBackends')],
 	['shaderGraph', () => import('./shaderGraph')],
 	['shaderCodeGuard', () => import('./shaderCodeGuard')],
+	['shaderCodeReach', () => import('./shaderCodeReach.js')], // 73 AI9
 	['shaderSync', () => import('./shaderSync')],
 	['shaderTextures', () => import('./shaderTextures')],
 	['shaderCatalog', () => import('./shaderCatalog')],

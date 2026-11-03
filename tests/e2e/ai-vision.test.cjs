@@ -10,6 +10,9 @@
 //   6. generate_mesh from_picture: the attached picture reaches Meshy's image-to-3d; the model lands on both peers
 //   7. the provider chat stays local: peer B has no bubble, and a viewer has no + button
 //   8. N6 folded: the bubble's picture stays inside the window
+//   73-int: 6 asks AI7's question before Meshy gets the picture (nothing sent before Send); 9. AI11 a text-only
+//      model's + is greyed with a reason that offers a vision model, and nothing attaches; AI8 the + menu states
+//      the limits before a pick; a vision model (counterfactual) attaches again
 // Run: APP_URL=https://localhost:5621/ npm run e2e -- ai-vision
 const path = require('node:path');
 const h = require('./helpers.cjs');
@@ -177,6 +180,11 @@ h.run(async () => {
 	await attach();
 	const toolTurn = await send('make this a 3D model', 'the tool prompt went out');
 	h.check(toolTurn.tools.find((t) => t.function.name === 'generate_mesh')?.function.parameters.properties.from_picture, 'generate_mesh offers from_picture');
+	// 73 AI7: the assistant's path asks too, and nothing goes before the answer
+	await page.waitForSelector('#confirm-mesh-picture-consent', { timeout: 10000 });
+	await page.waitForTimeout(800);
+	h.check(tasks.length === 0, 'AI7: nothing reached Meshy before the person answered');
+	await page.click('#confirm-dialog-send');
 	await h.eventually(() => tasks.length, (n) => n === 1, 'the attached picture reached image-to-3d', 15000);
 	h.check(tasks[0].image_url.startsWith('data:image/jpeg;base64,'), 'as the same clean JPEG');
 	await h.eventually(() => objectCount(A), (n) => n === base + 1, 'the model is placed on A', 30000);
@@ -186,6 +194,39 @@ h.run(async () => {
 	await send('make that again', 'a call with no picture went out');
 	await h.eventually(async () => (await messages(A)).some((x) => x.role === 'error' && /no such picture/.test(x.content)), (v) => v === true, 'from_picture with nothing attached is refused', 8000);
 	h.check(tasks.length === 1, 'and nothing more went to Meshy');
+
+	// ---- 9. 73 AI11 + AI8: which models see pictures, and the limits up front -----------------------------
+	const useModel = (preset, model) =>
+		page.evaluate(
+			([pr, mo]) => {
+				const p = window.__stores.aiProviders;
+				const id = p.addAiProvider({ preset: pr, label: 'Grok', baseUrl: location.origin + '/mock-ai/v1', model: mo, apiKey: 'k' });
+				p.setAiActiveProvider(id);
+			},
+			[preset, model]
+		);
+	await useModel('grok', 'grok-3-mini');
+	await h.eventually(() => page.evaluate(() => document.querySelector('#chat-attach')?.getAttribute('aria-disabled')), (v) => v === 'true', 'AI11: a text-only model greys the +', 8000);
+	const grey = await page.evaluate(() => ({ title: document.querySelector('#chat-attach')?.getAttribute('title'), name: document.querySelector('#chat-attach')?.getAttribute('aria-label') }));
+	h.check(/grok-3-mini can’t see pictures/.test(grey.title ?? '') && /grok-4/.test(grey.title ?? ''), `AI11: the reason offers a model that can (${grey.title})`);
+	h.check(/unavailable/.test(grey.name ?? ''), 'AI11: the accessible name says it is unavailable');
+	await page.click('#chat-attach');
+	await h.eventually(() => page.evaluate(() => [...document.querySelectorAll('.tp-toast')].map((t) => t.textContent).join(' | ')), (t) => /can’t see pictures/.test(t), 'AI11: a press says why', 8000);
+	await page.setInputFiles('#chat-attach-file', PHOTO);
+	await page.waitForTimeout(1500);
+	const trayNow = await page.evaluate(() => {
+		let v;
+		window.__stores.chatAttach.composerPending.subscribe((x) => (v = x))();
+		return v.length;
+	});
+	h.check(trayNow === 0, 'AI11: nothing attaches for a model that cannot see it');
+	await useModel('grok', 'grok-4');
+	await h.eventually(() => page.evaluate(() => document.querySelector('#chat-attach')?.getAttribute('aria-disabled')), (v) => v === null, 'counterfactual: a vision model ungreys the +', 8000);
+	await page.click('#chat-attach');
+	await page.waitForSelector('text=From device…', { timeout: 5000 });
+	const menuText = await page.evaluate(() => document.body.innerText);
+	h.check(/Grok: up to 4 pictures a message, each sent as a JPEG up to 1568 px/.test(menuText), 'AI8: the + menu states the limits before a pick');
+	await page.keyboard.press('Escape');
 
 	// ---- 7. local, and viewers ---------------------------------------------------------------------------
 	h.check((await messages(B)).length === 0, 'the provider chat is not replicated');

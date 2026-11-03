@@ -7,6 +7,10 @@
 //   4. ComfyUI: no {{IMAGE}} = no picture row; with it the bytes are uploaded and the name is in the graph
 //   5. counterfactual: text only still goes to text-to-3d
 //   6. the dialog on the N6, folded and unfolded: on screen, no sideways overflow, Camera offered
+//   73-int (AI7): a picture for Meshy asks first — cost, the third-party line, the privacy link; Cancel sends
+//      nothing and leaves no job row (counterfactual: Send sends). AI8: the limits are stated before a pick;
+//      AI6: the first-use tip, retired by the first pick. AI4: no provider -> says so + opens Tools &
+//      connections; Meshy 402 / 401 -> the message names Meshy and what to try.
 // Run: APP_URL=https://localhost:5621/ npm run e2e -- image-to-3d
 const path = require('node:path');
 const h = require('./helpers.cjs');
@@ -53,10 +57,22 @@ async function waitPicture(page) {
 	}
 }
 
-async function generate(page) {
+/** @param {any} page @param {boolean} [consent] a picture for Meshy: answer AI7's question with Send */
+async function generate(page, consent = false) {
 	await page.locator('.mesh-gen-modal button', { hasText: 'Generate' }).last().click();
 	await page.waitForSelector('.mesh-gen-modal', { state: 'detached', timeout: 5000 });
+	if (consent) {
+		await page.waitForSelector('#confirm-mesh-picture-consent', { timeout: 8000 });
+		await page.click('#confirm-dialog-send');
+	}
 }
+
+const jobCount = (page) =>
+	page.evaluate(() => {
+		let v = [];
+		window.__stores.meshJobs.meshJobs.subscribe((x) => (v = x))();
+		return v.length;
+	});
 
 h.run(async () => {
 	const { metadataOf, fromBase64 } = await import('../../src/lib/chat/attachCore.js');
@@ -104,8 +120,11 @@ h.run(async () => {
 	const base = (await objects(A)).length;
 
 	// ---- 1. the photo: the GPS never reaches the provider ------------------------------------------------
+	await page.evaluate(() => window.__stores.tips?.resetTips?.());
 	await page.evaluate(OPEN);
 	await page.waitForSelector('#mesh-gen-picture');
+	h.check(/2048 px/.test((await page.locator('#mesh-gen-limits').innerText().catch(() => '')) ?? ''), 'AI8: the picture limits are stated before a pick');
+	h.check((await page.locator('#mesh-gen-tip').count()) === 1, 'AI6: the first-use tip shows on the picture row');
 	h.check(await page.locator('.mesh-gen-modal button', { hasText: 'Generate' }).last().isDisabled(), 'no words and no picture: Generate is off');
 	await page.setInputFiles('#mesh-gen-file-input', PHOTO);
 	await waitPicture(page);
@@ -118,7 +137,31 @@ h.run(async () => {
 	h.check(prep.inMeta.gps === true, 'counterfactual: the input photo carried GPS');
 	h.check(prep.outMeta.gps === false && prep.outMeta.exif === false, 'the prepared picture has no EXIF or GPS');
 	h.check(Math.max(prep.w, prep.h) <= 2048 && prep.outBytes <= 4 * 1024 * 1024, `the picture is ≤ 2048 px and ≤ 4 MB (${prep.w}×${prep.h}, ${prep.outBytes} B)`);
+	h.check(!(await page.locator('#mesh-gen-tip').count()), 'AI6: the first-use tip retired with the first picture');
+
+	// ---- 73 AI7: the question before anything leaves -----------------------------------------------------
+	const jobsBefore = await jobCount(page);
 	await generate(page);
+	await page.waitForSelector('#confirm-mesh-picture-consent', { timeout: 8000 });
+	const ask = await page.evaluate(() => ({
+		text: document.querySelector('#confirm-mesh-picture-consent')?.closest('[role="dialog"]')?.textContent ?? document.querySelector('#confirm-mesh-picture-consent')?.textContent ?? '',
+		href: document.querySelector('#confirm-dialog-link')?.getAttribute('href'),
+		target: document.querySelector('#confirm-dialog-link')?.getAttribute('target'),
+		send: document.querySelector('#confirm-dialog-send')?.textContent?.trim()
+	}));
+	h.check(/about 20 credits/.test(ask.text), 'AI7: the cost is stated (about 20 credits, Preview)');
+	h.check(/third-party/.test(ask.text) && /Meshy/.test(ask.text), 'AI7: it says the picture goes to Meshy, a third party');
+	h.check(ask.href === 'https://www.meshy.ai/privacy-policy' && ask.target === '_blank', "AI7: Meshy's privacy policy is linked");
+	h.check(ask.send === 'Send to Meshy', 'AI7: the answer says what it does');
+	await page.click('#confirm-dialog-cancel');
+	await page.waitForTimeout(1500);
+	h.check(imageTasks.length === 0 && textTasks.length === 0, 'AI7: Cancel sent nothing');
+	h.check((await jobCount(page)) === jobsBefore, 'AI7: Cancel left no job row');
+	await page.evaluate(OPEN);
+	await page.waitForSelector('#mesh-gen-file-input', { state: 'attached' });
+	await page.setInputFiles('#mesh-gen-file-input', PHOTO);
+	await waitPicture(page);
+	await generate(page, true);
 	await h.eventually(() => imageTasks.length, (n) => n === 1, 'the photo went to image-to-3d', 8000);
 	const sent = imageTasks[0];
 	const m = /^data:(image\/[a-z]+);base64,(.+)$/.exec(sent.image_url);
@@ -142,7 +185,7 @@ h.run(async () => {
 	await page.click('#mesh-gen-viewport');
 	await waitPicture(page);
 	await page.fill('.mesh-gen-modal input[placeholder="Treasure chest"]', 'Viewport copy');
-	await generate(page);
+	await generate(page, true);
 	await waitCount(A, base + 2, 'the viewport model is placed');
 	h.check(imageTasks.length === 2 && /^data:image\//.test(imageTasks[1].image_url), 'the viewport went to image-to-3d');
 	h.check((await objects(A)).at(-1).name === 'Viewport copy', 'the name field names the object');
@@ -163,7 +206,7 @@ h.run(async () => {
 	await page.click('#mesh-gen-image-clear');
 	await page.selectOption('#mesh-gen-explorer', itemId);
 	await waitPicture(page);
-	await generate(page);
+	await generate(page, true);
 	await waitCount(A, base + 3, 'the Explorer model is placed');
 	h.check(imageTasks.length === 3, "the dialog's picker went to image-to-3d");
 
@@ -212,6 +255,37 @@ h.run(async () => {
 	await generate(page);
 	await waitCount(A, base + 5, 'the ComfyUI model is placed');
 	h.check(uploads === 1 && graph?.['1']?.inputs?.image === 'uploaded-73.webp', 'ComfyUI: uploaded, and the returned name is in the graph');
+	h.check(!(await page.locator('#confirm-mesh-picture-consent').count()), "AI7: ComfyUI (the person's own server) is not asked about");
+
+	// ---- 73 AI4: errors that name the provider and what to try -----------------------------------------
+	await setProvider(page, 'meshy');
+	for (const [status, want] of [[402, /Meshy: out of credits — add credits/], [401, /Meshy rejected the API key — check it in Settings/]]) {
+		await page.unroute('**/mock-meshy/openapi/v1/image-to-3d');
+		await page.route('**/mock-meshy/openapi/v1/image-to-3d', (route) => route.fulfill({ status, contentType: 'application/json', body: '{"message":"no"}' }));
+		await page.evaluate(OPEN);
+		await page.waitForSelector('#mesh-gen-viewport');
+		await page.click('#mesh-gen-viewport');
+		await waitPicture(page);
+		await generate(page, true);
+		await h.eventually(
+			() => page.evaluate(() => [...document.querySelectorAll('.tp-toast')].map((t) => t.textContent ?? '').join(' | ')),
+			(t) => want.test(t),
+			`AI4: a ${status} names Meshy and what to try`,
+			15000
+		);
+	}
+	// no provider at all: the dialog says so and opens Tools & connections
+	await page.evaluate(() => {
+		const mp = window.__stores.meshProviders;
+		let list;
+		mp.meshProviders.subscribe((v) => (list = v))();
+		for (const p of list) mp.removeMeshProvider(p.id);
+	});
+	await page.evaluate(OPEN);
+	await page.waitForSelector('#mesh-gen-no-provider');
+	await page.click('#mesh-gen-setup');
+	await h.eventually(() => page.evaluate(() => !!document.querySelector('#settings-sections')), (v) => v === true, 'AI4: Set one up opens Settings', 8000);
+	h.check(!(await page.locator('.mesh-gen-modal').count()), 'AI4: and the dialog made way');
 	await B.page.close();
 	await page.close();
 

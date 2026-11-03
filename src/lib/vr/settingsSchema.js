@@ -500,7 +500,7 @@ export function activateVRSetting(id, dir = 1) {
 export const vrSettingsTick = writable(0);
 /** 36-vr-ai (B9): what the in-headset Search page filters by (typed on the VR keyboard) */
 export const vrSettingsQuery = writable('');
-const watched = [vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrFlying, vrMenuHand, vrMenuHold, vrGrabStyle, vrTargetHz, vrStatsOpen, peerHandStyle, vrPassthrough, vrWireframeSelection, vrVertexHold, vrSleeveEnabled, perfStatsShown, vrMicMode, vrFaceCap, vrVertexCap, vrSmoothTurn, vrSmoothTurnSpeed, vrComfortVignette, vrStance, vrHeightOffset, vrWorldSnap, vrBothGripsWorld, vrOneHanded, vrBindings, vrSettingsQuery];
+const watched = [vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrFlying, vrMenuHand, vrMenuHold, vrGrabStyle, vrTargetHz, vrStatsOpen, peerHandStyle, vrPassthrough, vrWireframeSelection, vrVertexHold, vrSleeveEnabled, perfStatsShown, vrMicMode, vrFaceCap, vrVertexCap, vrSmoothTurn, vrSmoothTurnSpeed, vrComfortVignette, vrStance, vrHeightOffset, vrWorldSnap, vrBothGripsWorld, vrOneHanded, vrBindings, vrSettingsQuery, customShadersOnQuest];
 /** one derived over every watched store: any change re-renders whatever shows a setting */
 let version = 0;
 export const vrSettingsVersion = derived([vrSettingsTick, ...watched], () => ++version);

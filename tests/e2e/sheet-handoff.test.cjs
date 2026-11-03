@@ -183,7 +183,10 @@ h.run(async () => {
 		 *  a dock tab's frame also holds the panel's header, which has nothing to scroll) */
 		const inY = (y) => Math.max(bodyR ? bodyR.top + 12 : s0.top + 40, Math.min(s0.bottom - 12, y));
 		const sc = await scrollerAt(bx, by);
-		const scrolls = !!sc && sc.max > 30;
+		// 54-int: a list must be able to ABSORB the gestures below (step 1 asks for > 40 px of scroll, the hand-back
+		// travels ~130 px past the start); a body that scrolls only a little (the Explorer's empty state with its
+		// "Add files…" button, 81 X1, overflows a 248 px sheet by ~40 px) hands the rest to the sheet by design
+		const scrolls = !!sc && sc.max > 140;
 		// --- 1. drag UP on the list: the list scrolls, the sheet stays ---
 		if (scrolls) {
 			await setProbeTop(0);
@@ -202,7 +205,7 @@ h.run(async () => {
 			h.check(s2 && Math.abs(s2.h - s0.h) < 4, `${name}: ...and does not move the sheet (${Math.round(s0.h)} -> ${Math.round(s2?.h ?? 0)})`);
 			h.check((await probeTop()) < before, `${name}: ...the list scrolled back toward its top (${before} -> ${await probeTop()})`);
 		} else {
-			h.check(true, `${name}: its body does not scroll at this height (${JSON.stringify(sc)}) — the body is the sheet`);
+			h.check(true, `${name}: its body does not scroll (far) at this height (${JSON.stringify(sc)}) — the body is the sheet`);
 		}
 		// --- 3. at the top: a slow drag down moves the SHEET with the finger ---
 		if (scrolls) await setProbeTop(0);

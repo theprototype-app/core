@@ -121,13 +121,14 @@ h.run(async () => {
 			const y = r.top + r.height / 2;
 			const w = /** @type {HTMLElement} */ (document.querySelector('#whats-new-window'));
 			const wr = w.getBoundingClientRect();
-			// a desktop window is clamped below the top bar (dragWindow), so it may simply not reach the logo
-			if (x < wr.left || x > wr.right || y < wr.top || y > wr.bottom) return 'not under the window';
+			// a window is clamped below the top chrome (dragWindow's topChromeFloor: desktop, and since 54 f a
+			// tablet-wide screen too), so it may simply not reach the logo -- only when it was HELD down (top > 0)
+			if (x < wr.left || x > wr.right || y < wr.top || y > wr.bottom) return wr.top > 0 ? 'not under the window' : 'missed the logo at top 0';
 			const hit = document.elementFromPoint(x, y);
 			return w.contains(hit) ? 'covered' : hit?.id || hit?.tagName;
 		});
 		h.check(
-			logoUnder === 'covered' || (dev === 'desktop' && logoUnder === 'not under the window'),
+			logoUnder === 'covered' || (dev !== 'folded' && logoUnder === 'not under the window'),
 			`${dev}: where What's new overlaps the logo, a press lands in What's new (${logoUnder})`
 		);
 		// and its own close still works by a real click

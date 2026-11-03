@@ -200,7 +200,8 @@ h.run(async () => {
 		h.check(/wears a shader graph/.test(refused.error || ''), '3. set_material refuses a shader-driven object');
 
 		const driver = await make('Driver', [7, 0.5, 0]);
-		const noGlsl = json(await call(B.client, 'create_shader', { objects: [driver], text: 'x = glsl {expression: "not glsl ("}\nout = surface\nx -> out.emissive' }));
+		// balanced on purpose: since 1.55 the GLSL gate (shaderCode) refuses unmatched brackets before any compiler runs
+		const noGlsl = json(await call(B.client, 'create_shader', { objects: [driver], text: 'x = glsl {expression: "notGlsl * 2.0"}\nout = surface\nx -> out.emissive' }));
 		console.log('   compile answer: ' + short(noGlsl));
 		h.check(/undeclared identifier|syntax error/.test(noGlsl.skipped?.[0]?.errors?.[0] || ''), '3. broken GLSL: the compiler\'s own error comes back');
 		await h.eventually(() => onHost(A.page, driver), (o) => o?.driven === false, '3. and the host\'s object wears no shader', 8000);

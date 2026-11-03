@@ -256,9 +256,13 @@ async function resolveCc0(wanted) {
 	const pick = (/** @type {any[]} */ list) =>
 		list.find((r) => String(r.id).toLowerCase() === q || String(r.name).toLowerCase() === q) ?? list.find((r) => String(r.name).toLowerCase().includes(q));
 	let row = pick(rows);
-	if (!row) {
+	// ambientCG's search matches TITLES ("Wood 051"), never ids: `q=Wood051` finds nothing, so an id-shaped name
+	// is searched by its title form first and picked by its exact id
+	const titled = wanted.trim().replace(/([a-z])([A-Z])/g, '$1 $2').replace(/([A-Za-z])(\d)/g, '$1 $2');
+	for (const query of [...new Set([titled, wanted.trim()])]) {
+		if (row) break;
 		try {
-			row = pick(core.normalizeAmbientCg((await fetchers.acgPage({ query: wanted, offset: 0 })).data));
+			row = pick(core.normalizeAmbientCg((await fetchers.acgPage({ query, offset: 0 })).data));
 		} catch (e) {
 			unreachable = e instanceof Error ? e.message : String(e);
 		}

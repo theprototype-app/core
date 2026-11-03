@@ -320,6 +320,30 @@ describe('set_material', () => {
 			globalThis.fetch = real;
 		}
 	});
+	it('an ambientCG id is searched by its title form (the search matches "Wood 051", never "Wood051")', async () => {
+		const o = box();
+		const real = globalThis.fetch;
+		/** @type {string[]} */
+		const asked = [];
+		globalThis.fetch = async (/** @type {any} */ url) => {
+			const u = new URL(String(url));
+			if (u.hostname === 'api.polyhaven.com') return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+			if (u.pathname.endsWith('/acg/assets')) {
+				asked.push(String(u.searchParams.get('q')));
+				const hit = u.searchParams.get('q') === 'Wood 051';
+				const assets = hit ? [{ id: 'Wood051', title: 'Wood 051', tags: [], previewImage: {}, downloadFolders: {} }] : [];
+				return new Response(JSON.stringify({ totalResults: assets.length, assets }), { status: 200, headers: { 'content-type': 'application/json' } });
+			}
+			throw new TypeError('no import in this test');
+		};
+		try {
+			const r = await call('set_material', { objects: [o.uuid], cc0: 'Wood051' });
+			expect(asked[0]).toBe('Wood 051');
+			expect(r.error ?? '').not.toMatch(/no CC0 material called/);
+		} finally {
+			globalThis.fetch = real;
+		}
+	});
 	it('a library hash that is not an image is refused', async () => {
 		const o = box();
 		expect((await call('set_material', { objects: [o.uuid], maps: { normal: 'abcdef0123456789' } })).error).toMatch(/not an image in the library/);

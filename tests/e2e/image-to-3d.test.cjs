@@ -252,10 +252,14 @@ h.run(async () => {
 	await page.waitForSelector('#mesh-gen-file-input', { state: 'attached' });
 	await page.setInputFiles('#mesh-gen-file-input', PHOTO);
 	await waitPicture(page);
-	await generate(page);
+	// the mock lives on the app's own origin: on a dev server that is this computer (no question), on a deployed
+	// preview it is another host, which AI7 must ask about before the picture goes (generate() then answers Send)
+	const comfyRemote = await page.evaluate(() => !/^(localhost|127\.|\[::1\]$)/.test(location.hostname));
+	await generate(page, comfyRemote);
 	await waitCount(A, base + 5, 'the ComfyUI model is placed');
 	h.check(uploads === 1 && graph?.['1']?.inputs?.image === 'uploaded-73.webp', 'ComfyUI: uploaded, and the returned name is in the graph');
-	h.check(!(await page.locator('#confirm-mesh-picture-consent').count()), "AI7: ComfyUI (the person's own server) is not asked about");
+	if (comfyRemote) h.check(true, 'AI7: a ComfyUI on another host was asked about first, and Send went on (deployed origin)');
+	else h.check(!(await page.locator('#confirm-mesh-picture-consent').count()), "AI7: ComfyUI (the person's own server) is not asked about");
 
 	// ---- 73 AI4: errors that name the provider and what to try -----------------------------------------
 	await setProvider(page, 'meshy');

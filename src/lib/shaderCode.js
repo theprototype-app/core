@@ -254,7 +254,7 @@ export const MAX_ARRAY_LENGTH = 64;
  * What one operation on each name in the text may cost. Anything the scan cannot type counts as
  * HEAVY (a matrix's 64), so a declaration it misreads refuses a shader rather than letting one by.
  * @param {string} src the comment-stripped text
- * @returns {{weightOf: (name: string, next: string) => number, arrayProblems: string[]}}
+ * @returns {{weightOf: (name: string, next: string) => number, memberWeight: (name: string) => number, arrayProblems: string[]}}
  */
 export function valueWeights(src) {
 	/** @type {Map<string, number>} name -> weight as a whole value */
@@ -268,17 +268,34 @@ export function valueWeights(src) {
 	const typeWeight = (/** @type {string} */ type) =>
 		LIGHT_TYPES.has(type) ? 1 : (MATRIX_TYPES[type] ?? structs.get(type) ?? 64);
 	const lengthOf = (/** @type {string} */ text) => {
-		const n = /^\d+$/.test(text) ? Number(text) : integerDefines(src).get(text)?.value;
+		const t = String(text).replace(/[()\s]/g, '');
+		const n = /^\d+$/.test(t) ? Number(t) : integerDefines(src).get(t)?.value;
 		return n === undefined ? Infinity : n;
 	};
-	// structs first: a copy costs what its members do
+	/** @type {Set<string>} struct member names: one after a `.` is weighed even when it reads like a swizzle */
+	const members = new Set();
+	// structs first: a copy costs what its members do. Each member line is `type a, b[4];`
 	for (const m of src.matchAll(/\bstruct\s+([A-Za-z_]\w*)\s*\{([^}]*)\}/g)) {
 		let size = 0;
-		for (const f of m[2].matchAll(/([A-Za-z_]\w*)\s+([A-Za-z_]\w*)\s*(?:\[\s*(\w+)\s*\])?\s*;/g)) {
-			const w = typeWeight(f[1]) * (f[3] ? lengthOf(f[3]) : 1);
-			size += w;
-			whole.set(f[2], Math.max(whole.get(f[2]) ?? 0, f[3] ? 64 : typeWeight(f[1])));
-			if (f[3]) element.set(f[2], typeWeight(f[1]));
+		for (const line of m[2].split(';')) {
+			const head = /^\s*(?:(?:highp|mediump|lowp)\s+)?([A-Za-z_]\w*)\s*(\[\s*\w+\s*\])?\s*(.*)$/s.exec(line);
+			if (!head || !head[3].trim()) continue;
+			const w = typeWeight(head[1]);
+			for (const piece of head[3].split(',')) {
+				const f = /^\s*([A-Za-z_]\w*)\s*((?:\[\s*\w+\s*\]\s*)*)$/.exec(piece);
+				if (!f) {
+					size += 64 * MAX_ARRAY_LENGTH; // a member the scan cannot read counts as the heaviest there is
+					continue;
+				}
+				const dims = [...f[2].matchAll(/\[\s*(\w+)\s*\]/g)].map((d) => d[1]).concat(head[2] ? [head[2].replace(/[\[\]\s]/g, '')] : []);
+				if (dims.length > 1) arrayProblems.push('`' + f[1] + '` is an array of arrays, which is not available here.');
+				const n = dims.length ? lengthOf(dims[0]) : 1;
+				if (dims.length && !(n <= MAX_ARRAY_LENGTH)) arrayProblems.push('`' + f[1] + '` holds ' + (Number.isFinite(n) ? n : 'an unknown number of') + ' elements; an array here holds at most ' + MAX_ARRAY_LENGTH + '.');
+				size += w * Math.min(n, MAX_ARRAY_LENGTH);
+				members.add(f[1]);
+				whole.set(f[1], Math.max(whole.get(f[1]) ?? 0, w * (dims.length ? Math.min(n, MAX_ARRAY_LENGTH) : 1)));
+				if (dims.length) element.set(f[1], Math.max(element.get(f[1]) ?? 0, w));
+			}
 		}
 		structs.set(m[1], Math.max(1, size));
 	}
@@ -297,8 +314,11 @@ export function valueWeights(src) {
 			if (c === '(' || c === '[') depth++;
 			else if ((c === ')' || c === ']') && depth > 0) depth--;
 			else if (depth === 0 && (c === ',' || c === ';' || c === ')' || c === '{' || c === '=')) {
-				const piece = /^\s*([A-Za-z_]\w*)\s*(?:\[\s*(\w+)\s*\])?/.exec(src.slice(start, i));
-				if (piece) names.push([piece[1], piece[2] ?? m[3] ?? '']);
+				const piece = /^\s*([A-Za-z_]\w*)\s*(?:\[([^\]]*)\])?(\s*\[)?/.exec(src.slice(start, i));
+				if (piece) {
+					if (piece[3] || (piece[2] && m[3])) arrayProblems.push('`' + piece[1] + '` is an array of arrays, which is not available here.');
+					names.push([piece[1], piece[2] ?? m[3] ?? '']);
+				}
 				if (c === '=') {
 					// skip the initializer
 					let d = 0;
@@ -338,18 +358,22 @@ export function valueWeights(src) {
 		if (next === '.' && !element.has(name)) return 1; // a member or component read: its own name is weighed
 		return whole.get(name) ?? 64;
 	};
-	return { weightOf, arrayProblems };
+	/** after a `.`: a struct member weighs what it holds, a swizzle reads components @param {string} name */
+	const memberWeight = (name) => (members.has(name) ? (whole.get(name) ?? 64) : SWIZZLE.test(name) ? 1 : weightOf(name, ''));
+	return { weightOf, memberWeight, arrayProblems: [...new Set(arrayProblems)] };
 }
 
-/** One statement's work: its operations, each at the cost of the heaviest value it touches. @param {string} text @param {(name: string, next: string) => number} weightOf */
-function statementWork(text, weightOf) {
+/**
+ * One statement's work: its operations, each at the cost of the heaviest value it touches.
+ * @param {string} text @param {{weightOf: (name: string, next: string) => number, memberWeight: (name: string) => number}} weights
+ */
+function statementWork(text, { weightOf, memberWeight }) {
 	const ops = text.match(OPERATIONS)?.length ?? 0;
 	if (!ops) return 0;
 	let heaviest = 1;
 	for (const m of text.matchAll(/(\.\s*)?\b([A-Za-z_]\w*)\b(?=\s*(.?))/g)) {
 		if (/^\d/.test(m[2])) continue;
-		if (m[1] && SWIZZLE.test(m[2])) continue;
-		heaviest = Math.max(heaviest, weightOf(m[2], m[3]));
+		heaviest = Math.max(heaviest, m[1] ? memberWeight(m[2]) : weightOf(m[2], m[3]));
 	}
 	return ops * heaviest;
 }
@@ -363,7 +387,7 @@ function statementWork(text, weightOf) {
  */
 export function programWork(text) {
 	const defines = integerDefines(text);
-	const { weightOf } = valueWeights(text);
+	const weights = valueWeights(text);
 	// directives are not run per pixel: blank them (same length, so every index still holds)
 	const src = text.replace(/^[ \t]*#[^\n]*$/gm, (/** @type {string} */ m) => ' '.repeat(m.length));
 	/** brace depth at each index */
@@ -417,7 +441,7 @@ export function programWork(text) {
 		}
 		outside.push(src.slice(cursor, to));
 		const straight = outside.join(' ');
-		for (const statement of straight.split(/[;{}]/)) total += statementWork(statement, weightOf);
+		for (const statement of straight.split(/[;{}]/)) total += statementWork(statement, weights);
 		for (const m of straight.matchAll(/\b([A-Za-z_]\w*)\s*\(/g))
 			if (functions.has(m[1])) total += callWork(m[1], stack);
 		return total;

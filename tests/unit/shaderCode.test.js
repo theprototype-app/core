@@ -93,6 +93,15 @@ describe('checkShaderCode', () => {
 		// a struct copy weighs its members
 		expect(one('struct S { float v[64]; mat4 m; };\n', 'S a; S b; for (int i = 0; i < 1024; i++) { b = a; }')[0]).toMatch(/operations/);
 		expect(one('struct Hit { float d; vec3 n; };\n', 'Hit h = Hit(1.0, vec3(0.0)); float x = h.d;')).toEqual([]);
+		// a member named like a swizzle still weighs what it holds; members declared with commas all count
+		expect(one('struct S { mat4 xy; };\n', 'S s; mat4 r = mat4(1.0); for (int i = 0; i < 512; i++) { r = s.xy * s.xy; }')[0]).toMatch(/operations/);
+		expect(one('struct S { float v[64], w[64], u[64]; };\n', 'S a; S b; for (int i = 0; i < 256; i++) { b = a; }')[0]).toMatch(/operations/);
+		// arrays of arrays would multiply past the cap
+		expect(one('', 'float g[8][64];')[0]).toMatch(/array of arrays/);
+		expect(one('', 'float[8] g[64];')[0]).toMatch(/array of arrays/);
+		expect(one('struct S { float v[8][8]; };\n', '')[0]).toMatch(/array of arrays/);
+		// a matrix element is still read as ordinary indexing
+		expect(one('', 'mat3 m = mat3(1.0); float x = m[0][1];')).toEqual([]);
 		// a name the gate cannot type counts as heavy: a misread refuses, it never lets one by
 		expect(one('', 'float x = 0.0; for (int i = 0; i < 1024; i++) { x += mystery; }')[0]).toMatch(/operations/);
 	});

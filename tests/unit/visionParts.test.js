@@ -31,7 +31,8 @@ describe('limitPictures', () => {
 		const list = [turn('one'), { role: 'assistant', content: 'ok' }, turn('two'), turn('three')];
 		const out = limitPictures(list);
 		expect(out[0].content).toContain('one');
-		expect(out[0].content).toContain('a.jpg');
+		expect(out[0].content).toContain('a picture');
+		expect(out[0].content).not.toContain('a.jpg'); // a file name stays home
 		expect(typeof out[0].content).toBe('string');
 		expect(Array.isArray(out[2].content) && Array.isArray(out[3].content)).toBe(true);
 		expect(Array.isArray(list[0].content)).toBe(true); // a new array, the input untouched

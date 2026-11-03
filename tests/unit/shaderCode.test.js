@@ -29,10 +29,14 @@ describe('checkShaderCode', () => {
 		expect(problem).toMatch(/Fragment line 2: `while`/);
 		expect(check('do { } while (false);').length).toBeGreaterThan(0);
 	});
-	it('takes a counted for, with a literal, a #define or a const int', () => {
+	it('takes a counted for, with a literal or a #define above it', () => {
 		expect(check('for (int i = 0; i < 64; i++) { float x = 1.0; }')).toEqual([]);
 		expect(check('for (int i = 0; i <= 64; ++i) x += 1.0;')).toEqual([]);
-		expect(checkShaderCode({ vertex: STARTER_VERTEX, fragment: '#define STEPS 32\nconst int M = 8;\n' + frag('for (int i = 0; i < STEPS; i++) {} for (int j = 0; j < M; j += 2) {}') })).toEqual([]);
+		expect(checkShaderCode({ vertex: STARTER_VERTEX, fragment: '#define STEPS 32\n#define M 8\n' + frag('for (int i = 0; i < STEPS; i++) {} for (int j = 0; j < M; j += 2) {}') })).toEqual([]);
+		// a const int can be shadowed by a local of the same name, so it is not a bound the gate can trust
+		expect(checkShaderCode({ vertex: STARTER_VERTEX, fragment: 'const int M = 8;\n' + frag('for (int j = 0; j < M; j++) {}') })[0]).toMatch(/`M` is not a constant/);
+		// a #define BELOW the loop is not one there either
+		expect(checkShaderCode({ vertex: STARTER_VERTEX, fragment: frag('for (int j = 0; j < M; j++) {}') + '#define M 8\n' })[0]).toMatch(/`M` is not a constant/);
 	});
 	it('refuses a for it cannot bound', () => {
 		expect(check('for (;;) {}')[0]).toMatch(/count up to a constant/);
@@ -48,9 +52,55 @@ describe('checkShaderCode', () => {
 	});
 	it('multiplies nested loops', () => {
 		const nest = 'for (int a = 0; a < 512; a++) { for (int b = 0; b < 512; b++) { } }';
-		expect(check(nest)[0]).toMatch(/nested loops run 262144/);
+		expect(check(nest)[0]).toMatch(/run 262144 steps in all/);
 		// siblings do not multiply
 		expect(check('for (int a = 0; a < 512; a++) { } for (int b = 0; b < 512; b++) { }')).toEqual([]);
+	});
+	it('counts the whole stage: siblings add, calls count their callee, brace-less bodies included', () => {
+		const loop = (n) => 'for (int i = 0; i < ' + n + '; i++) x += 1.0;';
+		expect(check('float x = 0.0;' + Array.from({ length: 64 }, () => loop(1024)).join('\n'))).toEqual([]);
+		expect(check('float x = 0.0;' + Array.from({ length: 65 }, () => loop(1024)).join('\n'))[0]).toMatch(/66560 steps in all/);
+		const f = 'float f() { float s = 0.0; for (int i = 0; i < 1024; i++) s += 1.0; return s; }\n';
+		expect(checkShaderCode({ vertex: STARTER_VERTEX, fragment: f + frag('float x = 0.0; for (int k = 0; k < 64; k++) x += f();') })).toEqual([]);
+		expect(checkShaderCode({ vertex: STARTER_VERTEX, fragment: f + frag('float x = 0.0; for (int k = 0; k < 65; k++) x += f();') })[0]).toMatch(/66560 steps/);
+		// the call hides in an else of a brace-less body, and in a function whose parameter list has brackets
+		expect(checkShaderCode({ vertex: STARTER_VERTEX, fragment: f + frag('float x = 0.0; for (int k = 0; k < 128; k++) if (x > 1.0) x = 0.0; else x += f();') })[0]).toMatch(/steps in all/);
+		const g = 'float g(float a[(2)]) { float s = 0.0; for (int i = 0; i < 1024; i++) s += a[0]; return s; }\n';
+		expect(checkShaderCode({ vertex: STARTER_VERTEX, fragment: g + frag('float x = 0.0; float a[2]; for (int k = 0; k < 128; k++) x += g(a);') })[0]).toMatch(/steps in all/);
+		// a nest of brace-less loops multiplies
+		expect(check('float x = 0.0; for (int a = 0; a < 512; a++) for (int b = 0; b < 512; b++) x += 1.0;')[0]).toMatch(/262144 steps/);
+	});
+	it('reads the text the way the compiler does', () => {
+		// a carriage return ends a // comment for GLSL; a backslash joins lines
+		expect(check('float x = 0.0; // note\rwhile (true) { x += 1.0; }')[0]).toMatch(/carriage return/);
+		expect(check('float x = 0.0; wh\\\nile (true) { x += 1.0; }')[0]).toMatch(/backslash/);
+		expect(check('float x = 0.0; /* a *\\\n/ while (true) {} /* b */')[0]).toMatch(/backslash/);
+		expect(check('float x = 0.0;\u2028while (true) {}')[0]).toMatch(/line-separator/);
+		expect(check('float x\u00e9 = 0.0;')[0]).toMatch(/plain ASCII/);
+		// in a comment, any character is fine
+		expect(check('// caf\u00e9 \u2014 notes')).toEqual([]);
+	});
+	it('refuses every preprocessor way to change what a bound means', () => {
+		const pre = (head, body = '') => checkShaderCode({ vertex: STARTER_VERTEX, fragment: head + frag(body) })[0];
+		expect(pre('#define J i\n', 'float x = 0.0; for (int i = 0; i < 10; i++) { J--; }')).toMatch(/whole number/);
+		expect(pre('#define N 20\n#undef N\n#define N 10\n')).toMatch(/`#undef` is not available/);
+		expect(pre('#define N 20\n#define N 10\n')).toMatch(/defined twice/);
+		expect(pre('#if 0\n#endif\n')).toMatch(/`#if` is not available/);
+		expect(pre('#ifdef GL_ES\n#endif\n')).toMatch(/`#ifdef` is not available/);
+		expect(pre('#define N 0x7fffffff\n')).toMatch(/whole number/);
+		expect(pre('#line 5\n')).toMatch(/`#line` is not available/);
+		expect(pre('', 'float x = 1.0; # define N 5')).toMatch(/`#` only starts a line/);
+	});
+	it('refuses every way for a call to write a loop counter', () => {
+		const back = 'void back(inout int k) { k--; }\n';
+		expect(checkShaderCode({ vertex: STARTER_VERTEX, fragment: back + frag('for (int i = 0; i < 10; i++) { back(i); }') })[0]).toMatch(/`inout` parameters/);
+		expect(checkShaderCode({ vertex: STARTER_VERTEX, fragment: 'void zero(out int k) { k = 0; }\n' + frag('') })[0]).toMatch(/`out` parameters/);
+		expect(check('for (int i = 0; i < 4; i++) { i &= 0; }')[0]).toMatch(/changes its own counter/);
+		expect(check('for (int i = 0; i < 4; i++) { i >>= 1; }')[0]).toMatch(/changes its own counter/);
+		// a counter that is not declared in its header could be written from anywhere
+		expect(check('int i; for (i = 0; i < 4; i++) {}')[0]).toMatch(/count up to a constant/);
+		// a global `out` (GLSL 3 varyings) is not a parameter
+		expect(checkShaderCode({ vertex: 'out vec2 vUv2;\n' + STARTER_VERTEX, fragment: STARTER_FRAGMENT })).toEqual([]);
 	});
 	it('does not read a loop out of a comment', () => {
 		expect(check('// while (true) {}\n/* for (;;) */')).toEqual([]);
@@ -118,5 +168,30 @@ describe('the rest of the leaf', () => {
 		expect(parseGraphJson('{"nodes":[]}').error).toMatch(/nodes.*edges/);
 		expect(parseGraphJson('{"nodes":[{"id":1}],"edges":[]}').error).toMatch(/text `id`/);
 		expect(parseGraphJson('{"nodes":[{"id":"a","type":"color"}],"edges":[]}').nodes.length).toBe(1);
+	});
+});
+
+describe('the graph compiler holds node settings to what the node accepts', async () => {
+	const { compileShaderGraphToIR } = await import('../../src/lib/shaderCompile.js');
+	const doc = (data) => ({
+		nodes: [{ id: 'out', type: 'surface', data: {} }, { id: 'g', type: 'glsl', data }],
+		edges: [{ id: 'e', source: 'g', sourceHandle: 'out', target: 'out', targetHandle: 'emissive' }]
+	});
+	it('a choice must be one of the options, and a type never reaches a declaration raw', () => {
+		const r = compileShaderGraphToIR(doc({ expression: 'a', type: 'float zz = 0.0; for (;;) {} float' }));
+		expect(r.ok).toBe(false);
+		expect(r.errors.join(' ')).toMatch(/must be one of float, vec2, vec3, vec4/);
+	});
+	it('the expression takes names, numbers and operators only', () => {
+		expect(compileShaderGraphToIR(doc({ expression: '0.0 //\r); for (;;) {} float zz = (0.0', type: 'float' })).ok).toBe(false);
+		expect(compileShaderGraphToIR(doc({ expression: 'a) + (b', type: 'float' })).ok).toBe(false);
+		expect(compileShaderGraphToIR(doc({ expression: 'abs(a) * 0.5 + (b > 0.0 ? c : 1.0)', type: 'vec3' })).ok).toBe(true);
+		expect(glslExpressionProblem('a /* x */')).toMatch(/comments/);
+		expect(glslExpressionProblem('(a')).toMatch(/brackets/);
+		expect(glslExpressionProblem('a\nb')).toMatch(/line breaks/);
+	});
+	it('the code hash is a SHA-256 prefix', () => {
+		expect(shaderCodeHash({ vertex: 'a', fragment: 'b' })).toMatch(/^[0-9a-f]{40}$/);
+		expect(shaderCodeHash({ vertex: 'a', fragment: 'b' })).not.toBe(shaderCodeHash({ vertex: 'a', fragment: 'c' }));
 	});
 });

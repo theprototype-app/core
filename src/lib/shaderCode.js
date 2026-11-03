@@ -7,15 +7,22 @@
 // or the network — the risk is a hang, and a peer's document reaches every machine in the
 // session — so the rule that matters is the loop rule: GLSL ES 3.00 has no recursion, which
 // leaves a loop as the ONLY way to run for ever. `while`/`do` are refused and a `for` must
-// show a constant bound. That is best effort against a determined author (the probe and
-// the first-frame box in shaderCodeGuard are the backstop) but it removes the easy hang,
-// which would otherwise reset the GPU for everyone in the browser before any box could help.
+// show a constant bound. THE GATE READS THE TEXT THE COMPILER READS: no carriage return (it
+// ends a `//` comment for GLSL), no backslash (it joins lines), no conditional or re-defined
+// preprocessor (a `#define` is a NAME for a whole number, nothing else), no `out`/`inout`
+// parameter (the one way a call could write a loop's counter), and the WHOLE stage's loop
+// work is counted, calls included, against one budget. The probe and the first-frame box in
+// shaderCodeGuard stay behind it as the backstop, not the rule.
+import { sha256HexSync } from './inviteCore.js';
 
 /** Per stage. A document replicates WHOLE on every edit. */
 export const MAX_CODE_CHARS = 64 * 1024;
-/** One loop's bound, and the product down a nest of them. */
+/** One loop's bound. */
 export const MAX_LOOP_BOUND = 1024;
-export const MAX_LOOP_NEST_PRODUCT = 65536;
+/** The loop steps a whole stage may take: nests multiply, siblings add, calls count their callee. */
+export const MAX_PROGRAM_LOOP_WORK = 65536;
+/** @deprecated the old per-nest name; the budget now covers the whole stage */
+export const MAX_LOOP_NEST_PRODUCT = MAX_PROGRAM_LOOP_WORK;
 
 export const STARTER_VERTEX = `// three.js gives you: position, normal, uv,
 // modelViewMatrix, projectionMatrix, normalMatrix, cameraPosition
@@ -70,27 +77,72 @@ export function usesShaderCode(doc) {
 	return doc?.code?.use === true;
 }
 
-/** Blank the comments and keep every newline, so a reported line stays the author's. @param {string} src */
+/**
+ * Blank the comments and keep every newline, so a reported line stays the author's. A `//`
+ * comment ends at a newline OR a carriage return, as it does for the compiler (the gate also
+ * refuses carriage returns outright; this keeps the two readings equal for any other caller).
+ * @param {string} src
+ */
 export function stripGlslComments(src) {
-	return String(src ?? '').replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, (m) => m.replace(/[^\n]/g, ' '));
+	return String(src ?? '').replace(/\/\*[\s\S]*?\*\/|\/\/[^\n\r]*/g, (m) => m.replace(/[^\n]/g, ' '));
 }
 
 /** @param {string} src @param {number} index */
 const lineAt = (src, index) => src.slice(0, index).split('\n').length;
 
-/** Integer constants the bound of a `for` may name. @param {string} src */
-function integerConstants(src) {
-	/** @type {Map<string, number>} */
+/** `#define NAME <digits>` lines, the only names a loop bound may use, with where each is defined. @param {string} src */
+function integerDefines(src) {
+	/** @type {Map<string, {value: number, at: number}>} */
 	const out = new Map();
-	for (const m of src.matchAll(/^[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)[ \t]+(\d+)[ \t]*$/gm)) out.set(m[1], Number(m[2]));
-	for (const m of src.matchAll(/\bconst\s+int\s+([A-Za-z_]\w*)\s*=\s*(\d+)\s*;/g)) out.set(m[1], Number(m[2]));
+	for (const m of src.matchAll(/^[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)[ \t]+(\d+)[ \t]*$/gm))
+		if (!out.has(m[1])) out.set(m[1], { value: Number(m[2]), at: m.index ?? 0 });
 	return out;
 }
 
-/** The index just past the statement a loop header governs. @param {string} src @param {number} from */
-function bodyEnd(src, from) {
-	let i = from;
+/** A header we can bound: `int i = <n>; i < LIMIT; i++` (or `<=`, `++i`, `i += <n>`), the counter declared in it. */
+const LOOP_HEADER = /^\s*(?:(?:lowp|mediump|highp)\s+)?int\s+([A-Za-z_]\w*)\s*=\s*(-?\d+)\s*;\s*\1\s*(<=?)\s*([A-Za-z_]\w*|\d+)\s*;\s*(?:\1\s*\+\+|\+\+\s*\1|\1\s*\+=\s*[1-9]\d*)\s*$/;
+
+/** Where a `for (` header closes. @param {string} src @param {number} head just past the `(` */
+function headerClose(src, head) {
+	let depth = 1;
+	let i = head;
+	for (; i < src.length && depth; i++) {
+		if (src[i] === '(') depth++;
+		else if (src[i] === ')') depth--;
+	}
+	return i;
+}
+
+/**
+ * How many times a header runs, or null when nothing shows it. A named limit must be a
+ * `#define` ABOVE the loop: below it, the name is still an ordinary identifier there.
+ * @param {string} header @param {Map<string, {value: number, at: number}>} defines @param {number} at
+ */
+function loopBound(header, defines, at) {
+	const shape = LOOP_HEADER.exec(header);
+	if (!shape) return null;
+	const [, , startText, cmp, limitText] = shape;
+	const def = defines.get(limitText);
+	const limit = /^\d+$/.test(limitText) ? Number(limitText) : def && def.at < at ? def.value : undefined;
+	if (limit === undefined) return null;
+	return Math.max(0, limit - Number(startText) + (cmp === '<=' ? 1 : 0));
+}
+
+/** @param {string} src @param {number} i */
+const skipSpace = (src, i) => {
 	while (i < src.length && /\s/.test(src[i])) i++;
+	return i;
+};
+
+/**
+ * The index just past the statement that starts at `from`: a block, a `for`/`if`/`switch` with
+ * the statement it governs (and an `else`), or a simple statement up to its `;`. A loop's body
+ * is one statement, and a brace-less one can still hold `if (...) a; else b;` or another loop.
+ * @param {string} src @param {number} from
+ * @returns {number}
+ */
+function bodyEnd(src, from) {
+	let i = skipSpace(src, from);
 	if (src[i] === '{') {
 		let depth = 0;
 		for (; i < src.length; i++) {
@@ -99,8 +151,36 @@ function bodyEnd(src, from) {
 		}
 		return src.length;
 	}
-	const semi = src.indexOf(';', i);
-	return semi < 0 ? src.length : semi + 1;
+	const keyword = /^(for|if|switch)\s*\(/.exec(src.slice(i, i + 24));
+	if (keyword) {
+		let end = bodyEnd(src, headerClose(src, i + keyword[0].length));
+		if (keyword[1] === 'if') {
+			const j = skipSpace(src, end);
+			if (/^else\b/.test(src.slice(j, j + 5))) end = bodyEnd(src, j + 4);
+		}
+		return end;
+	}
+	let depth = 0;
+	for (; i < src.length; i++) {
+		const c = src[i];
+		if (c === '(' || c === '[') depth++;
+		else if (c === ')' || c === ']') depth--;
+		else if (c === ';' && depth <= 0) return i + 1;
+		else if (c === '}') return i;
+	}
+	return src.length;
+}
+
+/** @param {string} src @param {number} index how deep in parentheses, within the current statement */
+function parenDepthAt(src, index) {
+	let depth = 0;
+	for (let i = 0; i < index; i++) {
+		const c = src[i];
+		if (c === '(') depth++;
+		else if (c === ')') depth = Math.max(0, depth - 1);
+		else if (c === ';' || c === '{' || c === '}') depth = 0;
+	}
+	return depth;
 }
 
 /** @param {string} src the comment-stripped text @param {string} stage @returns {string[]} */
@@ -108,62 +188,152 @@ function loopProblems(src, stage) {
 	/** @type {string[]} */
 	const problems = [];
 	const say = (/** @type {number} */ index, /** @type {string} */ text) => problems.push(stage + ' line ' + lineAt(src, index) + ': ' + text);
-	const constants = integerConstants(src);
+	const defines = integerDefines(src);
 	for (const m of src.matchAll(/\b(while|do)\b/g))
-		say(m.index, '`' + m[1] + '` loops are not allowed here, because nothing can show they end. Use `for (int i = 0; i < 64; i++)`.');
-	/** @type {{end: number, bound: number}[]} */
-	const open = [];
+		say(m.index ?? 0, '`' + m[1] + '` loops are not allowed here, because nothing can show they end. Use `for (int i = 0; i < 64; i++)`.');
 	for (const m of src.matchAll(/\bfor\s*\(/g)) {
-		const head = m.index + m[0].length;
-		let depth = 1;
-		let i = head;
-		for (; i < src.length && depth; i++) {
-			if (src[i] === '(') depth++;
-			else if (src[i] === ')') depth--;
-		}
-		const header = src.slice(head, i - 1);
-		const shape = /^\s*(?:int\s+)?([A-Za-z_]\w*)\s*=\s*(-?\d+)\s*;\s*\1\s*(<=?)\s*([A-Za-z_]\w*|\d+)\s*;\s*(?:\1\s*\+\+|\+\+\s*\1|\1\s*\+=\s*[1-9]\d*)\s*$/.exec(header);
+		const at = m.index ?? 0;
+		const head = at + m[0].length;
+		const close = headerClose(src, head);
+		const header = src.slice(head, close - 1);
+		const shape = LOOP_HEADER.exec(header);
 		if (!shape) {
-			say(m.index, 'a `for` loop must count up to a constant, like `for (int i = 0; i < 64; i++)`.');
+			say(at, 'a `for` loop must count up to a constant, like `for (int i = 0; i < 64; i++)`.');
 			continue;
 		}
-		const [, name, startText, cmp, limitText] = shape;
-		const limit = /^\d+$/.test(limitText) ? Number(limitText) : constants.get(limitText);
-		if (limit === undefined) {
-			say(m.index, '`' + limitText + '` is not a constant, so nothing can show this loop ends. Use a number, a `#define` or a `const int`.');
+		const [, name, , , limitText] = shape;
+		const bound = loopBound(header, defines, at);
+		if (bound === null) {
+			say(at, '`' + limitText + '` is not a constant, so nothing can show this loop ends. Use a number, or `#define ' + limitText + ' 64` above the loop.');
 			continue;
 		}
-		const bound = Math.max(0, limit - Number(startText) + (cmp === '<=' ? 1 : 0));
-		if (bound > MAX_LOOP_BOUND) say(m.index, 'this loop runs ' + bound + ' times; the limit is ' + MAX_LOOP_BOUND + '.');
-		const end = bodyEnd(src, i);
-		const body = src.slice(i, end);
-		const written = new RegExp('(?:\\b' + name + '\\s*(?:=(?!=)|\\+\\+|--|[-+*/%]=))|(?:(?:\\+\\+|--)\\s*' + name + '\\b)');
-		if (written.test(body)) say(m.index, 'this loop changes its own counter `' + name + '` inside its body.');
-		while (open.length && open[open.length - 1].end <= m.index) open.pop();
-		const product = open.reduce((p, l) => p * l.bound, bound);
-		if (product > MAX_LOOP_NEST_PRODUCT) say(m.index, 'these nested loops run ' + product + ' times; the limit is ' + MAX_LOOP_NEST_PRODUCT + '.');
-		open.push({ end, bound });
+		if (bound > MAX_LOOP_BOUND) say(at, 'this loop runs ' + bound + ' times; the limit is ' + MAX_LOOP_BOUND + '.');
+		const body = src.slice(close, bodyEnd(src, close));
+		const written = new RegExp('(?:\\b' + name + '\\s*(?:=(?!=)|\\+\\+|--|<<=|>>=|[-+*/%&|^]=))|(?:(?:\\+\\+|--)\\s*' + name + '\\b)');
+		if (written.test(body)) say(at, 'this loop changes its own counter `' + name + '` inside its body.');
+	}
+	// a function gets its arguments by value: `out` and `inout` are the only way a call could write a counter
+	for (const m of src.matchAll(/\b(inout|out)\b/g)) {
+		if (m[1] === 'inout' || parenDepthAt(src, m.index ?? 0) > 0)
+			say(m.index ?? 0, '`' + m[1] + '` parameters are not allowed here; return the value instead.');
 	}
 	return problems;
+}
+
+/**
+ * THE WHOLE STAGE'S LOOP WORK: what `main` runs, each loop counting its bound times its body,
+ * each call to one of the author's functions counting that function's work. GLSL has no
+ * recursion, so the walk ends; a cycle (the compiler refuses one anyway) counts as too much,
+ * and so does a loop nothing can bound.
+ * @param {string} src the comment-stripped text @returns {number}
+ */
+export function programLoopWork(src) {
+	const defines = integerDefines(src);
+	/** brace depth at each index */
+	const depth = new Int32Array(src.length + 1);
+	for (let i = 0, d = 0; i < src.length; i++) {
+		depth[i] = d;
+		if (src[i] === '{') d++;
+		else if (src[i] === '}') d = Math.max(0, d - 1);
+	}
+	/** @type {Map<string, {from: number, to: number}[]>} name -> its bodies (overloads count their worst) */
+	const functions = new Map();
+	for (const m of src.matchAll(/\b([A-Za-z_]\w*)\s*\(/g)) {
+		if (depth[m.index ?? 0] !== 0) continue;
+		const open = skipSpace(src, headerClose(src, (m.index ?? 0) + m[0].length));
+		if (src[open] !== '{') continue; // a prototype, or not a function at all
+		const list = functions.get(m[1]) ?? [];
+		list.push({ from: open + 1, to: bodyEnd(src, open) - 1 });
+		functions.set(m[1], list);
+	}
+	/** @type {Map<string, number>} */
+	const memo = new Map();
+	/** @param {string} name @param {Set<string>} stack @returns {number} */
+	const callWork = (name, stack) => {
+		if (stack.has(name)) return Infinity;
+		const known = memo.get(name);
+		if (known !== undefined) return known;
+		const next = new Set(stack).add(name);
+		let most = 0;
+		for (const body of functions.get(name) ?? []) most = Math.max(most, regionWork(body.from, body.to, next));
+		memo.set(name, most);
+		return most;
+	};
+	/** @param {number} from @param {number} to @param {Set<string>} stack @returns {number} */
+	const regionWork = (from, to, stack) => {
+		let total = 0;
+		let cursor = from;
+		/** @type {string[]} */
+		const outside = [];
+		const loops = /\bfor\s*\(/g;
+		loops.lastIndex = from;
+		for (let m = loops.exec(src); m && m.index < to; m = loops.exec(src)) {
+			const head = m.index + m[0].length;
+			const close = headerClose(src, head);
+			const bound = loopBound(src.slice(head, close - 1), defines, m.index) ?? Infinity;
+			const end = Math.min(bodyEnd(src, close), to);
+			outside.push(src.slice(cursor, m.index));
+			const steps = bound * Math.max(1, regionWork(close, end, stack));
+			total += Number.isNaN(steps) ? Infinity : steps;
+			cursor = end;
+			loops.lastIndex = end;
+		}
+		outside.push(src.slice(cursor, to));
+		for (const m of outside.join(' ').matchAll(/\b([A-Za-z_]\w*)\s*\(/g))
+			if (functions.has(m[1])) total += callWork(m[1], stack);
+		return total;
+	};
+	return functions.has('main') ? callWork('main', new Set()) : 0;
 }
 
 /** @param {string} src the comment-stripped text @param {string} stage @returns {string[]} */
 function preprocessorProblems(src, stage) {
 	/** @type {string[]} */
 	const problems = [];
-	for (const m of src.matchAll(/^[ \t]*#[ \t]*(\w+)([^\n]*)$/gm)) {
-		const line = stage + ' line ' + lineAt(src, m.index) + ': ';
+	/** @type {Set<string>} */
+	const defined = new Set();
+	for (const m of src.matchAll(/^[ \t]*#[ \t]*(\w*)([^\n]*)$/gm)) {
+		const line = stage + ' line ' + lineAt(src, m.index ?? 0) + ': ';
 		const [, directive, rest] = m;
+		if (!directive && !rest.trim()) continue; // the null directive
 		if (directive === 'include') {
-			const chunk = /<\s*([\w]+)\s*>/.exec(rest)?.[1] ?? '';
+			const chunk = /^[ \t]*<(\w+)>[ \t]*$/.exec(rest)?.[1] ?? '';
 			if (!ALLOWED_INCLUDES.has(chunk)) problems.push(line + '`#include` only takes ' + [...ALLOWED_INCLUDES].map((c) => '<' + c + '>').join(' and ') + '.');
 		} else if (directive === 'version' || directive === 'extension' || directive === 'pragma') {
 			problems.push(line + '`#' + directive + '` is set by the app.');
 		} else if (directive === 'define') {
-			// a macro is how a refused loop would come back
-			if (/##/.test(rest) || /\b(for|while|do)\b/.test(rest)) problems.push(line + 'a `#define` cannot build a loop.');
+			// a macro is how a refused loop, or an alias of a loop's counter, would come back
+			const shape = /^[ \t]+([A-Za-z_]\w*)[ \t]+(\d+)[ \t]*$/.exec(rest);
+			if (!shape) problems.push(line + 'a `#define` here names a whole number and nothing else, like `#define STEPS 32`, so it cannot build a loop.');
+			else if (defined.has(shape[1])) problems.push(line + '`' + shape[1] + '` is defined twice.');
+			else defined.add(shape[1]);
+		} else {
+			problems.push(line + '`#' + directive + '` is not available in your own GLSL: only `#define NAME number` and the two `#include` lines are.');
 		}
 	}
+	// a `#` anywhere else is not a directive this gate has read
+	for (const m of src.matchAll(/#/g)) {
+		const start = src.lastIndexOf('\n', (m.index ?? 0) - 1) + 1;
+		if (src.slice(start, m.index).trim()) {
+			problems.push(stage + ' line ' + lineAt(src, m.index ?? 0) + ': `#` only starts a line here.');
+			break;
+		}
+	}
+	return problems;
+}
+
+/** Characters the gate and the compiler might read differently. @param {string} text @param {string} stage @returns {string[]} */
+function characterProblems(text, stage) {
+	/** @type {string[]} */
+	const problems = [];
+	const at = (/** @type {number} */ index) => stage + ' line ' + lineAt(text, index) + ': ';
+	const cr = text.indexOf('\r');
+	if (cr >= 0) problems.push(at(cr) + 'a carriage return is not allowed here; use plain line ends.');
+	const slash = text.indexOf('\\');
+	if (slash >= 0) problems.push(at(slash) + 'a backslash is not allowed here (GLSL needs none, and it joins lines).');
+	// eslint-disable-next-line no-control-regex
+	const control = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\u0085\u2028\u2029]/.exec(text);
+	if (control) problems.push(at(control.index) + 'a control or line-separator character is not allowed here.');
 	return problems;
 }
 
@@ -208,39 +378,72 @@ export function checkShaderCode(code) {
 			problems.push(stage + ' shader is ' + text.length + ' characters; the limit is ' + MAX_CODE_CHARS + '.');
 			continue;
 		}
+		const characters = characterProblems(text, stage);
+		if (characters.length) {
+			problems.push(...characters);
+			continue;
+		}
 		const clean = stripGlslComments(text);
+		const ascii = /[^\t\n\x20-\x7e]/.exec(clean);
+		if (ascii) problems.push(stage + ' line ' + lineAt(clean, ascii.index) + ': only plain ASCII is allowed outside comments.');
+		const before = problems.length;
 		problems.push(...preprocessorProblems(clean, stage), ...loopProblems(clean, stage));
 		if (!/\bvoid\s+main\s*\(/.test(clean)) problems.push(stage + ' shader has no `void main()`.');
+		else if (problems.length === before) {
+			const work = programLoopWork(clean);
+			if (!(work <= MAX_PROGRAM_LOOP_WORK))
+				problems.push(stage + ': the loops in this shader run ' + (Number.isFinite(work) ? work : 'too many') + ' steps in all, counting the functions they call; the limit is ' + MAX_PROGRAM_LOOP_WORK + '.');
+		}
 	}
 	const { samplers } = scanShaderUniforms(vertex, fragment);
 	if (samplers.length) problems.push('Textures are not available in your own GLSL yet (`' + samplers.join('`, `') + '`). Use a Texture node in the graph.');
 	return problems;
 }
 
+/** What a GLSL expression may be made of: names, numbers and operators, on one line. */
+const EXPRESSION_CHARS = /^[A-Za-z0-9_ \t.,+\-*/%()[\]<>=!&|^?:~]*$/;
+export const MAX_EXPRESSION_CHARS = 2000;
+
 /**
- * The graph's GLSL expression node pastes its text into a statement, so a `;` or a brace
- * lets it close that statement and open a loop of its own. An expression needs neither.
+ * The graph's GLSL expression node pastes its text into a statement, so anything that could
+ * close that statement, open a block, start a directive or a comment, or join lines is
+ * refused by an ALLOWLIST of characters rather than a list of the dangerous ones.
  * @param {string} expression @returns {string|null}
  */
 export function glslExpressionProblem(expression) {
-	const clean = stripGlslComments(expression);
-	if (/[;{}#]/.test(clean)) return 'A GLSL expression cannot contain `;`, braces or `#`. Use your own GLSL for whole programs.';
-	if (/\b(while|for|do)\b/.test(clean)) return 'A GLSL expression cannot contain a loop.';
+	const text = String(expression ?? '');
+	if (text.length > MAX_EXPRESSION_CHARS) return 'A GLSL expression is limited to ' + MAX_EXPRESSION_CHARS + ' characters. Use your own GLSL for whole programs.';
+	if (!EXPRESSION_CHARS.test(text))
+		return 'A GLSL expression cannot contain `;`, braces, `#`, a backslash or line breaks: only names, numbers, spaces and operators. Use your own GLSL for whole programs.';
+	if (/\/\/|\/\*/.test(text)) return 'A GLSL expression cannot contain comments.';
+	if (/\b(while|for|do)\b/.test(text)) return 'A GLSL expression cannot contain a loop.';
+	let depth = 0;
+	for (const c of text) {
+		if (c === '(') depth++;
+		else if (c === ')' && --depth < 0) break;
+	}
+	if (depth !== 0) return 'A GLSL expression needs its brackets to match.';
 	return null;
 }
 
-/** Content identity, for verdicts and the device's block list. @param {any} code @returns {string} */
+/** recent texts -> their hash, so a panel recomputing per keystroke does not re-digest 128 KB */
+const hashCache = new Map();
+
+/**
+ * Content identity, for verdicts, "yours" and the device's block list: SHA-256 (the first 160
+ * bits), so nobody can make other code share the hash of code a device has passed or trusted.
+ * @param {any} code @returns {string}
+ */
 export function shaderCodeHash(code) {
 	const { vertex, fragment } = normalizeShaderCode(code);
-	let a = 5381;
-	let b = 52711;
 	const text = vertex + '\u0000' + fragment;
-	for (let i = 0; i < text.length; i++) {
-		const c = text.charCodeAt(i);
-		a = (Math.imul(a, 33) ^ c) >>> 0;
-		b = (Math.imul(b, 31) + c) >>> 0;
+	let hash = hashCache.get(text);
+	if (!hash) {
+		hash = sha256HexSync('tpglsl1:' + text).slice(0, 40);
+		hashCache.set(text, hash);
+		if (hashCache.size > 32) hashCache.delete(hashCache.keys().next().value);
 	}
-	return a.toString(36) + b.toString(36);
+	return hash;
 }
 
 /** What three puts ahead of an author's text on WebGL2. The probe has to compile the same language. */

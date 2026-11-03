@@ -1,11 +1,17 @@
 // 73 AI3 — THE SANDBOXED FIRST COMPILE. A peer's GLSL meets a throwaway WebGL2 context on a
-// 16x16 canvas in a worker before it ever reaches the scene's context: compile + link + one
+// 64x64 canvas in a worker before it ever reaches the scene's context: compile + link + one
 // draw + a read that waits for it. A driver that takes its time here blocks this thread, not
-// the app, and the main thread can terminate it.
+// the app, and the main thread can terminate it. It draws with the document's OWN uniform
+// values and a running clock, so code cannot simply sit still while every input reads zero;
+// it is still a backstop behind the static gate (which is the rule), not a proof.
 import { PROBE_VERTEX_PREFIX, PROBE_FRAGMENT_PREFIX, stripAllowedIncludes, mapShaderLog } from './shaderCode.js';
 
 const IDENTITY4 = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
 const IDENTITY3 = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+/** the test frame's side, in pixels */
+export const PROBE_SIZE = 64;
+/** a clock that has been running a while: code that waits for time to pass meets it here */
+const PROBE_TIME = 37.25;
 
 /** @param {any} gl @param {number} type @param {string} prefix @param {string} text @param {string} stage */
 function compile(gl, type, prefix, text, stage) {
@@ -19,7 +25,7 @@ function compile(gl, type, prefix, text, stage) {
 /** @param {any} data */
 function probe(data) {
 	if (typeof OffscreenCanvas === 'undefined') return { status: 'unavailable' };
-	const canvas = new OffscreenCanvas(16, 16);
+	const canvas = new OffscreenCanvas(PROBE_SIZE, PROBE_SIZE);
 	/** @type {any} */
 	const gl = canvas.getContext('webgl2');
 	if (!gl) return { status: 'unavailable' };
@@ -51,6 +57,19 @@ function probe(data) {
 	}
 	const normalAt = gl.getUniformLocation(program, 'normalMatrix');
 	if (normalAt) gl.uniformMatrix3fv(normalAt, false, IDENTITY3);
+	const cameraAt = gl.getUniformLocation(program, 'cameraPosition');
+	if (cameraAt) gl.uniform3f(cameraAt, 0, 0, 5);
+	const timeAt = gl.getUniformLocation(program, 'uShaderTime');
+	if (timeAt) gl.uniform1f(timeAt, PROBE_TIME);
+	for (const u of Array.isArray(data.uniforms) ? data.uniforms : []) {
+		const at = gl.getUniformLocation(program, String(u?.name ?? ''));
+		if (!at) continue;
+		const v = (Array.isArray(u.value) ? u.value : [u.value]).map((/** @type {any} */ n) => (Number.isFinite(Number(n)) ? Number(n) : 0));
+		if (u.type === 'float') gl.uniform1f(at, v[0] ?? 0);
+		else if (u.type === 'vec2') gl.uniform2f(at, v[0] ?? 0, v[1] ?? 0);
+		else if (u.type === 'vec3') gl.uniform3f(at, v[0] ?? 0, v[1] ?? 0, v[2] ?? 0);
+		else if (u.type === 'vec4') gl.uniform4f(at, v[0] ?? 0, v[1] ?? 0, v[2] ?? 0, v[3] ?? 0);
+	}
 	self.postMessage({ id: data.id, phase: 'draw' });
 	const started = performance.now();
 	gl.drawArrays(gl.TRIANGLES, 0, 3);

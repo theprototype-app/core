@@ -57,7 +57,7 @@ function substitute(node, prompt, seed, image = '') {
  */
 async function uploadImage(config, image) {
 	const form = new FormData();
-	form.append('image', new Blob([/** @type {any} */ (fromBase64(image.data))], { type: image.mimeType }), image.name || 'picture');
+	form.append('image', new Blob([/** @type {any} */ (fromBase64(image.data))], { type: image.mimeType }), 'picture.' + (/png/.test(image.mimeType) ? 'png' : /webp/.test(image.mimeType) ? 'webp' : 'jpg')); // never the person's own file name
 	const res = await fetch(config.baseUrl.replace(/\/+$/, '') + '/upload/image', { method: 'POST', headers: headers(config, false), body: form });
 	if (!res.ok) throw new Error(describeError(res.status, await res.text().catch(() => '')));
 	/** @type {any} */

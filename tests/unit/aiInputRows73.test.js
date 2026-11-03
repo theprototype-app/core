@@ -93,9 +93,18 @@ describe('73 AI7 + AI4 mesh jobs', async () => {
 		expect(ask?.message).toMatch(/third-party/);
 		expect(ask?.message).toMatch(/about 20 credits/);
 		expect(ask?.message).toMatch(/Cancel sends nothing/);
-		expect(ask?.link.href).toBe(MESHY_PRIVACY_URL);
+		expect(ask?.link?.href).toBe(MESHY_PRIVACY_URL);
 		expect(pictureConsentFor({ kind: 'meshy', label: 'Meshy', mode: 'refine' })?.message).toMatch(/about 30 credits/);
-		expect(pictureConsentFor({ kind: 'comfyui', label: 'ComfyUI' })).toBe(null);
+		expect(pictureConsentFor({ kind: 'comfyui', label: 'ComfyUI', baseUrl: 'http://127.0.0.1:8188' })).toBe(null);
+		expect(pictureConsentFor({ kind: 'comfyui', label: 'Box', baseUrl: 'http://192.168.1.20:8188' })).toBe(null);
+	});
+	it('a ComfyUI elsewhere, or a hosted preset, asks before the picture leaves', () => {
+		const remote = pictureConsentFor({ kind: 'comfyui', label: 'Rented GPU', baseUrl: 'https://gpu.example.com' });
+		expect(remote?.message).toMatch(/gpu\.example\.com/);
+		expect(remote?.message).toMatch(/Cancel sends nothing/);
+		const hosted = pictureConsentFor({ kind: 'comfyui', label: 'Hosted', managedBy: 'cloud', baseUrl: 'http://localhost:1' });
+		expect(hosted?.message).toMatch(/hosted service/);
+		expect(pictureConsentFor({ kind: 'comfyui', label: 'X', baseUrl: 'not a url' })).not.toBe(null);
 	});
 	it('an error names the provider', () => {
 		const cfg = { label: 'My Meshy', kind: 'meshy' };

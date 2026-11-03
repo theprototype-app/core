@@ -124,7 +124,8 @@ export function glslLiteral(value, type) {
 		const v = asArray(value, 4);
 		return 'vec4(' + v.map(floatLit).join(', ') + ')';
 	}
-	return String(value);
+	// anything else is not a literal this compiler knows how to write safely
+	return floatLit(value);
 }
 
 /** @param {any} n @returns {string} */
@@ -267,7 +268,13 @@ function createCompiler(graph, outputType) {
 			/** @type {Record<string, string>} */
 			const params = {};
 			for (const p of def.params ?? []) {
-				const authored = node.data?.[p.name] ?? p.default;
+				let authored = node.data?.[p.name] ?? p.default;
+				// a document can come from anybody: a choice must be one of the node's own options,
+				// and text is only ever the GLSL expression, which has its own gate below
+				if (p.type === 'enum' && !(Array.isArray(p.options) && p.options.includes(authored))) {
+					errors.push('Node "' + (node.data?.label ?? def.label ?? node.type) + '": "' + p.name + '" must be one of ' + (p.options ?? []).join(', ') + '.');
+					authored = p.default;
+				}
 				if (p.uniform) {
 					const name = 'u_' + safe(nodeId) + '_' + p.name;
 					const runtime = uniformValue(authored, p.type);
@@ -346,10 +353,15 @@ function createCompiler(graph, outputType) {
 				);
 			}
 
-			// 73 AI3: the expression node pastes text into a statement, the one way out of it
-			if (def.key === 'glsl') {
-				const problem = glslExpressionProblem(String(params.expression ?? ''));
-				if (problem) errors.push(problem);
+			// 73 AI3: the expression node pastes text into a statement, the one way out of it; any
+			// other text param a later def adds is held to the same gate
+			for (const p of def.params ?? []) {
+				if (p.type !== 'text') continue;
+				const problem = glslExpressionProblem(String(params[p.name] ?? ''));
+				if (problem) {
+					errors.push(problem);
+					params[p.name] = String(p.default ?? '0.0');
+				}
 			}
 			const expr = def.emit ? def.emit({ in: inExpr, params, node, stage }) : '0.0';
 			inProgress.delete(nodeId);

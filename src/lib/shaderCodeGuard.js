@@ -20,7 +20,7 @@ const JOURNAL_KEY = 'shaderCodeJournal';
 const PROBE_BOOT_MS = 20000;
 /** Compile + link + draw, from the moment the worker holds the text. Past this it is terminated. */
 const PROBE_TIMEOUT_MS = 8000;
-/** One draw of 256 pixels. Past this a full-screen frame would be thousands of times worse. */
+/** One 64x64 draw. Past this a full-screen frame would be hundreds of times worse. */
 const PROBE_DRAW_MS = 1000;
 /** From the first draw to the GPU reporting it finished, the program link included. */
 let firstFrameMs = 6000;
@@ -171,7 +171,9 @@ function runProbe(code, hash) {
 		};
 		// the worker failing to START proves nothing about the shader
 		worker.onerror = () => finish({ status: 'unavailable' });
-		worker.postMessage({ id, vertex: code.vertex, fragment: code.fragment });
+		// the document's own field values: the test draws what the scene would
+		const uniforms = scanShaderUniforms(code.vertex, code.fragment).uniforms.map(({ name, type }) => ({ name, type, value: codeUniformValue(code.uniforms?.[name], type) }));
+		worker.postMessage({ id, vertex: code.vertex, fragment: code.fragment, uniforms });
 	});
 }
 
@@ -185,16 +187,25 @@ export function probeShaderCode(code) {
 	let verdict = verdicts.get(hash);
 	if (!verdict) {
 		verdict = runProbe(normalizeShaderCode(code), hash).then((v) => {
-			if (v.status === 'ok' && v.drawMs > PROBE_DRAW_MS)
-				return { ok: false, status: 'slow', drawMs: v.drawMs, errors: ['This shader took ' + Math.round(v.drawMs) + ' ms to draw 256 pixels, so it stays off on this device.'] };
-			if (v.status === 'ok' || v.status === 'unavailable') return { ok: true, status: v.status, drawMs: v.drawMs, errors: [] };
-			if (v.status === 'error') return { ok: false, status: 'error', errors: v.errors?.length ? v.errors : ['The shader did not compile.'] };
-			if (v.status === 'lost') return { ok: false, status: 'lost', errors: ['This shader lost the test graphics context, so it stays off on this device.'] };
-			return { ok: false, status: 'timeout', phase: v.phase, errors: ['This shader did not finish its test draw in ' + PROBE_TIMEOUT_MS / 1000 + ' s (' + v.phase + '), so it stays off on this device.'] };
+			const answer = probeAnswer(v);
+			// slow, lost and timed out say something about this device and this code: they are
+			// written down like a crash, so the next session does not run the same test again
+			if (answer.status === 'slow' || answer.status === 'lost' || answer.status === 'timeout') blockShaderCode(hash, answer.errors[0]);
+			return answer;
 		});
 		verdicts.set(hash, verdict);
 	}
 	return verdict;
+}
+
+/** @param {any} v the worker's report @returns {{ok: boolean, errors: string[], status: string, drawMs?: number, phase?: string}} */
+function probeAnswer(v) {
+	if (v.status === 'ok' && v.drawMs > PROBE_DRAW_MS)
+		return { ok: false, status: 'slow', drawMs: v.drawMs, errors: ['This shader took ' + Math.round(v.drawMs) + ' ms to draw a 64x64 test frame, so it stays off on this device.'] };
+	if (v.status === 'ok' || v.status === 'unavailable') return { ok: true, status: v.status, drawMs: v.drawMs, errors: [] };
+	if (v.status === 'error') return { ok: false, status: 'error', errors: v.errors?.length ? v.errors : ['The shader did not compile.'] };
+	if (v.status === 'lost') return { ok: false, status: 'lost', errors: ['This shader lost the test graphics context, so it stays off on this device.'] };
+	return { ok: false, status: 'timeout', phase: v.phase, errors: ['This shader did not finish its test draw in ' + PROBE_TIMEOUT_MS / 1000 + ' s (' + v.phase + '), so it stays off on this device.'] };
 }
 
 /**

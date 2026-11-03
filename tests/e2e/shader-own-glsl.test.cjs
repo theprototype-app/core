@@ -129,6 +129,8 @@ h.run(async () => {
 	await until(A.page, async () => /did not finish its test draw/.test((await errorsOf(A.page, uuid)).join()), 'a silent probe times out');
 	h.check((await worn(A.page, uuid)).hash === null, 'and the object is back on its own material');
 	h.check(await A.page.evaluate((k) => window.__stores.shaderGraph.shaderGraphOf(k).code.use === true, uuid), 'the document is untouched: a verdict is this device\'s');
+	const timedOut = await A.page.evaluate(() => localStorage.getItem('shaderCodeBlocked'));
+	h.check(/did not finish its test draw/.test(timedOut ?? ''), 'a timed-out test is written down, so the next session does not run it again: ' + timedOut);
 	await A.page.evaluate(() => {
 		const g = window.__stores.shaderCodeGuard.shaderCodeGuardForTest;
 		g.resetMakeProbeWorker();

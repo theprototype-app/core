@@ -231,7 +231,7 @@
 
 			{#if isHosted}
 				<p class="text-[11px] text-ink-warn">
-					Uses your {active?.label} account credits.{consent ? ' Before anything is sent you confirm the cost and that the picture goes to Meshy.' : ''}
+					Uses your {active?.label} account credits.{consent ? (active?.kind === 'meshy' ? ' Before anything is sent you confirm the cost and that the picture goes to Meshy.' : ' Before anything is sent you confirm that the picture leaves this device.') : ''}
 				</p>
 			{/if}
 

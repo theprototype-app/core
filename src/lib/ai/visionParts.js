@@ -31,8 +31,9 @@ const carriesPictures = (m) => m?.role === 'user' && Array.isArray(m.content) &&
 /** @param {any} m */
 function withoutPictures(m) {
 	const text = m.content.filter((/** @type {any} */ p) => p.type === 'text').map((/** @type {any} */ p) => p.text).join('\n');
-	const names = m.content.filter((/** @type {any} */ p) => p.type === 'image_url').map((/** @type {any} */ p) => p.tpName || 'a picture');
-	return { ...m, content: text + '\n\n[Attached earlier, no longer shown: ' + names.join(', ') + ']' };
+	// the count, never the file names: a name can say more about the person than the picture did
+	const count = m.content.filter((/** @type {any} */ p) => p.type === 'image_url').length;
+	return { ...m, content: text + '\n\n[Attached earlier, no longer shown: ' + (count === 1 ? 'a picture' : count + ' pictures') + ']' };
 }
 
 /** the transcript with pictures only on its newest `keep` picture turns (a new array; `keep` 0 = none left)

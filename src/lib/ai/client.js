@@ -10,10 +10,11 @@
 
 import { parseTextToolCalls, visiblePrefixLength } from './toolCallText.js';
 import { normalizeEndpointUrl, CHAT_TAILS, serverKind, corsHint } from './url.js'; // fix-batch-2: a leaf
+import { wireMessages } from './visionParts.js'; // 73 AI2: a leaf
 
 /**
  * @typedef {import('./providers.js').AiProviderConfig} AiProviderConfig
- * @typedef {{role: string, content?: string|null, tool_calls?: any[], tool_call_id?: string, name?: string}} ChatMessage
+ * @typedef {{role: string, content?: string|any[]|null, tool_calls?: any[], tool_call_id?: string, name?: string}} ChatMessage
  * @typedef {{id: string, name: string, arguments: string, extra?: any}} ToolCall
  */
 // ToolCall.extra = provider extras that MUST be echoed back when the assistant turn is
@@ -85,7 +86,7 @@ function authHeaders(config) {
  */
 export async function chatOnce({ config, messages, tools, onDelta, onReasoning, signal, stream = true }) {
 	/** @type {any} */
-	const body = { model: config.model, messages, stream };
+	const body = { model: config.model, messages: wireMessages(messages), stream };
 	if (typeof config.temperature === 'number') body.temperature = config.temperature;
 	if (tools && tools.length) {
 		body.tools = tools;

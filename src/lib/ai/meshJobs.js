@@ -68,13 +68,16 @@ function newId() {
 }
 
 /**
- * Generate a mesh from a prompt and place it in the scene.
- * @param {{prompt: string, providerId?: string, seed?: number, name?: string, position?: number[]}} params
+ * Generate a mesh from a prompt and/or a picture and place it in the scene. Roadmap 73 AI1: `image` is
+ * an attachments.prepareImage result (downscaled, metadata stripped). The picture and its FILE NAME stay
+ * off the scene: the provenance says only that one was used, and the default object name is generic.
+ * @param {{prompt?: string, providerId?: string, seed?: number, name?: string, position?: number[], image?: {mimeType: string, data: string, name?: string}}} params
  * @returns {Promise<{uuid: string}>}
  */
 export async function generateMesh(params) {
 	const prompt = (params.prompt || '').trim();
-	if (!prompt) throw new Error('Empty prompt');
+	const image = params.image ?? null;
+	if (!prompt && !image) throw new Error('Empty prompt');
 
 	const cfg = params.providerId
 		? get(meshProviders).find((p) => p.id === params.providerId)
@@ -90,12 +93,12 @@ export async function generateMesh(params) {
 
 	const id = newId();
 	const seed = typeof params.seed === 'number' ? params.seed : Math.floor(Math.random() * 1e9);
-	add({ id, prompt, provider: cfg.label, status: 'submitting', progress: null });
+	add({ id, prompt: prompt || 'From a picture', provider: cfg.label, status: 'submitting', progress: null });
 
 	const adapter = adapterFor(cfg.kind);
 	const start = Date.now();
 	try {
-		let ref = await adapter.submit(cfg, { prompt, seed });
+		let ref = await adapter.submit(cfg, { prompt, seed, ...(image ? { image } : {}) });
 		update(id, { status: 'running', progress: null });
 
 		/** @type {any} */
@@ -129,15 +132,16 @@ export async function generateMesh(params) {
 			throw new Error('Generated mesh is too large (' + Math.round(buffer.byteLength / 1e6) + ' MB, cap 40 MB)');
 		}
 
-		const provenance = { prompt, provider: cfg.kind, label: cfg.label, seed, at: Date.now() };
+		const provenance = { prompt, provider: cfg.kind, label: cfg.label, seed, at: Date.now(), ...(image ? { source: 'image' } : {}) };
+		const objectName = params.name || (prompt ? shortName(prompt) : 'Model from a picture');
 		const uuid = await importGeneratedGlb(buffer, {
-			name: params.name || shortName(prompt),
+			name: objectName,
 			position: params.position,
 			provenance
 		});
 
 		// best-effort cache into the Explorer "Generated" library for re-placement
-		cacheGenerated(buffer, params.name || shortName(prompt)).catch(() => {});
+		cacheGenerated(buffer, objectName).catch(() => {});
 
 		update(id, { status: 'done', progress: 1, uuid });
 		return { uuid };

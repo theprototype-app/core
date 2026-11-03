@@ -58,7 +58,7 @@ function outputType() {
  * `{error}`. Orientation is applied from the EXIF (createImageBitmap 'from-image') BEFORE the
  * metadata is dropped, so a portrait phone photo stays upright.
  * @param {Blob} blob @param {string} [name]
- * @param {{maxBytes?: number, maxEdge?: number}} [opts]
+ * @param {{maxBytes?: number, maxEdge?: number, type?: string}} [opts] `type` pins the output format
  * @returns {Promise<{mimeType: string, data: string, name: string, w: number, h: number, bytes: number} | {error: string}>}
  */
 export async function prepareImage(blob, name = '', opts = {}) {
@@ -86,7 +86,7 @@ export async function prepareImage(blob, name = '', opts = {}) {
 	const canvas = document.createElement('canvas');
 	const ctx = canvas.getContext('2d');
 	if (!ctx) return { error: 'This browser cannot draw pictures' };
-	const outType = outputType();
+	const outType = opts.type ?? outputType();
 	const maxBytes = opts.maxBytes ?? MAX_ATTACH_BYTES;
 	/** @type {Uint8Array | null} */
 	let bytes = null;
@@ -146,12 +146,22 @@ async function dataUrlBlob(dataUrl) {
 	return (await fetch(dataUrl)).blob();
 }
 
+/** Roadmap 73 AI2: the same picture as JPEG, the one format every vision provider reads (Grok refuses
+ * WebP). Through prepareImage again, so the metadata rule holds for this output too.
+ * @param {{mimeType: string, data: string, name?: string}} image */
+export async function asJpeg(image) {
+	if (image.mimeType === 'image/jpeg') return image;
+	const r = await prepareImage(await dataUrlBlob('data:' + image.mimeType + ';base64,' + image.data), image.name ?? '', { type: 'image/jpeg' });
+	return 'error' in r ? image : r;
+}
+
 /** C8 "Viewport screenshot": what you are looking at, at the chat's size */
-export async function viewportPicture() {
+/** @param {{maxBytes?: number, maxEdge?: number, type?: string}} [opts] */
+export async function viewportPicture(opts) {
 	const { viewportThumbnail } = await import('../sessions');
 	const url = viewportThumbnail(2048);
 	if (!url) return { error: 'No viewport to capture (in VR, take the headset off first)' };
-	return prepareImage(await dataUrlBlob(url), 'viewport');
+	return prepareImage(await dataUrlBlob(url), 'viewport', opts);
 }
 
 /**
@@ -177,12 +187,13 @@ export async function selectionPicture() {
 	return { image, text: 'About the selected object' + (objects.length > 1 ? 's' : '') + ' ' + names + ': ' };
 }
 
-/** an Explorer image item (a drag from the Explorer, or the + menu's From Explorer) @param {string} itemId */
-export async function explorerPicture(itemId) {
+/** an Explorer image item (a drag from the Explorer, or the + menu's From Explorer)
+ * @param {string} itemId @param {{maxBytes?: number, maxEdge?: number, type?: string}} [opts] */
+export async function explorerPicture(itemId, opts) {
 	const explorer = await import('../explorer');
 	const item = explorer.itemById(itemId);
 	if (!item || item.kind !== 'image') return { error: 'That Explorer file is not a picture' };
 	const blob = await explorer.itemBlob(item.id);
 	if (!blob) return { error: item.name + ' has no bytes on this device yet' };
-	return prepareImage(blob, item.name);
+	return prepareImage(blob, item.name, opts);
 }

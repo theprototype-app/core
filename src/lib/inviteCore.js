@@ -258,6 +258,16 @@ export function inviteLink(base, hostId, token, kind, srvTail = '') {
 	return String(base) + '#' + String(hostId).toUpperCase() + (kind === 'agent' ? '&agent' : '') + '&invite=' + token + (srvTail || '');
 }
 
+/**
+ * 94 SP4: the SAME person invite as a PLAY link — `<play base>#<HOST>&invite=<token>[~srv]` opens
+ * core's play-only entry (`/play`, no editor) and joins the session; the host sends the scene.
+ * Never an agent link (an agent joins the editor). `playBase` = playUrl('/play').
+ * @param {string} playBase @param {string} hostId @param {string} token @param {string} [srvTail]
+ */
+export function playInviteLink(playBase, hostId, token, srvTail = '') {
+	return inviteLink(playBase, hostId, token, 'person', srvTail);
+}
+
 /** the ready MCP command for an agent link (55 F1: `@theprototype/agent`) @param {string} link */
 export const mcpCommand = (link) => "claude mcp add theprototype -- npx -y @theprototype/agent mcp '" + link + "'";
 

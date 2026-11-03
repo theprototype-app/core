@@ -32,12 +32,12 @@ import { onPlayOrigin, playUrl } from './playOrigin.js';
 import { safeStorage } from './safeStorage';
 // v3.1 (roadmap 29 G-3): the hosted-AI preset seam. Both provider modules are LEAVES
 // (svelte/store + safeStorage), so a static edge from here closes nothing.
-import { aiProviders, aiActiveProvider, aiEnabled, addAiProvider, updateAiProvider, removeAiProvider, setAiActiveProvider, setAiEnabled } from './ai/providers';
-import { meshProviders, meshActiveProvider, meshGenEnabled, addMeshProvider, updateMeshProvider, removeMeshProvider, setMeshActiveProvider, setMeshGenEnabled } from './ai/meshProviders';
 import { meshJobStatus, onExportBuilt, onTemplateOpen, onFunnelEvent, setSceneHeart, problemReporter, setWhatsNewCloud, setConnectBadge, setPeerMenuItems, setConnectorProvider, connectorSignInSlot } from './cloudHooks';
 // 36-community (C4): a leaf (svelte/store only) — safe as a static edge
 import { gameIdentity, ensureGameId, forkGameId } from './gameIdentity.js';
 import { exportMode } from './export/exportBoot.js';
+// 94 SP1: the play entry (`/play`) loads the play-side plugin build and says so (a leaf)
+import { playEntry } from './play/playEntry.js';
 import { publishSlot, publishedLink, openPublishExport } from './export/exportStores.js';
 // CL-5 (37-continuity): a zero-import leaf — the scene-change feed over autosave's dirtyPulse
 import { sceneChangeFeed } from './sceneChangeFeed.js';
@@ -57,7 +57,20 @@ let playModeLib = null;
  *  arrives through the same primed dynamic import as the two above. App already loaded it at boot.
  *  @type {any} */
 let autosaveLib = null;
+/** 94 SP1 (94-routes Q2 F2): the aiPresets seam's provider stores, PRIMED rather than static — a static
+ * edge put the AI provider tables (and their imports) in every shared play link's boot. The editor has
+ * them in its own boot anyway, so the prime resolves at once there and the seam stays synchronous;
+ * the play entry never loads them and offers no aiPresets (plugins typeof-probe it). */
+/** @type {any} */ let aiLib = null;
+/** @type {any} */ let meshLib = null;
+const aiReady = playEntry
+	? Promise.resolve()
+	: Promise.all([import('./ai/providers'), import('./ai/meshProviders')]).then(([a, m]) => {
+			aiLib = a;
+			meshLib = m;
+		});
 async function primeSeams() {
+	await aiReady;
 	[cameraBookmarksLib, playModeLib, autosaveLib] = await Promise.all([import('./cameraBookmarks'), import('./playMode'), import('./autosave')]);
 }
 /** CL-5: `sceneRevision()` / `onSceneChange(fn)` — nothing subscribes until a plugin asks */
@@ -81,10 +94,7 @@ export async function startCloudPlugin() {
 	if (exportMode) return settleRoles();
 	let url = '';
 	try {
-		url =
-			import.meta.env.VITE_CLOUD_PLUGIN ||
-			(typeof localStorage !== 'undefined' && safeStorage.getItem('cloudPluginUrl')) ||
-			'';
+		url = pluginUrl();
 	} catch {
 		url = '';
 	}
@@ -119,6 +129,19 @@ export async function startCloudPlugin() {
 	} finally {
 		clearTimeout(tooLong);
 	}
+}
+
+/**
+ * Which plugin build this page loads. 94 SP1 (agreed with 94-routes, A1): the play entry asks for the
+ * PLAY-SIDE build first (`VITE_CLOUD_PLAY_PLUGIN`, dev override `cloudPlayPluginUrl`) and falls back to
+ * the editor's, so nothing breaks before a play build is deployed. Same register/compatibleHooks contract.
+ * @returns {string}
+ */
+export function pluginUrl() {
+	const ls = (/** @type {string} */ k) => (typeof localStorage !== 'undefined' && safeStorage.getItem(k)) || '';
+	const editor = import.meta.env.VITE_CLOUD_PLUGIN || ls('cloudPluginUrl') || '';
+	if (!playEntry) return editor;
+	return import.meta.env.VITE_CLOUD_PLAY_PLUGIN || ls('cloudPlayPluginUrl') || editor;
 }
 
 /** how long messages may wait for the plugin (`localStorage.cloudPluginWaitMs`: the dev override, as `cloudPluginUrl`) */
@@ -166,12 +189,15 @@ function withoutRoles(message) {
  * `null` for `ai` or `mesh` REMOVES that entry (the store's own remove re-points the
  * active slot at the first remaining provider, exactly as a user delete does).
  */
+function aiNotReady() {
+	if (!aiLib || !meshLib) throw new Error('aiPresets: the AI provider stores are not loaded yet (a register() runs after them)');
+}
 const aiPresets = {
 	/** does the user have a provider of their OWN (the tagged entry excluded)?
 	 *  @param {string} tag @returns {{ai: boolean, mesh: boolean}} */
-	userHas: (tag) => ({
-		ai: get(aiProviders).some((p) => p.managedBy !== tag),
-		mesh: get(meshProviders).some((p) => p.managedBy !== tag)
+	userHas: (tag) => (aiNotReady(), {
+		ai: get(aiLib.aiProviders).some((/** @type {any} */ p) => p.managedBy !== tag),
+		mesh: get(meshLib.meshProviders).some((/** @type {any} */ p) => p.managedBy !== tag)
 	}),
 	/**
 	 * Create / update / remove the managed entry in aiProviders + meshProviders.
@@ -180,35 +206,36 @@ const aiPresets = {
 	 * @returns {{ai: {id: string, active: boolean}, mesh: {id: string, active: boolean}, enabled: {ai: boolean, mesh: boolean}}}
 	 */
 	seed(tag, { ai, mesh, activate, enable } = {}) {
+		aiNotReady();
 		if (typeof tag !== 'string' || !tag) throw new Error('aiPresets.seed: a non-empty tag is required');
 		const mayActivate = { ai: activate?.ai !== false, mesh: activate?.mesh !== false };
 		const out = { ai: { id: '', active: false }, mesh: { id: '', active: false }, enabled: { ai: false, mesh: false } };
 
 		out.ai.id = seedOne(tag, ai, mayActivate.ai, {
-			list: aiProviders,
-			active: aiActiveProvider,
-			add: (/** @type {any} */ cfg) => addAiProvider({ ...cfg, preset: 'custom' }),
-			update: updateAiProvider,
-			remove: removeAiProvider,
-			setActive: setAiActiveProvider
+			list: aiLib.aiProviders,
+			active: aiLib.aiActiveProvider,
+			add: (/** @type {any} */ cfg) => aiLib.addAiProvider({ ...cfg, preset: 'custom' }),
+			update: aiLib.updateAiProvider,
+			remove: aiLib.removeAiProvider,
+			setActive: aiLib.setAiActiveProvider
 		});
-		out.ai.active = !!out.ai.id && get(aiActiveProvider) === out.ai.id;
-		if (enable && out.ai.active && !get(aiEnabled)) {
-			setAiEnabled(true);
+		out.ai.active = !!out.ai.id && get(aiLib.aiActiveProvider) === out.ai.id;
+		if (enable && out.ai.active && !get(aiLib.aiEnabled)) {
+			aiLib.setAiEnabled(true);
 			out.enabled.ai = true;
 		}
 
 		out.mesh.id = seedOne(tag, mesh, mayActivate.mesh, {
-			list: meshProviders,
-			active: meshActiveProvider,
-			add: (/** @type {any} */ cfg) => addMeshProvider({ kind: 'comfyui', ...cfg }),
-			update: updateMeshProvider,
-			remove: removeMeshProvider,
-			setActive: setMeshActiveProvider
+			list: meshLib.meshProviders,
+			active: meshLib.meshActiveProvider,
+			add: (/** @type {any} */ cfg) => meshLib.addMeshProvider({ kind: 'comfyui', ...cfg }),
+			update: meshLib.updateMeshProvider,
+			remove: meshLib.removeMeshProvider,
+			setActive: meshLib.setMeshActiveProvider
 		});
-		out.mesh.active = !!out.mesh.id && get(meshActiveProvider) === out.mesh.id;
-		if (enable && out.mesh.active && !get(meshGenEnabled)) {
-			setMeshGenEnabled(true);
+		out.mesh.active = !!out.mesh.id && get(meshLib.meshActiveProvider) === out.mesh.id;
+		if (enable && out.mesh.active && !get(meshLib.meshGenEnabled)) {
+			meshLib.setMeshGenEnabled(true);
 			out.enabled.mesh = true;
 		}
 		return out;
@@ -312,6 +339,9 @@ export function makeCloudApi() {
 		 *  and nothing that signs anyone in belongs here (a token on this origin is what the split
 		 *  exists to avoid). Absent on older engines — probe it; false on the app origin. */
 		playOrigin: onPlayOrigin,
+		/** 94 SP1 (A2): this page is the slim play entry (`/play`) — editor slots never render here;
+		 *  `mountProfile` mounts into the play start card's `#play-account-slot` */
+		playEntry,
 		/** 69 T4: an absolute play / embed URL — on the play origin when one is configured, else here.
 		 *  @param {string} path e.g. `/?s=<id>&play=1&embed=1` */
 		playUrl: (/** @type {string} */ path) => playUrl(String(path ?? '/')),
@@ -567,7 +597,7 @@ export function makeCloudApi() {
 		/** ONE plugin-managed provider preset in Settings ▸ AI — `userHas(tag)` +
 		 *  `seed(tag, {ai, mesh, activate, enable})`; see `aiPresets` above. Additive and
 		 *  typeof-probed: no CLOUD_HOOKS_VERSION bump, an older engine simply has none. */
-		aiPresets,
+		aiPresets: playEntry ? undefined : aiPresets,
 		/** an extra status line under each mesh-job card ("You are #3 in queue"). Pass
 		 *  `fn() → string | null` (null renders nothing) or null to remove it; call it
 		 *  again whenever the line may have changed — every set is a poke. */

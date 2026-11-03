@@ -51,6 +51,9 @@ h.run(async () => {
 	const text = await section.textContent();
 	h.check(text.includes('in Pit') && text.includes('Alice') && text.includes('Bob'), `the other room's scene and members render (${text.trim().slice(0, 60)}…)`);
 	h.check(!text.includes('ShouldNotShow'), 'MY room is excluded — these are the OTHER scenes');
+	// 94 SP6: public rooms are not your session — they sit under their own heading
+	const heading = (await section.locator('#cross-scene-heading').textContent().catch(() => null))?.trim() ?? null;
+	h.check(heading === 'Public rooms', `the other rooms sit under a "Public rooms" heading (${JSON.stringify(heading)})`);
 	h.check(!text.includes('in Void'), 'a room with nobody to show is skipped, not an empty header');
 	const chips = await section.locator('.mode-chip').allTextContents();
 	h.check(JSON.stringify(chips.map((c) => c.trim())) === '["playing","editor"]', `mode chips per member (${JSON.stringify(chips)})`);

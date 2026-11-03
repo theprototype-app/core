@@ -6,7 +6,8 @@ import { snapEnabled, snapSettings, snapTargets } from './snapping';
 import { dimsOf, dimsRevision, loadMeasuredDims, measureDims, dimsLabel, costLabel } from './placementDims';
 import { placementPreview, placementTriBudget, placementShowDims, currentGhostTier } from './placementPrefs';
 import { showGhost, poseGhost, hideGhost, setGhostModel, ghostInfo, setGhostFrame } from './placeGhost';
-import { registerDebugHook } from './debugHooks';
+import { registerDebugHook } from '$lib/debugHookRegistry.js';
+import { playEntry } from './play/playEntry.js';
 
 // 39 P1 — DRAG TO PLACE. An Explorer card dragged onto the viewport shows a ghost where the
 // item will land, and releasing there spawns it — the content-browser drag of Unity / Unreal /
@@ -79,7 +80,9 @@ let packRefsRef = null;
 let explorerRef = null;
 /** @type {any} */
 let prefabsRef = null;
-const primed = Promise.all([
+// 94 SP1: not on the play entry (`/play`) — nothing there places library items (no Explorer, no
+// palette), and the prime pulled the Explorer's drop/library code into every play link
+const primed = playEntry ? Promise.resolve() : Promise.all([
 	import('./explorerDrop').then((m) => (dropRef = m)),
 	import('./packRefs').then((m) => (packRefsRef = m)),
 	import('./explorer').then((m) => (explorerRef = m)),

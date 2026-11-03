@@ -18,6 +18,8 @@
 		"stale-chunk": "needs the built app (scripts/serve-build.cjs): vite's preload helper is build-only, so it only SKIPs on a dev server"
 	},
 	"optional": {
+		"play-entry": "joined from 94-play (roadmap 94 slim play runtime, 2026-11-03): not yet measured on a GitHub runner, so it reports and does not gate",
+		"play-hud-layout": "joined from 94-play (roadmap 94 SP6, 2026-11-03): not yet measured on a GitHub runner, so it reports and does not gate",
 		"agent-bridge": "red on the GitHub runner (SwiftShader, no retry) with unchanged code: deps-auto run 5, 2026-10-24",
 		"agent-look": "joined from 85-look (roadmap 85 materials and looks, 2026-10-31): not yet measured on a GitHub runner, so it reports and does not gate",
 		"agent-conformance": "joined from 55-next (1.48.1 agent tool contract, 41's research rounds 1-6, 2026-10-28): not yet measured on a GitHub runner, so it reports and does not gate until a deps run has seen it green",
@@ -605,6 +607,8 @@
 		"perf-governor": 56,
 		"perf-recorder": 26,
 		"phone-bar-41b": 55,
+		"play-entry": 240,
+		"play-hud-layout": 600,
 		"phone-bar-42": 136,
 		"phone-dock-tabs": 118,
 		"phone-save-options": 41,

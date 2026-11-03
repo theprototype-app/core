@@ -42,7 +42,7 @@ import { holdForWireBatch } from '$lib/wireBatch';
 // 60 Q2: the fast movement channel (an unordered, unreliable second channel for pose streams)
 import { tapAgentEdit } from '$lib/agentPresence';
 import { createFastLinks, createStaleFilter, createKeyframer, stampPose, poseKey, fastChannelEnabled, setPoseTap, tapPose } from '$lib/fastChannel';
-import { registerDebugHook } from '$lib/debugHooks';
+import { registerDebugHook } from '$lib/debugHookRegistry.js';
 import { routePerfLive, perfLivePeerGone } from '$lib/perf/liveWire.js'; // 34 PF: the live perf stream (an import-free leaf)
 import { noteWireError } from '$lib/wireErrors';
 import { composeAdmitNotice, shortPeer } from '$lib/admitNotice';

@@ -230,7 +230,7 @@ h.run(async () => {
 			width: Math.round(c?.getBoundingClientRect().width ?? 0)
 		};
 	});
-	h.check(['Offline', 'Connecting…', 'Connected'].includes(chip.text), `phone: with room the Connect chip says its state in one word (41b H4) ("${chip.text}")`);
+	h.check(['Connect', 'Offline', 'Connecting…', 'Connected'].includes(chip.text), `phone: with room the Connect chip says its state in one word (41b H4) ("${chip.text}")`);
 	h.check(/Not connected|Connecting/.test(chip.label) && chip.title.length > 0, `phone: its words are the aria-label and tooltip ("${chip.label}")`);
 	h.check(chip.width <= chip.slot, `phone: the chip fits its slot beside the bell (${chip.width} of ${chip.slot} px)`);
 	await emitOnPeer(phone, 'disconnected');

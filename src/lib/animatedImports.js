@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { createGltfLoader } from './gltfLoader';
 import { parseGltfSceneSafe } from './ktx2Twins';
 import { objectsGroup, pokeScene } from '../stores/sceneStore';
@@ -456,6 +455,8 @@ async function parseAnimatedBytes(bytes, kind) {
 		return { root, animations };
 	}
 	if (kind === 'fbx') {
+		// 94 SP1: a lazy chunk, loaded only for a scene that carries an FBX (the VRM rule above)
+		const { FBXLoader } = await import('three/addons/loaders/FBXLoader.js');
 		const root = new FBXLoader().parse(bytes, '');
 		return { root, animations: root.animations ?? [] };
 	}

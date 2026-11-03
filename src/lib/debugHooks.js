@@ -14,6 +14,10 @@
 // of a session that did not ask for the hook. Code that already holds an object can publish it with
 // `registerDebugHook(name, obj)` (before or after the install) instead of adding a row.
 
+// 94 SP1: the runtime registry lives in a leaf (the play entry imports it without this table)
+import { registeredDebugHooks as registered, registerDebugHook } from './debugHookRegistry.js';
+export { registerDebugHook };
+
 /** @type {[string, () => Promise<any>][]} */
 export const DEBUG_HOOKS = [
 	['*', () => import('../stores/sceneStore')],
@@ -558,18 +562,6 @@ export const DEBUG_HOOKS = [
 	['engines', () => import('./behaviours/engines.js')],
 	['groupReconcile', () => import('./groupReconcile.js')]
 ];
-
-/** hooks published at runtime through registerDebugHook @type {Record<string, any>} */
-const registered = {};
-
-/** Publish `obj` on the debug hook as `__stores[name]` — now if the hook is installed, else when
- * it is. @param {string} name @param {any} obj */
-export function registerDebugHook(name, obj) {
-	registered[name] = obj;
-	/** @type {any} */
-	const w = typeof window !== 'undefined' ? window : null;
-	if (w?.__stores) w.__stores[name] = obj;
-}
 
 /** Load every row and publish `window.__stores`. @returns {Promise<Record<string, any>>} */
 export function installDebugHooks() {

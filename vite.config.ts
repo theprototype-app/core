@@ -280,5 +280,11 @@ export default defineConfig({
 	},
 	ssr: {
 		noExternal: ['three']
+	},
+	// 94 SP3: `TP_SOURCEMAP=1 npm run build` maps every chunk back to its sources, so
+	// `node scripts/boot-size.cjs --sources <page>` can say WHICH modules a page's boot carries
+	build: {
+		// @ts-ignore -- no @types/node in this project (see the top of this file)
+		sourcemap: typeof process !== 'undefined' && process.env.TP_SOURCEMAP === '1'
 	}
 });

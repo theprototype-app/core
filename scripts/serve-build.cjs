@@ -17,6 +17,7 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const https = require('https');
+const zlib = require('zlib');
 
 const ROOT = path.resolve(__dirname, '..');
 const args = process.argv.slice(2);
@@ -28,6 +29,9 @@ const arg = (name, def) => {
 const PORT = Number(arg('--port', process.env.PORT || '5323'));
 const DIR = path.resolve(ROOT, arg('--dir', 'build'));
 const PLAIN = args.includes('--http');
+// 94 SP3: `--gzip` compresses text responses the way Cloudflare Pages does, so a THROTTLED boot
+// measurement (scripts/boot-frame.cjs) pays for gzip bytes, not raw ones
+const GZIP = args.includes('--gzip');
 const CF_BEACON = args.includes('--inject-cf-beacon')
 	? "<!-- Cloudflare Pages Analytics --><script defer src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{\"token\": \"0123456789abcdef0123456789abcdef\"}'></script><!-- Cloudflare Pages Analytics -->"
 	: '';
@@ -90,13 +94,16 @@ function handle(req, res) {
 		return res.end('not found');
 	}
 	const immutable = rel.startsWith('/_app/immutable/');
+	const gz = GZIP && /\.(html?|m?js|css|json|svg|txt|webmanifest|wasm)$/i.test(file) && /\bgzip\b/.test(String(req.headers['accept-encoding'] || ''));
 	res.writeHead(200, {
 		...SITE_HEADERS,
 		'Content-Type': MIME[path.extname(file)] || 'application/octet-stream',
-		'Cache-Control': immutable ? 'public, max-age=31536000, immutable' : 'no-cache'
+		'Cache-Control': immutable ? 'public, max-age=31536000, immutable' : 'no-cache',
+		...(gz ? { 'Content-Encoding': 'gzip', Vary: 'Accept-Encoding' } : {})
 	});
 	if (req.method === 'HEAD') return res.end();
 	if (CF_BEACON && /\.html?$/i.test(file)) return res.end(fs.readFileSync(file, 'utf8').replace(/<\/body>/i, CF_BEACON + '</body>'));
+	if (gz) return fs.createReadStream(file).pipe(zlib.createGzip({ level: 6 })).pipe(res);
 	fs.createReadStream(file).pipe(res);
 }
 

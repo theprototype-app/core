@@ -67,3 +67,32 @@ A game or level over budget **today** ships with an entry in `allow`:
 `scenes.ref` / `modules.ref` name what is measured. A release that ships new game scenes bumps
 `scenes.ref` (e.g. `preview-1-20`) in the same PR, re-runs the check, and adjusts the allow-list.
 A new General-tab level is measured once it has viewpoints in `scripts/level-views.cjs`.
+
+## Boot size (94 SP3)
+
+`boot-budget.json` holds what a page makes the browser fetch and run before its first frame — for the
+play entry (`/play`, `build/play.html`, what every shared play link opens) and for the editor
+(`build/index.html`, a looser line):
+
+| key | what it is |
+|---|---|
+| `maxJsGzBytes` | initial JS, gzip -9: the page's own `modulepreload`s plus their static-import closure (Vite manifest) |
+| `maxFirstFrameMs` | first WebGL frame on the `throttle` profile, median of 3 runs (0 = reported, not gated) |
+| `throttle` | the profile: 1.6 Mbps down, 150 ms RTT, 4x CPU slowdown (Lighthouse's mobile line), gzip on |
+| `history` | one row per line change: date, lane, measured, new line, why |
+
+```sh
+npm run build
+node scripts/boot-size.cjs                 # the table + the largest chunks per page
+node scripts/boot-size.cjs --check         # exit 1 when a page is over its line (CI: ci.yml build job)
+node scripts/boot-size.cjs --json a.json  # then, on another build: --diff a.json (growth per chunk)
+TP_SOURCEMAP=1 npm run build && node scripts/boot-size.cjs --sources play --top 40
+                                           # which SOURCE files the play boot is made of
+node scripts/boot-frame.cjs [--check]      # first frame, throttled (CI: same job, after the bytes)
+```
+
+**A red is a decision, not a number to bump.** New code on a boot path is paid by every player before
+the first frame. First try to make it lazy (an `import()` at the point of use — see `src/PlayApp.svelte`'s
+header for the rule); raise the line only when the boot truly needs it, in the same PR, with a
+`history` row saying why. The editor's line is looser on purpose: it boots a whole workshop, but it
+still must not grow silently.

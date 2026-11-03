@@ -15,7 +15,7 @@
 import { TP_AGENT_VERSION } from './contract.js';
 
 /** Tools that change nothing in the shared scene, so a viewer may run them. */
-export const READ_ONLY_TOOLS = new Set(['list_scene', 'describe_node_types', 'what_can_you_do']);
+export const READ_ONLY_TOOLS = new Set(['list_scene', 'describe_node_types', 'what_can_you_do', 'list_materials', 'get_material', 'describe_shader_nodes', 'get_post']);
 
 /** Longest waitForEdit (ms). */
 export const MAX_WAIT_MS = 10 * 60 * 1000;

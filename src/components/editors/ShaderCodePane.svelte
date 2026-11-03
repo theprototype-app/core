@@ -8,7 +8,8 @@
 	import ShaderVectorInput from './nodes/ShaderVectorInput.svelte';
 	import { showToast } from '../../stores/appStore.js';
 	import { objectsGroup } from '../../stores/sceneStore.js';
-	import { setShaderGraphFor, shaderGraphOf, shaderCodeRunState, retryShaderCodeFor } from '$lib/shaderGraph';
+	import { setShaderGraphFor, shaderGraphOf, shaderCodeRunState, retryShaderCodeFor, runForeignShaderCodeFor } from '$lib/shaderGraph';
+	import { shaderCodeHeld, markShaderCodeMine, setCustomShadersOnQuest } from '$lib/shaderCodeReach.js'; // 73 AI9
 	import { beginShaderGesture, endShaderGesture } from '$lib/shaderSync';
 	import { compileShaderGraphToIR, compilePostGraphToIR } from '$lib/shaderCompile';
 	import { shaderCodeBlocked, shaderCodeSuspended, codeUniformValue } from '$lib/shaderCodeGuard';
@@ -93,6 +94,8 @@
 	const fields = $derived(scanShaderUniforms(code.vertex, code.fragment).uniforms);
 	const hash = $derived(shaderCodeHash(code));
 	const refusal = $derived($shaderCodeBlocked[hash] || $shaderCodeSuspended || '');
+	// 73 AI9: held on this device for where it came from (someone else's, untested) or Quest's default
+	const held = $derived(refusal ? null : $shaderCodeHeld[hash] ?? null);
 	const runState = $derived.by(() => {
 		void $objectsGroup; // a THREE tree is not reactive; the install pokes this
 		return doc ? shaderCodeRunState(scope) : 'off';
@@ -104,6 +107,8 @@
 		const current = shaderGraphOf(scope);
 		if (!current) return; // refused, and the editor said why
 		codeDirty = false;
+		// 73 AI9: text applied here is yours on this device
+		markShaderCodeMine(shaderCodeHash({ vertex: vertexText, fragment: fragmentText }));
 		setShaderGraphFor(scope, { code: { ...normalizeShaderCode(current.code), use: true, vertex: vertexText, fragment: fragmentText } });
 	}
 	function turnOff() {
@@ -161,8 +166,15 @@
 			{/if}
 		</div>
 	{:else}
-		<div class="scp-status" id="shader-own-status" data-state={refusal ? 'refused' : runState}>
-			{#if refusal}
+		<div class="scp-status" id="shader-own-status" data-state={refusal ? 'refused' : held ? 'held-' + held.kind : runState} role="status">
+			{#if held}
+				<span>{held.reason}</span>
+				{#if held.kind === 'quest'}
+					<button class="ui-button-quiet scp-act" id="shader-own-quest-on" onclick={() => setCustomShadersOnQuest(true)}>Turn on custom shaders</button>
+				{:else}
+					<button class="ui-button-quiet scp-act" id="shader-own-run-anyway" title="Runs it on this device only, still time-boxed" onclick={() => runForeignShaderCodeFor(scope)}>Run it anyway</button>
+				{/if}
+			{:else if refusal}
 				<span>{refusal}</span>
 				<button class="ui-button-quiet scp-act" id="shader-own-retry" onclick={() => retryShaderCodeFor(scope)}>Try again</button>
 			{:else if runState === 'running'}

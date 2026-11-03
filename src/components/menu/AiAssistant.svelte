@@ -44,6 +44,7 @@
 	import ConnectClaude from './ConnectClaude.svelte'; // 86 B1/B2
 	import AiWelcome from './AiWelcome.svelte'; // 86-fix N1
 	import { aiEnabled, aiProviders, aiActiveProvider, setAiActiveProvider, aiReady } from '$lib/ai/providers';
+	import { visionSupport } from '$lib/ai/visionLimits.js'; // 73 AI8 + AI11
 	import { aiMessages, aiBusy, aiStatus, runPrompt, stopAi, resetAiConversation } from '$lib/ai/assistant';
 	import { dragWindow } from '$lib/dragWindow';
 	import { bottomDockable } from '$lib/bottomDockDrop';
@@ -80,6 +81,8 @@
 	const amViewer = $derived(viewerNow($rolesInfo));
 	const mayStop = $derived(!!running && canStop(running));
 	/** the picker's value: `p:<provider id>` or `a:<agent peer id>` */
+	// 73 AI8 + AI11: what the assistant's model takes (an agent answers for itself: null)
+	const vision = $derived(agentId ? null : visionSupport($aiProviders.find((p) => p.id === $aiActiveProvider) ?? null));
 	const pickValue = $derived(agentId ? 'a:' + agentId : $aiActiveProvider ? 'p:' + $aiActiveProvider : '');
 	let historyOpen = $state(false);
 	let historyBtn: any = $state(null);
@@ -118,6 +121,8 @@
 		}
 		// 73 AI2: the pictures go to the provider too. Not set up yet: runPrompt only sends you to Settings, keep what you wrote
 		if ((!text && !pending.length) || $aiBusy) return;
+		// 73 AI11: a model that can't see them never receives them; the tray stays for a model that can
+		if (pending.length && vision?.ok === false) return showToast(vision.reason);
 		const images = pending;
 		if (aiReady()) {
 			prompt = '';
@@ -442,7 +447,7 @@
 					}}
 				/>
 				<!-- 56 C8: pictures for the next message (+ menu, paste, drop, Explorer drag) -->
-				<ChatAttach bind:pending disabled={inputDisabled} />
+				<ChatAttach bind:pending disabled={inputDisabled} {vision} />
 				<button
 					id="ai-mic"
 					class="ai-mic shrink-0"

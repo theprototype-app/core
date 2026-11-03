@@ -32,6 +32,7 @@ import { vrFaceCap } from '../faceEdit';
 import { vrVertexCap } from '../meshEdit';
 import { resetWindowPoses } from '../vrWindowPoses';
 import { safeStorage } from '../safeStorage';
+import { customShadersOnQuest, setCustomShadersOnQuest } from '../shaderCodeReach.js'; // 73 AI9
 import { pivotMode } from '../multiTransform'; // 37 R1: the selection's pivot point
 import { openVRKeyboard } from '../vrKeyboard';
 import { renderer } from './core.js';
@@ -324,6 +325,18 @@ export const VR_SETTINGS = [
 		},
 		keywords: ['mixed reality', 'ar', 'camera'],
 		note: 'Mixed reality — applies on the next VR entry'
+	},
+	// 73 AI9: off by default on Quest (one GPU hang there takes the whole browser down); elsewhere it changes nothing
+	{
+		id: 'customShaders',
+		page: 'display',
+		label: 'Turn on custom shaders',
+		icon: 'code',
+		kind: 'toggle',
+		get: () => get(customShadersOnQuest),
+		set: (v) => setCustomShadersOnQuest(!!v),
+		keywords: ['glsl', 'shader', 'your glsl', 'quest', 'gpu', 'custom code'],
+		note: 'On Quest: lets a scene’s own GLSL run (each one is still tested first). Off by default, because one stuck shader can close the browser'
 	},
 	{ id: 'wireframe', page: 'display', label: 'Selection wireframe', icon: 'box', kind: 'toggle', get: () => get(vrWireframeSelection), set: (v) => put(vrWireframeSelection, 'vrWireframe', !!v), keywords: ['outline', 'highlight'], note: 'Draws a wireframe over what you select' },
 	{ id: 'resetPanels', page: 'display', label: 'Reset panel positions', icon: 'layers', kind: 'action', run: () => (resetWindowPoses(), showToast('VR panel positions reset')), keywords: ['windows', 'menus'], note: 'Panels you moved go back to their spots on the controllers' },

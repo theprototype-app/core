@@ -16,6 +16,8 @@
 	import { tick, untrack } from 'svelte';
 	import { explorerClose, mobileUndockAllowed, explorerSceneSaveArm, explorerRevealArm, peers } from '../../stores/appStore.js';
 	import { settingsOpen, settingsSection } from '../../stores/appStore.js';
+	import { explainMissing, openToolRow } from '$lib/tools/toolLinks.js'; // 73 AI4
+	import { featureStatus } from '$lib/tools/toolStatus.js';
 	import { showToast, enable3dPreview, stackOnDrop, confirmPrefabUpdate, meshGenModalOpen } from '../../stores/appStore.js';
 	import { meshGenReady, meshTakesImage, activeMeshConfig } from '$lib/ai/meshProviders.js';
 	import {
@@ -5020,13 +5022,27 @@
 				// resize, adjust, versions). A pack item is a reference to bytes on a CDN, so it
 				// has nothing to save into — copy it into the Library first.
 				// roadmap 73 AI1: the picture as the start of a generated model
-				...(item.kind === 'image' && !item.packEntry && !item.dataUrl && meshGenReady() && meshTakesImage(activeMeshConfig())
+				// 73 AI4: always listed for your own pictures; with no provider (or one that cannot start from a
+				// picture) the press says what is missing and opens its row in Tools & connections
+				...(item.kind === 'image' && !item.packEntry && !item.dataUrl
 					? [
 							{
 								label: 'Make a 3D model…',
 								icon: 'sparkles',
-								tooltip: 'Generate a 3D model from this picture with your mesh provider',
-								action: () => meshGenModalOpen.set({ imageItemId: item.id })
+								tooltip: meshGenReady()
+									? meshTakesImage(activeMeshConfig())
+										? 'Generate a 3D model from this picture with your mesh provider'
+										: 'Your mesh provider can’t start from a picture: use Meshy, or a ComfyUI workflow with {{IMAGE}}'
+									: featureStatus('generateMesh').message,
+								action: () => {
+									if (explainMissing('generateMesh')) return;
+									if (!meshTakesImage(activeMeshConfig())) {
+										showToast('Your mesh provider can’t start from a picture: use Meshy, or a ComfyUI workflow with {{IMAGE}} in a LoadImage node');
+										openToolRow('mesh');
+										return;
+									}
+									meshGenModalOpen.set({ imageItemId: item.id });
+								}
 							}
 						]
 					: []),

@@ -14,6 +14,14 @@
 	import { prepareImage, viewportPicture, explorerPicture } from '$lib/chat/attachments.js';
 	import { MESH_IMAGE } from '$lib/chat/attachCore.js';
 	import { rolesInfo } from '$lib/cloudHooks';
+	import { openToolRow } from '$lib/tools/toolLinks.js';
+	import { tipShown, dismissTip, TIP_MESH_PICTURE } from '$lib/tips.js';
+	import { pictureConsentFor } from '$lib/ai/meshConsent.js';
+
+	/** 73 AI6: the first-use hint, until a picture is picked */
+	const pictureTip = tipShown(TIP_MESH_PICTURE);
+	/** 73 AI8: the picture limits, said before a pick (attachCore.MESH_IMAGE) */
+	const pictureLimits = `JPEG, PNG, WebP or HEIC · sent at up to ${MESH_IMAGE.maxEdge} px and ${Math.round(MESH_IMAGE.maxBytes / (1024 * 1024))} MB · location data removed first`;
 
 	let prompt = $state('');
 	let name = $state('');
@@ -38,6 +46,9 @@
 	// C5's rule: viewers attach nothing
 	const takesImage = $derived(meshTakesImage(active) && ($rolesInfo as any)?.myRole !== 'viewer');
 	const ready = $derived(!!(prompt.trim() || (image && takesImage)));
+	// 73 AI4: a provider that cannot start from a picture says so (and what would)
+	const noPicture = $derived(!!active && !meshTakesImage(active) && ($rolesInfo as any)?.myRole !== 'viewer');
+	const consent = $derived(active && image && takesImage ? pictureConsentFor(active) : null);
 
 	// the Explorer menu's "Make a 3D model…" opens with the picture already chosen
 	let seededFrom: string | null = null;
@@ -63,7 +74,10 @@
 		if (token !== pickToken) return;
 		busy = false;
 		if (r?.error) showToast(r.error);
-		else image = r;
+		else {
+			image = r;
+			dismissTip(TIP_MESH_PICTURE);
+		}
 	}
 
 	function onFile(e: Event) {
@@ -140,12 +154,32 @@
 					</select>
 				</label>
 			{:else}
-				<p class="text-xs text-ink-warn">No mesh provider configured — add one in Settings → AI → Mesh generation.</p>
+				<!-- 73 AI4: says what is missing and goes there -->
+				<p id="mesh-gen-no-provider" class="text-xs text-ink-warn">
+					No mesh provider set up yet.
+					<button
+						id="mesh-gen-setup"
+						type="button"
+						class="underline"
+						onclick={() => {
+							close();
+							openToolRow('mesh');
+						}}>Set one up in Tools &amp; connections</button
+					>
+				</p>
+			{/if}
+			{#if noPicture}
+				<p id="mesh-gen-no-picture" class="text-[11px] text-text-muted">
+					{active?.label} can’t start from a picture. Use Meshy, or a ComfyUI workflow with <code>{'{{IMAGE}}'}</code> in a LoadImage node.
+				</p>
 			{/if}
 
 			{#if takesImage}
 				<div class="flex flex-col gap-1 text-xs text-text-2" id="mesh-gen-picture">
 					Picture (optional)
+					{#if $pictureTip && !image}
+						<span id="mesh-gen-tip" class="text-[11px] text-accent-text" role="note">New: start from a photo, an Explorer picture or the viewport — the model is made from it.</span>
+					{/if}
 					{#if image}
 						<div class="flex items-center gap-2">
 							<img id="mesh-gen-image" class="mesh-gen-thumb" src={'data:' + image.mimeType + ';base64,' + image.data} alt={image.name} />
@@ -169,6 +203,7 @@
 							{/if}
 						</div>
 					{/if}
+					<span id="mesh-gen-limits" class="text-[11px] text-text-muted">{pictureLimits}</span>
 					{#if busy}
 						<span id="mesh-gen-preparing" class="text-[11px] text-text-muted" role="status">Preparing the picture…</span>
 					{/if}
@@ -195,7 +230,9 @@
 			</label>
 
 			{#if isHosted}
-				<p class="text-[11px] text-ink-warn">Uses your {active?.label} account credits.{image && takesImage ? ' The picture is sent to them.' : ''}</p>
+				<p class="text-[11px] text-ink-warn">
+					Uses your {active?.label} account credits.{consent ? ' Before anything is sent you confirm the cost and that the picture goes to Meshy.' : ''}
+				</p>
 			{/if}
 
 			<div class="flex items-center gap-2">

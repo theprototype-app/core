@@ -42,6 +42,8 @@ import {
 	codeUniformValue
 } from './shaderCodeGuard.js';
 import { showToast } from '../stores/appStore.js';
+import { deviceRefusal, reachRefusal, customShadersOnQuest, shaderCodeHeld, holdShaderCode, releaseHeldShaderCode } from './shaderCodeReach.js'; // 73 AI9
+import { exportMode } from './export/exportBoot.js';
 
 /** The reserved key for the scene default material (layer 2). */
 export const SCENE_GRAPH_KEY = 'scene';
@@ -381,6 +383,12 @@ async function compileCodeAndApply(key, doc) {
 	const hash = shaderCodeHash(doc.code);
 	const refused = shaderCodeRefusal(hash);
 	if (refused) return standDownCode(key, hash, refused);
+	// 73 AI9: Quest keeps custom GLSL off until asked; not even the worker test runs (it is a GPU draw too)
+	const offHere = deviceRefusal();
+	if (offHere) {
+		holdShaderCode(hash, offHere);
+		return standDownCode(key, hash, offHere.reason);
+	}
 	const verdict = await probeShaderCode(doc.code);
 	// a newer edit overtook the probe, and scheduled its own compile
 	const now = shaderGraphOf(key);
@@ -394,6 +402,14 @@ async function compileCodeAndApply(key, doc) {
 		setErrors(key, verdict.errors);
 		return { ok: false, errors: verdict.errors };
 	}
+	// 73 AI9: someone else's code runs only on a PASSED worker test; yours (and an exported game's) also
+	// on an untestable one, the first-frame box still holding
+	const notYours = reachRefusal(hash, verdict.status, exportMode);
+	if (notYours) {
+		holdShaderCode(hash, notYours);
+		return standDownCode(key, hash, notYours.reason);
+	}
+	releaseHeldShaderCode(hash);
 	/** @type {string[]} */
 	const errors = [];
 	const fields = scanShaderUniforms(now?.code?.vertex, now?.code?.fragment).uniforms;
@@ -422,10 +438,42 @@ async function compileCodeAndApply(key, doc) {
 	return { ok: errors.length === 0, errors };
 }
 
+let reachWatched = false;
 function startCodeGuard() {
 	startShaderCodeGuard(() => {
 		for (const [key, doc] of Object.entries(get(shaderGraphs))) if (usesShaderCode(doc)) scheduleCompile(key, 0);
 	});
+	if (reachWatched) return;
+	reachWatched = true;
+	// 73 AI9: "Turn on custom shaders" on Quest re-runs what it held (the first value is the current one)
+	let first = true;
+	customShadersOnQuest.subscribe((on) => {
+		if (first) return void (first = false);
+		if (on) recompileHeld('quest');
+	});
+}
+
+/** Everything held for `kind` gets another go (the switch, or Run it anyway). @param {'quest'|'foreign'} kind @param {string} [onlyHash] */
+function recompileHeld(kind, onlyHash) {
+	const held = get(shaderCodeHeld);
+	for (const [key, doc] of Object.entries(get(shaderGraphs))) {
+		if (!usesShaderCode(doc)) continue;
+		const hash = shaderCodeHash(/** @type {any} */ (doc).code);
+		if (held[hash]?.kind !== kind || (onlyHash && hash !== onlyHash)) continue;
+		releaseHeldShaderCode(hash);
+		saidRefusals.delete(hash);
+		setErrors(key, []);
+		scheduleCompile(key, 0);
+	}
+	reconcileShaderGraphs();
+}
+
+/** 73 AI9: the pane's "Run it anyway" on someone else's shader this device could not test. @param {string} key */
+export async function runForeignShaderCodeFor(key) {
+	const hash = shaderCodeHash(shaderGraphOf(key)?.code);
+	const { markShaderCodeMine } = await import('./shaderCodeReach.js');
+	markShaderCodeMine(hash);
+	recompileHeld('foreign', hash);
 }
 
 /** The panel's Try again. @param {string} key */

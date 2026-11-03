@@ -5,6 +5,7 @@ import { explainMissing } from '../tools/toolLinks.js';
 import { runChat, describeAiError, AiHttpError } from './client.js';
 import { getAiTools, executeAiTool, buildSystemPrompt, summarizeScene, repairToolCall, setTurnPictures } from './tools.js';
 import { userContent, limitPictures, hasPictures, isVisionRefusal } from './visionParts.js';
+import { visionSupport } from './visionLimits.js'; // 73 AI4
 import { beginHistoryBatch, endHistoryBatch } from '$lib/history';
 
 // Conversation orchestrator (roadmap #10, A5). Module-level state so the chat
@@ -160,7 +161,12 @@ function pictureFailure(error, config) {
 	if (!(error instanceof AiHttpError) || !hasPictures(apiHistory)) return null;
 	if (![400, 404, 413, 415, 422].includes(error.status)) return null;
 	apiHistory = limitPictures(apiHistory, 0);
-	if (isVisionRefusal(error.status, error.body)) return 'This model can’t read pictures — pick a vision model, or ask without the picture. The picture is left out of the rest of this chat.';
+	if (isVisionRefusal(error.status, error.body)) {
+		// 73 AI4: say so, and offer a model that has it
+		const suggest = visionSupport(config).suggest;
+		const offer = suggest && suggest !== config?.model ? ' (for example ' + suggest + ' in Settings ▸ Tools & connections)' : '';
+		return (config?.model || 'This model') + ' can’t read pictures — pick a vision model' + offer + ', or ask without the picture. The picture is left out of the rest of this chat.';
+	}
 	return describeAiError(error, config) + ' — pictures are left out of the rest of this chat.';
 }
 

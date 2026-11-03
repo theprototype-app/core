@@ -964,7 +964,12 @@ async function runAiTool(rawName, rawArgs, opts) {
 					.catch(() => {});
 				return {
 					started: true,
-					note: 'Generating a 3D mesh from ' + (picture ? 'the attached picture' : '"' + prompt.slice(0, 60) + '"') + '. It will appear in the scene in ~1-3 minutes; a progress card shows status. Do not call generate_mesh again for the same request.'
+					note:
+						'Generating a 3D mesh from ' +
+						(picture ? 'the attached picture' : '"' + prompt.slice(0, 60) + '"') +
+						'. It will appear in the scene in ~1-3 minutes; a progress card shows status.' +
+						(picture && activeMeshConfig()?.kind === 'meshy' ? ' The person is first asked to confirm sending the picture to Meshy; if they cancel, nothing is made.' : '') +
+						' Do not call generate_mesh again for the same request.'
 				};
 			}
 

@@ -204,6 +204,14 @@ export async function buildExport(opts, onProgress = () => {}) {
 	const { result: payload, excluded } = withoutLocalObjects(() => buildSessionPayload(title));
 	noteLocalObjectsExcluded(excluded);
 	if (!payload?.objects?.length) throw new Error('The scene is empty — add something to play first.');
+	// 73 AI9: an exported game carries only the author's own GLSL (written or chosen to run on this device);
+	// someone else's is exported switched off (the graph stays), and the warning says how to keep it
+	{
+		const { foreignShaderCodeOff } = await import('../shaderCodeReach.js');
+		const { shaderCodeHash, usesShaderCode } = await import('../shaderCode.js');
+		const off = foreignShaderCodeOff(payload.shaderGraphs, shaderCodeHash, usesShaderCode);
+		if (off) warnings.push(`${off} custom shader${off === 1 ? '' : 's'} from someone else ${off === 1 ? 'is' : 'are'} left off in the export. To keep one, open it in the shader editor's Your GLSL and press Apply (it becomes yours).`);
+	}
 	// 46 P3: the export preset (Settings ▸ Export ▸ Optimize for, shared with Save) — For Quest / web
 	// bundles resized textures with KTX2 twins and LOD chains (the runtime ships the transcoder)
 	const { saveOptions } = await import('../saveOptions');

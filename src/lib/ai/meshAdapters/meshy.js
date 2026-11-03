@@ -225,9 +225,11 @@ class AssetHttpError extends Error {
 
 /** @param {number} status @param {string} detail */
 function describeError(status, detail) {
-	if (status === 401 || status === 403) return 'Meshy rejected the API key';
-	if (status === 402) return 'Meshy: out of credits';
-	if (status === 429) return 'Meshy rate limit — try again shortly';
+	// 73 AI4: each says what to try
+	if (status === 401 || status === 403) return 'Meshy rejected the API key — check it in Settings ▸ Tools & connections ▸ Mesh providers';
+	if (status === 402) return 'Meshy: out of credits — add credits on meshy.ai, or switch the provider to Preview, which uses fewer';
+	if (status === 429) return 'Meshy rate limit — wait a minute and try again';
+	if (status === 413) return 'Meshy: the picture is too large — try a smaller one';
 	let msg = '';
 	try {
 		const j = JSON.parse(detail);

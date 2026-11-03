@@ -3,6 +3,8 @@ import { showToast } from '../../stores/appStore.js';
 import { activeMeshConfig, meshProviders, meshGenReady } from './meshProviders.js';
 import { adapterFor } from './meshAdapters/index.js';
 import { importGeneratedGlb } from '$lib/fileHandler.svelte';
+import { showChoiceEx } from '$lib/confirmDialog';
+import { pictureConsentFor, namedError } from './meshConsent.js'; // 73 AI7 + AI4: a leaf
 
 // Mesh-generation job runner (roadmap #11, G2/G5). Submits a prompt to the active
 // mesh provider, polls to completion, downloads the GLB, and imports it into the
@@ -91,6 +93,11 @@ export async function generateMesh(params) {
 		throw new Error('mesh provider not ready');
 	}
 
+	// 73 AI7: a picture going to a HOSTED provider (a third party) is asked about first: what it costs and
+	// where it goes. Every path reaches here (the dialog, the assistant's from_picture), so none skips it.
+	// Cancel sends nothing and leaves no job row.
+	if (image && !(await askPictureConsent(cfg))) throw new CancelledError();
+
 	const id = newId();
 	const seed = typeof params.seed === 'number' ? params.seed : Math.floor(Math.random() * 1e9);
 	add({ id, prompt: prompt || 'From a picture', provider: cfg.label, status: 'submitting', progress: null });
@@ -107,7 +114,7 @@ export async function generateMesh(params) {
 			if (cancelled.has(id)) throw new CancelledError();
 			await sleep(POLL_MS);
 			if (cancelled.has(id)) throw new CancelledError();
-			if (Date.now() - start > MAX_MS) throw new Error('Generation timed out after 10 minutes');
+			if (Date.now() - start > MAX_MS) throw new Error(cfg.label + ' did not finish within 10 minutes — try again, or try Preview mode, which is quicker');
 
 			/** @type {any} */
 			let r;
@@ -151,13 +158,27 @@ export async function generateMesh(params) {
 			update(id, { status: 'cancelled' });
 			throw e;
 		}
-		const msg = e instanceof Error ? e.message : String(e);
+		const msg = namedError(e instanceof Error ? e.message : String(e), cfg);
 		update(id, { status: 'error', error: msg });
 		showToast('Mesh generation failed: ' + msg);
 		throw e;
 	} finally {
 		cancelled.delete(id);
 	}
+}
+
+/** @param {any} cfg @returns {Promise<boolean>} */
+async function askPictureConsent(cfg) {
+	const ask = pictureConsentFor(cfg);
+	if (!ask) return true;
+	const answer = await showChoiceEx({
+		id: 'mesh-picture-consent',
+		title: ask.title,
+		message: ask.message,
+		link: ask.link,
+		choices: [{ value: 'send', label: ask.send }]
+	});
+	return answer?.value === 'send';
 }
 
 class CancelledError extends Error {

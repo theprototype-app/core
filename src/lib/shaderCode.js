@@ -215,6 +215,9 @@ function loopProblems(src, stage) {
 		const body = src.slice(close, bodyEnd(src, close));
 		const written = new RegExp('(?:\\b' + name + '\\s*(?:=(?!=)|\\+\\+|--|<<=|>>=|[-+*/%&|^]=))|(?:(?:\\+\\+|--)\\s*' + name + '\\b)');
 		if (written.test(body)) say(at, 'this loop changes its own counter `' + name + '` inside its body.');
+		// three.js pastes an included chunk where the line is, so one in a loop would run every step, uncounted
+		const include = /^[ \t]*#[ \t]*include\b/m.exec(body);
+		if (include) say(close + include.index, '`#include` belongs after your loops, not inside one.');
 	}
 	// a function gets its arguments by value: `out` and `inout` are the only way a call could write a counter
 	for (const m of src.matchAll(/\b(inout|out)\b/g)) {
@@ -254,13 +257,15 @@ export const MAX_ARRAY_LENGTH = 64;
  * What one operation on each name in the text may cost. Anything the scan cannot type counts as
  * HEAVY (a matrix's 64), so a declaration it misreads refuses a shader rather than letting one by.
  * @param {string} src the comment-stripped text
- * @returns {{weightOf: (name: string, next: string) => number, memberWeight: (name: string) => number, arrayProblems: string[]}}
+ * @returns {{weightOf: (name: string, next: string) => number, memberWeight: (name: string) => number, indexCost: (name: string, constant: boolean) => number, arrayProblems: string[]}}
  */
 export function valueWeights(src) {
 	/** @type {Map<string, number>} name -> weight as a whole value */
 	const whole = new Map();
 	/** @type {Map<string, number>} array name -> weight of one element */
 	const element = new Map();
+	/** @type {Map<string, number>} array name -> its length */
+	const lengths = new Map();
 	/** @type {Map<string, number>} struct type -> weight of a copy */
 	const structs = new Map();
 	/** @type {string[]} */
@@ -294,7 +299,10 @@ export function valueWeights(src) {
 				size += w * Math.min(n, MAX_ARRAY_LENGTH);
 				members.add(f[1]);
 				whole.set(f[1], Math.max(whole.get(f[1]) ?? 0, w * (dims.length ? Math.min(n, MAX_ARRAY_LENGTH) : 1)));
-				if (dims.length) element.set(f[1], Math.max(element.get(f[1]) ?? 0, w));
+				if (dims.length) {
+					element.set(f[1], Math.max(element.get(f[1]) ?? 0, w));
+					lengths.set(f[1], Math.max(lengths.get(f[1]) ?? 0, Math.min(n, MAX_ARRAY_LENGTH)));
+				}
 			}
 		}
 		structs.set(m[1], Math.max(1, size));
@@ -340,6 +348,7 @@ export function valueWeights(src) {
 				const n = lengthOf(len);
 				if (!(n <= MAX_ARRAY_LENGTH)) arrayProblems.push('`' + name + '` holds ' + (Number.isFinite(n) ? n : 'an unknown number of') + ' elements; an array here holds at most ' + MAX_ARRAY_LENGTH + '.');
 				element.set(name, Math.max(element.get(name) ?? 0, typeWeight(type)));
+				lengths.set(name, Math.max(lengths.get(name) ?? 0, Math.min(n, MAX_ARRAY_LENGTH)));
 				whole.set(name, Math.max(whole.get(name) ?? 0, Math.min(n, MAX_ARRAY_LENGTH) * typeWeight(type)));
 			} else whole.set(name, Math.max(whole.get(name) ?? 0, typeWeight(type)));
 		}
@@ -360,15 +369,20 @@ export function valueWeights(src) {
 	};
 	/** after a `.`: a struct member weighs what it holds, a swizzle reads components @param {string} name */
 	const memberWeight = (name) => (members.has(name) ? (whole.get(name) ?? 64) : SWIZZLE.test(name) ? 1 : weightOf(name, ''));
-	return { weightOf, memberWeight, arrayProblems: [...new Set(arrayProblems)] };
+	/** a subscript: a constant one is a plain read, a computed one may cost a pass over the array (a GPU
+	 * often lowers a dynamic index into a local array to a select over every element) @param {string} name @param {boolean} constant */
+	const indexCost = (name, constant) => (constant ? 1 : (lengths.get(name) ?? (BUILTIN_VALUES[name] || MATRIX_TYPES[name] || whole.has(name) ? 4 : MAX_ARRAY_LENGTH)));
+	return { weightOf, memberWeight, indexCost, arrayProblems: [...new Set(arrayProblems)] };
 }
 
 /**
  * One statement's work: its operations, each at the cost of the heaviest value it touches.
- * @param {string} text @param {{weightOf: (name: string, next: string) => number, memberWeight: (name: string) => number}} weights
+ * @param {string} text @param {{weightOf: (name: string, next: string) => number, memberWeight: (name: string) => number, indexCost: (name: string, constant: boolean) => number}} weights
  */
-function statementWork(text, { weightOf, memberWeight }) {
-	const ops = text.match(OPERATIONS)?.length ?? 0;
+function statementWork(text, { weightOf, memberWeight, indexCost }) {
+	let ops = text.match(OPERATIONS)?.length ?? 0;
+	// every subscript is work too, and nesting them in one statement must not make them free
+	for (const m of text.matchAll(/(?:\b([A-Za-z_]\w*)|\])\s*\[\s*(\d+\s*\])?/g)) ops += indexCost(m[1] ?? '', !!m[2]);
 	if (!ops) return 0;
 	let heaviest = 1;
 	for (const m of text.matchAll(/(\.\s*)?\b([A-Za-z_]\w*)\b(?=\s*(.?))/g)) {

@@ -102,6 +102,12 @@ describe('checkShaderCode', () => {
 		expect(one('struct S { float v[8][8]; };\n', '')[0]).toMatch(/array of arrays/);
 		// a matrix element is still read as ordinary indexing
 		expect(one('', 'mat3 m = mat3(1.0); float x = m[0][1];')).toEqual([]);
+		// subscripts are work: a chain of computed indexes in one statement costs each step a pass
+		const chain = Array.from({ length: 32 }, () => 'k[').join('') + 'i' + ']'.repeat(32);
+		expect(one('', 'int k[64]; float v[64]; float x = 0.0; for (int i = 0; i < 1024; i++) { x += v[' + chain + ' & 63]; }')[0]).toMatch(/operations/);
+		expect(one('', 'float w[9]; float x = 0.0; for (int i = 0; i < 64; i++) { x += w[i - (i / 9) * 9] + w[0]; }')).toEqual([]);
+		// an included chunk inside a loop would run every step
+		expect(one('', 'for (int i = 0; i < 8; i++) {\n#include <tonemapping_fragment>\n}')[0]).toMatch(/`#include` belongs after your loops/);
 		// a name the gate cannot type counts as heavy: a misread refuses, it never lets one by
 		expect(one('', 'float x = 0.0; for (int i = 0; i < 1024; i++) { x += mystery; }')[0]).toMatch(/operations/);
 	});

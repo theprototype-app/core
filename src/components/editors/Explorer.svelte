@@ -5854,7 +5854,9 @@
 	function canAddFilesAt(key: string | null) {
 		if (key == null) return true;
 		const vol = volumeOf(key);
-		if (vol) return !sessionReadOnly(vol.volumeId);
+		// a PURE check: this runs inside menus and the empty-state template, where sessionReadOnly's
+		// toast is a state write (state_unsafe_mutation) -- the drop path keeps the toasting refusal
+		if (vol) return !isSessionVolumeId(vol.volumeId);
 		return activeLibraryFolderOf(key) !== null;
 	}
 	const addFilesItem = (target: string | null) => ({

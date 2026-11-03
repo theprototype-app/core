@@ -368,7 +368,6 @@ function applyAiTransform(object, t) {
 			scale: object.scale.toArray()
 		};
 	});
-	notifyExternalMove(object.uuid);
 	pokeScene();
 	broadcast({ type: 'move', uuid: object.uuid, pos: after.pos, rot: after.rot, scale: after.scale });
 	recordTransform({ uuid: object.uuid, before, after });

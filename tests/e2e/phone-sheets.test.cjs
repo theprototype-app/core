@@ -95,7 +95,9 @@ h.run(async () => {
 			const r = s.getBoundingClientRect();
 			if (r.top < 56) return 'under the top bar (top ' + Math.round(r.top) + ')';
 			const at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-			return at && s.contains(at) ? 'ok' : 'covered by ' + (at?.id || at?.className || 'nothing').toString().slice(0, 60);
+			return at && s.contains(at)
+				? 'ok'
+				: 'covered by ' + (at?.id || at?.className || 'nothing').toString().slice(0, 60) + ' "' + (at?.textContent || '').trim().slice(0, 120) + '"';
 		});
 
 	// ---- the sheets ------------------------------------------------------------------

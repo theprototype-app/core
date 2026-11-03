@@ -37,6 +37,11 @@ h.run(async () => {
 		await A.page.waitForFunction((n) => !!window.__stores?.[n], name, { timeout: 30000 });
 
 	// ---- 1. the composer: downscale + EXIF/GPS strip on the sender --------------------------------
+	// 1.55 (73 AI11): the assistant takes pictures only for a model that can see them, and none with no assistant set up
+	await A.page.evaluate(() => {
+		const p = window.__stores.aiProviders;
+		p.setAiActiveProvider(p.addAiProvider({ preset: 'custom', label: 'MockVision', baseUrl: location.origin + '/mock-ai/v1', model: 'vision-1', apiKey: 'k' }));
+	});
 	await A.page.evaluate(() => window.__stores.aiAssistantHidden.set(''));
 	await A.page.waitForSelector('#chat-attach', { timeout: 15000 });
 	await A.page.setInputFiles('#chat-attach-file', BIG);

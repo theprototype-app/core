@@ -908,7 +908,12 @@ export function outputTypeOf(
 ) {
 	const out = (def.outputs ?? []).find((o) => o.name === outputName) ?? (def.outputs ?? [])[0];
 	if (!out) return 'float';
-	if (out.followsParam) return node?.data?.[out.followsParam] ?? out.type;
+	if (out.followsParam) {
+		// the TYPE names a GLSL declaration, so it is only ever one of the param's own options
+		const param = (def.params ?? []).find((p) => p.name === out.followsParam);
+		const chosen = node?.data?.[out.followsParam];
+		return param?.options?.includes(chosen) ? chosen : (param?.default ?? out.type);
+	}
 	if (out.followsInput) return inputTypeOf(out.followsInput) ?? out.type;
 	return out.type;
 }

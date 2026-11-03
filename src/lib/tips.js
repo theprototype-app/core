@@ -45,3 +45,6 @@ export function resetTips() {
 
 /** the phone More sheet's drag how-to */
 export const TIP_PHONE_MORE = 'phone-more-drag';
+
+/** 73 AI6: Generate 3D model can start from a picture (retires on the first picture picked) */
+export const TIP_MESH_PICTURE = 'mesh-from-picture';

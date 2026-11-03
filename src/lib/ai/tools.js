@@ -19,7 +19,7 @@ import { aimLight } from '$lib/lightParams';
 import { itemByHash } from '$lib/explorer';
 import { animatedBaseOf, writingBasePose } from '$lib/flowRuntime';
 import { reportedPose } from './poseReport.js';
-import { meshGenReady } from './meshProviders.js';
+import { meshGenReady, meshTakesImage, activeMeshConfig } from './meshProviders.js';
 import { featureStatus, toolSummary } from '../tools/toolStatus.js';
 import '../tools/builtinTools.js'; // 59 T5: the registry the prompt's tool lines read
 import { viewerToolRefusal } from './viewerGate.js';
@@ -952,14 +952,24 @@ async function runAiTool(rawName, rawArgs, opts) {
 				// Kick off the job and return immediately; the job runner places +
 				// replicates the mesh when it lands (a progress card shows status).
 				const prompt = String(args?.prompt || '').trim();
-				if (!prompt) return { error: 'prompt required' };
+				// 73 AI1 + AI2: a picture the person attached to this message, 1 = the first
+				const pictureAt = args?.from_picture === true ? 1 : Number(args?.from_picture) || 0;
+				const picture = pictureAt ? turnPictures[pictureAt - 1] : null;
+				if (pictureAt && !picture) return { error: 'no such picture on this message (' + turnPictures.length + ' attached)' };
+				if (!prompt && !picture) return { error: 'prompt required' };
 				if (!meshGenReady()) return { error: 'no mesh-generation provider is configured — tell the user: ' + featureStatus('generateMesh').message };
+				if (picture && !meshTakesImage(activeMeshConfig())) return { error: 'the active mesh provider cannot start from a picture; describe the object in words instead' };
 				import('$lib/ai/meshJobs')
-					.then((m) => m.generateMesh({ prompt, name: args?.name, position: args?.position }))
+					.then((m) => m.generateMesh({ prompt, name: args?.name, position: args?.position, ...(picture ? { image: picture } : {}) }))
 					.catch(() => {});
 				return {
 					started: true,
-					note: 'Generating a 3D mesh from "' + prompt.slice(0, 60) + '". It will appear in the scene in ~1-3 minutes; a progress card shows status. Do not call generate_mesh again for the same request.'
+					note:
+						'Generating a 3D mesh from ' +
+						(picture ? 'the attached picture' : '"' + prompt.slice(0, 60) + '"') +
+						'. It will appear in the scene in ~1-3 minutes; a progress card shows status.' +
+						(picture && activeMeshConfig()?.kind === 'meshy' ? ' The person is first asked to confirm sending the picture to Meshy; if they cancel, nothing is made.' : '') +
+						' Do not call generate_mesh again for the same request.'
 				};
 			}
 
@@ -1224,12 +1234,21 @@ export const MESH_TOOL = {
 			properties: {
 				prompt: { type: 'string', description: 'what to generate, e.g. "a weathered wooden treasure chest"' },
 				name: { type: 'string' },
-				position: { type: 'array', items: { type: 'number' }, description: '[x,y,z]' }
+				position: { type: 'array', items: { type: 'number' }, description: '[x,y,z]' },
+				from_picture: { type: 'number', description: 'build it from a picture attached to this message: 1 = the first. Only when the person wants the picture turned into a 3D object' }
 			},
 			required: ['prompt']
 		}
 	}
 };
+
+/** 73 AI2: the current prompt's pictures, for generate_mesh's from_picture (assistant.js sets and clears them)
+ * @type {any[]} */
+let turnPictures = [];
+/** @param {any[]} list */
+export function setTurnPictures(list) {
+	turnPictures = list;
+}
 
 /** Flow-node tool schemas. Built per call.
  * 34 D5: the node TYPE is a plain string now — the vocabulary lives once, grouped, in the
@@ -1465,7 +1484,7 @@ export function getAiTools(opts) {
 /** Build the system prompt with scene-building guidance. @param {ToolOpts} [opts] @returns {string} */
 export function buildSystemPrompt(opts) {
 	const meshLine = meshGenReady()
-		? '\nCustom meshes: for objects no primitive can approximate, call generate_mesh with a text\ndescription (slow, async — it appears shortly). Prefer primitives for simple shapes.'
+		? '\nCustom meshes: for objects no primitive can approximate, call generate_mesh with a text\ndescription (slow, async — it appears shortly). Prefer primitives for simple shapes. To turn an attached picture into a 3D object, add from_picture: 1.'
 		: '';
 	// 59 T5: the assistant reads the same tool status the buttons do — what is NOT set up here, so a
 	// request for it gets "that needs X, set it up in Tools & connections" instead of a guess

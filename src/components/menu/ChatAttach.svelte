@@ -15,7 +15,14 @@
 	import { keepImage, isKept, openChat, chatRefs } from '$lib/chat/tpchatStore.js';
 	import { rolesInfo } from '$lib/cloudHooks';
 
-	let { pending = $bindable([]), disabled = false }: { pending?: any[]; disabled?: boolean } = $props();
+	// 73 AI8 + AI11: `vision` = what the ASSISTANT's model takes (ai/visionLimits.visionSupport); null for an
+	// agent target, which answers for itself. ok false = the + stays reachable but says why and adds nothing.
+	let {
+		pending = $bindable([]),
+		disabled = false,
+		vision = null
+	}: { pending?: any[]; disabled?: boolean; vision?: { ok: boolean | 'maybe'; reason: string; limits: string } | null } = $props();
+	const blocked = $derived(!!vision && vision.ok === false);
 
 	let root: HTMLElement | null = $state(null);
 	let fileInput: HTMLInputElement | null = $state(null);
@@ -57,6 +64,7 @@
 	async function addFiles(files: Iterable<File> | FileList | null) {
 		if (!files) return;
 		if (!canAttach()) return showToast('View-only — editors and admins can attach pictures.');
+		if (blocked) return showToast(vision!.reason);
 		const list = [...files];
 		if (!list.length) return;
 		if (room <= 0) return showToast(`At most ${MAX_ATTACHMENTS} pictures per message`);
@@ -72,6 +80,7 @@
 
 	async function addOne(make: () => Promise<any>) {
 		if (!canAttach()) return showToast('View-only — editors and admins can attach pictures.');
+		if (blocked) return showToast(vision!.reason);
 		if (room <= 0) return showToast(`At most ${MAX_ATTACHMENTS} pictures per message`);
 		busy = true;
 		try {
@@ -115,6 +124,9 @@
 	);
 
 	const menuItems = $derived([
+		// 73 AI8: the limits BEFORE anything is picked
+		...(vision ? [{ label: vision.limits, icon: 'info', disabled: true, action: () => {} }] : []),
+		...(vision?.ok === 'maybe' ? [{ label: vision.reason, icon: 'triangle-alert', disabled: true, action: () => {} }] : []),
 		{ label: 'From device…', icon: 'upload', action: () => fileInput?.click() },
 		...(phone ? [{ label: 'Camera', icon: 'camera', action: () => cameraInput?.click() }] : []),
 		explorerImages.length
@@ -129,6 +141,7 @@
 	]);
 
 	function openMenu(e: MouseEvent) {
+		if (blocked) return showToast(vision!.reason);
 		const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
 		menu = { x: r.left, y: r.top - 8 };
 	}
@@ -213,9 +226,11 @@
 			id="chat-attach"
 			type="button"
 			class="chat-attach-btn shrink-0"
-			aria-label="Add a picture"
-			aria-haspopup="menu"
-			title={room > 0 ? 'Add a picture (paste or drop works too)' : `At most ${MAX_ATTACHMENTS} pictures per message`}
+			aria-label={blocked ? 'Add a picture — unavailable: ' + vision!.reason : 'Add a picture'}
+			aria-haspopup={blocked ? undefined : 'menu'}
+			aria-disabled={blocked || undefined}
+			class:chat-attach-blocked={blocked}
+			title={blocked ? vision!.reason : room > 0 ? 'Add a picture (paste or drop works too)' + (vision ? ' — ' + vision.limits : '') : `At most ${MAX_ATTACHMENTS} pictures per message`}
 			disabled={disabled || busy || room <= 0}
 			onclick={openMenu}
 		>
@@ -252,6 +267,11 @@
 <style>
 	.chat-attach {
 		display: contents;
+	}
+	/* 73 AI11: reachable (focus + the reason on press), but reads as unavailable */
+	.chat-attach-btn.chat-attach-blocked {
+		opacity: 0.45;
+		cursor: not-allowed;
 	}
 	.chat-attach-btn {
 		display: inline-flex;

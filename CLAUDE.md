@@ -1369,6 +1369,20 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   pane, the palette tooltip AND the docs-site tables from one string; `shader-node-docs`
   fails if a node ships without one. Plan + as-built: cloud `plans/core/pending/shader-graph-editor.md`; the
   scene-wide half (post stack, layer 2) is `scene-look-post-processing.md`.
+  **73 AI3 — THE `</>` VIEW AND YOUR OWN GLSL** (`shaderCode` pure leaf + `shaderCodeGuard` +
+  `shaderCodeProbe.worker` + `ShaderCodePane.svelte`). A document may carry `code: {use, vertex,
+  fragment, uniforms}`; `use` picks code or graph, it rides the document so wire, undo and saves
+  needed nothing, and surface only (post gets the GLSL + Graph JSON tabs). A shader cannot reach
+  DOM or network, so the risk is a HANG, in layers: static gate (no recursion in GLSL ES, so loops
+  are the only way to run for ever: `while`/`do` refused, `for` counts to a constant, the GLSL
+  expression node refuses `;` braces `#`) → device block list → worker probe (own WebGL2 context on
+  16x16; its clock starts when the worker holds the text, because module boot under load measured
+  8 s and said nothing about the shader; it MUST lose its context on exit, the browser sheds the
+  oldest past ~16 and that is the scene's) → first frame boxed by a fence dropped in a microtask
+  from `material.onBeforeRender`, polled on a timer (rAF does not run in XR) → context loss turns
+  it all off in the tab. A journal in localStorage written before a GPU can run the hash makes a
+  crash count at the next boot. VERDICTS ARE THE DEVICE'S: never the document, never the wire.
+  Field writes are value writes on the same material (no recompile). Test seams: `shaderCodeGuardForTest`.
   **THE HUD** (21-A, `hudDocs` + `hudSync` + `components/hud/` + the dock tab) — core
   had not one UI/2D/screen node, so a game's menu and score could not be authored:
   `dungeon-realms` hand-rolls a `#dr-gui` overlay at a hardcoded `z-index: 900` and

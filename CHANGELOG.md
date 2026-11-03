@@ -5,6 +5,29 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.55.0 — Give the AI pictures and shaders 🖼️
+
+### 🧊 A 3D model from a picture
+- **Generate 3D model from a picture**: a photo, an Explorer image or the viewport, with Meshy or a ComfyUI workflow that has `{{IMAGE}}` in a LoadImage node. In the Explorer, a picture's menu has **Make a 3D model…**.
+- **Location data is removed on your device** before a picture is sent anywhere.
+- **You are asked before a picture leaves your device for someone else's server**: for Meshy with the cost (about 20 credits in Preview, 30 in Refine) and a link to Meshy's privacy policy; for a hosted preset or a ComfyUI that is not on your computer or local network, with where it goes. Cancel sends nothing.
+- Mesh-provider errors name the provider and say what to do (key rejected, out of credits, timed out, unreachable), and *No mesh provider set up yet* links to Settings.
+
+### 💬 Pictures in the AI assistant
+- **Attach a picture and ask about it**, or ask for a 3D model of it. The **+** menu shows the limits (up to 4 pictures a message, 1568 px, location data removed).
+- A model that cannot see pictures greys the **+** with the reason and names one that can.
+
+### ✨ Your own shaders
+- **Shader editor `</>` view**: the GLSL a graph compiles to, the graph as editable JSON, and **Your GLSL**: your own vertex + fragment pair for a material, with compile errors shown inline by stage and line.
+- Your GLSL is shared with everyone in the session. Each device tests it first and switches it off for itself if it fails, is too slow or the graphics context is lost, with **Try again**. Shader code from someone else runs only after your device's test has passed.
+- On Quest, custom shaders are off until **Settings ▸ VR ▸ Display ▸ Turn on custom shaders**. An exported game switches off shader code its author did not write.
+- The GLSL expression node takes one expression of names, numbers and operators. A saved graph that used more shows an error and keeps its last good material.
+- 🔒 **Shader graphs and shader code from other people are checked before they reach your graphics card.**
+
+### 🌱 Start here
+- **Templates ▸ Shader garden**: three objects wearing Your GLSL.
+- A first-use tip on Generate 3D model, and a docs page: **Give the AI pictures and shaders**.
+
 ## 1.54.3 — Stability: sessions that keep up, friendlier failures, small wins 🛠️
 
 ### 🤝 Sessions

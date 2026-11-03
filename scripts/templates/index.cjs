@@ -44,7 +44,9 @@ const TEMPLATE_FILES = [
 	// 36-backlog-21c (21-C8): Race (the core `race` module drives it)
 	'race',
 	// 36-fb F26: the Water works diorama (Fluid emitter, flow paths, Rotate / Motor, Float Along Flow)
-	'water-works'
+	'water-works',
+	// 73 AI6: the 1.55 starter — three objects in your own GLSL
+	'shader-garden'
 ];
 
 /** games whose def is OWNED BY ITS MODULE (modules/<id>/<id>.def.json, read by moduleDef) */

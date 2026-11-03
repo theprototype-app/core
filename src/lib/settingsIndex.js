@@ -154,6 +154,7 @@ export const SETTINGS_ROWS = [
 	["VR", "Statistics card", "A card on the other hand: peers, objects, network"],
 	["VR", "Peer hands", "How hand-tracked peers look to you· now Hands"],
 	["VR", "Passthrough", "Mixed reality — applies on the next VR entry— not supported on this device"],
+	["VR", "Turn on custom shaders", "On Quest: lets a scene’s own GLSL run (each one is still tested first). Off by default, because one stuck sh…"],
 	["VR", "Selection wireframe", "Draws a wireframe over what you select"],
 	["VR", "Reset panel positions", "Panels you moved go back to their spots on the controllers"],
 	["VR", "Game HUD", "Where a game’s score and timer show in the headset· now Follow head"],

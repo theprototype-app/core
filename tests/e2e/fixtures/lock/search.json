@@ -2962,6 +2962,7 @@
 				"Teleport",
 				"Texture threshold",
 				"Triangle threshold",
+				"Turn on custom shaders",
 				"Use CDN for packs",
 				"VR welcome tour",
 				"When you add files during a session"
@@ -3640,6 +3641,7 @@
 				"Stance",
 				"Statistics card",
 				"Teleport",
+				"Turn on custom shaders",
 				"Turning",
 				"Vertex edit limit",
 				"World grab snapping"
@@ -4505,6 +4507,7 @@
 				"Start fullscreen",
 				"Statistics card",
 				"Teleport",
+				"Turn on custom shaders",
 				"Turning",
 				"Use CDN for packs",
 				"VR welcome tour",

@@ -23,6 +23,7 @@
 // memo + the in-progress set, the PATH-based guard the flow editor uses.
 
 import { shaderNodeDef, outputTypeOf, SURFACE_NODE, POST_OUTPUT_NODE } from './shaderCatalog.js';
+import { glslExpressionProblem } from './shaderCode.js';
 
 /** @typedef {'float'|'vec2'|'vec3'|'vec4'|'sampler2D'} GlslType */
 /** @typedef {'fragment'|'vertex'|'post'} ShaderStage */
@@ -108,6 +109,9 @@ export function coerce(expr, from, to) {
 	return a === 3 ? 'vec4(' + expr + ', 1.0)' : 'vec4(' + expr + ', 0.0, 1.0)';
 }
 
+/** Nodes a shader graph may hold. */
+export const MAX_GRAPH_NODES = 512;
+
 /** GLSL literal for an authored param value. @param {any} value @param {string} type */
 export function glslLiteral(value, type) {
 	if (type === 'float') return floatLit(value);
@@ -123,7 +127,8 @@ export function glslLiteral(value, type) {
 		const v = asArray(value, 4);
 		return 'vec4(' + v.map(floatLit).join(', ') + ')';
 	}
-	return String(value);
+	// anything else is not a literal this compiler knows how to write safely
+	return floatLit(value);
 }
 
 /** @param {any} n @returns {string} */
@@ -193,6 +198,8 @@ function createCompiler(graph, outputType) {
 	const edges = graph?.edges ?? [];
 	/** @type {string[]} */
 	const errors = [];
+	// a graph cannot loop, but a document from anybody could still be a million nodes of straight-line work
+	if (nodes.length > MAX_GRAPH_NODES) errors.push('The graph has ' + nodes.length + ' nodes; the limit is ' + MAX_GRAPH_NODES + '.');
 	const output = nodes.find((n) => n.type === outputType);
 
 	/** @type {Map<string, any>} */
@@ -266,7 +273,13 @@ function createCompiler(graph, outputType) {
 			/** @type {Record<string, string>} */
 			const params = {};
 			for (const p of def.params ?? []) {
-				const authored = node.data?.[p.name] ?? p.default;
+				let authored = node.data?.[p.name] ?? p.default;
+				// a document can come from anybody: a choice must be one of the node's own options,
+				// and text is only ever the GLSL expression, which has its own gate below
+				if (p.type === 'enum' && !(Array.isArray(p.options) && p.options.includes(authored))) {
+					errors.push('Node "' + (node.data?.label ?? def.label ?? node.type) + '": "' + p.name + '" must be one of ' + (p.options ?? []).join(', ') + '.');
+					authored = p.default;
+				}
 				if (p.uniform) {
 					const name = 'u_' + safe(nodeId) + '_' + p.name;
 					const runtime = uniformValue(authored, p.type);
@@ -345,6 +358,16 @@ function createCompiler(graph, outputType) {
 				);
 			}
 
+			// 73 AI3: the expression node pastes text into a statement, the one way out of it; any
+			// other text param a later def adds is held to the same gate
+			for (const p of def.params ?? []) {
+				if (p.type !== 'text') continue;
+				const problem = glslExpressionProblem(String(params[p.name] ?? ''));
+				if (problem) {
+					errors.push(problem);
+					params[p.name] = String(p.default ?? '0.0');
+				}
+			}
 			const expr = def.emit ? def.emit({ in: inExpr, params, node, stage }) : '0.0';
 			inProgress.delete(nodeId);
 			// hoist into a temp so a reused node is computed exactly once
@@ -398,6 +421,7 @@ function createCompiler(graph, outputType) {
 export function compileShaderGraphToIR(graph) {
 	const { output, errors, uniforms, preludes, makePass } = createCompiler(graph, SURFACE_NODE);
 	if (!output) return { ok: false, errors: ['The graph has no Surface output node.'] };
+	if (errors.length) return { ok: false, errors };
 
 	/** @type {any} */
 	const ir = { uniforms: [], prelude: '', body: '', defines: {} };
@@ -448,6 +472,7 @@ export function compileShaderGraphToIR(graph) {
 export function compilePostGraphToIR(graph) {
 	const { output, errors, uniforms, preludes, makePass } = createCompiler(graph, POST_OUTPUT_NODE);
 	if (!output) return { ok: false, errors: ['The graph has no Post output node.'] };
+	if (errors.length) return { ok: false, errors };
 	const pass = makePass('post');
 	const taps = pass.walkTaps(POST_TAP_TYPES);
 	if (!taps.color && !errors.length)

@@ -125,6 +125,29 @@ export function summarizeToolCall(tool, args, result, nameOf = () => '') {
 			const file = String(result?.file?.name ?? 'a file');
 			return 'imported ' + file + (result?.spec ? ' + its spec' : '') + (result?.uuid ? ' and placed it in the scene' : ' into the Explorer');
 		}
+		// 85 G1-G6
+		case 'set_geometry': {
+			const done = arr(result.updated).filter((r) => r && r.ok);
+			const names = nameList(done.map((r) => nameOf(r.uuid)));
+			const types = [...new Set(done.filter((r) => r.from).map((r) => r.geometry?.type).filter(Boolean))];
+			return (types.length ? 'turned ' + count(done.length, 'object') + ' into ' + types.join(', ') : 'reshaped ' + count(done.length, 'object')) + (names ? ' (' + names + ')' : '');
+		}
+		case 'create_lathe':
+		case 'create_tube':
+		case 'extrude_shape':
+		case 'create_mesh': {
+			const made = arr(result.created).filter((r) => r && !r.error);
+			const what = { create_lathe: 'a lathe', create_tube: 'a tube', extrude_shape: 'an extrusion', create_mesh: 'a mesh' }[tool];
+			const name = nameList(made.map((r) => r.name));
+			return 'made ' + what + (name ? ' (' + name + ')' : '');
+		}
+		case 'edit_mesh': {
+			const row = arr(result.updated)[0];
+			if (!row) return null; // ops: [] is a preview — a read
+			const ops = nameList(arr(row?.ops).map((o) => String(o?.op ?? '').replace(/_/g, ' ')));
+			const on = nameOf(String(row?.uuid ?? args?.object ?? ''));
+			return 'edited the mesh' + (on ? ' of ' + on : '') + (ops ? ' (' + ops + ')' : '');
+		}
 		case 'install_modules':
 			return 'installed ' + count(arr(args?.ids ?? args?.modules).length, 'module');
 		default:

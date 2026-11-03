@@ -95,10 +95,21 @@ export function stampGeometryParams(object) {
 	if (current) object.userData.geometryParams = current;
 }
 
+/** a registry type's default params @param {string} gtype */
+export function defaultGeometryParams(gtype) {
+	/** @type {any} */
+	const params = {};
+	for (const p of geometrySpec(gtype)?.params ?? []) params[p.key] = p.def;
+	return params;
+}
+
 /**
  * Apply a param patch: rebuild, stamp, replicate, record.
+ * 85 G1: `gtype` changes the primitive's TYPE in place (box → cylinder): the patch then lands
+ * on the new type's defaults, and the object keeps its uuid, transform, material and flows.
+ * The same `geometry` message and history kind carry it (both already hold the gtype).
  * @param {string} uuid @param {any} patch
- * @param {{replicate?: boolean, record?: boolean}=} options
+ * @param {{replicate?: boolean, record?: boolean, gtype?: string}=} options
  */
 export function applyGeometry(uuid, patch, options = {}) {
 	const { replicate = true, record = true } = options;
@@ -107,13 +118,15 @@ export function applyGeometry(uuid, patch, options = {}) {
 	if (!object?.geometry) return false;
 	const current = geometryParamsOf(object);
 	if (!current) return false;
+	const gtype = options.gtype && geometrySpec(options.gtype) ? options.gtype : current.gtype;
 	const before = { gtype: current.gtype, params: { ...current.params } };
-	const params = cleanFor(current.gtype, { ...current.params, ...patch });
-	const fresh = buildGeometry(current.gtype, params);
+	const base = gtype === current.gtype ? current.params : defaultGeometryParams(gtype);
+	const params = cleanFor(gtype, { ...base, ...patch });
+	const fresh = buildGeometry(gtype, params);
 	if (!fresh) return false;
 	object.geometry.dispose();
 	object.geometry = fresh;
-	object.userData.geometryParams = { gtype: current.gtype, params };
+	object.userData.geometryParams = { gtype, params };
 	// a rebuild discards any recorded vertex edits — the flag resets. faceEdited
 	// (which every meshgeo commit stamps, so every sculpt stroke too) goes with
 	// it: it is the same lock, and leaving it set means the parametric rows stay
@@ -122,11 +135,11 @@ export function applyGeometry(uuid, patch, options = {}) {
 	delete object.userData.faceEdited;
 	pokeScene();
 	if (record)
-		recordEntry({ kind: 'geometry', uuid, before, after: { gtype: current.gtype, params } });
+		recordEntry({ kind: 'geometry', uuid, before, after: { gtype, params } });
 	if (replicate) {
 		/** @type {any} */
 		const peer = get(peers);
-		if (peer) peer.send({ type: 'geometry', uuid, gtype: current.gtype, params });
+		if (peer) peer.send({ type: 'geometry', uuid, gtype, params });
 	}
 	return true;
 }
@@ -137,7 +150,8 @@ export function applyRemoteGeometry(data) {
 	const group = get(objectsGroup);
 	const object = group?.getObjectByProperty('uuid', data.uuid);
 	if (!object?.geometry) return;
-	const fresh = buildGeometry(data.gtype, data.params ?? {});
+	// 85 G2/G4: a profile / outline rides `params` — the builder gets the cleaned set, never the raw wire
+	const fresh = buildGeometry(data.gtype, cleanFor(data.gtype, { ...data.params }));
 	if (!fresh) return;
 	object.geometry.dispose();
 	object.geometry = fresh;
@@ -150,7 +164,8 @@ export function applyRemoteGeometry(data) {
 // undo/redo replays the full param set — `state` is the recorded
 // {gtype, params} side (history passes entry.before/.after by value)
 registerHistoryKind('geometry', (entry, state) => {
-	return applyGeometry(entry.uuid, state.params, { record: false, replicate: true });
+	// 85 G1: the recorded side's TYPE too — undoing a box → cylinder brings the box back
+	return applyGeometry(entry.uuid, state.params, { record: false, replicate: true, gtype: state.gtype });
 });
 
 export { GEOMETRY_PARAMS };

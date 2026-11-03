@@ -4,6 +4,7 @@
 	// Apply/Reload, FlowCode's contract) · Your GLSL (a vertex + fragment pair that replaces the
 	// graph while it is on). A post document gets the first two: your own GLSL is surface only.
 	import CodeEditor from './CodeEditor.svelte';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import ShaderVectorInput from './nodes/ShaderVectorInput.svelte';
 	import { showToast } from '../../stores/appStore.js';
 	import { objectsGroup } from '../../stores/sceneStore.js';
@@ -173,7 +174,7 @@
 			{/if}
 		</div>
 		{#if fields.length}
-			<div class="scp-fields" id="shader-own-fields">
+			<div class="scp-fields" id="shader-own-fields" use:minimalScroll>
 				{#each fields as field (field.name)}
 					<div class="scp-field" data-uniform={field.name}>
 						<span class="scp-field-name">{field.name}</span>

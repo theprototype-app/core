@@ -289,6 +289,8 @@
 		"chat-media": 480,
 		"image-to-3d": 420,
 		"ai-vision": 420,
+		"shader-own-glsl": 420,
+		"shader-own-glsl-sync": 360,
 		"connector-relay": 240,
 		"connector-physics": 150,
 		"connector-window": 150,

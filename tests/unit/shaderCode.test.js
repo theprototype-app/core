@@ -58,24 +58,43 @@ describe('checkShaderCode', () => {
 	});
 	it('counts the whole stage\'s work: steps times body, calls what they run, both sides of a branch', () => {
 		const loop = (n) => 'for (int i = 0; i < ' + n + '; i++) x += 1.0;';
-		expect(check('float x = 0.0;' + Array.from({ length: 30 }, () => loop(1024)).join('\n'))).toEqual([]);
-		expect(check('float x = 0.0;' + Array.from({ length: 40 }, () => loop(1024)).join('\n'))[0]).toMatch(/about 409\d\d operations for every pixel/);
+		expect(check('float x = 0.0;' + Array.from({ length: 15 }, () => loop(1024)).join('\n'))).toEqual([]);
+		expect(check('float x = 0.0;' + Array.from({ length: 20 }, () => loop(1024)).join('\n'))[0]).toMatch(/about 409\d\d operations for every pixel/);
 		// steps alone are not the measure: a heavy body inside the step budget
 		expect(check('float x = 0.0; for (int a = 0; a < 1024; a++) for (int b = 0; b < 32; b++) x += sin(x) * cos(x) + exp(x) * log(x + 2.0);')[0]).toMatch(/operations for every pixel/);
 		// a branch that waits for the clock is counted as if it ran
 		expect(checkShaderCode({ vertex: STARTER_VERTEX, fragment: 'uniform float uShaderTime;\n' + frag('float x = 0.0; if (uShaderTime > 100.0) { for (int a = 0; a < 1024; a++) for (int b = 0; b < 64; b++) x += 1.0; }') })[0]).toMatch(/operations/);
 		const f = 'float f() { float s = 0.0; for (int i = 0; i < 1024; i++) s += 1.0; return s; }\n';
-		expect(checkShaderCode({ vertex: STARTER_VERTEX, fragment: f + frag('float x = 0.0; for (int k = 0; k < 16; k++) x += f();') })).toEqual([]);
+		expect(checkShaderCode({ vertex: STARTER_VERTEX, fragment: f + frag('float x = 0.0; for (int k = 0; k < 8; k++) x += f();') })).toEqual([]);
 		expect(checkShaderCode({ vertex: STARTER_VERTEX, fragment: f + frag('float x = 0.0; for (int k = 0; k < 40; k++) x += f();') })[0]).toMatch(/operations/);
 		// the call hides in an else of a brace-less body, and in a function whose parameter list has brackets
 		expect(checkShaderCode({ vertex: STARTER_VERTEX, fragment: f + frag('float x = 0.0; for (int k = 0; k < 128; k++) if (x > 1.0) x = 0.0; else x += f();') })[0]).toMatch(/operations/);
 		const g = 'float g(float a[(2)]) { float s = 0.0; for (int i = 0; i < 1024; i++) s += a[0]; return s; }\n';
 		expect(checkShaderCode({ vertex: STARTER_VERTEX, fragment: g + frag('float x = 0.0; float a[2]; for (int k = 0; k < 128; k++) x += g(a);') })[0]).toMatch(/operations/);
 		// a nest of brace-less loops multiplies
-		expect(check('float x = 0.0; for (int a = 0; a < 512; a++) for (int b = 0; b < 512; b++) x += 1.0;')[0]).toMatch(/about 262\d{3} operations/);
+		expect(check('float x = 0.0; for (int a = 0; a < 512; a++) for (int b = 0; b < 512; b++) x += 1.0;')[0]).toMatch(/about 524\d{3} operations/);
 		// a real raymarch fits
 		const march = 'float sdf(vec3 p) { return length(p) - 1.0; }\n' + frag('vec3 p = vec3(0.0); float t = 0.0; for (int i = 0; i < 128; i++) { float d = sdf(p + vec3(0.0, 0.0, t)); if (d < 0.001) break; t += d; }');
 		expect(checkShaderCode({ vertex: STARTER_VERTEX, fragment: march })).toEqual([]);
+	});
+	it('weighs matrices, heavy built-ins, arrays and structs by their size', () => {
+		const one = (head, body) => checkShaderCode({ vertex: STARTER_VERTEX, fragment: head + frag(body) });
+		// a product of two mat4s is ~64 steps, not one
+		expect(one('', 'mat4 m = mat4(1.0); for (int a = 0; a < 1024; a++) { m = m * m; }')[0]).toMatch(/operations/);
+		expect(one('', 'mat4 m = mat4(1.0); for (int a = 0; a < 256; a++) { m = inverse(m); }')[0]).toMatch(/operations/);
+		// a mat2 rotation inside a 128-step raymarch is ordinary
+		const rot = 'mat2 rot(float a) { float c = cos(a); float s = sin(a); return mat2(c, -s, s, c); }\nfloat sdf(vec3 p) { p.xz = rot(0.5) * p.xz; return length(p) - 1.0; }\n';
+		expect(one(rot, 'vec3 p = vec3(0.0); float t = 0.0; for (int i = 0; i < 128; i++) { float d = sdf(p + vec3(0.0, 0.0, t)); if (d < 0.001) break; t += d; }')).toEqual([]);
+		// arrays: element reads are light, whole copies weigh their length, and the length is capped
+		expect(one('', 'float w[9]; float x = 0.0; for (int i = 0; i < 9; i++) { x += w[i] * 2.0; }')).toEqual([]);
+		expect(one('', 'float a[64]; float b[64]; for (int i = 0; i < 1024; i++) { b = a; }')[0]).toMatch(/operations/);
+		expect(one('', 'float big[65];')[0]).toMatch(/`big` holds 65 elements; an array here holds at most 64/);
+		expect(one('', 'float a[4], big[100];')[0]).toMatch(/`big` holds 100/);
+		// a struct copy weighs its members
+		expect(one('struct S { float v[64]; mat4 m; };\n', 'S a; S b; for (int i = 0; i < 1024; i++) { b = a; }')[0]).toMatch(/operations/);
+		expect(one('struct Hit { float d; vec3 n; };\n', 'Hit h = Hit(1.0, vec3(0.0)); float x = h.d;')).toEqual([]);
+		// a name the gate cannot type counts as heavy: a misread refuses, it never lets one by
+		expect(one('', 'float x = 0.0; for (int i = 0; i < 1024; i++) { x += mystery; }')[0]).toMatch(/operations/);
 	});
 	it('reads the text the way the compiler does', () => {
 		// a carriage return ends a // comment for GLSL; a backslash joins lines

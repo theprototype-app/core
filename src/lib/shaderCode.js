@@ -224,18 +224,148 @@ function loopProblems(src, stage) {
 	return problems;
 }
 
-/** what counts one operation: a call (built-ins and constructors too) or an operator */
-const OPERATIONS = /[A-Za-z_]\w*\s*\(|&&|\|\||[<>!=]=|<<|>>|[-+*/%<>?^&|~!]/g;
+/** what counts one operation: a call (built-ins and constructors too), an operator, an assignment or a
+ * `return` (the last two copy a value, which for an array or a struct is the whole of it) */
+const OPERATIONS = /[A-Za-z_]\w*\s*\(|\breturn\b|&&|\|\||[<>!=]=|<<|>>|[-+*/%<>?^&|~!]|=/g;
+
+/** types whose operations cost about one step (a vector is one SIMD-ish step) */
+const LIGHT_TYPES = new Set(['void', 'float', 'int', 'uint', 'bool', 'vec2', 'vec3', 'vec4', 'ivec2', 'ivec3', 'ivec4', 'uvec2', 'uvec3', 'uvec4', 'bvec2', 'bvec3', 'bvec4']);
+/** a matrix type -> what one operation on it may cost (a product is n^3) */
+const MATRIX_TYPES = /** @type {Record<string, number>} */ ({ mat2: 8, mat3: 27, mat4: 64, mat2x2: 8, mat3x3: 27, mat4x4: 64, mat2x3: 27, mat3x2: 27, mat2x4: 64, mat4x2: 64, mat3x4: 64, mat4x3: 64 });
+/** built-ins that cost more than a step */
+const HEAVY_BUILTINS = /** @type {Record<string, number>} */ ({ inverse: 256, determinant: 64, transpose: 16, outerProduct: 16, matrixCompMult: 64 });
+/** words that are never a value: keywords, qualifiers, the light built-in functions */
+const NOT_VALUES = new Set([
+	...'if else for return break continue discard switch case default const in out inout uniform varying attribute precision highp mediump lowp true false struct layout flat smooth centroid invariant location'.split(' '),
+	...'sin cos tan asin acos atan sinh cosh tanh asinh acosh atanh radians degrees pow exp log exp2 log2 sqrt inversesqrt abs sign floor trunc round roundEven ceil fract mod modf min max clamp mix step smoothstep isnan isinf floatBitsToInt floatBitsToUint intBitsToFloat uintBitsToFloat length distance dot cross normalize faceforward reflect refract lessThan lessThanEqual greaterThan greaterThanEqual equal notEqual any all not dFdx dFdy fwidth'.split(' ')
+]);
+/** values the app (three.js) and GLSL provide, by weight */
+const BUILTIN_VALUES = /** @type {Record<string, number>} */ ({
+	gl_FragCoord: 1, gl_FragColor: 1, gl_Position: 1, gl_PointSize: 1, gl_FrontFacing: 1, gl_PointCoord: 1, gl_VertexID: 1, gl_InstanceID: 1, gl_FragDepth: 1,
+	position: 1, normal: 1, uv: 1, cameraPosition: 1, isOrthographic: 1, uShaderTime: 1,
+	modelMatrix: 64, modelViewMatrix: 64, projectionMatrix: 64, viewMatrix: 64, normalMatrix: 27
+});
+/** a swizzle after a `.` reads components, nothing more */
+const SWIZZLE = /^(?:[xyzw]{1,4}|[rgba]{1,4}|[stpq]{1,4})$/;
+/** the cap on one array: past it, copying or comparing a whole one is a loop the gate cannot see */
+export const MAX_ARRAY_LENGTH = 64;
+
+/**
+ * What one operation on each name in the text may cost. Anything the scan cannot type counts as
+ * HEAVY (a matrix's 64), so a declaration it misreads refuses a shader rather than letting one by.
+ * @param {string} src the comment-stripped text
+ * @returns {{weightOf: (name: string, next: string) => number, arrayProblems: string[]}}
+ */
+export function valueWeights(src) {
+	/** @type {Map<string, number>} name -> weight as a whole value */
+	const whole = new Map();
+	/** @type {Map<string, number>} array name -> weight of one element */
+	const element = new Map();
+	/** @type {Map<string, number>} struct type -> weight of a copy */
+	const structs = new Map();
+	/** @type {string[]} */
+	const arrayProblems = [];
+	const typeWeight = (/** @type {string} */ type) =>
+		LIGHT_TYPES.has(type) ? 1 : (MATRIX_TYPES[type] ?? structs.get(type) ?? 64);
+	const lengthOf = (/** @type {string} */ text) => {
+		const n = /^\d+$/.test(text) ? Number(text) : integerDefines(src).get(text)?.value;
+		return n === undefined ? Infinity : n;
+	};
+	// structs first: a copy costs what its members do
+	for (const m of src.matchAll(/\bstruct\s+([A-Za-z_]\w*)\s*\{([^}]*)\}/g)) {
+		let size = 0;
+		for (const f of m[2].matchAll(/([A-Za-z_]\w*)\s+([A-Za-z_]\w*)\s*(?:\[\s*(\w+)\s*\])?\s*;/g)) {
+			const w = typeWeight(f[1]) * (f[3] ? lengthOf(f[3]) : 1);
+			size += w;
+			whole.set(f[2], Math.max(whole.get(f[2]) ?? 0, f[3] ? 64 : typeWeight(f[1])));
+			if (f[3]) element.set(f[2], typeWeight(f[1]));
+		}
+		structs.set(m[1], Math.max(1, size));
+	}
+	const types = [...LIGHT_TYPES, ...Object.keys(MATRIX_TYPES), ...structs.keys()];
+	const decl = new RegExp('\\b(' + types.join('|') + ')\\s*(\\[\\s*(\\w+)\\s*\\])?\\s+([A-Za-z_]\\w*)', 'g');
+	for (const m of src.matchAll(decl)) {
+		const type = m[1];
+		// the rest of this declaration, at bracket depth 0, for `float a, b[4], c`
+		let i = (m.index ?? 0) + m[0].length - m[4].length;
+		/** @type {string[][]} name, array length text */
+		const names = [];
+		let depth = 0;
+		let start = i;
+		for (; i <= src.length; i++) {
+			const c = src[i] ?? ';';
+			if (c === '(' || c === '[') depth++;
+			else if ((c === ')' || c === ']') && depth > 0) depth--;
+			else if (depth === 0 && (c === ',' || c === ';' || c === ')' || c === '{' || c === '=')) {
+				const piece = /^\s*([A-Za-z_]\w*)\s*(?:\[\s*(\w+)\s*\])?/.exec(src.slice(start, i));
+				if (piece) names.push([piece[1], piece[2] ?? m[3] ?? '']);
+				if (c === '=') {
+					// skip the initializer
+					let d = 0;
+					for (i++; i < src.length; i++) {
+						const k = src[i];
+						if (k === '(' || k === '[') d++;
+						else if (k === ')' || k === ']') d--;
+						else if (d === 0 && (k === ',' || k === ';')) break;
+					}
+					if (src[i] !== ',') break;
+				} else if (c !== ',') break;
+				start = i + 1;
+				// another declaration with its own type ends this one (parameter lists)
+				if (new RegExp('^\\s*(?:const\\s+|in\\s+|highp\\s+|mediump\\s+|lowp\\s+)*(' + types.join('|') + ')\\b').test(src.slice(start))) break;
+			}
+		}
+		for (const [name, len] of names) {
+			if (len) {
+				const n = lengthOf(len);
+				if (!(n <= MAX_ARRAY_LENGTH)) arrayProblems.push('`' + name + '` holds ' + (Number.isFinite(n) ? n : 'an unknown number of') + ' elements; an array here holds at most ' + MAX_ARRAY_LENGTH + '.');
+				element.set(name, Math.max(element.get(name) ?? 0, typeWeight(type)));
+				whole.set(name, Math.max(whole.get(name) ?? 0, Math.min(n, MAX_ARRAY_LENGTH) * typeWeight(type)));
+			} else whole.set(name, Math.max(whole.get(name) ?? 0, typeWeight(type)));
+		}
+	}
+	// a function is its return type's weight: its work is counted where it runs
+	for (const m of src.matchAll(new RegExp('\\b(' + types.join('|') + ')\\s+([A-Za-z_]\\w*)\\s*\\(', 'g'))) whole.set(m[2], Math.max(whole.get(m[2]) ?? 0, typeWeight(m[1])));
+	for (const name of integerDefines(src).keys()) whole.set(name, 1);
+	/** @param {string} name @param {string} next the first character after it */
+	const weightOf = (name, next) => {
+		if (NOT_VALUES.has(name) || LIGHT_TYPES.has(name)) return 1;
+		if (HEAVY_BUILTINS[name]) return HEAVY_BUILTINS[name];
+		if (MATRIX_TYPES[name]) return MATRIX_TYPES[name];
+		if (structs.has(name)) return /** @type {number} */ (structs.get(name));
+		if (BUILTIN_VALUES[name]) return BUILTIN_VALUES[name];
+		if (next === '[' && element.has(name)) return /** @type {number} */ (element.get(name));
+		if (next === '.' && !element.has(name)) return 1; // a member or component read: its own name is weighed
+		return whole.get(name) ?? 64;
+	};
+	return { weightOf, arrayProblems };
+}
+
+/** One statement's work: its operations, each at the cost of the heaviest value it touches. @param {string} text @param {(name: string, next: string) => number} weightOf */
+function statementWork(text, weightOf) {
+	const ops = text.match(OPERATIONS)?.length ?? 0;
+	if (!ops) return 0;
+	let heaviest = 1;
+	for (const m of text.matchAll(/(\.\s*)?\b([A-Za-z_]\w*)\b(?=\s*(.?))/g)) {
+		if (/^\d/.test(m[2])) continue;
+		if (m[1] && SWIZZLE.test(m[2])) continue;
+		heaviest = Math.max(heaviest, weightOf(m[2], m[3]));
+	}
+	return ops * heaviest;
+}
 
 /**
  * THE WHOLE STAGE'S WORK (see MAX_SHADER_WORK): what `main` runs, each loop counting its bound
  * times its body, each call to one of the author's functions counting that function's work. GLSL
  * has no recursion, so the walk ends; a cycle (the compiler refuses one anyway) counts as too
  * much, and so does a loop nothing can bound.
- * @param {string} src the comment-stripped text @returns {number}
+ * @param {string} text the comment-stripped text @returns {number}
  */
-export function programWork(src) {
-	const defines = integerDefines(src);
+export function programWork(text) {
+	const defines = integerDefines(text);
+	const { weightOf } = valueWeights(text);
+	// directives are not run per pixel: blank them (same length, so every index still holds)
+	const src = text.replace(/^[ \t]*#[^\n]*$/gm, (/** @type {string} */ m) => ' '.repeat(m.length));
 	/** brace depth at each index */
 	const depth = new Int32Array(src.length + 1);
 	for (let i = 0, d = 0; i < src.length; i++) {
@@ -287,7 +417,7 @@ export function programWork(src) {
 		}
 		outside.push(src.slice(cursor, to));
 		const straight = outside.join(' ');
-		total += straight.match(OPERATIONS)?.length ?? 0;
+		for (const statement of straight.split(/[;{}]/)) total += statementWork(statement, weightOf);
 		for (const m of straight.matchAll(/\b([A-Za-z_]\w*)\s*\(/g))
 			if (functions.has(m[1])) total += callWork(m[1], stack);
 		return total;
@@ -397,11 +527,12 @@ export function checkShaderCode(code) {
 		if (ascii) problems.push(stage + ' line ' + lineAt(clean, ascii.index) + ': only plain ASCII is allowed outside comments.');
 		const before = problems.length;
 		problems.push(...preprocessorProblems(clean, stage), ...loopProblems(clean, stage));
+		problems.push(...valueWeights(clean).arrayProblems.map((p) => stage + ': ' + p));
 		if (!/\bvoid\s+main\s*\(/.test(clean)) problems.push(stage + ' shader has no `void main()`.');
 		else if (problems.length === before) {
 			const work = programWork(clean);
 			if (!(work <= MAX_SHADER_WORK))
-				problems.push(stage + ': this shader does about ' + (Number.isFinite(work) ? work : 'unboundedly many') + ' operations for every ' + (stage === 'Vertex' ? 'vertex' : 'pixel') + ' (loops count each step, calls what they run, both sides of a branch); the limit is ' + MAX_SHADER_WORK + '.');
+				problems.push(stage + ': this shader does about ' + (Number.isFinite(work) ? work : 'unboundedly many') + ' operations for every ' + (stage === 'Vertex' ? 'vertex' : 'pixel') + ' (loops count each step, calls what they run, both sides of a branch, and matrices, arrays and structs their size); the limit is ' + MAX_SHADER_WORK + '.');
 		}
 	}
 	const { samplers } = scanShaderUniforms(vertex, fragment);

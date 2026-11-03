@@ -210,7 +210,7 @@ h.run(async () => {
 	const grey = await page.evaluate(() => ({ title: document.querySelector('#chat-attach')?.getAttribute('title'), name: document.querySelector('#chat-attach')?.getAttribute('aria-label') }));
 	h.check(/grok-3-mini can’t see pictures/.test(grey.title ?? '') && /grok-4/.test(grey.title ?? ''), `AI11: the reason offers a model that can (${grey.title})`);
 	h.check(/unavailable/.test(grey.name ?? ''), 'AI11: the accessible name says it is unavailable');
-	await page.click('#chat-attach');
+	await page.click('#chat-attach', { force: true }); // aria-disabled keeps it pressable: the press explains why
 	await h.eventually(() => page.evaluate(() => [...document.querySelectorAll('.tp-toast')].map((t) => t.textContent).join(' | ')), (t) => /can’t see pictures/.test(t), 'AI11: a press says why', 8000);
 	await page.setInputFiles('#chat-attach-file', PHOTO);
 	await page.waitForTimeout(1500);

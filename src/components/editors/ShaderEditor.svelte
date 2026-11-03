@@ -30,6 +30,7 @@
 	import '../../styles/flow.css';
 	import { selectedObjects, objectsGroup } from '../../stores/sceneStore';
 	import { shaderEditorClose, showToast, mobileUndockAllowed } from '../../stores/appStore.js';
+	import ShaderCodePane from './ShaderCodePane.svelte';
 	import {
 		shaderGraphs,
 		shaderErrors,
@@ -151,6 +152,9 @@
 	let propsOpen = $state(LS?.getItem('shaderPropsOpen') !== 'false');
 	let paletteOpen = $state(LS?.getItem('shaderPaletteOpen') !== 'false');
 	let propsTab = $state(LS?.getItem('shaderPropsTab') || 'settings');
+	// 73 AI3: the </> view. LOCAL, like the columns beside it
+	let codeOpen = $state(LS?.getItem('shaderCodeOpen') === 'true');
+	const codeDriven = $derived(doc?.code?.use === true && !isPost);
 	// #20 P7: the left column's own height, measured — the graph tree's resize ceiling
 	let paletteColH = $state(0);
 	// 38 NOTES-38 #36: below 640px of its OWN width (a docked phone panel, a narrowed window)
@@ -178,6 +182,7 @@
 	let showMinimap = $state(LS?.getItem('shaderMinimap') === 'true');
 	let snapToGrid = $state(LS?.getItem('shaderSnap') === 'true');
 	$effect(() => {
+		LS?.setItem('shaderCodeOpen', String(codeOpen));
 		LS?.setItem('shaderPropsOpen', String(propsOpen));
 		LS?.setItem('shaderPaletteOpen', String(paletteOpen));
 		LS?.setItem('shaderPropsTab', propsTab);
@@ -689,6 +694,16 @@
 {/snippet}
 
 {#snippet editorActions()}
+	<button
+		class="ui-button-quiet"
+		id="shader-code-btn"
+		title="Show the code: generated GLSL, graph JSON, your own GLSL"
+		aria-label="Toggle the shader code view"
+		aria-pressed={codeOpen}
+		onclick={() => (codeOpen = !codeOpen)}
+	>
+		<Icon name="braces" size={16} aria-hidden="true" />
+	</button>
 	{#if doc}
 		<button
 			class="ui-button-quiet"
@@ -735,6 +750,9 @@
 			</div>
 		{/if}
 
+		{#if codeDriven}
+			<div class="shader-code-banner" id="shader-code-banner">Your GLSL is driving this material. The graph is kept, and takes over again when you turn your GLSL off.</div>
+		{/if}
 		<div class="shader-body" bind:clientWidth={bodyW}>
 			{#if paletteOpen && !compact}
 				<div class="shader-side shader-side-left" bind:clientHeight={paletteColH}>
@@ -862,8 +880,17 @@
 					{@render propsContent()}
 				</div>
 			{/if}
+			{#if codeOpen && !compact}
+				<div class="shader-code-side" id="shader-code-side">
+					<ShaderCodePane {scope} {doc} {isPost} ensureDoc={createGraph} />
+				</div>
+			{/if}
 		</div>
 		{#if compact}
+			<!-- a phone has no room for a split: the same pane, as a sheet -->
+			<Sheet bind:open={codeOpen} title="Code" detents={['full']} id="shader-code-sheet">
+				<div class="shader-sheet-body shader-code-sheet-body"><ShaderCodePane {scope} {doc} {isPost} ensureDoc={createGraph} /></div>
+			</Sheet>
 			<Sheet bind:open={paletteSheet} title="Nodes" detents={['half', 'full']} id="shader-palette-sheet">
 				<div class="shader-sheet-body">{@render paletteContent(320, pickFromSheet)}</div>
 			</Sheet>
@@ -1226,6 +1253,28 @@
 			position: absolute;
 			inset: -14px;
 		}
+	}
+	.shader-code-side {
+		flex: 0 0 min(46%, 440px);
+		min-width: 0;
+		border-left: 1px solid var(--border);
+		display: flex;
+		flex-direction: column;
+	}
+	/* above the phone bar, the DockViewsSheet way; the body fills what the detent leaves */
+	:global(#shader-code-sheet.sh) {
+		bottom: var(--ps-bar-h, 0px) !important;
+	}
+	.shader-code-sheet-body {
+		height: calc(100dvh - var(--ps-bar-h, 0px) - 120px);
+	}
+	.shader-code-banner {
+		flex: 0 0 auto;
+		font-size: 11px;
+		padding: 3px 8px;
+		color: var(--text-2);
+		background: var(--accent-soft);
+		border-bottom: 1px solid var(--border);
 	}
 	.shader-errors {
 		flex: 0 0 auto;

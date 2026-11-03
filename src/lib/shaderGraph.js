@@ -29,6 +29,19 @@ import {
 // only), and its `shaders` key has been DECLARED since B precisely so this phase adds a
 // renderer rather than a new concept — see that module for the rule it encodes.
 import { viewportOverrides, renderLayer } from './viewportOverrides.js';
+// 73 AI3: your own GLSL. `shaderCode` is pure; the guard owns what this device will run.
+import { checkShaderCode, shaderCodeHash, usesShaderCode, scanShaderUniforms, normalizeShaderCode } from './shaderCode.js';
+import {
+	startShaderCodeGuard,
+	shaderCodeRefusal,
+	probeShaderCode,
+	makeCodeMaterial,
+	watchFirstFrame,
+	forgetCodeMaterial,
+	retryShaderCode,
+	codeUniformValue
+} from './shaderCodeGuard.js';
+import { showToast } from '../stores/appStore.js';
 
 /** The reserved key for the scene default material (layer 2). */
 export const SCENE_GRAPH_KEY = 'scene';
@@ -40,6 +53,7 @@ export const SCENE_GRAPH_KEY = 'scene';
  * @property {'surface'|'post'} domain
  * @property {string} backend
  * @property {number} changedAt
+ * @property {any} [code] 73 AI3: your own GLSL, see shaderCode.js
  */
 
 /** All graph documents, keyed as described above. @type {import('svelte/store').Writable<Record<string, ShaderGraphDoc>>} */
@@ -83,7 +97,8 @@ export function normalizeShaderGraph(doc) {
 		edges: Array.isArray(doc?.edges) ? doc.edges : [],
 		domain: doc?.domain === 'post' ? 'post' : 'surface',
 		backend: typeof doc?.backend === 'string' ? doc.backend : INJECT_SHADER_BACKEND,
-		changedAt: Number(doc?.changedAt) || 0
+		changedAt: Number(doc?.changedAt) || 0,
+		...(doc?.code ? { code: normalizeShaderCode(doc.code) } : {})
 	};
 }
 
@@ -281,6 +296,7 @@ export async function compileAndApply(key) {
 		setErrors(key, []);
 		return { ok: true };
 	}
+	if (usesShaderCode(doc)) return compileCodeAndApply(key, doc);
 	const result = compileShaderGraphToIR(doc);
 	if (!result.ok) {
 		setErrors(key, result.errors ?? ['Shader compile failed.']);
@@ -326,6 +342,120 @@ export async function compileAndApply(key) {
 	}
 	setErrors(key, errors);
 	return { ok: errors.length === 0, errors };
+}
+
+// ---- 73 AI3: your own GLSL --------------------------------------------------------
+
+/** Each refusal is said once, however many objects and recompiles it covers. @type {Set<string>} */
+const saidRefusals = new Set();
+
+/**
+ * This device will not run this code: take it off what it drives, and say why. The document
+ * stays exactly as it is, because the peer who wrote it may run it perfectly well.
+ * @param {string} key @param {string} hash @param {string} reason
+ * @returns {{ok: boolean, errors: string[]}}
+ */
+function standDownCode(key, hash, reason) {
+	for (const object of targetsFor(key)) if (installed.get(object.uuid)?.userData?.shaderCodeHash) detachFrom(object);
+	setErrors(key, [reason]);
+	if (!saidRefusals.has(hash)) {
+		saidRefusals.add(hash);
+		showToast('A custom shader was turned off on this device. ' + reason);
+	}
+	return { ok: false, errors: [reason] };
+}
+
+/**
+ * The code half of compileAndApply: static gate -> this device's refusals -> the worker probe
+ * -> install + the first-frame box. A failure of the first and third keeps the last good
+ * material, the mid-edit rule the graph path keeps.
+ * @param {string} key @param {any} doc @returns {Promise<{ok: boolean, errors?: string[]}>}
+ */
+async function compileCodeAndApply(key, doc) {
+	startCodeGuard();
+	const problems = checkShaderCode(doc.code);
+	if (problems.length) {
+		setErrors(key, problems);
+		return { ok: false, errors: problems };
+	}
+	const hash = shaderCodeHash(doc.code);
+	const refused = shaderCodeRefusal(hash);
+	if (refused) return standDownCode(key, hash, refused);
+	const verdict = await probeShaderCode(doc.code);
+	// a newer edit overtook the probe, and scheduled its own compile
+	const now = shaderGraphOf(key);
+	if (!usesShaderCode(now) || shaderCodeHash(now?.code) !== hash) return { ok: true };
+	// and the context can go while the probe runs: asked before the wait, the answer is stale
+	const lateRefusal = shaderCodeRefusal(hash);
+	if (lateRefusal) return standDownCode(key, hash, lateRefusal);
+	if (!verdict.ok) {
+		// a driver's compile log is a mistake to fix; anything else is this device's verdict
+		if (verdict.status !== 'error') return standDownCode(key, hash, verdict.errors[0]);
+		setErrors(key, verdict.errors);
+		return { ok: false, errors: verdict.errors };
+	}
+	/** @type {string[]} */
+	const errors = [];
+	const fields = scanShaderUniforms(now?.code?.vertex, now?.code?.fragment).uniforms;
+	const targets = targetsFor(key);
+	if (!targets.length && key !== SCENE_GRAPH_KEY) retryMissingTarget(key);
+	else missingTries.delete(key);
+	for (const object of targets) {
+		if (!shaderTargetSupported(object)) {
+			errors.push(shaderRefusalReason(object));
+			continue;
+		}
+		const current = installed.get(object.uuid);
+		if (current?.userData?.shaderCodeHash === hash) {
+			// the same program: a field moved, which is a value write and never a recompile
+			for (const { name, type } of fields)
+				if (current.userData.shaderUniforms[name]) current.userData.shaderUniforms[name].value = codeUniformValue(now?.code?.uniforms?.[name], type);
+			continue;
+		}
+		const base = captureBase(object);
+		const material = makeCodeMaterial(now?.code, hash);
+		material.side = base.side;
+		applyMaterial(object, material);
+		watchFirstFrame(material, hash, (reason) => standDownCode(key, hash, reason));
+	}
+	setErrors(key, errors);
+	return { ok: errors.length === 0, errors };
+}
+
+function startCodeGuard() {
+	startShaderCodeGuard(() => {
+		for (const [key, doc] of Object.entries(get(shaderGraphs))) if (usesShaderCode(doc)) scheduleCompile(key, 0);
+	});
+}
+
+/** The panel's Try again. @param {string} key */
+export function retryShaderCodeFor(key) {
+	const doc = shaderGraphOf(key);
+	const hash = shaderCodeHash(doc?.code);
+	saidRefusals.delete(hash);
+	retryShaderCode(hash);
+	setErrors(key, []);
+	scheduleCompile(key, 0);
+	reconcileShaderGraphs();
+}
+
+/**
+ * Is this document's GLSL running on this device, for the panel's status line.
+ * @param {string} key @returns {'off'|'running'|'waiting'}
+ */
+export function shaderCodeRunState(key) {
+	const doc = shaderGraphOf(key);
+	if (!usesShaderCode(doc)) return 'off';
+	const hash = shaderCodeHash(doc?.code);
+	return targetsFor(key).some((/** @type {any} */ o) => installed.get(o?.uuid)?.userData?.shaderCodeHash === hash) ? 'running' : 'waiting';
+}
+
+/** A code material left an object. Its hash stays answerable while another object still runs it. @param {any} material */
+function releaseCodeMaterial(material) {
+	const hash = material?.userData?.shaderCodeHash;
+	if (!hash) return;
+	const stillUsed = [...installed.values()].some((m) => m !== material && m?.userData?.shaderCodeHash === hash);
+	forgetCodeMaterial(material, stillUsed);
 }
 
 /**
@@ -394,6 +524,7 @@ export function shaderLayerOn() {
 /** Install the default wiring. Idempotent; call once at boot. */
 export function startShaderGraphs() {
 	if (!targetsHook) registerShaderTargets(defaultTargetsFor);
+	startCodeGuard();
 	// subscribed HERE rather than at module level: the callback reads `shadersOn` and
 	// `installed`, and a module-level subscribe runs synchronously at eval, where a `let`
 	// declared below would TDZ-crash the SSR prerender (the meshEdit lesson)
@@ -550,7 +681,12 @@ export function baseMaterialOf(uuid) {
 
 /** @param {any} object @param {any} material */
 function applyMaterial(object, material) {
+	const previous = installed.get(object.uuid);
 	installed.set(object.uuid, material);
+	if (previous?.userData?.shaderCodeHash && previous !== material) {
+		releaseCodeMaterial(previous);
+		previous.dispose?.();
+	}
 	// P5: with the layer switched off on THIS device the compile still runs and the
 	// result is still remembered — only the assignment waits. So switching back on is a
 	// swap rather than a recompile, and a peer's authored material is never lost here.
@@ -620,6 +756,7 @@ export function detachFrom(object) {
 	if (base) object.material = base;
 	baseMaterials.delete(object.uuid);
 	installed.delete(object.uuid);
+	releaseCodeMaterial(mine);
 	forgetShaderContext(object);
 	// dispose only what WE made, never the base (the onionSkin rule)
 	if (mine && mine !== base && typeof mine.dispose === 'function') mine.dispose();

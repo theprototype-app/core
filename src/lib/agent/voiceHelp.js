@@ -14,6 +14,7 @@ const CAN = /** @type {[string, string][]} */ ([
 	['where_are_users', 'build right where you are standing or looking'],
 	['attach_to_user', 'hand you props, like a flashlight'],
 	['save_scene', 'save this scene to your library'],
+	['undo_last', 'undo what I just did when you say so'],
 	['screenshot', 'look at the scene to check my work']
 ]);
 

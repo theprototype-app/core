@@ -3,6 +3,8 @@ import { objectsGroup, lockedObjects, pokeScene } from '../../stores/sceneStore.
 import { peers } from '../../stores/appStore.js';
 import { lockSkip } from './lockNote.js';
 import { sceneFilter } from './sceneFilter.js';
+import { ASSIST_TOOL_NAMES, ASSIST_AI_TOOLS, ASSIST_PROMPT, assistTool } from './assistTools.js';
+import { aboutOriginPosition, originOf } from '$lib/objectOrigin';
 import { geometrySpec } from '$lib/geometryParams';
 import { createGeometry, createLight, createGroup } from '$lib/geometries.svelte.js';
 import { recordObjectPresence, recordTransform } from '$lib/history';
@@ -140,6 +142,8 @@ function describeObject(object) {
 		if (material.color) out.color = '#' + material.color.getHexString();
 	}
 	if (object.userData?.physics) out.physics = { ...object.userData.physics };
+	const pivot = originOf(object);
+	if (pivot) out.pivot = pivot.map(r3); // 85 set_pivot: object space
 	const geometry = geometrySummary(object);
 	if (geometry) out.geometry = geometry;
 	const flow = summarizeGraph(object.uuid);
@@ -350,15 +354,21 @@ function applyAiTransform(object, t) {
 			scale: object.scale.toArray()
 		};
 		if (t.position && t.position.length === 3) object.position.fromArray(t.position);
+		const hadQuat = object.quaternion.clone();
+		const hadScale = object.scale.clone();
 		if (t.rotation && t.rotation.length === 3)
 			object.rotation.set(t.rotation[0], t.rotation[1], t.rotation[2]);
 		if (t.scale && t.scale.length === 3) object.scale.fromArray(t.scale);
+		// 85 set_pivot: an object with a pivot turns and scales ABOUT it, the way the gizmo does; a position
+		// given in the same update is where the person asked for it, so it stands
+		if (!t.position) aboutOriginPosition(object, hadQuat, hadScale);
 		after = {
 			pos: object.position.toArray(),
 			rot: [object.rotation.x, object.rotation.y, object.rotation.z],
 			scale: object.scale.toArray()
 		};
 	});
+	notifyExternalMove(object.uuid);
 	pokeScene();
 	broadcast({ type: 'move', uuid: object.uuid, pos: after.pos, rot: after.rot, scale: after.scale });
 	recordTransform({ uuid: object.uuid, before, after });
@@ -617,7 +627,8 @@ const TOOL_NAMES = [
 	'import_model', // 56 C9 (offered to agents; see importModel.js)
 	'import_file', // 66 S4b (offered to agents; see importFile.js)
 	...GEOMETRY_TOOL_NAMES, // 85 G1-G6 (geometryTools.js)
-	...LOOK_TOOL_NAMES // 85 L1-L5 (lookTools.js)
+	...LOOK_TOOL_NAMES, // 85 L1-L5 (lookTools.js)
+	...ASSIST_TOOL_NAMES // 85 undo_last, pivots, images (assistTools.js): unlisted, their arguments read as create_objects / update_objects
 ];
 
 /** 34 D5: the behaviour family's spellings. They map to the behaviour tools only while a
@@ -665,6 +676,15 @@ const NAME_ALIASES = /** @type {Record<string,string>} */ ({
 	list_objects: 'list_scene',
 	list: 'list_scene',
 	clear: 'clear_scene',
+	undo: 'undo_last',
+	undo_last_call: 'undo_last',
+	undo_tool_call: 'undo_last',
+	set_origin: 'set_pivot',
+	set_object_pivot: 'set_pivot',
+	make_pivot: 'create_pivot',
+	upload_image: 'add_image',
+	import_image: 'add_image',
+	add_texture: 'add_image',
 	generate_model: 'generate_mesh',
 	// (85 G6: `create_mesh` is a tool of its own now — mesh from vertex data, not generation)
 	set_geometry_params: 'set_geometry',
@@ -948,6 +968,12 @@ async function runAiTool(rawName, rawArgs, opts) {
 				return { cleared: count };
 			}
 
+			case 'undo_last':
+			case 'set_pivot':
+			case 'create_pivot':
+			case 'add_image':
+				return await assistTool(name, args);
+
 			case 'create_flow_nodes':
 				return createFlowNodesTool(args, { physics });
 
@@ -1162,7 +1188,7 @@ export const AI_TOOLS = [
 								uuid: { type: 'string' },
 								name: { type: 'string' },
 								position: { type: 'array', items: { type: 'number' } },
-								rotation: { type: 'array', items: { type: 'number' } },
+								rotation: { type: 'array', items: { type: 'number' }, description: 'radians; an object with a pivot (set_pivot) turns about it' },
 								scale: { type: 'array', items: { type: 'number' } },
 								color: { type: 'string', description: 'hex #rrggbb' },
 								materialType: {
@@ -1527,7 +1553,7 @@ const PHYSICS_AI_TOOLS = [
  * Call this per turn (readiness can change). @param {ToolOpts} [opts] @returns {any[]} */
 export function getAiTools(opts) {
 	const physics = !!opts?.physics || physicsToolsEnabled();
-	const tools = [...AI_TOOLS, ...GEOMETRY_AI_TOOLS, ...LOOK_AI_TOOLS, ...flowToolSchemas(physics), ...behaviourToolSchemas()];
+	const tools = [...AI_TOOLS, ...GEOMETRY_AI_TOOLS, ...LOOK_AI_TOOLS, ...ASSIST_AI_TOOLS, ...flowToolSchemas(physics), ...behaviourToolSchemas()];
 	if (physics) tools.push(...PHYSICS_AI_TOOLS);
 	if (meshGenReady()) tools.push(MESH_TOOL);
 	return tools;
@@ -1632,6 +1658,6 @@ export function buildSystemPrompt(opts) {
 		"an object's name as the tool name — the name of a thing you create belongs in that object's",
 		'`name` field inside create_objects. Every call takes effect immediately, so never repeat a',
 		'call that already came back without an error — once the scene matches the request, stop',
-		'calling tools and write the summary.' + meshLine + toolsLine + GEOMETRY_PROMPT + LOOK_PROMPT + flowBlock + extraBlock + physicsBlock
+		'calling tools and write the summary.' + meshLine + toolsLine + GEOMETRY_PROMPT + LOOK_PROMPT + ASSIST_PROMPT + flowBlock + extraBlock + physicsBlock
 	].join('\n');
 }

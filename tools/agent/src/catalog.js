@@ -61,6 +61,10 @@ export const TOOL_ANNOTATIONS = /** @type {Record<string, {title: string, read?:
 	create_post_graph: { title: 'Add a custom post effect', destructive: false },
 	uv_unwrap: { title: 'Unwrap UVs', destructive: true },
 	set_uv: { title: 'Set texture tiling or face mapping', destructive: true },
+	undo_last: { title: 'Undo your last change', destructive: true },
+	set_pivot: { title: 'Set the point an object turns about', destructive: true },
+	create_pivot: { title: 'Make a pivot group', destructive: false },
+	add_image: { title: 'Add an image to the library', destructive: false, openWorld: true },
 	install_modules: { title: 'Install modules', destructive: false, openWorld: true },
 	accept_offer: { title: 'Answer a question the app asks', destructive: true },
 	connect: { title: 'Join a session', destructive: false, openWorld: true },
@@ -111,6 +115,7 @@ export const GUIDANCE = [
 		on: ['status', 'list_scene']
 	},
 	{ line: 'Call status first: it says whether you may edit (a viewer can only look).', on: ['status'] },
+	{ line: 'When the person says "undo that" or "take that back", call undo_last; if it refuses, say who changed what.', on: ['undo_last'] },
 	{
 		line: 'You act as this person in their own tab: status "you" is them (their peer id, name and role); the other users are everyone else.',
 		on: ['status', 'where_are_users'],

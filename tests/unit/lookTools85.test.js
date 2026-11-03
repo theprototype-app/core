@@ -565,3 +565,20 @@ describe('the registry', () => {
 		expect(summarizeToolCall('set_uv', { faces: {} }, { updated: [{}] })).toMatch(/mapped faces/);
 	});
 });
+
+describe('85a first-use tip', () => {
+	it('retires on exactly the 85 tools that change something (tips.AGENT_TIP_TOOLS in step)', async () => {
+		const { AGENT_TIP_TOOLS } = await import('../../src/lib/tips.js');
+		// geometryTools / assistTools pull geometries.svelte.js (runes), so their NAMES are read from the source
+		const fs = await import('node:fs');
+		/** @param {string} file @param {string} name */
+		const names = (file, name) => {
+			const m = fs.readFileSync(new URL('../../src/lib/ai/' + file, import.meta.url), 'utf8').match(new RegExp('export const ' + name + ' = (\\[[^\\]]*\\])'));
+			return /** @type {string[]} */ (JSON.parse(String(m?.[1]).replace(/'/g, '"')));
+		};
+		const GEOMETRY_TOOL_NAMES = names('geometryTools.js', 'GEOMETRY_TOOL_NAMES');
+		const ASSIST_TOOL_NAMES = names('assistTools.js', 'ASSIST_TOOL_NAMES');
+		const want = [...GEOMETRY_TOOL_NAMES, ...LOOK_TOOL_NAMES.filter((n) => !LOOK_READ_TOOLS.includes(n)), ...ASSIST_TOOL_NAMES];
+		expect([...AGENT_TIP_TOOLS].sort()).toEqual([...want].sort());
+	});
+});

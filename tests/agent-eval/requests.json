@@ -1,0 +1,26 @@
+{
+	"$comment": "Roadmap 85 eval set (owner 2026-11-01): ~20 spoken requests, the same scene (scene.json), scored pass / partial / fail by every release that changes connector tools. `pass` = any of these calls is made (tool + action when a family) without a refused call before it; `partial` = it gets there after a refused / wrong call, or makes one of `partial`; anything else = fail. Read-only calls (list_scene, status, screenshot, where_are_users, describe_node_types, what_can_you_do, the family read actions) never count against a request.",
+	"requests": [
+		{ "id": "campfire", "say": "Build a small campfire next to the table: some logs and a warm light.", "pass": [{ "tool": "create_objects" }] },
+		{ "id": "night", "say": "Make it night.", "pass": [{ "tool": "update_objects" }, { "tool": "set_look", "action": "post" }], "partial": [{ "tool": "create_objects" }] },
+		{ "id": "lamp-here", "say": "Put a lamp in front of me.", "pass": [{ "tool": "create_objects", "after": "where_are_users" }], "partial": [{ "tool": "create_objects" }] },
+		{ "id": "spin", "say": "Make the crate spin slowly.", "pass": [{ "tool": "create_flow_nodes" }] },
+		{ "id": "bigger", "say": "Make the ball twice as big.", "pass": [{ "tool": "update_objects" }, { "tool": "edit_shape", "action": "params" }] },
+		{ "id": "delete", "say": "Get rid of the crate.", "pass": [{ "tool": "delete_objects" }] },
+		{ "id": "drop-ball", "say": "Make the ball fall onto the table when I press play.", "pass": [{ "tool": "set_physics" }] },
+		{ "id": "vase", "say": "Put a vase on the table, a nice curvy one.", "pass": [{ "tool": "create_shape", "action": "lathe" }], "partial": [{ "tool": "create_objects" }] },
+		{ "id": "rail", "say": "Run a handrail along the edge of the floor, from one corner to the next.", "pass": [{ "tool": "create_shape", "action": "tube" }], "partial": [{ "tool": "create_objects" }] },
+		{ "id": "sign", "say": "Make a star-shaped sign above the door.", "pass": [{ "tool": "create_shape", "action": "extrude" }], "partial": [{ "tool": "create_shape", "action": "mesh" }, { "tool": "create_objects" }] },
+		{ "id": "round-box", "say": "Turn the crate into a cylinder.", "pass": [{ "tool": "edit_shape", "action": "params" }], "partial": [{ "tool": "delete_objects" }] },
+		{ "id": "bevel", "say": "Bevel the top edges of the table so they are not so sharp.", "pass": [{ "tool": "edit_shape", "action": "mesh" }] },
+		{ "id": "glossy-floor", "say": "Make the floor glossy, like polished stone.", "pass": [{ "tool": "set_look", "action": "material" }, { "tool": "update_objects" }] },
+		{ "id": "glass", "say": "Make the ball look like glass.", "pass": [{ "tool": "set_look", "action": "material" }, { "tool": "update_objects" }] },
+		{ "id": "wood-texture", "say": "Give the table a real wood texture.", "pass": [{ "tool": "set_look", "action": "material" }], "partial": [{ "tool": "assets", "action": "image" }, { "tool": "update_objects" }] },
+		{ "id": "glow-pulse", "say": "Make the lamp shade glow and pulse slowly.", "pass": [{ "tool": "set_look", "action": "shader" }, { "tool": "create_flow_nodes" }], "partial": [{ "tool": "update_objects" }] },
+		{ "id": "bloom", "say": "Add a soft bloom to the whole scene.", "pass": [{ "tool": "set_look", "action": "post" }] },
+		{ "id": "tiling", "say": "The floor texture is stretched, make it repeat four times.", "pass": [{ "tool": "set_look", "action": "uv" }] },
+		{ "id": "nod", "say": "Make the lamp tilt at its base instead of its middle.", "pass": [{ "tool": "edit_shape", "action": "pivot" }], "partial": [{ "tool": "edit_shape", "action": "pivot_group" }] },
+		{ "id": "checker-image", "say": "Make a black and white checkerboard image and put it on the floor.", "pass": [{ "tool": "assets", "action": "image" }], "partial": [{ "tool": "set_look", "action": "material" }, { "tool": "set_look", "action": "shader" }] },
+		{ "id": "undo", "say": "Undo that.", "setup": "The assistant has just changed the floor colour to red in this conversation.", "pass": [{ "tool": "undo_last" }], "partial": [{ "tool": "update_objects" }] }
+	]
+}

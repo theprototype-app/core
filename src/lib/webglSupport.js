@@ -10,8 +10,8 @@
 import { reportError } from './errorReports.js';
 import { WEBGL_CREATE_MSG } from './errorReportCore.js';
 
-/** where the "what to try" page lives (the docs home until a troubleshooting page exists) */
-export const NO_WEBGL_DOCS = 'https://docs.theprototype.app/';
+/** where the "what to try" section lives (docs PR #61, merged with 1.54.3) */
+export const NO_WEBGL_DOCS = 'https://docs.theprototype.app/performance/#3d-view-does-not-start';
 
 /**
  * Can this browser give us a WebGL 2 context (all three r163+ draws with)? The probe context is

@@ -186,8 +186,8 @@ export function createLight(command, uuid) {
         if (uuid) light.uuid = uuid
     } else if (lightType == 'rectarea') {
         // needs the uniforms lib once, or Standard/Physical materials render black
-        initRectAreaUniforms();
         light = new THREE.RectAreaLight(0xffffff, 2, 4, 4);
+        initRectAreaUniforms(light); // 94: the tables load lazily; materials refresh when they land
         light.name = 'RectArea';
     } else {
         console.log('Invalid light: ' + light);

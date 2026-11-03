@@ -53,6 +53,16 @@ jobs:
           [ "$(npm -v)" = "$npm_pin" ] || fail "runner npm $(npm -v), pinned $npm_pin — Node $node_pin bundles a different npm; bump packageManager + devEngines with it"
       - run: npm ci
       - run: npm run build
+      # 94 SP3 — THE BOOT GATE (perf/boot-budget.json). Bytes: the initial JS (gzip) the play entry
+      # (/play) and the editor make the browser fetch before they run; a red means new code landed
+      # on a boot path — make it an import(), or raise the line in the same PR with a `history` row.
+      - name: boot size
+        run: node scripts/boot-size.cjs --check
+      # Time: first frame on a throttled phone (slow 4G + 4x CPU), median of 3. Loose lines — a
+      # shared runner is noisy; the byte gate above is the precise one.
+      - run: npx playwright install --with-deps chromium
+      - name: boot first frame
+        run: node scripts/boot-frame.cjs --check
 
   check:
     runs-on: ubuntu-latest

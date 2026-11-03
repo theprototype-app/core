@@ -11,6 +11,8 @@
 	// Not rendered in VR: DOM is invisible in a headset. The in-scene VR path is a later
 	// phase (the AnnotationPins / AnnotationMarkers split).
 	import { onMount } from 'svelte';
+	// 94 SP6: the top-anchored game HUD moves below the play chrome row when they would overlap
+	import { bottomFootprint, hudBottomLift, hudTopShift, playChromeRects, topFootprint } from '$lib/play/hudSafeArea.js';
 	import HudElement from './HudElement.svelte';
 	import { hudDocs, hudRuntime, hudScreenOverride, hudPreviewInViewport, hudIsGame, visibleScreen, activeHudKeys, setHudValue, hudValueOf } from '$lib/hudDocs';
 	import { isVRMode, isLocked, playPointerFree } from '../../stores/sceneStore';
@@ -129,6 +131,44 @@
 	// dropdowns, and under pointer lock the ring is the only hand a player has. A
 	// disabled control is skipped the way it ignores presses.
 	const focusables = $derived(elements.filter((el) => isInteractiveKind(el.kind) && el.enabled !== false));
+	// 94 SP6 — THE SAFE AREAS (top row + bottom row). While playing (never while authoring: the artboard is the author's
+	// own frame), measured twice a second like the badge's lift (MadeWithBadge): the play chrome
+	// changes as chips come and go, and a 500 ms check costs a few rect reads.
+	let topShift = $state(0);
+	let bottomLift = $state(0);
+	$effect(() => {
+		if (!shown) {
+			topShift = 0;
+			bottomLift = 0;
+			return;
+		}
+		const list = elements;
+		const scale = textScale;
+		const measure = () => {
+			const vw = window.innerWidth;
+			const vh = window.innerHeight;
+			const tops = [];
+			const bottoms = [];
+			for (const el of list) {
+				const k = textScaled(el.kind) ? scale : 1;
+				const t = topFootprint(el, vw, k);
+				if (t) tops.push(t);
+				const b = bottomFootprint(el, vw, vh, k);
+				if (b) bottoms.push(b);
+			}
+			const chrome = playChromeRects();
+			topShift = hudTopShift(tops, chrome, vh);
+			bottomLift = hudBottomLift(bottoms, chrome, vh);
+		};
+		measure();
+		const id = setInterval(measure, 500);
+		window.addEventListener('resize', measure);
+		return () => {
+			clearInterval(id);
+			window.removeEventListener('resize', measure);
+		};
+	});
+
 	const anyVisible = $derived(elements.length > 0 && (!$isVRMode || arPlaying) && layerAllowed && !authoringHidden && !gameHidden);
 
 	// ---- 21-E3: the MENU SUBSTATE - this component is the SINGLE WRITER ------------
@@ -351,8 +391,9 @@
 		const f = textScaled(el.kind) ? textScale : 1;
 		/** @type {string[]} */
 		const out = [`width: ${el.w * f}px`, `height: ${el.h * f}px`, `z-index: ${el.z}`, `--hud-text-scale: ${f}`];
-		if (v === 'top') out.push(`top: ${el.y}px`);
-		else if (v === 'bottom') out.push(`bottom: ${el.y}px`);
+		// 94 SP6: below the play chrome row when they would overlap, and never under a notch
+		if (v === 'top') out.push(`top: calc(${el.y}px + var(--hud-top-shift, 0px))`);
+		else if (v === 'bottom') out.push(`bottom: calc(${el.y}px + var(--hud-bottom-lift, 0px))`);
 		else out.push('top: 50%', `--hud-ty: ${el.y}px`);
 		if (h === 'left') out.push(`left: ${el.x}px`);
 		else if (h === 'right') out.push(`right: ${el.x}px`);
@@ -410,7 +451,7 @@
 {/if}
 
 {#if anyVisible}
-	<div id="hud-layer" class="hud-layer" class:hud-authoring={!shown} class:hud-inert={gameInEditor} data-authoring={!shown} data-inert={gameInEditor} use:arPortal={arPlaying}>
+	<div id="hud-layer" class="hud-layer" style:--hud-top-shift={shown ? `max(env(safe-area-inset-top, 0px), ${topShift}px)` : '0px'} data-top-shift={topShift} style:--hud-bottom-lift={shown ? `max(env(safe-area-inset-bottom, 0px), ${bottomLift}px)` : '0px'} data-bottom-lift={bottomLift} class:hud-authoring={!shown} class:hud-inert={gameInEditor} data-authoring={!shown} data-inert={gameInEditor} use:arPortal={arPlaying}>
 		{#each elements as el (el.__key + ':' + el.id)}
 			<div
 				class="hud-slot"

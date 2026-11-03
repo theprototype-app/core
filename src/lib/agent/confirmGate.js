@@ -15,7 +15,7 @@ import { peers, userdata, showToast } from '../../stores/appStore.js';
 import { rolesInfo } from '$lib/cloudHooks';
 import { sessionHost } from '$lib/connectionState';
 import { isAgentPeer } from '$lib/inviteStore';
-import { registerDebugHook } from '$lib/debugHooks';
+import { registerDebugHook } from '$lib/debugHookRegistry.js';
 import { agentRequested } from './agentMode.js';
 import { confirmRoute, confirmTargets, askRefusal, cleanSummary, CONFIRM_TTL_MS, CONFIRM_MAX_WAIT_S } from './confirmCore.js';
 

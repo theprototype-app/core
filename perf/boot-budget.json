@@ -1,0 +1,33 @@
+{
+	"version": 1,
+	"comment": "94 SP3 — what a page makes the browser fetch before it runs (initial JS, gzip -9, static-import closure of the prerendered page's own preloads). Held by `node scripts/boot-size.cjs --check` after `npm run build` (CI: ci.yml build job). A red means new code landed on the boot path: make it a lazy chunk (`import()`), or raise the line IN THE SAME PR with a reason in `history`. See perf/README.md ▸ Boot size.",
+	"pages": {
+		"play": {
+			"html": "play.html",
+			"maxJsGzBytes": 2097152,
+			"maxFirstFrameMs": 20000
+		},
+		"editor": {
+			"html": "index.html",
+			"maxJsGzBytes": 3407872,
+			"maxFirstFrameMs": 32000
+		}
+	},
+	"history": [
+		{
+			"date": "2026-11-03",
+			"lane": "94-play",
+			"play": "1914.8 KB measured -> line 2048 KB",
+			"editor": "3042.2 KB measured (3133 KB at v1.56.0) -> line 3328 KB, the looser line",
+			"note": "first lines: the play entry's boot (SP1) and the editor's, gzip -9 initial JS",
+			"firstFrame": "throttled (slow 4G + 4x CPU, median of 5 on the Deck): play 14641 ms, editor 23647 ms -> loose lines 20000 / 32000 ms (x1.35: a shared runner is noisy; the byte lines are the precise gate)"
+		}
+	],
+	"throttle": {
+		"cpu": 4,
+		"downKbps": 1600,
+		"upKbps": 750,
+		"rttMs": 150,
+		"comment": "Lighthouse's mobile line (slow 4G + 4x CPU); scripts/boot-frame.cjs"
+	}
+}

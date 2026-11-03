@@ -1428,8 +1428,10 @@
 	.ps-gi {
 		position: relative;
 	}
-	/* 46 B1: the budget item's tier — a dot on its icon (bottom-right in More, beside the glyph on the bar) */
-	.ps-dot {
+	/* 46 B1: the budget item's tier — a dot on its icon (bottom-right in More, beside the glyph on the bar).
+	   Scoped to `.budget-dot`: the connection chip's status dot is a `.ps-dot` too, and this rule used to
+	   pull it out of the chip's row onto the chevron (94 SP6, the 390 px status row). */
+	.ps-dot.budget-dot {
 		position: absolute;
 		right: 4px;
 		bottom: 4px;
@@ -1438,7 +1440,7 @@
 		border: 2px solid var(--surface-1);
 		box-sizing: content-box;
 	}
-	.ps-tab .ps-dot {
+	.ps-tab .ps-dot.budget-dot {
 		right: calc(50% - 17px);
 		bottom: auto;
 		top: 10px;

@@ -17,7 +17,7 @@ import { get, writable } from 'svelte/store';
 import { peers, userdata, showToast } from '../../stores/appStore.js';
 import { knownRoleOf } from '$lib/cloudHooks';
 import { meshGenReady } from '$lib/ai/meshProviders.js';
-import { registerDebugHook } from '$lib/debugHooks';
+import { registerDebugHook } from '$lib/debugHookRegistry.js';
 
 /** longest prompt the host will run */
 export const MAX_PROMPT = 500;

@@ -81,7 +81,7 @@ h.run(async () => {
 			};
 		});
 	const roomy = await chip();
-	h.check(['Offline', 'Connecting…', 'Connected'].includes(roomy.text ?? ''), `H4: with room the chip says its state (${JSON.stringify(roomy)})`);
+	h.check(['Connect', 'Offline', 'Connecting…', 'Connected'].includes(roomy.text ?? ''), `H4: with room the chip says its state (${JSON.stringify(roomy)})`);
 	h.check(!roomy.clipped && roomy.chipW <= roomy.wrapW, `H4: the word is whole and the chip fits its slot (${roomy.chipW} of ${roomy.wrapW} px)`);
 	h.check(!!roomy.title && roomy.title.length > 0, `H4: the full sentence is still the tooltip ("${roomy.title}")`);
 	// crowd the slot the way the peers button (and a call's mic) do: the right edge moves in

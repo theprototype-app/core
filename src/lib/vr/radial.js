@@ -109,11 +109,13 @@ import { boxSelectEnd, beginStretch, commitStretch } from './tools.js';
 import { handleAiAction } from './aiPanel.js';
 import { closeDollhouse } from './dollhouse.js';
 import { startVRSculpt } from './sculpt.js';
+import { playEntry } from '../play/playEntry.js';
 import { pointerHand } from './bindings.js'; // 53 (A7): the one controller when one-handed
 // 36 X4: the collider session, PRIMED (colliderEdit reaches faceEdit/history — a static
 // edge from here is the documented cycle family); every use below is null-safe
 /** @type {any} */ let colliderEditRef = null;
-if (typeof window !== 'undefined') import('../colliderEdit').then((m) => (colliderEditRef = m));
+// 94 SP1: an editing session — never primed on the play entry (`/play`)
+if (typeof window !== 'undefined' && !playEntry) import('../colliderEdit').then((m) => (colliderEditRef = m));
 
 /** Raycast the quick-menu tiles @param {number} index @returns {string|null} tile action name */
 export function raycastMenu(index) {

@@ -25,6 +25,7 @@
 // The assistant is a PRIMED dynamic import (the moduleSDK / colliderEdit precedent): loaded as this module
 // evaluates, read null-safely, and its stores are mirrored into this file's own.
 import { get, writable } from 'svelte/store';
+import { playEntry } from '../play/playEntry.js';
 import {
 	vrAiPanelOpen,
 	vrChatPanelOpen,
@@ -123,7 +124,9 @@ function mirrorThread(list) {
 
 /** the assistant's own values, kept while an agent is the target so switching back restores them */
 const provider = { messages: /** @type {any[]} */ ([]), busy: false, status: '' };
-if (typeof window !== 'undefined')
+// 94 SP1: not on the play entry (`/play`) — the assistant is an editing tool, and priming it pulled the
+// whole AI stack (tools, attachments) into every shared play link; sendVrAiPrompt already answers false
+if (typeof window !== 'undefined' && !playEntry)
 	import('../ai/assistant.js').then((m) => {
 		assistantRef = m;
 		m.aiMessages.subscribe((list) => {

@@ -16,6 +16,9 @@
 	import { rolesInfo } from '$lib/cloudHooks';
 	import { peerServerStatus, inviteServerParam } from '$lib/peerServer';
 	import { invites, inviteSheet, createInvite, revokeInvite, listInvites, handover, tokenOf } from '$lib/inviteStore';
+	// 94 SP4: a person invite also comes as a PLAY link (the play-only entry joins the session)
+	import { playInviteLink } from '$lib/inviteCore';
+	import { playUrl } from '$lib/playOrigin.js';
 
 	/** @type {'agent'|'person'} */
 	let tab = $state(get(inviteSheet) === 'person' ? 'person' : 'agent');
@@ -51,6 +54,12 @@
 		if (!current) return null;
 		const token = tokenOf(current.id);
 		return token ? handover(myId, token, current.kind, inviteServerParam($peerServerStatus)) : null;
+	});
+	/** 94 SP4: the same invite, opening the player instead of the editor (people only) */
+	const playLink = $derived.by(() => {
+		if (!current || current.kind !== 'person') return '';
+		const token = tokenOf(current.id);
+		return token ? playInviteLink(playUrl('/play'), myId, token, inviteServerParam($peerServerStatus)) : '';
 	});
 
 	function create() {
@@ -188,6 +197,15 @@
 						<Button variant="secondary" size="sm" id="invite-copy-link" icon="copy" onclick={() => copyText(strings.link, 'Invite link')}>Copy</Button>
 					</div>
 				</div>
+				{#if playLink}
+					<div class="inv-field">
+						<span class="inv-label" id="invite-play-label">Play link — opens straight into the game, no editor</span>
+						<div class="inv-copy">
+							<input id="invite-play-link" class="ui-input inv-text" readonly value={playLink} aria-labelledby="invite-play-label" />
+							<Button variant="secondary" size="sm" id="invite-copy-play-link" icon="play" onclick={() => copyText(playLink, 'Play link')}>Copy</Button>
+						</div>
+					</div>
+				{/if}
 				{#if tab === 'agent'}
 					<div class="inv-field">
 						<span class="inv-label">MCP command</span>

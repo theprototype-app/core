@@ -48,7 +48,9 @@ const TEMPLATE_FILES = [
 	// 73 AI6: the 1.55 starter — three objects in your own GLSL
 	'shader-garden',
 	// 85a-int: the 1.56 starter — a plain room for the agent's shape, look and undo tools
-	'agent-workshop'
+	'agent-workshop',
+	// 94-int: the 1.57 starter — a tiny game set up for sharing (no module, no pack: its play link starts fast)
+	'topple-tower'
 ];
 
 /** games whose def is OWNED BY ITS MODULE (modules/<id>/<id>.def.json, read by moduleDef) */

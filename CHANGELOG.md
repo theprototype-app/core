@@ -5,6 +5,37 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.57.0 — Shared games start fast 🚀
+
+### ▶ A play view made only for playing
+- **Play links, embeds and pasted links now open the play view**: the scene, the game's rules, HUD and touch controls — and none of the editor. About a third less to load than before, so a shared game's first picture comes several seconds sooner on a slow phone.
+- The play view has **Open in theprototype.app** and **Remix** (your own copy in the editor) beside the game.
+- Playing needs no account. Shared games run on their own address (`play.theprototype.app`), where your sign-in, autosaves and AI keys do not exist.
+- A page that embeds a game can follow it: the play view reports when it is ready, shows its first frame and starts playing.
+
+### 👥 Play together from a link
+- **Invite ▸ Person** has a **Play link**: whoever opens it joins your session straight into the game, no editor. A published game's play link can carry an invite too.
+
+### 📱 Phones
+- On a narrow phone the game's HUD (timer, score, stage title) moves out from under the Play buttons (✕, Playing, Menu).
+- The connection chip says **Connect** before you connect, as on a computer, and other live rooms are listed under their own **Public rooms** heading.
+
+### 🌱 Start here
+- **Templates ▸ Topple tower**: a tiny game set up for sharing. Change it, **Publish**, send the play link.
+- A first-use hint on the Publish sheet's play link, and a docs page: **Share a Game**.
+
+### 🔧 Fixes
+- A host now answers a joiner who asks for the session's roles.
+
+## 1.56.0 — Agents build the whole shape and the whole look 🤖
+
+- **Claude and other agents can shape things**: lathe a vase, run a tube or handrail along a path, extrude a star-shaped sign, edit a mesh, set an object's geometry.
+- **…and dress them**: library materials, ambientCG CC0 materials by name, a picture from an https link, node shaders, UVs and post effects (a whole-scene look asks the host first).
+- **"Undo that"** works by voice or text; agents can also set an object's pivot and place images.
+- The Claude connector gains five tools as families: create_shape, edit_shape, set_look, assets, undo_last.
+- 🔒 A texture from a link follows the same rules as an image: https only, no private addresses, a time limit, re-encoded on your device.
+- **Templates ▸ Agent workshop**, and a hint on the Connect Claude row.
+
 ## 1.55.0 — Give the AI pictures and shaders 🖼️
 
 ### 🧊 A 3D model from a picture

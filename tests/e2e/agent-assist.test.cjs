@@ -180,7 +180,11 @@ h.run(async () => {
 		});
 		await new Promise((r) => noCors.listen(0, r));
 		const blockedUrl = 'https://' + new URL(BASE).hostname + ':' + noCors.address().port + '/a.jpg';
-		const reachable = await A.page.evaluate((u) => fetch(u, { mode: 'no-cors' }).then(() => true, () => false), blockedUrl);
+		// a run served from localhost (the battery's slots) cannot reach the CORS case: the private-host rule refuses the
+		// name first, which section 4's 'this machine' row already covers; a run on a public name (theprototype.app:<port>) does
+		const publicName = !/^(localhost|127\.|\[?::1\]?$)/.test(new URL(BASE).hostname);
+		const reachable = publicName && (await A.page.evaluate((u) => fetch(u, { mode: 'no-cors' }).then(() => true, () => false), blockedUrl));
+		if (!publicName) console.log('   (no CORS row skipped: served from ' + new URL(BASE).hostname + ', a private name)');
 		await A.page.route('https://html.example.test/**', (route) => route.fulfill({ status: 200, headers: { 'access-control-allow-origin': '*', 'content-type': 'image/png' }, body: '<!doctype html><html>log in</html>' }));
 		const exec = (tool, args) => A.page.evaluate(([t, a]) => window.__stores.aiTools.executeAiTool(t, a), [tool, args]);
 		const fromUrl = await exec('add_image', { url: 'https://images.example.test/swatch.jpg?token=SECRET', name: 'fetched', licence: 'CC0' });

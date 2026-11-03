@@ -417,14 +417,23 @@
 		// replace the item list) — a menu opened near the bottom edge and flipped up
 		// would otherwise grow straight off the screen. Re-place on any size change,
 		// guarded so the maxHeight write can't loop.
+		// 54i: re-placed on the NEXT frame, never inside the observer callback — reposition writes the
+		// menu's own max-height (the search list takes its own height once you type), and resizing the
+		// observed box inside its callback left minimalScroll's observer on the same box undelivered:
+		// "ResizeObserver loop completed with undelivered notifications", toasted as Something went wrong
+		let raf = 0;
 		const observer = new ResizeObserver(() => {
-			if (node.offsetWidth === lastW && node.offsetHeight === lastH) return;
-			reposition();
+			if (raf || (node.offsetWidth === lastW && node.offsetHeight === lastH)) return;
+			raf = win.requestAnimationFrame(() => {
+				raf = 0;
+				if (node.isConnected && (node.offsetWidth !== lastW || node.offsetHeight !== lastH)) reposition();
+			});
 		});
 		observer.observe(node);
 		win.addEventListener('resize', reposition);
 		return {
 			destroy: () => {
+				if (raf) win.cancelAnimationFrame(raf);
 				observer.disconnect();
 				win.removeEventListener('resize', reposition);
 			}

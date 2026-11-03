@@ -57,9 +57,13 @@ function loadDetents() {
 	}
 }
 export const phoneDetents = writable(loadDetents());
-/** @param {Record<string, string>} map @param {string|null} kind */
-export function detentOf(map, kind) {
-	return (kind && map[kind]) || 'half';
+/** 54i: the detent a window ASKS for while the person has not moved its sheet yet (kind -> detent).
+ *  LOCAL and never saved — the AI window's welcome asks for 'full' so both choices fit without an
+ *  inner scroll on a folded phone; a height the person chose (`phoneDetents`) always wins. */
+export const phoneFirstDetents = writable(/** @type {Record<string, string>} */ ({}));
+/** @param {Record<string, string>} map @param {string|null} kind @param {Record<string, string>} [firsts] */
+export function detentOf(map, kind, firsts = {}) {
+	return (kind && (map[kind] || (DETENT_NAMES.includes(firsts[kind]) ? firsts[kind] : ''))) || 'half';
 }
 /** @param {string} kind @param {string} detent */
 export function setPhoneDetent(kind, detent) {

@@ -116,7 +116,7 @@ export function shaderCodeRefusal(hash) {
 export function retryShaderCode(hash) {
 	shaderCodeSuspended.set('');
 	if (hash) {
-		verdicts.delete(hash);
+		for (const key of verdicts.keys()) if (key.startsWith(hash + '|')) verdicts.delete(key);
 		journalStrike(hash);
 		shaderCodeBlocked.update((all) => {
 			const next = { ...all };
@@ -172,8 +172,7 @@ function runProbe(code, hash) {
 		// the worker failing to START proves nothing about the shader
 		worker.onerror = () => finish({ status: 'unavailable' });
 		// the document's own field values: the test draws what the scene would
-		const uniforms = scanShaderUniforms(code.vertex, code.fragment).uniforms.map(({ name, type }) => ({ name, type, value: codeUniformValue(code.uniforms?.[name], type) }));
-		worker.postMessage({ id, vertex: code.vertex, fragment: code.fragment, uniforms });
+		worker.postMessage({ id, vertex: code.vertex, fragment: code.fragment, uniforms: probeUniforms(code) });
 	});
 }
 
@@ -184,18 +183,27 @@ function runProbe(code, hash) {
  */
 export function probeShaderCode(code) {
 	const hash = shaderCodeHash(code);
-	let verdict = verdicts.get(hash);
+	const normal = normalizeShaderCode(code);
+	// the test draws with the document's field values, so its answer is about the code AND them
+	const key = hash + '|' + JSON.stringify(probeUniforms(normal));
+	let verdict = verdicts.get(key);
 	if (!verdict) {
-		verdict = runProbe(normalizeShaderCode(code), hash).then((v) => {
+		verdict = runProbe(normal, hash).then((v) => {
 			const answer = probeAnswer(v);
-			// slow, lost and timed out say something about this device and this code: they are
-			// written down like a crash, so the next session does not run the same test again
-			if (answer.status === 'slow' || answer.status === 'lost' || answer.status === 'timeout') blockShaderCode(hash, answer.errors[0]);
+			// a hang or a lost context says something about this device and this code whatever the
+			// values: written down like a crash, so the next session does not run it again. Slow is
+			// about these values, and stays this session's.
+			if (answer.status === 'lost' || answer.status === 'timeout') blockShaderCode(hash, answer.errors[0]);
 			return answer;
 		});
-		verdicts.set(hash, verdict);
+		verdicts.set(key, verdict);
 	}
 	return verdict;
+}
+
+/** The field values the test draws with. @param {any} code normalized */
+function probeUniforms(code) {
+	return scanShaderUniforms(code.vertex, code.fragment).uniforms.map(({ name, type }) => ({ name, type, value: codeUniformValue(code.uniforms?.[name], type) }));
 }
 
 /** @param {any} v the worker's report @returns {{ok: boolean, errors: string[], status: string, drawMs?: number, phase?: string}} */

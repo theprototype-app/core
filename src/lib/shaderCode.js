@@ -11,7 +11,7 @@
 // ends a `//` comment for GLSL), no backslash (it joins lines), no conditional or re-defined
 // preprocessor (a `#define` is a NAME for a whole number, nothing else), no `out`/`inout`
 // parameter (the one way a call could write a loop's counter), and the WHOLE stage's loop
-// work is counted, calls included, against one budget. The probe and the first-frame box in
+// work is counted, calls and every operation included, against one budget. The probe and the first-frame box in
 // shaderCodeGuard stay behind it as the backstop, not the rule.
 import { sha256HexSync } from './inviteCore.js';
 
@@ -19,10 +19,14 @@ import { sha256HexSync } from './inviteCore.js';
 export const MAX_CODE_CHARS = 64 * 1024;
 /** One loop's bound. */
 export const MAX_LOOP_BOUND = 1024;
-/** The loop steps a whole stage may take: nests multiply, siblings add, calls count their callee. */
-export const MAX_PROGRAM_LOOP_WORK = 65536;
-/** @deprecated the old per-nest name; the budget now covers the whole stage */
-export const MAX_LOOP_NEST_PRODUCT = MAX_PROGRAM_LOOP_WORK;
+/**
+ * The work one run of a stage (one pixel, one vertex) may do, in operations: every call and operator
+ * counts one, a loop counts its body once per step, a call counts what the function runs. Both sides
+ * of every branch count, so code cannot stay cheap until a clock or a value says otherwise. Generous
+ * for real shaders (a 128-step raymarch of ~80 operations is ~10k) and small enough that a whole
+ * screen of it stays inside a frame's order of magnitude.
+ */
+export const MAX_SHADER_WORK = 32768;
 
 export const STARTER_VERTEX = `// three.js gives you: position, normal, uv,
 // modelViewMatrix, projectionMatrix, normalMatrix, cameraPosition
@@ -220,14 +224,17 @@ function loopProblems(src, stage) {
 	return problems;
 }
 
+/** what counts one operation: a call (built-ins and constructors too) or an operator */
+const OPERATIONS = /[A-Za-z_]\w*\s*\(|&&|\|\||[<>!=]=|<<|>>|[-+*/%<>?^&|~!]/g;
+
 /**
- * THE WHOLE STAGE'S LOOP WORK: what `main` runs, each loop counting its bound times its body,
- * each call to one of the author's functions counting that function's work. GLSL has no
- * recursion, so the walk ends; a cycle (the compiler refuses one anyway) counts as too much,
- * and so does a loop nothing can bound.
+ * THE WHOLE STAGE'S WORK (see MAX_SHADER_WORK): what `main` runs, each loop counting its bound
+ * times its body, each call to one of the author's functions counting that function's work. GLSL
+ * has no recursion, so the walk ends; a cycle (the compiler refuses one anyway) counts as too
+ * much, and so does a loop nothing can bound.
  * @param {string} src the comment-stripped text @returns {number}
  */
-export function programLoopWork(src) {
+export function programWork(src) {
 	const defines = integerDefines(src);
 	/** brace depth at each index */
 	const depth = new Int32Array(src.length + 1);
@@ -279,7 +286,9 @@ export function programLoopWork(src) {
 			loops.lastIndex = end;
 		}
 		outside.push(src.slice(cursor, to));
-		for (const m of outside.join(' ').matchAll(/\b([A-Za-z_]\w*)\s*\(/g))
+		const straight = outside.join(' ');
+		total += straight.match(OPERATIONS)?.length ?? 0;
+		for (const m of straight.matchAll(/\b([A-Za-z_]\w*)\s*\(/g))
 			if (functions.has(m[1])) total += callWork(m[1], stack);
 		return total;
 	};
@@ -390,9 +399,9 @@ export function checkShaderCode(code) {
 		problems.push(...preprocessorProblems(clean, stage), ...loopProblems(clean, stage));
 		if (!/\bvoid\s+main\s*\(/.test(clean)) problems.push(stage + ' shader has no `void main()`.');
 		else if (problems.length === before) {
-			const work = programLoopWork(clean);
-			if (!(work <= MAX_PROGRAM_LOOP_WORK))
-				problems.push(stage + ': the loops in this shader run ' + (Number.isFinite(work) ? work : 'too many') + ' steps in all, counting the functions they call; the limit is ' + MAX_PROGRAM_LOOP_WORK + '.');
+			const work = programWork(clean);
+			if (!(work <= MAX_SHADER_WORK))
+				problems.push(stage + ': this shader does about ' + (Number.isFinite(work) ? work : 'unboundedly many') + ' operations for every ' + (stage === 'Vertex' ? 'vertex' : 'pixel') + ' (loops count each step, calls what they run, both sides of a branch); the limit is ' + MAX_SHADER_WORK + '.');
 		}
 	}
 	const { samplers } = scanShaderUniforms(vertex, fragment);

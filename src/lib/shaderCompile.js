@@ -109,6 +109,9 @@ export function coerce(expr, from, to) {
 	return a === 3 ? 'vec4(' + expr + ', 1.0)' : 'vec4(' + expr + ', 0.0, 1.0)';
 }
 
+/** Nodes a shader graph may hold. */
+export const MAX_GRAPH_NODES = 512;
+
 /** GLSL literal for an authored param value. @param {any} value @param {string} type */
 export function glslLiteral(value, type) {
 	if (type === 'float') return floatLit(value);
@@ -195,6 +198,8 @@ function createCompiler(graph, outputType) {
 	const edges = graph?.edges ?? [];
 	/** @type {string[]} */
 	const errors = [];
+	// a graph cannot loop, but a document from anybody could still be a million nodes of straight-line work
+	if (nodes.length > MAX_GRAPH_NODES) errors.push('The graph has ' + nodes.length + ' nodes; the limit is ' + MAX_GRAPH_NODES + '.');
 	const output = nodes.find((n) => n.type === outputType);
 
 	/** @type {Map<string, any>} */
@@ -416,6 +421,7 @@ function createCompiler(graph, outputType) {
 export function compileShaderGraphToIR(graph) {
 	const { output, errors, uniforms, preludes, makePass } = createCompiler(graph, SURFACE_NODE);
 	if (!output) return { ok: false, errors: ['The graph has no Surface output node.'] };
+	if (errors.length) return { ok: false, errors };
 
 	/** @type {any} */
 	const ir = { uniforms: [], prelude: '', body: '', defines: {} };
@@ -466,6 +472,7 @@ export function compileShaderGraphToIR(graph) {
 export function compilePostGraphToIR(graph) {
 	const { output, errors, uniforms, preludes, makePass } = createCompiler(graph, POST_OUTPUT_NODE);
 	if (!output) return { ok: false, errors: ['The graph has no Post output node.'] };
+	if (errors.length) return { ok: false, errors };
 	const pass = makePass('post');
 	const taps = pass.walkTaps(POST_TAP_TYPES);
 	if (!taps.color && !errors.length)

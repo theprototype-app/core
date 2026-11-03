@@ -52,23 +52,30 @@ describe('checkShaderCode', () => {
 	});
 	it('multiplies nested loops', () => {
 		const nest = 'for (int a = 0; a < 512; a++) { for (int b = 0; b < 512; b++) { } }';
-		expect(check(nest)[0]).toMatch(/run 262144 steps in all/);
+		expect(check(nest)[0]).toMatch(/about 262\d{3} operations/);
 		// siblings do not multiply
 		expect(check('for (int a = 0; a < 512; a++) { } for (int b = 0; b < 512; b++) { }')).toEqual([]);
 	});
-	it('counts the whole stage: siblings add, calls count their callee, brace-less bodies included', () => {
+	it('counts the whole stage\'s work: steps times body, calls what they run, both sides of a branch', () => {
 		const loop = (n) => 'for (int i = 0; i < ' + n + '; i++) x += 1.0;';
-		expect(check('float x = 0.0;' + Array.from({ length: 64 }, () => loop(1024)).join('\n'))).toEqual([]);
-		expect(check('float x = 0.0;' + Array.from({ length: 65 }, () => loop(1024)).join('\n'))[0]).toMatch(/66560 steps in all/);
+		expect(check('float x = 0.0;' + Array.from({ length: 30 }, () => loop(1024)).join('\n'))).toEqual([]);
+		expect(check('float x = 0.0;' + Array.from({ length: 40 }, () => loop(1024)).join('\n'))[0]).toMatch(/about 409\d\d operations for every pixel/);
+		// steps alone are not the measure: a heavy body inside the step budget
+		expect(check('float x = 0.0; for (int a = 0; a < 1024; a++) for (int b = 0; b < 32; b++) x += sin(x) * cos(x) + exp(x) * log(x + 2.0);')[0]).toMatch(/operations for every pixel/);
+		// a branch that waits for the clock is counted as if it ran
+		expect(checkShaderCode({ vertex: STARTER_VERTEX, fragment: 'uniform float uShaderTime;\n' + frag('float x = 0.0; if (uShaderTime > 100.0) { for (int a = 0; a < 1024; a++) for (int b = 0; b < 64; b++) x += 1.0; }') })[0]).toMatch(/operations/);
 		const f = 'float f() { float s = 0.0; for (int i = 0; i < 1024; i++) s += 1.0; return s; }\n';
-		expect(checkShaderCode({ vertex: STARTER_VERTEX, fragment: f + frag('float x = 0.0; for (int k = 0; k < 64; k++) x += f();') })).toEqual([]);
-		expect(checkShaderCode({ vertex: STARTER_VERTEX, fragment: f + frag('float x = 0.0; for (int k = 0; k < 65; k++) x += f();') })[0]).toMatch(/66560 steps/);
+		expect(checkShaderCode({ vertex: STARTER_VERTEX, fragment: f + frag('float x = 0.0; for (int k = 0; k < 16; k++) x += f();') })).toEqual([]);
+		expect(checkShaderCode({ vertex: STARTER_VERTEX, fragment: f + frag('float x = 0.0; for (int k = 0; k < 40; k++) x += f();') })[0]).toMatch(/operations/);
 		// the call hides in an else of a brace-less body, and in a function whose parameter list has brackets
-		expect(checkShaderCode({ vertex: STARTER_VERTEX, fragment: f + frag('float x = 0.0; for (int k = 0; k < 128; k++) if (x > 1.0) x = 0.0; else x += f();') })[0]).toMatch(/steps in all/);
+		expect(checkShaderCode({ vertex: STARTER_VERTEX, fragment: f + frag('float x = 0.0; for (int k = 0; k < 128; k++) if (x > 1.0) x = 0.0; else x += f();') })[0]).toMatch(/operations/);
 		const g = 'float g(float a[(2)]) { float s = 0.0; for (int i = 0; i < 1024; i++) s += a[0]; return s; }\n';
-		expect(checkShaderCode({ vertex: STARTER_VERTEX, fragment: g + frag('float x = 0.0; float a[2]; for (int k = 0; k < 128; k++) x += g(a);') })[0]).toMatch(/steps in all/);
+		expect(checkShaderCode({ vertex: STARTER_VERTEX, fragment: g + frag('float x = 0.0; float a[2]; for (int k = 0; k < 128; k++) x += g(a);') })[0]).toMatch(/operations/);
 		// a nest of brace-less loops multiplies
-		expect(check('float x = 0.0; for (int a = 0; a < 512; a++) for (int b = 0; b < 512; b++) x += 1.0;')[0]).toMatch(/262144 steps/);
+		expect(check('float x = 0.0; for (int a = 0; a < 512; a++) for (int b = 0; b < 512; b++) x += 1.0;')[0]).toMatch(/about 262\d{3} operations/);
+		// a real raymarch fits
+		const march = 'float sdf(vec3 p) { return length(p) - 1.0; }\n' + frag('vec3 p = vec3(0.0); float t = 0.0; for (int i = 0; i < 128; i++) { float d = sdf(p + vec3(0.0, 0.0, t)); if (d < 0.001) break; t += d; }');
+		expect(checkShaderCode({ vertex: STARTER_VERTEX, fragment: march })).toEqual([]);
 	});
 	it('reads the text the way the compiler does', () => {
 		// a carriage return ends a // comment for GLSL; a backslash joins lines
@@ -189,6 +196,12 @@ describe('the graph compiler holds node settings to what the node accepts', asyn
 		expect(glslExpressionProblem('a /* x */')).toMatch(/comments/);
 		expect(glslExpressionProblem('(a')).toMatch(/brackets/);
 		expect(glslExpressionProblem('a\nb')).toMatch(/line breaks/);
+	});
+	it('a graph is capped in size', async () => {
+		const { MAX_GRAPH_NODES } = await import('../../src/lib/shaderCompile.js');
+		const big = doc({ expression: 'a', type: 'float' });
+		for (let i = 0; i <= MAX_GRAPH_NODES; i++) big.nodes.push({ id: 'f' + i, type: 'float', data: {} });
+		expect(compileShaderGraphToIR(big).errors[0]).toMatch(/the limit is 512/);
 	});
 	it('the code hash is a SHA-256 prefix', () => {
 		expect(shaderCodeHash({ vertex: 'a', fragment: 'b' })).toMatch(/^[0-9a-f]{40}$/);

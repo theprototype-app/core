@@ -1276,6 +1276,10 @@
 							"type": "number"
 						},
 						"description": "[x,y,z]"
+					},
+					"from_picture": {
+						"type": "number",
+						"description": "build it from a picture attached to this message: 1 = the first. Only when the person wants the picture turned into a 3D object"
 					}
 				},
 				"required": [

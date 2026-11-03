@@ -190,7 +190,9 @@ export function buildCatalog(hostTools, opts = {}) {
 	if (!Array.isArray(hostTools) || !hostTools.length) throw new Error('the host tool list is empty');
 	const mapped = mapHostTools(hostTools);
 	// the bridge tools a page answers itself; `connect` is the agent CLI's (the Worker drops it, serve keeps it)
-	const tools = withGuidance([...mapped.tools, ...bridgeTools('browser'), ...connectorOnlyTools()].map(annotate));
+	const plain = [...mapped.tools, ...bridgeTools('browser'), ...connectorOnlyTools()].map(annotate);
+	const tools = withGuidance(plain);
+	const connector = opts.connectorExcluded ? connectorView(plain, opts.connectorExcluded) : undefined;
 	return {
 		format: CATALOG_FORMAT,
 		generator: {
@@ -202,8 +204,184 @@ export function buildCatalog(hostTools, opts = {}) {
 		instructions: connectorInstructions(tools.map((t) => t.name)),
 		// mcp-fix: what the connector leaves out, on purpose (core's CONNECTOR_BLOCKED_TOOLS); the Worker checks against it
 		...(opts.connectorExcluded ? { connectorExcluded: [...opts.connectorExcluded].sort() } : {}),
-		tools
+		tools,
+		// 85a TB: what the claude.ai connector lists — the same tools, with the 85 ones grouped into families
+		...(connector ? { connector } : {})
 	};
+}
+
+/**
+ * 85a TB — THE CONNECTOR'S TOOL FAMILIES (owner tool budget 2026-11-01, roadmap 85's table). The claude.ai
+ * connector stays at about 40 tools and its 22 published tools never change, so new work joins as ONE tool per
+ * family with an `action` field. Grouping happens ONLY here (and in the Worker, which turns `{action, <action>:
+ * {...}}` back into the fine tool before relaying): the tab, local agents and `serve` keep the fine names.
+ * `actions` maps an action to the fine tool it runs. The action's fields go in an object named after the action,
+ * which carries the fine tool's own schema and description, so nothing about a tool is lost by grouping it.
+ * Reserved, not built yet: edit_shape `update` (G6b update_mesh), assets search / place / prefab (85-world, 85b),
+ * set_look environment / sky / light (85-scene, 85b), create_shape from_image (73's image-to-3D is generate_mesh,
+ * which the connector leaves out).
+ * @type {Readonly<Record<string, {title: string, summary: string, actions: Record<string, string>}>>}
+ */
+export const CONNECTOR_FAMILIES = Object.freeze({
+	create_shape: {
+		title: 'Make a shape',
+		summary:
+			'Make shapes the basic objects cannot: a lathe (a vase, a bowl, a lamp from a profile turned around an axis), a tube along a path (a rail, a pipe, a cable), an extruded outline (a sign, a star, a wall with a hole), or a mesh from your own vertices (anything else).',
+		actions: { lathe: 'create_lathe', tube: 'create_tube', extrude: 'extrude_shape', mesh: 'create_mesh' }
+	},
+	edit_shape: {
+		title: 'Reshape or model objects',
+		summary:
+			'Change the shape of objects that exist: params = new size / segments / type in place, mesh = model faces and vertices (extrude, inset, bevel, subdivide, weld, smooth, dissolve, make a face), pivot = the point an object turns about, pivot_group = a group at a joint so several parts swing together.',
+		actions: { params: 'set_geometry', mesh: 'edit_mesh', pivot: 'set_pivot', pivot_group: 'create_pivot' }
+	},
+	set_look: {
+		title: 'Materials, shaders, UVs and post effects',
+		summary:
+			'How things look: material = colour, roughness, metal, glow, see-through and textures (a library image, a CC0 material by name or an https image); list_materials / get_material read them; shader / edit_shader / assign_shader / shader_nodes = node shaders on objects; post / get_post / post_graph = the scene\'s post effects (bloom, colour grade, vignette; the host is asked first); unwrap / uv = texture mapping and tiling.',
+		actions: {
+			material: 'set_material',
+			list_materials: 'list_materials',
+			get_material: 'get_material',
+			shader: 'create_shader',
+			edit_shader: 'edit_shader',
+			assign_shader: 'assign_shader',
+			shader_nodes: 'describe_shader_nodes',
+			post: 'set_post',
+			get_post: 'get_post',
+			post_graph: 'create_post_graph',
+			unwrap: 'uv_unwrap',
+			uv: 'set_uv'
+		}
+	},
+	assets: {
+		title: 'Images and assets',
+		summary: 'The shared library: image = put an image into it (an https URL, base64 data, or a canvas you describe) and get its hash for textures.',
+		actions: { image: 'add_image' }
+	}
+});
+
+/** Connector tools that are not in a family: the 22 published ones + undo_last (1.56). A tool in none of these,
+ * no family and not left out on purpose fails the generator: a new connector name needs an owner row. */
+export const CONNECTOR_STANDALONE = Object.freeze([
+	'list_scene',
+	'create_objects',
+	'update_objects',
+	'delete_objects',
+	'group_objects',
+	'clear_scene',
+	'animate_parts',
+	'create_flow_nodes',
+	'update_flow_nodes',
+	'describe_node_types',
+	'create_behaviour',
+	'edit_behaviour',
+	'set_physics',
+	'create_joints',
+	'control_simulation',
+	'what_can_you_do',
+	'save_scene',
+	'status',
+	'screenshot',
+	'wait_for_edit',
+	'join_session',
+	'where_are_users',
+	'undo_last',
+	// left out by the Worker's own policy (generate_mesh), kept listed so the Worker's EXCLUDED_TOOLS stays the scope call
+	'generate_mesh'
+]);
+
+/** fine tool → `family {action}` wording, for text the connector's model reads @returns {Map<string, string>} */
+export function familyNames() {
+	const out = new Map();
+	for (const [family, f] of Object.entries(CONNECTOR_FAMILIES))
+		for (const [action, tool] of Object.entries(f.actions)) out.set(tool, family + ' {action: "' + action + '"}');
+	return out;
+}
+
+/** a text with every fine family-member name said the connector's way @param {string} text */
+export function sayFamilyNames(text) {
+	const names = familyNames();
+	return names.size ? String(text).replace(new RegExp('\\b(' + [...names.keys()].join('|') + ')\\b', 'g'), (m) => names.get(m) ?? m) : String(text);
+}
+
+/**
+ * The connector's view of the catalog: standalone tools as they are, family members replaced by their family
+ * (at the first member's place). Throws when a tool is in no list — the budget rule.
+ * @param {{name: string, title: string, description: string, inputSchema: any, annotations: Record<string, any>}[]} plain annotated, before guidance
+ * @param {string[]} excluded core's CONNECTOR_BLOCKED_TOOLS
+ */
+export function connectorView(plain, excluded) {
+	const byName = new Map(plain.map((t) => [t.name, t]));
+	const familyOf = new Map();
+	for (const [family, f] of Object.entries(CONNECTOR_FAMILIES)) for (const tool of Object.values(f.actions)) familyOf.set(tool, family);
+	const stray = plain.map((t) => t.name).filter((n) => !CONNECTOR_STANDALONE.includes(n) && !familyOf.has(n) && !excluded.includes(n));
+	if (stray.length)
+		throw new Error('tools with no place in the connector (tools/agent/src/catalog.js CONNECTOR_FAMILIES / CONNECTOR_STANDALONE / CONNECTOR_BLOCKED_TOOLS): ' + stray.join(', '));
+	/** @type {any[]} */
+	const list = [];
+	/** @type {Record<string, Record<string, string>>} */
+	const families = {};
+	let placed = false;
+	for (const t of plain) {
+		if (!familyOf.has(t.name)) {
+			list.push(t);
+			continue;
+		}
+		if (placed) continue;
+		// every family at the place of the first member, in the table's order
+		placed = true;
+		for (const [family, f] of Object.entries(CONNECTOR_FAMILIES)) {
+			const actions = Object.entries(f.actions).filter(([, tool]) => byName.has(tool));
+			if (!actions.length) continue;
+			families[family] = Object.fromEntries(actions);
+			list.push(familyTool(family, f, actions.map(([action, tool]) => [action, /** @type {any} */ (byName.get(tool))])));
+		}
+	}
+	const tools = withGuidance(list);
+	return { instructions: connectorInstructions(tools.map((t) => t.name)), families, tools };
+}
+
+/**
+ * One family as one MCP tool. `{action, <action>: {...}}`; the per-action object has the fine tool's own schema.
+ * @param {string} family @param {{title: string, summary: string}} f @param {[string, any][]} actions
+ */
+function familyTool(family, f, actions) {
+	/** @type {Record<string, any>} */
+	const properties = {
+		action: { type: 'string', enum: actions.map(([a]) => a), description: 'What to do. Put its fields in the object named after the action.' }
+	};
+	for (const [action, t] of actions) properties[action] = { ...t.inputSchema, description: sayFamilyNames(t.description) };
+	const example = actions[0][0];
+	const description =
+		f.summary + '\nCall it as {"action": "' + example + '", "' + example + '": {…its fields…}}; each action\'s fields and limits are in its object below.';
+	const edits = actions.filter(([, t]) => !t.annotations.readOnlyHint);
+	const annotations = {
+		title: f.title,
+		readOnlyHint: false,
+		destructiveHint: edits.some(([, t]) => t.annotations.destructiveHint !== false),
+		openWorldHint: actions.some(([, t]) => t.annotations.openWorldHint === true)
+	};
+	return { name: family, title: f.title, description, inputSchema: { type: 'object', properties, required: ['action'] }, annotations };
+}
+
+/**
+ * The Worker's half, kept here so core's unit tests cover it with the same tables: a family call → the fine tool
+ * and its arguments. A missing per-action object falls back to the call's other fields (a model that flattened them).
+ * @param {Record<string, Record<string, string>>} families @param {string} name @param {any} args
+ * @returns {{tool: string, args: any} | {error: string} | null} null = not a family
+ */
+export function resolveFamilyCall(families, name, args) {
+	const actions = families?.[name];
+	if (!actions) return null;
+	const action = typeof args?.action === 'string' ? args.action : '';
+	const tool = actions[action];
+	if (!tool) return { error: name + ' needs an action: one of ' + Object.keys(actions).join(', ') + '.' };
+	const inner = args[action];
+	if (inner && typeof inner === 'object' && !Array.isArray(inner)) return { tool, args: inner };
+	const { action: _a, ...rest } = args;
+	for (const a of Object.keys(actions)) delete rest[a];
+	return { tool, args: rest };
 }
 
 /**

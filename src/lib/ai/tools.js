@@ -1187,7 +1187,7 @@ export const AI_TOOLS = [
 								uuid: { type: 'string' },
 								name: { type: 'string' },
 								position: { type: 'array', items: { type: 'number' } },
-								rotation: { type: 'array', items: { type: 'number' }, description: 'radians; an object with a pivot (set_pivot) turns about it' },
+								rotation: { type: 'array', items: { type: 'number' } }, // 85: an object with a pivot turns about it (set_pivot says so; the connector's live schema stays byte-identical)
 								scale: { type: 'array', items: { type: 'number' } },
 								color: { type: 'string', description: 'hex #rrggbb' },
 								materialType: {

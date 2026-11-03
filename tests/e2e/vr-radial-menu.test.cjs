@@ -56,6 +56,17 @@ h.run(async () => {
 	);
 
 	// --- registry: confirmed base ring + sub-rings + context hub ---
+	// 94 SP1: the wrist Asset Browser (Add ▸ Assets) and the logic panel (Tools ▸ Logic) mount with the XR
+	// session now, not at boot — flag VR mode and wait for their lazy entries before reading the rings
+	await A.page.evaluate(() => window.__stores.isVRMode.set(true));
+	await A.page.waitForFunction(
+		() => {
+			const m = window.__stores.vrRadialMenu;
+			return m.ringEntries('tools').some((e) => e.id === 'logic') && m.ringEntries('add').length >= 10;
+		},
+		null,
+		{ timeout: 30000 }
+	);
 	const registry = await A.page.evaluate(() => {
 		const m = window.__stores.vrRadialMenu;
 		return {

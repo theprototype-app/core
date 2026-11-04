@@ -14,7 +14,8 @@ import {
 	mergeLetterStyles,
 	layoutOnPath,
 	glyphColors,
-	glyphQuads
+	glyphQuads,
+	isNewerTextRecord
 } from './textPathCore.js';
 import { applyTextProxyLook, textPlaceholderGeometry } from './textPathObject.js';
 import { textPathPolylineOf, textPathSourceKey } from './textPathSources.js';
@@ -483,6 +484,9 @@ function attached(o, root) {
  * its carrier. Nothing here is sent or saved.
  * @param {any} root objectsGroup
  */
+/** TX4: the newer-version notice shows once per tab */
+let newerNoticed = false;
+
 export function tickTextPaths(root) {
 	rootRef = root;
 	visualParent = root?.parent ?? null;
@@ -508,6 +512,11 @@ export function tickTextPaths(root) {
 			if (o.userData.textPath !== e.recRef) {
 				e.recRef = o.userData.textPath;
 				e.rec = normalizeTextPath(e.recRef);
+				if (!newerNoticed && isNewerTextRecord(e.recRef)) {
+					// TX4: drawn with what this build knows; the newer fields stay in the record
+					newerNoticed = true;
+					showToast('A text in this scene was made with a newer version of theprototype.app — it may look different here. Reload to update.');
+				}
 				if (e.rec.fontAsset) shareFontAsset(e.rec.fontAsset);
 				if (e.rec.mode === 'extruded') ensureSolid(e, true);
 				else {

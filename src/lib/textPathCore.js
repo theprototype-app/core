@@ -264,7 +264,10 @@ export function normalizeTextPath(raw) {
 	if (path.kind !== 'none') mode = 'flat';
 	const fontAsset = typeof r.fontAsset === 'string' && HASH_RE.test(r.fontAsset) ? r.fontAsset : null;
 	return {
-		v: TEXT_PATH_VERSION,
+		// TX4: a NEWER build's fields ride along verbatim (overwritten below by every field we know),
+		// so an edit made here does not strip what that build added; v stays theirs
+		...newerFields(r),
+		v: isNewerTextRecord(r) ? Math.floor(r.v) : TEXT_PATH_VERSION,
 		text,
 		font: fontById(r.font).id,
 		bold: !!r.bold,
@@ -296,6 +299,30 @@ export function normalizeTextPath(raw) {
 		metalness: clampNum(r.metalness, d.metalness, 0, 1),
 		roughness: clampNum(r.roughness, d.roughness, 0, 1)
 	};
+}
+
+/** TX4: a record written by a newer build (its `v` is above ours) @param {any} raw */
+export function isNewerTextRecord(raw) {
+	return Number.isFinite(raw?.v) && raw.v > TEXT_PATH_VERSION && raw.v < 1000;
+}
+
+const NEWER_FIELDS_MAX = 4096;
+
+/** the fields of a newer record this build does not know, when small and plain @param {any} r @returns {Record<string, any>} */
+function newerFields(r) {
+	if (!isNewerTextRecord(r)) return {};
+	/** @type {Record<string, any>} */
+	const out = {};
+	for (const [k, val] of Object.entries(r)) {
+		if (k in TEXT_PATH_DEFAULTS || k === 'v' || k === '__proto__' || k === 'constructor') continue;
+		out[k] = val;
+	}
+	try {
+		const json = JSON.stringify(out);
+		return json.length <= NEWER_FIELDS_MAX ? JSON.parse(json) : {};
+	} catch {
+		return {};
+	}
 }
 
 /** a block text (no path) rather than text on a path @param {any} rec */

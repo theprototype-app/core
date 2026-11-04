@@ -20,7 +20,7 @@ import {
 	googleCssUrl,
 	pickGoogleFontUrl
 } from '../../src/lib/text3dCore.js';
-import { normalizeTextPath, textCapCheck, textCharCap, TEXT_FONTS, SOLID_FONTS_PATH, TEXT_CAPS } from '../../src/lib/textPathCore.js';
+import { normalizeTextPath, textCapCheck, textCharCap, TEXT_FONTS, SOLID_FONTS_PATH, TEXT_CAPS, TEXT_PATH_VERSION, isBlockText, isNewerTextRecord } from '../../src/lib/textPathCore.js';
 
 // 64-text: the pure half of the ONE text object's extruded mode, block layout and font import.
 
@@ -267,5 +267,29 @@ describe('fonts the user adds', () => {
 		expect(pickGoogleFontUrl(css)).toBe('https://fonts.gstatic.com/s/lobster/v30/latin.woff2');
 		expect(pickGoogleFontUrl(`@font-face { src: url(https://fonts.gstatic.com/s/x/one.ttf) }`)).toBe('https://fonts.gstatic.com/s/x/one.ttf');
 		expect(pickGoogleFontUrl(`@font-face { src: url(https://evil.example/x.woff2) }`)).toBe(null);
+	});
+});
+
+describe('TX4 old and newer records', () => {
+	it('a v1 record (64 D2, text on a path) keeps its curve, text and look; it reads as flat', () => {
+		const v1 = { v: 1, text: 'Welcome', font: 'serif', size: 0.3, color: '#ff0000', path: { kind: 'arc', radius: 2, angle: 120 }, offset: 0.1, align: 'center' };
+		const r = normalizeTextPath(v1);
+		expect(r).toMatchObject({ v: TEXT_PATH_VERSION, text: 'Welcome', font: 'serif', size: 0.3, color: '#ff0000', mode: 'flat', path: { kind: 'arc' }, offset: 0.1 });
+		expect(isBlockText(r)).toBe(false);
+	});
+	it('a newer record keeps its unknown fields and its version through our normalize; ours never grow them', () => {
+		const newer = { v: TEXT_PATH_VERSION + 1, text: 'Hi', mode: 'extruded', path: { kind: 'none' }, gradient: { from: '#000000', to: '#ffffff' } };
+		expect(isNewerTextRecord(newer)).toBe(true);
+		const r = normalizeTextPath(newer);
+		expect(r).toMatchObject({ v: TEXT_PATH_VERSION + 1, text: 'Hi', mode: 'extruded', gradient: { from: '#000000', to: '#ffffff' } });
+		// an edit merges over it and the field survives a second normalize
+		expect(normalizeTextPath({ ...r, text: 'Hello' }).gradient).toEqual({ from: '#000000', to: '#ffffff' });
+		// a record of ours never carries strangers
+		const ours = normalizeTextPath({ v: TEXT_PATH_VERSION, text: 'x', gradient: 1 });
+		expect('gradient' in ours).toBe(false);
+		expect(isNewerTextRecord(ours)).toBe(false);
+		// a huge or junk newer payload is dropped, not copied
+		expect('blob' in normalizeTextPath({ v: 99, blob: 'x'.repeat(5000) })).toBe(false);
+		expect(isNewerTextRecord({ v: 1e9 })).toBe(false);
 	});
 });

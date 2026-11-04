@@ -18,6 +18,9 @@
 //      bytes from A and draws with it, the scene's asset list (what a .tpscene / export carries)
 //      names it; a no-embedding font raises the export licence warning
 //   §8 the Inspector: Flat / Solid buttons, the solid rows, the licence line (screenshots)
+//   §9 the agent: create_text "HELLO" solid with a bevel on both peers, set_geometry params,
+//      list_fonts, one undo per call
+//   §10 a record from a newer build: one notice, and an edit here keeps its fields on B
 //
 // Counterfactual: v1.60.0 has no Text kind — `/create Text` makes nothing, every row is red.
 // Run: e2e-slot --dev <lane> 5996 -- env APP_URL=https://localhost:5996/ npm run e2e -- text-object
@@ -265,6 +268,45 @@ h.run(async () => {
 	await A.page.click('#text-mode-flat');
 	await until(A.page, uuid, (d) => d.mode === 'flat' && d.synced, '§8 pressing Flat switches the mode');
 	await A.page.screenshot({ path: path.join(OUT, 'text-object-flat.png') });
+
+	// ---- §9 the agent: "HELLO", solid, with a bevel -------------------------------------------
+	const exec = (/** @type {any} */ page, /** @type {string} */ t, /** @type {any} */ a) => page.evaluate(([tn, ta]) => window.__stores.aiTools.executeAiTool(tn, ta), [t, a]);
+	const agent = await exec(A.page, 'create_text', { text: 'HELLO', solid: true, depth: 0.15, bevel: 0.01, font: 'serif', position: [0, 2, -2] });
+	const au = agent?.created?.uuid;
+	h.check(!!au && agent.created.mode === 'solid', `§9 create_text makes a solid "HELLO" (${JSON.stringify(agent).slice(0, 200)})`);
+	const ag = await until(A.page, au, solidBuilt, '§9 A builds the agent\'s solid text');
+	const agB = await until(B.page, au, solidBuilt, '§9 ...and B, from the record');
+	h.check(ag.solid.drawn === 5 && ag.solid.missing === 0 && ag.solid.triangles === agB.solid.triangles, `§9 5 bevelled serif letters on both peers (${ag.solid.triangles} triangles)`);
+	const arec = await record(B.page, au);
+	h.check(arec?.bevel?.size === 0.01 && arec?.depth === 0.15 && arec?.font === 'serif', `§9 B holds the record the agent asked for (bevel ${arec?.bevel?.size}, depth ${arec?.depth})`);
+	const edited9 = await exec(A.page, 'set_geometry', { updates: [{ uuid: au, params: { text: 'HELLO!', bevel: false } }] });
+	h.check(edited9?.updated?.[0]?.ok === true, '§9 set_geometry params edit the text');
+	await until(B.page, au, (d) => solidBuilt(d) && d.text === 'HELLO!', '§9 B follows the edit');
+	const fonts9 = await exec(A.page, 'list_fonts', {});
+	h.check(fonts9?.bundled?.length >= 5 && fonts9.library?.length >= 3 && fonts9.caps?.solid === 300, `§9 list_fonts: bundled, the Library's (two uploads + a Google font: ${fonts9?.library?.length}), caps`);
+	await undo(A.page);
+	await until(B.page, au, (d) => d.text === 'HELLO', '§9 one undo takes the edit back on B');
+	await undo(A.page);
+	await h.eventually(() => one(B.page, au), (d) => !d, '§9 a second undo removes the agent\'s text on B', 20000);
+
+	// ---- §10 a record from a newer build -------------------------------------------------------
+	const newer = await A.page.evaluate((u) => {
+		window.__stores.toastStore.set([]);
+		let g;
+		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		const o = g.getObjectByProperty('uuid', u);
+		o.userData.textPath = { ...o.userData.textPath, v: 99, gradient: { from: '#000000', to: '#ffffff' } };
+		return true;
+	}, uuid);
+	await h.eventually(
+		() => A.page.evaluate(() => { let t; window.__stores.toastStore.subscribe((v) => (t = v))(); return t.map((x) => (typeof x === 'string' ? x : x.text)).join(' | '); }),
+		(t) => /made with a newer version/.test(t),
+		'§10 a newer record says so once',
+		10000
+	);
+	await set(A.page, uuid, { text: 'Kept' });
+	const kept = await record(B.page, uuid).then(async (r) => (r?.text === 'Kept' ? r : (await new Promise((res) => setTimeout(res, 1500)), record(B.page, uuid))));
+	h.check(newer && kept?.v === 99 && kept?.gradient?.to === '#ffffff', `§10 an edit here keeps the newer build's fields on B (v ${kept?.v})`);
 
 	await h.finish(browser);
 });

@@ -1441,7 +1441,7 @@ export const LOOK_AI_TOOLS = [
 		type: 'function',
 		function: {
 			name: 'describe_shader_nodes',
-			description: 'The shader node catalog: each type with what it does, its params (which become uniforms), inputs and outputs.',
+			description: 'The shader node catalog: each type with what it does, its params (which become uniforms), inputs and outputs. UV warps include polarCoordinates, twirl and rotateUV; the glsl node keeps the type wired into a, b and c (float, vec2, vec3, vec4) and returns its declared type.',
 			parameters: {
 				type: 'object',
 				properties: {

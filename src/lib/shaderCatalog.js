@@ -460,6 +460,75 @@ const DEFS = [
 		emit: (a) => '(' + a.in.uv + ' + uShaderTime * ' + a.params.speed + ')'
 	},
 
+	// diorama2 (item 10) — the three UV warps 73's design listed, the Unity Shader Graph formulas
+	{
+		key: 'polarCoordinates',
+		label: 'Polar coordinates',
+		group: 'UV',
+		inputs: [{ name: 'uv', type: 'vec2', default: 'vUv' }],
+		params: [
+			{ name: 'center', type: 'vec2', default: [0.5, 0.5], uniform: true },
+			{ name: 'radialScale', type: 'float', default: 1, uniform: true },
+			{ name: 'lengthScale', type: 'float', default: 1, uniform: true }
+		],
+		nativeType: 'vec2',
+		outputs: [
+			{ name: 'out', type: 'vec2' },
+			{ name: 'radius', type: 'float', suffix: '.x' },
+			{ name: 'angle', type: 'float', suffix: '.y' }
+		],
+		requires: ['uv'],
+		prelude:
+			'vec2 tpPolar(vec2 uv, vec2 c, float rs, float ls) {\n' +
+			'  vec2 d = uv - c;\n' +
+			'  return vec2(length(d) * 2.0 * rs, atan(d.x, d.y) * 0.15915494 * ls);\n' +
+			'}\n',
+		emit: (a) => 'tpPolar(' + a.in.uv + ', ' + a.params.center + ', ' + a.params.radialScale + ', ' + a.params.lengthScale + ')'
+	},
+	{
+		key: 'twirl',
+		label: 'Twirl',
+		group: 'UV',
+		inputs: [{ name: 'uv', type: 'vec2', default: 'vUv' }],
+		params: [
+			{ name: 'center', type: 'vec2', default: [0.5, 0.5], uniform: true },
+			{ name: 'strength', type: 'float', default: 10, uniform: true },
+			{ name: 'offset', type: 'vec2', default: [0, 0], uniform: true }
+		],
+		outputs: [{ name: 'out', type: 'vec2' }],
+		requires: ['uv'],
+		prelude:
+			'vec2 tpTwirl(vec2 uv, vec2 c, float s, vec2 o) {\n' +
+			'  vec2 d = uv - c;\n' +
+			'  float an = s * length(d);\n' +
+			'  return vec2(cos(an) * d.x - sin(an) * d.y, sin(an) * d.x + cos(an) * d.y) + c + o;\n' +
+			'}\n',
+		emit: (a) => 'tpTwirl(' + a.in.uv + ', ' + a.params.center + ', ' + a.params.strength + ', ' + a.params.offset + ')'
+	},
+	{
+		key: 'rotateUV',
+		label: 'Rotate UV',
+		group: 'UV',
+		// `angle` is a socket so Time can spin it; `rotation` is the fixed part (radians), added to it
+		inputs: [
+			{ name: 'uv', type: 'vec2', default: 'vUv' },
+			{ name: 'angle', type: 'float', default: '0.0' }
+		],
+		params: [
+			{ name: 'center', type: 'vec2', default: [0.5, 0.5], uniform: true },
+			{ name: 'rotation', type: 'float', default: 0, uniform: true }
+		],
+		outputs: [{ name: 'out', type: 'vec2' }],
+		requires: ['uv'],
+		prelude:
+			'vec2 tpRotateUv(vec2 uv, vec2 c, float r) {\n' +
+			'  vec2 d = uv - c;\n' +
+			'  float s = sin(r), k = cos(r);\n' +
+			'  return vec2(k * d.x - s * d.y, s * d.x + k * d.y) + c;\n' +
+			'}\n',
+		emit: (a) => 'tpRotateUv(' + a.in.uv + ', ' + a.params.center + ', ' + a.in.angle + ' + ' + a.params.rotation + ')'
+	},
+
 	// ---- utility ----------------------------------------------------------------
 	{
 		key: 'fresnel',
@@ -579,11 +648,12 @@ const DEFS = [
 		key: 'glsl',
 		label: 'GLSL expression',
 		group: 'Utility',
-		// the ONE raw node the fork answer asked for: a, b, c are in scope as GLSL
+		// the ONE raw node the fork answer asked for: a, b, c are in scope as GLSL. diorama2: each keeps the TYPE wired
+		// into it (a vec2 uv, a vec3 colour), so `a * b` of two colours is a vec3 expression; unwired they are 0.0
 		inputs: [
-			{ name: 'a', type: 'float', default: '0.0' },
-			{ name: 'b', type: 'float', default: '0.0' },
-			{ name: 'c', type: 'float', default: '0.0' }
+			{ name: 'a', type: 'float', default: '0.0', keepType: true },
+			{ name: 'b', type: 'float', default: '0.0', keepType: true },
+			{ name: 'c', type: 'float', default: '0.0', keepType: true }
 		],
 		params: [
 			{ name: 'expression', type: 'text', default: 'a' },
@@ -853,6 +923,9 @@ const DOCS = {
 	// uv
 	tilingOffset: 'Repeats and shifts texture coordinates: tiling 3 means the image fits three times, offset slides it.',
 	panner: 'Scrolls texture coordinates over time on the shared clock — flowing water, conveyor belts, moving clouds. Every peer sees the same offset.',
+	polarCoordinates: 'Turns UV into distance from the centre (radius) and angle around it (0-1 per turn): rings, radar sweeps, a texture wrapped round a disc.',
+	twirl: 'Swirls UV around the centre, more the further out — whirlpools, portals, magic circles. Strength sets how many turns.',
+	rotateUV: 'Turns texture coordinates around the centre by rotation radians, plus whatever is wired into angle (wire Time to spin it).',
 
 	// utility
 	fresnel: 'Bright at grazing angles, dark face-on — the rim light that reads as glass, water or a force field. Power tightens the rim.',
@@ -860,7 +933,7 @@ const DOCS = {
 	posterize: 'Snaps values into a number of steps, for a banded or cel-shaded look.',
 	gradient: 'A three-colour ramp driven by one number. Feed it Noise, UV or Fresnel to colour-map anything; the midpoint biases where the middle colour sits.',
 	normalMap: 'Reads a normal map image and applies it as surface detail, building the tangent frame from screen-space derivatives so it works on meshes with no tangents.',
-	glsl: 'The escape hatch: write a GLSL expression using a, b and c as the wired inputs, and declare what type it returns.',
+	glsl: 'The escape hatch: write a GLSL expression using a, b and c as the wired inputs (each keeps the type wired into it: float, vec2, vec3 or vec4), and declare what type it returns.',
 
 	// post (P4)
 	sceneColor: 'The frame as rendered so far, before this effect: the colour under this screen pixel. The starting point of every post graph.',

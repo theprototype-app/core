@@ -44,6 +44,12 @@ function answer(tool, args) {
 			return { groups: { Input: ['time', 'uv', 'color'], Math: ['sin', 'multiply', 'add'], Output: ['surface (albedo, emissive, roughness, metalness, opacity)'] } };
 		case 'get_post':
 			return { enabled: false, effects: [] };
+		case 'set_sky':
+		case 'set_light':
+			if (!args?.confirmId) return { needsConfirm: true, confirmId: 'c-2', summary: 'the sky and light of the whole scene', note: 'Repeat the call with confirmId (and wait up to 60 s) after telling the person the host was asked.' };
+			return { ok: true };
+		case 'validate_scene':
+			return { ok: false, issues: [{ level: 'warn', code: 'walk-no-spawn', message: 'Play walks but there is no spawn', fix: 'game_setup {spawn}' }] };
 		case 'set_post':
 			if (!args?.confirmId) return { needsConfirm: true, confirmId: 'c-1', summary: 'post effects for the whole scene', note: 'Repeat the call with confirmId (and wait up to 60 s) after telling the person the host was asked.' };
 			return { ok: true, effects: [{ kind: 'bloom' }] };

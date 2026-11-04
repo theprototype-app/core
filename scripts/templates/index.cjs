@@ -52,7 +52,9 @@ const TEMPLATE_FILES = [
 	// 94-int: the 1.57 starter — a tiny game set up for sharing (no module, no pack: its play link starts fast)
 	'topple-tower',
 	// 68-int: the 1.58 starter — a stage that keeps moving and a camera to film it with
-	'film-set'
+	'film-set',
+	// 85b-int: the 1.60 starter — an empty plot for the agent's world, HUD, sky and game-check tools
+	'game-plot'
 ];
 
 /** games whose def is OWNED BY ITS MODULE (modules/<id>/<id>.def.json, read by moduleDef) */

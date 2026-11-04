@@ -15,7 +15,7 @@
 import { TP_AGENT_VERSION } from './contract.js';
 
 /** Tools that change nothing in the shared scene, so a viewer may run them. */
-export const READ_ONLY_TOOLS = new Set(['list_scene', 'describe_node_types', 'what_can_you_do', 'list_materials', 'get_material', 'describe_shader_nodes', 'get_post']);
+export const READ_ONLY_TOOLS = new Set(['list_scene', 'describe_node_types', 'what_can_you_do', 'list_materials', 'get_material', 'describe_shader_nodes', 'get_post', 'list_hud', 'get_environment', 'search_assets', 'inspect_runtime', 'validate_scene', 'logs']);
 
 /** Longest waitForEdit (ms). */
 export const MAX_WAIT_MS = 10 * 60 * 1000;
@@ -101,6 +101,7 @@ export function toolName(tool) {
  * @property {() => {node: string, message: string}[]} [scriptErrors] mcp-fix: Script nodes that are failing now
  * @property {() => {name: string, where: string, message: string}[]} [behaviourErrors] 1.2: the scene's failing behaviours
  * @property {() => any} [sceneBudget] 1.6.0 (mcp-shapes): the compact scene budget status carries
+ * @property {() => any[]} [recentLogs] (roadmap 85, R3) the newest errors / warnings / toasts status carries as `logs`
  * @property {() => {arrived: number, total: number} | null} [loading] 1.2: a scene still arriving (null = none)
  * @property {() => {host: string, since: number, until: number, expired: boolean} | null} [hostAway] 1.2: the host left
  *   and no person is here: paused (null = a host is here)
@@ -333,6 +334,16 @@ export function createAgentCore(deps) {
 		}
 	}
 
+	/** 85b R3: `{logs}` — the newest errors, warnings and toasts on this page (the `logs` tool has the rest) */
+	function recentLogs() {
+		try {
+			const rows = deps.recentLogs?.() ?? [];
+			return rows.length ? { logs: rows.slice(-5) } : {};
+		} catch {
+			return {};
+		}
+	}
+
 	/** mcp-shapes: `{sceneBudget}` — how heavy the scene is (the Statistics overlay's numbers), else nothing */
 	function sceneBudget() {
 		try {
@@ -376,6 +387,7 @@ export function createAgentCore(deps) {
 			...behaviourErrors(),
 			...scriptErrors(),
 			...sceneBudget(),
+			...recentLogs(),
 			notices: notices.slice()
 		};
 	}

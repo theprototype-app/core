@@ -3,7 +3,8 @@ import * as THREE from 'three';
 import { objectsGroup, lockedObjects, pokeScene } from '../../stores/sceneStore.js';
 import { peers } from '../../stores/appStore.js';
 import { lockSkip } from './lockNote.js';
-import { sceneFilter } from './sceneFilter.js';
+import { sceneFilter, cursorOffset, cursorAt, PAGE_MAX } from './sceneFilter.js';
+import { placeObject, comfortRefusal, withBodyUnits } from './placement.js';
 import { ASSIST_TOOL_NAMES, ASSIST_AI_TOOLS, ASSIST_PROMPT, assistTool } from './assistTools.js';
 import { aboutOriginPosition, originOf } from '$lib/objectOrigin';
 import { geometrySpec } from '$lib/geometryParams';
@@ -19,7 +20,7 @@ import {
 import { setObjectColor, switchMaterialType, setMaterialParam } from '$lib/materialsHandler';
 import { checkMaterialParam, toHexColor, isMapSlotKey } from '$lib/materialParamRules.js';
 import { lightStateOf, recordLightChange, sendLight } from '$lib/multiEdit';
-import { aimLight } from '$lib/lightParams';
+import { aimLight, setShadowMapSize } from '$lib/lightParams';
 import { itemByHash, itemBlob } from '$lib/explorer';
 import { animatedBaseOf, writingBasePose } from '$lib/flowRuntime';
 import { reportedPose } from './poseReport.js';
@@ -52,6 +53,10 @@ import { meshStats } from './meshStats.js';
 import { applyShadowFlags, SHADOW_SCHEMA } from './shadowFlags.js';
 import { duplicatePlan, DUPLICATE_MAX } from './duplicateCore.js';
 import { LOOK_TOOL_NAMES, LOOK_AI_TOOLS, LOOK_PROMPT, lookTool } from './lookTools.js';
+import { HUD_TOOL_NAMES, HUD_AI_TOOLS, HUD_PROMPT, hudTool } from './hudTools.js';
+import { SCENE_SETUP_TOOL_NAMES, SCENE_SETUP_AI_TOOLS, SCENE_SETUP_PROMPT, sceneSetupTool } from './sceneSetupTools.js';
+import { WORLD_TOOL_NAMES, WORLD_AI_TOOLS, WORLD_PROMPT, worldTool, resolvePatterns } from './worldTools.js';
+import { RUNTIME_TOOL_NAMES, RUNTIME_AI_TOOLS, RUNTIME_PROMPT, runtimeTool } from './runtimeTools.js';
 
 // AI tool layer (roadmap #10, A4). Maps OpenAI-style function calls onto the
 // existing REPLICATED mutation surface — every tool applies locally AND broadcasts
@@ -291,13 +296,17 @@ export function graphPage(graphId, page) {
  * replicated objectsGroup only (scene-root helpers/env stay local). Capped so a
  * huge scene can't blow the context.
  * @param {number} [cap]
- * @param {{brief?: boolean, name?: string, type?: string, near?: {position: number[], radius: number}} | null} [filter]
+ * @param {{brief?: boolean, name?: string, type?: string, near?: {position: number[], radius: number}, bounds?: {min: number[], max: number[]}, limit?: number, cursor?: string} | null} [filter]
  *   55 (1.48.1): list_scene's narrowing — uuid/name/type/parent only, a name glob, a type, a world-space sphere
  * @returns {{objects: any[], truncated?: number}}
  */
 export function summarizeScene(cap = 200, filter = null) {
 	const group = get(objectsGroup);
 	const keep = sceneFilter(filter);
+	// 85b R7: paging — `limit` per page, `cursor` = where this page starts (the previous page's nextCursor)
+	const paged = filter && (filter.limit !== undefined || filter.cursor !== undefined);
+	const skip = paged ? cursorOffset(filter.cursor) : 0;
+	if (paged && Number.isFinite(Number(filter.limit))) cap = Math.max(1, Math.min(PAGE_MAX, Math.floor(Number(filter.limit))));
 	/** @type {any[]} */
 	const objects = [];
 	let truncated = 0;
@@ -308,6 +317,7 @@ export function summarizeScene(cap = 200, filter = null) {
 			if (object === group) return;
 			if (keep && !keep(object)) return;
 			matched++;
+			if (matched <= skip) return;
 			if (objects.length >= cap) {
 				truncated++;
 				return;
@@ -317,8 +327,9 @@ export function summarizeScene(cap = 200, filter = null) {
 	}
 	/** @type {any} */
 	const out = truncated ? { objects, truncated } : { objects };
+	if (paged && truncated) out.nextCursor = cursorAt(skip + objects.length);
 	// a filtered read is about objects: the scene-wide flow / behaviours / joints stay in the plain call
-	if (keep || filter?.brief) return { ...out, matched };
+	if (keep || filter?.brief || paged) return { ...out, matched };
 	const sceneFlow = summarizeGraph(SCENE_GRAPH);
 	if (sceneFlow) out.sceneFlow = sceneFlow;
 	const behaviours = summarizeBehaviours();
@@ -351,7 +362,7 @@ function lockedByPeer(uuid) {
  * Move an object and replicate + record (mirrors alignToGround/transformSet).
  * @param {any} object @param {{position?: number[], rotation?: number[], scale?: number[]}} t
  */
-function applyAiTransform(object, t) {
+export function applyAiTransform(object, t) {
 	if (!t.position && !t.rotation && !t.scale) return;
 	/** @type {any} */ let before;
 	/** @type {any} */ let after;
@@ -386,7 +397,9 @@ function applyAiTransform(object, t) {
 const colorOf = (v) => toHexColor(v) ?? (typeof v === 'string' && /^[a-z]{3,20}$/i.test(v.trim()) ? v.trim().toLowerCase() : null);
 
 /** 55 (41's research, round 4): the light fields create/update_objects take, and what each must be */
-const LIGHT_FIELDS = ['color', 'intensity', 'distance', 'decay', 'angle', 'penumbra', 'width', 'height', 'groundColor', 'castShadow', 'aim'];
+const LIGHT_FIELDS = ['color', 'intensity', 'distance', 'decay', 'angle', 'penumbra', 'width', 'height', 'groundColor', 'castShadow', 'aim', 'shadowQuality'];
+/** 85 H4: shadow quality words → the Inspector's shadow map sizes (lightParams SHADOW_SIZES) */
+const SHADOW_QUALITY = /** @type {Record<string, number>} */ ({ low: 512, medium: 1024, high: 2048 });
 /** the ranges a light number is clamped into @type {Record<string, [number, number]>} */
 const LIGHT_RANGES = { intensity: [0, 1000], distance: [0, 1000], decay: [0, 5], angle: [0.02, Math.PI / 2], penumbra: [0, 1], width: [0.1, 100], height: [0.1, 100] };
 
@@ -419,6 +432,14 @@ function applyAiLight(light, spec) {
 			else if (typeof value !== 'boolean') errors.push('castShadow: takes true or false');
 			else {
 				light.castShadow = value;
+				touched = true;
+			}
+		} else if (key === 'shadowQuality') {
+			const size = SHADOW_QUALITY[String(value).toLowerCase()];
+			if (!light.shadow) errors.push('shadowQuality: a ' + light.type + ' casts no shadow');
+			else if (!size) errors.push('shadowQuality: low, medium or high');
+			else {
+				setShadowMapSize(light, size);
 				touched = true;
 			}
 		} else if (key === 'aim') {
@@ -557,6 +578,9 @@ function duplicateFrom(args) {
 
 /** @param {any} spec @returns {any} one created object's result */
 function createOne(spec, extraTypes = /** @type {string[]} */ ([])) {
+	// 85b S6: "hip", "0.5 reach" … are metres from here on
+	const unitsOf = withBodyUnits(spec);
+	spec = unitsOf.spec;
 	const uuid = genUuid();
 	let created = null;
 	if (spec.kind === 'light') {
@@ -634,6 +658,17 @@ function createOne(spec, extraTypes = /** @type {string[]} */ ([])) {
 		const why = lookAtTarget(created, spec.lookAt);
 		if (why) warnings.push(why);
 	}
+	// 85b S2-S4: at a ping / backed onto its surface / standing on the floor / facing a person
+	const place = placeObject(created, spec, applyAiTransform);
+	warnings.push(...place.warnings);
+	// 85b S5: never inside a headset wearer — the object goes again and the call says why
+	const clash = comfortRefusal(created);
+	if (clash) {
+		deleteObjectsByUuid([uuid]);
+		return { error: clash };
+	}
+	// 85b S5: in a headset (a connector tab), it fades in
+	import('$lib/vr/agentComfort.js').then((m) => m.agentObjectArrived(uuid)).catch(() => {});
 	// fix-live F-4: static unless asked — a built scene must not fall apart in Play
 	const physics = aiCreatePhysics(spec, created.userData?.physics);
 	if (physics) setPhysicsFor(uuid, physics);
@@ -641,6 +676,8 @@ function createOne(spec, extraTypes = /** @type {string[]} */ ([])) {
 		uuid,
 		name: created.name,
 		...(created.userData?.physics?.mode ? { physics: created.userData.physics.mode } : {}),
+		...(place.placed ? { placed: place.placed } : {}),
+		...(unitsOf.units ? { units: unitsOf.units } : {}),
 		...(warnings.length ? { warnings } : {})
 	};
 }
@@ -659,6 +696,8 @@ function normalizePrimitive(raw) {
  * @param {any} spec @returns {Promise<any>}
  */
 async function updateOne(spec) {
+	const unitsOf = withBodyUnits(spec); // 85b S6
+	spec = unitsOf.spec;
 	const uuid = spec.uuid;
 	const object = objectOf(uuid);
 	if (!object) return { uuid, error: 'no object with that uuid' };
@@ -666,6 +705,9 @@ async function updateOne(spec) {
 	if (lock) return { uuid, skipped: lock };
 	/** @type {string[]} */
 	const errors = [];
+	// 85b S5: where it was, in case the move would put it inside a headset wearer
+	const was = { position: object.position.toArray(), rotation: [object.rotation.x, object.rotation.y, object.rotation.z], scale: object.scale.toArray() };
+	const moves = ['position', 'rotation', 'scale', 'at', 'snap', 'face_user', 'parentUuid', 'lookAt'].some((k) => spec[k] !== undefined);
 
 	if (typeof spec.name === 'string') renameObject(uuid, spec.name);
 	// 55 (1.48.1 a): re-nest FIRST (the object keeps its world pose), then a given position is LOCAL to the new parent
@@ -710,7 +752,16 @@ async function updateOne(spec) {
 		const why = lookAtTarget(object, spec.lookAt);
 		if (why) errors.push(why);
 	}
-	return errors.length ? { uuid, ok: false, errors } : { uuid, ok: true };
+	// 85b S2-S4: after the move, so at / snap / face_user see where it is now
+	const place = placeObject(object, spec, applyAiTransform);
+	errors.push(...place.warnings);
+	const clash = moves ? comfortRefusal(object) : null;
+	if (clash) {
+		applyAiTransform(object, was);
+		return { uuid, ok: false, errors: [...errors, clash + ' (it was put back)'] };
+	}
+	const extra = { ...(place.placed ? { placed: place.placed } : {}), ...(unitsOf.units ? { units: unitsOf.units } : {}) };
+	return errors.length ? { uuid, ok: false, errors, ...extra } : { uuid, ok: true, ...extra };
 }
 
 const TOOL_NAMES = [
@@ -734,7 +785,11 @@ const TOOL_NAMES = [
 	'import_file', // 66 S4b (offered to agents; see importFile.js)
 	...GEOMETRY_TOOL_NAMES, // 85 G1-G6 (geometryTools.js)
 	...LOOK_TOOL_NAMES, // 85 L1-L5 (lookTools.js)
-	...ASSIST_TOOL_NAMES // 85 undo_last, pivots, images (assistTools.js): unlisted, their arguments read as create_objects / update_objects
+	...HUD_TOOL_NAMES, // 85 H1 / H2 + hud panel (hudTools.js)
+	...SCENE_SETUP_TOOL_NAMES, // 85 H3-H7: sky, light, spawn, play camera, opening view (sceneSetupTools.js)
+	...WORLD_TOOL_NAMES, // 85b W1-W7 (worldTools.js)
+	...ASSIST_TOOL_NAMES, // 85 undo_last, pivots, images (assistTools.js): unlisted, their arguments read as create_objects / update_objects
+	...RUNTIME_TOOL_NAMES // 85b R1-R4 (runtimeTools.js): inspect, validate, logs, playtest
 ];
 
 /** 34 D5: the behaviour family's spellings. They map to the behaviour tools only while a
@@ -816,6 +871,16 @@ const NAME_ALIASES = /** @type {Record<string,string>} */ ({
 	unwrap: 'uv_unwrap',
 	unwrap_uv: 'uv_unwrap',
 	set_tiling: 'set_uv',
+	// 85b R1-R4
+	inspect: 'inspect_runtime',
+	debug_runtime: 'inspect_runtime',
+	why_not_fired: 'inspect_runtime',
+	validate: 'validate_scene',
+	lint_scene: 'validate_scene',
+	get_logs: 'logs',
+	read_logs: 'logs',
+	play_test: 'playtest',
+	test_play: 'playtest',
 	shader_nodes: 'describe_shader_nodes',
 	// flow / behavior invention family
 	add_behavior: 'create_flow_nodes',
@@ -998,8 +1063,8 @@ async function runAiTool(rawName, rawArgs, opts) {
 				// 55: `{flow, page}` reads one page of a big graph's summary
 				if (args && typeof args.flow === 'string' && args.flow) return graphPage(args.flow === 'scene' ? SCENE_GRAPH : args.flow, args.page ?? 1);
 				// 55 (1.48.1): narrowed reads
-				if (args && (args.brief || args.name || args.type || args.near))
-					return summarizeScene(200, { brief: args.brief === true, name: args.name, type: args.type, near: args.near });
+				if (args && (args.brief || args.name || args.type || args.near || args.bounds || args.limit !== undefined || args.cursor !== undefined))
+					return summarizeScene(200, { brief: args.brief === true, name: args.name, type: args.type, near: args.near, bounds: args.bounds, limit: args.limit, cursor: args.cursor });
 				return summarizeScene();
 
 			case 'animate_parts': {
@@ -1152,10 +1217,32 @@ async function runAiTool(rawName, rawArgs, opts) {
 			case 'edit_mesh':
 			case 'create_mesh':
 			case 'create_shapes':
+			case 'update_mesh':
 				// 85 G1-G6 (+ mcp-shapes: create_shapes, many in one call): shape and model objects (geometryTools.js)
 				return await geometryTool(name, args, createOne);
 
-			case 'set_material':
+			case 'search_assets':
+			case 'place_asset':
+			case 'prefab':
+			case 'create_particles':
+			case 'scatter':
+			case 'terrain':
+			case 'water':
+			case 'place_sound':
+			case 'set_music':
+				// 85b W1-W7: assets, terrain, scatter, water, particles, sound (worldTools.js)
+				return await worldTool(name, args, createOne);
+
+			case 'set_material': {
+				// 85b L7: a procedural texture by name (pattern / maps.<slot>.pattern) becomes a library image first
+				const resolved = await resolvePatterns(args);
+				if ('error' in resolved) return { error: resolved.error };
+				const done = await lookTool(name, resolved.args);
+				if (!done || typeof done !== 'object' || done.error || !resolved.patterns?.length) return done;
+				// patternScale: the texture repeats that many times (set_uv's tiling, in the same call's undo step)
+				const tiled = resolved.tiling ? await lookTool('set_uv', { objects: resolved.args.objects, tiling: resolved.tiling }) : null;
+				return { ...done, patterns: resolved.patterns, ...(tiled?.error ? { warnings: ['patternScale: ' + tiled.error] } : {}) };
+			}
 			case 'list_materials':
 			case 'get_material':
 			case 'create_shader':
@@ -1169,6 +1256,28 @@ async function runAiTool(rawName, rawArgs, opts) {
 			case 'set_uv':
 				// 85 L1-L5: materials, shaders, the look stack, UVs (lookTools.js)
 				return await lookTool(name, args);
+
+			case 'create_hud':
+			case 'edit_hud':
+			case 'list_hud':
+			case 'hud_panel':
+				// 85 H1 / H2 + hud panel (hudTools.js)
+				return await hudTool(name, args);
+
+			case 'set_sky':
+			case 'set_light':
+			case 'get_environment':
+			case 'place_spawn':
+			case 'set_play_camera':
+				// 85 H3-H7 (sceneSetupTools.js)
+				return await sceneSetupTool(name, args);
+
+			case 'inspect_runtime':
+			case 'validate_scene':
+			case 'logs':
+			case 'playtest':
+				// 85b R1-R4: see what the game does (runtimeTools.js)
+				return await runtimeTool(name, args);
 
 			default:
 				return {
@@ -1196,7 +1305,8 @@ const LIGHT_SCHEMA = {
 	height: { type: 'number', description: 'rectarea: height in metres' },
 	groundColor: { type: 'string', description: 'hemisphere: the ground colour, hex' },
 	castShadow: { type: 'boolean', description: 'directional/spot/point: cast shadows' },
-	aim: { type: 'array', items: { type: 'number' }, description: 'directional/spot: a world point [x,y,z] to point at' }
+	aim: { type: 'array', items: { type: 'number' }, description: 'directional/spot: a world point [x,y,z] to point at' },
+	shadowQuality: { type: 'string', enum: ['low', 'medium', 'high'], description: 'directional/spot/point: shadow sharpness (each device may cap it)' }
 };
 
 /** OpenAI-format tool schemas. Batch-first so one prompt = few tool calls. */
@@ -1220,7 +1330,15 @@ export const AI_TOOLS = [
 						description: 'optional: only objects within radius of a WORLD position',
 						properties: { position: { type: 'array', items: { type: 'number' }, description: '[x, y, z]' }, radius: { type: 'number' } },
 						required: ['position', 'radius']
-					}
+					},
+					bounds: {
+						type: 'object',
+						description: 'optional: only objects whose WORLD position is inside this box',
+						properties: { min: { type: 'array', items: { type: 'number' }, description: '[x, y, z]' }, max: { type: 'array', items: { type: 'number' }, description: '[x, y, z]' } },
+						required: ['min', 'max']
+					},
+					limit: { type: 'number', description: 'optional: objects per page (1-500); the reply has nextCursor when more match' },
+					cursor: { type: 'string', description: 'optional: the nextCursor of the previous page' }
 				}
 			}
 		}
@@ -1275,6 +1393,20 @@ export const AI_TOOLS = [
 								...LIGHT_SCHEMA,
 								...SHADOW_SCHEMA,
 								lookAt: { description: 'turn it so its local +Z (front) faces this: a world point [x,y,z] or another object\'s uuid (+Y stays up; lights use aim)' },
+								at: {
+									type: 'object',
+									description: 'build at a spot a person PINGED (Ctrl+Alt+click, the menu\'s Ping, a long-press menu, the VR stick click): {ping: id} from where_are_users {pings: true}, or {ping: "latest"} = "here"; on a floor or table top it stands on it, and the ping follows the object it landed on. Or around a PERSON as they are now: {user: "me" | peer id | name, ahead: 1.5, right: 0, up: 0} (metres or body units; it faces them; call again to follow them as they walk). Sizes, positions and these offsets also take BODY UNITS: "eye", "height", "shoulder", "hip", "knee", "reach", "room", with a factor ("0.5 reach") — that person\'s, from where_are_users body',
+									properties: {
+										ping: { type: 'string' },
+										user: { type: 'string' },
+										ahead: { description: 'metres in front of them (at least 0.6), or a body unit' },
+										right: { description: 'metres to their right (negative = left), or a body unit' },
+										up: { description: 'metres above their floor, or a body unit' }
+									}
+								},
+								align: { type: 'string', enum: ['surface'], description: 'with at: back it onto the pinged surface (its +Z along the surface normal, upright on a wall) — a painting on a wall' },
+								snap: { type: 'string', enum: ['floor'], description: 'stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground' },
+								face_user: { description: 'turn it (yaw only) so its +Z front faces a person: true = the person you act for, or a peer id / name from where_are_users' },
 								parentUuid: { type: 'string', description: 'uuid of an existing group to nest under — position/rotation/scale are then LOCAL to that group' },
 								physics: {
 									type: 'string',
@@ -1324,6 +1456,20 @@ export const AI_TOOLS = [
 								...LIGHT_SCHEMA,
 								...SHADOW_SCHEMA,
 								lookAt: { description: 'turn it so its local +Z (front) faces this: a world point [x,y,z] or another object\'s uuid (+Y stays up; lights use aim)' },
+								at: {
+									type: 'object',
+									description: 'build at a spot a person PINGED (Ctrl+Alt+click, the menu\'s Ping, a long-press menu, the VR stick click): {ping: id} from where_are_users {pings: true}, or {ping: "latest"} = "here"; on a floor or table top it stands on it, and the ping follows the object it landed on. Or around a PERSON as they are now: {user: "me" | peer id | name, ahead: 1.5, right: 0, up: 0} (metres or body units; it faces them; call again to follow them as they walk). Sizes, positions and these offsets also take BODY UNITS: "eye", "height", "shoulder", "hip", "knee", "reach", "room", with a factor ("0.5 reach") — that person\'s, from where_are_users body',
+									properties: {
+										ping: { type: 'string' },
+										user: { type: 'string' },
+										ahead: { description: 'metres in front of them (at least 0.6), or a body unit' },
+										right: { description: 'metres to their right (negative = left), or a body unit' },
+										up: { description: 'metres above their floor, or a body unit' }
+									}
+								},
+								align: { type: 'string', enum: ['surface'], description: 'with at: back it onto the pinged surface (its +Z along the surface normal, upright on a wall) — a painting on a wall' },
+								snap: { type: 'string', enum: ['floor'], description: 'stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground' },
+								face_user: { description: 'turn it (yaw only) so its +Z front faces a person: true = the person you act for, or a peer id / name from where_are_users' },
 								visible: { type: 'boolean' },
 								parentUuid: {
 									type: 'string',
@@ -1675,7 +1821,7 @@ const PHYSICS_AI_TOOLS = [
  * Call this per turn (readiness can change). @param {ToolOpts} [opts] @returns {any[]} */
 export function getAiTools(opts) {
 	const physics = !!opts?.physics || physicsToolsEnabled();
-	const tools = [...AI_TOOLS, ...GEOMETRY_AI_TOOLS, ...LOOK_AI_TOOLS, ...ASSIST_AI_TOOLS, ...flowToolSchemas(physics), ...behaviourToolSchemas()];
+	const tools = [...AI_TOOLS, ...GEOMETRY_AI_TOOLS, ...LOOK_AI_TOOLS, ...HUD_AI_TOOLS, ...SCENE_SETUP_AI_TOOLS, ...WORLD_AI_TOOLS, ...ASSIST_AI_TOOLS, ...RUNTIME_AI_TOOLS, ...flowToolSchemas(physics), ...behaviourToolSchemas()];
 	if (physics) tools.push(...PHYSICS_AI_TOOLS);
 	if (meshGenReady()) tools.push(MESH_TOOL);
 	return tools;
@@ -1780,6 +1926,6 @@ export function buildSystemPrompt(opts) {
 		"an object's name as the tool name — the name of a thing you create belongs in that object's",
 		'`name` field inside create_objects. Every call takes effect immediately, so never repeat a',
 		'call that already came back without an error — once the scene matches the request, stop',
-		'calling tools and write the summary.' + meshLine + toolsLine + GEOMETRY_PROMPT + LOOK_PROMPT + ASSIST_PROMPT + flowBlock + extraBlock + physicsBlock
+		'calling tools and write the summary.' + meshLine + toolsLine + GEOMETRY_PROMPT + LOOK_PROMPT + HUD_PROMPT + SCENE_SETUP_PROMPT + WORLD_PROMPT + ASSIST_PROMPT + RUNTIME_PROMPT + flowBlock + extraBlock + physicsBlock
 	].join('\n');
 }

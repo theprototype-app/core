@@ -126,6 +126,11 @@ export function lines() {
 	);
 }
 
+/** 85 R3: the ring as plain copies, oldest first (the agent's `logs` tool and status read it) @returns {Entry[]} */
+export function entries() {
+	return ring.map((e) => ({ ...e }));
+}
+
 /** Drop everything (tests, and the "start again" case). */
 export function clearDiagnostics() {
 	ring.length = 0;

@@ -64,7 +64,10 @@ export const CONNECTOR_SCHEMAS = /** @type {Record<string, any>} */ ({
 		properties: { link: { type: 'string', description: 'the session link, invite link or session id the person gave you' } },
 		required: ['link']
 	},
-	where_are_users: { type: 'object', properties: {} }
+	where_are_users: {
+		type: 'object',
+		properties: { pings: { type: 'boolean', description: 'also list the recent pings (85b S2): id, who, how long ago, position, surface normal, the object it is on' } }
+	}
 });
 
 /** tools that change nothing: allowed under a read scope */
@@ -86,7 +89,7 @@ const PROBE_WAIT_MS = 3000;
  *   visible: () => boolean,
  *   encodeShot: (dataUrl: string) => Promise<{image: {mimeType: string, data: string}, width: number, height: number} | null>,
  *   joinSession?: (args: any, ctx: {onCancel: (fn: () => void) => void}) => Promise<any>,
- *   whereAreUsers?: () => any,
+ *   whereAreUsers?: (args?: any) => any,
  *   toolCode?: Record<string, () => Promise<any>>,
  *   you?: () => {peerId: string|null, name: string, role: 'host'|'guest'|'editor'|'viewer', inVR: boolean},
  *   lastJoinResult?: () => any,
@@ -229,11 +232,14 @@ export function createDispatcher(deps) {
 	}
 
 	/** 86-fix: read-only, answered from this tab's own scene */
-	/** @param {'read'|'edit'} scope a look-only grant gets the person's own pose, nobody else's */
-	async function whereCall(scope) {
-		const r = /** @type {NonNullable<typeof deps.whereAreUsers>} */ (deps.whereAreUsers)();
+	/** @param {'read'|'edit'} scope a look-only grant gets the person's own pose, nobody else's @param {any} [args] */
+	async function whereCall(scope, args) {
+		const r = /** @type {NonNullable<typeof deps.whereAreUsers>} */ (deps.whereAreUsers)(args && typeof args === 'object' ? args : {});
 		if (isError(r)) return fail('failed', String(r.error));
-		return { result: scope === 'edit' ? r : { ...r, users: r.users.filter((/** @type {any} */ u) => u.you) } };
+		if (scope === 'edit') return { result: r };
+		// a read scope sees only the person it acts as — their pings too
+		const you = r.users.find((/** @type {any} */ u) => u.you);
+		return { result: { ...r, users: you ? [you] : [], ...(r.pings ? { pings: r.pings.filter((/** @type {any} */ p) => p.by === you?.id) } : {}) } };
 	}
 
 	/** the DO cancelled one call @param {string} id */
@@ -306,7 +312,7 @@ export function createDispatcher(deps) {
 						: tool === 'wait_for_edit'
 							? waitForEdit(id, args)
 							: tool === 'where_are_users'
-								? whereCall(frame.scope)
+								? whereCall(frame.scope, args)
 								: own
 									? joinCall(id, args)
 									: sceneCall(id, tool, args);

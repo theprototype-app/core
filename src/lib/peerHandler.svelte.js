@@ -29,7 +29,7 @@ import { applyJoinRefusal } from '$lib/peerApproval';
 // 55 A7/A8: the agent action log + where an agent looked (store-only)
 import { applyAgentLog, applyAgentUndo, applyAgentView, dropAgentView, sendAgentLogTo } from '$lib/agentLog';
 import { applyAgentChatMessage, sendAgentChatBacklogTo, agentChatPeerGone } from '$lib/agentChat'; // 56 C1
-import { captureInviteHash, verifyInviteDial, joinerInviteMeta, dialingWithInvite, myKind, noteDialKind, noteJoinedVia, agentsAsGuests, isAgentSession } from '$lib/inviteStore';
+import { captureInviteHash, verifyInviteDial, joinerInviteMeta, dialingWithInvite, myKind, noteDialKind, noteJoinedVia, agentsAsGuests, isAgentSession, isAgentPeer } from '$lib/inviteStore';
 import { applyKick, isBlocked, isHeldOut, resetModeration, blockReplay } from '$lib/peerModeration'; // 55 A9
 import { notePeerFacts, notePeerActivity, dropPeerFacts, myDevice } from '$lib/peerFacts'; // 55 A9
 import { sessionHost, markPeerJoined, resetSession, signalingRetry, noteSignalingRetry, clearSignalingRetry, noteApprovalStarted, clearApprovalStarted, approvalStartedAt, APPROVAL_WINDOW_MS, MAX_PENDING_APPROVALS, HARD_PEER_CAP, roomIsFull } from '$lib/connectionState';
@@ -305,6 +305,11 @@ function boundApprovals(approvals) {
 let sessionVolumesMod = null;
 function sessionVolumesNow() {
 	return (sessionVolumesMod ??= import('$lib/sessionVolumes.js'));
+}
+
+/** 85b S5: an agent peer made this object — in a headset it fades in (agentComfort checks the headset) @param {string} uuid */
+function agentMadeObject(uuid) {
+	import('$lib/vr/agentComfort.js').then((m) => m.agentObjectArrived(uuid)).catch(() => {});
 }
 
 export class PeerConnection {
@@ -1234,6 +1239,7 @@ export class PeerConnection {
 					addMessage({message: data.message, type: data.type, sender: data.sender});
 				} else if(data.type == 'create') {
 					createGeometry(data.command, data.uuid);
+					if (isAgentPeer(conn.peer)) agentMadeObject(data.uuid); // 85b S5: fades in, in a headset
 				} else if(data.type == 'light') {
 					createLight(data.command, data.uuid);
 				} else if(data.type == 'group') {
@@ -1685,7 +1691,7 @@ export class PeerConnection {
 					} else if(data.type == 'flowcursor') {
 					applyFlowCursor(data);
 				} else if(data.type == 'ping') {
-					applyPing(data);
+					applyPing(data, conn.peer); // 85b S2: the sender is the connection
 				} else if(data.type == 'assetfile') {
 					// shared Explorer bytes (97) — dedup by content hash
 					applyAssetFile(data, conn.peer);

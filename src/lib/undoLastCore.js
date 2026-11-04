@@ -100,3 +100,31 @@ export function conflictWords(conflicts) {
 	const more = conflicts.length > 3 ? ' and ' + (conflicts.length - 3) + ' more' : '';
 	return 'not undone: someone changed these since, and undoing would overwrite their work: ' + parts.join(', ') + more + '. Nothing was changed. Ask them, or fix it with a new edit.';
 }
+
+// ---------------------------------------------------------------- 85b R6b named checkpoints
+
+/** how many named checkpoints one agent keeps (the oldest goes first) */
+export const CHECKPOINT_MAX = 10;
+
+/** a checkpoint's name: 1-40 characters, trimmed @param {any} v @returns {string | null} */
+export function checkpointName(v) {
+	if (typeof v !== 'string') return null;
+	const name = v.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim();
+	return name && name.length <= 40 ? name : null;
+}
+
+/**
+ * The lines a restore takes back: this agent's own since the checkpoint, newest first, still on the stack.
+ * @param {any[]} log oldest first @param {string} me @param {number} since the checkpoint's time (ms)
+ * @param {(line: any) => any[] | undefined} stepsOf @param {any[]} stack
+ * @returns {any[]}
+ */
+export function linesSince(log, me, since, stepsOf, stack) {
+	return pickUndoLines(
+		log.filter((l) => Number(l?.at) > since),
+		me,
+		Infinity,
+		stepsOf,
+		stack
+	);
+}

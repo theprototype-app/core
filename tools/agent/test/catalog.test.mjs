@@ -123,5 +123,21 @@ check('catalog.json carries the connector view: the 5 new names of 1.56 and ever
 	return ['create_shape', 'edit_shape', 'set_look', 'assets', 'undo_last'].every((n) => names.includes(n)) && Object.values(v.families).every((a) => Object.values(a).every((t) => fine.has(t))) && guidanceGaps(v).length === 0;
 })());
 
+check('catalog.json: 85-scene adds hud + game_setup and set_look {sky, light, environment}', (() => {
+	const v = committed.connector;
+	const f = v.families;
+	return (
+		f.hud?.create === 'create_hud' && f.hud?.list === 'list_hud' && f.hud?.update === 'edit_hud' && f.hud?.panel === 'hud_panel' &&
+		f.game_setup?.spawn === 'place_spawn' && f.game_setup?.play_camera === 'set_play_camera' &&
+		f.set_look?.sky === 'set_sky' && f.set_look?.light === 'set_light' && f.set_look?.environment === 'get_environment'
+	);
+})());
+
+// 85b (1.60): `run` joins; playtest stays agent-page only (B4b) — out of the family, left out by the Worker; no run {play, stop}
+check('catalog.json: the run family = inspect / validate / logs, playtest left out of the connector', (() => {
+	const run = committed.connector.families.run ?? {};
+	return run.inspect === 'inspect_runtime' && run.validate === 'validate_scene' && run.logs === 'logs' && !('playtest' in run) && !('play' in run) && (committed.connectorExcluded ?? []).includes('playtest');
+})());
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

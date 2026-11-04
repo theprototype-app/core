@@ -19,7 +19,7 @@ import { withWireBatch } from '$lib/wireBatch';
 import { originOf, originWorld, originPreset, setOriginFor, setOriginFromWorld, resetOrigin } from '$lib/objectOrigin';
 import { physicsShapeChanged } from '$lib/physics';
 import { lockSkip } from './lockNote.js';
-import { entryUuids, undoCount, conflictWords, personEntriesAbove, undoConflicts, UNDO_LAST_MAX } from '$lib/undoLastCore.js';
+import { entryUuids, undoCount, conflictWords, personEntriesAbove, undoConflicts, UNDO_LAST_MAX, checkpointName, CHECKPOINT_MAX } from '$lib/undoLastCore.js';
 import { IMAGE_CANVAS_SCHEMA, IMAGE_LIMITS_TEXT } from './imageToolCore.js';
 
 /** the tool names this module answers */
@@ -191,10 +191,52 @@ function undoAssistantSteps(count) {
 	return { undone, count: undone.length };
 }
 
+/** people (not agents) this page is connected to — a restore with any of them present asks the host */
+async function otherPeople() {
+	const { isAgentPeer } = await import('$lib/inviteStore');
+	/** @type {any} */
+	const link = get(peers);
+	return (link?.openedPeers ? [...link.openedPeers].map(String) : []).filter((id) => !isAgentPeer(id));
+}
+
+/**
+ * 85b R6b: named checkpoints on the undo family. `checkpoint` saves the moment, `restore` takes back every one of
+ * YOUR calls since it (refused, nothing changed, when someone has edited those objects since), `checkpoints` lists
+ * them. With other people in the session a restore asks the host first (Allow / Deny, the scene-wide look rule).
+ * @param {any} args @param {any} recorder
+ */
+async function checkpointTool(args, recorder) {
+	if (!recorder.recordingThisCall())
+		return { error: 'checkpoints are for an agent\'s own calls (an agent page or the Claude connector); the in-app assistant has none' };
+	if (args.checkpoints === true) return { checkpoints: recorder.listCheckpoints() };
+	if (args.checkpoint !== undefined) {
+		const name = checkpointName(args.checkpoint);
+		if (!name) return { error: 'checkpoint: a name, 1-40 characters' };
+		return recorder.saveCheckpoint(name);
+	}
+	const name = checkpointName(args.restore);
+	if (!name) return { error: 'restore: the name of a checkpoint you saved' };
+	// answer a waiting question (confirmId) or check first, so a refusal never becomes a prompt
+	if (args.confirmId === undefined) {
+		const plan = await recorder.planRestore(name);
+		if ('error' in plan) return { ...plan, undone: [] };
+		if (!plan.lines.length) return { restored: name, undone: [], note: 'Nothing of yours changed since that checkpoint.' };
+		if (!(await otherPeople()).length) return recorder.restoreCheckpoint(name);
+		const { gateScenewide } = await import('$lib/agent/confirmGate.js');
+		return gateScenewide('undo_last', args, {
+			summary: 'go back to its checkpoint "' + name + '" (undo its last ' + plan.lines.length + ' change' + (plan.lines.length === 1 ? '' : 's') + ')',
+			apply: () => recorder.restoreCheckpoint(name)
+		});
+	}
+	const { gateScenewide } = await import('$lib/agent/confirmGate.js');
+	return gateScenewide('undo_last', args, { summary: '', apply: () => recorder.restoreCheckpoint(name) });
+}
+
 /** @param {any} args */
 async function undoLastTool(args) {
-	const count = undoCount(args?.count);
 	const recorder = await import('$lib/agentLogRecorder.js');
+	if (args?.checkpoint !== undefined || args?.restore !== undefined || args?.checkpoints === true) return checkpointTool(args, recorder);
+	const count = undoCount(args?.count);
 	return recorder.recordingThisCall() ? recorder.undoLastCalls(count) : undoAssistantSteps(count);
 }
 
@@ -227,10 +269,24 @@ export const ASSIST_AI_TOOLS = [
 			name: 'undo_last',
 			description:
 				'Take back your own last tool call (count for several, newest first). Use it whenever the person says "undo that" or "take that back": they may be talking and cannot see each call. ' +
-				'Only ever undoes YOUR calls. If someone has since changed the same objects it refuses and lists them, and nothing changes: tell the person who changed what.',
+				'Only ever undoes YOUR calls. If someone has since changed the same objects it refuses and lists them, and nothing changes: tell the person who changed what. ' +
+				'Before a big change, save a checkpoint ({checkpoint: "before the roof"}); {restore: "before the roof"} goes back to it (up to ' +
+				CHECKPOINT_MAX +
+				' names).',
 			parameters: {
 				type: 'object',
-				properties: { count: { type: 'integer', minimum: 1, maximum: UNDO_LAST_MAX, description: 'how many of your calls to take back (default 1)' } }
+				properties: {
+					count: { type: 'integer', minimum: 1, maximum: UNDO_LAST_MAX, description: 'how many of your calls to take back (default 1)' },
+					checkpoint: { type: 'string', maxLength: 40, description: 'save this moment under a name ("before the roof") to come back to; nothing is undone' },
+					restore: {
+						type: 'string',
+						maxLength: 40,
+						description: 'go back to a checkpoint you saved: takes back every one of your calls since it, in one call. With other people here the host is asked first (needsConfirm, then call again with confirmId)'
+					},
+					checkpoints: { type: 'boolean', description: 'true = list your checkpoints' },
+					confirmId: { type: 'string', description: 'with restore: the confirmId a needsConfirm answer gave' },
+					wait: { type: 'number', description: 'with confirmId: seconds to wait for the host\'s answer (at most 60)' }
+				}
 			}
 		}
 	},

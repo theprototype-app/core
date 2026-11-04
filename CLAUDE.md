@@ -2663,6 +2663,24 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   2 (every canvas panel >= 1 texel per Quest pixel). `api.claimInput('sticks')` + the world-pan stick REEL (stick Y
   pushes/pulls a one-grip world, as Edit does an object); `addSetting({onLevels: true})` draws a choice as tabs on the
   VR Levels page, which now lists every level.
+- **ROADMAP 85b (85-scene + 85-world + 85-runtime, 85b-int, 1.60) — AGENT TOOLS FOR THE GAME AROUND A SCENE.** Four tool
+  modules in `lib/ai/`, each exporting `*_TOOL_NAMES` / `*_READ_TOOLS` / `*_AI_TOOLS` / `*_PROMPT` and one dispatcher that
+  `tools.js` calls: `hudTools` (create_hud / edit_hud / list_hud / hud_panel; the first screen added to an EMPTY hud doc is
+  the doc's only and active screen — no stray `main`), `sceneSetupTools` (set_sky / set_light / get_environment write ONE
+  `environment` undo kind and are scene-wide → `confirmGate.gateScenewide`; place_spawn / set_play_camera write the
+  `sceneplay` kind; `startView` on scenePhysics is the opening view a SAVE writes as the payload camera — autosave keeps the
+  live view; only `mode: "first"` exists, third / orbit / fixed answer `unavailable` with the node route), `worldTools`
+  (assets search / place / prefab, terrain, scatter, water, particles, place_sound, set_music, patterns by name, update_mesh;
+  a sound URL goes through lookTools' `checkTextureUrl` + `readHttpsBytes`, an audio byte sniff and a decode before the
+  library; the `music` history kind registers lazily on the first set_music) and `runtimeTools` (inspect_runtime /
+  validate_scene / logs / playtest — playtest runs only on an agent page and is `connectorExcluded` in core AND
+  `EXCLUDED_TOOLS` in the Worker). Every new read must join THREE sets by hand (agentCore READ_ONLY_TOOLS, agentLogCore
+  READ_ONLY, viewerGate VIEWER_SAFE_TOOLS) and `tools/agent/src/catalog.js` CONNECTOR_FAMILIES maps it to a connector family
+  (`hud`, `game_setup`, `effects`, `run`; set_look sky / light / environment; assets search / place / prefab). Regenerate
+  `tools/agent/catalog.json` with `npm run catalog:agent`, never hand-merge it. Pings (`pingCore` / `pingLog`) carry an
+  object-local `on` and are logged 2 min, throttled 250 ms both ways, sender = `conn.peer`; placement params (`at`, `align`,
+  `snap`, `face_user`) live in `ai/placement.js`. Undo checkpoints (R6b) are on `undo_last`; a restore with people present
+  asks the host. Agent contract 1.7.0 (`status.logs`). Release proof: e2e `agent-level-proof`; eval set `tests/agent-eval`.
 - **ROADMAP 72 (72-materials) — MATERIAL MAP SLOTS (LK1) AND LOOK ANIMATION IN GLB (LK4).** LK1: `lib/materialMaps.js` (the
   `materialmaps` history kind, write paths, receivers; `setObjectsMapSet` = the one seam a generator such as PBRnxt fills)
   + `lib/materialMapTextures.js` (apply, per-material transform, thumbs) + `materialParamRules.js` (`MAP_SLOTS`, inline

@@ -24,3 +24,4 @@ shows up here before the owner re-syncs it in claude.ai.
 | release | live | release | model |
 |---|---|---|---|
 | 1.56.0 (85a) | 11.5 / 21 (22 tools) | 20 / 21 (27 tools: + create_shape, edit_shape, set_look, assets, undo_last) | sonnet |
+| 1.60.0 (85b) | 21 / 25 (27 tools; the 21 older requests 20 / 21) | 24 / 25 (31 tools: + hud, game_setup, effects, run; the 21 older requests 20 / 21, the four 85b ones 4 / 4) | sonnet |

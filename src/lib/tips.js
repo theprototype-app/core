@@ -57,7 +57,17 @@ export const TIP_AGENT_SHAPES = 'agent-shapes-looks';
 /** the tools that retire it: geometryTools + lookTools + assistTools NAMES minus the look tools that only read (a unit
  * test keeps them in step; those modules pull three.js, so the row cannot import them) */
 export const AGENT_TIP_TOOLS = new Set([
-	...['set_geometry', 'create_lathe', 'create_tube', 'extrude_shape', 'edit_mesh', 'create_mesh', 'create_shapes'],
+	...['set_geometry', 'create_lathe', 'create_tube', 'extrude_shape', 'edit_mesh', 'create_mesh', 'create_shapes', 'update_mesh'],
 	...['set_material', 'create_shader', 'edit_shader', 'assign_shader', 'set_post', 'create_post_graph', 'uv_unwrap', 'set_uv'],
 	...['undo_last', 'set_pivot', 'create_pivot', 'add_image']
+]);
+
+/** 85b (1.60): Claude builds worlds and games now (the Connect Claude row, shown before the 85a hint; retires on the
+ * first successful call of an 85b tool that changes something) */
+export const TIP_AGENT_GAMES = 'agent-worlds-games';
+/** hudTools + sceneSetupTools + worldTools NAMES minus the reads (a unit test keeps them in step) */
+export const AGENT_GAMES_TIP_TOOLS = new Set([
+	...['create_hud', 'edit_hud', 'hud_panel'],
+	...['set_sky', 'set_light', 'place_spawn', 'set_play_camera'],
+	...['place_asset', 'prefab', 'create_particles', 'scatter', 'terrain', 'water', 'place_sound', 'set_music']
 ]);

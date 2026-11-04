@@ -186,6 +186,20 @@ export const PARTICLE_PRESETS = [
 		}
 	},
 	{
+		// 85b W5b: slow glowing points that drift and blink over a meadow or a pond at night
+		key: 'fireflies',
+		name: 'Fireflies',
+		config: {
+			count: 36, lifetime: 3.6, lifeJitter: 0.5,
+			shape: 'sphere', radius: 2.5,
+			speed: 0.2, speedJitter: 1, gravity: 0.05, drag: 1, turbulence: 1,
+			sizeStart: 0.07, sizeEnd: 0.05,
+			colorStart: '#f6ff8a', colorEnd: '#9cff3a',
+			opacity: 1, fadeIn: 0.35, fadeOut: 0.45,
+			sprite: 'dot', blending: 'additive', spin: 0, space: 'world'
+		}
+	},
+	{
 		// 36 B3: rain over an area; place the emitter at cloud height (Add ▸ Effects lifts it)
 		key: 'rain',
 		name: 'Rain',

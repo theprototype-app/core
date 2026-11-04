@@ -31,7 +31,7 @@ fs.mkdirSync(dir, { recursive: true });
 const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-eval-'));
 
 /** calls that only look never count against a request */
-const READS = new Set(['list_scene', 'status', 'screenshot', 'where_are_users', 'describe_node_types', 'what_can_you_do', 'list_materials', 'get_material', 'describe_shader_nodes', 'get_post', 'wait_for_edit']);
+const READS = new Set(['list_scene', 'status', 'screenshot', 'where_are_users', 'describe_node_types', 'what_can_you_do', 'list_materials', 'get_material', 'describe_shader_nodes', 'get_post', 'wait_for_edit', 'search_assets', 'list_hud', 'get_environment', 'inspect_runtime', 'validate_scene', 'logs']);
 
 const SYSTEM =
 	'You are Claude in the claude.ai app, talking with a person (often by voice). The theprototype connector is connected to their open ' +

@@ -58,6 +58,11 @@ export const primitivesCatalog = [
 		items: [{ label: 'Terrain', command: '/create Terrain 24 48' }]
 	},
 	{
+		// 64 D2: text that follows a curve (its own, or a spline / flow path it is linked to)
+		group: 'Text',
+		items: [{ label: 'Text on a path', command: '/create Text' }]
+	},
+	{
 		// 36-sim U2b: a glass tank of particle fluid (local per peer; settings replicate)
 		group: 'Simulation',
 		items: [{ label: 'Fluid tank', command: '/create FluidTank 1.2 0.8 0.8' }]

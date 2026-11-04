@@ -3,7 +3,7 @@
 	"format": 2,
 	"generator": {
 		"source": "tpAgent.tools() via core scripts/agent-tool-catalog.cjs, mapped by tools/agent/src/catalog.js",
-		"hostTools": 46,
+		"hostTools": 50,
 		"dropped": []
 	},
 	"instructions": "You are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", \"here\" or \"this\", call where_are_users and build at the spots it gives, facing the person.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.\nWhen asked what you can do here, call what_can_you_do and say its \"say\" line.",
@@ -14,7 +14,8 @@
 		"import_model",
 		"install_modules",
 		"leave",
-		"pending_offers"
+		"pending_offers",
+		"playtest"
 	],
 	"tools": [
 		{
@@ -2252,6 +2253,162 @@
 			}
 		},
 		{
+			"name": "inspect_runtime",
+			"title": "See what the game is doing",
+			"description": "Read what the game is doing right now, without changing anything: when each event and action node last fired, the game state and variables, who runs the physics and the game rules, behaviour and script errors, and what the HUD shows. Pass node (a flow node id) or object (a uuid) to ask \"why didn't it fire?\": it names the missing link (no source upstream, a selector wired the wrong way, nothing clicked it yet). Action nodes run only when an upstream source fires; firing one directly does nothing.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"node": {
+						"type": "string",
+						"description": "a flow node id: explain this node"
+					},
+					"object": {
+						"type": "string",
+						"description": "an object uuid: its nodes and why they did or did not fire"
+					},
+					"limit": {
+						"type": "integer",
+						"minimum": 1,
+						"maximum": 80,
+						"description": "overview: how many nodes (default 40)"
+					}
+				}
+			},
+			"annotations": {
+				"title": "See what the game is doing",
+				"readOnlyHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "validate_scene",
+			"title": "Check the game for problems",
+			"description": "Check the scene for what would not work when someone presses Play: actions nothing fires, an Object Selector wired the wrong way round, a scene-graph On Click that reaches no object, Game Start wired as an event, HUD nodes pointing at elements that do not exist, walk mode with no spawn, a scene with no light, behaviour code problems. Each issue says what to fix. Run it after building a game, then playtest.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {}
+			},
+			"annotations": {
+				"title": "Check the game for problems",
+				"readOnlyHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "logs",
+			"title": "Read the recent log",
+			"description": "The page's recent log: errors, warnings, console lines and the toasts people saw, oldest first. Pass since (the \"now\" of the previous answer) for only what is new. status shows the newest few.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"since": {
+						"type": "number",
+						"description": "only lines after this time (ms since 1970, the \"now\" a previous logs answer gave)"
+					},
+					"level": {
+						"type": "string",
+						"enum": [
+							"debug",
+							"info",
+							"warn",
+							"error"
+						],
+						"description": "the lowest level to include (default info)"
+					},
+					"limit": {
+						"type": "integer",
+						"minimum": 1,
+						"maximum": 100,
+						"description": "most lines (default 40)"
+					}
+				}
+			},
+			"annotations": {
+				"title": "Read the recent log",
+				"readOnlyHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "playtest",
+			"title": "Play the game as a test player",
+			"description": "Play the game as a virtual player in YOUR OWN Play (agent page only; it never moves a person): walk a path, look at a point, click or grab an object, press a key or a HUD button, wait. Then it reports which nodes fired, the game state before and after, what the HUD shows and any errors. It fires SOURCES the way a player does (a click reaches On Click nodes); a step on an action node does nothing. Walk points are on the floor; your eye is 1.6 m above them. Clicks and pickups count for real in the shared game, like a person playing.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"steps": {
+						"type": "array",
+						"maxItems": 40,
+						"description": "in order, each ONE of: {walk: [[x,y,z], …], speed?} · {look: [x,y,z]} · {click: uuid} · {grab: uuid} · {key: \"KeyE\", hold?} · {hud: elementId} · {wait: seconds}",
+						"items": {
+							"type": "object",
+							"properties": {
+								"walk": {
+									"type": "array",
+									"items": {
+										"type": "array",
+										"items": {
+											"type": "number"
+										}
+									},
+									"description": "floor points to walk through"
+								},
+								"speed": {
+									"type": "number",
+									"description": "walking speed m/s (default 3)"
+								},
+								"look": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"description": "[x,y,z] to face"
+								},
+								"click": {
+									"type": "string",
+									"description": "object uuid"
+								},
+								"grab": {
+									"type": "string",
+									"description": "object uuid"
+								},
+								"key": {
+									"type": "string",
+									"description": "a key code: KeyE, Space, ArrowUp …"
+								},
+								"hold": {
+									"type": "number",
+									"description": "seconds to hold the key (default 0.2)"
+								},
+								"hud": {
+									"type": "string",
+									"description": "a HUD button element id"
+								},
+								"wait": {
+									"type": "number",
+									"description": "seconds"
+								}
+							}
+						}
+					},
+					"stayInPlay": {
+						"type": "boolean",
+						"description": "keep this page in Play afterwards (default: leave Play if the playtest entered it)"
+					}
+				},
+				"required": [
+					"steps"
+				]
+			},
+			"annotations": {
+				"title": "Play the game as a test player",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"openWorldHint": false
+			}
+		},
+		{
 			"name": "create_flow_nodes",
 			"title": "Add behaviour (flow) nodes",
 			"description": "Add behavior (flow) nodes to a node graph — this is how objects get MOTION and interactivity: spin, bounce, patrol a path, pulse, blink, react to clicks. graph is \"scene\" or an object uuid (ONE graph per call). KEY RULE: a behavior node placed in an OBJECT's graph with no edges automatically drives that object — most behaviors are one node, zero edges, so usually OMIT edges. A script node runs every frame FROM THE BASE POSE, so object.rotation.y += 0.02 lands at base + 0.02 and stays: write object.rotation.y = base.rot[1] + elapsed * speed (base has pos, rot, scale as arrays; elapsed = seconds since Play started, time = the shared clock, seconds of the day, a large number). Particle gravity is the acceleration along world Y: negative falls, positive rises. Describe nodes EITHER as text (graph lines, see the system prompt) OR as nodes/edges arrays. A call with some bad nodes still creates the good ones and returns partial:true + errors[] — resend only what errors[] names.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.",
@@ -3252,6 +3409,11 @@
 				"post_graph": "create_post_graph",
 				"unwrap": "uv_unwrap",
 				"uv": "set_uv"
+			},
+			"run": {
+				"inspect": "inspect_runtime",
+				"validate": "validate_scene",
+				"logs": "logs"
 			},
 			"assets": {
 				"image": "add_image"
@@ -5226,6 +5388,85 @@
 				}
 			},
 			{
+				"name": "run",
+				"title": "See and check what the game does",
+				"description": "What the game does when it runs: inspect = when each event and action last fired, the game state and variables, errors, and why a node did not fire (pass node or object); validate = what would not work when someone presses Play, each with its fix; logs = the tab's recent errors, warnings and toasts.\nCall it as {\"action\": \"inspect\", \"inspect\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
+				"inputSchema": {
+					"type": "object",
+					"properties": {
+						"action": {
+							"type": "string",
+							"enum": [
+								"inspect",
+								"validate",
+								"logs"
+							],
+							"description": "What to do. Put its fields in the object named after the action."
+						},
+						"inspect": {
+							"type": "object",
+							"properties": {
+								"node": {
+									"type": "string",
+									"description": "a flow node id: explain this node"
+								},
+								"object": {
+									"type": "string",
+									"description": "an object uuid: its nodes and why they did or did not fire"
+								},
+								"limit": {
+									"type": "integer",
+									"minimum": 1,
+									"maximum": 80,
+									"description": "overview: how many nodes (default 40)"
+								}
+							},
+							"description": "Read what the game is doing right now, without changing anything: when each event and action node last fired, the game state and variables, who runs the physics and the game rules, behaviour and script errors, and what the HUD shows. Pass node (a flow node id) or object (a uuid) to ask \"why didn't it fire?\": it names the missing link (no source upstream, a selector wired the wrong way, nothing clicked it yet). Action nodes run only when an upstream source fires; firing one directly does nothing."
+						},
+						"validate": {
+							"type": "object",
+							"properties": {},
+							"description": "Check the scene for what would not work when someone presses Play: actions nothing fires, an Object Selector wired the wrong way round, a scene-graph On Click that reaches no object, Game Start wired as an event, HUD nodes pointing at elements that do not exist, walk mode with no spawn, a scene with no light, behaviour code problems. Each issue says what to fix. Run it after building a game, then playtest."
+						},
+						"logs": {
+							"type": "object",
+							"properties": {
+								"since": {
+									"type": "number",
+									"description": "only lines after this time (ms since 1970, the \"now\" a previous logs answer gave)"
+								},
+								"level": {
+									"type": "string",
+									"enum": [
+										"debug",
+										"info",
+										"warn",
+										"error"
+									],
+									"description": "the lowest level to include (default info)"
+								},
+								"limit": {
+									"type": "integer",
+									"minimum": 1,
+									"maximum": 100,
+									"description": "most lines (default 40)"
+								}
+							},
+							"description": "The page's recent log: errors, warnings, console lines and the toasts people saw, oldest first. Pass since (the \"now\" of the previous answer) for only what is new. status shows the newest few."
+						}
+					},
+					"required": [
+						"action"
+					]
+				},
+				"annotations": {
+					"title": "See and check what the game does",
+					"readOnlyHint": false,
+					"destructiveHint": false,
+					"openWorldHint": false
+				}
+			},
+			{
 				"name": "assets",
 				"title": "Images and assets",
 				"description": "The shared library: image = put an image into it (an https URL, base64 data, or a canvas you describe) and get its hash for textures.\nCall it as {\"action\": \"image\", \"image\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
@@ -5383,6 +5624,84 @@
 					"title": "Undo your last change",
 					"readOnlyHint": false,
 					"destructiveHint": true,
+					"openWorldHint": false
+				}
+			},
+			{
+				"name": "playtest",
+				"title": "Play the game as a test player",
+				"description": "Play the game as a virtual player in YOUR OWN Play (agent page only; it never moves a person): walk a path, look at a point, click or grab an object, press a key or a HUD button, wait. Then it reports which nodes fired, the game state before and after, what the HUD shows and any errors. It fires SOURCES the way a player does (a click reaches On Click nodes); a step on an action node does nothing. Walk points are on the floor; your eye is 1.6 m above them. Clicks and pickups count for real in the shared game, like a person playing.\nTake a screenshot after each change to check your work.",
+				"inputSchema": {
+					"type": "object",
+					"properties": {
+						"steps": {
+							"type": "array",
+							"maxItems": 40,
+							"description": "in order, each ONE of: {walk: [[x,y,z], …], speed?} · {look: [x,y,z]} · {click: uuid} · {grab: uuid} · {key: \"KeyE\", hold?} · {hud: elementId} · {wait: seconds}",
+							"items": {
+								"type": "object",
+								"properties": {
+									"walk": {
+										"type": "array",
+										"items": {
+											"type": "array",
+											"items": {
+												"type": "number"
+											}
+										},
+										"description": "floor points to walk through"
+									},
+									"speed": {
+										"type": "number",
+										"description": "walking speed m/s (default 3)"
+									},
+									"look": {
+										"type": "array",
+										"items": {
+											"type": "number"
+										},
+										"description": "[x,y,z] to face"
+									},
+									"click": {
+										"type": "string",
+										"description": "object uuid"
+									},
+									"grab": {
+										"type": "string",
+										"description": "object uuid"
+									},
+									"key": {
+										"type": "string",
+										"description": "a key code: KeyE, Space, ArrowUp …"
+									},
+									"hold": {
+										"type": "number",
+										"description": "seconds to hold the key (default 0.2)"
+									},
+									"hud": {
+										"type": "string",
+										"description": "a HUD button element id"
+									},
+									"wait": {
+										"type": "number",
+										"description": "seconds"
+									}
+								}
+							}
+						},
+						"stayInPlay": {
+							"type": "boolean",
+							"description": "keep this page in Play afterwards (default: leave Play if the playtest entered it)"
+						}
+					},
+					"required": [
+						"steps"
+					]
+				},
+				"annotations": {
+					"title": "Play the game as a test player",
+					"readOnlyHint": false,
+					"destructiveHint": false,
 					"openWorldHint": false
 				}
 			},

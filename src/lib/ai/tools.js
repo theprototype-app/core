@@ -52,6 +52,7 @@ import { meshStats } from './meshStats.js';
 import { applyShadowFlags, SHADOW_SCHEMA } from './shadowFlags.js';
 import { duplicatePlan, DUPLICATE_MAX } from './duplicateCore.js';
 import { LOOK_TOOL_NAMES, LOOK_AI_TOOLS, LOOK_PROMPT, lookTool } from './lookTools.js';
+import { RUNTIME_TOOL_NAMES, RUNTIME_AI_TOOLS, RUNTIME_PROMPT, runtimeTool } from './runtimeTools.js';
 
 // AI tool layer (roadmap #10, A4). Maps OpenAI-style function calls onto the
 // existing REPLICATED mutation surface — every tool applies locally AND broadcasts
@@ -734,7 +735,8 @@ const TOOL_NAMES = [
 	'import_file', // 66 S4b (offered to agents; see importFile.js)
 	...GEOMETRY_TOOL_NAMES, // 85 G1-G6 (geometryTools.js)
 	...LOOK_TOOL_NAMES, // 85 L1-L5 (lookTools.js)
-	...ASSIST_TOOL_NAMES // 85 undo_last, pivots, images (assistTools.js): unlisted, their arguments read as create_objects / update_objects
+	...ASSIST_TOOL_NAMES, // 85 undo_last, pivots, images (assistTools.js): unlisted, their arguments read as create_objects / update_objects
+	...RUNTIME_TOOL_NAMES // 85b R1-R4 (runtimeTools.js): inspect, validate, logs, playtest
 ];
 
 /** 34 D5: the behaviour family's spellings. They map to the behaviour tools only while a
@@ -816,6 +818,16 @@ const NAME_ALIASES = /** @type {Record<string,string>} */ ({
 	unwrap: 'uv_unwrap',
 	unwrap_uv: 'uv_unwrap',
 	set_tiling: 'set_uv',
+	// 85b R1-R4
+	inspect: 'inspect_runtime',
+	debug_runtime: 'inspect_runtime',
+	why_not_fired: 'inspect_runtime',
+	validate: 'validate_scene',
+	lint_scene: 'validate_scene',
+	get_logs: 'logs',
+	read_logs: 'logs',
+	play_test: 'playtest',
+	test_play: 'playtest',
 	shader_nodes: 'describe_shader_nodes',
 	// flow / behavior invention family
 	add_behavior: 'create_flow_nodes',
@@ -1169,6 +1181,13 @@ async function runAiTool(rawName, rawArgs, opts) {
 			case 'set_uv':
 				// 85 L1-L5: materials, shaders, the look stack, UVs (lookTools.js)
 				return await lookTool(name, args);
+
+			case 'inspect_runtime':
+			case 'validate_scene':
+			case 'logs':
+			case 'playtest':
+				// 85b R1-R4: see what the game does (runtimeTools.js)
+				return await runtimeTool(name, args);
 
 			default:
 				return {
@@ -1675,7 +1694,7 @@ const PHYSICS_AI_TOOLS = [
  * Call this per turn (readiness can change). @param {ToolOpts} [opts] @returns {any[]} */
 export function getAiTools(opts) {
 	const physics = !!opts?.physics || physicsToolsEnabled();
-	const tools = [...AI_TOOLS, ...GEOMETRY_AI_TOOLS, ...LOOK_AI_TOOLS, ...ASSIST_AI_TOOLS, ...flowToolSchemas(physics), ...behaviourToolSchemas()];
+	const tools = [...AI_TOOLS, ...GEOMETRY_AI_TOOLS, ...LOOK_AI_TOOLS, ...ASSIST_AI_TOOLS, ...RUNTIME_AI_TOOLS, ...flowToolSchemas(physics), ...behaviourToolSchemas()];
 	if (physics) tools.push(...PHYSICS_AI_TOOLS);
 	if (meshGenReady()) tools.push(MESH_TOOL);
 	return tools;
@@ -1780,6 +1799,6 @@ export function buildSystemPrompt(opts) {
 		"an object's name as the tool name — the name of a thing you create belongs in that object's",
 		'`name` field inside create_objects. Every call takes effect immediately, so never repeat a',
 		'call that already came back without an error — once the scene matches the request, stop',
-		'calling tools and write the summary.' + meshLine + toolsLine + GEOMETRY_PROMPT + LOOK_PROMPT + ASSIST_PROMPT + flowBlock + extraBlock + physicsBlock
+		'calling tools and write the summary.' + meshLine + toolsLine + GEOMETRY_PROMPT + LOOK_PROMPT + ASSIST_PROMPT + RUNTIME_PROMPT + flowBlock + extraBlock + physicsBlock
 	].join('\n');
 }

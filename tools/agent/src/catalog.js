@@ -70,7 +70,12 @@ export const TOOL_ANNOTATIONS = /** @type {Record<string, {title: string, read?:
 	connect: { title: 'Join a session', destructive: false, openWorld: true },
 	// 86-fix N2: the connector's join — the person confirms in the tab; joining may replace what the tab shows
 	join_session: { title: 'Join a session (asks the person)', destructive: true, openWorld: true },
-	where_are_users: { title: 'Where the people are', read: true }
+	where_are_users: { title: 'Where the people are', read: true },
+	// 85b R1-R4
+	inspect_runtime: { title: 'See what the game is doing', read: true },
+	validate_scene: { title: 'Check the game for problems', read: true },
+	logs: { title: 'Read the recent log', read: true },
+	playtest: { title: 'Play the game as a test player', destructive: false }
 });
 
 /** a title from a tool name: `create_objects` → `Create objects` @param {string} name */
@@ -256,6 +261,14 @@ export const CONNECTOR_FAMILIES = Object.freeze({
 			unwrap: 'uv_unwrap',
 			uv: 'set_uv'
 		}
+	},
+	// 85b R1-R4 (lane 85-runtime): playtest is agent-page only (B4b), so the connector's `run` has no playtest;
+	// play / stop stay control_simulation's (K1: start Play only when the person asks)
+	run: {
+		title: 'See and check what the game does',
+		summary:
+			"What the game does when it runs: inspect = when each event and action last fired, the game state and variables, errors, and why a node did not fire (pass node or object); validate = what would not work when someone presses Play, each with its fix; logs = the tab's recent errors, warnings and toasts.",
+		actions: { inspect: 'inspect_runtime', validate: 'validate_scene', logs: 'logs' }
 	},
 	assets: {
 		title: 'Images and assets',

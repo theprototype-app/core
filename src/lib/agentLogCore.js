@@ -14,7 +14,7 @@ export const AGENT_LOG_HANDSHAKE = 50;
 export const TEXT_MAX = 160;
 
 /** tools that only read: no line */
-const READ_ONLY = new Set(['list_scene', 'status', 'screenshot', 'wait_for_edit', 'tools', 'snapshot', 'list_materials', 'get_material', 'describe_shader_nodes', 'get_post']);
+const READ_ONLY = new Set(['list_scene', 'status', 'screenshot', 'wait_for_edit', 'tools', 'snapshot', 'list_materials', 'get_material', 'describe_shader_nodes', 'get_post', 'inspect_runtime', 'validate_scene', 'logs']);
 
 /** @param {number} n @param {string} one @param {string} [many] */
 const count = (n, one, many = one + 's') => n + ' ' + (n === 1 ? one : many);
@@ -189,6 +189,11 @@ export function summarizeToolCall(tool, args, result, nameOf = () => '') {
 		case 'set_uv':
 			return (args?.faces !== undefined ? 'mapped faces of ' : 'set the tiling on ') + count(arr(result.updated).length, 'object');
 		// 85 R6, pivots, images
+		case 'playtest': {
+			// 85b R2: a play session changes nothing authored (its clicks are the game's own runtime state)
+			const fired = arr(result.fired).length;
+			return 'playtested (' + count(arr(result.steps).length, 'step') + ', ' + count(fired, 'node') + ' fired)';
+		}
 		case 'undo_last': {
 			const done = arr(result.undone);
 			if (!done.length) return null; // nothing to undo changed nothing

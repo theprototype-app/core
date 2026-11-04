@@ -5,6 +5,38 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.60.0 — An agent builds the game around your scene 🎮
+
+### 🌲 Agents build whole places
+- **Terrain, forests and water**: an agent can make hills and paint them, scatter a forest or rocks over them (kept off steep slopes and to the right paint), and add a pool, a lake or the sea. One undo step each, and everyone sees it at once.
+- **Fire, smoke and fireflies**: particles by name, on their own or on an object. **Fireflies** is a new preset in Add ▸ Effects too.
+- **Sounds where they belong**: a crackle on the campfire, a sound when something is clicked or entered, and the scene's background music. A sound from a web address goes into the library first and must really be a sound file.
+- **Find and place assets**: agents search your library, the model packs, your prefabs and free CC0 materials, then place them or save a group as a prefab.
+- **Textures by name**: wood, planks, brick, marble, stone, grass … drawn on the spot and kept in the library.
+- **Smoother models**: a mesh an agent makes can be smoothed as it is made, and changed afterwards with new vertices.
+
+### 🤖 Agents set up the game
+- Agents can **make a HUD**: screens with text, timers, bars, buttons and images on the nine anchors, plus **panels** for a pause menu or a scoreboard. They get the ids back to wire live values.
+- They can set the **sky, fog and light**: a look preset or a sky image, a background colour or gradient, fog by distance or density, exposure, the sun, the ambient light and extra lights. These change everyone's view, so the agent **asks the host first**.
+- They can say **where Play starts** and which way the player faces, switch on **first-person walking or flying**, and set the view a scene **opens with**. Lights an agent places take a **shadow quality**.
+
+### 🔍 Agents test and fix games
+- **Check my game**: an agent lists what would not work when someone presses Play (a selector wired the wrong way, an action nothing triggers, walking with no start spot, a HUD bound to nothing, an unlit scene …), each with its fix, and explains why a node did not fire.
+- **A test player** on the agent's own page walks, looks, clicks, grabs and presses keys and HUD buttons, then says what fired and what the HUD showed.
+- **Checkpoints**: an agent can save a named point and go back to it in one step; with people present the host is asked first.
+- `status` shows the last few errors and toasts, and the full log is one call away.
+
+### 👉 "Put a lamp here"
+- **Point at a spot** (a ping) and say "put a lamp here": the agent builds at your ping, stands things on the floor or a table, backs a painting onto a wall, and turns things to face you. Pings now remember what they landed on and follow it if it moves.
+- Agents know where you are and how tall you are ("a table at hip height"), and in a headset nothing they make appears inside you; what they make fades in.
+
+### 🔌 On claude.ai
+- The connector gains **four tools**: `hud`, `game_setup`, `effects` and `run`; `set_look` gains `sky`, `light` and `environment`, `assets` gains `search`, `place` and `prefab`. Claude sees them after the connector reconnects.
+
+### 🧰 Also
+- **Templates ▸ Game plot**: an empty plot to try it on — ask for hills with a forest and a lake, a campfire, a race HUD and a start spot, then "check my game".
+- While Claude is connected, the **Connect Claude** row says what is new until it has used one of these tools.
+
 ## 1.59.0 — Looks finished everywhere ✨
 
 ### 🎨 Materials with real surface detail

@@ -2,7 +2,7 @@
 	"$comment": "Roadmap 85 eval set (owner 2026-11-01): ~20 spoken requests, the same scene (scene.json), scored pass / partial / fail by every release that changes connector tools. `pass` = any of these calls is made (tool + action when a family) without a refused call before it; `partial` = it gets there after a refused / wrong call, or makes one of `partial`; anything else = fail. Read-only calls (list_scene, status, screenshot, where_are_users, describe_node_types, what_can_you_do, the family read actions) never count against a request.",
 	"requests": [
 		{ "id": "campfire", "say": "Build a small campfire next to the table: some logs and a warm light.", "pass": [{ "tool": "create_objects" }] },
-		{ "id": "night", "say": "Make it night.", "pass": [{ "tool": "update_objects" }, { "tool": "set_look", "action": "post" }], "partial": [{ "tool": "create_objects" }] },
+		{ "id": "night", "say": "Make it night.", "pass": [{ "tool": "set_look", "action": "sky" }, { "tool": "set_look", "action": "light" }, { "tool": "update_objects" }, { "tool": "set_look", "action": "post" }], "partial": [{ "tool": "create_objects" }] },
 		{ "id": "lamp-here", "say": "Put a lamp in front of me.", "pass": [{ "tool": "create_objects", "after": "where_are_users" }], "partial": [{ "tool": "create_objects" }] },
 		{ "id": "spin", "say": "Make the crate spin slowly.", "pass": [{ "tool": "create_flow_nodes" }] },
 		{ "id": "bigger", "say": "Make the ball twice as big.", "pass": [{ "tool": "update_objects" }, { "tool": "edit_shape", "action": "params" }] },
@@ -21,6 +21,10 @@
 		{ "id": "tiling", "say": "The floor texture is stretched, make it repeat four times.", "pass": [{ "tool": "set_look", "action": "uv" }] },
 		{ "id": "nod", "say": "Make the lamp tilt at its base instead of its middle.", "pass": [{ "tool": "edit_shape", "action": "pivot" }], "partial": [{ "tool": "edit_shape", "action": "pivot_group" }] },
 		{ "id": "checker-image", "say": "Make a black and white checkerboard image and put it on the floor.", "pass": [{ "tool": "assets", "action": "image" }], "partial": [{ "tool": "set_look", "action": "material" }, { "tool": "set_look", "action": "shader" }] },
-		{ "id": "undo", "say": "Undo that.", "setup": "The assistant has just changed the floor colour to red in this conversation.", "pass": [{ "tool": "undo_last" }], "partial": [{ "tool": "update_objects" }] }
+		{ "id": "undo", "say": "Undo that.", "setup": "The assistant has just changed the floor colour to red in this conversation.", "pass": [{ "tool": "undo_last" }], "partial": [{ "tool": "update_objects" }] },
+		{ "id": "race-hud", "say": "Add a race HUD: a countdown timer and a score.", "pass": [{ "tool": "hud", "action": "create" }, { "tool": "hud", "action": "panel" }], "partial": [{ "tool": "create_flow_nodes" }] },
+		{ "id": "forest-hills", "say": "Turn the ground outside into hills with a forest on them.", "pass": [{ "tool": "effects", "action": "terrain" }, { "tool": "effects", "action": "scatter" }], "partial": [{ "tool": "create_objects" }] },
+		{ "id": "start-here", "say": "Make the player start by the door when they press Play.", "pass": [{ "tool": "game_setup", "action": "spawn" }], "partial": [{ "tool": "create_flow_nodes" }, { "tool": "create_objects" }] },
+		{ "id": "check-game", "say": "Check my game: would anything not work when someone presses Play?", "pass": [{ "tool": "run", "action": "validate" }], "partial": [{ "tool": "run", "action": "inspect" }] }
 	]
 }

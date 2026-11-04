@@ -283,7 +283,7 @@ describe('TX4 old and newer records', () => {
 		const r = normalizeTextPath(newer);
 		expect(r).toMatchObject({ v: TEXT_PATH_VERSION + 1, text: 'Hi', mode: 'extruded', gradient: { from: '#000000', to: '#ffffff' } });
 		// an edit merges over it and the field survives a second normalize
-		expect(normalizeTextPath({ ...r, text: 'Hello' }).gradient).toEqual({ from: '#000000', to: '#ffffff' });
+		expect(/** @type {any} */ (normalizeTextPath({ ...r, text: 'Hello' })).gradient).toEqual({ from: '#000000', to: '#ffffff' });
 		// a record of ours never carries strangers
 		const ours = normalizeTextPath({ v: TEXT_PATH_VERSION, text: 'x', gradient: 1 });
 		expect('gradient' in ours).toBe(false);

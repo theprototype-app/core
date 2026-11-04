@@ -9,7 +9,7 @@
 //      with no missing glyph; depth / bevel / quality change the mesh; undo; flat ↔ solid keeps
 //      the text and its style
 //   §3 the mesh is never saved: a serializer (toJSON under the park ritual) sees the placeholder
-//   §4 save → reload → identical record, the solid rebuilt from it
+//   §4 (run LAST) save → reload → identical record, the solid rebuilt from it
 //   §5 Bake → mesh on A: a normal mesh on A and B (no record, same triangle count), its
 //      vertices editable; ONE undo brings the text back
 //   §6 the cap: a phone / headset writer is refused past its solid cap with the plain message
@@ -145,20 +145,9 @@ h.run(async () => {
 	}, uuid);
 	h.check(saved.verts > 0 && saved.verts <= 12 && saved.after > 100, `§3 a serializer sees the placeholder (${saved.verts / 3} verts, ${saved.bytes} bytes), the scene keeps the mesh (${saved.after} verts)`);
 
-	// ---- §4 save -> reload -> identical --------------------------------------------------
-	const before = await record(A.page, uuid);
-	await A.page.evaluate(() => window.__stores.autosave.saveNow());
-	await A.page.waitForTimeout(1500);
-	await h.freshReload(A);
-	await h.answerRestore(A, 'restore');
-	await h.eventually(() => record(A.page, uuid), (r) => !!r, '§4 the text is back after a reload', 30000);
-	const reloaded = await record(A.page, uuid); // h.eventually returns nothing
-	h.check(JSON.stringify(reloaded) === JSON.stringify(before), '§4 the record is identical after save + reload');
-	const rebuilt = await until(A.page, uuid, solidBuilt, '§4 the solid text rebuilds from the record');
-	h.check(rebuilt.solid.drawn === 5, `§4 rebuilt: ${rebuilt.solid.triangles} triangles`);
-
 	// ---- §5 Bake -> mesh -----------------------------------------------------------------
-	const tri = rebuilt.solid.triangles;
+	const premise5 = await until(A.page, uuid, solidBuilt, '§5 premise: the solid text is built on A');
+	const tri = premise5.solid.triangles;
 	const baked = await A.page.evaluate((u) => window.__stores.textPathEdit.bakeTextToMesh(u), uuid);
 	h.check(baked.ok, '§5 Bake to mesh succeeds');
 	const ca = await carrier(A.page, uuid);
@@ -178,6 +167,15 @@ h.run(async () => {
 	await undo(A.page);
 	await until(A.page, uuid, solidBuilt, '§5 ONE undo brings the text back on A');
 	await until(B.page, uuid, solidBuilt, '§5 ...and on B');
+	const nameOf = (/** @type {any} */ page) => page.evaluate((u) => { let g; window.__stores.objectsGroup.subscribe((v) => (g = v))(); return g.getObjectByProperty('uuid', u)?.name; }, uuid);
+	const undoneName = await nameOf(A.page);
+	h.check(undoneName === 'Text', `§5 the undo gives the name back ("${undoneName}", Bake had made it "Text mesh")`);
+	await redo(A.page);
+	await h.eventually(() => carrier(A.page, uuid), (c) => !!c && !c.text && c.verts === tri * 3, '§5 a REDO bakes again on A (the mesh, not a bare carrier)', 20000);
+	await h.eventually(() => carrier(B.page, uuid), (c) => !!c && !c.text && c.verts === tri * 3, '§5 ...and on B', 20000);
+	await undo(A.page);
+	await until(A.page, uuid, solidBuilt, '§5 undo again: the text is back for the rest of the suite');
+	await until(B.page, uuid, solidBuilt, '§5 ...on B too');
 
 	// ---- §6 the cap ---------------------------------------------------------------------------
 	const refused = await A.page.evaluate((u) => {
@@ -243,17 +241,22 @@ h.run(async () => {
 	h.check(warn.some((t) => /redistribut/.test(t)), `§7 a no-embedding font raises the export licence warning (${JSON.stringify(warn)})`);
 	// B reloads with Google blocked: the font comes from its own Library copy or from A
 	await h.freshReload(B);
-	await h.answerRestore(B, 'dismiss');
+	// a joiner's reload REJOINS the session by itself (run6's shot: connected, 2 users, no restore question,
+	// so no dial input either). Wait for that; only a page that does not rejoin answers the restore and dials
+	const rejoined = await B.page
+		.waitForFunction(() => { let p; window.__stores.peers.subscribe((v) => (p = v))(); return (p?.openedPeers?.length ?? p?.openedPeers?.size ?? 0) > 0; }, null, { timeout: 30000, polling: 250 })
+		.then(() => true)
+		.catch(() => false);
+	console.log('[text-object] B rejoined after its reload by itself:', rejoined);
+	if (!rejoined) {
+		await h.answerRestore(B, 'dismiss');
+		await h.connect(B, A);
+	}
 	await h.eventually(() => one(B.page, uuid).catch(() => null), (d) => !!d && solidBuilt(d) && String(d.fontUrl).startsWith('blob:'), '§7 after a reload with Google blocked, B still draws Lobster', 60000);
 	h.check(googleCalls === callsBefore, '§7 ...still without a single Google call');
 
 	// ---- §8 the Inspector ---------------------------------------------------------------------
-	await A.page.evaluate((u) => {
-		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
-		window.__stores.selectedObject.set(g.getObjectByProperty('uuid', u));
-		window.__stores.selectedObjects?.set?.([g.getObjectByProperty('uuid', u)]);
-	}, uuid);
+	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u, true), uuid);
 	await A.page.waitForSelector('#text-mode-solid', { timeout: 20000 });
 	const ui = await A.page.evaluate(() => ({
 		solidPressed: document.querySelector('#text-mode-solid')?.getAttribute('aria-pressed'),
@@ -307,6 +310,20 @@ h.run(async () => {
 	await set(A.page, uuid, { text: 'Kept' });
 	const kept = await record(B.page, uuid).then(async (r) => (r?.text === 'Kept' ? r : (await new Promise((res) => setTimeout(res, 1500)), record(B.page, uuid))));
 	h.check(newer && kept?.v === 99 && kept?.gradient?.to === '#ffffff', `§10 an edit here keeps the newer build's fields on B (v ${kept?.v})`);
+
+	// ---- §4 save -> reload -> identical (LAST: a reload gives A a new peer id, so B is not with it afterwards) ----
+	await set(A.page, uuid, { text: 'HELLO', mode: 'extruded' });
+	await until(A.page, uuid, (d) => solidBuilt(d) && d.text === 'HELLO', '§4 premise: a solid HELLO before the save');
+	const before = await record(A.page, uuid);
+	await A.page.evaluate(() => window.__stores.autosave.saveNow());
+	await A.page.waitForTimeout(1500);
+	await h.freshReload(A);
+	await h.answerRestore(A, 'restore');
+	await h.eventually(() => record(A.page, uuid), (r) => !!r, '§4 the text is back after a reload', 30000);
+	const reloaded = await record(A.page, uuid); // h.eventually returns nothing
+	h.check(JSON.stringify(reloaded) === JSON.stringify(before), '§4 the record is identical after save + reload');
+	const rebuilt4 = await until(A.page, uuid, solidBuilt, '§4 the solid text rebuilds from the record');
+	h.check(rebuilt4.solid.drawn === 5, `§4 rebuilt: ${rebuilt4.solid.triangles} triangles`);
 
 	await h.finish(browser);
 });

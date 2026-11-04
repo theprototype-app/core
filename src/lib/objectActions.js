@@ -895,9 +895,12 @@ registerHistoryKind('props', (entry, state) => {
 	}
 	if ('textPath' in state) {
 		// 64 D2: text on a path — the record only; every peer lays the letters out from it
+		// 64 TX5: a REDO of Bake bakes again (dropping the record alone would leave a text with no mesh)
 		if (state.textPath) applyTextPathTo(object, state.textPath);
+		else if (state.bake && object.userData.textPath) void import('./textPathEdit.js').then((m) => m.applyRemoteBake(object));
 		else delete object.userData.textPath;
-		if (peer) peer.send({ type: 'objectParameters', parameter: 'textPath', uuid: entry.uuid, textPath: state.textPath ?? null });
+		if (peer)
+			peer.send({ type: 'objectParameters', parameter: 'textPath', uuid: entry.uuid, textPath: state.textPath ?? null, ...(state.bake ? { bake: true } : {}) });
 	}
 	if ('fluidInteraction' in state) {
 		// 36-fb F23: how a mesh meets particle fluid (none / collide / float; absent = auto)

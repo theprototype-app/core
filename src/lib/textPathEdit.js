@@ -184,8 +184,8 @@ export function createTextObject(patch, at = null) {
 /**
  * TX5 Bake → mesh: an EXTRUDED text becomes a normal mesh (its geometry and its two materials,
  * editable vertices); the record is dropped. ONE undo step (undo brings the text back). Peers
- * receive the baked object whole (an `object` override), so a peer whose own copy had not built
- * yet still ends with the same mesh. The caller confirms first.
+ * get `textPath: null, bake: true` and bake their own build (applyRemoteBake), building it first
+ * when they had not. The caller confirms first.
  * @param {string} uuid @returns {Promise<{ok: true} | {ok: false, error: string}>}
  */
 export async function bakeTextToMesh(uuid) {
@@ -199,11 +199,50 @@ export async function bakeTextToMesh(uuid) {
 	object.geometry = m.bakeCopy(geo);
 	object.material = Array.isArray(object.material) ? object.material.map((/** @type {any} */ mt) => mt.clone()) : object.material;
 	delete object.userData.textPath;
-	object.name = object.name === 'Text' ? 'Text mesh' : object.name;
-	recordEntry({ kind: 'props', uuid, before: { textPath: rec }, after: { textPath: null } });
+	const name = object.name;
+	object.name = name === 'Text' ? 'Text mesh' : name;
+	// the name rides the entry so an undo gives back "Text" (it read "Text mesh" in the licence warning after
+	// an undo); `bake` makes a redo bake again
+	recordEntry({ kind: 'props', uuid, before: { textPath: rec, name }, after: { textPath: null, bake: true, name: object.name } });
 	/** @type {any} */
 	const peer = get(peers);
-	peer?.send({ type: 'object', element: object.toJSON(), groupuuid: object.parent?.uuid, override: true });
+	// every peer bakes its OWN build of the same record (§2 of the suite: identical triangles on two peers). The
+	// mesh itself does not travel: a sign's toJSON is ~1 MB of plain number arrays, past what the peer
+	// encoder packs (measured: "Maximum call stack size exceeded", nothing sent). `bake` is additive — an older
+	// peer only drops the record
+	peer?.send({ type: 'objectParameters', parameter: 'textPath', uuid, textPath: null, bake: true });
 	pokeScene();
 	return { ok: true };
+}
+
+/**
+ * The receiving half of Bake: this peer's own extruded build of the record becomes the mesh. A peer that has
+ * not built it yet (its font still arriving, a phone) builds it first at the desktop cap, so the baked mesh
+ * is the writer's. Undo arrives as the record again and turns it back into a text.
+ * @param {any} object
+ */
+export async function applyRemoteBake(object) {
+	const raw = object?.userData?.textPath;
+	if (!raw) return;
+	const rec = normalizeTextPath(raw);
+	const m = await import('./text3dBuild.js');
+	/** @type {any} */
+	let geo = m.ownsGeometry(object.geometry) ? object.geometry : null;
+	if (!geo && rec.mode === 'extruded' && isBlockText(rec)) {
+		try {
+			const rt = await import('./textPathRuntime.js');
+			geo = (await m.buildExtruded(rec, await rt.solidFontUrl(rec), 'desktop')).geometry;
+		} catch (error) {
+			console.log('bake: could not build the text here', error);
+		}
+	}
+	// the record changed while we built (an undo raced the bake): leave the text alone
+	if (object.userData.textPath !== raw) return;
+	if (geo) {
+		object.geometry = m.bakeCopy(geo);
+		object.material = Array.isArray(object.material) && object.material.length === 2 ? object.material.map((/** @type {any} */ mt) => mt.clone()) : m.extrudedMaterials(rec);
+	}
+	delete object.userData.textPath;
+	if (object.name === 'Text') object.name = 'Text mesh';
+	pokeScene();
 }

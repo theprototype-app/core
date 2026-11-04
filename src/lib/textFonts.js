@@ -169,12 +169,33 @@ async function parseBytes(bytes) {
 	return ot.parse(u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength));
 }
 
-/** WOFF2 -> TTF bytes (lazy WASM) @param {Uint8Array} bytes @returns {Promise<Uint8Array>} */
+/** how long the decoder may take to start + decode before the import says so (it never hangs a caller) */
+const WOFF2_TIMEOUT_MS = 20000;
+
+/**
+ * WOFF2 -> TTF bytes, once at import (a lazy chunk: Google's decoder as wasm, vendored — the npm wrapper only
+ * works under Node, see src/lib/vendor/wawoff2/decompress.js). Throws on bytes it cannot decode or on the timeout.
+ * @param {Uint8Array} bytes @returns {Promise<Uint8Array>}
+ */
 export async function decodeWoff2(bytes) {
-	// @ts-ignore - CJS, no types
-	const mod = await import('wawoff2/decompress.js');
-	const decompress = mod.default ?? mod;
-	return new Uint8Array(await decompress(bytes));
+	/** @type {ReturnType<typeof setTimeout> | undefined} */
+	let timer;
+	const timeout = new Promise((_, reject) => {
+		timer = setTimeout(() => reject(new Error('the WOFF2 decoder did not answer')), WOFF2_TIMEOUT_MS);
+	});
+	try {
+		const work = (async () => {
+			const { default: loadWoff2 } = await import('./vendor/wawoff2/decompress.js');
+			const decoder = await loadWoff2();
+			const out = decoder.decompress(bytes);
+			if (out === false || !out) throw new Error('not a WOFF2 font');
+			// a copy: the result can be a view into the decoder's memory
+			return new Uint8Array(out);
+		})();
+		return /** @type {Uint8Array} */ (await Promise.race([work, timeout]));
+	} finally {
+		clearTimeout(timer);
+	}
 }
 
 // ---- adding fonts ------------------------------------------------------------------------------

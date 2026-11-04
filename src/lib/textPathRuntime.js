@@ -110,6 +110,16 @@ function fontUrlFor(rec, solid) {
 	return solid ? bundledSolidUrl(rec.font) : bundledFlatUrl(rec.font);
 }
 
+/**
+ * The font file a SOLID build of this record uses, waiting for a Library font that is here (one that is not
+ * yet falls back to sans, as the live text does). For a peer baking a text it never built (textPathEdit).
+ * @param {any} rec a normalized record @returns {Promise<string>}
+ */
+export async function solidFontUrl(rec) {
+	if (rec.fontAsset) return fontAssetUrl(rec.fontAsset) ?? (await resolveFontAsset(rec.fontAsset)) ?? bundledSolidUrl('sans');
+	return bundledSolidUrl(rec.font);
+}
+
 /** 'low' on a phone or in a headset (TX6 caps) */
 export function textProfile() {
 	const forced = typeof window !== 'undefined' ? /** @type {any} */ (window).__tpTextProfile : null;
@@ -479,14 +489,14 @@ function attached(o, root) {
 	return false;
 }
 
+/** TX4: the newer-version notice shows once per tab */
+let newerNoticed = false;
+
 /**
  * Per frame (textPathTick): one visual per text object, laid out from its record and glued to
  * its carrier. Nothing here is sent or saved.
  * @param {any} root objectsGroup
  */
-/** TX4: the newer-version notice shows once per tab */
-let newerNoticed = false;
-
 export function tickTextPaths(root) {
 	rootRef = root;
 	visualParent = root?.parent ?? null;

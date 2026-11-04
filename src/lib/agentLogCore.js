@@ -143,6 +143,12 @@ export function summarizeToolCall(tool, args, result, nameOf = () => '') {
 			const name = nameList(made.map((r) => r.name));
 			return 'made ' + what + (name ? ' (' + name + ')' : '');
 		}
+		case 'create_shapes': {
+			// mcp-shapes: one line for the whole batch
+			const made = arr(result.created).filter((r) => r && r.uuid && !r.error);
+			const name = nameList(made.map((r) => r.name));
+			return 'made ' + count(made.length, 'shape') + (name ? ' (' + name + ')' : '');
+		}
 		case 'edit_mesh': {
 			const row = arr(result.updated)[0];
 			if (!row) return null; // ops: [] is a preview — a read

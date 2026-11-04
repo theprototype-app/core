@@ -89,6 +89,18 @@ check('join_session (86-fix N2) is listed as an edit that asks the person', c.to
 	check('TB resolve: flattened fields still work', JSON.stringify(resolveFamilyCall(fam, 'set_look', { action: 'get_material', uuid: 'u' })) === '{"tool":"get_material","args":{"uuid":"u"}}');
 	check('TB resolve: an unknown action names the ones there are', /one of material, get_material/.test(resolveFamilyCall(fam, 'set_look', { action: 'paint' }).error ?? ''));
 	check('TB resolve: not a family = null', resolveFamilyCall(fam, 'list_scene', {}) === null);
+	// mcp-shapes: create_shape {shapes: [...]} = the batch tool, no action
+	{
+		const withBatch = connectorView([...plain, fine('create_mesh'), fine('create_shapes', { inputSchema: { type: 'object', properties: { shapes: { type: 'array', maxItems: 50 } }, required: ['shapes'] } })], ['import_file']);
+		const shape = withBatch.tools.find((t) => t.name === 'create_shape');
+		check('batch: the family map carries the batch key, create_shapes is not listed on its own', JSON.stringify(withBatch.families.create_shape) === '{"lathe":"create_lathe","mesh":"create_mesh","shapes":"create_shapes"}' && !withBatch.tools.some((t) => t.name === 'create_shapes'));
+		check('batch: shapes is a top-level list, not an action, and action is then optional', shape.inputSchema.properties.shapes.type === 'array' && shape.inputSchema.properties.shapes.maxItems === 50 && !shape.inputSchema.properties.action.enum.includes('shapes') && shape.inputSchema.required === undefined && /Many at once/.test(shape.description));
+		const bf = withBatch.families;
+		check('batch resolve: {shapes: [...]} with no action → create_shapes', JSON.stringify(resolveFamilyCall(bf, 'create_shape', { shapes: [{ action: 'mesh' }] })) === '{"tool":"create_shapes","args":{"shapes":[{"action":"mesh"}]}}');
+		check('batch resolve: the single form is unchanged', JSON.stringify(resolveFamilyCall(bf, 'create_shape', { action: 'mesh', mesh: { vertices: [] } })) === '{"tool":"create_mesh","args":{"vertices":[]}}');
+		check('batch: create_shapes is said the connector\'s way', sayFamilyNames('use create_shapes or create_mesh') === "use create_shape {shapes: […]} or create_shape {action: 'mesh'}");
+		check('batch: a family with a batch keeps the other families required:[action]', withBatch.tools.find((t) => t.name === 'set_look').inputSchema.required.join() === 'action');
+	}
 	check('TB: the 22 published tools + undo_last are standalone', ['list_scene', 'create_objects', 'update_objects', 'delete_objects', 'group_objects', 'clear_scene', 'animate_parts', 'create_flow_nodes', 'update_flow_nodes', 'describe_node_types', 'create_behaviour', 'edit_behaviour', 'set_physics', 'create_joints', 'control_simulation', 'what_can_you_do', 'save_scene', 'status', 'screenshot', 'wait_for_edit', 'join_session', 'where_are_users', 'undo_last'].every((n) => CONNECTOR_STANDALONE.includes(n)));
 	check('TB: no tool is in two families, and none is also standalone', (() => {
 		const all = Object.values(CONNECTOR_FAMILIES).flatMap((f) => Object.values(f.actions));

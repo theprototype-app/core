@@ -45,6 +45,7 @@ import {
 	controlSimulationTool
 } from './flowTools.js';
 import { GEOMETRY_TOOL_NAMES, GEOMETRY_AI_TOOLS, GEOMETRY_PROMPT, geometryTool } from './geometryTools.js';
+import { shapePose } from './shapeBatchCore.js';
 import { LOOK_TOOL_NAMES, LOOK_AI_TOOLS, LOOK_PROMPT, lookTool } from './lookTools.js';
 
 // AI tool layer (roadmap #10, A4). Maps OpenAI-style function calls onto the
@@ -521,13 +522,20 @@ function createOne(spec, extraTypes = /** @type {string[]} */ ([])) {
 	if (spec.name) renameObject(uuid, String(spec.name).slice(0, 120));
 	// 55 (1.48.1 a): nest FIRST, then place — position/rotation/scale are LOCAL to the group, as list_scene reports
 	// them (attach() keeps the world pose, so nesting after the transform read them as world space)
-	if (spec.parentUuid) {
-		const parent = objectOf(spec.parentUuid);
-		if (parent && parent.type === 'Group') moveObjectToGroup(uuid, spec.parentUuid);
-	}
-	applyAiTransform(created, spec);
 	/** @type {string[]} */
 	const warnings = [];
+	let nested = false;
+	if (spec.parentUuid) {
+		const parent = objectOf(spec.parentUuid);
+		if (parent && parent.type === 'Group') {
+			moveObjectToGroup(uuid, spec.parentUuid);
+			nested = true;
+		} else warnings.push('parentUuid: no group with that uuid — made at the scene root');
+	}
+	// mcp-shapes: nested with no position / rotation / scale = the group's own frame. attach() kept the WORLD
+	// pose (the world origin), so the part sat at the inverse of the group's transform inside it.
+	const pose = shapePose(spec, nested);
+	applyAiTransform(created, 'error' in pose ? spec : pose);
 	// 55 (41's research, round 4): a light takes its fields (it used to come out white at intensity 1)
 	if (created.isLight) warnings.push(...applyAiLight(created, spec));
 	else if (spec.color && created.material && !Array.isArray(created.material)) {
@@ -1040,7 +1048,8 @@ async function runAiTool(rawName, rawArgs, opts) {
 			case 'extrude_shape':
 			case 'edit_mesh':
 			case 'create_mesh':
-				// 85 G1-G6: shape and model objects (geometryTools.js)
+			case 'create_shapes':
+				// 85 G1-G6 (+ mcp-shapes: create_shapes, many in one call): shape and model objects (geometryTools.js)
 				return await geometryTool(name, args, createOne);
 
 			case 'set_material':

@@ -4,7 +4,7 @@
 // 68-int: the 1.58 starter — a small stage to FILM. Things keep moving by themselves (Spin / Bounce / Orbit
 // flow nodes, no Play needed), so a phone in Film mode always has something to follow, and one scene camera
 // ("Film camera") stands in front of it as the camera to film with. The card text says the three steps:
-// open Film (More ▸ Film, or the camera's menu), press ● and walk or turn, then Export video. No module, no
+// open Film (More ▸ Film with phone, or the camera's menu), press ● and walk or turn, then Export video. No module, no
 // pack, no music: it opens fast on a phone.
 const { graphBuilder } = require('./_builders.cjs');
 
@@ -29,7 +29,7 @@ module.exports = {
 	slug: 'film-set',
 	title: 'Film set',
 	description:
-		'A small stage that keeps moving, and a camera to film it with. On a phone: More ▸ Film, press ● and turn or walk to move the camera, then Export video for an MP4.',
+		'A small stage that keeps moving, and a camera to film it with. On a phone: More ▸ Film with phone, press ● and turn or walk to move the camera, then Export video for an MP4.',
 	license: 'CC0-1.0',
 	author: 'theprototype',
 	tags: ['film', 'camera', 'video', 'starter'],

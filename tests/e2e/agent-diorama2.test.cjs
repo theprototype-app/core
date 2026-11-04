@@ -10,6 +10,8 @@
 //   7  shaders: glsl with vector inputs + polarCoordinates / twirl / rotateUV compile on the host GPU
 //   8  set_post + screenshot {postEffects: true}: applied, or unavailable WITH the reason
 //   9  status: sceneBudget.top, no family-rewritten keys
+//  part 2: 27 callsBySource, 24 sound upload + pack sounds, 22 terrain peak + paintBy, 23 scatter circles + id,
+//      25 front axis, 28 list_scene by touches, 26 screenshot view camera / hud / avatars, 21 confirm status
 //  10  the Oppo N6, folded 390x896 and unfolded 770x850 @2.9: post drawn or the reason named; set_quality's card
 //      on the person's own screen (Allow), then restore
 // Run: e2e-slot --dev <tree> 5971 -- node tests/e2e/agent-diorama2.test.cjs
@@ -265,6 +267,7 @@ h.run(async () => {
 		if (asked.needsConfirm) {
 			await answer(A.page, /bloom/, 'Allow');
 			const applied = json(await call(B.client, 'set_post', { confirmId: asked.confirmId, wait: 30 }));
+			h.check(asked.status === 'pending', '8. (21) a confirm ask says status pending: ' + short({ status: asked.status }));
 			h.check(applied.effects?.[0]?.kind === 'bloom', '8. the host allowed a bloom: ' + short(applied));
 			h.check(typeof applied.shownHere === 'boolean', '8. set_post says whether it shows on this screen: ' + short({ shownHere: applied.shownHere, reason: applied.reason }));
 		}
@@ -279,6 +282,133 @@ h.run(async () => {
 		const walk = (v) => v && typeof v === 'object' && Object.entries(v).forEach(([k, x]) => (keys.push(k), walk(x)));
 		walk(st);
 		h.check(!keys.some((k) => /\{action/.test(k)), '9. no status key was rewritten into a tool call');
+
+		// ---------------- part 2 (items 22-28) ----------------
+		const cb = sb?.callsBySource;
+		// an idle view (render on demand) leaves the draw calls out on purpose (calls null) rather than report 0
+		const idleView = sb && sb.calls == null;
+		h.check(idleView ? cb === undefined : !!cb && ['objects', 'otherInView', 'shadows', 'post', 'otherViews'].every((k) => typeof cb[k] === 'number'), '27. sceneBudget.callsBySource splits the draw calls (or the idle view leaves them out): ' + short(idleView ? { idle: true, calls: sb.calls } : cb));
+
+		console.log('\n=== 24b. sound upload -> place_sound ===');
+		const rate = 8000;
+		const n = 800;
+		const wav = Buffer.alloc(44 + n * 2);
+		wav.write('RIFF', 0); wav.writeUInt32LE(36 + n * 2, 4); wav.write('WAVE', 8); wav.write('fmt ', 12);
+		wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22); wav.writeUInt32LE(rate, 24);
+		wav.writeUInt32LE(rate * 2, 28); wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36); wav.writeUInt32LE(n * 2, 40);
+		for (let i = 0; i < n; i++) wav.writeInt16LE(Math.round(8000 * Math.sin((i * 2 * Math.PI * 440) / rate)), 44 + i * 2);
+		const up = json(await call(B.client, 'upload_asset', { data: wav.toString('base64'), name: 'beep' }));
+		h.check(up.kind === 'sound' && !!up.hash, '24b. a WAV upload lands in the library: ' + short({ kind: up.kind, hash: up.hash, error: up.error }));
+		if (up.hash) {
+			const snd = json(await call(B.client, 'place_sound', { asset: up.hash, position: [0, 1, 2], radius: 6 }));
+			h.check(!snd.error && (snd.created?.length || snd.updated?.length), '24b. place_sound takes the uploaded hash: ' + short(snd.error || snd.created));
+		}
+		const bad = json(await call(B.client, 'upload_asset', { data: b64('<html>not a sound</html>xxxxxxxx') }));
+		h.check(!!bad.error, '24b. junk bytes are refused: ' + short(bad.error));
+
+		console.log('\n=== 24a. pack sounds in search_assets ===');
+		const found = json(await call(B.client, 'search_assets', { kinds: ['sound'], sources: ['packs'] }));
+		const packRow = (found.results ?? []).find((r) => String(r.id).startsWith('pack:'));
+		if (!packRow) console.log('  SKIP 24a: no pack sound listed (CDN unreachable?) ' + short(found.error || found.note));
+		else {
+			h.check(packRow.kind === 'sound' && /music/.test(packRow.use ?? ''), '24a. a pack sound row with its use line: ' + short(packRow));
+			const ps = json(await call(B.client, 'place_sound', { asset: packRow.id, position: [2, 1, 2] }));
+			h.check(!ps.error, '24a. place_sound takes the pack id (copied into the library): ' + short(ps.error || ps.created));
+		}
+
+		console.log('\n=== 22. terrain height / edges / layers / paintBy ===');
+		const ter = json(await call(B.client, 'terrain', { size: 30, position: [60, 0, 0], height: 5, edges: 'island', seed: 3, layers: [{ color: '#c2b280' }, { color: '#3a7d2c' }, { color: '#888888' }], paintBy: 'height' }));
+		const tRow = ter.created?.[0];
+		h.check(!!tRow?.uuid && Math.abs((tRow.peak ?? 0) - 5) < 0.6, '22. height = the highest peak: ' + short(tRow ?? ter.error));
+		h.check(/height/.test(tRow?.paintedBy ?? ''), '22. paintBy height painted the layers: ' + short(tRow?.paintedBy));
+		if (tRow?.uuid) {
+			await h.eventually(
+				() => A.page.evaluate((u) => { const d = window.__stores.terrainPaint?.splatDigest?.(u); return typeof d === 'string' ? d.length : 0; }, tRow.uuid),
+				(len) => len > 0,
+				'22. the host has the splat (layers draw)',
+				30000
+			);
+		}
+
+		console.log('\n=== 23. scatter avoid circle + rules.avoid + id ===');
+		const pad = json(await call(B.client, 'create_objects', { objects: [{ kind: 'primitive', primitive: 'Box', params: [12, 0.2, 12], name: 'Meadow', position: [40, 0, 30] }] }));
+		const padId = pad.created?.[0]?.uuid;
+		const sc2 = json(await call(B.client, 'scatter', { surface: padId, assets: ['Cone', 'Sphere'], count: 60, seed: 11, id: 'meadow mix', avoid: [{ position: [40, 0, 30], radius: 3 }], rules: { avoid: [{ position: [44, 0, 34], radius: 1.5 }] } }));
+		const setRow = sc2.updated?.[0];
+		h.check(setRow?.set === 'meadow mix' && setRow.assets === 2, '23. one named set for both assets: ' + short(setRow ?? sc2.error));
+		if (setRow?.set) {
+			// the set reaches the host over the wire: wait for it before reading where the instances landed
+			let inst = [];
+			for (let i = 0; i < 60 && !inst.length; i++) {
+				inst = await A.page.evaluate(({ u, id }) => (window.__stores.terrainPaint.scatterInstancesOf(u, id) ?? []).map((p) => [p.x, p.z]), { u: padId, id: setRow.set });
+				if (!inst.length) await A.page.waitForTimeout(500);
+			}
+			h.check(inst.length > 0, '23. the host drew the set: ' + inst.length);
+			h.check(inst.every(([x, z]) => x * x + z * z > 2.9 * 2.9), '23. none inside the 3 m circle at the centre');
+			h.check(inst.every(([x, z]) => (x - 4) ** 2 + (z - 4) ** 2 > 1.4 * 1.4), '23. none inside the rules.avoid circle');
+		}
+
+		console.log('\n=== 25. front axis ===');
+		const aimed = json(await call(B.client, 'create_objects', { objects: [{ kind: 'primitive', primitive: 'Box', name: 'Arrow', position: [0, 1, 10], lookAt: [5, 1, 10], front: '+x' }] }));
+		const arrowId = aimed.created?.[0]?.uuid;
+		const axisOut = await A.page.evaluate((u) => {
+			let g; window.__stores.objectsGroup.subscribe((x) => (g = x))();
+			const o = g?.getObjectByProperty('uuid', u);
+			if (!o) return null;
+			o.updateMatrixWorld(true);
+			const e = o.matrixWorld.elements;
+			return [e[0], e[1], e[2]].map((v) => Math.round(v * 100) / 100);
+		}, arrowId);
+		h.check(!!axisOut && axisOut[0] > 0.95, '25. front +x points at the target (local +x -> world +x): ' + short(axisOut));
+
+		console.log('\n=== 28. list_scene bounds by touches ===');
+		const wall = json(await call(B.client, 'create_objects', { objects: [{ kind: 'primitive', primitive: 'Box', params: [20, 2, 0.3], name: 'Long wall', position: [0, 1, -30] }] }));
+		const wallId = wall.created?.[0]?.uuid;
+		const byOrigin = json(await call(B.client, 'list_scene', { bounds: { min: [8, 0, -31], max: [12, 3, -29] } }));
+		const byTouch = json(await call(B.client, 'list_scene', { bounds: { min: [8, 0, -31], max: [12, 3, -29], by: 'touches' } }));
+		const has = (r) => JSON.stringify(r).includes(wallId);
+		h.check(!has(byOrigin) && has(byTouch), '28. a box at the wall\'s end finds it by touches, not by origin: ' + short({ origin: has(byOrigin), touches: has(byTouch) }));
+
+		console.log('\n=== 26. screenshot camera / hud / avatars ===');
+		await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create Camera'));
+		// no agent tool makes a camera: the person does (the camera-objects suite's way), and the agent finds it
+		let camRow = null;
+		for (let i = 0; i < 40 && !camRow; i++) {
+			camRow = await A.page.evaluate(() => {
+				let g; window.__stores.objectsGroup.subscribe((x) => (g = x))();
+				let found = null;
+				g?.traverse((o) => { if (!found && o.userData?.camera) found = o.uuid; });
+				return found;
+			});
+			if (!camRow) await A.page.waitForTimeout(250);
+		}
+		h.check(!!camRow, '26. the person made a camera object');
+		if (camRow) {
+			const ls = json(await call(B.client, 'list_scene', {}));
+			let seen = JSON.stringify(ls).includes(camRow);
+			for (let i = 0; i < 20 && !seen; i++) {
+				await A.page.waitForTimeout(500);
+				seen = JSON.stringify(json(await call(B.client, 'list_scene', {}))).includes(camRow);
+			}
+			h.check(seen, '26. the camera reached the agent');
+		}
+		const shotText = (r) => {
+			const t = (r.content ?? []).filter((c) => c.type === 'text').map((c) => c.text).find((x) => x.includes('"camera"'));
+			return t ? JSON.parse(t).camera : null;
+		};
+		if (camRow) {
+			const viaCam = await call(B.client, 'screenshot', { view: 'camera', uuid: camRow, size: 256 });
+			const cam = shotText(viaCam);
+			h.check(cam?.subject?.kind === 'camera' && cam.subject.uuids?.[0] === camRow, '26. view camera looks through the camera object: ' + short(cam?.subject));
+		}
+		const noUuid = (await call(B.client, 'screenshot', { view: 'camera' })).content?.filter((c) => c.type === 'text').map((c) => c.text).join(' ') ?? '';
+		h.check(/uuid/.test(noUuid) && /camera/.test(noUuid), '26. view camera without uuid explains itself: ' + short(noUuid));
+		json(await call(B.client, 'create_hud', { screens: [{ name: 'Play', elements: [{ kind: 'text', text: 'Score 0', anchor: 'top-left' }, { kind: 'bar', value: 0.6, anchor: 'top-right' }] }] }));
+		const withHud = shotText(await call(B.client, 'screenshot', { hud: true, size: 256 }));
+		h.check((withHud?.hud?.drawn ?? 0) >= 1, '26. hud: true draws the HUD over the picture: ' + short(withHud?.hud));
+		const clean = shotText(await call(B.client, 'screenshot', { size: 256 }));
+		const keep = shotText(await call(B.client, 'screenshot', { size: 256, avatars: true }));
+		h.check(clean?.avatars === false && keep?.avatars === true, '26. avatars are out by default and in on request: ' + short({ clean: clean?.avatars, keep: keep?.avatars }));
 	} finally {
 		await closeBridge(B);
 	}

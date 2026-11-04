@@ -226,6 +226,7 @@ export function createBridgeServer(opts) {
 				const postEffects = a.postEffects === true ? true : undefined;
 				const extra = { ...(a.hud === true ? { hud: true } : {}), ...(typeof a.avatars === 'boolean' ? { avatars: a.avatars } : {}) };
 				const shot = await engine.screenshot({ view, uuid, uuids, from, camera, aspect, zoom, margin, size, ...(postEffects ? { postEffects } : {}), ...extra });
+				if ('error' in shot) return textResult({ error: shot.error }, true);
 				/** @type {any[]} */
 				const content = [{ type: 'image', data: shot.data, mimeType: shot.mimeType || 'image/png' }];
 				if (shot.note) content.push({ type: 'text', text: shot.note });

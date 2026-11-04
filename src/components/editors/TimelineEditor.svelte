@@ -948,8 +948,8 @@
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
 							<span
 								class="tl-track-name"
-								title="{track.name} — double-click to rename"
-								ondblclick={() => (renamingTrack = track.id)}>{track.name}</span
+								title="{track.kind === 'prop' ? propTrackLabel(track) : track.name} — double-click to rename"
+								ondblclick={() => (renamingTrack = track.id)}>{track.kind === 'prop' ? propTrackLabel(track) : track.name}</span
 							>
 						{/if}
 						<button

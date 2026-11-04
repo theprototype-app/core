@@ -120,7 +120,7 @@ export function commitTake(seqIn, take) {
 		let tr = propTrack(seq, camera, path);
 		if (!tr) {
 			const label = propDef(path)?.label ?? path;
-			tr = normalizeTrack({ kind: 'prop', name: take.cameraName ? `${take.cameraName} · ${label}` : label, target: camera, path, type });
+			tr = normalizeTrack({ kind: 'prop', name: take.cameraName ? `${label} · ${take.cameraName}` : label, target: camera, path, type });
 			seq.tracks.push(tr);
 			// a channel that starts moving in a LATER shot: hold its base value from the session's start
 			const base = baseFor(take, path);

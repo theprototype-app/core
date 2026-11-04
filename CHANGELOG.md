@@ -8,7 +8,7 @@
 ## 1.58.0 — Film with your phone, share it as a video 🎬
 
 ### 📱 Film with your phone
-- **Your phone becomes a scene camera's viewfinder** (More ▸ Film, a camera's menu, or the Inspector's Film button): turn the phone to look around, the stick and ▲▼ move, recentre and horizon lock keep it level. No motion sensor? Drag to look.
+- **Your phone becomes a scene camera's viewfinder** (More ▸ Film with phone, a camera's menu, or the Inspector's Film button): turn the phone to look around, the stick and ▲▼ move, recentre and horizon lock keep it level. No motion sensor? Drag to look.
 - **● records into the Timeline** while it plays, so animations stay in sync. **❚❚** adds the shot as one undo step; carry on as a **Cut** (a new shot) or a **Move** (the camera flies to the new spot). Retake any shot; 3-2-1 countdown; markers.
 - **Live lens, each recorded as its own track**: zoom (pinch, the rail, 18–85 mm lens snaps), dutch angle, tap to pull focus with an aperture (new **Depth of field** look effect), smoothing, tripod and follow-a-target rigs, thirds / safe / level guides and 16:9, 9:16 and 2.39:1 masks.
 - **Android: Track my movement** — walk to move the camera (walk scale 0.1–20 ×), and a mini-map to jump anywhere.
@@ -22,6 +22,7 @@
 ### ⏱ Timeline
 - **Property tracks**: the keys of one value (a recorded camera move, its zoom, focus, roll…) show as a row of keys; **Smooth keys** in the track menu takes the handheld shake out and keeps the key times.
 - A track made with a newer version of the app is kept and shared, with a note, instead of being changed into an event track.
+- Scenes with property tracks need 1.58: 1.57 and older show one as an empty event track (and lose its keys if saved there).
 
 ### 🌱 Start here
 - **Templates ▸ Film set**: a small stage that keeps moving, and a camera to film it with.

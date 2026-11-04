@@ -530,8 +530,8 @@
 	</p>
 {/if}
 <p class="text-[length:var(--fs-badge)] italic text-text-muted">
-	Post-processing does not run in VR — the effects are skipped in a headset, and objects still look
-	the same.
+	In a headset the tone curve, colour grade, LUT (approximate) and vignette still show; the other
+	effects are desktop-only, as each one says.
 </p>
 
 <style>

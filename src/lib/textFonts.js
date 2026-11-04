@@ -59,6 +59,21 @@ export function onFontLanded(fn) {
 	return () => listeners.delete(fn);
 }
 
+function notifyLanded() {
+	for (const fn of listeners) {
+		try {
+			fn();
+		} catch (error) {
+			console.log('font listener failed', error);
+		}
+	}
+}
+
+/** whether a Library font's bytes are on this device (its object URL may still be loading) @param {string} hash */
+export function fontAssetHere(hash) {
+	return !!hash && (urls.has(hash) || !!itemByHash(hash));
+}
+
 /** the object URL for a Library font, or null while it is missing / loading. SYNCHRONOUS. @param {string} hash */
 export function fontAssetUrl(hash) {
 	return hash ? (urls.get(hash) ?? null) : null;
@@ -92,6 +107,9 @@ export async function resolveFontAsset(hash) {
 			if (!blob) return null;
 			const url = URL.createObjectURL(blob);
 			urls.set(hash, url);
+			// 64-text-int: a font read from THIS device's Library (an exported game's first load, any reload)
+			// lands here too, not only one pulled from a peer — its texts lay out again with it
+			queueMicrotask(notifyLanded);
 			return url;
 		} catch (error) {
 			console.log('font asset read failed', error);
@@ -113,15 +131,8 @@ function startWatch() {
 		const landed = [...awaiting].filter((hash) => items.some((it) => it?.hash === hash));
 		if (!landed.length) return;
 		for (const hash of landed) awaiting.delete(hash);
-		void Promise.all(landed.map((hash) => resolveFontAsset(hash))).then(() => {
-			for (const fn of listeners) {
-				try {
-					fn();
-				} catch (error) {
-					console.log('font listener failed', error);
-				}
-			}
-		});
+		// resolveFontAsset tells the listeners when each one's object URL exists
+		for (const hash of landed) void resolveFontAsset(hash);
 	});
 }
 

@@ -20,7 +20,7 @@ import {
 import { applyTextProxyLook, textPlaceholderGeometry } from './textPathObject.js';
 import { textPathPolylineOf, textPathSourceKey } from './textPathSources.js';
 import { layoutInPlace, blockAlign, anchorParts } from './text3dCore.js';
-import { bundledFlatUrl, bundledSolidUrl, fontAssetUrl, resolveFontAsset, onFontLanded, shareFontAsset } from './textFonts.js';
+import { bundledFlatUrl, bundledSolidUrl, fontAssetUrl, fontAssetHere, resolveFontAsset, onFontLanded, shareFontAsset } from './textFonts.js';
 import { registerParkHook } from './parkHooks.js';
 import { coarsePointer } from './inputDevice.js';
 import { isVRMode } from '../stores/sceneStore';
@@ -101,6 +101,9 @@ function fontUrlFor(rec, solid) {
 		const url = fontAssetUrl(rec.fontAsset);
 		if (url) return url;
 		void resolveFontAsset(rec.fontAsset);
+		// the bytes are HERE and only being read into an object URL (an exported game's first frame, a
+		// reload): no notice and no sans mesh — wait a moment, onFontLanded lays the text out again
+		if (fontAssetHere(rec.fontAsset)) return null;
 		if (!noticed.has(rec.fontAsset)) {
 			noticed.add(rec.fontAsset);
 			showToast(`The font “${rec.fontName || 'Font'}” is not on this device yet — showing Noto Sans until it arrives.`);

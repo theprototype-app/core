@@ -123,7 +123,7 @@ export function bridgeTools(engine = 'browser') {
 			},
 			{
 				name: 'wait_for_edit',
-				description: 'Wait until someone in the session changes the scene (or the timeout passes), so you can react to the humans.',
+				description: 'Wait until someone in the session changes the scene or PINGS a spot (or the timeout passes), so you can react to the humans. A ping answers {changed: true, ping: {id, position, normal, on}}: build there with at: {ping: id}.',
 				inputSchema: {
 					type: 'object',
 					properties: { timeout_ms: { type: 'number', description: 'default 30000, at most 120000' } }

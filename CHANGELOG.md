@@ -23,6 +23,12 @@
 - Agents can **turn shadows on or off per part** as they build or import it. <!-- mcp-diorama2 13 -->
 - Ask Claude "what can you do?" and it now mentions the **sky, background and fog**, and the **opening view** players start from. <!-- mcp-diorama2 12 -->
 - **Claude on claude.ai reads the right words again**: tool replies no longer turn ordinary words like "logs" into tool names (`status` had a field called "run {action: 'logs'}"). <!-- mcp-diorama2 4 -->
+- Claude on claude.ai **keeps your names and ids as they are**: prefab ids, object names, undo lines and messages no longer come back with tool wording mixed in. <!-- mcp-diorama2 15 -->
+- **"Allow" now does what it says**: when an agent asks to change the whole look and you press Allow, its change goes through (a repeated ask used to open a new question each time), and the agent hears pending, allowed, denied or expired. Going back to a checkpoint is asked as exactly that. <!-- mcp-diorama2 17 -->
+- **Pings land where you point**: Ctrl+Alt+click and "Ping this object" mark the spot you clicked, not the middle of a nearby object. Building a group at a ping no longer breaks its position, and an agent waiting for you wakes up when you ping. <!-- mcp-diorama2 19 -->
+- **Game rounds keep going with view-only guests**: a guest is never the one who decides the round; the host (or an editor) is. <!-- mcp-diorama2 20 -->
+- A **round pond** is the size you ask for ([diameter, depth, diameter]), sits on its spot, and its colour tints the whole water. <!-- mcp-diorama2 18 -->
+- A particle effect placed on its own (fireflies, rain) no longer shows a **ball** where it comes from. <!-- mcp-diorama2 21 -->
 - For developers: `tpAgent` contract 1.8.0 (`edit_shape {action: "duplicate"}`, `create_shape {action: "import"}`, `set_look {quality}`, screenshot `postEffects`, `sceneBudget.top` / `vsync`, scatter `source` / `avoid`); no new connector tool names. <!-- mcp-diorama2 -->
 
 ## 1.60.0 — An agent builds the game around your scene 🎮

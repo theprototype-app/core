@@ -432,6 +432,7 @@ describe('set_post', () => {
 		const asked = await call('set_post', { effects: [{ kind: 'bloom', params: { intensity: 2 } }] });
 		expect(asked.needsConfirm).toBe(true);
 		expect(asked.summary).toMatch(/add bloom/);
+		expect(asked.status).toBe('pending'); // mcp-diorama2 17: the states are named
 		expect(out[0]).toMatchObject({ type: 'agentconfirmreq', id: asked.confirmId, tool: 'set_post' });
 		expect(scenePost.postStackFor('scene').effects.length).toBe(0);
 		expect(stack().length).toBe(0);
@@ -447,6 +448,7 @@ describe('set_post', () => {
 		confirmGate.handleConfirmRelay('h', { type: 'agentconfirmans', id: asked.confirmId, allow: true });
 		const applied = await call('set_post', { confirmId: asked.confirmId });
 		expect(applied.effects[0].kind).toBe('bloom');
+		expect(applied.status).toBe('allowed');
 		expect(applied.effects[0].id).toBeTruthy();
 		expect(stack().length).toBe(1);
 		expect(summarizeToolCall('set_post', {}, applied)).toMatch(/bloom/);
@@ -466,6 +468,7 @@ describe('set_post', () => {
 		const denied = await call('set_post', { confirmId: asked.confirmId, wait: 30 });
 		expect(Date.now() - t0).toBeLessThan(5000);
 		expect(denied.denied).toBe(true);
+		expect(denied.status).toBe('denied');
 		expect(stack().length).toBe(0);
 	});
 	it('with no host to ask it says so', async () => {

@@ -22,9 +22,16 @@
 // the roster, which every peer holds) are dropped from every tier; a session of agents only
 // still has an authority (the smallest of them), so a page alone with another agent never stalls.
 
+// mcp-diorama2 (20): A VIEW-ONLY GUEST IS NEVER THE AUTHORITY while an editor is here, and the HOST comes first. Under
+// the cloud roles every peer drops a viewer's kit / behaviour / simulation messages at the capability gate, so a viewer
+// that won the smallest-id tier decided for nobody and the round stalled. `roleOf` reads the roles map every peer
+// holds (the same answer everywhere): viewers leave the eligible set, then an ADMIN (the host, or whoever the host
+// handed the room to) is tier 0. No roles (open source, no plugin) = no viewers = the rule as it was.
+
 /**
  * @param {{me?: string | null, peers?: (string | null | undefined)[], host?: string | null,
- *   initiator?: string | null, incumbent?: string | null, agents?: (string | null | undefined)[]}} facts
+ *   initiator?: string | null, incumbent?: string | null, agents?: (string | null | undefined)[],
+ *   roleOf?: ((id: string) => string | null | undefined) | null}} facts
  *   `me` this peer's id · `peers` the ids it is connected to · `host` the session host as this
  *   peer knows it · `initiator` the peer stepping the physics (this peer's id when it is)
  *   · `incumbent` the peer that wrote the kit document last ('' / null before any write)
@@ -37,7 +44,21 @@ export function pickAuthority(facts) {
 	if (me) present.add(me);
 	const agents = new Set((facts?.agents ?? []).filter(Boolean).map(String));
 	const people = [...present].filter((id) => !agents.has(id));
-	const eligible = new Set(people.length ? people : present);
+	let eligible = new Set(people.length ? people : present);
+	const roleOf = typeof facts?.roleOf === 'function' ? facts.roleOf : null;
+	if (roleOf) {
+		const role = (/** @type {string} */ id) => {
+			try {
+				return roleOf(id) ?? null;
+			} catch {
+				return null;
+			}
+		};
+		const editors = [...eligible].filter((id) => role(id) !== 'viewer');
+		if (editors.length) eligible = new Set(editors);
+		const admins = [...eligible].filter((id) => role(id) === 'admin').sort();
+		if (admins.length) return admins[0];
+	}
 	const host = facts?.host ? String(facts.host) : null;
 	if (host && eligible.has(host)) return host;
 	const initiator = facts?.initiator ? String(facts.initiator) : null;

@@ -86,6 +86,10 @@ check('join_session (86-fix N2) is listed as an edit that asks the person', c.to
 	check('TB: a tool in no family, not standalone and not excluded fails the generator (a new name needs an owner row)', /brand_new_tool/.test(stray));
 	const fam = { set_look: { material: 'set_material', get_material: 'get_material' } };
 	check('TB resolve: {action, <action>: {...}} → the fine tool with the inner fields', JSON.stringify(resolveFamilyCall(fam, 'set_look', { action: 'material', material: { objects: ['a'], color: '#f00' } })) === '{"tool":"set_material","args":{"objects":["a"],"color":"#f00"}}');
+	check(
+		'mcp-diorama2 17: a repeat with confirmId / wait beside the action object keeps them (the host\'s Allow reaches the call)',
+		JSON.stringify(resolveFamilyCall(fam, 'set_look', { action: 'material', material: { color: '#f00' }, confirmId: 'c1', wait: 30 }).args) === '{"color":"#f00","confirmId":"c1","wait":30}'
+	);
 	check('TB resolve: flattened fields still work', JSON.stringify(resolveFamilyCall(fam, 'set_look', { action: 'get_material', uuid: 'u' })) === '{"tool":"get_material","args":{"uuid":"u"}}');
 	check('TB resolve: an unknown action names the ones there are', /one of material, get_material/.test(resolveFamilyCall(fam, 'set_look', { action: 'paint' }).error ?? ''));
 	check('TB resolve: not a family = null', resolveFamilyCall(fam, 'list_scene', {}) === null);

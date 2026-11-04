@@ -23,12 +23,14 @@ import { agentInbox } from './agentInbox.js';
 import { beginHistoryBatch, endHistoryBatch } from '$lib/history';
 import { peers, userdata, waitingForApproval, toastStore, dismissToastById, loading, loadingcount } from '../../stores/appStore.js';
 import { sceneLoad } from '$lib/sceneLoader.js';
-import { globalRenderer } from '../../stores/sceneStore.js';
+import { globalRenderer, objectsGroup } from '../../stores/sceneStore.js';
 import { agentBudgetReport } from '$lib/sceneBudget';
 import { recentLogs } from '$lib/ai/runtimeTools.js'; // 85b R3
 import { scriptErrors } from '../../stores/flowStore';
 import { sessionHost, snapshotPending } from '$lib/connectionState';
 import { isAgentPeer } from '$lib/inviteStore';
+import { pingLog } from '$lib/pingLog.js';
+import { describePing } from '$lib/connector/whereAreUsers.js';
 import { requestConnect } from '$lib/peerApproval';
 import { rolesInfo } from '$lib/cloudHooks';
 import { dirtyPulse, dismissRestore, restoreAvailable } from '$lib/autosave';
@@ -517,6 +519,20 @@ export function createTpAgent(extra = {}) {
 			}),
 		missingModules: () => missingModulesFrom(get(peerModuleVersions), openPeerIds(), moduleVersions()),
 		onSceneChange: (cb) => dirtyPulse.subscribe(() => cb()),
+		// mcp-diorama2 (19): a person's new ping wakes wait_for_edit, said the way where_are_users says it
+		onPing: (cb) => {
+			const seen = new Set((/** @type {any[]} */ (get(pingLog)) ?? []).map((p) => p.id));
+			const me = String(/** @type {any} */ (get(peers))?.peer?.id ?? '');
+			return pingLog.subscribe((log) => {
+				for (const rec of /** @type {any[]} */ (log ?? [])) {
+					if (seen.has(rec.id)) continue;
+					seen.add(rec.id);
+					if (isAgentPeer(rec.peer) || (!extra.connector && rec.peer === me)) continue;
+					const group = /** @type {any} */ (get(objectsGroup));
+					cb(group ? describePing(rec, group, Date.now()) : { id: rec.id, by: rec.peer });
+				}
+			});
+		},
 		screenshot: (opts) => (extra.screenshot ?? takeScreenshot)(opts),
 		lastShot: () => lastShot,
 		leave: async () => {

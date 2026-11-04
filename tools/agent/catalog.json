@@ -3304,7 +3304,7 @@
 		{
 			"name": "create_particles",
 			"title": "Add particles",
-			"description": "Particles by preset name: sparkles, fire, smoke, dust, confetti, sparks, trail, wisps, fireflies, rain, snow. Without object it places a small emitter at position (rain and snow hang at cloud height over it); with object it attaches to that object (a torch, a campfire log). overrides tune any field (count, lifetime, speed, gravity, sizeStart, colorStart, colorEnd, opacity, …). remove: true takes them off. One undo step.\nTake a screenshot after each change to check your work.",
+			"description": "Particles by preset name: sparkles, fire, smoke, dust, confetti, sparks, trail, wisps, fireflies, rain, snow. Without object it places an invisible emitter (an empty group, nothing drawn but the particles) at position (rain and snow hang at cloud height over it); with object it attaches to that object (a torch, a campfire log). overrides tune any field (count, lifetime, speed, gravity, sizeStart, colorStart, colorEnd, opacity, …). remove: true takes them off. One undo step.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -3549,7 +3549,7 @@
 		{
 			"name": "water",
 			"title": "Add or change water",
-			"description": "Water: without uuid it makes a body of water — kind tank, pool, round, lake or ocean, size [w, h, d], at position (its bottom centre). With uuid it changes one (or makes an object water with a preset). preset: pool, aquarium, ocean, lake, river, lava, swamp, toxic, ice. level 0-1 (how full), color, look {shallowColor, deepColor, clarity, foam, …}, waves {count, amplitude, wavelength, speed, direction}, flow. Things float in it in Play. remove: true makes it a plain object again. One undo step.\nTake a screenshot after each change to check your work.",
+			"description": "Water: without uuid it makes a body of water — kind tank, pool, round, lake or ocean, size [w, h, d] (round: [diameter, depth, diameter]), at position (its bottom centre). With uuid it changes one (or makes an object water with a preset). preset: pool, aquarium, ocean, lake, river, lava, swamp, toxic, ice. level 0-1 (how full), color (tints the whole body, shallow to deep), look {shallowColor, deepColor, clarity, foam, …}, waves {count, amplitude, wavelength, speed, direction}, flow. Things float in it in Play. remove: true makes it a plain object again. One undo step.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -5145,7 +5145,7 @@
 		{
 			"name": "wait_for_edit",
 			"title": "Wait for someone to edit",
-			"description": "Wait until someone in the session changes the scene (or the timeout passes), so you can react to the humans.",
+			"description": "Wait until someone in the session changes the scene or PINGS a spot (or the timeout passes), so you can react to the humans. A ping answers {changed: true, ping: {id, position, normal, on}}: build there with at: {ping: id}.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -8509,7 +8509,7 @@
 									"type": "boolean"
 								}
 							},
-							"description": "Water: without uuid it makes a body of water — kind tank, pool, round, lake or ocean, size [w, h, d], at position (its bottom centre). With uuid it changes one (or makes an object water with a preset). preset: pool, aquarium, ocean, lake, river, lava, swamp, toxic, ice. level 0-1 (how full), color, look {shallowColor, deepColor, clarity, foam, …}, waves {count, amplitude, wavelength, speed, direction}, flow. Things float in it in Play. remove: true makes it a plain object again. One undo step."
+							"description": "Water: without uuid it makes a body of water — kind tank, pool, round, lake or ocean, size [w, h, d] (round: [diameter, depth, diameter]), at position (its bottom centre). With uuid it changes one (or makes an object water with a preset). preset: pool, aquarium, ocean, lake, river, lava, swamp, toxic, ice. level 0-1 (how full), color (tints the whole body, shallow to deep), look {shallowColor, deepColor, clarity, foam, …}, waves {count, amplitude, wavelength, speed, direction}, flow. Things float in it in Play. remove: true makes it a plain object again. One undo step."
 						},
 						"particles": {
 							"type": "object",
@@ -8553,7 +8553,7 @@
 									"type": "boolean"
 								}
 							},
-							"description": "Particles by preset name: sparkles, fire, smoke, dust, confetti, sparks, trail, wisps, fireflies, rain, snow. Without object it places a small emitter at position (rain and snow hang at cloud height over it); with object it attaches to that object (a torch, a campfire log). overrides tune any field (count, lifetime, speed, gravity, sizeStart, colorStart, colorEnd, opacity, …). remove: true takes them off. One undo step."
+							"description": "Particles by preset name: sparkles, fire, smoke, dust, confetti, sparks, trail, wisps, fireflies, rain, snow. Without object it places an invisible emitter (an empty group, nothing drawn but the particles) at position (rain and snow hang at cloud height over it); with object it attaches to that object (a torch, a campfire log). overrides tune any field (count, lifetime, speed, gravity, sizeStart, colorStart, colorEnd, opacity, …). remove: true takes them off. One undo step."
 						},
 						"sound": {
 							"type": "object",
@@ -10174,7 +10174,7 @@
 			{
 				"name": "wait_for_edit",
 				"title": "Wait for someone to edit",
-				"description": "Wait until someone in the session changes the scene (or the timeout passes), so you can react to the humans.",
+				"description": "Wait until someone in the session changes the scene or PINGS a spot (or the timeout passes), so you can react to the humans. A ping answers {changed: true, ping: {id, position, normal, on}}: build there with at: {ping: id}.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {

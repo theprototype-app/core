@@ -74,10 +74,30 @@ function settle(ask, status, reason) {
 function pendingResult(ask) {
 	return {
 		needsConfirm: true,
+		status: 'pending',
 		confirmId: ask.id,
 		summary: ask.summary,
-		note: 'Nothing has changed yet: this changes the whole scene\'s look, so the host was asked (Allow / Deny). Call this tool again with {"confirmId": "' + ask.id + '", "wait": 30} to get the answer and apply it.'
+		note:
+			'Nothing has changed yet: ' +
+			(ask.tool === 'undo_last' ? 'going back to a checkpoint undoes work other people can see' : 'this changes the whole scene\'s look') +
+			', so the host was asked (Allow / Deny). Call this tool again with {"confirmId": "' +
+			ask.id +
+			'", "wait": 30} to get the answer: it applies the moment they press Allow.'
 	};
+}
+
+/**
+ * mcp-diorama2 (item 17) — the words a prompt opens with: a checkpoint restore is not a look change
+ * @param {string} tool @param {string} summary
+ */
+export function askLine(tool, summary) {
+	return tool === 'undo_last' ? ' wants to ' + summary : ' wants to change the whole scene: ' + summary;
+}
+
+/** an allowed call's own result, saying so (an error from the change itself stays an error) @param {any} result @param {any} [extra] */
+function withStatus(result, extra = {}) {
+	if (!result || typeof result !== 'object' || Array.isArray(result)) return result;
+	return { ...result, ...extra, status: 'allowed' };
 }
 
 /** @param {Ask} ask @param {number} seconds */
@@ -137,12 +157,12 @@ export async function gateScenewide(tool, args, change) {
 		if (Number.isFinite(wait)) await waitFor(ask, Math.min(CONFIRM_MAX_WAIT_S, wait));
 		const status = statusOf(ask);
 		if (status === 'pending') return pendingResult(ask);
-		if (status === 'denied') return { error: (ask.id.startsWith('d') ? 'the person said no' : 'the host said no') + (ask.reason ? ': ' + ask.reason : '') + ' — nothing changed', denied: true };
-		if (status === 'expired') return { error: 'nobody answered in time — nothing changed; call again without confirmId to ask again', expired: true };
-		if (status === 'applied') return { ...ask.result, alreadyApplied: true };
+		if (status === 'denied') return { error: (ask.id.startsWith('d') ? 'the person said no' : 'the host said no') + (ask.reason ? ': ' + ask.reason : '') + ' — nothing changed', status: 'denied', denied: true };
+		if (status === 'expired') return { error: 'nobody answered in time — nothing changed; call again without confirmId to ask again', status: 'expired', expired: true };
+		if (status === 'applied') return withStatus(ask.result, { alreadyApplied: true });
 		ask.status = 'applied';
 		ask.result = await ask.apply();
-		return ask.result;
+		return withStatus(ask.result);
 	}
 	/** @type {any} */
 	const roles = get(rolesInfo);
@@ -162,7 +182,7 @@ export async function gateScenewide(tool, args, change) {
 	};
 	if (route === 'local') {
 		asks.set(ask.id, ask);
-		promptHere('Claude wants to change the whole scene: ' + ask.summary, (allow) => settle(ask, allow ? 'allowed' : 'denied'));
+		promptHere('Claude' + askLine(tool, ask.summary), (allow) => settle(ask, allow ? 'allowed' : 'denied'));
 		return pendingResult(ask);
 	}
 	/** @type {any} */
@@ -218,7 +238,7 @@ export function handleConfirmRelay(from, data) {
 			answered = true;
 			showing.set(from, Math.max(0, (showing.get(from) ?? 1) - 1));
 		}, CONFIRM_TTL_MS);
-		promptHere(nameOf(from) + ' wants to change the whole scene: ' + cleanSummary(data.summary), answer);
+		promptHere(nameOf(from) + askLine(String(data.tool ?? ''), cleanSummary(data.summary)), answer);
 	} catch (e) {
 		console.warn('confirm relay', e);
 	}

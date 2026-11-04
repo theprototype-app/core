@@ -115,6 +115,8 @@ export function toolName(tool) {
  * @property {() => {name: string, reason: string}[]} missingTools
  * @property {() => any[]} missingModules
  * @property {(cb: () => void) => () => void} onSceneChange
+ * @property {(cb: (ping: any) => void) => () => void} [onPing] mcp-diorama2 (19): a person's NEW ping (as where_are_users
+ *   reads one) — wait_for_edit wakes on it, because "build here" starts with a ping and changes nothing
  * @property {(opts: any) => Promise<string|null>} screenshot
  * @property {() => any} [lastShot] what the last screenshot used
  * @property {() => Promise<void>} leave
@@ -411,12 +413,17 @@ export function createAgentCore(deps) {
 				resolve(result);
 			}
 			let primed = false;
-			off = deps.onSceneChange(() => {
+			const offScene = deps.onSceneChange(() => {
 				// a store subscription calls back once on subscribe — that is not a change
 				if (!primed) return;
 				if (selfEditing > 0) return;
 				finish({ changed: true, at: now() });
 			});
+			const offPing = deps.onPing?.((ping) => finish({ changed: true, at: now(), ping })) ?? (() => {});
+			off = () => {
+				offScene();
+				offPing();
+			};
 			primed = true;
 		});
 	}

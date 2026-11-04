@@ -79,7 +79,7 @@
 	import { setParticleRoot } from '$lib/particleRuntime';
 	import WaterLayer from './water/WaterLayer.svelte';
 	import { registerEditResumeSources } from '$lib/editResume';
-	import { sendPing } from '$lib/ping';
+	import { sendPing, surfaceHit } from '$lib/ping';
 	import { startLightHelpers, updateLightHelpers, lightProxiesGroup } from '$lib/lightHelpers';
 	import { HELPER_LAYER } from '$lib/helperLayer';
 	import { startColliderHelpers, updateColliderHelpers } from '$lib/colliderHelpers';
@@ -1259,12 +1259,14 @@
 			// Ctrl+Alt+click pings the pointed spot for every peer (36 F22: plain Alt+click is
 			// the selection cycle now — Blender/Unity's gesture for "the thing behind")
 			if (event.altKey && (event.ctrlKey || event.metaKey)) {
-				const hits = pickSceneObjects();
+				// mcp-diorama2 (19): a SURFACE hit — selection's tiny-object / measurement proxies sit at an object's
+				// origin, so a ping near a small thing used to land on its origin instead of where you pointed
+				const hit = surfaceHit(pickSceneObjects());
 				const planePoint = new THREE.Vector3();
-				const point = hits[0]?.point ??
+				const point = hit?.point ??
 					(selectionRaycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), planePoint)
 						? planePoint : null);
-				if (point) sendPing(point, undefined, hits[0]); // 85b S2: the hit = what it landed on
+				if (point) sendPing(point, undefined, hit); // 85b S2: the hit = what it landed on
 				return;
 			}
 			// 57.2: the spline tool places a control point per click; a second click

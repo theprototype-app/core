@@ -472,6 +472,18 @@ function familyTool(family, f, actions, batch = null) {
 }
 
 /**
+ * mcp-diorama2 (item 17) — the question's fields travel with the action's object: an agent repeats
+ * {action: 'sky', sky: {…}, confirmId, wait} as the needsConfirm note says, and keeping only `sky` dropped the
+ * confirmId, so every repeat opened a NEW question and the host's Allow never reached the call.
+ * @param {any} inner @param {any} args
+ */
+export function withAnswerFields(inner, args) {
+	const out = { ...inner };
+	for (const k of ['confirmId', 'wait']) if (args?.[k] !== undefined && out[k] === undefined) out[k] = args[k];
+	return out;
+}
+
+/**
  * The Worker's half, kept here so core's unit tests cover it with the same tables: a family call → the fine tool
  * and its arguments. A missing per-action object falls back to the call's other fields (a model that flattened them).
  * @param {Record<string, Record<string, string>>} families @param {string} name @param {any} args
@@ -487,7 +499,7 @@ export function resolveFamilyCall(families, name, args) {
 	const tool = actions[action];
 	if (!tool) return { error: name + ' needs an action: one of ' + Object.keys(actions).join(', ') + '.' };
 	const inner = args[action];
-	if (inner && typeof inner === 'object' && !Array.isArray(inner)) return { tool, args: inner };
+	if (inner && typeof inner === 'object' && !Array.isArray(inner)) return { tool, args: withAnswerFields(inner, args) };
 	const { action: _a, ...rest } = args;
 	for (const a of Object.keys(actions)) delete rest[a];
 	return { tool, args: rest };

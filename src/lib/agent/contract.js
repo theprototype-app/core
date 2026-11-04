@@ -112,7 +112,7 @@ export const SCREENSHOT_DEFAULT_SIZE = 768;
 
 /**
  * `waitForEdit` result.
- * @typedef {{changed: true, at: number} | {changed: false, timedOut: true}} TpAgentEditWait
+ * @typedef {{changed: true, at: number, ping?: any} | {changed: false, timedOut: true}} TpAgentEditWait  (`ping`: 1.8.0, a new ping woke it)
  */
 
 /**

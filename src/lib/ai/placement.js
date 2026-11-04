@@ -76,6 +76,8 @@ function inside(hit, object) {
  */
 export function floorUnder(object, group) {
 	const box = new THREE.Box3().setFromObject(object);
+	// an empty group / a light: its origin is its base (mcp-diorama2 19)
+	if (box.isEmpty()) box.setFromCenterAndSize(object.getWorldPosition(new THREE.Vector3()), new THREE.Vector3());
 	const c = box.getCenter(new THREE.Vector3());
 	const ray = new THREE.Raycaster(new THREE.Vector3(c.x, box.min.y + 1000, c.z), new THREE.Vector3(0, -1, 0));
 	const hits = ray.intersectObjects(group.children, true).filter((h) => {
@@ -126,8 +128,7 @@ export function placeObject(object, spec, apply) {
 			const local = new THREE.Vector3(row.position[0] + f[0] * ahead + rt[0] * right, row.floor + up, row.position[2] + f[2] * ahead + rt[2] * right);
 			const point = group.localToWorld(local);
 			setWorld(object, point);
-			const box = new THREE.Box3().setFromObject(object);
-			setWorld(object, object.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, point.y - box.min.y, 0)));
+			setWorld(object, object.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, liftOnto(object, point.y), 0)));
 			placed.at = 'user ' + (row.name || row.id);
 			moved = true;
 			if (spec.face_user === undefined) spec = { ...spec, face_user: row.you && !agentRequested() ? true : row.id };
@@ -151,14 +152,14 @@ export function placeObject(object, spec, apply) {
 				moved = true;
 				if (spec.align === 'surface') {
 					setWorld(object, undefined, surfaceQuaternion(normal));
-					const back = -localBox(object).min.z * object.getWorldScale(new THREE.Vector3()).z;
+					const lb = localBox(object);
+					const back = lb.isEmpty() ? 0 : -lb.min.z * object.getWorldScale(new THREE.Vector3()).z;
 					setWorld(object, where.point.clone().addScaledVector(normal.clone().normalize(), back));
 					placed.align = 'surface';
 					surface = true;
 				} else if (normal.y > 0.7 && spec.snap === undefined) {
 					// a ping on a floor or a table top: the object stands on it, not half inside it
-					const box = new THREE.Box3().setFromObject(object);
-					setWorld(object, object.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, where.point.y - box.min.y, 0)));
+					setWorld(object, object.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, liftOnto(object, where.point.y), 0)));
 					placed.standsOn = placed.on ?? 'the ground';
 				}
 			}
@@ -172,9 +173,8 @@ export function placeObject(object, spec, apply) {
 		else if (surface && normal && Math.abs(normal.y) < 0.7) warnings.push('snap: skipped — the object is on a wall (align: "surface")');
 		else {
 			const hit = floorUnder(object, group);
-			const box = new THREE.Box3().setFromObject(object);
 			const floorY = hit ? hit.y : group.getWorldPosition(new THREE.Vector3()).y;
-			setWorld(object, object.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, floorY - box.min.y, 0)));
+			setWorld(object, object.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, liftOnto(object, floorY), 0)));
 			placed.snapped = hit ? hit.on.name || hit.on.uuid : 'the ground';
 			moved = true;
 		}
@@ -209,6 +209,18 @@ export function placeObject(object, spec, apply) {
 	object.updateWorldMatrix(true, true);
 	apply(object, { position, rotation: [r.x, r.y, r.z] });
 	return { placed, warnings };
+}
+
+/**
+ * mcp-diorama2 (19): how far up `object` must go for its bottom to sit at world height `y`. An EMPTY group (or a
+ * light) has an empty box — min = +Infinity — and the old arithmetic put a NaN in its position, which then went
+ * to every peer; nothing to stand on = no lift (its origin is the spot).
+ * @param {any} object @param {number} y
+ */
+export function liftOnto(object, y) {
+	const box = new THREE.Box3().setFromObject(object);
+	if (box.isEmpty() || !Number.isFinite(box.min.y)) return y - object.getWorldPosition(new THREE.Vector3()).y;
+	return y - box.min.y;
 }
 
 /** face_user: true = the person this tab acts as; on an agent page, the person who pinged last, else the first person here */

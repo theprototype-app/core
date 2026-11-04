@@ -272,6 +272,18 @@ describe('waitForEdit()', () => {
 		expect(res).toEqual({ changed: false, timedOut: true });
 		expect(app.subs.size).toBe(0);
 	});
+	it('mcp-diorama2 19: wakes on a NEW ping, says which, and lets go of the ping feed', async () => {
+		const pingSubs = new Set();
+		const app = fakeApp({ onPing: (/** @type {any} */ cb) => (pingSubs.add(cb), () => pingSubs.delete(cb)) });
+		const { agent } = createAgentCore(app.deps);
+		const wait = agent.waitForEdit(1000);
+		await tick();
+		for (const fn of pingSubs) fn({ id: 'p1', by: 'ann', position: [1, 0, 2] });
+		const res = await wait;
+		expect(res).toMatchObject({ changed: true, ping: { id: 'p1', position: [1, 0, 2] } });
+		expect(pingSubs.size).toBe(0);
+		expect(app.subs.size).toBe(0);
+	});
 	it("is not woken by the agent's own exec", async () => {
 		const app = fakeApp();
 		const { agent } = createAgentCore(app.deps);

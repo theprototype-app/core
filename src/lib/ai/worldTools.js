@@ -220,6 +220,18 @@ async function cc0Rows(kinds, notes) {
 	return rows;
 }
 
+/**
+ * what a search row is FOR, as the call that uses it (mcp-diorama2 item 15: no lane names like "(85-scene)")
+ * @param {{kind: string, name?: string}} row
+ */
+export function assetUse(row) {
+	if (row.kind === 'model' || row.kind === 'prefab') return "assets {action: 'place', place: {asset: id, position}}";
+	if (row.kind === 'material') return 'set_look {action: \'material\', material: {objects, cc0: "' + row.name + '"}}';
+	if (row.kind === 'sound') return "effects {action: 'sound', sound: {asset: id, position}}";
+	if (row.kind === 'image') return 'a texture: set_look material maps {albedo: hash}';
+	return "a sky / environment light: set_look {action: 'sky', sky: {hdri: id}}";
+}
+
 /** @param {any} args */
 async function searchAssetsTool(args) {
 	const words = queryWords(args.query);
@@ -246,16 +258,7 @@ async function searchAssetsTool(args) {
 		.sort((a, b) => b.score - a.score || (b.row.popularity ?? 0) - (a.row.popularity ?? 0) || a.i - b.i);
 	const results = ranked.slice(0, limit).map(({ row }) => {
 		const { tags: _t, popularity: _p, ...out } = row;
-		out.use =
-			row.kind === 'model' || row.kind === 'prefab'
-				? "assets {action: 'place', place: {asset: id, position}}"
-				: row.kind === 'material'
-					? 'set_look {action: \'material\', material: {objects, cc0: "' + row.name + '"}}'
-					: row.kind === 'sound'
-						? "effects {action: 'sound', sound: {asset: id, position}}"
-						: row.kind === 'image'
-							? 'a texture: set_look material maps {albedo: hash}'
-							: 'the sky / environment light (85-scene)';
+		out.use = assetUse(row);
 		return out;
 	});
 	return { query: words.join(' '), found: ranked.length, results, ...(notes.length ? { notes } : {}) };
@@ -423,9 +426,10 @@ async function createParticlesTool(args, createBase) {
 	} else {
 		const at = args.position === undefined ? [0, 0, 0] : vec3(args.position);
 		if (!at) return { error: 'position: [x, y, z] metres' };
-		// the Effects menu's marker: a small sphere, scenery; a weather preset hangs at cloud height over the point
+		// mcp-diorama2 (21): an EMPTY GROUP carries the emitter — nothing of its own is drawn (the 0.15 m sphere this
+		// used to make showed as a ball in the fire); a weather preset hangs at cloud height over the point
 		const fall = Number(/** @type {any} */ (preset.config).fall) || 0;
-		const r = createBase({ kind: 'primitive', primitive: 'Sphere', params: [0.15], name: String(args.name ?? preset.name + ' emitter').slice(0, 120), position: [at[0], at[1] + fall, at[2]] });
+		const r = createBase({ kind: 'group', name: String(args.name ?? preset.name + ' emitter').slice(0, 120), position: [at[0], at[1] + fall, at[2]] });
 		if (r.error) return { error: r.error };
 		object = objectOf(r.uuid);
 		if (!object) return { error: 'the emitter could not be made' };
@@ -692,11 +696,23 @@ const WATER_SHAPES = /** @type {Record<string, {primitive: string, params: numbe
 	round: { primitive: 'Cylinder', params: [1.5, 1.5, 1.2], shape: 'cylinder' }
 });
 
+/** a water colour → THREE.Color, or null @param {any} v */
+function waterTint(v) {
+	if (typeof v !== 'string') return null;
+	const t = v.trim().toLowerCase();
+	if (/^#?[0-9a-f]{6}$/.test(t)) return new THREE.Color('#' + t.replace(/^#/, ''));
+	return /** @type {any} */ (THREE.Color).NAMES?.[t] !== undefined ? new THREE.Color(t) : null;
+}
+
 /** @param {any} args @param {CreateBase} createBase */
 async function waterTool(args, createBase) {
 	const wa = await import('$lib/water/waterActions.js');
 	const { WATER_PRESETS } = await import('$lib/water/presets.js');
 	if (args.preset !== undefined && !WATER_PRESETS.some((p) => p.key === args.preset)) return { error: 'preset: one of ' + WATER_PRESETS.map((p) => p.key).join(', ') };
+	// checked before anything is made: a refused colour must not leave a pond behind
+	const tintArg = args.color ?? args.look?.color;
+	const tint = tintArg === undefined ? null : waterTint(tintArg);
+	if (tintArg !== undefined && !tint) return { error: 'color: "#rrggbb" or a colour name' };
 	/** @type {any} */
 	let object;
 	let made = false;
@@ -720,8 +736,11 @@ async function waterTool(args, createBase) {
 		let params = k.params;
 		if (args.size !== undefined) {
 			const s = args.size;
-			if (!Array.isArray(s) || !(s.length === 3 || (kind === 'round' && s.length === 2)) || !s.every((n) => typeof n === 'number' && n > 0 && n <= 2000)) return { error: 'size: [width, depth (height), length] metres' + (kind === 'round' ? ' — or [radius, height] for round' : '') };
-			params = kind === 'round' ? [s[0], s[0], s[s.length - 1]] : s;
+			if (!Array.isArray(s) || !(s.length === 3 || (kind === 'round' && s.length === 2)) || !s.every((n) => typeof n === 'number' && n > 0 && n <= 2000))
+				return { error: 'size: [width, depth (height), length] metres' + (kind === 'round' ? ' — for round [diameter, depth, diameter] (or [radius, depth])' : '') };
+			// mcp-diorama2 (18): round takes the box convention [diameter, depth, diameter] (it read [radius, radius,
+			// height], so [4, 1, 4] made a pond 8 m across and 4 m deep); [radius, depth] still works
+			params = kind === 'round' ? (s.length === 2 ? [s[0], s[0], s[1]] : [(s[0] + s[2]) / 4, (s[0] + s[2]) / 4, s[1]]) : s;
 		}
 		const h = kind === 'round' ? params[2] : params[1];
 		const r = createBase({ kind: 'primitive', primitive: k.primitive, params, name: String(args.name ?? (kind === 'ocean' ? 'Ocean' : kind === 'lake' ? 'Lake' : 'Water')).slice(0, 120), position: [at[0], at[1] + h / 2, at[2]] });
@@ -750,10 +769,21 @@ async function waterTool(args, createBase) {
 		if (!args[k] || typeof args[k] !== 'object' || Array.isArray(args[k])) return { error: k + ': an object of ' + k + ' fields' };
 		patch[k] = args[k];
 	}
-	if (args.color !== undefined) patch.look = { ...(patch.look ?? {}), shallowColor: args.color };
+	// mcp-diorama2 (18): `color` (or look.color) tints the whole body — shallow AND deep — so a green pond is green;
+	// look.shallowColor / deepColor still set one end each
+	if (tint) {
+		const { color: _c, ...look } = patch.look ?? {};
+		patch.look = { shallowColor: '#' + tint.getHexString(), deepColor: '#' + tint.clone().multiplyScalar(0.35).getHexString(), ...look };
+	}
 	if (Object.keys(patch).length) wa.updateObjectWater(object.uuid, patch, { immediate: true });
 	const water = object.userData.water;
-	const row = { uuid: object.uuid, name: object.name, preset: water?.preset ?? args.preset, level: water?.level };
+	const row = {
+		uuid: object.uuid,
+		name: object.name,
+		preset: water?.preset ?? args.preset,
+		level: water?.level,
+		...(water?.look ? { look: { shallowColor: water.look.shallowColor, deepColor: water.look.deepColor } } : {})
+	};
 	return made ? { created: [row] } : { updated: [{ ...row, ok: true }] };
 }
 
@@ -1009,7 +1039,7 @@ export const WORLD_AI_TOOLS = [
 			description:
 				'Particles by preset name: ' +
 				PARTICLE_PRESETS.map((p) => p.key).join(', ') +
-				'. Without object it places a small emitter at position (rain and snow hang at cloud height over it); with object it attaches to that object (a torch, a campfire log). overrides tune any field (count, lifetime, speed, gravity, sizeStart, colorStart, colorEnd, opacity, …). remove: true takes them off. One undo step.',
+				'. Without object it places an invisible emitter (an empty group, nothing drawn but the particles) at position (rain and snow hang at cloud height over it); with object it attaches to that object (a torch, a campfire log). overrides tune any field (count, lifetime, speed, gravity, sizeStart, colorStart, colorEnd, opacity, …). remove: true takes them off. One undo step.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1085,7 +1115,7 @@ export const WORLD_AI_TOOLS = [
 		function: {
 			name: 'water',
 			description:
-				'Water: without uuid it makes a body of water — kind tank, pool, round, lake or ocean, size [w, h, d], at position (its bottom centre). With uuid it changes one (or makes an object water with a preset). preset: pool, aquarium, ocean, lake, river, lava, swamp, toxic, ice. level 0-1 (how full), color, look {shallowColor, deepColor, clarity, foam, …}, waves {count, amplitude, wavelength, speed, direction}, flow. Things float in it in Play. remove: true makes it a plain object again. One undo step.',
+				'Water: without uuid it makes a body of water — kind tank, pool, round, lake or ocean, size [w, h, d] (round: [diameter, depth, diameter]), at position (its bottom centre). With uuid it changes one (or makes an object water with a preset). preset: pool, aquarium, ocean, lake, river, lava, swamp, toxic, ice. level 0-1 (how full), color (tints the whole body, shallow to deep), look {shallowColor, deepColor, clarity, foam, …}, waves {count, amplitude, wavelength, speed, direction}, flow. Things float in it in Play. remove: true makes it a plain object again. One undo step.',
 			parameters: {
 				type: 'object',
 				properties: {

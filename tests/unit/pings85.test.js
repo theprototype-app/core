@@ -157,6 +157,34 @@ describe('85b S2-S4 placement params', () => {
 	});
 });
 
+describe('mcp-diorama2 19 pings: the spot pointed at; groups; nothing NaN', () => {
+	beforeEach(() => applied.splice(0));
+	it('an empty group placed at a ping sits at the ping (it used to get a NaN position)', () => {
+		const table = box(2, 1, 2, [0, 0.5, 0]);
+		ping.pingLog.set([rec('g', 'me', Date.now(), { pos: [0.3, 1, -0.2], on: { uuid: table.uuid, local: [0.3, 0.5, -0.2], normal: [0, 1, 0] } })]);
+		const fox = new THREE.Group();
+		group.add(fox);
+		const r = placeObject(fox, { at: { ping: 'latest' }, snap: 'floor' }, apply);
+		expect(fox.position.toArray().every(Number.isFinite)).toBe(true);
+		expect(fox.position.toArray()).toEqual([expect.closeTo(0.3), expect.closeTo(1), expect.closeTo(-0.2)]);
+		expect(r.warnings).toEqual([]);
+	});
+	it('a pick\'s tiny-object / measurement proxies are not where anyone pointed; the surface hit is', () => {
+		const real = { point: new THREE.Vector3(1, 2, 3), object: {} };
+		expect(ping.surfaceHit([{ point: new THREE.Vector3(), tinyProxy: true }, { point: new THREE.Vector3(), measure: true }, real])).toBe(real);
+		expect(ping.surfaceHit([{ point: new THREE.Vector3(), tinyProxy: true }])).toBe(null);
+	});
+	it('"Ping this object" from the menu pings the right-clicked spot on it, not the top of its box', () => {
+		const table = box(2, 1, 2, [5, 0.5, 0]);
+		sent.splice(0);
+		const later = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 60000); // past the one-ping-per-gap throttle
+		ping.pingObjectAt(table.uuid, [5.5, 1, 0.5]);
+		later.mockRestore();
+		expect(sent.at(-1).pos).toEqual([5.5, 1, 0.5]);
+		expect(sent.at(-1).on).toMatchObject({ uuid: table.uuid, local: [0.5, 0.5, 0.5] });
+	});
+});
+
 describe('85b S5 comfort', () => {
 	it('the clear radius: head sphere, body column above the ankles', () => {
 		const p = { head: { x: 0, y: 1.6, z: 0 }, feet: 0 };

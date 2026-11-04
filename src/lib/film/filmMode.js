@@ -46,7 +46,8 @@ import {
 	oneEuro,
 	oneEuroQuat,
 	smoothingParams,
-	levelHorizon
+	levelHorizon,
+	MOTION_KEYS
 } from './filmCore';
 
 const D2R = Math.PI / 180;
@@ -61,7 +62,9 @@ const SENSOR_WAIT_MS = 1500;
  * `rig`: 'handheld' | 'tripod' (position locked, pan / tilt only) | 'track' (keeps `target` framed).
  * @typedef {{uuid: string, name: string, aspect: string, sensor: string, source: string,
  *   horizonLock: boolean, speed: number, fov: number, roll: number, smoothing: number,
- *   rig: string, target: string, targetName: string, focus: number|null, aperture: number|null, walk?: boolean, heightLock?: boolean}} FilmUi
+ *   rig: string, target: string, targetName: string, focus: number|null, aperture: number|null, walk?: boolean, heightLock?: boolean,
+ *   motion?: string}} FilmUi
+ * fix-film: `motion` = the picker's choice (remembered per device): tilt | touch | walk | tripod | keys
  */
 /** @type {import('svelte/store').Writable<FilmUi | null>} */
 export const film = writable(null);
@@ -107,7 +110,11 @@ const live = {
 	/** @type {any} */
 	quatFilter: null,
 	/** the marker the live lens is posed on (so the post look reads it) @type {any} */
-	lensObject: null
+	lensObject: null,
+	/** fix-film: false = the motion sensor is ignored (Touch / Keyboard + mouse: drag to look) */
+	useSensor: true,
+	/** fix-film: what drag-to-look turns about when the sensor is ignored (the view at the switch) @type {number[]} */
+	lookBase: IDENTITY.slice()
 };
 
 /** how long a focus pull takes, seconds */
@@ -142,7 +149,7 @@ function screenAngle() {
 
 /** the camera orientation the sensor says right now (no offsets), or null */
 function sensorCamQ() {
-	return live.deviceQ ? cameraQuatFromDevice(live.deviceQ, screenAngle()) : null;
+	return live.deviceQ && live.useSensor ? cameraQuatFromDevice(live.deviceQ, screenAngle()) : null;
 }
 
 /** pitch (radians, + = up) of an orientation's forward @param {number[]} q */
@@ -158,9 +165,9 @@ function rawOrientation() {
 		const q = quatMul(live.offset, camQ);
 		return live.dragYaw ? quatMul(quatAxisAngle([0, 1, 0], live.dragYaw), q) : q;
 	}
-	// touch look: yaw + pitch about the start, no roll (a dragged camera has no reason to tilt)
-	const yaw = yawOf(live.startQ) + live.dragYaw;
-	const pitch = Math.max(-1.5, Math.min(1.5, pitchOf(live.startQ) + live.dragPitch));
+	// touch look: yaw + pitch about the start (or where Touch took over), no roll (a dragged camera has no reason to tilt)
+	const yaw = yawOf(live.lookBase) + live.dragYaw;
+	const pitch = Math.max(-1.5, Math.min(1.5, pitchOf(live.lookBase) + live.dragPitch));
 	return quatNorm(quatMul(quatAxisAngle([0, 1, 0], yaw), quatAxisAngle([1, 0, 0], pitch)));
 }
 
@@ -264,6 +271,8 @@ export async function enableMotion() {
  */
 function frame(camera, uuid) {
 	if (!live.uuid || uuid !== live.uuid) return false;
+	// fix-film: previewing a shot — the camera follows the RECORDED track (the scrub poses the marker)
+	if (previewing) return false;
 	// AR walk: the headset runtime poses the camera, filmWalk feeds walkFrame from the XR frame
 	if (walking) return true;
 	const now = performance.now() / 1000;
@@ -338,6 +347,20 @@ export function setHeightLock(on) {
 
 // ---- V3 AR walk (filmWalk.js drives it) ------------------------------------------------
 let walking = false;
+let previewing = false;
+
+/**
+ * fix-film: preview a recorded shot in the viewfinder — the live pose stands aside, the marker is
+ * no longer skipped by the timeline's prop playback (so a scrub poses it), and the view follows it.
+ * Off again: the live pose takes over from where it was. @param {boolean} on
+ */
+export function setPreviewing(on) {
+	previewing = !!on;
+	if (!live.uuid) return;
+	if (previewing) skipTargets.delete(live.uuid);
+	else skipTargets.add(live.uuid);
+	live.lastT = 0;
+}
 
 /** filmWalk: the session took over (true) or ended (false) @param {boolean} on */
 export function setWalking(on) {
@@ -521,6 +544,9 @@ export function startFilm(uuid) {
 	live.aperture = null;
 	live.trackOffset = null;
 	live.lensObject = null;
+	live.lookBase = live.startQ.slice();
+	const motion = storedMotion();
+	live.useSensor = motion !== 'touch' && motion !== 'keys';
 	const smoothing = Math.min(1, Math.max(0, Number(safeStorage.getItem('film:smoothing') ?? 0.3)));
 	setFilters(smoothing);
 	live.lastT = 0;
@@ -535,7 +561,8 @@ export function startFilm(uuid) {
 		fov: live.fov,
 		roll: live.roll,
 		smoothing,
-		rig: 'handheld',
+		rig: motion === 'tripod' ? 'tripod' : 'handheld',
+		motion,
 		target: '',
 		targetName: '',
 		focus: null,
@@ -563,6 +590,7 @@ export function startFilm(uuid) {
 export function stopFilm(opts = {}) {
 	const uuid = live.uuid;
 	for (const fn of teardown.splice(0)) fn();
+	previewing = false;
 	clearTimeout(sensorTimer);
 	stopSensor();
 	frameListeners.clear();
@@ -622,15 +650,55 @@ export function setLift(v) {
 export function lookDrag(dx, dy, heightPx) {
 	const k = (live.fov * D2R) / Math.max(1, heightPx);
 	live.dragYaw += dx * k;
-	if (!live.deviceQ) live.dragPitch += dy * k;
+	if (!sensorCamQ()) live.dragPitch += dy * k;
 }
 
 /** Recentre: where the phone points now becomes the direction the camera started in. */
 export function recentre() {
 	const camQ = sensorCamQ();
 	if (camQ) live.offset = recentreOffset(camQ, live.startQ);
+	if (!live.useSensor) live.lookBase = live.startQ.slice(); // Touch: back to the marker's heading
 	live.dragYaw = 0;
 	live.dragPitch = 0;
+}
+
+/** the picker's remembered choice on this device ('' = never chosen) */
+function storedMotion() {
+	const v = safeStorage.getItem('film:motion') ?? '';
+	return MOTION_KEYS.includes(v) ? v : '';
+}
+
+/**
+ * fix-film — the motion picker: what moves the view. Tilt reads the sensor; Touch and Keyboard +
+ * mouse ignore it (drag to look); Tripod locks the position (pan / tilt with the sensor or a drag).
+ * The view CONTINUES from where it points (no jump at the switch). Walk is started by FilmMode
+ * (the AR session needs the press). The choice is remembered on this device; the take is unchanged.
+ * @param {string} motion @param {{remember?: boolean}} [opts] remember: false = this time only (a fallback)
+ */
+export function setMotion(motion, opts = {}) {
+	if (!MOTION_KEYS.includes(motion)) return false;
+	const current = drawn?.qBase ?? live.q;
+	const sensor = motion === 'tilt' || motion === 'tripod' || motion === 'walk';
+	if (live.useSensor && !sensor) {
+		// sensor → drag: the drag turns about the view as it is now
+		live.lookBase = levelHorizon(current);
+		live.dragYaw = 0;
+		live.dragPitch = 0;
+	}
+	live.useSensor = sensor;
+	if (sensor) {
+		// drag → sensor: where the phone points now shows what the view showed
+		const camQ = sensorCamQ();
+		if (camQ) live.offset = recentreOffset(camQ, current);
+		live.dragYaw = 0;
+		live.dragPitch = 0;
+	}
+	const ui = get(film);
+	if (motion === 'tripod') setRig('tripod');
+	else if (ui?.rig === 'tripod') setRig('handheld');
+	patchUi({ motion });
+	if (opts.remember !== false) safeStorage.setItem('film:motion', motion);
+	return true;
 }
 
 export function toggleHorizonLock() {
@@ -670,7 +738,7 @@ export function filmDebug() {
 }
 
 // the suites reach the runtime once it loaded (a ROW in DEBUG_HOOKS would pull it into every debug boot)
-registerDebugHook('filmMode', { film, startFilm, stopFilm, setStick, setLift, lookDrag, recentre, toggleHorizonLock, cycleSpeed, placeCamera, filmPose, filmDebug, onFilmFrame, lookHasDof, setHeightLock, setRig, pickAt });
+registerDebugHook('filmMode', { film, startFilm, stopFilm, setMotion, setPreviewing, setStick, setLift, lookDrag, recentre, toggleHorizonLock, cycleSpeed, placeCamera, filmPose, filmDebug, onFilmFrame, lookHasDof, setHeightLock, setRig, pickAt });
 
 // ---- V5 / V8 live controls ------------------------------------------------------------
 
@@ -752,6 +820,11 @@ registerDebugHook('filmLive', { setSmoothing, setFov, setRoll, setAperture, pull
 
 /** the camera Film drew last frame (for tap raycasts) @type {any} */
 let liveCamera = null;
+
+/** fix-film: the camera the viewfinder draws through (the recorder's first-frame thumbnail) */
+export function filmCamera() {
+	return liveCamera;
+}
 const raycaster = new THREE.Raycaster();
 
 /**

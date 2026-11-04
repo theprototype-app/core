@@ -455,3 +455,96 @@ export function formatTake(s) {
 	const sec = v - m * 60;
 	return `${m}:${sec < 10 ? '0' : ''}${sec.toFixed(1)}`;
 }
+
+// ---- fix-film: the motion picker, the walk's view options, the tracking-loss rule (pure) ----
+
+/** what moves Film's view: turn the phone, drag, walk (AR), a locked tripod, or WASD + mouse */
+export const MOTION_KEYS = Object.freeze(['tilt', 'touch', 'walk', 'tripod', 'keys']);
+
+/** @typedef {{key: string, label: string, desc: string, available: boolean, reason: string}} MotionOption */
+
+/**
+ * The picker's choices for this device. `gyro`: true / false / null (not known yet); `ar`: the walk's
+ * entry ('checking' | 'ready' | 'unsupported'); `keyboard`: a fine pointer or a hardware keyboard.
+ * Walk is listed only where AR is (or may yet be) supported; Keyboard + mouse only with a keyboard.
+ * @param {{touch: boolean, gyro: boolean | null, ar: string, keyboard: boolean}} ctx
+ * @returns {MotionOption[]}
+ */
+export function motionOptions(ctx) {
+	/** @type {MotionOption[]} */
+	const out = [
+		{
+			key: 'tilt',
+			label: 'Phone tilt',
+			desc: 'Look around by turning the phone',
+			available: ctx.gyro !== false,
+			reason: ctx.gyro === false ? 'No motion sensor on this device — drag to look instead' : ''
+		},
+		{ key: 'touch', label: 'Touch', desc: 'Drag the picture to look, the stick to move', available: true, reason: '' }
+	];
+	if (ctx.ar !== 'unsupported')
+		out.push({
+			key: 'walk',
+			label: 'Walk',
+			desc: 'AR: the phone tracks your steps — walk to move the camera',
+			available: ctx.ar === 'ready',
+			reason: ctx.ar === 'ready' ? '' : 'Checking for AR…'
+		});
+	out.push({ key: 'tripod', label: 'Tripod', desc: 'Position locked — pan and tilt only', available: true, reason: '' });
+	if (ctx.keyboard) out.push({ key: 'keys', label: 'Keyboard + mouse', desc: 'W A S D to move, drag to look', available: true, reason: '' });
+	return out;
+}
+
+/**
+ * The motion in effect: the chosen one where it can run, else the nearest that can — no gyro turns
+ * Phone tilt into Touch, and a remembered Walk waits for a tap (a session needs one) on the gyro.
+ * @param {string} chosen @param {{gyro: boolean | null, walking: boolean, keyboard: boolean, touch: boolean}} ctx
+ */
+export function effectiveMotion(chosen, ctx) {
+	const fallback = ctx.gyro === false ? (ctx.touch || !ctx.keyboard ? 'touch' : 'keys') : 'tilt';
+	if (ctx.walking) return 'walk';
+	if (chosen === 'tilt') return ctx.gyro === false ? fallback : 'tilt';
+	if (chosen === 'walk') return fallback;
+	if (chosen === 'keys' && !ctx.keyboard) return fallback;
+	return MOTION_KEYS.includes(chosen) ? chosen : fallback;
+}
+
+/** The first choice on a device with nothing remembered: a screen with no touch is driven by keys. @param {{touch: boolean}} ctx */
+export function defaultMotion(ctx) {
+	return ctx.touch ? 'tilt' : 'keys';
+}
+
+/** the pill's words for the mode in effect (`waiting`: a remembered Walk not started yet) @param {string} mode @param {{starting?: boolean, waiting?: boolean}} [s] */
+export function motionLabel(mode, s = {}) {
+	if (s.waiting) return 'Walk · tap to start';
+	const label = { tilt: 'Phone tilt', touch: 'Touch', walk: 'Walk', tripod: 'Tripod', keys: 'Keyboard + mouse' }[mode] ?? 'Touch';
+	return s.starting ? `${label}…` : label;
+}
+
+/** the walk's scale chips: 1 m walked = N m in the scene */
+export const WALK_SCALE_CHIPS = Object.freeze([0.5, 1, 2, 5]);
+
+/** the walk's live view: Off = the scene's own sky (default), On = the scene over the room, Dimmed = the room faint behind */
+export const PASSTHROUGH = Object.freeze([
+	{ key: 'off', label: 'Off', look: 'sky' },
+	{ key: 'on', label: 'On', look: 'room' },
+	{ key: 'dim', label: 'Dimmed', look: 'dim' }
+]);
+
+/** the roomLook (sceneStore) a passthrough choice shows @param {string} key */
+export function passthroughLook(key) {
+	return /** @type {'sky' | 'room' | 'dim'} */ (PASSTHROUGH.find((p) => p.key === key)?.look ?? 'sky');
+}
+
+/** how long tracking may drop before the walk gives up: a take can't wait (it would film a frozen view) */
+export const TRACKING_GRACE_S = Object.freeze({ recording: 0.4, idle: 2 });
+
+/**
+ * The walk's verdict on a tracking gap: 'ok' (tracked), 'wait' (a blip — hold the last pose), or
+ * 'fallback' (pause the take at a Mark, end the session, carry on with the stick).
+ * @param {number} lostForS seconds without a tracked position (0 = tracked) @param {boolean} recording
+ */
+export function trackingVerdict(lostForS, recording) {
+	if (!(lostForS > 0)) return 'ok';
+	return lostForS >= (recording ? TRACKING_GRACE_S.recording : TRACKING_GRACE_S.idle) ? 'fallback' : 'wait';
+}

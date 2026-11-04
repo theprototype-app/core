@@ -108,8 +108,12 @@ export async function buildExtruded(rec, url, profile) {
 	});
 	const bevel = rec.bevel;
 	const bevelOn = bevel.size > 0 && bevel.thickness > 0;
-	// a bevel wider than the thinnest stroke turns letters inside out: keep it under 12% of the em
-	const bevelSize = Math.min(bevel.size, em * 0.12);
+	// a bevel cut INTO the letter wider than half its thinnest stroke turns it inside out (a serif's
+	// hairline is ~4.5% of the em: measured, 64-text-int). So at most 1.5% of the em goes inward and the
+	// rest of the width grows the letter outward; the whole bevel stays under 6% of the em (wider ones
+	// close the counters of a, e, g)
+	const bevelSize = Math.min(bevel.size, em * 0.06);
+	const bevelInset = Math.min(bevelSize, em * 0.015);
 	const geometry = shapes.length
 		? new THREE.ExtrudeGeometry(shapes, {
 				depth: rec.depth,
@@ -118,7 +122,7 @@ export async function buildExtruded(rec, url, profile) {
 				bevelEnabled: bevelOn,
 				bevelSize,
 				bevelThickness: Math.min(bevel.thickness, rec.depth * 2),
-				bevelOffset: bevelOn ? -bevelSize : 0, // the bevel eats into the letter, the outline keeps its size
+				bevelOffset: bevelOn ? -bevelInset : 0, // the face is inset a little, the sides grow by the rest
 				bevelSegments: bevel.segments
 			})
 		: new THREE.BufferGeometry();

@@ -195,6 +195,13 @@ export function summarizeToolCall(tool, args, result, nameOf = () => '') {
 			return 'playtested (' + count(arr(result.steps).length, 'step') + ', ' + count(fired, 'node') + ' fired)';
 		}
 		case 'undo_last': {
+			// 85b R6b: checkpoints
+			if (result.saved && typeof result.checkpoint === 'string') return 'saved checkpoint “' + result.checkpoint.slice(0, 40) + '”';
+			if (result.checkpoints) return null;
+			if (typeof result.restored === 'string') {
+				const n = arr(result.undone).length;
+				return n ? 'went back to checkpoint “' + result.restored.slice(0, 40) + '” (undid ' + count(n, 'call') + ')' : null;
+			}
 			const done = arr(result.undone);
 			if (!done.length) return null; // nothing to undo changed nothing
 			return 'undid ' + (done.length === 1 ? '“' + String(done[0]?.text ?? 'a step').slice(0, 100) + '”' : done.length + ' of its calls');

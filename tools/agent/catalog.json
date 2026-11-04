@@ -2004,7 +2004,7 @@
 		{
 			"name": "undo_last",
 			"title": "Undo your last change",
-			"description": "Take back your own last tool call (count for several, newest first). Use it whenever the person says \"undo that\" or \"take that back\": they may be talking and cannot see each call. Only ever undoes YOUR calls. If someone has since changed the same objects it refuses and lists them, and nothing changes: tell the person who changed what.\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nTake a screenshot after each change to check your work.",
+			"description": "Take back your own last tool call (count for several, newest first). Use it whenever the person says \"undo that\" or \"take that back\": they may be talking and cannot see each call. Only ever undoes YOUR calls. If someone has since changed the same objects it refuses and lists them, and nothing changes: tell the person who changed what. Before a big change, save a checkpoint ({checkpoint: \"before the roof\"}); {restore: \"before the roof\"} goes back to it (up to 10 names).\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -2013,6 +2013,28 @@
 						"minimum": 1,
 						"maximum": 20,
 						"description": "how many of your calls to take back (default 1)"
+					},
+					"checkpoint": {
+						"type": "string",
+						"maxLength": 40,
+						"description": "save this moment under a name (\"before the roof\") to come back to; nothing is undone"
+					},
+					"restore": {
+						"type": "string",
+						"maxLength": 40,
+						"description": "go back to a checkpoint you saved: takes back every one of your calls since it, in one call. With other people here the host is asked first (needsConfirm, then call again with confirmId)"
+					},
+					"checkpoints": {
+						"type": "boolean",
+						"description": "true = list your checkpoints"
+					},
+					"confirmId": {
+						"type": "string",
+						"description": "with restore: the confirmId a needsConfirm answer gave"
+					},
+					"wait": {
+						"type": "number",
+						"description": "with confirmId: seconds to wait for the host's answer (at most 60)"
 					}
 				}
 			},
@@ -5608,7 +5630,7 @@
 			{
 				"name": "undo_last",
 				"title": "Undo your last change",
-				"description": "Take back your own last tool call (count for several, newest first). Use it whenever the person says \"undo that\" or \"take that back\": they may be talking and cannot see each call. Only ever undoes YOUR calls. If someone has since changed the same objects it refuses and lists them, and nothing changes: tell the person who changed what.\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nTake a screenshot after each change to check your work.",
+				"description": "Take back your own last tool call (count for several, newest first). Use it whenever the person says \"undo that\" or \"take that back\": they may be talking and cannot see each call. Only ever undoes YOUR calls. If someone has since changed the same objects it refuses and lists them, and nothing changes: tell the person who changed what. Before a big change, save a checkpoint ({checkpoint: \"before the roof\"}); {restore: \"before the roof\"} goes back to it (up to 10 names).\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -5617,6 +5639,28 @@
 							"minimum": 1,
 							"maximum": 20,
 							"description": "how many of your calls to take back (default 1)"
+						},
+						"checkpoint": {
+							"type": "string",
+							"maxLength": 40,
+							"description": "save this moment under a name (\"before the roof\") to come back to; nothing is undone"
+						},
+						"restore": {
+							"type": "string",
+							"maxLength": 40,
+							"description": "go back to a checkpoint you saved: takes back every one of your calls since it, in one call. With other people here the host is asked first (needsConfirm, then call again with confirmId)"
+						},
+						"checkpoints": {
+							"type": "boolean",
+							"description": "true = list your checkpoints"
+						},
+						"confirmId": {
+							"type": "string",
+							"description": "with restore: the confirmId a needsConfirm answer gave"
+						},
+						"wait": {
+							"type": "number",
+							"description": "with confirmId: seconds to wait for the host's answer (at most 60)"
 						}
 					}
 				},

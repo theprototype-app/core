@@ -14,6 +14,17 @@ vi.mock('$lib/physics', () => ({ physicsShapeChanged: (u) => shapeChanged(u), re
 vi.mock('../../src/lib/physics.js', () => ({ physicsShapeChanged: (u) => shapeChanged(u), remoteSimulating: sim }));
 vi.mock('../../src/lib/ai/tools.js', () => ({ setAiToolObserver: (fn) => (observer = fn) }));
 vi.mock('../../src/lib/agent/agentInbox.js', () => ({ agentInbox: () => ({ state: () => ({}) }) }));
+// 85b R6b: the Allow / Deny question (agent/confirmGate.js) — asked once, then applied on the call with confirmId
+const asked = [];
+vi.mock('$lib/agent/confirmGate.js', () => ({
+	gateScenewide: async (tool, args, change) => {
+		if (args.confirmId === undefined) {
+			asked.push({ tool, summary: change.summary });
+			return { needsConfirm: true, confirmId: 'c1', summary: change.summary };
+		}
+		return change.apply();
+	}
+}));
 vi.mock('$lib/geometries.svelte.js', () => ({
 	createGroup: () => {
 		const g = new THREE.Group();
@@ -208,6 +219,75 @@ describe('undo_last on the A8 recorder', () => {
 		const r = await assistTool('undo_last', {});
 		expect(r.undone?.length).toBe(1);
 		expect(a.position.x).toBe(0);
+	});
+});
+
+describe('85b R6b named checkpoints (undo_last {checkpoint, restore})', () => {
+	beforeEach(() => {
+		recorder.stopAgentRecorder();
+		recorder.startAgentRecorder();
+		asked.length = 0;
+	});
+	const tick = () => new Promise((r) => setTimeout(r, 3));
+
+	it('restore takes back every call since the checkpoint, and only those', async () => {
+		const a = box('A');
+		await moveCall(a, [1, 0, 0]);
+		await tick();
+		expect((await undoLast({ checkpoint: 'before roof' })).saved).toBe(true);
+		await tick();
+		await moveCall(a, [2, 0, 0]);
+		await moveCall(a, [3, 0, 0]);
+		const r = await undoLast({ restore: 'before roof' });
+		expect(r).toMatchObject({ restored: 'before roof', count: 2 });
+		expect(a.position.x).toBe(1);
+		expect(get(agentLog).filter((l) => l.tool === 'update_objects').map((l) => !!l.undone)).toEqual([false, true, true]);
+		// nothing since: a calm answer, no error
+		expect((await undoLast({ restore: 'before roof' })).undone).toEqual([]);
+	});
+
+	it('refuses, whole, when someone edited those objects since; an unknown name lists the real ones', async () => {
+		const a = box('Lamp');
+		await undoLast({ checkpoint: 'cp' });
+		await tick();
+		await moveCall(a, [2, 0, 0]);
+		await tick();
+		notePeerActivity('host', { type: 'color', uuid: a.uuid });
+		const r = await undoLast({ restore: 'cp' });
+		expect(r.refused).toBe(true);
+		expect(r.error).toMatch(/Lamp/);
+		expect(a.position.x).toBe(2);
+		expect((await undoLast({ restore: 'nope' })).error).toMatch(/there are: cp/);
+		expect((await undoLast({ checkpoints: true })).checkpoints.map((c) => c.name)).toEqual(['cp']);
+	});
+
+	it('with other people here the host is asked first; the call with confirmId applies it', async () => {
+		const a = box('A');
+		await undoLast({ checkpoint: 'cp' });
+		await tick();
+		await moveCall(a, [2, 0, 0]);
+		peers.set({ peer: { id: 'agent' }, send: (m) => sent.push(m), openedPeers: new Set(['host']) });
+		const q = await undoLast({ restore: 'cp' });
+		expect(q.needsConfirm).toBe(true);
+		expect(asked[0].summary).toMatch(/checkpoint "cp" \(undo its last 1 change\)/);
+		expect(a.position.x).toBe(2); // nothing yet
+		const r = await undoLast({ restore: 'cp', confirmId: q.confirmId });
+		expect(r.restored).toBe('cp');
+		expect(a.position.x).toBe(0);
+	});
+
+	it('names: 1-40 characters; at most CHECKPOINT_MAX kept, the oldest goes', async () => {
+		expect((await undoLast({ checkpoint: '' })).error).toBeTruthy();
+		expect((await undoLast({ checkpoint: 'x'.repeat(41) })).error).toBeTruthy();
+		for (let i = 0; i <= core.CHECKPOINT_MAX; i++) await undoLast({ checkpoint: 'n' + i });
+		const names = (await undoLast({ checkpoints: true })).checkpoints.map((c) => c.name);
+		expect(names.length).toBe(core.CHECKPOINT_MAX);
+		expect(names[0]).toBe('n1');
+	});
+
+	it('the in-app assistant has no checkpoints', async () => {
+		recorder.stopAgentRecorder();
+		expect((await assistTool('undo_last', { checkpoint: 'x' })).error).toMatch(/agent/);
 	});
 });
 

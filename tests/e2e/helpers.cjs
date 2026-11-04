@@ -855,7 +855,7 @@ const SKIES_DIR = (() => {
 	const fs = require('fs');
 	if (process.env.SKIES_DIR) return path.resolve(process.env.SKIES_DIR);
 	const root = path.resolve(__dirname, '../../..');
-	const lanes = fs.existsSync(root) ? fs.readdirSync(root).filter((d) => /^packs-lane-59-/.test(d)).sort() : [];
+	const lanes = fs.existsSync(root) ? fs.readdirSync(root).filter((d) => /^packs-lane-(72|59)-/.test(d)).sort().reverse() : [];
 	return [path.join(root, 'packs/hdri'), ...lanes.map((d) => path.join(root, d, 'hdri'))].find((d) => fs.existsSync(path.join(d, 'meadow_2_1k.hdr'))) ?? null;
 })();
 /**
@@ -868,7 +868,7 @@ async function routeSkies(target, opts = {}) {
 	const path = require('path');
 	/** @type {string[]} */
 	const hits = [];
-	await target.route(/\/hdri\/[^/?#]+\.hdr(\?.*)?$/, async (/** @type {any} */ route) => {
+	await target.route(/\/hdri\/[^/?#]+\.(hdr|jpg)(\?.*)?$/, async (/** @type {any} */ route) => {
 		const url = route.request().url();
 		// the app's own origin (a custom upload is never fetched by URL; an export's copy is) passes
 		if (url.startsWith(URL)) return route.continue();

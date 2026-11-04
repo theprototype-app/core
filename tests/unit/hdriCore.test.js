@@ -45,7 +45,9 @@ describe('hdriOf', () => {
 			intensity: 1,
 			background: true,
 			blur: 0,
-			toneMapping: 'aces'
+			toneMapping: 'aces',
+			quality: 'auto',
+			minQuality: 'standard'
 		});
 		const h = hdriOf({ hdri: { src: 'bundled:meadow', rotation: -90, intensity: 99, blur: -1, background: false, toneMapping: 'weird' } });
 		expect(h.rotation).toBe(270);

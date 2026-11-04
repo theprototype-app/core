@@ -13,14 +13,16 @@
 
 	const QUALITY = [
 		{ value: 'auto', label: 'Auto' },
-		{ value: 'full', label: 'Full (1k)' },
-		{ value: 'low', label: 'Low (headset)' }
+		{ value: 'low', label: 'Low (headset)' },
+		{ value: 'standard', label: 'Standard (1K)' },
+		{ value: 'high', label: 'High (2K)' },
+		{ value: 'max', label: 'Max (4K)' }
 	];
 </script>
 
 <!-- 36-int-122: the I4 search reads a section's keywords from its root element -->
 <div class="contents" data-keywords={keywords.join(' ')}>
-	<SettingRow id="row-hdri-quality" label="Sky image quality" description="How sharp an HDRI sky and its reflections are here: Full at 1024 px, Low at 512 px (the headset tier). Auto picks Low in a headset or a heavy scene. Peers are unaffected." wide>
+	<SettingRow id="row-hdri-quality" label="Sky image quality" description="How sharp a sky image is on this device. Auto picks by device and connection, and a scene may set its own. Low also softens reflections, for a headset or a heavy scene. Peers are unaffected." wide>
 		<Segmented id="hdri-quality" label="Sky image quality" options={QUALITY} value={$hdriQuality} onchange={(v) => hdriQuality.set(/** @type {any} */ (v))} />
 	</SettingRow>
 </div>

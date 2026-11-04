@@ -1,4 +1,5 @@
 // 36-share (B13) — TOOLS ▸ RECORDING: a turntable / flythrough of the viewport as a webm.
+// 65 M4: run WITHOUT WebCodecs, so this is the live MediaRecorder fallback of the frame-exact export.
 //
 //   1. the viewport menu's Tools ▸ Recording… opens the dialog; a flythrough with < 2 saved views
 //      is refused with the reason, and Start is disabled
@@ -45,7 +46,16 @@ const state = (/** @type {any} */ page) =>
 
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
-	const A = await h.setupPage(browser, 'A', { ...(THEME ? { storage: { theme: THEME } } : {}), context: { viewport: { width: 1280, height: 800 }, acceptDownloads: true } });
+	// 65 M4: the frame-exact export (video-export suite) is the default now; this suite is the LIVE
+	// MediaRecorder take, which is what a browser WITHOUT WebCodecs gets — so it removes WebCodecs
+	const A = await h.setupPage(browser, 'A', {
+		...(THEME ? { storage: { theme: THEME } } : {}),
+		context: { viewport: { width: 1280, height: 800 }, acceptDownloads: true },
+		init: () => {
+			delete (/** @type {any} */ (window).VideoEncoder);
+			delete (/** @type {any} */ (window).VideoFrame);
+		}
+	});
 	const { page } = A;
 
 	// a small scene to film

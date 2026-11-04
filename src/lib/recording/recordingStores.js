@@ -16,7 +16,9 @@ export const recordingOpen = writable(false);
  * @typedef {{status: 'idle'|'preparing'|'recording'|'finishing'|'done'|'error', progress: number,
  *   elapsed: number, duration: number, frames: number, error: string, result: RecordingResult | null}} RecordingState
  * @typedef {{name: string, url: string, blob: Blob, bytes: number, durationMs: number, width: number,
- *   height: number, fps: number, mime: string, itemId: string | null, savedNote: string}} RecordingResult
+ *   height: number, fps: number, mime: string, itemId: string | null, savedNote: string,
+ *   format?: string, frames?: number, exact?: boolean, encoder?: string}} RecordingResult
+ * (65 M4: `format` mp4|webm|gif|webp|png, `frames` written, `exact` = rendered frame by frame)
  */
 
 /** @type {RecordingState} */

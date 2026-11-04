@@ -565,6 +565,10 @@ function detectPhone() {
 	}
 }
 phone = detectPhone();
+/** 68 V9: the export dialog's phone cap reads the same verdict the governor started from */
+export function isPhoneDevice() {
+	return phone;
+}
 // 36 G1: a phone is judged against a 60 Hz panel until its own frames say otherwise
 if (phone) governor.setThresholds(phoneThresholds(60));
 if (phone && get(autoQuality)) {

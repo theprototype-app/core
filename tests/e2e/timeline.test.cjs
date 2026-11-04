@@ -18,6 +18,8 @@
 //      field and an old scene loads with none
 //  11. the phone sheet layout (folded OPPO Find N6 width): narrow header column, finger rows,
 //      no horizontal page scroll
+//  12. (68-int) a property track draws its keys; Smooth keys keeps the times and takes the shake
+//      out (one undo step back); a track kind from a newer version shows a note and survives edits
 //
 // Counterfactual: on v1.38.0 there is no Timeline — step 1 fails (no editor opens).
 // Run: e2e-slot --dev <lane> 5482 -- env APP_URL=https://localhost:5482/ npm run e2e -- timeline
@@ -685,5 +687,50 @@ h.run(async () => {
 	await pa.waitForTimeout(500);
 	await shot(pa, '07-timeline-light.png');
 	await P.ctx.close();
+
+	// ---------- 12. (68-int) a property track's keys, Smooth keys, and a newer version's track ----------
+	const take = await pa.evaluate(() => {
+		const S = window.__stores;
+		const keys = Array.from({ length: 21 }, (_, i) => ({ id: 'k' + i, t: i * 0.25, v: 50 + (i % 2 ? 4 : -4), i: 'linear', h: 'vector', src: 'rec' }));
+		const sid = S.sequences.createSequence('Take 68', {
+			duration: 6,
+			tracks: [
+				{ id: 'tr-fov', kind: 'prop', name: '', target: 'nobody', path: 'camera.fov', type: 'number', keys },
+				{ id: 'tr-new', kind: 'hologram', name: 'Hologram', items: [{ id: 'h1', t: 1, beam: 2 }] }
+			]
+		});
+		return { sid, keys: keys.map((k) => [k.t, k.v]) };
+	});
+	await pa.waitForTimeout(500);
+	const rows = await pa.evaluate(() => ({
+		keys: document.querySelectorAll('.tl-lane[data-track-id="tr-fov"] .tl-key').length,
+		newer: document.querySelector('.tl-lane[data-track-id="tr-new"] .tl-newer')?.textContent || '',
+		addProp: document.querySelectorAll('#timeline-add-prop').length
+	}));
+	h.check(rows.keys === 21, `a property track draws its 21 keys as a row (${rows.keys})`);
+	h.check(/newer version of the app/.test(rows.newer), `a newer version's track is kept with a note, not broken ("${rows.newer.slice(0, 60)}")`);
+	await pa.locator('[data-track-menu="tr-fov"]').click();
+	await pa.locator('[role="menuitem"]', { hasText: 'Smooth keys' }).first().click();
+	await pa.waitForTimeout(400);
+	const smoothed = await pa.evaluate((sid) => {
+		let all = /** @type {any} */ (null);
+		window.__stores.sequences.sequences.subscribe((/** @type {any} */ v) => (all = v))();
+		const tr = all[sid].tracks.find((/** @type {any} */ t) => t.id === 'tr-fov');
+		return { keys: tr.keys.map((/** @type {any} */ k) => [k.t, k.v]), newerKind: all[sid].tracks.find((/** @type {any} */ t) => t.id === 'tr-new')?.kind };
+	}, take.sid);
+	const sameTimes = smoothed.keys.length === take.keys.length && smoothed.keys.every((k, i) => Math.abs(k[0] - take.keys[i][0]) < 1e-9);
+	const wob = (/** @type {number[][]} */ ks) => ks.slice(2, -2).reduce((m, k) => Math.max(m, Math.abs(k[1] - 50)), 0);
+	h.check(sameTimes && wob(smoothed.keys) < wob(take.keys) / 2, `Smooth keys flattens the shake and keeps every key time (±${wob(take.keys)} → ±${wob(smoothed.keys).toFixed(2)})`);
+	h.check(smoothed.newerKind === 'hologram', 'editing the sequence keeps the newer track as it was');
+	await pa.evaluate(() => window.__stores.history.undo());
+	await pa.waitForTimeout(400);
+	const undone = await pa.evaluate((sid) => {
+		let all = /** @type {any} */ (null);
+		window.__stores.sequences.sequences.subscribe((/** @type {any} */ v) => (all = v))();
+		return all[sid].tracks.find((/** @type {any} */ t) => t.id === 'tr-fov').keys.map((/** @type {any} */ k) => k.v);
+	}, take.sid);
+	h.check(JSON.stringify(undone) === JSON.stringify(take.keys.map((k) => k[1])), 'one undo puts the recorded keys back');
+	await shot(pa, '08-property-track.png');
+	h.check(!h.pageErrors(A).length, `no page errors on A after the property track (${h.pageErrors(A).slice(0, 2).join(' | ') || 'none'})`);
 	await h.finish(browser);
 });

@@ -49,6 +49,9 @@ export const TIP_PHONE_MORE = 'phone-more-drag';
 /** 73 AI6: Generate 3D model can start from a picture (retires on the first picture picked) */
 export const TIP_MESH_PICTURE = 'mesh-from-picture';
 
+/** 68: Film mode's first-use how-to (retires on the first take, or its ✕) */
+export const TIP_FILM = 'film-first-use';
+
 /** 85a: Claude can shape, dress and undo now (the Connect Claude row; retires on the first call of one of those tools) */
 export const TIP_AGENT_SHAPES = 'agent-shapes-looks';
 /** the tools that retire it: geometryTools + lookTools + assistTools NAMES minus the look tools that only read (a unit

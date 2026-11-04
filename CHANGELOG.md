@@ -5,6 +5,32 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.58.0 — Film with your phone, share it as a video 🎬
+
+### 📱 Film with your phone
+- **Your phone becomes a scene camera's viewfinder** (More ▸ Film with phone, a camera's menu, or the Inspector's Film button): turn the phone to look around, the stick and ▲▼ move, recentre and horizon lock keep it level. No motion sensor? Drag to look.
+- **● records into the Timeline** while it plays, so animations stay in sync. **❚❚** adds the shot as one undo step; carry on as a **Cut** (a new shot) or a **Move** (the camera flies to the new spot). Retake any shot; 3-2-1 countdown; markers.
+- **Live lens, each recorded as its own track**: zoom (pinch, the rail, 18–85 mm lens snaps), dutch angle, tap to pull focus with an aperture (new **Depth of field** look effect), smoothing, tripod and follow-a-target rigs, thirds / safe / level guides and 16:9, 9:16 and 2.39:1 masks.
+- **Android: Track my movement** — walk to move the camera (walk scale 0.1–20 ×), and a mini-map to jump anywhere.
+- **In a session** everyone sees the filming camera move and can **Watch the shot**; only editors record.
+
+### 🎞 Share as video
+- **Export a video or GIF**: Tools ▸ Recording… (or **Export video** in Film's shots) renders a Timeline, a turntable or a flythrough frame by frame to **MP4, WebM, a GIF or animated WebP loop, or a PNG sequence** with a transparent background. The frame count is exact, however slow the device.
+- It **renders in the background**: a progress bar with the time left and **Cancel**; **Hide** shrinks it to a corner chip while you keep working in the panels.
+- On a phone an export is at most 20 s and 1920 px (a hot phone renders smaller), with the reason when it says no.
+
+### ⏱ Timeline
+- **Property tracks**: the keys of one value (a recorded camera move, its zoom, focus, roll…) show as a row of keys; **Smooth keys** in the track menu takes the handheld shake out and keeps the key times.
+- A track made with a newer version of the app is kept and shared, with a note, instead of being changed into an event track.
+- Scenes with property tracks need 1.58: 1.57 and older show one as an empty event track (and lose its keys if saved there).
+
+### 🌱 Start here
+- **Templates ▸ Film set**: a small stage that keeps moving, and a camera to film it with.
+- A first-use tip in Film mode, and a docs page: **Film with your phone**.
+
+### 🔧 Fixed
+- On a phone, connecting to a session no longer shows "Something went wrong: ResizeObserver loop…" (the connection chip measured itself while it changed size).
+
 ## 1.57.0 — Shared games start fast 🚀
 
 ### ▶ A play view made only for playing

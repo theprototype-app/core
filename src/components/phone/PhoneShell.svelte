@@ -87,6 +87,7 @@
 	import { requestPlay, willEnterXR, willEnterAR, playAsItems } from '$lib/playMode';
 	// 50 R1: the AR table — a phone places the scene on a real table (Android Chrome, WebXR immersive-ar)
 	import { enterArTable, arTableEntry, arPlayItems } from '$lib/arTable';
+	import { openFilm } from '$lib/film/filmState';
 	import { AR_UNSUPPORTED_NOTE } from '$lib/arTableCore.js';
 	import { playHere, playHereItems } from '$lib/playHere'; // 60 Q1
 	import { visibleDockKey, DOCK_TITLES, dockMinimized, dockHeight } from '$lib/bottomDock';
@@ -324,12 +325,23 @@
 			const next = base + CHIP_LABEL_GAP + meas.offsetWidth > room;
 			if (next !== compact) chipCompact = compact = next;
 		};
-		const ro = new ResizeObserver(fit);
+		// 68-int: fit in the NEXT frame, never inside the delivery pass: flipping chipCompact shows or hides the label
+		// INSIDE the observed chip, so the chip resized during its own delivery and Chromium raised "ResizeObserver
+		// loop completed with undelivered notifications" — the error toast on a phone as the peers connected
+		// (measured on the 1.58 preview: #hud-tr + .ps-chip + .ps-chip-measure in the failing pass)
+		let raf = 0;
+		const ro = new ResizeObserver(() => {
+			cancelAnimationFrame(raf);
+			raf = requestAnimationFrame(fit);
+		});
 		ro.observe(wrap);
 		ro.observe(chip);
 		ro.observe(meas);
 		fit();
-		return () => ro.disconnect();
+		return () => {
+			cancelAnimationFrame(raf);
+			ro.disconnect();
+		};
 	});
 
 	// ---- the strip -------------------------------------------------------------------
@@ -585,6 +597,8 @@
 			note: () => ($arTableEntry === 'unsupported' ? AR_UNSUPPORTED_NOTE : $arTableEntry === 'checking' ? 'Checking…' : '')
 		},
 		focus: { label: 'Focus mode', short: 'Focus', icon: 'maximize-2', run: () => enterFocusMode() },
+		// 68 V1: film the scene with the phone (turn it to look, a stick to move, ● to record)
+		film: { label: 'Film with phone', short: 'Film', icon: 'video', hint: 'The phone becomes a scene camera: turn it to look around, record a shot into the Timeline', run: fromMore(() => openFilm()) },
 		// 46 B1: the scene budget for the chosen device (Statistics ▸ Budget picks the device); the dot is its tier
 		budget: {
 			get label() {

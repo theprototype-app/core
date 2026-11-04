@@ -52,7 +52,8 @@ describe('normalizeTextPath', () => {
 	it('defaults for garbage, clamps and types every field', () => {
 		const d = normalizeTextPath(null);
 		expect(d.text).toBe(TEXT_PATH_DEFAULTS.text);
-		expect(d.path.kind).toBe('arc');
+		expect(d.path.kind).toBe('none'); // 64-text: a plain block of text by default
+		expect(d.mode).toBe('flat');
 		const r = normalizeTextPath({ text: 42, font: 'comic', size: -3, color: 'red', spacing: 99, align: 'justify', side: 'up', orient: 'x', offset: 7, path: { kind: 'spiral', radius: 1e9, sweep: 0 } });
 		expect(r.text).toBe(TEXT_PATH_DEFAULTS.text);
 		expect(r.font).toBe('sans');
@@ -63,14 +64,14 @@ describe('normalizeTextPath', () => {
 		expect(r.side).toBe('left');
 		expect(r.orient).toBe('auto');
 		expect(r.offset).toBe(1);
-		expect(r.path).toMatchObject({ kind: 'arc', radius: 100, sweep: 5 });
+		expect(r.path).toMatchObject({ kind: 'none', radius: 100, sweep: 5 });
 	});
 	it('caps the text by code points and keeps only real fonts', () => {
 		expect(Array.from(normalizeTextPath({ text: '😀'.repeat(MAX_TEXT + 9) }).text).length).toBe(MAX_TEXT);
 		for (const f of TEXT_FONTS) expect(normalizeTextPath({ font: f.id }).font).toBe(f.id);
 	});
-	it('a link without a target falls back to the default curve', () => {
-		expect(normalizeTextPath({ path: { kind: 'object' } }).path.kind).toBe('arc');
+	it('a link without a target falls back to a straight line', () => {
+		expect(normalizeTextPath({ path: { kind: 'object' } }).path.kind).toBe('line');
 		expect(normalizeTextPath({ path: { kind: 'object', target: 'abc' } }).path).toMatchObject({ kind: 'object', target: 'abc' });
 	});
 	it('letters: valid indices only, untouched fields dropped, empty styles gone', () => {

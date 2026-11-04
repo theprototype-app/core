@@ -33,7 +33,10 @@ const TEXT_OUT = path.join(__dirname, '..', 'static', 'fonts', 'text');
 const TEXT_FONTS = [
 	'@fontsource/ibm-plex-sans@5.1.0/files/ibm-plex-sans-latin-400-normal.woff',
 	'@fontsource/ibm-plex-mono@5.1.0/files/ibm-plex-mono-latin-500-normal.woff',
-	'@fontsource/press-start-2p@5.1.0/files/press-start-2p-latin-400-normal.woff'
+	'@fontsource/press-start-2p@5.1.0/files/press-start-2p-latin-400-normal.woff',
+	// 64-text TX3: the serif and rounded families of the bundled five (OFL)
+	'@fontsource/noto-serif@5.1.0/files/noto-serif-latin-400-normal.woff',
+	'@fontsource/nunito@5.1.0/files/nunito-latin-400-normal.woff'
 ];
 
 /** @param {string} rel */

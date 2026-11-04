@@ -25,37 +25,98 @@
 // layer (`mergeLetterStyles`) — it never writes the record, so an animation neither replicates
 // nor lands in undo; determinism comes from the synced clock it is driven by.
 
-export const TEXT_PATH_VERSION = 1;
-/** the longest text one object holds (the record rides every save and the wire) */
-export const MAX_TEXT = 500;
+export const TEXT_PATH_VERSION = 2;
+/** the longest text one object holds (the record rides every save and the wire); the per-device
+ * caps below are lower (64-text TX6) */
+export const MAX_TEXT = 2000;
 /** the most styled letters one record keeps */
 export const MAX_STYLED = 500;
 /** where the bundled font files live, relative to the app's base (scripts/fetch-troika-fonts.cjs) */
 export const TEXT_FONTS_PATH = 'fonts/text';
+/** where an extruded text's font file is looked up (TEXT_FONTS[].solid is relative to it) */
+export const SOLID_FONTS_PATH = 'fonts';
 
 /**
- * The font list: Noto Sans (troika's own resolver: every script, bold and italic) and the three
- * families the app's interface already ships, as WOFF copies (troika cannot read WOFF2).
- * A glyph a file lacks falls back to the resolver, so no text ever renders as boxes.
- * @type {ReadonlyArray<{id: string, label: string, file: string | null}>}
+ * The bundled fonts (64-text TX3: sans / serif / mono / rounded / display, all OFL, fetched only
+ * when a text uses them — never in the first load). 'sans' is Noto Sans through troika's own
+ * resolver (every script, bold and italic) for FLAT text; extruded text needs one concrete file
+ * per face (`solid`, read by opentype.js), so it carries one. A glyph a file lacks falls back to
+ * the resolver in flat text, so no text ever renders as boxes; extruded text skips it.
+ * WOFF, not WOFF2: troika and opentype.js cannot read WOFF2. `file` is under TEXT_FONTS_PATH, `solid`
+ * under SOLID_FONTS_PATH (the sans face reuses the resolver's own Latin Noto Sans: no new bytes).
+ * @type {ReadonlyArray<{id: string, label: string, kind: string, file: string | null, solid: string}>}
  */
 export const TEXT_FONTS = Object.freeze([
-	Object.freeze({ id: 'sans', label: 'Noto Sans', file: null }),
-	Object.freeze({ id: 'plex-sans', label: 'IBM Plex Sans', file: 'ibm-plex-sans-latin-400-normal.woff' }),
-	Object.freeze({ id: 'plex-mono', label: 'IBM Plex Mono', file: 'ibm-plex-mono-latin-500-normal.woff' }),
-	Object.freeze({ id: 'pixel', label: 'Press Start 2P', file: 'press-start-2p-latin-400-normal.woff' })
+	Object.freeze({ id: 'sans', label: 'Noto Sans', kind: 'sans', file: null, solid: 'unicode-font-resolver/font-files/latin/sans-serif.normal.400.woff' }),
+	Object.freeze({ id: 'serif', label: 'Noto Serif', kind: 'serif', file: 'noto-serif-latin-400-normal.woff', solid: 'text/noto-serif-latin-400-normal.woff' }),
+	Object.freeze({ id: 'plex-mono', label: 'IBM Plex Mono', kind: 'mono', file: 'ibm-plex-mono-latin-500-normal.woff', solid: 'text/ibm-plex-mono-latin-500-normal.woff' }),
+	Object.freeze({ id: 'rounded', label: 'Nunito', kind: 'rounded', file: 'nunito-latin-400-normal.woff', solid: 'text/nunito-latin-400-normal.woff' }),
+	Object.freeze({ id: 'pixel', label: 'Press Start 2P', kind: 'display', file: 'press-start-2p-latin-400-normal.woff', solid: 'text/press-start-2p-latin-400-normal.woff' }),
+	Object.freeze({ id: 'plex-sans', label: 'IBM Plex Sans', kind: 'sans', file: 'ibm-plex-sans-latin-400-normal.woff', solid: 'text/ibm-plex-sans-latin-400-normal.woff' })
 ]);
 
+/** 64-text: how the text is drawn — flat letters (troika SDF) or solid extruded ones */
+export const TEXT_MODES = Object.freeze(['flat', 'extruded']);
+/** 64-text: where a block of text sits around the object's origin (the 9-grid) */
+export const TEXT_ANCHORS = Object.freeze([
+	'top-left', 'top-center', 'top-right',
+	'middle-left', 'middle-center', 'middle-right',
+	'bottom-left', 'bottom-center', 'bottom-right'
+]);
+export const TEXT_QUALITIES = Object.freeze(['low', 'medium', 'high']);
+/** curve segments per glyph curve for each quality (extruded) */
+export const QUALITY_SEGMENTS = Object.freeze({ low: 3, medium: 6, high: 12 });
+
+/**
+ * 64-text TX6: characters one text object may hold, per device profile and mode. Extruded text
+ * is real geometry (hundreds of triangles a letter), so its caps are lower; a phone or a
+ * headset ('low') is lower still. A writer is refused past ITS device's cap (`textCapCheck`);
+ * a low device showing a longer text from a desktop peer draws only its cap.
+ */
+export const TEXT_CAPS = Object.freeze({
+	desktop: Object.freeze({ flat: 2000, extruded: 300 }),
+	low: Object.freeze({ flat: 500, extruded: 80 })
+});
+
+/** @param {string} mode @param {string} profile 'desktop' | 'low' */
+export function textCharCap(mode, profile) {
+	const p = TEXT_CAPS[profile === 'low' ? 'low' : 'desktop'];
+	return mode === 'extruded' ? p.extruded : p.flat;
+}
+
+/**
+ * Would this record be refused on this device? Characters, not UTF-16 units.
+ * @param {any} rec a normalized record @param {string} profile
+ * @returns {{ok: true} | {ok: false, cap: number, count: number, message: string}}
+ */
+export function textCapCheck(rec, profile) {
+	const count = Array.from(rec?.text ?? '').length;
+	const mode = rec?.mode === 'extruded' ? 'extruded' : 'flat';
+	const cap = textCharCap(mode, profile);
+	if (count <= cap) return { ok: true };
+	const where = profile === 'low' ? ' on this device' : '';
+	return {
+		ok: false,
+		cap,
+		count,
+		message: `That text is too long: ${mode === 'extruded' ? 'solid (extruded)' : 'flat'} text holds up to ${cap} characters${where} (this has ${count}). Split it into more than one text, or make it flat.`
+	};
+}
+
 /** @type {ReadonlyArray<string>} */
-export const PATH_KINDS = Object.freeze(['line', 'arc', 'circle', 'wave', 'object']);
+export const PATH_KINDS = Object.freeze(['none', 'line', 'arc', 'circle', 'wave', 'object']);
 export const ALIGNS = Object.freeze(['start', 'center', 'end', 'fit']);
 export const ORIENTS = Object.freeze(['auto', 'flat', 'upright']);
 
 /** @typedef {{color?: string, size?: number, dx?: number, dy?: number, rot?: number}} LetterStyle */
 /** @typedef {{kind: string, length: number, radius: number, sweep: number, amplitude: number, wavelength: number, target: string | null}} TextPathCurve */
-/** @typedef {{v: number, text: string, font: string, bold: boolean, italic: boolean, size: number, color: string,
- *   spacing: number, lineHeight: number, outline: number, outlineColor: string, path: TextPathCurve, offset: number,
- *   align: string, side: string, orient: string, shift: number, letters: Record<string, LetterStyle>}} TextPathRecord */
+/** @typedef {{size: number, thickness: number, segments: number}} TextBevel */
+/** @typedef {{v: number, text: string, font: string, fontAsset: string | null, fontName: string, bold: boolean, italic: boolean,
+ *   size: number, color: string, spacing: number, lineHeight: number, outline: number, outlineColor: string,
+ *   path: TextPathCurve, offset: number, align: string, side: string, orient: string, shift: number,
+ *   letters: Record<string, LetterStyle>, mode: string, maxWidth: number, anchor: string, depth: number,
+ *   bevel: TextBevel, quality: string, sideColor: string | null, emissive: number, metalness: number,
+ *   roughness: number}} TextPathRecord */
 
 export const TEXT_PATH_DEFAULTS = Object.freeze({
 	v: TEXT_PATH_VERSION,
@@ -69,14 +130,42 @@ export const TEXT_PATH_DEFAULTS = Object.freeze({
 	lineHeight: 1.2, // em
 	outline: 0, // em
 	outlineColor: '#000000',
-	path: Object.freeze({ kind: 'arc', length: 4, radius: 2, sweep: 180, amplitude: 0.3, wavelength: 2, target: null }),
+	// 64-text: 'none' = a plain block of text (wraps at maxWidth, sits on its anchor); the curves
+	// are text on a path (Add ▸ Text ▸ Text on a path sets 'arc')
+	path: Object.freeze({ kind: 'none', length: 4, radius: 2, sweep: 180, amplitude: 0.3, wavelength: 2, target: null }),
 	offset: 0, // fraction of the path length, -1..1, added to the alignment's start
 	align: 'center',
 	side: 'left', // SVG 2 `side`: 'right' runs the path backwards, putting the text on its other side
 	orient: 'auto',
 	shift: 0, // m, baseline distance from the path (positive = away from it, on the letters' up side)
-	letters: Object.freeze({})
+	letters: Object.freeze({}),
+	// ---- 64-text: the ONE text object ----
+	mode: 'flat',
+	fontAsset: null, // a Library font's content hash (user upload / Google Fonts); wins over `font`
+	fontName: '', // its family name, for the missing-font notice and the Inspector
+	maxWidth: 0, // m; 0 = no wrapping (block text only)
+	anchor: 'middle-center',
+	depth: 0.1, // m (extruded)
+	bevel: Object.freeze({ size: 0.006, thickness: 0.01, segments: 2 }), // m; size 0 = no bevel
+	quality: 'medium',
+	sideColor: null, // extruded sides; null = the face colour, a shade darker
+	emissive: 0, // glow, 0..4 (extruded: the face colour lights itself)
+	metalness: 0,
+	roughness: 0.5
 });
+
+/** @param {any} raw @returns {TextBevel} */
+export function normalizeBevel(raw) {
+	const r = raw && typeof raw === 'object' ? raw : {};
+	const d = TEXT_PATH_DEFAULTS.bevel;
+	return {
+		size: clampNum(r.size, d.size, 0, 1),
+		thickness: clampNum(r.thickness, d.thickness, 0, 1),
+		segments: Math.round(clampNum(r.segments, d.segments, 1, 8))
+	};
+}
+
+const HASH_RE = /^[A-Za-z0-9_-]{8,128}$/;
 
 /** @param {any} v @param {number} d @param {number} lo @param {number} hi */
 const clampNum = (v, d, lo, hi) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);
@@ -153,7 +242,13 @@ export function normalizeTextPath(raw) {
 	const text = typeof r.text === 'string' ? Array.from(r.text).slice(0, MAX_TEXT).join('') : d.text;
 	const path = normalizeCurve(r.path);
 	// a link with no target is no link
-	if (path.kind === 'object' && !path.target) path.kind = d.path.kind;
+	if (path.kind === 'object' && !path.target) path.kind = 'line';
+	// a v1 record (64 D2, never released) had no 'none' and always a curve: keep it on its curve
+	let mode = oneOf(r.mode, TEXT_MODES, d.mode);
+	// extruded text on a path is out of scope: such a record stays flat (setTextPathFor refuses
+	// the switch with a message, this is the boundary's rule for anything else)
+	if (path.kind !== 'none') mode = 'flat';
+	const fontAsset = typeof r.fontAsset === 'string' && HASH_RE.test(r.fontAsset) ? r.fontAsset : null;
 	return {
 		v: TEXT_PATH_VERSION,
 		text,
@@ -172,9 +267,24 @@ export function normalizeTextPath(raw) {
 		side: r.side === 'right' ? 'right' : 'left',
 		orient: oneOf(r.orient, ORIENTS, d.orient),
 		shift: clampNum(r.shift, d.shift, -50, 50),
-		letters: normalizeLetters(r.letters, text.length)
+		letters: normalizeLetters(r.letters, text.length),
+		mode,
+		fontAsset,
+		fontName: fontAsset && typeof r.fontName === 'string' ? r.fontName.replace(/[\u0000-\u001f]/g, '').slice(0, 80) : '',
+		maxWidth: clampNum(r.maxWidth, d.maxWidth, 0, 500),
+		anchor: oneOf(r.anchor, TEXT_ANCHORS, d.anchor),
+		depth: clampNum(r.depth, d.depth, 0.001, 50),
+		bevel: normalizeBevel(r.bevel),
+		quality: oneOf(r.quality, TEXT_QUALITIES, d.quality),
+		sideColor: typeof r.sideColor === 'string' && HEX.test(r.sideColor) ? r.sideColor.toLowerCase() : null,
+		emissive: clampNum(r.emissive, d.emissive, 0, 4),
+		metalness: clampNum(r.metalness, d.metalness, 0, 1),
+		roughness: clampNum(r.roughness, d.roughness, 0, 1)
 	};
 }
+
+/** a block text (no path) rather than text on a path @param {any} rec */
+export const isBlockText = (rec) => rec?.path?.kind === 'none';
 
 /** @param {any} o */
 export function isTextPathObject(o) {
@@ -223,7 +333,7 @@ export function remapLetters(before, after, letters) {
 export function builtinPolyline(curve) {
 	const c = normalizeCurve(curve);
 	const normal = [0, 0, 1];
-	if (c.kind === 'line' || c.kind === 'object') {
+	if (c.kind === 'line' || c.kind === 'object' || c.kind === 'none') {
 		return { points: [[-c.length / 2, 0, 0], [c.length / 2, 0, 0]], closed: false, normal };
 	}
 	if (c.kind === 'wave') {

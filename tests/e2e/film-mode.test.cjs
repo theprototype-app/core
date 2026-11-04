@@ -555,6 +555,8 @@ h.run(async () => {
 	h.check(near(p.fov, fovFor(14), 0.5), `the bottom of the rail is the widest lens (fov ${p.fov.toFixed(1)})`);
 	// a two-finger pinch on the picture zooms in focal ratio (synthetic pointers)
 	await pg.locator('.film-lens[data-mm="24"]').click();
+	// the pinch reads the lens it starts from: wait for the 24 mm chip to land (a fast GPU slot pinched from 14 mm)
+	for (let i = 0; i < 40 && !near((await pose(pg)).fov, fovFor(24), 0.05); i++) await pg.waitForTimeout(50);
 	await pg.evaluate(() => {
 		const el = document.getElementById('film-look');
 		const ev = (type, id, x, y) => el.dispatchEvent(new PointerEvent(type, { pointerId: id, clientX: x, clientY: y, bubbles: true, pointerType: 'touch', isPrimary: id === 11 }));
@@ -564,7 +566,7 @@ h.run(async () => {
 		ev('pointerup', 12, 800, 400);
 		ev('pointerup', 11, 600, 400);
 	});
-	p = await pose(pg);
+	for (let i = 0; i < 40 && !near((p = await pose(pg)).fov, fovFor(50), 0.05); i++) await pg.waitForTimeout(50);
 	h.check(near(p.fov, fovFor(50), 0.05), `pinching apart 2× doubles the focal length and snaps to 50 mm (fov ${p.fov.toFixed(2)})`);
 	await pg.locator('.film-lens[data-mm="35"]').click();
 

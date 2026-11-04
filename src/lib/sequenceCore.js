@@ -21,14 +21,31 @@
 //             playhead crosses `t`; `dur` is ignored
 // Unknown fields RIDE THROUGH every normalize (the hudSync rule): a newer peer's field
 // survives an older peer's edit of the same document.
+//
+// 68 — PROPERTY tracks (the one keyframe model, curveCore.js):
+//   Track = { id, kind: 'prop', name, muted, target: uuid, path, type, keys: Key[], raw?, items: [] }
+//   `path` is a key into the allowlisted registry (propTracks.js); `type` is the curve type
+//   the path animates with; `keys` are curveCore keys in SEQUENCE seconds; `raw` is the
+//   content-addressed recording a take was reduced from (RawRef, rides through). A prop
+//   track has no items; shots, crossings and live items skip it.
+// 68 — UNKNOWN track kinds are kept OPAQUE (they used to coerce to `event`, so an older peer
+// editing a sequence would have broken a newer peer's track). Only id/name/muted/items are
+// made safe; the rest rides through verbatim, and the player and editor skip the track.
 
-export const TRACK_KINDS = /** @type {const} */ (['camera', 'anim', 'audio', 'event']);
+import { normalizeCurve, isCurveType, sampleCurve } from './curveCore.js';
+
+export const TRACK_KINDS = /** @type {const} */ (['camera', 'anim', 'audio', 'event', 'prop']);
+
+/** The kinds the editor's Add-track menu offers (a prop track is made by recording or by
+ *  "Animate a property", which pick its target and path). */
+export const ADDABLE_KINDS = /** @type {const} */ (['camera', 'anim', 'audio', 'event']);
 
 export const TRACK_LABELS = /** @type {Record<string, string>} */ ({
 	camera: 'Camera',
 	anim: 'Animation',
 	audio: 'Audio',
-	event: 'Event'
+	event: 'Event',
+	prop: 'Property'
 });
 
 export const DEFAULT_DURATION = 10;
@@ -105,6 +122,31 @@ export function normalizeItem(kind, raw) {
 /** @param {any} raw @returns {any} */
 export function normalizeTrack(raw) {
 	const r = raw && typeof raw === 'object' ? raw : {};
+	if (typeof r.kind === 'string' && r.kind && !isTrackKind(r.kind)) {
+		// a newer peer's kind: opaque, kept verbatim (its items are not ours to normalize)
+		return {
+			...r,
+			id: str(r.id) || newId('tr'),
+			name: str(r.name) || r.kind,
+			muted: !!r.muted,
+			items: Array.isArray(r.items) ? r.items : []
+		};
+	}
+	if (r.kind === 'prop') {
+		const type = isCurveType(r.type) ? r.type : 'number';
+		return {
+			...r,
+			id: str(r.id) || newId('tr'),
+			kind: 'prop',
+			name: str(r.name) || TRACK_LABELS.prop,
+			muted: !!r.muted,
+			target: str(r.target),
+			path: str(r.path),
+			type,
+			keys: normalizeCurve(type, r.keys),
+			items: []
+		};
+	}
 	const kind = isTrackKind(r.kind) ? r.kind : 'event';
 	const items = (Array.isArray(r.items) ? r.items : []).map((/** @type {any} */ it) =>
 		normalizeItem(kind, it)
@@ -201,6 +243,8 @@ export function crossedStarts(seq, prev, now, kind) {
 	if (!(now > prev)) return out;
 	for (const track of seq?.tracks ?? []) {
 		if (track.muted) continue;
+		// a prop track has no items, and an opaque (newer) kind's items are not ours to fire
+		if (track.kind === 'prop' || !isTrackKind(track.kind)) continue;
 		if (kind && track.kind !== kind) continue;
 		for (const item of track.items) if (item.t > prev && item.t <= now) out.push({ item, track });
 	}
@@ -237,12 +281,35 @@ export function playheadAt(seq, elapsed, from = 0) {
 	return raw >= dur ? { t: dur, done: true, wraps: 0 } : { t: raw, done: false, wraps: 0 };
 }
 
-/** The furthest any item reaches — the editor offers to grow the duration to it. @param {any} seq */
+/** The furthest any item (or property key) reaches — the editor offers to grow the duration to it. @param {any} seq */
 export function contentEnd(seq) {
 	let end = 0;
-	for (const track of seq?.tracks ?? [])
-		for (const item of track.items) end = Math.max(end, item.t + item.dur);
+	for (const track of seq?.tracks ?? []) {
+		for (const item of track.items ?? []) end = Math.max(end, item.t + (Number(item.dur) || 0));
+		if (track.kind === 'prop' && track.keys?.length) end = Math.max(end, track.keys[track.keys.length - 1].t);
+	}
 	return end;
+}
+
+/**
+ * 68: what every unmuted PROPERTY track says at time t — the player writes these onto
+ * their targets. `skip` = target uuids to leave alone (Film mode's live camera).
+ * @param {any} seq @param {number} t @param {Set<string>} [skip]
+ * @returns {{track: any, target: string, path: string, type: string, value: any}[]}
+ */
+export function propsAt(seq, t, skip) {
+	const out = [];
+	for (const track of seq?.tracks ?? []) {
+		if (track.kind !== 'prop' || track.muted || !track.target || !track.path || !track.keys?.length) continue;
+		if (skip?.has(track.target)) continue;
+		out.push({ track, target: track.target, path: track.path, type: track.type, value: sampleCurve(track.type, track.keys, t) });
+	}
+	return out;
+}
+
+/** The prop track animating `path` on `target`, if any. @param {any} seq @param {string} target @param {string} path */
+export function propTrackOf(seq, target, path) {
+	return seq?.tracks?.find((/** @type {any} */ tr) => tr.kind === 'prop' && tr.target === target && tr.path === path) ?? null;
 }
 
 // ---- snapping -----------------------------------------------------------------
@@ -280,12 +347,14 @@ export function snapTargets(seq, exclude, playhead) {
 	/** @type {number[]} */
 	const out = [0, num(seq?.duration, DEFAULT_DURATION)];
 	if (typeof playhead === 'number') out.push(playhead);
-	for (const track of seq?.tracks ?? [])
-		for (const item of track.items) {
+	for (const track of seq?.tracks ?? []) {
+		for (const item of track.items ?? []) {
 			if (exclude?.has(item.id)) continue;
 			out.push(item.t);
 			if (item.dur > 0) out.push(item.t + item.dur);
 		}
+		if (track.kind === 'prop') for (const key of track.keys ?? []) if (!exclude?.has(key.id)) out.push(key.t);
+	}
 	return out;
 }
 

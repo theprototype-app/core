@@ -3,9 +3,10 @@
 	import { OrbitControls } from '@threlte/extras';
 	import * as THREE from 'three';
 	import { objectsGroup, TControls } from '../stores/sceneStore';
-	import { cameraPreview, writeBackPose, previewOrbit, seatOrbitBehind, previewPoseOverride } from '$lib/cameraPreview';
+	import { cameraPreview, writeBackPose, previewOrbit, seatOrbitBehind, previewPoseOverride, applyMarkerLens } from '$lib/cameraPreview';
 	import { cameraSpec, aspectRatio, syncCameraToObject } from '$lib/cameraObjects';
 	import { safeStorage } from '$lib/safeStorage';
+	import { filmCameraMount } from '$lib/film/filmState';
 
 	// 16-P5: while a camera OBJECT is previewed, THIS is the render camera — a real
 	// perspective/orthographic camera (`makeDefault`, so threlte's `camera.current`
@@ -64,6 +65,8 @@
 		object.matrixWorld.decompose(pos, quat, scale);
 		cameraRef.position.copy(pos);
 		cameraRef.quaternion.copy(quat);
+		// 68: a marker's fov / dutch roll (prop tracks, Film takes) reach the lens here
+		applyMarkerLens(cameraRef, object);
 	});
 
 	// a previewed camera must not also be gizmo-attached (dragging the marker while
@@ -90,6 +93,8 @@
 </script>
 
 {#if $cameraPreview && spec}
+	<!-- 68 V3: the camera's own mount — identity, except during Film's AR walk (filmState.filmCameraMount) -->
+	<T.Group bind:ref={$filmCameraMount} name="preview-camera-mount">
 	{#if spec.kind === 'orthographic'}
 		<T.OrthographicCamera
 			makeDefault
@@ -121,4 +126,5 @@
 			{/if}
 		</T.PerspectiveCamera>
 	{/if}
+	</T.Group>
 {/if}

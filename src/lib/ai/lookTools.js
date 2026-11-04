@@ -117,8 +117,14 @@ export async function fetchTextureUrl(url, fetcher = fetch) {
 	}
 }
 
-/** @param {string} url @param {typeof fetch} fetcher @param {AbortSignal} signal @returns {Promise<{bytes: Uint8Array, type: string, name: string} | {error: string}>} */
-async function readTexture(url, fetcher, signal) {
+/**
+ * 85-world: the URL rules as one reader, for textures and (W6) sounds — CORS fetch with no credentials and no
+ * referrer, the address it LANDED on checked again, a size cap read as it streams. The bytes are not believed:
+ * the caller sniffs them.
+ * @param {string} url @param {typeof fetch} fetcher @param {AbortSignal} signal @param {number} [max]
+ * @returns {Promise<{bytes: Uint8Array, name: string} | {error: string}>}
+ */
+export async function readHttpsBytes(url, fetcher, signal, max = URL_MAX_BYTES) {
 	/** @type {Response} */
 	let res;
 	try {
@@ -133,7 +139,7 @@ async function readTexture(url, fetcher, signal) {
 		if (!landed.ok) return { error: 'it redirected somewhere that is not fetched: ' + landed.error };
 	}
 	const declared = Number(res.headers.get('content-length'));
-	if (declared > URL_MAX_BYTES) return { error: 'it is ' + Math.round(declared / 1048576) + ' MB — the limit is ' + URL_MAX_BYTES / 1048576 + ' MB' };
+	if (declared > max) return { error: 'it is ' + Math.round(declared / 1048576) + ' MB — the limit is ' + max / 1048576 + ' MB' };
 	const reader = res.body?.getReader?.();
 	/** @type {Uint8Array[]} */
 	const parts = [];
@@ -143,15 +149,15 @@ async function readTexture(url, fetcher, signal) {
 			const { done, value } = await reader.read();
 			if (done) break;
 			total += value.length;
-			if (total > URL_MAX_BYTES) {
+			if (total > max) {
 				void reader.cancel();
-				return { error: 'it is over the ' + URL_MAX_BYTES / 1048576 + ' MB limit' };
+				return { error: 'it is over the ' + max / 1048576 + ' MB limit' };
 			}
 			parts.push(value);
 		}
 	} else {
 		const whole = new Uint8Array(await res.arrayBuffer());
-		if (whole.length > URL_MAX_BYTES) return { error: 'it is over the ' + URL_MAX_BYTES / 1048576 + ' MB limit' };
+		if (whole.length > max) return { error: 'it is over the ' + max / 1048576 + ' MB limit' };
 		parts.push(whole);
 		total = whole.length;
 	}
@@ -161,17 +167,24 @@ async function readTexture(url, fetcher, signal) {
 		bytes.set(part, at);
 		at += part.length;
 	}
-	const type = sniffImageType(bytes);
-	if (!type || !URL_IMAGE_TYPES.includes(type)) return { error: 'it is not an image this app reads (PNG, JPEG, WebP, GIF, AVIF)' };
-	const tail = new URL(res.url || url).pathname.split('/').pop() || 'texture';
+	const tail = new URL(res.url || url).pathname.split('/').pop() || 'file';
 	let plain = tail;
 	try {
 		plain = decodeURIComponent(tail);
 	} catch {
 		/* a stray % in the path: keep it as it is */
 	}
-	const name = plain.replace(/[^\w.\- ]+/g, '_').slice(0, 80) || 'texture';
-	return { bytes, type, name: /\.[a-z0-9]{2,5}$/i.test(name) ? name : name + '.' + type.split('/')[1] };
+	return { bytes, name: plain.replace(/[^\w.\- ]+/g, '_').slice(0, 80) };
+}
+
+/** @param {string} url @param {typeof fetch} fetcher @param {AbortSignal} signal @returns {Promise<{bytes: Uint8Array, type: string, name: string} | {error: string}>} */
+async function readTexture(url, fetcher, signal) {
+	const got = await readHttpsBytes(url, fetcher, signal);
+	if ('error' in got) return got;
+	const type = sniffImageType(got.bytes);
+	if (!type || !URL_IMAGE_TYPES.includes(type)) return { error: 'it is not an image this app reads (PNG, JPEG, WebP, GIF, AVIF)' };
+	const name = got.name || 'texture';
+	return { bytes: got.bytes, type, name: /\.[a-z0-9]{2,5}$/i.test(name) ? name : name + '.' + type.split('/')[1] };
 }
 
 /**
@@ -1257,16 +1270,21 @@ export const LOOK_AI_TOOLS = [
 					opacity: { type: 'number', minimum: 0, maximum: 1, description: 'below 1 also turns transparent on' },
 					transparent: { type: 'boolean' },
 					params: { type: 'object', description: 'any other material number, e.g. {"clearcoat": 1, "transmission": 0.9, "ior": 1.5} (those need type MeshPhysicalMaterial)' },
+					pattern: {
+						description:
+							'85b: a procedural albedo texture by name — wood, planks, brick, tiles, marble, stone, concrete, metal, grass, sand, fabric, checker, stripes, noise — or {name, colors: [dark, light], scale, seed, size}; it becomes a library image first'
+					},
+					patternScale: { type: 'number', description: 'with pattern: how many times it repeats across each face (e.g. 4 for a floor)' },
 					maps: {
 						type: 'object',
-						description: 'texture slots, each a library image hash, an https URL, or null to clear',
+						description: 'texture slots, each a library image hash, an https URL, {pattern: name} (a procedural texture), or null to clear',
 						properties: {
-							albedo: { type: ['string', 'null'] },
-							normal: { type: ['string', 'null'] },
-							roughness: { type: ['string', 'null'] },
-							metalness: { type: ['string', 'null'] },
-							emissive: { type: ['string', 'null'] },
-							ao: { type: ['string', 'null'] }
+							albedo: { type: ['string', 'object', 'null'] },
+							normal: { type: ['string', 'object', 'null'] },
+							roughness: { type: ['string', 'object', 'null'] },
+							metalness: { type: ['string', 'object', 'null'] },
+							emissive: { type: ['string', 'object', 'null'] },
+							ao: { type: ['string', 'object', 'null'] }
 						}
 					},
 					type: { type: 'string', enum: MATERIAL_TYPES, description: 'swap the material class first' },

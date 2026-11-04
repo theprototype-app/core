@@ -3,7 +3,7 @@
 	"format": 2,
 	"generator": {
 		"source": "tpAgent.tools() via core scripts/agent-tool-catalog.cjs, mapped by tools/agent/src/catalog.js",
-		"hostTools": 46,
+		"hostTools": 56,
 		"dropped": []
 	},
 	"instructions": "You are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", \"here\" or \"this\", call where_are_users and build at the spots it gives, facing the person.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.\nWhen asked what you can do here, call what_can_you_do and say its \"say\" line.",
@@ -1171,7 +1171,7 @@
 		{
 			"name": "create_mesh",
 			"title": "Make a mesh from data",
-			"description": "A mesh from raw data: vertices [[x, y, z], …] and faces [[i, j, k] or [i, j, k, l] …] (indices into vertices, counter-clockwise seen from outside; polygons of up to 32 corners are fanned, so keep them convex), optional uvs (one [u, v] per vertex). Up to 20000 vertices and 20000 faces; normals are computed (smooth: true for smooth shading, flatShading: true for hard facets). Colour it as you make it: materials [{color, roughness, metalness, …}] (up to 16 slots) with faceMaterials [slot per face, same order as faces] for parts in different colours; or colors [[r, g, b] 0-1, one per vertex] for a painted gradient (multiplied by the material colour). Material slots last through edit_mesh; vertex colours last only while an edit keeps the vertex count. Edit it afterwards with edit_mesh. Returns the uuid.\nTake a screenshot after each change to check your work.",
+			"description": "A mesh from raw data: vertices [[x, y, z], …] and faces [[i, j, k] or [i, j, k, l] …] (indices into vertices, counter-clockwise seen from outside; polygons of up to 32 corners are fanned, so keep them convex), optional uvs (one [u, v] per vertex). Up to 20000 vertices and 20000 faces; normals are computed (smooth: true for smooth shading, flatShading: true for hard facets). Colour it as you make it: materials [{color, roughness, metalness, …}] (up to 16 slots) with faceMaterials [slot per face, same order as faces] for parts in different colours; or colors [[r, g, b] 0-1, one per vertex] for a painted gradient (multiplied by the material colour). Material slots last through edit_mesh; vertex colours last only while an edit keeps the vertex count. subdivide: 1 or 2 smooths it (Catmull-Clark: a box of six quads becomes a rounded pebble, a few quads become a soft organic shape; each level about four times the faces, checked against the caps). Edit it afterwards with edit_mesh, or send new vertices with update_mesh. Returns the uuid.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -1279,6 +1279,12 @@
 						"maxItems": 20000,
 						"description": "the materials slot of each face (0 = the first), one per face"
 					},
+					"subdivide": {
+						"type": "integer",
+						"minimum": 0,
+						"maximum": 2,
+						"description": "smooth the mesh 1 or 2 levels (Catmull-Clark); smooth shading follows unless smooth: false"
+					},
 					"name": {
 						"type": "string"
 					},
@@ -1341,6 +1347,102 @@
 				"title": "Make a mesh from data",
 				"readOnlyHint": false,
 				"destructiveHint": false,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "update_mesh",
+			"title": "Change a mesh made from data",
+			"description": "New data for a mesh create_mesh made, by uuid, as ONE undo step: mode \"replace\" sends every vertex and face again (the same fields and caps as create_mesh, subdivide included); mode \"patch\" replaces vertices from offset on (vertices[0] lands on index offset) and keeps the faces — for moving part of a mesh made in this tab (after a reload, send \"replace\"). uvs/colors patch the same way. Primitives use set_geometry; to model any mesh use edit_mesh.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"uuid": {
+						"type": "string"
+					},
+					"mode": {
+						"type": "string",
+						"enum": [
+							"replace",
+							"patch"
+						]
+					},
+					"offset": {
+						"type": "integer",
+						"minimum": 0,
+						"description": "patch: the first vertex index the new vertices replace"
+					},
+					"vertices": {
+						"type": "array",
+						"items": {
+							"type": "array",
+							"items": {
+								"type": "number"
+							},
+							"minItems": 3,
+							"maxItems": 3
+						},
+						"maxItems": 20000
+					},
+					"faces": {
+						"type": "array",
+						"items": {
+							"type": "array",
+							"items": {
+								"type": "integer"
+							}
+						},
+						"maxItems": 20000
+					},
+					"uvs": {
+						"type": "array",
+						"items": {
+							"type": "array",
+							"items": {
+								"type": "number"
+							},
+							"minItems": 2,
+							"maxItems": 2
+						}
+					},
+					"colors": {
+						"type": "array",
+						"items": {
+							"type": "array",
+							"items": {
+								"type": "number"
+							},
+							"minItems": 3,
+							"maxItems": 3
+						},
+						"maxItems": 20000
+					},
+					"faceMaterials": {
+						"type": "array",
+						"items": {
+							"type": "integer",
+							"minimum": 0
+						},
+						"maxItems": 20000
+					},
+					"smooth": {
+						"type": "boolean"
+					},
+					"subdivide": {
+						"type": "integer",
+						"minimum": 0,
+						"maximum": 2
+					}
+				},
+				"required": [
+					"uuid",
+					"vertices"
+				]
+			},
+			"annotations": {
+				"title": "Change a mesh made from data",
+				"readOnlyHint": false,
+				"destructiveHint": true,
 				"openWorldHint": false
 			}
 		},
@@ -1452,43 +1554,56 @@
 						"type": "object",
 						"description": "any other material number, e.g. {\"clearcoat\": 1, \"transmission\": 0.9, \"ior\": 1.5} (those need type MeshPhysicalMaterial)"
 					},
+					"pattern": {
+						"description": "85b: a procedural albedo texture by name — wood, planks, brick, tiles, marble, stone, concrete, metal, grass, sand, fabric, checker, stripes, noise — or {name, colors: [dark, light], scale, seed, size}; it becomes a library image first"
+					},
+					"patternScale": {
+						"type": "number",
+						"description": "with pattern: how many times it repeats across each face (e.g. 4 for a floor)"
+					},
 					"maps": {
 						"type": "object",
-						"description": "texture slots, each a library image hash, an https URL, or null to clear",
+						"description": "texture slots, each a library image hash, an https URL, {pattern: name} (a procedural texture), or null to clear",
 						"properties": {
 							"albedo": {
 								"type": [
 									"string",
+									"object",
 									"null"
 								]
 							},
 							"normal": {
 								"type": [
 									"string",
+									"object",
 									"null"
 								]
 							},
 							"roughness": {
 								"type": [
 									"string",
+									"object",
 									"null"
 								]
 							},
 							"metalness": {
 								"type": [
 									"string",
+									"object",
 									"null"
 								]
 							},
 							"emissive": {
 								"type": [
 									"string",
+									"object",
 									"null"
 								]
 							},
 							"ao": {
 								"type": [
 									"string",
+									"object",
 									"null"
 								]
 							}
@@ -1998,6 +2113,560 @@
 				"readOnlyHint": false,
 				"destructiveHint": true,
 				"openWorldHint": false
+			}
+		},
+		{
+			"name": "search_assets",
+			"title": "Find assets",
+			"description": "Find assets to build with, by words and kind: models and prefabs to place, sounds, images, CC0 materials and HDRIs. Searches the shared library, the model packs, your prefabs and Poly Haven. Each result has an id, name, kind, source, licence, size when known, and how to use it. Read-only.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"query": {
+						"type": "string",
+						"description": "words, e.g. \"pine tree\", \"wooden crate\", \"campfire crackle\"; empty lists everything of the kinds"
+					},
+					"kinds": {
+						"type": "array",
+						"items": {
+							"type": "string",
+							"enum": [
+								"model",
+								"material",
+								"hdri",
+								"sound",
+								"image",
+								"prefab"
+							]
+						},
+						"description": "default all"
+					},
+					"sources": {
+						"type": "array",
+						"items": {
+							"type": "string",
+							"enum": [
+								"library",
+								"packs",
+								"prefabs",
+								"cc0"
+							]
+						},
+						"description": "default all"
+					},
+					"limit": {
+						"type": "integer",
+						"minimum": 1,
+						"maximum": 40,
+						"description": "default 12"
+					}
+				}
+			},
+			"annotations": {
+				"title": "Find assets",
+				"readOnlyHint": true,
+				"openWorldHint": true
+			}
+		},
+		{
+			"name": "place_asset",
+			"title": "Place an asset",
+			"description": "Place a model or prefab found with search_assets, the way dragging it from the Asset Browser does (replicated, one undo step). count + spacing make a row; yaw turns it. Returns the new uuids. A model by URL goes through import_model instead.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"asset": {
+						"type": "string",
+						"description": "an id from search_assets: lib:<hash>, pack:<pack>/<item> or prefab:<id>"
+					},
+					"position": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"minItems": 3,
+						"maxItems": 3,
+						"description": "world metres; the model stands on this point"
+					},
+					"yaw": {
+						"type": "number",
+						"description": "radians about the up axis"
+					},
+					"scale": {
+						"type": "number",
+						"description": "a size factor (1 = as authored)"
+					},
+					"count": {
+						"type": "integer",
+						"minimum": 1,
+						"maximum": 50,
+						"description": "copies in a row (default 1)"
+					},
+					"spacing": {
+						"type": "number",
+						"description": "metres between copies (default 2)"
+					},
+					"name": {
+						"type": "string"
+					}
+				},
+				"required": [
+					"asset"
+				]
+			},
+			"annotations": {
+				"title": "Place an asset",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"openWorldHint": true
+			}
+		},
+		{
+			"name": "prefab",
+			"title": "Save or place a prefab",
+			"description": "Prefabs (stamps): mode \"save\" keeps objects (with their materials, flows and behaviours) as a prefab in this person's library and returns its id; mode \"place\" puts copies of a prefab into the scene with fresh ids (count + spacing for a row), one undo step.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"mode": {
+						"type": "string",
+						"enum": [
+							"save",
+							"place"
+						]
+					},
+					"objects": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						},
+						"maxItems": 200,
+						"description": "save: the uuids to keep together"
+					},
+					"name": {
+						"type": "string"
+					},
+					"prefab": {
+						"type": "string",
+						"description": "place: the prefab id (prefab:…) or its name"
+					},
+					"position": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"minItems": 3,
+						"maxItems": 3
+					},
+					"yaw": {
+						"type": "number"
+					},
+					"count": {
+						"type": "integer",
+						"minimum": 1,
+						"maximum": 50
+					},
+					"spacing": {
+						"type": "number"
+					}
+				}
+			},
+			"annotations": {
+				"title": "Save or place a prefab",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "create_particles",
+			"title": "Add particles",
+			"description": "Particles by preset name: sparkles, fire, smoke, dust, confetti, sparks, trail, wisps, fireflies, rain, snow. Without object it places a small emitter at position (rain and snow hang at cloud height over it); with object it attaches to that object (a torch, a campfire log). overrides tune any field (count, lifetime, speed, gravity, sizeStart, colorStart, colorEnd, opacity, …). remove: true takes them off. One undo step.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"preset": {
+						"type": "string",
+						"enum": [
+							"sparkles",
+							"fire",
+							"smoke",
+							"dust",
+							"confetti",
+							"sparks",
+							"trail",
+							"wisps",
+							"fireflies",
+							"rain",
+							"snow"
+						]
+					},
+					"object": {
+						"type": "string",
+						"description": "attach to this object (uuid) instead of placing an emitter"
+					},
+					"position": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"minItems": 3,
+						"maxItems": 3
+					},
+					"name": {
+						"type": "string"
+					},
+					"overrides": {
+						"type": "object",
+						"description": "particle fields: mode, count, lifetime, lifeJitter, shape, angle, radius, offset, speed, speedJitter, gravity, drag, turbulence, sizeStart, sizeEnd, colorStart, colorEnd, colorMode, opacity, fadeIn, fadeOut, sprite, blending, spin, space, aim, render, inherit, stretch, trail, trailSegments"
+					},
+					"remove": {
+						"type": "boolean"
+					}
+				}
+			},
+			"annotations": {
+				"title": "Add particles",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "scatter",
+			"title": "Scatter over a surface",
+			"description": "Scatter many instances over a terrain or any mesh (a forest on hills, rocks on a beach, flowers on a slope): asset = a primitive (Box, Sphere, Cone, Cylinder, Capsule, Dodecahedron) or a model id from search_assets, or assets = up to 8 mixed evenly. density per m² (or count), scale range, rules {slope: [min°, max°], height: [min, max] m, layer: {i, min}} keep them where they belong. Cheap instancing, seeded (the same on every peer). Returns the set id; remove: <set id> deletes a set. One undo step.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"surface": {
+						"type": "string",
+						"description": "the terrain or mesh uuid"
+					},
+					"asset": {
+						"type": "string"
+					},
+					"assets": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						},
+						"maxItems": 8
+					},
+					"density": {
+						"type": "number",
+						"description": "instances per square metre, 0.01-4 (default 0.2)"
+					},
+					"count": {
+						"type": "integer",
+						"description": "or an exact count, 1-8000"
+					},
+					"scale": {
+						"description": "[min, max] size factors (default [0.8, 1.2]) or one number"
+					},
+					"spacing": {
+						"type": "number",
+						"description": "minimum metres between instances"
+					},
+					"randomRotation": {
+						"type": "boolean",
+						"description": "default true"
+					},
+					"rules": {
+						"type": "object",
+						"description": "{slope: [0, 25] degrees from flat, height: [min, max] metres, layer: {i: paint layer 0-3, min: 0-1}}"
+					},
+					"seed": {
+						"type": "integer"
+					},
+					"tint": {
+						"type": "number",
+						"description": "0-1 colour variation"
+					},
+					"sink": {
+						"type": "number",
+						"description": "metres pushed into the ground"
+					},
+					"collider": {
+						"type": "string",
+						"enum": [
+							"none",
+							"box",
+							"sphere",
+							"hull"
+						],
+						"description": "physics for the instances (default none)"
+					},
+					"remove": {
+						"type": "string",
+						"description": "a set id to delete instead"
+					}
+				},
+				"required": [
+					"surface"
+				]
+			},
+			"annotations": {
+				"title": "Scatter over a surface",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "terrain",
+			"title": "Make or shape terrain",
+			"description": "Make or change a terrain. Without uuid it makes one (size metres, at position); with uuid it changes that one. Shape by noise: height (metres), detail (0.005-0.6), octaves, ridged, warp, edges (flat|island|bowl), seed. Sculpt with ops [{op: raise|lower|smooth|flatten, at: [x, z] from the terrain's centre, radius, strength 0-1, height (metres, raise/lower), passes}] and paint with {op: \"paint\", at, radius, layer 0-3, strength}. layers: up to 4 {color, texture (a library hash or a pattern name like grass, sand, stone), tiling}. One undo step.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"uuid": {
+						"type": "string"
+					},
+					"name": {
+						"type": "string"
+					},
+					"position": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"minItems": 3,
+						"maxItems": 3
+					},
+					"size": {
+						"type": "number",
+						"minimum": 1,
+						"maximum": 200
+					},
+					"height": {
+						"type": "number",
+						"minimum": 0,
+						"maximum": 40
+					},
+					"detail": {
+						"type": "number"
+					},
+					"octaves": {
+						"type": "integer",
+						"minimum": 1,
+						"maximum": 6
+					},
+					"ridged": {
+						"type": "boolean"
+					},
+					"warp": {
+						"type": "number"
+					},
+					"edges": {
+						"type": "string",
+						"enum": [
+							"flat",
+							"island",
+							"bowl"
+						]
+					},
+					"seed": {
+						"type": "integer"
+					},
+					"ops": {
+						"type": "array",
+						"maxItems": 64,
+						"items": {
+							"type": "object"
+						}
+					},
+					"layers": {
+						"type": "array",
+						"maxItems": 4,
+						"items": {
+							"type": "object",
+							"properties": {
+								"color": {
+									"type": "string"
+								},
+								"texture": {
+									"type": "string"
+								},
+								"pattern": {
+									"description": "a procedural texture by name — wood (wood grain), planks (wooden planks with seams), brick (red brick in running bond), tiles (square tiles with grout), marble (white marble with veins), stone (cobbles / round stones), concrete (grey concrete), metal (brushed metal), grass (grass), sand (sand), fabric (woven fabric), checker (a checkerboard), stripes (stripes), noise (soft noise) — or {name, colors: [dark, light, …], scale: repeats of the motif (1 = its own), seed, size: 128|256|512|1024}. It becomes a library image, shared with every peer."
+								},
+								"tiling": {
+									"type": "number"
+								}
+							}
+						}
+					},
+					"force": {
+						"type": "boolean",
+						"description": "reshape even though it was hand-sculpted (the sculpting is lost)"
+					}
+				}
+			},
+			"annotations": {
+				"title": "Make or shape terrain",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "water",
+			"title": "Add or change water",
+			"description": "Water: without uuid it makes a body of water — kind tank, pool, round, lake or ocean, size [w, h, d], at position (its bottom centre). With uuid it changes one (or makes an object water with a preset). preset: pool, aquarium, ocean, lake, river, lava, swamp, toxic, ice. level 0-1 (how full), color, look {shallowColor, deepColor, clarity, foam, …}, waves {count, amplitude, wavelength, speed, direction}, flow. Things float in it in Play. remove: true makes it a plain object again. One undo step.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"uuid": {
+						"type": "string"
+					},
+					"kind": {
+						"type": "string",
+						"enum": [
+							"tank",
+							"pool",
+							"ocean",
+							"lake",
+							"round"
+						]
+					},
+					"preset": {
+						"type": "string"
+					},
+					"size": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						}
+					},
+					"position": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"minItems": 3,
+						"maxItems": 3
+					},
+					"name": {
+						"type": "string"
+					},
+					"level": {
+						"type": "number"
+					},
+					"color": {
+						"type": "string"
+					},
+					"look": {
+						"type": "object"
+					},
+					"waves": {
+						"type": "object"
+					},
+					"flow": {
+						"type": "object"
+					},
+					"remove": {
+						"type": "boolean"
+					}
+				}
+			},
+			"annotations": {
+				"title": "Add or change water",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "place_sound",
+			"title": "Place a sound",
+			"description": "A sound in the world: asset = a library sound (search_assets kinds [\"sound\"]) or an https URL of a sound file (it is checked and added to the library first). Positional: heard near position (or on object), radius metres. Without on it loops all the time (a campfire crackle, a river); on: click | enter | exit | grab | hit plays it once when that happens on the object. One undo step for the file's node and its wiring.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"asset": {
+						"type": "string",
+						"description": "lib:<hash>, a library hash, or https://…"
+					},
+					"object": {
+						"type": "string",
+						"description": "put the sound on this object (uuid) instead of at position"
+					},
+					"position": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"minItems": 3,
+						"maxItems": 3
+					},
+					"name": {
+						"type": "string"
+					},
+					"volume": {
+						"type": "number",
+						"minimum": 0,
+						"maximum": 1
+					},
+					"radius": {
+						"type": "number"
+					},
+					"loop": {
+						"type": "boolean"
+					},
+					"on": {
+						"type": "string",
+						"enum": [
+							"click",
+							"enter",
+							"exit",
+							"grab",
+							"hit"
+						]
+					}
+				},
+				"required": [
+					"asset"
+				]
+			},
+			"annotations": {
+				"title": "Place a sound",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"openWorldHint": true
+			}
+		},
+		{
+			"name": "set_music",
+			"title": "Set the background music",
+			"description": "The scene's background music, heard by everyone in sync: asset = a library sound or an https URL (null clears it), volume 0-1, play / stop. One undo step.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"asset": {
+						"type": [
+							"string",
+							"null"
+						]
+					},
+					"volume": {
+						"type": "number",
+						"minimum": 0,
+						"maximum": 1
+					},
+					"play": {
+						"type": "boolean"
+					},
+					"stop": {
+						"type": "boolean"
+					}
+				}
+			},
+			"annotations": {
+				"title": "Set the background music",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"openWorldHint": true
 			}
 		},
 		{
@@ -3236,6 +3905,7 @@
 			"edit_shape": {
 				"params": "set_geometry",
 				"mesh": "edit_mesh",
+				"update": "update_mesh",
 				"pivot": "set_pivot",
 				"pivot_group": "create_pivot"
 			},
@@ -3254,7 +3924,18 @@
 				"uv": "set_uv"
 			},
 			"assets": {
+				"search": "search_assets",
+				"place": "place_asset",
+				"prefab": "prefab",
 				"image": "add_image"
+			},
+			"effects": {
+				"terrain": "terrain",
+				"scatter": "scatter",
+				"water": "water",
+				"particles": "create_particles",
+				"sound": "place_sound",
+				"music": "set_music"
 			}
 		},
 		"tools": [
@@ -4214,6 +4895,12 @@
 									"maxItems": 20000,
 									"description": "the materials slot of each face (0 = the first), one per face"
 								},
+								"subdivide": {
+									"type": "integer",
+									"minimum": 0,
+									"maximum": 2,
+									"description": "smooth the mesh 1 or 2 levels (Catmull-Clark); smooth shading follows unless smooth: false"
+								},
 								"name": {
 									"type": "string"
 								},
@@ -4271,7 +4958,7 @@
 								"vertices",
 								"faces"
 							],
-							"description": "A mesh from raw data: vertices [[x, y, z], …] and faces [[i, j, k] or [i, j, k, l] …] (indices into vertices, counter-clockwise seen from outside; polygons of up to 32 corners are fanned, so keep them convex), optional uvs (one [u, v] per vertex). Up to 20000 vertices and 20000 faces; normals are computed (smooth: true for smooth shading, flatShading: true for hard facets). Colour it as you make it: materials [{color, roughness, metalness, …}] (up to 16 slots) with faceMaterials [slot per face, same order as faces] for parts in different colours; or colors [[r, g, b] 0-1, one per vertex] for a painted gradient (multiplied by the material colour). Material slots last through edit_shape {action: 'mesh'}; vertex colours last only while an edit keeps the vertex count. Edit it afterwards with edit_shape {action: 'mesh'}. Returns the uuid."
+							"description": "A mesh from raw data: vertices [[x, y, z], …] and faces [[i, j, k] or [i, j, k, l] …] (indices into vertices, counter-clockwise seen from outside; polygons of up to 32 corners are fanned, so keep them convex), optional uvs (one [u, v] per vertex). Up to 20000 vertices and 20000 faces; normals are computed (smooth: true for smooth shading, flatShading: true for hard facets). Colour it as you make it: materials [{color, roughness, metalness, …}] (up to 16 slots) with faceMaterials [slot per face, same order as faces] for parts in different colours; or colors [[r, g, b] 0-1, one per vertex] for a painted gradient (multiplied by the material colour). Material slots last through edit_shape {action: 'mesh'}; vertex colours last only while an edit keeps the vertex count. subdivide: 1 or 2 smooths it (Catmull-Clark: a box of six quads becomes a rounded pebble, a few quads become a soft organic shape; each level about four times the faces, checked against the caps). Edit it afterwards with edit_shape {action: 'mesh'}, or send new vertices with edit_shape {action: 'update'}. Returns the uuid."
 						},
 						"shapes": {
 							"type": "array",
@@ -4324,7 +5011,7 @@
 			{
 				"name": "edit_shape",
 				"title": "Reshape or model objects",
-				"description": "Change the shape of objects that exist: params = new size / segments / type in place, mesh = model faces and vertices (extrude, inset, bevel, subdivide, weld, smooth, dissolve, make a face), pivot = the point an object turns about, pivot_group = a group at a joint so several parts swing together.\nCall it as {\"action\": \"params\", \"params\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
+				"description": "Change the shape of objects that exist: params = new size / segments / type in place, mesh = model faces and vertices (extrude, inset, bevel, subdivide, weld, smooth, dissolve, make a face), update = new vertices / faces for a mesh made from data (replace it, or patch a range), pivot = the point an object turns about, pivot_group = a group at a joint so several parts swing together.\nCall it as {\"action\": \"params\", \"params\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -4333,6 +5020,7 @@
 							"enum": [
 								"params",
 								"mesh",
+								"update",
 								"pivot",
 								"pivot_group"
 							],
@@ -4607,6 +5295,92 @@
 							],
 							"description": "Model an existing mesh like Edit Mesh does: run ops on a selection of its faces or vertices. Face ops: extrude {distance}, inset {amount 0-1}, move {distance} along the normal, bevel {width, segments, profile}, subdivide, delete, flip. Vertex ops: weld (to their centre), move {offset [x,y,z]}, smooth {factor, iterations}, dissolve, bevel {width}, delete, connect (2 vertices), create_face (3-4 vertices). An op without its own select goes on with what the previous face op left selected (after extrude / inset / move / flip: the cap, the inset's inner face), like Edit Mesh; otherwise the select is read again on the mesh as it is at that op (indices too). Call with ops: [] first to preview faces / vertices (index, normal, centre). Afterwards the object counts as hand-edited (edit_shape {action: 'params'} then needs force). One undo step per call."
 						},
+						"update": {
+							"type": "object",
+							"properties": {
+								"uuid": {
+									"type": "string"
+								},
+								"mode": {
+									"type": "string",
+									"enum": [
+										"replace",
+										"patch"
+									]
+								},
+								"offset": {
+									"type": "integer",
+									"minimum": 0,
+									"description": "patch: the first vertex index the new vertices replace"
+								},
+								"vertices": {
+									"type": "array",
+									"items": {
+										"type": "array",
+										"items": {
+											"type": "number"
+										},
+										"minItems": 3,
+										"maxItems": 3
+									},
+									"maxItems": 20000
+								},
+								"faces": {
+									"type": "array",
+									"items": {
+										"type": "array",
+										"items": {
+											"type": "integer"
+										}
+									},
+									"maxItems": 20000
+								},
+								"uvs": {
+									"type": "array",
+									"items": {
+										"type": "array",
+										"items": {
+											"type": "number"
+										},
+										"minItems": 2,
+										"maxItems": 2
+									}
+								},
+								"colors": {
+									"type": "array",
+									"items": {
+										"type": "array",
+										"items": {
+											"type": "number"
+										},
+										"minItems": 3,
+										"maxItems": 3
+									},
+									"maxItems": 20000
+								},
+								"faceMaterials": {
+									"type": "array",
+									"items": {
+										"type": "integer",
+										"minimum": 0
+									},
+									"maxItems": 20000
+								},
+								"smooth": {
+									"type": "boolean"
+								},
+								"subdivide": {
+									"type": "integer",
+									"minimum": 0,
+									"maximum": 2
+								}
+							},
+							"required": [
+								"uuid",
+								"vertices"
+							],
+							"description": "New data for a mesh create_shape {action: 'mesh'} made, by uuid, as ONE undo step: mode \"replace\" sends every vertex and face again (the same fields and caps as create_shape {action: 'mesh'}, subdivide included); mode \"patch\" replaces vertices from offset on (vertices[0] lands on index offset) and keeps the faces — for moving part of a mesh made in this tab (after a reload, send \"replace\"). uvs/colors patch the same way. Primitives use edit_shape {action: 'params'}; to model any mesh use edit_shape {action: 'mesh'}."
+						},
 						"pivot": {
 							"type": "object",
 							"properties": {
@@ -4777,43 +5551,56 @@
 									"type": "object",
 									"description": "any other material number, e.g. {\"clearcoat\": 1, \"transmission\": 0.9, \"ior\": 1.5} (those need type MeshPhysicalMaterial)"
 								},
+								"pattern": {
+									"description": "85b: a procedural albedo texture by name — wood, planks, brick, tiles, marble, stone, concrete, metal, grass, sand, fabric, checker, stripes, noise — or {name, colors: [dark, light], scale, seed, size}; it becomes a library image first"
+								},
+								"patternScale": {
+									"type": "number",
+									"description": "with pattern: how many times it repeats across each face (e.g. 4 for a floor)"
+								},
 								"maps": {
 									"type": "object",
-									"description": "texture slots, each a library image hash, an https URL, or null to clear",
+									"description": "texture slots, each a library image hash, an https URL, {pattern: name} (a procedural texture), or null to clear",
 									"properties": {
 										"albedo": {
 											"type": [
 												"string",
+												"object",
 												"null"
 											]
 										},
 										"normal": {
 											"type": [
 												"string",
+												"object",
 												"null"
 											]
 										},
 										"roughness": {
 											"type": [
 												"string",
+												"object",
 												"null"
 											]
 										},
 										"metalness": {
 											"type": [
 												"string",
+												"object",
 												"null"
 											]
 										},
 										"emissive": {
 											"type": [
 												"string",
+												"object",
 												"null"
 											]
 										},
 										"ao": {
 											"type": [
 												"string",
+												"object",
 												"null"
 											]
 										}
@@ -5228,16 +6015,153 @@
 			{
 				"name": "assets",
 				"title": "Images and assets",
-				"description": "The shared library: image = put an image into it (an https URL, base64 data, or a canvas you describe) and get its hash for textures.\nCall it as {\"action\": \"image\", \"image\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
+				"description": "Assets to build with: search = find models, prefabs, sounds, images, CC0 materials and HDRIs by words (library, packs, Poly Haven); place = put a found model or prefab into the scene; prefab = keep objects as a reusable prefab, or place copies of one; image = put an image into the library (an https URL, base64 data, or a canvas you describe) and get its hash for textures.\nCall it as {\"action\": \"search\", \"search\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
 						"action": {
 							"type": "string",
 							"enum": [
+								"search",
+								"place",
+								"prefab",
 								"image"
 							],
 							"description": "What to do. Put its fields in the object named after the action."
+						},
+						"search": {
+							"type": "object",
+							"properties": {
+								"query": {
+									"type": "string",
+									"description": "words, e.g. \"pine tree\", \"wooden crate\", \"campfire crackle\"; empty lists everything of the kinds"
+								},
+								"kinds": {
+									"type": "array",
+									"items": {
+										"type": "string",
+										"enum": [
+											"model",
+											"material",
+											"hdri",
+											"sound",
+											"image",
+											"prefab"
+										]
+									},
+									"description": "default all"
+								},
+								"sources": {
+									"type": "array",
+									"items": {
+										"type": "string",
+										"enum": [
+											"library",
+											"packs",
+											"prefabs",
+											"cc0"
+										]
+									},
+									"description": "default all"
+								},
+								"limit": {
+									"type": "integer",
+									"minimum": 1,
+									"maximum": 40,
+									"description": "default 12"
+								}
+							},
+							"description": "Find assets to build with, by words and kind: models and prefabs to place, sounds, images, CC0 materials and HDRIs. Searches the shared library, the model packs, your prefabs and Poly Haven. Each result has an id, name, kind, source, licence, size when known, and how to use it. Read-only."
+						},
+						"place": {
+							"type": "object",
+							"properties": {
+								"asset": {
+									"type": "string",
+									"description": "an id from search_assets: lib:<hash>, pack:<pack>/<item> or prefab:<id>"
+								},
+								"position": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"minItems": 3,
+									"maxItems": 3,
+									"description": "world metres; the model stands on this point"
+								},
+								"yaw": {
+									"type": "number",
+									"description": "radians about the up axis"
+								},
+								"scale": {
+									"type": "number",
+									"description": "a size factor (1 = as authored)"
+								},
+								"count": {
+									"type": "integer",
+									"minimum": 1,
+									"maximum": 50,
+									"description": "copies in a row (default 1)"
+								},
+								"spacing": {
+									"type": "number",
+									"description": "metres between copies (default 2)"
+								},
+								"name": {
+									"type": "string"
+								}
+							},
+							"required": [
+								"asset"
+							],
+							"description": "Place a model or assets {action: 'prefab'} found with assets {action: 'search'}, the way dragging it from the Asset Browser does (replicated, one undo step). count + spacing make a row; yaw turns it. Returns the new uuids. A model by URL goes through import_model instead."
+						},
+						"prefab": {
+							"type": "object",
+							"properties": {
+								"mode": {
+									"type": "string",
+									"enum": [
+										"save",
+										"place"
+									]
+								},
+								"objects": {
+									"type": "array",
+									"items": {
+										"type": "string"
+									},
+									"maxItems": 200,
+									"description": "save: the uuids to keep together"
+								},
+								"name": {
+									"type": "string"
+								},
+								"prefab": {
+									"type": "string",
+									"description": "place: the prefab id (prefab:…) or its name"
+								},
+								"position": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"minItems": 3,
+									"maxItems": 3
+								},
+								"yaw": {
+									"type": "number"
+								},
+								"count": {
+									"type": "integer",
+									"minimum": 1,
+									"maximum": 50
+								},
+								"spacing": {
+									"type": "number"
+								}
+							},
+							"description": "Prefabs (stamps): mode \"save\" keeps objects (with their materials, flows and behaviours) as a assets {action: 'prefab'} in this person's library and returns its id; mode \"place\" puts copies of a assets {action: 'prefab'} into the scene with fresh ids (count + spacing for a row), one undo step."
 						},
 						"image": {
 							"type": "object",
@@ -5361,6 +6285,368 @@
 					"title": "Images and assets",
 					"readOnlyHint": false,
 					"destructiveHint": false,
+					"openWorldHint": true
+				}
+			},
+			{
+				"name": "effects",
+				"title": "Terrain, scatter, water, particles and sound",
+				"description": "The world around the build: terrain = make or shape ground (noise hills, sculpt, paint layers); scatter = many trees, rocks or flowers over a terrain or mesh, with slope / height rules; water = a pool, lake or ocean, or make an object water; particles = fire, smoke, sparkles, fireflies, rain, snow … by preset; sound = a positional sound (looping, or on click / enter); music = the scene's background track.\nCall it as {\"action\": \"terrain\", \"terrain\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
+				"inputSchema": {
+					"type": "object",
+					"properties": {
+						"action": {
+							"type": "string",
+							"enum": [
+								"terrain",
+								"scatter",
+								"water",
+								"particles",
+								"sound",
+								"music"
+							],
+							"description": "What to do. Put its fields in the object named after the action."
+						},
+						"terrain": {
+							"type": "object",
+							"properties": {
+								"uuid": {
+									"type": "string"
+								},
+								"name": {
+									"type": "string"
+								},
+								"position": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"minItems": 3,
+									"maxItems": 3
+								},
+								"size": {
+									"type": "number",
+									"minimum": 1,
+									"maximum": 200
+								},
+								"height": {
+									"type": "number",
+									"minimum": 0,
+									"maximum": 40
+								},
+								"detail": {
+									"type": "number"
+								},
+								"octaves": {
+									"type": "integer",
+									"minimum": 1,
+									"maximum": 6
+								},
+								"ridged": {
+									"type": "boolean"
+								},
+								"warp": {
+									"type": "number"
+								},
+								"edges": {
+									"type": "string",
+									"enum": [
+										"flat",
+										"island",
+										"bowl"
+									]
+								},
+								"seed": {
+									"type": "integer"
+								},
+								"ops": {
+									"type": "array",
+									"maxItems": 64,
+									"items": {
+										"type": "object"
+									}
+								},
+								"layers": {
+									"type": "array",
+									"maxItems": 4,
+									"items": {
+										"type": "object",
+										"properties": {
+											"color": {
+												"type": "string"
+											},
+											"texture": {
+												"type": "string"
+											},
+											"pattern": {
+												"description": "a procedural texture by name — wood (wood grain), planks (wooden planks with seams), brick (red brick in running bond), tiles (square tiles with grout), marble (white marble with veins), stone (cobbles / round stones), concrete (grey concrete), metal (brushed metal), grass (grass), sand (sand), fabric (woven fabric), checker (a checkerboard), stripes (stripes), noise (soft noise) — or {name, colors: [dark, light, …], scale: repeats of the motif (1 = its own), seed, size: 128|256|512|1024}. It becomes a library image, shared with every peer."
+											},
+											"tiling": {
+												"type": "number"
+											}
+										}
+									}
+								},
+								"force": {
+									"type": "boolean",
+									"description": "reshape even though it was hand-sculpted (the sculpting is lost)"
+								}
+							},
+							"description": "Make or change a effects {action: 'terrain'}. Without uuid it makes one (size metres, at position); with uuid it changes that one. Shape by noise: height (metres), detail (0.005-0.6), octaves, ridged, warp, edges (flat|island|bowl), seed. Sculpt with ops [{op: raise|lower|smooth|flatten, at: [x, z] from the effects {action: 'terrain'}'s centre, radius, strength 0-1, height (metres, raise/lower), passes}] and paint with {op: \"paint\", at, radius, layer 0-3, strength}. layers: up to 4 {color, texture (a library hash or a pattern name like grass, sand, stone), tiling}. One undo step."
+						},
+						"scatter": {
+							"type": "object",
+							"properties": {
+								"surface": {
+									"type": "string",
+									"description": "the terrain or mesh uuid"
+								},
+								"asset": {
+									"type": "string"
+								},
+								"assets": {
+									"type": "array",
+									"items": {
+										"type": "string"
+									},
+									"maxItems": 8
+								},
+								"density": {
+									"type": "number",
+									"description": "instances per square metre, 0.01-4 (default 0.2)"
+								},
+								"count": {
+									"type": "integer",
+									"description": "or an exact count, 1-8000"
+								},
+								"scale": {
+									"description": "[min, max] size factors (default [0.8, 1.2]) or one number"
+								},
+								"spacing": {
+									"type": "number",
+									"description": "minimum metres between instances"
+								},
+								"randomRotation": {
+									"type": "boolean",
+									"description": "default true"
+								},
+								"rules": {
+									"type": "object",
+									"description": "{slope: [0, 25] degrees from flat, height: [min, max] metres, layer: {i: paint layer 0-3, min: 0-1}}"
+								},
+								"seed": {
+									"type": "integer"
+								},
+								"tint": {
+									"type": "number",
+									"description": "0-1 colour variation"
+								},
+								"sink": {
+									"type": "number",
+									"description": "metres pushed into the ground"
+								},
+								"collider": {
+									"type": "string",
+									"enum": [
+										"none",
+										"box",
+										"sphere",
+										"hull"
+									],
+									"description": "physics for the instances (default none)"
+								},
+								"remove": {
+									"type": "string",
+									"description": "a set id to delete instead"
+								}
+							},
+							"required": [
+								"surface"
+							],
+							"description": "Scatter many instances over a effects {action: 'terrain'} or any mesh (a forest on hills, rocks on a beach, flowers on a slope): asset = a primitive (Box, Sphere, Cone, Cylinder, Capsule, Dodecahedron) or a model id from assets {action: 'search'}, or assets = up to 8 mixed evenly. density per m² (or count), scale range, rules {slope: [min°, max°], height: [min, max] m, layer: {i, min}} keep them where they belong. Cheap instancing, seeded (the same on every peer). Returns the set id; remove: <set id> deletes a set. One undo step."
+						},
+						"water": {
+							"type": "object",
+							"properties": {
+								"uuid": {
+									"type": "string"
+								},
+								"kind": {
+									"type": "string",
+									"enum": [
+										"tank",
+										"pool",
+										"ocean",
+										"lake",
+										"round"
+									]
+								},
+								"preset": {
+									"type": "string"
+								},
+								"size": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									}
+								},
+								"position": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"minItems": 3,
+									"maxItems": 3
+								},
+								"name": {
+									"type": "string"
+								},
+								"level": {
+									"type": "number"
+								},
+								"color": {
+									"type": "string"
+								},
+								"look": {
+									"type": "object"
+								},
+								"waves": {
+									"type": "object"
+								},
+								"flow": {
+									"type": "object"
+								},
+								"remove": {
+									"type": "boolean"
+								}
+							},
+							"description": "Water: without uuid it makes a body of effects {action: 'water'} — kind tank, pool, round, lake or ocean, size [w, h, d], at position (its bottom centre). With uuid it changes one (or makes an object effects {action: 'water'} with a preset). preset: pool, aquarium, ocean, lake, river, lava, swamp, toxic, ice. level 0-1 (how full), color, look {shallowColor, deepColor, clarity, foam, …}, waves {count, amplitude, wavelength, speed, direction}, flow. Things float in it in Play. remove: true makes it a plain object again. One undo step."
+						},
+						"particles": {
+							"type": "object",
+							"properties": {
+								"preset": {
+									"type": "string",
+									"enum": [
+										"sparkles",
+										"fire",
+										"smoke",
+										"dust",
+										"confetti",
+										"sparks",
+										"trail",
+										"wisps",
+										"fireflies",
+										"rain",
+										"snow"
+									]
+								},
+								"object": {
+									"type": "string",
+									"description": "attach to this object (uuid) instead of placing an emitter"
+								},
+								"position": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"minItems": 3,
+									"maxItems": 3
+								},
+								"name": {
+									"type": "string"
+								},
+								"overrides": {
+									"type": "object",
+									"description": "particle fields: mode, count, lifetime, lifeJitter, shape, angle, radius, offset, speed, speedJitter, gravity, drag, turbulence, sizeStart, sizeEnd, colorStart, colorEnd, colorMode, opacity, fadeIn, fadeOut, sprite, blending, spin, space, aim, render, inherit, stretch, trail, trailSegments"
+								},
+								"remove": {
+									"type": "boolean"
+								}
+							},
+							"description": "Particles by preset name: sparkles, fire, smoke, dust, confetti, sparks, trail, wisps, fireflies, rain, snow. Without object it places a small emitter at position (rain and snow hang at cloud height over it); with object it attaches to that object (a torch, a campfire log). overrides tune any field (count, lifetime, speed, gravity, sizeStart, colorStart, colorEnd, opacity, …). remove: true takes them off. One undo step."
+						},
+						"sound": {
+							"type": "object",
+							"properties": {
+								"asset": {
+									"type": "string",
+									"description": "lib:<hash>, a library hash, or https://…"
+								},
+								"object": {
+									"type": "string",
+									"description": "put the sound on this object (uuid) instead of at position"
+								},
+								"position": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"minItems": 3,
+									"maxItems": 3
+								},
+								"name": {
+									"type": "string"
+								},
+								"volume": {
+									"type": "number",
+									"minimum": 0,
+									"maximum": 1
+								},
+								"radius": {
+									"type": "number"
+								},
+								"loop": {
+									"type": "boolean"
+								},
+								"on": {
+									"type": "string",
+									"enum": [
+										"click",
+										"enter",
+										"exit",
+										"grab",
+										"hit"
+									]
+								}
+							},
+							"required": [
+								"asset"
+							],
+							"description": "A sound in the world: asset = a library sound (assets {action: 'search'} kinds [\"sound\"]) or an https URL of a sound file (it is checked and added to the library first). Positional: heard near position (or on object), radius metres. Without on it loops all the time (a campfire crackle, a river); on: click | enter | exit | grab | hit plays it once when that happens on the object. One undo step for the file's node and its wiring."
+						},
+						"music": {
+							"type": "object",
+							"properties": {
+								"asset": {
+									"type": [
+										"string",
+										"null"
+									]
+								},
+								"volume": {
+									"type": "number",
+									"minimum": 0,
+									"maximum": 1
+								},
+								"play": {
+									"type": "boolean"
+								},
+								"stop": {
+									"type": "boolean"
+								}
+							},
+							"description": "The scene's background music, heard by everyone in sync: asset = a library sound or an https URL (null clears it), volume 0-1, play / stop. One undo step."
+						}
+					},
+					"required": [
+						"action"
+					]
+				},
+				"annotations": {
+					"title": "Terrain, scatter, water, particles and sound",
+					"readOnlyHint": false,
+					"destructiveHint": true,
 					"openWorldHint": true
 				}
 			},

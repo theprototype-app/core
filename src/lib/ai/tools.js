@@ -52,6 +52,7 @@ import { meshStats } from './meshStats.js';
 import { applyShadowFlags, SHADOW_SCHEMA } from './shadowFlags.js';
 import { duplicatePlan, DUPLICATE_MAX } from './duplicateCore.js';
 import { LOOK_TOOL_NAMES, LOOK_AI_TOOLS, LOOK_PROMPT, lookTool } from './lookTools.js';
+import { WORLD_TOOL_NAMES, WORLD_AI_TOOLS, WORLD_PROMPT, worldTool, resolvePatterns } from './worldTools.js';
 
 // AI tool layer (roadmap #10, A4). Maps OpenAI-style function calls onto the
 // existing REPLICATED mutation surface — every tool applies locally AND broadcasts
@@ -351,7 +352,7 @@ function lockedByPeer(uuid) {
  * Move an object and replicate + record (mirrors alignToGround/transformSet).
  * @param {any} object @param {{position?: number[], rotation?: number[], scale?: number[]}} t
  */
-function applyAiTransform(object, t) {
+export function applyAiTransform(object, t) {
 	if (!t.position && !t.rotation && !t.scale) return;
 	/** @type {any} */ let before;
 	/** @type {any} */ let after;
@@ -734,6 +735,7 @@ const TOOL_NAMES = [
 	'import_file', // 66 S4b (offered to agents; see importFile.js)
 	...GEOMETRY_TOOL_NAMES, // 85 G1-G6 (geometryTools.js)
 	...LOOK_TOOL_NAMES, // 85 L1-L5 (lookTools.js)
+	...WORLD_TOOL_NAMES, // 85b W1-W7 (worldTools.js)
 	...ASSIST_TOOL_NAMES // 85 undo_last, pivots, images (assistTools.js): unlisted, their arguments read as create_objects / update_objects
 ];
 
@@ -1152,10 +1154,32 @@ async function runAiTool(rawName, rawArgs, opts) {
 			case 'edit_mesh':
 			case 'create_mesh':
 			case 'create_shapes':
+			case 'update_mesh':
 				// 85 G1-G6 (+ mcp-shapes: create_shapes, many in one call): shape and model objects (geometryTools.js)
 				return await geometryTool(name, args, createOne);
 
-			case 'set_material':
+			case 'search_assets':
+			case 'place_asset':
+			case 'prefab':
+			case 'create_particles':
+			case 'scatter':
+			case 'terrain':
+			case 'water':
+			case 'place_sound':
+			case 'set_music':
+				// 85b W1-W7: assets, terrain, scatter, water, particles, sound (worldTools.js)
+				return await worldTool(name, args, createOne);
+
+			case 'set_material': {
+				// 85b L7: a procedural texture by name (pattern / maps.<slot>.pattern) becomes a library image first
+				const resolved = await resolvePatterns(args);
+				if ('error' in resolved) return { error: resolved.error };
+				const done = await lookTool(name, resolved.args);
+				if (!done || typeof done !== 'object' || done.error || !resolved.patterns?.length) return done;
+				// patternScale: the texture repeats that many times (set_uv's tiling, in the same call's undo step)
+				const tiled = resolved.tiling ? await lookTool('set_uv', { objects: resolved.args.objects, tiling: resolved.tiling }) : null;
+				return { ...done, patterns: resolved.patterns, ...(tiled?.error ? { warnings: ['patternScale: ' + tiled.error] } : {}) };
+			}
 			case 'list_materials':
 			case 'get_material':
 			case 'create_shader':
@@ -1675,7 +1699,7 @@ const PHYSICS_AI_TOOLS = [
  * Call this per turn (readiness can change). @param {ToolOpts} [opts] @returns {any[]} */
 export function getAiTools(opts) {
 	const physics = !!opts?.physics || physicsToolsEnabled();
-	const tools = [...AI_TOOLS, ...GEOMETRY_AI_TOOLS, ...LOOK_AI_TOOLS, ...ASSIST_AI_TOOLS, ...flowToolSchemas(physics), ...behaviourToolSchemas()];
+	const tools = [...AI_TOOLS, ...GEOMETRY_AI_TOOLS, ...LOOK_AI_TOOLS, ...WORLD_AI_TOOLS, ...ASSIST_AI_TOOLS, ...flowToolSchemas(physics), ...behaviourToolSchemas()];
 	if (physics) tools.push(...PHYSICS_AI_TOOLS);
 	if (meshGenReady()) tools.push(MESH_TOOL);
 	return tools;
@@ -1780,6 +1804,6 @@ export function buildSystemPrompt(opts) {
 		"an object's name as the tool name — the name of a thing you create belongs in that object's",
 		'`name` field inside create_objects. Every call takes effect immediately, so never repeat a',
 		'call that already came back without an error — once the scene matches the request, stop',
-		'calling tools and write the summary.' + meshLine + toolsLine + GEOMETRY_PROMPT + LOOK_PROMPT + ASSIST_PROMPT + flowBlock + extraBlock + physicsBlock
+		'calling tools and write the summary.' + meshLine + toolsLine + GEOMETRY_PROMPT + LOOK_PROMPT + WORLD_PROMPT + ASSIST_PROMPT + flowBlock + extraBlock + physicsBlock
 	].join('\n');
 }

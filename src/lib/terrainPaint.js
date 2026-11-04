@@ -184,6 +184,18 @@ export function paintStrokeMove(uuid, x, z, dt, radius, strength) {
 	}
 }
 
+/**
+ * 85-world: one step of an OPEN paint stroke with its own layer and no preview (the agent's `terrain {ops: paint}`
+ * paints several spots in one stroke; endPaintStroke commits them as ONE entry).
+ * @param {string} uuid @param {number} x @param {number} z @param {number} layer @param {number} radius @param {number} strength @param {number} dt
+ */
+export function paintStrokeAt(uuid, x, z, layer, radius, strength, dt) {
+	if (!paintStroke || paintStroke.uuid !== uuid) return false;
+	if (!paintAt(uuid, x, z, layer, radius, strength, dt)) return false;
+	paintStroke.changed = true;
+	return true;
+}
+
 /** Stroke end: ONE commit (the block re-encoded + sent) and ONE undo entry. */
 export function endPaintStroke() {
 	const stroke = paintStroke;

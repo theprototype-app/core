@@ -70,7 +70,18 @@ export const TOOL_ANNOTATIONS = /** @type {Record<string, {title: string, read?:
 	connect: { title: 'Join a session', destructive: false, openWorld: true },
 	// 86-fix N2: the connector's join — the person confirms in the tab; joining may replace what the tab shows
 	join_session: { title: 'Join a session (asks the person)', destructive: true, openWorld: true },
-	where_are_users: { title: 'Where the people are', read: true }
+	where_are_users: { title: 'Where the people are', read: true },
+	// 85b 85-world
+	search_assets: { title: 'Find assets', read: true, openWorld: true },
+	place_asset: { title: 'Place an asset', destructive: false, openWorld: true },
+	prefab: { title: 'Save or place a prefab', destructive: false },
+	create_particles: { title: 'Add particles', destructive: true },
+	scatter: { title: 'Scatter over a surface', destructive: true },
+	terrain: { title: 'Make or shape terrain', destructive: true },
+	water: { title: 'Add or change water', destructive: true },
+	place_sound: { title: 'Place a sound', destructive: false, openWorld: true },
+	set_music: { title: 'Set the background music', destructive: true, openWorld: true },
+	update_mesh: { title: 'Change a mesh made from data', destructive: true }
 });
 
 /** a title from a tool name: `create_objects` → `Create objects` @param {string} name */
@@ -219,9 +230,9 @@ export function buildCatalog(hostTools, opts = {}) {
  * which carries the fine tool's own schema and description, so nothing about a tool is lost by grouping it.
  * mcp-shapes: a family may also have a BATCH — `batch: {key, tool}` — called as `{<key>: [...]}` with no action
  * (create_shape {shapes: [{action, mesh: {...}}, ...]}); the families map carries it as action `<key>`.
- * Reserved, not built yet: edit_shape `update` (G6b update_mesh), assets search / place / prefab (85-world, 85b),
- * set_look environment / sky / light (85-scene, 85b), create_shape from_image (73's image-to-3D is generate_mesh,
- * which the connector leaves out).
+ * 85b (85-world) built edit_shape `update` (G6b update_mesh), assets search / place / prefab and the effects family.
+ * Reserved, not built yet: set_look environment / sky / light (85-scene, 85b), create_shape from_image (73's
+ * image-to-3D is generate_mesh, which the connector leaves out).
  * @type {Readonly<Record<string, {title: string, summary: string, actions: Record<string, string>, batch?: {key: string, tool: string}}>>}
  */
 export const CONNECTOR_FAMILIES = Object.freeze({
@@ -235,8 +246,8 @@ export const CONNECTOR_FAMILIES = Object.freeze({
 	edit_shape: {
 		title: 'Reshape or model objects',
 		summary:
-			'Change the shape of objects that exist: params = new size / segments / type in place, mesh = model faces and vertices (extrude, inset, bevel, subdivide, weld, smooth, dissolve, make a face), pivot = the point an object turns about, pivot_group = a group at a joint so several parts swing together.',
-		actions: { params: 'set_geometry', mesh: 'edit_mesh', pivot: 'set_pivot', pivot_group: 'create_pivot' }
+			'Change the shape of objects that exist: params = new size / segments / type in place, mesh = model faces and vertices (extrude, inset, bevel, subdivide, weld, smooth, dissolve, make a face), update = new vertices / faces for a mesh made from data (replace it, or patch a range), pivot = the point an object turns about, pivot_group = a group at a joint so several parts swing together.',
+		actions: { params: 'set_geometry', mesh: 'edit_mesh', update: 'update_mesh', pivot: 'set_pivot', pivot_group: 'create_pivot' }
 	},
 	set_look: {
 		title: 'Materials, shaders, UVs and post effects',
@@ -259,8 +270,16 @@ export const CONNECTOR_FAMILIES = Object.freeze({
 	},
 	assets: {
 		title: 'Images and assets',
-		summary: 'The shared library: image = put an image into it (an https URL, base64 data, or a canvas you describe) and get its hash for textures.',
-		actions: { image: 'add_image' }
+		summary:
+			'Assets to build with: search = find models, prefabs, sounds, images, CC0 materials and HDRIs by words (library, packs, Poly Haven); place = put a found model or prefab into the scene; prefab = keep objects as a reusable prefab, or place copies of one; image = put an image into the library (an https URL, base64 data, or a canvas you describe) and get its hash for textures.',
+		actions: { search: 'search_assets', place: 'place_asset', prefab: 'prefab', image: 'add_image' }
+	},
+	// 85b (1.60, the tool budget's effects row)
+	effects: {
+		title: 'Terrain, scatter, water, particles and sound',
+		summary:
+			'The world around the build: terrain = make or shape ground (noise hills, sculpt, paint layers); scatter = many trees, rocks or flowers over a terrain or mesh, with slope / height rules; water = a pool, lake or ocean, or make an object water; particles = fire, smoke, sparkles, fireflies, rain, snow … by preset; sound = a positional sound (looping, or on click / enter); music = the scene\'s background track.',
+		actions: { terrain: 'terrain', scatter: 'scatter', water: 'water', particles: 'create_particles', sound: 'place_sound', music: 'set_music' }
 	}
 });
 

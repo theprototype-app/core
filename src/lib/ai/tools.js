@@ -46,6 +46,7 @@ import {
 } from './flowTools.js';
 import { GEOMETRY_TOOL_NAMES, GEOMETRY_AI_TOOLS, GEOMETRY_PROMPT, geometryTool } from './geometryTools.js';
 import { shapePose } from './shapeBatchCore.js';
+import { meshStats } from './meshStats.js';
 import { LOOK_TOOL_NAMES, LOOK_AI_TOOLS, LOOK_PROMPT, lookTool } from './lookTools.js';
 
 // AI tool layer (roadmap #10, A4). Maps OpenAI-style function calls onto the
@@ -147,6 +148,8 @@ function describeObject(object) {
 	if (pivot) out.pivot = pivot.map(r3); // 85 set_pivot: object space
 	const geometry = geometrySummary(object);
 	if (geometry) out.geometry = geometry;
+	const mesh = meshStats(object);
+	if (mesh) out.mesh = mesh;
 	const flow = summarizeGraph(object.uuid);
 	if (flow) out.flow = flow;
 	return out;
@@ -296,6 +299,7 @@ export function summarizeScene(cap = 200, filter = null) {
 	let truncated = 0;
 	let matched = 0;
 	if (group) {
+		group.updateMatrixWorld(true); // mcp-shapes: meshStats' world box
 		group.traverse((/** @type {any} */ object) => {
 			if (object === group) return;
 			if (keep && !keep(object)) return;
@@ -1103,7 +1107,7 @@ export const AI_TOOLS = [
 		function: {
 			name: 'list_scene',
 			description:
-				'List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. The transform is the AUTHORED pose: an object an effect is moving also has animated: true, and live {position, rotation, scale, visible} when this frame differs; update_objects writes the authored pose, so never copy live back into it. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius}. A big flow graph shows its first page and says how to read the rest: pass {flow: "scene" | object uuid, page} to read one page of one graph.',
+				'List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. Every mesh also has mesh {vertexCount, faceCount (triangles), bounds {local, world}} — each box [[minX, minY, minZ], [maxX, maxY, maxZ]], local in the mesh\'s own space (its vertices), world in the scene. The transform is the AUTHORED pose: an object an effect is moving also has animated: true, and live {position, rotation, scale, visible} when this frame differs; update_objects writes the authored pose, so never copy live back into it. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius}. A big flow graph shows its first page and says how to read the rest: pass {flow: "scene" | object uuid, page} to read one page of one graph.',
 			parameters: {
 				type: 'object',
 				properties: {

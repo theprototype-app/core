@@ -15,7 +15,7 @@
 	import { connectorSignInSlot } from '$lib/cloudHooks';
 	import { settingsOpen, settingsSection, showToast } from '../../stores/appStore';
 	import { requestSignIn } from '$lib/connector/connectorSignIn.js';
-	import { tipShown, dismissTip, TIP_AGENT_SHAPES, AGENT_TIP_TOOLS } from '$lib/tips.js';
+	import { tipShown, dismissTip, TIP_AGENT_SHAPES, AGENT_TIP_TOOLS, TIP_AGENT_GAMES, AGENT_GAMES_TIP_TOOLS } from '$lib/tips.js';
 
 	let { welcome = false }: { welcome?: boolean } = $props();
 	const signIn = $derived(welcome && !$connectorAvailable && !!$connectorSignInSlot);
@@ -27,6 +27,12 @@
 	$effect(() => {
 		const c = s.lastCall;
 		if (c?.ok && AGENT_TIP_TOOLS.has(c.tool) && $shapesTip) dismissTip(TIP_AGENT_SHAPES);
+	});
+	/** 85b (1.60): worlds, HUDs, sky and game checks — shown first, one hint at a time */
+	const gamesTip = tipShown(TIP_AGENT_GAMES);
+	$effect(() => {
+		const c = s.lastCall;
+		if (c?.ok && AGENT_GAMES_TIP_TOOLS.has(c.tool) && $gamesTip) dismissTip(TIP_AGENT_GAMES);
 	});
 	const tone = $derived(s.phase === 'connected' ? 'ok' : s.phase === 'reconnecting' || s.throttled ? 'warn' : s.phase === 'closed' || s.phase === 'error' ? 'bad' : 'idle');
 
@@ -120,7 +126,11 @@
 				{/if}
 				<button type="button" class="cc-link" onclick={openConnectedApps}>Connected apps</button>
 			</p>
-			{#if s.phase === 'connected' && $shapesTip}
+			{#if s.phase === 'connected' && $gamesTip}
+				<p class="cc-hint cc-new" id="connect-claude-tip" role="note">
+					New in 1.60: ask Claude for hills with a forest and a lake, a campfire that crackles, a race HUD, a night sky with fog — or “check my game”.
+				</p>
+			{:else if s.phase === 'connected' && $shapesTip}
 				<p class="cc-hint cc-new" id="connect-claude-tip" role="note">
 					New: ask Claude for a curvy vase, a handrail or a star-shaped sign, a wood or glass look — or say “undo that”.
 				</p>

@@ -606,3 +606,24 @@ describe('85a first-use tip', () => {
 		expect([...AGENT_TIP_TOOLS].sort()).toEqual([...want].sort());
 	});
 });
+
+describe('85b first-use tip', () => {
+	it('retires on exactly the 85b HUD / scene setup / world tools that change something (tips.AGENT_GAMES_TIP_TOOLS in step)', async () => {
+		const { AGENT_GAMES_TIP_TOOLS } = await import('../../src/lib/tips.js');
+		const fs = await import('node:fs');
+		/** @param {string} file @param {string} name */
+		const names = (file, name) => {
+			const m = fs.readFileSync(new URL('../../src/lib/ai/' + file, import.meta.url), 'utf8').match(new RegExp('export const ' + name + ' = (\\[[^\\]]*\\])'));
+			return /** @type {string[]} */ (JSON.parse(String(m?.[1]).replace(/'/g, '"')));
+		};
+		const want = [
+			['hudTools.js', 'HUD'],
+			['sceneSetupTools.js', 'SCENE_SETUP'],
+			['worldTools.js', 'WORLD']
+		].flatMap(([file, p]) => {
+			const read = names(file, p + '_READ_TOOLS');
+			return names(file, p + '_TOOL_NAMES').filter((n) => !read.includes(n));
+		});
+		expect([...AGENT_GAMES_TIP_TOOLS].sort()).toEqual([...want].sort());
+	});
+});

@@ -11,6 +11,7 @@ import { createAgentCore, missingModulesFrom, viewerRefusal } from './agentCore.
 import { getAiTools, executeAiTool, buildSystemPrompt, summarizeScene, repairToolCall, MESH_TOOL } from '$lib/ai/tools.js';
 import { IMPORT_MODEL_TOOL } from '$lib/ai/importModel.js'; // 56 C9
 import { IMPORT_SHAPE_TOOL } from '$lib/ai/importShape.js'; // diorama2 item 9
+import { UPLOAD_ASSET_TOOL } from '$lib/ai/uploadAsset.js'; // diorama2 items 16 + 24
 import { IMPORT_FILE_TOOL } from '$lib/ai/importFile.js'; // 66 S4b
 import { physicsToolsEnabled, forcePhysicsTools } from '$lib/ai/flowTools.js';
 import { meshGenReady } from '$lib/ai/meshProviders.js';
@@ -378,6 +379,7 @@ function agentTools(opts) {
 	if (!meshGenReady() && hostMeshReady() && !list.some((t) => t?.function?.name === 'generate_mesh')) list.push(MESH_TOOL);
 	list.push(IMPORT_MODEL_TOOL); // 56 C9: a GLB built outside the app (the bridge maps a local `path` to `data`)
 	list.push(IMPORT_FILE_TOOL); // 66 S4b: a sheet + spec / JSON / .tpanim from a local tool (same `path` mapping)
+	list.push(UPLOAD_ASSET_TOOL); // diorama2 items 16 + 24: a sound or an HDR sky as bytes (the connector's assets upload)
 	list.push(IMPORT_SHAPE_TOOL); // diorama2 item 9: glTF / GLB / OBJ by data, chunks or https url (the connector's create_shape import)
 	return list;
 }

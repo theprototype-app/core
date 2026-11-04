@@ -29,7 +29,9 @@
 - **Game rounds keep going with view-only guests**: a guest is never the one who decides the round; the host (or an editor) is. <!-- mcp-diorama2 20 -->
 - A **round pond** is the size you ask for ([diameter, depth, diameter]), sits on its spot, and its colour tints the whole water. <!-- mcp-diorama2 18 -->
 - A particle effect placed on its own (fireflies, rain) no longer shows a **ball** where it comes from. <!-- mcp-diorama2 21 -->
-- For developers: `tpAgent` contract 1.8.0 (`edit_shape {action: "duplicate"}`, `create_shape {action: "import"}`, `set_look {quality}`, screenshot `postEffects`, `sceneBudget.top` / `vsync`, scatter `source` / `avoid`); no new connector tool names. <!-- mcp-diorama2 -->
+- An agent can light the scene with a **Poly Haven sky** it found in search (it lands in your library first), or **send its own HDR sky**. <!-- mcp-diorama2 16 -->
+- Agents find the **sounds in the sound packs** (a fire crackle, wind, rain) and use them straight away; they are copied into your library the first time. An agent can also **send its own sound or music** to the library, so a site that blocks downloads no longer matters. <!-- mcp-diorama2 24 -->
+- For developers: `tpAgent` contract 1.8.0 (`edit_shape {action: "duplicate"}`, `create_shape {action: "import"}`, `set_look {quality}`, screenshot `postEffects`, `sceneBudget.top` / `vsync`, scatter `source` / `avoid`, `assets {action: "upload"}` = `upload_asset`, `set_look sky {hdri: "cc0:polyhaven/<id>"}`, pack sound ids `pack:<name>/<file>`); no new connector tool names. <!-- mcp-diorama2 -->
 
 ## 1.60.0 — An agent builds the game around your scene 🎮
 

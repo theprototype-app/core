@@ -3,7 +3,7 @@
 	"format": 2,
 	"generator": {
 		"source": "tpAgent.tools() via core scripts/agent-tool-catalog.cjs, mapped by tools/agent/src/catalog.js",
-		"hostTools": 72,
+		"hostTools": 73,
 		"dropped": []
 	},
 	"instructions": "You are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.\nWhen asked what you can do here, call what_can_you_do and say its \"say\" line.",
@@ -2749,7 +2749,7 @@
 		{
 			"name": "set_sky",
 			"title": "Change the sky and fog",
-			"description": "The sky and the air: a look preset (studio, daylight, sunset, night, classic, clearsky, meadow, sunrise, starlight, photostudio), a sky image by name (clearsky, meadow, sunrise, starlight, photostudio; or {hash} of an HDR in the library — never a URL) with rotation, intensity, blur and Sky quality (auto / standard / high / max, plus a minimum), a background colour or {top, bottom} gradient, fog ({color, near, far} in metres, or {color, density}; null = none) and exposure. \"Make it night\": preset night or hdri starlight + a dark fog. Changes the whole scene's look, so the host is asked first: it answers needsConfirm, then repeat with confirmId. One undo step.\nTake a screenshot after each change to check your work.",
+			"description": "The sky and the air: a look preset (studio, daylight, sunset, night, classic, clearsky, meadow, sunrise, starlight, photostudio), a sky image by name (clearsky, meadow, sunrise, starlight, photostudio; a search_assets HDRI id \"cc0:polyhaven/<id>\" (fetched into the library once) or \"lib:<hash>\"; or {hash} of an HDR in the library — upload your own .hdr / .exr with assets upload; never a URL) with rotation, intensity, blur and Sky quality (auto / standard / high / max, plus a minimum), a background colour or {top, bottom} gradient, fog ({color, near, far} in metres, or {color, density}; null = none) and exposure. \"Make it night\": preset night or hdri starlight + a dark fog. Changes the whole scene's look, so the host is asked first: it answers needsConfirm, then repeat with confirmId. One undo step.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -2763,7 +2763,7 @@
 							"object",
 							"null"
 						],
-						"description": "a sky name (clearsky, meadow, sunrise, starlight, photostudio), null for none, or {name | hash, rotation (degrees), intensity 0-4, blur 0-1, background (false = light only), quality, minQuality}",
+						"description": "a sky name (clearsky, meadow, sunrise, starlight, photostudio), a search_assets HDRI id (\"cc0:polyhaven/<id>\": fetched into the library once, CC0, credited) or \"lib:<hash>\", null for none, or {name | hash, rotation (degrees), intensity 0-4, blur 0-1, background (false = light only), quality, minQuality}. A sky file you hold yourself: assets upload gives its hash",
 						"properties": {
 							"name": {
 								"type": "string"
@@ -3141,7 +3141,7 @@
 		{
 			"name": "search_assets",
 			"title": "Find assets",
-			"description": "Find assets to build with, by words and kind: models and prefabs to place, sounds, images, CC0 materials and HDRIs. Searches the shared library, the model packs, your prefabs and Poly Haven. Each result has an id, name, kind, source, licence, size when known, and how to use it. Read-only.",
+			"description": "Find assets to build with, by words and kind: models and prefabs to place, sounds, images, CC0 materials and HDRIs. Searches the shared library, the packs (models, and the sounds of the sound packs: pack:<name>/<file>), your prefabs and Poly Haven. Each result has an id, name, kind, source, licence, size when known, and how to use it. Read-only.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -3616,13 +3616,13 @@
 		{
 			"name": "place_sound",
 			"title": "Place a sound",
-			"description": "A sound in the world: asset = a library sound (search_assets kinds [\"sound\"]) or an https URL of a sound file (it is checked and added to the library first). Positional: heard near position (or on object), radius metres. Without on it loops all the time (a campfire crackle, a river); on: click | enter | exit | grab | hit plays it once when that happens on the object. One undo step for the file's node and its wiring.\nTake a screenshot after each change to check your work.",
+			"description": "A sound in the world: asset = a sound from search_assets kinds [\"sound\"] — a library hash / lib: id, or a pack sound pack:<name>/<file> (copied into the library on first use) — or an https URL of a sound file (it is checked and added to the library first). A sound you made or fetched yourself goes through assets upload (base64 bytes → a hash), so a site without CORS does not matter. Positional: heard near position (or on object), radius metres. Without on it loops all the time (a campfire crackle, a river); on: click | enter | exit | grab | hit plays it once when that happens on the object. One undo step for the file's node and its wiring.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
 					"asset": {
 						"type": "string",
-						"description": "lib:<hash>, a library hash, or https://…"
+						"description": "lib:<hash>, a library hash, pack:<name>/<file>, or https://…"
 					},
 					"object": {
 						"type": "string",
@@ -3675,7 +3675,7 @@
 		{
 			"name": "set_music",
 			"title": "Set the background music",
-			"description": "The scene's background music, heard by everyone in sync: asset = a library sound or an https URL (null clears it), volume 0-1, play / stop. One undo step.\nTake a screenshot after each change to check your work.",
+			"description": "The scene's background music, heard by everyone in sync: asset = a library sound (hash / lib:), a pack sound pack:<name>/<file>, an https URL, or the hash assets upload gave you for your own music (null clears it), volume 0-1, play / stop. One undo step.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -4756,6 +4756,52 @@
 			}
 		},
 		{
+			"name": "upload_asset",
+			"title": "Upload a sound or an HDR sky",
+			"description": "Put a SOUND or an HDR SKY you hold as bytes into the library and get its hash: your own generated music or ambience, or a file you fetched yourself (any site — the bytes come from you, so nothing needs the site to allow cross-origin reads). data = base64; a big file goes as chunk: {id, index, total} parts (each a multiple of 4 base64 characters). Sounds: WAV, OGG, MP3, FLAC, M4A or WebM up to 16 MB (decoded once to prove it is audio) → place it with effects sound {asset: hash} or music {asset: hash}. Skies: Radiance .hdr or OpenEXR up to 25 MB → set_look sky {hdri: {hash}}. The type comes from the bytes, never the name. Images go through image instead. Everyone in the session can pull it by hash.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"data": {
+						"type": "string",
+						"description": "the file as base64 (or this chunk's part of it)"
+					},
+					"chunk": {
+						"type": "object",
+						"description": "{id, index (from 0), total}: one part of a big file; it lands when the last part arrives",
+						"properties": {
+							"id": {
+								"type": "string"
+							},
+							"index": {
+								"type": "integer"
+							},
+							"total": {
+								"type": "integer"
+							}
+						}
+					},
+					"name": {
+						"type": "string",
+						"description": "a name for the library (the extension comes from the bytes)"
+					},
+					"folder": {
+						"type": "string",
+						"description": "Explorer folder (default \"Sounds\" or \"Skies\")"
+					}
+				},
+				"required": [
+					"data"
+				]
+			},
+			"annotations": {
+				"title": "Upload a sound or an HDR sky",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"openWorldHint": false
+			}
+		},
+		{
 			"name": "import_shape",
 			"title": "Import a model file (glTF / GLB / OBJ)",
 			"description": "Bring in a 3D model file: glTF 2.0 (.glb, or .gltf JSON with everything embedded) or Wavefront .obj, as data (base64; for a big file send chunk: {id, index, total} parts, each a multiple of 4 base64 characters) or an https url (public addresses only, ≤ 25 MB; the file is copied into the library first, so the scene never needs the address again). Named sub-meshes become named children, returned in parts with uuids, so animate_parts can move them (a lid, a wheel, a door). position / rotation (radians) / scale as create_objects; with parentUuid they are the group's own space. castShadow / receiveShadow apply to every mesh in it. A model is data: nothing in it runs, and a file that points at outside files is refused. One undo step; everyone sees it.\nTake a screenshot after each change to check your work.",
@@ -5250,7 +5296,8 @@
 				"search": "search_assets",
 				"place": "place_asset",
 				"prefab": "prefab",
-				"image": "add_image"
+				"image": "add_image",
+				"upload": "upload_asset"
 			},
 			"effects": {
 				"terrain": "terrain",
@@ -7635,7 +7682,7 @@
 										"object",
 										"null"
 									],
-									"description": "a sky name (clearsky, meadow, sunrise, starlight, photostudio), null for none, or {name | hash, rotation (degrees), intensity 0-4, blur 0-1, background (false = light only), quality, minQuality}",
+									"description": "a sky name (clearsky, meadow, sunrise, starlight, photostudio), a search_assets HDRI id (\"cc0:polyhaven/<id>\": fetched into the library once, CC0, credited) or \"lib:<hash>\", null for none, or {name | hash, rotation (degrees), intensity 0-4, blur 0-1, background (false = light only), quality, minQuality}. A sky file you hold yourself: assets upload gives its hash",
 									"properties": {
 										"name": {
 											"type": "string"
@@ -7733,7 +7780,7 @@
 									"description": "with confirmId: seconds to wait for the answer (up to 60)"
 								}
 							},
-							"description": "The sky and the air: a look preset (studio, daylight, sunset, night, classic, clearsky, meadow, sunrise, starlight, photostudio), a sky image by name (clearsky, meadow, sunrise, starlight, photostudio; or {hash} of an HDR in the library — never a URL) with rotation, intensity, blur and Sky quality (auto / standard / high / max, plus a minimum), a background colour or {top, bottom} gradient, fog ({color, near, far} in metres, or {color, density}; null = none) and exposure. \"Make it night\": preset night or hdri starlight + a dark fog. Changes the whole scene's look, so the host is asked first: it answers needsConfirm, then repeat with confirmId. One undo step."
+							"description": "The sky and the air: a look preset (studio, daylight, sunset, night, classic, clearsky, meadow, sunrise, starlight, photostudio), a sky image by name (clearsky, meadow, sunrise, starlight, photostudio; a assets {action: 'search'} HDRI id \"cc0:polyhaven/<id>\" (fetched into the library once) or \"lib:<hash>\"; or {hash} of an HDR in the library — upload your own .hdr / .exr with assets upload; never a URL) with rotation, intensity, blur and Sky quality (auto / standard / high / max, plus a minimum), a background colour or {top, bottom} gradient, fog ({color, near, far} in metres, or {color, density}; null = none) and exposure. \"Make it night\": preset night or hdri starlight + a dark fog. Changes the whole scene's look, so the host is asked first: it answers needsConfirm, then repeat with confirmId. One undo step."
 						},
 						"light": {
 							"type": "object",
@@ -7991,7 +8038,7 @@
 			{
 				"name": "assets",
 				"title": "Images and assets",
-				"description": "Assets to build with: search = find models, prefabs, sounds, images, CC0 materials and HDRIs by words (library, packs, Poly Haven); place = put a found model or prefab into the scene; prefab = keep objects as a reusable prefab, or place copies of one; image = put an image into the library (an https URL, base64 data, or a canvas you describe) and get its hash for textures.\nCall it as {\"action\": \"search\", \"search\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
+				"description": "Assets to build with: search = find models, prefabs, sounds, images, CC0 materials and HDRIs by words (library, packs, Poly Haven); place = put a found model or prefab into the scene; prefab = keep objects as a reusable prefab, or place copies of one; image = put an image into the library (an https URL, base64 data, or a canvas you describe) and get its hash for textures; upload = put a SOUND or an HDR SKY you hold as base64 bytes (your own music, a file you fetched) into the library and get its hash for effects sound / music or set_look sky.\nCall it as {\"action\": \"search\", \"search\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -8001,7 +8048,8 @@
 								"search",
 								"place",
 								"prefab",
-								"image"
+								"image",
+								"upload"
 							],
 							"description": "What to do. Put its fields in the object named after the action."
 						},
@@ -8047,7 +8095,7 @@
 									"description": "default 12"
 								}
 							},
-							"description": "Find assets to build with, by words and kind: models and prefabs to place, sounds, images, CC0 materials and HDRIs. Searches the shared library, the model packs, your prefabs and Poly Haven. Each result has an id, name, kind, source, licence, size when known, and how to use it. Read-only."
+							"description": "Find assets to build with, by words and kind: models and prefabs to place, sounds, images, CC0 materials and HDRIs. Searches the shared library, the packs (models, and the sounds of the sound packs: pack:<name>/<file>), your prefabs and Poly Haven. Each result has an id, name, kind, source, licence, size when known, and how to use it. Read-only."
 						},
 						"place": {
 							"type": "object",
@@ -8251,6 +8299,42 @@
 								}
 							},
 							"description": "Put an image into the shared library (Explorer) and get its hash, for texture slots (update_objects materialParams.map, set_look {action: 'material'}) and image nodes. Give exactly one source: `url` (https, the site must allow other origins), `data` (base64, also how to pass an image you generated), or `canvas` (draw one from shapes, gradients, checkers and noise: textures, signs, labels). It is re-encoded here, so nothing in the file survives but its pixels. Limits: 16 MB in, 4096 px on the long side (larger is scaled down), a canvas 2048 px and 500 ops. One undo step; editors and admins only."
+						},
+						"upload": {
+							"type": "object",
+							"properties": {
+								"data": {
+									"type": "string",
+									"description": "the file as base64 (or this chunk's part of it)"
+								},
+								"chunk": {
+									"type": "object",
+									"description": "{id, index (from 0), total}: one part of a big file; it lands when the last part arrives",
+									"properties": {
+										"id": {
+											"type": "string"
+										},
+										"index": {
+											"type": "integer"
+										},
+										"total": {
+											"type": "integer"
+										}
+									}
+								},
+								"name": {
+									"type": "string",
+									"description": "a name for the library (the extension comes from the bytes)"
+								},
+								"folder": {
+									"type": "string",
+									"description": "Explorer folder (default \"Sounds\" or \"Skies\")"
+								}
+							},
+							"required": [
+								"data"
+							],
+							"description": "Put a SOUND or an HDR SKY you hold as bytes into the library and get its hash: your own generated music or ambience, or a file you fetched yourself (any site — the bytes come from you, so nothing needs the site to allow cross-origin reads). data = base64; a big file goes as chunk: {id, index, total} parts (each a multiple of 4 base64 characters). Sounds: WAV, OGG, MP3, FLAC, M4A or WebM up to 16 MB (decoded once to prove it is audio) → place it with effects sound {asset: hash} or music {asset: hash}. Skies: Radiance .hdr or OpenEXR up to 25 MB → set_look sky {hdri: {hash}}. The type comes from the bytes, never the name. Images go through image instead. Everyone in the session can pull it by hash."
 						}
 					},
 					"required": [
@@ -8560,7 +8644,7 @@
 							"properties": {
 								"asset": {
 									"type": "string",
-									"description": "lib:<hash>, a library hash, or https://…"
+									"description": "lib:<hash>, a library hash, pack:<name>/<file>, or https://…"
 								},
 								"object": {
 									"type": "string",
@@ -8602,7 +8686,7 @@
 							"required": [
 								"asset"
 							],
-							"description": "A sound in the world: asset = a library sound (assets {action: 'search'} kinds [\"sound\"]) or an https URL of a sound file (it is checked and added to the library first). Positional: heard near position (or on object), radius metres. Without on it loops all the time (a campfire crackle, a river); on: click | enter | exit | grab | hit plays it once when that happens on the object. One undo step for the file's node and its wiring."
+							"description": "A sound in the world: asset = a sound from assets {action: 'search'} kinds [\"sound\"] — a library hash / lib: id, or a pack sound pack:<name>/<file> (copied into the library on first use) — or an https URL of a sound file (it is checked and added to the library first). A sound you made or fetched yourself goes through assets upload (base64 bytes → a hash), so a site without CORS does not matter. Positional: heard near position (or on object), radius metres. Without on it loops all the time (a campfire crackle, a river); on: click | enter | exit | grab | hit plays it once when that happens on the object. One undo step for the file's node and its wiring."
 						},
 						"music": {
 							"type": "object",
@@ -8625,7 +8709,7 @@
 									"type": "boolean"
 								}
 							},
-							"description": "The scene's background music, heard by everyone in sync: asset = a library sound or an https URL (null clears it), volume 0-1, play / stop. One undo step."
+							"description": "The scene's background music, heard by everyone in sync: asset = a library sound (hash / lib:), a pack sound pack:<name>/<file>, an https URL, or the hash assets upload gave you for your own music (null clears it), volume 0-1, play / stop. One undo step."
 						}
 					},
 					"required": [

@@ -37,6 +37,7 @@ export const TOOL_ANNOTATIONS = /** @type {Record<string, {title: string, read?:
 	import_model: { title: 'Import a 3D model', destructive: false },
 	import_file: { title: 'Import a file', destructive: false },
 	import_shape: { title: 'Import a model file (glTF / GLB / OBJ)', destructive: false, openWorld: true },
+	upload_asset: { title: 'Upload a sound or an HDR sky', destructive: false },
 	update_objects: { title: 'Change objects', destructive: true },
 	update_flow_nodes: { title: 'Change or remove flow nodes', destructive: true },
 	edit_behaviour: { title: 'Edit a code behaviour', destructive: true },
@@ -302,8 +303,8 @@ export const CONNECTOR_FAMILIES = Object.freeze({
 	assets: {
 		title: 'Images and assets',
 		summary:
-			'Assets to build with: search = find models, prefabs, sounds, images, CC0 materials and HDRIs by words (library, packs, Poly Haven); place = put a found model or prefab into the scene; prefab = keep objects as a reusable prefab, or place copies of one; image = put an image into the library (an https URL, base64 data, or a canvas you describe) and get its hash for textures.',
-		actions: { search: 'search_assets', place: 'place_asset', prefab: 'prefab', image: 'add_image' }
+			'Assets to build with: search = find models, prefabs, sounds, images, CC0 materials and HDRIs by words (library, packs, Poly Haven); place = put a found model or prefab into the scene; prefab = keep objects as a reusable prefab, or place copies of one; image = put an image into the library (an https URL, base64 data, or a canvas you describe) and get its hash for textures; upload = put a SOUND or an HDR SKY you hold as base64 bytes (your own music, a file you fetched) into the library and get its hash for effects sound / music or set_look sky.',
+		actions: { search: 'search_assets', place: 'place_asset', prefab: 'prefab', image: 'add_image', upload: 'upload_asset' }
 	},
 	// 85b (1.60, the tool budget's effects row)
 	effects: {

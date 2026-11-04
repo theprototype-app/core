@@ -14,6 +14,6 @@ const { LOOK_TOOL_NAMES } = await import('../../src/lib/ai/lookTools.js');
 const source = readFileSync(fileURLToPath(new URL('../../src/lib/ai/tools.js', import.meta.url)), 'utf8');
 
 describe('tools.js routes every geometry and look tool', () => {
-	for (const name of [...GEOMETRY_TOOL_NAMES, ...LOOK_TOOL_NAMES, 'import_shape'])
+	for (const name of [...GEOMETRY_TOOL_NAMES, ...LOOK_TOOL_NAMES, 'import_shape', 'upload_asset'])
 		it(name + ' has its case', () => expect(source).toContain("case '" + name + "'"));
 });

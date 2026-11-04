@@ -512,6 +512,43 @@ export function sniffAudio(b) {
 	return null;
 }
 
+/**
+ * mcp-diorama2 (24a, owner): a zip pack's SOUNDS as search rows, from the manifest.json beside its zip on the CDN —
+ * so an agent finds "fire crackle" before anyone installed the pack. The id `pack:<name>/<file>` is what
+ * place_sound / set_music take; only a file the manifest lists is ever fetched (no path from an agent reaches a URL).
+ * @param {any} manifest @param {{name: string, title?: string, license?: string}} pack
+ * @returns {{id: string, name: string, kind: 'sound', source: string, licence: string, credit?: string, tags: string[]}[]}
+ */
+export function packSoundRows(manifest, pack) {
+	const items = Array.isArray(manifest?.items) ? manifest.items : [];
+	return items
+		.filter((/** @type {any} */ it) => typeof it?.file === 'string' && SOUND_FILE.test(it.file) && safePackFile(it.file))
+		.map((/** @type {any} */ it) => ({
+			id: 'pack:' + pack.name + '/' + it.file,
+			name: String(it.name || it.file.split('/').pop()).slice(0, 120),
+			kind: /** @type {'sound'} */ ('sound'),
+			source: 'pack ' + (pack.title || pack.name),
+			licence: String(it.license || manifest.license || pack.license || 'see the pack'),
+			...(it.author ? { credit: String(it.author).slice(0, 120) } : {}),
+			tags: [it.file, pack.name, String(pack.title ?? ''), ...String(it.name ?? '').split(/\s+/), /loop/i.test(it.file) ? 'loop ambience ambient' : '']
+		}));
+}
+
+/** a sound file a pack may hold @type {RegExp} */
+export const SOUND_FILE = /\.(ogg|wav|mp3|flac|m4a|webm)$/i;
+
+/** a manifest file path we will put after the pack's base URL: relative, no `..`, no scheme @param {string} file */
+export function safePackFile(file) {
+	return typeof file === 'string' && file.length <= 200 && !/^[a-z]+:|^\/|\\|(^|\/)\.\.(\/|$)/i.test(file);
+}
+
+/** `pack:<name>/<file>` → its parts, or null @param {string} id */
+export function parsePackSoundId(id) {
+	const m = /^pack:([a-z0-9][a-z0-9_-]{0,63})\/(.+)$/i.exec(String(id ?? ''));
+	if (!m || !SOUND_FILE.test(m[2]) || !safePackFile(m[2])) return null;
+	return { pack: m[1], file: m[2] };
+}
+
 /** the flow node a sound's `on` names → its catalog type */
 export const SOUND_TRIGGERS = Object.freeze({ click: 'onclick', enter: 'onenter', exit: 'onexit', grab: 'ongrab', hit: 'onhit' });
 

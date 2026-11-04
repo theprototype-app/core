@@ -30,6 +30,8 @@ import {
 	sniffAudio,
 	AUDIO_MAX_BYTES,
 	SOUND_TRIGGERS,
+	packSoundRows,
+	parsePackSoundId,
 	placementPoints
 } from './worldToolsCore.js';
 import { PARTICLE_PRESETS, PARTICLE_DEFAULTS, particlePreset } from '$lib/particlePresets';
@@ -152,16 +154,49 @@ async function libraryRows(kinds) {
 		}));
 }
 
-/** pack rows (models; a zip pack's sounds land in the library when installed) @param {string[]} kinds @param {string[]} notes */
+/** a zip pack's manifest.json, read once per session (a few KB) @type {Map<string, Promise<any>>} */
+const packManifests = new Map();
+
+/** @param {any} pack @returns {Promise<any>} */
+function packManifest(pack) {
+	const url = String(pack.base) + '/manifest.json';
+	let got = packManifests.get(url);
+	if (!got) {
+		got = (async () => {
+			const { fetchIndex } = await import('$lib/contentBase');
+			const res = await fetchIndex(url);
+			if (!res.ok) throw new Error(String(res.status));
+			return res.json();
+		})();
+		got.catch(() => packManifests.delete(url));
+		packManifests.set(url, got);
+	}
+	return got;
+}
+
+/**
+ * pack rows: models from a list pack, and (mcp-diorama2 24a) the SOUNDS of a zip pack from its manifest — an id
+ * `pack:<name>/<file>` that place_sound / set_music copy into the library on first use. An INSTALLED pack's items
+ * are library items and list there. @param {string[]} kinds @param {string[]} notes
+ */
 async function packRows(kinds, notes) {
-	if (!kinds.includes('model')) return [];
+	const wantModels = kinds.includes('model');
+	const wantSounds = kinds.includes('sound');
+	if (!wantModels && !wantSounds) return [];
 	const pk = await import('$lib/packs');
 	if (!(/** @type {any[]} */ (get(pk.packs)).length)) await pk.loadPacks();
 	/** @type {any[]} */
 	const rows = [];
 	for (const pack of /** @type {any[]} */ (get(pk.packs))) {
 		if (pack.source === 'imported') continue; // its items ARE library items, listed there
-		if (!pack.listUrl) continue;
+		if (wantSounds && pack.zip && pack.base) {
+			try {
+				rows.push(...packSoundRows(await packManifest(pack), pack));
+			} catch {
+				notes.push('the sounds of the pack "' + pack.title + '" could not be read');
+			}
+		}
+		if (!wantModels || !pack.listUrl) continue;
 		let items = [];
 		try {
 			items = await pk.listPackItems(pack);
@@ -227,7 +262,7 @@ async function cc0Rows(kinds, notes) {
 export function assetUse(row) {
 	if (row.kind === 'model' || row.kind === 'prefab') return "assets {action: 'place', place: {asset: id, position}}";
 	if (row.kind === 'material') return 'set_look {action: \'material\', material: {objects, cc0: "' + row.name + '"}}';
-	if (row.kind === 'sound') return "effects {action: 'sound', sound: {asset: id, position}}";
+	if (row.kind === 'sound') return "effects {action: 'sound', sound: {asset: id, position}} or effects {action: 'music', music: {asset: id}}";
 	if (row.kind === 'image') return 'a texture: set_look material maps {albedo: hash}';
 	return "a sky / environment light: set_look {action: 'sky', sky: {hdri: id}}";
 }
@@ -831,10 +866,76 @@ export async function soundItem(source) {
 		if (!item) return { error: s.slice(0, 60) + ': the library refused it' };
 		return { hash: String(item.hash), name: String(item.name), from: 'url' };
 	}
+	if (s.startsWith('pack:')) return packSoundItem(s);
 	const hash = s.startsWith('lib:') ? s.slice(4) : s;
 	const item = ex.itemByHash(hash);
-	if (!item || item.kind !== 'audio') return { error: 'asset: no sound in the library has that hash (search_assets kinds: ["sound"])' };
+	if (!item || item.kind !== 'audio') return { error: 'asset: no sound in the library has that hash (search_assets kinds: ["sound"]; a pack sound is pack:<name>/<file>, your own bytes go through assets upload)' };
 	return { hash: String(item.hash), name: String(item.name), from: 'library' };
+}
+
+/**
+ * mcp-diorama2 (24a, owner): a pack sound `pack:<name>/<file>` → a library item, copied in on first use like an
+ * install (into the pack's own folder, the one installing the pack would make, so a later install dedupes by hash).
+ * Only a file the pack's manifest lists is fetched, from the pack's own CDN base; capped, sniffed and decoded like a
+ * URL sound. An installed pack answers from the library with no fetch.
+ * @param {string} id @returns {Promise<{hash: string, name: string, from: string} | {error: string}>}
+ */
+export async function packSoundItem(id) {
+	const ref = parsePackSoundId(id);
+	if (!ref) return { error: 'asset: a pack sound is pack:<name>/<file> as search_assets lists it (kinds: ["sound"])' };
+	const pk = await import('$lib/packs');
+	if (!(/** @type {any[]} */ (get(pk.packs)).length)) await pk.loadPacks();
+	const list = /** @type {any[]} */ (get(pk.packs));
+	const ex = await import('$lib/explorer');
+	const base = ref.file.split('/').pop() ?? ref.file;
+	const installed = list.find((p) => p.name === ref.pack && p.source === 'imported');
+	if (installed) {
+		const ids = new Set((installed.items ?? []).map((/** @type {any} */ it) => it.id));
+		const rec = /** @type {any[]} */ (get(ex.explorerItems)).find((r) => ids.has(r.id) && r.name === base && r.kind === 'audio');
+		if (rec) return { hash: String(rec.hash), name: String(rec.name), from: 'pack' };
+	}
+	const pack = list.find((p) => p.name === ref.pack && p.zip && p.base);
+	if (!pack) return { error: 'asset: no sound pack is called "' + ref.pack + '" (search_assets kinds: ["sound"] lists them)' };
+	/** @type {any} */
+	let manifest;
+	try {
+		manifest = await packManifest(pack);
+	} catch {
+		return { error: 'asset: the pack "' + pack.title + '" could not be read — try again' };
+	}
+	const row = packSoundRows(manifest, pack).find((r) => r.id === 'pack:' + ref.pack + '/' + ref.file);
+	if (!row) return { error: 'asset: the pack "' + pack.title + '" has no sound ' + ref.file };
+	const { readHttpsBytes } = await import('./lookTools.js');
+	const { FETCH_TIMEOUT_MS } = await import('./imageToolCore.js');
+	const abort = new AbortController();
+	const timer = setTimeout(() => abort.abort(), FETCH_TIMEOUT_MS);
+	/** @type {any} */
+	let got;
+	try {
+		got = await readHttpsBytes(String(pack.base) + '/' + ref.file, fetch, abort.signal, AUDIO_MAX_BYTES);
+	} catch {
+		got = { error: 'it took over ' + FETCH_TIMEOUT_MS / 1000 + ' s' };
+	} finally {
+		clearTimeout(timer);
+	}
+	if (got.error) return { error: 'asset: ' + base + ': ' + got.error };
+	if (!sniffAudio(got.bytes)) return { error: 'asset: ' + base + ' is not a sound file this app plays' };
+	const Ctx = /** @type {any} */ (globalThis).OfflineAudioContext;
+	if (Ctx) {
+		try {
+			await new Ctx(1, 1, 44100).decodeAudioData(got.bytes.slice().buffer);
+		} catch {
+			return { error: 'asset: ' + base + ' does not decode as audio' };
+		}
+	}
+	const { fileIntoLibrary } = await import('./importFile.js');
+	try {
+		const folder = String(manifest?.name || pack.title || pack.name).replace(/[*\\/]/g, ' ').trim() || 'Sounds';
+		const filed = await fileIntoLibrary(got.bytes, base, folder);
+		return { hash: String(filed.item.hash), name: String(filed.item.name), from: 'pack', ...(row.licence ? { licence: row.licence } : {}), ...(row.credit ? { credit: row.credit } : {}) };
+	} catch (e) {
+		return { error: 'asset: the library refused ' + base + ': ' + String(/** @type {any} */ (e)?.message ?? e).slice(0, 80) };
+	}
 }
 
 /** @param {any} args @param {CreateBase} createBase */
@@ -978,7 +1079,7 @@ export const WORLD_AI_TOOLS = [
 		function: {
 			name: 'search_assets',
 			description:
-				'Find assets to build with, by words and kind: models and prefabs to place, sounds, images, CC0 materials and HDRIs. Searches the shared library, the model packs, your prefabs and Poly Haven. Each result has an id, name, kind, source, licence, size when known, and how to use it. Read-only.',
+				'Find assets to build with, by words and kind: models and prefabs to place, sounds, images, CC0 materials and HDRIs. Searches the shared library, the packs (models, and the sounds of the sound packs: pack:<name>/<file>), your prefabs and Poly Haven. Each result has an id, name, kind, source, licence, size when known, and how to use it. Read-only.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1140,11 +1241,11 @@ export const WORLD_AI_TOOLS = [
 		function: {
 			name: 'place_sound',
 			description:
-				'A sound in the world: asset = a library sound (search_assets kinds ["sound"]) or an https URL of a sound file (it is checked and added to the library first). Positional: heard near position (or on object), radius metres. Without on it loops all the time (a campfire crackle, a river); on: click | enter | exit | grab | hit plays it once when that happens on the object. One undo step for the file\'s node and its wiring.',
+				'A sound in the world: asset = a sound from search_assets kinds ["sound"] — a library hash / lib: id, or a pack sound pack:<name>/<file> (copied into the library on first use) — or an https URL of a sound file (it is checked and added to the library first). A sound you made or fetched yourself goes through assets upload (base64 bytes → a hash), so a site without CORS does not matter. Positional: heard near position (or on object), radius metres. Without on it loops all the time (a campfire crackle, a river); on: click | enter | exit | grab | hit plays it once when that happens on the object. One undo step for the file\'s node and its wiring.',
 			parameters: {
 				type: 'object',
 				properties: {
-					asset: { type: 'string', description: 'lib:<hash>, a library hash, or https://…' },
+					asset: { type: 'string', description: 'lib:<hash>, a library hash, pack:<name>/<file>, or https://…' },
 					object: { type: 'string', description: 'put the sound on this object (uuid) instead of at position' },
 					position: V3,
 					name: { type: 'string' },
@@ -1162,7 +1263,7 @@ export const WORLD_AI_TOOLS = [
 		function: {
 			name: 'set_music',
 			description:
-				'The scene\'s background music, heard by everyone in sync: asset = a library sound or an https URL (null clears it), volume 0-1, play / stop. One undo step.',
+				'The scene\'s background music, heard by everyone in sync: asset = a library sound (hash / lib:), a pack sound pack:<name>/<file>, an https URL, or the hash assets upload gave you for your own music (null clears it), volume 0-1, play / stop. One undo step.',
 			parameters: {
 				type: 'object',
 				properties: {

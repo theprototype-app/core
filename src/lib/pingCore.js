@@ -12,7 +12,8 @@ export const PING_LOG_PER_PEER = 5;
 export const PING_MIN_GAP = 250;
 
 const finite3 = (/** @type {any} */ v) => Array.isArray(v) && v.length === 3 && v.every((n) => typeof n === 'number' && Number.isFinite(n));
-const str = (/** @type {any} */ v, /** @type {number} */ max) => v === undefined || (typeof v === 'string' && v.length <= max);
+// an absent optional field can arrive as null (PeerJS's binary packing has no undefined)
+const str = (/** @type {any} */ v, /** @type {number} */ max) => v == null || (typeof v === 'string' && v.length <= max);
 const UUID = /^[0-9a-fA-F-]{8,64}$/;
 
 /**
@@ -22,10 +23,10 @@ const UUID = /^[0-9a-fA-F-]{8,64}$/;
 export function isPingMessage(d) {
 	if (typeof d.id !== 'string' || !d.id || d.id.length > 64 || !finite3(d.pos)) return false;
 	if (!str(d.name, 200) || !str(d.color, 64) || !str(d.sound, 64) || !str(d.peerId, 128)) return false;
-	if (d.uuid !== undefined && !(typeof d.uuid === 'string' && UUID.test(d.uuid))) return false;
-	if (d.on === undefined) return true;
+	if (d.uuid != null && !(typeof d.uuid === 'string' && UUID.test(d.uuid))) return false;
+	if (d.on == null) return true;
 	const on = d.on;
-	return !!on && typeof on === 'object' && typeof on.uuid === 'string' && UUID.test(on.uuid) && finite3(on.local) && (on.normal === undefined || finite3(on.normal));
+	return typeof on === 'object' && typeof on.uuid === 'string' && UUID.test(on.uuid) && finite3(on.local) && (on.normal == null || finite3(on.normal));
 }
 
 /**

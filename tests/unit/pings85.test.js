@@ -52,6 +52,8 @@ describe('85b S2 ping log', () => {
 		const ok = { type: 'ping', id: 'abc', pos: [1, 2, 3], name: 'Ann', color: '#fff', sound: 'ding' };
 		expect(validateWireMessage(ok)).toBe(true);
 		expect(validateWireMessage({ ...ok, on: { uuid: '12345678-aaaa', local: [0, 1, 0], normal: [0, 0, 1] } })).toBe(true);
+		// PeerJS binary packing turns an absent field into null: still a ping
+		expect(validateWireMessage({ ...ok, uuid: null, on: null, color: null })).toBe(true);
 		expect(isPingMessage({ ...ok, pos: [1, 2] })).toBe(false);
 		expect(isPingMessage({ ...ok, on: { uuid: 'x y', local: [0, 0, 0] } })).toBe(false);
 		expect(isPingMessage({ ...ok, on: { uuid: '12345678', local: [0, NaN, 0] } })).toBe(false);

@@ -28,6 +28,9 @@
 - **Templates ▸ Film set**: a small stage that keeps moving, and a camera to film it with.
 - A first-use tip in Film mode, and a docs page: **Film with your phone**.
 
+### 🔧 Fixed
+- On a phone, connecting to a session no longer shows "Something went wrong: ResizeObserver loop…" (the connection chip measured itself while it changed size).
+
 ## 1.57.0 — Shared games start fast 🚀
 
 ### ▶ A play view made only for playing

@@ -170,7 +170,10 @@ h.run(async () => {
 	const loadedAtBoot = await page.evaluate(() => ({
 		files: performance.getEntriesByType('resource').map((e) => e.name).filter((n) => /film\/(filmMode|FilmMode|filmWalk|filmRecorder)/.test(n)),
 		runtime: 'filmMode' in window.__stores,
-		total: performance.getEntriesByType('resource').length
+		total: performance.getEntriesByType('resource').length,
+		// a built app names its chunks by hash, so there the witness is a new script arriving with Film
+		built: !performance.getEntriesByType('resource').some((e) => /\/src\//.test(e.name)),
+		js: performance.getEntriesByType('resource').filter((e) => /\.js(\?|$)/.test(e.name)).length
 	}));
 	h.check(loadedAtBoot.files.length === 0 && !loadedAtBoot.runtime && loadedAtBoot.total > 50, `Film mode is not in the boot graph (${JSON.stringify(loadedAtBoot)})`);
 
@@ -197,9 +200,13 @@ h.run(async () => {
 	h.check((await page.locator('#film-tip').count()) === 0, 'its ✕ closes the tip');
 	const loadedAfter = await page.evaluate(() => ({
 		files: performance.getEntriesByType('resource').map((e) => e.name).filter((n) => /film\/(filmMode|FilmMode)/.test(n)).length,
-		runtime: 'filmMode' in window.__stores
+		runtime: 'filmMode' in window.__stores,
+		js: performance.getEntriesByType('resource').filter((e) => /\.js(\?|$)/.test(e.name)).length
 	}));
-	h.check(loadedAfter.files >= 1 && loadedAfter.runtime, `opening Film loads its chunk (${JSON.stringify(loadedAfter)})`);
+	h.check(
+		(loadedAfter.files >= 1 || (loadedAtBoot.built && loadedAfter.js > loadedAtBoot.js)) && loadedAfter.runtime,
+		`opening Film loads its chunk (${JSON.stringify({ ...loadedAfter, built: loadedAtBoot.built, jsAtBoot: loadedAtBoot.js })})`
+	);
 
 	// the letterbox: 16:9 across the folded screen, centred
 	let rect = await viewportRect(page);

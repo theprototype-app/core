@@ -106,6 +106,11 @@ h.run(async () => {
 		return v;
 	});
 	h.check(entry === 'ready', `IWER offers immersive-ar, so Track my movement is offered (${entry})`);
+	// no error toast on the phone through connect + Film (1.58 preview: the connection chip's ResizeObserver loop)
+	const errToasts = await page.evaluate(() => [...document.querySelectorAll('.tp-toast-text')].map((t) => t.textContent.trim()).filter((t) => /Something went wrong/.test(t)));
+	h.check(errToasts.length === 0, `no error toast on the phone (${JSON.stringify(errToasts).slice(0, 160)})`);
+	// a phone page's own toasts (the auto-quality step-down, a joined peer) sit over Film's sheet buttons
+	await page.evaluate(() => window.__stores.toastStore.set([]));
 	await page.locator('#film-settings-btn').click();
 	const n0 = await page.evaluate(() => window.__iwer.sessions.length);
 	await page.locator('#film-walk').click();

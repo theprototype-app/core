@@ -325,12 +325,23 @@
 			const next = base + CHIP_LABEL_GAP + meas.offsetWidth > room;
 			if (next !== compact) chipCompact = compact = next;
 		};
-		const ro = new ResizeObserver(fit);
+		// 68-int: fit in the NEXT frame, never inside the delivery pass: flipping chipCompact shows or hides the label
+		// INSIDE the observed chip, so the chip resized during its own delivery and Chromium raised "ResizeObserver
+		// loop completed with undelivered notifications" — the error toast on a phone as the peers connected
+		// (measured on the 1.58 preview: #hud-tr + .ps-chip + .ps-chip-measure in the failing pass)
+		let raf = 0;
+		const ro = new ResizeObserver(() => {
+			cancelAnimationFrame(raf);
+			raf = requestAnimationFrame(fit);
+		});
 		ro.observe(wrap);
 		ro.observe(chip);
 		ro.observe(meas);
 		fit();
-		return () => ro.disconnect();
+		return () => {
+			cancelAnimationFrame(raf);
+			ro.disconnect();
+		};
 	});
 
 	// ---- the strip -------------------------------------------------------------------

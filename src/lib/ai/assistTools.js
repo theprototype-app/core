@@ -111,12 +111,27 @@ function createPivotTool(args) {
 		else members.push(o);
 	}
 	if (!members.length) return { error: 'no pivot made: ' + skippedWhy[0], skippedWhy };
-	const at = pivotPoint(args?.at, members);
-	if (!at) return { error: 'at: takes a world point [x, y, z], or ' + PIVOT_POINTS.join(' / ') + ' of the objects' };
 	const group = /** @type {any} */ (get(objectsGroup));
-	const name = typeof args?.name === 'string' && args.name.trim() ? args.name.trim().slice(0, 120) : 'Pivot';
 	// parts of one model stay inside it: the pivot joins their common parent, or a moved lamp loses its head
 	const parent = members.every((m) => m.parent === members[0].parent) && members[0].parent !== group ? members[0].parent : null;
+	// mcp-shapes: `local` = the point in the space of the group the pivot joins (the parts' common parent), the
+	// numbers list_scene shows for things inside it; `at` stays the world point
+	if (args?.local !== undefined && args?.at !== undefined) return { error: 'give at (a world point) or local (a point in the parent group), not both' };
+	/** @type {THREE.Vector3 | null} */
+	let at = null;
+	if (args?.local !== undefined) {
+		const local = point(args.local);
+		if (!local) return { error: 'local: takes [x, y, z] in the space of the group the objects are in' + (parent ? '' : ' (they are at the scene root, so that is world space)') };
+		at = new THREE.Vector3().fromArray(local);
+		if (parent) {
+			parent.updateMatrixWorld(true);
+			parent.localToWorld(at);
+		}
+	} else {
+		at = pivotPoint(args?.at, members);
+		if (!at) return { error: 'at: takes a world point [x, y, z], or ' + PIVOT_POINTS.join(' / ') + ' of the objects; or give local: [x, y, z] in their group' };
+	}
+	const name = typeof args?.name === 'string' && args.name.trim() ? args.name.trim().slice(0, 120) : 'Pivot';
 	/** @type {any} */
 	const peer = get(peers);
 	// the groupSelection order: both sides attach with the group already at the point, so local coords match
@@ -137,6 +152,7 @@ function createPivotTool(args) {
 		groupUuid: uuid,
 		name,
 		at: at.toArray().map(r3),
+		...(parent ? { local: objectOf(uuid)?.position.toArray().map(r3) } : {}),
 		members: members.map((m) => m.uuid),
 		...(parent ? { parentUuid: parent.uuid } : {}),
 		...(skippedWhy.length ? { skippedWhy } : {}),
@@ -252,15 +268,16 @@ export const ASSIST_AI_TOOLS = [
 		function: {
 			name: 'create_pivot',
 			description:
-				'Make a group at a point and put objects in it, so turning the group swings them about that point: arm parts about a shoulder, several parts of a lamp about one joint. The objects stay where they are. For one object, set_pivot needs no extra group. Returns groupUuid.',
+				'Make a group at a point and put objects in it, so turning the group swings them about that point: arm parts about a shoulder, several parts of a lamp about one joint. The objects stay where they are. Give the point as at (world) or local (in the group the objects are already in — the numbers list_scene shows inside it). For one object, set_pivot needs no extra group. Returns groupUuid.',
 			parameters: {
 				type: 'object',
 				properties: {
 					objects: { type: 'array', items: { type: 'string' }, maxItems: MAX_PIVOT_MEMBERS, description: 'the uuids to swing' },
 					at: { description: 'the point: [x,y,z] world metres, or "center" / "bottom" / "top" of the objects together' },
+					local: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3, description: 'instead of at: [x,y,z] in the space of the group the objects are in (world space at the scene root)' },
 					name: { type: 'string', description: 'the group\'s name (default "Pivot")' }
 				},
-				required: ['objects', 'at']
+				required: ['objects']
 			}
 		}
 	},

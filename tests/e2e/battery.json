@@ -272,6 +272,7 @@
 		"agent-look": "agent",
 		"agent-mcp": "agent",
 		"agent-assist": "agent",
+		"agent-shapes": "agent",
 		"agent-proof": "agent",
 		"agent-chat": "agent",
 		"import-file": "agent"
@@ -312,6 +313,7 @@
 		"agent-mcp": 100,
 		"agent-presence": 40,
 		"agent-assist": 240,
+		"agent-shapes": 240,
 		"agent-proof": 600,
 		"agent-travel": 240,
 		"ai-connection": 90,

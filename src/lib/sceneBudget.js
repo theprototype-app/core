@@ -483,13 +483,24 @@ function walkScene() {
 	let objects = 0;
 	let meshes = 0;
 	let hidden = 0;
+	let lights = 0;
 	group?.traverse?.((/** @type {any} */ o) => {
 		if (o === group) return;
 		objects++;
 		if (o.isMesh) meshes++;
+		if (o.isLight) lights++; // mcp-shapes: the agent's status reports it
 		if (o.visible === false) hidden++;
 	});
-	return { objects, meshes, hidden };
+	// mcp-shapes: the scene's OWN triangles (visible meshes, instances counted) — the agent's status needs a number
+	// while the view is idle, and the render totals above are per DISPLAY frame, so a scene nobody is changing
+	// (render on demand) reads 0 there
+	let sceneTriangles = 0;
+	group?.traverseVisible?.((/** @type {any} */ o) => {
+		const g = o.isMesh ? o.geometry : null;
+		const n = g ? (g.index ? g.index.count : (g.attributes?.position?.count ?? 0)) : 0;
+		if (n) sceneTriangles += Math.floor(n / 3) * (o.isInstancedMesh ? o.count : 1);
+	});
+	return { objects, meshes, hidden, lights, sceneTriangles };
 }
 
 // --- per-frame render totals (26-E) -----------------------------------------------
@@ -614,6 +625,8 @@ function sample() {
 		objects: scene.objects,
 		meshes: scene.meshes,
 		hidden: scene.hidden,
+		lights: scene.lights,
+		sceneTriangles: scene.sceneTriangles,
 		// per DISPLAY frame across every render() call; before the sampler has counted a
 		// frame (a forced reading straight after boot) fall back to the raw last pass
 		triangles: totals ? totals.triangles : (info?.render?.triangles ?? null),
@@ -734,6 +747,37 @@ export function stopSceneMetrics() {
 export function sampleSceneMetrics() {
 	sample();
 	return get(sceneMetrics);
+}
+
+/**
+ * mcp-shapes: the scene budget an agent's status carries — the numbers the Statistics overlay reads, compact: the
+ * worst tier (green | amber | red, or unknown before a frame was measured), the profile it is judged on (desktop | vr)
+ * and `over` = every budget past green, so an agent knows when to stop adding. Read-only, a fresh sample when the
+ * sampler has not run yet.
+ * @param {Record<string, any>} [given] a sample (tests); default the live one
+ */
+export function agentBudgetReport(given) {
+	let metrics = given ?? get(sceneMetrics);
+	if (!given && !metrics?.at) metrics = sampleSceneMetrics();
+	// an idle view (render on demand) draws nothing per display frame: say the scene's own triangles and leave the
+	// draw calls out rather than report 0 for a scene full of meshes
+	const idle = !(metrics.triangles > 0) && metrics.sceneTriangles > 0;
+	if (idle) {
+		metrics = { ...metrics, triangles: metrics.sceneTriangles };
+		if (!(metrics.calls > 0)) metrics.calls = null;
+	}
+	const profile = metrics.profile === 'vr' ? 'vr' : 'desktop';
+	/** @type {Record<string, any>} */
+	const out = { tier: worstTier(metrics, profile), profile };
+	for (const key of ['objects', 'meshes', 'triangles', 'calls', 'textures', 'lights', 'frameP95']) {
+		const v = metrics[key];
+		if (typeof v === 'number' && Number.isFinite(v)) out[key] = key === 'frameP95' ? Math.round(v * 10) / 10 : v;
+	}
+	const over = budgetRows(metrics, profile)
+		.filter((r) => r.tier === 'amber' || r.tier === 'red')
+		.map((r) => r.key + ' ' + r.tier + ' (' + r.value + ', green up to ' + r.green + ')');
+	if (over.length) out.over = over;
+	return out;
 }
 
 /** One line per budget, for the diagnostics bundle (audit H4). */

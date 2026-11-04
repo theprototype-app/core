@@ -39,6 +39,10 @@ import {
 	uniformsOf
 } from './lookToolsCore.js';
 import { FETCH_TIMEOUT_MS } from './imageToolCore.js';
+import { STARTER_PRESETS } from '$lib/materialPresetsCore.js';
+
+/** mcp-shapes: the starter presets every scene has, said in the tool text so an agent does not have to guess */
+const STARTER_NAMES = STARTER_PRESETS.map((p) => p.label).join(', ');
 
 /** the tool names this module answers */
 export const LOOK_TOOL_NAMES = [
@@ -388,7 +392,11 @@ async function setMaterialTool(args) {
 	let preset = null;
 	if (args.preset) {
 		preset = await findPreset(args.preset);
-		if (!preset) return { error: 'preset: no preset called "' + String(args.preset).slice(0, 40) + '"' };
+		if (!preset) {
+			const mp = await import('$lib/materialPresets');
+			const saved = get(mp.materialPresets).map((p) => p.name);
+			return { error: 'preset: no preset called "' + String(args.preset).slice(0, 40) + '" — one of ' + [STARTER_NAMES, ...saved].join(', ') + ' (or cc0: a free material by name)' };
+		}
 	} else if (args.cc0) {
 		const found = await resolveCc0(args.cc0);
 		if ('error' in found) return { error: 'cc0: ' + found.error };
@@ -1234,7 +1242,9 @@ export const LOOK_AI_TOOLS = [
 		function: {
 			name: 'set_material',
 			description:
-				'Make objects look finished: colour, roughness, metalness, emissive, opacity and texture maps, on many objects in one call. Maps take a library image hash or an https URL (https only, CORS-enabled, 16 MB, PNG/JPEG/WebP/GIF/AVIF; it becomes a library item first and is re-encoded like an upload; returned in assets). cc0 fetches a free CC0 material by name (Poly Haven / ambientCG); preset applies a named preset. faces gives just those faces their own new material slot. One undo step.',
+				'Make objects look finished: colour, roughness, metalness, emissive, opacity and texture maps, on many objects in one call. Maps take a library image hash or an https URL (https only, CORS-enabled, 16 MB, PNG/JPEG/WebP/GIF/AVIF; it becomes a library item first and is re-encoded like an upload; returned in assets). cc0 fetches a free CC0 material by id or name from Poly Haven (its texture names) or ambientCG (ids like "Wood051", "Bricks076", "Metal032", "Ground037"), or by words ("brown planks"); preset applies a named preset: one of ' +
+					STARTER_NAMES +
+					', or one the person saved (list_materials lists them all). faces gives just those faces their own new material slot. One undo step.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1260,8 +1270,8 @@ export const LOOK_AI_TOOLS = [
 						}
 					},
 					type: { type: 'string', enum: MATERIAL_TYPES, description: 'swap the material class first' },
-					preset: { type: 'string', description: 'a preset name from list_materials' },
-					cc0: { type: 'string', description: 'a CC0 material by name, e.g. "Wood051" or "brown planks"' },
+					preset: { type: 'string', description: 'a preset: ' + STARTER_NAMES + ', or a saved one list_materials names' },
+					cc0: { type: 'string', description: 'a CC0 material by Poly Haven name, ambientCG id ("Wood051", "Bricks076", "Metal032") or words ("brown planks")' },
 					slot: { type: 'integer', minimum: 0, description: 'which material slot of a multi-material object (default 0)' },
 					faces: FACES_SCHEMA
 				},
@@ -1273,7 +1283,10 @@ export const LOOK_AI_TOOLS = [
 		type: 'function',
 		function: {
 			name: 'list_materials',
-			description: 'What objects wear: per object its material slots (type, colour, numbers, which maps) and shader, plus the preset names and shader keys. Read this before editing.',
+			description:
+				'What objects wear: per object its material slots (type, colour, numbers, which maps) and shader, plus the preset names (the starters ' +
+				STARTER_NAMES +
+				', and any the person saved) and shader keys. Read this before editing.',
 			parameters: {
 				type: 'object',
 				properties: {

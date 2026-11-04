@@ -11,7 +11,7 @@
 // major. The bridge feature-detects methods, so an older bridge keeps working against a newer page.
 
 /** The contract version (`tpAgent.version`). */
-export const TP_AGENT_VERSION = '1.5.0';
+export const TP_AGENT_VERSION = '1.6.0';
 
 /** Every method of the contract, in the order the docs list them. */
 export const TP_AGENT_METHODS = /** @type {const} */ ([
@@ -93,6 +93,9 @@ export const SCREENSHOT_DEFAULT_SIZE = 768;
  * @property {{node: string, message: string}[]} [scriptErrors] mcp-fix: Script nodes failing now (their code threw, or it was paused for being slow)
  * @property {{name: string, where: string, message: string}[]} [behaviourErrors] 1.2: the latest errors thrown by
  *   the scene's code behaviours (on whichever peer runs them); absent when none — fix with edit_behaviour
+ * @property {{tier: string, profile: 'desktop'|'vr', objects?: number, meshes?: number, triangles?: number, calls?: number, textures?: number, lights?: number, frameP95?: number, over?: string[]}} [sceneBudget]
+ *   1.6.0 (mcp-shapes): how heavy the scene is — the Statistics overlay's numbers, the worst tier (green | amber | red |
+ *   unknown) on the profile it is judged by, and `over` = each budget past green
  * @property {{status: 'listening'|'working'|'away', muted: boolean, queued: number, waiting: number, current: any, chatId: string|null}} [chat]
  *   1.3.0 (roadmap 56): the chat inbox — the badge people see, requests waiting, the running request
  */

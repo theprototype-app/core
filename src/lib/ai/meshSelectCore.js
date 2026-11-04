@@ -15,6 +15,8 @@ export const PREVIEW_MAX = 200;
 export const MESH_MAX_VERTICES = 20000;
 export const MESH_MAX_FACES = 20000;
 export const MESH_MAX_CORNERS = 32;
+/** mcp-shapes: material slots one create_mesh may carry (faceMaterials index into them) */
+export const MESH_MAX_MATERIALS = 16;
 const COORD_MAX = 1000;
 
 /** @param {number} n */
@@ -188,10 +190,12 @@ export function previewOf(faces, vertices) {
 /**
  * create_mesh's data → triangles. Faces are polygons of 3-32 corners (fan-triangulated: give convex
  * polygons, or triangles); every index is checked. `uvs` is one [u, v] per vertex.
- * @param {any} args
- * @returns {{positions: number[], uvs: number[] | null, partition: number[][], triangles: number} | {error: string}}
+ * mcp-shapes: `colors` = one [r, g, b] (0..1) per vertex → per-corner colours; `faceMaterials` = one slot index per
+ * face (into `materials`, `slots` long) → a slot per triangle, and the geometry groups as runs of equal slots.
+ * @param {any} args @param {number} [slots] how many materials the call gives (0 = faceMaterials not allowed)
+ * @returns {{positions: number[], uvs: number[] | null, colors: number[] | null, groups: {start: number, count: number, materialIndex: number}[] | null, partition: number[][], triangles: number} | {error: string}}
  */
-export function meshFromData(args) {
+export function meshFromData(args, slots = 0) {
 	const vertices = args?.vertices;
 	const faces = args?.faces;
 	if (!Array.isArray(vertices) || vertices.length < 3) return { error: 'vertices: at least 3 points [x, y, z]' };
@@ -218,8 +222,34 @@ export function meshFromData(args) {
 		}
 		uvs = /** @type {number[][]} */ (args.uvs);
 	}
+	let colors = null;
+	if (args.colors !== undefined) {
+		if (!Array.isArray(args.colors) || args.colors.length !== verts.length)
+			return { error: 'colors: one [r, g, b] (0..1) per vertex (' + verts.length + '), or leave it out' };
+		for (let i = 0; i < args.colors.length; i++) {
+			const c = args.colors[i];
+			if (!Array.isArray(c) || c.length !== 3 || !c.every((n) => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 1))
+				return { error: 'colors[' + i + ']: [r, g, b] numbers from 0 to 1' };
+		}
+		colors = /** @type {number[][]} */ (args.colors);
+	}
+	let slotOf = null;
+	if (args.faceMaterials !== undefined) {
+		if (!slots) return { error: 'faceMaterials: give materials too (faceMaterials are indices into it)' };
+		if (!Array.isArray(args.faceMaterials) || !Array.isArray(faces) || args.faceMaterials.length !== faces.length)
+			return { error: 'faceMaterials: one material index per face (' + (Array.isArray(faces) ? faces.length : 0) + ')' };
+		for (let i = 0; i < args.faceMaterials.length; i++) {
+			const m = args.faceMaterials[i];
+			if (!Number.isInteger(m) || m < 0 || m >= slots) return { error: 'faceMaterials[' + i + ']: ' + JSON.stringify(m) + ' is not a material (0-' + (slots - 1) + ')' };
+		}
+		slotOf = /** @type {number[]} */ (args.faceMaterials);
+	}
 	/** @type {number[]} */
 	const positions = [];
+	/** @type {number[]} */
+	const colorOut = [];
+	/** @type {number[]} */
+	const triSlot = [];
 	/** @type {number[]} */
 	const uvOut = [];
 	/** @type {number[][]} */
@@ -239,11 +269,25 @@ export function meshFromData(args) {
 			for (const i of [face[0], face[k], face[k + 1]]) {
 				positions.push(verts[i][0], verts[i][1], verts[i][2]);
 				if (uvs) uvOut.push(uvs[i][0], uvs[i][1]);
+				if (colors) colorOut.push(colors[i][0], colors[i][1], colors[i][2]);
 			}
+			if (slotOf) triSlot.push(slotOf[f]);
 			own.push(tri++);
 		}
 		partition.push(own);
 	}
 	if (tri > MESH_MAX_FACES * 2) return { error: 'faces: ' + tri + ' triangles after splitting polygons; the cap is ' + MESH_MAX_FACES * 2 };
-	return { positions, uvs: uvs ? uvOut : null, partition, triangles: tri };
+	return { positions, uvs: uvs ? uvOut : null, colors: colors ? colorOut : null, groups: slotOf ? slotGroups(triSlot) : null, partition, triangles: tri };
+}
+
+/** runs of equal slots → geometry groups (vertex ranges, 3 per triangle) @param {number[]} triSlot */
+export function slotGroups(triSlot) {
+	/** @type {{start: number, count: number, materialIndex: number}[]} */
+	const out = [];
+	for (let t = 0; t < triSlot.length; t++) {
+		const last = out[out.length - 1];
+		if (last && last.materialIndex === triSlot[t]) last.count += 3;
+		else out.push({ start: t * 3, count: 3, materialIndex: triSlot[t] });
+	}
+	return out;
 }

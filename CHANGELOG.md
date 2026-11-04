@@ -7,6 +7,13 @@
 
 ## Unreleased
 
+### 🤖 Agents build models part by part
+- **Shapes made inside a group stay in the group's own space**: a mesh, lathe, extrusion or tube made with a parent lands where it was asked, relative to the group, and turns with it. Before, a part made in a moved or turned group ended up in the wrong place.
+- Agents can make **up to 50 shapes in one step** (one undo), and **colour a mesh as they make it**: a colour per vertex, or a material per face, with a flat low-poly look on request.
+- **Shadows, copies and facing** for any object: switch an object's shadows on or off, make a row or ring of copies (with a little random turn and size), and turn something to face a point or another object.
+- Agents see each mesh's size and corners in the scene list, how heavy the scene is (and when it is past its budget) in their status, and the names of the ready-made materials.
+- Making a pivot for several parts can take the point in their group's own space.
+
 ### 🔧 Fixes
 - **Switching away from the browser on a phone and coming back says nothing.** The 3D view no longer flashes "The 3D view has stopped" when the browser hands its graphics back within a few seconds of the page showing again; it only appears when the view stays stopped.
 - The browser's harmless "ResizeObserver loop" warning no longer pops up as "Something went wrong". It is still kept in **Copy diagnostics**.

@@ -217,17 +217,20 @@ export function buildCatalog(hostTools, opts = {}) {
  * {...}}` back into the fine tool before relaying): the tab, local agents and `serve` keep the fine names.
  * `actions` maps an action to the fine tool it runs. The action's fields go in an object named after the action,
  * which carries the fine tool's own schema and description, so nothing about a tool is lost by grouping it.
+ * mcp-shapes: a family may also have a BATCH — `batch: {key, tool}` — called as `{<key>: [...]}` with no action
+ * (create_shape {shapes: [{action, mesh: {...}}, ...]}); the families map carries it as action `<key>`.
  * Reserved, not built yet: edit_shape `update` (G6b update_mesh), assets search / place / prefab (85-world, 85b),
  * set_look environment / sky / light (85-scene, 85b), create_shape from_image (73's image-to-3D is generate_mesh,
  * which the connector leaves out).
- * @type {Readonly<Record<string, {title: string, summary: string, actions: Record<string, string>}>>}
+ * @type {Readonly<Record<string, {title: string, summary: string, actions: Record<string, string>, batch?: {key: string, tool: string}}>>}
  */
 export const CONNECTOR_FAMILIES = Object.freeze({
 	create_shape: {
 		title: 'Make a shape',
 		summary:
 			'Make shapes the basic objects cannot: a lathe (a vase, a bowl, a lamp from a profile turned around an axis), a tube along a path (a rail, a pipe, a cable), an extruded outline (a sign, a star, a wall with a hole), or a mesh from your own vertices (anything else).',
-		actions: { lathe: 'create_lathe', tube: 'create_tube', extrude: 'extrude_shape', mesh: 'create_mesh' }
+		actions: { lathe: 'create_lathe', tube: 'create_tube', extrude: 'extrude_shape', mesh: 'create_mesh' },
+		batch: { key: 'shapes', tool: 'create_shapes' }
 	},
 	edit_shape: {
 		title: 'Reshape or model objects',
@@ -294,8 +297,10 @@ export const CONNECTOR_STANDALONE = Object.freeze([
 /** fine tool → `family {action}` wording, for text the connector's model reads @returns {Map<string, string>} */
 export function familyNames() {
 	const out = new Map();
-	for (const [family, f] of Object.entries(CONNECTOR_FAMILIES))
+	for (const [family, f] of Object.entries(CONNECTOR_FAMILIES)) {
 		for (const [action, tool] of Object.entries(f.actions)) out.set(tool, family + " {action: '" + action + "'}");
+		if (f.batch) out.set(f.batch.tool, family + ' {' + f.batch.key + ': […]}');
+	}
 	return out;
 }
 
@@ -314,7 +319,7 @@ export function sayFamilyNames(text) {
 export function connectorView(plain, excluded) {
 	const byName = new Map(plain.map((t) => [t.name, t]));
 	const familyOf = new Map();
-	for (const [family, f] of Object.entries(CONNECTOR_FAMILIES)) for (const tool of Object.values(f.actions)) familyOf.set(tool, family);
+	for (const [family, f] of Object.entries(CONNECTOR_FAMILIES)) for (const tool of [...Object.values(f.actions), ...(f.batch ? [f.batch.tool] : [])]) familyOf.set(tool, family);
 	const stray = plain.map((t) => t.name).filter((n) => !CONNECTOR_STANDALONE.includes(n) && !familyOf.has(n) && !excluded.includes(n));
 	if (stray.length)
 		throw new Error('tools with no place in the connector (tools/agent/src/catalog.js CONNECTOR_FAMILIES / CONNECTOR_STANDALONE / CONNECTOR_BLOCKED_TOOLS): ' + stray.join(', '));
@@ -334,8 +339,16 @@ export function connectorView(plain, excluded) {
 		for (const [family, f] of Object.entries(CONNECTOR_FAMILIES)) {
 			const actions = Object.entries(f.actions).filter(([, tool]) => byName.has(tool));
 			if (!actions.length) continue;
-			families[family] = Object.fromEntries(actions);
-			list.push(familyTool(family, f, actions.map(([action, tool]) => [action, /** @type {any} */ (byName.get(tool))])));
+			const batch = f.batch && byName.has(f.batch.tool) ? f.batch : null;
+			families[family] = { ...Object.fromEntries(actions), ...(batch ? { [batch.key]: batch.tool } : {}) };
+			list.push(
+				familyTool(
+					family,
+					f,
+					actions.map(([action, tool]) => [action, /** @type {any} */ (byName.get(tool))]),
+					batch ? { key: batch.key, tool: /** @type {any} */ (byName.get(batch.tool)) } : null
+				)
+			);
 		}
 	}
 	const tools = withGuidance(list);
@@ -344,25 +357,33 @@ export function connectorView(plain, excluded) {
 
 /**
  * One family as one MCP tool. `{action, <action>: {...}}`; the per-action object has the fine tool's own schema.
+ * A batch (mcp-shapes) adds its list at the top level — `{<key>: [...]}`, no action — so `action` is then optional.
  * @param {string} family @param {{title: string, summary: string}} f @param {[string, any][]} actions
+ * @param {{key: string, tool: any} | null} [batch]
  */
-function familyTool(family, f, actions) {
+function familyTool(family, f, actions, batch = null) {
 	/** @type {Record<string, any>} */
 	const properties = {
 		action: { type: 'string', enum: actions.map(([a]) => a), description: 'What to do. Put its fields in the object named after the action.' }
 	};
 	for (const [action, t] of actions) properties[action] = { ...t.inputSchema, description: sayFamilyNames(t.description) };
 	const example = actions[0][0];
-	const description =
+	let description =
 		f.summary + '\nCall it as {"action": "' + example + '", "' + example + '": {…its fields…}}; each action\'s fields and limits are in its object below.';
-	const edits = actions.filter(([, t]) => !t.annotations.readOnlyHint);
+	if (batch) {
+		const list = batch.tool.inputSchema?.properties?.[batch.key];
+		properties[batch.key] = { ...(list ?? { type: 'array' }), description: sayFamilyNames(batch.tool.description) };
+		description += '\nMany at once: {"' + batch.key + '": [{"action": "' + example + '", "' + example + '": {…}}, …]} with no action — one call, one undo step.';
+	}
+	const all = batch ? [...actions, [batch.key, batch.tool]] : actions;
+	const edits = all.filter(([, t]) => !t.annotations.readOnlyHint);
 	const annotations = {
 		title: f.title,
 		readOnlyHint: false,
 		destructiveHint: edits.some(([, t]) => t.annotations.destructiveHint !== false),
-		openWorldHint: actions.some(([, t]) => t.annotations.openWorldHint === true)
+		openWorldHint: all.some(([, t]) => t.annotations.openWorldHint === true)
 	};
-	return { name: family, title: f.title, description, inputSchema: { type: 'object', properties, required: ['action'] }, annotations };
+	return { name: family, title: f.title, description, inputSchema: { type: 'object', properties, ...(batch ? {} : { required: ['action'] }) }, annotations };
 }
 
 /**
@@ -374,6 +395,9 @@ function familyTool(family, f, actions) {
 export function resolveFamilyCall(families, name, args) {
 	const actions = families?.[name];
 	if (!actions) return null;
+	// mcp-shapes: a batch is called with its list and no action (create_shape {shapes: [...]})
+	const batchKey = typeof args?.action !== 'string' ? Object.keys(actions).find((k) => Array.isArray(args?.[k])) : undefined;
+	if (batchKey) return { tool: actions[batchKey], args: { [batchKey]: args[batchKey] } };
 	const action = typeof args?.action === 'string' ? args.action : '';
 	const tool = actions[action];
 	if (!tool) return { error: name + ' needs an action: one of ' + Object.keys(actions).join(', ') + '.' };

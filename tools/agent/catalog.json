@@ -197,7 +197,7 @@
 									"items": {
 										"type": "number"
 									},
-									"description": "up to 4 constructor args. Box=[w,h,d], Sphere=[radius], Cylinder=[rTop,rBottom,height], Cone=[radius,height], Plane=[w,h], Torus=[radius,tube]. Omit for sensible defaults."
+									"description": "up to 4 constructor args. Box=[w,h,d], Sphere=[radius], Cylinder=[rTop,rBottom,height], Cone=[radius,height], Plane=[w,h], Torus=[radius,tube]. Omit for sensible defaults. Sizes go down to 0.001 m."
 								},
 								"name": {
 									"type": "string"
@@ -326,7 +326,7 @@
 								},
 								"parentUuid": {
 									"type": "string",
-									"description": "uuid of an existing group to nest under — position/rotation/scale are then LOCAL to that group"
+									"description": "uuid of an existing group (or any object, not a light or camera) to nest under — position/rotation/scale are then LOCAL to it. A uuid that is not in the scene is an error and that object is not made"
 								},
 								"physics": {
 									"type": "string",
@@ -514,7 +514,7 @@
 								},
 								"parentUuid": {
 									"type": "string",
-									"description": "group uuid to nest under, or \"root\" to un-nest. The object keeps its world pose; a position given in the same update is LOCAL to the new parent"
+									"description": "group uuid (or any object, not a light or camera) to nest under, or \"root\" to un-nest. The object keeps its world pose; a position given in the same update is LOCAL to the new parent. A uuid not in the scene is an error"
 								}
 							},
 							"required": [
@@ -748,7 +748,7 @@
 								},
 								"params": {
 									"type": "object",
-									"description": "param name → value; sizes clamped to 1 km, segment counts to their range"
+									"description": "param name → value; sizes from 0.001 m to 1 km (the same for every primitive), segment counts to their range"
 								},
 								"path": {
 									"type": "array",
@@ -870,7 +870,7 @@
 					},
 					"parentUuid": {
 						"type": "string",
-						"description": "uuid of a group to nest under — position / rotation / scale AND the shape's own points are then LOCAL to that group (no position = the group's origin), so the part moves and turns with it"
+						"description": "uuid of a group (or any object, not a light or camera) to nest under — position / rotation / scale AND the shape's own points are then LOCAL to it (no position = its origin), so the part moves and turns with it. A uuid that is not in the scene is an error and nothing is made"
 					},
 					"physics": {
 						"type": "string",
@@ -1076,7 +1076,7 @@
 					},
 					"parentUuid": {
 						"type": "string",
-						"description": "uuid of a group to nest under — position / rotation / scale AND the shape's own points are then LOCAL to that group (no position = the group's origin), so the part moves and turns with it"
+						"description": "uuid of a group (or any object, not a light or camera) to nest under — position / rotation / scale AND the shape's own points are then LOCAL to it (no position = its origin), so the part moves and turns with it. A uuid that is not in the scene is an error and nothing is made"
 					},
 					"physics": {
 						"type": "string",
@@ -1298,7 +1298,7 @@
 		{
 			"name": "create_mesh",
 			"title": "Make a mesh from data",
-			"description": "A mesh from raw data: vertices [[x, y, z], …] and faces [[i, j, k] or [i, j, k, l] …] (indices into vertices, counter-clockwise seen from outside; polygons of up to 32 corners are fanned, so keep them convex), optional uvs (one [u, v] per vertex). Up to 20000 vertices and 20000 faces; normals are computed (smooth: true for smooth shading, flatShading: true for hard facets). Colour it as you make it: materials [{color, roughness, metalness, …}] (up to 16 slots) with faceMaterials [slot per face, same order as faces] for parts in different colours; or colors [[r, g, b] 0-1, one per vertex] for a painted gradient (multiplied by the material colour). Material slots last through edit_mesh; vertex colours last only while an edit keeps the vertex count. subdivide: 1 or 2 smooths it (Catmull-Clark: a box of six quads becomes a rounded pebble, a few quads become a soft organic shape; each level about four times the faces, checked against the caps). Edit it afterwards with edit_mesh, or send new vertices with update_mesh. Returns the uuid.\nTake a screenshot after each change to check your work.",
+			"description": "A mesh from raw data: vertices [[x, y, z], …] and faces [[i, j, k] or [i, j, k, l] …] (indices into vertices, counter-clockwise seen from outside; polygons of up to 32 corners are fanned, so keep them convex), optional uvs (one [u, v] per vertex). Up to 20000 vertices and 20000 faces; normals are computed (smooth: true for smooth shading, flatShading: true for hard facets). Colour it as you make it: materials [{color, roughness, metalness, …}] (up to 16 slots) with faceMaterials [slot per face, same order as faces] for parts in different colours; or colors (one per vertex: [r, g, b] 0-1 meant as sRGB, the way a colour picker or a hex code means them, or a \"#rrggbb\" string; colorSpace: \"linear\" takes the numbers as linear) for a painted gradient — they multiply the material colour, which is white when you give colors and no color. Material slots last through edit_mesh; vertex colours last only while an edit keeps the vertex count. subdivide: 1 or 2 smooths it (Catmull-Clark: a box of six quads becomes a rounded pebble, a few quads become a soft organic shape; each level about four times the faces, checked against the caps). Edit it afterwards with edit_mesh, or send new vertices with update_mesh. Returns the uuid.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -1345,15 +1345,31 @@
 					"colors": {
 						"type": "array",
 						"items": {
-							"type": "array",
-							"items": {
-								"type": "number"
-							},
-							"minItems": 3,
-							"maxItems": 3
+							"anyOf": [
+								{
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"minItems": 3,
+									"maxItems": 3
+								},
+								{
+									"type": "string",
+									"description": "#rrggbb"
+								}
+							]
 						},
 						"maxItems": 20000,
-						"description": "one [r, g, b] (0-1) per vertex, in the order of vertices"
+						"description": "one colour per vertex, in the order of vertices: [r, g, b] (0-1, sRGB unless colorSpace is \"linear\") or \"#rrggbb\""
+					},
+					"colorSpace": {
+						"type": "string",
+						"enum": [
+							"srgb",
+							"linear"
+						],
+						"description": "how [r, g, b] colors numbers are meant: \"srgb\" (default — like a colour picker, as material colours are) or \"linear\"; hex is always sRGB"
 					},
 					"materials": {
 						"type": "array",
@@ -1446,7 +1462,7 @@
 					},
 					"parentUuid": {
 						"type": "string",
-						"description": "uuid of a group to nest under — position / rotation / scale AND the shape's own points are then LOCAL to that group (no position = the group's origin), so the part moves and turns with it"
+						"description": "uuid of a group (or any object, not a light or camera) to nest under — position / rotation / scale AND the shape's own points are then LOCAL to it (no position = its origin), so the part moves and turns with it. A uuid that is not in the scene is an error and nothing is made"
 					},
 					"physics": {
 						"type": "string",
@@ -1535,14 +1551,31 @@
 					"colors": {
 						"type": "array",
 						"items": {
-							"type": "array",
-							"items": {
-								"type": "number"
-							},
-							"minItems": 3,
-							"maxItems": 3
+							"anyOf": [
+								{
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"minItems": 3,
+									"maxItems": 3
+								},
+								{
+									"type": "string",
+									"description": "#rrggbb"
+								}
+							]
 						},
-						"maxItems": 20000
+						"maxItems": 20000,
+						"description": "as create_mesh: [r, g, b] (sRGB unless colorSpace is \"linear\") or \"#rrggbb\" per vertex"
+					},
+					"colorSpace": {
+						"type": "string",
+						"enum": [
+							"srgb",
+							"linear"
+						],
+						"description": "how [r, g, b] colors numbers are meant: \"srgb\" (default — like a colour picker, as material colours are) or \"linear\"; hex is always sRGB"
 					},
 					"faceMaterials": {
 						"type": "array",
@@ -5217,7 +5250,7 @@
 										"items": {
 											"type": "number"
 										},
-										"description": "up to 4 constructor args. Box=[w,h,d], Sphere=[radius], Cylinder=[rTop,rBottom,height], Cone=[radius,height], Plane=[w,h], Torus=[radius,tube]. Omit for sensible defaults."
+										"description": "up to 4 constructor args. Box=[w,h,d], Sphere=[radius], Cylinder=[rTop,rBottom,height], Cone=[radius,height], Plane=[w,h], Torus=[radius,tube]. Omit for sensible defaults. Sizes go down to 0.001 m."
 									},
 									"name": {
 										"type": "string"
@@ -5346,7 +5379,7 @@
 									},
 									"parentUuid": {
 										"type": "string",
-										"description": "uuid of an existing group to nest under — position/rotation/scale are then LOCAL to that group"
+										"description": "uuid of an existing group (or any object, not a light or camera) to nest under — position/rotation/scale are then LOCAL to it. A uuid that is not in the scene is an error and that object is not made"
 									},
 									"physics": {
 										"type": "string",
@@ -5534,7 +5567,7 @@
 									},
 									"parentUuid": {
 										"type": "string",
-										"description": "group uuid to nest under, or \"root\" to un-nest. The object keeps its world pose; a position given in the same update is LOCAL to the new parent"
+										"description": "group uuid (or any object, not a light or camera) to nest under, or \"root\" to un-nest. The object keeps its world pose; a position given in the same update is LOCAL to the new parent. A uuid not in the scene is an error"
 									}
 								},
 								"required": [
@@ -5803,7 +5836,7 @@
 								},
 								"parentUuid": {
 									"type": "string",
-									"description": "uuid of a group to nest under — position / rotation / scale AND the shape's own points are then LOCAL to that group (no position = the group's origin), so the part moves and turns with it"
+									"description": "uuid of a group (or any object, not a light or camera) to nest under — position / rotation / scale AND the shape's own points are then LOCAL to it (no position = its origin), so the part moves and turns with it. A uuid that is not in the scene is an error and nothing is made"
 								},
 								"physics": {
 									"type": "string",
@@ -5989,7 +6022,7 @@
 								},
 								"parentUuid": {
 									"type": "string",
-									"description": "uuid of a group to nest under — position / rotation / scale AND the shape's own points are then LOCAL to that group (no position = the group's origin), so the part moves and turns with it"
+									"description": "uuid of a group (or any object, not a light or camera) to nest under — position / rotation / scale AND the shape's own points are then LOCAL to it (no position = its origin), so the part moves and turns with it. A uuid that is not in the scene is an error and nothing is made"
 								},
 								"physics": {
 									"type": "string",
@@ -6059,15 +6092,31 @@
 								"colors": {
 									"type": "array",
 									"items": {
-										"type": "array",
-										"items": {
-											"type": "number"
-										},
-										"minItems": 3,
-										"maxItems": 3
+										"anyOf": [
+											{
+												"type": "array",
+												"items": {
+													"type": "number"
+												},
+												"minItems": 3,
+												"maxItems": 3
+											},
+											{
+												"type": "string",
+												"description": "#rrggbb"
+											}
+										]
 									},
 									"maxItems": 20000,
-									"description": "one [r, g, b] (0-1) per vertex, in the order of vertices"
+									"description": "one colour per vertex, in the order of vertices: [r, g, b] (0-1, sRGB unless colorSpace is \"linear\") or \"#rrggbb\""
+								},
+								"colorSpace": {
+									"type": "string",
+									"enum": [
+										"srgb",
+										"linear"
+									],
+									"description": "how [r, g, b] colors numbers are meant: \"srgb\" (default — like a colour picker, as material colours are) or \"linear\"; hex is always sRGB"
 								},
 								"materials": {
 									"type": "array",
@@ -6160,7 +6209,7 @@
 								},
 								"parentUuid": {
 									"type": "string",
-									"description": "uuid of a group to nest under — position / rotation / scale AND the shape's own points are then LOCAL to that group (no position = the group's origin), so the part moves and turns with it"
+									"description": "uuid of a group (or any object, not a light or camera) to nest under — position / rotation / scale AND the shape's own points are then LOCAL to it (no position = its origin), so the part moves and turns with it. A uuid that is not in the scene is an error and nothing is made"
 								},
 								"physics": {
 									"type": "string",
@@ -6183,7 +6232,7 @@
 								"vertices",
 								"faces"
 							],
-							"description": "A mesh from raw data: vertices [[x, y, z], …] and faces [[i, j, k] or [i, j, k, l] …] (indices into vertices, counter-clockwise seen from outside; polygons of up to 32 corners are fanned, so keep them convex), optional uvs (one [u, v] per vertex). Up to 20000 vertices and 20000 faces; normals are computed (smooth: true for smooth shading, flatShading: true for hard facets). Colour it as you make it: materials [{color, roughness, metalness, …}] (up to 16 slots) with faceMaterials [slot per face, same order as faces] for parts in different colours; or colors [[r, g, b] 0-1, one per vertex] for a painted gradient (multiplied by the material colour). Material slots last through edit_shape {action: 'mesh'}; vertex colours last only while an edit keeps the vertex count. subdivide: 1 or 2 smooths it (Catmull-Clark: a box of six quads becomes a rounded pebble, a few quads become a soft organic shape; each level about four times the faces, checked against the caps). Edit it afterwards with edit_shape {action: 'mesh'}, or send new vertices with edit_shape {action: 'update'}. Returns the uuid."
+							"description": "A mesh from raw data: vertices [[x, y, z], …] and faces [[i, j, k] or [i, j, k, l] …] (indices into vertices, counter-clockwise seen from outside; polygons of up to 32 corners are fanned, so keep them convex), optional uvs (one [u, v] per vertex). Up to 20000 vertices and 20000 faces; normals are computed (smooth: true for smooth shading, flatShading: true for hard facets). Colour it as you make it: materials [{color, roughness, metalness, …}] (up to 16 slots) with faceMaterials [slot per face, same order as faces] for parts in different colours; or colors (one per vertex: [r, g, b] 0-1 meant as sRGB, the way a colour picker or a hex code means them, or a \"#rrggbb\" string; colorSpace: \"linear\" takes the numbers as linear) for a painted gradient — they multiply the material colour, which is white when you give colors and no color. Material slots last through edit_shape {action: 'mesh'}; vertex colours last only while an edit keeps the vertex count. subdivide: 1 or 2 smooths it (Catmull-Clark: a box of six quads becomes a rounded pebble, a few quads become a soft organic shape; each level about four times the faces, checked against the caps). Edit it afterwards with edit_shape {action: 'mesh'}, or send new vertices with edit_shape {action: 'update'}. Returns the uuid."
 						},
 						"shapes": {
 							"type": "array",
@@ -6292,7 +6341,7 @@
 											},
 											"params": {
 												"type": "object",
-												"description": "param name → value; sizes clamped to 1 km, segment counts to their range"
+												"description": "param name → value; sizes from 0.001 m to 1 km (the same for every primitive), segment counts to their range"
 											},
 											"path": {
 												"type": "array",
@@ -6574,14 +6623,31 @@
 								"colors": {
 									"type": "array",
 									"items": {
-										"type": "array",
-										"items": {
-											"type": "number"
-										},
-										"minItems": 3,
-										"maxItems": 3
+										"anyOf": [
+											{
+												"type": "array",
+												"items": {
+													"type": "number"
+												},
+												"minItems": 3,
+												"maxItems": 3
+											},
+											{
+												"type": "string",
+												"description": "#rrggbb"
+											}
+										]
 									},
-									"maxItems": 20000
+									"maxItems": 20000,
+									"description": "as create_mesh: [r, g, b] (sRGB unless colorSpace is \"linear\") or \"#rrggbb\" per vertex"
+								},
+								"colorSpace": {
+									"type": "string",
+									"enum": [
+										"srgb",
+										"linear"
+									],
+									"description": "how [r, g, b] colors numbers are meant: \"srgb\" (default — like a colour picker, as material colours are) or \"linear\"; hex is always sRGB"
 								},
 								"faceMaterials": {
 									"type": "array",
@@ -7669,7 +7735,7 @@
 							"required": [
 								"asset"
 							],
-							"description": "Place a model or assets {action: 'prefab'} found with assets {action: 'search'}, the way dragging it from the Asset Browser does (replicated, one undo step). count + spacing make a row; yaw turns it. Returns the new uuids. A model by URL goes through import_model instead."
+							"description": "Place a model or prefab found with assets {action: 'search'}, the way dragging it from the Asset Browser does (replicated, one undo step). count + spacing make a row; yaw turns it. Returns the new uuids. A model by URL goes through import_model instead."
 						},
 						"prefab": {
 							"type": "object",
@@ -7716,7 +7782,7 @@
 									"type": "number"
 								}
 							},
-							"description": "Prefabs (stamps): mode \"save\" keeps objects (with their materials, flows and behaviours) as a assets {action: 'prefab'} in this person's library and returns its id; mode \"place\" puts copies of a assets {action: 'prefab'} into the scene with fresh ids (count + spacing for a row), one undo step."
+							"description": "Prefabs (stamps): mode \"save\" keeps objects (with their materials, flows and behaviours) as a prefab in this person's library and returns its id; mode \"place\" puts copies of a prefab into the scene with fresh ids (count + spacing for a row), one undo step."
 						},
 						"image": {
 							"type": "object",
@@ -7947,7 +8013,7 @@
 									"description": "reshape even though it was hand-sculpted (the sculpting is lost)"
 								}
 							},
-							"description": "Make or change a effects {action: 'terrain'}. Without uuid it makes one (size metres, at position); with uuid it changes that one. Shape by noise: height (metres), detail (0.005-0.6), octaves, ridged, warp, edges (flat|island|bowl), seed. Sculpt with ops [{op: raise|lower|smooth|flatten, at: [x, z] from the effects {action: 'terrain'}'s centre, radius, strength 0-1, height (metres, raise/lower), passes}] and paint with {op: \"paint\", at, radius, layer 0-3, strength}. layers: up to 4 {color, texture (a library hash or a pattern name like grass, sand, stone), tiling}. One undo step."
+							"description": "Make or change a terrain. Without uuid it makes one (size metres, at position); with uuid it changes that one. Shape by noise: height (metres), detail (0.005-0.6), octaves, ridged, warp, edges (flat|island|bowl), seed. Sculpt with ops [{op: raise|lower|smooth|flatten, at: [x, z] from the terrain's centre, radius, strength 0-1, height (metres, raise/lower), passes}] and paint with {op: \"paint\", at, radius, layer 0-3, strength}. layers: up to 4 {color, texture (a library hash or a pattern name like grass, sand, stone), tiling}. One undo step."
 						},
 						"scatter": {
 							"type": "object",
@@ -8018,7 +8084,7 @@
 							"required": [
 								"surface"
 							],
-							"description": "Scatter many instances over a effects {action: 'terrain'} or any mesh (a forest on hills, rocks on a beach, flowers on a slope): asset = a primitive (Box, Sphere, Cone, Cylinder, Capsule, Dodecahedron) or a model id from assets {action: 'search'}, or assets = up to 8 mixed evenly. density per m² (or count), scale range, rules {slope: [min°, max°], height: [min, max] m, layer: {i, min}} keep them where they belong. Cheap instancing, seeded (the same on every peer). Returns the set id; remove: <set id> deletes a set. One undo step."
+							"description": "Scatter many instances over a terrain or any mesh (a forest on hills, rocks on a beach, flowers on a slope): asset = a primitive (Box, Sphere, Cone, Cylinder, Capsule, Dodecahedron) or a model id from assets {action: 'search'}, or assets = up to 8 mixed evenly. density per m² (or count), scale range, rules {slope: [min°, max°], height: [min, max] m, layer: {i, min}} keep them where they belong. Cheap instancing, seeded (the same on every peer). Returns the set id; remove: <set id> deletes a set. One undo step."
 						},
 						"water": {
 							"type": "object",
@@ -8075,7 +8141,7 @@
 									"type": "boolean"
 								}
 							},
-							"description": "Water: without uuid it makes a body of effects {action: 'water'} — kind tank, pool, round, lake or ocean, size [w, h, d], at position (its bottom centre). With uuid it changes one (or makes an object effects {action: 'water'} with a preset). preset: pool, aquarium, ocean, lake, river, lava, swamp, toxic, ice. level 0-1 (how full), color, look {shallowColor, deepColor, clarity, foam, …}, waves {count, amplitude, wavelength, speed, direction}, flow. Things float in it in Play. remove: true makes it a plain object again. One undo step."
+							"description": "Water: without uuid it makes a body of water — kind tank, pool, round, lake or ocean, size [w, h, d], at position (its bottom centre). With uuid it changes one (or makes an object water with a preset). preset: pool, aquarium, ocean, lake, river, lava, swamp, toxic, ice. level 0-1 (how full), color, look {shallowColor, deepColor, clarity, foam, …}, waves {count, amplitude, wavelength, speed, direction}, flow. Things float in it in Play. remove: true makes it a plain object again. One undo step."
 						},
 						"particles": {
 							"type": "object",

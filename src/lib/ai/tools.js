@@ -1,3 +1,4 @@
+import { parentTarget } from './parentTarget.js';
 import { get } from 'svelte/store';
 import * as THREE from 'three';
 import { objectsGroup, lockedObjects, pokeScene } from '../../stores/sceneStore.js';
@@ -47,7 +48,7 @@ import {
 	createJointsTool,
 	controlSimulationTool
 } from './flowTools.js';
-import { GEOMETRY_TOOL_NAMES, GEOMETRY_AI_TOOLS, GEOMETRY_PROMPT, geometryTool } from './geometryTools.js';
+import { GEOMETRY_TOOL_NAMES, GEOMETRY_AI_TOOLS, GEOMETRY_PROMPT, geometryTool, MIN_SIZE } from './geometryTools.js';
 import { shapePose } from './shapeBatchCore.js';
 import { meshStats } from './meshStats.js';
 import { applyShadowFlags, SHADOW_SCHEMA } from './shadowFlags.js';
@@ -144,7 +145,7 @@ function describeObject(object) {
 		uuid: object.uuid,
 		name: object.name || object.type,
 		type: object.type,
-		parentUuid: object.parent && object.parent.type === 'Group' ? object.parent.uuid : null,
+		parentUuid: object.parent ? object.parent.uuid : null,
 		...reportedPose(object, animatedBaseOf(object.uuid))
 	};
 	const material = object.material;
@@ -187,7 +188,7 @@ function geometrySummary(object) {
 
 /** 55 (1.48.1): list_scene `brief` — enough to address an object, nothing more @param {any} object */
 function briefObject(object) {
-	return { uuid: object.uuid, name: object.name || object.type, type: object.type, parentUuid: object.parent && object.parent.type === 'Group' ? object.parent.uuid : null };
+	return { uuid: object.uuid, name: object.name || object.type, type: object.type, parentUuid: object.parent ? object.parent.uuid : null };
 }
 
 /** Node data compacted for the model: big point lists reduced to a count, long strings
@@ -581,6 +582,9 @@ function createOne(spec, extraTypes = /** @type {string[]} */ ([])) {
 	// 85b S6: "hip", "0.5 reach" … are metres from here on
 	const unitsOf = withBodyUnits(spec);
 	spec = unitsOf.spec;
+	// mcp-diorama2: a parent that is not there is an error, never a silent part at the scene root
+	const parentCheck = parentTarget(spec.parentUuid);
+	if (parentCheck && 'error' in parentCheck) return { error: parentCheck.error };
 	const uuid = genUuid();
 	let created = null;
 	if (spec.kind === 'light') {
@@ -613,7 +617,7 @@ function createOne(spec, extraTypes = /** @type {string[]} */ ([])) {
 		if (bad >= 0) return { error: 'params[' + bad + '] = ' + JSON.stringify(spec.params[bad]) + ': sizes are positive numbers (' + primitive + ')' };
 		const params =
 			Array.isArray(spec.params) && spec.params.length
-				? spec.params.slice(0, 4).map((/** @type {number} */ v) => Math.min(1000, v))
+				? spec.params.slice(0, 4).map((/** @type {number} */ v) => Math.min(1000, v > 0 ? Math.max(MIN_SIZE, v) : v)) // diorama2: one small minimum
 				: DEFAULT_PARAMS[primitive] || [];
 		const command = ('/create ' + primitive + ' ' + params.join(' ')).trim();
 		createGeometry(command, uuid);
@@ -632,13 +636,13 @@ function createOne(spec, extraTypes = /** @type {string[]} */ ([])) {
 	/** @type {string[]} */
 	const warnings = [];
 	let nested = false;
-	if (spec.parentUuid) {
-		const parent = objectOf(spec.parentUuid);
-		if (parent && parent.type === 'Group') {
-			moveObjectToGroup(uuid, spec.parentUuid);
-			nested = true;
-		} else warnings.push('parentUuid: no group with that uuid — made at the scene root');
-	}
+	// mcp-diorama2: any container is a parent (a group restored as a plain Object3D too); a missing one was
+	// refused before anything was made (createOne's parentTarget check), so this only nests
+	const target = parentTarget(spec.parentUuid);
+	if (target && !('error' in target)) {
+		moveObjectToGroup(uuid, target.parent.uuid, { anyParent: true });
+		nested = true;
+	} else if (target) warnings.push(target.error);
 	// mcp-shapes: nested with no position / rotation / scale = the group's own frame. attach() kept the WORLD
 	// pose (the world origin), so the part sat at the inverse of the group's transform inside it.
 	const pose = shapePose(spec, nested);
@@ -714,9 +718,9 @@ async function updateOne(spec) {
 	if (spec.parentUuid) {
 		if (spec.parentUuid === 'root') moveObjectToGroup(uuid, 'root');
 		else {
-			const parent = objectOf(spec.parentUuid);
-			if (parent && parent.type === 'Group') moveObjectToGroup(uuid, spec.parentUuid);
-			else errors.push('parentUuid: no group with that uuid');
+			const target = parentTarget(spec.parentUuid);
+			if (target && !('error' in target)) moveObjectToGroup(uuid, target.parent.uuid, { anyParent: true });
+			else if (target) errors.push(target.error.replace(' — nothing was made', ''));
 		}
 	}
 	applyAiTransform(object, spec);
@@ -1379,7 +1383,7 @@ export const AI_TOOLS = [
 									type: 'array',
 									items: { type: 'number' },
 									description:
-										'up to 4 constructor args. Box=[w,h,d], Sphere=[radius], Cylinder=[rTop,rBottom,height], Cone=[radius,height], Plane=[w,h], Torus=[radius,tube]. Omit for sensible defaults.'
+										'up to 4 constructor args. Box=[w,h,d], Sphere=[radius], Cylinder=[rTop,rBottom,height], Cone=[radius,height], Plane=[w,h], Torus=[radius,tube]. Omit for sensible defaults. Sizes go down to 0.001 m.'
 								},
 								name: { type: 'string' },
 								position: { type: 'array', items: { type: 'number' }, description: '[x,y,z]' },
@@ -1407,7 +1411,7 @@ export const AI_TOOLS = [
 								align: { type: 'string', enum: ['surface'], description: 'with at: back it onto the pinged surface (its +Z along the surface normal, upright on a wall) — a painting on a wall' },
 								snap: { type: 'string', enum: ['floor'], description: 'stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground' },
 								face_user: { description: 'turn it (yaw only) so its +Z front faces a person: true = the person you act for, or a peer id / name from where_are_users' },
-								parentUuid: { type: 'string', description: 'uuid of an existing group to nest under — position/rotation/scale are then LOCAL to that group' },
+								parentUuid: { type: 'string', description: 'uuid of an existing group (or any object, not a light or camera) to nest under — position/rotation/scale are then LOCAL to it. A uuid that is not in the scene is an error and that object is not made' },
 								physics: {
 									type: 'string',
 									enum: ['static', 'dynamic'],
@@ -1473,7 +1477,7 @@ export const AI_TOOLS = [
 								visible: { type: 'boolean' },
 								parentUuid: {
 									type: 'string',
-									description: 'group uuid to nest under, or "root" to un-nest. The object keeps its world pose; a position given in the same update is LOCAL to the new parent'
+									description: 'group uuid (or any object, not a light or camera) to nest under, or "root" to un-nest. The object keeps its world pose; a position given in the same update is LOCAL to the new parent. A uuid not in the scene is an error'
 								}
 							},
 							required: ['uuid']

@@ -365,8 +365,29 @@ export function familyNames() {
 
 /** a text with every fine family-member name said the connector's way @param {string} text */
 export function sayFamilyNames(text) {
-	const names = familyNames();
-	return names.size ? String(text).replace(new RegExp('\\b(' + [...names.keys()].join('|') + ')\\b', 'g'), (m) => names.get(m) ?? m) : String(text);
+	return sayToolNames(String(text), familyNames());
+}
+
+/**
+ * mcp-diorama2 (item 4) — THE ONE REWRITE RULE for "a fine tool name in a text → the connector's family wording",
+ * shared by the catalog (descriptions) and the Worker (tool results; cloud worker-mcp/src/catalog.js keeps a copy and
+ * a test pins the two). The 1.60 rewrite replaced every WORD that is also a tool name, so status answered a key named
+ * "run {action: 'logs'}" and a tip said "a campfire with run {action: 'logs'}". It touches TOOL REFERENCES only:
+ *   - a name with an underscore (set_geometry, create_mesh) is an identifier, never English — rewritten in prose;
+ *   - a one-word name (logs, scatter, terrain, water, prefab) is rewritten only written as code: `logs`;
+ *   - never a JSON key ("logs": …) and never a JSON string that IS the name ("tool": "create_mesh" is data).
+ * @param {string} text @param {Map<string, string>} say fine name → wording
+ */
+export function sayToolNames(text, say) {
+	if (!say.size) return text;
+	const re = new RegExp('\\b(' + [...say.keys()].sort((a, b) => b.length - a.length).join('|') + ')\\b', 'g');
+	return text.replace(re, (m, _name, at, whole) => {
+		const before = whole[at - 1];
+		const after = whole[at + m.length];
+		if (before === '"' && after === '"') return m; // a JSON key or a value that is exactly the name: data
+		if (!m.includes('_') && !(before === '`' && after === '`')) return m; // an English word
+		return say.get(m) ?? m;
+	});
 }
 
 /**

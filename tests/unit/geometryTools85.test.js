@@ -112,6 +112,17 @@ describe('G1 set_geometry', () => {
 		expect(cleanParamPatch('Box', [2, 3, 4]).patch).toEqual({ width: 2, height: 3, depth: 4 });
 	});
 
+	it('diorama2: ONE small minimum for every primitive size (an Octahedron radius clamped to 0.1, a Sphere took 0.006)', () => {
+		for (const [type, key] of [['Octahedron', 'radius'], ['Sphere', 'radius'], ['Icosahedron', 'radius'], ['Box', 'width'], ['Torus', 'tube'], ['Capsule', 'radius']]) {
+			expect(cleanParamPatch(type, { [key]: 0.006 }).patch[key]).toBe(0.006);
+			const tiny = cleanParamPatch(type, { [key]: 0.0001 });
+			expect(tiny.patch[key]).toBe(0.001);
+			expect(tiny.warnings[0]).toMatch(/0\.001/);
+		}
+		// a size that may be 0 (a cone's top radius) still may
+		expect(cleanParamPatch('Cylinder', { radiusTop: 0 }).patch.radiusTop).toBe(0);
+	});
+
 	it('refuses an unknown type, a non-mesh and a mesh with no params', async () => {
 		const box = prim(new THREE.BoxGeometry());
 		const raw = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 1, 0, 0, 0, 1, 0], 3)));
@@ -395,10 +406,74 @@ describe('mcp-shapes: create_shape in a group, colours at creation, many in one 
 		expect(worldOf(o).x).toBeCloseTo(-0.9, 6);
 	});
 
-	it('a parentUuid that is not a group is a warning, the shape is made at the root', async () => {
+	it('diorama2: a parentUuid that names nothing is an ERROR and nothing is made (it used to land at the root)', async () => {
+		const before = group.children.length;
 		const r = await call('create_mesh', { ...CUBE, parentUuid: 'nope' });
-		expect(r.created[0].warnings[0]).toMatch(/no group/);
-		expect(live(r.created[0].uuid).parent).toBe(group);
+		expect(r.error).toMatch(/parentUuid: no object with that uuid/);
+		expect(group.children.length).toBe(before);
+		const t = await call('create_tube', { path: [[0, 0, 0], [0, 2, 0]], parentUuid: 'nope' });
+		expect(t.error).toMatch(/parentUuid/);
+		const b = await call('create_shapes', { shapes: [{ action: 'mesh', mesh: { ...CUBE } }, { action: 'mesh', mesh: { ...CUBE, parentUuid: 'nope' } }] });
+		expect(b.error).toMatch(/shapes\[1\].*parentUuid/);
+		expect(group.children.length).toBe(before);
+	});
+
+	it('diorama2: a plain Object3D (a group an older autosave restored) is a parent; a light is not', async () => {
+		const holder = new THREE.Object3D();
+		holder.name = 'fox_head';
+		holder.position.set(2, 0, 0);
+		group.add(holder);
+		const r = await call('create_mesh', { ...CUBE, parentUuid: holder.uuid, name: 'eye_l' });
+		expect(r.created[0].warnings).toBeUndefined();
+		expect(live(r.created[0].uuid).parent).toBe(holder);
+		const light = new THREE.PointLight();
+		group.add(light);
+		const l = await call('create_mesh', { ...CUBE, parentUuid: light.uuid });
+		expect(l.error).toMatch(/is a light/);
+	});
+
+	it('diorama2: colors with no color = a WHITE material (a palette pastel used to tint the vertex colours)', async () => {
+		const colors = CUBE.vertices.map(() => [1, 0, 0]);
+		const r = await call('create_mesh', { ...CUBE, colors });
+		expect(live(r.created[0].uuid).material.color.getHexString()).toBe('ffffff');
+		const own = await call('create_mesh', { ...CUBE, colors, color: '#336699' });
+		expect(live(own.created[0].uuid).material.color.getHexString()).toBe('336699');
+		const plain = await call('create_mesh', { ...CUBE });
+		expect(live(plain.created[0].uuid).material.color.getHexString()).not.toBe('ffffff');
+	});
+
+	it('diorama2: colors are sRGB by default, hex strings per vertex, colorSpace "linear" passes numbers through', async () => {
+		const half = CUBE.vertices.map(() => [0.5, 0.5, 0.5]);
+		const srgb = await call('create_mesh', { ...CUBE, colors: half });
+		const c = live(srgb.created[0].uuid).geometry.attributes.color;
+		expect(c.getX(0)).toBeCloseTo(core.srgbToLinear(0.5), 5); // 0.214, not 0.5 (washed out)
+		const lin = await call('create_mesh', { ...CUBE, colors: half, colorSpace: 'linear' });
+		expect(live(lin.created[0].uuid).geometry.attributes.color.getX(0)).toBeCloseTo(0.5, 5);
+		const hex = await call('create_mesh', { ...CUBE, colors: CUBE.vertices.map(() => '#ff8000') });
+		const h = live(hex.created[0].uuid).geometry.attributes.color;
+		expect([h.getX(0), h.getY(0), h.getZ(0)].map((n) => Math.round(n * 1000) / 1000)).toEqual([1, Math.round(core.srgbToLinear(128 / 255) * 1000) / 1000, 0]);
+		expect((await call('create_mesh', { ...CUBE, colors: half, colorSpace: 'cmyk' })).error).toMatch(/colorSpace/);
+	});
+
+	it('diorama2: a rejected colors / vertices / uvs list says how many entries arrived and the first bad index', async () => {
+		const short = await call('create_mesh', { ...CUBE, colors: [[1, 0, 0]] });
+		expect(short.error).toMatch(/1 entry arrived, the mesh has 8 vertices/);
+		const bad = CUBE.vertices.map(() => [1, 0, 0]);
+		bad[5] = [2, 0, 0];
+		bad[6] = 'blue';
+		expect((await call('create_mesh', { ...CUBE, colors: bad })).error).toMatch(/^colors\[5\] \(the first bad one of 8 entries\).*got \[2,0,0\]/);
+		const verts = CUBE.vertices.slice();
+		verts[3] = [0, 'x', 0];
+		expect((await call('create_mesh', { ...CUBE, vertices: verts })).error).toMatch(/^vertices\[3\] \(the first bad one of 8 entries\)/);
+		expect((await call('create_mesh', { ...CUBE, uvs: [[0, 0], [1, 0]] })).error).toMatch(/uvs: 2 entries arrived, the mesh has 8 vertices/);
+	});
+
+	it('diorama2: update_mesh patch takes sRGB / hex colours the same way', async () => {
+		const r = await call('create_mesh', { ...CUBE, colors: CUBE.vertices.map(() => '#ffffff') });
+		const uuid = r.created[0].uuid;
+		const p = await call('update_mesh', { uuid, mode: 'patch', offset: 0, vertices: [CUBE.vertices[0]], colors: [[0.5, 0.5, 0.5]] });
+		expect(p.updated[0].ok).toBe(true);
+		expect(live(uuid).geometry.attributes.color.getX(0)).toBeCloseTo(core.srgbToLinear(0.5), 5);
 	});
 
 	it('colors = per-vertex colours on the meshgeo (raw bytes), vertexColors on; flatShading at creation', async () => {

@@ -16,6 +16,7 @@
 //
 // faceEdit / splineTool are loaded on first use: both sit deep in the history import family, and
 // this module is part of the assistant's static graph (and of the catalog generator's SSR load).
+import { parentTarget } from './parentTarget.js';
 import { get } from 'svelte/store';
 import * as THREE from 'three';
 import { objectsGroup, pokeScene } from '../../stores/sceneStore.js';
@@ -42,6 +43,7 @@ import {
 	applySelect,
 	previewOf,
 	meshFromData,
+	vertexColorsLinear,
 	MESH_MAX_VERTICES,
 	MESH_MAX_FACES,
 	MESH_MAX_MATERIALS
@@ -57,6 +59,9 @@ const TUBE_MAX_POINTS = 200;
 const TUBE_MAX_RADIUS = 50;
 
 /** types set_geometry may change a primitive INTO (Terrain is made, not converted) */
+/** diorama2: the smallest size (metres) any primitive takes from an agent — create_objects params and set_geometry alike */
+export const MIN_SIZE = 0.001;
+
 const TYPE_TARGETS = Object.keys(GEOMETRY_PARAMS).filter((t) => t !== 'Terrain');
 
 /** @param {number} n */
@@ -82,10 +87,11 @@ function broadcast(data) {
  * @returns {string | null} a warning when parentUuid names no group
  */
 function nestLocal(object, args, pose) {
-	if (!args.parentUuid) return null;
-	const parent = objectOf(String(args.parentUuid));
-	if (parent?.type !== 'Group') return 'parentUuid: no group with that uuid — made at the scene root';
-	moveObjectToGroup(object.uuid, parent.uuid);
+	const target = parentTarget(args.parentUuid);
+	if (!target) return null;
+	// diorama2: callers check parentTarget BEFORE making anything; a parent gone since then is still said
+	if ('error' in target) return target.error;
+	moveObjectToGroup(object.uuid, target.parent.uuid, { anyParent: true });
 	const before = { pos: object.position.toArray(), rot: [object.rotation.x, object.rotation.y, object.rotation.z], scale: object.scale.toArray() };
 	if (pose.position) object.position.fromArray(pose.position);
 	if (pose.rotation) object.rotation.set(pose.rotation[0], pose.rotation[1], pose.rotation[2]);
@@ -107,7 +113,7 @@ const HAND_EDITED =
 const colorOf = (v) => toHexColor(v) ?? (typeof v === 'string' && /^[a-z]{3,20}$/i.test(v.trim()) ? v.trim().toLowerCase() : null);
 
 /**
- * Check a param patch against a registry spec. Sizes are clamped to the Inspector's minimum and to
+ * Check a param patch against a registry spec. Sizes are clamped to MIN_SIZE (diorama2; the Inspector's minimum before) and to
  * 1 km (create_objects' cap — the Inspector's slider maximum is a UI range, not a limit), counts to
  * the spec's range (they are what costs triangles), words to the spec's options.
  * @param {string} gtype @param {any} raw an object {key: value}, or create_objects' positional array
@@ -146,7 +152,9 @@ export function cleanParamPatch(gtype, raw) {
 				errors.push('params.' + key + ': a number');
 				continue;
 			}
-			const lo = row.min ?? -1000;
+			// diorama2: ONE small minimum for every primitive's sizes (an Octahedron radius clamped to 0.1 while a
+			// Sphere took 0.006): a size the Inspector starts above 0 may go down to MIN_SIZE here
+			const lo = gtype !== 'Terrain' && row.kind === 'slider' && (row.min ?? 0) > 0 ? MIN_SIZE : (row.min ?? -1000);
 			const hi = row.kind === 'slider' ? Math.max(row.max ?? 1000, 1000) : (row.max ?? 1000);
 			let v = row.kind === 'int' ? Math.round(value) : value;
 			v = Math.min(Math.max(v, lo), hi);
@@ -287,6 +295,8 @@ async function setSplineShape(uuid, object, u) {
 async function createTubeTool(args) {
 	const made = tubeRecordOf(args);
 	if ('error' in made) return { error: made.error };
+	const target = parentTarget(args.parentUuid);
+	if (target && 'error' in target) return { error: target.error };
 	const group = get(objectsGroup);
 	if (!group) return { error: 'no scene' };
 	const st = await import('$lib/splineTool');
@@ -466,12 +476,28 @@ export function subdividedArgs(args, slots = 0) {
 	return { args: { ...args, ...out, subdivide: undefined, smooth: args.smooth ?? true }, levels };
 }
 
+/**
+ * diorama2: a create_mesh / update_mesh call with its `colors` made linear (vertexColorsLinear: sRGB by default, hex
+ * allowed, colorSpace "linear" to pass numbers through) and colorSpace consumed. @param {any} args
+ * @returns {{args: any} | {error: string}}
+ */
+function withLinearColors(args) {
+	const made = vertexColorsLinear(args?.colors, args?.colorSpace);
+	if ('error' in made) return made;
+	if (args?.colors === undefined && args?.colorSpace === undefined) return { args };
+	const { colorSpace: _c, ...rest } = args;
+	return { args: made.colors ? { ...rest, colors: made.colors } : rest };
+}
+
 /** 85b G6b: what each data mesh was made from, kept in THIS tab for update_mesh {patch} (a patch edits the authored
  * vertex list, which the triangle soup on the wire no longer holds) @type {Map<string, any>} */
 const meshSources = new Map();
 
 /** @param {any} args */
 async function createMeshTool(args) {
+	const lin = withLinearColors(args);
+	if ('error' in lin) return { error: lin.error };
+	args = lin.args;
 	const mats = meshMaterialSpecs(args.materials);
 	if ('error' in mats) return { error: mats.error };
 	const source = args;
@@ -492,13 +518,17 @@ async function createMeshTool(args) {
 	if (data.colors) stub.setAttribute('color', new THREE.Float32BufferAttribute(data.colors.slice(0, 9), 3));
 	stub.computeVertexNormals();
 	const mesh = new THREE.Mesh(stub);
-	const base = colorOf(args.color) ?? paletteColorFor(mesh.uuid);
+	// diorama2: vertex colours MULTIPLY the material colour, so with colors and no color the material is white (a
+	// palette pastel used to tint every vertex colour); a slot with its own color keeps it
+	const base = colorOf(args.color) ?? (data.colors ? '#ffffff' : paletteColorFor(mesh.uuid));
 	// one slot = a plain material; several = an array, drawn through the geometry groups the meshgeo carries
 	const slots = mats.specs.length ? mats.specs.map((spec) => meshMaterial(spec, base, args)) : [meshMaterial({}, base, args)];
 	mesh.material = slots.length > 1 ? slots : slots[0];
 	mesh.name = String(args.name || 'Mesh').slice(0, 120);
 	if (args.smooth === true) mesh.userData.shading = 'smooth';
-	const nested = !!args.parentUuid && objectOf(String(args.parentUuid))?.type === 'Group';
+	const target = parentTarget(args.parentUuid);
+	if (target && 'error' in target) return { error: target.error };
+	const nested = !!target;
 	const pose = shapePose(args, nested);
 	if ('error' in pose) return { error: pose.error };
 	// at the root the pose rides the `object` message; in a group it is set AFTER nesting (nestLocal)
@@ -709,7 +739,12 @@ function shapeArgsError(tool, args) {
 	if (args.color !== undefined && !colorOf(args.color)) return 'color: a hex colour like "#ff8800"';
 	/** @type {any} */
 	let made;
+	const parent = parentTarget(args.parentUuid);
+	if (parent && 'error' in parent) return parent.error;
 	if (tool === 'create_mesh') {
+		const lin = withLinearColors(args);
+		if ('error' in lin) return lin.error;
+		args = lin.args;
 		const mats = meshMaterialSpecs(args.materials);
 		const sub = 'error' in mats ? mats : subdividedArgs(args, mats.specs.length);
 		made = 'error' in sub ? sub : meshFromData(/** @type {any} */ (sub).args, /** @type {any} */ (mats).specs.length);
@@ -768,6 +803,9 @@ function isDataMesh(o) {
  * @param {any} args
  */
 async function updateMeshTool(args) {
+	const lin = withLinearColors(args);
+	if ('error' in lin) return { error: lin.error };
+	args = lin.args;
 	const uuid = String(args.uuid ?? args.object ?? '');
 	const object = uuid && objectOf(uuid);
 	if (!object) return { error: 'uuid: no object with that uuid' };
@@ -853,6 +891,10 @@ export async function geometryTool(name, args, createBase) {
 const V3 = { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 };
 const V2 = { type: 'array', items: { type: 'number' }, minItems: 2, maxItems: 2 };
 /** where a created shape goes — create_objects' fields */
+/** diorama2: a vertex colour: [r, g, b] or a hex string */
+const VCOLOR = { anyOf: [{ type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 }, { type: 'string', description: '#rrggbb' }] };
+const COLOR_SPACE = { type: 'string', enum: ['srgb', 'linear'], description: 'how [r, g, b] colors numbers are meant: "srgb" (default — like a colour picker, as material colours are) or "linear"; hex is always sRGB' };
+
 const PLACE = {
 	name: { type: 'string' },
 	position: V3,
@@ -861,7 +903,7 @@ const PLACE = {
 	color: { type: 'string', description: 'hex #rrggbb' },
 	parentUuid: {
 		type: 'string',
-		description: 'uuid of a group to nest under — position / rotation / scale AND the shape\'s own points are then LOCAL to that group (no position = the group\'s origin), so the part moves and turns with it'
+		description: 'uuid of a group (or any object, not a light or camera) to nest under — position / rotation / scale AND the shape\'s own points are then LOCAL to it (no position = its origin), so the part moves and turns with it. A uuid that is not in the scene is an error and nothing is made'
 	},
 	physics: { type: 'string', enum: ['static', 'dynamic'], description: 'default static' },
 	castShadow: { type: 'boolean', description: 'cast a shadow (on by default)' },
@@ -901,7 +943,7 @@ export const GEOMETRY_AI_TOOLS = [
 							properties: {
 								uuid: { type: 'string' },
 								type: { type: 'string', enum: TYPE_TARGETS, description: 'change the primitive type in place' },
-								params: { type: 'object', description: 'param name → value; sizes clamped to 1 km, segment counts to their range' },
+								params: { type: 'object', description: 'param name → value; sizes from 0.001 m to 1 km (the same for every primitive), segment counts to their range' },
 								path: { type: 'array', items: V3, description: 'tubes: a new path in the space the tube lives in (the scene, or its group)' },
 								radius: { type: 'number', description: 'tubes: one radius for every point' },
 								radii: { type: 'array', items: { type: 'number' }, description: 'tubes: one radius per point' },
@@ -1032,7 +1074,7 @@ export const GEOMETRY_AI_TOOLS = [
 				MESH_MAX_FACES +
 				' faces; normals are computed (smooth: true for smooth shading, flatShading: true for hard facets). Colour it as you make it: materials [{color, roughness, metalness, …}] (up to ' +
 				MESH_MAX_MATERIALS +
-				' slots) with faceMaterials [slot per face, same order as faces] for parts in different colours; or colors [[r, g, b] 0-1, one per vertex] for a painted gradient (multiplied by the material colour). Material slots last through edit_mesh; vertex colours last only while an edit keeps the vertex count. subdivide: 1 or 2 smooths it (Catmull-Clark: a box of six quads becomes a rounded pebble, a few quads become a soft organic shape; each level about four times the faces, checked against the caps). Edit it afterwards with edit_mesh, or send new vertices with update_mesh. Returns the uuid.',
+				' slots) with faceMaterials [slot per face, same order as faces] for parts in different colours; or colors (one per vertex: [r, g, b] 0-1 meant as sRGB, the way a colour picker or a hex code means them, or a "#rrggbb" string; colorSpace: "linear" takes the numbers as linear) for a painted gradient — they multiply the material colour, which is white when you give colors and no color. Material slots last through edit_mesh; vertex colours last only while an edit keeps the vertex count. subdivide: 1 or 2 smooths it (Catmull-Clark: a box of six quads becomes a rounded pebble, a few quads become a soft organic shape; each level about four times the faces, checked against the caps). Edit it afterwards with edit_mesh, or send new vertices with update_mesh. Returns the uuid.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1041,7 +1083,8 @@ export const GEOMETRY_AI_TOOLS = [
 					uvs: { type: 'array', items: V2 },
 					smooth: { type: 'boolean' },
 					flatShading: { type: 'boolean', description: 'true = one flat normal per triangle (low-poly look)' },
-					colors: { type: 'array', items: V3, maxItems: MESH_MAX_VERTICES, description: 'one [r, g, b] (0-1) per vertex, in the order of vertices' },
+					colors: { type: 'array', items: VCOLOR, maxItems: MESH_MAX_VERTICES, description: 'one colour per vertex, in the order of vertices: [r, g, b] (0-1, sRGB unless colorSpace is "linear") or "#rrggbb"' },
+					colorSpace: COLOR_SPACE,
 					materials: {
 						type: 'array',
 						minItems: 1,
@@ -1083,7 +1126,8 @@ export const GEOMETRY_AI_TOOLS = [
 					vertices: { type: 'array', items: V3, maxItems: MESH_MAX_VERTICES },
 					faces: { type: 'array', items: { type: 'array', items: { type: 'integer' } }, maxItems: MESH_MAX_FACES },
 					uvs: { type: 'array', items: V2 },
-					colors: { type: 'array', items: V3, maxItems: MESH_MAX_VERTICES },
+					colors: { type: 'array', items: VCOLOR, maxItems: MESH_MAX_VERTICES, description: 'as create_mesh: [r, g, b] (sRGB unless colorSpace is "linear") or "#rrggbb" per vertex' },
+					colorSpace: COLOR_SPACE,
 					faceMaterials: { type: 'array', items: { type: 'integer', minimum: 0 }, maxItems: MESH_MAX_FACES },
 					smooth: { type: 'boolean' },
 					subdivide: { type: 'integer', minimum: 0, maximum: 2 }

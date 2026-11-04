@@ -5,6 +5,16 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## Unreleased
+
+### 🦊 Fixes from an agent's diorama build
+- **Groups come back as groups** after "Restore previous session": a group used to return as a plain node, so its parts looked loose and an agent could not build into it. <!-- mcp-diorama2 1 -->
+- An agent that names a **group that is not there** now gets an error and nothing is made, instead of a part dropped at the middle of the scene; any object (not a light or camera) can hold parts. <!-- mcp-diorama2 1 -->
+- A mesh an agent **paints per vertex** keeps its true colours: no random pastel tint on top, and colours mean what a colour picker means (sRGB), with `#rrggbb` per vertex allowed. <!-- mcp-diorama2 2, 3 -->
+- Agents can make **tiny parts** of every shape alike (down to 1 mm; an octahedron used to stop at 10 cm). <!-- mcp-diorama2 5 -->
+- When a mesh's colour, vertex or UV list is wrong, the agent hears **how many entries arrived and which one is bad**. <!-- mcp-diorama2 6 -->
+- **Claude on claude.ai reads the right words again**: tool replies no longer turn ordinary words like "logs" into tool names (`status` had a field called "run {action: 'logs'}"). <!-- mcp-diorama2 4 -->
+
 ## 1.60.0 — An agent builds the game around your scene 🎮
 
 ### 🌲 Agents build whole places

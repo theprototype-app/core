@@ -34,7 +34,7 @@ export function duplicatePlan(args, base) {
 	const rr = args.randomRot;
 	if (rr === true) turn = [0, Math.PI, 0];
 	else if (typeof rr === 'number' && Number.isFinite(rr) && rr >= 0) turn = [0, rr, 0];
-	else if (vec3(rr) && rr.every((n) => n >= 0)) turn = [...rr];
+	else if (vec3(rr) && rr.every((/** @type {number} */ n) => n >= 0)) turn = [...rr];
 	else if (rr !== undefined && rr !== false) return { error: 'randomRot: true (any turn about Y), a number (± radians about Y) or [x, y, z] (± radians per axis)' };
 	/** @type {[number, number]} size factor range */
 	let size = [1, 1];

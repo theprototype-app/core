@@ -5,6 +5,15 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## Unreleased
+
+### 🤖 Agents build models part by part
+- **Shapes made inside a group stay in the group's own space**: a mesh, lathe, extrusion or tube made with a parent lands where it was asked, relative to the group, and turns with it. Before, a part made in a moved or turned group ended up in the wrong place.
+- Agents can make **up to 50 shapes in one step** (one undo), and **colour a mesh as they make it**: a colour per vertex, or a material per face, with a flat low-poly look on request.
+- **Shadows, copies and facing** for any object: switch an object's shadows on or off, make a row or ring of copies (with a little random turn and size), and turn something to face a point or another object.
+- Agents see each mesh's size and corners in the scene list, how heavy the scene is (and when it is past its budget) in their status, and the names of the ready-made materials.
+- Making a pivot for several parts can take the point in their group's own space.
+
 ## 1.57.0 — Shared games start fast 🚀
 
 ### ▶ A play view made only for playing

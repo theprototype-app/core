@@ -1359,15 +1359,6 @@ export function trisToUVs(tris) {
 }
 
 /**
- * M1: keep a TEXTURED mesh mapped across a geometry swap. Prefer the uvs the
- * edit computed; else carry the previous geometry's attribute over — exact
- * whenever the vertex count is unchanged (sculpt strokes, vertex drags, VR
- * grabs, stretch), clipped or zero-padded when an op grew/shrank the mesh
- * without tracking uvs (createFaceFromVerts). Never leaves a partial attribute:
- * three requires uv.count === position.count.
- * @param {any} geometry @param {any} previous @param {number[] | null} [uvs]
- */
-/**
  * mcp-shapes: a mesh with vertex colours (create_mesh `colors`) keeps them across a geometry swap. Given colours win;
  * else the previous attribute is carried when the vertex count is unchanged (a move, a smooth, a sculpt stroke) and
  * reset to WHITE when it is not — corners an op invented have no colour, and carrying by index would scramble them.
@@ -1389,6 +1380,15 @@ function preserveColors(geometry, previous, colors) {
 	geometry.setAttribute('color', new THREE.BufferAttribute(array, 3));
 }
 
+/**
+ * M1: keep a TEXTURED mesh mapped across a geometry swap. Prefer the uvs the
+ * edit computed; else carry the previous geometry's attribute over — exact
+ * whenever the vertex count is unchanged (sculpt strokes, vertex drags, VR
+ * grabs, stretch), clipped or zero-padded when an op grew/shrank the mesh
+ * without tracking uvs (createFaceFromVerts). Never leaves a partial attribute:
+ * three requires uv.count === position.count.
+ * @param {any} geometry @param {any} previous @param {number[] | null} [uvs]
+ */
 function preserveUVs(geometry, previous, uvs) {
 	const count = geometry.attributes.position.count;
 	if (uvs?.length) {
@@ -8188,7 +8188,7 @@ function withFaces(state) {
 }
 
 /** @param {string} uuid @param {number[]} positions @param {any[] | null} [groups]
- * @param {number[] | null} [uvs] */
+ * @param {number[] | null} [uvs] @param {ArrayLike<number> | null} [colors] */
 function broadcastMeshGeo(uuid, positions, groups, uvs, colors) {
 	/** @type {any} */
 	const peer = get(peers);

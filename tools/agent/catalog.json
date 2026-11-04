@@ -3,7 +3,7 @@
 	"format": 2,
 	"generator": {
 		"source": "tpAgent.tools() via core scripts/agent-tool-catalog.cjs, mapped by tools/agent/src/catalog.js",
-		"hostTools": 45,
+		"hostTools": 46,
 		"dropped": []
 	},
 	"instructions": "You are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", \"here\" or \"this\", call where_are_users and build at the spots it gives, facing the person.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.\nWhen asked what you can do here, call what_can_you_do and say its \"say\" line.",
@@ -20,7 +20,7 @@
 		{
 			"name": "list_scene",
 			"title": "Read the scene",
-			"description": "List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. The transform is the AUTHORED pose: an object an effect is moving also has animated: true, and live {position, rotation, scale, visible} when this frame differs; update_objects writes the authored pose, so never copy live back into it. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius}. A big flow graph shows its first page and says how to read the rest: pass {flow: \"scene\" | object uuid, page} to read one page of one graph.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall list_scene before editing so you use real uuids; batch many objects into one call.",
+			"description": "List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. Every mesh also has mesh {vertexCount, faceCount (triangles), bounds {local, world}} — each box [[minX, minY, minZ], [maxX, maxY, maxZ]], local in the mesh's own space (its vertices), world in the scene. The transform is the AUTHORED pose: an object an effect is moving also has animated: true, and live {position, rotation, scale, visible} when this frame differs; update_objects writes the authored pose, so never copy live back into it. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius}. A big flow graph shows its first page and says how to read the rest: pass {flow: \"scene\" | object uuid, page} to read one page of one graph.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall list_scene before editing so you use real uuids; batch many objects into one call.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -75,10 +75,39 @@
 		{
 			"name": "create_objects",
 			"title": "Add objects",
-			"description": "Create one or more primitives, lights or empty groups in a single call. Ground is the y=0 plane; place objects so they rest ON it (a box of height h sits at y=h/2). Returns the new uuids.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", \"here\" or \"this\", call where_are_users and build at the spots it gives, facing the person.\nTake a screenshot after each change to check your work.",
+			"description": "Create one or more primitives, lights or empty groups in a single call. Ground is the y=0 plane; place objects so they rest ON it (a box of height h sits at y=h/2). Returns the new uuids. To copy an existing object instead (a row of fence posts, a ring of chairs), pass from: its uuid, count, offset [x,y,z] between one copy and the next, and optionally randomRot / randomScale with a seed: deep copies (children, materials, flows), one undo step, uuids in order, in the source's own group. lookAt turns an object so its local +Z axis (its front) faces a point or another object, +Y kept up.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", \"here\" or \"this\", call where_are_users and build at the spots it gives, facing the person.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
+					"from": {
+						"type": "string",
+						"description": "copy this object (uuid) instead of making new ones; objects can still be given beside it"
+					},
+					"count": {
+						"type": "integer",
+						"description": "with from: how many copies, 1-100 (default 1)"
+					},
+					"offset": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"description": "with from: [x,y,z] metres from one copy to the next, in the source's space (copy i = source + i x offset)"
+					},
+					"randomRot": {
+						"description": "with from: true (any turn about Y), a number (± radians about Y) or [x,y,z] (± radians per axis)"
+					},
+					"randomScale": {
+						"description": "with from: a fraction like 0.2 (sizes 0.8-1.2, uniform) or [min, max] factors"
+					},
+					"seed": {
+						"type": "integer",
+						"description": "with from: the same seed makes the same copies (default 1)"
+					},
+					"name": {
+						"type": "string",
+						"description": "with from: the copies' name (numbered when several)"
+					},
 					"objects": {
 						"type": "array",
 						"items": {
@@ -199,7 +228,7 @@
 								},
 								"castShadow": {
 									"type": "boolean",
-									"description": "directional/spot/point: cast shadows"
+									"description": "meshes and models: cast a shadow (on by default); lights: directional / spot / point cast shadows"
 								},
 								"aim": {
 									"type": "array",
@@ -207,6 +236,13 @@
 										"type": "number"
 									},
 									"description": "directional/spot: a world point [x,y,z] to point at"
+								},
+								"receiveShadow": {
+									"type": "boolean",
+									"description": "meshes and models: shadows fall on it (on by default)"
+								},
+								"lookAt": {
+									"description": "turn it so its local +Z (front) faces this: a world point [x,y,z] or another object's uuid (+Y stays up; lights use aim)"
 								},
 								"parentUuid": {
 									"type": "string",
@@ -231,9 +267,7 @@
 						}
 					}
 				},
-				"required": [
-					"objects"
-				]
+				"required": []
 			},
 			"annotations": {
 				"title": "Add objects",
@@ -245,7 +279,7 @@
 		{
 			"name": "update_objects",
 			"title": "Change objects",
-			"description": "Modify existing objects by uuid: move/rotate/scale, recolor, change material, rename, show/hide, or reparent. Batch many in one call. On an object an effect is moving, a transform sets its authored pose (the one list_scene reports) and the effect carries on from there.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nTake a screenshot after each change to check your work.",
+			"description": "Modify existing objects by uuid: move/rotate/scale, recolor, change material, rename, show/hide, shadows (castShadow / receiveShadow), turn to face something (lookAt), or reparent. Batch many in one call. On an object an effect is moving, a transform sets its authored pose (the one list_scene reports) and the effect carries on from there.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -332,7 +366,7 @@
 								},
 								"castShadow": {
 									"type": "boolean",
-									"description": "directional/spot/point: cast shadows"
+									"description": "meshes and models: cast a shadow (on by default); lights: directional / spot / point cast shadows"
 								},
 								"aim": {
 									"type": "array",
@@ -340,6 +374,13 @@
 										"type": "number"
 									},
 									"description": "directional/spot: a world point [x,y,z] to point at"
+								},
+								"receiveShadow": {
+									"type": "boolean",
+									"description": "meshes and models: shadows fall on it (on by default)"
+								},
+								"lookAt": {
+									"description": "turn it so its local +Z (front) faces this: a world point [x,y,z] or another object's uuid (+Y stays up; lights use aim)"
 								},
 								"visible": {
 									"type": "boolean"
@@ -592,7 +633,7 @@
 										"minItems": 3,
 										"maxItems": 3
 									},
-									"description": "tubes: a new path in scene space"
+									"description": "tubes: a new path in the space the tube lives in (the scene, or its group)"
 								},
 								"radius": {
 									"type": "number",
@@ -702,7 +743,7 @@
 					},
 					"parentUuid": {
 						"type": "string",
-						"description": "group to nest under (position is then local to it)"
+						"description": "uuid of a group to nest under — position / rotation / scale AND the shape's own points are then LOCAL to that group (no position = the group's origin), so the part moves and turns with it"
 					},
 					"physics": {
 						"type": "string",
@@ -711,6 +752,14 @@
 							"dynamic"
 						],
 						"description": "default static"
+					},
+					"castShadow": {
+						"type": "boolean",
+						"description": "cast a shadow (on by default)"
+					},
+					"receiveShadow": {
+						"type": "boolean",
+						"description": "shadows fall on it (on by default)"
 					}
 				},
 				"required": [
@@ -727,7 +776,7 @@
 		{
 			"name": "create_tube",
 			"title": "Make a tube along a path",
-			"description": "A tube swept along a smooth 3D path — rail, pipe, cable, handrail, tentacle. path = [[x, y, z], …] in SCENE space (the object is placed at the path's centre); radius for all points or radii per point (tapers). Editable with set_geometry (path, radii, closed). Returns the uuid.\nTake a screenshot after each change to check your work.",
+			"description": "A tube swept along a smooth 3D path — rail, pipe, cable, handrail, tentacle. path = [[x, y, z], …] in SCENE space, or in the group's own space with parentUuid (the object is placed at the path's centre); radius for all points or radii per point (tapers). Editable with set_geometry (path, radii, closed). Returns the uuid.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -888,7 +937,7 @@
 					},
 					"parentUuid": {
 						"type": "string",
-						"description": "group to nest under (position is then local to it)"
+						"description": "uuid of a group to nest under — position / rotation / scale AND the shape's own points are then LOCAL to that group (no position = the group's origin), so the part moves and turns with it"
 					},
 					"physics": {
 						"type": "string",
@@ -897,6 +946,14 @@
 							"dynamic"
 						],
 						"description": "default static"
+					},
+					"castShadow": {
+						"type": "boolean",
+						"description": "cast a shadow (on by default)"
+					},
+					"receiveShadow": {
+						"type": "boolean",
+						"description": "shadows fall on it (on by default)"
 					}
 				},
 				"required": [
@@ -1176,7 +1233,7 @@
 					},
 					"parentUuid": {
 						"type": "string",
-						"description": "group to nest under (position is then local to it)"
+						"description": "uuid of a group to nest under — position / rotation / scale AND the shape's own points are then LOCAL to that group (no position = the group's origin), so the part moves and turns with it"
 					},
 					"physics": {
 						"type": "string",
@@ -1185,6 +1242,14 @@
 							"dynamic"
 						],
 						"description": "default static"
+					},
+					"castShadow": {
+						"type": "boolean",
+						"description": "cast a shadow (on by default)"
+					},
+					"receiveShadow": {
+						"type": "boolean",
+						"description": "shadows fall on it (on by default)"
 					}
 				},
 				"required": [
@@ -1200,9 +1265,66 @@
 			}
 		},
 		{
+			"name": "create_shapes",
+			"title": "Create shapes",
+			"description": "Make up to 50 shapes in ONE call and ONE undo step: shapes = [{action: \"mesh\", mesh: {…create_mesh's fields…}}, {action: \"lathe\", lathe: {…}}, …] with action one of lathe, tube, extrude, mesh (the same fields as create_mesh / create_lathe / extrude_shape / create_tube, parentUuid included). Every entry is checked first and nothing is made if one is wrong (the error names its index, shapes[3]); the uuids come back in the order given.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"shapes": {
+						"type": "array",
+						"minItems": 1,
+						"maxItems": 50,
+						"items": {
+							"type": "object",
+							"properties": {
+								"action": {
+									"type": "string",
+									"enum": [
+										"lathe",
+										"tube",
+										"extrude",
+										"mesh"
+									]
+								},
+								"lathe": {
+									"type": "object",
+									"description": "create_lathe's fields"
+								},
+								"tube": {
+									"type": "object",
+									"description": "create_tube's fields"
+								},
+								"extrude": {
+									"type": "object",
+									"description": "extrude_shape's fields"
+								},
+								"mesh": {
+									"type": "object",
+									"description": "create_mesh's fields"
+								}
+							},
+							"required": [
+								"action"
+							]
+						}
+					}
+				},
+				"required": [
+					"shapes"
+				]
+			},
+			"annotations": {
+				"title": "Create shapes",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
 			"name": "set_material",
 			"title": "Change materials and textures",
-			"description": "Make objects look finished: colour, roughness, metalness, emissive, opacity and texture maps, on many objects in one call. Maps take a library image hash or an https URL (https only, CORS-enabled, 16 MB, PNG/JPEG/WebP/GIF/AVIF; it becomes a library item first and is re-encoded like an upload; returned in assets). cc0 fetches a free CC0 material by name (Poly Haven / ambientCG); preset applies a named preset. faces gives just those faces their own new material slot. One undo step.\nTake a screenshot after each change to check your work.",
+			"description": "Make objects look finished: colour, roughness, metalness, emissive, opacity and texture maps, on many objects in one call. Maps take a library image hash or an https URL (https only, CORS-enabled, 16 MB, PNG/JPEG/WebP/GIF/AVIF; it becomes a library item first and is re-encoded like an upload; returned in assets). cc0 fetches a free CC0 material by id or name from Poly Haven (its texture names) or ambientCG (ids like \"Wood051\", \"Bricks076\", \"Metal032\", \"Ground037\"), or by words (\"brown planks\"); preset applies a named preset: one of Wood, Metal, Plastic, Glass, Stone, Rubber, Fish scales, Neon, or one the person saved (list_materials lists them all). faces gives just those faces their own new material slot. One undo step.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -1306,11 +1428,11 @@
 					},
 					"preset": {
 						"type": "string",
-						"description": "a preset name from list_materials"
+						"description": "a preset: Wood, Metal, Plastic, Glass, Stone, Rubber, Fish scales, Neon, or a saved one list_materials names"
 					},
 					"cc0": {
 						"type": "string",
-						"description": "a CC0 material by name, e.g. \"Wood051\" or \"brown planks\""
+						"description": "a CC0 material by Poly Haven name, ambientCG id (\"Wood051\", \"Bricks076\", \"Metal032\") or words (\"brown planks\")"
 					},
 					"slot": {
 						"type": "integer",
@@ -1336,7 +1458,7 @@
 		{
 			"name": "list_materials",
 			"title": "Read materials",
-			"description": "What objects wear: per object its material slots (type, colour, numbers, which maps) and shader, plus the preset names and shader keys. Read this before editing.",
+			"description": "What objects wear: per object its material slots (type, colour, numbers, which maps) and shader, plus the preset names (the starters Wood, Metal, Plastic, Glass, Stone, Rubber, Fish scales, Neon, and any the person saved) and shader keys. Read this before editing.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -1886,7 +2008,7 @@
 		{
 			"name": "create_pivot",
 			"title": "Make a pivot group",
-			"description": "Make a group at a point and put objects in it, so turning the group swings them about that point: arm parts about a shoulder, several parts of a lamp about one joint. The objects stay where they are. For one object, set_pivot needs no extra group. Returns groupUuid.\nTake a screenshot after each change to check your work.",
+			"description": "Make a group at a point and put objects in it, so turning the group swings them about that point: arm parts about a shoulder, several parts of a lamp about one joint. The objects stay where they are. Give the point as at (world) or local (in the group the objects are already in — the numbers list_scene shows inside it). For one object, set_pivot needs no extra group. Returns groupUuid.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -1901,14 +2023,22 @@
 					"at": {
 						"description": "the point: [x,y,z] world metres, or \"center\" / \"bottom\" / \"top\" of the objects together"
 					},
+					"local": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"minItems": 3,
+						"maxItems": 3,
+						"description": "instead of at: [x,y,z] in the space of the group the objects are in (world space at the scene root)"
+					},
 					"name": {
 						"type": "string",
 						"description": "the group's name (default \"Pivot\")"
 					}
 				},
 				"required": [
-					"objects",
-					"at"
+					"objects"
 				]
 			},
 			"annotations": {
@@ -2826,7 +2956,7 @@
 		{
 			"name": "status",
 			"title": "Session status",
-			"description": "Where the agent is: connection state, whether the host has let it in, its role (viewer edits stay local), the app version, and why any tool is missing.\nYou are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.",
+			"description": "Where the agent is: connection state, whether the host has let it in, its role (viewer edits stay local), the app version, and why any tool is missing. sceneBudget says how heavy the scene is: objects, triangles, draw calls, textures, lights, frame time p95, tier green / amber / red on the desktop or vr profile, and over = each budget past green (build lighter, or stop adding, while it is not green).\nYou are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {}
@@ -3020,7 +3150,8 @@
 				"lathe": "create_lathe",
 				"tube": "create_tube",
 				"extrude": "extrude_shape",
-				"mesh": "create_mesh"
+				"mesh": "create_mesh",
+				"shapes": "create_shapes"
 			},
 			"edit_shape": {
 				"params": "set_geometry",
@@ -3050,7 +3181,7 @@
 			{
 				"name": "list_scene",
 				"title": "Read the scene",
-				"description": "List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. The transform is the AUTHORED pose: an object an effect is moving also has animated: true, and live {position, rotation, scale, visible} when this frame differs; update_objects writes the authored pose, so never copy live back into it. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius}. A big flow graph shows its first page and says how to read the rest: pass {flow: \"scene\" | object uuid, page} to read one page of one graph.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall list_scene before editing so you use real uuids; batch many objects into one call.",
+				"description": "List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. Every mesh also has mesh {vertexCount, faceCount (triangles), bounds {local, world}} — each box [[minX, minY, minZ], [maxX, maxY, maxZ]], local in the mesh's own space (its vertices), world in the scene. The transform is the AUTHORED pose: an object an effect is moving also has animated: true, and live {position, rotation, scale, visible} when this frame differs; update_objects writes the authored pose, so never copy live back into it. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius}. A big flow graph shows its first page and says how to read the rest: pass {flow: \"scene\" | object uuid, page} to read one page of one graph.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall list_scene before editing so you use real uuids; batch many objects into one call.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -3105,10 +3236,39 @@
 			{
 				"name": "create_objects",
 				"title": "Add objects",
-				"description": "Create one or more primitives, lights or empty groups in a single call. Ground is the y=0 plane; place objects so they rest ON it (a box of height h sits at y=h/2). Returns the new uuids.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", \"here\" or \"this\", call where_are_users and build at the spots it gives, facing the person.\nTake a screenshot after each change to check your work.",
+				"description": "Create one or more primitives, lights or empty groups in a single call. Ground is the y=0 plane; place objects so they rest ON it (a box of height h sits at y=h/2). Returns the new uuids. To copy an existing object instead (a row of fence posts, a ring of chairs), pass from: its uuid, count, offset [x,y,z] between one copy and the next, and optionally randomRot / randomScale with a seed: deep copies (children, materials, flows), one undo step, uuids in order, in the source's own group. lookAt turns an object so its local +Z axis (its front) faces a point or another object, +Y kept up.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", \"here\" or \"this\", call where_are_users and build at the spots it gives, facing the person.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
+						"from": {
+							"type": "string",
+							"description": "copy this object (uuid) instead of making new ones; objects can still be given beside it"
+						},
+						"count": {
+							"type": "integer",
+							"description": "with from: how many copies, 1-100 (default 1)"
+						},
+						"offset": {
+							"type": "array",
+							"items": {
+								"type": "number"
+							},
+							"description": "with from: [x,y,z] metres from one copy to the next, in the source's space (copy i = source + i x offset)"
+						},
+						"randomRot": {
+							"description": "with from: true (any turn about Y), a number (± radians about Y) or [x,y,z] (± radians per axis)"
+						},
+						"randomScale": {
+							"description": "with from: a fraction like 0.2 (sizes 0.8-1.2, uniform) or [min, max] factors"
+						},
+						"seed": {
+							"type": "integer",
+							"description": "with from: the same seed makes the same copies (default 1)"
+						},
+						"name": {
+							"type": "string",
+							"description": "with from: the copies' name (numbered when several)"
+						},
 						"objects": {
 							"type": "array",
 							"items": {
@@ -3229,7 +3389,7 @@
 									},
 									"castShadow": {
 										"type": "boolean",
-										"description": "directional/spot/point: cast shadows"
+										"description": "meshes and models: cast a shadow (on by default); lights: directional / spot / point cast shadows"
 									},
 									"aim": {
 										"type": "array",
@@ -3237,6 +3397,13 @@
 											"type": "number"
 										},
 										"description": "directional/spot: a world point [x,y,z] to point at"
+									},
+									"receiveShadow": {
+										"type": "boolean",
+										"description": "meshes and models: shadows fall on it (on by default)"
+									},
+									"lookAt": {
+										"description": "turn it so its local +Z (front) faces this: a world point [x,y,z] or another object's uuid (+Y stays up; lights use aim)"
 									},
 									"parentUuid": {
 										"type": "string",
@@ -3261,9 +3428,7 @@
 							}
 						}
 					},
-					"required": [
-						"objects"
-					]
+					"required": []
 				},
 				"annotations": {
 					"title": "Add objects",
@@ -3275,7 +3440,7 @@
 			{
 				"name": "update_objects",
 				"title": "Change objects",
-				"description": "Modify existing objects by uuid: move/rotate/scale, recolor, change material, rename, show/hide, or reparent. Batch many in one call. On an object an effect is moving, a transform sets its authored pose (the one list_scene reports) and the effect carries on from there.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nTake a screenshot after each change to check your work.",
+				"description": "Modify existing objects by uuid: move/rotate/scale, recolor, change material, rename, show/hide, shadows (castShadow / receiveShadow), turn to face something (lookAt), or reparent. Batch many in one call. On an object an effect is moving, a transform sets its authored pose (the one list_scene reports) and the effect carries on from there.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -3362,7 +3527,7 @@
 									},
 									"castShadow": {
 										"type": "boolean",
-										"description": "directional/spot/point: cast shadows"
+										"description": "meshes and models: cast a shadow (on by default); lights: directional / spot / point cast shadows"
 									},
 									"aim": {
 										"type": "array",
@@ -3370,6 +3535,13 @@
 											"type": "number"
 										},
 										"description": "directional/spot: a world point [x,y,z] to point at"
+									},
+									"receiveShadow": {
+										"type": "boolean",
+										"description": "meshes and models: shadows fall on it (on by default)"
+									},
+									"lookAt": {
+										"description": "turn it so its local +Z (front) faces this: a world point [x,y,z] or another object's uuid (+Y stays up; lights use aim)"
 									},
 									"visible": {
 										"type": "boolean"
@@ -3568,7 +3740,7 @@
 			{
 				"name": "create_shape",
 				"title": "Make a shape",
-				"description": "Make shapes the basic objects cannot: a lathe (a vase, a bowl, a lamp from a profile turned around an axis), a tube along a path (a rail, a pipe, a cable), an extruded outline (a sign, a star, a wall with a hole), or a mesh from your own vertices (anything else).\nCall it as {\"action\": \"lathe\", \"lathe\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
+				"description": "Make shapes the basic objects cannot: a lathe (a vase, a bowl, a lamp from a profile turned around an axis), a tube along a path (a rail, a pipe, a cable), an extruded outline (a sign, a star, a wall with a hole), or a mesh from your own vertices (anything else).\nCall it as {\"action\": \"lathe\", \"lathe\": {…its fields…}}; each action's fields and limits are in its object below.\nMany at once: {\"shapes\": [{\"action\": \"lathe\", \"lathe\": {…}}, …]} with no action — one call, one undo step.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -3645,7 +3817,7 @@
 								},
 								"parentUuid": {
 									"type": "string",
-									"description": "group to nest under (position is then local to it)"
+									"description": "uuid of a group to nest under — position / rotation / scale AND the shape's own points are then LOCAL to that group (no position = the group's origin), so the part moves and turns with it"
 								},
 								"physics": {
 									"type": "string",
@@ -3654,6 +3826,14 @@
 										"dynamic"
 									],
 									"description": "default static"
+								},
+								"castShadow": {
+									"type": "boolean",
+									"description": "cast a shadow (on by default)"
+								},
+								"receiveShadow": {
+									"type": "boolean",
+									"description": "shadows fall on it (on by default)"
 								}
 							},
 							"required": [
@@ -3714,7 +3894,7 @@
 							"required": [
 								"path"
 							],
-							"description": "A tube swept along a smooth 3D path — rail, pipe, cable, handrail, tentacle. path = [[x, y, z], …] in SCENE space (the object is placed at the path's centre); radius for all points or radii per point (tapers). Editable with edit_shape {action: 'params'} (path, radii, closed). Returns the uuid."
+							"description": "A tube swept along a smooth 3D path — rail, pipe, cable, handrail, tentacle. path = [[x, y, z], …] in SCENE space, or in the group's own space with parentUuid (the object is placed at the path's centre); radius for all points or radii per point (tapers). Editable with edit_shape {action: 'params'} (path, radii, closed). Returns the uuid."
 						},
 						"extrude": {
 							"type": "object",
@@ -3811,7 +3991,7 @@
 								},
 								"parentUuid": {
 									"type": "string",
-									"description": "group to nest under (position is then local to it)"
+									"description": "uuid of a group to nest under — position / rotation / scale AND the shape's own points are then LOCAL to that group (no position = the group's origin), so the part moves and turns with it"
 								},
 								"physics": {
 									"type": "string",
@@ -3820,6 +4000,14 @@
 										"dynamic"
 									],
 									"description": "default static"
+								},
+								"castShadow": {
+									"type": "boolean",
+									"description": "cast a shadow (on by default)"
+								},
+								"receiveShadow": {
+									"type": "boolean",
+									"description": "shadows fall on it (on by default)"
 								}
 							},
 							"required": [
@@ -3900,7 +4088,7 @@
 								},
 								"parentUuid": {
 									"type": "string",
-									"description": "group to nest under (position is then local to it)"
+									"description": "uuid of a group to nest under — position / rotation / scale AND the shape's own points are then LOCAL to that group (no position = the group's origin), so the part moves and turns with it"
 								},
 								"physics": {
 									"type": "string",
@@ -3909,6 +4097,14 @@
 										"dynamic"
 									],
 									"description": "default static"
+								},
+								"castShadow": {
+									"type": "boolean",
+									"description": "cast a shadow (on by default)"
+								},
+								"receiveShadow": {
+									"type": "boolean",
+									"description": "shadows fall on it (on by default)"
 								}
 							},
 							"required": [
@@ -3916,16 +4112,52 @@
 								"faces"
 							],
 							"description": "A mesh from raw data: vertices [[x, y, z], …] and faces [[i, j, k] or [i, j, k, l] …] (indices into vertices, counter-clockwise seen from outside; polygons of up to 32 corners are fanned, so keep them convex), optional uvs (one [u, v] per vertex). Up to 20000 vertices and 20000 faces; normals are computed (smooth: true for smooth shading). Edit it afterwards with edit_shape {action: 'mesh'}. Returns the uuid."
+						},
+						"shapes": {
+							"type": "array",
+							"minItems": 1,
+							"maxItems": 50,
+							"items": {
+								"type": "object",
+								"properties": {
+									"action": {
+										"type": "string",
+										"enum": [
+											"lathe",
+											"tube",
+											"extrude",
+											"mesh"
+										]
+									},
+									"lathe": {
+										"type": "object",
+										"description": "create_lathe's fields"
+									},
+									"tube": {
+										"type": "object",
+										"description": "create_tube's fields"
+									},
+									"extrude": {
+										"type": "object",
+										"description": "extrude_shape's fields"
+									},
+									"mesh": {
+										"type": "object",
+										"description": "create_mesh's fields"
+									}
+								},
+								"required": [
+									"action"
+								]
+							},
+							"description": "Make up to 50 shapes in ONE call and ONE undo step: shapes = [{action: \"mesh\", mesh: {…create_shape {action: 'mesh'}'s fields…}}, {action: \"lathe\", lathe: {…}}, …] with action one of lathe, tube, extrude, mesh (the same fields as create_shape {action: 'mesh'} / create_shape {action: 'lathe'} / create_shape {action: 'extrude'} / create_shape {action: 'tube'}, parentUuid included). Every entry is checked first and nothing is made if one is wrong (the error names its index, shapes[3]); the uuids come back in the order given."
 						}
-					},
-					"required": [
-						"action"
-					]
+					}
 				},
 				"annotations": {
 					"title": "Make a shape",
 					"readOnlyHint": false,
-					"destructiveHint": false,
+					"destructiveHint": true,
 					"openWorldHint": false
 				}
 			},
@@ -3999,7 +4231,7 @@
 													"minItems": 3,
 													"maxItems": 3
 												},
-												"description": "tubes: a new path in scene space"
+												"description": "tubes: a new path in the space the tube lives in (the scene, or its group)"
 											},
 											"radius": {
 												"type": "number",
@@ -4282,16 +4514,24 @@
 								"at": {
 									"description": "the point: [x,y,z] world metres, or \"center\" / \"bottom\" / \"top\" of the objects together"
 								},
+								"local": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"minItems": 3,
+									"maxItems": 3,
+									"description": "instead of at: [x,y,z] in the space of the group the objects are in (world space at the scene root)"
+								},
 								"name": {
 									"type": "string",
 									"description": "the group's name (default \"Pivot\")"
 								}
 							},
 							"required": [
-								"objects",
-								"at"
+								"objects"
 							],
-							"description": "Make a group at a point and put objects in it, so turning the group swings them about that point: arm parts about a shoulder, several parts of a lamp about one joint. The objects stay where they are. For one object, edit_shape {action: 'pivot'} needs no extra group. Returns groupUuid."
+							"description": "Make a group at a point and put objects in it, so turning the group swings them about that point: arm parts about a shoulder, several parts of a lamp about one joint. The objects stay where they are. Give the point as at (world) or local (in the group the objects are already in — the numbers list_scene shows inside it). For one object, edit_shape {action: 'pivot'} needs no extra group. Returns groupUuid."
 						}
 					},
 					"required": [
@@ -4433,11 +4673,11 @@
 								},
 								"preset": {
 									"type": "string",
-									"description": "a preset name from list_materials"
+									"description": "a preset: Wood, Metal, Plastic, Glass, Stone, Rubber, Fish scales, Neon, or a saved one list_materials names"
 								},
 								"cc0": {
 									"type": "string",
-									"description": "a CC0 material by name, e.g. \"Wood051\" or \"brown planks\""
+									"description": "a CC0 material by Poly Haven name, ambientCG id (\"Wood051\", \"Bricks076\", \"Metal032\") or words (\"brown planks\")"
 								},
 								"slot": {
 									"type": "integer",
@@ -4452,7 +4692,7 @@
 							"required": [
 								"objects"
 							],
-							"description": "Make objects look finished: colour, roughness, metalness, emissive, opacity and texture maps, on many objects in one call. Maps take a library image hash or an https URL (https only, CORS-enabled, 16 MB, PNG/JPEG/WebP/GIF/AVIF; it becomes a library item first and is re-encoded like an upload; returned in assets). cc0 fetches a free CC0 material by name (Poly Haven / ambientCG); preset applies a named preset. faces gives just those faces their own new material slot. One undo step."
+							"description": "Make objects look finished: colour, roughness, metalness, emissive, opacity and texture maps, on many objects in one call. Maps take a library image hash or an https URL (https only, CORS-enabled, 16 MB, PNG/JPEG/WebP/GIF/AVIF; it becomes a library item first and is re-encoded like an upload; returned in assets). cc0 fetches a free CC0 material by id or name from Poly Haven (its texture names) or ambientCG (ids like \"Wood051\", \"Bricks076\", \"Metal032\", \"Ground037\"), or by words (\"brown planks\"); preset applies a named preset: one of Wood, Metal, Plastic, Glass, Stone, Rubber, Fish scales, Neon, or one the person saved (set_look {action: 'list_materials'} lists them all). faces gives just those faces their own new material slot. One undo step."
 						},
 						"list_materials": {
 							"type": "object",
@@ -4479,7 +4719,7 @@
 									"maximum": 200
 								}
 							},
-							"description": "What objects wear: per object its material slots (type, colour, numbers, which maps) and shader, plus the preset names and shader keys. Read this before editing."
+							"description": "What objects wear: per object its material slots (type, colour, numbers, which maps) and shader, plus the preset names (the starters Wood, Metal, Plastic, Glass, Stone, Rubber, Fish scales, Neon, and any the person saved) and shader keys. Read this before editing."
 						},
 						"get_material": {
 							"type": "object",
@@ -5771,7 +6011,7 @@
 			{
 				"name": "status",
 				"title": "Session status",
-				"description": "Where the agent is: connection state, whether the host has let it in, its role (viewer edits stay local), the app version, and why any tool is missing.\nYou are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.",
+				"description": "Where the agent is: connection state, whether the host has let it in, its role (viewer edits stay local), the app version, and why any tool is missing. sceneBudget says how heavy the scene is: objects, triangles, draw calls, textures, lights, frame time p95, tier green / amber / red on the desktop or vr profile, and over = each budget past green (build lighter, or stop adding, while it is not green).\nYou are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {}

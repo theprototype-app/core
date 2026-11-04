@@ -6,8 +6,8 @@ const base = { position: [1, 0, 0], rotation: [0, 0.5, 0], scale: [1, 2, 1] };
 describe('duplicatePlan (create_objects from, mcp-shapes item 7)', () => {
 	it('copy i sits at base + i x offset, same turn and size without randomness', () => {
 		const r = /** @type {any} */ (duplicatePlan({ count: 3, offset: [2, 0, 0] }, base));
-		expect(r.poses.map((p) => p.position)).toEqual([[3, 0, 0], [5, 0, 0], [7, 0, 0]]);
-		expect(r.poses.every((p) => p.rotation[1] === 0.5 && p.scale[1] === 2)).toBe(true);
+		expect(r.poses.map((/** @type {any} */ p) => p.position)).toEqual([[3, 0, 0], [5, 0, 0], [7, 0, 0]]);
+		expect(r.poses.every((/** @type {any} */ p) => p.rotation[1] === 0.5 && p.scale[1] === 2)).toBe(true);
 	});
 	it('the same seed makes the same copies; another seed does not', () => {
 		const a = duplicatePlan({ count: 5, randomRot: true, randomScale: 0.2, seed: 7 }, base);

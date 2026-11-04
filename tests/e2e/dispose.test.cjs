@@ -143,7 +143,13 @@ h.run(async () => {
 			'premise: the overlay is hidden while the context is healthy'
 		);
 		await A.page.evaluate(() => window.__loseCtx.loseContext());
+		// fix-bgquiet: the overlay waits out a 3 s grace (a phone hands a context straight back)
 		await A.page.waitForTimeout(800);
+		h.check(
+			!(await A.page.locator('.gl-lost').isVisible().catch(() => false)),
+			'inside the grace the overlay stays down'
+		);
+		await A.page.waitForTimeout(3200);
 
 		const overlay = await A.page.locator('.gl-lost').isVisible().catch(() => false);
 		h.check(overlay, 'a lost context raises the overlay instead of looking like a freeze');

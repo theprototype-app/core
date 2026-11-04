@@ -132,10 +132,10 @@ h.run(async () => {
 		const rej = requests[1]?.body ?? {};
 		h.check(rej.kind === 'rejection' && rej.msg === 'e2e rejected after <n> ms', `B13 an unhandled rejection: kind rejection, long numbers folded (${rej.kind}: ${rej.msg})`);
 
-		await page.evaluate(() => {
-			window.__stores.contextLost.set(true);
-			window.__stores.contextLost.set(false);
-		});
+		// fix-bgquiet: a loss is reported only once it outlasts the 3 s grace on a visible page
+		await page.evaluate(() => window.__stores.contextLost.set(true));
+		await page.waitForTimeout(3600);
+		await page.evaluate(() => window.__stores.contextLost.set(false));
 		await waitRequests(page, 3);
 		h.check(requests[2]?.body?.kind === 'webgl', `B14 the main renderer losing its WebGL context: kind webgl (${requests[2]?.body?.kind})`);
 

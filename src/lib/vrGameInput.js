@@ -36,6 +36,7 @@ import { registerVRFrameHook, registerVRTriggerHooks, registerPanelGroupProvider
 import { vrPerfStripFrame, hideVrPerfStrip } from './vrPerfStrip';
 import { vrRecIndicatorFrame, hideVrRecIndicator } from './vrRecIndicator';
 import { arTableActive } from './arTableState.js';
+import { vrUiStandsDown } from './vrUiGate.js';
 import { vrGamePanelFrame, panelTargetAlong, panelHover, pressPanelTarget, pokeFrame, uAcross, vrGameSurface, hideVrGamePanel } from './vrGamePanel';
 
 const _mat = new THREE.Matrix4();
@@ -394,7 +395,9 @@ export function startVrGameInput() {
 		registerVRFrameHook(() => {
 			const renderer = /** @type {any} */ (get(globalRenderer));
 			// 50 R1: an AR table draws the game's screens in its DOM overlay, not on the VR board
-			if (!renderer?.xr?.isPresenting || arTableActive()) {
+			// fix-film: nor while Film is open — its DOM controls are the whole UI (and a head-locked
+			// band would be filmed)
+			if (!renderer?.xr?.isPresenting || arTableActive() || vrUiStandsDown()) {
 				// the session ENDED: take the surfaces down once (this hook runs every desktop
 				// frame too, where there is nothing to do)
 				if (presenting) {

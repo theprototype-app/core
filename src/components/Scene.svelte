@@ -9,7 +9,7 @@
 	import { peers, username, userdata, specatorMode, avatarConfig, viewportMenu, objectContextMenu, viewportMenuOpener, addMenu, addMenuOpener, showToast, multiSelectMode } from '../stores/appStore';
 	import { get } from 'svelte/store';
 	import { vrPostEnabled } from '$lib/viewportOverrides';
-	import { isLocked, editorMode, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, sessionCompositesOverRoom, vrObjectsPanelOpen, vrPaletteOpen, vrPropsPanelOpen, vrPrefabsPanelOpen, vrChatPanelOpen, vrEditMenuOpen, vrSnapMenuOpen, vrSettingsPanelOpen, vrApprovePanelOpen, vrToolMode, viewMode, contextLost, readVrOverride } from '../stores/sceneStore';
+	import { isLocked, editorMode, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, sessionCompositesOverRoom, setSessionComposites, vrObjectsPanelOpen, vrPaletteOpen, vrPropsPanelOpen, vrPrefabsPanelOpen, vrChatPanelOpen, vrEditMenuOpen, vrSnapMenuOpen, vrSettingsPanelOpen, vrApprovePanelOpen, vrToolMode, viewMode, contextLost, readVrOverride } from '../stores/sceneStore';
 	import {
 		selectObject,
 		deselectObject,
@@ -70,6 +70,7 @@
 	import { startVrGameInput, stopVrGameInput } from '$lib/vrGameInput';
 	import { tickArTable } from '$lib/arTable'; // 50 R1: phone AR table placement
 	import { arTableActive, tickPhoneAr } from '$lib/arTableState.js';
+	import { vrUiHidden } from '$lib/vrUiGate.js';
 	import { gameFeelActive } from '$lib/gameFeel';
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
 	import { measureMode, measureClick, measureHoverAt } from '$lib/measure';
@@ -196,6 +197,8 @@
 	$vrOverride = readVrOverride(); // 41b H7: a choice, or this device's default (a phone plays on its screen)
 	camera.current.position.set(10.5, 7.57, 11.4);
 	let fov = camera.current.fov
+	// fix-film: the renderer's autoClear before an XR session forced it on (null = not forced)
+	let xrAutoClearWas: boolean | null = null;
 	let resetSettings = false;
 	setTimeout(() => {
 		// $peers.send({ type: 'userdata', userdata: $userdata });
@@ -372,6 +375,15 @@
 		// 50 R1: the AR table's reticle + placement (a no-op unless one is running)
 		if (renderer?.xr?.isPresenting) tickArTable(renderer, camera.current);
 		if (renderer?.xr?.isPresenting) tickPhoneAr(renderer, camera.current); // 68 V3: Film's AR walk
+		// fix-film (the AR smear): an XR frame is CLEARED every frame. postprocessing's EffectComposer
+		// turns autoClear off for the desktop pipeline and nothing turned it back on while presenting;
+		// a headset's opaque sky repainted every pixel and hid it, but over a camera feed (the sky
+		// lifted, or drawn as a texture) Android's AR framebuffer kept the previous frame — every
+		// moving thing left trails. Restored to the desktop value when the session ends.
+		if (renderer?.xr?.isPresenting && !renderer.autoClear) {
+			if (xrAutoClearWas === null) xrAutoClearWas = renderer.autoClear;
+			renderer.autoClear = true;
+		}
 		// console.log(camera.current.lookAt.)
 		if (camera.current.fov !== fov) {
 			// console.log('fov changed')
@@ -755,6 +767,8 @@
 		});
 		// tell peers our controllers are gone when the VR session ends
 		const onSessionEnd = () => {
+			if (xrAutoClearWas !== null) renderer.autoClear = xrAutoClearWas; // fix-film
+			xrAutoClearWas = null;
 			exitEditMode(); // leave vertex edit mode cleanly (113)
 			exitFaceEdit(); // and face edit mode (118)
 			exitSplineEdit(); // and any spline session (57.4)
@@ -1915,6 +1929,10 @@ bind:playerMesh
 position={[0, 2, 3]}
 />
 
+<!-- fix-film: every in-headset UI stands down while Film is open (any session — the gyro view, a
+     headset, the phone's AR walk): Film's own DOM controls are the whole UI, and a head-locked panel
+     would be filmed (on a phone's AR framebuffer it smeared across every frame) -->
+{#if !$vrUiHidden}
 <VRMenu />
 <VRStats />
 <!-- 94 SP1: the editor's VR panels load when they open, never with a play link's boot. Each one's
@@ -1942,13 +1960,15 @@ position={[0, 2, 3]}
 	{#await import('./play/VRAssetBrowser.svelte') then m}<m.default />{/await}
 	{#await import('./play/VRLogicPanel.svelte') then m}<m.default />{/await}
 {/if}
+{/if}
 
 <XR
 	offerSession={$xrOfferMode}
 	onsessionstart={() => {
 		// passthrough (90): AR sessions blend with the room — drop the local sky
 		const session = renderer.xr.getSession();
-		passthroughActive.set(sessionCompositesOverRoom(session));
+		// (fix-film: through roomLook — Film's walk may keep the scene's own sky over the room)
+		setSessionComposites(sessionCompositesOverRoom(session));
 		// B2.1: request the preferred refresh rate (auto = highest supported) —
 		// without this the Quest stays at its 90Hz default
 		applyVRFrameRate();
@@ -1956,7 +1976,7 @@ position={[0, 2, 3]}
 		// GAME lands in Interact on its spawn — not an AR table, which is placed first (50 R1)
 		if (!arTableActive()) onVRSessionStart();
 	}}
-	onsessionend={() => passthroughActive.set(false)}
+	onsessionend={() => setSessionComposites(false)}
 >
 	<Controller left />
 	<Controller right />

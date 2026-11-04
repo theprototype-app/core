@@ -70,7 +70,17 @@ export const TOOL_ANNOTATIONS = /** @type {Record<string, {title: string, read?:
 	connect: { title: 'Join a session', destructive: false, openWorld: true },
 	// 86-fix N2: the connector's join — the person confirms in the tab; joining may replace what the tab shows
 	join_session: { title: 'Join a session (asks the person)', destructive: true, openWorld: true },
-	where_are_users: { title: 'Where the people are', read: true }
+	where_are_users: { title: 'Where the people are', read: true },
+	// 85-scene (85b)
+	create_hud: { title: 'Add a HUD', destructive: false },
+	edit_hud: { title: 'Change the HUD', destructive: true },
+	list_hud: { title: 'Read the HUD', read: true },
+	hud_panel: { title: 'Add a HUD panel', destructive: false },
+	set_sky: { title: 'Change the sky and fog', destructive: true },
+	set_light: { title: 'Change the scene light', destructive: true },
+	get_environment: { title: 'Read the sky and light', read: true },
+	place_spawn: { title: 'Set where Play starts', destructive: true },
+	set_play_camera: { title: 'Set the play camera and opening view', destructive: true }
 });
 
 /** a title from a tool name: `create_objects` → `Create objects` @param {string} name */
@@ -220,8 +230,8 @@ export function buildCatalog(hostTools, opts = {}) {
  * mcp-shapes: a family may also have a BATCH — `batch: {key, tool}` — called as `{<key>: [...]}` with no action
  * (create_shape {shapes: [{action, mesh: {...}}, ...]}); the families map carries it as action `<key>`.
  * Reserved, not built yet: edit_shape `update` (G6b update_mesh), assets search / place / prefab (85-world, 85b),
- * set_look environment / sky / light (85-scene, 85b), create_shape from_image (73's image-to-3D is generate_mesh,
- * which the connector leaves out).
+ * create_shape from_image (73's image-to-3D is generate_mesh, which the connector leaves out). 85-scene (85b) built
+ * set_look sky / light / environment (environment = the read), hud and game_setup.
  * @type {Readonly<Record<string, {title: string, summary: string, actions: Record<string, string>, batch?: {key: string, tool: string}}>>}
  */
 export const CONNECTOR_FAMILIES = Object.freeze({
@@ -239,9 +249,9 @@ export const CONNECTOR_FAMILIES = Object.freeze({
 		actions: { params: 'set_geometry', mesh: 'edit_mesh', pivot: 'set_pivot', pivot_group: 'create_pivot' }
 	},
 	set_look: {
-		title: 'Materials, shaders, UVs and post effects',
+		title: 'Materials, shaders, sky, light and post effects',
 		summary:
-			'How things look: material = colour, roughness, metal, glow, see-through and textures (a library image, a CC0 material by name or an https image); list_materials / get_material read them; shader / edit_shader / assign_shader / shader_nodes = node shaders on objects; post / get_post / post_graph = the scene\'s post effects (bloom, colour grade, vignette; the host is asked first); unwrap / uv = texture mapping and tiling.',
+			'How things look: material = colour, roughness, metal, glow, see-through and textures (a library image, a CC0 material by name or an https image); list_materials / get_material read them; shader / edit_shader / assign_shader / shader_nodes = node shaders on objects; sky = the sky image, background, fog and exposure; light = the sun, ambient and environment lights; environment reads both; post / get_post / post_graph = the scene\'s post effects (bloom, colour grade, vignette); sky, light and post change the whole scene, so the host is asked first; unwrap / uv = texture mapping and tiling.',
 		actions: {
 			material: 'set_material',
 			list_materials: 'list_materials',
@@ -254,13 +264,30 @@ export const CONNECTOR_FAMILIES = Object.freeze({
 			get_post: 'get_post',
 			post_graph: 'create_post_graph',
 			unwrap: 'uv_unwrap',
-			uv: 'set_uv'
+			uv: 'set_uv',
+			sky: 'set_sky',
+			light: 'set_light',
+			environment: 'get_environment'
 		}
 	},
 	assets: {
 		title: 'Images and assets',
 		summary: 'The shared library: image = put an image into it (an https URL, base64 data, or a canvas you describe) and get its hash for textures.',
 		actions: { image: 'add_image' }
+	},
+	// 85-scene (85b): 85 H1 / H2 + the panel shape 67's scene panels reuse
+	hud: {
+		title: 'Game HUD',
+		summary:
+			'The game\'s 2D screen overlay: create = screens of elements (timer, score text, bars, buttons, images) and their ids; list = what is there and what each element is bound to; update = change, move or remove elements and screens; panel = a backdrop with rows (a menu, a scoreboard). Bind live values with hudtext / hudbar / hudtimer flow nodes whose element is an id.',
+		actions: { create: 'create_hud', list: 'list_hud', update: 'edit_hud', panel: 'hud_panel' }
+	},
+	// 85-scene (85b): 85 H3 + H6; levels / portal / loading / checkpoint join with 91 / 93
+	game_setup: {
+		title: 'Game setup: spawn and play camera',
+		summary:
+			'How the game starts: spawn = where Play starts and which way the player faces; play_camera = first person walking or flying (speed, jump, eye height) and openingView = where the editor camera starts when the scene opens.',
+		actions: { spawn: 'place_spawn', play_camera: 'set_play_camera' }
 	}
 });
 

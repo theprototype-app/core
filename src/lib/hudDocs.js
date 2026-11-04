@@ -665,7 +665,16 @@ export function removeHudElements(key, screenId, elementIds) {
 
 /** @param {string} key @param {string} name @returns {string} the new screen's id */
 export function addHudScreen(key, name) {
-	const doc = hudDocOf(key) ?? normalizeHudDoc({});
+	const existing = hudDocOf(key);
+	// 85 H1 (the agent tester's trap): on a key with NO document, normalizeHudDoc({}) invents an empty
+	// `main`, so the first added screen came second and `main` stayed active — nothing showed. The first
+	// screen of a new document is now its only screen, and the active one.
+	if (!existing) {
+		const id = 'screen-1-' + Math.floor(Math.random() * 1e6).toString(36);
+		setHudDocFor(key, { screens: [normalizeHudScreen({ id, name: name || 'Screen 1' })], active: id });
+		return id;
+	}
+	const doc = existing;
 	const id = 'screen-' + (doc.screens.length + 1) + '-' + Math.floor(Math.random() * 1e6).toString(36);
 	setHudDocFor(key, {
 		...doc,

@@ -533,6 +533,21 @@ function commit(partial, replicate = true) {
 	if (peer) peer.send({ type: 'environment', ...state });
 }
 
+/**
+ * 85 H4 / H5 / H7: a whole environment state through the one write path — the agent's set_sky / set_light
+ * and their undo (the `environment` history kind, ai/sceneSetupHistory.js). Persists, applies, replicates.
+ * @param {{preset?: string, exposure?: number, customPreset?: any, lights?: any[], lodBias?: number}} state
+ */
+export function commitEnvironment(state) {
+	commit({
+		preset: state.preset ?? 'studio',
+		exposure: state.exposure ?? 1,
+		customPreset: state.customPreset ?? null,
+		lights: Array.isArray(state.lights) ? state.lights : [],
+		lodBias: lodBiasOf(state) === 1 ? undefined : lodBiasOf(state)
+	});
+}
+
 /** User action: switch preset/exposure (extra lights survive preset switches)
  * @param {string} preset @param {number=} exposure */
 export function setEnvironment(preset, exposure) {

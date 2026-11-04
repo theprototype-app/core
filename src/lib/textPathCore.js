@@ -115,7 +115,7 @@ export const ORIENTS = Object.freeze(['auto', 'flat', 'upright']);
  *   size: number, color: string, spacing: number, lineHeight: number, outline: number, outlineColor: string,
  *   path: TextPathCurve, offset: number, align: string, side: string, orient: string, shift: number,
  *   letters: Record<string, LetterStyle>, mode: string, maxWidth: number, anchor: string, depth: number,
- *   bevel: TextBevel, quality: string, sideColor: string | null, emissive: number, metalness: number,
+ *   bevel: TextBevel, quality: string, fontMeta: {licence: string, url: string, noEmbed: boolean} | null, sideColor: string | null, emissive: number, metalness: number,
  *   roughness: number}} TextPathRecord */
 
 export const TEXT_PATH_DEFAULTS = Object.freeze({
@@ -143,6 +143,7 @@ export const TEXT_PATH_DEFAULTS = Object.freeze({
 	mode: 'flat',
 	fontAsset: null, // a Library font's content hash (user upload / Google Fonts); wins over `font`
 	fontName: '', // its family name, for the missing-font notice and the Inspector
+	fontMeta: null, // {licence, url, noEmbed} of a Library font (TX3b)
 	maxWidth: 0, // m; 0 = no wrapping (block text only)
 	anchor: 'middle-center',
 	depth: 0.1, // m (extruded)
@@ -166,6 +167,19 @@ export function normalizeBevel(raw) {
 }
 
 const HASH_RE = /^[A-Za-z0-9_-]{8,128}$/;
+
+/**
+ * TX3b: what a Library font said about its licence when it was picked (its `name` table and
+ * OS/2 fsType, read once at import) — rides the record so every peer's Inspector and the export
+ * warning know it without parsing the font.
+ * @param {any} raw @returns {{licence: string, url: string, noEmbed: boolean} | null}
+ */
+export function normalizeFontMeta(raw) {
+	if (!raw || typeof raw !== 'object') return null;
+	const licence = typeof raw.licence === 'string' ? raw.licence.replace(/[\u0000-\u001f]/g, '').slice(0, 64) : '';
+	const url = typeof raw.url === 'string' && /^https?:\/\//i.test(raw.url) ? raw.url.slice(0, 300) : '';
+	return { licence, url, noEmbed: !!raw.noEmbed };
+}
 
 /** @param {any} v @param {number} d @param {number} lo @param {number} hi */
 const clampNum = (v, d, lo, hi) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);
@@ -271,6 +285,7 @@ export function normalizeTextPath(raw) {
 		mode,
 		fontAsset,
 		fontName: fontAsset && typeof r.fontName === 'string' ? r.fontName.replace(/[\u0000-\u001f]/g, '').slice(0, 80) : '',
+		fontMeta: fontAsset ? normalizeFontMeta(r.fontMeta) : null,
 		maxWidth: clampNum(r.maxWidth, d.maxWidth, 0, 500),
 		anchor: oneOf(r.anchor, TEXT_ANCHORS, d.anchor),
 		depth: clampNum(r.depth, d.depth, 0.001, 50),

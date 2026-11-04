@@ -3,10 +3,9 @@ import * as THREE from 'three';
 // @ts-ignore - troika-three-text ships no type declarations (threlte's <Text> dependency)
 import { Text } from 'troika-three-text';
 import {
-	TEXT_FONTS_PATH,
 	CARET_STRIDE,
-	fontById,
 	normalizeTextPath,
+	isBlockText,
 	isTextPathObject,
 	builtinPolyline,
 	makeSampler,
@@ -17,8 +16,21 @@ import {
 	glyphColors,
 	glyphQuads
 } from './textPathCore.js';
-import { applyTextProxyLook } from './textPathObject.js';
+import { applyTextProxyLook, textPlaceholderGeometry } from './textPathObject.js';
 import { textPathPolylineOf, textPathSourceKey } from './textPathSources.js';
+import { layoutInPlace, blockAlign, anchorParts } from './text3dCore.js';
+import { bundledFlatUrl, bundledSolidUrl, fontAssetUrl, resolveFontAsset, onFontLanded, shareFontAsset } from './textFonts.js';
+import { registerParkHook } from './parkHooks.js';
+import { coarsePointer } from './inputDevice.js';
+import { isVRMode } from '../stores/sceneStore';
+import { showToast } from '../stores/appStore';
+import { get } from 'svelte/store';
+
+// 64-text: the ONE text object has two modes on the same record. FLAT (this file's troika
+// visual, as below — a block of text, or text on a path) and EXTRUDED: the carrier itself becomes
+// the solid letters (text3dBuild, a lazy chunk with opentype.js), so selection, VR rays, shadows
+// and Bake → mesh treat it like any mesh. Its geometry is never saved or sent: a park hook swaps
+// the placeholder in while a serializer reads the scene, and every peer builds its own.
 
 // 64 D2 — TEXT ON A PATH, the runtime. LOCAL per peer and never saved: only the record on the
 // carrier travels; every peer lays the same letters out from it (golden rule 8).
@@ -73,17 +85,42 @@ function pathMaterial() {
 	return m;
 }
 
-/** a bundled font's URL ('sans' = troika's resolver, which covers every script) @param {string} id */
-function fontUrl(id) {
-	const f = fontById(id);
-	if (!f.file || typeof document === 'undefined') return null;
-	return new URL(TEXT_FONTS_PATH + '/' + f.file, document.baseURI).href;
+/** hashes whose missing-font notice was shown (once per font per session) @type {Set<string>} */
+const noticed = new Set();
+
+/**
+ * The font file a record draws with: a Library font (when its bytes are here), else the bundled
+ * one. A Library font still on its way falls back to Noto Sans with ONE notice, and the text is
+ * laid out again when the bytes land (onFontLanded).
+ * @param {any} rec @param {boolean} solid extruded (needs a concrete file) or flat ('sans' = troika's resolver)
+ * @returns {string | null}
+ */
+function fontUrlFor(rec, solid) {
+	if (rec.fontAsset) {
+		const url = fontAssetUrl(rec.fontAsset);
+		if (url) return url;
+		void resolveFontAsset(rec.fontAsset);
+		if (!noticed.has(rec.fontAsset)) {
+			noticed.add(rec.fontAsset);
+			showToast(`The font “${rec.fontName || 'Font'}” is not on this device yet — showing Noto Sans until it arrives.`);
+		}
+		return solid ? bundledSolidUrl('sans') : null;
+	}
+	return solid ? bundledSolidUrl(rec.font) : bundledFlatUrl(rec.font);
+}
+
+/** 'low' on a phone or in a headset (TX6 caps) */
+export function textProfile() {
+	const forced = typeof window !== 'undefined' ? /** @type {any} */ (window).__tpTextProfile : null;
+	if (forced === 'low' || forced === 'desktop') return forced;
+	return coarsePointer() || get(isVRMode) ? 'low' : 'desktop';
 }
 
 /**
  * @typedef {{carrier: any, text: any, rec: any, recRef: any, troikaKey: string, info: any,
  *   glyphChars: Int32Array | null, target: any, relinkIn: number, sourceKey: any,
- *   overrides: any, dirty: boolean, synced: boolean, glyphs: number, hidden: number, rows: Float32Array | null}} Entry
+ *   overrides: any, dirty: boolean, synced: boolean, glyphs: number, hidden: number, rows: Float32Array | null,
+ *   solidKey: string, solidGeo: any, solidMats: any[] | null, solidInfo: any, building: boolean, solidWanted: string, recKey: string}} Entry
  */
 /** @type {Map<string, Entry>} */
 const entries = new Map();
@@ -92,14 +129,41 @@ let rootRef = /** @type {any} */ (null);
 
 /** the troika-side fields: a change to any of these re-typesets (asynchronously) @param {any} rec */
 const troikaKeyOf = (rec) =>
-	JSON.stringify([rec.text, rec.font, rec.bold, rec.italic, rec.size, rec.spacing, rec.lineHeight, rec.outline, rec.outlineColor]);
+	JSON.stringify([
+		rec.text,
+		fontUrlFor(rec, false),
+		rec.bold,
+		rec.italic,
+		rec.size,
+		rec.spacing,
+		rec.lineHeight,
+		rec.outline,
+		rec.outlineColor,
+		isBlockText(rec) ? [rec.maxWidth, rec.align, rec.anchor] : 0
+	]);
 
 /** @param {Entry} e */
 function applyTroika(e) {
 	const t = e.text;
 	const rec = e.rec;
+	// 64-text: a block of text wraps, aligns and sits on its anchor; text on a path is laid out
+	// straight from the origin and then carried onto the curve (layoutOnPath)
+	if (isBlockText(rec)) {
+		const a = anchorParts(rec.anchor);
+		t.anchorX = a.x;
+		t.anchorY = a.y;
+		t.textAlign = blockAlign(rec.align);
+		t.whiteSpace = 'normal';
+		t.maxWidth = rec.maxWidth > 0 ? rec.maxWidth : Infinity;
+	} else {
+		t.anchorX = 0;
+		t.anchorY = 'top-baseline';
+		t.textAlign = 'left';
+		t.whiteSpace = 'nowrap';
+		t.maxWidth = Infinity;
+	}
 	t.text = rec.text;
-	t.font = fontUrl(rec.font);
+	t.font = fontUrlFor(rec, false);
 	t.fontSize = rec.size;
 	t.fontWeight = rec.bold ? 'bold' : 'normal';
 	t.fontStyle = rec.italic ? 'italic' : 'normal';
@@ -141,7 +205,14 @@ function makeEntry(carrier) {
 		synced: false,
 		glyphs: 0,
 		hidden: 0,
-		rows: null
+		rows: null,
+		solidKey: '',
+		solidGeo: null,
+		solidMats: null,
+		solidInfo: null,
+		building: false,
+		solidWanted: '',
+		recKey: ''
 	};
 	text.addEventListener('synccomplete', () => {
 		const info = text.textRenderInfo;
@@ -158,6 +229,14 @@ function makeEntry(carrier) {
 function disposeEntry(e) {
 	e.text.removeFromParent();
 	e.text.dispose(); // its own geometry; the shared base material stays
+	// a carrier that is still a text (deleted, or replaced) gives its solid look back; a BAKED one
+	// keeps its geometry + materials — they are the mesh now
+	if (e.solidGeo && e.carrier.userData?.textPath && e.carrier.geometry === e.solidGeo) {
+		e.carrier.geometry = textPlaceholderGeometry();
+		applyTextProxyLook(e.carrier);
+	}
+	e.solidGeo = null;
+	e.solidMats = null;
 }
 
 /** the curve in the carrier's frame @param {Entry} e */
@@ -175,18 +254,26 @@ function layout(e) {
 	const info = e.info;
 	if (!info || !e.rec) return;
 	const rec = e.rec;
-	const line = polylineOf(e);
-	const sampler = makeSampler(line, rec.side === 'right');
-	const orient = rec.orient === 'auto' ? (line.orient ?? 'flat') : rec.orient;
+	if (rec.mode === 'extruded') return; // the carrier is the letters (ensureSolid)
 	const charCount = Math.floor((info.caretPositions?.length ?? 0) / CARET_STRIDE);
 	const styles = mergeLetterStyles(charCount, rec.letters, e.overrides);
 	const glyphChars = e.glyphChars ?? new Int32Array(0);
-	const { rows, hidden } = layoutOnPath(
-		{ glyphBounds: info.glyphBounds, glyphChars, caretPositions: info.caretPositions, lineHeight: info.lineHeight, fontSize: rec.size },
-		styles,
-		sampler,
-		{ normal: line.normal, orient, align: rec.align, offset: rec.offset, shift: rec.shift }
-	);
+	let rows;
+	let hidden;
+	if (isBlockText(rec)) {
+		// 64-text: a block keeps troika's own placement; letters only take their styles
+		({ rows, hidden } = layoutInPlace({ glyphBounds: info.glyphBounds, glyphChars, caretPositions: info.caretPositions, fontSize: rec.size }, styles, CARET_STRIDE));
+	} else {
+		const line = polylineOf(e);
+		const sampler = makeSampler(line, rec.side === 'right');
+		const orient = rec.orient === 'auto' ? (line.orient ?? 'flat') : rec.orient;
+		({ rows, hidden } = layoutOnPath(
+			{ glyphBounds: info.glyphBounds, glyphChars, caretPositions: info.caretPositions, lineHeight: info.lineHeight, fontSize: rec.size },
+			styles,
+			sampler,
+			{ normal: line.normal, orient, align: rec.align, offset: rec.offset, shift: rec.shift }
+		));
+	}
 	const n = glyphChars.length;
 	const r0 = new Float32Array(n * 4);
 	const r1 = new Float32Array(n * 4);
@@ -220,6 +307,116 @@ function layout(e) {
 	e.carrier.geometry = proxy;
 	old?.dispose?.();
 }
+
+/** @type {Promise<any> | null} */
+let buildMod = null;
+const builder = () => (buildMod ??= import('./text3dBuild.js'));
+
+/**
+ * 64-text TX1: an EXTRUDED text's carrier shows the solid letters.
+ * @param {Entry} e @param {boolean=} recChanged the record changed (materials + key refresh) Built asynchronously (the
+ * font, then the geometry); the record seen at the end must still be the one asked for, or the
+ * result is dropped and the next tick asks again.
+ */
+function ensureSolid(e, recChanged = false) {
+	const rec = e.rec;
+	if (recChanged) {
+		e.recKey = JSON.stringify(rec);
+		const mats = e.solidMats;
+		if (mats) builder().then((m) => m.extrudedMaterials(rec, mats));
+	}
+	const url = fontUrlFor(rec, true);
+	if (!url) return;
+	const profile = textProfile();
+	const wanted = url + '|' + profile + '|' + e.recKey;
+	if (wanted === e.solidWanted || e.building) return;
+	e.building = true;
+	const recRef = e.recRef;
+	builder()
+		.then(async (m) => {
+			const { geometry, info } = await m.buildExtruded(rec, url, profile);
+			e.building = false;
+			if (e.recRef !== recRef || !entries.has(e.carrier.uuid) || entries.get(e.carrier.uuid) !== e || e.rec.mode !== 'extruded') return;
+			e.solidWanted = wanted;
+			const c = e.carrier;
+			const old = c.geometry;
+			c.geometry = geometry;
+			if (old && old !== geometry && !m.ownsGeometry(old)) old.dispose?.();
+			e.solidGeo = geometry;
+			e.solidInfo = info;
+			const mats = m.extrudedMaterials(rec, e.solidMats);
+			if (c.material !== mats) {
+				const prev = c.material;
+				c.material = mats;
+				if (prev && prev !== e.solidMats && !Array.isArray(prev)) prev.dispose?.();
+			}
+			e.solidMats = mats;
+			c.castShadow = true;
+			c.receiveShadow = true;
+			m.releaseExtruded((/** @type {any} */ g) => [...entries.values()].some((x) => x.carrier.geometry === g));
+		})
+		.catch((err) => {
+			e.building = false;
+			e.solidWanted = wanted; // do not retry a broken font every frame
+			console.log('extruded text failed', err);
+			showToast('Could not build the solid text: ' + (err?.message ?? 'the font did not load') + '.');
+		});
+}
+
+/** back from extruded to flat: the carrier is the invisible hit proxy again @param {Entry} e */
+function leaveSolid(e) {
+	if (!e.solidGeo) return;
+	const c = e.carrier;
+	if (c.geometry === e.solidGeo) c.geometry = textPlaceholderGeometry();
+	e.solidMats?.forEach((m) => m.dispose?.());
+	e.solidMats = null;
+	e.solidGeo = null;
+	e.solidWanted = '';
+	e.solidInfo = null;
+	c.castShadow = false;
+	c.receiveShadow = false;
+	applyTextProxyLook(c);
+	e.troikaKey = ''; // re-typeset so the proxy comes back
+}
+
+// the geometry is the RECORD's, never the save's: a serializer reads the placeholder
+registerParkHook(() => {
+	/** @type {(() => void)[]} */
+	const undo = [];
+	for (const e of entries.values()) {
+		const c = e.carrier;
+		if (!e.solidGeo || c.geometry !== e.solidGeo || !c.userData?.textPath) continue;
+		const geo = c.geometry;
+		const mat = c.material;
+		c.geometry = parkGeometry();
+		c.material = parkMaterial();
+		undo.push(() => {
+			c.geometry = geo;
+			c.material = mat;
+		});
+	}
+	return undo.length ? () => undo.forEach((u) => u()) : null;
+});
+/** @type {any} */
+let parkGeo = null;
+/** @type {any} */
+let parkMat = null;
+const parkGeometry = () => (parkGeo ??= textPlaceholderGeometry());
+function parkMaterial() {
+	if (!parkMat) {
+		parkMat = new THREE.MeshBasicMaterial();
+		applyTextProxyLook({ material: parkMat });
+	}
+	return parkMat;
+}
+
+// a Library font that landed late: every text using one lays out again
+onFontLanded(() => {
+	for (const e of entries.values()) {
+		if (!e.rec?.fontAsset) continue;
+		e.recRef = null; // re-read the record: the troika key and the solid key both see the new URL
+	}
+});
 
 /** @param {any} o @param {any} root visible all the way up to the content root */
 function shown(o, root) {
@@ -306,18 +503,29 @@ export function tickTextPaths(root) {
 			if (!e) {
 				e = makeEntry(o);
 				entries.set(o.uuid, e);
-				applyTextProxyLook(o);
+				if (normalizeTextPath(o.userData.textPath).mode !== 'extruded') applyTextProxyLook(o);
 			}
 			if (o.userData.textPath !== e.recRef) {
 				e.recRef = o.userData.textPath;
 				e.rec = normalizeTextPath(e.recRef);
-				const key = troikaKeyOf(e.rec);
-				if (key !== e.troikaKey) {
-					e.troikaKey = key;
-					applyTroika(e); // relays out on synccomplete
+				if (e.rec.fontAsset) shareFontAsset(e.rec.fontAsset);
+				if (e.rec.mode === 'extruded') ensureSolid(e, true);
+				else {
+					leaveSolid(e);
+					const key = troikaKeyOf(e.rec);
+					if (key !== e.troikaKey) {
+						e.troikaKey = key;
+						applyTroika(e); // relays out on synccomplete
+					}
+					applyTextProxyLook(o);
 				}
 				e.dirty = true;
-				applyTextProxyLook(o);
+			}
+			if (e.rec.mode === 'extruded') {
+				e.text.visible = false;
+				// the font may land, the device may enter VR (a lower cap): ensureSolid is cheap when nothing changed
+				if (!e.building) ensureSolid(e);
+				return;
 			}
 			resolveTarget(e, root);
 			if (e.target) {
@@ -405,7 +613,12 @@ export function textPathDebug() {
 			glyphs: e.glyphs,
 			hidden: e.hidden,
 			linked: !!e.target,
-			visible: !!e.text.visible && !!e.text.parent,
+			visible: e.rec?.mode === 'extruded' ? !!e.solidGeo : !!e.text.visible && !!e.text.parent,
+			mode: e.rec?.mode ?? 'flat',
+			block: isBlockText(e.rec),
+			solid: e.solidInfo ? { ...e.solidInfo, building: e.building } : e.rec?.mode === 'extruded' ? { building: e.building } : null,
+			font: e.rec ? (e.rec.fontAsset ? 'asset:' + e.rec.fontAsset : e.rec.font) : null,
+			fontUrl: e.rec ? fontUrlFor(e.rec, e.rec.mode === 'extruded') : null,
 			proxyTris: (e.carrier.geometry?.index?.count ?? 0) / 3,
 			baseline,
 			off,

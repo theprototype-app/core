@@ -54,7 +54,7 @@ h.run(async () => {
 	await h.connect(B, A);
 
 	// ---- §1 ------------------------------------------------------------------------------
-	const uuid = await A.page.evaluate(() => window.__stores.addObjects.spawnAtPoint('/create Text', [0, 0, 0]).uuid);
+	const uuid = await A.page.evaluate(() => window.__stores.addObjects.spawnAtPoint('/create Text path', [0, 0, 0]).uuid);
 	const a1 = await until(A.page, uuid, (d) => d.glyphs > 0, '§1 premise: A laid the default text out');
 	const b1 = await until(B.page, uuid, (d) => d.glyphs > 0, '§1 premise: B received the /create and laid it out too');
 	const rec = await record(A.page, uuid);
@@ -241,7 +241,7 @@ h.run(async () => {
 		'§8 premise: the app sees an immersive-vr headset',
 		10000
 	);
-	const vr = await C.page.evaluate(() => window.__stores.addObjects.spawnAtPoint('/create Text', [0, 0, -3]).uuid);
+	const vr = await C.page.evaluate(() => window.__stores.addObjects.spawnAtPoint('/create Text path', [0, 0, -3]).uuid);
 	await until(C.page, vr, (d) => d.glyphs > 0, '§8 premise: a text in front of the headset');
 	await iwer.enter(C.page);
 	// aim BOTH controllers at the middle of glyph 6's hit quad (the carrier's own proxy triangles): the beam

@@ -1,8 +1,10 @@
 import { get } from 'svelte/store';
 import { objectsGroup, pokeScene } from '../stores/sceneStore';
-import { peers } from '../stores/appStore';
+import { peers, showToast } from '../stores/appStore';
 import { recordEntry, beginHistoryBatch, endHistoryBatch, historyBatchOpen } from './history';
-import { normalizeTextPath, normalizeLetterStyle, remapLetters, MAX_STYLED } from './textPathCore.js';
+import { normalizeTextPath, normalizeLetterStyle, remapLetters, MAX_STYLED, textCapCheck, isBlockText } from './textPathCore.js';
+import { coarsePointer } from './inputDevice.js';
+import { isVRMode } from '../stores/sceneStore';
 import { applyTextPathTo } from './textPathObject.js';
 import { textPathSourceFor } from './textPathSources.js';
 import { spawnAtPoint } from './addObjects.js';
@@ -16,6 +18,33 @@ import { isSplineObject, normalizeSpline } from './splineTube';
 /** @param {string} uuid */
 const objectOf = (uuid) => get(objectsGroup)?.getObjectByProperty('uuid', uuid);
 
+/** 'low' on a phone or in a headset (the TX6 caps; the runtime's textProfile, without its chunk) */
+export function writerProfile() {
+	const forced = typeof window !== 'undefined' ? /** @type {any} */ (window).__tpTextProfile : null;
+	if (forced === 'low' || forced === 'desktop') return forced;
+	return coarsePointer() || get(isVRMode) ? 'low' : 'desktop';
+}
+
+/** the last write refused, and why (the Inspector / agent tool read it) @type {string | null} */
+let lastRefusal = null;
+export const lastTextRefusal = () => lastRefusal;
+
+/**
+ * Would this change be refused? (64-text: extruded text on a path is out of scope; TX6 caps)
+ * @param {any} before normalized @param {any} merged the raw merge, before normalizing
+ * @returns {string | null} the plain message, or null
+ */
+export function refusalFor(before, merged) {
+	if (merged.mode === 'extruded' && (merged.path?.kind ?? 'none') !== 'none')
+		return 'Solid (extruded) text cannot follow a path: set Follows to None (a plain block of text) first, or keep it flat.';
+	const next = normalizeTextPath(merged);
+	// only a change that makes the text LONGER (or solid) is refused: shortening always goes through
+	const grows = Array.from(next.text).length > Array.from(before.text).length || next.mode !== before.mode;
+	if (!grows) return null;
+	const cap = textCapCheck(next, writerProfile());
+	return cap.ok ? null : cap.message;
+}
+
 /**
  * @param {string} uuid
  * @param {any} patch shallow; `path` merges one level down; a new `text` carries the letter
@@ -28,7 +57,16 @@ export function setTextPathFor(uuid, patch) {
 	const before = normalizeTextPath(object.userData.textPath);
 	const merged = { ...before, ...patch };
 	if (patch.path) merged.path = { ...before.path, ...patch.path };
+	if (patch.bevel) merged.bevel = { ...before.bevel, ...patch.bevel };
 	if (typeof patch.text === 'string' && !('letters' in patch)) merged.letters = remapLetters(before.text, patch.text, before.letters);
+	// a font change: a bundled font clears a Library one, and the other way round
+	if (typeof patch.font === 'string' && !('fontAsset' in patch)) merged.fontAsset = null;
+	const refusal = refusalFor(before, merged);
+	lastRefusal = refusal;
+	if (refusal) {
+		showToast(refusal);
+		return null;
+	}
 	const next = normalizeTextPath(merged);
 	if (JSON.stringify(next) === JSON.stringify(before)) return before;
 	applyTextPathTo(object, next);
@@ -104,4 +142,57 @@ export function putTextOnPath(targetUuid, text) {
 		if (own) endHistoryBatch('Put text on a path');
 	}
 	return object;
+}
+
+/**
+ * 64-text: a new text object (the agent tool's create, a template) — one undo step for the
+ * create and its record. Refusals (cap, extruded on a path) remove the object again.
+ * @param {any} patch the record fields @param {number[] | null} at world point or null (in front of the camera)
+ * @returns {{object: any} | {error: string}}
+ */
+export function createTextObject(patch, at = null) {
+	const own = !historyBatchOpen();
+	if (own) beginHistoryBatch();
+	let object = null;
+	let error = null;
+	try {
+		object = spawnAtPoint('/create Text', at);
+		if (!object?.uuid || !object.userData?.textPath) error = 'Could not create the text.';
+		else if (patch && Object.keys(patch).length && !setTextPathFor(object.uuid, patch)) error = lastRefusal ?? 'That text could not be set.';
+	} finally {
+		if (own) endHistoryBatch(error ? 'Text (refused)' : 'Add text');
+	}
+	if (error && object?.uuid) {
+		// the batch holds the create: undoing it removes the half-made object everywhere
+		import('./history').then((h) => h.undo?.()).catch(() => {});
+		return { error };
+	}
+	return { object };
+}
+
+/**
+ * TX5 Bake → mesh: an EXTRUDED text becomes a normal mesh (its geometry and its two materials,
+ * editable vertices); the record is dropped. ONE undo step (undo brings the text back). Peers
+ * receive the baked object whole (an `object` override), so a peer whose own copy had not built
+ * yet still ends with the same mesh. The caller confirms first.
+ * @param {string} uuid @returns {Promise<{ok: true} | {ok: false, error: string}>}
+ */
+export async function bakeTextToMesh(uuid) {
+	const object = objectOf(uuid);
+	if (!object?.userData?.textPath) return { ok: false, error: 'That is not a text object.' };
+	const rec = normalizeTextPath(object.userData.textPath);
+	if (rec.mode !== 'extruded' || !isBlockText(rec)) return { ok: false, error: 'Only solid (extruded) text bakes to a mesh. Switch it to Solid first.' };
+	const m = await import('./text3dBuild.js');
+	const geo = object.geometry;
+	if (!geo || !m.ownsGeometry(geo) || !(geo.getAttribute?.('position')?.count > 0)) return { ok: false, error: 'The solid text is still being built — try again in a moment.' };
+	object.geometry = m.bakeCopy(geo);
+	object.material = Array.isArray(object.material) ? object.material.map((/** @type {any} */ mt) => mt.clone()) : object.material;
+	delete object.userData.textPath;
+	object.name = object.name === 'Text' ? 'Text mesh' : object.name;
+	recordEntry({ kind: 'props', uuid, before: { textPath: rec }, after: { textPath: null } });
+	/** @type {any} */
+	const peer = get(peers);
+	peer?.send({ type: 'object', element: object.toJSON(), groupuuid: object.parent?.uuid, override: true });
+	pokeScene();
+	return { ok: true };
 }

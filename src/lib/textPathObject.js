@@ -44,11 +44,18 @@ export function applyTextProxyLook(object) {
 
 /**
  * Stamp a fresh text object (from the replicated /create, deterministic on every peer).
- * @param {any} object
+ * @param {any} object @param {string=} variant '' | 'solid' | 'path'
  */
-export function stampTextPath(object) {
+export function stampTextPath(object, variant = '') {
 	object.name = 'Text';
-	object.userData.textPath = JSON.parse(JSON.stringify(TEXT_PATH_DEFAULTS));
+	const rec = JSON.parse(JSON.stringify(TEXT_PATH_DEFAULTS));
+	// 64-text: '/create Text' = a block of flat text, 'solid' = extruded, 'path' = text on an arc
+	if (variant === 'solid') rec.mode = 'extruded';
+	if (variant === 'path') {
+		rec.path.kind = 'arc';
+		rec.text = 'Text on a path';
+	} else rec.text = 'Text';
+	object.userData.textPath = rec;
 	// letters are not scenery you light or knock over
 	object.castShadow = false;
 	object.receiveShadow = false;

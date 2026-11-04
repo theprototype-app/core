@@ -130,7 +130,7 @@ export function createGeometry(command, uuid) {
         if (geometry === 'FluidTank') stampFluidTank(object, options[0], options[1], options[2]);
         if (geometry === 'FluidEmitter') stampFluidEmitter(object); // 36-fb F23
         if (geometry === 'FlowPath') stampFlowPath(object); // 36-fb F24
-        if (geometry === 'Text') stampTextPath(object); // 64 D2: text on a path
+        if (geometry === 'Text') stampTextPath(object, command.split(' ')[2] ?? ''); // 64-text: '' | solid | path (a word, not a number)
         // PFX-C follow-up: standard primitives are DYNAMIC by default (mass 1) so
         // a fresh cube falls, collides and THROWS the moment a sim runs — fun by
         // default. Explicit allow-list: Terrain + module-registered primitives

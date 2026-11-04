@@ -49,6 +49,9 @@ export const TIP_PHONE_MORE = 'phone-more-drag';
 /** 73 AI6: Generate 3D model can start from a picture (retires on the first picture picked) */
 export const TIP_MESH_PICTURE = 'mesh-from-picture';
 
+/** 64-text: the Text section's first-use how-to (Solid / Bake / fonts; retires on a mode switch, or its ✕) */
+export const TIP_TEXT_3D = 'text-3d-first-use';
+
 /** 68: Film mode's first-use how-to (retires on the first take, or its ✕) */
 export const TIP_FILM = 'film-first-use';
 

@@ -110,7 +110,7 @@ const look = (page) =>
 		s.roomLook.subscribe((v) => (rl = v))();
 		s.globalScene.subscribe((v) => (sc = v))();
 		const bg = sc?.background;
-		return { passthrough: pt, skyOverRoom: sky, roomLook: rl, background: bg ? bg.constructor.name : null };
+		return { passthrough: pt, skyOverRoom: sky, roomLook: rl, background: bg ? (bg.isDataTexture ? 'DataTexture' : bg.isCubeTexture ? 'CubeTexture' : bg.isTexture ? 'Texture' : bg.isColor ? 'Color' : 'other') : null }; // flags, not constructor.name (minified on built apps)
 	});
 
 /** @param {number[]} q */

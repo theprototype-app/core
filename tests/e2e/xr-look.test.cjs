@@ -83,6 +83,7 @@ async function eye(page, label) {
 	} finally {
 		await standDown(false);
 	}
+	if (process.env.XR_LOOK_SHOTS) require('fs').mkdirSync(process.env.XR_LOOK_SHOTS, { recursive: true });
 	if (process.env.XR_LOOK_SHOTS) require('fs').writeFileSync(`${process.env.XR_LOOK_SHOTS}/${label}.png`, shot.left);
 	const crop = await sharp(shot.left).extract({ left: 108, top: 108, width: 40, height: 40 }).removeAlpha().png().toBuffer();
 	const s = await sharp(crop).stats();

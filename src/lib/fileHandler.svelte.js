@@ -24,6 +24,7 @@ import { downscaleImage } from '$lib/materialsHandler';
 import { shaderDrivenCount } from '$lib/shaderGraph';
 import { originOf, bakeOriginForExport } from '$lib/objectOrigin';
 import { bakeAnimationsForExport } from '$lib/animationPreview';
+import { withLookAnimation, hasLookAnimation } from '$lib/gltfLookExport';
 import { createGltfLoader, registerAnimatedImport, recordAnimatedImport, sendAnimatedImport, stampGltfPrimitives } from '$lib/animatedImports';
 import { parseGltfSceneSafe, withTwins } from '$lib/ktx2Twins';
 import { environment } from './environment';
@@ -150,6 +151,18 @@ function selectedRoots() {
 	return roots;
 }
 
+/**
+ * The authored clips, in the shape GLTFExporter wants. With several roots it reads `animations` as one list
+ * PER ROOT and walks each entry by index, so a flat list of clips was silently dropped: exporting two objects
+ * lost the movement of both.
+ * @param {any[]} roots @returns {any[] | null}
+ */
+function bakedForExporter(roots) {
+	const perRoot = roots.map((root) => bakeAnimationsForExport(root));
+	if (!perRoot.some((clips) => clips.length)) return null;
+	return roots.length === 1 ? perRoot[0] : perRoot;
+}
+
 /** Run the GLTFExporter over a root (or array of roots) and download it.
  * @param {string} format @param {any} input
  * @param {{filename?: string, onlyVisible?: boolean, shaderNote?: boolean, excludeLocal?: boolean}=} opts (`excludeLocal`, fix-batch-2: a whole-scene export leaves local objects out)
@@ -161,7 +174,7 @@ function exportGltf(format, input, opts = {}) {
 	// SH4: glTF has no way to express a node-graph shader, so an exported object
 	// carries its BASE material (parkAnimatedAtBase parks ours) and the graph is left
 	// behind. Say so rather than letting the file look complete — the same honesty as
-	// the animation bake skipping look channels.
+	// the Quest preset leaving look animation out.
 	// `shaderDrivenCount` counts the SCENE's graphs, which says nothing about a detached
 	// tree, so the prefab path opts out rather than warning about somebody else's object.
 	const shaderDriven = opts.shaderNote === false ? 0 : shaderDrivenCount();
@@ -192,12 +205,13 @@ function exportGltf(format, input, opts = {}) {
 	// understands — sample them into real KeyframeTracks so the movement leaves
 	// with the model. Baked from the LIVE roots (the origin clones have the pivot
 	// folded into their geometry already, and the bake reads the same origin).
-	const animations = roots.flatMap((root) => bakeAnimationsForExport(root));
+	const animations = bakedForExporter(roots);
 	/** @type {any} */
 	const parseOptions = {};
-	if (animations.length) parseOptions.animations = animations;
+	if (animations) parseOptions.animations = animations;
 	if (opts.onlyVisible === false) parseOptions.onlyVisible = false;
-	const exporter = new GLTFExporter();
+	// 72 LK4: look animation + camera markers (KHR_animation_pointer)
+	const exporter = withLookAnimation(new GLTFExporter(), roots, carriesOrigin ? /** @type {any[]} */ (payload) : roots);
 	exporter.parse(
 		payload,
 		function (result) {
@@ -249,8 +263,8 @@ function exportGltf(format, input, opts = {}) {
  * it, and dropping it silently is the documented GLTFExporter trap (options are parse()'s
  * FOURTH argument, and onlyVisible defaults to TRUE).
  * @param {any} roots one root or an array of them
- * @param {{binary?: boolean, excludeLocal?: boolean}} [opts] `excludeLocal` (fix-batch-2) = a
- *   whole-scene export: local objects stay out
+ * @param {{binary?: boolean, excludeLocal?: boolean, lookAnimation?: boolean}} [opts] `excludeLocal` (fix-batch-2) = a
+ *   whole-scene export: local objects stay out; `lookAnimation: false` (72 LK4) = no pointer channels or cameras
  * @returns {Promise<ArrayBuffer|null>}
  */
 export function gltfBytesFor(roots, opts = {}) {
@@ -270,14 +284,18 @@ export function gltfBytesFor(roots, opts = {}) {
 			if (originOf(object)) carriesOrigin = true;
 		});
 	const payload = carriesOrigin ? list.map((root) => bakeOriginForExport(root.clone(true))) : list;
-	const animations = list.flatMap((root) => bakeAnimationsForExport(root));
+	const animations = bakedForExporter(list);
 	/** @type {any} */
 	const parseOptions = { onlyVisible: false, binary: !!opts.binary };
-	if (animations.length) parseOptions.animations = animations;
+	if (animations) parseOptions.animations = animations;
 	return new Promise((resolve) => {
 		try {
 			// 46: KTX2 twins ride along (KHR_texture_basisu beside the plain image)
-			withTwins(new GLTFExporter()).parse(
+			const exporter = withTwins(new GLTFExporter());
+			// 72 LK4: look animation + camera markers. The Quest preset's optimizer rewrites the file and
+			// cannot keep pointer channels, so it opts out and says so.
+			if (opts.lookAnimation !== false) withLookAnimation(exporter, list, /** @type {any[]} */ (payload));
+			exporter.parse(
 				payload,
 				(/** @type {any} */ result) => {
 					restore();
@@ -315,7 +333,9 @@ export const lastExportReport = writable(null);
  * @param {any[]} roots @param {string} [filename] @param {boolean} [excludeLocal] fix-batch-2: a whole-scene export
  */
 export async function exportGltfQuest(roots, filename, excludeLocal = false) {
-	const bytes = await gltfBytesFor(roots, { binary: true, excludeLocal });
+	const bytes = await gltfBytesFor(roots, { binary: true, excludeLocal, lookAnimation: false });
+	if (hasLookAnimation(Array.isArray(roots) ? roots : [roots]))
+		showToast('Note: look animation (material, light, field of view) is left out of the Quest / web file. A plain GLB keeps it.');
 	if (!bytes) {
 		showToast('Could not export the selection.');
 		return null;
@@ -377,7 +397,7 @@ export function save(format) {
 	if (format === 'tpscene') return void saveTpScene(); // B3: Scene bundle path
 	// L2: glTF has nowhere to put a screen-space post stack, so a GLTF export
 	// silently loses the scene's look. Say so rather than let someone discover it
-	// downstream — the same honesty as the animation bake's look-channel skip.
+	// downstream — the same honesty as the Quest preset's note about look animation.
 	// .tpscene (above) and sessions carry it; only this path cannot.
 	if (get(scenePost).effects.length)
 		showToast('Note: the scene look (post-processing) is not part of a GLTF file — save a Scene (.tpscene) to keep it.');

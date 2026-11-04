@@ -20,6 +20,7 @@
 import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { globalScene, globalRenderer, isVRMode } from '../../stores/sceneStore';
+import { vrUiStandsDown } from '../vrUiGate.js'; // fix-film: never in Film
 import { activeTour, tours } from './index.js';
 import { FAMILY_KEY, VR_TOUR } from './builtin.js';
 import { controllerSvg, litFor, sessionFamily } from './controllerArt.js';
@@ -200,7 +201,7 @@ function frame() {
 	const tour = get(activeTour);
 	const renderer = /** @type {any} */ (get(globalRenderer));
 	const session = renderer?.xr?.getSession?.();
-	const live = !!tour && tour.surface === 'vr' && !tour.preview && !!session && get(isVRMode);
+	const live = !!tour && tour.surface === 'vr' && !tour.preview && !!session && get(isVRMode) && !vrUiStandsDown();
 	if (!mesh) return;
 	if (!live) {
 		mesh.visible = false;

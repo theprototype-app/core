@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import { writable, get } from 'svelte/store';
-import { globalScene, globalRenderer, objectsGroup, backgroundColor, TControls, passthroughActive, pokeScene } from '../stores/sceneStore';
+import { globalScene, globalRenderer, objectsGroup, backgroundColor, TControls, passthroughActive, roomLook, skyOverRoom, pokeScene } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 import { sceneRadius } from './sceneBounds';
 import { fogFarFor, mergeFogPatch } from './fogReach';
@@ -266,6 +266,33 @@ function gradientTexture(gradient) {
 	return texture;
 }
 
+/** @type {{key: string, texture: any} | null} */
+let solidCache = null;
+/** a 1x1 sRGB texture of one colour (a backdrop three DRAWS rather than clears) @param {any} color */
+function solidBackdrop(color) {
+	const key = color.getHexString();
+	if (solidCache && solidCache.key === key) return solidCache.texture;
+	const c = { r: 0, g: 0, b: 0 };
+	color.getRGB(c, THREE.SRGBColorSpace);
+	const texture = new THREE.DataTexture(new Uint8Array([Math.round(c.r * 255), Math.round(c.g * 255), Math.round(c.b * 255), 255]), 1, 1);
+	texture.colorSpace = THREE.SRGBColorSpace;
+	texture.needsUpdate = true;
+	solidCache?.texture.dispose();
+	solidCache = { key, texture };
+	return texture;
+}
+/** @type {any} */
+let dimTexture = null;
+/** black at 60% — the AR room seen at 40% behind the scene (Film's "Dimmed" passthrough) */
+function dimBackdrop() {
+	if (!dimTexture) {
+		dimTexture = new THREE.DataTexture(new Uint8Array([0, 0, 0, 153]), 1, 1);
+		dimTexture.colorSpace = THREE.SRGBColorSpace;
+		dimTexture.needsUpdate = true;
+	}
+	return dimTexture;
+}
+
 /** The solid ground disc (a scene-root mesh in ENV_ROOT, like the catcher, so it never
  * enters objectsGroup, sync or a save — the payload's `ground` field is what travels).
  * @param {any} scene @param {boolean} create */
@@ -319,6 +346,31 @@ function reconcileExtraLights(scene, defs) {
  */
 let toneMappingOwner = () => false;
 
+/**
+ * 72 LK3: the VR look decides what the curve finally is while a session runs (xrLook.js, through this
+ * seam for the reason above). Identity otherwise.
+ * @type {(constant: number, hasSkyImage: boolean) => number}
+ */
+let toneFilter = (constant) => constant;
+/** @param {((constant: number, hasSkyImage: boolean) => number) | null} fn */
+export function setToneFilter(fn) {
+	toneFilter = fn ?? ((constant) => constant);
+}
+/** what the last apply knew about the sky image @type {{ready: boolean, mode: string}} */
+let lastHdriTone = { ready: false, mode: '' };
+
+/** The curve alone, with no rig rebuild: a VR session starting or ending moves only this */
+export function reapplyToneMapping() {
+	const renderer = /** @type {any} */ (get(globalRenderer));
+	if (!renderer) return;
+	const wanted = toneMappingOwner()
+		? THREE.NoToneMapping
+		: lastHdriTone.ready
+			? toneMappingConstant(lastHdriTone.mode)
+			: THREE.ACESFilmicToneMapping;
+	renderer.toneMapping = toneFilter(wanted, lastHdriTone.ready);
+}
+
 /** @param {(() => boolean) | null} fn */
 export function registerToneMappingOwner(fn) {
 	toneMappingOwner = fn ?? (() => false);
@@ -364,13 +416,19 @@ export function applyEnvironment() {
 	// passthrough (90): local view mode — the room shows through where the sky
 	// would render; the replicated env STATE keeps its colors untouched
 	if (passthrough) {
-		scene.background = null;
+		// fix-film: 'dim' keeps a faint black veil over the room (an alpha-0.6 backdrop the
+		// compositor blends the camera feed under); 'room' leaves nothing (three clears to clear)
+		scene.background = get(roomLook) === 'dim' ? dimBackdrop() : null;
 		scene.fog = null;
 	} else {
 		// 30 author-kit: a gradient sky when the payload carries one, else the flat colour
 		const gradient = skyGradientOf(preset);
-		if (!(hdri.ready && hdri.background))
-			scene.background = (gradient && gradientTexture(gradient)) || new THREE.Color(preset.background);
+		if (!(hdri.ready && hdri.background)) {
+			const sky = (gradient && gradientTexture(gradient)) || new THREE.Color(preset.background);
+			// fix-film: over a camera feed three clears a COLOUR background to transparent, so the
+			// scene's sky would vanish — a 1x1 texture of that colour is drawn as an opaque backdrop
+			scene.background = get(skyOverRoom) && sky instanceof THREE.Color ? solidBackdrop(sky) : sky;
+		}
 		// fog never swallows a big scene: a PRESET's reach grows with the scene bounds; a fog the
 		// user set by hand (`fit: false`) keeps its own (36 A5, fogReach.js)
 		scene.fog = preset.fog
@@ -385,14 +443,10 @@ export function applyEnvironment() {
 		// TWICE — visibly crushed highlights. The stack says so through the seam
 		// below rather than this module importing it, which keeps environment out of
 		// the post/history import family entirely.
-		const stackTonemaps = toneMappingOwner();
 		// 37-hdri: an HDRI picks its curve (ACES unless the payload says AgX/Neutral) — this is
 		// what VR and the PiP inset show; the desktop composer gets the same curve as a pass
-		renderer.toneMapping = stackTonemaps
-			? THREE.NoToneMapping
-			: hdri.ready
-				? toneMappingConstant(hdri.toneMapping)
-				: THREE.ACESFilmicToneMapping;
+		lastHdriTone = { ready: hdri.ready, mode: hdri.toneMapping };
+		reapplyToneMapping();
 		// exposure is only read by three's tone mapping chunk, so it is inert under
 		// NoToneMapping — left as authored so switching back needs no re-apply
 		renderer.toneMappingExposure = (preset.exposure ?? 1) * (state.exposure ?? 1);
@@ -838,6 +892,8 @@ export function startEnvironment() {
 	globalRenderer.subscribe(() => applyEnvironment());
 	// entering/leaving a passthrough session swaps the local sky in and out
 	passthroughActive.subscribe(() => applyEnvironment());
+	skyOverRoom.subscribe(() => applyEnvironment()); // fix-film
+	roomLook.subscribe(() => applyEnvironment());
 	// user lights dim the rig so custom lighting reads properly
 	objectsGroup.subscribe((group) => {
 		if (!group) return;

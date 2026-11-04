@@ -95,6 +95,7 @@
 		clamp
 	} from '$lib/sequenceCore';
 	import { listCameraObjects } from '$lib/cameraObjects';
+	import { timelineFocus } from '$lib/timelineOpen';
 	import { propDef } from '$lib/propTracks';
 	import { smoothKeys } from '$lib/curveCore';
 	import { animations, clipList } from '$lib/animationPreview';
@@ -302,6 +303,20 @@
 			fittedFor = id;
 			untrack(fitView);
 		}
+	});
+	// fix-film: Film's "Edit in timeline" on one shot — show that range, playhead at its start
+	$effect(() => {
+		const f = $timelineFocus;
+		if (!f || !seq || f.seq !== seqId) return;
+		untrack(() => {
+			fittedFor = f.seq;
+			const pad = Math.max(0.2, (f.t1 - f.t0) * 0.08);
+			viewStart = Math.max(-pad, f.t0 - pad);
+			viewEnd = f.t1 + pad;
+			if (f.item) sequenceSelection.set([f.item]);
+			scrubTo(f.t0, true);
+			timelineFocus.set(null);
+		});
 	});
 	function wheel(node: HTMLElement) {
 		const onWheel = (e: WheelEvent) => {

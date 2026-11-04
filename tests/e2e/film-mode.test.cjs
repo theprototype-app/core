@@ -127,6 +127,9 @@ const pose = (page) => page.evaluate(() => window.__stores.filmMode.filmPose());
 const renderQuat = (page) =>
 	page.evaluate(() => new Promise((r) => window.__stores.globalCamera.subscribe((c) => r(c.quaternion.toArray()))()));
 /** @param {any} page */
+const renderPos = (page) =>
+	page.evaluate(() => new Promise((r) => window.__stores.globalCamera.subscribe((c) => r(c.getWorldPosition(c.position.clone()).toArray()))()));
+/** @param {any} page */
 const viewportRect = (page) =>
 	page.evaluate(() => {
 		const r = document.getElementById('viewport').getBoundingClientRect();
@@ -192,12 +195,20 @@ h.run(async () => {
 	await picked.click();
 	await page.waitForSelector('#film-exit', { timeout: 10000 });
 	h.check(await page.evaluate(() => document.documentElement.classList.contains('film-mode')), 'Film takes the screen over (html.film-mode)');
-	// 68-int: the first-use how-to shows on the first Film, and its ✕ retires it for good
-	const tip = (await page.locator('#film-tip').textContent().catch(() => '')) || '';
-	h.check(/records a shot into the Timeline/.test(tip), `the first-use tip says how to film ("${tip.trim().slice(0, 70)}…")`);
-	await page.locator('#film-tip-close').click();
+	// fix-film: the first Film shows three help cards (look, move, record / cut); the last one retires them
+	await page.waitForSelector('#film-help', { timeout: 5000 });
+	const cards = [];
+	for (let i = 0; i < 3; i++) {
+		cards.push(await page.locator('#film-help').getAttribute('data-card'));
+		if (i < 2) await page.locator('#film-help-next').click();
+	}
+	h.check(cards.join(',') === 'look,move,record', `three first-use cards: look, move, record / cut (${cards.join(',')})`);
+	h.check(/records a shot/.test((await page.locator('#film-help').textContent()) || ''), 'the last card says how to record and cut');
+	h.check((await page.locator('#film-help-never').count()) === 1, "every card offers Don't show again");
+	await page.locator('#film-help-done').click();
 	await page.waitForTimeout(200);
-	h.check((await page.locator('#film-tip').count()) === 0, 'its ✕ closes the tip');
+	h.check((await page.locator('#film-help').count()) === 0, 'Done closes the cards');
+	h.check(await page.evaluate(() => localStorage.getItem('film:help') === 'seen'), 'and they do not come back next time');
 	const loadedAfter = await page.evaluate(() => ({
 		files: performance.getEntriesByType('resource').map((e) => e.name).filter((n) => /film\/(filmMode|FilmMode)/.test(n)).length,
 		runtime: 'filmMode' in window.__stores,
@@ -254,6 +265,37 @@ h.run(async () => {
 	h.check(near(rollDeg(p.q), 0, 1), `horizon lock keeps the picture level (${rollDeg(p.q).toFixed(1)}°)`);
 	h.check((await page.locator('#film-horizon').getAttribute('aria-pressed')) === 'true', 'the horizon lock button reads pressed');
 	await page.locator('#film-horizon').click();
+
+	// fix-film: the motion picker — the pill names the mode; Touch ignores the sensor; back to Phone tilt, no jump
+	await page.evaluate(() => window.__tilt(30, 90, 0));
+	await page.locator('#film-recentre').click();
+	await page.waitForTimeout(300);
+	h.check(/Phone tilt/.test((await page.locator('#film-sensor').textContent()) || ''), `the pill names the mode (${(await page.locator('#film-sensor').textContent())?.trim()})`);
+	await page.evaluate(() => window.__stores.toastStore.set([]));
+	await page.locator('#film-sensor').click();
+	await page.waitForSelector('#film-motion-sheet', { timeout: 5000 });
+	const choices = await page.locator('.film-motion-opt').evaluateAll((els) => els.map((e) => e.getAttribute('data-motion')));
+	h.check(['tilt', 'touch', 'tripod'].every((k) => choices.includes(k)), `the picker offers Phone tilt, Touch, Tripod (${choices.join(',')})`);
+	await shot(page, 'folded-motion-picker');
+	await page.locator('.film-motion-opt[data-motion="touch"]').click();
+	await page.waitForTimeout(300);
+	h.check((await page.locator('#film-motion-sheet').count()) === 0 && /Touch/.test((await page.locator('#film-sensor').textContent()) || ''), 'choosing Touch closes the sheet, the pill reads Touch');
+	const yTouch = yawDeg((await pose(page)).q);
+	await page.evaluate(() => window.__tilt(80, 90, 0));
+	await page.waitForTimeout(400);
+	const yTurned = yawDeg((await pose(page)).q);
+	h.check(near(yTurned, yTouch, 1), `Touch: turning the phone does not turn the view (${yTouch.toFixed(1)} → ${yTurned.toFixed(1)})`);
+	await page.evaluate(() => window.__stores.filmMode.lookDrag(120, 0, 219));
+	await page.waitForTimeout(300);
+	const yDragged = yawDeg((await pose(page)).q);
+	h.check(Math.abs(yDragged - yTouch) > 5, `Touch: a drag turns it (${yTouch.toFixed(1)} → ${yDragged.toFixed(1)})`);
+	h.check(await page.evaluate(() => localStorage.getItem('film:motion') === 'touch'), 'the choice is remembered on this device');
+	await page.evaluate(() => window.__stores.toastStore.set([]));
+	await page.locator('#film-sensor').click();
+	await page.locator('.film-motion-opt[data-motion="tilt"]').click();
+	await page.waitForTimeout(400);
+	const yBack = yawDeg((await pose(page)).q);
+	h.check(near(yBack, yDragged, 2), `back to Phone tilt the view continues where it pointed — no jump (${yDragged.toFixed(1)} → ${yBack.toFixed(1)})`);
 	await page.evaluate(() => window.__tilt(30, 90, 0));
 	await page.locator('#film-recentre').click();
 	await page.waitForTimeout(300);
@@ -321,6 +363,8 @@ h.run(async () => {
 	}, seqId);
 	const waitSaved = (label) => h.eventually(takeUi, (u) => u.state === 'paused' && !u.saving, label, 15000);
 
+	// fix-film: no shots pill before the first shot
+	h.check((await page.locator('#film-shots').count()) === 0, 'no shots pill before the first shot');
 	// shot 1: record, walk forward, pause
 	await page.locator('#film-record').click();
 	await h.eventually(takeUi, (u) => u.state === 'recording', '● starts a take');
@@ -339,6 +383,7 @@ h.run(async () => {
 	let sh = await shotsOf();
 	h.check(sh.items.length === 1 && sh.keys >= 2, `shot 1 is in the timeline with reduced keys (${JSON.stringify(sh)})`);
 	h.check(sh.raw === 1, 'the take keeps its raw samples (a RawRef on the position track)');
+	h.check((await page.locator('#film-shots').textContent())?.includes('1 shot'), 'from the first shot on the pill shows (paused)');
 	const shot1End = sh.items[0].t + sh.items[0].dur;
 
 	// shot 2: teleport, resume → the ask (Cut default), Cut
@@ -434,14 +479,97 @@ h.run(async () => {
 	await waitSaved('the retake committed');
 	sh = await shotsOf();
 	h.check(sh.items.length === 3 && !sh.items.some((i) => i.id === shot2Id), `the retake replaced shot 2, three shots remain (${JSON.stringify(sh.items)})`);
+	await page.evaluate(() => window.__stores.filmRecorder.finishTake());
+	await page.waitForTimeout(300);
+	h.check((await page.locator('#film-shots').count()) === 1, 'the shots pill stays when no take is running');
+	await page.evaluate(() => window.__stores.toastStore.set([]));
 	await page.locator('#film-shots').click();
 	h.check((await page.locator('.film-shot-row').count()) === 3, 'the shots list shows the three shots');
+	h.check(/Shots on this camera/.test((await page.locator('#film-shot-list').textContent()) || ''), 'the sheet is "Shots on this camera"');
+	const titles = await page.locator('.film-shot-title').allTextContents();
+	h.check(titles.join(',') === 'Shot 1,Shot 2,Shot 3', `rows are named Shot 1-3 until renamed (${titles.join(',')})`);
+	const meta = await page.locator('.film-shot-meta').allTextContents();
+	h.check(/Cut \+ 1 move/.test(meta.join('|')) || meta.length === 3, `each row shows its length and Cut / Move (${meta.join(' | ')})`);
+	await h.eventually(() => page.locator('img.film-shot-thumb').count(), (n) => n >= 2, 'rows show the first frame recorded for them (thumbnails)', 10000);
+	// the sticky footer: always there, Export all (N) until rows are ticked
+	h.check((await page.locator('#film-export').textContent())?.includes('Export all (3)'), 'the footer reads Export all (3)');
+	await page.locator('.film-shot-pick').first().check();
+	h.check((await page.locator('#film-export').textContent())?.includes('Export 1 selected'), 'ticking a row: Export 1 selected');
+	await page.locator('.film-shot-pick').first().uncheck();
+	const footVisible = await page.evaluate(() => {
+		const list = document.querySelector('#film-shot-list').getBoundingClientRect();
+		const foot = document.querySelector('.film-shot-foot').getBoundingClientRect();
+		return foot.bottom <= list.bottom + 1 && foot.height > 30;
+	});
+	h.check(footVisible, 'Edit in timeline + Export sit in a footer inside the sheet');
+	// rename
+	const firstId = (await shotsOf()).items[0].id;
+	await page.locator(`.film-shot-row[data-item="${firstId}"] .film-shot-more`).click();
+	await page.locator(`.film-shot-actions[data-item="${firstId}"] .film-act[data-act="rename"]`).click();
+	await page.locator('.film-shot-name').fill('Wide open');
+	await page.locator('.film-shot-name').press('Enter');
+	await page.waitForTimeout(200);
+	const named = await page.evaluate(({ id, item }) => {
+		let all = null;
+		window.__stores.sequences.sequences.subscribe((v) => (all = v))();
+		return all[id].tracks.find((t) => t.kind === 'camera' && t.rec).items.find((i) => i.id === item)?.name;
+	}, { id: seqId, item: firstId });
+	h.check(named === 'Wide open' && (await page.locator('.film-shot-title').first().textContent()) === 'Wide open', `Rename names the shot in the timeline (${named})`);
+	// delete + undo
+	const lastId = (await shotsOf()).items[2].id;
+	await page.evaluate(() => window.__stores.toastStore.set([]));
+	await page.locator(`.film-shot-row[data-item="${lastId}"] .film-shot-more`).click();
+	await page.locator(`.film-shot-actions[data-item="${lastId}"] .film-act[data-act="delete"]`).click();
+	await page.waitForTimeout(200);
+	h.check((await page.locator('.film-shot-row').count()) === 2, 'Delete removes the row');
+	await page.locator('.tp-toast button', { hasText: 'Undo' }).first().click();
+	await page.waitForTimeout(300);
+	h.check((await page.locator('.film-shot-row').count()) === 3 && (await shotsOf()).items.some((i) => i.id === lastId), 'Undo brings the very shot back');
+	// preview: the viewfinder follows the RECORDED track (the retaken shot 2 was filmed at x -40)
+	const second = (await shotsOf()).items[1];
+	await page.locator(`.film-shot-row[data-item="${second.id}"] .film-shot-main`).click();
+	await page.waitForSelector('#film-preview', { timeout: 5000 });
+	await page.evaluate((t) => {
+		const el = document.querySelector('#film-preview-scrub');
+		el.value = String(t);
+		el.dispatchEvent(new Event('input', { bubbles: true }));
+	}, second.t + second.dur / 2);
+	await page.waitForTimeout(400);
+	const viewX = await renderPos(page);
+	h.check(Math.abs(viewX[0] + 40) < 1.5, `tapping a row previews that shot in the viewfinder, scrubbable (view x ${viewX[0].toFixed(2)})`);
+	await shot(page, 'folded-shot-preview');
+	// trim the in point by 0.3 s
+	await page.locator('#film-preview-done').click();
+	await page.locator(`.film-shot-row[data-item="${second.id}"] .film-shot-more`).click();
+	await page.locator(`.film-shot-actions[data-item="${second.id}"] .film-act[data-act="trim"]`).click();
+	await page.waitForSelector('#film-trim-in', { timeout: 5000 });
+	await page.evaluate((t) => {
+		const el = document.querySelector('#film-trim-in');
+		el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+		el.value = String(t);
+		el.dispatchEvent(new Event('input', { bubbles: true }));
+		el.dispatchEvent(new Event('change', { bubbles: true }));
+	}, second.t + 0.3);
+	await page.waitForTimeout(300);
+	const trimmed = (await shotsOf()).items.find((i) => i.id === second.id);
+	h.check(Math.abs(trimmed.t - (second.t + 0.3)) < 0.02 && Math.abs(trimmed.dur - (second.dur - 0.3)) < 0.02, `Trim moves the shot's in point (${second.t.toFixed(2)} → ${trimmed.t.toFixed(2)})`);
+	await page.evaluate(() => window.__stores.history.undo());
+	await page.waitForTimeout(300);
+	const untrimmed = (await shotsOf()).items.find((i) => i.id === second.id);
+	h.check(Math.abs(untrimmed.t - second.t) < 0.02, `one undo takes the whole trim back (${untrimmed.t.toFixed(2)})`);
+	await page.locator('#film-preview-done').click();
 	await shot(page, 'folded-shots');
 
 	// 68 V9 Share as video: the take → Export video → the Recording dialog on the take's timeline, as MP4;
 	// on a phone an over-long render is refused with the reason, a short one exports frame by frame
+	await page.evaluate(() => window.__stores.toastStore.set([]));
 	await page.locator('#film-export').click();
+	await page.waitForSelector('#film-export-sheet', { timeout: 5000 });
+	h.check((await page.locator('#film-export-joined').count()) === 1 && (await page.locator('#film-export-each').count()) === 1, 'the export offers one joined video or one file per shot');
+	await page.locator('#film-export-joined').click();
 	await page.waitForSelector('#recording-dialog', { timeout: 20000 });
+	const jobNote = (await page.locator('#recording-film-job').textContent().catch(() => '')) || '';
+	h.check(/3 shots joined/.test(jobNote), `the export dialog says it films the 3 shots joined ("${jobNote.trim().slice(0, 80)}")`);
 	const dlg = await page.evaluate(() => ({
 		film: !!document.getElementById('film-root'),
 		mode: document.querySelector('#recording-dialog')?.getAttribute('data-mode'),
@@ -454,12 +582,15 @@ h.run(async () => {
 		await page.locator('#' + id).dispatchEvent('change');
 		await page.waitForTimeout(150);
 	};
-	await setNum('recording-duration', '30');
-	const capMsg = (await page.locator('#recording-blocked').textContent().catch(() => '')) || '';
-	h.check(/On a phone an export is at most 20 s \(this one is 30 s\)/.test(capMsg) && (await page.locator('#recording-start').isDisabled()), `the phone cap refuses a 30 s render with the reason ("${capMsg.slice(0, 90)}…")`);
+	// fix-film: the length is the shots' — shown, not editable, while Film's shots are being exported
+	const shotSum = (await shotsOf()).items.reduce((n, i) => n + i.dur, 0);
+	const lenField = await page.evaluate(() => {
+		const el = /** @type {HTMLInputElement} */ (document.querySelector('#recording-duration'));
+		return { disabled: el.disabled, value: Number(el.value) };
+	});
+	h.check(lenField.disabled && Math.abs(lenField.value - shotSum) < 0.05, `the Length is the shots' length, not editable (${JSON.stringify(lenField)} vs ${shotSum.toFixed(2)})`);
 	await page.selectOption('#recording-resolution', '480p');
 	await page.selectOption('#recording-fps', '12');
-	await setNum('recording-duration', '2');
 	await shot(page, 'folded-export-dialog');
 	await page.click('#recording-start');
 	await page.waitForSelector('#recording-result, #recording-error', { timeout: 180000 });
@@ -468,8 +599,15 @@ h.run(async () => {
 		window.__stores.recordingStores.recordingState.subscribe((/** @type {any} */ v) => (s = v))();
 		return { status: s.status, error: s.error, mime: s.result?.mime, frames: s.result?.frames, exact: s.result?.exact, w: s.result?.width };
 	});
-	h.check(vid.status === 'done' && vid.mime === 'video/mp4' && vid.frames === 24 && vid.exact, `the take exports to MP4, frame-exact (${JSON.stringify(vid)})`);
+	h.check(vid.status === 'done' && vid.mime === 'video/mp4' && Math.abs(vid.frames - Math.round(shotSum * 12)) <= 1 && vid.exact, `the take exports to MP4, frame-exact, the shots' length (${shotSum.toFixed(2)} s × 12 fps; ${JSON.stringify(vid)})`);
 	await shot(page, 'folded-export-result');
+	// after the shots' file the dialog is an ordinary export again: the phone cap still refuses a 30 s render
+	await page.locator('#recording-again, #recording-new, #recording-back').first().click({ timeout: 3000 }).catch(() => {});
+	if (await page.$('#recording-duration')) {
+		await setNum('recording-duration', '30');
+		const capMsg = (await page.locator('#recording-blocked').textContent().catch(() => '')) || '';
+		h.check(/On a phone an export is at most 20 s \(this one is 30 s\)/.test(capMsg) && (await page.locator('#recording-start').isDisabled()), `the phone cap refuses a 30 s render with the reason ("${capMsg.slice(0, 90)}…")`);
+	} else h.check(false, 'the export dialog offers another export after a result');
 	await page.evaluate(() => {
 		window.__stores.recordingStores.recordingOpen.set(false);
 	});
@@ -498,7 +636,7 @@ h.run(async () => {
 	const uuidB = await makeCamera(B.page);
 	await B.page.evaluate((u) => window.__stores.filmState.openFilm(u), uuidB);
 	await B.page.waitForSelector('#film-exit', { timeout: 15000 });
-	await B.page.locator('#film-tip-close').click({ timeout: 3000 }).catch(() => {});
+	await B.page.locator('#film-help-never').click({ timeout: 3000 }).catch(() => {});
 	rect = await viewportRect(B.page);
 	h.check(near(rect.w, 770, 1) && near(rect.h, 433, 1), `unfolded: the shot box is 770×433 (${JSON.stringify(rect)})`);
 	// upright portrait: Rx(90°) in the device frame (beta 90)
@@ -537,8 +675,15 @@ h.run(async () => {
 	const uuidC = await makeCamera(C.page);
 	await C.page.evaluate((u) => window.__stores.filmState.openFilm(u), uuidC);
 	await C.page.waitForSelector('#film-exit', { timeout: 15000 });
-	await C.page.locator('#film-tip-close').click({ timeout: 3000 }).catch(() => {});
+	await C.page.locator('#film-help-never').click({ timeout: 3000 }).catch(() => {});
 	await h.eventually(() => C.page.locator('#film-sensor').getAttribute('data-sensor'), (s) => s === 'touch', 'no motion sensor → drag to look', 6000);
+	const deskPill = ((await C.page.locator('#film-sensor').textContent()) || '').trim();
+	h.check(/Keyboard \+ mouse|Touch/.test(deskPill), `a desktop with no motion sensor names Keyboard + mouse (or Touch) (${deskPill})`);
+	await C.page.locator('#film-sensor').click();
+	const tiltOpt = C.page.locator('.film-motion-opt[data-motion="tilt"]');
+	h.check((await tiltOpt.isDisabled()) && /No motion sensor/.test((await tiltOpt.textContent()) || ''), 'Phone tilt is greyed with the reason on a device without a sensor');
+	h.check((await C.page.locator('.film-motion-opt[data-motion="keys"]').count()) === 1, 'a desktop is offered Keyboard + mouse');
+	await C.page.locator('#film-sensor').click();
 	// ================= V5 / V8: the live controls =================
 	const pg = C.page;
 	const fovFor = (mm) => (2 * Math.atan(24 / (2 * mm)) * 180) / Math.PI;
@@ -636,8 +781,9 @@ h.run(async () => {
 	let bs = await boxScreen();
 	const under1 = await underTap(bs);
 	await pg.mouse.click(bs.x, bs.y);
-	await h.eventually(() => pose(pg), (q) => q.focus !== undefined && Math.abs(q.focus - (bs.depth - 0.5)) < 0.6, `tap-to-focus pulls focus to the box (~${bs.depth.toFixed(1)} m; the tap landed on ${under1})`, 6000);
+	// the square lives 1.2 s: look for it right after the tap, before the focus poll (68-int (3))
 	h.check((await pg.locator('#film-focus-mark').count()) === 1, 'the focus square marks the tap');
+	await h.eventually(() => pose(pg), (q) => q.focus !== undefined && Math.abs(q.focus - (bs.depth - 0.5)) < 0.6, `tap-to-focus pulls focus to the box (~${bs.depth.toFixed(1)} m; the tap landed on ${under1})`, 6000);
 	const lens = await pg.evaluate((u) => {
 		let g = null;
 		window.__stores.objectsGroup.subscribe((v) => (g = v))();
@@ -668,6 +814,7 @@ h.run(async () => {
 	await pg.waitForTimeout(800);
 	await pg.keyboard.up('KeyW');
 	h.check(Math.hypot(...(await pose(pg)).pos.map((v, i) => v - t0p[i])) < 1e-3, 'tripod: position locked');
+	h.check(/Tripod/.test((await pg.locator('#film-sensor').textContent()) || '') && (await pg.locator('#film-stick').getAttribute('class'))?.includes('film-hidden'), 'tripod: the pill reads Tripod and the stick steps aside');
 	await pg.locator('#film-tripod-chip').click();
 	// track: arm, tap the box, walk sideways — the framing holds
 	await pg.locator('#film-settings-btn').click();

@@ -1,6 +1,6 @@
 import { writable } from 'svelte/store';
 import { APP_VERSION, COMMIT_SHA, IS_DEV } from './version.js';
-import { describeReason } from './errorReportCore.js';
+import { describeReason, ignoredMessage } from './errorReportCore.js';
 
 // 27-B (hardening audit H4) — THE ONE PLACE A FAILURE LEAVES A TRACE.
 //
@@ -264,6 +264,17 @@ export async function copyDiagnostics() {
 }
 
 /**
+ * Does an uncaught error earn the "Something went wrong" toast? The browser's own benign
+ * warnings (ResizeObserver loop, cross-origin "Script error.", an interrupted play()) do not:
+ * the SAME list the error reports skip (errorReportCore's IGNORE), so the two never disagree.
+ * The line still goes into the ring, so Copy diagnostics keeps it.
+ * @param {string} message
+ */
+export function toastsUncaught(message) {
+	return !ignoredMessage(message);
+}
+
+/**
  * Install the global capture. Idempotent, and safe to call before anything else in
  * App.svelte's onMount — it is the first thing that runs there precisely so that a
  * failure DURING boot is already being recorded.
@@ -281,7 +292,7 @@ export function startDiagnostics() {
 		const message = event.error?.message ?? event.message ?? 'unknown error';
 		const where = event.filename ? ` (${event.filename}:${event.lineno}:${event.colno})` : '';
 		log('error', 'window', message + where, event.error?.stack);
-		lastUncaught.set({ message, at: Date.now() });
+		if (toastsUncaught(message)) lastUncaught.set({ message, at: Date.now() });
 	});
 
 	window.addEventListener('unhandledrejection', (event) => {
@@ -289,7 +300,7 @@ export function startDiagnostics() {
 		// 54i b: a non-Error reason is named by constructor + a safe JSON (errorReportCore, a leaf)
 		const message = describeReason(reason).message || 'unknown rejection';
 		log('error', 'promise', message, reason?.stack);
-		lastUncaught.set({ message, at: Date.now() });
+		if (toastsUncaught(message)) lastUncaught.set({ message, at: Date.now() });
 	});
 
 	if (!IS_DEV) {

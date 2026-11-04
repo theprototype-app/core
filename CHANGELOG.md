@@ -5,6 +5,47 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.59.0 — Looks finished everywhere ✨
+
+### 🎨 Materials with real surface detail
+- **Inspector ▸ Material ▸ Maps**: give a material a **normal, roughness, metalness, emission and AO map** beside its colour image, with **tiling, offset and rotation** per material and a strength for normal and AO.
+- **Load a set of maps…** picks several files at once and sorts them into slots by name (`wood_normal.png`, `wood_roughness.jpg` …).
+- Everyone in the session sees them, it is one undo step, and they are saved in scenes, presets and GLB. Agents can set them too.
+
+### 🌄 Much sharper skies
+- Skies now come as **UltraHDR images up to 4K** (8K for Meadow): a small one shows at once, then the sharp one swaps in.
+- **Configure scene ▸ Sky quality**: Auto, Standard, High or Max, plus a **minimum quality**. While a scene says Auto, players can pick theirs in the game options. Exported games keep the option.
+- A headset, a phone or a slow connection gets a lighter sky on Auto, and a headset never goes past High. The lighting always comes from the small file, so it looks the same at every quality.
+
+### 🥽 Your look in VR
+- A scene's **look now shows in a headset**: tone mapping, hue / saturation, brightness / contrast, LUTs (approximate) and vignette, with no extra rendering pass.
+- The Look panel marks what stays desktop-only (bloom, AO, grain, chromatic aberration, pixelation, scanlines, dot screen, post graphs).
+
+### 📦 GLB export
+- **GLB files now carry look animation**: material changes, fades and visibility, lights and a camera's field of view, through `KHR_animation_pointer`. The Animation window has a new **Field of view** channel, and camera markers export as real glTF cameras.
+- The Quest / web preset leaves look animation out and says so.
+
+### 🎬 Film
+- **Film on a phone's Walk no longer shows the VR welcome** or any headset menu, and the view no longer leaves trails when the camera moves (the AR view is cleared every frame — the Android AR table and headset passthrough get the same fix).
+- **Film hides every headset menu and panel** while it is open, in any session.
+- **Choose how the camera moves**: tap the pill for Phone tilt, Touch, Walk (Android AR), Tripod, or Keyboard + mouse on a desktop. The pill always says which one is on, and the choice is remembered on this device.
+- **Walk view**: what you see behind the scene — Off (the scene's sky), On (the room), or Dimmed — and the walking scale ×0.5 / ×1 / ×2 / ×5. Only the live view changes, never the recording.
+- **If Walk can't start or loses tracking**, the take pauses at a mark, a short message says why, and Film carries on with the thumbstick (with **Recentre**).
+- **First-use cards** (look, move, record and cut) with "Don't show again"; Settings ▸ How to film shows them again.
+- **Shots on this camera**: a shots pill opens a list with a thumbnail, name, length and Cut / Move per shot. Tap to preview with a scrub bar; Trim, Rename, Retake, Delete (with Undo) and Edit in timeline. Export all or only the ticked shots, as one video or one file per shot.
+
+### 🤖 Agents build models part by part
+- **Shapes made inside a group stay in the group's own space**: a mesh, lathe, extrusion or tube made with a parent lands where it was asked, relative to the group, and turns with it. Before, a part made in a moved or turned group ended up in the wrong place.
+- Agents can make **up to 50 shapes in one step** (one undo), and **colour a mesh as they make it**: a colour per vertex, or a material per face, with a flat low-poly look on request.
+- **Shadows, copies and facing** for any object: switch an object's shadows on or off, make a row or ring of copies (with a little random turn and size), and turn something to face a point or another object.
+- Agents see each mesh's size and corners in the scene list, how heavy the scene is (and when it is past its budget) in their status, and the names of the ready-made materials.
+- Making a pivot for several parts can take the point in their group's own space.
+
+### 🔧 Fixes
+- **Switching away from the browser on a phone and coming back says nothing.** The 3D view no longer flashes "The 3D view has stopped" when the browser hands its graphics back within a few seconds of the page showing again; it only appears when the view stays stopped.
+- The browser's harmless "ResizeObserver loop" warning no longer pops up as "Something went wrong". It is still kept in **Copy diagnostics**.
+- Exporting several objects to GLB now keeps their authored movement (it kept none).
+
 ## 1.58.0 — Film with your phone, share it as a video 🎬
 
 ### 📱 Film with your phone

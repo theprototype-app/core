@@ -340,6 +340,30 @@ describe('create_pivot', () => {
 		expect(live(r.groupUuid).parent).toBe(lamp);
 	});
 
+	it('mcp-shapes: local = the point in the group the parts are in (a turned model)', async () => {
+		const fox = new THREE.Group();
+		group.add(fox);
+		fox.position.set(-0.9, 0, 0.9);
+		fox.rotation.set(0, -Math.PI / 2, 0);
+		fox.updateMatrixWorld(true);
+		const tail = box('Tail');
+		fox.add(tail);
+		tail.position.set(0, 0.3, -0.6); // local, as list_scene shows it
+		const r = await assistTool('create_pivot', { objects: [tail.uuid], local: [0, 0.3, -0.4], name: 'TailRoot' });
+		const g = live(r.groupUuid);
+		expect(g.parent).toBe(fox);
+		expect(close(g.position.toArray(), [0, 0.3, -0.4])).toBe(true);
+		expect(close(r.local, [0, 0.3, -0.4])).toBe(true);
+		// world: -90 deg about y maps local (x, y, z) to (-z, y, x), plus the group's position
+		expect(close(r.at, [-0.5, 0.3, 0.9])).toBe(true);
+		expect(close(tail.getWorldPosition(new THREE.Vector3()).toArray(), [-0.3, 0.3, 0.9])).toBe(true);
+		expect((await assistTool('create_pivot', { objects: [tail.uuid], local: [0, 0, 0], at: [0, 0, 0] })).error).toMatch(/not both/);
+		expect((await assistTool('create_pivot', { objects: [tail.uuid], local: [0, 0] })).error).toMatch(/local:/);
+		// at the scene root, local is world space
+		const a = box('Free', [2, 0, 0]);
+		expect((await assistTool('create_pivot', { objects: [a.uuid], local: [2, 1, 0] })).at).toEqual([2, 1, 0]);
+	});
+
 	it('refuses with nothing to hold or nowhere to go, and makes no group', async () => {
 		const a = box('A');
 		const count = group.children.length;

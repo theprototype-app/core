@@ -256,7 +256,9 @@ export function startErrorReports() {
 			};
 			if (document.visibilityState === 'visible') markAlive();
 			let wasLost = false;
-			scene.contextLost.subscribe((lost) => {
+			// a loss the page got back quietly (a phone backgrounding the tab) is not a report:
+			// read the LOUD half, which the grace rule in contextLoss.js drives
+			scene.contextLossShown.subscribe((lost) => {
 				if (lost && !wasLost) reportError({ kind: 'webgl', message: 'WebGL context lost' });
 				wasLost = !!lost;
 			});

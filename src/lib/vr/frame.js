@@ -112,6 +112,7 @@ import {
 	updateStretchSliderDrag
 } from './tools.js';
 import { arTableActive } from '../arTableState.js';
+import { vrUiStandsDown } from '../vrUiGate.js';
 
 /** @type {any} */ let micHud = null;
 
@@ -200,7 +201,8 @@ function panelModal() {
 export function updateVRControls() {
 	// 50 R1: a phone placing a scene on a table is not a headset — no rays, sticks, grips, panels,
 	// height lift or spawn; the AR table runs its own frame (arTable.tickArTable)
-	const session = arTableActive() ? null : renderer?.xr.getSession();
+	// fix-film: Film (any session) draws no rays, hover boxes or mic HUD either
+	const session = arTableActive() || vrUiStandsDown() ? null : renderer?.xr.getSession();
 	updateRaysAndHover(!!session);
 	updateBlink();
 	updateMicHud(!!session);

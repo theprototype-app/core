@@ -56,6 +56,7 @@
 	import CustomWrapper from '$lib/ColorWrapper.svelte';
 	import { sineIn } from 'svelte/easing';
 	import { applyExplorerImage } from '$lib/explorerDrop';
+	import MaterialMapSlots from './MaterialMapSlots.svelte';
 	import { explorerItems, explorerFolders, inspectedFile, itemBlob, renameItem, deleteItem, updateItemBytes } from '$lib/explorer';
 	import { decodeMeta } from '$lib/audioEngine';
 	import { openTextEditor, openImagePreview } from '$lib/fileWindows';
@@ -4203,6 +4204,9 @@
 						</div>
 						</div>
 					{/if}
+
+					<!-- 72 LK1: normal, roughness, metalness, emissive, AO + tiling / offset / rotation -->
+					<MaterialMapSlots {material} targets={shaderFree} {matMixed} refresh={() => selectedObject.update((s) => s)} />
 
 					{#if material.type === 'MeshStandardMaterial' || material.type === 'MeshPhysicalMaterial'}
 						<SliderRow label="Roughness" resetValue={1} min={0} max={1} step={0.05} value={material.roughness}

@@ -23,13 +23,15 @@ import { peers } from '../../stores/appStore.js';
 import { applyGeometry, geometryParamsOf } from '$lib/geometryEdit';
 import { GEOMETRY_PARAMS, geometrySpec } from '$lib/geometryParams';
 import { PROFILE_MAX_POINTS, OUTLINE_MAX_POINTS, OUTLINE_MAX_HOLES } from '$lib/customGeometries';
-import { recordObjectPresence } from '$lib/history';
+import { recordObjectPresence, recordTransform } from '$lib/history';
 import { moveObjectToGroup } from '$lib/objectActions';
 import { toHexColor } from '$lib/materialParamRules.js';
 import { setPhysicsFor } from '$lib/physics';
 import { paletteColorFor } from '$lib/palette';
 import { lockSkip } from './lockNote.js';
 import { aiCreatePhysics } from './aiPhysicsDefault.js';
+import { shapePose, checkShapes, SHAPES_MAX, SHAPE_ACTIONS } from './shapeBatchCore.js';
+import { applyShadowFlags } from './shadowFlags.js';
 import {
 	parseSelect,
 	vertexKey,
@@ -39,11 +41,12 @@ import {
 	previewOf,
 	meshFromData,
 	MESH_MAX_VERTICES,
-	MESH_MAX_FACES
+	MESH_MAX_FACES,
+	MESH_MAX_MATERIALS
 } from './meshSelectCore.js';
 
 /** the tool names this module answers */
-export const GEOMETRY_TOOL_NAMES = ['set_geometry', 'create_lathe', 'create_tube', 'extrude_shape', 'edit_mesh', 'create_mesh'];
+export const GEOMETRY_TOOL_NAMES = ['set_geometry', 'create_lathe', 'create_tube', 'extrude_shape', 'edit_mesh', 'create_mesh', 'create_shapes'];
 
 /** how many objects one set_geometry call reshapes, and ops one edit_mesh call runs */
 const MAX_UPDATES = 100;
@@ -67,6 +70,29 @@ function broadcast(data) {
 	/** @type {any} */
 	const peer = get(peers);
 	if (peer) peer.send(data);
+}
+
+/**
+ * mcp-shapes: put a freshly made object (still at the scene root, already announced) into `parentUuid` and give it
+ * its LOCAL pose there — create_objects' order: nest first, then place. attach() keeps the world pose, so placing
+ * first read every coordinate as world space and the part landed at the inverse of the group's transform.
+ * @param {any} object @param {any} args @param {{position?: number[], rotation?: number[], scale?: number[]}} pose
+ * @returns {string | null} a warning when parentUuid names no group
+ */
+function nestLocal(object, args, pose) {
+	if (!args.parentUuid) return null;
+	const parent = objectOf(String(args.parentUuid));
+	if (parent?.type !== 'Group') return 'parentUuid: no group with that uuid — made at the scene root';
+	moveObjectToGroup(object.uuid, parent.uuid);
+	const before = { pos: object.position.toArray(), rot: [object.rotation.x, object.rotation.y, object.rotation.z], scale: object.scale.toArray() };
+	if (pose.position) object.position.fromArray(pose.position);
+	if (pose.rotation) object.rotation.set(pose.rotation[0], pose.rotation[1], pose.rotation[2]);
+	if (pose.scale) object.scale.fromArray(pose.scale);
+	const after = { pos: object.position.toArray(), rot: [object.rotation.x, object.rotation.y, object.rotation.z], scale: object.scale.toArray() };
+	pokeScene();
+	broadcast({ type: 'move', uuid: object.uuid, pos: after.pos, rot: after.rot, scale: after.scale });
+	recordTransform({ uuid: object.uuid, before, after });
+	return null;
 }
 
 /** G7: has a person (or edit_mesh) changed this object's vertices by hand? @param {any} object */
@@ -272,10 +298,13 @@ async function createTubeTool(args) {
 	pokeScene();
 	recordObjectPresence('create', mesh);
 	broadcast({ type: 'object', element: mesh.toJSON() });
+	// mcp-shapes: in a group the path is in the GROUP's space — the tube sits at the path's centre there
+	const warning = nestLocal(mesh, args, { position: made.center, rotation: [0, 0, 0], scale: [1, 1, 1] });
 	st.commitSplineEdit(mesh.uuid, stub, made.record);
 	const physics = aiCreatePhysics(args, undefined);
 	if (physics) setPhysicsFor(mesh.uuid, physics);
-	return { created: [{ uuid: mesh.uuid, name: mesh.name, points: made.record.points.length, position: made.center.map(r3) }] };
+	const warnings = [...(warning ? [warning] : []), ...applyShadowFlags(mesh, args)];
+	return { created: [{ uuid: mesh.uuid, name: mesh.name, points: made.record.points.length, position: made.center.map(r3), ...(warnings.length ? { warnings } : {}) }] };
 }
 
 // ---- G2 / G4 parametric shapes: create a base primitive, then give it its params ----------------------
@@ -306,8 +335,8 @@ function createParametric(createBase, gtype, args, params) {
 	return { created: [{ ...base, geometry: shapeOf(objectOf(base.uuid)) }] };
 }
 
-/** @param {CreateBase} createBase @param {any} args */
-function createLatheTool(createBase, args) {
+/** a lathe's params from the agent's args, or the error @param {any} args @returns {{params: Record<string, any>} | {error: string}} */
+function latheParamsOf(args) {
 	const profile = points2(args?.profile, 'profile', 2, PROFILE_MAX_POINTS);
 	if (typeof profile === 'string') return { error: profile };
 	if (profile.some((p) => p[0] < 0)) return { error: 'profile: x is the radius from the Y axis, so it cannot be negative' };
@@ -316,11 +345,18 @@ function createLatheTool(createBase, args) {
 	if (args.segments !== undefined) params.segments = Number(args.segments);
 	if (args.phiStart !== undefined) params.phiStart = Number(args.phiStart);
 	if (args.phiLength !== undefined) params.phiLength = Number(args.phiLength);
-	return createParametric(createBase, 'Lathe', args, params);
+	return { params };
 }
 
 /** @param {CreateBase} createBase @param {any} args */
-function extrudeShapeTool(createBase, args) {
+function createLatheTool(createBase, args) {
+	const made = latheParamsOf(args);
+	if ('error' in made) return { error: made.error };
+	return createParametric(createBase, 'Lathe', args, made.params);
+}
+
+/** an extrusion's params from the agent's args, or the error @param {any} args @returns {{params: Record<string, any>} | {error: string}} */
+function extrudeParamsOf(args) {
 	const outline = points2(args?.points, 'points', 3, OUTLINE_MAX_POINTS);
 	if (typeof outline === 'string') return { error: outline };
 	/** @type {number[][][]} */
@@ -347,14 +383,73 @@ function extrudeShapeTool(createBase, args) {
 		}
 	}
 	if (args.curveSegments !== undefined) params.curveSegments = Number(args.curveSegments);
-	return createParametric(createBase, 'Extrude', args, params);
+	return { params };
+}
+
+/** @param {CreateBase} createBase @param {any} args */
+function extrudeShapeTool(createBase, args) {
+	const made = extrudeParamsOf(args);
+	if ('error' in made) return { error: made.error };
+	return createParametric(createBase, 'Extrude', args, made.params);
 }
 
 // ---- G6 create_mesh --------------------------------------------------------------------------------
 
+/**
+ * mcp-shapes: create_mesh `materials` = the slots faceMaterials index into: [{color, roughness, metalness, opacity,
+ * emissive}]. Checked here (an error names the slot) and built as MeshStandardMaterial.
+ * @param {any} list @returns {{specs: any[]} | {error: string}}
+ */
+export function meshMaterialSpecs(list) {
+	if (list === undefined) return { specs: [] };
+	if (!Array.isArray(list) || !list.length || list.length > MESH_MAX_MATERIALS) return { error: 'materials: a list of 1-' + MESH_MAX_MATERIALS + ' {color, roughness, metalness, …}' };
+	/** @type {any[]} */
+	const specs = [];
+	for (let i = 0; i < list.length; i++) {
+		const m = list[i];
+		const at = 'materials[' + i + ']';
+		if (!m || typeof m !== 'object' || Array.isArray(m)) return { error: at + ': an object like {"color": "#aa6633", "roughness": 0.8}' };
+		/** @type {any} */
+		const spec = {};
+		for (const [key, value] of Object.entries(m)) {
+			if (key === 'color' || key === 'emissive') {
+				const hex = colorOf(value);
+				if (!hex) return { error: at + '.' + key + ': a hex colour like "#ff8800"' };
+				spec[key] = hex;
+			} else if (key === 'roughness' || key === 'metalness' || key === 'opacity' || key === 'emissiveIntensity') {
+				const hi = key === 'emissiveIntensity' ? 100 : 1;
+				if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > hi) return { error: at + '.' + key + ': a number from 0 to ' + hi };
+				spec[key] = value;
+			} else if (key === 'name') spec.name = String(value).slice(0, 60);
+			else return { error: at + '.' + key + ': not a material field — color, roughness, metalness, opacity, emissive, emissiveIntensity, name' };
+		}
+		specs.push(spec);
+	}
+	return { specs };
+}
+
+/** @param {any} spec one meshMaterialSpecs entry @param {string} fallback colour @param {any} args */
+function meshMaterial(spec, fallback, args) {
+	const m = new THREE.MeshStandardMaterial({ roughness: spec.roughness ?? 0.85, metalness: spec.metalness ?? 0 });
+	m.color.set(spec.color ?? fallback);
+	if (spec.emissive) m.emissive.set(spec.emissive);
+	if (spec.emissiveIntensity !== undefined) m.emissiveIntensity = spec.emissiveIntensity;
+	if (spec.opacity !== undefined && spec.opacity < 1) {
+		m.opacity = spec.opacity;
+		m.transparent = true;
+	}
+	if (spec.name) m.name = spec.name;
+	// mcp-shapes: per-vertex colours multiply the slot's colour; flatShading = one normal per triangle in the shader
+	if (Array.isArray(args.colors)) m.vertexColors = true;
+	if (args.flatShading === true) m.flatShading = true;
+	return m;
+}
+
 /** @param {any} args */
 async function createMeshTool(args) {
-	const data = meshFromData(args);
+	const mats = meshMaterialSpecs(args.materials);
+	if ('error' in mats) return { error: mats.error };
+	const data = meshFromData(args, mats.specs.length);
 	if ('error' in data) return { error: data.error };
 	if (args.color !== undefined && !colorOf(args.color)) return { error: 'color: a hex colour like "#ff8800"' };
 	const group = get(objectsGroup);
@@ -365,32 +460,52 @@ async function createMeshTool(args) {
 	// partition beside them) — one presence + one meshgeo entry, one undo step in the call's batch
 	const stub = new THREE.BufferGeometry();
 	stub.setAttribute('position', new THREE.Float32BufferAttribute(data.positions.slice(0, 9), 3));
+	if (data.colors) stub.setAttribute('color', new THREE.Float32BufferAttribute(data.colors.slice(0, 9), 3));
 	stub.computeVertexNormals();
-	const mesh = new THREE.Mesh(stub, new THREE.MeshStandardMaterial({ roughness: 0.85 }));
-	mesh.material.color.set(colorOf(args.color) ?? paletteColorFor(mesh.uuid));
+	const mesh = new THREE.Mesh(stub);
+	const base = colorOf(args.color) ?? paletteColorFor(mesh.uuid);
+	// one slot = a plain material; several = an array, drawn through the geometry groups the meshgeo carries
+	const slots = mats.specs.length ? mats.specs.map((spec) => meshMaterial(spec, base, args)) : [meshMaterial({}, base, args)];
+	mesh.material = slots.length > 1 ? slots : slots[0];
 	mesh.name = String(args.name || 'Mesh').slice(0, 120);
 	if (args.smooth === true) mesh.userData.shading = 'smooth';
-	for (const [key, n] of /** @type {const} */ ([['position', 3], ['rotation', 3], ['scale', 3]])) {
-		const v = args[key];
-		if (v === undefined) continue;
-		if (!Array.isArray(v) || v.length !== n || !v.every((x) => typeof x === 'number' && Number.isFinite(x))) return { error: key + ': [x, y, z] numbers' };
-		if (key === 'rotation') mesh.rotation.set(v[0], v[1], v[2]);
-		else mesh[key].fromArray(v);
+	const nested = !!args.parentUuid && objectOf(String(args.parentUuid))?.type === 'Group';
+	const pose = shapePose(args, nested);
+	if ('error' in pose) return { error: pose.error };
+	// at the root the pose rides the `object` message; in a group it is set AFTER nesting (nestLocal)
+	if (!nested) {
+		if (pose.position) mesh.position.fromArray(pose.position);
+		if (pose.rotation) mesh.rotation.set(pose.rotation[0], pose.rotation[1], pose.rotation[2]);
+		if (pose.scale) mesh.scale.fromArray(pose.scale);
 	}
 	group.add(mesh);
 	pokeScene();
 	recordObjectPresence('create', mesh);
 	broadcast({ type: 'object', element: mesh.toJSON() });
-	if (args.parentUuid) {
-		const parent = objectOf(String(args.parentUuid));
-		if (parent?.type === 'Group') moveObjectToGroup(mesh.uuid, parent.uuid);
-	}
+	/** @type {string[]} */
+	const warnings = [];
+	const warning = nestLocal(mesh, args, nested ? pose : {});
+	if (warning) warnings.push(warning);
 	const before = { positions: data.positions.slice(0, 9), groups: null, uvs: null, faces: null };
-	const after = { positions: data.positions, groups: null, uvs: data.uvs, faces: data.partition };
+	// a single slot draws every triangle: its groups would only mark them all slot 0
+	const after = { positions: data.positions, groups: slots.length > 1 ? data.groups : null, uvs: data.uvs, faces: data.partition, ...(data.colors ? { colors: data.colors } : {}) };
 	if (!fe.commitMeshGeoTriple(mesh.uuid, before, after)) return { error: 'the mesh is too large to sync', created: [{ uuid: mesh.uuid, name: mesh.name }] };
 	const physics = aiCreatePhysics(args, undefined);
 	if (physics) setPhysicsFor(mesh.uuid, physics);
-	return { created: [{ uuid: mesh.uuid, name: mesh.name, triangles: data.triangles, faces: data.partition.length }] };
+	warnings.push(...applyShadowFlags(mesh, args));
+	return {
+		created: [
+			{
+				uuid: mesh.uuid,
+				name: mesh.name,
+				triangles: data.triangles,
+				faces: data.partition.length,
+				...(slots.length > 1 ? { materials: slots.length } : {}),
+				...(data.colors ? { vertexColors: true } : {}),
+				...(warnings.length ? { warnings } : {})
+			}
+		]
+	};
 }
 
 // ---- G5 edit_mesh ----------------------------------------------------------------------------------
@@ -551,6 +666,54 @@ function partial(uuid, done, error) {
 	return done.length ? { updated: [{ uuid, ok: false, ops: done, errors: [error] }], warning: 'stopped at: ' + error } : { error };
 }
 
+// ---- mcp-shapes: create_shapes, many shapes in one call -------------------------------------------
+
+/**
+ * What a create tool would refuse, checked BEFORE anything is made (a batch makes all or nothing up front).
+ * @param {string} tool @param {any} args @returns {string | null}
+ */
+function shapeArgsError(tool, args) {
+	const pose = shapePose(args, false);
+	if ('error' in pose) return pose.error;
+	if (args.color !== undefined && !colorOf(args.color)) return 'color: a hex colour like "#ff8800"';
+	/** @type {any} */
+	let made;
+	if (tool === 'create_mesh') {
+		const mats = meshMaterialSpecs(args.materials);
+		made = 'error' in mats ? mats : meshFromData(args, mats.specs.length);
+	}
+	else if (tool === 'create_tube') made = tubeRecordOf(args);
+	else if (tool === 'create_lathe') made = latheParamsOf(args);
+	else if (tool === 'extrude_shape') made = extrudeParamsOf(args);
+	return made && 'error' in made ? made.error : null;
+}
+
+/** @param {any} args @param {CreateBase} createBase */
+async function createShapesTool(args, createBase) {
+	const checked = checkShapes(args?.shapes);
+	if ('error' in checked) return { error: checked.error, ...(checked.errors.length > 1 ? { errors: checked.errors } : {}) };
+	/** @type {string[]} */
+	const errors = [];
+	checked.entries.forEach((e, i) => {
+		const why = shapeArgsError(e.tool, e.args);
+		if (why) errors.push('shapes[' + i + '] (' + e.action + '): ' + why);
+	});
+	if (errors.length) return { error: 'nothing was made — ' + errors[0], errors };
+	/** @type {any[]} */
+	const created = [];
+	for (let i = 0; i < checked.entries.length; i++) {
+		const e = checked.entries[i];
+		const r = await geometryTool(e.tool, e.args, createBase);
+		const rows = Array.isArray(r?.created) ? r.created : [];
+		if (r?.error) created.push({ index: i, action: e.action, error: r.error, ...(rows[0]?.uuid ? { uuid: rows[0].uuid } : {}) });
+		else for (const row of rows) created.push({ index: i, action: e.action, ...row });
+	}
+	const uuids = created.filter((c) => c.uuid && !c.error).map((c) => c.uuid);
+	if (!uuids.length) return { error: 'nothing was made: ' + (created[0]?.error ?? 'no shapes'), created };
+	const failed = created.filter((c) => c.error).length;
+	return { created, uuids, ...(failed ? { warning: failed + ' of ' + created.length + ' shapes failed — see errors' } : {}) };
+}
+
 // ---- the router ------------------------------------------------------------------------------------
 
 /**
@@ -573,6 +736,8 @@ export async function geometryTool(name, args, createBase) {
 			return editMeshTool(args ?? {});
 		case 'create_mesh':
 			return createMeshTool(args ?? {});
+		case 'create_shapes':
+			return createShapesTool(args ?? {}, createBase);
 		default:
 			return { error: 'unknown geometry tool ' + name };
 	}
@@ -589,8 +754,13 @@ const PLACE = {
 	rotation: { ...V3, description: 'Euler radians' },
 	scale: V3,
 	color: { type: 'string', description: 'hex #rrggbb' },
-	parentUuid: { type: 'string', description: 'group to nest under (position is then local to it)' },
-	physics: { type: 'string', enum: ['static', 'dynamic'], description: 'default static' }
+	parentUuid: {
+		type: 'string',
+		description: 'uuid of a group to nest under — position / rotation / scale AND the shape\'s own points are then LOCAL to that group (no position = the group\'s origin), so the part moves and turns with it'
+	},
+	physics: { type: 'string', enum: ['static', 'dynamic'], description: 'default static' },
+	castShadow: { type: 'boolean', description: 'cast a shadow (on by default)' },
+	receiveShadow: { type: 'boolean', description: 'shadows fall on it (on by default)' }
 };
 const SELECT = {
 	type: 'object',
@@ -627,7 +797,7 @@ export const GEOMETRY_AI_TOOLS = [
 								uuid: { type: 'string' },
 								type: { type: 'string', enum: TYPE_TARGETS, description: 'change the primitive type in place' },
 								params: { type: 'object', description: 'param name → value; sizes clamped to 1 km, segment counts to their range' },
-								path: { type: 'array', items: V3, description: 'tubes: a new path in scene space' },
+								path: { type: 'array', items: V3, description: 'tubes: a new path in the space the tube lives in (the scene, or its group)' },
 								radius: { type: 'number', description: 'tubes: one radius for every point' },
 								radii: { type: 'array', items: { type: 'number' }, description: 'tubes: one radius per point' },
 								closed: { type: 'boolean', description: 'tubes: join the ends' },
@@ -666,7 +836,7 @@ export const GEOMETRY_AI_TOOLS = [
 		function: {
 			name: 'create_tube',
 			description:
-				'A tube swept along a smooth 3D path — rail, pipe, cable, handrail, tentacle. path = [[x, y, z], …] in SCENE space (the object is placed at the path\'s centre); radius for all points or radii per point (tapers). Editable with set_geometry (path, radii, closed). Returns the uuid.',
+				'A tube swept along a smooth 3D path — rail, pipe, cable, handrail, tentacle. path = [[x, y, z], …] in SCENE space, or in the group\'s own space with parentUuid (the object is placed at the path\'s centre); radius for all points or radii per point (tapers). Editable with set_geometry (path, radii, closed). Returns the uuid.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -677,7 +847,10 @@ export const GEOMETRY_AI_TOOLS = [
 					radialSegments: { type: 'integer', description: '3-32, default 8' },
 					name: { type: 'string' },
 					color: { type: 'string', description: 'hex #rrggbb' },
-					physics: { type: 'string', enum: ['static', 'dynamic'] }
+					parentUuid: { type: 'string', description: "uuid of a group to nest under — path points are then LOCAL to that group, so the tube moves and turns with it" },
+					physics: { type: 'string', enum: ['static', 'dynamic'] },
+					castShadow: PLACE.castShadow,
+					receiveShadow: PLACE.receiveShadow
 				},
 				required: ['path']
 			}
@@ -752,7 +925,9 @@ export const GEOMETRY_AI_TOOLS = [
 				MESH_MAX_VERTICES +
 				' vertices and ' +
 				MESH_MAX_FACES +
-				' faces; normals are computed (smooth: true for smooth shading). Edit it afterwards with edit_mesh. Returns the uuid.',
+				' faces; normals are computed (smooth: true for smooth shading, flatShading: true for hard facets). Colour it as you make it: materials [{color, roughness, metalness, …}] (up to ' +
+				MESH_MAX_MATERIALS +
+				' slots) with faceMaterials [slot per face, same order as faces] for parts in different colours; or colors [[r, g, b] 0-1, one per vertex] for a painted gradient (multiplied by the material colour). Material slots last through edit_mesh; vertex colours last only while an edit keeps the vertex count. Edit it afterwards with edit_mesh. Returns the uuid.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -760,9 +935,61 @@ export const GEOMETRY_AI_TOOLS = [
 					faces: { type: 'array', items: { type: 'array', items: { type: 'integer' } }, maxItems: MESH_MAX_FACES },
 					uvs: { type: 'array', items: V2 },
 					smooth: { type: 'boolean' },
+					flatShading: { type: 'boolean', description: 'true = one flat normal per triangle (low-poly look)' },
+					colors: { type: 'array', items: V3, maxItems: MESH_MAX_VERTICES, description: 'one [r, g, b] (0-1) per vertex, in the order of vertices' },
+					materials: {
+						type: 'array',
+						minItems: 1,
+						maxItems: MESH_MAX_MATERIALS,
+						description: 'material slots faceMaterials points into',
+						items: {
+							type: 'object',
+							properties: {
+								color: { type: 'string', description: 'hex like "#aa6633"' },
+								roughness: { type: 'number', minimum: 0, maximum: 1 },
+								metalness: { type: 'number', minimum: 0, maximum: 1 },
+								opacity: { type: 'number', minimum: 0, maximum: 1 },
+								emissive: { type: 'string', description: 'hex glow colour' },
+								emissiveIntensity: { type: 'number', minimum: 0, maximum: 100 },
+								name: { type: 'string' }
+							}
+						}
+					},
+					faceMaterials: { type: 'array', items: { type: 'integer', minimum: 0 }, maxItems: MESH_MAX_FACES, description: 'the materials slot of each face (0 = the first), one per face' },
 					...PLACE
 				},
 				required: ['vertices', 'faces']
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
+			name: 'create_shapes',
+			description:
+				'Make up to ' +
+				SHAPES_MAX +
+				' shapes in ONE call and ONE undo step: shapes = [{action: "mesh", mesh: {…create_mesh\'s fields…}}, {action: "lathe", lathe: {…}}, …] with action one of ' +
+				Object.keys(SHAPE_ACTIONS).join(', ') +
+				' (the same fields as create_mesh / create_lathe / extrude_shape / create_tube, parentUuid included). Every entry is checked first and nothing is made if one is wrong (the error names its index, shapes[3]); the uuids come back in the order given.',
+			parameters: {
+				type: 'object',
+				properties: {
+					shapes: {
+						type: 'array',
+						minItems: 1,
+						maxItems: SHAPES_MAX,
+						items: {
+							type: 'object',
+							properties: {
+								action: { type: 'string', enum: Object.keys(SHAPE_ACTIONS) },
+								...Object.fromEntries(Object.entries(SHAPE_ACTIONS).map(([a, tool]) => [a, { type: 'object', description: tool + '\'s fields' }]))
+							},
+							required: ['action']
+						}
+					}
+				},
+				required: ['shapes']
 			}
 		}
 	}
@@ -774,7 +1001,8 @@ export const GEOMETRY_PROMPT = [
 	'Shapes: set_geometry reshapes an existing object in place (params like width/height/radius, or',
 	'its type) — never delete and recreate. create_lathe (profile → vase, bowl, column), create_tube',
 	'(path → rail, pipe), extrude_shape (outline → sign, letter, floor plan), create_mesh (raw',
-	'vertices/faces). edit_mesh models a mesh: extrude/inset/bevel/subdivide faces picked by normal',
+	'vertices/faces); create_shapes makes many in one call. With parentUuid every coordinate is the',
+	'group\'s own (local) space. edit_mesh models a mesh: extrude/inset/bevel/subdivide faces picked by normal',
 	'("up"), box or index; weld/smooth/dissolve vertices. Preview a selection with ops: [].'
 ].join('\n');
 

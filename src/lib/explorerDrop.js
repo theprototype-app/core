@@ -149,6 +149,20 @@ export async function applyExplorerImage(uuid, payload, slot = 0) {
 }
 
 /**
+ * 72 LK1: an Explorer image as one map slot (normal, roughness, ...) of many objects.
+ * @param {string[]} uuids @param {any} payload @param {string} key
+ * @returns {Promise<boolean>}
+ */
+export async function applyExplorerImageToMapSlot(uuids, payload, key) {
+	const item = get(explorerItems).find((entry) => entry.id === payload.id);
+	if (!item || item.kind !== 'image') return false;
+	const blob = await itemBlob(item.id);
+	if (!blob) return false;
+	const { setObjectsMapSlot } = await import('./materialMaps');
+	return (await setObjectsMapSlot(uuids, key, new File([blob], item.name, { type: blob.type || 'image/png' }))) > 0;
+}
+
+/**
  * Hold a dismissible "Loading …" toast while a slow CDN pack fetch runs (with
  * NOTHING on screen otherwise). Uses the raw store so it can be removed by
  * reference — `showToast` has no handle and would also push a notification;

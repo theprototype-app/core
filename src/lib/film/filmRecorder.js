@@ -22,7 +22,8 @@ import { playSequence, stopSequence, scrubSequence, releaseScrub, seqTransport }
 import { findCameraObject } from '../cameraObjects';
 import { isViewer } from '../objectPermissions';
 import { showToast } from '../../stores/appStore';
-import { onFilmFrame, setPoseFilter, liveState, placeCamera, setPresenceRecording, parentInContent } from './filmMode';
+import { onFilmFrame, setPoseFilter, liveState, placeCamera, setPresenceRecording, parentInContent, filmCamera } from './filmMode';
+import { captureThumb, storeThumb } from './filmThumb';
 import { commitTake, uniformSamples, filmShots, DEFAULT_BUDGET } from './filmTake';
 import { packRaw, moveEase, RAW_LAYOUT } from './filmCore';
 import { sampleCurve } from '../curveCore';
@@ -48,7 +49,7 @@ function idleUi() {
  *   lastItemId: string|null, lastPose: any, base: Record<string, number>}} Session */
 /** @type {Session | null} */
 let session = null;
-/** @typedef {{mode: 'cut'|'move'|'retake', itemId: string|null, t0: number, runAt: number, frames: any[], markers: number[]}} Segment */
+/** @typedef {{mode: 'cut'|'move'|'retake', itemId: string|null, t0: number, runAt: number, frames: any[], markers: number[], thumb?: Promise<Blob | null>}} Segment */
 /** @type {Segment | null} */
 let segment = null;
 /** @type {(() => void) | null} */
@@ -70,6 +71,13 @@ function patch(patch) {
 /** @param {any} pose @param {number} dt */
 function onFrame(pose, dt) {
 	if (!segment) return;
+	// fix-film: a new shot's first frame becomes its thumbnail — rendered once, just after this
+	// frame is drawn (never inside the frame loop), offscreen
+	if (!segment.frames.length && segment.mode !== 'move' && !segment.thumb) {
+		const camera = filmCamera();
+		const aspect = camera?.isPerspectiveCamera ? camera.aspect : 16 / 9;
+		segment.thumb = new Promise((resolve) => queueMicrotask(() => captureThumb(camera, aspect).then(resolve, () => resolve(null))));
+	}
 	const t = segment.t0 + Math.max(0, syncedNow() - segment.runAt);
 	segment.frames.push({
 		t,
@@ -272,6 +280,8 @@ async function commitSegment(s, seg) {
 		return { ...smp, pos: v.toArray(), quat: q.toArray() };
 	});
 	const raw = await storeRaw(s, seg, uniform);
+	const thumbBlob = seg.thumb ? await seg.thumb : null;
+	const thumb = thumbBlob ? await storeThumb(thumbBlob, `${s.name} shot ${seg.t0.toFixed(2)}s.jpg`) : '';
 	const doc = sequenceOf(s.seqId);
 	if (!doc) return;
 	const result = commitTake(doc, {
@@ -283,7 +293,8 @@ async function commitSegment(s, seg) {
 		base: s.base,
 		sessionStart: s.sessionStart,
 		raw,
-		markers: seg.markers
+		markers: seg.markers,
+		...(thumb ? { thumb } : {})
 	});
 	if (!result) {
 		showToast('That take was too short to keep');
@@ -339,6 +350,47 @@ export function addMarker() {
 		/* no haptics here */
 	}
 	return true;
+}
+
+// ---- fix-film: the shots sheet ----
+
+/** the sequence whose shots the sheet lists: the take's, else the Timeline's own */
+export function shotsSequenceId() {
+	return session?.seqId ?? get(take).seq ?? get(activeSequence) ?? null;
+}
+
+/**
+ * Write an edited document (a rename, a trim step, a delete, an undo) — inside a sequence gesture
+ * unless one is already open (a trim drag opens one and closes it on release: ONE undo step).
+ * @param {string} seqId @param {any} next a whole new document, or null (nothing to do)
+ */
+export function writeShots(seqId, next) {
+	if (!seqId || !next) return false;
+	if (get(take).state === 'recording') return false;
+	const open = gestureOpen;
+	if (!open) beginSequenceGesture(seqId);
+	setSequence(seqId, next);
+	if (!open) endSequenceGesture(seqId);
+	return true;
+}
+let gestureOpen = false;
+/** a trim drag: one undo step for the whole drag @param {string} seqId */
+export function beginShotsGesture(seqId) {
+	if (gestureOpen || !seqId) return;
+	gestureOpen = true;
+	beginSequenceGesture(seqId);
+}
+/** @param {string} seqId */
+export function endShotsGesture(seqId) {
+	if (!gestureOpen) return;
+	gestureOpen = false;
+	endSequenceGesture(seqId);
+}
+
+/** after a shot preview: a paused take shows its paused moment again (or the scrub lets go) */
+export function afterShotPreview() {
+	releaseScrub();
+	if (session && get(take).state === 'paused') scrubSequence(session.seqId, session.pausedAt);
 }
 
 /** Film closed: commit what was recording, forget the session. */

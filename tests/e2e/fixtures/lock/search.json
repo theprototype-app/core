@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-11-01T19:12:07.153Z",
+	"recordedAt": "2026-11-04T09:14:49.718Z",
 	"settings": {
 		"Theme": {
 			"rows": [
@@ -4592,6 +4592,7 @@
 				"Emission",
 				"Geometry",
 				"LOD",
+				"Maps",
 				"Material",
 				"Model",
 				"Object",
@@ -4632,6 +4633,7 @@
 			],
 			"material": [
 				"Emission",
+				"Maps",
 				"Material",
 				"Physics",
 				"Shadow",
@@ -4639,18 +4641,28 @@
 			],
 			"texture": [
 				"Emission",
+				"Maps",
+				"Material",
+				"Shadow",
+				"Texture"
+			],
+			"maps": [
+				"Emission",
+				"Maps",
 				"Material",
 				"Shadow",
 				"Texture"
 			],
 			"emission": [
 				"Emission",
+				"Maps",
 				"Material",
 				"Shadow",
 				"Texture"
 			],
 			"shadow": [
 				"Emission",
+				"Maps",
 				"Material",
 				"Shadow",
 				"Texture"
@@ -4670,6 +4682,7 @@
 			],
 			"scale": [
 				"Emission",
+				"Maps",
 				"Material",
 				"Scatter",
 				"Shadow",
@@ -4678,6 +4691,7 @@
 			],
 			"color": [
 				"Emission",
+				"Maps",
 				"Material",
 				"Shadow",
 				"Texture"

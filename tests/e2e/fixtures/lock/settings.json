@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-11-01T19:36:04.013Z",
+	"recordedAt": "2026-11-04T09:12:10.045Z",
 	"viewport": {
 		"width": 1440,
 		"height": 900
@@ -5852,18 +5852,18 @@
 						},
 						{
 							"kind": "segment",
-							"id": "hdri-quality-full",
-							"label": "Full (1k)",
+							"id": "hdri-quality-low",
+							"label": "Low (headset)",
 							"where": "control",
 							"default": false,
 							"disabled": false,
 							"state": true,
 							"effects": {
 								"storage": {
-									"hdri:quality": "full"
+									"hdri:quality": "low"
 								},
 								"stores": {
-									"hdriPrefs.hdriQuality": "full"
+									"hdriPrefs.hdriQuality": "low"
 								},
 								"html": [],
 								"body": [],
@@ -5878,18 +5878,70 @@
 						},
 						{
 							"kind": "segment",
-							"id": "hdri-quality-low",
-							"label": "Low (headset)",
+							"id": "hdri-quality-standard",
+							"label": "Standard (1K)",
 							"where": "control",
 							"default": false,
 							"disabled": false,
 							"state": true,
 							"effects": {
 								"storage": {
-									"hdri:quality": "low"
+									"hdri:quality": "standard"
 								},
 								"stores": {
-									"hdriPrefs.hdriQuality": "low"
+									"hdriPrefs.hdriQuality": "standard"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						},
+						{
+							"kind": "segment",
+							"id": "hdri-quality-high",
+							"label": "High (2K)",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"hdri:quality": "high"
+								},
+								"stores": {
+									"hdriPrefs.hdriQuality": "high"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						},
+						{
+							"kind": "segment",
+							"id": "hdri-quality-max",
+							"label": "Max (4K)",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"hdri:quality": "max"
+								},
+								"stores": {
+									"hdriPrefs.hdriQuality": "max"
 								},
 								"html": [],
 								"body": [],
@@ -9819,9 +9871,41 @@
 							"scope": "device",
 							"restored": false,
 							"storageAfterRestore": {
-								"notifications": "[{\"id\":\"n1793560361939_1\",\"text\":\"The VR welcome will play the next time you enter VR.\",\"ts\":1793560361939,\"kind\":\"action\"},{\"id\":\"n1793560372451_2\",\"text\":\"Tours reset — each one shows again the first time it applies.\",\"ts\":1793560372451,\"kind\":\"info\"},{\"id\":\"n1793560379124_3\",\"text\":\"Window positions reset\",\"ts\":1793560379124,\"kind\":\"info\"},{\"id\":\"n1793560447369_4\",\"text\":\"Touch layout reset to the default arrangement\",\"ts\":1793560447369,\"kind\":\"info\"},{\"id\":\"n1793560829639_5\",\"text\":\"Line colors reset\",\"ts\":1793560829639,\"kind\":\"info\"},{\"id\":\"n1793560962216_6\",\"text\":\"Passthrough on — takes effect on the next VR entry\",\"ts\":1793560962216,\"kind\":\"info\"},{\"id\":\"n1793560962786_7\",\"text\":\"Passthrough off — takes effect on the next VR entry\",\"ts\":1793560962786,\"kind\":\"info\"}]",
+								"notifications": "[{\"id\":\"n1793782171767_1\",\"text\":\"The VR welcome will play the next time you enter VR.\",\"ts\":1793782171767,\"kind\":\"action\"},{\"id\":\"n1793782182266_2\",\"text\":\"Tours reset — each one shows again the first time it applies.\",\"ts\":1793782182266,\"kind\":\"info\"},{\"id\":\"n1793782188850_3\",\"text\":\"Window positions reset\",\"ts\":1793782188850,\"kind\":\"info\"},{\"id\":\"n1793782257363_4\",\"text\":\"Touch layout reset to the default arrangement\",\"ts\":1793782257363,\"kind\":\"info\"},{\"id\":\"n1793782629898_5\",\"text\":\"Line colors reset\",\"ts\":1793782629898,\"kind\":\"info\"},{\"id\":\"n1793782756293_6\",\"text\":\"Passthrough on — takes effect on the next VR entry\",\"ts\":1793782756293,\"kind\":\"info\"},{\"id\":\"n1793782756842_7\",\"text\":\"Passthrough off — takes effect on the next VR entry\",\"ts\":1793782756842,\"kind\":\"info\"}]",
 								"vrPassthrough": "false"
 							},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Turn on custom shaders",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "vr-set-customShaders",
+							"label": "Turn on custom shaders",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"customShadersQuest": "1"
+								},
+								"stores": {
+									"shaderCodeReach.customShadersOnQuest": true,
+									"vrSettingsSchema.vrSettingsVersion": "<changed>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
 							"exercise": "done"
 						}
 					]
@@ -12902,12 +12986,22 @@
 					},
 					{
 						"kind": "segment",
-						"id": "hdri-quality-full",
+						"id": "hdri-quality-low",
 						"default": false
 					},
 					{
 						"kind": "segment",
-						"id": "hdri-quality-low",
+						"id": "hdri-quality-standard",
+						"default": false
+					},
+					{
+						"kind": "segment",
+						"id": "hdri-quality-high",
+						"default": false
+					},
+					{
+						"kind": "segment",
+						"id": "hdri-quality-max",
 						"default": false
 					}
 				]
@@ -14017,6 +14111,16 @@
 					{
 						"kind": "toggle",
 						"id": "passthrough-toggle",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Turn on custom shaders",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "vr-set-customShaders",
 						"default": false
 					}
 				]

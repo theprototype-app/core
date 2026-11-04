@@ -70,21 +70,25 @@ export const CHANNELS = [
 	'opacity',
 	'color.r', 'color.g', 'color.b',
 	'metalness', 'roughness', 'emissive',
-	'light.intensity'
+	'light.intensity',
+	'camera.fov'
 ];
 
 /** channels that HOLD their value until the next key instead of interpolating */
 export const STEPPED = new Set(['visible']);
 
-/** channels that drive the MATERIAL rather than the transform (they need the
- * material state captured so Stop can put it back, and glTF cannot carry them) */
+/** channels that drive the MATERIAL rather than the transform (they need the material state captured
+ * so Stop can put it back; glTF carries them through KHR_animation_pointer, gltfLookExport.js) */
 export const MATERIAL_CHANNELS = new Set([
 	'opacity', 'color.r', 'color.g', 'color.b', 'metalness', 'roughness', 'emissive'
 ]);
 
+/** a camera marker with no lens of its own (cameraObjects' default; read inline to keep this module's imports) */
+const DEFAULT_FOV = 50;
+
 /** @param {string} channel */
 export function isMaterialChannel(channel) {
-	return MATERIAL_CHANNELS.has(channel) || channel === 'light.intensity';
+	return MATERIAL_CHANNELS.has(channel) || channel === 'light.intensity' || channel === 'camera.fov';
 }
 
 /** Every material of an object as a flat list — a mesh with UV slots has an ARRAY,
@@ -368,6 +372,7 @@ export function channelValue(obj, channel) {
 		case 'roughness': return material?.roughness ?? 1;
 		case 'emissive': return material?.emissiveIntensity ?? 0;
 		case 'light.intensity': return obj.isLight ? (obj.intensity ?? 1) : 0;
+		case 'camera.fov': return obj.userData?.camera?.fov ?? DEFAULT_FOV;
 		default: return 0;
 	}
 }
@@ -378,6 +383,8 @@ export function channelValue(obj, channel) {
 export function channelApplies(obj, channel) {
 	if (!obj) return false;
 	if (channel === 'light.intensity') return !!obj.isLight;
+	// 72 LK4: an orthographic camera has a size, not an angle
+	if (channel === 'camera.fov') return !!obj.userData?.camera && obj.userData.camera.kind !== 'orthographic';
 	if (!MATERIAL_CHANNELS.has(channel)) return true;
 	const material = materialsOf(obj)[0];
 	if (!material) return false;
@@ -399,7 +406,8 @@ export function channelLabel(channel) {
 			opacity: 'Opacity',
 			'color.r': 'Colour R', 'color.g': 'Colour G', 'color.b': 'Colour B',
 			metalness: 'Metalness', roughness: 'Roughness', emissive: 'Emission',
-			'light.intensity': 'Light intensity'
+			'light.intensity': 'Light intensity',
+			'camera.fov': 'Field of view'
 		}[channel] ?? channel
 	);
 }
@@ -547,6 +555,9 @@ function setChannel(obj, channel, v) {
 		case 'light.intensity':
 			if (obj.isLight) obj.intensity = Math.max(0, v);
 			break;
+		case 'camera.fov':
+			if (obj.userData?.camera) obj.userData.camera.fov = Math.min(170, Math.max(1, v));
+			break;
 		case 'opacity': {
 			// An opacity below 1 does NOTHING without the transparent flag, and that
 			// flag changes the render program, so it needs needsUpdate — and Stop has
@@ -628,7 +639,8 @@ function captureBase(object) {
 		scale: object.scale.toArray(),
 		visible: object.visible !== false,
 		materials,
-		intensity: object.isLight ? object.intensity : undefined
+		intensity: object.isLight ? object.intensity : undefined,
+		cameraFov: object.userData?.camera?.fov
 	};
 }
 
@@ -639,6 +651,7 @@ function restoreBase(object, base) {
 	object.scale.fromArray(base.scale);
 	object.visible = base.visible !== false;
 	if (base.intensity !== undefined && object.isLight) object.intensity = base.intensity;
+	if (base.cameraFov !== undefined && object.userData?.camera) object.userData.camera.fov = base.cameraFov;
 	if (base.materials?.length) {
 		const live = materialsOf(object);
 		for (let i = 0; i < live.length && i < base.materials.length; i++) {
@@ -1163,6 +1176,7 @@ function defaultTo(channel, from) {
 	if (channel === 'opacity' || channel === 'metalness' || channel === 'roughness')
 		return from >= 0.5 ? 0 : 1;
 	if (channel.startsWith('color')) return from >= 0.5 ? 0 : 1;
+	if (channel === 'camera.fov') return from >= 40 ? from / 2 : from * 2; // a zoom you can see, inside the lens range
 	return from + 2;
 }
 
@@ -1760,6 +1774,52 @@ export function clipToThreeClip(object, clip, opts = {}) {
 	if (visible.length) tracks.push(new THREE.BooleanKeyframeTrack(name + '.visible', times, visible));
 	if (!tracks.length) return null;
 	return new THREE.AnimationClip(opts.name ?? clip.name, duration, tracks);
+}
+
+/** the channels a glTF node's TRS cannot hold: what the KHR_animation_pointer export carries */
+const POINTER_CHANNELS = new Set(['visible', ...MATERIAL_CHANNELS, 'light.intensity', 'camera.fov']);
+
+/**
+ * 72 LK4: one clip's look channels sampled onto the bake's own time grid, so a clip's look and movement
+ * stay in step in the file. Null when the clip has none.
+ * @param {any} clip @param {{fps?: number}} [opts]
+ * @returns {{times: number[], channels: Record<string, number[]>} | null}
+ */
+export function sampleLookChannels(clip, opts = {}) {
+	const wanted = [...new Set((clip?.tracks ?? []).map((/** @type {any} */ t) => t.channel))].filter((c) => POINTER_CHANNELS.has(String(c)));
+	if (!wanted.length) return null;
+	const fps = Math.max(4, num(opts.fps, BAKE_FPS) || BAKE_FPS);
+	const duration = Math.max(clip.duration, 0.001);
+	const frames = Math.max(1, Math.round(duration * fps));
+	/** @type {number[]} */
+	const times = [];
+	/** @type {Record<string, number[]>} */
+	const channels = Object.fromEntries(wanted.map((c) => [String(c), []]));
+	for (let i = 0; i <= frames; i++) {
+		const t = Math.min(i / fps, duration);
+		if (times.length && t <= times[times.length - 1]) continue;
+		times.push(t);
+		const values = evaluateClip(clip, clip.step ? Math.floor(t * clip.step + 1e-6) / clip.step : t);
+		for (const c of wanted) channels[String(c)].push(values[String(c)]);
+	}
+	return { times, channels };
+}
+
+/** Every clip with look channels in a subtree. @param {any} root
+ * @returns {{object: any, clip: any, samples: {times: number[], channels: Record<string, number[]>}}[]} */
+export function lookClipsOf(root) {
+	/** @type {{object: any, clip: any, samples: any}[]} */
+	const out = [];
+	const sets = get(animations);
+	root?.traverse?.((/** @type {any} */ object) => {
+		const set = sets[object.uuid];
+		if (!set) return;
+		for (const clip of Object.values(/** @type {any} */ (getAnimSet(object.uuid))?.clips ?? {})) {
+			const samples = sampleLookChannels(clip);
+			if (samples) out.push({ object, clip, samples });
+		}
+	});
+	return out;
 }
 
 /** Every authored clip of an object, baked. @param {any} object @param {string} uuid */

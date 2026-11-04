@@ -1,4 +1,5 @@
 <script>
+	import { xrSupportOf } from '$lib/xrLookCore.js';
 	// L3 — Configure Scene ▸ Post-processing.
 	//
 	// The stack list: add / remove / reorder / per-entry enable, with each entry's
@@ -400,6 +401,12 @@
 				</div>
 				{#if openId === entry.id}
 					<div id={'post-params-' + entry.id} class="flex flex-col gap-1 px-2 pb-1 pt-1">
+						<!-- 72 LK3: the composer does not run in a headset; say which effects come along -->
+						{#if !isUnknown(entry) && xrSupportOf(entry.kind) !== 'baked'}
+							<p class="post-xr-note text-[length:var(--fs-badge)] text-text-muted">
+								{xrSupportOf(entry.kind) === 'approx' ? 'Approximate in a headset.' : 'Not shown in a headset.'}
+							</p>
+						{/if}
 						{#if isUnknown(entry)}
 							<p class="text-[length:var(--fs-badge)] italic text-warn-text">
 								Saved and shared as-is. Open this scene in a build that has "{entry.kind}" to edit it.
@@ -523,8 +530,8 @@
 	</p>
 {/if}
 <p class="text-[length:var(--fs-badge)] italic text-text-muted">
-	Post-processing does not run in VR — the effects are skipped in a headset, and objects still look
-	the same.
+	In a headset the tone curve, colour grade, LUT (approximate) and vignette still show; the other
+	effects are desktop-only, as each one says.
 </p>
 
 <style>

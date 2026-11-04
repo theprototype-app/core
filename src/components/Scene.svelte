@@ -1261,7 +1261,7 @@
 				const point = hits[0]?.point ??
 					(selectionRaycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), planePoint)
 						? planePoint : null);
-				if (point) sendPing(point);
+				if (point) sendPing(point, undefined, hits[0]); // 85b S2: the hit = what it landed on
 				return;
 			}
 			// 57.2: the spline tool places a control point per click; a second click

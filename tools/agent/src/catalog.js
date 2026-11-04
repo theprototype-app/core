@@ -128,7 +128,7 @@ export const GUIDANCE = [
 	},
 	{ line: 'Call list_scene before editing so you use real uuids; batch many objects into one call.', on: ['list_scene', 'create_objects', 'update_objects'] },
 	{
-		line: 'For "in front of me", "here" or "this", call where_are_users and build at the spots it gives, facing the person.',
+		line: 'For "in front of me", call where_are_users and build at the spots it gives, facing the person (face_user: true). For "here" or "this", build at the person\'s latest ping: at: {ping: "latest"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.',
 		on: ['where_are_users', 'create_objects']
 	},
 	{ line: 'For "give me a flashlight" or another prop, make the object, then attach_to_user to the person who asked.', on: ['attach_to_user'] },

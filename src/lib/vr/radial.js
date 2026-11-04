@@ -772,7 +772,7 @@ export function pingFromController(index) {
 	const hits = group ? ray.intersectObjects(group.children, true) : [];
 	if (hits[0]) {
 		const top = topLevelObjectOf(hits[0].object);
-		sendPing(hits[0].point, top?.uuid);
+		sendPing(hits[0].point, top?.uuid, hits[0]); // 85b S2: the surface it landed on
 		hapticPulse(0.4, 60);
 		return true;
 	}

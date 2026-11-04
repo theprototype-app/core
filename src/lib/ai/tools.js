@@ -4,6 +4,7 @@ import { objectsGroup, lockedObjects, pokeScene } from '../../stores/sceneStore.
 import { peers } from '../../stores/appStore.js';
 import { lockSkip } from './lockNote.js';
 import { sceneFilter, cursorOffset, cursorAt, PAGE_MAX } from './sceneFilter.js';
+import { placeObject } from './placement.js';
 import { ASSIST_TOOL_NAMES, ASSIST_AI_TOOLS, ASSIST_PROMPT, assistTool } from './assistTools.js';
 import { aboutOriginPosition, originOf } from '$lib/objectOrigin';
 import { geometrySpec } from '$lib/geometryParams';
@@ -641,6 +642,9 @@ function createOne(spec, extraTypes = /** @type {string[]} */ ([])) {
 		const why = lookAtTarget(created, spec.lookAt);
 		if (why) warnings.push(why);
 	}
+	// 85b S2-S4: at a ping / backed onto its surface / standing on the floor / facing a person
+	const place = placeObject(created, spec, applyAiTransform);
+	warnings.push(...place.warnings);
 	// fix-live F-4: static unless asked — a built scene must not fall apart in Play
 	const physics = aiCreatePhysics(spec, created.userData?.physics);
 	if (physics) setPhysicsFor(uuid, physics);
@@ -648,6 +652,7 @@ function createOne(spec, extraTypes = /** @type {string[]} */ ([])) {
 		uuid,
 		name: created.name,
 		...(created.userData?.physics?.mode ? { physics: created.userData.physics.mode } : {}),
+		...(place.placed ? { placed: place.placed } : {}),
 		...(warnings.length ? { warnings } : {})
 	};
 }
@@ -717,7 +722,11 @@ async function updateOne(spec) {
 		const why = lookAtTarget(object, spec.lookAt);
 		if (why) errors.push(why);
 	}
-	return errors.length ? { uuid, ok: false, errors } : { uuid, ok: true };
+	// 85b S2-S4: after the move, so at / snap / face_user see where it is now
+	const place = placeObject(object, spec, applyAiTransform);
+	errors.push(...place.warnings);
+	const extra = place.placed ? { placed: place.placed } : {};
+	return errors.length ? { uuid, ok: false, errors, ...extra } : { uuid, ok: true, ...extra };
 }
 
 const TOOL_NAMES = [
@@ -1308,6 +1317,14 @@ export const AI_TOOLS = [
 								...LIGHT_SCHEMA,
 								...SHADOW_SCHEMA,
 								lookAt: { description: 'turn it so its local +Z (front) faces this: a world point [x,y,z] or another object\'s uuid (+Y stays up; lights use aim)' },
+								at: {
+									type: 'object',
+									description: 'build at a spot a person PINGED (Ctrl+Alt+click, the menu\'s Ping, a long-press menu, the VR stick click): {ping: id} from where_are_users {pings: true}, or {ping: "latest"} = "here". On a floor or table top it stands on it; the ping follows the object it landed on',
+									properties: { ping: { type: 'string' } }
+								},
+								align: { type: 'string', enum: ['surface'], description: 'with at: back it onto the pinged surface (its +Z along the surface normal, upright on a wall) — a painting on a wall' },
+								snap: { type: 'string', enum: ['floor'], description: 'stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground' },
+								face_user: { description: 'turn it (yaw only) so its +Z front faces a person: true = the person you act for, or a peer id / name from where_are_users' },
 								parentUuid: { type: 'string', description: 'uuid of an existing group to nest under — position/rotation/scale are then LOCAL to that group' },
 								physics: {
 									type: 'string',
@@ -1357,6 +1374,14 @@ export const AI_TOOLS = [
 								...LIGHT_SCHEMA,
 								...SHADOW_SCHEMA,
 								lookAt: { description: 'turn it so its local +Z (front) faces this: a world point [x,y,z] or another object\'s uuid (+Y stays up; lights use aim)' },
+								at: {
+									type: 'object',
+									description: 'build at a spot a person PINGED (Ctrl+Alt+click, the menu\'s Ping, a long-press menu, the VR stick click): {ping: id} from where_are_users {pings: true}, or {ping: "latest"} = "here". On a floor or table top it stands on it; the ping follows the object it landed on',
+									properties: { ping: { type: 'string' } }
+								},
+								align: { type: 'string', enum: ['surface'], description: 'with at: back it onto the pinged surface (its +Z along the surface normal, upright on a wall) — a painting on a wall' },
+								snap: { type: 'string', enum: ['floor'], description: 'stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground' },
+								face_user: { description: 'turn it (yaw only) so its +Z front faces a person: true = the person you act for, or a peer id / name from where_are_users' },
 								visible: { type: 'boolean' },
 								parentUuid: {
 									type: 'string',

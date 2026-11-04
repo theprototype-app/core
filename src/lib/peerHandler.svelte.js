@@ -1685,7 +1685,7 @@ export class PeerConnection {
 					} else if(data.type == 'flowcursor') {
 					applyFlowCursor(data);
 				} else if(data.type == 'ping') {
-					applyPing(data);
+					applyPing(data, conn.peer); // 85b S2: the sender is the connection
 				} else if(data.type == 'assetfile') {
 					// shared Explorer bytes (97) — dedup by content hash
 					applyAssetFile(data, conn.peer);

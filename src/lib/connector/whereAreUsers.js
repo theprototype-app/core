@@ -8,6 +8,7 @@ import { get } from 'svelte/store';
 import { peers, userdata } from '../../stores/appStore.js';
 import { objectsGroup, globalCamera, globalRenderer } from '../../stores/sceneStore.js';
 import { localFeet } from '$lib/avatars/avatarState.js';
+import { recentPings, pingWorld } from '$lib/pingLog.js';
 
 /** a parked avatar (no live pose yet) sits this high */
 export const NO_POSE_Y = 999;
@@ -57,9 +58,30 @@ function nameOf(id) {
 }
 
 /**
- * @returns {{users: any[]} | {error: string}}
+ * 85b S2: one ping as an agent reads it, in the build frame (it follows the object it landed on).
+ * @param {import('$lib/pingCore.js').PingRecord} rec @param {any} group @param {number} now
  */
-export function whereAreUsers() {
+export function describePing(rec, group, now) {
+	const w = pingWorld(rec);
+	const inv = new THREE.Matrix4().copy(group.matrixWorld).invert();
+	const p = group.worldToLocal(w.point.clone());
+	const n = w.normal.clone().transformDirection(inv);
+	return {
+		id: rec.id,
+		by: rec.peer,
+		...(rec.name ? { name: rec.name } : {}),
+		secondsAgo: Math.round((now - rec.time) / 100) / 10,
+		position: p.toArray().map(r2),
+		normal: n.toArray().map(r2),
+		...(w.on ? { on: { uuid: w.on.uuid, name: w.on.name || '' } } : rec.on ? { note: 'the object it was on is gone' } : {})
+	};
+}
+
+/**
+ * @param {{pings?: boolean}} [args] roadmap 85 S2: `pings: true` adds the recent pings (newest first)
+ * @returns {{users: any[], pings?: any[]} | {error: string}}
+ */
+export function whereAreUsers(args) {
 	const group = /** @type {any} */ (get(objectsGroup));
 	if (!group) return { error: 'The 3D view is not ready yet.' };
 	let root = group;
@@ -73,6 +95,7 @@ export function whereAreUsers() {
 
 	const link = /** @type {any} */ (get(peers));
 	const me = link?.peer?.id ?? null;
+	/** @type {any[]} */
 	const users = [];
 	const renderer = /** @type {any} */ (get(globalRenderer));
 	const inVR = !!renderer?.xr?.isPresenting;
@@ -93,5 +116,43 @@ export function whereAreUsers() {
 		const pose = w[13] >= NO_POSE_Y ? { note: 'no live pose yet' } : describePose(local(m.matrixWorld), floorAt(m.userData?.feet ?? null, w));
 		users.push({ id, name: nameOf(id), ...pose, ...(m.userData?.knocked ? { idle: true } : {}) });
 	}
-	return { users };
+	// 85b S2: everybody's latest ping on their own row; the whole recent list when asked
+	const now = Date.now();
+	const log = recentPings()
+		.slice()
+		.sort((a, b) => b.time - a.time);
+	for (const u of users) {
+		const rec = log.find((p) => p.peer === u.id);
+		if (rec) u.latestPing = describePing(rec, group, now);
+	}
+	return args?.pings ? { users, pings: log.map((rec) => describePing(rec, group, now)) } : { users };
+}
+
+/**
+ * 85b S4: one person's WORLD eye position — `me` (this tab: its camera, the headset in VR), or a peer by id or
+ * by name (case-insensitive). Null when that person has no live pose.
+ * @param {string} who 'me' | a peer id | a name @returns {{id: string | null, position: THREE.Vector3} | null}
+ */
+export function personWorldPosition(who) {
+	const link = /** @type {any} */ (get(peers));
+	const me = link?.peer?.id ?? null;
+	if (who === 'me' || (me && who === me)) {
+		const renderer = /** @type {any} */ (get(globalRenderer));
+		const cam = renderer?.xr?.isPresenting ? renderer.xr.getCamera?.() : get(globalCamera);
+		if (!cam) return null;
+		cam.updateWorldMatrix?.(true, false);
+		return { id: me, position: new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld) };
+	}
+	const group = /** @type {any} */ (get(objectsGroup));
+	if (!group) return null;
+	let root = group;
+	while (root.parent) root = root.parent;
+	const ids = link?.openedPeers ? [...link.openedPeers].map(String) : [];
+	const want = String(who).toLowerCase();
+	const id = ids.find((p) => p === who) ?? ids.find((p) => nameOf(p).toLowerCase() === want);
+	const m = id ? root.getObjectByName(id) : null;
+	if (!m) return null;
+	m.updateWorldMatrix(true, false);
+	const position = new THREE.Vector3().setFromMatrixPosition(m.matrixWorld);
+	return position.y >= NO_POSE_Y ? null : { id: id ?? null, position };
 }

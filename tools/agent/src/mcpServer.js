@@ -224,7 +224,8 @@ export function createBridgeServer(opts) {
 				if (!engineReady()) return textResult({ error: 'the agent page is not up yet (' + engine.state + ')' }, true);
 				const { view, uuid, uuids, from, camera, aspect, zoom, margin, size } = a;
 				const postEffects = a.postEffects === true ? true : undefined;
-				const shot = await engine.screenshot({ view, uuid, uuids, from, camera, aspect, zoom, margin, size, ...(postEffects ? { postEffects } : {}) });
+				const extra = { ...(a.hud === true ? { hud: true } : {}), ...(typeof a.avatars === 'boolean' ? { avatars: a.avatars } : {}) };
+				const shot = await engine.screenshot({ view, uuid, uuids, from, camera, aspect, zoom, margin, size, ...(postEffects ? { postEffects } : {}), ...extra });
 				/** @type {any[]} */
 				const content = [{ type: 'image', data: shot.data, mimeType: shot.mimeType || 'image/png' }];
 				if (shot.note) content.push({ type: 'text', text: shot.note });

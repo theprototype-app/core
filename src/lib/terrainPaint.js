@@ -297,6 +297,26 @@ export function setSplatResolution(uuid, res) {
 	return true;
 }
 
+/**
+ * mcp-diorama2 (22): replace a terrain's whole paint map (an agent's paint-by-height): apply, ONE undo entry, ONE
+ * message — setSplatResolution's path with the bytes given. @param {string} uuid @param {Uint8Array} bytes
+ * @param {number} [res]
+ */
+export function setTerrainSplat(uuid, bytes, res = SPLAT_RES) {
+	const object = objectOf(uuid);
+	if (!object?.userData?.terrain || !SPLAT_RES_CHOICES.includes(res) || bytes?.length !== res * res * 4) return false;
+	if (!canEditObject(object)) {
+		warnViewerReadOnly();
+		return false;
+	}
+	const s = liveSplat(object);
+	const before = s ? { bytes: s.bytes.slice(), res: s.res } : { bytes: null, res: SPLAT_RES };
+	applyTerrainSplat(uuid, bytes, res);
+	sendSplat(uuid, bytes, res);
+	recordEntry({ kind: 'terrainSplat', uuid, before, after: { bytes: bytes.slice(), res } });
+	return true;
+}
+
 /** The splat resolution a terrain paints at (its map's, else the default). @param {string} uuid */
 export function splatResolutionOf(uuid) {
 	return liveSplat(objectOf(uuid))?.res ?? SPLAT_RES;

@@ -93,6 +93,34 @@ export function floorUnder(object, group) {
 	return { y: top.point.y, on };
 }
 
+/** mcp-diorama2 (25): the local axis a model's FRONT is along (glTF says +Z, but many models face +X or -Z) */
+export const FRONT_AXES = Object.freeze(['+z', '-z', '+x', '-x', '+y', '-y']);
+
+/**
+ * `front` → its local unit vector; undefined = +Z (three's lookAt convention). Null for anything else. No guessing
+ * from the model (owner trim): the agent says which way it faces.
+ * @param {any} front @returns {THREE.Vector3 | null}
+ */
+export function frontVector(front) {
+	if (front === undefined || front === null) return new THREE.Vector3(0, 0, 1);
+	const f = String(front).trim().toLowerCase();
+	const k = FRONT_AXES.indexOf(f.length === 1 ? '+' + f : f);
+	if (k < 0) return null;
+	const v = new THREE.Vector3();
+	v[/** @type {'x' | 'y' | 'z'} */ (FRONT_AXES[k][1])] = FRONT_AXES[k][0] === '-' ? -1 : 1;
+	return v;
+}
+
+/**
+ * Turn `object` (in place, no apply) so its local `axis` points at the world `point`, +Y kept up as far as the axis
+ * allows: three's lookAt (which aims +Z), then the fixed turn that brings `axis` onto +Z.
+ * @param {any} object @param {THREE.Vector3} point @param {THREE.Vector3} axis a FRONT_AXES unit vector
+ */
+export function aimFront(object, point, axis) {
+	object.lookAt(point);
+	if (axis.z !== 1) object.quaternion.multiply(new THREE.Quaternion().setFromUnitVectors(axis, new THREE.Vector3(0, 0, 1)));
+}
+
 /**
  * Work out the placement and hand the ONE transform to `apply` (tools.js applyAiTransform).
  * @param {any} object @param {any} spec @param {(object: any, t: {position: number[], rotation: number[]}) => void} apply
@@ -181,8 +209,11 @@ export function placeObject(object, spec, apply) {
 	}
 
 	// S4: turn to face a person (yaw only)
+	const front = frontVector(spec.front);
 	if (spec.face_user !== undefined && spec.face_user !== false) {
 		if (surface && normal && Math.abs(normal.y) < 0.7) warnings.push('face_user: skipped — the object is backed onto a wall');
+		else if (!front) warnings.push('face_user: front must be one of ' + FRONT_AXES.join(', '));
+		else if (front.y !== 0) warnings.push('face_user: turns about the vertical only, so its front must be +x, -x, +z or -z');
 		else {
 			const who = spec.face_user === true ? defaultPerson() : String(spec.face_user);
 			const person = who ? personWorldPosition(who) : null;
@@ -192,7 +223,8 @@ export function placeObject(object, spec, apply) {
 				if (Math.hypot(d.x, d.z) < 1e-4) warnings.push('face_user: the object is where that person stands');
 				else {
 					const e = new THREE.Euler().setFromQuaternion(object.getWorldQuaternion(new THREE.Quaternion()), 'YXZ');
-					e.y = Math.atan2(d.x, d.z);
+					// the yaw that swings the given front (not always +Z) round to the person
+					e.y = Math.atan2(d.x, d.z) - Math.atan2(front.x, front.z);
 					setWorld(object, undefined, new THREE.Quaternion().setFromEuler(e));
 					placed.facing = person.id ?? who;
 					moved = true;

@@ -31,7 +31,11 @@
 - A particle effect placed on its own (fireflies, rain) no longer shows a **ball** where it comes from. <!-- mcp-diorama2 21 -->
 - An agent can light the scene with a **Poly Haven sky** it found in search (it lands in your library first), or **send its own HDR sky**. <!-- mcp-diorama2 16 -->
 - Agents find the **sounds in the sound packs** (a fire crackle, wind, rain) and use them straight away; they are copied into your library the first time. An agent can also **send its own sound or music** to the library, so a site that blocks downloads no longer matters. <!-- mcp-diorama2 24 -->
-- For developers: `tpAgent` contract 1.8.0 (`edit_shape {action: "duplicate"}`, `create_shape {action: "import"}`, `set_look {quality}`, screenshot `postEffects`, `sceneBudget.top` / `vsync`, scatter `source` / `avoid`, `assets {action: "upload"}` = `upload_asset`, `set_look sky {hdri: "cc0:polyhaven/<id>"}`, pack sound ids `pack:<name>/<file>`); no new connector tool names. <!-- mcp-diorama2 -->
+- **Terrain does what an agent asks**: "6 m high" is the highest peak, island edges sink into the water, colour layers show straight away, and the layers can be painted by height for you (sand low, rock and snow on top). <!-- mcp-diorama2 22 -->
+- **Scatter keeps a circle clear** round a spot or an object (the campfire, the tent door), and several kinds of plant or rock in one call make one set with the name the agent gives it. <!-- mcp-diorama2 23 -->
+- An agent can say **which way a model faces** (`front: "+x"`), so a fox placed "facing you" or "looking at the fire" turns its nose, not its side. <!-- mcp-diorama2 25 -->
+- An agent's **screenshot leaves the people out** (a clean picture of the scene), can **show the game HUD** on top, and can **look through one of your scene cameras**. <!-- mcp-diorama2 26 -->
+- For developers: `tpAgent` contract 1.8.0 (`edit_shape {action: "duplicate"}`, `create_shape {action: "import"}`, `set_look {quality}`, screenshot `postEffects`, `sceneBudget.top` / `vsync`, scatter `source` / `avoid`, `assets {action: "upload"}` = `upload_asset`, `set_look sky {hdri: "cc0:polyhaven/<id>"}`, pack sound ids `pack:<name>/<file>`, terrain `paintBy` / `peak`, scatter `id` + avoid circles, `front` on lookAt / face_user, screenshot `view: "camera"` / `hud` / `avatars`); no new connector tool names. <!-- mcp-diorama2 -->
 
 ## 1.60.0 — An agent builds the game around your scene 🎮
 

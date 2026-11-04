@@ -147,3 +147,78 @@ describe('21 particles with no object: the emitter draws nothing', () => {
 		expect(find(rain.created[0].uuid).position.y).toBeGreaterThan(0);
 	});
 });
+
+const { terrainGeometry } = await import('../../src/lib/customGeometries.js');
+describe('22 terrain: height is the peak, island edges, layers that show, paint by height', () => {
+	function terrainAt() {
+		const m = new THREE.Mesh(terrainGeometry({ size: 24, segments: 24, amplitude: 0 }), new THREE.MeshStandardMaterial());
+		m.name = 'Terrain';
+		m.userData.terrain = true;
+		group.add(m);
+		stampGeometryParams(m);
+		return m;
+	}
+	const maxY = (m) => {
+		let top = -Infinity;
+		const a = m.geometry.attributes.position.array;
+		for (let i = 1; i < a.length; i += 3) top = Math.max(top, a[i]);
+		return top;
+	};
+
+	it('heightSplat (pure): every texel sums to 255; low ground is layer 0, the top is the last layer', () => {
+		const g = terrainGeometry({ size: 10, segments: 8, amplitude: 0 });
+		const a = g.attributes.position.array;
+		for (let i = 0; i < a.length; i += 3) a[i + 1] = a[i] + 5; // a ramp rising along +x
+		const bytes = core.heightSplat(a, { minX: -5, minZ: -5, sizeX: 10, sizeZ: 10 }, 16, 3);
+		for (let o = 0; o < bytes.length; o += 4) expect(bytes[o] + bytes[o + 1] + bytes[o + 2] + bytes[o + 3]).toBe(255);
+		expect(bytes[(8 * 16 + 0) * 4]).toBe(255); // the low (west) edge: all layer 0
+		expect(bytes[(8 * 16 + 15) * 4 + 2]).toBe(255); // the high (east) edge: all layer 2
+		expect(bytes[(8 * 16 + 15) * 4 + 3]).toBe(0); // layer 3 was not asked for
+	});
+
+	it('height: 6 with island edges peaks at 6 m and sinks the rim; the answer says the peak', async () => {
+		const t = terrainAt();
+		const r = await worldTool('terrain', { uuid: t.uuid, height: 6, edges: 'island', seed: 3 }, createBase);
+		expect(r.updated?.[0]?.ok, JSON.stringify(r)).toBe(true);
+		expect(r.updated[0].peak).toBeCloseTo(6, 1);
+		expect(maxY(t)).toBeCloseTo(6, 1);
+		const a = t.geometry.attributes.position.array;
+		expect(Math.abs(a[1])).toBeLessThan(1e-6); // a corner of an island is at 0
+	});
+
+	it('layers on an unpainted terrain get a paint map so they show; paintBy height writes one by height', async () => {
+		const t = terrainAt();
+		await worldTool('terrain', { uuid: t.uuid, height: 4 }, createBase);
+		expect(t.userData.terrainSplat).toBeFalsy();
+		await worldTool('terrain', { uuid: t.uuid, layers: [{ color: '#c2b280' }] }, createBase);
+		expect(t.userData.terrainSplat).toBeTruthy();
+		const r = await worldTool('terrain', { uuid: t.uuid, layers: [{ color: '#c2b280' }, { color: '#3a7d2c' }, { color: '#888888' }], paintBy: 'height' }, createBase);
+		expect(r.updated[0].paintedBy).toMatch(/height/);
+		expect((await worldTool('terrain', { uuid: t.uuid, paintBy: 'slope' }, createBase)).error).toMatch(/paintBy/);
+	});
+});
+
+describe('23 scatter: rules.avoid circles round a spot or an object, one named set for every asset', () => {
+	function floorMesh() {
+		const g = new THREE.PlaneGeometry(20, 20, 10, 10);
+		g.rotateX(-Math.PI / 2);
+		const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial());
+		m.name = 'Floor';
+		group.add(m);
+		return m;
+	}
+	it('rules.avoid [{position, radius}, {uuid, radius}] land as circles in the set; three assets make one set with the given id', async () => {
+		const f = floorMesh();
+		const hut = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial());
+		hut.position.set(4, 0, 4);
+		group.add(hut);
+		const r = await worldTool('scatter', { surface: f.uuid, assets: ['Cone', 'Sphere', 'Box'], count: 50, seed: 2, id: 'meadow', rules: { slope: [0, 30], avoid: [{ position: [-3, 0, 2], radius: 2 }, { uuid: hut.uuid, radius: 3 }] } });
+		expect(r.updated?.[0], JSON.stringify(r)).toMatchObject({ ok: true, set: 'meadow', assets: 3 });
+		const set = f.userData.terrainScatter?.sets?.find((s) => s.id === 'meadow') ?? JSON.stringify(f.userData).match(/meadow/);
+		expect(set).toBeTruthy();
+		expect(JSON.stringify(f.userData)).toContain('[-3,2,2]');
+		expect(JSON.stringify(f.userData)).toContain('[4,4,3]');
+		expect((await worldTool('scatter', { surface: f.uuid, asset: 'Cone', avoid: [{ position: [0, 0, 0], radius: -1 }] })).error).toMatch(/radius/);
+		expect((await worldTool('scatter', { surface: f.uuid, asset: 'Cone', rules: { avoid: [{ position: [0, 0] }] } })).error).toMatch(/avoid/);
+	});
+});

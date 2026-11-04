@@ -4,7 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 
-const { scatterPlacements, avoidRects } = await import('../../src/lib/terrainSurface.js');
+const { scatterPlacements, avoidRects, avoidCircles } = await import('../../src/lib/terrainSurface.js');
 
 /** a flat 10 x 10 m floor mesh (its top at y = 0) */
 function floor() {
@@ -41,5 +41,17 @@ describe('diorama2 scatter avoid + placements', () => {
 		expect(avoidRects({ avoid: [[0, 0, 1, 1], [1, 'x', 2, 2], [3, 3, 2, 4]] })).toEqual([[0, 0, 1, 1]]);
 		expect(avoidRects(undefined)).toEqual([]);
 		expect(avoidRects({ avoid: Array.from({ length: 20 }, () => [0, 0, 1, 1]) }).length).toBe(16);
+	});
+
+	it('mcp-diorama2 23: nothing lands inside an avoid circle [x, z, radius]; rects and circles mix', () => {
+		const m = floor();
+		const all = spots(m, { seed: 4, gen: { density: 2, rot: true, scaleMin: 1, scaleMax: 1 } });
+		const kept = spots(m, { seed: 4, gen: { density: 2, rot: true, scaleMin: 1, scaleMax: 1, avoid: [[1, -1, 2], [-5, -5, -4, -4]] } });
+		const inCircle = (v) => (v.x - 1) ** 2 + (v.z + 1) ** 2 <= 4;
+		expect(all.some(inCircle)).toBe(true);
+		expect(kept.some(inCircle)).toBe(false);
+		expect(kept.length).toBeGreaterThan(0);
+		expect(avoidCircles({ avoid: [[1, 2, 3], [0, 0, 1, 1], [1, 1, 0], [1, 'x', 2]] })).toEqual([[1, 2, 3]]);
+		expect(avoidRects({ avoid: [[1, 2, 3], [0, 0, 1, 1]] })).toEqual([[0, 0, 1, 1]]);
 	});
 });

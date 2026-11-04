@@ -19,6 +19,7 @@
 import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { globalRenderer, globalScene, globalCamera, objectsGroup, TControls } from '../../stores/sceneStore';
+import { peers } from '../../stores/appStore';
 import { isEditorHelper } from '$lib/water/waterRuntime.js';
 import { planShot, viewPose, boundsOf, linearFrameToSrgb } from './screenshotCore.js';
 import { postState, renderWithPost } from './postShot.js';
@@ -78,8 +79,15 @@ function boxOf(object) {
 	return { min: box.min.toArray(), max: box.max.toArray() };
 }
 
-/** @param {any} scene @param {any} renderer */
-function hideHelpers(scene, renderer, keepGrid = false) {
+/** mcp-diorama2 (26): the people in a frame — the peers' avatars (Player.svelte's group), the character preview,
+ * an agent's camera marker, this tab's own rig — named roots OUTSIDE the scene's objects @param {string} self */
+function isPerson(/** @type {any} */ n, self) {
+	const name = String(n.name ?? '');
+	return name === 'peer-avatars' || name === 'avatar-preview' || name.startsWith('agent-marker-') || (!!self && name === self);
+}
+
+/** @param {any} scene @param {any} renderer @param {boolean} [keepGrid] @param {{people?: boolean, also?: any[]}} [more] */
+function hideHelpers(scene, renderer, keepGrid = false, more = {}) {
 	/** @type {any[]} */
 	const hidden = [];
 	const tc = /** @type {any} */ (get(TControls));
@@ -88,9 +96,22 @@ function hideHelpers(scene, renderer, keepGrid = false) {
 		gizmo.visible = false;
 		hidden.push(gizmo);
 	}
+	const objects = get(objectsGroup);
+	const self = more.people ? String(/** @type {any} */ (get(peers))?.peer?.id ?? '') : '';
+	for (const n of more.also ?? [])
+		if (n?.visible) {
+			n.visible = false;
+			hidden.push(n);
+		}
 	scene.traverse((/** @type {any} */ n) => {
 		if (!n.visible || n === scene) return;
 		if (keepGrid && n.name === 'editor-grid') return;
+		// people live outside the scene's objects; an object a user NAMED like a peer id is still scene
+		if (more.people && isPerson(n, self) && !isInside(n, objects)) {
+			n.visible = false;
+			hidden.push(n);
+			return;
+		}
 		if (isEditorHelper(n) || n.isTransformControlsRoot || n.isTransformControlsGizmo || n.isTransformControlsPlane) {
 			n.visible = false;
 			hidden.push(n);
@@ -100,6 +121,12 @@ function hideHelpers(scene, renderer, keepGrid = false) {
 	return () => {
 		for (const n of hidden) n.visible = true;
 	};
+}
+
+/** @param {any} n @param {any} root */
+function isInside(n, root) {
+	for (let p = n; p; p = p.parent) if (p === root) return true;
+	return false;
 }
 
 /**
@@ -117,17 +144,41 @@ export async function takeScreenshot(opts = {}) {
 	lastShot = null;
 	if (!renderer || !scene || renderer.xr?.isPresenting) return null;
 	const canvas = renderer.domElement;
-	const plan = planShot(opts, canvas?.width && canvas?.height ? canvas.width / canvas.height : 16 / 9);
+	const canvasAspect = canvas?.width && canvas?.height ? canvas.width / canvas.height : 16 / 9;
+	// mcp-diorama2 (26): view 'camera' looks through a scene camera — its framing aspect unless one is asked for
+	/** @type {any} */
+	let through = null;
+	if (String(opts.view ?? '').toLowerCase() === 'camera' && typeof opts.uuid === 'string') {
+		const co = await import('$lib/cameraObjects');
+		through = co.findCameraObject(opts.uuid);
+		if (!through) return refuse('view camera: ' + opts.uuid + ' is not a camera in the scene (list_scene shows the cameras)');
+		if (opts.aspect === undefined || opts.aspect === null) opts = { ...opts, aspect: co.aspectRatio(co.cameraSpec(through).aspect) || canvasAspect };
+	}
+	const plan = planShot(opts, canvasAspect);
 	if (plan.problem !== null) return refuse(plan.problem);
 	const { w, h, view } = plan;
 
-	const fov = Number(userCamera?.fov) || 50;
+	const spec = through ? (await import('$lib/cameraObjects')).cameraSpec(through) : null;
+	const fov = spec ? Number(spec.fov) || 50 : Number(userCamera?.fov) || 50;
 	const camera = new THREE.PerspectiveCamera(fov, w / h, 0.05, 2000);
 	/** @type {number[] | null} */
 	let aimedAt = null;
 	/** @type {{kind: string, uuids?: string[], names?: string[]}} */
 	let subject = { kind: 'none' };
-	if (plan.free) {
+	if (through) {
+		through.updateWorldMatrix(true, false);
+		const pos = new THREE.Vector3();
+		const quat = new THREE.Quaternion();
+		through.matrixWorld.decompose(pos, quat, new THREE.Vector3());
+		camera.position.copy(pos);
+		camera.quaternion.copy(quat);
+		camera.near = Math.max(0.01, Number(spec?.near) || 0.1);
+		camera.far = Math.max(camera.near + 1, Number(spec?.far) || 1000);
+		camera.zoom = plan.zoom;
+		const roll = Number(spec?.roll);
+		if (Number.isFinite(roll) && roll) camera.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), (-roll * Math.PI) / 180));
+		subject = { kind: 'camera', uuids: [through.uuid], names: [String(through.name ?? '')] };
+	} else if (plan.free) {
 		camera.position.fromArray(plan.free.position);
 		// a straight-up or straight-down look has no "up" of its own
 		const look = new THREE.Vector3().fromArray(plan.free.target).sub(camera.position).normalize();
@@ -173,7 +224,10 @@ export async function takeScreenshot(opts = {}) {
 		type: float ? THREE.FloatType : THREE.UnsignedByteType,
 		depthBuffer: true
 	});
-	const restore = hideHelpers(scene, renderer, !!opts.grid);
+	// mcp-diorama2 (26): a clean frame leaves the people out (avatars: true keeps them; 'current' keeps them unless
+	// avatars: false — it is what the person sees); looking through a camera, its own body is out of the frame too
+	const people = /** @type {any} */ (opts).avatars === true ? false : /** @type {any} */ (opts).avatars === false ? true : !plan.current;
+	const restore = hideHelpers(scene, renderer, !!opts.grid, { people, also: through ? [through] : [] });
 	const previous = renderer.getRenderTarget();
 	const autoClear = renderer.autoClear;
 	/** @type {Float32Array|Uint8Array} */
@@ -224,6 +278,21 @@ export async function takeScreenshot(opts = {}) {
 	ctx.imageSmoothingEnabled = true;
 	ctx.imageSmoothingQuality = 'high';
 	ctx.drawImage(big, 0, 0, w, h);
+	// mcp-diorama2 (26): the game HUD this tab shows, on top (DOM never reaches a readback)
+	/** @type {any} */
+	let hud = null;
+	if (/** @type {any} */ (opts).hud === true) {
+		try {
+			const { drawHudOver } = await import('./screenshotHud.js');
+			const { cameraPreview } = await import('$lib/cameraPreview');
+			const viewing = through?.uuid ?? (plan.current ? (/** @type {any} */ (get(cameraPreview))?.uuid ?? null) : null);
+			// laid out as on a window of the person's height at this picture's aspect (their own window for 'current')
+			const cssH = canvas?.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 0);
+			hud = drawHudOver(ctx, w, h, { through: viewing, windowW: cssH ? Math.round(cssH * (w / h)) : 0 });
+		} catch (e) {
+			hud = { error: String(/** @type {any} */ (e)?.message ?? e).slice(0, 80) };
+		}
+	}
 	lastShot = {
 		position: camera.position.toArray(),
 		target: aimedAt ?? camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(5).add(camera.position).toArray(),
@@ -234,6 +303,8 @@ export async function takeScreenshot(opts = {}) {
 		view,
 		subject,
 		...(post ?? {}),
+		avatars: !people,
+		...(hud ? { hud } : {}),
 		at: Date.now()
 	};
 	// 56 C8: a PERSON's "ask about this selection" picture is not where an agent looked

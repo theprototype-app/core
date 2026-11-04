@@ -32,6 +32,7 @@ import {
 	SOUND_TRIGGERS,
 	packSoundRows,
 	parsePackSoundId,
+	heightSplat,
 	placementPoints
 } from './worldToolsCore.js';
 import { PARTICLE_PRESETS, PARTICLE_DEFAULTS, particlePreset } from '$lib/particlePresets';
@@ -485,6 +486,7 @@ const TERRAIN_FIELDS = /** @type {Record<string, string>} */ ({ size: 'size', se
 
 /** @param {any} args @param {CreateBase} createBase */
 async function terrainTool(args, createBase) {
+	if (args.paintBy !== undefined && args.paintBy !== 'height') return { error: 'paintBy: "height" (layer 0 low, the last layer on the peaks)' };
 	/** @type {any} */
 	const params = {};
 	for (const [k, v] of Object.entries(args)) if (TERRAIN_FIELDS[k]) params[TERRAIN_FIELDS[k]] = v;
@@ -510,6 +512,33 @@ async function terrainTool(args, createBase) {
 		delete params.size;
 	}
 	const uuid = object.uuid;
+	// mcp-diorama2 (22): `height` is the PEAK in metres (the noise's raw scale is `amplitude`): the generator is
+	// deterministic, so one probe build at amplitude 1 with the same shape says how tall a unit is
+	/** @type {number | undefined} */
+	let peak;
+	if (args.height !== undefined && args.amplitude === undefined) {
+		if (typeof args.height !== 'number' || !(args.height >= 0) || args.height > 100) return { error: 'height: the highest peak in metres (0-100)', ...(made ? { created: [{ uuid, name: object.name }] } : {}) };
+		if (args.height === 0) params.amplitude = 0;
+		else {
+			const { geometryParamsOf } = await import('$lib/geometryEdit');
+			const { terrainGeometry } = await import('$lib/customGeometries');
+			const probe = terrainGeometry({ ...(geometryParamsOf(object) ?? {}), ...params, amplitude: 1 });
+			const ys = probe.attributes.position.array;
+			let unit = 0;
+			for (let i = 1; i < ys.length; i += 3) unit = Math.max(unit, ys[i]);
+			probe.dispose();
+			params.amplitude = unit > 1e-6 ? Math.round((args.height / unit) * 1000) / 1000 : args.height;
+			if (params.amplitude > 40) {
+				warnings.push('this shape cannot reach ' + args.height + ' m (the noise is capped): it peaks at ' + r3(unit * 40) + ' m — use fewer octaves, ridged, or raise ops');
+				params.amplitude = 40;
+			}
+			peak = r3(unit * params.amplitude);
+		}
+	}
+	if (args.edges !== undefined && params.amplitude === undefined) {
+		const { geometryParamsOf } = await import('$lib/geometryEdit');
+		if (!(Number(geometryParamsOf(object)?.amplitude) > 0)) warnings.push('edges shape the noise, and this terrain is flat: give height too');
+	}
 	// 1. the shape (the geometry message + history kind — set_geometry's path), BEFORE any sculpting
 	if (Object.keys(params).length) {
 		const { geometryTool } = await import('./geometryTools.js');
@@ -547,6 +576,9 @@ async function terrainTool(args, createBase) {
 			next.push(out);
 		}
 		tp.setTerrainLayers(uuid, next);
+		// mcp-diorama2 (22): layers draw only through a paint map, and an unpainted terrain has none — so a colour set
+		// here showed nothing. Give it the plain map (all layer 0) unless paintBy writes one below.
+		if (args.paintBy === undefined && !object.userData?.terrainSplat) tp.setSplatResolution(uuid, tp.splatResolutionOf(uuid));
 	}
 	// 3. sculpt + paint ops: the brush the Sculpt toolbar runs, then ONE meshgeo snapshot (+ one splat entry)
 	object.geometry?.computeBoundingBox?.();
@@ -580,7 +612,28 @@ async function terrainTool(args, createBase) {
 		}
 		pokeScene();
 	}
-	const row = { uuid, name: object.name, ...(sculpted ? { sculpted } : {}), ...(painted ? { painted } : {}), ...(warnings.length ? { warnings } : {}) };
+	// 4. mcp-diorama2 (22): paint by height, over the FINAL shape (after any sculpting)
+	let paintedBy;
+	if (args.paintBy === 'height') {
+		const tp = await import('$lib/terrainPaint');
+		const { terrainBounds } = await import('$lib/terrainSurface');
+		object.geometry.computeBoundingBox();
+		const b = terrainBounds(object);
+		const res = tp.splatResolutionOf(uuid);
+		const n = Array.isArray(args.layers) && args.layers.length >= 2 ? args.layers.length : 4;
+		if (b && tp.setTerrainSplat(uuid, heightSplat(object.geometry.attributes.position.array, b, res, n), res)) paintedBy = 'height (' + n + ' layers, low to high)';
+		pokeScene();
+	}
+	if (peak === undefined && args.height !== undefined && args.amplitude === undefined) peak = 0;
+	const row = {
+		uuid,
+		name: object.name,
+		...(peak !== undefined ? { peak } : {}),
+		...(sculpted ? { sculpted } : {}),
+		...(painted ? { painted } : {}),
+		...(paintedBy ? { paintedBy } : {}),
+		...(warnings.length ? { warnings } : {})
+	};
 	return made ? { created: [row] } : { updated: [{ ...row, ok: true }] };
 }
 
@@ -620,11 +673,39 @@ const SCATTER_COPIES_MAX = 200;
  */
 function avoidRectsOf(surface, list) {
 	if (list === undefined) return { rects: [] };
-	if (!Array.isArray(list) || list.length > 16) return { error: 'avoid: a list of up to 16 object uuids nothing is scattered on (a path, a portal, a house)' };
+	const SAY = 'avoid: up to 16 places nothing is scattered on — an object uuid (its footprint: a path, a portal, a house), {uuid, radius} (a circle round it) or {position: [x, y, z], radius} (metres)';
+	if (!Array.isArray(list) || list.length > 16) return { error: SAY };
 	surface.updateWorldMatrix(true, false);
+	const r6 = (/** @type {number} */ n) => Math.round(n * 1e4) / 1e4;
+	// metres → the surface's local units (a scaled terrain): the mean of its x and z world scale
+	const ws = new THREE.Vector3();
+	surface.getWorldScale(ws);
+	const unit = Math.max(1e-6, (Math.abs(ws.x) + Math.abs(ws.z)) / 2);
 	/** @type {number[][]} */
 	const rects = [];
-	for (const id of list) {
+	for (const entry of list) {
+		const isObj = entry && typeof entry === 'object' && !Array.isArray(entry);
+		// mcp-diorama2 (23): a circle — {uuid, radius} round an object, or {position, radius} round a spot
+		if (isObj && entry.radius !== undefined) {
+			if (typeof entry.radius !== 'number' || !(entry.radius > 0) || entry.radius > 1000) return { error: 'avoid: radius in metres (above 0)' };
+			/** @type {THREE.Vector3} */
+			let at;
+			if (entry.uuid !== undefined) {
+				const o = objectOf(String(entry.uuid));
+				if (!o) return { error: 'avoid: no object with the uuid ' + String(entry.uuid).slice(0, 40) };
+				o.updateWorldMatrix(true, false);
+				at = o.getWorldPosition(new THREE.Vector3());
+			} else {
+				const p = vec3(entry.position);
+				if (!p) return { error: SAY };
+				at = new THREE.Vector3(p[0], p[1], p[2]);
+			}
+			const local = surface.worldToLocal(at);
+			rects.push([r6(local.x), r6(local.z), r6(entry.radius / unit)]);
+			continue;
+		}
+		const id = isObj ? entry.uuid : entry;
+		if (id === undefined || (isObj && entry.position !== undefined)) return { error: SAY };
 		const o = objectOf(String(id));
 		if (!o) return { error: 'avoid: no object with the uuid ' + String(id).slice(0, 40) };
 		o.updateWorldMatrix(true, true);
@@ -635,7 +716,6 @@ function avoidRectsOf(surface, list) {
 			const p = surface.worldToLocal(new THREE.Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z));
 			minX = Math.min(minX, p.x), maxX = Math.max(maxX, p.x), minZ = Math.min(minZ, p.z), maxZ = Math.max(maxZ, p.z);
 		}
-		const r6 = (/** @type {number} */ n) => Math.round(n * 1e4) / 1e4;
 		rects.push([r6(minX), r6(minZ), r6(maxX), r6(maxZ)]);
 	}
 	return { rects };
@@ -699,8 +779,11 @@ async function scatterTool(args) {
 		return { updated: [{ uuid: object.uuid, ok: true, removed: args.remove }] };
 	}
 	// mcp-diorama2: avoid = objects nothing lands on or in (their footprint on the surface)
-	const avoid = avoidRectsOf(object, args.avoid);
+	// mcp-diorama2 (23): avoid may sit in rules too (rules.avoid), and both lists add up
+	const avoidArg = args.rules?.avoid !== undefined && args.avoid !== undefined ? [...[args.avoid].flat(), ...[args.rules.avoid].flat()] : args.avoid ?? args.rules?.avoid;
+	const avoid = avoidRectsOf(object, avoidArg);
 	if ('error' in avoid) return avoid;
+	if (args.id !== undefined && (typeof args.id !== 'string' || !/^[\w .-]{1,34}$/.test(args.id))) return { error: 'id: a name for the set (letters, digits, space . _ -, up to 34)' };
 	// mcp-diorama2: source = an object in the scene, copied (real objects you can edit) to the scatter's spots
 	if (args.source !== undefined) return scatterCopies(object, args, avoid.rects);
 	const list = args.assets ?? (args.asset !== undefined ? [args.asset] : null);
@@ -715,10 +798,12 @@ async function scatterTool(args) {
 	const made = scatterSetOf(args, sources);
 	if ('error' in made) return made;
 	if (avoid.rects.length) made.set.gen = { ...made.set.gen, avoid: avoid.rects };
+	// mcp-diorama2 (23): every asset of one call is ONE set (a weighted mix), under the id you name if you name one
+	if (args.id !== undefined) made.set.id = args.id;
 	const id = tp.addScatterSet(object.uuid, made.set);
 	if (!id) return { error: 'the scatter set was refused (a surface holds up to 8 sets; it must be a terrain or a mesh)' };
 	const instances = tp.scatterInstancesOf(object.uuid, id);
-	return { updated: [{ uuid: object.uuid, ok: true, set: id, instances: Array.isArray(instances) ? instances.length : undefined }] };
+	return { updated: [{ uuid: object.uuid, ok: true, set: id, assets: sources.length, instances: Array.isArray(instances) ? instances.length : undefined }] };
 }
 
 // ---------------------------------------------------------------- W4 water
@@ -1159,7 +1244,7 @@ export const WORLD_AI_TOOLS = [
 		function: {
 			name: 'scatter',
 			description:
-				'Scatter many instances over a terrain or any mesh (a forest on hills, rocks on a beach, flowers on a slope): asset = a primitive (Box, Sphere, Cone, Cylinder, Capsule, Dodecahedron) or a model id from search_assets, or assets = up to 8 mixed evenly. density per m² (or count), scale range, rules {slope: [min°, max°], height: [min, max] m, layer: {i, min}} keep them where they belong. Cheap instancing, seeded (the same on every peer; seed picks another layout). avoid = up to 16 object uuids nothing lands on (a path, a house, a portal). source = the uuid of an object you built: up to 200 REAL copies of it (editable, with its children, materials and behaviour) instead of instances — for one or a few copies in a row or mirrored, use duplicate. Returns the set id (or the copies\' uuids); remove: <set id> deletes a set. One undo step.',
+				'Scatter many instances over a terrain or any mesh (a forest on hills, rocks on a beach, flowers on a slope): asset = a primitive (Box, Sphere, Cone, Cylinder, Capsule, Dodecahedron) or a model id from search_assets, or assets = up to 8 mixed evenly. density per m² (or count), scale range, rules {slope: [min°, max°], height: [min, max] m, layer: {i, min}} keep them where they belong. Cheap instancing, seeded (the same on every peer; seed picks another layout). avoid (or rules.avoid) = up to 16 places nothing lands on: an object uuid (its footprint: a path, a house, a portal), {uuid, radius} or {position, radius} (a clear circle, metres). All the assets of one call make ONE set (id names it). source = the uuid of an object you built: up to 200 REAL copies of it (editable, with its children, materials and behaviour) instead of instances — for one or a few copies in a row or mirrored, use duplicate. Returns the set id (or the copies\' uuids); remove: <set id> deletes a set. One undo step.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1171,10 +1256,11 @@ export const WORLD_AI_TOOLS = [
 					scale: { description: '[min, max] size factors (default [0.8, 1.2]) or one number' },
 					spacing: { type: 'number', description: 'minimum metres between instances' },
 					randomRotation: { type: 'boolean', description: 'default true' },
-					rules: { type: 'object', description: '{slope: [0, 25] degrees from flat, height: [min, max] metres, layer: {i: paint layer 0-3, min: 0-1}}' },
+					rules: { type: 'object', description: '{slope: [0, 25] degrees from flat, height: [min, max] metres, layer: {i: paint layer 0-3, min: 0-1}, avoid: the same list as avoid}' },
 					seed: { type: 'integer', description: 'the same seed puts them in the same spots; another seed, another layout' },
 					source: { type: 'string', description: 'the uuid of an object in the scene: scatter real copies of it (max 200) instead of asset' },
-					avoid: { type: 'array', items: { type: 'string' }, maxItems: 16, description: 'uuids of objects to keep clear: nothing lands on their footprint' },
+					avoid: { type: 'array', maxItems: 16, items: { anyOf: [{ type: 'string' }, { type: 'object', properties: { uuid: { type: 'string' }, position: V3, radius: { type: 'number' } } }] }, description: 'places to keep clear: an object uuid (its footprint), {uuid, radius} or {position, radius} (a circle, metres)' },
+					id: { type: 'string', description: 'a name for the set (default from the first asset); remove takes it' },
 					tint: { type: 'number', description: '0-1 colour variation' },
 					sink: { type: 'number', description: 'metres pushed into the ground' },
 					collider: { type: 'string', enum: ['none', 'box', 'sphere', 'hull'], description: 'physics for the instances (default none)' },
@@ -1189,7 +1275,7 @@ export const WORLD_AI_TOOLS = [
 		function: {
 			name: 'terrain',
 			description:
-				'Make or change a terrain. Without uuid it makes one (size metres, at position); with uuid it changes that one. Shape by noise: height (metres), detail (0.005-0.6), octaves, ridged, warp, edges (flat|island|bowl), seed. Sculpt with ops [{op: raise|lower|smooth|flatten, at: [x, z] from the terrain\'s centre, radius, strength 0-1, height (metres, raise/lower), passes}] and paint with {op: "paint", at, radius, layer 0-3, strength}. layers: up to 4 {color, texture (a library hash or a pattern name like grass, sand, stone), tiling}. One undo step.',
+				'Make or change a terrain. Without uuid it makes one (size metres, at position); with uuid it changes that one. Shape by noise: height (the highest peak, metres — the answer says the peak it got), detail (0.005-0.6), octaves, ridged, warp, edges (flat|island|bowl: island sinks the rim to 0 so it rises out of water; bowl raises the rim), seed; amplitude is the raw noise scale if you want it. Sculpt with ops [{op: raise|lower|smooth|flatten, at: [x, z] from the terrain\'s centre, radius, strength 0-1, height (metres, raise/lower), passes}] and paint with {op: "paint", at, radius, layer 0-3, strength}. layers: up to 4 {color, texture (a library hash or a pattern name like grass, sand, stone), tiling} — layer 0 covers the ground until you paint the others; paintBy: "height" paints them for you, layer 0 in the low ground up to the last on the peaks. One undo step.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1197,7 +1283,9 @@ export const WORLD_AI_TOOLS = [
 					name: { type: 'string' },
 					position: V3,
 					size: { type: 'number', minimum: 1, maximum: 200 },
-					height: { type: 'number', minimum: 0, maximum: 40 },
+					height: { type: 'number', minimum: 0, maximum: 100, description: 'the highest peak, metres' },
+					amplitude: { type: 'number', minimum: 0, maximum: 40, description: 'the raw noise scale (height sets it for you)' },
+					paintBy: { type: 'string', enum: ['height'], description: 'paint the layers by height: layer 0 low, the last layer on the peaks' },
 					detail: { type: 'number' },
 					octaves: { type: 'integer', minimum: 1, maximum: 6 },
 					ridged: { type: 'boolean' },

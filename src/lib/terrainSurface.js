@@ -741,8 +741,12 @@ function terrainAccept(object, set, b) {
 function setInstances(object, set, b, room = MAX_INSTANCES) {
 	// mcp-diorama2: `gen.avoid` = host-local [minX, minZ, maxX, maxZ] rectangles nothing is placed in (a path, the
 	// portal) — data in the set, so every peer leaves the same holes
-	const avoid = avoidRects(set.gen);
-	const clear = (/** @type {number} */ x, /** @type {number} */ z) => !avoid.some((r) => x >= r[0] && x <= r[2] && z >= r[1] && z <= r[3]);
+	const rects = avoidRects(set.gen);
+	// mcp-diorama2 (23): and [x, z, radius] circles (a radius round a spot or an object)
+	const circles = avoidCircles(set.gen);
+	const avoid = [...rects, ...circles];
+	const clear = (/** @type {number} */ x, /** @type {number} */ z) =>
+		!rects.some((r) => x >= r[0] && x <= r[2] && z >= r[1] && z <= r[3]) && !circles.some((c) => (x - c[0]) ** 2 + (z - c[1]) ** 2 <= c[2] * c[2]);
 	if (set.host === 'mesh') {
 		const S = set.gen ? surfaceOf(object) : null;
 		// a mesh's paint layer is not a thing (no splat map): a layer mask rejects everything there
@@ -759,6 +763,13 @@ function setInstances(object, set, b, room = MAX_INSTANCES) {
 export function avoidRects(gen) {
 	const list = Array.isArray(gen?.avoid) ? gen.avoid.slice(0, 16) : [];
 	return list.filter((/** @type {any} */ r) => Array.isArray(r) && r.length === 4 && r.every((n) => typeof n === 'number' && Number.isFinite(n)) && r[0] <= r[2] && r[1] <= r[3]);
+}
+
+/** mcp-diorama2 (23): the avoid CIRCLES [x, z, radius] in the same list (a rectangle has four numbers, a circle three)
+ * @param {any} gen @returns {number[][]} */
+export function avoidCircles(gen) {
+	const list = Array.isArray(gen?.avoid) ? gen.avoid.slice(0, 16) : [];
+	return list.filter((/** @type {any} */ c) => Array.isArray(c) && c.length === 3 && c.every((n) => typeof n === 'number' && Number.isFinite(n)) && c[2] > 0);
 }
 
 /**

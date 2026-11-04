@@ -5,7 +5,7 @@ import { objectsGroup, lockedObjects, pokeScene } from '../../stores/sceneStore.
 import { peers } from '../../stores/appStore.js';
 import { lockSkip } from './lockNote.js';
 import { sceneFilter, cursorOffset, cursorAt, PAGE_MAX } from './sceneFilter.js';
-import { placeObject, comfortRefusal, withBodyUnits } from './placement.js';
+import { placeObject, comfortRefusal, withBodyUnits, frontVector, FRONT_AXES, aimFront } from './placement.js';
 import { ASSIST_TOOL_NAMES, ASSIST_AI_TOOLS, ASSIST_PROMPT, assistTool } from './assistTools.js';
 import { aboutOriginPosition, originOf } from '$lib/objectOrigin';
 import { geometrySpec } from '$lib/geometryParams';
@@ -526,10 +526,14 @@ async function applyAiMaterialParams(uuid, params) {
 /**
  * mcp-shapes: turn an object so its local +Z axis (its front) points at a world point or at another object, +Y kept
  * up — three's lookAt, through the transform path (one move, one undo entry; an object with a pivot turns about it).
- * @param {any} object @param {any} target [x, y, z] world, or a uuid @returns {string | null} the error
+ * @param {any} object @param {any} target [x, y, z] world, or a uuid @param {any} [front] the local front axis (default +z)
+ * @returns {string | null} the error
  */
-function lookAtTarget(object, target) {
+function lookAtTarget(object, target, front) {
 	if (object.isLight) return 'lookAt: a light turns with aim: [x, y, z]';
+	// mcp-diorama2 (25): which local axis is the front (default +Z); the turn lands that axis on the target
+	const axis = frontVector(front);
+	if (!axis) return 'front: one of ' + FRONT_AXES.join(', ') + ' (the local axis the model faces along)';
 	const root = get(objectsGroup);
 	root?.updateMatrixWorld(true);
 	/** @type {THREE.Vector3} */
@@ -543,7 +547,7 @@ function lookAtTarget(object, target) {
 	else return "lookAt: a world point [x, y, z] or another object's uuid";
 	if (object.getWorldPosition(new THREE.Vector3()).distanceTo(point) < 1e-6) return 'lookAt: the target is where the object is';
 	const was = object.quaternion.clone();
-	object.lookAt(point);
+	aimFront(object, point, axis);
 	const rotation = [object.rotation.x, object.rotation.y, object.rotation.z];
 	object.quaternion.copy(was);
 	applyAiTransform(object, { rotation });
@@ -659,7 +663,7 @@ function createOne(spec, extraTypes = /** @type {string[]} */ ([])) {
 	if (!created.isLight) warnings.push(...applyShadowFlags(created, spec));
 	else if (spec.receiveShadow !== undefined) warnings.push('receiveShadow: a light casts shadows, nothing falls on it');
 	if (spec.lookAt !== undefined) {
-		const why = lookAtTarget(created, spec.lookAt);
+		const why = lookAtTarget(created, spec.lookAt, spec.front);
 		if (why) warnings.push(why);
 	}
 	// 85b S2-S4: at a ping / backed onto its surface / standing on the floor / facing a person
@@ -753,7 +757,7 @@ async function updateOne(spec) {
 	if (typeof spec.visible === 'boolean' && object.visible !== spec.visible) toggleObjectVisibility(uuid);
 	// mcp-shapes: after the move, so a new position is where it looks from
 	if (spec.lookAt !== undefined) {
-		const why = lookAtTarget(object, spec.lookAt);
+		const why = lookAtTarget(object, spec.lookAt, spec.front);
 		if (why) errors.push(why);
 	}
 	// 85b S2-S4: after the move, so at / snap / face_user see where it is now
@@ -1408,7 +1412,7 @@ export const AI_TOOLS = [
 								color: { type: 'string', description: 'hex like #ff8800 (a mesh, or a light\'s colour)' },
 								...LIGHT_SCHEMA,
 								...SHADOW_SCHEMA,
-								lookAt: { description: 'turn it so its local +Z (front) faces this: a world point [x,y,z] or another object\'s uuid (+Y stays up; lights use aim)' },
+								lookAt: { description: 'turn it so its front (local +Z, or the front you give) faces this: a world point [x,y,z] or another object\'s uuid (+Y stays up; lights use aim)' },
 								at: {
 									type: 'object',
 									description: 'build at a spot a person PINGED (Ctrl+Alt+click, the menu\'s Ping, a long-press menu, the VR stick click): {ping: id} from where_are_users {pings: true}, or {ping: "latest"} = "here"; on a floor or table top it stands on it, and the ping follows the object it landed on. Or around a PERSON as they are now: {user: "me" | peer id | name, ahead: 1.5, right: 0, up: 0} (metres or body units; it faces them; call again to follow them as they walk). Sizes, positions and these offsets also take BODY UNITS: "eye", "height", "shoulder", "hip", "knee", "reach", "room", with a factor ("0.5 reach") — that person\'s, from where_are_users body',
@@ -1422,7 +1426,8 @@ export const AI_TOOLS = [
 								},
 								align: { type: 'string', enum: ['surface'], description: 'with at: back it onto the pinged surface (its +Z along the surface normal, upright on a wall) — a painting on a wall' },
 								snap: { type: 'string', enum: ['floor'], description: 'stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground' },
-								face_user: { description: 'turn it (yaw only) so its +Z front faces a person: true = the person you act for, or a peer id / name from where_are_users' },
+								face_user: { description: 'turn it (yaw only) so its front faces a person: true = the person you act for, or a peer id / name from where_are_users' },
+								front: { type: 'string', enum: ['+z', '-z', '+x', '-x', '+y', '-y'], description: 'which local axis is its front for lookAt and face_user (default +z; many models face +x or -z — look at a screenshot)' },
 								parentUuid: { type: 'string', description: 'uuid of an existing group (or any object, not a light or camera) to nest under — position/rotation/scale are then LOCAL to it. A uuid that is not in the scene is an error and that object is not made' },
 								physics: {
 									type: 'string',
@@ -1471,7 +1476,7 @@ export const AI_TOOLS = [
 								},
 								...LIGHT_SCHEMA,
 								...SHADOW_SCHEMA,
-								lookAt: { description: 'turn it so its local +Z (front) faces this: a world point [x,y,z] or another object\'s uuid (+Y stays up; lights use aim)' },
+								lookAt: { description: 'turn it so its front (local +Z, or the front you give) faces this: a world point [x,y,z] or another object\'s uuid (+Y stays up; lights use aim)' },
 								at: {
 									type: 'object',
 									description: 'build at a spot a person PINGED (Ctrl+Alt+click, the menu\'s Ping, a long-press menu, the VR stick click): {ping: id} from where_are_users {pings: true}, or {ping: "latest"} = "here"; on a floor or table top it stands on it, and the ping follows the object it landed on. Or around a PERSON as they are now: {user: "me" | peer id | name, ahead: 1.5, right: 0, up: 0} (metres or body units; it faces them; call again to follow them as they walk). Sizes, positions and these offsets also take BODY UNITS: "eye", "height", "shoulder", "hip", "knee", "reach", "room", with a factor ("0.5 reach") — that person\'s, from where_are_users body',
@@ -1485,7 +1490,8 @@ export const AI_TOOLS = [
 								},
 								align: { type: 'string', enum: ['surface'], description: 'with at: back it onto the pinged surface (its +Z along the surface normal, upright on a wall) — a painting on a wall' },
 								snap: { type: 'string', enum: ['floor'], description: 'stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground' },
-								face_user: { description: 'turn it (yaw only) so its +Z front faces a person: true = the person you act for, or a peer id / name from where_are_users' },
+								face_user: { description: 'turn it (yaw only) so its front faces a person: true = the person you act for, or a peer id / name from where_are_users' },
+								front: { type: 'string', enum: ['+z', '-z', '+x', '-x', '+y', '-y'], description: 'which local axis is its front for lookAt and face_user (default +z; many models face +x or -z — look at a screenshot)' },
 								visible: { type: 'boolean' },
 								parentUuid: {
 									type: 'string',

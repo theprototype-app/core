@@ -38,7 +38,7 @@ export const TP_AGENT_METHODS = /** @type {const} */ ([
 ]);
 
 /** Camera views `screenshot` renders from (A5). */
-export const SCREENSHOT_VIEWS = /** @type {const} */ (['current', 'top', 'front', 'iso', 'focus']);
+export const SCREENSHOT_VIEWS = /** @type {const} */ (['current', 'top', 'front', 'iso', 'focus', 'camera']);
 
 /** Largest side a screenshot may ask for (px); `size` is clamped to it. */
 export const SCREENSHOT_MAX_SIZE = 2048;
@@ -118,8 +118,9 @@ export const SCREENSHOT_DEFAULT_SIZE = 768;
 /**
  * `screenshot` options.
  * @typedef {object} TpAgentScreenshotOptions
- * @property {'current'|'top'|'front'|'iso'|'focus'} [view] default 'iso'
- * @property {string} [uuid] the object to frame (`focus` needs this or `uuids`)
+ * @property {'current'|'top'|'front'|'iso'|'focus'|'camera'} [view] default 'iso'; 'camera' looks through the scene camera `uuid`
+ *   (its pose, lens and framing aspect — mcp-diorama2)
+ * @property {string} [uuid] the object to frame (`focus` needs this or `uuids`), or the camera for view 'camera'
  * @property {string[]} [uuids] objects to frame together
  * @property {string|{yaw: number, pitch: number}} [from] the angle around the subject, instead of `view`: front, back, left, right, top, below, iso, or degrees
  * @property {{position: number[], target: number[]}} [camera] a free camera, instead of `view` and `from`
@@ -130,6 +131,9 @@ export const SCREENSHOT_DEFAULT_SIZE = 768;
  * @property {boolean} [grid] draw the grid (default false)
  * @property {boolean} [postEffects] draw the frame through the post stack this tab draws (bloom, vignette, grade …);
  *   lastShot().postEffects then says "applied" or "unavailable" with a reason (mcp-diorama2)
+ * @property {boolean} [avatars] draw the people (avatars, an agent's camera marker) — default false: a clean frame
+ *   shows the scene; view 'current' keeps them unless this is false (mcp-diorama2)
+ * @property {boolean} [hud] draw the game HUD on top, the screens this tab shows (default false; mcp-diorama2)
  */
 
 /**

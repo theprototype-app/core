@@ -21,7 +21,7 @@ const { objectsGroup } = await import('../../src/stores/sceneStore');
 const { peers } = await import('../../src/stores/appStore');
 const core = await import('../../src/lib/pingCore.js');
 const ping = await import('../../src/lib/ping.js');
-const { placeObject, surfaceQuaternion, floorUnder, comfortRefusal, withBodyUnits } = await import('../../src/lib/ai/placement.js');
+const { placeObject, surfaceQuaternion, floorUnder, comfortRefusal, withBodyUnits, frontVector, aimFront } = await import('../../src/lib/ai/placement.js');
 const units = await import('../../src/lib/ai/bodyUnitsCore.js');
 const comfort = await import('../../src/lib/vr/agentComfort.js');
 const { runParkHooks } = await import('../../src/lib/parkHooks.js');
@@ -246,5 +246,36 @@ describe('85b S6 body units, S7 at a person', () => {
 		expect(front.z).toBeGreaterThan(0.99);
 		placeObject(stool, { at: { user: 'me', ahead: 0.1 } }, apply);
 		expect(stool.position.z).toBeCloseTo(10 - 0.6);
+	});
+});
+
+describe('mcp-diorama2 25: a front axis for lookAt and face_user (no guessing)', () => {
+	beforeEach(() => applied.splice(0));
+	it('frontVector reads the six axes, +z by default, and refuses anything else', () => {
+		expect(frontVector(undefined).toArray()).toEqual([0, 0, 1]);
+		expect(frontVector('+x').toArray()).toEqual([1, 0, 0]);
+		expect(frontVector('-Z').toArray()).toEqual([0, 0, -1]);
+		expect(frontVector('x').toArray()).toEqual([1, 0, 0]);
+		expect(frontVector('forward')).toBeNull();
+	});
+	it('face_user with front +x turns the +X side to the person; a vertical front is a warning', () => {
+		const fox = box(1, 1, 0.4, [0, 0.5, 0]);
+		placeObject(fox, { face_user: true, front: '+x' }, apply);
+		const side = new THREE.Vector3(1, 0, 0).applyQuaternion(fox.quaternion);
+		expect(side.z).toBeGreaterThan(0.99); // the person stands at +z
+		const n = applied.length;
+		expect(placeObject(fox, { face_user: true, front: '+y' }, apply).warnings[0]).toMatch(/vertical/);
+		expect(placeObject(fox, { face_user: true, front: 'up' }, apply).warnings[0]).toMatch(/front must be/);
+		expect(applied.length).toBe(n);
+	});
+	it('aimFront lands the given axis on the target', () => {
+		const o = new THREE.Object3D();
+		for (const f of ['+z', '-z', '+x', '-x']) {
+			aimFront(o, new THREE.Vector3(5, 0, 5), frontVector(f));
+			const d = frontVector(f).applyQuaternion(o.quaternion);
+			expect(d.x).toBeCloseTo(Math.SQRT1_2, 5);
+			expect(d.z).toBeCloseTo(Math.SQRT1_2, 5);
+			expect(new THREE.Vector3(0, 1, 0).applyQuaternion(o.quaternion).y).toBeCloseTo(1, 5);
+		}
 	});
 });

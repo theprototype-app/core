@@ -460,8 +460,9 @@ export function scatterSetOf(args, sources) {
 		gen.spacing = args.spacing;
 	}
 	const rules = args.rules ?? {};
-	if (typeof rules !== 'object' || Array.isArray(rules)) return { error: 'rules: {slope: [min°, max°], height: [min, max], layer: {i, min}}' };
-	for (const k of Object.keys(rules)) if (!['slope', 'height', 'layer'].includes(k)) return { error: 'rules.' + k + ': not a rule — slope, height or layer' };
+	if (typeof rules !== 'object' || Array.isArray(rules)) return { error: 'rules: {slope: [min°, max°], height: [min, max], layer: {i, min}, avoid: [...]}' };
+	// rules.avoid is read by the tool (it needs the scene); mcp-diorama2 (23)
+	for (const k of Object.keys(rules)) if (!['slope', 'height', 'layer', 'avoid'].includes(k)) return { error: 'rules.' + k + ': not a rule — slope, height, layer or avoid' };
 	const pair = (/** @type {any} */ v, /** @type {number} */ lo, /** @type {number} */ hi) => Array.isArray(v) && v.length === 2 && v.every((n) => typeof n === 'number' && n >= lo && n <= hi) && v[0] <= v[1];
 	if (rules.slope !== undefined) {
 		if (!pair(rules.slope, 0, 180)) return { error: 'rules.slope: [min, max] degrees from flat (0 = level ground, 90 = a wall)' };
@@ -567,4 +568,72 @@ export function placementPoints(at, count, spacing, yaw = 0) {
 		out.push([at[0] + dx * k, at[1], at[2] + dz * k]);
 	}
 	return out;
+}
+
+/**
+ * mcp-diorama2 (22): a terrain's paint BY HEIGHT — the splat that puts layer 0 in the low ground and the last given
+ * layer on the peaks (sand → grass → rock → snow), soft across each band edge. Pure: the terrain's LOCAL vertex
+ * positions + its bounds in, RGBA splat bytes out (each texel's four weights sum to 255, the terrainPaintCore rule).
+ * Heights are read off the vertex grid by nearest-cell binning, then sampled bilinearly per texel.
+ * @param {ArrayLike<number>} positions xyz triples @param {{minX: number, minZ: number, sizeX: number, sizeZ: number}} b
+ * @param {number} res splat texels per side @param {number} layers 2..4 @returns {Uint8Array}
+ */
+export function heightSplat(positions, b, res, layers) {
+	const n = Math.max(2, Math.min(4, layers | 0));
+	const count = Math.floor(positions.length / 3);
+	const seg = Math.max(1, Math.round(Math.sqrt(count)) - 1);
+	const grid = new Float32Array((seg + 1) * (seg + 1)).fill(NaN);
+	let lo = Infinity;
+	let hi = -Infinity;
+	for (let i = 0; i < count; i++) {
+		const x = positions[i * 3];
+		const y = positions[i * 3 + 1];
+		const z = positions[i * 3 + 2];
+		const c = Math.min(seg, Math.max(0, Math.round(((x - b.minX) / b.sizeX) * seg)));
+		const r = Math.min(seg, Math.max(0, Math.round(((z - b.minZ) / b.sizeZ) * seg)));
+		const k = r * (seg + 1) + c;
+		grid[k] = Number.isNaN(grid[k]) ? y : Math.max(grid[k], y);
+		if (y < lo) lo = y;
+		if (y > hi) hi = y;
+	}
+	for (let k = 0; k < grid.length; k++) if (Number.isNaN(grid[k])) grid[k] = lo;
+	const span = hi - lo > 1e-6 ? hi - lo : 1;
+	const at = (/** @type {number} */ c, /** @type {number} */ r) => grid[Math.min(seg, r) * (seg + 1) + Math.min(seg, c)];
+	const edge = 0.25 / n;
+	const bytes = new Uint8Array(res * res * 4);
+	const w = [0, 0, 0, 0];
+	for (let j = 0; j < res; j++) {
+		for (let i = 0; i < res; i++) {
+			const gx = ((i + 0.5) / res) * seg;
+			const gz = ((j + 0.5) / res) * seg;
+			const c0 = Math.floor(gx);
+			const r0 = Math.floor(gz);
+			const fx = gx - c0;
+			const fz = gz - r0;
+			const h = (at(c0, r0) * (1 - fx) + at(c0 + 1, r0) * fx) * (1 - fz) + (at(c0, r0 + 1) * (1 - fx) + at(c0 + 1, r0 + 1) * fx) * fz;
+			const t = hi - lo > 1e-6 ? (h - lo) / span : 0;
+			let sum = 0;
+			for (let k = 0; k < 4; k++) {
+				if (k >= n) {
+					w[k] = 0;
+					continue;
+				}
+				const bandLo = k === 0 ? -Infinity : k / n;
+				const bandHi = k === n - 1 ? Infinity : (k + 1) / n;
+				const d = Math.max(bandLo - t, t - bandHi, 0);
+				w[k] = Math.max(0, 1 - d / edge);
+				sum += w[k];
+			}
+			const o = (j * res + i) * 4;
+			let given = 0;
+			let top = 0;
+			for (let k = 0; k < 4; k++) {
+				bytes[o + k] = Math.round((w[k] / sum) * 255);
+				given += bytes[o + k];
+				if (w[k] > w[top]) top = k;
+			}
+			bytes[o + top] += 255 - given; // the rounding goes to the strongest layer, so every texel sums to 255
+		}
+	}
+	return bytes;
 }

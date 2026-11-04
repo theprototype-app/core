@@ -86,12 +86,12 @@ export function bridgeTools(engine = 'browser') {
 			{
 				name: 'screenshot',
 				description:
-					'See the scene: a PNG of a clean frame (no gizmos) from a temporary camera, never moving anyone\'s view. view: current | top | front | iso | focus (focus needs uuid or uuids); from = an angle or {yaw, pitch}; camera = a free {position, target}. 4:3 unless aspect says otherwise (current follows the person\'s window). Answers with the camera it used. postEffects: true draws the scene\'s post effects too.',
+					'See the scene: a PNG of a clean frame (no gizmos, no people) from a temporary camera, never moving anyone\'s view. view: current | top | front | iso | focus | camera (focus needs uuid or uuids; camera looks through the scene camera uuid, its lens and framing); from = an angle or {yaw, pitch}; camera = a free {position, target}. 4:3 unless aspect says otherwise (current follows the person\'s window). Answers with the camera it used. postEffects: true draws the scene\'s post effects too; hud: true the game HUD on top; avatars: true keeps the people in (current keeps them unless false).',
 				inputSchema: {
 					type: 'object',
 					properties: {
-						view: { type: 'string', enum: ['current', 'top', 'front', 'iso', 'focus'] },
-						uuid: { type: 'string', description: 'object to frame' },
+						view: { type: 'string', enum: ['current', 'top', 'front', 'iso', 'focus', 'camera'] },
+						uuid: { type: 'string', description: 'object to frame, or the camera to look through (view camera)' },
 						uuids: { type: 'array', items: { type: 'string' }, description: 'objects to frame together' },
 						from: {
 							description: 'the angle around the subject, instead of view: front, back, left, right, top, below, iso, or {yaw, pitch} in degrees (yaw 0 = front, 90 = right; pitch 90 = from above)',
@@ -113,6 +113,8 @@ export function bridgeTools(engine = 'browser') {
 						zoom: { type: 'number', description: 'above 1 is closer, 0.1 to 10' },
 						margin: { type: 'number', description: 'room around the subject: 1 touches the frame, default 1.15' },
 						size: { type: 'number', description: 'longest side in pixels' },
+						hud: { type: 'boolean', description: 'true = draw the game HUD this screen shows on top (score, timer, menus), laid out as on screen' },
+						avatars: { type: 'boolean', description: 'true = keep the people (avatars, an agent\'s camera marker) in the frame; default leaves them out, except view current' },
 						postEffects: {
 							type: 'boolean',
 							description:

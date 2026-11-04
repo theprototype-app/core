@@ -29,8 +29,8 @@ export const BRIDGE_SCHEMAS = /** @type {Record<string, any>} */ ({
 	screenshot: {
 		type: 'object',
 		properties: {
-			view: { type: 'string', enum: ['current', 'top', 'front', 'iso', 'focus'] },
-			uuid: { type: 'string', description: 'object to frame' },
+			view: { type: 'string', enum: ['current', 'top', 'front', 'iso', 'focus', 'camera'] },
+			uuid: { type: 'string', description: 'object to frame, or the camera to look through (view camera)' },
 			uuids: { type: 'array', items: { type: 'string' }, description: 'objects to frame together' },
 			from: {
 				description: 'the angle around the subject, instead of view: front, back, left, right, top, below, iso, or {yaw, pitch} in degrees (yaw 0 = front, 90 = right; pitch 90 = from above)',
@@ -52,6 +52,8 @@ export const BRIDGE_SCHEMAS = /** @type {Record<string, any>} */ ({
 			zoom: { type: 'number', description: 'above 1 is closer, 0.1 to 10' },
 			margin: { type: 'number', description: 'room around the subject: 1 touches the frame, default 1.15' },
 			size: { type: 'number', description: 'longest side in pixels' },
+			hud: { type: 'boolean', description: 'true = draw the game HUD this screen shows on top (score, timer, menus), laid out as on screen' },
+			avatars: { type: 'boolean', description: 'true = keep the people (avatars, an agent\'s camera marker) in the frame; default leaves them out, except view current' },
 			postEffects: {
 				type: 'boolean',
 				description:
@@ -189,7 +191,9 @@ export function createDispatcher(deps) {
 		const asked = Date.now();
 		const { view, uuid, uuids, from, camera, aspect, zoom, margin } = args;
 		const postEffects = args.postEffects === true ? true : undefined;
-		const url = await deps.agent.screenshot({ view, uuid, uuids, from, camera, aspect, zoom, margin, size, ...(postEffects ? { postEffects } : {}) });
+		// mcp-diorama2 (26): the HUD on top, and whether the people stay in the frame
+		const extra = { ...(args.hud === true ? { hud: true } : {}), ...(typeof args.avatars === 'boolean' ? { avatars: args.avatars } : {}) };
+		const url = await deps.agent.screenshot({ view, uuid, uuids, from, camera, aspect, zoom, margin, size, ...(postEffects ? { postEffects } : {}), ...extra });
 		const used = deps.agent.lastShot?.();
 		const fresh = used && used.at >= asked ? used : null;
 		if (inFlight.get(id)?.cancelled) return fail('cancelled', 'cancelled');
@@ -200,7 +204,7 @@ export function createDispatcher(deps) {
 		if (!shot) return fail('failed', 'The screenshot could not be encoded.');
 		// mcp-diorama2: what the post stack did for this frame, when it was asked for
 		const post = postEffects && fresh?.postEffects ? { postEffects: fresh.postEffects, ...(fresh.reason ? { reason: fresh.reason } : {}), ...(fresh.detail ? { detail: fresh.detail } : {}), ...(fresh.how ? { how: fresh.how } : {}) } : {};
-		return { result: fresh ? { ...shot, ...post, camera: { position: fresh.position, target: fresh.target, fov: fresh.fov, zoom: fresh.zoom, view: fresh.view, subject: fresh.subject } } : shot };
+		return { result: fresh ? { ...shot, ...post, camera: { position: fresh.position, target: fresh.target, fov: fresh.fov, zoom: fresh.zoom, view: fresh.view, subject: fresh.subject }, ...(fresh.hud ? { hud: fresh.hud } : {}) } : shot };
 	}
 
 	/** @param {string} id @param {any} args */

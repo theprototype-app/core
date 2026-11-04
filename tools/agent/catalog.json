@@ -284,7 +284,7 @@
 									"description": "meshes and models: shadows fall on it (on by default)"
 								},
 								"lookAt": {
-									"description": "turn it so its local +Z (front) faces this: a world point [x,y,z] or another object's uuid (+Y stays up; lights use aim)"
+									"description": "turn it so its front (local +Z, or the front you give) faces this: a world point [x,y,z] or another object's uuid (+Y stays up; lights use aim)"
 								},
 								"at": {
 									"type": "object",
@@ -322,7 +322,19 @@
 									"description": "stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground"
 								},
 								"face_user": {
-									"description": "turn it (yaw only) so its +Z front faces a person: true = the person you act for, or a peer id / name from where_are_users"
+									"description": "turn it (yaw only) so its front faces a person: true = the person you act for, or a peer id / name from where_are_users"
+								},
+								"front": {
+									"type": "string",
+									"enum": [
+										"+z",
+										"-z",
+										"+x",
+										"-x",
+										"+y",
+										"-y"
+									],
+									"description": "which local axis is its front for lookAt and face_user (default +z; many models face +x or -z — look at a screenshot)"
 								},
 								"parentUuid": {
 									"type": "string",
@@ -469,7 +481,7 @@
 									"description": "meshes and models: shadows fall on it (on by default)"
 								},
 								"lookAt": {
-									"description": "turn it so its local +Z (front) faces this: a world point [x,y,z] or another object's uuid (+Y stays up; lights use aim)"
+									"description": "turn it so its front (local +Z, or the front you give) faces this: a world point [x,y,z] or another object's uuid (+Y stays up; lights use aim)"
 								},
 								"at": {
 									"type": "object",
@@ -507,7 +519,19 @@
 									"description": "stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground"
 								},
 								"face_user": {
-									"description": "turn it (yaw only) so its +Z front faces a person: true = the person you act for, or a peer id / name from where_are_users"
+									"description": "turn it (yaw only) so its front faces a person: true = the person you act for, or a peer id / name from where_are_users"
+								},
+								"front": {
+									"type": "string",
+									"enum": [
+										"+z",
+										"-z",
+										"+x",
+										"-x",
+										"+y",
+										"-y"
+									],
+									"description": "which local axis is its front for lookAt and face_user (default +z; many models face +x or -z — look at a screenshot)"
 								},
 								"visible": {
 									"type": "boolean"
@@ -3358,7 +3382,7 @@
 		{
 			"name": "scatter",
 			"title": "Scatter over a surface",
-			"description": "Scatter many instances over a terrain or any mesh (a forest on hills, rocks on a beach, flowers on a slope): asset = a primitive (Box, Sphere, Cone, Cylinder, Capsule, Dodecahedron) or a model id from search_assets, or assets = up to 8 mixed evenly. density per m² (or count), scale range, rules {slope: [min°, max°], height: [min, max] m, layer: {i, min}} keep them where they belong. Cheap instancing, seeded (the same on every peer; seed picks another layout). avoid = up to 16 object uuids nothing lands on (a path, a house, a portal). source = the uuid of an object you built: up to 200 REAL copies of it (editable, with its children, materials and behaviour) instead of instances — for one or a few copies in a row or mirrored, use duplicate. Returns the set id (or the copies' uuids); remove: <set id> deletes a set. One undo step.\nTake a screenshot after each change to check your work.",
+			"description": "Scatter many instances over a terrain or any mesh (a forest on hills, rocks on a beach, flowers on a slope): asset = a primitive (Box, Sphere, Cone, Cylinder, Capsule, Dodecahedron) or a model id from search_assets, or assets = up to 8 mixed evenly. density per m² (or count), scale range, rules {slope: [min°, max°], height: [min, max] m, layer: {i, min}} keep them where they belong. Cheap instancing, seeded (the same on every peer; seed picks another layout). avoid (or rules.avoid) = up to 16 places nothing lands on: an object uuid (its footprint: a path, a house, a portal), {uuid, radius} or {position, radius} (a clear circle, metres). All the assets of one call make ONE set (id names it). source = the uuid of an object you built: up to 200 REAL copies of it (editable, with its children, materials and behaviour) instead of instances — for one or a few copies in a row or mirrored, use duplicate. Returns the set id (or the copies' uuids); remove: <set id> deletes a set. One undo step.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -3397,7 +3421,7 @@
 					},
 					"rules": {
 						"type": "object",
-						"description": "{slope: [0, 25] degrees from flat, height: [min, max] metres, layer: {i: paint layer 0-3, min: 0-1}}"
+						"description": "{slope: [0, 25] degrees from flat, height: [min, max] metres, layer: {i: paint layer 0-3, min: 0-1}, avoid: the same list as avoid}"
 					},
 					"seed": {
 						"type": "integer",
@@ -3409,11 +3433,38 @@
 					},
 					"avoid": {
 						"type": "array",
-						"items": {
-							"type": "string"
-						},
 						"maxItems": 16,
-						"description": "uuids of objects to keep clear: nothing lands on their footprint"
+						"items": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "object",
+									"properties": {
+										"uuid": {
+											"type": "string"
+										},
+										"position": {
+											"type": "array",
+											"items": {
+												"type": "number"
+											},
+											"minItems": 3,
+											"maxItems": 3
+										},
+										"radius": {
+											"type": "number"
+										}
+									}
+								}
+							]
+						},
+						"description": "places to keep clear: an object uuid (its footprint), {uuid, radius} or {position, radius} (a circle, metres)"
+					},
+					"id": {
+						"type": "string",
+						"description": "a name for the set (default from the first asset); remove takes it"
 					},
 					"tint": {
 						"type": "number",
@@ -3452,7 +3503,7 @@
 		{
 			"name": "terrain",
 			"title": "Make or shape terrain",
-			"description": "Make or change a terrain. Without uuid it makes one (size metres, at position); with uuid it changes that one. Shape by noise: height (metres), detail (0.005-0.6), octaves, ridged, warp, edges (flat|island|bowl), seed. Sculpt with ops [{op: raise|lower|smooth|flatten, at: [x, z] from the terrain's centre, radius, strength 0-1, height (metres, raise/lower), passes}] and paint with {op: \"paint\", at, radius, layer 0-3, strength}. layers: up to 4 {color, texture (a library hash or a pattern name like grass, sand, stone), tiling}. One undo step.\nTake a screenshot after each change to check your work.",
+			"description": "Make or change a terrain. Without uuid it makes one (size metres, at position); with uuid it changes that one. Shape by noise: height (the highest peak, metres — the answer says the peak it got), detail (0.005-0.6), octaves, ridged, warp, edges (flat|island|bowl: island sinks the rim to 0 so it rises out of water; bowl raises the rim), seed; amplitude is the raw noise scale if you want it. Sculpt with ops [{op: raise|lower|smooth|flatten, at: [x, z] from the terrain's centre, radius, strength 0-1, height (metres, raise/lower), passes}] and paint with {op: \"paint\", at, radius, layer 0-3, strength}. layers: up to 4 {color, texture (a library hash or a pattern name like grass, sand, stone), tiling} — layer 0 covers the ground until you paint the others; paintBy: \"height\" paints them for you, layer 0 in the low ground up to the last on the peaks. One undo step.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -3478,7 +3529,21 @@
 					"height": {
 						"type": "number",
 						"minimum": 0,
-						"maximum": 40
+						"maximum": 100,
+						"description": "the highest peak, metres"
+					},
+					"amplitude": {
+						"type": "number",
+						"minimum": 0,
+						"maximum": 40,
+						"description": "the raw noise scale (height sets it for you)"
+					},
+					"paintBy": {
+						"type": "string",
+						"enum": [
+							"height"
+						],
+						"description": "paint the layers by height: layer 0 low, the last layer on the peaks"
 					},
 					"detail": {
 						"type": "number"
@@ -5068,7 +5133,7 @@
 		{
 			"name": "screenshot",
 			"title": "Take a picture of the scene",
-			"description": "See the scene: a PNG of a clean frame (no gizmos) from a temporary camera, never moving anyone's view. view: current | top | front | iso | focus (focus needs uuid or uuids); from = an angle or {yaw, pitch}; camera = a free {position, target}. 4:3 unless aspect says otherwise (current follows the person's window). Answers with the camera it used. postEffects: true draws the scene's post effects too.",
+			"description": "See the scene: a PNG of a clean frame (no gizmos, no people) from a temporary camera, never moving anyone's view. view: current | top | front | iso | focus | camera (focus needs uuid or uuids; camera looks through the scene camera uuid, its lens and framing); from = an angle or {yaw, pitch}; camera = a free {position, target}. 4:3 unless aspect says otherwise (current follows the person's window). Answers with the camera it used. postEffects: true draws the scene's post effects too; hud: true the game HUD on top; avatars: true keeps the people in (current keeps them unless false).",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -5079,12 +5144,13 @@
 							"top",
 							"front",
 							"iso",
-							"focus"
+							"focus",
+							"camera"
 						]
 					},
 					"uuid": {
 						"type": "string",
-						"description": "object to frame"
+						"description": "object to frame, or the camera to look through (view camera)"
 					},
 					"uuids": {
 						"type": "array",
@@ -5175,6 +5241,14 @@
 					"size": {
 						"type": "number",
 						"description": "longest side in pixels"
+					},
+					"hud": {
+						"type": "boolean",
+						"description": "true = draw the game HUD this screen shows on top (score, timer, menus), laid out as on screen"
+					},
+					"avatars": {
+						"type": "boolean",
+						"description": "true = keep the people (avatars, an agent's camera marker) in the frame; default leaves them out, except view current"
 					},
 					"postEffects": {
 						"type": "boolean",
@@ -5585,7 +5659,7 @@
 										"description": "meshes and models: shadows fall on it (on by default)"
 									},
 									"lookAt": {
-										"description": "turn it so its local +Z (front) faces this: a world point [x,y,z] or another object's uuid (+Y stays up; lights use aim)"
+										"description": "turn it so its front (local +Z, or the front you give) faces this: a world point [x,y,z] or another object's uuid (+Y stays up; lights use aim)"
 									},
 									"at": {
 										"type": "object",
@@ -5623,7 +5697,19 @@
 										"description": "stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground"
 									},
 									"face_user": {
-										"description": "turn it (yaw only) so its +Z front faces a person: true = the person you act for, or a peer id / name from where_are_users"
+										"description": "turn it (yaw only) so its front faces a person: true = the person you act for, or a peer id / name from where_are_users"
+									},
+									"front": {
+										"type": "string",
+										"enum": [
+											"+z",
+											"-z",
+											"+x",
+											"-x",
+											"+y",
+											"-y"
+										],
+										"description": "which local axis is its front for lookAt and face_user (default +z; many models face +x or -z — look at a screenshot)"
 									},
 									"parentUuid": {
 										"type": "string",
@@ -5770,7 +5856,7 @@
 										"description": "meshes and models: shadows fall on it (on by default)"
 									},
 									"lookAt": {
-										"description": "turn it so its local +Z (front) faces this: a world point [x,y,z] or another object's uuid (+Y stays up; lights use aim)"
+										"description": "turn it so its front (local +Z, or the front you give) faces this: a world point [x,y,z] or another object's uuid (+Y stays up; lights use aim)"
 									},
 									"at": {
 										"type": "object",
@@ -5808,7 +5894,19 @@
 										"description": "stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground"
 									},
 									"face_user": {
-										"description": "turn it (yaw only) so its +Z front faces a person: true = the person you act for, or a peer id / name from where_are_users"
+										"description": "turn it (yaw only) so its front faces a person: true = the person you act for, or a peer id / name from where_are_users"
+									},
+									"front": {
+										"type": "string",
+										"enum": [
+											"+z",
+											"-z",
+											"+x",
+											"-x",
+											"+y",
+											"-y"
+										],
+										"description": "which local axis is its front for lookAt and face_user (default +z; many models face +x or -z — look at a screenshot)"
 									},
 									"visible": {
 										"type": "boolean"
@@ -8392,7 +8490,21 @@
 								"height": {
 									"type": "number",
 									"minimum": 0,
-									"maximum": 40
+									"maximum": 100,
+									"description": "the highest peak, metres"
+								},
+								"amplitude": {
+									"type": "number",
+									"minimum": 0,
+									"maximum": 40,
+									"description": "the raw noise scale (height sets it for you)"
+								},
+								"paintBy": {
+									"type": "string",
+									"enum": [
+										"height"
+									],
+									"description": "paint the layers by height: layer 0 low, the last layer on the peaks"
 								},
 								"detail": {
 									"type": "number"
@@ -8452,7 +8564,7 @@
 									"description": "reshape even though it was hand-sculpted (the sculpting is lost)"
 								}
 							},
-							"description": "Make or change a terrain. Without uuid it makes one (size metres, at position); with uuid it changes that one. Shape by noise: height (metres), detail (0.005-0.6), octaves, ridged, warp, edges (flat|island|bowl), seed. Sculpt with ops [{op: raise|lower|smooth|flatten, at: [x, z] from the terrain's centre, radius, strength 0-1, height (metres, raise/lower), passes}] and paint with {op: \"paint\", at, radius, layer 0-3, strength}. layers: up to 4 {color, texture (a library hash or a pattern name like grass, sand, stone), tiling}. One undo step."
+							"description": "Make or change a terrain. Without uuid it makes one (size metres, at position); with uuid it changes that one. Shape by noise: height (the highest peak, metres — the answer says the peak it got), detail (0.005-0.6), octaves, ridged, warp, edges (flat|island|bowl: island sinks the rim to 0 so it rises out of water; bowl raises the rim), seed; amplitude is the raw noise scale if you want it. Sculpt with ops [{op: raise|lower|smooth|flatten, at: [x, z] from the terrain's centre, radius, strength 0-1, height (metres, raise/lower), passes}] and paint with {op: \"paint\", at, radius, layer 0-3, strength}. layers: up to 4 {color, texture (a library hash or a pattern name like grass, sand, stone), tiling} — layer 0 covers the ground until you paint the others; paintBy: \"height\" paints them for you, layer 0 in the low ground up to the last on the peaks. One undo step."
 						},
 						"scatter": {
 							"type": "object",
@@ -8492,7 +8604,7 @@
 								},
 								"rules": {
 									"type": "object",
-									"description": "{slope: [0, 25] degrees from flat, height: [min, max] metres, layer: {i: paint layer 0-3, min: 0-1}}"
+									"description": "{slope: [0, 25] degrees from flat, height: [min, max] metres, layer: {i: paint layer 0-3, min: 0-1}, avoid: the same list as avoid}"
 								},
 								"seed": {
 									"type": "integer",
@@ -8504,11 +8616,38 @@
 								},
 								"avoid": {
 									"type": "array",
-									"items": {
-										"type": "string"
-									},
 									"maxItems": 16,
-									"description": "uuids of objects to keep clear: nothing lands on their footprint"
+									"items": {
+										"anyOf": [
+											{
+												"type": "string"
+											},
+											{
+												"type": "object",
+												"properties": {
+													"uuid": {
+														"type": "string"
+													},
+													"position": {
+														"type": "array",
+														"items": {
+															"type": "number"
+														},
+														"minItems": 3,
+														"maxItems": 3
+													},
+													"radius": {
+														"type": "number"
+													}
+												}
+											}
+										]
+									},
+									"description": "places to keep clear: an object uuid (its footprint), {uuid, radius} or {position, radius} (a circle, metres)"
+								},
+								"id": {
+									"type": "string",
+									"description": "a name for the set (default from the first asset); remove takes it"
 								},
 								"tint": {
 									"type": "number",
@@ -8536,7 +8675,7 @@
 							"required": [
 								"surface"
 							],
-							"description": "Scatter many instances over a terrain or any mesh (a forest on hills, rocks on a beach, flowers on a slope): asset = a primitive (Box, Sphere, Cone, Cylinder, Capsule, Dodecahedron) or a model id from assets {action: 'search'}, or assets = up to 8 mixed evenly. density per m² (or count), scale range, rules {slope: [min°, max°], height: [min, max] m, layer: {i, min}} keep them where they belong. Cheap instancing, seeded (the same on every peer; seed picks another layout). avoid = up to 16 object uuids nothing lands on (a path, a house, a portal). source = the uuid of an object you built: up to 200 REAL copies of it (editable, with its children, materials and behaviour) instead of instances — for one or a few copies in a row or mirrored, use duplicate. Returns the set id (or the copies' uuids); remove: <set id> deletes a set. One undo step."
+							"description": "Scatter many instances over a terrain or any mesh (a forest on hills, rocks on a beach, flowers on a slope): asset = a primitive (Box, Sphere, Cone, Cylinder, Capsule, Dodecahedron) or a model id from assets {action: 'search'}, or assets = up to 8 mixed evenly. density per m² (or count), scale range, rules {slope: [min°, max°], height: [min, max] m, layer: {i, min}} keep them where they belong. Cheap instancing, seeded (the same on every peer; seed picks another layout). avoid (or rules.avoid) = up to 16 places nothing lands on: an object uuid (its footprint: a path, a house, a portal), {uuid, radius} or {position, radius} (a clear circle, metres). All the assets of one call make ONE set (id names it). source = the uuid of an object you built: up to 200 REAL copies of it (editable, with its children, materials and behaviour) instead of instances — for one or a few copies in a row or mirrored, use duplicate. Returns the set id (or the copies' uuids); remove: <set id> deletes a set. One undo step."
 						},
 						"water": {
 							"type": "object",
@@ -10135,7 +10274,7 @@
 			{
 				"name": "screenshot",
 				"title": "Take a picture of the scene",
-				"description": "See the scene: a PNG of a clean frame (no gizmos) from a temporary camera, never moving anyone's view. view: current | top | front | iso | focus (focus needs uuid or uuids); from = an angle or {yaw, pitch}; camera = a free {position, target}. 4:3 unless aspect says otherwise (current follows the person's window). Answers with the camera it used. postEffects: true draws the scene's post effects too.",
+				"description": "See the scene: a PNG of a clean frame (no gizmos, no people) from a temporary camera, never moving anyone's view. view: current | top | front | iso | focus | camera (focus needs uuid or uuids; camera looks through the scene camera uuid, its lens and framing); from = an angle or {yaw, pitch}; camera = a free {position, target}. 4:3 unless aspect says otherwise (current follows the person's window). Answers with the camera it used. postEffects: true draws the scene's post effects too; hud: true the game HUD on top; avatars: true keeps the people in (current keeps them unless false).",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -10146,12 +10285,13 @@
 								"top",
 								"front",
 								"iso",
-								"focus"
+								"focus",
+								"camera"
 							]
 						},
 						"uuid": {
 							"type": "string",
-							"description": "object to frame"
+							"description": "object to frame, or the camera to look through (view camera)"
 						},
 						"uuids": {
 							"type": "array",
@@ -10242,6 +10382,14 @@
 						"size": {
 							"type": "number",
 							"description": "longest side in pixels"
+						},
+						"hud": {
+							"type": "boolean",
+							"description": "true = draw the game HUD this screen shows on top (score, timer, menus), laid out as on screen"
+						},
+						"avatars": {
+							"type": "boolean",
+							"description": "true = keep the people (avatars, an agent's camera marker) in the frame; default leaves them out, except view current"
 						},
 						"postEffects": {
 							"type": "boolean",

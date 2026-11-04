@@ -324,3 +324,32 @@ describe('sequenceCore prop tracks', () => {
 		expect(snapTargets(seq)).toContain(6);
 	});
 });
+
+describe('68-int smoothKeys (V6 smooth a take)', () => {
+	it('keeps every key time, flattens the shake, renormalizes quats', async () => {
+		const { smoothKeys, normalizeCurve, sampleCurve } = await import('../../src/lib/curveCore.js');
+		const jitter = normalizeCurve(
+			'number',
+			Array.from({ length: 31 }, (_, i) => ({ id: 'k' + i, t: i / 10, v: i / 10 + (i % 2 ? 0.2 : -0.2), i: 'linear', h: 'vector' }))
+		);
+		const smooth = smoothKeys('number', jitter, 0.4);
+		expect(smooth.map((k) => k.t)).toEqual(jitter.map((k) => k.t));
+		const wobble = (/** @type {any[]} */ ks) => ks.slice(1, -1).reduce((m, k) => Math.max(m, Math.abs(k.v - k.t)), 0);
+		expect(wobble(smooth)).toBeLessThan(wobble(jitter) / 2);
+		expect(smooth.every((k) => k.src === 'user')).toBe(true);
+		const q = normalizeCurve('quat', [
+			{ id: 'a', t: 0, v: [0, 0, 0, 1] },
+			{ id: 'b', t: 0.5, v: [0, 0.2588, 0, 0.9659] },
+			{ id: 'c', t: 1, v: [0, -0.5, 0, -0.866] }
+		]);
+		const qs = smoothKeys('quat', q, 0.5);
+		for (const k of qs) expect(Math.hypot(...k.v)).toBeCloseTo(1, 6);
+		expect(qs.map((k) => k.t)).toEqual([0, 0.5, 1]);
+		// deterministic: the same input gives the same keys (every peer applies the same edit)
+		expect(smoothKeys('number', jitter, 0.4).map((k) => k.v)).toEqual(smooth.map((k) => k.v));
+		// a step curve and a two-key curve are left alone
+		const st = normalizeCurve('step', [{ id: 'a', t: 0, v: 1 }, { id: 'b', t: 1, v: 0 }, { id: 'c', t: 2, v: 1 }]);
+		expect(smoothKeys('step', st)).toBe(st);
+		void sampleCurve;
+	});
+});

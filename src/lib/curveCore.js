@@ -654,3 +654,44 @@ export function reducePose(samples, budget = {}) {
 	}
 	return { position: normalizeCurve('vec3', position), quaternion: normalizeCurve('quat', quaternion) };
 }
+
+/**
+ * 68-int (V6 "smooth a take"): SMOOTH a curve without moving its keys — every key's value becomes the mean
+ * of the curve over a centred window (sampled at 30 Hz, clamped at the curve's ends), so handheld shake
+ * flattens out while the key TIMES stay (pose channels keep sharing them, trim and retake are untouched).
+ * Bezier-capable types become autoClamped beziers; a quat averages with sign continuity and is renormalized;
+ * a step curve is returned unchanged. Smoothed keys are marked `src: 'user'` (a later Re-smooth from raw asks).
+ * Pure and deterministic, so every peer that applies the edit gets the same keys.
+ * @param {string} type @param {any[]} keys normalized keys @param {number} [window] seconds (0.4)
+ * @returns {any[]} normalized keys
+ */
+export function smoothKeys(type, keys, window = 0.4) {
+	if (!Array.isArray(keys) || keys.length < 3 || type === 'step' || !(window > 0)) return keys;
+	const t0 = keys[0].t;
+	const t1 = keys[keys.length - 1].t;
+	const half = window / 2;
+	const steps = Math.max(2, Math.round(window * 30));
+	const w = widthOf(type);
+	const out = keys.map((k) => {
+		/** @type {any} */
+		let acc = type === 'quat' ? [0, 0, 0, 0] : w === 1 ? 0 : new Array(w).fill(0);
+		for (let s = 0; s <= steps; s++) {
+			const t = Math.min(t1, Math.max(t0, k.t - half + (window * s) / steps));
+			const v = sampleCurve(type, keys, t);
+			if (type === 'quat') {
+				const sign = v[0] * k.v[0] + v[1] * k.v[1] + v[2] * k.v[2] + v[3] * k.v[3] < 0 ? -1 : 1;
+				for (let c = 0; c < 4; c++) acc[c] += sign * v[c];
+			} else if (w === 1) acc += v;
+			else for (let c = 0; c < w; c++) acc[c] += v[c];
+		}
+		const n = steps + 1;
+		let v;
+		if (type === 'quat') {
+			const len = Math.hypot(acc[0], acc[1], acc[2], acc[3]) || 1;
+			v = acc.map((/** @type {number} */ c) => c / len);
+		} else v = w === 1 ? acc / n : acc.map((/** @type {number} */ c) => c / n);
+		const bez = canBezier(type);
+		return { ...k, v, i: bez ? 'bezier' : k.i, h: bez ? 'autoClamped' : k.h, in: undefined, out: undefined, src: 'user' };
+	});
+	return normalizeCurve(type, out);
+}

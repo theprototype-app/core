@@ -83,8 +83,9 @@
 		releaseScrub
 	} from '$lib/sequencePlayer';
 	import {
-		TRACK_KINDS,
+		ADDABLE_KINDS,
 		TRACK_LABELS,
+		isTrackKind,
 		formatTime,
 		rulerTicks,
 		snapTime,
@@ -94,6 +95,8 @@
 		clamp
 	} from '$lib/sequenceCore';
 	import { listCameraObjects } from '$lib/cameraObjects';
+	import { propDef } from '$lib/propTracks';
+	import { smoothKeys } from '$lib/curveCore';
 	import { animations, clipList } from '$lib/animationPreview';
 	import { animatedObjects, clipInfo } from '$lib/animatedImports';
 	import { explorerItems } from '$lib/explorer';
@@ -104,14 +107,29 @@
 		camera: 'camera',
 		anim: 'clapperboard',
 		audio: 'volume-2',
-		event: 'zap'
+		event: 'zap',
+		prop: 'sliders-horizontal' // 68: a property track (keys of one value: a recorded take, FOV, focus…)
 	};
 	const KIND_COLOR: Record<string, string> = {
 		camera: 'var(--icon-object)',
 		anim: 'var(--accent)',
 		audio: 'var(--icon-audio)',
-		event: 'var(--ink-warn)'
+		event: 'var(--ink-warn)',
+		prop: 'var(--accent)'
 	};
+	/** 68-int: what a track head and lane say about a track kind this version does not know (a newer one) */
+	const NEWER_NOTE = 'Made with a newer version of the app: kept and shared, but this version cannot play or edit it';
+	/** 68-int: a property track's name for people — its target's name + the property */
+	function propTrackLabel(track: any) {
+		const what = propDef(track.path)?.label ?? track.path;
+		return track.name && track.name !== TRACK_LABELS.prop ? track.name : what;
+	}
+	/** 68-int (V6): smooth a property track's keys (handheld shake out, key times kept): one undo step */
+	function smoothTrack(track: any) {
+		if (!seqId || track.kind !== 'prop' || !Array.isArray(track.keys) || track.keys.length < 3) return;
+		updateTrack(seqId, track.id, { keys: smoothKeys(track.type, track.keys, 0.4) });
+		showToast('Smoothed ' + propTrackLabel(track) + ' (' + track.keys.length + ' keys, times kept)');
+	}
 
 	// ---- shell: docked vs floating (HudEditor's verbatim) ------------------------------
 	// 70 W2: `popped` = this instance lives in a pop-out window ($lib/windows/panelHost mounts it there)
@@ -646,7 +664,7 @@
 		menu = {
 			x: e.clientX,
 			y: e.clientY,
-			items: TRACK_KINDS.map((kind) => ({
+			items: ADDABLE_KINDS.map((kind) => ({
 				label: TRACK_LABELS[kind] + ' track',
 				icon: KIND_ICON[kind],
 				action: () => addTrackOf(kind)
@@ -661,6 +679,9 @@
 			y: e.clientY,
 			items: [
 				{ label: 'Rename…', action: () => (renamingTrack = track.id) },
+				...(track.kind === 'prop'
+					? [{ label: 'Smooth keys', disabled: !(track.keys?.length >= 3), action: () => smoothTrack(track) }]
+					: []),
 				{
 					label: track.muted ? 'Unmute' : 'Mute',
 					action: () => updateTrack(id, track.id, { muted: !track.muted })
@@ -883,7 +904,7 @@
 				{#if !seq.tracks.length}
 					<div class="tl-empty-tracks">
 						<span>Add a track:</span>
-						{#each TRACK_KINDS as kind (kind)}
+						{#each ADDABLE_KINDS as kind (kind)}
 							<Button
 								size="sm"
 								variant="secondary"
@@ -897,8 +918,8 @@
 				{/if}
 				{#each seq.tracks as track, index (track.id)}
 					<div class="tl-track-head" data-track-head={track.id} class:tl-muted={track.muted}>
-						<span class="tl-kind" style="color: {KIND_COLOR[track.kind]}"
-							><Icon name={KIND_ICON[track.kind]} size={16} /></span
+						<span class="tl-kind" style="color: {KIND_COLOR[track.kind] ?? 'var(--ink-warn)'}" title={isTrackKind(track.kind) ? TRACK_LABELS[track.kind] : NEWER_NOTE}
+							><Icon name={KIND_ICON[track.kind] ?? 'triangle-alert'} size={16} /></span
 						>
 						{#if renamingTrack === track.id}
 							<!-- svelte-ignore a11y_autofocus -->
@@ -952,13 +973,25 @@
 						class:tl-muted={track.muted}
 						data-track-id={track.id}
 						data-track-kind={track.kind}
-						title="Double-click to add {track.kind === 'event'
-							? 'an event'
-							: 'a ' + TRACK_LABELS[track.kind].toLowerCase() + ' item'}"
-						ondblclick={(e) => laneDblClick(e, track)}
+						data-track-newer={isTrackKind(track.kind) ? undefined : ''}
+						title={!isTrackKind(track.kind)
+							? NEWER_NOTE
+							: track.kind === 'prop'
+								? propTrackLabel(track) + ' · ' + (track.keys?.length ?? 0) + ' keys — the track menu ⋯ smooths them'
+								: 'Double-click to add ' + (track.kind === 'event' ? 'an event' : 'a ' + TRACK_LABELS[track.kind].toLowerCase() + ' item')}
+						ondblclick={(e) => {
+							if (isTrackKind(track.kind) && track.kind !== 'prop') laneDblClick(e, track);
+						}}
 						onpointerdown={laneDown}
 					>
-						{#each track.items as item (item.id)}
+						{#if !isTrackKind(track.kind)}
+							<span class="tl-newer" role="note">{NEWER_NOTE}</span>
+						{:else if track.kind === 'prop'}
+							{#each track.keys ?? [] as key (key.id)}
+								<span class="tl-key" class:tl-key-user={key.src === 'user'} style="left: {xOf(key.t)}px" data-key-id={key.id}></span>
+							{/each}
+						{/if}
+						{#each isTrackKind(track.kind) ? track.items : [] as item (item.id)}
 							{@const sel = selection.includes(item.id)}
 							{#if track.kind === 'event'}
 								<div
@@ -1535,6 +1568,31 @@
 	}
 	.tl-event.tl-sel {
 		box-shadow: none;
+	}
+	/* 68-int: a property track's keys (a dope row) and a newer version's track */
+	.tl-key {
+		position: absolute;
+		top: 50%;
+		width: 7px;
+		height: 7px;
+		margin: -4px 0 0 -4px;
+		border: 1px solid var(--accent);
+		background: color-mix(in srgb, var(--accent) 45%, var(--surface-1));
+		transform: rotate(45deg);
+		pointer-events: none;
+	}
+	.tl-key.tl-key-user {
+		background: var(--accent);
+	}
+	.tl-newer {
+		position: absolute;
+		left: 8px;
+		top: 50%;
+		transform: translateY(-50%);
+		font-size: var(--fs-desc);
+		color: var(--ink-warn);
+		white-space: nowrap;
+		pointer-events: none;
 	}
 	.tl-diamond {
 		width: 12px;

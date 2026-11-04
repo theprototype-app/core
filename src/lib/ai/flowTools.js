@@ -234,6 +234,25 @@ function validatePoints(raw) {
 	return points;
 }
 
+/** 85b R10: flowRuntime's DIRECT_TARGET_TYPES (kept here too: flowRuntime is history-family) */
+const DIRECT_TARGET_TOOL_TYPES = new Set(['setcolor', 'visibility', 'spin']);
+/** a direct target: '' (none) or the uuid of an object in the scene, else null @param {any} v @returns {string | null} */
+function directTarget(v) {
+	if (v === '' || v === null) return '';
+	if (typeof v !== 'string' || v.length > 64) return null;
+	return /** @type {any} */ (get(objectsGroup))?.getObjectByProperty?.('uuid', v) ? v : null;
+}
+
+/** describe_node_types: the R10 `target` param on the three types that take one @param {string} t @param {any} spec */
+function withDirectTarget(t, spec) {
+	if (!spec || !DIRECT_TARGET_TOOL_TYPES.has(t)) return spec;
+	return {
+		...spec,
+		params: [...(Array.isArray(spec.params) ? spec.params : []), { key: 'target', kind: 'text', label: 'target object uuid' }],
+		note: [spec.note, 'target (an object uuid) drives that object with no Object Selector: a button drives a door. Empty = the usual rules (a selector it feeds, or the graph\'s own object).'].filter(Boolean).join(' ')
+	};
+}
+
 /**
  * Node data exactly like the editor builds it (Nodes.svelte addNode): label +
  * type + spec defaults, overlaid with the model's data for KNOWN keys only
@@ -270,6 +289,13 @@ function buildNodeData(type, spec, raw, errors) {
 			data.outputs = scriptOutputs({ outputs: value });
 			continue;
 		}
+		// 85b R10: Set Color / Visibility / Spin may name the object they drive (no selector chain)
+		if (key === 'target' && DIRECT_TARGET_TOOL_TYPES.has(type)) {
+			const t = directTarget(value);
+			if (t === null) errors.push(type + ' target: an object uuid from list_scene (or "" for the usual rules) — left unset');
+			else data.target = t;
+			continue;
+		}
 		if (key in (spec?.defaults ?? {})) data[key] = value;
 		// unknown keys are dropped silently — defaults render fine without them
 	}
@@ -286,7 +312,7 @@ function buildNodeData(type, spec, raw, errors) {
 export function describeNodeTypesTool(args, opts) {
 	return describeNodeTypes(args, {
 		vocabulary: aiNodeVocabulary(!!opts?.physics || physicsToolsEnabled()),
-		spec: (t) => findNodeSpec(t),
+		spec: (t) => withDirectTarget(t, findNodeSpec(t)),
 		doc: (t) => nodeDoc(t),
 		// D24's own lists (edgeHandles.js), so what this tool says is exactly what an edge is checked against;
 		// params are listed separately (a wire into a param key drives it)
@@ -527,6 +553,17 @@ export function updateFlowNodesTool(args) {
 				}
 				before.points = node.data.points;
 				patch.points = points;
+				continue;
+			}
+			// 85b R10: a direct target on Set Color / Visibility / Spin, checked like create's
+			if (key === 'target' && DIRECT_TARGET_TOOL_TYPES.has(node.type)) {
+				const t = directTarget(value);
+				if (t === null) {
+					errors.push(node.type + ' target: an object uuid from list_scene (or "" for the usual rules)');
+					continue;
+				}
+				before.target = node.data.target ?? '';
+				patch.target = t;
 				continue;
 			}
 			const known = key === 'label' || key in (spec?.defaults ?? {}) || key in node.data;

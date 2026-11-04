@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { objectsGroup, lockedObjects, pokeScene } from '../../stores/sceneStore.js';
 import { peers } from '../../stores/appStore.js';
 import { lockSkip } from './lockNote.js';
-import { sceneFilter } from './sceneFilter.js';
+import { sceneFilter, cursorOffset, cursorAt, PAGE_MAX } from './sceneFilter.js';
 import { ASSIST_TOOL_NAMES, ASSIST_AI_TOOLS, ASSIST_PROMPT, assistTool } from './assistTools.js';
 import { aboutOriginPosition, originOf } from '$lib/objectOrigin';
 import { geometrySpec } from '$lib/geometryParams';
@@ -292,13 +292,17 @@ export function graphPage(graphId, page) {
  * replicated objectsGroup only (scene-root helpers/env stay local). Capped so a
  * huge scene can't blow the context.
  * @param {number} [cap]
- * @param {{brief?: boolean, name?: string, type?: string, near?: {position: number[], radius: number}} | null} [filter]
+ * @param {{brief?: boolean, name?: string, type?: string, near?: {position: number[], radius: number}, bounds?: {min: number[], max: number[]}, limit?: number, cursor?: string} | null} [filter]
  *   55 (1.48.1): list_scene's narrowing — uuid/name/type/parent only, a name glob, a type, a world-space sphere
  * @returns {{objects: any[], truncated?: number}}
  */
 export function summarizeScene(cap = 200, filter = null) {
 	const group = get(objectsGroup);
 	const keep = sceneFilter(filter);
+	// 85b R7: paging — `limit` per page, `cursor` = where this page starts (the previous page's nextCursor)
+	const paged = filter && (filter.limit !== undefined || filter.cursor !== undefined);
+	const skip = paged ? cursorOffset(filter.cursor) : 0;
+	if (paged && Number.isFinite(Number(filter.limit))) cap = Math.max(1, Math.min(PAGE_MAX, Math.floor(Number(filter.limit))));
 	/** @type {any[]} */
 	const objects = [];
 	let truncated = 0;
@@ -309,6 +313,7 @@ export function summarizeScene(cap = 200, filter = null) {
 			if (object === group) return;
 			if (keep && !keep(object)) return;
 			matched++;
+			if (matched <= skip) return;
 			if (objects.length >= cap) {
 				truncated++;
 				return;
@@ -318,8 +323,9 @@ export function summarizeScene(cap = 200, filter = null) {
 	}
 	/** @type {any} */
 	const out = truncated ? { objects, truncated } : { objects };
+	if (paged && truncated) out.nextCursor = cursorAt(skip + objects.length);
 	// a filtered read is about objects: the scene-wide flow / behaviours / joints stay in the plain call
-	if (keep || filter?.brief) return { ...out, matched };
+	if (keep || filter?.brief || paged) return { ...out, matched };
 	const sceneFlow = summarizeGraph(SCENE_GRAPH);
 	if (sceneFlow) out.sceneFlow = sceneFlow;
 	const behaviours = summarizeBehaviours();
@@ -1010,8 +1016,8 @@ async function runAiTool(rawName, rawArgs, opts) {
 				// 55: `{flow, page}` reads one page of a big graph's summary
 				if (args && typeof args.flow === 'string' && args.flow) return graphPage(args.flow === 'scene' ? SCENE_GRAPH : args.flow, args.page ?? 1);
 				// 55 (1.48.1): narrowed reads
-				if (args && (args.brief || args.name || args.type || args.near))
-					return summarizeScene(200, { brief: args.brief === true, name: args.name, type: args.type, near: args.near });
+				if (args && (args.brief || args.name || args.type || args.near || args.bounds || args.limit !== undefined || args.cursor !== undefined))
+					return summarizeScene(200, { brief: args.brief === true, name: args.name, type: args.type, near: args.near, bounds: args.bounds, limit: args.limit, cursor: args.cursor });
 				return summarizeScene();
 
 			case 'animate_parts': {
@@ -1239,7 +1245,15 @@ export const AI_TOOLS = [
 						description: 'optional: only objects within radius of a WORLD position',
 						properties: { position: { type: 'array', items: { type: 'number' }, description: '[x, y, z]' }, radius: { type: 'number' } },
 						required: ['position', 'radius']
-					}
+					},
+					bounds: {
+						type: 'object',
+						description: 'optional: only objects whose WORLD position is inside this box',
+						properties: { min: { type: 'array', items: { type: 'number' }, description: '[x, y, z]' }, max: { type: 'array', items: { type: 'number' }, description: '[x, y, z]' } },
+						required: ['min', 'max']
+					},
+					limit: { type: 'number', description: 'optional: objects per page (1-500); the reply has nextCursor when more match' },
+					cursor: { type: 'string', description: 'optional: the nextCursor of the previous page' }
 				}
 			}
 		}

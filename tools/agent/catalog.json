@@ -64,6 +64,38 @@
 							"position",
 							"radius"
 						]
+					},
+					"bounds": {
+						"type": "object",
+						"description": "optional: only objects whose WORLD position is inside this box",
+						"properties": {
+							"min": {
+								"type": "array",
+								"items": {
+									"type": "number"
+								},
+								"description": "[x, y, z]"
+							},
+							"max": {
+								"type": "array",
+								"items": {
+									"type": "number"
+								},
+								"description": "[x, y, z]"
+							}
+						},
+						"required": [
+							"min",
+							"max"
+						]
+					},
+					"limit": {
+						"type": "number",
+						"description": "optional: objects per page (1-500); the reply has nextCursor when more match"
+					},
+					"cursor": {
+						"type": "string",
+						"description": "optional: the nextCursor of the previous page"
 					}
 				}
 			},
@@ -3488,6 +3520,38 @@
 								"position",
 								"radius"
 							]
+						},
+						"bounds": {
+							"type": "object",
+							"description": "optional: only objects whose WORLD position is inside this box",
+							"properties": {
+								"min": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"description": "[x, y, z]"
+								},
+								"max": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"description": "[x, y, z]"
+								}
+							},
+							"required": [
+								"min",
+								"max"
+							]
+						},
+						"limit": {
+							"type": "number",
+							"description": "optional: objects per page (1-500); the reply has nextCursor when more match"
+						},
+						"cursor": {
+							"type": "string",
+							"description": "optional: the nextCursor of the previous page"
 						}
 					}
 				},

@@ -78,7 +78,9 @@ describe('create_shapes batch (mcp-shapes item 2)', () => {
 		expect(/** @type {any} */ (checkShapes(Array.from({ length: SHAPES_MAX }, () => ({ action: 'mesh' })))).entries).toHaveLength(SHAPES_MAX);
 	});
 	it("the actions are the connector's create_shape family", () => {
-		const { shapes: _batch, ...actions } = CONNECTOR_FAMILIES.create_shape.actions;
+		// diorama2: import is one model file per call (base64, chunks or a fetch), never a batch entry
+		const { shapes: _batch, import: imp, ...actions } = CONNECTOR_FAMILIES.create_shape.actions;
+		expect(imp).toBe('import_shape');
 		expect(actions).toEqual(SHAPE_ACTIONS);
 	});
 });

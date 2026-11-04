@@ -3,7 +3,7 @@
 	"format": 2,
 	"generator": {
 		"source": "tpAgent.tools() via core scripts/agent-tool-catalog.cjs, mapped by tools/agent/src/catalog.js",
-		"hostTools": 71,
+		"hostTools": 72,
 		"dropped": []
 	},
 	"instructions": "You are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.\nWhen asked what you can do here, call what_can_you_do and say its \"say\" line.",
@@ -4756,6 +4756,95 @@
 			}
 		},
 		{
+			"name": "import_shape",
+			"title": "Import a model file (glTF / GLB / OBJ)",
+			"description": "Bring in a 3D model file: glTF 2.0 (.glb, or .gltf JSON with everything embedded) or Wavefront .obj, as data (base64; for a big file send chunk: {id, index, total} parts, each a multiple of 4 base64 characters) or an https url (public addresses only, ≤ 25 MB; the file is copied into the library first, so the scene never needs the address again). Named sub-meshes become named children, returned in parts with uuids, so animate_parts can move them (a lid, a wheel, a door). position / rotation (radians) / scale as create_objects; with parentUuid they are the group's own space. castShadow / receiveShadow apply to every mesh in it. A model is data: nothing in it runs, and a file that points at outside files is refused. One undo step; everyone sees it.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"data": {
+						"type": "string",
+						"description": "the file as base64 (or this chunk's part of it)"
+					},
+					"chunk": {
+						"type": "object",
+						"description": "{id, index (from 0), total}: one part of a big file; the model is placed when the last part lands",
+						"properties": {
+							"id": {
+								"type": "string"
+							},
+							"index": {
+								"type": "integer"
+							},
+							"total": {
+								"type": "integer"
+							}
+						}
+					},
+					"url": {
+						"type": "string",
+						"description": "an https address of a .glb / .gltf / .obj (the server must allow cross-origin reads)"
+					},
+					"name": {
+						"type": "string"
+					},
+					"position": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"minItems": 3,
+						"maxItems": 3
+					},
+					"rotation": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"minItems": 3,
+						"maxItems": 3,
+						"description": "radians, XYZ"
+					},
+					"scale": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"minItems": 3,
+						"maxItems": 3
+					},
+					"parentUuid": {
+						"type": "string",
+						"description": "a group (or any object) to put it in"
+					},
+					"folder": {
+						"type": "string",
+						"description": "Explorer folder (default \"Imported models\")"
+					},
+					"castShadow": {
+						"type": "boolean"
+					},
+					"receiveShadow": {
+						"type": "boolean"
+					},
+					"source": {
+						"type": "string",
+						"description": "where it came from (kept with the model)"
+					},
+					"licence": {
+						"type": "string",
+						"description": "its licence, e.g. CC0"
+					}
+				}
+			},
+			"annotations": {
+				"title": "Import a model file (glTF / GLB / OBJ)",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"openWorldHint": true
+			}
+		},
+		{
 			"name": "install_modules",
 			"title": "Install modules",
 			"description": "Install the modules the other peers in this session run and this page lacks (status().missingModules), from the module gallery. Local to this page; omit ids to install every missing one.\nTake a screenshot after each change to check your work.",
@@ -5123,6 +5212,7 @@
 				"tube": "create_tube",
 				"extrude": "extrude_shape",
 				"mesh": "create_mesh",
+				"import": "import_shape",
 				"shapes": "create_shapes"
 			},
 			"edit_shape": {
@@ -5870,7 +5960,7 @@
 			{
 				"name": "create_shape",
 				"title": "Make a shape",
-				"description": "Make shapes the basic objects cannot: a lathe (a vase, a bowl, a lamp from a profile turned around an axis), a tube along a path (a rail, a pipe, a cable), an extruded outline (a sign, a star, a wall with a hole), or a mesh from your own vertices (anything else).\nCall it as {\"action\": \"lathe\", \"lathe\": {…its fields…}}; each action's fields and limits are in its object below.\nMany at once: {\"shapes\": [{\"action\": \"lathe\", \"lathe\": {…}}, …]} with no action — one call, one undo step.\nTake a screenshot after each change to check your work.",
+				"description": "Make shapes the basic objects cannot: a lathe (a vase, a bowl, a lamp from a profile turned around an axis), a tube along a path (a rail, a pipe, a cable), an extruded outline (a sign, a star, a wall with a hole), or a mesh from your own vertices (anything else); import = a glTF / GLB / OBJ model file (base64, chunks or an https url) whose named parts come back as children animate_parts can move.\nCall it as {\"action\": \"lathe\", \"lathe\": {…its fields…}}; each action's fields and limits are in its object below.\nMany at once: {\"shapes\": [{\"action\": \"lathe\", \"lathe\": {…}}, …]} with no action — one call, one undo step.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -5880,7 +5970,8 @@
 								"lathe",
 								"tube",
 								"extrude",
-								"mesh"
+								"mesh",
+								"import"
 							],
 							"description": "What to do. Put its fields in the object named after the action."
 						},
@@ -6345,6 +6436,85 @@
 							],
 							"description": "A mesh from raw data: vertices [[x, y, z], …] and faces [[i, j, k] or [i, j, k, l] …] (indices into vertices, counter-clockwise seen from outside; polygons of up to 32 corners are fanned, so keep them convex), optional uvs (one [u, v] per vertex). Up to 20000 vertices and 20000 faces; normals are computed (smooth: true for smooth shading, flatShading: true for hard facets). Colour it as you make it: materials [{color, roughness, metalness, …}] (up to 16 slots) with faceMaterials [slot per face, same order as faces] for parts in different colours; or colors (one per vertex: [r, g, b] 0-1 meant as sRGB, the way a colour picker or a hex code means them, or a \"#rrggbb\" string; colorSpace: \"linear\" takes the numbers as linear) for a painted gradient — they multiply the material colour, which is white when you give colors and no color. Material slots last through edit_shape {action: 'mesh'}; vertex colours last only while an edit keeps the vertex count. subdivide: 1 or 2 smooths it (Catmull-Clark: a box of six quads becomes a rounded pebble, a few quads become a soft organic shape; each level about four times the faces, checked against the caps). Edit it afterwards with edit_shape {action: 'mesh'}, or send new vertices with edit_shape {action: 'update'}. Returns the uuid."
 						},
+						"import": {
+							"type": "object",
+							"properties": {
+								"data": {
+									"type": "string",
+									"description": "the file as base64 (or this chunk's part of it)"
+								},
+								"chunk": {
+									"type": "object",
+									"description": "{id, index (from 0), total}: one part of a big file; the model is placed when the last part lands",
+									"properties": {
+										"id": {
+											"type": "string"
+										},
+										"index": {
+											"type": "integer"
+										},
+										"total": {
+											"type": "integer"
+										}
+									}
+								},
+								"url": {
+									"type": "string",
+									"description": "an https address of a .glb / .gltf / .obj (the server must allow cross-origin reads)"
+								},
+								"name": {
+									"type": "string"
+								},
+								"position": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"minItems": 3,
+									"maxItems": 3
+								},
+								"rotation": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"minItems": 3,
+									"maxItems": 3,
+									"description": "radians, XYZ"
+								},
+								"scale": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"minItems": 3,
+									"maxItems": 3
+								},
+								"parentUuid": {
+									"type": "string",
+									"description": "a group (or any object) to put it in"
+								},
+								"folder": {
+									"type": "string",
+									"description": "Explorer folder (default \"Imported models\")"
+								},
+								"castShadow": {
+									"type": "boolean"
+								},
+								"receiveShadow": {
+									"type": "boolean"
+								},
+								"source": {
+									"type": "string",
+									"description": "where it came from (kept with the model)"
+								},
+								"licence": {
+									"type": "string",
+									"description": "its licence, e.g. CC0"
+								}
+							},
+							"description": "Bring in a 3D model file: glTF 2.0 (.glb, or .gltf JSON with everything embedded) or Wavefront .obj, as data (base64; for a big file send chunk: {id, index, total} parts, each a multiple of 4 base64 characters) or an https url (public addresses only, ≤ 25 MB; the file is copied into the library first, so the scene never needs the address again). Named sub-meshes become named children, returned in parts with uuids, so animate_parts can move them (a lid, a wheel, a door). position / rotation (radians) / scale as create_objects; with parentUuid they are the group's own space. castShadow / receiveShadow apply to every mesh in it. A model is data: nothing in it runs, and a file that points at outside files is refused. One undo step; everyone sees it."
+						},
 						"shapes": {
 							"type": "array",
 							"minItems": 1,
@@ -6390,7 +6560,7 @@
 					"title": "Make a shape",
 					"readOnlyHint": false,
 					"destructiveHint": true,
-					"openWorldHint": false
+					"openWorldHint": true
 				}
 			},
 			{

@@ -787,6 +787,7 @@ const TOOL_NAMES = [
 	'edit_behaviour',
 	'import_model', // 56 C9 (offered to agents; see importModel.js)
 	'import_file', // 66 S4b (offered to agents; see importFile.js)
+	'import_shape', // diorama2 item 9: glTF / GLB / OBJ by data / chunks / https url (offered to agents; the connector's create_shape import)
 	...GEOMETRY_TOOL_NAMES, // 85 G1-G6 (geometryTools.js)
 	...LOOK_TOOL_NAMES, // 85 L1-L5 (lookTools.js)
 	...HUD_TOOL_NAMES, // 85 H1 / H2 + hud panel (hudTools.js)
@@ -1210,6 +1211,10 @@ async function runAiTool(rawName, rawArgs, opts) {
 			case 'import_model':
 				// 56 C9: a self-contained GLB through the app's own import path (one undo, synced)
 				return await (await import('./importModel.js')).importModelTool(args);
+
+			case 'import_shape':
+				// diorama2 item 9: a model file by data / chunks / https url → library first, then the app's import path
+				return await (await import('./importShape.js')).importShapeTool(args);
 
 			case 'import_file':
 				// 66 S4b: a PNG / WebP / JSON / .tpanim made on the agent's machine (Explorer + a scene card)

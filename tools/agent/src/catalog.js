@@ -36,6 +36,7 @@ export const TOOL_ANNOTATIONS = /** @type {Record<string, {title: string, read?:
 	save_scene: { title: 'Save the scene', destructive: false },
 	import_model: { title: 'Import a 3D model', destructive: false },
 	import_file: { title: 'Import a file', destructive: false },
+	import_shape: { title: 'Import a model file (glTF / GLB / OBJ)', destructive: false, openWorld: true },
 	update_objects: { title: 'Change objects', destructive: true },
 	update_flow_nodes: { title: 'Change or remove flow nodes', destructive: true },
 	edit_behaviour: { title: 'Edit a code behaviour', destructive: true },
@@ -257,8 +258,8 @@ export const CONNECTOR_FAMILIES = Object.freeze({
 	create_shape: {
 		title: 'Make a shape',
 		summary:
-			'Make shapes the basic objects cannot: a lathe (a vase, a bowl, a lamp from a profile turned around an axis), a tube along a path (a rail, a pipe, a cable), an extruded outline (a sign, a star, a wall with a hole), or a mesh from your own vertices (anything else).',
-		actions: { lathe: 'create_lathe', tube: 'create_tube', extrude: 'extrude_shape', mesh: 'create_mesh' },
+			'Make shapes the basic objects cannot: a lathe (a vase, a bowl, a lamp from a profile turned around an axis), a tube along a path (a rail, a pipe, a cable), an extruded outline (a sign, a star, a wall with a hole), or a mesh from your own vertices (anything else); import = a glTF / GLB / OBJ model file (base64, chunks or an https url) whose named parts come back as children animate_parts can move.',
+		actions: { lathe: 'create_lathe', tube: 'create_tube', extrude: 'extrude_shape', mesh: 'create_mesh', import: 'import_shape' },
 		batch: { key: 'shapes', tool: 'create_shapes' }
 	},
 	edit_shape: {

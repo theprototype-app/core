@@ -29,6 +29,13 @@ function sweep(group) {
 	});
 }
 
+/** mcp-shapes: a mesh whose flags someone set on purpose (an agent's castShadow / receiveShadow) is never defaulted
+ * afterwards — the sweep can run a frame later (pokeScene batches) and would turn receiveShadow back on
+ * @param {any} node */
+export function markShadowsChosen(node) {
+	if (node) seen.add(node);
+}
+
 let started = false;
 
 export function startShadowDefaults() {

@@ -31,6 +31,7 @@ import { paletteColorFor } from '$lib/palette';
 import { lockSkip } from './lockNote.js';
 import { aiCreatePhysics } from './aiPhysicsDefault.js';
 import { shapePose, checkShapes, SHAPES_MAX, SHAPE_ACTIONS } from './shapeBatchCore.js';
+import { applyShadowFlags } from './shadowFlags.js';
 import {
 	parseSelect,
 	vertexKey,
@@ -302,7 +303,8 @@ async function createTubeTool(args) {
 	st.commitSplineEdit(mesh.uuid, stub, made.record);
 	const physics = aiCreatePhysics(args, undefined);
 	if (physics) setPhysicsFor(mesh.uuid, physics);
-	return { created: [{ uuid: mesh.uuid, name: mesh.name, points: made.record.points.length, position: made.center.map(r3), ...(warning ? { warnings: [warning] } : {}) }] };
+	const warnings = [...(warning ? [warning] : []), ...applyShadowFlags(mesh, args)];
+	return { created: [{ uuid: mesh.uuid, name: mesh.name, points: made.record.points.length, position: made.center.map(r3), ...(warnings.length ? { warnings } : {}) }] };
 }
 
 // ---- G2 / G4 parametric shapes: create a base primitive, then give it its params ----------------------
@@ -490,6 +492,7 @@ async function createMeshTool(args) {
 	if (!fe.commitMeshGeoTriple(mesh.uuid, before, after)) return { error: 'the mesh is too large to sync', created: [{ uuid: mesh.uuid, name: mesh.name }] };
 	const physics = aiCreatePhysics(args, undefined);
 	if (physics) setPhysicsFor(mesh.uuid, physics);
+	warnings.push(...applyShadowFlags(mesh, args));
 	return {
 		created: [
 			{
@@ -755,7 +758,9 @@ const PLACE = {
 		type: 'string',
 		description: 'uuid of a group to nest under — position / rotation / scale AND the shape\'s own points are then LOCAL to that group (no position = the group\'s origin), so the part moves and turns with it'
 	},
-	physics: { type: 'string', enum: ['static', 'dynamic'], description: 'default static' }
+	physics: { type: 'string', enum: ['static', 'dynamic'], description: 'default static' },
+	castShadow: { type: 'boolean', description: 'cast a shadow (on by default)' },
+	receiveShadow: { type: 'boolean', description: 'shadows fall on it (on by default)' }
 };
 const SELECT = {
 	type: 'object',

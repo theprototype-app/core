@@ -1,4 +1,5 @@
 import { get } from 'svelte/store';
+import * as THREE from 'three';
 import { objectsGroup, lockedObjects, pokeScene } from '../../stores/sceneStore.js';
 import { peers } from '../../stores/appStore.js';
 import { lockSkip } from './lockNote.js';
@@ -12,7 +13,8 @@ import {
 	renameObject,
 	toggleObjectVisibility,
 	moveObjectToGroup,
-	deleteObjectsByUuid
+	deleteObjectsByUuid,
+	duplicateObject
 } from '$lib/objectActions';
 import { setObjectColor, switchMaterialType, setMaterialParam } from '$lib/materialsHandler';
 import { checkMaterialParam, toHexColor } from '$lib/materialParamRules.js';
@@ -47,6 +49,8 @@ import {
 import { GEOMETRY_TOOL_NAMES, GEOMETRY_AI_TOOLS, GEOMETRY_PROMPT, geometryTool } from './geometryTools.js';
 import { shapePose } from './shapeBatchCore.js';
 import { meshStats } from './meshStats.js';
+import { applyShadowFlags, SHADOW_SCHEMA } from './shadowFlags.js';
+import { duplicatePlan, DUPLICATE_MAX } from './duplicateCore.js';
 import { LOOK_TOOL_NAMES, LOOK_AI_TOOLS, LOOK_PROMPT, lookTool } from './lookTools.js';
 
 // AI tool layer (roadmap #10, A4). Maps OpenAI-style function calls onto the
@@ -476,6 +480,60 @@ async function applyAiMaterialParams(uuid, params) {
 	return errors;
 }
 
+/**
+ * mcp-shapes: turn an object so its local +Z axis (its front) points at a world point or at another object, +Y kept
+ * up — three's lookAt, through the transform path (one move, one undo entry; an object with a pivot turns about it).
+ * @param {any} object @param {any} target [x, y, z] world, or a uuid @returns {string | null} the error
+ */
+function lookAtTarget(object, target) {
+	if (object.isLight) return 'lookAt: a light turns with aim: [x, y, z]';
+	const root = get(objectsGroup);
+	root?.updateMatrixWorld(true);
+	/** @type {THREE.Vector3} */
+	let point;
+	if (typeof target === 'string') {
+		const other = objectOf(target);
+		if (!other) return 'lookAt: no object with that uuid';
+		if (other === object) return 'lookAt: an object cannot look at itself';
+		point = other.getWorldPosition(new THREE.Vector3());
+	} else if (Array.isArray(target) && target.length === 3 && target.every((n) => typeof n === 'number' && Number.isFinite(n))) point = new THREE.Vector3().fromArray(target);
+	else return "lookAt: a world point [x, y, z] or another object's uuid";
+	if (object.getWorldPosition(new THREE.Vector3()).distanceTo(point) < 1e-6) return 'lookAt: the target is where the object is';
+	const was = object.quaternion.clone();
+	object.lookAt(point);
+	const rotation = [object.rotation.x, object.rotation.y, object.rotation.z];
+	object.quaternion.copy(was);
+	applyAiTransform(object, { rotation });
+	return null;
+}
+
+/**
+ * mcp-shapes: create_objects {from, count, offset, randomRot, randomScale, seed} — deep copies of one object (children,
+ * clips, flows and joints inside it come along, the Ctrl+D path), each placed by duplicatePlan, in the source's parent.
+ * @param {any} args @returns {any}
+ */
+function duplicateFrom(args) {
+	const uuid = String(args.from);
+	const source = objectOf(uuid);
+	if (!source) return { error: 'from: no object with that uuid' };
+	const plan = duplicatePlan(args, {
+		position: source.position.toArray(),
+		rotation: [source.rotation.x, source.rotation.y, source.rotation.z],
+		scale: source.scale.toArray()
+	});
+	if ('error' in plan) return { error: plan.error };
+	const base = typeof args.name === 'string' && args.name.trim() ? args.name.trim().slice(0, 110) : (source.name || source.type) + ' copy';
+	/** @type {any[]} */
+	const created = [];
+	plan.poses.forEach((pose, i) => {
+		const clone = duplicateObject(uuid, { select: false, at: pose.position, name: plan.poses.length > 1 ? base + ' ' + (i + 1) : base });
+		if (!clone) return created.push({ error: 'the copy could not be made' });
+		applyAiTransform(clone, { rotation: pose.rotation, scale: pose.scale });
+		created.push({ uuid: clone.uuid, name: clone.name, position: pose.position });
+	});
+	return { from: uuid, created, uuids: created.filter((c) => c.uuid).map((c) => c.uuid) };
+}
+
 /** @param {any} spec @returns {any} one created object's result */
 function createOne(spec, extraTypes = /** @type {string[]} */ ([])) {
 	const uuid = genUuid();
@@ -548,6 +606,13 @@ function createOne(spec, extraTypes = /** @type {string[]} */ ([])) {
 		if (hex) setObjectColor(uuid, hex);
 		else warnings.push('color: takes a hex colour like "#ff8800"');
 	}
+	// mcp-shapes: shadows on a mesh / model (a light's castShadow went through applyAiLight), then lookAt
+	if (!created.isLight) warnings.push(...applyShadowFlags(created, spec));
+	else if (spec.receiveShadow !== undefined) warnings.push('receiveShadow: a light casts shadows, nothing falls on it');
+	if (spec.lookAt !== undefined) {
+		const why = lookAtTarget(created, spec.lookAt);
+		if (why) warnings.push(why);
+	}
 	// fix-live F-4: static unless asked — a built scene must not fall apart in Play
 	const physics = aiCreatePhysics(spec, created.userData?.physics);
 	if (physics) setPhysicsFor(uuid, physics);
@@ -594,9 +659,13 @@ async function updateOne(spec) {
 	applyAiTransform(object, spec);
 	if (object.isLight) {
 		errors.push(...applyAiLight(object, spec));
+		if (spec.receiveShadow !== undefined) errors.push('receiveShadow: a light casts shadows, nothing falls on it');
 		if (spec.materialType !== undefined || spec.materialParams !== undefined) errors.push('materialType/materialParams: a light has no material — use color, intensity, distance, angle…');
 	} else {
-		if (hasLightFields(spec)) errors.push(LIGHT_FIELDS.filter((k) => k !== 'color' && spec[k] !== undefined).join(', ') + ': only a light takes these');
+		// mcp-shapes: castShadow is a mesh flag too (receiveShadow is mesh-only)
+		const lightOnly = LIGHT_FIELDS.filter((k) => k !== 'color' && k !== 'castShadow' && spec[k] !== undefined);
+		if (lightOnly.length) errors.push(lightOnly.join(', ') + ': only a light takes these');
+		errors.push(...applyShadowFlags(object, spec));
 		if (spec.color) {
 			const hex = colorOf(spec.color);
 			if (!hex) errors.push('color: takes a hex colour like "#ff8800"');
@@ -615,6 +684,11 @@ async function updateOne(spec) {
 		}
 	}
 	if (typeof spec.visible === 'boolean' && object.visible !== spec.visible) toggleObjectVisibility(uuid);
+	// mcp-shapes: after the move, so a new position is where it looks from
+	if (spec.lookAt !== undefined) {
+		const why = lookAtTarget(object, spec.lookAt);
+		if (why) errors.push(why);
+	}
 	return errors.length ? { uuid, ok: false, errors } : { uuid, ok: true };
 }
 
@@ -917,9 +991,13 @@ async function runAiTool(rawName, rawArgs, opts) {
 
 			case 'create_objects': {
 				const specs = Array.isArray(args?.objects) ? args.objects : [];
+				// mcp-shapes: {from, count, ...} = copies of an existing object (with objects too: both, one undo step)
+				const copies = args?.from !== undefined ? duplicateFrom(args) : null;
+				if (copies && !specs.length) return copies;
 				if (!specs.length)
 					return { error: 'no objects provided — pass objects: [{ kind: "primitive", primitive: "Box", ... }]' };
 				const results = specs.map((/** @type {any} */ s) => createOne(s));
+				if (copies) return { created: results, copies };
 				// surface a total failure at the TOP level so the caller (and the undo
 				// summary) doesn't count a no-op as an applied action
 				if (results.every((/** @type {any} */ r) => r.error))
@@ -1131,10 +1209,17 @@ export const AI_TOOLS = [
 		function: {
 			name: 'create_objects',
 			description:
-				'Create one or more primitives, lights or empty groups in a single call. Ground is the y=0 plane; place objects so they rest ON it (a box of height h sits at y=h/2). Returns the new uuids.',
+				'Create one or more primitives, lights or empty groups in a single call. Ground is the y=0 plane; place objects so they rest ON it (a box of height h sits at y=h/2). Returns the new uuids. To copy an existing object instead (a row of fence posts, a ring of chairs), pass from: its uuid, count, offset [x,y,z] between one copy and the next, and optionally randomRot / randomScale with a seed: deep copies (children, materials, flows), one undo step, uuids in order, in the source\'s own group. lookAt turns an object so its local +Z axis (its front) faces a point or another object, +Y kept up.',
 			parameters: {
 				type: 'object',
 				properties: {
+					from: { type: 'string', description: 'copy this object (uuid) instead of making new ones; objects can still be given beside it' },
+					count: { type: 'integer', description: 'with from: how many copies, 1-' + DUPLICATE_MAX + ' (default 1)' },
+					offset: { type: 'array', items: { type: 'number' }, description: 'with from: [x,y,z] metres from one copy to the next, in the source\'s space (copy i = source + i x offset)' },
+					randomRot: { description: 'with from: true (any turn about Y), a number (± radians about Y) or [x,y,z] (± radians per axis)' },
+					randomScale: { description: 'with from: a fraction like 0.2 (sizes 0.8-1.2, uniform) or [min, max] factors' },
+					seed: { type: 'integer', description: 'with from: the same seed makes the same copies (default 1)' },
+					name: { type: 'string', description: 'with from: the copies\' name (numbered when several)' },
 					objects: {
 						type: 'array',
 						items: {
@@ -1167,6 +1252,8 @@ export const AI_TOOLS = [
 								scale: { type: 'array', items: { type: 'number' }, description: '[x,y,z]' },
 								color: { type: 'string', description: 'hex like #ff8800 (a mesh, or a light\'s colour)' },
 								...LIGHT_SCHEMA,
+								...SHADOW_SCHEMA,
+								lookAt: { description: 'turn it so its local +Z (front) faces this: a world point [x,y,z] or another object\'s uuid (+Y stays up; lights use aim)' },
 								parentUuid: { type: 'string', description: 'uuid of an existing group to nest under — position/rotation/scale are then LOCAL to that group' },
 								physics: {
 									type: 'string',
@@ -1179,7 +1266,7 @@ export const AI_TOOLS = [
 						}
 					}
 				},
-				required: ['objects']
+				required: []
 			}
 		}
 	},
@@ -1188,7 +1275,7 @@ export const AI_TOOLS = [
 		function: {
 			name: 'update_objects',
 			description:
-				'Modify existing objects by uuid: move/rotate/scale, recolor, change material, rename, show/hide, or reparent. Batch many in one call. On an object an effect is moving, a transform sets its authored pose (the one list_scene reports) and the effect carries on from there.',
+				'Modify existing objects by uuid: move/rotate/scale, recolor, change material, rename, show/hide, shadows (castShadow / receiveShadow), turn to face something (lookAt), or reparent. Batch many in one call. On an object an effect is moving, a transform sets its authored pose (the one list_scene reports) and the effect carries on from there.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1214,6 +1301,8 @@ export const AI_TOOLS = [
 										'meshes: numbers (roughness, metalness, opacity, emissiveIntensity, clearcoat, transmission, ior, shininess…, clamped), true/false (wireframe, transparent, flatShading), hex colours (emissive, specular), side (front|back|double), and map = a library image hash (null clears). Each bad key comes back in errors.'
 								},
 								...LIGHT_SCHEMA,
+								...SHADOW_SCHEMA,
+								lookAt: { description: 'turn it so its local +Z (front) faces this: a world point [x,y,z] or another object\'s uuid (+Y stays up; lights use aim)' },
 								visible: { type: 'boolean' },
 								parentUuid: {
 									type: 'string',

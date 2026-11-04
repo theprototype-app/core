@@ -470,6 +470,14 @@ describe('mcp-shapes: create_shape in a group, colours at creation, many in one 
 		expect(summarizeToolCall('create_shapes', {}, r)).toBe('made 3 shapes (Body, Vase +1)');
 	});
 
+	it('castShadow / receiveShadow at creation: the Inspector flag path (objectParameters), undone with the shape', async () => {
+		const r = await call('create_mesh', { ...CUBE, castShadow: false, receiveShadow: false });
+		const o = live(r.created[0].uuid);
+		expect([o.castShadow, o.receiveShadow, o.userData.shadow]).toEqual([false, false, false]);
+		expect(sent.filter((m) => m.type === 'objectParameters').map((m) => m.parameter)).toEqual(['castShadow', 'receiveShadow']);
+		expect((await call('create_tube', { path: [[0, 0, 0], [1, 0, 0]], receiveShadow: 'yes' })).created[0].warnings).toEqual(['receiveShadow: true or false']);
+	});
+
 	it('create_shapes checks every entry first: one wrong entry names its index and nothing is made', async () => {
 		const count = group.children.length;
 		const r = await call('create_shapes', { shapes: [{ action: 'mesh', mesh: CUBE }, { action: 'mesh', mesh: { vertices: CUBE.vertices, faces: [[0, 1, 99]] } }] });

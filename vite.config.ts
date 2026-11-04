@@ -265,7 +265,8 @@ export default defineConfig({
 			// opened — discovered then, it would reload the page with the tab half-bound
 			// 69: the script engine loads with the first scene that carries code — the same reload, with
 			// the scene that was just opened gone (its wasm comes in by ?url, so pre-bundling is safe)
-			include: ['quickjs-emscripten-core', '@jitl/quickjs-wasmfile-release-sync', 'lodash.groupby', 'meshoptimizer/simplifier', '@codemirror/state', '@codemirror/language', '@lezer/highlight', 'meshoptimizer', '@gltf-transform/core', '@gltf-transform/extensions', '@gltf-transform/functions', 'ktx-parse', 'libheif-js/libheif-wasm/libheif.js', 'yjs', 'y-protocols/awareness', 'y-codemirror.next']
+			// 68 V9 (from 65 M4): mediabunny + gifenc are reached only by the video export's lazy import — the same rule
+			include: ['quickjs-emscripten-core', '@jitl/quickjs-wasmfile-release-sync', 'lodash.groupby', 'meshoptimizer/simplifier', '@codemirror/state', '@codemirror/language', '@lezer/highlight', 'meshoptimizer', '@gltf-transform/core', '@gltf-transform/extensions', '@gltf-transform/functions', 'ktx-parse', 'libheif-js/libheif-wasm/libheif.js', 'yjs', 'y-protocols/awareness', 'y-codemirror.next', 'mediabunny', 'gifenc']
 		},
 	// dev https via the repo's local certs (vite-plugin-mkcert stayed on vite<=5;
 	// certs/ was already how CI-less https worked before mkcert)

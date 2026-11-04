@@ -41,6 +41,8 @@
 	import { rolesInfo } from '$lib/cloudHooks';
 	import { isViewer } from '$lib/objectPermissions';
 	import { openTimeline } from '$lib/timelineOpen';
+	import { recordingOpen, setRecordingPrefs } from '$lib/recording/recordingStores.js';
+	import { MIN_DURATION, MAX_DURATION } from '$lib/recording/recordingCore.js';
 	import { filmShots } from '$lib/film/filmTake';
 	import { sequences } from '$lib/sequences';
 	import { registerDebugHook } from '$lib/debugHooks';
@@ -560,6 +562,16 @@
 		closeFilm();
 		void openTimeline(seq ?? undefined);
 	}
+	/** 68 V9: Share as video — the take's timeline, straight into the export (MP4, frame by frame) */
+	async function exportTake() {
+		const id = $take.seq;
+		await finishTake();
+		const seq = id ? get(sequences)[id] : null;
+		closeFilm();
+		if (!seq) return;
+		setRecordingPrefs({ mode: 'timeline', sequence: seq.id, format: 'mp4', duration: Math.min(MAX_DURATION, Math.max(MIN_DURATION, Number(seq.duration) || MIN_DURATION)) });
+		recordingOpen.set(true);
+	}
 	const shots = $derived.by(() => {
 		const seq = $take.seq ? $sequences[$take.seq] : null;
 		return seq && $film ? filmShots(seq, $film.uuid) : [];
@@ -969,7 +981,10 @@
 				{/each}
 				{#if shots.length}
 					<button id="film-edit" class="film-sheet-btn primary" onclick={editInTimeline}>
-						<Icon name="clapperboard" size={20} /><span><strong>Edit in Timeline</strong> — trim, re-time and export the take</span>
+						<Icon name="clapperboard" size={20} /><span><strong>Edit in Timeline</strong> — trim, re-time and smooth the take</span>
+					</button>
+					<button id="film-export" class="film-sheet-btn" onclick={exportTake}>
+						<Icon name="video" size={20} /><span><strong>Export video</strong> — the take as an MP4, frame by frame</span>
 					</button>
 				{/if}
 			</div>

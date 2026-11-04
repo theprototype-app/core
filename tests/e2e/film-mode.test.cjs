@@ -417,12 +417,49 @@ h.run(async () => {
 	await page.locator('#film-shots').click();
 	h.check((await page.locator('.film-shot-row').count()) === 3, 'the shots list shows the three shots');
 	await shot(page, 'folded-shots');
-	await page.locator('#film-shots').click();
-	await page.evaluate(() => window.__stores.filmRecorder.finishTake());
 
-	// Exit: chrome back, preview over, the MARKER never moved
-	await page.locator('#film-exit').click();
-	await page.waitForTimeout(600);
+	// 68 V9 Share as video: the take → Export video → the Recording dialog on the take's timeline, as MP4;
+	// on a phone an over-long render is refused with the reason, a short one exports frame by frame
+	await page.locator('#film-export').click();
+	await page.waitForSelector('#recording-dialog', { timeout: 20000 });
+	const dlg = await page.evaluate(() => ({
+		film: !!document.getElementById('film-root'),
+		mode: document.querySelector('#recording-dialog')?.getAttribute('data-mode'),
+		seq: /** @type {HTMLSelectElement | null} */ (document.querySelector('#recording-sequence'))?.value,
+		format: /** @type {HTMLSelectElement | null} */ (document.querySelector('#recording-format'))?.value
+	}));
+	h.check(!dlg.film && dlg.mode === 'timeline' && dlg.seq === seqId && dlg.format === 'mp4', `Export video closes Film and opens the export on the take's timeline as MP4 (${JSON.stringify(dlg)})`);
+	const setNum = async (/** @type {string} */ id, /** @type {string} */ v) => {
+		await page.fill('#' + id, v);
+		await page.locator('#' + id).dispatchEvent('change');
+		await page.waitForTimeout(150);
+	};
+	await setNum('recording-duration', '30');
+	const capMsg = (await page.locator('#recording-blocked').textContent().catch(() => '')) || '';
+	h.check(/On a phone an export is at most 20 s \(this one is 30 s\)/.test(capMsg) && (await page.locator('#recording-start').isDisabled()), `the phone cap refuses a 30 s render with the reason ("${capMsg.slice(0, 90)}…")`);
+	await page.selectOption('#recording-resolution', '480p');
+	await page.selectOption('#recording-fps', '12');
+	await setNum('recording-duration', '2');
+	await shot(page, 'folded-export-dialog');
+	await page.click('#recording-start');
+	await page.waitForSelector('#recording-result, #recording-error', { timeout: 180000 });
+	const vid = await page.evaluate(() => {
+		let s = /** @type {any} */ (null);
+		window.__stores.recordingStores.recordingState.subscribe((/** @type {any} */ v) => (s = v))();
+		return { status: s.status, error: s.error, mime: s.result?.mime, frames: s.result?.frames, exact: s.result?.exact, w: s.result?.width };
+	});
+	h.check(vid.status === 'done' && vid.mime === 'video/mp4' && vid.frames === 24 && vid.exact, `the take exports to MP4, frame-exact (${JSON.stringify(vid)})`);
+	await shot(page, 'folded-export-result');
+	await page.evaluate(() => {
+		window.__stores.recordingStores.recordingOpen.set(false);
+	});
+	await page.waitForTimeout(400);
+
+	// Exit: chrome back, preview over, the MARKER never moved (Export video already left Film)
+	if (await page.$('#film-exit')) {
+		await page.locator('#film-exit').click();
+		await page.waitForTimeout(600);
+	}
 	const after = await page.evaluate((u) => {
 		let g = null;
 		window.__stores.objectsGroup.subscribe((v) => (g = v))();

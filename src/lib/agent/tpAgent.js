@@ -23,6 +23,7 @@ import { beginHistoryBatch, endHistoryBatch } from '$lib/history';
 import { peers, userdata, waitingForApproval, toastStore, dismissToastById, loading, loadingcount } from '../../stores/appStore.js';
 import { sceneLoad } from '$lib/sceneLoader.js';
 import { globalRenderer } from '../../stores/sceneStore.js';
+import { agentBudgetReport } from '$lib/sceneBudget';
 import { scriptErrors } from '../../stores/flowStore';
 import { sessionHost, snapshotPending } from '$lib/connectionState';
 import { isAgentPeer } from '$lib/inviteStore';
@@ -477,6 +478,7 @@ export function createTpAgent(extra = {}) {
 		},
 		host: () => get(sessionHost),
 		behaviourErrors: () => /** @type {any} */ (behaviourHost())?.errors?.() ?? [],
+		sceneBudget: () => agentBudgetReport(), // mcp-shapes
 		scriptErrors: () => Object.entries(/** @type {Record<string, string>} */ (get(scriptErrors))).slice(0, 20).map(([node, message]) => ({ node: node.slice(0, 64), message: String(message).slice(0, 200) })),
 		hostAway: () => hostAwayState(),
 		// 1.2: a scene still arriving — the join snapshot (the uuids the sender announced and we lack) or a

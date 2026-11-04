@@ -100,6 +100,7 @@ export function toolName(tool) {
  * @property {() => string|null} host
  * @property {() => {node: string, message: string}[]} [scriptErrors] mcp-fix: Script nodes that are failing now
  * @property {() => {name: string, where: string, message: string}[]} [behaviourErrors] 1.2: the scene's failing behaviours
+ * @property {() => any} [sceneBudget] 1.6.0 (mcp-shapes): the compact scene budget status carries
  * @property {() => {arrived: number, total: number} | null} [loading] 1.2: a scene still arriving (null = none)
  * @property {() => {host: string, since: number, until: number, expired: boolean} | null} [hostAway] 1.2: the host left
  *   and no person is here: paused (null = a host is here)
@@ -332,6 +333,16 @@ export function createAgentCore(deps) {
 		}
 	}
 
+	/** mcp-shapes: `{sceneBudget}` — how heavy the scene is (the Statistics overlay's numbers), else nothing */
+	function sceneBudget() {
+		try {
+			const b = deps.sceneBudget?.();
+			return b ? { sceneBudget: b } : {};
+		} catch {
+			return {};
+		}
+	}
+
 	/** @returns {import('./contract.js').TpAgentStatus & {notices: string[]}} */
 	function status() {
 		const host = deps.host();
@@ -364,6 +375,7 @@ export function createAgentCore(deps) {
 			// 55 (41's gem test): a behaviour that throws says so here, not only in the runtime's instance list
 			...behaviourErrors(),
 			...scriptErrors(),
+			...sceneBudget(),
 			notices: notices.slice()
 		};
 	}

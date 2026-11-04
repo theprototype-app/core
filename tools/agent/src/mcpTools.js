@@ -152,7 +152,9 @@ export const WHERE_ARE_USERS_TOOL = {
 		'plus forward and right vectors, the floor under them, and ready-made spots 1.5 m and 3 m in front of them at floor level. ' +
 		'The entry with "you": true is the person you act as. Use it for "in front of me", "around me", "behind me", "to my left". ' +
 		'A person can PING a spot (Ctrl+Alt+click, Ping in a menu, the VR stick click): each row carries their latestPing, and pings: true lists the ' +
-		'recent ones (2 minutes). For "put it here", build with create_objects / update_objects at: {ping: "latest"} (align: "surface" for a wall).',
+		'recent ones (2 minutes). For "put it here", build with create_objects / update_objects at: {ping: "latest"} (align: "surface" for a wall). ' +
+		'Each row also has body (eye, height, shoulder, hip, knee, reach, room — "a table at hip height") and, in VR, hands (left, right, apart — "as wide as my hands"). ' +
+		'Nothing you make may appear inside a person in VR (0.45 m around the head, through the body): that call is refused and says so.',
 	inputSchema: {
 		type: 'object',
 		properties: { pings: { type: 'boolean', description: 'also list the recent pings (85b S2): id, who, how long ago, position, surface normal, the object it is on' } }

@@ -279,10 +279,22 @@
 								},
 								"at": {
 									"type": "object",
-									"description": "build at a spot a person PINGED (Ctrl+Alt+click, the menu's Ping, a long-press menu, the VR stick click): {ping: id} from where_are_users {pings: true}, or {ping: \"latest\"} = \"here\". On a floor or table top it stands on it; the ping follows the object it landed on",
+									"description": "build at a spot a person PINGED (Ctrl+Alt+click, the menu's Ping, a long-press menu, the VR stick click): {ping: id} from where_are_users {pings: true}, or {ping: \"latest\"} = \"here\"; on a floor or table top it stands on it, and the ping follows the object it landed on. Or around a PERSON as they are now: {user: \"me\" | peer id | name, ahead: 1.5, right: 0, up: 0} (metres or body units; it faces them; call again to follow them as they walk). Sizes, positions and these offsets also take BODY UNITS: \"eye\", \"height\", \"shoulder\", \"hip\", \"knee\", \"reach\", \"room\", with a factor (\"0.5 reach\") — that person's, from where_are_users body",
 									"properties": {
 										"ping": {
 											"type": "string"
+										},
+										"user": {
+											"type": "string"
+										},
+										"ahead": {
+											"description": "metres in front of them (at least 0.6), or a body unit"
+										},
+										"right": {
+											"description": "metres to their right (negative = left), or a body unit"
+										},
+										"up": {
+											"description": "metres above their floor, or a body unit"
 										}
 									}
 								},
@@ -443,10 +455,22 @@
 								},
 								"at": {
 									"type": "object",
-									"description": "build at a spot a person PINGED (Ctrl+Alt+click, the menu's Ping, a long-press menu, the VR stick click): {ping: id} from where_are_users {pings: true}, or {ping: \"latest\"} = \"here\". On a floor or table top it stands on it; the ping follows the object it landed on",
+									"description": "build at a spot a person PINGED (Ctrl+Alt+click, the menu's Ping, a long-press menu, the VR stick click): {ping: id} from where_are_users {pings: true}, or {ping: \"latest\"} = \"here\"; on a floor or table top it stands on it, and the ping follows the object it landed on. Or around a PERSON as they are now: {user: \"me\" | peer id | name, ahead: 1.5, right: 0, up: 0} (metres or body units; it faces them; call again to follow them as they walk). Sizes, positions and these offsets also take BODY UNITS: \"eye\", \"height\", \"shoulder\", \"hip\", \"knee\", \"reach\", \"room\", with a factor (\"0.5 reach\") — that person's, from where_are_users body",
 									"properties": {
 										"ping": {
 											"type": "string"
+										},
+										"user": {
+											"type": "string"
+										},
+										"ahead": {
+											"description": "metres in front of them (at least 0.6), or a body unit"
+										},
+										"right": {
+											"description": "metres to their right (negative = left), or a body unit"
+										},
+										"up": {
+											"description": "metres above their floor, or a body unit"
 										}
 									}
 								},
@@ -3474,7 +3498,7 @@
 		{
 			"name": "where_are_users",
 			"title": "Where the people are",
-			"description": "Where each person in the session is and which way they look (their desktop camera, or the VR headset): position, facing as a compass yaw plus forward and right vectors, the floor under them, and ready-made spots 1.5 m and 3 m in front of them at floor level. The entry with \"you\": true is the person you act as. Use it for \"in front of me\", \"around me\", \"behind me\", \"to my left\". A person can PING a spot (Ctrl+Alt+click, Ping in a menu, the VR stick click): each row carries their latestPing, and pings: true lists the recent ones (2 minutes). For \"put it here\", build with create_objects / update_objects at: {ping: \"latest\"} (align: \"surface\" for a wall).\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.",
+			"description": "Where each person in the session is and which way they look (their desktop camera, or the VR headset): position, facing as a compass yaw plus forward and right vectors, the floor under them, and ready-made spots 1.5 m and 3 m in front of them at floor level. The entry with \"you\": true is the person you act as. Use it for \"in front of me\", \"around me\", \"behind me\", \"to my left\". A person can PING a spot (Ctrl+Alt+click, Ping in a menu, the VR stick click): each row carries their latestPing, and pings: true lists the recent ones (2 minutes). For \"put it here\", build with create_objects / update_objects at: {ping: \"latest\"} (align: \"surface\" for a wall). Each row also has body (eye, height, shoulder, hip, knee, reach, room — \"a table at hip height\") and, in VR, hands (left, right, apart — \"as wide as my hands\"). Nothing you make may appear inside a person in VR (0.45 m around the head, through the body): that call is refused and says so.\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -3792,10 +3816,22 @@
 									},
 									"at": {
 										"type": "object",
-										"description": "build at a spot a person PINGED (Ctrl+Alt+click, the menu's Ping, a long-press menu, the VR stick click): {ping: id} from where_are_users {pings: true}, or {ping: \"latest\"} = \"here\". On a floor or table top it stands on it; the ping follows the object it landed on",
+										"description": "build at a spot a person PINGED (Ctrl+Alt+click, the menu's Ping, a long-press menu, the VR stick click): {ping: id} from where_are_users {pings: true}, or {ping: \"latest\"} = \"here\"; on a floor or table top it stands on it, and the ping follows the object it landed on. Or around a PERSON as they are now: {user: \"me\" | peer id | name, ahead: 1.5, right: 0, up: 0} (metres or body units; it faces them; call again to follow them as they walk). Sizes, positions and these offsets also take BODY UNITS: \"eye\", \"height\", \"shoulder\", \"hip\", \"knee\", \"reach\", \"room\", with a factor (\"0.5 reach\") — that person's, from where_are_users body",
 										"properties": {
 											"ping": {
 												"type": "string"
+											},
+											"user": {
+												"type": "string"
+											},
+											"ahead": {
+												"description": "metres in front of them (at least 0.6), or a body unit"
+											},
+											"right": {
+												"description": "metres to their right (negative = left), or a body unit"
+											},
+											"up": {
+												"description": "metres above their floor, or a body unit"
 											}
 										}
 									},
@@ -3956,10 +3992,22 @@
 									},
 									"at": {
 										"type": "object",
-										"description": "build at a spot a person PINGED (Ctrl+Alt+click, the menu's Ping, a long-press menu, the VR stick click): {ping: id} from where_are_users {pings: true}, or {ping: \"latest\"} = \"here\". On a floor or table top it stands on it; the ping follows the object it landed on",
+										"description": "build at a spot a person PINGED (Ctrl+Alt+click, the menu's Ping, a long-press menu, the VR stick click): {ping: id} from where_are_users {pings: true}, or {ping: \"latest\"} = \"here\"; on a floor or table top it stands on it, and the ping follows the object it landed on. Or around a PERSON as they are now: {user: \"me\" | peer id | name, ahead: 1.5, right: 0, up: 0} (metres or body units; it faces them; call again to follow them as they walk). Sizes, positions and these offsets also take BODY UNITS: \"eye\", \"height\", \"shoulder\", \"hip\", \"knee\", \"reach\", \"room\", with a factor (\"0.5 reach\") — that person's, from where_are_users body",
 										"properties": {
 											"ping": {
 												"type": "string"
+											},
+											"user": {
+												"type": "string"
+											},
+											"ahead": {
+												"description": "metres in front of them (at least 0.6), or a body unit"
+											},
+											"right": {
+												"description": "metres to their right (negative = left), or a body unit"
+											},
+											"up": {
+												"description": "metres above their floor, or a body unit"
 											}
 										}
 									},
@@ -6882,7 +6930,7 @@
 			{
 				"name": "where_are_users",
 				"title": "Where the people are",
-				"description": "Where each person in the session is and which way they look (their desktop camera, or the VR headset): position, facing as a compass yaw plus forward and right vectors, the floor under them, and ready-made spots 1.5 m and 3 m in front of them at floor level. The entry with \"you\": true is the person you act as. Use it for \"in front of me\", \"around me\", \"behind me\", \"to my left\". A person can PING a spot (Ctrl+Alt+click, Ping in a menu, the VR stick click): each row carries their latestPing, and pings: true lists the recent ones (2 minutes). For \"put it here\", build with create_objects / update_objects at: {ping: \"latest\"} (align: \"surface\" for a wall).\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.",
+				"description": "Where each person in the session is and which way they look (their desktop camera, or the VR headset): position, facing as a compass yaw plus forward and right vectors, the floor under them, and ready-made spots 1.5 m and 3 m in front of them at floor level. The entry with \"you\": true is the person you act as. Use it for \"in front of me\", \"around me\", \"behind me\", \"to my left\". A person can PING a spot (Ctrl+Alt+click, Ping in a menu, the VR stick click): each row carries their latestPing, and pings: true lists the recent ones (2 minutes). For \"put it here\", build with create_objects / update_objects at: {ping: \"latest\"} (align: \"surface\" for a wall). Each row also has body (eye, height, shoulder, hip, knee, reach, room — \"a table at hip height\") and, in VR, hands (left, right, apart — \"as wide as my hands\"). Nothing you make may appear inside a person in VR (0.45 m around the head, through the body): that call is refused and says so.\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {

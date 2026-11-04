@@ -4,7 +4,7 @@ import { objectsGroup, lockedObjects, pokeScene } from '../../stores/sceneStore.
 import { peers } from '../../stores/appStore.js';
 import { lockSkip } from './lockNote.js';
 import { sceneFilter, cursorOffset, cursorAt, PAGE_MAX } from './sceneFilter.js';
-import { placeObject } from './placement.js';
+import { placeObject, comfortRefusal, withBodyUnits } from './placement.js';
 import { ASSIST_TOOL_NAMES, ASSIST_AI_TOOLS, ASSIST_PROMPT, assistTool } from './assistTools.js';
 import { aboutOriginPosition, originOf } from '$lib/objectOrigin';
 import { geometrySpec } from '$lib/geometryParams';
@@ -565,6 +565,9 @@ function duplicateFrom(args) {
 
 /** @param {any} spec @returns {any} one created object's result */
 function createOne(spec, extraTypes = /** @type {string[]} */ ([])) {
+	// 85b S6: "hip", "0.5 reach" … are metres from here on
+	const unitsOf = withBodyUnits(spec);
+	spec = unitsOf.spec;
 	const uuid = genUuid();
 	let created = null;
 	if (spec.kind === 'light') {
@@ -645,6 +648,14 @@ function createOne(spec, extraTypes = /** @type {string[]} */ ([])) {
 	// 85b S2-S4: at a ping / backed onto its surface / standing on the floor / facing a person
 	const place = placeObject(created, spec, applyAiTransform);
 	warnings.push(...place.warnings);
+	// 85b S5: never inside a headset wearer — the object goes again and the call says why
+	const clash = comfortRefusal(created);
+	if (clash) {
+		deleteObjectsByUuid([uuid]);
+		return { error: clash };
+	}
+	// 85b S5: in a headset (a connector tab), it fades in
+	import('$lib/vr/agentComfort.js').then((m) => m.agentObjectArrived(uuid)).catch(() => {});
 	// fix-live F-4: static unless asked — a built scene must not fall apart in Play
 	const physics = aiCreatePhysics(spec, created.userData?.physics);
 	if (physics) setPhysicsFor(uuid, physics);
@@ -653,6 +664,7 @@ function createOne(spec, extraTypes = /** @type {string[]} */ ([])) {
 		name: created.name,
 		...(created.userData?.physics?.mode ? { physics: created.userData.physics.mode } : {}),
 		...(place.placed ? { placed: place.placed } : {}),
+		...(unitsOf.units ? { units: unitsOf.units } : {}),
 		...(warnings.length ? { warnings } : {})
 	};
 }
@@ -671,6 +683,8 @@ function normalizePrimitive(raw) {
  * @param {any} spec @returns {Promise<any>}
  */
 async function updateOne(spec) {
+	const unitsOf = withBodyUnits(spec); // 85b S6
+	spec = unitsOf.spec;
 	const uuid = spec.uuid;
 	const object = objectOf(uuid);
 	if (!object) return { uuid, error: 'no object with that uuid' };
@@ -678,6 +692,9 @@ async function updateOne(spec) {
 	if (lock) return { uuid, skipped: lock };
 	/** @type {string[]} */
 	const errors = [];
+	// 85b S5: where it was, in case the move would put it inside a headset wearer
+	const was = { position: object.position.toArray(), rotation: [object.rotation.x, object.rotation.y, object.rotation.z], scale: object.scale.toArray() };
+	const moves = ['position', 'rotation', 'scale', 'at', 'snap', 'face_user', 'parentUuid', 'lookAt'].some((k) => spec[k] !== undefined);
 
 	if (typeof spec.name === 'string') renameObject(uuid, spec.name);
 	// 55 (1.48.1 a): re-nest FIRST (the object keeps its world pose), then a given position is LOCAL to the new parent
@@ -725,7 +742,12 @@ async function updateOne(spec) {
 	// 85b S2-S4: after the move, so at / snap / face_user see where it is now
 	const place = placeObject(object, spec, applyAiTransform);
 	errors.push(...place.warnings);
-	const extra = place.placed ? { placed: place.placed } : {};
+	const clash = moves ? comfortRefusal(object) : null;
+	if (clash) {
+		applyAiTransform(object, was);
+		return { uuid, ok: false, errors: [...errors, clash + ' (it was put back)'] };
+	}
+	const extra = { ...(place.placed ? { placed: place.placed } : {}), ...(unitsOf.units ? { units: unitsOf.units } : {}) };
 	return errors.length ? { uuid, ok: false, errors, ...extra } : { uuid, ok: true, ...extra };
 }
 
@@ -1319,8 +1341,14 @@ export const AI_TOOLS = [
 								lookAt: { description: 'turn it so its local +Z (front) faces this: a world point [x,y,z] or another object\'s uuid (+Y stays up; lights use aim)' },
 								at: {
 									type: 'object',
-									description: 'build at a spot a person PINGED (Ctrl+Alt+click, the menu\'s Ping, a long-press menu, the VR stick click): {ping: id} from where_are_users {pings: true}, or {ping: "latest"} = "here". On a floor or table top it stands on it; the ping follows the object it landed on',
-									properties: { ping: { type: 'string' } }
+									description: 'build at a spot a person PINGED (Ctrl+Alt+click, the menu\'s Ping, a long-press menu, the VR stick click): {ping: id} from where_are_users {pings: true}, or {ping: "latest"} = "here"; on a floor or table top it stands on it, and the ping follows the object it landed on. Or around a PERSON as they are now: {user: "me" | peer id | name, ahead: 1.5, right: 0, up: 0} (metres or body units; it faces them; call again to follow them as they walk). Sizes, positions and these offsets also take BODY UNITS: "eye", "height", "shoulder", "hip", "knee", "reach", "room", with a factor ("0.5 reach") — that person\'s, from where_are_users body',
+									properties: {
+										ping: { type: 'string' },
+										user: { type: 'string' },
+										ahead: { description: 'metres in front of them (at least 0.6), or a body unit' },
+										right: { description: 'metres to their right (negative = left), or a body unit' },
+										up: { description: 'metres above their floor, or a body unit' }
+									}
 								},
 								align: { type: 'string', enum: ['surface'], description: 'with at: back it onto the pinged surface (its +Z along the surface normal, upright on a wall) — a painting on a wall' },
 								snap: { type: 'string', enum: ['floor'], description: 'stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground' },
@@ -1376,8 +1404,14 @@ export const AI_TOOLS = [
 								lookAt: { description: 'turn it so its local +Z (front) faces this: a world point [x,y,z] or another object\'s uuid (+Y stays up; lights use aim)' },
 								at: {
 									type: 'object',
-									description: 'build at a spot a person PINGED (Ctrl+Alt+click, the menu\'s Ping, a long-press menu, the VR stick click): {ping: id} from where_are_users {pings: true}, or {ping: "latest"} = "here". On a floor or table top it stands on it; the ping follows the object it landed on',
-									properties: { ping: { type: 'string' } }
+									description: 'build at a spot a person PINGED (Ctrl+Alt+click, the menu\'s Ping, a long-press menu, the VR stick click): {ping: id} from where_are_users {pings: true}, or {ping: "latest"} = "here"; on a floor or table top it stands on it, and the ping follows the object it landed on. Or around a PERSON as they are now: {user: "me" | peer id | name, ahead: 1.5, right: 0, up: 0} (metres or body units; it faces them; call again to follow them as they walk). Sizes, positions and these offsets also take BODY UNITS: "eye", "height", "shoulder", "hip", "knee", "reach", "room", with a factor ("0.5 reach") — that person\'s, from where_are_users body',
+									properties: {
+										ping: { type: 'string' },
+										user: { type: 'string' },
+										ahead: { description: 'metres in front of them (at least 0.6), or a body unit' },
+										right: { description: 'metres to their right (negative = left), or a body unit' },
+										up: { description: 'metres above their floor, or a body unit' }
+									}
 								},
 								align: { type: 'string', enum: ['surface'], description: 'with at: back it onto the pinged surface (its +Z along the surface normal, upright on a wall) — a painting on a wall' },
 								snap: { type: 'string', enum: ['floor'], description: 'stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground' },

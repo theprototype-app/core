@@ -6,9 +6,10 @@
 import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { peers, userdata } from '../../stores/appStore.js';
-import { objectsGroup, globalCamera, globalRenderer } from '../../stores/sceneStore.js';
+import { objectsGroup, globalCamera, globalRenderer, peerHands } from '../../stores/sceneStore.js';
 import { localFeet } from '$lib/avatars/avatarState.js';
 import { recentPings, pingWorld } from '$lib/pingLog.js';
+import { bodyFrom } from '$lib/ai/bodyUnitsCore.js';
 
 /** a parked avatar (no live pose yet) sits this high */
 export const NO_POSE_Y = 999;
@@ -116,6 +117,19 @@ export function whereAreUsers(args) {
 		const pose = w[13] >= NO_POSE_Y ? { note: 'no live pose yet' } : describePose(local(m.matrixWorld), floorAt(m.userData?.feet ?? null, w));
 		users.push({ id, name: nameOf(id), ...pose, ...(m.userData?.knocked ? { idle: true } : {}) });
 	}
+	// 85b S6 / S8: body-scale numbers for everyone with a pose; hands for whoever is in VR
+	const hands = /** @type {Record<string, any>} */ (get(peerHands) ?? {});
+	for (const u of users) {
+		if (!u.position) continue;
+		u.body = bodyFrom(u.eyeHeightAboveFloor, u.you && inVR ? xrRoomSide(renderer) : null);
+		const h = u.you ? (inVR ? myHands(renderer) : null) : hands[u.id]?.active ? { left: hands[u.id].left?.pos, right: hands[u.id].right?.pos } : null;
+		if (h) {
+			const toLocal = (/** @type {any} */ p) => (Array.isArray(p) && p.length === 3 && p.every(Number.isFinite) ? group.worldToLocal(_v.fromArray(p)).toArray().map(r2) : null);
+			const left = toLocal(h.left);
+			const right = toLocal(h.right);
+			if (left || right) u.hands = { ...(left ? { left } : {}), ...(right ? { right } : {}), ...(left && right ? { apart: r2(Math.hypot(left[0] - right[0], left[1] - right[1], left[2] - right[2])) } : {}) };
+		}
+	}
 	// 85b S2: everybody's latest ping on their own row; the whole recent list when asked
 	const now = Date.now();
 	const log = recentPings()
@@ -126,6 +140,44 @@ export function whereAreUsers(args) {
 		if (rec) u.latestPing = describePing(rec, group, now);
 	}
 	return args?.pings ? { users, pings: log.map((rec) => describePing(rec, group, now)) } : { users };
+}
+
+/** 85b S6: the smaller side of the headset's bounded play area (bounded-floor only), else null @param {any} renderer */
+function xrRoomSide(renderer) {
+	const pts = renderer?.xr?.getReferenceSpace?.()?.boundsGeometry;
+	if (!pts || pts.length < 3) return null;
+	const xs = [...pts].map((p) => p.x);
+	const zs = [...pts].map((p) => p.z);
+	return Math.min(Math.max(...xs) - Math.min(...xs), Math.max(...zs) - Math.min(...zs));
+}
+
+/** 85b S8: this tab's two controllers / hands in the headset (WORLD), by handedness @param {any} renderer */
+function myHands(renderer) {
+	const sources = renderer?.xr?.getSession?.()?.inputSources;
+	if (!sources) return null;
+	/** @type {{left?: number[], right?: number[]}} */
+	const out = {};
+	[...sources].forEach((src, i) => {
+		if (src.handedness !== 'left' && src.handedness !== 'right') return;
+		const grip = renderer.xr.getControllerGrip?.(i);
+		if (!grip) return;
+		grip.updateWorldMatrix?.(true, false);
+		out[/** @type {'left' | 'right'} */ (src.handedness)] = new THREE.Vector3().setFromMatrixPosition(grip.matrixWorld).toArray();
+	});
+	return out.left || out.right ? out : null;
+}
+
+/**
+ * 85b S6: one person's body numbers (eye, hip, reach …) for body-scale units — `who` as personWorldPosition.
+ * @param {string} who @returns {ReturnType<typeof bodyFrom>}
+ */
+export function bodyOf(who) {
+	const r = whereAreUsers();
+	if ('error' in r) return bodyFrom(null);
+	const me = /** @type {any} */ (get(peers))?.peer?.id ?? null;
+	const want = String(who).toLowerCase();
+	const u = r.users.find((x) => (who === 'me' ? x.you : x.id === who || (x.name && String(x.name).toLowerCase() === want) || (me && who === me && x.you)));
+	return u?.body ?? bodyFrom(null);
 }
 
 /**
@@ -155,4 +207,50 @@ export function personWorldPosition(who) {
 	m.updateWorldMatrix(true, false);
 	const position = new THREE.Vector3().setFromMatrixPosition(m.matrixWorld);
 	return position.y >= NO_POSE_Y ? null : { id: id ?? null, position };
+}
+
+/**
+ * 85b S5: the people in a HEADSET right now — this tab when it presents, every peer whose `vrhands` stream is
+ * active — with their head and the floor under them (WORLD). What the comfort radius protects.
+ * @returns {{id: string | null, name: string, head: THREE.Vector3, feet: number | null}[]}
+ */
+export function headsetPeople() {
+	const out = [];
+	const link = /** @type {any} */ (get(peers));
+	const me = link?.peer?.id ?? null;
+	const renderer = /** @type {any} */ (get(globalRenderer));
+	if (renderer?.xr?.isPresenting) {
+		const cam = renderer.xr.getCamera?.();
+		if (cam) {
+			cam.updateWorldMatrix?.(true, false);
+			const f = localFeet();
+			out.push({ id: me, name: nameOf(me ?? ''), head: new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld), feet: Number.isFinite(f) ? /** @type {number} */ (f) : null });
+		}
+	}
+	const hands = /** @type {Record<string, any>} */ (get(peerHands) ?? {});
+	const group = /** @type {any} */ (get(objectsGroup));
+	let root = group;
+	while (root?.parent) root = root.parent;
+	for (const id of link?.openedPeers ? [...link.openedPeers].map(String) : []) {
+		if (!hands[id]?.active) continue;
+		const m = root?.getObjectByName(id);
+		if (!m) continue;
+		m.updateWorldMatrix(true, false);
+		const head = new THREE.Vector3().setFromMatrixPosition(m.matrixWorld);
+		if (head.y >= NO_POSE_Y) continue;
+		out.push({ id, name: nameOf(id), head, feet: Number.isFinite(m.userData?.feet) ? m.userData.feet : null });
+	}
+	return out;
+}
+
+/**
+ * 85b S7: one person's where_are_users row (build frame) — 'me', a peer id or a name; null = no live pose.
+ * @param {string} who @returns {any | null}
+ */
+export function personRow(who) {
+	const r = whereAreUsers();
+	if ('error' in r) return null;
+	const want = String(who).toLowerCase();
+	const u = r.users.find((x) => (who === 'me' ? x.you : x.id === who || (x.name && String(x.name).toLowerCase() === want)));
+	return u?.position ? u : null;
 }

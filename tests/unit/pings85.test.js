@@ -6,8 +6,13 @@ import * as THREE from 'three';
 
 vi.mock('$lib/agent/agentMode.js', () => ({ agentRequested: () => false }));
 vi.mock('$lib/inviteStore.js', () => ({ isAgentPeer: (id) => id === 'agent' }));
+const people = { vr: [] };
 vi.mock('$lib/connector/whereAreUsers.js', () => ({
-	personWorldPosition: (who) => (who === 'me' ? { id: 'me', position: new THREE.Vector3(0, 1.6, 10) } : null)
+	personWorldPosition: (who) => (who === 'me' ? { id: 'me', position: new THREE.Vector3(0, 1.6, 10) } : null),
+	headsetPeople: () => people.vr,
+	personRow: (who) =>
+		who === 'me' ? { id: 'me', you: true, name: 'Ann', position: [0, 1.6, 10], floor: 0, forwardFlat: [0, 0, -1], right: [1, 0, 0] } : null,
+	bodyOf: () => ({ eye: 1.6, height: 1.71, shoulder: 1.4, hip: 0.9, knee: 0.49, reach: 0.75, room: 3, assumed: false })
 }));
 vi.mock('$lib/pingAudio', () => ({ playPing: () => {} }));
 vi.mock('../../src/lib/lockControl', () => ({ peerColor: () => '#f80' }));
@@ -16,7 +21,10 @@ const { objectsGroup } = await import('../../src/stores/sceneStore');
 const { peers } = await import('../../src/stores/appStore');
 const core = await import('../../src/lib/pingCore.js');
 const ping = await import('../../src/lib/ping.js');
-const { placeObject, surfaceQuaternion, floorUnder } = await import('../../src/lib/ai/placement.js');
+const { placeObject, surfaceQuaternion, floorUnder, comfortRefusal, withBodyUnits } = await import('../../src/lib/ai/placement.js');
+const units = await import('../../src/lib/ai/bodyUnitsCore.js');
+const comfort = await import('../../src/lib/vr/agentComfort.js');
+const { runParkHooks } = await import('../../src/lib/parkHooks.js');
 const { isPingMessage, logPing, findPing, PING_MIN_GAP, PING_LOG_PER_PEER, PING_LOG_TTL } = core;
 const { validateWireMessage } = await import('../../src/lib/wireValidate.js');
 
@@ -144,5 +152,69 @@ describe('85b S2-S4 placement params', () => {
 		const n = applied.length;
 		expect(placeObject(sign, { at: { ping: 'gone' } }, apply).warnings[0]).toMatch(/no such ping/);
 		expect(applied.length).toBe(n);
+	});
+});
+
+describe('85b S5 comfort', () => {
+	it('the clear radius: head sphere, body column above the ankles', () => {
+		const p = { head: { x: 0, y: 1.6, z: 0 }, feet: 0 };
+		const b = (min, max) => ({ min: { x: min[0], y: min[1], z: min[2] }, max: { x: max[0], y: max[1], z: max[2] } });
+		expect(core.comfortClash(b([-0.1, 1.5, -0.6], [0.1, 1.7, -0.3]), p)).toBe('head');
+		expect(core.comfortClash(b([-0.1, 0.5, -0.2], [0.1, 0.7, -0.1]), p)).toBe('body');
+		expect(core.comfortClash(b([-2, -0.1, -2], [2, 0.1, 2]), p)).toBe(null); // the floor under them
+		expect(core.comfortClash(b([-0.1, 0.5, -1.6], [0.1, 0.7, -1.4]), p)).toBe(null); // 1.5 m ahead
+	});
+
+	it('only headset wearers count; the refusal names them', () => {
+		const crate = box(1, 1, 1, [0, 0.5, 0]);
+		people.vr = [];
+		expect(comfortRefusal(crate)).toBe(null);
+		people.vr = [{ id: 'q', name: 'Quinn', head: new THREE.Vector3(0, 1.6, 0.2), feet: 0 }];
+		expect(comfortRefusal(crate)).toMatch(/inside Quinn's body/);
+		people.vr = [];
+	});
+
+	it('a fade ends exactly where the material was, and a save mid-fade sees the real opacity', async () => {
+		const m = box(1, 1, 1);
+		m.material.opacity = 0.8;
+		comfort.fadeIn(m);
+		expect(m.material.opacity).toBe(0);
+		expect(m.material.transparent).toBe(true);
+		const restore = runParkHooks();
+		expect(m.material.opacity).toBe(0.8);
+		expect(m.material.transparent).toBe(false);
+		restore();
+		expect(m.material.opacity).toBe(0);
+		await new Promise((r) => setTimeout(r, comfort.FADE_MS + 120));
+		expect(m.material.opacity).toBe(0.8);
+		expect(m.material.transparent).toBe(false);
+	});
+});
+
+describe('85b S6 body units, S7 at a person', () => {
+	it('proportions from the eye height; units in strings', () => {
+		const b = units.bodyFrom(1.6);
+		expect(b.hip).toBeCloseTo(0.91, 1);
+		expect(units.bodyFrom(9).assumed).toBe(true);
+		expect(units.resolveUnit('0.5 reach', b)).toBeCloseTo(b.reach / 2, 3);
+		expect(units.resolveUnit('hips', b)).toBe(b.hip);
+		expect(units.resolveUnit('2', b)).toBe('2');
+		expect(units.specUsesUnits({ params: [1, 'hip', 1] })).toBe(true);
+		expect(units.specUsesUnits({ params: [1, 2, 3] })).toBe(false);
+		const r = withBodyUnits({ params: [1.2, 'hip', 0.8], position: [0, '0.5 hip', 0] });
+		expect(r.spec.params).toEqual([1.2, 0.9, 0.8]);
+		expect(r.spec.position[1]).toBe(0.45);
+		expect(r.units).toEqual({ from: 'me' });
+	});
+
+	it('at {user}: ahead of them on their floor, facing them', () => {
+		const stool = box(0.4, 0.5, 0.4);
+		const r = placeObject(stool, { at: { user: 'me', ahead: 2 } }, apply);
+		expect(r.placed.at).toBe('user Ann');
+		expect(stool.position.toArray().map((v) => Math.round(v * 100) / 100)).toEqual([0, 0.25, 8]);
+		const front = new THREE.Vector3(0, 0, 1).applyQuaternion(stool.quaternion);
+		expect(front.z).toBeGreaterThan(0.99);
+		placeObject(stool, { at: { user: 'me', ahead: 0.1 } }, apply);
+		expect(stool.position.z).toBeCloseTo(10 - 0.6);
 	});
 });

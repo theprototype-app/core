@@ -63,3 +63,32 @@ export function findPing(log, ref, me, isAgent = () => false) {
 	const newest = (/** @type {PingRecord[]} */ rows) => rows.reduce((/** @type {PingRecord | null} */ b, p) => (!b || p.time > b.time ? p : b), null);
 	return newest(log.filter((p) => p.peer === me)) ?? newest(log.filter((p) => !isAgent(p.peer)));
 }
+
+// ---------------------------------------------------------------- 85b S5 the comfort radius (pure)
+
+/** nothing an agent makes may come closer than this to a headset wearer's head */
+export const COMFORT_HEAD_R = 0.45;
+/** …or to the column of their body (feet + ankle height up to the head) */
+export const COMFORT_BODY_R = 0.3;
+/** a rug or floor at the feet is fine: the body column starts this high */
+export const COMFORT_ANKLE = 0.15;
+/** a headset wearer whose floor is unknown stands about this far under their eyes */
+export const COMFORT_EYE = 1.5;
+
+/**
+ * Does a world box come inside a person's comfort space?
+ * @param {{min: {x: number, y: number, z: number}, max: {x: number, y: number, z: number}}} box
+ * @param {{head: {x: number, y: number, z: number}, feet: number | null}} person
+ * @returns {'head' | 'body' | null}
+ */
+export function comfortClash(box, person) {
+	const h = person.head;
+	const cx = Math.max(box.min.x, Math.min(h.x, box.max.x));
+	const cy = Math.max(box.min.y, Math.min(h.y, box.max.y));
+	const cz = Math.max(box.min.z, Math.min(h.z, box.max.z));
+	if (Math.hypot(cx - h.x, cy - h.y, cz - h.z) < COMFORT_HEAD_R) return 'head';
+	const feet = Number.isFinite(person.feet) ? /** @type {number} */ (person.feet) : h.y - COMFORT_EYE;
+	const flat = Math.hypot(cx - h.x, cz - h.z);
+	if (flat < COMFORT_BODY_R && box.max.y > feet + COMFORT_ANKLE && box.min.y < h.y) return 'body';
+	return null;
+}

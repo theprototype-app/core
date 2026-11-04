@@ -8,11 +8,14 @@ import { get } from 'svelte/store';
 import { objectsGroup } from '../../stores/sceneStore.js';
 import { peers } from '../../stores/appStore.js';
 import { recentPings, pingWorld } from '$lib/pingLog.js';
-import { findPing } from '$lib/pingCore.js';
+import { findPing, comfortClash, COMFORT_HEAD_R } from '$lib/pingCore.js';
 import { isAgentPeer } from '$lib/inviteStore.js';
 import { agentRequested } from '$lib/agent/agentMode.js';
-import { personWorldPosition } from '$lib/connector/whereAreUsers.js';
+import { personWorldPosition, headsetPeople, personRow, bodyOf } from '$lib/connector/whereAreUsers.js';
+import { specUsesUnits, resolveSpecUnits } from './bodyUnitsCore.js';
 
+/** S7: never closer in front of a person than this (the comfort radius stands too) */
+export const FOLLOW_MIN_AHEAD = 0.6;
 /** how far ABOVE the object a floor snap still counts (a table top under a lamp placed at table height) */
 export const SNAP_REACH_UP = 2;
 const UP = new THREE.Vector3(0, 1, 0);
@@ -107,8 +110,32 @@ export function placeObject(object, spec, apply) {
 	let normal = null;
 	let surface = false;
 
+	// S7: at a person — ahead / right / up of where they stand NOW, on their floor, facing them (each call re-anchors)
+	const atUser = spec.at && typeof spec.at === 'object' && spec.at.user !== undefined;
+	if (atUser) {
+		const who = spec.at.user === true || spec.at.user === 'me' ? defaultPerson() : String(spec.at.user);
+		const row = who ? personRow(who) : null;
+		if (!row) warnings.push('at: ' + (who ? 'no live pose for "' + who + '"' : 'nobody to build around'));
+		else {
+			const num = (/** @type {any} */ v, /** @type {number} */ d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+			const ahead = Math.max(FOLLOW_MIN_AHEAD, num(spec.at.ahead, 1.5));
+			const right = num(spec.at.right, 0);
+			const up = num(spec.at.up, 0);
+			const f = row.forwardFlat;
+			const rt = row.right;
+			const local = new THREE.Vector3(row.position[0] + f[0] * ahead + rt[0] * right, row.floor + up, row.position[2] + f[2] * ahead + rt[2] * right);
+			const point = group.localToWorld(local);
+			setWorld(object, point);
+			const box = new THREE.Box3().setFromObject(object);
+			setWorld(object, object.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, point.y - box.min.y, 0)));
+			placed.at = 'user ' + (row.name || row.id);
+			moved = true;
+			if (spec.face_user === undefined) spec = { ...spec, face_user: row.you && !agentRequested() ? true : row.id };
+		}
+	}
+
 	// S2: at a ping
-	if (spec.at !== undefined) {
+	if (spec.at !== undefined && !atUser) {
 		const ref = spec.at && typeof spec.at === 'object' ? spec.at.ping : spec.at;
 		const me = /** @type {any} */ (get(peers))?.peer?.id ?? null;
 		const rec = findPing(recentPings(), typeof ref === 'string' ? ref : '', agentRequested() ? null : me, (id) => isAgentPeer(id));
@@ -185,10 +212,45 @@ export function placeObject(object, spec, apply) {
 }
 
 /** face_user: true = the person this tab acts as; on an agent page, the person who pinged last, else the first person here */
-function defaultPerson() {
+export function defaultPerson() {
 	if (!agentRequested()) return 'me';
 	const rec = findPing(recentPings(), 'latest', null, (id) => isAgentPeer(id));
 	if (rec) return rec.peer;
 	const link = /** @type {any} */ (get(peers));
 	return [...(link?.openedPeers ?? [])].map(String).find((id) => !isAgentPeer(id)) ?? '';
+}
+
+/**
+ * 85b S5: a headset wearer this object would be inside of (their head or body), as a refusal sentence; null = clear.
+ * Only VR people: on a desktop the camera is a viewpoint, not a body.
+ * @param {any} object @returns {string | null}
+ */
+export function comfortRefusal(object) {
+	const people = headsetPeople();
+	if (!people.length) return null;
+	object.updateWorldMatrix(true, true);
+	const box = new THREE.Box3().setFromObject(object);
+	if (box.isEmpty()) return null;
+	for (const person of people) {
+		const where = comfortClash(box, person);
+		if (where)
+			return (
+				'refused: it would be inside ' + (person.name || 'a person') + "'s " + (where === 'head' ? 'head space' : 'body') +
+				' (they are in VR; nothing comes within ' + COMFORT_HEAD_R + ' m of a head or through a body) — place it in front of them, e.g. where_are_users inFront1_5m'
+			);
+	}
+	return null;
+}
+
+/**
+ * 85b S6: body-scale units ("hip", "0.5 reach", "2 eye") in params / position / scale / at → metres, from the
+ * person the call is about (at.user, else face_user, else the default person).
+ * @param {any} spec @returns {{spec: any, units?: {from: string, assumed?: true}}}
+ */
+export function withBodyUnits(spec) {
+	if (!specUsesUnits(spec)) return { spec };
+	const named = typeof spec.at?.user === 'string' && spec.at.user !== 'me' ? spec.at.user : typeof spec.face_user === 'string' ? spec.face_user : '';
+	const who = named || defaultPerson() || 'me';
+	const body = bodyOf(who);
+	return { spec: resolveSpecUnits(spec, body), units: { from: who, ...(body.assumed ? { assumed: true } : {}) } };
 }

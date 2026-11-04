@@ -403,6 +403,7 @@
 		"diagnostics": 48,
 		"dialback-sync": 110,
 		"dispose": 35,
+		"background-quiet": 180,
 		"dock-add-registry": 62,
 		"dock-chrome": 116,
 		"dock-chrome-40": 172,

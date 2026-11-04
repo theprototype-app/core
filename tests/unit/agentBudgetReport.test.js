@@ -29,3 +29,39 @@ describe('agentBudgetReport on an idle view', () => {
 		expect([r.triangles, r.calls]).toEqual([240, 22]);
 	});
 });
+
+describe('diorama2 (item 14): top contributors + the vsync verdict', () => {
+	it('topContributors ranks the top-level objects by triangles and by draw calls (instances and material slots count)', async () => {
+		const THREE = await import('three');
+		const { topContributors } = await import('../../src/lib/sceneBudget.js');
+		const root = new THREE.Group();
+		const ball = new THREE.Mesh(new THREE.SphereGeometry(1, 64, 32), new THREE.MeshStandardMaterial());
+		ball.name = 'Ball';
+		const forest = new THREE.Group();
+		forest.name = 'Forest';
+		const trees = new THREE.InstancedMesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial(), 50);
+		forest.add(trees);
+		const crate = new THREE.Mesh(new THREE.BoxGeometry(), [1, 2, 3, 4, 5, 6].map(() => new THREE.MeshStandardMaterial()));
+		crate.name = 'Crate';
+		const hidden = new THREE.Mesh(new THREE.SphereGeometry(1, 128, 64), new THREE.MeshStandardMaterial());
+		hidden.visible = false;
+		root.add(ball, forest, crate, hidden);
+		const top = topContributors(root, 2);
+		expect(top.byTriangles.map((r) => r.name)).toEqual(['Ball', 'Forest']);
+		expect(top.byTriangles[1].triangles).toBe(12 * 50);
+		expect(top.byCalls[0]).toMatchObject({ name: 'Crate', calls: 6 });
+	});
+
+	it('vsyncVerdict: a steady 16.7 ms on a 60 Hz panel is the display cap; 33 ms p95 on it misses vsync; no rate = null', async () => {
+		const { vsyncVerdict } = await import('../../src/lib/sceneBudget.js');
+		const cap = vsyncVerdict({ n: 240, p05: 16.6, p50: 16.7, p95: 16.8 });
+		expect(cap).toMatchObject({ onVsync: true, hz: 60 });
+		expect(cap.say).toMatch(/60 Hz/);
+		expect(vsyncVerdict({ n: 240, p05: 8.3, p50: 8.4, p95: 8.4 })).toMatchObject({ onVsync: true, hz: 120 });
+		const slow = vsyncVerdict({ n: 240, p05: 16.7, p50: 16.7, p95: 33.4 });
+		expect(slow).toMatchObject({ onVsync: false, hz: 60 });
+		expect(slow.say).toMatch(/2 refreshes/);
+		expect(vsyncVerdict({ n: 240, p05: 22.5, p95: 25 })).toBe(null);
+		expect(vsyncVerdict({ n: 5, p05: 16.7, p95: 16.7 })).toBe(null);
+	});
+});

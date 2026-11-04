@@ -19,6 +19,9 @@
 - **Scatter keeps paths clear** and can spread **real copies of something you built** (up to 200, each one editable) instead of simple instances; the same seed gives the same layout. <!-- mcp-diorama2 8 -->
 - Agents can **bring in a model file** — glTF, GLB or OBJ, sent in parts or from a public https address. It goes into your library first, and its named parts (a lid, a wheel) can be animated. Nothing in a model runs, and a file that points at other files is refused. <!-- mcp-diorama2 9 -->
 - New shader nodes: **Polar coordinates, Twirl and Rotate UV** (whirlpools, portals, spinning patterns), and the **GLSL expression** node takes colours and vectors as they are. <!-- mcp-diorama2 10 -->
+- An agent can see **what makes your scene heavy** (the objects drawing the most triangles and draw calls) and can tell a slow scene from a screen that simply refreshes at 60 Hz. <!-- mcp-diorama2 14 -->
+- Agents can **turn shadows on or off per part** as they build or import it. <!-- mcp-diorama2 13 -->
+- Ask Claude "what can you do?" and it now mentions the **sky, background and fog**, and the **opening view** players start from. <!-- mcp-diorama2 12 -->
 - **Claude on claude.ai reads the right words again**: tool replies no longer turn ordinary words like "logs" into tool names (`status` had a field called "run {action: 'logs'}"). <!-- mcp-diorama2 4 -->
 
 ## 1.60.0 — An agent builds the game around your scene 🎮

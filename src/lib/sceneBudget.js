@@ -319,8 +319,76 @@ export function frameStats() {
 		n: sorted.length,
 		p50: percentile(sorted, 0.5),
 		p95: percentile(sorted, 0.95),
-		p99: percentile(sorted, 0.99)
+		p99: percentile(sorted, 0.99),
+		// diorama2: the FAST end says the display's refresh (the frames that were on time), additive
+		p05: percentile(sorted, 0.05)
 	};
+}
+
+/** display refresh rates a vsync-aligned frame interval is matched against */
+const REFRESH_HZ = [30, 48, 50, 60, 72, 75, 90, 100, 120, 144, 165, 240];
+
+/**
+ * diorama2 (item 14): does frameP95 sit ON the display's vsync? rAF timestamps are vsync-aligned, so the fastest
+ * frames (p05) are one refresh apart — that names the display rate. A p95 within ~6% of that interval is a frame
+ * on every refresh: the display caps the rate (a steady 16.7 ms = a 60 Hz panel), and the scene is not what limits
+ * it. A p95 of two or more refreshes means frames miss vsync. PURE.
+ * @param {{p05?: number | null, p50?: number | null, p95?: number | null, n?: number}} stats
+ * @returns {{onVsync: boolean, hz: number, say: string} | null} null when the frames name no refresh rate
+ */
+export function vsyncVerdict(stats) {
+	const fast = Number(stats?.p05);
+	const p95 = Number(stats?.p95);
+	if (!(fast > 0) || !(p95 > 0) || (stats?.n ?? 60) < 30) return null;
+	const hz = REFRESH_HZ.find((r) => Math.abs(fast - 1000 / r) <= (1000 / r) * 0.06);
+	if (!hz) return null;
+	const interval = 1000 / hz;
+	if (p95 <= interval * 1.06)
+		return {
+			onVsync: true,
+			hz,
+			say: 'frameP95 ' + Math.round(p95 * 10) / 10 + ' ms is one refresh of this ' + hz + ' Hz display: every frame lands on vsync, so the display caps the frame rate, not the scene (a steady 16.7 ms is a 60 Hz cap, not a slow scene)'
+		};
+	const refreshes = Math.round(p95 / interval);
+	return {
+		onVsync: false,
+		hz,
+		say: 'the display refreshes at ' + hz + ' Hz, and the slowest frames (p95 ' + Math.round(p95 * 10) / 10 + ' ms) take about ' + refreshes + ' refreshes: frames miss vsync — lighten the scene (see top) to make it smooth'
+	};
+}
+
+/**
+ * diorama2 (item 14): what costs the most — the scene's top-level objects ranked by the triangles their visible
+ * meshes draw (an instanced mesh counts every instance) and by draw calls (one per mesh per material slot). Per
+ * pass: the shadow pass draws a caster again. PURE given the tree.
+ * @param {any} root the objects group @param {number} [n]
+ * @returns {{byTriangles: {uuid: string, name: string, triangles: number, calls: number}[], byCalls: {uuid: string, name: string, triangles: number, calls: number}[]}}
+ */
+export function topContributors(root, n = 5) {
+	/** @type {{uuid: string, name: string, triangles: number, calls: number}[]} */
+	const rows = [];
+	for (const top of root?.children ?? []) {
+		if (top.visible === false) continue;
+		let triangles = 0;
+		let calls = 0;
+		/** @param {any} o */
+		const walk = (o) => {
+			if (o.visible === false) return;
+			const g = o.isMesh ? o.geometry : null;
+			if (g?.attributes?.position) {
+				const per = Math.floor((g.index ? g.index.count : g.attributes.position.count) / 3);
+				const copies = o.isInstancedMesh ? Math.max(0, Number(o.count) || 0) : 1;
+				triangles += per * copies;
+				const slots = Array.isArray(o.material) ? Math.max(1, g.groups?.length || o.material.length) : 1;
+				if (copies > 0) calls += slots;
+			}
+			for (const c of o.children ?? []) walk(c);
+		};
+		walk(top);
+		if (triangles > 0 || calls > 0) rows.push({ uuid: top.uuid, name: String(top.name || top.type).slice(0, 60), triangles, calls });
+	}
+	const by = (/** @type {'triangles' | 'calls'} */ k) => [...rows].sort((a, b) => b[k] - a[k] || (a.uuid < b.uuid ? -1 : 1)).slice(0, n);
+	return { byTriangles: by('triangles'), byCalls: by('calls') };
 }
 
 // --- long tasks -------------------------------------------------------------------
@@ -777,6 +845,17 @@ export function agentBudgetReport(given) {
 		.filter((r) => r.tier === 'amber' || r.tier === 'red')
 		.map((r) => r.key + ' ' + r.tier + ' (' + r.value + ', green up to ' + r.green + ')');
 	if (over.length) out.over = over;
+	// diorama2 (item 14): which objects to lighten first, and whether the frame time is the scene or the display
+	try {
+		const top = topContributors(get(objectsGroup), 5);
+		if (top.byTriangles.length) out.top = top;
+	} catch {
+		/* a reading, never a reason for the status to fail */
+	}
+	if (!idle && !given) {
+		const v = vsyncVerdict(frameStats());
+		if (v) out.vsync = v;
+	}
 	return out;
 }
 

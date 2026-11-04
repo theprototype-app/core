@@ -38,3 +38,12 @@ describe('86 T3 what_can_you_do', () => {
 		expect(r.role).toBe('viewer');
 	});
 });
+
+describe('diorama2 (item 12): the look and the opening view are mentioned when the page has them', () => {
+	it('set_sky and set_play_camera add their phrases and a sky example', () => {
+		const r = whatCanYouDo({ status: { role: 'editor', canEdit: true }, tools: [...ALL, 'set_sky', 'set_play_camera'] });
+		expect(r.can).toContain('set the sky, the background colour and fog');
+		expect(r.can).toContain('choose the opening view players start the game with');
+		expect(r.tryAsking).toContain('Make it a sunset with a little fog');
+	});
+});

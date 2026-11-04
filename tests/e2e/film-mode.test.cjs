@@ -271,6 +271,7 @@ h.run(async () => {
 	await page.locator('#film-recentre').click();
 	await page.waitForTimeout(300);
 	h.check(/Phone tilt/.test((await page.locator('#film-sensor').textContent()) || ''), `the pill names the mode (${(await page.locator('#film-sensor').textContent())?.trim()})`);
+	await page.evaluate(() => window.__stores.toastStore.set([]));
 	await page.locator('#film-sensor').click();
 	await page.waitForSelector('#film-motion-sheet', { timeout: 5000 });
 	const choices = await page.locator('.film-motion-opt').evaluateAll((els) => els.map((e) => e.getAttribute('data-motion')));
@@ -289,6 +290,7 @@ h.run(async () => {
 	const yDragged = yawDeg((await pose(page)).q);
 	h.check(Math.abs(yDragged - yTouch) > 5, `Touch: a drag turns it (${yTouch.toFixed(1)} → ${yDragged.toFixed(1)})`);
 	h.check(await page.evaluate(() => localStorage.getItem('film:motion') === 'touch'), 'the choice is remembered on this device');
+	await page.evaluate(() => window.__stores.toastStore.set([]));
 	await page.locator('#film-sensor').click();
 	await page.locator('.film-motion-opt[data-motion="tilt"]').click();
 	await page.waitForTimeout(400);
@@ -480,6 +482,7 @@ h.run(async () => {
 	await page.evaluate(() => window.__stores.filmRecorder.finishTake());
 	await page.waitForTimeout(300);
 	h.check((await page.locator('#film-shots').count()) === 1, 'the shots pill stays when no take is running');
+	await page.evaluate(() => window.__stores.toastStore.set([]));
 	await page.locator('#film-shots').click();
 	h.check((await page.locator('.film-shot-row').count()) === 3, 'the shots list shows the three shots');
 	h.check(/Shots on this camera/.test((await page.locator('#film-shot-list').textContent()) || ''), 'the sheet is "Shots on this camera"');
@@ -514,6 +517,7 @@ h.run(async () => {
 	h.check(named === 'Wide open' && (await page.locator('.film-shot-title').first().textContent()) === 'Wide open', `Rename names the shot in the timeline (${named})`);
 	// delete + undo
 	const lastId = (await shotsOf()).items[2].id;
+	await page.evaluate(() => window.__stores.toastStore.set([]));
 	await page.locator(`.film-shot-row[data-item="${lastId}"] .film-shot-more`).click();
 	await page.locator(`.film-shot-actions[data-item="${lastId}"] .film-act[data-act="delete"]`).click();
 	await page.waitForTimeout(200);
@@ -558,6 +562,7 @@ h.run(async () => {
 
 	// 68 V9 Share as video: the take → Export video → the Recording dialog on the take's timeline, as MP4;
 	// on a phone an over-long render is refused with the reason, a short one exports frame by frame
+	await page.evaluate(() => window.__stores.toastStore.set([]));
 	await page.locator('#film-export').click();
 	await page.waitForSelector('#film-export-sheet', { timeout: 5000 });
 	h.check((await page.locator('#film-export-joined').count()) === 1 && (await page.locator('#film-export-each').count()) === 1, 'the export offers one joined video or one file per shot');
@@ -577,12 +582,15 @@ h.run(async () => {
 		await page.locator('#' + id).dispatchEvent('change');
 		await page.waitForTimeout(150);
 	};
-	await setNum('recording-duration', '30');
-	const capMsg = (await page.locator('#recording-blocked').textContent().catch(() => '')) || '';
-	h.check(/On a phone an export is at most 20 s \(this one is 30 s\)/.test(capMsg) && (await page.locator('#recording-start').isDisabled()), `the phone cap refuses a 30 s render with the reason ("${capMsg.slice(0, 90)}…")`);
+	// fix-film: the length is the shots' — shown, not editable, while Film's shots are being exported
+	const shotSum = (await shotsOf()).items.reduce((n, i) => n + i.dur, 0);
+	const lenField = await page.evaluate(() => {
+		const el = /** @type {HTMLInputElement} */ (document.querySelector('#recording-duration'));
+		return { disabled: el.disabled, value: Number(el.value) };
+	});
+	h.check(lenField.disabled && Math.abs(lenField.value - shotSum) < 0.05, `the Length is the shots' length, not editable (${JSON.stringify(lenField)} vs ${shotSum.toFixed(2)})`);
 	await page.selectOption('#recording-resolution', '480p');
 	await page.selectOption('#recording-fps', '12');
-	await setNum('recording-duration', '2');
 	await shot(page, 'folded-export-dialog');
 	await page.click('#recording-start');
 	await page.waitForSelector('#recording-result, #recording-error', { timeout: 180000 });
@@ -591,8 +599,15 @@ h.run(async () => {
 		window.__stores.recordingStores.recordingState.subscribe((/** @type {any} */ v) => (s = v))();
 		return { status: s.status, error: s.error, mime: s.result?.mime, frames: s.result?.frames, exact: s.result?.exact, w: s.result?.width };
 	});
-	h.check(vid.status === 'done' && vid.mime === 'video/mp4' && vid.frames === 24 && vid.exact, `the take exports to MP4, frame-exact (${JSON.stringify(vid)})`);
+	h.check(vid.status === 'done' && vid.mime === 'video/mp4' && Math.abs(vid.frames - Math.round(shotSum * 12)) <= 1 && vid.exact, `the take exports to MP4, frame-exact, the shots' length (${shotSum.toFixed(2)} s × 12 fps; ${JSON.stringify(vid)})`);
 	await shot(page, 'folded-export-result');
+	// after the shots' file the dialog is an ordinary export again: the phone cap still refuses a 30 s render
+	await page.locator('#recording-again, #recording-new, #recording-back').first().click({ timeout: 3000 }).catch(() => {});
+	if (await page.$('#recording-duration')) {
+		await setNum('recording-duration', '30');
+		const capMsg = (await page.locator('#recording-blocked').textContent().catch(() => '')) || '';
+		h.check(/On a phone an export is at most 20 s \(this one is 30 s\)/.test(capMsg) && (await page.locator('#recording-start').isDisabled()), `the phone cap refuses a 30 s render with the reason ("${capMsg.slice(0, 90)}…")`);
+	} else h.check(false, 'the export dialog offers another export after a result');
 	await page.evaluate(() => {
 		window.__stores.recordingStores.recordingOpen.set(false);
 	});

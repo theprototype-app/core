@@ -328,6 +328,7 @@ function nextInJob() {
 	const done = job.done + 1;
 	exportJob.set({ ...job, done });
 	if (done < job.queue.length) setTimeout(() => void startExport(), 0);
+	else exportJob.set(null); // the last file: the dialog is an ordinary export again
 }
 
 /** @param {string} reason */

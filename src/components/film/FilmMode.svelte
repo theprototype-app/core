@@ -970,9 +970,10 @@
 			</button>
 			<div class="film-title">
 				<span class="film-name">{$film.name}</span>
-				{#if $film.sensor === 'permission'}
+				<!-- fix-film: the pill ALWAYS names the mode; the iOS motion ask sits beside it, only for Phone tilt -->
+				{#if $film.sensor === 'permission' && motion === 'tilt'}
 					<button id="film-motion" class="film-chip film-chip-ask" onclick={() => enableMotion()}>Use phone motion</button>
-				{:else}
+				{/if}
 					<button
 						id="film-sensor"
 						class="film-chip film-pill"
@@ -987,7 +988,6 @@
 							shotsOpen = false;
 						}}>{motionPill} <Icon name="chevron-down" size={16} /></button
 					>
-				{/if}
 			</div>
 			<div class="film-top-right">
 				<button

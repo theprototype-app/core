@@ -13,6 +13,7 @@
 	import { recordingOpen, recordingState, recordingPrefs, setRecordingPrefs, exportJob } from '$lib/recording/recordingStores.js';
 	import { startRecording, cancelRecording, resetRecording, downloadRecording, recordingBlocker } from '$lib/recording/recorder.js';
 	import { RESOLUTIONS, FPS_CHOICES, MIN_DURATION, MAX_DURATION, EXPORT_FORMATS } from '$lib/recording/recordingCore.js';
+	import { rangesDuration } from '$lib/recording/frameClock.js';
 	import { exportPlan, estimateExportBytes, FORMAT_INFO, ALPHA_FORMATS, formatBytes } from '$lib/recording/videoExportCore.js';
 	import { startExport, exportBlocker, exportCaps } from '$lib/recording/offlineRender.js';
 	import { sequences } from '$lib/sequences';
@@ -28,7 +29,12 @@
 		{ id: 'high', label: 'High (large file)' }
 	];
 
-	const p = $derived($recordingPrefs);
+	const rawPrefs = $derived($recordingPrefs);
+	// fix-film: Film's chosen shots (joined, or one file each) — the export films only those, so the length,
+	// the phone cap and the estimate all read the shots' length (the file being made), not the Length field
+	const job = $derived(rawPrefs.mode === 'timeline' && $exportJob && $exportJob.sequence === rawPrefs.sequence ? $exportJob : null);
+	const jobSeconds = $derived(job ? rangesDuration(job.queue[job.done] ?? []) : 0);
+	const p = $derived(job && jobSeconds > 0 ? { ...rawPrefs, duration: jobSeconds } : rawPrefs);
 	const st = $derived($recordingState);
 	const busy = $derived(st.status === 'preparing' || st.status === 'recording' || st.status === 'finishing');
 	const views = $derived(/** @type {any[]} */ ($bookmarks));
@@ -38,8 +44,6 @@
 	const seqMap = $derived($sequences);
 	const seqList = $derived(Object.values(seqMap).sort((a, b) => String(a.name).localeCompare(String(b.name))));
 	const seq = $derived(p.mode === 'timeline' ? findSequence($sequences, p.sequence) : null);
-	// fix-film: Film's chosen shots (joined, or one file each) — the export films only those
-	const job = $derived(p.mode === 'timeline' && $exportJob && $exportJob.sequence === p.sequence ? $exportJob : null);
 	const caps = exportCaps();
 	const plan = $derived.by(() => {
 		const dom = /** @type {any} */ ($globalRenderer)?.domElement;
@@ -269,7 +273,7 @@
 					</select>
 					<label for="recording-duration">Length</label>
 					<span class="rec-inline">
-						<input id="recording-duration" class="ui-input rec-num" type="number" min={MIN_DURATION} max={MAX_DURATION} step="0.5" value={p.duration} onchange={(e) => setRecordingPrefs({ duration: Number(/** @type {any} */ (e.currentTarget).value) })} />
+						<input id="recording-duration" class="ui-input rec-num" type="number" min={MIN_DURATION} max={MAX_DURATION} step="0.5" value={p.duration} disabled={!!job} title={job ? "The length of the shots Film is exporting" : undefined} onchange={(e) => setRecordingPrefs({ duration: Number(/** @type {any} */ (e.currentTarget).value) })} />
 						<span class="rec-dim">seconds</span>
 					</span>
 					<label for="recording-quality">Quality</label>

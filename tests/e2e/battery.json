@@ -324,6 +324,7 @@
 		"ar-table": 120,
 		"film-mode": 360,
 		"film-walk-iwer": 240,
+		"film-fix-iwer": 300,
 		"video-export": 300,
 		"arch-primitives": 98,
 		"auto-quality-notice": 60,

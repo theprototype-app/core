@@ -90,9 +90,9 @@ const vrUi = (page) =>
 		let sc = null;
 		s.globalScene.subscribe((v) => (sc = v))();
 		const names = new Set();
-		sc?.traverse((o) => {
-			if (!o.visible || !o.name) return;
-			if (/^vr-|tour|wrist|radial|sleeve/i.test(o.name)) names.add(o.name);
+		// DRAWN = it and every ancestor visible (a reticle's dot is visible inside a hidden reticle)
+		sc?.traverseVisible((o) => {
+			if (o.name && /^vr-|tour|wrist|radial|sleeve/i.test(o.name)) names.add(o.name);
 		});
 		let a = null;
 		s.tours?.activeTour?.subscribe?.((v) => (a = v))();
@@ -212,6 +212,20 @@ h.run(async () => {
 		h.check(st.autoClear === true, tag(`the renderer clears every XR frame (autoClear ${st.autoClear}, blend ${st.blend})`));
 
 		// ---- V. passthrough: Off (default, the scene's sky) / On / Dimmed ----
+		// the pill names the mode all through the walk (it used to give way to the iOS-style motion ask)
+		const pillThere = !!(await page.waitForSelector('#film-sensor', { timeout: 8000 }).catch(() => null));
+		h.check(pillThere && /Walk/.test((await page.locator('#film-sensor').textContent().catch(() => '')) || ''), tag('the motion pill still names Walk a few seconds into the walk'));
+		if (!pillThere) {
+			const dump = await page.evaluate(() => {
+				const s = window.__stores;
+				let f = null, w = null;
+				s.filmMode?.film?.subscribe?.((v) => (f = v))();
+				s.filmWalk?.walk?.subscribe?.((v) => (w = v))();
+				return { url: location.href, root: !!document.getElementById('film-root'), cls: document.documentElement.className.slice(0, 120), motion: document.querySelector('#film-motion')?.textContent, film: f && { sensor: f.sensor, motion: f.motion, open: f.open }, walk: w, top: document.querySelector('.film-top')?.innerHTML.slice(0, 400) };
+			});
+			console.log('FILM STATE', JSON.stringify(dump));
+			await page.screenshot({ path: path.join(OUT, `${size.key}-no-pill.png`) });
+		}
 		const v0 = await look(page);
 		h.check(v0.roomLook === 'sky' && !v0.passthrough && v0.skyOverRoom && !!v0.background, tag(`Passthrough Off by default: the scene's sky stays (${JSON.stringify(v0)})`));
 		await page.locator('#film-sensor').click();
@@ -251,6 +265,14 @@ h.run(async () => {
 			box.scale.set(2, 1.5, 0.5);
 			box.updateMatrixWorld(true);
 		}, { id: boxId, at: [p0.pos[0] + f[0] * 4, p0.pos[1] + f[1] * 4, p0.pos[2] + f[2] * 4] });
+		// COUNTERFACTUAL (FILM_FIX_COUNTERFACTUAL=1): pin autoClear off the way 1.58 left it — the trail must show
+		const counter = process.env.FILM_FIX_COUNTERFACTUAL === '1';
+		if (counter)
+			await page.evaluate(() => {
+				let r = null;
+				window.__stores.globalRenderer.subscribe((v) => (r = v))();
+				Object.defineProperty(r, 'autoClear', { get: () => false, set() {}, configurable: true });
+			});
 		await iwer.frames(page, 10);
 		const m0 = await magenta(page);
 		await page.screenshot({ path: path.join(OUT, `${size.key}-walk-box.png`) });
@@ -259,6 +281,10 @@ h.run(async () => {
 		const m1 = await magenta(page);
 		await page.screenshot({ path: path.join(OUT, `${size.key}-walk-turned.png`) });
 		h.check(m0.n > 40, tag(`premise: the magenta box is in view (${m0.n} px of ${m0.total})`));
+		if (counter) {
+			h.check(m1.n > m0.n * 0.5, tag(`COUNTERFACTUAL: with autoClear off the box smears (${m1.n} magenta px left of ${m0.n})`));
+			break;
+		}
 		h.check(m1.n < Math.max(4, m0.n * 0.05), tag(`turning away leaves no trail of the box (${m1.n} magenta px left of ${m0.n})`));
 		await iwer.pose(page, 'head', [0, 1.6, 0]);
 		await iwer.frames(page, 4);

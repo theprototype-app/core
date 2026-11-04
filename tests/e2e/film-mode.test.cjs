@@ -189,6 +189,12 @@ h.run(async () => {
 	await picked.click();
 	await page.waitForSelector('#film-exit', { timeout: 10000 });
 	h.check(await page.evaluate(() => document.documentElement.classList.contains('film-mode')), 'Film takes the screen over (html.film-mode)');
+	// 68-int: the first-use how-to shows on the first Film, and its ✕ retires it for good
+	const tip = (await page.locator('#film-tip').textContent().catch(() => '')) || '';
+	h.check(/records a shot into the Timeline/.test(tip), `the first-use tip says how to film ("${tip.trim().slice(0, 70)}…")`);
+	await page.locator('#film-tip-close').click();
+	await page.waitForTimeout(200);
+	h.check((await page.locator('#film-tip').count()) === 0, 'its ✕ closes the tip');
 	const loadedAfter = await page.evaluate(() => ({
 		files: performance.getEntriesByType('resource').map((e) => e.name).filter((n) => /film\/(filmMode|FilmMode)/.test(n)).length,
 		runtime: 'filmMode' in window.__stores
@@ -478,6 +484,7 @@ h.run(async () => {
 	const uuidB = await makeCamera(B.page);
 	await B.page.evaluate((u) => window.__stores.filmState.openFilm(u), uuidB);
 	await B.page.waitForSelector('#film-exit', { timeout: 15000 });
+	await B.page.locator('#film-tip-close').click({ timeout: 3000 }).catch(() => {});
 	rect = await viewportRect(B.page);
 	h.check(near(rect.w, 770, 1) && near(rect.h, 433, 1), `unfolded: the shot box is 770×433 (${JSON.stringify(rect)})`);
 	// upright portrait: Rx(90°) in the device frame (beta 90)
@@ -516,6 +523,7 @@ h.run(async () => {
 	const uuidC = await makeCamera(C.page);
 	await C.page.evaluate((u) => window.__stores.filmState.openFilm(u), uuidC);
 	await C.page.waitForSelector('#film-exit', { timeout: 15000 });
+	await C.page.locator('#film-tip-close').click({ timeout: 3000 }).catch(() => {});
 	await h.eventually(() => C.page.locator('#film-sensor').getAttribute('data-sensor'), (s) => s === 'touch', 'no motion sensor → drag to look', 6000);
 	// ================= V5 / V8: the live controls =================
 	const pg = C.page;

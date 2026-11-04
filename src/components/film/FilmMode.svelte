@@ -42,6 +42,7 @@
 	import { isViewer } from '$lib/objectPermissions';
 	import { openTimeline } from '$lib/timelineOpen';
 	import { recordingOpen, setRecordingPrefs } from '$lib/recording/recordingStores.js';
+	import { tipShown, dismissTip, TIP_FILM } from '$lib/tips.js';
 	import { MIN_DURATION, MAX_DURATION } from '$lib/recording/recordingCore.js';
 	import { filmShots } from '$lib/film/filmTake';
 	import { sequences } from '$lib/sequences';
@@ -562,6 +563,11 @@
 		closeFilm();
 		void openTimeline(seq ?? undefined);
 	}
+	/** 68: the first-use how-to, until the first take (or its ✕) */
+	const filmTip = tipShown(TIP_FILM);
+	$effect(() => {
+		if ($take.state === 'recording' && $filmTip) dismissTip(TIP_FILM);
+	});
 	/** 68 V9: Share as video — the take's timeline, straight into the export (MP4, frame by frame) */
 	async function exportTake() {
 		const id = $take.seq;
@@ -668,6 +674,15 @@
 			<div id="film-countdown-num" class="film-countdown" aria-live="assertive">{countdown}</div>
 		{/if}
 		<div class="film-hints">
+			{#if $filmTip && $take.state === 'idle'}
+				<p id="film-tip" class="film-chip film-tip" role="note">
+					<span
+						>{$film.sensor === 'gyro' || $film.sensor === 'starting' ? 'Turn the phone to look' : 'Drag to look (no motion sensor in use)'} · the stick and ▲▼ move ·
+						● records a shot into the Timeline · ❚❚ adds it</span
+					>
+					<button id="film-tip-close" type="button" class="film-tip-close" aria-label="Close the tip" onclick={() => dismissTip(TIP_FILM)}>✕</button>
+				</p>
+			{/if}
 			{#if $walk.on || $walk.starting}
 				<button id="film-walk-chip" class="film-chip" data-tracking={$walk.tracking} title="Stop walking" onclick={() => stopWalk()}
 					>{$walk.starting ? 'Starting AR…' : $walk.tracking ? `Walking ×${$walk.scale}` : 'Finding the room…'} ✕</button
@@ -1355,6 +1370,26 @@
 	}
 	.film-hints > * {
 		pointer-events: auto;
+	}
+	/* 68: the first-use how-to — one line of chips' look, wraps on a folded phone */
+	.film-tip {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin: 0;
+		max-width: min(92vw, 520px);
+		border-radius: 12px;
+		white-space: normal;
+		text-align: left;
+	}
+	.film-tip-close {
+		flex: none;
+		border: 0;
+		background: transparent;
+		color: inherit;
+		font: inherit;
+		cursor: pointer;
+		padding: 2px 6px;
 	}
 	.film-warn {
 		background: var(--film-warn);

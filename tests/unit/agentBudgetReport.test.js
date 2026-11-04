@@ -65,3 +65,57 @@ describe('diorama2 (item 14): top contributors + the vsync verdict', () => {
 		expect(vsyncVerdict({ n: 5, p05: 16.7, p95: 16.7 })).toBe(null);
 	});
 });
+
+describe('mcp-diorama2 27: no red on the vsync cap, draw calls by source', () => {
+	it('a frame time that is the headset refresh does not make the scene red; the same time off vsync still does', () => {
+		const m = { at: 1, profile: 'vr', objects: 10, triangles: 1000, calls: 20, frameP95: 13.9 };
+		expect(agentBudgetReport(m).tier).toBe('amber'); // 13.9 ms is amber on the vr profile
+		const capped = agentBudgetReport(m, { n: 240, p05: 13.8, p50: 13.9, p95: 13.9 });
+		expect(capped.tier).toBe('green');
+		expect(capped.over).toBeUndefined();
+		expect(capped.vsync).toMatchObject({ onVsync: true, hz: 72 });
+		const missed = agentBudgetReport({ ...m, frameP95: 27.8 }, { n: 240, p05: 13.8, p50: 13.9, p95: 27.8 });
+		expect(missed.tier).toBe('red');
+		expect(missed.vsync.onVsync).toBe(false);
+	});
+
+	it('renderSource: the main view, the post stack (other scenes, an override material), other views', async () => {
+		const { renderSource } = await import('../../src/lib/sceneBudget.js');
+		const scene = {};
+		const cam = {};
+		expect(renderSource(scene, cam, scene, cam)).toBe('scene');
+		expect(renderSource(scene, {}, scene, cam)).toBe('views');
+		expect(renderSource({}, cam, scene, cam)).toBe('post');
+		expect(renderSource({ overrideMaterial: {} }, cam, null, cam)).toBe('post');
+	});
+
+	it('the counter splits shadow-map calls out of the render they happen in, and the report splits the scene pass', async () => {
+		const THREE = await import('three');
+		const { countRenderCalls, uncountRenderCalls, agentBudgetReport: report } = await import('../../src/lib/sceneBudget.js');
+		const { objectsGroup, globalScene, globalCamera } = await import('../../src/stores/sceneStore');
+		const scene = new THREE.Scene();
+		const camera = new THREE.PerspectiveCamera();
+		globalScene.set(scene);
+		globalCamera.set(camera);
+		const group = new THREE.Group();
+		for (let i = 0; i < 3; i++) group.add(new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial()));
+		objectsGroup.set(group);
+		/** @type {any} */
+		const renderer = {
+			info: { render: { calls: 0, triangles: 0 }, autoReset: true },
+			shadowMap: { render() { renderer.info.render.calls += 4; } },
+			render(/** @type {any} */ s) {
+				this.info.render.calls = 0;
+				if (s === scene) this.shadowMap.render();
+				this.info.render.calls += s === scene ? 5 : 1;
+			}
+		};
+		expect(countRenderCalls(renderer)).toBe(true);
+		renderer.render(scene, camera); // 4 shadow + 5 view
+		renderer.render(new THREE.Scene(), camera); // a post pass
+		uncountRenderCalls(renderer);
+		expect(renderer.shadowMap.__budgetShadow).toBeUndefined();
+		const r = report({ at: 1, profile: 'desktop', calls: 10, triangles: 100, callsBySource: { scene: 5, shadows: 4, post: 1, views: 0 } });
+		expect(r.callsBySource).toEqual({ objects: 3, otherInView: 2, shadows: 4, post: 1, otherViews: 0 });
+	});
+});

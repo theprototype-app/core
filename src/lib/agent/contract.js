@@ -95,9 +95,10 @@ export const SCREENSHOT_DEFAULT_SIZE = 768;
  * @property {{node: string, message: string}[]} [scriptErrors] mcp-fix: Script nodes failing now (their code threw, or it was paused for being slow)
  * @property {{name: string, where: string, message: string}[]} [behaviourErrors] 1.2: the latest errors thrown by
  *   the scene's code behaviours (on whichever peer runs them); absent when none — fix with edit_behaviour
- * @property {{tier: string, profile: 'desktop'|'vr', objects?: number, meshes?: number, triangles?: number, calls?: number, textures?: number, lights?: number, frameP95?: number, over?: string[], top?: {byTriangles: {uuid: string, name: string, triangles: number, calls: number}[], byCalls: {uuid: string, name: string, triangles: number, calls: number}[]}, vsync?: {onVsync: boolean, hz: number, say: string}}} [sceneBudget]
+ * @property {{tier: string, profile: 'desktop'|'vr', objects?: number, meshes?: number, triangles?: number, calls?: number, textures?: number, lights?: number, frameP95?: number, over?: string[], top?: {byTriangles: {uuid: string, name: string, triangles: number, calls: number}[], byCalls: {uuid: string, name: string, triangles: number, calls: number}[]}, vsync?: {onVsync: boolean, hz: number, say: string}, callsBySource?: {objects: number, otherInView: number, shadows: number, post: number, otherViews: number}}} [sceneBudget]
  *   1.6.0 (mcp-shapes): how heavy the scene is — the Statistics overlay's numbers, the worst tier (green | amber | red |
- *   unknown) on the profile it is judged by, and `over` = each budget past green
+ *   unknown) on the profile it is judged by, and `over` = each budget past green; a frame time ON the display refresh
+ *   (vsync.onVsync) is never judged (mcp-diorama2 27), and `callsBySource` splits the draw calls by where they come from
  * @property {{level: string, text: string, at: number}[]} [logs] 1.7.0 (roadmap 85b, R3): the newest errors, warnings
  *   and toasts on this page (at most 5; the `logs` tool returns the rest); absent when there are none
  * @property {{status: 'listening'|'working'|'away', muted: boolean, queued: number, waiting: number, current: any, chatId: string|null}} [chat]

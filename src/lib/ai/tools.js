@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { objectsGroup, lockedObjects, pokeScene } from '../../stores/sceneStore.js';
 import { peers } from '../../stores/appStore.js';
 import { lockSkip } from './lockNote.js';
-import { sceneFilter, cursorOffset, cursorAt, PAGE_MAX } from './sceneFilter.js';
+import { sceneFilter, cursorOffset, cursorAt, PAGE_MAX, SPATIAL_TESTS } from './sceneFilter.js';
 import { placeObject, comfortRefusal, withBodyUnits, frontVector, FRONT_AXES, aimFront } from './placement.js';
 import { ASSIST_TOOL_NAMES, ASSIST_AI_TOOLS, ASSIST_PROMPT, assistTool } from './assistTools.js';
 import { aboutOriginPosition, originOf } from '$lib/objectOrigin';
@@ -1073,6 +1073,9 @@ async function runAiTool(rawName, rawArgs, opts) {
 				// 55: `{flow, page}` reads one page of a big graph's summary
 				if (args && typeof args.flow === 'string' && args.flow) return graphPage(args.flow === 'scene' ? SCENE_GRAPH : args.flow, args.page ?? 1);
 				// 55 (1.48.1): narrowed reads
+				// mcp-diorama2 (28): near / bounds test origins, or world mesh bounds (by)
+				for (const k of /** @type {const} */ (['near', 'bounds']))
+					if (args?.[k]?.by !== undefined && !SPATIAL_TESTS.includes(args[k].by)) return { error: k + '.by: ' + SPATIAL_TESTS.join(', ') };
 				if (args && (args.brief || args.name || args.type || args.near || args.bounds || args.limit !== undefined || args.cursor !== undefined))
 					return summarizeScene(200, { brief: args.brief === true, name: args.name, type: args.type, near: args.near, bounds: args.bounds, limit: args.limit, cursor: args.cursor });
 				return summarizeScene();
@@ -1347,14 +1350,14 @@ export const AI_TOOLS = [
 					type: { type: 'string', description: 'optional: only objects of this type — Mesh, Group, PointLight… or a primitive shape (Box, Wall, Sphere…)' },
 					near: {
 						type: 'object',
-						description: 'optional: only objects within radius of a WORLD position',
-						properties: { position: { type: 'array', items: { type: 'number' }, description: '[x, y, z]' }, radius: { type: 'number' } },
+						description: 'optional: only objects within radius of a WORLD position (by: origin = where the object is, the default; touches = any part of its world bounds; inside = all of it)',
+						properties: { position: { type: 'array', items: { type: 'number' }, description: '[x, y, z]' }, radius: { type: 'number' }, by: { type: 'string', enum: ['origin', 'touches', 'inside'] } },
 						required: ['position', 'radius']
 					},
 					bounds: {
 						type: 'object',
-						description: 'optional: only objects whose WORLD position is inside this box',
-						properties: { min: { type: 'array', items: { type: 'number' }, description: '[x, y, z]' }, max: { type: 'array', items: { type: 'number' }, description: '[x, y, z]' } },
+						description: 'optional: only objects inside this WORLD box — by: origin = their position (the default), touches = any part of their world mesh bounds overlaps it (a long wall crossing in), inside = all of it fits',
+						properties: { min: { type: 'array', items: { type: 'number' }, description: '[x, y, z]' }, max: { type: 'array', items: { type: 'number' }, description: '[x, y, z]' }, by: { type: 'string', enum: ['origin', 'touches', 'inside'] } },
 						required: ['min', 'max']
 					},
 					limit: { type: 'number', description: 'optional: objects per page (1-500); the reply has nextCursor when more match' },

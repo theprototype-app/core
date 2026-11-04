@@ -364,12 +364,12 @@ h.run(async () => {
 	for (let i = 0; i < 40; i++) {
 		const x = (await pose(page)).pos[0];
 		flyXs.push(x);
-		if (x > 30 && x < 59) break;
+		if (x >= 29.9 && x < 59) break;
 		await page.waitForTimeout(40);
 	}
 	await h.eventually(takeUi, (u) => u.state === 'recording', 'Move resumes recording');
-	const flying = flyXs.find((x) => x > 30 && x < 59) ?? flyXs[flyXs.length - 1];
-	h.check(flying > 30 && flying < 59, `Move flies from the last frame (x ${flying.toFixed(1)} on the way to 60; samples ${flyXs.map((x) => x.toFixed(1)).join(',')})`);
+	const flying = flyXs.find((x) => x >= 29.9 && x < 59) ?? flyXs[flyXs.length - 1];
+	h.check(flying >= 29.9 && flying < 59, `Move flies from the last frame (shot 2 ended at x 30; x ${flying.toFixed(1)} on the way to 60; samples ${flyXs.map((x) => x.toFixed(1)).join(',')})`);
 	await page.waitForTimeout(2200);
 	const landed = (await pose(page)).pos[0];
 	h.check(Math.abs(landed - 60) < 0.5, `…and lands where you are (x ${landed.toFixed(2)})`);

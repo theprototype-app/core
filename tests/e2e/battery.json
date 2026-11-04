@@ -15,7 +15,8 @@
 		"net-stress": "multi-peer stress on the self-hosted signaling box",
 		"perf-beacon": "reads a hosts-mapped preview origin",
 		"timeline-export": "needs the built app (scripts/serve-build.cjs), not the dev server",
-		"stale-chunk": "needs the built app (scripts/serve-build.cjs): vite's preload helper is build-only, so it only SKIPs on a dev server"
+		"stale-chunk": "needs the built app (scripts/serve-build.cjs): vite's preload helper is build-only, so it only SKIPs on a dev server",
+		"text-export": "needs the built app (scripts/serve-build.cjs): the exporter reads build/export-manifest.json, so it only SKIPs on a dev server"
 	},
 	"optional": {
 		"play-entry": "joined from 94-play (roadmap 94 slim play runtime, 2026-11-03): not yet measured on a GitHub runner, so it reports and does not gate",
@@ -456,6 +457,7 @@
 		"explorer-views": 305,
 		"export-presets": 288,
 		"export-zip": 2,
+		"text-export": 240,
 		"external-font-cdn": 19,
 		"fb-water": 80,
 		"fb-water-phone": 260,

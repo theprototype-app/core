@@ -330,7 +330,7 @@
 								},
 								"materialParams": {
 									"type": "object",
-									"description": "meshes: numbers (roughness, metalness, opacity, emissiveIntensity, clearcoat, transmission, ior, shininess…, clamped), true/false (wireframe, transparent, flatShading), hex colours (emissive, specular), side (front|back|double), and map = a library image hash (null clears). Each bad key comes back in errors."
+									"description": "meshes: numbers (roughness, metalness, opacity, emissiveIntensity, clearcoat, transmission, ior, shininess…, clamped), true/false (wireframe, transparent, flatShading), hex colours (emissive, specular), side (front|back|double), map slots (map, normalMap, roughnessMap, metalnessMap, emissiveMap, aoMap: a library image hash, or null to clear), texTransform ({repeat:[u,v], offset:[u,v], rotation:radians}), and map = a library image hash (null clears). Each bad key comes back in errors."
 								},
 								"intensity": {
 									"type": "number",
@@ -3571,7 +3571,7 @@
 									},
 									"materialParams": {
 										"type": "object",
-										"description": "meshes: numbers (roughness, metalness, opacity, emissiveIntensity, clearcoat, transmission, ior, shininess…, clamped), true/false (wireframe, transparent, flatShading), hex colours (emissive, specular), side (front|back|double), and map = a library image hash (null clears). Each bad key comes back in errors."
+										"description": "meshes: numbers (roughness, metalness, opacity, emissiveIntensity, clearcoat, transmission, ior, shininess…, clamped), true/false (wireframe, transparent, flatShading), hex colours (emissive, specular), side (front|back|double), map slots (map, normalMap, roughnessMap, metalnessMap, emissiveMap, aoMap: a library image hash, or null to clear), texTransform ({repeat:[u,v], offset:[u,v], rotation:radians}), and map = a library image hash (null clears). Each bad key comes back in errors."
 									},
 									"intensity": {
 										"type": "number",

@@ -3,7 +3,7 @@
 	"format": 2,
 	"generator": {
 		"source": "tpAgent.tools() via core scripts/agent-tool-catalog.cjs, mapped by tools/agent/src/catalog.js",
-		"hostTools": 69,
+		"hostTools": 71,
 		"dropped": []
 	},
 	"instructions": "You are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.\nWhen asked what you can do here, call what_can_you_do and say its \"say\" line.",
@@ -706,7 +706,7 @@
 		{
 			"name": "set_geometry",
 			"title": "Reshape objects",
-			"description": "Reshape existing objects in place (they keep uuid, transform, material and flows): change a primitive's params (the keys list_scene shows under geometry, e.g. {width, height, depth} for a Box, {radiusTop, radiusBottom, height, radialSegments} for a Cylinder, {segments, phiLength} for a Lathe, {depth, bevel} for an extrusion), or its TYPE (box → Cylinder) with params on top of the new type's defaults. A tube (create_tube) takes path, radius / radii, closed. An object whose vertices were hand-edited refuses unless force: true (the rebuild replaces those edits). Up to 100 objects per call, one undo step.\nTake a screenshot after each change to check your work.",
+			"description": "Reshape existing objects in place (they keep uuid, transform, material and flows): change a primitive's params (the keys list_scene shows under geometry, e.g. {width, height, depth} for a Box, {radiusTop, radiusBottom, height, radialSegments} for a Cylinder, {segments, phiLength} for a Lathe, {depth, bevel} for an extrusion), or its TYPE (box → Cylinder) with params on top of the new type's defaults. A tube (create_tube) takes path, radius / radii, closed. A 3D text (create_text) takes its text fields as params (text, font, size, depth, bevel, align, maxWidth, anchor, color …). An object whose vertices were hand-edited refuses unless force: true (the rebuild replaces those edits). Up to 100 objects per call, one undo step.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -1627,6 +1627,156 @@
 				"title": "Create shapes",
 				"readOnlyHint": false,
 				"destructiveHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "create_text",
+			"title": "Add 3D text",
+			"description": "Add a 3D text object: a sign, a title, a label. Flat letters by default; solid (extruded) letters with depth and a bevel when solid: true or depth / bevel are given. Fonts: bundled, any Google Fonts family by name, or a Library font {asset}. Solid text holds up to 300 characters (80 on a phone or headset), flat 2000. Returns its uuid; change it later with set_geometry params.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"text": {
+						"type": "string",
+						"description": "the words; \\n breaks a line"
+					},
+					"font": {
+						"description": "a bundled font (sans, serif, mono, rounded, display — or its name: Noto Sans, Noto Serif, IBM Plex Mono, Nunito, Press Start 2P, IBM Plex Sans), ANY Google Fonts family name (fetched once, kept in the Library), or {asset: \"<hash>\"} for a Library font"
+					},
+					"size": {
+						"type": "number",
+						"description": "letter height (the em) in metres, default 0.4"
+					},
+					"solid": {
+						"type": "boolean",
+						"description": "true = solid 3D letters (extruded); false = flat. depth or bevel imply solid"
+					},
+					"depth": {
+						"type": "number",
+						"description": "solid: thickness in metres (default 0.1)"
+					},
+					"bevel": {
+						"description": "solid: bevel width in metres, false for none, or {size, thickness, segments}"
+					},
+					"align": {
+						"type": "string",
+						"enum": [
+							"left",
+							"center",
+							"right",
+							"justify"
+						]
+					},
+					"maxWidth": {
+						"type": "number",
+						"description": "wrap lines at this width in metres; 0 = no wrapping"
+					},
+					"anchor": {
+						"type": "string",
+						"enum": [
+							"top-left",
+							"top-center",
+							"top-right",
+							"middle-left",
+							"middle-center",
+							"middle-right",
+							"bottom-left",
+							"bottom-center",
+							"bottom-right"
+						],
+						"description": "where the block sits around its position (default middle-center)"
+					},
+					"lineHeight": {
+						"type": "number",
+						"description": "in ems, default 1.2"
+					},
+					"letterSpacing": {
+						"type": "number",
+						"description": "extra space between letters, in ems"
+					},
+					"bold": {
+						"type": "boolean",
+						"description": "flat Noto Sans and Google fonts"
+					},
+					"italic": {
+						"type": "boolean"
+					},
+					"color": {
+						"type": "string",
+						"description": "hex #rrggbb (the face colour of solid text)"
+					},
+					"sideColor": {
+						"type": "string",
+						"description": "solid: hex colour of the sides (default a shade of color)"
+					},
+					"emissive": {
+						"type": "number",
+						"description": "solid: glow 0..4"
+					},
+					"metalness": {
+						"type": "number"
+					},
+					"roughness": {
+						"type": "number"
+					},
+					"quality": {
+						"type": "string",
+						"enum": [
+							"low",
+							"medium",
+							"high"
+						],
+						"description": "solid: curve smoothness (triangles)"
+					},
+					"outline": {
+						"type": "number",
+						"description": "flat: outline width in ems (0..0.3)"
+					},
+					"name": {
+						"type": "string"
+					},
+					"position": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"minItems": 3,
+						"maxItems": 3,
+						"description": "world point, metres (default: in front of the camera)"
+					},
+					"rotation": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"minItems": 3,
+						"maxItems": 3,
+						"description": "Euler radians"
+					}
+				},
+				"required": [
+					"text"
+				]
+			},
+			"annotations": {
+				"title": "Add 3D text",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"openWorldHint": true
+			}
+		},
+		{
+			"name": "list_fonts",
+			"title": "List fonts for 3D text",
+			"description": "The fonts 3D text can use: the bundled ones, the Library's (uploads and Google fonts, with their licences), and which the scene's texts use. Read only.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {}
+			},
+			"annotations": {
+				"title": "List fonts for 3D text",
+				"readOnlyHint": true,
 				"openWorldHint": false
 			}
 		},
@@ -4484,7 +4634,7 @@
 		{
 			"name": "import_file",
 			"title": "Import a file",
-			"description": "Bring a file made on your machine into the session: PNG / WebP images (≤ 16 MB, metadata stripped), JSON (≤ 2 MB) or a .tpanim clip. The type is read from the bytes. It lands in the Explorer (folder \"Generated\" unless `folder`), shared with every peer. Pass the generator's input as `spec` and it is saved beside the file as <name>.<generator>.json (e.g. knight.png + knight.pixling.json) so it can be regenerated. An image is also placed in the scene as a card (a plane; `place: false` to skip): `filter: \"nearest\"` keeps pixel art crisp (default when a spec is given), `frame: {w, h, col, row}` shows one frame of a sprite sheet, `facing: \"camera-y\"` turns it to face each viewer. One undo step; editors and admins only. Large files: send base64 parts with `chunk: {id, index, total}` (the bridge does this for you with `path`).\nTake a screenshot after each change to check your work.",
+			"description": "Bring a file made on your machine into the session: PNG / WebP images (≤ 16 MB, metadata stripped), JSON (≤ 2 MB), a .tpanim clip, or a font (TTF / OTF / WOFF / WOFF2 — it becomes a Library font for 3D text). The type is read from the bytes. It lands in the Explorer (folder \"Generated\" unless `folder`), shared with every peer. Pass the generator's input as `spec` and it is saved beside the file as <name>.<generator>.json (e.g. knight.png + knight.pixling.json) so it can be regenerated. An image is also placed in the scene as a card (a plane; `place: false` to skip): `filter: \"nearest\"` keeps pixel art crisp (default when a spec is given), `frame: {w, h, col, row}` shows one frame of a sprite sheet, `facing: \"camera-y\"` turns it to face each viewer. One undo step; editors and admins only. Large files: send base64 parts with `chunk: {id, index, total}` (the bridge does this for you with `path`).\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -4981,6 +5131,7 @@
 				"tube": "create_tube",
 				"extrude": "extrude_shape",
 				"mesh": "create_mesh",
+				"text": "create_text",
 				"shapes": "create_shapes"
 			},
 			"edit_shape": {
@@ -5016,7 +5167,8 @@
 				"search": "search_assets",
 				"place": "place_asset",
 				"prefab": "prefab",
-				"image": "add_image"
+				"image": "add_image",
+				"fonts": "list_fonts"
 			},
 			"effects": {
 				"terrain": "terrain",
@@ -5726,7 +5878,7 @@
 			{
 				"name": "create_shape",
 				"title": "Make a shape",
-				"description": "Make shapes the basic objects cannot: a lathe (a vase, a bowl, a lamp from a profile turned around an axis), a tube along a path (a rail, a pipe, a cable), an extruded outline (a sign, a star, a wall with a hole), or a mesh from your own vertices (anything else).\nCall it as {\"action\": \"lathe\", \"lathe\": {…its fields…}}; each action's fields and limits are in its object below.\nMany at once: {\"shapes\": [{\"action\": \"lathe\", \"lathe\": {…}}, …]} with no action — one call, one undo step.\nTake a screenshot after each change to check your work.",
+				"description": "Make shapes the basic objects cannot: a lathe (a vase, a bowl, a lamp from a profile turned around an axis), a tube along a path (a rail, a pipe, a cable), an extruded outline (a sign, a star, a wall with a hole), a mesh from your own vertices (anything else), or text = 3D words (a sign, a title: flat, or solid with depth and a bevel; any bundled or Google Fonts font).\nCall it as {\"action\": \"lathe\", \"lathe\": {…its fields…}}; each action's fields and limits are in its object below.\nMany at once: {\"shapes\": [{\"action\": \"lathe\", \"lathe\": {…}}, …]} with no action — one call, one undo step.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -5736,7 +5888,8 @@
 								"lathe",
 								"tube",
 								"extrude",
-								"mesh"
+								"mesh",
+								"text"
 							],
 							"description": "What to do. Put its fields in the object named after the action."
 						},
@@ -6185,6 +6338,132 @@
 							],
 							"description": "A mesh from raw data: vertices [[x, y, z], …] and faces [[i, j, k] or [i, j, k, l] …] (indices into vertices, counter-clockwise seen from outside; polygons of up to 32 corners are fanned, so keep them convex), optional uvs (one [u, v] per vertex). Up to 20000 vertices and 20000 faces; normals are computed (smooth: true for smooth shading, flatShading: true for hard facets). Colour it as you make it: materials [{color, roughness, metalness, …}] (up to 16 slots) with faceMaterials [slot per face, same order as faces] for parts in different colours; or colors [[r, g, b] 0-1, one per vertex] for a painted gradient (multiplied by the material colour). Material slots last through edit_shape {action: 'mesh'}; vertex colours last only while an edit keeps the vertex count. subdivide: 1 or 2 smooths it (Catmull-Clark: a box of six quads becomes a rounded pebble, a few quads become a soft organic shape; each level about four times the faces, checked against the caps). Edit it afterwards with edit_shape {action: 'mesh'}, or send new vertices with edit_shape {action: 'update'}. Returns the uuid."
 						},
+						"text": {
+							"type": "object",
+							"properties": {
+								"text": {
+									"type": "string",
+									"description": "the words; \\n breaks a line"
+								},
+								"font": {
+									"description": "a bundled font (sans, serif, mono, rounded, display — or its name: Noto Sans, Noto Serif, IBM Plex Mono, Nunito, Press Start 2P, IBM Plex Sans), ANY Google Fonts family name (fetched once, kept in the Library), or {asset: \"<hash>\"} for a Library font"
+								},
+								"size": {
+									"type": "number",
+									"description": "letter height (the em) in metres, default 0.4"
+								},
+								"solid": {
+									"type": "boolean",
+									"description": "true = solid 3D letters (extruded); false = flat. depth or bevel imply solid"
+								},
+								"depth": {
+									"type": "number",
+									"description": "solid: thickness in metres (default 0.1)"
+								},
+								"bevel": {
+									"description": "solid: bevel width in metres, false for none, or {size, thickness, segments}"
+								},
+								"align": {
+									"type": "string",
+									"enum": [
+										"left",
+										"center",
+										"right",
+										"justify"
+									]
+								},
+								"maxWidth": {
+									"type": "number",
+									"description": "wrap lines at this width in metres; 0 = no wrapping"
+								},
+								"anchor": {
+									"type": "string",
+									"enum": [
+										"top-left",
+										"top-center",
+										"top-right",
+										"middle-left",
+										"middle-center",
+										"middle-right",
+										"bottom-left",
+										"bottom-center",
+										"bottom-right"
+									],
+									"description": "where the block sits around its position (default middle-center)"
+								},
+								"lineHeight": {
+									"type": "number",
+									"description": "in ems, default 1.2"
+								},
+								"letterSpacing": {
+									"type": "number",
+									"description": "extra space between letters, in ems"
+								},
+								"bold": {
+									"type": "boolean",
+									"description": "flat Noto Sans and Google fonts"
+								},
+								"italic": {
+									"type": "boolean"
+								},
+								"color": {
+									"type": "string",
+									"description": "hex #rrggbb (the face colour of solid text)"
+								},
+								"sideColor": {
+									"type": "string",
+									"description": "solid: hex colour of the sides (default a shade of color)"
+								},
+								"emissive": {
+									"type": "number",
+									"description": "solid: glow 0..4"
+								},
+								"metalness": {
+									"type": "number"
+								},
+								"roughness": {
+									"type": "number"
+								},
+								"quality": {
+									"type": "string",
+									"enum": [
+										"low",
+										"medium",
+										"high"
+									],
+									"description": "solid: curve smoothness (triangles)"
+								},
+								"outline": {
+									"type": "number",
+									"description": "flat: outline width in ems (0..0.3)"
+								},
+								"name": {
+									"type": "string"
+								},
+								"position": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"minItems": 3,
+									"maxItems": 3,
+									"description": "world point, metres (default: in front of the camera)"
+								},
+								"rotation": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"minItems": 3,
+									"maxItems": 3,
+									"description": "Euler radians"
+								}
+							},
+							"required": [
+								"text"
+							],
+							"description": "Add a 3D text object: a sign, a title, a label. Flat letters by default; solid (extruded) letters with depth and a bevel when solid: true or depth / bevel are given. Fonts: bundled, any Google Fonts family by name, or a Library font {asset}. Solid text holds up to 300 characters (80 on a phone or headset), flat 2000. Returns its uuid; change it later with edit_shape {action: 'params'} params."
+						},
 						"shapes": {
 							"type": "array",
 							"minItems": 1,
@@ -6230,13 +6509,13 @@
 					"title": "Make a shape",
 					"readOnlyHint": false,
 					"destructiveHint": true,
-					"openWorldHint": false
+					"openWorldHint": true
 				}
 			},
 			{
 				"name": "edit_shape",
 				"title": "Reshape or model objects",
-				"description": "Change the shape of objects that exist: params = new size / segments / type in place, mesh = model faces and vertices (extrude, inset, bevel, subdivide, weld, smooth, dissolve, make a face), update = new vertices / faces for a mesh made from data (replace it, or patch a range), pivot = the point an object turns about, pivot_group = a group at a joint so several parts swing together.\nCall it as {\"action\": \"params\", \"params\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
+				"description": "Change the shape of objects that exist: params = new size / segments / type in place (on a 3D text: its words, font, size, depth, bevel, align, wrap width, anchor, colours), mesh = model faces and vertices (extrude, inset, bevel, subdivide, weld, smooth, dissolve, make a face), update = new vertices / faces for a mesh made from data (replace it, or patch a range), pivot = the point an object turns about, pivot_group = a group at a joint so several parts swing together.\nCall it as {\"action\": \"params\", \"params\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -6339,7 +6618,7 @@
 							"required": [
 								"updates"
 							],
-							"description": "Reshape existing objects in place (they keep uuid, transform, material and flows): change a primitive's params (the keys list_scene shows under geometry, e.g. {width, height, depth} for a Box, {radiusTop, radiusBottom, height, radialSegments} for a Cylinder, {segments, phiLength} for a Lathe, {depth, bevel} for an extrusion), or its TYPE (box → Cylinder) with params on top of the new type's defaults. A tube (create_shape {action: 'tube'}) takes path, radius / radii, closed. An object whose vertices were hand-edited refuses unless force: true (the rebuild replaces those edits). Up to 100 objects per call, one undo step."
+							"description": "Reshape existing objects in place (they keep uuid, transform, material and flows): change a primitive's params (the keys list_scene shows under geometry, e.g. {width, height, depth} for a Box, {radiusTop, radiusBottom, height, radialSegments} for a Cylinder, {segments, phiLength} for a Lathe, {depth, bevel} for an extrusion), or its TYPE (box → Cylinder) with params on top of the new type's defaults. A tube (create_shape {action: 'tube'}) takes path, radius / radii, closed. A 3D text (create_shape {action: 'text'}) takes its text fields as params (text, font, size, depth, bevel, align, maxWidth, anchor, color …). An object whose vertices were hand-edited refuses unless force: true (the rebuild replaces those edits). Up to 100 objects per call, one undo step."
 						},
 						"mesh": {
 							"type": "object",
@@ -7570,7 +7849,7 @@
 			{
 				"name": "assets",
 				"title": "Images and assets",
-				"description": "Assets to build with: search = find models, prefabs, sounds, images, CC0 materials and HDRIs by words (library, packs, Poly Haven); place = put a found model or prefab into the scene; prefab = keep objects as a reusable prefab, or place copies of one; image = put an image into the library (an https URL, base64 data, or a canvas you describe) and get its hash for textures.\nCall it as {\"action\": \"search\", \"search\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
+				"description": "Assets to build with: search = find models, prefabs, sounds, images, CC0 materials and HDRIs by words (library, packs, Poly Haven); place = put a found model or prefab into the scene; prefab = keep objects as a reusable prefab, or place copies of one; image = put an image into the library (an https URL, base64 data, or a canvas you describe) and get its hash for textures; fonts = the fonts 3D text can use (bundled, the library's, the scene's).\nCall it as {\"action\": \"search\", \"search\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -7580,7 +7859,8 @@
 								"search",
 								"place",
 								"prefab",
-								"image"
+								"image",
+								"fonts"
 							],
 							"description": "What to do. Put its fields in the object named after the action."
 						},
@@ -7830,6 +8110,11 @@
 								}
 							},
 							"description": "Put an image into the shared library (Explorer) and get its hash, for texture slots (update_objects materialParams.map, set_look {action: 'material'}) and image nodes. Give exactly one source: `url` (https, the site must allow other origins), `data` (base64, also how to pass an image you generated), or `canvas` (draw one from shapes, gradients, checkers and noise: textures, signs, labels). It is re-encoded here, so nothing in the file survives but its pixels. Limits: 16 MB in, 4096 px on the long side (larger is scaled down), a canvas 2048 px and 500 ops. One undo step; editors and admins only."
+						},
+						"fonts": {
+							"type": "object",
+							"properties": {},
+							"description": "The fonts 3D text can use: the bundled ones, the Library's (uploads and Google fonts, with their licences), and which the scene's texts use. Read only."
 						}
 					},
 					"required": [
@@ -9306,7 +9591,7 @@
 			{
 				"name": "import_file",
 				"title": "Import a file",
-				"description": "Bring a file made on your machine into the session: PNG / WebP images (≤ 16 MB, metadata stripped), JSON (≤ 2 MB) or a .tpanim clip. The type is read from the bytes. It lands in the Explorer (folder \"Generated\" unless `folder`), shared with every peer. Pass the generator's input as `spec` and it is saved beside the file as <name>.<generator>.json (e.g. knight.png + knight.pixling.json) so it can be regenerated. An image is also placed in the scene as a card (a plane; `place: false` to skip): `filter: \"nearest\"` keeps pixel art crisp (default when a spec is given), `frame: {w, h, col, row}` shows one frame of a sprite sheet, `facing: \"camera-y\"` turns it to face each viewer. One undo step; editors and admins only. Large files: send base64 parts with `chunk: {id, index, total}` (the bridge does this for you with `path`).\nTake a screenshot after each change to check your work.",
+				"description": "Bring a file made on your machine into the session: PNG / WebP images (≤ 16 MB, metadata stripped), JSON (≤ 2 MB), a .tpanim clip, or a font (TTF / OTF / WOFF / WOFF2 — it becomes a Library font for 3D text). The type is read from the bytes. It lands in the Explorer (folder \"Generated\" unless `folder`), shared with every peer. Pass the generator's input as `spec` and it is saved beside the file as <name>.<generator>.json (e.g. knight.png + knight.pixling.json) so it can be regenerated. An image is also placed in the scene as a card (a plane; `place: false` to skip): `filter: \"nearest\"` keeps pixel art crisp (default when a spec is given), `frame: {w, h, col, row}` shows one frame of a sprite sheet, `facing: \"camera-y\"` turns it to face each viewer. One undo step; editors and admins only. Large files: send base64 parts with `chunk: {id, index, total}` (the bridge does this for you with `path`).\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {

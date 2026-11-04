@@ -1,0 +1,270 @@
+// 64-text — THE ONE TEXT OBJECT: flat (troika) and solid (extruded) on one record, bundled and
+// user-added fonts, Bake → mesh, the per-device cap. Measured through `textPathDebug()` (glyph
+// layout, the solid build's triangles / missing glyphs, the font each peer drew with) and the
+// record itself; the pictures go to OUT.
+//
+//   §1 /create Text on two peers: a flat BLOCK (no path) — both peers lay the same glyphs out;
+//      Wrap width breaks it into lines, Anchor moves it, every edit undoes on both peers
+//   §2 Solid: A and B build the extruded mesh from the record; each bundled font builds "HELLO"
+//      with no missing glyph; depth / bevel / quality change the mesh; undo; flat ↔ solid keeps
+//      the text and its style
+//   §3 the mesh is never saved: a serializer (toJSON under the park ritual) sees the placeholder
+//   §4 save → reload → identical record, the solid rebuilt from it
+//   §5 Bake → mesh on A: a normal mesh on A and B (no record, same triangle count), its
+//      vertices editable; ONE undo brings the text back
+//   §6 the cap: a phone / headset writer is refused past its solid cap with the plain message
+//   §7 fonts: an uploaded WOFF (as a TTF-class file) and a WOFF2 (decoded on import) become
+//      Library fonts; a Google font by name (mocked CSS + file), then Google BLOCKED: B pulls the
+//      bytes from A and draws with it, the scene's asset list (what a .tpscene / export carries)
+//      names it; a no-embedding font raises the export licence warning
+//   §8 the Inspector: Flat / Solid buttons, the solid rows, the licence line (screenshots)
+//
+// Counterfactual: v1.60.0 has no Text kind — `/create Text` makes nothing, every row is red.
+// Run: e2e-slot --dev <lane> 5996 -- env APP_URL=https://localhost:5996/ npm run e2e -- text-object
+const h = require('./helpers.cjs');
+const fs = require('fs');
+const path = require('path');
+
+const OUT = process.env.E2E_OUT ?? 'test-results/64-text-object';
+fs.mkdirSync(OUT, { recursive: true });
+
+/** @param {any} page */
+const dbg = (page) => page.evaluate(() => window.__stores.textPath.textPathDebug());
+/** @param {any} page @param {string} uuid */
+const one = async (page, uuid) => (await dbg(page)).find((/** @type {any} */ d) => d.uuid === uuid);
+/** @param {any} page @param {string} uuid @param {any} patch */
+const set = (page, uuid, patch) => page.evaluate(([u, p]) => !!window.__stores.textPathEdit.setTextPathFor(u, p), [uuid, patch]);
+/** @param {any} page @param {string} uuid */
+const record = (page, uuid) =>
+	page.evaluate((u) => {
+		let g;
+		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		return JSON.parse(JSON.stringify(g.getObjectByProperty('uuid', u)?.userData?.textPath ?? null));
+	}, uuid);
+/** the carrier's own geometry/material facts @param {any} page @param {string} uuid */
+const carrier = (page, uuid) =>
+	page.evaluate((u) => {
+		let g;
+		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		const o = g.getObjectByProperty('uuid', u);
+		if (!o) return null;
+		return {
+			verts: o.geometry?.getAttribute?.('position')?.count ?? 0,
+			groups: o.geometry?.groups?.length ?? 0,
+			matIndexes: [...new Set((o.geometry?.groups ?? []).map((gr) => gr.materialIndex))],
+			mats: Array.isArray(o.material) ? o.material.map((m) => m.type + ':' + m.color.getHexString()) : [o.material?.type],
+			text: !!o.userData.textPath
+		};
+	}, uuid);
+/** @param {any} page @param {string} uuid @param {(d: any) => boolean} pred @param {string} label */
+async function until(page, uuid, pred, label, timeout = 30000) {
+	await h.eventually(async () => (await one(page, uuid)) ?? null, (d) => !!d && pred(d), label, timeout);
+	return one(page, uuid);
+}
+const solidBuilt = (/** @type {any} */ d) => d.mode === 'extruded' && !!d.solid && !d.solid.building && d.solid.triangles > 0;
+const undo = (/** @type {any} */ page) => page.evaluate(() => window.__stores.history.undo());
+const redo = (/** @type {any} */ page) => page.evaluate(() => window.__stores.history.redo());
+/** the y of every glyph baseline, rounded @param {any} d */
+const lineYs = (d) => [...new Set(d.baseline.map((/** @type {number[]} */ p) => +p[1].toFixed(2)))];
+
+h.run(async () => {
+	const browser = await h.launch();
+	const A = await h.setupPage(browser, 'A');
+	const B = await h.setupPage(browser, 'B');
+	await h.connect(B, A);
+
+	// ---- §1 flat block --------------------------------------------------------------------
+	const uuid = await A.page.evaluate(() => window.__stores.addObjects.spawnAtPoint('/create Text', [0, 1, 0]).uuid);
+	const a1 = await until(A.page, uuid, (d) => d.synced && d.glyphs === 4, '§1 A lays "Text" out as a flat block');
+	await until(B.page, uuid, (d) => d.synced && d.glyphs === 4, '§1 B lays the same 4 glyphs out');
+	h.check(a1.block && a1.mode === 'flat', `§1 a new text is a flat block (block=${a1.block}, mode=${a1.mode})`);
+	await set(A.page, uuid, { text: 'one two three four five six' });
+	const wide = await until(B.page, uuid, (d) => d.synced && d.text === 'one two three four five six', '§1 B follows the new text');
+	h.check(lineYs(wide).length === 1, `§1 no wrap width = one line (${lineYs(wide).length})`);
+	await set(A.page, uuid, { maxWidth: 1.2 });
+	const wrapped = await until(B.page, uuid, (d) => d.synced && lineYs(d).length >= 3, '§1 Wrap width 1.2 m breaks it into lines on B');
+	h.check(lineYs(wrapped).length >= 3, `§1 wrapped into ${lineYs(wrapped).length} lines`);
+	const xBefore = Math.min(...wrapped.baseline.map((/** @type {number[]} */ p) => p[0]));
+	await set(A.page, uuid, { anchor: 'top-left' });
+	const anchored = await until(B.page, uuid, (d) => d.synced && Math.min(...d.baseline.map((/** @type {number[]} */ p) => p[0])) > xBefore + 0.3, '§1 Anchor top-left moves the block right of the origin on B');
+	h.check(Math.min(...anchored.baseline.map((/** @type {number[]} */ p) => p[0])) > -0.05, '§1 top-left anchor: the block starts at the object');
+	await undo(A.page);
+	await until(B.page, uuid, (d) => d.synced && Math.abs(Math.min(...d.baseline.map((/** @type {number[]} */ p) => p[0])) - xBefore) < 0.05, '§1 undo the anchor (on B)');
+	await undo(A.page);
+	await until(B.page, uuid, (d) => d.synced && lineYs(d).length === 1, '§1 undo the wrap (on B)');
+
+	// ---- §2 solid -------------------------------------------------------------------------
+	await set(A.page, uuid, { text: 'HELLO', mode: 'extruded' });
+	const s1 = await until(A.page, uuid, solidBuilt, '§2 A builds the solid text');
+	const s1b = await until(B.page, uuid, solidBuilt, '§2 B builds the same solid text from the record');
+	h.check(s1.solid.triangles === s1b.solid.triangles && s1.solid.drawn === 5 && s1.solid.missing === 0, `§2 same mesh on both peers: ${s1.solid.triangles} / ${s1b.solid.triangles} triangles, 5 letters, 0 missing`);
+	const c1 = await carrier(A.page, uuid);
+	h.check(c1.groups >= 2 && c1.matIndexes.every((/** @type {number} */ i) => i === 0 || i === 1) && c1.mats.length === 2 && c1.mats[0].startsWith('MeshStandardMaterial'), `§2 the carrier IS the mesh: face (0) + side (1) groups, two materials (${JSON.stringify(c1.mats)})`);
+	const fonts = await A.page.evaluate(() => window.__stores.textFonts.bundledFonts().map((f) => f.id));
+	h.check(fonts.length >= 5, `§2 at least five bundled fonts (${fonts.join(', ')})`);
+	for (const f of fonts) {
+		await set(A.page, uuid, { font: f });
+		const d = await until(A.page, uuid, (x) => solidBuilt(x) && x.font === f && String(x.fontUrl).includes(f === 'sans' ? 'sans-serif' : '') && x.solid.drawn === 5, `§2 font ${f} builds`);
+		h.check(d.solid.missing === 0, `§2 ${f}: "HELLO" has no missing glyph (${d.solid.triangles} triangles)`);
+		await until(B.page, uuid, (x) => solidBuilt(x) && x.font === f, `§2 B builds ${f} too`);
+	}
+	await set(A.page, uuid, { font: 'sans' });
+	const base = await until(A.page, uuid, (d) => solidBuilt(d) && d.font === 'sans', '§2 back on sans');
+	await set(A.page, uuid, { bevel: { size: 0 } });
+	const noBevel = await until(A.page, uuid, (d) => solidBuilt(d) && d.solid.triangles < base.solid.triangles, '§2 no bevel = fewer triangles');
+	await set(A.page, uuid, { quality: 'high' });
+	await until(A.page, uuid, (d) => solidBuilt(d) && d.solid.triangles > noBevel.solid.triangles, '§2 high quality = more triangles');
+	await undo(A.page);
+	await undo(A.page);
+	await until(B.page, uuid, (d) => solidBuilt(d) && d.solid.triangles === base.solid.triangles, '§2 two undos restore the bevel + quality on B');
+	await set(A.page, uuid, { depth: 0.4, color: '#ff8800', sideColor: '#224488', emissive: 1 });
+	await h.eventually(() => carrier(B.page, uuid), (c) => !!c && c.mats[0]?.endsWith('ff8800') && c.mats[1]?.endsWith('224488'), '§2 B draws the face orange and the sides blue', 20000);
+	await set(A.page, uuid, { mode: 'flat' });
+	const back = await until(B.page, uuid, (d) => d.mode === 'flat' && d.synced && d.glyphs === 5, '§2 flat again on B');
+	const r2 = await record(B.page, uuid);
+	h.check(back.text === 'HELLO' && r2.color === '#ff8800' && r2.depth === 0.4, '§2 flat ↔ solid keeps the text, colour and solid settings');
+	const c3 = await carrier(A.page, uuid);
+	h.check(c3.mats.length === 1 && c3.groups === 0, `§2 flat: the carrier is the invisible hit proxy again (${JSON.stringify(c3.mats)})`);
+	await set(A.page, uuid, { mode: 'extruded' });
+	await until(A.page, uuid, solidBuilt, '§2 solid again');
+
+	// ---- §3 the mesh is never saved ---------------------------------------------------------
+	const saved = await A.page.evaluate(async (u) => {
+		let g;
+		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		const o = g.getObjectByProperty('uuid', u);
+		const unpark = window.__stores.flowRuntime.parkAnimatedAtBase();
+		const json = o.toJSON();
+		unpark();
+		const geo = json.geometries?.[0];
+		const verts = geo?.data?.attributes?.position?.array?.length ?? -1;
+		return { verts, after: o.geometry.getAttribute('position').count, bytes: JSON.stringify(json).length };
+	}, uuid);
+	h.check(saved.verts > 0 && saved.verts <= 12 && saved.after > 100, `§3 a serializer sees the placeholder (${saved.verts / 3} verts, ${saved.bytes} bytes), the scene keeps the mesh (${saved.after} verts)`);
+
+	// ---- §4 save -> reload -> identical --------------------------------------------------
+	const before = await record(A.page, uuid);
+	await A.page.evaluate(() => window.__stores.autosave.saveNow());
+	await A.page.waitForTimeout(1500);
+	await h.freshReload(A);
+	await h.answerRestore(A, 'restore');
+	await h.eventually(() => record(A.page, uuid), (r) => !!r, '§4 the text is back after a reload', 30000);
+	const reloaded = await record(A.page, uuid); // h.eventually returns nothing
+	h.check(JSON.stringify(reloaded) === JSON.stringify(before), '§4 the record is identical after save + reload');
+	const rebuilt = await until(A.page, uuid, solidBuilt, '§4 the solid text rebuilds from the record');
+	h.check(rebuilt.solid.drawn === 5, `§4 rebuilt: ${rebuilt.solid.triangles} triangles`);
+
+	// ---- §5 Bake -> mesh -----------------------------------------------------------------
+	const tri = rebuilt.solid.triangles;
+	const baked = await A.page.evaluate((u) => window.__stores.textPathEdit.bakeTextToMesh(u), uuid);
+	h.check(baked.ok, '§5 Bake to mesh succeeds');
+	const ca = await carrier(A.page, uuid);
+	await h.eventually(() => carrier(B.page, uuid), (c) => !!c && !c.text && c.verts === tri * 3, '§5 B holds the baked mesh (no record, same vertices)', 20000);
+	h.check(!ca.text && ca.verts === tri * 3, `§5 a normal mesh on A (${ca.verts} verts) and B`);
+	const edited = await A.page.evaluate((u) => {
+		window.__stores.meshEdit.enterEditMode(u);
+		let e;
+		window.__stores.meshEdit.editingObject.subscribe((v) => (e = v))(); // the uuid being edited
+		let g;
+		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		const n = e === u ? window.__stores.meshEdit.vertexCount(g.getObjectByProperty('uuid', u)) : 0;
+		window.__stores.meshEdit.exitEditMode();
+		return n;
+	}, uuid);
+	h.check(edited > 0, `§5 its vertices are editable (${edited} in the vertex editor)`);
+	await undo(A.page);
+	await until(A.page, uuid, solidBuilt, '§5 ONE undo brings the text back on A');
+	await until(B.page, uuid, solidBuilt, '§5 ...and on B');
+
+	// ---- §6 the cap ---------------------------------------------------------------------------
+	const refused = await A.page.evaluate((u) => {
+		window.__tpTextProfile = 'low';
+		const ok = window.__stores.textPathEdit.setTextPathFor(u, { text: 'x'.repeat(120) });
+		const why = window.__stores.textPathEdit.lastTextRefusal();
+		window.__tpTextProfile = undefined;
+		const okDesktop = !!window.__stores.textPathEdit.setTextPathFor(u, { text: 'x'.repeat(120) });
+		return { ok: !!ok, why, okDesktop };
+	}, uuid);
+	h.check(!refused.ok && /too long.*80 characters on this device/.test(refused.why ?? ''), `§6 a phone / headset writer is refused past 80 solid characters: "${refused.why}"`);
+	h.check(refused.okDesktop, '§6 the same text goes through on a desktop (cap 300)');
+	await set(A.page, uuid, { text: 'HELLO' });
+
+	// ---- §7 fonts --------------------------------------------------------------------------
+	// an upload (a WOFF; TTF/OTF take the same path) and a WOFF2 decoded at import
+	const up = await A.page.evaluate(async () => {
+		const tf = window.__stores.textFonts;
+		const get = async (/** @type {string} */ p) => new Uint8Array(await (await fetch(p)).arrayBuffer());
+		const woff = await tf.addFontBytes(await get('fonts/text/nunito-latin-400-normal.woff'), 'Nunito.woff');
+		const woff2 = await tf.addFontBytes(await get('fonts/ibm-plex-sans-latin.woff2'), 'IBM Plex Sans.woff2');
+		return { woff, woff2 };
+	});
+	h.check(up.woff.ok && up.woff2.ok && up.woff2.font.format !== 'woff2', `§7 uploads become Library fonts (woff ${up.woff.ok}, woff2 → ${up.woff2.font?.format})`);
+	await set(A.page, uuid, { fontAsset: up.woff2.font.hash, fontName: up.woff2.font.family });
+	const own = await until(A.page, uuid, (d) => solidBuilt(d) && d.font === 'asset:' + up.woff2.font.hash && String(d.fontUrl).startsWith('blob:'), '§7 A draws with the decoded WOFF2');
+	h.check(own.solid.missing === 0, '§7 the WOFF2 font builds HELLO');
+	await until(B.page, uuid, (d) => solidBuilt(d) && String(d.fontUrl).startsWith('blob:'), '§7 B pulls the font from A and draws with it', 40000);
+
+	// a Google font by name: the CSS API + the file, mocked; afterwards Google is blocked
+	const lobster = fs.readFileSync(path.join(__dirname, '..', '..', 'static', 'fonts', 'press-start-2p-latin.woff2'));
+	let googleCalls = 0;
+	for (const P of [A, B]) {
+		await P.page.context().route(/fonts\.(googleapis|gstatic)\.com/, (/** @type {any} */ route) => {
+			googleCalls++;
+			const u = route.request().url();
+			if (u.includes('googleapis.com/css2'))
+				return route.fulfill({ status: 200, contentType: 'text/css', body: `/* latin */\n@font-face { font-family: 'Lobster'; src: url(https://fonts.gstatic.com/s/lobster/v30/latin.woff2) format('woff2'); }` });
+			return route.fulfill({ status: 200, contentType: 'font/woff2', body: lobster });
+		});
+	}
+	const g = await A.page.evaluate(() => window.__stores.textFonts.addGoogleFont('Lobster'));
+	h.check(g.ok && g.font.family === 'Lobster' && googleCalls === 2, `§7 Google font "Lobster" fetched ONCE (2 requests: CSS + file) and kept (${g.error ?? g.font?.hash})`);
+	for (const P of [A, B]) {
+		await P.page.context().unroute(/fonts\.(googleapis|gstatic)\.com/);
+		await P.page.context().route(/fonts\.(googleapis|gstatic)\.com/, (/** @type {any} */ route) => {
+			googleCalls++;
+			return route.abort('failed');
+		});
+	}
+	const callsBefore = googleCalls;
+	await set(A.page, uuid, { fontAsset: g.font.hash, fontName: 'Lobster', fontMeta: { licence: 'Test', url: '', noEmbed: true } });
+	await until(B.page, uuid, (d) => solidBuilt(d) && d.font === 'asset:' + g.font.hash && String(d.fontUrl).startsWith('blob:'), '§7 B draws Lobster (bytes from A, never Google)', 40000);
+	h.check(googleCalls === callsBefore, `§7 no peer called Google at run time (${googleCalls - callsBefore} calls)`);
+	const assets = await A.page.evaluate(async () => {
+		const sa = window.__stores.sceneAssets;
+		sa.refreshSceneAssets?.();
+		await new Promise((r) => setTimeout(r, 600));
+		return sa.sceneAssetList().map((/** @type {any} */ a) => a.hash);
+	});
+	h.check(assets.includes(g.font.hash), `§7 the scene's asset list (what .tpscene / export carry) names the font (${assets.length} assets)`);
+	const warn = await A.page.evaluate(() => window.__stores.sceneLicences.licenceWarningsFor(null, 'export').map((/** @type {any} */ w) => w.text));
+	h.check(warn.some((t) => /redistribut/.test(t)), `§7 a no-embedding font raises the export licence warning (${JSON.stringify(warn)})`);
+	// B reloads with Google blocked: the font comes from its own Library copy or from A
+	await h.freshReload(B);
+	await h.answerRestore(B, 'dismiss');
+	await h.eventually(() => one(B.page, uuid).catch(() => null), (d) => !!d && solidBuilt(d) && String(d.fontUrl).startsWith('blob:'), '§7 after a reload with Google blocked, B still draws Lobster', 60000);
+	h.check(googleCalls === callsBefore, '§7 ...still without a single Google call');
+
+	// ---- §8 the Inspector ---------------------------------------------------------------------
+	await A.page.evaluate((u) => {
+		let g;
+		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__stores.selectedObject.set(g.getObjectByProperty('uuid', u));
+		window.__stores.selectedObjects?.set?.([g.getObjectByProperty('uuid', u)]);
+	}, uuid);
+	await A.page.waitForSelector('#text-mode-solid', { timeout: 20000 });
+	const ui = await A.page.evaluate(() => ({
+		solidPressed: document.querySelector('#text-mode-solid')?.getAttribute('aria-pressed'),
+		depth: !!document.querySelector('#text-solid-depth'),
+		bake: !!document.querySelector('#text-solid-bake'),
+		licence: document.querySelector('#text-font-licence')?.textContent?.trim(),
+		noEmbed: !!document.querySelector('#text-font-noembed')
+	}));
+	h.check(ui.solidPressed === 'true' && ui.depth && ui.bake && ui.noEmbed, `§8 the Inspector shows Solid pressed, depth, Bake, the no-embedding note (${JSON.stringify(ui)})`);
+	await A.page.locator('#text-mode-solid').scrollIntoViewIfNeeded();
+	await A.page.screenshot({ path: path.join(OUT, 'text-object-inspector.png') });
+	await A.page.click('#text-mode-flat');
+	await until(A.page, uuid, (d) => d.mode === 'flat' && d.synced, '§8 pressing Flat switches the mode');
+	await A.page.screenshot({ path: path.join(OUT, 'text-object-flat.png') });
+
+	await h.finish(browser);
+});

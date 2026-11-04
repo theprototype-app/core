@@ -151,6 +151,17 @@ export function putTextOnPath(targetUuid, text) {
  * @returns {{object: any} | {error: string}}
  */
 export function createTextObject(patch, at = null) {
+	// refuse BEFORE anything is made: inside a caller's batch (an agent call) an undo cannot
+	// take a half-made object back out
+	if (patch && typeof patch === 'object') {
+		const fresh = normalizeTextPath({ text: 'Text' });
+		const why = refusalFor(fresh, { ...fresh, ...patch, ...(patch.path ? { path: { ...fresh.path, ...patch.path } } : {}) });
+		if (why) {
+			lastRefusal = why;
+			showToast(why);
+			return { error: why };
+		}
+	}
 	const own = !historyBatchOpen();
 	if (own) beginHistoryBatch();
 	let object = null;

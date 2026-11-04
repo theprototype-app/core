@@ -180,7 +180,7 @@ export async function decodeWoff2(bytes) {
 // ---- adding fonts ------------------------------------------------------------------------------
 
 /**
- * @typedef {{hash: string, name: string, family: string, licence: string, url: string, noEmbed: boolean, format: string}} FontAsset
+ * @typedef {{hash: string, id?: string, name: string, family: string, licence: string, url: string, noEmbed: boolean, format: string}} FontAsset
  */
 
 /**
@@ -220,7 +220,7 @@ export async function addFontBytes(raw, name, opts = {}) {
 	const item = await addItemFromBytes(/** @type {ArrayBuffer} */ (buffer), fileName, opts.folderId ?? null, { imported: true, kind: 'font' });
 	if (!item?.hash) return { ok: false, error: 'Could not add the font to the Library.' };
 	infoByHash.set(item.hash, { family, licence: licenceLabel(lic.licence, lic.url), url: lic.url, noEmbed: lic.noEmbed });
-	return { ok: true, font: { hash: item.hash, name: item.name ?? fileName, family, licence: licenceLabel(lic.licence, lic.url), url: lic.url, noEmbed: lic.noEmbed, format: ext } };
+	return { ok: true, font: { hash: item.hash, id: item.id, name: item.name ?? fileName, family, licence: licenceLabel(lic.licence, lic.url), url: lic.url, noEmbed: lic.noEmbed, format: ext } };
 }
 
 /** what a Library font says about itself, cached per hash @type {Map<string, {family: string, licence: string, url: string, noEmbed: boolean}>} */

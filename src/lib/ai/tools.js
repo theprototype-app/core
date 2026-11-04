@@ -48,6 +48,7 @@ import {
 	controlSimulationTool
 } from './flowTools.js';
 import { GEOMETRY_TOOL_NAMES, GEOMETRY_AI_TOOLS, GEOMETRY_PROMPT, geometryTool } from './geometryTools.js';
+import { TEXT_TOOL_NAMES, TEXT_AI_TOOLS, TEXT_PROMPT, textTool } from './textTools.js';
 import { shapePose } from './shapeBatchCore.js';
 import { meshStats } from './meshStats.js';
 import { applyShadowFlags, SHADOW_SCHEMA } from './shadowFlags.js';
@@ -784,6 +785,7 @@ const TOOL_NAMES = [
 	'import_model', // 56 C9 (offered to agents; see importModel.js)
 	'import_file', // 66 S4b (offered to agents; see importFile.js)
 	...GEOMETRY_TOOL_NAMES, // 85 G1-G6 (geometryTools.js)
+	...TEXT_TOOL_NAMES, // 64-text TX7: create_text, list_fonts (textTools.js)
 	...LOOK_TOOL_NAMES, // 85 L1-L5 (lookTools.js)
 	...HUD_TOOL_NAMES, // 85 H1 / H2 + hud panel (hudTools.js)
 	...SCENE_SETUP_TOOL_NAMES, // 85 H3-H7: sky, light, spawn, play camera, opening view (sceneSetupTools.js)
@@ -1220,6 +1222,10 @@ async function runAiTool(rawName, rawArgs, opts) {
 			case 'update_mesh':
 				// 85 G1-G6 (+ mcp-shapes: create_shapes, many in one call): shape and model objects (geometryTools.js)
 				return await geometryTool(name, args, createOne);
+			case 'create_text':
+			case 'list_fonts':
+				// 64-text TX7: 3D text objects and their fonts (textTools.js)
+				return await textTool(name, args);
 
 			case 'search_assets':
 			case 'place_asset':
@@ -1821,7 +1827,7 @@ const PHYSICS_AI_TOOLS = [
  * Call this per turn (readiness can change). @param {ToolOpts} [opts] @returns {any[]} */
 export function getAiTools(opts) {
 	const physics = !!opts?.physics || physicsToolsEnabled();
-	const tools = [...AI_TOOLS, ...GEOMETRY_AI_TOOLS, ...LOOK_AI_TOOLS, ...HUD_AI_TOOLS, ...SCENE_SETUP_AI_TOOLS, ...WORLD_AI_TOOLS, ...ASSIST_AI_TOOLS, ...RUNTIME_AI_TOOLS, ...flowToolSchemas(physics), ...behaviourToolSchemas()];
+	const tools = [...AI_TOOLS, ...GEOMETRY_AI_TOOLS, ...TEXT_AI_TOOLS, ...LOOK_AI_TOOLS, ...HUD_AI_TOOLS, ...SCENE_SETUP_AI_TOOLS, ...WORLD_AI_TOOLS, ...ASSIST_AI_TOOLS, ...RUNTIME_AI_TOOLS, ...flowToolSchemas(physics), ...behaviourToolSchemas()];
 	if (physics) tools.push(...PHYSICS_AI_TOOLS);
 	if (meshGenReady()) tools.push(MESH_TOOL);
 	return tools;
@@ -1926,6 +1932,6 @@ export function buildSystemPrompt(opts) {
 		"an object's name as the tool name — the name of a thing you create belongs in that object's",
 		'`name` field inside create_objects. Every call takes effect immediately, so never repeat a',
 		'call that already came back without an error — once the scene matches the request, stop',
-		'calling tools and write the summary.' + meshLine + toolsLine + GEOMETRY_PROMPT + LOOK_PROMPT + HUD_PROMPT + SCENE_SETUP_PROMPT + WORLD_PROMPT + ASSIST_PROMPT + RUNTIME_PROMPT + flowBlock + extraBlock + physicsBlock
+		'calling tools and write the summary.' + meshLine + toolsLine + GEOMETRY_PROMPT + TEXT_PROMPT + LOOK_PROMPT + HUD_PROMPT + SCENE_SETUP_PROMPT + WORLD_PROMPT + ASSIST_PROMPT + RUNTIME_PROMPT + flowBlock + extraBlock + physicsBlock
 	].join('\n');
 }

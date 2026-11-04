@@ -23,6 +23,7 @@
 // line with per-line Undo in the AI assistant window.
 
 import { get } from 'svelte/store';
+import { sniffFont } from '$lib/text3dCore.js';
 import { objectsGroup, pokeScene } from '../../stores/sceneStore.js';
 import { peers, userdata } from '../../stores/appStore.js';
 import { rolesInfo } from '$lib/cloudHooks';
@@ -215,6 +216,30 @@ async function placeCard(o) {
 }
 
 /**
+ * 64-text TX7: a font file → a Library font (WOFF2 decoded to TTF; its licence read from the
+ * name table), shared with the session, and the {asset} 3D text takes.
+ * @param {Uint8Array} raw @param {any} args
+ */
+async function importFont(raw, args) {
+	const tf = await import('$lib/textFonts.js');
+	const folder = await ensureFolder(folderPath(args.folder));
+	const got = await tf.addFontBytes(raw, String(args.name ?? ''), { folderId: folder.id });
+	if (!got.ok) return { error: got.error };
+	const f = got.font;
+	await shareAll(folder.id, [{ id: f.id, hash: f.hash }]);
+	return {
+		font: { asset: f.hash },
+		name: f.family,
+		file: f.name,
+		...(f.licence ? { licence: f.licence } : {}),
+		...(f.noEmbed
+			? { noEmbedding: true, warning: 'This font says it may not be embedded: a scene using it warns before export, and the font is not shared outside this session.' }
+			: {}),
+		hint: 'Use it with create_text {font: {asset: "' + f.hash + '"}} or set_geometry params {font: {asset}}.'
+	};
+}
+
+/**
  * The tool. Never throws: `{file, spec?, uuid?, …, note}`, `{received, of}` for a chunk that is not the
  * last, or `{error}`.
  * @param {any} args `{data?, chunk?, name?, folder?, spec?, generator?, place?, position?, rotation?, height?, width?,
@@ -240,6 +265,8 @@ export async function importFileTool(args = {}) {
 	} catch {
 		return { error: 'data is not valid base64' };
 	}
+	// 64-text TX7: a font (TTF / OTF / WOFF / WOFF2) becomes a Library font for 3D text
+	if (sniffFont(raw)) return await importFont(raw, args);
 	const type = sniffFile(raw);
 	if ('error' in type) return { error: type.error };
 	const tooBig = sizeRefusal(type, raw.length);
@@ -357,7 +384,7 @@ export const IMPORT_FILE_TOOL = {
 	function: {
 		name: 'import_file',
 		description:
-			'Bring a file made on your machine into the session: PNG / WebP images (≤ 16 MB, metadata stripped), JSON (≤ 2 MB) or a .tpanim clip. The type is read from the bytes. ' +
+			'Bring a file made on your machine into the session: PNG / WebP images (≤ 16 MB, metadata stripped), JSON (≤ 2 MB), a .tpanim clip, or a font (TTF / OTF / WOFF / WOFF2 — it becomes a Library font for 3D text). The type is read from the bytes. ' +
 			'It lands in the Explorer (folder "Generated" unless `folder`), shared with every peer. Pass the generator\'s input as `spec` and it is saved beside the file as <name>.<generator>.json ' +
 			'(e.g. knight.png + knight.pixling.json) so it can be regenerated. An image is also placed in the scene as a card (a plane; `place: false` to skip): `filter: "nearest"` keeps pixel art crisp ' +
 			'(default when a spec is given), `frame: {w, h, col, row}` shows one frame of a sprite sheet, `facing: "camera-y"` turns it to face each viewer. One undo step; editors and admins only. ' +

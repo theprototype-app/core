@@ -161,11 +161,14 @@ export function ownsGeometry(g) {
 }
 
 /**
- * A baked copy: the cache keeps its own, the baked mesh owns this one.
+ * A baked copy: the cache keeps its own, the baked mesh owns this one. A PLAIN BufferGeometry
+ * (attributes, index, groups): an ExtrudeGeometry clone keeps its `parameters`, and toJSON then
+ * writes the SHAPES, so every save, peer and undo snapshot would re-extrude it from them —
+ * without the depth centring, and slowly.
  * @param {any} g
  */
 export function bakeCopy(g) {
-	const copy = g.clone();
+	const copy = new THREE.BufferGeometry().copy(g);
 	copy.userData = {};
 	return copy;
 }

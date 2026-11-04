@@ -595,8 +595,11 @@ export function textPathDebug() {
 			for (let g = 0; g < e.glyphs; g++) {
 				const o = g * 12;
 				const x = (b[g * 4] + b[g * 4 + 2]) / 2;
-				// the glyph's baseline is y = -k·lineHeight; the first line's is 0 (single-line texts here)
-				v.set(r[o] * x + r[o + 3], r[o + 4] * x + r[o + 7], r[o + 8] * x + r[o + 11]).applyMatrix4(e.carrier.matrixWorld);
+				// on a path the rows place the glyph (its own y is the first line's 0); a BLOCK keeps
+				// troika's placement, so its line's y is the caret bottom of the glyph's character
+				const c = e.glyphChars?.[g] ?? 0;
+				const y = isBlockText(e.rec) ? (info.caretPositions?.[c * CARET_STRIDE + 2] ?? 0) : 0;
+				v.set(r[o] * x + r[o + 1] * y + r[o + 3], r[o + 4] * x + r[o + 5] * y + r[o + 7], r[o + 8] * x + r[o + 9] * y + r[o + 11]).applyMatrix4(e.carrier.matrixWorld);
 				baseline.push([v.x, v.y, v.z]);
 				const sx = Math.hypot(r[o], r[o + 4], r[o + 8]);
 				scales.push(sx);

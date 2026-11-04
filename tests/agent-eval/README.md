@@ -25,4 +25,4 @@ shows up here before the owner re-syncs it in claude.ai.
 |---|---|---|---|
 | 1.56.0 (85a) | 11.5 / 21 (22 tools) | 20 / 21 (27 tools: + create_shape, edit_shape, set_look, assets, undo_last) | sonnet |
 | 1.60.0 (85b) | 21 / 25 (27 tools; the 21 older requests 20 / 21) | 24 / 25 (31 tools: + hud, game_setup, effects, run; the 21 older requests 20 / 21, the four 85b ones 4 / 4) | sonnet |
-| 1.61.0 (64-text + diorama2) | 25 / 29 (31 tools; text/fonts/import requests: hello-sign partial, which-fonts pass, import-glb fail, crate-row partial) | 27.5 / 29 (31 tools, 39 behind them: + create_shape text/import, edit_shape duplicate, assets fonts/upload; crate-row stays partial — create_objects over duplicate) | sonnet |
+| 1.61.0 (64-text + diorama2) | 25 / 29 (31 tools; text/fonts/import requests: hello-sign partial, which-fonts fail, import-glb fail, crate-row partial) | 27.5 / 29 (31 tools, 39 behind them: + create_shape text/import, edit_shape duplicate, assets fonts/upload; crate-row stays partial — create_objects over duplicate) | sonnet |

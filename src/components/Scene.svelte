@@ -9,7 +9,8 @@
 	import { peers, username, userdata, specatorMode, avatarConfig, viewportMenu, objectContextMenu, viewportMenuOpener, addMenu, addMenuOpener, showToast, multiSelectMode } from '../stores/appStore';
 	import { get } from 'svelte/store';
 	import { vrPostEnabled } from '$lib/viewportOverrides';
-	import { isLocked, editorMode, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, sessionCompositesOverRoom, vrObjectsPanelOpen, vrPaletteOpen, vrPropsPanelOpen, vrPrefabsPanelOpen, vrChatPanelOpen, vrEditMenuOpen, vrSnapMenuOpen, vrSettingsPanelOpen, vrApprovePanelOpen, vrToolMode, viewMode, contextLost, readVrOverride } from '../stores/sceneStore';
+	import { isLocked, editorMode, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, sessionCompositesOverRoom, vrObjectsPanelOpen, vrPaletteOpen, vrPropsPanelOpen, vrPrefabsPanelOpen, vrChatPanelOpen, vrEditMenuOpen, vrSnapMenuOpen, vrSettingsPanelOpen, vrApprovePanelOpen, vrToolMode, viewMode, contextLost, contextLossShown, readVrOverride } from '../stores/sceneStore';
+	import { startContextLossGate } from '$lib/contextLoss.js';
 	import {
 		selectObject,
 		deselectObject,
@@ -799,6 +800,9 @@
 			});
 			$contextLost = false;
 		};
+		// a phone backgrounding the tab loses and restores the context routinely: the overlay
+		// (and the error report) wait for a loss that outlasts the grace rule in contextLoss.js
+		startContextLossGate(contextLost, contextLossShown);
 		element.addEventListener('webglcontextlost', onContextLost);
 		element.addEventListener('webglcontextrestored', onContextRestored);
 		let downPosition = null;

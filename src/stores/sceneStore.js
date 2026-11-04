@@ -83,6 +83,13 @@ export const globalRenderer = writable(null);
  * @type {import('svelte/store').Writable<boolean>}
  */
 export const contextLost = writable(false);
+/**
+ * The LOUD half of `contextLost`: true only once a loss has outlasted the grace rule in
+ * `lib/contextLoss.js` (a phone backgrounding the tab and handing the context back on return
+ * says nothing). The overlay and the error report read this; the shader guard reads the raw one.
+ * @type {import('svelte/store').Writable<boolean>}
+ */
+export const contextLossShown = writable(false);
 /** @type {import('svelte/store').Writable<any>} */
 export const orbitControls = writable(null);
 /**

@@ -9,7 +9,7 @@
 	// It usually is not lost: the scene graph lives in JavaScript, so a save still works
 	// and the browser often hands the context back on its own. This says both of those
 	// things and gives the two actions worth having.
-	import { contextLost } from '../stores/sceneStore';
+	import { contextLossShown } from '../stores/sceneStore';
 	import { save } from '$lib/fileHandler.svelte';
 
 	// .tpscene rather than GLTF: it is the whole scene bundle and needs no selection,
@@ -19,7 +19,7 @@
 	const reload = () => location.reload();
 </script>
 
-{#if $contextLost}
+{#if $contextLossShown}
 	<div class="gl-lost" role="alertdialog" aria-modal="true" aria-labelledby="gl-lost-title">
 		<div class="gl-lost-card">
 			<h2 id="gl-lost-title">The 3D view has stopped</h2>

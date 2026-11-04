@@ -10,7 +10,7 @@ import { get } from 'svelte/store';
 
 // mcp-shapes: a real attach (keeps the world pose, as the app's does), wired below once the stores are loaded
 vi.mock('$lib/objectActions', () => ({ moveObjectToGroup: (uuid, target) => globalThis.__testAttach?.(uuid, target) }));
-vi.mock('$lib/physics', () => ({ setPhysicsFor: () => {} }));
+vi.mock('$lib/physics', () => ({ setPhysicsFor: () => {}, physicsShapeChanged: () => {} }));
 
 const { objectsGroup } = await import('../../src/stores/sceneStore');
 const { peers } = await import('../../src/stores/appStore');
@@ -484,5 +484,57 @@ describe('mcp-shapes: create_shape in a group, colours at creation, many in one 
 		expect(r.error).toMatch(/^nothing was made — shapes\[1\] \(mesh\): faces\[0\]: index 99/);
 		expect(group.children.length).toBe(count);
 		expect((await call('create_shapes', { shapes: [{ action: 'cone' }] })).error).toMatch(/shapes\[0\]: action/);
+	});
+});
+
+describe('85b G9 subdivide + G6b update_mesh', () => {
+	it('subdivide: 1 smooths the cube (24 quads, rounded), ONE undo removes it; the cap is checked first', async () => {
+		const r = await call('create_mesh', { ...CUBE, subdivide: 1 });
+		expect(r.created[0]).toMatchObject({ faces: 24, triangles: 48, subdivided: 1 });
+		const o = live(r.created[0].uuid);
+		const p = o.geometry.attributes.position;
+		let far = 0;
+		for (let i = 0; i < p.count; i++) far = Math.max(far, Math.hypot(p.getX(i), p.getY(i), p.getZ(i)));
+		expect(far).toBeLessThan(Math.hypot(0.5, 0.5, 0.5) - 0.05);
+		expect(get(history.undoStack).length).toBe(1);
+		history.undo();
+		expect(live(o.uuid)).toBeUndefined();
+		expect((await call('create_mesh', { ...CUBE, subdivide: 3 })).error).toMatch(/subdivide: 1 or 2/);
+		const big = { vertices: Array.from({ length: 4 * 1500 }, (_, i) => [i % 500, 0, Math.floor(i / 500)]), faces: Array.from({ length: 1500 }, (_, i) => [4 * i, 4 * i + 1, 4 * i + 2, 4 * i + 3]) };
+		expect((await call('create_mesh', { ...big, subdivide: 2 })).error).toMatch(/caps are/);
+	});
+	it('create_shapes checks a subdivide entry the same way', async () => {
+		const r = await call('create_shapes', { shapes: [{ action: 'mesh', mesh: { ...CUBE, subdivide: 4 } }] });
+		expect(r.error).toMatch(/shapes\[0\].*subdivide/);
+	});
+	it('update_mesh patch moves vertices from offset as ONE undo step; replace sends a new mesh; refuses a primitive', async () => {
+		const r = await call('create_mesh', { ...CUBE, name: 'Block' });
+		const uuid = r.created[0].uuid;
+		sent = [];
+		history.undoStack.set([]);
+		const up = await call('update_mesh', { uuid, mode: 'patch', offset: 2, vertices: [[0.5, 1.5, -0.5], [-0.5, 1.5, -0.5]] });
+		expect(up.updated[0]).toMatchObject({ ok: true, mode: 'patch', triangles: 12 });
+		const o = live(uuid);
+		o.geometry.computeBoundingBox();
+		expect(o.geometry.boundingBox.max.y).toBeCloseTo(1.5);
+		expect(sent.map((m) => m.type)).toContain('meshgeo');
+		expect(get(history.undoStack).length).toBe(1);
+		history.undo();
+		live(uuid).geometry.computeBoundingBox();
+		expect(live(uuid).geometry.boundingBox.max.y).toBeCloseTo(0.5);
+		const tri = await call('update_mesh', { uuid, mode: 'replace', vertices: [[0, 0, 0], [1, 0, 0], [0, 1, 0]], faces: [[0, 1, 2]] });
+		expect(tri.updated[0].triangles).toBe(1);
+		expect((await call('update_mesh', { uuid, mode: 'patch', offset: 2, vertices: [[0, 0, 0], [1, 1, 1]] })).error).toMatch(/run past/);
+		const box = prim(new THREE.BoxGeometry());
+		expect((await call('update_mesh', { uuid: box.uuid, vertices: CUBE.vertices, faces: CUBE.faces })).error).toMatch(/set_geometry/);
+		expect((await call('update_mesh', { uuid: 'nope', vertices: [] })).error).toMatch(/no object/);
+		expect(summarizeToolCall('update_mesh', { uuid }, tri)).toBeTruthy();
+	});
+	it('a patch on a mesh this tab did not make asks for replace', async () => {
+		const m = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 1, 0, 0, 0, 1, 0], 3)), new THREE.MeshStandardMaterial());
+		group.add(m);
+		expect((await call('update_mesh', { uuid: m.uuid, mode: 'patch', vertices: [[0, 0, 1]] })).error).toMatch(/send mode "replace"/);
+		const ok = await call('update_mesh', { uuid: m.uuid, vertices: CUBE.vertices, faces: CUBE.faces, subdivide: 1 });
+		expect(ok.updated[0]).toMatchObject({ ok: true, subdivided: 1, triangles: 48 });
 	});
 });

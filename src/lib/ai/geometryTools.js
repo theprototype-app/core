@@ -26,12 +26,14 @@ import { PROFILE_MAX_POINTS, OUTLINE_MAX_POINTS, OUTLINE_MAX_HOLES } from '$lib/
 import { recordObjectPresence, recordTransform } from '$lib/history';
 import { moveObjectToGroup } from '$lib/objectActions';
 import { toHexColor } from '$lib/materialParamRules.js';
-import { setPhysicsFor } from '$lib/physics';
+import { setPhysicsFor, physicsShapeChanged } from '$lib/physics';
+import { readStoredFaces } from '$lib/meshTopology';
 import { paletteColorFor } from '$lib/palette';
 import { lockSkip } from './lockNote.js';
 import { aiCreatePhysics } from './aiPhysicsDefault.js';
 import { shapePose, checkShapes, SHAPES_MAX, SHAPE_ACTIONS } from './shapeBatchCore.js';
 import { applyShadowFlags } from './shadowFlags.js';
+import { catmullClark, subdivisionSize } from './worldToolsCore.js';
 import {
 	parseSelect,
 	vertexKey,
@@ -46,7 +48,7 @@ import {
 } from './meshSelectCore.js';
 
 /** the tool names this module answers */
-export const GEOMETRY_TOOL_NAMES = ['set_geometry', 'create_lathe', 'create_tube', 'extrude_shape', 'edit_mesh', 'create_mesh', 'create_shapes'];
+export const GEOMETRY_TOOL_NAMES = ['set_geometry', 'create_lathe', 'create_tube', 'extrude_shape', 'edit_mesh', 'create_mesh', 'create_shapes', 'update_mesh'];
 
 /** how many objects one set_geometry call reshapes, and ops one edit_mesh call runs */
 const MAX_UPDATES = 100;
@@ -445,10 +447,37 @@ function meshMaterial(spec, fallback, args) {
 	return m;
 }
 
+/**
+ * 85b G9: `subdivide: 1-2` smooths the polygon mesh the call gives (Catmull-Clark: corners round off, a cube of six
+ * quads comes out a rounded box), checked against the caps BEFORE it runs. The input is checked first as given, so
+ * an error names the index the caller sent. @param {any} args @param {number} slots
+ * @returns {{args: any, levels: number} | {error: string}}
+ */
+export function subdividedArgs(args, slots = 0) {
+	if (args?.subdivide === undefined || args.subdivide === 0) return { args, levels: 0 };
+	const levels = args.subdivide;
+	if (levels !== 1 && levels !== 2) return { error: 'subdivide: 1 or 2 (each level smooths and makes about four times the faces)' };
+	const plain = meshFromData(args, slots);
+	if ('error' in plain) return plain;
+	const size = subdivisionSize(args, levels);
+	if (size.vertices > MESH_MAX_VERTICES || size.faces > MESH_MAX_FACES)
+		return { error: 'subdivide: ' + levels + ' level' + (levels > 1 ? 's' : '') + ' would make about ' + size.faces + ' faces and ' + size.vertices + ' vertices; the caps are ' + MESH_MAX_FACES + ' faces and ' + MESH_MAX_VERTICES + ' vertices — send fewer faces or subdivide: 1' };
+	const out = catmullClark(args, levels);
+	return { args: { ...args, ...out, subdivide: undefined, smooth: args.smooth ?? true }, levels };
+}
+
+/** 85b G6b: what each data mesh was made from, kept in THIS tab for update_mesh {patch} (a patch edits the authored
+ * vertex list, which the triangle soup on the wire no longer holds) @type {Map<string, any>} */
+const meshSources = new Map();
+
 /** @param {any} args */
 async function createMeshTool(args) {
 	const mats = meshMaterialSpecs(args.materials);
 	if ('error' in mats) return { error: mats.error };
+	const source = args;
+	const sub = subdividedArgs(args, mats.specs.length);
+	if ('error' in sub) return { error: sub.error };
+	args = sub.args;
 	const data = meshFromData(args, mats.specs.length);
 	if ('error' in data) return { error: data.error };
 	if (args.color !== undefined && !colorOf(args.color)) return { error: 'color: a hex colour like "#ff8800"' };
@@ -493,12 +522,14 @@ async function createMeshTool(args) {
 	const physics = aiCreatePhysics(args, undefined);
 	if (physics) setPhysicsFor(mesh.uuid, physics);
 	warnings.push(...applyShadowFlags(mesh, args));
+	meshSources.set(mesh.uuid, { source: pickMeshSource(source), levels: sub.levels, slots: mats.specs.length });
 	return {
 		created: [
 			{
 				uuid: mesh.uuid,
 				name: mesh.name,
 				triangles: data.triangles,
+				...(sub.levels ? { subdivided: sub.levels } : {}),
 				faces: data.partition.length,
 				...(slots.length > 1 ? { materials: slots.length } : {}),
 				...(data.colors ? { vertexColors: true } : {}),
@@ -680,7 +711,8 @@ function shapeArgsError(tool, args) {
 	let made;
 	if (tool === 'create_mesh') {
 		const mats = meshMaterialSpecs(args.materials);
-		made = 'error' in mats ? mats : meshFromData(args, mats.specs.length);
+		const sub = 'error' in mats ? mats : subdividedArgs(args, mats.specs.length);
+		made = 'error' in sub ? sub : meshFromData(/** @type {any} */ (sub).args, /** @type {any} */ (mats).specs.length);
 	}
 	else if (tool === 'create_tube') made = tubeRecordOf(args);
 	else if (tool === 'create_lathe') made = latheParamsOf(args);
@@ -714,6 +746,77 @@ async function createShapesTool(args, createBase) {
 	return { created, uuids, ...(failed ? { warning: failed + ' of ' + created.length + ' shapes failed — see errors' } : {}) };
 }
 
+// ---- G6b update_mesh ---------------------------------------------------------------------------------
+
+/** the authored fields of a create_mesh / update_mesh call @param {any} a */
+function pickMeshSource(a) {
+	/** @type {any} */
+	const out = { vertices: a.vertices, faces: a.faces };
+	for (const k of ['uvs', 'colors', 'faceMaterials']) if (a[k] !== undefined) out[k] = a[k];
+	return out;
+}
+
+/** a mesh made from data (G6): not a primitive, not terrain, not an import — a plain BufferGeometry mesh @param {any} o */
+function isDataMesh(o) {
+	return !!o?.isMesh && !o.userData?.geometryParams && !o.userData?.terrain && !o.userData?.packRef && o.geometry?.type === 'BufferGeometry' && !o.userData?.imported;
+}
+
+/**
+ * 85b G6b: new data for a mesh create_mesh made, by uuid — mode replace (every vertex and face again) or patch
+ * (vertices from `offset` replaced in the authored list; faces kept). Same checks and caps as create_mesh, normals
+ * recomputed, the physics shape rebuilt, ONE meshgeo entry (one undo step), replicated.
+ * @param {any} args
+ */
+async function updateMeshTool(args) {
+	const uuid = String(args.uuid ?? args.object ?? '');
+	const object = uuid && objectOf(uuid);
+	if (!object) return { error: 'uuid: no object with that uuid' };
+	if (!isDataMesh(object)) return { error: 'update_mesh changes meshes made with create_mesh; for a primitive use set_geometry, to model any mesh use edit_mesh' };
+	const lock = lockSkip(uuid, object);
+	if (lock) return { error: String(lock) };
+	const mode = args.mode ?? (args.offset !== undefined ? 'patch' : 'replace');
+	const known = meshSources.get(uuid);
+	/** @type {any} */
+	let next;
+	if (mode === 'replace') {
+		if (!Array.isArray(args.vertices) || !Array.isArray(args.faces)) return { error: 'replace: give vertices and faces (the whole mesh again)' };
+		next = pickMeshSource(args);
+	} else if (mode === 'patch') {
+		if (!known) return { error: 'patch needs the vertex list this mesh was made from, which this tab no longer has (it was made in another tab, or before a reload): send mode "replace" with every vertex and face' };
+		const offset = args.offset ?? 0;
+		const verts = known.source.vertices;
+		if (!Number.isInteger(offset) || offset < 0 || offset > verts.length) return { error: 'offset: the first vertex to replace, 0-' + verts.length };
+		if (!Array.isArray(args.vertices) || !args.vertices.length) return { error: 'patch: vertices from offset on' };
+		if (offset + args.vertices.length > verts.length) return { error: 'patch: vertices ' + offset + '-' + (offset + args.vertices.length - 1) + ' run past the mesh\'s ' + verts.length + ' (append with mode "replace")' };
+		const v = verts.slice();
+		args.vertices.forEach((/** @type {any} */ p, /** @type {number} */ i) => (v[offset + i] = p));
+		next = { ...known.source, vertices: v };
+		for (const k of ['uvs', 'colors']) {
+			if (args[k] === undefined) continue;
+			if (!known.source[k]) return { error: k + ': this mesh has no ' + k + ' to patch; send mode "replace"' };
+			const list = known.source[k].slice();
+			args[k].forEach((/** @type {any} */ p, /** @type {number} */ i) => (list[offset + i] = p));
+			next[k] = list;
+		}
+	} else return { error: 'mode: replace or patch' };
+	const slots = Array.isArray(object.material) ? object.material.length : 0;
+	if (next.faceMaterials !== undefined && !slots) return { error: 'faceMaterials: this mesh has one material; make it again with materials to have several' };
+	const levels = args.subdivide ?? (mode === 'patch' ? known?.levels ?? 0 : 0);
+	const sub = subdividedArgs({ ...next, subdivide: levels }, slots);
+	if ('error' in sub) return { error: sub.error };
+	const data = meshFromData(sub.args, slots);
+	if ('error' in data) return { error: data.error };
+	const fe = await import('$lib/faceEdit');
+	const tris = fe.readTriangles(object.geometry);
+	const before = { positions: fe.trisToPositions(tris), groups: fe.trisToGroups(tris), uvs: fe.trisToUVs(tris), faces: readStoredFaces(object.geometry) };
+	const after = { positions: data.positions, groups: slots > 1 ? data.groups : null, uvs: data.uvs, faces: data.partition, ...(data.colors ? { colors: data.colors } : {}) };
+	if (!fe.commitMeshGeoTriple(uuid, before, after)) return { error: 'the mesh is too large to sync' };
+	if (args.smooth !== undefined || sub.levels) object.userData.shading = args.smooth === false ? 'flat' : sub.levels || args.smooth ? 'smooth' : object.userData.shading;
+	physicsShapeChanged(uuid);
+	meshSources.set(uuid, { source: next, levels: sub.levels, slots });
+	return { updated: [{ uuid, ok: true, mode, triangles: data.triangles, ...(sub.levels ? { subdivided: sub.levels } : {}) }] };
+}
+
 // ---- the router ------------------------------------------------------------------------------------
 
 /**
@@ -738,6 +841,8 @@ export async function geometryTool(name, args, createBase) {
 			return createMeshTool(args ?? {});
 		case 'create_shapes':
 			return createShapesTool(args ?? {}, createBase);
+		case 'update_mesh':
+			return updateMeshTool(args ?? {});
 		default:
 			return { error: 'unknown geometry tool ' + name };
 	}
@@ -927,7 +1032,7 @@ export const GEOMETRY_AI_TOOLS = [
 				MESH_MAX_FACES +
 				' faces; normals are computed (smooth: true for smooth shading, flatShading: true for hard facets). Colour it as you make it: materials [{color, roughness, metalness, …}] (up to ' +
 				MESH_MAX_MATERIALS +
-				' slots) with faceMaterials [slot per face, same order as faces] for parts in different colours; or colors [[r, g, b] 0-1, one per vertex] for a painted gradient (multiplied by the material colour). Material slots last through edit_mesh; vertex colours last only while an edit keeps the vertex count. Edit it afterwards with edit_mesh. Returns the uuid.',
+				' slots) with faceMaterials [slot per face, same order as faces] for parts in different colours; or colors [[r, g, b] 0-1, one per vertex] for a painted gradient (multiplied by the material colour). Material slots last through edit_mesh; vertex colours last only while an edit keeps the vertex count. subdivide: 1 or 2 smooths it (Catmull-Clark: a box of six quads becomes a rounded pebble, a few quads become a soft organic shape; each level about four times the faces, checked against the caps). Edit it afterwards with edit_mesh, or send new vertices with update_mesh. Returns the uuid.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -956,9 +1061,34 @@ export const GEOMETRY_AI_TOOLS = [
 						}
 					},
 					faceMaterials: { type: 'array', items: { type: 'integer', minimum: 0 }, maxItems: MESH_MAX_FACES, description: 'the materials slot of each face (0 = the first), one per face' },
+					subdivide: { type: 'integer', minimum: 0, maximum: 2, description: 'smooth the mesh 1 or 2 levels (Catmull-Clark); smooth shading follows unless smooth: false' },
 					...PLACE
 				},
 				required: ['vertices', 'faces']
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
+			name: 'update_mesh',
+			description:
+				'New data for a mesh create_mesh made, by uuid, as ONE undo step: mode "replace" sends every vertex and face again (the same fields and caps as create_mesh, subdivide included); mode "patch" replaces vertices from offset on (vertices[0] lands on index offset) and keeps the faces — for moving part of a mesh made in this tab (after a reload, send "replace"). uvs/colors patch the same way. Primitives use set_geometry; to model any mesh use edit_mesh.',
+			parameters: {
+				type: 'object',
+				properties: {
+					uuid: { type: 'string' },
+					mode: { type: 'string', enum: ['replace', 'patch'] },
+					offset: { type: 'integer', minimum: 0, description: 'patch: the first vertex index the new vertices replace' },
+					vertices: { type: 'array', items: V3, maxItems: MESH_MAX_VERTICES },
+					faces: { type: 'array', items: { type: 'array', items: { type: 'integer' } }, maxItems: MESH_MAX_FACES },
+					uvs: { type: 'array', items: V2 },
+					colors: { type: 'array', items: V3, maxItems: MESH_MAX_VERTICES },
+					faceMaterials: { type: 'array', items: { type: 'integer', minimum: 0 }, maxItems: MESH_MAX_FACES },
+					smooth: { type: 'boolean' },
+					subdivide: { type: 'integer', minimum: 0, maximum: 2 }
+				},
+				required: ['uuid', 'vertices']
 			}
 		}
 	},
@@ -1001,7 +1131,7 @@ export const GEOMETRY_PROMPT = [
 	'Shapes: set_geometry reshapes an existing object in place (params like width/height/radius, or',
 	'its type) — never delete and recreate. create_lathe (profile → vase, bowl, column), create_tube',
 	'(path → rail, pipe), extrude_shape (outline → sign, letter, floor plan), create_mesh (raw',
-	'vertices/faces); create_shapes makes many in one call. With parentUuid every coordinate is the',
+	'vertices/faces, subdivide: 1-2 to smooth it; update_mesh sends it new vertices); create_shapes makes many in one call. With parentUuid every coordinate is the',
 	'group\'s own (local) space. edit_mesh models a mesh: extrude/inset/bevel/subdivide faces picked by normal',
 	'("up"), box or index; weld/smooth/dissolve vertices. Preview a selection with ops: [].'
 ].join('\n');

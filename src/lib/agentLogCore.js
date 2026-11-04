@@ -14,7 +14,7 @@ export const AGENT_LOG_HANDSHAKE = 50;
 export const TEXT_MAX = 160;
 
 /** tools that only read: no line */
-const READ_ONLY = new Set(['list_scene', 'status', 'screenshot', 'wait_for_edit', 'tools', 'snapshot', 'list_materials', 'get_material', 'describe_shader_nodes', 'get_post', 'list_hud', 'get_environment']);
+const READ_ONLY = new Set(['list_scene', 'status', 'screenshot', 'wait_for_edit', 'tools', 'snapshot', 'list_materials', 'get_material', 'describe_shader_nodes', 'get_post', 'list_hud', 'get_environment', 'search_assets']);
 
 /** @param {number} n @param {string} one @param {string} [many] */
 const count = (n, one, many = one + 's') => n + ' ' + (n === 1 ? one : many);
@@ -224,6 +224,46 @@ export function summarizeToolCall(tool, args, result, nameOf = () => '') {
 		case 'add_image':
 			if (result.partial) return null;
 			return (result.existed ? 'reused the image ' : 'added the image ') + String(result.name ?? '').slice(0, 80);
+		// 85b 85-world
+		case 'place_asset': {
+			const made = arr(result.created).filter((r) => r && r.uuid);
+			return 'placed ' + count(made.length, 'asset') + (made.length ? ' (' + nameList(made.map((r) => r.name)) + ')' : '');
+		}
+		case 'prefab':
+			if (result.saved) return 'saved the prefab ' + String(result.saved.name ?? '').slice(0, 60);
+			return 'placed ' + count(arr(result.created).length, 'copy', 'copies') + ' of a prefab';
+		case 'create_particles': {
+			const row = arr(result.created)[0] ?? arr(result.updated)[0];
+			if (row?.removed) return 'took the particles off ' + (nameOf(row.uuid) || 'an object');
+			return (result.created ? 'added ' : 'set ') + String(row?.preset ?? '') + ' particles' + (row?.uuid && !result.created ? ' on ' + (nameOf(row.uuid) || 'an object') : '');
+		}
+		case 'scatter': {
+			const row = arr(result.updated)[0];
+			if (row?.removed) return 'removed a scatter set from ' + (nameOf(row.uuid) || 'a surface');
+			return 'scattered ' + (row?.instances ?? 'some') + ' instances over ' + (nameOf(row?.uuid) || 'a surface');
+		}
+		case 'terrain': {
+			const row = arr(result.created)[0] ?? arr(result.updated)[0];
+			const did = [row?.sculpted ? 'sculpted' : '', row?.painted ? 'painted' : ''].filter(Boolean).join(' and ');
+			return (result.created ? 'made a terrain' : 'changed the terrain') + (did ? ' (' + did + ')' : '') + (row?.name && !result.created ? ' ' + String(row.name).slice(0, 40) : '');
+		}
+		case 'water': {
+			const row = arr(result.created)[0] ?? arr(result.updated)[0];
+			if (row?.removed) return 'turned ' + (nameOf(row.uuid) || 'an object') + ' back from water';
+			return (result.created ? 'added water' : 'changed the water') + (row?.name ? ' (' + String(row.name).slice(0, 40) + ')' : '');
+		}
+		case 'place_sound': {
+			const row = arr(result.created)[0] ?? arr(result.updated)[0];
+			return 'placed the sound ' + String(row?.file ?? '').slice(0, 60) + (row?.on ? ' (on ' + row.on + ')' : '');
+		}
+		case 'set_music': {
+			const row = arr(result.updated)[0];
+			return row?.music ? 'set the music to ' + String(row.music).slice(0, 60) + (row.playing ? '' : ' (stopped)') : 'cleared the music';
+		}
+		case 'update_mesh': {
+			const row = arr(result.updated)[0];
+			return 'changed the mesh of ' + (nameOf(String(row?.uuid ?? '')) || 'an object');
+		}
 		case 'install_modules':
 			return 'installed ' + count(arr(args?.ids ?? args?.modules).length, 'module');
 		default:

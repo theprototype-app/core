@@ -310,7 +310,7 @@ export function describeNodeTypesTool(args, opts) {
  * Local `ref` keys let edges point at freshly created nodes. Records ONE
  * 'flownodes' history entry for the whole call.
  * @param {any} args {graph, nodes: [{ref?, type, data?}], edges?: [{from, to, fromHandle?, toHandle?}]}
- * @param {{physics?: boolean}} [opts] `physics` allows the physics node family whatever the checkbox (86-fix B1)
+ * @param {{physics?: boolean, allow?: string[]}} [opts] `physics` allows the physics node family whatever the checkbox (86-fix B1); `allow` adds node types a tool built the inputs for (85-world: `sound`, after its Explorer asset)
  * @returns {any}
  */
 export function createFlowNodesTool(args, opts) {
@@ -327,7 +327,8 @@ export function createFlowNodesTool(args, opts) {
 		return { error: 'no nodes provided — pass text: \'id = type {params}\' lines, or nodes: [{ type, data? }] (one graph per call)' };
 
 	const physics = !!opts?.physics || physicsToolsEnabled();
-	const allowed = aiNodeTypes(physics);
+	// 85-world W6: a tool that made the Explorer asset first may create a node the assistant may not (`sound`)
+	const allowed = [...aiNodeTypes(physics), ...(Array.isArray(opts?.allow) ? opts.allow : [])];
 	/** @type {any} */
 	const peer = get(peers);
 

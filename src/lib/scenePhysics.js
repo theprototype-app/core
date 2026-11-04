@@ -126,6 +126,14 @@ function withUnknown(raw, known, claimed) {
 	return out;
 }
 
+/** 85 H6: `{position, target}` of finite triples, else null @param {any} raw @returns {{position: number[], target: number[]} | null} */
+export function normalizeStartViewField(raw) {
+	const ok = (/** @type {any} */ v) => Array.isArray(v) && v.length === 3 && v.every((n) => typeof n === 'number' && Number.isFinite(n) && Math.abs(n) < 1e6);
+	if (!raw || typeof raw !== 'object' || !ok(raw.position)) return null;
+	const r = (/** @type {number} */ n) => Math.round(n * 1000) / 1000;
+	return { position: raw.position.map(r), target: ok(raw.target) ? raw.target.map(r) : [0, 0, 0] };
+}
+
 /**
  * The ONE boundary normalizer — every store write (local edit, remote apply,
  * handshake, restore) goes through it. Clamps live HERE, not in the setters, so
@@ -224,6 +232,10 @@ export function normalizeScenePhysics(raw) {
 		// that never used it stays byte-identical. Scene-wide like the rest of this block, and
 		// housed here for the same reason the play block is: zero new wire surface.
 		...(source.holdCamera === true ? { holdCamera: true } : {}),
+		// 85 H6: the editor OPENING VIEW an author (or an agent) chose — where the editor camera starts
+		// when the scene opens. Present only when authored; a save writes it as the payload's `camera`
+		// instead of the saver's live view (sessions.buildSessionPayload). Nobody's camera moves on set.
+		...optional('startView', normalizeStartViewField(source.startView)),
 		// 36 F22: Configure Scene ▸ Advanced ▸ "Selection passes through" — present only when it
 		// differs from the defaults (water on, transparent + triggers off)
 		...optional('pick', normalizePick(source.pick)),
@@ -247,6 +259,7 @@ export function normalizeScenePhysics(raw) {
 		'play',
 		'knock',
 		'holdCamera',
+		'startView',
 		'pick',
 		'simOnLoad',
 		'fluidBudget',

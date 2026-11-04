@@ -3,7 +3,7 @@
 	"format": 2,
 	"generator": {
 		"source": "tpAgent.tools() via core scripts/agent-tool-catalog.cjs, mapped by tools/agent/src/catalog.js",
-		"hostTools": 46,
+		"hostTools": 55,
 		"dropped": []
 	},
 	"instructions": "You are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", \"here\" or \"this\", call where_are_users and build at the spots it gives, facing the person.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.\nWhen asked what you can do here, call what_can_you_do and say its \"say\" line.",
@@ -237,6 +237,15 @@
 									},
 									"description": "directional/spot: a world point [x,y,z] to point at"
 								},
+								"shadowQuality": {
+									"type": "string",
+									"enum": [
+										"low",
+										"medium",
+										"high"
+									],
+									"description": "directional/spot/point: shadow sharpness (each device may cap it)"
+								},
 								"receiveShadow": {
 									"type": "boolean",
 									"description": "meshes and models: shadows fall on it (on by default)"
@@ -374,6 +383,15 @@
 										"type": "number"
 									},
 									"description": "directional/spot: a world point [x,y,z] to point at"
+								},
+								"shadowQuality": {
+									"type": "string",
+									"enum": [
+										"low",
+										"medium",
+										"high"
+									],
+									"description": "directional/spot/point: shadow sharpness (each device may cap it)"
 								},
 								"receiveShadow": {
 									"type": "boolean",
@@ -2001,6 +2019,777 @@
 			}
 		},
 		{
+			"name": "create_hud",
+			"title": "Add a HUD",
+			"description": "Give the game a HUD (2D screen overlay): screens of elements — a timer, a score text, a health bar, buttons, an image. A screen named like an existing one gets the elements added. Returns every element id: bind live values with create_flow_nodes (a hudtext / hudbar / hudtimer node with data.element = the id, e.g. counter -> hudtext). A new screen becomes the one that shows unless active: false. One undo step.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"screens": {
+						"type": "array",
+						"maxItems": 8,
+						"items": {
+							"type": "object",
+							"properties": {
+								"name": {
+									"type": "string"
+								},
+								"showWhile": {
+									"type": "string",
+									"enum": [
+										"",
+										"menu",
+										"playing",
+										"paused",
+										"over"
+									],
+									"description": "show this screen while the game is menu / playing / paused / over (\"\" = only when a hudscreen node shows it)"
+								},
+								"input": {
+									"type": "string",
+									"enum": [
+										"game",
+										"menu"
+									],
+									"description": "menu = the mouse is free to click this screen in Play"
+								},
+								"active": {
+									"type": "boolean",
+									"description": "the screen that shows by default"
+								},
+								"elements": {
+									"type": "array",
+									"maxItems": 60,
+									"items": {
+										"type": "object",
+										"description": "one HUD element: kind (text, bar, image, button, timer, list, slider, toggle, dropdown, textfield, panel, crosshair, minimap, progressradial, iconrow, hotbar, keyhint …), text, anchor (top-left / top-center / top-right / middle-left / center / middle-right / bottom-left / bottom-center / bottom-right) + x / y pixel offsets from that corner or edge, w / h in pixels, style {size, weight, font, color, bg, border, radius, pad, align, opacity}, plus the kind's own fields (bar: min, max, value, orientation; timer: duration, countDown; image: src = a library image hash; slider: min, max, value; dropdown: options; button: enabled)",
+										"properties": {
+											"kind": {
+												"type": "string"
+											},
+											"text": {
+												"type": "string"
+											},
+											"anchor": {
+												"type": "string",
+												"enum": [
+													"top-left",
+													"top-center",
+													"top-right",
+													"middle-left",
+													"center",
+													"middle-right",
+													"bottom-left",
+													"bottom-center",
+													"bottom-right"
+												]
+											},
+											"x": {
+												"type": "number"
+											},
+											"y": {
+												"type": "number"
+											},
+											"w": {
+												"type": "number"
+											},
+											"h": {
+												"type": "number"
+											},
+											"style": {
+												"type": "object"
+											}
+										}
+									}
+								}
+							}
+						}
+					},
+					"camera": {
+						"type": "string",
+						"description": "a camera object uuid: the HUD shows only while looking through that camera (default: the scene HUD)"
+					}
+				},
+				"required": [
+					"screens"
+				]
+			},
+			"annotations": {
+				"title": "Add a HUD",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "edit_hud",
+			"title": "Change the HUD",
+			"description": "Change a HUD that exists (list_hud first): updates = [{id, …any element field to change, screen?: move it to that screen}], remove = element ids (a panel takes its rows with it), screens = [{id or name, rename?, showWhile?, input?, active?, remove?: true}]. One undo step.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"updates": {
+						"type": "array",
+						"maxItems": 60,
+						"items": {
+							"type": "object",
+							"description": "one HUD element: kind (text, bar, image, button, timer, list, slider, toggle, dropdown, textfield, panel, crosshair, minimap, progressradial, iconrow, hotbar, keyhint …), text, anchor (top-left / top-center / top-right / middle-left / center / middle-right / bottom-left / bottom-center / bottom-right) + x / y pixel offsets from that corner or edge, w / h in pixels, style {size, weight, font, color, bg, border, radius, pad, align, opacity}, plus the kind's own fields (bar: min, max, value, orientation; timer: duration, countDown; image: src = a library image hash; slider: min, max, value; dropdown: options; button: enabled)",
+							"properties": {
+								"id": {
+									"type": "string"
+								},
+								"screen": {
+									"type": "string"
+								},
+								"kind": {
+									"type": "string"
+								},
+								"text": {
+									"type": "string"
+								},
+								"anchor": {
+									"type": "string",
+									"enum": [
+										"top-left",
+										"top-center",
+										"top-right",
+										"middle-left",
+										"center",
+										"middle-right",
+										"bottom-left",
+										"bottom-center",
+										"bottom-right"
+									]
+								},
+								"x": {
+									"type": "number"
+								},
+								"y": {
+									"type": "number"
+								},
+								"w": {
+									"type": "number"
+								},
+								"h": {
+									"type": "number"
+								},
+								"style": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"remove": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						}
+					},
+					"screens": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"id": {
+									"type": "string"
+								},
+								"name": {
+									"type": "string"
+								},
+								"rename": {
+									"type": "string"
+								},
+								"remove": {
+									"type": "boolean"
+								},
+								"showWhile": {
+									"type": "string",
+									"enum": [
+										"",
+										"menu",
+										"playing",
+										"paused",
+										"over"
+									],
+									"description": "show this screen while the game is menu / playing / paused / over (\"\" = only when a hudscreen node shows it)"
+								},
+								"input": {
+									"type": "string",
+									"enum": [
+										"game",
+										"menu"
+									],
+									"description": "menu = the mouse is free to click this screen in Play"
+								},
+								"active": {
+									"type": "boolean",
+									"description": "the screen that shows by default"
+								}
+							}
+						}
+					},
+					"camera": {
+						"type": "string",
+						"description": "a camera object uuid: the HUD shows only while looking through that camera (default: the scene HUD)"
+					}
+				}
+			},
+			"annotations": {
+				"title": "Change the HUD",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "list_hud",
+			"title": "Read the HUD",
+			"description": "Read the HUD: its screens (which one shows, showWhile), every element (id, kind, text, place, size) and what each element is bound to. Read this before editing a HUD a person made.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"camera": {
+						"type": "string",
+						"description": "a camera object uuid: the HUD shows only while looking through that camera (default: the scene HUD)"
+					}
+				}
+			},
+			"annotations": {
+				"title": "Read the HUD",
+				"readOnlyHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "hud_panel",
+			"title": "Add a HUD panel",
+			"description": "A panel on the HUD: a backdrop box with a title and rows laid out top-down inside it (a settings menu with sliders and toggles, a scoreboard, a start menu with buttons). Goes on `screen` (made if missing) or the screen showing. Returns the panel id and each row id; moving or removing the panel with edit_hud moves or removes its rows. One undo step.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"title": {
+						"type": "string"
+					},
+					"rows": {
+						"type": "array",
+						"maxItems": 24,
+						"items": {
+							"type": "object",
+							"description": "one HUD element: kind (text, bar, image, button, timer, list, slider, toggle, dropdown, textfield, panel, crosshair, minimap, progressradial, iconrow, hotbar, keyhint …), text, anchor (top-left / top-center / top-right / middle-left / center / middle-right / bottom-left / bottom-center / bottom-right) + x / y pixel offsets from that corner or edge, w / h in pixels, style {size, weight, font, color, bg, border, radius, pad, align, opacity}, plus the kind's own fields (bar: min, max, value, orientation; timer: duration, countDown; image: src = a library image hash; slider: min, max, value; dropdown: options; button: enabled)",
+							"properties": {
+								"kind": {
+									"type": "string"
+								},
+								"text": {
+									"type": "string"
+								},
+								"anchor": {
+									"type": "string",
+									"enum": [
+										"top-left",
+										"top-center",
+										"top-right",
+										"middle-left",
+										"center",
+										"middle-right",
+										"bottom-left",
+										"bottom-center",
+										"bottom-right"
+									]
+								},
+								"x": {
+									"type": "number"
+								},
+								"y": {
+									"type": "number"
+								},
+								"w": {
+									"type": "number"
+								},
+								"h": {
+									"type": "number"
+								},
+								"style": {
+									"type": "object"
+								}
+							}
+						}
+					},
+					"screen": {
+						"type": "string",
+						"description": "screen id or name (made when missing)"
+					},
+					"anchor": {
+						"type": "string",
+						"enum": [
+							"top-left",
+							"top-center",
+							"top-right",
+							"middle-left",
+							"center",
+							"middle-right",
+							"bottom-left",
+							"bottom-center",
+							"bottom-right"
+						],
+						"description": "default center"
+					},
+					"x": {
+						"type": "number"
+					},
+					"y": {
+						"type": "number"
+					},
+					"w": {
+						"type": "number",
+						"description": "default 260"
+					},
+					"h": {
+						"type": "number",
+						"description": "default: fits the rows"
+					},
+					"gap": {
+						"type": "number"
+					},
+					"pad": {
+						"type": "number"
+					},
+					"style": {
+						"type": "object",
+						"description": "the backdrop: bg, border, radius, opacity"
+					},
+					"showWhile": {
+						"type": "string",
+						"enum": [
+							"",
+							"menu",
+							"playing",
+							"paused",
+							"over"
+						],
+						"description": "show this screen while the game is menu / playing / paused / over (\"\" = only when a hudscreen node shows it)"
+					},
+					"input": {
+						"type": "string",
+						"enum": [
+							"game",
+							"menu"
+						],
+						"description": "menu = the mouse is free to click this screen in Play"
+					},
+					"active": {
+						"type": "boolean",
+						"description": "the screen that shows by default"
+					},
+					"camera": {
+						"type": "string",
+						"description": "a camera object uuid: the HUD shows only while looking through that camera (default: the scene HUD)"
+					}
+				},
+				"required": [
+					"rows"
+				]
+			},
+			"annotations": {
+				"title": "Add a HUD panel",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "set_sky",
+			"title": "Change the sky and fog",
+			"description": "The sky and the air: a look preset (studio, daylight, sunset, night, classic, clearsky, meadow, sunrise, starlight, photostudio), a sky image by name (clearsky, meadow, sunrise, starlight, photostudio; or {hash} of an HDR in the library — never a URL) with rotation, intensity, blur and Sky quality (auto / standard / high / max, plus a minimum), a background colour or {top, bottom} gradient, fog ({color, near, far} in metres, or {color, density}; null = none) and exposure. \"Make it night\": preset night or hdri starlight + a dark fog. Changes the whole scene's look, so the host is asked first: it answers needsConfirm, then repeat with confirmId. One undo step.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"preset": {
+						"type": "string",
+						"description": "studio, daylight, sunset, night, classic, clearsky, meadow, sunrise, starlight, photostudio"
+					},
+					"hdri": {
+						"type": [
+							"string",
+							"object",
+							"null"
+						],
+						"description": "a sky name (clearsky, meadow, sunrise, starlight, photostudio), null for none, or {name | hash, rotation (degrees), intensity 0-4, blur 0-1, background (false = light only), quality, minQuality}",
+						"properties": {
+							"name": {
+								"type": "string"
+							},
+							"hash": {
+								"type": "string"
+							},
+							"rotation": {
+								"type": "number"
+							},
+							"intensity": {
+								"type": "number",
+								"minimum": 0,
+								"maximum": 4
+							},
+							"blur": {
+								"type": "number",
+								"minimum": 0,
+								"maximum": 1
+							},
+							"background": {
+								"type": "boolean"
+							},
+							"quality": {
+								"type": "string",
+								"enum": [
+									"auto",
+									"standard",
+									"high",
+									"max"
+								]
+							},
+							"minQuality": {
+								"type": "string",
+								"enum": [
+									"standard",
+									"high",
+									"max"
+								]
+							}
+						}
+					},
+					"background": {
+						"type": "string",
+						"description": "a colour: hex or a CSS name"
+					},
+					"gradient": {
+						"type": [
+							"object",
+							"null"
+						],
+						"properties": {
+							"top": {
+								"type": "string"
+							},
+							"bottom": {
+								"type": "string"
+							}
+						}
+					},
+					"fog": {
+						"type": [
+							"object",
+							"null"
+						],
+						"properties": {
+							"color": {
+								"type": "string"
+							},
+							"near": {
+								"type": "number",
+								"minimum": 0
+							},
+							"far": {
+								"type": "number",
+								"minimum": 0
+							},
+							"density": {
+								"type": "number",
+								"exclusiveMinimum": 0
+							}
+						}
+					},
+					"exposure": {
+						"type": "number",
+						"minimum": 0.1,
+						"maximum": 4
+					},
+					"confirmId": {
+						"type": "string",
+						"description": "the id a needsConfirm answer gave: repeat the call with it to get the host's answer and apply"
+					},
+					"wait": {
+						"type": "number",
+						"description": "with confirmId: seconds to wait for the answer (up to 60)"
+					}
+				}
+			},
+			"annotations": {
+				"title": "Change the sky and fog",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "set_light",
+			"title": "Change the scene light",
+			"description": "The scene's own lighting: sun {color, intensity, direction [x,y,z] the light shines (y below 0)} or null for none, ambient {sky, ground, intensity} or null, and environment lights (directional / point / hemisphere, at most 8): add [{kind, color, intensity, position}], update [{id, …}], remove [ids] (get_environment lists their ids). Lamps, spots and area lights in the scene are objects: create_objects kind light. Changes the whole scene's look, so the host is asked first (needsConfirm, then repeat with confirmId). One undo step.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"sun": {
+						"type": [
+							"object",
+							"null"
+						],
+						"properties": {
+							"color": {
+								"type": "string"
+							},
+							"intensity": {
+								"type": "number",
+								"minimum": 0
+							},
+							"direction": {
+								"type": "array",
+								"items": {
+									"type": "number"
+								},
+								"minItems": 3,
+								"maxItems": 3
+							}
+						}
+					},
+					"ambient": {
+						"type": [
+							"object",
+							"null"
+						],
+						"properties": {
+							"sky": {
+								"type": "string"
+							},
+							"ground": {
+								"type": "string"
+							},
+							"intensity": {
+								"type": "number",
+								"minimum": 0
+							}
+						}
+					},
+					"add": {
+						"type": "array",
+						"maxItems": 8,
+						"items": {
+							"type": "object",
+							"properties": {
+								"kind": {
+									"type": "string",
+									"enum": [
+										"directional",
+										"point",
+										"hemisphere"
+									]
+								},
+								"groundColor": {
+									"type": "string"
+								},
+								"color": {
+									"type": "string"
+								},
+								"intensity": {
+									"type": "number",
+									"minimum": 0
+								},
+								"position": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"minItems": 3,
+									"maxItems": 3
+								}
+							}
+						}
+					},
+					"update": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"id": {
+									"type": "string"
+								},
+								"groundColor": {
+									"type": "string"
+								},
+								"color": {
+									"type": "string"
+								},
+								"intensity": {
+									"type": "number",
+									"minimum": 0
+								},
+								"position": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"minItems": 3,
+									"maxItems": 3
+								}
+							}
+						}
+					},
+					"remove": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						}
+					},
+					"confirmId": {
+						"type": "string",
+						"description": "the id a needsConfirm answer gave: repeat the call with it to get the host's answer and apply"
+					},
+					"wait": {
+						"type": "number",
+						"description": "with confirmId: seconds to wait for the answer (up to 60)"
+					}
+				}
+			},
+			"annotations": {
+				"title": "Change the scene light",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "get_environment",
+			"title": "Read the sky and light",
+			"description": "Read the scene's sky and light: the preset, the sky image and its quality, background, fog, exposure, the sun and ambient, the environment lights (ids for set_light), the light objects (uuid, shadows) and the spawn / opening view; plus the preset and sky names. Read this before changing the look.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"names": {
+						"type": "boolean",
+						"description": "false = leave out the preset and sky name lists"
+					}
+				}
+			},
+			"annotations": {
+				"title": "Read the sky and light",
+				"readOnlyHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "place_spawn",
+			"title": "Set where Play starts",
+			"description": "Where Play starts: position [x, y, z] of the player's feet (or object: a uuid to stand on top of), facing a point [x, y, z] or an object uuid (or yaw in radians, 0 faces -Z); clear: true removes it. One undo step.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"position": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"minItems": 3,
+						"maxItems": 3
+					},
+					"object": {
+						"type": "string"
+					},
+					"facing": {
+						"type": [
+							"array",
+							"string"
+						],
+						"items": {
+							"type": "number"
+						}
+					},
+					"yaw": {
+						"type": "number"
+					},
+					"clear": {
+						"type": "boolean"
+					}
+				}
+			},
+			"annotations": {
+				"title": "Set where Play starts",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "set_play_camera",
+			"title": "Set the play camera and opening view",
+			"description": "How Play looks and where the editor opens. mode: first = first person through the player's eyes, walking (fly: true to fly) with speed, jumpHeight, eyeHeight, gravity — a Character Controller node in the scene graph, changed in place on a second call; none = the default Play camera. third / orbit / fixed are not Play cameras yet (the answer says what to use instead). openingView (H6): where the editor camera starts when the scene opens — {position, target}, \"spawn\" (behind the player), \"frame\" (the whole scene) or null; saved with the scene, nobody's view moves now.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"mode": {
+						"type": "string",
+						"enum": [
+							"first",
+							"third",
+							"orbit",
+							"fixed",
+							"none"
+						]
+					},
+					"fly": {
+						"type": "boolean"
+					},
+					"speed": {
+						"type": "number",
+						"minimum": 0.01,
+						"maximum": 1
+					},
+					"jumpHeight": {
+						"type": "number",
+						"minimum": 0,
+						"maximum": 5
+					},
+					"eyeHeight": {
+						"type": "number",
+						"minimum": 0.2,
+						"maximum": 3
+					},
+					"gravity": {
+						"type": "boolean"
+					},
+					"openingView": {
+						"type": [
+							"object",
+							"string",
+							"null"
+						],
+						"description": "{position: [x,y,z], target: [x,y,z]}, \"spawn\", \"frame\" or null",
+						"properties": {
+							"position": {
+								"type": "array",
+								"items": {
+									"type": "number"
+								},
+								"minItems": 3,
+								"maxItems": 3
+							},
+							"target": {
+								"type": "array",
+								"items": {
+									"type": "number"
+								},
+								"minItems": 3,
+								"maxItems": 3
+							}
+						}
+					}
+				}
+			},
+			"annotations": {
+				"title": "Set the play camera and opening view",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
 			"name": "undo_last",
 			"title": "Undo your last change",
 			"description": "Take back your own last tool call (count for several, newest first). Use it whenever the person says \"undo that\" or \"take that back\": they may be talking and cannot see each call. Only ever undoes YOUR calls. If someone has since changed the same objects it refuses and lists them, and nothing changes: tell the person who changed what.\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nTake a screenshot after each change to check your work.",
@@ -3251,10 +4040,23 @@
 				"get_post": "get_post",
 				"post_graph": "create_post_graph",
 				"unwrap": "uv_unwrap",
-				"uv": "set_uv"
+				"uv": "set_uv",
+				"sky": "set_sky",
+				"light": "set_light",
+				"environment": "get_environment"
 			},
 			"assets": {
 				"image": "add_image"
+			},
+			"hud": {
+				"create": "create_hud",
+				"list": "list_hud",
+				"update": "edit_hud",
+				"panel": "hud_panel"
+			},
+			"game_setup": {
+				"spawn": "place_spawn",
+				"play_camera": "set_play_camera"
 			}
 		},
 		"tools": [
@@ -3478,6 +4280,15 @@
 										},
 										"description": "directional/spot: a world point [x,y,z] to point at"
 									},
+									"shadowQuality": {
+										"type": "string",
+										"enum": [
+											"low",
+											"medium",
+											"high"
+										],
+										"description": "directional/spot/point: shadow sharpness (each device may cap it)"
+									},
 									"receiveShadow": {
 										"type": "boolean",
 										"description": "meshes and models: shadows fall on it (on by default)"
@@ -3615,6 +4426,15 @@
 											"type": "number"
 										},
 										"description": "directional/spot: a world point [x,y,z] to point at"
+									},
+									"shadowQuality": {
+										"type": "string",
+										"enum": [
+											"low",
+											"medium",
+											"high"
+										],
+										"description": "directional/spot/point: shadow sharpness (each device may cap it)"
 									},
 									"receiveShadow": {
 										"type": "boolean",
@@ -4707,8 +5527,8 @@
 			},
 			{
 				"name": "set_look",
-				"title": "Materials, shaders, UVs and post effects",
-				"description": "How things look: material = colour, roughness, metal, glow, see-through and textures (a library image, a CC0 material by name or an https image); list_materials / get_material read them; shader / edit_shader / assign_shader / shader_nodes = node shaders on objects; post / get_post / post_graph = the scene's post effects (bloom, colour grade, vignette; the host is asked first); unwrap / uv = texture mapping and tiling.\nCall it as {\"action\": \"material\", \"material\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
+				"title": "Materials, shaders, sky, light and post effects",
+				"description": "How things look: material = colour, roughness, metal, glow, see-through and textures (a library image, a CC0 material by name or an https image); list_materials / get_material read them; shader / edit_shader / assign_shader / shader_nodes = node shaders on objects; sky = the sky image, background, fog and exposure; light = the sun, ambient and environment lights; environment reads both; post / get_post / post_graph = the scene's post effects (bloom, colour grade, vignette); sky, light and post change the whole scene, so the host is asked first; unwrap / uv = texture mapping and tiling.\nCall it as {\"action\": \"material\", \"material\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -4726,7 +5546,10 @@
 								"get_post",
 								"post_graph",
 								"unwrap",
-								"uv"
+								"uv",
+								"sky",
+								"light",
+								"environment"
 							],
 							"description": "What to do. Put its fields in the object named after the action."
 						},
@@ -5212,6 +6035,254 @@
 								"objects"
 							],
 							"description": "Tile, shift or rotate a material slot's textures (tiling: 4 repeats a floor texture four times). maps limits it to some slots. With faces it maps only those faces instead: they are projected flat so the image fills them once (a label on one side of a box), with tiling / offset / rotation on top; pair it with set_look {action: 'material'} faces for an image only on that face. One undo step."
+						},
+						"sky": {
+							"type": "object",
+							"properties": {
+								"preset": {
+									"type": "string",
+									"description": "studio, daylight, sunset, night, classic, clearsky, meadow, sunrise, starlight, photostudio"
+								},
+								"hdri": {
+									"type": [
+										"string",
+										"object",
+										"null"
+									],
+									"description": "a sky name (clearsky, meadow, sunrise, starlight, photostudio), null for none, or {name | hash, rotation (degrees), intensity 0-4, blur 0-1, background (false = light only), quality, minQuality}",
+									"properties": {
+										"name": {
+											"type": "string"
+										},
+										"hash": {
+											"type": "string"
+										},
+										"rotation": {
+											"type": "number"
+										},
+										"intensity": {
+											"type": "number",
+											"minimum": 0,
+											"maximum": 4
+										},
+										"blur": {
+											"type": "number",
+											"minimum": 0,
+											"maximum": 1
+										},
+										"background": {
+											"type": "boolean"
+										},
+										"quality": {
+											"type": "string",
+											"enum": [
+												"auto",
+												"standard",
+												"high",
+												"max"
+											]
+										},
+										"minQuality": {
+											"type": "string",
+											"enum": [
+												"standard",
+												"high",
+												"max"
+											]
+										}
+									}
+								},
+								"background": {
+									"type": "string",
+									"description": "a colour: hex or a CSS name"
+								},
+								"gradient": {
+									"type": [
+										"object",
+										"null"
+									],
+									"properties": {
+										"top": {
+											"type": "string"
+										},
+										"bottom": {
+											"type": "string"
+										}
+									}
+								},
+								"fog": {
+									"type": [
+										"object",
+										"null"
+									],
+									"properties": {
+										"color": {
+											"type": "string"
+										},
+										"near": {
+											"type": "number",
+											"minimum": 0
+										},
+										"far": {
+											"type": "number",
+											"minimum": 0
+										},
+										"density": {
+											"type": "number",
+											"exclusiveMinimum": 0
+										}
+									}
+								},
+								"exposure": {
+									"type": "number",
+									"minimum": 0.1,
+									"maximum": 4
+								},
+								"confirmId": {
+									"type": "string",
+									"description": "the id a needsConfirm answer gave: repeat the call with it to get the host's answer and apply"
+								},
+								"wait": {
+									"type": "number",
+									"description": "with confirmId: seconds to wait for the answer (up to 60)"
+								}
+							},
+							"description": "The sky and the air: a look preset (studio, daylight, sunset, night, classic, clearsky, meadow, sunrise, starlight, photostudio), a sky image by name (clearsky, meadow, sunrise, starlight, photostudio; or {hash} of an HDR in the library — never a URL) with rotation, intensity, blur and Sky quality (auto / standard / high / max, plus a minimum), a background colour or {top, bottom} gradient, fog ({color, near, far} in metres, or {color, density}; null = none) and exposure. \"Make it night\": preset night or hdri starlight + a dark fog. Changes the whole scene's look, so the host is asked first: it answers needsConfirm, then repeat with confirmId. One undo step."
+						},
+						"light": {
+							"type": "object",
+							"properties": {
+								"sun": {
+									"type": [
+										"object",
+										"null"
+									],
+									"properties": {
+										"color": {
+											"type": "string"
+										},
+										"intensity": {
+											"type": "number",
+											"minimum": 0
+										},
+										"direction": {
+											"type": "array",
+											"items": {
+												"type": "number"
+											},
+											"minItems": 3,
+											"maxItems": 3
+										}
+									}
+								},
+								"ambient": {
+									"type": [
+										"object",
+										"null"
+									],
+									"properties": {
+										"sky": {
+											"type": "string"
+										},
+										"ground": {
+											"type": "string"
+										},
+										"intensity": {
+											"type": "number",
+											"minimum": 0
+										}
+									}
+								},
+								"add": {
+									"type": "array",
+									"maxItems": 8,
+									"items": {
+										"type": "object",
+										"properties": {
+											"kind": {
+												"type": "string",
+												"enum": [
+													"directional",
+													"point",
+													"hemisphere"
+												]
+											},
+											"groundColor": {
+												"type": "string"
+											},
+											"color": {
+												"type": "string"
+											},
+											"intensity": {
+												"type": "number",
+												"minimum": 0
+											},
+											"position": {
+												"type": "array",
+												"items": {
+													"type": "number"
+												},
+												"minItems": 3,
+												"maxItems": 3
+											}
+										}
+									}
+								},
+								"update": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"id": {
+												"type": "string"
+											},
+											"groundColor": {
+												"type": "string"
+											},
+											"color": {
+												"type": "string"
+											},
+											"intensity": {
+												"type": "number",
+												"minimum": 0
+											},
+											"position": {
+												"type": "array",
+												"items": {
+													"type": "number"
+												},
+												"minItems": 3,
+												"maxItems": 3
+											}
+										}
+									}
+								},
+								"remove": {
+									"type": "array",
+									"items": {
+										"type": "string"
+									}
+								},
+								"confirmId": {
+									"type": "string",
+									"description": "the id a needsConfirm answer gave: repeat the call with it to get the host's answer and apply"
+								},
+								"wait": {
+									"type": "number",
+									"description": "with confirmId: seconds to wait for the answer (up to 60)"
+								}
+							},
+							"description": "The scene's own lighting: sun {color, intensity, direction [x,y,z] the light shines (y below 0)} or null for none, ambient {sky, ground, intensity} or null, and environment lights (directional / point / hemisphere, at most 8): add [{kind, color, intensity, position}], update [{id, …}], remove [ids] (set_look {action: 'environment'} lists their ids). Lamps, spots and area lights in the scene are objects: create_objects kind light. Changes the whole scene's look, so the host is asked first (needsConfirm, then repeat with confirmId). One undo step."
+						},
+						"environment": {
+							"type": "object",
+							"properties": {
+								"names": {
+									"type": "boolean",
+									"description": "false = leave out the preset and sky name lists"
+								}
+							},
+							"description": "Read the scene's sky and light: the preset, the sky image and its quality, background, fog, exposure, the sun and ambient, the environment lights (ids for set_look {action: 'light'}), the light objects (uuid, shadows) and the spawn / opening view; plus the preset and sky names. Read this before changing the look."
 						}
 					},
 					"required": [
@@ -5219,7 +6290,7 @@
 					]
 				},
 				"annotations": {
-					"title": "Materials, shaders, UVs and post effects",
+					"title": "Materials, shaders, sky, light and post effects",
 					"readOnlyHint": false,
 					"destructiveHint": true,
 					"openWorldHint": true
@@ -5362,6 +6433,497 @@
 					"readOnlyHint": false,
 					"destructiveHint": false,
 					"openWorldHint": true
+				}
+			},
+			{
+				"name": "hud",
+				"title": "Game HUD",
+				"description": "The game's 2D screen overlay: create = screens of elements (timer, score text, bars, buttons, images) and their ids; list = what is there and what each element is bound to; update = change, move or remove elements and screens; panel = a backdrop with rows (a menu, a scoreboard). Bind live values with hudtext / hudbar / hudtimer flow nodes whose element is an id.\nCall it as {\"action\": \"create\", \"create\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
+				"inputSchema": {
+					"type": "object",
+					"properties": {
+						"action": {
+							"type": "string",
+							"enum": [
+								"create",
+								"list",
+								"update",
+								"panel"
+							],
+							"description": "What to do. Put its fields in the object named after the action."
+						},
+						"create": {
+							"type": "object",
+							"properties": {
+								"screens": {
+									"type": "array",
+									"maxItems": 8,
+									"items": {
+										"type": "object",
+										"properties": {
+											"name": {
+												"type": "string"
+											},
+											"showWhile": {
+												"type": "string",
+												"enum": [
+													"",
+													"menu",
+													"playing",
+													"paused",
+													"over"
+												],
+												"description": "show this screen while the game is menu / playing / paused / over (\"\" = only when a hudscreen node shows it)"
+											},
+											"input": {
+												"type": "string",
+												"enum": [
+													"game",
+													"menu"
+												],
+												"description": "menu = the mouse is free to click this screen in Play"
+											},
+											"active": {
+												"type": "boolean",
+												"description": "the screen that shows by default"
+											},
+											"elements": {
+												"type": "array",
+												"maxItems": 60,
+												"items": {
+													"type": "object",
+													"description": "one HUD element: kind (text, bar, image, button, timer, list, slider, toggle, dropdown, textfield, panel, crosshair, minimap, progressradial, iconrow, hotbar, keyhint …), text, anchor (top-left / top-center / top-right / middle-left / center / middle-right / bottom-left / bottom-center / bottom-right) + x / y pixel offsets from that corner or edge, w / h in pixels, style {size, weight, font, color, bg, border, radius, pad, align, opacity}, plus the kind's own fields (bar: min, max, value, orientation; timer: duration, countDown; image: src = a library image hash; slider: min, max, value; dropdown: options; button: enabled)",
+													"properties": {
+														"kind": {
+															"type": "string"
+														},
+														"text": {
+															"type": "string"
+														},
+														"anchor": {
+															"type": "string",
+															"enum": [
+																"top-left",
+																"top-center",
+																"top-right",
+																"middle-left",
+																"center",
+																"middle-right",
+																"bottom-left",
+																"bottom-center",
+																"bottom-right"
+															]
+														},
+														"x": {
+															"type": "number"
+														},
+														"y": {
+															"type": "number"
+														},
+														"w": {
+															"type": "number"
+														},
+														"h": {
+															"type": "number"
+														},
+														"style": {
+															"type": "object"
+														}
+													}
+												}
+											}
+										}
+									}
+								},
+								"camera": {
+									"type": "string",
+									"description": "a camera object uuid: the HUD shows only while looking through that camera (default: the scene HUD)"
+								}
+							},
+							"required": [
+								"screens"
+							],
+							"description": "Give the game a HUD (2D screen overlay): screens of elements — a timer, a score text, a health bar, buttons, an image. A screen named like an existing one gets the elements added. Returns every element id: bind live values with create_flow_nodes (a hudtext / hudbar / hudtimer node with data.element = the id, e.g. counter -> hudtext). A new screen becomes the one that shows unless active: false. One undo step."
+						},
+						"list": {
+							"type": "object",
+							"properties": {
+								"camera": {
+									"type": "string",
+									"description": "a camera object uuid: the HUD shows only while looking through that camera (default: the scene HUD)"
+								}
+							},
+							"description": "Read the HUD: its screens (which one shows, showWhile), every element (id, kind, text, place, size) and what each element is bound to. Read this before editing a HUD a person made."
+						},
+						"update": {
+							"type": "object",
+							"properties": {
+								"updates": {
+									"type": "array",
+									"maxItems": 60,
+									"items": {
+										"type": "object",
+										"description": "one HUD element: kind (text, bar, image, button, timer, list, slider, toggle, dropdown, textfield, panel, crosshair, minimap, progressradial, iconrow, hotbar, keyhint …), text, anchor (top-left / top-center / top-right / middle-left / center / middle-right / bottom-left / bottom-center / bottom-right) + x / y pixel offsets from that corner or edge, w / h in pixels, style {size, weight, font, color, bg, border, radius, pad, align, opacity}, plus the kind's own fields (bar: min, max, value, orientation; timer: duration, countDown; image: src = a library image hash; slider: min, max, value; dropdown: options; button: enabled)",
+										"properties": {
+											"id": {
+												"type": "string"
+											},
+											"screen": {
+												"type": "string"
+											},
+											"kind": {
+												"type": "string"
+											},
+											"text": {
+												"type": "string"
+											},
+											"anchor": {
+												"type": "string",
+												"enum": [
+													"top-left",
+													"top-center",
+													"top-right",
+													"middle-left",
+													"center",
+													"middle-right",
+													"bottom-left",
+													"bottom-center",
+													"bottom-right"
+												]
+											},
+											"x": {
+												"type": "number"
+											},
+											"y": {
+												"type": "number"
+											},
+											"w": {
+												"type": "number"
+											},
+											"h": {
+												"type": "number"
+											},
+											"style": {
+												"type": "object"
+											}
+										}
+									}
+								},
+								"remove": {
+									"type": "array",
+									"items": {
+										"type": "string"
+									}
+								},
+								"screens": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"id": {
+												"type": "string"
+											},
+											"name": {
+												"type": "string"
+											},
+											"rename": {
+												"type": "string"
+											},
+											"remove": {
+												"type": "boolean"
+											},
+											"showWhile": {
+												"type": "string",
+												"enum": [
+													"",
+													"menu",
+													"playing",
+													"paused",
+													"over"
+												],
+												"description": "show this screen while the game is menu / playing / paused / over (\"\" = only when a hudscreen node shows it)"
+											},
+											"input": {
+												"type": "string",
+												"enum": [
+													"game",
+													"menu"
+												],
+												"description": "menu = the mouse is free to click this screen in Play"
+											},
+											"active": {
+												"type": "boolean",
+												"description": "the screen that shows by default"
+											}
+										}
+									}
+								},
+								"camera": {
+									"type": "string",
+									"description": "a camera object uuid: the HUD shows only while looking through that camera (default: the scene HUD)"
+								}
+							},
+							"description": "Change a HUD that exists (hud {action: 'list'} first): updates = [{id, …any element field to change, screen?: move it to that screen}], remove = element ids (a panel takes its rows with it), screens = [{id or name, rename?, showWhile?, input?, active?, remove?: true}]. One undo step."
+						},
+						"panel": {
+							"type": "object",
+							"properties": {
+								"title": {
+									"type": "string"
+								},
+								"rows": {
+									"type": "array",
+									"maxItems": 24,
+									"items": {
+										"type": "object",
+										"description": "one HUD element: kind (text, bar, image, button, timer, list, slider, toggle, dropdown, textfield, panel, crosshair, minimap, progressradial, iconrow, hotbar, keyhint …), text, anchor (top-left / top-center / top-right / middle-left / center / middle-right / bottom-left / bottom-center / bottom-right) + x / y pixel offsets from that corner or edge, w / h in pixels, style {size, weight, font, color, bg, border, radius, pad, align, opacity}, plus the kind's own fields (bar: min, max, value, orientation; timer: duration, countDown; image: src = a library image hash; slider: min, max, value; dropdown: options; button: enabled)",
+										"properties": {
+											"kind": {
+												"type": "string"
+											},
+											"text": {
+												"type": "string"
+											},
+											"anchor": {
+												"type": "string",
+												"enum": [
+													"top-left",
+													"top-center",
+													"top-right",
+													"middle-left",
+													"center",
+													"middle-right",
+													"bottom-left",
+													"bottom-center",
+													"bottom-right"
+												]
+											},
+											"x": {
+												"type": "number"
+											},
+											"y": {
+												"type": "number"
+											},
+											"w": {
+												"type": "number"
+											},
+											"h": {
+												"type": "number"
+											},
+											"style": {
+												"type": "object"
+											}
+										}
+									}
+								},
+								"screen": {
+									"type": "string",
+									"description": "screen id or name (made when missing)"
+								},
+								"anchor": {
+									"type": "string",
+									"enum": [
+										"top-left",
+										"top-center",
+										"top-right",
+										"middle-left",
+										"center",
+										"middle-right",
+										"bottom-left",
+										"bottom-center",
+										"bottom-right"
+									],
+									"description": "default center"
+								},
+								"x": {
+									"type": "number"
+								},
+								"y": {
+									"type": "number"
+								},
+								"w": {
+									"type": "number",
+									"description": "default 260"
+								},
+								"h": {
+									"type": "number",
+									"description": "default: fits the rows"
+								},
+								"gap": {
+									"type": "number"
+								},
+								"pad": {
+									"type": "number"
+								},
+								"style": {
+									"type": "object",
+									"description": "the backdrop: bg, border, radius, opacity"
+								},
+								"showWhile": {
+									"type": "string",
+									"enum": [
+										"",
+										"menu",
+										"playing",
+										"paused",
+										"over"
+									],
+									"description": "show this screen while the game is menu / playing / paused / over (\"\" = only when a hudscreen node shows it)"
+								},
+								"input": {
+									"type": "string",
+									"enum": [
+										"game",
+										"menu"
+									],
+									"description": "menu = the mouse is free to click this screen in Play"
+								},
+								"active": {
+									"type": "boolean",
+									"description": "the screen that shows by default"
+								},
+								"camera": {
+									"type": "string",
+									"description": "a camera object uuid: the HUD shows only while looking through that camera (default: the scene HUD)"
+								}
+							},
+							"required": [
+								"rows"
+							],
+							"description": "A panel on the HUD: a backdrop box with a title and rows laid out top-down inside it (a settings menu with sliders and toggles, a scoreboard, a start menu with buttons). Goes on `screen` (made if missing) or the screen showing. Returns the panel id and each row id; moving or removing the panel with hud {action: 'update'} moves or removes its rows. One undo step."
+						}
+					},
+					"required": [
+						"action"
+					]
+				},
+				"annotations": {
+					"title": "Game HUD",
+					"readOnlyHint": false,
+					"destructiveHint": true,
+					"openWorldHint": false
+				}
+			},
+			{
+				"name": "game_setup",
+				"title": "Game setup: spawn and play camera",
+				"description": "How the game starts: spawn = where Play starts and which way the player faces; play_camera = first person walking or flying (speed, jump, eye height) and openingView = where the editor camera starts when the scene opens.\nCall it as {\"action\": \"spawn\", \"spawn\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
+				"inputSchema": {
+					"type": "object",
+					"properties": {
+						"action": {
+							"type": "string",
+							"enum": [
+								"spawn",
+								"play_camera"
+							],
+							"description": "What to do. Put its fields in the object named after the action."
+						},
+						"spawn": {
+							"type": "object",
+							"properties": {
+								"position": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"minItems": 3,
+									"maxItems": 3
+								},
+								"object": {
+									"type": "string"
+								},
+								"facing": {
+									"type": [
+										"array",
+										"string"
+									],
+									"items": {
+										"type": "number"
+									}
+								},
+								"yaw": {
+									"type": "number"
+								},
+								"clear": {
+									"type": "boolean"
+								}
+							},
+							"description": "Where Play starts: position [x, y, z] of the player's feet (or object: a uuid to stand on top of), facing a point [x, y, z] or an object uuid (or yaw in radians, 0 faces -Z); clear: true removes it. One undo step."
+						},
+						"play_camera": {
+							"type": "object",
+							"properties": {
+								"mode": {
+									"type": "string",
+									"enum": [
+										"first",
+										"third",
+										"orbit",
+										"fixed",
+										"none"
+									]
+								},
+								"fly": {
+									"type": "boolean"
+								},
+								"speed": {
+									"type": "number",
+									"minimum": 0.01,
+									"maximum": 1
+								},
+								"jumpHeight": {
+									"type": "number",
+									"minimum": 0,
+									"maximum": 5
+								},
+								"eyeHeight": {
+									"type": "number",
+									"minimum": 0.2,
+									"maximum": 3
+								},
+								"gravity": {
+									"type": "boolean"
+								},
+								"openingView": {
+									"type": [
+										"object",
+										"string",
+										"null"
+									],
+									"description": "{position: [x,y,z], target: [x,y,z]}, \"spawn\", \"frame\" or null",
+									"properties": {
+										"position": {
+											"type": "array",
+											"items": {
+												"type": "number"
+											},
+											"minItems": 3,
+											"maxItems": 3
+										},
+										"target": {
+											"type": "array",
+											"items": {
+												"type": "number"
+											},
+											"minItems": 3,
+											"maxItems": 3
+										}
+									}
+								}
+							},
+							"description": "How Play looks and where the editor opens. mode: first = first person through the player's eyes, walking (fly: true to fly) with speed, jumpHeight, eyeHeight, gravity — a Character Controller node in the scene graph, changed in place on a second call; none = the default Play camera. third / orbit / fixed are not Play cameras yet (the answer says what to use instead). openingView (H6): where the editor camera starts when the scene opens — {position, target}, \"spawn\" (behind the player), \"frame\" (the whole scene) or null; saved with the scene, nobody's view moves now."
+						}
+					},
+					"required": [
+						"action"
+					]
+				},
+				"annotations": {
+					"title": "Game setup: spawn and play camera",
+					"readOnlyHint": false,
+					"destructiveHint": true,
+					"openWorldHint": false
 				}
 			},
 			{

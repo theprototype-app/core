@@ -14,7 +14,7 @@ export const AGENT_LOG_HANDSHAKE = 50;
 export const TEXT_MAX = 160;
 
 /** tools that only read: no line */
-const READ_ONLY = new Set(['list_scene', 'status', 'screenshot', 'wait_for_edit', 'tools', 'snapshot', 'list_materials', 'get_material', 'describe_shader_nodes', 'get_post']);
+const READ_ONLY = new Set(['list_scene', 'status', 'screenshot', 'wait_for_edit', 'tools', 'snapshot', 'list_materials', 'get_material', 'describe_shader_nodes', 'get_post', 'list_hud', 'get_environment']);
 
 /** @param {number} n @param {string} one @param {string} [many] */
 const count = (n, one, many = one + 's') => n + ' ' + (n === 1 ? one : many);
@@ -188,6 +188,26 @@ export function summarizeToolCall(tool, args, result, nameOf = () => '') {
 			return 'unwrapped the UVs of ' + count(arr(result.updated).length, 'object') + ' (' + String(args?.method ?? 'smart') + ')';
 		case 'set_uv':
 			return (args?.faces !== undefined ? 'mapped faces of ' : 'set the tiling on ') + count(arr(result.updated).length, 'object');
+		// 85 H1-H7 (85-scene)
+		case 'create_hud': {
+			const els = arr(result.elements);
+			const screens = nameList(arr(result.screens).map((s) => s?.name));
+			return 'added ' + (screens ? 'HUD screen ' + screens : 'to the HUD') + ' (' + count(els.length, 'element') + ')';
+		}
+		case 'edit_hud': {
+			const n = arr(result.updated).length + arr(result.removed).length + arr(result.screens).length;
+			return 'changed the HUD (' + count(n, 'edit') + ')';
+		}
+		case 'hud_panel':
+			return 'added a HUD panel' + (args?.title ? ' (' + String(args.title).slice(0, 60) + ')' : '') + ' with ' + count(arr(result.rows).length, 'row');
+		case 'set_sky':
+			return 'changed the sky' + (result.label ? ' (' + String(result.label).slice(0, 40) + ')' : '');
+		case 'set_light':
+			return 'changed the scene light' + (arr(result.created).length ? ' (+' + count(arr(result.created).length, 'light') + ')' : '');
+		case 'place_spawn':
+			return result.spawn ? 'set where Play starts' : 'removed the spawn';
+		case 'set_play_camera':
+			return result.playCamera ? 'set the play camera (' + String(result.playCamera.mode) + ')' : 'set the scene\'s opening view';
 		// 85 R6, pivots, images
 		case 'undo_last': {
 			const done = arr(result.undone);

@@ -19,7 +19,7 @@ import {
 import { setObjectColor, switchMaterialType, setMaterialParam } from '$lib/materialsHandler';
 import { checkMaterialParam, toHexColor, isMapSlotKey } from '$lib/materialParamRules.js';
 import { lightStateOf, recordLightChange, sendLight } from '$lib/multiEdit';
-import { aimLight } from '$lib/lightParams';
+import { aimLight, setShadowMapSize } from '$lib/lightParams';
 import { itemByHash, itemBlob } from '$lib/explorer';
 import { animatedBaseOf, writingBasePose } from '$lib/flowRuntime';
 import { reportedPose } from './poseReport.js';
@@ -52,6 +52,8 @@ import { meshStats } from './meshStats.js';
 import { applyShadowFlags, SHADOW_SCHEMA } from './shadowFlags.js';
 import { duplicatePlan, DUPLICATE_MAX } from './duplicateCore.js';
 import { LOOK_TOOL_NAMES, LOOK_AI_TOOLS, LOOK_PROMPT, lookTool } from './lookTools.js';
+import { HUD_TOOL_NAMES, HUD_AI_TOOLS, HUD_PROMPT, hudTool } from './hudTools.js';
+import { SCENE_SETUP_TOOL_NAMES, SCENE_SETUP_AI_TOOLS, SCENE_SETUP_PROMPT, sceneSetupTool } from './sceneSetupTools.js';
 
 // AI tool layer (roadmap #10, A4). Maps OpenAI-style function calls onto the
 // existing REPLICATED mutation surface — every tool applies locally AND broadcasts
@@ -386,7 +388,9 @@ function applyAiTransform(object, t) {
 const colorOf = (v) => toHexColor(v) ?? (typeof v === 'string' && /^[a-z]{3,20}$/i.test(v.trim()) ? v.trim().toLowerCase() : null);
 
 /** 55 (41's research, round 4): the light fields create/update_objects take, and what each must be */
-const LIGHT_FIELDS = ['color', 'intensity', 'distance', 'decay', 'angle', 'penumbra', 'width', 'height', 'groundColor', 'castShadow', 'aim'];
+const LIGHT_FIELDS = ['color', 'intensity', 'distance', 'decay', 'angle', 'penumbra', 'width', 'height', 'groundColor', 'castShadow', 'aim', 'shadowQuality'];
+/** 85 H4: shadow quality words → the Inspector's shadow map sizes (lightParams SHADOW_SIZES) */
+const SHADOW_QUALITY = /** @type {Record<string, number>} */ ({ low: 512, medium: 1024, high: 2048 });
 /** the ranges a light number is clamped into @type {Record<string, [number, number]>} */
 const LIGHT_RANGES = { intensity: [0, 1000], distance: [0, 1000], decay: [0, 5], angle: [0.02, Math.PI / 2], penumbra: [0, 1], width: [0.1, 100], height: [0.1, 100] };
 
@@ -419,6 +423,14 @@ function applyAiLight(light, spec) {
 			else if (typeof value !== 'boolean') errors.push('castShadow: takes true or false');
 			else {
 				light.castShadow = value;
+				touched = true;
+			}
+		} else if (key === 'shadowQuality') {
+			const size = SHADOW_QUALITY[String(value).toLowerCase()];
+			if (!light.shadow) errors.push('shadowQuality: a ' + light.type + ' casts no shadow');
+			else if (!size) errors.push('shadowQuality: low, medium or high');
+			else {
+				setShadowMapSize(light, size);
 				touched = true;
 			}
 		} else if (key === 'aim') {
@@ -734,6 +746,8 @@ const TOOL_NAMES = [
 	'import_file', // 66 S4b (offered to agents; see importFile.js)
 	...GEOMETRY_TOOL_NAMES, // 85 G1-G6 (geometryTools.js)
 	...LOOK_TOOL_NAMES, // 85 L1-L5 (lookTools.js)
+	...HUD_TOOL_NAMES, // 85 H1 / H2 + hud panel (hudTools.js)
+	...SCENE_SETUP_TOOL_NAMES, // 85 H3-H7: sky, light, spawn, play camera, opening view (sceneSetupTools.js)
 	...ASSIST_TOOL_NAMES // 85 undo_last, pivots, images (assistTools.js): unlisted, their arguments read as create_objects / update_objects
 ];
 
@@ -1170,6 +1184,21 @@ async function runAiTool(rawName, rawArgs, opts) {
 				// 85 L1-L5: materials, shaders, the look stack, UVs (lookTools.js)
 				return await lookTool(name, args);
 
+			case 'create_hud':
+			case 'edit_hud':
+			case 'list_hud':
+			case 'hud_panel':
+				// 85 H1 / H2 + hud panel (hudTools.js)
+				return await hudTool(name, args);
+
+			case 'set_sky':
+			case 'set_light':
+			case 'get_environment':
+			case 'place_spawn':
+			case 'set_play_camera':
+				// 85 H3-H7 (sceneSetupTools.js)
+				return await sceneSetupTool(name, args);
+
 			default:
 				return {
 					error:
@@ -1196,7 +1225,8 @@ const LIGHT_SCHEMA = {
 	height: { type: 'number', description: 'rectarea: height in metres' },
 	groundColor: { type: 'string', description: 'hemisphere: the ground colour, hex' },
 	castShadow: { type: 'boolean', description: 'directional/spot/point: cast shadows' },
-	aim: { type: 'array', items: { type: 'number' }, description: 'directional/spot: a world point [x,y,z] to point at' }
+	aim: { type: 'array', items: { type: 'number' }, description: 'directional/spot: a world point [x,y,z] to point at' },
+	shadowQuality: { type: 'string', enum: ['low', 'medium', 'high'], description: 'directional/spot/point: shadow sharpness (each device may cap it)' }
 };
 
 /** OpenAI-format tool schemas. Batch-first so one prompt = few tool calls. */
@@ -1675,7 +1705,7 @@ const PHYSICS_AI_TOOLS = [
  * Call this per turn (readiness can change). @param {ToolOpts} [opts] @returns {any[]} */
 export function getAiTools(opts) {
 	const physics = !!opts?.physics || physicsToolsEnabled();
-	const tools = [...AI_TOOLS, ...GEOMETRY_AI_TOOLS, ...LOOK_AI_TOOLS, ...ASSIST_AI_TOOLS, ...flowToolSchemas(physics), ...behaviourToolSchemas()];
+	const tools = [...AI_TOOLS, ...GEOMETRY_AI_TOOLS, ...LOOK_AI_TOOLS, ...HUD_AI_TOOLS, ...SCENE_SETUP_AI_TOOLS, ...ASSIST_AI_TOOLS, ...flowToolSchemas(physics), ...behaviourToolSchemas()];
 	if (physics) tools.push(...PHYSICS_AI_TOOLS);
 	if (meshGenReady()) tools.push(MESH_TOOL);
 	return tools;
@@ -1780,6 +1810,6 @@ export function buildSystemPrompt(opts) {
 		"an object's name as the tool name — the name of a thing you create belongs in that object's",
 		'`name` field inside create_objects. Every call takes effect immediately, so never repeat a',
 		'call that already came back without an error — once the scene matches the request, stop',
-		'calling tools and write the summary.' + meshLine + toolsLine + GEOMETRY_PROMPT + LOOK_PROMPT + ASSIST_PROMPT + flowBlock + extraBlock + physicsBlock
+		'calling tools and write the summary.' + meshLine + toolsLine + GEOMETRY_PROMPT + LOOK_PROMPT + HUD_PROMPT + SCENE_SETUP_PROMPT + ASSIST_PROMPT + flowBlock + extraBlock + physicsBlock
 	].join('\n');
 }

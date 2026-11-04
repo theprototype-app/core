@@ -61,7 +61,7 @@ import { scenePostSnapshot, scenePostRestore } from './scenePost';
 // follows scenePost exactly: null when default, and restore stamps a fresh
 // changedAt because a restore is an authoritative local write.
 import { environmentSnapshot, environmentRestore } from './environment';
-import { scenePhysicsSnapshot, scenePhysicsRestore } from './scenePhysics';
+import { scenePhysicsSnapshot, scenePhysicsRestore, scenePhysicsState_ } from './scenePhysics';
 import { musicSnapshot, musicRestore } from './sceneMusic';
 // 23-A2: the musical transport, on the same terms as physics/music — null at the
 // default, omitted rather than written, restart-from-now when it was playing
@@ -357,9 +357,10 @@ export function buildSessionPayload(name, opts = {}) {
 			// exportSessionZip's `chats` option and tpchatCore.payloadForDoor.
 			...(talk ? { chats: talk } : {}),
 			...(kept ? { chatRefs: kept } : {}),
-			camera: camera
-				? { position: camera.position.toArray(), target: controls?.target?.toArray() ?? [0, 0, 0] }
-				: null,
+			// 85 H6: an authored opening view wins over wherever the saver's camera happens to be
+			camera:
+				get(scenePhysicsState_).startView ??
+				(camera ? { position: camera.position.toArray(), target: controls?.target?.toArray() ?? [0, 0, 0] } : null),
 			// P5: where the author left off — the selection and any open mesh-edit /
 			// sculpt session with its picks. NULL for an ordinary scene, so the field is
 			// absent and every existing file stays byte-identical.

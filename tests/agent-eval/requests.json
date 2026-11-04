@@ -25,6 +25,8 @@
 		{ "id": "race-hud", "say": "Add a race HUD: a countdown timer and a score.", "pass": [{ "tool": "hud", "action": "create" }, { "tool": "hud", "action": "panel" }], "partial": [{ "tool": "create_flow_nodes" }] },
 		{ "id": "forest-hills", "say": "Turn the ground outside into hills with a forest on them.", "pass": [{ "tool": "effects", "action": "terrain" }, { "tool": "effects", "action": "scatter" }], "partial": [{ "tool": "create_objects" }] },
 		{ "id": "start-here", "say": "Make the player start by the door when they press Play.", "pass": [{ "tool": "game_setup", "action": "spawn" }], "partial": [{ "tool": "create_flow_nodes" }, { "tool": "create_objects" }] },
-		{ "id": "check-game", "say": "Check my game: would anything not work when someone presses Play?", "pass": [{ "tool": "run", "action": "validate" }], "partial": [{ "tool": "run", "action": "inspect" }] }
+		{ "id": "check-game", "say": "Check my game: would anything not work when someone presses Play?", "pass": [{ "tool": "run", "action": "validate" }], "partial": [{ "tool": "run", "action": "inspect" }] },
+		{ "id": "hello-sign", "say": "Put a big solid HELLO sign with a bevel over the door.", "pass": [{ "tool": "create_shape", "action": "text" }], "partial": [{ "tool": "create_shape" }, { "tool": "create_objects" }] },
+		{ "id": "which-fonts", "say": "What fonts can I use for 3D text?", "pass": [{ "tool": "assets", "action": "fonts" }], "partial": [{ "tool": "what_can_you_do" }] }
 	]
 }

@@ -177,6 +177,8 @@ async function setGeometryOne(u) {
 	if (!object) return { uuid, error: 'no object with that uuid' };
 	const lock = lockSkip(uuid, object);
 	if (lock) return { uuid, skipped: lock };
+	// 64-text TX7: a text's shape IS its record (words, font, depth, bevel …) — textTools edits it
+	if (object.userData?.textPath) return await (await import('./textTools.js')).setTextOne(uuid, u.params);
 	if (!object.geometry || !object.isMesh) return { uuid, error: 'not a mesh — set_geometry reshapes primitives, lathes, tubes and extrusions' };
 	// a spline tube: its record is the shape (57.1), edited through the spline path
 	if (object.userData?.spline?.points?.length) return await setSplineShape(uuid, object, u);
@@ -887,7 +889,7 @@ export const GEOMETRY_AI_TOOLS = [
 		function: {
 			name: 'set_geometry',
 			description:
-				'Reshape existing objects in place (they keep uuid, transform, material and flows): change a primitive\'s params (the keys list_scene shows under geometry, e.g. {width, height, depth} for a Box, {radiusTop, radiusBottom, height, radialSegments} for a Cylinder, {segments, phiLength} for a Lathe, {depth, bevel} for an extrusion), or its TYPE (box → Cylinder) with params on top of the new type\'s defaults. A tube (create_tube) takes path, radius / radii, closed. An object whose vertices were hand-edited refuses unless force: true (the rebuild replaces those edits). Up to ' +
+				'Reshape existing objects in place (they keep uuid, transform, material and flows): change a primitive\'s params (the keys list_scene shows under geometry, e.g. {width, height, depth} for a Box, {radiusTop, radiusBottom, height, radialSegments} for a Cylinder, {segments, phiLength} for a Lathe, {depth, bevel} for an extrusion), or its TYPE (box → Cylinder) with params on top of the new type\'s defaults. A tube (create_tube) takes path, radius / radii, closed. A 3D text (create_text) takes its text fields as params (text, font, size, depth, bevel, align, maxWidth, anchor, color …). An object whose vertices were hand-edited refuses unless force: true (the rebuild replaces those edits). Up to ' +
 				MAX_UPDATES +
 				' objects per call, one undo step.',
 			parameters: {

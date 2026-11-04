@@ -479,6 +479,13 @@ export const VALIDATORS = {
 		if (d.parameter === 'mapSlot') return isUuid(d.uuid) && isMapSlotKey(d.key) && isMapSlotImage(d.map);
 		if (d.parameter === 'texTransform') return isUuid(d.uuid) && normalizeTexTransform(d.transform) !== null;
 		if (d.parameter === 'normalStrength') return isUuid(d.uuid) && Number.isFinite(d.value);
+		// 64 D2: a text-on-a-path record (normalizeTextPath clamps the rest) or null; a text
+		// longer than any record keeps is refused before it is copied anywhere
+		if (d.parameter === 'textPath') {
+			const v = d.textPath;
+			if (v === null) return isUuid(d.uuid);
+			return isUuid(d.uuid) && !!v && typeof v === 'object' && !isArray(v) && (v.text === undefined || (typeof v.text === 'string' && v.text.length <= 4000));
+		}
 		if (d.parameter === 'water' || d.parameter === 'bubbles' || d.parameter === 'pour') {
 			const v = d[d.parameter];
 			return isUuid(d.uuid) && (v === null || (!!v && typeof v === 'object' && !isArray(v)));

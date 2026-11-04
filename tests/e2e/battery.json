@@ -285,6 +285,8 @@
 	},
 	"suites": {
 		"possess": 120,
+		"text-path": 360,
+		"text-object": 480,
 		"no-webgl": 120,
 		"stale-chunk": 150,
 		"model-replace": 540,

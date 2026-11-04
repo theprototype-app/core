@@ -139,5 +139,13 @@ check('catalog.json: the run family = inspect / validate / logs, playtest left o
 	return run.inspect === 'inspect_runtime' && run.validate === 'validate_scene' && run.logs === 'logs' && !('playtest' in run) && !('play' in run) && (committed.connectorExcluded ?? []).includes('playtest');
 })());
 
+// 64-text TX7: 3D text rides existing families — create_shape {text}, assets {fonts}; no new top-level name
+check('catalog.json: 64-text adds create_shape {text} + assets {fonts}, no new connector name', (() => {
+	const v = committed.connector;
+	const f = v.families;
+	const names = new Set([...Object.keys(f), ...(v.tools ?? []).map((/** @type {any} */ t) => t.name)]);
+	return f.create_shape?.text === 'create_text' && f.assets?.fonts === 'list_fonts' && !names.has('create_text') && !names.has('list_fonts') && !names.has('text');
+})());
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

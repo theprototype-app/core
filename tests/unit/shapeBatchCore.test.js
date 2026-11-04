@@ -78,7 +78,9 @@ describe('create_shapes batch (mcp-shapes item 2)', () => {
 		expect(/** @type {any} */ (checkShapes(Array.from({ length: SHAPES_MAX }, () => ({ action: 'mesh' })))).entries).toHaveLength(SHAPES_MAX);
 	});
 	it("the actions are the connector's create_shape family", () => {
-		const { shapes: _batch, ...actions } = CONNECTOR_FAMILIES.create_shape.actions;
+		// 64-text: `text` (create_text) is a family action made one per call, not a batch entry
+		const { shapes: _batch, text: _text, ...actions } = CONNECTOR_FAMILIES.create_shape.actions;
+		expect(_text).toBe('create_text');
 		expect(actions).toEqual(SHAPE_ACTIONS);
 	});
 });

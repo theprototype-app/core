@@ -25,6 +25,7 @@ import { normalizeLodGroup } from '$lib/lodGroupCore'
 import { normalizeFluid } from '$lib/sim/fluidCore.js'; // 36-sim
 import { normalizeEmitter, normalizeInteraction } from '$lib/sim/fluidEmitterCore.js'; // 36-fb F23
 import { applyFlowPathTo } from '$lib/sim/flowPathObject.js'; // 36-fb F24
+import { applyTextPathTo } from '$lib/textPathObject.js'; // 64 D2
 import { runSceneClearHandlers } from '$lib/moduleSDK'
 import { annotations } from '$lib/annotationsHandler'
 import { isViewer, warnViewerReadOnly } from '$lib/objectPermissions'
@@ -691,6 +692,16 @@ export async function objectParameters(data) {
             else delete mesh.userData.flowPath;
             pokeScene();
         }
+    } else if (data.parameter == 'textPath') {
+        // 64 D2: text on a path's record, normalized at the boundary; every peer lays it out
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            if (data.textPath) applyTextPathTo(mesh, data.textPath);
+            // 64-text TX5: Bake — this peer bakes its own build of the record (the mesh never travels)
+            else if (data.bake === true && mesh.userData.textPath) void import('$lib/textPathEdit.js').then((m) => m.applyRemoteBake(mesh));
+            else delete mesh.userData.textPath;
+            pokeScene();
+        }
     } else if (data.parameter == 'fluidInteraction') {
         // 36-fb F23: how a mesh meets particle fluid (absent = auto)
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
@@ -1272,6 +1283,20 @@ export function sendObject(conn, element, groupuuid, opts = {}) {
                 ...heal
             });
             sendObject(conn, element, element.uuid, opts);
+        } else if (element.userData?.textPath) {
+            // 64 TX1: a TEXT carrier travels as its RECORD — toJSON read NOW, while the park hook holds
+            // the placeholder (~3 KB). The GLTF branch below exported it in a later callback, after the
+            // park was restored: the solid's [face, side] array split into a GROUP of primitives and a
+            // late joiner got a Group the text runtime never picks up (measured: type Group, no text)
+            conn.send({
+                type: 'object',
+                element: element.toJSON(),
+                groupuuid: groupuuid,
+                pos: element.position.toArray(),
+                rot: element.rotation.toArray(),
+                scale: element.scale.toArray(),
+                ...heal
+            });
         } else if (multiMaterialSyncable(element)) {
             // A MATERIAL ARRAY cannot survive the GLTF round trip: the exporter
             // splits geometry.groups into one primitive per material and the loader

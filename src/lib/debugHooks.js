@@ -572,7 +572,14 @@ export const DEBUG_HOOKS = [
 	['mainGraph', () => import('./mainGraph.js')],
 	// 36 (U10, games-graphs): engine pieces, the behaviour runtime, authored-group sockets
 	['engines', () => import('./behaviours/engines.js')],
-	['groupReconcile', () => import('./groupReconcile.js')]
+	['groupReconcile', () => import('./groupReconcile.js')],
+	// 64 D2: text on a path (textPathDebug, setLetterOverrides)
+	['textPath', () => import('./textPathRuntime.js')],
+	['textPathEdit', () => import('./textPathEdit.js')],
+	// 64-text: fonts (bundled + Library + Google), the solid build, the export licence walk
+	['textFonts', () => import('./textFonts.js')],
+	['text3dBuild', () => import('./text3dBuild.js')],
+	['sceneLicences', () => import('./sceneLicences.js')]
 ];
 
 /** Load every row and publish `window.__stores`. @returns {Promise<Record<string, any>>} */

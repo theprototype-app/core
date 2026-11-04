@@ -44,6 +44,8 @@ export const TOOL_ANNOTATIONS = /** @type {Record<string, {title: string, read?:
 	delete_objects: { title: 'Delete objects', destructive: true },
 	clear_scene: { title: 'Clear the scene', destructive: true },
 	create_lathe: { title: 'Make a lathed shape', destructive: false },
+	create_text: { title: 'Add 3D text', destructive: false, openWorld: true },
+	list_fonts: { title: 'List fonts for 3D text', read: true },
 	create_tube: { title: 'Make a tube along a path', destructive: false },
 	extrude_shape: { title: 'Extrude an outline', destructive: false },
 	create_mesh: { title: 'Make a mesh from data', destructive: false },
@@ -254,14 +256,14 @@ export const CONNECTOR_FAMILIES = Object.freeze({
 	create_shape: {
 		title: 'Make a shape',
 		summary:
-			'Make shapes the basic objects cannot: a lathe (a vase, a bowl, a lamp from a profile turned around an axis), a tube along a path (a rail, a pipe, a cable), an extruded outline (a sign, a star, a wall with a hole), or a mesh from your own vertices (anything else).',
-		actions: { lathe: 'create_lathe', tube: 'create_tube', extrude: 'extrude_shape', mesh: 'create_mesh' },
+			'Make shapes the basic objects cannot: a lathe (a vase, a bowl, a lamp from a profile turned around an axis), a tube along a path (a rail, a pipe, a cable), an extruded outline (a sign, a star, a wall with a hole), a mesh from your own vertices (anything else), or text = 3D words (a sign, a title: flat, or solid with depth and a bevel; any bundled or Google Fonts font).',
+		actions: { lathe: 'create_lathe', tube: 'create_tube', extrude: 'extrude_shape', mesh: 'create_mesh', text: 'create_text' },
 		batch: { key: 'shapes', tool: 'create_shapes' }
 	},
 	edit_shape: {
 		title: 'Reshape or model objects',
 		summary:
-			'Change the shape of objects that exist: params = new size / segments / type in place, mesh = model faces and vertices (extrude, inset, bevel, subdivide, weld, smooth, dissolve, make a face), update = new vertices / faces for a mesh made from data (replace it, or patch a range), pivot = the point an object turns about, pivot_group = a group at a joint so several parts swing together.',
+			'Change the shape of objects that exist: params = new size / segments / type in place (on a 3D text: its words, font, size, depth, bevel, align, wrap width, anchor, colours), mesh = model faces and vertices (extrude, inset, bevel, subdivide, weld, smooth, dissolve, make a face), update = new vertices / faces for a mesh made from data (replace it, or patch a range), pivot = the point an object turns about, pivot_group = a group at a joint so several parts swing together.',
 		actions: { params: 'set_geometry', mesh: 'edit_mesh', update: 'update_mesh', pivot: 'set_pivot', pivot_group: 'create_pivot' }
 	},
 	set_look: {
@@ -297,8 +299,8 @@ export const CONNECTOR_FAMILIES = Object.freeze({
 	assets: {
 		title: 'Images and assets',
 		summary:
-			'Assets to build with: search = find models, prefabs, sounds, images, CC0 materials and HDRIs by words (library, packs, Poly Haven); place = put a found model or prefab into the scene; prefab = keep objects as a reusable prefab, or place copies of one; image = put an image into the library (an https URL, base64 data, or a canvas you describe) and get its hash for textures.',
-		actions: { search: 'search_assets', place: 'place_asset', prefab: 'prefab', image: 'add_image' }
+			'Assets to build with: search = find models, prefabs, sounds, images, CC0 materials and HDRIs by words (library, packs, Poly Haven); place = put a found model or prefab into the scene; prefab = keep objects as a reusable prefab, or place copies of one; image = put an image into the library (an https URL, base64 data, or a canvas you describe) and get its hash for textures; fonts = the fonts 3D text can use (bundled, the library\'s, the scene\'s).',
+		actions: { search: 'search_assets', place: 'place_asset', prefab: 'prefab', image: 'add_image', fonts: 'list_fonts' }
 	},
 	// 85b (1.60, the tool budget's effects row)
 	effects: {

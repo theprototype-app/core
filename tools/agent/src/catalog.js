@@ -91,7 +91,12 @@ export const TOOL_ANNOTATIONS = /** @type {Record<string, {title: string, read?:
 	water: { title: 'Add or change water', destructive: true },
 	place_sound: { title: 'Place a sound', destructive: false, openWorld: true },
 	set_music: { title: 'Set the background music', destructive: true, openWorld: true },
-	update_mesh: { title: 'Change a mesh made from data', destructive: true }
+	update_mesh: { title: 'Change a mesh made from data', destructive: true },
+	// 85b R1-R4
+	inspect_runtime: { title: 'See what the game is doing', read: true },
+	validate_scene: { title: 'Check the game for problems', read: true },
+	logs: { title: 'Read the recent log', read: true },
+	playtest: { title: 'Play the game as a test player', destructive: false }
 });
 
 /** a title from a tool name: `create_objects` → `Create objects` @param {string} name */
@@ -144,7 +149,7 @@ export const GUIDANCE = [
 	},
 	{ line: 'Call list_scene before editing so you use real uuids; batch many objects into one call.', on: ['list_scene', 'create_objects', 'update_objects'] },
 	{
-		line: 'For "in front of me", "here" or "this", call where_are_users and build at the spots it gives, facing the person.',
+		line: 'For "in front of me", call where_are_users and build at the spots it gives, facing the person (face_user: true). For "here" or "this", build at the person\'s latest ping: at: {ping: "latest"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.',
 		on: ['where_are_users', 'create_objects']
 	},
 	{ line: 'For "give me a flashlight" or another prop, make the object, then attach_to_user to the person who asked.', on: ['attach_to_user'] },
@@ -280,6 +285,14 @@ export const CONNECTOR_FAMILIES = Object.freeze({
 			light: 'set_light',
 			environment: 'get_environment'
 		}
+	},
+	// 85b R1-R4 (lane 85-runtime): playtest is agent-page only (B4b), so the connector's `run` has no playtest;
+	// play / stop stay control_simulation's (K1: start Play only when the person asks)
+	run: {
+		title: 'See and check what the game does',
+		summary:
+			"What the game does when it runs: inspect = when each event and action last fired, the game state and variables, errors, and why a node did not fire (pass node or object); validate = what would not work when someone presses Play, each with its fix; logs = the tab's recent errors, warnings and toasts.",
+		actions: { inspect: 'inspect_runtime', validate: 'validate_scene', logs: 'logs' }
 	},
 	assets: {
 		title: 'Images and assets',

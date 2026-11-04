@@ -24,6 +24,7 @@
 // The one import: the material parameter rules, itself a zero-import leaf (shared with the setter and
 // the AI tools, so the three cannot disagree about what a material key takes).
 import { checkMaterialParam, isMapSlotKey, isMapSlotImage, normalizeTexTransform } from './materialParamRules.js';
+import { isPingMessage } from './pingCore.js';
 
 /** @param {unknown} v */
 export function isUuid(v) {
@@ -171,6 +172,8 @@ const shortStr = (v) => typeof v === 'string' && v.length > 0 && v.length <= 128
  */
 export const VALIDATORS = {
 	hosts: (d) => isArray(d.hosts),
+	// 85b S2: a ping — the 87 marker fields plus the optional object-local `on` (pingCore)
+	ping: (d) => isPingMessage(d),
 	// 37 R15: a chat history reply — a bounded list (each entry is checked again on merge)
 	chathistory: (d) => isArray(d.messages) && d.messages.length <= 500,
 	// 48 S2: a sequence document (normalized again on apply) / its delete / the full map

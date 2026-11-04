@@ -2401,11 +2401,24 @@ function targetUuidOf(edge) {
 	return selected;
 }
 
+/** 85b R10: the effect nodes that may name their object directly (`data.target`, an object uuid) — a
+ * button drives a door with no Object Selector chain. Absent / '' = the old rules, byte-identical. */
+export const DIRECT_TARGET_TYPES = new Set(['setcolor', 'visibility', 'spin']);
+/** @param {any} node @returns {string | null} */
+function directTargetOf(node) {
+	if (!DIRECT_TARGET_TYPES.has(node?.type)) return null;
+	const t = node.data?.target;
+	if (typeof t !== 'string' || !t || t === '-None-' || muted.includes(t)) return null;
+	return t;
+}
+
 // H1: inside an OBJECT graph, an effect/source node that is NOT wired into any
 // objectselector implicitly targets the graph's owner object. Explicit selector
 // wiring always wins (lets an object graph drive other objects too).
 /** @param {any} node @returns {string | null} the owner uuid or null */
 function implicitOwnerOf(node) {
+	// 85b R10: a Set Color / Visibility / Spin naming its own target drives THAT object, not the owner
+	if (directTargetOf(node)) return null;
 	const graph = node.__graph;
 	if (!graph || graph === SCENE_GRAPH) return null;
 	if (muted.includes(graph)) return null;
@@ -4840,7 +4853,7 @@ function runTick(now) {
 		// H1: object-graph effects with no explicit selector target their owner
 		nodes.forEach((node) => {
 			if (!isEffectNode(node)) return;
-			const uuid = implicitOwnerOf(node);
+			const uuid = directTargetOf(node) ?? implicitOwnerOf(node); // 85b R10: a named target first
 			if (!uuid) return;
 			if (!active.has(uuid)) active.set(uuid, []);
 			if (!active.get(uuid).includes(node)) active.get(uuid).push(node);

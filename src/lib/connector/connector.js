@@ -134,7 +134,7 @@ function setup() {
 		joinSession: (args, ctx) => joinSession(args, ctx),
 		lastJoinResult: () => lastJoinResult(),
 		// 86-fix: where the people are (85 S1), and who "you" are — the person this tab belongs to
-		whereAreUsers: () => whereAreUsers(),
+		whereAreUsers: (/** @type {any} */ a) => whereAreUsers(a),
 		toolCode: { animate_parts: () => import('$lib/tpanim/animateParts.js') },
 		you: () => youOf(agent.status()),
 		onCallStart: () => view({ busy: dispatcher?.inFlight() ?? 0 }),

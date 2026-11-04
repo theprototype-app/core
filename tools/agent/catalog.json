@@ -3,10 +3,10 @@
 	"format": 2,
 	"generator": {
 		"source": "tpAgent.tools() via core scripts/agent-tool-catalog.cjs, mapped by tools/agent/src/catalog.js",
-		"hostTools": 65,
+		"hostTools": 69,
 		"dropped": []
 	},
-	"instructions": "You are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", \"here\" or \"this\", call where_are_users and build at the spots it gives, facing the person.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.\nWhen asked what you can do here, call what_can_you_do and say its \"say\" line.",
+	"instructions": "You are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.\nWhen asked what you can do here, call what_can_you_do and say its \"say\" line.",
 	"connectorExcluded": [
 		"accept_offer",
 		"connect",
@@ -14,7 +14,8 @@
 		"import_model",
 		"install_modules",
 		"leave",
-		"pending_offers"
+		"pending_offers",
+		"playtest"
 	],
 	"tools": [
 		{
@@ -63,6 +64,38 @@
 							"position",
 							"radius"
 						]
+					},
+					"bounds": {
+						"type": "object",
+						"description": "optional: only objects whose WORLD position is inside this box",
+						"properties": {
+							"min": {
+								"type": "array",
+								"items": {
+									"type": "number"
+								},
+								"description": "[x, y, z]"
+							},
+							"max": {
+								"type": "array",
+								"items": {
+									"type": "number"
+								},
+								"description": "[x, y, z]"
+							}
+						},
+						"required": [
+							"min",
+							"max"
+						]
+					},
+					"limit": {
+						"type": "number",
+						"description": "optional: objects per page (1-500); the reply has nextCursor when more match"
+					},
+					"cursor": {
+						"type": "string",
+						"description": "optional: the nextCursor of the previous page"
 					}
 				}
 			},
@@ -75,7 +108,7 @@
 		{
 			"name": "create_objects",
 			"title": "Add objects",
-			"description": "Create one or more primitives, lights or empty groups in a single call. Ground is the y=0 plane; place objects so they rest ON it (a box of height h sits at y=h/2). Returns the new uuids. To copy an existing object instead (a row of fence posts, a ring of chairs), pass from: its uuid, count, offset [x,y,z] between one copy and the next, and optionally randomRot / randomScale with a seed: deep copies (children, materials, flows), one undo step, uuids in order, in the source's own group. lookAt turns an object so its local +Z axis (its front) faces a point or another object, +Y kept up.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", \"here\" or \"this\", call where_are_users and build at the spots it gives, facing the person.\nTake a screenshot after each change to check your work.",
+			"description": "Create one or more primitives, lights or empty groups in a single call. Ground is the y=0 plane; place objects so they rest ON it (a box of height h sits at y=h/2). Returns the new uuids. To copy an existing object instead (a row of fence posts, a ring of chairs), pass from: its uuid, count, offset [x,y,z] between one copy and the next, and optionally randomRot / randomScale with a seed: deep copies (children, materials, flows), one undo step, uuids in order, in the source's own group. lookAt turns an object so its local +Z axis (its front) faces a point or another object, +Y kept up.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -253,6 +286,44 @@
 								"lookAt": {
 									"description": "turn it so its local +Z (front) faces this: a world point [x,y,z] or another object's uuid (+Y stays up; lights use aim)"
 								},
+								"at": {
+									"type": "object",
+									"description": "build at a spot a person PINGED (Ctrl+Alt+click, the menu's Ping, a long-press menu, the VR stick click): {ping: id} from where_are_users {pings: true}, or {ping: \"latest\"} = \"here\"; on a floor or table top it stands on it, and the ping follows the object it landed on. Or around a PERSON as they are now: {user: \"me\" | peer id | name, ahead: 1.5, right: 0, up: 0} (metres or body units; it faces them; call again to follow them as they walk). Sizes, positions and these offsets also take BODY UNITS: \"eye\", \"height\", \"shoulder\", \"hip\", \"knee\", \"reach\", \"room\", with a factor (\"0.5 reach\") — that person's, from where_are_users body",
+									"properties": {
+										"ping": {
+											"type": "string"
+										},
+										"user": {
+											"type": "string"
+										},
+										"ahead": {
+											"description": "metres in front of them (at least 0.6), or a body unit"
+										},
+										"right": {
+											"description": "metres to their right (negative = left), or a body unit"
+										},
+										"up": {
+											"description": "metres above their floor, or a body unit"
+										}
+									}
+								},
+								"align": {
+									"type": "string",
+									"enum": [
+										"surface"
+									],
+									"description": "with at: back it onto the pinged surface (its +Z along the surface normal, upright on a wall) — a painting on a wall"
+								},
+								"snap": {
+									"type": "string",
+									"enum": [
+										"floor"
+									],
+									"description": "stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground"
+								},
+								"face_user": {
+									"description": "turn it (yaw only) so its +Z front faces a person: true = the person you act for, or a peer id / name from where_are_users"
+								},
 								"parentUuid": {
 									"type": "string",
 									"description": "uuid of an existing group to nest under — position/rotation/scale are then LOCAL to that group"
@@ -399,6 +470,44 @@
 								},
 								"lookAt": {
 									"description": "turn it so its local +Z (front) faces this: a world point [x,y,z] or another object's uuid (+Y stays up; lights use aim)"
+								},
+								"at": {
+									"type": "object",
+									"description": "build at a spot a person PINGED (Ctrl+Alt+click, the menu's Ping, a long-press menu, the VR stick click): {ping: id} from where_are_users {pings: true}, or {ping: \"latest\"} = \"here\"; on a floor or table top it stands on it, and the ping follows the object it landed on. Or around a PERSON as they are now: {user: \"me\" | peer id | name, ahead: 1.5, right: 0, up: 0} (metres or body units; it faces them; call again to follow them as they walk). Sizes, positions and these offsets also take BODY UNITS: \"eye\", \"height\", \"shoulder\", \"hip\", \"knee\", \"reach\", \"room\", with a factor (\"0.5 reach\") — that person's, from where_are_users body",
+									"properties": {
+										"ping": {
+											"type": "string"
+										},
+										"user": {
+											"type": "string"
+										},
+										"ahead": {
+											"description": "metres in front of them (at least 0.6), or a body unit"
+										},
+										"right": {
+											"description": "metres to their right (negative = left), or a body unit"
+										},
+										"up": {
+											"description": "metres above their floor, or a body unit"
+										}
+									}
+								},
+								"align": {
+									"type": "string",
+									"enum": [
+										"surface"
+									],
+									"description": "with at: back it onto the pinged surface (its +Z along the surface normal, upright on a wall) — a painting on a wall"
+								},
+								"snap": {
+									"type": "string",
+									"enum": [
+										"floor"
+									],
+									"description": "stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground"
+								},
+								"face_user": {
+									"description": "turn it (yaw only) so its +Z front faces a person: true = the person you act for, or a peer id / name from where_are_users"
 								},
 								"visible": {
 									"type": "boolean"
@@ -3461,7 +3570,7 @@
 		{
 			"name": "undo_last",
 			"title": "Undo your last change",
-			"description": "Take back your own last tool call (count for several, newest first). Use it whenever the person says \"undo that\" or \"take that back\": they may be talking and cannot see each call. Only ever undoes YOUR calls. If someone has since changed the same objects it refuses and lists them, and nothing changes: tell the person who changed what.\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nTake a screenshot after each change to check your work.",
+			"description": "Take back your own last tool call (count for several, newest first). Use it whenever the person says \"undo that\" or \"take that back\": they may be talking and cannot see each call. Only ever undoes YOUR calls. If someone has since changed the same objects it refuses and lists them, and nothing changes: tell the person who changed what. Before a big change, save a checkpoint ({checkpoint: \"before the roof\"}); {restore: \"before the roof\"} goes back to it (up to 10 names).\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -3470,6 +3579,28 @@
 						"minimum": 1,
 						"maximum": 20,
 						"description": "how many of your calls to take back (default 1)"
+					},
+					"checkpoint": {
+						"type": "string",
+						"maxLength": 40,
+						"description": "save this moment under a name (\"before the roof\") to come back to; nothing is undone"
+					},
+					"restore": {
+						"type": "string",
+						"maxLength": 40,
+						"description": "go back to a checkpoint you saved: takes back every one of your calls since it, in one call. With other people here the host is asked first (needsConfirm, then call again with confirmId)"
+					},
+					"checkpoints": {
+						"type": "boolean",
+						"description": "true = list your checkpoints"
+					},
+					"confirmId": {
+						"type": "string",
+						"description": "with restore: the confirmId a needsConfirm answer gave"
+					},
+					"wait": {
+						"type": "number",
+						"description": "with confirmId: seconds to wait for the host's answer (at most 60)"
 					}
 				}
 			},
@@ -3707,6 +3838,162 @@
 				"readOnlyHint": false,
 				"destructiveHint": false,
 				"openWorldHint": true
+			}
+		},
+		{
+			"name": "inspect_runtime",
+			"title": "See what the game is doing",
+			"description": "Read what the game is doing right now, without changing anything: when each event and action node last fired, the game state and variables, who runs the physics and the game rules, behaviour and script errors, and what the HUD shows. Pass node (a flow node id) or object (a uuid) to ask \"why didn't it fire?\": it names the missing link (no source upstream, a selector wired the wrong way, nothing clicked it yet). Action nodes run only when an upstream source fires; firing one directly does nothing.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"node": {
+						"type": "string",
+						"description": "a flow node id: explain this node"
+					},
+					"object": {
+						"type": "string",
+						"description": "an object uuid: its nodes and why they did or did not fire"
+					},
+					"limit": {
+						"type": "integer",
+						"minimum": 1,
+						"maximum": 80,
+						"description": "overview: how many nodes (default 40)"
+					}
+				}
+			},
+			"annotations": {
+				"title": "See what the game is doing",
+				"readOnlyHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "validate_scene",
+			"title": "Check the game for problems",
+			"description": "Check the scene for what would not work when someone presses Play: actions nothing fires, an Object Selector wired the wrong way round, a scene-graph On Click that reaches no object, Game Start wired as an event, HUD nodes pointing at elements that do not exist, walk mode with no spawn, a scene with no light, behaviour code problems. Each issue says what to fix. Run it after building a game, then playtest.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {}
+			},
+			"annotations": {
+				"title": "Check the game for problems",
+				"readOnlyHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "logs",
+			"title": "Read the recent log",
+			"description": "The page's recent log: errors, warnings, console lines and the toasts people saw, oldest first. Pass since (the \"now\" of the previous answer) for only what is new. status shows the newest few.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"since": {
+						"type": "number",
+						"description": "only lines after this time (ms since 1970, the \"now\" a previous logs answer gave)"
+					},
+					"level": {
+						"type": "string",
+						"enum": [
+							"debug",
+							"info",
+							"warn",
+							"error"
+						],
+						"description": "the lowest level to include (default info)"
+					},
+					"limit": {
+						"type": "integer",
+						"minimum": 1,
+						"maximum": 100,
+						"description": "most lines (default 40)"
+					}
+				}
+			},
+			"annotations": {
+				"title": "Read the recent log",
+				"readOnlyHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "playtest",
+			"title": "Play the game as a test player",
+			"description": "Play the game as a virtual player in YOUR OWN Play (agent page only; it never moves a person): walk a path, look at a point, click or grab an object, press a key or a HUD button, wait. Then it reports which nodes fired, the game state before and after, what the HUD shows and any errors. It fires SOURCES the way a player does (a click reaches On Click nodes); a step on an action node does nothing. Walk points are on the floor; your eye is 1.6 m above them. Clicks and pickups count for real in the shared game, like a person playing.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"steps": {
+						"type": "array",
+						"maxItems": 40,
+						"description": "in order, each ONE of: {walk: [[x,y,z], …], speed?} · {look: [x,y,z]} · {click: uuid} · {grab: uuid} · {key: \"KeyE\", hold?} · {hud: elementId} · {wait: seconds}",
+						"items": {
+							"type": "object",
+							"properties": {
+								"walk": {
+									"type": "array",
+									"items": {
+										"type": "array",
+										"items": {
+											"type": "number"
+										}
+									},
+									"description": "floor points to walk through"
+								},
+								"speed": {
+									"type": "number",
+									"description": "walking speed m/s (default 3)"
+								},
+								"look": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"description": "[x,y,z] to face"
+								},
+								"click": {
+									"type": "string",
+									"description": "object uuid"
+								},
+								"grab": {
+									"type": "string",
+									"description": "object uuid"
+								},
+								"key": {
+									"type": "string",
+									"description": "a key code: KeyE, Space, ArrowUp …"
+								},
+								"hold": {
+									"type": "number",
+									"description": "seconds to hold the key (default 0.2)"
+								},
+								"hud": {
+									"type": "string",
+									"description": "a HUD button element id"
+								},
+								"wait": {
+									"type": "number",
+									"description": "seconds"
+								}
+							}
+						}
+					},
+					"stayInPlay": {
+						"type": "boolean",
+						"description": "keep this page in Play afterwards (default: leave Play if the playtest entered it)"
+					}
+				},
+				"required": [
+					"steps"
+				]
+			},
+			"annotations": {
+				"title": "Play the game as a test player",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"openWorldHint": false
 			}
 		},
 		{
@@ -4669,10 +4956,15 @@
 		{
 			"name": "where_are_users",
 			"title": "Where the people are",
-			"description": "Where each person in the session is and which way they look (their desktop camera, or the VR headset): position, facing as a compass yaw plus forward and right vectors, the floor under them, and ready-made spots 1.5 m and 3 m in front of them at floor level. The entry with \"you\": true is the person you act as. Use it for \"in front of me\", \"around me\", \"behind me\", \"to my left\".\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nFor \"in front of me\", \"here\" or \"this\", call where_are_users and build at the spots it gives, facing the person.",
+			"description": "Where each person in the session is and which way they look (their desktop camera, or the VR headset): position, facing as a compass yaw plus forward and right vectors, the floor under them, and ready-made spots 1.5 m and 3 m in front of them at floor level. The entry with \"you\": true is the person you act as. Use it for \"in front of me\", \"around me\", \"behind me\", \"to my left\". A person can PING a spot (Ctrl+Alt+click, Ping in a menu, the VR stick click): each row carries their latestPing, and pings: true lists the recent ones (2 minutes). For \"put it here\", build with create_objects / update_objects at: {ping: \"latest\"} (align: \"surface\" for a wall). Each row also has body (eye, height, shoulder, hip, knee, reach, room — \"a table at hip height\") and, in VR, hands (left, right, apart — \"as wide as my hands\"). Nothing you make may appear inside a person in VR (0.45 m around the head, through the body): that call is refused and says so.\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.",
 			"inputSchema": {
 				"type": "object",
-				"properties": {}
+				"properties": {
+					"pings": {
+						"type": "boolean",
+						"description": "also list the recent pings (85b S2): id, who, how long ago, position, surface normal, the object it is on"
+					}
+				}
 			},
 			"annotations": {
 				"title": "Where the people are",
@@ -4682,7 +4974,7 @@
 		}
 	],
 	"connector": {
-		"instructions": "You are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", \"here\" or \"this\", call where_are_users and build at the spots it gives, facing the person.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.\nWhen asked what you can do here, call what_can_you_do and say its \"say\" line.",
+		"instructions": "You are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.\nWhen asked what you can do here, call what_can_you_do and say its \"say\" line.",
 		"families": {
 			"create_shape": {
 				"lathe": "create_lathe",
@@ -4714,6 +5006,11 @@
 				"sky": "set_sky",
 				"light": "set_light",
 				"environment": "get_environment"
+			},
+			"run": {
+				"inspect": "inspect_runtime",
+				"validate": "validate_scene",
+				"logs": "logs"
 			},
 			"assets": {
 				"search": "search_assets",
@@ -4787,6 +5084,38 @@
 								"position",
 								"radius"
 							]
+						},
+						"bounds": {
+							"type": "object",
+							"description": "optional: only objects whose WORLD position is inside this box",
+							"properties": {
+								"min": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"description": "[x, y, z]"
+								},
+								"max": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"description": "[x, y, z]"
+								}
+							},
+							"required": [
+								"min",
+								"max"
+							]
+						},
+						"limit": {
+							"type": "number",
+							"description": "optional: objects per page (1-500); the reply has nextCursor when more match"
+						},
+						"cursor": {
+							"type": "string",
+							"description": "optional: the nextCursor of the previous page"
 						}
 					}
 				},
@@ -4799,7 +5128,7 @@
 			{
 				"name": "create_objects",
 				"title": "Add objects",
-				"description": "Create one or more primitives, lights or empty groups in a single call. Ground is the y=0 plane; place objects so they rest ON it (a box of height h sits at y=h/2). Returns the new uuids. To copy an existing object instead (a row of fence posts, a ring of chairs), pass from: its uuid, count, offset [x,y,z] between one copy and the next, and optionally randomRot / randomScale with a seed: deep copies (children, materials, flows), one undo step, uuids in order, in the source's own group. lookAt turns an object so its local +Z axis (its front) faces a point or another object, +Y kept up.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", \"here\" or \"this\", call where_are_users and build at the spots it gives, facing the person.\nTake a screenshot after each change to check your work.",
+				"description": "Create one or more primitives, lights or empty groups in a single call. Ground is the y=0 plane; place objects so they rest ON it (a box of height h sits at y=h/2). Returns the new uuids. To copy an existing object instead (a row of fence posts, a ring of chairs), pass from: its uuid, count, offset [x,y,z] between one copy and the next, and optionally randomRot / randomScale with a seed: deep copies (children, materials, flows), one undo step, uuids in order, in the source's own group. lookAt turns an object so its local +Z axis (its front) faces a point or another object, +Y kept up.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -4977,6 +5306,44 @@
 									"lookAt": {
 										"description": "turn it so its local +Z (front) faces this: a world point [x,y,z] or another object's uuid (+Y stays up; lights use aim)"
 									},
+									"at": {
+										"type": "object",
+										"description": "build at a spot a person PINGED (Ctrl+Alt+click, the menu's Ping, a long-press menu, the VR stick click): {ping: id} from where_are_users {pings: true}, or {ping: \"latest\"} = \"here\"; on a floor or table top it stands on it, and the ping follows the object it landed on. Or around a PERSON as they are now: {user: \"me\" | peer id | name, ahead: 1.5, right: 0, up: 0} (metres or body units; it faces them; call again to follow them as they walk). Sizes, positions and these offsets also take BODY UNITS: \"eye\", \"height\", \"shoulder\", \"hip\", \"knee\", \"reach\", \"room\", with a factor (\"0.5 reach\") — that person's, from where_are_users body",
+										"properties": {
+											"ping": {
+												"type": "string"
+											},
+											"user": {
+												"type": "string"
+											},
+											"ahead": {
+												"description": "metres in front of them (at least 0.6), or a body unit"
+											},
+											"right": {
+												"description": "metres to their right (negative = left), or a body unit"
+											},
+											"up": {
+												"description": "metres above their floor, or a body unit"
+											}
+										}
+									},
+									"align": {
+										"type": "string",
+										"enum": [
+											"surface"
+										],
+										"description": "with at: back it onto the pinged surface (its +Z along the surface normal, upright on a wall) — a painting on a wall"
+									},
+									"snap": {
+										"type": "string",
+										"enum": [
+											"floor"
+										],
+										"description": "stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground"
+									},
+									"face_user": {
+										"description": "turn it (yaw only) so its +Z front faces a person: true = the person you act for, or a peer id / name from where_are_users"
+									},
 									"parentUuid": {
 										"type": "string",
 										"description": "uuid of an existing group to nest under — position/rotation/scale are then LOCAL to that group"
@@ -5123,6 +5490,44 @@
 									},
 									"lookAt": {
 										"description": "turn it so its local +Z (front) faces this: a world point [x,y,z] or another object's uuid (+Y stays up; lights use aim)"
+									},
+									"at": {
+										"type": "object",
+										"description": "build at a spot a person PINGED (Ctrl+Alt+click, the menu's Ping, a long-press menu, the VR stick click): {ping: id} from where_are_users {pings: true}, or {ping: \"latest\"} = \"here\"; on a floor or table top it stands on it, and the ping follows the object it landed on. Or around a PERSON as they are now: {user: \"me\" | peer id | name, ahead: 1.5, right: 0, up: 0} (metres or body units; it faces them; call again to follow them as they walk). Sizes, positions and these offsets also take BODY UNITS: \"eye\", \"height\", \"shoulder\", \"hip\", \"knee\", \"reach\", \"room\", with a factor (\"0.5 reach\") — that person's, from where_are_users body",
+										"properties": {
+											"ping": {
+												"type": "string"
+											},
+											"user": {
+												"type": "string"
+											},
+											"ahead": {
+												"description": "metres in front of them (at least 0.6), or a body unit"
+											},
+											"right": {
+												"description": "metres to their right (negative = left), or a body unit"
+											},
+											"up": {
+												"description": "metres above their floor, or a body unit"
+											}
+										}
+									},
+									"align": {
+										"type": "string",
+										"enum": [
+											"surface"
+										],
+										"description": "with at: back it onto the pinged surface (its +Z along the surface normal, upright on a wall) — a painting on a wall"
+									},
+									"snap": {
+										"type": "string",
+										"enum": [
+											"floor"
+										],
+										"description": "stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground"
+									},
+									"face_user": {
+										"description": "turn it (yaw only) so its +Z front faces a person: true = the person you act for, or a peer id / name from where_are_users"
 									},
 									"visible": {
 										"type": "boolean"
@@ -7084,6 +7489,85 @@
 				}
 			},
 			{
+				"name": "run",
+				"title": "See and check what the game does",
+				"description": "What the game does when it runs: inspect = when each event and action last fired, the game state and variables, errors, and why a node did not fire (pass node or object); validate = what would not work when someone presses Play, each with its fix; logs = the tab's recent errors, warnings and toasts.\nCall it as {\"action\": \"inspect\", \"inspect\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
+				"inputSchema": {
+					"type": "object",
+					"properties": {
+						"action": {
+							"type": "string",
+							"enum": [
+								"inspect",
+								"validate",
+								"logs"
+							],
+							"description": "What to do. Put its fields in the object named after the action."
+						},
+						"inspect": {
+							"type": "object",
+							"properties": {
+								"node": {
+									"type": "string",
+									"description": "a flow node id: explain this node"
+								},
+								"object": {
+									"type": "string",
+									"description": "an object uuid: its nodes and why they did or did not fire"
+								},
+								"limit": {
+									"type": "integer",
+									"minimum": 1,
+									"maximum": 80,
+									"description": "overview: how many nodes (default 40)"
+								}
+							},
+							"description": "Read what the game is doing right now, without changing anything: when each event and action node last fired, the game state and variables, who runs the physics and the game rules, behaviour and script errors, and what the HUD shows. Pass node (a flow node id) or object (a uuid) to ask \"why didn't it fire?\": it names the missing link (no source upstream, a selector wired the wrong way, nothing clicked it yet). Action nodes run only when an upstream source fires; firing one directly does nothing."
+						},
+						"validate": {
+							"type": "object",
+							"properties": {},
+							"description": "Check the scene for what would not work when someone presses Play: actions nothing fires, an Object Selector wired the wrong way round, a scene-graph On Click that reaches no object, Game Start wired as an event, HUD nodes pointing at elements that do not exist, walk mode with no spawn, a scene with no light, behaviour code problems. Each issue says what to fix. Run it after building a game, then playtest."
+						},
+						"logs": {
+							"type": "object",
+							"properties": {
+								"since": {
+									"type": "number",
+									"description": "only lines after this time (ms since 1970, the \"now\" a previous logs answer gave)"
+								},
+								"level": {
+									"type": "string",
+									"enum": [
+										"debug",
+										"info",
+										"warn",
+										"error"
+									],
+									"description": "the lowest level to include (default info)"
+								},
+								"limit": {
+									"type": "integer",
+									"minimum": 1,
+									"maximum": 100,
+									"description": "most lines (default 40)"
+								}
+							},
+							"description": "The page's recent log: errors, warnings, console lines and the toasts people saw, oldest first. Pass since (the \"now\" of the previous answer) for only what is new. status shows the newest few."
+						}
+					},
+					"required": [
+						"action"
+					]
+				},
+				"annotations": {
+					"title": "See and check what the game does",
+					"readOnlyHint": false,
+					"destructiveHint": false,
+					"openWorldHint": false
+				}
+			},
+			{
 				"name": "assets",
 				"title": "Images and assets",
 				"description": "Assets to build with: search = find models, prefabs, sounds, images, CC0 materials and HDRIs by words (library, packs, Poly Haven); place = put a found model or prefab into the scene; prefab = keep objects as a reusable prefab, or place copies of one; image = put an image into the library (an https URL, base64 data, or a canvas you describe) and get its hash for textures.\nCall it as {\"action\": \"search\", \"search\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
@@ -8215,7 +8699,7 @@
 			{
 				"name": "undo_last",
 				"title": "Undo your last change",
-				"description": "Take back your own last tool call (count for several, newest first). Use it whenever the person says \"undo that\" or \"take that back\": they may be talking and cannot see each call. Only ever undoes YOUR calls. If someone has since changed the same objects it refuses and lists them, and nothing changes: tell the person who changed what.\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nTake a screenshot after each change to check your work.",
+				"description": "Take back your own last tool call (count for several, newest first). Use it whenever the person says \"undo that\" or \"take that back\": they may be talking and cannot see each call. Only ever undoes YOUR calls. If someone has since changed the same objects it refuses and lists them, and nothing changes: tell the person who changed what. Before a big change, save a checkpoint ({checkpoint: \"before the roof\"}); {restore: \"before the roof\"} goes back to it (up to 10 names).\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -8224,6 +8708,28 @@
 							"minimum": 1,
 							"maximum": 20,
 							"description": "how many of your calls to take back (default 1)"
+						},
+						"checkpoint": {
+							"type": "string",
+							"maxLength": 40,
+							"description": "save this moment under a name (\"before the roof\") to come back to; nothing is undone"
+						},
+						"restore": {
+							"type": "string",
+							"maxLength": 40,
+							"description": "go back to a checkpoint you saved: takes back every one of your calls since it, in one call. With other people here the host is asked first (needsConfirm, then call again with confirmId)"
+						},
+						"checkpoints": {
+							"type": "boolean",
+							"description": "true = list your checkpoints"
+						},
+						"confirmId": {
+							"type": "string",
+							"description": "with restore: the confirmId a needsConfirm answer gave"
+						},
+						"wait": {
+							"type": "number",
+							"description": "with confirmId: seconds to wait for the host's answer (at most 60)"
 						}
 					}
 				},
@@ -8231,6 +8737,84 @@
 					"title": "Undo your last change",
 					"readOnlyHint": false,
 					"destructiveHint": true,
+					"openWorldHint": false
+				}
+			},
+			{
+				"name": "playtest",
+				"title": "Play the game as a test player",
+				"description": "Play the game as a virtual player in YOUR OWN Play (agent page only; it never moves a person): walk a path, look at a point, click or grab an object, press a key or a HUD button, wait. Then it reports which nodes fired, the game state before and after, what the HUD shows and any errors. It fires SOURCES the way a player does (a click reaches On Click nodes); a step on an action node does nothing. Walk points are on the floor; your eye is 1.6 m above them. Clicks and pickups count for real in the shared game, like a person playing.\nTake a screenshot after each change to check your work.",
+				"inputSchema": {
+					"type": "object",
+					"properties": {
+						"steps": {
+							"type": "array",
+							"maxItems": 40,
+							"description": "in order, each ONE of: {walk: [[x,y,z], …], speed?} · {look: [x,y,z]} · {click: uuid} · {grab: uuid} · {key: \"KeyE\", hold?} · {hud: elementId} · {wait: seconds}",
+							"items": {
+								"type": "object",
+								"properties": {
+									"walk": {
+										"type": "array",
+										"items": {
+											"type": "array",
+											"items": {
+												"type": "number"
+											}
+										},
+										"description": "floor points to walk through"
+									},
+									"speed": {
+										"type": "number",
+										"description": "walking speed m/s (default 3)"
+									},
+									"look": {
+										"type": "array",
+										"items": {
+											"type": "number"
+										},
+										"description": "[x,y,z] to face"
+									},
+									"click": {
+										"type": "string",
+										"description": "object uuid"
+									},
+									"grab": {
+										"type": "string",
+										"description": "object uuid"
+									},
+									"key": {
+										"type": "string",
+										"description": "a key code: KeyE, Space, ArrowUp …"
+									},
+									"hold": {
+										"type": "number",
+										"description": "seconds to hold the key (default 0.2)"
+									},
+									"hud": {
+										"type": "string",
+										"description": "a HUD button element id"
+									},
+									"wait": {
+										"type": "number",
+										"description": "seconds"
+									}
+								}
+							}
+						},
+						"stayInPlay": {
+							"type": "boolean",
+							"description": "keep this page in Play afterwards (default: leave Play if the playtest entered it)"
+						}
+					},
+					"required": [
+						"steps"
+					]
+				},
+				"annotations": {
+					"title": "Play the game as a test player",
+					"readOnlyHint": false,
+					"destructiveHint": false,
 					"openWorldHint": false
 				}
 			},
@@ -9194,10 +9778,15 @@
 			{
 				"name": "where_are_users",
 				"title": "Where the people are",
-				"description": "Where each person in the session is and which way they look (their desktop camera, or the VR headset): position, facing as a compass yaw plus forward and right vectors, the floor under them, and ready-made spots 1.5 m and 3 m in front of them at floor level. The entry with \"you\": true is the person you act as. Use it for \"in front of me\", \"around me\", \"behind me\", \"to my left\".\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nFor \"in front of me\", \"here\" or \"this\", call where_are_users and build at the spots it gives, facing the person.",
+				"description": "Where each person in the session is and which way they look (their desktop camera, or the VR headset): position, facing as a compass yaw plus forward and right vectors, the floor under them, and ready-made spots 1.5 m and 3 m in front of them at floor level. The entry with \"you\": true is the person you act as. Use it for \"in front of me\", \"around me\", \"behind me\", \"to my left\". A person can PING a spot (Ctrl+Alt+click, Ping in a menu, the VR stick click): each row carries their latestPing, and pings: true lists the recent ones (2 minutes). For \"put it here\", build with create_objects / update_objects at: {ping: \"latest\"} (align: \"surface\" for a wall). Each row also has body (eye, height, shoulder, hip, knee, reach, room — \"a table at hip height\") and, in VR, hands (left, right, apart — \"as wide as my hands\"). Nothing you make may appear inside a person in VR (0.45 m around the head, through the body): that call is refused and says so.\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.",
 				"inputSchema": {
 					"type": "object",
-					"properties": {}
+					"properties": {
+						"pings": {
+							"type": "boolean",
+							"description": "also list the recent pings (85b S2): id, who, how long ago, position, surface normal, the object it is on"
+						}
+					}
 				},
 				"annotations": {
 					"title": "Where the people are",

@@ -76,7 +76,7 @@ export const BRIDGE_TOOLS = /** @type {const} */ (['status', 'screenshot', 'wait
  * Core is the source of this list: `npm run catalog:agent` writes it into the catalog, the Worker's
  * EXCLUDED_TOOLS is checked against it, and the generator fails on any tool that is in neither list.
  */
-export const CONNECTOR_BLOCKED_TOOLS = new Set(['install_modules', 'pending_offers', 'accept_offer', 'leave', 'connect', 'import_model', 'import_file']);
+export const CONNECTOR_BLOCKED_TOOLS = new Set(['install_modules', 'pending_offers', 'accept_offer', 'leave', 'connect', 'import_model', 'import_file', 'playtest']);
 
 /** the wait_for_edit cap a connector call may ask for (the bridge's own) */
 export const MAX_WAIT_MS = 120 * 1000;

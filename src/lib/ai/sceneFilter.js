@@ -34,5 +34,28 @@ export function sceneFilter(filter) {
 		// getWorldPosition updates the matrices first: an agent page draws (and so updates them) only every few seconds
 		tests.push((o) => typeof o.getWorldPosition === 'function' && o.getWorldPosition(v).distanceToSquared(centre) <= r2);
 	}
+	// 85b R7: a world-space box {min: [x,y,z], max: [x,y,z]} — the object's position inside it
+	const b = filter.bounds;
+	const box = (/** @type {any} */ p) => Array.isArray(p) && p.length === 3 && p.every((n) => Number.isFinite(Number(n)));
+	if (b && box(b.min) && box(b.max)) {
+		const lo = b.min.map(Number);
+		const hi = b.max.map(Number);
+		const v = new Vector3();
+		tests.push((o) => {
+			if (typeof o.getWorldPosition !== 'function') return false;
+			o.getWorldPosition(v);
+			return v.x >= Math.min(lo[0], hi[0]) && v.x <= Math.max(lo[0], hi[0]) && v.y >= Math.min(lo[1], hi[1]) && v.y <= Math.max(lo[1], hi[1]) && v.z >= Math.min(lo[2], hi[2]) && v.z <= Math.max(lo[2], hi[2]);
+		});
+	}
 	return tests.length ? (o) => tests.every((t) => t(o)) : null;
 }
+
+/** 85b R7: list_scene paging — a cursor is where the next page starts, among the matching objects. */
+export const PAGE_MAX = 500;
+/** @param {any} cursor @returns {number} the offset (0 = from the start; an unreadable cursor starts over) */
+export function cursorOffset(cursor) {
+	const m = typeof cursor === 'string' ? /^o(\d{1,6})$/.exec(cursor) : null;
+	return m ? Number(m[1]) : 0;
+}
+/** @param {number} offset */
+export const cursorAt = (offset) => 'o' + offset;

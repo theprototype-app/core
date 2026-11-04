@@ -779,6 +779,7 @@
 			$isVRMode = false; // back to the editor whichever way the session ended
 			resetWorldRig(); // the grabbed world snaps back to 1:1 (least surprise)
 			$peers?.send({ type: 'vrhands', peerId: $peers.peer.id, left: null, right: null, active: false });
+			import('$lib/vr/agentComfort.js').then((m) => m.stopAgentComfort()).catch(() => {}); // 85b S5
 		};
 		renderer.xr.addEventListener('sessionend', onSessionEnd);
 
@@ -795,6 +796,8 @@
 			// a session accepted AFTER the watchdog already fired still come up in VR.
 			noteXRSessionStarted();
 			$isVRMode = true;
+			// 85b S5: agent lines as headset toasts, agent-made objects fade in
+			import('$lib/vr/agentComfort.js').then((m) => m.startAgentComfort()).catch(() => {});
 		};
 		renderer.xr.addEventListener('sessionstart', onSessionStart);
 
@@ -1261,7 +1264,7 @@
 				const point = hits[0]?.point ??
 					(selectionRaycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), planePoint)
 						? planePoint : null);
-				if (point) sendPing(point);
+				if (point) sendPing(point, undefined, hits[0]); // 85b S2: the hit = what it landed on
 				return;
 			}
 			// 57.2: the spline tool places a control point per click; a second click

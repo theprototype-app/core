@@ -133,5 +133,11 @@ check('catalog.json: 85-scene adds hud + game_setup and set_look {sky, light, en
 	);
 })());
 
+// 85b (1.60): `run` joins; playtest stays agent-page only (B4b) — out of the family, left out by the Worker; no run {play, stop}
+check('catalog.json: the run family = inspect / validate / logs, playtest left out of the connector', (() => {
+	const run = committed.connector.families.run ?? {};
+	return run.inspect === 'inspect_runtime' && run.validate === 'validate_scene' && run.logs === 'logs' && !('playtest' in run) && !('play' in run) && (committed.connectorExcluded ?? []).includes('playtest');
+})());
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

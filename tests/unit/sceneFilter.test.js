@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 
-import { sceneFilter } from '../../src/lib/ai/sceneFilter.js';
+import { sceneFilter, cursorOffset, cursorAt } from '../../src/lib/ai/sceneFilter.js';
 
 /** @param {string} name @param {number[]} pos @param {string} [gtype] */
 const obj = (name, pos, gtype) => {
@@ -34,5 +34,20 @@ describe('list_scene filters (55, 1.48.1)', () => {
 		expect(sceneFilter({ near: { position: [101, 0, 0], radius: 0.5 } })?.(child)).toBe(true);
 		expect(sceneFilter({ near: { position: [1, 0, 0], radius: 0.5 } })?.(child)).toBe(false);
 		expect(sceneFilter({ near: { position: [0, 0, 0], radius: 6 }, name: 'wall' })?.(wall)).toBe(true);
+	});
+});
+
+describe('85b R7: bounds + paging cursors', () => {
+	it('bounds: world position inside the box (corners in any order)', () => {
+		const a = obj('a', [1, 1, 1]);
+		expect(sceneFilter({ bounds: { min: [0, 0, 0], max: [2, 2, 2] } })?.(a)).toBe(true);
+		expect(sceneFilter({ bounds: { min: [2, 2, 2], max: [0, 0, 0] } })?.(a)).toBe(true);
+		expect(sceneFilter({ bounds: { min: [2, 0, 0], max: [3, 2, 2] } })?.(a)).toBe(false);
+		expect(sceneFilter({ bounds: { min: [0, 0], max: [2, 2, 2] } })).toBe(null);
+	});
+	it('a cursor is an offset; junk starts over', () => {
+		expect(cursorOffset(cursorAt(40))).toBe(40);
+		expect(cursorOffset('nope')).toBe(0);
+		expect(cursorOffset(undefined)).toBe(0);
 	});
 });

@@ -17,7 +17,7 @@ import { publishAgentEntry, publishAgentUndone, setAgentUndoHandler, agentLog, a
 import { agentInbox } from './agent/agentInbox.js';
 import { peerEditLog } from './peerFacts.js';
 import { remoteSimulating } from './physics.js';
-import { pickUndoLines, entryUuids, personEntriesAbove, undoConflicts, conflictWords } from './undoLastCore.js';
+import { pickUndoLines, entryUuids, personEntriesAbove, undoConflicts, conflictWords, linesSince, CHECKPOINT_MAX } from './undoLastCore.js';
 
 /** line id -> the history entries the call recorded @type {Map<string, any[]>} */
 const historyOf = new Map();
@@ -167,6 +167,85 @@ export async function undoLastCalls(count) {
 	return { undone, count: undone.length, ...(undone.length < count ? { note: 'Only ' + undone.length + ' of yours could be undone.' } : {}) };
 }
 
+/** the conflict rows for some of this agent's lines (who changed their objects since) @param {any[]} lines @param {any[]} stack */
+function conflictsOf(lines, stack) {
+	const agentSteps = new Set([...historyOf.values()].flat());
+	const rows = lines.map((line) => {
+		const steps = /** @type {any[]} */ (historyOf.get(line.id));
+		return {
+			line,
+			uuids: steps.reduce((set, s) => entryUuids(s, set), new Set(line.uuids ?? [])),
+			local: personEntriesAbove(stack, steps, (e) => agentSteps.has(e))
+		};
+	});
+	return undoConflicts(rows, peerEditLog(), { ignoreMovesUntil: simSeenAt, nameOf, peerName: agentName });
+}
+
+// ---------------------------------------------------------------- 85b R6b named checkpoints
+
+/** name -> when it was set (ms) and how many of this agent's lines existed then @type {Map<string, {at: number}>} */
+const checkpoints = new Map();
+
+/** @returns {{name: string, at: number}[]} oldest first */
+export function listCheckpoints() {
+	return [...checkpoints].map(([name, c]) => ({ name, at: c.at }));
+}
+
+/**
+ * R6b: remember this moment by name. Re-using a name moves it here. The oldest goes past CHECKPOINT_MAX.
+ * @param {string} name @returns {Promise<any>}
+ */
+export async function saveCheckpoint(name) {
+	await Promise.all([...settling]); // the previous call's line is in the log before the mark
+	checkpoints.delete(name);
+	checkpoints.set(name, { at: Date.now() });
+	while (checkpoints.size > CHECKPOINT_MAX) checkpoints.delete(/** @type {string} */ (checkpoints.keys().next().value));
+	return { checkpoint: name, saved: true, checkpoints: listCheckpoints().map((c) => c.name) };
+}
+
+/**
+ * R6b: what going back to a checkpoint would take back, checked (nothing changes here).
+ * @param {string} name @returns {Promise<{lines: any[]} | {error: string, [k: string]: any}>}
+ */
+export async function planRestore(name) {
+	await Promise.all([...settling]);
+	const cp = checkpoints.get(name);
+	if (!cp) return { error: 'no checkpoint named "' + name + '"' + (checkpoints.size ? '; there are: ' + [...checkpoints.keys()].join(', ') : '; save one first with checkpoint') };
+	/** @type {any} */
+	const p = get(peers);
+	const me = String(p?.peer?.id || 'me').toLowerCase();
+	const stack = get(undoStack);
+	const lines = linesSince(get(agentLog), me, cp.at, (line) => historyOf.get(line.id), stack);
+	if (!lines.length) return { lines: [] };
+	const conflicts = conflictsOf(lines, stack);
+	if (conflicts.length) return { error: conflictWords(conflicts), refused: true, conflicts };
+	return { lines };
+}
+
+/**
+ * R6b: take back every one of this agent's calls since the checkpoint, newest first. All or nothing up front
+ * (planRestore); a step that will not replay stops it there and says how far it got.
+ * @param {string} name @returns {Promise<any>}
+ */
+export async function restoreCheckpoint(name) {
+	const plan = await planRestore(name);
+	if ('error' in plan) return { ...plan, undone: [] };
+	if (!plan.lines.length) return { restored: name, undone: [], note: 'Nothing of yours changed since that checkpoint.' };
+	/** @type {{tool: string, text: string}[]} */
+	const undone = [];
+	for (const line of plan.lines) {
+		if (!undoLine(line)) break;
+		undone.push({ tool: line.tool, text: line.text });
+	}
+	if (!undone.length) return { error: 'that could not be undone right now (an Edit Mesh session is open?). Nothing was changed.', undone: [] };
+	return {
+		restored: name,
+		undone,
+		count: undone.length,
+		...(undone.length < plan.lines.length ? { note: 'Only ' + undone.length + ' of ' + plan.lines.length + ' calls could be undone.' } : {})
+	};
+}
+
 /** one line's steps, newest first, each through history's own per-entry undo @param {any} line @returns {boolean} any applied */
 function undoLine(line) {
 	const steps = historyOf.get(line.id);
@@ -182,6 +261,7 @@ function undoLine(line) {
 /** test seam: forget the recorder's state */
 export function resetAgentRecorder() {
 	historyOf.clear();
+	checkpoints.clear();
 	settling.clear();
 	simSeenAt = 0;
 	seq = 0;

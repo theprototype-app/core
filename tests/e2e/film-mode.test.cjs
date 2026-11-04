@@ -359,10 +359,17 @@ h.run(async () => {
 	await page.evaluate(() => window.__stores.filmMode.placeCamera([60, 2, 0]));
 	await page.locator('#film-record').click();
 	await page.locator('#film-resume-move').click();
+	// sample the 1.5 s fly from the click on (a slow slot's resume check alone can take most of it)
+	const flyXs = [];
+	for (let i = 0; i < 40; i++) {
+		const x = (await pose(page)).pos[0];
+		flyXs.push(x);
+		if (x > 30 && x < 59) break;
+		await page.waitForTimeout(40);
+	}
 	await h.eventually(takeUi, (u) => u.state === 'recording', 'Move resumes recording');
-	await page.waitForTimeout(300);
-	const flying = (await pose(page)).pos[0];
-	h.check(flying > 30 && flying < 59, `Move flies from the last frame (x ${flying.toFixed(1)} on the way to 60)`);
+	const flying = flyXs.find((x) => x > 30 && x < 59) ?? flyXs[flyXs.length - 1];
+	h.check(flying > 30 && flying < 59, `Move flies from the last frame (x ${flying.toFixed(1)} on the way to 60; samples ${flyXs.map((x) => x.toFixed(1)).join(',')})`);
 	await page.waitForTimeout(2200);
 	const landed = (await pose(page)).pos[0];
 	h.check(Math.abs(landed - 60) < 0.5, `…and lands where you are (x ${landed.toFixed(2)})`);

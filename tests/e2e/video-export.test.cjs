@@ -212,14 +212,31 @@ h.run(async () => {
 				v.muted = true;
 				v.src = URL.createObjectURL(new Blob([u], { type: mime }));
 				await new Promise((r, j) => ((v.onloadeddata = r), (v.onerror = j)));
-				v.currentTime = which === 'first' ? 0 : Math.max(0, v.duration - 0.02);
-				await new Promise((r) => (v.onseeked = r));
 				const c = document.createElement('canvas');
 				c.width = 64;
 				c.height = 36;
 				const ctx = /** @type {CanvasRenderingContext2D} */ (c.getContext('2d'));
-				ctx.drawImage(v, 0, 0, 64, 36);
-				return Array.from(ctx.getImageData(0, 0, 64, 36).data);
+				// headless Chromium can hand a detached <video> to drawImage before the seeked frame is decoded
+				// (a blank draw, preview proof 1.58): wait for a presented frame and retry a blank one
+				let px = [];
+				for (let attempt = 0; attempt < 4; attempt++) {
+					const t = which === 'first' ? attempt * 0.001 : Math.max(0, v.duration - 0.02 - attempt * 0.001);
+					const seeked = new Promise((r) => (v.onseeked = r));
+					v.currentTime = t;
+					await seeked;
+					await new Promise((r) => {
+						const vv = /** @type {any} */ (v);
+						if (vv.requestVideoFrameCallback) vv.requestVideoFrameCallback(() => r(undefined));
+						setTimeout(r, 300);
+					});
+					ctx.clearRect(0, 0, 64, 36);
+					ctx.drawImage(v, 0, 0, 64, 36);
+					px = Array.from(ctx.getImageData(0, 0, 64, 36).data);
+					let lit = 0;
+					for (let i = 0; i < px.length; i += 4) lit += px[i] + px[i + 1] + px[i + 2];
+					if (lit > 0) break;
+				}
+				return px;
 			},
 			{ b64, mime, which }
 		);

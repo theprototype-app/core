@@ -23,6 +23,7 @@ import { recordEntry } from './history';
 import { applyMaterials, materialsPayload } from './materialsHandler';
 import { fanTargets } from './materialSharing';
 import {
+	EXTRA_MAP_FIELDS,
 	MAT_PRESET_KEY,
 	STARTER_PRESETS,
 	normalizePreset,
@@ -39,6 +40,7 @@ import {
 	LOOK_DEFAULTS
 } from './materialPresetsCore';
 import { proceduralMaps } from './materialPresetMaps';
+import { mapSlotKnownUrl } from './materialMapTextures.js';
 
 // PRIMED dynamic import (the materialsHandler/animationPreview pattern): objectActions holds the
 // selection-tint memory, and a static edge from here would put this module (reached from
@@ -168,6 +170,15 @@ export function presetWirePayload(preset, current) {
 		const s = preset.normalScale ?? 1;
 		json.normalScale = [s, s];
 	}
+	// 72 LK1
+	for (const key of EXTRA_MAP_FIELDS) {
+		if (!preset[key] || !(key in material)) continue;
+		const tex = THREE.MathUtils.generateUUID();
+		const img = THREE.MathUtils.generateUUID();
+		images.push({ uuid: img, url: preset[key] });
+		textures.push(textureJson(tex, img, key === 'emissiveMap', preset.repeat));
+		json[key] = tex;
+	}
 	return {
 		materials: [json],
 		textures,
@@ -242,7 +253,8 @@ export function lookOfMaterial(material, label = 'Material') {
 	if (!material || Array.isArray(material)) return null;
 	return snapshotLook(material, label, {
 		mapUrl: material.userData?.mapDataUrl ?? null,
-		normalMapUrl: material.normalMap ? (material.userData?.normalMapDataUrl ?? null) : null
+		normalMapUrl: material.normalMap ? (mapSlotKnownUrl(material, 'normalMap') ?? material.userData?.normalMapDataUrl ?? null) : null,
+		slotUrls: Object.fromEntries(EXTRA_MAP_FIELDS.map((key) => [key, material[key] ? mapSlotKnownUrl(material, key) : null]))
 	});
 }
 

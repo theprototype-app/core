@@ -2201,7 +2201,7 @@
 						<div class="flex items-center gap-1 {selTrack?.id === t.id ? 'bg-accent-soft' : ''}">
 							<button
 								class="min-w-0 flex-1 truncate px-2 py-1 text-left text-xs hover:bg-surface-hover {selTrack?.id === t.id ? 'text-accent-soft-text' : 'text-text-2'}"
-								title={isMaterialChannel(t.channel) ? channelLabel(t.channel) + ' — a look channel: it drives the material, so a GLTF export cannot carry it' : channelLabel(t.channel)}
+								title={isMaterialChannel(t.channel) ? channelLabel(t.channel) + ' — a look channel. A GLB export carries it as KHR_animation_pointer, so a viewer without that extension holds it still' : channelLabel(t.channel)}
 								onclick={() => { selId = t.id; selKeys = []; if (compact) phonePane = 'plot'; }}>{channelLabel(t.channel)}</button
 							>
 							<span class="shrink-0 text-[10px] tabular-nums text-text-faint">{t.keys.length}</span>

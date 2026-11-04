@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { globalScene, objectsGroup, showGrid, TControls, lockedObjects, selectedObject, globalCamera, peerHands, pokeScene, beginSceneBatch, endSceneBatch } from '../stores/sceneStore.js';
+import { receiveMapSlot, receiveTexTransform, receiveNormalStrength } from '$lib/materialMaps';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createGeometry, createLight, createGroup } from '$lib/geometries.svelte'
@@ -601,6 +602,12 @@ export async function objectParameters(data) {
         if (mesh) applyMap(mesh, data.map, data.slot ?? 0, typeof data.source === 'string' ? data.source : null);
     } else if (data.parameter == 'materialParam') {
         setMaterialParam(data.uuid, data.key, data.value, false);
+    } else if (data.parameter == 'mapSlot') {
+        receiveMapSlot(data); // 72 LK1: normal, roughness, metalness, emissive, AO
+    } else if (data.parameter == 'texTransform') {
+        receiveTexTransform(data);
+    } else if (data.parameter == 'normalStrength') {
+        receiveNormalStrength(data);
     } else if (data.parameter == 'animation') {
         // 57 M3: the stamp + crossfade ride along when the sender has them (absent = an older peer)
         /** @type {any} */

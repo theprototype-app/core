@@ -7,6 +7,7 @@ import { peers, showToast } from '../stores/appStore';
 import { heicToJpegFile } from './heic.js';
 import { checkMaterialParam } from './materialParamRules.js'; // 55: one check for every material parameter
 import { recordEntry, registerHistoryKind } from '$lib/history';
+import { TEXTURE_PARAMS, copyTextureParams, adoptTexTransform, carryMapSlots } from './materialMapTextures.js'; // 72 LK1
 
 // Custom materials and image textures for scene objects, replicated to peers
 // through the existing objectParameters message. Textures travel as dataURLs
@@ -90,6 +91,9 @@ function broadcast(data) {
 	if (!data?.uuid) return;
 	for (const other of fanTargets(data.uuid)) peer.send({ ...data, uuid: other });
 }
+
+/** 72 LK1: the same send for materialMaps.js (a shared material reaches every object wearing it) */
+export const broadcastMaterial = broadcast;
 
 // Undo entries replay through the same replicated actions below
 // (recordEntry no-ops while history is being applied).
@@ -353,46 +357,7 @@ function autoKeyMaterial(uuid) {
 	});
 }
 
-/**
- * SAMPLER STATE that must survive replacing a material's map.
- *
- * Every texture write here used to set `colorSpace` and nothing else, so painting
- * over an IMPORTED texture silently re-mapped it three ways at once: GLTFLoader
- * sets `flipY = false` (the glTF convention) while three's CanvasTexture and
- * TextureLoader default to `true`, so the image flipped vertically; glTF's default
- * sampler wrap is REPEAT while three's is CLAMP, so anything relying on tiling
- * smeared its border; and KHR_texture_transform's repeat/offset/rotation plus
- * `channel` (which UV set the map reads) were dropped entirely. The user-visible
- * result was "the UV map broke" after one brush stroke.
- * @type {string[]}
- */
-const TEXTURE_PARAMS = [
-	'flipY',
-	'wrapS',
-	'wrapT',
-	'rotation',
-	'channel',
-	'anisotropy',
-	'magFilter',
-	'minFilter',
-	'generateMipmaps',
-	'premultiplyAlpha',
-	'unpackAlignment'
-];
-
-/**
- * Copy sampler state from one texture to another. Vector-valued params
- * (repeat/offset/center) are COPIED, never aliased — sharing the Vector2 would let
- * a later edit of one texture move the other. Capture `from` BEFORE disposing it.
- * @param {any} from @param {any} to
- */
-export function copyTextureParams(from, to) {
-	if (!from || !to) return;
-	for (const key of TEXTURE_PARAMS) if (from[key] !== undefined) to[key] = from[key];
-	for (const key of ['repeat', 'offset', 'center'])
-		if (from[key] && to[key]?.copy) to[key].copy(from[key]);
-	to.needsUpdate = true;
-}
+export { copyTextureParams };
 
 /**
  * Apply (or remove, with null) a texture dataURL to one material SLOT of an
@@ -436,6 +401,7 @@ export function applyMap(object, dataURL, slot = 0, source = null) {
 	new THREE.TextureLoader().load(dataURL, (texture) => {
 		texture.colorSpace = THREE.SRGBColorSpace;
 		if (inherit) copyTextureParams(inherit, texture);
+		adoptTexTransform(material, texture); // 72 LK1: the material's tiling reaches a map set after it
 		material.map?.dispose();
 		material.map = texture;
 		material.needsUpdate = true;
@@ -445,15 +411,15 @@ export function applyMap(object, dataURL, slot = 0, source = null) {
 
 /** Downscale an image file to maxSize px and encode as a compact dataURL
  * (exported since 17-D2 — the OBJ/.mtl import path reuses it for its textures)
- * @param {File | Blob} file @param {number} maxSize */
-export async function downscaleImage(file, maxSize) {
+ * @param {File | Blob} file @param {number} maxSize @param {number} [quality] */
+export async function downscaleImage(file, maxSize, quality = 0.8) {
 	const bitmap = await createImageBitmap(file);
 	const scale = Math.min(1, maxSize / Math.max(bitmap.width, bitmap.height));
 	const canvas = document.createElement('canvas');
 	canvas.width = Math.max(1, Math.round(bitmap.width * scale));
 	canvas.height = Math.max(1, Math.round(bitmap.height * scale));
 	canvas.getContext('2d')?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-	const webp = canvas.toDataURL('image/webp', 0.8);
+	const webp = canvas.toDataURL('image/webp', quality);
 	// browsers without webp encoding fall back to png silently
 	return webp.startsWith('data:image/webp') ? webp : canvas.toDataURL('image/jpeg', 0.85);
 }
@@ -469,6 +435,29 @@ export const MAX_TEXTURE_SOURCE_BYTES = 64 * 1024 * 1024;
 export const TEXTURE_MAX_SIDE = 1024;
 
 /**
+ * A picked image as the inline URL a texture stores: size check, HEIC decode, downscale. Null = refused,
+ * with the reason already toasted. 72 LK1: maps that hold numbers ask for a higher quality.
+ * @param {File | Blob} file @param {number} [quality] @returns {Promise<string | null>}
+ */
+export async function decodeTextureFile(file, quality = 0.8) {
+	if (file.size > MAX_TEXTURE_SOURCE_BYTES) {
+		showToast('That image is too big to read (' + Math.round(file.size / 1048576) + ' MB) — save it smaller first');
+		return null;
+	}
+	// 46-media H1: a HEIC photo picked straight into a texture slot is decoded first (heic.js) —
+	// createImageBitmap cannot read one outside Safari, and the wire carries the JPEG's pixels
+	const decoded = await heicToJpegFile(file, { onError: showToast });
+	if (!decoded) return null;
+	try {
+		return await downscaleImage(decoded, TEXTURE_MAX_SIDE, quality);
+	} catch (error) {
+		console.log(error);
+		showToast('Could not read the image file');
+		return null;
+	}
+}
+
+/**
  * Set one image file as the texture of MANY objects (17-D1) and replicate.
  * The file is decoded and downscaled ONCE and the resulting dataURL applied per
  * uuid — same per-object history entry and `objectParameters` message as the
@@ -482,25 +471,9 @@ export const TEXTURE_MAX_SIDE = 1024;
  * @returns {Promise<number>} how many were textured
  */
 export async function setObjectsTexture(uuids, file, slot = 0, opts = {}) {
-	if (file.size > MAX_TEXTURE_SOURCE_BYTES) {
-		showToast('That image is too big to read (' + Math.round(file.size / 1048576) + ' MB) — save it smaller first');
-		return 0;
-	}
 	const source = opts.source ? String(opts.source) : null;
-	// 46-media H1: a HEIC photo picked straight into a texture slot is decoded first (heic.js) —
-	// createImageBitmap cannot read one outside Safari, and the wire carries the JPEG's pixels
-	const decoded = await heicToJpegFile(file, { onError: showToast });
-	if (!decoded) return 0;
-	file = decoded;
-	/** @type {string} */
-	let dataURL;
-	try {
-		dataURL = await downscaleImage(file, TEXTURE_MAX_SIDE);
-	} catch (error) {
-		console.log(error);
-		showToast('Could not read the image file');
-		return 0;
-	}
+	const dataURL = await decodeTextureFile(file);
+	if (!dataURL) return 0;
 	let applied = 0;
 	let missingSlot = 0;
 	for (const uuid of uuids) {
@@ -620,6 +593,7 @@ export function switchMaterialType(uuid, type, replicate = true) {
 			fresh.userData.mapDataUrl = old.userData?.mapDataUrl;
 			if (old.userData?.mapSource) fresh.userData.mapSource = old.userData.mapSource;
 		}
+		carryMapSlots(old, fresh, object); // 72 LK1: normal, roughness, metalness, emissive, AO + tiling
 		fresh.transparent = old.transparent;
 		if ('wireframe' in fresh && old.wireframe !== undefined) fresh.wireframe = old.wireframe;
 		// carry shared numeric params only where the TARGET type has them

@@ -15,10 +15,10 @@ import {
 	deleteObjectsByUuid
 } from '$lib/objectActions';
 import { setObjectColor, switchMaterialType, setMaterialParam } from '$lib/materialsHandler';
-import { checkMaterialParam, toHexColor } from '$lib/materialParamRules.js';
+import { checkMaterialParam, toHexColor, isMapSlotKey } from '$lib/materialParamRules.js';
 import { lightStateOf, recordLightChange, sendLight } from '$lib/multiEdit';
 import { aimLight } from '$lib/lightParams';
-import { itemByHash } from '$lib/explorer';
+import { itemByHash, itemBlob } from '$lib/explorer';
 import { animatedBaseOf, writingBasePose } from '$lib/flowRuntime';
 import { reportedPose } from './poseReport.js';
 import { meshGenReady, meshTakesImage, activeMeshConfig } from './meshProviders.js';
@@ -462,6 +462,27 @@ async function applyAiMaterialParams(uuid, params) {
 			}
 			const { applyExplorerImage } = await import('$lib/explorerDrop');
 			if (!(await applyExplorerImage(uuid, { id: item.id }))) errors.push('map: the image could not be read');
+			continue;
+		}
+		// 72 LK1: a map slot by library image hash, or null to clear; tiling as one object
+		if (isMapSlotKey(key)) {
+			const { setObjectsMapSlot, removeObjectsMapSlot } = await import('$lib/materialMaps');
+			if (value === null) {
+				await removeObjectsMapSlot([uuid], key);
+				continue;
+			}
+			const item = typeof value === 'string' ? itemByHash(value) : null;
+			if (!item || item.kind !== 'image') {
+				errors.push(key + ': pass an image hash from the library, or null to clear');
+				continue;
+			}
+			const blob = await itemBlob(item.id);
+			if (!blob || !(await setObjectsMapSlot([uuid], key, blob))) errors.push(key + ': the image could not be read');
+			continue;
+		}
+		if (key === 'texTransform') {
+			const { setTexTransform } = await import('$lib/materialMaps');
+			if (!setTexTransform(uuid, /** @type {any} */ (value))) errors.push('texTransform: takes { repeat: [u, v], offset: [u, v], rotation: radians }');
 			continue;
 		}
 		const checked = checkMaterialParam(material, key, value);
@@ -1198,7 +1219,7 @@ export const AI_TOOLS = [
 								materialParams: {
 									type: 'object',
 									description:
-										'meshes: numbers (roughness, metalness, opacity, emissiveIntensity, clearcoat, transmission, ior, shininess…, clamped), true/false (wireframe, transparent, flatShading), hex colours (emissive, specular), side (front|back|double), and map = a library image hash (null clears). Each bad key comes back in errors.'
+										'meshes: numbers (roughness, metalness, opacity, emissiveIntensity, clearcoat, transmission, ior, shininess…, clamped), true/false (wireframe, transparent, flatShading), hex colours (emissive, specular), side (front|back|double), map slots (map, normalMap, roughnessMap, metalnessMap, emissiveMap, aoMap: a library image hash, or null to clear), texTransform ({repeat:[u,v], offset:[u,v], rotation:radians}), and map = a library image hash (null clears). Each bad key comes back in errors.'
 								},
 								...LIGHT_SCHEMA,
 								visible: { type: 'boolean' },

@@ -11,6 +11,7 @@
 //     roughness, metalness, clearcoat, clearcoatRoughness, transmission, ior, shininess,
 //     emissive: '#rrggbb', emissiveIntensity, opacity, transparent, flatShading,
 //     map: dataURL|null, normalMap: dataURL|null, normalScale, repeat: [u, v],
+//     roughnessMap, metalnessMap, emissiveMap, aoMap: dataURL (72 LK1, absent on an older save),
 //     procedural: 'wood'|'stone'|'scales' }   ← built-ins only: the maps are generated on the device
 //   40 F16 adds the THIN-FILM fields (MeshPhysicalMaterial): iridescence, iridescenceIOR,
 //     iridescenceThicknessMin/Max (nm — three's iridescenceThicknessRange), thickness (the
@@ -291,6 +292,9 @@ const RANGES = {
 	thickness: [0, 10]
 };
 
+/** 72 LK1: the map slots a preset carries beside `map` and `normalMap` */
+export const EXTRA_MAP_FIELDS = ['roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap'];
+
 /** a data:image URL or null — presets never carry a remote URL (a library would fetch it) @param {any} v */
 function imageUrlOrNull(v) {
 	return typeof v === 'string' && /^data:image\/(png|jpeg|webp);base64,/.test(v) ? v : null;
@@ -325,6 +329,11 @@ export function normalizePreset(input) {
 	if (map) out.map = map;
 	const normalMap = imageUrlOrNull(input.normalMap);
 	if (normalMap) out.normalMap = normalMap;
+	// 72 LK1: the other three-channel maps ride a preset the same way
+	for (const key of EXTRA_MAP_FIELDS) {
+		const url = imageUrlOrNull(input[key]);
+		if (url) out[key] = url;
+	}
 	const normalScale = num(input.normalScale, 0, 4);
 	if (normalScale !== undefined) out.normalScale = normalScale;
 	if (Array.isArray(input.repeat) && input.repeat.length === 2) {
@@ -348,7 +357,7 @@ const r4 = (n) => Math.round(n * 1e4) / 1e4;
  * fields) as a preset payload. `mapUrl`/`normalMapUrl` are the data-URLs the caller found
  * for its maps — the material itself only holds GPU textures.
  * @param {any} material @param {string} label
- * @param {{mapUrl?: string|null, normalMapUrl?: string|null, procedural?: string|null}} [maps]
+ * @param {{mapUrl?: string|null, normalMapUrl?: string|null, slotUrls?: Record<string, string|null>, procedural?: string|null}} [maps]
  */
 export function snapshotLook(material, label, maps = {}) {
 	/** @type {any} */
@@ -381,6 +390,7 @@ export function snapshotLook(material, label, maps = {}) {
 	else {
 		if (maps.mapUrl) raw.map = maps.mapUrl;
 		if (maps.normalMapUrl) raw.normalMap = maps.normalMapUrl;
+		for (const key of EXTRA_MAP_FIELDS) if (maps.slotUrls?.[key]) raw[key] = maps.slotUrls[key];
 	}
 	if (material?.normalMap && material?.normalScale && typeof material.normalScale.x === 'number')
 		raw.normalScale = r4(material.normalScale.x);
@@ -400,6 +410,7 @@ const LOOK_FIELDS = [
 	'procedural',
 	'map',
 	'normalMap',
+	...EXTRA_MAP_FIELDS,
 	'repeat'
 ];
 

@@ -7,6 +7,17 @@
 
 ## Unreleased
 
+### ✍️ 3D text
+- **Signs and titles in 3D**: Add ▸ Text writes words into the scene — **flat** letters with an outline, or **solid** letters with depth and a bevel. Switch between the two and the words and style stay. <!-- 64-text TX1 -->
+- **Every setting live, one undo each**: align, wrap width, line and letter spacing, bold / italic, size in metres, where it is anchored, and for solid letters the side colour, metal, roughness and glow. <!-- 64-text TX2 -->
+- **Six fonts built in** (sans, serif, mono, rounded, pixel and IBM Plex Sans), loaded only when a text uses them. **Add your own**: upload a TTF, OTF, WOFF or WOFF2 file, or type a **Google Fonts** name. Either way the font is stored once in your Library, travels with the scene and the exported game, and never has to be fetched again. <!-- 64-text TX3 -->
+- **Font licences in view**: the Inspector shows a font's licence, and a font that does not allow embedding gets the usual licence warning when you export. <!-- 64-text TX3b -->
+- Everyone in the session sees the same text, built from its settings; a scene saves the words and settings, not a heavy mesh. <!-- 64-text TX4 -->
+- **Bake to mesh** turns solid text into a normal mesh you can edit vertex by vertex (one undo step). <!-- 64-text TX5 -->
+- Phones and headsets keep a lower letter count per text so they stay smooth; past it you get a plain message. <!-- 64-text TX6 -->
+- **Agents write too**: "a solid HELLO with a bevel" works from an AI app, and an agent can list the fonts it may use. A new starter scene, **Text sign**, shows both kinds. <!-- 64-text TX7 TX8 -->
+- For developers: `create_shape {action: "text"}` (= `create_text`), `edit_shape {action: "params"}` on a text, `assets {action: "fonts"}` (= `list_fonts`), `import_file` takes font files; no new connector tool names. <!-- 64-text TX7 -->
+
 ### 🦊 Fixes from an agent's diorama build
 - **Groups come back as groups** after "Restore previous session": a group used to return as a plain node, so its parts looked loose and an agent could not build into it. <!-- mcp-diorama2 1 -->
 - An agent that names a **group that is not there** now gets an error and nothing is made, instead of a part dropped at the middle of the scene; any object (not a light or camera) can hold parts. <!-- mcp-diorama2 1 -->

@@ -78,6 +78,8 @@ export const TOOL_ANNOTATIONS = /** @type {Record<string, {title: string, read?:
 	hud_panel: { title: 'Add a HUD panel', destructive: false },
 	set_sky: { title: 'Change the sky and fog', destructive: true },
 	set_light: { title: 'Change the scene light', destructive: true },
+	// mcp-diorama2: this device's quality preset, asked of the person on their own screen
+	set_quality: { title: 'Ask for higher quality on this device', destructive: true },
 	get_environment: { title: 'Read the sky and light', read: true },
 	place_spawn: { title: 'Set where Play starts', destructive: true },
 	set_play_camera: { title: 'Set the play camera and opening view', destructive: true },
@@ -267,7 +269,7 @@ export const CONNECTOR_FAMILIES = Object.freeze({
 	set_look: {
 		title: 'Materials, shaders, sky, light and post effects',
 		summary:
-			'How things look: material = colour, roughness, metal, glow, see-through and textures (a library image, a CC0 material by name or an https image); list_materials / get_material read them; shader / edit_shader / assign_shader / shader_nodes = node shaders on objects; sky = the sky image, background, fog and exposure; light = the sun, ambient and environment lights; environment reads both; post / get_post / post_graph = the scene\'s post effects (bloom, colour grade, vignette); sky, light and post change the whole scene, so the host is asked first; unwrap / uv = texture mapping and tiling.',
+			'How things look: material = colour, roughness, metal, glow, see-through and textures (a library image, a CC0 material by name or an https image); list_materials / get_material read them; shader / edit_shader / assign_shader / shader_nodes = node shaders on objects; sky = the sky image, background, fog and exposure; light = the sun, ambient and environment lights; environment reads both; post / get_post / post_graph = the scene\'s post effects (bloom, colour grade, vignette); sky, light and post change the whole scene, so the host is asked first; unwrap / uv = texture mapping and tiling; quality = ask the person to raise THIS device\'s quality (a card on their screen, Allow / Keep) when a phone hides the post effects to stay smooth.',
 		actions: {
 			material: 'set_material',
 			list_materials: 'list_materials',
@@ -283,7 +285,8 @@ export const CONNECTOR_FAMILIES = Object.freeze({
 			uv: 'set_uv',
 			sky: 'set_sky',
 			light: 'set_light',
-			environment: 'get_environment'
+			environment: 'get_environment',
+			quality: 'set_quality'
 		}
 	},
 	// 85b R1-R4 (lane 85-runtime): playtest is agent-page only (B4b), so the connector's `run` has no playtest;

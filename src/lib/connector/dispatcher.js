@@ -51,7 +51,12 @@ export const BRIDGE_SCHEMAS = /** @type {Record<string, any>} */ ({
 			aspect: { description: 'width to height: "4:3" (default), "1:1", "16:9" or a number. view current defaults to the person\'s window', anyOf: [{ type: 'string' }, { type: 'number' }] },
 			zoom: { type: 'number', description: 'above 1 is closer, 0.1 to 10' },
 			margin: { type: 'number', description: 'room around the subject: 1 touches the frame, default 1.15' },
-			size: { type: 'number', description: 'longest side in pixels' }
+			size: { type: 'number', description: 'longest side in pixels' },
+			postEffects: {
+				type: 'boolean',
+				description:
+					'true = draw it through the scene\'s post effects (bloom, vignette, colour grade …) as this screen shows them. The answer says postEffects "applied", or "unavailable" with a reason ("quality tier" = this device turned them off to keep its frame rate, usual on a phone — `how` says where the person raises it, or ask the person for higher quality: set_look action "quality" — set_quality for a local agent)'
+			}
 		}
 	},
 	wait_for_edit: { type: 'object', properties: { timeout_ms: { type: 'number', description: 'default 30000, at most 120000' } } }
@@ -183,7 +188,8 @@ export function createDispatcher(deps) {
 		const size = Math.max(64, Math.min(SHOT_MAX, Number(args.size) || SHOT_DEFAULT));
 		const asked = Date.now();
 		const { view, uuid, uuids, from, camera, aspect, zoom, margin } = args;
-		const url = await deps.agent.screenshot({ view, uuid, uuids, from, camera, aspect, zoom, margin, size });
+		const postEffects = args.postEffects === true ? true : undefined;
+		const url = await deps.agent.screenshot({ view, uuid, uuids, from, camera, aspect, zoom, margin, size, ...(postEffects ? { postEffects } : {}) });
 		const used = deps.agent.lastShot?.();
 		const fresh = used && used.at >= asked ? used : null;
 		if (inFlight.get(id)?.cancelled) return fail('cancelled', 'cancelled');
@@ -192,7 +198,9 @@ export function createDispatcher(deps) {
 		if (!deps.visible()) return fail('hidden', 'Your theprototype tab went to the background.');
 		const shot = await deps.encodeShot(url);
 		if (!shot) return fail('failed', 'The screenshot could not be encoded.');
-		return { result: fresh ? { ...shot, camera: { position: fresh.position, target: fresh.target, fov: fresh.fov, zoom: fresh.zoom, view: fresh.view, subject: fresh.subject } } : shot };
+		// mcp-diorama2: what the post stack did for this frame, when it was asked for
+		const post = postEffects && fresh?.postEffects ? { postEffects: fresh.postEffects, ...(fresh.reason ? { reason: fresh.reason } : {}), ...(fresh.detail ? { detail: fresh.detail } : {}), ...(fresh.how ? { how: fresh.how } : {}) } : {};
+		return { result: fresh ? { ...shot, ...post, camera: { position: fresh.position, target: fresh.target, fov: fresh.fov, zoom: fresh.zoom, view: fresh.view, subject: fresh.subject } } : shot };
 	}
 
 	/** @param {string} id @param {any} args */

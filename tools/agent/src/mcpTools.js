@@ -86,7 +86,7 @@ export function bridgeTools(engine = 'browser') {
 			{
 				name: 'screenshot',
 				description:
-					'See the scene: a PNG of a clean frame (no gizmos) from a temporary camera, never moving anyone\'s view. view: current | top | front | iso | focus (focus needs uuid or uuids); from = an angle or {yaw, pitch}; camera = a free {position, target}. 4:3 unless aspect says otherwise (current follows the person\'s window). Answers with the camera it used.',
+					'See the scene: a PNG of a clean frame (no gizmos) from a temporary camera, never moving anyone\'s view. view: current | top | front | iso | focus (focus needs uuid or uuids); from = an angle or {yaw, pitch}; camera = a free {position, target}. 4:3 unless aspect says otherwise (current follows the person\'s window). Answers with the camera it used. postEffects: true draws the scene\'s post effects too.',
 				inputSchema: {
 					type: 'object',
 					properties: {
@@ -112,7 +112,12 @@ export function bridgeTools(engine = 'browser') {
 						aspect: { description: 'width to height: "4:3" (default), "1:1", "16:9" or a number. view current defaults to the person\'s window', anyOf: [{ type: 'string' }, { type: 'number' }] },
 						zoom: { type: 'number', description: 'above 1 is closer, 0.1 to 10' },
 						margin: { type: 'number', description: 'room around the subject: 1 touches the frame, default 1.15' },
-						size: { type: 'number', description: 'longest side in pixels' }
+						size: { type: 'number', description: 'longest side in pixels' },
+						postEffects: {
+							type: 'boolean',
+							description:
+								'true = draw it through the scene\'s post effects (bloom, vignette, colour grade …) as this screen shows them. The answer says postEffects "applied", or "unavailable" with a reason ("quality tier" = this device turned them off to keep its frame rate, usual on a phone — `how` says where the person raises it, or ask the person for higher quality: set_look action "quality" — set_quality for a local agent)'
+						}
 					}
 				}
 			},

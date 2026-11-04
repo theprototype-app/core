@@ -126,6 +126,8 @@ export const SCREENSHOT_DEFAULT_SIZE = 768;
  * @property {number} [margin] room around the subject: 1 touches the frame, default 1.15
  * @property {number} [size] longest side in px (default 768, max 2048)
  * @property {boolean} [grid] draw the grid (default false)
+ * @property {boolean} [postEffects] draw the frame through the post stack this tab draws (bloom, vignette, grade …);
+ *   lastShot().postEffects then says "applied" or "unavailable" with a reason (mcp-diorama2)
  */
 
 /**

@@ -3,7 +3,7 @@
 	"format": 2,
 	"generator": {
 		"source": "tpAgent.tools() via core scripts/agent-tool-catalog.cjs, mapped by tools/agent/src/catalog.js",
-		"hostTools": 69,
+		"hostTools": 70,
 		"dropped": []
 	},
 	"instructions": "You are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.\nWhen asked what you can do here, call what_can_you_do and say its \"say\" line.",
@@ -2039,7 +2039,7 @@
 		{
 			"name": "set_post",
 			"title": "Change the post effects",
-			"description": "The scene's post effects (bloom, huesaturation, brightnesscontrast, tonemapping, vignette, grain, chromaticaberration, ao, lut, pixelation, scanlines, dotscreen, smaa; get_post lists every param). effects: [{kind, params, enabled, at, remove}], matched to what is there by id or kind, so repeating a call does not stack a second bloom; replace: true drops the rest; the stack order is the order of effect. This changes the whole scene's look: the first call returns needsConfirm and the host is asked; repeat it with confirmId. One undo step.\nTake a screenshot after each change to check your work.",
+			"description": "The scene's post effects (bloom, huesaturation, brightnesscontrast, tonemapping, vignette, grain, chromaticaberration, ao, lut, pixelation, scanlines, dotscreen, smaa; get_post lists every param). effects: [{kind, params, enabled, at, remove}], matched to what is there by id or kind, so repeating a call does not stack a second bloom; replace: true drops the rest; the stack order is the order of effect. This changes the whole scene's look: the first call returns needsConfirm and the host is asked; repeat it with confirmId. One undo step. The answer says shownHere: false with a reason when this screen does not draw post effects (reason \"quality tier\" = the device turned them off to keep its frame rate, usual on a phone: the scene keeps them; say so, and offer to ask with set_quality).\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -2103,6 +2103,43 @@
 			},
 			"annotations": {
 				"title": "Change the post effects",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "set_quality",
+			"title": "Ask for higher quality on this device",
+			"description": "Ask the person to raise THIS device's quality (their Settings ▸ Scene ▸ Performance ▸ Quality preset). Use it when set_post / get_post / screenshot say shownHere false or postEffects \"unavailable\" with reason \"quality tier\": a phone turns post effects off to keep its frame rate. The person gets a card on their own screen (Allow / Keep) and answers; nothing changes until they allow, nothing changes on anyone else's device, nothing goes into the scene. The first call returns needsConfirm; call again with confirmId (and wait) for the answer. level: high (full quality, post effects on), medium, auto (the device decides), restore (put back what it was before you asked; no question). Suggest it out loud first: \"Your phone hides the glow to stay smooth; shall I ask it for high quality?\"\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"level": {
+						"type": "string",
+						"enum": [
+							"high",
+							"medium",
+							"auto",
+							"restore"
+						]
+					},
+					"reason": {
+						"type": "string",
+						"description": "a few words for the card, e.g. \"so the portal glow shows\""
+					},
+					"confirmId": {
+						"type": "string",
+						"description": "the id a needsConfirm answer gave: repeat the call with it to get the host's answer and apply"
+					},
+					"wait": {
+						"type": "number",
+						"description": "with confirmId: seconds to wait for the answer (up to 60)"
+					}
+				}
+			},
+			"annotations": {
+				"title": "Ask for higher quality on this device",
 				"readOnlyHint": false,
 				"destructiveHint": true,
 				"openWorldHint": false
@@ -4828,7 +4865,7 @@
 		{
 			"name": "screenshot",
 			"title": "Take a picture of the scene",
-			"description": "See the scene: a PNG of a clean frame (no gizmos) from a temporary camera, never moving anyone's view. view: current | top | front | iso | focus (focus needs uuid or uuids); from = an angle or {yaw, pitch}; camera = a free {position, target}. 4:3 unless aspect says otherwise (current follows the person's window). Answers with the camera it used.",
+			"description": "See the scene: a PNG of a clean frame (no gizmos) from a temporary camera, never moving anyone's view. view: current | top | front | iso | focus (focus needs uuid or uuids); from = an angle or {yaw, pitch}; camera = a free {position, target}. 4:3 unless aspect says otherwise (current follows the person's window). Answers with the camera it used. postEffects: true draws the scene's post effects too.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -4935,6 +4972,10 @@
 					"size": {
 						"type": "number",
 						"description": "longest side in pixels"
+					},
+					"postEffects": {
+						"type": "boolean",
+						"description": "true = draw it through the scene's post effects (bloom, vignette, colour grade …) as this screen shows them. The answer says postEffects \"applied\", or \"unavailable\" with a reason (\"quality tier\" = this device turned them off to keep its frame rate, usual on a phone — `how` says where the person raises it, or ask the person for higher quality: set_look action \"quality\" — set_quality for a local agent)"
 					}
 				}
 			},
@@ -5038,7 +5079,8 @@
 				"uv": "set_uv",
 				"sky": "set_sky",
 				"light": "set_light",
-				"environment": "get_environment"
+				"environment": "get_environment",
+				"quality": "set_quality"
 			},
 			"run": {
 				"inspect": "inspect_runtime",
@@ -6773,7 +6815,7 @@
 			{
 				"name": "set_look",
 				"title": "Materials, shaders, sky, light and post effects",
-				"description": "How things look: material = colour, roughness, metal, glow, see-through and textures (a library image, a CC0 material by name or an https image); list_materials / get_material read them; shader / edit_shader / assign_shader / shader_nodes = node shaders on objects; sky = the sky image, background, fog and exposure; light = the sun, ambient and environment lights; environment reads both; post / get_post / post_graph = the scene's post effects (bloom, colour grade, vignette); sky, light and post change the whole scene, so the host is asked first; unwrap / uv = texture mapping and tiling.\nCall it as {\"action\": \"material\", \"material\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
+				"description": "How things look: material = colour, roughness, metal, glow, see-through and textures (a library image, a CC0 material by name or an https image); list_materials / get_material read them; shader / edit_shader / assign_shader / shader_nodes = node shaders on objects; sky = the sky image, background, fog and exposure; light = the sun, ambient and environment lights; environment reads both; post / get_post / post_graph = the scene's post effects (bloom, colour grade, vignette); sky, light and post change the whole scene, so the host is asked first; unwrap / uv = texture mapping and tiling; quality = ask the person to raise THIS device's quality (a card on their screen, Allow / Keep) when a phone hides the post effects to stay smooth.\nCall it as {\"action\": \"material\", \"material\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -6794,7 +6836,8 @@
 								"uv",
 								"sky",
 								"light",
-								"environment"
+								"environment",
+								"quality"
 							],
 							"description": "What to do. Put its fields in the object named after the action."
 						},
@@ -7164,7 +7207,7 @@
 									"description": "with confirmId: seconds to wait for the answer (up to 60)"
 								}
 							},
-							"description": "The scene's post effects (bloom, huesaturation, brightnesscontrast, tonemapping, vignette, grain, chromaticaberration, ao, lut, pixelation, scanlines, dotscreen, smaa; set_look {action: 'get_post'} lists every param). effects: [{kind, params, enabled, at, remove}], matched to what is there by id or kind, so repeating a call does not stack a second bloom; replace: true drops the rest; the stack order is the order of effect. This changes the whole scene's look: the first call returns needsConfirm and the host is asked; repeat it with confirmId. One undo step."
+							"description": "The scene's post effects (bloom, huesaturation, brightnesscontrast, tonemapping, vignette, grain, chromaticaberration, ao, lut, pixelation, scanlines, dotscreen, smaa; set_look {action: 'get_post'} lists every param). effects: [{kind, params, enabled, at, remove}], matched to what is there by id or kind, so repeating a call does not stack a second bloom; replace: true drops the rest; the stack order is the order of effect. This changes the whole scene's look: the first call returns needsConfirm and the host is asked; repeat it with confirmId. One undo step. The answer says shownHere: false with a reason when this screen does not draw post effects (reason \"quality tier\" = the device turned them off to keep its frame rate, usual on a phone: the scene keeps them; say so, and offer to ask with set_look {action: 'quality'})."
 						},
 						"get_post": {
 							"type": "object",
@@ -7541,6 +7584,33 @@
 								}
 							},
 							"description": "Read the scene's sky and light: the preset, the sky image and its quality, background, fog, exposure, the sun and ambient, the environment lights (ids for set_look {action: 'light'}), the light objects (uuid, shadows) and the spawn / opening view; plus the preset and sky names. Read this before changing the look."
+						},
+						"quality": {
+							"type": "object",
+							"properties": {
+								"level": {
+									"type": "string",
+									"enum": [
+										"high",
+										"medium",
+										"auto",
+										"restore"
+									]
+								},
+								"reason": {
+									"type": "string",
+									"description": "a few words for the card, e.g. \"so the portal glow shows\""
+								},
+								"confirmId": {
+									"type": "string",
+									"description": "the id a needsConfirm answer gave: repeat the call with it to get the host's answer and apply"
+								},
+								"wait": {
+									"type": "number",
+									"description": "with confirmId: seconds to wait for the answer (up to 60)"
+								}
+							},
+							"description": "Ask the person to raise THIS device's quality (their Settings ▸ Scene ▸ Performance ▸ Quality preset). Use it when set_look {action: 'post'} / set_look {action: 'get_post'} / screenshot say shownHere false or postEffects \"unavailable\" with reason \"quality tier\": a phone turns post effects off to keep its frame rate. The person gets a card on their own screen (Allow / Keep) and answers; nothing changes until they allow, nothing changes on anyone else's device, nothing goes into the scene. The first call returns needsConfirm; call again with confirmId (and wait) for the answer. level: high (full quality, post effects on), medium, auto (the device decides), restore (put back what it was before you asked; no question). Suggest it out loud first: \"Your phone hides the glow to stay smooth; shall I ask it for high quality?\""
 						}
 					},
 					"required": [
@@ -9683,7 +9753,7 @@
 			{
 				"name": "screenshot",
 				"title": "Take a picture of the scene",
-				"description": "See the scene: a PNG of a clean frame (no gizmos) from a temporary camera, never moving anyone's view. view: current | top | front | iso | focus (focus needs uuid or uuids); from = an angle or {yaw, pitch}; camera = a free {position, target}. 4:3 unless aspect says otherwise (current follows the person's window). Answers with the camera it used.",
+				"description": "See the scene: a PNG of a clean frame (no gizmos) from a temporary camera, never moving anyone's view. view: current | top | front | iso | focus (focus needs uuid or uuids); from = an angle or {yaw, pitch}; camera = a free {position, target}. 4:3 unless aspect says otherwise (current follows the person's window). Answers with the camera it used. postEffects: true draws the scene's post effects too.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -9790,6 +9860,10 @@
 						"size": {
 							"type": "number",
 							"description": "longest side in pixels"
+						},
+						"postEffects": {
+							"type": "boolean",
+							"description": "true = draw it through the scene's post effects (bloom, vignette, colour grade …) as this screen shows them. The answer says postEffects \"applied\", or \"unavailable\" with a reason (\"quality tier\" = this device turned them off to keep its frame rate, usual on a phone — `how` says where the person raises it, or ask the person for higher quality: set_look action \"quality\" — set_quality for a local agent)"
 						}
 					}
 				},

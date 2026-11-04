@@ -556,8 +556,9 @@ describe('the registry', () => {
 			expect(viewerToolRefusal(n, true), n).toBe(null);
 			expect(READ_ONLY_TOOLS.has(n), n).toBe(true);
 		}
+		// mcp-diorama2: set_quality asks about THIS device only (nothing replicated), so a viewer may use it too
 		for (const n of LOOK_TOOL_NAMES.filter((t) => !LOOK_READ_TOOLS.includes(t))) {
-			expect(viewerToolRefusal(n, true)?.viewOnly, n).toBe(true);
+			expect(viewerToolRefusal(n, true)?.viewOnly, n).toBe(n === 'set_quality' ? undefined : true);
 			expect(READ_ONLY_TOOLS.has(n), n).toBe(false);
 		}
 	});

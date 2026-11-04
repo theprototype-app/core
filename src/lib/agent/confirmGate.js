@@ -92,16 +92,35 @@ function waitFor(ask, seconds) {
 	});
 }
 
-/** a prompt in THIS tab @param {string} text @param {(allow: boolean) => void} answer */
-function promptHere(text, answer) {
+/** a prompt in THIS tab @param {string} text @param {(allow: boolean) => void} answer @param {string} [no] the refusing button */
+function promptHere(text, answer, no = 'Deny') {
 	showToast(
 		text,
 		[
 			{ label: 'Allow', action: () => answer(true) },
-			{ label: 'Deny', action: () => answer(false) }
+			{ label: no, action: () => answer(false) }
 		],
 		{ keep: true }
 	);
+}
+
+/**
+ * mcp-diorama2 (item 7, owner) — a change to THIS DEVICE's own settings (its quality preset), asked of the person at
+ * this screen and nobody else: never relayed to the host or a peer, never applied without the answer (an agent's
+ * own page has nobody to ask and is its own device, so it applies there). Same confirmId protocol as gateScenewide.
+ * @param {string} tool @param {any} args @param {{summary: string, prompt: string, apply: () => Promise<any> | any}} change
+ */
+export async function gateDevice(tool, args, change) {
+	if (args?.confirmId !== undefined) return gateScenewide(tool, args, change);
+	if (agentRequested()) return change.apply();
+	/** @type {Ask} */
+	const ask = { id: 'd' + Date.now().toString(36) + '-' + ++seq, tool, summary: cleanSummary(change.summary), status: 'pending', targets: new Set(), apply: change.apply, at: Date.now(), waiters: [] };
+	asks.set(ask.id, ask);
+	promptHere(change.prompt, (allow) => settle(ask, allow ? 'allowed' : 'denied', allow ? undefined : 'they chose to keep this device as it is'), 'Keep');
+	return {
+		...pendingResult(ask),
+		note: 'Nothing has changed yet: this is the person\'s own device, so they were asked on their screen (Allow / Keep). Call this tool again with {"confirmId": "' + ask.id + '", "wait": 30} to get the answer.'
+	};
 }
 
 /**
@@ -118,7 +137,7 @@ export async function gateScenewide(tool, args, change) {
 		if (Number.isFinite(wait)) await waitFor(ask, Math.min(CONFIRM_MAX_WAIT_S, wait));
 		const status = statusOf(ask);
 		if (status === 'pending') return pendingResult(ask);
-		if (status === 'denied') return { error: 'the host said no' + (ask.reason ? ': ' + ask.reason : '') + ' — nothing changed', denied: true };
+		if (status === 'denied') return { error: (ask.id.startsWith('d') ? 'the person said no' : 'the host said no') + (ask.reason ? ': ' + ask.reason : '') + ' — nothing changed', denied: true };
 		if (status === 'expired') return { error: 'nobody answered in time — nothing changed; call again without confirmId to ask again', expired: true };
 		if (status === 'applied') return { ...ask.result, alreadyApplied: true };
 		ask.status = 'applied';

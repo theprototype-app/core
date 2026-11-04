@@ -21,6 +21,7 @@ import { get } from 'svelte/store';
 import { globalRenderer, globalScene, globalCamera, objectsGroup, TControls } from '../../stores/sceneStore';
 import { isEditorHelper } from '$lib/water/waterRuntime.js';
 import { planShot, viewPose, boundsOf, linearFrameToSrgb } from './screenshotCore.js';
+import { postState, renderWithPost } from './postShot.js';
 // 55 A7 (union): every peer draws the "AI" camera marker where this shot looked (agentLog is store-only)
 import { noteAgentView } from '$lib/agentLog';
 
@@ -176,13 +177,30 @@ export async function takeScreenshot(opts = {}) {
 	const previous = renderer.getRenderTarget();
 	const autoClear = renderer.autoClear;
 	/** @type {Float32Array|Uint8Array} */
-	const pixels = float ? new Float32Array(rw * rh * 4) : new Uint8Array(rw * rh * 4);
+	let pixels = float ? new Float32Array(rw * rh * 4) : new Uint8Array(rw * rh * 4);
+	let bytes = !float;
+	// mcp-diorama2 (item 7): through the post stack this tab draws, when asked and when it draws one
+	/** @type {{postEffects: 'applied' | 'unavailable', reason?: string, detail?: string, how?: string | null} | null} */
+	let post = null;
 	try {
-		renderer.autoClear = true;
-		renderer.setRenderTarget(target);
-		renderer.clear();
-		renderer.render(scene, camera);
-		renderer.readRenderTargetPixels(target, 0, 0, rw, rh, pixels);
+		const wanted = /** @type {any} */ (opts).postEffects === true ? postState() : null;
+		if (wanted && !wanted.live) post = { postEffects: 'unavailable', reason: /** @type {string} */ (wanted.reason), detail: wanted.detail ?? undefined, how: wanted.how };
+		if (wanted?.live) {
+			const shot = await renderWithPost(renderer, scene, camera, rw, rh, wanted.entries);
+			if ('error' in shot) post = { postEffects: 'unavailable', reason: 'render failed', detail: shot.error, how: null };
+			else {
+				pixels = shot.pixels;
+				bytes = !shot.float;
+				post = { postEffects: 'applied', detail: wanted.entries.map((/** @type {any} */ e) => e.kind).join(', ') };
+			}
+		}
+		if (post?.postEffects !== 'applied') {
+			renderer.autoClear = true;
+			renderer.setRenderTarget(target);
+			renderer.clear();
+			renderer.render(scene, camera);
+			renderer.readRenderTargetPixels(target, 0, 0, rw, rh, pixels);
+		}
 	} finally {
 		renderer.setRenderTarget(previous);
 		renderer.autoClear = autoClear;
@@ -192,7 +210,7 @@ export async function takeScreenshot(opts = {}) {
 	const rgba = linearFrameToSrgb(pixels, rw, rh, {
 		toneMapping: /** @type {any} */ (toneMappingName(renderer)),
 		exposure: Number(renderer.toneMappingExposure) || 1,
-		bytes: !float
+		bytes
 	});
 	const big = document.createElement('canvas');
 	big.width = rw;
@@ -215,6 +233,7 @@ export async function takeScreenshot(opts = {}) {
 		height: h,
 		view,
 		subject,
+		...(post ?? {}),
 		at: Date.now()
 	};
 	// 56 C8: a PERSON's "ask about this selection" picture is not where an agent looked

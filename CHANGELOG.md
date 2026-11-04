@@ -13,6 +13,8 @@
 - A mesh an agent **paints per vertex** keeps its true colours: no random pastel tint on top, and colours mean what a colour picker means (sRGB), with `#rrggbb` per vertex allowed. <!-- mcp-diorama2 2, 3 -->
 - Agents can make **tiny parts** of every shape alike (down to 1 mm; an octahedron used to stop at 10 cm). <!-- mcp-diorama2 5 -->
 - When a mesh's colour, vertex or UV list is wrong, the agent hears **how many entries arrived and which one is bad**. <!-- mcp-diorama2 6 -->
+- An agent's **screenshot can show the post effects** (bloom, vignette, grade) as your screen draws them, and says when your screen does not draw them and why. <!-- mcp-diorama2 7 -->
+- **Phones that hide post effects to stay smooth are no longer a mystery**: the agent says so, and can ask you for higher quality on your own device — a card with **Allow / Keep**, then Undo; nobody else's device changes. <!-- mcp-diorama2 7 -->
 - **Claude on claude.ai reads the right words again**: tool replies no longer turn ordinary words like "logs" into tool names (`status` had a field called "run {action: 'logs'}"). <!-- mcp-diorama2 4 -->
 
 ## 1.60.0 — An agent builds the game around your scene 🎮

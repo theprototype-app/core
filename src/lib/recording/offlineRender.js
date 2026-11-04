@@ -21,9 +21,9 @@ import { get } from 'svelte/store';
 import { globalRenderer, globalScene, isVRMode, isLocked } from '../../stores/sceneStore';
 import { isPhoneDevice, qualityState } from '../qualityGovernor';
 import { PHONE_START_LEVEL } from '../qualityGovernorCore';
-import { recordingState, recordingPrefs, IDLE_RECORDING } from './recordingStores.js';
+import { recordingState, recordingPrefs, IDLE_RECORDING, exportJob } from './recordingStores.js';
 import { coerceRecordingPrefs, coverRect, recordingFileName } from './recordingCore.js';
-import { pathT, timelineTime, sinkHasRoom } from './frameClock.js';
+import { pathT, timelineTime, sinkHasRoom, rangeTime, rangesDuration } from './frameClock.js';
 import { exportPlan, probeCaps, FORMAT_INFO } from './videoExportCore.js';
 import { createSink, canEncodeWebp } from './exportSinks.js';
 import {
@@ -51,7 +51,7 @@ const PREP_FRAMES = 4;
  * @type {null | {
  *   prefs: import('./recordingCore.js').RecordingPrefs, plan: ReturnType<typeof exportPlan>,
  *   sink: import('./exportSinks.js').Sink, canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D,
- *   seq: any, pose: ((t: number) => any) | null, loop: boolean, phase: 'preparing'|'rendering'|'finishing',
+ *   seq: any, ranges?: number[][] | null, pose: ((t: number) => any) | null, loop: boolean, phase: 'preparing'|'rendering'|'finishing',
  *   prep: number, i: number, posed: number, settle: number, poseRender: number, thumbnail: string | null,
  *   restore: () => void, shotsWere: boolean, lastPublish: number, startedAt: number
  * }}
@@ -91,9 +91,19 @@ export function exportBlocker(prefs) {
  * @returns {Promise<boolean>}
  */
 export async function startExport(override) {
-	const prefs = coerceRecordingPrefs({ ...get(recordingPrefs), ...(override || {}) });
+	let prefs = coerceRecordingPrefs({ ...get(recordingPrefs), ...(override || {}) });
+	// fix-film: Film's chosen shots — the next file of the job films only its ranges
+	const ranges = jobRanges(prefs);
+	if (ranges) prefs = coerceRecordingPrefs({ ...prefs, duration: rangesDuration(ranges) });
 	const { plan, seq } = planFor(prefs);
-	if (plan.path === 'mediarecorder') return startRecording(prefs);
+	if (plan.path === 'mediarecorder') {
+		if (ranges) {
+			exportJob.set(null);
+			recordingState.set({ ...IDLE_RECORDING, status: 'error', error: 'Exporting chosen shots needs a browser that encodes video frame by frame (Chrome, Edge or Safari 17+). Export the whole timeline instead.' });
+			return false;
+		}
+		return startRecording(prefs);
+	}
 	const blocked = session ? 'An export is already running.' : sceneBlocker(prefs) || plan.blocker;
 	if (blocked) {
 		recordingState.set({ ...IDLE_RECORDING, status: 'error', error: blocked });
@@ -144,6 +154,7 @@ export async function startExport(override) {
 		canvas,
 		ctx,
 		seq,
+		ranges,
 		pose: planPose(prefs),
 		// a whole number of turns comes back to its first frame: never draw it twice
 		loop: prefs.mode === 'turntable' && Number.isInteger(prefs.revolutions),
@@ -180,7 +191,7 @@ function before() {
 	}
 	const frame = s.phase === 'preparing' ? 0 : s.i;
 	const { plan } = s;
-	if (s.seq) scrubSequence(s.seq.id, timelineTime(frame, plan.fps, s.seq));
+	if (s.seq) scrubSequence(s.seq.id, s.ranges ? rangeTime(frame, plan.fps, s.ranges) : timelineTime(frame, plan.fps, s.seq));
 	if (s.pose) applyPose(s.pose(pathT(frame, plan.frames, s.loop)));
 	if (s.posed !== frame) {
 		s.posed = frame;
@@ -292,6 +303,7 @@ async function finish() {
 				encoder: s.sink.label
 			}
 		});
+		nextInJob();
 	} catch (e) {
 		recordingState.set({
 			...IDLE_RECORDING,
@@ -301,10 +313,28 @@ async function finish() {
 	}
 }
 
+/** fix-film: the ranges the next file of Film's export job films (null = the whole timeline) @param {any} prefs */
+function jobRanges(prefs) {
+	const job = get(exportJob);
+	if (!job || prefs.mode !== 'timeline' || job.sequence !== prefs.sequence) return null;
+	const next = job.queue[job.done];
+	return Array.isArray(next) && next.length ? next : null;
+}
+
+/** fix-film: one file of a per-shot job is done — start the next (every file lands in Explorer ▸ Recordings) */
+function nextInJob() {
+	const job = get(exportJob);
+	if (!job) return;
+	const done = job.done + 1;
+	exportJob.set({ ...job, done });
+	if (done < job.queue.length) setTimeout(() => void startExport(), 0);
+}
+
 /** @param {string} reason */
 function fail(reason) {
 	const s = session;
 	if (!s) return;
+	if (s.ranges) exportJob.set(null); // a failed or cancelled file ends the job
 	s.sink.cancel();
 	teardown();
 	recordingState.set({ ...IDLE_RECORDING, status: reason ? 'error' : 'idle', error: reason });

@@ -10,7 +10,7 @@
 	import ModalDialog from '../ui/ModalDialog.svelte';
 	import { get } from 'svelte/store';
 	import { untrack } from 'svelte';
-	import { recordingOpen, recordingState, recordingPrefs, setRecordingPrefs } from '$lib/recording/recordingStores.js';
+	import { recordingOpen, recordingState, recordingPrefs, setRecordingPrefs, exportJob } from '$lib/recording/recordingStores.js';
 	import { startRecording, cancelRecording, resetRecording, downloadRecording, recordingBlocker } from '$lib/recording/recorder.js';
 	import { RESOLUTIONS, FPS_CHOICES, MIN_DURATION, MAX_DURATION, EXPORT_FORMATS } from '$lib/recording/recordingCore.js';
 	import { exportPlan, estimateExportBytes, FORMAT_INFO, ALPHA_FORMATS, formatBytes } from '$lib/recording/videoExportCore.js';
@@ -38,6 +38,8 @@
 	const seqMap = $derived($sequences);
 	const seqList = $derived(Object.values(seqMap).sort((a, b) => String(a.name).localeCompare(String(b.name))));
 	const seq = $derived(p.mode === 'timeline' ? findSequence($sequences, p.sequence) : null);
+	// fix-film: Film's chosen shots (joined, or one file each) — the export films only those
+	const job = $derived(p.mode === 'timeline' && $exportJob && $exportJob.sequence === p.sequence ? $exportJob : null);
 	const caps = exportCaps();
 	const plan = $derived.by(() => {
 		const dom = /** @type {any} */ ($globalRenderer)?.domElement;
@@ -104,7 +106,10 @@
 
 	function close() {
 		recordingOpen.set(false);
-		if (!busy) resetRecording();
+		if (!busy) {
+			resetRecording();
+			exportJob.set(null);
+		}
 	}
 
 	function reveal() {
@@ -184,6 +189,9 @@
 						{(r.durationMs / 1000).toFixed(1)} s · {r.width} × {r.height} · {r.fps} fps{#if r.frames} · {r.frames} frames{/if} · {fmt(r.bytes)}{#if r.encoder} · {r.encoder}{/if}
 					</div>
 					<div class="rec-dim">{r.savedNote}</div>
+					{#if job && job.queue.length > 1}
+						<div id="recording-job-progress" class="rec-dim">File {Math.min(job.done, job.queue.length)} of {job.queue.length}{job.done >= job.queue.length ? ' — every file is in Explorer ▸ Recordings' : ''}</div>
+					{/if}
 					<div class="rec-actions">
 						<button id="recording-download" type="button" class="rec-go" onclick={downloadRecording}>Download{r.mime === 'application/zip' ? ' .zip' : ''}</button>
 						{#if r.itemId}
@@ -227,7 +235,11 @@
 								{#each seqList as s (s.id)}<option value={s.id}>{s.name} ({s.duration.toFixed(1)} s)</option>{/each}
 							</select>
 						</div>
-						<p class="rec-note">Films the timeline from its start, frame by frame: its camera shots (or your view where it has none), its clips at every frame. The length follows the timeline.</p>
+						{#if job}
+							<p id="recording-film-job" class="rec-note">From Film: {job.label}. Only those shots are filmed, in recorded order.</p>
+						{:else}
+							<p class="rec-note">Films the timeline from its start, frame by frame: its camera shots (or your view where it has none), its clips at every frame. The length follows the timeline.</p>
+						{/if}
 					{:else}
 						<p id="recording-no-timeline" class="rec-note">Make a timeline first (Windows ▸ Timeline): camera shots and clips on a track. Then film it here.</p>
 					{/if}

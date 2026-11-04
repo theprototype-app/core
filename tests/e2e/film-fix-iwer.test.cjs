@@ -265,7 +265,7 @@ h.run(async () => {
 			box.scale.set(2, 1.5, 0.5);
 			box.updateMatrixWorld(true);
 		}, { id: boxId, at: [p0.pos[0] + f[0] * 4, p0.pos[1] + f[1] * 4, p0.pos[2] + f[2] * 4] });
-		// COUNTERFACTUAL (FILM_FIX_COUNTERFACTUAL=1): pin autoClear off the way 1.58 left it — the trail must show
+		// COUNTERFACTUAL (FILM_FIX_COUNTERFACTUAL=1): pin autoClear off the way 1.58 left it — then no XR frame may be cleared (the clear row must be able to fail)
 		const counter = process.env.FILM_FIX_COUNTERFACTUAL === '1';
 		if (counter)
 			await page.evaluate(() => {
@@ -273,7 +273,40 @@ h.run(async () => {
 				window.__stores.globalRenderer.subscribe((v) => (r = v))();
 				Object.defineProperty(r, 'autoClear', { get: () => false, set() {}, configurable: true });
 			});
+		await iwer.frames(page, 4);
+		// THE CLEAR ITSELF: IWER (like the spec) clears the XR framebuffer each frame on its own, so pixels alone
+		// cannot fail here — the N6's AR framebuffer keeps the last frame. Count the app's colour clears ON THE XR
+		// FRAMEBUFFER per XR frame (a shadow map's clear is on its own target and does not count).
+		await page.evaluate(() => {
+			let r = null;
+			window.__stores.globalRenderer.subscribe((v) => (r = v))();
+			// three's renderer.clear, not gl.clear: IWER clears its framebuffer through the same GL context (once
+			// a frame, the counterfactual measured it), and that clear is the emulator's, not the app's
+			const gl = r.getContext();
+			const xrFb = () => r.xr.getSession()?.renderState?.baseLayer?.framebuffer ?? null;
+			const orig = r.clear;
+			window.__clearSpy = { n: 0, frames: 0, orig };
+			r.clear = function (color = true, depth, stencil) {
+				if (color !== false && gl.getParameter(gl.FRAMEBUFFER_BINDING) === xrFb()) window.__clearSpy.n++;
+				return orig.call(this, color, depth, stencil);
+			};
+			const sess = r.xr.getSession();
+			const tick = () => {
+				if (!window.__clearSpy) return;
+				window.__clearSpy.frames++;
+				sess.requestAnimationFrame(tick);
+			};
+			sess.requestAnimationFrame(tick);
+		});
 		await iwer.frames(page, 10);
+		const clears = await page.evaluate(() => {
+			let r = null;
+			window.__stores.globalRenderer.subscribe((v) => (r = v))();
+			const spy = window.__clearSpy;
+			r.clear = spy.orig;
+			window.__clearSpy = null;
+			return { clears: spy.n, frames: spy.frames };
+		});
 		const m0 = await magenta(page);
 		await page.screenshot({ path: path.join(OUT, `${size.key}-walk-box.png`) });
 		await iwer.pose(page, 'head', [0, 1.6, 0], { yaw: Math.PI });
@@ -282,9 +315,10 @@ h.run(async () => {
 		await page.screenshot({ path: path.join(OUT, `${size.key}-walk-turned.png`) });
 		h.check(m0.n > 40, tag(`premise: the magenta box is in view (${m0.n} px of ${m0.total})`));
 		if (counter) {
-			h.check(m1.n > m0.n * 0.5, tag(`COUNTERFACTUAL: with autoClear off the box smears (${m1.n} magenta px left of ${m0.n})`));
+			h.check(clears.clears === 0, tag(`COUNTERFACTUAL: with autoClear off no XR frame is cleared (${JSON.stringify(clears)})`));
 			break;
 		}
+		h.check(clears.frames >= 8 && clears.clears >= clears.frames - 1, tag(`every XR frame is cleared before it is drawn (${clears.clears} colour clears in ${clears.frames} frames)`));
 		h.check(m1.n < Math.max(4, m0.n * 0.05), tag(`turning away leaves no trail of the box (${m1.n} magenta px left of ${m0.n})`));
 		await iwer.pose(page, 'head', [0, 1.6, 0]);
 		await iwer.frames(page, 4);

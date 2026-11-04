@@ -339,7 +339,8 @@ export class BrowserEngine extends EventEmitter {
 	/**
 	 * A PNG of the scene: tpAgent.screenshot (A5: a clean frame from a temporary camera), else
 	 * the renderer canvas as the page draws it (`fallback: true`, chrome-free but with helpers).
-	 * @param {any} opts @returns {Promise<{data: string, mimeType: string, fallback?: boolean, note?: string}>}
+	 * A refused shot answers `{error}` (the reason), with no picture.
+	 * @param {any} opts @returns {Promise<{data: string, mimeType: string, fallback?: boolean, note?: string} | {error: string}>}
 	 */
 	async screenshot(opts = {}) {
 		if (this.state !== 'ready' || !this.page) throw new Error('the agent page is not ready (state ' + this.state + ')');
@@ -347,8 +348,14 @@ export class BrowserEngine extends EventEmitter {
 			.evaluate(async (o) => {
 				const api = /** @type {any} */ (window).tpAgent;
 				if (!api || typeof api.screenshot !== 'function') return null;
+				const asked = Date.now();
 				let r = await api.screenshot(o);
-				if (!r) return null;
+				if (!r) {
+					// mcp-diorama2 (26): a REFUSED shot (view camera with no uuid, a bad view) says why in lastShot —
+					// the reason goes back to the agent instead of a live-canvas picture it did not ask for
+					const last = typeof api.lastShot === 'function' ? api.lastShot() : null;
+					return last && typeof last.error === 'string' && last.at >= asked ? { refused: last.error } : null;
+				}
 				if (typeof Blob !== 'undefined' && r instanceof Blob) {
 					r = await new Promise((res, rej) => {
 						const fr = new FileReader();
@@ -362,6 +369,7 @@ export class BrowserEngine extends EventEmitter {
 				return typeof r === 'string' ? { data: r, mimeType: 'image/png', camera } : null;
 			}, opts)
 			.catch((/** @type {any} */ e) => ({ error: firstLine(e) }));
+		if (viaApi && typeof viaApi.refused === 'string') return { error: viaApi.refused };
 		if (viaApi && typeof viaApi.data === 'string') {
 			const m = /^data:([^;,]+)(;base64)?,/.exec(viaApi.data);
 			return m ? { data: viaApi.data.slice(m[0].length), mimeType: m[1], camera: viaApi.camera } : viaApi;

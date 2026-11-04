@@ -46,6 +46,14 @@ beforeEach(() => {
 
 /** create_objects' createOne, minus the replication the handlers do not own */
 function createBase(spec) {
+	if (spec.kind === 'group') {
+		const g = new THREE.Group();
+		g.name = spec.name || 'Group';
+		if (spec.position) g.position.fromArray(spec.position);
+		group.add(g);
+		history.recordObjectPresence('create', g);
+		return { uuid: g.uuid, name: g.name };
+	}
 	const g = spec.primitive === 'Sphere' ? new THREE.SphereGeometry(spec.params?.[0] ?? 0.5) : spec.primitive === 'Cylinder' ? new THREE.CylinderGeometry() : new THREE.BoxGeometry(...(spec.params ?? [1, 1, 1]));
 	const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial());
 	m.name = spec.name || spec.primitive;
@@ -193,7 +201,7 @@ describe('W5 particles (+ W5b fireflies)', () => {
 		expect(r.created[0].preset).toBe('fireflies');
 		const o = find(r.created[0].uuid);
 		expect(o.userData.particles).toMatchObject({ preset: 'fireflies', count: 50 });
-		expect(o.castShadow).toBe(false);
+		expect(o.isGroup).toBe(true); // mcp-diorama2 21: nothing drawn but the particles
 		expect(sent.some((m) => m.type === 'objectParameters' && m.parameter === 'particles' && m.uuid === o.uuid)).toBe(true);
 		expect(stack().length).toBe(1);
 		await history.undo();

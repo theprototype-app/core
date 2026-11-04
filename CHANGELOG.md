@@ -5,6 +5,40 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## Unreleased
+
+### 🦊 Fixes from an agent's diorama build
+- **Groups come back as groups** after "Restore previous session": a group used to return as a plain node, so its parts looked loose and an agent could not build into it. <!-- mcp-diorama2 1 -->
+- An agent that names a **group that is not there** now gets an error and nothing is made, instead of a part dropped at the middle of the scene; any object (not a light or camera) can hold parts. <!-- mcp-diorama2 1 -->
+- A mesh an agent **paints per vertex** keeps its true colours: no random pastel tint on top, and colours mean what a colour picker means (sRGB), with `#rrggbb` per vertex allowed. <!-- mcp-diorama2 2, 3 -->
+- Agents can make **tiny parts** of every shape alike (down to 1 mm; an octahedron used to stop at 10 cm). <!-- mcp-diorama2 5 -->
+- When a mesh's colour, vertex or UV list is wrong, the agent hears **how many entries arrived and which one is bad**. <!-- mcp-diorama2 6 -->
+- An agent's **screenshot can show the post effects** (bloom, vignette, grade) as your screen draws them, and says when your screen does not draw them and why. <!-- mcp-diorama2 7 -->
+- **Phones that hide post effects to stay smooth are no longer a mystery**: the agent says so, and can ask you for higher quality on your own device — a card with **Allow / Keep**, then Undo; nobody else's device changes. <!-- mcp-diorama2 7 -->
+- Agents can **copy and mirror** what they build: a row of fence posts, or a left ear made into the right one, its faces turned the right way. One undo step, and everyone sees it. <!-- mcp-diorama2 8 -->
+- **Scatter keeps paths clear** and can spread **real copies of something you built** (up to 200, each one editable) instead of simple instances; the same seed gives the same layout. <!-- mcp-diorama2 8 -->
+- Agents can **bring in a model file** — glTF, GLB or OBJ, sent in parts or from a public https address. It goes into your library first, and its named parts (a lid, a wheel) can be animated. Nothing in a model runs, and a file that points at other files is refused. <!-- mcp-diorama2 9 -->
+- New shader nodes: **Polar coordinates, Twirl and Rotate UV** (whirlpools, portals, spinning patterns), and the **GLSL expression** node takes colours and vectors as they are. <!-- mcp-diorama2 10 -->
+- An agent can see **what makes your scene heavy** (the objects drawing the most triangles and draw calls) and can tell a slow scene from a screen that simply refreshes at 60 Hz. <!-- mcp-diorama2 14 -->
+- Agents can **turn shadows on or off per part** as they build or import it. <!-- mcp-diorama2 13 -->
+- Ask Claude "what can you do?" and it now mentions the **sky, background and fog**, and the **opening view** players start from. <!-- mcp-diorama2 12 -->
+- **Claude on claude.ai reads the right words again**: tool replies no longer turn ordinary words like "logs" into tool names (`status` had a field called "run {action: 'logs'}"). <!-- mcp-diorama2 4 -->
+- Claude on claude.ai **keeps your names and ids as they are**: prefab ids, object names, undo lines and messages no longer come back with tool wording mixed in. <!-- mcp-diorama2 15 -->
+- **"Allow" now does what it says**: when an agent asks to change the whole look and you press Allow, its change goes through (a repeated ask used to open a new question each time), and the agent hears pending, allowed, denied or expired. Going back to a checkpoint is asked as exactly that. <!-- mcp-diorama2 17 -->
+- **Pings land where you point**: Ctrl+Alt+click and "Ping this object" mark the spot you clicked, not the middle of a nearby object. Building a group at a ping no longer breaks its position, and an agent waiting for you wakes up when you ping. <!-- mcp-diorama2 19 -->
+- **Game rounds keep going with view-only guests**: a guest is never the one who decides the round; the host (or an editor) is. <!-- mcp-diorama2 20 -->
+- A **round pond** is the size you ask for ([diameter, depth, diameter]), sits on its spot, and its colour tints the whole water. <!-- mcp-diorama2 18 -->
+- A particle effect placed on its own (fireflies, rain) no longer shows a **ball** where it comes from. <!-- mcp-diorama2 21 -->
+- An agent can light the scene with a **Poly Haven sky** it found in search (it lands in your library first), or **send its own HDR sky**. <!-- mcp-diorama2 16 -->
+- Agents find the **sounds in the sound packs** (a fire crackle, wind, rain) and use them straight away; they are copied into your library the first time. An agent can also **send its own sound or music** to the library, so a site that blocks downloads no longer matters. <!-- mcp-diorama2 24 -->
+- **Terrain does what an agent asks**: "6 m high" is the highest peak, island edges sink into the water, colour layers show straight away, and the layers can be painted by height for you (sand low, rock and snow on top). <!-- mcp-diorama2 22 -->
+- **Scatter keeps a circle clear** round a spot or an object (the campfire, the tent door), and several kinds of plant or rock in one call make one set with the name the agent gives it. <!-- mcp-diorama2 23 -->
+- An agent can say **which way a model faces** (`front: "+x"`), so a fox placed "facing you" or "looking at the fire" turns its nose, not its side. <!-- mcp-diorama2 25 -->
+- An agent's **screenshot leaves the people out** (a clean picture of the scene), can **show the game HUD** on top, and can **look through one of your scene cameras**. <!-- mcp-diorama2 26 -->
+- An agent no longer calls a scene **slow when your screen simply refreshes at its own rate** (a headset at 72 Hz included), and it can see **where the draw calls come from**: your objects, shadows, effects, or camera previews. <!-- mcp-diorama2 27 -->
+- An agent asking **"what is in this area?"** can count a long wall or a big rock that only reaches into it, not only things whose middle is there. <!-- mcp-diorama2 28 -->
+- For developers: `tpAgent` contract 1.8.0 (`edit_shape {action: "duplicate"}`, `create_shape {action: "import"}`, `set_look {quality}`, screenshot `postEffects`, `sceneBudget.top` / `vsync`, scatter `source` / `avoid`, `assets {action: "upload"}` = `upload_asset`, `set_look sky {hdri: "cc0:polyhaven/<id>"}`, pack sound ids `pack:<name>/<file>`, terrain `paintBy` / `peak`, scatter `id` + avoid circles, `front` on lookAt / face_user, screenshot `view: "camera"` / `hud` / `avatars`, `sceneBudget.callsBySource`, list_scene `near.by` / `bounds.by`); no new connector tool names. <!-- mcp-diorama2 -->
+
 ## 1.60.0 — An agent builds the game around your scene 🎮
 
 ### 🌲 Agents build whole places

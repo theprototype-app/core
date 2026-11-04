@@ -3,7 +3,7 @@
 	"format": 2,
 	"generator": {
 		"source": "tpAgent.tools() via core scripts/agent-tool-catalog.cjs, mapped by tools/agent/src/catalog.js",
-		"hostTools": 71,
+		"hostTools": 75,
 		"dropped": []
 	},
 	"instructions": "You are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.\nWhen asked what you can do here, call what_can_you_do and say its \"say\" line.",
@@ -47,7 +47,7 @@
 					},
 					"near": {
 						"type": "object",
-						"description": "optional: only objects within radius of a WORLD position",
+						"description": "optional: only objects within radius of a WORLD position (by: origin = where the object is, the default; touches = any part of its world bounds; inside = all of it)",
 						"properties": {
 							"position": {
 								"type": "array",
@@ -58,6 +58,14 @@
 							},
 							"radius": {
 								"type": "number"
+							},
+							"by": {
+								"type": "string",
+								"enum": [
+									"origin",
+									"touches",
+									"inside"
+								]
 							}
 						},
 						"required": [
@@ -67,7 +75,7 @@
 					},
 					"bounds": {
 						"type": "object",
-						"description": "optional: only objects whose WORLD position is inside this box",
+						"description": "optional: only objects inside this WORLD box — by: origin = their position (the default), touches = any part of their world mesh bounds overlaps it (a long wall crossing in), inside = all of it fits",
 						"properties": {
 							"min": {
 								"type": "array",
@@ -82,6 +90,14 @@
 									"type": "number"
 								},
 								"description": "[x, y, z]"
+							},
+							"by": {
+								"type": "string",
+								"enum": [
+									"origin",
+									"touches",
+									"inside"
+								]
 							}
 						},
 						"required": [
@@ -197,7 +213,7 @@
 									"items": {
 										"type": "number"
 									},
-									"description": "up to 4 constructor args. Box=[w,h,d], Sphere=[radius], Cylinder=[rTop,rBottom,height], Cone=[radius,height], Plane=[w,h], Torus=[radius,tube]. Omit for sensible defaults."
+									"description": "up to 4 constructor args. Box=[w,h,d], Sphere=[radius], Cylinder=[rTop,rBottom,height], Cone=[radius,height], Plane=[w,h], Torus=[radius,tube]. Omit for sensible defaults. Sizes go down to 0.001 m."
 								},
 								"name": {
 									"type": "string"
@@ -284,7 +300,7 @@
 									"description": "meshes and models: shadows fall on it (on by default)"
 								},
 								"lookAt": {
-									"description": "turn it so its local +Z (front) faces this: a world point [x,y,z] or another object's uuid (+Y stays up; lights use aim)"
+									"description": "turn it so its front (local +Z, or the front you give) faces this: a world point [x,y,z] or another object's uuid (+Y stays up; lights use aim)"
 								},
 								"at": {
 									"type": "object",
@@ -322,11 +338,23 @@
 									"description": "stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground"
 								},
 								"face_user": {
-									"description": "turn it (yaw only) so its +Z front faces a person: true = the person you act for, or a peer id / name from where_are_users"
+									"description": "turn it (yaw only) so its front faces a person: true = the person you act for, or a peer id / name from where_are_users"
+								},
+								"front": {
+									"type": "string",
+									"enum": [
+										"+z",
+										"-z",
+										"+x",
+										"-x",
+										"+y",
+										"-y"
+									],
+									"description": "which local axis is its front for lookAt and face_user (default +z; many models face +x or -z — look at a screenshot)"
 								},
 								"parentUuid": {
 									"type": "string",
-									"description": "uuid of an existing group to nest under — position/rotation/scale are then LOCAL to that group"
+									"description": "uuid of an existing group (or any object, not a light or camera) to nest under — position/rotation/scale are then LOCAL to it. A uuid that is not in the scene is an error and that object is not made"
 								},
 								"physics": {
 									"type": "string",
@@ -469,7 +497,7 @@
 									"description": "meshes and models: shadows fall on it (on by default)"
 								},
 								"lookAt": {
-									"description": "turn it so its local +Z (front) faces this: a world point [x,y,z] or another object's uuid (+Y stays up; lights use aim)"
+									"description": "turn it so its front (local +Z, or the front you give) faces this: a world point [x,y,z] or another object's uuid (+Y stays up; lights use aim)"
 								},
 								"at": {
 									"type": "object",
@@ -507,14 +535,26 @@
 									"description": "stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground"
 								},
 								"face_user": {
-									"description": "turn it (yaw only) so its +Z front faces a person: true = the person you act for, or a peer id / name from where_are_users"
+									"description": "turn it (yaw only) so its front faces a person: true = the person you act for, or a peer id / name from where_are_users"
+								},
+								"front": {
+									"type": "string",
+									"enum": [
+										"+z",
+										"-z",
+										"+x",
+										"-x",
+										"+y",
+										"-y"
+									],
+									"description": "which local axis is its front for lookAt and face_user (default +z; many models face +x or -z — look at a screenshot)"
 								},
 								"visible": {
 									"type": "boolean"
 								},
 								"parentUuid": {
 									"type": "string",
-									"description": "group uuid to nest under, or \"root\" to un-nest. The object keeps its world pose; a position given in the same update is LOCAL to the new parent"
+									"description": "group uuid (or any object, not a light or camera) to nest under, or \"root\" to un-nest. The object keeps its world pose; a position given in the same update is LOCAL to the new parent. A uuid not in the scene is an error"
 								}
 							},
 							"required": [
@@ -748,7 +788,7 @@
 								},
 								"params": {
 									"type": "object",
-									"description": "param name → value; sizes clamped to 1 km, segment counts to their range"
+									"description": "param name → value; sizes from 0.001 m to 1 km (the same for every primitive), segment counts to their range"
 								},
 								"path": {
 									"type": "array",
@@ -870,7 +910,7 @@
 					},
 					"parentUuid": {
 						"type": "string",
-						"description": "uuid of a group to nest under — position / rotation / scale AND the shape's own points are then LOCAL to that group (no position = the group's origin), so the part moves and turns with it"
+						"description": "uuid of a group (or any object, not a light or camera) to nest under — position / rotation / scale AND the shape's own points are then LOCAL to it (no position = its origin), so the part moves and turns with it. A uuid that is not in the scene is an error and nothing is made"
 					},
 					"physics": {
 						"type": "string",
@@ -1076,7 +1116,7 @@
 					},
 					"parentUuid": {
 						"type": "string",
-						"description": "uuid of a group to nest under — position / rotation / scale AND the shape's own points are then LOCAL to that group (no position = the group's origin), so the part moves and turns with it"
+						"description": "uuid of a group (or any object, not a light or camera) to nest under — position / rotation / scale AND the shape's own points are then LOCAL to it (no position = its origin), so the part moves and turns with it. A uuid that is not in the scene is an error and nothing is made"
 					},
 					"physics": {
 						"type": "string",
@@ -1298,7 +1338,7 @@
 		{
 			"name": "create_mesh",
 			"title": "Make a mesh from data",
-			"description": "A mesh from raw data: vertices [[x, y, z], …] and faces [[i, j, k] or [i, j, k, l] …] (indices into vertices, counter-clockwise seen from outside; polygons of up to 32 corners are fanned, so keep them convex), optional uvs (one [u, v] per vertex). Up to 20000 vertices and 20000 faces; normals are computed (smooth: true for smooth shading, flatShading: true for hard facets). Colour it as you make it: materials [{color, roughness, metalness, …}] (up to 16 slots) with faceMaterials [slot per face, same order as faces] for parts in different colours; or colors [[r, g, b] 0-1, one per vertex] for a painted gradient (multiplied by the material colour). Material slots last through edit_mesh; vertex colours last only while an edit keeps the vertex count. subdivide: 1 or 2 smooths it (Catmull-Clark: a box of six quads becomes a rounded pebble, a few quads become a soft organic shape; each level about four times the faces, checked against the caps). Edit it afterwards with edit_mesh, or send new vertices with update_mesh. Returns the uuid.\nTake a screenshot after each change to check your work.",
+			"description": "A mesh from raw data: vertices [[x, y, z], …] and faces [[i, j, k] or [i, j, k, l] …] (indices into vertices, counter-clockwise seen from outside; polygons of up to 32 corners are fanned, so keep them convex), optional uvs (one [u, v] per vertex). Up to 20000 vertices and 20000 faces; normals are computed (smooth: true for smooth shading, flatShading: true for hard facets). Colour it as you make it: materials [{color, roughness, metalness, …}] (up to 16 slots) with faceMaterials [slot per face, same order as faces] for parts in different colours; or colors (one per vertex: [r, g, b] 0-1 meant as sRGB, the way a colour picker or a hex code means them, or a \"#rrggbb\" string; colorSpace: \"linear\" takes the numbers as linear) for a painted gradient — they multiply the material colour, which is white when you give colors and no color. Material slots last through edit_mesh; vertex colours last only while an edit keeps the vertex count. subdivide: 1 or 2 smooths it (Catmull-Clark: a box of six quads becomes a rounded pebble, a few quads become a soft organic shape; each level about four times the faces, checked against the caps). Edit it afterwards with edit_mesh, or send new vertices with update_mesh. Returns the uuid.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -1345,15 +1385,31 @@
 					"colors": {
 						"type": "array",
 						"items": {
-							"type": "array",
-							"items": {
-								"type": "number"
-							},
-							"minItems": 3,
-							"maxItems": 3
+							"anyOf": [
+								{
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"minItems": 3,
+									"maxItems": 3
+								},
+								{
+									"type": "string",
+									"description": "#rrggbb"
+								}
+							]
 						},
 						"maxItems": 20000,
-						"description": "one [r, g, b] (0-1) per vertex, in the order of vertices"
+						"description": "one colour per vertex, in the order of vertices: [r, g, b] (0-1, sRGB unless colorSpace is \"linear\") or \"#rrggbb\""
+					},
+					"colorSpace": {
+						"type": "string",
+						"enum": [
+							"srgb",
+							"linear"
+						],
+						"description": "how [r, g, b] colors numbers are meant: \"srgb\" (default — like a colour picker, as material colours are) or \"linear\"; hex is always sRGB"
 					},
 					"materials": {
 						"type": "array",
@@ -1446,7 +1502,7 @@
 					},
 					"parentUuid": {
 						"type": "string",
-						"description": "uuid of a group to nest under — position / rotation / scale AND the shape's own points are then LOCAL to that group (no position = the group's origin), so the part moves and turns with it"
+						"description": "uuid of a group (or any object, not a light or camera) to nest under — position / rotation / scale AND the shape's own points are then LOCAL to it (no position = its origin), so the part moves and turns with it. A uuid that is not in the scene is an error and nothing is made"
 					},
 					"physics": {
 						"type": "string",
@@ -1472,6 +1528,61 @@
 			},
 			"annotations": {
 				"title": "Make a mesh from data",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "duplicate",
+			"title": "Copy or mirror an object",
+			"description": "Copy an object you built (its children, materials, behaviour and physics come along; nothing is resent): count copies stepping by offset [x, y, z] metres in its parent's space (default: a row to the side), or mirror \"x\"|\"y\"|\"z\" = the mirror image across that plane through the PARENT's centre (in a group: its centre line — a left arm or ear becomes the right one; at the scene root: the world's), its triangles re-wound so normals stay right (Box and even-segment round shapes keep their params). parentUuid nests the copies (they keep their place in the world). One undo step; everyone sees it. For tens to hundreds of copies spread over a terrain or mesh, use scatter with source: <uuid>.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"uuid": {
+						"type": "string",
+						"description": "the object to copy"
+					},
+					"count": {
+						"type": "integer",
+						"minimum": 1,
+						"maximum": 50,
+						"description": "copies (default 1)"
+					},
+					"offset": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"minItems": 3,
+						"maxItems": 3,
+						"description": "[x, y, z] metres between copies in the parent's space; with mirror it moves the mirror image (default [0, 0, 0])"
+					},
+					"mirror": {
+						"type": "string",
+						"enum": [
+							"x",
+							"y",
+							"z"
+						],
+						"description": "the axis the mirror flips: x makes a left part the right one"
+					},
+					"parentUuid": {
+						"type": "string",
+						"description": "a group (or any object) to put the copies in"
+					},
+					"name": {
+						"type": "string",
+						"description": "the copies' name (numbered when several)"
+					}
+				},
+				"required": [
+					"uuid"
+				]
+			},
+			"annotations": {
+				"title": "Copy or mirror an object",
 				"readOnlyHint": false,
 				"destructiveHint": false,
 				"openWorldHint": false
@@ -1535,14 +1646,31 @@
 					"colors": {
 						"type": "array",
 						"items": {
-							"type": "array",
-							"items": {
-								"type": "number"
-							},
-							"minItems": 3,
-							"maxItems": 3
+							"anyOf": [
+								{
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"minItems": 3,
+									"maxItems": 3
+								},
+								{
+									"type": "string",
+									"description": "#rrggbb"
+								}
+							]
 						},
-						"maxItems": 20000
+						"maxItems": 20000,
+						"description": "as create_mesh: [r, g, b] (sRGB unless colorSpace is \"linear\") or \"#rrggbb\" per vertex"
+					},
+					"colorSpace": {
+						"type": "string",
+						"enum": [
+							"srgb",
+							"linear"
+						],
+						"description": "how [r, g, b] colors numbers are meant: \"srgb\" (default — like a colour picker, as material colours are) or \"linear\"; hex is always sRGB"
 					},
 					"faceMaterials": {
 						"type": "array",
@@ -2127,7 +2255,7 @@
 		{
 			"name": "describe_shader_nodes",
 			"title": "Look up shader node types",
-			"description": "The shader node catalog: each type with what it does, its params (which become uniforms), inputs and outputs.",
+			"description": "The shader node catalog: each type with what it does, its params (which become uniforms), inputs and outputs. UV warps include polarCoordinates, twirl and rotateUV; the glsl node keeps the type wired into a, b and c (float, vec2, vec3, vec4) and returns its declared type.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -2156,7 +2284,7 @@
 		{
 			"name": "set_post",
 			"title": "Change the post effects",
-			"description": "The scene's post effects (bloom, huesaturation, brightnesscontrast, tonemapping, vignette, grain, chromaticaberration, ao, lut, pixelation, scanlines, dotscreen, smaa; get_post lists every param). effects: [{kind, params, enabled, at, remove}], matched to what is there by id or kind, so repeating a call does not stack a second bloom; replace: true drops the rest; the stack order is the order of effect. This changes the whole scene's look: the first call returns needsConfirm and the host is asked; repeat it with confirmId. One undo step.\nTake a screenshot after each change to check your work.",
+			"description": "The scene's post effects (bloom, huesaturation, brightnesscontrast, tonemapping, vignette, grain, chromaticaberration, ao, lut, pixelation, scanlines, dotscreen, smaa; get_post lists every param). effects: [{kind, params, enabled, at, remove}], matched to what is there by id or kind, so repeating a call does not stack a second bloom; replace: true drops the rest; the stack order is the order of effect. This changes the whole scene's look: the first call returns needsConfirm and the host is asked; repeat it with confirmId. One undo step. The answer says shownHere: false with a reason when this screen does not draw post effects (reason \"quality tier\" = the device turned them off to keep its frame rate, usual on a phone: the scene keeps them; say so, and offer to ask with set_quality).\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -2220,6 +2348,43 @@
 			},
 			"annotations": {
 				"title": "Change the post effects",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "set_quality",
+			"title": "Ask for higher quality on this device",
+			"description": "Ask the person to raise THIS device's quality (their Settings ▸ Scene ▸ Performance ▸ Quality preset). Use it when set_post / get_post / screenshot say shownHere false or postEffects \"unavailable\" with reason \"quality tier\": a phone turns post effects off to keep its frame rate. The person gets a card on their own screen (Allow / Keep) and answers; nothing changes until they allow, nothing changes on anyone else's device, nothing goes into the scene. The first call returns needsConfirm; call again with confirmId (and wait) for the answer. level: high (full quality, post effects on), medium, auto (the device decides), restore (put back what it was before you asked; no question). Suggest it out loud first: \"Your phone hides the glow to stay smooth; shall I ask it for high quality?\"\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"level": {
+						"type": "string",
+						"enum": [
+							"high",
+							"medium",
+							"auto",
+							"restore"
+						]
+					},
+					"reason": {
+						"type": "string",
+						"description": "a few words for the card, e.g. \"so the portal glow shows\""
+					},
+					"confirmId": {
+						"type": "string",
+						"description": "the id a needsConfirm answer gave: repeat the call with it to get the host's answer and apply"
+					},
+					"wait": {
+						"type": "number",
+						"description": "with confirmId: seconds to wait for the answer (up to 60)"
+					}
+				}
+			},
+			"annotations": {
+				"title": "Ask for higher quality on this device",
 				"readOnlyHint": false,
 				"destructiveHint": true,
 				"openWorldHint": false
@@ -2774,7 +2939,7 @@
 		{
 			"name": "set_sky",
 			"title": "Change the sky and fog",
-			"description": "The sky and the air: a look preset (studio, daylight, sunset, night, classic, clearsky, meadow, sunrise, starlight, photostudio), a sky image by name (clearsky, meadow, sunrise, starlight, photostudio; or {hash} of an HDR in the library — never a URL) with rotation, intensity, blur and Sky quality (auto / standard / high / max, plus a minimum), a background colour or {top, bottom} gradient, fog ({color, near, far} in metres, or {color, density}; null = none) and exposure. \"Make it night\": preset night or hdri starlight + a dark fog. Changes the whole scene's look, so the host is asked first: it answers needsConfirm, then repeat with confirmId. One undo step.\nTake a screenshot after each change to check your work.",
+			"description": "The sky and the air: a look preset (studio, daylight, sunset, night, classic, clearsky, meadow, sunrise, starlight, photostudio), a sky image by name (clearsky, meadow, sunrise, starlight, photostudio; a search_assets HDRI id \"cc0:polyhaven/<id>\" (fetched into the library once) or \"lib:<hash>\"; or {hash} of an HDR in the library — upload your own .hdr / .exr with assets upload; never a URL) with rotation, intensity, blur and Sky quality (auto / standard / high / max, plus a minimum), a background colour or {top, bottom} gradient, fog ({color, near, far} in metres, or {color, density}; null = none) and exposure. \"Make it night\": preset night or hdri starlight + a dark fog. Changes the whole scene's look, so the host is asked first: it answers needsConfirm, then repeat with confirmId. One undo step.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -2788,7 +2953,7 @@
 							"object",
 							"null"
 						],
-						"description": "a sky name (clearsky, meadow, sunrise, starlight, photostudio), null for none, or {name | hash, rotation (degrees), intensity 0-4, blur 0-1, background (false = light only), quality, minQuality}",
+						"description": "a sky name (clearsky, meadow, sunrise, starlight, photostudio), a search_assets HDRI id (\"cc0:polyhaven/<id>\": fetched into the library once, CC0, credited) or \"lib:<hash>\", null for none, or {name | hash, rotation (degrees), intensity 0-4, blur 0-1, background (false = light only), quality, minQuality}. A sky file you hold yourself: assets upload gives its hash",
 						"properties": {
 							"name": {
 								"type": "string"
@@ -3166,7 +3331,7 @@
 		{
 			"name": "search_assets",
 			"title": "Find assets",
-			"description": "Find assets to build with, by words and kind: models and prefabs to place, sounds, images, CC0 materials and HDRIs. Searches the shared library, the model packs, your prefabs and Poly Haven. Each result has an id, name, kind, source, licence, size when known, and how to use it. Read-only.",
+			"description": "Find assets to build with, by words and kind: models and prefabs to place, sounds, images, CC0 materials and HDRIs. Searches the shared library, the packs (models, and the sounds of the sound packs: pack:<name>/<file>), your prefabs and Poly Haven. Each result has an id, name, kind, source, licence, size when known, and how to use it. Read-only.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -3329,7 +3494,7 @@
 		{
 			"name": "create_particles",
 			"title": "Add particles",
-			"description": "Particles by preset name: sparkles, fire, smoke, dust, confetti, sparks, trail, wisps, fireflies, rain, snow. Without object it places a small emitter at position (rain and snow hang at cloud height over it); with object it attaches to that object (a torch, a campfire log). overrides tune any field (count, lifetime, speed, gravity, sizeStart, colorStart, colorEnd, opacity, …). remove: true takes them off. One undo step.\nTake a screenshot after each change to check your work.",
+			"description": "Particles by preset name: sparkles, fire, smoke, dust, confetti, sparks, trail, wisps, fireflies, rain, snow. Without object it places an invisible emitter (an empty group, nothing drawn but the particles) at position (rain and snow hang at cloud height over it); with object it attaches to that object (a torch, a campfire log). overrides tune any field (count, lifetime, speed, gravity, sizeStart, colorStart, colorEnd, opacity, …). remove: true takes them off. One undo step.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -3383,7 +3548,7 @@
 		{
 			"name": "scatter",
 			"title": "Scatter over a surface",
-			"description": "Scatter many instances over a terrain or any mesh (a forest on hills, rocks on a beach, flowers on a slope): asset = a primitive (Box, Sphere, Cone, Cylinder, Capsule, Dodecahedron) or a model id from search_assets, or assets = up to 8 mixed evenly. density per m² (or count), scale range, rules {slope: [min°, max°], height: [min, max] m, layer: {i, min}} keep them where they belong. Cheap instancing, seeded (the same on every peer). Returns the set id; remove: <set id> deletes a set. One undo step.\nTake a screenshot after each change to check your work.",
+			"description": "Scatter many instances over a terrain or any mesh (a forest on hills, rocks on a beach, flowers on a slope): asset = a primitive (Box, Sphere, Cone, Cylinder, Capsule, Dodecahedron) or a model id from search_assets, or assets = up to 8 mixed evenly. density per m² (or count), scale range, rules {slope: [min°, max°], height: [min, max] m, layer: {i, min}} keep them where they belong. Cheap instancing, seeded (the same on every peer; seed picks another layout). avoid (or rules.avoid) = up to 16 places nothing lands on: an object uuid (its footprint: a path, a house, a portal), {uuid, radius} or {position, radius} (a clear circle, metres). All the assets of one call make ONE set (id names it). source = the uuid of an object you built: up to 200 REAL copies of it (editable, with its children, materials and behaviour) instead of instances — for one or a few copies in a row or mirrored, use duplicate. Returns the set id (or the copies' uuids); remove: <set id> deletes a set. One undo step.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -3422,10 +3587,50 @@
 					},
 					"rules": {
 						"type": "object",
-						"description": "{slope: [0, 25] degrees from flat, height: [min, max] metres, layer: {i: paint layer 0-3, min: 0-1}}"
+						"description": "{slope: [0, 25] degrees from flat, height: [min, max] metres, layer: {i: paint layer 0-3, min: 0-1}, avoid: the same list as avoid}"
 					},
 					"seed": {
-						"type": "integer"
+						"type": "integer",
+						"description": "the same seed puts them in the same spots; another seed, another layout"
+					},
+					"source": {
+						"type": "string",
+						"description": "the uuid of an object in the scene: scatter real copies of it (max 200) instead of asset"
+					},
+					"avoid": {
+						"type": "array",
+						"maxItems": 16,
+						"items": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "object",
+									"properties": {
+										"uuid": {
+											"type": "string"
+										},
+										"position": {
+											"type": "array",
+											"items": {
+												"type": "number"
+											},
+											"minItems": 3,
+											"maxItems": 3
+										},
+										"radius": {
+											"type": "number"
+										}
+									}
+								}
+							]
+						},
+						"description": "places to keep clear: an object uuid (its footprint), {uuid, radius} or {position, radius} (a circle, metres)"
+					},
+					"id": {
+						"type": "string",
+						"description": "a name for the set (default from the first asset); remove takes it"
 					},
 					"tint": {
 						"type": "number",
@@ -3464,7 +3669,7 @@
 		{
 			"name": "terrain",
 			"title": "Make or shape terrain",
-			"description": "Make or change a terrain. Without uuid it makes one (size metres, at position); with uuid it changes that one. Shape by noise: height (metres), detail (0.005-0.6), octaves, ridged, warp, edges (flat|island|bowl), seed. Sculpt with ops [{op: raise|lower|smooth|flatten, at: [x, z] from the terrain's centre, radius, strength 0-1, height (metres, raise/lower), passes}] and paint with {op: \"paint\", at, radius, layer 0-3, strength}. layers: up to 4 {color, texture (a library hash or a pattern name like grass, sand, stone), tiling}. One undo step.\nTake a screenshot after each change to check your work.",
+			"description": "Make or change a terrain. Without uuid it makes one (size metres, at position); with uuid it changes that one. Shape by noise: height (the highest peak, metres — the answer says the peak it got), detail (0.005-0.6), octaves, ridged, warp, edges (flat|island|bowl: island sinks the rim to 0 so it rises out of water; bowl raises the rim), seed; amplitude is the raw noise scale if you want it. Sculpt with ops [{op: raise|lower|smooth|flatten, at: [x, z] from the terrain's centre, radius, strength 0-1, height (metres, raise/lower), passes}] and paint with {op: \"paint\", at, radius, layer 0-3, strength}. layers: up to 4 {color, texture (a library hash or a pattern name like grass, sand, stone), tiling} — layer 0 covers the ground until you paint the others; paintBy: \"height\" paints them for you, layer 0 in the low ground up to the last on the peaks. One undo step.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -3490,7 +3695,21 @@
 					"height": {
 						"type": "number",
 						"minimum": 0,
-						"maximum": 40
+						"maximum": 100,
+						"description": "the highest peak, metres"
+					},
+					"amplitude": {
+						"type": "number",
+						"minimum": 0,
+						"maximum": 40,
+						"description": "the raw noise scale (height sets it for you)"
+					},
+					"paintBy": {
+						"type": "string",
+						"enum": [
+							"height"
+						],
+						"description": "paint the layers by height: layer 0 low, the last layer on the peaks"
 					},
 					"detail": {
 						"type": "number"
@@ -3561,7 +3780,7 @@
 		{
 			"name": "water",
 			"title": "Add or change water",
-			"description": "Water: without uuid it makes a body of water — kind tank, pool, round, lake or ocean, size [w, h, d], at position (its bottom centre). With uuid it changes one (or makes an object water with a preset). preset: pool, aquarium, ocean, lake, river, lava, swamp, toxic, ice. level 0-1 (how full), color, look {shallowColor, deepColor, clarity, foam, …}, waves {count, amplitude, wavelength, speed, direction}, flow. Things float in it in Play. remove: true makes it a plain object again. One undo step.\nTake a screenshot after each change to check your work.",
+			"description": "Water: without uuid it makes a body of water — kind tank, pool, round, lake or ocean, size [w, h, d] (round: [diameter, depth, diameter]), at position (its bottom centre). With uuid it changes one (or makes an object water with a preset). preset: pool, aquarium, ocean, lake, river, lava, swamp, toxic, ice. level 0-1 (how full), color (tints the whole body, shallow to deep), look {shallowColor, deepColor, clarity, foam, …}, waves {count, amplitude, wavelength, speed, direction}, flow. Things float in it in Play. remove: true makes it a plain object again. One undo step.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -3628,13 +3847,13 @@
 		{
 			"name": "place_sound",
 			"title": "Place a sound",
-			"description": "A sound in the world: asset = a library sound (search_assets kinds [\"sound\"]) or an https URL of a sound file (it is checked and added to the library first). Positional: heard near position (or on object), radius metres. Without on it loops all the time (a campfire crackle, a river); on: click | enter | exit | grab | hit plays it once when that happens on the object. One undo step for the file's node and its wiring.\nTake a screenshot after each change to check your work.",
+			"description": "A sound in the world: asset = a sound from search_assets kinds [\"sound\"] — a library hash / lib: id, or a pack sound pack:<name>/<file> (copied into the library on first use) — or an https URL of a sound file (it is checked and added to the library first). A sound you made or fetched yourself goes through assets upload (base64 bytes → a hash), so a site without CORS does not matter. Positional: heard near position (or on object), radius metres. Without on it loops all the time (a campfire crackle, a river); on: click | enter | exit | grab | hit plays it once when that happens on the object. One undo step for the file's node and its wiring.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
 					"asset": {
 						"type": "string",
-						"description": "lib:<hash>, a library hash, or https://…"
+						"description": "lib:<hash>, a library hash, pack:<name>/<file>, or https://…"
 					},
 					"object": {
 						"type": "string",
@@ -3687,7 +3906,7 @@
 		{
 			"name": "set_music",
 			"title": "Set the background music",
-			"description": "The scene's background music, heard by everyone in sync: asset = a library sound or an https URL (null clears it), volume 0-1, play / stop. One undo step.\nTake a screenshot after each change to check your work.",
+			"description": "The scene's background music, heard by everyone in sync: asset = a library sound (hash / lib:), a pack sound pack:<name>/<file>, an https URL, or the hash assets upload gave you for your own music (null clears it), volume 0-1, play / stop. One undo step.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -4768,6 +4987,141 @@
 			}
 		},
 		{
+			"name": "upload_asset",
+			"title": "Upload a sound or an HDR sky",
+			"description": "Put a SOUND or an HDR SKY you hold as bytes into the library and get its hash: your own generated music or ambience, or a file you fetched yourself (any site — the bytes come from you, so nothing needs the site to allow cross-origin reads). data = base64; a big file goes as chunk: {id, index, total} parts (each a multiple of 4 base64 characters). Sounds: WAV, OGG, MP3, FLAC, M4A or WebM up to 16 MB (decoded once to prove it is audio) → place it with effects sound {asset: hash} or music {asset: hash}. Skies: Radiance .hdr or OpenEXR up to 25 MB → set_look sky {hdri: {hash}}. The type comes from the bytes, never the name. Images go through image instead. Everyone in the session can pull it by hash.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"data": {
+						"type": "string",
+						"description": "the file as base64 (or this chunk's part of it)"
+					},
+					"chunk": {
+						"type": "object",
+						"description": "{id, index (from 0), total}: one part of a big file; it lands when the last part arrives",
+						"properties": {
+							"id": {
+								"type": "string"
+							},
+							"index": {
+								"type": "integer"
+							},
+							"total": {
+								"type": "integer"
+							}
+						}
+					},
+					"name": {
+						"type": "string",
+						"description": "a name for the library (the extension comes from the bytes)"
+					},
+					"folder": {
+						"type": "string",
+						"description": "Explorer folder (default \"Sounds\" or \"Skies\")"
+					}
+				},
+				"required": [
+					"data"
+				]
+			},
+			"annotations": {
+				"title": "Upload a sound or an HDR sky",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "import_shape",
+			"title": "Import a model file (glTF / GLB / OBJ)",
+			"description": "Bring in a 3D model file: glTF 2.0 (.glb, or .gltf JSON with everything embedded) or Wavefront .obj, as data (base64; for a big file send chunk: {id, index, total} parts, each a multiple of 4 base64 characters) or an https url (public addresses only, ≤ 25 MB; the file is copied into the library first, so the scene never needs the address again). Named sub-meshes become named children, returned in parts with uuids, so animate_parts can move them (a lid, a wheel, a door). position / rotation (radians) / scale as create_objects; with parentUuid they are the group's own space. castShadow / receiveShadow apply to every mesh in it. A model is data: nothing in it runs, and a file that points at outside files is refused. One undo step; everyone sees it.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"data": {
+						"type": "string",
+						"description": "the file as base64 (or this chunk's part of it)"
+					},
+					"chunk": {
+						"type": "object",
+						"description": "{id, index (from 0), total}: one part of a big file; the model is placed when the last part lands",
+						"properties": {
+							"id": {
+								"type": "string"
+							},
+							"index": {
+								"type": "integer"
+							},
+							"total": {
+								"type": "integer"
+							}
+						}
+					},
+					"url": {
+						"type": "string",
+						"description": "an https address of a .glb / .gltf / .obj (the server must allow cross-origin reads)"
+					},
+					"name": {
+						"type": "string"
+					},
+					"position": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"minItems": 3,
+						"maxItems": 3
+					},
+					"rotation": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"minItems": 3,
+						"maxItems": 3,
+						"description": "radians, XYZ"
+					},
+					"scale": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"minItems": 3,
+						"maxItems": 3
+					},
+					"parentUuid": {
+						"type": "string",
+						"description": "a group (or any object) to put it in"
+					},
+					"folder": {
+						"type": "string",
+						"description": "Explorer folder (default \"Imported models\")"
+					},
+					"castShadow": {
+						"type": "boolean"
+					},
+					"receiveShadow": {
+						"type": "boolean"
+					},
+					"source": {
+						"type": "string",
+						"description": "where it came from (kept with the model)"
+					},
+					"licence": {
+						"type": "string",
+						"description": "its licence, e.g. CC0"
+					}
+				}
+			},
+			"annotations": {
+				"title": "Import a model file (glTF / GLB / OBJ)",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"openWorldHint": true
+			}
+		},
+		{
 			"name": "install_modules",
 			"title": "Install modules",
 			"description": "Install the modules the other peers in this session run and this page lacks (status().missingModules), from the module gallery. Local to this page; omit ids to install every missing one.\nTake a screenshot after each change to check your work.",
@@ -4931,7 +5285,7 @@
 		{
 			"name": "status",
 			"title": "Session status",
-			"description": "Where the agent is: connection state, whether the host has let it in, its role (viewer edits stay local), the app version, and why any tool is missing. sceneBudget says how heavy the scene is: objects, triangles (per frame drawn; the scene's own count while the view is idle, then no draw calls), draw calls, textures, lights you placed, frame time p95, tier green / amber / red on the desktop or vr profile, and over = each budget past green (build lighter, or stop adding, while it is not green).\nYou are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.",
+			"description": "Where the agent is: connection state, whether the host has let it in, its role (viewer edits stay local), the app version, and why any tool is missing. sceneBudget says how heavy the scene is: objects, triangles (per frame drawn; the scene's own count while the view is idle, then no draw calls), draw calls, textures, lights you placed, frame time p95, tier green / amber / red on the desktop or vr profile, and over = each budget past green (build lighter, or stop adding, while it is not green). top = the objects drawing the most triangles / draw calls (lighten those first); vsync says whether frameP95 sits on the display's refresh (a steady 16.7 ms on a 60 Hz screen is the display's cap, not a slow scene) or frames miss it — a frame on the refresh never turns the tier amber or red. callsBySource splits the draw calls: objects (yours), otherInView (people, grid, sky, helpers), shadows, post (effects), otherViews (camera previews, reflections).\nYou are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {}
@@ -4945,7 +5299,7 @@
 		{
 			"name": "screenshot",
 			"title": "Take a picture of the scene",
-			"description": "See the scene: a PNG of a clean frame (no gizmos) from a temporary camera, never moving anyone's view. view: current | top | front | iso | focus (focus needs uuid or uuids); from = an angle or {yaw, pitch}; camera = a free {position, target}. 4:3 unless aspect says otherwise (current follows the person's window). Answers with the camera it used.",
+			"description": "See the scene: a PNG of a clean frame (no gizmos, no people) from a temporary camera, never moving anyone's view. view: current | top | front | iso | focus | camera (focus needs uuid or uuids; camera looks through the scene camera uuid, its lens and framing); from = an angle or {yaw, pitch}; camera = a free {position, target}. 4:3 unless aspect says otherwise (current follows the person's window). Answers with the camera it used. postEffects: true draws the scene's post effects too; hud: true the game HUD on top; avatars: true keeps the people in (current keeps them unless false).",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -4956,12 +5310,13 @@
 							"top",
 							"front",
 							"iso",
-							"focus"
+							"focus",
+							"camera"
 						]
 					},
 					"uuid": {
 						"type": "string",
-						"description": "object to frame"
+						"description": "object to frame, or the camera to look through (view camera)"
 					},
 					"uuids": {
 						"type": "array",
@@ -5052,6 +5407,18 @@
 					"size": {
 						"type": "number",
 						"description": "longest side in pixels"
+					},
+					"hud": {
+						"type": "boolean",
+						"description": "true = draw the game HUD this screen shows on top (score, timer, menus), laid out as on screen"
+					},
+					"avatars": {
+						"type": "boolean",
+						"description": "true = keep the people (avatars, an agent's camera marker) in the frame; default leaves them out, except view current"
+					},
+					"postEffects": {
+						"type": "boolean",
+						"description": "true = draw it through the scene's post effects (bloom, vignette, colour grade …) as this screen shows them. The answer says postEffects \"applied\", or \"unavailable\" with a reason (\"quality tier\" = this device turned them off to keep its frame rate, usual on a phone — `how` says where the person raises it, or ask the person for higher quality: set_look action \"quality\" — set_quality for a local agent)"
 					}
 				}
 			},
@@ -5064,7 +5431,7 @@
 		{
 			"name": "wait_for_edit",
 			"title": "Wait for someone to edit",
-			"description": "Wait until someone in the session changes the scene (or the timeout passes), so you can react to the humans.",
+			"description": "Wait until someone in the session changes the scene or PINGS a spot (or the timeout passes), so you can react to the humans. A ping answers {changed: true, ping: {id, position, normal, on}}: build there with at: {ping: id}.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -5132,12 +5499,14 @@
 				"extrude": "extrude_shape",
 				"mesh": "create_mesh",
 				"text": "create_text",
+				"import": "import_shape",
 				"shapes": "create_shapes"
 			},
 			"edit_shape": {
 				"params": "set_geometry",
 				"mesh": "edit_mesh",
 				"update": "update_mesh",
+				"duplicate": "duplicate",
 				"pivot": "set_pivot",
 				"pivot_group": "create_pivot"
 			},
@@ -5156,7 +5525,8 @@
 				"uv": "set_uv",
 				"sky": "set_sky",
 				"light": "set_light",
-				"environment": "get_environment"
+				"environment": "get_environment",
+				"quality": "set_quality"
 			},
 			"run": {
 				"inspect": "inspect_runtime",
@@ -5168,6 +5538,7 @@
 				"place": "place_asset",
 				"prefab": "prefab",
 				"image": "add_image",
+				"upload": "upload_asset",
 				"fonts": "list_fonts"
 			},
 			"effects": {
@@ -5219,7 +5590,7 @@
 						},
 						"near": {
 							"type": "object",
-							"description": "optional: only objects within radius of a WORLD position",
+							"description": "optional: only objects within radius of a WORLD position (by: origin = where the object is, the default; touches = any part of its world bounds; inside = all of it)",
 							"properties": {
 								"position": {
 									"type": "array",
@@ -5230,6 +5601,14 @@
 								},
 								"radius": {
 									"type": "number"
+								},
+								"by": {
+									"type": "string",
+									"enum": [
+										"origin",
+										"touches",
+										"inside"
+									]
 								}
 							},
 							"required": [
@@ -5239,7 +5618,7 @@
 						},
 						"bounds": {
 							"type": "object",
-							"description": "optional: only objects whose WORLD position is inside this box",
+							"description": "optional: only objects inside this WORLD box — by: origin = their position (the default), touches = any part of their world mesh bounds overlaps it (a long wall crossing in), inside = all of it fits",
 							"properties": {
 								"min": {
 									"type": "array",
@@ -5254,6 +5633,14 @@
 										"type": "number"
 									},
 									"description": "[x, y, z]"
+								},
+								"by": {
+									"type": "string",
+									"enum": [
+										"origin",
+										"touches",
+										"inside"
+									]
 								}
 							},
 							"required": [
@@ -5369,7 +5756,7 @@
 										"items": {
 											"type": "number"
 										},
-										"description": "up to 4 constructor args. Box=[w,h,d], Sphere=[radius], Cylinder=[rTop,rBottom,height], Cone=[radius,height], Plane=[w,h], Torus=[radius,tube]. Omit for sensible defaults."
+										"description": "up to 4 constructor args. Box=[w,h,d], Sphere=[radius], Cylinder=[rTop,rBottom,height], Cone=[radius,height], Plane=[w,h], Torus=[radius,tube]. Omit for sensible defaults. Sizes go down to 0.001 m."
 									},
 									"name": {
 										"type": "string"
@@ -5456,7 +5843,7 @@
 										"description": "meshes and models: shadows fall on it (on by default)"
 									},
 									"lookAt": {
-										"description": "turn it so its local +Z (front) faces this: a world point [x,y,z] or another object's uuid (+Y stays up; lights use aim)"
+										"description": "turn it so its front (local +Z, or the front you give) faces this: a world point [x,y,z] or another object's uuid (+Y stays up; lights use aim)"
 									},
 									"at": {
 										"type": "object",
@@ -5494,11 +5881,23 @@
 										"description": "stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground"
 									},
 									"face_user": {
-										"description": "turn it (yaw only) so its +Z front faces a person: true = the person you act for, or a peer id / name from where_are_users"
+										"description": "turn it (yaw only) so its front faces a person: true = the person you act for, or a peer id / name from where_are_users"
+									},
+									"front": {
+										"type": "string",
+										"enum": [
+											"+z",
+											"-z",
+											"+x",
+											"-x",
+											"+y",
+											"-y"
+										],
+										"description": "which local axis is its front for lookAt and face_user (default +z; many models face +x or -z — look at a screenshot)"
 									},
 									"parentUuid": {
 										"type": "string",
-										"description": "uuid of an existing group to nest under — position/rotation/scale are then LOCAL to that group"
+										"description": "uuid of an existing group (or any object, not a light or camera) to nest under — position/rotation/scale are then LOCAL to it. A uuid that is not in the scene is an error and that object is not made"
 									},
 									"physics": {
 										"type": "string",
@@ -5641,7 +6040,7 @@
 										"description": "meshes and models: shadows fall on it (on by default)"
 									},
 									"lookAt": {
-										"description": "turn it so its local +Z (front) faces this: a world point [x,y,z] or another object's uuid (+Y stays up; lights use aim)"
+										"description": "turn it so its front (local +Z, or the front you give) faces this: a world point [x,y,z] or another object's uuid (+Y stays up; lights use aim)"
 									},
 									"at": {
 										"type": "object",
@@ -5679,14 +6078,26 @@
 										"description": "stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground"
 									},
 									"face_user": {
-										"description": "turn it (yaw only) so its +Z front faces a person: true = the person you act for, or a peer id / name from where_are_users"
+										"description": "turn it (yaw only) so its front faces a person: true = the person you act for, or a peer id / name from where_are_users"
+									},
+									"front": {
+										"type": "string",
+										"enum": [
+											"+z",
+											"-z",
+											"+x",
+											"-x",
+											"+y",
+											"-y"
+										],
+										"description": "which local axis is its front for lookAt and face_user (default +z; many models face +x or -z — look at a screenshot)"
 									},
 									"visible": {
 										"type": "boolean"
 									},
 									"parentUuid": {
 										"type": "string",
-										"description": "group uuid to nest under, or \"root\" to un-nest. The object keeps its world pose; a position given in the same update is LOCAL to the new parent"
+										"description": "group uuid (or any object, not a light or camera) to nest under, or \"root\" to un-nest. The object keeps its world pose; a position given in the same update is LOCAL to the new parent. A uuid not in the scene is an error"
 									}
 								},
 								"required": [
@@ -5878,7 +6289,7 @@
 			{
 				"name": "create_shape",
 				"title": "Make a shape",
-				"description": "Make shapes the basic objects cannot: a lathe (a vase, a bowl, a lamp from a profile turned around an axis), a tube along a path (a rail, a pipe, a cable), an extruded outline (a sign, a star, a wall with a hole), a mesh from your own vertices (anything else), or text = 3D words (a sign, a title: flat, or solid with depth and a bevel; any bundled or Google Fonts font).\nCall it as {\"action\": \"lathe\", \"lathe\": {…its fields…}}; each action's fields and limits are in its object below.\nMany at once: {\"shapes\": [{\"action\": \"lathe\", \"lathe\": {…}}, …]} with no action — one call, one undo step.\nTake a screenshot after each change to check your work.",
+				"description": "Make shapes the basic objects cannot: a lathe (a vase, a bowl, a lamp from a profile turned around an axis), a tube along a path (a rail, a pipe, a cable), an extruded outline (a sign, a star, a wall with a hole), a mesh from your own vertices (anything else), or text = 3D words (a sign, a title: flat, or solid with depth and a bevel; any bundled or Google Fonts font); import = a glTF / GLB / OBJ model file (base64, chunks or an https url) whose named parts come back as children animate_parts can move.\nCall it as {\"action\": \"lathe\", \"lathe\": {…its fields…}}; each action's fields and limits are in its object below.\nMany at once: {\"shapes\": [{\"action\": \"lathe\", \"lathe\": {…}}, …]} with no action — one call, one undo step.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -5889,7 +6300,8 @@
 								"tube",
 								"extrude",
 								"mesh",
-								"text"
+								"text",
+								"import"
 							],
 							"description": "What to do. Put its fields in the object named after the action."
 						},
@@ -5956,7 +6368,7 @@
 								},
 								"parentUuid": {
 									"type": "string",
-									"description": "uuid of a group to nest under — position / rotation / scale AND the shape's own points are then LOCAL to that group (no position = the group's origin), so the part moves and turns with it"
+									"description": "uuid of a group (or any object, not a light or camera) to nest under — position / rotation / scale AND the shape's own points are then LOCAL to it (no position = its origin), so the part moves and turns with it. A uuid that is not in the scene is an error and nothing is made"
 								},
 								"physics": {
 									"type": "string",
@@ -6142,7 +6554,7 @@
 								},
 								"parentUuid": {
 									"type": "string",
-									"description": "uuid of a group to nest under — position / rotation / scale AND the shape's own points are then LOCAL to that group (no position = the group's origin), so the part moves and turns with it"
+									"description": "uuid of a group (or any object, not a light or camera) to nest under — position / rotation / scale AND the shape's own points are then LOCAL to it (no position = its origin), so the part moves and turns with it. A uuid that is not in the scene is an error and nothing is made"
 								},
 								"physics": {
 									"type": "string",
@@ -6212,15 +6624,31 @@
 								"colors": {
 									"type": "array",
 									"items": {
-										"type": "array",
-										"items": {
-											"type": "number"
-										},
-										"minItems": 3,
-										"maxItems": 3
+										"anyOf": [
+											{
+												"type": "array",
+												"items": {
+													"type": "number"
+												},
+												"minItems": 3,
+												"maxItems": 3
+											},
+											{
+												"type": "string",
+												"description": "#rrggbb"
+											}
+										]
 									},
 									"maxItems": 20000,
-									"description": "one [r, g, b] (0-1) per vertex, in the order of vertices"
+									"description": "one colour per vertex, in the order of vertices: [r, g, b] (0-1, sRGB unless colorSpace is \"linear\") or \"#rrggbb\""
+								},
+								"colorSpace": {
+									"type": "string",
+									"enum": [
+										"srgb",
+										"linear"
+									],
+									"description": "how [r, g, b] colors numbers are meant: \"srgb\" (default — like a colour picker, as material colours are) or \"linear\"; hex is always sRGB"
 								},
 								"materials": {
 									"type": "array",
@@ -6313,7 +6741,7 @@
 								},
 								"parentUuid": {
 									"type": "string",
-									"description": "uuid of a group to nest under — position / rotation / scale AND the shape's own points are then LOCAL to that group (no position = the group's origin), so the part moves and turns with it"
+									"description": "uuid of a group (or any object, not a light or camera) to nest under — position / rotation / scale AND the shape's own points are then LOCAL to it (no position = its origin), so the part moves and turns with it. A uuid that is not in the scene is an error and nothing is made"
 								},
 								"physics": {
 									"type": "string",
@@ -6336,7 +6764,7 @@
 								"vertices",
 								"faces"
 							],
-							"description": "A mesh from raw data: vertices [[x, y, z], …] and faces [[i, j, k] or [i, j, k, l] …] (indices into vertices, counter-clockwise seen from outside; polygons of up to 32 corners are fanned, so keep them convex), optional uvs (one [u, v] per vertex). Up to 20000 vertices and 20000 faces; normals are computed (smooth: true for smooth shading, flatShading: true for hard facets). Colour it as you make it: materials [{color, roughness, metalness, …}] (up to 16 slots) with faceMaterials [slot per face, same order as faces] for parts in different colours; or colors [[r, g, b] 0-1, one per vertex] for a painted gradient (multiplied by the material colour). Material slots last through edit_shape {action: 'mesh'}; vertex colours last only while an edit keeps the vertex count. subdivide: 1 or 2 smooths it (Catmull-Clark: a box of six quads becomes a rounded pebble, a few quads become a soft organic shape; each level about four times the faces, checked against the caps). Edit it afterwards with edit_shape {action: 'mesh'}, or send new vertices with edit_shape {action: 'update'}. Returns the uuid."
+							"description": "A mesh from raw data: vertices [[x, y, z], …] and faces [[i, j, k] or [i, j, k, l] …] (indices into vertices, counter-clockwise seen from outside; polygons of up to 32 corners are fanned, so keep them convex), optional uvs (one [u, v] per vertex). Up to 20000 vertices and 20000 faces; normals are computed (smooth: true for smooth shading, flatShading: true for hard facets). Colour it as you make it: materials [{color, roughness, metalness, …}] (up to 16 slots) with faceMaterials [slot per face, same order as faces] for parts in different colours; or colors (one per vertex: [r, g, b] 0-1 meant as sRGB, the way a colour picker or a hex code means them, or a \"#rrggbb\" string; colorSpace: \"linear\" takes the numbers as linear) for a painted gradient — they multiply the material colour, which is white when you give colors and no color. Material slots last through edit_shape {action: 'mesh'}; vertex colours last only while an edit keeps the vertex count. subdivide: 1 or 2 smooths it (Catmull-Clark: a box of six quads becomes a rounded pebble, a few quads become a soft organic shape; each level about four times the faces, checked against the caps). Edit it afterwards with edit_shape {action: 'mesh'}, or send new vertices with edit_shape {action: 'update'}. Returns the uuid."
 						},
 						"text": {
 							"type": "object",
@@ -6464,6 +6892,85 @@
 							],
 							"description": "Add a 3D text object: a sign, a title, a label. Flat letters by default; solid (extruded) letters with depth and a bevel when solid: true or depth / bevel are given. Fonts: bundled, any Google Fonts family by name, or a Library font {asset}. Solid text holds up to 300 characters (80 on a phone or headset), flat 2000. Returns its uuid; change it later with edit_shape {action: 'params'} params."
 						},
+						"import": {
+							"type": "object",
+							"properties": {
+								"data": {
+									"type": "string",
+									"description": "the file as base64 (or this chunk's part of it)"
+								},
+								"chunk": {
+									"type": "object",
+									"description": "{id, index (from 0), total}: one part of a big file; the model is placed when the last part lands",
+									"properties": {
+										"id": {
+											"type": "string"
+										},
+										"index": {
+											"type": "integer"
+										},
+										"total": {
+											"type": "integer"
+										}
+									}
+								},
+								"url": {
+									"type": "string",
+									"description": "an https address of a .glb / .gltf / .obj (the server must allow cross-origin reads)"
+								},
+								"name": {
+									"type": "string"
+								},
+								"position": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"minItems": 3,
+									"maxItems": 3
+								},
+								"rotation": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"minItems": 3,
+									"maxItems": 3,
+									"description": "radians, XYZ"
+								},
+								"scale": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"minItems": 3,
+									"maxItems": 3
+								},
+								"parentUuid": {
+									"type": "string",
+									"description": "a group (or any object) to put it in"
+								},
+								"folder": {
+									"type": "string",
+									"description": "Explorer folder (default \"Imported models\")"
+								},
+								"castShadow": {
+									"type": "boolean"
+								},
+								"receiveShadow": {
+									"type": "boolean"
+								},
+								"source": {
+									"type": "string",
+									"description": "where it came from (kept with the model)"
+								},
+								"licence": {
+									"type": "string",
+									"description": "its licence, e.g. CC0"
+								}
+							},
+							"description": "Bring in a 3D model file: glTF 2.0 (.glb, or .gltf JSON with everything embedded) or Wavefront .obj, as data (base64; for a big file send chunk: {id, index, total} parts, each a multiple of 4 base64 characters) or an https url (public addresses only, ≤ 25 MB; the file is copied into the library first, so the scene never needs the address again). Named sub-meshes become named children, returned in parts with uuids, so animate_parts can move them (a lid, a wheel, a door). position / rotation (radians) / scale as create_objects; with parentUuid they are the group's own space. castShadow / receiveShadow apply to every mesh in it. A model is data: nothing in it runs, and a file that points at outside files is refused. One undo step; everyone sees it."
+						},
 						"shapes": {
 							"type": "array",
 							"minItems": 1,
@@ -6515,7 +7022,7 @@
 			{
 				"name": "edit_shape",
 				"title": "Reshape or model objects",
-				"description": "Change the shape of objects that exist: params = new size / segments / type in place (on a 3D text: its words, font, size, depth, bevel, align, wrap width, anchor, colours), mesh = model faces and vertices (extrude, inset, bevel, subdivide, weld, smooth, dissolve, make a face), update = new vertices / faces for a mesh made from data (replace it, or patch a range), pivot = the point an object turns about, pivot_group = a group at a joint so several parts swing together.\nCall it as {\"action\": \"params\", \"params\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
+				"description": "Change the shape of objects that exist: params = new size / segments / type in place (on a 3D text: its words, font, size, depth, bevel, align, wrap width, anchor, colours), mesh = model faces and vertices (extrude, inset, bevel, subdivide, weld, smooth, dissolve, make a face), update = new vertices / faces for a mesh made from data (replace it, or patch a range), duplicate = copies of an object in a row, or its mirror image (a left arm → the right one), pivot = the point an object turns about, pivot_group = a group at a joint so several parts swing together.\nCall it as {\"action\": \"params\", \"params\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -6525,6 +7032,7 @@
 								"params",
 								"mesh",
 								"update",
+								"duplicate",
 								"pivot",
 								"pivot_group"
 							],
@@ -6571,7 +7079,7 @@
 											},
 											"params": {
 												"type": "object",
-												"description": "param name → value; sizes clamped to 1 km, segment counts to their range"
+												"description": "param name → value; sizes from 0.001 m to 1 km (the same for every primitive), segment counts to their range"
 											},
 											"path": {
 												"type": "array",
@@ -6853,14 +7361,31 @@
 								"colors": {
 									"type": "array",
 									"items": {
-										"type": "array",
-										"items": {
-											"type": "number"
-										},
-										"minItems": 3,
-										"maxItems": 3
+										"anyOf": [
+											{
+												"type": "array",
+												"items": {
+													"type": "number"
+												},
+												"minItems": 3,
+												"maxItems": 3
+											},
+											{
+												"type": "string",
+												"description": "#rrggbb"
+											}
+										]
 									},
-									"maxItems": 20000
+									"maxItems": 20000,
+									"description": "as create_mesh: [r, g, b] (sRGB unless colorSpace is \"linear\") or \"#rrggbb\" per vertex"
+								},
+								"colorSpace": {
+									"type": "string",
+									"enum": [
+										"srgb",
+										"linear"
+									],
+									"description": "how [r, g, b] colors numbers are meant: \"srgb\" (default — like a colour picker, as material colours are) or \"linear\"; hex is always sRGB"
 								},
 								"faceMaterials": {
 									"type": "array",
@@ -6884,6 +7409,51 @@
 								"vertices"
 							],
 							"description": "New data for a mesh create_shape {action: 'mesh'} made, by uuid, as ONE undo step: mode \"replace\" sends every vertex and face again (the same fields and caps as create_shape {action: 'mesh'}, subdivide included); mode \"patch\" replaces vertices from offset on (vertices[0] lands on index offset) and keeps the faces — for moving part of a mesh made in this tab (after a reload, send \"replace\"). uvs/colors patch the same way. Primitives use edit_shape {action: 'params'}; to model any mesh use edit_shape {action: 'mesh'}."
+						},
+						"duplicate": {
+							"type": "object",
+							"properties": {
+								"uuid": {
+									"type": "string",
+									"description": "the object to copy"
+								},
+								"count": {
+									"type": "integer",
+									"minimum": 1,
+									"maximum": 50,
+									"description": "copies (default 1)"
+								},
+								"offset": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"minItems": 3,
+									"maxItems": 3,
+									"description": "[x, y, z] metres between copies in the parent's space; with mirror it moves the mirror image (default [0, 0, 0])"
+								},
+								"mirror": {
+									"type": "string",
+									"enum": [
+										"x",
+										"y",
+										"z"
+									],
+									"description": "the axis the mirror flips: x makes a left part the right one"
+								},
+								"parentUuid": {
+									"type": "string",
+									"description": "a group (or any object) to put the copies in"
+								},
+								"name": {
+									"type": "string",
+									"description": "the copies' name (numbered when several)"
+								}
+							},
+							"required": [
+								"uuid"
+							],
+							"description": "Copy an object you built (its children, materials, behaviour and physics come along; nothing is resent): count copies stepping by offset [x, y, z] metres in its parent's space (default: a row to the side), or mirror \"x\"|\"y\"|\"z\" = the mirror image across that plane through the PARENT's centre (in a group: its centre line — a left arm or ear becomes the right one; at the scene root: the world's), its triangles re-wound so normals stay right (Box and even-segment round shapes keep their params). parentUuid nests the copies (they keep their place in the world). One undo step; everyone sees it. For tens to hundreds of copies spread over a terrain or mesh, use scatter with source: <uuid>."
 						},
 						"pivot": {
 							"type": "object",
@@ -6986,7 +7556,7 @@
 			{
 				"name": "set_look",
 				"title": "Materials, shaders, sky, light and post effects",
-				"description": "How things look: material = colour, roughness, metal, glow, see-through and textures (a library image, a CC0 material by name or an https image); list_materials / get_material read them; shader / edit_shader / assign_shader / shader_nodes = node shaders on objects; sky = the sky image, background, fog and exposure; light = the sun, ambient and environment lights; environment reads both; post / get_post / post_graph = the scene's post effects (bloom, colour grade, vignette); sky, light and post change the whole scene, so the host is asked first; unwrap / uv = texture mapping and tiling.\nCall it as {\"action\": \"material\", \"material\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
+				"description": "How things look: material = colour, roughness, metal, glow, see-through and textures (a library image, a CC0 material by name or an https image); list_materials / get_material read them; shader / edit_shader / assign_shader / shader_nodes = node shaders on objects; sky = the sky image, background, fog and exposure; light = the sun, ambient and environment lights; environment reads both; post / get_post / post_graph = the scene's post effects (bloom, colour grade, vignette); sky, light and post change the whole scene, so the host is asked first; unwrap / uv = texture mapping and tiling; quality = ask the person to raise THIS device's quality (a card on their screen, Allow / Keep) when a phone hides the post effects to stay smooth.\nCall it as {\"action\": \"material\", \"material\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -7007,7 +7577,8 @@
 								"uv",
 								"sky",
 								"light",
-								"environment"
+								"environment",
+								"quality"
 							],
 							"description": "What to do. Put its fields in the object named after the action."
 						},
@@ -7315,7 +7886,7 @@
 									]
 								}
 							},
-							"description": "The shader node catalog: each type with what it does, its params (which become uniforms), inputs and outputs."
+							"description": "The shader node catalog: each type with what it does, its params (which become uniforms), inputs and outputs. UV warps include polarCoordinates, twirl and rotateUV; the glsl node keeps the type wired into a, b and c (float, vec2, vec3, vec4) and returns its declared type."
 						},
 						"post": {
 							"type": "object",
@@ -7377,7 +7948,7 @@
 									"description": "with confirmId: seconds to wait for the answer (up to 60)"
 								}
 							},
-							"description": "The scene's post effects (bloom, huesaturation, brightnesscontrast, tonemapping, vignette, grain, chromaticaberration, ao, lut, pixelation, scanlines, dotscreen, smaa; set_look {action: 'get_post'} lists every param). effects: [{kind, params, enabled, at, remove}], matched to what is there by id or kind, so repeating a call does not stack a second bloom; replace: true drops the rest; the stack order is the order of effect. This changes the whole scene's look: the first call returns needsConfirm and the host is asked; repeat it with confirmId. One undo step."
+							"description": "The scene's post effects (bloom, huesaturation, brightnesscontrast, tonemapping, vignette, grain, chromaticaberration, ao, lut, pixelation, scanlines, dotscreen, smaa; set_look {action: 'get_post'} lists every param). effects: [{kind, params, enabled, at, remove}], matched to what is there by id or kind, so repeating a call does not stack a second bloom; replace: true drops the rest; the stack order is the order of effect. This changes the whole scene's look: the first call returns needsConfirm and the host is asked; repeat it with confirmId. One undo step. The answer says shownHere: false with a reason when this screen does not draw post effects (reason \"quality tier\" = the device turned them off to keep its frame rate, usual on a phone: the scene keeps them; say so, and offer to ask with set_look {action: 'quality'})."
 						},
 						"get_post": {
 							"type": "object",
@@ -7520,7 +8091,7 @@
 										"object",
 										"null"
 									],
-									"description": "a sky name (clearsky, meadow, sunrise, starlight, photostudio), null for none, or {name | hash, rotation (degrees), intensity 0-4, blur 0-1, background (false = light only), quality, minQuality}",
+									"description": "a sky name (clearsky, meadow, sunrise, starlight, photostudio), a search_assets HDRI id (\"cc0:polyhaven/<id>\": fetched into the library once, CC0, credited) or \"lib:<hash>\", null for none, or {name | hash, rotation (degrees), intensity 0-4, blur 0-1, background (false = light only), quality, minQuality}. A sky file you hold yourself: assets upload gives its hash",
 									"properties": {
 										"name": {
 											"type": "string"
@@ -7618,7 +8189,7 @@
 									"description": "with confirmId: seconds to wait for the answer (up to 60)"
 								}
 							},
-							"description": "The sky and the air: a look preset (studio, daylight, sunset, night, classic, clearsky, meadow, sunrise, starlight, photostudio), a sky image by name (clearsky, meadow, sunrise, starlight, photostudio; or {hash} of an HDR in the library — never a URL) with rotation, intensity, blur and Sky quality (auto / standard / high / max, plus a minimum), a background colour or {top, bottom} gradient, fog ({color, near, far} in metres, or {color, density}; null = none) and exposure. \"Make it night\": preset night or hdri starlight + a dark fog. Changes the whole scene's look, so the host is asked first: it answers needsConfirm, then repeat with confirmId. One undo step."
+							"description": "The sky and the air: a look preset (studio, daylight, sunset, night, classic, clearsky, meadow, sunrise, starlight, photostudio), a sky image by name (clearsky, meadow, sunrise, starlight, photostudio; a assets {action: 'search'} HDRI id \"cc0:polyhaven/<id>\" (fetched into the library once) or \"lib:<hash>\"; or {hash} of an HDR in the library — upload your own .hdr / .exr with assets upload; never a URL) with rotation, intensity, blur and Sky quality (auto / standard / high / max, plus a minimum), a background colour or {top, bottom} gradient, fog ({color, near, far} in metres, or {color, density}; null = none) and exposure. \"Make it night\": preset night or hdri starlight + a dark fog. Changes the whole scene's look, so the host is asked first: it answers needsConfirm, then repeat with confirmId. One undo step."
 						},
 						"light": {
 							"type": "object",
@@ -7754,6 +8325,33 @@
 								}
 							},
 							"description": "Read the scene's sky and light: the preset, the sky image and its quality, background, fog, exposure, the sun and ambient, the environment lights (ids for set_look {action: 'light'}), the light objects (uuid, shadows) and the spawn / opening view; plus the preset and sky names. Read this before changing the look."
+						},
+						"quality": {
+							"type": "object",
+							"properties": {
+								"level": {
+									"type": "string",
+									"enum": [
+										"high",
+										"medium",
+										"auto",
+										"restore"
+									]
+								},
+								"reason": {
+									"type": "string",
+									"description": "a few words for the card, e.g. \"so the portal glow shows\""
+								},
+								"confirmId": {
+									"type": "string",
+									"description": "the id a needsConfirm answer gave: repeat the call with it to get the host's answer and apply"
+								},
+								"wait": {
+									"type": "number",
+									"description": "with confirmId: seconds to wait for the answer (up to 60)"
+								}
+							},
+							"description": "Ask the person to raise THIS device's quality (their Settings ▸ Scene ▸ Performance ▸ Quality preset). Use it when set_look {action: 'post'} / set_look {action: 'get_post'} / screenshot say shownHere false or postEffects \"unavailable\" with reason \"quality tier\": a phone turns post effects off to keep its frame rate. The person gets a card on their own screen (Allow / Keep) and answers; nothing changes until they allow, nothing changes on anyone else's device, nothing goes into the scene. The first call returns needsConfirm; call again with confirmId (and wait) for the answer. level: high (full quality, post effects on), medium, auto (the device decides), restore (put back what it was before you asked; no question). Suggest it out loud first: \"Your phone hides the glow to stay smooth; shall I ask it for high quality?\""
 						}
 					},
 					"required": [
@@ -7849,7 +8447,7 @@
 			{
 				"name": "assets",
 				"title": "Images and assets",
-				"description": "Assets to build with: search = find models, prefabs, sounds, images, CC0 materials and HDRIs by words (library, packs, Poly Haven); place = put a found model or prefab into the scene; prefab = keep objects as a reusable prefab, or place copies of one; image = put an image into the library (an https URL, base64 data, or a canvas you describe) and get its hash for textures; fonts = the fonts 3D text can use (bundled, the library's, the scene's).\nCall it as {\"action\": \"search\", \"search\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
+				"description": "Assets to build with: search = find models, prefabs, sounds, images, CC0 materials and HDRIs by words (library, packs, Poly Haven); place = put a found model or prefab into the scene; prefab = keep objects as a reusable prefab, or place copies of one; image = put an image into the library (an https URL, base64 data, or a canvas you describe) and get its hash for textures; upload = put a SOUND or an HDR SKY you hold as base64 bytes (your own music, a file you fetched) into the library and get its hash for effects sound / music or set_look sky; fonts = the fonts 3D text can use (bundled, the library's, the scene's).\nCall it as {\"action\": \"search\", \"search\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -7860,6 +8458,7 @@
 								"place",
 								"prefab",
 								"image",
+								"upload",
 								"fonts"
 							],
 							"description": "What to do. Put its fields in the object named after the action."
@@ -7906,7 +8505,7 @@
 									"description": "default 12"
 								}
 							},
-							"description": "Find assets to build with, by words and kind: models and prefabs to place, sounds, images, CC0 materials and HDRIs. Searches the shared library, the model packs, your prefabs and Poly Haven. Each result has an id, name, kind, source, licence, size when known, and how to use it. Read-only."
+							"description": "Find assets to build with, by words and kind: models and prefabs to place, sounds, images, CC0 materials and HDRIs. Searches the shared library, the packs (models, and the sounds of the sound packs: pack:<name>/<file>), your prefabs and Poly Haven. Each result has an id, name, kind, source, licence, size when known, and how to use it. Read-only."
 						},
 						"place": {
 							"type": "object",
@@ -7949,7 +8548,7 @@
 							"required": [
 								"asset"
 							],
-							"description": "Place a model or assets {action: 'prefab'} found with assets {action: 'search'}, the way dragging it from the Asset Browser does (replicated, one undo step). count + spacing make a row; yaw turns it. Returns the new uuids. A model by URL goes through import_model instead."
+							"description": "Place a model or prefab found with assets {action: 'search'}, the way dragging it from the Asset Browser does (replicated, one undo step). count + spacing make a row; yaw turns it. Returns the new uuids. A model by URL goes through import_model instead."
 						},
 						"prefab": {
 							"type": "object",
@@ -7996,7 +8595,7 @@
 									"type": "number"
 								}
 							},
-							"description": "Prefabs (stamps): mode \"save\" keeps objects (with their materials, flows and behaviours) as a assets {action: 'prefab'} in this person's library and returns its id; mode \"place\" puts copies of a assets {action: 'prefab'} into the scene with fresh ids (count + spacing for a row), one undo step."
+							"description": "Prefabs (stamps): mode \"save\" keeps objects (with their materials, flows and behaviours) as a prefab in this person's library and returns its id; mode \"place\" puts copies of a prefab into the scene with fresh ids (count + spacing for a row), one undo step."
 						},
 						"image": {
 							"type": "object",
@@ -8111,6 +8710,42 @@
 							},
 							"description": "Put an image into the shared library (Explorer) and get its hash, for texture slots (update_objects materialParams.map, set_look {action: 'material'}) and image nodes. Give exactly one source: `url` (https, the site must allow other origins), `data` (base64, also how to pass an image you generated), or `canvas` (draw one from shapes, gradients, checkers and noise: textures, signs, labels). It is re-encoded here, so nothing in the file survives but its pixels. Limits: 16 MB in, 4096 px on the long side (larger is scaled down), a canvas 2048 px and 500 ops. One undo step; editors and admins only."
 						},
+						"upload": {
+							"type": "object",
+							"properties": {
+								"data": {
+									"type": "string",
+									"description": "the file as base64 (or this chunk's part of it)"
+								},
+								"chunk": {
+									"type": "object",
+									"description": "{id, index (from 0), total}: one part of a big file; it lands when the last part arrives",
+									"properties": {
+										"id": {
+											"type": "string"
+										},
+										"index": {
+											"type": "integer"
+										},
+										"total": {
+											"type": "integer"
+										}
+									}
+								},
+								"name": {
+									"type": "string",
+									"description": "a name for the library (the extension comes from the bytes)"
+								},
+								"folder": {
+									"type": "string",
+									"description": "Explorer folder (default \"Sounds\" or \"Skies\")"
+								}
+							},
+							"required": [
+								"data"
+							],
+							"description": "Put a SOUND or an HDR SKY you hold as bytes into the library and get its hash: your own generated music or ambience, or a file you fetched yourself (any site — the bytes come from you, so nothing needs the site to allow cross-origin reads). data = base64; a big file goes as chunk: {id, index, total} parts (each a multiple of 4 base64 characters). Sounds: WAV, OGG, MP3, FLAC, M4A or WebM up to 16 MB (decoded once to prove it is audio) → place it with effects sound {asset: hash} or music {asset: hash}. Skies: Radiance .hdr or OpenEXR up to 25 MB → set_look sky {hdri: {hash}}. The type comes from the bytes, never the name. Images go through image instead. Everyone in the session can pull it by hash."
+						},
 						"fonts": {
 							"type": "object",
 							"properties": {},
@@ -8172,7 +8807,21 @@
 								"height": {
 									"type": "number",
 									"minimum": 0,
-									"maximum": 40
+									"maximum": 100,
+									"description": "the highest peak, metres"
+								},
+								"amplitude": {
+									"type": "number",
+									"minimum": 0,
+									"maximum": 40,
+									"description": "the raw noise scale (height sets it for you)"
+								},
+								"paintBy": {
+									"type": "string",
+									"enum": [
+										"height"
+									],
+									"description": "paint the layers by height: layer 0 low, the last layer on the peaks"
 								},
 								"detail": {
 									"type": "number"
@@ -8232,7 +8881,7 @@
 									"description": "reshape even though it was hand-sculpted (the sculpting is lost)"
 								}
 							},
-							"description": "Make or change a effects {action: 'terrain'}. Without uuid it makes one (size metres, at position); with uuid it changes that one. Shape by noise: height (metres), detail (0.005-0.6), octaves, ridged, warp, edges (flat|island|bowl), seed. Sculpt with ops [{op: raise|lower|smooth|flatten, at: [x, z] from the effects {action: 'terrain'}'s centre, radius, strength 0-1, height (metres, raise/lower), passes}] and paint with {op: \"paint\", at, radius, layer 0-3, strength}. layers: up to 4 {color, texture (a library hash or a pattern name like grass, sand, stone), tiling}. One undo step."
+							"description": "Make or change a terrain. Without uuid it makes one (size metres, at position); with uuid it changes that one. Shape by noise: height (the highest peak, metres — the answer says the peak it got), detail (0.005-0.6), octaves, ridged, warp, edges (flat|island|bowl: island sinks the rim to 0 so it rises out of water; bowl raises the rim), seed; amplitude is the raw noise scale if you want it. Sculpt with ops [{op: raise|lower|smooth|flatten, at: [x, z] from the terrain's centre, radius, strength 0-1, height (metres, raise/lower), passes}] and paint with {op: \"paint\", at, radius, layer 0-3, strength}. layers: up to 4 {color, texture (a library hash or a pattern name like grass, sand, stone), tiling} — layer 0 covers the ground until you paint the others; paintBy: \"height\" paints them for you, layer 0 in the low ground up to the last on the peaks. One undo step."
 						},
 						"scatter": {
 							"type": "object",
@@ -8272,10 +8921,50 @@
 								},
 								"rules": {
 									"type": "object",
-									"description": "{slope: [0, 25] degrees from flat, height: [min, max] metres, layer: {i: paint layer 0-3, min: 0-1}}"
+									"description": "{slope: [0, 25] degrees from flat, height: [min, max] metres, layer: {i: paint layer 0-3, min: 0-1}, avoid: the same list as avoid}"
 								},
 								"seed": {
-									"type": "integer"
+									"type": "integer",
+									"description": "the same seed puts them in the same spots; another seed, another layout"
+								},
+								"source": {
+									"type": "string",
+									"description": "the uuid of an object in the scene: scatter real copies of it (max 200) instead of asset"
+								},
+								"avoid": {
+									"type": "array",
+									"maxItems": 16,
+									"items": {
+										"anyOf": [
+											{
+												"type": "string"
+											},
+											{
+												"type": "object",
+												"properties": {
+													"uuid": {
+														"type": "string"
+													},
+													"position": {
+														"type": "array",
+														"items": {
+															"type": "number"
+														},
+														"minItems": 3,
+														"maxItems": 3
+													},
+													"radius": {
+														"type": "number"
+													}
+												}
+											}
+										]
+									},
+									"description": "places to keep clear: an object uuid (its footprint), {uuid, radius} or {position, radius} (a circle, metres)"
+								},
+								"id": {
+									"type": "string",
+									"description": "a name for the set (default from the first asset); remove takes it"
 								},
 								"tint": {
 									"type": "number",
@@ -8303,7 +8992,7 @@
 							"required": [
 								"surface"
 							],
-							"description": "Scatter many instances over a effects {action: 'terrain'} or any mesh (a forest on hills, rocks on a beach, flowers on a slope): asset = a primitive (Box, Sphere, Cone, Cylinder, Capsule, Dodecahedron) or a model id from assets {action: 'search'}, or assets = up to 8 mixed evenly. density per m² (or count), scale range, rules {slope: [min°, max°], height: [min, max] m, layer: {i, min}} keep them where they belong. Cheap instancing, seeded (the same on every peer). Returns the set id; remove: <set id> deletes a set. One undo step."
+							"description": "Scatter many instances over a terrain or any mesh (a forest on hills, rocks on a beach, flowers on a slope): asset = a primitive (Box, Sphere, Cone, Cylinder, Capsule, Dodecahedron) or a model id from assets {action: 'search'}, or assets = up to 8 mixed evenly. density per m² (or count), scale range, rules {slope: [min°, max°], height: [min, max] m, layer: {i, min}} keep them where they belong. Cheap instancing, seeded (the same on every peer; seed picks another layout). avoid (or rules.avoid) = up to 16 places nothing lands on: an object uuid (its footprint: a path, a house, a portal), {uuid, radius} or {position, radius} (a clear circle, metres). All the assets of one call make ONE set (id names it). source = the uuid of an object you built: up to 200 REAL copies of it (editable, with its children, materials and behaviour) instead of instances — for one or a few copies in a row or mirrored, use duplicate. Returns the set id (or the copies' uuids); remove: <set id> deletes a set. One undo step."
 						},
 						"water": {
 							"type": "object",
@@ -8360,7 +9049,7 @@
 									"type": "boolean"
 								}
 							},
-							"description": "Water: without uuid it makes a body of effects {action: 'water'} — kind tank, pool, round, lake or ocean, size [w, h, d], at position (its bottom centre). With uuid it changes one (or makes an object effects {action: 'water'} with a preset). preset: pool, aquarium, ocean, lake, river, lava, swamp, toxic, ice. level 0-1 (how full), color, look {shallowColor, deepColor, clarity, foam, …}, waves {count, amplitude, wavelength, speed, direction}, flow. Things float in it in Play. remove: true makes it a plain object again. One undo step."
+							"description": "Water: without uuid it makes a body of water — kind tank, pool, round, lake or ocean, size [w, h, d] (round: [diameter, depth, diameter]), at position (its bottom centre). With uuid it changes one (or makes an object water with a preset). preset: pool, aquarium, ocean, lake, river, lava, swamp, toxic, ice. level 0-1 (how full), color (tints the whole body, shallow to deep), look {shallowColor, deepColor, clarity, foam, …}, waves {count, amplitude, wavelength, speed, direction}, flow. Things float in it in Play. remove: true makes it a plain object again. One undo step."
 						},
 						"particles": {
 							"type": "object",
@@ -8404,14 +9093,14 @@
 									"type": "boolean"
 								}
 							},
-							"description": "Particles by preset name: sparkles, fire, smoke, dust, confetti, sparks, trail, wisps, fireflies, rain, snow. Without object it places a small emitter at position (rain and snow hang at cloud height over it); with object it attaches to that object (a torch, a campfire log). overrides tune any field (count, lifetime, speed, gravity, sizeStart, colorStart, colorEnd, opacity, …). remove: true takes them off. One undo step."
+							"description": "Particles by preset name: sparkles, fire, smoke, dust, confetti, sparks, trail, wisps, fireflies, rain, snow. Without object it places an invisible emitter (an empty group, nothing drawn but the particles) at position (rain and snow hang at cloud height over it); with object it attaches to that object (a torch, a campfire log). overrides tune any field (count, lifetime, speed, gravity, sizeStart, colorStart, colorEnd, opacity, …). remove: true takes them off. One undo step."
 						},
 						"sound": {
 							"type": "object",
 							"properties": {
 								"asset": {
 									"type": "string",
-									"description": "lib:<hash>, a library hash, or https://…"
+									"description": "lib:<hash>, a library hash, pack:<name>/<file>, or https://…"
 								},
 								"object": {
 									"type": "string",
@@ -8453,7 +9142,7 @@
 							"required": [
 								"asset"
 							],
-							"description": "A sound in the world: asset = a library sound (assets {action: 'search'} kinds [\"sound\"]) or an https URL of a sound file (it is checked and added to the library first). Positional: heard near position (or on object), radius metres. Without on it loops all the time (a campfire crackle, a river); on: click | enter | exit | grab | hit plays it once when that happens on the object. One undo step for the file's node and its wiring."
+							"description": "A sound in the world: asset = a sound from assets {action: 'search'} kinds [\"sound\"] — a library hash / lib: id, or a pack sound pack:<name>/<file> (copied into the library on first use) — or an https URL of a sound file (it is checked and added to the library first). A sound you made or fetched yourself goes through assets upload (base64 bytes → a hash), so a site without CORS does not matter. Positional: heard near position (or on object), radius metres. Without on it loops all the time (a campfire crackle, a river); on: click | enter | exit | grab | hit plays it once when that happens on the object. One undo step for the file's node and its wiring."
 						},
 						"music": {
 							"type": "object",
@@ -8476,7 +9165,7 @@
 									"type": "boolean"
 								}
 							},
-							"description": "The scene's background music, heard by everyone in sync: asset = a library sound or an https URL (null clears it), volume 0-1, play / stop. One undo step."
+							"description": "The scene's background music, heard by everyone in sync: asset = a library sound (hash / lib:), a pack sound pack:<name>/<file>, an https URL, or the hash assets upload gave you for your own music (null clears it), volume 0-1, play / stop. One undo step."
 						}
 					},
 					"required": [
@@ -9888,7 +10577,7 @@
 			{
 				"name": "status",
 				"title": "Session status",
-				"description": "Where the agent is: connection state, whether the host has let it in, its role (viewer edits stay local), the app version, and why any tool is missing. sceneBudget says how heavy the scene is: objects, triangles (per frame drawn; the scene's own count while the view is idle, then no draw calls), draw calls, textures, lights you placed, frame time p95, tier green / amber / red on the desktop or vr profile, and over = each budget past green (build lighter, or stop adding, while it is not green).\nYou are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.",
+				"description": "Where the agent is: connection state, whether the host has let it in, its role (viewer edits stay local), the app version, and why any tool is missing. sceneBudget says how heavy the scene is: objects, triangles (per frame drawn; the scene's own count while the view is idle, then no draw calls), draw calls, textures, lights you placed, frame time p95, tier green / amber / red on the desktop or vr profile, and over = each budget past green (build lighter, or stop adding, while it is not green). top = the objects drawing the most triangles / draw calls (lighten those first); vsync says whether frameP95 sits on the display's refresh (a steady 16.7 ms on a 60 Hz screen is the display's cap, not a slow scene) or frames miss it — a frame on the refresh never turns the tier amber or red. callsBySource splits the draw calls: objects (yours), otherInView (people, grid, sky, helpers), shadows, post (effects), otherViews (camera previews, reflections).\nYou are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {}
@@ -9902,7 +10591,7 @@
 			{
 				"name": "screenshot",
 				"title": "Take a picture of the scene",
-				"description": "See the scene: a PNG of a clean frame (no gizmos) from a temporary camera, never moving anyone's view. view: current | top | front | iso | focus (focus needs uuid or uuids); from = an angle or {yaw, pitch}; camera = a free {position, target}. 4:3 unless aspect says otherwise (current follows the person's window). Answers with the camera it used.",
+				"description": "See the scene: a PNG of a clean frame (no gizmos, no people) from a temporary camera, never moving anyone's view. view: current | top | front | iso | focus | camera (focus needs uuid or uuids; camera looks through the scene camera uuid, its lens and framing); from = an angle or {yaw, pitch}; camera = a free {position, target}. 4:3 unless aspect says otherwise (current follows the person's window). Answers with the camera it used. postEffects: true draws the scene's post effects too; hud: true the game HUD on top; avatars: true keeps the people in (current keeps them unless false).",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -9913,12 +10602,13 @@
 								"top",
 								"front",
 								"iso",
-								"focus"
+								"focus",
+								"camera"
 							]
 						},
 						"uuid": {
 							"type": "string",
-							"description": "object to frame"
+							"description": "object to frame, or the camera to look through (view camera)"
 						},
 						"uuids": {
 							"type": "array",
@@ -10009,6 +10699,18 @@
 						"size": {
 							"type": "number",
 							"description": "longest side in pixels"
+						},
+						"hud": {
+							"type": "boolean",
+							"description": "true = draw the game HUD this screen shows on top (score, timer, menus), laid out as on screen"
+						},
+						"avatars": {
+							"type": "boolean",
+							"description": "true = keep the people (avatars, an agent's camera marker) in the frame; default leaves them out, except view current"
+						},
+						"postEffects": {
+							"type": "boolean",
+							"description": "true = draw it through the scene's post effects (bloom, vignette, colour grade …) as this screen shows them. The answer says postEffects \"applied\", or \"unavailable\" with a reason (\"quality tier\" = this device turned them off to keep its frame rate, usual on a phone — `how` says where the person raises it, or ask the person for higher quality: set_look action \"quality\" — set_quality for a local agent)"
 						}
 					}
 				},
@@ -10021,7 +10723,7 @@
 			{
 				"name": "wait_for_edit",
 				"title": "Wait for someone to edit",
-				"description": "Wait until someone in the session changes the scene (or the timeout passes), so you can react to the humans.",
+				"description": "Wait until someone in the session changes the scene or PINGS a spot (or the timeout passes), so you can react to the humans. A ping answers {changed: true, ping: {id, position, normal, on}}: build there with at: {ping: id}.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {

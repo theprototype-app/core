@@ -12,7 +12,7 @@ import { SCREENSHOT_VIEWS, SCREENSHOT_MAX_SIZE, SCREENSHOT_DEFAULT_SIZE } from '
 /** Smallest side a request may ask for. */
 export const SCREENSHOT_MIN_SIZE = 64;
 
-/** @param {any} view @returns {'current'|'top'|'front'|'iso'|'focus'} */
+/** @param {any} view @returns {'current'|'top'|'front'|'iso'|'focus'|'camera'} */
 export function normalizeView(view) {
 	const v = String(view ?? '').toLowerCase();
 	return /** @type {any} */ (SCREENSHOT_VIEWS.includes(/** @type {any} */ (v)) ? v : 'iso');
@@ -110,6 +110,9 @@ export function planShot(opts, canvasAspect) {
 	if (o.from !== undefined && o.from !== null && !dir) return { problem: 'from is one of ' + Object.keys(SHOT_ANGLES).join(', ') + ', or {yaw, pitch} in degrees' };
 	if (o.aspect !== undefined && o.aspect !== null && parseAspect(o.aspect) === null) return { problem: 'aspect is like "4:3", "1:1", "16:9", or a number' };
 	if (!free && view === 'focus' && !uuids.length) return { problem: 'focus needs the uuid of an object in the scene' };
+	// mcp-diorama2 (26): through a scene camera — its own pose, so from / camera do not apply
+	if (view === 'camera' && uuids.length !== 1) return { problem: 'view camera needs uuid: one camera object in the scene (list_scene shows them)' };
+	if (view === 'camera' && (free || dir)) return { problem: 'view camera looks through that camera: leave camera and from out' };
 	const current = !free && !dir && view === 'current';
 	const aspect = parseAspect(o.aspect) ?? (current ? canvasAspect : FRAMED_ASPECT);
 	const { w, h } = frameSize(clampSize(o.size), aspect);

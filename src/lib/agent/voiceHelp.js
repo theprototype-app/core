@@ -13,6 +13,8 @@ const CAN = /** @type {[string, string][]} */ ([
 	['generate_mesh', 'generate a 3D model from a description'],
 	['create_lathe', 'make shapes like vases, pipes and signs'],
 	['set_material', 'change materials, textures and the look of the scene'],
+	['set_sky', 'set the sky, the background colour and fog'],
+	['set_play_camera', 'choose the opening view players start the game with'],
 	['where_are_users', 'build right where you are standing or looking'],
 	['attach_to_user', 'hand you props, like a flashlight'],
 	['save_scene', 'save this scene to your library'],
@@ -39,6 +41,7 @@ export function whatCanYouDo(facts) {
 	if (names.has('where_are_users')) tryAsking.push('Put a tree in front of me');
 	else if (names.has('set_physics')) tryAsking.push('Drop a ball onto the table');
 	if (names.has('attach_to_user')) tryAsking.push('Give me a flashlight');
+	if (names.has('set_sky')) tryAsking.push('Make it a sunset with a little fog');
 	const say = viewer
 		? 'You are a viewer in this session, so I can look at the scene and describe it, but I cannot build here. Ask the host for edit access and I can add, move and animate things for you.'
 		: 'I can build in your open theprototype tab: ' + (can.length > 1 ? can.slice(0, 3).join(', ') + ', and more' : can[0] ?? 'look at the scene') + '. Everything I change shows for everyone here, and you can undo it.';

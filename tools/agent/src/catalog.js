@@ -36,6 +36,8 @@ export const TOOL_ANNOTATIONS = /** @type {Record<string, {title: string, read?:
 	save_scene: { title: 'Save the scene', destructive: false },
 	import_model: { title: 'Import a 3D model', destructive: false },
 	import_file: { title: 'Import a file', destructive: false },
+	import_shape: { title: 'Import a model file (glTF / GLB / OBJ)', destructive: false, openWorld: true },
+	upload_asset: { title: 'Upload a sound or an HDR sky', destructive: false },
 	update_objects: { title: 'Change objects', destructive: true },
 	update_flow_nodes: { title: 'Change or remove flow nodes', destructive: true },
 	edit_behaviour: { title: 'Edit a code behaviour', destructive: true },
@@ -80,6 +82,8 @@ export const TOOL_ANNOTATIONS = /** @type {Record<string, {title: string, read?:
 	hud_panel: { title: 'Add a HUD panel', destructive: false },
 	set_sky: { title: 'Change the sky and fog', destructive: true },
 	set_light: { title: 'Change the scene light', destructive: true },
+	// mcp-diorama2: this device's quality preset, asked of the person on their own screen
+	set_quality: { title: 'Ask for higher quality on this device', destructive: true },
 	get_environment: { title: 'Read the sky and light', read: true },
 	place_spawn: { title: 'Set where Play starts', destructive: true },
 	set_play_camera: { title: 'Set the play camera and opening view', destructive: true },
@@ -94,6 +98,7 @@ export const TOOL_ANNOTATIONS = /** @type {Record<string, {title: string, read?:
 	place_sound: { title: 'Place a sound', destructive: false, openWorld: true },
 	set_music: { title: 'Set the background music', destructive: true, openWorld: true },
 	update_mesh: { title: 'Change a mesh made from data', destructive: true },
+	duplicate: { title: 'Copy or mirror an object', destructive: false },
 	// 85b R1-R4
 	inspect_runtime: { title: 'See what the game is doing', read: true },
 	validate_scene: { title: 'Check the game for problems', read: true },
@@ -256,20 +261,20 @@ export const CONNECTOR_FAMILIES = Object.freeze({
 	create_shape: {
 		title: 'Make a shape',
 		summary:
-			'Make shapes the basic objects cannot: a lathe (a vase, a bowl, a lamp from a profile turned around an axis), a tube along a path (a rail, a pipe, a cable), an extruded outline (a sign, a star, a wall with a hole), a mesh from your own vertices (anything else), or text = 3D words (a sign, a title: flat, or solid with depth and a bevel; any bundled or Google Fonts font).',
-		actions: { lathe: 'create_lathe', tube: 'create_tube', extrude: 'extrude_shape', mesh: 'create_mesh', text: 'create_text' },
+			'Make shapes the basic objects cannot: a lathe (a vase, a bowl, a lamp from a profile turned around an axis), a tube along a path (a rail, a pipe, a cable), an extruded outline (a sign, a star, a wall with a hole), a mesh from your own vertices (anything else), or text = 3D words (a sign, a title: flat, or solid with depth and a bevel; any bundled or Google Fonts font); import = a glTF / GLB / OBJ model file (base64, chunks or an https url) whose named parts come back as children animate_parts can move.',
+		actions: { lathe: 'create_lathe', tube: 'create_tube', extrude: 'extrude_shape', mesh: 'create_mesh', text: 'create_text', import: 'import_shape' },
 		batch: { key: 'shapes', tool: 'create_shapes' }
 	},
 	edit_shape: {
 		title: 'Reshape or model objects',
 		summary:
-			'Change the shape of objects that exist: params = new size / segments / type in place (on a 3D text: its words, font, size, depth, bevel, align, wrap width, anchor, colours), mesh = model faces and vertices (extrude, inset, bevel, subdivide, weld, smooth, dissolve, make a face), update = new vertices / faces for a mesh made from data (replace it, or patch a range), pivot = the point an object turns about, pivot_group = a group at a joint so several parts swing together.',
-		actions: { params: 'set_geometry', mesh: 'edit_mesh', update: 'update_mesh', pivot: 'set_pivot', pivot_group: 'create_pivot' }
+			'Change the shape of objects that exist: params = new size / segments / type in place (on a 3D text: its words, font, size, depth, bevel, align, wrap width, anchor, colours), mesh = model faces and vertices (extrude, inset, bevel, subdivide, weld, smooth, dissolve, make a face), update = new vertices / faces for a mesh made from data (replace it, or patch a range), duplicate = copies of an object in a row, or its mirror image (a left arm → the right one), pivot = the point an object turns about, pivot_group = a group at a joint so several parts swing together.',
+		actions: { params: 'set_geometry', mesh: 'edit_mesh', update: 'update_mesh', duplicate: 'duplicate', pivot: 'set_pivot', pivot_group: 'create_pivot' }
 	},
 	set_look: {
 		title: 'Materials, shaders, sky, light and post effects',
 		summary:
-			'How things look: material = colour, roughness, metal, glow, see-through and textures (a library image, a CC0 material by name or an https image); list_materials / get_material read them; shader / edit_shader / assign_shader / shader_nodes = node shaders on objects; sky = the sky image, background, fog and exposure; light = the sun, ambient and environment lights; environment reads both; post / get_post / post_graph = the scene\'s post effects (bloom, colour grade, vignette); sky, light and post change the whole scene, so the host is asked first; unwrap / uv = texture mapping and tiling.',
+			'How things look: material = colour, roughness, metal, glow, see-through and textures (a library image, a CC0 material by name or an https image); list_materials / get_material read them; shader / edit_shader / assign_shader / shader_nodes = node shaders on objects; sky = the sky image, background, fog and exposure; light = the sun, ambient and environment lights; environment reads both; post / get_post / post_graph = the scene\'s post effects (bloom, colour grade, vignette); sky, light and post change the whole scene, so the host is asked first; unwrap / uv = texture mapping and tiling; quality = ask the person to raise THIS device\'s quality (a card on their screen, Allow / Keep) when a phone hides the post effects to stay smooth.',
 		actions: {
 			material: 'set_material',
 			list_materials: 'list_materials',
@@ -285,7 +290,8 @@ export const CONNECTOR_FAMILIES = Object.freeze({
 			uv: 'set_uv',
 			sky: 'set_sky',
 			light: 'set_light',
-			environment: 'get_environment'
+			environment: 'get_environment',
+			quality: 'set_quality'
 		}
 	},
 	// 85b R1-R4 (lane 85-runtime): playtest is agent-page only (B4b), so the connector's `run` has no playtest;
@@ -299,8 +305,8 @@ export const CONNECTOR_FAMILIES = Object.freeze({
 	assets: {
 		title: 'Images and assets',
 		summary:
-			'Assets to build with: search = find models, prefabs, sounds, images, CC0 materials and HDRIs by words (library, packs, Poly Haven); place = put a found model or prefab into the scene; prefab = keep objects as a reusable prefab, or place copies of one; image = put an image into the library (an https URL, base64 data, or a canvas you describe) and get its hash for textures; fonts = the fonts 3D text can use (bundled, the library\'s, the scene\'s).',
-		actions: { search: 'search_assets', place: 'place_asset', prefab: 'prefab', image: 'add_image', fonts: 'list_fonts' }
+			'Assets to build with: search = find models, prefabs, sounds, images, CC0 materials and HDRIs by words (library, packs, Poly Haven); place = put a found model or prefab into the scene; prefab = keep objects as a reusable prefab, or place copies of one; image = put an image into the library (an https URL, base64 data, or a canvas you describe) and get its hash for textures; upload = put a SOUND or an HDR SKY you hold as base64 bytes (your own music, a file you fetched) into the library and get its hash for effects sound / music or set_look sky; fonts = the fonts 3D text can use (bundled, the library\'s, the scene\'s).',
+		actions: { search: 'search_assets', place: 'place_asset', prefab: 'prefab', image: 'add_image', upload: 'upload_asset', fonts: 'list_fonts' }
 	},
 	// 85b (1.60, the tool budget's effects row)
 	effects: {
@@ -367,8 +373,29 @@ export function familyNames() {
 
 /** a text with every fine family-member name said the connector's way @param {string} text */
 export function sayFamilyNames(text) {
-	const names = familyNames();
-	return names.size ? String(text).replace(new RegExp('\\b(' + [...names.keys()].join('|') + ')\\b', 'g'), (m) => names.get(m) ?? m) : String(text);
+	return sayToolNames(String(text), familyNames());
+}
+
+/**
+ * mcp-diorama2 (item 4) — THE ONE REWRITE RULE for "a fine tool name in a text → the connector's family wording",
+ * shared by the catalog (descriptions) and the Worker (tool results; cloud worker-mcp/src/catalog.js keeps a copy and
+ * a test pins the two). The 1.60 rewrite replaced every WORD that is also a tool name, so status answered a key named
+ * "run {action: 'logs'}" and a tip said "a campfire with run {action: 'logs'}". It touches TOOL REFERENCES only:
+ *   - a name with an underscore (set_geometry, create_mesh) is an identifier, never English — rewritten in prose;
+ *   - a one-word name (logs, scatter, terrain, water, prefab) is rewritten only written as code: `logs`;
+ *   - never a JSON key ("logs": …) and never a JSON string that IS the name ("tool": "create_mesh" is data).
+ * @param {string} text @param {Map<string, string>} say fine name → wording
+ */
+export function sayToolNames(text, say) {
+	if (!say.size) return text;
+	const re = new RegExp('\\b(' + [...say.keys()].sort((a, b) => b.length - a.length).join('|') + ')\\b', 'g');
+	return text.replace(re, (m, _name, at, whole) => {
+		const before = whole[at - 1];
+		const after = whole[at + m.length];
+		if (before === '"' && after === '"') return m; // a JSON key or a value that is exactly the name: data
+		if (!m.includes('_') && !(before === '`' && after === '`')) return m; // an English word
+		return say.get(m) ?? m;
+	});
 }
 
 /**
@@ -448,6 +475,18 @@ function familyTool(family, f, actions, batch = null) {
 }
 
 /**
+ * mcp-diorama2 (item 17) — the question's fields travel with the action's object: an agent repeats
+ * {action: 'sky', sky: {…}, confirmId, wait} as the needsConfirm note says, and keeping only `sky` dropped the
+ * confirmId, so every repeat opened a NEW question and the host's Allow never reached the call.
+ * @param {any} inner @param {any} args
+ */
+export function withAnswerFields(inner, args) {
+	const out = { ...inner };
+	for (const k of ['confirmId', 'wait']) if (args?.[k] !== undefined && out[k] === undefined) out[k] = args[k];
+	return out;
+}
+
+/**
  * The Worker's half, kept here so core's unit tests cover it with the same tables: a family call → the fine tool
  * and its arguments. A missing per-action object falls back to the call's other fields (a model that flattened them).
  * @param {Record<string, Record<string, string>>} families @param {string} name @param {any} args
@@ -463,7 +502,7 @@ export function resolveFamilyCall(families, name, args) {
 	const tool = actions[action];
 	if (!tool) return { error: name + ' needs an action: one of ' + Object.keys(actions).join(', ') + '.' };
 	const inner = args[action];
-	if (inner && typeof inner === 'object' && !Array.isArray(inner)) return { tool, args: inner };
+	if (inner && typeof inner === 'object' && !Array.isArray(inner)) return { tool, args: withAnswerFields(inner, args) };
 	const { action: _a, ...rest } = args;
 	for (const a of Object.keys(actions)) delete rest[a];
 	return { tool, args: rest };

@@ -26,6 +26,7 @@ import { sessionNow } from '../sessionClock';
 import { readStored, writeStored } from '../gameStorage';
 import { gameState, setGameState, commitGameState } from '../gameState';
 import { pickAuthority } from './authority.js';
+import { rolesInfo } from '../cloudHooks';
 import { isAgentPeer, myKind } from '../inviteStore';
 import { createKit, KIT_DOC, KIT_REQ } from './core.js';
 import { KIT_PIECES } from './index.js';
@@ -85,9 +86,15 @@ const incumbent = () => {
 	}
 };
 
+/** mcp-diorama2 (20): the roles map's reader when a roles plugin publishes one (every peer holds the same map), else null */
+const roleOfPeer = () => {
+	const info = /** @type {any} */ (get(rolesInfo));
+	return typeof info?.roleOf === 'function' ? (/** @type {string} */ id) => info.roleOf(id) : null;
+};
+
 /** the facts this peer decides the authority from (the debug hook reads them too) */
 export function kitAuthorityFacts() {
-	return { me: me(), peers: openPeers(), host: null, initiator: initiator(), incumbent: incumbent(), agents: agentIds() };
+	return { me: me(), peers: openPeers(), host: null, initiator: initiator(), incumbent: incumbent(), agents: agentIds(), roleOf: roleOfPeer() };
 }
 
 /** who decides, as this peer sees it */

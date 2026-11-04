@@ -13,6 +13,15 @@ vi.mock('../../src/lib/geometries.svelte.js', async () => {
 	return { createLight: () => new T.DirectionalLight() };
 });
 vi.mock('$lib/objectActions', () => ({ moveObjectToGroup: () => {}, selectionTintOriginals: () => null }));
+// mcp-diorama2 16: the Poly Haven fetch stood in for (the real one downloads); held rows are reused
+const cc0Calls = vi.hoisted(() => ({ imports: [], held: null }));
+vi.mock('$lib/cc0/cc0Import.js', () => ({
+	heldItemFor: (row) => (cc0Calls.held && cc0Calls.held.id === row.id ? { hash: cc0Calls.held.hash } : null),
+	importCc0: async (row, res, opts) => {
+		cc0Calls.imports.push({ row, res, opts });
+		return { item: { hash: 'ab'.repeat(16), name: row.name + ' 1k.hdr' } };
+	}
+}));
 
 const { objectsGroup } = await import('../../src/stores/sceneStore');
 const { peers, toastStore } = await import('../../src/stores/appStore');
@@ -170,5 +179,21 @@ describe('hudDocs.addHudScreen on a key with no document', () => {
 		expect(doc.active).toBe(id);
 		const second = hudDocs.addHudScreen('scene', 'Menu');
 		expect(sceneDoc().screens.map((s) => s.id)).toEqual([id, second]);
+	});
+});
+
+describe('mcp-diorama2 16: a sky from search', () => {
+	it('cc0:polyhaven/<id> is fetched once at 1k (never applied by the fetch) and becomes {hash}; a held one is reused; lib:<hash> passes', async () => {
+		const { resolveSkyRef } = await import('../../src/lib/ai/sceneSetupTools.js');
+		const r = await resolveSkyRef({ hdri: 'cc0:polyhaven/kloppenheim_06' });
+		expect(r.args.hdri).toMatchObject({ hash: 'ab'.repeat(16) });
+		expect(r.fetched).toMatchObject({ from: expect.stringMatching(/Poly Haven/) });
+		expect(cc0Calls.imports[0]).toMatchObject({ res: '1k', opts: { applySky: false }, row: { source: 'polyhaven', id: 'kloppenheim_06', kind: 'hdris' } });
+		cc0Calls.held = { id: 'kloppenheim_06', hash: 'cd'.repeat(16) };
+		const again = await resolveSkyRef({ hdri: { name: 'cc0:polyhaven/kloppenheim_06', rotation: 90 } });
+		expect(again.args.hdri).toMatchObject({ hash: 'cd'.repeat(16), rotation: 90 });
+		expect(cc0Calls.imports.length).toBe(1);
+		expect((await resolveSkyRef({ hdri: 'lib:' + 'ef'.repeat(16) })).args.hdri).toMatchObject({ hash: 'ef'.repeat(16) });
+		expect((await resolveSkyRef({ hdri: 'starlight' })).args).toEqual({ hdri: 'starlight' });
 	});
 });

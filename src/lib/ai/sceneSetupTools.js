@@ -45,8 +45,42 @@ async function gated(tool, args, summary, apply) {
 	return gateScenewide(tool, args, { summary, apply });
 }
 
-/** @param {any} args */
-async function setSkyTool(args) {
+/**
+ * mcp-diorama2 (16): a sky FROM SEARCH — `cc0:polyhaven/<id>` (an HDRI search_assets found: fetched at 1k into the
+ * library's Poly Haven folder once, credited, reused after) or `lib:<hash>` (one already in the library) — becomes
+ * {hash} for the planner, which only knows bundled names and hashes. Anything else passes through unchanged.
+ * @param {any} args @returns {Promise<{args: any, fetched?: any} | {error: string}>}
+ */
+export async function resolveSkyRef(args) {
+	const key = args?.hdri !== undefined ? 'hdri' : args?.sky !== undefined ? 'sky' : null;
+	if (!key) return { args };
+	const v = args[key];
+	const ref = typeof v === 'string' ? v.trim() : typeof v?.name === 'string' ? v.name.trim() : '';
+	const with_ = (/** @type {string} */ hash) => ({ ...args, [key]: { ...(v && typeof v === 'object' ? v : {}), name: undefined, hash } });
+	if (/^lib:[0-9a-f]{16,128}$/.test(ref)) return { args: with_(ref.slice(4)) };
+	const m = /^cc0:polyhaven\/([a-z0-9_-]{1,80})$/i.exec(ref);
+	if (!m) return { args };
+	const id = m[1];
+	const row = { source: 'polyhaven', id, name: id.replace(/_/g, ' '), kind: 'hdris', url: 'https://polyhaven.com/a/' + id };
+	try {
+		const cc0 = await import('$lib/cc0/cc0Import.js');
+		const held = cc0.heldItemFor(row);
+		if (held?.hash) return { args: with_(String(held.hash)) };
+		const got = await cc0.importCc0(row, '1k', { applySky: false });
+		const hash = got?.item?.hash;
+		if (!hash) return { error: 'hdri "' + ref + '": Poly Haven did not give a sky file' };
+		return { args: with_(String(hash)), fetched: { hash: String(hash), name: String(got.item.name), from: 'Poly Haven (CC0)' } };
+	} catch (e) {
+		return { error: 'hdri "' + ref + '": ' + String(/** @type {any} */ (e)?.cc0?.message ?? /** @type {any} */ (e)?.message ?? e).slice(0, 160) };
+	}
+}
+
+/** @param {any} input */
+async function setSkyTool(input) {
+	// a confirm re-call keeps its question's own apply; only a fresh call resolves (and may fetch) a sky
+	const ref = input?.confirmId === undefined ? await resolveSkyRef(input) : { args: input };
+	if ('error' in ref) return { error: ref.error };
+	const args = ref.args;
 	const plan = planSky(args, { ...envNow(), presets: ENVIRONMENT_PRESETS, hdris: BUNDLED_HDRIS, named });
 	if ('error' in plan && args?.confirmId === undefined) return { error: plan.error };
 	const words = 'error' in plan ? [] : plan.words;
@@ -59,7 +93,7 @@ async function setSkyTool(args) {
 		const before = h.environmentNow();
 		commitEnvironment({ ...before, ...now.state });
 		h.recordEnvironment(before);
-		return { updated: [{ environment: true, ok: true }], ...describeEnvironment(), ...(now.warnings.length ? { warnings: now.warnings } : {}) };
+		return { updated: [{ environment: true, ok: true }], ...describeEnvironment(), ...(ref.fetched ? { fetched: ref.fetched } : {}), ...(now.warnings.length ? { warnings: now.warnings } : {}) };
 	});
 }
 
@@ -281,14 +315,14 @@ export const SCENE_SETUP_AI_TOOLS = [
 				PRESET_NAMES +
 				'), a sky image by name (' +
 				SKY_NAMES +
-				'; or {hash} of an HDR in the library — never a URL) with rotation, intensity, blur and Sky quality (auto / standard / high / max, plus a minimum), a background colour or {top, bottom} gradient, fog ({color, near, far} in metres, or {color, density}; null = none) and exposure. "Make it night": preset night or hdri starlight + a dark fog. Changes the whole scene\'s look, so the host is asked first: it answers needsConfirm, then repeat with confirmId. One undo step.',
+				'; a search_assets HDRI id "cc0:polyhaven/<id>" (fetched into the library once) or "lib:<hash>"; or {hash} of an HDR in the library — upload your own .hdr / .exr with assets upload; never a URL) with rotation, intensity, blur and Sky quality (auto / standard / high / max, plus a minimum), a background colour or {top, bottom} gradient, fog ({color, near, far} in metres, or {color, density}; null = none) and exposure. "Make it night": preset night or hdri starlight + a dark fog. Changes the whole scene\'s look, so the host is asked first: it answers needsConfirm, then repeat with confirmId. One undo step.',
 			parameters: {
 				type: 'object',
 				properties: {
 					preset: { type: 'string', description: PRESET_NAMES },
 					hdri: {
 						type: ['string', 'object', 'null'],
-						description: 'a sky name (' + SKY_NAMES + '), null for none, or {name | hash, rotation (degrees), intensity 0-4, blur 0-1, background (false = light only), quality, minQuality}',
+						description: 'a sky name (' + SKY_NAMES + '), a search_assets HDRI id ("cc0:polyhaven/<id>": fetched into the library once, CC0, credited) or "lib:<hash>", null for none, or {name | hash, rotation (degrees), intensity 0-4, blur 0-1, background (false = light only), quality, minQuality}. A sky file you hold yourself: assets upload gives its hash',
 						properties: {
 							name: { type: 'string' },
 							hash: { type: 'string' },

@@ -77,7 +77,7 @@ export function bridgeTools(engine = 'browser') {
 		{
 			name: 'status',
 			description:
-				'Where the agent is: connection state, whether the host has let it in, its role (viewer edits stay local), the app version, and why any tool is missing. sceneBudget says how heavy the scene is: objects, triangles (per frame drawn; the scene\'s own count while the view is idle, then no draw calls), draw calls, textures, lights you placed, frame time p95, tier green / amber / red on the desktop or vr profile, and over = each budget past green (build lighter, or stop adding, while it is not green).',
+				'Where the agent is: connection state, whether the host has let it in, its role (viewer edits stay local), the app version, and why any tool is missing. sceneBudget says how heavy the scene is: objects, triangles (per frame drawn; the scene\'s own count while the view is idle, then no draw calls), draw calls, textures, lights you placed, frame time p95, tier green / amber / red on the desktop or vr profile, and over = each budget past green (build lighter, or stop adding, while it is not green). top = the objects drawing the most triangles / draw calls (lighten those first); vsync says whether frameP95 sits on the display\'s refresh (a steady 16.7 ms on a 60 Hz screen is the display\'s cap, not a slow scene) or frames miss it — a frame on the refresh never turns the tier amber or red. callsBySource splits the draw calls: objects (yours), otherInView (people, grid, sky, helpers), shadows, post (effects), otherViews (camera previews, reflections).',
 			inputSchema: { type: 'object', properties: {} }
 		}
 	];
@@ -86,12 +86,12 @@ export function bridgeTools(engine = 'browser') {
 			{
 				name: 'screenshot',
 				description:
-					'See the scene: a PNG of a clean frame (no gizmos) from a temporary camera, never moving anyone\'s view. view: current | top | front | iso | focus (focus needs uuid or uuids); from = an angle or {yaw, pitch}; camera = a free {position, target}. 4:3 unless aspect says otherwise (current follows the person\'s window). Answers with the camera it used.',
+					'See the scene: a PNG of a clean frame (no gizmos, no people) from a temporary camera, never moving anyone\'s view. view: current | top | front | iso | focus | camera (focus needs uuid or uuids; camera looks through the scene camera uuid, its lens and framing); from = an angle or {yaw, pitch}; camera = a free {position, target}. 4:3 unless aspect says otherwise (current follows the person\'s window). Answers with the camera it used. postEffects: true draws the scene\'s post effects too; hud: true the game HUD on top; avatars: true keeps the people in (current keeps them unless false).',
 				inputSchema: {
 					type: 'object',
 					properties: {
-						view: { type: 'string', enum: ['current', 'top', 'front', 'iso', 'focus'] },
-						uuid: { type: 'string', description: 'object to frame' },
+						view: { type: 'string', enum: ['current', 'top', 'front', 'iso', 'focus', 'camera'] },
+						uuid: { type: 'string', description: 'object to frame, or the camera to look through (view camera)' },
 						uuids: { type: 'array', items: { type: 'string' }, description: 'objects to frame together' },
 						from: {
 							description: 'the angle around the subject, instead of view: front, back, left, right, top, below, iso, or {yaw, pitch} in degrees (yaw 0 = front, 90 = right; pitch 90 = from above)',
@@ -112,13 +112,20 @@ export function bridgeTools(engine = 'browser') {
 						aspect: { description: 'width to height: "4:3" (default), "1:1", "16:9" or a number. view current defaults to the person\'s window', anyOf: [{ type: 'string' }, { type: 'number' }] },
 						zoom: { type: 'number', description: 'above 1 is closer, 0.1 to 10' },
 						margin: { type: 'number', description: 'room around the subject: 1 touches the frame, default 1.15' },
-						size: { type: 'number', description: 'longest side in pixels' }
+						size: { type: 'number', description: 'longest side in pixels' },
+						hud: { type: 'boolean', description: 'true = draw the game HUD this screen shows on top (score, timer, menus), laid out as on screen' },
+						avatars: { type: 'boolean', description: 'true = keep the people (avatars, an agent\'s camera marker) in the frame; default leaves them out, except view current' },
+						postEffects: {
+							type: 'boolean',
+							description:
+								'true = draw it through the scene\'s post effects (bloom, vignette, colour grade …) as this screen shows them. The answer says postEffects "applied", or "unavailable" with a reason ("quality tier" = this device turned them off to keep its frame rate, usual on a phone — `how` says where the person raises it, or ask the person for higher quality: set_look action "quality" — set_quality for a local agent)'
+						}
 					}
 				}
 			},
 			{
 				name: 'wait_for_edit',
-				description: 'Wait until someone in the session changes the scene (or the timeout passes), so you can react to the humans.',
+				description: 'Wait until someone in the session changes the scene or PINGS a spot (or the timeout passes), so you can react to the humans. A ping answers {changed: true, ping: {id, position, normal, on}}: build there with at: {ping: id}.',
 				inputSchema: {
 					type: 'object',
 					properties: { timeout_ms: { type: 'number', description: 'default 30000, at most 120000' } }

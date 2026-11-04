@@ -51,3 +51,28 @@ describe('85b R7: bounds + paging cursors', () => {
 		expect(cursorOffset(undefined)).toBe(0);
 	});
 });
+
+describe('mcp-diorama2 28: near / bounds test the world mesh bounds when asked', () => {
+	// a 10 m wall along x, its origin at x = 0
+	const wall = new THREE.Mesh(new THREE.BoxGeometry(10, 2, 0.2), new THREE.MeshStandardMaterial());
+	wall.name = 'Long wall';
+	wall.position.set(0, 1, 0);
+	const lamp = new THREE.PointLight();
+	lamp.position.set(4, 1, 0);
+	it('bounds: origin misses a wall crossing in; touches finds it; inside wants all of it', () => {
+		const box = { min: [3, 0, -1], max: [8, 3, 1] };
+		expect(sceneFilter({ bounds: box })?.(wall)).toBe(false);
+		expect(sceneFilter({ bounds: { ...box, by: 'touches' } })?.(wall)).toBe(true);
+		expect(sceneFilter({ bounds: { ...box, by: 'inside' } })?.(wall)).toBe(false);
+		expect(sceneFilter({ bounds: { min: [-6, 0, -1], max: [6, 3, 1], by: 'inside' } })?.(wall)).toBe(true);
+		// a light draws nothing: its origin decides
+		expect(sceneFilter({ bounds: { ...box, by: 'inside' } })?.(lamp)).toBe(true);
+	});
+	it('near: touches = any part within the radius; inside = all of it', () => {
+		const near = { position: [5, 1, 0], radius: 1 };
+		expect(sceneFilter({ near })?.(wall)).toBe(false);
+		expect(sceneFilter({ near: { ...near, by: 'touches' } })?.(wall)).toBe(true);
+		expect(sceneFilter({ near: { ...near, by: 'inside' } })?.(wall)).toBe(false);
+		expect(sceneFilter({ near: { position: [0, 1, 0], radius: 6, by: 'inside' } })?.(wall)).toBe(true);
+	});
+});

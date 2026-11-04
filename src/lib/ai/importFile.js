@@ -128,6 +128,23 @@ async function shareAll(folderId, items) {
 	}
 }
 
+/**
+ * mcp-diorama2 (create_shape import): one file into the library the way import_file files it — the folder
+ * chain made, deduped by hash, shared with every peer, and a `libraryfile` entry in the caller's history batch
+ * so the same undo that removes the placed model bins a file this call created.
+ * @param {Uint8Array} bytes @param {string} name @param {unknown} folder an Explorer folder path ("A/B")
+ * @returns {Promise<{item: any, created: boolean, folder: string}>}
+ */
+export async function fileIntoLibrary(bytes, name, folder) {
+	const path = folderPath(folder);
+	const made = await ensureFolder(path);
+	const main = await addFile(bytes, name, made.id);
+	if (!main.item) throw new Error('the Explorer refused the file');
+	await shareAll(made.id, [main.item]);
+	if (main.created) recordEntry({ kind: 'libraryfile', hashes: [main.item.hash], before: { present: false }, after: { present: true } });
+	return { item: main.item, created: main.created, folder: path.join('/') };
+}
+
 // the undo half of "the files this import created": bin them / bring them back, both shared
 registerHistoryKind('libraryfile', (/** @type {any} */ entry, /** @type {any} */ state) => {
 	const present = state === entry.after;

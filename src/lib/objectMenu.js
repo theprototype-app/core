@@ -27,7 +27,7 @@ import { originPreset, resetOrigin } from './objectOrigin';
 import { pivotMode, reseatPivot, pivotParentAvailable } from './multiTransform';
 import { alignSelection, distributeSelection, dropSelection } from './align'; // 47 M2
 import { addAnnotation } from './annotationsHandler';
-import { pingObject, pingObjects } from './ping';
+import { pingObject, pingObjectAt, pingObjects } from './ping';
 import { hasOriginal } from './decimate';
 import { linkOf } from './prefabSync';
 import { prefabById } from './prefabs';
@@ -281,7 +281,7 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 			label: multi ? 'Ping selection' + suffix : 'Ping this object',
 			icon: 'radar',
 			tooltip: 'Everyone sees a pulse here (Ctrl+Alt+click pings anywhere)',
-			action: () => (multi ? pingObjects(targets) : pingObject(uuid))
+			action: () => (multi ? pingObjects(targets) : point ? pingObjectAt(uuid, point) : pingObject(uuid))
 		},
 		// 15-G audit: a note pins to ONE point on ONE object. The ViewportMenu path passes the
 		// sticky primary (not necessarily what is under the cursor), so during a multi-select

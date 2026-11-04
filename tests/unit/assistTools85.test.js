@@ -269,7 +269,7 @@ describe('85b R6b named checkpoints (undo_last {checkpoint, restore})', () => {
 		peers.set({ peer: { id: 'agent' }, send: (m) => sent.push(m), openedPeers: new Set(['host']) });
 		const q = await undoLast({ restore: 'cp' });
 		expect(q.needsConfirm).toBe(true);
-		expect(asked[0].summary).toMatch(/checkpoint "cp" \(undo its last 1 change\)/);
+		expect(asked[0].summary).toMatch(/^go back to a checkpoint "cp" \(undo its last 1 change\)/); // mcp-diorama2 17
 		expect(a.position.x).toBe(2); // nothing yet
 		const r = await undoLast({ restore: 'cp', confirmId: q.confirmId });
 		expect(r.restored).toBe('cp');

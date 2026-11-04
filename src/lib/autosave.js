@@ -1,4 +1,5 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
+import { groupUuidsOf, regroup } from './groupRestore.js';
 import * as THREE from 'three';
 import { rejoinOutcome } from './rejoin'; // fix-agenttest 6
 import { get, writable } from 'svelte/store';
@@ -342,6 +343,8 @@ async function writeSnapshot() {
 		// same reason, different loss: a MATERIAL ARRAY cannot cross the GLTF round
 		// trip either (it comes back as a Group of single-material children)
 		multiMaterial: multiMaterialSnapshot(),
+		// mcp-diorama2: and a GROUP comes back as a plain Object3D (groupRestore.js) — its uuids, to rebuild it
+		groups: groupUuidsOf(group),
 		// fix-agenttest 1: and no LIGHT survives it whole — Hemisphere/Ambient/RectArea came
 		// back as empty nodes, the rest without shadows, decay or direction (lightSnapshot.js)
 		lights: lightsSnapshot(group, isTransient),
@@ -729,6 +732,8 @@ async function applyRestore(snapshot, offer = null) {
 					delete child.userData.__uuid;
 				}
 			});
+			// mcp-diorama2: the groups as groups again (GLTFLoader made them plain Object3D nodes)
+			regroup(container, snapshot.groups);
 			// fix-agenttest 1: the lights from their sidecar, BEFORE the build loop so the
 			// copy each peer is sent below is the real light, not the GLTF's empty node (an
 			// older snapshot has no sidecar: its punctual lights stay as GLTFLoader built them)

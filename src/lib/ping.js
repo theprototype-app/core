@@ -126,6 +126,25 @@ export function sendPing(position, uuid, hit) {
 }
 let lastSent = 0;
 
+/**
+ * mcp-diorama2 (19): the first hit on real geometry — selection's tiny-object and measurement proxies carry the
+ * object's ORIGIN as their point, which is not where anyone pointed. null = nothing real under the pointer.
+ * @param {any[]} hits nearest first
+ */
+export function surfaceHit(hits) {
+	return (hits ?? []).find((h) => h && !h.tinyProxy && !h.measure && h.point) ?? null;
+}
+
+/**
+ * mcp-diorama2 (19): the object menu's Ping at the spot that was right-clicked (the menu's hit point), on that
+ * object — "Ping this object" used to pulse the top of its bounding box, so an agent read a point nobody chose.
+ * @param {string} uuid @param {number[]} point world
+ */
+export function pingObjectAt(uuid, point) {
+	if (!Array.isArray(point) || point.length !== 3 || !point.every(Number.isFinite)) return pingObject(uuid);
+	sendPing(point, uuid);
+}
+
 /** Ping the top-center of an object by uuid (used by the object context menu).
  * Lives here so the shared object-menu builder needs no THREE import. @param {string} uuid */
 export function pingObject(uuid) {

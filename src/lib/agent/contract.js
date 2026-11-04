@@ -11,7 +11,9 @@
 // major. The bridge feature-detects methods, so an older bridge keeps working against a newer page.
 
 /** The contract version (`tpAgent.version`). */
-export const TP_AGENT_VERSION = '1.7.0';
+// 1.8.0 (mcp-diorama2): screenshot {postEffects} + its {postEffects, reason, detail, how} answer, status sceneBudget
+// {top, vsync}; new tools duplicate, import_shape, set_quality (all additive: optional fields, new tools)
+export const TP_AGENT_VERSION = '1.8.0';
 
 /** Every method of the contract, in the order the docs list them. */
 export const TP_AGENT_METHODS = /** @type {const} */ ([

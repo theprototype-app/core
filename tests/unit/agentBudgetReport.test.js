@@ -56,11 +56,11 @@ describe('diorama2 (item 14): top contributors + the vsync verdict', () => {
 		const { vsyncVerdict } = await import('../../src/lib/sceneBudget.js');
 		const cap = vsyncVerdict({ n: 240, p05: 16.6, p50: 16.7, p95: 16.8 });
 		expect(cap).toMatchObject({ onVsync: true, hz: 60 });
-		expect(cap.say).toMatch(/60 Hz/);
+		expect(cap?.say).toMatch(/60 Hz/);
 		expect(vsyncVerdict({ n: 240, p05: 8.3, p50: 8.4, p95: 8.4 })).toMatchObject({ onVsync: true, hz: 120 });
 		const slow = vsyncVerdict({ n: 240, p05: 16.7, p50: 16.7, p95: 33.4 });
 		expect(slow).toMatchObject({ onVsync: false, hz: 60 });
-		expect(slow.say).toMatch(/2 refreshes/);
+		expect(slow?.say).toMatch(/2 refreshes/);
 		expect(vsyncVerdict({ n: 240, p05: 22.5, p95: 25 })).toBe(null);
 		expect(vsyncVerdict({ n: 5, p05: 16.7, p95: 16.7 })).toBe(null);
 	});

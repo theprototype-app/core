@@ -70,8 +70,9 @@ export async function renderWithPost(renderer, scene, camera, w, h, entries) {
 	const previous = renderer.getRenderTarget();
 	const autoClear = renderer.autoClear;
 	try {
-		for (const pass of passes) composer.addPass(pass);
+		// addPass reads this.renderer (drawing buffer size, context attributes): set it first
 		composer.renderer = renderer;
+		for (const pass of passes) composer.addPass(pass);
 		composer.inputBuffer.setSize(w, h);
 		composer.outputBuffer.setSize(w, h);
 		const alpha = renderer.getContext().getContextAttributes()?.alpha ?? false;

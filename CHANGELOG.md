@@ -23,6 +23,7 @@
 - Agents can **turn shadows on or off per part** as they build or import it. <!-- mcp-diorama2 13 -->
 - Ask Claude "what can you do?" and it now mentions the **sky, background and fog**, and the **opening view** players start from. <!-- mcp-diorama2 12 -->
 - **Claude on claude.ai reads the right words again**: tool replies no longer turn ordinary words like "logs" into tool names (`status` had a field called "run {action: 'logs'}"). <!-- mcp-diorama2 4 -->
+- For developers: `tpAgent` contract 1.8.0 (`edit_shape {action: "duplicate"}`, `create_shape {action: "import"}`, `set_look {quality}`, screenshot `postEffects`, `sceneBudget.top` / `vsync`, scatter `source` / `avoid`); no new connector tool names. <!-- mcp-diorama2 -->
 
 ## 1.60.0 — An agent builds the game around your scene 🎮
 

@@ -1086,6 +1086,8 @@ const QUALITY_LEVELS = ['high', 'medium', 'auto', 'restore'];
  * @param {any} args
  */
 async function setQualityTool(args) {
+	// a confirm re-call ({confirmId, wait}) carries no level: the stored ask runs its own apply
+	if (args.confirmId !== undefined) return (await import('$lib/agent/confirmGate')).gateDevice('set_quality', args, { summary: '', prompt: '', apply: async () => ({}) });
 	const level = String(args.level ?? args.quality ?? '');
 	if (!QUALITY_LEVELS.includes(level)) return { error: 'level: ' + QUALITY_LEVELS.join(', ') + ' (high = full quality, post effects on; restore = what it was before you asked)' };
 	const q = await import('$lib/qualityGovernor');

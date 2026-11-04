@@ -1227,6 +1227,7 @@ async function runAiTool(rawName, rawArgs, opts) {
 			case 'create_mesh':
 			case 'create_shapes':
 			case 'update_mesh':
+			case 'duplicate': // diorama2 item 8
 				// 85 G1-G6 (+ mcp-shapes: create_shapes, many in one call): shape and model objects (geometryTools.js)
 				return await geometryTool(name, args, createOne);
 
@@ -1263,6 +1264,7 @@ async function runAiTool(rawName, rawArgs, opts) {
 			case 'create_post_graph':
 			case 'uv_unwrap':
 			case 'set_uv':
+			case 'set_quality': // diorama2 item 7 (owner add-on): this device's quality, asked on its own screen
 				// 85 L1-L5: materials, shaders, the look stack, UVs (lookTools.js)
 				return await lookTool(name, args);
 

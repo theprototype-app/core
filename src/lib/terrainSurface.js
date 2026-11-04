@@ -751,7 +751,7 @@ function setInstances(object, set, b, room = MAX_INSTANCES) {
 		return surfaceInstancesOf(set, S, base64ToBytes, { room, accept });
 	}
 	const mask = set.gen ? terrainAccept(object, set, b) : undefined;
-	const accept = avoid.length ? (/** @type {number} */ x, /** @type {number} */ z, /** @type {number} */ k) => clear(x, z) && (!mask || mask(x, z, k)) : mask;
+	const accept = avoid.length ? (/** @type {number} */ x, /** @type {number} */ z) => clear(x, z) && (!mask || mask(x, z)) : mask;
 	return instancesOf(set, b, base64ToBytes, { room, accept });
 }
 

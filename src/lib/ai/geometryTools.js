@@ -961,7 +961,7 @@ async function duplicateTool(args) {
 	if (source.isLight || source.isCamera) return { error: 'duplicate copies shapes and models; for a light or a camera, create a new one' };
 	const count = args.count ?? 1;
 	if (!Number.isInteger(count) || count < 1 || count > DUPLICATE_MAX) return { error: 'count: 1-' + DUPLICATE_MAX + ' copies (for hundreds over a surface, use scatter with source)' };
-	const a = args.mirror === undefined ? -1 : AXES.indexOf(String(args.mirror).toLowerCase());
+	const a = args.mirror === undefined ? -1 : AXES.indexOf(/** @type {any} */ (String(args.mirror).toLowerCase()));
 	if (args.mirror !== undefined && a < 0) return { error: 'mirror: "x", "y" or "z" — the axis the mirror flips' };
 	let offset = args.offset;
 	if (offset !== undefined && !(Array.isArray(offset) && offset.length === 3 && offset.every((v) => typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= 1000)))

@@ -847,7 +847,10 @@ export const GEOMETRY_AI_TOOLS = [
 					radialSegments: { type: 'integer', description: '3-32, default 8' },
 					name: { type: 'string' },
 					color: { type: 'string', description: 'hex #rrggbb' },
-					physics: { type: 'string', enum: ['static', 'dynamic'] }
+					parentUuid: { type: 'string', description: "uuid of a group to nest under — path points are then LOCAL to that group, so the tube moves and turns with it" },
+					physics: { type: 'string', enum: ['static', 'dynamic'] },
+					castShadow: PLACE.castShadow,
+					receiveShadow: PLACE.receiveShadow
 				},
 				required: ['path']
 			}
@@ -922,7 +925,9 @@ export const GEOMETRY_AI_TOOLS = [
 				MESH_MAX_VERTICES +
 				' vertices and ' +
 				MESH_MAX_FACES +
-				' faces; normals are computed (smooth: true for smooth shading). Edit it afterwards with edit_mesh. Returns the uuid.',
+				' faces; normals are computed (smooth: true for smooth shading, flatShading: true for hard facets). Colour it as you make it: materials [{color, roughness, metalness, …}] (up to ' +
+				MESH_MAX_MATERIALS +
+				' slots) with faceMaterials [slot per face, same order as faces] for parts in different colours; or colors [[r, g, b] 0-1, one per vertex] for a painted gradient (multiplied by the material colour). Material slots last through edit_mesh; vertex colours last only while an edit keeps the vertex count. Edit it afterwards with edit_mesh. Returns the uuid.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -930,6 +935,27 @@ export const GEOMETRY_AI_TOOLS = [
 					faces: { type: 'array', items: { type: 'array', items: { type: 'integer' } }, maxItems: MESH_MAX_FACES },
 					uvs: { type: 'array', items: V2 },
 					smooth: { type: 'boolean' },
+					flatShading: { type: 'boolean', description: 'true = one flat normal per triangle (low-poly look)' },
+					colors: { type: 'array', items: V3, maxItems: MESH_MAX_VERTICES, description: 'one [r, g, b] (0-1) per vertex, in the order of vertices' },
+					materials: {
+						type: 'array',
+						minItems: 1,
+						maxItems: MESH_MAX_MATERIALS,
+						description: 'material slots faceMaterials points into',
+						items: {
+							type: 'object',
+							properties: {
+								color: { type: 'string', description: 'hex like "#aa6633"' },
+								roughness: { type: 'number', minimum: 0, maximum: 1 },
+								metalness: { type: 'number', minimum: 0, maximum: 1 },
+								opacity: { type: 'number', minimum: 0, maximum: 1 },
+								emissive: { type: 'string', description: 'hex glow colour' },
+								emissiveIntensity: { type: 'number', minimum: 0, maximum: 100 },
+								name: { type: 'string' }
+							}
+						}
+					},
+					faceMaterials: { type: 'array', items: { type: 'integer', minimum: 0 }, maxItems: MESH_MAX_FACES, description: 'the materials slot of each face (0 = the first), one per face' },
 					...PLACE
 				},
 				required: ['vertices', 'faces']

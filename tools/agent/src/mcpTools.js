@@ -77,7 +77,7 @@ export function bridgeTools(engine = 'browser') {
 		{
 			name: 'status',
 			description:
-				'Where the agent is: connection state, whether the host has let it in, its role (viewer edits stay local), the app version, and why any tool is missing. sceneBudget says how heavy the scene is: objects, triangles, draw calls, textures, lights, frame time p95, tier green / amber / red on the desktop or vr profile, and over = each budget past green (build lighter, or stop adding, while it is not green).',
+				'Where the agent is: connection state, whether the host has let it in, its role (viewer edits stay local), the app version, and why any tool is missing. sceneBudget says how heavy the scene is: objects, triangles (per frame drawn; the scene\'s own count while the view is idle, then no draw calls), draw calls, textures, lights you placed, frame time p95, tier green / amber / red on the desktop or vr profile, and over = each budget past green (build lighter, or stop adding, while it is not green).',
 			inputSchema: { type: 'object', properties: {} }
 		}
 	];

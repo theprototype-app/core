@@ -16,3 +16,16 @@ describe('agentBudgetReport (status sceneBudget, mcp-shapes item 10)', () => {
 		expect(agentBudgetReport({ at: 1, profile: 'desktop' })).toEqual({ tier: 'unknown', profile: 'desktop' });
 	});
 });
+
+describe('agentBudgetReport on an idle view', () => {
+	it('no frame drew: triangles = the scene\'s own, draw calls left out (never a 0 for a full scene)', () => {
+		const r = agentBudgetReport({ at: 1, profile: 'desktop', objects: 12, meshes: 10, triangles: 0, calls: 0, sceneTriangles: 120, lights: 0 });
+		expect(r.triangles).toBe(120);
+		expect('calls' in r).toBe(false);
+		expect(r.tier).toBe('green');
+	});
+	it('a drawn frame wins over the scene count', () => {
+		const r = agentBudgetReport({ at: 1, profile: 'desktop', meshes: 10, triangles: 240, calls: 22, sceneTriangles: 120 });
+		expect([r.triangles, r.calls]).toEqual([240, 22]);
+	});
+});

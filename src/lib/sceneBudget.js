@@ -491,7 +491,16 @@ function walkScene() {
 		if (o.isLight) lights++; // mcp-shapes: the agent's status reports it
 		if (o.visible === false) hidden++;
 	});
-	return { objects, meshes, hidden, lights };
+	// mcp-shapes: the scene's OWN triangles (visible meshes, instances counted) — the agent's status needs a number
+	// while the view is idle, and the render totals above are per DISPLAY frame, so a scene nobody is changing
+	// (render on demand) reads 0 there
+	let sceneTriangles = 0;
+	group?.traverseVisible?.((/** @type {any} */ o) => {
+		const g = o.isMesh ? o.geometry : null;
+		const n = g ? (g.index ? g.index.count : (g.attributes?.position?.count ?? 0)) : 0;
+		if (n) sceneTriangles += Math.floor(n / 3) * (o.isInstancedMesh ? o.count : 1);
+	});
+	return { objects, meshes, hidden, lights, sceneTriangles };
 }
 
 // --- per-frame render totals (26-E) -----------------------------------------------
@@ -617,6 +626,7 @@ function sample() {
 		meshes: scene.meshes,
 		hidden: scene.hidden,
 		lights: scene.lights,
+		sceneTriangles: scene.sceneTriangles,
 		// per DISPLAY frame across every render() call; before the sampler has counted a
 		// frame (a forced reading straight after boot) fall back to the raw last pass
 		triangles: totals ? totals.triangles : (info?.render?.triangles ?? null),
@@ -749,6 +759,13 @@ export function sampleSceneMetrics() {
 export function agentBudgetReport(given) {
 	let metrics = given ?? get(sceneMetrics);
 	if (!given && !metrics?.at) metrics = sampleSceneMetrics();
+	// an idle view (render on demand) draws nothing per display frame: say the scene's own triangles and leave the
+	// draw calls out rather than report 0 for a scene full of meshes
+	const idle = !(metrics.triangles > 0) && metrics.sceneTriangles > 0;
+	if (idle) {
+		metrics = { ...metrics, triangles: metrics.sceneTriangles };
+		if (!(metrics.calls > 0)) metrics.calls = null;
+	}
 	const profile = metrics.profile === 'vr' ? 'vr' : 'desktop';
 	/** @type {Record<string, any>} */
 	const out = { tier: worstTier(metrics, profile), profile };

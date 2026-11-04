@@ -819,12 +819,24 @@
 						"type": "string",
 						"description": "hex #rrggbb"
 					},
+					"parentUuid": {
+						"type": "string",
+						"description": "uuid of a group to nest under — path points are then LOCAL to that group, so the tube moves and turns with it"
+					},
 					"physics": {
 						"type": "string",
 						"enum": [
 							"static",
 							"dynamic"
 						]
+					},
+					"castShadow": {
+						"type": "boolean",
+						"description": "cast a shadow (on by default)"
+					},
+					"receiveShadow": {
+						"type": "boolean",
+						"description": "shadows fall on it (on by default)"
 					}
 				},
 				"required": [
@@ -1159,7 +1171,7 @@
 		{
 			"name": "create_mesh",
 			"title": "Make a mesh from data",
-			"description": "A mesh from raw data: vertices [[x, y, z], …] and faces [[i, j, k] or [i, j, k, l] …] (indices into vertices, counter-clockwise seen from outside; polygons of up to 32 corners are fanned, so keep them convex), optional uvs (one [u, v] per vertex). Up to 20000 vertices and 20000 faces; normals are computed (smooth: true for smooth shading). Edit it afterwards with edit_mesh. Returns the uuid.\nTake a screenshot after each change to check your work.",
+			"description": "A mesh from raw data: vertices [[x, y, z], …] and faces [[i, j, k] or [i, j, k, l] …] (indices into vertices, counter-clockwise seen from outside; polygons of up to 32 corners are fanned, so keep them convex), optional uvs (one [u, v] per vertex). Up to 20000 vertices and 20000 faces; normals are computed (smooth: true for smooth shading, flatShading: true for hard facets). Colour it as you make it: materials [{color, roughness, metalness, …}] (up to 16 slots) with faceMaterials [slot per face, same order as faces] for parts in different colours; or colors [[r, g, b] 0-1, one per vertex] for a painted gradient (multiplied by the material colour). Material slots last through edit_mesh; vertex colours last only while an edit keeps the vertex count. Edit it afterwards with edit_mesh. Returns the uuid.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -1198,6 +1210,74 @@
 					},
 					"smooth": {
 						"type": "boolean"
+					},
+					"flatShading": {
+						"type": "boolean",
+						"description": "true = one flat normal per triangle (low-poly look)"
+					},
+					"colors": {
+						"type": "array",
+						"items": {
+							"type": "array",
+							"items": {
+								"type": "number"
+							},
+							"minItems": 3,
+							"maxItems": 3
+						},
+						"maxItems": 20000,
+						"description": "one [r, g, b] (0-1) per vertex, in the order of vertices"
+					},
+					"materials": {
+						"type": "array",
+						"minItems": 1,
+						"maxItems": 16,
+						"description": "material slots faceMaterials points into",
+						"items": {
+							"type": "object",
+							"properties": {
+								"color": {
+									"type": "string",
+									"description": "hex like \"#aa6633\""
+								},
+								"roughness": {
+									"type": "number",
+									"minimum": 0,
+									"maximum": 1
+								},
+								"metalness": {
+									"type": "number",
+									"minimum": 0,
+									"maximum": 1
+								},
+								"opacity": {
+									"type": "number",
+									"minimum": 0,
+									"maximum": 1
+								},
+								"emissive": {
+									"type": "string",
+									"description": "hex glow colour"
+								},
+								"emissiveIntensity": {
+									"type": "number",
+									"minimum": 0,
+									"maximum": 100
+								},
+								"name": {
+									"type": "string"
+								}
+							}
+						}
+					},
+					"faceMaterials": {
+						"type": "array",
+						"items": {
+							"type": "integer",
+							"minimum": 0
+						},
+						"maxItems": 20000,
+						"description": "the materials slot of each face (0 = the first), one per face"
 					},
 					"name": {
 						"type": "string"
@@ -2956,7 +3036,7 @@
 		{
 			"name": "status",
 			"title": "Session status",
-			"description": "Where the agent is: connection state, whether the host has let it in, its role (viewer edits stay local), the app version, and why any tool is missing. sceneBudget says how heavy the scene is: objects, triangles, draw calls, textures, lights, frame time p95, tier green / amber / red on the desktop or vr profile, and over = each budget past green (build lighter, or stop adding, while it is not green).\nYou are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.",
+			"description": "Where the agent is: connection state, whether the host has let it in, its role (viewer edits stay local), the app version, and why any tool is missing. sceneBudget says how heavy the scene is: objects, triangles (per frame drawn; the scene's own count while the view is idle, then no draw calls), draw calls, textures, lights you placed, frame time p95, tier green / amber / red on the desktop or vr profile, and over = each budget past green (build lighter, or stop adding, while it is not green).\nYou are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {}
@@ -3883,12 +3963,24 @@
 									"type": "string",
 									"description": "hex #rrggbb"
 								},
+								"parentUuid": {
+									"type": "string",
+									"description": "uuid of a group to nest under — path points are then LOCAL to that group, so the tube moves and turns with it"
+								},
 								"physics": {
 									"type": "string",
 									"enum": [
 										"static",
 										"dynamic"
 									]
+								},
+								"castShadow": {
+									"type": "boolean",
+									"description": "cast a shadow (on by default)"
+								},
+								"receiveShadow": {
+									"type": "boolean",
+									"description": "shadows fall on it (on by default)"
 								}
 							},
 							"required": [
@@ -4054,6 +4146,74 @@
 								"smooth": {
 									"type": "boolean"
 								},
+								"flatShading": {
+									"type": "boolean",
+									"description": "true = one flat normal per triangle (low-poly look)"
+								},
+								"colors": {
+									"type": "array",
+									"items": {
+										"type": "array",
+										"items": {
+											"type": "number"
+										},
+										"minItems": 3,
+										"maxItems": 3
+									},
+									"maxItems": 20000,
+									"description": "one [r, g, b] (0-1) per vertex, in the order of vertices"
+								},
+								"materials": {
+									"type": "array",
+									"minItems": 1,
+									"maxItems": 16,
+									"description": "material slots faceMaterials points into",
+									"items": {
+										"type": "object",
+										"properties": {
+											"color": {
+												"type": "string",
+												"description": "hex like \"#aa6633\""
+											},
+											"roughness": {
+												"type": "number",
+												"minimum": 0,
+												"maximum": 1
+											},
+											"metalness": {
+												"type": "number",
+												"minimum": 0,
+												"maximum": 1
+											},
+											"opacity": {
+												"type": "number",
+												"minimum": 0,
+												"maximum": 1
+											},
+											"emissive": {
+												"type": "string",
+												"description": "hex glow colour"
+											},
+											"emissiveIntensity": {
+												"type": "number",
+												"minimum": 0,
+												"maximum": 100
+											},
+											"name": {
+												"type": "string"
+											}
+										}
+									}
+								},
+								"faceMaterials": {
+									"type": "array",
+									"items": {
+										"type": "integer",
+										"minimum": 0
+									},
+									"maxItems": 20000,
+									"description": "the materials slot of each face (0 = the first), one per face"
+								},
 								"name": {
 									"type": "string"
 								},
@@ -4111,7 +4271,7 @@
 								"vertices",
 								"faces"
 							],
-							"description": "A mesh from raw data: vertices [[x, y, z], …] and faces [[i, j, k] or [i, j, k, l] …] (indices into vertices, counter-clockwise seen from outside; polygons of up to 32 corners are fanned, so keep them convex), optional uvs (one [u, v] per vertex). Up to 20000 vertices and 20000 faces; normals are computed (smooth: true for smooth shading). Edit it afterwards with edit_shape {action: 'mesh'}. Returns the uuid."
+							"description": "A mesh from raw data: vertices [[x, y, z], …] and faces [[i, j, k] or [i, j, k, l] …] (indices into vertices, counter-clockwise seen from outside; polygons of up to 32 corners are fanned, so keep them convex), optional uvs (one [u, v] per vertex). Up to 20000 vertices and 20000 faces; normals are computed (smooth: true for smooth shading, flatShading: true for hard facets). Colour it as you make it: materials [{color, roughness, metalness, …}] (up to 16 slots) with faceMaterials [slot per face, same order as faces] for parts in different colours; or colors [[r, g, b] 0-1, one per vertex] for a painted gradient (multiplied by the material colour). Material slots last through edit_shape {action: 'mesh'}; vertex colours last only while an edit keeps the vertex count. Edit it afterwards with edit_shape {action: 'mesh'}. Returns the uuid."
 						},
 						"shapes": {
 							"type": "array",
@@ -6011,7 +6171,7 @@
 			{
 				"name": "status",
 				"title": "Session status",
-				"description": "Where the agent is: connection state, whether the host has let it in, its role (viewer edits stay local), the app version, and why any tool is missing. sceneBudget says how heavy the scene is: objects, triangles, draw calls, textures, lights, frame time p95, tier green / amber / red on the desktop or vr profile, and over = each budget past green (build lighter, or stop adding, while it is not green).\nYou are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.",
+				"description": "Where the agent is: connection state, whether the host has let it in, its role (viewer edits stay local), the app version, and why any tool is missing. sceneBudget says how heavy the scene is: objects, triangles (per frame drawn; the scene's own count while the view is idle, then no draw calls), draw calls, textures, lights you placed, frame time p95, tier green / amber / red on the desktop or vr profile, and over = each budget past green (build lighter, or stop adding, while it is not green).\nYou are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {}

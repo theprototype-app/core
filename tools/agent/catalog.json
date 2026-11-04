@@ -3,7 +3,7 @@
 	"format": 2,
 	"generator": {
 		"source": "tpAgent.tools() via core scripts/agent-tool-catalog.cjs, mapped by tools/agent/src/catalog.js",
-		"hostTools": 70,
+		"hostTools": 71,
 		"dropped": []
 	},
 	"instructions": "You are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.\nWhen asked what you can do here, call what_can_you_do and say its \"say\" line.",
@@ -1488,6 +1488,61 @@
 			},
 			"annotations": {
 				"title": "Make a mesh from data",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "duplicate",
+			"title": "Copy or mirror an object",
+			"description": "Copy an object you built (its children, materials, behaviour and physics come along; nothing is resent): count copies stepping by offset [x, y, z] metres in its parent's space (default: a row to the side), or mirror \"x\"|\"y\"|\"z\" = the mirror image across that plane through the PARENT's centre (in a group: its centre line — a left arm or ear becomes the right one; at the scene root: the world's), its triangles re-wound so normals stay right (Box and even-segment round shapes keep their params). parentUuid nests the copies (they keep their place in the world). One undo step; everyone sees it. For tens to hundreds of copies spread over a terrain or mesh, use scatter with source: <uuid>.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"uuid": {
+						"type": "string",
+						"description": "the object to copy"
+					},
+					"count": {
+						"type": "integer",
+						"minimum": 1,
+						"maximum": 50,
+						"description": "copies (default 1)"
+					},
+					"offset": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"minItems": 3,
+						"maxItems": 3,
+						"description": "[x, y, z] metres between copies in the parent's space; with mirror it moves the mirror image (default [0, 0, 0])"
+					},
+					"mirror": {
+						"type": "string",
+						"enum": [
+							"x",
+							"y",
+							"z"
+						],
+						"description": "the axis the mirror flips: x makes a left part the right one"
+					},
+					"parentUuid": {
+						"type": "string",
+						"description": "a group (or any object) to put the copies in"
+					},
+					"name": {
+						"type": "string",
+						"description": "the copies' name (numbered when several)"
+					}
+				},
+				"required": [
+					"uuid"
+				]
+			},
+			"annotations": {
+				"title": "Copy or mirror an object",
 				"readOnlyHint": false,
 				"destructiveHint": false,
 				"openWorldHint": false
@@ -3303,7 +3358,7 @@
 		{
 			"name": "scatter",
 			"title": "Scatter over a surface",
-			"description": "Scatter many instances over a terrain or any mesh (a forest on hills, rocks on a beach, flowers on a slope): asset = a primitive (Box, Sphere, Cone, Cylinder, Capsule, Dodecahedron) or a model id from search_assets, or assets = up to 8 mixed evenly. density per m² (or count), scale range, rules {slope: [min°, max°], height: [min, max] m, layer: {i, min}} keep them where they belong. Cheap instancing, seeded (the same on every peer). Returns the set id; remove: <set id> deletes a set. One undo step.\nTake a screenshot after each change to check your work.",
+			"description": "Scatter many instances over a terrain or any mesh (a forest on hills, rocks on a beach, flowers on a slope): asset = a primitive (Box, Sphere, Cone, Cylinder, Capsule, Dodecahedron) or a model id from search_assets, or assets = up to 8 mixed evenly. density per m² (or count), scale range, rules {slope: [min°, max°], height: [min, max] m, layer: {i, min}} keep them where they belong. Cheap instancing, seeded (the same on every peer; seed picks another layout). avoid = up to 16 object uuids nothing lands on (a path, a house, a portal). source = the uuid of an object you built: up to 200 REAL copies of it (editable, with its children, materials and behaviour) instead of instances — for one or a few copies in a row or mirrored, use duplicate. Returns the set id (or the copies' uuids); remove: <set id> deletes a set. One undo step.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -3345,7 +3400,20 @@
 						"description": "{slope: [0, 25] degrees from flat, height: [min, max] metres, layer: {i: paint layer 0-3, min: 0-1}}"
 					},
 					"seed": {
-						"type": "integer"
+						"type": "integer",
+						"description": "the same seed puts them in the same spots; another seed, another layout"
+					},
+					"source": {
+						"type": "string",
+						"description": "the uuid of an object in the scene: scatter real copies of it (max 200) instead of asset"
+					},
+					"avoid": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						},
+						"maxItems": 16,
+						"description": "uuids of objects to keep clear: nothing lands on their footprint"
 					},
 					"tint": {
 						"type": "number",
@@ -5061,6 +5129,7 @@
 				"params": "set_geometry",
 				"mesh": "edit_mesh",
 				"update": "update_mesh",
+				"duplicate": "duplicate",
 				"pivot": "set_pivot",
 				"pivot_group": "create_pivot"
 			},
@@ -6327,7 +6396,7 @@
 			{
 				"name": "edit_shape",
 				"title": "Reshape or model objects",
-				"description": "Change the shape of objects that exist: params = new size / segments / type in place, mesh = model faces and vertices (extrude, inset, bevel, subdivide, weld, smooth, dissolve, make a face), update = new vertices / faces for a mesh made from data (replace it, or patch a range), pivot = the point an object turns about, pivot_group = a group at a joint so several parts swing together.\nCall it as {\"action\": \"params\", \"params\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
+				"description": "Change the shape of objects that exist: params = new size / segments / type in place, mesh = model faces and vertices (extrude, inset, bevel, subdivide, weld, smooth, dissolve, make a face), update = new vertices / faces for a mesh made from data (replace it, or patch a range), duplicate = copies of an object in a row, or its mirror image (a left arm → the right one), pivot = the point an object turns about, pivot_group = a group at a joint so several parts swing together.\nCall it as {\"action\": \"params\", \"params\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -6337,6 +6406,7 @@
 								"params",
 								"mesh",
 								"update",
+								"duplicate",
 								"pivot",
 								"pivot_group"
 							],
@@ -6713,6 +6783,51 @@
 								"vertices"
 							],
 							"description": "New data for a mesh create_shape {action: 'mesh'} made, by uuid, as ONE undo step: mode \"replace\" sends every vertex and face again (the same fields and caps as create_shape {action: 'mesh'}, subdivide included); mode \"patch\" replaces vertices from offset on (vertices[0] lands on index offset) and keeps the faces — for moving part of a mesh made in this tab (after a reload, send \"replace\"). uvs/colors patch the same way. Primitives use edit_shape {action: 'params'}; to model any mesh use edit_shape {action: 'mesh'}."
+						},
+						"duplicate": {
+							"type": "object",
+							"properties": {
+								"uuid": {
+									"type": "string",
+									"description": "the object to copy"
+								},
+								"count": {
+									"type": "integer",
+									"minimum": 1,
+									"maximum": 50,
+									"description": "copies (default 1)"
+								},
+								"offset": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"minItems": 3,
+									"maxItems": 3,
+									"description": "[x, y, z] metres between copies in the parent's space; with mirror it moves the mirror image (default [0, 0, 0])"
+								},
+								"mirror": {
+									"type": "string",
+									"enum": [
+										"x",
+										"y",
+										"z"
+									],
+									"description": "the axis the mirror flips: x makes a left part the right one"
+								},
+								"parentUuid": {
+									"type": "string",
+									"description": "a group (or any object) to put the copies in"
+								},
+								"name": {
+									"type": "string",
+									"description": "the copies' name (numbered when several)"
+								}
+							},
+							"required": [
+								"uuid"
+							],
+							"description": "Copy an object you built (its children, materials, behaviour and physics come along; nothing is resent): count copies stepping by offset [x, y, z] metres in its parent's space (default: a row to the side), or mirror \"x\"|\"y\"|\"z\" = the mirror image across that plane through the PARENT's centre (in a group: its centre line — a left arm or ear becomes the right one; at the scene root: the world's), its triangles re-wound so normals stay right (Box and even-segment round shapes keep their params). parentUuid nests the copies (they keep their place in the world). One undo step; everyone sees it. For tens to hundreds of copies spread over a terrain or mesh, use scatter with source: <uuid>."
 						},
 						"pivot": {
 							"type": "object",
@@ -8126,7 +8241,20 @@
 									"description": "{slope: [0, 25] degrees from flat, height: [min, max] metres, layer: {i: paint layer 0-3, min: 0-1}}"
 								},
 								"seed": {
-									"type": "integer"
+									"type": "integer",
+									"description": "the same seed puts them in the same spots; another seed, another layout"
+								},
+								"source": {
+									"type": "string",
+									"description": "the uuid of an object in the scene: scatter real copies of it (max 200) instead of asset"
+								},
+								"avoid": {
+									"type": "array",
+									"items": {
+										"type": "string"
+									},
+									"maxItems": 16,
+									"description": "uuids of objects to keep clear: nothing lands on their footprint"
 								},
 								"tint": {
 									"type": "number",
@@ -8154,7 +8282,7 @@
 							"required": [
 								"surface"
 							],
-							"description": "Scatter many instances over a terrain or any mesh (a forest on hills, rocks on a beach, flowers on a slope): asset = a primitive (Box, Sphere, Cone, Cylinder, Capsule, Dodecahedron) or a model id from assets {action: 'search'}, or assets = up to 8 mixed evenly. density per m² (or count), scale range, rules {slope: [min°, max°], height: [min, max] m, layer: {i, min}} keep them where they belong. Cheap instancing, seeded (the same on every peer). Returns the set id; remove: <set id> deletes a set. One undo step."
+							"description": "Scatter many instances over a terrain or any mesh (a forest on hills, rocks on a beach, flowers on a slope): asset = a primitive (Box, Sphere, Cone, Cylinder, Capsule, Dodecahedron) or a model id from assets {action: 'search'}, or assets = up to 8 mixed evenly. density per m² (or count), scale range, rules {slope: [min°, max°], height: [min, max] m, layer: {i, min}} keep them where they belong. Cheap instancing, seeded (the same on every peer; seed picks another layout). avoid = up to 16 object uuids nothing lands on (a path, a house, a portal). source = the uuid of an object you built: up to 200 REAL copies of it (editable, with its children, materials and behaviour) instead of instances — for one or a few copies in a row or mirrored, use duplicate. Returns the set id (or the copies' uuids); remove: <set id> deletes a set. One undo step."
 						},
 						"water": {
 							"type": "object",

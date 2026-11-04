@@ -739,13 +739,41 @@ function terrainAccept(object, set, b) {
  * @param {any} object @param {any} set @param {any} b @param {number} [room]
  */
 function setInstances(object, set, b, room = MAX_INSTANCES) {
+	// mcp-diorama2: `gen.avoid` = host-local [minX, minZ, maxX, maxZ] rectangles nothing is placed in (a path, the
+	// portal) — data in the set, so every peer leaves the same holes
+	const avoid = avoidRects(set.gen);
+	const clear = (/** @type {number} */ x, /** @type {number} */ z) => !avoid.some((r) => x >= r[0] && x <= r[2] && z >= r[1] && z <= r[3]);
 	if (set.host === 'mesh') {
 		const S = set.gen ? surfaceOf(object) : null;
 		// a mesh's paint layer is not a thing (no splat map): a layer mask rejects everything there
 		const mask = set.gen ? maskOf(set.gen) : {};
-		return surfaceInstancesOf(set, S, base64ToBytes, { room, accept: mask.layer ? () => false : null });
+		const accept = mask.layer ? () => false : avoid.length ? (/** @type {any} */ p) => clear(p.x, p.z) : null;
+		return surfaceInstancesOf(set, S, base64ToBytes, { room, accept });
 	}
-	return instancesOf(set, b, base64ToBytes, { room, accept: set.gen ? terrainAccept(object, set, b) : undefined });
+	const mask = set.gen ? terrainAccept(object, set, b) : undefined;
+	const accept = avoid.length ? (/** @type {number} */ x, /** @type {number} */ z, /** @type {number} */ k) => clear(x, z) && (!mask || mask(x, z, k)) : mask;
+	return instancesOf(set, b, base64ToBytes, { room, accept });
+}
+
+/** mcp-diorama2: the avoid rectangles a set's generator carries (at most 16, finite, min <= max) @param {any} gen @returns {number[][]} */
+export function avoidRects(gen) {
+	const list = Array.isArray(gen?.avoid) ? gen.avoid.slice(0, 16) : [];
+	return list.filter((/** @type {any} */ r) => Array.isArray(r) && r.length === 4 && r.every((n) => typeof n === 'number' && Number.isFinite(n)) && r[0] <= r[2] && r[1] <= r[3]);
+}
+
+/**
+ * mcp-diorama2 (scatter `source`): where a set WOULD put its instances on `object`, without adding it — the same
+ * generator, masks and avoid holes the drawn sets use, as matrices in the host's LOCAL space.
+ * @param {any} object a terrain or mesh host @param {any} set a scatterSetOf set (gen, seed, …) @param {boolean} meshHost
+ * @returns {any[]} THREE.Matrix4 per instance
+ */
+export function scatterPlacements(object, set, meshHost) {
+	const b = terrainBounds(object);
+	if (!b) return [];
+	const norm = normalizeScatter({ sets: [{ data: '', count: 0, align: meshHost, ...set, id: 'preview', source: { kind: 'primitive', type: 'Box' }, sources: undefined, ...(meshHost ? { host: 'mesh' } : {}) }] }, base64ToBytes)?.sets?.[0];
+	if (!norm) return [];
+	const grid = object.userData?.terrain ? heightGridOf(object) : null;
+	return instanceMatrices(setInstances(object, norm, b), norm.align, grid, norm.sink ?? 0);
 }
 
 /**

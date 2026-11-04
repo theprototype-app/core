@@ -50,7 +50,7 @@ import {
 } from './meshSelectCore.js';
 
 /** the tool names this module answers */
-export const GEOMETRY_TOOL_NAMES = ['set_geometry', 'create_lathe', 'create_tube', 'extrude_shape', 'edit_mesh', 'create_mesh', 'create_shapes', 'update_mesh'];
+export const GEOMETRY_TOOL_NAMES = ['set_geometry', 'create_lathe', 'create_tube', 'extrude_shape', 'edit_mesh', 'create_mesh', 'create_shapes', 'update_mesh', 'duplicate'];
 
 /** how many objects one set_geometry call reshapes, and ops one edit_mesh call runs */
 const MAX_UPDATES = 100;
@@ -855,6 +855,181 @@ async function updateMeshTool(args) {
 	return { updated: [{ uuid, ok: true, mode, triangles: data.triangles, ...(sub.levels ? { subdivided: sub.levels } : {}) }] };
 }
 
+// ---- diorama2 duplicate -----------------------------------------------------------------------------
+
+/** copies one duplicate call makes */
+export const DUPLICATE_MAX = 50;
+const AXES = /** @type {const} */ (['x', 'y', 'z']);
+const FULL = Math.PI * 2 - 1e-6;
+
+/**
+ * Is this parametric primitive its own mirror image across its local `axis` plane (vertex for vertex, up to order)?
+ * Then a mirror needs no new triangles and the copy keeps its editable params. Round shapes need an EVEN segment
+ * count for the x / z mirror (an odd ring is not symmetric across both planes).
+ * @param {any} geometry @param {number} a 0 x, 1 y, 2 z
+ */
+export function mirrorSymmetric(geometry, a) {
+	const p = geometry?.parameters ?? {};
+	const even = (/** @type {any} */ n) => Number.isInteger(n) && n % 2 === 0;
+	switch (geometry?.type) {
+		case 'BoxGeometry':
+			return true;
+		case 'SphereGeometry':
+			if ((p.phiLength ?? Math.PI * 2) < FULL || (p.thetaLength ?? Math.PI) < Math.PI - 1e-6 || (p.thetaStart ?? 0) !== 0 || (p.phiStart ?? 0) !== 0) return false;
+			return a === 1 || a === 2 || even(p.widthSegments);
+		case 'CylinderGeometry':
+		case 'ConeGeometry':
+			if ((p.thetaLength ?? Math.PI * 2) < FULL || (p.thetaStart ?? 0) !== 0) return false;
+			if (a === 1) return geometry.type === 'CylinderGeometry' && p.radiusTop === p.radiusBottom;
+			return a === 0 || even(p.radialSegments);
+		case 'CapsuleGeometry':
+			return a === 1 || even(p.radialSegments);
+		case 'TorusGeometry':
+			if ((p.arc ?? Math.PI * 2) < FULL) return false;
+			return a !== 0 || even(p.tubularSegments);
+		default:
+			return false;
+	}
+}
+
+/**
+ * The mirrored triangle soup of a geometry across its local `a` plane: the coordinate negated, each triangle's
+ * corners reversed (b and c swap) so it still faces outward, uvs / colours / material slots carried with their
+ * corner. Pure (THREE only). @param {any} fe faceEdit (readTriangles + trisTo*) @param {any} geometry @param {number} a
+ */
+export function mirroredSoup(fe, geometry, a) {
+	const tris = fe.readTriangles(geometry);
+	const flipped = tris.map((/** @type {any} */ t) => {
+		const m = (/** @type {any} */ v) => {
+			const c = v.clone();
+			c.setComponent(a, -c.getComponent(a));
+			return c;
+		};
+		/** @type {any} */
+		const out = [m(t[0]), m(t[2]), m(t[1])];
+		if (t.mi !== undefined) out.mi = t.mi;
+		if (t.uv) out.uv = [t.uv[0], t.uv[2], t.uv[1]];
+		return out;
+	});
+	/** @type {number[] | null} */
+	let colors = null;
+	const col = geometry.attributes.color;
+	if (col) {
+		const index = geometry.index;
+		colors = [];
+		const n = index ? index.count : geometry.attributes.position.count;
+		for (let i = 0; i < n; i += 3)
+			for (const o of [0, 2, 1]) {
+				const j = index ? index.getX(i + o) : i + o;
+				colors.push(col.getX(j), col.getY(j), col.getZ(j));
+			}
+	}
+	return {
+		before: { positions: fe.trisToPositions(tris), groups: fe.trisToGroups(tris), uvs: fe.trisToUVs(tris), faces: readStoredFaces(geometry) },
+		after: { positions: fe.trisToPositions(flipped), groups: fe.trisToGroups(flipped), uvs: fe.trisToUVs(flipped), faces: readStoredFaces(geometry), ...(colors ? { colors } : {}) }
+	};
+}
+
+/**
+ * A node's local transform conjugated by the mirror across axis `a` (R·T·R): the coordinate negated, the rotation's
+ * other two quaternion parts negated, the scale unchanged. Applied to every node of a copied tree, with the
+ * remaining R baked into each mesh's triangles, the whole tree is the mirror image of the original with only
+ * proper rotations and positive scales. @param {any} node @param {number} a
+ */
+export function mirrorLocalPose(node, a) {
+	node.position.setComponent(a, -node.position.getComponent(a));
+	const q = node.quaternion;
+	q.set(a === 0 ? q.x : -q.x, a === 1 ? q.y : -q.y, a === 2 ? q.z : -q.z, q.w);
+	node.rotation.setFromQuaternion(q);
+}
+
+/** a node's pose as history and the `move` message carry it @param {any} o */
+const poseOf = (o) => ({ pos: o.position.toArray(), rot: [o.rotation.x, o.rotation.y, o.rotation.z], scale: o.scale.toArray() });
+
+/**
+ * duplicate {uuid, count?, offset?, mirror?, parentUuid?}: copies of an object (its children, materials, behaviour,
+ * physics) through the editor's own Duplicate — no geometry is resent. count copies step by `offset` (the parent's
+ * space, metres); mirror "x"|"y"|"z" makes each copy the mirror image across that plane through the PARENT's
+ * origin (the group's centre line — a left arm becomes a right arm) with its triangles re-wound so it still faces
+ * out. parentUuid nests the copies (they keep their place in the world). One undo step.
+ * @param {any} args
+ */
+async function duplicateTool(args) {
+	const uuid = String(args.uuid ?? args.object ?? '');
+	const source = uuid && objectOf(uuid);
+	if (!source) return { error: 'uuid: no object with that uuid (list_scene lists them)' };
+	if (source.isLight || source.isCamera) return { error: 'duplicate copies shapes and models; for a light or a camera, create a new one' };
+	const count = args.count ?? 1;
+	if (!Number.isInteger(count) || count < 1 || count > DUPLICATE_MAX) return { error: 'count: 1-' + DUPLICATE_MAX + ' copies (for hundreds over a surface, use scatter with source)' };
+	const a = args.mirror === undefined ? -1 : AXES.indexOf(String(args.mirror).toLowerCase());
+	if (args.mirror !== undefined && a < 0) return { error: 'mirror: "x", "y" or "z" — the axis the mirror flips' };
+	let offset = args.offset;
+	if (offset !== undefined && !(Array.isArray(offset) && offset.length === 3 && offset.every((v) => typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= 1000)))
+		return { error: 'offset: [x, y, z] metres between copies, in the parent\'s space' };
+	if (offset === undefined) {
+		// a row to the side by default (the object's own width and a gap); a mirror copy stays on the mirror line
+		const size = new THREE.Box3().setFromObject(source, true).getSize(new THREE.Vector3());
+		offset = a >= 0 ? [0, 0, 0] : [r3(Math.max(size.x, 0.1) + 0.25), 0, 0];
+	}
+	const target = parentTarget(args.parentUuid);
+	if (target && 'error' in target) return { error: target.error };
+	const { duplicateObject } = await import('$lib/objectActions');
+	const fe = a >= 0 ? await import('$lib/faceEdit') : null;
+	const base = String(args.name || (source.name || source.type) + (a >= 0 ? ' mirror' : ' copy')).slice(0, 110);
+	/** @type {any[]} */
+	const created = [];
+	/** @type {string[]} */
+	const warnings = [];
+	let flipped = 0;
+	let kept = 0;
+	for (let i = 1; i <= count; i++) {
+		const clone = duplicateObject(source.uuid, { select: false, name: count > 1 ? base + ' ' + i : base, at: source.position.toArray() });
+		if (!clone) return created.length ? { created, warning: 'stopped at copy ' + i + ': it could not be made' } : { error: 'the copy could not be made' };
+		/** @type {Map<any, any>} */
+		const before = new Map();
+		clone.traverse((/** @type {any} */ n) => before.set(n, poseOf(n)));
+		if (a >= 0 && fe) {
+			clone.traverse((/** @type {any} */ n) => mirrorLocalPose(n, a));
+			/** @type {any[]} */
+			const meshes = [];
+			clone.traverse((/** @type {any} */ n) => n.isMesh && n.geometry?.attributes?.position && meshes.push(n));
+			for (const m of meshes) {
+				if (!m.isSkinnedMesh && !m.isInstancedMesh && !m.userData?.vertexEdited && !m.userData?.faceEdited && mirrorSymmetric(m.geometry, a)) {
+					kept++;
+					continue;
+				}
+				// the copy shares its source's geometry (Object3D.clone): give it its own before the swap
+				m.geometry = m.geometry.clone();
+				const soup = m.isSkinnedMesh || m.isInstancedMesh ? null : mirroredSoup(fe, m.geometry, a);
+				if (soup && fe.commitMeshGeoTriple(m.uuid, soup.before, soup.after)) {
+					physicsShapeChanged(m.uuid);
+					flipped++;
+					continue;
+				}
+				// too big to sync as triangles (or skinned): a negative scale is the same mirror — three re-winds it
+				m.scale.setComponent(a, -m.scale.getComponent(a));
+				warnings.push((m.name || 'a mesh') + ' is mirrored by a negative scale (too large to rewrite)');
+			}
+		}
+		if (offset.some((/** @type {number} */ v) => v !== 0)) clone.position.add(new THREE.Vector3(offset[0] * i, offset[1] * i, offset[2] * i));
+		pokeScene();
+		for (const [n, was] of before) {
+			const now = poseOf(n);
+			if (JSON.stringify(now) === JSON.stringify(was)) continue;
+			broadcast({ type: 'move', uuid: n.uuid, pos: now.pos, rot: now.rot, scale: now.scale });
+			recordTransform({ uuid: n.uuid, before: was, after: now });
+		}
+		if (target && target.parent !== clone.parent) moveObjectToGroup(clone.uuid, target.parent.uuid, { anyParent: true });
+		created.push({ uuid: clone.uuid, name: clone.name, position: clone.position.toArray().map(r3) });
+	}
+	return {
+		created,
+		source: source.uuid,
+		...(a >= 0 ? { mirror: AXES[a], rewound: flipped, symmetric: kept } : {}),
+		...(warnings.length ? { warnings: [...new Set(warnings)] } : {})
+	};
+}
+
 // ---- the router ------------------------------------------------------------------------------------
 
 /**
@@ -881,6 +1056,8 @@ export async function geometryTool(name, args, createBase) {
 			return createShapesTool(args ?? {}, createBase);
 		case 'update_mesh':
 			return updateMeshTool(args ?? {});
+		case 'duplicate':
+			return duplicateTool(args ?? {});
 		default:
 			return { error: 'unknown geometry tool ' + name };
 	}
@@ -1114,6 +1291,26 @@ export const GEOMETRY_AI_TOOLS = [
 	{
 		type: 'function',
 		function: {
+			name: 'duplicate',
+			description:
+				'Copy an object you built (its children, materials, behaviour and physics come along; nothing is resent): count copies stepping by offset [x, y, z] metres in its parent\'s space (default: a row to the side), or mirror "x"|"y"|"z" = the mirror image across that plane through the PARENT\'s centre (in a group: its centre line — a left arm or ear becomes the right one; at the scene root: the world\'s), its triangles re-wound so normals stay right (Box and even-segment round shapes keep their params). parentUuid nests the copies (they keep their place in the world). One undo step; everyone sees it. For tens to hundreds of copies spread over a terrain or mesh, use scatter with source: <uuid>.',
+			parameters: {
+				type: 'object',
+				properties: {
+					uuid: { type: 'string', description: 'the object to copy' },
+					count: { type: 'integer', minimum: 1, maximum: DUPLICATE_MAX, description: 'copies (default 1)' },
+					offset: { ...V3, description: '[x, y, z] metres between copies in the parent\'s space; with mirror it moves the mirror image (default [0, 0, 0])' },
+					mirror: { type: 'string', enum: ['x', 'y', 'z'], description: 'the axis the mirror flips: x makes a left part the right one' },
+					parentUuid: { type: 'string', description: 'a group (or any object) to put the copies in' },
+					name: { type: 'string', description: 'the copies\' name (numbered when several)' }
+				},
+				required: ['uuid']
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
 			name: 'update_mesh',
 			description:
 				'New data for a mesh create_mesh made, by uuid, as ONE undo step: mode "replace" sends every vertex and face again (the same fields and caps as create_mesh, subdivide included); mode "patch" replaces vertices from offset on (vertices[0] lands on index offset) and keeps the faces — for moving part of a mesh made in this tab (after a reload, send "replace"). uvs/colors patch the same way. Primitives use set_geometry; to model any mesh use edit_mesh.',
@@ -1177,6 +1374,7 @@ export const GEOMETRY_PROMPT = [
 	'(path → rail, pipe), extrude_shape (outline → sign, letter, floor plan), create_mesh (raw',
 	'vertices/faces, subdivide: 1-2 to smooth it; update_mesh sends it new vertices); create_shapes makes many in one call. With parentUuid every coordinate is the',
 	'group\'s own (local) space. edit_mesh models a mesh: extrude/inset/bevel/subdivide faces picked by normal',
-	'("up"), box or index; weld/smooth/dissolve vertices. Preview a selection with ops: [].'
+	'("up"), box or index; weld/smooth/dissolve vertices. Preview a selection with ops: [].',
+	'duplicate copies an object (count + offset for a row, mirror: "x" for the other side of a group).'
 ].join('\n');
 

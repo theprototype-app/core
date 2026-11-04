@@ -15,6 +15,8 @@
 - When a mesh's colour, vertex or UV list is wrong, the agent hears **how many entries arrived and which one is bad**. <!-- mcp-diorama2 6 -->
 - An agent's **screenshot can show the post effects** (bloom, vignette, grade) as your screen draws them, and says when your screen does not draw them and why. <!-- mcp-diorama2 7 -->
 - **Phones that hide post effects to stay smooth are no longer a mystery**: the agent says so, and can ask you for higher quality on your own device — a card with **Allow / Keep**, then Undo; nobody else's device changes. <!-- mcp-diorama2 7 -->
+- Agents can **copy and mirror** what they build: a row of fence posts, or a left ear made into the right one, its faces turned the right way. One undo step, and everyone sees it. <!-- mcp-diorama2 8 -->
+- **Scatter keeps paths clear** and can spread **real copies of something you built** (up to 200, each one editable) instead of simple instances; the same seed gives the same layout. <!-- mcp-diorama2 8 -->
 - **Claude on claude.ai reads the right words again**: tool replies no longer turn ordinary words like "logs" into tool names (`status` had a field called "run {action: 'logs'}"). <!-- mcp-diorama2 4 -->
 
 ## 1.60.0 — An agent builds the game around your scene 🎮

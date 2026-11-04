@@ -94,6 +94,7 @@ export const TOOL_ANNOTATIONS = /** @type {Record<string, {title: string, read?:
 	place_sound: { title: 'Place a sound', destructive: false, openWorld: true },
 	set_music: { title: 'Set the background music', destructive: true, openWorld: true },
 	update_mesh: { title: 'Change a mesh made from data', destructive: true },
+	duplicate: { title: 'Copy or mirror an object', destructive: false },
 	// 85b R1-R4
 	inspect_runtime: { title: 'See what the game is doing', read: true },
 	validate_scene: { title: 'Check the game for problems', read: true },
@@ -263,8 +264,8 @@ export const CONNECTOR_FAMILIES = Object.freeze({
 	edit_shape: {
 		title: 'Reshape or model objects',
 		summary:
-			'Change the shape of objects that exist: params = new size / segments / type in place, mesh = model faces and vertices (extrude, inset, bevel, subdivide, weld, smooth, dissolve, make a face), update = new vertices / faces for a mesh made from data (replace it, or patch a range), pivot = the point an object turns about, pivot_group = a group at a joint so several parts swing together.',
-		actions: { params: 'set_geometry', mesh: 'edit_mesh', update: 'update_mesh', pivot: 'set_pivot', pivot_group: 'create_pivot' }
+			'Change the shape of objects that exist: params = new size / segments / type in place, mesh = model faces and vertices (extrude, inset, bevel, subdivide, weld, smooth, dissolve, make a face), update = new vertices / faces for a mesh made from data (replace it, or patch a range), duplicate = copies of an object in a row, or its mirror image (a left arm → the right one), pivot = the point an object turns about, pivot_group = a group at a joint so several parts swing together.',
+		actions: { params: 'set_geometry', mesh: 'edit_mesh', update: 'update_mesh', duplicate: 'duplicate', pivot: 'set_pivot', pivot_group: 'create_pivot' }
 	},
 	set_look: {
 		title: 'Materials, shaders, sky, light and post effects',

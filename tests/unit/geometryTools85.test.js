@@ -9,7 +9,12 @@ import * as THREE from 'three';
 import { get } from 'svelte/store';
 
 // mcp-shapes: a real attach (keeps the world pose, as the app's does), wired below once the stores are loaded
-vi.mock('$lib/objectActions', () => ({ moveObjectToGroup: (uuid, target) => globalThis.__testAttach?.(uuid, target) }));
+vi.mock('$lib/objectActions', () => ({
+	moveObjectToGroup: (uuid, target) => globalThis.__testAttach?.(uuid, target),
+	// diorama2: the app's Duplicate in miniature — a clone (geometry SHARED, as Object3D.clone does), fresh uuids, the
+	// `duplicate` message and a create entry
+	duplicateObject: (uuid, options = {}) => globalThis.__testDuplicate?.(uuid, options)
+}));
 vi.mock('$lib/physics', () => ({ setPhysicsFor: () => {}, physicsShapeChanged: () => {} }));
 
 const { objectsGroup } = await import('../../src/stores/sceneStore');
@@ -21,6 +26,21 @@ const core = await import('../../src/lib/ai/meshSelectCore.js');
 const { latheGeometry, extrudeGeometry, cleanExtrude, cleanLathe } = await import('../../src/lib/customGeometries.js');
 const { summarizeToolCall } = await import('../../src/lib/agentLogCore.js');
 const { readTriangles } = await import('../../src/lib/faceEdit.js');
+globalThis.__testDuplicate = (uuid, options) => {
+	const root = get(objectsGroup);
+	const source = root.getObjectByProperty('uuid', uuid);
+	if (!source) return null;
+	const clone = source.clone(true);
+	const nodes = [];
+	clone.traverse((n) => nodes.push(n));
+	nodes.forEach((n) => (n.uuid = crypto.randomUUID()));
+	clone.name = options.name || source.name + ' copy';
+	if (options.at) clone.position.fromArray(options.at);
+	source.parent.add(clone);
+	get(peers)?.send({ type: 'duplicate', sourceUuid: uuid, uuids: nodes.map((n) => n.uuid), name: clone.name, pos: clone.position.toArray() });
+	history.recordObjectPresence('create', clone);
+	return clone;
+};
 globalThis.__testAttach = (uuid, target) => {
 	const root = get(objectsGroup);
 	const o = root.getObjectByProperty('uuid', uuid);
@@ -611,5 +631,82 @@ describe('85b G9 subdivide + G6b update_mesh', () => {
 		expect((await call('update_mesh', { uuid: m.uuid, mode: 'patch', vertices: [[0, 0, 1]] })).error).toMatch(/send mode "replace"/);
 		const ok = await call('update_mesh', { uuid: m.uuid, vertices: CUBE.vertices, faces: CUBE.faces, subdivide: 1 });
 		expect(ok.updated[0]).toMatchObject({ ok: true, subdivided: 1, triangles: 48 });
+	});
+});
+
+describe('diorama2 duplicate (edit_shape duplicate)', () => {
+	/** world-space face normal of triangle t of a mesh */
+	const normalOf = (m, t) => {
+		m.updateWorldMatrix(true, false);
+		const tris = readTriangles(m.geometry);
+		const [a, b, c] = tris[t].map((v) => v.clone().applyMatrix4(m.matrixWorld));
+		return new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a)).normalize();
+	};
+
+	it('count + offset: copies in a row, one `duplicate` message each, ONE undo removes them all', async () => {
+		const box = prim(new THREE.BoxGeometry(1, 1, 1), 'Post');
+		const r = await call('duplicate', { uuid: box.uuid, count: 3, offset: [2, 0, 0] });
+		expect(r.created.map((c) => c.position[0])).toEqual([2, 4, 6]);
+		expect(sent.filter((m) => m.type === 'duplicate').length).toBe(3);
+		expect(group.children.length).toBe(4);
+		expect(live(r.created[0].uuid).geometry).toBe(box.geometry); // nothing resent: the copy shares the source's data
+		await history.undo();
+		expect(group.children.length).toBe(1);
+	});
+
+	it('mirror x in a group: the copy lands across the centre line, re-wound so its faces point the mirrored way', async () => {
+		const body = new THREE.Group();
+		group.add(body);
+		const r0 = await call('create_mesh', { name: 'Ear', vertices: [[0.5, 0, 0], [1, 0, 0], [0.6, 1, 0.3]], faces: [[0, 1, 2]], parentUuid: body.uuid, position: [1, 0.5, 0], rotation: [0, 0.4, 0.2] });
+		const ear = live(r0.created[0].uuid);
+		const n0 = normalOf(ear, 0);
+		const p0 = ear.getWorldPosition(new THREE.Vector3());
+		sent = [];
+		const r = await call('duplicate', { uuid: ear.uuid, mirror: 'x' });
+		expect(r.mirror).toBe('x');
+		expect(r.rewound).toBe(1);
+		const twin = live(r.created[0].uuid);
+		expect(twin.parent).toBe(body);
+		expect(twin.scale.x).toBeGreaterThan(0); // a proper rotation and a positive scale: the mirror is in the triangles
+		const p1 = twin.getWorldPosition(new THREE.Vector3());
+		expect(p1.x).toBeCloseTo(-p0.x, 5);
+		expect(p1.y).toBeCloseTo(p0.y, 5);
+		const n1 = normalOf(twin, 0);
+		expect(n1.x).toBeCloseTo(-n0.x, 5);
+		expect(n1.y).toBeCloseTo(n0.y, 5);
+		expect(n1.z).toBeCloseTo(n0.z, 5);
+		// every world corner of the copy is a corner of the source with x negated
+		ear.updateWorldMatrix(true, false);
+		twin.updateWorldMatrix(true, false);
+		const corners = (m) => readTriangles(m.geometry)[0].map((v) => v.clone().applyMatrix4(m.matrixWorld));
+		const src = corners(ear).map((v) => [-v.x, v.y, v.z].map((n) => n.toFixed(4)).join());
+		for (const v of corners(twin)) expect(src).toContain([v.x, v.y, v.z].map((n) => n.toFixed(4)).join());
+		expect(sent.some((m) => m.type === 'meshgeo' && m.uuid === twin.uuid)).toBe(true);
+		expect(ear.geometry.attributes.position.count).toBe(3); // the source is untouched
+		await history.undo();
+		expect(live(twin.uuid)).toBeUndefined();
+	});
+
+	it('a Box (and an even-segment cylinder) is its own mirror image: the copy keeps its editable params', async () => {
+		const box = prim(new THREE.BoxGeometry(1, 2, 3), 'Crate');
+		box.position.set(2, 0, 0);
+		const r = await call('duplicate', { uuid: box.uuid, mirror: 'x' });
+		expect(r.symmetric).toBe(1);
+		const twin = live(r.created[0].uuid);
+		expect(twin.geometry.type).toBe('BoxGeometry');
+		expect(twin.position.x).toBeCloseTo(-2);
+		const { mirrorSymmetric } = await import('../../src/lib/ai/geometryTools.js');
+		expect(mirrorSymmetric(new THREE.CylinderGeometry(1, 1, 2, 16), 0)).toBe(true);
+		expect(mirrorSymmetric(new THREE.CylinderGeometry(1, 1, 2, 7), 2)).toBe(false);
+		expect(mirrorSymmetric(new THREE.ConeGeometry(1, 2, 8), 1)).toBe(false);
+	});
+
+	it('refuses what it cannot copy, and a missing parent, before making anything', async () => {
+		const box = prim(new THREE.BoxGeometry(), 'B');
+		expect((await call('duplicate', { uuid: 'nope' })).error).toMatch(/uuid/);
+		expect((await call('duplicate', { uuid: box.uuid, count: 51 })).error).toMatch(/scatter/);
+		expect((await call('duplicate', { uuid: box.uuid, mirror: 'w' })).error).toMatch(/mirror/);
+		expect((await call('duplicate', { uuid: box.uuid, parentUuid: 'gone' })).error).toMatch(/nothing was made/);
+		expect(group.children.length).toBe(1);
 	});
 });

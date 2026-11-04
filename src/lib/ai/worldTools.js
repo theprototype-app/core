@@ -571,6 +571,83 @@ async function scatterSourceOf(a) {
 	return { error: 'asset: a prefab or CC0 asset cannot be scattered — a primitive, a library model or a pack model' };
 }
 
+/** copies scatter `source` may make in one call */
+const SCATTER_COPIES_MAX = 200;
+
+/**
+ * mcp-diorama2: `avoid` uuids → rectangles in the surface's LOCAL x/z (each object's world box, corners taken into
+ * the surface's frame), the form the scatter set stores. @param {any} surface @param {any} list
+ * @returns {{rects: number[][]} | {error: string}}
+ */
+function avoidRectsOf(surface, list) {
+	if (list === undefined) return { rects: [] };
+	if (!Array.isArray(list) || list.length > 16) return { error: 'avoid: a list of up to 16 object uuids nothing is scattered on (a path, a portal, a house)' };
+	surface.updateWorldMatrix(true, false);
+	/** @type {number[][]} */
+	const rects = [];
+	for (const id of list) {
+		const o = objectOf(String(id));
+		if (!o) return { error: 'avoid: no object with the uuid ' + String(id).slice(0, 40) };
+		o.updateWorldMatrix(true, true);
+		const box = new THREE.Box3().setFromObject(o, true);
+		if (box.isEmpty()) box.setFromCenterAndSize(o.getWorldPosition(new THREE.Vector3()), new THREE.Vector3(1, 1, 1));
+		let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
+		for (let i = 0; i < 8; i++) {
+			const p = surface.worldToLocal(new THREE.Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z));
+			minX = Math.min(minX, p.x), maxX = Math.max(maxX, p.x), minZ = Math.min(minZ, p.z), maxZ = Math.max(maxZ, p.z);
+		}
+		const r6 = (/** @type {number} */ n) => Math.round(n * 1e4) / 1e4;
+		rects.push([r6(minX), r6(minZ), r6(maxX), r6(maxZ)]);
+	}
+	return { rects };
+}
+
+/**
+ * mcp-diorama2: scatter {source: uuid} — real copies of a scene object (children, materials, flows: the duplicate
+ * path) at the spots the scatter generator picks on `surface` (density / count, scale, rules, spacing, seed, avoid),
+ * at the scene root. One undo step with the call; replicated as ordinary duplicates.
+ * @param {any} surface @param {any} args @param {number[][]} avoid
+ */
+async function scatterCopies(surface, args, avoid) {
+	const source = objectOf(String(args.source));
+	if (!source) return { error: 'source: no object with that uuid' };
+	if (source === surface) return { error: 'source: an object cannot be scattered over itself' };
+	const made = scatterSetOf(args, [{ kind: 'primitive', type: 'Box' }]);
+	if ('error' in made) return made;
+	const seed = args.seed === undefined ? 1 : args.seed;
+	if (!Number.isInteger(seed)) return { error: 'seed: a whole number (the same seed puts the copies in the same spots)' };
+	const set = { ...made.set, seed: seed >>> 0, gen: { ...made.set.gen, ...(avoid.length ? { avoid } : {}) } };
+	const { isMeshHost } = await import('$lib/terrainPaint');
+	const { scatterPlacements } = await import('$lib/terrainSurface');
+	const meshHost = !surface.userData?.terrain && isMeshHost(surface);
+	if (!meshHost && !surface.userData?.terrain) return { error: 'surface: a terrain or a mesh to scatter the copies over' };
+	const spots = scatterPlacements(surface, set, meshHost);
+	if (!spots.length) return { error: 'the rules left no spot on that surface: loosen slope / height, or avoid less' };
+	if (spots.length > SCATTER_COPIES_MAX) return { error: 'that is ' + spots.length + ' copies; source makes at most ' + SCATTER_COPIES_MAX + ' real objects — lower density / count, or scatter a model (asset) for thousands' };
+	const { duplicateObject, moveObjectToGroup } = await import('$lib/objectActions');
+	const { applyAiTransform } = await import('./tools.js');
+	surface.updateWorldMatrix(true, false);
+	source.updateWorldMatrix(true, false);
+	const srcQ = source.getWorldQuaternion(new THREE.Quaternion());
+	const srcS = source.getWorldScale(new THREE.Vector3());
+	/** @type {string[]} */
+	const uuids = [];
+	const base = (source.name || source.type) + ' ';
+	spots.forEach((/** @type {any} */ m, /** @type {number} */ i) => {
+		const world = new THREE.Matrix4().multiplyMatrices(surface.matrixWorld, m);
+		const pos = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+		world.decompose(pos, q, sc);
+		const clone = duplicateObject(source.uuid, { select: false, name: base + (i + 1), at: source.position.toArray() });
+		if (!clone) return;
+		if (clone.parent !== get(objectsGroup)) moveObjectToGroup(clone.uuid, 'root');
+		const rot = new THREE.Euler().setFromQuaternion(q.multiply(srcQ));
+		const f = sc.x;
+		applyAiTransform(clone, { position: pos.toArray().map(r3), rotation: [rot.x, rot.y, rot.z], scale: [srcS.x * f, srcS.y * f, srcS.z * f] });
+		uuids.push(clone.uuid);
+	});
+	return { created: uuids.map((uuid) => ({ uuid })), uuids, source: source.uuid, copies: uuids.length, seed: set.seed, ...(avoid.length ? { avoided: avoid.length } : {}) };
+}
+
 /** @param {any} args */
 async function scatterTool(args) {
 	const object = objectOf(String(args.surface ?? args.object ?? ''));
@@ -582,8 +659,13 @@ async function scatterTool(args) {
 		if (typeof args.remove !== 'string' || !tp.editScatterSet(object.uuid, args.remove, null)) return { error: 'remove: the id of a scatter set on this surface (list_scene shows them)' };
 		return { updated: [{ uuid: object.uuid, ok: true, removed: args.remove }] };
 	}
+	// mcp-diorama2: avoid = objects nothing lands on or in (their footprint on the surface)
+	const avoid = avoidRectsOf(object, args.avoid);
+	if ('error' in avoid) return avoid;
+	// mcp-diorama2: source = an object in the scene, copied (real objects you can edit) to the scatter's spots
+	if (args.source !== undefined) return scatterCopies(object, args, avoid.rects);
 	const list = args.assets ?? (args.asset !== undefined ? [args.asset] : null);
-	if (!Array.isArray(list) || !list.length || list.length > 8) return { error: 'asset: what to scatter (or assets: up to 8, mixed evenly)' };
+	if (!Array.isArray(list) || !list.length || list.length > 8) return { error: 'asset: what to scatter (or assets: up to 8, mixed evenly; or source: the uuid of an object in the scene)' };
 	/** @type {any[]} */
 	const sources = [];
 	for (const a of list) {
@@ -593,6 +675,7 @@ async function scatterTool(args) {
 	}
 	const made = scatterSetOf(args, sources);
 	if ('error' in made) return made;
+	if (avoid.rects.length) made.set.gen = { ...made.set.gen, avoid: avoid.rects };
 	const id = tp.addScatterSet(object.uuid, made.set);
 	if (!id) return { error: 'the scatter set was refused (a surface holds up to 8 sets; it must be a terrain or a mesh)' };
 	const instances = tp.scatterInstancesOf(object.uuid, id);
@@ -945,7 +1028,7 @@ export const WORLD_AI_TOOLS = [
 		function: {
 			name: 'scatter',
 			description:
-				'Scatter many instances over a terrain or any mesh (a forest on hills, rocks on a beach, flowers on a slope): asset = a primitive (Box, Sphere, Cone, Cylinder, Capsule, Dodecahedron) or a model id from search_assets, or assets = up to 8 mixed evenly. density per m² (or count), scale range, rules {slope: [min°, max°], height: [min, max] m, layer: {i, min}} keep them where they belong. Cheap instancing, seeded (the same on every peer). Returns the set id; remove: <set id> deletes a set. One undo step.',
+				'Scatter many instances over a terrain or any mesh (a forest on hills, rocks on a beach, flowers on a slope): asset = a primitive (Box, Sphere, Cone, Cylinder, Capsule, Dodecahedron) or a model id from search_assets, or assets = up to 8 mixed evenly. density per m² (or count), scale range, rules {slope: [min°, max°], height: [min, max] m, layer: {i, min}} keep them where they belong. Cheap instancing, seeded (the same on every peer; seed picks another layout). avoid = up to 16 object uuids nothing lands on (a path, a house, a portal). source = the uuid of an object you built: up to 200 REAL copies of it (editable, with its children, materials and behaviour) instead of instances — for one or a few copies in a row or mirrored, use duplicate. Returns the set id (or the copies\' uuids); remove: <set id> deletes a set. One undo step.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -958,7 +1041,9 @@ export const WORLD_AI_TOOLS = [
 					spacing: { type: 'number', description: 'minimum metres between instances' },
 					randomRotation: { type: 'boolean', description: 'default true' },
 					rules: { type: 'object', description: '{slope: [0, 25] degrees from flat, height: [min, max] metres, layer: {i: paint layer 0-3, min: 0-1}}' },
-					seed: { type: 'integer' },
+					seed: { type: 'integer', description: 'the same seed puts them in the same spots; another seed, another layout' },
+					source: { type: 'string', description: 'the uuid of an object in the scene: scatter real copies of it (max 200) instead of asset' },
+					avoid: { type: 'array', items: { type: 'string' }, maxItems: 16, description: 'uuids of objects to keep clear: nothing lands on their footprint' },
 					tint: { type: 'number', description: '0-1 colour variation' },
 					sink: { type: 'number', description: 'metres pushed into the ground' },
 					collider: { type: 'string', enum: ['none', 'box', 'sphere', 'hull'], description: 'physics for the instances (default none)' },

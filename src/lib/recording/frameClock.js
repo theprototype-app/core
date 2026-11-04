@@ -77,3 +77,24 @@ export const GIF_MAX_FPS = 50;
 export function sinkHasRoom(pending, limit = 4) {
 	return pending < limit;
 }
+
+/**
+ * fix-film: frame i of an export that films only some RANGES of a timeline (Film's chosen shots),
+ * back to back in the order given — the sequence time to pose. Past the end it holds the last frame.
+ * @param {number} i @param {number} fps @param {number[][]} ranges [[t0, t1], …]
+ */
+export function rangeTime(i, fps, ranges) {
+	let t = Math.max(0, i / fps);
+	for (const [a, b] of ranges) {
+		const len = Math.max(0, b - a);
+		if (t < len) return a + t;
+		t -= len;
+	}
+	const last = ranges[ranges.length - 1];
+	return last ? last[1] : 0;
+}
+
+/** total seconds of a list of ranges @param {number[][]} ranges */
+export function rangesDuration(ranges) {
+	return ranges.reduce((n, [a, b]) => n + Math.max(0, b - a), 0);
+}

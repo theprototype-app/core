@@ -51,3 +51,13 @@ export function setRecordingPrefs(patch) {
 export function openRecording() {
 	recordingOpen.set(true);
 }
+
+/**
+ * fix-film: a Film export of CHOSEN SHOTS — never persisted (it belongs to the one export it was
+ * made for). `queue`: one entry per file, each a list of [t0, t1] ranges of `sequence` filmed back
+ * to back (joined = one entry of every range; per shot = one entry per shot). `done` counts the
+ * files finished. The dialog clears it when it closes.
+ * @typedef {{sequence: string, queue: number[][][], joined: boolean, total: number, done: number, label: string}} ExportJob
+ * @type {import('svelte/store').Writable<ExportJob | null>}
+ */
+export const exportJob = writable(null);

@@ -21,6 +21,8 @@ import { bindingOf, bindingLabel, vrBindings } from '../vr/bindings.js';
 import { showToast } from '../../stores/appStore.js';
 import { coarsePointer } from '../inputDevice';
 import { installFirstWin } from '../onboarding/firstWin.js'; // 76 FW1
+import { arTableActive } from '../arTableState.js';
+import { vrUiStandsDown } from '../vrUiGate.js';
 import { HDRI_TOUR, HDRI_STEPS } from '../hdri/hdriTour.js'; // 37-hdri
 
 export const VR_TOUR = 'vr-welcome';
@@ -266,8 +268,12 @@ export function installTours() {
 				// a screen tour is invisible in a headset: park it (it resumes later)
 				const now = get(activeTour);
 				if (now && now.surface !== 'vr') tours.close();
-				if (!autoStartAllowed()) return;
-				vrTimer = setTimeout(() => tours.maybeAutoStart(VR_TOUR), VR_START_DELAY);
+				// fix-film: a phone AR session (an AR table, Film's walk) is not a headset, and Film
+				// owns the whole screen in any session — the welcome waits for a real VR entry
+				if (!autoStartAllowed() || vrWelcomeStandsDown()) return;
+				vrTimer = setTimeout(() => {
+					if (!vrWelcomeStandsDown()) tours.maybeAutoStart(VR_TOUR);
+				}, VR_START_DELAY);
 			} else {
 				// leaving VR is the last step's action; anywhere else it PAUSES the tour
 				tours.signal('vr-exit');
@@ -298,6 +304,11 @@ export function installTours() {
 	return () => {
 		for (const fn of teardown.splice(0)) fn();
 	};
+}
+
+/** the VR welcome never auto-starts in a phone AR session or while Film is open */
+export function vrWelcomeStandsDown() {
+	return arTableActive() || vrUiStandsDown();
 }
 
 /** ms after the session starts before the welcome shows (controller profiles arrive late) */

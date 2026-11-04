@@ -37,7 +37,7 @@ export const SCALAR_CHANNELS = Object.freeze([
  * @typedef {{
  *   camera: string, cameraName?: string, mode: 'cut'|'move'|'retake', itemId?: string,
  *   samples: TakeSample[], base?: Record<string, number>, sessionStart?: number,
- *   budget?: Partial<typeof DEFAULT_BUDGET>, raw?: any, markers?: number[]
+ *   budget?: Partial<typeof DEFAULT_BUDGET>, raw?: any, markers?: number[], thumb?: string
  * }} Take
  */
 
@@ -84,10 +84,22 @@ export function commitTake(seqIn, take) {
 	}
 	/** @type {any} */
 	let shot = take.mode === 'move' ? track.items.find((/** @type {any} */ it) => it.id === take.itemId) : null;
+	// fix-film: a retake keeps the shot's NAME (its thumbnail is the new first frame)
+	const replaced = take.mode === 'retake' && take.itemId ? track.items.find((/** @type {any} */ it) => it.id === take.itemId) : null;
 	if (take.mode === 'retake' && take.itemId) track.items = track.items.filter((/** @type {any} */ it) => it.id !== take.itemId);
-	if (shot) shot.dur = Math.max(MIN_ITEM, t1 - shot.t);
-	else {
-		shot = normalizeItem('camera', { id: newId('it'), t: t0, dur: t1 - t0, camera, ease: 'linear' });
+	if (shot) {
+		shot.dur = Math.max(MIN_ITEM, t1 - shot.t);
+		shot.moves = (Number(shot.moves) || 0) + 1; // fix-film: the row says "Cut + N moves"
+	} else {
+		shot = normalizeItem('camera', {
+			id: newId('it'),
+			t: t0,
+			dur: t1 - t0,
+			camera,
+			ease: 'linear',
+			...(replaced?.name ? { name: replaced.name } : {}),
+			...(take.thumb ? { thumb: take.thumb } : {})
+		});
 		track.items.push(shot);
 	}
 	const keepId = shot.id;
@@ -247,4 +259,100 @@ function slerpArr(a, b, s) {
 	const q = [a[0] * k0 + bx * k1, a[1] * k0 + by * k1, a[2] * k0 + bz * k1, a[3] * k0 + bw * k1];
 	const l = Math.hypot(q[0], q[1], q[2], q[3]) || 1;
 	return q.map((v) => v / l);
+}
+
+// ---- fix-film: the shots sheet's edits (pure; each returns a NEW document, or null) ----
+
+/** "Cut", or "Cut + 2 moves" (a Move continues the shot it flies from) @param {any} shot */
+export function shotKind(shot) {
+	const n = Number(shot?.moves) || 0;
+	return n ? `Cut + ${n} move${n === 1 ? '' : 's'}` : 'Cut';
+}
+
+/** the name a row shows: its own, else "Shot N" @param {any} shot @param {number} index */
+export function shotName(shot, index) {
+	const own = typeof shot?.name === 'string' ? shot.name.trim() : '';
+	return own || `Shot ${index + 1}`;
+}
+
+/** @param {any} seqIn @param {string} camera @param {string} itemId @param {(it: any, track: any) => any} fn */
+function withShot(seqIn, camera, itemId, fn) {
+	if (!filmTrackOf(seqIn, camera)?.items?.some((/** @type {any} */ it) => it.id === itemId)) return null;
+	const seq = structuredClone(seqIn);
+	const track = filmTrackOf(seq, camera);
+	const it = track.items.find((/** @type {any} */ x) => x.id === itemId);
+	return fn(it, track) === false ? null : seq;
+}
+
+/** Rename a shot ('' = back to "Shot N"); names are capped at 60 characters. @param {any} seq @param {string} camera @param {string} itemId @param {string} name */
+export function renameShot(seq, camera, itemId, name) {
+	const clean = String(name ?? '').replace(/\s+/g, ' ').trim().slice(0, 60);
+	return withShot(seq, camera, itemId, (it) => {
+		if ((it.name ?? '') === clean) return false;
+		if (clean) it.name = clean;
+		else delete it.name;
+	});
+}
+
+/**
+ * Trim a shot to [inT, outT] — NEVER past the shot as recorded (the keys outside stay, so trimming
+ * back out restores it) and never shorter than the timeline's smallest item. Only this shot moves.
+ * @param {any} seq @param {string} camera @param {string} itemId @param {number} inT @param {number} outT
+ */
+export function trimShot(seq, camera, itemId, inT, outT) {
+	return withShot(seq, camera, itemId, (it) => {
+		const recT = Number.isFinite(it.recT) ? it.recT : it.t;
+		const recEnd = Number.isFinite(it.recDur) ? recT + it.recDur : it.t + it.dur;
+		let a = Math.max(recT, Math.min(Number(inT), recEnd - MIN_ITEM));
+		let b = Math.min(recEnd, Math.max(Number(outT), a + MIN_ITEM));
+		if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
+		if (Math.abs(a - it.t) < 1e-6 && Math.abs(b - (it.t + it.dur)) < 1e-6) return false;
+		// the first trim remembers the recorded range (the handles stop there)
+		if (!Number.isFinite(it.recT)) {
+			it.recT = it.t;
+			it.recDur = it.dur;
+		}
+		it.t = a;
+		it.dur = b - a;
+	});
+}
+
+/** Delete a shot (its keys stay — Undo puts the item back exactly). @param {any} seq @param {string} camera @param {string} itemId
+ * @returns {{seq: any, removed: any} | null} */
+export function deleteShot(seq, camera, itemId) {
+	/** @type {any} */
+	let removed = null;
+	const next = withShot(seq, camera, itemId, (it, track) => {
+		removed = structuredClone(it);
+		track.items = track.items.filter((/** @type {any} */ x) => x.id !== itemId);
+	});
+	return next ? { seq: next, removed } : null;
+}
+
+/** Undo a delete: the item back on the camera's Film track (no-op when it is there). @param {any} seqIn @param {string} camera @param {any} item */
+export function restoreShot(seqIn, camera, item) {
+	if (!item?.id || !filmTrackOf(seqIn, camera)) return null;
+	if (filmTrackOf(seqIn, camera).items.some((/** @type {any} */ it) => it.id === item.id)) return null;
+	const seq = structuredClone(seqIn);
+	const track = filmTrackOf(seq, camera);
+	track.items = [...track.items, normalizeItem('camera', item)].sort((a, b) => a.t - b.t);
+	return seq;
+}
+
+/**
+ * What an export of the shots sheet films: the ticked shots (none ticked = all), in RECORDED order
+ * (by time), as `[t0, t1]` ranges — `joined` = one video of every range back to back, else one file
+ * per shot. @param {any[]} shots by time @param {string[]} picked ids @param {boolean} joined
+ * @returns {{queue: number[][][], count: number, seconds: number}}
+ */
+export function exportPlanFor(shots, picked, joined) {
+	const chosen = (picked?.length ? shots.filter((s) => picked.includes(s.id)) : shots).slice().sort((a, b) => a.t - b.t);
+	const ranges = chosen.map((s) => [s.t, s.t + s.dur]);
+	const seconds = ranges.reduce((n, r) => n + (r[1] - r[0]), 0);
+	return { queue: !ranges.length ? [] : joined ? [ranges] : ranges.map((r) => [r]), count: ranges.length, seconds };
+}
+
+/** the sticky footer's export label @param {number} total @param {number} picked */
+export function exportLabel(total, picked) {
+	return picked > 0 ? `Export ${picked} selected` : `Export all (${total})`;
 }

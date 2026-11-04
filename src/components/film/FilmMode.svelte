@@ -29,23 +29,28 @@
 		onFilmFrame,
 		filmPose,
 		placeCamera,
-		setHeightLock
+		setHeightLock,
+		setMotion,
+		setPreviewing
 	} from '$lib/film/filmMode';
-	import { walk, walkEntry, startWalk, stopWalk, setWalkScale, recentreWalk, teleportWalk } from '$lib/film/filmWalk';
+	import { walk, walkEntry, startWalk, stopWalk, setWalkScale, recentreWalk, teleportWalk, setPassthrough, setWalkHooks } from '$lib/film/filmWalk';
 	import { worldRig } from '../../stores/sceneStore';
 	import * as THREE from 'three';
-	import { stickValue, formatTake, LENS_PRESETS, focalForFov, fovForFocal, pinchFov, snapToLens, rollOf } from '$lib/film/filmCore';
-	import { take, record, pause, resume, finishTake, retake, closeRecorder, recorderDebug, addMarker } from '$lib/film/filmRecorder';
+	import { stickValue, formatTake, LENS_PRESETS, focalForFov, fovForFocal, pinchFov, snapToLens, rollOf, motionOptions, effectiveMotion, defaultMotion, motionLabel, WALK_SCALE_CHIPS, PASSTHROUGH } from '$lib/film/filmCore';
+	import { take, record, pause, resume, finishTake, retake, closeRecorder, recorderDebug, addMarker, writeShots, beginShotsGesture, endShotsGesture, afterShotPreview } from '$lib/film/filmRecorder';
+	import { thumbUrl } from '$lib/film/filmThumb';
+	import { scrubSequence } from '$lib/sequencePlayer';
+	import { showToast } from '../../stores/appStore';
 	import { safeStorage } from '$lib/safeStorage';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { rolesInfo } from '$lib/cloudHooks';
 	import { isViewer } from '$lib/objectPermissions';
 	import { openTimeline } from '$lib/timelineOpen';
-	import { recordingOpen, setRecordingPrefs } from '$lib/recording/recordingStores.js';
+	import { recordingOpen, setRecordingPrefs, exportJob } from '$lib/recording/recordingStores.js';
 	import { tipShown, dismissTip, TIP_FILM } from '$lib/tips.js';
 	import { MIN_DURATION, MAX_DURATION } from '$lib/recording/recordingCore.js';
-	import { filmShots } from '$lib/film/filmTake';
-	import { sequences } from '$lib/sequences';
+	import { filmShots, shotKind, shotName, renameShot, trimShot, deleteShot, restoreShot, exportPlanFor, exportLabel } from '$lib/film/filmTake';
+	import { sequences, activeSequence } from '$lib/sequences';
 	import { registerDebugHook } from '$lib/debugHooks';
 	import { aspectRatio, listCameraObjects, setCameraFromView } from '$lib/cameraObjects';
 	import { objectsGroup, selectedObject } from '../../stores/sceneStore';
@@ -313,7 +318,10 @@
 			return;
 		}
 		armed = '';
-		setRig(rig);
+		// fix-film: Tripod is a motion mode (the picker's) — the rig row is the same switch
+		if (rig === 'tripod') setMotion('tripod');
+		else if ($film?.rig === 'tripod') setMotion(handheldMotion());
+		else setRig(rig);
 	}
 
 	// ---- level bubble, slow-frame (heat) + battery hints: sampled from the frame hook ----
@@ -402,13 +410,78 @@
 		if ($walk.on) recentreWalk();
 		else recentre();
 	}
-	function onWalk() {
-		if ($walk.on || $walk.starting) return stopWalk();
-		const p = filmPose();
-		startWalk({ pos: p.pos, q: p.qBase });
-		settingsOpen = false;
-	}
 	const WALK_LOG = { min: Math.log10(0.1), max: Math.log10(20) };
+
+	// ---- fix-film: the motion picker (the pill names the mode in effect; the choice is remembered) ----
+	let keyboardSeen = $state(false);
+	const finePointer = typeof matchMedia !== 'undefined' && matchMedia('(any-pointer: fine)').matches;
+	const touchScreen = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0;
+	/** true = a motion sensor delivers, false = none here, null = not known yet */
+	const gyro = $derived(!$film ? null : $film.sensor === 'gyro' ? true : $film.sensor === 'touch' || $film.sensor === 'denied' ? false : null);
+	const motionCtx = $derived({ gyro, walking: $walk.on || $walk.starting, keyboard: finePointer || keyboardSeen, touch: touchScreen });
+	const chosenMotion = $derived($film?.motion || defaultMotion({ touch: touchScreen }));
+	const motion = $derived(effectiveMotion(chosenMotion, motionCtx));
+	const motionPill = $derived(
+		$film?.sensor === 'starting' && motion === 'tilt'
+			? motionLabel('tilt', { starting: true })
+			: motionLabel(motion, { waiting: chosenMotion === 'walk' && !motionCtx.walking })
+	);
+	const motionChoices = $derived(motionOptions({ touch: touchScreen, gyro, ar: $walkEntry, keyboard: motionCtx.keyboard }));
+	/** @type {Record<string, string>} */
+	const MOTION_ICONS = { tilt: 'smartphone', touch: 'hand', walk: 'footprints', tripod: 'camera', keys: 'keyboard' };
+	let motionOpen = $state(false);
+	/** @param {string} key */
+	function chooseMotion(key) {
+		if (key === 'walk') {
+			setMotion('walk');
+			// the AR session must start inside this press (requestSession needs the user activation)
+			if (!$walk.on && !$walk.starting) {
+				const p = filmPose();
+				startWalk({ pos: p.pos, q: p.qBase });
+			}
+			motionOpen = false;
+			return;
+		}
+		if ($walk.on || $walk.starting) stopWalk();
+		setMotion(key);
+		motionOpen = false;
+	}
+	/** the handheld mode a Tripod / walk falls back to: the sensor when there is one */
+	const handheldMotion = () => (gyro === false ? (touchScreen || !motionCtx.keyboard ? 'touch' : 'keys') : 'tilt');
+	let scalePop = $state(false);
+	// a failed start, lost tracking, or the system ending AR: pause the take at a Mark, say why, carry
+	// on with the stick (never a broken view) — this time only (the remembered choice stays Walk)
+	const FALLBACK_WHY = { denied: 'AR was not allowed', failed: 'Walk could not start AR', lost: 'Tracking was lost', ended: 'AR stopped' };
+	setWalkHooks({
+		recording: () => get(take).state === 'recording',
+		fallback: (why, recording) => {
+			if (recording) {
+				addMarker();
+				pause();
+			}
+			scalePop = false;
+			setMotion(handheldMotion(), { remember: false });
+			showToast(`${FALLBACK_WHY[why] ?? 'Walking stopped'}${recording ? ' — the take paused at a mark' : ''}. Filming with the thumbstick now.`, [
+				{ label: 'Recentre', action: () => recentre() }
+			]);
+		}
+	});
+
+	// ---- fix-film: first-use help (3 cards) ----
+	let helpOpen = $state(safeStorage.getItem('film:help') !== 'seen');
+	let helpStep = $state(0);
+	const HELP_CARDS = [
+		{ key: 'look', title: 'Look', icon: 'smartphone' },
+		{ key: 'move', title: 'Move', icon: 'move-3d' },
+		{ key: 'record', title: 'Record and cut', icon: 'clapperboard' }
+	];
+	/** close the cards; `never` = Don't show again (closing after the last card counts as seen too) @param {boolean} never */
+	function closeHelp(never) {
+		if (never || helpStep >= HELP_CARDS.length - 1) safeStorage.setItem('film:help', 'seen');
+		helpOpen = false;
+		helpStep = 0;
+		if ($filmTip) dismissTip(TIP_FILM);
+	}
 
 	let mapOpen = $state(false);
 	let mapEl = $state(/** @type {HTMLCanvasElement | null} */ (null));
@@ -485,6 +558,7 @@
 	/** @param {KeyboardEvent} e */
 	function onKey(e) {
 		if (!$film) return;
+		if (e.type === 'keydown' && !keyboardSeen && MOVE_KEYS.has(e.code)) keyboardSeen = true;
 		const t = /** @type {any} */ (e.target);
 		if (t?.tagName === 'INPUT' || t?.tagName === 'TEXTAREA' || t?.isContentEditable) return;
 		if (e.type === 'keydown' && e.code === 'Escape') {
@@ -538,6 +612,8 @@
 	onDestroy(() => {
 		if (typeof window === 'undefined') return;
 		stopWalk();
+		endPreview();
+		setWalkHooks({ recording: () => false, fallback: () => {} });
 		window.removeEventListener('keydown', onKey, true);
 		window.removeEventListener('keyup', onKey, true);
 		cancelCountdown();
@@ -556,32 +632,175 @@
 		return isViewer();
 	});
 	let shotsOpen = $state(false);
-	/** V6: hand the take to the Timeline (edit there; video export is the Timeline's job) */
-	async function editInTimeline() {
-		const seq = $take.seq;
+	/** V6: hand the take to the Timeline — fix-film: on one shot's row, at that shot's range @param {any} [shot] */
+	async function editInTimeline(shot) {
+		const seq = shotsSeqId;
+		endPreview();
 		await finishTake();
 		closeFilm();
-		void openTimeline(seq ?? undefined);
+		void openTimeline(seq || undefined, shot ? { t0: shot.t, t1: shot.t + shot.dur, item: shot.id } : undefined);
 	}
 	/** 68: the first-use how-to, until the first take (or its ✕) */
 	const filmTip = tipShown(TIP_FILM);
 	$effect(() => {
 		if ($take.state === 'recording' && $filmTip) dismissTip(TIP_FILM);
 	});
-	/** 68 V9: Share as video — the take's timeline, straight into the export (MP4, frame by frame) */
-	async function exportTake() {
-		const id = $take.seq;
+	// ---- fix-film: the shots sheet ----
+	/** the sequence whose shots this camera has: the take's, else the Timeline's own */
+	/** @type {string} */
+	const shotsSeqId = $derived($take.seq ?? $activeSequence ?? '');
+	/** @type {any[]} */
+	const shots = $derived.by(() => {
+		const seq = shotsSeqId ? $sequences[shotsSeqId] : null;
+		return seq && $film ? filmShots(seq, $film.uuid) : [];
+	});
+	/** ticked rows (export) @type {string[]} */
+	let picked = $state([]);
+	$effect(() => {
+		const ids = new Set(shots.map((s) => s.id));
+		if (picked.some((id) => !ids.has(id))) picked = picked.filter((id) => ids.has(id));
+	});
+	/** @param {string} id */
+	function togglePick(id) {
+		picked = picked.includes(id) ? picked.filter((x) => x !== id) : [...picked, id];
+	}
+	/** hash -> object URL, read from the Library once per thumbnail @type {Record<string, string>} */
+	let thumbs = $state({});
+	$effect(() => {
+		for (const s of shots) {
+			const hash = s.thumb;
+			if (!hash || hash in thumbs) continue;
+			thumbs = { ...thumbs, [hash]: '' };
+			void thumbUrl(hash).then((url) => (thumbs = { ...thumbs, [hash]: url }));
+		}
+	});
+	/** the row whose actions are open @type {string} */
+	let menuFor = $state('');
+	/** the row being renamed @type {string} */
+	let renaming = $state('');
+	/** @param {any} s @param {string} name */
+	function commitRename(s, name) {
+		renaming = '';
+		const seq = shotsSeqId ? get(sequences)[shotsSeqId] : null;
+		if (seq && $film) writeShots(shotsSeqId, renameShot(seq, $film.uuid, s.id, name));
+	}
+	/** @param {any} s @param {number} i */
+	function onDeleteShot(s, i) {
+		const id = shotsSeqId;
+		const seq = id ? get(sequences)[id] : null;
+		const uuid = $film?.uuid;
+		if (!seq || !uuid) return;
+		const r = deleteShot(seq, uuid, s.id);
+		menuFor = '';
+		if (!r || !writeShots(id, r.seq)) return;
+		showToast(`Deleted ${shotName(s, i)}`, [
+			{
+				label: 'Undo',
+				action: () => {
+					const now = get(sequences)[id];
+					if (now) writeShots(id, restoreShot(now, uuid, r.removed));
+				}
+			}
+		]);
+	}
+
+	// preview / trim one shot in the viewfinder (the camera follows the RECORDED track)
+	/** @type {{id: string, name: string, t: number, t0: number, t1: number, playing: boolean, trim: boolean, recT: number, recEnd: number} | null} */
+	let preview = $state(null);
+	let previewRaf = 0;
+	/** @param {any} s @param {number} i @param {boolean} [trim] */
+	function startPreview(s, i, trim = false) {
+		if (!shotsSeqId || $take.state === 'recording') return;
+		shotsOpen = false;
+		menuFor = '';
+		setPreviewing(true);
+		const recT = Number.isFinite(s.recT) ? s.recT : s.t;
+		const recEnd = Number.isFinite(s.recDur) ? recT + s.recDur : s.t + s.dur;
+		preview = { id: s.id, name: shotName(s, i), t: s.t, t0: s.t, t1: s.t + s.dur, playing: false, trim, recT, recEnd };
+		scrubSequence(shotsSeqId, s.t);
+	}
+	/** @param {number} t */
+	function scrubPreview(t) {
+		if (!preview || !shotsSeqId) return;
+		preview.t = Math.min(preview.t1, Math.max(preview.t0, t));
+		scrubSequence(shotsSeqId, preview.t);
+	}
+	function togglePlay() {
+		if (!preview) return;
+		if (preview.playing) {
+			preview.playing = false;
+			cancelAnimationFrame(previewRaf);
+			return;
+		}
+		if (preview.t >= preview.t1 - 1e-3) preview.t = preview.t0;
+		preview.playing = true;
+		let last = performance.now();
+		const step = (/** @type {number} */ now) => {
+			if (!preview?.playing) return;
+			const t = preview.t + (now - last) / 1000;
+			last = now;
+			scrubPreview(t);
+			if (t >= preview.t1) preview.playing = false;
+			else previewRaf = requestAnimationFrame(step);
+		};
+		previewRaf = requestAnimationFrame(step);
+	}
+	/** a trim handle moved: the shot's in / out (one undo step per drag) @param {'in'|'out'} which @param {number} v */
+	function trimTo(which, v) {
+		if (!preview || !shotsSeqId || !$film) return;
+		const seq = get(sequences)[shotsSeqId];
+		if (!seq) return;
+		const a = which === 'in' ? v : preview.t0;
+		const b = which === 'out' ? v : preview.t1;
+		const next = trimShot(seq, $film.uuid, preview.id, a, b);
+		if (!next || !writeShots(shotsSeqId, next)) return;
+		const it = filmShots(next, $film.uuid).find((/** @type {any} */ x) => x.id === preview?.id);
+		if (!it) return;
+		preview.t0 = it.t;
+		preview.t1 = it.t + it.dur;
+		scrubPreview(which === 'in' ? preview.t0 : preview.t1);
+	}
+	function endPreview() {
+		if (!preview) return;
+		cancelAnimationFrame(previewRaf);
+		if (shotsSeqId) endShotsGesture(shotsSeqId);
+		preview = null;
+		setPreviewing(false);
+		afterShotPreview();
+	}
+
+	// export: every shot, or the ticked ones — one video joined in recorded order, or one file each
+	let exportAsk = $state(false);
+	const exportBtn = $derived(exportLabel(shots.length, picked.length));
+	function onExport() {
+		const plan = exportPlanFor(shots, picked, true);
+		if (!plan.count) return;
+		if (plan.count === 1) return void exportShots(true);
+		exportAsk = true;
+	}
+	/** 68 V9 Share as video, fix-film: only the chosen shots @param {boolean} joined */
+	async function exportShots(joined) {
+		exportAsk = false;
+		const id = shotsSeqId;
+		const plan = exportPlanFor(shots, picked, joined);
+		endPreview();
 		await finishTake();
 		const seq = id ? get(sequences)[id] : null;
 		closeFilm();
-		if (!seq) return;
-		setRecordingPrefs({ mode: 'timeline', sequence: seq.id, format: 'mp4', duration: Math.min(MAX_DURATION, Math.max(MIN_DURATION, Number(seq.duration) || MIN_DURATION)) });
+		if (!seq || !plan.count) return;
+		const first = plan.queue[0] ?? [];
+		const seconds = first.reduce((n, r) => n + (r[1] - r[0]), 0);
+		exportJob.set({
+			sequence: seq.id,
+			queue: plan.queue,
+			joined,
+			total: plan.count,
+			done: 0,
+			label: plan.count === 1 ? '1 shot' : joined ? `${plan.count} shots joined (${plan.seconds.toFixed(1)} s)` : `${plan.count} shots, one file each`
+		});
+		setRecordingPrefs({ mode: 'timeline', sequence: seq.id, format: 'mp4', duration: Math.min(MAX_DURATION, Math.max(MIN_DURATION, seconds || MIN_DURATION)) });
 		recordingOpen.set(true);
 	}
-	const shots = $derived.by(() => {
-		const seq = $take.seq ? $sequences[$take.seq] : null;
-		return seq && $film ? filmShots(seq, $film.uuid) : [];
-	});
 	function onRecord() {
 		if (countdown) return cancelCountdown();
 		if ($take.state === 'recording') pause();
@@ -596,20 +815,11 @@
 	/** @param {string} id */
 	function onRetake(id) {
 		shotsOpen = false;
+		menuFor = '';
+		endPreview();
 		void retake(id);
 	}
 
-	const sensorLabel = $derived(
-		!$film
-			? ''
-			: $film.sensor === 'gyro'
-				? 'Phone motion'
-				: $film.sensor === 'starting'
-					? 'Looking for motion…'
-					: $film.sensor === 'denied'
-						? 'Motion off · drag to look'
-						: 'Drag to look'
-	);
 </script>
 
 <svelte:window bind:innerWidth={vw} bind:innerHeight={vh} />
@@ -674,26 +884,40 @@
 			<div id="film-countdown-num" class="film-countdown" aria-live="assertive">{countdown}</div>
 		{/if}
 		<div class="film-hints">
-			{#if $filmTip && $take.state === 'idle'}
-				<p id="film-tip" class="film-chip film-tip" role="note">
-					<span
-						>{$film.sensor === 'gyro' || $film.sensor === 'starting' ? 'Turn the phone to look' : 'Drag to look (no motion sensor in use)'} · the stick and ▲▼ move ·
-						● records a shot into the Timeline · ❚❚ adds it</span
-					>
-					<button id="film-tip-close" type="button" class="film-tip-close" aria-label="Close the tip" onclick={() => dismissTip(TIP_FILM)}>✕</button>
-				</p>
-			{/if}
 			{#if $walk.on || $walk.starting}
-				<button id="film-walk-chip" class="film-chip" data-tracking={$walk.tracking} title="Stop walking" onclick={() => stopWalk()}
-					>{$walk.starting ? 'Starting AR…' : $walk.tracking ? `Walking ×${$walk.scale}` : 'Finding the room…'} ✕</button
-				>
+				<span class="film-walk-group">
+					<button
+						id="film-walk-chip"
+						class="film-chip"
+						data-tracking={$walk.tracking}
+						aria-expanded={scalePop}
+						title="Walking scale: 1 m walked = this many metres in the scene"
+						onclick={() => (scalePop = !scalePop)}
+						>{$walk.starting ? 'Starting AR…' : $walk.lost > 0 ? 'Hold still — finding the room…' : $walk.tracking ? `Walking ×${$walk.scale}` : 'Finding the room…'}</button
+					><button id="film-walk-stop" class="film-chip film-chip-x" title="Stop walking" aria-label="Stop walking" onclick={() => stopWalk()}>✕</button>
+				</span>
+				{#if scalePop}
+					<span id="film-walk-scale-pop" class="film-walk-group" role="group" aria-label="Walking scale">
+						{#each WALK_SCALE_CHIPS as k (k)}
+							<button
+								class="film-chip film-scale"
+								data-scale={k}
+								aria-pressed={$walk.scale === k}
+								onclick={() => {
+									setWalkScale(k);
+									scalePop = false;
+								}}>×{k}</button
+							>
+						{/each}
+					</span>
+				{/if}
 			{/if}
 			{#if armed === 'track'}
 				<span id="film-track-hint" class="film-chip film-chip-ask">Tap what to follow</span>
 			{:else if $film.rig === 'track'}
 				<button id="film-track-chip" class="film-chip" title="Stop following" onclick={() => setRig('handheld')}>Following {$film.targetName} ✕</button>
 			{:else if $film.rig === 'tripod'}
-				<button id="film-tripod-chip" class="film-chip" title="Back to handheld" onclick={() => setRig('handheld')}>Tripod ✕</button>
+				<button id="film-tripod-chip" class="film-chip" title="Back to handheld" onclick={() => setMotion(handheldMotion())}>Tripod ✕</button>
 			{/if}
 			{#if lowBattery}<span id="film-battery" class="film-chip film-warn">Battery low</span>{/if}
 			{#if slow}<span id="film-heat" class="film-chip film-warn" title="Frames are slow — the phone may be hot or busy">Slow frames · phone hot?</span>{/if}
@@ -746,11 +970,24 @@
 			</button>
 			<div class="film-title">
 				<span class="film-name">{$film.name}</span>
-				{#if $film.sensor === 'permission'}
+				<!-- fix-film: the pill ALWAYS names the mode; the iOS motion ask sits beside it, only for Phone tilt -->
+				{#if $film.sensor === 'permission' && motion === 'tilt'}
 					<button id="film-motion" class="film-chip film-chip-ask" onclick={() => enableMotion()}>Use phone motion</button>
-				{:else}
-					<span id="film-sensor" class="film-chip" data-sensor={$film.sensor}>{sensorLabel}</span>
 				{/if}
+					<button
+						id="film-sensor"
+						class="film-chip film-pill"
+						data-sensor={$film.sensor}
+						data-motion={motion}
+						aria-expanded={motionOpen}
+						aria-haspopup="dialog"
+						title="How the camera moves"
+						onclick={() => {
+							motionOpen = !motionOpen;
+							settingsOpen = false;
+							shotsOpen = false;
+						}}>{motionPill} <Icon name="chevron-down" size={16} /></button
+					>
 			</div>
 			<div class="film-top-right">
 				<button
@@ -790,6 +1027,8 @@
 			<div
 				id="film-stick"
 				class="film-stick"
+				class:film-hidden={motion === 'tripod'}
+				aria-hidden={motion === 'tripod'}
 				bind:this={stickEl}
 				role="slider"
 				aria-label="Move the camera"
@@ -803,14 +1042,26 @@
 				<span class="film-knob" style="transform: translate({knob.x}px, {knob.y}px)"></span>
 			</div>
 			<div class="film-center">
-				{#if $take.state !== 'idle'}
+				{#if $take.state !== 'idle' || shots.length}
 					<div class="film-take-row">
-						<span id="film-take-timer" class="film-chip film-timer" data-state={$take.state}
-							>{#if $take.state === 'recording'}<span class="film-rec-dot" aria-hidden="true"></span>{/if}{formatTake($take.t)}</span
-						>
-						<button id="film-shots" class="film-chip" aria-expanded={shotsOpen} onclick={() => (shotsOpen = !shotsOpen)}
-							>{shots.length} {shots.length === 1 ? 'shot' : 'shots'}</button
-						>
+						{#if $take.state !== 'idle'}
+							<span id="film-take-timer" class="film-chip film-timer" data-state={$take.state}
+								>{#if $take.state === 'recording'}<span class="film-rec-dot" aria-hidden="true"></span>{/if}{formatTake($take.t)}</span
+							>
+						{/if}
+						<!-- fix-film: from the first shot on, recording or not; never before it -->
+						{#if shots.length}
+							<button
+								id="film-shots"
+								class="film-chip"
+								aria-expanded={shotsOpen}
+								onclick={() => {
+									shotsOpen = !shotsOpen;
+									motionOpen = false;
+									settingsOpen = false;
+								}}>{shots.length} {shots.length === 1 ? 'shot' : 'shots'}</button
+							>
+						{/if}
 						{#if $take.state === 'recording'}
 							<button id="film-marker" class="film-chip" title="Drop a timeline marker here (M)" onclick={() => addMarker()}
 								><Icon name="flag" size={16} />Mark{#if $take.markers}&nbsp;{$take.markers}{/if}</button
@@ -865,32 +1116,6 @@
 		{#if settingsOpen}
 			<div id="film-settings" class="film-sheet film-settings" use:minimalScroll role="dialog" aria-label="Camera settings">
 				<p class="film-sheet-title">Camera</p>
-				<div class="film-row">
-					<span>Walk</span>
-					<button
-						id="film-walk"
-						class="film-sheet-btn"
-						class:primary={$walk.on}
-						aria-pressed={$walk.on}
-						disabled={$walkEntry !== 'ready' && !$walk.on}
-						title={$walkEntry === 'ready' ? 'Your steps move the camera (AR tracking)' : 'Walking needs AR — Chrome on an Android phone'}
-						onclick={onWalk}>{$walk.on ? 'Stop walking' : 'Track my movement'}</button
-					>
-				</div>
-				{#if $walkEntry !== 'ready'}
-					<p class="film-note">Walking needs AR — Chrome on an Android phone with Google Play Services for AR.</p>
-				{/if}
-				<label class="film-row"
-					><span>Walk scale</span><input
-						id="film-walk-scale"
-						type="range"
-						min={WALK_LOG.min}
-						max={WALK_LOG.max}
-						step="0.01"
-						value={Math.log10($walk.scale)}
-						oninput={(e) => setWalkScale(Math.round(Math.pow(10, Number(e.currentTarget.value)) * 100) / 100)}
-					/><output>×{$walk.scale}</output></label
-				>
 				<div class="film-row">
 					<span>Rig</span>
 					<div class="film-seg">
@@ -981,26 +1206,245 @@
 				<label class="film-row"
 					><span>3-2-1 countdown</span><input id="film-countdown" type="checkbox" class="tp-check" bind:checked={countdownOn} /></label
 				>
+				<button
+					id="film-help-open"
+					class="film-sheet-btn"
+					onclick={() => {
+						settingsOpen = false;
+						helpStep = 0;
+						helpOpen = true;
+					}}><Icon name="circle-help" size={20} /><span><strong>How to film</strong> — the three cards again</span></button
+				>
+			</div>
+		{/if}
+		{#if motionOpen}
+			<div id="film-motion-sheet" class="film-sheet film-motion-sheet" use:minimalScroll role="dialog" aria-label="How the camera moves">
+				<p class="film-sheet-title">How the camera moves</p>
+				{#each motionChoices as o (o.key)}
+					<button
+						id={o.key === 'walk' ? 'film-walk' : undefined}
+						class="film-sheet-btn film-motion-opt"
+						class:primary={motion === o.key || (o.key === 'walk' && chosenMotion === 'walk')}
+						data-motion={o.key}
+						aria-pressed={motion === o.key}
+						disabled={!o.available}
+						onclick={() => chooseMotion(o.key)}
+					>
+						<Icon name={MOTION_ICONS[o.key]} size={24} /><span><strong>{o.label}</strong><small>{o.reason || o.desc}</small></span>
+					</button>
+				{/each}
+				{#if $walkEntry === 'unsupported'}
+					<p class="film-note">Walk needs AR — Chrome on an Android phone with Google Play Services for AR.</p>
+				{:else}
+					<p class="film-sheet-title">While walking</p>
+					<div class="film-row">
+						<span>Passthrough</span>
+						<div id="film-passthrough" class="film-seg">
+							{#each PASSTHROUGH as pt (pt.key)}
+								<button class="film-pass" data-pass={pt.key} aria-pressed={$walk.passthrough === pt.key} onclick={() => setPassthrough(pt.key)}>{pt.label}</button>
+							{/each}
+						</div>
+					</div>
+					<p class="film-note">Off shows the scene's own sky, On the scene over the room, Dimmed the room faint behind it. Only the live view changes — never the recorded take or its export.</p>
+					<div class="film-row">
+						<span>Walking scale</span>
+						<div id="film-walk-scales" class="film-seg">
+							{#each WALK_SCALE_CHIPS as k (k)}
+								<button class="film-scale" data-scale={k} aria-pressed={$walk.scale === k} onclick={() => setWalkScale(k)}>×{k}</button>
+							{/each}
+						</div>
+					</div>
+					<label class="film-row"
+						><span>Fine scale</span><input
+							id="film-walk-scale"
+							type="range"
+							min={WALK_LOG.min}
+							max={WALK_LOG.max}
+							step="0.01"
+							value={Math.log10($walk.scale)}
+							oninput={(e) => setWalkScale(Math.round(Math.pow(10, Number(e.currentTarget.value)) * 100) / 100)}
+						/><output>×{$walk.scale}</output></label
+					>
+					<p class="film-note">1 m walked = ×{$walk.scale} m in the scene.</p>
+				{/if}
+			</div>
+		{/if}
+		{#if helpOpen}
+			{@const card = HELP_CARDS[helpStep]}
+			<div id="film-help" class="film-sheet film-help" role="dialog" aria-label="How to film" data-card={card.key}>
+				<div class="film-help-head">
+					<Icon name={card.icon} size={32} />
+					<p class="film-sheet-title">{card.title}</p>
+					<span class="film-help-count">{helpStep + 1} / {HELP_CARDS.length}</span>
+				</div>
+				{#if card.key === 'look'}
+					<p class="film-help-body">Turn the phone to look around. Or drag the picture: tap the pill at the top to choose Phone tilt, Touch, Walk or Tripod.</p>
+					{#if gyro === false}
+						<p id="film-help-nogyro" class="film-note">This device has no motion sensor, so Film uses Touch: drag to look, the stick to move.</p>
+					{:else}
+						<p class="film-note">On a phone without a gyroscope, Film switches to Touch on its own: drag to look.</p>
+					{/if}
+				{:else if card.key === 'move'}
+					<p class="film-help-body">The stick moves the camera and ▲▼ raise and lower it. On an AR phone, Walk moves it with your own steps.</p>
+				{:else}
+					<p class="film-help-body">● records a shot while the timeline plays; ❚❚ adds it. Resume as a Cut (a new shot) or a Move (fly on from the last frame). The shots pill lists every shot.</p>
+				{/if}
+				<div class="film-help-foot">
+					<button id="film-help-never" class="film-sheet-btn film-sheet-cancel" onclick={() => closeHelp(true)}>Don't show again</button>
+					{#if helpStep < HELP_CARDS.length - 1}
+						<button id="film-help-next" class="film-sheet-btn primary" onclick={() => (helpStep += 1)}>Next</button>
+					{:else}
+						<button id="film-help-done" class="film-sheet-btn primary" onclick={() => closeHelp(false)}>Done</button>
+					{/if}
+				</div>
 			</div>
 		{/if}
 		{#if shotsOpen}
-			<div id="film-shot-list" class="film-sheet" use:minimalScroll role="dialog" aria-label="Shots">
-				<p class="film-sheet-title">Shots of this camera</p>
-				{#each shots as s, i (s.id)}
-					<div class="film-shot-row" data-item={s.id}>
-						<span>Shot {i + 1} · {formatTake(s.t)}–{formatTake(s.t + s.dur)}</span>
-						<button class="film-chip film-retake" disabled={$take.state === 'recording'} onclick={() => onRetake(s.id)}>Retake</button>
-					</div>
-				{:else}
-					<p class="film-sheet-empty">No shots yet</p>
-				{/each}
-				{#if shots.length}
-					<button id="film-edit" class="film-sheet-btn primary" onclick={editInTimeline}>
-						<Icon name="clapperboard" size={20} /><span><strong>Edit in Timeline</strong> — trim, re-time and smooth the take</span>
+			<div id="film-shot-list" class="film-sheet film-shots-sheet" role="dialog" aria-label="Shots on this camera">
+				<p class="film-sheet-title">Shots on this camera</p>
+				<div class="film-shot-scroll" use:minimalScroll>
+					{#each shots as s, i (s.id)}
+						{@const name = shotName(s, i)}
+						<div class="film-shot-row" data-item={s.id}>
+							<input
+								type="checkbox"
+								class="tp-check film-shot-pick"
+								aria-label="Select {name} to export"
+								checked={picked.includes(s.id)}
+								onchange={() => togglePick(s.id)}
+							/>
+							<button class="film-shot-main" title="Preview {name}" disabled={$take.state === 'recording'} onclick={() => startPreview(s, i)}>
+								{#if s.thumb && thumbs[s.thumb]}
+									<img class="film-shot-thumb" src={thumbs[s.thumb]} alt="" />
+								{:else}
+									<span class="film-shot-thumb film-shot-thumb-none"><Icon name="video" size={16} /></span>
+								{/if}
+								<span class="film-shot-text">
+									{#if renaming === s.id}
+										<!-- svelte-ignore a11y_autofocus -->
+										<input
+											class="film-shot-name ui-input"
+											value={s.name ?? ''}
+											placeholder={`Shot ${i + 1}`}
+											maxlength="60"
+											autofocus
+											onclick={(e) => e.stopPropagation()}
+											onkeydown={(e) => {
+												e.stopPropagation();
+												if (e.key === 'Enter') commitRename(s, e.currentTarget.value);
+												if (e.key === 'Escape') renaming = '';
+											}}
+											onblur={(e) => commitRename(s, e.currentTarget.value)}
+										/>
+									{:else}
+										<span class="film-shot-title">{name}</span>
+									{/if}
+									<span class="film-shot-meta">{formatTake(s.dur)} · {shotKind(s)}</span>
+								</span>
+							</button>
+							<button
+								class="film-btn film-shot-more"
+								aria-label="More for {name}"
+								aria-expanded={menuFor === s.id}
+								onclick={() => (menuFor = menuFor === s.id ? '' : s.id)}><Icon name="ellipsis" size={20} /></button
+							>
+						</div>
+						{#if menuFor === s.id}
+							<div class="film-shot-actions" data-item={s.id}>
+								<button class="film-chip film-act" data-act="preview" disabled={$take.state === 'recording'} onclick={() => startPreview(s, i)}><Icon name="play" size={16} />Preview</button>
+								<button class="film-chip film-act" data-act="trim" disabled={$take.state === 'recording'} onclick={() => startPreview(s, i, true)}><Icon name="scissors" size={16} />Trim</button>
+								<button
+									class="film-chip film-act"
+									data-act="rename"
+									onclick={() => {
+										renaming = s.id;
+										menuFor = '';
+									}}><Icon name="pencil" size={16} />Rename</button
+								>
+								<button class="film-chip film-act film-retake" data-act="retake" disabled={$take.state === 'recording'} onclick={() => onRetake(s.id)}
+									><Icon name="rotate-ccw" size={16} />Retake</button
+								>
+								<button class="film-chip film-act" data-act="delete" disabled={$take.state === 'recording'} onclick={() => onDeleteShot(s, i)}><Icon name="trash-2" size={16} />Delete</button>
+								<button class="film-chip film-act" data-act="timeline" onclick={() => editInTimeline(s)}><Icon name="clapperboard" size={16} />Edit in timeline</button>
+							</div>
+						{/if}
+					{/each}
+				</div>
+				<!-- the footer stays put under the scrolling list -->
+				<div class="film-shot-foot">
+					<button id="film-edit" class="film-sheet-btn" onclick={() => editInTimeline()}>
+						<Icon name="clapperboard" size={20} /><span><strong>Edit in timeline</strong></span>
 					</button>
-					<button id="film-export" class="film-sheet-btn" onclick={exportTake}>
-						<Icon name="video" size={20} /><span><strong>Export video</strong> — the take as an MP4, frame by frame</span>
+					<button id="film-export" class="film-sheet-btn primary" data-picked={picked.length} onclick={onExport}>
+						<Icon name="video" size={20} /><span><strong>{exportBtn}</strong></span>
 					</button>
+				</div>
+			</div>
+		{/if}
+		{#if exportAsk}
+			{@const n = picked.length || shots.length}
+			<div id="film-export-sheet" class="film-sheet" role="dialog" aria-label="Export video">
+				<p class="film-sheet-title">Export {n} shots</p>
+				<button id="film-export-joined" class="film-sheet-btn primary" onclick={() => exportShots(true)}>
+					<Icon name="video" size={20} /><span><strong>One video</strong> — the shots joined in recorded order</span>
+				</button>
+				<button id="film-export-each" class="film-sheet-btn" onclick={() => exportShots(false)}>
+					<Icon name="clapperboard" size={20} /><span><strong>One file per shot</strong> — each goes to Explorer ▸ Recordings</span>
+				</button>
+				<button class="film-sheet-btn film-sheet-cancel" onclick={() => (exportAsk = false)}>Cancel</button>
+			</div>
+		{/if}
+		{#if preview}
+			<div id="film-preview" class="film-sheet film-preview" role="dialog" aria-label="{preview.trim ? 'Trim' : 'Preview'} {preview.name}" data-mode={preview.trim ? 'trim' : 'preview'}>
+				<div class="film-preview-head">
+					<button id="film-preview-play" class="film-btn" aria-label={preview.playing ? 'Pause the preview' : 'Play the shot'} onclick={togglePlay}
+						><Icon name={preview.playing ? 'pause' : 'play'} size={20} /></button
+					>
+					<span class="film-preview-name">{preview.trim ? 'Trim' : 'Preview'} · {preview.name}</span>
+					<span class="film-preview-time">{formatTake(preview.t - preview.t0)} / {formatTake(preview.t1 - preview.t0)}</span>
+					<button id="film-preview-done" class="film-chip" onclick={() => {
+						endPreview();
+						shotsOpen = true;
+					}}>Done</button>
+				</div>
+				<input
+					id="film-preview-scrub"
+					type="range"
+					aria-label="Scrub the shot"
+					min={preview.t0}
+					max={preview.t1}
+					step="0.01"
+					value={preview.t}
+					oninput={(e) => scrubPreview(Number(e.currentTarget.value))}
+				/>
+				{#if preview.trim}
+					<label class="film-row"
+						><span>In</span><input
+							id="film-trim-in"
+							type="range"
+							min={preview.recT}
+							max={preview.recEnd}
+							step="0.01"
+							value={preview.t0}
+							onpointerdown={() => shotsSeqId && beginShotsGesture(shotsSeqId)}
+							oninput={(e) => trimTo('in', Number(e.currentTarget.value))}
+							onchange={() => shotsSeqId && endShotsGesture(shotsSeqId)}
+						/><output>{formatTake(preview.t0 - preview.recT)}</output></label
+					>
+					<label class="film-row"
+						><span>Out</span><input
+							id="film-trim-out"
+							type="range"
+							min={preview.recT}
+							max={preview.recEnd}
+							step="0.01"
+							value={preview.t1}
+							onpointerdown={() => shotsSeqId && beginShotsGesture(shotsSeqId)}
+							oninput={(e) => trimTo('out', Number(e.currentTarget.value))}
+							onchange={() => shotsSeqId && endShotsGesture(shotsSeqId)}
+						/><output>{formatTake(preview.t1 - preview.recT)}</output></label
+					>
+					<p class="film-note">The handles stop at the shot as recorded; trimming back out brings it back.</p>
 				{/if}
 			</div>
 		{/if}
@@ -1260,14 +1704,193 @@
 	.film-shot-row {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
 		gap: 8px;
-		min-height: 40px;
+		min-height: 52px;
 		font-variant-numeric: tabular-nums;
 	}
-	.film-sheet-empty {
+	/* fix-film: the motion pill, the picker, the walk chips, the help cards, the shots sheet, the preview bar */
+	.film-pill {
+		gap: 4px;
+		min-height: 32px;
+		padding: 2px 10px 2px 12px;
+		pointer-events: auto;
+	}
+	.film-hidden {
+		visibility: hidden;
+		pointer-events: none !important;
+	}
+	.film-walk-group {
+		display: inline-flex;
+		gap: 4px;
+		pointer-events: auto;
+	}
+	.film-walk-group .film-chip {
+		min-height: 32px;
+	}
+	.film-chip-x {
+		padding: 2px 10px;
+	}
+	.film-scale[aria-pressed='true'] {
+		background: var(--accent);
+		border-color: transparent;
+	}
+	.film-motion-sheet {
+		top: calc(max(10px, env(safe-area-inset-top)) + 56px);
+		bottom: auto;
+		max-height: calc(100vh - 200px);
+	}
+	.film-motion-opt {
+		min-height: 60px;
+	}
+	.film-motion-opt span {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+	.film-motion-opt small {
+		opacity: 0.8;
+		font-size: var(--fs-desc);
+	}
+	.film-motion-opt:disabled {
+		opacity: 0.5;
+	}
+	.film-help {
+		top: 50%;
+		bottom: auto;
+		transform: translate(-50%, -50%);
+		gap: 10px;
+	}
+	.film-help-head {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+	}
+	.film-help-head .film-sheet-title {
 		margin: 0;
+		flex: 1;
+	}
+	.film-help-count {
 		opacity: 0.7;
+		font-variant-numeric: tabular-nums;
+	}
+	.film-help-body {
+		margin: 0;
+		line-height: 1.4;
+	}
+	.film-help-foot {
+		display: flex;
+		justify-content: space-between;
+		gap: 8px;
+	}
+	.film-help-foot .film-sheet-btn {
+		justify-content: center;
+		padding: 6px 16px;
+	}
+	.film-shots-sheet {
+		overflow: hidden;
+		max-height: min(60vh, 520px);
+	}
+	.film-shot-scroll {
+		flex: 1 1 auto;
+		min-height: 0;
+		overflow: auto;
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+	.film-shot-main {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 4px;
+		border-radius: 10px;
+		color: var(--film-ink);
+		text-align: left;
+	}
+	.film-shot-main:disabled {
+		opacity: 0.6;
+	}
+	.film-shot-thumb {
+		flex: 0 0 auto;
+		width: 72px;
+		height: 40px;
+		border-radius: 6px;
+		object-fit: cover;
+		background: var(--film-glass);
+	}
+	.film-shot-thumb-none {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.film-shot-text {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+	}
+	.film-shot-title {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.film-shot-meta {
+		opacity: 0.75;
+		font-size: var(--fs-desc);
+	}
+	.film-shot-name {
+		width: 100%;
+		min-height: 30px;
+	}
+	.film-shot-more {
+		flex: 0 0 auto;
+		width: 36px;
+		height: 36px;
+	}
+	.film-shot-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		padding: 0 4px 6px 32px;
+	}
+	.film-act {
+		gap: 4px;
+		min-height: 32px;
+	}
+	.film-shot-foot {
+		flex: 0 0 auto;
+		display: flex;
+		gap: 6px;
+		padding-top: 6px;
+		border-top: 1px solid var(--film-edge);
+	}
+	.film-shot-foot .film-sheet-btn {
+		flex: 1;
+		justify-content: center;
+	}
+	.film-preview {
+		bottom: calc(max(16px, env(safe-area-inset-bottom)) + 140px);
+	}
+	.film-preview-head {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.film-preview-name {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.film-preview-time {
+		font-variant-numeric: tabular-nums;
+		opacity: 0.8;
+	}
+	#film-preview-scrub {
+		width: 100%;
 	}
 	.film-frame {
 		position: absolute;
@@ -1372,25 +1995,6 @@
 		pointer-events: auto;
 	}
 	/* 68: the first-use how-to — one line of chips' look, wraps on a folded phone */
-	.film-tip {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		margin: 0;
-		max-width: min(92vw, 520px);
-		border-radius: 12px;
-		white-space: normal;
-		text-align: left;
-	}
-	.film-tip-close {
-		flex: none;
-		border: 0;
-		background: transparent;
-		color: inherit;
-		font: inherit;
-		cursor: pointer;
-		padding: 2px 6px;
-	}
 	.film-warn {
 		background: var(--film-warn);
 		color: var(--film-shadow);

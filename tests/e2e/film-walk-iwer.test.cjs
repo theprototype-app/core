@@ -82,6 +82,7 @@ h.run(async () => {
 	// ---- P. presence ----
 	await page.evaluate((u) => window.__stores.filmState.openFilm(u), uuid);
 	await page.waitForSelector('#film-exit', { timeout: 15000 });
+	await page.locator('#film-help-never').click({ timeout: 5000 }).catch(() => {});
 	await page.evaluate(() => window.__stores.filmMode.placeCamera([3, 2, -4]));
 	await h.eventually(() => markerOn(A, uuid), (p) => p && Math.abs(p[0] - 3) < 0.05 && Math.abs(p[1] - 2) < 0.05 && Math.abs(p[2] + 4) < 0.05, "A sees B's filming camera where B films from (the gizmo)", 10000);
 	const filming = await A.page.evaluate(() => {
@@ -111,7 +112,8 @@ h.run(async () => {
 	h.check(errToasts.length === 0, `no error toast on the phone (${JSON.stringify(errToasts).slice(0, 160)})`);
 	// a phone page's own toasts (the auto-quality step-down, a joined peer) sit over Film's sheet buttons
 	await page.evaluate(() => window.__stores.toastStore.set([]));
-	await page.locator('#film-settings-btn').click();
+	// fix-film: Walk lives in the motion picker the pill opens
+	await page.locator('#film-sensor').click();
 	const n0 = await page.evaluate(() => window.__iwer.sessions.length);
 	await page.locator('#film-walk').click();
 	await h.eventually(() => iwer.state(page), (s) => s.presenting, 'three presents the AR walk session', 15000);
@@ -199,7 +201,7 @@ h.run(async () => {
 	await page.evaluate(() => window.__stores.filmRecorder.finishTake());
 
 	// ---- X. stop walking ----
-	await page.locator('#film-walk-chip').click();
+	await page.locator('#film-walk-stop').click();
 	await h.eventually(() => iwer.state(page), (s) => !s.presenting, 'Stop walking ends the session', 10000);
 	const mount = await page.evaluate(() => {
 		let m = null;

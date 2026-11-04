@@ -243,6 +243,29 @@ export const passthroughActive = writable(false);
 export function sessionCompositesOverRoom(session) {
 	return !!session && session.environmentBlendMode !== 'opaque';
 }
+// fix-film: WHAT AN AR SESSION SHOWS BEHIND THE SCENE — a LOCAL view choice, never the replicated
+// environment, never a recording. 'room' (the default every AR session had: the sky lifts, the
+// camera feed shows through) · 'sky' (the scene's own sky stays, opaque — Film's walk default: the
+// film look while the phone tracks) · 'dim' (the sky lifts and the room shows faint behind the scene).
+/** @type {import('svelte/store').Writable<'room' | 'sky' | 'dim'>} */
+export const roomLook = writable(/** @type {'room' | 'sky' | 'dim'} */ ('room'));
+// true while a session that composites over the room keeps the scene's own sky ('sky'): environment
+// then paints a flat-colour sky as a texture, because three clears a colour background to
+// TRANSPARENT in an alpha-blend session (the room would show through anyway)
+export const skyOverRoom = writable(false);
+let sessionComposites = false;
+/** Scene's session start / end: does the live session composite over the room? @param {boolean} on */
+export function setSessionComposites(on) {
+	sessionComposites = !!on;
+	refreshRoomLook();
+}
+function refreshRoomLook() {
+	let look = 'room';
+	roomLook.subscribe((v) => (look = v))();
+	passthroughActive.set(sessionComposites && look !== 'sky');
+	skyOverRoom.set(sessionComposites && look === 'sky');
+}
+roomLook.subscribe(() => refreshRoomLook());
 // selection keeps working but the transform gizmo must NOT attach (sculpt mode:
 // a visible gizmo invites accidental terrain moves mid-stroke). Lives in this
 // leaf store so objectActions can gate on it without importing terrainSculpt

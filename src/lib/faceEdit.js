@@ -1367,6 +1367,28 @@ export function trisToUVs(tris) {
  * three requires uv.count === position.count.
  * @param {any} geometry @param {any} previous @param {number[] | null} [uvs]
  */
+/**
+ * mcp-shapes: a mesh with vertex colours (create_mesh `colors`) keeps them across a geometry swap. Given colours win;
+ * else the previous attribute is carried when the vertex count is unchanged (a move, a smooth, a sculpt stroke) and
+ * reset to WHITE when it is not — corners an op invented have no colour, and carrying by index would scramble them.
+ * A mesh that never had colours gets none (the common case stays byte-identical).
+ * @param {any} geometry @param {any} previous @param {Float32Array | null} colors
+ */
+function preserveColors(geometry, previous, colors) {
+	const count = geometry.attributes.position.count;
+	if (colors?.length) {
+		const array = new Float32Array(count * 3).fill(1);
+		array.set(colors.length > array.length ? colors.subarray(0, array.length) : colors);
+		geometry.setAttribute('color', new THREE.BufferAttribute(array, 3));
+		return;
+	}
+	const old = previous?.attributes?.color;
+	if (!old) return;
+	const array = new Float32Array(count * 3).fill(1);
+	if (old.count === count) for (let i = 0; i < count; i++) array.set([old.getX(i), old.getY(i), old.getZ(i)], i * 3);
+	geometry.setAttribute('color', new THREE.BufferAttribute(array, 3));
+}
+
 function preserveUVs(geometry, previous, uvs) {
 	const count = geometry.attributes.position.count;
 	if (uvs?.length) {
@@ -1448,8 +1470,10 @@ function toFloats(data) {
  *   when it still fits the new mesh exactly and dropped otherwise (A7), which is what
  *   an older peer's positions-only message does too.
  * @param {any} [faceTris] P9 stored topology, CSR half two — the flat triangle run
+ * @param {any} [colors] mcp-shapes: per-vertex colours (3 per vertex), same wire shapes as positions;
+ *   omitted = carry the previous colours when the vertex count is unchanged (else white)
  */
-export function applyMeshGeo(uuid, positions, groups, uvs, faceCounts, faceTris) {
+export function applyMeshGeo(uuid, positions, groups, uvs, faceCounts, faceTris, colors) {
 	const object = lookupEditable(uuid); // A8: also finds the collider-edit proxy
 	if (!object) return;
 	const floats = toFloats(positions);
@@ -1466,6 +1490,7 @@ export function applyMeshGeo(uuid, positions, groups, uvs, faceCounts, faceTris)
 	const previous = object.geometry;
 	preserveMaterialGroups(geometry, previous, object, groups);
 	preserveUVs(geometry, previous, uvs == null ? null : Array.from(toFloats(uvs)));
+	preserveColors(geometry, previous, colors == null ? null : toFloats(colors));
 	if (faceCounts != null && faceTris != null) applyFacesWire(geometry, faceCounts, faceTris);
 	else if (!carryFaces(geometry, previous)) clearStoredFaces(geometry);
 	previous?.dispose?.();
@@ -3596,9 +3621,15 @@ export function commitMeshGeoTriple(uuid, before, after, op = false) {
 		return false;
 	}
 	const packed = after.faces?.length ? packFaces(after.faces) : null;
-	applyMeshGeo(uuid, after.positions, after.groups, after.uvs, packed?.faceCounts, packed?.faceTris);
+	// mcp-shapes: a coloured mesh's colours go into BOTH sides of the entry, so an undo brings them back exactly
+	// (an op's own snapshots are positions/groups/uvs only)
+	const had = lookupEditable(uuid)?.geometry?.attributes?.color;
+	if (had && before && typeof before === 'object' && before.colors == null && before.positions?.length === had.count * 3) before = { ...before, colors: Array.from(had.array) };
+	applyMeshGeo(uuid, after.positions, after.groups, after.uvs, packed?.faceCounts, packed?.faceTris, after.colors);
+	const now = lookupEditable(uuid)?.geometry?.attributes?.color;
+	if (now && after.colors == null) after = { ...after, colors: Array.from(now.array) };
 	// broadcastMeshGeo reads the topology off the object we just applied to
-	broadcastMeshGeo(uuid, after.positions, after.groups, after.uvs);
+	broadcastMeshGeo(uuid, after.positions, after.groups, after.uvs, after.colors);
 	// 37 R11: `op` = an operator's commit (vertex mode) — the live-symmetry boundary
 	(op ? recordOp : recordEntry)({ kind: 'meshgeo', uuid, before, after });
 	return true;
@@ -8158,7 +8189,7 @@ function withFaces(state) {
 
 /** @param {string} uuid @param {number[]} positions @param {any[] | null} [groups]
  * @param {number[] | null} [uvs] */
-function broadcastMeshGeo(uuid, positions, groups, uvs) {
+function broadcastMeshGeo(uuid, positions, groups, uvs, colors) {
 	/** @type {any} */
 	const peer = get(peers);
 	// P9: the topology rides as OPTIONAL sibling fields read off the object we just
@@ -8180,6 +8211,8 @@ function broadcastMeshGeo(uuid, positions, groups, uvs) {
 			positions: new Float32Array(positions).buffer,
 			...(groups?.length ? { groups } : {}),
 			...(uvs?.length ? { uvs: new Float32Array(uvs).buffer } : {}),
+			// mcp-shapes: per-vertex colours, raw bytes, only when the commit carries them (create_mesh colors)
+			...(colors?.length ? { colors: new Float32Array(colors).buffer } : {}),
 			...faceFields
 		});
 }
@@ -9810,10 +9843,11 @@ registerHistoryKind('meshgeo', (entry, state) => {
 	const positions = state?.positions ?? state;
 	const groups = state?.positions ? state.groups : undefined;
 	const uvs = state?.positions ? state.uvs : undefined;
+	const colors = state?.positions ? state.colors : undefined; // mcp-shapes
 	// P9: topology travels INSIDE the state object (A5), and only for producers that
 	// authored one. Packed here so the replay and the re-broadcast agree byte for byte.
 	const packed = state?.faces ? packFaces(state.faces) : null;
-	applyMeshGeo(entry.uuid, positions, groups, uvs, packed?.faceCounts, packed?.faceTris);
+	applyMeshGeo(entry.uuid, positions, groups, uvs, packed?.faceCounts, packed?.faceTris, colors);
 	// same raw-bytes wire format as broadcastMeshGeo (big plain arrays blow
 	// binarypack's recursion and the replay would silently not replicate)
 	/** @type {any} */
@@ -9825,6 +9859,7 @@ registerHistoryKind('meshgeo', (entry, state) => {
 			positions: new Float32Array(positions).buffer,
 			...(groups?.length ? { groups } : {}),
 			...(uvs?.length ? { uvs: new Float32Array(uvs).buffer } : {}),
+			...(colors?.length ? { colors: new Float32Array(colors).buffer } : {}),
 			...(packed ? packed : {})
 		});
 	return true;

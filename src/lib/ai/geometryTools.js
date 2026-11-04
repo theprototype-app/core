@@ -40,7 +40,8 @@ import {
 	previewOf,
 	meshFromData,
 	MESH_MAX_VERTICES,
-	MESH_MAX_FACES
+	MESH_MAX_FACES,
+	MESH_MAX_MATERIALS
 } from './meshSelectCore.js';
 
 /** the tool names this module answers */
@@ -392,9 +393,61 @@ function extrudeShapeTool(createBase, args) {
 
 // ---- G6 create_mesh --------------------------------------------------------------------------------
 
+/**
+ * mcp-shapes: create_mesh `materials` = the slots faceMaterials index into: [{color, roughness, metalness, opacity,
+ * emissive}]. Checked here (an error names the slot) and built as MeshStandardMaterial.
+ * @param {any} list @returns {{specs: any[]} | {error: string}}
+ */
+export function meshMaterialSpecs(list) {
+	if (list === undefined) return { specs: [] };
+	if (!Array.isArray(list) || !list.length || list.length > MESH_MAX_MATERIALS) return { error: 'materials: a list of 1-' + MESH_MAX_MATERIALS + ' {color, roughness, metalness, …}' };
+	/** @type {any[]} */
+	const specs = [];
+	for (let i = 0; i < list.length; i++) {
+		const m = list[i];
+		const at = 'materials[' + i + ']';
+		if (!m || typeof m !== 'object' || Array.isArray(m)) return { error: at + ': an object like {"color": "#aa6633", "roughness": 0.8}' };
+		/** @type {any} */
+		const spec = {};
+		for (const [key, value] of Object.entries(m)) {
+			if (key === 'color' || key === 'emissive') {
+				const hex = colorOf(value);
+				if (!hex) return { error: at + '.' + key + ': a hex colour like "#ff8800"' };
+				spec[key] = hex;
+			} else if (key === 'roughness' || key === 'metalness' || key === 'opacity' || key === 'emissiveIntensity') {
+				const hi = key === 'emissiveIntensity' ? 100 : 1;
+				if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > hi) return { error: at + '.' + key + ': a number from 0 to ' + hi };
+				spec[key] = value;
+			} else if (key === 'name') spec.name = String(value).slice(0, 60);
+			else return { error: at + '.' + key + ': not a material field — color, roughness, metalness, opacity, emissive, emissiveIntensity, name' };
+		}
+		specs.push(spec);
+	}
+	return { specs };
+}
+
+/** @param {any} spec one meshMaterialSpecs entry @param {string} fallback colour @param {any} args */
+function meshMaterial(spec, fallback, args) {
+	const m = new THREE.MeshStandardMaterial({ roughness: spec.roughness ?? 0.85, metalness: spec.metalness ?? 0 });
+	m.color.set(spec.color ?? fallback);
+	if (spec.emissive) m.emissive.set(spec.emissive);
+	if (spec.emissiveIntensity !== undefined) m.emissiveIntensity = spec.emissiveIntensity;
+	if (spec.opacity !== undefined && spec.opacity < 1) {
+		m.opacity = spec.opacity;
+		m.transparent = true;
+	}
+	if (spec.name) m.name = spec.name;
+	// mcp-shapes: per-vertex colours multiply the slot's colour; flatShading = one normal per triangle in the shader
+	if (Array.isArray(args.colors)) m.vertexColors = true;
+	if (args.flatShading === true) m.flatShading = true;
+	return m;
+}
+
 /** @param {any} args */
 async function createMeshTool(args) {
-	const data = meshFromData(args);
+	const mats = meshMaterialSpecs(args.materials);
+	if ('error' in mats) return { error: mats.error };
+	const data = meshFromData(args, mats.specs.length);
 	if ('error' in data) return { error: data.error };
 	if (args.color !== undefined && !colorOf(args.color)) return { error: 'color: a hex colour like "#ff8800"' };
 	const group = get(objectsGroup);
@@ -405,9 +458,13 @@ async function createMeshTool(args) {
 	// partition beside them) — one presence + one meshgeo entry, one undo step in the call's batch
 	const stub = new THREE.BufferGeometry();
 	stub.setAttribute('position', new THREE.Float32BufferAttribute(data.positions.slice(0, 9), 3));
+	if (data.colors) stub.setAttribute('color', new THREE.Float32BufferAttribute(data.colors.slice(0, 9), 3));
 	stub.computeVertexNormals();
-	const mesh = new THREE.Mesh(stub, new THREE.MeshStandardMaterial({ roughness: 0.85 }));
-	mesh.material.color.set(colorOf(args.color) ?? paletteColorFor(mesh.uuid));
+	const mesh = new THREE.Mesh(stub);
+	const base = colorOf(args.color) ?? paletteColorFor(mesh.uuid);
+	// one slot = a plain material; several = an array, drawn through the geometry groups the meshgeo carries
+	const slots = mats.specs.length ? mats.specs.map((spec) => meshMaterial(spec, base, args)) : [meshMaterial({}, base, args)];
+	mesh.material = slots.length > 1 ? slots : slots[0];
 	mesh.name = String(args.name || 'Mesh').slice(0, 120);
 	if (args.smooth === true) mesh.userData.shading = 'smooth';
 	const nested = !!args.parentUuid && objectOf(String(args.parentUuid))?.type === 'Group';
@@ -428,11 +485,24 @@ async function createMeshTool(args) {
 	const warning = nestLocal(mesh, args, nested ? pose : {});
 	if (warning) warnings.push(warning);
 	const before = { positions: data.positions.slice(0, 9), groups: null, uvs: null, faces: null };
-	const after = { positions: data.positions, groups: null, uvs: data.uvs, faces: data.partition };
+	// a single slot draws every triangle: its groups would only mark them all slot 0
+	const after = { positions: data.positions, groups: slots.length > 1 ? data.groups : null, uvs: data.uvs, faces: data.partition, ...(data.colors ? { colors: data.colors } : {}) };
 	if (!fe.commitMeshGeoTriple(mesh.uuid, before, after)) return { error: 'the mesh is too large to sync', created: [{ uuid: mesh.uuid, name: mesh.name }] };
 	const physics = aiCreatePhysics(args, undefined);
 	if (physics) setPhysicsFor(mesh.uuid, physics);
-	return { created: [{ uuid: mesh.uuid, name: mesh.name, triangles: data.triangles, faces: data.partition.length, ...(warnings.length ? { warnings } : {}) }] };
+	return {
+		created: [
+			{
+				uuid: mesh.uuid,
+				name: mesh.name,
+				triangles: data.triangles,
+				faces: data.partition.length,
+				...(slots.length > 1 ? { materials: slots.length } : {}),
+				...(data.colors ? { vertexColors: true } : {}),
+				...(warnings.length ? { warnings } : {})
+			}
+		]
+	};
 }
 
 // ---- G5 edit_mesh ----------------------------------------------------------------------------------
@@ -605,7 +675,10 @@ function shapeArgsError(tool, args) {
 	if (args.color !== undefined && !colorOf(args.color)) return 'color: a hex colour like "#ff8800"';
 	/** @type {any} */
 	let made;
-	if (tool === 'create_mesh') made = meshFromData(args);
+	if (tool === 'create_mesh') {
+		const mats = meshMaterialSpecs(args.materials);
+		made = 'error' in mats ? mats : meshFromData(args, mats.specs.length);
+	}
 	else if (tool === 'create_tube') made = tubeRecordOf(args);
 	else if (tool === 'create_lathe') made = latheParamsOf(args);
 	else if (tool === 'extrude_shape') made = extrudeParamsOf(args);

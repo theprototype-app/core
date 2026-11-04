@@ -8,7 +8,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as THREE from 'three';
 import { get } from 'svelte/store';
 
-vi.mock('$lib/objectActions', () => ({ moveObjectToGroup: () => {} }));
+// mcp-shapes: a real attach (keeps the world pose, as the app's does), wired below once the stores are loaded
+vi.mock('$lib/objectActions', () => ({ moveObjectToGroup: (uuid, target) => globalThis.__testAttach?.(uuid, target) }));
 vi.mock('$lib/physics', () => ({ setPhysicsFor: () => {} }));
 
 const { objectsGroup } = await import('../../src/stores/sceneStore');
@@ -20,6 +21,12 @@ const core = await import('../../src/lib/ai/meshSelectCore.js');
 const { latheGeometry, extrudeGeometry, cleanExtrude, cleanLathe } = await import('../../src/lib/customGeometries.js');
 const { summarizeToolCall } = await import('../../src/lib/agentLogCore.js');
 const { readTriangles } = await import('../../src/lib/faceEdit.js');
+globalThis.__testAttach = (uuid, target) => {
+	const root = get(objectsGroup);
+	const o = root.getObjectByProperty('uuid', uuid);
+	const d = root.getObjectByProperty('uuid', target);
+	if (o && d) d.attach(o);
+};
 
 /** @type {any[]} */
 let sent = [];
@@ -340,5 +347,134 @@ describe('meshSelectCore', () => {
 		// 90° takes the top and its four side neighbours' half-planes? no: sides are exactly 90° off, cos 0
 		expect(core.applySelect(faces, core.parseSelect({ normal: 'up', angle: 89 }), (f) => f.centroid).picked.length).toBe(2);
 		expect(core.applySelect(faces, core.parseSelect({ normal: 'up', angle: 90 }), (f) => f.centroid).picked.length).toBe(10);
+	});
+});
+
+describe('mcp-shapes: create_shape in a group, colours at creation, many in one call', () => {
+	/** the agent's repro: a group at [-0.9, 0, 0.9] turned -90 degrees */
+	function turnedGroup() {
+		const g = new THREE.Group();
+		g.name = 'Fox';
+		g.position.set(-0.9, 0, 0.9);
+		g.rotation.set(0, -Math.PI / 2, 0);
+		group.add(g);
+		group.updateMatrixWorld(true);
+		return g;
+	}
+	const worldOf = (o) => {
+		group.updateMatrixWorld(true);
+		return new THREE.Vector3().setFromMatrixPosition(o.matrixWorld);
+	};
+
+	it('a mesh with parentUuid and no position sits at the group origin, LOCAL identity, and turns with the group', async () => {
+		const g = turnedGroup();
+		const r = await call('create_mesh', { ...CUBE, parentUuid: g.uuid });
+		const o = live(r.created[0].uuid);
+		expect(o.parent).toBe(g);
+		expect(o.position.toArray()).toEqual([0, 0, 0]);
+		expect(o.rotation.y).toBe(0);
+		expect(worldOf(o).x).toBeCloseTo(-0.9, 6);
+		expect(worldOf(o).z).toBeCloseTo(0.9, 6);
+		// vertices are local too: the +x face (0.5) points along the group's local +x = world +z
+		const off = await call('create_mesh', { ...CUBE, parentUuid: g.uuid, position: [1, 0, 0] });
+		const p = live(off.created[0].uuid);
+		expect(p.position.toArray()).toEqual([1, 0, 0]);
+		expect(worldOf(p).z).toBeCloseTo(1.9, 6);
+		g.rotation.y = 0;
+		expect(worldOf(p).x).toBeCloseTo(0.1, 6);
+		// the move after nesting is sent (peers attach keeping the world pose, then take the local pose)
+		expect(sent.some((m) => m.type === 'move' && m.uuid === p.uuid && m.pos[0] === 1)).toBe(true);
+	});
+
+	it('a tube with parentUuid reads its path in the group space', async () => {
+		const g = turnedGroup();
+		const r = await call('create_tube', { path: [[0, 0, 0], [0, 2, 0]], parentUuid: g.uuid });
+		const o = live(r.created[0].uuid);
+		expect(o.parent).toBe(g);
+		expect(o.position.toArray()).toEqual([0, 1, 0]);
+		expect(worldOf(o).x).toBeCloseTo(-0.9, 6);
+	});
+
+	it('a parentUuid that is not a group is a warning, the shape is made at the root', async () => {
+		const r = await call('create_mesh', { ...CUBE, parentUuid: 'nope' });
+		expect(r.created[0].warnings[0]).toMatch(/no group/);
+		expect(live(r.created[0].uuid).parent).toBe(group);
+	});
+
+	it('colors = per-vertex colours on the meshgeo (raw bytes), vertexColors on; flatShading at creation', async () => {
+		const colors = CUBE.vertices.map((v) => [v[0] + 0.5, v[1] + 0.5, v[2] + 0.5]);
+		const r = await call('create_mesh', { ...CUBE, colors, flatShading: true });
+		expect(r.created[0].vertexColors).toBe(true);
+		const o = live(r.created[0].uuid);
+		expect(o.material.vertexColors).toBe(true);
+		expect(o.material.flatShading).toBe(true);
+		const c = o.geometry.attributes.color;
+		expect(c.count).toBe(36);
+		// face 0 = [0, 3, 2, 1] fanned → first corner is vertex 0 = (-0.5,-0.5,-0.5) → black
+		expect([c.getX(0), c.getY(0), c.getZ(0)]).toEqual([0, 0, 0]);
+		const geo = sent.find((m) => m.type === 'meshgeo');
+		expect(geo.colors).toBeInstanceOf(ArrayBuffer);
+		expect(new Float32Array(geo.colors).length).toBe(108);
+	});
+
+	it('vertex colours stay through an edit that keeps the vertex count, come back on undo after one that does not', async () => {
+		const colors = CUBE.vertices.map(() => [1, 0, 0]);
+		const r = await call('create_mesh', { ...CUBE, colors });
+		const uuid = r.created[0].uuid;
+		const ex = await call('edit_mesh', { object: uuid, select: { normal: 'up' }, ops: [{ op: 'extrude', distance: 0.5 }] });
+		expect(ex.updated[0].ok).toBe(true);
+		const c = live(uuid).geometry.attributes.color;
+		expect(c.count).toBe(live(uuid).geometry.attributes.position.count);
+		expect(c.getY(0)).toBe(1); // a changed count resets to white
+		history.undo();
+		const back = live(uuid).geometry.attributes.color;
+		expect([back.getX(0), back.getY(0), back.getZ(0)]).toEqual([1, 0, 0]);
+	});
+
+	it('materials + faceMaterials = a material array and geometry groups that cover every triangle', async () => {
+		const r = await call('create_mesh', { ...CUBE, materials: [{ color: '#ff0000' }, { color: '#00ff00', roughness: 0.2, metalness: 1 }], faceMaterials: [0, 0, 1, 1, 0, 1] });
+		expect(r.created[0].materials).toBe(2);
+		const o = live(r.created[0].uuid);
+		expect(Array.isArray(o.material)).toBe(true);
+		expect(o.material[1].metalness).toBe(1);
+		const groups = o.geometry.groups;
+		expect(groups.reduce((n, g) => n + g.count, 0)).toBe(36);
+		expect(groups.map((g) => g.materialIndex)).toEqual([0, 1, 0, 1]);
+		expect(sent.find((m) => m.type === 'meshgeo').groups).toHaveLength(4);
+	});
+
+	it('colour errors name the index', async () => {
+		expect((await call('create_mesh', { ...CUBE, colors: CUBE.vertices.map((_, i) => (i === 5 ? [2, 0, 0] : [1, 1, 1])) })).error).toMatch(/colors\[5\]/);
+		expect((await call('create_mesh', { ...CUBE, faceMaterials: [0, 0, 0, 0, 0, 0] })).error).toMatch(/give materials too/);
+		expect((await call('create_mesh', { ...CUBE, materials: [{}], faceMaterials: [0, 0, 3, 0, 0, 0] })).error).toMatch(/faceMaterials\[2\]/);
+		expect((await call('create_mesh', { ...CUBE, materials: [{ color: 'nope!' }] })).error).toMatch(/materials\[0\]\.color/);
+		expect((await call('create_mesh', { ...CUBE, materials: [{ shine: 1 }] })).error).toMatch(/not a material field/);
+	});
+
+	it('create_shapes: several shapes, uuids in order, ONE undo step takes them all back', async () => {
+		const g = turnedGroup();
+		const before = get(history.undoStack).length;
+		const r = await call('create_shapes', {
+			shapes: [
+				{ action: 'mesh', mesh: { ...CUBE, name: 'Body', parentUuid: g.uuid } },
+				{ action: 'lathe', lathe: { profile: [[0, 0], [0.3, 0.5], [0, 1]], name: 'Vase' } },
+				{ action: 'tube', path: [[0, 0, 0], [1, 1, 1]], name: 'Rail' }
+			]
+		});
+		expect(r.uuids).toHaveLength(3);
+		expect(r.created.map((c) => [c.index, c.action, c.name])).toEqual([[0, 'mesh', 'Body'], [1, 'lathe', 'Vase'], [2, 'tube', 'Rail']]);
+		expect(live(r.uuids[0]).parent).toBe(g);
+		expect(get(history.undoStack).length).toBe(before + 1);
+		history.undo();
+		expect(r.uuids.map(live)).toEqual([undefined, undefined, undefined]);
+		expect(summarizeToolCall('create_shapes', {}, r)).toBe('made 3 shapes (Body, Vase +1)');
+	});
+
+	it('create_shapes checks every entry first: one wrong entry names its index and nothing is made', async () => {
+		const count = group.children.length;
+		const r = await call('create_shapes', { shapes: [{ action: 'mesh', mesh: CUBE }, { action: 'mesh', mesh: { vertices: CUBE.vertices, faces: [[0, 1, 99]] } }] });
+		expect(r.error).toMatch(/^nothing was made — shapes\[1\] \(mesh\): faces\[0\]: index 99/);
+		expect(group.children.length).toBe(count);
+		expect((await call('create_shapes', { shapes: [{ action: 'cone' }] })).error).toMatch(/shapes\[0\]: action/);
 	});
 });

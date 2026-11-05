@@ -1,5 +1,5 @@
 <script lang="ts">
-import { coarseNow } from '$lib/touchDensity.js'; // phone-polish item 5: the parked auto-quality card
+import { coarsePointer } from '$lib/inputDevice'; // phone-polish item 5: the parked auto-quality card
 	import Icon from '../ui/Icon.svelte';
     import { cameraPreview, stopCameraPreview, toggleCameraControl, previewLabel } from '$lib/cameraPreview'
     // R22 round 2: the connect-time library offer (see the effect below)
@@ -170,7 +170,8 @@ const undoToasts = $derived($toastStore.filter((t: any) => t?.kind === 'undo'));
 // arrives a few seconds after boot, top-centre, right where the thumb reaches for a window header or
 // the menu — it is parked at the BOTTOM there instead, above the Controls band / the phone bar
 const PARKED_ON_TOUCH = new Set(['auto-quality']);
-const parked = (t: any) => $coarseNow && !!t && typeof t === 'object' && PARKED_ON_TOUCH.has(t.id);
+const touchScreen = coarsePointer(); // read once: a device does not change its pointer mid-session
+const parked = (t: any) => touchScreen && !!t && typeof t === 'object' && PARKED_ON_TOUCH.has(t.id);
 const parkedToasts = $derived($toastStore.filter((t: any) => parked(t)));
 const transientToasts = $derived($toastStore.filter((t: any) => !t?.sticky && t?.kind !== 'undo' && !parked(t)));
 const hiddenCount = $derived(Math.max(0, transientToasts.length - MAX_TOASTS));

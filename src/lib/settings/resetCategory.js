@@ -70,7 +70,6 @@ import { perfStatsShown } from '../fpsMeter';
 import { perfReportsOn } from '../perf/beacon';
 import { setViewPrefs, DEFAULT_VIEW_PREFS } from '../viewPrefs';
 import { uiDensity } from '../uiDensity';
-import { touchSize } from '../touchDensity.js';
 import { projectActions } from '../projectActions'; // 41b H14
 import { helpersInPlay } from '../helperLayer';
 import { trackpadMode, allowBrowserZoom, reversePan, panEnabled, pinchZoomEnabled } from '../trackpadNav';
@@ -163,7 +162,6 @@ const RESETS = {
 		perfReportsOn.set(false);
 		setViewPrefs({ dockPushesViewport: DEFAULT_VIEW_PREFS.dockPushesViewport });
 		uiDensity.set('comfortable');
-		touchSize.set('auto');
 		projectActions.set('auto');
 	},
 	controls() {

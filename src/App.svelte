@@ -15,8 +15,6 @@
   import { onMount } from 'svelte'
   // phone-polish item 2: the on-screen keyboard as --kb-inset / --kb-top (dialogs with a field read them)
   import { installKeyboardInset } from '$lib/ui/keyboardInset.js'
-  // phone-polish item 3: Touch size (applies <html data-touch-ui> at boot and on every change)
-  import '$lib/touchDensity.js'
   import { Canvas } from '@threlte/core'
   // 30 P0: threlte's Canvas defaults `shadows` to PCFSoftShadowMap, which three 0.185
   // deprecates and silently downgrades to PCFShadowMap on the first shadow render (with a

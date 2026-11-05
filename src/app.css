@@ -15,8 +15,6 @@
 @import './styles/motion.css';
 /* 53 A3: the keyboard focus ring on every control — UNLAYERED, it must beat component styles */
 @import './styles/focus.css';
-/* phone-polish item 3: Touch size — UNLAYERED (it grows the components' own sizes), all under :root[data-touch-ui] */
-@import './styles/touch-density.css';
 
 /* flowbite's plugin stays for one reason: its base styles for native form controls (checkbox
    ticks, select arrows, field resets). No Flowbite COMPONENT is left (38 R11: flowbite-svelte is

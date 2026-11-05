@@ -3657,8 +3657,7 @@
 		barPlaced
 			? 'left: var(--cl-bar-x, 50%); top: var(--cl-bar-y, auto); bottom: auto; translate: none; touch-action: none;' + (movingBar ? ' cursor: grabbing;' : '')
 			:
-		// phone-polish: + the touch strip's extra height while a dock is up (min(): 0 with no dock)
-		($floatingToolbar ? 'bottom: calc(var(--bottom-inset, 0px) + 16px + min(var(--bottom-inset, 0px), var(--dock-strip-extra, 0px)));' : 'bottom: 16px;') +
+		($floatingToolbar ? 'bottom: calc(var(--bottom-inset, 0px) + 16px);' : 'bottom: 16px;') +
 			(editCentre != null
 				? ` left: ${Math.round(editCentre)}px; max-width: ${Math.max(0, Math.floor(editPlace!.right - editPlace!.left))}px;`
 				: track.mid > 0

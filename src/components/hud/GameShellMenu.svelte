@@ -422,6 +422,7 @@
 	.gs-card {
 		width: min(460px, 100%);
 		max-height: calc(100vh - 32px);
+		max-height: calc(100dvh - 32px);
 		overflow-y: auto;
 		padding: 20px 22px 22px;
 		border-radius: 16px;

@@ -45,7 +45,7 @@
 		tabindex="-1"
 		class="ui-panel fixed flex flex-col overflow-hidden outline-hidden"
 		use:dragWindow={{ key: 'whatsNewWin', defaultRect: { left: 220, top: 90 }, resizable: true, minW: 320, minH: 240 }}
-		style="z-index: var(--z-onboarding); width: min(620px, 94vw); height: min(620px, 80vh)"
+		style="z-index: var(--z-onboarding); width: min(620px, 94vw); height: min(620px, 80vh); max-height: calc(100dvh - var(--dw-top, 90px) - 12px)"
 		onkeydown={onKeydown}
 	>
 		<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">

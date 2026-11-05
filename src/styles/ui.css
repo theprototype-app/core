@@ -172,6 +172,7 @@ input.tp-check:disabled {
 		height: min(var(--inspector-h, 45vh), var(--ps-sheet-max, 100vh)) !important;
 		/* never rise above the Connect bar + top-right chrome (like the Flow/Explorer dock) */
 		max-height: calc(100vh - var(--connect-bottom, 54px) - 56px) !important;
+		max-height: calc(100dvh - var(--connect-bottom, 54px) - 56px) !important;
 		border-radius: 0.75rem 0.75rem 0 0 !important;
 	}
 	/* 38 NOTES-38 #32 (a): on the phone shell the Inspector sheet ends at the TOP of the bottom bar
@@ -182,6 +183,7 @@ input.tp-check:disabled {
 		padding-bottom: 16px !important;
 		/* 40 F1: the shell's sheet room — clear of the top bar AND of the selection strip */
 		max-height: var(--ps-sheet-max, calc(100vh - var(--ps-bar-h) - 64px)) !important;
+		max-height: var(--ps-sheet-max, calc(100dvh - var(--ps-bar-h) - 64px)) !important;
 	}
 	.ins-resize {
 		display: flex !important;

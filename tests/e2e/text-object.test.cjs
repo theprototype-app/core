@@ -187,7 +187,13 @@ h.run(async () => {
 		await until(B.page, uuid, solidBuilt, `§5 loop ${n}: ...and on B`);
 		const ran = await A.page.evaluate(
 			async ([u, ms]) => {
-				const out = await window.__stores.textPathEdit.bakeTextToMesh(u);
+				// solidBuilt reads the runtime record; an autosave export parks the solid geometry across its
+				// async encode, and Bake then refuses ("still being built — try again"). Try again, as a user would.
+				let out = await window.__stores.textPathEdit.bakeTextToMesh(u);
+				for (let t = 0; !out.ok && /still being built/.test(out.error) && t < 40; t++) {
+					await new Promise((r) => setTimeout(r, 250));
+					out = await window.__stores.textPathEdit.bakeTextToMesh(u);
+				}
 				if (!out.ok) return out;
 				window.__stores.history.undo();
 				if (ms) await new Promise((r) => setTimeout(r, ms));
@@ -196,7 +202,11 @@ h.run(async () => {
 			},
 			[uuid, gap]
 		);
-		if (!ran.ok) loopRed.push(`${n}: bake refused (${ran.error})`);
+		if (!ran.ok) {
+			// no bake, no undo/redo ran: undoing here would pop an unrelated entry and break every later loop
+			loopRed.push(`${n}: bake refused (${ran.error})`);
+			continue;
+		}
 		await h.eventually(() => carrier(A.page, uuid), (c) => !!c && !c.text && c.verts === tri * 3, `§5 loop ${n} (gap ${gap} ms): the redo bakes A`, 20000);
 		await h.eventually(() => carrier(B.page, uuid), (c) => !!c && !c.text && c.verts === tri * 3, `§5 loop ${n} (gap ${gap} ms): ...and B`, 20000);
 		// past an autosave export (it parks the solid geometry while it runs) and a late runtime build

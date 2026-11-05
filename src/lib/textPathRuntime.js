@@ -402,9 +402,13 @@ registerParkHook(() => {
 		if (!e.solidGeo || c.geometry !== e.solidGeo || !c.userData?.textPath) continue;
 		const geo = c.geometry;
 		const mat = c.material;
-		c.geometry = parkGeometry();
-		c.material = parkMaterial();
+		const parkedGeo = (c.geometry = parkGeometry());
+		const parkedMat = (c.material = parkMaterial());
 		undo.push(() => {
+			// fix-bake: an autosave export holds the park across its async encode — a carrier BAKED in
+			// between (a redo, a peer's bake) has its own mesh now; putting the solid back would hand the
+			// baked object the runtime's build (released later) in place of its copy
+			if (c.geometry !== parkedGeo || c.material !== parkedMat) return;
 			c.geometry = geo;
 			c.material = mat;
 		});

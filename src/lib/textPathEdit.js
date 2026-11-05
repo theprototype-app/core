@@ -5,7 +5,7 @@ import { recordEntry, beginHistoryBatch, endHistoryBatch, historyBatchOpen } fro
 import { normalizeTextPath, normalizeLetterStyle, remapLetters, MAX_STYLED, textCapCheck, isBlockText } from './textPathCore.js';
 import { coarsePointer } from './inputDevice.js';
 import { isVRMode } from '../stores/sceneStore';
-import { applyTextPathTo } from './textPathObject.js';
+import { applyTextPathTo, bumpTextTurn, textTurn } from './textPathObject.js';
 import { textPathSourceFor } from './textPathSources.js';
 import { spawnAtPoint } from './addObjects.js';
 import { isSplineObject, normalizeSpline } from './splineTube';
@@ -69,6 +69,7 @@ export function setTextPathFor(uuid, patch) {
 	}
 	const next = normalizeTextPath(merged);
 	if (JSON.stringify(next) === JSON.stringify(before)) return before;
+	bumpTextTurn(uuid);
 	applyTextPathTo(object, next);
 	recordEntry({ kind: 'props', uuid, before: { textPath: before }, after: { textPath: next } });
 	/** @type {any} */
@@ -193,9 +194,10 @@ export async function bakeTextToMesh(uuid) {
 	if (!object?.userData?.textPath) return { ok: false, error: 'That is not a text object.' };
 	const rec = normalizeTextPath(object.userData.textPath);
 	if (rec.mode !== 'extruded' || !isBlockText(rec)) return { ok: false, error: 'Only solid (extruded) text bakes to a mesh. Switch it to Solid first.' };
-	const m = await import('./text3dBuild.js');
+	const m = await build3dModule();
 	const geo = object.geometry;
 	if (!geo || !m.ownsGeometry(geo) || !(geo.getAttribute?.('position')?.count > 0)) return { ok: false, error: 'The solid text is still being built — try again in a moment.' };
+	bumpTextTurn(uuid);
 	object.geometry = m.bakeCopy(geo);
 	object.material = Array.isArray(object.material) ? object.material.map((/** @type {any} */ mt) => mt.clone()) : object.material;
 	delete object.userData.textPath;
@@ -215,17 +217,31 @@ export async function bakeTextToMesh(uuid) {
 	return { ok: true };
 }
 
+/** text3dBuild once it has loaded: a bake that finds the solid already built then needs no await at all */
+/** @type {any} */
+let build3d = null;
+const build3dModule = async () => (build3d ??= await import('./text3dBuild.js'));
+
 /**
- * The receiving half of Bake: this peer's own extruded build of the record becomes the mesh. A peer that has
- * not built it yet (its font still arriving, a phone) builds it first at the desktop cap, so the baked mesh
- * is the writer's. Undo arrives as the record again and turns it back into a text.
- * @param {any} object
+ * The receiving half of Bake, and a REDO of one on the writer: this peer's own extruded build of the
+ * record becomes the mesh. A peer that has not built it yet (its font still arriving, a phone; or the
+ * solid parked by an autosave export) builds it first at the desktop cap, so the baked mesh is the
+ * writer's. Undo arrives as the record again and turns it back into a text.
+ *
+ * fix-bake: what cancels a bake that had to wait is a NEWER TURN of the record (`turn` is the one the
+ * caller bumped, synchronously, when the bake message or the redo step arrived; an undo, a remote edit
+ * or a local edit bumps it again) — never the record being REASSIGNED, which is how the 1.61 identity
+ * guard left the writer's text standing while its peers baked. The object is looked up again by uuid
+ * at the end (it may have been replaced under it), and its own solid, when it has one by then, is the
+ * build that is baked.
+ * @param {any} object @param {number=} turn the caller's bumpTextTurn(object.uuid); absent = bumped here
  */
-export async function applyRemoteBake(object) {
-	const raw = object?.userData?.textPath;
-	if (!raw) return;
-	const rec = normalizeTextPath(raw);
-	const m = await import('./text3dBuild.js');
+export async function applyRemoteBake(object, turn) {
+	const uuid = object?.uuid;
+	if (!uuid || !object.userData?.textPath) return;
+	const mine = turn ?? bumpTextTurn(uuid);
+	const rec = normalizeTextPath(object.userData.textPath);
+	const m = build3d ?? (await build3dModule());
 	/** @type {any} */
 	let geo = m.ownsGeometry(object.geometry) ? object.geometry : null;
 	if (!geo && rec.mode === 'extruded' && isBlockText(rec)) {
@@ -236,13 +252,18 @@ export async function applyRemoteBake(object) {
 			console.log('bake: could not build the text here', error);
 		}
 	}
-	// the record changed while we built (an undo raced the bake): leave the text alone
-	if (object.userData.textPath !== raw) return;
+	// a newer state of the record came after this bake (an undo raced it, an edit): leave the text alone
+	if (textTurn(uuid) !== mine) return;
+	const target = objectOf(uuid) ?? object;
+	if (!target.userData?.textPath) return; // a mesh already
+	if (m.ownsGeometry(target.geometry)) geo = target.geometry;
+	const recNow = normalizeTextPath(target.userData.textPath);
 	if (geo) {
-		object.geometry = m.bakeCopy(geo);
-		object.material = Array.isArray(object.material) && object.material.length === 2 ? object.material.map((/** @type {any} */ mt) => mt.clone()) : m.extrudedMaterials(rec);
+		target.geometry = m.bakeCopy(geo);
+		target.material =
+			Array.isArray(target.material) && target.material.length === 2 ? target.material.map((/** @type {any} */ mt) => mt.clone()) : m.extrudedMaterials(recNow);
 	}
-	delete object.userData.textPath;
-	if (object.name === 'Text') object.name = 'Text mesh';
+	delete target.userData.textPath;
+	if (target.name === 'Text') target.name = 'Text mesh';
 	pokeScene();
 }

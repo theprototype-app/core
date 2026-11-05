@@ -216,6 +216,8 @@ h.run(async () => {
 					/** @type {any} */ let g;
 					window.__stores.objectsGroup.subscribe((x) => (g = x))();
 					const o = g.getObjectByProperty('uuid', u);
+					// a click comes after a frame drew the object; the test can land before one (onHost does the same)
+					o.updateWorldMatrix(true, true);
 					const THREE = window.__stores.THREE;
 					const ray = new THREE.Raycaster(new THREE.Vector3().fromArray(f), new THREE.Vector3().fromArray(d).normalize());
 					const hit = ray.intersectObject(o, true)[0];

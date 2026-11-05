@@ -201,12 +201,10 @@
         // in your seed-deterministic room (peers take consecutive rooms).
         // untracked: the effect must only depend on $isLocked.
         untrack(() => {
-          // fix-play-link: wherever play starts (spawn, dungeon room, the saved camera), step clear
-          // of a player already standing there — a joiner started inside the host's avatar head
-          const others = (($userdata ?? []) as any[]).map((u: any) => u[0]).filter((id: string) => id && id !== ($peers as any)?.peer?.id)
           // 30b P4: a game's own spawn (the scene's play.spawn, or a module's api.setSpawn)
           // wins; the dungeon's per-peer rooms below are what a scene without one gets
-          if (spawnDesktopPlayer()) return void stepClearOfAvatars(others)
+          // (fix-play-link: the spawn itself lands clear of other players' avatars)
+          if (spawnDesktopPlayer()) return
           const data = dungeonData($globalScene)
           // resolve the rig ONCE and mutate the object: `$cameraParent.position.x = v`
           // compiles to store_mutate -> cameraParent.set(), and useParent() is a
@@ -222,7 +220,9 @@
               rig.position.z = spawn.z
             }
           }
-          stepClearOfAvatars(others)
+          // fix-play-link: no spawn (a dungeon room, the saved camera): step clear of a player
+          // already standing there — a joiner started inside the host's avatar head
+          stepClearOfAvatars()
         })
       } else {
         // left play (or the transient on the way out) — nothing to keep asking for

@@ -3,6 +3,7 @@
 	// menu row was pressed (perf/moment.js captureMoment); this card only asks for the note and
 	// whether to send it. Saving locally always happens; sending needs the build's endpoint.
 	import { momentDraft, closeMomentReport } from '$lib/perf/moment';
+	import { autofocusOk } from '$lib/inputDevice';
 	import { perfReportsOn, perfReportsAvailable } from '$lib/perf/beacon';
 	import { summarize } from '$lib/perf/tpprof';
 
@@ -59,7 +60,7 @@
 		<label class="field">
 			<span>What happened? (optional)</span>
 			<!-- svelte-ignore a11y_autofocus -->
-			<textarea id="moment-note" rows="3" maxlength="1000" bind:value={note} autofocus></textarea>
+			<textarea id="moment-note" rows="3" maxlength="1000" bind:value={note} autofocus={autofocusOk()}></textarea>
 		</label>
 		{#if $perfReportsAvailable}
 			<label class="check">

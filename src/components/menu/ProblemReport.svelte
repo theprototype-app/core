@@ -7,6 +7,7 @@
 	// ticked, and only when the cloud plugin is there and they are signed in) or keep it on
 	// this device. Boxes are stored as fractions of the picture.
 	import { onDestroy } from 'svelte';
+	import { autofocusOk } from '$lib/inputDevice';
 	import { problemDraft, closeProblemReport, reporterAccount, normalizeMark, MAX_MARKS } from '$lib/problemReport';
 	import { problemReporter } from '$lib/cloudHooks';
 
@@ -141,7 +142,7 @@
 		<label class="field">
 			<span>What happened?</span>
 			<!-- svelte-ignore a11y_autofocus -->
-			<textarea id="problem-note" rows="3" maxlength="2000" bind:value={note} autofocus placeholder="What did you expect, and what happened instead?"></textarea>
+			<textarea id="problem-note" rows="3" maxlength="2000" bind:value={note} autofocus={autofocusOk()} placeholder="What did you expect, and what happened instead?"></textarea>
 		</label>
 		{#if $problemDraft.perf}
 			<label class="check">
@@ -181,6 +182,12 @@
 		max-height: calc(100vh - var(--connect-bottom, 0px) - 72px);
 		max-height: calc(100dvh - var(--connect-bottom, 0px) - 72px);
 		overflow-y: auto;
+	}
+	/* phone-polish item 2: with the on-screen keyboard up, sit in what is left above it (Send and
+	   Cancel stayed under it on the HONOR) — the card scrolls inside that */
+	:global(:root.kb-open) .problem {
+		top: calc(var(--kb-top, 0px) + 8px);
+		max-height: calc(100dvh - var(--kb-inset, 0px) - var(--kb-top, 0px) - 16px);
 		display: flex;
 		flex-direction: column;
 		gap: 8px;

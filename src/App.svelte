@@ -13,6 +13,8 @@
   // (it must read the hash before the dial consumes it); the API itself is a dynamic import.
   import { agentRequested } from '$lib/agent/agentMode'
   import { onMount } from 'svelte'
+  // phone-polish item 2: the on-screen keyboard as --kb-inset / --kb-top (dialogs with a field read them)
+  import { installKeyboardInset } from '$lib/ui/keyboardInset.js'
   import { Canvas } from '@threlte/core'
   // 30 P0: threlte's Canvas defaults `shadows` to PCFSoftShadowMap, which three 0.185
   // deprecates and silently downgrades to PCFShadowMap on the first shadow render (with a
@@ -237,6 +239,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
     startPerfLive()
     // 34 R1: performance reports (opt-in; inert without VITE_PERF_REPORTS_URL)
     startPerfBeacon()
+    installKeyboardInset()
     // 34 R1: an installed module older than this build expects -> toast + a Modules row
     startStaleModuleWatch()
     // 31-perf P2: automatic levels of detail (a render-time swap; see lod.js)

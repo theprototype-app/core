@@ -8,6 +8,7 @@
 	// shortcut rebound or a tool that is unavailable right now is always current.
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { tick } from 'svelte';
+	import { autofocusOk } from '$lib/inputDevice';
 	import { commandPaletteOpen } from '../../stores/appStore';
 	import { buildCommands } from '$lib/commandPalette';
 	import { rankCommands } from '$lib/commandRank';
@@ -29,7 +30,8 @@
 		commands = buildCommands();
 		query = '';
 		active = 0;
-		tick().then(() => input?.focus());
+		// phone-polish item 2: on touch the keyboard would cover the list the user opened this for
+		if (autofocusOk()) tick().then(() => input?.focus());
 	});
 	$effect(() => {
 		void query;
@@ -135,6 +137,12 @@
 		width: min(600px, calc(100vw - 24px));
 		max-height: 64vh;
 		display: flex;
+	}
+	/* phone-polish item 2: the on-screen keyboard covers the lower half — the palette takes the top
+	   of what stays visible, and its list scrolls inside */
+	:global(:root.kb-open) .cp {
+		top: calc(var(--kb-top, 0px) + 8px);
+		max-height: calc(100dvh - var(--kb-inset, 0px) - var(--kb-top, 0px) - 16px);
 		flex-direction: column;
 		background: var(--surface-1);
 		border: 1px solid var(--border);
@@ -183,6 +191,7 @@
 	}
 	.cp-list {
 		overflow-y: auto;
+		min-height: 0; /* shrinks with the palette (the keyboard rule above) */
 		padding: 6px;
 	}
 	.cp-item {

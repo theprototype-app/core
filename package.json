@@ -33,7 +33,7 @@
 		"@iwer/devui": "2.7.0",
 		"@pixiv/three-vrm-animation": "^3.5.5",
 		"@sveltejs/adapter-static": "^3.0.10",
-		"@sveltejs/kit": "^2.70.3",
+		"@sveltejs/kit": "^3.1.0",
 		"@sveltejs/vite-plugin-svelte": "^7.3.1",
 		"@tailwindcss/vite": "^4.3.3",
 		"flowbite": "^3.1.2",

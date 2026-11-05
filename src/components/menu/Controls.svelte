@@ -3657,7 +3657,13 @@
 		barPlaced
 			? 'left: var(--cl-bar-x, 50%); top: var(--cl-bar-y, auto); bottom: auto; translate: none; touch-action: none;' + (movingBar ? ' cursor: grabbing;' : '')
 			:
-		($floatingToolbar ? 'bottom: calc(var(--bottom-inset, 0px) + 16px);' : 'bottom: 16px;') +
+		// phone-polish: with a dock up the bar clears the dock's tab strip (DockTabs' -top-6 = 1.5rem above the dock's
+		// edge) by 4 px — at 16 px it covered the strip's own buttons (1 at 100 %, 6 at 130 % interface scale, measured
+		// on the unfolded phone). Inline px is not rewritten by a11y-css, so the 16 / 4 px scale by --ui-scale here.
+		// No dock (inset 0): max() picks the 16 px floor, as before.
+		($floatingToolbar
+			? 'bottom: calc(var(--bottom-inset, 0px) + max(16px * var(--ui-scale, 1), min(var(--bottom-inset, 0px), 1.5rem + 4px * var(--ui-scale, 1))));'
+			: 'bottom: 16px;') +
 			(editCentre != null
 				? ` left: ${Math.round(editCentre)}px; max-width: ${Math.max(0, Math.floor(editPlace!.right - editPlace!.left))}px;`
 				: track.mid > 0

@@ -8,7 +8,7 @@ const nap = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const look = (page) =>
 	page.evaluate(() => {
-		const col = [...document.querySelectorAll("[data-docked='right']")].find((e) => e.getClientRects().length && e.getBoundingClientRect().width > 0);
+		const col = [...document.querySelectorAll("#inspector, [data-sidebar-side='right'], [data-docked='right']")].find((e) => e.getClientRects().length && e.getBoundingClientRect().width > 0);
 		const pill = document.querySelector('#controls-pill');
 		const c = col?.getBoundingClientRect();
 		const p = pill?.getBoundingClientRect();
@@ -41,7 +41,9 @@ h.run(async () => {
 		h.check(!!s.col && !!s.pill && s.pill.r <= s.col.l + 1, tag(`pinned: the bar ends left of the column (${JSON.stringify(s)})`));
 		const free = s.col ? s.col.l / 2 : 0;
 		const mid = s.pill ? (s.pill.l + s.pill.r) / 2 : 0;
-		h.check(!!s.pill && Math.abs(mid - free) <= 12, tag(`pinned: the bar centres in the free width (centre ${mid}, free middle ${free})`));
+		// centred in the free width — unless the left corner buttons on its row push it right (the track's min)
+		const tr = await page.evaluate(() => window.__toolbarTrack ?? null);
+		h.check(!!s.pill && (Math.abs(mid - free) <= 12 || (tr && Math.abs(mid - tr.min) <= 2)), tag(`pinned: the bar centres in the free width (centre ${mid}, free middle ${free}, track ${JSON.stringify(tr && { min: Math.round(tr.min), max: Math.round(tr.max) })})`));
 
 		// 3. unpinned again: back to the screen's middle
 		await page.evaluate(() => window.__stores.sidebars.toggleSidebarFull('right', false));

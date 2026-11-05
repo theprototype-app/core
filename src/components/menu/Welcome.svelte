@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { backClose } from '$lib/backStack.js'; // phone-polish: Android Back steps back / closes it
 	// RW/B1: first-visit welcome overlay. The app IS the landing page, so this is the
 	// only thing between the click and the canvas. Shown once ever (hasSeenWelcome) unless
 	// the user ticks "Show this on start", which also has a Settings toggle.
@@ -117,6 +118,7 @@
 	function openRepo() {
 		window.open(REPO_URL, '_blank', 'noopener');
 	}
+	const backToAsk = () => (view = 'ask');
 	function onKeydown(e: KeyboardEvent) {
 		if (e.key !== 'Escape') return;
 		e.preventDefault();
@@ -143,6 +145,7 @@
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<div
 		id="welcome-overlay"
+		use:backClose={view !== 'ask' ? backToAsk : closeWelcome}
 		class="welcome-card"
 		bind:this={cardEl}
 		use:minimalScroll

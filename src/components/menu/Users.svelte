@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { backClose } from '$lib/backStack.js'; // phone-polish: Android Back closes it
 	import { cameraPreviews, joinPeerPreview, previewLabel } from '$lib/cameraPreview';
 	import Icon from '../ui/Icon.svelte';
 	import { roving } from '$lib/keyboardNav'; // 53 A3: the top-right group is one tab stop
@@ -1392,6 +1393,7 @@
 	{#if openDropdown}
 		<div
 			id="avatar-dropdown"
+			use:backClose={() => (openDropdown = false)}
 			popover={$phoneShellActive ? undefined : 'manual'}
 			role="tooltip"
 			{@attach dropdownAttach}

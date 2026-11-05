@@ -1,4 +1,5 @@
 <script>
+	import { backClose } from '$lib/backStack.js'; // phone-polish: Android Back closes it
 	// 38 R8 (NOTES-38 #14) — THE COMMAND PALETTE (Ctrl+K, the `help.palette` registry row).
 	// One search over tools and shortcuts, windows, the menu and every Settings row; what it
 	// lists is commandPalette.js, how it ranks is commandRank.js. A pick closes the palette
@@ -72,7 +73,7 @@
 {#if $commandPaletteOpen}
 	<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 	<div class="cp-scrim" onclick={close}></div>
-	<div id="command-palette" class="tp-ui cp" role="dialog" aria-label="Command palette">
+	<div id="command-palette" class="tp-ui cp" use:backClose={close} role="dialog" aria-label="Command palette">
 		<div class="cp-search">
 			<input
 				bind:this={input}

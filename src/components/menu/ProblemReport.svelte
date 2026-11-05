@@ -1,4 +1,5 @@
 <script>
+	import { backClose } from '$lib/backStack.js'; // phone-polish: Android Back closes it
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	// 37 R20 — "Report a problem" (desktop and the Quest browser). The picture was taken when
 	// the menu row was pressed (problemReport.js captureProblem). Here the person drags boxes
@@ -115,7 +116,7 @@
 
 {#if $problemDraft}
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-	<div id="problem-report" class="problem ui-panel" use:minimalScroll role="dialog" aria-label="Report a problem" tabindex="-1">
+	<div id="problem-report" class="problem ui-panel" use:minimalScroll use:backClose={() => (drawing ? (drawing = null) : void answer(null))} role="dialog" aria-label="Report a problem" tabindex="-1">
 		<p class="title">Report a problem</p>
 		{#if $problemDraft.shotUrl}
 			<p class="muted">Drag on the picture to box what is wrong{marks.length ? ` (${marks.length})` : ''}.</p>

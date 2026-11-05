@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { backClose } from '$lib/backStack.js'; // phone-polish: Android Back closes it
 	// 36 I5 — the screen surface of the tour engine (T1): a card anchored next to the step's
 	// `data-tour` target, with a spotlight ring around the target. The rest of the app stays
 	// usable (the spotlight is click-through), because a tour that blocks the thing it points at
@@ -123,6 +124,7 @@
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<div
 		id="tour-card"
+		use:backClose={skip}
 		bind:this={cardEl}
 		use:minimalScroll
 		class="tour-card"

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { backClose } from '$lib/backStack.js'; // phone-polish: Android Back closes it
 	import Icon from '../ui/Icon.svelte';
 	import SheetGrip from '../ui/SheetGrip.svelte';
 	import { readSheetH, saveSheetH } from '$lib/ui/sheetDrag.js';
@@ -170,6 +171,7 @@
 {#if !$closeMenu}
 	<nav
 		id="sidebar70"
+		use:backClose={() => closeMenu.set(true)}
 		transition:fade={{ duration: motionMs(130) }}
 		class="app-sidebar tp-ui tp-menu tp-noscrollbar fixed"
 		style="--side-top: {$connectDocked ? $connectBarHeight + 64 : 64}px; {$phoneShellActive ? `--menu-sheet-h: ${menuShown}px` : ''}"

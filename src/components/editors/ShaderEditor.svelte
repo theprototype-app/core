@@ -1,4 +1,5 @@
 <script>
+	import { backClose } from '$lib/backStack.js'; // phone-polish: Android Back closes it
 	import { onLayoutRestore, storedPanelLayout } from '$lib/uiLayoutsCore';
 	// The Shader editor dock tab (plan SH3).
 	//
@@ -1084,6 +1085,7 @@
 {:else if !$shaderEditorClose && !docked}
 	<div
 		id="shader-window"
+		use:backClose={() => shaderEditorClose.set(true)}
 		class="ui-panel tp-ui tp-window fixed flex flex-col overflow-hidden"
 		use:dragWindow={{ key: 'shader', defaultRect: { left: 240, top: 150 } }}
 		use:focusStack={'shader'}

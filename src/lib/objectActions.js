@@ -47,7 +47,7 @@ import { desktopSpawn, spawnEyePose } from './playSpawn'; // 30b P4 (+ vrOnly: c
 // D2: a LEAF (svelte stores + THREE), so a static import here closes no cycle
 import { shareDuplicatedMaterials, linkMaterials } from './materialSharing';
 import { applyFlowPathTo } from './sim/flowPathObject.js'; // 36-fb F24 (a three leaf)
-import { applyTextPathTo } from './textPathObject.js'; // 64 D2 (a three leaf)
+import { applyTextPathTo, bumpTextTurn } from './textPathObject.js'; // 64 D2 (a three leaf)
 import {
 	duplicateCarriesAnimation,
 	duplicateCarriesFlow,
@@ -895,9 +895,11 @@ registerHistoryKind('props', (entry, state) => {
 	}
 	if ('textPath' in state) {
 		// 64 D2: text on a path — the record only; every peer lays the letters out from it
-		// 64 TX5: a REDO of Bake bakes again (dropping the record alone would leave a text with no mesh)
+		// 64 TX5: a REDO of Bake bakes again (dropping the record alone would leave a text with no mesh).
+		// fix-bake: every step is a new TURN, taken NOW — a later undo cancels a bake still waiting on its import
+		const turn = bumpTextTurn(entry.uuid);
 		if (state.textPath) applyTextPathTo(object, state.textPath);
-		else if (state.bake && object.userData.textPath) void import('./textPathEdit.js').then((m) => m.applyRemoteBake(object));
+		else if (state.bake && object.userData.textPath) void import('./textPathEdit.js').then((m) => m.applyRemoteBake(object, turn));
 		else delete object.userData.textPath;
 		if (peer)
 			peer.send({ type: 'objectParameters', parameter: 'textPath', uuid: entry.uuid, textPath: state.textPath ?? null, ...(state.bake ? { bake: true } : {}) });

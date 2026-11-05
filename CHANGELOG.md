@@ -5,6 +5,18 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.62.0 — Sign in from another device 🔑
+
+### 🔑 Sign in from another device (on theprototype.app)
+- **No typing passwords on a headset**: a device that is not signed in shows a short code (and a QR code behind a small icon). Open **theprototype.app/link** on a phone or computer where you are signed in, check which device is asking, and approve it. Works in every direction: Quest from a PC or phone, a PC from a phone, one browser from another. <!-- 88 L1-L4 -->
+- **Approve only a device you are holding**: the approve sheet says which device, browser and system is asking and how long ago; a device it cannot recognise needs a second tap. <!-- 88 L3 L9 -->
+- **Borrowed browsers stay short**: a sign-in made with a code lasts at most 24 hours, unless you tick **Trust this device** on it. <!-- 88 L8 -->
+- **Account ▸ Devices** lists every device signed in to your account (how it signed in, when it was last used), with **Sign out** per device and **Sign out all other devices**. Signing out now also ends that device's session on the server. <!-- 88 L7 -->
+- Five wrong codes pause approving for 15 minutes. Codes, secrets and sign-ins are never written to any log. <!-- 88 L4 L5 -->
+
+### 🔧 Fixes
+- **Bake to mesh, Undo, Redo in quick succession** now bakes the text on your own screen too: it could stay a text for you while everyone else in the session saw the mesh. <!-- fix-bake (1.61 Q1) -->
+
 ## 1.61.0 — Write in 3D ✍️
 
 ### ✍️ 3D text

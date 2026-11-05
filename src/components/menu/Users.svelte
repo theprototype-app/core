@@ -755,6 +755,22 @@
 		// still the CIRCLE's right edge, read from its rect (never floating-ui's drifting maths, the mobile-
 		// viewport trap below), so the notch's circle sits exactly over the trigger wherever it is.
 		dropdownEl.style.setProperty('--pm-right', `${Math.max(0, Math.round(window.innerWidth - r.right))}px`);
+		// phone-polish item 6: the menu grew tall (account, sign-in methods, community, sponsor …) and on a
+		// short screen — a phone in landscape, a browser with its bars showing — it ran off the bottom with no
+		// way to reach its last rows. It stops at the visible bottom and SCROLLS (wheel and a finger's drag);
+		// `overscroll-behavior` keeps the drag from scrolling or zooming the page behind it. The visible top is
+		// the rect's top: the -50 px margin seats the notch over the trigger. The phone sheet (phone.css) owns
+		// its own height.
+		if ($phoneShellActive) {
+			dropdownEl.style.removeProperty('max-height');
+			dropdownEl.style.removeProperty('overflow-y');
+			return;
+		}
+		const visTop = dropdownEl.getBoundingClientRect().top;
+		const vh = window.visualViewport?.height ?? window.innerHeight;
+		dropdownEl.style.maxHeight = `${Math.max(160, Math.round(vh - Math.max(0, visTop) - 8))}px`;
+		dropdownEl.style.overflowY = 'auto';
+		dropdownEl.style.overscrollBehavior = 'contain';
 	}
 	/** fix-batch-1 #23: the trigger's keys — Enter / Space toggle, ↓ opens; opening moves focus in */
 	function triggerKey(e: KeyboardEvent) {

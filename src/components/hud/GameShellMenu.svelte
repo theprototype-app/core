@@ -183,7 +183,7 @@
 	>
 		<Icon name="menu" size={16} aria-hidden="true" />
 		<span>Menu</span>
-		{#if playing}<kbd>Esc</kbd>{/if}
+		{#if playing && !coarse}<kbd>Esc</kbd>{/if}
 	</button>
 {/if}
 

@@ -25,7 +25,7 @@ import { normalizeLodGroup } from '$lib/lodGroupCore'
 import { normalizeFluid } from '$lib/sim/fluidCore.js'; // 36-sim
 import { normalizeEmitter, normalizeInteraction } from '$lib/sim/fluidEmitterCore.js'; // 36-fb F23
 import { applyFlowPathTo } from '$lib/sim/flowPathObject.js'; // 36-fb F24
-import { applyTextPathTo } from '$lib/textPathObject.js'; // 64 D2
+import { applyTextPathTo, bumpTextTurn } from '$lib/textPathObject.js'; // 64 D2
 import { runSceneClearHandlers } from '$lib/moduleSDK'
 import { annotations } from '$lib/annotationsHandler'
 import { isViewer, warnViewerReadOnly } from '$lib/objectPermissions'
@@ -696,9 +696,12 @@ export async function objectParameters(data) {
         // 64 D2: text on a path's record, normalized at the boundary; every peer lays it out
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
         if (mesh) {
+            // fix-bake: each message is a new TURN of the record, taken in arrival order — a record after a
+            // bake (the writer's undo) cancels a bake still building here
+            const turn = bumpTextTurn(data.uuid);
             if (data.textPath) applyTextPathTo(mesh, data.textPath);
             // 64-text TX5: Bake — this peer bakes its own build of the record (the mesh never travels)
-            else if (data.bake === true && mesh.userData.textPath) void import('$lib/textPathEdit.js').then((m) => m.applyRemoteBake(mesh));
+            else if (data.bake === true && mesh.userData.textPath) void import('$lib/textPathEdit.js').then((m) => m.applyRemoteBake(mesh, turn));
             else delete mesh.userData.textPath;
             pokeScene();
         }

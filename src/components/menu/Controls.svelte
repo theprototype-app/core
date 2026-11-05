@@ -3296,6 +3296,10 @@
 			if (sb.left.shown && (sb.left.full || editing)) left = Math.max(left, sb.leftX + sb.left.w + EDGE_MARGIN);
 			if (sb.right.shown && (sb.right.full || editing)) right = Math.min(right, vw - sb.right.w - EDGE_MARGIN);
 		}
+		// phone-polish item 4: with a column PINNED the bar's home is the middle of the width that is
+		// left, not of the screen — on a tablet the screen's middle sits against (or under) the column
+		const pinned = left !== EDGE_MARGIN || right !== vw - EDGE_MARGIN;
+		const home = pinned ? (left + right) / 2 : vw / 2;
 		// the bar's ROW is its bottom bar-height: a wrapped edit bar is taller, and reading its whole box
 		// would let a corner button ABOVE the row narrow the band it wraps into (and so on)
 		const rowH = cssPx(getComputedStyle(document.documentElement).getPropertyValue('--hud-bar-h')) || pill.height;
@@ -3330,7 +3334,7 @@
 		const min = left + half;
 		const max = right - half;
 		const ok = max - min >= 1;
-		const next = { min, max, mid: ok ? Math.max(min, Math.min(max, vw / 2)) : vw / 2, ok };
+		const next = { min, max, mid: ok ? Math.max(min, Math.min(max, home)) : home, ok };
 		// REASSIGNED, never mutated: `$derived` compares with ===. Guarded on the values
 		// so a ResizeObserver callback can never write its way into a second callback.
 		if (next.min !== track.min || next.max !== track.max || next.mid !== track.mid || next.ok !== track.ok)

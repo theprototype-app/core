@@ -739,6 +739,12 @@ style="z-index: var(--z-toast-low); pointer-events: none;"
     .toasts-parked > :global(div) {
         pointer-events: auto;
     }
+    /* device-lab 2026-11-05: on a phone the card covered Film's motion sheet ("Phone tilt"). Parked, it sits under
+       every sheet, menu and window (chrome level); in Film it would sit under the viewfinder's stick and record
+       button instead, so it stands down there — the bell keeps it */
+    :global(html.film-mode) .toasts-parked {
+        display: none;
+    }
     /* the stack owns the top offset now; the containers just flow inside it */
     .toasts-critical:empty,
     .toasts-regular:empty {

@@ -10,10 +10,10 @@
 ### 📱 Phones and tablets
 - **Android Back closes what is on top**: a menu, a dialog, a window or the bottom panel closes with the Back button or gesture, one at a time, instead of leaving the app. Play mode and shared play links keep their own Back. <!-- phone-polish 1 -->
 - **The keyboard no longer covers Save**: dialogs with a text field (Layouts, Report a problem, the command palette and others) move up above the on-screen keyboard, and on a touch screen they no longer pop the keyboard open by themselves. <!-- phone-polish 2 -->
-- **Bigger buttons on touch screens**: on a phone or tablet, buttons, tabs, menu rows and window controls are 40-44 px and the panel tab strips are taller. **Settings ▸ Interface ▸ Touch size** switches it: Auto (touch screens), Large or Standard. <!-- phone-polish 3 -->
+- **Easier to hit on touch screens, same look**: small buttons, tabs and menu rows answer a tap up to about 44 px around them, without growing on screen and never taking a tap meant for the control next door. Want everything bigger? **Settings ▸ Accessibility ▸ Interface scale** grows the whole interface, panel tab strips and menus included. <!-- phone-polish 3 -->
 - **Tablets**: with the Properties column pinned full height, the toolbar moves over and centres in the space beside it instead of hiding under it. <!-- phone-polish 4 -->
 - **Long menus scroll**: the profile menu (and every other long menu) stays on screen in landscape and scrolls with a finger or the wheel. <!-- phone-polish 6 -->
-- Smaller ones: the animation player's controls wrap in landscape; the context-menu filter is a 44 px field; the logo menu has a **Command palette** row; the "lowered the scene look" card sits lower on touch screens so it does not cover the panels at the top. <!-- phone-polish 5 -->
+- Smaller ones: the animation player's controls wrap in landscape; the logo menu has a **Command palette** row; the "lowered the scene look" card sits at the bottom on touch screens so it does not cover the panels at the top; the **Towers** start screen has a touch line. <!-- phone-polish 5 -->
 
 ## 1.62.0 — Sign in from another device 🔑
 

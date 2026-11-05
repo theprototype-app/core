@@ -247,8 +247,10 @@ const TOWERS_DEF = {
 						{ id: 'subtitle', kind: 'text', anchor: 'center', x: 0, y: -154, w: 580, h: 44, z: 1, label: 'Carry pieces from the racks to the glowing zone and build up to the gold ring. You can only grab what is close to you, so build steps and jump to reach higher. The tower must hold still for three seconds.', style: { size: 13, color: '#d8dee9', align: 'center' }, wrap: true },
 						{ id: 'menu-line', kind: 'text', anchor: 'center', x: 0, y: -110, w: 420, h: 22, z: 1, label: '', style: { size: 14, weight: '600', color: '#9ee6ff', align: 'center' } },
 						...Array.from({ length: 12 }, (_, k) => towersLevelCell(k + 1)).flat(),
-						{ id: 'menu-hint', kind: 'text', anchor: 'center', x: 0, y: 214, w: 600, h: 34, z: 1, label: 'Desktop: hold click to grab · wheel pushes/pulls · WASD walk · Space jumps · P pause', style: { size: 12, color: '#8b97a8', align: 'center' }, wrap: true },
-						{ id: 'menu-hint-vr', kind: 'text', anchor: 'center', x: 0, y: 244, w: 600, h: 34, z: 1, label: 'VR: grip grabs a piece · left stick walks · A jumps · Y switches to Edit', style: { size: 12, color: '#8b97a8', align: 'center' }, wrap: true }
+						{ id: 'menu-hint', kind: 'text', anchor: 'center', x: 0, y: 184, w: 600, h: 34, z: 1, label: 'Desktop: hold click to grab · wheel pushes/pulls · WASD walk · Space jumps · P pause', style: { size: 12, color: '#8b97a8', align: 'center' }, wrap: true },
+						{ id: 'menu-hint-vr', kind: 'text', anchor: 'center', x: 0, y: 214, w: 600, h: 34, z: 1, label: 'VR: grip grabs a piece · left stick walks · A jumps · Y switches to Edit', style: { size: 12, color: '#8b97a8', align: 'center' }, wrap: true },
+						// phone-polish: the touch row (a finger walks, looks and jumps; carrying is pointer/VR only — playInteract W4)
+						{ id: 'menu-hint-touch', kind: 'text', anchor: 'center', x: 0, y: 244, w: 600, h: 34, z: 1, label: 'Touch: left thumb walks · drag on the right to look · the Jump button jumps · carrying pieces needs a mouse or VR', style: { size: 12, color: '#8b97a8', align: 'center' }, wrap: true }
 					]
 				},
 				{

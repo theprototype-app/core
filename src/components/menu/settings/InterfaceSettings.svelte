@@ -86,6 +86,7 @@
 	import { perfReportsOn, perfReportsAvailable } from '$lib/perf/beacon';
 	import { viewPrefs, setViewPrefs } from '$lib/viewPrefs';
 	import { uiDensity, DENSITIES } from '$lib/uiDensity';
+	import { touchSize, TOUCH_SIZES, normalizeTouchSize } from '$lib/touchDensity.js'; // phone-polish item 3
 	import { projectActions, PROJECT_ACTIONS } from '$lib/projectActions'; // 41b H14
 
 	const pct = (/** @type {number} */ v) => Math.round(v * 100) + '%';
@@ -127,6 +128,9 @@
 		</SettingRow>
 		<SettingRow id="row-density" label="Density" description="Compact tightens rows and controls to 32 px on a desktop screen.">
 			<Segmented id="density" label="Density" options={DENSITIES} value={$uiDensity} onchange={(v) => uiDensity.set(v)} />
+		</SettingRow>
+		<SettingRow id="row-touch-size" label="Touch size" description="Large makes buttons, tabs, fields and menu rows at least 40-44 px for a finger. Auto turns it on for touch screens." keywords="touch finger tap target big larger buttons phone tablet foldable density">
+			<Segmented id="touch-size" label="Touch size" options={TOUCH_SIZES} value={$touchSize} onchange={(v) => touchSize.set(normalizeTouchSize(v))} />
 		</SettingRow>
 		<SettingRow id="row-custom-theme" label="Custom theme" wide keywords="colours colors import export theme.json">
 			{#snippet desc()}Export the current theme as <code>.theme.json</code>, edit the colours, then load it back.{/snippet}

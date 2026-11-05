@@ -28,6 +28,7 @@ export const SETTINGS_ROWS = [
 	["Interface", "Your character", "Pick your character, head, hat, outfit colour and ping, with a live preview on yourself."],
 	["Interface", "Show everyone as classic heads", "On this device only: draws other people as the floating head instead of their animated character (lighter o…"],
 	["Interface", "Theme", "UI theme for THIS device (the 3D viewport follows the environment, not the theme)"],
+	["Interface", "Touch size", "Large makes buttons, tabs, fields and menu rows at least 40-44 px for a finger. Auto turns it on for touch screens."],
 	["Interface", "Custom theme", "Export the active theme as an editable .theme.json, tweak the colors, then Browse to load it back"],
 	["Interface", "Game sounds", "How loud a game's effects are on this device — coins, goals, hits, the clicks a game makes."],
 	["Interface", "Music", "The background music a game plays while you are in Interact or Play (it stops when you go back to editing)."],

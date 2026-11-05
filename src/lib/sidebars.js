@@ -3,6 +3,7 @@ import { safeStorage } from './safeStorage';
 import { inspectorClose, inspectorKind, closeMenu, connectDocked, connectBarHeight, setInspectorFocuser } from '../stores/appStore';
 import { onLayoutRestore } from './uiLayoutsCore';
 import { scaledPx, uiScale } from './uiScale'; // 53 A1: the default + minimum width follow the UI scale
+import { touchUi } from './touchDensity.js'; // phone-polish: Touch size makes the tab strip 40 px (a leaf)
 import { panelAway } from './windows/panelPlaces.js'; // 70 W2: a popped Inspector leaves its column
 
 // 42 I2/I3 — ONE SIDEBAR PER SCREEN SIDE (user decision 2026-10-14, roadmap 42).
@@ -38,6 +39,8 @@ import { panelAway } from './windows/panelPlaces.js'; // 70 W2: a popped Inspect
 export const SIDES = ['left', 'right'];
 /** the tab header's height, px */
 export const STRIP_H = 30;
+/** phone-polish item 3: the strip under Touch size — its tabs and buttons are 40 px targets */
+export const TOUCH_STRIP_H = 44;
 /** the column's top below the corner chrome (the old drawer's top-16) */
 const TOP_PX = 64; // 53 A1: design px — the live top is scaledPx(TOP_PX), the chrome row grows with the UI scale
 export const MIN_W = 250;
@@ -327,6 +330,8 @@ export function startSidebars() {
 		return covered;
 	});
 	geometry.subscribe(publish);
+	// phone-polish: the strip height follows Touch size — re-publish with the geometry we already have
+	touchUi.subscribe(() => publish(get(geometry)));
 	// the left inset is measured from the menu's DOM, which mounts after the store fires
 	closeMenu.subscribe(() => requestAnimationFrame(() => leftInsetTick.update((n) => n + 1)));
 	window.addEventListener('resize', () => {
@@ -412,7 +417,7 @@ export const geometry = derived(
 /** @param {any} g */
 function publish(g) {
 	const root = document.documentElement.style;
-	root.setProperty('--sb-strip-h', scaledPx(STRIP_H) + 'px'); // 53 A1: the strip's CSS is scaled too
+	root.setProperty('--sb-strip-h', scaledPx(get(touchUi) ? TOUCH_STRIP_H : STRIP_H) + 'px'); // 53 A1: the strip's CSS is scaled too
 	for (const side of SIDES) {
 		root.setProperty(`--sb-${side}-w`, g[side].w + 'px');
 		root.setProperty(`--sb-${side}-top`, g[side].top + 'px');

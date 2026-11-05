@@ -235,7 +235,7 @@
    class below, and the stacks — and the sim transport riding the right one — add the open dock's
    height to their bottom. Off, --hud-stack-lift is 0 and every number is what it was. */
 :root.hud-stacks-lifted {
-	--hud-stack-lift: var(--bottom-inset, 0px);
+	--hud-stack-lift: calc(var(--bottom-inset, 0px) + min(var(--bottom-inset, 0px), var(--dock-strip-extra, 0px)));
 }
 .hud-stack {
 	position: fixed;

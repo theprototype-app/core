@@ -1,0 +1,98 @@
+/* phone-polish item 3 — TOUCH SIZE ($lib/touchDensity.js sets <html data-touch-ui>: Settings ▸ Interface
+   ▸ Touch size, Auto = on for a coarse pointer; `?density=touch|compact` flips it on this device).
+
+   The HONOR touch audit measured most chrome at 20-32 px against a 44 px touch guideline, because the
+   44 px tokens (tokens.css) switch on only UNDER 640 px — an unfolded foldable (718 px) or a tablet got the
+   mouse-sized chrome. Everything here only GROWS a control (min-* or the token the component already
+   reads), so a layout that already fits a finger is unchanged.
+
+   UNLAYERED on purpose (like windows.css): it must beat the components' own sizes, and every rule is
+   behind the attribute, so the desktop is byte-identical. The node graph (.svelte-flow) and the
+   canvases keep their own metrics — their handles are drawn, not tapped as buttons. */
+
+/* ---- 1. the tokens: the phone values, for every touch screen ---- */
+:root[data-touch-ui] {
+	--fs-input: 1rem; /* 16px: no zoom-on-focus, and a field a thumb can read */
+	--control-h: 44px;
+	--control-h-sm: 40px;
+	--icon-button: 40px;
+	--toggle-w: 51px;
+	--toggle-h: 31px;
+	--row-h: 44px;
+	--setting-row-pad-y: 14px;
+	--nav-row-h: 52px;
+}
+
+/* ---- 2. window chrome (every window, panel and modal header) ---- */
+:root[data-touch-ui] .wc .wc-head {
+	min-height: 48px;
+}
+:root[data-touch-ui] .wc .wc-btn,
+:root[data-touch-ui] .wc .wc-back {
+	min-width: 40px;
+	min-height: 40px;
+}
+
+/* ---- 3. the bottom dock's strip: 24 → 40 px, its tabs and buttons 38 px ---- */
+:root[data-touch-ui] .tp-dtabs.tp-dtabs-slim {
+	height: 40px;
+}
+:root[data-touch-ui] .tp-dtabs-slim .tp-dtab {
+	height: 38px;
+	padding: 0 12px;
+	font-size: var(--fs-desc);
+}
+:root[data-touch-ui] .tp-dtabs-slim .tp-dtab.tp-dtab-icon {
+	width: 40px;
+}
+:root[data-touch-ui] .tp-dtabs-slim .tp-dtab-x {
+	width: 34px;
+	height: 38px;
+}
+/* the strip rides ABOVE the dock's top edge (DockTabs' -top-6 = the 24 px slot): lift it by its new height */
+:root[data-touch-ui] .dt-row,
+:root[data-touch-ui] .dt-chrome {
+	top: -40px;
+}
+/* …and what floats above the dock (the Controls bar, lifted corner stacks) rises by the same 16 px.
+   Controls / hud.css add it as min(--bottom-inset, this): nothing while no dock is up */
+:root[data-touch-ui] {
+	--dock-strip-extra: 16px;
+}
+/* the floating-window group strip and the kit tabs */
+:root[data-touch-ui] .tp-dtabs:not(.tp-dtabs-slim) {
+	height: 44px;
+}
+:root[data-touch-ui] .tp-dtabs:not(.tp-dtabs-slim) .tp-dtab {
+	height: 38px;
+}
+:root[data-touch-ui] .tp-dtab.tp-dtab-icon {
+	min-width: 38px;
+}
+:root[data-touch-ui] .tp-dtab-x {
+	width: 34px;
+	height: 38px;
+}
+
+/* ---- 4. fields, buttons and tabs in the app's chrome (not inside the node graph) ---- */
+:root[data-touch-ui]
+	:is(.tp-ui, .ui-panel, #sidebar70, #inspector, #avatar-dropdown, #peers-popover, .md)
+	:is(input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file'], [type='hidden']), select):not(.svelte-flow *) {
+	min-height: 40px;
+}
+:root[data-touch-ui] :is(.tp-ui, .ui-panel, #sidebar70, #inspector, #avatar-dropdown, #peers-popover, .md) :is(button, [role='tab'], [role='menuitem'], [role='option']):not(.svelte-flow *):not(.tp-dtab-x):not([aria-hidden='true']) {
+	min-height: 40px;
+}
+/* an icon-only button (no text of its own) is a square target */
+:root[data-touch-ui] :is(.tp-ui, .ui-panel, #sidebar70, #inspector) button[aria-label]:not(.svelte-flow *) {
+	min-width: 40px;
+}
+:root[data-touch-ui] :is(.tp-ui, .ui-panel) :is([role='checkbox'], [role='switch']):not(.svelte-flow *) {
+	min-height: 32px;
+}
+
+/* ---- 5. menus: 44 px rows, the filter field a full row ---- */
+:root[data-touch-ui] .tp-menu [role='menuitem'],
+:root[data-touch-ui] .tp-menu .menu-item {
+	min-height: 44px;
+}

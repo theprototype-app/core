@@ -5931,7 +5931,7 @@
 						{
 							"kind": "segment",
 							"id": "hdri-quality-max",
-							"label": "Max (4K)",
+							"label": "Max (up to 8K)",
 							"where": "control",
 							"default": false,
 							"disabled": false,

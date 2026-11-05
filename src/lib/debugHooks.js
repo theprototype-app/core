@@ -465,6 +465,8 @@ export const DEBUG_HOOKS = [
 	['touchActions', () => import('./touchActions')],
 	['touchSpec', () => import('./touchSpec')],
 	['playMode', () => import('./playMode')],
+	['backStack', () => import('./backStack.js')], // phone-polish: Android Back closes the top surface
+	['hitSlop', () => import('./ui/hitSlop.js')], // phone-polish: invisible tap areas (A/B: setHitSlopEnabled)
 	['arTable', () => import('./arTable')],
 	// 60 Q1: Play here
 	['playHere', () => import('./playHere')],

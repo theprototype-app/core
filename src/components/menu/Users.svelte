@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { backClose } from '$lib/backStack.js'; // phone-polish: Android Back closes it
 	import { cameraPreviews, joinPeerPreview, previewLabel } from '$lib/cameraPreview';
 	import Icon from '../ui/Icon.svelte';
 	import { roving } from '$lib/keyboardNav'; // 53 A3: the top-right group is one tab stop
@@ -754,6 +755,21 @@
 		// still the CIRCLE's right edge, read from its rect (never floating-ui's drifting maths, the mobile-
 		// viewport trap below), so the notch's circle sits exactly over the trigger wherever it is.
 		dropdownEl.style.setProperty('--pm-right', `${Math.max(0, Math.round(window.innerWidth - r.right))}px`);
+		// phone-polish item 6: the menu grew tall (account, sign-in methods, community, sponsor …) and on a
+		// short screen — a phone in landscape, a browser with its bars showing — it ran off the bottom with no
+		// way to reach its last rows. It stops at the visible bottom and SCROLLS (wheel and a finger's drag);
+		// `overscroll-behavior` keeps the drag from scrolling or zooming the page behind it. The visible top is
+		// the rect's top: the -50 px margin seats the notch over the trigger. The phone sheet (phone.css) owns
+		// its own height.
+		// The cap is a CSS variable read by the rule below, not an inline overflow: the inline `overflow-y` was dropped
+		// again after placement (measured: max-height stayed, overflow-y vanished), leaving a clipped menu.
+		if ($phoneShellActive) {
+			dropdownEl.style.removeProperty('--pm-max-h');
+			return;
+		}
+		const visTop = dropdownEl.getBoundingClientRect().top;
+		const vh = window.visualViewport?.height ?? window.innerHeight;
+		dropdownEl.style.setProperty('--pm-max-h', `${Math.max(160, Math.round(vh - Math.max(0, visTop) - 8))}px`);
 	}
 	/** fix-batch-1 #23: the trigger's keys — Enter / Space toggle, ↓ opens; opening moves focus in */
 	function triggerKey(e: KeyboardEvent) {
@@ -1392,6 +1408,7 @@
 	{#if openDropdown}
 		<div
 			id="avatar-dropdown"
+			use:backClose={() => (openDropdown = false)}
 			popover={$phoneShellActive ? undefined : 'manual'}
 			role="tooltip"
 			{@attach dropdownAttach}
@@ -1612,6 +1629,13 @@
 	   right: 0 chrome), so pin it and let floating-ui keep only the vertical placement.
 	   !important beats floating-ui's non-important inline `left`; :global because the
 	   panel is rendered by a child component (no scope class). */
+	/* phone-polish item 6: never past the visible bottom; scrolls by wheel and finger (the phone sheet, phone.css,
+	   owns its own height and scroll) */
+	:global(:root:not(.phone-shell) #avatar-dropdown) {
+		max-height: var(--pm-max-h, none);
+		overflow-y: auto;
+		overscroll-behavior: contain;
+	}
 	:global(#avatar-dropdown) {
 		left: auto !important;
 		/* 45 N4: the circle's CURRENT right edge (placeDropdown measures it); 20 px = the corner's own inset */

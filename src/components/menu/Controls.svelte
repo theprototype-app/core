@@ -3296,6 +3296,10 @@
 			if (sb.left.shown && (sb.left.full || editing)) left = Math.max(left, sb.leftX + sb.left.w + EDGE_MARGIN);
 			if (sb.right.shown && (sb.right.full || editing)) right = Math.min(right, vw - sb.right.w - EDGE_MARGIN);
 		}
+		// phone-polish item 4: with a column PINNED the bar's home is the middle of the width that is
+		// left, not of the screen — on a tablet the screen's middle sits against (or under) the column
+		const pinned = left !== EDGE_MARGIN || right !== vw - EDGE_MARGIN;
+		const home = pinned ? (left + right) / 2 : vw / 2;
 		// the bar's ROW is its bottom bar-height: a wrapped edit bar is taller, and reading its whole box
 		// would let a corner button ABOVE the row narrow the band it wraps into (and so on)
 		const rowH = cssPx(getComputedStyle(document.documentElement).getPropertyValue('--hud-bar-h')) || pill.height;
@@ -3330,7 +3334,7 @@
 		const min = left + half;
 		const max = right - half;
 		const ok = max - min >= 1;
-		const next = { min, max, mid: ok ? Math.max(min, Math.min(max, vw / 2)) : vw / 2, ok };
+		const next = { min, max, mid: ok ? Math.max(min, Math.min(max, home)) : home, ok };
 		// REASSIGNED, never mutated: `$derived` compares with ===. Guarded on the values
 		// so a ResizeObserver callback can never write its way into a second callback.
 		if (next.min !== track.min || next.max !== track.max || next.mid !== track.mid || next.ok !== track.ok)
@@ -3653,7 +3657,13 @@
 		barPlaced
 			? 'left: var(--cl-bar-x, 50%); top: var(--cl-bar-y, auto); bottom: auto; translate: none; touch-action: none;' + (movingBar ? ' cursor: grabbing;' : '')
 			:
-		($floatingToolbar ? 'bottom: calc(var(--bottom-inset, 0px) + 16px);' : 'bottom: 16px;') +
+		// phone-polish: with a dock up the bar clears the dock's tab strip (DockTabs' -top-6 = 1.5rem above the dock's
+		// edge) by 4 px — at 16 px it covered the strip's own buttons (1 at 100 %, 6 at 130 % interface scale, measured
+		// on the unfolded phone). Inline px is not rewritten by a11y-css, so the 16 / 4 px scale by --ui-scale here.
+		// No dock (inset 0): max() picks the 16 px floor, as before.
+		($floatingToolbar
+			? 'bottom: calc(var(--bottom-inset, 0px) + max(16px * var(--ui-scale, 1), min(var(--bottom-inset, 0px), 1.5rem + 4px * var(--ui-scale, 1))));'
+			: 'bottom: 16px;') +
 			(editCentre != null
 				? ` left: ${Math.round(editCentre)}px; max-width: ${Math.max(0, Math.floor(editPlace!.right - editPlace!.left))}px;`
 				: track.mid > 0

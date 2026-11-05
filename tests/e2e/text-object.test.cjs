@@ -177,6 +177,49 @@ h.run(async () => {
 	await until(A.page, uuid, solidBuilt, '§5 undo again: the text is back for the rest of the suite');
 	await until(B.page, uuid, solidBuilt, '§5 ...on B too');
 
+	// fix-bake (the 1.61.0 production red): Bake → Undo → Redo within about a second, five times, the gap
+	// between the undo and the redo growing from none to a second. The writer's redo is the one that raced
+	// (it kept its text while B baked); both peers must end as the mesh, and STAY it.
+	const loopRed = [];
+	for (const [i, gap] of [0, 60, 250, 600, 1000].entries()) {
+		const n = i + 1;
+		await until(A.page, uuid, solidBuilt, `§5 loop ${n}: the solid text is built on A`);
+		await until(B.page, uuid, solidBuilt, `§5 loop ${n}: ...and on B`);
+		const ran = await A.page.evaluate(
+			async ([u, ms]) => {
+				// solidBuilt reads the runtime record; an autosave export parks the solid geometry across its
+				// async encode, and Bake then refuses ("still being built — try again"). Try again, as a user would.
+				let out = await window.__stores.textPathEdit.bakeTextToMesh(u);
+				for (let t = 0; !out.ok && /still being built/.test(out.error) && t < 40; t++) {
+					await new Promise((r) => setTimeout(r, 250));
+					out = await window.__stores.textPathEdit.bakeTextToMesh(u);
+				}
+				if (!out.ok) return out;
+				window.__stores.history.undo();
+				if (ms) await new Promise((r) => setTimeout(r, ms));
+				window.__stores.history.redo();
+				return out;
+			},
+			[uuid, gap]
+		);
+		if (!ran.ok) {
+			// no bake, no undo/redo ran: undoing here would pop an unrelated entry and break every later loop
+			loopRed.push(`${n}: bake refused (${ran.error})`);
+			continue;
+		}
+		await h.eventually(() => carrier(A.page, uuid), (c) => !!c && !c.text && c.verts === tri * 3, `§5 loop ${n} (gap ${gap} ms): the redo bakes A`, 20000);
+		await h.eventually(() => carrier(B.page, uuid), (c) => !!c && !c.text && c.verts === tri * 3, `§5 loop ${n} (gap ${gap} ms): ...and B`, 20000);
+		// past an autosave export (it parks the solid geometry while it runs) and a late runtime build
+		await A.page.waitForTimeout(1500);
+		const [lateA, lateB] = [await carrier(A.page, uuid), await carrier(B.page, uuid)];
+		if (lateA?.text || lateB?.text || lateA?.verts !== tri * 3 || lateB?.verts !== tri * 3)
+			loopRed.push(`${n} (gap ${gap}): A ${JSON.stringify(lateA)} B ${JSON.stringify(lateB)}`);
+		await undo(A.page);
+	}
+	h.check(loopRed.length === 0, `§5 Bake → Undo → Redo x5 ends baked on BOTH peers and stays baked${loopRed.length ? ': ' + loopRed.join('; ') : ''}`);
+	await until(A.page, uuid, solidBuilt, '§5 after the loop: the text is back on A');
+	await until(B.page, uuid, solidBuilt, '§5 ...and on B');
+
 	// ---- §6 the cap ---------------------------------------------------------------------------
 	const refused = await A.page.evaluate((u) => {
 		window.__tpTextProfile = 'low';

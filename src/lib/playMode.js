@@ -17,6 +17,8 @@ import { playEntry } from './play/playEntry.js';
 import { safeStorage } from './safeStorage';
 // 50 R1: a LEAF (svelte/store only) — the AR table's session is not a Play press
 import { arTableActive } from './arTableState.js';
+// phone-polish: the editor's Back stack steps aside while play owns Back (W4 below)
+import { suspendBack } from './backStack.js';
 
 // THE PLAY STATE MACHINE, lifted out of Controls.svelte so the play FAB, the FAB's
 // right-click mode menu and (next) a keyboard shortcut all press the same button.
@@ -458,6 +460,12 @@ if (typeof window !== 'undefined') {
 		exitPlay();
 	});
 
+	// phone-polish: Back closes the top editor surface (backStack.js) EXCEPT while playing and on
+	// player-only pages, where W4 keeps today's behaviour. Suspended from the first `true`
+	// until the exit has settled (`null`), so the transient `false` never re-pushes a marker
+	// under play's own back() still on its way.
+	embedMode.subscribe((on) => suspendBack('player', !!on));
+	isLocked.subscribe((v) => suspendBack('play', v === true || v === false));
 	isLocked.subscribe((v) => {
 		// W4: the marker follows the state, not the button, so every entry gets one and
 		// every exit spends one — Escape, the ✕, a HUD quit, a peer-driven stop. This

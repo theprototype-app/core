@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { backClose } from '$lib/backStack.js'; // phone-polish: Android Back closes the menu
 	import { createEventDispatcher, onDestroy } from 'svelte';
 	import { rememberFocus } from '$lib/keyboardNav';
 	import ContextMenuItems from './ContextMenuItems.svelte';
@@ -474,6 +475,7 @@
 	bind:this={menuEl}
 	use:portal
 	use:place
+	use:backClose={() => dispatch('close')}
 	use:minimalScroll
 	class="ctx-scroll tp-ui tp-menu fixed min-w-36 overflow-y-auto overflow-x-hidden"
 	style="left: 0; top: 0; z-index: calc(var(--z-portal) + 1);"

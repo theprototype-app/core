@@ -5,6 +5,28 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## Unreleased
+
+### 📱 Phones and tablets
+- **Android Back closes what is on top**: a menu, a dialog, a window or the bottom panel closes with the Back button or gesture, one at a time, instead of leaving the app. Play mode and shared play links keep their own Back. <!-- phone-polish 1 -->
+- **The keyboard no longer covers Save**: dialogs with a text field (Layouts, Report a problem, the command palette and others) move up above the on-screen keyboard, and on a touch screen they no longer pop the keyboard open by themselves. <!-- phone-polish 2 -->
+- **Easier to hit on touch screens, same look**: small buttons, tabs and menu rows answer a tap up to about 44 px around them, without growing on screen and never taking a tap meant for the control next door. Want everything bigger? **Settings ▸ Accessibility ▸ Interface scale** grows the whole interface, panel tab strips and menus included. <!-- phone-polish 3 -->
+- **Tablets**: with the Properties column pinned full height, the toolbar moves over and centres in the space beside it instead of hiding under it. <!-- phone-polish 4 -->
+- **Long menus scroll**: the profile menu (and every other long menu) stays on screen in landscape and scrolls with a finger or the wheel. <!-- phone-polish 6 -->
+- Smaller ones: the animation player's controls wrap in landscape; the logo menu has a **Command palette** row; the "lowered the scene look" card sits at the bottom on touch screens so it does not cover the panels at the top; the **Towers** start screen has a touch line. <!-- phone-polish 5 -->
+
+## 1.62.0 — Sign in from another device 🔑
+
+### 🔑 Sign in from another device (on theprototype.app)
+- **No typing passwords on a headset**: a device that is not signed in shows a short code (and a QR code behind a small icon). Open **theprototype.app/link** on a phone or computer where you are signed in, check which device is asking, and approve it. Works in every direction: Quest from a PC or phone, a PC from a phone, one browser from another. <!-- 88 L1-L4 -->
+- **Approve only a device you are holding**: the approve sheet says which device, browser and system is asking and how long ago; a device it cannot recognise needs a second tap. <!-- 88 L3 L9 -->
+- **Borrowed browsers stay short**: a sign-in made with a code lasts at most 24 hours, unless you tick **Trust this device** on it. <!-- 88 L8 -->
+- **Account ▸ Devices** lists every device signed in to your account (how it signed in, when it was last used), with **Sign out** per device and **Sign out all other devices**. Signing out now also ends that device's session on the server. <!-- 88 L7 -->
+- Five wrong codes pause approving for 15 minutes. Codes, secrets and sign-ins are never written to any log. <!-- 88 L4 L5 -->
+
+### 🔧 Fixes
+- **Bake to mesh, Undo, Redo in quick succession** now bakes the text on your own screen too: it could stay a text for you while everyone else in the session saw the mesh. <!-- fix-bake (1.61 Q1) -->
+
 ## 1.61.0 — Write in 3D ✍️
 
 ### ✍️ 3D text

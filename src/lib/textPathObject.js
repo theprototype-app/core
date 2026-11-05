@@ -74,3 +74,21 @@ export function applyTextPathTo(object, raw) {
 	object.userData.textPath = rec;
 	return rec;
 }
+
+// fix-bake (the 1.61.0 production red): a text's TURN — a per-uuid count of the STATES its record
+// has been given (an edit, an undo/redo step, a remote message, a bake). A bake that has to wait (its
+// own build, a module import) is cancelled by a newer TURN, never by the record merely being
+// reassigned: the 1.61 guard compared the record's IDENTITY, so any write of the same record in that
+// window (or the object being replaced under its uuid) left the writer's text standing after a fast
+// Bake → Undo → Redo while every peer baked. Bumped synchronously by each writer that means "a newer
+// state" (textPathEdit, the history applier, the remote applier); applyTextPathTo itself does not bump.
+/** @type {Map<string, number>} */
+const textTurns = new Map();
+/** a newer state of this text's record @param {string} uuid @returns {number} the new turn */
+export function bumpTextTurn(uuid) {
+	const n = (textTurns.get(uuid) ?? 0) + 1;
+	textTurns.set(uuid, n);
+	return n;
+}
+/** @param {string} uuid @returns {number} */
+export const textTurn = (uuid) => textTurns.get(uuid) ?? 0;

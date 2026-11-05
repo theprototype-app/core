@@ -59,6 +59,10 @@ h.run(async () => {
 		await surface(page, tag('main menu'), () => set(page, 'closeMenu', false), '#sidebar70');
 		await surface(page, tag('Explorer'), () => openExplorer(page), '#explorer-list');
 		await surface(page, tag('Chat (mounted while hidden)'), () => set(page, 'chatHidden', ''), '#chat-window');
+		// the Connect drawer is not a window (HONOR audit: Back left the app with it open)
+		// (the folded phone shell has no drawer: its connect chip opens a sheet)
+		if (!(await page.evaluate(() => document.documentElement.classList.contains('phone-shell'))))
+			await surface(page, tag('Connect drawer'), () => set(page, 'connectDrawerOpen', true), '[data-testid=connect-info-drawer] .cxd-body');
 
 		// a context menu, opened by a tap the way a thumb does
 		const addBtn = (await visible(page, '#mobile-add-button')) ? '#mobile-add-button' : null;

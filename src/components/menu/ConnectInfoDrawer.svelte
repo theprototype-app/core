@@ -31,9 +31,17 @@
 	// 44 M14: the pill pinned to the top row or floating — this shell's answer ($lib/connectPin)
 	import { connectPinned, setConnectPinned } from '$lib/connectPin';
 	import { phoneShellActive } from '$lib/ui/phoneShell.js';
+	import { registerBack } from '$lib/backStack.js'; // phone-polish: Android Back closes the open drawer
 
 	/** @type {{ onClose?: () => void }} */
 	const { onClose = () => {} } = $props();
+
+	// phone-polish (HONOR audit): Back left the app with the drawer open — the drawer is not a window, so it
+	// registers itself while its body is open (a pinned, collapsed tab bar is chrome, not a surface)
+	$effect(() => {
+		if (!$connectDrawerOpen) return;
+		return registerBack(() => connectDrawerOpen.set(false), 'connect-drawer');
+	});
 
 	// pin: keep the tab bar (+ status) visible when the body is collapsed
 	const togglePin = () => connectDrawerPinned.update((v) => !v);

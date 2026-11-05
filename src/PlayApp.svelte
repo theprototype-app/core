@@ -27,6 +27,7 @@
   import NoWebGLScreen from './components/NoWebGLScreen.svelte';
   import RenderPausedOverlay from './components/RenderPausedOverlay.svelte';
   import EmbedChrome from './components/play/EmbedChrome.svelte';
+  import XrButtons from './components/play/XrButtons.svelte';
   import MadeWithBadge from './components/play/MadeWithBadge.svelte';
   import PlayReticle from './components/play/PlayReticle.svelte';
   import PlayBanner from './components/play/PlayBanner.svelte';
@@ -160,6 +161,7 @@
 </script>
 
 <EmbedChrome />
+<XrButtons />
 <MadeWithBadge />
 <ConfirmModal />
 <ContextLostOverlay />

@@ -12,7 +12,7 @@
 	// phase (the AnnotationPins / AnnotationMarkers split).
 	import { onMount } from 'svelte';
 	// 94 SP6: the top-anchored game HUD moves below the play chrome row when they would overlap
-	import { bottomFootprint, hudBottomLift, hudTopShift, playChromeRects, topFootprint } from '$lib/play/hudSafeArea.js';
+	import { bottomFootprint, hudBottomLift, hudCenterFit, hudTopShift, playChromeRects, topFootprint } from '$lib/play/hudSafeArea.js';
 	import HudElement from './HudElement.svelte';
 	import { hudDocs, hudRuntime, hudScreenOverride, hudPreviewInViewport, hudIsGame, visibleScreen, activeHudKeys, setHudValue, hudValueOf } from '$lib/hudDocs';
 	import { isVRMode, isLocked, playPointerFree } from '../../stores/sceneStore';
@@ -136,10 +136,12 @@
 	// changes as chips come and go, and a 500 ms check costs a few rect reads.
 	let topShift = $state(0);
 	let bottomLift = $state(0);
+	let centerFit = $state(1);
 	$effect(() => {
 		if (!shown) {
 			topShift = 0;
 			bottomLift = 0;
+			centerFit = 1;
 			return;
 		}
 		const list = elements;
@@ -157,6 +159,8 @@
 				if (b) bottoms.push(b);
 			}
 			const chrome = playChromeRects();
+			// fix-play-link: a centred menu wider/taller than this screen shrinks to fit (folded N6)
+			centerFit = hudCenterFit(list, vw, vh, (el) => (textScaled(el.kind) ? scale : 1));
 			topShift = hudTopShift(tops, chrome, vh);
 			bottomLift = hudBottomLift(bottoms, chrome, vh);
 		};
@@ -394,10 +398,10 @@
 		// 94 SP6: below the play chrome row when they would overlap, and never under a notch
 		if (v === 'top') out.push(`top: calc(${el.y}px + var(--hud-top-shift, 0px))`);
 		else if (v === 'bottom') out.push(`bottom: calc(${el.y}px + var(--hud-bottom-lift, 0px))`);
-		else out.push('top: 50%', `--hud-ty: ${el.y}px`);
+		else out.push('top: 50%', `--hud-ty: ${el.y * fitOf(el)}px`);
 		if (h === 'left') out.push(`left: ${el.x}px`);
 		else if (h === 'right') out.push(`right: ${el.x}px`);
-		else out.push('left: 50%', `--hud-tx: ${el.x}px`);
+		else out.push('left: 50%', `--hud-tx: ${el.x * fitOf(el)}px`);
 		return out.join('; ');
 	}
 	const textScale = $derived(shown ? hudTextScale($accessValues.hudText) : 1);
@@ -413,7 +417,12 @@
 		const cx = h === 'center';
 		const cy = v === 'middle';
 		if (!cx && !cy) return '';
-		return `transform: translate(${cx ? 'calc(-50% + var(--hud-tx, 0px))' : '0'}, ${cy ? 'calc(-50% + var(--hud-ty, 0px))' : '0'})`;
+		const k = fitOf(el);
+		return `transform: translate(${cx ? 'calc(-50% + var(--hud-tx, 0px))' : '0'}, ${cy ? 'calc(-50% + var(--hud-ty, 0px))' : '0'})${k < 1 ? ` scale(${k})` : ''}`;
+	}
+	/** fix-play-link: the fit scale of a CENTRE-anchored element (1 for every other anchor) @param {any} el */
+	function fitOf(el) {
+		return (el.anchor ?? 'top-left') === 'center' ? centerFit : 1;
 	}
 
 	/** 50 R1: while an AR table plays, the node lives in the AR overlay (the only DOM a phone's AR

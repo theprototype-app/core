@@ -540,11 +540,14 @@ export function makeCloudApi() {
 		 * LOCK only inside a user gesture; called from a boot deep link the mode still
 		 * holds (a refused lock never exits play) and the pointer locks on the player's
 		 * first click. Returns false only before the seam is primed (never after boot).
+		 * fix-play-link: it is an AUTOPLAY (no gesture) and goes through `autoPlay` — flat on a
+		 * screen, and none at all on an XR-capable device, where the start card's Enter VR must stay
+		 * reachable (the only caller is the `play=1` deep link).
 		 * @returns {boolean}
 		 */
 		startPlay: () => {
 			if (!playModeLib) return false;
-			playModeLib.requestPlay();
+			void playModeLib.autoPlay();
 			return true;
 		},
 		/** A4: leave play mode — the canonical exit (Escape / the touch ✕ / a HUD quit).

@@ -7,7 +7,7 @@
     import { userdata, peers } from '../../stores/appStore'
     import { dungeonData, slideMove, spawnPointFor } from '$lib/dungeonPlay'
     import { resolvePlaySettings } from '$lib/playSettings'
-    import { spawnDesktopPlayer } from '$lib/playSpawn'
+    import { spawnDesktopPlayer, stepClearOfAvatars } from '$lib/playSpawn'
     // 30 P3: free-cursor games never take the pointer — the real cursor aims
     import { playCursorFree } from '$lib/playCursor'
     // 31 K3: in a game, Escape (and any lock loss) opens the pause menu instead of leaving play
@@ -203,6 +203,7 @@
         untrack(() => {
           // 30b P4: a game's own spawn (the scene's play.spawn, or a module's api.setSpawn)
           // wins; the dungeon's per-peer rooms below are what a scene without one gets
+          // (fix-play-link: the spawn itself lands clear of other players' avatars)
           if (spawnDesktopPlayer()) return
           const data = dungeonData($globalScene)
           // resolve the rig ONCE and mutate the object: `$cameraParent.position.x = v`
@@ -219,6 +220,9 @@
               rig.position.z = spawn.z
             }
           }
+          // fix-play-link: no spawn (a dungeon room, the saved camera): step clear of a player
+          // already standing there — a joiner started inside the host's avatar head
+          stepClearOfAvatars()
         })
       } else {
         // left play (or the transient on the way out) — nothing to keep asking for

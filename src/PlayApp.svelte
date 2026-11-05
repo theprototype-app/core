@@ -10,6 +10,10 @@
   // RULE for this file: a STATIC import here is paid by every shared play link before its first
   // frame (perf/boot-budget.json holds it, `node scripts/boot-size.cjs --check`). Anything a game
   // only sometimes needs is an `import()` at the point of use.
+  // fix-play-link: the app's stylesheet (tokens, fonts, the shared kit). The play entry never loaded
+  // it, so every kit surface here — the modules ask, the confirm dialog, the start card's tokens —
+  // rendered in the browser's default serif with no colours (device lab, Quest 3 + folded N6)
+  import './app.css';
   import { safeStorage } from '$lib/safeStorage';
   import '$lib/threeFixes.js';
   import '$lib/troikaFonts.js';
@@ -23,6 +27,7 @@
   import NoWebGLScreen from './components/NoWebGLScreen.svelte';
   import RenderPausedOverlay from './components/RenderPausedOverlay.svelte';
   import EmbedChrome from './components/play/EmbedChrome.svelte';
+  import XrButtons from './components/play/XrButtons.svelte';
   import MadeWithBadge from './components/play/MadeWithBadge.svelte';
   import PlayReticle from './components/play/PlayReticle.svelte';
   import PlayBanner from './components/play/PlayBanner.svelte';
@@ -128,6 +133,10 @@
     startSceneAssets();
     startNetworkQuality();
     startAudioDevices();
+    // fix-play-link: the modules this player installed come back at boot, as in the editor — the
+    // play entry never restored them, so "This scene uses modules" asked on every visit. Before the
+    // plugin, whose `?s=` load runs the ask (and the ask waits for this restore)
+    import('$lib/userModules').then((m) => m.loadUserModules());
     startCloudPlugin();
     startTrackpadNav();
     startInviteLinks();
@@ -152,6 +161,7 @@
 </script>
 
 <EmbedChrome />
+<XrButtons />
 <MadeWithBadge />
 <ConfirmModal />
 <ContextLostOverlay />

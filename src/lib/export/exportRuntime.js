@@ -15,7 +15,7 @@
 import { get } from 'svelte/store';
 import { exportConfig, pageUrl } from './exportBoot.js';
 import { objectsGroup, globalRenderer } from '../../stores/sceneStore';
-import { requestPlay } from '../playMode';
+import { autoPlay } from '../playMode';
 
 /** @type {{phase: string, error: string, modules: string[]}} for the suite (window.__stores.exportRuntime) */
 export const exportRuntimeState = { phase: 'idle', error: '', modules: [] };
@@ -92,7 +92,8 @@ export async function startExportRuntime() {
 		await applyGameDefaults(cfg);
 
 		exportRuntimeState.phase = 'play';
-		requestPlay({ flat: true });
+		// fix-play-link: flat on a screen; on an XR-capable device the start card (Enter VR) stays
+		await autoPlay();
 		exportRuntimeState.phase = 'playing';
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);

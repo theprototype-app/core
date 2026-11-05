@@ -7,7 +7,7 @@
     import { userdata, peers } from '../../stores/appStore'
     import { dungeonData, slideMove, spawnPointFor } from '$lib/dungeonPlay'
     import { resolvePlaySettings } from '$lib/playSettings'
-    import { spawnDesktopPlayer } from '$lib/playSpawn'
+    import { spawnDesktopPlayer, stepClearOfAvatars } from '$lib/playSpawn'
     // 30 P3: free-cursor games never take the pointer — the real cursor aims
     import { playCursorFree } from '$lib/playCursor'
     // 31 K3: in a game, Escape (and any lock loss) opens the pause menu instead of leaving play
@@ -201,9 +201,12 @@
         // in your seed-deterministic room (peers take consecutive rooms).
         // untracked: the effect must only depend on $isLocked.
         untrack(() => {
+          // fix-play-link: wherever play starts (spawn, dungeon room, the saved camera), step clear
+          // of a player already standing there — a joiner started inside the host's avatar head
+          const others = (($userdata ?? []) as any[]).map((u: any) => u[0]).filter((id: string) => id && id !== ($peers as any)?.peer?.id)
           // 30b P4: a game's own spawn (the scene's play.spawn, or a module's api.setSpawn)
           // wins; the dungeon's per-peer rooms below are what a scene without one gets
-          if (spawnDesktopPlayer()) return
+          if (spawnDesktopPlayer()) return void stepClearOfAvatars(others)
           const data = dungeonData($globalScene)
           // resolve the rig ONCE and mutate the object: `$cameraParent.position.x = v`
           // compiles to store_mutate -> cameraParent.set(), and useParent() is a
@@ -219,6 +222,7 @@
               rig.position.z = spawn.z
             }
           }
+          stepClearOfAvatars(others)
         })
       } else {
         // left play (or the transient on the way out) — nothing to keep asking for

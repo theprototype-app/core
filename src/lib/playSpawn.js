@@ -80,3 +80,67 @@ export function spawnDesktopPlayer(spawn = desktopSpawn()) {
 	cam.updateMatrixWorld(true);
 	return true;
 }
+
+/** fix-play-link: how far a joining eye keeps from another player's avatar root (its head) */
+export const AVATAR_CLEARANCE = 1.0;
+
+/**
+ * fix-play-link — WHERE AN EYE STANDS CLEAR OF THE OTHER PLAYERS. Pure. Everyone who presses Play
+ * lands on the same spawn (or the same saved camera), so a player joining a game already under way
+ * started INSIDE the first player's avatar head (folded N6; a flat beige view for 25 s on the
+ * HONOR). Returns `eye` itself when it is already clear; else the nearest spot on rings around it
+ * (1.2 m, 2.4 m, 3.6 m; eight bearings, the first one straight BEHIND the facing so the
+ * other player is in view) that is clear of every avatar; else `eye`.
+ * Heights are kept: a spawn's floor is the author's, the ring only moves sideways.
+ * @param {number[]} eye [x, y, z] @param {number[][]} others avatar roots [x, y, z]
+ * @param {number} [yaw] the facing (three's rotation.y; 0 faces -Z) @param {number} [clearance]
+ * @returns {number[]}
+ */
+export function clearOfAvatars(eye, others, yaw = 0, clearance = AVATAR_CLEARANCE) {
+	const clear = (/** @type {number[]} */ p) =>
+		others.every((o) => Math.hypot(o[0] - p[0], o[1] - p[1], o[2] - p[2]) >= clearance);
+	if (clear(eye)) return eye;
+	for (const radius of [1.2, 2.4, 3.6]) {
+		for (let i = 0; i < 8; i++) {
+			// i = 0 is behind the facing (+Z rotated by yaw), then alternately either side of it
+			const turn = (i % 2 ? 1 : -1) * Math.ceil(i / 2) * (Math.PI / 4);
+			const a = yaw + turn;
+			const spot = [eye[0] + Math.sin(a) * radius, eye[1], eye[2] + Math.cos(a) * radius];
+			if (clear(spot)) return spot;
+		}
+	}
+	return eye;
+}
+
+/**
+ * Step desktop Play's camera clear of the other players' avatars (see `clearOfAvatars`). The
+ * avatars are the scene's groups named by peer id (AvatarRig). Call after the spawn landed.
+ * @param {string[]} peerIds the OTHER players @returns {boolean} whether the camera moved
+ */
+export function stepClearOfAvatars(peerIds) {
+	/** @type {any} */
+	const cam = get(playerCam);
+	/** @type {any} */
+	const scene = get(globalScene);
+	if (!cam?.isObject3D || !scene || !peerIds.length) return false;
+	const others = [];
+	const v = new THREE.Vector3();
+	for (const id of peerIds) {
+		const rig = id && scene.getObjectByName(id);
+		if (!rig?.isObject3D || !rig.visible) continue;
+		rig.getWorldPosition(v);
+		if (v.y > 500) continue; // AvatarRig parks an avatar with no pose yet at y = 1000
+		others.push([v.x, v.y, v.z]);
+	}
+	if (!others.length) return false;
+	cam.updateWorldMatrix(true, false);
+	const eye = cam.getWorldPosition(new THREE.Vector3());
+	const yaw = new THREE.Euler().setFromQuaternion(cam.getWorldQuaternion(new THREE.Quaternion()), 'YXZ').y;
+	const spot = clearOfAvatars([eye.x, eye.y, eye.z], others, yaw);
+	if (spot[0] === eye.x && spot[2] === eye.z) return false;
+	const target = new THREE.Vector3(spot[0], spot[1], spot[2]);
+	if (cam.parent) cam.parent.worldToLocal(target);
+	cam.position.copy(target);
+	cam.updateMatrixWorld(true);
+	return true;
+}

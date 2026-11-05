@@ -287,7 +287,7 @@
 		use:tabbable={{ key: 'aiAssistant', title: 'AI assistant', openStore: aiAssistantHidden, isOpen: (v: string) => v === '', close: () => aiAssistantHidden.set('hidden') }}
 		class="ui-panel tp-ui tp-window flex w-[min(500px,90vw)] flex-col overflow-hidden {welcome ? '' : 'h-[440px]'}"
 		class:ai-fit={welcome}
-		style="z-index: var(--z-window)"
+		style="z-index: var(--z-window); max-height: calc(100dvh - var(--dw-top, 64px) - 12px)"
 		data-target={agentId ? 'agent' : 'provider'}
 		role="region"
 		aria-label="AI assistant"

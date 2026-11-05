@@ -205,6 +205,9 @@
 		/* Tailwind's preflight zeroes every margin; the UA centres a dialog with margin: auto */
 		margin: auto;
 		max-height: 88vh;
+		/* ui-audit-honor: 88vh is the URL-bar-HIDDEN viewport on Android Chrome (639px of a 587px view on the
+		   HONOR) — Templates/Save options opened 26px above the top with Close cut off. dvh = what you can see */
+		max-height: 88dvh;
 		padding: 0;
 		overflow: hidden;
 		color: var(--text);

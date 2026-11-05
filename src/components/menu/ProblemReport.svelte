@@ -178,6 +178,7 @@
 		z-index: var(--z-modal, 1100);
 		width: min(560px, calc(100vw - 32px));
 		max-height: calc(100vh - var(--connect-bottom, 0px) - 72px);
+		max-height: calc(100dvh - var(--connect-bottom, 0px) - 72px);
 		overflow-y: auto;
 		display: flex;
 		flex-direction: column;

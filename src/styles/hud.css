@@ -754,6 +754,7 @@
 :root.cl-bar-rotated #controls-pill.hud-editing .hud-bar-row {
 	flex-wrap: wrap;
 	max-height: calc(100vh - 96px);
+	max-height: calc(100dvh - 96px);
 	width: auto;
 }
 :root.cl-bar-rotated #controls-pill .hud-edit-hint {

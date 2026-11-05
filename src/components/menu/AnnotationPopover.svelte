@@ -772,6 +772,7 @@
 		top: auto;
 		width: 100%;
 		max-height: calc(100vh - var(--connect-bottom, 54px) - 56px);
+		max-height: calc(100dvh - var(--connect-bottom, 54px) - 56px);
 		border-radius: 0.75rem 0.75rem 0 0;
 	}
 	.note-card.note-sheet .note-body {

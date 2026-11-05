@@ -172,6 +172,7 @@
 		   dock when it pushes the viewport — so a toolbox parked low scrolls its body
 		   instead of hanging its status footer under the pill. */
 		max-height: calc(100vh - var(--dw-top, 24px) - 12px - var(--controls-inset, 0px) - var(--viewport-inset, 0px));
+		max-height: calc(100dvh - var(--dw-top, 24px) - 12px - var(--controls-inset, 0px) - var(--viewport-inset, 0px));
 		user-select: none;
 		font-size: 13px;
 		/* own the SURFACE from tokens: `ui-panel`'s background is compiled from
@@ -262,6 +263,7 @@
 			height: min(var(--tbx-sheet-h, 40vh), var(--ps-sheet-max, 100vh)) !important;
 			/* never rise above the Connect bar + the top-right chrome */
 			max-height: calc(100vh - var(--connect-bottom, 54px) - 56px) !important;
+			max-height: calc(100dvh - var(--connect-bottom, 54px) - 56px) !important;
 			border-radius: 0.75rem 0.75rem 0 0 !important;
 			/* The sheet's BACKGROUND runs to the very bottom, but its CONTENTS stop
 			   above the Controls HUD — the Inspector sheet's contract. The padding

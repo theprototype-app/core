@@ -11,7 +11,9 @@
 	import ThemedSelect from '../../ui/ThemedSelect.svelte';
 	import { environment, presetPayload, setEnvironment, editEnvSky } from '$lib/environment';
 	import { BUNDLED_HDRIS, bundledHdri } from '$lib/hdri/catalog.js';
-	import { hdriOf } from '$lib/hdri/hdriCore.js';
+	import { hdriOf, skyMaxLabelHere } from '$lib/hdri/hdriCore.js';
+	// fix-play-link (r1590-09): what Max loads on this device
+	const MAX_LABEL = skyMaxLabelHere();
 	import { hdriStatus } from '$lib/hdri/skyEnv.js';
 	import { explorerItems, addItemFromBytes } from '$lib/explorer';
 	import { showToast } from '../../../stores/appStore';
@@ -172,7 +174,7 @@
 						{ value: 'auto', name: 'Auto' },
 						{ value: 'standard', name: 'Standard (1K)' },
 						{ value: 'high', name: 'High (2K)' },
-						{ value: 'max', name: 'Max (4K)' }
+						{ value: 'max', name: MAX_LABEL }
 					]}
 					onchange={(/** @type {any} */ v) => edit({ quality: v })}
 				/>
@@ -188,7 +190,7 @@
 						items={[
 							{ value: 'standard', name: 'Standard (1K)' },
 							{ value: 'high', name: 'High (2K)' },
-							{ value: 'max', name: 'Max (4K)' }
+							{ value: 'max', name: MAX_LABEL }
 						]}
 						onchange={(/** @type {any} */ v) => edit({ minQuality: v })}
 					/>

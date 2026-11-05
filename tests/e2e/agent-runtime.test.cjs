@@ -192,7 +192,7 @@ h.run(async () => {
 		await h.eventually(() => onHost(A.page, junkId), (o) => !!o, '5. the junk box reached the host', 20000);
 		const ask = json(await call(B.client, 'undo_last', { restore: 'arena' }));
 		h.check(ask.needsConfirm === true && !!ask.confirmId, '5. with a person here, restore asks the host first: ' + short(ask));
-		const allow = A.page.locator('.tp-toast', { hasText: 'wants to change the whole scene' }).getByText('Allow', { exact: true });
+		const allow = A.page.locator('.tp-toast', { hasText: 'wants to go back to a checkpoint' }).getByText('Allow', { exact: true });
 		await allow.first().click({ timeout: 30000 });
 		const done = json(await call(B.client, 'undo_last', { restore: 'arena', confirmId: ask.confirmId, wait: 10 }));
 		h.check(!done.error, '5. allowed: restored in one call: ' + short(done));

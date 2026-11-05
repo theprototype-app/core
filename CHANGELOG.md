@@ -5,7 +5,7 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
-## Unreleased
+## 1.62.0 — Sign in from another device 🔑
 
 ### 🔑 Sign in from another device (on theprototype.app)
 - **No typing passwords on a headset**: a device that is not signed in shows a short code (and a QR code behind a small icon). Open **theprototype.app/link** on a phone or computer where you are signed in, check which device is asking, and approve it. Works in every direction: Quest from a PC or phone, a PC from a phone, one browser from another. <!-- 88 L1-L4 -->

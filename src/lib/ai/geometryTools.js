@@ -16,6 +16,7 @@
 //
 // faceEdit / splineTool are loaded on first use: both sit deep in the history import family, and
 // this module is part of the assistant's static graph (and of the catalog generator's SSR load).
+import { parentTarget } from './parentTarget.js';
 import { get } from 'svelte/store';
 import * as THREE from 'three';
 import { objectsGroup, pokeScene } from '../../stores/sceneStore.js';
@@ -42,13 +43,14 @@ import {
 	applySelect,
 	previewOf,
 	meshFromData,
+	vertexColorsLinear,
 	MESH_MAX_VERTICES,
 	MESH_MAX_FACES,
 	MESH_MAX_MATERIALS
 } from './meshSelectCore.js';
 
 /** the tool names this module answers */
-export const GEOMETRY_TOOL_NAMES = ['set_geometry', 'create_lathe', 'create_tube', 'extrude_shape', 'edit_mesh', 'create_mesh', 'create_shapes', 'update_mesh'];
+export const GEOMETRY_TOOL_NAMES = ['set_geometry', 'create_lathe', 'create_tube', 'extrude_shape', 'edit_mesh', 'create_mesh', 'create_shapes', 'update_mesh', 'duplicate'];
 
 /** how many objects one set_geometry call reshapes, and ops one edit_mesh call runs */
 const MAX_UPDATES = 100;
@@ -57,6 +59,9 @@ const TUBE_MAX_POINTS = 200;
 const TUBE_MAX_RADIUS = 50;
 
 /** types set_geometry may change a primitive INTO (Terrain is made, not converted) */
+/** diorama2: the smallest size (metres) any primitive takes from an agent — create_objects params and set_geometry alike */
+export const MIN_SIZE = 0.001;
+
 const TYPE_TARGETS = Object.keys(GEOMETRY_PARAMS).filter((t) => t !== 'Terrain');
 
 /** @param {number} n */
@@ -82,10 +87,11 @@ function broadcast(data) {
  * @returns {string | null} a warning when parentUuid names no group
  */
 function nestLocal(object, args, pose) {
-	if (!args.parentUuid) return null;
-	const parent = objectOf(String(args.parentUuid));
-	if (parent?.type !== 'Group') return 'parentUuid: no group with that uuid — made at the scene root';
-	moveObjectToGroup(object.uuid, parent.uuid);
+	const target = parentTarget(args.parentUuid);
+	if (!target) return null;
+	// diorama2: callers check parentTarget BEFORE making anything; a parent gone since then is still said
+	if ('error' in target) return target.error;
+	moveObjectToGroup(object.uuid, target.parent.uuid, { anyParent: true });
 	const before = { pos: object.position.toArray(), rot: [object.rotation.x, object.rotation.y, object.rotation.z], scale: object.scale.toArray() };
 	if (pose.position) object.position.fromArray(pose.position);
 	if (pose.rotation) object.rotation.set(pose.rotation[0], pose.rotation[1], pose.rotation[2]);
@@ -107,7 +113,7 @@ const HAND_EDITED =
 const colorOf = (v) => toHexColor(v) ?? (typeof v === 'string' && /^[a-z]{3,20}$/i.test(v.trim()) ? v.trim().toLowerCase() : null);
 
 /**
- * Check a param patch against a registry spec. Sizes are clamped to the Inspector's minimum and to
+ * Check a param patch against a registry spec. Sizes are clamped to MIN_SIZE (diorama2; the Inspector's minimum before) and to
  * 1 km (create_objects' cap — the Inspector's slider maximum is a UI range, not a limit), counts to
  * the spec's range (they are what costs triangles), words to the spec's options.
  * @param {string} gtype @param {any} raw an object {key: value}, or create_objects' positional array
@@ -146,7 +152,9 @@ export function cleanParamPatch(gtype, raw) {
 				errors.push('params.' + key + ': a number');
 				continue;
 			}
-			const lo = row.min ?? -1000;
+			// diorama2: ONE small minimum for every primitive's sizes (an Octahedron radius clamped to 0.1 while a
+			// Sphere took 0.006): a size the Inspector starts above 0 may go down to MIN_SIZE here
+			const lo = gtype !== 'Terrain' && row.kind === 'slider' && (row.min ?? 0) > 0 ? MIN_SIZE : (row.min ?? -1000);
 			const hi = row.kind === 'slider' ? Math.max(row.max ?? 1000, 1000) : (row.max ?? 1000);
 			let v = row.kind === 'int' ? Math.round(value) : value;
 			v = Math.min(Math.max(v, lo), hi);
@@ -177,6 +185,8 @@ async function setGeometryOne(u) {
 	if (!object) return { uuid, error: 'no object with that uuid' };
 	const lock = lockSkip(uuid, object);
 	if (lock) return { uuid, skipped: lock };
+	// 64-text TX7: a text's shape IS its record (words, font, depth, bevel …) — textTools edits it
+	if (object.userData?.textPath) return await (await import('./textTools.js')).setTextOne(uuid, u.params);
 	if (!object.geometry || !object.isMesh) return { uuid, error: 'not a mesh — set_geometry reshapes primitives, lathes, tubes and extrusions' };
 	// a spline tube: its record is the shape (57.1), edited through the spline path
 	if (object.userData?.spline?.points?.length) return await setSplineShape(uuid, object, u);
@@ -287,6 +297,8 @@ async function setSplineShape(uuid, object, u) {
 async function createTubeTool(args) {
 	const made = tubeRecordOf(args);
 	if ('error' in made) return { error: made.error };
+	const target = parentTarget(args.parentUuid);
+	if (target && 'error' in target) return { error: target.error };
 	const group = get(objectsGroup);
 	if (!group) return { error: 'no scene' };
 	const st = await import('$lib/splineTool');
@@ -466,12 +478,28 @@ export function subdividedArgs(args, slots = 0) {
 	return { args: { ...args, ...out, subdivide: undefined, smooth: args.smooth ?? true }, levels };
 }
 
+/**
+ * diorama2: a create_mesh / update_mesh call with its `colors` made linear (vertexColorsLinear: sRGB by default, hex
+ * allowed, colorSpace "linear" to pass numbers through) and colorSpace consumed. @param {any} args
+ * @returns {{args: any} | {error: string}}
+ */
+function withLinearColors(args) {
+	const made = vertexColorsLinear(args?.colors, args?.colorSpace);
+	if ('error' in made) return made;
+	if (args?.colors === undefined && args?.colorSpace === undefined) return { args };
+	const { colorSpace: _c, ...rest } = args;
+	return { args: made.colors ? { ...rest, colors: made.colors } : rest };
+}
+
 /** 85b G6b: what each data mesh was made from, kept in THIS tab for update_mesh {patch} (a patch edits the authored
  * vertex list, which the triangle soup on the wire no longer holds) @type {Map<string, any>} */
 const meshSources = new Map();
 
 /** @param {any} args */
 async function createMeshTool(args) {
+	const lin = withLinearColors(args);
+	if ('error' in lin) return { error: lin.error };
+	args = lin.args;
 	const mats = meshMaterialSpecs(args.materials);
 	if ('error' in mats) return { error: mats.error };
 	const source = args;
@@ -492,13 +520,17 @@ async function createMeshTool(args) {
 	if (data.colors) stub.setAttribute('color', new THREE.Float32BufferAttribute(data.colors.slice(0, 9), 3));
 	stub.computeVertexNormals();
 	const mesh = new THREE.Mesh(stub);
-	const base = colorOf(args.color) ?? paletteColorFor(mesh.uuid);
+	// diorama2: vertex colours MULTIPLY the material colour, so with colors and no color the material is white (a
+	// palette pastel used to tint every vertex colour); a slot with its own color keeps it
+	const base = colorOf(args.color) ?? (data.colors ? '#ffffff' : paletteColorFor(mesh.uuid));
 	// one slot = a plain material; several = an array, drawn through the geometry groups the meshgeo carries
 	const slots = mats.specs.length ? mats.specs.map((spec) => meshMaterial(spec, base, args)) : [meshMaterial({}, base, args)];
 	mesh.material = slots.length > 1 ? slots : slots[0];
 	mesh.name = String(args.name || 'Mesh').slice(0, 120);
 	if (args.smooth === true) mesh.userData.shading = 'smooth';
-	const nested = !!args.parentUuid && objectOf(String(args.parentUuid))?.type === 'Group';
+	const target = parentTarget(args.parentUuid);
+	if (target && 'error' in target) return { error: target.error };
+	const nested = !!target;
 	const pose = shapePose(args, nested);
 	if ('error' in pose) return { error: pose.error };
 	// at the root the pose rides the `object` message; in a group it is set AFTER nesting (nestLocal)
@@ -709,7 +741,12 @@ function shapeArgsError(tool, args) {
 	if (args.color !== undefined && !colorOf(args.color)) return 'color: a hex colour like "#ff8800"';
 	/** @type {any} */
 	let made;
+	const parent = parentTarget(args.parentUuid);
+	if (parent && 'error' in parent) return parent.error;
 	if (tool === 'create_mesh') {
+		const lin = withLinearColors(args);
+		if ('error' in lin) return lin.error;
+		args = lin.args;
 		const mats = meshMaterialSpecs(args.materials);
 		const sub = 'error' in mats ? mats : subdividedArgs(args, mats.specs.length);
 		made = 'error' in sub ? sub : meshFromData(/** @type {any} */ (sub).args, /** @type {any} */ (mats).specs.length);
@@ -768,6 +805,9 @@ function isDataMesh(o) {
  * @param {any} args
  */
 async function updateMeshTool(args) {
+	const lin = withLinearColors(args);
+	if ('error' in lin) return { error: lin.error };
+	args = lin.args;
 	const uuid = String(args.uuid ?? args.object ?? '');
 	const object = uuid && objectOf(uuid);
 	if (!object) return { error: 'uuid: no object with that uuid' };
@@ -817,6 +857,181 @@ async function updateMeshTool(args) {
 	return { updated: [{ uuid, ok: true, mode, triangles: data.triangles, ...(sub.levels ? { subdivided: sub.levels } : {}) }] };
 }
 
+// ---- diorama2 duplicate -----------------------------------------------------------------------------
+
+/** copies one duplicate call makes */
+export const DUPLICATE_MAX = 50;
+const AXES = /** @type {const} */ (['x', 'y', 'z']);
+const FULL = Math.PI * 2 - 1e-6;
+
+/**
+ * Is this parametric primitive its own mirror image across its local `axis` plane (vertex for vertex, up to order)?
+ * Then a mirror needs no new triangles and the copy keeps its editable params. Round shapes need an EVEN segment
+ * count for the x / z mirror (an odd ring is not symmetric across both planes).
+ * @param {any} geometry @param {number} a 0 x, 1 y, 2 z
+ */
+export function mirrorSymmetric(geometry, a) {
+	const p = geometry?.parameters ?? {};
+	const even = (/** @type {any} */ n) => Number.isInteger(n) && n % 2 === 0;
+	switch (geometry?.type) {
+		case 'BoxGeometry':
+			return true;
+		case 'SphereGeometry':
+			if ((p.phiLength ?? Math.PI * 2) < FULL || (p.thetaLength ?? Math.PI) < Math.PI - 1e-6 || (p.thetaStart ?? 0) !== 0 || (p.phiStart ?? 0) !== 0) return false;
+			return a === 1 || a === 2 || even(p.widthSegments);
+		case 'CylinderGeometry':
+		case 'ConeGeometry':
+			if ((p.thetaLength ?? Math.PI * 2) < FULL || (p.thetaStart ?? 0) !== 0) return false;
+			if (a === 1) return geometry.type === 'CylinderGeometry' && p.radiusTop === p.radiusBottom;
+			return a === 0 || even(p.radialSegments);
+		case 'CapsuleGeometry':
+			return a === 1 || even(p.radialSegments);
+		case 'TorusGeometry':
+			if ((p.arc ?? Math.PI * 2) < FULL) return false;
+			return a !== 0 || even(p.tubularSegments);
+		default:
+			return false;
+	}
+}
+
+/**
+ * The mirrored triangle soup of a geometry across its local `a` plane: the coordinate negated, each triangle's
+ * corners reversed (b and c swap) so it still faces outward, uvs / colours / material slots carried with their
+ * corner. Pure (THREE only). @param {any} fe faceEdit (readTriangles + trisTo*) @param {any} geometry @param {number} a
+ */
+export function mirroredSoup(fe, geometry, a) {
+	const tris = fe.readTriangles(geometry);
+	const flipped = tris.map((/** @type {any} */ t) => {
+		const m = (/** @type {any} */ v) => {
+			const c = v.clone();
+			c.setComponent(a, -c.getComponent(a));
+			return c;
+		};
+		/** @type {any} */
+		const out = [m(t[0]), m(t[2]), m(t[1])];
+		if (t.mi !== undefined) out.mi = t.mi;
+		if (t.uv) out.uv = [t.uv[0], t.uv[2], t.uv[1]];
+		return out;
+	});
+	/** @type {number[] | null} */
+	let colors = null;
+	const col = geometry.attributes.color;
+	if (col) {
+		const index = geometry.index;
+		colors = [];
+		const n = index ? index.count : geometry.attributes.position.count;
+		for (let i = 0; i < n; i += 3)
+			for (const o of [0, 2, 1]) {
+				const j = index ? index.getX(i + o) : i + o;
+				colors.push(col.getX(j), col.getY(j), col.getZ(j));
+			}
+	}
+	return {
+		before: { positions: fe.trisToPositions(tris), groups: fe.trisToGroups(tris), uvs: fe.trisToUVs(tris), faces: readStoredFaces(geometry) },
+		after: { positions: fe.trisToPositions(flipped), groups: fe.trisToGroups(flipped), uvs: fe.trisToUVs(flipped), faces: readStoredFaces(geometry), ...(colors ? { colors } : {}) }
+	};
+}
+
+/**
+ * A node's local transform conjugated by the mirror across axis `a` (R·T·R): the coordinate negated, the rotation's
+ * other two quaternion parts negated, the scale unchanged. Applied to every node of a copied tree, with the
+ * remaining R baked into each mesh's triangles, the whole tree is the mirror image of the original with only
+ * proper rotations and positive scales. @param {any} node @param {number} a
+ */
+export function mirrorLocalPose(node, a) {
+	node.position.setComponent(a, -node.position.getComponent(a));
+	const q = node.quaternion;
+	q.set(a === 0 ? q.x : -q.x, a === 1 ? q.y : -q.y, a === 2 ? q.z : -q.z, q.w);
+	node.rotation.setFromQuaternion(q);
+}
+
+/** a node's pose as history and the `move` message carry it @param {any} o */
+const poseOf = (o) => ({ pos: o.position.toArray(), rot: [o.rotation.x, o.rotation.y, o.rotation.z], scale: o.scale.toArray() });
+
+/**
+ * duplicate {uuid, count?, offset?, mirror?, parentUuid?}: copies of an object (its children, materials, behaviour,
+ * physics) through the editor's own Duplicate — no geometry is resent. count copies step by `offset` (the parent's
+ * space, metres); mirror "x"|"y"|"z" makes each copy the mirror image across that plane through the PARENT's
+ * origin (the group's centre line — a left arm becomes a right arm) with its triangles re-wound so it still faces
+ * out. parentUuid nests the copies (they keep their place in the world). One undo step.
+ * @param {any} args
+ */
+async function duplicateTool(args) {
+	const uuid = String(args.uuid ?? args.object ?? '');
+	const source = uuid && objectOf(uuid);
+	if (!source) return { error: 'uuid: no object with that uuid (list_scene lists them)' };
+	if (source.isLight || source.isCamera) return { error: 'duplicate copies shapes and models; for a light or a camera, create a new one' };
+	const count = args.count ?? 1;
+	if (!Number.isInteger(count) || count < 1 || count > DUPLICATE_MAX) return { error: 'count: 1-' + DUPLICATE_MAX + ' copies (for hundreds over a surface, use scatter with source)' };
+	const a = args.mirror === undefined ? -1 : AXES.indexOf(/** @type {any} */ (String(args.mirror).toLowerCase()));
+	if (args.mirror !== undefined && a < 0) return { error: 'mirror: "x", "y" or "z" — the axis the mirror flips' };
+	let offset = args.offset;
+	if (offset !== undefined && !(Array.isArray(offset) && offset.length === 3 && offset.every((v) => typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= 1000)))
+		return { error: 'offset: [x, y, z] metres between copies, in the parent\'s space' };
+	if (offset === undefined) {
+		// a row to the side by default (the object's own width and a gap); a mirror copy stays on the mirror line
+		const size = new THREE.Box3().setFromObject(source, true).getSize(new THREE.Vector3());
+		offset = a >= 0 ? [0, 0, 0] : [r3(Math.max(size.x, 0.1) + 0.25), 0, 0];
+	}
+	const target = parentTarget(args.parentUuid);
+	if (target && 'error' in target) return { error: target.error };
+	const { duplicateObject } = await import('$lib/objectActions');
+	const fe = a >= 0 ? await import('$lib/faceEdit') : null;
+	const base = String(args.name || (source.name || source.type) + (a >= 0 ? ' mirror' : ' copy')).slice(0, 110);
+	/** @type {any[]} */
+	const created = [];
+	/** @type {string[]} */
+	const warnings = [];
+	let flipped = 0;
+	let kept = 0;
+	for (let i = 1; i <= count; i++) {
+		const clone = duplicateObject(source.uuid, { select: false, name: count > 1 ? base + ' ' + i : base, at: source.position.toArray() });
+		if (!clone) return created.length ? { created, warning: 'stopped at copy ' + i + ': it could not be made' } : { error: 'the copy could not be made' };
+		/** @type {Map<any, any>} */
+		const before = new Map();
+		clone.traverse((/** @type {any} */ n) => before.set(n, poseOf(n)));
+		if (a >= 0 && fe) {
+			clone.traverse((/** @type {any} */ n) => mirrorLocalPose(n, a));
+			/** @type {any[]} */
+			const meshes = [];
+			clone.traverse((/** @type {any} */ n) => n.isMesh && n.geometry?.attributes?.position && meshes.push(n));
+			for (const m of meshes) {
+				if (!m.isSkinnedMesh && !m.isInstancedMesh && !m.userData?.vertexEdited && !m.userData?.faceEdited && mirrorSymmetric(m.geometry, a)) {
+					kept++;
+					continue;
+				}
+				// the copy shares its source's geometry (Object3D.clone): give it its own before the swap
+				m.geometry = m.geometry.clone();
+				const soup = m.isSkinnedMesh || m.isInstancedMesh ? null : mirroredSoup(fe, m.geometry, a);
+				if (soup && fe.commitMeshGeoTriple(m.uuid, soup.before, soup.after)) {
+					physicsShapeChanged(m.uuid);
+					flipped++;
+					continue;
+				}
+				// too big to sync as triangles (or skinned): a negative scale is the same mirror — three re-winds it
+				m.scale.setComponent(a, -m.scale.getComponent(a));
+				warnings.push((m.name || 'a mesh') + ' is mirrored by a negative scale (too large to rewrite)');
+			}
+		}
+		if (offset.some((/** @type {number} */ v) => v !== 0)) clone.position.add(new THREE.Vector3(offset[0] * i, offset[1] * i, offset[2] * i));
+		pokeScene();
+		for (const [n, was] of before) {
+			const now = poseOf(n);
+			if (JSON.stringify(now) === JSON.stringify(was)) continue;
+			broadcast({ type: 'move', uuid: n.uuid, pos: now.pos, rot: now.rot, scale: now.scale });
+			recordTransform({ uuid: n.uuid, before: was, after: now });
+		}
+		if (target && target.parent !== clone.parent) moveObjectToGroup(clone.uuid, target.parent.uuid, { anyParent: true });
+		created.push({ uuid: clone.uuid, name: clone.name, position: clone.position.toArray().map(r3) });
+	}
+	return {
+		created,
+		source: source.uuid,
+		...(a >= 0 ? { mirror: AXES[a], rewound: flipped, symmetric: kept } : {}),
+		...(warnings.length ? { warnings: [...new Set(warnings)] } : {})
+	};
+}
+
 // ---- the router ------------------------------------------------------------------------------------
 
 /**
@@ -843,6 +1058,8 @@ export async function geometryTool(name, args, createBase) {
 			return createShapesTool(args ?? {}, createBase);
 		case 'update_mesh':
 			return updateMeshTool(args ?? {});
+		case 'duplicate':
+			return duplicateTool(args ?? {});
 		default:
 			return { error: 'unknown geometry tool ' + name };
 	}
@@ -853,6 +1070,10 @@ export async function geometryTool(name, args, createBase) {
 const V3 = { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 };
 const V2 = { type: 'array', items: { type: 'number' }, minItems: 2, maxItems: 2 };
 /** where a created shape goes — create_objects' fields */
+/** diorama2: a vertex colour: [r, g, b] or a hex string */
+const VCOLOR = { anyOf: [{ type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 }, { type: 'string', description: '#rrggbb' }] };
+const COLOR_SPACE = { type: 'string', enum: ['srgb', 'linear'], description: 'how [r, g, b] colors numbers are meant: "srgb" (default — like a colour picker, as material colours are) or "linear"; hex is always sRGB' };
+
 const PLACE = {
 	name: { type: 'string' },
 	position: V3,
@@ -861,7 +1082,7 @@ const PLACE = {
 	color: { type: 'string', description: 'hex #rrggbb' },
 	parentUuid: {
 		type: 'string',
-		description: 'uuid of a group to nest under — position / rotation / scale AND the shape\'s own points are then LOCAL to that group (no position = the group\'s origin), so the part moves and turns with it'
+		description: 'uuid of a group (or any object, not a light or camera) to nest under — position / rotation / scale AND the shape\'s own points are then LOCAL to it (no position = its origin), so the part moves and turns with it. A uuid that is not in the scene is an error and nothing is made'
 	},
 	physics: { type: 'string', enum: ['static', 'dynamic'], description: 'default static' },
 	castShadow: { type: 'boolean', description: 'cast a shadow (on by default)' },
@@ -887,7 +1108,7 @@ export const GEOMETRY_AI_TOOLS = [
 		function: {
 			name: 'set_geometry',
 			description:
-				'Reshape existing objects in place (they keep uuid, transform, material and flows): change a primitive\'s params (the keys list_scene shows under geometry, e.g. {width, height, depth} for a Box, {radiusTop, radiusBottom, height, radialSegments} for a Cylinder, {segments, phiLength} for a Lathe, {depth, bevel} for an extrusion), or its TYPE (box → Cylinder) with params on top of the new type\'s defaults. A tube (create_tube) takes path, radius / radii, closed. An object whose vertices were hand-edited refuses unless force: true (the rebuild replaces those edits). Up to ' +
+				'Reshape existing objects in place (they keep uuid, transform, material and flows): change a primitive\'s params (the keys list_scene shows under geometry, e.g. {width, height, depth} for a Box, {radiusTop, radiusBottom, height, radialSegments} for a Cylinder, {segments, phiLength} for a Lathe, {depth, bevel} for an extrusion), or its TYPE (box → Cylinder) with params on top of the new type\'s defaults. A tube (create_tube) takes path, radius / radii, closed. A 3D text (create_text) takes its text fields as params (text, font, size, depth, bevel, align, maxWidth, anchor, color …). An object whose vertices were hand-edited refuses unless force: true (the rebuild replaces those edits). Up to ' +
 				MAX_UPDATES +
 				' objects per call, one undo step.',
 			parameters: {
@@ -901,7 +1122,7 @@ export const GEOMETRY_AI_TOOLS = [
 							properties: {
 								uuid: { type: 'string' },
 								type: { type: 'string', enum: TYPE_TARGETS, description: 'change the primitive type in place' },
-								params: { type: 'object', description: 'param name → value; sizes clamped to 1 km, segment counts to their range' },
+								params: { type: 'object', description: 'param name → value; sizes from 0.001 m to 1 km (the same for every primitive), segment counts to their range' },
 								path: { type: 'array', items: V3, description: 'tubes: a new path in the space the tube lives in (the scene, or its group)' },
 								radius: { type: 'number', description: 'tubes: one radius for every point' },
 								radii: { type: 'array', items: { type: 'number' }, description: 'tubes: one radius per point' },
@@ -1032,7 +1253,7 @@ export const GEOMETRY_AI_TOOLS = [
 				MESH_MAX_FACES +
 				' faces; normals are computed (smooth: true for smooth shading, flatShading: true for hard facets). Colour it as you make it: materials [{color, roughness, metalness, …}] (up to ' +
 				MESH_MAX_MATERIALS +
-				' slots) with faceMaterials [slot per face, same order as faces] for parts in different colours; or colors [[r, g, b] 0-1, one per vertex] for a painted gradient (multiplied by the material colour). Material slots last through edit_mesh; vertex colours last only while an edit keeps the vertex count. subdivide: 1 or 2 smooths it (Catmull-Clark: a box of six quads becomes a rounded pebble, a few quads become a soft organic shape; each level about four times the faces, checked against the caps). Edit it afterwards with edit_mesh, or send new vertices with update_mesh. Returns the uuid.',
+				' slots) with faceMaterials [slot per face, same order as faces] for parts in different colours; or colors (one per vertex: [r, g, b] 0-1 meant as sRGB, the way a colour picker or a hex code means them, or a "#rrggbb" string; colorSpace: "linear" takes the numbers as linear) for a painted gradient — they multiply the material colour, which is white when you give colors and no color. Material slots last through edit_mesh; vertex colours last only while an edit keeps the vertex count. subdivide: 1 or 2 smooths it (Catmull-Clark: a box of six quads becomes a rounded pebble, a few quads become a soft organic shape; each level about four times the faces, checked against the caps). Edit it afterwards with edit_mesh, or send new vertices with update_mesh. Returns the uuid.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1041,7 +1262,8 @@ export const GEOMETRY_AI_TOOLS = [
 					uvs: { type: 'array', items: V2 },
 					smooth: { type: 'boolean' },
 					flatShading: { type: 'boolean', description: 'true = one flat normal per triangle (low-poly look)' },
-					colors: { type: 'array', items: V3, maxItems: MESH_MAX_VERTICES, description: 'one [r, g, b] (0-1) per vertex, in the order of vertices' },
+					colors: { type: 'array', items: VCOLOR, maxItems: MESH_MAX_VERTICES, description: 'one colour per vertex, in the order of vertices: [r, g, b] (0-1, sRGB unless colorSpace is "linear") or "#rrggbb"' },
+					colorSpace: COLOR_SPACE,
 					materials: {
 						type: 'array',
 						minItems: 1,
@@ -1071,6 +1293,26 @@ export const GEOMETRY_AI_TOOLS = [
 	{
 		type: 'function',
 		function: {
+			name: 'duplicate',
+			description:
+				'Copy an object you built (its children, materials, behaviour and physics come along; nothing is resent): count copies stepping by offset [x, y, z] metres in its parent\'s space (default: a row to the side), or mirror "x"|"y"|"z" = the mirror image across that plane through the PARENT\'s centre (in a group: its centre line — a left arm or ear becomes the right one; at the scene root: the world\'s), its triangles re-wound so normals stay right (Box and even-segment round shapes keep their params). parentUuid nests the copies (they keep their place in the world). One undo step; everyone sees it. For tens to hundreds of copies spread over a terrain or mesh, use scatter with source: <uuid>.',
+			parameters: {
+				type: 'object',
+				properties: {
+					uuid: { type: 'string', description: 'the object to copy' },
+					count: { type: 'integer', minimum: 1, maximum: DUPLICATE_MAX, description: 'copies (default 1)' },
+					offset: { ...V3, description: '[x, y, z] metres between copies in the parent\'s space; with mirror it moves the mirror image (default [0, 0, 0])' },
+					mirror: { type: 'string', enum: ['x', 'y', 'z'], description: 'the axis the mirror flips: x makes a left part the right one' },
+					parentUuid: { type: 'string', description: 'a group (or any object) to put the copies in' },
+					name: { type: 'string', description: 'the copies\' name (numbered when several)' }
+				},
+				required: ['uuid']
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
 			name: 'update_mesh',
 			description:
 				'New data for a mesh create_mesh made, by uuid, as ONE undo step: mode "replace" sends every vertex and face again (the same fields and caps as create_mesh, subdivide included); mode "patch" replaces vertices from offset on (vertices[0] lands on index offset) and keeps the faces — for moving part of a mesh made in this tab (after a reload, send "replace"). uvs/colors patch the same way. Primitives use set_geometry; to model any mesh use edit_mesh.',
@@ -1083,7 +1325,8 @@ export const GEOMETRY_AI_TOOLS = [
 					vertices: { type: 'array', items: V3, maxItems: MESH_MAX_VERTICES },
 					faces: { type: 'array', items: { type: 'array', items: { type: 'integer' } }, maxItems: MESH_MAX_FACES },
 					uvs: { type: 'array', items: V2 },
-					colors: { type: 'array', items: V3, maxItems: MESH_MAX_VERTICES },
+					colors: { type: 'array', items: VCOLOR, maxItems: MESH_MAX_VERTICES, description: 'as create_mesh: [r, g, b] (sRGB unless colorSpace is "linear") or "#rrggbb" per vertex' },
+					colorSpace: COLOR_SPACE,
 					faceMaterials: { type: 'array', items: { type: 'integer', minimum: 0 }, maxItems: MESH_MAX_FACES },
 					smooth: { type: 'boolean' },
 					subdivide: { type: 'integer', minimum: 0, maximum: 2 }
@@ -1133,6 +1376,7 @@ export const GEOMETRY_PROMPT = [
 	'(path → rail, pipe), extrude_shape (outline → sign, letter, floor plan), create_mesh (raw',
 	'vertices/faces, subdivide: 1-2 to smooth it; update_mesh sends it new vertices); create_shapes makes many in one call. With parentUuid every coordinate is the',
 	'group\'s own (local) space. edit_mesh models a mesh: extrude/inset/bevel/subdivide faces picked by normal',
-	'("up"), box or index; weld/smooth/dissolve vertices. Preview a selection with ops: [].'
+	'("up"), box or index; weld/smooth/dissolve vertices. Preview a selection with ops: [].',
+	'duplicate copies an object (count + offset for a row, mirror: "x" for the other side of a group).'
 ].join('\n');
 

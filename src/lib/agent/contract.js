@@ -11,7 +11,9 @@
 // major. The bridge feature-detects methods, so an older bridge keeps working against a newer page.
 
 /** The contract version (`tpAgent.version`). */
-export const TP_AGENT_VERSION = '1.7.0';
+// 1.8.0 (mcp-diorama2): screenshot {postEffects} + its {postEffects, reason, detail, how} answer, status sceneBudget
+// {top, vsync}; new tools duplicate, import_shape, set_quality (all additive: optional fields, new tools)
+export const TP_AGENT_VERSION = '1.8.0';
 
 /** Every method of the contract, in the order the docs list them. */
 export const TP_AGENT_METHODS = /** @type {const} */ ([
@@ -36,7 +38,7 @@ export const TP_AGENT_METHODS = /** @type {const} */ ([
 ]);
 
 /** Camera views `screenshot` renders from (A5). */
-export const SCREENSHOT_VIEWS = /** @type {const} */ (['current', 'top', 'front', 'iso', 'focus']);
+export const SCREENSHOT_VIEWS = /** @type {const} */ (['current', 'top', 'front', 'iso', 'focus', 'camera']);
 
 /** Largest side a screenshot may ask for (px); `size` is clamped to it. */
 export const SCREENSHOT_MAX_SIZE = 2048;
@@ -93,9 +95,10 @@ export const SCREENSHOT_DEFAULT_SIZE = 768;
  * @property {{node: string, message: string}[]} [scriptErrors] mcp-fix: Script nodes failing now (their code threw, or it was paused for being slow)
  * @property {{name: string, where: string, message: string}[]} [behaviourErrors] 1.2: the latest errors thrown by
  *   the scene's code behaviours (on whichever peer runs them); absent when none — fix with edit_behaviour
- * @property {{tier: string, profile: 'desktop'|'vr', objects?: number, meshes?: number, triangles?: number, calls?: number, textures?: number, lights?: number, frameP95?: number, over?: string[]}} [sceneBudget]
+ * @property {{tier: string, profile: 'desktop'|'vr', objects?: number, meshes?: number, triangles?: number, calls?: number, textures?: number, lights?: number, frameP95?: number, over?: string[], top?: {byTriangles: {uuid: string, name: string, triangles: number, calls: number}[], byCalls: {uuid: string, name: string, triangles: number, calls: number}[]}, vsync?: {onVsync: boolean, hz: number, say: string}, callsBySource?: {objects: number, otherInView: number, shadows: number, post: number, otherViews: number}}} [sceneBudget]
  *   1.6.0 (mcp-shapes): how heavy the scene is — the Statistics overlay's numbers, the worst tier (green | amber | red |
- *   unknown) on the profile it is judged by, and `over` = each budget past green
+ *   unknown) on the profile it is judged by, and `over` = each budget past green; a frame time ON the display refresh
+ *   (vsync.onVsync) is never judged (mcp-diorama2 27), and `callsBySource` splits the draw calls by where they come from
  * @property {{level: string, text: string, at: number}[]} [logs] 1.7.0 (roadmap 85b, R3): the newest errors, warnings
  *   and toasts on this page (at most 5; the `logs` tool returns the rest); absent when there are none
  * @property {{status: 'listening'|'working'|'away', muted: boolean, queued: number, waiting: number, current: any, chatId: string|null}} [chat]
@@ -110,14 +113,15 @@ export const SCREENSHOT_DEFAULT_SIZE = 768;
 
 /**
  * `waitForEdit` result.
- * @typedef {{changed: true, at: number} | {changed: false, timedOut: true}} TpAgentEditWait
+ * @typedef {{changed: true, at: number, ping?: any} | {changed: false, timedOut: true}} TpAgentEditWait  (`ping`: 1.8.0, a new ping woke it)
  */
 
 /**
  * `screenshot` options.
  * @typedef {object} TpAgentScreenshotOptions
- * @property {'current'|'top'|'front'|'iso'|'focus'} [view] default 'iso'
- * @property {string} [uuid] the object to frame (`focus` needs this or `uuids`)
+ * @property {'current'|'top'|'front'|'iso'|'focus'|'camera'} [view] default 'iso'; 'camera' looks through the scene camera `uuid`
+ *   (its pose, lens and framing aspect — mcp-diorama2)
+ * @property {string} [uuid] the object to frame (`focus` needs this or `uuids`), or the camera for view 'camera'
  * @property {string[]} [uuids] objects to frame together
  * @property {string|{yaw: number, pitch: number}} [from] the angle around the subject, instead of `view`: front, back, left, right, top, below, iso, or degrees
  * @property {{position: number[], target: number[]}} [camera] a free camera, instead of `view` and `from`
@@ -126,6 +130,11 @@ export const SCREENSHOT_DEFAULT_SIZE = 768;
  * @property {number} [margin] room around the subject: 1 touches the frame, default 1.15
  * @property {number} [size] longest side in px (default 768, max 2048)
  * @property {boolean} [grid] draw the grid (default false)
+ * @property {boolean} [postEffects] draw the frame through the post stack this tab draws (bloom, vignette, grade …);
+ *   lastShot().postEffects then says "applied" or "unavailable" with a reason (mcp-diorama2)
+ * @property {boolean} [avatars] draw the people (avatars, an agent's camera marker) — default false: a clean frame
+ *   shows the scene; view 'current' keeps them unless this is false (mcp-diorama2)
+ * @property {boolean} [hud] draw the game HUD on top, the screens this tab shows (default false; mcp-diorama2)
  */
 
 /**

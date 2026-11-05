@@ -1,10 +1,11 @@
+import { parentTarget } from './parentTarget.js';
 import { get } from 'svelte/store';
 import * as THREE from 'three';
 import { objectsGroup, lockedObjects, pokeScene } from '../../stores/sceneStore.js';
 import { peers } from '../../stores/appStore.js';
 import { lockSkip } from './lockNote.js';
-import { sceneFilter, cursorOffset, cursorAt, PAGE_MAX } from './sceneFilter.js';
-import { placeObject, comfortRefusal, withBodyUnits } from './placement.js';
+import { sceneFilter, cursorOffset, cursorAt, PAGE_MAX, SPATIAL_TESTS } from './sceneFilter.js';
+import { placeObject, comfortRefusal, withBodyUnits, frontVector, FRONT_AXES, aimFront } from './placement.js';
 import { ASSIST_TOOL_NAMES, ASSIST_AI_TOOLS, ASSIST_PROMPT, assistTool } from './assistTools.js';
 import { aboutOriginPosition, originOf } from '$lib/objectOrigin';
 import { geometrySpec } from '$lib/geometryParams';
@@ -47,7 +48,8 @@ import {
 	createJointsTool,
 	controlSimulationTool
 } from './flowTools.js';
-import { GEOMETRY_TOOL_NAMES, GEOMETRY_AI_TOOLS, GEOMETRY_PROMPT, geometryTool } from './geometryTools.js';
+import { GEOMETRY_TOOL_NAMES, GEOMETRY_AI_TOOLS, GEOMETRY_PROMPT, geometryTool, MIN_SIZE } from './geometryTools.js';
+import { TEXT_TOOL_NAMES, TEXT_AI_TOOLS, TEXT_PROMPT, textTool } from './textTools.js';
 import { shapePose } from './shapeBatchCore.js';
 import { meshStats } from './meshStats.js';
 import { applyShadowFlags, SHADOW_SCHEMA } from './shadowFlags.js';
@@ -144,7 +146,7 @@ function describeObject(object) {
 		uuid: object.uuid,
 		name: object.name || object.type,
 		type: object.type,
-		parentUuid: object.parent && object.parent.type === 'Group' ? object.parent.uuid : null,
+		parentUuid: object.parent ? object.parent.uuid : null,
 		...reportedPose(object, animatedBaseOf(object.uuid))
 	};
 	const material = object.material;
@@ -187,7 +189,7 @@ function geometrySummary(object) {
 
 /** 55 (1.48.1): list_scene `brief` — enough to address an object, nothing more @param {any} object */
 function briefObject(object) {
-	return { uuid: object.uuid, name: object.name || object.type, type: object.type, parentUuid: object.parent && object.parent.type === 'Group' ? object.parent.uuid : null };
+	return { uuid: object.uuid, name: object.name || object.type, type: object.type, parentUuid: object.parent ? object.parent.uuid : null };
 }
 
 /** Node data compacted for the model: big point lists reduced to a count, long strings
@@ -525,10 +527,14 @@ async function applyAiMaterialParams(uuid, params) {
 /**
  * mcp-shapes: turn an object so its local +Z axis (its front) points at a world point or at another object, +Y kept
  * up — three's lookAt, through the transform path (one move, one undo entry; an object with a pivot turns about it).
- * @param {any} object @param {any} target [x, y, z] world, or a uuid @returns {string | null} the error
+ * @param {any} object @param {any} target [x, y, z] world, or a uuid @param {any} [front] the local front axis (default +z)
+ * @returns {string | null} the error
  */
-function lookAtTarget(object, target) {
+function lookAtTarget(object, target, front) {
 	if (object.isLight) return 'lookAt: a light turns with aim: [x, y, z]';
+	// mcp-diorama2 (25): which local axis is the front (default +Z); the turn lands that axis on the target
+	const axis = frontVector(front);
+	if (!axis) return 'front: one of ' + FRONT_AXES.join(', ') + ' (the local axis the model faces along)';
 	const root = get(objectsGroup);
 	root?.updateMatrixWorld(true);
 	/** @type {THREE.Vector3} */
@@ -542,7 +548,7 @@ function lookAtTarget(object, target) {
 	else return "lookAt: a world point [x, y, z] or another object's uuid";
 	if (object.getWorldPosition(new THREE.Vector3()).distanceTo(point) < 1e-6) return 'lookAt: the target is where the object is';
 	const was = object.quaternion.clone();
-	object.lookAt(point);
+	aimFront(object, point, axis);
 	const rotation = [object.rotation.x, object.rotation.y, object.rotation.z];
 	object.quaternion.copy(was);
 	applyAiTransform(object, { rotation });
@@ -581,6 +587,9 @@ function createOne(spec, extraTypes = /** @type {string[]} */ ([])) {
 	// 85b S6: "hip", "0.5 reach" … are metres from here on
 	const unitsOf = withBodyUnits(spec);
 	spec = unitsOf.spec;
+	// mcp-diorama2: a parent that is not there is an error, never a silent part at the scene root
+	const parentCheck = parentTarget(spec.parentUuid);
+	if (parentCheck && 'error' in parentCheck) return { error: parentCheck.error };
 	const uuid = genUuid();
 	let created = null;
 	if (spec.kind === 'light') {
@@ -613,7 +622,7 @@ function createOne(spec, extraTypes = /** @type {string[]} */ ([])) {
 		if (bad >= 0) return { error: 'params[' + bad + '] = ' + JSON.stringify(spec.params[bad]) + ': sizes are positive numbers (' + primitive + ')' };
 		const params =
 			Array.isArray(spec.params) && spec.params.length
-				? spec.params.slice(0, 4).map((/** @type {number} */ v) => Math.min(1000, v))
+				? spec.params.slice(0, 4).map((/** @type {number} */ v) => Math.min(1000, v > 0 ? Math.max(MIN_SIZE, v) : v)) // diorama2: one small minimum
 				: DEFAULT_PARAMS[primitive] || [];
 		const command = ('/create ' + primitive + ' ' + params.join(' ')).trim();
 		createGeometry(command, uuid);
@@ -632,13 +641,13 @@ function createOne(spec, extraTypes = /** @type {string[]} */ ([])) {
 	/** @type {string[]} */
 	const warnings = [];
 	let nested = false;
-	if (spec.parentUuid) {
-		const parent = objectOf(spec.parentUuid);
-		if (parent && parent.type === 'Group') {
-			moveObjectToGroup(uuid, spec.parentUuid);
-			nested = true;
-		} else warnings.push('parentUuid: no group with that uuid — made at the scene root');
-	}
+	// mcp-diorama2: any container is a parent (a group restored as a plain Object3D too); a missing one was
+	// refused before anything was made (createOne's parentTarget check), so this only nests
+	const target = parentTarget(spec.parentUuid);
+	if (target && !('error' in target)) {
+		moveObjectToGroup(uuid, target.parent.uuid, { anyParent: true });
+		nested = true;
+	} else if (target) warnings.push(target.error);
 	// mcp-shapes: nested with no position / rotation / scale = the group's own frame. attach() kept the WORLD
 	// pose (the world origin), so the part sat at the inverse of the group's transform inside it.
 	const pose = shapePose(spec, nested);
@@ -655,7 +664,7 @@ function createOne(spec, extraTypes = /** @type {string[]} */ ([])) {
 	if (!created.isLight) warnings.push(...applyShadowFlags(created, spec));
 	else if (spec.receiveShadow !== undefined) warnings.push('receiveShadow: a light casts shadows, nothing falls on it');
 	if (spec.lookAt !== undefined) {
-		const why = lookAtTarget(created, spec.lookAt);
+		const why = lookAtTarget(created, spec.lookAt, spec.front);
 		if (why) warnings.push(why);
 	}
 	// 85b S2-S4: at a ping / backed onto its surface / standing on the floor / facing a person
@@ -714,9 +723,9 @@ async function updateOne(spec) {
 	if (spec.parentUuid) {
 		if (spec.parentUuid === 'root') moveObjectToGroup(uuid, 'root');
 		else {
-			const parent = objectOf(spec.parentUuid);
-			if (parent && parent.type === 'Group') moveObjectToGroup(uuid, spec.parentUuid);
-			else errors.push('parentUuid: no group with that uuid');
+			const target = parentTarget(spec.parentUuid);
+			if (target && !('error' in target)) moveObjectToGroup(uuid, target.parent.uuid, { anyParent: true });
+			else if (target) errors.push(target.error.replace(' — nothing was made', ''));
 		}
 	}
 	applyAiTransform(object, spec);
@@ -749,7 +758,7 @@ async function updateOne(spec) {
 	if (typeof spec.visible === 'boolean' && object.visible !== spec.visible) toggleObjectVisibility(uuid);
 	// mcp-shapes: after the move, so a new position is where it looks from
 	if (spec.lookAt !== undefined) {
-		const why = lookAtTarget(object, spec.lookAt);
+		const why = lookAtTarget(object, spec.lookAt, spec.front);
 		if (why) errors.push(why);
 	}
 	// 85b S2-S4: after the move, so at / snap / face_user see where it is now
@@ -783,7 +792,10 @@ const TOOL_NAMES = [
 	'edit_behaviour',
 	'import_model', // 56 C9 (offered to agents; see importModel.js)
 	'import_file', // 66 S4b (offered to agents; see importFile.js)
+	'upload_asset', // diorama2 items 16 + 24: a sound or an HDR sky as base64 / chunks → the library hash (the connector's assets upload)
+	'import_shape', // diorama2 item 9: glTF / GLB / OBJ by data / chunks / https url (offered to agents; the connector's create_shape import)
 	...GEOMETRY_TOOL_NAMES, // 85 G1-G6 (geometryTools.js)
+	...TEXT_TOOL_NAMES, // 64-text TX7: create_text, list_fonts (textTools.js)
 	...LOOK_TOOL_NAMES, // 85 L1-L5 (lookTools.js)
 	...HUD_TOOL_NAMES, // 85 H1 / H2 + hud panel (hudTools.js)
 	...SCENE_SETUP_TOOL_NAMES, // 85 H3-H7: sky, light, spawn, play camera, opening view (sceneSetupTools.js)
@@ -1063,6 +1075,9 @@ async function runAiTool(rawName, rawArgs, opts) {
 				// 55: `{flow, page}` reads one page of a big graph's summary
 				if (args && typeof args.flow === 'string' && args.flow) return graphPage(args.flow === 'scene' ? SCENE_GRAPH : args.flow, args.page ?? 1);
 				// 55 (1.48.1): narrowed reads
+				// mcp-diorama2 (28): near / bounds test origins, or world mesh bounds (by)
+				for (const k of /** @type {const} */ (['near', 'bounds']))
+					if (args?.[k]?.by !== undefined && !SPATIAL_TESTS.includes(args[k].by)) return { error: k + '.by: ' + SPATIAL_TESTS.join(', ') };
 				if (args && (args.brief || args.name || args.type || args.near || args.bounds || args.limit !== undefined || args.cursor !== undefined))
 					return summarizeScene(200, { brief: args.brief === true, name: args.name, type: args.type, near: args.near, bounds: args.bounds, limit: args.limit, cursor: args.cursor });
 				return summarizeScene();
@@ -1207,6 +1222,14 @@ async function runAiTool(rawName, rawArgs, opts) {
 				// 56 C9: a self-contained GLB through the app's own import path (one undo, synced)
 				return await (await import('./importModel.js')).importModelTool(args);
 
+			case 'upload_asset':
+				// diorama2 items 16 + 24: a sound or an HDR sky as bytes → the library, its hash back
+				return await (await import('./uploadAsset.js')).uploadAssetTool(args);
+
+			case 'import_shape':
+				// diorama2 item 9: a model file by data / chunks / https url → library first, then the app's import path
+				return await (await import('./importShape.js')).importShapeTool(args);
+
 			case 'import_file':
 				// 66 S4b: a PNG / WebP / JSON / .tpanim made on the agent's machine (Explorer + a scene card)
 				return await (await import('./importFile.js')).importFileTool(args);
@@ -1218,8 +1241,13 @@ async function runAiTool(rawName, rawArgs, opts) {
 			case 'create_mesh':
 			case 'create_shapes':
 			case 'update_mesh':
+			case 'duplicate': // diorama2 item 8
 				// 85 G1-G6 (+ mcp-shapes: create_shapes, many in one call): shape and model objects (geometryTools.js)
 				return await geometryTool(name, args, createOne);
+			case 'create_text':
+			case 'list_fonts':
+				// 64-text TX7: 3D text objects and their fonts (textTools.js)
+				return await textTool(name, args);
 
 			case 'search_assets':
 			case 'place_asset':
@@ -1254,6 +1282,7 @@ async function runAiTool(rawName, rawArgs, opts) {
 			case 'create_post_graph':
 			case 'uv_unwrap':
 			case 'set_uv':
+			case 'set_quality': // diorama2 item 7 (owner add-on): this device's quality, asked on its own screen
 				// 85 L1-L5: materials, shaders, the look stack, UVs (lookTools.js)
 				return await lookTool(name, args);
 
@@ -1327,14 +1356,14 @@ export const AI_TOOLS = [
 					type: { type: 'string', description: 'optional: only objects of this type — Mesh, Group, PointLight… or a primitive shape (Box, Wall, Sphere…)' },
 					near: {
 						type: 'object',
-						description: 'optional: only objects within radius of a WORLD position',
-						properties: { position: { type: 'array', items: { type: 'number' }, description: '[x, y, z]' }, radius: { type: 'number' } },
+						description: 'optional: only objects within radius of a WORLD position (by: origin = where the object is, the default; touches = any part of its world bounds; inside = all of it)',
+						properties: { position: { type: 'array', items: { type: 'number' }, description: '[x, y, z]' }, radius: { type: 'number' }, by: { type: 'string', enum: ['origin', 'touches', 'inside'] } },
 						required: ['position', 'radius']
 					},
 					bounds: {
 						type: 'object',
-						description: 'optional: only objects whose WORLD position is inside this box',
-						properties: { min: { type: 'array', items: { type: 'number' }, description: '[x, y, z]' }, max: { type: 'array', items: { type: 'number' }, description: '[x, y, z]' } },
+						description: 'optional: only objects inside this WORLD box — by: origin = their position (the default), touches = any part of their world mesh bounds overlaps it (a long wall crossing in), inside = all of it fits',
+						properties: { min: { type: 'array', items: { type: 'number' }, description: '[x, y, z]' }, max: { type: 'array', items: { type: 'number' }, description: '[x, y, z]' }, by: { type: 'string', enum: ['origin', 'touches', 'inside'] } },
 						required: ['min', 'max']
 					},
 					limit: { type: 'number', description: 'optional: objects per page (1-500); the reply has nextCursor when more match' },
@@ -1379,7 +1408,7 @@ export const AI_TOOLS = [
 									type: 'array',
 									items: { type: 'number' },
 									description:
-										'up to 4 constructor args. Box=[w,h,d], Sphere=[radius], Cylinder=[rTop,rBottom,height], Cone=[radius,height], Plane=[w,h], Torus=[radius,tube]. Omit for sensible defaults.'
+										'up to 4 constructor args. Box=[w,h,d], Sphere=[radius], Cylinder=[rTop,rBottom,height], Cone=[radius,height], Plane=[w,h], Torus=[radius,tube]. Omit for sensible defaults. Sizes go down to 0.001 m.'
 								},
 								name: { type: 'string' },
 								position: { type: 'array', items: { type: 'number' }, description: '[x,y,z]' },
@@ -1392,7 +1421,7 @@ export const AI_TOOLS = [
 								color: { type: 'string', description: 'hex like #ff8800 (a mesh, or a light\'s colour)' },
 								...LIGHT_SCHEMA,
 								...SHADOW_SCHEMA,
-								lookAt: { description: 'turn it so its local +Z (front) faces this: a world point [x,y,z] or another object\'s uuid (+Y stays up; lights use aim)' },
+								lookAt: { description: 'turn it so its front (local +Z, or the front you give) faces this: a world point [x,y,z] or another object\'s uuid (+Y stays up; lights use aim)' },
 								at: {
 									type: 'object',
 									description: 'build at a spot a person PINGED (Ctrl+Alt+click, the menu\'s Ping, a long-press menu, the VR stick click): {ping: id} from where_are_users {pings: true}, or {ping: "latest"} = "here"; on a floor or table top it stands on it, and the ping follows the object it landed on. Or around a PERSON as they are now: {user: "me" | peer id | name, ahead: 1.5, right: 0, up: 0} (metres or body units; it faces them; call again to follow them as they walk). Sizes, positions and these offsets also take BODY UNITS: "eye", "height", "shoulder", "hip", "knee", "reach", "room", with a factor ("0.5 reach") — that person\'s, from where_are_users body',
@@ -1406,8 +1435,9 @@ export const AI_TOOLS = [
 								},
 								align: { type: 'string', enum: ['surface'], description: 'with at: back it onto the pinged surface (its +Z along the surface normal, upright on a wall) — a painting on a wall' },
 								snap: { type: 'string', enum: ['floor'], description: 'stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground' },
-								face_user: { description: 'turn it (yaw only) so its +Z front faces a person: true = the person you act for, or a peer id / name from where_are_users' },
-								parentUuid: { type: 'string', description: 'uuid of an existing group to nest under — position/rotation/scale are then LOCAL to that group' },
+								face_user: { description: 'turn it (yaw only) so its front faces a person: true = the person you act for, or a peer id / name from where_are_users' },
+								front: { type: 'string', enum: ['+z', '-z', '+x', '-x', '+y', '-y'], description: 'which local axis is its front for lookAt and face_user (default +z; many models face +x or -z — look at a screenshot)' },
+								parentUuid: { type: 'string', description: 'uuid of an existing group (or any object, not a light or camera) to nest under — position/rotation/scale are then LOCAL to it. A uuid that is not in the scene is an error and that object is not made' },
 								physics: {
 									type: 'string',
 									enum: ['static', 'dynamic'],
@@ -1455,7 +1485,7 @@ export const AI_TOOLS = [
 								},
 								...LIGHT_SCHEMA,
 								...SHADOW_SCHEMA,
-								lookAt: { description: 'turn it so its local +Z (front) faces this: a world point [x,y,z] or another object\'s uuid (+Y stays up; lights use aim)' },
+								lookAt: { description: 'turn it so its front (local +Z, or the front you give) faces this: a world point [x,y,z] or another object\'s uuid (+Y stays up; lights use aim)' },
 								at: {
 									type: 'object',
 									description: 'build at a spot a person PINGED (Ctrl+Alt+click, the menu\'s Ping, a long-press menu, the VR stick click): {ping: id} from where_are_users {pings: true}, or {ping: "latest"} = "here"; on a floor or table top it stands on it, and the ping follows the object it landed on. Or around a PERSON as they are now: {user: "me" | peer id | name, ahead: 1.5, right: 0, up: 0} (metres or body units; it faces them; call again to follow them as they walk). Sizes, positions and these offsets also take BODY UNITS: "eye", "height", "shoulder", "hip", "knee", "reach", "room", with a factor ("0.5 reach") — that person\'s, from where_are_users body',
@@ -1469,11 +1499,12 @@ export const AI_TOOLS = [
 								},
 								align: { type: 'string', enum: ['surface'], description: 'with at: back it onto the pinged surface (its +Z along the surface normal, upright on a wall) — a painting on a wall' },
 								snap: { type: 'string', enum: ['floor'], description: 'stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground' },
-								face_user: { description: 'turn it (yaw only) so its +Z front faces a person: true = the person you act for, or a peer id / name from where_are_users' },
+								face_user: { description: 'turn it (yaw only) so its front faces a person: true = the person you act for, or a peer id / name from where_are_users' },
+								front: { type: 'string', enum: ['+z', '-z', '+x', '-x', '+y', '-y'], description: 'which local axis is its front for lookAt and face_user (default +z; many models face +x or -z — look at a screenshot)' },
 								visible: { type: 'boolean' },
 								parentUuid: {
 									type: 'string',
-									description: 'group uuid to nest under, or "root" to un-nest. The object keeps its world pose; a position given in the same update is LOCAL to the new parent'
+									description: 'group uuid (or any object, not a light or camera) to nest under, or "root" to un-nest. The object keeps its world pose; a position given in the same update is LOCAL to the new parent. A uuid not in the scene is an error'
 								}
 							},
 							required: ['uuid']
@@ -1821,7 +1852,7 @@ const PHYSICS_AI_TOOLS = [
  * Call this per turn (readiness can change). @param {ToolOpts} [opts] @returns {any[]} */
 export function getAiTools(opts) {
 	const physics = !!opts?.physics || physicsToolsEnabled();
-	const tools = [...AI_TOOLS, ...GEOMETRY_AI_TOOLS, ...LOOK_AI_TOOLS, ...HUD_AI_TOOLS, ...SCENE_SETUP_AI_TOOLS, ...WORLD_AI_TOOLS, ...ASSIST_AI_TOOLS, ...RUNTIME_AI_TOOLS, ...flowToolSchemas(physics), ...behaviourToolSchemas()];
+	const tools = [...AI_TOOLS, ...GEOMETRY_AI_TOOLS, ...TEXT_AI_TOOLS, ...LOOK_AI_TOOLS, ...HUD_AI_TOOLS, ...SCENE_SETUP_AI_TOOLS, ...WORLD_AI_TOOLS, ...ASSIST_AI_TOOLS, ...RUNTIME_AI_TOOLS, ...flowToolSchemas(physics), ...behaviourToolSchemas()];
 	if (physics) tools.push(...PHYSICS_AI_TOOLS);
 	if (meshGenReady()) tools.push(MESH_TOOL);
 	return tools;
@@ -1926,6 +1957,6 @@ export function buildSystemPrompt(opts) {
 		"an object's name as the tool name — the name of a thing you create belongs in that object's",
 		'`name` field inside create_objects. Every call takes effect immediately, so never repeat a',
 		'call that already came back without an error — once the scene matches the request, stop',
-		'calling tools and write the summary.' + meshLine + toolsLine + GEOMETRY_PROMPT + LOOK_PROMPT + HUD_PROMPT + SCENE_SETUP_PROMPT + WORLD_PROMPT + ASSIST_PROMPT + RUNTIME_PROMPT + flowBlock + extraBlock + physicsBlock
+		'calling tools and write the summary.' + meshLine + toolsLine + GEOMETRY_PROMPT + TEXT_PROMPT + LOOK_PROMPT + HUD_PROMPT + SCENE_SETUP_PROMPT + WORLD_PROMPT + ASSIST_PROMPT + RUNTIME_PROMPT + flowBlock + extraBlock + physicsBlock
 	].join('\n');
 }

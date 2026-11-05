@@ -75,6 +75,7 @@ class FakeEngine extends EventEmitter {
 	}
 	async screenshot(opts) {
 		this.lastShot = opts;
+		if (opts.view === 'camera' && !opts.uuid) return { error: 'view camera needs uuid: one camera object' };
 		return { data: 'iVBORw0KGgo=', mimeType: 'image/png' };
 	}
 	async waitForEdit(ms) {
@@ -241,6 +242,8 @@ check('get_thread forwards chatId/before/limit', json(th).chatId === 'c9' && eng
 const shot = await call('screenshot', { view: 'top', size: 512 });
 check('screenshot → an MCP image block', shot.content[0].type === 'image' && shot.content[0].mimeType === 'image/png' && shot.content[0].data === 'iVBORw0KGgo=');
 check('screenshot options forwarded', engines[0].lastShot.view === 'top' && engines[0].lastShot.size === 512);
+const refusedShot = await call('screenshot', { view: 'camera' });
+check('a refused screenshot answers its reason, no picture (diorama2 26)', refusedShot.isError === true && /needs uuid/.test(json(refusedShot).error) && !refusedShot.content.some((c) => c.type === 'image'));
 const w = json(await call('wait_for_edit', { timeout_ms: 999999 }));
 check('wait_for_edit clamps its timeout', w.changed === true && w.waited === 120000);
 

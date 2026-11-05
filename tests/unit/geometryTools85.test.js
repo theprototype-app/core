@@ -9,7 +9,12 @@ import * as THREE from 'three';
 import { get } from 'svelte/store';
 
 // mcp-shapes: a real attach (keeps the world pose, as the app's does), wired below once the stores are loaded
-vi.mock('$lib/objectActions', () => ({ moveObjectToGroup: (uuid, target) => globalThis.__testAttach?.(uuid, target) }));
+vi.mock('$lib/objectActions', () => ({
+	moveObjectToGroup: (uuid, target) => globalThis.__testAttach?.(uuid, target),
+	// diorama2: the app's Duplicate in miniature — a clone (geometry SHARED, as Object3D.clone does), fresh uuids, the
+	// `duplicate` message and a create entry
+	duplicateObject: (uuid, options = {}) => globalThis.__testDuplicate?.(uuid, options)
+}));
 vi.mock('$lib/physics', () => ({ setPhysicsFor: () => {}, physicsShapeChanged: () => {} }));
 
 const { objectsGroup } = await import('../../src/stores/sceneStore');
@@ -21,6 +26,21 @@ const core = await import('../../src/lib/ai/meshSelectCore.js');
 const { latheGeometry, extrudeGeometry, cleanExtrude, cleanLathe } = await import('../../src/lib/customGeometries.js');
 const { summarizeToolCall } = await import('../../src/lib/agentLogCore.js');
 const { readTriangles } = await import('../../src/lib/faceEdit.js');
+globalThis.__testDuplicate = (uuid, options) => {
+	const root = get(objectsGroup);
+	const source = root.getObjectByProperty('uuid', uuid);
+	if (!source) return null;
+	const clone = source.clone(true);
+	const nodes = [];
+	clone.traverse((n) => nodes.push(n));
+	nodes.forEach((n) => (n.uuid = crypto.randomUUID()));
+	clone.name = options.name || source.name + ' copy';
+	if (options.at) clone.position.fromArray(options.at);
+	source.parent.add(clone);
+	get(peers)?.send({ type: 'duplicate', sourceUuid: uuid, uuids: nodes.map((n) => n.uuid), name: clone.name, pos: clone.position.toArray() });
+	history.recordObjectPresence('create', clone);
+	return clone;
+};
 globalThis.__testAttach = (uuid, target) => {
 	const root = get(objectsGroup);
 	const o = root.getObjectByProperty('uuid', uuid);
@@ -110,6 +130,17 @@ describe('G1 set_geometry', () => {
 		expect(c.warnings.length).toBe(2);
 		// create_objects' positional form maps onto the constructor order
 		expect(cleanParamPatch('Box', [2, 3, 4]).patch).toEqual({ width: 2, height: 3, depth: 4 });
+	});
+
+	it('diorama2: ONE small minimum for every primitive size (an Octahedron radius clamped to 0.1, a Sphere took 0.006)', () => {
+		for (const [type, key] of [['Octahedron', 'radius'], ['Sphere', 'radius'], ['Icosahedron', 'radius'], ['Box', 'width'], ['Torus', 'tube'], ['Capsule', 'radius']]) {
+			expect(cleanParamPatch(type, { [key]: 0.006 }).patch[key]).toBe(0.006);
+			const tiny = cleanParamPatch(type, { [key]: 0.0001 });
+			expect(tiny.patch[key]).toBe(0.001);
+			expect(tiny.warnings[0]).toMatch(/0\.001/);
+		}
+		// a size that may be 0 (a cone's top radius) still may
+		expect(cleanParamPatch('Cylinder', { radiusTop: 0 }).patch.radiusTop).toBe(0);
 	});
 
 	it('refuses an unknown type, a non-mesh and a mesh with no params', async () => {
@@ -395,10 +426,74 @@ describe('mcp-shapes: create_shape in a group, colours at creation, many in one 
 		expect(worldOf(o).x).toBeCloseTo(-0.9, 6);
 	});
 
-	it('a parentUuid that is not a group is a warning, the shape is made at the root', async () => {
+	it('diorama2: a parentUuid that names nothing is an ERROR and nothing is made (it used to land at the root)', async () => {
+		const before = group.children.length;
 		const r = await call('create_mesh', { ...CUBE, parentUuid: 'nope' });
-		expect(r.created[0].warnings[0]).toMatch(/no group/);
-		expect(live(r.created[0].uuid).parent).toBe(group);
+		expect(r.error).toMatch(/parentUuid: no object with that uuid/);
+		expect(group.children.length).toBe(before);
+		const t = await call('create_tube', { path: [[0, 0, 0], [0, 2, 0]], parentUuid: 'nope' });
+		expect(t.error).toMatch(/parentUuid/);
+		const b = await call('create_shapes', { shapes: [{ action: 'mesh', mesh: { ...CUBE } }, { action: 'mesh', mesh: { ...CUBE, parentUuid: 'nope' } }] });
+		expect(b.error).toMatch(/shapes\[1\].*parentUuid/);
+		expect(group.children.length).toBe(before);
+	});
+
+	it('diorama2: a plain Object3D (a group an older autosave restored) is a parent; a light is not', async () => {
+		const holder = new THREE.Object3D();
+		holder.name = 'fox_head';
+		holder.position.set(2, 0, 0);
+		group.add(holder);
+		const r = await call('create_mesh', { ...CUBE, parentUuid: holder.uuid, name: 'eye_l' });
+		expect(r.created[0].warnings).toBeUndefined();
+		expect(live(r.created[0].uuid).parent).toBe(holder);
+		const light = new THREE.PointLight();
+		group.add(light);
+		const l = await call('create_mesh', { ...CUBE, parentUuid: light.uuid });
+		expect(l.error).toMatch(/is a light/);
+	});
+
+	it('diorama2: colors with no color = a WHITE material (a palette pastel used to tint the vertex colours)', async () => {
+		const colors = CUBE.vertices.map(() => [1, 0, 0]);
+		const r = await call('create_mesh', { ...CUBE, colors });
+		expect(live(r.created[0].uuid).material.color.getHexString()).toBe('ffffff');
+		const own = await call('create_mesh', { ...CUBE, colors, color: '#336699' });
+		expect(live(own.created[0].uuid).material.color.getHexString()).toBe('336699');
+		const plain = await call('create_mesh', { ...CUBE });
+		expect(live(plain.created[0].uuid).material.color.getHexString()).not.toBe('ffffff');
+	});
+
+	it('diorama2: colors are sRGB by default, hex strings per vertex, colorSpace "linear" passes numbers through', async () => {
+		const half = CUBE.vertices.map(() => [0.5, 0.5, 0.5]);
+		const srgb = await call('create_mesh', { ...CUBE, colors: half });
+		const c = live(srgb.created[0].uuid).geometry.attributes.color;
+		expect(c.getX(0)).toBeCloseTo(core.srgbToLinear(0.5), 5); // 0.214, not 0.5 (washed out)
+		const lin = await call('create_mesh', { ...CUBE, colors: half, colorSpace: 'linear' });
+		expect(live(lin.created[0].uuid).geometry.attributes.color.getX(0)).toBeCloseTo(0.5, 5);
+		const hex = await call('create_mesh', { ...CUBE, colors: CUBE.vertices.map(() => '#ff8000') });
+		const h = live(hex.created[0].uuid).geometry.attributes.color;
+		expect([h.getX(0), h.getY(0), h.getZ(0)].map((n) => Math.round(n * 1000) / 1000)).toEqual([1, Math.round(core.srgbToLinear(128 / 255) * 1000) / 1000, 0]);
+		expect((await call('create_mesh', { ...CUBE, colors: half, colorSpace: 'cmyk' })).error).toMatch(/colorSpace/);
+	});
+
+	it('diorama2: a rejected colors / vertices / uvs list says how many entries arrived and the first bad index', async () => {
+		const short = await call('create_mesh', { ...CUBE, colors: [[1, 0, 0]] });
+		expect(short.error).toMatch(/1 entry arrived, the mesh has 8 vertices/);
+		const bad = CUBE.vertices.map(() => [1, 0, 0]);
+		bad[5] = [2, 0, 0];
+		bad[6] = 'blue';
+		expect((await call('create_mesh', { ...CUBE, colors: bad })).error).toMatch(/^colors\[5\] \(the first bad one of 8 entries\).*got \[2,0,0\]/);
+		const verts = CUBE.vertices.slice();
+		verts[3] = [0, 'x', 0];
+		expect((await call('create_mesh', { ...CUBE, vertices: verts })).error).toMatch(/^vertices\[3\] \(the first bad one of 8 entries\)/);
+		expect((await call('create_mesh', { ...CUBE, uvs: [[0, 0], [1, 0]] })).error).toMatch(/uvs: 2 entries arrived, the mesh has 8 vertices/);
+	});
+
+	it('diorama2: update_mesh patch takes sRGB / hex colours the same way', async () => {
+		const r = await call('create_mesh', { ...CUBE, colors: CUBE.vertices.map(() => '#ffffff') });
+		const uuid = r.created[0].uuid;
+		const p = await call('update_mesh', { uuid, mode: 'patch', offset: 0, vertices: [CUBE.vertices[0]], colors: [[0.5, 0.5, 0.5]] });
+		expect(p.updated[0].ok).toBe(true);
+		expect(live(uuid).geometry.attributes.color.getX(0)).toBeCloseTo(core.srgbToLinear(0.5), 5);
 	});
 
 	it('colors = per-vertex colours on the meshgeo (raw bytes), vertexColors on; flatShading at creation', async () => {
@@ -536,5 +631,82 @@ describe('85b G9 subdivide + G6b update_mesh', () => {
 		expect((await call('update_mesh', { uuid: m.uuid, mode: 'patch', vertices: [[0, 0, 1]] })).error).toMatch(/send mode "replace"/);
 		const ok = await call('update_mesh', { uuid: m.uuid, vertices: CUBE.vertices, faces: CUBE.faces, subdivide: 1 });
 		expect(ok.updated[0]).toMatchObject({ ok: true, subdivided: 1, triangles: 48 });
+	});
+});
+
+describe('diorama2 duplicate (edit_shape duplicate)', () => {
+	/** world-space face normal of triangle t of a mesh */
+	const normalOf = (m, t) => {
+		m.updateWorldMatrix(true, false);
+		const tris = readTriangles(m.geometry);
+		const [a, b, c] = tris[t].map((v) => v.clone().applyMatrix4(m.matrixWorld));
+		return new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a)).normalize();
+	};
+
+	it('count + offset: copies in a row, one `duplicate` message each, ONE undo removes them all', async () => {
+		const box = prim(new THREE.BoxGeometry(1, 1, 1), 'Post');
+		const r = await call('duplicate', { uuid: box.uuid, count: 3, offset: [2, 0, 0] });
+		expect(r.created.map((c) => c.position[0])).toEqual([2, 4, 6]);
+		expect(sent.filter((m) => m.type === 'duplicate').length).toBe(3);
+		expect(group.children.length).toBe(4);
+		expect(live(r.created[0].uuid).geometry).toBe(box.geometry); // nothing resent: the copy shares the source's data
+		await history.undo();
+		expect(group.children.length).toBe(1);
+	});
+
+	it('mirror x in a group: the copy lands across the centre line, re-wound so its faces point the mirrored way', async () => {
+		const body = new THREE.Group();
+		group.add(body);
+		const r0 = await call('create_mesh', { name: 'Ear', vertices: [[0.5, 0, 0], [1, 0, 0], [0.6, 1, 0.3]], faces: [[0, 1, 2]], parentUuid: body.uuid, position: [1, 0.5, 0], rotation: [0, 0.4, 0.2] });
+		const ear = live(r0.created[0].uuid);
+		const n0 = normalOf(ear, 0);
+		const p0 = ear.getWorldPosition(new THREE.Vector3());
+		sent = [];
+		const r = await call('duplicate', { uuid: ear.uuid, mirror: 'x' });
+		expect(r.mirror).toBe('x');
+		expect(r.rewound).toBe(1);
+		const twin = live(r.created[0].uuid);
+		expect(twin.parent).toBe(body);
+		expect(twin.scale.x).toBeGreaterThan(0); // a proper rotation and a positive scale: the mirror is in the triangles
+		const p1 = twin.getWorldPosition(new THREE.Vector3());
+		expect(p1.x).toBeCloseTo(-p0.x, 5);
+		expect(p1.y).toBeCloseTo(p0.y, 5);
+		const n1 = normalOf(twin, 0);
+		expect(n1.x).toBeCloseTo(-n0.x, 5);
+		expect(n1.y).toBeCloseTo(n0.y, 5);
+		expect(n1.z).toBeCloseTo(n0.z, 5);
+		// every world corner of the copy is a corner of the source with x negated
+		ear.updateWorldMatrix(true, false);
+		twin.updateWorldMatrix(true, false);
+		const corners = (m) => readTriangles(m.geometry)[0].map((v) => v.clone().applyMatrix4(m.matrixWorld));
+		const src = corners(ear).map((v) => [-v.x, v.y, v.z].map((n) => n.toFixed(4)).join());
+		for (const v of corners(twin)) expect(src).toContain([v.x, v.y, v.z].map((n) => n.toFixed(4)).join());
+		expect(sent.some((m) => m.type === 'meshgeo' && m.uuid === twin.uuid)).toBe(true);
+		expect(ear.geometry.attributes.position.count).toBe(3); // the source is untouched
+		await history.undo();
+		expect(live(twin.uuid)).toBeUndefined();
+	});
+
+	it('a Box (and an even-segment cylinder) is its own mirror image: the copy keeps its editable params', async () => {
+		const box = prim(new THREE.BoxGeometry(1, 2, 3), 'Crate');
+		box.position.set(2, 0, 0);
+		const r = await call('duplicate', { uuid: box.uuid, mirror: 'x' });
+		expect(r.symmetric).toBe(1);
+		const twin = live(r.created[0].uuid);
+		expect(twin.geometry.type).toBe('BoxGeometry');
+		expect(twin.position.x).toBeCloseTo(-2);
+		const { mirrorSymmetric } = await import('../../src/lib/ai/geometryTools.js');
+		expect(mirrorSymmetric(new THREE.CylinderGeometry(1, 1, 2, 16), 0)).toBe(true);
+		expect(mirrorSymmetric(new THREE.CylinderGeometry(1, 1, 2, 7), 2)).toBe(false);
+		expect(mirrorSymmetric(new THREE.ConeGeometry(1, 2, 8), 1)).toBe(false);
+	});
+
+	it('refuses what it cannot copy, and a missing parent, before making anything', async () => {
+		const box = prim(new THREE.BoxGeometry(), 'B');
+		expect((await call('duplicate', { uuid: 'nope' })).error).toMatch(/uuid/);
+		expect((await call('duplicate', { uuid: box.uuid, count: 51 })).error).toMatch(/scatter/);
+		expect((await call('duplicate', { uuid: box.uuid, mirror: 'w' })).error).toMatch(/mirror/);
+		expect((await call('duplicate', { uuid: box.uuid, parentUuid: 'gone' })).error).toMatch(/nothing was made/);
+		expect(group.children.length).toBe(1);
 	});
 });

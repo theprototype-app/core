@@ -10,6 +10,8 @@ import { get } from 'svelte/store';
 import { createAgentCore, missingModulesFrom, viewerRefusal } from './agentCore.js';
 import { getAiTools, executeAiTool, buildSystemPrompt, summarizeScene, repairToolCall, MESH_TOOL } from '$lib/ai/tools.js';
 import { IMPORT_MODEL_TOOL } from '$lib/ai/importModel.js'; // 56 C9
+import { IMPORT_SHAPE_TOOL } from '$lib/ai/importShape.js'; // diorama2 item 9
+import { UPLOAD_ASSET_TOOL } from '$lib/ai/uploadAsset.js'; // diorama2 items 16 + 24
 import { IMPORT_FILE_TOOL } from '$lib/ai/importFile.js'; // 66 S4b
 import { physicsToolsEnabled, forcePhysicsTools } from '$lib/ai/flowTools.js';
 import { meshGenReady } from '$lib/ai/meshProviders.js';
@@ -22,12 +24,14 @@ import { agentInbox } from './agentInbox.js';
 import { beginHistoryBatch, endHistoryBatch } from '$lib/history';
 import { peers, userdata, waitingForApproval, toastStore, dismissToastById, loading, loadingcount } from '../../stores/appStore.js';
 import { sceneLoad } from '$lib/sceneLoader.js';
-import { globalRenderer } from '../../stores/sceneStore.js';
+import { globalRenderer, objectsGroup } from '../../stores/sceneStore.js';
 import { agentBudgetReport } from '$lib/sceneBudget';
 import { recentLogs } from '$lib/ai/runtimeTools.js'; // 85b R3
 import { scriptErrors } from '../../stores/flowStore';
 import { sessionHost, snapshotPending } from '$lib/connectionState';
 import { isAgentPeer } from '$lib/inviteStore';
+import { pingLog } from '$lib/pingLog.js';
+import { describePing } from '$lib/connector/whereAreUsers.js';
 import { requestConnect } from '$lib/peerApproval';
 import { rolesInfo } from '$lib/cloudHooks';
 import { dirtyPulse, dismissRestore, restoreAvailable } from '$lib/autosave';
@@ -375,6 +379,8 @@ function agentTools(opts) {
 	if (!meshGenReady() && hostMeshReady() && !list.some((t) => t?.function?.name === 'generate_mesh')) list.push(MESH_TOOL);
 	list.push(IMPORT_MODEL_TOOL); // 56 C9: a GLB built outside the app (the bridge maps a local `path` to `data`)
 	list.push(IMPORT_FILE_TOOL); // 66 S4b: a sheet + spec / JSON / .tpanim from a local tool (same `path` mapping)
+	list.push(UPLOAD_ASSET_TOOL); // diorama2 items 16 + 24: a sound or an HDR sky as bytes (the connector's assets upload)
+	list.push(IMPORT_SHAPE_TOOL); // diorama2 item 9: glTF / GLB / OBJ by data, chunks or https url (the connector's create_shape import)
 	return list;
 }
 
@@ -515,6 +521,20 @@ export function createTpAgent(extra = {}) {
 			}),
 		missingModules: () => missingModulesFrom(get(peerModuleVersions), openPeerIds(), moduleVersions()),
 		onSceneChange: (cb) => dirtyPulse.subscribe(() => cb()),
+		// mcp-diorama2 (19): a person's new ping wakes wait_for_edit, said the way where_are_users says it
+		onPing: (cb) => {
+			const seen = new Set((/** @type {any[]} */ (get(pingLog)) ?? []).map((p) => p.id));
+			const me = String(/** @type {any} */ (get(peers))?.peer?.id ?? '');
+			return pingLog.subscribe((log) => {
+				for (const rec of /** @type {any[]} */ (log ?? [])) {
+					if (seen.has(rec.id)) continue;
+					seen.add(rec.id);
+					if (isAgentPeer(rec.peer) || (!extra.connector && rec.peer === me)) continue;
+					const group = /** @type {any} */ (get(objectsGroup));
+					cb(group ? describePing(rec, group, Date.now()) : { id: rec.id, by: rec.peer });
+				}
+			});
+		},
 		screenshot: (opts) => (extra.screenshot ?? takeScreenshot)(opts),
 		lastShot: () => lastShot,
 		leave: async () => {

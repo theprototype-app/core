@@ -348,9 +348,10 @@ function createCompiler(graph, outputType) {
 				def.nativeType ??
 					outputTypeOf(def, (def.outputs ?? [])[0]?.name, node, (name) => inType[name] ?? null)
 			);
-			// a variadic socket adopts the wired type; the others coerce to it
+			// a variadic socket adopts the wired type; the others coerce to it. diorama2: a `keepType` socket keeps
+			// whatever is wired as it is (the GLSL expression node's a / b / c: a vec3 stays a vec3)
 			for (const socket of def.inputs ?? []) {
-				const want = socket.variadicType ? nativeType : socket.type;
+				const want = socket.keepType ? (inType[socket.name] ?? socket.type) : socket.variadicType ? nativeType : socket.type;
 				inExpr[socket.name] = coerce(
 					inExpr[socket.name],
 					/** @type {GlslType} */ (inType[socket.name] ?? want),

@@ -62,6 +62,24 @@ describe('authority — one peer decides, everyone agrees who', () => {
 		expect(pickAuthority({ me: 'b', peers: ['c'], host: null })).toBe('b');
 		expect(pickAuthority({ me: 'z', peers: ['y', 'x'] })).toBe('x');
 	});
+	it('mcp-diorama2 20: a view-only guest is never the authority while an editor is here; the host (admin) first', () => {
+		/** @type {Record<string, string>} */
+		const roles = { '0guest': 'viewer', host9: 'admin', ed5: 'editor' };
+		const roleOf = (/** @type {string} */ id) => roles[id] ?? 'viewer';
+		// the report: a guest with the smallest id won the fallback and nothing it decided reached anyone
+		for (const me of ['0guest', 'host9', 'ed5']) {
+			const peers = ['0guest', 'host9', 'ed5'].filter((p) => p !== me);
+			expect(pickAuthority({ me, peers, roleOf }), me).toBe('host9');
+			expect(pickAuthority({ me, peers, roleOf, initiator: '0guest', incumbent: '0guest' }), me).toBe('host9');
+		}
+		// the host gone: the editor, never the guest, though the guest simulated and wrote last
+		expect(pickAuthority({ me: '0guest', peers: ['ed5'], roleOf, initiator: '0guest', incumbent: '0guest' })).toBe('ed5');
+		expect(isAuthorityFor({ me: '0guest', peers: ['ed5'], roleOf })).toBe(false);
+		// guests only: still somebody decides (a game of viewers does not stall)
+		expect(pickAuthority({ me: 'b', peers: ['a'], roleOf: () => 'viewer' })).toBe('a');
+		// no roles (no plugin): unchanged
+		expect(pickAuthority({ me: 'z', peers: ['y', 'x'], roleOf: null })).toBe('x');
+	});
 	it('55: an AI agent page is never the authority while a person is present (41\'s gem test)', () => {
 		// the report: agent '1e16b' < host 'ff637', so the lowest-id fallback chose the agent
 		const host = { me: 'ff637', peers: ['1e16b'], agents: ['1e16b'] };

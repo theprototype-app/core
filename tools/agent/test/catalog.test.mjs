@@ -1,7 +1,7 @@
 // The static tool catalog (roadmap 86 T4 + 56 C19) and its voice instructions (86 T3). Pure: no browser.
 // Run: node test/catalog.test.mjs
 import fs from 'node:fs';
-import { buildCatalog, connectorInstructions, annotate, guidanceGaps, withGuidance, CATALOG_FORMAT, CONNECTOR_FAMILIES, CONNECTOR_STANDALONE, connectorView, resolveFamilyCall, sayFamilyNames } from '../src/catalog.js';
+import { buildCatalog, connectorInstructions, annotate, guidanceGaps, withGuidance, CATALOG_FORMAT, CONNECTOR_FAMILIES, CONNECTOR_STANDALONE, connectorView, resolveFamilyCall, sayFamilyNames, sayToolNames, familyNames } from '../src/catalog.js';
 import { BRIDGE_TOOL_NAMES } from '../src/mcpTools.js';
 
 let pass = 0;
@@ -86,6 +86,10 @@ check('join_session (86-fix N2) is listed as an edit that asks the person', c.to
 	check('TB: a tool in no family, not standalone and not excluded fails the generator (a new name needs an owner row)', /brand_new_tool/.test(stray));
 	const fam = { set_look: { material: 'set_material', get_material: 'get_material' } };
 	check('TB resolve: {action, <action>: {...}} → the fine tool with the inner fields', JSON.stringify(resolveFamilyCall(fam, 'set_look', { action: 'material', material: { objects: ['a'], color: '#f00' } })) === '{"tool":"set_material","args":{"objects":["a"],"color":"#f00"}}');
+	check(
+		'mcp-diorama2 17: a repeat with confirmId / wait beside the action object keeps them (the host\'s Allow reaches the call)',
+		JSON.stringify(resolveFamilyCall(fam, 'set_look', { action: 'material', material: { color: '#f00' }, confirmId: 'c1', wait: 30 }).args) === '{"color":"#f00","confirmId":"c1","wait":30}'
+	);
 	check('TB resolve: flattened fields still work', JSON.stringify(resolveFamilyCall(fam, 'set_look', { action: 'get_material', uuid: 'u' })) === '{"tool":"get_material","args":{"uuid":"u"}}');
 	check('TB resolve: an unknown action names the ones there are', /one of material, get_material/.test(resolveFamilyCall(fam, 'set_look', { action: 'paint' }).error ?? ''));
 	check('TB resolve: not a family = null', resolveFamilyCall(fam, 'list_scene', {}) === null);
@@ -107,6 +111,23 @@ check('join_session (86-fix N2) is listed as an edit that asks the person', c.to
 		return new Set(all).size === all.length && !all.some((t) => CONNECTOR_STANDALONE.includes(t));
 	})());
 	check('TB: sayFamilyNames leaves other words alone', sayFamilyNames('use set_material, not set_materials or list_scene') === "use set_look {action: 'material'}, not set_materials or list_scene");
+	// mcp-diorama2 item 4: the 1.60 rewrite replaced English words that are also tool names and JSON keys
+	check('diorama2: a one-word tool name in prose stays a word', sayFamilyNames('Build a campfire with logs and a warm light; scatter rocks on the terrain by the water, keep it as a prefab') === 'Build a campfire with logs and a warm light; scatter rocks on the terrain by the water, keep it as a prefab');
+	check('diorama2: a one-word tool name written as code is rewritten', sayFamilyNames('read `logs` for the error') === "read `run {action: 'logs'}` for the error");
+	check('diorama2: a JSON key and a JSON value that IS the name are data', sayFamilyNames('{"logs":[],"tool":"create_mesh","note":"use set_geometry"}') === '{"logs":[],"tool":"create_mesh","note":"use edit_shape {action: \'params\'}"}');
+	check('diorama2: the longest name wins (create_shapes, not create_shape + s)', sayToolNames('create_shapes', new Map([['create_shape', 'A'], ['create_shapes', 'B']])) === 'B');
+}
+
+// mcp-diorama2 item 4 — THE GUARD: no one-word family member ever turns up rewritten in the committed connector text
+// outside backticks (the "as a assets {action: 'prefab'}" / "the effects {action: 'terrain'}'s centre" corruption)
+{
+	const words = [...familyNames()].filter(([fine]) => !fine.includes('_'));
+	const texts = [];
+	const walk = (x) => (typeof x === 'string' ? texts.push(x) : x && typeof x === 'object' ? Object.values(x).forEach(walk) : null);
+	walk(JSON.parse(fs.readFileSync(new URL('../catalog.json', import.meta.url), 'utf8')).connector?.tools ?? []);
+	const bad = [];
+	for (const t of texts) for (const [, say] of words) for (let i = t.indexOf(say); i >= 0; i = t.indexOf(say, i + 1)) if (t[i - 1] !== '`') bad.push(t.slice(Math.max(0, i - 30), i + say.length + 10));
+	check('diorama2: no English word in the connector catalog was rewritten into a tool reference' + (bad.length ? ' — ' + bad.slice(0, 3).join(' | ') : ''), words.length > 3 && bad.length === 0);
 }
 
 // the committed catalog (written by core scripts/agent-tool-catalog.cjs) parses and has the instructions
@@ -137,6 +158,14 @@ check('catalog.json: 85-scene adds hud + game_setup and set_look {sky, light, en
 check('catalog.json: the run family = inspect / validate / logs, playtest left out of the connector', (() => {
 	const run = committed.connector.families.run ?? {};
 	return run.inspect === 'inspect_runtime' && run.validate === 'validate_scene' && run.logs === 'logs' && !('playtest' in run) && !('play' in run) && (committed.connectorExcluded ?? []).includes('playtest');
+})());
+
+// 64-text TX7: 3D text rides existing families — create_shape {text}, assets {fonts}; no new top-level name
+check('catalog.json: 64-text adds create_shape {text} + assets {fonts}, no new connector name', (() => {
+	const v = committed.connector;
+	const f = v.families;
+	const names = new Set([...Object.keys(f), ...(v.tools ?? []).map((/** @type {any} */ t) => t.name)]);
+	return f.create_shape?.text === 'create_text' && f.assets?.fonts === 'list_fonts' && !names.has('create_text') && !names.has('list_fonts') && !names.has('text');
 })());
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

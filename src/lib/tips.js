@@ -49,6 +49,9 @@ export const TIP_PHONE_MORE = 'phone-more-drag';
 /** 73 AI6: Generate 3D model can start from a picture (retires on the first picture picked) */
 export const TIP_MESH_PICTURE = 'mesh-from-picture';
 
+/** 64-text: the Text section's first-use how-to (Solid / Bake / fonts; retires on a mode switch, or its ✕) */
+export const TIP_TEXT_3D = 'text-3d-first-use';
+
 /** 68: Film mode's first-use how-to (retires on the first take, or its ✕) */
 export const TIP_FILM = 'film-first-use';
 
@@ -57,8 +60,8 @@ export const TIP_AGENT_SHAPES = 'agent-shapes-looks';
 /** the tools that retire it: geometryTools + lookTools + assistTools NAMES minus the look tools that only read (a unit
  * test keeps them in step; those modules pull three.js, so the row cannot import them) */
 export const AGENT_TIP_TOOLS = new Set([
-	...['set_geometry', 'create_lathe', 'create_tube', 'extrude_shape', 'edit_mesh', 'create_mesh', 'create_shapes', 'update_mesh'],
-	...['set_material', 'create_shader', 'edit_shader', 'assign_shader', 'set_post', 'create_post_graph', 'uv_unwrap', 'set_uv'],
+	...['set_geometry', 'create_lathe', 'create_tube', 'extrude_shape', 'edit_mesh', 'create_mesh', 'create_shapes', 'update_mesh', 'duplicate'],
+	...['set_material', 'create_shader', 'edit_shader', 'assign_shader', 'set_post', 'create_post_graph', 'uv_unwrap', 'set_uv', 'set_quality'],
 	...['undo_last', 'set_pivot', 'create_pivot', 'add_image']
 ]);
 

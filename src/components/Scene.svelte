@@ -47,6 +47,7 @@
 	import { updateSpatialAudio } from '$lib/voiceChat';
 	import { tickAnimatedMixers } from '$lib/animatedImports';
 	import { tickSim } from '$lib/sim/runtime.js'; // 36-sim: jiggle, splashes, fluid tanks
+	import { tickTextPathsLazy } from '$lib/textPathTick.js'; // 64 D2: text on a path
 	import { startPackBehaviors, tickPackBehaviors } from '$lib/packBehavior';
 	import { startArchParts } from '$lib/arch/archParts.js';
 	import { tickAnimationPreview, captureAutoKey, playheadOf } from '$lib/animationPreview';
@@ -79,7 +80,7 @@
 	import { setParticleRoot } from '$lib/particleRuntime';
 	import WaterLayer from './water/WaterLayer.svelte';
 	import { registerEditResumeSources } from '$lib/editResume';
-	import { sendPing } from '$lib/ping';
+	import { sendPing, surfaceHit } from '$lib/ping';
 	import { startLightHelpers, updateLightHelpers, lightProxiesGroup } from '$lib/lightHelpers';
 	import { HELPER_LAYER } from '$lib/helperLayer';
 	import { startColliderHelpers, updateColliderHelpers } from '$lib/colliderHelpers';
@@ -449,6 +450,7 @@
 		tickAnimatedMixers(); // imported clips run on the synced clock
 		tickPackBehaviors(); // 33 P2: doors/lids/levers pose from their shared state (rest in Edit)
 		tickSim($objectsGroup, camera.current, renderer, performance.now()); // 36-sim (after mixers: jiggle rides the posed bones)
+		tickTextPathsLazy($objectsGroup, performance.now()); // 64 D2: letters follow their carriers (and linked paths)
 		tickAnimationPreview(); // Animation window: local transform preview (not synced)
 		tickSequences(); // 48 S2: shots / clips / audio / events of running sequences
 		tickMeshEdit(); // vertex handles follow the object if it moves (119)
@@ -1259,12 +1261,14 @@
 			// Ctrl+Alt+click pings the pointed spot for every peer (36 F22: plain Alt+click is
 			// the selection cycle now — Blender/Unity's gesture for "the thing behind")
 			if (event.altKey && (event.ctrlKey || event.metaKey)) {
-				const hits = pickSceneObjects();
+				// mcp-diorama2 (19): a SURFACE hit — selection's tiny-object / measurement proxies sit at an object's
+				// origin, so a ping near a small thing used to land on its origin instead of where you pointed
+				const hit = surfaceHit(pickSceneObjects());
 				const planePoint = new THREE.Vector3();
-				const point = hits[0]?.point ??
+				const point = hit?.point ??
 					(selectionRaycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), planePoint)
 						? planePoint : null);
-				if (point) sendPing(point, undefined, hits[0]); // 85b S2: the hit = what it landed on
+				if (point) sendPing(point, undefined, hit); // 85b S2: the hit = what it landed on
 				return;
 			}
 			// 57.2: the spline tool places a control point per click; a second click

@@ -15,13 +15,15 @@
 		"net-stress": "multi-peer stress on the self-hosted signaling box",
 		"perf-beacon": "reads a hosts-mapped preview origin",
 		"timeline-export": "needs the built app (scripts/serve-build.cjs), not the dev server",
-		"stale-chunk": "needs the built app (scripts/serve-build.cjs): vite's preload helper is build-only, so it only SKIPs on a dev server"
+		"stale-chunk": "needs the built app (scripts/serve-build.cjs): vite's preload helper is build-only, so it only SKIPs on a dev server",
+		"text-export": "needs the built app (scripts/serve-build.cjs): the exporter reads build/export-manifest.json, so it only SKIPs on a dev server"
 	},
 	"optional": {
 		"play-entry": "joined from 94-play (roadmap 94 slim play runtime, 2026-11-03): not yet measured on a GitHub runner, so it reports and does not gate",
 		"play-hud-layout": "joined from 94-play (roadmap 94 SP6, 2026-11-03): not yet measured on a GitHub runner, so it reports and does not gate",
 		"agent-bridge": "red on the GitHub runner (SwiftShader, no retry) with unchanged code: deps-auto run 5, 2026-10-24",
 		"agent-level-proof": "joined from 85b-int (the 1.60 release proof: one agent session builds a level; fetches a CC0 sound from jsDelivr): not yet measured on a GitHub runner, so it reports and does not gate",
+		"agent-diorama2": "joined from mcp-diorama2 (the diorama build report, 2026-11-04): not yet measured on a GitHub runner, so it reports and does not gate",
 		"agent-scene": "joined from 85-scene (roadmap 85 HUD, sky and play tools, 2026-11-04): not yet measured on a GitHub runner, so it reports and does not gate",
 		"agent-look": "joined from 85-look (roadmap 85 materials and looks, 2026-10-31): not yet measured on a GitHub runner, so it reports and does not gate",
 		"agent-conformance": "joined from 55-next (1.48.1 agent tool contract, 41's research rounds 1-6, 2026-10-28): not yet measured on a GitHub runner, so it reports and does not gate until a deps run has seen it green",
@@ -279,12 +281,15 @@
 		"agent-runtime": "agent",
 		"agent-level-proof": "agent",
 		"agent-shapes": "agent",
+		"agent-diorama2": "agent",
 		"agent-proof": "agent",
 		"agent-chat": "agent",
 		"import-file": "agent"
 	},
 	"suites": {
 		"possess": 120,
+		"text-path": 360,
+		"text-object": 480,
 		"no-webgl": 120,
 		"stale-chunk": 150,
 		"model-replace": 540,
@@ -324,6 +329,7 @@
 		"agent-runtime": 120,
 		"agent-level-proof": 360,
 		"agent-shapes": 240,
+		"agent-diorama2": 360,
 		"agent-proof": 600,
 		"agent-travel": 240,
 		"ai-connection": 90,
@@ -451,6 +457,7 @@
 		"explorer-views": 305,
 		"export-presets": 288,
 		"export-zip": 2,
+		"text-export": 240,
 		"external-font-cdn": 19,
 		"fb-water": 80,
 		"fb-water-phone": 260,

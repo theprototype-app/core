@@ -224,7 +224,7 @@ async function checkpointTool(args, recorder) {
 		if (!(await otherPeople()).length) return recorder.restoreCheckpoint(name);
 		const { gateScenewide } = await import('$lib/agent/confirmGate.js');
 		return gateScenewide('undo_last', args, {
-			summary: 'go back to its checkpoint "' + name + '" (undo its last ' + plan.lines.length + ' change' + (plan.lines.length === 1 ? '' : 's') + ')',
+			summary: 'go back to a checkpoint "' + name + '" (undo its last ' + plan.lines.length + ' change' + (plan.lines.length === 1 ? '' : 's') + ')',
 			apply: () => recorder.restoreCheckpoint(name)
 		});
 	}

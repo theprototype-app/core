@@ -83,7 +83,10 @@ const EXTENSIONS = {
 	hdri: ['hdr', 'exr'],
 	// 57 M1: an animation CLIP (.tpanim). A .vrma / .bvh / animation-only .glb or .fbx is converted
 	// to one on import (tpanim/convert.js), so the library only ever holds .tpanim clips
-	anim: ['tpanim']
+	anim: ['tpanim'],
+	// 64-text TX3: a FONT the 3D text object draws with (a WOFF2 is decoded to TTF on import —
+	// troika and opentype.js cannot read it)
+	font: ['ttf', 'otf', 'woff', 'woff2']
 };
 
 /** 57 M1: extensions whose files MAY be animation clips — the converter decides (lazy chunk) */
@@ -95,6 +98,18 @@ const MAYBE_ANIMATION = /\.(vrma|bvh|glb|fbx)$/i;
  * @param {File} file @returns {Promise<File[] | null | false>}
  */
 async function convertForImport(file) {
+	if (/\.woff2$/i.test(file.name)) {
+		// 64-text: the Library keeps fonts as sfnt bytes (lazy WASM decoder)
+		try {
+			const { decodeWoff2 } = await import('./textFonts.js');
+			const ttf = await decodeWoff2(new Uint8Array(await file.arrayBuffer()));
+			return [new File([/** @type {BlobPart} */ (ttf)], file.name.replace(/\.woff2$/i, '.ttf'), { type: 'font/ttf' })];
+		} catch (error) {
+			console.log('woff2 import failed', file.name, error);
+			showToast('Could not read the font ' + file.name);
+			return false;
+		}
+	}
 	if (!MAYBE_ANIMATION.test(file.name)) return null;
 	try {
 		const { convertAnimationFile } = await import('./tpanim/convert.js');

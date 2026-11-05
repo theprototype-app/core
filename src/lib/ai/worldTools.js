@@ -30,6 +30,9 @@ import {
 	sniffAudio,
 	AUDIO_MAX_BYTES,
 	SOUND_TRIGGERS,
+	packSoundRows,
+	parsePackSoundId,
+	heightSplat,
 	placementPoints
 } from './worldToolsCore.js';
 import { PARTICLE_PRESETS, PARTICLE_DEFAULTS, particlePreset } from '$lib/particlePresets';
@@ -152,16 +155,49 @@ async function libraryRows(kinds) {
 		}));
 }
 
-/** pack rows (models; a zip pack's sounds land in the library when installed) @param {string[]} kinds @param {string[]} notes */
+/** a zip pack's manifest.json, read once per session (a few KB) @type {Map<string, Promise<any>>} */
+const packManifests = new Map();
+
+/** @param {any} pack @returns {Promise<any>} */
+function packManifest(pack) {
+	const url = String(pack.base) + '/manifest.json';
+	let got = packManifests.get(url);
+	if (!got) {
+		got = (async () => {
+			const { fetchIndex } = await import('$lib/contentBase');
+			const res = await fetchIndex(url);
+			if (!res.ok) throw new Error(String(res.status));
+			return res.json();
+		})();
+		got.catch(() => packManifests.delete(url));
+		packManifests.set(url, got);
+	}
+	return got;
+}
+
+/**
+ * pack rows: models from a list pack, and (mcp-diorama2 24a) the SOUNDS of a zip pack from its manifest — an id
+ * `pack:<name>/<file>` that place_sound / set_music copy into the library on first use. An INSTALLED pack's items
+ * are library items and list there. @param {string[]} kinds @param {string[]} notes
+ */
 async function packRows(kinds, notes) {
-	if (!kinds.includes('model')) return [];
+	const wantModels = kinds.includes('model');
+	const wantSounds = kinds.includes('sound');
+	if (!wantModels && !wantSounds) return [];
 	const pk = await import('$lib/packs');
 	if (!(/** @type {any[]} */ (get(pk.packs)).length)) await pk.loadPacks();
 	/** @type {any[]} */
 	const rows = [];
 	for (const pack of /** @type {any[]} */ (get(pk.packs))) {
 		if (pack.source === 'imported') continue; // its items ARE library items, listed there
-		if (!pack.listUrl) continue;
+		if (wantSounds && pack.zip && pack.base) {
+			try {
+				rows.push(...packSoundRows(await packManifest(pack), pack));
+			} catch {
+				notes.push('the sounds of the pack "' + pack.title + '" could not be read');
+			}
+		}
+		if (!wantModels || !pack.listUrl) continue;
 		let items = [];
 		try {
 			items = await pk.listPackItems(pack);
@@ -220,6 +256,18 @@ async function cc0Rows(kinds, notes) {
 	return rows;
 }
 
+/**
+ * what a search row is FOR, as the call that uses it (mcp-diorama2 item 15: no lane names like "(85-scene)")
+ * @param {{kind: string, name?: string}} row
+ */
+export function assetUse(row) {
+	if (row.kind === 'model' || row.kind === 'prefab') return "assets {action: 'place', place: {asset: id, position}}";
+	if (row.kind === 'material') return 'set_look {action: \'material\', material: {objects, cc0: "' + row.name + '"}}';
+	if (row.kind === 'sound') return "effects {action: 'sound', sound: {asset: id, position}} or effects {action: 'music', music: {asset: id}}";
+	if (row.kind === 'image') return 'a texture: set_look material maps {albedo: hash}';
+	return "a sky / environment light: set_look {action: 'sky', sky: {hdri: id}}";
+}
+
 /** @param {any} args */
 async function searchAssetsTool(args) {
 	const words = queryWords(args.query);
@@ -246,16 +294,7 @@ async function searchAssetsTool(args) {
 		.sort((a, b) => b.score - a.score || (b.row.popularity ?? 0) - (a.row.popularity ?? 0) || a.i - b.i);
 	const results = ranked.slice(0, limit).map(({ row }) => {
 		const { tags: _t, popularity: _p, ...out } = row;
-		out.use =
-			row.kind === 'model' || row.kind === 'prefab'
-				? "assets {action: 'place', place: {asset: id, position}}"
-				: row.kind === 'material'
-					? 'set_look {action: \'material\', material: {objects, cc0: "' + row.name + '"}}'
-					: row.kind === 'sound'
-						? "effects {action: 'sound', sound: {asset: id, position}}"
-						: row.kind === 'image'
-							? 'a texture: set_look material maps {albedo: hash}'
-							: 'the sky / environment light (85-scene)';
+		out.use = assetUse(row);
 		return out;
 	});
 	return { query: words.join(' '), found: ranked.length, results, ...(notes.length ? { notes } : {}) };
@@ -423,9 +462,10 @@ async function createParticlesTool(args, createBase) {
 	} else {
 		const at = args.position === undefined ? [0, 0, 0] : vec3(args.position);
 		if (!at) return { error: 'position: [x, y, z] metres' };
-		// the Effects menu's marker: a small sphere, scenery; a weather preset hangs at cloud height over the point
+		// mcp-diorama2 (21): an EMPTY GROUP carries the emitter — nothing of its own is drawn (the 0.15 m sphere this
+		// used to make showed as a ball in the fire); a weather preset hangs at cloud height over the point
 		const fall = Number(/** @type {any} */ (preset.config).fall) || 0;
-		const r = createBase({ kind: 'primitive', primitive: 'Sphere', params: [0.15], name: String(args.name ?? preset.name + ' emitter').slice(0, 120), position: [at[0], at[1] + fall, at[2]] });
+		const r = createBase({ kind: 'group', name: String(args.name ?? preset.name + ' emitter').slice(0, 120), position: [at[0], at[1] + fall, at[2]] });
 		if (r.error) return { error: r.error };
 		object = objectOf(r.uuid);
 		if (!object) return { error: 'the emitter could not be made' };
@@ -446,6 +486,7 @@ const TERRAIN_FIELDS = /** @type {Record<string, string>} */ ({ size: 'size', se
 
 /** @param {any} args @param {CreateBase} createBase */
 async function terrainTool(args, createBase) {
+	if (args.paintBy !== undefined && args.paintBy !== 'height') return { error: 'paintBy: "height" (layer 0 low, the last layer on the peaks)' };
 	/** @type {any} */
 	const params = {};
 	for (const [k, v] of Object.entries(args)) if (TERRAIN_FIELDS[k]) params[TERRAIN_FIELDS[k]] = v;
@@ -471,6 +512,33 @@ async function terrainTool(args, createBase) {
 		delete params.size;
 	}
 	const uuid = object.uuid;
+	// mcp-diorama2 (22): `height` is the PEAK in metres (the noise's raw scale is `amplitude`): the generator is
+	// deterministic, so one probe build at amplitude 1 with the same shape says how tall a unit is
+	/** @type {number | undefined} */
+	let peak;
+	if (args.height !== undefined && args.amplitude === undefined) {
+		if (typeof args.height !== 'number' || !(args.height >= 0) || args.height > 100) return { error: 'height: the highest peak in metres (0-100)', ...(made ? { created: [{ uuid, name: object.name }] } : {}) };
+		if (args.height === 0) params.amplitude = 0;
+		else {
+			const { geometryParamsOf } = await import('$lib/geometryEdit');
+			const { terrainGeometry } = await import('$lib/customGeometries');
+			const probe = terrainGeometry({ ...(geometryParamsOf(object) ?? {}), ...params, amplitude: 1 });
+			const ys = probe.attributes.position.array;
+			let unit = 0;
+			for (let i = 1; i < ys.length; i += 3) unit = Math.max(unit, ys[i]);
+			probe.dispose();
+			params.amplitude = unit > 1e-6 ? Math.round((args.height / unit) * 1000) / 1000 : args.height;
+			if (params.amplitude > 40) {
+				warnings.push('this shape cannot reach ' + args.height + ' m (the noise is capped): it peaks at ' + r3(unit * 40) + ' m — use fewer octaves, ridged, or raise ops');
+				params.amplitude = 40;
+			}
+			peak = r3(unit * params.amplitude);
+		}
+	}
+	if (args.edges !== undefined && params.amplitude === undefined) {
+		const { geometryParamsOf } = await import('$lib/geometryEdit');
+		if (!(Number(geometryParamsOf(object)?.amplitude) > 0)) warnings.push('edges shape the noise, and this terrain is flat: give height too');
+	}
 	// 1. the shape (the geometry message + history kind — set_geometry's path), BEFORE any sculpting
 	if (Object.keys(params).length) {
 		const { geometryTool } = await import('./geometryTools.js');
@@ -508,6 +576,9 @@ async function terrainTool(args, createBase) {
 			next.push(out);
 		}
 		tp.setTerrainLayers(uuid, next);
+		// mcp-diorama2 (22): layers draw only through a paint map, and an unpainted terrain has none — so a colour set
+		// here showed nothing. Give it the plain map (all layer 0) unless paintBy writes one below.
+		if (args.paintBy === undefined && !object.userData?.terrainSplat) tp.setSplatResolution(uuid, tp.splatResolutionOf(uuid));
 	}
 	// 3. sculpt + paint ops: the brush the Sculpt toolbar runs, then ONE meshgeo snapshot (+ one splat entry)
 	object.geometry?.computeBoundingBox?.();
@@ -541,7 +612,28 @@ async function terrainTool(args, createBase) {
 		}
 		pokeScene();
 	}
-	const row = { uuid, name: object.name, ...(sculpted ? { sculpted } : {}), ...(painted ? { painted } : {}), ...(warnings.length ? { warnings } : {}) };
+	// 4. mcp-diorama2 (22): paint by height, over the FINAL shape (after any sculpting)
+	let paintedBy;
+	if (args.paintBy === 'height') {
+		const tp = await import('$lib/terrainPaint');
+		const { terrainBounds } = await import('$lib/terrainSurface');
+		object.geometry.computeBoundingBox();
+		const b = terrainBounds(object);
+		const res = tp.splatResolutionOf(uuid);
+		const n = Array.isArray(args.layers) && args.layers.length >= 2 ? args.layers.length : 4;
+		if (b && tp.setTerrainSplat(uuid, heightSplat(object.geometry.attributes.position.array, b, res, n), res)) paintedBy = 'height (' + n + ' layers, low to high)';
+		pokeScene();
+	}
+	if (peak === undefined && args.height !== undefined && args.amplitude === undefined) peak = 0;
+	const row = {
+		uuid,
+		name: object.name,
+		...(peak !== undefined ? { peak } : {}),
+		...(sculpted ? { sculpted } : {}),
+		...(painted ? { painted } : {}),
+		...(paintedBy ? { paintedBy } : {}),
+		...(warnings.length ? { warnings } : {})
+	};
 	return made ? { created: [row] } : { updated: [{ ...row, ok: true }] };
 }
 
@@ -571,6 +663,110 @@ async function scatterSourceOf(a) {
 	return { error: 'asset: a prefab or CC0 asset cannot be scattered — a primitive, a library model or a pack model' };
 }
 
+/** copies scatter `source` may make in one call */
+const SCATTER_COPIES_MAX = 200;
+
+/**
+ * mcp-diorama2: `avoid` uuids → rectangles in the surface's LOCAL x/z (each object's world box, corners taken into
+ * the surface's frame), the form the scatter set stores. @param {any} surface @param {any} list
+ * @returns {{rects: number[][]} | {error: string}}
+ */
+function avoidRectsOf(surface, list) {
+	if (list === undefined) return { rects: [] };
+	const SAY = 'avoid: up to 16 places nothing is scattered on — an object uuid (its footprint: a path, a portal, a house), {uuid, radius} (a circle round it) or {position: [x, y, z], radius} (metres)';
+	if (!Array.isArray(list) || list.length > 16) return { error: SAY };
+	surface.updateWorldMatrix(true, false);
+	const r6 = (/** @type {number} */ n) => Math.round(n * 1e4) / 1e4;
+	// metres → the surface's local units (a scaled terrain): the mean of its x and z world scale
+	const ws = new THREE.Vector3();
+	surface.getWorldScale(ws);
+	const unit = Math.max(1e-6, (Math.abs(ws.x) + Math.abs(ws.z)) / 2);
+	/** @type {number[][]} */
+	const rects = [];
+	for (const entry of list) {
+		const isObj = entry && typeof entry === 'object' && !Array.isArray(entry);
+		// mcp-diorama2 (23): a circle — {uuid, radius} round an object, or {position, radius} round a spot
+		if (isObj && entry.radius !== undefined) {
+			if (typeof entry.radius !== 'number' || !(entry.radius > 0) || entry.radius > 1000) return { error: 'avoid: radius in metres (above 0)' };
+			/** @type {THREE.Vector3} */
+			let at;
+			if (entry.uuid !== undefined) {
+				const o = objectOf(String(entry.uuid));
+				if (!o) return { error: 'avoid: no object with the uuid ' + String(entry.uuid).slice(0, 40) };
+				o.updateWorldMatrix(true, false);
+				at = o.getWorldPosition(new THREE.Vector3());
+			} else {
+				const p = vec3(entry.position);
+				if (!p) return { error: SAY };
+				at = new THREE.Vector3(p[0], p[1], p[2]);
+			}
+			const local = surface.worldToLocal(at);
+			rects.push([r6(local.x), r6(local.z), r6(entry.radius / unit)]);
+			continue;
+		}
+		const id = isObj ? entry.uuid : entry;
+		if (id === undefined || (isObj && entry.position !== undefined)) return { error: SAY };
+		const o = objectOf(String(id));
+		if (!o) return { error: 'avoid: no object with the uuid ' + String(id).slice(0, 40) };
+		o.updateWorldMatrix(true, true);
+		const box = new THREE.Box3().setFromObject(o, true);
+		if (box.isEmpty()) box.setFromCenterAndSize(o.getWorldPosition(new THREE.Vector3()), new THREE.Vector3(1, 1, 1));
+		let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
+		for (let i = 0; i < 8; i++) {
+			const p = surface.worldToLocal(new THREE.Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z));
+			minX = Math.min(minX, p.x), maxX = Math.max(maxX, p.x), minZ = Math.min(minZ, p.z), maxZ = Math.max(maxZ, p.z);
+		}
+		rects.push([r6(minX), r6(minZ), r6(maxX), r6(maxZ)]);
+	}
+	return { rects };
+}
+
+/**
+ * mcp-diorama2: scatter {source: uuid} — real copies of a scene object (children, materials, flows: the duplicate
+ * path) at the spots the scatter generator picks on `surface` (density / count, scale, rules, spacing, seed, avoid),
+ * at the scene root. One undo step with the call; replicated as ordinary duplicates.
+ * @param {any} surface @param {any} args @param {number[][]} avoid
+ */
+async function scatterCopies(surface, args, avoid) {
+	const source = objectOf(String(args.source));
+	if (!source) return { error: 'source: no object with that uuid' };
+	if (source === surface) return { error: 'source: an object cannot be scattered over itself' };
+	const made = scatterSetOf(args, [{ kind: 'primitive', type: 'Box' }]);
+	if ('error' in made) return made;
+	const seed = args.seed === undefined ? 1 : args.seed;
+	if (!Number.isInteger(seed)) return { error: 'seed: a whole number (the same seed puts the copies in the same spots)' };
+	const set = { ...made.set, seed: seed >>> 0, gen: { ...made.set.gen, ...(avoid.length ? { avoid } : {}) } };
+	const { isMeshHost } = await import('$lib/terrainPaint');
+	const { scatterPlacements } = await import('$lib/terrainSurface');
+	const meshHost = !surface.userData?.terrain && isMeshHost(surface);
+	if (!meshHost && !surface.userData?.terrain) return { error: 'surface: a terrain or a mesh to scatter the copies over' };
+	const spots = scatterPlacements(surface, set, meshHost);
+	if (!spots.length) return { error: 'the rules left no spot on that surface: loosen slope / height, or avoid less' };
+	if (spots.length > SCATTER_COPIES_MAX) return { error: 'that is ' + spots.length + ' copies; source makes at most ' + SCATTER_COPIES_MAX + ' real objects — lower density / count, or scatter a model (asset) for thousands' };
+	const { duplicateObject, moveObjectToGroup } = await import('$lib/objectActions');
+	const { applyAiTransform } = await import('./tools.js');
+	surface.updateWorldMatrix(true, false);
+	source.updateWorldMatrix(true, false);
+	const srcQ = source.getWorldQuaternion(new THREE.Quaternion());
+	const srcS = source.getWorldScale(new THREE.Vector3());
+	/** @type {string[]} */
+	const uuids = [];
+	const base = (source.name || source.type) + ' ';
+	spots.forEach((/** @type {any} */ m, /** @type {number} */ i) => {
+		const world = new THREE.Matrix4().multiplyMatrices(surface.matrixWorld, m);
+		const pos = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+		world.decompose(pos, q, sc);
+		const clone = duplicateObject(source.uuid, { select: false, name: base + (i + 1), at: source.position.toArray() });
+		if (!clone) return;
+		if (clone.parent !== get(objectsGroup)) moveObjectToGroup(clone.uuid, 'root');
+		const rot = new THREE.Euler().setFromQuaternion(q.multiply(srcQ));
+		const f = sc.x;
+		applyAiTransform(clone, { position: pos.toArray().map(r3), rotation: [rot.x, rot.y, rot.z], scale: [srcS.x * f, srcS.y * f, srcS.z * f] });
+		uuids.push(clone.uuid);
+	});
+	return { created: uuids.map((uuid) => ({ uuid })), uuids, source: source.uuid, copies: uuids.length, seed: set.seed, ...(avoid.length ? { avoided: avoid.length } : {}) };
+}
+
 /** @param {any} args */
 async function scatterTool(args) {
 	const object = objectOf(String(args.surface ?? args.object ?? ''));
@@ -582,8 +778,16 @@ async function scatterTool(args) {
 		if (typeof args.remove !== 'string' || !tp.editScatterSet(object.uuid, args.remove, null)) return { error: 'remove: the id of a scatter set on this surface (list_scene shows them)' };
 		return { updated: [{ uuid: object.uuid, ok: true, removed: args.remove }] };
 	}
+	// mcp-diorama2: avoid = objects nothing lands on or in (their footprint on the surface)
+	// mcp-diorama2 (23): avoid may sit in rules too (rules.avoid), and both lists add up
+	const avoidArg = args.rules?.avoid !== undefined && args.avoid !== undefined ? [...[args.avoid].flat(), ...[args.rules.avoid].flat()] : args.avoid ?? args.rules?.avoid;
+	const avoid = avoidRectsOf(object, avoidArg);
+	if ('error' in avoid) return avoid;
+	if (args.id !== undefined && (typeof args.id !== 'string' || !/^[\w .-]{1,34}$/.test(args.id))) return { error: 'id: a name for the set (letters, digits, space . _ -, up to 34)' };
+	// mcp-diorama2: source = an object in the scene, copied (real objects you can edit) to the scatter's spots
+	if (args.source !== undefined) return scatterCopies(object, args, avoid.rects);
 	const list = args.assets ?? (args.asset !== undefined ? [args.asset] : null);
-	if (!Array.isArray(list) || !list.length || list.length > 8) return { error: 'asset: what to scatter (or assets: up to 8, mixed evenly)' };
+	if (!Array.isArray(list) || !list.length || list.length > 8) return { error: 'asset: what to scatter (or assets: up to 8, mixed evenly; or source: the uuid of an object in the scene)' };
 	/** @type {any[]} */
 	const sources = [];
 	for (const a of list) {
@@ -593,10 +797,13 @@ async function scatterTool(args) {
 	}
 	const made = scatterSetOf(args, sources);
 	if ('error' in made) return made;
+	if (avoid.rects.length) made.set.gen = { ...made.set.gen, avoid: avoid.rects };
+	// mcp-diorama2 (23): every asset of one call is ONE set (a weighted mix), under the id you name if you name one
+	if (args.id !== undefined) made.set.id = args.id;
 	const id = tp.addScatterSet(object.uuid, made.set);
 	if (!id) return { error: 'the scatter set was refused (a surface holds up to 8 sets; it must be a terrain or a mesh)' };
 	const instances = tp.scatterInstancesOf(object.uuid, id);
-	return { updated: [{ uuid: object.uuid, ok: true, set: id, instances: Array.isArray(instances) ? instances.length : undefined }] };
+	return { updated: [{ uuid: object.uuid, ok: true, set: id, assets: sources.length, instances: Array.isArray(instances) ? instances.length : undefined }] };
 }
 
 // ---------------------------------------------------------------- W4 water
@@ -609,11 +816,23 @@ const WATER_SHAPES = /** @type {Record<string, {primitive: string, params: numbe
 	round: { primitive: 'Cylinder', params: [1.5, 1.5, 1.2], shape: 'cylinder' }
 });
 
+/** a water colour → THREE.Color, or null @param {any} v */
+function waterTint(v) {
+	if (typeof v !== 'string') return null;
+	const t = v.trim().toLowerCase();
+	if (/^#?[0-9a-f]{6}$/.test(t)) return new THREE.Color('#' + t.replace(/^#/, ''));
+	return /** @type {any} */ (THREE.Color).NAMES?.[t] !== undefined ? new THREE.Color(t) : null;
+}
+
 /** @param {any} args @param {CreateBase} createBase */
 async function waterTool(args, createBase) {
 	const wa = await import('$lib/water/waterActions.js');
 	const { WATER_PRESETS } = await import('$lib/water/presets.js');
 	if (args.preset !== undefined && !WATER_PRESETS.some((p) => p.key === args.preset)) return { error: 'preset: one of ' + WATER_PRESETS.map((p) => p.key).join(', ') };
+	// checked before anything is made: a refused colour must not leave a pond behind
+	const tintArg = args.color ?? args.look?.color;
+	const tint = tintArg === undefined ? null : waterTint(tintArg);
+	if (tintArg !== undefined && !tint) return { error: 'color: "#rrggbb" or a colour name' };
 	/** @type {any} */
 	let object;
 	let made = false;
@@ -637,8 +856,11 @@ async function waterTool(args, createBase) {
 		let params = k.params;
 		if (args.size !== undefined) {
 			const s = args.size;
-			if (!Array.isArray(s) || !(s.length === 3 || (kind === 'round' && s.length === 2)) || !s.every((n) => typeof n === 'number' && n > 0 && n <= 2000)) return { error: 'size: [width, depth (height), length] metres' + (kind === 'round' ? ' — or [radius, height] for round' : '') };
-			params = kind === 'round' ? [s[0], s[0], s[s.length - 1]] : s;
+			if (!Array.isArray(s) || !(s.length === 3 || (kind === 'round' && s.length === 2)) || !s.every((n) => typeof n === 'number' && n > 0 && n <= 2000))
+				return { error: 'size: [width, depth (height), length] metres' + (kind === 'round' ? ' — for round [diameter, depth, diameter] (or [radius, depth])' : '') };
+			// mcp-diorama2 (18): round takes the box convention [diameter, depth, diameter] (it read [radius, radius,
+			// height], so [4, 1, 4] made a pond 8 m across and 4 m deep); [radius, depth] still works
+			params = kind === 'round' ? (s.length === 2 ? [s[0], s[0], s[1]] : [(s[0] + s[2]) / 4, (s[0] + s[2]) / 4, s[1]]) : s;
 		}
 		const h = kind === 'round' ? params[2] : params[1];
 		const r = createBase({ kind: 'primitive', primitive: k.primitive, params, name: String(args.name ?? (kind === 'ocean' ? 'Ocean' : kind === 'lake' ? 'Lake' : 'Water')).slice(0, 120), position: [at[0], at[1] + h / 2, at[2]] });
@@ -667,10 +889,21 @@ async function waterTool(args, createBase) {
 		if (!args[k] || typeof args[k] !== 'object' || Array.isArray(args[k])) return { error: k + ': an object of ' + k + ' fields' };
 		patch[k] = args[k];
 	}
-	if (args.color !== undefined) patch.look = { ...(patch.look ?? {}), shallowColor: args.color };
+	// mcp-diorama2 (18): `color` (or look.color) tints the whole body — shallow AND deep — so a green pond is green;
+	// look.shallowColor / deepColor still set one end each
+	if (tint) {
+		const { color: _c, ...look } = patch.look ?? {};
+		patch.look = { shallowColor: '#' + tint.getHexString(), deepColor: '#' + tint.clone().multiplyScalar(0.35).getHexString(), ...look };
+	}
 	if (Object.keys(patch).length) wa.updateObjectWater(object.uuid, patch, { immediate: true });
 	const water = object.userData.water;
-	const row = { uuid: object.uuid, name: object.name, preset: water?.preset ?? args.preset, level: water?.level };
+	const row = {
+		uuid: object.uuid,
+		name: object.name,
+		preset: water?.preset ?? args.preset,
+		level: water?.level,
+		...(water?.look ? { look: { shallowColor: water.look.shallowColor, deepColor: water.look.deepColor } } : {})
+	};
 	return made ? { created: [row] } : { updated: [{ ...row, ok: true }] };
 }
 
@@ -718,10 +951,76 @@ export async function soundItem(source) {
 		if (!item) return { error: s.slice(0, 60) + ': the library refused it' };
 		return { hash: String(item.hash), name: String(item.name), from: 'url' };
 	}
+	if (s.startsWith('pack:')) return packSoundItem(s);
 	const hash = s.startsWith('lib:') ? s.slice(4) : s;
 	const item = ex.itemByHash(hash);
-	if (!item || item.kind !== 'audio') return { error: 'asset: no sound in the library has that hash (search_assets kinds: ["sound"])' };
+	if (!item || item.kind !== 'audio') return { error: 'asset: no sound in the library has that hash (search_assets kinds: ["sound"]; a pack sound is pack:<name>/<file>, your own bytes go through assets upload)' };
 	return { hash: String(item.hash), name: String(item.name), from: 'library' };
+}
+
+/**
+ * mcp-diorama2 (24a, owner): a pack sound `pack:<name>/<file>` → a library item, copied in on first use like an
+ * install (into the pack's own folder, the one installing the pack would make, so a later install dedupes by hash).
+ * Only a file the pack's manifest lists is fetched, from the pack's own CDN base; capped, sniffed and decoded like a
+ * URL sound. An installed pack answers from the library with no fetch.
+ * @param {string} id @returns {Promise<{hash: string, name: string, from: string} | {error: string}>}
+ */
+export async function packSoundItem(id) {
+	const ref = parsePackSoundId(id);
+	if (!ref) return { error: 'asset: a pack sound is pack:<name>/<file> as search_assets lists it (kinds: ["sound"])' };
+	const pk = await import('$lib/packs');
+	if (!(/** @type {any[]} */ (get(pk.packs)).length)) await pk.loadPacks();
+	const list = /** @type {any[]} */ (get(pk.packs));
+	const ex = await import('$lib/explorer');
+	const base = ref.file.split('/').pop() ?? ref.file;
+	const installed = list.find((p) => p.name === ref.pack && p.source === 'imported');
+	if (installed) {
+		const ids = new Set((installed.items ?? []).map((/** @type {any} */ it) => it.id));
+		const rec = /** @type {any[]} */ (get(ex.explorerItems)).find((r) => ids.has(r.id) && r.name === base && r.kind === 'audio');
+		if (rec) return { hash: String(rec.hash), name: String(rec.name), from: 'pack' };
+	}
+	const pack = list.find((p) => p.name === ref.pack && p.zip && p.base);
+	if (!pack) return { error: 'asset: no sound pack is called "' + ref.pack + '" (search_assets kinds: ["sound"] lists them)' };
+	/** @type {any} */
+	let manifest;
+	try {
+		manifest = await packManifest(pack);
+	} catch {
+		return { error: 'asset: the pack "' + pack.title + '" could not be read — try again' };
+	}
+	const row = packSoundRows(manifest, pack).find((r) => r.id === 'pack:' + ref.pack + '/' + ref.file);
+	if (!row) return { error: 'asset: the pack "' + pack.title + '" has no sound ' + ref.file };
+	const { readHttpsBytes } = await import('./lookTools.js');
+	const { FETCH_TIMEOUT_MS } = await import('./imageToolCore.js');
+	const abort = new AbortController();
+	const timer = setTimeout(() => abort.abort(), FETCH_TIMEOUT_MS);
+	/** @type {any} */
+	let got;
+	try {
+		got = await readHttpsBytes(String(pack.base) + '/' + ref.file, fetch, abort.signal, AUDIO_MAX_BYTES);
+	} catch {
+		got = { error: 'it took over ' + FETCH_TIMEOUT_MS / 1000 + ' s' };
+	} finally {
+		clearTimeout(timer);
+	}
+	if (got.error) return { error: 'asset: ' + base + ': ' + got.error };
+	if (!sniffAudio(got.bytes)) return { error: 'asset: ' + base + ' is not a sound file this app plays' };
+	const Ctx = /** @type {any} */ (globalThis).OfflineAudioContext;
+	if (Ctx) {
+		try {
+			await new Ctx(1, 1, 44100).decodeAudioData(got.bytes.slice().buffer);
+		} catch {
+			return { error: 'asset: ' + base + ' does not decode as audio' };
+		}
+	}
+	const { fileIntoLibrary } = await import('./importFile.js');
+	try {
+		const folder = String(manifest?.name || pack.title || pack.name).replace(/[*\\/]/g, ' ').trim() || 'Sounds';
+		const filed = await fileIntoLibrary(got.bytes, base, folder);
+		return { hash: String(filed.item.hash), name: String(filed.item.name), from: 'pack', ...(row.licence ? { licence: row.licence } : {}), ...(row.credit ? { credit: row.credit } : {}) };
+	} catch (e) {
+		return { error: 'asset: the library refused ' + base + ': ' + String(/** @type {any} */ (e)?.message ?? e).slice(0, 80) };
+	}
 }
 
 /** @param {any} args @param {CreateBase} createBase */
@@ -865,7 +1164,7 @@ export const WORLD_AI_TOOLS = [
 		function: {
 			name: 'search_assets',
 			description:
-				'Find assets to build with, by words and kind: models and prefabs to place, sounds, images, CC0 materials and HDRIs. Searches the shared library, the model packs, your prefabs and Poly Haven. Each result has an id, name, kind, source, licence, size when known, and how to use it. Read-only.',
+				'Find assets to build with, by words and kind: models and prefabs to place, sounds, images, CC0 materials and HDRIs. Searches the shared library, the packs (models, and the sounds of the sound packs: pack:<name>/<file>), your prefabs and Poly Haven. Each result has an id, name, kind, source, licence, size when known, and how to use it. Read-only.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -926,7 +1225,7 @@ export const WORLD_AI_TOOLS = [
 			description:
 				'Particles by preset name: ' +
 				PARTICLE_PRESETS.map((p) => p.key).join(', ') +
-				'. Without object it places a small emitter at position (rain and snow hang at cloud height over it); with object it attaches to that object (a torch, a campfire log). overrides tune any field (count, lifetime, speed, gravity, sizeStart, colorStart, colorEnd, opacity, …). remove: true takes them off. One undo step.',
+				'. Without object it places an invisible emitter (an empty group, nothing drawn but the particles) at position (rain and snow hang at cloud height over it); with object it attaches to that object (a torch, a campfire log). overrides tune any field (count, lifetime, speed, gravity, sizeStart, colorStart, colorEnd, opacity, …). remove: true takes them off. One undo step.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -945,7 +1244,7 @@ export const WORLD_AI_TOOLS = [
 		function: {
 			name: 'scatter',
 			description:
-				'Scatter many instances over a terrain or any mesh (a forest on hills, rocks on a beach, flowers on a slope): asset = a primitive (Box, Sphere, Cone, Cylinder, Capsule, Dodecahedron) or a model id from search_assets, or assets = up to 8 mixed evenly. density per m² (or count), scale range, rules {slope: [min°, max°], height: [min, max] m, layer: {i, min}} keep them where they belong. Cheap instancing, seeded (the same on every peer). Returns the set id; remove: <set id> deletes a set. One undo step.',
+				'Scatter many instances over a terrain or any mesh (a forest on hills, rocks on a beach, flowers on a slope): asset = a primitive (Box, Sphere, Cone, Cylinder, Capsule, Dodecahedron) or a model id from search_assets, or assets = up to 8 mixed evenly. density per m² (or count), scale range, rules {slope: [min°, max°], height: [min, max] m, layer: {i, min}} keep them where they belong. Cheap instancing, seeded (the same on every peer; seed picks another layout). avoid (or rules.avoid) = up to 16 places nothing lands on: an object uuid (its footprint: a path, a house, a portal), {uuid, radius} or {position, radius} (a clear circle, metres). All the assets of one call make ONE set (id names it). source = the uuid of an object you built: up to 200 REAL copies of it (editable, with its children, materials and behaviour) instead of instances — for one or a few copies in a row or mirrored, use duplicate. Returns the set id (or the copies\' uuids); remove: <set id> deletes a set. One undo step.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -957,8 +1256,11 @@ export const WORLD_AI_TOOLS = [
 					scale: { description: '[min, max] size factors (default [0.8, 1.2]) or one number' },
 					spacing: { type: 'number', description: 'minimum metres between instances' },
 					randomRotation: { type: 'boolean', description: 'default true' },
-					rules: { type: 'object', description: '{slope: [0, 25] degrees from flat, height: [min, max] metres, layer: {i: paint layer 0-3, min: 0-1}}' },
-					seed: { type: 'integer' },
+					rules: { type: 'object', description: '{slope: [0, 25] degrees from flat, height: [min, max] metres, layer: {i: paint layer 0-3, min: 0-1}, avoid: the same list as avoid}' },
+					seed: { type: 'integer', description: 'the same seed puts them in the same spots; another seed, another layout' },
+					source: { type: 'string', description: 'the uuid of an object in the scene: scatter real copies of it (max 200) instead of asset' },
+					avoid: { type: 'array', maxItems: 16, items: { anyOf: [{ type: 'string' }, { type: 'object', properties: { uuid: { type: 'string' }, position: V3, radius: { type: 'number' } } }] }, description: 'places to keep clear: an object uuid (its footprint), {uuid, radius} or {position, radius} (a circle, metres)' },
+					id: { type: 'string', description: 'a name for the set (default from the first asset); remove takes it' },
 					tint: { type: 'number', description: '0-1 colour variation' },
 					sink: { type: 'number', description: 'metres pushed into the ground' },
 					collider: { type: 'string', enum: ['none', 'box', 'sphere', 'hull'], description: 'physics for the instances (default none)' },
@@ -973,7 +1275,7 @@ export const WORLD_AI_TOOLS = [
 		function: {
 			name: 'terrain',
 			description:
-				'Make or change a terrain. Without uuid it makes one (size metres, at position); with uuid it changes that one. Shape by noise: height (metres), detail (0.005-0.6), octaves, ridged, warp, edges (flat|island|bowl), seed. Sculpt with ops [{op: raise|lower|smooth|flatten, at: [x, z] from the terrain\'s centre, radius, strength 0-1, height (metres, raise/lower), passes}] and paint with {op: "paint", at, radius, layer 0-3, strength}. layers: up to 4 {color, texture (a library hash or a pattern name like grass, sand, stone), tiling}. One undo step.',
+				'Make or change a terrain. Without uuid it makes one (size metres, at position); with uuid it changes that one. Shape by noise: height (the highest peak, metres — the answer says the peak it got), detail (0.005-0.6), octaves, ridged, warp, edges (flat|island|bowl: island sinks the rim to 0 so it rises out of water; bowl raises the rim), seed; amplitude is the raw noise scale if you want it. Sculpt with ops [{op: raise|lower|smooth|flatten, at: [x, z] from the terrain\'s centre, radius, strength 0-1, height (metres, raise/lower), passes}] and paint with {op: "paint", at, radius, layer 0-3, strength}. layers: up to 4 {color, texture (a library hash or a pattern name like grass, sand, stone), tiling} — layer 0 covers the ground until you paint the others; paintBy: "height" paints them for you, layer 0 in the low ground up to the last on the peaks. One undo step.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -981,7 +1283,9 @@ export const WORLD_AI_TOOLS = [
 					name: { type: 'string' },
 					position: V3,
 					size: { type: 'number', minimum: 1, maximum: 200 },
-					height: { type: 'number', minimum: 0, maximum: 40 },
+					height: { type: 'number', minimum: 0, maximum: 100, description: 'the highest peak, metres' },
+					amplitude: { type: 'number', minimum: 0, maximum: 40, description: 'the raw noise scale (height sets it for you)' },
+					paintBy: { type: 'string', enum: ['height'], description: 'paint the layers by height: layer 0 low, the last layer on the peaks' },
 					detail: { type: 'number' },
 					octaves: { type: 'integer', minimum: 1, maximum: 6 },
 					ridged: { type: 'boolean' },
@@ -1000,7 +1304,7 @@ export const WORLD_AI_TOOLS = [
 		function: {
 			name: 'water',
 			description:
-				'Water: without uuid it makes a body of water — kind tank, pool, round, lake or ocean, size [w, h, d], at position (its bottom centre). With uuid it changes one (or makes an object water with a preset). preset: pool, aquarium, ocean, lake, river, lava, swamp, toxic, ice. level 0-1 (how full), color, look {shallowColor, deepColor, clarity, foam, …}, waves {count, amplitude, wavelength, speed, direction}, flow. Things float in it in Play. remove: true makes it a plain object again. One undo step.',
+				'Water: without uuid it makes a body of water — kind tank, pool, round, lake or ocean, size [w, h, d] (round: [diameter, depth, diameter]), at position (its bottom centre). With uuid it changes one (or makes an object water with a preset). preset: pool, aquarium, ocean, lake, river, lava, swamp, toxic, ice. level 0-1 (how full), color (tints the whole body, shallow to deep), look {shallowColor, deepColor, clarity, foam, …}, waves {count, amplitude, wavelength, speed, direction}, flow. Things float in it in Play. remove: true makes it a plain object again. One undo step.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1025,11 +1329,11 @@ export const WORLD_AI_TOOLS = [
 		function: {
 			name: 'place_sound',
 			description:
-				'A sound in the world: asset = a library sound (search_assets kinds ["sound"]) or an https URL of a sound file (it is checked and added to the library first). Positional: heard near position (or on object), radius metres. Without on it loops all the time (a campfire crackle, a river); on: click | enter | exit | grab | hit plays it once when that happens on the object. One undo step for the file\'s node and its wiring.',
+				'A sound in the world: asset = a sound from search_assets kinds ["sound"] — a library hash / lib: id, or a pack sound pack:<name>/<file> (copied into the library on first use) — or an https URL of a sound file (it is checked and added to the library first). A sound you made or fetched yourself goes through assets upload (base64 bytes → a hash), so a site without CORS does not matter. Positional: heard near position (or on object), radius metres. Without on it loops all the time (a campfire crackle, a river); on: click | enter | exit | grab | hit plays it once when that happens on the object. One undo step for the file\'s node and its wiring.',
 			parameters: {
 				type: 'object',
 				properties: {
-					asset: { type: 'string', description: 'lib:<hash>, a library hash, or https://…' },
+					asset: { type: 'string', description: 'lib:<hash>, a library hash, pack:<name>/<file>, or https://…' },
 					object: { type: 'string', description: 'put the sound on this object (uuid) instead of at position' },
 					position: V3,
 					name: { type: 'string' },
@@ -1047,7 +1351,7 @@ export const WORLD_AI_TOOLS = [
 		function: {
 			name: 'set_music',
 			description:
-				'The scene\'s background music, heard by everyone in sync: asset = a library sound or an https URL (null clears it), volume 0-1, play / stop. One undo step.',
+				'The scene\'s background music, heard by everyone in sync: asset = a library sound (hash / lib:), a pack sound pack:<name>/<file>, an https URL, or the hash assets upload gave you for your own music (null clears it), volume 0-1, play / stop. One undo step.',
 			parameters: {
 				type: 'object',
 				properties: {

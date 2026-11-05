@@ -57,7 +57,8 @@ export const LOOK_TOOL_NAMES = [
 	'get_post',
 	'create_post_graph',
 	'uv_unwrap',
-	'set_uv'
+	'set_uv',
+	'set_quality'
 ];
 
 /** the ones that only read */
@@ -1000,6 +1001,7 @@ async function getPostTool(args) {
 		enabled: stack.enabled,
 		...(stack.mode ? { mode: stack.mode } : {}),
 		effects: stack.effects.map((e) => ({ id: e.id, kind: e.kind, enabled: e.enabled, params: e.params })),
+		...(await shownHere()),
 		kinds: sp.postEffectKinds().map((k) => ({
 			kind: k.kind,
 			label: k.label,
@@ -1031,7 +1033,7 @@ async function setPostTool(args) {
 	const { gateScenewide } = await import('$lib/agent/confirmGate');
 	return gateScenewide('set_post', args, {
 		summary: 'post effects on ' + look.label + ': ' + words.join(', '),
-		apply: () => {
+		apply: async () => {
 			// planned again here: the stack may have moved while the host thought about it
 			const now = planPost(sp.postStackFor(look.key), args, (k) => sp.postEffectDef(k), kinds);
 			if (now.errors.length) return { error: 'the look was not changed', errors: now.errors };
@@ -1054,7 +1056,66 @@ async function setPostTool(args) {
 				sp.endLookGesture();
 			}
 			const stack = sp.postStackFor(look.key);
-			return { updated: [{ look: look.key, ok: true }], enabled: stack.enabled, effects: stack.effects.map((e) => ({ id: e.id, kind: e.kind, enabled: e.enabled, params: e.params })) };
+			return { updated: [{ look: look.key, ok: true }], enabled: stack.enabled, effects: stack.effects.map((e) => ({ id: e.id, kind: e.kind, enabled: e.enabled, params: e.params })), ...(await shownHere()) };
+		}
+	});
+}
+
+/**
+ * mcp-diorama2 (item 7): does THIS screen draw the look? The answer an agent needs after set_post on a phone that
+ * turned post off to keep its frames — said, never changed silently.
+ * @returns {Promise<{shownHere: true} | {shownHere: false, reason: string, detail: string | null, how: string | null}>}
+ */
+async function shownHere() {
+	const { postState } = await import('$lib/agent/postShot');
+	const st = postState();
+	if (st.live) return { shownHere: true };
+	return { shownHere: false, reason: /** @type {string} */ (st.reason), detail: st.detail, how: st.how };
+}
+
+/** what the agent changed on this device, so "restore" can put it back @type {{was: string, now: string} | null} */
+let qualityChange = null;
+
+const QUALITY_LEVELS = ['high', 'medium', 'auto', 'restore'];
+
+/**
+ * mcp-diorama2 (item 7, owner) — set_look {action: "quality"}: ask the person to raise THIS device's quality preset
+ * (Settings ▸ Scene ▸ Performance), e.g. so the post effects show on a phone that turned them off. A card on their own
+ * screen (Allow / Keep); never another person's device, never in the scene file, never sent. After Allow the card
+ * offers Undo, and level "restore" puts back what it was without asking (it is undoing the agent's own change).
+ * @param {any} args
+ */
+async function setQualityTool(args) {
+	// a confirm re-call ({confirmId, wait}) carries no level: the stored ask runs its own apply
+	if (args.confirmId !== undefined) return (await import('$lib/agent/confirmGate')).gateDevice('set_quality', args, { summary: '', prompt: '', apply: async () => ({}) });
+	const level = String(args.level ?? args.quality ?? '');
+	if (!QUALITY_LEVELS.includes(level)) return { error: 'level: ' + QUALITY_LEVELS.join(', ') + ' (high = full quality, post effects on; restore = what it was before you asked)' };
+	const q = await import('$lib/qualityGovernor');
+	const { showToast } = await import('../../stores/appStore.js');
+	const was = String(get(q.qualityPreset));
+	const after = async () => ({ quality: String(get(q.qualityPreset)), was, ...(await shownHere()) });
+	if (level === 'restore') {
+		if (!qualityChange) return { error: 'nothing to restore: you have not changed this device\'s quality' };
+		q.qualityPreset.set(/** @type {any} */ (qualityChange.was));
+		qualityChange = null;
+		return { restored: true, ...(await after()) };
+	}
+	if (level === was) return { unchanged: true, ...(await after()) };
+	const label = level === 'auto' ? 'Auto' : level.charAt(0).toUpperCase() + level.slice(1);
+	const why = typeof args.reason === 'string' && args.reason.trim() ? ' — ' + args.reason.trim().slice(0, 120) : level === 'high' ? ' so the post effects show' : '';
+	const { gateDevice } = await import('$lib/agent/confirmGate');
+	return gateDevice('set_quality', args, {
+		summary: 'quality preset on this device: ' + label,
+		prompt: 'Claude wants ' + label + ' quality on this device' + why + '. It may run slower; only this screen changes.',
+		apply: async () => {
+			const before = String(get(q.qualityPreset));
+			q.qualityPreset.set(/** @type {any} */ (level));
+			qualityChange = { was: qualityChange?.was ?? before, now: level };
+			showToast('Quality preset: ' + label + ' on this device.', [{ label: 'Undo', action: () => {
+				q.qualityPreset.set(/** @type {any} */ (before));
+				qualityChange = null;
+			} }]);
+			return { updated: [{ quality: level, ok: true }], ...(await after()), was: before, undo: 'set_quality {"level": "restore"}, or the Undo on the person\'s card' };
 		}
 	});
 }
@@ -1232,6 +1293,8 @@ export async function lookTool(name, args) {
 			return uvUnwrapTool(args ?? {});
 		case 'set_uv':
 			return setUvTool(args ?? {});
+		case 'set_quality':
+			return setQualityTool(args ?? {});
 		default:
 			return { error: 'unknown look tool ' + name };
 	}
@@ -1380,7 +1443,7 @@ export const LOOK_AI_TOOLS = [
 		type: 'function',
 		function: {
 			name: 'describe_shader_nodes',
-			description: 'The shader node catalog: each type with what it does, its params (which become uniforms), inputs and outputs.',
+			description: 'The shader node catalog: each type with what it does, its params (which become uniforms), inputs and outputs. UV warps include polarCoordinates, twirl and rotateUV; the glsl node keeps the type wired into a, b and c (float, vec2, vec3, vec4) and returns its declared type.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1395,7 +1458,7 @@ export const LOOK_AI_TOOLS = [
 		function: {
 			name: 'set_post',
 			description:
-				'The scene\'s post effects (bloom, huesaturation, brightnesscontrast, tonemapping, vignette, grain, chromaticaberration, ao, lut, pixelation, scanlines, dotscreen, smaa; get_post lists every param). effects: [{kind, params, enabled, at, remove}], matched to what is there by id or kind, so repeating a call does not stack a second bloom; replace: true drops the rest; the stack order is the order of effect. This changes the whole scene\'s look: the first call returns needsConfirm and the host is asked; repeat it with confirmId. One undo step.',
+				'The scene\'s post effects (bloom, huesaturation, brightnesscontrast, tonemapping, vignette, grain, chromaticaberration, ao, lut, pixelation, scanlines, dotscreen, smaa; get_post lists every param). effects: [{kind, params, enabled, at, remove}], matched to what is there by id or kind, so repeating a call does not stack a second bloom; replace: true drops the rest; the stack order is the order of effect. This changes the whole scene\'s look: the first call returns needsConfirm and the host is asked; repeat it with confirmId. One undo step. The answer says shownHere: false with a reason when this screen does not draw post effects (reason "quality tier" = the device turned them off to keep its frame rate, usual on a phone: the scene keeps them; say so, and offer to ask with set_quality).',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1418,6 +1481,22 @@ export const LOOK_AI_TOOLS = [
 					replace: { type: 'boolean' },
 					camera: { type: 'string', description: 'a camera\'s own look instead of the scene\'s' },
 					mode: { type: 'string', enum: ['append', 'replace'], description: 'camera look: add to the scene look, or replace it' },
+					...CONFIRM_SCHEMA
+				}
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
+			name: 'set_quality',
+			description:
+				'Ask the person to raise THIS device\'s quality (their Settings ▸ Scene ▸ Performance ▸ Quality preset). Use it when set_post / get_post / screenshot say shownHere false or postEffects "unavailable" with reason "quality tier": a phone turns post effects off to keep its frame rate. The person gets a card on their own screen (Allow / Keep) and answers; nothing changes until they allow, nothing changes on anyone else\'s device, nothing goes into the scene. The first call returns needsConfirm; call again with confirmId (and wait) for the answer. level: high (full quality, post effects on), medium, auto (the device decides), restore (put back what it was before you asked; no question). Suggest it out loud first: "Your phone hides the glow to stay smooth; shall I ask it for high quality?"',
+			parameters: {
+				type: 'object',
+				properties: {
+					level: { type: 'string', enum: QUALITY_LEVELS },
+					reason: { type: 'string', description: 'a few words for the card, e.g. "so the portal glow shows"' },
 					...CONFIRM_SCHEMA
 				}
 			}

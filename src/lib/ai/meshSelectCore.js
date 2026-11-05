@@ -187,6 +187,54 @@ export function previewOf(faces, vertices) {
 	};
 }
 
+/** diorama2: how many entries a list field brought, in words @param {any} list */
+const arrived = (list) => (Array.isArray(list) ? list.length + ' entr' + (list.length === 1 ? 'y' : 'ies') + ' arrived' : 'got ' + (list === null ? 'null' : typeof list) + ', not a list');
+
+/** a value for an error message, cut short @param {any} v */
+function shortJson(v) {
+	let s;
+	try {
+		s = JSON.stringify(v);
+	} catch {
+		s = String(v);
+	}
+	s = s === undefined ? 'nothing' : s;
+	return s.length > 60 ? s.slice(0, 57) + '…' : s;
+}
+
+/** sRGB (what a colour picker and a hex code mean) → the linear value a vertex colour attribute holds @param {number} c */
+export const srgbToLinear = (c) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+
+/**
+ * diorama2: create_mesh / update_mesh `colors` → linear [r, g, b] numbers, the form the geometry's colour attribute
+ * holds. Each entry is [r, g, b] (0..1) or a hex string ("#ff8800", "#f80"). `colorSpace` "srgb" (the default:
+ * numbers mean what a colour picker means, as a material colour does) or "linear" (numbers go in as they are). Hex is
+ * always sRGB. Nothing given = nothing to do. Errors name how many entries arrived and the first bad one.
+ * @param {any} colors @param {any} [colorSpace] @returns {{colors: number[][] | undefined} | {error: string}}
+ */
+export function vertexColorsLinear(colors, colorSpace) {
+	if (colorSpace !== undefined && colorSpace !== 'srgb' && colorSpace !== 'linear') return { error: 'colorSpace: "srgb" (the default) or "linear"' };
+	if (colors === undefined) return { colors: undefined };
+	if (!Array.isArray(colors)) return { error: 'colors: ' + arrived(colors) + ' — one [r, g, b] (0..1) or "#rrggbb" per vertex' };
+	const linear = colorSpace === 'linear';
+	/** @type {number[][]} */
+	const out = [];
+	for (let i = 0; i < colors.length; i++) {
+		const c = colors[i];
+		const bad = () => ({ error: 'colors[' + i + '] (the first bad one of ' + colors.length + ' entries): [r, g, b] numbers from 0 to 1 or "#rrggbb", got ' + shortJson(c) });
+		if (typeof c === 'string') {
+			const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(c.trim());
+			if (!m) return bad();
+			const h = m[1].length === 3 ? m[1].replace(/./g, (x) => x + x) : m[1];
+			out.push([0, 2, 4].map((k) => srgbToLinear(parseInt(h.slice(k, k + 2), 16) / 255)));
+			continue;
+		}
+		if (!Array.isArray(c) || c.length !== 3 || !c.every((n) => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 1)) return bad();
+		out.push(linear ? c.slice() : c.map(srgbToLinear));
+	}
+	return { colors: out };
+}
+
 /**
  * create_mesh's data → triangles. Faces are polygons of 3-32 corners (fan-triangulated: give convex
  * polygons, or triangles); every index is checked. `uvs` is one [u, v] per vertex.
@@ -198,15 +246,15 @@ export function previewOf(faces, vertices) {
 export function meshFromData(args, slots = 0) {
 	const vertices = args?.vertices;
 	const faces = args?.faces;
-	if (!Array.isArray(vertices) || vertices.length < 3) return { error: 'vertices: at least 3 points [x, y, z]' };
-	if (vertices.length > MESH_MAX_VERTICES) return { error: 'vertices: at most ' + MESH_MAX_VERTICES + ' (got ' + vertices.length + ')' };
+	if (!Array.isArray(vertices) || vertices.length < 3) return { error: 'vertices: at least 3 points [x, y, z] (' + arrived(vertices) + ')' };
+	if (vertices.length > MESH_MAX_VERTICES) return { error: 'vertices: at most ' + MESH_MAX_VERTICES + ' (' + arrived(vertices) + ')' };
 	/** @type {number[][]} */
 	const verts = [];
 	for (let i = 0; i < vertices.length; i++) {
 		const v = vertices[i];
 		if (!Array.isArray(v) || v.length !== 3 || !v.every((n) => typeof n === 'number' && Number.isFinite(n)))
-			return { error: 'vertices[' + i + ']: [x, y, z] numbers' };
-		if (v.some((n) => Math.abs(n) > COORD_MAX)) return { error: 'vertices[' + i + ']: coordinates within ±' + COORD_MAX + ' m' };
+			return { error: 'vertices[' + i + '] (the first bad one of ' + vertices.length + ' entries): [x, y, z] numbers, got ' + shortJson(v) };
+		if (v.some((n) => Math.abs(n) > COORD_MAX)) return { error: 'vertices[' + i + '] (the first bad one of ' + vertices.length + ' entries): coordinates within ±' + COORD_MAX + ' m' };
 		verts.push(v);
 	}
 	if (!Array.isArray(faces) || !faces.length) return { error: 'faces: at least one face, e.g. [[0, 1, 2]] (indices into vertices)' };
@@ -214,22 +262,23 @@ export function meshFromData(args, slots = 0) {
 	let uvs = null;
 	if (args.uvs !== undefined) {
 		if (!Array.isArray(args.uvs) || args.uvs.length !== verts.length)
-			return { error: 'uvs: one [u, v] per vertex (' + verts.length + '), or leave it out' };
+			return { error: 'uvs: ' + arrived(args.uvs) + ', the mesh has ' + verts.length + ' vertices — one [u, v] per vertex, or leave it out' };
 		for (let i = 0; i < args.uvs.length; i++) {
 			const uv = args.uvs[i];
 			if (!Array.isArray(uv) || uv.length !== 2 || !uv.every((n) => typeof n === 'number' && Number.isFinite(n)))
-				return { error: 'uvs[' + i + ']: [u, v] numbers' };
+				return { error: 'uvs[' + i + '] (the first bad one of ' + args.uvs.length + ' entries): [u, v] numbers, got ' + shortJson(uv) };
 		}
 		uvs = /** @type {number[][]} */ (args.uvs);
 	}
 	let colors = null;
 	if (args.colors !== undefined) {
 		if (!Array.isArray(args.colors) || args.colors.length !== verts.length)
-			return { error: 'colors: one [r, g, b] (0..1) per vertex (' + verts.length + '), or leave it out' };
+			return { error: 'colors: ' + arrived(args.colors) + ', the mesh has ' + verts.length + ' vertices — one [r, g, b] (0..1) or "#rrggbb" per vertex, or leave it out' };
+		// diorama2: hex strings and sRGB numbers are made linear by vertexColorsLinear before this runs
 		for (let i = 0; i < args.colors.length; i++) {
 			const c = args.colors[i];
 			if (!Array.isArray(c) || c.length !== 3 || !c.every((n) => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 1))
-				return { error: 'colors[' + i + ']: [r, g, b] numbers from 0 to 1' };
+				return { error: 'colors[' + i + '] (the first bad one of ' + args.colors.length + ' entries): [r, g, b] numbers from 0 to 1 or "#rrggbb", got ' + shortJson(c) };
 		}
 		colors = /** @type {number[][]} */ (args.colors);
 	}

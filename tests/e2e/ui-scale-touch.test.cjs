@@ -24,7 +24,8 @@ const measure = (page) =>
 			stripHits,
 			objClose: R('#object-list .wc-close, #object-list [aria-label^="Close"]'),
 			sbStripH: parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sb-strip-h')) || 0,
-			sbTab: R('[data-sidebar-tab], .sb-tab, .sidebar-strip [role=tab]')
+			sbTab: R('[data-sidebar-tab], .sb-tab, .sidebar-strip [role=tab]'),
+			logo: R('#logo-menu')
 		};
 	});
 
@@ -55,6 +56,8 @@ h.run(async () => {
 	h.check(b.sbStripH >= a.sbStripH * 1.2, `130 %: the sidebar tab strip grows (${a.sbStripH} → ${b.sbStripH})`);
 	h.check(b.stripHits === 0, `130 %: no dock-strip control sits under the Controls bar (${b.stripHits})`);
 	h.check(!b.dockTab || !b.dockStrip || b.dockTab.h <= b.dockStrip.h + 1, `130 %: a dock tab fits its strip (${b.dockTab?.h} in ${b.dockStrip?.h})`);
+	// HONOR 718 x 587 at 130 %: the default dock (320 px scaled) pushed the bar into the logo / undo row
+	h.check(!!b.logo && !!b.pill && b.pill.t >= b.logo.b, `130 %: the Controls bar stays below the top row (bar top ${b.pill?.t}, logo bottom ${b.logo?.b})`);
 
 	// a menu at 130 %: the Add menu stays on the screen
 	await page.evaluate(() => { window.__stores.explorerClose.set(true); window.__stores.objectListClose.set(true); window.__stores.inspectorClose.set(true); });

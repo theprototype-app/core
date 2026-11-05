@@ -74,7 +74,11 @@ bottomDockActive.subscribe((value) => {
 
 /** @param {number} h */
 function clampH(h) {
-	const max = typeof window !== 'undefined' ? Math.round(window.innerHeight * 0.8) : 800;
+	// phone-polish (HONOR, 718 x 587 at 130 % interface scale): 80 % of a short screen left the floating toolbar, which
+	// rides above the dock, inside the top row (logo, undo, bell). The dock also leaves TOP_RESERVE for that row + the
+	// tab strip + the bar (~200 px at 100 %, scaled) — on a tall desktop screen 80 % is still the tighter limit.
+	const vh = typeof window !== 'undefined' ? window.innerHeight : 1000;
+	const max = Math.max(scaledPx(160), Math.round(Math.min(vh * 0.8, vh - scaledPx(200))));
 	return Math.min(Math.max(h || scaledPx(320), scaledPx(160)), max);
 }
 /** shared height of the dock — ONE value for every tab, Explorer included */

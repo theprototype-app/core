@@ -38,6 +38,7 @@
 	import { whatsNewUnseen, openWhatsNew } from '$lib/whatsNew';
 	// 36 I5: own lines (not the shared icon list) so a merge with the menu's other lanes stays a union
 	import { checkpointsOpen, checkpointSaveOpen } from '../../stores/appStore.js'; // 36 B14
+	import { commandPaletteOpen } from '../../stores/appStore'; // phone-polish item 5: the palette's touch entry
 	import { startEditorTour } from '$lib/tours/builtin.js';
 	import { statsOpen } from '$lib/sceneBudget';
 	import { layoutsMenuOpen } from '$lib/uiLayouts'; // 37 R14
@@ -358,6 +359,11 @@
 		<!-- 37 R20: a picture + boxes round what is wrong + a note, sent to the team with consent -->
 		<button id="report-problem" class="side-row" onclick={() => { closeMenu.set(true); void openProblemReport(); }}>
 			<span class="side-ico"><Icon name="message-square-warning" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Report a problem</span>
+		</button>
+		<!-- phone-polish item 5: the command palette was Ctrl+K only — no way in on a touch screen -->
+		<button id="open-command-palette" class="side-row" onclick={() => { closeMenu.set(true); commandPaletteOpen.set(true); }}>
+			<span class="side-ico"><Icon name="search" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Command palette</span>
+			<span class="side-hint">Ctrl+K</span>
 		</button>
 		<!-- 36 U5: "Live profiler" left the menu — it is a Profiler tool, opened from the
 		     Profiler tab's own header (#profiler-open-live) beside Record and Import -->

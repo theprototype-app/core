@@ -631,6 +631,19 @@
 		outline: none !important;
 		box-shadow: none !important;
 	}
+	/* phone-polish item 5: on a touch screen the filter is a full 44 px row (it was 32 — the audit's
+	   "130x16" field inside it) and its text 16 px, so focusing it does not zoom the page */
+	@media (pointer: coarse) {
+		.ctx-filter.on {
+			height: 44px;
+		}
+		.ctx-filter-input {
+			font-size: 16px;
+		}
+	}
+	:global(:root[data-touch-ui]) .ctx-filter.on {
+		height: 44px;
+	}
 	/* 16-Q5: resize grip for the search list — sticks to the bottom-right corner */
 	.ctx-grip {
 		position: sticky;

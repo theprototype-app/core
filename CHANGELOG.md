@@ -5,6 +5,11 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## Unreleased
+
+### 🔧 Fixes
+- **Bake to mesh, Undo, Redo in quick succession** now bakes the text on your own screen too: it could stay a text for you while everyone else in the session saw the mesh. <!-- fix-bake (1.61 Q1) -->
+
 ## 1.61.0 — Write in 3D ✍️
 
 ### ✍️ 3D text

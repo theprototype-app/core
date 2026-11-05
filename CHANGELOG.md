@@ -5,7 +5,7 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
-## Unreleased
+## 1.61.0 — Write in 3D ✍️
 
 ### ✍️ 3D text
 - **Signs and titles in 3D**: Add ▸ Text writes words into the scene — **flat** letters with an outline, or **solid** letters with depth and a bevel. Switch between the two and the words and style stay. <!-- 64-text TX1 -->

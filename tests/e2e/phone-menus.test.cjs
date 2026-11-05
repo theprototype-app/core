@@ -61,9 +61,14 @@ h.run(async () => {
 			// it is what ran off the HONOR's screen — the same menu with 24 rows added stands in for that
 			{ label: 'profile menu, signed-in length', sel: '#avatar-dropdown', pad: 24, open: () => page.locator('#avatar-trigger').first().tap(), close: () => page.evaluate(() => history.back()) },
 			{ label: 'logo menu', sel: '#sidebar70', open: () => page.evaluate(() => window.__stores.closeMenu.set(false)), close: () => page.evaluate(() => window.__stores.closeMenu.set(true)) },
-			{ label: 'Add menu', sel: '[role=menu].ctx-scroll', open: () => page.locator('#mobile-add-button').first().tap(), close: () => page.evaluate(() => history.back()) }
+			// the corner + is not on the folded phone's bar (phone-back skips it the same way)
+			{ label: 'Add menu', sel: '[role=menu].ctx-scroll', skip: () => page.locator('#mobile-add-button').first().isVisible().then((v) => !v), open: () => page.locator('#mobile-add-button').first().tap(), close: () => page.evaluate(() => history.back()) }
 		];
 		for (const m of menus) {
+			if (m.skip && (await m.skip())) {
+				console.log(tag(`${m.label}: not on this layout`));
+				continue;
+			}
 			await m.open();
 			await h.eventually(() => page.locator(m.sel).first().isVisible().catch(() => false), (v) => v, tag(`${m.label}: opens`));
 			await nap(800);

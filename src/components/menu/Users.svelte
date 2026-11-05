@@ -761,16 +761,15 @@
 		// `overscroll-behavior` keeps the drag from scrolling or zooming the page behind it. The visible top is
 		// the rect's top: the -50 px margin seats the notch over the trigger. The phone sheet (phone.css) owns
 		// its own height.
+		// The cap is a CSS variable read by the rule below, not an inline overflow: the inline `overflow-y` was dropped
+		// again after placement (measured: max-height stayed, overflow-y vanished), leaving a clipped menu.
 		if ($phoneShellActive) {
-			dropdownEl.style.removeProperty('max-height');
-			dropdownEl.style.removeProperty('overflow-y');
+			dropdownEl.style.removeProperty('--pm-max-h');
 			return;
 		}
 		const visTop = dropdownEl.getBoundingClientRect().top;
 		const vh = window.visualViewport?.height ?? window.innerHeight;
-		dropdownEl.style.maxHeight = `${Math.max(160, Math.round(vh - Math.max(0, visTop) - 8))}px`;
-		dropdownEl.style.overflowY = 'auto';
-		dropdownEl.style.overscrollBehavior = 'contain';
+		dropdownEl.style.setProperty('--pm-max-h', `${Math.max(160, Math.round(vh - Math.max(0, visTop) - 8))}px`);
 	}
 	/** fix-batch-1 #23: the trigger's keys — Enter / Space toggle, ↓ opens; opening moves focus in */
 	function triggerKey(e: KeyboardEvent) {
@@ -1630,6 +1629,13 @@
 	   right: 0 chrome), so pin it and let floating-ui keep only the vertical placement.
 	   !important beats floating-ui's non-important inline `left`; :global because the
 	   panel is rendered by a child component (no scope class). */
+	/* phone-polish item 6: never past the visible bottom; scrolls by wheel and finger (the phone sheet, phone.css,
+	   owns its own height and scroll) */
+	:global(:root:not(.phone-shell) #avatar-dropdown) {
+		max-height: var(--pm-max-h, none);
+		overflow-y: auto;
+		overscroll-behavior: contain;
+	}
 	:global(#avatar-dropdown) {
 		left: auto !important;
 		/* 45 N4: the circle's CURRENT right edge (placeDropdown measures it); 20 px = the corner's own inset */

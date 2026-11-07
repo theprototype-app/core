@@ -1423,6 +1423,9 @@ export class PeerConnection {
 				} else if(data.type == 'getytext') {
 					// answered across rooms too, with `none`, so the asker stops waiting at once
 					answerYText(data, conn.peer, sameRoomOrUnknown(conn.peer));
+				} else if(data.type == 'photoreq' || data.type == 'photores' || data.type == 'photostop') {
+					// 98 P2: Photo mode's hand-off (a Quest / phone asks a PC to path-trace its view); lazy
+					import('$lib/photo/photoMode.js').then((m) => m.onPhotoMessage(data, conn.peer)).catch(() => {});
 				} else if(data.type == 'tpchat') {
 					// 56 C10: one chat, whole-doc latest-wins on changedAt (one writer per session)
 					applyRemoteTpchat(data);

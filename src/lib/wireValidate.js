@@ -25,6 +25,7 @@
 // the AI tools, so the three cannot disagree about what a material key takes).
 import { checkMaterialParam, isMapSlotKey, isMapSlotImage, normalizeTexTransform } from './materialParamRules.js';
 import { isPingMessage } from './pingCore.js';
+import { validPhotoRequest, validPhotoResult } from './photo/photoCore.js';
 
 /** @param {unknown} v */
 export function isUuid(v) {
@@ -171,6 +172,10 @@ const shortStr = (v) => typeof v === 'string' && v.length > 0 && v.length <= 128
  * @type {Record<string, (data: any) => boolean>}
  */
 export const VALIDATORS = {
+	// 98 P2 (98-photo): Photo mode's hand-off — a view to render, its answer (PNG bytes capped), a stop
+	photoreq: (d) => validPhotoRequest(d),
+	photores: (d) => validPhotoResult(d),
+	photostop: (d) => typeof d.id === 'string' && d.id.length <= 64,
 	hosts: (d) => isArray(d.hosts),
 	// 85b S2: a ping — the 87 marker fields plus the optional object-local `on` (pingCore)
 	ping: (d) => isPingMessage(d),

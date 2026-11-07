@@ -103,7 +103,9 @@ export const TOOL_ANNOTATIONS = /** @type {Record<string, {title: string, read?:
 	inspect_runtime: { title: 'See what the game is doing', read: true },
 	validate_scene: { title: 'Check the game for problems', read: true },
 	logs: { title: 'Read the recent log', read: true },
-	playtest: { title: 'Play the game as a test player', destructive: false }
+	playtest: { title: 'Play the game as a test player', destructive: false },
+	// 98 P2
+	take_photo: { title: 'Take a path-traced photo of the view', destructive: false }
 });
 
 /** a title from a tool name: `create_objects` → `Create objects` @param {string} name */
@@ -302,8 +304,8 @@ export const CONNECTOR_FAMILIES = Object.freeze({
 	run: {
 		title: 'See and check what the game does',
 		summary:
-			"What the game does when it runs: inspect = when each event and action last fired, the game state and variables, errors, and why a node did not fire (pass node or object); validate = what would not work when someone presses Play, each with its fix; logs = the tab's recent errors, warnings and toasts.",
-		actions: { inspect: 'inspect_runtime', validate: 'validate_scene', logs: 'logs' }
+			"What the game does when it runs: inspect = when each event and action last fired, the game state and variables, errors, and why a node did not fire (pass node or object); validate = what would not work when someone presses Play, each with its fix; logs = the tab's recent errors, warnings and toasts; photo = a path-traced still of the person's view (a PC peer renders it for a Quest), optionally saved to the Library.",
+		actions: { inspect: 'inspect_runtime', validate: 'validate_scene', logs: 'logs', photo: 'take_photo' }
 	},
 	assets: {
 		title: 'Images and assets',

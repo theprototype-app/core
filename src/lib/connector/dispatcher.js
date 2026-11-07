@@ -224,6 +224,12 @@ export function createDispatcher(deps) {
 			const r = await deps.agent.exec(tool, args);
 			if (r && typeof r === 'object' && r.refused) return fail('refused', String(r.error ?? 'refused'));
 			if (isError(r)) return fail('failed', String(r.error) + (r.created ? ' ' + JSON.stringify(r.created).slice(0, 600) : ''));
+			// 98 P2: a photo comes back as an image the AI app can see (downscaled like a screenshot)
+			if (tool === 'take_photo' && typeof r?.image_url === 'string') {
+				const { image_url, ...rest } = r;
+				const shot = image_url ? await deps.encodeShot(image_url) : null;
+				return { result: shot ? { ...shot, ...rest } : rest };
+			}
 			return { result: r };
 		});
 		queue = job.catch(() => {});

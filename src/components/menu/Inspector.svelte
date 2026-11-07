@@ -127,6 +127,7 @@
 	import MaterialPresetsRow from './MaterialPresetsRow.svelte'; // 37 R5
 	import Cc0Credit from '../editors/Cc0Credit.svelte'; // 47-cc0: where a CC0 asset came from
 	import PostStack from './PostStack.svelte';
+	import PhotoEntry from '../photo/PhotoEntry.svelte';
 	import { showColliders, colliderVizObjects, setColliderViz } from '$lib/colliderHelpers';
 	import { enterColliderEdit } from '$lib/colliderEdit';
 	import { inferredColliderKind } from '$lib/colliderSpec';
@@ -2126,6 +2127,7 @@
 					inherits, and a material on one object. Only the right to switch a layer off
 					is local — that is View ▸ Overrides, above.
 				</p>
+				<PhotoEntry />
 				<PostStack />
 				<BakeLightSection /><!-- 98 P1: scene data, saved + replicated -->
 				<p class="ui-section-label" data-anchor="Materials">Shader materials</p>

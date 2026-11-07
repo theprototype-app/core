@@ -82,6 +82,7 @@
 		"svelte-hamburgers": "^5.0.0",
 		"three": "^0.186.1",
 		"three-bvh-csg": "^0.0.18",
+		"three-gpu-pathtracer": "0.0.27",
 		"three-mesh-bvh": "^0.9.17",
 		"y-codemirror.next": "^0.3.6",
 		"y-protocols": "^1.0.7",

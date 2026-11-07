@@ -37,6 +37,7 @@
 	import WindowChrome from './WindowChrome.svelte';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { rememberFocus, trapTab } from '$lib/keyboardNav.js';
+	import { autofocusOk } from '$lib/inputDevice';
 
 	/** @type {{open?: boolean, title?: string, titleId?: string, modal?: boolean, outsideclose?: boolean, dismissable?: boolean, permanent?: boolean, frame?: boolean, width?: 'sm'|'md'|'lg'|'xl', desktopWidth?: string, padded?: boolean, bodyId?: string, bodyClass?: string, class?: string, oncancel?: (e: Event) => void, actions?: import('svelte').Snippet, bar?: import('svelte').Snippet, footer?: import('svelte').Snippet, children?: import('svelte').Snippet} & Record<string, any>} */
 	let {
@@ -140,12 +141,19 @@
 			// (a dialog with NO header of its own — Settings draws its WindowChrome inside — skips
 			// nothing: flowbite focused that window's search field)
 			const ownHead = !!(title || dismissable);
-			/** @type {HTMLElement | null} */
-			const el =
-				dlg.querySelector('[data-autofocus]') ??
-				all.find((n) => !ownHead || !n.closest('.wc-head')) ??
-				all[0] ??
-				null;
+			// phone-polish item 2: on a touch screen a focused text field raises the on-screen keyboard
+			// over the dialog the user just opened (Layouts' name field hid Save and Close on the
+			// HONOR) — focus the first thing that is NOT a text field there; the field waits for a tap
+			const typing = (/** @type {Element} */ n) =>
+				n.tagName === 'TEXTAREA' ||
+				(n.tagName === 'INPUT' && !/^(button|checkbox|radio|range|color|file|submit|reset|image)$/i.test(/** @type {HTMLInputElement} */ (n).type));
+			const okField = (/** @type {Element | null | undefined} */ n) => (n && (autofocusOk() || !typing(n)) ? n : null);
+			const el = /** @type {HTMLElement | null} */ (
+				okField(dlg.querySelector('[data-autofocus]')) ??
+				all.find((n) => (!ownHead || !n.closest('.wc-head')) && okField(n)) ??
+				(autofocusOk() ? all[0] : null) ??
+				null
+			);
 			// the same element flowbite focused; no focus RING for this programmatic focus (a
 			// keyboard user still gets one the moment they press Tab)
 			// @ts-ignore focusVisible is newer than the DOM lib
@@ -208,6 +216,8 @@
 		/* ui-audit-honor: 88vh is the URL-bar-HIDDEN viewport on Android Chrome (639px of a 587px view on the
 		   HONOR) — Templates/Save options opened 26px above the top with Close cut off. dvh = what you can see */
 		max-height: 88dvh;
+		/* phone-polish item 2: and never under the on-screen keyboard (0 while it is down) */
+		max-height: calc(88dvh - var(--kb-inset, 0px) - var(--kb-top, 0px));
 		padding: 0;
 		overflow: hidden;
 		color: var(--text);

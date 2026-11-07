@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { backClose } from '$lib/backStack.js'; // phone-polish: Android Back closes it
 	// Generate 3D model modal (roadmap #11, G6): a direct (no-LLM) entry point to
 	// mesh generation. Opened from the Add menu; kicks a meshJobs job (progress shows
 	// in the MeshJobsCard). Rendered at the component root (not inside a filtered
@@ -130,7 +131,7 @@
 
 {#if $meshGenModalOpen}
 	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions a11y_no_noninteractive_element_interactions -->
-	<div class="mesh-gen-backdrop" role="presentation" onclick={onBackdrop} onpaste={onPaste} ondrop={onDrop} ondragover={(e) => e.preventDefault()}>
+	<div class="mesh-gen-backdrop" use:backClose={close} role="presentation" onclick={onBackdrop} onpaste={onPaste} ondrop={onDrop} ondragover={(e) => e.preventDefault()}>
 		<div
 			class="ui-panel mesh-gen-modal flex max-h-[92dvh] w-[min(460px,92vw)] flex-col gap-3 overflow-y-auto bg-surface-1/95 p-4 backdrop-blur-sm"
 			use:minimalScroll

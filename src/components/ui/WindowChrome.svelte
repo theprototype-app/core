@@ -34,6 +34,7 @@
 	import Icon from './Icon.svelte';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { fullName } from '$lib/ui/fullName.js';
+	import { registerBack } from '$lib/backStack.js';
 
 	/** @type {{size?: 'modal'|'panel'|'tool', title?: string, icon?: string, count?: number|string, titleId?: string, onclose?: (() => void) | null, closeLabel?: string, onpin?: (() => void) | null, pinned?: boolean, pinAttrs?: Record<string, any>, onpopout?: (() => void) | null, onback?: (() => void) | null, backLabel?: string, bare?: boolean, headerClass?: string, closeAttrs?: Record<string, any>, heading?: import('svelte').Snippet, dockedHead?: 'hide'|'tools', body?: boolean, padded?: boolean, elevated?: boolean, headerEl?: HTMLElement | null, headerAttrs?: Record<string, any>, actions?: import('svelte').Snippet, footer?: import('svelte').Snippet, children?: import('svelte').Snippet} & Record<string, any>} */
 	let {
@@ -75,9 +76,34 @@
 	const headingId = $derived(titleId ?? 'wc-title-' + uid);
 	const named = $derived(size !== 'modal' && !heading && !!title && rest.role === undefined && rest['aria-label'] === undefined && rest['aria-labelledby'] === undefined);
 	const hasCount = $derived(count !== undefined && count !== null && count !== '');
+
+	// phone-polish item 1: a window with a way out is a surface Android Back closes (or steps
+	// back a page in, when it shows a Back chevron). OPEN = ON SCREEN, not mounted: Chat and the
+	// AI window stay mounted behind a `hidden` class, and a hidden window in the stack would keep
+	// Back inside the app for good. The effect re-runs when the window moves between its root
+	// page and a sub-page, so each page re-joins the stack.
+	/** @type {HTMLElement | undefined} */
+	let rootEl = $state();
+	let shown = $state(false);
+	$effect(() => {
+		const root = rootEl;
+		if (!root || typeof ResizeObserver === 'undefined') return;
+		// a `bare` chrome is display: contents (no box of its own): its window is the parent
+		const el = getComputedStyle(root).display === 'contents' && root.parentElement ? root.parentElement : root;
+		const look = () => (shown = el.getClientRects().length > 0);
+		look();
+		const ro = new ResizeObserver(look);
+		ro.observe(el);
+		return () => ro.disconnect();
+	});
+	$effect(() => {
+		const fn = onback ?? onclose;
+		if (!fn || !shown) return;
+		return registerBack(() => fn(), title || size);
+	});
 </script>
 
-<div class="tp-ui wc wc-{size}" class:wc-elevated={elevated} class:wc-headless-body={!body} class:wc-bare={bare} role={named ? 'region' : undefined} aria-labelledby={named ? headingId : undefined} {...rest}>
+<div bind:this={rootEl} class="tp-ui wc wc-{size}" class:wc-elevated={elevated} class:wc-headless-body={!body} class:wc-bare={bare} role={named ? 'region' : undefined} aria-labelledby={named ? headingId : undefined} {...rest}>
 	<header class="wc-head {headerClass}" class:wc-nav={!!onback} data-docked-head={dockedHead} bind:this={headerEl} {...headerAttrs}>
 		{#if onback}
 			<button type="button" class="wc-back" onclick={onback}>

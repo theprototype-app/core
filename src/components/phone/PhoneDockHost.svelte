@@ -25,7 +25,8 @@
 	import { dockAddMenuAt, dockAddItems, rebuildAfterPick } from '$lib/dockMenu';
 	import EmptyState from '../ui/EmptyState.svelte';
 	import WorkspaceLayouts from '../menu/WorkspaceLayouts.svelte';
-	import { dockHeight, dockEmptyShown, dockSplitView, dockPaneOf } from '$lib/bottomDock';
+	import { dockHeight, dockEmptyShown, dockSplitView, dockPaneOf, dockMinimized, visibleDockKey } from '$lib/bottomDock';
+	import { registerBack } from '$lib/backStack.js';
 	import DockSplit from '../DockSplit.svelte';
 	import { phoneDockShown, phoneTabsOpen, startPhoneDock } from '$lib/phoneDock';
 	import { HOSTED, hostedTabsOpen, hostedDockShown, hostedDockShownKeys, startDockHost } from '$lib/dockHost';
@@ -45,6 +46,14 @@
 	});
 
 	const anyOpen = $derived(Object.values($phoneTabsOpen).some(Boolean));
+	// phone-polish item 1: Android Back puts the bottom dock down — what a tap on the shown phone-bar
+	// item does, and the strip's own "Minimize the dock": every tab stays open, the viewport clears;
+	// the next Back is the user's. Both postures: a docked editor (Explorer, Flow …) draws its own
+	// strip row instead of a WindowChrome, so the dock is the one surface that answers for it
+	$effect(() => {
+		if (!$visibleDockKey || $dockMinimized) return;
+		return registerBack(() => dockMinimized.set(true), 'dock');
+	});
 	// 42 I6: a hosted window docked on a wider screen
 	const anyHosted = $derived(Object.values($hostedTabsOpen).some(Boolean));
 	// 44 M5: the EMPTY dock ("T" with nothing docked) is this frame too, on a wider screen — its strip

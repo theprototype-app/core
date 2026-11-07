@@ -3,7 +3,7 @@
 	"format": 2,
 	"generator": {
 		"source": "tpAgent.tools() via core scripts/agent-tool-catalog.cjs, mapped by tools/agent/src/catalog.js",
-		"hostTools": 75,
+		"hostTools": 76,
 		"dropped": []
 	},
 	"instructions": "You are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.\nWhen asked what you can do here, call what_can_you_do and say its \"say\" line.",
@@ -4366,6 +4366,42 @@
 			}
 		},
 		{
+			"name": "take_photo",
+			"title": "Take a path-traced photo of the view",
+			"description": "A PHOTO of the person's current view: a path-traced still (soft shadows, real reflections and glass), rendered in their tab while they keep working; their view never moves. It takes seconds to a minute: samples (1-2048, default 256) or seconds (2-600, default 60), whichever comes first. On a Quest or a weak phone a PC in the session renders it; with no PC it is a normal still and the answer says why. Post effects, flat text, particles and your own GLSL are not in a photo (notShown lists what was left out). save: true also files the PNG in the Library under Scene shots. Use it when the person asks for a photo, a render or a nice picture of the scene; for checking your work use screenshot.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"samples": {
+						"type": "integer",
+						"minimum": 1,
+						"maximum": 2048,
+						"description": "path-tracing samples (more = cleaner, slower; default 256)"
+					},
+					"seconds": {
+						"type": "number",
+						"minimum": 2,
+						"maximum": 600,
+						"description": "time limit in seconds (default 60)"
+					},
+					"denoise": {
+						"type": "boolean",
+						"description": "smooth the remaining noise (default true)"
+					},
+					"save": {
+						"type": "boolean",
+						"description": "also save the PNG to the Library under Scene shots/<scene> (default false)"
+					}
+				}
+			},
+			"annotations": {
+				"title": "Take a path-traced photo of the view",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"openWorldHint": false
+			}
+		},
+		{
 			"name": "create_flow_nodes",
 			"title": "Add behaviour (flow) nodes",
 			"description": "Add behavior (flow) nodes to a node graph — this is how objects get MOTION and interactivity: spin, bounce, patrol a path, pulse, blink, react to clicks. graph is \"scene\" or an object uuid (ONE graph per call). KEY RULE: a behavior node placed in an OBJECT's graph with no edges automatically drives that object — most behaviors are one node, zero edges, so usually OMIT edges. A script node runs every frame FROM THE BASE POSE, so object.rotation.y += 0.02 lands at base + 0.02 and stays: write object.rotation.y = base.rot[1] + elapsed * speed (base has pos, rot, scale as arrays; elapsed = seconds since Play started, time = the shared clock, seconds of the day, a large number). Particle gravity is the acceleration along world Y: negative falls, positive rises. Describe nodes EITHER as text (graph lines, see the system prompt) OR as nodes/edges arrays. A call with some bad nodes still creates the good ones and returns partial:true + errors[] — resend only what errors[] names.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.",
@@ -5531,7 +5567,8 @@
 			"run": {
 				"inspect": "inspect_runtime",
 				"validate": "validate_scene",
-				"logs": "logs"
+				"logs": "logs",
+				"photo": "take_photo"
 			},
 			"assets": {
 				"search": "search_assets",
@@ -8368,7 +8405,7 @@
 			{
 				"name": "run",
 				"title": "See and check what the game does",
-				"description": "What the game does when it runs: inspect = when each event and action last fired, the game state and variables, errors, and why a node did not fire (pass node or object); validate = what would not work when someone presses Play, each with its fix; logs = the tab's recent errors, warnings and toasts.\nCall it as {\"action\": \"inspect\", \"inspect\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
+				"description": "What the game does when it runs: inspect = when each event and action last fired, the game state and variables, errors, and why a node did not fire (pass node or object); validate = what would not work when someone presses Play, each with its fix; logs = the tab's recent errors, warnings and toasts; photo = a path-traced still of the person's view (a PC peer renders it for a Quest), optionally saved to the Library.\nCall it as {\"action\": \"inspect\", \"inspect\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -8377,7 +8414,8 @@
 							"enum": [
 								"inspect",
 								"validate",
-								"logs"
+								"logs",
+								"photo"
 							],
 							"description": "What to do. Put its fields in the object named after the action."
 						},
@@ -8431,6 +8469,32 @@
 								}
 							},
 							"description": "The page's recent log: errors, warnings, console lines and the toasts people saw, oldest first. Pass since (the \"now\" of the previous answer) for only what is new. status shows the newest few."
+						},
+						"photo": {
+							"type": "object",
+							"properties": {
+								"samples": {
+									"type": "integer",
+									"minimum": 1,
+									"maximum": 2048,
+									"description": "path-tracing samples (more = cleaner, slower; default 256)"
+								},
+								"seconds": {
+									"type": "number",
+									"minimum": 2,
+									"maximum": 600,
+									"description": "time limit in seconds (default 60)"
+								},
+								"denoise": {
+									"type": "boolean",
+									"description": "smooth the remaining noise (default true)"
+								},
+								"save": {
+									"type": "boolean",
+									"description": "also save the PNG to the Library under Scene shots/<scene> (default false)"
+								}
+							},
+							"description": "A PHOTO of the person's current view: a path-traced still (soft shadows, real reflections and glass), rendered in their tab while they keep working; their view never moves. It takes seconds to a minute: samples (1-2048, default 256) or seconds (2-600, default 60), whichever comes first. On a Quest or a weak phone a PC in the session renders it; with no PC it is a normal still and the answer says why. Post effects, flat text, particles and your own GLSL are not in a photo (notShown lists what was left out). save: true also files the PNG in the Library under Scene shots. Use it when the person asks for a photo, a render or a nice picture of the scene; for checking your work use screenshot."
 						}
 					},
 					"required": [

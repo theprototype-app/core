@@ -86,8 +86,9 @@ function isPerson(/** @type {any} */ n, self) {
 	return name === 'peer-avatars' || name === 'avatar-preview' || name.startsWith('agent-marker-') || (!!self && name === self);
 }
 
-/** @param {any} scene @param {any} renderer @param {boolean} [keepGrid] @param {{people?: boolean, also?: any[]}} [more] */
-function hideHelpers(scene, renderer, keepGrid = false, more = {}) {
+/** 98-photo reuses it (Photo mode hides the same helpers while the tracer reads the scene)
+ * @param {any} scene @param {any} renderer @param {boolean} [keepGrid] @param {{people?: boolean, also?: any[]}} [more] */
+export function hideHelpers(scene, renderer, keepGrid = false, more = {}) {
 	/** @type {any[]} */
 	const hidden = [];
 	const tc = /** @type {any} */ (get(TControls));

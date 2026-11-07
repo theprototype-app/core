@@ -108,7 +108,7 @@ export function meshKind(o, opts = {}) {
 	if (o.isTroikaText || o.geometry?.isInstancedBufferGeometry) return 'skip-text';
 	if (o.isInstancedMesh) return 'instances';
 	const mats = Array.isArray(o.material) ? o.material : [o.material];
-	if (mats.some((m) => m?.isShaderMaterial || m?.isRawShaderMaterial)) return 'skip-shader';
+	if (mats.some((/** @type {any} */ m) => m?.isShaderMaterial || m?.isRawShaderMaterial)) return 'skip-shader';
 	return 'trace';
 }
 

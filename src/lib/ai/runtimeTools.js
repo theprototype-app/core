@@ -34,7 +34,7 @@ import {
 } from './runtimeCore.js';
 
 /** the tool names this module answers */
-export const RUNTIME_TOOL_NAMES = ['inspect_runtime', 'validate_scene', 'logs', 'playtest'];
+export const RUNTIME_TOOL_NAMES = ['inspect_runtime', 'validate_scene', 'logs', 'playtest', 'take_photo'];
 /** the read-only ones (viewers may run them; the connector's read scope allows them) */
 export const RUNTIME_READ_TOOLS = ['inspect_runtime', 'validate_scene', 'logs'];
 
@@ -397,9 +397,46 @@ export async function runtimeTool(name, args) {
 			return logsTool(args ?? {});
 		case 'playtest':
 			return playtest(args ?? {});
+		case 'take_photo':
+			return takePhotoTool(args ?? {});
 		default:
 			return { error: 'unknown tool ' + name };
 	}
+}
+
+/**
+ * 98 P2 (98-photo): a path-traced still of the person's CURRENT view (connector `run {action: 'photo'}`).
+ * Runs in this tab (or a PC peer's when this is a Quest / weak phone; else a plain raster still), never
+ * moves anybody's view; `save` files the PNG in the Library under Scene shots/<scene>.
+ * @param {any} args
+ */
+async function takePhotoTool(args) {
+	const m = await import('$lib/photo/photoMode.js');
+	const s = await m.startPhoto({ samples: args.samples, seconds: args.seconds, denoise: args.denoise });
+	if (s.status !== 'done' || !s.blob) return { error: s.error || 'No photo was made.' };
+	/** @type {any} */
+	let saved = null;
+	if (args.save === true) saved = await m.savePhotoToScene().catch((/** @type {any} */ e) => ({ error: String(e?.message ?? e) }));
+	const image_url = await new Promise((res) => {
+		const r = new FileReader();
+		r.onload = () => res(String(r.result));
+		r.onerror = () => res('');
+		r.readAsDataURL(/** @type {Blob} */ (s.blob));
+	});
+	const where = s.place === 'peer' ? 'on a PC in the session' : s.place === 'raster' ? 'as a normal still (this device cannot path-trace)' : 'path-traced here';
+	return {
+		say: 'Took a photo of your view, ' + where + (s.samples ? ', ' + s.samples + ' samples' : '') + (saved && !saved.error ? ', saved to the Library.' : '.'),
+		place: s.place,
+		...(s.place !== 'here' && s.why ? { why: s.why } : {}),
+		samples: s.samples,
+		ms: s.ms,
+		width: s.width,
+		height: s.height,
+		reason: s.reason,
+		...(s.notes.length ? { notShown: s.notes.map((n) => n.note) } : {}),
+		...(saved ? { saved } : {}),
+		image_url
+	};
 }
 
 /** the assistant's OpenAI-format schemas */
@@ -480,6 +517,24 @@ export const RUNTIME_AI_TOOLS = [
 					stayInPlay: { type: 'boolean', description: 'keep this page in Play afterwards (default: leave Play if the playtest entered it)' }
 				},
 				required: ['steps']
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
+			name: 'take_photo',
+			description:
+				"A PHOTO of the person's current view: a path-traced still (soft shadows, real reflections and glass), rendered in their tab while they keep working; their view never moves. It takes seconds to a minute: samples (1-2048, default 256) or seconds (2-600, default 60), whichever comes first. " +
+				'On a Quest or a weak phone a PC in the session renders it; with no PC it is a normal still and the answer says why. Post effects, flat text, particles and your own GLSL are not in a photo (notShown lists what was left out). save: true also files the PNG in the Library under Scene shots. Use it when the person asks for a photo, a render or a nice picture of the scene; for checking your work use screenshot.',
+			parameters: {
+				type: 'object',
+				properties: {
+					samples: { type: 'integer', minimum: 1, maximum: 2048, description: 'path-tracing samples (more = cleaner, slower; default 256)' },
+					seconds: { type: 'number', minimum: 2, maximum: 600, description: 'time limit in seconds (default 60)' },
+					denoise: { type: 'boolean', description: 'smooth the remaining noise (default true)' },
+					save: { type: 'boolean', description: 'also save the PNG to the Library under Scene shots/<scene> (default false)' }
+				}
 			}
 		}
 	}

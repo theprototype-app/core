@@ -84,6 +84,7 @@ function currentTier(renderer) {
 		pref,
 		presenting: !!renderer?.xr?.isPresenting || !!get(isVRMode),
 		headset: typeof navigator !== 'undefined' && isHeadsetUA(navigator.userAgent),
+		phone: deviceFacts().phone,
 		postOff: !!get(qualityOverrides)?.postOff
 	});
 }

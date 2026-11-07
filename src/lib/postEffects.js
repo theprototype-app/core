@@ -28,6 +28,7 @@ import { lutAffine } from './xrLookCore.js';
 // 98 P4: lens flare, god rays, volumetric fog (registered by side effect, own passes each)
 import { currentFinishTier } from './post/finishEffects.js';
 import { scaleProEffects } from './post/proPresetsCore.js';
+import { aoTierSettings } from './post/finishCore.js';
 // L5: a LUT is an Explorer ASSET, so it must ride the content-hash push/pull or a
 // peer (and every late joiner) grades with a missing texture — golden rule 9.
 import { itemByHash, itemBlob, explorerItems } from './explorer';
@@ -224,8 +225,11 @@ function applyAoQuality(pass, params, prefs) {
 	const q = prefs?.shadowQuality;
 	const quality = params?.quality && params.quality !== 'auto' ? params.quality : q;
 	const half = params?.halfRes;
-	pass.configuration.halfRes =
-		half === 'on' ? true : half === 'off' ? false : q === 'low' || q === 'medium' || q === 'off';
+	// 98 P3: 'auto' follows the device TIER too — a phone is always half res + a lighter denoise
+	const tier = aoTierSettings(currentFinishTier(), q);
+	pass.configuration.halfRes = half === 'on' ? true : half === 'off' ? false : tier.halfRes;
+	if (pass.configuration.denoiseSamples !== tier.denoiseSamples) pass.configuration.denoiseSamples = tier.denoiseSamples;
+	if (pass.configuration.denoiseRadius !== tier.denoiseRadius) pass.configuration.denoiseRadius = tier.denoiseRadius;
 	if (pass.setQualityMode)
 		pass.setQualityMode(quality === 'high' ? 'High' : quality === 'medium' ? 'Medium' : 'Low');
 }

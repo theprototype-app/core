@@ -86,3 +86,15 @@ describe('98 P5 pro presets', () => {
 		expect(scaleProEffects(all, 'pc')).toHaveLength(all.length);
 	});
 });
+
+import { aoTierSettings } from '../../src/lib/post/finishCore.js';
+describe('98 P3 AO per tier', () => {
+	it('a phone is always half res with a lighter denoise', () => {
+		expect(aoTierSettings('phone', 'high')).toEqual({ halfRes: true, denoiseSamples: 4, denoiseRadius: 8 });
+	});
+	it('a PC keeps the shadow-quality mapping (the pre-98 behaviour)', () => {
+		expect(aoTierSettings('pc', 'high').halfRes).toBe(false);
+		expect(aoTierSettings('pc', 'medium').halfRes).toBe(true);
+		expect(aoTierSettings('pc', 'high').denoiseSamples).toBe(8);
+	});
+});

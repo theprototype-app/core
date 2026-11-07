@@ -71,5 +71,18 @@ export function sunScreen(dir, camPos, viewProj) {
 	return { x, y, visible: true, fade };
 }
 
+/**
+ * 98 P3 — AO per device tier, for the params an author left on 'auto'. A phone always renders AO at
+ * HALF resolution with a lighter denoise (fill-bound: half res is ~4x fewer AO pixels, the denoise
+ * hides the softer result); a PC keeps the device's shadow-quality mapping and N8AO's full denoise.
+ * @param {'pc'|'phone'|'quest'} tier @param {string} [shadowQuality]
+ * @returns {{halfRes: boolean, denoiseSamples: number, denoiseRadius: number}}
+ */
+export function aoTierSettings(tier, shadowQuality) {
+	if (tier !== 'pc') return { halfRes: true, denoiseSamples: 4, denoiseRadius: 8 };
+	const low = shadowQuality === 'low' || shadowQuality === 'medium' || shadowQuality === 'off';
+	return { halfRes: low, denoiseSamples: 8, denoiseRadius: 12 };
+}
+
 /** The finish effect kinds this lane adds (P4). Off by default = not in the stack = no pass. */
 export const FINISH_KINDS = Object.freeze(['lensflare', 'godrays', 'volumetricfog']);

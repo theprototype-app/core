@@ -462,6 +462,17 @@
 											onchange={(v) => assignAsset(entry.id, param.key, String(v ?? ''))}
 										/>
 									</div>
+								{:else if param.type === 'color'}
+									<label class="ui-row items-center gap-2">
+										<span class="w-20 shrink-0 text-xs text-text-2">{param.label}</span>
+										<input
+											type="color"
+											id={'post-param-' + entry.id + '-' + param.key}
+											class="h-5 w-7 cursor-pointer"
+											value={String(entry.params[param.key] ?? param.default ?? '#ffffff')}
+											onchange={(e) => setPostEffectParams(entry.id, { [param.key]: e.currentTarget.value }, docKey)}
+										/>
+									</label>
 								{:else if param.type === 'bool'}
 									<InsToggle
 										id={'post-param-' + entry.id + '-' + param.key}

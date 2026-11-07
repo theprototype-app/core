@@ -246,29 +246,43 @@ h.run(async () => {
 			const half = rt.texture.type === THREE.HalfFloatType;
 			const buf = half ? new Uint16Array(4) : new Uint8Array(4);
 			const renderer = window.__stores.traaPass.traaDebug.renderer;
+			// sample a block around where the bending top half of the mesh is on screen (a coarse grid over the
+			// whole frame steps right over a thin mesh)
+			const cam = pass.viewCamera;
+			const p = new THREE.Vector3(0, 0.6, 0);
+			mesh.localToWorld(p);
+			p.project(cam);
+			const cx = Math.round((p.x * 0.5 + 0.5) * w);
+			const cy = Math.round((p.y * 0.5 + 0.5) * hgt);
 			let moving = 0;
-			for (let gx = 1; gx < 32; gx++)
-				for (let gy = 1; gy < 32; gy++) {
-					renderer.readRenderTargetPixels(rt, Math.floor((gx / 32) * w), Math.floor((gy / 32) * hgt), 1, 1, buf);
+			let geometry = 0;
+			for (let dx = -12; dx <= 12; dx += 3)
+				for (let dy = -12; dy <= 12; dy += 3) {
+					const x = Math.min(w - 1, Math.max(0, cx + dx));
+					const y = Math.min(hgt - 1, Math.max(0, cy + dy));
+					renderer.readRenderTargetPixels(rt, x, y, 1, 1, buf);
+					const a = half ? THREE.DataUtils.fromHalfFloat(buf[3]) : buf[3] / 255;
 					const v = half ? [THREE.DataUtils.fromHalfFloat(buf[0]), THREE.DataUtils.fromHalfFloat(buf[1])] : [buf[0] / 255, buf[1] / 255];
-					if (Math.hypot(v[0], v[1]) > 1e-4) moving++;
+					if (a > 0.5) geometry++;
+					if (Math.hypot(v[0], v[1]) > 1e-5) moving++;
 				}
+			window.__pfGeometry = geometry;
 			return moving;
 		};
 		const before = await count();
 		let a = 0;
 		const timer = setInterval(() => {
-			a += 0.15;
-			tip.rotation.z = Math.sin(a) * 0.9;
+			a += 0.35;
+			tip.rotation.z = Math.sin(a) * 1.2;
 		}, 16);
 		const during = await count();
 		clearInterval(timer);
 		const slot = pass.prevBones.get(mesh);
 		scene.remove(mesh);
-		return { before, during, prevBound: !!slot && slot.fresh === false, half: pass.velocity.texture.type === THREE.HalfFloatType };
+		return { before, during, geometry: window.__pfGeometry, prevBound: !!slot && slot.fresh === false, half: pass.velocity.texture.type === THREE.HalfFloatType };
 	});
 	h.check(skinned.prevBound, '8.5 a SkinnedMesh gets its previous pose bound in the velocity pass');
-	h.check(skinned.before === 0 && skinned.during > 0, '8.6 bending bones (mesh itself still) write motion vectors: ' + skinned.before + ' -> ' + skinned.during + ' moving samples (half float ' + skinned.half + ')');
+	h.check(skinned.before === 0 && skinned.during > 0, '8.6 bending bones (mesh itself still) write motion vectors: ' + skinned.before + ' -> ' + skinned.during + ' moving samples (' + skinned.geometry + ' samples on the mesh, half float ' + skinned.half + ')');
 
 	await page.evaluate(() => window.__stores.isLocked.set(true));
 	await settle(page, 600);

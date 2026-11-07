@@ -27,14 +27,18 @@ const _clear = new Color();
 const _pos = new Vector3();
 
 /** the newest TRAA pass, for the post-finish suite (read through debugHooks only) */
-export const traaDebug = { /** @type {any} */ last: null, /** @type {any} */ renderer: null };
+/** @type {{last: any, renderer: any}} */
+export const traaDebug = { last: null, renderer: null };
 
 export class TRAAPass extends Pass {
 	/** @param {any} scene @param {any} camera @param {{blend?: number}} [options] */
 	constructor(scene, camera, options = {}) {
 		super('TRAAPass');
-		this.mainScene = scene;
-		this.mainCamera = camera;
+		// postprocessing's Pass declares mainScene / mainCamera as SETTER-ONLY accessors (a plain assignment
+		// is swallowed and a read gives undefined), so the views live in our own fields behind the accessors
+		// overridden below — the composer's setMainCamera still reaches us through them.
+		/** @type {any} */ this.viewScene = scene;
+		/** @type {any} */ this.viewCamera = camera;
 		/** set by the registry's tick: run the filter this frame (false = a plain copy) */
 		this.active = true;
 		this.blend = options.blend ?? 0.1;
@@ -123,10 +127,24 @@ export class TRAAPass extends Pass {
 		return material;
 	}
 
+	get mainCamera() {
+		return this.viewCamera;
+	}
+	set mainCamera(camera) {
+		this.setMainCamera(camera);
+	}
+	get mainScene() {
+		return this.viewScene;
+	}
+	set mainScene(scene) {
+		this.viewScene = scene;
+	}
+
 	/** @param {any} camera */
 	setMainCamera(camera) {
+		if (camera === this.viewCamera) return;
 		this.restoreProjection();
-		this.mainCamera = camera;
+		this.viewCamera = camera;
 		this.historyValid = false;
 	}
 
@@ -142,7 +160,7 @@ export class TRAAPass extends Pass {
 
 	/** Put back the camera's clean projection if our jittered one is still on it. */
 	restoreProjection() {
-		const cam = this.mainCamera;
+		const cam = this.viewCamera;
 		if (cam && this.jitteredProjection && cam.projectionMatrix.equals(this.jitteredProjection)) {
 			cam.projectionMatrix.copy(this.cleanProjection);
 			cam.projectionMatrixInverse.copy(this.cleanProjection).invert();
@@ -153,7 +171,7 @@ export class TRAAPass extends Pass {
 	/** Called by the registry's tick before the composer renders: jitter for this frame's beauty pass. */
 	prepareFrame() {
 		this.restoreProjection();
-		const cam = this.mainCamera;
+		const cam = this.viewCamera;
 		if (!cam || !this.active) {
 			this.historyValid = false;
 			return;
@@ -178,7 +196,7 @@ export class TRAAPass extends Pass {
 	/** @param {any} renderer @param {any} inputBuffer @param {any} outputBuffer */
 	render(renderer, inputBuffer, outputBuffer) {
 		const target = this.renderToScreen ? null : outputBuffer;
-		const cam = this.mainCamera;
+		const cam = this.viewCamera;
 		if (!this.active || !cam) {
 			this.copyMaterial.inputBuffer = inputBuffer.texture;
 			this.fullscreenMaterial = this.copyMaterial;
@@ -202,7 +220,7 @@ export class TRAAPass extends Pass {
 		const vu = this.velocityMaterial.uniforms;
 		vu.currViewProj.value.copy(this.currViewProj);
 		vu.prevViewProj.value.copy(this.prevViewProj);
-		const scene = this.mainScene;
+		const scene = this.viewScene;
 		const override = scene.overrideMaterial;
 		const background = scene.background;
 		renderer.getClearColor(_clear);
@@ -233,7 +251,7 @@ export class TRAAPass extends Pass {
 		ru.prevViewProj.value.copy(this.prevViewProj);
 		ru.blend.value = this.blend;
 		ru.reset.value = reset ? 1 : 0;
-		this.fullscreenMaterial = this.resolveMaterial;
+		this.fullscreenMaterial = /** @type {any} */ (this.resolveMaterial);
 		renderer.setRenderTarget(write);
 		renderer.render(this.scene, this.camera);
 

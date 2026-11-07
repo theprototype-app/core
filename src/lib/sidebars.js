@@ -435,6 +435,9 @@ export function memberPlacement(side) {
 	return (
 		`position: fixed; ${x} top: calc(var(--sb-${side}-top, 64px) + var(--sb-strip-h, 30px)); ` +
 		`bottom: var(--sb-${side}-bottom, 0px); width: var(--sb-${side}-w, 320px); ` +
-		`height: calc(100vh - var(--sb-${side}-top, 64px) - var(--sb-strip-h, 30px) - var(--sb-${side}-bottom, 0px));`
+		`height: calc(100vh - var(--sb-${side}-top, 64px) - var(--sb-strip-h, 30px) - var(--sb-${side}-bottom, 0px)); ` +
+		// ui-audit-honor: the VISIBLE viewport where supported (a later declaration wins; 100vh is the fallback) —
+		// on Android Chrome 100vh ignores the URL bar and the column ran off the bottom
+		`height: calc(100dvh - var(--sb-${side}-top, 64px) - var(--sb-strip-h, 30px) - var(--sb-${side}-bottom, 0px));`
 	);
 }

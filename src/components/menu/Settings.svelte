@@ -787,6 +787,9 @@
 		display: flex;
 		flex-direction: column;
 		height: min(80vh, 760px);
+		/* ui-audit-honor: the visible viewport where supported, so the footer (Reset · Done) stays inside the
+		   ModalDialog's 88dvh cap on Android Chrome */
+		height: min(80dvh, 760px);
 		min-height: 0;
 	}
 	/* the header is the dialog's own: no second frame around it */

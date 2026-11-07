@@ -29,6 +29,9 @@
 		{ "id": "hello-sign", "say": "Put a big solid HELLO sign with a bevel over the door.", "pass": [{ "tool": "create_shape", "action": "text" }], "partial": [{ "tool": "create_shape" }, { "tool": "create_objects" }] },
 		{ "id": "which-fonts", "say": "What fonts can I use for 3D text?", "pass": [{ "tool": "assets", "action": "fonts" }], "partial": [{ "tool": "what_can_you_do" }] },
 		{ "id": "crate-row", "say": "Make four more crates in a row next to this one.", "pass": [{ "tool": "edit_shape", "action": "duplicate" }], "partial": [{ "tool": "create_objects" }] },
-		{ "id": "import-glb", "say": "Bring in the chair model at https://example.com/models/chair.glb and put it by the table.", "pass": [{ "tool": "create_shape", "action": "import" }], "partial": [{ "tool": "assets" }] }
+		{ "id": "import-glb", "say": "Bring in the chair model at https://example.com/models/chair.glb and put it by the table.", "pass": [{ "tool": "create_shape", "action": "import" }], "partial": [{ "tool": "assets" }] },
+		{ "id": "cinematic-look", "say": "Make this scene look cinematic, like a film still.", "pass": [{ "tool": "set_look", "action": "preset" }], "partial": [{ "tool": "set_look", "action": "post" }, { "tool": "set_look", "action": "sky" }] },
+		{ "id": "bake-light", "say": "Bake the lighting so the corners get soft shadows.", "pass": [{ "tool": "set_look", "action": "bake" }], "partial": [{ "tool": "set_look", "action": "post" }] },
+		{ "id": "nice-photo", "say": "Take a really nice high-quality photo of what I'm looking at.", "pass": [{ "tool": "run", "action": "photo" }], "partial": [{ "tool": "screenshot" }] }
 	]
 }

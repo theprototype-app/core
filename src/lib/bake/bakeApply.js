@@ -54,13 +54,13 @@ function objectOf(uuid) {
 	return group?.getObjectByProperty?.('uuid', uuid) ?? null;
 }
 
+/** the newer-version notice shows once per tab */
+let newerNoticed = false;
+
 /**
  * Apply (or, with null, remove) a record. Serialized: a second call waits for the first.
  * @param {any} record
  */
-/** the newer-version notice shows once per tab */
-let newerNoticed = false;
-
 export function applyBakeRecord(record) {
 	applying = applying.then(() => applyNow(record)).catch((error) => console.warn('bake apply', error));
 	return applying;

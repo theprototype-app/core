@@ -31,7 +31,6 @@ export const PRO_LOOKS = {
 			{ kind: 'bloom', params: { intensity: 0.6, luminanceThreshold: 0.85, luminanceSmoothing: 0.05, radius: 0.8 } },
 			{ kind: 'lensflare', params: { amount: 0.25, threshold: 1, spacing: 0.35, halo: 0.4 } },
 			{ kind: 'tonemapping', params: { mode: 'ACES_FILMIC', whitePoint: 4, middleGrey: 0.6 } },
-			{ kind: 'chromaticaberration', params: { offsetX: 0.0008, offsetY: 0.0004, radialModulation: true } },
 			{ kind: 'grain', params: { opacity: 0.12, premultiply: true } },
 			{ kind: 'vignette', params: { offset: 0.45, darkness: 0.55, technique: 'DEFAULT' } },
 			{ kind: 'smaa', params: { preset: 'MEDIUM' } }
@@ -51,6 +50,9 @@ export const PRO_LOOKS = {
 		]
 	}
 };
+
+// No chromatic aberration in Cinematic: it and SMAA are both CONVOLUTION effects, and two of those in one merged
+// EffectPass make postprocessing drop the whole group (post-finish §3 caught it: 5 of 10 effects built).
 
 export const PRO_PRESET_KEYS = Object.freeze(Object.keys(PRO_LOOKS));
 

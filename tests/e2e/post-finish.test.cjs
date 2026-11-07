@@ -113,7 +113,7 @@ h.run(async () => {
 		const on = await lookOf(page);
 		h.check(res.ok && on.preset === name && on.kinds.length >= 5 && on.kinds.includes('tonemapping'), '3.' + name + ' sets the sky + the look (' + on.preset + ': ' + on.kinds.join(',') + ')');
 		const built = await builtKinds(page);
-		h.check(built.includes('tonemapping'), '3.' + name + ' compiles on desktop (' + built.length + ' effects built)');
+		h.check(built.includes('tonemapping') && built.length === on.kinds.length, '3.' + name + ' compiles on desktop, every effect built (' + built.length + '/' + on.kinds.length + ')');
 		await page.evaluate(() => window.__stores.history.undo());
 		await settle(page, 1000);
 		const back = await lookOf(page);
@@ -156,7 +156,11 @@ h.run(async () => {
 		await window.__stores.proPresets.applyProPreset('cinematic');
 		await new Promise((r) => setTimeout(r, 2500));
 	});
-	const phoneBuild = await phone.page.evaluate(() => ({ ...window.__stores.finishEffects.lastFinishBuild, built: window.__postDebug?.().chain ?? [] }));
+	const phoneBuild = await phone.page.evaluate(() => ({
+		...window.__stores.finishEffects.lastFinishBuild,
+		tier: window.__stores.finishEffects.currentFinishTier(),
+		built: window.__postDebug?.().chain ?? []
+	}));
 	h.check(phoneBuild.tier === 'phone', '6.1 a touch phone is the phone tier (' + phoneBuild.tier + ')');
 	if (phoneBuild.built.some((c) => c.includes('volumetricfog')))
 		h.check(phoneBuild.fogSteps === 8 && phoneBuild.raySamples === 16, '6.2 the phone caps the fog march at 8 and god rays at 16 (' + phoneBuild.fogSteps + '/' + phoneBuild.raySamples + ')');
@@ -173,7 +177,7 @@ h.run(async () => {
 	const questBuilt = await builtKinds(quest.page);
 	h.check(questLook.kinds.includes('volumetricfog'), '6.3 the Quest scene document keeps the full cinematic look');
 	h.check(
-		!questBuilt.some((k) => k === 'volumetricfog' || k === 'godrays' || k === 'lensflare'),
+		questBuilt.includes('tonemapping') && !questBuilt.some((k) => k === 'volumetricfog' || k === 'godrays' || k === 'lensflare'),
 		'6.4 the Quest builds it without fog / god rays / lens flare (' + questBuilt.join(',') + ')'
 	);
 	await h.closePeer(quest);

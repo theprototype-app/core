@@ -3,6 +3,7 @@
 // `{#if $photoOpen}` mount reach it without pulling photoMode / the tracer into the first load.
 import { writable } from 'svelte/store';
 import { safeStorage } from '$lib/safeStorage';
+import { registerDebugHook } from '$lib/debugHookRegistry.js';
 
 /** the Photo window is open (LOCAL) */
 export const photoOpen = writable(false);
@@ -42,3 +43,6 @@ photoPrefs.subscribe((p) => {
 export function openPhoto() {
 	photoOpen.set(true);
 }
+
+// the photo-mode suite's seam: open the window and reach the (lazy) controller without importing it here
+registerDebugHook('photo', { open: openPhoto, photoOpen, photoPrefs, mode: () => import('./photoMode.js'), render: () => import('./photoRender.js'), three: () => import('three') });

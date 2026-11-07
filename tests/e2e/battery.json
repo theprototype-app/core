@@ -288,6 +288,7 @@
 	},
 	"suites": {
 		"possess": 120,
+		"photo-mode": 420,
 		"text-path": 360,
 		"text-object": 480,
 		"no-webgl": 120,

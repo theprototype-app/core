@@ -29,8 +29,12 @@ import { photoDone, meshKind, materialKind, translateParams, parityNotes, INSTAN
 
 /** @type {Promise<any> | null} */
 let tracerModule = null;
+/** has the tracer chunk been fetched in this tab (the suite's lazy-load check) */
+let tracerFetched = false;
+export const tracerLoaded = () => tracerFetched;
 /** the path tracer chunk, once @returns {Promise<any>} */
 export function loadTracer() {
+	tracerFetched = true;
 	tracerModule ??= import('three-gpu-pathtracer').catch((e) => {
 		tracerModule = null;
 		throw e;

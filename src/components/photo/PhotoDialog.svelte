@@ -9,7 +9,7 @@
 	import SliderRow from '../ui/SliderRow.svelte';
 	import Toggle from '../ui/Toggle.svelte';
 	import Segmented from '../ui/Segmented.svelte';
-	import { photoOpen, photoPrefs, photoState, startPhoto, stopPhoto, downloadPhoto, savePhotoToScene, closePhoto, photoWhere } from '$lib/photo/photoMode.js';
+	import { photoOpen, photoPrefs, photoState, startPhoto, stopPhoto, downloadPhoto, savePhotoToScene, photoWhere } from '$lib/photo/photoMode.js';
 	import { PHOTO_SAMPLES, PHOTO_SECONDS, PHOTO_PARITY } from '$lib/photo/photoCore.js';
 
 	/** @type {HTMLCanvasElement | null} */
@@ -48,6 +48,7 @@
 		raster: 'A normal (not path-traced) still.'
 	});
 
+	// closing the window stops a render that is still running (the last still stays for the next open)
 	onDestroy(() => {
 		if ($photoState.status === 'rendering') stopPhoto();
 	});
@@ -59,7 +60,7 @@
 	title="Photo"
 	width="md"
 	modal={false}
-	bind:open={() => $photoOpen, (v) => (v ? photoOpen.set(true) : closePhoto())}
+	bind:open={() => $photoOpen, (v) => photoOpen.set(!!v)}
 	aria-label="Photo: a path-traced still of this view"
 >
 	<div class="flex flex-col gap-2">

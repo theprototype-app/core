@@ -1409,6 +1409,7 @@
 		<div
 			id="avatar-dropdown"
 			use:backClose={() => (openDropdown = false)}
+			use:minimalScroll
 			popover={$phoneShellActive ? undefined : 'manual'}
 			role="tooltip"
 			{@attach dropdownAttach}
@@ -1635,6 +1636,8 @@
 		max-height: var(--pm-max-h, none);
 		overflow-y: auto;
 		overscroll-behavior: contain;
+		/* 98-int: the app's minimal scrollbar (use:minimalScroll on the panel), never the native bar (NOTES-38 #1) */
+		scrollbar-width: none;
 	}
 	:global(#avatar-dropdown) {
 		left: auto !important;

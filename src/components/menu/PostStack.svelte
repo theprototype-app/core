@@ -469,7 +469,7 @@
 											type="color"
 											id={'post-param-' + entry.id + '-' + param.key}
 											class="h-5 w-7 cursor-pointer"
-											value={String(entry.params[param.key] ?? param.default ?? '#ffffff')}
+											value={String(entry.params[param.key] ?? param.default ?? '#ffffff' /* tokens-ok: colour-picker fallback value (effect data) */)}
 											onchange={(e) => setPostEffectParams(entry.id, { [param.key]: e.currentTarget.value }, docKey)}
 										/>
 									</label>

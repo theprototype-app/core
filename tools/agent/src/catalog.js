@@ -291,7 +291,8 @@ export const CONNECTOR_FAMILIES = Object.freeze({
 			sky: 'set_sky',
 			light: 'set_light',
 			environment: 'get_environment',
-			quality: 'set_quality'
+			quality: 'set_quality',
+			preset: 'set_look_preset'
 		}
 	},
 	// 85b R1-R4 (lane 85-runtime): playtest is agent-page only (B4b), so the connector's `run` has no playtest;

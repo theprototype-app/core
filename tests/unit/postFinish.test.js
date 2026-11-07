@@ -60,3 +60,29 @@ describe('98 P4 off = no pass in the stack', () => {
 		expect(planPostStack(entries).passCount).toBe(3);
 	});
 });
+
+import { PRO_LOOKS, PRO_PRESET_KEYS, scaleProEffects, proLookEntries, isProPreset } from '../../src/lib/post/proPresetsCore.js';
+
+describe('98 P5 pro presets', () => {
+	it('the three presets exist and write only known kinds', () => {
+		expect(PRO_PRESET_KEYS).toEqual(['product', 'cinematic', 'stylised']);
+		expect(isProPreset('cinematic')).toBe(true);
+		expect(isProPreset('studio')).toBe(false);
+		for (const key of PRO_PRESET_KEYS) for (const e of PRO_LOOKS[key].effects) expect(typeof e.kind).toBe('string');
+	});
+	it('product shot has no fog or god rays at all', () => {
+		const kinds = proLookEntries('product').map((e) => e.kind);
+		expect(kinds).not.toContain('volumetricfog');
+		expect(kinds).not.toContain('godrays');
+	});
+	it('a headset builds cinematic without fog / god rays / lens flare; pc and phone keep them', () => {
+		const all = proLookEntries('cinematic');
+		const quest = scaleProEffects(all, 'quest').map((e) => e.kind);
+		expect(quest).not.toContain('volumetricfog');
+		expect(quest).not.toContain('godrays');
+		expect(quest).not.toContain('lensflare');
+		expect(quest).toContain('tonemapping');
+		expect(scaleProEffects(all, 'phone')).toHaveLength(all.length);
+		expect(scaleProEffects(all, 'pc')).toHaveLength(all.length);
+	});
+});

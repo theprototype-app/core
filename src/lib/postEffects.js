@@ -26,7 +26,8 @@ import { N8AOPostPass } from 'n8ao';
 import { registerPostEffect, postEffectDef, planPostStack } from './scenePost';
 import { lutAffine } from './xrLookCore.js';
 // 98 P4: lens flare, god rays, volumetric fog (registered by side effect, own passes each)
-import './post/finishEffects.js';
+import { currentFinishTier } from './post/finishEffects.js';
+import { scaleProEffects } from './post/proPresetsCore.js';
 // L5: a LUT is an Explorer ASSET, so it must ride the content-hash push/pull or a
 // peer (and every late joiner) grades with a missing texture — golden rule 9.
 import { itemByHash, itemBlob, explorerItems } from './explorer';
@@ -54,7 +55,9 @@ import { objectsGroup } from '../stores/sceneStore';
  * @returns {{passes: any[], instances: {kind: string, id: string, object: any, def: any, isPass: boolean}[], skipped: any[], plan: any[]}}
  */
 export function compilePostStack(entries, ctx) {
-	const { groups, skipped } = planPostStack(entries);
+	// 98 P5: the scene keeps ONE look; THIS device builds its tier's share of it (a headset leaves
+	// fog, god rays and lens flare out — they stay in the document for everyone else)
+	const { groups, skipped } = planPostStack(scaleProEffects(entries, currentFinishTier()));
 	/** @type {any[]} */
 	const passes = [];
 	/** @type {any[]} */

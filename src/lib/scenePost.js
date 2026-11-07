@@ -512,6 +512,22 @@ export function addPostEffect(kind, index, key = POST_SCENE_KEY) {
 	return id;
 }
 
+/**
+ * 98 P5: replace a document's whole effect list in ONE commit (one undo entry, one message) — a
+ * pro preset. Ids are minted here; the document is switched on.
+ * @param {{kind: string, enabled?: boolean, params?: Record<string, any>}[]} effects
+ */
+export function replacePostEffects(effects, key = POST_SCENE_KEY) {
+	return commit(
+		(state) => ({
+			...state,
+			enabled: true,
+			effects: effects.map((e) => ({ id: newId(), kind: e.kind, enabled: e.enabled !== false, params: { ...defaultPostParams(e.kind), ...(e.params ?? {}) } }))
+		}),
+		key
+	);
+}
+
 /** @param {string} id */
 export function removePostEffect(id, key = POST_SCENE_KEY) {
 	commit((state) => ({ ...state, effects: state.effects.filter((entry) => entry.id !== id) }), key);

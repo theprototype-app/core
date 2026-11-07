@@ -63,6 +63,15 @@ function mapOf(m) {
 }
 
 /**
+ * 98-int (old-scene rule): a record from a NEWER build (a higher `v`) keeps its version through our
+ * writes, so the "made with a newer version" notice can say so and saving it here does not claim v1.
+ * @param {any} raw
+ */
+export function isNewerBakeRecord(raw) {
+	return Number.isFinite(raw?.v) && raw.v > BAKE_VERSION && raw.v < 1000;
+}
+
+/**
  * ONE boundary for every record: wire, save, undo. Anything unusable becomes null (= no bake).
  * Unknown fields on the record are KEPT (a newer peer's additions survive our round trip).
  * @param {any} raw @returns {any | null}
@@ -90,7 +99,7 @@ export function normalizeBakeRecord(raw) {
 	const intensity = raw.intensity && typeof raw.intensity === 'object' ? raw.intensity : {};
 	return {
 		...raw,
-		v: BAKE_VERSION,
+		v: isNewerBakeRecord(raw) ? Math.floor(raw.v) : BAKE_VERSION,
 		full,
 		lite: mapOf(raw.lite),
 		lightScale: num(raw.lightScale, 0, 1e6, 0),

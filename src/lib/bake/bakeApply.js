@@ -24,7 +24,8 @@ import { registerParkHook } from '../parkHooks';
 import { bakeStale, bakeShown } from '../sceneBake';
 import { bakeUvFor } from './bakePlanCore.js';
 import { halves } from './bakeAtlasCore.js';
-import { mapChoice, objectSig, staleOf, lightsSig } from './bakeRecordCore.js';
+import { mapChoice, objectSig, staleOf, lightsSig, isNewerBakeRecord } from './bakeRecordCore.js';
+import { showToast } from '../../stores/appStore';
 import { geometryArrays, collectLights, deviceBakeTier, whyNotReceiver } from './bakeScene.js';
 
 /** @typedef {{ lightMap: any, lightMapIntensity: number, aoMap: any, aoMapIntensity: number, ownAo: boolean }} MaterialWas */
@@ -57,6 +58,9 @@ function objectOf(uuid) {
  * Apply (or, with null, remove) a record. Serialized: a second call waits for the first.
  * @param {any} record
  */
+/** the newer-version notice shows once per tab */
+let newerNoticed = false;
+
 export function applyBakeRecord(record) {
 	applying = applying.then(() => applyNow(record)).catch((error) => console.warn('bake apply', error));
 	return applying;
@@ -72,6 +76,11 @@ async function applyNow(record) {
 		bakeShown.set({ map: 'none', applied: 0, pending: 0, note: '' });
 		bakeStale.set({ stale: false, moved: 0, missing: 0, lights: false });
 		return;
+	}
+	if (!newerNoticed && isNewerBakeRecord(record)) {
+		// 98-int (old-scene rule): drawn with what this build knows; the newer fields stay in the record
+		newerNoticed = true;
+		showToast('The baked light in this scene was made with a newer version of theprototype.app — it may look different here. Reload to update.');
 	}
 	const choice = mapChoice(record, tier);
 	if (!choice) {

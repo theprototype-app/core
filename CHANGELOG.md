@@ -7,10 +7,20 @@
 
 ## Unreleased
 
+### 📸 Pro look
+- **Pro presets, one press**: **Product shot**, **Cinematic** and **Stylised** sit beside the other Environment presets and set the sky, the light, the exposure, the tone mapping and a whole stack of post effects together. Undo takes it all back in one step; the look is saved with the scene and everyone sees it. Each device draws its own share: a phone runs lighter fog and god rays, a headset leaves fog, god rays and lens flare out. <!-- 98 P5 -->
+- **Baked light** (Configure Scene ▸ Scene look): one button bakes soft corner shadows and light bouncing off walls for everything that does not move — progress, Cancel, one Undo step, an *Out of date* chip when things move, Bake again. Saved in the scene and seen by every peer; phones and headsets get a smaller copy. Objects with overlapping UVs get the corner shadows only, and the panel says so. <!-- 98 P1 -->
+- **Photo mode** (Scene look ▸ **Photo…**): a path-traced still of your view — soft shadows, real reflections, glass — as a PNG. Samples and time limit, denoise, Stop any time, **Download PNG** or **Save to scene shots**. On a headset or a phone, a PC in the session renders it for you. <!-- 98 P2 -->
+- **Lens flare, god rays and volumetric fog** join the look stack (Camera FX). Each is off until added, and an effect that is off costs nothing. <!-- 98 P4 -->
+- **Smoother edges**: temporal anti-aliasing (**TRAA**) replaces SMAA as the default — one Anti-aliasing entry with a Method — with motion tracked on animated characters so they do not smear. Older scenes keep their SMAA. <!-- 98 P3 -->
+- Ambient occlusion is cheaper on phones, and a phone keeps the full sky when Auto quality turns the look off (it used to drop to the headset's 512 px sky). <!-- 98 P3, fix-batch-4 G12 -->
+- A new starter scene, **Product shot**, and a tip on the Bake button show the way: preset, bake, photo. <!-- 98 P6 -->
+- AI apps: `set_look` takes `action: "preset"` and `action: "bake"`, and `run` takes `action: "photo"` — no new tool names. <!-- 98 P5 P1 P2 -->
+
 ### 📱 Phones and tablets
 - **Android Back closes what is on top**: a menu, a dialog, a window or the bottom panel closes with the Back button or gesture, one at a time, instead of leaving the app. Play mode and shared play links keep their own Back. <!-- phone-polish 1 -->
 - **The keyboard no longer covers Save**: dialogs with a text field (Layouts, Report a problem, the command palette and others) move up above the on-screen keyboard, and on a touch screen they no longer pop the keyboard open by themselves. <!-- phone-polish 2 -->
-- **Easier to hit on touch screens, same look**: small buttons, tabs and menu rows answer a tap up to about 44 px around them, without growing on screen and never taking a tap meant for the control next door. Want everything bigger? **Settings ▸ Accessibility ▸ Interface scale** grows the whole interface, panel tab strips and menus included. <!-- phone-polish 3 -->
+- **Easier to hit on touch screens, same look**: small buttons, tabs and menu rows answer a tap up to about 44 px around them, without growing on screen and never taking a tap meant for the control next door. Want everything bigger? **Settings ▸ Accessibility ▸ UI scale** grows the whole interface, panel tab strips and menus included. <!-- phone-polish 3 -->
 - **Tablets**: with the Properties column pinned full height, the toolbar moves over and centres in the space beside it instead of hiding under it. <!-- phone-polish 4 -->
 - **Long menus scroll**: the profile menu (and every other long menu) stays on screen in landscape and scrolls with a finger or the wheel. <!-- phone-polish 6 -->
 - Smaller ones: the animation player's controls wrap in landscape; the logo menu has a **Command palette** row; the "lowered the scene look" card sits at the bottom on touch screens so it does not cover the panels at the top; the **Towers** start screen has a touch line. <!-- phone-polish 5 -->

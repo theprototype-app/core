@@ -9,6 +9,9 @@
 	import { bakeRecord, bakeJob, bakeStale, bakeShown } from '$lib/sceneBake';
 	import { isViewer } from '$lib/objectPermissions';
 	import { safeStorage } from '$lib/safeStorage';
+	import { dismissTip, tipShown, TIP_BAKE } from '$lib/tips.js';
+
+	const showTip = tipShown(TIP_BAKE);
 
 	const QUALITIES = [
 		{ key: 'draft', label: 'Draft' },
@@ -34,6 +37,7 @@
 
 	const runner = () => import('$lib/bake/bakeRunner.js');
 	async function bake() {
+		dismissTip(TIP_BAKE);
 		(await runner()).runBake({ quality });
 	}
 	async function cancel() {
@@ -87,6 +91,15 @@
 			</div>
 		</div>
 	{:else}
+		{#if $showTip && !record && !viewer}
+			<div id="bake-first-use" class="mt-1 flex items-start gap-2 rounded-md border border-border bg-surface-2 p-2 text-xs text-text-2" role="note">
+				<p class="grow">
+					New: pick a pro look first (<b>Environment ▸ Product shot</b>, Cinematic or Stylised), then <b>Bake light</b>. Baked
+					light costs nothing while you play, on a phone or a headset too. <b>Photo…</b> above makes a path-traced still.
+				</p>
+				<button class="ui-chip text-text-2" aria-label="Close the tip" onclick={() => dismissTip(TIP_BAKE)}>✕</button>
+			</div>
+		{/if}
 		<div class="mt-1 flex flex-wrap items-center gap-1">
 			<UiButton
 				id="bake-light-button"

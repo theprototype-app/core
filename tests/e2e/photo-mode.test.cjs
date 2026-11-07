@@ -3,6 +3,8 @@
 //   2  a small product scene (PBR, glass, emissive, a Basic material, particles) → Render photo with N samples →
 //      a PNG of the view's size with N samples, not blank; the person's camera did not move; the parity note names
 //      what was left out (particles) and what was approximated (Basic)
+//   2b 98-int: a pro look with an HDRI (Product shot, Cinematic): the PMREM environment used to crash the tracer
+//      ("Converting circular structure to JSON (hdriTarget)") — now it renders lit by an unrolled equirect
 //   3  Stop: a long render stops at once and keeps the still so far (reason "stopped", ≥ 1 sample)
 //   4  Download PNG (a real download, .png) and Save to scene shots (a Library file under Scene shots/)
 //   5  phone profile, alone: "not on this device" + the best raster still
@@ -105,6 +107,43 @@ h.run(async () => {
 	const kinds = (s2.notes ?? []).map((n) => n.kind);
 	h.check(kinds.includes('points') && kinds.includes('basic'), `2 the parity note names particles (left out) and Basic (approximated): ${kinds.join(', ')}`);
 	h.check(await tracerLoaded(A.page), '2 the tracer chunk loaded on demand');
+
+	// ---- 2b. HDRI pro looks (98-int counterfactual: red on cadada36 with the circular-JSON error)
+	for (const look of ['product', 'cinematic']) {
+		const r = await A.page.evaluate(async (name) => {
+			const s = window.__stores;
+			await s.proPresets.applyProPreset(name);
+			const { hdriStatus } = s.hdriStores;
+			/** @type {any} */ let st;
+			const t0 = Date.now();
+			for (;;) {
+				hdriStatus.subscribe((v) => (st = v))();
+				// ready, and the bigger sky cube in too (it lands later and swaps the background: not our undo)
+				if ((st.state === 'ready' && (!st.sky || st.skyWidth > 0)) || st.state === 'failed' || st.state === 'missing' || Date.now() - t0 > 60000) break;
+				await new Promise((res) => setTimeout(res, 250));
+			}
+			/** @type {any} */ let scene;
+			s.globalScene.subscribe((v) => (scene = v))();
+			const before = { env: scene.environment, bg: scene.background };
+			try {
+				const out = await (await s.photo.render()).renderPhoto({ samples: 4, seconds: 60, width: 160, height: 100, denoise: false });
+				const bmp = await createImageBitmap(out.blob);
+				const c = document.createElement('canvas');
+				c.width = 32;
+				c.height = 20;
+				const ctx = /** @type {CanvasRenderingContext2D} */ (c.getContext('2d'));
+				ctx.drawImage(bmp, 0, 0, 32, 20);
+				const d = ctx.getImageData(0, 0, 32, 20).data;
+				let sum = 0;
+				for (let i = 0; i < d.length; i += 4) sum += d[i] + d[i + 1] + d[i + 2];
+				return { ok: true, hdri: st.state, env: out.env, mean: Math.round(sum / (d.length / 4) / 3), restored: scene.environment === before.env && (scene.background === before.bg || !scene.background?.isDataTexture) };
+			} catch (e) {
+				return { ok: false, hdri: st.state, error: String(/** @type {any} */ (e)?.message ?? e) };
+			}
+		}, look);
+		h.check(r.ok && r.hdri === 'ready' && r.env === 'cubeuv', `2b ${look}: the HDRI look path-traces lit by its own sky (${JSON.stringify(r)})`);
+		h.check(!!r.ok && r.mean > 8 && !!r.restored, `2b ${look}: not black (mean ${r.mean}) and the live sky is back after the render`);
+	}
 
 	// ---- 3. Stop
 	await prefs(A.page, { samples: 2048, seconds: 600 });

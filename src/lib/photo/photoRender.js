@@ -119,6 +119,77 @@ export function poseOf(live) {
 	return { pos: pos.toArray(), quat: quat.toArray(), fov: live.isPerspectiveCamera ? live.fov : 50, near: live.near, far: live.far };
 }
 
+/** a PMREM (CubeUV atlas) texture — what three's PMREMGenerator makes, never a readable image @param {any} t */
+function isCubeUv(t) {
+	return !!t && !t.isCubeTexture && t.mapping === THREE.CubeUVReflectionMapping;
+}
+
+/**
+ * Unroll a PMREM atlas (mip 0) into a float equirect DataTexture the tracer can read and importance-sample:
+ * one full-screen pass through three's own `textureCubeUV`, then a read-back. Same direction convention as
+ * three's `equirectUv` and the tracer's `equirectDirectionToUv`, so `environmentRotation` still applies.
+ * @param {any} renderer @param {any} pmrem @returns {any} a THREE.DataTexture the caller disposes, or null
+ */
+export function cubeUvToEquirect(renderer, pmrem) {
+	const imageHeight = pmrem?.image?.height;
+	if (!imageHeight) return null;
+	// three's WebGLPrograms generateCubeUVSize, verbatim
+	const maxMip = Math.log2(imageHeight) - 2;
+	const texelHeight = 1.0 / imageHeight;
+	const texelWidth = 1.0 / (3 * Math.max(Math.pow(2, maxMip), 7 * 16));
+	const width = Math.min(2048, Math.max(256, imageHeight));
+	const height = width / 2;
+	const target = new THREE.WebGLRenderTarget(width, height, { type: THREE.FloatType, format: THREE.RGBAFormat, depthBuffer: false, generateMipmaps: false });
+	const material = new THREE.ShaderMaterial({
+		defines: { ENVMAP_TYPE_CUBE_UV: '', CUBEUV_TEXEL_WIDTH: texelWidth.toFixed(10), CUBEUV_TEXEL_HEIGHT: texelHeight.toFixed(10), CUBEUV_MAX_MIP: maxMip.toFixed(1) },
+		uniforms: { envMap: { value: pmrem } },
+		vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+		fragmentShader: `
+			uniform sampler2D envMap;
+			varying vec2 vUv;
+			#include <common>
+			#include <cube_uv_reflection_fragment>
+			void main() {
+				float phi = (vUv.x - 0.5) * 2.0 * PI;
+				float theta = (vUv.y - 0.5) * PI;
+				vec3 dir = vec3(cos(theta) * cos(phi), sin(theta), cos(theta) * sin(phi));
+				gl_FragColor = vec4(textureCubeUV(envMap, dir, 0.0).rgb, 1.0);
+			}`,
+		depthTest: false,
+		depthWrite: false,
+		toneMapped: false
+	});
+	const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+	quad.frustumCulled = false;
+	const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+	const prevTarget = renderer.getRenderTarget();
+	const prevXr = renderer.xr?.enabled;
+	try {
+		if (renderer.xr) renderer.xr.enabled = false;
+		renderer.setRenderTarget(target);
+		renderer.render(quad, cam);
+		const data = new Float32Array(width * height * 4);
+		renderer.readRenderTargetPixels(target, 0, 0, width, height, data);
+		const tex = new THREE.DataTexture(data, width, height, THREE.RGBAFormat, THREE.FloatType);
+		tex.mapping = THREE.EquirectangularReflectionMapping;
+		tex.colorSpace = THREE.LinearSRGBColorSpace;
+		tex.minFilter = THREE.LinearFilter;
+		tex.magFilter = THREE.LinearFilter;
+		tex.generateMipmaps = false;
+		tex.flipY = false;
+		tex.needsUpdate = true;
+		return tex;
+	} catch {
+		return null;
+	} finally {
+		renderer.setRenderTarget(prevTarget);
+		if (renderer.xr) renderer.xr.enabled = prevXr;
+		target.dispose();
+		material.dispose();
+		quad.geometry.dispose();
+	}
+}
+
 /**
  * Prepare the scene for the tracer's one synchronous read; returns the undo.
  * @param {any} scene @param {any} renderer @param {any} pkg the tracer module
@@ -185,6 +256,24 @@ function prepareScene(scene, renderer, pkg) {
 	const was = { environment: scene.environment, background: scene.background, envIntensity: scene.environmentIntensity };
 	/** @type {any} */
 	let gradient = null;
+	/** @type {any} */
+	let readable = null;
+	/** what the tracer was handed for light: none | hemi | cube | equirect | cubeuv (the 98-int HDRI fix) */
+	let env = scene.environment ? (scene.environment.isCubeTexture ? 'cube' : 'equirect') : 'none';
+	// 98-int: a pro look's HDRI (and any PMREM environment) is a CubeUV ATLAS that lives on the GPU only — the
+	// tracer reads image.data to importance-sample an EQUIRECT, and its clone of the texture threw on the old
+	// circular userData. Hand it a readable equirect unrolled from the atlas; one it cannot read falls to the hemi.
+	if (isCubeUv(scene.environment)) {
+		const pmrem = scene.environment;
+		readable = cubeUvToEquirect(renderer, pmrem);
+		scene.environment = readable;
+		if (scene.background === pmrem) scene.background = readable;
+		env = readable ? 'cubeuv' : 'none';
+	} else if (scene.environment && !scene.environment.isCubeTexture && !scene.environment.image?.data) {
+		scene.environment = null;
+		env = 'none';
+	}
+	if (isCubeUv(scene.background)) scene.background = null;
 	if (!scene.environment) {
 		/** @type {any} */
 		let hemi = null;
@@ -205,6 +294,7 @@ function prepareScene(scene, renderer, pkg) {
 
 	return {
 		met,
+		env,
 		undo() {
 			for (const o of hidden) o.visible = true;
 			if (proxies.parent) proxies.parent.remove(proxies);
@@ -217,6 +307,7 @@ function prepareScene(scene, renderer, pkg) {
 		},
 		dispose() {
 			gradient?.dispose?.();
+			readable?.dispose?.();
 		}
 	};
 }
@@ -244,7 +335,7 @@ function nextFrame() {
  *   onProgress?: (p: {samples: number, elapsedMs: number, fraction: number, compiling: boolean}) => void,
  *   preview?: HTMLCanvasElement | null   // drawn with the still so far every few samples
  * }} [opts]
- * @returns {Promise<{blob: Blob, samples: number, ms: number, reason: string, notes: {kind: string, count: number, note: string}[], width: number, height: number}>}
+ * @returns {Promise<{blob: Blob, samples: number, ms: number, reason: string, notes: {kind: string, count: number, note: string}[], width: number, height: number, env: string}>}
  */
 export async function renderPhoto(plan, opts = {}) {
 	/** @type {any} */
@@ -309,7 +400,7 @@ export async function renderPhoto(plan, opts = {}) {
 		if (tracer.samples < 1) throw new Error(reason === 'stopped' ? 'Stopped before the first sample.' : 'The renderer did not start in time.');
 		const pixels = await readFinal(renderer, tracer.target, plan, plan.denoise, pkg);
 		const blob = await toPng(pixels, plan.width, plan.height);
-		return { blob, samples: Math.floor(tracer.samples), ms: Math.round(performance.now() - started), reason, notes: parityNotes(prep.met), width: plan.width, height: plan.height };
+		return { blob, samples: Math.floor(tracer.samples), ms: Math.round(performance.now() - started), reason, notes: parityNotes(prep.met), width: plan.width, height: plan.height, env: prep.env };
 	} finally {
 		tracer.dispose();
 		prep.dispose();

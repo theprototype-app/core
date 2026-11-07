@@ -182,6 +182,100 @@ h.run(async () => {
 	);
 	await h.closePeer(quest);
 
+	console.log('\n=== 8. TRAA (P3): one AA setting, no leaked jitter, skinned motion vectors ===');
+	await page.evaluate(() => window.__stores.scenePost.postStacks.set({ scene: { enabled: true, effects: [], changedAt: Date.now() } }));
+	await settle(page, 1200);
+	const noAa = await h.grabFrame(A, clip);
+	const addable = await page.evaluate(() => window.__stores.scenePost.postEffectKinds().filter((d) => !d.legacy).map((d) => d.kind));
+	h.check(addable.includes('antialias') && !addable.includes('smaa'), '8.0 the add menu offers ONE anti-aliasing (antialias), not smaa');
+	await page.evaluate(() => window.__stores.scenePost.addPostEffect('antialias'));
+	await settle(page, 2000);
+	h.check((await builtKinds(page)).includes('antialias'), '8.1 TRAA compiles into the chain');
+	const proj = await page.evaluate(async () => {
+		const cam = window.__stores.traaPass.traaDebug.last?.mainCamera;
+		if (!cam) return { max: -1, frames: 0 };
+		const out = [];
+		for (let i = 0; i < 8; i++) {
+			await new Promise((r) => setTimeout(r, 60));
+			out.push(Math.abs(cam.projectionMatrix.elements[8]) + Math.abs(cam.projectionMatrix.elements[9]));
+		}
+		return { max: Math.max(...out), frames: window.__stores.traaPass.traaDebug.last?.frame ?? 0 };
+	});
+	h.check(proj.frames > 5 && proj.max >= 0 && proj.max < 1e-9, '8.2 the jitter never leaks out of the frame (' + proj.frames + ' jittered frames, max offset ' + proj.max + ')');
+	const t1 = await h.grabFrame(A, clip);
+	const aaDelta = await h.frameDelta(page, noAa, t1);
+	h.check(aaDelta.changed >= 50 && aaDelta.max >= 5, '8.3 TRAA changes the edges: ' + aaDelta.changed + ' px, max ' + aaDelta.max);
+	await settle(page, 800);
+	const t2 = await h.grabFrame(A, clip);
+	const still = await h.frameDelta(page, t1, t2);
+	h.check(still.changed < 360 * 360 * 0.01, '8.4 a still scene converges (no shimmer): ' + still.changed + ' px moved between two settled frames');
+
+	const skinned = await page.evaluate(async () => {
+		const THREE = window.__stores.THREE;
+		let group = null;
+		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		const scene = group.parent;
+		const geo = new THREE.BoxGeometry(0.6, 2, 0.6, 1, 8, 1);
+		const pos = geo.attributes.position;
+		const idx = [];
+		const wt = [];
+		for (let i = 0; i < pos.count; i++) {
+			const t = Math.min(1, Math.max(0, (pos.getY(i) + 1) / 2));
+			idx.push(0, 1, 0, 0);
+			wt.push(1 - t, t, 0, 0);
+		}
+		geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(idx, 4));
+		geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(wt, 4));
+		const root = new THREE.Bone();
+		const tip = new THREE.Bone();
+		tip.position.y = 1;
+		root.add(tip);
+		root.position.y = -1;
+		const mesh = new THREE.SkinnedMesh(geo, new THREE.MeshStandardMaterial({ color: '#ff3366' }));
+		mesh.name = 'post-finish-skinned';
+		mesh.add(root);
+		mesh.bind(new THREE.Skeleton([root, tip]));
+		mesh.position.set(0, 1.2, 0);
+		scene.add(mesh);
+		const pass = window.__stores.traaPass.traaDebug.last;
+		const count = async () => {
+			await new Promise((r) => setTimeout(r, 400));
+			const rt = pass.velocity;
+			const w = rt.width;
+			const hgt = rt.height;
+			const half = rt.texture.type === THREE.HalfFloatType;
+			const buf = half ? new Uint16Array(4) : new Uint8Array(4);
+			const renderer = window.__stores.traaPass.traaDebug.renderer;
+			let moving = 0;
+			for (let gx = 1; gx < 32; gx++)
+				for (let gy = 1; gy < 32; gy++) {
+					renderer.readRenderTargetPixels(rt, Math.floor((gx / 32) * w), Math.floor((gy / 32) * hgt), 1, 1, buf);
+					const v = half ? [THREE.DataUtils.fromHalfFloat(buf[0]), THREE.DataUtils.fromHalfFloat(buf[1])] : [buf[0] / 255, buf[1] / 255];
+					if (Math.hypot(v[0], v[1]) > 1e-4) moving++;
+				}
+			return moving;
+		};
+		const before = await count();
+		let a = 0;
+		const timer = setInterval(() => {
+			a += 0.15;
+			tip.rotation.z = Math.sin(a) * 0.9;
+		}, 16);
+		const during = await count();
+		clearInterval(timer);
+		const slot = pass.prevBones.get(mesh);
+		scene.remove(mesh);
+		return { before, during, prevBound: !!slot && slot.fresh === false, half: pass.velocity.texture.type === THREE.HalfFloatType };
+	});
+	h.check(skinned.prevBound, '8.5 a SkinnedMesh gets its previous pose bound in the velocity pass');
+	h.check(skinned.before === 0 && skinned.during > 0, '8.6 bending bones (mesh itself still) write motion vectors: ' + skinned.before + ' -> ' + skinned.during + ' moving samples (half float ' + skinned.half + ')');
+
+	await page.evaluate(() => window.__stores.isLocked.set(true));
+	await settle(page, 600);
+	const playActive = await page.evaluate(() => window.__stores.traaPass.traaDebug.last?.active);
+	await page.evaluate(() => window.__stores.isLocked.set(null));
+	h.check(playActive === true, '8.7 on a computer TRAA stays on in Play (the phone default is off: unit-proven)');
+
 	h.check(h.pageErrors(A).length === 0, '7.1 no page errors (' + h.pageErrors(A).slice(0, 2).join(' | ') + ')');
 	await browser.close();
 });

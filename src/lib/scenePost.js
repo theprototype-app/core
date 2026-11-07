@@ -45,7 +45,7 @@ const postKinds = {};
  *
  * @param {string} kind stable wire identifier
  * @param {{label: string, group?: string, isPass?: boolean, params?: PostParam[],
- *   ownsToneMapping?: boolean,
+ *   ownsToneMapping?: boolean, legacy?: boolean,
  *   make: (params: Record<string, any>, ctx: any) => any,
  *   retarget?: (object: any, camera: any) => void,
  *   resize?: (object: any, width: number, height: number, dpr: number) => void,
@@ -84,7 +84,9 @@ export function postEffectKinds() {
 		label: def.label,
 		group: def.group,
 		isPass: def.isPass,
-		params: def.params
+		params: def.params,
+		// 98 P3: a superseded kind still renders saved scenes but is not offered for new ones
+		legacy: !!def.legacy
 	}));
 }
 

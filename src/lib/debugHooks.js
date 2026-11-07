@@ -364,6 +364,7 @@ export const DEBUG_HOOKS = [
 	['proPresets', () => import('./post/proPresets.js')],
 	['finishCore', () => import('./post/finishCore.js')],
 	['finishEffects', () => import('./post/finishEffects.js')],
+	['traaPass', () => import('./post/traaPass.js')],
 	['xrLook', () => import('./xrLook.js')],
 	['xrLookCore', () => import('./xrLookCore.js')],
 	['viewportOverrides', () => import('./viewportOverrides')],

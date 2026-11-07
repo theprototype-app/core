@@ -112,7 +112,7 @@
 	const addMenuItems = $derived.by(() => {
 		/** @type {Record<string, any[]>} */
 		const byGroup = {};
-		for (const def of postEffectKinds()) (byGroup[def.group] ??= []).push(def);
+		for (const def of postEffectKinds()) if (!def.legacy) (byGroup[def.group] ??= []).push(def);
 		// known families first, in a deliberate order; anything a module registers
 		// under a new group follows, alphabetically
 		const extra = Object.keys(byGroup)

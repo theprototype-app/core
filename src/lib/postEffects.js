@@ -35,7 +35,9 @@ import { itemByHash, itemBlob, explorerItems } from './explorer';
 import { requestAsset } from './assetShare';
 import { get } from 'svelte/store';
 import { cameraPreview } from './cameraPreview';
-import { objectsGroup } from '../stores/sceneStore';
+import { objectsGroup, isLocked } from '../stores/sceneStore';
+import { TRAAPass } from './post/traaPass.js';
+import { traaActive } from './post/traaCore.js';
 
 // L1 — the built-in post effects and the COMPILER.
 //
@@ -609,6 +611,9 @@ registerPostEffect('dotscreen', {
 registerPostEffect('smaa', {
 	label: 'Anti-aliasing (SMAA)',
 	group: 'aa',
+	// 98 P3: superseded by 'antialias' (one AA setting). Kept so every saved scene still renders; not offered
+	// in the add menu any more.
+	legacy: true,
 	params: [
 		{ key: 'preset', label: 'Quality', type: 'select', default: 'MEDIUM',
 			options: [
@@ -620,4 +625,62 @@ registerPostEffect('smaa', {
 	],
 	make: (params) =>
 		new SMAAEffect({ preset: /** @type {any} */ (SMAAPreset)[params.preset] ?? SMAAPreset.MEDIUM })
+});
+
+// ---- 98 P3: ONE anti-aliasing setting ---------------------------------------
+
+// TRAA (temporal, with reprojection) or SMAA, in ONE entry — the author picks a method, not between two effects.
+// Its own pass either way (`isPass`): TRAA is a Pass, and an SMAA in its own EffectPass can never meet another
+// convolution effect in a merge run (the group-drop post-finish caught with chromatic aberration).
+registerPostEffect('antialias', {
+	label: 'Anti-aliasing',
+	group: 'aa',
+	isPass: true,
+	params: [
+		{ key: 'method', label: 'Method', type: 'select', default: 'traa',
+			hint: 'TRAA blends frames for the smoothest edges; SMAA is single-frame (no trails on fast motion).',
+			options: [
+				{ value: 'traa', label: 'TRAA (temporal)' },
+				{ value: 'smaa', label: 'SMAA' }
+			] },
+		{ key: 'quality', label: 'SMAA quality', type: 'select', default: 'MEDIUM',
+			options: [
+				{ value: 'LOW', label: 'Low' },
+				{ value: 'MEDIUM', label: 'Medium' },
+				{ value: 'HIGH', label: 'High' },
+				{ value: 'ULTRA', label: 'Ultra' }
+			] },
+		{ key: 'inPlay', label: 'TRAA in Play', type: 'select', default: 'auto',
+			hint: 'Auto keeps it on a computer and turns it off on a phone, where fast motion could leave trails.',
+			options: [
+				{ value: 'auto', label: 'Auto (per device)' },
+				{ value: 'on', label: 'On' },
+				{ value: 'off', label: 'Off' }
+			] },
+		{ key: 'blend', label: 'TRAA new-frame weight', min: 0.03, max: 0.5, step: 0.01, decimals: 2, default: 0.1,
+			hint: 'Lower = smoother, higher = less trailing.' }
+	],
+	make: (params, ctx) => {
+		if (params.method === 'smaa') {
+			const pass = /** @type {any} */ (
+				new EffectPass(ctx.camera, new SMAAEffect({ preset: /** @type {any} */ (SMAAPreset)[params.quality] ?? SMAAPreset.MEDIUM }))
+			);
+			pass.__aa = 'smaa';
+			return pass;
+		}
+		const pass = /** @type {any} */ (new TRAAPass(ctx.scene, ctx.camera, { blend: num(params.blend, 0.1) }));
+		pass.__aa = 'traa';
+		pass.__inPlay = params.inPlay ?? 'auto';
+		return pass;
+	},
+	retarget: (/** @type {any} */ pass, /** @type {any} */ camera) => {
+		if (pass.__aa === 'traa') pass.setMainCamera(camera);
+		else pass.mainCamera = camera;
+	},
+	// before the composer renders: decide on/off for this device + mode, and jitter the projection
+	tick: (/** @type {any} */ pass) => {
+		if (pass.__aa !== 'traa') return;
+		pass.active = traaActive({ tier: currentFinishTier(), playing: get(isLocked) === true, inPlay: pass.__inPlay });
+		pass.prepareFrame();
+	}
 });

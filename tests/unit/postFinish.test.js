@@ -99,3 +99,51 @@ describe('98 P3 AO per tier', () => {
 		expect(aoTierSettings('pc', 'high').denoiseSamples).toBe(8);
 	});
 });
+
+import { halton, jitterAt, applyJitter, traaActive, isCameraCut, JITTER_SAMPLES } from '../../src/lib/post/traaCore.js';
+describe('98 P3 TRAA core', () => {
+	it('halton(2,3) jitter stays inside the pixel and covers it in 8 frames', () => {
+		expect(halton(1, 2)).toBeCloseTo(0.5);
+		expect(halton(2, 3)).toBeCloseTo(2 / 3);
+		const pts = Array.from({ length: JITTER_SAMPLES }, (_, i) => jitterAt(i));
+		for (const [x, y] of pts) {
+			expect(Math.abs(x)).toBeLessThanOrEqual(0.5);
+			expect(Math.abs(y)).toBeLessThanOrEqual(0.5);
+		}
+		expect(new Set(pts.map((p) => p.join())).size).toBe(JITTER_SAMPLES);
+		expect(jitterAt(JITTER_SAMPLES)).toEqual(jitterAt(0));
+	});
+	it('jitters a perspective projection in its third column, an ortho one in its translation', () => {
+		const persp = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, -1, 0, 0, -0.2, 0];
+		applyJitter(persp, [0.5, -0.5], 100, 50);
+		expect(persp[8]).toBeCloseTo(0.01);
+		expect(persp[9]).toBeCloseTo(-0.02);
+		const ortho = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1];
+		applyJitter(ortho, [0.5, 0.5], 100, 100);
+		expect(ortho[12]).toBeCloseTo(0.01);
+		expect(ortho[8]).toBe(0);
+	});
+	it('the Play off switch: phone off in Play unless pinned, PC on, Quest never', () => {
+		expect(traaActive({ tier: 'pc', playing: true })).toBe(true);
+		expect(traaActive({ tier: 'phone', playing: true })).toBe(false);
+		expect(traaActive({ tier: 'phone', playing: true, inPlay: 'on' })).toBe(true);
+		expect(traaActive({ tier: 'pc', playing: true, inPlay: 'off' })).toBe(false);
+		expect(traaActive({ tier: 'phone', playing: false })).toBe(true);
+		expect(traaActive({ tier: 'quest', playing: false })).toBe(false);
+	});
+	it('a camera cut resets the history', () => {
+		const cam = {};
+		expect(isCameraCut(null, { camera: cam, pos: [0, 0, 0] })).toBe(true);
+		expect(isCameraCut({ camera: cam, pos: [0, 0, 0] }, { camera: cam, pos: [0.1, 0, 0] })).toBe(false);
+		expect(isCameraCut({ camera: cam, pos: [0, 0, 0] }, { camera: cam, pos: [9, 0, 0] })).toBe(true);
+		expect(isCameraCut({ camera: {}, pos: [0, 0, 0] }, { camera: cam, pos: [0, 0, 0] })).toBe(true);
+	});
+	it('every preset anti-aliases with TRAA, before grain', () => {
+		for (const key of PRO_PRESET_KEYS) {
+			const kinds = proLookEntries(key).map((e) => e.kind);
+			expect(kinds).toContain('antialias');
+			expect(kinds).not.toContain('smaa');
+			if (kinds.includes('grain')) expect(kinds.indexOf('antialias')).toBeLessThan(kinds.indexOf('grain'));
+		}
+	});
+});

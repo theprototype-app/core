@@ -15,10 +15,10 @@ export const PRO_LOOKS = {
 		exposure: 1,
 		effects: [
 			{ kind: 'ao', params: { aoRadius: 0.8, intensity: 2, distanceFalloff: 1, quality: 'high', halfRes: 'auto' } },
+			{ kind: 'antialias', params: { method: 'traa', quality: 'HIGH', inPlay: 'auto', blend: 0.08 } },
 			{ kind: 'bloom', params: { intensity: 0.25, luminanceThreshold: 0.92, luminanceSmoothing: 0.03, radius: 0.6 } },
 			{ kind: 'tonemapping', params: { mode: 'NEUTRAL', whitePoint: 4, middleGrey: 0.6 } },
-			{ kind: 'vignette', params: { offset: 0.35, darkness: 0.3, technique: 'DEFAULT' } },
-			{ kind: 'smaa', params: { preset: 'HIGH' } }
+			{ kind: 'vignette', params: { offset: 0.35, darkness: 0.3, technique: 'DEFAULT' } }
 		]
 	},
 	cinematic: {
@@ -28,12 +28,12 @@ export const PRO_LOOKS = {
 			{ kind: 'ao', params: { aoRadius: 1.5, intensity: 2.5, distanceFalloff: 1, quality: 'auto', halfRes: 'auto' } },
 			{ kind: 'volumetricfog', params: { amount: 1, color: '#c9b49a', density: 0.015, falloff: 0.2, baseHeight: 0, scatter: 1.5, steps: 24, maxDistance: 300 } },
 			{ kind: 'godrays', params: { amount: 0.5, samples: 48, density: 0.9, decay: 0.96, threshold: 0.5 } },
+			{ kind: 'antialias', params: { method: 'traa', quality: 'MEDIUM', inPlay: 'auto', blend: 0.1 } },
 			{ kind: 'bloom', params: { intensity: 0.6, luminanceThreshold: 0.85, luminanceSmoothing: 0.05, radius: 0.8 } },
 			{ kind: 'lensflare', params: { amount: 0.25, threshold: 1, spacing: 0.35, halo: 0.4 } },
 			{ kind: 'tonemapping', params: { mode: 'ACES_FILMIC', whitePoint: 4, middleGrey: 0.6 } },
 			{ kind: 'grain', params: { opacity: 0.12, premultiply: true } },
-			{ kind: 'vignette', params: { offset: 0.45, darkness: 0.55, technique: 'DEFAULT' } },
-			{ kind: 'smaa', params: { preset: 'MEDIUM' } }
+			{ kind: 'vignette', params: { offset: 0.45, darkness: 0.55, technique: 'DEFAULT' } }
 		]
 	},
 	stylised: {
@@ -41,16 +41,18 @@ export const PRO_LOOKS = {
 		exposure: 1.1,
 		effects: [
 			{ kind: 'ao', params: { aoRadius: 1, intensity: 3, distanceFalloff: 1, quality: 'auto', halfRes: 'auto' } },
+			{ kind: 'antialias', params: { method: 'traa', quality: 'MEDIUM', inPlay: 'auto', blend: 0.1 } },
 			{ kind: 'bloom', params: { intensity: 0.45, luminanceThreshold: 0.8, luminanceSmoothing: 0.05, radius: 0.7 } },
 			{ kind: 'tonemapping', params: { mode: 'AGX', whitePoint: 4, middleGrey: 0.6 } },
 			{ kind: 'huesaturation', params: { hue: 0, saturation: 0.3 } },
 			{ kind: 'brightnesscontrast', params: { brightness: 0.02, contrast: 0.15 } },
-			{ kind: 'vignette', params: { offset: 0.5, darkness: 0.35, technique: 'DEFAULT' } },
-			{ kind: 'smaa', params: { preset: 'MEDIUM' } }
+			{ kind: 'vignette', params: { offset: 0.5, darkness: 0.35, technique: 'DEFAULT' } }
 		]
 	}
 };
 
+// Anti-aliasing sits AFTER the fog / god-ray marches (TRAA smooths their per-frame noise) and BEFORE
+// bloom, grading and grain (it would average the grain away).
 // No chromatic aberration in Cinematic: it and SMAA are both CONVOLUTION effects, and two of those in one merged
 // EffectPass make postprocessing drop the whole group (post-finish §3 caught it: 5 of 10 effects built).
 

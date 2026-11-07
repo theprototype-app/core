@@ -13,7 +13,7 @@
 //   none    needs neighbouring pixels or a depth pass; stays desktop-only
 
 // (SMAA counts as baked: the headset's own MSAA already does that job)
-const BAKED = new Set(['tonemapping', 'huesaturation', 'brightnesscontrast', 'smaa']);
+const BAKED = new Set(['tonemapping', 'huesaturation', 'brightnesscontrast', 'smaa', 'antialias']);
 const APPROX = new Set(['lut', 'vignette']);
 
 /** @param {string} kind @returns {'baked'|'approx'|'none'} how this effect appears in a headset */

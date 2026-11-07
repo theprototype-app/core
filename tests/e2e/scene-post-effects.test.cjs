@@ -73,7 +73,9 @@ h.run(async () => {
 		// 98 P4: the lens and film finish (their own suite: post-finish)
 		'lensflare:camera',
 		'godrays:camera',
-		'volumetricfog:camera'
+		'volumetricfog:camera',
+		// 98 P3: the ONE anti-aliasing setting (TRAA | SMAA); 'smaa' above stays for saved scenes
+		'antialias:aa'
 	];
 	for (const want of expected)
 		h.check(kinds.includes(want), '1.x ' + want + ' is registered in the right group');

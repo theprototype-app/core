@@ -192,6 +192,8 @@
 		setMusicPlaying,
 		setMusicVolume
 	} from '$lib/sceneMusic';
+	import { isProPreset } from '$lib/post/proPresetsCore.js';
+	import { applyProPreset } from '$lib/post/proPresets.js';
 	import {
 		environment,
 		ENVIRONMENT_PRESETS,
@@ -1870,7 +1872,7 @@
 					label="Environment preset"
 					options={envPresetOptions}
 					value={$environment.preset}
-					onpress={(key) => (key === 'custom' ? applyCustomPreset($environment.customPreset) : setEnvironment(key))}
+					onpress={(key) => (key === 'custom' ? applyCustomPreset($environment.customPreset) : isProPreset(key) ? applyProPreset(key) : setEnvironment(key))}
 				/>
 				<SliderRow
 					label="Exposure"

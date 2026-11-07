@@ -58,7 +58,8 @@ export const LOOK_TOOL_NAMES = [
 	'create_post_graph',
 	'uv_unwrap',
 	'set_uv',
-	'set_quality'
+	'set_quality',
+	'set_look_preset'
 ];
 
 /** the ones that only read */
@@ -1078,6 +1079,26 @@ let qualityChange = null;
 
 const QUALITY_LEVELS = ['high', 'medium', 'auto', 'restore'];
 
+/** 98 P5: the pro presets (Product shot / Cinematic / Stylised) — sky, light, tone mapping, exposure and the
+ * post effects as ONE undo step, scaled per device as each one draws it. Scene-wide, so the host is asked. */
+async function setLookPresetTool(/** @type {any} */ args) {
+	const { PRO_LOOKS, PRO_PRESET_KEYS, isProPreset } = await import('$lib/post/proPresetsCore.js');
+	const name = String(args?.preset ?? '').toLowerCase().replace(/[\s_-]+/g, '');
+	const key = name === 'productshot' ? 'product' : name === 'stylized' ? 'stylised' : name;
+	if (!isProPreset(key)) return { error: 'preset: one of ' + PRO_PRESET_KEYS.join(', ') };
+	const { gateScenewide } = await import('$lib/agent/confirmGate');
+	return gateScenewide('set_look_preset', args, {
+		summary: 'the ' + PRO_LOOKS[key].label + ' look (sky, light and post effects)',
+		apply: async () => {
+			const { applyProPreset } = await import('$lib/post/proPresets.js');
+			const done = await applyProPreset(key);
+			if (!done.ok) return { error: done.error };
+			return { updated: [{ preset: key, ok: true }], label: done.label, effects: done.effects, undo: 'undo_last, or the Undo on the person\'s card', ...(await shownHere()) };
+		}
+	});
+}
+
+
 /**
  * mcp-diorama2 (item 7, owner) — set_look {action: "quality"}: ask the person to raise THIS device's quality preset
  * (Settings ▸ Scene ▸ Performance), e.g. so the post effects show on a phone that turned them off. A card on their own
@@ -1295,6 +1316,8 @@ export async function lookTool(name, args) {
 			return setUvTool(args ?? {});
 		case 'set_quality':
 			return setQualityTool(args ?? {});
+		case 'set_look_preset':
+			return setLookPresetTool(args ?? {});
 		default:
 			return { error: 'unknown look tool ' + name };
 	}
@@ -1458,7 +1481,7 @@ export const LOOK_AI_TOOLS = [
 		function: {
 			name: 'set_post',
 			description:
-				'The scene\'s post effects (bloom, huesaturation, brightnesscontrast, tonemapping, vignette, grain, chromaticaberration, ao, lut, pixelation, scanlines, dotscreen, smaa; get_post lists every param). effects: [{kind, params, enabled, at, remove}], matched to what is there by id or kind, so repeating a call does not stack a second bloom; replace: true drops the rest; the stack order is the order of effect. This changes the whole scene\'s look: the first call returns needsConfirm and the host is asked; repeat it with confirmId. One undo step. The answer says shownHere: false with a reason when this screen does not draw post effects (reason "quality tier" = the device turned them off to keep its frame rate, usual on a phone: the scene keeps them; say so, and offer to ask with set_quality).',
+				'The scene\'s post effects (bloom, huesaturation, brightnesscontrast, tonemapping, vignette, grain, chromaticaberration, lensflare, godrays, volumetricfog, ao, lut, pixelation, scanlines, dotscreen, antialias {method: traa | smaa} — it replaces the older smaa; get_post lists every param). effects: [{kind, params, enabled, at, remove}], matched to what is there by id or kind, so repeating a call does not stack a second bloom; replace: true drops the rest; the stack order is the order of effect. This changes the whole scene\'s look: the first call returns needsConfirm and the host is asked; repeat it with confirmId. One undo step. The answer says shownHere: false with a reason when this screen does not draw post effects (reason "quality tier" = the device turned them off to keep its frame rate, usual on a phone: the scene keeps them; say so, and offer to ask with set_quality).',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1483,6 +1506,22 @@ export const LOOK_AI_TOOLS = [
 					mode: { type: 'string', enum: ['append', 'replace'], description: 'camera look: add to the scene look, or replace it' },
 					...CONFIRM_SCHEMA
 				}
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
+			name: 'set_look_preset',
+			description:
+				'A pro look in one step: preset product (Product shot: studio light, clean AO, neutral tone mapping), cinematic (low sun, volumetric fog, god rays, lens flare, film grain, ACES) or stylised (bright sky, punchy colour, AgX). Sets the sky + light, exposure, tone mapping and the post effects together as ONE undo step, saved in the scene; each device draws its own share (a phone marches less fog, a headset leaves fog / god rays / lens flare out). Replaces the scene\'s post effects. Changes the whole scene\'s look: the first call returns needsConfirm and the host is asked; repeat it with confirmId.',
+			parameters: {
+				type: 'object',
+				properties: {
+					preset: { type: 'string', enum: ['product', 'cinematic', 'stylised'] },
+					...CONFIRM_SCHEMA
+				},
+				required: ['preset']
 			}
 		}
 	},

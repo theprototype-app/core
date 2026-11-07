@@ -3,7 +3,7 @@
 	"format": 2,
 	"generator": {
 		"source": "tpAgent.tools() via core scripts/agent-tool-catalog.cjs, mapped by tools/agent/src/catalog.js",
-		"hostTools": 75,
+		"hostTools": 76,
 		"dropped": []
 	},
 	"instructions": "You are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.\nWhen asked what you can do here, call what_can_you_do and say its \"say\" line.",
@@ -2284,7 +2284,7 @@
 		{
 			"name": "set_post",
 			"title": "Change the post effects",
-			"description": "The scene's post effects (bloom, huesaturation, brightnesscontrast, tonemapping, vignette, grain, chromaticaberration, ao, lut, pixelation, scanlines, dotscreen, smaa; get_post lists every param). effects: [{kind, params, enabled, at, remove}], matched to what is there by id or kind, so repeating a call does not stack a second bloom; replace: true drops the rest; the stack order is the order of effect. This changes the whole scene's look: the first call returns needsConfirm and the host is asked; repeat it with confirmId. One undo step. The answer says shownHere: false with a reason when this screen does not draw post effects (reason \"quality tier\" = the device turned them off to keep its frame rate, usual on a phone: the scene keeps them; say so, and offer to ask with set_quality).\nTake a screenshot after each change to check your work.",
+			"description": "The scene's post effects (bloom, huesaturation, brightnesscontrast, tonemapping, vignette, grain, chromaticaberration, lensflare, godrays, volumetricfog, ao, lut, pixelation, scanlines, dotscreen, smaa; get_post lists every param). effects: [{kind, params, enabled, at, remove}], matched to what is there by id or kind, so repeating a call does not stack a second bloom; replace: true drops the rest; the stack order is the order of effect. This changes the whole scene's look: the first call returns needsConfirm and the host is asked; repeat it with confirmId. One undo step. The answer says shownHere: false with a reason when this screen does not draw post effects (reason \"quality tier\" = the device turned them off to keep its frame rate, usual on a phone: the scene keeps them; say so, and offer to ask with set_quality).\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -2348,6 +2348,41 @@
 			},
 			"annotations": {
 				"title": "Change the post effects",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "set_look_preset",
+			"title": "Set look preset",
+			"description": "A pro look in one step: preset product (Product shot: studio light, clean AO, neutral tone mapping), cinematic (low sun, volumetric fog, god rays, lens flare, film grain, ACES) or stylised (bright sky, punchy colour, AgX). Sets the sky + light, exposure, tone mapping and the post effects together as ONE undo step, saved in the scene; each device draws its own share (a phone marches less fog, a headset leaves fog / god rays / lens flare out). Replaces the scene's post effects. Changes the whole scene's look: the first call returns needsConfirm and the host is asked; repeat it with confirmId.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"preset": {
+						"type": "string",
+						"enum": [
+							"product",
+							"cinematic",
+							"stylised"
+						]
+					},
+					"confirmId": {
+						"type": "string",
+						"description": "the id a needsConfirm answer gave: repeat the call with it to get the host's answer and apply"
+					},
+					"wait": {
+						"type": "number",
+						"description": "with confirmId: seconds to wait for the answer (up to 60)"
+					}
+				},
+				"required": [
+					"preset"
+				]
+			},
+			"annotations": {
+				"title": "Set look preset",
 				"readOnlyHint": false,
 				"destructiveHint": true,
 				"openWorldHint": false
@@ -2939,13 +2974,13 @@
 		{
 			"name": "set_sky",
 			"title": "Change the sky and fog",
-			"description": "The sky and the air: a look preset (studio, daylight, sunset, night, classic, clearsky, meadow, sunrise, starlight, photostudio), a sky image by name (clearsky, meadow, sunrise, starlight, photostudio; a search_assets HDRI id \"cc0:polyhaven/<id>\" (fetched into the library once) or \"lib:<hash>\"; or {hash} of an HDR in the library — upload your own .hdr / .exr with assets upload; never a URL) with rotation, intensity, blur and Sky quality (auto / standard / high / max, plus a minimum), a background colour or {top, bottom} gradient, fog ({color, near, far} in metres, or {color, density}; null = none) and exposure. \"Make it night\": preset night or hdri starlight + a dark fog. Changes the whole scene's look, so the host is asked first: it answers needsConfirm, then repeat with confirmId. One undo step.\nTake a screenshot after each change to check your work.",
+			"description": "The sky and the air: a look preset (studio, daylight, sunset, night, classic, clearsky, meadow, sunrise, starlight, photostudio, product, cinematic, stylised), a sky image by name (clearsky, meadow, sunrise, starlight, photostudio; a search_assets HDRI id \"cc0:polyhaven/<id>\" (fetched into the library once) or \"lib:<hash>\"; or {hash} of an HDR in the library — upload your own .hdr / .exr with assets upload; never a URL) with rotation, intensity, blur and Sky quality (auto / standard / high / max, plus a minimum), a background colour or {top, bottom} gradient, fog ({color, near, far} in metres, or {color, density}; null = none) and exposure. \"Make it night\": preset night or hdri starlight + a dark fog. Changes the whole scene's look, so the host is asked first: it answers needsConfirm, then repeat with confirmId. One undo step.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
 					"preset": {
 						"type": "string",
-						"description": "studio, daylight, sunset, night, classic, clearsky, meadow, sunrise, starlight, photostudio"
+						"description": "studio, daylight, sunset, night, classic, clearsky, meadow, sunrise, starlight, photostudio, product, cinematic, stylised"
 					},
 					"hdri": {
 						"type": [
@@ -5526,7 +5561,8 @@
 				"sky": "set_sky",
 				"light": "set_light",
 				"environment": "get_environment",
-				"quality": "set_quality"
+				"quality": "set_quality",
+				"preset": "set_look_preset"
 			},
 			"run": {
 				"inspect": "inspect_runtime",
@@ -7578,7 +7614,8 @@
 								"sky",
 								"light",
 								"environment",
-								"quality"
+								"quality",
+								"preset"
 							],
 							"description": "What to do. Put its fields in the object named after the action."
 						},
@@ -7948,7 +7985,7 @@
 									"description": "with confirmId: seconds to wait for the answer (up to 60)"
 								}
 							},
-							"description": "The scene's post effects (bloom, huesaturation, brightnesscontrast, tonemapping, vignette, grain, chromaticaberration, ao, lut, pixelation, scanlines, dotscreen, smaa; set_look {action: 'get_post'} lists every param). effects: [{kind, params, enabled, at, remove}], matched to what is there by id or kind, so repeating a call does not stack a second bloom; replace: true drops the rest; the stack order is the order of effect. This changes the whole scene's look: the first call returns needsConfirm and the host is asked; repeat it with confirmId. One undo step. The answer says shownHere: false with a reason when this screen does not draw post effects (reason \"quality tier\" = the device turned them off to keep its frame rate, usual on a phone: the scene keeps them; say so, and offer to ask with set_look {action: 'quality'})."
+							"description": "The scene's post effects (bloom, huesaturation, brightnesscontrast, tonemapping, vignette, grain, chromaticaberration, lensflare, godrays, volumetricfog, ao, lut, pixelation, scanlines, dotscreen, smaa; set_look {action: 'get_post'} lists every param). effects: [{kind, params, enabled, at, remove}], matched to what is there by id or kind, so repeating a call does not stack a second bloom; replace: true drops the rest; the stack order is the order of effect. This changes the whole scene's look: the first call returns needsConfirm and the host is asked; repeat it with confirmId. One undo step. The answer says shownHere: false with a reason when this screen does not draw post effects (reason \"quality tier\" = the device turned them off to keep its frame rate, usual on a phone: the scene keeps them; say so, and offer to ask with set_look {action: 'quality'})."
 						},
 						"get_post": {
 							"type": "object",
@@ -8083,7 +8120,7 @@
 							"properties": {
 								"preset": {
 									"type": "string",
-									"description": "studio, daylight, sunset, night, classic, clearsky, meadow, sunrise, starlight, photostudio"
+									"description": "studio, daylight, sunset, night, classic, clearsky, meadow, sunrise, starlight, photostudio, product, cinematic, stylised"
 								},
 								"hdri": {
 									"type": [
@@ -8189,7 +8226,7 @@
 									"description": "with confirmId: seconds to wait for the answer (up to 60)"
 								}
 							},
-							"description": "The sky and the air: a look preset (studio, daylight, sunset, night, classic, clearsky, meadow, sunrise, starlight, photostudio), a sky image by name (clearsky, meadow, sunrise, starlight, photostudio; a assets {action: 'search'} HDRI id \"cc0:polyhaven/<id>\" (fetched into the library once) or \"lib:<hash>\"; or {hash} of an HDR in the library — upload your own .hdr / .exr with assets upload; never a URL) with rotation, intensity, blur and Sky quality (auto / standard / high / max, plus a minimum), a background colour or {top, bottom} gradient, fog ({color, near, far} in metres, or {color, density}; null = none) and exposure. \"Make it night\": preset night or hdri starlight + a dark fog. Changes the whole scene's look, so the host is asked first: it answers needsConfirm, then repeat with confirmId. One undo step."
+							"description": "The sky and the air: a look preset (studio, daylight, sunset, night, classic, clearsky, meadow, sunrise, starlight, photostudio, product, cinematic, stylised), a sky image by name (clearsky, meadow, sunrise, starlight, photostudio; a assets {action: 'search'} HDRI id \"cc0:polyhaven/<id>\" (fetched into the library once) or \"lib:<hash>\"; or {hash} of an HDR in the library — upload your own .hdr / .exr with assets upload; never a URL) with rotation, intensity, blur and Sky quality (auto / standard / high / max, plus a minimum), a background colour or {top, bottom} gradient, fog ({color, near, far} in metres, or {color, density}; null = none) and exposure. \"Make it night\": preset night or hdri starlight + a dark fog. Changes the whole scene's look, so the host is asked first: it answers needsConfirm, then repeat with confirmId. One undo step."
 						},
 						"light": {
 							"type": "object",
@@ -8352,6 +8389,31 @@
 								}
 							},
 							"description": "Ask the person to raise THIS device's quality (their Settings ▸ Scene ▸ Performance ▸ Quality preset). Use it when set_look {action: 'post'} / set_look {action: 'get_post'} / screenshot say shownHere false or postEffects \"unavailable\" with reason \"quality tier\": a phone turns post effects off to keep its frame rate. The person gets a card on their own screen (Allow / Keep) and answers; nothing changes until they allow, nothing changes on anyone else's device, nothing goes into the scene. The first call returns needsConfirm; call again with confirmId (and wait) for the answer. level: high (full quality, post effects on), medium, auto (the device decides), restore (put back what it was before you asked; no question). Suggest it out loud first: \"Your phone hides the glow to stay smooth; shall I ask it for high quality?\""
+						},
+						"preset": {
+							"type": "object",
+							"properties": {
+								"preset": {
+									"type": "string",
+									"enum": [
+										"product",
+										"cinematic",
+										"stylised"
+									]
+								},
+								"confirmId": {
+									"type": "string",
+									"description": "the id a needsConfirm answer gave: repeat the call with it to get the host's answer and apply"
+								},
+								"wait": {
+									"type": "number",
+									"description": "with confirmId: seconds to wait for the answer (up to 60)"
+								}
+							},
+							"required": [
+								"preset"
+							],
+							"description": "A pro look in one step: preset product (Product shot: studio light, clean AO, neutral tone mapping), cinematic (low sun, volumetric fog, god rays, lens flare, film grain, ACES) or stylised (bright sky, punchy colour, AgX). Sets the sky + light, exposure, tone mapping and the post effects together as ONE undo step, saved in the scene; each device draws its own share (a phone marches less fog, a headset leaves fog / god rays / lens flare out). Replaces the scene's post effects. Changes the whole scene's look: the first call returns needsConfirm and the host is asked; repeat it with confirmId."
 						}
 					},
 					"required": [

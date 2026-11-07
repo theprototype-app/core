@@ -375,7 +375,8 @@ function registerBuiltins() {
 			label: preset.label,
 			order,
 			active: () => get(environment)?.preset === key,
-			action: () => setEnvironment(key)
+			// 98 P5: a pro preset also writes the look (one undo step); dynamic — it reaches history
+			action: () => ((/** @type {any} */ (preset)).pro ? import('./post/proPresets.js').then((m) => m.applyProPreset(key)) : setEnvironment(key))
 		})
 	);
 	registerVRMenuEntry({ id: 'grid', group: 'scene', label: 'Grid', icon: 'grid-3x3', order: 3, active: () => !!get(showGrid) });

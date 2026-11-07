@@ -90,13 +90,18 @@ export function mergeHdriPatch(current, patch) {
 /**
  * Which resolution this device renders an HDRI at. 'low' = the Quest tier: a 512-wide source,
  * a 128 px PMREM, and the sky drawn FROM the prefiltered PMREM (no separate equirect texture).
- * @param {{presenting?: boolean, headset?: boolean, pref?: string, postOff?: boolean}} s
+ * 98 G12 TIER FLOOR: the governor turning the look off (`postOff`) never puts a PHONE on this
+ * Quest tier — a phone keeps the full-light sky (its visible sharpness is still capped to Standard by
+ * resolveSkyQuality). Device-lab r1590-08: the HONOR started on the 512 px sky because its first
+ * governor walk reached "post off". A desktop that falls that far still takes the low tier.
+ * @param {{presenting?: boolean, headset?: boolean, phone?: boolean, pref?: string, postOff?: boolean}} s
  * @returns {'full' | 'low'}
  */
 export function resolveHdriTier(s) {
 	if (s.pref === 'low') return 'low';
 	if (s.pref === 'full') return 'full';
-	if (s.presenting || s.headset || s.postOff) return 'low';
+	if (s.presenting || s.headset) return 'low';
+	if (s.postOff && !s.phone) return 'low';
 	return 'full';
 }
 

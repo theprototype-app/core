@@ -73,8 +73,8 @@ export function normalizeBakeRecord(raw) {
 	if (!full) return null;
 	const objects = (Array.isArray(raw.objects) ? raw.objects : [])
 		.slice(0, MAX_OBJECTS)
-		.filter((o) => o && typeof o.uuid === 'string' && o.uuid.length > 0 && o.uuid.length <= 64)
-		.map((o) => ({
+		.filter((/** @type {any} */ o) => o && typeof o.uuid === 'string' && o.uuid.length > 0 && o.uuid.length <= 64)
+		.map((/** @type {any} */ o) => ({
 			...o,
 			uuid: o.uuid,
 			src: o.src === 'uv1' || o.src === 'uv0' ? o.src : 'auto',

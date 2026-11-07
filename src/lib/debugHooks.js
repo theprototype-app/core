@@ -360,6 +360,10 @@ export const DEBUG_HOOKS = [
 	['editOverlays', () => import('./editOverlays')],
 	['objectPermissions', () => import('./objectPermissions')],
 	['scenePost', () => import('./scenePost')],
+	// 98 P1: the bake record + job, the runner and the apply side (each loads only when asked)
+	['sceneBake', () => import('./sceneBake')],
+	['bakeRunner', () => import('./bake/bakeRunner.js')],
+	['bakeApply', () => import('./bake/bakeApply.js')],
 	['postEffects', () => import('./postEffects')],
 	['xrLook', () => import('./xrLook.js')],
 	['xrLookCore', () => import('./xrLookCore.js')],

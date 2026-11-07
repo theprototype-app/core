@@ -25,6 +25,7 @@ import { startSimOnLoad } from './sim/simOnLoad.js';
 import { animatedImportsSnapshot, animatedImportsRestore } from './animatedImports';
 import { animations, animationsSnapshot, animationsRestore } from './animationPreview';
 import { scenePost, scenePostSnapshot, scenePostRestore } from './scenePost';
+import { bakeRecord, sceneBakeSnapshot, sceneBakeRestore } from './sceneBake'; // 98 P1
 import { environment, environmentSnapshot, environmentRestore } from './environment';
 import { scenePhysicsState_, scenePhysicsSnapshot, scenePhysicsRestore } from './scenePhysics';
 import { transport, transportSnapshot, transportRestore } from './musicClock';
@@ -365,6 +366,8 @@ async function writeSnapshot() {
 		// live, so it rides beside the snapshot — the same shape rigs and material
 		// arrays use, for the same reason
 		post: scenePostSnapshot(),
+		// 98 P1: the baked-light record (hashes + atlas placement), null when unbaked
+		bake: sceneBakeSnapshot(),
 		// A6.1: the sky and the gravity ride here for the same reason. GRAVITY had
 		// nowhere else at all — scenePhysics keeps no localStorage — so an edited
 		// gravity was simply lost on reload. The environment also persists locally,
@@ -700,6 +703,7 @@ async function applyRestore(snapshot, offer = null) {
 			return null;
 		}
 		scenePostRestore(snapshot.post, true);
+		sceneBakeRestore(snapshot.bake, true);
 		await within(warmComposer(), WARM_WAIT_MS);
 		releaseFrames();
 		await nextFrames(2);
@@ -905,6 +909,7 @@ export function startAutosave() {
 	// without this a scene's post stack would be in the snapshot and never trigger
 	// one being written ("my grading is gone after a reload")
 	scenePost.subscribe(() => markDirty());
+	bakeRecord.subscribe(() => markDirty()); // 98 P1
 	// A6.1: and again for the sky and the gravity — the scenePost lesson is that
 	// without the subscription the field sits in the snapshot and nothing ever
 	// triggers one being written

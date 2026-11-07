@@ -1,3 +1,4 @@
+// @ts-nocheck — geometry fixtures built from plain arrays
 // 98 P1 — the bake cores: BVH + tracing, the UV2 auto-unwrap / overlap / AO-only fallback, the
 // atlas planner, the kernel (AO + one bounce), the encode, the record + stale + tier budget.
 import { describe, it, expect } from 'vitest';

@@ -291,7 +291,9 @@ export const CONNECTOR_FAMILIES = Object.freeze({
 			sky: 'set_sky',
 			light: 'set_light',
 			environment: 'get_environment',
-			quality: 'set_quality'
+			quality: 'set_quality',
+			// 98 P1: a new ACTION on set_look, no new connector tool name
+			bake: 'bake_light'
 		}
 	},
 	// 85b R1-R4 (lane 85-runtime): playtest is agent-page only (B4b), so the connector's `run` has no playtest;

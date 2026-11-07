@@ -1,3 +1,4 @@
+// @ts-nocheck — fixture registry stubs and nullable preset lookups on known keys
 import { describe, it, expect } from 'vitest';
 import { finishTier, capsFor, cappedSteps, sunScreen, FINISH_KINDS } from '../../src/lib/post/finishCore.js';
 import { registerPostEffect, planPostStack, stackCounts } from '../../src/lib/scenePost.js';

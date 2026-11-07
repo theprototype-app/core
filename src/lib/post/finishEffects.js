@@ -30,6 +30,10 @@ export function currentFinishTier(renderer) {
 	});
 }
 
+/** What the last build of each finish effect decided on THIS device (read by the post-finish suite
+ * through debugHooks: the tier, and the steps a capped march really takes). */
+export const lastFinishBuild = { tier: '', fogSteps: -1, raySamples: -1 };
+
 const _sunPos = new Vector3();
 const _sunTarget = new Vector3();
 const _viewProj = new Matrix4();
@@ -105,12 +109,14 @@ registerPostEffect('godrays', {
 		{ key: 'threshold', label: 'Sky threshold', min: 0, max: 2, step: 0.01, decimals: 2, default: 0.5 }
 	],
 	make: (params, ctx) => {
-		const caps = capsFor(currentFinishTier(ctx.renderer));
+		const tier = currentFinishTier(ctx.renderer);
+		const caps = capsFor(tier);
 		const samples = cappedSteps(num(params.samples, 48), caps.raySamples);
+		Object.assign(lastFinishBuild, { tier, raySamples: samples });
 		const effect = new Effect('GodRaysFinishEffect', GOD_RAYS_FRAG, {
 			blendFunction: BlendFunction.NORMAL,
 			attributes: EffectAttribute.CONVOLUTION | EffectAttribute.DEPTH,
-			uniforms: new Map([
+			uniforms: /** @type {Map<string, Uniform<any>>} */ (new Map(/** @type {[string, Uniform<any>][]} */ ([
 				['sunUv', new Uniform(new Vector2(0.5, 0.5))],
 				['strength', new Uniform(0)],
 				['samples', new Uniform(samples)],
@@ -118,7 +124,7 @@ registerPostEffect('godrays', {
 				['decay', new Uniform(num(params.decay, 0.96))],
 				['weight', new Uniform(1 / Math.max(1, samples) * 4)],
 				['threshold', new Uniform(num(params.threshold, 0.5))]
-			])
+			])))
 		});
 		const pass = ownPass(effect, ctx);
 		pass.__finish.amount = num(params.amount, 0.6);
@@ -160,13 +166,15 @@ registerPostEffect('volumetricfog', {
 		{ key: 'maxDistance', label: 'Reach', min: 10, max: 2000, step: 10, decimals: 0, default: 300 }
 	],
 	make: (params, ctx) => {
-		const caps = capsFor(currentFinishTier(ctx.renderer));
+		const tier = currentFinishTier(ctx.renderer);
+		const caps = capsFor(tier);
 		const asked = num(params.steps, 24);
 		const steps = asked <= 0 ? 0 : cappedSteps(asked, caps.fogSteps);
+		Object.assign(lastFinishBuild, { tier, fogSteps: steps });
 		const effect = new Effect('VolumetricFogEffect', VOLUMETRIC_FOG_FRAG, {
 			blendFunction: BlendFunction.NORMAL,
 			attributes: EffectAttribute.DEPTH,
-			uniforms: new Map([
+			uniforms: /** @type {Map<string, Uniform<any>>} */ (new Map(/** @type {[string, Uniform<any>][]} */ ([
 				['projInv', new Uniform(new Matrix4())],
 				['camWorld', new Uniform(new Matrix4())],
 				['fogColor', new Uniform(new Color(String(params.color ?? '#b8c6d6')))],
@@ -180,7 +188,7 @@ registerPostEffect('volumetricfog', {
 				['steps', new Uniform(steps)],
 				['maxDistance', new Uniform(num(params.maxDistance, 300))],
 				['fogTime', new Uniform(0)]
-			])
+			])))
 		});
 		const pass = ownPass(effect, ctx);
 		pass.__finish.steps = steps;

@@ -24,7 +24,7 @@ import { registerHistoryKind, recordEntry } from './history';
 /**
  * @typedef {{id: string, kind: string, enabled: boolean, params: Record<string, any>}} PostEntry
  * @typedef {{enabled: boolean, effects: PostEntry[], changedAt: number, mode?: 'append'|'replace'}} PostStack
- * @typedef {{key: string, label: string, type?: 'number'|'select'|'bool'|'asset'|'graph', min?: number, max?: number, step?: number, decimals?: number, default: any, hint?: string, options?: {value: any, label: string}[]}} PostParam
+ * @typedef {{key: string, label: string, type?: 'number'|'select'|'bool'|'asset'|'graph'|'color', min?: number, max?: number, step?: number, decimals?: number, default: any, hint?: string, options?: {value: any, label: string}[]}} PostParam
  */
 
 // ---- the kind REGISTRY -----------------------------------------------------

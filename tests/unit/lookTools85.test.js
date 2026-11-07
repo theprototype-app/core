@@ -420,8 +420,8 @@ describe('set_post', () => {
 	});
 	it('refuses what the registry does not know, before asking anyone', async () => {
 		asAgent();
-		const out = await call('set_post', { effects: [{ kind: 'lensflare' }] });
-		expect(out.errors[0]).toMatch(/unknown kind "lensflare".*bloom/);
+		const out = await call('set_post', { effects: [{ kind: 'sparkleburst' }] });
+		expect(out.errors[0]).toMatch(/unknown kind "sparkleburst".*bloom/);
 		const param = await call('set_post', { effects: [{ kind: 'bloom', params: { sparkle: 1 } }] });
 		expect(param.errors[0]).toMatch(/no param "sparkle"/);
 		expect((await call('set_post', {})).error).toMatch(/nothing to set/);

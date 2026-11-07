@@ -59,7 +59,8 @@ export function isProPreset(name) {
 	return Object.prototype.hasOwnProperty.call(PRO_LOOKS, name);
 }
 
-/** Kinds a tier leaves out of the built stack (they stay in the scene for the other devices). */
+/** Kinds a tier leaves out of the built stack (they stay in the scene for the other devices).
+ * @type {Readonly<Record<string, readonly string[]>>} */
 export const TIER_DROPS = Object.freeze({
 	pc: Object.freeze([]),
 	phone: Object.freeze([]),

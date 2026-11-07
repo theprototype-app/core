@@ -1079,14 +1079,6 @@ let qualityChange = null;
 
 const QUALITY_LEVELS = ['high', 'medium', 'auto', 'restore'];
 
-/**
- * mcp-diorama2 (item 7, owner) — set_look {action: "quality"}: ask the person to raise THIS device's quality preset
- * (Settings ▸ Scene ▸ Performance), e.g. so the post effects show on a phone that turned them off. A card on their own
- * screen (Allow / Keep); never another person's device, never in the scene file, never sent. After Allow the card
- * offers Undo, and level "restore" puts back what it was without asking (it is undoing the agent's own change).
- * @param {any} args
- */
-
 /** 98 P5: the pro presets (Product shot / Cinematic / Stylised) — sky, light, tone mapping, exposure and the
  * post effects as ONE undo step, scaled per device as each one draws it. Scene-wide, so the host is asked. */
 async function setLookPresetTool(/** @type {any} */ args) {
@@ -1106,6 +1098,14 @@ async function setLookPresetTool(/** @type {any} */ args) {
 	});
 }
 
+
+/**
+ * mcp-diorama2 (item 7, owner) — set_look {action: "quality"}: ask the person to raise THIS device's quality preset
+ * (Settings ▸ Scene ▸ Performance), e.g. so the post effects show on a phone that turned them off. A card on their own
+ * screen (Allow / Keep); never another person's device, never in the scene file, never sent. After Allow the card
+ * offers Undo, and level "restore" puts back what it was without asking (it is undoing the agent's own change).
+ * @param {any} args
+ */
 async function setQualityTool(args) {
 	// a confirm re-call ({confirmId, wait}) carries no level: the stored ask runs its own apply
 	if (args.confirmId !== undefined) return (await import('$lib/agent/confirmGate')).gateDevice('set_quality', args, { summary: '', prompt: '', apply: async () => ({}) });

@@ -69,7 +69,11 @@ h.run(async () => {
 		// P4: the post DOMAIN's bridge — an effect whose shader is a graph document rather
 		// than a built-in. It belongs in this list for the same reason it belongs in the add
 		// menu: it is a kind of the library, registered through the same seam.
-		'graph:graph'
+		'graph:graph',
+		// 98 P4: the lens and film finish (their own suite: post-finish)
+		'lensflare:camera',
+		'godrays:camera',
+		'volumetricfog:camera'
 	];
 	for (const want of expected)
 		h.check(kinds.includes(want), '1.x ' + want + ' is registered in the right group');

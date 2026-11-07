@@ -304,6 +304,7 @@
 		"agent-api": 420,
 		"agent-chat": 360,
 		"agent-look": 240,
+		"post-finish": 300,
 		"agent-scene": 240,
 		"agent-chat-roles": 240,
 		"agent-chat-vr": 300,

@@ -525,8 +525,24 @@ export async function removeUserModule(id) {
 	});
 }
 
+/** the boot restore in flight (null until `loadUserModules` first runs) @type {Promise<void> | null} */
+let bootRestore = null;
+
+/** fix-play-link: settles once the boot restore has activated the stored modules (at once when no
+ * restore was started). The scene-modules ask waits on it, or a module this player installed last
+ * visit reads as "Not installed" because the ask ran before the restore finished.
+ * @returns {Promise<void>} */
+export function userModulesRestored() {
+	return bootRestore ?? Promise.resolve();
+}
+
 /** Boot: load stored records and activate the enabled ones */
-export async function loadUserModules() {
+export function loadUserModules() {
+	bootRestore ??= restoreUserModules();
+	return bootRestore;
+}
+
+async function restoreUserModules() {
 	if (typeof indexedDB === 'undefined') return;
 	try {
 		const stored = (await idbGet(KEY)) ?? [];

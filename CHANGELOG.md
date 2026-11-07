@@ -15,6 +15,15 @@
 - **Long menus scroll**: the profile menu (and every other long menu) stays on screen in landscape and scrolls with a finger or the wheel. <!-- phone-polish 6 -->
 - Smaller ones: the animation player's controls wrap in landscape; the logo menu has a **Command palette** row; the "lowered the scene look" card sits at the bottom on touch screens so it does not cover the panels at the top; the **Towers** start screen has a touch line. <!-- phone-polish 5 -->
 
+### 🥽 Play links on headsets and phones
+- **Enter VR works from a play link**: on a headset the game no longer starts flat by itself; the start card stays with **Enter VR** first, and pressing it opens VR (it used to start flat play on the screen instead). Leaving VR brings the card back. <!-- fix-play-link 1 -->
+- **"This scene uses modules" asks less, and looks right**: a module from the official modules collection installs by itself when you open a game's play link, a module you installed is remembered on the next visit, and **Load anyway** is remembered for that version. The question is styled like the rest of the app. <!-- fix-play-link 1 -->
+- **The play page is styled on every device** (it showed a plain serif font on some phones). <!-- fix-play-link 2 -->
+- Joining a game from a play link **no longer puts your camera inside another player's head**: you start a step away from them. <!-- fix-play-link 4 -->
+- **Game menus fit narrow screens**: a menu made on a computer shrinks to fit a folded phone instead of running off both sides. <!-- fix-play-link 5 -->
+- **Sky quality ▸ Max** says what it loads on your device: "up to 8K" where the 8K sky loads, "4K" elsewhere. <!-- fix-play-link 6 -->
+- For developers: `window.tpPlay.state` reaches `ready` after a play link joins a session. <!-- fix-play-link 3 -->
+
 ## 1.62.0 — Sign in from another device 🔑
 
 ### 🔑 Sign in from another device (on theprototype.app)

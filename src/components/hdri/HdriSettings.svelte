@@ -10,13 +10,14 @@
 	import SettingRow from '../ui/SettingRow.svelte';
 	import Segmented from '../ui/Segmented.svelte';
 	import { hdriQuality } from '$lib/hdri/hdriPrefs.js';
+	import { skyMaxLabelHere } from '$lib/hdri/hdriCore.js';
 
 	const QUALITY = [
 		{ value: 'auto', label: 'Auto' },
 		{ value: 'low', label: 'Low (headset)' },
 		{ value: 'standard', label: 'Standard (1K)' },
 		{ value: 'high', label: 'High (2K)' },
-		{ value: 'max', label: 'Max (4K)' }
+		{ value: 'max', label: skyMaxLabelHere() }
 	];
 </script>
 

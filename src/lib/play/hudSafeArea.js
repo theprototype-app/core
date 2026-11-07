@@ -121,3 +121,32 @@ export function playChromeRects(root = typeof document === 'undefined' ? /** @ty
 	}
 	return out;
 }
+
+/**
+ * fix-play-link — A CENTRED SCREEN THAT DOES NOT FIT IS SHRUNK TO FIT. Pure. The HUD is authored in
+ * pixels on a desktop artboard (Towers' menu panel is 640 px wide), and on a folded phone (~380 px)
+ * its centre-anchored menu ran off both sides. Returns the one scale every CENTRE-anchored element
+ * takes (its offset from the middle scales with it, so the menu keeps its shape): the largest k <= 1
+ * that keeps their union inside the viewport less `margin`. Corner-anchored elements are untouched —
+ * they hug their own edge and do not collide with a centred menu's overflow.
+ * @param {{anchor?: string, x?: number, y?: number, w?: number, h?: number, kind?: string}[]} elements
+ * @param {number} viewportW @param {number} viewportH
+ * @param {(el: any) => number} [growth] the element's text-size growth (its box is w*growth wide)
+ * @param {number} [margin] px kept clear at each side
+ * @returns {number}
+ */
+export function hudCenterFit(elements, viewportW, viewportH, growth = () => 1, margin = 12) {
+	let halfW = 0;
+	let halfH = 0;
+	for (const el of elements) {
+		if ((el.anchor ?? 'top-left') !== 'center') continue;
+		const g = growth(el) || 1;
+		halfW = Math.max(halfW, Math.abs(el.x ?? 0) + ((el.w ?? 0) * g) / 2);
+		halfH = Math.max(halfH, Math.abs(el.y ?? 0) + ((el.h ?? 0) * g) / 2);
+	}
+	if (!(viewportW > 0) || !(viewportH > 0) || (!halfW && !halfH)) return 1;
+	const kw = halfW ? (viewportW / 2 - margin) / halfW : 1;
+	const kh = halfH ? (viewportH / 2 - margin) / halfH : 1;
+	const k = Math.min(1, kw, kh);
+	return k > 0 ? Math.round(k * 1000) / 1000 : 1;
+}

@@ -86,11 +86,13 @@
 	{#if $isLocked !== true}
 		<div id="embed-start" class="embed-start">
 			{#if title}<div class="embed-title">{title}</div>{/if}
-			<div class="embed-actions">
-				<button id="embed-play" type="button" class="embed-play" onclick={play}>▶ Play</button>
+			<!-- fix-play-link: on a headset Enter VR comes FIRST (data-vr-first) — it is what the device
+			     is for, and nothing autoplays there (playMode.autoPlay) so this card stays until a press -->
+			<div class="embed-actions" data-vr-first={vrAllowed && $vrSupported ? '' : undefined}>
 				{#if vrAllowed && $vrSupported}
 					<button id="embed-vr" type="button" class="embed-play embed-vr" onclick={() => requestPlay()}>Enter VR</button>
 				{/if}
+				<button id="embed-play" type="button" class="embed-play" onclick={play}>▶ Play</button>
 				{#if $sceneHeart}
 					<HeartButton id="embed-heart" size="md" count={$sceneHeart.count} liked={$sceneHeart.liked} label="Like this game" ontoggle={() => $sceneHeart.toggle()} />
 				{/if}
@@ -180,6 +182,15 @@
 		touch-action: manipulation;
 	}
 	.embed-vr {
+		background: var(--accent-muted);
+		color: var(--accent-soft-text);
+	}
+	/* on a headset Enter VR is the primary press and the flat ▶ Play the secondary one */
+	[data-vr-first] .embed-vr {
+		background: var(--live);
+		color: var(--on-live);
+	}
+	[data-vr-first] .embed-play:not(.embed-vr) {
 		background: var(--accent-muted);
 		color: var(--accent-soft-text);
 	}

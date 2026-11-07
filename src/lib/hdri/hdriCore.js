@@ -158,6 +158,28 @@ export function skyFileTier(quality, tiers, caps = {}) {
 	return '1k';
 }
 
+/**
+ * fix-play-link (r1590-09): the Max option's label says what Max LOADS here — the same rule as
+ * `skyFileTier`: 8K on a machine with >= 8 GB that is not a phone (on a sky that has an 8K file;
+ * the others top out at 4K, hence "up to"), else 4K. The picker said "Max (4K)" while the PC
+ * loaded the 8192 Meadow cube.
+ * @param {{memoryGB?: number, phone?: boolean}} facts
+ */
+export function skyMaxLabel(facts = {}) {
+	return facts.memoryGB && facts.memoryGB >= 8 && !facts.phone ? 'Max (up to 8K)' : 'Max (4K)';
+}
+
+/** this device's facts for `skyMaxLabel` (navigator.deviceMemory + a coarse pointer = a phone) */
+export function skyMaxLabelHere() {
+	try {
+		const nav = /** @type {any} */ (globalThis.navigator);
+		const phone = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+		return skyMaxLabel({ memoryGB: Number(nav?.deviceMemory) || 0, phone });
+	} catch {
+		return skyMaxLabel();
+	}
+}
+
 /** A headset browser by its user agent (Quest, Pico, Vive Focus) @param {string} ua */
 export function isHeadsetUA(ua) {
 	return /OculusBrowser|Quest|Pico|VRShell|Wolvic|Vive/i.test(String(ua ?? ''));

@@ -43,11 +43,15 @@ export const arSupported = writable(false);
 // try/catch and not just .catch(): a runtime whose isSessionSupported THROWS
 // synchronously would otherwise throw during this module's evaluation, and this
 // module owns the play button — the one control the app cannot lose.
+/** fix-play-link: settles once the immersive-vr probe has answered (at once when there is no probe)
+ * @type {Promise<void>} */
+let vrProbe = Promise.resolve();
 try {
 	const xr = typeof navigator === 'undefined' ? null : /** @type {any} */ (navigator).xr;
-	xr?.isSessionSupported?.('immersive-vr')
-		?.then((/** @type {boolean} */ ok) => vrSupported.set(!!ok))
-		?.catch(() => vrSupported.set(false));
+	vrProbe =
+		xr?.isSessionSupported?.('immersive-vr')
+			?.then((/** @type {boolean} */ ok) => vrSupported.set(!!ok))
+			?.catch(() => vrSupported.set(false)) ?? Promise.resolve();
 	xr?.isSessionSupported?.('immersive-ar')
 		?.then((/** @type {boolean} */ ok) => arSupported.set(!!ok))
 		?.catch(() => arSupported.set(false));
@@ -385,6 +389,23 @@ export function requestPlay(/** @type {{flat?: boolean}} */ opts = {}) {
 	// dozen and belongs in its own change.
 	if (get(isLocked) === null) isLocked.set(true);
 }
+
+/**
+ * fix-play-link — WHAT A SCENE THAT JUST LANDED DOES BY ITSELF (no gesture): a play link's
+ * `play=1`, the Welcome card's "Play a game", an exported game. It plays FLAT on a screen — and on
+ * an XR-CAPABLE device it does NOT play at all: flat play hides the start card, and the start card
+ * holds Enter VR, the one press that can open a headset session (it needs that gesture). The Quest
+ * 3 device-lab run found a play link that went straight to flat play with no way into VR but Exit.
+ * Waits for the immersive-vr probe (bounded: a runtime whose probe never settles counts as no XR).
+ * @returns {Promise<boolean>} true when it started play
+ */
+export async function autoPlay() {
+	await Promise.race([vrProbe, new Promise((r) => setTimeout(r, AUTOPLAY_PROBE_WAIT))]);
+	if (get(vrSupported)) return false;
+	requestPlay({ flat: true });
+	return true;
+}
+const AUTOPLAY_PROBE_WAIT = 2000;
 
 /* ------------------------------------------------------------- play as… ---- */
 

@@ -59,7 +59,8 @@ export const LOOK_TOOL_NAMES = [
 	'uv_unwrap',
 	'set_uv',
 	'set_quality',
-	'set_look_preset'
+	'set_look_preset',
+	'bake_light'
 ];
 
 /** the ones that only read */
@@ -1074,6 +1075,62 @@ async function shownHere() {
 	return { shownHere: false, reason: /** @type {string} */ (st.reason), detail: st.detail, how: st.how };
 }
 
+/** 98 P1 — set_look {action: "bake"}: bake soft light + corner shadows for everything static. */
+const BAKE_DOS = ['bake', 'status', 'cancel', 'clear', 'strength'];
+/** @param {any} args */
+async function bakeLightTool(args) {
+	const what = String(args.do ?? (args.confirmId !== undefined ? 'bake' : 'status'));
+	if (!BAKE_DOS.includes(what)) return { error: 'do: ' + BAKE_DOS.join(', ') };
+	const sb = await import('$lib/sceneBake');
+	const status = () => {
+		const d = sb.sceneBakeDebug();
+		const r = d.record;
+		return {
+			baked: !!r,
+			objects: r?.objects.length ?? 0,
+			aoOnly: r?.objects.filter((/** @type {any} */ o) => o.mode === 'ao').length ?? 0,
+			stale: d.stale.stale,
+			strength: r?.intensity ?? null,
+			stats: r?.stats ?? null,
+			running: d.job.running,
+			progress: Math.round(d.job.progress * 100),
+			notes: d.job.notes,
+			...(d.job.error ? { lastError: d.job.error } : {}),
+			shownHere: d.shown.map
+		};
+	};
+	if (what === 'status') return status();
+	const runner = await import('$lib/bake/bakeRunner.js');
+	if (what === 'cancel') return { cancelled: runner.cancelBake(), ...status() };
+	if (what === 'strength' && args.light === undefined && args.ao === undefined) return { error: 'strength: give light (0-3) and/or ao (0-1)' };
+	if (what !== 'bake' && !sb.sceneBakeDebug().record) return { error: 'the scene has no baked light' };
+	const { gateScenewide } = await import('$lib/agent/confirmGate');
+	const summary =
+		what === 'bake' ? 'bake the light (' + String(args.quality ?? 'normal') + ' quality)' : what === 'clear' ? 'remove the baked light' : 'change the baked light strength';
+	return gateScenewide('bake_light', args, {
+		summary,
+		apply: async () => {
+			if (what === 'clear') return { cleared: runner.clearBake(), ...status(), undo: 'undo_last' };
+			if (what === 'strength') {
+				const patch = {};
+				if (args.light !== undefined) /** @type {any} */ (patch).light = Math.min(3, Math.max(0, Number(args.light) || 0));
+				if (args.ao !== undefined) /** @type {any} */ (patch).ao = Math.min(1, Math.max(0, Number(args.ao) || 0));
+				runner.setBakeIntensity(patch);
+				return { updated: true, ...status() };
+			}
+			const wait = Math.min(120, Math.max(0, Number(args.wait ?? 60)));
+			const run = runner.runBake({ quality: typeof args.quality === 'string' ? args.quality : 'normal' });
+			const done = await Promise.race([run, new Promise((resolve) => setTimeout(() => resolve(null), wait * 1000))]);
+			if (!done) return { ...status(), how: 'still baking: call set_look {action: "bake", bake: {do: "status"}} in a few seconds' };
+			const r = /** @type {any} */ (done);
+			if (!r.ok) return { error: r.cancelled ? 'the bake was cancelled — nothing changed' : 'the bake failed: ' + r.error };
+			// the atlas is decoded onto the materials just after the record lands: answer with what this screen shows
+			for (let i = 0; i < 25 && sb.sceneBakeDebug().shown.map === 'none'; i++) await new Promise((res) => setTimeout(res, 200));
+			return { ...status(), ms: r.ms, undo: 'undo_last', how: 'take a screenshot to see it; if things move later, bake again' };
+		}
+	});
+}
+
 /** what the agent changed on this device, so "restore" can put it back @type {{was: string, now: string} | null} */
 let qualityChange = null;
 
@@ -1318,6 +1375,8 @@ export async function lookTool(name, args) {
 			return setQualityTool(args ?? {});
 		case 'set_look_preset':
 			return setLookPresetTool(args ?? {});
+		case 'bake_light':
+			return bakeLightTool(args ?? {});
 		default:
 			return { error: 'unknown look tool ' + name };
 	}
@@ -1536,6 +1595,24 @@ export const LOOK_AI_TOOLS = [
 				properties: {
 					level: { type: 'string', enum: QUALITY_LEVELS },
 					reason: { type: 'string', description: 'a few words for the card, e.g. "so the portal glow shows"' },
+					...CONFIRM_SCHEMA
+				}
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
+			name: 'bake_light',
+			description:
+				'Bake light (Pro look): soft shadows in corners (AO) and light bouncing off walls, worked out once for every object that does not move (no physics body that moves, no flow or clip animation) and saved with the scene — everyone sees it, it undoes as one step. do: bake (the default; runs on this device, takes seconds; asks the host first like set_post), status (read: baked?, stale = things moved since, notes such as objects with overlapping UVs that got AO only), cancel, clear (remove it), strength (light 0-3, ao 0-1). quality: draft, normal, high. Bake AFTER the layout is final; bake again when status says stale. wait: seconds to wait for the result (default 60, max 120).',
+			parameters: {
+				type: 'object',
+				properties: {
+					do: { type: 'string', enum: BAKE_DOS },
+					quality: { type: 'string', enum: ['draft', 'normal', 'high'] },
+					light: { type: 'number', minimum: 0, maximum: 3, description: 'do strength: bounce light strength (1 = as baked)' },
+					ao: { type: 'number', minimum: 0, maximum: 1, description: 'do strength: corner shadow strength' },
 					...CONFIRM_SCHEMA
 				}
 			}

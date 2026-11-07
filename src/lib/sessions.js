@@ -55,6 +55,7 @@ import { annotationsSnapshot, annotationsRestore } from './autosave';
 import { captureEditResume, applyEditResume } from './editResume';
 import { jointsSnapshot, jointsRestore } from './joints';
 import { scenePostSnapshot, scenePostRestore } from './scenePost';
+import { sceneBakeSnapshot, sceneBakeRestore } from './sceneBake'; // 98 P1
 // A6.1: the scene's LOOK and RULES ride the file beside its objects. They were
 // missing, so a template loaded into whatever sky and gravity the room happened to
 // have — and a physics scene is unplayable at a peer's edited gravity. Each pair
@@ -275,6 +276,7 @@ export function buildSessionPayload(name, opts = {}) {
 	const env = environmentSnapshot();
 	const gravity = scenePhysicsSnapshot();
 	const track = musicSnapshot();
+	const baked = sceneBakeSnapshot(); // 98 P1: null when unbaked → no field
 	const clock = transportSnapshot();
 	const seqs = sequencesSnapshot(); // 48 S2
 	const talk = chatsSnapshot('all'); // 56 C10
@@ -336,6 +338,7 @@ export function buildSessionPayload(name, opts = {}) {
 			...(env ? { environment: env } : {}),
 			...(gravity ? { physics: gravity } : {}),
 			...(track ? { music: track } : {}),
+			...(baked ? { bake: baked } : {}),
 			...(clock ? { transport: clock } : {}),
 			...(routing ? { patch: routing } : {}),
 			// A6.2: {id, version} — the handshake's shape, so there is one shape for
@@ -1556,6 +1559,7 @@ async function applySessionNow(payload, opts, job) {
 		return;
 	}
 	scenePostRestore(payload.post, replicate);
+	sceneBakeRestore(payload.bake, replicate); // 98 P1: absent = no bake (an old scene stays unbaked)
 	// the composer's own pass shaders, off-frame too (Outline registers the warm-up)
 	await within(warmComposer(), WARM_WAIT_MS);
 	releaseFrames();

@@ -155,6 +155,8 @@ export function sceneSignature(payload) {
 		environment: stripStamps(payload.environment ?? null),
 		physics: stripStamps(payload.physics ?? null),
 		music: stripStamps(payload.music ?? null),
+		// 98 P1: a bake is scene data worth a save — keyed in only when present
+		...(payload.bake ? { bake: stripStamps(payload.bake) } : {}),
 		hud: stripStamps(payload.hud ?? null),
 		// 48 S2: a sequence is scene data like the HUD — keyed in only when present, so
 		// every scene without one keeps the signature an older build computed

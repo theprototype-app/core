@@ -257,6 +257,8 @@ export const VALIDATORS = {
 	getmatpreset: (d) => typeof d.ref === 'string' && d.ref.length <= 32,
 	matpresetpart: (d) => typeof d.from === 'string' && typeof d.ref === 'string' && Number.isInteger(d.i) && Number.isInteger(d.n) && d.n >= 1 && d.n <= 256 && d.i >= 0 && d.i < d.n && typeof d.data === 'string' && d.data.length <= 300_000,
 	environment: (d) => !!d && typeof d === 'object',
+	// 98 P1: the scene's bake record (null = cleared) on a latest-wins stamp; the record itself is normalized by sceneBake
+	scenebake: (d) => Number.isFinite(Number(d.changedAt)) && (d.record === null || (!!d.record && typeof d.record === 'object' && !Array.isArray(d.record))),
 	atscene: (d) => typeof d.peerId === 'string',
 	// 55 A6: the agent mesh relay (agent/meshRelay.js) — the host re-checks everything that matters
 	meshgenask: () => true,

@@ -696,6 +696,7 @@
 		"scene-open-guard": 240,
 		"scene-physics-state": 80,
 		"scene-post": 120,
+		"bake-light": 240,
 		"scene-post-effects": 120,
 		"scene-post-ui": 119,
 		"scene-switch-keep": 626,

@@ -91,6 +91,7 @@ import { applyRoomAnchorRemote, sendRoomAnchor } from '$lib/colocation';
 // drives is LOCAL receive-side filtering; nobody stops broadcasting because of it.
 import { applyRemoteColocation, dropPeerColocation, sendColocationState } from '$lib/colocationPresence';
 import { applyRemoteScenePost, scenePostStates, sendScenePost } from '$lib/scenePost';
+import { applyRemoteSceneBake, sceneBakeState, sendSceneBake } from '$lib/sceneBake'; // 98 P1
 // 23-A2: the musical transport (a latest-wins singleton like scenephysics) and the
 // peer clock-offset estimate it carries alongside
 import { applyRemoteTransport, transportState, sendTransport } from '$lib/musicClock';
@@ -142,7 +143,7 @@ import { exportMode } from './export/exportBoot.js';
 /** 55: the full-state requests an AGENT page leaves unanswered — every one whose reply is scene content
  * (see the dispatch gate). Not getasset/getproject/getchat/getmodulestate/getnodedefs: bytes, the manifest,
  * chat and module versions are not a world, and a getasset answer is how a scene's files reach the room. */
-export const AGENT_UNANSWERED = new Set(['getobjects', 'getnodes', 'getjoints', 'getanim', 'getscenepost', 'gettransport', 'getpatch', 'getshadergraphs', 'gethuds', 'getseqs', 'gethudvalues', 'getgame', 'getunderlays', 'gettriggers', 'getannotations', 'getkitentities', 'getytext']);
+export const AGENT_UNANSWERED = new Set(['getobjects', 'getnodes', 'getjoints', 'getanim', 'getscenepost', 'getscenebake', 'gettransport', 'getpatch', 'getshadergraphs', 'gethuds', 'getseqs', 'gethudvalues', 'getgame', 'getunderlays', 'gettriggers', 'getannotations', 'getkitentities', 'getytext']);
 
 /**
  * 36-export: the Peer an exported game holds — the same shape the rest of the app reads
@@ -1339,6 +1340,12 @@ export class PeerConnection {
 					applyRemoteScenePost(data);
 				} else if(data.type == 'getscenepost') {
 					if (sameRoomOrUnknown(conn.peer)) sendScenePost(data.sender);
+				} else if(data.type == 'scenebake') {
+					// 98 P1: the baked-light record (two content hashes + where each object sits
+					// in the atlas), latest-wins on changedAt; the pixels pull through getasset
+					applyRemoteSceneBake(data);
+				} else if(data.type == 'getscenebake') {
+					if (sameRoomOrUnknown(conn.peer)) sendSceneBake(data.sender);
 				} else if(data.type == 'transport') {
 					// 23-A2: the musical transport, latest-wins on changedAt (the scenephysics
 					// shape). Every peer then derives the beat LOCALLY from the shared startedAt.
@@ -1978,6 +1985,7 @@ export class PeerConnection {
 		conn.send({type: 'getjoints', sender: this.peer.id})
 		conn.send({type: 'getanim', sender: this.peer.id})
 		conn.send({type: 'getscenepost', sender: this.peer.id})
+		conn.send({type: 'getscenebake', sender: this.peer.id}) // 98 P1
 		// CO1: a REQUEST rather than a push, because a scene that never colocated must
 		// send nothing at all — `sendRoomAnchor` returns early on a null anchor, so the
 		// handshake of a non-colocated session is byte-identical to what it always was.
@@ -2095,6 +2103,8 @@ export class PeerConnection {
 			conn.send(patchState())
 			// L-C: one per post DOCUMENT — the scene look and any camera looks
 			for (const state of scenePostStates()) conn.send(state)
+			// 98 P1: the bake, only once this scene has ever had one (an unbaked scene says nothing)
+			if (sceneBakeState().changedAt) conn.send(sceneBakeState())
 		}
 		conn.send(handModelState())
 		conn.send(envPresetsState())
@@ -2873,6 +2883,7 @@ function pushWorldState(peerId) {
 	conn.send(scenePhysicsState());
 	// L-C: one per post DOCUMENT — the scene look and any camera looks
 	for (const state of scenePostStates()) conn.send(state);
+	if (sceneBakeState().changedAt) conn.send(sceneBakeState()); // 98 P1
 	conn.send(gameStatePayload());
 	conn.send(kitPayload());
 	for (const msg of kitEntityPayloads()) conn.send(msg);

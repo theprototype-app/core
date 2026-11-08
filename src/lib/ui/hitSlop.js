@@ -171,17 +171,26 @@ function clipToGround(el, r, s) {
 	const clip = clipBoxOf(el);
 	const xs = [r.l + 1, (r.l + r.r) / 2, r.r - 1];
 	const ys = [r.t + 1, (r.t + r.b) / 2, r.b - 1];
-	/** @param {(d: number) => [number, number][]} pts @param {number} want */
+	/** every line of the band an area of depth d would cover, outer line included, at most 3 px apart: a surface
+	 *  that starts INSIDE the band (a toast's top 3 px above a button, HONOR d98-g scene-quality) is caught even when
+	 *  the outer line is clear @param {number} d */
+	const lines = (d) => {
+		const out = [];
+		for (let k = OUT; k < d; k += 3) out.push(k);
+		out.push(d + OUT);
+		return out;
+	};
+	/** @param {(k: number) => [number, number][]} pts @param {number} want */
 	const reach = (pts, want) => {
-		for (const d of [want, want / 2]) if (d >= 1 && pts(d).every(([x, y]) => ownGround(el, clip, x, y))) return d;
+		for (const d of [want, want / 2]) if (d >= 1 && lines(d).every((k) => pts(k).every(([x, y]) => ownGround(el, clip, x, y)))) return d;
 		return 0;
 	};
 	// the ground just OUTSIDE the area's edge, half a pixel out: on a 2.9x screen the edge snaps up to ~0.35 px past
 	// its CSS line (a sample inside the area let the sidebar's hide button take the Connect bar's last pixel row)
-	s.t = reach((d) => xs.map((x) => [x, r.t - d - OUT]), s.t);
-	s.b = reach((d) => xs.map((x) => [x, r.b + d + OUT]), s.b);
-	s.l = reach((d) => ys.map((y) => [r.l - d - OUT, y]), s.l);
-	s.r = reach((d) => ys.map((y) => [r.r + d + OUT, y]), s.r);
+	s.t = reach((k) => xs.map((x) => [x, r.t - k]), s.t);
+	s.b = reach((k) => xs.map((x) => [x, r.b + k]), s.b);
+	s.l = reach((k) => ys.map((y) => [r.l - k, y]), s.l);
+	s.r = reach((k) => ys.map((y) => [r.r + k, y]), s.r);
 	// the area is a rectangle, so where two sides grow its CORNER reaches diagonally: a corner on someone else's
 	// ground costs the shorter of its two sides
 	for (const [v, hz] of /** @type {const} */ ([['t', 'l'], ['t', 'r'], ['b', 'l'], ['b', 'r']])) {

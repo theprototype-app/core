@@ -245,11 +245,13 @@
 	flex-direction: column-reverse;
 	gap: 4px;
 }
+/* dock-fixes (owner 2026-11-08): the stacks sit inside the FREE viewport rect — beside every open
+   sidebar, pinned or not ($lib/sidebars --sb-free-*, 0px with no column / on a phone) */
 .hud-stack-left {
-	left: 16px;
+	left: calc(16px + var(--sb-free-left, 0px));
 }
 .hud-stack-right {
-	right: 16px;
+	right: calc(16px + var(--sb-free-right, 0px));
 }
 .hud-stack .hud-fab {
 	position: relative;
@@ -273,14 +275,18 @@
    `--sb-dock-left/-right` is a pinned, shown column's width, else 0px ($lib/sidebars publishes it),
    and the vertical lift is the dock's VISIBLE height (`--bottom-inset` reads 0 while the dock is
    hidden or minimized), so a hidden dock drops the stacks back to the floor beside the sidebar. */
-:root.hud-stacks-lifted .hud-stack-left {
-	left: calc(16px + var(--sb-dock-left, 0px));
+/* dock-fixes: the stacks now take the FREE rect lifted or not (the rule above); the sim transport rides
+   the right stack, so it does too — an id here beats SimControls' right-4 utility */
+#sim-controls {
+	right: calc(16px + var(--sb-free-right, 0px));
 }
-:root.hud-stacks-lifted .hud-stack-right {
-	right: calc(16px + var(--sb-dock-right, 0px));
+/* dock-fixes: a free width of a phone's between the open columns (`sb-free-narrow`, $lib/sidebars) lifts the stacks
+   above the toolbar's row — ui.css's <= 600 px rule, keyed to the room that is left rather than the screen */
+:root.sb-free-narrow .hud-stack {
+	bottom: calc(var(--hud-stack-lift, 0px) + 74px);
 }
-:root.hud-stacks-lifted #sim-controls {
-	right: calc(16px + var(--sb-dock-right, 0px));
+:root.sb-free-narrow #sim-controls {
+	bottom: calc(var(--hud-stack-lift, 0px) + 74px + var(--hud-stack-right-n, 2) * (var(--hud-fab) + 4px) + 4px);
 }
 .hud-edit-item {
 	position: relative;
@@ -680,12 +686,8 @@
 }
 /* 44 M13: in Edit positions the corner stacks sit beside any OPEN sidebar (Controls sets the class and the widths),
    so their placeholders are never under a column — the edit bar (J8) and the row beside the logo do the same */
-:root.hud-edit-beside .hud-stack-left {
-	left: calc(16px + var(--sb-open-left, 0px));
-}
-:root.hud-edit-beside .hud-stack-right {
-	right: calc(16px + var(--sb-open-right, 0px));
-}
+/* (dock-fixes: what 44 M13 did here for Edit positions only — the stacks beside every open sidebar — is
+   now the stacks' rule all the time, `.hud-stack-left / -right` above; `hud-edit-beside` adds nothing) */
 
 /* ---- 44 M12b: THE CLUSTERS — placed, rotated, hidden (Controls' layoutClusters sets the classes + the px) ---- */
 :root.cl-left-placed #hud-stack-left.hud-stack,

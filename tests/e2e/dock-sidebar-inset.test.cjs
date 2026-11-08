@@ -1,6 +1,8 @@
 // Roadmap #9 fix: a LEFT-docked window's topbar (dock/close buttons) was covered
-// by the app-sidebar (z-hud > z-drawer), worst on narrow screens. When the menu
-// is open the left dock now insets past the sidebar so its buttons stay reachable.
+// by the app-sidebar (z-hud > z-drawer), worst on narrow screens; the left dock then
+// inset past the open menu. dock-fixes B (owner 2026-11-08) REVERSES the inset: the menu
+// OVERLAYS the left column (--z-popover, above every sidebar) and never relayouts it —
+// shoving the column sideways pushed a left-docked Configure Scene over the right one.
 const h = require('./helpers.cjs');
 
 h.run(async () => {
@@ -24,12 +26,14 @@ h.run(async () => {
 		await new Promise((r) => setTimeout(r, 200));
 		const openLeft = win.getBoundingClientRect().left;
 		const sb = document.querySelector('.app-sidebar');
-		const sbRight = sb ? sb.getBoundingClientRect().right : 0;
-		return { docked: win.dataset.docked, closedLeft, openLeft, sbRight };
+		const r = sb ? sb.getBoundingClientRect() : null;
+		const top = r ? document.elementFromPoint(r.left + r.width / 2, r.top + Math.min(r.height / 2, 120)) : null;
+		return { docked: win.dataset.docked, closedLeft, openLeft, sbRight: r ? r.right : 0, menuOnTop: !!top?.closest('.app-sidebar') };
 	});
 	h.check(r.docked === 'left', `object list restored docked-left (${r.docked})`);
 	h.check(r.closedLeft < 2, `menu closed: docked flush to the edge (left=${r.closedLeft})`);
-	h.check(r.openLeft >= r.sbRight - 1, `menu open: docked window clears the sidebar (left=${Math.round(r.openLeft)} >= sidebar right=${Math.round(r.sbRight)})`);
+	h.check(r.openLeft < 2, `menu open: the docked window keeps its edge — no relayout (left=${Math.round(r.openLeft)})`);
+	h.check(r.menuOnTop, `menu open: the menu draws OVER the docked window (sidebar right=${Math.round(r.sbRight)})`);
 
 	await h.finish(browser);
 });

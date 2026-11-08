@@ -596,6 +596,11 @@
 </ModalDialog>
 
 <style>
+	/* dock-fixes PC-5: one height for every tab — sized to its content, the centred dialog grew and shrank and
+	   jumped ~44 px between General and Examples; the body scrolls instead */
+	:global(dialog#templates-modal[open]) {
+		height: min(56rem, calc(88dvh - var(--kb-inset, 0px) - var(--kb-top, 0px)));
+	}
 	.tpl-body {
 		display: flex;
 		flex-direction: column;

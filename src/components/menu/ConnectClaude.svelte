@@ -102,7 +102,7 @@
 					</div>
 					<p class="cc-manual">or add it by hand: Settings ▸ Connectors ▸ Add custom connector</p>
 					<div class="cc-address">
-						<code class="cc-url">{CONNECTOR_MCP_URL}</code>
+						<code class="cc-url">{#each CONNECTOR_MCP_URL.split(/(?<=\/)(?!\/)/) as part, i (i)}{#if i}<wbr />{/if}{part}{/each}</code>
 						<Button id="connect-claude-copy" variant="icon" size="sm" icon={copied ? 'check' : 'copy'} label="Copy connector address" onclick={copyMcpLink} />
 					</div>
 					<span class="sr-only" role="status" aria-live="polite">{copied ? 'Copied' : ''}</span>
@@ -199,7 +199,8 @@
 	.cc-url {
 		flex: 1;
 		min-width: 0;
-		overflow-wrap: anywhere;
+		/* dock-fixes (device lab): break after a "/" (the <wbr>s), mid-word only when a segment alone is too wide */
+		overflow-wrap: break-word;
 		color: var(--text);
 	}
 	/* a thumb-sized copy button wherever people use a thumb, whatever the kit's own size is at this width */

@@ -26,6 +26,7 @@ import { bakeUvFor } from './bakePlanCore.js';
 import { halves } from './bakeAtlasCore.js';
 import { mapChoice, objectSig, staleOf, lightsSig, isNewerBakeRecord } from './bakeRecordCore.js';
 import { showToast } from '../../stores/appStore';
+import { settleQuality } from '../qualityGovernor';
 import { geometryArrays, collectLights, deviceBakeTier, whyNotReceiver } from './bakeScene.js';
 
 /** @typedef {{ lightMap: any, lightMapIntensity: number, aoMap: any, aoMapIntensity: number, ownAo: boolean }} MaterialWas */
@@ -117,6 +118,9 @@ async function applyNow(record) {
 	} else if (current && current !== record) removeAll();
 	current = record;
 	refresh();
+	// 98-int: every baked material recompiles (a lightMap define) and the maps upload — device-lab-3 measured a 0.7 s
+	// stall on the HONOR right after a bake; that hitch is not the scene's cost (the F27 settle)
+	settleQuality();
 	startWatching();
 	bakeShown.update((s) => ({ ...s, map: choice, note: choice === 'lite' ? 'This device shows the small copy of the baked light.' : '' }));
 }

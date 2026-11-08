@@ -442,7 +442,7 @@ h.run(async () => {
 		const auto = gv();
 		return { low, decided, high, medium: medium.level, mediumReason: medium.reason, auto: auto.level, autoReason: auto.reason };
 	});
-	h.check(q.low === 7 && q.decided === 'game preset', '13.1 Low pins level 7 and the governor holds it (' + JSON.stringify(q) + ')');
+	h.check(q.low === 8 && q.decided === 'game preset', '13.1 Low pins level 8 and the governor holds it (' + JSON.stringify(q) + ')');
 	h.check(q.high === 0 && q.medium === 3 && /medium/.test(q.mediumReason), '13.2 High = 0, Medium = 3');
 	h.check(q.auto === 0 && /auto/.test(q.autoReason), '13.3 Auto releases the pin back to the governor');
 

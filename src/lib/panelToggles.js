@@ -29,7 +29,8 @@ import { raiseWindow, isTopVisibleWindow } from './windowFocus';
 import { groupOfKey, activateTab } from './windowTabs';
 import { revealWindow } from './dragWindow';
 import { safeStorage } from './safeStorage';
-import { sidebarTabCovered, activateSidebarTab } from './sidebars';
+import { sidebarTabCovered, activateSidebarTab, sidebarSideOf, collapseSideIfLast } from './sidebars';
+import { HOSTED, hostedDocked } from './dockHost';
 
 // ONE decision tree for the Controls panel buttons AND their keyboard shortcuts
 // (O / N). Before this module the Object list button had taskbar semantics
@@ -194,6 +195,44 @@ export function togglePanel(key) {
 		return;
 	}
 	cfg.openStore.set(true);
+}
+
+/**
+ * dock-fixes (owner 2026-11-08) — THE SAME TREE for the hosted windows' own buttons (the AI assistant,
+ * Chat: `$lib/dockHost` HOSTED, whose open stores are not the inverted booleans `PANELS` holds). The
+ * report: "click AI assistant -> dock it to a sidebar -> click the AI assistant button again: the window
+ * hides but its sidebar tab stays and the sidebar does not collapse when it was the only tab". The tab
+ * staying was docking.js's presence test (fixed there); this is what the button does with each state:
+ *
+ *   closed                          -> open (it returns where it was: floating, its sidebar tab, its dock tab)
+ *   a sidebar tab, covered          -> bring that tab to the front
+ *   a bottom-dock tab, not showing  -> bring that tab to the front (un-minimizes the dock)
+ *   otherwise                       -> close it — and a sidebar it was the LAST tab of collapses with it
+ *
+ * A floating window keeps the plain toggle its button always had.
+ * @param {string} key a HOSTED key ('aiAssistant', 'chat', …)
+ */
+export function toggleHostedWindow(key) {
+	const h = HOSTED[key];
+	if (!h) return;
+	if (!h.isOpen(get(h.store))) {
+		h.open();
+		return;
+	}
+	if (sidebarSideOf(key)) {
+		if (sidebarTabCovered(key)) {
+			activateSidebarTab(key);
+			return;
+		}
+		collapseSideIfLast(key);
+		h.close();
+		return;
+	}
+	if (!get(phoneShell) && get(hostedDocked)[key] && (get(dockMinimized) || !get(dockShownKeys).includes(key))) {
+		activateDock(key);
+		return;
+	}
+	h.close();
 }
 
 /**

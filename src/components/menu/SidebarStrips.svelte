@@ -316,9 +316,9 @@
 				>
 					<Icon name="unfold-vertical" size={16} aria-hidden="true" />
 				</button>
-				<!-- the hide button only on an EMPTY column: with tabs the strip has no room to spare (two tabs
-				     must still fit a 320 px column), and the tab menu's "Hide this sidebar" + the shortcut do it -->
-				{#if !$sidebarTabs[side].length}
+				<!-- dock-fixes (owner 2026-11-08, "sidebars must ALWAYS be hideable with a button"): the hide button is
+				     on every column, with tabs or without — pinned outside the scrolling tabs like the "+" (the tabs
+				     scroll sideways when they outgrow the column, so it costs no tab its place) -->
 				<button
 					type="button"
 					id="sidebar-hide-{side}"
@@ -329,7 +329,6 @@
 				>
 					<Icon name={side === 'left' ? 'panel-left-close' : 'panel-right-close'} size={16} aria-hidden="true" />
 				</button>
-				{/if}
 			</div>
 			{#if !$sidebarTabs[side].length}
 				<!-- 44 M7: an EMPTY column stays open (VS Code / Blender style): one quiet centred line -->

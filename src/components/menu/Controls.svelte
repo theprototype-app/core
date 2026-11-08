@@ -62,7 +62,7 @@
 	import { dockable } from '$lib/docking';
 	import { bottomDockable } from '$lib/bottomDockDrop';
 	import { dockShownKeys, dockOccupants, bottomInset, FLOW_FAMILY, armDockMode, DOCK_TITLES } from '$lib/bottomDock';
-	import { togglePanel } from '$lib/panelToggles';
+	import { togglePanel, toggleHostedWindow } from '$lib/panelToggles';
 	import { requestPlay, willEnterXR, willEnterAR, xrSessionFailed, playAsItems } from '$lib/playMode';
 	import { simpleUntilPlay, holdAdvanced } from '$lib/onboarding/onboardState.js'; // 76 FW1
 	// 60 Q1: Play here — a roster button (Customize), a row in Play's own menu, Ctrl+Shift+Enter
@@ -1300,7 +1300,7 @@
 			slot: 'chat-button',
 			icon: 'message-square',
 			tint: () => ($chatHidden !== 'hidden' ? ICON_ON : ICON_OFF),
-			run: () => chatHidden.set($chatHidden === 'hidden' ? '' : 'hidden')
+			run: () => toggleHostedWindow('chat')
 		},
 		mic: {
 			get title() {
@@ -1399,7 +1399,8 @@
 	/** the AI button press — AiHudButton's own path (I3). 86-fix N1: it always opens the window; with no
 	 *  provider set up the window itself offers Connect Claude or Settings ▸ Tools & connections */
 	function toggleAiAssistant() {
-		aiAssistantHidden.set($aiAssistantHidden === '' ? 'hidden' : '');
+		// dock-fixes: one tree for a floating, sidebar-docked or bottom-docked window ($lib/panelToggles)
+		toggleHostedWindow('aiAssistant');
 	}
 
 	/** the "+" press — MobileAddButton's own path: a new object lands in the middle of the

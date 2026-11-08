@@ -268,6 +268,21 @@ export function keepSideOpen(key) {
 	if (tabs.length === 1 && tabs[0] === key && get(sidebarMode)[m.side] !== 'hidden') setMode(m.side, 'open');
 }
 
+/**
+ * dock-fixes (owner 2026-11-08) — the OPPOSITE of `keepSideOpen`, for a toolbar button / shortcut that
+ * HIDES a panel ("click the AI assistant button again: … the sidebar does not collapse when it was the
+ * only tab"). A button press is "put this away", not "empty this column for something else", so when
+ * `key` is its side's last tab the column goes with it, even one the user once kept open empty (44 M7's
+ * 'open' is dropped back to 'auto'). Its tabs, order and width are untouched.
+ * @param {string} key
+ */
+export function collapseSideIfLast(key) {
+	const m = get(members)[key];
+	if (!m || !m.present) return;
+	const tabs = get(sidebarTabs)[m.side];
+	if (tabs.length === 1 && tabs[0] === key && get(sidebarMode)[m.side] === 'open') setMode(m.side, 'auto');
+}
+
 /** bring a panel's tab to the front of its side @param {string} key */
 export function activateSidebarTab(key) {
 	const m = get(members)[key];

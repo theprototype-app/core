@@ -437,23 +437,24 @@ export function dockAddItems({ exclude = [], pane } = {}) {
  * over a closed view rather than into a gap, and each disables itself at its end of the
  * strip — a row that can only no-op is worse than a row that says it cannot.
  * @param {string} key
- * @returns {{label: string, tooltip: string, action?: () => void, danger?: boolean, disabled?: boolean, children?: any[]}[]}
+ * @returns {{label: string, icon?: string, tooltip: string, action?: () => void, danger?: boolean, disabled?: boolean, children?: any[]}[]}
  */
 export function dockTabItems(key) {
 	const title = DOCK_TITLES[key] ?? 'this view';
-	/** @type {{label: string, tooltip: string, action?: () => void, danger?: boolean, disabled?: boolean, children?: any[]}[]} */
+	/** @type {{label: string, icon?: string, tooltip: string, action?: () => void, danger?: boolean, disabled?: boolean, children?: any[]}[]} */
 	const items = [];
 	// 44 M9 — the split rows (decision: Split right / Unsplit / Swap sides); wider screens only
 	if (!get(phoneShell)) {
 		const pair = splitOf(key);
 		if (pair) {
 			const names = `${DOCK_TITLES[pair.a] ?? pair.a} / ${pair.b ? (DOCK_TITLES[pair.b] ?? pair.b) : 'the empty pane'}`;
-			items.push({ label: 'Swap sides', tooltip: `Swap the two halves of ${names}`, disabled: !pair.b, action: () => swapSplitSides(key) });
-			items.push({ label: 'Unsplit', tooltip: `Show ${names} as two tabs again`, action: () => unsplitDock(key) });
+			items.push({ label: 'Swap sides', icon: 'arrow-left-right', tooltip: `Swap the two halves of ${names}`, disabled: !pair.b, action: () => swapSplitSides(key) });
+			items.push({ label: 'Unsplit', icon: 'square', tooltip: `Show ${names} as two tabs again`, action: () => unsplitDock(key) });
 		} else {
 			const next = nextSplitPartner(key);
 			items.push({
 				label: 'Split right',
+				icon: 'columns-2',
 				tooltip: next ? `Show ${title} and ${DOCK_TITLES[next]} side by side` : `Show ${title} beside an empty pane (pick its window with "+")`,
 				action: () => splitDock(key, next)
 			});
@@ -461,6 +462,7 @@ export function dockTabItems(key) {
 			if (others.length > 1)
 				items.push({
 					label: 'Split with',
+					icon: 'columns-2',
 					tooltip: `Pick the view to show beside ${title}`,
 					children: others.map((t) => ({ label: t.title, icon: t.icon, tooltip: `${title} on the left, ${t.title} on the right`, action: () => splitDock(key, t.key) }))
 				});
@@ -472,12 +474,14 @@ export function dockTabItems(key) {
 	const at = present.indexOf(key) >= 0 ? present.indexOf(key) : pairOf ? present.indexOf(pairOf.a) : -1;
 	items.push({
 		label: 'Move left',
+		icon: 'arrow-left',
 		tooltip: `Move ${title} one tab towards the start of the strip`,
 		disabled: at <= 0,
 		action: () => moveDockTab(key, 'left')
 	});
 	items.push({
 		label: 'Move right',
+		icon: 'arrow-right',
 		tooltip: `Move ${title} one tab towards the end of the strip`,
 		disabled: at < 0 || at >= present.length - 1,
 		action: () => moveDockTab(key, 'right')
@@ -488,6 +492,7 @@ export function dockTabItems(key) {
 	if (canUndockTab(key))
 		items.push({
 			label: 'Undock into a floating window',
+			icon: 'app-window',
 			tooltip: `Take ${title} out of the dock`,
 			action: () => armDockMode(key, false)
 		});
@@ -497,6 +502,7 @@ export function dockTabItems(key) {
 		for (const side of /** @type {const} */ (['left', 'right']))
 			items.push({
 				label: `Move to the ${side} sidebar`,
+				icon: side === 'left' ? 'panel-left' : 'panel-right',
 				tooltip: `Dock ${title} in the ${side} sidebar, as one of its tabs`,
 				action: () => moveToSidebar(key, side)
 			});
@@ -507,6 +513,7 @@ export function dockTabItems(key) {
 		if (all.length > 1)
 			items.push({
 				label: 'Pop out the whole dock',
+				icon: 'external-link',
 				tooltip: `Every tab of the bottom dock in ONE browser window, as its tabs`,
 				action: () => popOutDockPanels(all, 'bottom', key)
 			});
@@ -514,11 +521,13 @@ export function dockTabItems(key) {
 	// 42 I14: focus mode's touch/pointer way in for a docked window — the tab fills the window
 	items.push({
 		label: 'Maximize (focus mode)',
+		icon: 'maximize-2',
 		tooltip: `Show ${title} alone, filling the window — Esc, Ctrl+Space or "Exit focus" restores`,
 		action: () => maximizeDockTab(key)
 	});
 	items.push({
 		label: 'Close',
+		icon: 'x',
 		tooltip: `Close ${title} (it leaves the dock; nothing else is touched)`,
 		action: () => closeDockView(key)
 	});

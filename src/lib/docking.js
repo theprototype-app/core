@@ -84,8 +84,20 @@ function applyAll() {
 }
 
 /** a docked window is a TAB only while it is open (the object list stays mounted and hides
- *  itself with a class when closed) @param {any} node */
-const isPresent = (node) => !!node?.isConnected && !node.classList.contains('hidden');
+ *  itself with a class when closed). dock-fixes (owner 2026-11-08): the class may sit on an
+ *  ANCESTOR — the AI assistant and Chat hide their wrapper (`#ai-assistant.hidden`, `#chat.hidden`),
+ *  not the window, so the old own-class test kept a closed AI assistant's sidebar tab (and its
+ *  column) on screen with nothing in it @param {any} node */
+const isPresent = (node) => !!node?.isConnected && !node.closest('.hidden');
+
+/** the elements whose `class` decides `isPresent`: the window and its ancestors up to <body>
+ * @param {any} node @returns {Element[]} */
+function presenceChain(node) {
+	/** @type {Element[]} */
+	const out = [];
+	for (let el = node; el && el !== document.body && el.nodeType === 1; el = el.parentElement) out.push(el);
+	return out;
+}
 
 /** @param {string} key */
 function apply(key) {
@@ -287,7 +299,7 @@ export function dockable(node, { key }) {
 	entry.observer = new MutationObserver(() => {
 		if (isPresent(node) !== entry.present) apply(key);
 	});
-	entry.observer.observe(node, { attributes: true, attributeFilter: ['class'] });
+	for (const el of presenceChain(node)) entry.observer.observe(el, { attributes: true, attributeFilter: ['class'] });
 
 	/** @param {any} e */
 	const down = (e) => {

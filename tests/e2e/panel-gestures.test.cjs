@@ -88,6 +88,7 @@ const frames = (page) => page.evaluate(() => new Promise((r) => requestAnimation
 
 /** a real touch gesture: optional still hold first, then `steps` moves by `d`, then release */
 async function gesture(page, cdp, from, d, { hold = 0, steps = 14 } = {}) {
+	if (!from) return;
 	await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [from] });
 	await page.waitForTimeout(hold || 40);
 	for (let i = 1; i <= steps; i++) {
@@ -146,7 +147,8 @@ h.run(async () => {
 		// G1 — a sideways swipe on a tab scrolls the tabs; the group neither moves nor tears
 		const first = await visibleTab(page);
 		await gesture(page, cdp, first, { x: -140, y: 0 }, { steps: 8 });
-		let s1 = await strip(page);
+		const NONE = { x: NaN, y: NaN, w: 0, sl: NaN, st: NaN, over: 0 };
+		let s1 = (await strip(page)) ?? NONE;
 		let g1 = await groups(page);
 		h.check(s1.sl > s0.sl + 20, `${name} G1.1 a sideways swipe scrolls the tabs (scrollLeft ${s0.sl} -> ${s1.sl})`);
 		h.check(s1.x === s0.x && s1.y === s0.y && g1.length === 1 && g1[0].members.length === 3, `${name} G1.2 ...and moves / tears nothing (${JSON.stringify({ s0, s1, members: g1.map((g) => g.members) })})`);
@@ -155,7 +157,7 @@ h.run(async () => {
 		// G2 — a vertical drag on a tab does nothing
 		const tab2 = await visibleTab(page);
 		await gesture(page, cdp, tab2, { x: 0, y: 120 }, { steps: 6 });
-		const s2 = await strip(page);
+		const s2 = (await strip(page)) ?? NONE;
 		const g2 = await groups(page);
 		h.check(s2.x === s1.x && s2.y === s1.y && s2.st === 0, `${name} G2.1 a vertical drag on a tab neither moves the window nor scrolls the tabs vertically (${JSON.stringify(s2)})`);
 		h.check(g2.length === 1 && g2[0].members.length === 3 && !(await menuOpen(page)), `${name} G2.2 ...tears nothing, opens no menu`);
@@ -197,12 +199,12 @@ h.run(async () => {
 
 		// G5 — the group's touch grip moves it with the finger
 		const grip = await centreOf(page, '.tab-strip .ts-grip');
-		const s5a = await strip(page);
+		const s5a = (await strip(page)) ?? NONE;
 		const gripHit = grip && (await page.evaluate((p) => !!document.elementFromPoint(p.x, p.y)?.closest('.ts-grip'), grip));
 		h.check(!!grip && gripHit, `${name} G5.0 premise: the touch grip is drawn on a coarse pointer, and a finger there hits it`);
 		if (grip) {
 			await gesture(page, cdp, grip, { x: 40, y: 50 }, { steps: 8 });
-			const s5b = await strip(page);
+			const s5b = (await strip(page)) ?? NONE;
 			h.check(Math.abs(s5b.x - s5a.x - 40) <= 3 && Math.abs(s5b.y - s5a.y - 50) <= 3, `${name} G5.1 dragging the grip moves the group with the finger (${JSON.stringify({ s5a, s5b })})`);
 		}
 

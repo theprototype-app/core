@@ -283,6 +283,12 @@ h.run(async () => {
 				}
 				return null;
 			});
+		// dock-fixes A': an UNPINNED column with less than 240 px under its strip hides itself (the folded landscape
+		// phone is 390 px tall) — pin the right column to full height there, as a person would, so S still covers it
+		if (name === 'landscape') {
+			await page.evaluate(() => window.__stores.sidebars.toggleSidebarFull('right', true));
+			await page.waitForTimeout(800);
+		}
 		const sb0 = await side();
 		if (!sb0) {
 			h.check(name === 'folded', `${name} S0 the right sidebar strip is drawn on a wider screen (folded = phone shell, none)`);
@@ -310,8 +316,9 @@ h.run(async () => {
 			h.check(JSON.stringify(s3.tabs) === JSON.stringify(sb0.tabs), `${name} S3 a long-press + a drag within 48 px of the strip leaves the tab where it was (${JSON.stringify(s3.tabs)})`);
 			// S4 — long-press + a drag out into the viewport: it floats there
 			t = await sideTab();
-			const vw = await page.evaluate(() => innerWidth);
-			const toX = Math.round(vw * 0.3);
+			// the open viewport just left of the right column: since dock-fixes an EMPTY left column's box is a drop
+			// target too (a release there docks the tab into that column, which is right — a column is a dock)
+			const toX = await page.evaluate(() => Math.round(document.querySelector('#sidebar-strip-right').getBoundingClientRect().left - 80));
 			await gesture(page, cdp, t, { x: toX - (t?.x ?? 0), y: 140 }, { hold: 420, steps: 10 });
 			const s4 = (await side()) ?? { tabs: [] };
 			h.check(!s4.tabs.includes(t.key) && s4.tabs.length === sb0.tabs.length - 1, `${name} S4 a long-press + a drag out into the viewport takes "${t?.key}" out of the sidebar (${JSON.stringify(s4.tabs)})`);

@@ -232,6 +232,10 @@ h.run(async () => {
 				await P.touchscreen.tap(195, 120);
 				await P.waitForTimeout(300);
 				h.check((await P.locator('.tp-crumb-tip').count()) === 0, 'the name bubble goes with the next touch');
+				// that touch lands on the 3D view and deselects (it used to land on the auto-quality toast at the top, which
+				// phone-polish parked at the bottom on touch) — the object's flow is the next step's premise, so select it again
+				await select(P, a);
+				await P.waitForTimeout(600);
 			});
 			// ---- tap: the siblings as the action sheet ----------------------------------
 			await step('phone: tap a crumb', async () => {

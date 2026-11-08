@@ -560,7 +560,15 @@ function projectPoint(page, world) {
  * stores must be set AFTER the reload.
  */
 async function freshReload(peer) {
-	await peer.page.reload({ waitUntil: 'domcontentloaded' });
+	try {
+		await peer.page.reload({ waitUntil: 'domcontentloaded' });
+	} catch (e) {
+		// phone-polish Android Back: closing a menu/sheet spends its history marker with history.back(), and a reload
+		// issued before that popstate lands is aborted by it (net::ERR_ABORTED) — settle, then reload once more
+		if (!/ERR_ABORTED|frame was detached/.test(String(e?.message ?? e))) throw e;
+		await peer.page.waitForTimeout(500);
+		await peer.page.reload({ waitUntil: 'domcontentloaded' });
+	}
 	await peer.page.waitForFunction(() => window.__stores && !!window.__stores.moduleSDK, { timeout: 30000 });
 }
 

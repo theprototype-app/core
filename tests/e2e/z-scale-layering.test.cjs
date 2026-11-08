@@ -41,7 +41,9 @@ const winners = (/** @type {string} */ sel) => {
 			[r.right - 3, r.bottom - 3]
 		];
 		const wins = pts.some(([x, y]) => {
-			if (x < area.left || y < area.top || x > area.right || y > area.bottom) return false;
+			// half-open, as hit-testing is: a point ON the right/bottom edge is outside the surface (a folded phone's What's
+			// new stops above the parked quality card, whose button sat exactly on that line)
+			if (x < area.left || y < area.top || x >= area.right || y >= area.bottom) return false;
 			if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return false;
 			const hit = document.elementFromPoint(x, y);
 			return !!hit && !surf.contains(hit) && (el === hit || el.contains(hit));

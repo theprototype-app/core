@@ -100,7 +100,8 @@ function ownGround(el, clip, x, y) {
 	// an area running off the screen is judged by its on-screen part: its outermost visible line
 	x = Math.min(Math.max(x, 0.05), innerWidth - 0.05);
 	y = Math.min(Math.max(y, 0.05), innerHeight - 0.05);
-	const hit = document.elementFromPoint(x, y);
+	const stack = document.elementsFromPoint(x, y);
+	const hit = stack[0];
 	if (!hit || hit === el || el.contains(hit)) return true;
 	if (hit.tagName === 'CANVAS') return !!hit.closest('#viewport');
 	if (!hit.contains(el)) return false;
@@ -111,14 +112,54 @@ function ownGround(el, clip, x, y) {
 	}
 	if (!ok) return false;
 	// its own text: a label wrapping the control is the control's (a press on it toggles the same thing)
-	if (hit.tagName === 'LABEL') return true;
-	return !ownTextBoxes(hit).some((b) => x >= b.left - 2 && x <= b.right + 2 && y >= b.top - 2 && y <= b.bottom + 2);
+	if (hit.tagName !== 'LABEL' && ownTextBoxes(hit).some((b) => x >= b.left - 2 && x <= b.right + 2 && y >= b.top - 2 && y <= b.bottom + 2)) return false;
+	return !overForeign(stack, el);
+}
+
+/** per scan: an element -> is it on top at its own centre? @type {Map<Element, boolean>} */
+let surfaceShown = new Map();
+
+/** @param {Element} s */
+function onTopAtCentre(s) {
+	let shown = surfaceShown.get(s);
+	if (shown === undefined) {
+		const r = s.getBoundingClientRect();
+		const x = Math.min(Math.max(r.left + r.width / 2, 0.05), innerWidth - 0.05);
+		const y = Math.min(Math.max(r.top + r.height / 2, 0.05), innerHeight - 0.05);
+		const c = r.width >= 1 && r.height >= 1 ? document.elementFromPoint(x, y) : null;
+		shown = !!c && s.contains(c);
+		surfaceShown.set(s, shown);
+	}
+	return shown;
+}
+
+/** is this ground lying OVER a surface that is still in sight? Under a panel's ground the stack holds the panel's
+ *  own ancestors and the 3D view; anything else is another surface's box running under the panel. If that surface
+ *  shows itself (on top at its own centre, at any level from the element up to the box it shares with the control:
+ *  a toast card, a window, a menu the panel half covers; HONOR d98-g 2026-11-08, the auto-quality card under
+ *  Configure Scene and the burger menu) a finger aims at it, so its box is off limits even where the panel hides
+ *  it. A surface hidden at its centre (the bar under a modal, a phone dock's empty body under the panel it hosts)
+ *  is not aimed at, and the panel's ground over it stays the control's (the d98-g overlay test, one level down).
+ *  @param {Element[]} stack @param {HTMLElement} el */
+function overForeign(stack, el) {
+	const vp = document.getElementById('viewport');
+	for (let i = 1; i < stack.length; i++) {
+		const e = stack[i];
+		if (e === document.body || e === document.documentElement || e.contains(el)) continue;
+		if (vp && (vp.contains(e) || e.contains(vp))) continue;
+		for (let s = /** @type {Element | null} */ (e); s && s !== document.body && !s.contains(el); s = s.parentElement) {
+			if (vp && s.contains(vp)) break;
+			if (onTopAtCentre(s)) return true;
+		}
+	}
+	return false;
 }
 
 /** audit seam (debug hook, the HONOR audit): the tap rule's verdict for one point of `el`'s tap area, measured as a
  *  scan would (call it with the areas off — a drawn area answers for itself) @param {HTMLElement} el @param {number} x @param {number} y */
 export function hitSlopGround(el, x, y) {
 	textBoxes = new Map();
+	surfaceShown = new Map();
 	groundOk = new Map();
 	const clip = clipBoxOf(el);
 	return { ok: ownGround(el, clip, x, y), clip, hit: document.elementFromPoint(x, y) };
@@ -169,6 +210,7 @@ export function scanHitSlop() {
 	mo?.disconnect();
 	clear();
 	textBoxes = new Map();
+	surfaceShown = new Map();
 	groundOk = new Map();
 	if (enabled) {
 		/** @type {{el: HTMLElement, cs: CSSStyleDeclaration, r: {l:number,t:number,r:number,b:number}, small: boolean, nested: boolean}[]} */

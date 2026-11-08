@@ -298,17 +298,19 @@ h.run(async () => {
 		const g = window.__stores.qualityGovernor.governorForTest;
 		const out = [];
 		for (const name of ['stylised', 'cinematic']) {
+			// let the previous settle run out first, so a new one is unambiguous
+			const t0 = performance.now();
+			while (g.settleLeft() > 0 && performance.now() - t0 < 4000) await new Promise((r) => setTimeout(r, 100));
 			const before = g.settleLeft();
 			await window.__stores.proPresets.applyProPreset(name);
-			// the chain rebuilds when the effect flushes (later under load): poll for the deadline to move forward —
-			// time passing alone only lowers it, so any rise is a new settle
+			// the chain rebuilds when the effect flushes (later under load): poll for a fresh settle
 			let after = g.settleLeft();
-			const t0 = performance.now();
-			while (!(after > before && Number.isFinite(after)) && performance.now() - t0 < 8000) {
+			const t1 = performance.now();
+			while (!(after > 0) && performance.now() - t1 < 8000) {
 				await new Promise((r) => setTimeout(r, 50));
 				after = g.settleLeft();
 			}
-			out.push({ before: Math.round(before), after: Math.round(after), moved: after > before && Number.isFinite(after) });
+			out.push({ before: Math.round(before), after: Math.round(after), moved: before <= 0 && after > 0 && Number.isFinite(after) });
 		}
 		return out;
 	});

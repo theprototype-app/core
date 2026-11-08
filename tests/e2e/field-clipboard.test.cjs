@@ -429,16 +429,16 @@ h.run(async () => {
 		h.check(!(await fieldMenuUp()), '8.6 phone: a slow 0.9 s drag on a slider does NOT open the field menu');
 	} else h.check(false, '8.6 phone: no slider on screen to drag');
 	await Q.evaluate(() => window.__stores.fieldMenu.fieldMenu.set(null));
-	// a real slow scrub (30 px in 0.9 s) on a value box still scrubs and opens nothing (a guard: a hold under
-	// Chrome's own touch slop IS a long press there, and opening the menu is right)
+	// a real scrub (60 px in 0.9 s) on a value box still scrubs and opens nothing (a guard: a finger that stays
+	// inside the 10 px slop for the 500 ms hold IS a long press there, and opening the menu is right)
 	await Q.keyboard.press('Escape');
 	await Q.evaluate(() => /** @type {any} */ (document.activeElement)?.blur?.());
 	const x0 = (await poseOf(Q, qB)).pos[0];
 	c = await centre(rowOf(Q, 'inspector-position').locator('.dn-wrap').nth(0));
-	await slowDrag(c.x, c.y, 30);
+	await slowDrag(c.x, c.y, 60);
 	await Q.waitForTimeout(400);
 	const x1 = (await poseOf(Q, qB)).pos[0];
-	h.check(!(await fieldMenuUp()) && x1 !== x0, `8.7 phone: a slow 30 px scrub on a value box scrubs (${x0} -> ${x1}) and opens no menu`);
+	h.check(!(await fieldMenuUp()) && x1 !== x0, `8.7 phone: a 60 px scrub on a value box scrubs (${x0} -> ${x1}) and opens no menu`);
 	await Q.evaluate(() => window.__stores.fieldMenu.fieldMenu.set(null));
 	h.check(h.pageErrors(F).length === 0, `phone: no page errors (${h.pageErrors(F).join(' | ').slice(0, 200)})`);
 	await F.ctx.close();

@@ -89,3 +89,66 @@ export function planAtlas(items, side, padTexels, maxDensity) {
 		}))
 	};
 }
+
+/**
+ * 98-int T1 (device-lab: Templates ▸ Tavern interior failed "the scene does not fit one lightmap" on the PC, the
+ * phone and at Quality ▸ High): its 414 receivers auto-unwrap into 111 599 charts (bevelled kit stone: a 35 m² wall
+ * is 534 charts) and EVERY chart costs at least (pad + 1)² texels whatever the density — ~2.8 M texels of padding for
+ * a 1 M atlas (9 M of 4 M at High). No atlas size fixes that. When the whole scene does not fit:
+ *   1. the most chart-heavy meshes switch to their OWN uv0 as one chart (`alt`: clean → light + AO, overlapping →
+ *      AO only), in steps from the heaviest down, until it fits — the Tavern then keeps every receiver;
+ *   2. still too much: keep the receivers with the most surface per chart and leave the rest out. Left-out meshes
+ *      still OCCLUDE (every static mesh is in the ray soup) and keep their realtime light; the bake's note names them.
+ * A scene that fits is planned exactly as before. Deterministic (ties by input order).
+ * @template {AtlasItem & { charts?: number, alt?: (() => (Partial<AtlasItem> & { src: string, mode: string, charts: number }) | null) | null }} T
+ * @param {T[]} items @param {number} side @param {number} padTexels @param {number} maxDensity
+ * @returns {{ atlas: { placements: Placement[], density: number, used: number }, kept: T[], dropped: T[] } | { error: string }}
+ */
+export function fitAtlas(items, side, padTexels, maxDensity) {
+	const full = planAtlas(items, side, padTexels, maxDensity);
+	if (!('error' in full)) return { atlas: full, kept: items, dropped: [] };
+	// 1. own uv0 for the chart-heavy, heaviest first
+	/** @type {T[]} */
+	let set = items;
+	for (const threshold of [512, 128, 32, 8, 2]) {
+		let changed = false;
+		const next = set.map((it) => {
+			if (!it.alt || (it.charts ?? 1) < threshold) return it;
+			const alt = it.alt();
+			if (!alt) return it;
+			changed = true;
+			return /** @type {T} */ ({ ...it, ...alt, alt: null });
+		});
+		if (!changed) continue;
+		set = next;
+		const atlas = planAtlas(set, side, padTexels, maxDensity);
+		if (!('error' in atlas)) return { atlas, kept: set, dropped: [] };
+	}
+	// 2. leave the least surface per chart out
+	if (set.length < 2) return full;
+	const worldOf = (/** @type {T} */ it) => it.area * it.ws * it.ws;
+	const order = set
+		.map((it, i) => ({ it, i, v: worldOf(it) / Math.max(1, it.charts ?? 1) }))
+		.sort((a, b) => b.v - a.v || a.i - b.i);
+	let total = 0;
+	for (const o of order) total += worldOf(o.it);
+	// a first guess from the texel budget at three quarters of the density the area alone would allow
+	const d = Math.min(maxDensity, Math.sqrt((0.45 * side * side) / Math.max(1e-9, total))) * 0.75;
+	const perChart = (padTexels + 1) * (padTexels + 1);
+	let used = 0;
+	let k = 0;
+	for (; k < order.length; k++) {
+		const it = order[k].it;
+		const t = worldOf(it) * d * d + (it.charts ?? 1) * perChart;
+		if (used + t > 0.6 * side * side) break;
+		used += t;
+	}
+	k = Math.min(k, order.length - 1);
+	for (let tries = 0; k > 0 && tries < 16; tries++, k = Math.floor(k * 0.85)) {
+		const keep = new Set(order.slice(0, k).map((o) => o.i));
+		const kept = set.filter((_, i) => keep.has(i));
+		const atlas = planAtlas(kept, side, padTexels, maxDensity);
+		if (!('error' in atlas)) return { atlas, kept, dropped: set.filter((_, i) => !keep.has(i)) };
+	}
+	return full;
+}

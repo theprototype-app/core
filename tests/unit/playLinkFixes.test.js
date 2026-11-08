@@ -5,7 +5,7 @@
 // folded phone, and the sky picker's Max label saying what Max loads.
 import { describe, it, expect, beforeEach } from 'vitest';
 import { planPlayerAsk, rememberLoadAnyway, answeredAnyway, askKey, ANYWAY_KEY } from '../../src/lib/play/moduleAsk.js';
-import { clearOfAvatars, AVATAR_CLEARANCE } from '../../src/lib/playSpawn.js';
+import { clearOfAvatars, AVATAR_CLEARANCE, arrivalSlot } from '../../src/lib/playSpawn.js';
 import { hudCenterFit } from '../../src/lib/play/hudSafeArea.js';
 import { skyMaxLabel, skyFileTier } from '../../src/lib/hdri/hdriCore.js';
 import { safeStorage } from '../../src/lib/safeStorage';
@@ -91,6 +91,43 @@ describe('a joining eye steps clear of other avatars', () => {
 		for (let x = -5; x <= 5; x += 0.5) for (let z = -5; z <= 5; z += 0.5) crowd.push([x, 1.7, z]);
 		const eye = [0, 1.7, 0];
 		expect(clearOfAvatars(eye, crowd)).toBe(eye);
+	});
+
+	// 98-int F4 (device-lab, Towers: the HONOR by play link + a 2nd browser both at (0, 2.9, 3), 0 m apart)
+	it('two players arriving together (neither sees the other yet) land apart, each with the same view of who is who', () => {
+		const eye = [0, 2.9, 3];
+		const host = [0, 1.7, -9.5]; // 12.5 m away: visible, not in the way
+		const a = arrivalSlot('63581aa', ['zz-phone']);
+		const b = arrivalSlot('zz-phone', ['63581aa']);
+		expect(a).toEqual({ rank: 0, of: 2 });
+		expect(b).toEqual({ rank: 1, of: 2 });
+		const pa = clearOfAvatars(eye, [host], 0, AVATAR_CLEARANCE, a);
+		const pb = clearOfAvatars(eye, [host], 0, AVATAR_CLEARANCE, b);
+		// the counterfactual: with no slot (the fix-play-link step alone) both take the bare spawn
+		expect(clearOfAvatars(eye, [host], 0)).toBe(eye);
+		expect(dist(pa, pb)).toBeGreaterThanOrEqual(AVATAR_CLEARANCE);
+		expect(pa[1]).toBe(2.9);
+		expect(pb[1]).toBe(2.9);
+	});
+
+	it('any number arriving together get pairwise distinct, clear spots — also with the host on the spawn', () => {
+		const eye = [0, 1.7, 0];
+		for (const host of [null, [0, 1.7, 0]]) {
+			const ids = ['p1', 'p2', 'p3', 'p4', 'p5'];
+			const spots = ids.map((me) => clearOfAvatars(eye, host ? [host] : [], 0, AVATAR_CLEARANCE, arrivalSlot(me, ids.filter((x) => x !== me))));
+			for (let i = 0; i < spots.length; i++) {
+				if (host) expect(dist(spots[i], host)).toBeGreaterThanOrEqual(AVATAR_CLEARANCE);
+				for (let j = i + 1; j < spots.length; j++) expect(dist(spots[i], spots[j])).toBeGreaterThanOrEqual(AVATAR_CLEARANCE);
+			}
+		}
+	});
+
+	it('a lone joiner (everyone else visible) keeps the old behaviour exactly', () => {
+		expect(arrivalSlot('me', [])).toEqual({ rank: 0, of: 1 });
+		const eye = [0, 1.7, 0];
+		const head = [0, 1.7, 0];
+		expect(clearOfAvatars(eye, [head], 0, AVATAR_CLEARANCE, arrivalSlot('me', []))).toEqual(clearOfAvatars(eye, [head], 0));
+		expect(clearOfAvatars(eye, [[5, 1.7, 0]], 0, AVATAR_CLEARANCE, arrivalSlot('me', []))).toBe(eye);
 	});
 });
 

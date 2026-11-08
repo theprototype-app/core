@@ -5,6 +5,7 @@
 //      what was left out (particles) and what was approximated (Basic)
 //   2b 98-int: a pro look with an HDRI (Product shot, Cinematic): the PMREM environment used to crash the tracer
 //      ("Converting circular structure to JSON (hdriTarget)") — now it renders lit by an unrolled equirect
+//   2c 98-int P6: the tracer shader is linked by the async compile, never synchronously at the first draw
 //   3  Stop: a long render stops at once and keeps the still so far (reason "stopped", ≥ 1 sample)
 //   4  Download PNG (a real download, .png) and Save to scene shots (a Library file under Scene shots/)
 //   5  phone profile, alone: "not on this device" + the best raster still
@@ -62,6 +63,60 @@ h.run(async () => {
 
 	// ---- 1. boot: no tracer
 	h.check(!(await tracerLoaded(A.page)), '1 boot: the path tracer chunk is not loaded by the editor');
+
+	// ---- 2c (runs FIRST: a later photo reuses the cached program and links nothing — the premise below).
+	// 98-int P6 (device-lab PC profile: ONE 19.3 s getProgramInfoLog block at the first draw). The tracer's
+	// shader must be linked by renderer.compile (async, KHR_parallel_shader_compile), never at draw time: three keys a
+	// program by the target bound when it is built, so a compile with the canvas bound built the canvas variant and the
+	// first draw into the float target linked a SECOND one synchronously. Counted on any GPU (the variant mismatch is
+	// not Windows-only; only the 19 s is).
+	{
+		const r = await A.page.evaluate(async () => {
+			const s = window.__stores;
+			/** @type {any} */ let rr;
+			s.globalRenderer.subscribe((v) => (rr = v))();
+			const gl = rr.getContext();
+			/** @type {{inCompile: boolean, toneMapped: boolean}[]} */
+			const links = [];
+			let inCompile = 0;
+			const link = gl.linkProgram;
+			gl.linkProgram = function (/** @type {any} */ p) {
+				const src = (gl.getAttachedShaders(p) || []).map((/** @type {any} */ x) => gl.getShaderSource(x) || '').join('\n');
+				if (/uniform BVH bvh/.test(src)) links.push({ inCompile: inCompile > 0, toneMapped: /#define TONE_MAPPING/.test(src) });
+				return link.call(this, p);
+			};
+			const compile = rr.compile;
+			rr.compile = function (/** @type {any[]} */ ...a) {
+				inCompile++;
+				try {
+					return compile.apply(this, a);
+				} finally {
+					inCompile--;
+				}
+			};
+			try {
+				// a scene the earlier renders did not see (a fresh define set), so the tracer has to build a program now
+				const { THREE } = s;
+				/** @type {any} */ let g;
+				s.objectsGroup.subscribe((v) => (g = v))();
+				const knot = new THREE.Mesh(new THREE.TorusKnotGeometry(0.4, 0.12, 64, 8), new THREE.MeshPhysicalMaterial({ color: '#3a7', transmission: 0.5, roughness: 0.2 }));
+				knot.name = 'P6 knot';
+				g.add(knot);
+				const out = await (await s.photo.render()).renderPhoto({ samples: 2, seconds: 60, width: 96, height: 64, denoise: false });
+				g.remove(knot);
+				return { ok: true, samples: out.samples, links };
+			} catch (e) {
+				return { ok: false, error: String(/** @type {any} */ (e)?.message ?? e), links };
+			} finally {
+				gl.linkProgram = link;
+				rr.compile = compile;
+			}
+		});
+		const atDraw = r.links.filter((l) => !l.inCompile);
+		h.check(r.ok && r.links.length > 0, `2c premise: the photo linked a path-tracer program (${JSON.stringify(r)})`);
+		h.check(r.ok && atDraw.length === 0, `2c P6: no path-tracer program is linked at draw time — every link is the async compile (${atDraw.length} at draw, ${r.links.length} in all)`);
+		h.check(r.links.every((l) => !l.toneMapped), `2c P6: no canvas (tone-mapped) variant of the tracer shader is built (${r.links.filter((l) => l.toneMapped).length})`);
+	}
 
 	// ---- 2. a small product scene
 	await A.page.evaluate(async () => {
@@ -226,7 +281,7 @@ h.run(async () => {
 	await B.page.evaluate(async () => (await window.__stores.photo.mode()).closePhoto());
 	await B.page.evaluate(() => window.__stores.photo.open());
 	await B.page.waitForFunction(() => document.querySelector('#photo-where')?.getAttribute('data-place') === 'peer', null, { timeout: 30000 });
-	h.check(true, '6 phone + PC: the window says a PC in this session renders it');
+	h.check(true, '6 phone + PC: the window says a computer in this session renders it');
 	await B.page.click('#photo-start');
 	await B.page.locator('#photo-result').waitFor({ timeout: 180000 });
 	const s6 = await state(B.page);

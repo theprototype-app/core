@@ -47,8 +47,22 @@ export function photoPlace(f) {
 		: f.xr || f.quest
 			? 'Path tracing is too heavy for a headset.'
 			: 'Path tracing is too heavy for this phone.';
-	if (pc) return { place: 'peer', peer: pc.id, peerName: pc.name || 'a PC', why: reason + ' ' + (pc.name || 'A PC') + ' in this session renders it and sends it back.' };
+	if (pc) {
+		const who = personName(pc.name, pc.id);
+		return { place: 'peer', peer: pc.id, peerName: who ? who + "'s computer" : 'a computer', why: reason + ' ' + (who ? who + "'s computer" : 'A computer') + ' in this session renders it and sends it back.' };
+	}
 	return { place: 'raster', why: reason + ' Not on this device: here is the best normal still. Join from a PC to render a photo.' };
+}
+
+/**
+ * A peer's name as a person reads it, or '' — peerActions.peerName falls back to the peer id when nobody set a
+ * name, and "63581 in this session renders it" (device-lab, HONOR → PC hand-off) is not a name.
+ * @param {string | undefined} name @param {string} id
+ */
+export function personName(name, id) {
+	const n = String(name ?? '').trim();
+	if (!n || /^\d+$/.test(n)) return '';
+	return String(id ?? '').toLowerCase().includes(n.toLowerCase()) ? '' : n;
 }
 
 /** @param {any} v @param {number} lo @param {number} hi @param {number} d */

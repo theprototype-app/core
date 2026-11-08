@@ -244,11 +244,11 @@
 
 /* dock-fixes: a hidden-scrollbar strip fades the edge that has more to scroll (lib/ui/edgeFade.js sets data-fade) */
 [data-fade='end'] {
-	mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+	mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); /* tokens-ok: mask alpha, not a colour */
 }
 [data-fade='start'] {
-	mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent);
+	mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent); /* tokens-ok: mask alpha, not a colour */
 }
 [data-fade='both'] {
-	mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+	mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent); /* tokens-ok: mask alpha, not a colour */
 }

@@ -13,7 +13,9 @@
 /** The contract version (`tpAgent.version`). */
 // 1.8.0 (mcp-diorama2): screenshot {postEffects} + its {postEffects, reason, detail, how} answer, status sceneBudget
 // {top, vsync}; new tools duplicate, import_shape, set_quality (all additive: optional fields, new tools)
-export const TP_AGENT_VERSION = '1.8.0';
+// 1.9.0 (98-finish): set_look {action: 'preset'} (set_look_preset: product / cinematic / stylised); set_post kinds
+// lensflare, godrays, volumetricfog (additive: a new tool behind an existing family, new effect kinds)
+export const TP_AGENT_VERSION = '1.9.0';
 
 /** Every method of the contract, in the order the docs list them. */
 export const TP_AGENT_METHODS = /** @type {const} */ ([

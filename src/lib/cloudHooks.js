@@ -81,6 +81,8 @@ const ALWAYS_ALLOWED = new Set([
 	'getshadergraphs',
 	'getanim',
 	'getscenepost',
+	// 98 P1: the bake REQUEST (its `scenebake` reply stays gateable)
+	'getscenebake',
 	'getroomanchor',
 	// 50 Y1: "send me the shared buffer of this code tab" — the getnodes rule: a REQUEST is
 	// floor (a just-approved viewer must still see the text everyone is typing), its `ytext`

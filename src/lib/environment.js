@@ -115,6 +115,41 @@ export const ENVIRONMENT_PRESETS = {
 		// an interior: as a sky it reads as a giant blurred wall, so it LIGHTS a plain backdrop
 		// (the product-shot setup) — reflections still show the softboxes
 		hdri: { src: 'bundled:photostudio', background: false }
+	},
+	// 98 P5 PRO PRESETS: the sky + light half of Product shot / Cinematic / Stylised. They live in this
+	// ONE list (the 72 look presets) so every preset picker shows them; picking one also writes the
+	// look (tone mapping, exposure, post effects) through post/proPresets.js as ONE undo step. `pro`
+	// marks them. An older peer that does not know the key renders Studio (the normalize rule).
+	product: {
+		label: 'Product shot',
+		pro: true,
+		background: '#2e3136',
+		gradient: { top: '#44484f', bottom: '#202226' },
+		fog: null,
+		hemi: { sky: '#ffffff', ground: '#c8c4c2', intensity: 0.9 },
+		sun: { color: '#ffffff', intensity: 1.1, position: [-6, 9, 7] },
+		exposure: 1,
+		hdri: { src: 'bundled:photostudio', background: false }
+	},
+	cinematic: {
+		label: 'Cinematic',
+		pro: true,
+		background: '#ccd0c5',
+		fog: null,
+		hemi: { sky: '#7a97bc', ground: '#594f24', intensity: 0.8 },
+		sun: { color: '#ffc78a', intensity: 1.6, position: [12.9, 2.2, 9.2] },
+		exposure: 1.05,
+		hdri: { src: 'bundled:sunrise' }
+	},
+	stylised: {
+		label: 'Stylised',
+		pro: true,
+		background: '#9cc8f0',
+		gradient: { top: '#6fb2ef', bottom: '#d9ecfb' },
+		fog: null,
+		hemi: { sky: '#d6ecff', ground: '#9c8a6e', intensity: 1.4 },
+		sun: { color: '#fff1d0', intensity: 2.2, position: [7, 12, 5] },
+		exposure: 1.1
 	}
 };
 

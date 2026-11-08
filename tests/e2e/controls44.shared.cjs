@@ -420,7 +420,9 @@ module.exports = (/** @type {string[]} */ parts) => {
 			await P.keyboard.press('Escape');
 			await P.waitForTimeout(300);
 			st = await rect(P, '#hud-stack-right');
-			h.check(Math.abs(1440 - st.right - 16) <= 1, T + `M13: leaving Edit positions puts the stack back in its corner (${Math.round(1440 - st.right)})`);
+			// dock-fixes item 4 (device lab UI-3): the corner stacks live in the FREE viewport, so with the right column
+			// still open "its corner" is the free rect's corner — 16 px beside the 320 px column
+			h.check(Math.abs(1440 - st.right - (320 + 16)) <= 1, T + `M13: leaving Edit positions puts the stack back in its corner of the free viewport, beside the open column (${Math.round(1440 - st.right)})`);
 			await sidebar(P, { open: false });
 			await P.evaluate(() => window.__stores.touchTools.set(false));
 			h.check(h.pageErrors(A).length === 0, T + `no page errors (${h.pageErrors(A).join(' / ')})`);

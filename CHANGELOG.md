@@ -5,6 +5,41 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.63.0 — Pro look 📸
+
+### 📸 Pro look
+- **Pro presets, one press**: **Product shot**, **Cinematic** and **Stylised** sit beside the other Environment presets and set the sky, the light, the exposure, the tone mapping and a whole stack of post effects together. Undo takes it all back in one step; the look is saved with the scene and everyone sees it. Each device draws its own share: a phone runs lighter fog and god rays, a headset leaves fog, god rays and lens flare out. <!-- 98 P5 -->
+- **Baked light** (Configure Scene ▸ Scene look): one button bakes soft corner shadows and light bouncing off walls for everything that does not move — progress, Cancel, one Undo step, an *Out of date* chip when things move, Bake again. Saved in the scene and seen by every peer; phones and headsets get a smaller copy. Objects with overlapping UVs get the corner shadows only, and the panel says so. A baked kit scene (a tavern of repeated pieces) still draws each kind of piece in one go, so the bake costs no frame time. <!-- 98 P1 + 98-int T1b -->
+- **Photo mode** (Scene look ▸ **Photo…**): a path-traced still of your view — soft shadows, real reflections, glass — as a PNG. Samples and time limit, denoise, Stop any time, **Download PNG** or **Save to scene shots**. On a headset or a phone, a PC in the session renders it for you. <!-- 98 P2 -->
+- **Lens flare, god rays and volumetric fog** join the look stack (Camera FX). Each is off until added, and an effect that is off costs nothing. <!-- 98 P4 -->
+- **Smoother edges**: temporal anti-aliasing (**TRAA**) replaces SMAA as the default — one Anti-aliasing entry with a Method — with motion tracked on animated characters so they do not smear. Older scenes keep their SMAA. <!-- 98 P3 -->
+- Ambient occlusion is cheaper on phones, and a phone keeps the full sky when Auto quality turns the look off (it used to drop to the headset's 512 px sky). <!-- 98 P3, fix-batch-4 G12 -->
+- A new starter scene, **Product shot**, and a tip on the Bake button show the way: preset, bake, photo. <!-- 98 P6 -->
+- AI apps: `set_look` takes `action: "preset"` and `action: "bake"`, and `run` takes `action: "photo"` — no new tool names. <!-- 98 P5 P1 P2 -->
+
+### 📱 Phones and tablets
+- **Android Back closes what is on top**: a menu, a dialog, a window or the bottom panel closes with the Back button or gesture, one at a time, instead of leaving the app. Play mode and shared play links keep their own Back. <!-- phone-polish 1 -->
+- **The keyboard no longer covers Save**: dialogs with a text field (Layouts, Report a problem, the command palette and others) move up above the on-screen keyboard, and on a touch screen they no longer pop the keyboard open by themselves. <!-- phone-polish 2 -->
+- **Bigger on touch screens when you want it**: **Settings ▸ Accessibility ▸ UI scale** grows the whole interface, panel tab strips and menus included. <!-- phone-polish 3 (the invisible 44 px tap areas ship off in 1.63: lane hitslop-fix) -->
+- **Tablets**: with the Properties column pinned full height, the toolbar moves over and centres in the space beside it instead of hiding under it. <!-- phone-polish 4 -->
+- **Long menus scroll**: the profile menu (and every other long menu) stays on screen in landscape and scrolls with a finger or the wheel. <!-- phone-polish 6 -->
+- Smaller ones: the animation player's controls wrap in landscape; the logo menu has a **Command palette** row; the "lowered the scene look" card sits at the bottom on touch screens so it does not cover the panels at the top; the **Towers** start screen has a touch line. <!-- phone-polish 5 -->
+
+### 🪟 Panels and sidebars
+- **Windows and menus stay out of the side columns**: the toolbar, floating windows and menus use the space between the open columns, and the toolbar centres there, pinned or not. When the bottom panel leaves a column too little room, the column hides itself and comes back when there is room again. <!-- dock-fixes 4, A', E -->
+- **Every column has its hide button**, the AI button opens and closes its own tab (an emptied column folds away), and the AI window keeps its size when you drag it partly off the screen. <!-- dock-fixes 1-3 -->
+- **A Panels button** on unfolded phones and tablets brings the side columns back with one tap. <!-- dock-fixes 8 -->
+- Smaller ones: the main menu opens over the left column instead of pushing it; **Free assets** opens where you are working; segmented buttons wrap instead of squeezing; long rows of filter chips and long menus fade at the edge that scrolls; dock tab menus have icons; a window that opened short can be made taller with its corner grip. <!-- dock-fixes B C D, PC-4, UI-6, 98-int 4a -->
+
+### 🥽 Play links on headsets and phones
+- **Enter VR works from a play link**: on a headset the game no longer starts flat by itself; the start card stays with **Enter VR** first, and pressing it opens VR (it used to start flat play on the screen instead). Leaving VR brings the card back. <!-- fix-play-link 1 -->
+- **"This scene uses modules" asks less, and looks right**: a module from the official modules collection installs by itself when you open a game's play link, a module you installed is remembered on the next visit, and **Load anyway** is remembered for that version. The question is styled like the rest of the app. <!-- fix-play-link 1 -->
+- **The play page is styled on every device** (it showed a plain serif font on some phones). <!-- fix-play-link 2 -->
+- Joining a game from a play link **no longer puts your camera inside another player's head**: you start a step away from them, also when two players join at the same moment. <!-- fix-play-link 4 + 98-int F4 -->
+- **Game menus fit narrow screens**: a menu made on a computer shrinks to fit a folded phone instead of running off both sides. <!-- fix-play-link 5 -->
+- **Sky quality ▸ Max** says what it loads on your device: "up to 8K" where the 8K sky loads, "4K" elsewhere. <!-- fix-play-link 6 -->
+- For developers: `window.tpPlay.state` reaches `ready` after a play link joins a session. <!-- fix-play-link 3 -->
+
 ## 1.62.0 — Sign in from another device 🔑
 
 ### 🔑 Sign in from another device (on theprototype.app)

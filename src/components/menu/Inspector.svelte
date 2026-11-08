@@ -37,6 +37,7 @@
 	import ModelSourceSection from './inspector/ModelSourceSection.svelte'; // 59 T1/T2/T7a
 	import { isReplaceableModel } from '$lib/modelTarget';
 	import HdriSection from './scene/HdriSection.svelte'; // 37-hdri
+	import BakeLightSection from './scene/BakeLightSection.svelte'; // 98 P1
 	import PhysicsFloats from '../sim/PhysicsFloats.svelte'; // 36-sim I1
 	import FluidEmitterSection from '../sim/FluidEmitterSection.svelte'; // 36-fb F23
 	import FluidInteractionRow from '../sim/FluidInteractionRow.svelte'; // 36-fb F23
@@ -126,6 +127,7 @@
 	import MaterialPresetsRow from './MaterialPresetsRow.svelte'; // 37 R5
 	import Cc0Credit from '../editors/Cc0Credit.svelte'; // 47-cc0: where a CC0 asset came from
 	import PostStack from './PostStack.svelte';
+	import PhotoEntry from '../photo/PhotoEntry.svelte';
 	import { showColliders, colliderVizObjects, setColliderViz } from '$lib/colliderHelpers';
 	import { enterColliderEdit } from '$lib/colliderEdit';
 	import { inferredColliderKind } from '$lib/colliderSpec';
@@ -192,6 +194,8 @@
 		setMusicPlaying,
 		setMusicVolume
 	} from '$lib/sceneMusic';
+	import { isProPreset } from '$lib/post/proPresetsCore.js';
+	import { applyProPreset } from '$lib/post/proPresets.js';
 	import {
 		environment,
 		ENVIRONMENT_PRESETS,
@@ -1870,7 +1874,7 @@
 					label="Environment preset"
 					options={envPresetOptions}
 					value={$environment.preset}
-					onpress={(key) => (key === 'custom' ? applyCustomPreset($environment.customPreset) : setEnvironment(key))}
+					onpress={(key) => (key === 'custom' ? applyCustomPreset($environment.customPreset) : isProPreset(key) ? applyProPreset(key) : setEnvironment(key))}
 				/>
 				<SliderRow
 					label="Exposure"
@@ -2123,7 +2127,9 @@
 					inherits, and a material on one object. Only the right to switch a layer off
 					is local — that is View ▸ Overrides, above.
 				</p>
+				<PhotoEntry />
 				<PostStack />
+				<BakeLightSection /><!-- 98 P1: scene data, saved + replicated -->
 				<p class="ui-section-label" data-anchor="Materials">Shader materials</p>
 				<p id="scene-look-shaders" class="text-[length:var(--fs-badge)] text-text-muted">
 					{shaderSummaryOf($shaderGraphs, $objectsGroup)}

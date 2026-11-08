@@ -1,0 +1,19 @@
+/* phone-polish (owner ruling 2026-11-05): the invisible tap area $lib/ui/hitSlop.js plans for small controls on a
+   touch screen. data-hs = which pseudo carries it (a = ::after, b = ::before) + `s` when the control was static and
+   needs a containing block. The pseudo paints nothing; a tap on it is a tap on the control. UNLAYERED so a
+   component's own ::after rules cannot hide it (the planner only picks a pseudo the control does not use). */
+[data-hs='as'],
+[data-hs='bs'] {
+	position: relative;
+}
+[data-hs^='a']::after,
+[data-hs^='b']::before {
+	content: '';
+	position: absolute;
+	top: calc(-1 * var(--hs-t, 0px));
+	right: calc(-1 * var(--hs-r, 0px));
+	bottom: calc(-1 * var(--hs-b, 0px));
+	left: calc(-1 * var(--hs-l, 0px));
+	background: transparent;
+	pointer-events: auto;
+}

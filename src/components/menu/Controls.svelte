@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onLayoutRestore } from '$lib/uiLayoutsCore';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
+	import { edgeFade } from '$lib/ui/edgeFade.js';
 	import { objectsGroup, TControls, transformMode, editorMode, isLocked, lockedObjects, globalScene, vrPassthrough, selectedObject, selectedObjects } from '../../stores/sceneStore';
 	import { chatUnread, chatMentioned } from '../../stores/appStore.js'; // 37 R15: the chat button's badge
 	import { chatHidden, flowGraphClose, flowCodeClose, animationClose, uvEditorClose, shaderEditorClose, hudEditorClose, timelineClose, explorerClose, profilerClose, codeWorkspaceClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, floatingToolbar, toolbarAlwaysOnTop, hudStackLift, showSimControls, expandedObjects } from '../../stores/appStore.js';
@@ -62,7 +63,7 @@
 	import { dockable } from '$lib/docking';
 	import { bottomDockable } from '$lib/bottomDockDrop';
 	import { dockShownKeys, dockOccupants, bottomInset, FLOW_FAMILY, armDockMode, DOCK_TITLES } from '$lib/bottomDock';
-	import { togglePanel } from '$lib/panelToggles';
+	import { togglePanel, toggleHostedWindow } from '$lib/panelToggles';
 	import { requestPlay, willEnterXR, willEnterAR, xrSessionFailed, playAsItems } from '$lib/playMode';
 	import { simpleUntilPlay, holdAdvanced } from '$lib/onboarding/onboardState.js'; // 76 FW1
 	// 60 Q1: Play here — a roster button (Customize), a row in Play's own menu, Ctrl+Shift+Enter
@@ -650,6 +651,9 @@
 	const qualityTitle = $derived.by(() => {
 		const q = $qualityState;
 		const what = q.labels.join(', ').toLowerCase();
+		// UI-9: a phone in Auto STARTS lighter (qualityGovernor's PHONE_START_LEVEL) before it has judged the scene
+		if (!q.pinned && String(q.reason).startsWith('phone'))
+			return 'Phones start with lighter drawing so the first seconds stay smooth: ' + what + '. Full quality comes back on its own when the frames allow. Click to keep it this way.';
 		return q.pinned
 			? 'Held at reduced quality (' + what + '). Click to restore full quality.'
 			: q.held
@@ -1300,7 +1304,7 @@
 			slot: 'chat-button',
 			icon: 'message-square',
 			tint: () => ($chatHidden !== 'hidden' ? ICON_ON : ICON_OFF),
-			run: () => chatHidden.set($chatHidden === 'hidden' ? '' : 'hidden')
+			run: () => toggleHostedWindow('chat')
 		},
 		mic: {
 			get title() {
@@ -1399,7 +1403,8 @@
 	/** the AI button press — AiHudButton's own path (I3). 86-fix N1: it always opens the window; with no
 	 *  provider set up the window itself offers Connect Claude or Settings ▸ Tools & connections */
 	function toggleAiAssistant() {
-		aiAssistantHidden.set($aiAssistantHidden === '' ? 'hidden' : '');
+		// dock-fixes: one tree for a floating, sidebar-docked or bottom-docked window ($lib/panelToggles)
+		toggleHostedWindow('aiAssistant');
 	}
 
 	/** the "+" press — MobileAddButton's own path: a new object lands in the middle of the
@@ -2071,15 +2076,18 @@
 		const r = el?.getBoundingClientRect();
 		return r && r.width > 0 && r.height > 0 ? boxOf(r) : null;
 	}
-	/** the room a cluster may take: the window less the pinned sidebars, the visible dock and a docked Connect bar */
+	/** the room a cluster may take: the window less the open sidebars, the visible dock and a docked Connect bar.
+	 *  dock-fixes (owner 2026-11-08): every OPEN column (the free viewport rect, $lib/sidebars), not only a pinned
+	 *  one — a placed cluster (the row beside the logo turned into a column, the stacks moved) drew over an
+	 *  unpinned sidebar */
 	function clusterArea(): Box {
 		const g = get(sidebarGeometry);
 		const vw = window.innerWidth;
 		const vh = window.innerHeight;
 		const inset = cssPx(getComputedStyle(document.documentElement).getPropertyValue('--bottom-inset')) || 0;
 		return {
-			left: g?.wide ? g.dockLeft : 0,
-			right: vw - (g?.wide ? g.dockRight : 0),
+			left: g?.wide ? g.freeLeft : 0,
+			right: vw - (g?.wide ? g.freeRight : 0),
 			top: get(connectDocked) ? get(connectBarHeight) : 0,
 			bottom: vh - inset
 		};
@@ -3291,11 +3299,18 @@
 		// a drag, Move toolbar and the overflow budget all stop at its edge; while Edit positions runs,
 		// EVERY open column does (the user's "next to the sidebar, not on top of it"). The geometry is
 		// 42 sidebars' store (`$lib/sidebars`), the same numbers its columns are drawn from.
+		// dock-fixes (owner 2026-11-08): EVERY open column, pinned or not, and all the time — the bar lives in the
+		// FREE viewport between the sidebars (centred there, shifting as a column opens / resizes, folding into
+		// its "»" before it would overlap one). An unpinned column used to let the bar slide under its bottom.
 		const sb = get(sidebarGeometry);
 		if (sb?.wide) {
-			if (sb.left.shown && (sb.left.full || editing)) left = Math.max(left, sb.leftX + sb.left.w + EDGE_MARGIN);
-			if (sb.right.shown && (sb.right.full || editing)) right = Math.min(right, vw - sb.right.w - EDGE_MARGIN);
+			if (sb.freeLeft) left = Math.max(left, sb.freeLeft + EDGE_MARGIN);
+			if (sb.freeRight) right = Math.min(right, vw - sb.freeRight - EDGE_MARGIN);
 		}
+		// phone-polish item 4: with a column OPEN the bar's home is the middle of the width that is
+		// left, not of the screen — on a tablet the screen's middle sits against (or under) the column
+		const pinned = left !== EDGE_MARGIN || right !== vw - EDGE_MARGIN;
+		const home = pinned ? (left + right) / 2 : vw / 2;
 		// the bar's ROW is its bottom bar-height: a wrapped edit bar is taller, and reading its whole box
 		// would let a corner button ABOVE the row narrow the band it wraps into (and so on)
 		const rowH = cssPx(getComputedStyle(document.documentElement).getPropertyValue('--hud-bar-h')) || pill.height;
@@ -3330,7 +3345,7 @@
 		const min = left + half;
 		const max = right - half;
 		const ok = max - min >= 1;
-		const next = { min, max, mid: ok ? Math.max(min, Math.min(max, vw / 2)) : vw / 2, ok };
+		const next = { min, max, mid: ok ? Math.max(min, Math.min(max, home)) : home, ok };
 		// REASSIGNED, never mutated: `$derived` compares with ===. Guarded on the values
 		// so a ResizeObserver callback can never write its way into a second callback.
 		if (next.min !== track.min || next.max !== track.max || next.mid !== track.mid || next.ok !== track.ok)
@@ -3653,7 +3668,13 @@
 		barPlaced
 			? 'left: var(--cl-bar-x, 50%); top: var(--cl-bar-y, auto); bottom: auto; translate: none; touch-action: none;' + (movingBar ? ' cursor: grabbing;' : '')
 			:
-		($floatingToolbar ? 'bottom: calc(var(--bottom-inset, 0px) + 16px);' : 'bottom: 16px;') +
+		// phone-polish: with a dock up the bar clears the dock's tab strip (DockTabs' -top-6 = 1.5rem above the dock's
+		// edge) by 4 px — at 16 px it covered the strip's own buttons (1 at 100 %, 6 at 130 % interface scale, measured
+		// on the unfolded phone). Inline px is not rewritten by a11y-css, so the 16 / 4 px scale by --ui-scale here.
+		// No dock (inset 0): max() picks the 16 px floor, as before.
+		($floatingToolbar
+			? 'bottom: calc(var(--bottom-inset, 0px) + max(16px * var(--ui-scale, 1), min(var(--bottom-inset, 0px), 1.5rem + 4px * var(--ui-scale, 1))));'
+			: 'bottom: 16px;') +
 			(editCentre != null
 				? ` left: ${Math.round(editCentre)}px; max-width: ${Math.max(0, Math.floor(editPlace!.right - editPlace!.left))}px;`
 				: track.mid > 0
@@ -4156,7 +4177,7 @@
 	<div class="obj-filters flex flex-col gap-1">
 		<div class="relative flex items-center gap-1">
 			<!-- 80.2: one scrollable chip row that never overflows the window -->
-			<div id="filter-chips" class="tp-noscrollbar flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap scrollbar-none" use:chipScroll>
+			<div id="filter-chips" class="tp-noscrollbar flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap scrollbar-none" use:chipScroll use:edgeFade>
 				<button
 					class="obj-chip"
 					aria-pressed={!searchTypes.size && !viewMode}
@@ -4385,7 +4406,7 @@
 				title={qualityTitle}
 				use:qualityChipClick
 			>
-				<Badge tone="warn" text={'Reduced quality' + ($qualityState.pinned ? ' · held' : ' (scene is heavy)')} />
+				<Badge tone="warn" text={'Reduced quality' + ($qualityState.pinned ? ' · held' : String($qualityState.reason).startsWith('phone') ? ' (phone start)' : ' (scene is heavy)')} />
 			</button>
 		{/if}
 	</div>

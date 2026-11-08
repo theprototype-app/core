@@ -45,6 +45,7 @@ export const SETTINGS_ROWS = [
 	["Interface", "Floating toolbar", "The bottom toolbar lifts above the docked Node editor or Explorer when one opens, so it never sits over the…"],
 	["Interface", "Toolbar always on top", "The bottom toolbar paints over the docked panels and over floating windows, so it is always reachable."],
 	["Interface", "Window positions", "Bring back any floating window (object list, chat, Explorer, editors) that drifted off-screen or behind the UI"],
+	["Interface", "Panels button", "A button beside your profile that shows or hides both sidebars, keeping their tabs open. Auto: on touch screens…"],
 	["Interface", "Touch tools", "Undo / Redo / Multi-select buttons beside the logo, for touch — no Ctrl+Z or Shift needed."],
 	["Interface", "Allow undocking (touch)", "On touch / small screens the Flow and Explorer panels stay docked and their \"undock\" buttons are hidden (fl…"],
 	["Interface", "Advanced mode", "Show system objects (module content, environment rig) as a System filter in the object list"],

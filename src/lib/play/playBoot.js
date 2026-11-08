@@ -20,6 +20,7 @@
 // `?s=<id>` is loaded by the cloud plugin's deep link (unchanged); `?scene=<url>` (a .tpscene that
 // is not a community record) is loaded here through the editor's own `loadRemoteScene`.
 import { globalRenderer, isLocked } from '../../stores/sceneStore';
+import { sessionHost } from '../connectionState';
 import { embedOpenUrl, embedSceneId } from '../playMode';
 import { appUrl } from '../playOrigin.js';
 import { playEntrySceneUrl } from './playEntry.js';
@@ -113,7 +114,8 @@ export function startPlayEntry() {
 	// LOADED: every remote load (this entry's `?scene=` and the plugin's `?s=`) goes through
 	// sceneTemplates.loadRemoteScene, whose `templateLoaded` fires once the payload applied
 	const markLoaded = (/** @type {boolean} */ ok, /** @type {string} */ why = '') => {
-		if (timings.loadedMs != null) return;
+		// once — except that a later success (a join after a refused load) lifts an 'error'
+		if (timings.loadedMs != null && !(ok && api.state === 'error')) return;
 		timings.loadedMs = Math.round(performance.now());
 		if (ok) {
 			if (api.state !== 'playing') setState('ready');
@@ -124,10 +126,21 @@ export function startPlayEntry() {
 		}
 		resolveLoaded(ok);
 	};
+	// JOINED: a play link with an invite joins a session, and a joiner's world comes from the host,
+	// not from a load — a viewer's own `loadRemoteScene` is refused (it may not replace the shared
+	// scene), so `templateLoaded` never fires for it. Being let in IS the scene arriving (the host's
+	// full state follows on the same ordered connection): the N6 sat at 'loading' after a join.
+	const offHost = sessionHost.subscribe((/** @type {string | null} */ host) => {
+		if (!host) return;
+		markLoaded(true);
+		queueMicrotask(() => offHost());
+	});
+
 	import('../sceneTemplates').then(({ templateLoaded, loadRemoteScene }) => {
-		let first = true;
+		// fix-play-link: NO first-value skip. The store starts null on this page (nothing loads a
+		// scene before this entry), and when the plugin's `?s=` load landed before this import
+		// resolved, the skipped first value WAS the load — the state then stayed 'loading' forever
 		templateLoaded.subscribe((v) => {
-			if (first) return void (first = false);
 			if (v) markLoaded(true);
 		});
 		const sceneUrl = playEntrySceneUrl();

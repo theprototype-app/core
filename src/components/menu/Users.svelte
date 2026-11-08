@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { backClose } from '$lib/backStack.js'; // phone-polish: Android Back closes it
 	import { cameraPreviews, joinPeerPreview, previewLabel } from '$lib/cameraPreview';
 	import Icon from '../ui/Icon.svelte';
 	import { roving } from '$lib/keyboardNav'; // 53 A3: the top-right group is one tab stop
@@ -120,6 +121,7 @@
 	import PeerProfileCard from './PeerProfileCard.svelte';
 	import { peerQuality, qGlyph } from '$lib/networkQuality';
 	import ContextMenu from '../ContextMenu.svelte';
+	import { panelsButtonShown, panelsOpen, togglePanels, hidePanelsButton } from '$lib/panelsButton';
 	import NotificationCenter from './NotificationCenter.svelte';
 	// 42 I9: which of the group's own buttons are placed here, in what order (Controls' layout)
 	import { toolbarSlots, slotOrder, TOP_DEFAULT } from '$lib/toolbarSlots';
@@ -754,6 +756,21 @@
 		// still the CIRCLE's right edge, read from its rect (never floating-ui's drifting maths, the mobile-
 		// viewport trap below), so the notch's circle sits exactly over the trigger wherever it is.
 		dropdownEl.style.setProperty('--pm-right', `${Math.max(0, Math.round(window.innerWidth - r.right))}px`);
+		// phone-polish item 6: the menu grew tall (account, sign-in methods, community, sponsor …) and on a
+		// short screen — a phone in landscape, a browser with its bars showing — it ran off the bottom with no
+		// way to reach its last rows. It stops at the visible bottom and SCROLLS (wheel and a finger's drag);
+		// `overscroll-behavior` keeps the drag from scrolling or zooming the page behind it. The visible top is
+		// the rect's top: the -50 px margin seats the notch over the trigger. The phone sheet (phone.css) owns
+		// its own height.
+		// The cap is a CSS variable read by the rule below, not an inline overflow: the inline `overflow-y` was dropped
+		// again after placement (measured: max-height stayed, overflow-y vanished), leaving a clipped menu.
+		if ($phoneShellActive) {
+			dropdownEl.style.removeProperty('--pm-max-h');
+			return;
+		}
+		const visTop = dropdownEl.getBoundingClientRect().top;
+		const vh = window.visualViewport?.height ?? window.innerHeight;
+		dropdownEl.style.setProperty('--pm-max-h', `${Math.max(160, Math.round(vh - Math.max(0, visTop) - 8))}px`);
 	}
 	/** fix-batch-1 #23: the trigger's keys — Enter / Space toggle, ↓ opens; opening moves focus in */
 	function triggerKey(e: KeyboardEvent) {
@@ -863,6 +880,89 @@
 	// 43 K3: the phone shell keeps the group's default ORDER, but a native the person took out (Edit
 	// positions / Customize, on the unfolded screen) stays out here too — hidden stays hidden
 	const trSlots = $derived($phoneShell ? { top: TOP_DEFAULT.filter((id) => $toolbarSlots.top.includes(id)), editing: false } : $toolbarSlots);
+	// dock-fixes item 8 — the Panels button's press, menu and long press (touch has no right button; the
+	// timer opens the menu while the finger is still down — ContextMenu's press-and-click backdrop keeps
+	// the lift from closing it)
+	let panelsMenu = $state<{ x: number; y: number } | null>(null);
+	let panelsTimer: ReturnType<typeof setTimeout> | null = null;
+	let panelsSwallow = false;
+	function clearPanelsPress() {
+		if (panelsTimer) clearTimeout(panelsTimer);
+		panelsTimer = null;
+	}
+	function onPanelsDown(e: PointerEvent) {
+		clearPanelsPress();
+		panelsSwallow = false;
+		if (e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
+		const x = e.clientX;
+		const y = e.clientY;
+		panelsTimer = setTimeout(() => {
+			panelsTimer = null;
+			panelsSwallow = true; // the click the lift produces is not a toggle
+			panelsMenu = { x, y };
+		}, 500);
+	}
+	function onPanelsClick() {
+		if (panelsSwallow) {
+			panelsSwallow = false;
+			return;
+		}
+		togglePanels();
+	}
+	function onPanelsMenu(e: MouseEvent) {
+		e.preventDefault();
+		clearPanelsPress();
+		// Android's own long-press may ALSO fire this: one menu, not two
+		if (!panelsMenu) panelsMenu = { x: e.clientX, y: e.clientY };
+	}
+	// dock-fixes item 4 — the top row between two columns that both reach it (a pinned left one + a right one under a
+	// docked Connect bar: the unfolded N6) can be narrower than the group + the profile. The group then STACKS into a
+	// column under the profile, inside the free width, instead of drawing over the left column. The row width is
+	// measured only while it is a row (the stacked box would feed its own decision back — the frozen-span rule).
+	let trEl = $state<HTMLElement | null>(null);
+	let trRowW = 0;
+	let trStacked = $state(false);
+	function measureTr() {
+		if (!trEl || $phoneShell) {
+			trStacked = false;
+			return;
+		}
+		if (!trStacked) trRowW = trEl.offsetWidth;
+		const g = $sidebarGeometry;
+		const free = window.innerWidth - (g?.freeTopLeft ?? 0) - (g?.freeTopRight ?? 0);
+		// the group sits 76 px in from the corner (the profile's place) and wants 8 px clear of the left column
+		trStacked = !!trRowW && free < trRowW + 76 + 8;
+	}
+	$effect(() => {
+		void $sidebarGeometry;
+		void $toolbarSlots;
+		void $panelsButtonShown;
+		const t = setTimeout(measureTr, 0);
+		window.addEventListener('resize', measureTr);
+		return () => {
+			clearTimeout(t);
+			window.removeEventListener('resize', measureTr);
+		};
+	});
+
+	const panelsMenuItems = $derived([
+		{
+			label: $panelsOpen ? 'Hide the sidebars' : 'Show the sidebars',
+			icon: 'columns-3',
+			tooltip: 'Show or hide both sidebars — their tabs stay open',
+			action: () => togglePanels()
+		},
+		{
+			label: 'Hide this button',
+			icon: 'eye-off',
+			tooltip: 'Remove the Panels button — Settings ▸ Interface ▸ Panels button brings it back',
+			action: () => {
+				hidePanelsButton();
+				showToast('Panels button hidden — Settings ▸ Interface ▸ Panels button brings it back');
+			}
+		}
+	]);
+
 	const trOrder = (id: string) => slotOrder(trSlots.top, id);
 	const trShown = (id: string) => !trSlots.editing && trOrder(id) != null;
 </script>
@@ -1073,10 +1173,12 @@
 <!-- 42 I2: a FULL-HEIGHT right sidebar takes the corner — the cluster moves inward by its width.
      45 N3: in ONE frame (no `right` transition): the user asked for no animation on the profile and the top
      clusters when a sidebar opens, closes or hides -->
-<div class="top-right-chrome" style="position: fixed; right: var(--sb-dock-right, 0px); z-index: var(--z-chrome-top); top: {$connectDocked ? $connectBarHeight + 'px' : '0px'};">
+<!-- dock-fixes (owner 2026-11-08): ANY right column that reaches this row (pinned, or tucked under a docked Connect
+     bar) takes the corner — the group drew over the column's header before (--sb-free-top-right, $lib/sidebars) -->
+<div class="top-right-chrome" style="position: fixed; right: var(--sb-free-top-right, 0px); z-index: var(--z-chrome-top); top: {$connectDocked ? $connectBarHeight + 'px' : '0px'};">
 	<!-- 38 R8: one glass group (styles/hud.css) — notes, notifications, peers — sitting just
 	     left of the profile circle, which keeps its own place (its dropdown is anchored to it) -->
-	<div id="hud-tr" class="tp-ui hud-glass hud-tr" style="position: absolute; top: 10px; right: 76px; z-index: 2;" role="toolbar" aria-label="Notes, notifications and people" use:roving={{ item: '.hud-cell:not(.hud-edit-item):not(.hud-edit-add)', axis: 'x' }}>
+	<div id="hud-tr" bind:this={trEl} class="tp-ui hud-glass hud-tr" class:tr-stacked={trStacked} style="position: absolute; top: 10px; right: 76px; z-index: 2;" role="toolbar" aria-label="Notes, notifications and people" use:roving={{ item: '.hud-cell:not(.hud-edit-item):not(.hud-edit-add)', axis: 'x' }}>
 	<!-- E2: scene-notes drawer toggle -->
 	{#if trShown('notes')}
 	<button
@@ -1348,6 +1450,28 @@
 		{/if}
 	</div>
 {/if}
+	<!-- dock-fixes item 8 (owner 2026-11-08): the PANELS button — shows / hides both sidebars ($lib/panelsButton),
+	     the last cell of the group, beside the profile. On by default on a touch screen with sidebars; its menu
+	     (right-click, a long press on touch) hides it, Settings ▸ Interface ▸ Panels button brings it back -->
+	{#if $panelsButtonShown && !trSlots.editing}
+	<button
+		id="panels-toggle"
+		class="hud-cell"
+		class:on={$panelsOpen}
+		style:order={900}
+		aria-pressed={$panelsOpen}
+		aria-label={$panelsOpen ? 'Hide the sidebars' : 'Show the sidebars'}
+		title={$panelsOpen ? 'Hide the sidebars (their tabs stay open) — right-click or long-press for more' : 'Show the sidebars — right-click or long-press for more'}
+		onclick={onPanelsClick}
+		oncontextmenu={onPanelsMenu}
+		onpointerdown={onPanelsDown}
+		onpointerup={clearPanelsPress}
+		onpointercancel={clearPanelsPress}
+		onpointerleave={clearPanelsPress}
+	>
+		<Icon name="columns-3" size={20} aria-hidden="true" />
+	</button>
+	{/if}
 	</div>
 	<!-- main profile button: a single clean Avatar (no href -> no navigation bug; no
 		 3-branch) that picks the effective avatar (custom upload > stored > cloud
@@ -1392,6 +1516,8 @@
 	{#if openDropdown}
 		<div
 			id="avatar-dropdown"
+			use:backClose={() => (openDropdown = false)}
+			use:minimalScroll
 			popover={$phoneShellActive ? undefined : 'manual'}
 			role="tooltip"
 			{@attach dropdownAttach}
@@ -1465,6 +1591,10 @@
 	<!-- 55 A9: the peer menu (lib/peerMenu.js builds it; the VR panel renders the same list) -->
 	<ContextMenu x={peerMenu.x} y={peerMenu.y} sizeKey="peer" items={peerMenuRows(peerMenu)} onclose={closePeerMenu} />
 {/if}
+{#if panelsMenu}
+	<!-- dock-fixes item 8: the Panels button's menu -->
+	<ContextMenu x={panelsMenu.x} y={panelsMenu.y} sizeKey="panels-button" items={panelsMenuItems} onclose={() => (panelsMenu = null)} />
+{/if}
 {#if changesMenu}
 	<ContextMenu x={changesMenu.x} y={changesMenu.y} sizeKey="peer-changes" items={changesItems(changesMenu.peerId)} onclose={() => (changesMenu = null)} />
 {/if}
@@ -1534,6 +1664,16 @@
 </ModalDialog>
 
 <style>
+	/* dock-fixes item 4: too narrow a top row between two columns — the group stands in a column under the profile
+	   (inline `top / right` place the row, so only !important moves it; the cluster's own placement — Edit positions,
+	   `cl-top-placed` in hud.css — is untouched: a placed group never stacks, its area is already the free rect) */
+	:global(:root:not(.cl-top-placed)) .hud-tr.tr-stacked {
+		flex-direction: column;
+		height: auto;
+		padding: 5px 0;
+		top: 56px !important;
+		right: 22px !important;
+	}
 	/* Role pill + change-role dropdown (cloud-roles bridge). These MUST live outside
 	   any media query — they previously sat inside @media(max-width:640px) so on a
 	   normal-width screen the "change role" control rendered as an unstyled native
@@ -1612,6 +1752,15 @@
 	   right: 0 chrome), so pin it and let floating-ui keep only the vertical placement.
 	   !important beats floating-ui's non-important inline `left`; :global because the
 	   panel is rendered by a child component (no scope class). */
+	/* phone-polish item 6: never past the visible bottom; scrolls by wheel and finger (the phone sheet, phone.css,
+	   owns its own height and scroll) */
+	:global(:root:not(.phone-shell) #avatar-dropdown) {
+		max-height: var(--pm-max-h, none);
+		overflow-y: auto;
+		overscroll-behavior: contain;
+		/* 98-int: the app's minimal scrollbar (use:minimalScroll on the panel), never the native bar (NOTES-38 #1) */
+		scrollbar-width: none;
+	}
 	:global(#avatar-dropdown) {
 		left: auto !important;
 		/* 45 N4: the circle's CURRENT right edge (placeDropdown measures it); 20 px = the corner's own inset */

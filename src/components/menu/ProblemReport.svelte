@@ -1,4 +1,5 @@
 <script>
+	import { backClose } from '$lib/backStack.js'; // phone-polish: Android Back closes it
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	// 37 R20 — "Report a problem" (desktop and the Quest browser). The picture was taken when
 	// the menu row was pressed (problemReport.js captureProblem). Here the person drags boxes
@@ -6,6 +7,7 @@
 	// ticked, and only when the cloud plugin is there and they are signed in) or keep it on
 	// this device. Boxes are stored as fractions of the picture.
 	import { onDestroy } from 'svelte';
+	import { autofocusOk } from '$lib/inputDevice';
 	import { problemDraft, closeProblemReport, reporterAccount, normalizeMark, MAX_MARKS } from '$lib/problemReport';
 	import { problemReporter } from '$lib/cloudHooks';
 
@@ -115,7 +117,7 @@
 
 {#if $problemDraft}
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-	<div id="problem-report" class="problem ui-panel" use:minimalScroll role="dialog" aria-label="Report a problem" tabindex="-1">
+	<div id="problem-report" class="problem ui-panel" use:minimalScroll use:backClose={() => (drawing ? (drawing = null) : void answer(null))} role="dialog" aria-label="Report a problem" tabindex="-1">
 		<p class="title">Report a problem</p>
 		{#if $problemDraft.shotUrl}
 			<p class="muted">Drag on the picture to box what is wrong{marks.length ? ` (${marks.length})` : ''}.</p>
@@ -140,7 +142,7 @@
 		<label class="field">
 			<span>What happened?</span>
 			<!-- svelte-ignore a11y_autofocus -->
-			<textarea id="problem-note" rows="3" maxlength="2000" bind:value={note} autofocus placeholder="What did you expect, and what happened instead?"></textarea>
+			<textarea id="problem-note" rows="3" maxlength="2000" bind:value={note} autofocus={autofocusOk()} placeholder="What did you expect, and what happened instead?"></textarea>
 		</label>
 		{#if $problemDraft.perf}
 			<label class="check">
@@ -178,7 +180,14 @@
 		z-index: var(--z-modal, 1100);
 		width: min(560px, calc(100vw - 32px));
 		max-height: calc(100vh - var(--connect-bottom, 0px) - 72px);
+		max-height: calc(100dvh - var(--connect-bottom, 0px) - 72px);
 		overflow-y: auto;
+	}
+	/* phone-polish item 2: with the on-screen keyboard up, sit in what is left above it (Send and
+	   Cancel stayed under it on the HONOR) — the card scrolls inside that */
+	:global(:root.kb-open) .problem {
+		top: calc(var(--kb-top, 0px) + 8px);
+		max-height: calc(100dvh - var(--kb-inset, 0px) - var(--kb-top, 0px) - 16px);
 		display: flex;
 		flex-direction: column;
 		gap: 8px;

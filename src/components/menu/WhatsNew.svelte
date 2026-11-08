@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { backClose } from '$lib/backStack.js'; // phone-polish: Android Back closes it
 	// RW/B4: the changelog as a floating window (ui-panel + dragWindow). Opened by the logo-menu
 	// row, the update toast, or Settings ▸ About. Opening it marks the version seen.
 	// 41 G3b: it lives on --z-onboarding, ABOVE the modals and every top/bottom button (logo,
@@ -41,11 +42,12 @@
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		id="whats-new-window"
+		use:backClose={closeWhatsNew}
 		bind:this={winEl}
 		tabindex="-1"
 		class="ui-panel fixed flex flex-col overflow-hidden outline-hidden"
 		use:dragWindow={{ key: 'whatsNewWin', defaultRect: { left: 220, top: 90 }, resizable: true, minW: 320, minH: 240 }}
-		style="z-index: var(--z-onboarding); width: min(620px, 94vw); height: min(620px, 80vh)"
+		style="z-index: var(--z-onboarding); width: min(620px, 94vw); height: min(620px, 80vh); max-height: calc(100dvh - var(--dw-top, 90px) - 12px)"
 		onkeydown={onKeydown}
 	>
 		<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">

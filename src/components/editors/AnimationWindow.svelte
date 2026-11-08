@@ -1835,7 +1835,7 @@
 <svelte:window onresize={fitToViewport} />
 
 {#snippet clipSettings(/** @type {boolean} */ stacked)}
-	<div class={stacked ? "an-clip-pane" : "flex items-center gap-1.5"}>
+	<div class={stacked ? "an-clip-pane" : "an-clip-row flex items-center gap-1.5"}>
 		<label class="flex items-center gap-1 text-[11px] text-text-muted" title="Clip length. Keys keep their times — use ＋ ▸ Retime to stretch the movement itself.">
 			<span>length</span>
 			<DragRow
@@ -2857,6 +2857,21 @@
 	/* compact (NOTES-38 #35): the one visible pane takes the whole width */
 	.an-pane-full { width: auto; flex: 1 1 auto; border-left: 0; border-right: 0; }
 	.an-pane-off { display: none; }
+	/* phone-polish item 5: on a touch screen the clip settings and the timeline tools WRAP instead of
+	   scrolling sideways — in landscape on the HONOR, Loop mode and Fit sat past the edge of a strip
+	   nobody knew to swipe */
+	@media (pointer: coarse) {
+		:global(#animation-settings),
+		:global(#animation-plot-tools) {
+			flex-wrap: wrap;
+			overflow-x: visible;
+			row-gap: 4px;
+		}
+		.an-clip-row {
+			flex-wrap: wrap;
+			row-gap: 4px;
+		}
+	}
 	/* the Clip pane: the transport's clip settings, wrapped into rows instead of one strip */
 	.an-clip-pane { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); align-items: center; gap: var(--space-2) var(--space-3); }
 </style>

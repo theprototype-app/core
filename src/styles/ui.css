@@ -172,6 +172,7 @@ input.tp-check:disabled {
 		height: min(var(--inspector-h, 45vh), var(--ps-sheet-max, 100vh)) !important;
 		/* never rise above the Connect bar + top-right chrome (like the Flow/Explorer dock) */
 		max-height: calc(100vh - var(--connect-bottom, 54px) - 56px) !important;
+		max-height: calc(100dvh - var(--connect-bottom, 54px) - 56px) !important;
 		border-radius: 0.75rem 0.75rem 0 0 !important;
 	}
 	/* 38 NOTES-38 #32 (a): on the phone shell the Inspector sheet ends at the TOP of the bottom bar
@@ -182,6 +183,7 @@ input.tp-check:disabled {
 		padding-bottom: 16px !important;
 		/* 40 F1: the shell's sheet room — clear of the top bar AND of the selection strip */
 		max-height: var(--ps-sheet-max, calc(100vh - var(--ps-bar-h) - 64px)) !important;
+		max-height: var(--ps-sheet-max, calc(100dvh - var(--ps-bar-h) - 64px)) !important;
 	}
 	.ins-resize {
 		display: flex !important;
@@ -281,6 +283,13 @@ dialog.tp-modal-frame {
 	max-width: min(1200px, 94vw) !important;
 	max-height: 88vh;
 }
+/* phone-polish item 2: the on-screen keyboard (lib/ui/keyboardInset.js — 0 when it is down). Android
+   Chrome draws it OVER the layout viewport, so a centred dialog kept Save/Close under it: centre in
+   what is left above it instead, and never grow past it (the body is the scroller). */
+dialog.tp-modal-frame {
+	top: var(--kb-top, 0px);
+	bottom: var(--kb-inset, 0px);
+}
 dialog.tp-modal-frame::before {
 	content: '';
 	position: fixed;
@@ -290,8 +299,8 @@ dialog.tp-modal-frame::before {
 }
 @media (max-width: 640px) {
 	dialog.tp-modal-frame {
-		top: var(--connect-bottom, 0px) !important;
-		bottom: 0 !important;
+		top: max(var(--connect-bottom, 0px), var(--kb-top, 0px)) !important;
+		bottom: var(--kb-inset, 0px) !important;
 		margin: 0 !important;
 		width: 100vw !important;
 		max-width: 100vw !important;

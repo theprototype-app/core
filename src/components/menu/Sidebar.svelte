@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { backClose } from '$lib/backStack.js'; // phone-polish: Android Back closes it
+	import { edgeFade } from '$lib/ui/edgeFade.js'; // 98-int UI-6: the edge with more rows fades (the scroll cue)
 	import Icon from '../ui/Icon.svelte';
 	import SheetGrip from '../ui/SheetGrip.svelte';
 	import { readSheetH, saveSheetH } from '$lib/ui/sheetDrag.js';
@@ -37,6 +39,7 @@
 	import { whatsNewUnseen, openWhatsNew } from '$lib/whatsNew';
 	// 36 I5: own lines (not the shared icon list) so a merge with the menu's other lanes stays a union
 	import { checkpointsOpen, checkpointSaveOpen } from '../../stores/appStore.js'; // 36 B14
+	import { commandPaletteOpen } from '../../stores/appStore'; // phone-polish item 5: the palette's touch entry
 	import { startEditorTour } from '$lib/tours/builtin.js';
 	import { statsOpen } from '$lib/sceneBudget';
 	import { layoutsMenuOpen } from '$lib/uiLayouts'; // 37 R14
@@ -46,6 +49,7 @@
 	import SaveOptionsModal from './SaveOptionsModal.svelte'; // 41b H14
 	import { saveManyDialog } from '$lib/saveManyState'; // 56 C13
 	import { openAssetBrowser } from '$lib/cc0/assetBrowserState.js'; // 47-cc0
+	import { openWindowHere } from '$lib/dockMenu'; // dock-fixes D: opens where you work
 
 	// 203: redesigned as a compact floating panel — flat list (order preserved,
 	// no boxed group / section headers / vertical bar), a fast fade-in (was a
@@ -147,6 +151,38 @@
 
 	// 15-J viewer gate + 33 (L3) the Clear scene modal live in $lib/sceneTemplates.confirmClearScene
 	// now — shared with the Templates modal's "Blank scene" card.
+
+	/**
+	 * dock-fixes E (owner 2026-11-08, shot 5): the open menu ends ABOVE the bottom toolbar instead of cutting it —
+	 * it scrolls instead (it already does on a short screen). Only when the toolbar is under the menu's column; the
+	 * toolbar itself never moves for the menu (the menu overlays, it relayouts nothing).
+	 */
+	function clearToolbar(node: HTMLElement, on: boolean) {
+		let enabled = on;
+		const fit = () => {
+			node.style.maxHeight = '';
+			if (!enabled) return;
+			const pill = document.getElementById('controls-pill');
+			const p = pill?.getBoundingClientRect();
+			const m = node.getBoundingClientRect();
+			// UI-6 (HONOR 718x587): it scrolled, but ran to the very bottom edge — it now ends 8 px inside the viewport
+			let bottom = window.innerHeight - 8;
+			if (p && p.width && p.left < m.right && p.right > m.left && p.top < m.bottom) bottom = Math.min(bottom, p.top - 8);
+			if (m.bottom > bottom) node.style.maxHeight = Math.max(160, Math.floor(bottom - m.top)) + 'px';
+		};
+		const raf = requestAnimationFrame(fit);
+		window.addEventListener('resize', fit);
+		return {
+			update(v: boolean) {
+				enabled = v;
+				fit();
+			},
+			destroy() {
+				cancelAnimationFrame(raf);
+				window.removeEventListener('resize', fit);
+			}
+		};
+	}
 </script>
 
 <!-- 94: the logo IS the menu button. Open state = accent ring. -->
@@ -170,6 +206,9 @@
 {#if !$closeMenu}
 	<nav
 		id="sidebar70"
+		use:backClose={() => closeMenu.set(true)}
+		use:clearToolbar={!$phoneShellActive}
+		use:edgeFade={$phoneShellActive ? 'off' : 'y'}
 		transition:fade={{ duration: motionMs(130) }}
 		class="app-sidebar tp-ui tp-menu tp-noscrollbar fixed"
 		style="--side-top: {$connectDocked ? $connectBarHeight + 64 : 64}px; {$phoneShellActive ? `--menu-sheet-h: ${menuShown}px` : ''}"
@@ -289,7 +328,7 @@
 			<span class="side-ico"><Icon name="trash-2" size={16} class="ico-danger" aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Clear Scene</span>
 		</button>
 		<!-- 47-cc0: free CC0 models, skies and materials (Poly Haven + ambientCG) -->
-		<button id="open-asset-browser" class="side-row" onclick={() => { openAssetBrowser(); closeMenu.set(true); }}>
+		<button id="open-asset-browser" class="side-row" onclick={() => { openWindowHere('assets', openAssetBrowser); closeMenu.set(true); }}>
 			<span class="side-ico"><Icon name="package-open" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Free assets (CC0)</span>
 		</button>
 		<!-- 76 FW1: until a new user's first Play, Modules and Layouts wait under "More" -->
@@ -356,6 +395,11 @@
 		<!-- 37 R20: a picture + boxes round what is wrong + a note, sent to the team with consent -->
 		<button id="report-problem" class="side-row" onclick={() => { closeMenu.set(true); void openProblemReport(); }}>
 			<span class="side-ico"><Icon name="message-square-warning" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Report a problem</span>
+		</button>
+		<!-- phone-polish item 5: the command palette was Ctrl+K only — no way in on a touch screen -->
+		<button id="open-command-palette" class="side-row" onclick={() => { closeMenu.set(true); commandPaletteOpen.set(true); }}>
+			<span class="side-ico"><Icon name="search" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Command palette</span>
+			<span class="side-hint">Ctrl+K</span>
 		</button>
 		<!-- 36 U5: "Live profiler" left the menu — it is a Profiler tool, opened from the
 		     Profiler tab's own header (#profiler-open-live) beside Record and Import -->

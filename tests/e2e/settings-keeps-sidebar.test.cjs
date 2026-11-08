@@ -6,6 +6,9 @@
 // full-screen Settings sheet and brings it back (unchanged — premise).
 // Desktop 1440x900 with a REAL mouse through the burger; unfolded N6 (770x850) with REAL taps.
 // Counterfactual: on origin/feat/43-int every "still open" check is red (hidePanels on open).
+// 98-int (dock-fixes A', owner 2026-11-08): on the unfolded phone both columns together leave too little viewport, so
+// the side opened EARLIER collapses to its show button by design. "Hides nothing" is therefore checked against what was
+// on screen BEFORE Settings opened (each side visible or collapsed stays so), plus the stores (nothing was closed).
 const h = require('./helpers.cjs');
 const THEME = process.env.THEME || 'dark';
 const OUT = process.env.OUT || null;
@@ -18,7 +21,9 @@ const panels = (P) =>
 		const vis = (sel) => { const el = document.querySelector(sel); if (!el) return false; const r = el.getBoundingClientRect(); const cs = getComputedStyle(el); return r.width > 0 && r.height > 0 && cs.display !== 'none' && cs.visibility !== 'hidden'; };
 		return {
 			settings: g(s.settingsOpen) === true && !!document.querySelector('dialog.settings-dialog[open]'),
-			inspector: g(s.inspectorClose) === false && vis('#inspector'),
+			inspector: g(s.inspectorClose) === false,
+			inspectorShown: g(s.inspectorClose) === false && vis('#inspector'),
+			autoHidden: g(s.sidebars.sidebarAutoHidden),
 			objects: g(s.objectListClose) === false,
 			flow: g(s.flowGraphClose) === false,
 			menu: g(s.closeMenu) === false
@@ -55,12 +60,15 @@ async function run(browser, name, context, how) {
 	await seed(P);
 	const before = await panels(P);
 	h.check(before.inspector && before.objects && before.flow && !before.settings, `${T}premise: Configure Scene (right sidebar), Objects (left sidebar) and the Node editor are open (${JSON.stringify(before)})`);
+	// desktop: both columns fit, so Configure Scene is ON SCREEN (the A' rule must not collapse anything at 1440)
+	if (name === 'desktop') h.check(before.inspectorShown, `${T}premise: Configure Scene is on screen at 1440 px (${JSON.stringify(before)})`);
+	const same = (x) => x.inspectorShown === before.inspectorShown && JSON.stringify(x.autoHidden) === JSON.stringify(before.autoHidden);
 
 	await openFromBurger(P, how);
 	const open = await panels(P);
 	if (OUT) await P.screenshot({ path: `${OUT}/m10-${name}-settings-open-${THEME}.png` });
 	h.check(open.settings, `${T}Burger ▸ Settings opens Settings (${JSON.stringify(open)})`);
-	h.check(open.inspector, `${T}…and the right sidebar stays open (Configure Scene shown)`);
+	h.check(open.inspector && same(open), `${T}…and the right sidebar stays as it was (Configure Scene open, ${before.inspectorShown ? 'shown' : 'collapsed by the free-space rule'})`);
 	h.check(open.objects, `${T}…the window in the left sidebar stays open`);
 	h.check(open.flow, `${T}…and the docked Node editor stays open`);
 	h.check(!open.menu, `${T}…the burger menu itself closed behind it (as before)`);
@@ -71,7 +79,7 @@ async function run(browser, name, context, how) {
 	else await close.click();
 	await P.waitForTimeout(700);
 	const after = await panels(P);
-	h.check(!after.settings && after.inspector && after.objects && after.flow, `${T}closing Settings leaves every panel exactly as it was (${JSON.stringify(after)})`);
+	h.check(!after.settings && after.inspector && after.objects && after.flow && same(after), `${T}closing Settings leaves every panel exactly as it was (${JSON.stringify(after)})`);
 
 	// a panel CLOSED while Settings is open stays closed afterwards (nothing is "restored" over the user's choice)
 	await openFromBurger(P, how);

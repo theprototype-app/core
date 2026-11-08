@@ -24,7 +24,7 @@ import { registerHistoryKind, recordEntry } from './history';
 /**
  * @typedef {{id: string, kind: string, enabled: boolean, params: Record<string, any>}} PostEntry
  * @typedef {{enabled: boolean, effects: PostEntry[], changedAt: number, mode?: 'append'|'replace'}} PostStack
- * @typedef {{key: string, label: string, type?: 'number'|'select'|'bool'|'asset'|'graph', min?: number, max?: number, step?: number, decimals?: number, default: any, hint?: string, options?: {value: any, label: string}[]}} PostParam
+ * @typedef {{key: string, label: string, type?: 'number'|'select'|'bool'|'asset'|'graph'|'color', min?: number, max?: number, step?: number, decimals?: number, default: any, hint?: string, options?: {value: any, label: string}[]}} PostParam
  */
 
 // ---- the kind REGISTRY -----------------------------------------------------
@@ -45,7 +45,7 @@ const postKinds = {};
  *
  * @param {string} kind stable wire identifier
  * @param {{label: string, group?: string, isPass?: boolean, params?: PostParam[],
- *   ownsToneMapping?: boolean,
+ *   ownsToneMapping?: boolean, legacy?: boolean,
  *   make: (params: Record<string, any>, ctx: any) => any,
  *   retarget?: (object: any, camera: any) => void,
  *   resize?: (object: any, width: number, height: number, dpr: number) => void,
@@ -84,7 +84,9 @@ export function postEffectKinds() {
 		label: def.label,
 		group: def.group,
 		isPass: def.isPass,
-		params: def.params
+		params: def.params,
+		// 98 P3: a superseded kind still renders saved scenes but is not offered for new ones
+		legacy: !!def.legacy
 	}));
 }
 
@@ -510,6 +512,22 @@ export function addPostEffect(kind, index, key = POST_SCENE_KEY) {
 		return { ...state, effects };
 	}, key);
 	return id;
+}
+
+/**
+ * 98 P5: replace a document's whole effect list in ONE commit (one undo entry, one message) — a
+ * pro preset. Ids are minted here; the document is switched on.
+ * @param {{kind: string, enabled?: boolean, params?: Record<string, any>}[]} effects
+ */
+export function replacePostEffects(effects, key = POST_SCENE_KEY) {
+	return commit(
+		(state) => ({
+			...state,
+			enabled: true,
+			effects: effects.map((e) => ({ id: newId(), kind: e.kind, enabled: e.enabled !== false, params: { ...defaultPostParams(e.kind), ...(e.params ?? {}) } }))
+		}),
+		key
+	);
 }
 
 /** @param {string} id */

@@ -84,6 +84,7 @@ function currentTier(renderer) {
 		pref,
 		presenting: !!renderer?.xr?.isPresenting || !!get(isVRMode),
 		headset: typeof navigator !== 'undefined' && isHeadsetUA(navigator.userAgent),
+		phone: deviceFacts().phone,
 		postOff: !!get(qualityOverrides)?.postOff
 	});
 }
@@ -346,6 +347,14 @@ async function parse(buffer, name) {
 	return { data: /** @type {Float32Array} */ (t.data), width: t.width, height: t.height, flipY: t.flipY ?? true };
 }
 
+/**
+ * texture -> the PMREM render target that owns its GPU memory. NOT `texture.userData`: three's
+ * Texture.copy/clone JSON-clones userData, and a render target is circular (98-int: Photo mode's tracer
+ * clones scene.environment and threw "Converting circular structure to JSON").
+ * @type {WeakMap<any, any>}
+ */
+const pmremTargets = new WeakMap();
+
 /** @param {any} renderer @param {string} src @param {string} tier */
 async function prefilter(renderer, src, tier) {
 	const t0 = performance.now();
@@ -361,7 +370,7 @@ async function prefilter(renderer, src, tier) {
 		recovered.dispose();
 		const texture = target.texture;
 		texture.name = 'hdri:' + src + '|' + tier;
-		texture.userData.hdriTarget = target;
+		pmremTargets.set(texture, target);
 		return { texture, width, size: target.height / 4, ms: Math.round(performance.now() - t0) };
 	}
 	const img = await parse(source.buffer, source.name);
@@ -386,14 +395,15 @@ async function prefilter(renderer, src, tier) {
 	const texture = target.texture;
 	texture.name = 'hdri:' + src + '|' + tier;
 	// the render target owns the GPU memory; keep it reachable for dispose
-	texture.userData.hdriTarget = target;
+	pmremTargets.set(texture, target);
 	return { texture, width: small.width, size: target.height / 4 /* cubeSize */, ms: Math.round(performance.now() - t0) };
 }
 
 /** @param {any} entry */
 function dropEntry(entry) {
 	if (!entry?.texture || entry.texture === applied) return;
-	entry.texture.userData.hdriTarget?.dispose?.();
+	pmremTargets.get(entry.texture)?.dispose?.();
+	pmremTargets.delete(entry.texture);
 	entry.texture.dispose?.();
 }
 

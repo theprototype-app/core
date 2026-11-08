@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-11-04T09:14:49.718Z",
+	"recordedAt": "2026-11-08T14:07:39.484Z",
 	"settings": {
 		"Theme": {
 			"rows": [
@@ -2519,6 +2519,7 @@
 				"Music",
 				"Object search in the right-click menu",
 				"Offer Enter VR in a headset browser",
+				"Panels button",
 				"Phone dock tab row",
 				"Phone grab handle",
 				"Phone selection toolbar",
@@ -3199,6 +3200,7 @@
 				"Music",
 				"Object search in the right-click menu",
 				"Offer Enter VR in a headset browser",
+				"Panels button",
 				"Phone dock tab row",
 				"Phone grab handle",
 				"Phone selection toolbar",
@@ -3253,6 +3255,7 @@
 				"Object search in the right-click menu",
 				"Offer Enter VR in a headset browser",
 				"One-handed",
+				"Panels button",
 				"Phone dock tab row",
 				"Phone grab handle",
 				"Phone selection toolbar",
@@ -4391,6 +4394,7 @@
 				"Node editor opens",
 				"Node editor: show / bring to front / hide",
 				"Object list: show / bring to front / hide",
+				"Panels button",
 				"Reset panel positions",
 				"Reverse trackpad pan",
 				"Right sidebar: show / hide",
@@ -4779,6 +4783,7 @@
 			"": [
 				"Advanced",
 				"Background",
+				"Baked light",
 				"Camera",
 				"Components",
 				"Environment",
@@ -4805,11 +4810,17 @@
 				"Viewport — this device"
 			],
 			"quality": [
-				"Quality"
+				"Baked light",
+				"Quality",
+				"Scene look",
+				"Shader materials"
 			],
 			"environment": [
+				"Baked light",
 				"Components",
 				"Environment",
+				"Scene look",
+				"Shader materials",
 				"Sky image (HDRI)"
 			],
 			"sky image (hdri)": [
@@ -4842,6 +4853,7 @@
 			],
 			"view": [
 				"Advanced",
+				"Baked light",
 				"Camera",
 				"Orbit feel",
 				"Overrides — this device",
@@ -4867,17 +4879,25 @@
 				"Viewport — this device"
 			],
 			"scene look": [
+				"Baked light",
 				"Overrides — this device",
 				"Scene look",
 				"Shader materials",
 				"View",
 				"Viewport — this device"
 			],
+			"baked light": [
+				"Baked light",
+				"Scene look",
+				"Shader materials"
+			],
 			"shader materials": [
+				"Baked light",
 				"Scene look",
 				"Shader materials"
 			],
 			"camera": [
+				"Baked light",
 				"Camera",
 				"Grid",
 				"Orbit feel",
@@ -4932,10 +4952,13 @@
 				"Start view"
 			],
 			"play": [
+				"Baked light",
 				"Music",
 				"Physics",
 				"Play",
+				"Scene look",
 				"Scene track (shared)",
+				"Shader materials",
 				"This device"
 			],
 			"background": [
@@ -4975,14 +4998,19 @@
 				"Sky image (HDRI)"
 			],
 			"colour": [
+				"Baked light",
 				"Grid",
 				"Scene look",
 				"Shader materials"
 			],
 			"shadow": [
-				"Quality"
+				"Baked light",
+				"Quality",
+				"Scene look",
+				"Shader materials"
 			],
 			"material": [
+				"Baked light",
 				"Overrides — this device",
 				"Physics",
 				"Scene look",
@@ -5004,10 +5032,13 @@
 				"Viewport — this device"
 			],
 			"light": [
+				"Baked light",
 				"Components",
 				"Environment",
 				"Level of detail",
 				"Overrides — this device",
+				"Scene look",
+				"Shader materials",
 				"Sky image (HDRI)",
 				"View",
 				"Viewport — this device"

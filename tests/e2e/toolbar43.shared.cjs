@@ -464,16 +464,18 @@ h.run(async () => {
 			l = await rect(P, '#hud-stack-left');
 			r = await rect(P, '#hud-stack-right');
 			h.check(Math.abs(l.left - (g.leftX + 360 + 16)) <= 2 && Math.abs(1440 - r.right - 16) <= 2, T + `J5: a pinned LEFT sidebar moves the left stack (${Math.round(l.left)}) and frees the right one (${Math.round(1440 - r.right)})`);
-			// unpinned: back to the corner (the brief: PINNED sidebars only)
+			// unpinned: dock-fixes item 4 (device lab UI-3) — the corner stacks live in the FREE viewport, so an unpinned
+			// column moves the stack beside it too (43's brief moved them for PINNED columns only)
 			await sidebar(P, { side: 'left', full: false, w: 360 });
 			l = await rect(P, '#hud-stack-left');
-			h.check(Math.abs(l.left - 16) <= 1, T + `J5: an UNPINNED sidebar leaves the stack in its corner (${Math.round(l.left)})`);
+			h.check(Math.abs(l.left - (360 + 16)) <= 1, T + `J5: an UNPINNED sidebar puts the stack in the free viewport's corner, beside it (${Math.round(l.left)})`);
 			// the option off: the corner, as before
 			await sidebar(P, { side: 'right', full: true, w: 420 });
 			await P.evaluate(() => window.__stores.hudStackLift.set(false));
 			await P.waitForTimeout(400);
 			r = await rect(P, '#hud-stack-right');
-			h.check(Math.abs(1440 - r.right - 16) <= 1, T + `J5: lift OFF → the corner as before (docked panels cover it) (${Math.round(1440 - r.right)})`);
+			// the lift is about the BOTTOM dock; beside an open column the free-viewport rule still applies (item 4)
+			h.check(Math.abs(1440 - r.right - (420 + 16)) <= 1, T + `J5: lift OFF → the stack stays beside the column, in the free viewport's corner (${Math.round(1440 - r.right)})`);
 			await sidebar(P, { open: false });
 		}
 
@@ -604,13 +606,18 @@ h.run(async () => {
 				h.check(last < 0 || f.length <= last, T + `J10: a narrower sidebar never folds more (${counts.join(' ')})`);
 				last = f.length;
 			}
-			h.check(last === 0 && (await P.locator('#toolbar-customize').count()) === 1, T + `J10: shrunk to 250 px every button is back, the "…" too (${counts.join(' ')})`);
-			// grow again → folds again; unpin → nothing folds (only a PINNED sidebar bounds the bar)
+			// 98-int (dock-fixes, owner 2026-11-08): the bar lives in the FREE viewport between the sidebar STRIPS, so the
+			// left strip (its hide button is always there now) takes its width too — at 250 px one cell may still fold
+			// with one cell folded the "…" lives in the "»" menu (Customize toolbar… is its last row), so the bar end is "»"
+			const endId = last === 0 ? '#toolbar-customize' : '#toolbar-overflow';
+			h.check(last <= 1 && (await P.locator(endId).count()) === 1, T + `J10: shrunk to 250 px the row is (almost) all back, the "…" too or the "»" that holds it (${counts.join(' ')}; ${endId})`);
+			// grow again → folds again; unpinned it folds the SAME (dock-fixes: every OPEN column bounds the bar, pinned or not —
+			// an unpinned column used to let the bar slide under its bottom)
 			await sidebar(P, { side: 'right', full: true, w: 440 });
 			const again = (await folded(P)).length;
 			await sidebar(P, { side: 'right', full: false, w: 440 });
 			const unpinned = (await folded(P)).length;
-			h.check(again > 0 && unpinned === 0, T + `J10: grown again it folds (${again}); unpinned it does not (${unpinned})`);
+			h.check(again > 0 && unpinned === again, T + `J10: grown again it folds (${again}); unpinned it folds the same (${unpinned})`);
 			h.check(JSON.stringify(await stored(P)) === record, T + 'J10: the enabled set never changed (the stored record is untouched)');
 			await sidebar(P, { side: 'right', full: true, w: 440 });
 			await P.locator('#toolbar-customize').count();

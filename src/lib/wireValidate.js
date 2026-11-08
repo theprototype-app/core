@@ -25,6 +25,7 @@
 // the AI tools, so the three cannot disagree about what a material key takes).
 import { checkMaterialParam, isMapSlotKey, isMapSlotImage, normalizeTexTransform } from './materialParamRules.js';
 import { isPingMessage } from './pingCore.js';
+import { validPhotoRequest, validPhotoResult } from './photo/photoCore.js';
 
 /** @param {unknown} v */
 export function isUuid(v) {
@@ -171,6 +172,10 @@ const shortStr = (v) => typeof v === 'string' && v.length > 0 && v.length <= 128
  * @type {Record<string, (data: any) => boolean>}
  */
 export const VALIDATORS = {
+	// 98 P2 (98-photo): Photo mode's hand-off — a view to render, its answer (PNG bytes capped), a stop
+	photoreq: (d) => validPhotoRequest(d),
+	photores: (d) => validPhotoResult(d),
+	photostop: (d) => typeof d.id === 'string' && d.id.length <= 64,
 	hosts: (d) => isArray(d.hosts),
 	// 85b S2: a ping — the 87 marker fields plus the optional object-local `on` (pingCore)
 	ping: (d) => isPingMessage(d),
@@ -257,6 +262,8 @@ export const VALIDATORS = {
 	getmatpreset: (d) => typeof d.ref === 'string' && d.ref.length <= 32,
 	matpresetpart: (d) => typeof d.from === 'string' && typeof d.ref === 'string' && Number.isInteger(d.i) && Number.isInteger(d.n) && d.n >= 1 && d.n <= 256 && d.i >= 0 && d.i < d.n && typeof d.data === 'string' && d.data.length <= 300_000,
 	environment: (d) => !!d && typeof d === 'object',
+	// 98 P1: the scene's bake record (null = cleared) on a latest-wins stamp; the record itself is normalized by sceneBake
+	scenebake: (d) => Number.isFinite(Number(d.changedAt)) && (d.record === null || (!!d.record && typeof d.record === 'object' && !Array.isArray(d.record))),
 	atscene: (d) => typeof d.peerId === 'string',
 	// 55 A6: the agent mesh relay (agent/meshRelay.js) — the host re-checks everything that matters
 	meshgenask: () => true,

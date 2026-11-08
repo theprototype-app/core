@@ -90,13 +90,18 @@ export function mergeHdriPatch(current, patch) {
 /**
  * Which resolution this device renders an HDRI at. 'low' = the Quest tier: a 512-wide source,
  * a 128 px PMREM, and the sky drawn FROM the prefiltered PMREM (no separate equirect texture).
- * @param {{presenting?: boolean, headset?: boolean, pref?: string, postOff?: boolean}} s
+ * 98 G12 TIER FLOOR: the governor turning the look off (`postOff`) never puts a PHONE on this
+ * Quest tier — a phone keeps the full-light sky (its visible sharpness is still capped to Standard by
+ * resolveSkyQuality). Device-lab r1590-08: the HONOR started on the 512 px sky because its first
+ * governor walk reached "post off". A desktop that falls that far still takes the low tier.
+ * @param {{presenting?: boolean, headset?: boolean, phone?: boolean, pref?: string, postOff?: boolean}} s
  * @returns {'full' | 'low'}
  */
 export function resolveHdriTier(s) {
 	if (s.pref === 'low') return 'low';
 	if (s.pref === 'full') return 'full';
-	if (s.presenting || s.headset || s.postOff) return 'low';
+	if (s.presenting || s.headset) return 'low';
+	if (s.postOff && !s.phone) return 'low';
 	return 'full';
 }
 
@@ -151,6 +156,28 @@ export function skyFileTier(quality, tiers, caps = {}) {
 		tiers.includes(t) && skyTierWidth(t) <= (caps.maxTexture ?? Infinity) && skyTierWidth(t) / 4 <= (caps.maxCube ?? Infinity);
 	for (const t of ['8k', '4k', '2k', '1k']) if (skyTierWidth(t) <= skyTierWidth(want) && fits(t)) return t;
 	return '1k';
+}
+
+/**
+ * fix-play-link (r1590-09): the Max option's label says what Max LOADS here — the same rule as
+ * `skyFileTier`: 8K on a machine with >= 8 GB that is not a phone (on a sky that has an 8K file;
+ * the others top out at 4K, hence "up to"), else 4K. The picker said "Max (4K)" while the PC
+ * loaded the 8192 Meadow cube.
+ * @param {{memoryGB?: number, phone?: boolean}} facts
+ */
+export function skyMaxLabel(facts = {}) {
+	return facts.memoryGB && facts.memoryGB >= 8 && !facts.phone ? 'Max (up to 8K)' : 'Max (4K)';
+}
+
+/** this device's facts for `skyMaxLabel` (navigator.deviceMemory + a coarse pointer = a phone) */
+export function skyMaxLabelHere() {
+	try {
+		const nav = /** @type {any} */ (globalThis.navigator);
+		const phone = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+		return skyMaxLabel({ memoryGB: Number(nav?.deviceMemory) || 0, phone });
+	} catch {
+		return skyMaxLabel();
+	}
 }
 
 /** A headset browser by its user agent (Quest, Pico, Vive Focus) @param {string} ua */

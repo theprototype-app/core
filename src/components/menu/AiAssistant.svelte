@@ -276,7 +276,7 @@
 	</div>
 {/if}
 
-<!-- Floating window -->
+<!-- Floating window. dock-fixes: its height cap is the viewport's (never the window's own top — see .ai-fit) -->
 {#if popped || !$panelAway.aiAssistant}
 <div id="ai-assistant" class={$aiAssistantHidden}>
 	<div
@@ -287,7 +287,7 @@
 		use:tabbable={{ key: 'aiAssistant', title: 'AI assistant', openStore: aiAssistantHidden, isOpen: (v: string) => v === '', close: () => aiAssistantHidden.set('hidden') }}
 		class="ui-panel tp-ui tp-window flex w-[min(500px,90vw)] flex-col overflow-hidden {welcome ? '' : 'h-[440px]'}"
 		class:ai-fit={welcome}
-		style="z-index: var(--z-window)"
+		style="z-index: var(--z-window); max-height: calc(100dvh - 76px)"
 		data-target={agentId ? 'agent' : 'provider'}
 		role="region"
 		aria-label="AI assistant"
@@ -489,10 +489,14 @@
 	.ai-signin-short {
 		display: none;
 	}
-	/* 54i: the welcome's height is its content, never more than the room below the window's top */
+	/* 54i: the welcome's height is its content, never taller than the screen below the top chrome.
+	   dock-fixes (owner 2026-11-08): capped by the VIEWPORT, not by the window's own top (`--dw-top`) —
+	   that cap followed the drag, so the window SHRANK as it was dragged partly off the bottom, where
+	   the Object list keeps its size. dragWindow's clamps keep the header reachable, and a load or a
+	   reveal brings the whole window back on screen. */
 	.ai-fit {
 		height: auto;
-		max-height: calc(100dvh - var(--dw-top, 0px) - 8px);
+		max-height: calc(100dvh - 76px);
 	}
 	@container (max-width: 440px) {
 		.ai-signin-long {

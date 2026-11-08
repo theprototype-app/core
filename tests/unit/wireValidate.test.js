@@ -178,3 +178,14 @@ describe('57 M1: objectParameters clipRefs', () => {
 		expect(validateWireMessage({ type: 'objectParameters', parameter: 'clipRefs', uuid: '', clipRefs: [] })).toBe(false);
 	});
 });
+
+describe('98 P1: scenebake', () => {
+	it('takes a record or a clear on a finite stamp, and nothing else', () => {
+		expect(validateWireMessage({ type: 'scenebake', record: { full: { hash: 'x' } }, changedAt: 5 })).toBe(true);
+		expect(validateWireMessage({ type: 'scenebake', record: null, changedAt: 6 })).toBe(true);
+		expect(validateWireMessage({ type: 'scenebake', record: [], changedAt: 6 })).toBe(false);
+		expect(validateWireMessage({ type: 'scenebake', record: 'x', changedAt: 6 })).toBe(false);
+		expect(validateWireMessage({ type: 'scenebake', record: null, changedAt: 'soon' })).toBe(false);
+		expect(validateWireMessage({ type: 'scenebake', changedAt: 6 })).toBe(false);
+	});
+});

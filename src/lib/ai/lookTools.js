@@ -58,7 +58,9 @@ export const LOOK_TOOL_NAMES = [
 	'create_post_graph',
 	'uv_unwrap',
 	'set_uv',
-	'set_quality'
+	'set_quality',
+	'set_look_preset',
+	'bake_light'
 ];
 
 /** the ones that only read */
@@ -1073,10 +1075,86 @@ async function shownHere() {
 	return { shownHere: false, reason: /** @type {string} */ (st.reason), detail: st.detail, how: st.how };
 }
 
+/** 98 P1 — set_look {action: "bake"}: bake soft light + corner shadows for everything static. */
+const BAKE_DOS = ['bake', 'status', 'cancel', 'clear', 'strength'];
+/** @param {any} args */
+async function bakeLightTool(args) {
+	const what = String(args.do ?? (args.confirmId !== undefined ? 'bake' : 'status'));
+	if (!BAKE_DOS.includes(what)) return { error: 'do: ' + BAKE_DOS.join(', ') };
+	const sb = await import('$lib/sceneBake');
+	const status = () => {
+		const d = sb.sceneBakeDebug();
+		const r = d.record;
+		return {
+			baked: !!r,
+			objects: r?.objects.length ?? 0,
+			aoOnly: r?.objects.filter((/** @type {any} */ o) => o.mode === 'ao').length ?? 0,
+			stale: d.stale.stale,
+			strength: r?.intensity ?? null,
+			stats: r?.stats ?? null,
+			running: d.job.running,
+			progress: Math.round(d.job.progress * 100),
+			notes: d.job.notes,
+			...(d.job.error ? { lastError: d.job.error } : {}),
+			shownHere: d.shown.map
+		};
+	};
+	if (what === 'status') return status();
+	const runner = await import('$lib/bake/bakeRunner.js');
+	if (what === 'cancel') return { cancelled: runner.cancelBake(), ...status() };
+	if (what === 'strength' && args.light === undefined && args.ao === undefined) return { error: 'strength: give light (0-3) and/or ao (0-1)' };
+	if (what !== 'bake' && !sb.sceneBakeDebug().record) return { error: 'the scene has no baked light' };
+	const { gateScenewide } = await import('$lib/agent/confirmGate');
+	const summary =
+		what === 'bake' ? 'bake the light (' + String(args.quality ?? 'normal') + ' quality)' : what === 'clear' ? 'remove the baked light' : 'change the baked light strength';
+	return gateScenewide('bake_light', args, {
+		summary,
+		apply: async () => {
+			if (what === 'clear') return { cleared: runner.clearBake(), ...status(), undo: 'undo_last' };
+			if (what === 'strength') {
+				const patch = {};
+				if (args.light !== undefined) /** @type {any} */ (patch).light = Math.min(3, Math.max(0, Number(args.light) || 0));
+				if (args.ao !== undefined) /** @type {any} */ (patch).ao = Math.min(1, Math.max(0, Number(args.ao) || 0));
+				runner.setBakeIntensity(patch);
+				return { updated: true, ...status() };
+			}
+			const wait = Math.min(120, Math.max(0, Number(args.wait ?? 60)));
+			const run = runner.runBake({ quality: typeof args.quality === 'string' ? args.quality : 'normal' });
+			const done = await Promise.race([run, new Promise((resolve) => setTimeout(() => resolve(null), wait * 1000))]);
+			if (!done) return { ...status(), how: 'still baking: call set_look {action: "bake", bake: {do: "status"}} in a few seconds' };
+			const r = /** @type {any} */ (done);
+			if (!r.ok) return { error: r.cancelled ? 'the bake was cancelled — nothing changed' : 'the bake failed: ' + r.error };
+			// the atlas is decoded onto the materials just after the record lands: answer with what this screen shows
+			for (let i = 0; i < 25 && sb.sceneBakeDebug().shown.map === 'none'; i++) await new Promise((res) => setTimeout(res, 200));
+			return { ...status(), ms: r.ms, undo: 'undo_last', how: 'take a screenshot to see it; if things move later, bake again' };
+		}
+	});
+}
+
 /** what the agent changed on this device, so "restore" can put it back @type {{was: string, now: string} | null} */
 let qualityChange = null;
 
 const QUALITY_LEVELS = ['high', 'medium', 'auto', 'restore'];
+
+/** 98 P5: the pro presets (Product shot / Cinematic / Stylised) — sky, light, tone mapping, exposure and the
+ * post effects as ONE undo step, scaled per device as each one draws it. Scene-wide, so the host is asked. */
+async function setLookPresetTool(/** @type {any} */ args) {
+	const { PRO_LOOKS, PRO_PRESET_KEYS, isProPreset } = await import('$lib/post/proPresetsCore.js');
+	const name = String(args?.preset ?? '').toLowerCase().replace(/[\s_-]+/g, '');
+	const key = name === 'productshot' ? 'product' : name === 'stylized' ? 'stylised' : name;
+	if (!isProPreset(key)) return { error: 'preset: one of ' + PRO_PRESET_KEYS.join(', ') };
+	const { gateScenewide } = await import('$lib/agent/confirmGate');
+	return gateScenewide('set_look_preset', args, {
+		summary: 'the ' + PRO_LOOKS[key].label + ' look (sky, light and post effects)',
+		apply: async () => {
+			const { applyProPreset } = await import('$lib/post/proPresets.js');
+			const done = await applyProPreset(key);
+			if (!done.ok) return { error: done.error };
+			return { updated: [{ preset: key, ok: true }], label: done.label, effects: done.effects, undo: 'undo_last, or the Undo on the person\'s card', ...(await shownHere()) };
+		}
+	});
+}
+
 
 /**
  * mcp-diorama2 (item 7, owner) — set_look {action: "quality"}: ask the person to raise THIS device's quality preset
@@ -1295,6 +1373,10 @@ export async function lookTool(name, args) {
 			return setUvTool(args ?? {});
 		case 'set_quality':
 			return setQualityTool(args ?? {});
+		case 'set_look_preset':
+			return setLookPresetTool(args ?? {});
+		case 'bake_light':
+			return bakeLightTool(args ?? {});
 		default:
 			return { error: 'unknown look tool ' + name };
 	}
@@ -1458,7 +1540,7 @@ export const LOOK_AI_TOOLS = [
 		function: {
 			name: 'set_post',
 			description:
-				'The scene\'s post effects (bloom, huesaturation, brightnesscontrast, tonemapping, vignette, grain, chromaticaberration, ao, lut, pixelation, scanlines, dotscreen, smaa; get_post lists every param). effects: [{kind, params, enabled, at, remove}], matched to what is there by id or kind, so repeating a call does not stack a second bloom; replace: true drops the rest; the stack order is the order of effect. This changes the whole scene\'s look: the first call returns needsConfirm and the host is asked; repeat it with confirmId. One undo step. The answer says shownHere: false with a reason when this screen does not draw post effects (reason "quality tier" = the device turned them off to keep its frame rate, usual on a phone: the scene keeps them; say so, and offer to ask with set_quality).',
+				'The scene\'s post effects (bloom, huesaturation, brightnesscontrast, tonemapping, vignette, grain, chromaticaberration, lensflare, godrays, volumetricfog, ao, lut, pixelation, scanlines, dotscreen, antialias {method: traa | smaa} — it replaces the older smaa; get_post lists every param). effects: [{kind, params, enabled, at, remove}], matched to what is there by id or kind, so repeating a call does not stack a second bloom; replace: true drops the rest; the stack order is the order of effect. This changes the whole scene\'s look: the first call returns needsConfirm and the host is asked; repeat it with confirmId. One undo step. The answer says shownHere: false with a reason when this screen does not draw post effects (reason "quality tier" = the device turned them off to keep its frame rate, usual on a phone: the scene keeps them; say so, and offer to ask with set_quality).',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1489,6 +1571,22 @@ export const LOOK_AI_TOOLS = [
 	{
 		type: 'function',
 		function: {
+			name: 'set_look_preset',
+			description:
+				'A pro look in one step: preset product (Product shot: studio light, clean AO, neutral tone mapping), cinematic (low sun, volumetric fog, god rays, lens flare, film grain, ACES) or stylised (bright sky, punchy colour, AgX). Sets the sky + light, exposure, tone mapping and the post effects together as ONE undo step, saved in the scene; each device draws its own share (a phone marches less fog, a headset leaves fog / god rays / lens flare out). Replaces the scene\'s post effects. Changes the whole scene\'s look: the first call returns needsConfirm and the host is asked; repeat it with confirmId.',
+			parameters: {
+				type: 'object',
+				properties: {
+					preset: { type: 'string', enum: ['product', 'cinematic', 'stylised'] },
+					...CONFIRM_SCHEMA
+				},
+				required: ['preset']
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
 			name: 'set_quality',
 			description:
 				'Ask the person to raise THIS device\'s quality (their Settings ▸ Scene ▸ Performance ▸ Quality preset). Use it when set_post / get_post / screenshot say shownHere false or postEffects "unavailable" with reason "quality tier": a phone turns post effects off to keep its frame rate. The person gets a card on their own screen (Allow / Keep) and answers; nothing changes until they allow, nothing changes on anyone else\'s device, nothing goes into the scene. The first call returns needsConfirm; call again with confirmId (and wait) for the answer. level: high (full quality, post effects on), medium, auto (the device decides), restore (put back what it was before you asked; no question). Suggest it out loud first: "Your phone hides the glow to stay smooth; shall I ask it for high quality?"',
@@ -1497,6 +1595,24 @@ export const LOOK_AI_TOOLS = [
 				properties: {
 					level: { type: 'string', enum: QUALITY_LEVELS },
 					reason: { type: 'string', description: 'a few words for the card, e.g. "so the portal glow shows"' },
+					...CONFIRM_SCHEMA
+				}
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
+			name: 'bake_light',
+			description:
+				'Bake light (Pro look): soft shadows in corners (AO) and light bouncing off walls, worked out once for every object that does not move (no physics body that moves, no flow or clip animation) and saved with the scene — everyone sees it, it undoes as one step. do: bake (the default; runs on this device, takes seconds; asks the host first like set_post), status (read: baked?, stale = things moved since, notes such as objects with overlapping UVs that got AO only), cancel, clear (remove it), strength (light 0-3, ao 0-1). quality: draft, normal, high. Bake AFTER the layout is final; bake again when status says stale. wait: seconds to wait for the result (default 60, max 120).',
+			parameters: {
+				type: 'object',
+				properties: {
+					do: { type: 'string', enum: BAKE_DOS },
+					quality: { type: 'string', enum: ['draft', 'normal', 'high'] },
+					light: { type: 'number', minimum: 0, maximum: 3, description: 'do strength: bounce light strength (1 = as baked)' },
+					ao: { type: 'number', minimum: 0, maximum: 1, description: 'do strength: corner shadow strength' },
 					...CONFIRM_SCHEMA
 				}
 			}

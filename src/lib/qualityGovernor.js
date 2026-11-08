@@ -5,7 +5,8 @@ import {
 	stepLabelsAt,
 	drawGapFor,
 	FULL_QUALITY,
-	MAX_LEVEL
+	MAX_LEVEL,
+	GOVERNOR_STEPS
 } from './qualityGovernorCore';
 import {
 	registerFrameObserver,
@@ -325,7 +326,8 @@ export const gameQualityState = writable({ preset: 'auto', level: null });
 
 /** the level each quality preset pins (null = the governor decides) — a game's Quality setting
  * and the device preset (42 I12) share the ladder @type {Record<string, number | null>} */
-export const QUALITY_PRESET_LEVELS = { auto: null, high: 0, medium: 3, low: 7 };
+// low = through Resolution 50% (98-int inserted lookLite before post: 7 -> 8 keeps Low's meaning)
+export const QUALITY_PRESET_LEVELS = { auto: null, high: 0, medium: 3, low: 8 };
 
 /** @param {any} level @returns {number | null} */
 function pinOf(level) {
@@ -383,6 +385,14 @@ export const governorForTest = {
 	/** @param {number} t */
 	longTask(t) {
 		governor.noteLongTask(t);
+	},
+	/** ms of settle left on the governor's own clock (≤ 0 = not settling) — 98-int: a look change settles */
+	settleLeft() {
+		return governor.settleUntil() - now();
+	},
+	/** the level at which the step `key` is in effect (98-int: lookLite / post) @param {string} key */
+	levelOf(key) {
+		return GOVERNOR_STEPS.findIndex((s) => s.key === key) + 1;
 	},
 	/** @param {number} level @param {number} [t] (40 F12: a synthetic clock, so real frames stay inert) */
 	setLevel(level, t) {

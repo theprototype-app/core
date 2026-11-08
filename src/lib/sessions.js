@@ -55,6 +55,7 @@ import { annotationsSnapshot, annotationsRestore } from './autosave';
 import { captureEditResume, applyEditResume } from './editResume';
 import { jointsSnapshot, jointsRestore } from './joints';
 import { scenePostSnapshot, scenePostRestore } from './scenePost';
+import { sceneBakeSnapshot, sceneBakeRestore } from './sceneBake'; // 98 P1
 // A6.1: the scene's LOOK and RULES ride the file beside its objects. They were
 // missing, so a template loaded into whatever sky and gravity the room happened to
 // have — and a physics scene is unplayable at a peer's edited gravity. Each pair
@@ -87,6 +88,10 @@ import { sceneCommand, sendObjects, clearSceneLocal } from './commandsHandler.sv
 import { nameOf } from './lockControl';
 import { idbGet, idbPut, idbDelete, idbKeys } from './idb';
 import { showConfirm, showChoice } from './confirmDialog';
+// fix-play-link: the modules ask on a player page (/play, /p/<id>, the play origin) — leaves
+import { planPlayerAsk, rememberLoadAnyway } from './play/moduleAsk.js';
+import { playEntry } from './play/playEntry.js';
+import { onPlayOrigin } from './playOrigin.js';
 // 33 (L2/L4): what happens to modules when the scene changes
 import { prepareSceneSwitch, sceneArrived } from './sceneSwitch';
 import { APP_VERSION } from './version.js';
@@ -275,6 +280,7 @@ export function buildSessionPayload(name, opts = {}) {
 	const env = environmentSnapshot();
 	const gravity = scenePhysicsSnapshot();
 	const track = musicSnapshot();
+	const baked = sceneBakeSnapshot(); // 98 P1: null when unbaked → no field
 	const clock = transportSnapshot();
 	const seqs = sequencesSnapshot(); // 48 S2
 	const talk = chatsSnapshot('all'); // 56 C10
@@ -336,6 +342,7 @@ export function buildSessionPayload(name, opts = {}) {
 			...(env ? { environment: env } : {}),
 			...(gravity ? { physics: gravity } : {}),
 			...(track ? { music: track } : {}),
+			...(baked ? { bake: baked } : {}),
 			...(clock ? { transport: clock } : {}),
 			...(routing ? { patch: routing } : {}),
 			// A6.2: {id, version} — the handshake's shape, so there is one shape for
@@ -667,6 +674,13 @@ async function confirmSessionFormat(payload) {
 }
 
 
+/** does the payload name any module at all (the cheap test before the boot-restore wait)
+ * @param {any} payload */
+function classifyHasNeeds(payload) {
+	const { missing, disabled, outdated } = classifyRequirements(payload?.modules);
+	return !!(missing.length || disabled.length || outdated.length);
+}
+
 /**
  * A6.2: the module-requirement prompt. A scene's `modules` field names what its
  * FLOW needs; this is where a player finds out before the scene lands looking
@@ -683,8 +697,37 @@ async function confirmSessionFormat(payload) {
  * @param {any} payload @returns {Promise<boolean>} false = cancel the import
  */
 async function confirmModuleRequirements(payload) {
-	const { missing, disabled, outdated } = classifyRequirements(payload?.modules);
+	if (!classifyHasNeeds(payload)) return true;
+	// fix-play-link: a module this player installed last visit is restored at boot — wait for that
+	// restore (bounded) before calling it "Not installed"
+	try {
+		const { userModulesRestored } = await import('./userModules');
+		await Promise.race([userModulesRestored(), new Promise((r) => setTimeout(r, 8000))]);
+	} catch {
+		/* no idb: nothing was restored, the classification below is the truth */
+	}
+	let { missing, disabled, outdated } = classifyRequirements(payload?.modules);
 	if (!missing.length && !disabled.length && !outdated.length) return true;
+	// fix-play-link (Q1): on a PLAYER page the person chose this one game. A module the official
+	// modules repo lists installs without asking (it is first-party code, pinned to the release tag);
+	// "Load anyway" is remembered per module + version. Only what is left is asked about.
+	if (playEntry || onPlayOrigin) {
+		let official = new Set();
+		try {
+			const { loadModuleGallery, galleryModules } = await import('./moduleGallery');
+			await loadModuleGallery();
+			official = new Set(get(galleryModules).map((/** @type {any} */ m) => m.id));
+		} catch {
+			/* gallery unreachable: everything is asked about, as before */
+		}
+		const plan = planPlayerAsk({ fetchable: [...missing, ...outdated], disabled, official });
+		if (plan.autoInstall.length) await installRequired(plan.autoInstall);
+		if (plan.skipAsk) return true;
+		const left = new Set(plan.ask.fetchable.map((e) => e.id));
+		missing = missing.filter((e) => left.has(e.id));
+		outdated = outdated.filter((e) => left.has(e.id));
+		disabled = plan.ask.disabled;
+	}
 	const name = (/** @type {any} */ entry) => entry.id + (entry.version ? ' v' + entry.version : '');
 	const lines = [];
 	if (missing.length) lines.push('Not installed: ' + missing.map(name).join(', '));
@@ -711,6 +754,7 @@ async function confirmModuleRequirements(payload) {
 		choices
 	});
 	if (!answer) return false; // Cancel / Esc / outside-close: nothing has been touched
+	if (answer === 'anyway' && (playEntry || onPlayOrigin)) rememberLoadAnyway([...missing, ...outdated, ...disabled]);
 	if (answer === 'enable') await enableRequired(disabled);
 	if (answer === 'install') await installRequired([...missing, ...outdated]);
 	return true;
@@ -1556,6 +1600,7 @@ async function applySessionNow(payload, opts, job) {
 		return;
 	}
 	scenePostRestore(payload.post, replicate);
+	sceneBakeRestore(payload.bake, replicate); // 98 P1: absent = no bake (an old scene stays unbaked)
 	// the composer's own pass shaders, off-frame too (Outline registers the warm-up)
 	await within(warmComposer(), WARM_WAIT_MS);
 	releaseFrames();

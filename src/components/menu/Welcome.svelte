@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { backClose } from '$lib/backStack.js'; // phone-polish: Android Back steps back / closes it
 	// RW/B1: first-visit welcome overlay. The app IS the landing page, so this is the
 	// only thing between the click and the canvas. Shown once ever (hasSeenWelcome) unless
 	// the user ticks "Show this on start", which also has a Settings toggle.
@@ -17,7 +18,7 @@
 	import Icon from '../ui/Icon.svelte';
 	import { templates, games, templatesState, loadTemplatesIndex, loadRemoteScene, loadingSlug } from '$lib/sceneTemplates';
 	import { chooseOnboarding } from '$lib/onboarding/firstWin.js';
-	import { requestPlay, embedMode } from '$lib/playMode';
+	import { autoPlay, embedMode } from '$lib/playMode';
 	import { aiEnabled, aiProviders, aiActiveProvider } from '$lib/ai/providers';
 	import { aiBusy, runPrompt } from '$lib/ai/assistant';
 
@@ -90,8 +91,9 @@
 		if (choice === 'play') {
 			chooseOnboarding('play', { entry });
 			const applied = await loadRemoteScene(entry, { origin: 'games' });
-			// straight into Play — the export / embed autoplay path (no gesture survives the download)
-			if (applied) requestPlay({ flat: true });
+			// straight into Play — the export / embed autoplay path (no gesture survives the download);
+			// not on an XR-capable device, where the Play button is what opens the headset session
+			if (applied) void autoPlay();
 			return;
 		}
 		chooseOnboarding(choice === 'remix' ? 'remix' : 'template');
@@ -117,6 +119,7 @@
 	function openRepo() {
 		window.open(REPO_URL, '_blank', 'noopener');
 	}
+	const backToAsk = () => (view = 'ask');
 	function onKeydown(e: KeyboardEvent) {
 		if (e.key !== 'Escape') return;
 		e.preventDefault();
@@ -143,6 +146,7 @@
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<div
 		id="welcome-overlay"
+		use:backClose={view !== 'ask' ? backToAsk : closeWelcome}
 		class="welcome-card"
 		bind:this={cardEl}
 		use:minimalScroll

@@ -787,6 +787,9 @@
 		display: flex;
 		flex-direction: column;
 		height: min(80vh, 760px);
+		/* ui-audit-honor: the visible viewport where supported, so the footer (Reset · Done) stays inside the
+		   ModalDialog's 88dvh cap on Android Chrome */
+		height: min(80dvh, 760px);
 		min-height: 0;
 	}
 	/* the header is the dialog's own: no second frame around it */
@@ -907,11 +910,15 @@
 		.settings-main :global(.seg-opt) {
 			min-height: 44px;
 		}
+		/* dock-fixes C: equal columns that WRAP instead of squeezing a label past its slot */
 		.settings-main :global(.sr-control > .seg) {
-			display: grid;
-			grid-template-columns: repeat(var(--seg-cols), minmax(0, 1fr));
+			display: flex;
 			width: 100%;
 			box-sizing: border-box;
+		}
+		.settings-main :global(.sr-control > .seg > .seg-opt) {
+			flex: 1 1 0;
+			min-width: fit-content;
 		}
 	}
 </style>

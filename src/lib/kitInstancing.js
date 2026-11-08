@@ -33,7 +33,8 @@ import { cellKey, cellOf, materialSignature, ineligible, MIN_BATCH, CELL_METRES 
 // member draws is the TEMPLATE's when the mesh shows its own (source) geometry — every copy
 // cloned it, so they are equal by construction — or the level geometry a LOD pass put on it,
 // which every copy shares (pack level files are fetched once per url, auto levels are cached
-// by content). The material is always the template's: equal to the copy's by the signature.
+// by content). The material is always the template's: equal to the copy's by the signature —
+// or, for a copy carrying BAKED LIGHT, its template's baked clone (98-int T1b, below).
 //
 // COLUMNS keep culling alive: one batch of every wall in a castle is drawn or skipped as a
 // whole, so batches are cut into 8 m columns (kitInstancingCore.CELL_METRES).
@@ -54,6 +55,36 @@ kitInstancingEnabled.subscribe((on) => {
 	safeStorage.setItem('kitInstancing', on ? 'true' : 'false');
 });
 
+/**
+ * 98-int T1b — BAKED PIECES STAY INSTANCED. A bake gives every copy its own lightmap UVs (its own
+ * place in the one atlas), so the copies stopped being the same draw — measured on the Tavern, a
+ * bake took kit instancing from 72 batched members to 4 and the frame from 10 to 19 ms on a 4090.
+ * But a copy's bake UVs are its piece's UNPLACED layout moved and scaled into the atlas
+ * (u = x + base·s), and the layout is the same for every copy of one geometry (bakeUvFor is
+ * deterministic). So a baked batch draws a LAYOUT geometry (the template's attributes plus the
+ * shared layout as the bake channel) with a baked clone of the template material whose vertex
+ * shader reads a per-instance `bakeST` (x, y, s). bakeApply answers through this hook — kit
+ * instancing never imports the lazy bake chunk.
+ * @typedef {{ geometry: any, material: any, st: number[] }} KitBakeInfo
+ * @typedef {{ infoFor: (mesh: any) => KitBakeInfo | null }} KitBakeHook
+ */
+/** @type {KitBakeHook | null} */
+let bakeHook = null;
+/** bakeApply registers (null unregisters). @param {KitBakeHook | null} hook */
+export function registerKitBakeHook(hook) {
+	bakeHook = hook;
+}
+/** the hook in use (the suite swaps it to prove what it draws) */
+export function kitBakeHook() {
+	return bakeHook;
+}
+/** bakeApply took a bake OFF (or swapped it): drop the batches drawing the old one. */
+export function kitBakeChanged() {
+	clearBatches();
+}
+/** The attribute name of the per-instance atlas placement. */
+export const BAKE_ST = 'bakeST';
+
 /** How often the candidate list is rebuilt (a traversal; a poke rebuilds sooner). */
 const SCAN_MS = 1000;
 const POKE_MS = 250;
@@ -66,7 +97,7 @@ let selected = new Set();
 
 /**
  * @typedef {{key: number, geometry: any, material: any, members: any[], count: number,
- *   holder: any, capacity: number, drawn: number, signature: number}} Batch
+ *   holder: any, capacity: number, drawn: number, signature: number, sts: (number[] | null)[]}} Batch
  */
 /** geometry -> material -> cell key -> batch. Reused across calls: no allocation per pass
  * once the scene has been seen. @type {Map<any, Map<any, Map<number, Batch>>>} */
@@ -118,7 +149,7 @@ function batchFor(geometry, material, key) {
 	if (!byCell) byMaterial.set(material, (byCell = new Map()));
 	let batch = byCell.get(key);
 	if (!batch) {
-		batch = { key, geometry, material, members: [], count: 0, holder: null, capacity: 0, drawn: 0, signature: 0 };
+		batch = { key, geometry, material, members: [], count: 0, holder: null, capacity: 0, drawn: 0, signature: 0, sts: [] };
 		byCell.set(key, batch);
 		allBatches.push(batch);
 	}
@@ -136,7 +167,20 @@ function ensureHolder(batch, n) {
 	}
 	let capacity = 8;
 	while (capacity < n) capacity *= 2;
-	const holder = new THREE.InstancedMesh(batch.geometry, batch.material, capacity);
+	let geometry = batch.geometry;
+	if (batch.geometry.userData?.kitBakeLayout) {
+		// a baked batch: its own geometry (sharing every attribute of the layout geometry) to
+		// carry this holder's per-instance placements
+		geometry = new THREE.BufferGeometry();
+		for (const name in batch.geometry.attributes) geometry.setAttribute(name, batch.geometry.attributes[name]);
+		geometry.setIndex(batch.geometry.index);
+		for (const g of batch.geometry.groups) geometry.addGroup(g.start, g.count, g.materialIndex);
+		geometry.setDrawRange(batch.geometry.drawRange.start, batch.geometry.drawRange.count);
+		geometry.boundingBox = batch.geometry.boundingBox;
+		geometry.boundingSphere = batch.geometry.boundingSphere;
+		geometry.setAttribute(BAKE_ST, new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3), 3));
+	}
+	const holder = new THREE.InstancedMesh(geometry, batch.material, capacity);
 	holder.name = 'kit-batch';
 	holder.matrixAutoUpdate = false;
 	holder.visible = false;
@@ -188,15 +232,24 @@ function before(camera) {
 		if (selected.size && (selected.has(c.root.uuid) || selected.has(mesh.uuid))) continue;
 		if (!shownToRoot(mesh, c.root)) continue;
 		if ((mesh.layers.mask & camera.layers.mask) === 0) continue;
-		const geometry = mesh.geometry === c.source.geometry ? c.source.template.geometry : mesh.geometry;
+		const own = mesh.geometry === c.source.geometry;
+		let geometry = own ? c.source.template.geometry : mesh.geometry;
+		let material = c.source.template.material;
+		// a baked copy draws in a baked batch (its own LOD-swapped geometry has no bake UVs: unbaked)
+		const baked = own && bakeHook ? bakeHook.infoFor(mesh) : null;
+		if (baked) {
+			geometry = baked.geometry;
+			material = baked.material;
+		}
 		if (mesh.frustumCulled !== false) {
 			if (!geometry.boundingSphere) geometry.computeBoundingSphere();
 			if (!frustum.intersectsSphere(sphere.copy(geometry.boundingSphere).applyMatrix4(mesh.matrixWorld))) continue;
 		}
 		const e = mesh.matrixWorld.elements;
-		const batch = batchFor(geometry, c.source.template.material, cellKey(e[12], e[14], mesh.castShadow, mesh.receiveShadow, cellMetres));
+		const batch = batchFor(geometry, material, cellKey(e[12], e[14], mesh.castShadow, mesh.receiveShadow, cellMetres));
 		if (batch.members.length <= batch.count) batch.members.push(mesh);
 		else batch.members[batch.count] = mesh;
+		batch.sts[batch.count] = baked ? baked.st : null;
 		batch.count++;
 	}
 	// 2 draw every group of two or more as one instanced call; the rest draw as themselves
@@ -209,6 +262,9 @@ function before(camera) {
 		const holder = ensureHolder(batch, n);
 		if (!holder) continue;
 		const array = holder.instanceMatrix.array;
+		const stAttr = holder.geometry.attributes[BAKE_ST];
+		const stArray = stAttr ? stAttr.array : null;
+		let stChanged = false;
 		let changed = n !== batch.drawn;
 		let signature = 0;
 		for (let i = 0; i < n; i++) {
@@ -221,11 +277,22 @@ function before(camera) {
 					changed = true;
 				}
 			}
+			const st = batch.sts[i];
+			if (stArray && st) {
+				const p = i * 3;
+				if (stArray[p] !== st[0] || stArray[p + 1] !== st[1] || stArray[p + 2] !== st[2]) {
+					stArray[p] = st[0];
+					stArray[p + 1] = st[1];
+					stArray[p + 2] = st[2];
+					stChanged = true;
+				}
+			}
 			signature = (signature * 31 + mesh.id) | 0;
 			mesh.visible = false;
 			hidden.push(mesh);
 		}
 		if (signature !== batch.signature) changed = true;
+		if (stChanged) stAttr.needsUpdate = true;
 		if (changed) {
 			holder.count = n;
 			holder.instanceMatrix.needsUpdate = true;
@@ -276,6 +343,8 @@ export function scanForKitInstancing() {
 				if (ineligible({ mesh, source })) return;
 				next.push({ mesh, root, source });
 				materials.add(source.template.material);
+				const baked = bakeHook?.infoFor(mesh);
+				if (baked) materials.add(baked.material);
 			});
 		}
 	}

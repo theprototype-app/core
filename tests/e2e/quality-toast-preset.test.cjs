@@ -123,11 +123,11 @@ h.run(async () => {
 	await page.locator('#scene-quality-preset [role="radio"]', { hasText: 'Low' }).click();
 	await page.waitForTimeout(400);
 	let s = await q(page);
-	h.check(s.level === 7 && /quality preset: low/.test(s.reason), `2.3 Low holds level 7 (${s.level}, "${s.reason}")`);
+	h.check(s.level === 8 && /quality preset: low/.test(s.reason), `2.3 Low holds level 8 (${s.level}, "${s.reason}")`);
 	const stored = await page.evaluate(() => localStorage.getItem('quality:preset'));
 	h.check(stored === 'low', `2.4 saved on this device (${stored})`);
 	const drift = await page.evaluate(() => /** @type {any} */ (window).__qdrive(20000, 8));
-	h.check(drift.moves.length === 0 && drift.level === 7, `2.5 a pinned preset is never re-decided: twenty seconds of fast frames keep 7 (${drift.moves.join(',') || 'none'})`);
+	h.check(drift.moves.length === 0 && drift.level === 8, `2.5 a pinned preset is never re-decided: twenty seconds of fast frames keep 8 (${drift.moves.join(',') || 'none'})`);
 	// a game's own Quality setting outranks it while the game is played
 	await page.evaluate(() => window.__stores.qualityGovernor.applyGameQuality(0, 'high'));
 	s = await q(page);
@@ -136,12 +136,12 @@ h.run(async () => {
 	h.check(/holds its own Quality setting/.test(note), `2.7 …and the section says so ("${note}")`);
 	await page.evaluate(() => window.__stores.qualityGovernor.applyGameQuality(null, 'auto'));
 	s = await q(page);
-	h.check(s.level === 7, `2.8 leaving the game hands back the device preset (${s.level})`);
+	h.check(s.level === 8, `2.8 leaving the game hands back the device preset (${s.level})`);
 	// survives a reload
 	await h.freshReload(D);
 	await page.locator('#restore-session-dismiss').click({ timeout: 6000 }).catch(() => {});
 	s = await q(page);
-	h.check(s.level === 7 && /quality preset: low/.test(s.reason), `2.9 after a reload the preset holds again (${s.level}, "${s.reason}")`);
+	h.check(s.level === 8 && /quality preset: low/.test(s.reason), `2.9 after a reload the preset holds again (${s.level}, "${s.reason}")`);
 	await page.evaluate(() => window.__stores.openSceneSection('Quality'));
 	await page.waitForSelector('#scene-quality-preset', { state: 'visible', timeout: 10000 });
 	await page.locator('#scene-quality-preset [role="radio"]', { hasText: 'Auto' }).click();

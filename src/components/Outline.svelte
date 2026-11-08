@@ -55,7 +55,8 @@
 	} from 'postprocessing';
 	import { onMount, onDestroy, untrack } from 'svelte';
 	import { renderPaused } from '$lib/overloadGuard';
-	import { qualityOverrides, ingestDrawGap } from '$lib/qualityGovernor';
+	import { qualityOverrides, ingestDrawGap, settleQuality } from '$lib/qualityGovernor';
+	import { liteLook } from '$lib/post/proPresetsCore.js';
 	import { agentRequested } from '$lib/agent/agentMode';
 	// 16-Q4 / 43 K5: every PiP window renders as a view of THIS renderer ($lib/pipViews)
 	import { renderPipViews, mainViewCovered, noteMainSkipped } from '$lib/pipViews';
@@ -191,6 +192,10 @@
 		});
 		stackPasses = compiled.passes;
 		stackInstances = compiled.instances;
+		// 98-int (device-lab-3, HONOR at Auto): a new chain compiles its shaders on its first frames, and
+		// those hitches are not the look's cost — read as overload, three preset switches walked the phone
+		// to level 6-9 (no post at all) and the flap lock kept it there. The F27 settle, as water and fluid do.
+		if (stackPasses.length) settleQuality();
 		stackPlan = compiled.plan;
 		stackSkipped = compiled.skipped;
 		// index 1.. = after RenderPass, BEFORE the two outline passes. postprocessing's
@@ -361,10 +366,12 @@
 			postOk,
 			postWarm
 		}).filter((entry) => !(reduced.aoOff && entry.kind === 'ao'));
-		const signature = postStackSignature(entries);
+		// 98-int: the governor's "Scene look lighter" step keeps the grade and drops the heavy passes
+		const shown = reduced.lookLite ? liteLook(entries) : entries;
+		const signature = postStackSignature(shown);
 		if (signature === stackSignature) return;
 		stackSignature = signature;
-		untrack(() => rebuildStack(entries));
+		untrack(() => rebuildStack(shown));
 	});
 
 	// the one local perf knob (shadowQuality) pokes the built passes live

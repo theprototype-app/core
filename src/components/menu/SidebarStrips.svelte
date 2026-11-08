@@ -316,9 +316,9 @@
 				>
 					<Icon name="unfold-vertical" size={16} aria-hidden="true" />
 				</button>
-				<!-- the hide button only on an EMPTY column: with tabs the strip has no room to spare (two tabs
-				     must still fit a 320 px column), and the tab menu's "Hide this sidebar" + the shortcut do it -->
-				{#if !$sidebarTabs[side].length}
+				<!-- dock-fixes (owner 2026-11-08, "sidebars must ALWAYS be hideable with a button"): the hide button is
+				     on every column, with tabs or without — pinned outside the scrolling tabs like the "+" (the tabs
+				     scroll sideways when they outgrow the column, so it costs no tab its place) -->
 				<button
 					type="button"
 					id="sidebar-hide-{side}"
@@ -329,7 +329,6 @@
 				>
 					<Icon name={side === 'left' ? 'panel-left-close' : 'panel-right-close'} size={16} aria-hidden="true" />
 				</button>
-				{/if}
 			</div>
 			{#if !$sidebarTabs[side].length}
 				<!-- 44 M7: an EMPTY column stays open (VS Code / Blender style): one quiet centred line -->
@@ -422,10 +421,15 @@
 		overflow-x: auto;
 		overflow-y: hidden;
 	}
+	/* dock-fixes: with the hide button on every column (owner) a 320 px column holds two tabs + four pinned buttons
+	   only if the tabs give a little: each SHRINKS to 72 px (label ellipsis, the full name in its tooltip) before the
+	   row scrolls — two tabs always fit whole, a third scrolls (J4). Without it the front tab scrolled the other
+	   one out past the strip's edge, where a press missed it (sidebar-tabs §3). */
 	.sb-tab-group {
 		display: inline-flex;
 		align-items: stretch;
-		flex: 0 0 auto;
+		flex: 0 1 auto;
+		min-width: 72px;
 		max-width: 200px;
 		margin-top: 3px;
 		border-radius: var(--radius-input) var(--radius-input) 0 0;

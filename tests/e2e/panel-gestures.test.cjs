@@ -109,6 +109,23 @@ const rowBox = (page, label) =>
 		const r = b.getBoundingClientRect();
 		return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
 	}, label);
+/** close whatever menu is open: Escape, then what a finger does — a tap outside it (a touch long-press menu
+ * leaves the keyboard focus where it was, so Escape alone does not reach it) */
+async function closeMenus(page) {
+	await page.keyboard.press('Escape');
+	await page.waitForTimeout(200);
+	if (!(await menuOpen(page))) return;
+	// a point outside the menu (a phone's menu is a bottom sheet, so mid-height can be the sheet itself)
+	const pt = await page.evaluate(() => {
+		for (const [x, y] of [[3, 3], [innerWidth - 3, 3], [3, Math.round(innerHeight / 2)]]) {
+			if (!document.elementFromPoint(x, y)?.closest('[role="menu"]')) return { x, y };
+		}
+		return { x: 3, y: 3 };
+	});
+	await page.touchscreen.tap(pt.x, pt.y).catch(() => page.mouse.click(pt.x, pt.y));
+	await page.waitForTimeout(300);
+}
+
 async function clickRow(page, label) {
 	const p = await rowBox(page, label);
 	if (p) await page.mouse.click(p.x, p.y);
@@ -120,6 +137,15 @@ async function hoverRow(page, label) {
 	if (p) await page.mouse.move(p.x, p.y, { steps: 3 });
 	await page.waitForTimeout(500);
 	return !!p;
+}
+async function tapRow(page, cdp, label) {
+	const p = await rowBox(page, label);
+	if (!p) return false;
+	await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [p] });
+	await page.waitForTimeout(60);
+	await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+	await page.waitForTimeout(500);
+	return true;
 }
 const menuOpen = (page) => page.evaluate(() => !!document.querySelector('[role="menu"]'));
 
@@ -212,8 +238,7 @@ h.run(async () => {
 		const tab6 = await visibleTab(page);
 		await gesture(page, cdp, tab6, { x: 0, y: 0 }, { hold: 800, steps: 1 });
 		h.check(await menuOpen(page), `${name} G6 a still long-press on a group tab opens its menu`);
-		await page.keyboard.press('Escape');
-		await page.waitForTimeout(300);
+		await closeMenus(page);
 
 		// ---- D: the dock strip — one row, a vertical drag never scrolls it ----
 		const dk = await page.evaluate(() => {
@@ -221,6 +246,166 @@ h.run(async () => {
 			return sc ? { oy: getComputedStyle(sc).overflowY, ta: getComputedStyle(sc).touchAction } : null;
 		});
 		if (dk) h.check(dk.oy === 'hidden' && dk.ta === 'pan-x', `${name} D1 the dock tab row is one row: overflow-y hidden, touch-action pan-x (${JSON.stringify(dk)})`);
+
+		// ---- S: the sidebar strip (wider screens only — a folded phone has no sidebars) ----
+		await page.evaluate(async () => {
+			const s = window.__stores;
+			let g;
+			s.windowTabs.tabGroups.subscribe((v) => (g = v))();
+			for (const grp of g) for (const k of [...grp.members]) s.windowTabs.ungroupTab(k);
+			await new Promise((r) => setTimeout(r, 300));
+			s.explorerClose.set(false);
+			s.sceneBudget.statsOpen.set(true);
+			await new Promise((r) => setTimeout(r, 900));
+			// objects comes back to the dock in section E
+			for (const k of ['objects', 'explorer', 'stats']) s.dockMenu.moveToSidebar(k, 'right');
+			await new Promise((r) => setTimeout(r, 900));
+			s.sidebars.setSidebarWidth('right', 250);
+		});
+		await page.waitForTimeout(800);
+		const side = () =>
+			page.evaluate(() => {
+				const st = document.querySelector('#sidebar-strip-right');
+				const sc = st?.querySelector('.sb-tabs');
+				if (!st || !sc || !st.getClientRects().length) return null;
+				return { tabs: [...st.querySelectorAll('[data-sidebar-tab]')].map((t) => t.dataset.sidebarTab), sl: Math.round(sc.scrollLeft), over: sc.scrollWidth - sc.clientWidth };
+			});
+		const sideTab = () =>
+			page.evaluate(() => {
+				const sc = document.querySelector('#sidebar-strip-right .sb-tabs')?.getBoundingClientRect();
+				for (const t of document.querySelectorAll('#sidebar-strip-right .sb-tab')) {
+					const r = t.getBoundingClientRect();
+					const x = Math.round(r.x + Math.min(r.width / 2, 40));
+					const y = Math.round(r.y + r.height / 2);
+					if (!sc || x < sc.left + 4 || x > sc.right - 4) continue;
+					if (document.elementFromPoint(x, y)?.closest('.sb-tab') !== t) continue;
+					return { x, y, key: t.dataset.sidebarTab };
+				}
+				return null;
+			});
+		const sb0 = await side();
+		if (!sb0) {
+			h.check(name === 'folded', `${name} S0 the right sidebar strip is drawn on a wider screen (folded = phone shell, none)`);
+		} else {
+			h.check(sb0.tabs.length >= 3 && sb0.over > 20, `${name} S0 premise: the right column holds several tabs that overflow its strip (${JSON.stringify(sb0)})`);
+			// S1 — a sideways swipe scrolls the tabs; nothing tears off (the owner's report)
+			let t = await sideTab();
+			h.check(!!t && !(await menuOpen(page)), `${name} S0.1 premise: a sidebar tab is under the finger, no menu open (${JSON.stringify(t)})`);
+			const dir = sb0.sl > sb0.over / 2 ? 1 : -1; // the finger drags the content back from whichever end it is at
+			await gesture(page, cdp, t, { x: 150 * dir, y: 0 }, { steps: 8 });
+			const s1 = (await side()) ?? { tabs: [], sl: NaN };
+			h.check(Math.abs(s1.sl - sb0.sl) > 20 && JSON.stringify(s1.tabs) === JSON.stringify(sb0.tabs), `${name} S1 a sideways swipe over the sidebar tabs scrolls them and tears nothing off (${JSON.stringify({ sb0, s1 })})`);
+			await page.screenshot({ path: `${OUT}/s1-${name}-sidebar-swipe.png` });
+			// S2 — a vertical drag on a tab does nothing
+			t = await sideTab();
+			await gesture(page, cdp, t, { x: 0, y: 160 }, { steps: 6 });
+			const s2 = (await side()) ?? { tabs: [] };
+			const s2menu = (await menuOpen(page)) ? await menuLabels(page) : null;
+			h.check(JSON.stringify(s2.tabs) === JSON.stringify(sb0.tabs) && !s2menu, `${name} S2 a vertical drag on a sidebar tab moves nothing (${JSON.stringify({ tabs: s2.tabs, menu: s2menu })})`);
+			if (s2menu) await closeMenus(page);
+			// S3 — long-press + a short drag (inside 48 px) and release: it stays
+			t = await sideTab();
+			await gesture(page, cdp, t, { x: -20, y: 30 }, { hold: 420, steps: 3 });
+			const s3 = (await side()) ?? { tabs: [] };
+			h.check(JSON.stringify(s3.tabs) === JSON.stringify(sb0.tabs), `${name} S3 a long-press + a drag within 48 px of the strip leaves the tab where it was (${JSON.stringify(s3.tabs)})`);
+			// S4 — long-press + a drag out into the viewport: it floats there
+			t = await sideTab();
+			const vw = await page.evaluate(() => innerWidth);
+			const toX = Math.round(vw * 0.3);
+			await gesture(page, cdp, t, { x: toX - (t?.x ?? 0), y: 140 }, { hold: 420, steps: 10 });
+			const s4 = (await side()) ?? { tabs: [] };
+			h.check(!s4.tabs.includes(t.key) && s4.tabs.length === sb0.tabs.length - 1, `${name} S4 a long-press + a drag out into the viewport takes "${t?.key}" out of the sidebar (${JSON.stringify(s4.tabs)})`);
+			await page.screenshot({ path: `${OUT}/s4-${name}-sidebar-torn.png` });
+
+			// S5 (item 5) — long-press Full height ▸ Hide this button; the tab menu then lists Show buttons
+			const full = await centreOf(page, '#sidebar-full-right');
+			await gesture(page, cdp, full, { x: 0, y: 0 }, { hold: 700, steps: 1 });
+			let rows = await menuLabels(page);
+			h.check(rows[0] === 'Hide this button', `${name} S5.1 a long-press on Full height opens its menu (${JSON.stringify(rows)})`);
+			await tapRow(page, cdp, 'Hide this button');
+			const fullShown = await page.evaluate(() => getComputedStyle(document.querySelector('#sidebar-full-right')).display);
+			h.check(fullShown === 'none', `${name} S5.2 ...Hide this button hides it (${fullShown})`);
+			t = await sideTab();
+			await gesture(page, cdp, t, { x: 0, y: 0 }, { hold: 800, steps: 1 });
+			rows = await menuLabels(page);
+			h.check(rows.includes('Show buttons'), `${name} S5.3 the sidebar tab's long-press menu lists Show buttons (${JSON.stringify(rows)})`);
+			await page.screenshot({ path: `${OUT}/s5-${name}-sidebar-show-buttons.png` });
+			await closeMenus(page);
+			await page.evaluate(() => window.__stores.chromeButtons.showAllChromeButtons());
+			await page.waitForTimeout(300);
+		}
+
+		// ---- E (item 5) — the dock's own buttons: long-press Minimize ▸ Hide; a dock tab's menu brings it back ----
+		const docked = await page.evaluate(async () => {
+			const s = window.__stores;
+			// close what E does not use, so nothing floats over the dock row (on a folded phone S's windows float;
+			// the Flow Code text window would catch the E4 drop)
+			s.sceneBudget.statsOpen.set(false);
+			s.flowCodeClose.set(true);
+			s.explorerClose.set(true);
+			s.toastStore.set([]); // an auto-quality card sits over the dock row on a loaded headless page
+			await new Promise((r) => setTimeout(r, 300));
+			const res = ['objects', 'animation'].map((k) => `${k}:${s.dockMenu.dockTab?.(k)}`);
+			if (res[0].endsWith('false')) {
+				// a phone keeps the Objects list floating: the Explorer is the second dock tab there
+				s.explorerClose.set(false);
+				await new Promise((r) => setTimeout(r, 600));
+				res.push(`explorer:${s.dockMenu.dockTab?.('explorer')}`);
+			}
+			await new Promise((r) => setTimeout(r, 1500)); // the flow family's tabs settle late
+			return res;
+		});
+		await page.waitForTimeout(600);
+		await page.screenshot({ path: `${OUT}/e0-${name}-dock.png` });
+		const floating = await page.evaluate(() => [...document.querySelectorAll('[data-window-key], .tab-strip[data-group-id]')].filter((e) => e.getClientRects().length).map((e) => e.getAttribute('data-window-key') ?? 'group'));
+		console.log(`${name} E setup: ${JSON.stringify({ docked, floating })}`);
+		const mini = await centreOf(page, '#dock-minimize');
+		if (!mini) h.check(name === 'folded', `${name} E0 the dock's own buttons are drawn (phone shell: hidden with the tab row)`);
+		else {
+			const hit = await page.evaluate(({ x, y }) => {
+				const el = document.elementFromPoint(x, y);
+				return el?.closest('#dock-minimize') ? 'ok' : `${el?.tagName}#${el?.id}.${el?.className?.toString?.().slice(0, 40)}`;
+			}, mini);
+			h.check(hit === 'ok', `${name} E0.1 premise: the finger lands on Minimize (${hit})`);
+			await gesture(page, cdp, mini, { x: 0, y: 0 }, { hold: 700, steps: 1 });
+			const rows = await menuLabels(page);
+			h.check(rows[0] === 'Hide this button', `${name} E1 a long-press on the dock's Minimize opens its menu (${JSON.stringify(rows)})`);
+			await tapRow(page, cdp, 'Hide this button');
+			const disp = await page.evaluate(() => getComputedStyle(document.querySelector('#dock-minimize')).display);
+			h.check(disp === 'none', `${name} E2 ...and hides it (${disp})`);
+			const dt = await page.evaluate(() => {
+				for (const t of document.querySelectorAll('[data-dock-tab]')) {
+					const r = t.getBoundingClientRect();
+					if (!r.width) continue;
+					const x = Math.round(r.x + Math.min(r.width / 2, 30));
+					const y = Math.round(r.y + r.height / 2);
+					if (document.elementFromPoint(x, y)?.closest('[data-dock-tab]') === t) return { x, y };
+				}
+				return null;
+			});
+			h.check(!!dt, `${name} E3.0 premise: a dock tab is under the finger`);
+			if (dt) {
+				await gesture(page, cdp, dt, { x: 0, y: 0 }, { hold: 800, steps: 1 });
+				const r2 = await menuLabels(page);
+				h.check(r2.includes('Show buttons'), `${name} E3 a dock tab's long-press menu lists Show buttons (${JSON.stringify(r2)})`);
+				await closeMenus(page);
+			}
+			await page.evaluate(() => window.__stores.chromeButtons.showAllChromeButtons());
+			await page.waitForTimeout(300);
+			// E4 (item 7) — a long-press + a drag along the dock strip reorders its tabs (touch had no drag at all)
+			const order = () => page.evaluate(() => [...document.querySelectorAll('[data-dock-tab]')].filter((t) => t.getClientRects().length).map((t) => t.dataset.dockTab));
+			const o0 = await order();
+			if (o0.length >= 2) {
+				const a = await centreOf(page, `[data-dock-tab="${o0[0]}"]`);
+				const b = await page.evaluate((k) => {
+					const r = document.querySelector(`[data-dock-tab="${k}"]`).getBoundingClientRect();
+					return { x: Math.round(r.right - 4), y: Math.round(r.y + r.height / 2) };
+				}, o0[1]);
+				await gesture(page, cdp, a, { x: b.x - a.x + 6, y: 0 }, { hold: 420, steps: 8 });
+				const o1 = await order();
+				h.check(o1.indexOf(o0[0]) > o1.indexOf(o0[1]) && o1.indexOf(o0[1]) >= 0, `${name} E4 a long-press + a drag along the dock strip reorders its tabs (${JSON.stringify({ o0, o1 })})`);
+			} else h.check(false, `${name} E4 premise: two dock tabs (${JSON.stringify({ o0, docked })})`);
+		}
 
 		h.check((h.pageErrors(P) || []).length === 0, `${name}: no page errors (${(h.pageErrors(P) || []).join(' | ')})`);
 		await P.ctx.close();
@@ -281,18 +466,20 @@ h.run(async () => {
 		const row = await page.evaluate(() => !!document.querySelector('#row-chrome-buttons #cb-toggle-group-close'));
 		h.check(row, `B6 Settings ▸ Customize buttons lists the strip buttons`);
 		const flip = async () => {
-			const t = page.locator('#cb-toggle-group-close');
-			await t.scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => {});
-			await t.click({ timeout: 5000 }).catch(() => page.evaluate(() => document.querySelector('#cb-toggle-group-close')?.click()));
+			await page.evaluate(() => {
+				const t = /** @type {HTMLElement|null} */ (document.querySelector('#cb-toggle-group-close'));
+				t?.scrollIntoView({ block: 'center' });
+				t?.click();
+			});
 		};
 		if (row) {
 			await flip();
 			await page.waitForTimeout(300);
-			const off = await page.evaluate(() => getComputedStyle(document.querySelector('.tab-strip .ts-close')).display + ' ' + document.querySelector('#cb-toggle-group-close')?.getAttribute('aria-checked'));
+			const off = await page.evaluate(() => getComputedStyle(document.querySelector('.tab-strip .ts-close')).display + ' ' + document.querySelector('#cb-toggle-group-close')?.getAttribute('aria-pressed'));
 			await page.screenshot({ path: `${OUT}/b6-desk-settings.png` });
 			await flip();
 			await page.waitForTimeout(300);
-			const on = await page.evaluate(() => getComputedStyle(document.querySelector('.tab-strip .ts-close')).display + ' ' + document.querySelector('#cb-toggle-group-close')?.getAttribute('aria-checked'));
+			const on = await page.evaluate(() => getComputedStyle(document.querySelector('.tab-strip .ts-close')).display + ' ' + document.querySelector('#cb-toggle-group-close')?.getAttribute('aria-pressed'));
 			h.check(off.startsWith('none') && !on.startsWith('none'), `B7 the Settings switch hides and shows it (${off} -> ${on})`);
 		}
 		await P.ctx.close();

@@ -22,7 +22,7 @@ beforeEach(() => showAllChromeButtons());
 describe('registry', () => {
 	it('has the strip buttons of every kind and no "+"', () => {
 		const ids = chromeButtonDefs().map((d) => d.id);
-		for (const id of ['sidebar.hide', 'sidebar.full', 'dock.split', 'dock.undock', 'dock.minimize', 'group.dock', 'group.close']) expect(ids).toContain(id);
+		for (const id of ['sidebar.toggle', 'sidebar.full', 'dock.split', 'dock.undock', 'dock.minimize', 'group.dock', 'group.close']) expect(ids).toContain(id);
 		expect(ids.some((id) => /add|plus/.test(id))).toBe(false);
 	});
 	it('refuses to register a "+" or an unknown kind; registering twice is harmless', () => {
@@ -79,10 +79,10 @@ describe('menus', () => {
 	});
 	it('a button menu: Hide this button first, then that kind\'s Show buttons, then Customize', () => {
 		hideChromeButton('sidebar.full');
-		const rows = chromeButtonMenuItems('sidebar.hide');
+		const rows = chromeButtonMenuItems('sidebar.toggle');
 		expect(rows.map((/** @type {any} */ r) => r.label)).toEqual(['Hide this button', 'Show buttons', 'Customize buttons…']);
 		rows[0].action();
-		expect(get(hiddenChromeButtons)).toContain('sidebar.hide');
+		expect(get(hiddenChromeButtons)).toContain('sidebar.toggle');
 		expect(chromeButtonMenuItems('dock.add')).toEqual([]);
 	});
 });

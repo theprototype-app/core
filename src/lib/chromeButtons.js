@@ -34,7 +34,9 @@ export const CHROME_KINDS = /** @type {Record<string, string>} */ ({
 
 /** @type {ChromeButtonDef[]} */
 const REGISTRY = [
-	{ id: 'sidebar.hide', kind: 'sidebar', label: 'Hide sidebar', icon: 'panel-right-close' },
+	// the column's show / hide control, whatever form it takes (strip button today; the owner may pick header
+	// buttons + a switch in the top-right group) — the id names the JOB, not the widget
+	{ id: 'sidebar.toggle', kind: 'sidebar', label: 'Show / hide sidebar', icon: 'panel-right-close' },
 	{ id: 'sidebar.full', kind: 'sidebar', label: 'Full height', icon: 'unfold-vertical' },
 	{ id: 'sidebar.lock', kind: 'sidebar', label: 'Header lock', icon: 'lock' },
 	{ id: 'dock.split', kind: 'dock', label: 'Split', icon: 'columns-2' },

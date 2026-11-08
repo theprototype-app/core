@@ -19,6 +19,8 @@
 	import Icon from '../ui/Icon.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import { stripScroll } from '$lib/ui/stripScroll.js';
+	import { tabTouch, outsideBy } from '$lib/ui/tabTouch.js'; // panel-gestures item 7
+	import { chromeButton, hiddenChromeButtons, showButtonsItems } from '$lib/chromeButtons'; // panel-gestures item 5
 	import { tabDropTarget, showDropTarget, canFloatPanel } from '$lib/sidebarDrop';
 	import { canDockHere, addWindowItems, rebuildAfterPick } from '$lib/dockMenu';
 	import { bindingOf } from '$lib/shortcuts';
@@ -67,39 +69,52 @@
 	let press: { key: string; from: Side; x0: number; y0: number; id: number } | null = null;
 	let suppressClick = false;
 	const DRAG_SLOP = 6;
-	const LONG_PRESS_MS = 500;
-	let pressTimer: ReturnType<typeof setTimeout> | null = null;
-	function clearPress() {
-		if (pressTimer) clearTimeout(pressTimer);
-		pressTimer = null;
-	}
 
+	// panel-gestures item 7 (owner, N6: "dragging across many sidebar tabs tears a tab off as a floating window
+	// instead of scrolling"): a MOUSE keeps the press-drag below; touch / pen go through $lib/ui/tabTouch — a
+	// sideways swipe scrolls the tabs, up / down does nothing, a still long-press LIFTS the tab and only then does
+	// it travel (the same drop model), floats only once it is TEAR_PX outside the strip, and held still = the menu
 	function onTabDown(e: PointerEvent, key: string, side: Side) {
-		if (e.button !== 0) return;
+		if (e.button !== 0 || e.pointerType !== 'mouse') return;
 		// a drag whose tab MOVED to the other strip never gets its click, so the flag is cleared here
 		suppressClick = false;
 		press = { key, from: side, x0: e.clientX, y0: e.clientY, id: e.pointerId };
 		(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
-		clearPress();
-		// touch has no right button: a STILL press opens the tab's menu (the timer is the promise —
-		// Android's own long-press contextmenu is not guaranteed once the tab claims the touch)
-		if (e.pointerType === 'touch' || e.pointerType === 'pen') {
-			const at = press;
-			pressTimer = setTimeout(() => {
-				pressTimer = null;
-				if (press !== at || drag) return;
-				press = null;
-				suppressClick = true;
-				openTabMenu(at.x0, at.y0, key, side);
-			}, LONG_PRESS_MS);
-		}
+	}
+	/** the strip's box when a touch lifted a tab (the tear-off margin is measured from it) */
+	let liftStrip: { left: number; top: number; right: number; bottom: number } | null = null;
+	function touchTab(key: string, side: Side) {
+		return {
+			onlift: (x: number, y: number) => {
+				const r = document.getElementById(`sidebar-strip-${side}`)?.getBoundingClientRect();
+				liftStrip = r ? { left: r.left, top: r.top, right: r.right, bottom: r.bottom } : null;
+				press = { key, from: side, x0: x, y0: y, id: -1 };
+			},
+			onmove: (e: PointerEvent) => {
+				if (!press || press.key !== key || press.id !== -1) return;
+				moveTo(e, true);
+			},
+			ondrop: (e: PointerEvent) => {
+				if (!press || press.key !== key || press.id !== -1) return;
+				drop(e, true);
+			},
+			oncancel: () => onTabCancel(),
+			onmenu: (x: number, y: number) => {
+				onTabCancel();
+				openTabMenu(x, y, key, side);
+			}
+		};
 	}
 	function onTabMove(e: PointerEvent) {
 		if (!press || e.pointerId !== press.id) return;
 		if (!drag && Math.hypot(e.clientX - press.x0, e.clientY - press.y0) < DRAG_SLOP) return;
-		clearPress();
+		moveTo(e, false);
+	}
+	/** a dragged tab asks the drop model where it would land; on touch the float target waits for the margin */
+	function moveTo(e: PointerEvent, touch: boolean) {
+		if (!press) return;
 		const key = press.key;
-		const target = tabDropTarget({
+		let target = tabDropTarget({
 			x: e.clientX,
 			y: e.clientY,
 			key,
@@ -108,19 +123,24 @@
 			canDock: key !== 'inspector' && canDockHere(key),
 			size: floatSizeOf(key) ?? undefined
 		});
+		// item 7: a finger tears a tab off only TEAR_PX outside its strip (a mouse keeps its own rule)
+		if (touch && target?.kind === 'float' && (!liftStrip || !outsideBy(liftStrip, e.clientX, e.clientY))) target = null;
 		showDropTarget(target, { id: 'sidebar-drop-zone' });
 		drag = { key, from: press.from, x: e.clientX, y: e.clientY, target };
 	}
 	function onTabUp(e: PointerEvent) {
 		if (!press || e.pointerId !== press.id) return;
-		clearPress();
+		drop(e, false);
+	}
+	function drop(e: PointerEvent, touch: boolean) {
 		const d = drag;
 		press = null;
 		drag = null;
+		liftStrip = null;
 		showDropTarget(null);
 		if (!d) return;
 		suppressClick = true; // the click that ends a drag is not a tab press
-		if (tearOffAt(d.key, e)) return; // 70 W4: released outside the browser window — its own window there
+		if (!touch && tearOffAt(d.key, e)) return; // 70 W4: released outside the browser window — its own window there
 		const t = d.target;
 		if (!t) return;
 		if (t.kind === 'side') moveSidebarTab(d.key, t.side);
@@ -128,7 +148,7 @@
 		else floatSidebarTab(d.key, e.clientX, e.clientY);
 	}
 	function onTabCancel() {
-		clearPress();
+		liftStrip = null;
 		press = null;
 		drag = null;
 		showDropTarget(null);
@@ -149,7 +169,8 @@
 		return bindingOf(side === 'left' ? 'panels.sidebar-left' : 'panels.sidebar-right') ?? '';
 	}
 	function openTabMenu(x: number, y: number, key: string, side: Side) {
-		menu = { x, y, items: sidebarTabItems(key, side, titleOf(key, $inspectorTabTitle)) };
+		// item 5: the strip buttons this person hid come back from here ("Show buttons ▸")
+		menu = { x, y, items: [...sidebarTabItems(key, side, titleOf(key, $inspectorTabTitle)), ...showButtonsItems('sidebar', $hiddenChromeButtons)] };
 	}
 	function onTabMenu(e: MouseEvent, key: string, side: Side) {
 		e.preventDefault();
@@ -254,6 +275,7 @@
 								tabindex={$sidebarShown[side] === key ? 0 : -1}
 								data-sidebar-tab={key}
 								title="{title} — drag to move it (the other side, the bottom dock, or out into a floating window); right-click for more"
+								use:tabTouch={touchTab(key, side)}
 								onpointerdown={(e) => onTabDown(e, key, side)}
 								onpointermove={onTabMove}
 								onpointerup={onTabUp}
@@ -293,6 +315,7 @@
 						type="button"
 						id="inspector-sticky-head"
 						class="sb-pin sb-lock ins-sticky-btn"
+						use:chromeButton={'sidebar.lock'}
 						aria-pressed={sticky}
 						aria-label={sticky ? `Let the ${panelName} header scroll away` : `Keep the ${panelName} header on top`}
 						title={sticky
@@ -306,6 +329,7 @@
 				<button
 					id="sidebar-full-{side}"
 					class="sb-pin"
+					use:chromeButton={'sidebar.full'}
 					class:on={$sidebarFull[side]}
 					aria-pressed={$sidebarFull[side]}
 					aria-label="Full height"
@@ -323,6 +347,7 @@
 					type="button"
 					id="sidebar-hide-{side}"
 					class="sb-pin"
+					use:chromeButton={'sidebar.toggle'}
 					aria-label="Hide the {side} sidebar"
 					title="Hide this sidebar — its tabs stay open{keyOfSide(side) ? ' (' + keyOfSide(side) + ' brings it back)' : ''}"
 					onclick={() => toggleSidebar(side, false)}
@@ -443,6 +468,10 @@
 	.sb-tab-group.dragging {
 		opacity: 0.5;
 	}
+	/* item 7: the long-pressed tab is lifted (it now follows the finger) */
+	.sb-tab-group :global(.sb-tab.tab-lifted) {
+		box-shadow: inset 0 0 0 2px var(--accent);
+	}
 	.sb-tab {
 		display: inline-flex;
 		align-items: center;
@@ -453,7 +482,8 @@
 		color: inherit;
 		font-size: var(--fs-desc);
 		cursor: grab;
-		touch-action: none;
+		/* item 7: a finger swipes the strip (tabTouch sets pan-x inline); a mouse drags as before */
+		touch-action: pan-x;
 		user-select: none;
 		white-space: nowrap;
 	}

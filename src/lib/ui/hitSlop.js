@@ -13,6 +13,7 @@
 // Desktop (fine pointer) never installs: zero cost, byte-identical.
 import { planSlop, TARGET } from './hitSlopCore.js';
 import { coarsePointer } from '$lib/inputDevice';
+import { isBodyDragGround } from '$lib/windowBodyDrag';
 
 const CONTROLS =
 	'button, a[href], input:not([type=hidden]), select, textarea, summary, [role=button], [role=menuitem], [role=menuitemcheckbox], [role=menuitemradio], [role=tab], [role=option], [role=switch], [role=checkbox], [role=radio]';
@@ -44,37 +45,76 @@ function visible(el) {
 	return { r, cs };
 }
 
-/** the nearest floating SURFACE around an element (a window, a menu, a sheet, the header): fixed, or positioned with
- *  a z-index — null = the page itself @param {Element | null} el */
-function surfaceOf(el) {
-	for (let e = el; e && e !== document.body && e !== document.documentElement; e = e.parentElement) {
+/** a press here is a ROW's or a drag's own (a tree row, a list row, a draggable card): never ground for a tap area */
+const ROWISH = '[role=treeitem], [role=row], [role=gridcell], [draggable=true]';
+
+/** per scan: an ancestor element -> the boxes of its OWN text (its glyphs, not its padding) @type {Map<Element, DOMRect[]>} */
+let textBoxes = new Map();
+/** per scan: an ancestor element -> may its ground (outside its text) take a tap area at all? @type {Map<Element, boolean>} */
+let groundOk = new Map();
+
+/** @param {Element} e */
+function ownTextBoxes(e) {
+	let boxes = textBoxes.get(e);
+	if (!boxes) {
+		boxes = [];
+		for (const n of e.childNodes) {
+			if (n.nodeType !== 3 || !n.textContent?.trim()) continue;
+			const range = document.createRange();
+			range.selectNodeContents(n);
+			boxes.push(...range.getClientRects());
+		}
+		textBoxes.set(e, boxes);
+	}
+	return boxes;
+}
+
+/** the nearest ancestor that clips or scrolls its content (a tap area past its edge is clipped away — and would
+ *  grow what it scrolls by) @param {HTMLElement} el */
+function clipperOf(el) {
+	for (let e = el.parentElement; e && e !== document.body; e = e.parentElement) {
 		const cs = getComputedStyle(e);
-		if (cs.position === 'fixed' || (cs.position !== 'static' && cs.zIndex !== 'auto')) return e;
+		if (cs.overflowX !== 'visible' || cs.overflowY !== 'visible') return e;
 	}
 	return null;
 }
 
-/** 98-int (#537 follow-up): may the control's tap area cover the point? Only where the page shows the control's own
- *  surface (its window body, its bar), the page itself or the 3D view — never another surface (a menu, a sheet, a
- *  modal, another window) painted there, above OR below the control: the planner only knows controls, so a header
- *  button's area used to take presses inside an open menu, and a window's ✕ area those on the window under it.
- *  @param {HTMLElement} el @param {number} x @param {number} y */
-function ownGround(el, x, y) {
+/** hitslop-fix — THE TAP RULE: may the control's tap area cover the point? What the page shows there must be
+ *  the control itself, the 3D view, or the GROUND of one of the control's own ancestors (its bar, its menu, its
+ *  window, the page) — never another element's own box: not another control, not a label or a section heading
+ *  beside it, not a neighbour's surface (a menu, a sheet, another window, a corner of the bar beside it). And
+ *  that ancestor ground must not mean something itself: a press on a row or a draggable belongs to the row, on
+ *  the glyphs of a text to that text, on a floating window's free body to the window's body drag; nor may it
+ *  lie past the nearest clipping/scrolling ancestor (the 98-int 4b foreign-surface clip is the special case of
+ *  "not an ancestor").
+ *  @param {HTMLElement} el @param {HTMLElement | null} clipper @param {number} x @param {number} y */
+function ownGround(el, clipper, x, y) {
 	if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return true;
 	const hit = document.elementFromPoint(x, y);
-	if (!hit || hit === el || el.contains(hit) || hit.contains(el) || hit.tagName === 'CANVAS') return true;
-	const s = surfaceOf(hit);
-	return !s || s.contains(el);
+	if (!hit || hit === el || el.contains(hit)) return true;
+	if (hit.tagName === 'CANVAS') return !!hit.closest('#viewport');
+	if (!hit.contains(el)) return false;
+	if (clipper && hit !== clipper && hit.contains(clipper)) return false;
+	let ok = groundOk.get(hit);
+	if (ok === undefined) {
+		ok = !hit.closest(ROWISH) && !isBodyDragGround(hit);
+		groundOk.set(hit, ok);
+	}
+	if (!ok) return false;
+	// its own text: a label wrapping the control is the control's (a press on it toggles the same thing)
+	if (hit.tagName === 'LABEL') return true;
+	return !ownTextBoxes(hit).some((b) => x >= b.left - 2 && x <= b.right + 2 && y >= b.top - 2 && y <= b.bottom + 2);
 }
 
 /** cut each side of a planned slop back to what ownGround allows: the full reach, half of it, or nothing
  *  @param {HTMLElement} el @param {{l:number,t:number,r:number,b:number}} r @param {{t:number,r:number,b:number,l:number}} s */
-function clipToSurface(el, r, s) {
+function clipToGround(el, r, s) {
+	const clipper = clipperOf(el);
 	const xs = [r.l + 1, (r.l + r.r) / 2, r.r - 1];
 	const ys = [r.t + 1, (r.t + r.b) / 2, r.b - 1];
 	/** @param {(d: number) => [number, number][]} pts @param {number} want */
 	const reach = (pts, want) => {
-		for (const d of [want, want / 2]) if (d >= 1 && pts(d).every(([x, y]) => ownGround(el, x, y))) return d;
+		for (const d of [want, want / 2]) if (d >= 1 && pts(d).every(([x, y]) => ownGround(el, clipper, x, y))) return d;
 		return 0;
 	};
 	s.t = reach((d) => xs.map((x) => [x, r.t - d + 0.5]), s.t);
@@ -100,6 +140,8 @@ export function scanHitSlop() {
 	const t0 = performance.now();
 	mo?.disconnect();
 	clear();
+	textBoxes = new Map();
+	groundOk = new Map();
 	if (enabled) {
 		/** @type {{el: HTMLElement, cs: CSSStyleDeclaration, r: {l:number,t:number,r:number,b:number}, small: boolean, nested: boolean}[]} */
 		const items = [];
@@ -131,8 +173,8 @@ export function scanHitSlop() {
 			const slot = after === 'none' || after === 'normal' ? 'a' : before === 'none' || before === 'normal' ? 'b' : null;
 			if (!slot) return void why.set(it.el, 'both pseudos in use');
 			// measured against the page with NO tap area drawn yet: the writes wait until every control is clipped
-			clipToSurface(it.el, it.r, s);
-			if (s.t + s.r + s.b + s.l < 1) return void why.set(it.el, 'another surface all around');
+			clipToGround(it.el, it.r, s);
+			if (s.t + s.r + s.b + s.l < 1) return void why.set(it.el, 'no free ground around it');
 			const hs = it.cs.position === 'static' ? slot + 's' : slot;
 			writes.push(() => {
 				it.el.setAttribute('data-hs', hs);

@@ -608,7 +608,9 @@ h.run(async () => {
 			}
 			// 98-int (dock-fixes, owner 2026-11-08): the bar lives in the FREE viewport between the sidebar STRIPS, so the
 			// left strip (its hide button is always there now) takes its width too — at 250 px one cell may still fold
-			h.check(last <= 1 && (await P.locator('#toolbar-customize').count()) === 1, T + `J10: shrunk to 250 px the row is (almost) all back, the "…" too (${counts.join(' ')})`);
+			// with one cell folded the "…" lives in the "»" menu (Customize toolbar… is its last row), so the bar end is "»"
+			const endId = last === 0 ? '#toolbar-customize' : '#toolbar-overflow';
+			h.check(last <= 1 && (await P.locator(endId).count()) === 1, T + `J10: shrunk to 250 px the row is (almost) all back, the "…" too or the "»" that holds it (${counts.join(' ')}; ${endId})`);
 			// grow again → folds again; unpinned it folds the SAME (dock-fixes: every OPEN column bounds the bar, pinned or not —
 			// an unpinned column used to let the bar slide under its bottom)
 			await sidebar(P, { side: 'right', full: true, w: 440 });

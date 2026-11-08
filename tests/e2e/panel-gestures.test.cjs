@@ -333,6 +333,38 @@ h.run(async () => {
 			await closeMenus(page);
 			await page.evaluate(() => window.__stores.chromeButtons.showAllChromeButtons());
 			await page.waitForTimeout(300);
+
+			// P (item 5 x dock-fixes item 8) — the Panels button wears the generic button menu, BOUND to its own
+			// mode: its "Show / Hide the sidebars" row first, Hide this button sets the mode 'off', and Show brings
+			// back the mode it had
+			const pb = await centreOf(page, '#panels-toggle');
+			if (name === 'unfolded') h.check(!!pb, `${name} P0 premise: the Panels button is drawn on the unfolded phone (Auto, touch)`);
+			if (pb) {
+				const open0 = await page.evaluate(() => !!document.querySelector('#panels-toggle')?.getAttribute('aria-pressed')?.includes('true'));
+				await gesture(page, cdp, pb, { x: 0, y: 0 }, { hold: 700, steps: 1 });
+				const pr = await menuLabels(page);
+				const open1 = await page.evaluate(() => !!document.querySelector('#panels-toggle')?.getAttribute('aria-pressed')?.includes('true'));
+				h.check(/^(Hide|Show) the sidebars$/.test(pr[0]) && pr[1] === 'Hide this button' && pr.includes('Customize buttons…'), `${name} P1 a long-press on the Panels button opens the button menu with its own row first (${JSON.stringify(pr)})`);
+				h.check(open0 === open1, `${name} P2 ...and the lift does not toggle the sidebars (${open0} -> ${open1})`);
+				await page.screenshot({ path: `${OUT}/p1-${name}-panels-menu.png` });
+				await tapRow(page, cdp, 'Hide this button');
+				const off = await page.evaluate(() => {
+					const s = window.__stores;
+					let m, ids;
+					s.panelsButton.panelsButtonMode.subscribe((v) => (m = v))();
+					s.chromeButtons.hiddenChromeIds.subscribe((v) => (ids = v))();
+					return { m, ids, drawn: !!document.querySelector('#panels-toggle') };
+				});
+				h.check(off.m === 'off' && !off.drawn && off.ids.includes('top.panels'), `${name} P3 Hide this button switches its mode off and it is listed as hidden (${JSON.stringify(off)})`);
+				await page.evaluate(() => window.__stores.chromeButtons.setChromeButtonShown('top.panels', true));
+				await page.waitForTimeout(400);
+				const on = await page.evaluate(() => {
+					let m;
+					window.__stores.panelsButton.panelsButtonMode.subscribe((v) => (m = v))();
+					return { m, drawn: !!document.querySelector('#panels-toggle') };
+				});
+				h.check(on.m === 'auto' && on.drawn, `${name} P4 Show (Customize buttons) brings back the mode it had (${JSON.stringify(on)})`);
+			}
 		}
 
 		// ---- E (item 5) — the dock's own buttons: long-press Minimize ▸ Hide; a dock tab's menu brings it back ----
@@ -465,6 +497,8 @@ h.run(async () => {
 		await page.waitForTimeout(900);
 		const row = await page.evaluate(() => !!document.querySelector('#row-chrome-buttons #cb-toggle-group-close'));
 		h.check(row, `B6 Settings ▸ Customize buttons lists the strip buttons`);
+		const prow = await page.evaluate(() => !!document.querySelector('#row-chrome-buttons #cb-toggle-top-panels'));
+		h.check(prow, `B6.1 ...and the Panels button among the Top buttons`);
 		const flip = async () => {
 			await page.evaluate(() => {
 				const t = /** @type {HTMLElement|null} */ (document.querySelector('#cb-toggle-group-close'));

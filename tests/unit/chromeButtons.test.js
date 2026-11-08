@@ -88,6 +88,10 @@ describe('a bound button (its state lives elsewhere)', () => {
 		setChromeButtonShown('top.bound', true);
 		expect(get(off)).toBe(false);
 	});
+	it('a button\'s own rows come first in its menu', () => {
+		expect(registerChromeButton({ id: 'top.own', kind: 'top', label: 'Own', menu: () => [{ label: 'Do the thing' }] })).toBe(true);
+		expect(chromeButtonMenuItems('top.own').map((/** @type {any} */ r) => r.label)).toEqual(['Do the thing', 'Hide this button', 'Customize buttons…']);
+	});
 });
 
 describe('menus', () => {

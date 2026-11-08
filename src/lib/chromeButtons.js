@@ -22,7 +22,8 @@ import { settingsOpen, settingsSection, settingsSearchSeed } from '../stores/app
 /** A button whose shown / hidden state already lives elsewhere (the Panels button's own mode) BINDS it:
  * `hidden` says whether it is switched off, `set(hidden)` switches it. Its id never enters the record.
  * @typedef {{hidden: import('svelte/store').Readable<boolean>, set: (hidden: boolean) => void}} ChromeButtonState */
-/** @typedef {{id: string, kind: string, label: string, icon?: string, state?: ChromeButtonState}} ChromeButtonDef */
+/** `menu` = the button's OWN rows, drawn above Hide this button (the Panels button's "Show the sidebars")
+ * @typedef {{id: string, kind: string, label: string, icon?: string, state?: ChromeButtonState, menu?: () => any[]}} ChromeButtonDef */
 
 const KEY = 'chromeButtons';
 
@@ -177,6 +178,7 @@ export function chromeButtonMenuItems(id) {
 	const def = chromeButtonDef(id);
 	if (!def) return [];
 	return [
+		...(def.menu?.() ?? []),
 		{ label: 'Hide this button', icon: 'eye-off', tooltip: 'Settings ▸ Customize buttons, or this strip’s menu, brings it back', action: () => hideChromeButton(id) },
 		...showButtonsItems(def.kind),
 		{ label: 'Customize buttons…', icon: 'settings', action: openCustomizeButtons }

@@ -2072,15 +2072,18 @@
 		const r = el?.getBoundingClientRect();
 		return r && r.width > 0 && r.height > 0 ? boxOf(r) : null;
 	}
-	/** the room a cluster may take: the window less the pinned sidebars, the visible dock and a docked Connect bar */
+	/** the room a cluster may take: the window less the open sidebars, the visible dock and a docked Connect bar.
+	 *  dock-fixes (owner 2026-11-08): every OPEN column (the free viewport rect, $lib/sidebars), not only a pinned
+	 *  one — a placed cluster (the row beside the logo turned into a column, the stacks moved) drew over an
+	 *  unpinned sidebar */
 	function clusterArea(): Box {
 		const g = get(sidebarGeometry);
 		const vw = window.innerWidth;
 		const vh = window.innerHeight;
 		const inset = cssPx(getComputedStyle(document.documentElement).getPropertyValue('--bottom-inset')) || 0;
 		return {
-			left: g?.wide ? g.dockLeft : 0,
-			right: vw - (g?.wide ? g.dockRight : 0),
+			left: g?.wide ? g.freeLeft : 0,
+			right: vw - (g?.wide ? g.freeRight : 0),
 			top: get(connectDocked) ? get(connectBarHeight) : 0,
 			bottom: vh - inset
 		};
@@ -3292,12 +3295,15 @@
 		// a drag, Move toolbar and the overflow budget all stop at its edge; while Edit positions runs,
 		// EVERY open column does (the user's "next to the sidebar, not on top of it"). The geometry is
 		// 42 sidebars' store (`$lib/sidebars`), the same numbers its columns are drawn from.
+		// dock-fixes (owner 2026-11-08): EVERY open column, pinned or not, and all the time — the bar lives in the
+		// FREE viewport between the sidebars (centred there, shifting as a column opens / resizes, folding into
+		// its "»" before it would overlap one). An unpinned column used to let the bar slide under its bottom.
 		const sb = get(sidebarGeometry);
 		if (sb?.wide) {
-			if (sb.left.shown && (sb.left.full || editing)) left = Math.max(left, sb.leftX + sb.left.w + EDGE_MARGIN);
-			if (sb.right.shown && (sb.right.full || editing)) right = Math.min(right, vw - sb.right.w - EDGE_MARGIN);
+			if (sb.freeLeft) left = Math.max(left, sb.freeLeft + EDGE_MARGIN);
+			if (sb.freeRight) right = Math.min(right, vw - sb.freeRight - EDGE_MARGIN);
 		}
-		// phone-polish item 4: with a column PINNED the bar's home is the middle of the width that is
+		// phone-polish item 4: with a column OPEN the bar's home is the middle of the width that is
 		// left, not of the screen — on a tablet the screen's middle sits against (or under) the column
 		const pinned = left !== EDGE_MARGIN || right !== vw - EDGE_MARGIN;
 		const home = pinned ? (left + right) / 2 : vw / 2;

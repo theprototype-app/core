@@ -28,7 +28,17 @@ import { panelAway } from './windows/panelPlaces.js'; // 70 W2: a popped Inspect
 //   --sb-<side>-top / -bottom     the column's top / bottom (the header sits at top)
 //   --sb-left-x                   the left column's x (the menu insets an UNPINNED left column)
 //   --sb-dock-left / -right       a PINNED, shown column's width, else 0px: what the bottom dock
-//                                 and the corner chrome give way to
+//                                 gives way to (an unpinned column stops above the dock)
+//   --sb-free-left / -right       dock-fixes (owner 2026-11-08) — THE FREE VIEWPORT RECT: how far from
+//                                 each edge the room between the OPEN columns starts, pinned or not
+//                                 (the left one includes the menu inset). Every floating overlay —
+//                                 the corner stacks (+, AI, mic, chat), the bottom toolbar's track, the
+//                                 sim transport, a placed cluster — is laid out inside it, never over
+//                                 a column ("never covered, never covering")
+//   --sb-free-top-left / -right   the same for the TOP ROW (logo row: the top-right group, the
+//                                 profile): only a column that reaches that row counts — a pinned one,
+//                                 or the right one tucked under a docked Connect bar; an unpinned
+//                                 column under a floating pill starts below the row
 //
 // A leaf: svelte/store + the app stores. Members REPORT themselves (`reportMember`); nothing
 // here reaches into a component.
@@ -413,13 +423,19 @@ export const geometry = derived(
 		};
 		const left = col('left');
 		const right = col('right');
+		const leftX = left.full || !$wide ? 0 : measureLeftInset();
 		return {
 			left,
 			right,
 			wide: $wide,
-			leftX: left.full || !$wide ? 0 : measureLeftInset(),
+			leftX,
 			dockLeft: $wide && left.visible && left.full ? left.w : 0,
-			dockRight: $wide && right.visible && right.full ? right.w : 0
+			dockRight: $wide && right.visible && right.full ? right.w : 0,
+			// dock-fixes: the free viewport rect (see the bus above) — every OPEN column, pinned or not
+			freeLeft: $wide && left.visible ? leftX + left.w : 0,
+			freeRight: $wide && right.visible ? right.w : 0,
+			freeTopLeft: $wide && left.visible && left.full ? left.w : 0,
+			freeTopRight: $wide && right.visible && (right.full || !!$cDocked) ? right.w : 0
 		};
 	}
 );
@@ -436,6 +452,15 @@ function publish(g) {
 	root.setProperty('--sb-left-x', g.leftX + 'px');
 	root.setProperty('--sb-dock-left', g.dockLeft + 'px');
 	root.setProperty('--sb-dock-right', g.dockRight + 'px');
+	root.setProperty('--sb-free-left', g.freeLeft + 'px');
+	root.setProperty('--sb-free-right', g.freeRight + 'px');
+	root.setProperty('--sb-free-top-left', g.freeTopLeft + 'px');
+	root.setProperty('--sb-free-top-right', g.freeTopRight + 'px');
+	// dock-fixes: the free width between the columns is a PHONE's (<= 600 px, ui.css's breakpoint for the corner
+	// stacks): the stacks lift above the toolbar's row as they do on a narrow screen, so the bar gets the whole free
+	// width to fold into instead of three clusters sharing one row (the unfolded N6 with both columns open)
+	const freeW = typeof window !== 'undefined' ? window.innerWidth - g.freeLeft - g.freeRight : 1e4;
+	document.documentElement.classList.toggle('sb-free-narrow', !!g.wide && !!(g.freeLeft || g.freeRight) && freeW <= 600);
 	document.documentElement.classList.toggle('sb-full-left', !!g.dockLeft);
 	document.documentElement.classList.toggle('sb-full-right', !!g.dockRight);
 }

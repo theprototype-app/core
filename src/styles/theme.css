@@ -17,6 +17,15 @@
    folders amber, file kinds each a hue, destructive red. Defaults here are the
    dark-theme values (dark has no token block); every theme block below overrides.
    Custom .theme.json files may omit these — they fall back to :root. */
+/* dock-fixes (device lab UI-4): no color-scheme was declared, so native controls (the Bake light Quality select, the
+   Shader editor's checkboxes, scrollbars) drew in their LIGHT style on every dark theme. All themes but Light keep the
+   .dark base (themes.js), so they all say dark. */
+:root {
+	color-scheme: dark;
+}
+:root[data-theme='light'] {
+	color-scheme: light;
+}
 :root {
 	--icon-folder: #d4a95c;
 	--icon-image: #a78bfa;

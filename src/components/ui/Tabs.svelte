@@ -55,11 +55,37 @@
 		select(next);
 		buttons[next]?.focus();
 	}
+
+	// dock-fixes (device lab, folded N6): the strip scrolls with its scrollbar hidden, so a tab past the edge read as a
+	// cut word ("Ava"). The edge that has more to scroll FADES — the scroll cue — and the active tab is kept in view.
+	/** @param {HTMLElement} node */
+	function edgeFade(node) {
+		const update = () => {
+			const more = node.scrollWidth - node.clientWidth;
+			const start = more > 1 && node.scrollLeft > 1;
+			const end = more > 1 && node.scrollLeft < more - 1;
+			node.dataset.fade = start && end ? 'both' : start ? 'start' : end ? 'end' : '';
+		};
+		const ro = new ResizeObserver(update);
+		ro.observe(node);
+		node.addEventListener('scroll', update, { passive: true });
+		update();
+		return {
+			destroy() {
+				ro.disconnect();
+				node.removeEventListener('scroll', update);
+			}
+		};
+	}
+	$effect(() => {
+		const b = buttons[activeIndex];
+		if (b && b.parentElement && b.parentElement.scrollWidth > b.parentElement.clientWidth) b.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+	});
 </script>
 
 <div class="tp-ui tabs" class:tabs-dock={variant === 'dock'} {...rest}>
 	<div class="tabs-strip" class:tp-dtabs={variant === 'dock'}>
-		<div class="tabs-list" role="tablist" aria-label={label || undefined}>
+		<div class="tabs-list" role="tablist" aria-label={label || undefined} use:edgeFade>
 			{#each tabs as t, i (t.id)}
 				<button
 					bind:this={buttons[i]}
@@ -107,6 +133,15 @@
 		min-width: 0;
 		overflow-x: auto;
 		scrollbar-width: none;
+	}
+	.tabs-list[data-fade='end'] {
+		mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+	}
+	.tabs-list[data-fade='start'] {
+		mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent);
+	}
+	.tabs-list[data-fade='both'] {
+		mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
 	}
 	.tab {
 		position: relative;

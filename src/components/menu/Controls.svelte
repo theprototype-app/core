@@ -650,6 +650,9 @@
 	const qualityTitle = $derived.by(() => {
 		const q = $qualityState;
 		const what = q.labels.join(', ').toLowerCase();
+		// UI-9: a phone in Auto STARTS lighter (qualityGovernor's PHONE_START_LEVEL) before it has judged the scene
+		if (!q.pinned && String(q.reason).startsWith('phone'))
+			return 'Phones start with lighter drawing so the first seconds stay smooth: ' + what + '. Full quality comes back on its own when the frames allow. Click to keep it this way.';
 		return q.pinned
 			? 'Held at reduced quality (' + what + '). Click to restore full quality.'
 			: q.held
@@ -4402,7 +4405,7 @@
 				title={qualityTitle}
 				use:qualityChipClick
 			>
-				<Badge tone="warn" text={'Reduced quality' + ($qualityState.pinned ? ' · held' : ' (scene is heavy)')} />
+				<Badge tone="warn" text={'Reduced quality' + ($qualityState.pinned ? ' · held' : String($qualityState.reason).startsWith('phone') ? ' (phone start)' : ' (scene is heavy)')} />
 			</button>
 		{/if}
 	</div>

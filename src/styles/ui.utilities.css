@@ -84,6 +84,9 @@
 */
 @utility tp-seg {
   display: inline-flex;
+  /* dock-fixes C: wrap rather than clip when the row is narrower than the options */
+  flex-wrap: wrap;
+  max-width: 100%;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -96,6 +99,7 @@
   gap: 4px;
   padding: 2px 6px;
   font-size: 11px;
+  white-space: nowrap;
   /* 36 U1: the resting/hover ink follows the theme (the literals read 2.5:1 on light) and
      the armed half is the theme's accent FILL with the ink made for it — white on the
      plain accent was 3.3-3.7:1 everywhere and unreadable on High contrast's yellow */

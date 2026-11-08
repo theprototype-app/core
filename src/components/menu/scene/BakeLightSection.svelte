@@ -127,7 +127,7 @@
 				Quality
 				<select
 					id="bake-quality"
-					class="ui-select text-[length:var(--fs-badge)]"
+					class="ui-input w-auto py-0 text-[length:var(--fs-badge)]"
 					value={quality}
 					onchange={(e) => setQuality(/** @type {HTMLSelectElement} */ (e.currentTarget).value)}
 				>

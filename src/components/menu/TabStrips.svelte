@@ -5,6 +5,7 @@
 	// re-float it, ✕ closes the active member through its own path.
 	import { stripScroll } from '$lib/ui/stripScroll.js';
 	import { tabTouch, outsideBy } from '$lib/ui/tabTouch.js';
+	import { chromeButton } from '$lib/chromeButtons';
 	import { tabGroups, activateTab, moveGroup, tearOff, titleOf, closeGroup, closeMember, nodeOf } from '$lib/windowTabs';
 	import { focusTick, raiseWindowNode } from '$lib/windowFocus';
 	import { windowMenu, openWindowMenu } from '$lib/windowMenu';
@@ -313,7 +314,8 @@
 				data-group-dock={group.id}
 				title="Dock all tabs in this window"
 				aria-label="Dock all tabs in this window"
-				onpointerdown={(e) => e.stopPropagation()}
+				use:chromeButton={'group.dock'}
+				onpointerdown={(/** @type {PointerEvent} */ e) => e.stopPropagation()}
 				onclick={() => dockAllOf(group.members, group.active)}
 			>
 				<Icon name="panel-bottom" size={16} />
@@ -323,6 +325,7 @@
 			class="ts-close tp-dtab tp-dtab-icon shrink-0"
 			title="Close all tabs in this window"
 			aria-label="Close all tabs in this window"
+			use:chromeButton={'group.close'}
 			onclick={() => closeGroup(group.active)}
 		>
 			<Icon name="x" size={16} />

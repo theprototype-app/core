@@ -41,6 +41,8 @@ const EXACT = new Set([
 	'bottomDockSplits',
 	'windowTabGroups',
 	'objectListRect',
+	// panel-gestures item 5: the chrome buttons a person hid ($lib/chromeButtons), per layout
+	'chromeButtons',
 	'profilerDockSized',
 	// 42 I6: which floating windows the dock hosts as tabs ($lib/dockHost)
 	'objectListDocked',

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { backClose } from '$lib/backStack.js'; // phone-polish: Android Back closes it
+	import { edgeFade } from '$lib/ui/edgeFade.js'; // 98-int UI-6: the edge with more rows fades (the scroll cue)
 	import Icon from '../ui/Icon.svelte';
 	import SheetGrip from '../ui/SheetGrip.svelte';
 	import { readSheetH, saveSheetH } from '$lib/ui/sheetDrag.js';
@@ -207,6 +208,7 @@
 		id="sidebar70"
 		use:backClose={() => closeMenu.set(true)}
 		use:clearToolbar={!$phoneShellActive}
+		use:edgeFade={$phoneShellActive ? 'off' : 'y'}
 		transition:fade={{ duration: motionMs(130) }}
 		class="app-sidebar tp-ui tp-menu tp-noscrollbar fixed"
 		style="--side-top: {$connectDocked ? $connectBarHeight + 64 : 64}px; {$phoneShellActive ? `--menu-sheet-h: ${menuShown}px` : ''}"

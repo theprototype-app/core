@@ -252,3 +252,13 @@
 [data-fade='both'] {
 	mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent); /* tokens-ok: mask alpha, not a colour */
 }
+/* 98-int (UI-6): the same cue on a vertical scroller (the main menu): edgeFade(node, 'y') sets data-fade-y */
+[data-fade-y='end'] {
+	mask-image: linear-gradient(to bottom, #000 calc(100% - 36px), transparent); /* tokens-ok: mask alpha, not a colour */
+}
+[data-fade-y='start'] {
+	mask-image: linear-gradient(to top, #000 calc(100% - 36px), transparent); /* tokens-ok: mask alpha, not a colour */
+}
+[data-fade-y='both'] {
+	mask-image: linear-gradient(to bottom, transparent, #000 36px, #000 calc(100% - 36px), transparent); /* tokens-ok: mask alpha, not a colour */
+}

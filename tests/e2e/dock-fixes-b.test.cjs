@@ -179,6 +179,25 @@ h.run(async () => {
 	await S(page, () => window.__stores.objectListClose.set(true));
 	await page.waitForTimeout(300);
 
+	// ---- UI-6 (PC 1280, 98-int): the main menu runs below a short screen with its scrollbar hidden — the bottom edge
+	//      fades while rows wait below, the top one once scrolled to the end ----
+	await page.setViewportSize({ width: 1280, height: 560 });
+	await page.waitForTimeout(600);
+	await S(page, () => window.__stores.closeMenu.set(false));
+	await page.waitForSelector('#sidebar70', { timeout: 10000 });
+	await page.waitForTimeout(600);
+	const menuFade = await S(page, () => {
+		const n = document.getElementById('sidebar70');
+		if (!n) return null;
+		const before = { fade: n.dataset.fadeY || '', more: n.scrollHeight - n.clientHeight };
+		n.scrollTop = n.scrollHeight;
+		return new Promise((res) => setTimeout(() => res({ ...before, after: n.dataset.fadeY || '' }), 150));
+	});
+	h.check(!!menuFade && menuFade.more > 1 && menuFade.fade === 'end' && menuFade.after === 'start', `UI-6 the main menu at 1280x560 fades its bottom edge while rows wait below, the top once scrolled to the end (${JSON.stringify(menuFade)})`);
+	await S(page, () => window.__stores.closeMenu.set(true));
+	await page.setViewportSize(DESK.viewport);
+	await page.waitForTimeout(400);
+
 	await D.ctx.close();
 
 	// ================================ N6 unfolded ================================

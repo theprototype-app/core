@@ -5,7 +5,7 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
-## Unreleased
+## 1.63.0 — Pro look 📸
 
 ### 📸 Pro look
 - **Pro presets, one press**: **Product shot**, **Cinematic** and **Stylised** sit beside the other Environment presets and set the sky, the light, the exposure, the tone mapping and a whole stack of post effects together. Undo takes it all back in one step; the look is saved with the scene and everyone sees it. Each device draws its own share: a phone runs lighter fog and god rays, a headset leaves fog, god rays and lens flare out. <!-- 98 P5 -->
@@ -24,6 +24,12 @@
 - **Tablets**: with the Properties column pinned full height, the toolbar moves over and centres in the space beside it instead of hiding under it. <!-- phone-polish 4 -->
 - **Long menus scroll**: the profile menu (and every other long menu) stays on screen in landscape and scrolls with a finger or the wheel. <!-- phone-polish 6 -->
 - Smaller ones: the animation player's controls wrap in landscape; the logo menu has a **Command palette** row; the "lowered the scene look" card sits at the bottom on touch screens so it does not cover the panels at the top; the **Towers** start screen has a touch line. <!-- phone-polish 5 -->
+
+### 🪟 Panels and sidebars
+- **Windows and menus stay out of the side columns**: the toolbar, floating windows and menus use the space between the open columns, and the toolbar centres there, pinned or not. When the bottom panel leaves a column too little room, the column hides itself and comes back when there is room again. <!-- dock-fixes 4, A', E -->
+- **Every column has its hide button**, the AI button opens and closes its own tab (an emptied column folds away), and the AI window keeps its size when you drag it partly off the screen. <!-- dock-fixes 1-3 -->
+- **A Panels button** on unfolded phones and tablets brings the side columns back with one tap. <!-- dock-fixes 8 -->
+- Smaller ones: the main menu opens over the left column instead of pushing it; **Free assets** opens where you are working; segmented buttons wrap instead of squeezing; long rows of filter chips and long menus fade at the edge that scrolls; dock tab menus have icons; a window that opened short can be made taller with its corner grip. <!-- dock-fixes B C D, PC-4, UI-6, 98-int 4a -->
 
 ### 🥽 Play links on headsets and phones
 - **Enter VR works from a play link**: on a headset the game no longer starts flat by itself; the start card stays with **Enter VR** first, and pressing it opens VR (it used to start flat play on the screen instead). Leaving VR brings the card back. <!-- fix-play-link 1 -->

@@ -59,6 +59,11 @@ h.run(async () => {
 		// a busy screen: the Objects window (small ✕ / pin / filter buttons) over the editor chrome
 		await page.evaluate(() => window.__stores.objectListClose.set(false));
 		await nap(1500);
+		// 1.63 ships it OFF (98-int fork (a), until lane hitslop-fix): installed and scanning, no tap area drawn
+		const shipped = await page.evaluate(() => ({ on: window.__stores.hitSlop.hitSlopEnabled(), hs: document.querySelectorAll('[data-hs]').length, scans: window.__stores.hitSlop.hitSlopStats.scans }));
+		h.check(!shipped.on && shipped.hs === 0 && shipped.scans > 0, tag(`ships off: installed, no tap area (${JSON.stringify(shipped)})`));
+		await slopOn(page, true);
+		await nap(300);
 		const st = await page.evaluate(() => ({ ...window.__stores.hitSlop.hitSlopStats }));
 		h.check(st.scans > 0 && st.slopped > 0, tag(`installed on touch: ${JSON.stringify(st)}`));
 

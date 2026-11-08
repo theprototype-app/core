@@ -606,13 +606,16 @@ h.run(async () => {
 				h.check(last < 0 || f.length <= last, T + `J10: a narrower sidebar never folds more (${counts.join(' ')})`);
 				last = f.length;
 			}
-			h.check(last === 0 && (await P.locator('#toolbar-customize').count()) === 1, T + `J10: shrunk to 250 px every button is back, the "…" too (${counts.join(' ')})`);
-			// grow again → folds again; unpin → nothing folds (only a PINNED sidebar bounds the bar)
+			// 98-int (dock-fixes, owner 2026-11-08): the bar lives in the FREE viewport between the sidebar STRIPS, so the
+			// left strip (its hide button is always there now) takes its width too — at 250 px one cell may still fold
+			h.check(last <= 1 && (await P.locator('#toolbar-customize').count()) === 1, T + `J10: shrunk to 250 px the row is (almost) all back, the "…" too (${counts.join(' ')})`);
+			// grow again → folds again; unpinned it folds the SAME (dock-fixes: every OPEN column bounds the bar, pinned or not —
+			// an unpinned column used to let the bar slide under its bottom)
 			await sidebar(P, { side: 'right', full: true, w: 440 });
 			const again = (await folded(P)).length;
 			await sidebar(P, { side: 'right', full: false, w: 440 });
 			const unpinned = (await folded(P)).length;
-			h.check(again > 0 && unpinned === 0, T + `J10: grown again it folds (${again}); unpinned it does not (${unpinned})`);
+			h.check(again > 0 && unpinned === again, T + `J10: grown again it folds (${again}); unpinned it folds the same (${unpinned})`);
 			h.check(JSON.stringify(await stored(P)) === record, T + 'J10: the enabled set never changed (the stored record is untouched)');
 			await sidebar(P, { side: 'right', full: true, w: 440 });
 			await P.locator('#toolbar-customize').count();

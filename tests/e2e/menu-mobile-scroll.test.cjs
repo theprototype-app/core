@@ -84,7 +84,15 @@ async function swipeMenu(page, m) {
 	const x = 60;
 	const y0 = Math.round(Math.min(m.bottom, m.vh) - 12);
 	const dist = Math.round((Math.min(m.bottom, m.vh) - Math.max(m.top, 0)) * 0.8);
-	for (let pass = 0; pass < 3; pass++) {
+	// 98-int (dock-fixes A', owner 2026-11-08): an UNPINNED docked menu ends above the Controls band, so on the 360 px
+	// landscape phone it is ~160 px tall and three swipes no longer reach the end — swipe until it stops moving (max 8)
+	for (let pass = 0, prev = -1; pass < 8; pass++) {
+		const at = await page.evaluate(() => {
+			const n = /** @type {HTMLElement} */ (document.getElementById('sidebar70'));
+			return n.scrollTop + n.clientHeight >= n.scrollHeight - 1 ? -2 : Math.round(n.scrollTop);
+		});
+		if (at === -2 || at === prev) break;
+		prev = at;
 		await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y: y0 }] });
 		for (let i = 1; i <= 12; i++) {
 			await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y0 - (dist * i) / 12 }] });

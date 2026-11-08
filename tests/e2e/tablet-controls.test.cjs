@@ -45,12 +45,22 @@ h.run(async () => {
 		const tr = await page.evaluate(() => window.__toolbarTrack ?? null);
 		h.check(!!s.pill && (Math.abs(mid - free) <= 12 || (tr && Math.abs(mid - tr.min) <= 2)), tag(`pinned: the bar centres in the free width (centre ${mid}, free middle ${free}, track ${JSON.stringify(tr && { min: Math.round(tr.min), max: Math.round(tr.max) })})`));
 
-		// 3. unpinned again: back to the screen's middle
+		// 3. unpinned again, column still open: dock-fixes (owner 2026-11-08) — EVERY open column bounds the bar, pinned or
+		// not, so it stays centred in the free width (or at the track's min), exactly as pinned
 		await page.evaluate(() => window.__stores.sidebars.toggleSidebarFull('right', false));
 		await nap(1200);
 		s = await look(page);
 		const mid2 = s.pill ? (s.pill.l + s.pill.r) / 2 : 0;
-		h.check(!!s.pill && Math.abs(mid2 - s.W / 2) <= 12, tag(`unpinned: the bar is back in the middle (${mid2} vs ${s.W / 2})`));
+		const free2 = s.col ? s.col.l / 2 : s.W / 2;
+		const tr2 = await page.evaluate(() => window.__toolbarTrack ?? null);
+		h.check(!!s.pill && !!s.col && s.pill.r <= s.col.l + 1 && (Math.abs(mid2 - free2) <= 12 || (tr2 && Math.abs(mid2 - tr2.min) <= 2)), tag(`unpinned: the bar stays in the free width beside the open column (centre ${mid2}, free middle ${free2}, track ${JSON.stringify(tr2 && { min: Math.round(tr2.min), max: Math.round(tr2.max) })})`));
+		// 4. column closed: back to the screen's middle
+		await page.evaluate(() => window.__stores.inspectorClose.set(true));
+		await nap(1200);
+		s = await look(page);
+		const mid3 = s.pill ? (s.pill.l + s.pill.r) / 2 : 0;
+		const tr3 = await page.evaluate(() => window.__toolbarTrack ?? null);
+		h.check(!!s.pill && (Math.abs(mid3 - s.W / 2) <= 12 || (tr3 && Math.abs(mid3 - tr3.min) <= 2)), tag(`column closed: the bar is back in the middle (${mid3} vs ${s.W / 2})`));
 		await h.closePeer(P);
 	}
 	await h.finish(browser);

@@ -240,6 +240,11 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 				node.style.maxHeight = '';
 				delete node.dataset.toolbarCap;
 			}
+		} else if (node.dataset.toolbarCap) {
+			// 98-int: the window has a saved height now (the grip took the capped one as its baseline) — the height path
+			// above clears the toolbar from here on, and a cap left behind stopped the grip growing it (file-preview §7)
+			node.style.maxHeight = '';
+			delete node.dataset.toolbarCap;
 		}
 		if (typeof rect.left !== 'number' || typeof rect.top !== 'number') return;
 		node.style.left = rect.left + 'px';

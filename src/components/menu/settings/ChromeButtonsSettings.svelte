@@ -6,7 +6,7 @@
 	import SettingRow from '../../ui/SettingRow.svelte';
 	import Toggle from '../../ui/Toggle.svelte';
 	import Button from '../../ui/Button.svelte';
-	import { CHROME_KINDS, chromeButtonDefs, hiddenChromeButtons, setChromeButtonShown, showAllChromeButtons } from '$lib/chromeButtons';
+	import { CHROME_KINDS, chromeButtonDefs, hiddenChromeIds, setChromeButtonShown, showAllChromeButtons } from '$lib/chromeButtons';
 
 	const kinds = Object.keys(CHROME_KINDS).filter((k) => chromeButtonDefs(k).length);
 </script>
@@ -30,7 +30,7 @@
 						<Toggle
 							id="cb-toggle-{def.id.replace(/\W/g, '-')}"
 							labelledby="cb-label-{def.id.replace(/\W/g, '-')}"
-							checked={!$hiddenChromeButtons.includes(def.id)}
+							checked={!$hiddenChromeIds.includes(def.id)}
 							onchange={(/** @type {boolean} */ on) => setChromeButtonShown(def.id, on)}
 						/>
 					</div>
@@ -38,7 +38,7 @@
 			</div>
 		{/each}
 		<div class="cb-actions">
-			<Button id="chrome-buttons-show-all" size="sm" variant="outline" disabled={!$hiddenChromeButtons.length} onclick={() => showAllChromeButtons()}>Show all</Button>
+			<Button id="chrome-buttons-show-all" size="sm" variant="outline" disabled={!$hiddenChromeIds.length} onclick={() => showAllChromeButtons()}>Show all</Button>
 		</div>
 	</div>
 </SettingRow>

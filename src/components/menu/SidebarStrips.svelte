@@ -20,7 +20,7 @@
 	import ContextMenu from '../ContextMenu.svelte';
 	import { stripScroll } from '$lib/ui/stripScroll.js';
 	import { tabTouch, outsideBy } from '$lib/ui/tabTouch.js'; // panel-gestures item 7
-	import { chromeButton, hiddenChromeButtons, showButtonsItems } from '$lib/chromeButtons'; // panel-gestures item 5
+	import { chromeButton, hiddenChromeIds, showButtonsItems } from '$lib/chromeButtons'; // panel-gestures item 5
 	import { tabDropTarget, showDropTarget, canFloatPanel } from '$lib/sidebarDrop';
 	import { canDockHere, addWindowItems, rebuildAfterPick } from '$lib/dockMenu';
 	import { bindingOf } from '$lib/shortcuts';
@@ -170,7 +170,7 @@
 	}
 	function openTabMenu(x: number, y: number, key: string, side: Side) {
 		// item 5: the strip buttons this person hid come back from here ("Show buttons ▸")
-		menu = { x, y, items: [...sidebarTabItems(key, side, titleOf(key, $inspectorTabTitle)), ...showButtonsItems('sidebar', $hiddenChromeButtons)] };
+		menu = { x, y, items: [...sidebarTabItems(key, side, titleOf(key, $inspectorTabTitle)), ...showButtonsItems('sidebar', $hiddenChromeIds)] };
 	}
 	function onTabMenu(e: MouseEvent, key: string, side: Side) {
 		e.preventDefault();

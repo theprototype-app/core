@@ -1,13 +1,14 @@
 // panel-gestures item 5: the hideable chrome buttons — the registry refuses a "+", the record parses
 // defensively, "Show buttons" lists only what a strip kind hid, and the button menu's rows.
 import { describe, it, expect, beforeEach } from 'vitest';
-import { get } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import {
 	registerChromeButton,
 	chromeButtonDefs,
 	isHideable,
 	parseHidden,
 	hiddenChromeButtons,
+	hiddenChromeIds,
 	hideChromeButton,
 	showChromeButton,
 	showAllChromeButtons,
@@ -60,6 +61,32 @@ describe('the record', () => {
 	});
 	it('rides the named workspace layouts', () => {
 		expect(isLayoutKey('chromeButtons')).toBe(true);
+	});
+});
+
+describe('a bound button (its state lives elsewhere)', () => {
+	it('hide / show / show all reach its own state; the record never holds it; menus and the combined list see it', () => {
+		const off = writable(false);
+		const bound = { hidden: off, set: (/** @type {boolean} */ h) => off.set(h) };
+		expect(registerChromeButton({ id: 'top.bound', kind: 'top', label: 'Bound', state: bound })).toBe(true);
+		expect(get(hiddenChromeIds)).toEqual([]);
+		expect(hideChromeButton('top.bound')).toBe(true);
+		expect(get(off)).toBe(true);
+		expect(get(hiddenChromeButtons)).toEqual([]);
+		expect(get(hiddenChromeIds)).toEqual(['top.bound']);
+		expect(showButtonsItems('top')[0].children.map((/** @type {any} */ c) => c.label)).toEqual(['Bound']);
+		showButtonsItems('top')[0].children[0].action();
+		expect(get(off)).toBe(false);
+		// its OWN control switching it off is seen too (the Panels button's Settings row)
+		off.set(true);
+		hideChromeButton('dock.split');
+		expect(get(hiddenChromeIds)).toEqual(['dock.split', 'top.bound']);
+		showAllChromeButtons('top');
+		expect(get(off)).toBe(false);
+		expect(get(hiddenChromeIds)).toEqual(['dock.split']);
+		off.set(true);
+		setChromeButtonShown('top.bound', true);
+		expect(get(off)).toBe(false);
 	});
 });
 

@@ -51,7 +51,7 @@
 	import DockViewsSheet from './DockViewsSheet.svelte';
 	import { stripScroll } from '$lib/ui/stripScroll.js';
 	import { tabTouch } from '$lib/ui/tabTouch.js'; // panel-gestures item 7
-	import { chromeButton, hiddenChromeButtons, showButtonsItems } from '$lib/chromeButtons'; // panel-gestures item 5
+	import { chromeButton, hiddenChromeIds, showButtonsItems } from '$lib/chromeButtons'; // panel-gestures item 5
 	import ContextMenu from './ContextMenu.svelte';
 	import Icon from './ui/Icon.svelte';
 	import { tearOffAt } from '$lib/windows/panelPlaces.js';
@@ -79,7 +79,7 @@
 	/** the tab's menu at a point (a right-click, or item 7's touch long-press); item 5: + the dock buttons
 	 * this person hid ("Show buttons ▸") @param {number} x @param {number} y @param {string} key */
 	function openTabMenuAt(x, y, key) {
-		tabMenu = { x, y, items: [...dockTabItems(key), ...showButtonsItems('dock', $hiddenChromeButtons)] };
+		tabMenu = { x, y, items: [...dockTabItems(key), ...showButtonsItems('dock', $hiddenChromeIds)] };
 	}
 
 	// --- 44 M9: the split pair's tab --------------------------------------------------

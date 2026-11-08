@@ -4,7 +4,7 @@
 	import { onMount } from 'svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import { windowMenu, windowMenuItems, installWindowMenu } from '$lib/windowMenu';
-	import { hiddenChromeButtons, showButtonsItems } from '$lib/chromeButtons';
+	import { hiddenChromeIds, showButtonsItems } from '$lib/chromeButtons';
 
 	onMount(() => installWindowMenu());
 </script>
@@ -14,7 +14,7 @@
 	<ContextMenu
 		x={$windowMenu.x}
 		y={$windowMenu.y}
-		items={[...windowMenuItems($windowMenu), ...($windowMenu.grouped ? showButtonsItems('group', $hiddenChromeButtons) : [])]}
+		items={[...windowMenuItems($windowMenu), ...($windowMenu.grouped ? showButtonsItems('group', $hiddenChromeIds) : [])]}
 		sizeKey="window"
 		onclose={() => windowMenu.set(null)}
 	/>

@@ -1,4 +1,4 @@
-import { writable, get } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
 import { safeStorage } from './safeStorage';
 import { onLayoutRestore } from './uiLayoutsCore';
 import { settingsOpen, settingsSection, settingsSearchSeed } from '../stores/appStore.js';
@@ -19,7 +19,10 @@ import { settingsOpen, settingsSection, settingsSearchSeed } from '../stores/app
 // always a way back. LOCAL (this device) and part of the named workspace layouts ($lib/uiLayoutsCore:
 // the `chromeButtons` key), so a layout carries its own set; absent = everything shown.
 
-/** @typedef {{id: string, kind: string, label: string, icon?: string}} ChromeButtonDef */
+/** A button whose shown / hidden state already lives elsewhere (the Panels button's own mode) BINDS it:
+ * `hidden` says whether it is switched off, `set(hidden)` switches it. Its id never enters the record.
+ * @typedef {{hidden: import('svelte/store').Readable<boolean>, set: (hidden: boolean) => void}} ChromeButtonState */
+/** @typedef {{id: string, kind: string, label: string, icon?: string, state?: ChromeButtonState}} ChromeButtonDef */
 
 const KEY = 'chromeButtons';
 
@@ -55,6 +58,10 @@ export function registerChromeButton(def) {
 	if (!def || typeof def.id !== 'string' || !def.id || isAdd(def.id) || !CHROME_KINDS[def.kind]) return false;
 	if (REGISTRY.some((d) => d.id === def.id)) return true;
 	REGISTRY.push({ ...def });
+	// a bound button's own state moves the combined list; a stale record entry for it is dropped
+	def.state?.hidden.subscribe(() => boundTick.update((n) => n + 1));
+	if (def.state && get(hiddenChromeButtons).includes(def.id)) write(get(hiddenChromeButtons).filter((x) => x !== def.id));
+	boundTick.update((n) => n + 1);
 	return true;
 }
 
@@ -96,22 +103,40 @@ function write(list) {
 	else safeStorage.removeItem(KEY); // absent = the default, so a layout saved now applies cleanly
 }
 
+/** bumped when a bound button registers or its state moves */
+const boundTick = writable(0);
+
+/** EVERY hidden button: the record plus the bound buttons switched off — what menus, Settings and the
+ * buttons themselves read @type {import('svelte/store').Readable<string[]>} */
+export const hiddenChromeIds = derived([hiddenChromeButtons, boundTick], ([$list]) => {
+	const bound = REGISTRY.filter((d) => d.state && get(d.state.hidden)).map((d) => d.id);
+	return [...new Set([...$list.filter((id) => !chromeButtonDef(id)?.state), ...bound])].sort();
+});
+
 // a named layout just rewrote the key: re-read it (absent = everything shown)
 onLayoutRestore(() => hiddenChromeButtons.set(read()));
 
 /** @param {string} id */
 export function hideChromeButton(id) {
 	if (!isHideable(id)) return false;
+	const st = chromeButtonDef(id)?.state;
+	if (st) {
+		st.set(true);
+		return true;
+	}
 	const cur = get(hiddenChromeButtons);
 	if (!cur.includes(id)) write([...cur, id]);
 	return true;
 }
 /** @param {string} id */
 export function showChromeButton(id) {
+	const st = chromeButtonDef(id)?.state;
+	if (st) return void st.set(false);
 	write(get(hiddenChromeButtons).filter((x) => x !== id));
 }
 /** every hidden button back (of one kind, or all) @param {string} [kind] */
 export function showAllChromeButtons(kind) {
+	for (const d of REGISTRY) if (d.state && (!kind || d.kind === kind) && get(d.state.hidden)) d.state.set(false);
 	write(kind ? get(hiddenChromeButtons).filter((x) => chromeButtonDef(x)?.kind !== kind) : []);
 }
 /** @param {string} id @param {boolean} shown */
@@ -129,7 +154,7 @@ export function openCustomizeButtons() {
 
 /** "Show buttons ▸" for a strip kind's menu — nothing when that kind hides nothing
  * @param {string} kind @param {string[]} [hidden] @returns {any[]} */
-export function showButtonsItems(kind, hidden = get(hiddenChromeButtons)) {
+export function showButtonsItems(kind, hidden = get(hiddenChromeIds)) {
 	const off = /** @type {ChromeButtonDef[]} */ (hidden.map((id) => chromeButtonDef(id)).filter((d) => !!d && d.kind === kind));
 	if (!off.length) return [];
 	return [
@@ -177,7 +202,7 @@ export function chromeButton(node, id) {
 		else delete node.dataset.chromeHidden;
 	};
 	node.dataset.chromeButton = cur;
-	const unsub = hiddenChromeButtons.subscribe((l) => {
+	const unsub = hiddenChromeIds.subscribe((l) => {
 		list = l;
 		paint();
 	});

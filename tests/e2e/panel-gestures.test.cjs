@@ -481,6 +481,23 @@ h.run(async () => {
 			await page.waitForTimeout(300);
 			const on = await page.evaluate(() => getComputedStyle(document.querySelector('.tab-strip .ts-close')).display + ' ' + document.querySelector('#cb-toggle-group-close')?.getAttribute('aria-pressed'));
 			h.check(off.startsWith('none') && !on.startsWith('none'), `B7 the Settings switch hides and shows it (${off} -> ${on})`);
+			// the same two surfaces in the LIGHT theme (the shots above are dark)
+			await page.evaluate(() => window.__stores.themes?.theme.set('light'));
+			await flip();
+			await page.waitForTimeout(500);
+			await page.screenshot({ path: `${OUT}/b8-desk-settings-light.png` });
+			await flip();
+			await page.evaluate(() => window.__stores.settingsOpen?.set?.(false));
+			await page.waitForTimeout(500);
+			const c2 = await centreOf(page, '.tab-strip .ts-close');
+			await page.mouse.click(c2.x, c2.y, { button: 'right' });
+			await page.waitForTimeout(400);
+			const lightRows = await menuLabels(page);
+			const light = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
+			await page.screenshot({ path: `${OUT}/b8-desk-button-menu-light.png` });
+			h.check(light === 'light' && lightRows[0] === 'Hide this button', `B8 the button menu in the light theme (${light}, ${JSON.stringify(lightRows)})`);
+			await closeMenus(page);
+			await page.evaluate(() => window.__stores.themes?.theme.set('dark'));
 		}
 		await P.ctx.close();
 	}

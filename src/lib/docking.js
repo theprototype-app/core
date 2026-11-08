@@ -162,6 +162,9 @@ function dock(key, side) {
 	if (!entry) return false;
 	const from = sideOf(key);
 	if (from === side) {
+		// dock-fixes D: "already on that side" is the RECORD — a window that mounted floating with its side already
+		// remembered (Free assets after a bottom-dock tab) was never laid out into the column; apply it now
+		apply(key);
 		activateSidebarTab(key);
 		return true;
 	}

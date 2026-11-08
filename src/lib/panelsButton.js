@@ -1,7 +1,7 @@
 import { writable, derived, readable, get } from 'svelte/store';
 import { safeStorage } from './safeStorage';
 import { phoneShell } from './ui/phoneShell.js';
-import { SIDES, sidebarsWide, sidebarVisible, sidebarTabs, toggleSidebar } from './sidebars';
+import { SIDES, sidebarsWide, sidebarVisible, sidebarWanted, sidebarTabs, toggleSidebar } from './sidebars';
 
 // dock-fixes item 8 (owner 2026-11-08) — THE PANELS BUTTON. "On a phone UNFOLDED / tablet the sidebars
 // must always be reachable": Ctrl+B / Ctrl+Alt+B (44 M7) have no keyboard there, and a column hidden by
@@ -54,13 +54,18 @@ export const panelsOpen = derived(sidebarVisible, ($v) => !!($v.left || $v.right
 /** the sides that were on screen when the button hid them @type {('left'|'right')[]} */
 let remembered = [];
 
-/** the button press: hide every visible column, or bring the remembered ones back */
+/** the button press: hide every visible column, or bring the remembered ones back.
+ * dock-fixes A': it hides every column the person ASKED for, an auto-hidden one included — hiding only the visible
+ * one gave its room back and the auto-hidden one came straight back by itself. They are remembered with the visible
+ * ones LAST, so bringing them back reopens those last and the free-space rule keeps the same one on screen. */
 export function togglePanels() {
 	const vis = get(sidebarVisible);
 	const showing = SIDES.filter((s) => vis[s]);
 	if (showing.length) {
-		remembered = showing;
-		for (const s of showing) toggleSidebar(s, false);
+		const want = get(sidebarWanted);
+		const tucked = SIDES.filter((s) => want[s] && !vis[s]);
+		remembered = [...tucked, ...showing];
+		for (const s of remembered) toggleSidebar(s, false);
 		return;
 	}
 	const tabs = get(sidebarTabs);

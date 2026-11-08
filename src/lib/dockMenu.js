@@ -14,11 +14,11 @@ import {
 } from '../stores/appStore';
 import { imageEditorClose } from './image/imageEditorState';
 import { get, writable } from 'svelte/store';
-import { activateDock, armDockMode, armDockModes, dockOccupants, dockTabs, dockStripTabs, moveDockTab, visibleDockKey, undockButtonMode, placeDockTabs, canDockFloating, splitOf, splitDock, nextSplitPartner, unsplitDock, swapSplitSides, setSplitPane, dissolveSplitOf, DOCK_KEYS, DOCK_TITLES, DOCK_ICONS, PHONE_DOCK_TABS, HOSTED_DOCK_TABS } from './bottomDock';
+import { activateDock, bottomInset, armDockMode, armDockModes, dockOccupants, dockTabs, dockStripTabs, moveDockTab, visibleDockKey, undockButtonMode, placeDockTabs, canDockFloating, splitOf, splitDock, nextSplitPartner, unsplitDock, swapSplitSides, setSplitPane, dissolveSplitOf, DOCK_KEYS, DOCK_TITLES, DOCK_ICONS, PHONE_DOCK_TABS, HOSTED_DOCK_TABS } from './bottomDock';
 import { phoneShell } from './ui/phoneShell.js';
 import { queueMerge, groupOfKey, activateTab, nodeOf } from './windowTabs';
 import { maximizeDockTab } from './focusMode';
-import { sidebarTabs, activateSidebarTab, inspectorSide } from './sidebars';
+import { sidebarTabs, sidebarVisible, activateSidebarTab, inspectorSide } from './sidebars';
 import { raiseWindow, raiseWindowNode } from './windowFocus';
 import { revealWindow } from './dragWindow';
 import { isAway, releasePanel, focusPanelWindow, popOutItems, popOutDockPanels, canPopOut } from './windows/panelPlaces.js';
@@ -284,6 +284,35 @@ function openInSide(key, side) {
 	if (!sided) return;
 	// the window reports itself a member as it mounts; bring it to the front once it has
 	queueMicrotask(() => activateSidebarTab(key));
+	// dock-fixes D: a window that last lived in the BOTTOM dock (Free assets after a dock tab) mounted floating — its
+	// remembered side was written while the dock host still held it, and the new floating node never read it. Once it
+	// has mounted (two frames), anything not in the column it was sent to is moved there through the mounted path.
+	if (typeof requestAnimationFrame === 'function')
+		requestAnimationFrame(() =>
+			requestAnimationFrame(() => {
+				if (windowWhere(key) === 'floating' && moveToSidebar(key, side)) activateSidebarTab(key);
+			})
+		);
+}
+
+/**
+ * dock-fixes D (owner 2026-11-08) — a window opened from a MENU (the main menu's "Free assets (CC0)", the Add
+ * menu's) opens where the person is working, not as a stray floating window: open anywhere -> shown there
+ * (`focusWindow`); the bottom dock on screen -> a dock tab; else a sidebar column on screen -> a tab of it (the
+ * right one first); else floating, as before. The phone shell keeps its own rules (`fallback`). A "+" menu already
+ * opens into ITS dock or column (`addWindowItems`).
+ * @param {string} key @param {() => void} fallback how it opens floating
+ */
+export function openWindowHere(key, fallback) {
+	if (focusWindow(key)) return;
+	if (get(phoneShell)) return fallback();
+	// the dock's own openers cover the hosted windows (dockHost registers them), so no FLOAT_DOCKABLE gate here —
+	// that list is the EDITORS' floating mode, and gating on it sent Free assets floating
+	if (get(bottomInset) > 0) return dockView(key); // the dock on screen, an empty one included
+	const vis = get(sidebarVisible);
+	const side = vis.right ? 'right' : vis.left ? 'left' : null;
+	if (side) return openInSide(key, side);
+	fallback();
 }
 
 /**

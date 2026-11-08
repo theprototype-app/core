@@ -1,8 +1,9 @@
 import { writable, readable, derived, get } from 'svelte/store';
 import { safeStorage } from './safeStorage';
-import { inspectorClose, inspectorKind, closeMenu, connectDocked, connectBarHeight, setInspectorFocuser } from '../stores/appStore';
+import { inspectorClose, inspectorKind, connectDocked, connectBarHeight, setInspectorFocuser } from '../stores/appStore';
 import { onLayoutRestore } from './uiLayoutsCore';
-import { scaledPx, uiScale } from './uiScale'; // 53 A1: the default + minimum width follow the UI scale
+import { scaledPx, uiScale, cssPx } from './uiScale'; // 53 A1: the default + minimum width follow the UI scale
+import { dockHeight, bottomInset } from './bottomDock'; // dock-fixes A: the free-space rule reads the dock's height
 import { panelAway } from './windows/panelPlaces.js'; // 70 W2: a popped Inspector leaves its column
 
 // 42 I2/I3 — ONE SIDEBAR PER SCREEN SIDE (user decision 2026-10-14, roadmap 42).
@@ -228,13 +229,26 @@ function rank(side, key) {
 	return i < 0 ? 1e6 : i;
 }
 
+/**
+ * dock-fixes A' (owner 2026-11-08, correction): the sides the FREE-SPACE RULE took off screen. Growing the bottom
+ * dock is the point, so the dock is never clamped; instead an UNPINNED column whose room under its strip drops below
+ * MIN_COLUMN_H collapses to its show button and comes back by itself when the room returns. Across the screen the
+ * same: when both columns together would leave less than MIN_FREE_W of viewport (the unfolded phone), the side opened
+ * EARLIER collapses and comes back when there is room again. Nothing here is persisted or touches a side's mode, tabs
+ * or width — it is a mask over `sidebarWanted`.
+ * @type {import('svelte/store').Writable<Record<Side, boolean>>}
+ */
+export const sidebarAutoHidden = writable({ left: false, right: false });
+
 /** the tab in front on each side (null = the side is empty, or 44 M7: hidden) */
-export const sidebarShown = derived([sidebarTabs, mru, sidebarMode], ([$tabs, $mru, $mode]) => {
+// dock-fixes A': an auto-hidden side draws NO member either (device lab UI-3 again: the right column's strip went,
+// the Inspector stayed, full height over the top-right group) — the same path a hidden mode takes
+export const sidebarShown = derived([sidebarTabs, mru, sidebarMode, sidebarAutoHidden], ([$tabs, $mru, $mode, $auto]) => {
 	/** @type {Record<Side, string|null>} */
 	const out = { left: null, right: null };
 	for (const side of SIDES) {
 		const tabs = $tabs[side];
-		if (!tabs.length || $mode[side] === 'hidden') continue;
+		if (!tabs.length || $mode[side] === 'hidden' || $auto[side]) continue;
 		out[side] = $mru[side].find((k) => tabs.includes(k)) ?? tabs[0];
 	}
 	return out;
@@ -244,9 +258,19 @@ export const sidebarShown = derived([sidebarTabs, mru, sidebarMode], ([$tabs, $m
  * 44 M7 — is each side's column on screen: not hidden, and holding a tab or kept open empty.
  * @type {import('svelte/store').Readable<Record<Side, boolean>>}
  */
-export const sidebarVisible = derived([sidebarTabs, sidebarMode], ([$tabs, $mode]) => ({
+export const sidebarWanted = derived([sidebarTabs, sidebarMode], ([$tabs, $mode]) => ({
 	left: $mode.left !== 'hidden' && ($tabs.left.length > 0 || $mode.left === 'open'),
 	right: $mode.right !== 'hidden' && ($tabs.right.length > 0 || $mode.right === 'open')
+}));
+
+/**
+ * 44 M7 — is each side's column on screen: not hidden, holding a tab or kept open empty, and (dock-fixes A') not
+ * collapsed by the free-space rule.
+ * @type {import('svelte/store').Readable<Record<Side, boolean>>}
+ */
+export const sidebarVisible = derived([sidebarWanted, sidebarAutoHidden], ([$w, $a]) => ({
+	left: $w.left && !$a.left,
+	right: $w.right && !$a.right
 }));
 
 /** 44 M7: is this side an open column with NO tab (the "+" and the helper line)? @param {Side} side */
@@ -262,6 +286,13 @@ export function sidebarEmptyOpen(side) {
 export function toggleSidebar(side, on) {
 	const show = on ?? !get(sidebarVisible)[side];
 	setMode(side, show ? (get(sidebarTabs)[side].length ? 'auto' : 'open') : 'hidden');
+	// dock-fixes A': an explicit SHOW of a side the free-space rule collapsed wins — it becomes the newest side (the
+	// other one gives way across the screen) and, when the dock left it no room, the dock gives the room back
+	if (show && get(sidebarAutoHidden)[side]) {
+		latestSide = side;
+		makeRoomFor(side);
+		autoHideTick();
+	}
 }
 
 /**
@@ -352,10 +383,19 @@ export function startSidebars() {
 		return covered;
 	});
 	geometry.subscribe(publish);
-	// the left inset is measured from the menu's DOM, which mounts after the store fires
-	closeMenu.subscribe(() => requestAnimationFrame(() => leftInsetTick.update((n) => n + 1)));
+	// dock-fixes A': the newest side wins across the screen; the free-space rule re-runs on every change of the wanted
+	// sides, their widths / pins, the dock's height and the window size (geometry carries the last two families)
+	/** @type {Record<Side, boolean>} */
+	let wasWanted = { left: false, right: false };
+	sidebarWanted.subscribe((w) => {
+		for (const side of SIDES) if (w[side] && !wasWanted[side]) latestSide = side;
+		wasWanted = w;
+	});
+	derived([sidebarWanted, sidebarFull, sidebarWidth, bottomInset, connectDocked, connectBarHeight, resizeTick, sidebarsWide, uiScale], (x) => x).subscribe(() =>
+		requestAnimationFrame(autoHideTick)
+	);
 	window.addEventListener('resize', () => {
-		leftInsetTick.update((n) => n + 1);
+		resizeTick.update((n) => n + 1);
 		sidebarWidth.update((v) => ({ left: clampWidth(v.left), right: clampWidth(v.right) }));
 	});
 }
@@ -393,20 +433,15 @@ export const sidebarsWide = readable(true, (set) => {
 	return () => mq.removeEventListener('change', on);
 });
 
-const leftInsetTick = writable(0);
+const resizeTick = writable(0);
 
-// An UNPINNED left column starts past the open main menu (the menu used to cover the docked
-// panel's header — dock-sidebar-inset); a PINNED one keeps its edge and the logo + menu move
-// inward instead, so the menu opens beside the column, above every sidebar.
-function measureLeftInset() {
-	if (typeof document === 'undefined' || get(closeMenu) !== false) return 0;
-	const el = document.querySelector('.app-sidebar');
-	return el ? Math.round(el.getBoundingClientRect().right) + 8 : 228;
-}
-
+// dock-fixes B (owner 2026-11-08, shot 5): the open main menu OVERLAYS the left column (it sits on --z-popover,
+// above every sidebar) and never relayouts it. An unpinned column used to start past the open menu
+// (dock-sidebar-inset), which shoved a left-docked Configure Scene sideways over the right column on the unfolded
+// phone; a PINNED column keeps its edge and the logo + menu move inward beside it (--sb-dock-left), unchanged.
 export const geometry = derived(
 	// 53 A1: `uiScale` is a dependency only so the column's top re-derives with the scale
-	[sidebarShown, sidebarFull, sidebarWidth, connectDocked, connectBarHeight, leftInsetTick, sidebarsWide, sidebarVisible, uiScale],
+	[sidebarShown, sidebarFull, sidebarWidth, connectDocked, connectBarHeight, resizeTick, sidebarsWide, sidebarVisible, uiScale],
 	([$shown, $full, $w, $cDocked, $cBar, _tick, $wide, $visible]) => {
 		const TOP = scaledPx(TOP_PX);
 		/** @param {Side} side */
@@ -423,7 +458,7 @@ export const geometry = derived(
 		};
 		const left = col('left');
 		const right = col('right');
-		const leftX = left.full || !$wide ? 0 : measureLeftInset();
+		const leftX = 0;
 		return {
 			left,
 			right,
@@ -439,6 +474,46 @@ export const geometry = derived(
 		};
 	}
 );
+
+/** the least height an UNPINNED open column keeps under its tab strip (design px, scaled) */
+export const MIN_COLUMN_H = 240;
+/** the least viewport width both columns together leave free (design px, scaled) */
+export const MIN_FREE_W = 300;
+
+/** the side opened most recently (it wins when both do not fit) @type {Side} */
+let latestSide = 'right';
+
+/** room under an unpinned column's strip for the dock's current height, or Infinity for a pinned one @param {Side} side */
+function columnRoom(side) {
+	const g = get(geometry);
+	if (g[side].full) return Infinity;
+	const controls = cssPx(getComputedStyle(document.documentElement).getPropertyValue('--controls-inset')) || 0;
+	return window.innerHeight - g[side].top - scaledPx(STRIP_H) - controls - (get(bottomInset) || 0);
+}
+
+/** dock-fixes A': the free-space rule (see `sidebarAutoHidden`) */
+function autoHideTick() {
+	if (typeof window === 'undefined') return;
+	const want = get(sidebarWanted);
+	const next = { left: false, right: false };
+	if (get(sidebarsWide) && !document.documentElement.dataset.focus) {
+		for (const side of SIDES) if (want[side] && columnRoom(side) < scaledPx(MIN_COLUMN_H)) next[side] = true;
+		const w = get(sidebarWidth);
+		if (want.left && want.right && !next.left && !next.right && window.innerWidth - w.left - w.right < scaledPx(MIN_FREE_W)) {
+			next[latestSide === 'left' ? 'right' : 'left'] = true;
+		}
+	}
+	const cur = get(sidebarAutoHidden);
+	if (cur.left !== next.left || cur.right !== next.right) sidebarAutoHidden.set(next);
+}
+
+/** an explicit show of a column the dock left no room for: the dock shrinks just enough @param {Side} side */
+function makeRoomFor(side) {
+	const short = scaledPx(MIN_COLUMN_H) - columnRoom(side);
+	if (short <= 0) return;
+	const h = get(dockHeight);
+	dockHeight.set(Math.max(scaledPx(160), Math.round(h - short)));
+}
 
 /** @param {any} g */
 function publish(g) {

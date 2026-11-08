@@ -293,7 +293,10 @@ h.run(async () => {
 		});
 		await page.waitForTimeout(1200);
 		o = await overlays(page);
-		h.check((await sides(page))?.left === true && o.hits.length === 0, `U1.2 [${theme}] the AI assistant pinned left + Configure Scene right: the corner buttons and the toolbar clear both — cols ${o.cols.join(' | ')}; hits ${o.hits.join(' | ') || 'none'}`);
+		v = await sides(page);
+		// owner correction A' (2026-11-08): two columns would leave 154 px of a 770 px screen, so the one opened EARLIER
+		// (Configure Scene, right) tucks away and the AI assistant has the room; nothing sits over the column shown
+		h.check(v?.left === true && v?.right === false && o.hits.length === 0, `U1.2 [${theme}] the AI assistant pinned left: Configure Scene (opened earlier) tucks away, nothing over the column — ${JSON.stringify(v)}; cols ${o.cols.join(' | ')}; hits ${o.hits.join(' | ') || 'none'}`);
 		await page.screenshot({ path: `${OUT}/dock-fixes-u1-unfolded-${theme}.png` });
 
 		if (theme === 'dark') {
@@ -309,7 +312,7 @@ h.run(async () => {
 			await tapAt(page, '#panels-toggle');
 			await page.waitForTimeout(500);
 			v = await sides(page);
-			h.check(v?.left === true && v?.right === true, `U2.4 another tap brings both back (${JSON.stringify(v)})`);
+			h.check(v?.left === true && v?.right === false, `U2.4 another tap brings back the column that was showing (${JSON.stringify(v)})`);
 			await clickAt(page, '#panels-toggle', { button: 'right' });
 			const rows = await menuRows(page);
 			h.check(rows.some((r) => r.title === 'Hide this button' && r.icon), `U2.5 its menu offers "Hide this button" (${rows.map((r) => r.title).join(', ')})`);

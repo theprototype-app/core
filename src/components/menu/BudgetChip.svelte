@@ -70,6 +70,18 @@
 		return true;
 	}
 
+	/** dock-fixes E (owner 2026-11-08, shot 5: "Desktop 0%" over the chat button): the sampled points above can
+	 *  miss a 44 px corner button that overlaps only part of the chip — refuse any spot whose RECT meets a HUD cell
+	 *  @param {number} x @param {number} y @param {number} w @param {number} h */
+	function overChrome(x, y, w, h) {
+		for (const el of document.querySelectorAll('.hud-stack > *, #sim-controls, #hud-tr > *, .hud-cell')) {
+			if (wrap?.contains(el) || el.closest('#controls-pill')) continue;
+			const r = el.getBoundingClientRect();
+			if (r.width && r.height && r.left < x + w + 4 && r.right > x - 4 && r.top < y + h + 4 && r.bottom > y - 4) return true;
+		}
+		return false;
+	}
+
 	function place() {
 		if (!wrap) return;
 		// 48 F1: a placed chip is drawn where it was put — nothing to measure
@@ -101,7 +113,7 @@
 		const vh = window.innerHeight;
 		for (const s of spots) {
 			if (s.x < MARGIN || s.y < MARGIN || s.x + w > vw - MARGIN || s.y + h > vh - MARGIN) continue;
-			if (!overCanvas(s.x, s.y, w, h)) continue;
+			if (!overCanvas(s.x, s.y, w, h) || overChrome(s.x, s.y, w, h)) continue;
 			pos = { x: Math.round(s.x), y: Math.round(s.y) };
 			room = s.at;
 			return;

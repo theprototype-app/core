@@ -47,6 +47,22 @@ export function bakeBudget(tier, quality = 'normal', cores = 4) {
 	return { tier, quality: q, atlas, rays, timeCapMs: t.timeCapMs, maxDensity: t.maxDensity, workers, pad };
 }
 
+/**
+ * 98-int (device-lab-3, HONOR + Templates ▸ Tavern interior, 361 objects): "the scene does not fit one lightmap" left the
+ * person with no next step. Say what to do instead, by what THIS device can still try.
+ * @param {string} message the bake's error @param {string} tier pc | phone | quest @param {string} [quality]
+ */
+export function bakeErrorText(message, tier, quality = 'normal') {
+	if (!/does not fit one lightmap/.test(String(message))) return String(message);
+	const t = BAKE_TIERS[/** @type {'pc'|'phone'|'quest'} */ (tier)] ?? BAKE_TIERS.pc;
+	const bigger = quality !== 'high' && t.maxAtlas > t.atlas;
+	const steps = [];
+	if (bigger) steps.push('pick Quality ▸ High (a bigger lightmap) and bake again');
+	if (tier !== 'pc') steps.push('bake on a computer in this session — this device then shows the baked light too');
+	else if (!bigger) steps.push('use fewer, larger objects (join small pieces together)');
+	return 'Too many objects for one lightmap on this device. To bake it, ' + steps.join(', or ') + '.';
+}
+
 /** @param {unknown} v @param {number} lo @param {number} hi @param {number} dflt */
 function num(v, lo, hi, dflt) {
 	const n = Number(v);

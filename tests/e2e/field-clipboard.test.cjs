@@ -11,7 +11,8 @@
 //   7  value rows on their own: a slider row (Roughness), a toggle, a choice, a colour, and a
 //      Configure Scene row (Exposure) — copy / paste / reset
 //   8  phone (OPPO Find N6 folded, real touch): a LONG PRESS opens the menu, the release does
-//      not start typing in the field, and Paste vector works
+//      not start typing in the field, and Paste vector works; 98-int: a SLOW finger drag (0.9 s, under the
+//      10 px hold slop) on a slider drags and never opens the menu (device-lab-3, HONOR); a slow scrub on a value box scrubs
 const h = require('./helpers.cjs');
 
 const CTX = { permissions: ['clipboard-read', 'clipboard-write'] };
@@ -402,6 +403,43 @@ h.run(async () => {
 	await press(c.x, c.y, 60);
 	await Q.waitForTimeout(400);
 	h.check(await Q.evaluate(() => document.activeElement?.classList?.contains('dn-input') ?? false), '8.5 phone: a short tap on the box still starts typing');
+	// 8.6/8.7 a slow drag is a drag, not a long press (98-int)
+	await Q.keyboard.press('Escape');
+	await Q.evaluate(() => window.__stores.fieldMenu.fieldMenu.set(null));
+	await Q.waitForTimeout(300);
+	/** @param {number} x @param {number} y @param {number} dx total px over 900 ms */
+	const slowDrag = async (x, y, dx) => {
+		await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 1 }] });
+		for (let i = 1; i <= 9; i++) {
+			await new Promise((r) => setTimeout(r, 100));
+			await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x + (dx * i) / 9, y, id: 1 }] });
+		}
+		await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+	};
+	const fieldMenuUp = () => Q.evaluate(() => {
+		/** @type {any} */ let m;
+		window.__stores.fieldMenu.fieldMenu.subscribe((v) => (m = v))();
+		return !!m;
+	});
+	const range = Q.locator('input[type="range"]:visible').first();
+	if (await range.count()) {
+		c = await centre(range);
+		await slowDrag(c.x, c.y, 8);
+		await Q.waitForTimeout(300);
+		h.check(!(await fieldMenuUp()), '8.6 phone: a slow 0.9 s drag on a slider does NOT open the field menu');
+	} else h.check(false, '8.6 phone: no slider on screen to drag');
+	await Q.evaluate(() => window.__stores.fieldMenu.fieldMenu.set(null));
+	// a real slow scrub (30 px in 0.9 s) on a value box still scrubs and opens nothing (a guard: a hold under
+	// Chrome's own touch slop IS a long press there, and opening the menu is right)
+	await Q.keyboard.press('Escape');
+	await Q.evaluate(() => /** @type {any} */ (document.activeElement)?.blur?.());
+	const x0 = (await poseOf(Q, qB)).pos[0];
+	c = await centre(rowOf(Q, 'inspector-position').locator('.dn-wrap').nth(0));
+	await slowDrag(c.x, c.y, 30);
+	await Q.waitForTimeout(400);
+	const x1 = (await poseOf(Q, qB)).pos[0];
+	h.check(!(await fieldMenuUp()) && x1 !== x0, `8.7 phone: a slow 30 px scrub on a value box scrubs (${x0} -> ${x1}) and opens no menu`);
+	await Q.evaluate(() => window.__stores.fieldMenu.fieldMenu.set(null));
 	h.check(h.pageErrors(F).length === 0, `phone: no page errors (${h.pageErrors(F).join(' | ').slice(0, 200)})`);
 	await F.ctx.close();
 	await h.finish(browser);

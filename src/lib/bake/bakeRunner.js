@@ -10,7 +10,7 @@ import { get } from 'svelte/store';
 import { bakeJob, bakeRecord, setBakeRecord } from '../sceneBake';
 import { objectsGroup } from '../../stores/sceneStore';
 import { collectBakeScene, deviceBakeTier, freeChannel } from './bakeScene.js';
-import { bakeBudget, objectSig, lightsSig, LITE_SIDE } from './bakeRecordCore.js';
+import { bakeBudget, objectSig, lightsSig, LITE_SIDE, bakeErrorText } from './bakeRecordCore.js';
 
 /** @type {Worker[]} */
 let workers = [];
@@ -87,8 +87,10 @@ export async function runBake(opts = {}) {
 	cancelled = false;
 	const started = performance.now();
 	job({ running: true, phase: 'Looking at the scene', progress: 0.01, startedAt: Date.now(), error: '', notes: [] });
+	/** @type {'pc'|'phone'|'quest'} */
+	let tier = 'pc';
 	try {
-		const tier = await deviceBakeTier();
+		tier = await deviceBakeTier();
 		const budget = bakeBudget(tier, opts.quality, navigator.hardwareConcurrency || 2);
 		if (testLimits?.atlas) {
 			budget.atlas = Math.min(budget.atlas, testLimits.atlas);
@@ -233,7 +235,7 @@ export async function runBake(opts = {}) {
 		for (const w of workers) w.terminate();
 		workers = [];
 		if (cancelled) return { ok: false, cancelled: true, error: 'cancelled' };
-		const message = String(/** @type {any} */ (error)?.message ?? error);
+		const message = bakeErrorText(String(/** @type {any} */ (error)?.message ?? error), tier, opts.quality);
 		job({ running: false, phase: '', progress: 0, error: message, notes: [] });
 		return { ok: false, error: message };
 	}

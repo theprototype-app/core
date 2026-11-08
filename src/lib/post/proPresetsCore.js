@@ -81,6 +81,14 @@ export function scaleProEffects(entries, tier) {
 	return drop.length ? entries.filter((e) => !drop.includes(e.kind)) : entries;
 }
 
+/** 98-int: what the governor's "Scene look lighter" step leaves out on any device (the heavy passes; the grade stays) */
+export const LITE_DROPS = Object.freeze(['volumetricfog', 'godrays', 'lensflare', 'antialias', 'ao']);
+
+/** @template {{kind: string}} T @param {T[]} entries @returns {T[]} */
+export function liteLook(entries) {
+	return entries.filter((e) => !LITE_DROPS.includes(e.kind));
+}
+
 /**
  * The scene post document a pro preset writes (fresh ids are the store's job).
  * @param {string} name @returns {{kind: string, enabled: boolean, params: Record<string, any>}[] | null}

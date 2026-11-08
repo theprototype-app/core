@@ -8,6 +8,9 @@
 // 5. a peer sees the same look
 // 6. phone profile: fog / god-ray march capped (8 / 16); Quest profile (headset UA): the cinematic preset
 //    builds without fog / god rays / lens flare while the document keeps them
+// 9. 98-int: a preset switch SETTLES the quality governor (its passes compile on the first frames; read as overload,
+//    three switches walked the HONOR to level 6-9 = every look without its post stack); the ladder's "Scene look
+//    lighter" step keeps the grade and drops fog / god rays / lens flare / TRAA / AO before "post off"
 
 const h = require('./helpers.cjs');
 
@@ -289,6 +292,44 @@ h.run(async () => {
 	const playActive = await page.evaluate(() => window.__stores.traaPass.traaDebug.last?.active);
 	await page.evaluate(() => window.__stores.isLocked.set(null));
 	h.check(playActive === true, '8.7 on a computer TRAA stays on in Play (the phone default is off: unit-proven)');
+
+	// ---- 9. a look change settles the governor
+	const settleMs = await A.page.evaluate(async () => {
+		const g = window.__stores.qualityGovernor.governorForTest;
+		const out = [];
+		for (const name of ['stylised', 'cinematic']) {
+			const before = g.settleLeft();
+			await window.__stores.proPresets.applyProPreset(name);
+			// the chain rebuilds when the effect flushes (later under load): poll for the deadline to move forward —
+			// time passing alone only lowers it, so any rise is a new settle
+			let after = g.settleLeft();
+			const t0 = performance.now();
+			while (!(after > before && Number.isFinite(after)) && performance.now() - t0 < 8000) {
+				await new Promise((r) => setTimeout(r, 50));
+				after = g.settleLeft();
+			}
+			out.push({ before: Math.round(before), after: Math.round(after), moved: after > before && Number.isFinite(after) });
+		}
+		return out;
+	});
+	h.check(settleMs.every((m) => m.moved), '9.1 each preset switch settles the quality governor (' + JSON.stringify(settleMs) + ')');
+	// 9.2 the ladder's lighter step keeps the look visible (grade, tone mapping, bloom, vignette) and drops the heavy passes
+	await A.page.evaluate(() => window.__stores.proPresets.applyProPreset('cinematic'));
+	const stepOf = (/** @type {string} */ key) => A.page.evaluate((k) => window.__stores.qualityGovernor.governorForTest.levelOf(k), key);
+	const lite = await stepOf('lookLite');
+	const off = await stepOf('post');
+	await A.page.evaluate((n) => window.__stores.qualityGovernor.governorForTest.setLevel(n, 1e12), lite);
+	await settle(A.page, 1500);
+	const liteKinds = await builtKinds(A.page);
+	h.check(
+		liteKinds.includes('tonemapping') && liteKinds.includes('vignette') && !liteKinds.some((k) => ['volumetricfog', 'godrays', 'lensflare', 'antialias', 'ao'].includes(k)),
+		'9.2 "Scene look lighter" (level ' + lite + '): the grade stays, the heavy passes go (' + liteKinds.join(', ') + ')'
+	);
+	await A.page.evaluate((n) => window.__stores.qualityGovernor.governorForTest.setLevel(n, 1e12), off);
+	await settle(A.page, 1500);
+	const offKinds = await builtKinds(A.page);
+	h.check(offKinds.length === 0, '9.3 the next step (level ' + off + ') still turns the look off (' + offKinds.join(', ') + ')');
+	await A.page.evaluate(() => window.__stores.qualityGovernor.governorForTest.reset());
 
 	h.check(h.pageErrors(A).length === 0, '7.1 no page errors (' + h.pageErrors(A).slice(0, 2).join(' | ') + ')');
 	await browser.close();

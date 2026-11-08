@@ -66,6 +66,7 @@
 	import { peersAsClassic, knockedAfterSeconds, KNOCKED_AFTER_CHOICES } from '$lib/avatars/avatarState';
 	import WorkspaceLayoutsSettings from './WorkspaceLayoutsSettings.svelte'; // 37 R14
 	import UndockButtonSettings from './UndockButtonSettings.svelte'; // 40 F8
+	import PanelsButtonSettings from './PanelsButtonSettings.svelte'; // dock-fixes item 8
 	import PopOutWindowSettings from './PopOutWindowSettings.svelte'; // 70 W3/W5
 	import PanelHeaderSettings from './PanelHeaderSettings.svelte'; // 42 I1
 	import ChromeButtonsSettings from './ChromeButtonsSettings.svelte'; // panel-gestures item 5
@@ -298,6 +299,7 @@
 		</SettingRow>
 		<WorkspaceLayoutsSettings />
 		<UndockButtonSettings />
+		<PanelsButtonSettings />
 		<PopOutWindowSettings />
 		<PanelHeaderSettings />
 		<ChromeButtonsSettings />

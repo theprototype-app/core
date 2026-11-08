@@ -349,7 +349,18 @@ export async function renderPhoto(plan, opts = {}) {
 	const pkg = await loadTracer();
 	const camera = photoCamera(live, plan, opts.pose ?? null);
 	const started = performance.now();
-	const tracer = new pkg.WebGLPathTracer(renderer);
+	// P6: the constructor runs its own setScene (and may compile): a target is bound for it too (see below)
+	const was = renderer.getRenderTarget();
+	const warm = new THREE.WebGLRenderTarget(1, 1);
+	renderer.setRenderTarget(warm);
+	/** @type {any} */
+	let tracer;
+	try {
+		tracer = new pkg.WebGLPathTracer(renderer);
+	} finally {
+		renderer.setRenderTarget(was);
+		warm.dispose();
+	}
 	tracer.renderToCanvas = false;
 	tracer.rasterizeScene = false;
 	tracer.synchronizeRenderSize = false;
@@ -370,6 +381,14 @@ export async function renderPhoto(plan, opts = {}) {
 	const saved = saveState(renderer);
 	const prep = prepareScene(scene, renderer, pkg);
 	try {
+		// device-lab P6 (PC, ANGLE/D3D11): the tracer compiles its shader ASYNC (KHR_parallel_shader_compile)
+		// whenever its defines change — but three keys a program by the target bound AT COMPILE TIME (tone
+		// mapping + output colour space are the canvas's only while no target is bound). Compiled with the
+		// canvas bound, the async program was the canvas variant; the first draw into the tracer's float target
+		// then needed a SECOND variant and linked it synchronously: one 19.3 s getProgramInfoLog block in the
+		// profile. A float target stays bound around setScene and every renderSample, so the async compile
+		// builds the very variant the draw uses.
+		renderer.setRenderTarget(tracer.target);
 		tracer.setScene(scene, camera);
 	} finally {
 		prep.undo();
@@ -386,6 +405,7 @@ export async function renderPhoto(plan, opts = {}) {
 			if (reason) break;
 			const s = saveState(renderer);
 			try {
+				renderer.setRenderTarget(tracer.target);
 				tracer.renderSample();
 			} finally {
 				restoreState(renderer, s);

@@ -40,11 +40,15 @@
 		}
 	}
 
+	/** "256 samples in 80.9 s." as ONE string: svelte trims the space at a block edge ("samplesin", device-lab P6)
+	 * @param {{samples?: number, ms?: number}} st */
+	const doneText = (st) => (st.samples ? st.samples + ' samples' : '') + (st.ms ? (st.samples ? ' in ' : 'In ') + (st.ms / 1000).toFixed(1) + ' s' : '') + (st.samples || st.ms ? '.' : '');
+
 	const reasonText = /** @type {Record<string, string>} */ ({
 		samples: 'All samples done.',
 		time: 'Time limit reached.',
 		stopped: 'Stopped: this is the still so far.',
-		peer: 'Rendered on a PC in this session.',
+		peer: 'Rendered on a computer in this session.',
 		raster: 'A normal (not path-traced) still.'
 	});
 
@@ -74,6 +78,8 @@
 			{/if}
 		</p>
 		{#if phoneOnly}
+			<!-- device-lab P6 nit: Toggle's label is only its aria-label, so the visible words sit beside it -->
+			<label class="flex items-center gap-2 text-xs" for="photo-force">
 			<Toggle
 				id="photo-force"
 				label="Try here anyway (slow, may heat the phone)"
@@ -83,6 +89,8 @@
 					refreshWhere();
 				}}
 			/>
+				<span>Try here anyway (slow, may heat the phone)</span>
+			</label>
 		{/if}
 
 		<SliderRow
@@ -91,6 +99,7 @@
 			min={PHOTO_SAMPLES.min}
 			max={PHOTO_SAMPLES.max}
 			step={1}
+			decimals={0}
 			value={$photoPrefs.samples}
 			resetValue={PHOTO_SAMPLES.default}
 			onchange={(v) => photoPrefs.update((p) => ({ ...p, samples: Math.round(v) }))}
@@ -101,12 +110,16 @@
 			min={PHOTO_SECONDS.min}
 			max={PHOTO_SECONDS.max}
 			step={1}
+			decimals={0}
 			value={$photoPrefs.seconds}
 			resetValue={PHOTO_SECONDS.default}
 			onchange={(v) => photoPrefs.update((p) => ({ ...p, seconds: Math.round(v) }))}
 		/>
 		<div class="flex flex-wrap items-center gap-3">
-			<Toggle id="photo-denoise" label="Denoise" checked={$photoPrefs.denoise} onchange={(v) => photoPrefs.update((p) => ({ ...p, denoise: v }))} />
+			<label class="flex items-center gap-2 text-xs" for="photo-denoise">
+				<Toggle id="photo-denoise" label="Denoise" checked={$photoPrefs.denoise} onchange={(v) => photoPrefs.update((p) => ({ ...p, denoise: v }))} />
+				<span>Denoise</span>
+			</label>
 			<Segmented
 				id="photo-scale"
 				label="Size"
@@ -131,7 +144,7 @@
 					{#if $photoState.compiling}Preparing the renderer…{:else if $photoState.place === 'raster'}Taking the still…{:else}{$photoState.samples} / {$photoState.target} samples · {pct}%{/if}
 				{:else if $photoState.status === 'done'}
 					{reasonText[$photoState.reason] ?? ''}
-					{#if $photoState.samples}{$photoState.samples} samples{/if}{#if $photoState.ms} in {($photoState.ms / 1000).toFixed(1)} s{/if}.
+					{doneText($photoState)}
 				{:else if $photoState.status === 'error'}
 					<span id="photo-error" class="text-warn">{$photoState.error}</span>
 				{/if}

@@ -2,8 +2,8 @@
 // (b) one world-space SAMPLE per covered texel and (c) the triangle soup the rays hit. Pure, ZERO
 // IMPORTS beyond the other bake cores; it runs in the Worker so the editor never stalls on it.
 
-import { chooseUnwrap, rebuildLayout, triangleList, buildCharts, autoUnwrap, layoutFromUv, atlasUv, rasterTriangles } from './bakeUnwrapCore.js';
-import { planAtlas } from './bakeAtlasCore.js';
+import { chooseUnwrap, rebuildLayout, triangleList, buildCharts, autoUnwrap, layoutFromUv, atlasUv, rasterTriangles, overlapOf, CLEAN_OVERLAP } from './bakeUnwrapCore.js';
+import { fitAtlas } from './bakeAtlasCore.js';
 
 /**
  * @typedef {{
@@ -114,7 +114,7 @@ export function planBake(meshes, budget) {
 	/** @type {{ key: string, reason: string }[]} */
 	const skipped = [];
 	/** @type {any[]} */
-	const items = [];
+	let items = [];
 	receivers.forEach(({ m, i }, ri) => {
 		const { ws, area } = areaOf[ri];
 		const geo = { pos: m.pos, index: m.index, uv0: m.uv0, uv1: m.uv1 };
@@ -133,12 +133,29 @@ export function planBake(meshes, budget) {
 			mi: i,
 			src: chosen.src,
 			mode: chosen.mode,
-			layoutFor: (/** @type {number} */ pad) => (built ? autoUnwrap(m.pos, tris, m.uv0, pad, built) : fixed)
+			charts: built && !('error' in built) ? built.charts.length : 1,
+			layoutFor: (/** @type {number} */ pad) => (built ? autoUnwrap(m.pos, tris, m.uv0, pad, built) : fixed),
+			// 98-int T1: the mesh's own uv0 as ONE chart, for a scene whose auto-unwrap padding does not fit (clean →
+			// light + AO, overlapping → AO only, the chooseUnwrap rule). Only ever used when the plan does not fit.
+			alt:
+				chosen.src === 'auto' && m.uv0
+					? () => {
+							const lay = layoutFromUv(m.pos, tris, /** @type {any} */ (m.uv0));
+							if (!lay.ok) return null;
+							const mode = overlapOf(lay, tris, d0 * ws).ratio <= CLEAN_OVERLAP ? 'full' : 'ao';
+							return { src: 'uv0', mode, charts: 1, layoutFor: () => lay };
+						}
+					: null
 		});
 	});
 	if (!items.length) return { error: skipped.length ? 'no mesh could be unwrapped (' + skipped[0].reason + ')' : 'nothing to bake' };
-	const atlas = planAtlas(items, side, budget.pad, budget.maxDensity);
-	if ('error' in atlas) return { error: atlas.error };
+	// 98-int T1: a scene too detailed for one lightmap first lays its most chart-heavy meshes out by their own uv0
+	// (one chart each), and only then leaves the chart-heavy props out
+	const fit = fitAtlas(items, side, budget.pad, budget.maxDensity);
+	if ('error' in fit) return { error: fit.error };
+	const atlas = fit.atlas;
+	for (const it of fit.dropped) skipped.push({ key: it.key, reason: 'too detailed for one lightmap' });
+	items = fit.kept;
 
 	// samples: one per (covered texel, triangle)
 	/** @type {number[]} */

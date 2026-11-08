@@ -534,7 +534,7 @@
 	<DockViewsSheet bind:open={sheetOpen} />
 {/if}
 {#if tabMenu}
-	<ContextMenu x={tabMenu.x} y={tabMenu.y} items={tabMenu.items} on:close={() => (tabMenu = null)} />
+	<ContextMenu x={tabMenu.x} y={tabMenu.y} items={tabMenu.items} sizeKey="docktab" onclose={() => (tabMenu = null)} />
 {/if}
 
 <style>

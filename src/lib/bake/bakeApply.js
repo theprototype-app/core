@@ -22,7 +22,9 @@ import { explorerItems, itemByHash, itemBlob } from '../explorer';
 import { requestAsset } from '../assetShare';
 import { registerParkHook } from '../parkHooks';
 import { bakeStale, bakeShown } from '../sceneBake';
-import { bakeUvFor } from './bakePlanCore.js';
+import { rebuildLayout, atlasUv } from './bakeUnwrapCore.js';
+import { kitMeshSource } from '../packRefs';
+import { registerKitBakeHook, kitBakeChanged, BAKE_ST } from '../kitInstancing';
 import { halves } from './bakeAtlasCore.js';
 import { mapChoice, objectSig, staleOf, lightsSig, isNewerBakeRecord } from './bakeRecordCore.js';
 import { showToast } from '../../stores/appStore';
@@ -43,17 +45,129 @@ const meshes = new Map();
 const materials = new Map();
 /** @type {(() => void) | null} */
 let unwatch = null;
+
+// ---- 98-int T1b: baked kit pieces stay instanced (kitInstancing.js, the bake hook) -------------
+/** a baked kit copy -> what its batch draws @type {Map<any, { geometry: any, material: any, st: number[] }>} */
+const kitInfo = new Map();
+/** template geometry -> 'src|pad|ch' -> the layout geometry every copy of it shares
+ * @type {Map<any, Map<string, { geometry: any, base: Float32Array }>>} */
+const kitLayouts = new Map();
+/** template material -> its baked batch material @type {Map<any, any>} */
+const kitMaterials = new Map();
+registerKitBakeHook({ infoFor: (mesh) => kitInfo.get(mesh) ?? null });
+
+/** @param {Float32Array} a @param {Float32Array} b */
+function sameArray(a, b) {
+	if (a.length !== b.length) return false;
+	for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+	return true;
+}
+
+/**
+ * Remember how a baked kit copy batches: the layout geometry of its piece (made by the first
+ * copy) and its place in the atlas. A copy whose layout differs (cannot happen for an unedited
+ * clone, but the guard is one pass over the array) stays out of the batch and draws itself.
+ * @param {any} mesh @param {any} entry @param {Float32Array} local @param {number} ch
+ */
+function noteKitCopy(mesh, entry, local, ch) {
+	const source = kitMeshSource(mesh);
+	if (!source || Array.isArray(mesh.material) || mesh.geometry !== source.geometry || !textures || !current) return;
+	const tg = source.template.geometry;
+	// the pad only shapes an AUTO unwrap (a uv0/uv1 layout ignores it), and copies placed at
+	// different densities get different pads — keying on it there would split a batch for nothing
+	const key = entry.src + '|' + (entry.src === 'auto' ? entry.pad : '') + '|' + ch;
+	let byKey = kitLayouts.get(tg);
+	if (!byKey) kitLayouts.set(tg, (byKey = new Map()));
+	let lay = byKey.get(key);
+	if (!lay) {
+		const geometry = new THREE.BufferGeometry();
+		for (const name in tg.attributes) geometry.setAttribute(name, tg.attributes[name]);
+		if (tg.index) geometry.setIndex(tg.index);
+		for (const g of tg.groups) geometry.addGroup(g.start, g.count, g.materialIndex);
+		if (!tg.boundingSphere) tg.computeBoundingSphere();
+		if (!tg.boundingBox) tg.computeBoundingBox();
+		geometry.boundingSphere = tg.boundingSphere;
+		geometry.boundingBox = tg.boundingBox;
+		geometry.setAttribute('uv' + ch, new THREE.BufferAttribute(local, 2));
+		geometry.userData.kitBakeLayout = true;
+		lay = { geometry, base: local };
+		byKey.set(key, lay);
+	} else if (!sameArray(lay.base, local)) return;
+	kitInfo.set(mesh, { geometry: lay.geometry, material: kitMaterialFor(source.template.material), st: [entry.x, entry.y, entry.s] });
+}
+
+/** the baked clone of a template material that a baked batch draws with @param {any} template */
+function kitMaterialFor(template) {
+	let m = kitMaterials.get(template);
+	if (m) return m;
+	m = template.clone();
+	const ownAo = !!(template.aoMap && !template.aoMap.userData?.bake);
+	setKitMaterial(m, ownAo);
+	// the copy's atlas UV is x + base·s: the per-instance placement scales and moves the shared
+	// layout (the bake channel of the layout geometry) before the half's own offset/repeat
+	const ao = ownAo ? '' : `
+		#ifdef USE_AOMAP
+			vAoMapUv = ( aoMapTransform * vec3( AOMAP_UV * ${BAKE_ST}.z + ${BAKE_ST}.xy, 1 ) ).xy;
+		#endif`;
+	m.onBeforeCompile = (/** @type {any} */ shader) => {
+		shader.vertexShader = shader.vertexShader
+			.replace('#include <common>', `#include <common>
+#ifdef USE_INSTANCING
+	attribute vec3 ${BAKE_ST};
+#endif`)
+			.replace(
+				'#include <uv_vertex>',
+				`#include <uv_vertex>
+	#ifdef USE_INSTANCING
+		#ifdef USE_LIGHTMAP
+			vLightMapUv = ( lightMapTransform * vec3( LIGHTMAP_UV * ${BAKE_ST}.z + ${BAKE_ST}.xy, 1 ) ).xy;
+		#endif${ao}
+	#endif`
+			);
+	};
+	m.customProgramCacheKey = () => 'tp-kit-bake:' + (ownAo ? 0 : 1);
+	m.userData.kitBake = { ownAo };
+	kitMaterials.set(template, m);
+	return m;
+}
+
+/** @param {any} m @param {boolean} ownAo */
+function setKitMaterial(m, ownAo) {
+	if (!textures || !current) return;
+	m.lightMap = textures.light;
+	m.lightMapIntensity = current.lightScale * current.intensity.light;
+	if (!ownAo) {
+		m.aoMap = textures.ao;
+		m.aoMapIntensity = current.intensity.ao;
+	}
+}
+
+/** forget every baked batch (a bake came off or was replaced) */
+function dropKitBatches() {
+	if (!kitInfo.size && !kitMaterials.size) return;
+	kitInfo.clear();
+	for (const m of kitMaterials.values()) m.dispose();
+	kitMaterials.clear();
+	// the layout geometries share the templates' attributes: dropped, never disposed (a dispose
+	// would free the templates' GPU buffers too)
+	kitLayouts.clear();
+	kitBakeChanged();
+}
+
+/** one walk of the scene: uuid -> object (the 1 s watcher looked every baked uuid up with its
+ * own tree search — 400 searches a second on the Tavern) */
+function indexObjects() {
+	/** @type {Map<string, any>} */
+	const index = new Map();
+	/** @type {any} */
+	const group = get(objectsGroup);
+	group?.traverse?.((/** @type {any} */ o) => index.set(o.uuid, o));
+	return index;
+}
 /** @type {any} */
 let tick = null;
 let tier = /** @type {'pc' | 'phone' | 'quest' | null} */ (null);
 let applying = Promise.resolve();
-
-/** @param {string} uuid */
-function objectOf(uuid) {
-	/** @type {any} */
-	const group = get(objectsGroup);
-	return group?.getObjectByProperty?.('uuid', uuid) ?? null;
-}
 
 /** the newer-version notice shows once per tab */
 let newerNoticed = false;
@@ -99,6 +213,7 @@ async function applyNow(record) {
 			m.lightMapIntensity = record.lightScale * record.intensity.light;
 			if (!was.ownAo) m.aoMapIntensity = record.intensity.ao;
 		}
+		for (const m of kitMaterials.values()) setKitMaterial(m, m.userData.kitBake.ownAo);
 		refresh();
 		return;
 	}
@@ -175,24 +290,29 @@ function disposeTextures() {
 }
 
 /** put the bake on every recorded object that is here and not yet baked (objects arrive late) */
-function refresh() {
+function refresh(index = indexObjects()) {
 	if (!current || !textures) return;
-	let applied = 0, pending = 0;
+	let applied = 0, pending = 0, fresh = 0;
 	for (const entry of current.objects) {
 		if (meshes.has(entry.uuid)) {
 			applied++;
 			continue;
 		}
-		const mesh = objectOf(entry.uuid);
+		const mesh = index.get(entry.uuid);
 		if (!mesh?.isMesh) {
 			pending++;
 			continue;
 		}
-		if (applyTo(mesh, entry)) applied++;
+		if (applyTo(mesh, entry)) {
+			applied++;
+			fresh++;
+		}
 	}
-	bakeShown.update((s) => ({ ...s, applied, pending }));
-	updateStale();
-	if (applied) pokeScene();
+	bakeShown.update((s) => (s.applied === applied && s.pending === pending ? s : { ...s, applied, pending }));
+	updateStale(index);
+	// only when something new was baked (a poke every second re-ran every scene watcher, kit
+	// instancing's rescan among them)
+	if (fresh) pokeScene();
 }
 
 /** @param {any} mesh @param {any} entry */
@@ -202,8 +322,9 @@ function applyTo(mesh, entry) {
 	// ONE channel for the whole bake (the atlas textures carry it): the bake picked it
 	const ch = entry.ch;
 	if (geometry.attributes['uv' + ch] && geometry.userData.__bakeCh !== ch) return false;
-	const uv = bakeUvFor(geometryArrays(geometry), entry);
-	if (!uv) return false;
+	const layout = rebuildLayout(geometryArrays(geometry), entry.src, entry.pad);
+	if (!layout.ok) return false;
+	const uv = atlasUv(layout.uv, entry.x, entry.y, entry.s); // = bakeUvFor, keeping the layout
 	const attr = 'uv' + ch;
 	geometry.setAttribute(attr, new THREE.BufferAttribute(uv, 2));
 	geometry.userData.__bakeCh = ch;
@@ -211,6 +332,7 @@ function applyTo(mesh, entry) {
 	const list = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
 	for (const m of list) bakeMaterial(m, ch, entry.mode);
 	meshes.set(mesh.uuid, { mesh, geometry, attr });
+	noteKitCopy(mesh, entry, layout.uv, ch);
 	return true;
 }
 
@@ -237,6 +359,7 @@ function bakeMaterial(m, ch, mode) {
 
 /** take everything off, restore materials and geometry */
 function removeAll() {
+	dropKitBatches();
 	for (const [m, was] of materials) {
 		m.lightMap = was.lightMap;
 		m.lightMapIntensity = was.lightMapIntensity;
@@ -336,11 +459,15 @@ function startWatching() {
 	if (tick) return;
 	tick = setInterval(() => {
 		if (!current) return;
+		const index = indexObjects();
 		// a baked object that was deleted and re-created (undo) is a new mesh: re-apply
 		for (const [uuid, rec] of meshes) {
-			if (objectOf(uuid) !== rec.mesh) meshes.delete(uuid);
+			if (index.get(uuid) !== rec.mesh) {
+				meshes.delete(uuid);
+				kitInfo.delete(rec.mesh);
+			}
 		}
-		refresh();
+		refresh(index);
 	}, 1000);
 }
 
@@ -351,12 +478,13 @@ function stopWatching() {
 	unwatch = null;
 }
 
-function updateStale() {
+/** @param {Map<string, any>} index */
+function updateStale(index) {
 	if (!current) return;
 	/** @type {Map<string, string>} */
 	const sigs = new Map();
 	for (const entry of current.objects) {
-		const o = objectOf(entry.uuid);
+		const o = index.get(entry.uuid);
 		if (!o?.isMesh) continue;
 		o.updateWorldMatrix?.(true, false);
 		sigs.set(entry.uuid, objectSig(o.matrixWorld.elements, o.geometry.attributes.position.count));
@@ -372,6 +500,9 @@ export function bakeApplyDebug() {
 		textureHash,
 		meshes: [...meshes.keys()],
 		materials: materials.size,
-		channels: [...meshes.values()].map((m) => m.attr)
+		channels: [...meshes.values()].map((m) => m.attr),
+		kitBaked: kitInfo.size,
+		kitLayouts: [...kitLayouts.values()].reduce((n, m) => n + m.size, 0),
+		kitMaterials: kitMaterials.size
 	};
 }

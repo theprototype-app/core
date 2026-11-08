@@ -13,8 +13,15 @@ describe('photoPlace', () => {
 	});
 	it('a Quest hands off to the first PC peer, never to another headset or phone', () => {
 		const r = photoPlace({ quest: true, peers: [{ id: 'q2', device: 'vr' }, { id: 'ph', device: 'phone' }, { id: 'pc', device: 'desktop', name: 'Sam' }] });
-		expect(r).toMatchObject({ place: 'peer', peer: 'pc', peerName: 'Sam' });
-		expect(r.why).toMatch(/Sam in this session renders it/);
+		expect(r).toMatchObject({ place: 'peer', peer: 'pc', peerName: "Sam's computer" });
+		expect(r.why).toMatch(/Sam's computer in this session renders it/);
+	});
+	it('a PC with no name set is "a computer", never its raw peer id (device-lab: "63581 in this session renders it")', () => {
+		for (const name of ['63581', 'D86C1', '', undefined]) {
+			const r = photoPlace({ phone: true, peers: [{ id: 'd86c1e0a-63581', device: 'desktop', name }] });
+			expect(r.peerName).toBe('a computer');
+			expect(r.why).toMatch(/ A computer in this session renders it and sends it back\.$/);
+		}
 	});
 	it('in a headset with no PC peer: the raster still and a plain "not on this device"', () => {
 		const r = photoPlace({ xr: true, peers: [{ id: 'x', device: 'vr' }] });

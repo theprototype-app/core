@@ -6,7 +6,10 @@
 //      instanced mesh, a save writes the same stubs;
 //   3. a SELECTED, a RECOLOURED, a HIDDEN and a MOVED piece are each drawn right — the
 //      selected and recoloured leave their batch, the hidden one is not drawn, the moved one
-//      is drawn where it went.
+//      is drawn where it went;
+//   4. (98-int T1b) BAKED LIGHT keeps the batches: after a bake the same pieces are batched, and
+//      the batched baked picture is the unbatched baked picture (and not the batch without the
+//      bake — the counterfactual of a signature fix alone).
 // Needs the architecture kit served by the build (VITE_PACKS_BASE); SKIPS otherwise.
 //
 //   APP_URL=https://theprototype.app:5282/ node tests/e2e/kit-instancing.test.cjs
@@ -252,6 +255,94 @@ h.run(async () => {
 	const afterMove = await h.grabFrame(peer, movedClip);
 	const moved = await h.frameDelta(page, beforeMove, afterMove, 20);
 	h.check(moved.fraction > 0.3, `a MOVED piece is drawn where it went (${(moved.fraction * 100).toFixed(0)} % of its old patch changed)`);
+
+	// ---- 4. baked light keeps the batches (98-int T1b) -------------------------------------
+	await page.evaluate(() => {
+		const s = window.__stores;
+		s.selectedObjects?.set?.([]);
+		s.kitInstancing.scanForKitInstancing();
+	});
+	await settle();
+	const unbaked = await calls();
+	/** render the scene into a target: batched, unbatched, and batched WITHOUT the bake (the
+	 * counterfactual of a signature fix alone). The batched and unbatched pictures of a kit scene
+	 * are compared through the BAKE'S OWN CHANGE to each pixel (baked minus unbaked), so the
+	 * comparison is about the bake and nothing else. */
+	const bakedPixels = (phase) =>
+		page.evaluate((phase) => {
+			const s = window.__stores;
+			const get = (st) => {
+				let v;
+				st.subscribe((x) => (v = x))();
+				return v;
+			};
+			const r = get(s.globalRenderer), scene = get(s.globalScene), camera = get(s.globalCamera);
+			const kit = s.kitInstancing;
+			const W = 480, H = 270;
+			const rt = new s.THREE.WebGLRenderTarget(W, H);
+			const grab = () => {
+				const was = r.getRenderTarget();
+				r.setRenderTarget(rt);
+				r.render(scene, camera);
+				r.setRenderTarget(was);
+				const buf = new Uint8Array(W * H * 4);
+				r.readRenderTargetPixels(rt, 0, 0, W, H, buf);
+				return buf;
+			};
+			const pct = (fn) => {
+				let big = 0;
+				for (let i = 0; i < W * H * 4; i += 4) if (fn(i) > 6) big++;
+				return +((100 * big) / (W * H)).toFixed(3);
+			};
+			const px = (window.__kitBakePx = window.__kitBakePx || {});
+			kit.scanForKitInstancing();
+			const on = grab();
+			const members = kit.kitInstancingStats().members;
+			kit.kitInstancingEnabled.set(false);
+			const off = grab();
+			kit.kitInstancingEnabled.set(true);
+			const hook = kit.kitBakeHook();
+			kit.registerKitBakeHook(null);
+			kit.kitBakeChanged();
+			const plain = grab();
+			kit.registerKitBakeHook(hook);
+			kit.kitBakeChanged();
+			rt.dispose();
+			px[phase] = { on, off };
+			const u = px.unbaked;
+			if (!u || phase === 'unbaked') return { members };
+			const ch = (a, b, i) => Math.max(Math.abs(a[i] - b[i]), Math.abs(a[i + 1] - b[i + 1]), Math.abs(a[i + 2] - b[i + 2]));
+			const delta = (A, B, i) => Math.max(...[0, 1, 2].map((k) => Math.abs(A[i + k] - B[i + k] - (off[i + k] - u.off[i + k]))));
+			return {
+				members,
+				bakeVisible: pct((i) => ch(off, u.off, i)),
+				batched: pct((i) => delta(on, u.on, i)),
+				plain: pct((i) => delta(plain, u.on, i))
+			};
+		}, phase);
+	await bakedPixels('unbaked');
+	const bake = await page.evaluate(async () => (await window.__stores.bakeRunner).runBake({ quality: 'draft', ms: 8000 }).then((o) => ({ ok: o.ok, error: o.error, n: o.record?.objects?.length ?? 0 })));
+	h.check(bake.ok === true && bake.n > 0, `premise: the kit row bakes (${JSON.stringify(bake)})`);
+	await page.waitForFunction(() => window.__stores.bakeApply.bakeApplyDebug().meshes.length > 0, null, { timeout: 60000 }).catch(() => {});
+	await page.waitForTimeout(1500); // the 1 s scan
+	await page.evaluate(() => window.__stores.kitInstancing.scanForKitInstancing());
+	await settle();
+	const baked = await calls();
+	const kitBaked = await page.evaluate(() => window.__stores.bakeApply.bakeApplyDebug().kitBaked);
+	h.check(kitBaked > 0, `the baked kit copies batch through the bake hook (${kitBaked})`);
+	h.check(baked.stats.members >= unbaked.stats.members && baked.worst <= unbaked.worst, `a bake keeps the batches: members ${unbaked.stats.members} -> ${baked.stats.members}, calls ${unbaked.worst} -> ${baked.worst}`);
+	const px = await bakedPixels('baked');
+	h.check(px.members > 0 && px.bakeVisible > 1, `premise: the bake changes the picture (${px.bakeVisible} % of pixels) with pieces batched (${px.members})`);
+	h.check(px.plain > 1, `premise: a batch WITHOUT the bake misses it (${px.plain} % of pixels)`);
+	h.check(px.batched < 0.3, `the batched pieces show exactly the bake the unbatched ones show (${px.batched} % of pixels differ)`);
+	await page.evaluate(async () => (await window.__stores.bakeRunner).clearBake());
+	await page.waitForTimeout(1500);
+	const unbakedAgain = await page.evaluate(() => {
+		const s = window.__stores;
+		s.kitInstancing.scanForKitInstancing();
+		return s.bakeApply.bakeApplyDebug().kitBaked;
+	});
+	h.check(unbakedAgain === 0, `Remove baked light drops the baked batches (${unbakedAgain} left)`);
 
 	// a cleared scene leaves no holder behind
 	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));

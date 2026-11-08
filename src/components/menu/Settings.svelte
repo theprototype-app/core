@@ -910,11 +910,15 @@
 		.settings-main :global(.seg-opt) {
 			min-height: 44px;
 		}
+		/* dock-fixes C: equal columns that WRAP instead of squeezing a label past its slot */
 		.settings-main :global(.sr-control > .seg) {
-			display: grid;
-			grid-template-columns: repeat(var(--seg-cols), minmax(0, 1fr));
+			display: flex;
 			width: 100%;
 			box-sizing: border-box;
+		}
+		.settings-main :global(.sr-control > .seg > .seg-opt) {
+			flex: 1 1 0;
+			min-width: fit-content;
 		}
 	}
 </style>

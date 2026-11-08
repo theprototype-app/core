@@ -21,7 +21,7 @@ import { sameRoomOrUnknown } from '$lib/peerScenes.js';
 import { currentLevel } from '$lib/levels.js';
 import { isPhoneDevice } from '$lib/qualityGovernor.js';
 import { photoOpen, photoPrefs } from './photoOpen.js';
-import { photoPlace, photoPlan, photoFileName, isQuestUa, isPng, validPhotoRequest, validPhotoResult } from './photoCore.js';
+import { photoPlace, photoPlan, photoFileName, isQuestUa, isPng, validPhotoRequest, validPhotoResult, personName } from './photoCore.js';
 
 /**
  * @typedef {{
@@ -249,7 +249,7 @@ export async function onPhotoMessage(data, from) {
 	const plan = photoPlan(data, { peer: true });
 	const ctl = new AbortController();
 	answering = { id: data.id, from, ctl };
-	const who = peerName(from) || 'Someone';
+	const who = personName(peerName(from), from) || 'someone in this session';
 	showToast('Rendering a photo for ' + who + '…', [{ label: 'Stop', action: () => ctl.abort() }]);
 	let lastPing = 0;
 	try {

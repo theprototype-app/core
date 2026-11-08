@@ -118,7 +118,7 @@
 		use:focusStack
 		use:tabbable={{ key: 'chat', title: 'Chat', openStore: chatHidden, isOpen: (v) => v === '', close: () => chatHidden.set('hidden') }}
 		class="ui-panel tp-ui tp-window flex h-[420px] w-[min(500px,90vw)] flex-col overflow-hidden"
-		style="z-index: var(--z-window); max-height: calc(100dvh - var(--dw-top, 64px) - 12px)"
+		style="z-index: var(--z-window); max-height: calc(100dvh - 76px)"
 	>
 		<!-- 38 R6: the one window header (ui/WindowChrome); `ui-panel-header move-handle` is
 		     the grip dragWindow / tabbing / docking read -->

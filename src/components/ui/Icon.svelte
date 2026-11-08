@@ -70,6 +70,8 @@
 		Archive,
 		Bot,
 		ArrowDownToLine,
+		ArrowLeft, // dock-fixes: the dock tab menu's Move left / Swap sides
+		ArrowLeftRight,
 		ArrowRight,
 		Atom, // 38 NOTES-38 #24: Physics & effects ▸
 		AudioLines,
@@ -300,6 +302,8 @@
 		'app-window': AppWindow,
 		archive: Archive,
 		'arrow-down-to-line': ArrowDownToLine,
+		'arrow-left': ArrowLeft,
+		'arrow-left-right': ArrowLeftRight,
 		'arrow-right': ArrowRight,
 		atom: Atom,
 		'audio-lines': AudioLines,

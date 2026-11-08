@@ -388,6 +388,9 @@ export const DEBUG_HOOKS = [
 	['undoToast', () => import('./undoToast')],
 	['docking', () => import('./docking')],
 	['sidebars', () => import('./sidebars')],
+	// dock-fixes: the hosted windows' toggle tree + the Panels button (item 3 / item 8 suites)
+	['panelToggles', () => import('./panelToggles')],
+	['panelsButton', () => import('./panelsButton')],
 	// 43 J9: dismissible tips (the phone More sheet's drag how-to) + Reset tips
 	['tips', () => import('./tips')],
 	// 43: the layout reloaders (a suite swaps the stored toolbar without reloading the page)

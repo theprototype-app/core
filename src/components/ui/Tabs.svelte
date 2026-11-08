@@ -58,9 +58,15 @@
 	}
 
 	// dock-fixes: the edge with more to scroll fades (lib/ui/edgeFade.js); the active tab is kept in view.
+	// scroll the LIST only — scrollIntoView also scrolls every scrollable ancestor, and a kit Tabs inside a sidebar
+	// panel shifted the whole column (its tab strip went out from under the pointer: sidebar-tabs §3)
 	$effect(() => {
 		const b = buttons[activeIndex];
-		if (b && b.parentElement && b.parentElement.scrollWidth > b.parentElement.clientWidth) b.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+		const list = b?.parentElement;
+		if (!b || !list || list.scrollWidth <= list.clientWidth) return;
+		const l = b.getBoundingClientRect().left - list.getBoundingClientRect().left + list.scrollLeft;
+		if (l < list.scrollLeft) list.scrollLeft = l;
+		else if (l + b.offsetWidth > list.scrollLeft + list.clientWidth) list.scrollLeft = l + b.offsetWidth - list.clientWidth;
 	});
 </script>
 

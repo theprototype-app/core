@@ -133,8 +133,13 @@ h.run(async () => {
 	await S(page, () => window.__stores.closeMenu.set(false));
 	await page.waitForTimeout(500);
 	await clickAt(page, '#open-asset-browser');
-	await page.waitForTimeout(900);
-	const whereD2 = await S(page, () => window.__stores.dockMenu.windowWhere('assets'));
+	// the Free assets window is a lazy chunk: on a dev server it MOUNTS ~2 s after the press (until then it reads
+	// "floating" — open, no node yet) and docks itself into the column as it mounts. Wait for it to settle.
+	let whereD2 = null;
+	for (let i = 0; i < 30 && whereD2 !== 'right'; i++) {
+		await page.waitForTimeout(200);
+		whereD2 = await S(page, () => (document.getElementById('asset-browser-window') ? window.__stores.dockMenu.windowWhere('assets') : 'mounting'));
+	}
 	const ctxD2 = await S(page, () => {
 		const g = (st) => { let v; st.subscribe((x) => (v = x))(); return v; };
 		const s = window.__stores;

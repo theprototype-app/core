@@ -421,10 +421,15 @@
 		overflow-x: auto;
 		overflow-y: hidden;
 	}
+	/* dock-fixes: with the hide button on every column (owner) a 320 px column holds two tabs + four pinned buttons
+	   only if the tabs give a little: each SHRINKS to 72 px (label ellipsis, the full name in its tooltip) before the
+	   row scrolls — two tabs always fit whole, a third scrolls (J4). Without it the front tab scrolled the other
+	   one out past the strip's edge, where a press missed it (sidebar-tabs §3). */
 	.sb-tab-group {
 		display: inline-flex;
 		align-items: stretch;
-		flex: 0 0 auto;
+		flex: 0 1 auto;
+		min-width: 72px;
 		max-width: 200px;
 		margin-top: 3px;
 		border-radius: var(--radius-input) var(--radius-input) 0 0;

@@ -171,7 +171,7 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 			const r = pill.getBoundingClientRect();
 			if (r.height > 0 && r.top > window.innerHeight / 2 && rect.left < r.right && rect.left + w > r.left) {
 				maxTop = Math.min(maxTop, Math.round(r.top) - 4 - header);
-				if (atRest) clearTop = Math.round(r.top) - 8 - h;
+				if (atRest && !rect.overToolbar) clearTop = Math.round(r.top) - 8 - h;
 			}
 		}
 		// top never above minTop (the drag header stays reachable), never so low that the
@@ -199,7 +199,7 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 	// window would breathe under the pointer) and never under its own minimum (then the window wins, as before).
 	/** @param {number} h */
 	function clearOfToolbar(h) {
-		if (!atRest || typeof rect.top !== 'number' || typeof rect.left !== 'number' || typeof document === 'undefined') return h;
+		if (!atRest || rect.overToolbar || typeof rect.top !== 'number' || typeof rect.left !== 'number' || typeof document === 'undefined') return h;
 		const pill = document.getElementById('controls-pill');
 		const r = pill?.getBoundingClientRect();
 		const w = typeof rect.w === 'number' ? rect.w : node.offsetWidth || 0;
@@ -210,6 +210,17 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 		if (rect.top + natural > window.innerHeight + 1) return h;
 		const room = Math.floor(r.top - 8 - rect.top);
 		return room >= scaledPx(minH) ? Math.min(h, room) : h;
+	}
+	/** dock-fixes: the user's own move/resize ended with the window over the toolbar — that is deliberate (a window
+	 *  resized down over the dock, dropped onto it: window-over-dock / window-place-free), so the UI-5 rule leaves it
+	 *  alone until a later gesture ends off the toolbar or the size is reset. Persisted with the rect. */
+	function noteOverToolbar() {
+		if (typeof document === 'undefined') return;
+		const r = document.getElementById('controls-pill')?.getBoundingClientRect();
+		const b = node.getBoundingClientRect();
+		const over = !!r && r.height > 0 && r.top > window.innerHeight / 2 && b.left < r.right && b.right > r.left && b.bottom > r.top + 1;
+		if (over) rect.overToolbar = true;
+		else delete rect.overToolbar;
 	}
 	function apply() {
 		if (suspended()) return;
@@ -248,6 +259,7 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 			payload.w = rect.w;
 			if (axis !== 'x') payload.h = rect.h;
 		}
+		if (rect.overToolbar) payload.overToolbar = true;
 		safeStorage.setItem('win:' + key, JSON.stringify(payload));
 	}
 
@@ -436,6 +448,7 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 		dragging = false;
 		atRest = true;
 		node.releasePointerCapture?.(e.pointerId);
+		noteOverToolbar();
 		clamp(false); // at rest the header comes out from under the bottom chrome
 		apply();
 		save();
@@ -474,6 +487,7 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 		/** @param {any} e */
 		const gdown = (e) => {
 			sizing = true;
+			atRest = false;
 			// take the CURRENT rendered size as the baseline (the window may still be
 			// on its CSS default size, with nothing persisted yet)
 			rect.w = node.offsetWidth;
@@ -505,7 +519,9 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 		const gup = (e) => {
 			if (!sizing) return;
 			sizing = false;
+			atRest = true;
 			grabber.releasePointerCapture?.(e.pointerId);
+			noteOverToolbar();
 			clamp(false);
 			apply();
 			save();
@@ -530,6 +546,7 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 	function resetSize() {
 		delete rect.w;
 		delete rect.h;
+		delete rect.overToolbar;
 		node.style.removeProperty('width');
 		node.style.removeProperty('height');
 		clamp(true);

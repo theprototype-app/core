@@ -39,6 +39,11 @@ const SCALAR_FIELDS = ['type', 'side', 'opacity', 'transparent', 'alphaTest', 'r
 const COLOR_FIELDS = ['color', 'emissive', 'specularColor', 'sheenColor'];
 const MAP_FIELDS = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap', 'alphaMap', 'bumpMap', 'displacementMap', 'lightMap', 'envMap'];
 
+/** a texture bakeApply made (the lightmap atlas halves) @param {any} t */
+function isBakeTexture(t) {
+	return !!t?.userData?.bake;
+}
+
 /**
  * What a material LOOKS like, as a string: two materials with the same signature draw the
  * same pixels, so the copy of a pack piece can be drawn with its TEMPLATE's material. Any
@@ -49,9 +54,16 @@ const MAP_FIELDS = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap',
 export function materialSignature(m) {
 	if (!m) return '';
 	const parts = [];
+	// 98-int T1b: a BAKED LIGHT is not an edit. bakeApply puts the one lightmap atlas (lightMap +
+	// aoMap, both marked `userData.bake`) and the bake's strengths on every baked copy; counting
+	// them took every baked piece out of its batch (the Tavern: 72 batched members -> 4, so ~70
+	// pieces drew alone in every pass and the frame went 10 -> 19 ms on a 4090). The batch draws
+	// the bake itself (kitInstancing's bake hook), so the signature ignores it.
+	const bakedAo = isBakeTexture(m.aoMap) || !m.aoMap;
 	for (const k of SCALAR_FIELDS) {
 		const v = m[k];
 		if (v === undefined) continue;
+		if (k === 'aoMapIntensity' && bakedAo) continue;
 		parts.push(k + '=' + (v && typeof v === 'object' && 'x' in v ? v.x + ',' + v.y : v));
 	}
 	for (const k of COLOR_FIELDS) {
@@ -61,7 +73,7 @@ export function materialSignature(m) {
 	}
 	for (const k of MAP_FIELDS) {
 		const t = m[k];
-		if (!t) continue;
+		if (!t || isBakeTexture(t)) continue;
 		// a texture is the same picture when it is the same texture OBJECT (packRefs shares
 		// one per image) — or, for a plain record, the same uuid
 		parts.push(k + '@' + (t.uuid ?? t));

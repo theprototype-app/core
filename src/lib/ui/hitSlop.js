@@ -68,12 +68,17 @@ function ownTextBoxes(e) {
 	return boxes;
 }
 
-/** the nearest ancestor that clips or scrolls its content (a tap area past its edge is clipped away — and would
- *  grow what it scrolls by) @param {HTMLElement} el */
-function clipperOf(el) {
+/** the inner (client) box of the nearest ancestor that clips or scrolls its content: a tap area past it is clipped
+ *  away AND grows what that ancestor scrolls by (a list a few px wider than itself scrolls sideways, and a scrolling
+ *  list is never a window's body-drag ground) — null = nothing clips @param {HTMLElement} el */
+function clipBoxOf(el) {
 	for (let e = el.parentElement; e && e !== document.body; e = e.parentElement) {
 		const cs = getComputedStyle(e);
-		if (cs.overflowX !== 'visible' || cs.overflowY !== 'visible') return e;
+		if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue;
+		const r = e.getBoundingClientRect();
+		const l = r.left + e.clientLeft;
+		const t = r.top + e.clientTop;
+		return { l, t, r: l + e.clientWidth, b: t + e.clientHeight };
 	}
 	return null;
 }
@@ -86,14 +91,14 @@ function clipperOf(el) {
  *  the glyphs of a text to that text, on a floating window's free body to the window's body drag; nor may it
  *  lie past the nearest clipping/scrolling ancestor (the 98-int 4b foreign-surface clip is the special case of
  *  "not an ancestor").
- *  @param {HTMLElement} el @param {HTMLElement | null} clipper @param {number} x @param {number} y */
-function ownGround(el, clipper, x, y) {
+ *  @param {HTMLElement} el @param {{l:number,t:number,r:number,b:number} | null} clip @param {number} x @param {number} y */
+function ownGround(el, clip, x, y) {
+	if (clip && (x < clip.l || x > clip.r || y < clip.t || y > clip.b)) return false;
 	if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return true;
 	const hit = document.elementFromPoint(x, y);
 	if (!hit || hit === el || el.contains(hit)) return true;
 	if (hit.tagName === 'CANVAS') return !!hit.closest('#viewport');
 	if (!hit.contains(el)) return false;
-	if (clipper && hit !== clipper && hit.contains(clipper)) return false;
 	let ok = groundOk.get(hit);
 	if (ok === undefined) {
 		ok = !hit.closest(ROWISH) && !isBodyDragGround(hit);
@@ -108,18 +113,28 @@ function ownGround(el, clipper, x, y) {
 /** cut each side of a planned slop back to what ownGround allows: the full reach, half of it, or nothing
  *  @param {HTMLElement} el @param {{l:number,t:number,r:number,b:number}} r @param {{t:number,r:number,b:number,l:number}} s */
 function clipToGround(el, r, s) {
-	const clipper = clipperOf(el);
+	const clip = clipBoxOf(el);
 	const xs = [r.l + 1, (r.l + r.r) / 2, r.r - 1];
 	const ys = [r.t + 1, (r.t + r.b) / 2, r.b - 1];
 	/** @param {(d: number) => [number, number][]} pts @param {number} want */
 	const reach = (pts, want) => {
-		for (const d of [want, want / 2]) if (d >= 1 && pts(d).every(([x, y]) => ownGround(el, clipper, x, y))) return d;
+		for (const d of [want, want / 2]) if (d >= 1 && pts(d).every(([x, y]) => ownGround(el, clip, x, y))) return d;
 		return 0;
 	};
-	s.t = reach((d) => xs.map((x) => [x, r.t - d + 0.5]), s.t);
-	s.b = reach((d) => xs.map((x) => [x, r.b + d - 0.5]), s.b);
-	s.l = reach((d) => ys.map((y) => [r.l - d + 0.5, y]), s.l);
-	s.r = reach((d) => ys.map((y) => [r.r + d - 0.5, y]), s.r);
+	// the OUTERMOST line of the area (a sample half a pixel inside missed the bar a button sits 0.4 px under)
+	const E = 0.05;
+	s.t = reach((d) => xs.map((x) => [x, r.t - d + E]), s.t);
+	s.b = reach((d) => xs.map((x) => [x, r.b + d - E]), s.b);
+	s.l = reach((d) => ys.map((y) => [r.l - d + E, y]), s.l);
+	s.r = reach((d) => ys.map((y) => [r.r + d - E, y]), s.r);
+	// the area is a rectangle, so where two sides grow its CORNER reaches diagonally: a corner on someone else's
+	// ground costs the shorter of its two sides
+	for (const [v, hz] of /** @type {const} */ ([['t', 'l'], ['t', 'r'], ['b', 'l'], ['b', 'r']])) {
+		if (s[v] < 1 || s[hz] < 1) continue;
+		const x = hz === 'l' ? r.l - s.l + E : r.r + s.r - E;
+		const y = v === 't' ? r.t - s.t + E : r.b + s.b - E;
+		if (!ownGround(el, clip, x, y)) s[s[v] <= s[hz] ? v : hz] = 0;
+	}
 }
 
 function clear() {

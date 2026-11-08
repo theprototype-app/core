@@ -151,8 +151,10 @@ h.run(async () => {
 	const A2 = await h.setupPage(browser, 'phone-notice', { context: PHONE });
 	await load(A2.page, 'aquarium');
 	await A2.page.waitForTimeout(3000);
-	await A2.page.evaluate(() => window.__stores.qualityGovernor.applyGameQuality(6, 'test'));
-	await h.eventually(() => state(A2.page), (s) => s.water === 'quest', 'a pinned level 6: the water is simplified', 8000);
+	// the level whose step turns the scene look off — that drops the screen-space water (7 since 1.63's lookLite step)
+	const postLv = await A2.page.evaluate(() => window.__stores.qualityGovernor.governorForTest.levelOf('post'));
+	await A2.page.evaluate((lv) => window.__stores.qualityGovernor.applyGameQuality(lv, 'test'), postLv);
+	await h.eventually(() => state(A2.page), (s) => s.water === 'quest', `a pinned level ${postLv}: the water is simplified`, 8000);
 	await A2.page.waitForTimeout(1500);
 	h.check((await A2.page.$('#simplified-water-notice')) === null, 'the old strip is gone');
 	h.check(!(await A2.page.evaluate(() => [...document.querySelectorAll('.tp-toast-text')].some((e) => /^Lowered water quality/.test(e.textContent ?? '')))), 'a game preset is not announced as an automatic drop');

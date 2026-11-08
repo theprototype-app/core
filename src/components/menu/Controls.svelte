@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onLayoutRestore } from '$lib/uiLayoutsCore';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
+	import { edgeFade } from '$lib/ui/edgeFade.js';
 	import { objectsGroup, TControls, transformMode, editorMode, isLocked, lockedObjects, globalScene, vrPassthrough, selectedObject, selectedObjects } from '../../stores/sceneStore';
 	import { chatUnread, chatMentioned } from '../../stores/appStore.js'; // 37 R15: the chat button's badge
 	import { chatHidden, flowGraphClose, flowCodeClose, animationClose, uvEditorClose, shaderEditorClose, hudEditorClose, timelineClose, explorerClose, profilerClose, codeWorkspaceClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, floatingToolbar, toolbarAlwaysOnTop, hudStackLift, showSimControls, expandedObjects } from '../../stores/appStore.js';
@@ -4176,7 +4177,7 @@
 	<div class="obj-filters flex flex-col gap-1">
 		<div class="relative flex items-center gap-1">
 			<!-- 80.2: one scrollable chip row that never overflows the window -->
-			<div id="filter-chips" class="tp-noscrollbar flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap scrollbar-none" use:chipScroll>
+			<div id="filter-chips" class="tp-noscrollbar flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap scrollbar-none" use:chipScroll use:edgeFade>
 				<button
 					class="obj-chip"
 					aria-pressed={!searchTypes.size && !viewMode}

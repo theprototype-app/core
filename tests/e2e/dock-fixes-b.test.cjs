@@ -147,6 +147,33 @@ h.run(async () => {
 	});
 	await page.waitForTimeout(500);
 
+	// ---- PC-5: the Templates dialog keeps one height whatever the tab (it jumped ~44 px at 1920) ----
+	await S(page, () => window.__stores.templatesModalOpen.set(true));
+	await page.waitForSelector('#templates-tab-examples', { timeout: 15000 });
+	const tplH = [];
+	for (const t of ['general', 'examples', 'games', 'general']) {
+		await page.locator('#templates-tab-' + t).click();
+		await page.waitForTimeout(700);
+		tplH.push(await S(page, () => Math.round(document.getElementById('templates-modal')?.getBoundingClientRect().height || 0)));
+	}
+	h.check(tplH[0] > 0 && tplH.every((x) => Math.abs(x - tplH[0]) <= 1), `PC5 the Templates dialog keeps one height across General / Examples / Games (${tplH.join(' / ')})`);
+	await S(page, () => window.__stores.templatesModalOpen.set(false));
+	await page.waitForTimeout(400);
+
+	// ---- PC-4: the Objects window's filter chips fade the edge they scroll past instead of cutting "St…" ----
+	await S(page, () => window.__stores.objectListClose.set(false));
+	await page.waitForTimeout(800);
+	const chips = await S(page, () => {
+		const n = document.getElementById('filter-chips');
+		if (!n) return null;
+		const before = { fade: n.dataset.fade || '', more: n.scrollWidth - n.clientWidth };
+		n.scrollLeft = n.scrollWidth;
+		return new Promise((res) => setTimeout(() => res({ ...before, after: n.dataset.fade || '' }), 150));
+	});
+	h.check(!!chips && (chips.more <= 1 ? chips.fade === '' : chips.fade === 'end' && chips.after === 'start'), `PC4 the chip row fades its scrolling edge: 'end' at rest, 'start' scrolled to the end (${JSON.stringify(chips)})`);
+	await S(page, () => window.__stores.objectListClose.set(true));
+	await page.waitForTimeout(300);
+
 	await D.ctx.close();
 
 	// ================================ N6 unfolded ================================

@@ -19,10 +19,9 @@ const CONTROLS =
 	'button, a[href], input:not([type=hidden]), select, textarea, summary, [role=button], [role=menuitem], [role=menuitemcheckbox], [role=menuitemradio], [role=tab], [role=option], [role=switch], [role=checkbox], [role=radio]';
 const SKIP = '.svelte-flow, canvas, [data-no-hitslop]';
 
-// 98-int (1.63, theprototype-41 fork (a)): OFF by default — the planner still lets a tap area cover a point of its OWN
-// surface that a press needs (a window body for touch body-drag, a menu's section label, a bar's corner: 9 suites), and
-// lane hitslop-fix owns that. Installed + observing on touch as before; setHitSlopEnabled(true) is the A/B and audit seam.
-let enabled = false;
+// ON by default on touch (hitslop-fix, after 1.63 shipped it off): the tap rule in ownGround keeps every area off
+// the points a press needs elsewhere. setHitSlopEnabled stays the A/B and audit seam.
+let enabled = true;
 let installed = false;
 /** @type {MutationObserver | null} */
 let mo = null;

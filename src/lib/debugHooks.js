@@ -457,6 +457,7 @@ export const DEBUG_HOOKS = [
 	['filePreview', () => import('./filePreview')],
 	['saveAs', () => import('./saveAs')],
 	['windowTabs', () => import('./windowTabs')],
+	['chromeButtons', () => import('./chromeButtons')], // panel-gestures item 5
 	['colocation', () => import('./colocation')],
 	['colocationCalibrate', () => import('./colocationCalibrate')],
 	['colocationPresence', () => import('./colocationPresence')],

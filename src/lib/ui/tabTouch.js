@@ -149,6 +149,9 @@ export function tabTouch(node, options = {}) {
 	node.style.setProperty('touch-action', 'pan-x');
 	node.style.setProperty('-webkit-touch-callout', 'none');
 
+	const mark = () => {
+		node.dataset.tabPhase = g.phase;
+	};
 	const clearTimers = () => {
 		if (liftTimer) clearTimeout(liftTimer);
 		if (menuTimer) clearTimeout(menuTimer);
@@ -169,10 +172,12 @@ export function tabTouch(node, options = {}) {
 		swallowClick = false;
 		clearTimers();
 		g.down(e.pointerId, e.clientX, e.clientY);
+		mark();
 		const pid = e.pointerId;
 		liftTimer = setTimeout(() => {
 			liftTimer = 0;
 			if (!g.lift()) return;
+			mark();
 			try {
 				navigator.vibrate?.(10);
 			} catch {}
@@ -185,12 +190,14 @@ export function tabTouch(node, options = {}) {
 			menuTimer = setTimeout(() => {
 				menuTimer = 0;
 				if (g.menuDue()) menu();
+				mark();
 			}, Math.max(0, MENU_MS - LIFT_MS));
 		}, LIFT_MS);
 	};
 	/** @param {PointerEvent} e */
 	const move = (e) => {
 		const r = g.move(e.pointerId, e.clientX, e.clientY);
+		if (r !== 'ignore' && r !== 'wait' && r !== 'hold' && r !== 'drag') mark();
 		if (r === 'scroll' || r === 'vertical') clearTimers();
 		else if (r === 'drag-start' || r === 'drag') {
 			clearTimers();
@@ -201,6 +208,7 @@ export function tabTouch(node, options = {}) {
 	const up = (e) => {
 		const r = g.up(e.pointerId);
 		if (r === 'ignore') return;
+		mark();
 		clearTimers();
 		unlift();
 		if (r === 'drop') {
@@ -213,6 +221,7 @@ export function tabTouch(node, options = {}) {
 		clearTimers();
 		unlift();
 		if (g.cancel()) opts.oncancel?.();
+		mark();
 	};
 	/** @param {TouchEvent} e */
 	const touchmove = (e) => {

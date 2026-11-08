@@ -41,6 +41,45 @@ function visible(el) {
 	return { r, cs };
 }
 
+/** the nearest floating SURFACE around an element (a window, a menu, a sheet, the header): fixed, or positioned with
+ *  a z-index — null = the page itself @param {Element | null} el */
+function surfaceOf(el) {
+	for (let e = el; e && e !== document.body && e !== document.documentElement; e = e.parentElement) {
+		const cs = getComputedStyle(e);
+		if (cs.position === 'fixed' || (cs.position !== 'static' && cs.zIndex !== 'auto')) return e;
+	}
+	return null;
+}
+
+/** 98-int (#537 follow-up): may the control's tap area cover the point? Only where the page shows the control's own
+ *  surface (its window body, its bar), the page itself or the 3D view — never another surface (a menu, a sheet, a
+ *  modal, another window) painted there, above OR below the control: the planner only knows controls, so a header
+ *  button's area used to take presses inside an open menu, and a window's ✕ area those on the window under it.
+ *  @param {HTMLElement} el @param {number} x @param {number} y */
+function ownGround(el, x, y) {
+	if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return true;
+	const hit = document.elementFromPoint(x, y);
+	if (!hit || hit === el || el.contains(hit) || hit.contains(el) || hit.tagName === 'CANVAS') return true;
+	const s = surfaceOf(hit);
+	return !s || s.contains(el);
+}
+
+/** cut each side of a planned slop back to what ownGround allows: the full reach, half of it, or nothing
+ *  @param {HTMLElement} el @param {{l:number,t:number,r:number,b:number}} r @param {{t:number,r:number,b:number,l:number}} s */
+function clipToSurface(el, r, s) {
+	const xs = [r.l + 1, (r.l + r.r) / 2, r.r - 1];
+	const ys = [r.t + 1, (r.t + r.b) / 2, r.b - 1];
+	/** @param {(d: number) => [number, number][]} pts @param {number} want */
+	const reach = (pts, want) => {
+		for (const d of [want, want / 2]) if (d >= 1 && pts(d).every(([x, y]) => ownGround(el, x, y))) return d;
+		return 0;
+	};
+	s.t = reach((d) => xs.map((x) => [x, r.t - d + 0.5]), s.t);
+	s.b = reach((d) => xs.map((x) => [x, r.b + d - 0.5]), s.b);
+	s.l = reach((d) => ys.map((y) => [r.l - d + 0.5, y]), s.l);
+	s.r = reach((d) => ys.map((y) => [r.r + d - 0.5, y]), s.r);
+}
+
 function clear() {
 	for (const el of applied) {
 		el.removeAttribute('data-hs');
@@ -72,6 +111,8 @@ export function scanHitSlop() {
 		}
 		const plan = planSlop(items);
 		let slopped = 0, overflow = 0, absChild = 0, nested = 0;
+		/** @type {(() => void)[]} */
+		const writes = [];
 		items.forEach((it, i) => {
 			const s = plan[i];
 			if (it.nested && it.small) nested++;
@@ -86,15 +127,22 @@ export function scanHitSlop() {
 			const before = getComputedStyle(it.el, '::before').content;
 			const slot = after === 'none' || after === 'normal' ? 'a' : before === 'none' || before === 'normal' ? 'b' : null;
 			if (!slot) return void why.set(it.el, 'both pseudos in use');
-			it.el.setAttribute('data-hs', it.cs.position === 'static' ? slot + 's' : slot);
-			it.el.style.setProperty('--hs-t', s.t.toFixed(1) + 'px');
-			it.el.style.setProperty('--hs-r', s.r.toFixed(1) + 'px');
-			it.el.style.setProperty('--hs-b', s.b.toFixed(1) + 'px');
-			it.el.style.setProperty('--hs-l', s.l.toFixed(1) + 'px');
-			applied.add(it.el);
+			// measured against the page with NO tap area drawn yet: the writes wait until every control is clipped
+			clipToSurface(it.el, it.r, s);
+			if (s.t + s.r + s.b + s.l < 1) return void why.set(it.el, 'another surface all around');
+			const hs = it.cs.position === 'static' ? slot + 's' : slot;
+			writes.push(() => {
+				it.el.setAttribute('data-hs', hs);
+				it.el.style.setProperty('--hs-t', s.t.toFixed(1) + 'px');
+				it.el.style.setProperty('--hs-r', s.r.toFixed(1) + 'px');
+				it.el.style.setProperty('--hs-b', s.b.toFixed(1) + 'px');
+				it.el.style.setProperty('--hs-l', s.l.toFixed(1) + 'px');
+				applied.add(it.el);
+			});
 			why.set(it.el, 'slop ' + [s.t, s.r, s.b, s.l].map((v) => v.toFixed(0)).join('/'));
 			slopped++;
 		});
+		for (const w of writes) w();
 		Object.assign(hitSlopStats, { controls: items.length, slopped, skippedOverflow: overflow, skippedAbsChild: absChild, nested });
 	}
 	hitSlopStats.scans++;

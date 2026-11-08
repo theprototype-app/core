@@ -44,6 +44,9 @@ function visible(el) {
 	return { r, cs };
 }
 
+/** how far outside an area's edge its ground is tested (px): past the device-pixel snap of the edge */
+const OUT = 0.5;
+
 /** a press here is a ROW's or a drag's own (a tree row, a list row, a draggable card): never ground for a tap area */
 const ROWISH = '[role=treeitem], [role=row], [role=gridcell], [draggable=true]';
 
@@ -93,8 +96,10 @@ function clipBoxOf(el) {
  *  "not an ancestor").
  *  @param {HTMLElement} el @param {{l:number,t:number,r:number,b:number} | null} clip @param {number} x @param {number} y */
 function ownGround(el, clip, x, y) {
-	if (clip && (x < clip.l || x > clip.r || y < clip.t || y > clip.b)) return false;
-	if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return true;
+	if (clip && (x < clip.l - OUT || x > clip.r + OUT || y < clip.t - OUT || y > clip.b + OUT)) return false;
+	// an area running off the screen is judged by its on-screen part: its outermost visible line
+	x = Math.min(Math.max(x, 0.05), innerWidth - 0.05);
+	y = Math.min(Math.max(y, 0.05), innerHeight - 0.05);
 	const hit = document.elementFromPoint(x, y);
 	if (!hit || hit === el || el.contains(hit)) return true;
 	if (hit.tagName === 'CANVAS') return !!hit.closest('#viewport');
@@ -110,6 +115,15 @@ function ownGround(el, clip, x, y) {
 	return !ownTextBoxes(hit).some((b) => x >= b.left - 2 && x <= b.right + 2 && y >= b.top - 2 && y <= b.bottom + 2);
 }
 
+/** audit seam (debug hook, the HONOR audit): the tap rule's verdict for one point of `el`'s tap area, measured as a
+ *  scan would (call it with the areas off — a drawn area answers for itself) @param {HTMLElement} el @param {number} x @param {number} y */
+export function hitSlopGround(el, x, y) {
+	textBoxes = new Map();
+	groundOk = new Map();
+	const clip = clipBoxOf(el);
+	return { ok: ownGround(el, clip, x, y), clip, hit: document.elementFromPoint(x, y) };
+}
+
 /** cut each side of a planned slop back to what ownGround allows: the full reach, half of it, or nothing
  *  @param {HTMLElement} el @param {{l:number,t:number,r:number,b:number}} r @param {{t:number,r:number,b:number,l:number}} s */
 function clipToGround(el, r, s) {
@@ -121,18 +135,18 @@ function clipToGround(el, r, s) {
 		for (const d of [want, want / 2]) if (d >= 1 && pts(d).every(([x, y]) => ownGround(el, clip, x, y))) return d;
 		return 0;
 	};
-	// the OUTERMOST line of the area (a sample half a pixel inside missed the bar a button sits 0.4 px under)
-	const E = 0.05;
-	s.t = reach((d) => xs.map((x) => [x, r.t - d + E]), s.t);
-	s.b = reach((d) => xs.map((x) => [x, r.b + d - E]), s.b);
-	s.l = reach((d) => ys.map((y) => [r.l - d + E, y]), s.l);
-	s.r = reach((d) => ys.map((y) => [r.r + d - E, y]), s.r);
+	// the ground just OUTSIDE the area's edge, half a pixel out: on a 2.9x screen the edge snaps up to ~0.35 px past
+	// its CSS line (a sample inside the area let the sidebar's hide button take the Connect bar's last pixel row)
+	s.t = reach((d) => xs.map((x) => [x, r.t - d - OUT]), s.t);
+	s.b = reach((d) => xs.map((x) => [x, r.b + d + OUT]), s.b);
+	s.l = reach((d) => ys.map((y) => [r.l - d - OUT, y]), s.l);
+	s.r = reach((d) => ys.map((y) => [r.r + d + OUT, y]), s.r);
 	// the area is a rectangle, so where two sides grow its CORNER reaches diagonally: a corner on someone else's
 	// ground costs the shorter of its two sides
 	for (const [v, hz] of /** @type {const} */ ([['t', 'l'], ['t', 'r'], ['b', 'l'], ['b', 'r']])) {
 		if (s[v] < 1 || s[hz] < 1) continue;
-		const x = hz === 'l' ? r.l - s.l + E : r.r + s.r - E;
-		const y = v === 't' ? r.t - s.t + E : r.b + s.b - E;
+		const x = hz === 'l' ? r.l - s.l - OUT : r.r + s.r + OUT;
+		const y = v === 't' ? r.t - s.t - OUT : r.b + s.b + OUT;
 		if (!ownGround(el, clip, x, y)) s[s[v] <= s[hz] ? v : hz] = 0;
 	}
 }

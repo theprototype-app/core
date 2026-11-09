@@ -648,8 +648,6 @@ export function editEnvSky(patch, opts = {}) {
 	commit({ preset: 'custom', customPreset: payload }, opts.replicate !== false);
 }
 
-/** Editing a rig component detaches into a live custom payload
- * @param {'hemi'|'sun'} part @param {any} patch */
 /**
  * 78-int PL12: put parts of the environment back to a preset's own values (the row reset). Unlike
  * the edit paths it REPLACES each part (a fog reset must not pick up `fit: false`, which a near/far
@@ -667,6 +665,8 @@ export function resetEnvParts(parts) {
 	commit({ preset: 'custom', customPreset: payload });
 }
 
+/** Editing a rig component detaches into a live custom payload
+ * @param {'hemi'|'sun'} part @param {any} patch */
 export function editRigComponent(part, patch) {
 	const payload = detachedPayload();
 	payload[part] = { ...(payload[part] ?? {}), ...patch };

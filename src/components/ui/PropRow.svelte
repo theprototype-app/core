@@ -69,6 +69,9 @@
 		...rest
 	} = $props();
 
+	// 43 J3: what this row holds, for the field menu (null = not a clipboard field)
+	const scope = fieldClipScope();
+
 	// 78-int PL12: the changed mark (Inspector rows only, or a row that says so itself)
 	const numericChanged = $derived(
 		resetValue !== undefined && !mixed && Number.isFinite(value) && Math.abs(Number(value) - resetValue) > 0.5 * Math.pow(10, -Math.max(0, Math.min(6, decimals)))
@@ -84,8 +87,6 @@
 		else if (resetValue !== undefined) onchange(resetValue);
 	}
 
-	// 43 J3: what this row holds, for the field menu (null = not a clipboard field)
-	const scope = fieldClipScope();
 	/** @returns {any} */
 	function clipSpec() {
 		if (clip === false) return null;

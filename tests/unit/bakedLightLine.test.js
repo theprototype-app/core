@@ -24,8 +24,8 @@ describe('bakedLightLine', () => {
 		expect(l.text).toBe('512 px · 0.3 MB · 3 baked / 2 shown');
 	});
 	it('shows 0 when the device shows none of it, and clamps the count', () => {
-		expect(bakedLightLine(record, { map: 'none', applied: 3 }).shown).toBe(0);
-		expect(bakedLightLine(record, { map: 'full', applied: 99 }).shown).toBe(3);
+		expect(/** @type {any} */ (bakedLightLine(record, { map: 'none', applied: 3 })).shown).toBe(0);
+		expect(/** @type {any} */ (bakedLightLine(record, { map: 'full', applied: 99 })).shown).toBe(3);
 		expect(bakedLightLine({ ...record, full: { hash: 'a', side: 256, bytes: 2000 } }, { map: 'full', applied: 1 }).text).toContain('< 0.1 MB');
 	});
 });

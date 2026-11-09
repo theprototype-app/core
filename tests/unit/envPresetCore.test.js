@@ -15,7 +15,7 @@ const P = {
 const SRC = fs.readFileSync('src/lib/environment.js', 'utf8');
 const TABLE = SRC.slice(SRC.indexOf('export const ENVIRONMENT_PRESETS'), SRC.indexOf('/** name-indexable view'));
 const BUILT_INS = [...TABLE.matchAll(/^\t([a-z]+): \{$/gm)].map((m) => m[1]);
-const clone = (o) => JSON.parse(JSON.stringify(o));
+const clone = (/** @type {any} */ o) => JSON.parse(JSON.stringify(o));
 
 describe('presetSets', () => {
 	it('names what Studio holds', () => {
@@ -30,7 +30,7 @@ describe('presetSets', () => {
 	});
 	it('every built-in has a why line', () => {
 		expect(BUILT_INS.length).toBeGreaterThanOrEqual(13);
-		for (const key of BUILT_INS) expect(PRESET_WHY[key], key).toBeTruthy();
+		for (const key of BUILT_INS) expect(/** @type {Record<string, string>} */ (PRESET_WHY)[key], key).toBeTruthy();
 	});
 });
 

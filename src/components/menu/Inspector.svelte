@@ -1687,28 +1687,30 @@
 	const ENV_FEATURED = ['studio', 'daylight', 'sunset', 'night', 'clearsky', 'cinematic'];
 	/** the pill that reads as applied: an edited copy's base preset, else the state's own key */
 	const envPillValue = $derived($environment.preset === 'custom' && envState.basedOn ? envState.basedOn : $environment.preset);
+	/** the preset table, indexable by a string key @type {Record<string, any>} */
+	const ENV_BY_KEY = ENVIRONMENT_PRESETS;
 	/** @param {string} key */
 	const envOption = (key) =>
 		key === 'custom'
 			? { value: 'custom', label: $environment.customPreset?.label ?? 'Custom', title: 'This scene\'s own environment' }
 			: {
 					value: key,
-					label: ENVIRONMENT_PRESETS[key]?.label ?? key,
-					icon: ENVIRONMENT_PRESETS[key]?.pro ? 'sparkles' : undefined,
+					label: ENV_BY_KEY[key]?.label ?? key,
+					icon: ENV_BY_KEY[key]?.pro ? 'sparkles' : undefined,
 					// 78-int PL16: the applied preset, edited since, wears a dot; a press re-applies it (= Reset)
 					count: key === envState.basedOn && envState.modified.length ? '•' : undefined,
 					title:
 						key === envState.basedOn && envState.modified.length
-							? 'Modified: ' + envState.modified.join(', ') + ' — press to reset to ' + (ENVIRONMENT_PRESETS[key]?.label ?? key)
-							: ENVIRONMENT_PRESETS[key]?.pro
+							? 'Modified: ' + envState.modified.join(', ') + ' — press to reset to ' + (ENV_BY_KEY[key]?.label ?? key)
+							: ENV_BY_KEY[key]?.pro
 								? 'Pro look: also sets tone mapping and effects'
 								: undefined
 				};
 	const envPresetOptions = $derived.by(() => {
-		const keys = ENV_FEATURED.filter((k) => ENVIRONMENT_PRESETS[k]);
+		const keys = ENV_FEATURED.filter((k) => ENV_BY_KEY[k]);
 		// 78-int PL16: an edited copy keeps its preset's pill (with a dot); a plain custom one is "custom"
 		const now = envPillValue;
-		const known = now === 'custom' ? !!$environment.customPreset : !!ENVIRONMENT_PRESETS[now];
+		const known = now === 'custom' ? !!$environment.customPreset : !!ENV_BY_KEY[now];
 		if (known && !keys.includes(now)) keys[keys.length - 1] = now;
 		return keys.map(envOption);
 	});

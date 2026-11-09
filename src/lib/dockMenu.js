@@ -467,11 +467,11 @@ export function dockAddItems({ exclude = [], pane } = {}) {
  * over a closed view rather than into a gap, and each disables itself at its end of the
  * strip — a row that can only no-op is worse than a row that says it cannot.
  * @param {string} key
- * @returns {{label: string, icon?: string, tooltip: string, action?: () => void, danger?: boolean, disabled?: boolean, children?: any[]}[]}
+ * @returns {{label: string, icon?: string, tooltip: string, action?: () => void, danger?: boolean, disabled?: boolean, children?: any[], checked?: boolean, testid?: string}[]}
  */
 export function dockTabItems(key) {
 	const title = DOCK_TITLES[key] ?? 'this view';
-	/** @type {{label: string, icon?: string, tooltip: string, action?: () => void, danger?: boolean, disabled?: boolean, children?: any[]}[]} */
+	/** @type {{label: string, icon?: string, tooltip: string, action?: () => void, danger?: boolean, disabled?: boolean, children?: any[], checked?: boolean, testid?: string}[]} */
 	const items = [];
 	// 78-int PL14: the phone's Properties / Configure Scene tab has no inner header any more, so its pin
 	// ("Follow the selection", the wider screen's strip button) is the FIRST item of the tab's menu

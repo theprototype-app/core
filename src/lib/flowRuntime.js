@@ -1928,7 +1928,7 @@ function updateGameNodes(time, ctx) {
 			// 30b (core-games): a banner, a sound, a burst or a buzz — LOCAL on every peer from
 			// the replicated stamp, inside the actionSeenAt family above like storevalue (a
 			// fresh node adopting an old stamp must not announce on connect)
-			runGameFeelAction(type, data);
+			runGameFeelAction(type, data, node);
 		} else if (type === 'storevalue') {
 			// 30 P4: a LOCAL write on the stamp edge, inside the actionSeenAt family above (a
 			// fresh node adopting an old stamp must not overwrite a best on connect). It

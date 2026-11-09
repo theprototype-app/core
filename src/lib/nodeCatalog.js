@@ -323,7 +323,7 @@ export const nodeCatalog = [
 					{ key: 'seconds', kind: 'range', min: 0.3, max: 15, step: 0.1 },
 					{ key: 'color', kind: 'text', placeholder: '#ffd76a', maxLength: 20 }
 				],
-				note: 'A big banner on every screen (and in VR) — each player sees it from the same pulse.'
+				note: 'A big banner on every screen (and in VR) in Play — each player sees it from the same pulse. In Edit it goes to the Debugger console instead.'
 			},
 			{
 				type: 'gamesound',

@@ -101,6 +101,7 @@
 	import { safeStorage } from '$lib/safeStorage';
 	// 48 D1: the node graph debugger — LOCAL breakpoints (a red dot on the card) + the panel
 	import { debugBreakpoints, toggleBreakpoint, setDebugOpen } from '$lib/flowDebug.js';
+	import { announceUnread } from '$lib/gameAnnounce'; // 78 F14
 	// 36 U11: groups/notes as graph data, the scoped keymap's node actions, undo for editor edits
 	import {
 		GROUP_TYPE,
@@ -2001,7 +2002,9 @@
 					>{unknownHere} node{unknownHere === 1 ? ' needs' : 's need'} modules</KitButton>
 				{/if}
 				<!-- 48 D1: the Debugger panel (breakpoints, watch list, Step / Resume in Play) -->
-				<KitButton id="flow-debugger-open" variant="icon" size="sm" icon="bug" label="Debugger" title="Debugger — breakpoints, watch list, step through Play" onclick={() => setDebugOpen(true)} />
+				<KitButton id="flow-debugger-open" variant="icon" size="sm" icon="bug" label="Debugger" title={$announceUnread ? $announceUnread + ' new in the Debugger console (Announce in Edit)' : 'Debugger — breakpoints, watch list, step through Play'} onclick={() => setDebugOpen(true)} />
+				<!-- 78 F14: an Announce in Edit goes to the Debugger's console; a dot says something arrived -->
+				{#if $announceUnread}<span id="flow-console-dot" class="flow-console-dot" aria-label="{$announceUnread} new console lines"></span>{/if}
 				{#if level}
 					<!-- 36 U11: one level out of a group (Esc / Tab do the same) -->
 					<KitButton id="flow-group-leave" variant="icon" size="sm" icon="corner-left-up" label="Leave the group (Esc)" title="Leave the group (Esc)" onclick={leaveGroup} />
@@ -2282,5 +2285,15 @@
 	}
 	:global(.svelte-flow__edge.tp-proxy-edge .svelte-flow__edge-path) {
 		stroke-dasharray: 6 3;
+	}
+	/* 78 F14: new Debugger console lines */
+	.flow-console-dot {
+		width: 7px;
+		height: 7px;
+		margin-left: -8px;
+		align-self: flex-start;
+		border-radius: 9999px;
+		background: var(--accent);
+		flex: 0 0 auto;
 	}
 </style>

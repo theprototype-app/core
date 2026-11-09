@@ -474,7 +474,7 @@ export const RUNTIME_AI_TOOLS = [
 		function: {
 			name: 'logs',
 			description:
-				'The page\'s recent log: errors, warnings, console lines and the toasts people saw, oldest first. Pass since (the "now" of the previous answer) for only what is new. status shows the newest few.',
+				'The page\'s recent log: errors, warnings, console lines, Announce lines (scope announce: in Edit an Announce node draws no banner, its line lands here with the node that said it) and the toasts people saw, oldest first. Pass since (the "now" of the previous answer) for only what is new. status shows the newest few.',
 			parameters: {
 				type: 'object',
 				properties: {

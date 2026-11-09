@@ -45,7 +45,7 @@ export const NODE_DOCS = {
 	storevalue: "Saves a value on THIS device when a pulse arrives (set, keep the max or min, or add) - a best score or a level reached that survives a reload; never sent to other players.",
 	storedvalue: "Reads what Store Value saved on this device, as a number or text - the read side of a best score; each player sees their own.",
 	ongrab: "Fires a pulse when a player picks the object up - a carry in Play or Interact, or a VR grip in Interact; editor moves never fire it.",
-	announce: "Shows a big banner - 'Ring 2 reached', 'GOAL!' - on every screen and in VR when a pulse arrives; {v} in the text shows a wired number.",
+	announce: "Shows a big banner - 'Ring 2 reached', 'GOAL!' - on every screen and in VR when a pulse arrives in Play; {v} in the text shows a wired number. In Edit it draws no banner: the line goes to the Debugger's Console with its time and this node.",
 	gamesound: "Plays one of the built-in game sounds (coin, ring, levelup, cheer...) when a pulse arrives, at the wired object if one is wired; no sound files needed.",
 	effectburst: "Fires a short sparkle, confetti, smoke or sparks burst at the wired object (or in front of the player) when a pulse arrives; pooled and local to each device.",
 	hapticpulse: "Buzzes the VR controllers with a named pattern (tap, bump, success...) when a pulse arrives - only in Interact or Play, never while editing.",

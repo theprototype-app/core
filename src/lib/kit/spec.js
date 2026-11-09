@@ -32,8 +32,10 @@
  *   args?: KitArg[], vtype?: string, authority?: boolean, node?: boolean, local?: boolean, owned?: boolean}} KitCall
  * `owned` (actions): the SDK face appends the calling module's id after the spec args and
  * journals ONE `impl.disown(moduleId)` per module per piece (the node path passes no owner).
- * `local` (events only): the event is witnessed on ONE peer and stays there — its listeners
+ * `local` (events): the event is witnessed on ONE peer and stays there — its listeners
  * and its node pulse (kept local, the perPlayer rule) — e.g. "your grab was refused".
+ * `local` (actions, 93 LP3): the action acts on THIS peer's player only and changes no shared kit
+ * state, so it has no authority op (a checkpoint respawn); a Per-player chain keeps it to the presser.
  * @typedef {{piece: string, group: string, calls: KitCall[]}} KitSpec
  */
 

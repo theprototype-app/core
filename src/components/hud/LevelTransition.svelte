@@ -4,7 +4,7 @@
 	// checkpoints.js. DOM only: in a headset transition.js fades a sphere instead (DOM is invisible there).
 	// Colours an AUTHOR picked for their loading screen are data (inline style); everything else is tokens.
 	import { onDestroy } from 'svelte';
-	import { Flag } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { levelTransition, TRANSITION_MS, reducedMotion } from '../../lib/gameLevels/transition.js';
 	import { levelLoading } from '../../lib/gameLevels/loading.js';
 	import { checkpointFlash } from '../../lib/gameLevels/checkpoints.js';
@@ -146,7 +146,7 @@
 
 	{#if flashing && flash}
 		<div id="checkpoint-flash" class="cp-flash" class:still role="status" aria-live="polite">
-			<Flag size={16} aria-hidden="true" />
+			<Icon name="flag" size={16} aria-hidden="true" />
 			<span>{flash.name}</span>
 		</div>
 	{/if}

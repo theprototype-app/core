@@ -20,7 +20,8 @@ import { EDITOR_MOTION_TYPES } from './editorMotion';
  *   pulseAge: () => number | null,
  *   motionTime: number,
  *   motionRests: boolean,
- *   capturing: string | null
+ *   capturing: string | null,
+ *   why: () => string | null
  * }} LiveStateApi
  *   `value` = the node's output this tick (evaluated on demand); `pulseAge` = seconds since its last
  *   trigger stamp (null = never); `motionTime` = the clock motion nodes evaluate on; `motionRests` =
@@ -108,7 +109,10 @@ export function patrolTarget(data, time) {
 }
 
 // --- the built-ins -----------------------------------------------------------------------
-const TRIGGERS = ['onclick', 'ongrab', 'onhit', 'onimpact', 'onrest', 'onenter', 'onexit', 'keypress', 'gamepadbutton', 'hudbutton', 'ongamestate', 'animfinished', 'animmarker', 'onanimstate', 'onclap', 'onseqevent', 'allplayers'];
+// 78 F26: these say why they did not fire (blocked / won't fire), else when they last fired
+const WHY_TRIGGERS = ['onclick', 'onenter', 'onexit', 'onhover', 'kit-pickups-collect', 'timer'];
+for (const type of WHY_TRIGGERS) registerLiveState(type, (_node, api) => api.why?.() ?? firedText(api.pulseAge()));
+const TRIGGERS = ['ongrab', 'onhit', 'onimpact', 'onrest', 'keypress', 'gamepadbutton', 'hudbutton', 'ongamestate', 'animfinished', 'animmarker', 'onanimstate', 'onclap', 'onseqevent', 'allplayers'];
 for (const type of TRIGGERS) registerLiveState(type, (_node, api) => firedText(api.pulseAge()));
 registerLiveState('counter', (_node, api) => {
 	const v = api.value();
@@ -135,7 +139,7 @@ let lastJson = '';
  * Called by flowRuntime at the end of its tick. Throttled to ~4 Hz, only for the wanted graph's
  * nodes, and the store is written only when a line changed.
  * @param {{ nodes: any[], now: number, motionTime: number, motionRests: boolean, capturing: string | null,
- *   value: (node: any) => any, pulseAt: (id: string) => number | null, time: number }} tick
+ *   value: (node: any) => any, pulseAt: (id: string) => number | null, time: number, why?: (node: any) => string | null }} tick
  */
 export function publishLiveStates(tick) {
 	if (!wantedGraph) return;
@@ -158,7 +162,8 @@ export function publishLiveStates(tick) {
 					},
 					motionTime: tick.motionTime,
 					motionRests: tick.motionRests,
-					capturing: tick.capturing
+					capturing: tick.capturing,
+					why: () => tick.why?.(node) ?? null
 				});
 			} catch {
 				text = null;

@@ -194,6 +194,12 @@
 	{#if $debugValues.focus && live}
 		{@const focus = $debugValues.focus}
 		<p class="tbx-label">Wires · {focus.label}</p>
+		{#if focus.why}
+			<div class="tbx-row text-[11px]" id="debug-why">
+				<span class="text-text-muted">{focus.why.last}</span>
+				{#if focus.why.standing}<span class="debug-why-block text-warn-text">{focus.why.standing}</span>{/if}
+			</div>
+		{/if}
 		{#if focus.eventless}
 			<p class="tbx-row text-[11px] text-text-muted">No event reaches this node, so a breakpoint here never pauses — watch it instead.</p>
 		{/if}
@@ -278,6 +284,11 @@
 </ToolboxWindow>
 
 <style>
+	#debug-why {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
 	.debug-wire {
 		display: flex;
 		align-items: center;

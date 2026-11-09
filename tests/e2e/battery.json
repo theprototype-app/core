@@ -296,6 +296,7 @@
 	},
 	"suites": {
 		"possess": 120,
+		"trigger-why-78": 240,
 		"profile-notify": 180,
 		"player-sensors": 300,
 		"static-level-play": 240,

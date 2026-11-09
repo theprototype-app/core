@@ -105,6 +105,7 @@ import { spawnedFromOf } from './transientObjects'; // 31: a copy answers to its
 import { pathCaptureNode } from './pathCaptureState'; // fix-batch-2: a leaf
 import { animateInEditor, EDITOR_MOTION_TYPES } from './editorMotion'; // 78 F6: a leaf
 import { publishLiveStates, liveStatesWanted } from './nodeLiveState'; // 78 F7: a leaf
+import { noteCheck, lastCheck, whyCardLine, whySentence, WHY_TYPES } from './triggerWhy.js'; // 78 F26: a leaf
 import { applyPatrolOnPath, pathPreviewHeld } from './path/pathRuntime.js'; // 78 F4: a three leaf
 import { applyRotor, applyFlowFloat } from './sim/motionNodes.js'; // 36-fb F25/F24 (a three leaf)
 // 85 N1/N2/N4: Oscillate, the tweens and the light nodes (three leaves over a pure core)
@@ -4096,6 +4097,7 @@ export function fireObjectClick(uuid) {
 		if (node.type !== 'onclick') return;
 		// H1: an unwired OnClick inside the clicked object's own graph also fires
 		if (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid) {
+			noteCheck(node.id, { who: objectNameOf(uuid) ?? 'an object', fired: true }); // 78 F26
 			// 21-G4: a perPlayer On Click keeps its pulse LOCAL — that one bit is the
 			// whole per-player collectible (see replicatesPulse)
 			applyNodeTrigger(node.id, syncedNow(), replicatesPulse(node));
@@ -4212,15 +4214,112 @@ export function fireObjectHover(uuid, phase) {
 		if (!wants) continue;
 		if (!(reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid)) continue;
 		const data = resolveInputs(node, nodes, edges, now, ctx);
-		if (data.enabled === false || data.enabled === 0) continue;
+		const who = (objectNameOf(uuid) ?? 'an object') + ' · ' + phase;
+		if (data.enabled === false || data.enabled === 0) {
+			noteCheck(node.id, { who, reason: 'disabled' }); // 78 F26
+			continue;
+		}
 		const cooldown = phase === 'over' ? 0 : num(data.cooldown ?? 0);
 		const last = hoverFiredAt.get(node.id);
-		if (cooldown > 0 && typeof last === 'number' && now - last >= 0 && now - last < cooldown) continue;
+		if (cooldown > 0 && typeof last === 'number' && now - last >= 0 && now - last < cooldown) {
+			noteCheck(node.id, { who, reason: 'cooldown' }); // 78 F26
+			continue;
+		}
+		if (phase !== 'over' || !lastCheck(node.id)?.fired) noteCheck(node.id, { who, fired: true });
 		hoverFiredAt.set(node.id, now);
 		applyNodeTrigger(node.id, now, (data.who ?? 'anyone') === 'me' ? false : replicatesPulse(node));
 		fired++;
 	}
 	return fired;
+}
+
+// ---- 78 F26: WHY DID THIS NOT FIRE? -----------------------------------------------------------
+//
+// The checks themselves are written where each trigger decides (fireSensorEdge, fireObjectHover,
+// fireObjectClick, the kit's pickup refusals below); this is the STANDING half — what stops the
+// node right now on this device, from facts only the runtime holds. triggerWhy.js words both.
+
+/** the objects a trigger node watches: its graph's owner and every Object Selector it reaches @param {any} node @returns {string[]} */
+function watchedObjectsOf(node) {
+	/** @type {Set<string>} */
+	const set = new Set();
+	const owner = implicitOwnerOf(node);
+	if (owner) set.add(owner);
+	const seen = new Set([node.id]);
+	const stack = [node.id];
+	while (stack.length) {
+		const cur = stack.pop();
+		for (const edge of edges) {
+			if (edge.source !== cur || seen.has(edge.target)) continue;
+			seen.add(edge.target);
+			const target = nodeById(nodes, edge.target);
+			if (target?.type === 'objectselector') {
+				const sel = target.data?.selected;
+				if (sel && sel !== '-None-') set.add(sel);
+			} else stack.push(edge.target);
+		}
+	}
+	return [...set];
+}
+
+/** the kit refusals already turned into checks @type {WeakSet<object>} */
+const refusalsSeen = new WeakSet();
+
+/**
+ * What stops `node` from firing on this device right now, or null.
+ * @param {any} node @param {number} time @param {any} ctx @returns {import('./triggerWhy.js').WhyReason | null}
+ */
+function standingWhy(node, time, ctx) {
+	const playing = gameFeelActive();
+	if (node.type === 'timer') return edgesInto(edges, node.id).some((e) => e.targetHandle === 'a') ? null : 'nothing-wired';
+	if (node.type === 'kit-pickups-collect') {
+		// a refusal the kit heard for a pickup becomes this node's check (the reason travels with it)
+		for (const r of kit.refusals ?? []) {
+			if (refusalsSeen.has(r) || r.piece !== 'pickups') continue;
+			refusalsSeen.add(r);
+			noteCheck(node.id, { who: r.from ? 'a player' : '', reason: 'refused', detail: r.reason });
+		}
+		const d = resolveInputs(node, nodes, edges, time, ctx);
+		const touch = !(d.touch === false || d.touch === 0 || d.touch === 'false');
+		if (!touch && !edgesInto(edges, node.id).length) return 'touch-off';
+		return touch && !playing ? 'edit' : null;
+	}
+	const watched = watchedObjectsOf(node);
+	if (!watched.length) return 'no-target';
+	if (watched.every((u) => muted.includes(u))) return 'muted';
+	if (node.type === 'onclick') return playing ? null : 'edit';
+	if (node.type === 'onhover') {
+		if (!playing) return 'edit';
+		const d = resolveInputs(node, nodes, edges, time, ctx);
+		return d.enabled === false || d.enabled === 0 ? 'disabled' : null;
+	}
+	if (node.type === 'onenter' || node.type === 'onexit') {
+		const who = node.data?.who ?? 'any';
+		const initiator = !!physicsRef?.isInitiator?.();
+		const remote = !!(physicsRef?.remoteSimulating && get(physicsRef.remoteSimulating));
+		const sensorOn = watched.some((u) => !!sceneObjects?.getObjectByProperty('uuid', u)?.userData?.physics?.sensor);
+		if (who === 'player') {
+			if (!playing) return 'edit';
+			return sensorOn ? null : 'no-sensor';
+		}
+		if (who === 'any' && playing && sensorOn) return null; // the player can set it off
+		if (!initiator && !remote) return 'no-sim';
+		if (!initiator) return 'authority';
+	}
+	return null;
+}
+
+/**
+ * 78 F26 (the card, the debugger and the suites): what one trigger node says about itself.
+ * @param {string} nodeId
+ */
+export function triggerWhyOf(nodeId) {
+	const node = nodeById(nodes, nodeId);
+	if (!node || !WHY_TYPES.has(node.type)) return null;
+	const time = syncedNow();
+	const standing = standingWhy(node, time, runtimeCtx());
+	const check = lastCheck(node.id);
+	return { type: node.type, check, standing, card: whyCardLine(check, standing), ...whySentence(check, standing) };
 }
 
 // ---- 78 F2: HOVER ANIMATE ---------------------------------------------------------------------
@@ -4610,8 +4709,16 @@ function fireSensorEdge(type, uuid, otherUuid) {
 		if (node.type !== type) return;
 		if (!(reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid)) return;
 		// 36 X6: the filter input gates on the other body; the other rides the stamp
-		if (!contactPasses(resolveInputs(node, nodes, edges, syncedNow(), ctx), otherUuid ?? '')) return;
-		fireContact(node, otherUuid ?? '');
+		const data = resolveInputs(node, nodes, edges, syncedNow(), ctx);
+		const other = otherUuid ?? '';
+		const who = other === 'player' ? 'the player' : (objectNameOf(other) ?? 'an object');
+		if (!contactPasses(data, other)) {
+			// 78 F26: say which rule refused it
+			noteCheck(node.id, { who, reason: data?.who === 'player' && other !== 'player' ? 'not-player' : data?.who === 'objects' && other === 'player' ? 'not-objects' : 'filter' });
+			return;
+		}
+		noteCheck(node.id, { who, fired: true });
+		fireContact(node, other);
 	});
 }
 
@@ -5468,7 +5575,9 @@ function publishDebug(time, ctx, now) {
 		return { key, label, text: formatValue(w.handle ? unwrapHandle(v, { sourceHandle: w.handle }) : v, objectNameOf), missing: false };
 	});
 	const eventless = !!focus && outputType(focus.type) !== 'event' && !SCHEDULED_TYPES.includes(focus.type) && !inputs.some((r) => r.kind === 'event');
-	debugValues.set({ focus: focus ? { id: focus.id, label: debugLabel(focus), type: focus.type, eventless } : null, inputs, outputs, watches });
+	// 78 F26: a trigger node says when it was last checked and what blocks it
+	const why = focus && WHY_TYPES.has(focus.type) ? whySentence(lastCheck(focus.id), standingWhy(focus, time, ctx)) : null;
+	debugValues.set({ focus: focus ? { id: focus.id, label: debugLabel(focus), type: focus.type, eventless, why } : null, inputs, outputs, watches });
 }
 
 /** test/debug view of the runtime half */
@@ -5965,7 +6074,9 @@ function runTick(now) {
 			motionRests: !editorMotionOn && get(isLocked) !== true,
 			capturing: capturingPathNode,
 			value: (node) => evalNode(node, nodes, edges, time, new Set(), ctx),
-			pulseAt: (id) => ctx.triggers?.[id]?.lastT ?? null
+			pulseAt: (id) => ctx.triggers?.[id]?.lastT ?? null,
+			// 78 F26: the trigger nodes' "why not" line
+			why: (node) => (WHY_TYPES.has(node.type) ? whyCardLine(lastCheck(node.id), standingWhy(node, time, ctx)) : null)
 		});
 	if (paused) toLive();
 	phaseEnd(PHASE_FLOW);

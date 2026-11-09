@@ -62,6 +62,7 @@ const OUTPUT = {
 	animmarker: 'event', // 17-E F5: the playhead crossed a named point in a clip
 	onanimstate: 'event', // 57 M11: an Animation states machine entered a state
 	onseqevent: 'event', // 48 S2: a running sequence crossed an event item (or ended)
+	onpathevent: 'event', // 78 F4: a walker on a Path arrived at a point with an event
 	animstate: 'number', // 17-E F3: progress / playing / position, one at a time
 	velocity: 'number', // CL-C: live speed readout
 	measure: 'number', // B6: top / bottom / height / y / speed
@@ -170,6 +171,7 @@ const INPUT = {
 	rotor: { on: 'boolean' }, // 36-fb F25
 	flowfloat: { path: 'object' }, // 36-fb F24
 	followpath: { path: 'object' }, // 40 F15
+	pathpatrol: { path: 'object' }, // 78 F4: the Path object it walks
 	wander: { area: 'object' }, // 40 F15
 	setcolor: { color: 'color' },
 	visibility: { on: 'boolean' },

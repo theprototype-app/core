@@ -48,6 +48,7 @@
 	import SelectNode from './nodes/SelectNode.svelte';
 	import CustomNode from './nodes/CustomNode.svelte';
 	import PathPatrolNode from './nodes/PathPatrolNode.svelte';
+	import PathEventNode from './nodes/PathEventNode.svelte'; // 78 F4
 	import SoundNode from './nodes/SoundNode.svelte';
 	import ParticleNode from './nodes/ParticleNode.svelte';
 	import NumberNode from './nodes/NumberNode.svelte';
@@ -212,6 +213,7 @@
 		select: SelectNode,
 		customnode: CustomNode,
 		pathpatrol: PathPatrolNode,
+		onpathevent: PathEventNode, // 78 F4: On Path Event
 		sound: SoundNode,
 		particle: ParticleNode,
 		jiggle: AnimationNode, // 36-sim U2b

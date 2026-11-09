@@ -601,7 +601,13 @@ export const DEBUG_HOOKS = [
 	// 64-text: fonts (bundled + Library + Google), the solid build, the export licence walk
 	['textFonts', () => import('./textFonts.js')],
 	['text3dBuild', () => import('./text3dBuild.js')],
-	['sceneLicences', () => import('./sceneLicences.js')]
+	['sceneLicences', () => import('./sceneLicences.js')],
+	// 78 F4: the Path object (pathOf = the F9 read API, the actions, the agent tool)
+	['pathRuntime', () => import('./path/pathRuntime.js')],
+	['pathActions', () => import('./path/pathActions.js')],
+	['pathObject', () => import('./path/pathObject.js')],
+	['pathState', () => import('./path/pathState.js')],
+	['pathTools', () => import('./ai/pathTools.js')]
 ];
 
 /** Load every row and publish `window.__stores`. @returns {Promise<Record<string, any>>} */

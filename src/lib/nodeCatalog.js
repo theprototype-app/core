@@ -1061,9 +1061,23 @@ export const nodeCatalog = [
 				]
 			},
 			{
+				// 78 F4: walks a PATH OBJECT (`path`, picked on the card or wired) on its schedule —
+				// waits, speeds, gaps, events, loop modes all live on the Path. `trigger` starts a
+				// once-walk; `offset` (s) spreads several guards on one path. Clicked waypoints
+				// (`points`) are the legacy walk, and the card offers Convert
 				type: 'pathpatrol',
 				label: 'Path patrol',
-				defaults: { points: [], speed: 1, mode: 'loop' }
+				defaults: { points: [], speed: 1, mode: 'loop', path: '', offset: 0, face: true },
+				inputs: ['path', 'trigger'],
+				inputLabels: { path: 'path — a Path object', trigger: 'trigger — starts a Once walk' }
+			},
+			{
+				// 78 F4: a walker on a Path arrived at a point carrying an EVENT (named on the point).
+				// Blank path / event = any. Fired LOCALLY on every peer at the SAME shared moment
+				// (each walks the same schedule), the onseqevent reasoning
+				type: 'onpathevent',
+				label: 'On Path Event',
+				defaults: { path: '', event: '', pulse: 0.3 }
 			},
 			// 40 F15: GENERAL-PURPOSE motion (motion/motionNodes.js). Movers first (Follow Path,
 			// Wander are pure functions of the shared clock), then the followers that read the

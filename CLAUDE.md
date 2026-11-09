@@ -2725,7 +2725,36 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   on `online`, never an error. e2e: `h.routeSkies` (OPT-IN — a route disables the context's HTTP cache) serves them
   from a local packs checkout. Suites: vitest `toolStatus` (incl. the storage migration); e2e `tools-connections`,
   `sky-cdn`.
-
+- **ROADMAP 78 F4 + F9 (78-path) — THE PATH OBJECT.** A Path is a SPLINE OBJECT (`userData.spline`) whose record
+  carries a `path` block `{version, mode: loop|pingpong|once|random, speed, smooth, showInPlay, preview, seed}` plus
+  optional per-point extras: the POINT's own `wait`/`event`/`facing`, and the SPAN LEAVING it (point k owns k→k+1)
+  `speed`/`ease`/`gap` (a gap = a JUMP, zero time). `src/lib/path/pathCore.js` is the pure record leaf (normalize,
+  reverse — span keys move to the span's other end —, split, join, `recordFromPatrol`); `splineTube.normalizeSpline`
+  keeps the extras ONLY when the block is present, so a plain spline is byte-identical. Every write is the SPLINE
+  write path (`commitSplineEdit` → `splineedit` wire + `spline` undo kind): no new message, no new history kind.
+  Creation is the replicated `/create Path` (`customGeometryBuilders` + `stampPathObject` in geometries.svelte.js).
+  · DETERMINISM IS THE NETCODE: `motionCore.buildSchedule(points, {closed, smooth, mode, speed, seed})` → timed
+  segments, `scheduleAt(sched, t, {start, offset})` → pose; the walker's t is the shared EFFECT clock (pauses folded
+  in), its start is the node's trigger stamp − pauseOffset, else the round start, else 0 (a `once` walk with neither
+  stands at its first point). Events fire on arrival stamps, which every peer derives alike; the runtime's event
+  clock SEEDS (fires nothing) on first sight, a clock going back, or a jump > 5 s, so a reload never replays the past.
+  · F9, THE READ API (61's Patrol calls this — never a fourth list of points): `pathOf(root, uuid)` /
+  `pathOfObject(o)` in `path/pathRuntime.js` → `{uuid, name, points (WORLD + extras), closed, smooth, mode, speed,
+  seed, showInPlay, preview, schedule, period, length, poseAt(t, o), eventsBetween(a, b, o)}`, cached on the record
+  JSON + matrixWorld. `applyPatrolOnPath` is what the `pathpatrol` node runs when `data.path` is set; walker state
+  (`patrolStateOf(key)`, key = nodeId|objectUuid) carries `t/start/offset/p`, which is how the two-peer suite proves
+  agreement: the other peer recomputes the exact pose.
+  · Leaves: pathCore, pathState (editing uuid, scrub, picked points), pathRuntime — flowRuntime imports pathRuntime,
+  so it may never reach history. `pathActions.js` is history-family (create/settings/point fields/reverse/split/
+  join/convert). A Path is a physics SENSOR (never a collider) and hides in Play through `material.visible` + a
+  raycast no-op, NEVER `object.visible` (that is replicated authored state).
+  · Old `pathpatrol` nodes with clicked `points` keep walking the legacy code; Convert (`convertPatrolNode`) makes a
+  closed straight-line loop (ping-pong for 2 points or mode pingpong) re-centred on the waypoints' centroid —
+  pose-identical, proven in `pathCore.test.js` against a verbatim copy of the old walker.
+  · `captureAdapter.js` is a one-file stand-in for 78-wire's F5 capture stack (Esc pops the top capture first);
+  78-int swaps its body for a re-export. Agent: `create_path` (`ai/pathTools.js`), connector `create_shape {action:
+  'path'}`. Node `onpathevent` {path, event}. Suites: vitest `pathCore`, `pathRuntime78`, `pathTools78`; e2e
+  `path-object` (two peers).
 ## UI design system (redesign epic)
 
 - All UI follows the redesign spec kept in the `cloud` repo: `docs/design/redesign/SPEC.md`

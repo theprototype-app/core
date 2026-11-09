@@ -44,6 +44,7 @@
 	import FlowPathSection from '../sim/FlowPathSection.svelte'; // 36-fb F24
 	import TextPathSection from './TextPathSection.svelte'; // 64 D2
 	import TextOnPathButton from './TextOnPathButton.svelte'; // 64 D2
+	import PathSection from './inspector/PathSection.svelte'; // 78 F4
 	import FluidTankSection from '../sim/FluidTankSection.svelte'; // 36-sim U2b
 	import DragRow from '../ui/DragRow.svelte';
 	import FieldClip from '../ui/FieldClip.svelte'; // 43 J3
@@ -4501,9 +4502,11 @@
 					</p>
 				</Section>
 
+				<!-- 78 F4: a PATH object (a spline record with a path block) has its own section -->
+				{#if spline?.path}<PathSection object={$selectedObject} />{/if}
 				<!-- 57.5: SPLINE — the record is the source of truth, so these rows edit
 				     it and let every peer rebuild the tube (never the geometry directly) -->
-				{#if spline}
+				{#if spline && !spline.path}
 					<Section variant="panel" label="Spline">
 						<p class="px-1 text-[length:var(--fs-badge)] uppercase tracking-wider text-text-faint">
 							{spline.points.length} control points

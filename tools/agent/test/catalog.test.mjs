@@ -168,5 +168,13 @@ check('catalog.json: 64-text adds create_shape {text} + assets {fonts}, no new c
 	return f.create_shape?.text === 'create_text' && f.assets?.fonts === 'list_fonts' && !names.has('create_text') && !names.has('list_fonts') && !names.has('text');
 })());
 
+// 78 F4: the Path object rides create_shape {path}; no new connector name
+check('catalog.json: 78 adds create_shape {path}, no new connector name', (() => {
+	const v = committed.connector;
+	const f = v.families;
+	const names = new Set([...Object.keys(f), ...(v.tools ?? []).map((/** @type {any} */ t) => t.name)]);
+	return f.create_shape?.path === 'create_path' && !names.has('create_path') && !names.has('path');
+})());
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

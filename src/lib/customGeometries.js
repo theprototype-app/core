@@ -6,6 +6,7 @@ import { fluidEmitterGeometry } from './sim/fluidEmitterObject.js';
 import { flowPathGeometry } from './sim/flowPathObject.js';
 import { FLOW_PATH_DEFAULTS } from './sim/flowPathCore.js';
 import { textPlaceholderGeometry } from './textPathObject.js';
+import { pathGeometry } from './path/pathObject.js';
 
 // Architectural building-block geometries. All builders return a BufferGeometry
 // centered on X/Z and resting on y=0 (bbox bottom at the floor), so surface
@@ -318,5 +319,6 @@ export const customGeometryBuilders = {
 	FluidTank: fluidTankGeometry, // 36-sim U2b (sim/fluidTank.js)
 	FluidEmitter: fluidEmitterGeometry, // 36-fb F23 (sim/fluidEmitterObject.js)
 	FlowPath: () => flowPathGeometry(FLOW_PATH_DEFAULTS), // 36-fb F24 (sim/flowPathObject.js)
-	Text: textPlaceholderGeometry // 64 D2: text on a path (the hit proxy until the first layout)
+	Text: textPlaceholderGeometry, // 64 D2: text on a path (the hit proxy until the first layout)
+	Path: pathGeometry // 78 F4: the Path object (path/pathObject.js)
 };

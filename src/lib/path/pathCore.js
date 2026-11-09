@@ -235,7 +235,7 @@ export function recordFromPatrol(data) {
 	const raw = Array.isArray(data?.points) ? data.points : [];
 	const pts = raw.filter((/** @type {any} */ p) => Array.isArray(p) && p.length >= 3 && p.slice(0, 3).every((/** @type {any} */ v) => Number.isFinite(+v)));
 	if (pts.length < 2) return null;
-	const center = [0, 1, 2].map((a) => pts.reduce((s, /** @type {any} */ p) => s + +p[a], 0) / pts.length);
+	const center = [0, 1, 2].map((a) => pts.reduce((/** @type {number} */ s, /** @type {any} */ p) => s + +p[a], 0) / pts.length);
 	const loop = (data.mode ?? 'loop') === 'loop';
 	// a 2-point "loop" closes into A -> B -> A, which IS a ping-pong (a closed spline needs 3)
 	const closed = loop && pts.length > 2;

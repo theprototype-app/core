@@ -68,6 +68,11 @@ export const primitivesCatalog = [
 		]
 	},
 	{
+		// 78 F4: the Path object — a line guards walk (Path patrol), cameras ride and 61's Patrol reads
+		group: 'Path',
+		items: [{ label: 'Path', command: '/create Path' }]
+	},
+	{
 		// 36-sim U2b: a glass tank of particle fluid (local per peer; settings replicate)
 		group: 'Simulation',
 		items: [{ label: 'Fluid tank', command: '/create FluidTank 1.2 0.8 0.8' }]

@@ -58,6 +58,7 @@
 	import { onLodProxyMoved, onLodProxyDragChanged } from '$lib/lodLevelEdit';
 	import { splineEditObject, splineEditClick, splineEditRightClick, exitSplineEdit, beginRadiusDrag, radiusDragMove, endRadiusDrag, radiusDragActive, onSplineProxyMoved, onSplineProxyDragChanged, tickSplineEdit } from '$lib/splineEdit';
 	import { capturePathClick } from '$lib/pathCapture';
+	import { tickPathObjects } from '$lib/path/pathObject.js'; // 78 F4
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
 	import { startSnapEngine, setSnapPointer, beginSnapDrag, endSnapDrag, maybeSnapGizmo, snapAnchorPicking, snapAnchorClick, updateSnapAnchor } from '$lib/snapEngine';
 	import { meshPivotPicking, meshPivotClick, tickMeshPivotMarker } from '$lib/meshPivot';
@@ -457,6 +458,7 @@
 		tickEditWireframe(); // ...and the edit wireframe stays parented to it (faceEdit)
 		tickMeshPivotMarker(); // ...and the placed transform pivot's marker (meshPivot)
 		tickSplineEdit(); // 57.3: spline handles do the same (scene-root, world space)
+		tickPathObjects(scene, $objectsGroup, { playing: $isLocked === true, selected: $selectedObjects ?? [] }); // 78 F4: hide in Play, numbers, scrub ghost
 		updateLightHelpers();
 		updateColliderHelpers(); // CL-A A7: collider proxies follow their objects
 		updateSnapAnchor(); // 19-B P3: the picked snap-anchor marker follows its object
@@ -1282,7 +1284,7 @@
 			}
 			// 57.3: while editing a spline, clicks pick its handles (move a point /
 			// insert one on a span marker) instead of selecting objects
-			if ($splineEditObject && splineEditClick(selectionRaycaster)) return;
+			if ($splineEditObject && splineEditClick(selectionRaycaster, event.ctrlKey || event.shiftKey || event.metaKey || $multiSelectMode)) return; // 78 F4: additive = multi-select points
 			// a Path patrol node capturing waypoints takes the click
 			if (capturePathClick(selectionRaycaster)) return;
 			// measure mode captures clicks entirely

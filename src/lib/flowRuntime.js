@@ -97,6 +97,7 @@ import { registerGameSetting, gameSettingValue } from './gameSettings';
 import { setPointGrabEnabled } from './pointGrab';
 import { spawnedFromOf } from './transientObjects'; // 31: a copy answers to its template (a leaf)
 import { pathCaptureNode } from './pathCaptureState'; // fix-batch-2: a leaf
+import { applyPatrolOnPath, pathPreviewHeld } from './path/pathRuntime.js'; // 78 F4: a three leaf
 import { applyRotor, applyFlowFloat } from './sim/motionNodes.js'; // 36-fb F25/F24 (a three leaf)
 // 40 F15: general-purpose motion (a three leaf + its pure core)
 import {
@@ -3825,6 +3826,28 @@ export function fireSequenceEvent(seqId, seqName, name) {
 }
 
 /**
+ * 78 F4: a walker on a Path object ARRIVED at a point carrying an `event` — pulse every On Path
+ * Event node listening for it (`path` empty = any path, `event` empty = any event). LOCAL on
+ * every peer, like fireSequenceEvent: each peer walks the same schedule and stamps the SAME
+ * arrival moment (`at`, on the trigger clock), so the pulse agrees without a message.
+ * @param {string} pathUuid @param {string} name @param {number} at
+ */
+export function firePathEvent(pathUuid, name, at) {
+	const want = String(name ?? '').trim().toLowerCase();
+	let fired = 0;
+	nodes.forEach((node) => {
+		if (node.type !== 'onpathevent') return;
+		const path = String(node.data?.path ?? '').trim();
+		if (path && path !== '-None-' && path !== pathUuid) return;
+		const ev = String(node.data?.event ?? '').trim().toLowerCase();
+		if (ev && ev !== want) return;
+		applyNodeTrigger(node.id, at, false);
+		fired++;
+	});
+	return fired;
+}
+
+/**
  * A1: a module fired one of its own EVENT nodes. `fireObjectClick`'s body with the
  * target filter swapped for a caller-supplied match, ending in the same replicated
  * applyNodeTrigger — a module event is a real event on ONE peer, not a derivation,
@@ -4178,7 +4201,27 @@ function applyAnimation(object, base, anim, time, ctx) {
 	} else if (anim.type === 'pathpatrol') {
 		// fix-batch-2: the node whose waypoints are being placed holds still at its base
 		// pose, so the object stays where you can click it
-		if (anim.id !== capturingPathNode) applyPathPatrol(object, data, time);
+		// 78 F4: on a Path object (`path` = its uuid, picked on the card or wired), the walk is
+		// the Path's schedule (waits, speeds, gaps, events); clicked waypoints are the legacy walk
+		if (anim.id !== capturingPathNode) {
+			const onPath = typeof data.path === 'string' && data.path && data.path !== '-None-';
+			if (!onPath) applyPathPatrol(object, data, time);
+			else if (!pathPreviewHeld(sceneObjects, data.path, get(isLocked) === true)) {
+				// the walk's start in the EFFECT clock: a wired trigger's stamp, else the round's start
+				const shift = pauseOffset;
+				const stamp = triggerStampFor(anim.id, ctx);
+				const rc = synced ? roundCutoff() : null;
+				const roundStart = rc !== null && rc !== Infinity ? toSyncedStamp(rc) : null;
+				const start = typeof stamp === 'number' ? stamp - shift : roundStart !== null ? roundStart - shift : null;
+				applyPatrolOnPath(object, data, time, {
+					root: sceneObjects,
+					key: anim.id + '|' + object.uuid,
+					nodeId: anim.id,
+					start,
+					onEvent: (pathUuid, name, at) => firePathEvent(pathUuid, name, at + shift)
+				});
+			}
+		}
 	} else if (anim.type === 'lookat') {
 		// face a target object (uuid) or point ([x,y,z]) — 134
 		let target = null;

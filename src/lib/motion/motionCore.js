@@ -469,6 +469,7 @@ export function buildSchedule(points, opts = {}) {
 	const baseSpeed = clampNum(opts.speed, 1.5, 0.01, 50);
 	const ctrl = /** @type {V3[]} */ (pts.map((p) => p.pos));
 	const nSpans = closed ? n : n - 1;
+	/** @type {{pts: V3[], cum: number[], total: number}[]} */
 	const spans = [];
 	for (let k = 0; k < nSpans; k++) spans.push(spanSamples(ctrl, k, closed, smooth, per));
 
@@ -615,7 +616,7 @@ export function scheduleAt(sched, time, o = {}) {
 		tan = standingTangent(sched, seg.kind === 'move' ? i + 1 : i);
 	}
 	const standing = seg.kind === 'wait' || atEnd;
-	const pointIdx = seg.kind === 'wait' ? seg.point : atEnd ? seg.kind === 'move' ? seg.to : seg.point : seg.from;
+	const pointIdx = seg.kind === 'wait' ? seg.point : atEnd ? seg.to : seg.from;
 	const facing = standing ? sched.points[pointIdx]?.facing : undefined;
 	const yaw = typeof facing === 'number' ? (facing * Math.PI) / 180 : Math.atan2(tan[0], tan[2]);
 	const next = seg.kind === 'move' ? seg.to : nextStopAfter(segs, i, pointIdx);

@@ -38,6 +38,12 @@ import {
 	registerVRTriggerHooks
 } from './vrControls';
 import { viewportHasKeys } from './keyScope'; // 36 U11
+// 78 F4: the spline editor IS the Path editor — multi-select, a gizmo about the picked points'
+// centroid (move / rotate / scale), Add points (a capture on the F5 stack), Delete, Select all
+import { editingPathUuid, pathSelectedPoints } from './path/pathState.js';
+import { pushCapture, popTopCapture, popCapture } from './path/captureAdapter.js';
+import { isPathRecord, PATH_LINE_RADIUS } from './path/pathCore.js';
+import { objectsGroup } from '../stores/sceneStore';
 
 // 57.3/57.4: the spline EDIT session, built the same way mesh edit is — one
 // object at a time, scene-root handles (never children of the object: they must
@@ -67,6 +73,11 @@ export const splineEditObject = writable(null);
 export const splineSelectedPoint = writable(-1);
 /** live point count, for the toolbar readout @type {import('svelte/store').Writable<number>} */
 export const splinePointCount = writable(0);
+/** 78 F4: "Add points" armed — a click on the scene appends a point @type {import('svelte/store').Writable<boolean>} */
+export const splineAddMode = writable(false);
+/** 78 F4: the gizmo's mode while several points are picked @type {import('svelte/store').Writable<'translate'|'rotate'|'scale'>} */
+export const splineGizmoMode = writable('translate');
+const ADD_CAPTURE = 'path-add-points';
 
 const POINT_COLOR = 0x2f81f7;
 const POINT_SELECTED = 0xff4000;
@@ -85,6 +96,10 @@ const RADIUS_OFFSET = 1.8;
 /** @type {{pos: number[], radius: number}[]} */ let points = [];
 let selected = -1;
 let hovered = -1;
+/** 78 F4: every picked point (the primary `selected` is one of them) @type {number[]} */
+let picked = [];
+/** 78 F4: a multi-point gizmo drag — the proxy's start matrix (inverted) + the points' start world positions @type {any} */
+let dragStart = null;
 /** {kind, index, startRadius, startY} — a desktop radius drag @type {any} */
 let radiusDrag = null;
 /** the record as it was when the current gesture started @type {any} */
@@ -174,7 +189,7 @@ function refreshColors() {
 	for (let i = 0; i < points.length; i++)
 		pointHandles.setColorAt(
 			i,
-			new THREE.Color(i === selected ? POINT_SELECTED : i === hovered ? POINT_HOVER : POINT_COLOR)
+			new THREE.Color(i === selected || picked.includes(i) ? POINT_SELECTED : i === hovered ? POINT_HOVER : POINT_COLOR)
 		);
 	if (pointHandles.instanceColor) pointHandles.instanceColor.needsUpdate = true;
 }
@@ -201,7 +216,10 @@ function rebuildHandles() {
 	group.add(pointHandles, radiusHandles, midHandles);
 	scene.add(group);
 	if (selected >= points.length) selected = -1;
+	picked = picked.filter((i) => i < points.length);
+	if (selected >= 0 && !picked.includes(selected)) picked = [...picked, selected];
 	splineSelectedPoint.set(selected);
+	pathSelectedPoints.set([...picked]);
 	refreshMatrices();
 	refreshColors();
 	if (selected >= 0) seatGizmo(selected);
@@ -238,7 +256,9 @@ export function enterSplineEdit(uuid) {
 	lastObjectMatrix.copy(edited.matrixWorld);
 	selected = -1;
 	hovered = -1;
+	picked = [];
 	rebuildHandles();
+	if (isPathRecord(edited.userData.spline)) editingPathUuid.set(uuid);
 
 	proxy = new THREE.Object3D();
 	proxy.userData.isSplineProxy = true;
@@ -253,7 +273,7 @@ export function enterSplineEdit(uuid) {
 	if (peer) peer.send({ type: 'lock', uuid, peerId: peer.peer.id });
 
 	splineEditObject.set(uuid);
-	if (typeof window !== 'undefined') window.addEventListener('keydown', onKeydown);
+	if (typeof window !== 'undefined') window.addEventListener('keydown', onKeydown, true);
 	ensureVRHooks();
 	return true;
 }
@@ -274,12 +294,17 @@ export function exitSplineEdit() {
 	/** @type {any} */
 	const peer = get(peers);
 	if (peer && edited) peer.send({ type: 'unlock', uuid: edited.uuid, peerId: peer.peer.id });
-	if (typeof window !== 'undefined') window.removeEventListener('keydown', onKeydown);
+	if (typeof window !== 'undefined') window.removeEventListener('keydown', onKeydown, true);
 	edited = null;
 	proxy = null;
 	points = [];
 	selected = -1;
 	hovered = -1;
+	picked = [];
+	dragStart = null;
+	popCapture(ADD_CAPTURE);
+	pathSelectedPoints.set([]);
+	editingPathUuid.set(null);
 	radiusDrag = null;
 	gestureBefore = null;
 	vrCarry = null;
@@ -291,7 +316,23 @@ export function exitSplineEdit() {
 /** @param {KeyboardEvent} event */
 function onKeydown(event) {
 	if (!viewportHasKeys(event)) return; // 36 U11: Esc in another pane is that pane's
-	if (event.key === 'Escape') exitSplineEdit();
+	if (event.key === 'Escape') {
+		// 78 F4: Esc pops the top capture (Add points) before it closes the editor
+		if (popTopCapture()) return;
+		exitSplineEdit();
+		return;
+	}
+	if ((event.key === 'Delete' || event.key === 'Backspace') && picked.length) {
+		event.preventDefault();
+		event.stopPropagation();
+		deletePoints(picked);
+		return;
+	}
+	if ((event.ctrlKey || event.metaKey) && (event.key === 'a' || event.key === 'A')) {
+		event.preventDefault();
+		event.stopPropagation();
+		selectPoints(points.map((_p, i) => i));
+	}
 }
 
 // a remote edit (or an undo) swapped the record under us — regroup the handles
@@ -337,16 +378,80 @@ export function pickSplineHandle(raycaster) {
 	return best;
 }
 
-/** Seat the transform gizmo on control point `index`. @param {number} index */
+/** Seat the transform gizmo on control point `index` — or, with several points picked, on
+ * their CENTROID in the chosen mode (78 F4). @param {number} index */
 function seatGizmo(index) {
 	if (!proxy) return;
-	pointWorld(index, tempVector);
-	proxy.position.copy(tempVector);
+	proxy.quaternion.identity();
+	proxy.scale.set(1, 1, 1);
+	if (picked.length > 1) {
+		proxy.position.set(0, 0, 0);
+		for (const i of picked) proxy.position.add(pointWorld(i, tempVector));
+		proxy.position.multiplyScalar(1 / picked.length);
+	} else {
+		pointWorld(index, tempVector);
+		proxy.position.copy(tempVector);
+	}
 	/** @type {any} */
 	const controls = get(TControls);
 	if (!controls) return;
-	controls.setMode('translate');
+	controls.setMode(picked.length > 1 ? get(splineGizmoMode) : 'translate');
 	controls.attach(proxy);
+}
+
+/** 78 F4: the multi-point gizmo's mode @param {'translate'|'rotate'|'scale'} mode */
+export function setSplineGizmoMode(mode) {
+	splineGizmoMode.set(mode);
+	if (picked.length > 1 && selected >= 0) seatGizmo(selected);
+}
+
+/** 78 F4: pick exactly these points (the toolbox, Ctrl+A, tests) @param {number[]} indices */
+export function selectPoints(indices) {
+	if (!edited) return false;
+	picked = [...new Set(indices)].filter((i) => Number.isInteger(i) && i >= 0 && i < points.length);
+	selected = picked.length ? picked[picked.length - 1] : -1;
+	splineSelectedPoint.set(selected);
+	pathSelectedPoints.set([...picked]);
+	refreshColors();
+	/** @type {any} */
+	const controls = get(TControls);
+	if (selected >= 0) seatGizmo(selected);
+	else if (controls?.object === proxy) controls.detach();
+	return true;
+}
+
+/** 78 F4: arm / disarm Add points (a capture on the F5 stack: Esc pops it first) @param {boolean} on */
+export function setSplineAddMode(on) {
+	if (!edited) return false;
+	if (on) {
+		pushCapture({ id: ADD_CAPTURE, label: 'Click the scene to add points to the end · Esc to stop', onExit: () => splineAddMode.set(false) });
+		splineAddMode.set(true);
+	} else popCapture(ADD_CAPTURE);
+	return true;
+}
+
+/** 78 F4: append a point where the ray meets the scene (or the ground) @param {any} raycaster */
+export function addPointFromRay(raycaster) {
+	if (!edited) return false;
+	const group = get(objectsGroup);
+	const hits = (group ? raycaster.intersectObjects(group.children, true) : []).filter(
+		(/** @type {any} */ h) => h.object !== edited && !h.object.userData?.isSplineProxy
+	);
+	const at = hits[0]?.point ?? (raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Vector3()) || null);
+	if (!at) return false;
+	const local = edited.worldToLocal(at.clone());
+	const before = record();
+	if (!before) return false;
+	const after = cloneSpline(before);
+	const radius = isPathRecord(before) ? PATH_LINE_RADIUS : (before.points[before.points.length - 1]?.radius ?? MIN_RADIUS);
+	after.points.push({ pos: [local.x, local.y, local.z], radius });
+	if (after.points.length > before.points.length && commitSplineEdit(edited.uuid, before, after)) {
+		selected = after.points.length - 1;
+		picked = [selected];
+		rebuildHandles();
+		return true;
+	}
+	return false;
 }
 
 /**
@@ -355,18 +460,35 @@ function seatGizmo(index) {
  * swallowed rather than falling through to object selection.
  * @param {any} raycaster @returns {boolean} whether the click was consumed
  */
-export function splineEditClick(raycaster) {
+export function splineEditClick(raycaster, additive = false) {
 	const hit = pickSplineHandle(raycaster);
-	if (!hit) return false;
+	if (!hit) {
+		// 78 F4: Add points armed — the click on the scene is a new point at the end
+		if (get(splineAddMode)) return addPointFromRay(raycaster);
+		return false;
+	}
 	if (hit.kind === 'mid') {
 		insertPointOnSpan(hit.index);
 		return true;
 	}
 	if (hit.kind === 'radius') return true;
-	selected = hit.index;
+	// 78 F4: Ctrl / Shift toggles a point in or out of the pick; a plain click picks one
+	if (additive) {
+		picked = picked.includes(hit.index) ? picked.filter((i) => i !== hit.index) : [...picked, hit.index];
+		selected = picked.length ? (picked.includes(hit.index) ? hit.index : picked[picked.length - 1]) : -1;
+	} else {
+		picked = [hit.index];
+		selected = hit.index;
+	}
 	splineSelectedPoint.set(selected);
+	pathSelectedPoints.set([...picked]);
 	refreshColors();
-	seatGizmo(selected);
+	if (selected >= 0) seatGizmo(selected);
+	else {
+		/** @type {any} */
+		const controls = get(TControls);
+		if (controls?.object === proxy) controls.detach();
+	}
 	return true;
 }
 
@@ -394,6 +516,7 @@ export function insertPointOnSpan(index) {
 	const ok = commitSplineEdit(edited.uuid, before, after);
 	if (ok) {
 		selected = index + 1; // the new point, ready to drag
+		picked = [selected];
 		splineSelectedPoint.set(selected);
 		rebuildHandles();
 	}
@@ -411,8 +534,34 @@ export function deletePoint(index) {
 	}
 	if (selected === index) selected = -1;
 	else if (selected > index) selected--;
+	picked = picked.filter((i) => i !== index).map((i) => (i > index ? i - 1 : i));
 	const ok = commitSplineEdit(edited.uuid, before, after);
 	if (ok) rebuildHandles();
+	return ok;
+}
+
+/** 78 F4: delete several points as ONE undo step (keeps at least two) @param {number[]} indices */
+export function deletePoints(indices) {
+	const before = record();
+	if (!before) return false;
+	const drop = new Set(indices);
+	const keep = before.points.filter((/** @type {any} */ _p, /** @type {number} */ i) => !drop.has(i));
+	if (keep.length < 2) {
+		showToast('A path needs at least two points');
+		return false;
+	}
+	const after = cloneSpline(before);
+	after.points = keep.map((/** @type {any} */ p) => ({ ...p, pos: [...p.pos] }));
+	if (after.points.length < 3) after.closed = false;
+	selected = -1;
+	picked = [];
+	const ok = commitSplineEdit(edited.uuid, before, after);
+	if (ok) {
+		/** @type {any} */
+		const controls = get(TControls);
+		if (controls?.object === proxy) controls.detach();
+		rebuildHandles();
+	}
 	return ok;
 }
 
@@ -445,6 +594,23 @@ function withRadiusAt(index, radius) {
 /** Scene.svelte's gizmo `onchange` while the spline proxy is attached. */
 export function onSplineProxyMoved() {
 	if (!edited || selected < 0 || !proxy) return;
+	// 78 F4: several points ride the gizmo's transform about their centroid, from where they
+	// were when the drag started (absolute, so a rotate never accumulates error)
+	if (picked.length > 1) {
+		if (!dragStart) return; // attaching the gizmo fires a change without a drag
+		proxy.updateMatrix();
+		const delta = new THREE.Matrix4().multiplyMatrices(proxy.matrix, dragStart.inverse);
+		const data = cloneSpline(record());
+		picked.forEach((i, k) => {
+			if (!data.points[i]) return;
+			const world = dragStart.world[k].clone().applyMatrix4(delta);
+			data.points[i].pos = edited.worldToLocal(world).toArray();
+		});
+		streamSplineEdit(edited.uuid, data);
+		points = splineDataOf(edited)?.points ?? points;
+		refreshMatrices();
+		return;
+	}
 	const local = edited.worldToLocal(tempVector.copy(proxy.position));
 	const current = points[selected];
 	if (
@@ -466,8 +632,16 @@ export function onSplineProxyDragChanged(dragging) {
 	if (!edited || selected < 0) return;
 	if (dragging) {
 		gestureBefore = cloneSpline(record());
+		if (picked.length > 1 && proxy) {
+			proxy.updateMatrix();
+			dragStart = {
+				inverse: new THREE.Matrix4().copy(proxy.matrix).invert(),
+				world: picked.map((i) => pointWorld(i, new THREE.Vector3()).clone())
+			};
+		}
 		return;
 	}
+	dragStart = null;
 	if (!gestureBefore) return;
 	const after = record();
 	commitSplineEdit(edited.uuid, gestureBefore, after);
@@ -670,6 +844,8 @@ export function splineEditDebug() {
 		points: points.length,
 		spans: spanCount(),
 		selected,
+		picked: [...picked],
+		addMode: get(splineAddMode),
 		hovered,
 		radiusDrag: !!radiusDrag,
 		vrCarry: vrCarry ? vrCarry.kind : null,

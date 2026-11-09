@@ -8,6 +8,7 @@ import { stampFluidTank } from '$lib/sim/fluidTank.js';
 import { stampFluidEmitter } from '$lib/sim/fluidEmitterObject.js';
 import { stampFlowPath } from '$lib/sim/flowPathObject.js';
 import { stampTextPath } from '$lib/textPathObject.js';
+import { stampPathObject } from '$lib/path/pathObject.js';
 
 // RectAreaLight renders black on Standard/Physical materials until the
 // uniforms lib initializes — once per session is enough (79; lightSnapshot.js)
@@ -131,6 +132,7 @@ export function createGeometry(command, uuid) {
         if (geometry === 'FluidEmitter') stampFluidEmitter(object); // 36-fb F23
         if (geometry === 'FlowPath') stampFlowPath(object); // 36-fb F24
         if (geometry === 'Text') stampTextPath(object, command.split(' ')[2] ?? ''); // 64-text: '' | solid | path (a word, not a number)
+        if (geometry === 'Path') stampPathObject(object); // 78 F4: the Path object
         // PFX-C follow-up: standard primitives are DYNAMIC by default (mass 1) so
         // a fresh cube falls, collides and THROWS the moment a sim runs — fun by
         // default. Explicit allow-list: Terrain + module-registered primitives

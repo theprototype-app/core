@@ -10,7 +10,8 @@ import {
 	profilerClose,
 	codeWorkspaceClose,
 	inspectorClose,
-	inspectorKind
+	inspectorKind,
+	inspectorPinned
 } from '../stores/appStore';
 import { imageEditorClose } from './image/imageEditorState';
 import { get, writable } from 'svelte/store';
@@ -472,6 +473,19 @@ export function dockTabItems(key) {
 	const title = DOCK_TITLES[key] ?? 'this view';
 	/** @type {{label: string, icon?: string, tooltip: string, action?: () => void, danger?: boolean, disabled?: boolean, children?: any[]}[]} */
 	const items = [];
+	// 78-int PL14: the phone's Properties / Configure Scene tab has no inner header any more, so its pin
+	// ("Follow the selection", the wider screen's strip button) is the FIRST item of the tab's menu
+	if (get(phoneShell) && (key === 'properties' || key === 'scene')) {
+		const pinned = get(inspectorPinned);
+		items.push({
+			label: 'Follow the selection',
+			icon: pinned ? 'pin' : 'pin-off',
+			checked: pinned,
+			testid: 'inspector-pin',
+			tooltip: pinned ? 'On: this panel stays open and shows what you select. Tap to stop' : 'Keep this panel open and show what you select',
+			action: () => inspectorPinned.update((v) => !v)
+		});
+	}
 	// 44 M9 — the split rows (decision: Split right / Unsplit / Swap sides); wider screens only
 	if (!get(phoneShell)) {
 		const pair = splitOf(key);

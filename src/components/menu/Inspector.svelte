@@ -10,6 +10,7 @@
 	import { reducedMotion } from '$lib/motion';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import InspectorHead from './inspector/InspectorHead.svelte';
+	import InspectorLock from './inspector/InspectorLock.svelte'; // 78-int PL14
 	import Section from '../ui/Section.svelte';
 	import CameraHoldSetting from './scene/CameraHoldSetting.svelte';
 	import SelectionPassSetting from './scene/SelectionPassSetting.svelte'; // 36 F22 / S8
@@ -54,7 +55,7 @@
 	import { provideFieldClip, fieldClip, nativeFieldSpec } from '$lib/fieldMenu'; // 43 J3
 	import SheetGrip from '../ui/SheetGrip.svelte';
 	import { saveSheetH } from '$lib/ui/sheetDrag.js';
-	import { phoneSheetMaxH } from '$lib/ui/phoneShell.js';
+	import { phoneSheetMaxH, phoneShellActive } from '$lib/ui/phoneShell.js';
 	import { inspectorSide, sidebarShown, sidebarTabs, memberPlacement } from '$lib/sidebars'; // 42 I2/I3
 	import Segmented from '../ui/Segmented.svelte';
 	import ParticleMotionRows from '../fx/ParticleMotionRows.svelte';
@@ -1795,10 +1796,18 @@
 		inset={16}
 		onresize={insResize}
 		onclose={() => inspectorClose.set(true)}
-	/>
+	>
+		{#snippet end()}
+			<!-- 78-int PL14: the phone's header lock sits in the grip row (no inner title row any more) -->
+			<!-- on the phone SHELL the Inspector is a dock tab whose own grip is hidden: PhoneShell's dock grip carries it -->
+			{#if !$phoneShellActive && ($inspectorKind === 'scene' || ($inspectorKind !== 'file' && $selectedObject))}
+				<InspectorLock panel={$inspectorKind === 'scene' ? 'scene' : 'properties'} />
+			{/if}
+		{/snippet}
+	</SheetGrip>
 	{#if $inspectorKind === 'file'}
 		<!-- Explorer file properties (107) -->
-		<InspectorHead title={inspectedItem?.name ?? 'File'} icon="file-text" badge="File" onclose={() => inspectorClose.set(true)} />
+		<!-- 78-int PL14: no inner header — the tab says "File" and its name is the first row -->
 		{#if inspectedItem}
 			<div id="file-properties" class="flex flex-col gap-3">
 				<div class="flex justify-center">
@@ -1855,16 +1864,7 @@
 			<p class="p-3 text-sm italic text-text-muted">The file was removed.</p>
 		{/if}
 	{:else if $inspectorKind === 'scene'}
-		<InspectorHead
-			title="Scene"
-			icon="sun"
-			badge="Scene"
-			filter
-			panel="scene"
-			pinned={$inspectorPinned}
-			onpin={() => inspectorPinned.update((v) => !v)}
-			onclose={() => inspectorClose.set(true)}
-		/>
+		<InspectorHead filter placeholder="Filter scene settings" panel="scene" {popped} />
 
 		<div class="flex flex-col gap-3">
 			<!-- 42 I12: the device Quality preset is the TOP of Configure Scene -->
@@ -3129,15 +3129,7 @@
 	{:else if $moduleSelection && !$selectedObjects.length}
 		<!-- 30 P3: a Module content row (a PROXY, not an object): whose it is, and where it
 		     is edited — never transform rows the module would overwrite on its next rebuild -->
-		<InspectorHead
-			title="Properties"
-			icon="package"
-			badge="Module content"
-			panel="properties"
-			pinned={$inspectorPinned}
-			onpin={() => inspectorPinned.update((v) => !v)}
-			onclose={() => inspectorClose.set(true)}
-		/>
+		<InspectorHead badge="Module content" panel="properties" {popped} />
 		<div id="module-content-card" class="mt-2 flex flex-col gap-2 rounded-sm border border-border p-2 text-xs text-text-2">
 			<p class="text-sm font-semibold text-text">{$moduleSelection.label}</p>
 			<p>Made by the <strong>{$moduleSelection.moduleName}</strong> module — edit it with its toolbox or nodes.</p>
@@ -3149,14 +3141,11 @@
 		<!-- 38 NOTES-38 #24 (design page): the header names WHAT is inspected — the object's own
 		     name beside its kind badge; a set keeps the generic title -->
 		<InspectorHead
-			title={multiCount ? 'Properties' : $selectedObject.name || 'Properties'}
-			icon="box"
 			badge={multiCount ? `${multiCount} objects` : $selectedObject.type}
 			filter
+			placeholder={multiCount ? `Filter properties of ${multiCount} objects` : `Filter properties of ${$selectedObject.name || 'this object'}`}
 			panel="properties"
-			pinned={$inspectorPinned}
-			onpin={() => inspectorPinned.update((v) => !v)}
-			onclose={() => inspectorClose.set(true)}
+			{popped}
 		/>
 
 		<div class="flex flex-col gap-3">

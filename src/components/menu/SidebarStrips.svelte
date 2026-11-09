@@ -15,6 +15,7 @@
 	// bottom dock, or the viewport as a floating window — with ONE highlight for each
 	// ($lib/sidebarDrop). The tabs scroll sideways like the dock strip's when they outgrow the column.
 	// J6 — the Inspector's sticky-header lock (42 I1) sits here, beside Full height, on a wider screen.
+	// 78-int PL14 — and its pin ("Follow the selection", #inspector-pin), since the Inspector lost its inner header.
 	import { onMount, tick } from 'svelte';
 	import Icon from '../ui/Icon.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
@@ -47,7 +48,7 @@
 		toggleSidebar,
 		memberPlacement
 	} from '$lib/sidebars';
-	import { inspectorKind } from '../../stores/appStore.js';
+	import { inspectorKind, inspectorPinned } from '../../stores/appStore.js';
 	import { DOCK_TITLES, DOCK_ICONS } from '$lib/bottomDock';
 
 	onMount(() => startSidebars());
@@ -309,6 +310,22 @@
 					<Icon name="plus" size={16} aria-hidden="true" />
 				</button>
 				{#if lockPanel}
+					<!-- 78-int PL14: the Inspector's pin ("Follow the selection") moved here from its inner header -->
+					<button
+						type="button"
+						id="inspector-pin"
+						class="sb-pin sb-follow"
+						use:chromeButton={'sidebar.pin'}
+						class:on={$inspectorPinned}
+						aria-pressed={$inspectorPinned}
+						aria-label={$inspectorPinned ? 'Stop following the selection' : 'Follow the selection'}
+						title={$inspectorPinned
+							? 'Following the selection: this panel stays open and shows what you select. Click to stop'
+							: 'Follow the selection: keep this panel open and show what you select'}
+						onclick={() => inspectorPinned.update((v) => !v)}
+					>
+						<Icon name={$inspectorPinned ? 'pin' : 'pin-off'} size={16} aria-hidden="true" />
+					</button>
 					{@const sticky = $stickyPanelHeads[lockPanel] !== false}
 					{@const panelName = lockPanel === 'scene' ? 'Configure Scene' : 'Properties'}
 					<button

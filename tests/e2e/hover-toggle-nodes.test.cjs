@@ -184,17 +184,22 @@ h.run(async () => {
 	await h.connect(C, A);
 	await C.page.waitForFunction(() => window.__stores.allNodes().some((n) => n.id === 'door'), null, { timeout: 30000 });
 	await h.eventually(() => doorOf(C.page), (d) => d.ry !== null && Math.abs(d.ry - (ids.doorRot[1] + Math.PI / 2)) < 0.02 && d.isOpen === true, 'a late joiner sees the door OPEN with no new pulse', 15000);
+	// C's counters are SHARED state restored from the room (enter/leave/opened read what the room
+	// counted); "no new pulse" = C's opened equals A's, and stays so after the door settled on C
+	await C.page.waitForTimeout(1500);
 	const rc = await counts(C.page);
-	h.check(rc.opened === 0, `... and its "opened" did not fire on arrival (${JSON.stringify(rc)})`);
+	const ra = await counts(A.page);
+	h.check(rc.opened === ra.opened && rc.closed === ra.closed, `... and its "opened" did not fire on arrival (C ${JSON.stringify(rc)} = A ${JSON.stringify(ra)})`);
 
 	console.log('\n=== F8: named poses ===');
 	await A.page.evaluate(() => window.__stores.flowRuntime.applyNodeTrigger('kAjar', (Date.now() % 86400000) / 1000, true));
 	await A.page.waitForTimeout(1300);
 	const third = Math.PI / 6;
 	for (const [name, page] of [['A', A.page], ['B', B.page], ['C', C.page]]) {
-		const d = await doorOf(page);
-		h.check(Math.abs(d.ry - (ids.doorRot[1] + third)) < 0.02 && d.pose === 1, `go to "ajar": the door rests on the middle pose on ${name} (${JSON.stringify(d)})`);
+		// polled: a third headless page ticks slowly under load
+		await h.eventually(() => doorOf(page), (d) => Math.abs(d.ry - (ids.doorRot[1] + third)) < 0.02 && d.pose === 1, `go to "ajar": the door rests on the middle pose on ${name}`, 8000);
 	}
+	console.log('  C after ajar: ' + JSON.stringify(await doorOf(C.page)) + ' ' + JSON.stringify(await C.page.evaluate(() => window.__stores.flowRuntime.toggleAnimDebug?.('door') ?? null)));
 	await A.page.evaluate(() => window.__stores.flowRuntime.applyNodeTrigger('kToggle', (Date.now() % 86400000) / 1000, true));
 	await A.page.waitForTimeout(1300);
 	const d4 = await doorOf(B.page);

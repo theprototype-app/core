@@ -1939,10 +1939,12 @@
 {/snippet}
 
 {#snippet paneSwitch()}
-	<!-- one pane at a time when the editor is phone-narrow (NOTES-38 #35) -->
+	<!-- one pane at a time when the editor is phone-narrow (NOTES-38 #35). showhide-v8 §3: `full` — equal columns across
+	     the row, so the header is not a short strip hugging the left edge (the owner's folded shot) -->
 	<Segmented
 		label="Animation pane"
 		id="animation-pane"
+		full
 		bind:value={phonePane}
 		options={[
 			{ value: 'list', label: 'Channels' },
@@ -2796,7 +2798,7 @@
 					<span class="tp-dock-title">Animation</span>
 					<span class="tp-dock-sub" id="animation-target-name" use:fullName>{target.name || 'object'}</span>
 				</div>
-				<div class="flex shrink-0 items-center gap-2 pb-1">{@render paneSwitch()}</div>
+				<div class="flex w-full shrink-0 items-center gap-2 pb-1">{@render paneSwitch()}</div>
 			{:else}
 				<div class="flex min-w-0 shrink-0 items-center gap-2 pb-1">
 					<span class="tp-dock-title">Animation</span>
@@ -2840,7 +2842,7 @@
 					<button data-wc-chrome class="wc-act-text" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={16} />Dock</button>
 				{/snippet}
 			</WindowChrome>
-			{#if compact && target}<div class="flex shrink-0 items-center gap-2 px-2 py-1">{@render paneSwitch()}</div>{/if}
+			{#if compact && target}<div class="flex w-full shrink-0 items-center gap-2 px-2 py-1">{@render paneSwitch()}</div>{/if}
 			{@render body()}
 			<div
 				class="resize-cue absolute bottom-0 right-0 z-10 h-3.5 w-3.5 cursor-se-resize rounded-tl bg-border-strong/40"

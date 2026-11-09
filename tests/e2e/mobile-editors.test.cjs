@@ -221,6 +221,20 @@ h.run(async () => {
 	}));
 	h.check(panes.switch, 'animation: a phone gets the Channels / Timeline / Key / Clip switch');
 	h.check(panes.plotShown, 'animation: the timeline is the pane on show by default');
+	// showhide-v8 §3 (owner: "on mobile header of this tab is shifted to the left"): the switch spans the editor's row
+	const span = () =>
+		page.evaluate(() => {
+			const sw = document.getElementById('animation-pane')?.getBoundingClientRect();
+			const dock = document.getElementById('animation-dock')?.getBoundingClientRect();
+			if (!sw || !dock) return null;
+			return { l: Math.round(sw.left - dock.left), r: Math.round(dock.right - sw.right), w: Math.round(sw.width), dw: Math.round(dock.width) };
+		});
+	const spans = (g) => !!g && g.w >= g.dw - 48 && Math.abs(g.l - g.r) <= 8;
+	const g = await span();
+	h.check(spans(g), `animation: the Channels / Timeline / Key / Clip switch spans the row, centred (${JSON.stringify(g)})`);
+	await page.evaluate(() => document.getElementById('animation-pane').classList.remove('seg-full'));
+	h.check(!spans(await span()), 'animation: (counterfactual) the old left-hugging switch fails that check');
+	await page.evaluate(() => document.getElementById('animation-pane').classList.add('seg-full'));
 	// nothing overlaps: every visible text box in the editor sits inside the panel width
 	const overflowing = await page.evaluate(() => {
 		const dock = document.getElementById('animation-dock');

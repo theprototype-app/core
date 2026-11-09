@@ -23,18 +23,19 @@ h.run(async () => {
 
 	const ids = await S(p, async () => {
 		const st = window.__stores;
-		st.commandsHandler.sceneCommand('/create box');
-		st.commandsHandler.sceneCommand('/create box');
-		st.commandsHandler.sceneCommand('/create box');
-		const g = await new Promise((r) => st.objectsGroup.subscribe(r)());
-		const [bell, crate, gem] = g.children.slice(-3);
-		bell.name = 'Bell';
-		crate.name = 'Crate';
-		gem.name = 'Gem';
-		crate.position.x = 3;
-		gem.position.x = -3;
+		/** @type {any} */ let g;
+		st.objectsGroup.subscribe((v) => (g = v))();
+		// one box per command, read straight after it (the gem-arena way), named on every peer
+		const make = (/** @type {string} */ name, /** @type {number} */ x) => {
+			st.commandsHandler.sceneCommand('/create box');
+			const o = g.children[g.children.length - 1];
+			o.position.x = x;
+			st.objectActions.renameObject(o.uuid, name);
+			return o.uuid;
+		};
+		const out = { bell: make('Bell', 0), crate: make('Crate', 3), gem: make('Gem', -3) };
 		st.objectActions.applySelectionSet([]);
-		return { bell: bell.uuid, crate: crate.uuid, gem: gem.uuid };
+		return out;
 	});
 	const N = (id, type, data, x, y) => ({ id, type, position: { x, y }, data: { type, label: id, ...data }, class: 'w-[150px]' });
 	const sel = (id, uuid, y) => N(id, 'objectselector', { selected: uuid }, 320, y);
@@ -74,6 +75,12 @@ h.run(async () => {
 	await S(p, (doc) => window.__stores.restoreGraphs(JSON.parse(JSON.stringify(doc))), DOC);
 	await S(p, (id) => window.__stores.nodesHandler.sendNodes(id), B.id);
 	await p.waitForTimeout(800);
+	const named = await S(p, (ids) => {
+		/** @type {any} */ let g;
+		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		return { bell: g.getObjectByProperty('uuid', ids.bell)?.name, crate: g.getObjectByProperty('uuid', ids.crate)?.name, gem: g.getObjectByProperty('uuid', ids.gem)?.name, all: g.children.map((c) => c.name + ':' + c.uuid.slice(0, 8)) };
+	}, ids);
+	h.check(named.bell === 'Bell' && named.crate === 'Crate' && named.gem === 'Gem', `setup: the three boxes resolve by uuid on A (${JSON.stringify(named)})`);
 
 	// --- §1 standing reasons in Edit mode ------------------------------------------------------
 	console.log('\n=== §1 standing reasons (Edit mode) ===');

@@ -142,7 +142,9 @@ h.run(async () => {
 		const handle = win.locator('.move-handle').first();
 		const hb = await handle.boundingBox();
 		const wb = await win.boundingBox();
-		const sx = hb.x + Math.min(30, hb.width / 3);
+		// grab well inside the header: a pointer within 44 px of a screen edge reaches for that side's column
+		// (sidebarDrop EDGE) and the window would DOCK there instead of landing near the edge
+		const sx = hb.x + Math.min(140, hb.width / 2);
 		const sy = hb.y + hb.height / 2;
 		await page.mouse.move(sx, sy);
 		await page.mouse.down();
@@ -171,12 +173,15 @@ h.run(async () => {
 	await toggle('Lock layout');
 	await dragTo(10);
 	const unsnapped = await box();
-	const prefs54 = { snap: await read(page, 'windowPrefs.snapToEdges'), locked: await read(page, 'windowPrefs.layoutLocked') };
+	const prefs54 = { snap: await read(page, 'windowPrefs.snapToEdges'), locked: await read(page, 'windowPrefs.layoutLocked'), where: await page.evaluate(() => window.__stores.dockMenu.windowWhere('timeline')) };
+	h.check(prefs54.where === 'floating', `5.4a (premise) the drop near the edge leaves it floating, not docked (${prefs54.where})`);
 	h.check(!!unsnapped && unsnapped.x >= 8, `5.4 (counterfactual) Snap off: dropped 10 px from the edge it stays there (${JSON.stringify(unsnapped)}; ${JSON.stringify(prefs54)})`);
 	await toggle('Snap to edges');
 	await dragTo(300);
 	await dragTo(10);
 	const snapped = await box();
+	const where55 = await page.evaluate(() => window.__stores.dockMenu.windowWhere('timeline'));
+	h.check(where55 === 'floating', `5.5a (premise) still floating, so the x is the snap and not a dock (${where55})`);
 	h.check(!!snapped && snapped.x === 0, `5.5 Snap on: the same drop lands flush on the left edge (${JSON.stringify(snapped)})`);
 	await page.evaluate(() => window.__stores.windowPrefs.snapToEdges.set(false));
 	const before = await page.evaluate(() => window.__stores.dockMenu.windowWhere('timeline'));

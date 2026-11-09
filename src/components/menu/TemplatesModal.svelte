@@ -11,6 +11,7 @@
 	import EmptyState from '../ui/EmptyState.svelte';
 	import Icon from '../ui/Icon.svelte';
 	import SearchField from '../ui/SearchField.svelte';
+	import ContextMenu from '../ContextMenu.svelte';
 	import { templatesModalOpen, templatesModalTab, hidePanels, restorePanels } from '../../stores/appStore.js';
 	import {
 		templates,
@@ -30,7 +31,8 @@
 		loadRemoteScene,
 		saveRemoteSceneToLibrary,
 		confirmClearScene,
-		tagUnion,
+		rankTags,
+		featuredFirst,
 		matchesTags,
 		SUBMIT_URL
 	} from '$lib/sceneTemplates';
@@ -59,7 +61,17 @@
 	);
 	// chips are DERIVED from the tab's own tags, so a new tag in the index appears
 	// without a core release, and a tab with no tags grows no chip row at all
-	const chips = $derived(tagUnion(tabEntries));
+	// showhide-v8 §5: only the few most relevant tags (the ones most entries carry) sit beside the search; the rest
+	// are under More, so a tag-rich tab no longer pushes the grid off the dialog
+	const CHIP_COUNT = 5;
+	const ranked = $derived(rankTags(tabEntries, CHIP_COUNT, activeTags));
+	const chips = $derived(ranked.shown);
+	let moreMenu = $state(/** @type {{x: number, y: number} | null} */ (null));
+	/** @param {MouseEvent} e */
+	function openMore(e) {
+		const r = /** @type {HTMLElement} */ (e.currentTarget).getBoundingClientRect();
+		moreMenu = { x: r.left, y: r.bottom + 4 };
+	}
 	// 36-community (C5): the "Mine" chip — a provider that knows who is signed in says so
 	// (`provider.mine`) and marks the viewer's own entries; a facet of its own, AND-ed with tags
 	let mineOnly = $state(false);
@@ -100,7 +112,7 @@
 		}
 	}
 	const shown = $derived(
-		tabEntries.filter(
+		(tab === 'community' ? featuredFirst(tabEntries) : tabEntries).filter(
 			(/** @type {any} */ e) => matchesTags(e, activeTags) && (!mineOnly || !mineChip || e.mine === true) && matchesQuery(e, q)
 		)
 	);
@@ -397,41 +409,52 @@
 					{/each}
 				</div>
 			{/if}
+			<!-- A7: tag chips, shared by all four tabs and derived from the ACTIVE tab's own
+			     tags. OR within the facet (see matchesTags) — an AND would empty the grid on
+			     the second click, which reads as a broken filter. VR is just a chip. -->
+			{#if chips.length || mineChip || ranked.more.length}
+				<div id="templates-chips" class="tpl-chips">
+					{#if mineChip}
+						<button
+							id="templates-chip-mine"
+							class="tpl-chip"
+							class:active={mineOnly}
+							data-chip="__mine"
+							aria-pressed={mineOnly}
+							title="Only what you published"
+							onclick={() => (mineOnly = !mineOnly)}>Mine</button
+						>
+					{/if}
+					{#each chips as tag (tag)}
+						<button
+							class="tpl-chip"
+							class:active={activeTags.includes(tag)}
+							data-chip={tag}
+							aria-pressed={activeTags.includes(tag)}
+							onclick={() => toggleTag(tag)}>{tag}</button
+						>
+					{/each}
+					{#if ranked.more.length}
+						<button
+							id="templates-chips-more"
+							class="tpl-chip tpl-chip-more"
+							aria-haspopup="menu"
+							aria-expanded={!!moreMenu}
+							title="Every other tag in this tab"
+							onclick={openMore}
+							>More<Icon name="chevron-down" size={16} aria-hidden="true" /></button
+						>
+					{/if}
+					{#if activeTags.length}
+						<button id="templates-chips-clear" class="tpl-chip tpl-chip-clear" onclick={() => (activeTags = [])}>
+							Clear
+						</button>
+					{/if}
 		</div>
 		{#if tab === 'community' && $communitySearching}
 			<p id="community-searching" class="mb-2 text-xs italic text-text-faint" aria-live="polite">Searching…</p>
 		{/if}
 
-		<!-- A7: tag chips, shared by all four tabs and derived from the ACTIVE tab's own
-		     tags. OR within the facet (see matchesTags) — an AND would empty the grid on
-		     the second click, which reads as a broken filter. VR is just a chip. -->
-		{#if chips.length || mineChip}
-			<div id="templates-chips" class="tpl-chips">
-				{#if mineChip}
-					<button
-						id="templates-chip-mine"
-						class="tpl-chip"
-						class:active={mineOnly}
-						data-chip="__mine"
-						aria-pressed={mineOnly}
-						title="Only what you published"
-						onclick={() => (mineOnly = !mineOnly)}>Mine</button
-					>
-				{/if}
-				{#each chips as tag (tag)}
-					<button
-						class="tpl-chip"
-						class:active={activeTags.includes(tag)}
-						data-chip={tag}
-						aria-pressed={activeTags.includes(tag)}
-						onclick={() => toggleTag(tag)}>{tag}</button
-					>
-				{/each}
-				{#if activeTags.length}
-					<button id="templates-chips-clear" class="tpl-chip tpl-chip-clear" onclick={() => (activeTags = [])}>
-						Clear
-					</button>
-				{/if}
 			</div>
 		{/if}
 
@@ -593,6 +616,15 @@
 			and connected peers are asked before anything changes.
 		</p>
 	</div>
+	{#if moreMenu}
+		<ContextMenu
+			x={moreMenu.x}
+			y={moreMenu.y}
+			sizeKey="templates-tags"
+			items={ranked.more.map((tag) => ({ label: tag, checked: activeTags.includes(tag), action: () => toggleTag(tag) }))}
+			onclose={() => (moreMenu = null)}
+		/>
+	{/if}
 </ModalDialog>
 
 <style>
@@ -611,7 +643,11 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 6px;
-		margin-bottom: var(--space-4);
+	}
+	.tpl-chip-more {
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
 	}
 	/* 76 FW3: the search field + the provider's sort chips share one row, wrapping on a phone */
 	.tpl-search-row {

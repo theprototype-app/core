@@ -157,6 +157,33 @@ export function tagUnion(entries) {
 }
 
 /**
+ * showhide-v8 §5: which tags sit beside the search and which go under "More". A long tag row pushed the grid off
+ * the dialog, so only the `n` most RELEVANT stay out — the ones the most entries of this tab carry (ties by name) —
+ * plus every tag that is active, wherever it ranks, so a chip you turned on never hides in the menu.
+ * @param {any[]} entries @param {number} n @param {string[]} [active]
+ * @returns {{ shown: string[], more: string[] }}
+ */
+export function rankTags(entries, n, active = []) {
+	/** @type {Map<string, number>} */
+	const count = new Map();
+	for (const entry of entries ?? []) for (const tag of new Set((entry.tags ?? []).map(String))) if (tag) count.set(tag, (count.get(tag) ?? 0) + 1);
+	const ranked = [...count.keys()].sort((a, b) => (count.get(b) ?? 0) - (count.get(a) ?? 0) || a.localeCompare(b));
+	const top = ranked.slice(0, Math.max(0, n));
+	const shown = [...top, ...active.filter((t) => count.has(t) && !top.includes(t))];
+	return { shown, more: ranked.filter((t) => !shown.includes(t)).sort((a, b) => a.localeCompare(b)) };
+}
+
+/**
+ * showhide-v8 §5: Community shows FEATURED entries first (a provider marks them `featured: true`); a stable sort, so
+ * the provider's own order holds inside each half.
+ * @param {any[]} entries @returns {any[]}
+ */
+export function featuredFirst(entries) {
+	const list = entries ?? [];
+	return [...list.filter((e) => e?.featured === true), ...list.filter((e) => e?.featured !== true)];
+}
+
+/**
  * Does an entry match the active chips? OR within the facet: picking `vr` and
  * `co-op` shows anything that is either, which is what a browsing user means by
  * ticking two interests (an AND would empty the grid on the second click).

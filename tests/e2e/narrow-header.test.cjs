@@ -38,7 +38,8 @@ async function showOnly(P, which) {
 }
 async function answerRestore(P) {
 	for (let i = 0; i < 10; i++) {
-		const b = await P.$('#restore-session-dismiss');
+		// a fresh context can still be navigating (or the dev server reloads it): a lost context is a retry, not a crash
+		const b = await P.$('#restore-session-dismiss').catch(() => null);
 		if (b) return b.click().catch(() => {});
 		await P.waitForTimeout(300);
 	}

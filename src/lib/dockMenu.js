@@ -504,7 +504,8 @@ export function closeAllFloating() {
 	return n;
 }
 
- (null = closed). Every docked panel draws its own strip
+/**
+ * 44 M8 — WHERE THE DOCK'S "+" MENU IS OPEN (null = closed). Every docked panel draws its own strip
  * (DockTabs), and the empty dock's strip unmounts the moment a window docks — so a menu owned by the
  * strip died on the first Ctrl-pick there. The strips only SET this; one always-mounted renderer
  * (PhoneDockHost) draws the menu, so it outlives whichever strip opened it.

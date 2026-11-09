@@ -450,12 +450,11 @@
 							Clear
 						</button>
 					{/if}
+				</div>
+			{/if}
 		</div>
 		{#if tab === 'community' && $communitySearching}
 			<p id="community-searching" class="mb-2 text-xs italic text-text-faint" aria-live="polite">Searching…</p>
-		{/if}
-
-			</div>
 		{/if}
 
 		{#if tab === 'general'}

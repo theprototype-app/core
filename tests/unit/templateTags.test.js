@@ -2,6 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import { rankTags, featuredFirst } from '../../src/lib/sceneTemplates.js';
 
+/** @param {string} slug @param {string[]} tags @param {Record<string, unknown>} [extra] */
 const E = (slug, tags, extra = {}) => ({ slug, tags, ...extra });
 const entries = [
 	E('a', ['vr', 'physics', 'greybox']),

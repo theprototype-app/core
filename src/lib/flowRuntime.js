@@ -4293,14 +4293,27 @@ function applyToggleAnim(object, base, anim, data, time, ctx) {
 		const at = Math.max(0, poseIndexOf(poses, data.state));
 		door = { st: { from: null, fromPose: null, to: at, start: -Infinity, end: -Infinity }, seen: { ...stamps }, arrived: null, moving: false, adopted: String(data.state ?? '') };
 		doors.set(anim.id, door);
+		seeActionNode(anim, time);
 	}
 	/** @type {{kind: any, t: number, pose?: any}[]} */
 	const events = [];
 	for (const [kind, t] of Object.entries(stamps)) {
 		if (typeof t === 'number' && t !== door.seen[kind]) {
-			if (door.seen[kind] === null || t > /** @type {number} */ (door.seen[kind])) events.push({ kind, t, ...(kind === 'goto' ? { pose: data.pose } : {}) });
+			// a LATE JOINER's restored trigger log is history (the door already stands where the
+			// host saved it): it moves nothing and pulses nothing — the shared staleTrigger rule
+			const fresh = !staleTrigger(anim, t);
+			if (fresh && (door.seen[kind] === null || t > /** @type {number} */ (door.seen[kind]))) events.push({ kind, t, ...(kind === 'goto' ? { pose: data.pose } : {}) });
 			door.seen[kind] = t;
 		}
+	}
+	// the host's saved state changed under a door at rest (it arrived after our first sight, or
+	// a reload/undo wrote it): stand there, silently
+	const savedState = String(data.state ?? '');
+	if (savedState !== door.adopted) {
+		door.adopted = savedState;
+		const at = poseIndexOf(poses, savedState);
+		if (at >= 0 && !events.length && !door.moving && at !== door.st.to)
+			door.st = { from: null, fromPose: null, to: at, start: -Infinity, end: -Infinity };
 	}
 	const enabled = !(data.enabled === false || data.enabled === 0);
 	const autoClose = num(data.autoClose ?? 0);

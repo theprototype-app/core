@@ -36,6 +36,7 @@ h.run(async () => {
 			gem.position.set(...spots[i]);
 			gem.updateMatrixWorld(true);
 		});
+		{ let peer; s.peers.subscribe((v) => (peer = v))(); for (const o of gems) peer?.send({ type: 'move', uuid: o.uuid, pos: o.position.toArray(), rot: [o.rotation.x, o.rotation.y, o.rotation.z], scale: o.scale.toArray() }); } // the poses set above reach B (a direct set sends nothing)
 		s.scenePhysics.setScenePhysics({ ground: { enabled: true, height: 0 }, play: { spawn: { position: [0, 0.1, 1], yaw: 0 } } });
 		return gems.map((o) => o.uuid);
 	});

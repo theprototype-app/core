@@ -40,6 +40,7 @@ h.run(async () => {
 		crate.name = 'Crate';
 		crate.position.set(8, 0.25, 8);
 		crate.updateMatrixWorld(true);
+		{ let peer; s.peers.subscribe((v) => (peer = v))(); for (const o of [zone, crate]) peer?.send({ type: 'move', uuid: o.uuid, pos: o.position.toArray(), rot: [o.rotation.x, o.rotation.y, o.rotation.z], scale: o.scale.toArray() }); } // the poses set above reach B (a direct set sends nothing)
 		s.physics.setPhysicsFor(zone.uuid, { mode: 'static', sensor: true });
 		// a dynamic body far away keeps this suite independent of F11 (an all-static level)
 		s.physics.setPhysicsFor(crate.uuid, { mode: 'dynamic', mass: 5 });

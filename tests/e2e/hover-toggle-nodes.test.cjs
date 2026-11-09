@@ -36,6 +36,7 @@ h.run(async () => {
 		door.position.set(2.5, 1, 0);
 		bell.updateMatrixWorld(true);
 		door.updateMatrixWorld(true);
+		{ let peer; s.peers.subscribe((v) => (peer = v))(); for (const o of [bell, door]) peer?.send({ type: 'move', uuid: o.uuid, pos: o.position.toArray(), rot: [o.rotation.x, o.rotation.y, o.rotation.z], scale: o.scale.toArray() }); } // the poses set above reach B (a direct set sends nothing)
 		return { bell: bell.uuid, door: door.uuid, doorRot: door.rotation.toArray().slice(0, 3), doorPos: door.position.toArray() };
 	});
 	await A.page.waitForTimeout(1500);

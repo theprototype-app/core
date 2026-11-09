@@ -93,7 +93,7 @@ h.run(async () => {
 	const phase = () => host.page.evaluate(() => /** @type {any} */ (window).__kitApi.kit.round.phase());
 
 	await press(0);
-	await h.eventually(() => host.page.evaluate(() => /** @type {any} */ (window).__kitApi.kit.round.extra.state().intro), (v) => v === 1, 'premise: configured (intro 1 s)', 8000);
+	await h.eventually(() => host.page.evaluate(() => /** @type {any} */ (window).__stores.kit.kitDebug().doc.slices.round.intro), (v) => v === 1, 'premise: configured (intro 1 s)', 8000);
 
 	// ---- 1. start: "started" pulses (then "go"), on BOTH peers ----------------------------------
 	await press(1);

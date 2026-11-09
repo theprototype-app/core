@@ -1981,8 +1981,9 @@
 				     editing a preset is the presets lane's file), then what changed since + Reset -->
 				{#if envBase}
 					<div id="env-preset-info" class="env-info" data-based-on={envState.basedOn}>
-						<p id="env-preset-why">{PRESET_WHY[/** @type {keyof typeof PRESET_WHY} */ (envState.basedOn)] ?? ''}</p>
-						<p id="env-preset-sets"><span class="env-info-k">Sets:</span> {envSets.join(', ')}</p>
+						<p id="env-preset-why" class="env-why">{PRESET_WHY[/** @type {keyof typeof PRESET_WHY} */ (envState.basedOn)] ?? ''}</p>
+						<!-- on a phone the why line folds into this line's tooltip: the sky controls stay in view (PL29) -->
+						<p id="env-preset-sets" title={PRESET_WHY[/** @type {keyof typeof PRESET_WHY} */ (envState.basedOn)] ?? ''}><span class="env-info-k">Sets:</span> {envSets.join(', ')}</p>
 						{#if envState.modified.length}
 							<p id="env-preset-modified" class="env-modified">
 								<span><b>{envState.label}</b> · Modified: {envState.modified.join(', ')}</span>
@@ -5050,6 +5051,11 @@
 		font-size: var(--fs-badge);
 		line-height: 1.35;
 		color: var(--text-muted);
+	}
+	@media (max-width: 640px) {
+		.env-why {
+			display: none;
+		}
 	}
 	.env-info-k {
 		font-weight: 600;

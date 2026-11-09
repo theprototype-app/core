@@ -278,6 +278,8 @@ h.run(async () => {
 		console.log(`\n=== PL29 + PL14 ${dev.id} ===`);
 		const P = await h.setupPage(browser, dev.id, { context: dev.ctx });
 		await openScene(P.page);
+		// the sheet pulled up to its tallest (the default ~300 px sheet shows the pills only: see the lane report)
+		await P.page.evaluate(() => window.__stores.bottomDock.dockHeight.set(4000));
 		await P.page.waitForTimeout(800);
 		const fit = await P.page.evaluate(() => {
 			const ins = /** @type {HTMLElement | null} */ (document.querySelector('#inspector'));
@@ -316,8 +318,11 @@ h.run(async () => {
 			await tab.dispatchEvent('contextmenu');
 			await P.page.waitForTimeout(500);
 			const first = await P.page.evaluate(() => {
-				const items = [...document.querySelectorAll('.ctx-scroll [role="menuitem"], .ctx-scroll [role="menuitemcheckbox"], .ctx-scroll button')];
-				return { testid: items[0]?.getAttribute('data-testid') ?? '', text: items[0]?.textContent?.trim() ?? '' };
+				// on a phone the menu is a bottom sheet: the first item of the menu that holds the pin
+				const pin = document.querySelector('[data-testid="inspector-pin"]');
+				const menu = pin?.closest('[role="menu"]');
+				const items = menu ? [...menu.querySelectorAll('[role="menuitem"]')] : [];
+				return { testid: items[0]?.getAttribute('data-testid') ?? '', text: items[0]?.textContent?.trim() ?? '', found: !!pin };
 			});
 			h.check(first.testid === 'inspector-pin', `PL14.8 ${dev.id}: "Follow the selection" is the first long-press item (${JSON.stringify(first)})`);
 			await shots(P.page, `tab-menu-${dev.id}`);

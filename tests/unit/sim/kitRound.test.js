@@ -140,7 +140,7 @@ describe('kit.round — pause, the clock and the limit', () => {
 		R(sim, 'a').lose('lab');
 		sim.advance(800);
 		expect(phases(sim)).toEqual(['results', 'results']);
-		const auth = sim.authorities()[0];
+		const auth = /** @type {string} */ (sim.authorities()[0]);
 		const asker = auth === 'a' ? 'b' : 'a';
 		expect(R(sim, auth).win('direct')).toMatchObject({ ok: false, refused: true, reason: expect.stringContaining('results') });
 		R(sim, asker).win('asked');
@@ -154,7 +154,7 @@ describe('kit.round — pause, the clock and the limit', () => {
 	});
 	it('78 F17: start pulses "started" (and "go" when there is no intro) where it happened', () => {
 		const sim = createSim({ peers: ['a', 'b'] });
-		const auth = sim.authorities()[0];
+		const auth = /** @type {string} */ (sim.authorities()[0]);
 		const asker = auth === 'a' ? 'b' : 'a';
 		R(sim, asker).configure(1, 0, 'lose', 1);
 		R(sim, asker).start();

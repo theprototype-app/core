@@ -231,5 +231,5 @@ export function kitEntitiesRuntime() {
 
 /** the debug hook / suites */
 export function kitDebug() {
-	return { doc: kit.doc(), stats: { ...kit.stats }, pending: kit.pending.size, authority: kitAuthorityId(), me: me(), refusals: kit.refusals.map((r) => ({ ...r })) };
+	return { doc: kit.doc(), stats: { ...kit.stats }, pending: kit.pending.size, authority: kitAuthorityId(), me: me(), refusals: kit.refusals.map((/** @type {any} */ r) => ({ ...r })) };
 }

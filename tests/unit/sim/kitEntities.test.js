@@ -304,7 +304,7 @@ describe('78 F23: the dead leave the count, on every peer', () => {
 		const pulses = [];
 		for (const id of ['a', 'b'])
 			setEntityHost(sim.peer(id).kit, { pulse: (piece, ev) => pulses.push(id + ':' + piece + '-' + ev) });
-		const auth = sim.authorities()[0];
+		const auth = /** @type {string} */ (sim.authorities()[0]);
 		const other = auth === 'a' ? 'b' : 'a';
 		// research round 2's shape: a behaviour's spawn({kind, template, at, count, hp}) with no removeAfter
 		sim.peer(other).kit.api({}).spawner.spawn({ kind: 'labfoe', count: 2, hp: 30 });
@@ -341,7 +341,7 @@ describe('78 F21: mover chase / halt and health damageArea on SPAWNED entities, 
 		const TARGET = 'target-uuid';
 		for (const id of ['a', 'b'])
 			setEntityHost(sim.peer(id).kit, { resolveTarget: (ref) => (ref === TARGET ? [5, 0.3, 5] : null) });
-		const auth = sim.authorities()[0];
+		const auth = /** @type {string} */ (sim.authorities()[0]);
 		const other = sim.peer(auth === 'a' ? 'b' : 'a');
 		const node = (/** @type {string} */ type, /** @type {any} */ data, /** @type {number} */ n) => other.kit.runNodeAction(type, data, { rid: 'node:' + type + ':' + n });
 		node('kit-spawner-spawn', { kind: 'enemy', template: '', at: [-3, 0.4, -3], count: 3, spread: 1, hp: 5, speed: 1, removeAfter: 1 }, 1);

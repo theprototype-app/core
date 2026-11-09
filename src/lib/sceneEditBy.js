@@ -3,8 +3,8 @@
 // imports only svelte/store and its pure core, so peerHandler, the AI tool runner and the panel all
 // reach it without a cycle.
 //
-// HOW AN EDIT IS ATTRIBUTED. Each tracked store is subscribed; a change records the sections it
-// touched (sceneEditByCore.sectionsOf) as PENDING. Then:
+// HOW AN EDIT IS ATTRIBUTED. Each tracked store is subscribed and keeps the value at the last
+// attribution (`base`); the sections an edit touched are sceneEditByCore.sectionsOf(base, now). Then:
 //   · a LOCAL edit is confirmed by its live send (PeerConnection.send), which also stamps an additive
 //     `by` on the message — `{}` for the person, `{agent: '<label>'}` while an AI tool runs in this tab;
 //   · a REMOTE edit is confirmed right after its applier ran, IF the message carries `by`. Handshake
@@ -16,33 +16,31 @@ import { sectionsOf, authorOf } from './sceneEditByCore.js';
 /** section label -> {name, agent, self, at} @type {import('svelte/store').Writable<Record<string, {name: string, agent: boolean, self: boolean, at: number}>>} */
 export const sceneSectionEdits = writable({});
 
-/** a change older than this when its send / apply comes is not that message's change @type {number} */
-const PENDING_MS = 2000;
+/** a change no send or live message claims within this long was a re-statement (a load, a travel) @type {number} */
+const SETTLE_MS = 10000;
 
-/** @type {Map<string, {cur: any, pending: string[], pendingAt: number, ready: boolean}>} */
+/** @type {Map<string, {cur: any, base: any, ready: boolean, timer: any}>} */
 const tracked = new Map();
 
 /**
- * Follow one scene singleton store. Idempotent per kind.
+ * Follow one scene singleton store. Idempotent per kind. `base` is the value at the last attribution: a
+ * live edit is the difference between it and now. (A time window measured from the store change failed
+ * on a loaded scene: applyEnvironment between the change and the send can take seconds on a slow GPU.)
  * @param {string} kind @param {import('svelte/store').Readable<any>} store
  */
 export function trackSceneStore(kind, store) {
 	if (tracked.has(kind)) return;
-	const t = { cur: undefined, pending: /** @type {string[]} */ ([]), pendingAt: 0, ready: false };
+	const t = { cur: undefined, base: undefined, ready: false, timer: /** @type {any} */ (null) };
 	tracked.set(kind, t);
 	store.subscribe((v) => {
-		const next = v && typeof v === 'object' ? JSON.parse(JSON.stringify(v)) : v;
-		if (t.ready) {
-			const changed = sectionsOf(kind, t.cur, next);
-			if (changed.length) {
-				const now = Date.now();
-				if (now - t.pendingAt > PENDING_MS) t.pending = [];
-				t.pending = [...new Set([...t.pending, ...changed])];
-				t.pendingAt = now;
-			}
+		t.cur = v && typeof v === 'object' ? JSON.parse(JSON.stringify(v)) : v;
+		if (!t.ready) {
+			t.base = t.cur;
+			t.ready = true;
+			return;
 		}
-		t.cur = next;
-		t.ready = true;
+		clearTimeout(t.timer);
+		t.timer = setTimeout(() => (t.base = t.cur), SETTLE_MS);
 	});
 }
 
@@ -61,14 +59,12 @@ export function endAiEdit() {
 /** @param {string} kind @param {{name: string, agent: boolean, self: boolean}} who */
 function confirm(kind, who) {
 	const t = tracked.get(kind);
-	if (!t || !t.pending.length) return;
+	if (!t) return;
+	const sections = sectionsOf(kind, t.base, t.cur);
+	t.base = t.cur;
+	clearTimeout(t.timer);
+	if (!sections.length) return;
 	const at = Date.now();
-	if (at - t.pendingAt > PENDING_MS) {
-		t.pending = [];
-		return;
-	}
-	const sections = t.pending;
-	t.pending = [];
 	sceneSectionEdits.update((m) => {
 		const out = { ...m };
 		for (const s of sections) out[s] = { ...who, at };
@@ -77,7 +73,7 @@ function confirm(kind, who) {
 }
 
 /**
- * A live LOCAL send of a scene singleton: record the pending sections as ours (or the AI's) and
+ * A live LOCAL send of a scene singleton: record the sections it changed as ours (or the AI's) and
  * return the `by` field the message carries. `null` = not a tracked edit.
  * @param {any} data the outgoing message
  */
@@ -97,8 +93,9 @@ export function noteRemoteSceneEdit(data, peer) {
 	const kind = data?.type;
 	const t = tracked.get(kind);
 	if (!t) return;
-	if (!data?.by || typeof data.by !== 'object' || (kind === 'scenepost' && data.key)) {
-		t.pending = []; // a re-statement: nobody just changed it
+	if (kind === 'scenepost' && data.key) return;
+	if (!data?.by || typeof data.by !== 'object') {
+		t.base = t.cur; // a re-statement: nobody just changed it
 		return;
 	}
 	confirm(kind, { ...authorOf(data.by, peer), self: false });

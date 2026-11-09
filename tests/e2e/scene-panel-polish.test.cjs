@@ -206,11 +206,16 @@ h.run(async () => {
 	const none = await text(page, '#stats-baked-light');
 	h.check(none === 'none', `PL1.1 an unbaked scene says "none" ("${none}")`);
 	await shots(page, 'stats-none');
-	await page.evaluate(() => {
-		const c = window.__stores.commandsHandler;
-		c.sceneCommand('/create box');
-		c.sceneCommand('/create sphere');
-	});
+	// static meshes (a /create box moves with physics, and the bake leaves those out)
+	await page.evaluate(() =>
+		window.__stores.aiTools.executeAiTool('create_objects', {
+			objects: [
+				{ kind: 'primitive', primitive: 'Box', name: 'Floor', params: [6, 0.2, 6], position: [0, -0.1, 0] },
+				{ kind: 'primitive', primitive: 'Box', name: 'Wall', params: [6, 2, 0.2], position: [0, 1, -3] },
+				{ kind: 'primitive', primitive: 'Box', name: 'Crate', params: [1, 1, 1], position: [1, 0.5, 0] }
+			]
+		})
+	);
 	await page.waitForTimeout(1200);
 	const bake = await page.evaluate(async () => {
 		const runner = window.__stores.bakeRunner;

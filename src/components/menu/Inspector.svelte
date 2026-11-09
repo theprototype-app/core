@@ -1683,7 +1683,7 @@
 	});
 	/** the line under a shared section's header ('' = none) @param {string} label */
 	const sectionNote = (label) =>
-		editLine($sceneSectionEdits[label], { now: Math.max(editClock, $sceneSectionEdits[label]?.at ?? 0), others: (/** @type {any[]} */ ($userdata) ?? []).length > 1 });
+		editLine($sceneSectionEdits[label], { now: Math.max(editClock, $sceneSectionEdits[label]?.at ?? 0), others: (/** @type {any} */ ($peers)?.openedPeers?.size ?? 0) > 0 || (/** @type {any[]} */ ($userdata) ?? []).length > 1 });
 	const ENV_FEATURED = ['studio', 'daylight', 'sunset', 'night', 'clearsky', 'cinematic'];
 	/** the pill that reads as applied: an edited copy's base preset, else the state's own key */
 	const envPillValue = $derived($environment.preset === 'custom' && envState.basedOn ? envState.basedOn : $environment.preset);

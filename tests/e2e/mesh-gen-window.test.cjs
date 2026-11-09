@@ -18,7 +18,7 @@ const fs = require('fs');
 const SHOTS = process.env.SHOTS || '';
 if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
 const shot = async (page, name) => {
-	if (SHOTS) await page.screenshot({ path: path.join(SHOTS, name) });
+	if (SHOTS) await page.screenshot({ path: path.join(SHOTS, name), timeout: 20000 }).catch((e) => console.log(`shot ${name} skipped: ${String(e.message).split('\n')[0]}`));
 };
 const MESHY = '/mock-meshy';
 

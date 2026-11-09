@@ -15,8 +15,12 @@ const fs = require('fs');
 
 const SHOTS = process.env.SHOTS || '';
 if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
+// a background peer page renders at a crawl and its screenshot can hang to the runner cap: bring it to front,
+// bound it, and never fail a suite on a picture
 const shot = async (page, name) => {
-	if (SHOTS) await page.screenshot({ path: path.join(SHOTS, name) });
+	if (!SHOTS) return;
+	await page.bringToFront().catch(() => {});
+	await page.screenshot({ path: path.join(SHOTS, name), timeout: 20000 }).catch((e) => console.log(`shot ${name} skipped: ${String(e.message).split('\n')[0]}`));
 };
 
 const seqs = (page) =>

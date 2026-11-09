@@ -88,8 +88,12 @@ h.run(async () => {
 	// the editor hands its text to the tab store on its own beat: Save applies what the STORE holds, so wait for it
 	for (let i = 0; i < 20 && !/value:\s*7/.test((await activeTab(page))?.code ?? ''); i++) await page.waitForTimeout(150);
 	await page.locator('#code-ws-save').click();
-	await page.waitForTimeout(600);
-	const after = await graphNodes(page);
+	// the apply loads graphJsonApply lazily: on a cold dev server the first import takes seconds, so poll
+	let after = await graphNodes(page);
+	for (let i = 0; i < 40 && after.find((n) => n.id === 'n1')?.value !== 7; i++) {
+		await page.waitForTimeout(250);
+		after = await graphNodes(page);
+	}
 	const saw = await activeTab(page);
 	const focusAt = await S(page, () => (document.activeElement?.id || document.activeElement?.className || '').toString().slice(0, 60));
 	h.check(after.find((n) => n.id === 'n1')?.value === 7, `3.3 Save applied the text to the graph (${JSON.stringify(after)}; tab has 7: ${/value:\s*7/.test(saw?.code ?? '')}; err ${JSON.stringify(saw?.error)}; focus ${focusAt})`);
@@ -110,11 +114,26 @@ h.run(async () => {
 	await page.waitForTimeout(400);
 	h.check((await activeTab(page))?.format === 'json', '2.5 (setup) graph.json is the active tab');
 	// leave the Code pane's key scope (a press there keeps global shortcuts away, keyScope) with a press on the open
-	// viewport: (5, 450) is where the viewport's left column handle sits now, so press clear of it
-	await page.mouse.click(800, 200);
+	// viewport, clear of the column handles
+	// (a fixed point can land inside the Code window, depending on where it opened): find one the 3D canvas owns
+	const free = await S(page, () => {
+		for (let y = 120; y < innerHeight - 80; y += 40)
+			for (let x = 120; x < innerWidth - 120; x += 40) {
+				const el = document.elementFromPoint(x, y);
+				if (el?.tagName === 'CANVAS' && !el.closest('[data-key-scope]')) return { x, y };
+			}
+		return null;
+	});
+	h.check(!!free, `2.5b (premise) an open spot of the 3D view to press (${JSON.stringify(free)})`);
+	await page.mouse.click(free?.x ?? 800, free?.y ?? 200);
 	await page.keyboard.press('Alt+f');
-	await page.waitForTimeout(800);
-	h.check((await activeTab(page))?.format === 'text', '2.6 Alt+F raises the flow code tab');
+	let fmt = null;
+	for (let i = 0; i < 24 && fmt !== 'text'; i++) {
+		await page.waitForTimeout(250);
+		fmt = (await activeTab(page))?.format;
+	}
+	const focus26 = await S(page, () => (document.activeElement?.id || document.activeElement?.tagName || '').toString().slice(0, 40));
+	h.check(fmt === 'text', `2.6 Alt+F raises the flow code tab (${fmt}; focus ${focus26})`);
 
 	// --- 5: the edge handles + the lock ---
 	const leftOpen = () => page.evaluate(() => !!document.querySelector('.code-ws .code-side-left'));

@@ -1,5 +1,8 @@
 // showhide-v8 §6 — THE BURGER, DIRECTION A: Windows ▸, and opening the menu fetches nothing.
 //
+//   0. the regroup: search on top, then File · Scene · Versions · Window · Help, "Clear scene…" last in Scene, and
+//      Settings + the version as a footer that stays in view when the menu scrolls (premise: on a short window the
+//      menu DOES scroll and the last Help row is below its bottom edge)
 //   1. opening the burger makes no network request (the counterfactual: a request made by the page right after
 //      is seen by the same listener)
 //   2. Windows ▸ lists the windows with their shortcuts, an open mark on the open ones, then Focus mode / Full
@@ -56,6 +59,39 @@ h.run(async () => {
 	page.off('request', onReq);
 	h.check(control.some((u) => /robots\.txt/.test(u)), `1.1 (counterfactual) the listener sees a request the page makes (${JSON.stringify(control)})`);
 	h.check(during.length === 0, `1.2 opening the burger makes no request (${JSON.stringify(during)})`);
+
+	// --- 0: the direction A order + the footer ---
+	const order = await page.evaluate(() => {
+		const nav = document.querySelector('#sidebar70');
+		const kids = [...nav.querySelectorAll('.side-label, #open-command-palette, #clear-scene, #open-sessions-manager, #open-windows-menu, #open-settings, #open-version, #report-problem')];
+		return kids.map((e) => (e.classList.contains('side-label') ? 'L:' + e.textContent.trim() : '#' + e.id));
+	});
+	const want = ['#open-command-palette', 'L:File', 'L:Scene', '#clear-scene', 'L:Versions', '#open-sessions-manager', 'L:Window', '#open-windows-menu', 'L:Help', '#report-problem', '#open-settings', '#open-version'];
+	h.check(JSON.stringify(order) === JSON.stringify(want), `0.1 search, File, Scene (Clear scene… last), Versions, Window, Help, footer (${JSON.stringify(order)})`);
+	const lastScene = await page.evaluate(() => {
+		const rows = [...document.querySelectorAll('#sidebar70 > *')];
+		const i = rows.findIndex((e) => e.id === 'clear-scene');
+		return { prev: rows[i - 1]?.className ?? '', next: rows[i + 1]?.className ?? '', text: rows[i]?.textContent.trim() };
+	});
+	h.check(/side-div/.test(lastScene.prev) && /side-div/.test(lastScene.next) && lastScene.text === 'Clear scene…', `0.2 "Clear scene…" sits alone behind a divider (${JSON.stringify(lastScene)})`);
+	h.check((await page.locator('#open-version').innerText()).trim().match(/^\d+\.\d+\.\d+/), '0.3 the footer shows the version');
+	h.check((await page.locator('#sidebar70 .side-row', { hasText: 'Undo' }).count()) === 0, '0.4 no Undo / Redo row (owner)');
+	await page.evaluate(() => window.__stores.closeMenu.set(true));
+	await page.setViewportSize({ width: 1440, height: 560 });
+	await openBurger(page);
+	const foot = await page.evaluate(() => {
+		const nav = document.querySelector('#sidebar70');
+		nav.scrollTop = 0;
+		const n = nav.getBoundingClientRect();
+		const f = document.querySelector('#sidebar70 .side-foot').getBoundingClientRect();
+		const last = document.querySelector('#report-moment').getBoundingClientRect();
+		return { scrolls: nav.scrollHeight > nav.clientHeight + 8, navBottom: Math.round(n.bottom), footBottom: Math.round(f.bottom), footTop: Math.round(f.top), lastTop: Math.round(last.top) };
+	});
+	h.check(foot.scrolls && foot.lastTop > foot.footTop, `0.5 (premise) on a short window the menu scrolls and the last Help row is hidden below (${JSON.stringify(foot)})`);
+	h.check(Math.abs(foot.footBottom - foot.navBottom) <= 12 && foot.footTop < foot.navBottom, `0.6 ...while the Settings footer stays at the menu's bottom, in view (${JSON.stringify(foot)})`);
+	await page.evaluate(() => window.__stores.closeMenu.set(true));
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await openBurger(page);
 
 	// --- 2: the menu ---
 	await page.evaluate(() => window.__stores.explorerClose.set(false));

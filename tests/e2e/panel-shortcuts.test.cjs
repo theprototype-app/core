@@ -174,11 +174,13 @@ h.run(async () => {
 		await press(A.page, row.press);
 		closed = await storeVal(A.page, row.store);
 		// showhide-v8: Alt+F goes through flowCodeRedirect (a dynamic import, then the tab resolves) — slower than 400 ms cold
-		for (let i = 0; i < 20 && row.reopens && closed !== false; i++) {
+		// (and openCode brings its dock tab forward through a second dynamic import of bottomDock)
+		let st = await dockState(A.page);
+		for (let i = 0; i < 25 && row.reopens && (closed !== false || st.visible !== row.dock); i++) {
 			await A.page.waitForTimeout(200);
 			closed = await storeVal(A.page, row.store);
+			st = await dockState(A.page);
 		}
-		const st = await dockState(A.page);
 		h.check(closed === false, `3.${row.keys} opens the ${row.dock} view (${row.store}=${closed})`);
 		h.check(st.visible === row.dock, `3.${row.keys} ...as the visible dock tab (visible=${st.visible})`);
 		// a second press hides it again, per togglePanel's tree (step 4)

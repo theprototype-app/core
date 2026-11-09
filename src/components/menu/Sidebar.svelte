@@ -51,7 +51,8 @@
 	import { openAssetBrowser } from '$lib/cc0/assetBrowserState.js'; // 47-cc0
 	import { openWindowHere, burgerWindowItems, closeAllFloating } from '$lib/dockMenu'; // dock-fixes D: opens where you work; showhide-v8 §6 Windows ▸
 	import { snapToEdges, layoutLocked, layoutPerScene } from '$lib/windowPrefs.js';
-	import { bindingOf } from '$lib/shortcuts';
+	import { bindingOf, cheatSheetOpen } from '$lib/shortcuts';
+	import { APP_VERSION } from '$lib/version.js'; // showhide-v8 §6: the footer's version
 	import { toggleViewportFocus } from '$lib/focusMode';
 	import { resetWindowLayout } from '$lib/dragWindow';
 	import { editedSinceSave, noteFileSaved } from '$lib/saveState.js'; // showhide-v8 §6
@@ -272,7 +273,14 @@
 		     surface, 32px rows, faint section labels (Project · Scene · Collaborate · App) and a
 		     Segmented save format. Every row, id and handler is unchanged; Modules stays under
 		     Scene (phase 126's order, sidebar-reorg) and Settings stays in App. -->
-		<div class="side-label">Project</div>
+		<!-- showhide-v8 §6 (burger direction A, owner 2026-11-09): File · Scene · Versions · Window · Help, the command
+		     search on top and Settings + the version as a footer. Every id and handler is unchanged; only the order and a few
+		     words move ("Load" -> "Open…", "Clear scene…" last in Scene behind a divider). No Undo / Redo row (owner). -->
+		<button id="open-command-palette" class="side-row side-search" onclick={() => { closeMenu.set(true); commandPaletteOpen.set(true); }}>
+			<span class="side-ico"><Icon name="search" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Search commands…</span>
+			<span class="side-hint">Ctrl+K</span>
+		</button>
+		<div class="side-label">File</div>
 		{#if $projectActionsLayout === 'compact'}
 			<!-- 41b H14 — COMPACT (the desktop / unfolded default): a strict two-column grid at list-row
 			     height, DCC order create -> open / save -> interchange. Save saves with the last-used
@@ -283,7 +291,7 @@
 					<span class="side-ico"><Icon name="layout-template" size={16} aria-hidden="true" /></span><span class="pa-label">New from template…</span>
 				</button>
 				<button id="project-load" class="side-row pa-btn" title="Open a .tp project, .tpscene scene or .json file" onclick={() => pickFile('load-file')}>
-					<span class="side-ico"><Icon name="folder-open" size={16} aria-hidden="true" /></span><span class="pa-label">Load</span>
+					<span class="side-ico"><Icon name="folder-open" size={16} aria-hidden="true" /></span><span class="pa-label">Open…</span>
 				</button>
 				<!-- showhide-v8 §6 (burger direction A): [Save] — greyed until something changed since the last save — and
 				     [Save as… ▾], a menu: Save scene as file… · Save project as file… · Save as copy… · Save options… -->
@@ -318,7 +326,7 @@
 			<span class="side-ico"><Icon name="file-input" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Import</span>
 		</button>
 		<button class="side-row" onclick={() => pickFile('load-file')}>
-			<span class="side-ico"><Icon name="folder-open" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Load</span>
+			<span class="side-ico"><Icon name="folder-open" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Open…</span>
 		</button>
 		<button class="side-row" onclick={() => saveFromMenu(saveFormat)}>
 			<span class="side-ico"><Icon name="save" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Save</span>
@@ -362,7 +370,6 @@
 
 		<div class="side-div"></div>
 		<div class="side-label">Scene</div>
-
 		<!-- Scene -->
 		<!-- 15-O: the "●" text prefix is gone — it shifted the label as it appeared
 		     (read as a glitch) and duplicated what the open panel already shows.
@@ -373,17 +380,9 @@
 			<span class="side-ico"><Icon name="sliders-horizontal" size={16} aria-hidden="true" /></span>
 			<span class="flex-1 whitespace-nowrap">Configure Scene</span>
 		</button>
-		<button id="clear-scene" class="side-row" onclick={() => { closeMenu.set(true); void confirmClearScene(); }}>
-			<span class="side-ico"><Icon name="trash-2" size={16} class="ico-danger" aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Clear Scene</span>
-		</button>
 		<!-- 47-cc0: free CC0 models, skies and materials (Poly Haven + ambientCG) -->
 		<button id="open-asset-browser" class="side-row" onclick={() => { openWindowHere('assets', openAssetBrowser); closeMenu.set(true); }}>
 			<span class="side-ico"><Icon name="package-open" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Free assets (CC0)</span>
-		</button>
-		<!-- showhide-v8 §6: Windows ▸ (every window, its shortcut, open mark; focus / full screen / reset / close floating) -->
-		<button id="open-windows-menu" class="side-row" aria-haspopup="menu" aria-expanded={!!windowsMenu} onclick={openWindowsMenu}>
-			<span class="side-ico"><Icon name="app-window" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Windows</span>
-			<Icon name="chevron-right" size={16} aria-hidden="true" />
 		</button>
 		<!-- 76 FW1: until a new user's first Play, Modules and Layouts wait under "More" -->
 		{#if !$simpleUntilPlay || sceneMore}
@@ -419,10 +418,12 @@
 			</button>
 		{/if}
 		<div class="side-div"></div>
-		<div class="side-label">Collaborate</div>
-		<button id="open-sessions-manager" class="side-row" onclick={() => { sessionsOpen.set(true); closeMenu.set(true); }}>
-			<span class="side-ico"><Icon name="archive" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Sessions</span>
+		<button id="clear-scene" class="side-row" onclick={() => { closeMenu.set(true); void confirmClearScene(); }}>
+			<span class="side-ico"><Icon name="trash-2" size={16} class="ico-danger" aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Clear scene…</span>
 		</button>
+
+		<div class="side-div"></div>
+		<div class="side-label">Versions</div>
 		<!-- 36 B14: named checkpoints + the timeline they live in -->
 		<button id="save-checkpoint" class="side-row" onclick={() => { checkpointSaveOpen.set(true); closeMenu.set(true); }}>
 			<span class="side-ico"><Icon name="bookmark" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Save checkpoint…</span>
@@ -431,37 +432,37 @@
 		<button id="open-checkpoints" class="side-row" onclick={() => { checkpointsOpen.set(true); closeMenu.set(true); }}>
 			<span class="side-ico"><Icon name="history" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Checkpoints</span>
 		</button>
+		<button id="open-sessions-manager" class="side-row" onclick={() => { sessionsOpen.set(true); closeMenu.set(true); }}>
+			<span class="side-ico"><Icon name="archive" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Sessions</span>
+		</button>
 
 		<div class="side-div"></div>
-		<div class="side-label">App</div>
-
-		<!-- App -->
+		<div class="side-label">Window</div>
+		<!-- showhide-v8 §6: Windows ▸ (every window, its shortcut, open mark; focus / full screen / reset / close floating) -->
+		<button id="open-windows-menu" class="side-row" aria-haspopup="menu" aria-expanded={!!windowsMenu} onclick={openWindowsMenu}>
+			<span class="side-ico"><Icon name="app-window" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Windows</span>
+			<Icon name="chevron-right" size={16} aria-hidden="true" />
+		</button>
 		<!-- 26-A: what the scene costs. It sits beside Settings rather than under it
 		     because it is something you WATCH while working, not something you set. -->
 		<button id="open-stats" class="side-row" onclick={() => { statsOpen.set(true); closeMenu.set(true); }}>
 			<span class="side-ico"><Icon name="gauge" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Statistics</span>
 		</button>
-		<!-- 34 R1: the last 30 s of frame data + what the viewport shows + a note, kept as a
-			recording (and sent when performance reports are on) -->
-		<button id="report-moment" class="side-row" onclick={() => { closeMenu.set(true); void openMomentReport(); }}>
-			<span class="side-ico"><Icon name="flag" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Report this moment</span>
-		</button>
-		<!-- 37 R20: a picture + boxes round what is wrong + a note, sent to the team with consent -->
-		<button id="report-problem" class="side-row" onclick={() => { closeMenu.set(true); void openProblemReport(); }}>
-			<span class="side-ico"><Icon name="message-square-warning" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Report a problem</span>
-		</button>
-		<!-- phone-polish item 5: the command palette was Ctrl+K only — no way in on a touch screen -->
-		<button id="open-command-palette" class="side-row" onclick={() => { closeMenu.set(true); commandPaletteOpen.set(true); }}>
-			<span class="side-ico"><Icon name="search" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Command palette</span>
-			<span class="side-hint">Ctrl+K</span>
-		</button>
-		<!-- 36 U5: "Live profiler" left the menu — it is a Profiler tool, opened from the
-		     Profiler tab's own header (#profiler-open-live) beside Record and Import -->
-		<button class="side-row" onclick={() => { settingsOpen.set(!$settingsOpen); closeMenu.set(true); }}>
-			<span class="side-ico"><Icon name="settings" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Settings</span>
-		</button>
+
+		<div class="side-div"></div>
+		<div class="side-label">Help</div>
 		<button class="side-row" onclick={() => window.open('https://docs.theprototype.app', '_blank')}>
 			<span class="side-ico"><Icon name="book-open" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Docs</span>
+		</button>
+		<!-- showhide-v8 §6: the "?" cheat sheet had no menu row -->
+		<button id="open-shortcuts" class="side-row" onclick={() => { closeMenu.set(true); cheatSheetOpen.set(true); }}>
+			<span class="side-ico"><Icon name="keyboard" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Keyboard shortcuts</span>
+			<span class="side-hint">{bindingOf('help.cheatsheet') ?? '?'}</span>
+		</button>
+		<!-- 36 I5: the editor tour (Settings ▸ Tours has the VR welcome + reset). 76 FW1: it no longer starts by
+		     itself after the Welcome — the first-win quest does — so this row is where it lives -->
+		<button id="open-tour" class="side-row" onclick={() => { closeMenu.set(true); startEditorTour(); }}>
+			<span class="side-ico"><Icon name="compass" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Tour the interface</span>
 		</button>
 		<!-- the unseen cue is a CLASS toggle, not an {#if}: clicking this row closes the
 		     menu, and destroying a nested branch inside the subtree being destroyed in
@@ -471,11 +472,22 @@
 			<span class="flex-1 whitespace-nowrap">What's new</span>
 			<span class="row-dot" class:row-dot-on={$whatsNewUnseen}></span>
 		</button>
-		<!-- 36 I5: the editor tour (Settings ▸ Tours has the VR welcome + reset). 76 FW1: it no longer starts by
-		     itself after the Welcome — the first-win quest does — so this row is where it lives -->
-		<button id="open-tour" class="side-row" onclick={() => { closeMenu.set(true); startEditorTour(); }}>
-			<span class="side-ico"><Icon name="compass" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Tour the interface</span>
+		<!-- 37 R20: a picture + boxes round what is wrong + a note, sent to the team with consent -->
+		<button id="report-problem" class="side-row" onclick={() => { closeMenu.set(true); void openProblemReport(); }}>
+			<span class="side-ico"><Icon name="message-square-warning" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Report a problem…</span>
 		</button>
+		<!-- 34 R1: the last 30 s of frame data + what the viewport shows + a note, kept as a
+			recording (and sent when performance reports are on) -->
+		<button id="report-moment" class="side-row" onclick={() => { closeMenu.set(true); void openMomentReport(); }}>
+			<span class="side-ico"><Icon name="flag" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Report this moment</span>
+		</button>
+		<!-- showhide-v8 §6: Settings + the version, a footer that stays in view while the rows scroll; the version opens What's new -->
+		<div class="side-foot">
+			<button id="open-settings" class="side-row" onclick={() => { settingsOpen.set(!$settingsOpen); closeMenu.set(true); }}>
+				<span class="side-ico"><Icon name="settings" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Settings</span>
+			</button>
+			<button id="open-version" class="side-version" title="What's new in this version" onclick={() => { openWhatsNew(); closeMenu.set(true); }}>{APP_VERSION}</button>
+		</div>
 	</nav>
 {/if}
 
@@ -625,6 +637,34 @@
 		letter-spacing: var(--tracking-section);
 		text-transform: uppercase;
 		color: var(--text-faint);
+	}
+	/* showhide-v8 §6: the footer (Settings + version) stays at the bottom of the scrolling menu */
+	.side-foot {
+		position: sticky;
+		bottom: 0;
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		margin-top: 5px;
+		padding-top: 4px;
+		border-top: 1px solid var(--border);
+		background: var(--surface-1);
+	}
+	.side-foot .side-row {
+		flex: 1 1 auto;
+	}
+	.side-version {
+		flex: 0 0 auto;
+		padding: 0 8px;
+		min-height: 32px;
+		border-radius: var(--radius-input);
+		color: var(--text-faint);
+		font-family: var(--font-ui-mono);
+		font-size: var(--fs-badge);
+	}
+	.side-version:hover {
+		background-color: var(--surface-hover);
+		color: var(--text);
 	}
 	.side-div {
 		height: 1px;

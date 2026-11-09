@@ -87,7 +87,7 @@ h.run(async () => {
 	if (g) {
 		h.check(/New from template/.test(g.templates?.text ?? '') && Math.abs((g.templates?.w ?? 0) - g.grid.w) <= 1, `row 1: "New from template…" spans the full width (${g.templates?.w} of ${g.grid.w})`);
 		const y2 = g.load?.y, y3 = g.imp?.y;
-		h.check(g.load?.text === 'Load' && g.save?.y === y2 && (g.save?.x ?? 0) > (g.load?.x ?? 0), `row 2: Load | Save ▾ (${JSON.stringify([g.load, g.save])})`);
+		h.check(g.load?.text === 'Open…' && g.save?.y === y2 && (g.save?.x ?? 0) > (g.load?.x ?? 0), `row 2: Open… | Save ▾ (${JSON.stringify([g.load, g.save])})`);
 		h.check(g.imp?.text === 'Import' && g.exp?.y === y3 && /Export…/.test(g.exp?.text ?? '') && (y3 ?? 0) > (y2 ?? 0), `row 3: Import | Export… (${JSON.stringify([g.imp, g.exp])})`);
 		h.check(Math.abs((g.load?.w ?? 0) - (g.save?.w ?? 0)) <= 2 && Math.abs((g.imp?.w ?? 0) - (g.exp?.w ?? 0)) <= 2 && Math.abs((g.load?.w ?? 0) - (g.imp?.w ?? 0)) <= 2, 'a strict two-column grid: every half cell is one width');
 		const hs = [g.templates, g.load, g.saveMain, g.imp, g.exp].map((c) => c?.h ?? 0);

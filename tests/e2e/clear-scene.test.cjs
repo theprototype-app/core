@@ -38,7 +38,7 @@ h.run(async () => {
 	// clear via the sidebar with the confirmation toast
 	await A.page.evaluate(() => window.__stores.closeMenu.set(false));
 	await A.page.waitForTimeout(400);
-	await A.page.getByText('Clear Scene', { exact: true }).click();
+	await A.page.locator('#clear-scene').click();
 	await A.page.waitForTimeout(300);
 	h.check(
 		await A.page.getByText(/Clear the scene for everyone/).isVisible(),
@@ -51,7 +51,7 @@ h.run(async () => {
 	h.check((await childCount(A.page)) === 2, 'cancel keeps the scene');
 
 	// confirm — everything clears on BOTH peers, including module content
-	await A.page.getByText('Clear Scene', { exact: true }).click();
+	await A.page.locator('#clear-scene').click();
 	await A.page.waitForTimeout(300);
 	await A.page.getByRole('button', { name: 'Clear', exact: true }).click();
 	await h.eventually(() => childCount(A.page), (n) => n === 0, 'objects cleared on A');
@@ -92,7 +92,7 @@ h.run(async () => {
 	});
 	await A.page.evaluate(() => window.__stores.closeMenu.set(false));
 	await A.page.waitForTimeout(300);
-	await A.page.getByText('Clear Scene', { exact: true }).click();
+	await A.page.locator('#clear-scene').click();
 	await A.page.waitForTimeout(300);
 	h.check(
 		await A.page.getByText(/View-only — ask an editor to clear the scene/).isVisible(),
@@ -112,7 +112,7 @@ h.run(async () => {
 	await A.page.evaluate(() => window.__stores.cloudHooks.rolesInfo.set(null));
 	await A.page.evaluate(() => window.__stores.closeMenu.set(false));
 	await A.page.waitForTimeout(300);
-	await A.page.getByText('Clear Scene', { exact: true }).click();
+	await A.page.locator('#clear-scene').click();
 	await h.eventually(
 		() => A.page.evaluate(() => window.__stores.__clearSends),
 		(n) => n === 1,

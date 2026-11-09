@@ -104,19 +104,22 @@ h.run(async () => {
 	h.check(names.some((t) => /^Node editor/.test(t)) && names.some((t) => /^Explorer/.test(t)) && names.some((t) => /^Code/.test(t)), '2.1 the windows are listed');
 	h.check(names.some((t) => /Explorer.*Alt\+E/.test(t)), '2.2 ...with their shortcuts');
 	h.check(rows.find((r) => /^Explorer/.test(r.text))?.checked === true && rows.find((r) => /^Animation/.test(r.text))?.checked === false, '2.3 an open mark on the open window only');
-	const tail = names.slice(-7, -3).map((t) => t.replace(/Ctrl\+Space$/, '').trim());
-	h.check(JSON.stringify(tail) === JSON.stringify(['Focus mode', 'Full screen', 'Reset positions and sizes', 'Close all floating windows']), `2.4 then the window commands (${JSON.stringify(tail)})`);
+	// the brief's order after the panels: | Focus mode · Full screen | Reset · Close all floating | the three switches
+	// (a separator row has no text)
+	const tail = names.slice(-10).map((t) => t.replace(/Ctrl\+Space$/, '').trim() || '|');
+	const wantTail = ['|', 'Focus mode', 'Full screen', '|', 'Reset positions and sizes', 'Close all floating windows', '|', 'Snap to edges', 'Lock layout', 'Remember layout per scene'];
+	h.check(JSON.stringify(tail) === JSON.stringify(wantTail), `2.4 then the window commands in two groups, then the switches (${JSON.stringify(tail)})`);
 	const switches = rows.slice(-3);
 	h.check(JSON.stringify(switches.map((r) => r.text)) === JSON.stringify(['Snap to edges', 'Lock layout', 'Remember layout per scene']) && switches.every((r) => !r.checked), `2.5 then the three switches, all off by default (${JSON.stringify(switches)})`);
 
 	// --- 3: reveal, never close ---
-	await page.locator('[role="menu"] [role="menuitem"], [role="menu"] [role="menuitemcheckbox"]').filter({ hasText: /^Explorer/ }).first().click();
+	await page.locator('[role="menu"] [role="menuitem"], [role="menu"] [role="menuitemcheckbox"]').filter({ hasText: /^\s*Explorer/ }).first().click();
 	await page.waitForTimeout(600);
 	h.check((await read(page, 'explorerClose')) === false, '3.1 a click on the open Explorer keeps it open (reveals)');
 	await openBurger(page);
 	await page.locator('#open-windows-menu').click();
 	await page.waitForSelector('[role="menu"]', { timeout: 5000 });
-	await page.locator('[role="menu"] [role="menuitem"], [role="menu"] [role="menuitemcheckbox"]').filter({ hasText: /^Animation/ }).first().click();
+	await page.locator('[role="menu"] [role="menuitem"], [role="menu"] [role="menuitemcheckbox"]').filter({ hasText: /^\s*Animation/ }).first().click();
 	await page.waitForTimeout(900);
 	h.check((await read(page, 'animationClose')) === false, '3.2 a click on a closed window opens it');
 

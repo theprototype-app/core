@@ -104,6 +104,7 @@
 			{ separator: true },
 			{ label: 'Focus mode', icon: 'focus', hint: bindingOf('view.focus') ?? 'Ctrl+Space', tooltip: 'The viewport alone, nothing over it; again to restore', action: () => { closeMenu.set(true); toggleViewportFocus(); } },
 			{ label: 'Full screen', icon: 'fullscreen', tooltip: 'The app fills the screen (Esc leaves)', action: () => toggleFullScreen() },
+			{ separator: true },
 			{ label: 'Reset positions and sizes', icon: 'rotate-ccw', tooltip: 'Every floating window back to where and how big it started', action: () => { resetWindowLayout(); showToast('Window positions and sizes reset'); } },
 			{ label: 'Close all floating windows', icon: 'x', tooltip: 'Docked, sidebar and pop-out windows stay', action: () => { const n = closeAllFloating(); showToast(n ? `Closed ${n} floating window${n === 1 ? '' : 's'}` : 'No floating windows were open'); } },
 			{ separator: true },

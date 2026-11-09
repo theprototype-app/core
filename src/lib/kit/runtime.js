@@ -41,6 +41,8 @@ export { KIT_DOC, KIT_REQ };
 export function primeKitRuntime() {
 	import('../physics').then((m) => (physicsRef = m)).catch(() => {});
 	import('../flowRuntime').then((m) => (flowRef = m)).catch(() => {});
+	// 93 LP0: the scene's Levels table defines kit.levels on every peer (78 F19: nodes need no module code)
+	import('../gameLevels/runtime.js').then((m) => m.installLevelsRuntime()).catch(() => {});
 	// the K3 pause menu's Restart restarts a kit round (a game using kit.round needs no hook of
 	// its own); a game that never started one is left alone. Dynamic: gameShell reaches
 	// playSettings, which reads this file.

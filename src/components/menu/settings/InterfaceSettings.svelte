@@ -69,6 +69,7 @@
 	import PanelsButtonSettings from './PanelsButtonSettings.svelte'; // dock-fixes item 8
 	import PopOutWindowSettings from './PopOutWindowSettings.svelte'; // 70 W3/W5
 	import PanelHeaderSettings from './PanelHeaderSettings.svelte'; // 42 I1
+	import ChromeButtonsSettings from './ChromeButtonsSettings.svelte'; // panel-gestures item 5
 	import PhoneBarSettings from './PhoneBarSettings.svelte'; // 42 I5
 	import { gameSoundVolume } from '$lib/gameSfx';
 	import { gameMusicVolume } from '$lib/gameMusic';
@@ -301,6 +302,7 @@
 		<PanelsButtonSettings />
 		<PopOutWindowSettings />
 		<PanelHeaderSettings />
+		<ChromeButtonsSettings />
 		<SettingRow id="row-touch-tools" label="Touch tools" description="Undo, Redo and Multi-select buttons beside the logo. On by default on phones.">
 			<Toggle id="setting-touch-tools" label="Touch tools" bind:checked={$touchTools} />
 		</SettingRow>

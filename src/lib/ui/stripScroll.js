@@ -4,10 +4,19 @@
 // and the user can SEE there is more. `use:stripScroll` on the scrolling element (overflow-x:
 // auto; pair it with `tp-noscrollbar` — the strip shows no bar, NOTES-38 #1).
 // The fade classes (`strip-fade-l` / `strip-fade-r`) are styled in styles/windows.css.
+//
+// panel-gestures item 7 (owner, N6): "on docked panels a vertical drag moves the tabs up / down like
+// a menu" — `overflow-x: auto` computes overflow-y to auto too, so a row a pixel taller than its box
+// scrolled VERTICALLY under a finger. Every strip is one row: overflow-y hidden, touch-action pan-x
+// (a sideways swipe is the browser's own scroll; up / down on a strip does nothing), and the
+// sideways overscroll stays in the strip instead of swiping the page back.
 
 /** @param {HTMLElement} node */
 export function stripScroll(node) {
 	if (typeof window === 'undefined') return {};
+	node.style.setProperty('overflow-y', 'hidden');
+	node.style.setProperty('touch-action', 'pan-x');
+	node.style.setProperty('overscroll-behavior-x', 'contain');
 	const edges = () => {
 		const more = node.scrollWidth - node.clientWidth;
 		node.classList.toggle('strip-fade-l', more > 1 && node.scrollLeft > 1);

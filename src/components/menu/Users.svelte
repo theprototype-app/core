@@ -121,7 +121,8 @@
 	import PeerProfileCard from './PeerProfileCard.svelte';
 	import { peerQuality, qGlyph } from '$lib/networkQuality';
 	import ContextMenu from '../ContextMenu.svelte';
-	import { panelsButtonShown, panelsOpen, togglePanels, hidePanelsButton } from '$lib/panelsButton';
+	import { panelsButtonShown, panelsOpen, togglePanels } from '$lib/panelsButton';
+	import { chromeButton } from '$lib/chromeButtons'; // panel-gestures item 5: the Panels button's menu
 	import NotificationCenter from './NotificationCenter.svelte';
 	// 42 I9: which of the group's own buttons are placed here, in what order (Controls' layout)
 	import { toolbarSlots, slotOrder, TOP_DEFAULT } from '$lib/toolbarSlots';
@@ -880,41 +881,9 @@
 	// 43 K3: the phone shell keeps the group's default ORDER, but a native the person took out (Edit
 	// positions / Customize, on the unfolded screen) stays out here too — hidden stays hidden
 	const trSlots = $derived($phoneShell ? { top: TOP_DEFAULT.filter((id) => $toolbarSlots.top.includes(id)), editing: false } : $toolbarSlots);
-	// dock-fixes item 8 — the Panels button's press, menu and long press (touch has no right button; the
-	// timer opens the menu while the finger is still down — ContextMenu's press-and-click backdrop keeps
-	// the lift from closing it)
-	let panelsMenu = $state<{ x: number; y: number } | null>(null);
-	let panelsTimer: ReturnType<typeof setTimeout> | null = null;
-	let panelsSwallow = false;
-	function clearPanelsPress() {
-		if (panelsTimer) clearTimeout(panelsTimer);
-		panelsTimer = null;
-	}
-	function onPanelsDown(e: PointerEvent) {
-		clearPanelsPress();
-		panelsSwallow = false;
-		if (e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
-		const x = e.clientX;
-		const y = e.clientY;
-		panelsTimer = setTimeout(() => {
-			panelsTimer = null;
-			panelsSwallow = true; // the click the lift produces is not a toggle
-			panelsMenu = { x, y };
-		}, 500);
-	}
-	function onPanelsClick() {
-		if (panelsSwallow) {
-			panelsSwallow = false;
-			return;
-		}
-		togglePanels();
-	}
-	function onPanelsMenu(e: MouseEvent) {
-		e.preventDefault();
-		clearPanelsPress();
-		// Android's own long-press may ALSO fire this: one menu, not two
-		if (!panelsMenu) panelsMenu = { x: e.clientX, y: e.clientY };
-	}
+	// dock-fixes item 8 — the Panels button. panel-gestures item 5: its menu (right-click, a long press on
+	// touch) is the generic chrome-button one — `use:chromeButton={'top.panels'}`, registered BOUND in
+	// $lib/panelsButton with its own "Show / Hide the sidebars" row on top
 	// dock-fixes item 4 — the top row between two columns that both reach it (a pinned left one + a right one under a
 	// docked Connect bar: the unfolded N6) can be narrower than the group + the profile. The group then STACKS into a
 	// column under the profile, inside the free width, instead of drawing over the left column. The row width is
@@ -944,24 +913,6 @@
 			window.removeEventListener('resize', measureTr);
 		};
 	});
-
-	const panelsMenuItems = $derived([
-		{
-			label: $panelsOpen ? 'Hide the sidebars' : 'Show the sidebars',
-			icon: 'columns-3',
-			tooltip: 'Show or hide both sidebars — their tabs stay open',
-			action: () => togglePanels()
-		},
-		{
-			label: 'Hide this button',
-			icon: 'eye-off',
-			tooltip: 'Remove the Panels button — Settings ▸ Interface ▸ Panels button brings it back',
-			action: () => {
-				hidePanelsButton();
-				showToast('Panels button hidden — Settings ▸ Interface ▸ Panels button brings it back');
-			}
-		}
-	]);
 
 	const trOrder = (id: string) => slotOrder(trSlots.top, id);
 	const trShown = (id: string) => !trSlots.editing && trOrder(id) != null;
@@ -1462,12 +1413,8 @@
 		aria-pressed={$panelsOpen}
 		aria-label={$panelsOpen ? 'Hide the sidebars' : 'Show the sidebars'}
 		title={$panelsOpen ? 'Hide the sidebars (their tabs stay open) — right-click or long-press for more' : 'Show the sidebars — right-click or long-press for more'}
-		onclick={onPanelsClick}
-		oncontextmenu={onPanelsMenu}
-		onpointerdown={onPanelsDown}
-		onpointerup={clearPanelsPress}
-		onpointercancel={clearPanelsPress}
-		onpointerleave={clearPanelsPress}
+		onclick={() => togglePanels()}
+		use:chromeButton={'top.panels'}
 	>
 		<Icon name="columns-3" size={20} aria-hidden="true" />
 	</button>
@@ -1590,10 +1537,6 @@
 {#if peerMenu}
 	<!-- 55 A9: the peer menu (lib/peerMenu.js builds it; the VR panel renders the same list) -->
 	<ContextMenu x={peerMenu.x} y={peerMenu.y} sizeKey="peer" items={peerMenuRows(peerMenu)} onclose={closePeerMenu} />
-{/if}
-{#if panelsMenu}
-	<!-- dock-fixes item 8: the Panels button's menu -->
-	<ContextMenu x={panelsMenu.x} y={panelsMenu.y} sizeKey="panels-button" items={panelsMenuItems} onclose={() => (panelsMenu = null)} />
 {/if}
 {#if changesMenu}
 	<ContextMenu x={changesMenu.x} y={changesMenu.y} sizeKey="peer-changes" items={changesItems(changesMenu.peerId)} onclose={() => (changesMenu = null)} />

@@ -185,7 +185,10 @@ h.run(async () => {
 		const m = document.querySelector('#sidebar70')?.getBoundingClientRect();
 		return [...document.querySelectorAll('#project-actions button')].every((b) => {
 			const r = b.getBoundingClientRect();
-			return m && r.left >= m.left - 1 && r.right <= m.right + 1 && b.scrollWidth <= b.clientWidth + 1;
+			// hitslop-fix: the cell's CONTENT (icon + label) inside its box — not b.scrollWidth, which on a touch screen
+			// also counts the button's invisible tap area (an absolutely positioned ::after past its edges)
+			const inside = [...b.children].every((c) => { const q = c.getBoundingClientRect(); return q.left >= r.left - 1 && q.right <= r.right + 1; });
+			return m && r.left >= m.left - 1 && r.right <= m.right + 1 && inside;
 		});
 	});
 	h.check(fit, 'folded N6: every compact cell fits the sheet, no label clipped out of its cell');

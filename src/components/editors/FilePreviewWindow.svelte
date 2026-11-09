@@ -24,6 +24,7 @@
 	import { confirmLeaveEditor, imageEditorDirty as previewEditDirty } from '$lib/image/imageEditorState';
 	import { hostedDocked, setHostedDocked } from '$lib/dockHost';
 	import { bottomDockable } from '$lib/bottomDockDrop';
+	import { visibleDockKey, dockMinimized, splitDock, splitOf, activateDock } from '$lib/bottomDock';
 	import ImageEditorWindow from './ImageEditorWindow.svelte';
 	import {
 		previewSiblings,
@@ -271,7 +272,16 @@
 	// asked for again while already open: come forward, change nothing (21-I3's ruling)
 	$effect(() => {
 		void $previewRaise;
-		if (winEl) untrack(() => winEl.focus?.());
+		if (!winEl) return;
+		untrack(() => {
+			// uir-preview: a docked Preview behind another dock tab comes to the front too
+			if (docked) activateDock('preview');
+			winEl.focus?.();
+		});
+	});
+	// ...and so does one switched into Edit (Edit image… on the window already showing the image)
+	$effect(() => {
+		if (editing && untrack(() => docked)) untrack(() => activateDock('preview'));
 	});
 
 	$effect(() => {
@@ -530,7 +540,13 @@
 			return;
 		}
 		previewPinned.set(true);
-		if (!docked) setHostedDocked('preview', true);
+		if (!docked) {
+			// the Explorer docked and in front: SPLIT the dock, Explorer | Preview, or docking the
+			// Preview would hide the very selection it follows behind a tab
+			const besideExplorer = $visibleDockKey === 'explorer' && !$dockMinimized && !splitOf('explorer');
+			setHostedDocked('preview', true);
+			if (besideExplorer) splitDock('explorer', 'preview', 0.6);
+		}
 		const sel = $explorerSelection;
 		if (sel && previewFaceOf(sel) && previewIdOf(sel) !== walkId) void show(sel);
 	}
@@ -554,6 +570,21 @@
 			if (!fresh || !sel || !previewFaceOf(sel)) return;
 			if (previewIdOf(sel) === walkId && face !== 'empty') return;
 			void show(sel);
+		});
+	});
+
+	// leaving Edit: the picture may have been SAVED meanwhile, so the View face re-reads its bytes
+	let wasEditing = false;
+	$effect(() => {
+		const now = editing;
+		untrack(() => {
+			if (wasEditing && !now && target && face === 'image' && libItem) {
+				const old = target.url;
+				resolvingFor = '';
+				setPreviewWindow(winId, { ...target, url: '' });
+				if (old && String(old).startsWith('blob:')) URL.revokeObjectURL(old);
+			}
+			wasEditing = now;
 		});
 	});
 
@@ -979,7 +1010,7 @@
 				</div>
 			{:else if face === 'text'}
 				<!-- uir-preview: read-only text; the code editor stays the Explorer's double-click -->
-				<pre id="preview-text" class="pv-text" tabindex="-1">{text}</pre>
+				<pre id="preview-text" class="pv-text" tabindex="-1" use:minimalScroll>{text}</pre>
 				{#if textMore}<span class="pv-hint">Showing the first 256 KB — open it to see the rest.</span>{/if}
 			{:else if face === 'image'}
 				<img
@@ -1374,9 +1405,29 @@
 		min-width: 420px;
 		min-height: 320px;
 	}
+	/* PHONE: in Edit the window is the editor's full-width sheet between the top chrome and the
+	   Controls bar — it never covers Play or the selection toolbar (NOTES-38 #32, carried over from
+	   the retired editor window). dragWindow positions with inline styles, so the sheet's geometry
+	   has to win them. */
 	@media (max-width: 640px) {
 		.pv-editing {
+			left: 0 !important;
+			right: 0 !important;
+			top: var(--connect-bottom, 56px) !important;
+			bottom: var(--controls-inset, 0px) !important;
+			width: 100vw !important;
+			height: auto !important;
 			min-width: 0;
+			max-width: none !important;
+			border-radius: 12px 12px 0 0;
 		}
+		.pv-editing :global(.dw-resize) {
+			display: none;
+		}
+	}
+	/* the phone shell's top bar is 64 px and its bottom bar holds Play (the Inspector's rule) */
+	:global(:root.phone-shell) .pv-editing {
+		top: 64px !important;
+		bottom: var(--ps-bar-h) !important;
 	}
 </style>

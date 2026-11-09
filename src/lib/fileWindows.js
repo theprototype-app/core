@@ -139,10 +139,12 @@ export function openFilePreview(target) {
 		const newest = list[list.length - 1];
 		if (newest?.mode === 'edit') {
 			if (sameSource(spec, newest)) return void previewRaise.update((n) => n + 1);
-			void confirmLeaveEditor('switch').then((ok) => ok && imagePreviewTarget.set(spec));
+			void confirmLeaveEditor('switch').then((ok) => ok && (imagePreviewTarget.set(spec), previewRaise.update((n) => n + 1)));
 			return;
 		}
 		imagePreviewTarget.set(spec);
+		// a docked Preview behind another dock tab comes forward with what was opened
+		if (list.length) previewRaise.update((n) => n + 1);
 		return;
 	}
 	const list = get(previewWindows);
@@ -267,7 +269,8 @@ export function openPreviewEditor(itemId, name = '') {
 		list.find((w) => (w.kind ?? 'image') === 'image' && w.itemId === itemId) ??
 		list.find((w) => w.mode === 'edit') ??
 		list[0];
-	const spec = { title: name || win?.title || 'Image', kind: 'image', itemId, name: name || '', url: '', mode: 'edit' };
+	// no name given (a bridged open): the title is left empty and the window reads the library name
+	const spec = { title: name || '', kind: 'image', itemId, name: name || '', url: '', mode: 'edit' };
 	if (!win) {
 		const id = ++previewSeq;
 		previewWindows.set([...list, { ...spec, id }]);
@@ -278,7 +281,7 @@ export function openPreviewEditor(itemId, name = '') {
 	previewWindows.set(
 		list.map((w) =>
 			w.id === win.id
-				? { ...spec, title: same ? win.title || spec.title : spec.title, url: same ? win.url : '', onClose: win.onClose, id: win.id }
+				? { ...spec, title: spec.title || (same ? win.title : ''), url: same ? win.url : '', onClose: win.onClose, id: win.id }
 				: w.mode === 'edit'
 					? { ...w, mode: 'view' }
 					: w

@@ -8,7 +8,9 @@
 //
 //   §1  a 14 MB photo through the Inspector's real file input becomes a 1024 px texture, on both peers
 //   §2  a library image textures a box and the box REMEMBERS it (mapSource, both peers)
-//   §3  the preview window's Edit button opens the editor on that image
+//   §3  the preview window's Edit button opens the editor on that image (uir-preview: IN that
+//       window — the editor is its Edit face, so the window chrome below is the preview's:
+//       `.pv-title`, `#preview-close`, and on a phone `#image-preview-window` is the sheet)
 //   §4  rotate + the editor's own undo/redo (Ctrl+Z) never touch the scene's undo
 //   §5  a crop drawn with the real mouse, applied with Enter
 //   §6  brightness + Save: the same record, a version kept, the linked texture updated on BOTH
@@ -211,7 +213,7 @@ h.run(async () => {
 	});
 	await until(async () => /64 × 48/.test((await sizeText(A)) ?? ''), 8000);
 	h.check(/64 × 48/.test((await sizeText(A)) ?? ''), `the editor opened on the image (${await sizeText(A)})`);
-	await S(A, () => window.__stores.fileWindows.previewWindows.set([]));
+	h.check((await S(A, () => document.querySelector('#image-preview-window')?.dataset.previewMode)) === 'edit', 'uir-preview: in the same window, now in Edit');
 	// the editor draws the picture (a canvas that stayed blank would read all-zero)
 	const alphaAt = () => S(A, () => {
 		const c = document.querySelector('#image-editor-canvas');
@@ -307,7 +309,7 @@ h.run(async () => {
 	h.check(!!copy && copy.id !== quad.id, 'Save as copy made "quad copy.png" beside it');
 	h.check((await itemOf(A, quad.id))?.hash === quad.hash, 'the original image is unchanged');
 	h.check((await texOf(A, box2)).source === quad.hash, 'and so is the texture made from it');
-	const title = await A.page.locator('#image-editor-window .ie-title').textContent();
+	const title = await A.page.locator('#image-preview-window .pv-title').textContent();
 	h.check(/quad copy\.png/.test(title ?? ''), `the editor carries on with the copy ("${title?.trim()}")`);
 
 	// ---- §9 the Inspector's Edit on an unlinked texture --------------------------------
@@ -332,11 +334,11 @@ h.run(async () => {
 
 	// ---- §10 closing with unsaved edits asks first --------------------------------------
 	await A.page.locator('#image-editor-rotate-cw').click();
-	await A.page.locator('#image-editor-close').click();
+	await A.page.locator('#preview-close').click();
 	await A.page.locator('#confirm-dialog-close').waitFor({ timeout: 5000 });
 	await A.page.locator('#confirm-dialog-cancel').click();
 	h.check(await A.page.locator('#image-editor-window').isVisible(), '"Keep editing" keeps the window and the edit');
-	await A.page.locator('#image-editor-close').click();
+	await A.page.locator('#preview-close').click();
 	await A.page.locator('#confirm-dialog-close').click();
 	await until(async () => !(await A.page.locator('#image-editor-window').count()), 4000);
 	h.check(!(await A.page.locator('#image-editor-window').count()), '"Discard and close" closes it');
@@ -378,7 +380,7 @@ h.run(async () => {
 	// toasts (the quality governor's, on a phone) sit over the sheet's top; they are not under test
 	await S(P, () => document.querySelectorAll('.toasts-stack .tp-toast-x').forEach((b) => b.click()));
 	await P.page.waitForTimeout(300);
-	const win = await P.page.locator('#image-editor-window').boundingBox();
+	const win = await P.page.locator('#image-preview-window').boundingBox();
 	h.check(win && win.x <= 1 && win.width >= 388, `on a phone the editor is full width (${win?.x}, ${win?.width})`);
 	// the phone shell's Play lives in its bottom bar (#ps-play); the desktop pill is hidden there
 	const playSel = (await S(P, () => document.documentElement.classList.contains('phone-shell'))) ? '#ps-play' : '#play-button';
@@ -390,8 +392,8 @@ h.run(async () => {
 	}, playSel);
 	h.check(hitPlay, 'Play is still the thing under a tap');
 	const head = await S(P, () => {
-		const b = document.querySelector('#image-editor-close').getBoundingClientRect();
-		return !!document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2)?.closest('#image-editor-close');
+		const b = document.querySelector('#preview-close').getBoundingClientRect();
+		return !!document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2)?.closest('#preview-close');
 	});
 	h.check(head, 'the top bar does not cover the editor\'s close button');
 	// 41 G18: on a phone the panel starts HIDDEN until the user opens it (the ✎ tab)

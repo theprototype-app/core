@@ -366,10 +366,12 @@
 		const go = await showChoice({
 			title: words.title,
 			message: 'Your edits to ' + (item?.name ?? 'this image') + ' are not saved.',
-			choices: [{ value: 'go', label: words.label }],
+			// the choice's value names the action, so its button id reads #confirm-dialog-close /
+			// -switch / -leave (the close one is the id the editor's ask always had)
+			choices: [{ value: action, label: words.label }],
 			cancelLabel: 'Keep editing'
 		});
-		if (go !== 'go') return false;
+		if (go !== action) return false;
 		// the edit is discarded: the next image (or this one, reopened) loads fresh
 		loadedFor = '';
 		undoStack = [];

@@ -23,6 +23,9 @@
 	import { flowGraphs, SCENE_GRAPH } from '../../stores/flowStore';
 	import { isLocked, isVRMode, objectsGroup } from '../../stores/sceneStore';
 	import { findNodeSpec } from '$lib/nodeCatalog';
+	// 78 F14: the Console — what Announce nodes and modules said, with the time and the source
+	import { announceLog, announceUnread, clearAnnounceLog } from '$lib/gameAnnounce';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 
 	const playing = $derived($isLocked === true);
 	const paused = $derived($debugStatus.mode === 'paused');
@@ -56,6 +59,16 @@
 		moment: 'a scheduled moment ran',
 		pause: 'paused by you'
 	});
+
+	/** newest first, for the Console @type {any[]} */
+	const consoleRows = $derived([...$announceLog].reverse());
+	// the panel is open: whatever arrives is seen
+	$effect(() => {
+		void $announceLog;
+		announceUnread.set(0);
+	});
+	/** HH:MM:SS of a moment @param {number} t */
+	const clock = (t) => new Date(t).toTimeString().slice(0, 8);
 
 	let watchKind = $state('var');
 	let watchName = $state('');
@@ -157,6 +170,26 @@
 			</span>
 		{/if}
 	</div>
+
+	<p class="tbx-label">Console</p>
+	<div class="tbx-row debug-console" id="debug-console" use:minimalScroll>
+		{#each consoleRows as row (row.id)}
+			<div class="debug-wire debug-line" data-announce={row.id} data-shown={row.shown}>
+				<span class="debug-handle">{clock(row.at)}</span>
+				<span class="debug-text" title={row.sub ? row.text + ' / ' + row.sub : row.text}>{row.text}{#if row.sub}<span class="text-text-muted"> · {row.sub}</span>{/if}</span>
+				{#if row.source?.kind === 'node'}
+					<button class="debug-node debug-src" title="Show this node's wires" onclick={() => debugFocus.set(row.source.nodeId)}>{row.source.label || labelOf(row.source.nodeId) || 'Announce'}</button>
+				{:else if row.source}
+					<span class="debug-handle">{row.source.label}</span>
+				{/if}
+			</div>
+		{:else}
+			<span class="text-[11px] text-text-muted">What Announce nodes say in Edit shows here; in Play it is a banner.</span>
+		{/each}
+	</div>
+	{#if consoleRows.length}
+		<div class="tbx-row"><button id="debug-console-clear" class="tbx-cmd" onclick={() => clearAnnounceLog()}>Clear console</button></div>
+	{/if}
 
 	{#if $debugValues.focus && live}
 		{@const focus = $debugValues.focus}
@@ -293,6 +326,25 @@
 	.debug-value.debug-high {
 		color: var(--accent);
 		font-weight: 600;
+	}
+	.tbx-row.debug-console {
+		max-height: 140px;
+		overflow-y: auto;
+		flex-direction: column;
+		align-items: stretch;
+	}
+	.debug-text {
+		flex: 1 1 auto;
+		min-width: 0;
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+		color: var(--text);
+	}
+	.debug-node.debug-src {
+		flex: 0 1 auto;
+		max-width: 40%;
+		color: var(--accent);
 	}
 	.debug-x {
 		flex: 0 0 auto;

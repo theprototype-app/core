@@ -1769,7 +1769,7 @@ const PHYSICS_AI_TOOLS = [
 								},
 								sensor: {
 									type: 'boolean',
-									description: 'true = a trigger volume: no collision response, fires On Enter/On Exit nodes'
+									description: 'true = a trigger volume: no collision response, fires On Enter/On Exit nodes — for bodies AND for the player walking in (on every peer; set the node\'s who: player to react only to players)'
 								},
 								group: {
 									type: 'string',

@@ -118,15 +118,18 @@ function note(type, what) {
 
 /**
  * ONE stamp edge of a game-feel action node, already past flowRuntime's freshness and
- * staleness checks. `data` is the node's resolved inputs.
- * @param {string} type @param {any} data
+ * staleness checks. `data` is the node's resolved inputs; `node` (78 F14) names the console
+ * line's source.
+ * @param {string} type @param {any} data @param {any} [node]
  * @returns {boolean} whether it did something
  */
-export function runGameFeelAction(type, data) {
+export function runGameFeelAction(type, data, node) {
 	if (type === 'announce') {
 		const text = fillValue(data.text ?? '', data.value, data.decimals);
 		const sub = fillValue(data.sub ?? '', data.value, data.decimals);
-		const id = announce(text, { sub, ms: Number(data.seconds ?? 1.8) * 1000, color: data.color || undefined });
+		const label = typeof node?.data?.label === 'string' && node.data.label.trim() ? node.data.label.trim() : 'Announce';
+		const source = node?.id ? { kind: 'node', nodeId: node.id, label, graph: node.__graph ?? 'scene' } : undefined;
+		const id = announce(text, { sub, ms: Number(data.seconds ?? 1.8) * 1000, color: data.color || undefined, source });
 		if (id) note(type, { text, sub });
 		return id > 0;
 	}

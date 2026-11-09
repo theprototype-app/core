@@ -106,12 +106,14 @@ h.run(async () => {
 			last: dbg.last,
 			sfx: k.gameSfx.gameSfxDebug(),
 			live: k.effectsBurst.burstDebug().live,
-			bannerText: banner?.textContent ?? null
+			bannerText: banner?.textContent ?? null,
+			// 78 F14: in Edit the line goes to the Debugger console, not a banner
+			consoleLast: k.gameAnnounce.announceLog ? (() => { let v; k.gameAnnounce.announceLog.subscribe((x) => (v = x))(); return v[v.length - 1] ?? null; })() : null
 		};
 	});
 	h.check(one.ann?.text === 'Ring 2 reached' && one.ann?.sub === 'keep going', '1.1 Announce shows the text with {v} = the wired counter (' + JSON.stringify(one.ann) + ')');
 	h.check(one.ann?.color === '#7fd4ff' && one.ann?.ms === 2000, '1.2 in its colour, for its seconds');
-	h.check(/Ring 2 reached/.test(one.bannerText ?? ''), '1.3 the desktop banner draws it (' + JSON.stringify(one.bannerText) + ')');
+	h.check(one.bannerText === null && one.consoleLast?.text === 'Ring 2 reached' && one.consoleLast?.source?.nodeId === 'fAnn', '1.3 in Edit no banner covers the windows: the line is in the Debugger console, from its node (78 F14; ' + JSON.stringify({ banner: one.bannerText, console: one.consoleLast }) + ')');
 	const snd = one.last.filter((e) => e.type === 'gamesound');
 	h.check(snd.length === 2 && snd.every((e) => e.sound === 'ring' && e.spatial), '1.4 Game Sound played `ring` twice, placed at the wired box (' + JSON.stringify(snd) + ')');
 	h.check(one.sfx.last === 'ring', '1.5 through the procedural set (' + JSON.stringify(one.sfx) + ')');

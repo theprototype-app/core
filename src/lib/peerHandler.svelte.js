@@ -72,7 +72,7 @@ import { applyModuleMessage, moduleVersions, checkModuleVersions, checkPeerAppVe
 import { APP_VERSION, COMMIT_SHA } from '$lib/version.js';
 import { applyLockRequest, applyUnlock, applyLockDenied } from '$lib/lockControl';
 import { applyDrawLive, applyDrawEnd } from '$lib/drawMode';
-import { applySimulate, physicsExternalMove, applyThrow, applyHit, simulating, simPaused } from '$lib/physics';
+import { applySimulate, applySimVote, applySimHandoff, physicsExternalMove, applyThrow, applyHit, simulating, simPaused } from '$lib/physics';
 import { noteRemoteMove } from '$lib/moveSmoothing';
 import { noteRemoteHit, endKnockPrediction } from '$lib/knock';
 import { applyJointCreate, applyJointDelete, applyJointsSnapshot, sendJoints } from '$lib/joints';
@@ -1290,6 +1290,10 @@ export class PeerConnection {
 					noteRemoteHit(data, conn.peer);
 				} else if(data.type == 'simulate') {
 					applySimulate(data);
+				} else if(data.type == 'simvote') {
+					applySimVote(data, conn.peer); // 78 F25: the connection's peer, never the payload's
+				} else if(data.type == 'simhandoff') {
+					applySimHandoff(data, conn.peer);
 				} else if(data.type == 'jointcreate') {
 					applyJointCreate(data);
 				} else if(data.type == 'jointdelete') {

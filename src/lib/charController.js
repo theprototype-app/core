@@ -1,7 +1,7 @@
 import { writable, get } from 'svelte/store';
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
-import { globalScene } from '../stores/sceneStore';
+import { globalScene, globalCamera } from '../stores/sceneStore';
 import { sceneGravity, scenePhysicsGround } from './scenePhysics';
 import { dungeonData, slideMove } from './dungeonPlay';
 import { kitPlayRules } from './kit/runtime.js'; // 34 R2: kit.rules' jump height
@@ -120,6 +120,30 @@ export function effectiveSpeed(builtin) {
 	const override = get(playMoveSpeed);
 	if (override !== null) return override;
 	return get(charControl)?.speed ?? builtin;
+}
+
+// ---- 78 F10: the local player's body ------------------------------------------
+
+/** a standing person's eye above the feet when no controller says otherwise (playInteract's) */
+export const PLAYER_EYE_HEIGHT = 1.7;
+/** the player's body radius — the walker's capsule, and what a sensor feels */
+export const PLAYER_RADIUS = CAPSULE_RADIUS;
+const _eyeOut = new THREE.Vector3();
+
+/**
+ * THIS peer's player as a body: the eye (the play camera, world space), the height of its feet
+ * (the controller's eye height under it, else a standing person's) and its radius. What a
+ * sensor, a Proximity "to: player" and a touch pickup all measure against. Null with no camera.
+ * @returns {{eye: {x: number, y: number, z: number}, feetY: number, radius: number} | null}
+ */
+export function localPlayerBody() {
+	/** @type {any} */
+	const camera = get(globalCamera);
+	if (!camera?.getWorldPosition) return null;
+	camera.getWorldPosition(_eyeOut);
+	const h = Number(get(charControl)?.eyeHeight);
+	const eyeHeight = Number.isFinite(h) && h > 0 ? h : PLAYER_EYE_HEIGHT;
+	return { eye: { x: _eyeOut.x, y: _eyeOut.y, z: _eyeOut.z }, feetY: _eyeOut.y - eyeHeight, radius: PLAYER_RADIUS };
 }
 
 // ---- the declaration --------------------------------------------------------

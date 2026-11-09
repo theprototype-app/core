@@ -750,7 +750,7 @@ export async function controlSimulationTool(args) {
 		if (!on) {
 			if (inGroups) return { error: 'simulation did not start: ' + inGroups };
 			if (gaps.lockedOut.length) return { error: 'simulation did not start: another person is editing ' + gaps.lockedOut.join(', ') + ', and those are the only objects with dynamic physics.' };
-			return { error: 'simulation did not start — no object has physics yet (use set_physics or a mass node first)' };
+			return { error: 'simulation did not start — no object has dynamic physics yet (use set_physics or a mass node first). A level of only static objects runs by itself when someone presses Play, or here once the scene has a Character Controller node.' };
 		}
 		// mcp-fix: a joint that was not built holds nothing, so never let that pass as a clean start
 		const unbuilt = unbuiltJointIds();

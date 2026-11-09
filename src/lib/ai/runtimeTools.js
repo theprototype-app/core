@@ -110,7 +110,7 @@ function hudIndex() {
 /** the World runtimeCore reads @returns {Promise<import('./runtimeCore.js').World>} */
 async function world() {
 	const info = await typeInfo();
-	const [scenePhysics] = await Promise.all([import('$lib/scenePhysics').catch(() => null)]);
+	const [scenePhysics, physics] = await Promise.all([import('$lib/scenePhysics').catch(() => null), import('$lib/physics').catch(() => null)]);
 	const host = /** @type {any} */ (behaviourHost());
 	/** @type {{name: string, issues: any[]}[]} */
 	const behaviours = [];
@@ -132,6 +132,8 @@ async function world() {
 		hudElements: hud.elements,
 		hudScreens: hud.screens,
 		play: scenePhysics ? get(scenePhysics.scenePlay) : undefined,
+		// 78 F11: a walk scene with moving bodies does not start its world on Play by itself
+		dynamicBodies: physics?.sceneHasDynamicBodies ? physics.sceneHasDynamicBodies() : undefined,
 		envLit: environmentLights(),
 		behaviours,
 		...info
@@ -472,7 +474,7 @@ export const RUNTIME_AI_TOOLS = [
 		function: {
 			name: 'logs',
 			description:
-				'The page\'s recent log: errors, warnings, console lines and the toasts people saw, oldest first. Pass since (the "now" of the previous answer) for only what is new. status shows the newest few.',
+				'The page\'s recent log: errors, warnings, console lines, Announce lines (scope announce: in Edit an Announce node draws no banner, its line lands here with the node that said it) and the toasts people saw, oldest first. Pass since (the "now" of the previous answer) for only what is new. status shows the newest few.',
 			parameters: {
 				type: 'object',
 				properties: {

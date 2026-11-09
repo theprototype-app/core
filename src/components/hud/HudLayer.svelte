@@ -450,7 +450,8 @@
 	}
 </script>
 
-{#if $gameAnnouncement && (!$isVRMode || arPlaying) && layerAllowed}
+<!-- 78 F14: full-screen only while playing — in Edit the line goes to the Debugger's Console -->
+{#if $gameAnnouncement && shown && (!$isVRMode || arPlaying) && layerAllowed}
 	{#key $gameAnnouncement.id}
 		<div id="game-announce" class="game-announce" role="status" aria-live="polite" style="--announce-ms: {$gameAnnouncement.ms}ms" use:arPortal={arPlaying}>
 			<div class="game-announce-title" style:color={$gameAnnouncement.color}>{$gameAnnouncement.text}</div>

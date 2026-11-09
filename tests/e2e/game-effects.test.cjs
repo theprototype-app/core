@@ -201,6 +201,10 @@ h.run(async () => {
 	h.check(burstDelta.changed > idle.changed + 400, '6.1 a burst in view changes the frame (' + burstDelta.changed + ' px vs idle ' + idle.changed + ') ' + JSON.stringify({ fired6, diag }));
 
 	console.log('\n=== 7. announce ===');
+	// 78 F14: the banner draws in Play only (in Edit the line goes to the Debugger console —
+	// announce-console covers that), so the banner checks below run in Play
+	await page.evaluate(() => window.__stores.isLocked.set(true));
+	await page.waitForTimeout(300);
 	const ann = await page.evaluate(async () => {
 		const api = window.__api;
 		const empty = api.announce('   ');
@@ -250,6 +254,7 @@ h.run(async () => {
 	});
 	h.check(cleared.before.live > 0 && cleared.before.banner, '8.1 premise: a burst and a banner are up');
 	h.check(cleared.live === 0 && !cleared.banner, '8.2 a scene clear removes both (' + JSON.stringify(cleared) + ')');
+	await page.evaluate(() => window.__stores.isLocked.set(null));
 
 	await h.finish(browser);
 });

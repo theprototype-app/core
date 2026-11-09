@@ -10,13 +10,18 @@
 //      boxes sampled together stay within a frame's travel
 //   §4 an edit on A (a longer wait) replicates and both peers' schedules move together
 //   §5 an old clicked-waypoint Path patrol (pre-1.64 data) converts: a Path object on both peers,
-//      the node points at it, no jump in the walker's pose at the moment of conversion
+//      the node points at it, and at the walker's own t it stands where the OLD walk would (no jump)
 //   §6 Play hides a Path (material.visible), unless show in Play; editor shows it again
 //   §7 one undo removes the agent's whole call (the Path AND its walker node) on both peers
 //
 // Counterfactual: v1.63.0 has no Path kind and no create_path — §1 is red at the first row.
 // Run: e2e-slot --dev 78-path 5803 -- env APP_URL=https://theprototype.app:5803/ npm run e2e -- path-object
 const h = require('./helpers.cjs');
+const fs = require('fs');
+const path = require('path');
+
+const OUT = process.env.E2E_OUT ?? 'test-results/78-path';
+fs.mkdirSync(OUT, { recursive: true });
 
 /** @param {any} page @param {string} uuid */
 const record = (page, uuid) =>
@@ -59,6 +64,42 @@ const worldPos = (page, uuid) =>
 		o.updateWorldMatrix(true, false);
 		return [o.matrixWorld.elements[12], o.matrixWorld.elements[13], o.matrixWorld.elements[14]];
 	}, uuid);
+
+/** the walker's state AND its object's world position in ONE synchronous read (a walker moves
+ * between two page.evaluate calls) @param {any} page @param {string} key @param {string} uuid */
+const walkerAt = (page, key, uuid) =>
+	page.evaluate(
+		([k, u]) => {
+			let g;
+			window.__stores.objectsGroup.subscribe((x) => (g = x))();
+			const o = g?.getObjectByProperty('uuid', u);
+			const w = window.__stores.pathRuntime.patrolStateOf(k);
+			if (!o || !w) return null;
+			o.updateWorldMatrix(true, false);
+			return { ...w, pos: [o.matrixWorld.elements[12], o.matrixWorld.elements[13], o.matrixWorld.elements[14]] };
+		},
+		[key, uuid]
+	);
+
+/** the pre-1.64 Path patrol walk (flowRuntime applyPathPatrol, loop mode), for the Convert parity row
+ * @param {number[][]} pts @param {number} speed @param {number} time */
+const legacyLoopPose = (pts, speed, time) => {
+	const segs = pts.map((a, i) => {
+		const b = pts[(i + 1) % pts.length];
+		return { a, b, length: Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) };
+	});
+	const total = segs.reduce((s, x) => s + x.length, 0);
+	let d = (time * speed) % total;
+	for (const { a, b, length } of segs) {
+		if (d > length) {
+			d -= length;
+			continue;
+		}
+		const t = length > 0 ? d / length : 0;
+		return [0, 1, 2].map((i) => a[i] + (b[i] - a[i]) * t);
+	}
+	return null;
+};
 
 /** the pathpatrol node on an object's graph @param {any} page @param {string} graph */
 const patrolNode = (page, graph) =>
@@ -147,11 +188,10 @@ h.run(async () => {
 		[A, B, 'A→B'],
 		[B, A, 'B→A']
 	]) {
-		const w = await walker(from.page, keyOf(node));
+		const w = await walkerAt(from.page, keyOf(node), box);
 		const re = await posesAt(to.page, uuid, [w.t], { start: w.start, offset: w.offset });
 		h.check(close(re.poses[0].p, w.p.map((n) => +n.toFixed(6)), 1e-5), `§3 ${name}: the other peer recomputes the walker's exact pose at t=${w.t.toFixed(3)}`);
-		const pos = await worldPos(from.page, box);
-		h.check(close(pos, w.p, 1e-4), `§3 ${name}: the box sits where the schedule says`);
+		h.check(close(w.pos, w.p, 1e-4), `§3 ${name}: the box sits where the schedule says ${JSON.stringify([w.pos, w.p])}`);
 	}
 	const [pa, pb] = await Promise.all([worldPos(A.page, box), worldPos(B.page, box)]);
 	h.check(dist(pa, pb) < 0.5, `§3 the two boxes sampled together agree (drift ${dist(pa, pb).toFixed(3)} m)`);
@@ -162,6 +202,18 @@ h.run(async () => {
 	const [ea, eb] = await Promise.all([posesAt(A.page, uuid, [4.5]), posesAt(B.page, uuid, [4.5])]);
 	h.check(Math.abs(ea.period - 8) < 1e-9 && JSON.stringify(ea) === JSON.stringify(eb), '§4 both schedules moved together (period 8)');
 	h.check(close(ea.poses[0].p, [4, 0.5, 0]) && ea.poses[0].kind === 'wait', '§4 t=4.5 still standing at point 2');
+
+	// docs pictures (not a gate): the Inspector's Path section with point 2 picked
+	try {
+		await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u, true), uuid);
+		await A.page.locator('#path-mode').waitFor({ state: 'visible', timeout: 15000 });
+		await A.page.evaluate(() => window.__stores.pathState?.pathSelectedPoints?.set?.([1]));
+		await A.page.waitForTimeout(800);
+		await A.page.screenshot({ path: path.join(OUT, 'path-inspector.png') });
+		console.log('picture: ' + path.join(OUT, 'path-inspector.png'));
+	} catch (e) {
+		console.log('picture skipped: ' + String(e).slice(0, 120));
+	}
 
 	// §5 ------------------------------------------------------------------------------------
 	const old = await newBox(A.page);
@@ -178,21 +230,15 @@ h.run(async () => {
 	h.check(!legacy?.error, '§5 an old clicked-waypoint patrol on box 2 ' + JSON.stringify(legacy).slice(0, 120));
 	const ln = await patrolNode(A.page, old);
 	await h.eventually(() => patrolNode(B.page, old), (n) => n?.data?.points?.length === 3, '§5 the old node reached B');
-	await A.page.waitForTimeout(600);
-	const [before, conv, after] = await A.page.evaluate(
-		([id, old]) => {
-			let g;
-			window.__stores.objectsGroup.subscribe((x) => (g = x))();
-			const o = g.getObjectByProperty('uuid', old);
-			const pos = () => (o.updateWorldMatrix(true, false), [o.matrixWorld.elements[12], o.matrixWorld.elements[13], o.matrixWorld.elements[14]]);
-			const b = pos();
-			const c = window.__stores.pathActions.convertPatrolNode(id);
-			return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r([b, c, pos()]))));
-		},
-		[ln.id, old]
-	);
+	// the old walk has been running; Convert swaps it for the Path walk on the same shared clock
+	const conv = await A.page.evaluate((id) => window.__stores.pathActions.convertPatrolNode(id), ln.id);
 	h.check(conv?.ok === true && typeof conv.path === 'string', '§5 Convert made a Path ' + JSON.stringify(conv));
-	h.check(dist(before, after) < 0.3, `§5 no jump at the moment of conversion (${dist(before, after).toFixed(3)} m over two frames at 1 m/s)`);
+	const cn0 = await patrolNode(A.page, old);
+	await h.eventually(() => walkerAt(A.page, cn0.id + '|' + old, old), (w) => !!w?.p, '§5 A walks box 2 on the converted Path');
+	// no jump: at the walker's own t, the converted walk stands exactly where the OLD walk would have
+	const wc = await walkerAt(A.page, cn0.id + '|' + old, old);
+	const was = legacyLoopPose(oldPts, 1, wc.t);
+	h.check(close(wc.pos, was, 1e-4), `§5 no jump: at t=${wc.t.toFixed(3)} the converted walker is where the old patrol would be ${JSON.stringify([wc.pos, was])}`);
 	await h.eventually(() => patrolNode(B.page, old), (n) => n?.data?.path === conv.path && (n.data.points ?? []).length === 0, '§5 B: the node walks the Path, its points cleared');
 	await h.eventually(() => record(B.page, conv.path), (r) => !!r?.path, '§5 B: the converted Path arrived');
 	const cv = await B.page.evaluate((u) => {
@@ -204,7 +250,6 @@ h.run(async () => {
 	h.check(cv.closed && cv.mode === 'loop' && cv.smooth === false && cv.speed === 1, '§5 B: a closed straight-line loop at the old speed');
 	h.check(cv.pts.every((p, i) => close(p, oldPts[i], 1e-4)), '§5 B: the Path runs through the old waypoints in the world');
 	const cn = await patrolNode(A.page, old);
-	await h.eventually(() => walker(A.page, cn.id + '|' + old), (w) => !!w?.p, '§5 A walks box 2 on the Path');
 	const wA = await walker(A.page, cn.id + '|' + old);
 	const reB = await posesAt(B.page, conv.path, [wA.t], { start: wA.start, offset: wA.offset });
 	h.check(close(reB.poses[0].p, wA.p.map((n) => +n.toFixed(6)), 1e-5), '§5 B recomputes A’s converted walker exactly');

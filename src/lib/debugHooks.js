@@ -599,6 +599,7 @@ export const DEBUG_HOOKS = [
 	['pathRuntime', () => import('./path/pathRuntime.js')],
 	['pathActions', () => import('./path/pathActions.js')],
 	['pathObject', () => import('./path/pathObject.js')],
+	['pathState', () => import('./path/pathState.js')],
 	['pathTools', () => import('./ai/pathTools.js')]
 ];
 

@@ -293,6 +293,7 @@
 		"static-level-play": 240,
 		"touch-collect-nodes": 240,
 		"play-start-nodes": 200,
+		"announce-console": 160,
 		"photo-mode": 420,
 		"text-path": 360,
 		"text-object": 480,

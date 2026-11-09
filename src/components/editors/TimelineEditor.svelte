@@ -807,7 +807,7 @@
 	<div class="tl-seqs" id="timeline-sequences">
 		<div class="tl-pane-head">
 			<span class="tl-pane-title">Sequences</span>
-			<Button size="sm" variant="ghost" icon="plus" title="New sequence" id="timeline-new" onclick={newSequence} />
+			<Button size="sm" variant="ghost" icon="plus" title="Add a sequence" id="timeline-new" onclick={newSequence} />
 		</div>
 		{#if !list.length}
 			<p class="tl-hint tl-pad">None yet. A sequence is one cutscene.</p>

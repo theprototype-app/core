@@ -40,8 +40,21 @@ const pane = (page) =>
 
 /** open the Sequence tab without toggling it shut when it is already in front */
 async function sequenceTab(page) {
-	if ((await pane(page)).mode !== 'sequence') await page.click('.tl-root [data-ws-mode="sequence"]');
-	await page.waitForSelector('#timeline-seq-props', { timeout: 5000 });
+	const before = await pane(page);
+	if (before.mode !== 'sequence') await page.click('.tl-root [data-ws-mode="sequence"]');
+	try {
+		await page.waitForSelector('#timeline-seq-props', { timeout: 8000 });
+	} catch (e) {
+		const after = await page.evaluate(() => ({
+			tabs: [...document.querySelectorAll('.tl-root [data-ws-mode]')].map((t) => t.getAttribute('data-ws-mode') + ':' + t.className),
+			panel: document.querySelector('.tl-root .ws-panel-secondary')?.innerHTML.slice(0, 400) ?? null,
+			roots: document.querySelectorAll('.tl-root').length
+		}));
+		console.log('sequenceTab: before', JSON.stringify(before), 'after', JSON.stringify(after));
+		await shot(page, 'fail-sequence-tab.png');
+		if (!SHOTS) await page.screenshot({ path: 'test-results/uir-timeline/fail-sequence-tab.png' }).catch(() => {});
+		throw e;
+	}
 }
 
 async function openTimeline(page) {
@@ -171,7 +184,9 @@ h.run(async () => {
 			const s = q.createSequence('Phone cut');
 			q.addItem(s, q.addTrack(s, 'event'), { t: 0.5, name: 'beat' });
 		});
-		await openTimeline(C.page);
+		await C.page.evaluate(() => window.__stores.timelineClose.set(false));
+		await C.page.waitForSelector('.tl-root', { timeout: 15000 }); // a phone starts with the side panes put away
+		await C.page.waitForTimeout(500);
 		const phone = await C.page.evaluate(() => document.documentElement.classList.contains('phone-shell'));
 		o = await overflow(C.page);
 		h.check(o.root && o.scroll <= 1 && o.right <= 1, `${label}: no sideways overflow (${JSON.stringify(o)})`);

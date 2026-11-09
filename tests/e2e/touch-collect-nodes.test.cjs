@@ -129,7 +129,7 @@ h.run(async () => {
 			const w = (o) => (o ? o.getWorldPosition(new T.Vector3()).toArray().map((v) => +v.toFixed(2)) : null);
 			let locked;
 			s.isLocked.subscribe((v) => (locked = v))();
-			return { cam: w(cam), parent: w(cam?.parent), global: w(gc), same: cam === gc, locked, ctl: ctl?.mode ?? null, body: s.charController.localPlayerBody?.() ? { eye: s.charController.localPlayerBody().eye.toArray().map((v) => +v.toFixed(2)) } : null };
+			return { cam: w(cam), parent: w(cam?.parent), global: w(gc), same: cam === gc, locked, ctl: ctl?.mode ?? null, body: JSON.parse(JSON.stringify(s.charController.localPlayerBody?.() ?? null)) };
 		})())));
 	await h.eventually(() => doc(B.page), (d) => !!d.taken[ids[1]], 'B: standing on gem 2 takes it', 10000).catch(() => {});
 	await B.page.waitForTimeout(1500);

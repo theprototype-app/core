@@ -171,7 +171,7 @@ h.run(async () => {
 			const w = (o) => (o ? o.getWorldPosition(new T.Vector3()).toArray().map((v) => +v.toFixed(2)) : null);
 			let locked;
 			s.isLocked.subscribe((v) => (locked = v))();
-			return { cam: w(cam), parent: w(cam?.parent), global: w(gc), same: cam === gc, locked, ctl: ctl?.mode ?? null, body: s.charController.localPlayerBody?.() ? { eye: s.charController.localPlayerBody().eye.toArray().map((v) => +v.toFixed(2)) } : null };
+			return { cam: w(cam), parent: w(cam?.parent), global: w(gc), same: cam === gc, locked, ctl: ctl?.mode ?? null, body: JSON.parse(JSON.stringify(s.charController.localPlayerBody?.() ?? null)) };
 		})())));
 	await h.eventually(() => near(B.page), (v) => v === true, 'B: Proximity turns true at the sensor', 4000);
 	const nearIn = await near(B.page);

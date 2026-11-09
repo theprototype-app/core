@@ -72,7 +72,9 @@ h.run(async () => {
 
 	console.log('\n=== 2. the Debugger panel shows it ===');
 	await page.evaluate(() => window.__stores.flowDebug.setDebugOpen(true));
-	await page.waitForTimeout(600);
+	// the panel is a lazy import: on a cold dev server its first mount takes seconds
+	await page.waitForSelector('#debug-console', { timeout: 15000 }).catch(() => {});
+	await page.waitForTimeout(300);
 	const e2 = await state();
 	h.check(e2.rows.some((r) => /Ring 1 reached/.test(r) && /Ring banner/.test(r) && /\d\d:\d\d:\d\d/.test(r)), `the Debugger's Console lists it with the time and the node (${JSON.stringify(e2.rows)})`);
 	await page.evaluate(() => document.querySelector('#debug-console [data-announce] .debug-node')?.click());

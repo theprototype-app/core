@@ -14,6 +14,8 @@ import {
 	connectSlot,
 	usersSlot,
 	profileSlot,
+	settingsSlots,
+	SETTINGS_SLOT_KEYS,
 	drawerSlot,
 	rolesInfo,
 	scenePresence,
@@ -23,6 +25,7 @@ import {
 	setCommunityProvider,
 	settleRoles
 } from './cloudHooks';
+import { notifyOn } from './notifyPrefs';
 // 21-G5 (F7): the two reads a rooms roster wants — which scene this session is in,
 // and who is playing. Both leaves (levels reaches sessions, but nothing on the
 // cloudPlugin path is in history's import subtree — App alone imports this module).
@@ -365,6 +368,23 @@ export function makeCloudApi() {
 		/** render into the profile dropdown (login / account / preferences) — v2 */
 		mountProfile: (/** @type {any} */ mountFn) =>
 			profileSlot.set(typeof mountFn === 'function' ? mountFn : null),
+		/** profile-notify: may the plugin show this kind of automatic notification? The per-device switches in
+		 *  Settings ▸ Interface ▸ Notifications; the plugin's kinds are `roomInvites` and `contests`. Unknown = true.
+		 *  @param {string} kind */
+		notificationOn: (/** @type {string} */ kind) => notifyOn(String(kind)),
+		/** profile-notify: fill a Settings section — only `'account'` (Settings ▸ Account) so far. The section exists
+		 *  only while mounted; pass a non-function to remove it. Additive (no version bump): plugins typeof-probe it.
+		 *  @param {string} key @param {any} mountFn `(el) => cleanup` */
+		mountSettingsSection: (/** @type {string} */ key, /** @type {any} */ mountFn) => {
+			if (!SETTINGS_SLOT_KEYS.includes(key)) return false;
+			settingsSlots.update((m) => {
+				const next = { ...m };
+				if (typeof mountFn === 'function') next[key] = mountFn;
+				else delete next[key];
+				return next;
+			});
+			return true;
+		},
 		/** render into the Connect info drawer (room / host settings) — v2 */
 		mountConnectDrawer: (/** @type {any} */ mountFn) =>
 			drawerSlot.set(typeof mountFn === 'function' ? mountFn : null),

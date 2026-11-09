@@ -1,5 +1,6 @@
 <script module>
 	import { registerSettingsKeywords } from '$lib/settingsSearch';
+	import { NOTIFY_KINDS } from '$lib/notifyPrefs';
 	// 36 I4 / 37-settings: the words this page answers to beyond its row names — the old labels of the
 	// rows this redesign renamed (docs/settings-inventory.md, Decision C) and the words the absorbed
 	// section files carried (text selection, avatars, tours).
@@ -10,6 +11,7 @@
 		density: ['compact', 'comfortable', 'spacing', 'rows', 'dense', 'size'],
 		'welcome card on start': ['welcome on start', 'welcome'],
 		'show pop-ups only in the drawer': ['toasts in drawer only', 'toasts', 'notifications'],
+		'announce new versions': ["what's new", 'whats new', 'update', 'version', 'notifications'],
 		'show tours automatically': ['tour', 'tours', 'tutorial', 'onboarding', 'first run', 'guide'],
 		'vr welcome tour': ['vr welcome', 'controllers', 'quest', 'tour', 'tutorial'],
 		'editor tour': ['tour', 'tutorial', 'help', 'guide', 'tour the interface'],
@@ -31,6 +33,8 @@
 		'workspace layouts': ['layout', 'layouts', 'workspace', 'windows', 'dock', 'docked', 'panels', 'arrangement', 'save layout', 'restore layout', 'sizes']
 	};
 	for (const [row, words] of Object.entries(ROW_WORDS)) registerSettingsKeywords(row, words);
+	// profile-notify: every Notifications switch answers "notifications" and its own words
+	for (const k of NOTIFY_KINDS) registerSettingsKeywords(k.label.toLowerCase(), ['notifications', 'notify', 'alerts', ...k.keywords.split(' ')]);
 </script>
 
 <script>
@@ -81,7 +85,8 @@
 	// 43 J9: closed tips (the phone More sheet's how-to) come back from one row
 	import { resetTips, dismissedTips } from '$lib/tips';
 	import { xrOfferEnabled } from '$lib/xrOffer';
-	import { drawerSlot } from '$lib/cloudHooks';
+	import { drawerSlot, cloudPluginInfo } from '$lib/cloudHooks';
+	import { notifyPrefs, setNotify } from '$lib/notifyPrefs';
 	import { resetWindowLayout } from '$lib/dragWindow';
 	import { perfStatsShown } from '$lib/fpsMeter';
 	import { perfReportsOn, perfReportsAvailable } from '$lib/perf/beacon';
@@ -212,6 +217,23 @@
 		<SettingRow id="row-toasts-drawer" label="Show pop-ups only in the drawer" description="Pop-ups, connection requests included, go to the connection drawer’s Toasts tab instead of the viewport.">
 			<Toggle id="toasts-in-drawer" label="Show pop-ups only in the drawer" bind:checked={$toastsInDrawerOnly} />
 		</SettingRow>
+		<!-- profile-notify (owner 2026-11-09): one switch per automatic notification, on this device. Requests you
+		     must answer (connection, take control, role offers, agent permission) and safety notices always show. -->
+		{#each NOTIFY_KINDS.filter((k) => !k.cloud || $cloudPluginInfo) as k (k.id)}
+			<SettingRow id={'row-notify-' + k.id} label={k.label} badge="This device">
+				{#snippet desc()}{k.description}{#if k.id === 'pingSound'}
+						Your own ping sound is in <button
+							type="button"
+							class="iface-link"
+							id="notify-ping-character"
+							onclick={() => {
+								close();
+								characterModalOpen.set(true);
+							}}>Customize character</button
+						>.{/if}{/snippet}
+				<Toggle id={'notify-' + k.id} label={k.label} checked={$notifyPrefs[k.id] !== false} onchange={(on) => setNotify(k.id, on)} />
+			</SettingRow>
+		{/each}
 	</Section>
 
 	<Section variant="card" label="Tours">

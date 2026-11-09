@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { notifyOn } from './notifyPrefs';
 import { writable, get } from 'svelte/store';
 import { peers, username } from '../stores/appStore';
 import { objectsGroup } from '../stores/sceneStore';
@@ -62,10 +63,10 @@ export function hitWorldNormal(hit) {
 	return hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
 }
 
-/** @param {any} ping */
-function addPing(ping) {
+/** @param {any} ping @param {boolean} [sound] false = the marker without the chime */
+function addPing(ping, sound = true) {
 	pings.update((list) => [...list.filter((p) => Date.now() - p.ts < PING_TTL), ping]);
-	playPing(ping.sound, ping.pos);
+	if (sound) playPing(ping.sound, ping.pos);
 	// schedule expiry
 	setTimeout(() => {
 		pings.update((list) => list.filter((p) => Date.now() - p.ts < PING_TTL));
@@ -192,5 +193,5 @@ export function applyPing(data, from) {
 		color: data.color,
 		sound: data.sound,
 		uuid: data.uuid
-	});
+	}, notifyOn('pingSound')); // profile-notify: someone ELSE's ping — the Ping sounds switch; own pings always chime
 }

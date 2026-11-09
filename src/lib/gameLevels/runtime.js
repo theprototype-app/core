@@ -48,4 +48,8 @@ export function installLevelsRuntime() {
 	if (installed) return;
 	installed = true;
 	scenePhysicsState_.subscribe(() => syncKitLevels());
+	// acting on a chosen level (travel / spawn) + the travel carry: sessions-family, so dynamic
+	import('./travel.js')
+		.then((m) => m.installLevelsTravel())
+		.catch((error) => console.warn('levels: travel did not install', error));
 }

@@ -124,14 +124,16 @@ export default {
 	},
 	ops: {
 		/** @param {any} s @param {any[]} args @param {any} ctx */
-		select(s, [level, gameId], ctx) {
+		select(s, [level, gameId, solo], ctx) {
 			const def = defOf(ctx, gameId || s.game);
 			if (!def) return { result: { ok: false, reason: 'no levels are defined' } };
 			const id = str(level);
 			if (!def.list.some((/** @type {any} */ l) => l.id === id)) return { result: { ok: false, reason: 'no level ' + id } };
 			if (!isUnlockedBy(def.list, merged(ctx, def, s), id, def.unlock)) return { result: { ok: false, reason: 'Level ' + labelOf(def, id) + ' is locked' } };
 			if (s.current === id && s.game === def.id) return { result: { ok: true } };
-			return { slice: { ...s, game: def.id, current: id, results: s.game === def.id ? s.results : {} }, events: [['selected', { game: def.id, level: id }]] };
+			// 93 LP1: `solo` = one player's portal hop — the other players' level listeners stay put
+			const who = str(solo).slice(0, 64);
+			return { slice: { ...s, game: def.id, current: id, results: s.game === def.id ? s.results : {} }, events: [['selected', { game: def.id, level: id, ...(who ? { solo: who } : {}) }]] };
 		},
 		/** @param {any} s @param {any[]} _a @param {any} ctx */
 		next(s, _a, ctx) {
@@ -301,6 +303,9 @@ export default {
 						entry.shellOff?.();
 					};
 				},
+				/** 93 LP1: make a level current for ONE player's hop (a portal): the `selected` event carries
+				 * `solo: who`, so only that player's listeners act on it @param {string} level @param {string} who */
+				selectSolo: (level, who) => ctx.request('select', [str(level), active()?.id ?? '', str(who)]),
 				/** the level row (with its own data) @param {string} [level] the current when absent */
 				level: (level) => active()?.list.find((/** @type {any} */ l) => l.id === str(level ?? s().current)) ?? null,
 				/** the whole table as this device sees it: `[{id, label, locked, stars, best}]` */

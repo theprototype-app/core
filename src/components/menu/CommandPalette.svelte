@@ -137,12 +137,8 @@
 		width: min(600px, calc(100vw - 24px));
 		max-height: 64vh;
 		display: flex;
-	}
-	/* phone-polish item 2: the on-screen keyboard covers the lower half — the palette takes the top
-	   of what stays visible, and its list scrolls inside */
-	:global(:root.kb-open) .cp {
-		top: calc(var(--kb-top, 0px) + 8px);
-		max-height: calc(100dvh - var(--kb-inset, 0px) - var(--kb-top, 0px) - 16px);
+		/* showhide-v8 §5: these were stranded inside the keyboard rule below by a merge, so without the on-screen
+		   keyboard the palette had no panel and laid its field and list out side by side (the owner's shots) */
 		flex-direction: column;
 		background: var(--surface-1);
 		border: 1px solid var(--border);
@@ -151,6 +147,12 @@
 		color: var(--text);
 		font-family: var(--font-ui);
 		overflow: hidden;
+	}
+	/* phone-polish item 2: the on-screen keyboard covers the lower half — the palette takes the top
+	   of what stays visible, and its list scrolls inside */
+	:global(:root.kb-open) .cp {
+		top: calc(var(--kb-top, 0px) + 8px);
+		max-height: calc(100dvh - var(--kb-inset, 0px) - var(--kb-top, 0px) - 16px);
 	}
 	.cp-search {
 		display: flex;

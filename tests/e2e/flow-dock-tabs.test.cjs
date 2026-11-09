@@ -1,6 +1,7 @@
-// Docking rework: the Node editor, Flow Code and Animation are notebook TABS in ONE
-// bottom dock (they start docked). The docked Flow Code shows its Apply + Reload
-// buttons. Each tab undocks into a floating, resizable window.
+// Docking rework: the Node editor, Timeline and Animation are notebook TABS in ONE
+// bottom dock (they start docked). The docked Timeline shows its own content (the
+// "New sequence" action of a fresh scene). Each tab undocks into a floating, resizable window.
+// (showhide-v8 §4: this used Flow Code, which is a Code tab now — Timeline is the stand-in.)
 const h = require('./helpers.cjs');
 
 h.run(async () => {
@@ -15,7 +16,7 @@ h.run(async () => {
 		s.objectsGroup.subscribe((x) => (g = x))();
 		s.objectActions.selectObject(g.children[g.children.length - 1].uuid);
 		s.flowGraphClose.set(false);
-		s.flowCodeClose.set(false);
+		s.timelineClose.set(false);
 		s.animationClose.set(false);
 		s.bottomDock.activateDock('flow');
 	});
@@ -27,36 +28,37 @@ h.run(async () => {
 		window.__stores.bottomDock.flowTabs.subscribe((v) => (t = v))();
 		return t.map((x) => x.key);
 	});
-	h.check(tabs.join(',') === 'flow,flowcode,animation', `dock has Node editor + Flow Code + Animation tabs (${tabs.join(',')})`);
+	// flowTabs lists in FLOW_FAMILY order (flow, animation, ..., timeline), not open order
+	h.check(tabs.join(',') === 'flow,animation,timeline', `dock has Node editor + Timeline + Animation tabs (${tabs.join(',')})`);
 	const tabBtns = await A.page.evaluate(() => [...document.querySelectorAll('.tab-note')].map((b) => b.textContent.trim()).filter(Boolean));
-	h.check(tabBtns.includes('Flow Code') && tabBtns.includes('Animation'), `the tab strip renders the view tabs (${tabBtns.join('|')})`);
+	h.check(tabBtns.includes('Timeline') && tabBtns.includes('Animation'), `the tab strip renders the view tabs (${tabBtns.join('|')})`);
 
-	// switch to Flow Code -> it is the visible dock tab, with Apply + Reload buttons
-	await A.page.evaluate(() => window.__stores.bottomDock.activateDock('flowcode'));
+	// switch to Timeline -> it is the visible dock tab, showing its own content
+	await A.page.evaluate(() => window.__stores.bottomDock.activateDock('timeline'));
 	await A.page.waitForTimeout(300);
 	const fc = await A.page.evaluate(() => {
-		const dock = document.getElementById('flow-code-dock');
+		const dock = document.getElementById('timeline-dock');
 		const shown = !!dock && !dock.classList.contains('hidden');
 		const labels = dock ? [...dock.querySelectorAll('button')].map((b) => (b.title || '') + ' ' + b.textContent.trim()) : [];
-		return { shown, hasApply: labels.some((t) => t.includes('Apply')), hasReload: labels.some((t) => t.includes('Reload')) };
+		return { shown, hasNew: labels.some((t) => t.includes('New sequence')) };
 	});
-	h.check(fc.shown, 'Flow Code is the visible dock tab after switching');
-	h.check(fc.hasApply && fc.hasReload, 'the docked Flow Code shows Apply + Reload buttons');
+	h.check(fc.shown, 'Timeline is the visible dock tab after switching');
+	h.check(fc.hasNew, 'the docked Timeline shows its New sequence button');
 
-	// undock Flow Code -> floating window that can be resized (like the Object List)
+	// undock Timeline -> floating window that can be resized (like the Object List)
 	await A.page.evaluate(() => {
-		const dock = document.getElementById('flow-code-dock');
+		const dock = document.getElementById('timeline-dock');
 		[...dock.querySelectorAll('button')].find((b) => b.title && b.title.includes('Undock'))?.click();
 	});
 	await A.page.waitForTimeout(400);
-	// ungrouped floating Flow Code keeps Apply/Reload in its HEADER (not a content row)
+	// ungrouped floating Timeline keeps its Dock action in its HEADER (not a content row)
 	const hdrApply = await A.page.evaluate(() => {
-		const hdr = document.querySelector('#flow-code-window .ui-panel-header');
-		return hdr ? [...hdr.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Apply') : false;
+		const hdr = document.querySelector('#timeline-window .ui-panel-header');
+		return hdr ? [...hdr.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Dock') : false;
 	});
-	h.check(hdrApply, 'ungrouped floating Flow Code shows Apply in its header (not a content row)');
+	h.check(hdrApply, 'ungrouped floating Timeline shows Dock in its header (not a content row)');
 	const resized = await A.page.evaluate(async () => {
-		const win = document.getElementById('flow-code-window');
+		const win = document.getElementById('timeline-window');
 		if (!win) return { win: false };
 		const grip = win.querySelector('.resize-cue');
 		const b = win.getBoundingClientRect();
@@ -69,8 +71,8 @@ h.run(async () => {
 		const a = win.getBoundingClientRect();
 		return { win: true, beforeW: b.width, afterW: a.width, beforeLeft: b.left, afterLeft: a.left, beforeTop: b.top, afterTop: a.top };
 	});
-	h.check(resized.win, 'undocking Flow Code produces a floating window');
-	h.check(resized.afterW > resized.beforeW + 20, `the undocked Flow Code window resizes via its corner grip (${Math.round(resized.beforeW)}->${Math.round(resized.afterW)})`);
+	h.check(resized.win, 'undocking Timeline produces a floating window');
+	h.check(resized.afterW > resized.beforeW + 20, `the undocked Timeline window resizes via its corner grip (${Math.round(resized.beforeW)}->${Math.round(resized.afterW)})`);
 	// bug fix: resizing must NOT move the window (the reactive style attr used to wipe
 	// dragWindow's inline left/top, snapping the window to the top-left corner)
 	h.check(

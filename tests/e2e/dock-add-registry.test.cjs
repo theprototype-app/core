@@ -14,7 +14,7 @@ const h = require('./helpers.cjs');
 
 const PHONE = { viewport: { width: 390, height: 896 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2.9 };
 const DESK = { viewport: { width: 1440, height: 900 } };
-const STORAGE = { flowDocked: 'true', explorerDocked: 'true', flowCodeDocked: 'false' };
+const STORAGE = { flowDocked: 'true', explorerDocked: 'true', timelineDocked: 'false' };
 
 const S = (page, fn, arg) => page.evaluate(fn, arg);
 
@@ -105,7 +105,7 @@ h.run(async () => {
 	h.check(titles.includes('Image editor'), `2.2 ...and the Image editor (G24)`);
 	const flowRow = (rows ?? []).find((r) => r.title === 'Node editor');
 	const exRow = (rows ?? []).find((r) => r.title === 'Explorer');
-	const fcRow = (rows ?? []).find((r) => r.title === 'Flow Code');
+	const fcRow = (rows ?? []).find((r) => r.title === 'Timeline');
 	// 44 M5: ONE registry rule — an OPEN window (docked, in a sidebar, floating) is checked, its hint says
 	// where, and its row brings it to the front THERE; only a closed one opens (into the dock). The 41 G22
 	// "Remove" / "Dock" rows are gone (closing is the tab's ×; docking a floating window is its drag/menu).
@@ -123,18 +123,18 @@ h.run(async () => {
 	h.check(d.docked.includes('flow') && d.docked.includes('explorer') && d.visible === 'flow', `3.3 its row brings the docked Node editor to the front — nothing is removed (${JSON.stringify(d)})`);
 	// a closed window opens docked, in front
 	rows = await plusRows(page);
-	await clickRow(page, 'Flow Code');
+	await clickRow(page, 'Timeline');
 	d = await dockState(page);
-	h.check(d.docked.includes('flowcode') && d.visible === 'flowcode', `3.4 a closed window's row opens it docked, in front (${JSON.stringify(d)})`);
+	h.check(d.docked.includes('timeline') && d.visible === 'timeline', `3.4 a closed window's row opens it docked, in front (${JSON.stringify(d)})`);
 
 	// a floating window: its row raises it where it floats
-	await S(page, () => window.__stores.bottomDock.armDockMode('flowcode', false));
+	await S(page, () => window.__stores.bottomDock.armDockMode('timeline', false));
 	await page.waitForTimeout(900);
 	rows = await plusRows(page);
-	h.check((rows ?? []).find((r) => r.title === 'Flow Code')?.hint === 'Floating', `3.6 a floating window's row says Floating (${JSON.stringify((rows ?? []).find((r) => r.title === 'Flow Code'))})`);
-	await clickRow(page, 'Flow Code');
+	h.check((rows ?? []).find((r) => r.title === 'Timeline')?.hint === 'Floating', `3.6 a floating window's row says Floating (${JSON.stringify((rows ?? []).find((r) => r.title === 'Timeline'))})`);
+	await clickRow(page, 'Timeline');
 	d = await dockState(page);
-	h.check(!d.docked.includes('flowcode') && !!(await page.locator('#flow-code-window').count()), `3.7 ...and leaves it floating (${JSON.stringify(d)})`);
+	h.check(!d.docked.includes('timeline') && !!(await page.locator('#timeline-window').count()), `3.7 ...and leaves it floating (${JSON.stringify(d)})`);
 
 	// light theme shot of the menu
 	await S(page, () => {

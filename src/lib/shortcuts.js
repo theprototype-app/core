@@ -16,7 +16,8 @@ import {
 	showToast,
 	showSimControls,
 	armExplorerSceneSave,
-	explorerClose
+	explorerClose,
+	flowCodeClose
 } from '../stores/appStore';
 import { explainMissing } from './tools/toolLinks.js';
 import {
@@ -498,8 +499,9 @@ export const shortcuts = [
 		keys: 'Alt+F',
 		group: 'Panels',
 		scope: 'global',
-		label: 'Flow Code: show / bring to front / hide',
-		action: () => togglePanel('flowcode')
+		label: 'Flow code: open it in the Code window',
+		// showhide-v8 §4: the old open store is the seam (flowCodeRedirect opens Code on the active graph's flow code)
+		action: () => flowCodeClose.set(false)
 	},
 	{
 		id: 'panels.animation',

@@ -558,7 +558,7 @@ h.run(async () => {
 		['Animation (docked)', 'animationClose', 'animation', '#animation-dock', '[data-key-scope="animation"]'],
 		['UV editor (docked)', 'uvEditorClose', 'uv', '#uv-dock', '[data-key-scope="uv"]'],
 		['Shader editor (docked)', 'shaderEditorClose', 'shader', '#shader-editor', '[data-key-scope="shader"]'],
-		['Flow Code (docked)', 'flowCodeClose', 'flowcode', '#flow-code-dock', ''],
+		['Timeline (docked)', 'timelineClose', 'timeline', '#timeline-dock', ''],
 		['Profiler (docked)', 'profilerClose', 'profiler', 'div.tp-themed.inset-x-0', '']
 	];
 	for (const [label, store, key, root, exclude] of docked) {
@@ -653,7 +653,7 @@ h.run(async () => {
 	// ================= FLOATING page: F2 floating panels, F3, F4 ===================================
 	const B = await h.setupPage(browser, 'B', {
 		context: { viewport: { width: 1500, height: 940 } },
-		storage: { flowDocked: 'false', explorerDocked: 'false', codeDocked: 'false', hudDocked: 'false', animationDocked: 'false', uvDocked: 'false', shaderDocked: 'false', flowCodeDocked: 'false', profilerDocked: 'false' }
+		storage: { flowDocked: 'false', explorerDocked: 'false', codeDocked: 'false', hudDocked: 'false', animationDocked: 'false', uvDocked: 'false', shaderDocked: 'false', timelineDocked: 'false', profilerDocked: 'false' }
 	});
 	const q = B.page;
 	h.check(await S(q, PROBE), 'probe module up (B)');
@@ -666,7 +666,7 @@ h.run(async () => {
 		['Animation (floating)', 'animationClose', '#animation-window', '[data-key-scope="animation"]'],
 		['UV editor (floating)', 'uvEditorClose', '#uv-window', '[data-key-scope="uv"]'],
 		['Shader editor (floating)', 'shaderEditorClose', '#shader-window', '[data-key-scope="shader"]'],
-		['Flow Code (floating)', 'flowCodeClose', '#flow-code-window', ''],
+		['Timeline (floating)', 'timelineClose', '#timeline-window', ''],
 		['Profiler (floating)', 'profilerClose', '#profiler-window', '']
 	];
 	/** @type {any[]} */

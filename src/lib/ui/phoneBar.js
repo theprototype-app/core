@@ -21,7 +21,7 @@ import { safeStorage } from '../safeStorage';
 import { onLayoutRestore } from '../uiLayoutsCore';
 
 /** More ▸ Windows, in the order the sheet lists them (Play shows there only while off the bar) */
-export const WINDOW_ITEMS = ['play', 'add', 'more', 'objects', 'stats', 'chat', 'explorer', 'flow', 'animation', 'scene', 'ai', 'notes', 'flowcode', 'shader', 'uv', 'hud', 'timeline', 'profiler', 'code'];
+export const WINDOW_ITEMS = ['play', 'add', 'more', 'objects', 'stats', 'chat', 'explorer', 'flow', 'animation', 'scene', 'ai', 'notes', 'shader', 'uv', 'hud', 'timeline', 'profiler', 'code'];
 /** More ▸ Edit: the selection tools and the history, every one placeable on the bar */
 export const EDIT_ITEMS = ['inspect', 'move', 'rotate', 'scale', 'undo', 'redo', 'multiselect', 'interact'];
 /** More ▸ Tools & View (46 B1: + the scene budget — the toolbar chip's phone form; a folded bar has no

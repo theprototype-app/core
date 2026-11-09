@@ -7,9 +7,9 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 
-	// three floating windows: Object List + Flow Code (to be grouped) + Animation
+	// three floating windows: Object List + Timeline (to be grouped) + Animation
 	await A.page.evaluate(() => {
-		localStorage.setItem('flowCodeDocked', 'false');
+		localStorage.setItem('timelineDocked', 'false');
 		localStorage.setItem('animationDocked', 'false');
 	});
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
@@ -21,15 +21,15 @@ h.run(async () => {
 		s.objectsGroup.subscribe((x) => (g = x))();
 		s.objectActions.selectObject(g.children[g.children.length - 1].uuid);
 		s.objectListClose.set(false);
-		s.flowCodeClose.set(false);
+		s.timelineClose.set(false);
 		s.animationClose.set(false);
 	});
 	await A.page.waitForTimeout(700);
 
-	// merge Object List + Flow Code into a tab group (forms a strip)
+	// merge Object List + Timeline into a tab group (forms a strip)
 	const merged = await A.page.evaluate(async () => {
 		const ol = document.getElementById('object-list');
-		const fc = document.getElementById('flow-code-window');
+		const fc = document.getElementById('timeline-window');
 		const olr = ol.getBoundingClientRect();
 		const handle = fc.querySelector('.move-handle');
 		const fr = handle.getBoundingClientRect();

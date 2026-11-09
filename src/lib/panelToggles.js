@@ -2,7 +2,6 @@ import { tick } from 'svelte';
 import { get } from 'svelte/store';
 import {
 	flowGraphClose,
-	flowCodeClose,
 	animationClose,
 	uvEditorClose,
 	shaderEditorClose,
@@ -95,7 +94,6 @@ import { HOSTED, hostedDocked } from './dockHost';
  */
 const PANELS = {
 	flow: { key: 'flow', openStore: flowGraphClose, dragKey: 'flowWin', dockedLs: 'flowDocked' },
-	flowcode: { key: 'flowcode', openStore: flowCodeClose, dragKey: 'flowCode', dockedLs: 'flowCodeDocked' },
 	animation: { key: 'animation', openStore: animationClose, dragKey: 'animation', dockedLs: 'animationDocked' },
 	uv: { key: 'uv', openStore: uvEditorClose, dragKey: 'uv', dockedLs: 'uvDocked' },
 	shader: { key: 'shader', openStore: shaderEditorClose, dragKey: 'shader', dockedLs: 'shaderDocked' },

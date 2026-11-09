@@ -19,7 +19,7 @@
 //      conflict for either; Settings ▸ Shortcuts lists both rows; rebinding the left one to Ctrl+[ moves
 //      the key (and resetting puts Ctrl+B back)
 //   5  a floating window dragged over the EMPTY left column (not its edge) joins it as its tab
-//   6  M8 on the dock "+": on the empty dock, Ctrl-click Flow Code and Shift-click Animation dock both
+//   6  M8 on the dock "+": on the empty dock, Ctrl-click Timeline and Shift-click Animation dock both
 //      with the menu still up; a plain click on the UV editor docks it and closes the menu
 //   7  unfolded phone (touch): the right sidebar emptied by its × stays open with "+", and a tap on "+"
 //      opens the window list
@@ -253,14 +253,14 @@ h.run(async () => {
 	const empty = await read(page, 'bottomDock.dockEmptyShown');
 	h.check(empty === true, '6.0 premise: the empty dock');
 	await clickAt(page, '#phone-dock #dock-add-view');
-	await clickRow(page, 'Flow Code', 'Control');
-	h.check(await menuOpen(page), '6.1 Ctrl-click on Flow Code keeps the dock menu open — even though the empty dock it was opened from has gone');
+	await clickRow(page, 'Timeline', 'Control');
+	h.check(await menuOpen(page), '6.1 Ctrl-click on Timeline keeps the dock menu open — even though the empty dock it was opened from has gone');
 	await clickRow(page, 'Animation', 'Shift');
 	h.check(await menuOpen(page), '6.2 Shift-click on Animation keeps it open');
 	await clickRow(page, 'UV editor');
 	h.check(!(await menuOpen(page)), '6.3 a plain click on the UV editor closes it');
 	const docked = ((await read(page, 'bottomDock.dockTabs')) ?? []).map((t) => t.key);
-	h.check(['flowcode', 'animation', 'uv'].every((k) => docked.includes(k)), `6.4 all three are docked (${docked.join(',')})`);
+	h.check(['timeline', 'animation', 'uv'].every((k) => docked.includes(k)), `6.4 all three are docked (${docked.join(',')})`);
 	// the keyboard: Ctrl+Enter picks and keeps the menu up
 	await S(page, () => document.querySelector('#dock-add-view:not([style*="display: none"])'));
 	const plus = await S(page, () => {

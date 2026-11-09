@@ -33,6 +33,7 @@ import { codeWorkspaceClose, showToast, focusFlowNode } from '../stores/appStore
 import { setNodeData, serializeNode, serializeEdge } from './nodesHandler';
 import { recordFlowNodesEntry } from './flowGraphs';
 import { safeStorage } from './safeStorage';
+import { graphToText, textToGraph } from './graphText';
 import {
 	findTab,
 	isDirty,
@@ -206,6 +207,13 @@ async function graphTitle(graphId) {
 async function resolve(req) {
 	const ref = req.ref ?? {};
 	const id = 'code-' + ++seq;
+	if (req.source === 'flowtext') {
+		// showhide-v8 §4: the old Flow code tab, as a Code tab — the compact graph text (graphText.js), Ctrl+S applies
+		const graphId = ref.graphId ?? SCENE_GRAPH;
+		const text = graphToText(serializedGraph(graphId));
+		const title = (await graphTitle(graphId)).replace(/ ?graph\.json$/, '') + ' flow code';
+		return { id, kind: 'graph', format: 'text', title, lang: 'text', code: text, saved: text, graphId };
+	}
 	if (req.source === 'graph') {
 		const graphId = ref.graphId ?? SCENE_GRAPH;
 		const text = graphJson(serializedGraph(graphId));
@@ -271,7 +279,7 @@ async function resolve(req) {
  * OPEN SOURCE CODE IN THE WORKSPACE — the G1 entry point. Raises an already-open tab.
  * `ref` is an object (`{nodeId, graphId?}` · `{itemId}` · `{hash}` · `{moduleId, name?, code?}`
  * · `{graphId}`) or G1's string form (see `normalizeCodeRequest`).
- * @param {{source: 'script' | 'behaviour' | 'module' | 'graph' | 'customnode' | 'text', ref: any, graphId?: string, line?: number, readonly?: boolean}} request
+ * @param {{source: 'script' | 'behaviour' | 'module' | 'graph' | 'flowtext' | 'customnode' | 'text', ref: any, graphId?: string, line?: number, readonly?: boolean}} request
  * @returns {Promise<string | null>} the tab id
  */
 export async function openCode(request) {
@@ -455,7 +463,19 @@ async function saveNow(id, opts) {
 
 	if (tab.kind === 'graph') {
 		const graphId = tab.graphId ?? SCENE_GRAPH;
-		const result = parseGraphJson(code, serializedGraph(graphId));
+		let json = code;
+		if (tab.format === 'text') {
+			try {
+				json = JSON.stringify(textToGraph(code));
+			} catch (e) {
+				/** @type {any} */
+				const err = e;
+				const error = { message: String(err?.message ?? err), line: Number(err?.line) || 1 };
+				patchTab(id, (t) => ({ ...t, error }));
+				return { ok: false, error };
+			}
+		}
+		const result = parseGraphJson(json, serializedGraph(graphId));
 		if (!result.ok) {
 			patchTab(id, (t) => ({ ...t, error: result.error }));
 			return { ok: false, error: result.error };
@@ -809,7 +829,10 @@ function followOne(tab) {
 		}
 		return tab;
 	}
-	if (tab.kind === 'graph') return reconcileExternal(tab, graphJson(serializedGraph(tab.graphId ?? SCENE_GRAPH)));
+	if (tab.kind === 'graph') {
+		const graph = serializedGraph(tab.graphId ?? SCENE_GRAPH);
+		return reconcileExternal(tab, tab.format === 'text' ? graphToText(graph) : graphJson(graph));
+	}
 	return tab;
 }
 

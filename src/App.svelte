@@ -41,7 +41,7 @@
   import CharacterDialogs from './components/characters/CharacterDialogs.svelte'
   import PlaceholderTooltip from './components/menu/PlaceholderTooltip.svelte'
   import Flow from './components/Flow.svelte'
-  import FlowCode from './components/editors/FlowCode.svelte'
+  import { startFlowCodeRedirect } from '$lib/flowCodeRedirect.js'
   import AnimationWindow from './components/editors/AnimationWindow.svelte'
   import UvEditor from './components/editors/UvEditor.svelte'
   import ShaderEditor from './components/editors/ShaderEditor.svelte'
@@ -225,6 +225,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
 
   // node graph animations keep running even when the flow drawer is closed
   onMount(() => {
+    startFlowCodeRedirect() // showhide-v8 §4: the old Flow code tab opens Code's flow code tab
     // 27-B: FIRST, so a failure during the rest of this boot is already recorded.
     startDiagnostics()
     startWireErrors()
@@ -469,7 +470,6 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <!-- 70 W2: a panel in a pop-out window is unmounted here (one panel, one place); it remounts in its
      own last dock / float mode when it comes back -->
 {#if !$panelAway.flow}<Flow />{/if}
-{#if !$panelAway.flowcode}<FlowCode />{/if}
 {#if !$panelAway.animation}<AnimationWindow />{/if}
 {#if !$panelAway.uv}<UvEditor />{/if}
 {#if !$panelAway.shader}<SvelteFlowProvider><ShaderEditor /></SvelteFlowProvider>{/if}

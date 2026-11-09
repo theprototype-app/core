@@ -80,23 +80,23 @@ h.run(async () => {
 	const browser = await h.launch();
 	const P = await h.setupPage(browser, 'D', {
 		context: DESK,
-		storage: { flowDocked: 'true', explorerDocked: 'true', flowCodeDocked: 'false', animationDocked: 'false', uvDocked: 'false', dockTabOrder: '["flow","explorer"]' }
+		storage: { flowDocked: 'true', explorerDocked: 'true', timelineDocked: 'false', animationDocked: 'false', uvDocked: 'false', dockTabOrder: '["flow","explorer"]' }
 	});
 	const page = P.page;
 	await openDock(page);
 	h.check(JSON.stringify(await order(page)) === '["flow","explorer"]', `premise: the dock holds Node editor | Explorer (${JSON.stringify(await order(page))})`);
 
 	// ---- 1. a lone window onto the strip, between the two tabs -----------------------------
-	await S(page, () => window.__stores.flowCodeClose.set(false));
+	await S(page, () => window.__stores.timelineClose.set(false));
 	await page.waitForTimeout(800);
-	let from = await headerPoint(page, '#flow-code-window');
+	let from = await headerPoint(page, '#timeline-window');
 	let gap = await gapPoint(page, 1);
 	await page.mouse.move(from.x, from.y);
 	await page.mouse.down();
 	await page.mouse.move(gap.x, gap.y - 120, { steps: 8 });
 	await page.mouse.move(gap.x, gap.y, { steps: 8 });
 	await page.waitForTimeout(150);
-	let fb = await feedback(page, '#flow-code-window');
+	let fb = await feedback(page, '#timeline-window');
 	await page.screenshot({ path: (process.env.OUT || '/tmp') + '/g7-strip-caret-dark.png' });
 	h.check(fb.caret && fb.caretX >= gap.lo && fb.caretX <= gap.hi, `1.1 over the strip a caret marks the slot between the two tabs (caret x ${fb.caretX}, gap ${gap.lo}..${gap.hi})`);
 	h.check(fb.ghost && Math.abs(fb.opacity - 0.6) < 0.05, `1.2 ...and the dragged window turns see-through (opacity ${fb.opacity})`);
@@ -104,8 +104,8 @@ h.run(async () => {
 	await page.mouse.up();
 	await page.waitForTimeout(1200);
 	let ord = await order(page);
-	h.check(JSON.stringify(ord) === '["flow","flowcode","explorer"]', `1.4 released, it docks AT the caret: ${JSON.stringify(ord)}`);
-	h.check((await read(page, 'bottomDock.visibleDockKey')) === 'flowcode', '1.5 ...and is the visible tab');
+	h.check(JSON.stringify(ord) === '["flow","timeline","explorer"]', `1.4 released, it docks AT the caret: ${JSON.stringify(ord)}`);
+	h.check((await read(page, 'bottomDock.visibleDockKey')) === 'timeline', '1.5 ...and is the visible tab');
 	fb = await feedback(page, null);
 	h.check(!fb.caret && !fb.target && !(await S(page, () => !!document.querySelector('.dock-drag-ghost'))), '1.6 no feedback is left behind after the drop');
 
@@ -222,11 +222,11 @@ h.run(async () => {
 	// ---- 5. a whole group by its strip ---------------------------------------------------------
 	await S(page, async () => {
 		const s = window.__stores;
-		s.bottomDock.armDockMode('flowcode', false);
+		s.bottomDock.armDockMode('timeline', false);
 		await new Promise((r) => setTimeout(r, 400));
 		s.uvEditorClose.set(false);
 		await new Promise((r) => setTimeout(r, 900));
-		s.windowTabs.mergeWindows('flowcode', 'uv');
+		s.windowTabs.mergeWindows('timeline', 'uv');
 		await new Promise((r) => setTimeout(r, 300));
 		let g;
 		s.windowTabs.tabGroups.subscribe((v) => (g = v))();
@@ -252,7 +252,7 @@ h.run(async () => {
 	ord = await order(page);
 	h.check(sp.ok && fb.caret, `5.1 a group dragged by its strip shows the caret on the dock strip (${JSON.stringify(fb)})`);
 	h.check(
-		JSON.stringify(ord.slice(-2)) === '["flowcode","uv"]' && ord.length === before.length + 2,
+		JSON.stringify(ord.slice(-2)) === '["timeline","uv"]' && ord.length === before.length + 2,
 		`5.2 released, both of its tabs dock there, in tab order (${JSON.stringify(before)} -> ${JSON.stringify(ord)})`
 	);
 	h.check((await read(page, 'bottomDock.visibleDockKey')) === 'uv', '5.3 ...showing the tab that was active in the group');

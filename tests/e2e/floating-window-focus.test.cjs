@@ -29,7 +29,7 @@ const h = require('./helpers.cjs');
  * this one keyed — and until the merge nothing had ever driven that combination.
  */
 const VIEWS = [
-	{ key: 'flowcode', title: 'Flow Code', sel: '#flow-code-window', store: 'flowCodeClose' },
+	{ key: 'timeline', title: 'Timeline', sel: '#timeline-window', store: 'timelineClose' },
 	{ key: 'animation', title: 'Animation', sel: '#animation-window', store: 'animationClose' },
 	{ key: 'uv', title: 'UV editor', sel: '#uv-window', store: 'uvEditorClose' },
 	{ key: 'shader', title: 'Shader editor', sel: '#shader-window', store: 'shaderEditorClose' },
@@ -37,7 +37,7 @@ const VIEWS = [
 ];
 
 const ALL_SEL =
-	'#flow-window,#flow-code-window,#animation-window,#uv-window,#shader-window,#hud-window,#explorer-window,#object-list';
+	'#flow-window,#timeline-window,#animation-window,#uv-window,#shader-window,#hud-window,#explorer-window,#object-list';
 
 /** every floating window that is actually on screen, with its z, top-most last */
 const shown = (page) =>
@@ -67,12 +67,12 @@ h.run(async () => {
 
 	// every dock view opens FLOATING, and the four optional roster buttons are on the bar
 	await page.evaluate(() => {
-		for (const k of ['flowDocked', 'flowCodeDocked', 'animationDocked', 'uvDocked', 'shaderDocked', 'hudDocked', 'explorerDocked'])
+		for (const k of ['flowDocked', 'timelineDocked', 'animationDocked', 'uvDocked', 'shaderDocked', 'hudDocked', 'explorerDocked'])
 			localStorage.setItem(k, 'false');
 		localStorage.setItem(
 			'controlsLayout',
 			JSON.stringify({
-				order: ['move', 'rotate', 'scale', 'objects', 'flow', 'explorer', 'flowcode', 'animation', 'uv', 'shader', 'hud'],
+				order: ['move', 'rotate', 'scale', 'objects', 'flow', 'explorer', 'timeline', 'animation', 'uv', 'shader', 'hud'],
 				hidden: [],
 				spacerIndex: 3,
 				collapsed: false,
@@ -147,7 +147,7 @@ h.run(async () => {
 		s.uvEditorClose.set(false);
 		s.shaderEditorClose.set(false);
 		s.animationClose.set(false);
-		s.flowCodeClose.set(false);
+		s.timelineClose.set(false);
 	});
 	await page.waitForTimeout(2200);
 
@@ -254,7 +254,7 @@ h.run(async () => {
 		await page.waitForTimeout(350);
 		const focused = await page.evaluate(() => {
 			const a = document.activeElement;
-			return { tag: a?.tagName ?? 'none', inWin: !!a?.closest('#flow-window,#flow-code-window,#animation-window,#uv-window,#shader-window,#hud-window,#explorer-window,#object-list') };
+			return { tag: a?.tagName ?? 'none', inWin: !!a?.closest('#flow-window,#timeline-window,#animation-window,#uv-window,#shader-window,#hud-window,#explorer-window,#object-list') };
 		});
 		h.check(
 			focused.tag === 'INPUT' && focused.inWin,
@@ -303,8 +303,8 @@ h.run(async () => {
 	await pressT(); // closes the empty dock again
 	await page.evaluate(() => {
 		const s = window.__stores;
-		s.bottomDock.armDockMode('flowcode', true);
-		s.flowCodeClose.set(false);
+		s.bottomDock.armDockMode('timeline', true);
+		s.timelineClose.set(false);
 	});
 	await page.waitForTimeout(900);
 	const afterDock = await zMap();

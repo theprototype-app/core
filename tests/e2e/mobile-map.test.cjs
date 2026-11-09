@@ -324,7 +324,7 @@ h.run(async () => {
 	}
 	await rest();
 	await tap('#ps-more');
-	const optional = await read(() => ['flowcode', 'uv', 'shader', 'hud', 'profiler', 'code'].filter((k) => !document.querySelector(`#ps-tile-${k}`)?.offsetParent));
+	const optional = await read(() => ['timeline', 'uv', 'shader', 'hud', 'profiler', 'code'].filter((k) => !document.querySelector(`#ps-tile-${k}`)?.offsetParent));
 	row(30, optional.length === 0, `Optional views are tiles in More › Windows (missing ${JSON.stringify(optional)})`);
 	await rest();
 	await tap('#ps-more');

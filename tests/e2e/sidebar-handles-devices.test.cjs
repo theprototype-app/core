@@ -119,22 +119,33 @@ h.run(async () => {
 			h.check(!st.hr && !!st.hl, `${tag('1.6')} desktop: the right handle hides with its column open, the left stays`);
 			// --- 7: what sits above the open column beside the profile button ---
 			const above = await page.evaluate(() => {
-				const out = [];
 				const strip = document.getElementById('sidebar-strip-right')?.getBoundingClientRect();
 				const av = document.getElementById('avatar-trigger')?.getBoundingClientRect();
 				if (!strip || !av) return { skip: true };
-				const x = Math.round(strip.left + 40);
 				const y = Math.round(Math.max(4, av.top + av.height / 2));
-				for (const el of document.elementsFromPoint(x, y)) {
-					if (el === document.documentElement || el === document.body || el.tagName === 'CANVAS') break;
-					const cs = getComputedStyle(el);
-					out.push({ tag: el.tagName, id: el.id, cls: String(el.className).slice(0, 80), bg: cs.backgroundColor });
-				}
-				return { x, y, stack: out };
+				const canvas = [...document.querySelectorAll('canvas')].map((c) => c.getBoundingClientRect()).sort((p, q) => q.width * q.height - p.width * p.height)[0];
+				const probe = (x) => {
+					const stack = [];
+					for (const el of document.elementsFromPoint(x, y)) {
+						if (el === document.documentElement || el === document.body) break;
+						const cs = getComputedStyle(el);
+						stack.push({ tag: el.tagName, id: el.id, cls: String(el.className).slice(0, 60), bg: cs.backgroundColor });
+						if (el.tagName === 'CANVAS') break;
+					}
+					return { x, top: stack[0]?.tag ?? 'BODY', stack };
+				};
+				return {
+					y,
+					canvas: canvas && { x: Math.round(canvas.x), r: Math.round(canvas.right), w: Math.round(canvas.width) },
+					body: getComputedStyle(document.body).backgroundColor,
+					points: [Math.round(strip.left + 40), Math.round(av.left - 100), Math.round(av.left - 30)].map(probe)
+				};
 			});
-			console.log(`${dev.name} above-column stack`, JSON.stringify(above));
-			const painted = (above.stack ?? []).filter((e) => e.bg && e.bg !== 'rgba(0, 0, 0, 0)' && e.bg !== 'transparent');
-			h.check(!painted.length, `${tag('7.1')} nothing painted above the open column beside the profile button (${JSON.stringify(painted.slice(0, 2))})`);
+			console.log(`${dev.name} above-column`, JSON.stringify(above));
+			const vw = dev.ctx.viewport.width;
+			const painted = (above.points ?? []).flatMap((pt) => pt.stack.filter((e) => e.tag !== 'CANVAS' && e.bg && e.bg !== 'rgba(0, 0, 0, 0)' && e.bg !== 'transparent'));
+			h.check(!above.skip && above.canvas && above.canvas.r >= vw - 1, `${tag('7.1')} the 3D view still reaches the right edge above the open column (${JSON.stringify(above.canvas)})`);
+			h.check(!painted.length && (above.points ?? []).every((pt) => pt.stack.some((e) => e.tag === 'CANVAS')), `${tag('7.2')} nothing painted between the column and the profile button: the 3D view shows there (${JSON.stringify((above.points ?? []).map((pt) => pt.top))})`);
 		}
 		await page.evaluate(() => window.__stores.sidebars.toggleSidebar('right', false));
 		await settle(page);

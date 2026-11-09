@@ -16,9 +16,15 @@
 		previewWindows,
 		previewRaise,
 		openPreviewCog,
-		closePreviewWindow,
-		setPreviewWindow
+		setPreviewWindow,
+		setPreviewMode,
+		closePreviewGuarded
 	} from '$lib/fileWindows';
+	// uir-preview: Pin to dock + View | Edit (owner 2026-11-09)
+	import { confirmLeaveEditor, imageEditorDirty as previewEditDirty } from '$lib/image/imageEditorState';
+	import { hostedDocked, setHostedDocked } from '$lib/dockHost';
+	import { bottomDockable } from '$lib/bottomDockDrop';
+	import ImageEditorWindow from './ImageEditorWindow.svelte';
 	import {
 		previewSiblings,
 
@@ -30,7 +36,11 @@
 		previewIdOf,
 		previewPosition,
 		stepPreview,
-		clampPreviewOpacity
+		clampPreviewOpacity,
+		previewPinned,
+		explorerSelection,
+		imageWalk,
+		stepImage
 	} from '$lib/filePreview';
 	import { activeFolder, explorerFolders, explorerItems, itemBlob } from '$lib/explorer';
 	// R22 round 13 P3: the arrows may walk into a MOUNTED project's folder, whose files are
@@ -196,6 +206,14 @@
 	 * caller passes a plain `{title, url}` and must keep working unchanged. */
 	const face = $derived(target ? (target.kind ?? 'image') : null);
 	/**
+	 * uir-preview — VIEW | EDIT. The window's face is its target's `mode`; Edit draws the image editor
+	 * in the body (one window at a time — the editor is one). Only a library image can be edited.
+	 */
+	const editing = $derived(target?.mode === 'edit');
+	/** the PINNED window — the first one — follows the Explorer selection */
+	const pinned = $derived(first && $previewPinned);
+	const docked = $derived(first && !!$hostedDocked.preview);
+	/**
 	 * R22 ROUND 22 (user): "lock opacity setting for audio files (it does not makes sense
 	 * for it or for folder to have it)".
 	 *
@@ -211,11 +229,20 @@
 	const opacityApplies = $derived(face === 'image' || face === 'object');
 	/** 40-image (F13): an image in YOUR library can be edited — a pack card or a mounted
 	 * project's file has no record to save into */
-	const editable = $derived(face === 'image' && !!target?.itemId && $explorerItems.some((i: any) => i.id === target?.itemId));
+	const libItem = $derived(target?.itemId ? ($explorerItems.find((i: any) => i.id === target?.itemId) ?? null) : null);
+	const editable = $derived(face === 'image' && !!libItem);
+	/** what the header says: the target's title, else (a bridged open) the library name */
+	const title = $derived(target?.title || libItem?.name || '');
 	const walkId = $derived(String(target?.itemId ?? target?.folderId ?? ''));
-	const place = $derived(previewPosition($previewSiblings.entries, walkId));
-	const canPrev = $derived(!!stepPreview($previewSiblings.entries, walkId, -1));
-	const canNext = $derived(!!stepPreview($previewSiblings.entries, walkId, 1));
+	/** in Edit the walk is the IMAGES (`[` `]`, the filmstrip); in View every file with a face */
+	const place = $derived.by(() => {
+		if (!editing) return previewPosition($previewSiblings.entries, walkId);
+		const walk = imageWalk($previewSiblings.entries);
+		return { at: walk.findIndex((e: any) => previewIdOf(e) === walkId) + 1, of: walk.length };
+	});
+	const stepFn = $derived(editing ? stepImage : stepPreview);
+	const canPrev = $derived(!!stepFn($previewSiblings.entries, walkId, -1));
+	const canNext = $derived(!!stepFn($previewSiblings.entries, walkId, 1));
 	/**
 	 * The folder ABOVE the one being browsed — Backspace's destination.
 	 *
@@ -260,7 +287,8 @@
 			panX = 0;
 			panY = 0;
 			if ($openPreviewCog === winId) openPreviewCog.set(null);
-			setTimeout(() => winEl?.focus(), 0); // focus so the keys below reach us
+			// focus so the keys below reach us — in Edit, the editor's canvas (its own keys live there)
+			setTimeout(() => ((t.mode === 'edit' ? winEl?.querySelector('#image-editor-canvas-wrap') : null) ?? winEl)?.focus(), 0);
 		}
 	});
 
@@ -304,6 +332,22 @@
 				e.preventDefault();
 				e.stopPropagation();
 			};
+			/**
+			 * uir-preview — EDIT OWNS ITS KEYS. `[` `]` and Ctrl+←/→ walk the folder's images (never
+			 * while typing: a DragRow or a field keeps its brackets and its word-jumps); everything
+			 * else goes on to the editor's own handler, which sits inside this window — Esc cancels a
+			 * crop or returns to View there, Ctrl+Z is the editor's undo. Plain arrows are left alone.
+			 */
+			if (editing) {
+				if (typing) return;
+				const mod = e.ctrlKey || e.metaKey;
+				if (!mod && !e.altKey && (e.key === '[' || e.key === ']')) return stop(), step(e.key === ']' ? 1 : -1);
+				if (mod && !e.shiftKey && !e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight'))
+					return stop(), step(e.key === 'ArrowRight' ? 1 : -1);
+				// Esc with focus on the header (outside the editor): back to View, after the ask
+				if (e.key === 'Escape' && !el?.closest?.('#image-editor-window')) return stop(), void setMode('view');
+				return;
+			}
 			if (e.key === 'Escape') return stop(), close();
 			if (e.key === ' ' || e.code === 'Space') {
 				if (typing) return;
@@ -398,11 +442,11 @@
 	 * perfectly framed image off centre — which is the case the old rule got right, and the
 	 * only one it did.
 	 */
-	const canPan = $derived(face === 'image' && (zoom !== 1 || panX !== 0 || panY !== 0));
+	const canPan = $derived(face === 'image' && !editing && (zoom !== 1 || panX !== 0 || panY !== 0));
 
 	const clamp = (z: number) => Math.min(Math.max(z, 0.1), 8);
 	function onWheel(e: WheelEvent) {
-		if (face !== 'image') return;
+		if (face !== 'image' || editing) return;
 		e.preventDefault();
 		zoom = clamp(zoom * (e.deltaY > 0 ? 0.9 : 1.1));
 	}
@@ -411,6 +455,11 @@
 	async function show(entry: any) {
 		const kind = previewFaceOf(entry);
 		if (!kind) return;
+		// uir-preview: leaving an image with unsaved edits asks first; an IMAGE stays in Edit (the
+		// walk in Edit only offers images), anything else returns the window to View
+		const stayEdit = editing && kind === 'image' && imageWalk([entry]).length === 1;
+		if (editing && !(await confirmLeaveEditor('switch'))) return;
+		const mode = stayEdit ? 'edit' : 'view';
 		// releasing the URL we own is the OLD target's business, and only it knows whether
 		// it made one (a Scene-derived row hands us a data: url it did not mint)
 		const keep = target?.onClose;
@@ -421,6 +470,7 @@
 				kind: 'folder',
 				folderId: entry.folder.id,
 				url: '',
+				mode,
 				onClose: keep
 			});
 			return;
@@ -447,6 +497,8 @@
 			prefabId: item.kind === 'prefab' ? item.prefabId : '',
 			name: item.name,
 			url,
+			mode,
+			volumeId: item.volumeItem ? item.volumeId : undefined,
 			onClose: keep
 		});
 		zoom = 1;
@@ -455,9 +507,93 @@
 	}
 
 	function step(delta: number) {
-		const next = stepPreview($previewSiblings.entries, walkId, delta);
+		const next = stepFn($previewSiblings.entries, walkId, delta);
 		if (next) void show(next);
 	}
+
+	/** View | Edit. Edit needs a library image; leaving Edit asks when there are unsaved edits. */
+	async function setMode(next: 'view' | 'edit') {
+		if (!target || next === (target.mode ?? 'view')) return;
+		if (next === 'edit' && !editable) return;
+		if (next === 'view' && !(await confirmLeaveEditor('leave'))) return;
+		setPreviewMode(winId, next);
+	}
+
+	/**
+	 * uir-preview — "PIN TO DOCK". Unpinned: pin (follow the Explorer selection) and dock the Preview
+	 * tab. Pinned: unpin (stop following) and stay where it is. Only the first window is the pinned
+	 * one; the others never show the button.
+	 */
+	function togglePin() {
+		if ($previewPinned) {
+			previewPinned.set(false);
+			return;
+		}
+		previewPinned.set(true);
+		if (!docked) setHostedDocked('preview', true);
+		const sel = $explorerSelection;
+		if (sel && previewFaceOf(sel) && previewIdOf(sel) !== walkId) void show(sel);
+	}
+
+	/**
+	 * FOLLOW. The pinned window shows the Explorer's anchor whenever it CHANGES. Not on mount: a
+	 * window opened on something else (Edit image… from the Inspector) keeps it — except an EMPTY
+	 * Preview tab, which is waiting for exactly this. A selection with no face (a pack card, a
+	 * scene) leaves the window where it is.
+	 */
+	let followed: any = undefined;
+	$effect(() => {
+		const sel = $explorerSelection;
+		if (!pinned) {
+			followed = sel;
+			return;
+		}
+		untrack(() => {
+			const fresh = followed === undefined ? face === 'empty' : sel !== followed;
+			followed = sel;
+			if (!fresh || !sel || !previewFaceOf(sel)) return;
+			if (previewIdOf(sel) === walkId && face !== 'empty') return;
+			void show(sel);
+		});
+	});
+
+	// an image opened by id alone (Edit image…, the editor bridge) gets its bytes here
+	let resolvingFor = '';
+	$effect(() => {
+		const t = target;
+		if (!t || (t.kind ?? 'image') !== 'image' || t.url || !t.itemId || resolvingFor === t.itemId) return;
+		resolvingFor = t.itemId;
+		void itemBlob(t.itemId).then((blob: any) => {
+			const now = $previewWindows.find((w: any) => w.id === winId);
+			if (!blob || !now || now.itemId !== t.itemId || now.url) return;
+			setPreviewWindow(winId, { ...now, url: URL.createObjectURL(blob) });
+		});
+	});
+
+	/** uir-preview: the TEXT face — read-only, the first 256 KB */
+	const TEXT_CAP = 256 * 1024;
+	let text = $state('');
+	let textMore = $state(false);
+	let textFor = '';
+	$effect(() => {
+		const t = target;
+		if (!t || face !== 'text') return;
+		const key = String(t.itemId ?? '');
+		if (key === textFor) return;
+		textFor = key;
+		text = '';
+		textMore = false;
+		void (async () => {
+			const blob: any = t.volumeId ? await volumeBlob(t.volumeId, t.itemId) : await itemBlob(t.itemId);
+			if (textFor !== key) return;
+			if (!blob) {
+				text = '';
+				return;
+			}
+			textMore = blob.size > TEXT_CAP;
+			text = await blob.slice(0, TEXT_CAP).text();
+		})();
+	});
 
 	/**
 	 * WAIT FOR THE EXPLORER TO REPUBLISH, rather than guessing at a delay.
@@ -514,15 +650,13 @@
 	function releaseUrl() {
 		if (target?.url && String(target.url).startsWith('blob:')) URL.revokeObjectURL(target.url);
 	}
-	function close() {
-		target?.onClose?.(); // 218: let the opener (Explorer) refocus
-		releaseUrl();
-		closePreviewWindow(winId);
-		openedFor = null;
-		if (get(openPreviewCog) === winId) openPreviewCog.set(null);
+	/** 218: the opener (Explorer) refocuses through `onClose`; the ONE guarded close path also
+	 * asks before dropping unsaved image edits (uir-preview) */
+	async function close() {
+		if (await closePreviewGuarded(winId)) openedFor = null;
 	}
 
-	const ICONS: any = { image: 'image', audio: 'audio-lines', object: 'box', folder: 'folder' };
+	const ICONS: any = { image: 'image', audio: 'audio-lines', object: 'box', folder: 'folder', text: 'file-text', empty: 'eye', video: 'video' };
 </script>
 
 {#if target}
@@ -537,11 +671,14 @@
 	<div
 		id={first ? 'image-preview-window' : 'image-preview-window-' + index}
 		data-preview-id={winId}
+		data-preview-mode={editing ? 'edit' : 'view'}
+		data-preview-pinned={pinned ? 'true' : undefined}
 		bind:this={winEl}
 		tabindex="-1"
 		class="ui-panel tp-ui tp-window fixed flex flex-col overflow-hidden outline-hidden"
-		class:pv-through={winPassthrough}
-		class:pv-faded={winOpacity < 1}
+		class:pv-editing={editing}
+		class:pv-through={winPassthrough && !editing}
+		class:pv-faded={winOpacity < 1 && !editing}
 		style:--pv-opacity={winOpacity}
 		use:dragWindow={{
 			key: first ? 'imagePreviewWin' : 'imagePreviewWin:' + index,
@@ -549,7 +686,10 @@
 			resizable: true
 		}}
 		use:focusStack
+		use:bottomDockable={{ key: first ? 'preview' : 'previewExtra' }}
 		use:ownKeys
+		role="region"
+		aria-label={(editing ? 'Image editor' : 'Preview') + (title ? ': ' + title : '')}
 		style="z-index: var(--z-window); width: 520px; height: 420px"
 	>
 		<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5" use:headerWidth>
@@ -567,7 +707,7 @@
 			<button
 				id="preview-prev"
 				class="ui-button-quiet"
-				title="Previous file in this folder (←)"
+				title={editing ? 'Previous image in this folder ([ or Ctrl+←)' : 'Previous file in this folder (←)'}
 				aria-label="Previous file"
 				disabled={!canPrev}
 				onclick={() => step(-1)}><Icon name="chevron-left" size={16} aria-hidden="true" /></button
@@ -600,7 +740,7 @@
 			<button
 				id="preview-next"
 				class="ui-button-quiet"
-				title="Next file in this folder (→)"
+				title={editing ? 'Next image in this folder (] or Ctrl+→)' : 'Next file in this folder (→)'}
 				aria-label="Next file"
 				disabled={!canNext}
 				onclick={() => step(1)}><Icon name="chevron-right" size={16} aria-hidden="true" /></button
@@ -616,34 +756,59 @@
 			>
 			<!-- the title is the FIRST thing to go: the window is already showing you the file,
 			     and the name stays on the tooltip and on the drag handle -->
-			<span class="pv-title" class:pv-gone={hideTitle} title={target.title}>
+			<span class="pv-title" class:pv-gone={hideTitle} title={title}>
 				{#key face}
 					{@const faceIcon = ICONS[face ?? 'image'] ?? 'image'}
 					<Icon name={faceIcon} size={16} class="mr-1" aria-hidden="true" />
-				{/key}{target.title}</span
+				{/key}{title}{editing && $previewEditDirty ? ' •' : ''}</span
 			>
 			<span class="flex-1"></span>
-			{#if face === 'image' && !hideZoom}
+			{#if face === 'image' && !hideZoom && !editing}
 				<span id="image-zoom" class="text-xs text-text-muted">{Math.round(zoom * 100)}%</span>
 				<button class="ui-button-quiet" title="Zoom out" aria-label="Zoom out" onclick={() => (zoom = clamp(zoom * 0.8))}>−</button>
 				<button class="ui-button-quiet" title="Zoom in" aria-label="Zoom in" onclick={() => (zoom = clamp(zoom * 1.25))}>＋</button>
 				<button class="ui-button-quiet" title="Reset" onclick={() => ((zoom = 1), (panX = 0), (panY = 0))}>1:1</button>
 			{/if}
-			{#if editable}
-				<!-- 40-int: ranked with "up" — Edit image… is also on the Explorer's item menu and the
-				     Inspector's texture row, so it gives way before the walk, the cog and the exit -->
+			<!--
+				uir-preview — VIEW | EDIT, one window. Edit is offered for a library image (a pack card or a
+				mounted project's file has no record to save into) and stays visible, disabled with the
+				reason, for any other image so the switch does not appear and vanish while you walk.
+				The Edit half keeps the id `#preview-edit` of the button it replaces.
+			-->
+			{#if face === 'image'}
+				<span class="tp-seg pv-mode" class:pv-gone={hideExtras && !editing} role="group" aria-label="View or edit">
+					<button
+						id="preview-view"
+						class="tp-seg-btn"
+						aria-pressed={!editing}
+						title="View the file"
+						onclick={() => void setMode('view')}><Icon name="eye" size={16} aria-hidden="true" /><span class="pv-mode-label">View</span></button
+					>
+					<button
+						id="preview-edit"
+						class="tp-seg-btn"
+						aria-pressed={editing}
+						disabled={!editable}
+						title={editable ? 'Edit image — crop, rotate, resize, adjust' : 'Only an image in your Library can be edited'}
+						onclick={() => void setMode('edit')}><Icon name="square-pen" size={16} aria-hidden="true" /><span class="pv-mode-label">Edit</span></button
+					>
+				</span>
+			{/if}
+			{#if first}
 				<button
-					id="preview-edit"
-					class="ui-button-quiet"
-					class:pv-gone={hideExtras}
-					title="Edit image — crop, rotate, resize, adjust"
-					aria-label="Edit image"
-					onclick={() => import('$lib/image/imageEditor').then((m) => m.openImageEditor(String(target?.itemId)))}
-					><Icon name="square-pen" size={16} aria-hidden="true" /></button
+					id="preview-pin"
+					class="ui-button-quiet {pinned ? 'pv-cog-on' : ''}"
+					aria-pressed={pinned}
+					title={pinned
+						? 'Unpin — stop following the Explorer selection'
+						: 'Pin to dock — this preview follows the file selected in the Explorer'}
+					aria-label={pinned ? 'Unpin preview' : 'Pin preview to dock'}
+					onclick={togglePin}><Icon name="pin" size={16} aria-hidden="true" /></button
 				>
 			{/if}
 			<button
 				id="preview-cog"
+				class:pv-gone={editing}
 				class="ui-button-quiet {cogOpen ? 'pv-cog-on' : ''}"
 				aria-pressed={cogOpen}
 				title="Overlay settings"
@@ -651,10 +816,10 @@
 				onclick={() => openPreviewCog.set(cogOpen ? null : winId)}
 				><Icon name="settings" size={16} aria-hidden="true" /></button
 			>
-			<button class="ui-button-quiet" title="Close" aria-label="Close" onclick={close}>✕</button>
+			<button id="preview-close" class="ui-button-quiet" title="Close" aria-label="Close" onclick={() => void close()}><Icon name="x" size={16} aria-hidden="true" /></button>
 		</div>
 
-		{#if cogOpen}
+		{#if cogOpen && !editing}
 			<!--
 				A PANEL, not a ContextMenu: an opacity setting is a slider, and the shared menu
 				renders rows. It lives inside the window rather than portaled, because it is
@@ -804,7 +969,19 @@
 			}}
 			onpointerup={() => (panning = false)}
 		>
-			{#if face === 'image'}
+			{#if editing}
+				<!-- uir-preview: the Edit face — the image editor, with the images filmstrip on its left -->
+				<ImageEditorWindow onPick={(entry: any) => void show(entry)} />
+			{:else if face === 'empty'}
+				<div class="pv-folder" id="preview-empty">
+					<Icon name="eye" size={48} aria-hidden="true" />
+					<span class="pv-folder-name">Select a file in the Explorer to preview it here.</span>
+				</div>
+			{:else if face === 'text'}
+				<!-- uir-preview: read-only text; the code editor stays the Explorer's double-click -->
+				<pre id="preview-text" class="pv-text" tabindex="-1">{text}</pre>
+				{#if textMore}<span class="pv-hint">Showing the first 256 KB — open it to see the rest.</span>{/if}
+			{:else if face === 'image'}
 				<img
 					src={target.url}
 					alt={target.title}
@@ -1159,5 +1336,47 @@
 	.pv-folder-name {
 		font-size: 12px;
 		color: var(--text-2);
+	}
+	/* uir-preview: the read-only TEXT face */
+	.pv-text {
+		position: absolute;
+		inset: 0;
+		margin: 0;
+		overflow: auto;
+		padding: 8px 10px;
+		font-family: var(--font-ui-mono, ui-monospace, monospace);
+		font-size: var(--fs-badge);
+		line-height: 1.5;
+		color: var(--text);
+		white-space: pre-wrap;
+		word-break: break-word;
+		user-select: text;
+	}
+	/* uir-preview: View | Edit — icon + word, the word goes first when the header is tight */
+	.pv-mode {
+		flex-shrink: 0;
+	}
+	.pv-mode :global(.tp-seg-btn) {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+	}
+	.pv-mode-label {
+		font-size: var(--fs-badge);
+	}
+	/* the Edit face fills the body; the editor lays itself out (canvas, filmstrip, panels) */
+	.pv-editing .pv-body {
+		display: flex;
+		flex-direction: column;
+		cursor: default !important;
+	}
+	.pv-editing {
+		min-width: 420px;
+		min-height: 320px;
+	}
+	@media (max-width: 640px) {
+		.pv-editing {
+			min-width: 0;
+		}
 	}
 </style>

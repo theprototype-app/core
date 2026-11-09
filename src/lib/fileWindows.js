@@ -2,7 +2,9 @@ import { derived, get, writable } from 'svelte/store';
 // R22 round 12: the multi-window PREF lives with the other preview prefs; the COLLECTION
 // lives here, beside the target it generalises. filePreview imports nothing of ours, so
 // this edge closes no cycle.
-import { previewMultiWindow } from './filePreview';
+import { previewMultiWindow, previewPinned } from './filePreview';
+// uir-preview: the image editor is the preview window's EDIT face; its open state is a leaf
+import { imageEditorTarget, confirmLeaveEditor } from './image/imageEditorState';
 
 // Floating file windows (107): one shared professional code editor window
 // (Explorer text files AND the custom-node definition editor route here) and
@@ -131,6 +133,15 @@ export function openFilePreview(target) {
 	//   · a new window CASCADES off the last one, or every one of them lands on the same
 	//     saved rect and only the top is findable.
 	if (!get(previewMultiWindow)) {
+		// uir-preview: re-pointing the window that is in EDIT asks first (unsaved edits), and the
+		// same image asked for again keeps its Edit face — a raise, not a re-set
+		const list = get(previewWindows);
+		const newest = list[list.length - 1];
+		if (newest?.mode === 'edit') {
+			if (sameSource(spec, newest)) return void previewRaise.update((n) => n + 1);
+			void confirmLeaveEditor('switch').then((ok) => ok && imagePreviewTarget.set(spec));
+			return;
+		}
 		imagePreviewTarget.set(spec);
 		return;
 	}
@@ -218,3 +229,147 @@ export const previewSuspended = derived(
 	// windows are the only things that can be open, so it cannot drift or leak.
 	([target, windows]) => !!target || windows.some((/** @type {any} */ w) => w.kind === 'object')
 );
+
+
+// ---- uir-preview: Pin to dock, and View | Edit -------------------------------------------------
+//
+// Owner 2026-11-09 ("Windows, chat and tools"): ONE Preview tab that follows the Explorer selection
+// and docks, and the preview + image editor as ONE window with View | Edit. A window's face is its
+// target's `mode` ('view' when absent — every pre-uir caller); 'edit' draws the image editor in the
+// body. The editor is a singleton (`imageEditorTarget`), so ONE window at a time is in Edit.
+
+/** the id of the window in Edit, or null @type {import('svelte/store').Readable<number|null>} */
+export const previewEditWin = derived(previewWindows, (list) => list.find((w) => w.mode === 'edit')?.id ?? null);
+
+/** Put one window in View or Edit; Edit leaves any other window's Edit (one editor).
+ * @param {number} id @param {'view'|'edit'} mode */
+export function setPreviewMode(id, mode) {
+	previewWindows.update((list) =>
+		list.map((w) => (w.id === id ? { ...w, mode } : mode === 'edit' && w.mode === 'edit' ? { ...w, mode: 'view' } : w))
+	);
+}
+
+/** @param {any} w */
+function revokeOf(w) {
+	if (w?.url && String(w.url).startsWith('blob:')) URL.revokeObjectURL(w.url);
+}
+
+/**
+ * Open the image editor on a library image — IN a preview window. Which one: the window already
+ * showing this image, else the one already editing, else the first (the pinned one), else a new
+ * window. A repeat ask for what is already open is a RAISE (21-I3). The image's bytes for the View
+ * face resolve in the window (`url: ''`), because the editor reads its own.
+ * @param {string} itemId @param {string} [name] @returns {number} the window's id
+ */
+export function openPreviewEditor(itemId, name = '') {
+	const list = get(previewWindows);
+	const win =
+		list.find((w) => (w.kind ?? 'image') === 'image' && w.itemId === itemId) ??
+		list.find((w) => w.mode === 'edit') ??
+		list[0];
+	const spec = { title: name || win?.title || 'Image', kind: 'image', itemId, name: name || '', url: '', mode: 'edit' };
+	if (!win) {
+		const id = ++previewSeq;
+		previewWindows.set([...list, { ...spec, id }]);
+		return id;
+	}
+	const same = win.itemId === itemId && (win.kind ?? 'image') === 'image';
+	if (!same) revokeOf(win);
+	previewWindows.set(
+		list.map((w) =>
+			w.id === win.id
+				? { ...spec, title: same ? win.title || spec.title : spec.title, url: same ? win.url : '', onClose: win.onClose, id: win.id }
+				: w.mode === 'edit'
+					? { ...w, mode: 'view' }
+					: w
+		)
+	);
+	previewRaise.update((n) => n + 1);
+	return win.id;
+}
+
+/**
+ * Close one preview window, asking first when it holds unsaved edits. The ONE close path: the
+ * header ✕, Esc in View, and the dock tab's ✕ all come here.
+ * @param {number} id @returns {Promise<boolean>} closed
+ */
+export async function closePreviewGuarded(id) {
+	const w = get(previewWindows).find((x) => x.id === id);
+	if (!w) return true;
+	if (w.mode === 'edit' && !(await confirmLeaveEditor('close'))) return false;
+	w.onClose?.();
+	revokeOf(w);
+	closePreviewWindow(id);
+	if (get(openPreviewCog) === id) openPreviewCog.set(null);
+	return true;
+}
+
+/**
+ * Open THE Preview tab (the dock "+" row, a layout restore): pinned, so it follows the Explorer
+ * selection; an empty face until there is something to show.
+ */
+export function openPinnedPreview() {
+	previewPinned.set(true);
+	if (get(previewWindows).length) {
+		previewRaise.update((n) => n + 1);
+		return;
+	}
+	previewWindows.set([{ id: ++previewSeq, title: 'Preview', kind: 'empty', url: '' }]);
+}
+
+/** close the first window (the dock tab ✕) */
+export function closePinnedPreview() {
+	const first = get(previewWindows)[0];
+	if (first) void closePreviewGuarded(first.id);
+}
+
+// THE BRIDGE between the editor's own store and the window that hosts it, both directions, so
+// every existing writer of `imageEditorTarget` (openImageEditor, the dock's closer shape, suites)
+// still works: setting it opens the image in a window's Edit face; clearing it (the editor's own
+// close after its ask) returns that window to View; a window entering or leaving Edit, or walking
+// to another image in Edit, writes it. `bridging` stops each half answering the other.
+let bridging = false;
+/** @param {() => void} fn */
+const quietly = (fn) => {
+	bridging = true;
+	try {
+		fn();
+	} finally {
+		bridging = false;
+	}
+};
+if (typeof window !== 'undefined') {
+	imageEditorTarget.subscribe((t) => {
+		if (bridging) return;
+		const editing = get(previewWindows).find((w) => w.mode === 'edit');
+		if (!t) {
+			if (editing) quietly(() => setPreviewMode(editing.id, 'view'));
+			return;
+		}
+		if (editing && (editing.itemId ?? '') === (t.itemId ?? '')) {
+			previewRaise.update((n) => n + 1);
+			return;
+		}
+		quietly(() => {
+			if (t.itemId) openPreviewEditor(t.itemId);
+			else {
+				// "open the editor with nothing in it" (the dock's closer shape): an empty Edit face
+				const first = get(previewWindows)[0];
+				if (first) setPreviewWindow(first.id, { ...first, mode: 'edit' });
+				else previewWindows.set([{ id: ++previewSeq, title: 'Image editor', kind: 'image', itemId: '', url: '', mode: 'edit' }]);
+			}
+		});
+	});
+	previewWindows.subscribe((list) => {
+		if (bridging) return;
+		const editing = list.find((w) => w.mode === 'edit');
+		const t = get(imageEditorTarget);
+		if (!editing) {
+			if (t) quietly(() => imageEditorTarget.set(null));
+			return;
+		}
+		if (!t || (t.itemId ?? '') !== (editing.itemId ?? '')) {
+			quietly(() => imageEditorTarget.set({ itemId: editing.itemId ?? '', raise: (t?.raise ?? 0) + 1 }));
+		}
+	});
+}

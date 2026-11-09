@@ -93,8 +93,9 @@
 	import { defDefaults } from '$lib/customNodes';
 	import { findNodeSpec, nodeCatalog } from '$lib/nodeCatalog';
 	import { nodeDoc } from '$lib/nodeDocs';
-	import { isValidFlowConnection, typeColor, socketShape, SOCKET_TYPES, replaceableInputEdges, groupSocketType } from '$lib/flowSockets';
+	import { isValidFlowConnection, typeColor, socketShape, SOCKET_TYPES, replaceableInputEdges, groupSocketType, resolvedInputType } from '$lib/flowSockets';
 	import { lintFlowGraph, type FlowLintFinding } from '$lib/flowLint.js'; // 78 F24
+	import { fittingNodes, wireMenuRows, candidateOutputs, type WireEnd } from '$lib/wireSearch.js'; // 78 F1
 	import { variadicSocketExists, switcherItems, MAX_SWITCHER_ITEMS, SWITCHER_TYPES, switcherVType } from '$lib/variadicNodes.js'; // 37 (R6)
 	import { removeVariadicSocket, setSwitcherType, addSwitcherItem } from '$lib/variadicEdit.js'; // 37 (R6)
 	import KitButton from '../ui/Button.svelte'; // 37: the Switcher ⓘ rows on the redesign kit
@@ -1135,6 +1136,111 @@
 		return edge;
 	};
 
+	// =================================================================================
+	// 78 F1 — DRAG A WIRE INTO SPACE → NODE SEARCH. A wire let go over the empty pane opens the
+	// pane menu's search at the drop point, listing only the nodes that fit (exact type first,
+	// coercions second, "Show all nodes" last — $lib/wireSearch.js probes each with the same
+	// isValidFlowConnection a drag runs). A pick adds the node AND the wire as ONE undo step;
+	// several fitting sockets on one node are one row each. Tab opens the same search; touch takes
+	// the same path (xyflow ends a finger's wire with the same event).
+	// =================================================================================
+	/** The real endpoint behind a dragged socket (a group card's socket = the one inside it). */
+	function wireEndOf(nodeId: string, handleId: string | null, side: 'source' | 'target'): WireEnd | null {
+		if (nodeId === GROUP_IN || nodeId === GROUP_OUT || isPseudo({ id: nodeId })) return null;
+		const c =
+			side === 'source'
+				? realConnection({ source: nodeId, sourceHandle: handleId, target: '', targetHandle: null })
+				: realConnection({ source: '', sourceHandle: null, target: nodeId, targetHandle: handleId });
+		const id = side === 'source' ? c.source : c.target;
+		const node = storeNodesNow().find((n) => n.id === id);
+		return node ? { node, handle: (side === 'source' ? c.sourceHandle : c.targetHandle) ?? null, side } : null;
+	}
+	const wireEndName = (from: WireEnd) => (from.node.data?.label || from.node.type) + (from.handle ? ' · ' + from.handle : '');
+	const wireEndType = (from: WireEnd) =>
+		from.side === 'source' ? groupSocketType(from.node, from.handle, 'out') : resolvedInputType(from.node, from.handle);
+
+	/** Add `type` at `at` wired to `from` through `handle` — ONE undo step (and the wire it replaces). */
+	function placeWired(type: string, label: string, handle: string | null, from: WireEnd, at: { x: number; y: number }) {
+		const spec = findNodeSpec(type);
+		const node = {
+			id: crypto.randomUUID(),
+			type,
+			position: from.side === 'source' ? { x: Math.round(at.x), y: Math.round(at.y - 20) } : { x: Math.round(at.x - 170), y: Math.round(at.y - 20) },
+			data: { label, type, ...(spec?.defaults ?? {}) },
+			class: 'w-[150px]'
+		} as any;
+		const conn =
+			from.side === 'source'
+				? { source: from.node.id, sourceHandle: from.handle, target: node.id, targetHandle: handle }
+				: { source: node.id, sourceHandle: handle, target: from.node.id, targetHandle: from.handle };
+		const stale = from.side === 'target' ? replaceableInputEdges(conn, storeNodesNow(), storeEdgesNow()) : [];
+		inBatch('Add and connect', () => {
+			if (stale.length) commitDelete([], stale);
+			commitCreate([node], [makeEdge(conn)]);
+		});
+	}
+
+	/** The wire search's rows. @param showAll the full catalog under the fitting rows */
+	function wireSearchItems(from: WireEnd, at: { x: number; y: number }, showAll: boolean) {
+		const catalog = enabledCatalog([...nodeCatalog, ...$moduleNodeGroups], $disabledNodeTypes);
+		const rows = wireMenuRows(fittingNodes(from, catalog, findNodeSpec));
+		const fits = new Set(rows.map((r) => r.type));
+		const row = (r: (typeof rows)[number]) => ({
+			label: r.perHandle ? `${r.label} · ${r.handle ?? 'in'}` : r.label,
+			fit: r.fit,
+			tooltip: r.fit ? `${r.fromType} converts to ${r.toType}` : `${r.toType} — an exact fit`,
+			action: () => placeWired(r.type, r.label, r.handle, from, at)
+		});
+		const items: any[] = [{ header: { title: 'Wire from ' + wireEndName(from), badge: wireEndType(from) } }];
+		const exact = rows.filter((r) => r.fit === 0).map(row);
+		const converts = rows.filter((r) => r.fit === 1).map(row);
+		if (exact.length) items.push({ label: 'Fits', children: exact });
+		if (converts.length) items.push({ label: 'Converts', children: converts });
+		if (showAll)
+			items.push({
+				label: 'All nodes',
+				children: catalog.flatMap((group: any) =>
+					group.items
+						.filter((i: any) => !fits.has(i.type) && i.type !== NOTE_TYPE && i.type !== GROUP_TYPE)
+						.map((i: any) => ({ label: i.label, fit: 2, tooltip: 'No socket fits this wire — added unwired', action: () => addNode(i.type, i.label, at) }))
+				)
+			});
+		else
+			items.push({
+				label: 'Show all nodes',
+				icon: 'list',
+				pinned: true,
+				keepOpen: true,
+				tooltip: 'List every node (the ones that do not fit are added unwired)',
+				action: () => {
+					if (menu?.wire) menu = { ...menu, items: wireSearchItems(from, at, true) };
+				}
+			});
+		return items;
+	}
+
+	/** Open the wire search at screen (x, y); the node lands at `at` (flow coords, default the point). */
+	async function openWireSearch(x: number, y: number, from: WireEnd, at?: { x: number; y: number }) {
+		const flowAt = at ?? screenToFlowPosition({ x, y });
+		menu = null; // a fresh menu: `startSearch` is read once, when the menu mounts
+		await tick();
+		menu = { x, y, search: true, wire: true, items: wireSearchItems(from, flowAt, false) };
+	}
+
+	const onConnectEnd = (event: MouseEvent | TouchEvent, state: any) => {
+		if (!state || state.isValid || state.toHandle || !state.fromNode || !state.fromHandle) return;
+		const touch = 'changedTouches' in event && event.changedTouches?.length ? event.changedTouches[0] : null;
+		const x = touch ? touch.clientX : (event as MouseEvent).clientX;
+		const y = touch ? touch.clientY : (event as MouseEvent).clientY;
+		const el = document.elementFromPoint(x, y) as HTMLElement | null;
+		// only a drop on the open pane: not on a card, a socket, the minimap or the zoom controls
+		if (!el?.closest('.svelteFlow') || el.closest('.svelte-flow__node, .svelte-flow__handle, .svelte-flow__panel, .flow-lint-chip')) return;
+		const from = wireEndOf(state.fromNode.id, state.fromHandle.id ?? null, state.fromHandle.type === 'target' ? 'target' : 'source');
+		if (!from) return;
+		// after the click the pointerup makes, or the pane click would close the menu it opened
+		setTimeout(() => openWireSearch(x, y, from), 0);
+	};
+
 	// Replicate deletions xyflow made itself (deleteKey is the registry's now — this is the
 	// path for any delete xyflow still owns)
 	const ondelete = ({ nodes: deletedNodes, edges: deletedEdges }: { nodes: Node[]; edges: Edge[] }) => {
@@ -1491,10 +1597,24 @@
 			setTimeout(() => frameNodes((nodes as any[]).filter((n) => n.id === left)), 30);
 		});
 	}
+	/** Tab: enter the one selected group — else (78 F1) open the node search. With ONE node selected
+	 * it is the drag-to-search list from that node's output, placed to its right; leaving a group is Esc. */
 	function toggleGroup() {
-		const g = selectedVisible().find(isGroup);
-		if (g && selectedVisible().length === 1) enterGroup(g.id);
-		else if (level) leaveGroup();
+		const sel = selectedVisible();
+		const g = sel.find(isGroup);
+		if (g && sel.length === 1) {
+			enterGroup(g.id);
+			return;
+		}
+		const one = sel.length === 1 && !isNote(sel[0]) ? storeNodesNow().find((n) => n.id === sel[0].id) : null;
+		const from = one ? wireEndOf(one.id, candidateOutputs(String(one.type))[0] ?? null, 'source') : null;
+		if (!one || !from) {
+			addSearch();
+			return;
+		}
+		const p = lastPointer ?? paneCentre();
+		const w = sel[0].measured?.width ?? sel[0].width ?? 150;
+		openWireSearch(p.x, p.y, from, { x: sel[0].position.x + w + 60, y: sel[0].position.y + 20 });
 	}
 
 	// --- notes -------------------------------------------------------------------------
@@ -2118,6 +2238,7 @@
 			{snapGrid}
 			bind:viewport
 			{onbeforeconnect}
+			onconnectend={onConnectEnd}
 			{ondelete}
 			{isValidConnection}
 			panOnDrag={selectFirst ? [1, 2] : true}

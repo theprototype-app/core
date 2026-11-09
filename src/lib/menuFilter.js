@@ -62,7 +62,9 @@ export function rankMatches(leaves, query, max = MAX_MATCHES) {
 		.filter((entry) => entry.rank < 4)
 		.sort(
 			(a, b) =>
-				a.rank - b.rank || String(a.item.label).localeCompare(String(b.item.label))
+				// 78 F1: an item may carry a `fit` (the wire search: 0 exact, 1 coercion) — within one
+				// match rank the better fit leads; items without one tie, so every other menu is unchanged
+				a.rank - b.rank || (a.item.fit ?? 0) - (b.item.fit ?? 0) || String(a.item.label).localeCompare(String(b.item.label))
 		)
 		.slice(0, max);
 }

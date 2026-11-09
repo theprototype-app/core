@@ -917,7 +917,7 @@
 			"defaultKeys": "Tab",
 			"group": "Node editor",
 			"scope": "nodes",
-			"label": "Enter the selected group / leave the one you are in",
+			"label": "Enter the selected group, else search for a node to add (from the selected node, wired)",
 			"kind": "action",
 			"when": true
 		},

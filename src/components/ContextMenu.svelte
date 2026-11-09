@@ -162,6 +162,8 @@
 	}
 	/** how many rows the empty-query browse list shows (it scrolls) */
 	const BROWSE_CAP = 200;
+	// 78-wire: a menu that is MEANT to list everything (the wire search's "Show all nodes") raises it
+	export let browseCap: number = BROWSE_CAP;
 	/** 16-Q5: default height of the SEARCH list. A menu that unfolds down the whole
 	 *  screen is unusable, so the list gets a sensible box you can resize from the
 	 *  corner grip. */
@@ -203,7 +205,7 @@
 	$: pinnedLeaves = leaves.filter((entry) => entry.item.pinned);
 	$: freeLeaves = pinnedLeaves.length ? leaves.filter((entry) => !entry.item.pinned) : leaves;
 	$: matches = [
-		...(query ? rankMatches(freeLeaves, query) : searchMode ? freeLeaves.slice(0, BROWSE_CAP) : []),
+		...(query ? rankMatches(freeLeaves, query) : searchMode ? freeLeaves.slice(0, browseCap) : []),
 		...(query || searchMode ? pinnedLeaves : [])
 	];
 	/** flat list instead of the grouped tree? */
@@ -498,8 +500,10 @@
 	{#if headerItem}
 		<ContextMenuItems items={[headerItem]} onrun={run} />
 	{/if}
-	<!-- always mounted (it owns the keyboard) but collapsed until there's a query -->
-	<div class="ctx-filter" class:on={listMode} role="presentation">
+	<!-- always mounted (it owns the keyboard) but collapsed until there's a query. A labelled
+	     GROUP, not presentation: a menu may hold groups and items only, and a bare text field
+	     inside role=menu is an axe critical (aria-required-children) — 78-wire -->
+	<div class="ctx-filter" class:on={listMode} role="group" aria-label="Filter">
 		<Icon name="search" size={16} />
 		<input
 			class="ctx-filter-input"

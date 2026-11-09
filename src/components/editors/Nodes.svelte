@@ -1887,9 +1887,13 @@
 				const aw = a.measured?.width ?? a.width ?? 150;
 				const ah = a.measured?.height ?? a.height ?? 40;
 				const bh = b.measured?.height ?? b.height ?? 40;
-				return { f, x: (a.position.x + aw + b.position.x) / 2, y: (a.position.y + ah / 2 + b.position.y + bh / 2) / 2 };
+				const x1 = a.position.x + aw;
+				const y1 = a.position.y + ah / 2;
+				const x2 = b.position.x;
+				const y2 = b.position.y + bh / 2;
+				return { f, x: (x1 + x2) / 2, y: (y1 + y2) / 2, x1, y1, x2, y2 };
 			})
-			.filter((c): c is { f: FlowLintFinding; x: number; y: number } => !!c);
+			.filter((c): c is { f: FlowLintFinding; x: number; y: number; x1: number; y1: number; x2: number; y2: number } => !!c);
 	});
 	/** Apply a finding's fix: the flagged wire goes, the reversed one comes — ONE undo step. */
 	function reverseWire(f: FlowLintFinding) {
@@ -2341,6 +2345,14 @@
 			{/each}
 			<!-- 78 F24: a chip on every wire the lint flags (tooltip = what is wrong; press = the fix) -->
 			{#each lintChips as chip (chip.f.edgeId)}
+				{@const bend = Math.max(40, Math.abs(chip.x2 - chip.x1) / 2)}
+				<!-- the flagged wire, drawn here too: xyflow cannot draw a wire into a card with no input
+				     socket (On Click has none), so the backwards wire would otherwise be invisible -->
+				<ViewportPortal target="back">
+					<svg class="flow-lint-wire" data-edge-id={chip.f.edgeId} aria-hidden="true">
+						<path d="M {chip.x1} {chip.y1} C {chip.x1 + bend} {chip.y1}, {chip.x2 - bend} {chip.y2}, {chip.x2} {chip.y2}" />
+					</svg>
+				</ViewportPortal>
 				<ViewportPortal target="front">
 					<button
 						type="button"
@@ -2488,7 +2500,7 @@
 </div>
 
 {#if menu}
-	<ContextMenu x={menu.x} y={menu.y} items={menu.items} sizeKey="nodes" startSearch={!!menu.search} on:close={() => (menu = null)} />
+	<ContextMenu x={menu.x} y={menu.y} items={menu.items} sizeKey="nodes" startSearch={!!menu.search} browseCap={menu.wire ? 2000 : undefined} on:close={() => (menu = null)} />
 {/if}
 
 <style>
@@ -2533,6 +2545,22 @@
 	/* 78 F6: the motion switch reads as OFF at a glance (not by colour alone: the glyph is a pause) */
 	:global(.svelte-flow__controls-button.flow-motion-off) {
 		color: var(--accent);
+	}
+	/* 78 F24: the flagged wire (dashed: not colour alone) */
+	.flow-lint-wire {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 1px;
+		height: 1px;
+		overflow: visible;
+		pointer-events: none;
+	}
+	.flow-lint-wire path {
+		fill: none;
+		stroke: var(--danger);
+		stroke-width: 2;
+		stroke-dasharray: 6 4;
 	}
 	/* 78 F24: the flagged-wire chip (a real button: focusable, named, its tooltip is the finding) */
 	.flow-lint-chip {

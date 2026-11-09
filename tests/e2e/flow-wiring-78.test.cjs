@@ -26,7 +26,20 @@ const graph = (page, id = 'scene') =>
 	S(page, (id) => new Promise((r) => window.__stores.flowGraphs.subscribe((g) => r(JSON.parse(JSON.stringify(g[id] ?? { nodes: [], edges: [] }))))()), id);
 const edgeIds = (g) => g.edges.map((e) => e.id).sort();
 const handle = (node, kind) => `.svelteFlow .svelte-flow__handle.${kind}[data-nodeid="${node}"]`;
-const menuRows = (page) => page.locator('[role="menu"] .ctx-match').allTextContents();
+const menuRows = async (page) => (await page.locator('[role="menu"] .ctx-match').allTextContents()).map((t) => t.replace(/\s*▸\s*/g, ' ▸ ').replace(/\s+/g, ' ').trim());
+
+// screenshots, both themes (WIRE_SHOTS=<dir>) — the evidence folder's dark + light pair
+const SHOTS = process.env.WIRE_SHOTS || '';
+async function shotPair(page, name) {
+	if (!SHOTS) return;
+	const path = require('path');
+	await page.screenshot({ path: path.join(SHOTS, `${name}-dark.png`) });
+	await page.evaluate(() => window.__stores.themes.theme.set('light'));
+	await page.waitForTimeout(400);
+	await page.screenshot({ path: path.join(SHOTS, `${name}-light.png`) });
+	await page.evaluate(() => window.__stores.themes.theme.set('dark'));
+	await page.waitForTimeout(300);
+}
 
 /** an empty spot of the node pane (nothing drawn under it), in screen px */
 async function emptyPaneSpot(page, fx = 0.72, fy = 0.7) {
@@ -61,10 +74,11 @@ async function dragWire(page, fromSel, to) {
 
 /** a ground spot that lands on the 3D canvas (not under the docked editor) */
 async function groundSpot(page, dx) {
-	for (const z of [-2, -4, 0, -6]) {
+	for (const z of [3, 2, 0, -2]) {
 		const p = await h.projectPoint(page, [dx, 0, z]);
-		const onCanvas = await S(page, ({ x, y }) => document.elementFromPoint(x, y)?.tagName === 'CANVAS', p);
-		if (onCanvas) return p;
+		const hit = await S(page, ({ x, y }) => document.elementFromPoint(x, y)?.tagName ?? 'none', p);
+		if (hit === 'CANVAS') return p;
+		console.log(`  (ground ${dx},${z} is under a ${hit})`);
 	}
 	return null;
 }
@@ -120,7 +134,8 @@ h.run(async () => {
 	h.check(/Backwards wire/.test(tip ?? '') && /On Click never fires/.test(tip ?? ''), `§1 the chip's tooltip says what is wrong ("${tip}")`);
 	h.check(/Wire warning/.test((await chip.getAttribute('aria-label')) ?? ''), '§1 the chip has an accessible name');
 	const dash = await S(p, () => {
-		const path = document.querySelector('.svelteFlow .svelte-flow__edge[data-id="e-sel-click"] .svelte-flow__edge-path');
+		// xyflow cannot draw a wire INTO On Click (no input socket), so the lint draws it itself
+		const path = document.querySelector('.svelteFlow .flow-lint-wire[data-edge-id="e-sel-click"] path');
 		const cs = path ? getComputedStyle(path) : null;
 		return cs ? { dash: cs.strokeDasharray, stroke: cs.stroke } : null;
 	});
@@ -130,6 +145,7 @@ h.run(async () => {
 		return path ? getComputedStyle(path).strokeDasharray : null;
 	});
 	h.check(okDash === 'none', `§1 a correct wire stays solid (${okDash})`);
+	await shotPair(p, 'f24-backwards-wire');
 	await chip.click();
 	const reverseRow = p.locator('[role="menu"] [role="menuitem"]', { hasText: 'Reverse wire' }).first();
 	await reverseRow.waitFor({ timeout: 5000 });
@@ -169,10 +185,12 @@ h.run(async () => {
 	h.check(firstConv > 0 && rows.slice(0, firstConv).every((t) => t.startsWith('Fits')) && rows.slice(firstConv, -1).every((t) => t.startsWith('Converts')), `§2 exact, then coercions — never interleaved (first coercion at ${firstConv} of ${rows.length})`);
 	h.check(rows[rows.length - 1].trim() === 'Show all nodes', `§2 "Show all nodes" closes the list ("${rows[rows.length - 1]}")`);
 	h.check(rows.some((t) => /Counter · pulse/.test(t)) && rows.some((t) => /Counter · reset/.test(t)), '§2 several fitting sockets on one node = one row each');
-	h.check(!rows.some((t) => /Object Selector/.test(t)), '§2 a node with no input the wire fits (Object Selector) is not offered');
+	await shotPair(p, 'f1-wire-search');
+	const offeredSel = rows.filter((t) => /Object Selector/.test(t));
+	h.check(!offeredSel.some((t) => /▸ Object Selector$/.test(t)), `§2 a node with no input the wire fits (Object Selector) is not offered (${offeredSel.join(' | ')})`);
 	// axe: serious / critical only, on the open search menu
 	const ax = await new AxeBuilder({ page: p }).include('[role="menu"]').withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice']).analyze();
-	for (const v of ax.violations) console.log(`  [axe] ${v.impact} ${v.id} (${v.nodes.length}) ${v.nodes.slice(0, 3).map((n) => n.target.join(' ')).join(' | ')}`);
+	for (const v of ax.violations) console.log(`  [axe] ${v.impact} ${v.id} (${v.nodes.length}) ${v.nodes.slice(0, 3).map((n) => n.target.join(' ') + ' :: ' + (n.failureSummary ?? '').replace(/\s+/g, ' ')).join(' | ')}`);
 	const gated = ax.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical');
 	h.check(gated.length === 0, `§2 axe: no serious/critical violations in the search menu (${gated.map((v) => v.id).join(', ') || 'none'})`);
 	// type to filter: the exact fit leads inside its match rank
@@ -207,6 +225,7 @@ h.run(async () => {
 	await p.locator('[role="menu"] .ctx-match', { hasText: 'Show all nodes' }).click();
 	await p.waitForTimeout(300);
 	rows = await menuRows(p);
+	console.log(`  (show all: ${rows.length} rows, last ${rows.slice(-2).join(' | ')})`);
 	h.check((await menu.isVisible()) && rows.some((t) => t.startsWith('All nodes ▸ Object Selector')), `§2 Show all keeps the menu open and lists the rest (${rows.filter((t) => t.startsWith('All')).length} more)`);
 	await p.keyboard.press('Escape');
 	await p.waitForTimeout(300);
@@ -232,6 +251,9 @@ h.run(async () => {
 	await h.eventually(() => live('pp1'), (t) => t === 'placing points', '§3/F7 the capturing Path patrol card says so');
 	const banner = p.locator('#capture-banner');
 	h.check((await banner.getAttribute('data-capture')) === 'path', '§4 the banner names the armed capture (waypoints)');
+	// the docked node editor covers the lower viewport: close it for the viewport clicks
+	await p.locator('p[title="Node editor (N)"]').click();
+	await p.waitForTimeout(800);
 	const pts = async () => (await graph(p, ids.box)).nodes.find((n) => n.id === 'pp1')?.data.points?.length ?? -1;
 	const spot1 = await groundSpot(p, -1.5);
 	h.check(!!spot1, '§4 a ground spot on the canvas');
@@ -242,6 +264,7 @@ h.run(async () => {
 	await p.waitForTimeout(300);
 	h.check((await banner.getAttribute('data-capture')) === 'measure' && (await banner.getAttribute('data-depth')) === '2', '§4 Measure on top: the banner names it and counts 2 armed');
 	h.check(/then placing waypoints/.test((await p.locator('#capture-banner-below').textContent()) ?? ''), '§4 the banner says what is still armed underneath');
+	await shotPair(p, 'f5-capture-banner');
 	const spot2 = await groundSpot(p, 1.5);
 	await p.mouse.click(spot2.x, spot2.y);
 	await p.waitForTimeout(300);
@@ -259,6 +282,8 @@ h.run(async () => {
 
 	// --- §5 F6 Animate in editor -------------------------------------------------------------
 	console.log('\n=== §5 F6 Animate in editor ===');
+	await p.locator('p[title="Node editor (N)"]').click();
+	await p.waitForTimeout(1000);
 	await S(p, (uuid) => {
 		const st = window.__stores;
 		st.flowGraphsCtl.createObjectGraph(uuid);

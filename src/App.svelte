@@ -78,6 +78,8 @@
   import SplineToolbar from './components/menu/SplineToolbar.svelte'
   import MeasureToolbar from './components/menu/MeasureToolbar.svelte' // 47 M1
   import PathCaptureToolbar from './components/menu/PathCaptureToolbar.svelte' // fix-batch-2
+  import CaptureBanner from './components/menu/CaptureBanner.svelte' // 78 F5
+  import { startCaptureModes } from '$lib/captureModes' // 78 F5: the viewport capture stack
   import UnderlayWindow from './components/menu/UnderlayWindow.svelte' // 60 Q5
   import { underlayDropMenu } from '$lib/underlays'
   import ModuleToolboxLayer from './components/ui/ModuleToolboxLayer.svelte'
@@ -235,6 +237,8 @@ import { startMusicToolbox } from './lib/musicToolbox'
     // it keeps measuring while the canvas is remounting — which is exactly when a
     // report about the app freezing tends to be written.
     startSceneMetrics()
+    // 78 F5: the viewport capture stack (one Esc owner, installed before any tool arms)
+    startCaptureModes()
     // 34 PF/R1: the always-on light ring (moments, beacon windows) + user recordings
     startPerfRecorder()
     startDetailedProbe()
@@ -519,6 +523,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <SplineToolbar />
 <MeasureToolbar />
 <PathCaptureToolbar />
+<CaptureBanner />
 <!-- 60 Q5: Reference images (+ the image-drop "Use as reference" menu) -->
 <UnderlayWindow />
 <!-- A5: module toolboxes. OUTSIDE the {#if !$isLocked} block — a toolbox that opted

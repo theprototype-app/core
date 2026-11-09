@@ -60,6 +60,18 @@ async function emptyPaneSpot(page, fx = 0.72, fy = 0.7) {
 	);
 }
 
+/** press an undo/redo combo and wait (up to 5 s) for the graph to change */
+async function pressAndSettle(page, combo, id = 'scene') {
+	const before = JSON.stringify(await graph(page, id));
+	await page.keyboard.press(combo);
+	for (let i = 0; i < 25; i++) {
+		await page.waitForTimeout(200);
+		const g = await graph(page, id);
+		if (JSON.stringify(g) !== before) return g;
+	}
+	return graph(page, id);
+}
+
 /** Esc unwinds a search menu one step at a time (query, search, menu): press until it is gone */
 async function closeMenu(page) {
 	for (let i = 0; i < 4 && (await page.locator('.ctx-scroll').count()); i++) {
@@ -167,13 +179,9 @@ h.run(async () => {
 	await h.eventually(() => graph(B.page), (gb) => edgeIds(gb).includes('e-click-sel') && !edgeIds(gb).includes('e-sel-click'), '§1 the reversed wire replicates');
 	const pane0 = await p.locator('.svelteFlow .svelte-flow__pane').boundingBox();
 	await p.mouse.click(pane0.x + 12, pane0.y + 12);
-	await p.keyboard.press('Control+z');
-	await p.waitForTimeout(500);
-	g = await graph(p);
+	g = await pressAndSettle(p, 'Control+z');
 	h.check(edgeIds(g).includes('e-sel-click') && !edgeIds(g).includes('e-click-sel'), `§1 ONE undo brings the reversed wire back whole (${edgeIds(g).join(',')})`);
-	await p.keyboard.press('Control+y');
-	await p.waitForTimeout(500);
-	g = await graph(p);
+	g = await pressAndSettle(p, 'Control+y');
 	h.check(edgeIds(g).includes('e-click-sel') && !edgeIds(g).includes('e-sel-click'), '§1 redo reverses it again');
 
 	// --- §2 F1 drag a wire into space ---------------------------------------------------------
@@ -225,13 +233,9 @@ h.run(async () => {
 	h.check(!!cardBox && Math.abs(cardBox.x - drop.x) < 40 && Math.abs(cardBox.y + 20 - drop.y) < 60, `§2 the node lands at the drop point (${cardBox && Math.round(cardBox.x)},${cardBox && Math.round(cardBox.y)})`);
 	await h.eventually(() => graph(B.page), (gb) => !!added && gb.nodes.some((n) => n.id === added.id) && gb.edges.some((e) => e.target === added.id), '§2 node and wire replicate');
 	await p.mouse.click(pane0.x + 12, pane0.y + 12);
-	await p.keyboard.press('Control+z');
-	await p.waitForTimeout(500);
-	g = await graph(p);
+	g = await pressAndSettle(p, 'Control+z');
 	h.check(!g.nodes.some((n) => n.id === added?.id) && !g.edges.some((e) => e.target === added?.id), '§2 ONE undo removes node AND wire');
-	await p.keyboard.press('Control+y');
-	await p.waitForTimeout(500);
-	g = await graph(p);
+	g = await pressAndSettle(p, 'Control+y');
 	h.check(g.nodes.some((n) => n.id === added?.id) && g.edges.some((e) => e.target === added?.id), '§2 redo brings both back');
 	// Show all
 	drop = await emptyPaneSpot(p, 0.6, 0.45);

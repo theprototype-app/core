@@ -294,6 +294,8 @@
 		// setcamera/gamestart/setlook get their own card for the camera picker.
 		setgamestate: AnimationNode,
 		ongamestate: AnimationNode,
+		onplaystart: AnimationNode, // 78 F13
+		onplaystop: AnimationNode,
 		setvariable: AnimationNode,
 		getvariable: AnimationNode,
 		// 30 P4: the device-local pair (the second registry — the catalog is the first)

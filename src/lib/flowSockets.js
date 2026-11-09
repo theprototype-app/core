@@ -90,6 +90,8 @@ const OUTPUT = {
 	hudinput: 'number',
 	// 21-D6 game shell: the event half and the two readable ones
 	ongamestate: 'event',
+	onplaystart: 'event', // 78 F13
+	onplaystop: 'event',
 	getvariable: 'number',
 	gametime: 'number',
 	// 30 P4: the readable half of Store Value (a number socket; `output: text` carries a

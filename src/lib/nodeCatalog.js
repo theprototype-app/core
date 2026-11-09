@@ -217,7 +217,24 @@ export const nodeCatalog = [
 			// "which camera does the game start from" — placed in the SCENE graph. Every peer
 			// acts on it when the state enters `playing`, including a late joiner, which is
 			// what makes it the answer rather than a one-shot button action.
-			{ type: 'gamestart', label: 'Game Start', defaults: { camera: '', state: 'playing' } },
+			// 78 F13: labelled "Start camera" — "Game Start" read like an event and is not one (it
+			// never pulses). The type id stays `gamestart`: it is in saved graphs and on the wire.
+			{ type: 'gamestart', label: 'Start camera', defaults: { camera: '', state: 'playing' } },
+			// 78 F13: the events "Game Start" was mistaken for. `who`: session = the first player
+			// presses Play / the last one leaves (every peer pulses, derived from the replicated play
+			// presence); me = THIS peer presses Play / leaves (this peer only). Never sent.
+			{
+				type: 'onplaystart',
+				label: 'On Play start',
+				defaults: { who: 'session', pulse: 0.3 },
+				params: [{ key: 'who', kind: 'select', options: ['session', 'me'], doc: 'session = when the first player presses Play (every peer); me = when you press Play' }]
+			},
+			{
+				type: 'onplaystop',
+				label: 'On Play stop',
+				defaults: { who: 'session', pulse: 0.3 },
+				params: [{ key: 'who', kind: 'select', options: ['session', 'me'], doc: 'session = when the last player leaves Play (every peer); me = when you leave Play' }]
+			},
 			// 21-F4: SCENE TRAVEL. Acts on the trigger's STAMP EDGE like Set Game State;
 			// every peer loads the scene ITSELF (a peer missing the bytes pulls them
 			// first), the game state CARRIES across the hop, and the scene is picked by

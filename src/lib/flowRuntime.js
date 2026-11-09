@@ -2071,6 +2071,40 @@ function updateGameNodes(time, ctx) {
 	}
 }
 
+/** 78 F13: what On Play start / stop last saw — `me` (this peer plays) and `session` (anyone in
+ * this session plays); null until the first tick, which takes the state without pulsing (arriving
+ * in a session that already plays is not "Play began") */
+const playEdgeSeen = { me: /** @type {boolean | null} */ (null), session: /** @type {boolean | null} */ (null) };
+
+/**
+ * 78 F13: ON PLAY START / ON PLAY STOP. Pressing Play changed no game state, so "reset the score
+ * when Play begins" had no event to hang on (Game Start, now Start camera, never pulsed). Each peer
+ * derives both edges itself: `me` from its own play store, `session` from the replicated play
+ * presence (gamePresence.anyonePlaying) — so the pulse is LOCAL (replicate: false, the ongamestate
+ * rule: every peer reaches the transition itself and a broadcast would count it N times).
+ * @param {any} _time @param {any} _ctx
+ */
+function updatePlayEdgeNodes(_time, _ctx) {
+	const me = get(isLocked) === true;
+	const session = me || !!presenceRef?.anyonePlaying?.();
+	/** @type {[('me' | 'session'), boolean][]} */
+	const now = [
+		['me', me],
+		['session', session]
+	];
+	for (const [who, on] of now) {
+		const before = playEdgeSeen[who];
+		playEdgeSeen[who] = on;
+		if (before === null || before === on) continue;
+		const type = on ? 'onplaystart' : 'onplaystop';
+		for (const node of nodes) {
+			if (node.type !== type) continue;
+			if ((node.data?.who === 'me' ? 'me' : 'session') !== who) continue;
+			applyNodeTrigger(node.id, logicNow(), false);
+		}
+	}
+}
+
 /** A late joiner arrives with the state ALREADY set, so there is no transition to react
  * to — this is the one-shot catch-up the `gamestart` node needs to work for them too.
  * Called once the graph and the game state have both landed. */
@@ -2699,6 +2733,7 @@ export const valueTypes = [
 	'hudinput', // 21-D4: the HUD as a SOURCE - what the player set on a slider/toggle/etc
 	// 21-D6 the game shell
 	'ongamestate', 'getvariable', 'gametime',
+	'onplaystart', 'onplaystop', // 78 F13: Play began / ended (session or me)
 	'storedvalue', // 30 P4: what Store Value saved on this device
 	// 24-A A4: `peervariable` was MISSING here since 21-G4, and the omission was silent in
 	// every direction that is easy to look at — it has an OUTPUT type in flowSockets, an
@@ -3279,6 +3314,8 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			// it read undefined everywhere but its own card
 			return hudTimerRemaining(node, { ...d, duration: input('duration', d.duration) }, time, ctx);
 		case 'hudbutton': // 36 / DEVX #22: the press is the onclick pulse window — a wire
+		case 'onplaystart': // 78 F13: local pulses, derived on every peer (updatePlayEdgeNodes)
+		case 'onplaystop':
 		case 'ongamestate': // into a module input or a Math read undefined before (silent)
 		case 'onclick': {
 			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
@@ -5190,6 +5227,7 @@ function runTick(now) {
 	// 21-D6: the game shell. Runs BEFORE the HUD pass would matter next frame, and reads
 	// the same replicated trigger stamps, so every peer takes the same decisions.
 	updateGameNodes(time, ctx);
+	updatePlayEdgeNodes(time, ctx); // 78 F13: On Play start / stop
 	// 48 D1: the kit and the behaviours keep their own (live) clocks through a debugger pause, and
 	// behaviour inputs run on the authority — live with other players connected (ownCtx)
 	if (paused) toLive();

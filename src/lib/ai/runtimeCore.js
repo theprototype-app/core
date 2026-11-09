@@ -191,8 +191,8 @@ export function validateScene(w) {
 				code: 'gamestart-as-event',
 				level: 'error',
 				node: n.id,
-				message: name + ' is wired as if it were an event, but Game Start never fires: it only switches to its camera when the game state becomes playing, so what hangs off it never runs.',
-				fix: 'Use On Game State (state: playing) as the event; start the round with Set Game State from a button or On Click.'
+				message: name + ' is wired as if it were an event, but Start camera (type gamestart, once called Game Start) never fires: it only switches to its camera when the game state becomes playing, so what hangs off it never runs.',
+				fix: 'Use On Play start (fires once when Play begins) or On Game State (state: playing) as the event; start the round with Set Game State from a button or On Click.'
 			});
 		// HUD bindings to elements / screens that do not exist
 		const field = HUD_FIELDS[n.type];

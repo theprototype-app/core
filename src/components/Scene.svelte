@@ -20,8 +20,11 @@
 		selectSameType,
 		isolateObjects,
 		clearIsolation,
-		isIsolated
+		isIsolated,
+		flyTo
 	} from '$lib/objectActions';
+	// 78 PL32: a joiner whose camera opens inside the host's avatar steps to the side once
+	import { watchJoinSideStep } from '$lib/joinSideStep';
 	// 85: what a double-click does (a LOCAL pref; store-only leaf, no cycle)
 	import { doubleClickAction } from '$lib/selectionPrefs';
 	import { retryIfFailed } from '$lib/packRefs';
@@ -187,6 +190,7 @@
 		dpr.set((typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1) * o.dprScale);
 	});
 	onDestroy(stopQualityWatch);
+	onDestroy(watchJoinSideStep((eye, target) => flyTo(eye, target, 600)));
 
 	$globalScene = scene; // console.log($globalScene)
 	$globalRenderer = renderer;

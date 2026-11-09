@@ -115,14 +115,21 @@ export function stopMeasure(opts = {}) {
 	window.removeEventListener('keydown', onKeydown, true);
 }
 
+/** What Esc does in the tool: drop an edit session's picked point first, else leave without keeping
+ * the draft. Exported for the capture stack (78 F5), which owns Esc while the tool is armed. */
+export function measureEscape() {
+	const editing = get(measureEditing);
+	if (editing && editing.active >= 0) measureEditing.set({ ...editing, active: -1 }); // drop the pick first
+	else stopMeasure({ keep: false });
+}
+
 /** @param {KeyboardEvent} event */
 function onKeydown(event) {
 	if (!viewportHasKeys(event)) return; // 36 U11: Esc in another pane is that pane's
 	const editing = get(measureEditing);
 	let used = true;
 	if (event.key === 'Escape') {
-		if (editing && editing.active >= 0) measureEditing.set({ ...editing, active: -1 }); // drop the pick first
-		else stopMeasure({ keep: false });
+		measureEscape();
 	} else if (event.key === 'Enter') {
 		if (editing) stopMeasure();
 		else keepMeasurement();

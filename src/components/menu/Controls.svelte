@@ -68,6 +68,7 @@
 	import { simpleUntilPlay, holdAdvanced } from '$lib/onboarding/onboardState.js'; // 76 FW1
 	// 60 Q1: Play here — a roster button (Customize), a row in Play's own menu, Ctrl+Shift+Enter
 	import { playHere, playHereItems, playingHere } from '$lib/playHere';
+	import { animateInEditor, toggleAnimateInEditor } from '$lib/editorMotion'; // 78 F6
 	import { arPlayItems } from '$lib/arTable';
 	// 30 P2: Test play — the play button's right-click row beside the game chip's button
 	import { testPlay } from '$lib/gamePresence';
@@ -1370,6 +1371,24 @@
 			tint: () => ($playingHere ? ICON_ON : ICON_OFF),
 			run: () => playHere()
 		},
+		// 78 F6: ANIMATE IN EDITOR — an OPTIONAL roster button (Customize toolbar / the "+" list): off,
+		// every flow motion node rests at its authored pose while you edit; Play runs as always. The
+		// node editor's own controls carry the same switch. LOCAL (editorMotion.js).
+		animateedit: {
+			get title() {
+				return $animateInEditor
+					? 'Animate in editor: on — flow motion plays while you edit (click to rest every moving object)'
+					: 'Animate in editor: off — moving objects rest at their authored pose until Play (click to animate)';
+			},
+			label: 'Animate in editor',
+			slot: 'animate-edit-button',
+			get iconName() {
+				return $animateInEditor ? 'rotate-cw' : 'pause';
+			},
+			tint: () => ($animateInEditor ? ICON_ON : ICON_OFF),
+			pressed: () => $animateInEditor,
+			run: () => toggleAnimateInEditor()
+		},
 		multiselect: {
 			get title() {
 				return $multiSelectMode
@@ -1393,7 +1412,7 @@
 	 *  may only live in the top-right group (moved, removed, re-added there — never elsewhere) */
 	const HOME_ONLY: Record<string, Region> = { notifications: 'top', peers: 'top' };
 	/** 60 Q1: optional tool buttons (listed in Customize unchecked, like the optional views) */
-	const OPTIONAL_TOOLS = ['playhere'];
+	const OPTIONAL_TOOLS = ['playhere', 'animateedit'];
 	const ROSTER_IDS = [...DEFAULT_ORDER, ...OPTIONAL_VIEWS, ...OPTIONAL_TOOLS, ...CORNER_LEFT, ...CORNER_RIGHT, ...TOP_DEFAULT, ...TOUCH_DEFAULT];
 	/** 42 I7: the name a MENU prints for a button (its short label, else its title) */
 	function labelOf(id: string) {

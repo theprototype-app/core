@@ -103,6 +103,8 @@ import { registerGameSetting, gameSettingValue } from './gameSettings';
 import { setPointGrabEnabled } from './pointGrab';
 import { spawnedFromOf } from './transientObjects'; // 31: a copy answers to its template (a leaf)
 import { pathCaptureNode } from './pathCaptureState'; // fix-batch-2: a leaf
+import { animateInEditor, EDITOR_MOTION_TYPES } from './editorMotion'; // 78 F6: a leaf
+import { publishLiveStates, liveStatesWanted } from './nodeLiveState'; // 78 F7: a leaf
 import { applyRotor, applyFlowFloat } from './sim/motionNodes.js'; // 36-fb F25/F24 (a three leaf)
 // 40 F15: general-purpose motion (a three leaf + its pure core)
 import {
@@ -539,6 +541,9 @@ const suspended = new Set();
 /** fix-batch-2: the Path patrol node placing waypoints (paused while it does) @type {string | null} */
 let capturingPathNode = null;
 pathCaptureNode.subscribe((id) => (capturingPathNode = id));
+/** 78 F6: the viewer's "Animate in editor" switch (off = motion nodes rest outside Play) */
+let editorMotionOn = true;
+animateInEditor.subscribe((on) => (editorMotionOn = on));
 
 /**
  * 24-A A4: the effects a SUSPENDED object still gets.
@@ -5298,6 +5303,9 @@ function runTick(now) {
 	const active = new Map(); // uuid -> anim nodes
 	// 21-F2: read the gate ONCE per tick, not once per node
 	const playActive = gamePlayActive();
+	// 78 F6: "Animate in editor" off — every MOTION node stands down outside Play mode the same way,
+	// so its object rests at its authored pose (and comes back to the shared clock when it is on)
+	const motionRests = !editorMotionOn && get(isLocked) !== true;
 	/**
 	 * 21-F2: a Visibility node the recipe marked `whilePlaying` STANDS DOWN outside play.
 	 * Dropping it out of `active` (rather than skipping its apply) is the whole fix: the
@@ -5312,7 +5320,7 @@ function runTick(now) {
 	 * gets the restore-loop hand-back for free instead of reimplementing it wrong.
 	 * @param {any} node
 	 */
-	const dormant = (node) => !!node.data?.whilePlaying && !playActive;
+	const dormant = (node) => (!!node.data?.whilePlaying && !playActive) || (motionRests && EDITOR_MOTION_TYPES.has(node.type));
 	/** @param {any} node */
 	const isEffectNode = (node) =>
 		(animationTypes.includes(node.type) ||
@@ -5661,6 +5669,18 @@ function runTick(now) {
 	valueStats = { evals: ctx.evals, nodes: nodes.length, cuts: ctx.cuts };
 	// 48 D1: what the Debugger panel shows (status, the focused node's wires, the watch list)
 	if (dbg.armed) publishDebug(time, ctx, now);
+	// 78 F7: the live line under each card of the graph the node editor shows (~4 Hz, only while shown)
+	if (liveStatesWanted())
+		publishLiveStates({
+			nodes,
+			now,
+			time,
+			motionTime: effectTime(time),
+			motionRests: !editorMotionOn && get(isLocked) !== true,
+			capturing: capturingPathNode,
+			value: (node) => evalNode(node, nodes, edges, time, new Set(), ctx),
+			pulseAt: (id) => ctx.triggers?.[id]?.lastT ?? null
+		});
 	if (paused) toLive();
 	phaseEnd(PHASE_FLOW);
 

@@ -12,6 +12,7 @@
 		MarkerType,
 		SelectionMode,
 		useSvelteFlow,
+		ViewportPortal,
 		type Node,
 		type Edge,
 		type Connection
@@ -93,7 +94,11 @@
 	import { defDefaults } from '$lib/customNodes';
 	import { findNodeSpec, nodeCatalog } from '$lib/nodeCatalog';
 	import { nodeDoc } from '$lib/nodeDocs';
-	import { isValidFlowConnection, typeColor, socketShape, SOCKET_TYPES, replaceableInputEdges, groupSocketType } from '$lib/flowSockets';
+	import { isValidFlowConnection, typeColor, socketShape, SOCKET_TYPES, replaceableInputEdges, groupSocketType, resolvedInputType } from '$lib/flowSockets';
+	import { lintFlowGraph, type FlowLintFinding } from '$lib/flowLint.js'; // 78 F24
+	import { fittingNodes, wireMenuRows, candidateOutputs, type WireEnd } from '$lib/wireSearch.js'; // 78 F1
+	import { animateInEditor, toggleAnimateInEditor } from '$lib/editorMotion'; // 78 F6
+	import { liveStateGraph, nodeLiveStates, clearLiveStates } from '$lib/nodeLiveState'; // 78 F7
 	import { variadicSocketExists, switcherItems, MAX_SWITCHER_ITEMS, SWITCHER_TYPES, switcherVType } from '$lib/variadicNodes.js'; // 37 (R6)
 	import { removeVariadicSocket, setSwitcherType, addSwitcherItem } from '$lib/variadicEdit.js'; // 37 (R6)
 	import KitButton from '../ui/Button.svelte'; // 37: the Switcher ⓘ rows on the redesign kit
@@ -1140,6 +1145,111 @@
 		return edge;
 	};
 
+	// =================================================================================
+	// 78 F1 — DRAG A WIRE INTO SPACE → NODE SEARCH. A wire let go over the empty pane opens the
+	// pane menu's search at the drop point, listing only the nodes that fit (exact type first,
+	// coercions second, "Show all nodes" last — $lib/wireSearch.js probes each with the same
+	// isValidFlowConnection a drag runs). A pick adds the node AND the wire as ONE undo step;
+	// several fitting sockets on one node are one row each. Tab opens the same search; touch takes
+	// the same path (xyflow ends a finger's wire with the same event).
+	// =================================================================================
+	/** The real endpoint behind a dragged socket (a group card's socket = the one inside it). */
+	function wireEndOf(nodeId: string, handleId: string | null, side: 'source' | 'target'): WireEnd | null {
+		if (nodeId === GROUP_IN || nodeId === GROUP_OUT || isPseudo({ id: nodeId })) return null;
+		const c =
+			side === 'source'
+				? realConnection({ source: nodeId, sourceHandle: handleId, target: '', targetHandle: null })
+				: realConnection({ source: '', sourceHandle: null, target: nodeId, targetHandle: handleId });
+		const id = side === 'source' ? c.source : c.target;
+		const node = storeNodesNow().find((n) => n.id === id);
+		return node ? { node, handle: (side === 'source' ? c.sourceHandle : c.targetHandle) ?? null, side } : null;
+	}
+	const wireEndName = (from: WireEnd) => (from.node.data?.label || from.node.type) + (from.handle ? ' · ' + from.handle : '');
+	const wireEndType = (from: WireEnd) =>
+		from.side === 'source' ? groupSocketType(from.node, from.handle, 'out') : resolvedInputType(from.node, from.handle);
+
+	/** Add `type` at `at` wired to `from` through `handle` — ONE undo step (and the wire it replaces). */
+	function placeWired(type: string, label: string, handle: string | null, from: WireEnd, at: { x: number; y: number }) {
+		const spec = findNodeSpec(type);
+		const node = {
+			id: crypto.randomUUID(),
+			type,
+			position: from.side === 'source' ? { x: Math.round(at.x), y: Math.round(at.y - 20) } : { x: Math.round(at.x - 170), y: Math.round(at.y - 20) },
+			data: { label, type, ...(spec?.defaults ?? {}) },
+			class: 'w-[150px]'
+		} as any;
+		const conn =
+			from.side === 'source'
+				? { source: from.node.id, sourceHandle: from.handle, target: node.id, targetHandle: handle }
+				: { source: node.id, sourceHandle: handle, target: from.node.id, targetHandle: from.handle };
+		const stale = from.side === 'target' ? replaceableInputEdges(conn, storeNodesNow(), storeEdgesNow()) : [];
+		inBatch('Add and connect', () => {
+			if (stale.length) commitDelete([], stale);
+			commitCreate([node], [makeEdge(conn)]);
+		});
+	}
+
+	/** The wire search's rows. @param showAll the full catalog under the fitting rows */
+	function wireSearchItems(from: WireEnd, at: { x: number; y: number }, showAll: boolean) {
+		const catalog = enabledCatalog([...nodeCatalog, ...$moduleNodeGroups], $disabledNodeTypes);
+		const rows = wireMenuRows(fittingNodes(from, catalog, findNodeSpec));
+		const fits = new Set(rows.map((r) => r.type));
+		const row = (r: (typeof rows)[number]) => ({
+			label: r.perHandle ? `${r.label} · ${r.handle ?? 'in'}` : r.label,
+			fit: r.fit,
+			tooltip: r.fit ? `${r.fromType} converts to ${r.toType}` : `${r.toType} — an exact fit`,
+			action: () => placeWired(r.type, r.label, r.handle, from, at)
+		});
+		const items: any[] = [{ header: { title: 'Wire from ' + wireEndName(from), badge: wireEndType(from) } }];
+		const exact = rows.filter((r) => r.fit === 0).map(row);
+		const converts = rows.filter((r) => r.fit === 1).map(row);
+		if (exact.length) items.push({ label: 'Fits', children: exact });
+		if (converts.length) items.push({ label: 'Converts', children: converts });
+		if (showAll)
+			items.push({
+				label: 'All nodes',
+				children: catalog.flatMap((group: any) =>
+					group.items
+						.filter((i: any) => !fits.has(i.type) && i.type !== NOTE_TYPE && i.type !== GROUP_TYPE)
+						.map((i: any) => ({ label: i.label, fit: 2, tooltip: 'No socket fits this wire — added unwired', action: () => addNode(i.type, i.label, at) }))
+				)
+			});
+		else
+			items.push({
+				label: 'Show all nodes',
+				icon: 'list',
+				pinned: true,
+				keepOpen: true,
+				tooltip: 'List every node (the ones that do not fit are added unwired)',
+				action: () => {
+					if (menu?.wire) menu = { ...menu, items: wireSearchItems(from, at, true) };
+				}
+			});
+		return items;
+	}
+
+	/** Open the wire search at screen (x, y); the node lands at `at` (flow coords, default the point). */
+	async function openWireSearch(x: number, y: number, from: WireEnd, at?: { x: number; y: number }) {
+		const flowAt = at ?? screenToFlowPosition({ x, y });
+		menu = null; // a fresh menu: `startSearch` is read once, when the menu mounts
+		await tick();
+		menu = { x, y, search: true, wire: true, items: wireSearchItems(from, flowAt, false) };
+	}
+
+	const onConnectEnd = (event: MouseEvent | TouchEvent, state: any) => {
+		if (!state || state.isValid || state.toHandle || !state.fromNode || !state.fromHandle) return;
+		const touch = 'changedTouches' in event && event.changedTouches?.length ? event.changedTouches[0] : null;
+		const x = touch ? touch.clientX : (event as MouseEvent).clientX;
+		const y = touch ? touch.clientY : (event as MouseEvent).clientY;
+		const el = document.elementFromPoint(x, y) as HTMLElement | null;
+		// only a drop on the open pane: not on a card, a socket, the minimap or the zoom controls
+		if (!el?.closest('.svelteFlow') || el.closest('.svelte-flow__node, .svelte-flow__handle, .svelte-flow__panel, .flow-lint-chip')) return;
+		const from = wireEndOf(state.fromNode.id, state.fromHandle.id ?? null, state.fromHandle.type === 'target' ? 'target' : 'source');
+		if (!from) return;
+		// after the click the pointerup makes, or the pane click would close the menu it opened
+		setTimeout(() => openWireSearch(x, y, from), 0);
+	};
+
 	// Replicate deletions xyflow made itself (deleteKey is the registry's now — this is the
 	// path for any delete xyflow still owns)
 	const ondelete = ({ nodes: deletedNodes, edges: deletedEdges }: { nodes: Node[]; edges: Edge[] }) => {
@@ -1496,10 +1606,29 @@
 			setTimeout(() => frameNodes((nodes as any[]).filter((n) => n.id === left)), 30);
 		});
 	}
+	/** Tab: enter the one selected group — else (78 F1) open the node search. With ONE node selected
+	 * it is the drag-to-search list from that node's output, placed to its right; leaving a group is Esc. */
 	function toggleGroup() {
-		const g = selectedVisible().find(isGroup);
-		if (g && selectedVisible().length === 1) enterGroup(g.id);
-		else if (level) leaveGroup();
+		const sel = selectedVisible();
+		const g = sel.find(isGroup);
+		if (g && sel.length === 1) {
+			enterGroup(g.id);
+			return;
+		}
+		// nothing selected inside a group: Tab leaves it, as it always did
+		if (!sel.length && level) {
+			leaveGroup();
+			return;
+		}
+		const one = sel.length === 1 && !isNote(sel[0]) ? storeNodesNow().find((n) => n.id === sel[0].id) : null;
+		const from = one ? wireEndOf(one.id, candidateOutputs(String(one.type))[0] ?? null, 'source') : null;
+		if (!one || !from) {
+			addSearch();
+			return;
+		}
+		const p = lastPointer ?? paneCentre();
+		const w = sel[0].measured?.width ?? sel[0].width ?? 150;
+		openWireSearch(p.x, p.y, from, { x: sel[0].position.x + w + 60, y: sel[0].position.y + 20 });
 	}
 
 	// --- notes -------------------------------------------------------------------------
@@ -1743,6 +1872,79 @@
 		return list;
 	});
 
+	// =================================================================================
+	// 78 F24 — WRONG WIRING IS VISIBLE: the flow lint (pure, $lib/flowLint.js — the agent tools ask
+	// the same function) runs over the drawn graph; a flagged wire is dashed red, carries a chip
+	// at its middle whose tooltip says what is wrong, and the chip and the wire's own menu offer
+	// the fix (Reverse) as ONE undo step.
+	// =================================================================================
+	const lintFindings: FlowLintFinding[] = $derived.by(() => {
+		const drawn = (nodes as any[]).filter((n) => !n.hidden);
+		const ids = new Set(drawn.map((n) => n.id));
+		return lintFlowGraph(drawn, (edges as any[]).filter((e) => !e.hidden && ids.has(e.source) && ids.has(e.target)));
+	});
+	/** where a flagged wire's chip sits: halfway between the source's right edge and the target's left */
+	const lintChips = $derived.by(() => {
+		const byId = new Map((nodes as any[]).map((n) => [n.id, n]));
+		return lintFindings
+			.map((f) => {
+				const a = byId.get(f.source);
+				const b = byId.get(f.target);
+				if (!a || !b) return null;
+				const aw = a.measured?.width ?? a.width ?? 150;
+				const ah = a.measured?.height ?? a.height ?? 40;
+				const bh = b.measured?.height ?? b.height ?? 40;
+				const x1 = a.position.x + aw;
+				const y1 = a.position.y + ah / 2;
+				const x2 = b.position.x;
+				const y2 = b.position.y + bh / 2;
+				return { f, x: (x1 + x2) / 2, y: (y1 + y2) / 2, x1, y1, x2, y2 };
+			})
+			.filter((c): c is { f: FlowLintFinding; x: number; y: number; x1: number; y1: number; x2: number; y2: number } => !!c);
+	});
+	/** Apply a finding's fix: the flagged wire goes, the reversed one comes — ONE undo step. */
+	function reverseWire(f: FlowLintFinding) {
+		const fresh = makeEdge(f.fix);
+		const exists = storeEdgesNow().some((e) => e.id === fresh.id);
+		inBatch('Reverse wire', () => {
+			commitDelete([], [f.edgeId]);
+			if (!exists) commitCreate([], [fresh]);
+		});
+		showToast(exists ? 'Removed the backwards wire (the right one was already there)' : 'Wire reversed');
+	}
+	function lintMenu(f: FlowLintFinding, x: number, y: number) {
+		menu = {
+			x,
+			y,
+			items: [
+				{ header: { title: 'Backwards wire', badge: 'never fires' } },
+				{ label: 'Reverse wire', icon: 'arrow-left-right', tooltip: f.message, action: () => reverseWire(f) },
+				{ label: 'Disconnect', icon: 'x', action: () => commitDelete([], [f.edgeId]) }
+			]
+		};
+	}
+
+	// 78 F7: LIVE STATE ON THE CARDS — the runtime publishes one short line per card of the graph
+	// shown here (~4 Hz, $lib/nodeLiveState.js); each sits just under its card. Only while mounted.
+	$effect(() => {
+		liveStateGraph.set(activeId);
+	});
+	onMount(() => () => {
+		liveStateGraph.set(null);
+		clearLiveStates();
+	});
+	const liveChips = $derived.by(() => {
+		const states = $nodeLiveStates;
+		const out: { id: string; text: string; x: number; y: number; w: number }[] = [];
+		for (const n of nodes as any[]) {
+			const text = states[n.id];
+			if (!text || n.hidden || isPseudo(n)) continue;
+			const h = n.measured?.height ?? n.height ?? 40;
+			out.push({ id: n.id, text, x: n.position.x, y: n.position.y + h + 3, w: n.measured?.width ?? n.width ?? 150 });
+		}
+		return out;
+	});
+
 	// muted / collapsed cards: one generated stylesheet keyed by node id, so no node
 	// component has to learn about either (CSS.escape keeps a hostile id inert)
 	const bpSet = $derived(new Set($debugBreakpoints));
@@ -1761,6 +1963,8 @@
 			// 48 D1: a breakpoint is a red dot on the card's top-left corner (LOCAL, never node data)
 			if (bpSet.has(n.id)) rules.push(`${sel}::before{content:'';position:absolute;z-index:1;top:-5px;left:-5px;width:11px;height:11px;border-radius:9999px;background:var(--danger);box-shadow:0 0 0 2px var(--bg-app)}`);
 		}
+		// 78 F24: a wire the lint flags draws dashed in the danger colour (the chip on it says why)
+		for (const f of lintFindings) rules.push(`.svelteFlow .svelte-flow__edge[data-id="${esc(f.edgeId)}"] .svelte-flow__edge-path{stroke:var(--danger)!important;stroke-dasharray:6 4}`);
 		return rules.join('\n');
 	});
 
@@ -1927,10 +2131,14 @@
 
 	const onEdgeContextMenu = ({ edge, event }: { edge: Edge; event: MouseEvent }) => {
 		event.preventDefault();
+		const finding = lintFindings.find((f) => f.edgeId === edge.id); // 78 F24
 		menu = {
 			x: event.clientX,
 			y: event.clientY,
-			items: [{ label: (edge as any).data?.proxy ? 'Disconnect (the wire inside the group)' : 'Disconnect', action: () => deleteEdge(edge) }]
+			items: [
+				...(finding ? [{ header: { title: 'Backwards wire', badge: 'never fires' } }, { label: 'Reverse wire', icon: 'arrow-left-right', tooltip: finding.message, action: () => reverseWire(finding) }] : []),
+				{ label: (edge as any).data?.proxy ? 'Disconnect (the wire inside the group)' : 'Disconnect', action: () => deleteEdge(edge) }
+			]
 		};
 	};
 
@@ -2071,6 +2279,7 @@
 			{snapGrid}
 			bind:viewport
 			{onbeforeconnect}
+			onconnectend={onConnectEnd}
 			{ondelete}
 			{isValidConnection}
 			panOnDrag={selectFirst ? [1, 2] : true}
@@ -2115,6 +2324,17 @@
 				<ControlButton id="flow-tidy" title={'Tidy graph (' + (hint('nodes.tidy') || 'L') + ')'} aria-label="Tidy graph" onclick={() => tidyGraph('layout')}>
 					<Icon name="network" size={16} aria-hidden="true" />
 				</ControlButton>
+				<!-- 78 F6: Animate in editor — off rests every flow-moved object at its authored pose until Play -->
+				<ControlButton
+					id="flow-animate-edit"
+					class={$animateInEditor ? '' : 'flow-motion-off'}
+					title={$animateInEditor ? 'Animate in editor: on (click to rest every moving object until Play)' : 'Animate in editor: off — moving objects rest until Play (click to animate)'}
+					aria-label="Animate in editor"
+					aria-pressed={$animateInEditor}
+					onclick={() => toggleAnimateInEditor()}
+				>
+					<Icon name={$animateInEditor ? 'rotate-cw' : 'pause'} size={16} aria-hidden="true" />
+				</ControlButton>
 			</Controls>
 			{#if showMinimap}
 				<MiniMap
@@ -2126,6 +2346,36 @@
 					maskColor="color-mix(in srgb, var(--bg-app) 65%, transparent)"
 				/>
 			{/if}
+			<!-- 78 F7: what each node is doing right now, under its card -->
+			{#each liveChips as chip (chip.id)}
+				<ViewportPortal target="front">
+					<div class="flow-live-state" data-node-id={chip.id} style="transform: translate({chip.x}px, {chip.y}px); max-width: {chip.w}px">{chip.text}</div>
+				</ViewportPortal>
+			{/each}
+			<!-- 78 F24: a chip on every wire the lint flags (tooltip = what is wrong; press = the fix) -->
+			{#each lintChips as chip (chip.f.edgeId)}
+				{@const bend = Math.max(40, Math.abs(chip.x2 - chip.x1) / 2)}
+				<!-- the flagged wire, drawn here too: xyflow cannot draw a wire into a card with no input
+				     socket (On Click has none), so the backwards wire would otherwise be invisible -->
+				<ViewportPortal target="back">
+					<svg class="flow-lint-wire" data-edge-id={chip.f.edgeId} aria-hidden="true">
+						<path d="M {chip.x1} {chip.y1} C {chip.x1 + bend} {chip.y1}, {chip.x2 - bend} {chip.y2}, {chip.x2} {chip.y2}" />
+					</svg>
+				</ViewportPortal>
+				<ViewportPortal target="front">
+					<button
+						type="button"
+						class="flow-lint-chip nodrag nopan"
+						data-edge-id={chip.f.edgeId}
+						style="transform: translate({chip.x}px, {chip.y}px) translate(-50%, -50%)"
+						title={chip.f.message}
+						aria-label={'Wire warning: ' + chip.f.message}
+						onclick={(e) => lintMenu(chip.f, e.clientX, e.clientY)}
+					>
+						<Icon name="triangle-alert" size={16} aria-hidden="true" />
+					</button>
+				</ViewportPortal>
+			{/each}
 		</SvelteFlow>
 		<PeerCursors {viewport} />
 	</div>
@@ -2259,7 +2509,7 @@
 </div>
 
 {#if menu}
-	<ContextMenu x={menu.x} y={menu.y} items={menu.items} sizeKey="nodes" startSearch={!!menu.search} on:close={() => (menu = null)} />
+	<ContextMenu x={menu.x} y={menu.y} items={menu.items} sizeKey="nodes" startSearch={!!menu.search} browseCap={menu.wire ? 2000 : undefined} on:close={() => (menu = null)} />
 {/if}
 
 <style>
@@ -2286,6 +2536,59 @@
 	/* notes sit BEHIND the cards (drawn first, and never elevated when selected) */
 	:global(.svelte-flow__node-note) {
 		z-index: 0 !important;
+	}
+	/* 78 F7: a card's live line (status text, not a control: it never takes the pointer) */
+	.flow-live-state {
+		position: absolute;
+		pointer-events: none;
+		padding: 0 6px;
+		border-radius: 4px;
+		background: color-mix(in srgb, var(--bg-app) 80%, transparent);
+		color: var(--text-2);
+		font-size: 10px;
+		line-height: 16px;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	/* 78 F6: the motion switch reads as OFF at a glance (not by colour alone: the glyph is a pause) */
+	:global(.svelte-flow__controls-button.flow-motion-off) {
+		color: var(--accent);
+	}
+	/* 78 F24: the flagged wire (dashed: not colour alone) */
+	.flow-lint-wire {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 1px;
+		height: 1px;
+		overflow: visible;
+		pointer-events: none;
+	}
+	.flow-lint-wire path {
+		fill: none;
+		stroke: var(--danger);
+		stroke-width: 2;
+		stroke-dasharray: 6 4;
+	}
+	/* 78 F24: the flagged-wire chip (a real button: focusable, named, its tooltip is the finding) */
+	.flow-lint-chip {
+		position: absolute;
+		pointer-events: all;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 24px;
+		height: 24px;
+		border-radius: 9999px;
+		border: 1px solid var(--danger);
+		background: var(--bg-app);
+		color: var(--danger);
+		cursor: pointer;
+	}
+	.flow-lint-chip:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
 	}
 	:global(.svelte-flow__edge.tp-proxy-edge .svelte-flow__edge-path) {
 		stroke-dasharray: 6 3;

@@ -58,6 +58,7 @@
 	import { onLodProxyMoved, onLodProxyDragChanged } from '$lib/lodLevelEdit';
 	import { splineEditObject, splineEditClick, splineEditRightClick, exitSplineEdit, beginRadiusDrag, radiusDragMove, endRadiusDrag, radiusDragActive, onSplineProxyMoved, onSplineProxyDragChanged, tickSplineEdit } from '$lib/splineEdit';
 	import { capturePathClick } from '$lib/pathCapture';
+	import { captureOwns } from '$lib/captureStack'; // 78 F5: the top capture owns viewport clicks
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
 	import { startSnapEngine, setSnapPointer, beginSnapDrag, endSnapDrag, maybeSnapGizmo, snapAnchorPicking, snapAnchorClick, updateSnapAnchor } from '$lib/snapEngine';
 	import { meshPivotPicking, meshPivotClick, tickMeshPivotMarker } from '$lib/meshPivot';
@@ -899,7 +900,7 @@
 			}
 			// draw mode: dragging paints a FREEHAND stroke instead of orbiting; the
 			// spline tool places its points on pointerUP instead (57.2)
-			if ($drawMode && $drawTool !== 'spline' && !$isLocked && !$isVRMode) {
+			if ($drawMode && $drawTool !== 'spline' && !$isLocked && !$isVRMode && captureOwns('draw')) {
 				strokeActive = true;
 				setOrbitEnabled(false);
 				setRayFromEvent(event);
@@ -1053,7 +1054,7 @@
 			if ($knifePreview) knifeHover([event.clientX, event.clientY]);
 			// 47 M1: where the next measure click would land (the snap marker + rubber band) — a
 			// mouse that is not pressing; a finger has no hover
-			if ($measureMode && !event.buttons && event.pointerType !== 'touch')
+			if ($measureMode && captureOwns('measure') && !event.buttons && event.pointerType !== 'touch')
 				measureHoverAt([event.clientX, event.clientY], event.target === element);
 			if (marqueeStart) {
 				$marqueeRect = {
@@ -1216,7 +1217,7 @@
 			// 21-C3: the FLATTEN pick captures one click the same way — it is aimed at
 			// another OBJECT rather than a point, so it must also sit ahead of the
 			// selection path below, which would otherwise just select the terrain
-			if ($flattenPicking) {
+			if ($flattenPicking && captureOwns('flatten')) { // 78 F5: the top capture owns the click
 				setRayFromEvent(event);
 				if (flattenPickClick(selectionRaycaster)) return;
 			}
@@ -1273,7 +1274,7 @@
 			}
 			// 57.2: the spline tool places a control point per click; a second click
 			// in the same spot (double-click) finishes, like Enter/Finish do
-			if (splineToolActive()) {
+			if (splineToolActive() && captureOwns('draw')) {
 				const now = Date.now();
 				if (now - lastSplineClick < 400) finishSpline();
 				else splinePlaceFromRay(selectionRaycaster);
@@ -1284,9 +1285,9 @@
 			// insert one on a span marker) instead of selecting objects
 			if ($splineEditObject && splineEditClick(selectionRaycaster)) return;
 			// a Path patrol node capturing waypoints takes the click
-			if (capturePathClick(selectionRaycaster)) return;
+			if (captureOwns('path') && capturePathClick(selectionRaycaster)) return;
 			// measure mode captures clicks entirely
-			if ($measureMode) {
+			if ($measureMode && captureOwns('measure')) {
 				measureClick(selectionRaycaster, $objectsGroup, [event.clientX, event.clientY], { touch: touchTap });
 				return;
 			}

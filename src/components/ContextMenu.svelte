@@ -162,6 +162,8 @@
 	}
 	/** how many rows the empty-query browse list shows (it scrolls) */
 	const BROWSE_CAP = 200;
+	// 78-wire: a menu that is MEANT to list everything (the wire search's "Show all nodes") raises it
+	export let browseCap: number = BROWSE_CAP;
 	/** 16-Q5: default height of the SEARCH list. A menu that unfolds down the whole
 	 *  screen is unusable, so the list gets a sensible box you can resize from the
 	 *  corner grip. */
@@ -198,7 +200,14 @@
 	/** With a query: ranked matches. In search mode WITHOUT one: every action, so
 	 *  the box doubles as a full browse list (the node editor's old search box did
 	 *  this, and clearing the query should not throw you out of it). */
-	$: matches = query ? rankMatches(leaves, query) : searchMode ? leaves.slice(0, BROWSE_CAP) : [];
+	// 78 F1: a `pinned` leaf (the wire search's "Show all nodes") closes the flat list WHATEVER the
+	// query and the browse cap — the way out of a filtered list must never be filtered away
+	$: pinnedLeaves = leaves.filter((entry) => entry.item.pinned);
+	$: freeLeaves = pinnedLeaves.length ? leaves.filter((entry) => !entry.item.pinned) : leaves;
+	$: matches = [
+		...(query ? rankMatches(freeLeaves, query) : searchMode ? freeLeaves.slice(0, browseCap) : []),
+		...(query || searchMode ? pinnedLeaves : [])
+	];
 	/** flat list instead of the grouped tree? */
 	$: listMode = searchMode || !!query;
 

@@ -225,7 +225,7 @@
 		use:dragWindow={{ key: 'meshGenWindow', defaultRect: { left: 200, top: 90 }, resizable: true, minW: 300, minH: 280 }}
 		use:bottomDockable={{ key: KEY }}
 		use:focusStack={KEY}
-		style="z-index: var(--z-window); width: 420px; height: 620px"
+		style="z-index: var(--z-window); width: min(420px, calc(100vw - 16px)); height: min(620px, calc(100dvh - 110px))"
 		data-keywords="generate 3d model mesh ai meshy comfyui prompt picture image to 3d jobs history"
 		onpaste={onPaste}
 		ondrop={onDrop}

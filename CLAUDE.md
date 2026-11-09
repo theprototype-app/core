@@ -2780,6 +2780,24 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   connector's existing `game_setup` (no new tool names). Template `scripts/templates/two-levels.cjs`.
   Suites: units `levels*`; e2e `levels-progress` (two peers + one player; the cold hop runs at 6x CPU so the bar has
   steps) and `levels-export` (BUILT app only: serve-build + `E2E_PC=`; SKIPs without export-manifest.json).
+- **ROADMAP 78 F26 + F27 + PL42 (built in 78-int, 1.64).** F26 "WHY DID THIS NOT FIRE": `triggerWhy.js` is a LEAF (the
+  check map + the words): `noteCheck(nodeId, {who, fired, reason})` is called at the fire sites in flowRuntime
+  (`fireObjectClick`, `fireObjectHover`, `fireSensorEdge`, the Collect refusals), and `standingWhy(node)` in flowRuntime
+  answers "why can it not fire RIGHT NOW" (Edit mode, no sim, not the physics peer, no object, no sensor, disabled,
+  muted, touch off, nothing wired). LOCAL per device (a check is what THIS device saw; nothing replicates).
+  `whyCardLine` (<= 40 chars, a FRESH check wins for 10 s, then the standing reason) feeds the node card through
+  nodeLiveState's `WHY_TRIGGERS` readers; `whySentence` feeds the Flow debugger's `#debug-why` row (live in Play only).
+  `flowRuntime.triggerWhyOf(id)` -> `{type, check, standing (a reason KEY), card, sentence}` is the test seam. F27
+  STARTER RECIPES: `starterRecipes.js` (`STARTER_RECIPES` data + `insertStarterRecipe(id, ownerUuid)`) builds ONLY from
+  existing nodes into the OWNER'S own flow, in one history batch ('Add recipe'), every write on the replicated paths
+  (spawnAtPoint, setPhysicsFor, setMaterialParam, createPath, nodecreate/edgecreate); the walk-up door IS 85's Q9 "On
+  Near" (a static sensor zone + On Enter/Exit who:player). Nodes.svelte puts them under "Recipes" in the pane menu,
+  greyed on the scene graph. I2: hoverInput's F2 sampler writes `hoverState` source `pointer`, so an unwired Highlight
+  lights under the mouse in Interact and a phone tap. PL42 NO EMOJI: `scripts/check-emoji.cjs` (`npm run check:emoji`,
+  CI) fails on a colour emoji in src (comments skipped; `emoji-ok` per line, `emoji-ok-file` for user content such as
+  chatTokens.js); WindowShell mode tabs take a Lucide NAME (lowercase-dash = an icon, anything else = a text glyph);
+  `changelog.js stripEmoji` keeps the emoji-led older CHANGELOG entries out of What's new. Suites: unit `triggerWhy78`,
+  `checkEmoji`; e2e `trigger-why-78`, `starter-recipes-78`.
 
 ## UI design system (redesign epic)
 

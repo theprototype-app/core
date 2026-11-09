@@ -22,6 +22,17 @@ import { MUSIC_PRESET_IDS } from './gameMusicPresets';
 // 34 R2: the kit's node groups (a pure leaf over the piece specs)
 import { kitCatalogGroups } from './kit/catalog.js';
 import { BEHAVIOUR_STARTER } from './behaviours/starter.js';
+// 85 N1/N2: the easing + pivot names live in the pure core the runtime reads (a leaf)
+import { EASINGS, PIVOTS } from './motion/tweenCore.js';
+/** 85 N2: the tween sockets' labels (shared by Move / Rotate / Scale To) */
+const TWEEN_LABELS = {
+	trigger: 'trigger — go to the goal',
+	back: 'back — return to rest',
+	toggle: 'toggle — each pulse goes / returns',
+	open: 'open — at the goal while true',
+	amount: 'amount — 0 rest … 1 goal, by hand',
+	to: 'to — a point or an object (optional)'
+};
 /** Announce's value mark, spelled once OUTSIDE the catalog literals: a brace inside a node's
  * strings breaks the brace-matching scan flow-node-docs reads this file with */
 const V_MARK = '{v}';
@@ -981,6 +992,77 @@ export const nodeCatalog = [
 					{ key: 'speed', kind: 'range', min: -5, max: 5, step: 0.1 }
 				]
 			},
+			// 85 N1: a swing / sway / bob — a sine on rotation, position or scale from the shared clock,
+			// about a PIVOT face (a sign on its hook, a door on its hinge). A wired trigger starts a
+			// swing that dies away with damping (a struck bell). motion/tweenNodes.js
+			{
+				type: 'oscillate',
+				label: 'Oscillate / Swing',
+				defaults: { property: 'rotation', axis: 'z', amplitude: 20, period: 2, phase: 0, damping: 0, wave: 'sine', pivot: 'top' },
+				inputs: ['trigger'],
+				inputLabels: { trigger: 'trigger — start a swing that dies away (optional)' },
+				params: [
+					{ key: 'property', kind: 'select', options: ['rotation', 'position', 'scale'] },
+					{ key: 'axis', kind: 'select', options: ['x', 'y', 'z', 'all'] },
+					{ key: 'amplitude', kind: 'range', min: -180, max: 180, step: 0.01, doc: 'degrees (rotation), metres (position) or a fraction (scale)' },
+					{ key: 'period', kind: 'range', min: 0.1, max: 20, step: 0.05, doc: 'seconds per full swing' },
+					{ key: 'phase', kind: 'range', min: 0, max: 1, step: 0.01 },
+					{ key: 'damping', kind: 'range', min: 0, max: 5, step: 0.05, doc: 'how fast a triggered swing dies away' },
+					{ key: 'wave', kind: 'select', options: ['sine', 'triangle', 'bob'] },
+					{ key: 'pivot', kind: 'select', options: PIVOTS }
+				],
+				note: 'Rotation swings about the pivot face: top for a hanging sign or lamp, left / right for a door.'
+			},
+			// 85 N2: the TWEENS — go to a goal over a duration with easing, and back. Every peer computes
+			// the pose from the same replicated trigger stamps (trigger = go, back = return, toggle =
+			// alternate, open = a boolean held true / false). motion/tweenNodes.js
+			{
+				type: 'moveto',
+				label: 'Move To',
+				defaults: { x: 0, y: 1, z: 0, space: 'offset', duration: 1, easing: 'smooth', repeat: 'none' },
+				inputs: ['trigger', 'back', 'toggle', 'open', 'amount', 'to'],
+				inputLabels: TWEEN_LABELS,
+				params: [
+					{ key: 'x', kind: 'range', min: -20, max: 20, step: 0.05 },
+					{ key: 'y', kind: 'range', min: -20, max: 20, step: 0.05 },
+					{ key: 'z', kind: 'range', min: -20, max: 20, step: 0.05 },
+					{ key: 'space', kind: 'select', options: ['offset', 'world'] },
+					{ key: 'duration', kind: 'range', min: 0.05, max: 10, step: 0.05 },
+					{ key: 'easing', kind: 'select', options: EASINGS },
+					{ key: 'repeat', kind: 'select', options: ['none', 'pingpong', 'loop'] }
+				]
+			},
+			{
+				type: 'rotateto',
+				label: 'Rotate To',
+				defaults: { axis: 'y', angle: 90, pivot: 'origin', duration: 1, easing: 'smooth', repeat: 'none' },
+				inputs: ['trigger', 'back', 'toggle', 'open', 'amount', 'to'],
+				inputLabels: { ...TWEEN_LABELS, to: 'to — match this object\'s rotation (optional)' },
+				params: [
+					{ key: 'axis', kind: 'select', options: ['x', 'y', 'z'] },
+					{ key: 'angle', kind: 'range', min: -360, max: 360, step: 1, doc: 'degrees from the rest pose' },
+					{ key: 'pivot', kind: 'select', options: PIVOTS },
+					{ key: 'duration', kind: 'range', min: 0.05, max: 10, step: 0.05 },
+					{ key: 'easing', kind: 'select', options: EASINGS },
+					{ key: 'repeat', kind: 'select', options: ['none', 'pingpong', 'loop'] }
+				],
+				note: 'A door: pivot left (or right), axis y, angle 90 — wire On Click into toggle.'
+			},
+			{
+				type: 'scaleto',
+				label: 'Scale To',
+				defaults: { factor: 2, axis: 'all', pivot: 'origin', duration: 1, easing: 'smooth', repeat: 'none' },
+				inputs: ['trigger', 'back', 'toggle', 'open', 'amount', 'to'],
+				inputLabels: { ...TWEEN_LABELS, to: 'to — match this object\'s size (optional)' },
+				params: [
+					{ key: 'factor', kind: 'range', min: 0, max: 10, step: 0.05, doc: 'times the rest size' },
+					{ key: 'axis', kind: 'select', options: ['all', 'x', 'y', 'z'] },
+					{ key: 'pivot', kind: 'select', options: PIVOTS },
+					{ key: 'duration', kind: 'range', min: 0.05, max: 10, step: 0.05 },
+					{ key: 'easing', kind: 'select', options: EASINGS },
+					{ key: 'repeat', kind: 'select', options: ['none', 'pingpong', 'loop'] }
+				]
+			},
 			{
 				type: 'pathpatrol',
 				label: 'Path patrol',
@@ -1368,6 +1450,44 @@ export const nodeCatalog = [
 				defaults: { speed: 2 },
 				params: [{ key: 'speed', kind: 'range', min: 0.2, max: 10, step: 0.1 }]
 			},
+			// 85 N4: LIGHT CONTROL — a lamp you switch, a light that fades, a colour cycle. Drives every
+			// light in the object (a lamp model's bulb light too) and, with glow on, its emissive
+			// meshes. Local per peer from replicated stamps / the shared clock. motion/lightNodes.js
+			{
+				type: 'lightswitch',
+				label: 'Light Switch',
+				defaults: { on: true, fade: 0.3, glow: true },
+				inputs: ['trigger', 'back', 'toggle', 'on'],
+				inputLabels: { trigger: 'switch on', back: 'switch off', toggle: 'toggle — each pulse flips it', on: 'on — wire a boolean' },
+				params: [
+					{ key: 'on', kind: 'toggle', label: 'on at start' },
+					{ key: 'fade', kind: 'range', min: 0, max: 5, step: 0.05 },
+					{ key: 'glow', kind: 'toggle', label: 'dim glowing parts too' }
+				]
+			},
+			{
+				type: 'lightintensity',
+				label: 'Light Intensity',
+				defaults: { level: 1, fade: 0.5, glow: true },
+				params: [
+					{ key: 'level', kind: 'range', min: 0, max: 10, step: 0.05, doc: 'times the light\'s own intensity' },
+					{ key: 'fade', kind: 'range', min: 0, max: 10, step: 0.05 },
+					{ key: 'glow', kind: 'toggle', label: 'dim glowing parts too' }
+				]
+			},
+			{
+				type: 'lightcycle',
+				label: 'Light Colour Cycle',
+				defaults: { mode: 'rainbow', period: 4, saturation: 1, colors: '#ff3b30, #ffcc00, #34c759, #0a84ff', step: false, glow: true },
+				params: [
+					{ key: 'mode', kind: 'select', options: ['rainbow', 'list'] },
+					{ key: 'period', kind: 'range', min: 0.2, max: 60, step: 0.1 },
+					{ key: 'saturation', kind: 'range', min: 0, max: 1, step: 0.05 },
+					{ key: 'colors', kind: 'text', placeholder: '#ff0000, #00ff00, #0000ff', maxLength: 120 },
+					{ key: 'step', kind: 'toggle', label: 'jump between colours' },
+					{ key: 'glow', kind: 'toggle', label: 'tint glowing parts too' }
+				]
+			},
 			{
 				// spatial audio on the connected object; file from the Explorer (97)
 				type: 'sound',
@@ -1453,6 +1573,8 @@ export const animationTypes = [
 	'shake', 'spin', 'bounce', 'orbit', 'pulse', 'blink', 'pathpatrol',
 	'rotor', 'flowfloat', // 36-fb F25/F24 (sim/motionNodes.js)
 	'followpath', 'wander', 'orientvelocity', 'bodywave', // 40 F15 (motion/motionNodes.js)
+	'oscillate', 'moveto', 'rotateto', 'scaleto', // 85 N1/N2 (motion/tweenNodes.js)
+	'lightswitch', 'lightintensity', 'lightcycle', // 85 N4 (motion/lightNodes.js)
 	'lookat', 'setcolor', 'visibility', 'setuniform',
 	'camerarig', // 37 (R8)
 	'deviceparam', 'notetrigger' // 23-B3

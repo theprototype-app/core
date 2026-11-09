@@ -118,6 +118,10 @@ export const DEBUG_HOOKS = [
 	['materialTiers', () => import('./materialTiers.js')],
 	// 40 F15: the motion nodes (motionNodesDebug, resetMotionNodes)
 	['motionNodes', () => import('./motion/motionNodes.js')],
+	// 85 N1/N2/N4: the swing / tween / light nodes (tweenNodesDebug, lightNodesDebug) + the pure core
+	['tweenNodes', () => import('./motion/tweenNodes.js')],
+	['lightNodes', () => import('./motion/lightNodes.js')],
+	['tweenCore', () => import('./motion/tweenCore.js')],
 	['objectActions', () => import('./objectActions')],
 	['commandsHandler', () => import('./commandsHandler.svelte')],
 	['moduleSDK', () => import('./moduleSDK')],

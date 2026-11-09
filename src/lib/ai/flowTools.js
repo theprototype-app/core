@@ -112,8 +112,26 @@ const NODE_TYPE_ALIASES = /** @type {Record<string, string>} */ ({
 	start_animation: 'playanim',
 	stopanimation: 'playanim',
 	animate: 'playanim',
-	opendoor: 'playanim',
-	door: 'playanim',
+	// 85 N2: a door on a plain box has no clip to play — Rotate To swings it (pivot left)
+	opendoor: 'rotateto',
+	door: 'rotateto',
+	// 85 N1/N2/N4: the swing, the tweens and the light nodes by the words people use
+	swing: 'oscillate',
+	sway: 'oscillate',
+	pendulum: 'oscillate',
+	oscillator: 'oscillate',
+	tween: 'moveto',
+	turnto: 'rotateto',
+	grow: 'scaleto',
+	lighttoggle: 'lightswitch',
+	lightonoff: 'lightswitch',
+	lamp: 'lightswitch',
+	dim: 'lightintensity',
+	dimmer: 'lightintensity',
+	lightfade: 'lightintensity',
+	colorcycle: 'lightcycle',
+	colourcycle: 'lightcycle',
+	disco: 'lightcycle',
 	// 21-E4: the logic nodes. The four TYPES need no listing here - aiNodeTypes is
 	// derived from nodeCatalog, so adding them to the catalog put them in the enum -
 	// but a small model reaches for these four by FUNCTION rather than by name more
@@ -235,7 +253,7 @@ function validatePoints(raw) {
 }
 
 /** 85b R10: flowRuntime's DIRECT_TARGET_TYPES (kept here too: flowRuntime is history-family) */
-const DIRECT_TARGET_TOOL_TYPES = new Set(['setcolor', 'visibility', 'spin']);
+const DIRECT_TARGET_TOOL_TYPES = new Set(['setcolor', 'visibility', 'spin', 'oscillate', 'moveto', 'rotateto', 'scaleto', 'lightswitch', 'lightintensity', 'lightcycle']); // 85 N1/N2/N4 join
 /** a direct target: '' (none) or the uuid of an object in the scene, else null @param {any} v @returns {string | null} */
 function directTarget(v) {
 	if (v === '' || v === null) return '';

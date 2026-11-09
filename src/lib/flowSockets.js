@@ -168,6 +168,15 @@ const INPUT = {
 	flowfloat: { path: 'object' }, // 36-fb F24
 	followpath: { path: 'object' }, // 40 F15
 	wander: { area: 'object' }, // 40 F15
+	// 85 N1/N2/N4: the swing's trigger; the tweens' go / back / toggle events, held boolean,
+	// hand-driven amount and goal (a point, or an object off a selector); the light switch
+	oscillate: { trigger: 'event', amplitude: 'number', period: 'number', phase: 'number', damping: 'number' },
+	moveto: { trigger: 'event', back: 'event', toggle: 'event', open: 'boolean', amount: 'number', to: 'vector3', x: 'number', y: 'number', z: 'number', duration: 'number' },
+	rotateto: { trigger: 'event', back: 'event', toggle: 'event', open: 'boolean', amount: 'number', to: 'object', angle: 'number', duration: 'number' },
+	scaleto: { trigger: 'event', back: 'event', toggle: 'event', open: 'boolean', amount: 'number', to: 'object', factor: 'number', duration: 'number' },
+	lightswitch: { trigger: 'event', back: 'event', toggle: 'event', on: 'boolean', fade: 'number' },
+	lightintensity: { level: 'number', fade: 'number' },
+	lightcycle: { period: 'number', saturation: 'number' },
 	setcolor: { color: 'color' },
 	visibility: { on: 'boolean' },
 	setuniform: { value: 'number' },

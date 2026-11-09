@@ -194,6 +194,13 @@
 		wander: AnimationNode,
 		orientvelocity: AnimationNode,
 		bodywave: AnimationNode,
+		oscillate: AnimationNode, // 85 N1
+		moveto: AnimationNode, // 85 N2
+		rotateto: AnimationNode,
+		scaleto: AnimationNode,
+		lightswitch: AnimationNode, // 85 N4
+		lightintensity: AnimationNode,
+		lightcycle: AnimationNode,
 		bounce: AnimationNode,
 		orbit: AnimationNode,
 		pulse: AnimationNode,

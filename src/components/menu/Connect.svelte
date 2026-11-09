@@ -537,11 +537,11 @@
 	 re-enables them. Narrow screens drop the bar to its own row BELOW the logo
 	 (left) and the peers/profile chrome (right) instead of squeezing between them. -->
 <svelte:window onpointerdown={onPeekDown} onkeydown={onPeekKey} />
-<div class="connect-wrap" data-key-scope="keep" class:docked class:squeezed={squeezedView} class:peek class:body-open={$connectDrawerOpen} class:cx-hidden={!pillShown} style:--cx-shift="{cxShift}px">
+<div class="connect-wrap" data-key-scope="keep" class:docked class:squeezed={squeezedView} class:cx-narrow={(squeezedView || compact) && !docked} class:peek class:body-open={$connectDrawerOpen} class:cx-hidden={!pillShown} style:--cx-shift="{cxShift}px">
 	<!-- 38 R8: one glass bar (styles/hud.css) — your invite id as a mono chip, the dial field
 	     with ONE primary button, status as a Badge, icon buttons for the rest. Every id,
 	     testid, placeholder and button name the suites and the tour read is unchanged. -->
-	<div class="connect-pill tp-ui hud-glass" class:drawer-open={drawerVisible} class:compact class:docked class:squeezed={squeezedView} class:sq-left={squareLeft} class:sq-right={squareRight} bind:this={pillEl} role="group" data-state={connState}>
+	<div class="connect-pill tp-ui hud-glass" class:drawer-open={drawerVisible && !((squeezedView || compact) && !docked)} class:compact class:docked class:squeezed={squeezedView} class:sq-left={squareLeft} class:sq-right={squareRight} bind:this={pillEl} role="group" data-state={connState}>
 		{#if squeezedView}
 			<!-- 44 M14: floating with no room on the top row — the compact form (the phone chip's dot + the
 			     chevron). The dot shows the full bar over the row; it expands by itself when room returns. -->
@@ -989,12 +989,10 @@
 	.cx-squeeze {
 		padding: 0 10px;
 	}
-	.connect-pill.squeezed.drawer-open {
-		border-bottom-left-radius: var(--radius-window);
-		border-bottom-right-radius: var(--radius-window);
-		border-bottom-color: var(--border);
-	}
-	.connect-wrap.squeezed :global(.cxd-panel) {
+	/* 78 PL35 (C1): the connected CHIP is narrow too — its drawer used to span the chip and cut every row
+	   ("connectec", "self-hoste"). A narrow pill's drawer is its own card at a readable width, centred
+	   under it, exactly like the squeezed form's. */
+	.connect-wrap.cx-narrow :global(.cxd-panel) {
 		left: 50%;
 		right: auto;
 		width: min(420px, calc(100vw - 16px));

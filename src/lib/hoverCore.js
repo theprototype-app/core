@@ -138,7 +138,7 @@ export function hoverStep(over, seen, now, hysteresis = HOVER_HYSTERESIS) {
 /** @typedef {{kind: 'toggle'|'open'|'close'|'goto'|'auto', t: number, pose?: any}} DoorEvent */
 /** @typedef {{from: number | null, fromPose: Pose | null, to: number, start: number, end: number}} DoorState */
 
-/** the pose index a `go to` names: a number (0-based) or a pose name; -1 = none @param {Pose[]} poses @param {any} want */
+/** the pose index a `go to` names: a number (0-based) or a pose name; -1 = none @param {Pose[]} poses @param {any} want @returns {number} */
 export function poseIndexOf(poses, want) {
 	if (typeof want === 'number' && Number.isFinite(want)) {
 		const i = Math.round(want);

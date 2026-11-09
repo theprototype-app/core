@@ -60,9 +60,9 @@ describe('hover hysteresis', () => {
 });
 
 describe('Toggle Animation', () => {
-	const pose = (name, ry) => ({ name, p: [0, 0, 0], r: [0, ry, 0], s: [1, 1, 1] });
+	const pose = (/** @type {string} */ name, /** @type {number} */ ry) => ({ name, p: [0, 0, 0], r: [0, ry, 0], s: [1, 1, 1] });
 	const poses = [pose('closed', 0), pose('ajar', 0.5), pose('open', 1.5)];
-	const rest = (to) => ({ from: null, fromPose: null, to, start: -Infinity, end: -Infinity });
+	const rest = (/** @type {number} */ to) => ({ from: null, fromPose: null, to, start: -Infinity, end: -Infinity });
 	const opts = { duration: 1, interrupt: 'reverse', ease: 'linear' };
 
 	it('toggle goes closed -> open (the last pose) -> closed', () => {
@@ -85,7 +85,7 @@ describe('Toggle Animation', () => {
 		const moving = doorApply(rest(0), { kind: 'open', t: 0 }, poses, opts);
 		const rev = doorApply(moving, { kind: 'close', t: 0.5 }, poses, opts);
 		expect(rev.to).toBe(0);
-		expect(rev.fromPose.r[1]).toBeCloseTo(0.75, 6);
+		expect(rev.fromPose?.r[1]).toBeCloseTo(0.75, 6);
 		expect(doorPoseAt(rev, poses, 0.5, 'linear').pose.r[1]).toBeCloseTo(0.75, 6);
 		const fin = doorApply(moving, { kind: 'close', t: 0.5 }, poses, { ...opts, interrupt: 'finish' });
 		expect(fin).toBe(moving);

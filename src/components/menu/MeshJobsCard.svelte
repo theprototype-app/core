@@ -2,7 +2,12 @@
 	// Mesh-generation progress cards (roadmap #11, G2). Renders the meshJobs store as
 	// a small stack near the top-right — one card per active/finished job with a
 	// progress bar, cancel (while running) and dismiss (when finished).
-	import { meshJobs, cancelMeshJob, dismissMeshJob } from '$lib/ai/meshJobs';
+	import { meshJobs, cancelMeshJob, hideMeshJobCard } from '$lib/ai/meshJobs';
+	import { meshGenModalOpen } from '../../stores/appStore';
+	import Icon from '../ui/Icon.svelte';
+	// uir-timeline: the jobs are saved now and the Generate window lists them all; this card shows the ones
+	// this page started or resumed until dismissed, and stands down while the window is open (it says the same)
+	const cardJobs = $derived(($meshJobs as any[]).filter((j) => !j.cardHidden));
 	// v3.1 (roadmap 29 G-3): a cloud plugin's own line under the status row — the
 	// hosted queue position. Null without a plugin; see cloudHooks.meshJobStatus.
 	import { meshJobStatus } from '$lib/cloudHooks';
@@ -30,17 +35,17 @@
 	}
 </script>
 
-{#if $meshJobs.length}
+{#if cardJobs.length && !$meshGenModalOpen}
 	<div class="mesh-jobs">
-		{#each $meshJobs as job (job.id)}
+		{#each cardJobs as job (job.id)}
 			<div class="ui-panel mesh-job bg-surface-1/90 backdrop-blur-sm">
 				<div class="flex items-center gap-2">
-					<span class="text-sm">✨</span>
+					<span class="inline-flex text-accent"><Icon name="wand-sparkles" size={16} aria-hidden="true" /></span>
 					<span class="min-w-0 flex-1 truncate text-xs text-text-2" title={job.prompt}>{job.prompt}</span>
 					{#if RUNNING.has(job.status)}
 						<button class="ui-button-quiet text-[11px]" onclick={() => cancelMeshJob(job.id)}>Cancel</button>
 					{:else}
-						<button class="ui-button-quiet text-[11px]" title="Dismiss" aria-label="Dismiss this job" onclick={() => dismissMeshJob(job.id)}>✕</button>
+						<button class="ui-button-quiet text-[11px]" title="Dismiss" aria-label="Dismiss this job" onclick={() => hideMeshJobCard(job.id)}><Icon name="x" size={16} aria-hidden="true" /></button>
 					{/if}
 				</div>
 				<div class="mt-1 flex items-center gap-2">

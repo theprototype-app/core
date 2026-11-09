@@ -113,7 +113,8 @@ export const HOSTED_DOCK_WINDOWS = [
 	{ key: 'profilerLive', tooltip: 'Frame time as it happens, this peer or one you watch' },
 	{ key: 'chat', tooltip: 'Talk to the people in this session' },
 	{ key: 'aiAssistant', tooltip: 'Ask the AI assistant to build or change the scene' },
-	{ key: 'assets', tooltip: 'Free CC0 models, skies and materials from Poly Haven and ambientCG' }
+	{ key: 'assets', tooltip: 'Free CC0 models, skies and materials from Poly Haven and ambientCG' },
+	{ key: 'meshGen', tooltip: 'Make a 3D model from words or a picture; its jobs and your prompt history' }
 ];
 /** the registry rows for the posture we are in @returns {{key: string, tooltip: string}[]} */
 function windowsHere() {

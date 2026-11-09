@@ -1,5 +1,5 @@
 import { writable, derived, get } from 'svelte/store';
-import { objectListClose, chatHidden, aiAssistantHidden } from '../stores/appStore';
+import { objectListClose, chatHidden, aiAssistantHidden, meshGenModalOpen } from '../stores/appStore';
 import { isLocked } from '../stores/sceneStore';
 import { statsOpen } from './sceneBudget';
 import { profilerLiveOpen } from './perf/liveSink.js';
@@ -49,7 +49,9 @@ export const HOSTED = {
 	chat: { sel: '#chat-window', ls: 'chatDocked', store: chatHidden, isOpen: (v) => v === '', open: () => chatHidden.set(''), close: () => chatHidden.set('hidden') },
 	aiAssistant: { sel: '#ai-assistant-window', ls: 'aiAssistantDocked', store: aiAssistantHidden, isOpen: (v) => v === '', open: () => aiAssistantHidden.set(''), close: () => aiAssistantHidden.set('hidden') },
 	// 47-cc0: the free CC0 asset browser
-	assets: { sel: '#asset-browser-window', ls: 'assetBrowserDocked', store: assetBrowserOpen, isOpen: (v) => !!v, open: () => assetBrowserOpen.set(true), close: () => assetBrowserOpen.set(false) }
+	assets: { sel: '#asset-browser-window', ls: 'assetBrowserDocked', store: assetBrowserOpen, isOpen: (v) => !!v, open: () => assetBrowserOpen.set(true), close: () => assetBrowserOpen.set(false) },
+	// uir-timeline: the Generate window (its store keeps the modal's name; a value = open, seeded)
+	meshGen: { sel: '#mesh-gen-window', ls: 'meshGenDocked', store: meshGenModalOpen, isOpen: (v) => !!v, open: () => meshGenModalOpen.update((v) => v ?? {}), close: () => meshGenModalOpen.set(null) }
 };
 
 function readDocked() {

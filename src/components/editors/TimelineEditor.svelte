@@ -841,10 +841,10 @@
 							onclick={() => pickSequence(s.id)}
 							ondblclick={() => startRename(s.id)}
 						>
-							<Icon name="video" size={14} aria-hidden="true" />
+							<Icon name="video" size={16} aria-hidden="true" />
 							<span class="tl-seq-name">{s.name}</span>
-							{#if s.autoplay}<span class="tl-seq-flag" title="Autoplay"><Icon name="play" size={12} aria-hidden="true" /></span>{/if}
-							{#if s.loop}<span class="tl-seq-flag" title="Loop"><Icon name="repeat" size={12} aria-hidden="true" /></span>{/if}
+							{#if s.autoplay}<span class="tl-seq-flag" title="Autoplay"><Icon name="play" size={16} aria-hidden="true" /></span>{/if}
+							{#if s.loop}<span class="tl-seq-flag" title="Loop"><Icon name="repeat" size={16} aria-hidden="true" /></span>{/if}
 							<span class="tl-seq-len">{formatTime(s.duration, s.fps)}</span>
 						</button>
 					{/if}
@@ -882,7 +882,7 @@
 		<Button size="sm" variant="ghost" icon="square" title="Stop and rewind" id="timeline-stop" onclick={stopAll} />
 		<span class="tl-time" id="timeline-time">{formatTime(playhead, seq.fps)} / {formatTime(seq.duration, seq.fps)}</span>
 		{#if runningGame}<span class="tl-live" title="Running in the game (Play Sequence / autoplay)"
-				><Icon name="circle" size={10} aria-hidden="true" /> live</span
+				><Icon name="circle" size={16} aria-hidden="true" /> live</span
 			>{/if}
 		<span class="flex-1"></span>
 		<Button

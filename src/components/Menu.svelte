@@ -1,7 +1,7 @@
 <script lang="ts">
 	import Chat from './menu/Chat.svelte';
 	import AiAssistant from './menu/AiAssistant.svelte';
-	import MeshGenModal from './menu/MeshGenModal.svelte';
+	import MeshGenWindow from './menu/MeshGenWindow.svelte';
 	import MeshJobsCard from './menu/MeshJobsCard.svelte';
 	import Toasts from './menu/Toasts.svelte';
 	import SessionPrompts from './menu/SessionPrompts.svelte';
@@ -64,7 +64,7 @@
 <FocusModeExit />
 <!-- 43 K5: the 3D view as a picture-in-picture while a docked window fills the whole window -->
 <ViewportPip />
-<MeshGenModal />
+<MeshGenWindow />
 <MeshJobsCard />
 
 <!-- the editor chrome: hidden while playing, and for good in an embed (29-E) -->

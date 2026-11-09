@@ -41,7 +41,7 @@ export function planSetLevels(args, current) {
 	}
 	if (a.remove !== undefined) {
 		const ids = (Array.isArray(a.remove) ? a.remove : [a.remove]).map(String);
-		const missing = ids.filter((id) => !draft.list.some((/** @type {any} */ r) => r.id === id));
+		const missing = ids.filter((/** @type {string} */ id) => !draft.list.some((/** @type {any} */ r) => r.id === id));
 		if (missing.length) return { error: 'remove: no level ' + missing.join(', ') };
 		draft.list = draft.list.filter((/** @type {any} */ r) => !ids.includes(r.id));
 	}

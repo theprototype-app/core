@@ -14,6 +14,7 @@
 	import CameraHoldSetting from './scene/CameraHoldSetting.svelte';
 	import SelectionPassSetting from './scene/SelectionPassSetting.svelte'; // 36 F22 / S8
 	import SimOnLoadSetting from './scene/SimOnLoadSetting.svelte';
+	import LevelsSection from './scene/LevelsSection.svelte'; // 93 LP0
 	import FluidBudgetSetting from './scene/FluidBudgetSetting.svelte'; // 36-fb S3
 	import LodGroupPanel from './LodGroupPanel.svelte';
 	import LoadStatePanel from './LoadStatePanel.svelte';
@@ -3060,6 +3061,7 @@
 				</div>
 			</Section>
 
+			<Section variant="panel" label="Levels" badge="Shared" aliases={['Level', 'Portals', 'Checkpoints', 'Loading screen', 'Keep across levels']}><LevelsSection /></Section>
 			<Section variant="panel" label="Background" badge="Shared">
 				<FieldClip clip={colorClip('Background', () => $backgroundColor, (hex) => setBackground(hex))}>
 				<ColorPicker

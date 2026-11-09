@@ -33,7 +33,8 @@ const r1 = (n) => Math.round(n * 10) / 10;
  *   objects?: Record<string, {name: string, type?: string, light?: boolean, visible?: boolean}>,
  *   hudElements?: string[],
  *   hudScreens?: string[],
- *   play?: {interaction?: string, grounded?: boolean, spawn?: any},
+ *   play?: {interaction?: string, grounded?: boolean, spawn?: any, simOnPlay?: boolean},
+ *   dynamicBodies?: boolean,
  *   envLit?: boolean,
  *   behaviours?: {name: string, issues: {line?: number, message: string}[]}[],
  *   isSource: (type: string) => boolean,
@@ -217,6 +218,16 @@ export function validateScene(w) {
 			level: 'warning',
 			message: 'Play is set to walk, but there is no spawn point and no Character Controller node: players start wherever their camera happens to be.',
 			fix: 'Set a spawn (game_setup spawn) or add a Character Controller node.'
+		});
+	// 78 F11: an all-static walk level starts its world on Play by itself; one with moving bodies
+	// keeps the author's "run physics on Play" choice — and without it nothing stops a player
+	const walks = !!w.play?.grounded || w.nodes.some((n) => n.type === 'charcontroller' && n.data?.mode === 'walk');
+	if (walks && w.dynamicBodies === true && !w.play?.simOnPlay)
+		add({
+			code: 'walk-no-physics',
+			level: 'warning',
+			message: 'Play walks, but the scene has moving bodies and "run physics on Play" is off, so no physics world starts when someone presses Play: walls and floors will not stop players and sensors only feel the player.',
+			fix: 'Start the simulation with control_simulation action start (it keeps running through Play), or ask the person to turn on "Start the simulation when play mode opens" in Scene, Physics.'
 		});
 	// unlit
 	const lights = Object.values(objects).filter((o) => o.light).length;

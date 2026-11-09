@@ -8,7 +8,7 @@ import { get } from 'svelte/store';
 import { phaseBegin, phaseEnd, PHASE_INPUT, PHASE_FLOW, PHASE_MODULES, PHASE_PHYSICS } from './perf/perfMarks.js'; // 34 PF: an import-free leaf
 import { flowGraphs, mutedFlowObjects, syncedAnimations, flowValues, flowTriggers, SCENE_GRAPH, startGraphMirror, allNodes, allEdges, flowPaused, runtimeGraph, orphanGraphIds } from '../stores/flowStore';
 // 21-F2: `isLocked` is the LOCAL play substate the recipe gate reads — see gamePlayActive
-import { objectsGroup, isLocked, sceneRevision } from '../stores/sceneStore';
+import { objectsGroup, isLocked, sceneRevision, globalScene } from '../stores/sceneStore';
 import { peers, showToast, showInfoToast, dismissToastById} from '../stores/appStore';
 import { animationTypes, findNodeSpec } from './nodeCatalog';
 // 21-E7.6: hudKinds is a leaf (it reads only moduleHudKinds, itself svelte/store-only)
@@ -134,6 +134,7 @@ import { newTracker, trackPose } from './avatars/locomotion.js'; // 57 M3: a str
 // animationPreview and this module statically
 /** @type {any} */ let seqRef = null;
 /** @type {any} */ let physicsRef = null;
+/** @type {any} */ let playSettingsRef = null; // 78 F11 (primed: playSettings reaches module code)
 /** @type {any} */ let jointsRef = null;
 /** @type {any} */ let spawnerRef = null;
 /** B6: which On Rest nodes have already fired for the current rest episode
@@ -2096,6 +2097,36 @@ function playerCodeSettings(node, settings, time) {
 	return /** @type {T} */ (merged.settings);
 }
 
+/** 78 F11: the default walker's settings — a standing person, the built-in speed */
+const DEFAULT_WALKER = Object.freeze({ mode: /** @type {'walk'} */ ('walk'), speed: DEFAULT_FLY_SPEED, jumpHeight: 1.1, gravity: true });
+/** the play camera's base group height (Player.svelte): play.eyeHeight is LOCAL to it */
+const PLAY_BASE_Y = 0.9;
+
+/**
+ * 78 F11: WALK MODE WITHOUT A CHARACTER CONTROLLER NODE GETS ONE. While THIS peer plays on its own
+ * physics world (the run it steps — an all-static level starts one on Play) and the scene walks
+ * (flying is off, the 37 R24 default), the player is the walker — gravity, a jump, standing on
+ * boxes and climbing steps — instead of the eye-height pin that stood on the flat ground plane.
+ * Everything else keeps the old path byte-for-byte: no world here (a joiner, the editor), a
+ * scene that flies, a module that publishes its own play contract (the dungeon walks its raster).
+ * `sourceNodeId: 'default'` marks it. @returns {any}
+ */
+function defaultWalker() {
+	if (get(isLocked) !== true || !playSettingsRef || !physicsRef?.isInitiator?.()) return null;
+	/** @type {any} */
+	const scene = get(globalScene);
+	if (!scene) return null;
+	try {
+		if (playSettingsRef.playPublishers(scene).length) return null;
+		const play = playSettingsRef.resolvePlaySettings(scene);
+		if (!play.grounded) return null;
+		const eye = Number(play.eyeHeight);
+		return { ...DEFAULT_WALKER, eyeHeight: (Number.isFinite(eye) ? eye : 0.8) + PLAY_BASE_Y, sourceNodeId: 'default' };
+	} catch {
+		return null;
+	}
+}
+
 /** @param {number} time @param {any} ctx */
 function updateCharNodes(time, ctx) {
 	// 1. THE DECLARATION. charcontroller is not an action and has no trigger: it is
@@ -2104,7 +2135,8 @@ function updateCharNodes(time, ctx) {
 	// to a threlte task and a subscribed component).
 	const declarations = nodes.filter((/** @type {any} */ n) => n.type === 'charcontroller');
 	if (!declarations.length) {
-		setCharControl(null);
+		// 78 F11: walking with no controller node gets the DEFAULT walker (see defaultWalker)
+		setCharControl(defaultWalker());
 		charMultipleWarned = false;
 	} else {
 		// which one wins has to be DECIDED THE SAME WAY ON EVERY PEER or two players get
@@ -5417,6 +5449,7 @@ export function startFlowRuntime() {
 	// joints.js calls registerHistoryKind in its module BODY, so it may never be
 	// reachable from history's own import subtree.
 	import('./physics').then((m) => (physicsRef = m));
+	import('./playSettings').then((m) => (playSettingsRef = m)); // 78 F11: the default walker
 	import('./joints').then((m) => (jointsRef = m));
 	// B7: the spawner reaches objectActions AND physics, both of which reach history, so
 	// a static edge from here would close history -> flowRuntime -> spawner -> history

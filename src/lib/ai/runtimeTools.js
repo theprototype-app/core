@@ -110,7 +110,7 @@ function hudIndex() {
 /** the World runtimeCore reads @returns {Promise<import('./runtimeCore.js').World>} */
 async function world() {
 	const info = await typeInfo();
-	const [scenePhysics] = await Promise.all([import('$lib/scenePhysics').catch(() => null)]);
+	const [scenePhysics, physics] = await Promise.all([import('$lib/scenePhysics').catch(() => null), import('$lib/physics').catch(() => null)]);
 	const host = /** @type {any} */ (behaviourHost());
 	/** @type {{name: string, issues: any[]}[]} */
 	const behaviours = [];
@@ -132,6 +132,8 @@ async function world() {
 		hudElements: hud.elements,
 		hudScreens: hud.screens,
 		play: scenePhysics ? get(scenePhysics.scenePlay) : undefined,
+		// 78 F11: a walk scene with moving bodies does not start its world on Play by itself
+		dynamicBodies: physics?.sceneHasDynamicBodies ? physics.sceneHasDynamicBodies() : undefined,
 		envLit: environmentLights(),
 		behaviours,
 		...info

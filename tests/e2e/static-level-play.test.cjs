@@ -67,12 +67,18 @@ h.run(async () => {
 
 	/** walk forward for a while and report where the rig ended @param {string} label */
 	const walkInto = async (label) => {
+		const from = await rig(page);
 		await page.keyboard.down('KeyW');
-		await page.waitForTimeout(5000);
+		// until the rig is well past the wall (no world: it walks through) or 12 s (stopped)
+		for (let t = 0; t < 30; t++) {
+			await page.waitForTimeout(400);
+			if ((await rig(page)).z < -4.6) break;
+		}
 		await page.keyboard.up('KeyW');
 		await page.waitForTimeout(400);
 		const r = await rig(page);
-		console.log(`${label}: rig z ${r.z.toFixed(2)} (${r.source}, ${r.mode} from ${r.from})`);
+		console.log(`${label}: rig z ${from.z.toFixed(2)} -> ${r.z.toFixed(2)} (${r.source}, ${r.mode} from ${r.from})`);
+		h.check(from.z - r.z > 2.5, `premise (${label}): the player really walked toward the wall (${(from.z - r.z).toFixed(2)} m)`);
 		return r;
 	};
 
@@ -80,10 +86,7 @@ h.run(async () => {
 	await buildLevel(page, { controller: true, simOnPlay: true });
 	await page.waitForTimeout(1200);
 	await page.evaluate(() => window.__stores.isLocked.set(true));
-	const started1 = await h
-		.eventually(() => simulating(page), (v) => v === true, 'an all-static level starts its world on Play', 12000)
-		.then(() => true, () => false);
-	h.check(started1, 'Play starts the physics world in an all-static level (Run physics on Play, a walk controller)');
+	await h.eventually(() => simulating(page), (v) => v === true, 'Play starts the physics world in an all-static level (Run physics on Play, a walk controller)', 12000);
 	await page.waitForTimeout(1000);
 	const r1 = await walkInto('controller');
 	h.check(r1.source === 'rapier', `the walker sweeps through the physics world (${r1.source})`);
@@ -96,14 +99,10 @@ h.run(async () => {
 	await buildLevel(page, { controller: false, simOnPlay: false });
 	await page.waitForTimeout(1200);
 	await page.evaluate(() => window.__stores.isLocked.set(true));
-	await page.waitForTimeout(1500);
+	await h.eventually(() => simulating(page), (v) => v === true, 'a walk-mode all-static level starts its static world on Play by itself', 12000);
+	await page.waitForTimeout(1200);
 	const r2a = await rig(page);
 	h.check(r2a.mode === 'walk' && r2a.from === 'default', `walk mode with no controller node gets the DEFAULT walker (${r2a.mode} from ${r2a.from})`);
-	const started2 = await h
-		.eventually(() => simulating(page), (v) => v === true, 'a walk level starts its static world on Play', 12000)
-		.then(() => true, () => false);
-	h.check(started2, 'a walk-mode all-static level starts its static world on Play by itself');
-	await page.waitForTimeout(800);
 	const r2 = await walkInto('default walker');
 	h.check(r2.z > -3.75, `the wall at z -4 STOPS the default walker (z ${r2.z.toFixed(2)})`);
 	await h.leavePlay(A);

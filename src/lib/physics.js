@@ -20,6 +20,7 @@ import {
 	noteObjectPose
 } from './flowRuntime';
 import { colliderSpecOf } from './colliderSpec';
+import { charControl } from './charController'; // 78 F11: a leaf (stores + THREE)
 import { colliderDescsFor } from './colliderDescs';
 import { groupOf, interactionGroups, isGroupId, playerInteractionGroups, groupsInteract } from './collisionGroups';
 import {
@@ -735,7 +736,13 @@ export function enablePhysicsOnSelection() {
 	return count;
 }
 
-export async function toggleSimulation() {
+/**
+ * Start or stop the simulation. 78 F11: `{play: true}` = started BY Play (sim-on-play, a walk
+ * level): a level made only of static colliders then runs as one — the player's world — instead of
+ * being refused as "nothing to simulate". Any other argument (a menu passes its event) is ignored.
+ * @param {any} [opts]
+ */
+export async function toggleSimulation(opts) {
 	if (get(simulating)) {
 		stopSimulation();
 		return;
@@ -750,7 +757,18 @@ export async function toggleSimulation() {
 	// Its control_simulation runs on the host (agent/simRelay.js); a scene's sim-on-load or play waits
 	// for a person to start it.
 	if (myKind() === 'agent') return;
-	await startSimulation();
+	await startSimulation({ play: !!(opts && typeof opts === 'object' && opts.play === true) });
+}
+
+/** 78 F11: does any top-level object get a DYNAMIC body when a run starts? (what decides
+ * whether Play may start an all-static level by itself — it never sets a crate falling that
+ * the author did not ask to run) */
+export function sceneHasDynamicBodies() {
+	const group = get(objectsGroup);
+	if (!group) return false;
+	const params = collectParams(group);
+	const locked = get(lockedObjects).map((l) => l[1]);
+	return Object.keys(params).some((u) => params[u].mass != null && !params[u].forceStatic && !locked.includes(u));
 }
 
 /** CL-A A5: apply (or clear) per-axis locks on a dynamic body.
@@ -1061,7 +1079,8 @@ export function physicsAddBody(uuid) {
 	return true;
 }
 
-async function startSimulation() {
+/** @param {{play?: boolean}} [opts] */
+async function startSimulation(opts = {}) {
 	const group = get(objectsGroup);
 	/** @type {any} */
 	const peer = get(peers);
@@ -1075,7 +1094,12 @@ async function startSimulation() {
 	let dynamicUuids = Object.keys(params).filter(
 		(u) => params[u].mass != null && !params[u].forceStatic && !locked.includes(u)
 	);
-	if (dynamicUuids.length === 0) {
+	// 78 F11: A LEVEL IS STATIC COLLIDERS AND A PLAYER. Started by Play, while playing, or with a
+	// Character Controller in the scene, a run with no dynamic body is the player's world (walls,
+	// floors, sensors) — not "nothing to simulate", and never the selection fallback below (which
+	// would turn the platform you last placed into a falling crate the moment you press Play).
+	const levelRun = opts.play === true || get(isLocked) === true || get(charControl) !== null;
+	if (dynamicUuids.length === 0 && !levelRun) {
 		const selected = get(selectedObject);
 		// 33 P2: never a FUNCTIONAL pack item (a door, a chest): its colliders are the frame
 		// slabs + the followed moving parts, and as the fallback body it fell over and took

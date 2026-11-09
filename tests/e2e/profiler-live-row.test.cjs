@@ -54,7 +54,8 @@ h.run(async () => {
 	await page.waitForTimeout(1500);
 	st = await state(page);
 	const rec = st.rows.find((r) => r.key?.startsWith('rec:'));
-	h.check(!!rec && /^recorded\b/.test(rec.meta), `2.2 a recording made here is marked recorded (${JSON.stringify(rec)})`);
+	const said = await page.evaluate(() => document.querySelector('#profiler-status')?.textContent?.trim() ?? null);
+	h.check(!!rec && /^recorded\b/.test(rec.meta), `2.2 a recording made here is marked recorded (${JSON.stringify(rec)}; rows ${JSON.stringify(st.rows.map((r) => r.key))}; status ${JSON.stringify(said)})`);
 
 	// --- 3: switching between them ---
 	h.check(!st.view && st.live === false && !!rec?.sel, `3.1 the saved recording is shown and the live view left (the store follows) (${JSON.stringify({ view: st.view, live: st.live })})`);

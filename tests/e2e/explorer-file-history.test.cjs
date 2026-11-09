@@ -72,7 +72,7 @@ h.run(async () => {
 	console.log('after save', JSON.stringify(after));
 	const pickCard = async (id) => {
 		await page.locator(`[data-card-id="${id}"]`).first().click({ button: 'right' });
-		await page.locator('[role="menu"] [role="menuitem"]').filter({ hasText: /^Properties/ }).first().click();
+		await page.locator('[role="menu"] [role="menuitem"]').filter({ hasText: /^\s*Properties/ }).first().click();
 		await page.waitForTimeout(300);
 		await h.openWsMode(page, ':is(#explorer-window, #explorer-list)', 'history');
 		await page.waitForTimeout(600);

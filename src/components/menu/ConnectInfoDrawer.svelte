@@ -26,6 +26,7 @@
 	import { peerQuality, qColor, qGlyph } from '$lib/networkQuality';
 	import { peerServerStatus, peerServerPingUrl, peerServerPeersUrl } from '$lib/peerServer';
 	import { cancelOutboundRequest } from '$lib/peerApproval';
+	import { connectionStatus } from '$lib/connectionStatus';
 	import { drawerSlot, rolesInfo } from '$lib/cloudHooks';
 	import CloudSlot from '../CloudSlot.svelte';
 	// 44 M14: the pill pinned to the top row or floating — this shell's answer ($lib/connectPin)
@@ -113,7 +114,10 @@
 			? 'Connected' + (remoteOpen.length > 1 ? ' +' + (remoteOpen.length - 1) : '')
 			: connState === 'pending'
 				? 'Waiting…'
-				: 'Offline'
+				: // uir-people: the pill's own word (94 SP6 — a fresh page is not "offline"; a failing server is)
+					$connectionStatus.tone === 'failed'
+					? 'Offline'
+					: 'Ready'
 	);
 	const statusTitle = $derived(
 		connState === 'connected'

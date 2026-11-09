@@ -30,18 +30,20 @@ const until = async (p, fn, ms = 30000) => {
 const shot = async (p, name) => {
 	await p.page.screenshot({ path: `${OUT}/${name}-${W}.png` }).catch(() => {});
 };
+// two heavy pages (the second peer's avatar in view) answer an input event every few seconds headless — measured
+// the same on the base build (A/B 2026-11-09: 10.7 s for the trigger, 5.8-8.5 s for a row): patient clicks, not short ones
 async function openPeople(p) {
-	if (!(await read(p, 'peersPanelOpen'))) await p.page.locator('#peers-trigger').click({ timeout: 15000 });
-	await p.page.locator('#peers-popover').waitFor({ timeout: 8000 });
+	if (!(await read(p, 'peersPanelOpen'))) await p.page.locator('#peers-trigger').click({ timeout: h.PATIENT_CLICK_MS });
+	await p.page.locator('#peers-popover').waitFor({ timeout: 30000 });
 }
 async function openCardOf(p, peerId) {
 	await openPeople(p);
 	if ((await p.page.locator(`#person-card[data-peer-id="${peerId}"]`).count()) === 0) {
-		if (await p.page.locator('#person-card').count()) await p.page.locator('#person-card-back').click();
+		if (await p.page.locator('#person-card').count()) await p.page.locator('#person-card-back').click({ timeout: h.PATIENT_CLICK_MS });
 		// press the row's NAME (not one of its buttons)
-		await p.page.locator(`#peers-popover .peers-row[data-peer-id="${peerId}"] .peer-name`).click({ timeout: 8000 });
+		await p.page.locator(`#peers-popover .peers-row[data-peer-id="${peerId}"] .peer-name`).click({ timeout: h.PATIENT_CLICK_MS });
 	}
-	await p.page.locator(`#person-card[data-peer-id="${peerId}"]`).waitFor({ timeout: 8000 });
+	await p.page.locator(`#person-card[data-peer-id="${peerId}"]`).waitFor({ timeout: 30000 });
 }
 const cardPresence = (p) => p.page.locator('#person-card-presence').getAttribute('data-presence').catch(() => null);
 
@@ -115,7 +117,7 @@ h.run(async () => {
 	const before = await camAt();
 	const goto = A.page.locator('#person-card [data-testid="person-goto"]');
 	h.check(await until(A, async () => !(await goto.isDisabled()), 20000), 'Go to is enabled once B’s avatar is in the scene');
-	await goto.click();
+	await goto.click({ timeout: h.PATIENT_CLICK_MS });
 	h.check(
 		await until(A, async () => { const a = await camAt(); return Math.hypot(a[0] - before[0], a[1] - before[1], a[2] - before[2]) > 0.2; }, 8000),
 		'Go to flies A’s camera to B'
@@ -126,7 +128,7 @@ h.run(async () => {
 	await shot(B, '06-chip-guest-dark');
 	// back arrow + Esc
 	await openCardOf(A, B.id);
-	await A.page.locator('#person-card-back').click();
+	await A.page.locator('#person-card-back').click({ timeout: h.PATIENT_CLICK_MS });
 	h.check((await A.page.locator('#person-card').count()) === 0 && (await A.page.locator(`.peers-row[data-peer-id="${B.id}"]`).count()) === 1, 'the back arrow returns to the list');
 
 	// ---- 3. B changes its own status ---------------------------------------------------------------------
@@ -134,7 +136,7 @@ h.run(async () => {
 	await openCardOf(B, B.id);
 	h.check(await B.page.locator('#person-presence').isVisible(), 'B’s own card offers the status (the setting is on)');
 	await shot(B, '07-own-card-dark');
-	await B.page.locator('#person-presence-away').click();
+	await B.page.locator('#person-presence-away').click({ timeout: h.PATIENT_CLICK_MS });
 	await openCardOf(A, B.id);
 	h.check(await until(A, async () => (await cardPresence(A)) === 'away', 15000), 'A’s card follows B to Away');
 	await B.page.evaluate(() => window.__stores.peoplePresence.setPresenceEnabled(false));
@@ -154,7 +156,7 @@ h.run(async () => {
 	h.check((await C.page.locator('#person-card .pc-name').innerText()).includes('Sam'), 'C’s card shows B’s name');
 	h.check((await cardPresence(C)) === 'away', 'and Away');
 	await shot(C, '08-person-card-light');
-	await C.page.locator('#person-card-back').click();
+	await C.page.locator('#person-card-back').click({ timeout: h.PATIENT_CLICK_MS });
 	await shot(C, '09-people-list-light');
 
 	await h.finish(browser);

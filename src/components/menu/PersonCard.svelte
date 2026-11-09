@@ -201,6 +201,7 @@
 						class="pc-act"
 						class:danger={it.danger}
 						class:on={it.checked}
+						class:wide={String(it.label ?? '').length > 18}
 						data-testid={'person-' + short(it.testid)}
 						disabled={it.disabled}
 						title={it.tooltip || it.label}
@@ -400,6 +401,10 @@
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
 		gap: 6px;
+	}
+	/* a long label ("Show what they’re editing") takes the whole row instead of an ellipsis */
+	.pc-act.wide {
+		grid-column: 1 / -1;
 	}
 	.pc-act {
 		display: inline-flex;

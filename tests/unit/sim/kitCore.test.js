@@ -154,7 +154,7 @@ describe('the one write — actions anywhere, applied once by the authority', ()
 	it('a refused action changes nothing and says why', () => {
 		const sim = createSim({ peers: ['a', 'b'], pieces: PIECES });
 		const r = sim.peer('a').kit.impls.tally.add(-1);
-		expect(r).toEqual({ ok: false, reason: 'bad amount' });
+		expect(r).toEqual({ ok: false, refused: true, reason: 'bad amount' });
 		sim.settle();
 		expect(sim.peer('b').kit.doc().rev).toBe(0);
 	});

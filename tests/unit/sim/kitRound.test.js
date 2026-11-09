@@ -130,7 +130,39 @@ describe('kit.round — pause, the clock and the limit', () => {
 	});
 	it('win / lose with no round running is refused', () => {
 		const sim = createSim({ peers: ['a'] });
-		expect(R(sim, 'a').win()).toEqual({ ok: false, reason: 'no round is running' });
+		expect(R(sim, 'a').win()).toEqual({ ok: false, refused: true, reason: 'no round is running (in the menu): start one first' });
+	});
+	it('78 F17: win during the results is refused WITH the reason, and the peer that asked hears it', () => {
+		const sim = createSim({ peers: ['a', 'b'] });
+		R(sim, 'a').configure(0, 0, 'lose', 0.5);
+		R(sim, 'a').start();
+		sim.settle();
+		R(sim, 'a').lose('lab');
+		sim.advance(800);
+		expect(phases(sim)).toEqual(['results', 'results']);
+		const auth = sim.authorities()[0];
+		const asker = auth === 'a' ? 'b' : 'a';
+		expect(R(sim, auth).win('direct')).toMatchObject({ ok: false, refused: true, reason: expect.stringContaining('results') });
+		R(sim, asker).win('asked');
+		sim.settle();
+		for (const id of ['a', 'b']) {
+			const r = sim.peer(id).kit.refusals.filter((/** @type {any} */ x) => x.op === 'win');
+			expect(r.length, id).toBeGreaterThan(0);
+			expect(r[r.length - 1]).toMatchObject({ piece: 'round', op: 'win', reason: expect.stringContaining('results') });
+		}
+		expect(sim.refused).toEqual([]); // the `refused` field passes wireValidate
+	});
+	it('78 F17: start pulses "started" (and "go" when there is no intro) where it happened', () => {
+		const sim = createSim({ peers: ['a', 'b'] });
+		const auth = sim.authorities()[0];
+		const asker = auth === 'a' ? 'b' : 'a';
+		R(sim, asker).configure(1, 0, 'lose', 1);
+		R(sim, asker).start();
+		sim.settle();
+		const ev = (/** @type {string} */ id) => (sim.peer(id).emitted ?? []).filter((/** @type {any} */ e) => e.piece === 'round').map((/** @type {any} */ e) => e.event);
+		expect(ev(auth)).toContain('started');
+		sim.advance(1100);
+		expect(ev(auth)).toEqual(['started', 'go']);
 	});
 });
 

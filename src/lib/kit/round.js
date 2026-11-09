@@ -226,7 +226,8 @@ function begin(s, ctx) {
 
 /** @param {any} s @param {'won'|'lost'} phase @param {any} reason @param {any} ctx */
 function end(s, phase, reason, ctx) {
-	if (s.phase !== 'playing' && s.phase !== 'paused' && s.phase !== 'intro') return { result: { ok: false, reason: 'no round is running' } };
+	if (s.phase !== 'playing' && s.phase !== 'paused' && s.phase !== 'intro')
+		return { result: { ok: false, reason: s.phase === 'menu' ? 'no round is running (in the menu): start one first' : 'the round already ended (' + s.phase + '): start or restart a new one first' } };
 	const now = ctx.now();
 	const why = typeof reason === 'string' ? reason.slice(0, 120) : '';
 	// a pause still open is banked first, so the round's play time stops where it was

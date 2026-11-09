@@ -36,6 +36,8 @@ export const KIT_REQ = 'kitreq';
 export const RID_WINDOW = 64;
 /** a pending request is sent again after this long without being acknowledged (ms) */
 export const RESEND_MS = 1200;
+/** how many refusals a kit keeps for the Debug console and the agent's inspect_runtime (78 F17) */
+export const REFUSAL_WINDOW = 20;
 
 /**
  * @typedef {{
@@ -49,6 +51,7 @@ export const RESEND_MS = 1200;
  *   storage?: {get: (key: string, fallback?: any) => any, set: (key: string, value: any) => any},
  *   game?: {get: () => any, set: (state: string, opts?: any) => any, restart?: (opts?: any) => any},
  *   emit?: (piece: string, event: string, payload: any, opts?: {local?: boolean}) => void,
+ *   onRefused?: (refusal: {at: number, piece: string, op: string, reason: string, from: string, rid: string}) => void,
  *   rules?: any
  * }} KitHost
  */
@@ -109,6 +112,29 @@ export function createKit(host, pieces) {
 	const locals = {};
 	/** what the kit did, for tests and the debug hook */
 	const stats = { applied: 0, refused: 0, requests: 0, resent: 0, received: 0, stale: 0, duplicate: 0 };
+	/** 78 F17: the newest refusals, with their reasons — the authority's own, and those that came
+	 * back with a document (`refused` on the `kit` message), so the peer that ASKED knows why
+	 * @type {{at: number, piece: string, op: string, reason: string, from: string, rid: string}[]} */
+	const refusals = [];
+	/** @param {any} r */
+	const noteRefusal = (r) => {
+		const entry = {
+			at: Number(r?.at) || now(),
+			piece: String(r?.piece ?? '').slice(0, 40),
+			op: String(r?.op ?? '').slice(0, 40),
+			reason: String(r?.reason || 'refused').slice(0, 200),
+			from: String(r?.from ?? '').slice(0, 64),
+			rid: String(r?.rid ?? '').slice(0, 160)
+		};
+		refusals.push(entry);
+		while (refusals.length > REFUSAL_WINDOW) refusals.shift();
+		try {
+			host.onRefused?.(entry);
+		} catch {
+			/* a debug sink must never break the kit */
+		}
+		return entry;
+	};
 
 	/** @param {string} key @param {any} payload */
 	const fire = (key, payload) => {
@@ -188,6 +214,8 @@ export function createKit(host, pieces) {
 		let result;
 		let first = true;
 		let guard = 0;
+		/** 78 F17: every op of this change that refused, with its reason @type {any[]} */
+		const refusedHere = [];
 		while (queue.length && guard++ < 32) {
 			const [p, o, a] = /** @type {[string, string, any[]]} */ (queue.shift());
 			const reducer = defs[p]?.ops?.[o];
@@ -204,6 +232,12 @@ export function createKit(host, pieces) {
 				console.warn('kit: ' + p + '.' + o + ' failed', error);
 				r = { result: { ok: false, reason: String(error) } };
 			}
+			// 78 F17: a refusal says so in ONE shape — {ok: false, refused: true, reason} — for the
+			// caller (a behaviour, an agent tool) and for the record
+			if (r?.result?.ok === false) {
+				r = { ...r, result: { ...r.result, refused: true, reason: String(r.result.reason || 'refused') } };
+				refusedHere.push({ at: now(), piece: p, op: o, reason: r.result.reason, from: from ?? '', rid: rid ?? '' });
+			}
 			if (first) result = r?.result ?? (r?.slice !== undefined ? { ok: true } : r?.result);
 			first = false;
 			if (r?.slice !== undefined && r.slice !== draft[p]) {
@@ -214,11 +248,14 @@ export function createKit(host, pieces) {
 			for (const next of r?.also ?? []) queue.push([next[0], next[1], next[2] ?? []]);
 		}
 		if (result?.ok === false) stats.refused++;
+		const noted = refusedHere.map(noteRefusal);
 		if (!changed && !events.length && !rid) return result;
 		const rids = rid ? [...doc.rids, rid].slice(-RID_WINDOW) : doc.rids;
 		doc = { rev: doc.rev + 1, at: Math.max(now(), (doc.at ?? 0) + 1), by: host.me() ?? '', rids, slices: draft };
 		stats.applied++;
-		host.send({ type: KIT_DOC, doc, ev: events });
+		// 78 F17: a refused REQUEST's reason rides the document that acknowledges it (the requester
+		// was otherwise left with a pending id and no word on why nothing happened)
+		host.send({ type: KIT_DOC, doc, ev: events, ...(noted.length ? { refused: noted } : {}) });
 		deliver(events, true);
 		return result;
 	};
@@ -293,6 +330,7 @@ export function createKit(host, pieces) {
 			}
 			doc = normalizeDoc(msg.doc);
 			for (const rid of doc.rids) pending.delete(rid);
+			if (Array.isArray(msg.refused)) for (const r of msg.refused.slice(0, 8)) noteRefusal(r);
 			deliver(Array.isArray(msg.ev) ? msg.ev : [], false);
 			return true;
 		}
@@ -383,6 +421,8 @@ export function createKit(host, pieces) {
 		onChange,
 		stats,
 		pending,
+		/** 78 F17: the newest refusals with their reasons (read-only by convention) */
+		refusals,
 		/** live listeners on `piece.event` (every key when none is named) — the lifecycle contract
 		 * (T2) and 34-behaviours read it @param {string} [key] */
 		listenerCount: (key) =>

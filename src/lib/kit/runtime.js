@@ -32,6 +32,7 @@ import { createKit, KIT_DOC, KIT_REQ } from './core.js';
 import { KIT_PIECES } from './index.js';
 import { kitNodeType } from './spec.js';
 import { entitiesOfKit } from './entityHub.js';
+import { log } from '../diagnostics';
 
 export { KIT_DOC, KIT_REQ };
 
@@ -141,6 +142,11 @@ const host = {
 				...(opts.vars ? { vars: opts.vars } : {})
 			})
 	},
+	// 78 F17: a refusal is written down where people and agents look — the diagnostics log (the
+	// agent's logs / status, the Debug console) — with its reason
+	onRefused(r) {
+		log('warn', 'kit', r.piece + '.' + r.op + ' refused: ' + r.reason, r.from ? { from: r.from } : undefined);
+	},
 	emit(piece, event, _payload, opts) {
 		const type = kitNodeType(piece, event);
 		// a LOCAL event keeps its pulse in this peer's trigger log (the perPlayer rule)
@@ -225,5 +231,5 @@ export function kitEntitiesRuntime() {
 
 /** the debug hook / suites */
 export function kitDebug() {
-	return { doc: kit.doc(), stats: { ...kit.stats }, pending: kit.pending.size, authority: kitAuthorityId(), me: me() };
+	return { doc: kit.doc(), stats: { ...kit.stats }, pending: kit.pending.size, authority: kitAuthorityId(), me: me(), refusals: kit.refusals.map((r) => ({ ...r })) };
 }

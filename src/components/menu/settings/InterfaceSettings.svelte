@@ -221,8 +221,7 @@
 		     must answer (connection, take control, role offers, agent permission) and safety notices always show. -->
 		{#each NOTIFY_KINDS.filter((k) => !k.cloud || $cloudPluginInfo) as k (k.id)}
 			<SettingRow id={'row-notify-' + k.id} label={k.label} badge="This device">
-				{#snippet desc()}{k.description}{#if k.id === 'pingSound'}
-						Your own ping sound is in <button
+				{#snippet desc()}{k.description}{#if k.id === 'pingSound'}{' '}Your own ping sound is in <button
 							type="button"
 							class="iface-link"
 							id="notify-ping-character"

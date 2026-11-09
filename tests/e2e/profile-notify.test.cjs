@@ -120,6 +120,8 @@ h.run(async () => {
 	const rows = await P.evaluate(() => [...document.querySelectorAll('[id^="row-notify-"]')].map((r) => r.id.slice('row-notify-'.length)).filter((id) => !id.endsWith('-desc')));
 	h.check(rows.join(',') === 'peerLeft,chat,pingSound,agent,autoQuality', `Interface ▸ Notifications: the five core kinds, no cloud kinds without a plugin (${rows.join(',')})`);
 	h.check((await P.locator('#notify-ping-character').count()) === 1, 'the Ping sounds row links to Customize character (its own picker), no second picker');
+	const pingDesc = await P.locator('#row-notify-pingSound').innerText();
+	h.check(/still shows\. Your own ping sound is in Customize character\./.test(pingDesc.replace(/\s+/g, ' ')), `the Ping sounds sentence reads cleanly (${pingDesc.replace(/\s+/g, ' ').slice(0, 160)})`);
 	for (const [q, id] of [['notifications', 'row-notify-autoQuality'], ['ping sounds', 'row-notify-pingSound'], ['chat badge', 'row-notify-chat'], ['people leaving', 'row-notify-peerLeft'], ['ai assistant', 'row-notify-agent'], ['auto quality', 'row-notify-autoQuality']]) {
 		await search(q);
 		await P.waitForTimeout(500);

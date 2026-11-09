@@ -190,9 +190,13 @@ h.run(async () => {
 		const phone = await C.page.evaluate(() => document.documentElement.classList.contains('phone-shell'));
 		o = await overflow(C.page);
 		h.check(o.root && o.scroll <= 1 && o.right <= 1, `${label}: no sideways overflow (${JSON.stringify(o)})`);
-		if (phone) h.check(await C.page.locator('#timeline-seq-select').isVisible(), `${label}: the bar keeps a sequence picker (the side panes start hidden)`);
-		else h.check(await C.page.locator('#timeline-sequences').isVisible(), `${label}: the Sequences list shows`);
+		// both postures are a touch handheld: the side panes start put away (handheldPanels), so the bar keeps a picker
+		h.check(await C.page.locator('#timeline-seq-select').isVisible(), `${label}: the bar keeps a sequence picker (the side panes start hidden${phone ? ', phone shell' : ''})`);
+		await C.page.locator('.tl-root [data-ws-primary-toggle]').first().click();
+		await C.page.waitForTimeout(400);
+		h.check(await C.page.locator('#timeline-sequences').isVisible(), `${label}: the edge tab brings the Sequences list back`);
 		await shot(C.page, `06-phone-${label}.png`);
 		await C.page.context().close();
 	}
+	await h.finish(browser);
 });

@@ -113,6 +113,9 @@
 	import { animatedObjects, clipInfo } from '$lib/animatedImports';
 	import { explorerItems } from '$lib/explorer';
 	import { sendAsset } from '$lib/assetShare';
+	import { handheld } from '$lib/ui/handheldPanels.js';
+	// a touch handheld (folded OR unfolded) opens every side pane put away: keep the sequence picker in the bar
+	const HAND = handheld();
 
 	const KEY = 'timeline';
 	const KIND_ICON: Record<string, string> = {
@@ -777,6 +780,7 @@
 	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 	<div
 		class="tl-root"
+		class:tl-hand={HAND}
 		bind:this={root}
 		use:keys
 		tabindex="-1"
@@ -860,7 +864,7 @@
 <!-- TOP of the middle pane: the transport and the view tools -->
 {#snippet tlBar()}
 	<div class="tl-bar">
-		<!-- a phone opens with the side panes put away: the picker keeps switching one tap away -->
+		<!-- a phone or a handheld opens with the side panes put away: the picker keeps switching one tap away -->
 		<div class="tl-seq-pick tl-phone-only" title="Sequence">
 			<ThemedSelect
 				id="timeline-seq-select"
@@ -1607,7 +1611,8 @@
 	.tl-phone-only {
 		display: none;
 	}
-	:global(:root.phone-shell) .tl-phone-only {
+	:global(:root.phone-shell) .tl-phone-only,
+	.tl-hand .tl-phone-only {
 		display: block;
 	}
 	.tl-seq-pick {

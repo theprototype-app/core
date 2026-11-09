@@ -202,4 +202,5 @@ h.run(async () => {
 		await shot(C.page, `16-generate-phone-${label}.png`);
 		await C.page.context().close();
 	}
+	await h.finish(browser);
 });

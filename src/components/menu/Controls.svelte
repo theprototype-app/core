@@ -1812,7 +1812,7 @@
 	function onEditOutside(e: PointerEvent) {
 		if (!editing || editAddMenu || clusterMenu || clusterGrab.active()) return;
 		const t = e.target as Element | null;
-		if (t?.closest?.('#controls-pill, .hud-stack, #hud-tr, #touch-tools, #toolbar-edit-ghost, #connect-edit, [role="menu"], .ctx-scroll, [data-cluster-grip], #cluster-move-hint, .connect-wrap, #budget-edit, #budget-chip-wrap')) return;
+		if (t?.closest?.('#controls-pill, .hud-stack, #hud-tr, #touch-tools, #toolbar-edit-ghost, #connect-edit, [role="menu"], [data-cluster-grip], #cluster-move-hint, .connect-wrap, #budget-edit, #budget-chip-wrap')) return;
 		cancelEditPositions();
 	}
 

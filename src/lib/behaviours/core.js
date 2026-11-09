@@ -227,6 +227,12 @@ export function createBehaviourRuntime(host) {
 		}
 		const outer = inst.depth === 0;
 		const before = outer ? JSON.stringify(inst.state) : null;
+		// 78 F22: what a throw takes back — the state (the JSON above, already taken for the
+		// write check), the replicated timers (replaced, never mutated: a reference is the
+		// snapshot), the closure timers and the outputs queued for after the handler
+		const timersBefore = outer ? inst.doc.timers : null;
+		const closuresBefore = outer && inst.closures.length ? inst.closures.slice() : null;
+		const emitsBefore = outer ? inst.emits.length : 0;
 		if (outer) {
 			// one seeded generator per outermost dispatch; the sequence is in the document
 			const seq = local ? ++inst.localSeq : ++inst.doc.seq;
@@ -244,11 +250,23 @@ export function createBehaviourRuntime(host) {
 		} catch (error) {
 			err = error;
 			stats.errors++;
-			inst.errors.push({ at, where: label, message: String(/** @type {any} */ (error)?.message ?? error), stack: String(/** @type {any} */ (error)?.stack ?? '') });
+			// 78 F22: A THROW IS ALL OR NOTHING. The handler's partial writes go back to what they
+			// were before it ran (state, timers, queued outputs), so the document never holds half a
+			// handler — `state.last` set just before a `null.boom()` used to stay. Kit calls it made
+			// before the throw are requests already on their way and are NOT taken back.
+			const rolledBack = outer;
+			if (outer) {
+				adoptState(inst, /** @type {string} */ (before));
+				inst.doc.timers = /** @type {any[]} */ (timersBefore);
+				if (closuresBefore) inst.closures.splice(0, inst.closures.length, ...closuresBefore);
+				else inst.closures.length = 0;
+				inst.emits.length = emitsBefore;
+			}
+			inst.errors.push({ at, where: label, message: String(/** @type {any} */ (error)?.message ?? error), stack: String(/** @type {any} */ (error)?.stack ?? ''), ...(rolledBack ? { rolledBack: true } : {}) });
 			if (inst.errors.length > 20) inst.errors.shift();
 			// …and onto the document when this peer owns it, so the failure reaches every peer
 			if (!local && host.isAuthority()) inst.doc.errs = docErrors([...(inst.doc.errs ?? []), { at, where: label, message: String(/** @type {any} */ (error)?.message ?? error) }]);
-			warn(inst.name + ': ' + label + ' failed', error);
+			warn(inst.name + ': ' + label + ' failed' + (rolledBack ? ' (its changes were rolled back)' : ''), error);
 		} finally {
 			inst.depth--;
 		}

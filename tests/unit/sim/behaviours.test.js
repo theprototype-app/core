@@ -251,6 +251,28 @@ describe('behaviours — the runtime rules', () => {
 		expect(onB.some((/** @type {any} */ e) => /missingThing/.test(e.message))).toBe(true);
 		expect(onB.find((/** @type {any} */ e) => /missingThing/.test(e.message))).toMatchObject({ where: 'on.start', remote: true });
 	});
+	it('78 F22: a throwing handler rolls back its partial writes (state, timers, outputs) and names itself', async () => {
+		// research round 2: after null.boom() the handler's earlier `state.last = …` stayed
+		const sim = createBehaviourSim({ peers: ['a', 'b'] });
+		await sim.load(
+			'probe',
+			'export default behaviour({ state: {last: "", n: 0}, outputs: ["went"], ping() { this.state.last = "ping"; this.state.n++; }, boom() { this.state.last = "boom"; this.state.n = 99; this.after(1, "ping"); this.emit("went"); null.boom(); } });'
+		);
+		sim.advance(2100);
+		const A = sim.peer(sim.authorities()[0]);
+		A.bhv.call('probe', 'ping');
+		sim.settle();
+		expect(sim.states('probe')).toEqual(Array(2).fill(JSON.stringify({ last: 'ping', n: 1 })));
+		const emitsBefore = (A.emits ?? []).length;
+		A.bhv.call('probe', 'boom');
+		sim.advance(1500); // past the 1 s timer it scheduled before throwing
+		// the state is what it was before the handler ran — on every peer, and no timer fired ping again
+		expect(sim.states('probe')).toEqual(Array(2).fill(JSON.stringify({ last: 'ping', n: 1 })));
+		expect((A.emits ?? []).length).toBe(emitsBefore);
+		const err = A.bhv.live('probe').errors.find((/** @type {any} */ e) => /boom/.test(e.message));
+		expect(err).toMatchObject({ where: 'boom', rolledBack: true });
+		expect(err.message).toMatch(/boom/);
+	});
 	it('an unknown event is a problem, not a crash', async () => {
 		const sim = createBehaviourSim({ peers: ['a'] });
 		await sim.load('odd', 'export default behaviour({ on: { noSuchThing() {} } });');

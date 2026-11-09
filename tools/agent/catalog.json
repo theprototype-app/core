@@ -3694,12 +3694,12 @@
 						"type": "string",
 						"description": "uuid of an existing one to change (leave out to place a new one)"
 					},
-					"show": {
-						"type": "boolean",
-						"description": "false = invisible in Play (still works): a trigger inside your own doorway"
-					},
 					"label": {
 						"type": "string"
+					},
+					"show": {
+						"type": "boolean",
+						"description": "false = no message when reached (it still saves)"
 					}
 				}
 			},
@@ -10505,12 +10505,12 @@
 									"type": "string",
 									"description": "uuid of an existing one to change (leave out to place a new one)"
 								},
-								"show": {
-									"type": "boolean",
-									"description": "false = invisible in Play (still works): a trigger inside your own doorway"
-								},
 								"label": {
 									"type": "string"
+								},
+								"show": {
+									"type": "boolean",
+									"description": "false = no message when reached (it still saves)"
 								}
 							},
 							"description": "A Checkpoint pad: stepping on it saves THAT player's progress there; after a fall (or Back to checkpoint, or reloading an exported game) they come back to it. New: position or at; change one: object (uuid). label = what the flash says. One undo step."

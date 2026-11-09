@@ -14,6 +14,7 @@ import { gameFeelActive } from '../gameFeel';
 import { insideTrigger, BACK_TARGET } from './objects.js';
 import { levelRow } from './table.js';
 import { sceneLevelsTable } from './runtime.js';
+import { registerParkHook } from '../parkHooks.js';
 
 /** how often the trigger check runs (ms) */
 const CHECK_MS = 100;
@@ -53,6 +54,52 @@ function scan() {
 	cache = { portals, checkpoints, at: performance.now() };
 }
 
+// `show: false` — AN INVISIBLE DOORWAY IN PLAY. While this peer plays, a portal whose record says `show: false`
+// is hidden HERE (never sent: each player's own view, like everything in this file) and
+// still triggers. Leaving Play puts it back, and so does every serializer (a park hook), so a save taken
+// mid-play never writes the hidden state into the file.
+/** objects this module hid @type {Set<any>} */
+const hidden = new Set();
+
+/** hide / show the portals for this frame: hidden while `playing` when their record says show: false (a
+ * checkpoint's `show` is its reached message, not its pad) @param {any[]} objects @param {boolean} playing */
+export function applyPlayVisibility(objects, playing) {
+	for (const o of objects) {
+		const rec = o.userData?.portal;
+		const hide = playing && !!o.parent && rec?.show === false;
+		if (hide && !hidden.has(o)) {
+			if (!o.visible) continue; // hidden by someone else (a Visibility node): not ours to restore
+			o.visible = false;
+			hidden.add(o);
+		} else if (!hide && hidden.has(o)) {
+			o.visible = true;
+			hidden.delete(o);
+		}
+	}
+	// gone from the scan (deleted, or the record removed): give it back
+	if (hidden.size)
+		for (const o of [...hidden])
+			if (!objects.includes(o)) {
+				o.visible = true;
+				hidden.delete(o);
+			}
+}
+
+/** put every hidden object back (leaving Play) */
+function showAll() {
+	for (const o of hidden) o.visible = true;
+	hidden.clear();
+}
+
+registerParkHook(() => {
+	if (!hidden.size) return null;
+	const was = [...hidden];
+	for (const o of was) o.visible = true;
+	return () => {
+		for (const o of was) if (hidden.has(o)) o.visible = false;
+	};
+});
+
 /** per frame (kit/runtime tickKit, every peer) */
 export function tickLevelObjects() {
 	const now = performance.now();
@@ -60,9 +107,11 @@ export function tickLevelObjects() {
 	lastCheck = now;
 	if (!gameFeelActive()) {
 		if (inside.size) inside = new Set();
+		if (hidden.size) showAll();
 		return;
 	}
 	if (now - cache.at > 500) scan();
+	applyPlayVisibility(cache.portals, true);
 	if (!cache.portals.length && !cache.checkpoints.length) return;
 	const cam = /** @type {any} */ (get(globalCamera));
 	if (!cam?.getWorldPosition) return;

@@ -88,7 +88,7 @@ async function levelObjectTool(key, args, createBase) {
 			note:
 				key === 'portal'
 					? describePortal(next, table)
-					: 'Stepping on it saves this player\'s progress here' + (next?.show === false ? ' (invisible in Play)' : '') + '.'
+					: 'Stepping on it saves this player\'s progress here' + (next?.show === false ? ' (silently, no message)' : '') + '.'
 		};
 	} finally {
 		if (ownBatch) endHistoryBatch(key === 'portal' ? 'Portal' : 'Checkpoint');
@@ -142,8 +142,7 @@ const PLACE = {
 	yaw: { type: 'number', description: 'turn in radians; its arrow points -Z at 0 (arriving players face the arrow)' },
 	face_user: { type: 'boolean' },
 	name: { type: 'string' },
-	object: { type: 'string', description: 'uuid of an existing one to change (leave out to place a new one)' },
-	show: { type: 'boolean', description: 'false = invisible in Play (still works): a trigger inside your own doorway' }
+	object: { type: 'string', description: 'uuid of an existing one to change (leave out to place a new one)' }
 };
 const LOADING = {
 	preset: { type: 'string', enum: LOADING_PRESETS },
@@ -193,6 +192,7 @@ export const LEVELS_AI_TOOLS = [
 				type: 'object',
 				properties: {
 					...PLACE,
+					show: { type: 'boolean', description: 'false = invisible in Play (still works): a trigger inside your own doorway' },
 					level: { type: 'string' },
 					scene: { type: 'string' },
 					spawn: { type: 'string' },
@@ -209,7 +209,7 @@ export const LEVELS_AI_TOOLS = [
 			name: 'set_checkpoint',
 			description:
 				'A Checkpoint pad: stepping on it saves THAT player\'s progress there; after a fall (or Back to checkpoint, or reloading an exported game) they come back to it. New: position or at; change one: object (uuid). label = what the flash says. One undo step.',
-			parameters: { type: 'object', properties: { ...PLACE, label: { type: 'string' } } }
+			parameters: { type: 'object', properties: { ...PLACE, label: { type: 'string' }, show: { type: 'boolean', description: 'false = no message when reached (it still saves)' } } }
 		}
 	},
 	{

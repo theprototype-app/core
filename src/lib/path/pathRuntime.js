@@ -171,7 +171,8 @@ export function applyPatrolOnPath(object, data, time, ctx) {
 	if (!pose) return false;
 	setWorldPos(object, pose.p);
 	if (data.face !== false) setWorldYaw(object, pose.yaw);
-	const state = { kind: pose.kind, point: pose.point, next: pose.next, path: view.uuid };
+	// t / start / offset / p: what any peer needs to recompute this exact pose (the two-peer proof)
+	const state = { kind: pose.kind, point: pose.point, next: pose.next, path: view.uuid, t: time, start, offset, p: [pose.p[0], pose.p[1], pose.p[2]] };
 	walkerState.set(ctx.key, state);
 	// the node's card reads its (first) walker by node id
 	if (ctx.nodeId) walkerState.set(ctx.nodeId, state);

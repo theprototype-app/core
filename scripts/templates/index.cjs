@@ -19,6 +19,8 @@ const TEMPLATE_FILES = [
 	'architecture-shell-greybox',
 	// 93: the starter for levels and progress (two levels, a portal, a checkpoint, a kept score)
 	'two-levels',
+	// 78 F27: the starter recipes at work (door, walk-up door, bell, guard)
+	'starter-recipes',
 	'lighthouse-island',
 	// 23-D3's Jam Room, a game since 30 visuals-core
 	'jam-room',

@@ -52,7 +52,8 @@
 //   slug* title* description   identity + card text; author, license ('CC0-1.0'), tags []
 //   modules          [{id, version}] — the card's module list (games only; must match installModules)
 //   installModules   ['<id>'] — zips installed from MODULES_REPO before the build (the game shows)
-//   generate         a /command, {menu, moduleId?, waitMs?}, or a list of them — run after the build
+//   generate         a /command, {menu, moduleId?, waitMs?}, {recipe, on, waitMs?} (78 F27: a starter recipe on
+//                    the object named `on`), or a list of them — run after the build
 //   generateWaitMs   default wait after each generate step (2500)
 //   layout           [{kind, index?, pos, yaw?}] — place generated devices by userData.device.kind
 //   objects*         the scene: OBJECTS below
@@ -1153,6 +1154,13 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 					);
 					if (hit) hit.action();
 					else throw new Error('no module menu action named "' + step.menu + '"');
+				} else if (step.recipe) {
+					// 78 F27: a starter recipe on a named object (its own flow + whatever it adds: a zone, a path)
+					/** @type {any} */ let target = null;
+					group.traverse((/** @type {any} */ o) => { if (!target && o.name === step.on) target = o; });
+					if (!target) throw new Error('recipe "' + step.recipe + '": no object named "' + step.on + '"');
+					const res = s.starterRecipes.insertStarterRecipe(step.recipe, target.uuid);
+					if (!res.ok) throw new Error('recipe "' + step.recipe + '": ' + res.error);
 				}
 				await new Promise((r) => setTimeout(r, step.waitMs ?? d.generateWaitMs ?? 2500));
 				s.objectsGroup.update((v) => v);

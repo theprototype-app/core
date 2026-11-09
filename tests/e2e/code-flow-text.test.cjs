@@ -85,6 +85,8 @@ h.run(async () => {
 	const edited = tab.code.replace(/value:\s*3\b/, 'value: 7');
 	h.check(edited !== tab.code, '3.2 (setup) the param line was found to edit');
 	await setEditor(page, tab.id, edited);
+	// the editor hands its text to the tab store on its own beat: Save applies what the STORE holds, so wait for it
+	for (let i = 0; i < 20 && !/value:\s*7/.test((await activeTab(page))?.code ?? ''); i++) await page.waitForTimeout(150);
 	await page.locator('#code-ws-save').click();
 	await page.waitForTimeout(600);
 	const after = await graphNodes(page);

@@ -34,6 +34,9 @@
 	import { budgetTarget, setBudgetTarget, sceneCost, TARGETS, verdictFor, startBudgetMeter, budgetReveal, sampleBudget } from '$lib/budgetMeter';
 	import { TARGET_IDS, heaviest, formatMetric, formatCount, METRIC_LABELS } from '$lib/budgetMeterCore';
 	import { importSettings } from '$lib/importSettings';
+	// 78-int PL1: a bake moves only texture memory, so the Frame block names it ("none" unbaked)
+	import { bakeRecord, bakeShown } from '$lib/sceneBake';
+	import { bakedLightLine } from '$lib/bake/bakeRecordCore.js';
 
 	const profile = $derived($sceneMetrics.profile === 'vr' ? 'vr' : 'desktop');
 	const rows = $derived(budgetRows($sceneMetrics, profile));
@@ -41,6 +44,7 @@
 	// the wire table is not a store — it is a counter read on demand, so it re-reads
 	// whenever the sample stamp moves (the one signal that says "half a second passed")
 	const wire = $derived(($sceneMetrics.at, wireStats()));
+	const baked = $derived(bakedLightLine($bakeRecord, $bakeShown));
 
 	/** @param {number | null | undefined} n */
 	function num(n) {
@@ -236,6 +240,8 @@
 				<span class="text-right">{$sceneMetrics.heap == null ? 'not available' : mb($sceneMetrics.heap)}</span>
 				<span class="text-text-muted">Meshes / hidden</span>
 				<span class="text-right">{num($sceneMetrics.meshes)} / {num($sceneMetrics.hidden)}</span>
+				<span class="text-text-muted" title="The lightmap atlas this device shows: side in px, size, objects in the bake / carrying it here">Baked light</span>
+				<span id="stats-baked-light" class="text-right" data-none={baked.none ? 'true' : undefined}>{baked.text}</span>
 				{#if $sceneMetrics.ingestBacklog}
 					<span class="text-text-muted">Objects still arriving</span>
 					<span class="text-right">{num($sceneMetrics.ingestBacklog)}</span>

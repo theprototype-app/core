@@ -7,6 +7,7 @@
 	import UiButton from '../../ui/Button.svelte';
 	import Segmented from '../../ui/Segmented.svelte';
 	import InsToggle from '../inspector/InsToggle.svelte';
+	import LoadingScreenSettings from './LoadingScreenSettings.svelte'; // 93 LP2
 	import { scenePhysicsState_ } from '$lib/scenePhysics';
 	import { projectManifest, manifestSceneNames } from '$lib/projectManifest';
 	import { objectsGroup } from '../../../stores/sceneStore';
@@ -199,5 +200,6 @@
 				/>
 			</label>
 		</fieldset>
+		<LoadingScreenSettings value={table?.loading ?? null} disabled={viewer} onchange={(next) => edit((t) => (next ? (t.loading = next) : delete t.loading))} />
 	{/if}
 </div>

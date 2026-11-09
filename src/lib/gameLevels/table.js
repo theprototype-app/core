@@ -9,8 +9,9 @@
 // wire surface), absent unless authored so every older scene stays byte-identical. Travel carries
 // it into a scene that has no table of its own (gameLevels/runtime.js).
 //
-// A LEAF: imports nothing, so scenePhysics' normalizer, the unit layer and the exporter can all
-// read it.
+// A LEAF: imports only the loading-config leaf, so scenePhysics' normalizer, the unit layer and the
+// exporter can all read it.
+import { normalizeLoading } from './loadingConfig.js';
 
 /** what a keep entry may name (LP4); `var:<name>` keeps one named variable */
 export const KEEP_KINDS = ['score', 'inventory', 'health'];
@@ -93,7 +94,7 @@ export function normalizeLevelsTable(raw) {
 	if (!list.length) return null;
 	const { list: _list, keep: _keep, unlock: _unlock, loading: _loading, ...rest } = raw;
 	const unlock = UNLOCK_RULES.includes(raw.unlock) ? raw.unlock : 'all';
-	const loading = raw.loading && typeof raw.loading === 'object' ? raw.loading : null;
+	const loading = raw.loading && typeof raw.loading === 'object' ? normalizeLoading(raw.loading) : null;
 	return { ...rest, list, keep: normalizeKeep(raw.keep), unlock, ...(loading ? { loading } : {}) };
 }
 

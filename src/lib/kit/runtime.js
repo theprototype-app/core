@@ -170,6 +170,16 @@ export function kitPayload() {
 export function tickKit() {
 	kit.tick();
 	touchPickups();
+	for (const fn of tickHooks) fn();
+}
+
+/** 93 LP1: per-frame hooks beside the kit's own (portals / checkpoints) — a hook, so the levels runtime
+ * stays a dynamic import from here @type {Set<() => void>} */
+const tickHooks = new Set();
+/** @param {() => void} fn @returns {() => void} off */
+export function onKitTick(fn) {
+	tickHooks.add(fn);
+	return () => tickHooks.delete(fn);
 }
 
 /** 34 R2: kit.pickups' TOUCH — this player walking into a registered pickup takes it. ~10x a

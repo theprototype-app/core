@@ -1087,7 +1087,7 @@ export async function duplicateScene(item, newName, opts = {}) {
  * attempt that never comes. Resolves null only if watching is impossible.
  * @param {string} hash @returns {Promise<any>}
  */
-function resolveLevelItem(hash) {
+export function resolveLevelItem(hash) {
 	const item = itemByHash(hash);
 	if (item) return Promise.resolve(item);
 	requestAsset(hash);

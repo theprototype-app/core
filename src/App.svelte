@@ -178,6 +178,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
   import AutoQualityNotice from './components/AutoQualityNotice.svelte' // 40 F12 (was SimplifiedWaterNotice)
   import ShortcutSheet from './components/menu/ShortcutSheet.svelte' // 36 I3
   import HudLayer from './components/hud/HudLayer.svelte'
+  import LevelTransition from './components/hud/LevelTransition.svelte' // 93 LP1/LP2
   import ARTableOverlay from './components/play/ARTableOverlay.svelte' // 50 R1
   import PickCycleHint from './components/menu/PickCycleHint.svelte' // 36 F22 / S6 / S12
   import LiveRegions from './components/ui/LiveRegions.svelte' // 53-reader: toasts, errors, selection read aloud
@@ -568,6 +569,8 @@ import { startMusicToolbox } from './lib/musicToolbox'
      above (a game HUD that dies when you press play is no HUD at all). --z-hud, no
      new tier: it beats the camera PiP and loses to modal/toast/menu. -->
 <HudLayer />
+<!-- 93: the level-change cover, the game's loading screen, the checkpoint flash (LOCAL) -->
+<LevelTransition />
 <!-- 50 R1: the AR table's dom-overlay root (rendered always, hidden until a phone asks for AR) -->
 <ARTableOverlay />
 <PickCycleHint />

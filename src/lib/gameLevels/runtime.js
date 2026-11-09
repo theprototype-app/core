@@ -8,7 +8,7 @@
 // sessions / history family is a dynamic import elsewhere.
 import { get } from 'svelte/store';
 import { scenePhysicsState_ } from '../scenePhysics';
-import { kit } from '../kit/runtime.js';
+import { kit, onKitTick } from '../kit/runtime.js';
 import { kitLevelsDef } from './table.js';
 
 /** the scene's Levels table right now (null = the scene has none) @returns {any} */
@@ -52,4 +52,11 @@ export function installLevelsRuntime() {
 	import('./travel.js')
 		.then((m) => m.installLevelsTravel())
 		.catch((error) => console.warn('levels: travel did not install', error));
+	// LP1 / LP3: portals + checkpoints at play time, and the kit's checkpoint calls
+	Promise.all([import('./play.js'), import('./checkpoints.js')])
+		.then(([play, cps]) => {
+			onKitTick(play.tickLevelObjects);
+			cps.installCheckpoints();
+		})
+		.catch((error) => console.warn('levels: portals did not install', error));
 }

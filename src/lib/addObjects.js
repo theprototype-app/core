@@ -128,6 +128,22 @@ export function buildAddChildren(pointOf) {
 				}
 			}))
 		},
+		// 93 LP1 / LP3: the level-change doorway and the save point (records on userData, gameLevels/objects.js)
+		{
+			label: 'Game',
+			children: [
+				{
+					label: 'Portal',
+					tooltip: 'Place a portal: walking through it takes the player to another level, scene or spot (Properties ▸ Portal)',
+					action: () => spawnAtPoint('/create Portal', pointOf())
+				},
+				{
+					label: 'Checkpoint',
+					tooltip: 'Place a checkpoint: stepping on it saves the player\'s progress; they come back here after a fall or a reload',
+					action: () => spawnAtPoint('/create Checkpoint', pointOf())
+				}
+			]
+		},
 		// 36-water: tanks, pools, an ocean, bubbles — a /create container made into water
 		{
 			label: 'Water',
@@ -174,12 +190,12 @@ export function buildAddChildren(pointOf) {
 		// provider the row says what is missing and opens its row in Tools & connections
 		meshGenReady()
 			? {
-					label: '✨ Generate 3D model…',
+					label: 'Generate 3D model…',
 					tooltip: 'Create a custom mesh from a text prompt',
 					action: () => meshGenModalOpen.set({ position: pointOf() })
 				}
 			: {
-					label: '✨ Generate 3D model… (set up)',
+					label: 'Generate 3D model… (set up)',
 					tooltip: featureStatus('generateMesh').message,
 					action: () => explainMissing('generateMesh')
 				}

@@ -11,6 +11,8 @@
 	// 36 S5 (user, 2026-10-05): NO Cancel button — opening another scene is how a load is
 	// abandoned (the newest load wins at once, F20); the bar only says what is happening.
 	import { sceneLoad } from '$lib/sceneLoader';
+	// 93 LP2: a game's own loading screen covers the hop — this bar stands down under it
+	import { levelLoading } from '$lib/gameLevels/loading.js';
 
 	const SHOW_AFTER_MS = 250;
 
@@ -54,7 +56,7 @@
 	);
 </script>
 
-{#if visible && $sceneLoad}
+{#if visible && $sceneLoad && !$levelLoading.active}
 	<!-- a CSS entrance, not svelte's `fly`: a JS transition reads getComputedStyle on mount, which
 	     forces a whole-document layout in the middle of a load (measured inside its longest task) -->
 	<div class="scene-load">

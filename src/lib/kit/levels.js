@@ -248,6 +248,11 @@ export default {
 			/** @param {string} mode */
 			setMode: (mode) => ctx.request('setMode', [mode]),
 			current: () => s().current,
+			// 93 LP3: per-player checkpoints live in the app (gameLevels/checkpoints.js), reached through a host
+			// seam: no host (the sim, a module test) = these answer false / ''
+			respawn: () => !!ctx.local.progress?.respawn?.(),
+			newGame: () => !!ctx.local.progress?.newGame?.(),
+			checkpoint: () => String(ctx.local.progress?.checkpoint?.() ?? ''),
 			currentLabel: () => {
 				const def = active();
 				return def ? labelOf(def, s().current) : '';
@@ -332,6 +337,10 @@ export default {
 					if (def) writeProgress(ctx, def, normalizeProgress(null));
 					if (def) def.shellKey = null;
 					publish();
+				},
+				/** 93 LP3: the app's checkpoint host `{respawn(), newGame(), checkpoint()}` (null detaches) @param {any} host */
+				attachProgress(host) {
+					ctx.local.progress = host ?? null;
 				},
 				/** the app's seam to the K3 shell picker: `fn(spec, owner) -> off` @param {any} fn */
 				attachShell(fn) {

@@ -340,6 +340,10 @@ export async function buildExport(opts, onProgress = () => {}) {
 	const indexHtml = rewriteIndexHtml(fromHost('index.html', await indexRes.text()), { title });
 	out['index.html'] = enc.encode(indexHtml);
 
+	// 93 LP2: the game's own loading screen covers the export's first load
+	const { exportLoadingScreen } = await import('../gameLevels/exportLoading.js');
+	const loading = await exportLoadingScreen(out, payload, warnings);
+
 	// 5. the config, the cover, the readme
 	const config = {
 		version: 1,
@@ -354,7 +358,8 @@ export async function buildExport(opts, onProgress = () => {}) {
 		quality: opts.quality || 'auto',
 		vrButton: opts.vrButton !== false,
 		preset: opts.preset,
-		builtWith: APP_VERSION
+		builtWith: APP_VERSION,
+		...(loading ? { loading } : {})
 	};
 	const playJs = makePlayJs(config);
 	out['play.js'] = enc.encode(playJs);

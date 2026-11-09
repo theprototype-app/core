@@ -111,7 +111,7 @@ describe('one History', () => {
 			{ key: 'scene:B', title: 'B', updatedAt: 10, count: 2, people: [] }
 		],
 		agents: [{ id: 'g1', title: 'Make the fence taller', label: 'Claude', updatedAt: 40 }],
-		ai: [{ id: 'ai-1', title: 'Shader help', provider: 'Gemini', updatedAt: 30 }],
+		ai: [{ id: 'ai-1', title: 'Shader help', provider: 'Gemini', updatedAt: 30, count: 2 }],
 		room: { key: 'scene:A', title: 'A' },
 		liveCount: 4
 	};

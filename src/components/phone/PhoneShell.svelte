@@ -61,11 +61,13 @@
 	import { snapDetent, stepDetent, phoneSheetMax } from '$lib/ui/sheetSnap.js';
 	import { sheetDrag } from '$lib/ui/sheetDrag.js';
 	import { followBottomEdge } from '$lib/ui/bottomEdge.js';
+	import { toggleChatTab } from '$lib/chat/chatWindow.js'; // uir-chat
 	import {
 		peers,
 		userdata,
 		messages,
 		chatHidden,
+		chatTab,
 		aiAssistantHidden,
 		notificationCenterOpen,
 		peersPanelOpen,
@@ -162,8 +164,8 @@
 	 * @type {Record<string, [string|null, string|null, boolean]>} */
 	// 41b H1: Objects is a DOCK TAB now (PhoneDockHost), not a framed sheet
 	const HOSTS = {
+		// uir-chat: Chat and the AI assistant are one window (Session | Assistant tabs), one sheet
 		chat: ['#chat-window', null, false],
-		ai: ['#ai-assistant-window', null, false],
 		notif: ['#notif-panel', null, true],
 		// 41b H15: the connected-peers panel is a drawer like the notifications (it draws its own header)
 		peers: ['#peers-popover', null, true],
@@ -173,7 +175,6 @@
 
 	const openNow = $derived(/** @type {Record<string, boolean>} */ ({
 		chat: $chatHidden === '',
-		ai: $aiAssistantHidden === '',
 		notif: $notificationCenterOpen,
 		peers: $peersPanelOpen,
 		conn: $phoneSheet === 'conn',
@@ -242,7 +243,6 @@
 	function closeKind(/** @type {string|null} */ k) {
 		dragH = null;
 		if (k === 'chat') chatHidden.set('hidden');
-		else if (k === 'ai') aiAssistantHidden.set('hidden');
 		else if (k === 'notif') notificationCenterOpen.set(false);
 		else if (k === 'peers') peersPanelOpen.set(false);
 		else if (k === 'conn') closeConn();
@@ -432,7 +432,8 @@
 
 	// unread chat: messages that arrived while the chat sheet was closed
 	let seenChat = $state(0);
-	const chatOpen = $derived($chatHidden === '');
+	// uir-chat: the Session tab of the one Chat window is what reads the chat
+	const chatOpen = $derived($chatHidden === '' && $chatTab === 'session');
 	$effect(() => {
 		if (chatOpen) seenChat = $messages.length;
 	});
@@ -478,7 +479,7 @@
 	// 86-fix N1: always opens; with no provider the window offers Connect Claude or Settings ▸ AI
 	function openAi() {
 		phoneSheet.set(null);
-		aiAssistantHidden.set('');
+		toggleChatTab('assistant'); // uir-chat: the Assistant tab of the one Chat window
 	}
 	/** close the shell's own sheet, then run (a destination opened from More replaces it) */
 	const fromMore = (/** @type {() => void} */ fn) => () => {
@@ -520,9 +521,8 @@
 			label: 'Chat',
 			icon: 'message-square',
 			run: () => {
-				const open = chatOpen;
 				phoneSheet.set(null);
-				chatHidden.set(open ? 'hidden' : '');
+				toggleChatTab('session'); // uir-chat
 			},
 			pressed: () => chatOpen,
 			badge: () => chatUnread

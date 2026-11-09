@@ -42,7 +42,7 @@ export const PHONE_DOCK_TABS = ['properties', 'objects', 'notes', 'layouts', 'sc
  * docks by dropping on the strip. These are the content/tool windows; the one-off viewers
  * (file/model previews, the text viewer), What's new and the tool palettes keep floating.
  */
-export const HOSTED_DOCK_TABS = ['objects', 'stats', 'profilerLive', 'chat', 'aiAssistant', 'assets'];
+export const HOSTED_DOCK_TABS = ['objects', 'stats', 'profilerLive', 'chat', 'assets']; // uir-chat: Chat + AI = one window
 /** every key the strip can hold (the tab order may name any of them) */
 export const DOCK_KEYS = [...new Set([...DOCK_FAMILY, ...PHONE_DOCK_TABS, ...HOSTED_DOCK_TABS])];
 /**

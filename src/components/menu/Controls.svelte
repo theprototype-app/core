@@ -46,7 +46,8 @@
 	import Icon from '../ui/Icon.svelte';
 	import { createAttachmentKey, fromAction } from 'svelte/attachments';
 	// 41 G1: MobileAddButton / AiHudButton (and VoiceChat's mic button) became roster entries
-	import { aiAssistantHidden, viewportMenuOpener } from '../../stores/appStore.js';
+	import { aiAssistantHidden, chatTab, viewportMenuOpener } from '../../stores/appStore.js';
+	import { toggleChatTab } from '$lib/chat/chatWindow.js'; // uir-chat
 	// 42 I9: the top-right group's and the touch tools' buttons join the roster
 	import { notesDrawerOpen, multiSelectMode, touchTools } from '../../stores/appStore.js';
 	import { undo, redo } from '$lib/history';
@@ -1303,8 +1304,8 @@
 			label: 'Chat (C)',
 			slot: 'chat-button',
 			icon: 'message-square',
-			tint: () => ($chatHidden !== 'hidden' ? ICON_ON : ICON_OFF),
-			run: () => toggleHostedWindow('chat')
+			tint: () => ($chatHidden === '' && $chatTab === 'session' ? ICON_ON : ICON_OFF),
+			run: () => toggleChatTab('session') // uir-chat: the Session tab of the one Chat window
 		},
 		mic: {
 			get title() {
@@ -1403,8 +1404,9 @@
 	/** the AI button press — AiHudButton's own path (I3). 86-fix N1: it always opens the window; with no
 	 *  provider set up the window itself offers Connect Claude or Settings ▸ Tools & connections */
 	function toggleAiAssistant() {
-		// dock-fixes: one tree for a floating, sidebar-docked or bottom-docked window ($lib/panelToggles)
-		toggleHostedWindow('aiAssistant');
+		// dock-fixes: one tree for a floating, sidebar-docked or bottom-docked window ($lib/panelToggles);
+		// uir-chat: the AI assistant is the Assistant tab of the one Chat window
+		toggleChatTab('assistant');
 	}
 
 	/** the "+" press — MobileAddButton's own path: a new object lands in the middle of the

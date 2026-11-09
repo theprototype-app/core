@@ -9,7 +9,6 @@
 // The ranking is commandRank.js (a pure leaf). The palette itself is CommandPalette.svelte; the
 // Ctrl+K row lives in the registry (help.palette) and only sets `commandPaletteOpen`, so this
 // module is never imported by shortcuts.js (no cycle).
-import { get } from 'svelte/store';
 import {
 	settingsOpen,
 	settingsSection,
@@ -20,13 +19,12 @@ import {
 	checkpointSaveOpen,
 	templatesModalOpen,
 	characterModalOpen,
-	chatHidden,
-	aiAssistantHidden,
 	notesDrawerOpen,
 	notificationCenterOpen
 } from '../stores/appStore';
 import { shortcuts } from './shortcuts';
 import { togglePanel, TOGGLEABLE } from './panelToggles';
+import { toggleChatTab } from './chat/chatWindow.js'; // uir-chat
 import { DOCK_TITLES } from './bottomDock';
 import { publishExportOpen } from './export/exportStores';
 import { SETTINGS_ROWS, SETTINGS_SECTION_IDS } from './settingsIndex';
@@ -34,9 +32,6 @@ import { awayKeys, bringAllWindowsBack, canPopOut, popOutPanel } from './windows
 import { POPPABLE, panelTitle, panelIsOpen } from './windows/panelRegistry.js';
 
 /** @typedef {import('./commandRank').Command} Command */
-
-/** @param {import('svelte/store').Writable<string>} store */
-const flipHidden = (store) => store.set(get(store) === 'hidden' ? '' : 'hidden');
 
 /** @returns {Command[]} */
 function toolCommands() {
@@ -65,8 +60,8 @@ function windowCommands() {
 		run: () => togglePanel(key)
 	}));
 	list.push(
-		{ id: 'window:chat', kind: 'window', label: 'Chat', detail: 'Window — show or hide', run: () => flipHidden(chatHidden) },
-		{ id: 'window:ai', kind: 'window', label: 'AI assistant', detail: 'Window — show or hide', words: 'chat llm', run: () => flipHidden(aiAssistantHidden) },
+		{ id: 'window:chat', kind: 'window', label: 'Chat', detail: 'Window — show or hide', run: () => toggleChatTab('session') }, // uir-chat
+		{ id: 'window:ai', kind: 'window', label: 'AI assistant', detail: 'Window — show or hide', words: 'chat llm', run: () => toggleChatTab('assistant') },
 		{ id: 'window:notes', kind: 'window', label: 'Scene notes', detail: 'Window — show or hide', words: 'annotations', run: () => notesDrawerOpen.update((v) => !v) },
 		{ id: 'window:notifications', kind: 'window', label: 'Notifications', detail: 'Window — show or hide', words: 'history bell', run: () => notificationCenterOpen.update((v) => !v) }
 	);

@@ -1,5 +1,5 @@
 import { writable, derived, get } from 'svelte/store';
-import { objectListClose, chatHidden, aiAssistantHidden } from '../stores/appStore';
+import { objectListClose, chatHidden } from '../stores/appStore';
 import { isLocked } from '../stores/sceneStore';
 import { statsOpen } from './sceneBudget';
 import { profilerLiveOpen } from './perf/liveSink.js';
@@ -47,7 +47,7 @@ export const HOSTED = {
 	stats: { sel: '#stats-window', ls: 'statsDocked', store: statsOpen, isOpen: (v) => !!v, open: () => statsOpen.set(true), close: () => statsOpen.set(false) },
 	profilerLive: { sel: '#profiler-live', ls: 'profilerLiveDocked', store: profilerLiveOpen, isOpen: (v) => !!v, open: () => profilerLiveOpen.set(true), close: () => profilerLiveOpen.set(false) },
 	chat: { sel: '#chat-window', ls: 'chatDocked', store: chatHidden, isOpen: (v) => v === '', open: () => chatHidden.set(''), close: () => chatHidden.set('hidden') },
-	aiAssistant: { sel: '#ai-assistant-window', ls: 'aiAssistantDocked', store: aiAssistantHidden, isOpen: (v) => v === '', open: () => aiAssistantHidden.set(''), close: () => aiAssistantHidden.set('hidden') },
+	// uir-chat: the AI assistant is the Assistant tab of this one window (no key of its own any more)
 	// 47-cc0: the free CC0 asset browser
 	assets: { sel: '#asset-browser-window', ls: 'assetBrowserDocked', store: assetBrowserOpen, isOpen: (v) => !!v, open: () => assetBrowserOpen.set(true), close: () => assetBrowserOpen.set(false) }
 };

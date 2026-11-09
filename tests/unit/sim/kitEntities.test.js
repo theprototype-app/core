@@ -334,3 +334,51 @@ describe('78 F23: the dead leave the count, on every peer', () => {
 		expect(rt(sim, 'a').debug()).toMatchObject({ count: 0, stored: 1, living: 0 });
 	});
 });
+
+describe('78 F21: mover chase / halt and health damageArea on SPAWNED entities, from nodes on a non-authority', () => {
+	it('spawn -> chase a target object -> halt -> damageArea: every peer agrees at each step', () => {
+		const sim = createSim({ peers: ['a', 'b'], latency: 0 }); // poses compared exactly (agreeAfterFlush)
+		const TARGET = 'target-uuid';
+		for (const id of ['a', 'b'])
+			setEntityHost(sim.peer(id).kit, { resolveTarget: (ref) => (ref === TARGET ? [5, 0.3, 5] : null) });
+		const auth = sim.authorities()[0];
+		const other = sim.peer(auth === 'a' ? 'b' : 'a');
+		const node = (/** @type {string} */ type, /** @type {any} */ data, /** @type {number} */ n) => other.kit.runNodeAction(type, data, { rid: 'node:' + type + ':' + n });
+		node('kit-spawner-spawn', { kind: 'enemy', template: '', at: [-3, 0.4, -3], count: 3, spread: 1, hp: 5, speed: 1, removeAfter: 1 }, 1);
+		sim.settle();
+		const pos = () => [...rt(sim, auth).store.ents.values()].map((e) => [e.pos[0], e.pos[2]]);
+		const dist = () => pos().map(([x, z]) => Math.hypot(5 - x, 5 - z));
+		expect(pos().length).toBe(3);
+		const d0 = dist();
+		// chase: a node naming the target OBJECT (an uuid the app resolves to its place)
+		node('kit-mover-chase', { kind: 'enemy', target: TARGET }, 2);
+		sim.advance(1500);
+		const d1 = dist();
+		expect(d1.every((d, i) => d < d0[i] - 0.8), 'every entity walked toward the target: ' + JSON.stringify({ d0, d1 })).toBe(true);
+		expect(agreeAfterFlush(sim, auth)).toBe(true);
+		// halt: they stop where they are
+		node('kit-mover-halt', { kind: 'enemy' }, 3);
+		sim.advance(300); // the halt lands and the last stride settles
+		const p1 = pos();
+		sim.advance(1500);
+		const p2 = pos();
+		expect(p2.every(([x, z], i) => Math.hypot(x - p1[i][0], z - p1[i][1]) < 0.05), 'halted: ' + JSON.stringify({ p1, p2 })).toBe(true);
+		expect(agreeAfterFlush(sim, auth)).toBe(true);
+		// damageArea around the first entity, radius 3 (kind '' = any): every one inside loses 2 hp
+		const [cx, cz] = p2[0];
+		const inside = p2.filter(([x, z]) => Math.hypot(x - cx, z - cz) <= 3).length;
+		expect(inside).toBeGreaterThan(0);
+		node('kit-health-damageArea', { at: [cx, 0.4, cz], radius: 3, amount: 2, kind: '' }, 4);
+		sim.settle();
+		sim.advance(200); // hp rides the 15 Hz pose flush
+		for (const id of ['a', 'b']) {
+			const hp = [...rt(sim, id).store.ents.values()].map((e) => e.health.hp);
+			expect(hp.filter((v) => v === 3).length, id + ' hp ' + JSON.stringify(hp)).toBe(inside);
+		}
+		// and again until they die: the Count node goes to 0 on both peers
+		node('kit-health-damageArea', { at: [cx, 0.4, cz], radius: 3, amount: 10, kind: '' }, 5);
+		sim.settle();
+		sim.advance(200);
+		for (const id of ['a', 'b']) expect(sim.peer(id).kit.evalNodeValue('kit-spawner-count', { kind: 'enemy' })).toBe(3 - inside);
+	});
+});

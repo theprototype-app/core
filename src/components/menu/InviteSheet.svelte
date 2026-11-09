@@ -12,6 +12,8 @@
 	import Segmented from '../ui/Segmented.svelte';
 	import Button from '../ui/Button.svelte';
 	import Icon from '../ui/Icon.svelte';
+	// 78 PL37: the join link as a QR code, drawn here (no network)
+	import QrCode from '../ui/QrCode.svelte';
 	import { peers, showToast } from '../../stores/appStore';
 	import { rolesInfo } from '$lib/cloudHooks';
 	import { peerServerStatus, inviteServerParam } from '$lib/peerServer';
@@ -197,6 +199,13 @@
 						<Button variant="secondary" size="sm" id="invite-copy-link" icon="copy" onclick={() => copyText(strings.link, 'Invite link')}>Copy</Button>
 					</div>
 				</div>
+				{#if tab === 'person'}
+					<!-- 78 PL37: a phone joins by pointing its camera at the screen -->
+					<div class="inv-qr" id="invite-qr-wrap">
+						<QrCode id="invite-qr" text={strings.link} size={176} label="QR code of the invite link" />
+						<p class="inv-qr-note"><Icon name="qr-code" size={16} aria-hidden="true" /><span>Scan with a phone camera to join. Made on this device, nothing is sent anywhere.</span></p>
+					</div>
+				{/if}
 				{#if playLink}
 					<div class="inv-field">
 						<span class="inv-label" id="invite-play-label">Play link — opens straight into the game, no editor</span>
@@ -301,6 +310,25 @@
 	.inv-state[data-state='revoked'],
 	.inv-state[data-state='expired'] {
 		color: var(--ink-warn);
+	}
+	.inv-qr {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+	}
+	.inv-qr-note {
+		display: flex;
+		gap: 6px;
+		align-items: flex-start;
+		margin: 0;
+		color: var(--text-muted);
+		font-size: var(--fs-desc);
+	}
+	@media (max-width: 420px) {
+		.inv-qr {
+			flex-direction: column;
+			align-items: flex-start;
+		}
 	}
 	.inv-used {
 		margin: 0;

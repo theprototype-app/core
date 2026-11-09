@@ -88,7 +88,9 @@ h.run(async () => {
 	await page.locator('#code-ws-save').click();
 	await page.waitForTimeout(600);
 	const after = await graphNodes(page);
-	h.check(after.find((n) => n.id === 'n1')?.value === 7, `3.3 Save applied the text to the graph (${JSON.stringify(after)})`);
+	const saw = await activeTab(page);
+	const focusAt = await S(page, () => (document.activeElement?.id || document.activeElement?.className || '').toString().slice(0, 60));
+	h.check(after.find((n) => n.id === 'n1')?.value === 7, `3.3 Save applied the text to the graph (${JSON.stringify(after)}; tab has 7: ${/value:\s*7/.test(saw?.code ?? '')}; err ${JSON.stringify(saw?.error)}; focus ${focusAt})`);
 	tab = await activeTab(page);
 	h.check(!tab.error, '3.4 no error on a good save');
 
@@ -105,7 +107,8 @@ h.run(async () => {
 	await S(page, () => window.__stores.codeWorkspace.openCode({ source: 'graph', ref: { graphId: 'scene' } }));
 	await page.waitForTimeout(400);
 	h.check((await activeTab(page))?.format === 'json', '2.5 (setup) graph.json is the active tab');
-	await page.mouse.click(5, 450);
+	// focus out of the editor without a click: (5, 450) is where the viewport's left column handle sits now
+	await S(page, () => /** @type {HTMLElement} */ (document.activeElement)?.blur?.());
 	await page.keyboard.press('Alt+f');
 	await page.waitForTimeout(800);
 	h.check((await activeTab(page))?.format === 'text', '2.6 Alt+F raises the flow code tab');

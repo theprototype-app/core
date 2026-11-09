@@ -34,3 +34,18 @@ describe('changelog', () => {
 		expect(blocks[0].html).toBe('Plain &lt;b&gt;x&lt;/b&gt; &amp; y');
 	});
 });
+
+// 78-int PL42: the app shows no emoji, even from older emoji-led entries
+describe('changelog emoji', async () => {
+	const { changelogBlocks, stripEmoji } = await import('../../src/lib/changelog.js');
+	it('drops colour emoji and VS16 pictographs, keeps text glyphs', () => {
+		expect(stripEmoji('📸 Pro look')).toBe('Pro look');
+		expect(stripEmoji('⚙️ Settings and 🥽 VR')).toBe('Settings and VR');
+		expect(stripEmoji('A → B · ✕ · ▶ Play')).toBe('A → B · ✕ · ▶ Play');
+	});
+	it('the shipped CHANGELOG renders with no emoji', async () => {
+		const fs = await import('fs');
+		const html = changelogBlocks(fs.readFileSync('CHANGELOG.md', 'utf8')).map((b) => b.html + (b.items ?? []).join(' ')).join('\n');
+		expect(html.match(/\p{Emoji_Presentation}|\p{Extended_Pictographic}️/u)).toBe(null);
+	});
+});

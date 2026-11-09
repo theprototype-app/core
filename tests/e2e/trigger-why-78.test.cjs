@@ -96,7 +96,7 @@ h.run(async () => {
 	const fired = await S(p, (u) => window.__stores.flowRuntime.fireObjectClick(u), ids.bell);
 	h.check(fired >= 1, `§2 a click on the bell fires (${fired})`);
 	let w = await why(p, 'click');
-	h.check(w.check?.fired === true && w.check.who === 'Bell' && /^fired /.test(w.card), `§2 On Click: fired, by the bell ("${w.card}")`);
+	h.check(w.check?.fired === true && w.check.who === 'Bell' && /^fired /.test(w.card), `§2 On Click: fired, by the bell ("${w.card}", ${JSON.stringify(w.check)})`);
 
 	await st('hoverOff', 'disabled', 'On Hover with "enabled" off');
 	await S(p, (u) => window.__stores.flowRuntime.fireObjectHover(u, 'enter'), ids.bell);
@@ -122,10 +122,12 @@ h.run(async () => {
 	h.check(w.check?.reason === 'filter', `§2 the filter refuses the player ("${w.card}")`);
 	await S(p, ([u, g]) => window.__stores.flowRuntime.fireObjectEnter(u, g), [ids.bell, ids.gem]);
 	w = await why(p, 'enterFilter');
-	h.check(w.check?.fired === true && w.check.who === 'Gem', `§2 the filter's own object fires it ("${w.card}")`);
+	h.check(w.check?.fired === true && w.check.who === 'Gem', `§2 the filter's own object fires it ("${w.card}", ${JSON.stringify(w.check)})`);
 
 	// --- §3 the card and the Flow debugger -----------------------------------------------------
 	console.log('\n=== §3 card + debugger ===');
+	// a restore offer can be up since boot (nothing before §3 clicks): answer it or it eats the press
+	if (await p.locator('#restore-session-modal').isVisible().catch(() => false)) await p.locator('#restore-session-dismiss').click().catch(() => {});
 	await p.locator('p[title="Node editor (N)"]').click();
 	await p.waitForTimeout(1200);
 	const live = (id) => p.locator(`.flow-live-state[data-node-id="${id}"]`).textContent().catch(() => null);

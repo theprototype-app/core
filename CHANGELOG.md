@@ -1,9 +1,59 @@
 # Changelog
 
 <!-- This file is rendered INSIDE the app (What's new, from the logo menu) as well as
-     on GitHub, so keep entries short, human and emoji-led: one "## <version>" heading
+     on GitHub, so keep entries short and human: one "## <version>" heading
      per release, newest first. HTML comments like this one are stripped before
-     rendering, so maintainer notes stay out of the user-facing window. -->
+     rendering, so maintainer notes stay out of the user-facing window. No emoji from
+     1.64 on (owner rule: no emoji in the UI); the app strips them from older entries. -->
+
+## 1.64.0 — Doors, paths and levels
+
+### Rooms that react
+- **Starter recipes**: select an object, open the node editor and pick **Recipes** in the node search: **Door** (click to open), **Door that opens when you walk up**, **Bell** (click, point at or knock it) and **Guard** (walks a loop and says *Spotted!* when you come close). One undo takes a recipe back, and everyone in the session sees it at once. <!-- 78-int F27 -->
+- **Why did this not fire?** Trigger nodes (On Enter, On Exit, On Hover, On Click, Collect pickup, Timer) remember their last check: the card says *fired 2 s ago*, *blocked: not the player* or *won't fire: in Edit mode (use Play)*, and the Flow debugger says who, when and what stopped it. <!-- 78-int F26 -->
+- **On Hover** fires when a player's pointer, phone tap or VR laser goes over an object; **Hover Animate** swings, wobbles or pops it, and every player sees the same swing. An unwired **Highlight** now lights under the mouse in Interact and under a phone tap too. <!-- 78-nodes F2; 78-int I2 rewire -->
+- **Toggle Animation** opens and closes doors, lids and drawers between poses you capture (or named poses like "ajar"); the state is shared and saved, so late joiners see the same door. <!-- 78-nodes -->
+- **On Enter / On Exit work for the player** (every peer's own player, joiners too) with a new *who* option (anything / the player / objects only), and **Proximity** can measure to your own player. <!-- 78-nodes -->
+- **New nodes for a room that feels alive**: Oscillate, Move To / Rotate To / Scale To, Light Switch, Light Intensity, Colour Cycle, Wind Sway, Flowing Water and Ambient Animal; **Grabbable** (pick things up in Play or with the VR grip, no physics needed); **Highlight** + **Press Button**; **Sit Spot** (click a chair to sit, a move key stands you up). <!-- 85-nodes -->
+- **Node-only gems**: the Collect pickup node has *Collect on touch* (on by default), so walking over a gem takes it. <!-- 78-nodes -->
+- **On Play start / On Play stop** pulse once when the session (or just you) starts or stops playing; *Game Start* is now called **Start camera**. <!-- 78-nodes -->
+- **Announce** no longer flashes over the editor: in Edit its line goes to the Debugger's new **Console**; the banner shows in Play. <!-- 78-nodes -->
+
+### Paths
+- **Add ▸ Path** draws a route you can edit: waits, speeds, eases, jumps, facing and events per point; loop, ping-pong, once or random walks; hidden in Play. **Path patrol** walks a Path and every peer sees each walker in the same place; older patrols convert in one click. <!-- 78-path -->
+
+### Wiring
+- **Drag a wire into empty space to add a node**: a search opens right there with the nodes that fit; picking one adds the node and the wire in one undo step. **Tab** opens the same search for the selected node. <!-- 78-wire F1 -->
+- **Backwards wires are flagged**: a wire from an Object Selector *into* On Click (and other triggers) is drawn dashed red with a chip that offers **Reverse wire**. <!-- 78-wire -->
+- **Live state on node cards**: while the node editor is open, cards say what they are doing ("count 3", "fired 1.2 s ago", "to point 3"). <!-- 78-wire F7 -->
+- **One banner for click-to-place tools** (waypoints, measuring, drawing a spline, a flatten point): it names the tool that owns your next click, and Esc leaves only the top one. <!-- 78-wire F5 -->
+- **Animate in editor** (optional toolbar button): switch it off and Spin, Bounce, Orbit, Path patrol and friends rest at their pose while you edit. <!-- 78-wire F6 -->
+
+### Levels and portals
+- **Levels and progress**: one Levels table per game (Configure Scene ▸ Levels) shared by the Kit: Levels nodes, portals and Claude, with a keep-across-levels list (score, inventory, health, variables). <!-- 93-levels -->
+- **Portals** to another level, scene or spot, one player at a time, with fade, iris or card transitions and background preloading; **Checkpoints** with Back to checkpoint and New game nodes. <!-- 93-levels -->
+- **Loading screens** with real progress (five styles), and exported games **remember progress** and resume at the last checkpoint. New template: **Two levels and a portal**. <!-- 93-levels -->
+
+### Physics and the game kit
+- **The fastest device runs the physics**: when the device running a simulation is much slower than another player's, the run moves there by itself; a slow device alone keeps real time instead of slow motion. <!-- 78-nodes -->
+- A level made only of static objects runs its physics when Play starts (walls stop you), and a walking scene with no Character Controller gets a default walker. <!-- 78-nodes -->
+
+### Interface
+- **No emoji anywhere in the app**: icons are drawn as icons, so they look the same on every phone. <!-- 78-int PL42 -->
+- **Touch**: tab rows scroll with a sideways swipe instead of tearing tabs off; moving or tearing off a tab takes a long press. <!-- panel-gestures -->
+- **Hide chrome buttons you do not use** (right-click or long press ▸ Hide this button); Show buttons and Settings ▸ Customize buttons bring them back, saved per layout. <!-- panel-gestures -->
+- **Bigger tap areas on touch screens** are on: small buttons answer a finger that lands just beside them. <!-- hitslop-fix -->
+- **Profile menu** regrouped (Profile, Your stuff, Account), with a one-time card about email updates and **Settings ▸ Account ▸ Email**. <!-- profile-notify -->
+
+### AI apps
+- Agents can build all of this: `create_shape` with `action: "path"`, `game_setup` with `portal`, `checkpoint` and `loading`, and `describe_node_types` knows the new nodes (common words like door, lamp, cat, button and hover work as aliases). `inspect_runtime` shows the game kit's round, score and pickups. <!-- 78-path, 93-levels, 85-nodes -->
+
+### Fixes
+- Someone joining a session late now sees the pickups already taken (and cannot take them again); loading or clearing a scene alone before joining no longer resets the room's game. <!-- 78-kit -->
+- A kit action that cannot run right now (Win during the results, for example) says why, in the session log on every peer and to the AI. <!-- 78-kit -->
+- A behaviour handler that throws is rolled back (its state, timers and events) and its error says so. <!-- 78-kit -->
+- Things spawned from code that die stop counting at once and are removed after 1 second, like the Spawn node's. <!-- 78-kit -->
+- The scene load bar moves while a scene's objects are being built (it used to sit still, then jump to the end). <!-- 93-levels -->
 
 ## 1.63.0 — Pro look 📸
 

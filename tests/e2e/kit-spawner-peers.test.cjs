@@ -4,7 +4,9 @@
 // Two peers; the Spawn node is pressed on the NON-authority (a replicated On Click), the entities are
 // killed from code there too; every spawner/health event node is read back from BOTH peers' trigger
 // logs, and the counts from both runtimes.
-// Counterfactual on v1.63.0: 3.x (the dead stay stored) is red; the pulses are the measurement.
+// On v1.63.0 sections 1-3 are already GREEN (a node spawn carries removeAfter 1, and the pulses reach
+// every peer): the round-1 pulse report was the research's own clock window. The F23 counterfactual is
+// section 4 — a spawn from CODE with no removeAfter kept its dead forever (red on v1.63.0).
 const h = require('./helpers.cjs');
 
 const PROBE = () => {
@@ -80,7 +82,7 @@ h.run(async () => {
 		S.nodesHandler.createFlowEdge({ id: 'e-click-spawn.trigger', source: 'click', target: 'spawn', targetHandle: 'trigger' });
 		events.forEach((/** @type {string} */ e, i) => S.nodesHandler.createFlowNode({ id: 'ev-' + e, type: e, position: { x: 700, y: i * 120 }, data: { type: e } }));
 		S.objectActions.deselectObject();
-		return { btn: btn.uuid };
+		return { btn: btn.uuid, tpl: tpl.uuid };
 	}, EVENTS);
 	await h.eventually(
 		() => Promise.all([A, B].map((p) => p.page.evaluate(() => /** @type {any} */ (window).__stores.nodesHandler.graphHash()))),
@@ -111,6 +113,17 @@ h.run(async () => {
 	const final = await Promise.all([A, B].map(seen));
 	console.log('  pulses per peer: ' + JSON.stringify(final.map((s) => Object.fromEntries(Object.entries(s).map(([k, v]) => [k.replace(/^kit-/, ''), v.n])))));
 	h.check(final.every((s) => s['kit-spawner-emptied'].n === 1), '3.3 "On emptied" pulsed ONCE per peer (not again on the removals)');
+
+	// ---- 4. F23: a spawn from CODE with no removeAfter — the dead leave after the 1 s default too ----
+	await other.page.evaluate((tpl) => /** @type {any} */ (window).__kitApi.kit.spawner.spawn({ kind: 'codefoe', template: tpl, at: [3, 0.4, -3], count: 2, spread: 1, hp: 5 }), ids.tpl);
+	await h.eventually(() => Promise.all([A, B].map(ents)), (v) => v.every((x) => x.count === 2), 'premise: 2 code-spawned entities on both peers', 10000);
+	await other.page.evaluate(() => {
+		const k = /** @type {any} */ (window).__kitApi.kit;
+		const all = /** @type {any} */ (window).__stores.kitEntities.kitEntitiesDebug().entities ?? [];
+		for (const e of all.filter((/** @type {any} */ x) => x.kind === 'codefoe')) k.health.damage(e.id, 999);
+	});
+	await h.eventually(() => Promise.all([A, B].map(ents)), (v) => v.every((x) => x.count === 0), '4.1 the code-spawned dead stop counting on both peers', 8000);
+	await h.eventually(() => Promise.all([A, B].map(ents)), (v) => v.every((x) => x.stored === 0), '4.2 …and leave every store after the 1 s default (no removeAfter given)', 8000);
 
 	await h.finish(browser);
 });

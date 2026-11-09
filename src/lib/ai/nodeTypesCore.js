@@ -53,6 +53,7 @@ export function paramsOf(spec) {
 		if (Number.isFinite(p.min)) row.min = p.min;
 		if (Number.isFinite(p.max)) row.max = p.max;
 		if (typeof p.label === 'string' && p.label !== p.key) row.label = p.label;
+		if (typeof p.doc === 'string') row.doc = p.doc; // 85 N1: units (degrees / metres) an agent cannot guess
 		out.set(p.key, row);
 	}
 	for (const [key, value] of Object.entries(defaults)) {

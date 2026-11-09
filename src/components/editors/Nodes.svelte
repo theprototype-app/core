@@ -202,6 +202,20 @@
 		wander: AnimationNode,
 		orientvelocity: AnimationNode,
 		bodywave: AnimationNode,
+		oscillate: AnimationNode, // 85 N1
+		moveto: AnimationNode, // 85 N2
+		rotateto: AnimationNode,
+		scaleto: AnimationNode,
+		lightswitch: AnimationNode, // 85 N4
+		lightintensity: AnimationNode,
+		lightcycle: AnimationNode,
+		windsway: AnimationNode, // 85 N5
+		waterflow: AnimationNode,
+		ambientanimal: AnimationNode, // 85 N3
+		grabbable: AnimationNode, // 85 I1
+		highlight: AnimationNode, // 85 I2
+		pressbutton: AnimationNode,
+		sitspot: AnimationNode, // 85 I3
 		bounce: AnimationNode,
 		orbit: AnimationNode,
 		pulse: AnimationNode,

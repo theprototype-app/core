@@ -107,6 +107,17 @@ import { animateInEditor, EDITOR_MOTION_TYPES } from './editorMotion'; // 78 F6:
 import { publishLiveStates, liveStatesWanted } from './nodeLiveState'; // 78 F7: a leaf
 import { applyPatrolOnPath, pathPreviewHeld } from './path/pathRuntime.js'; // 78 F4: a three leaf
 import { applyRotor, applyFlowFloat } from './sim/motionNodes.js'; // 36-fb F25/F24 (a three leaf)
+// 85 N1/N2/N4: Oscillate, the tweens and the light nodes (three leaves over a pure core)
+import { applyOscillate, applyTween, tweenPosition, noteTweenRead, tickTweenNodes } from './motion/tweenNodes.js';
+import { applyLightSwitch, applyLightIntensity, applyLightCycle, pruneLightNodes } from './motion/lightNodes.js';
+import { applyHighlight, applyPress, prunePressNodes } from './motion/pressNodes.js'; // 85 I2
+import { isHovered } from './hoverState.js'; // 85 I2
+import { openEvent } from './motion/tweenCore.js';
+// 85 N5: Wind Sway + Flowing Water (vertex deformers + map scroll, a three leaf)
+import { applyWindSway, applyWaterFlow, pruneSwayNodes } from './motion/swayNodes.js';
+// 85 N3: Ambient Animal (a three leaf over motionNodes' Wander) + where the players are (stores only)
+import { applyAmbientAnimal, ambientRead, tickAmbientNodes } from './motion/ambientNodes.js';
+import { playerPositions } from './motion/players.js';
 // 40 F15: general-purpose motion (a three leaf + its pure core)
 import {
 	applyFollowPath,
@@ -566,7 +577,8 @@ animateInEditor.subscribe((on) => (editorMotionOn = on));
  * custom nodes (all of them may write a pose).
  */
 // 36-fb F25: a rotor on a DYNAMIC body during a run drives it with torque (no pose write)
-const POSE_FREE_EFFECTS = new Set(['setcolor', 'setuniform', 'deviceparam', 'notetrigger', 'rotor']);
+// 85 N4: the light nodes write intensity / colour only
+const POSE_FREE_EFFECTS = new Set(['setcolor', 'setuniform', 'deviceparam', 'notetrigger', 'rotor', 'lightswitch', 'lightintensity', 'lightcycle', 'windsway', 'waterflow', 'highlight']);
 
 /** @param {any} object */
 function captureBase(object) {
@@ -1172,6 +1184,21 @@ function updatePointGrabNodes(time, ctx) {
 		if (data.enabled === false || data.enabled === 0) enabled = false;
 	}
 	setPointGrabEnabled(enabled);
+}
+
+/**
+ * 85 I1: the Grabbable node that makes `uuid` carryable without a simulation — wired to it through an
+ * Object Selector, named as its direct target, or unwired inside its own graph — as its data, or null.
+ * playInteract asks this on a press and per frame for the reticle. @param {string} uuid
+ */
+export function kinematicGrab(uuid) {
+	if (!uuid || muted.includes(uuid)) return null;
+	for (const node of nodes) {
+		if (node.type !== 'grabbable') continue;
+		const t = node.data?.target;
+		if ((typeof t === 'string' && t === uuid) || implicitOwnerOf(node) === uuid || reachesObjectSelector(node.id, uuid)) return node.data ?? {};
+	}
+	return null;
 }
 
 /**
@@ -2548,7 +2575,7 @@ function targetUuidOf(edge) {
 
 /** 85b R10: the effect nodes that may name their object directly (`data.target`, an object uuid) — a
  * button drives a door with no Object Selector chain. Absent / '' = the old rules, byte-identical. */
-export const DIRECT_TARGET_TYPES = new Set(['setcolor', 'visibility', 'spin']);
+export const DIRECT_TARGET_TYPES = new Set(['setcolor', 'visibility', 'spin', 'oscillate', 'moveto', 'rotateto', 'scaleto', 'lightswitch', 'lightintensity', 'lightcycle', 'windsway', 'waterflow', 'ambientanimal', 'grabbable', 'highlight', 'pressbutton', 'sitspot']); // 85 N1-N5, I1-I3 join
 /** @param {any} node @returns {string | null} */
 function directTargetOf(node) {
 	if (!DIRECT_TARGET_TYPES.has(node?.type)) return null;
@@ -3867,6 +3894,13 @@ function nextTriggerLog(map, nodeId, t, walkId, walkHandle, touched) {
 				next[target.id] = { count: flips + 1, lastT: t };
 			} else if (handle === 'set' || handle === 'reset')
 				next[target.id] = { count: 0, lastT: t };
+		} else if (TOGGLE_TWEEN_TYPES.has(target.type)) {
+			// 85 N2/N4: a tween's / a light switch's `toggle` is the Latch's toggle — parity counted
+			// here (a stamp cannot carry it), cleared by trigger / back, which re-base it
+			if (handle === 'toggle') {
+				const held = next[target.id];
+				next[target.id] = { count: (held?.count ?? 0) + 1, lastT: t };
+			} else if (handle === 'trigger' || handle === 'back') next[target.id] = { count: 0, lastT: t };
 		} else if (target.type === 'random') {
 			// B6 shipped `reroll` as a DEAD input, and this is where it died: the roll
 			// reads `ctx.triggers[<the random node>]`, and NOTHING ever wrote an entry
@@ -4047,8 +4081,17 @@ export function fireModuleTrigger(type, match, opts) {
 	return fired;
 }
 
+/** @param {string} uuid */
 export function fireObjectClick(uuid) {
 	let fired = 0; // 30b: how many On Click nodes this reached (additive return)
+	// 85 I3: local click listeners (a Sit Spot sits THIS player down) — a leaf flowRuntime may not import
+	for (const hook of clickHooks) {
+		try {
+			if (hook(uuid)) fired++;
+		} catch (error) {
+			console.warn('click hook:', error);
+		}
+	}
 	nodes.forEach((node) => {
 		if (node.type !== 'onclick') return;
 		// H1: an unwired OnClick inside the clicked object's own graph also fires
@@ -4388,6 +4431,36 @@ export function toggleAnimDebug(nodeId) {
 export function objectHasOnClick(uuid) {
 	return nodes.some(
 		(node) => node.type === 'onclick' && (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid)
+	) || !!sitSpotFor(uuid); // 85 I3: a seat takes the click too
+}
+
+/** 85 I3: local click listeners, run by fireObjectClick before the On Click nodes @type {Set<(uuid: string) => boolean>} */
+const clickHooks = new Set();
+/** @param {(uuid: string) => boolean} fn returns true when it handled the click @returns {() => void} */
+export function registerClickHook(fn) {
+	clickHooks.add(fn);
+	return () => clickHooks.delete(fn);
+}
+
+/** 85 I3: the Sit Spot node on `uuid` (its data), or null — the kinematicGrab shape @param {string} uuid */
+export function sitSpotFor(uuid) {
+	if (!uuid || muted.includes(uuid)) return null;
+	for (const node of nodes) {
+		if (node.type !== 'sitspot') continue;
+		const t = node.data?.target;
+		if ((typeof t === 'string' && t === uuid) || implicitOwnerOf(node) === uuid || reachesObjectSelector(node.id, uuid)) return node.data ?? {};
+	}
+	return null;
+}
+
+/** 85 I2: does a hover-driven Highlight node (its `on` unwired) light `uuid` up? The VR laser
+ * treats such an object as something to point at. @param {string} uuid @returns {boolean} */
+export function objectHasHoverHighlight(uuid) {
+	return nodes.some(
+		(node) =>
+			node.type === 'highlight' &&
+			!edgesInto(edges, node.id).some((/** @type {any} */ e) => e.targetHandle === 'on') &&
+			(node.data?.target === uuid || reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid)
 	);
 }
 
@@ -4552,6 +4625,85 @@ export function fireObjectExit(uuid, otherUuid) {
 	fireSensorEdge('onexit', uuid, otherUuid);
 }
 
+/**
+ * 85 N1/N2 (debug + the two-peer suites): the pose ONE effect node gives `uuid` at shared time
+ * `time`, computed on a detached copy from the object's base — so two peers asked about the same
+ * moment answer for the same moment, whatever frame each happens to be drawing.
+ * @param {string} nodeId @param {string} uuid @param {number} [time] (default: now)
+ */
+export function effectPoseAt(nodeId, uuid, time) {
+	if (typeof time !== 'number') time = effectClockNow();
+	const anim = nodeById(nodes, nodeId);
+	const object = sceneObjects?.getObjectByProperty('uuid', uuid);
+	if (!anim || !object || !['oscillate', 'moveto', 'rotateto', 'scaleto', 'ambientanimal', 'pressbutton'].includes(anim.type)) return null;
+	const base = baseState.get(uuid) ?? captureBase(object);
+	const probe = object.clone(false);
+	probe.uuid = object.uuid + '#probe';
+	// parented WITHOUT joining the children list: the parent frame is what Move To's world goal
+	// needs, and an add() would fire the scene's child-added listeners for a throwaway
+	probe.parent = object.parent;
+	try {
+		restoreBase(probe, base);
+		applyAnimation(probe, base, anim, time, runtimeCtx());
+		return { pos: probe.position.toArray(), rot: [probe.rotation.x, probe.rotation.y, probe.rotation.z], scale: probe.scale.toArray() };
+	} finally {
+		probe.parent = null;
+	}
+}
+
+/** 85 (debug + suites): the shared clock effects read right now — the trigger stamps' domain */
+export function effectClockNow() {
+	return effectTime(syncedNow());
+}
+
+/** 85 N2: the tween nodes @type {Set<string>} */
+const TWEEN_TYPES = new Set(['moveto', 'rotateto', 'scaleto']);
+/** 85 N2/N4: the nodes whose `toggle` keeps a Latch-style parity in applyNodeTrigger @type {Set<string>} */
+const TOGGLE_TWEEN_TYPES = new Set(['moveto', 'rotateto', 'scaleto', 'lightswitch']);
+/** 85 N4: the light (node, object) keys driven this tick — the rest hand their lights back @type {Set<string>} */
+let liveLights = new Set();
+/** 85 N3: the players' positions, read once per tick by the first animal that needs them @type {number[][] | null} */
+let tickPlayers = null;
+/** 85 N5: the Wind Sway / Flowing Water (node, object) keys driven this tick @type {Set<string>} */
+let liveSway = new Set();
+/** 85 I2: the Highlight (node, object) keys driven this tick @type {Set<string>} */
+let liveHighlights = new Set();
+/** 85 N4: a Light Switch's wired `on` boolean, per (node, object), per peer @type {Map<string, any>} */
+const lightOpens = new Map();
+
+/**
+ * 85 N2/N4: what a tween / light switch reads off the graph — the newest trigger / back stamps
+ * (replicated), the toggle's stamp and the DIRECTION its parity gives (the Latch rule: the base
+ * is whichever of trigger / back is newer, each odd flip after it inverts it), and which inputs
+ * are wired at all.
+ * `restDir` = where it stands before any trigger / back (a tween at rest = 0; a Light Switch that
+ * starts on = 1, so its first toggle switches it OFF).
+ * @param {any} node @param {any} ctx @param {0 | 1} [restDir]
+ */
+function tweenStamps(node, ctx, restDir = 0) {
+	const into = edgesInto(edges, node.id);
+	const wired = (/** @type {string} */ h) => into.some((/** @type {any} */ e) => e.targetHandle === h);
+	const trigger = freshStamp(node, handleStamp(node, 'trigger', ctx));
+	const back = freshStamp(node, handleStamp(node, 'back', ctx));
+	const flips = ctx?.triggers?.[node.id]?.count ?? 0;
+	const toggleT = flips > 0 ? handleStamp(node, 'toggle', ctx) : null;
+	const baseDir = trigger === null && back === null ? restDir : trigger !== null && trigger >= (back ?? -Infinity) ? 1 : 0;
+	const toggleDir = flips % 2 === 1 ? 1 - baseDir : baseDir;
+	const openWired = wired('open');
+	const onWired = wired('on');
+	return {
+		trigger,
+		back,
+		toggle: toggleT,
+		// tweenEvents reads an ODD count as "to the goal"
+		toggleCount: toggleDir === 1 ? 1 : 2,
+		openWired,
+		onWired,
+		amountWired: wired('amount'),
+		anyWired: wired('trigger') || wired('back') || wired('toggle') || openWired || onWired
+	};
+}
+
 /** @param {any} object @param {any} base @param {any} anim @param {number} time @param {any} ctx */
 function applyAnimation(object, base, anim, time, ctx) {
 	const data = resolveInputs(anim, nodes, edges, time, ctx);
@@ -4611,6 +4763,66 @@ function applyAnimation(object, base, anim, time, ctx) {
 				pivotVec.z + Math.sin(time * speed) * radius
 			);
 		}
+		return;
+	}
+	// 85 N1/N2/N4: Oscillate, the tweens, the light nodes (motion/tweenNodes.js, lightNodes.js)
+	if (anim.type === 'oscillate') {
+		const start = triggerStampFor(anim.id, ctx);
+		const armed = edgesInto(edges, anim.id).some((/** @type {any} */ e) => e.targetHandle === 'trigger');
+		applyOscillate(object, data, time, { start, armed });
+		return;
+	}
+	if (TWEEN_TYPES.has(anim.type)) {
+		const key = anim.id + '|' + object.uuid;
+		const s = tweenStamps(anim, ctx);
+		const read = tweenPosition(key, data, time, s);
+		noteTweenRead(key, read);
+		applyTween(anim.type, object, base, data, read.pos, { root: sceneObjects });
+		return;
+	}
+	if (anim.type === 'lightswitch') {
+		const key = anim.id + '|' + object.uuid;
+		liveLights.add(key);
+		const s = tweenStamps(anim, ctx, data.on !== false && !edgesInto(edges, anim.id).some((/** @type {any} */ e) => e.targetHandle === 'on') ? 1 : 0);
+		/** @type {any[]} */
+		let open = [];
+		if (s.onWired) {
+			const next = openEvent(lightOpens.get(key), data.on, time);
+			lightOpens.set(key, next);
+			open = next.events;
+		}
+		applyLightSwitch(object, data, time, key, { ...s, open });
+		return;
+	}
+	if (anim.type === 'highlight') {
+		// 85 I2: per peer — the wired `on`, else "this person points at it"
+		const key = anim.id + '|' + object.uuid;
+		liveHighlights.add(key);
+		const onWired = edgesInto(edges, anim.id).some((/** @type {any} */ e) => e.targetHandle === 'on');
+		applyHighlight(object, data, time, key, onWired ? !!data.on : isHovered(object.uuid));
+		return;
+	}
+	if (anim.type === 'pressbutton') {
+		applyPress(object, data, time, triggerStampFor(anim.id, ctx));
+		return;
+	}
+	if (anim.type === 'ambientanimal') {
+		if (!tickPlayers) tickPlayers = playerPositions();
+		applyAmbientAnimal(object, base, data, time, { root: sceneObjects, key: anim.id + '|' + object.uuid, players: tickPlayers });
+		return;
+	}
+	if (anim.type === 'windsway' || anim.type === 'waterflow') {
+		const key = anim.id + '|' + object.uuid;
+		liveSway.add(key);
+		if (anim.type === 'windsway') applyWindSway(object, data, time, { key });
+		else applyWaterFlow(object, data, time, { key });
+		return;
+	}
+	if (anim.type === 'lightintensity' || anim.type === 'lightcycle') {
+		const key = anim.id + '|' + object.uuid;
+		liveLights.add(key);
+		if (anim.type === 'lightintensity') applyLightIntensity(object, data, time, key);
+		else applyLightCycle(object, data, time, key);
 		return;
 	}
 	// 36-fb F25/F24: the water machinery (sim/motionNodes.js, a leaf)
@@ -5438,6 +5650,19 @@ function runTick(now) {
 	// 40 F15: a Body Wave whose node or object went away puts its original materials back
 	pruneBodyWaves(liveWaves);
 	tickMotionNodes();
+	// 85 N4: lights no node drives any more get their authored values back
+	pruneLightNodes(liveLights);
+	for (const k of [...lightOpens.keys()]) if (!liveLights.has(k)) lightOpens.delete(k);
+	liveLights = new Set();
+	// 85 N5: a sway / water node that went away puts the original material back
+	pruneSwayNodes(liveSway);
+	liveSway = new Set();
+	// 85 I2: a highlight that went away puts the authored glow back
+	prunePressNodes(liveHighlights);
+	liveHighlights = new Set();
+	tickTweenNodes();
+	tickAmbientNodes();
+	tickPlayers = null;
 
 	// sound nodes keep their own audio chains (97) — hand over the live pairs
 	// 21-E4: `trigger` is the wired event's STAMP (null when nothing is wired)
@@ -5535,6 +5760,24 @@ function runTick(now) {
 		if (node.type !== 'blendspeed') return;
 		const uuid = implicitOwnerOf(node);
 		if (uuid) blendPairs.push({ node: { ...node, data: resolveInputs(node, nodes, edges, time, ctx) }, uuid, wired: speedWired(node.id) });
+	});
+	// 85 N3: an Ambient Animal with `clips` drives the same blend from its own speed (0 resting,
+	// 1 walking, 2.5 fleeing) — idle / walk / run on a model that has them
+	const ambientClips = (/** @type {any} */ node, /** @type {string} */ uuid) => {
+		const read = ambientRead(node.id + '|' + uuid);
+		if (!read) return;
+		blendPairs.push({ node: { id: node.id + '#clips', data: { walkSpeed: 1, runSpeed: 2.5, crossfade: 0.3, speed: read.speed } }, uuid, wired: true });
+	};
+	edges.forEach((edge) => {
+		const source = nodeById(nodes, edge.source);
+		if (source?.type !== 'ambientanimal' || source.data?.clips === false) return;
+		const uuid = targetUuidOf(edge);
+		if (uuid) ambientClips(source, uuid);
+	});
+	nodes.forEach((node) => {
+		if (node.type !== 'ambientanimal' || node.data?.clips === false) return;
+		const uuid = directTargetOf(node) ?? implicitOwnerOf(node);
+		if (uuid) ambientClips(node, uuid);
 	});
 	if (blendPairs.length || blendTrackers.size) updateBlendSpeed(blendPairs, ctx, logicNow(), sceneObjects);
 

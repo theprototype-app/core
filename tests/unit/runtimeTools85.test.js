@@ -185,3 +185,15 @@ describe('85b playtest steps', () => {
 		]);
 	});
 });
+
+// 85 (78-kit Q6): kitDocSummary reads doc.slices and the round's phase
+import { kitDocSummary } from '../../src/lib/ai/runtimeTools.js';
+describe('kitDocSummary', () => {
+	it('summarises round / score / pickups from doc.slices', () => {
+		const doc = { rev: 3, at: 1, by: 'a', rids: {}, slices: { round: { phase: 'playing', round: 2 }, score: { total: 5, players: { a: 5 } }, pickups: { taken: { x: 1, y: 1 } } } };
+		expect(kitDocSummary(doc)).toEqual({ doc: { round: { phase: 'playing', number: 2 }, score: { total: 5, players: { a: 5 } }, pickups: { taken: 2 } } });
+	});
+	it('is empty for no doc', () => {
+		expect(kitDocSummary(null)).toEqual({});
+	});
+});

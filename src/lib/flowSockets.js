@@ -173,6 +173,20 @@ const INPUT = {
 	followpath: { path: 'object' }, // 40 F15
 	pathpatrol: { path: 'object' }, // 78 F4: the Path object it walks
 	wander: { area: 'object' }, // 40 F15
+	// 85 N1/N2/N4: the swing's trigger; the tweens' go / back / toggle events, held boolean,
+	// hand-driven amount and goal (a point, or an object off a selector); the light switch
+	oscillate: { trigger: 'event', amplitude: 'number', period: 'number', phase: 'number', damping: 'number' },
+	moveto: { trigger: 'event', back: 'event', toggle: 'event', open: 'boolean', amount: 'number', to: 'vector3', x: 'number', y: 'number', z: 'number', duration: 'number' },
+	rotateto: { trigger: 'event', back: 'event', toggle: 'event', open: 'boolean', amount: 'number', to: 'object', angle: 'number', duration: 'number' },
+	scaleto: { trigger: 'event', back: 'event', toggle: 'event', open: 'boolean', amount: 'number', to: 'object', factor: 'number', duration: 'number' },
+	lightswitch: { trigger: 'event', back: 'event', toggle: 'event', on: 'boolean', fade: 'number' },
+	highlight: { on: 'boolean', strength: 'number', fade: 'number' }, // 85 I2
+	pressbutton: { trigger: 'event', depth: 'number' },
+	lightintensity: { level: 'number', fade: 'number' },
+	lightcycle: { period: 'number', saturation: 'number' },
+	windsway: { strength: 'number', direction: 'number', gust: 'number' }, // 85 N5
+	waterflow: { speed: 'number', swell: 'number' },
+	ambientanimal: { area: 'object', speed: 'number' }, // 85 N3
 	setcolor: { color: 'color' },
 	visibility: { on: 'boolean' },
 	setuniform: { value: 'number' },

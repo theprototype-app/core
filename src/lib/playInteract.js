@@ -13,7 +13,9 @@ import {
 	remoteSimulating,
 	isInitiator
 } from './physics';
-import { suspendAnimation, resumeAnimation, fireObjectClick, fireObjectGrab } from './flowRuntime';
+import { suspendAnimation, resumeAnimation, fireObjectClick, fireObjectGrab, kinematicGrab } from './flowRuntime';
+// 85 I1: Grabbables carried with no simulation, and their glide home (a leaf)
+import { grabRule, startGlide, cancelGlide, stepGlides, homeFor } from './grabReturn.js';
 import { velocityFromSamples, cursorThrow } from './throwVelocity';
 import { resolvePlaySettings } from './playSettings';
 import { pickStack, primaryIndex, gameRayEntry } from './selectThrough';
@@ -60,6 +62,8 @@ const REACH = 6; // m: how far the crosshair can start a grab
 const CARRY_DEFAULT = 2.5; // m
 const CARRY_MIN = 0.8;
 import { perfMark } from './perf/perfMarks.js';
+import { setHover } from './hoverState.js'; // 85 I2: the crosshair is a hover pointer
+import { tickSit } from './sitSpot.js'; // 85 I3: hold the seat while seated (and load the Sit Spot)
 const CARRY_MAX = 6;
 const CARRY_STEP = 0.25;
 const SPRING_K = 14; // 1/s, scaled by 1/sqrt(mass) and clamped
@@ -101,7 +105,8 @@ const euler = new THREE.Euler(0, 0, 0, 'YXZ');
  * `depth` + `offset`: 41 G4 — where on the object it was taken (see cursorGrabStart).
  * @type {{object: any, relQuat: THREE.Quaternion, mass: number, held: boolean,
  *   samples: {t: number, pos: THREE.Vector3, quat: THREE.Quaternion}[], lastSent: number,
- *   cursor?: boolean, depth?: number, offset?: THREE.Vector3}|null} */
+ *   cursor?: boolean, depth?: number, offset?: THREE.Vector3,
+ *   kin?: {rule: ReturnType<typeof grabRule>, home: {pos: number[], quat: number[]}}|null}|null} */
 let grab = null;
 /** 30 P1: the cursor's NDC while an Interact carry runs (fed by Scene's pointermove) */
 const cursorNdc = new THREE.Vector2();
@@ -313,8 +318,11 @@ function massOf(object) {
 	return typeof mass === 'number' && mass > 0 ? mass : 1;
 }
 
-/** Begin carrying. @param {any} object @param {any} camera */
-function beginGrab(object, camera) {
+/** Begin carrying. `kin` = a Grabbable node's data: a KINEMATIC carry with no body (85 I1).
+ * @param {any} object @param {any} camera @param {any} [kin] */
+function beginGrab(object, camera, kin = null) {
+	const home = kin ? homeFor(object) : null; // before the cancel: a catch mid-glide keeps the real home
+	cancelGlide(object.uuid);
 	perfMark('grab', { source: 'play' }); // 34 PF: a profiler marker
 	// the object's rotation relative to the camera's YAW, so carrying does not
 	// tip the object when you look up or down
@@ -324,9 +332,10 @@ function beginGrab(object, camera) {
 		object,
 		relQuat: yawQuat.clone().invert().multiply(object.quaternion.clone()),
 		mass: massOf(object),
-		held: isInitiator() ? holdBody(object.uuid) : false,
+		held: !kin && isInitiator() ? holdBody(object.uuid) : false,
 		samples: [],
-		lastSent: 0
+		lastSent: 0,
+		kin: kin && home ? { rule: grabRule(kin), home } : null
 	};
 	carryDistance = Math.min(
 		CARRY_MAX,
@@ -347,10 +356,17 @@ function beginGrab(object, camera) {
  */
 export function endGrab(throwIt) {
 	if (!grab) return null;
-	const { object, samples, held, cursor } = grab;
+	const { object, samples, held, cursor, kin } = grab;
 	const velocity = !throwIt ? { linvel: [0, 0, 0], angvel: [0, 0, 0] } : cursor ? cursorThrow(samples, performance.now()) : velocityFromSamples(samples);
 	grab = null;
 	resumeAnimation(object.uuid);
+	if (kin) {
+		// 85 I1: no body to release — the last pose goes out exactly, then it stays or glides home
+		sendMove(object);
+		if (kin.rule.release === 'return') startGlide(object, kin.home, kin.rule, performance.now());
+		playInteractState.update((s) => ({ ...s, mode: 'idle', uuid: null }));
+		return { uuid: object.uuid, velocity };
+	}
 	if (held) releaseBody(object.uuid, velocity);
 	else sendThrow(object, velocity, throwIt);
 	playInteractState.update((s) => ({ ...s, mode: 'idle', uuid: null }));
@@ -391,6 +407,18 @@ function sendThrow(object, velocity, throwIt) {
 	return true;
 }
 
+/** 85 I1: one `move` of an object's pose (a kinematic carry's last pose, a glide frame) @param {any} object */
+function sendMove(object) {
+	/** @type {any} */
+	const peer = get(peers);
+	if (peer)
+		peer.send(
+			{ type: 'move', uuid: object.uuid, pos: object.position.toArray(), rot: [object.rotation.x, object.rotation.y, object.rotation.z], scale: object.scale.toArray() },
+			{ fast: true }
+		);
+	pokeScene();
+}
+
 /** @param {PointerEvent} event */
 function onPointerDown(event) {
 	if (event.button !== 0) return;
@@ -422,8 +450,10 @@ function onPointerDown(event) {
 	// tap-to-interact keeps working; carrying with a thumb wants a gesture of its own
 	// (a long press, or a HUD button) and is not in this fix.
 	if (event.pointerType === 'touch') return;
-	if (!simRunning()) return; // nothing to hold; the tap path still works
-	if (!dynamicUuids().has(target.uuid)) return;
+	// 85 I1: a Grabbable is carried WITHOUT a body; anything else needs a running sim and a dynamic body
+	const physical = simRunning() && dynamicUuids().has(target.uuid);
+	const kin = physical ? null : kinematicGrab(target.uuid);
+	if (!physical && !kin) return; // nothing to hold; the tap path still works
 	// 31: a crosshair carry is POINTING — a scene that switched pointing off moves its
 	// bodies by touch only (walk into them); the tap above still reaches On Click
 	if (!pointGrabAllowed()) return;
@@ -442,7 +472,7 @@ function onPointerDown(event) {
 		warnViewerReadOnly();
 		return;
 	}
-	beginGrab(target, activeCamera);
+	beginGrab(target, activeCamera, kin);
 }
 
 /** 37: a module-owned Play press hears the drag (the aim ray: crosshair or free cursor) @param {PointerEvent} event */
@@ -546,6 +576,9 @@ function onWheel(event) {
  */
 export function tickPlayInteract(delta, camera) {
 	activeCamera = camera ?? activeCamera;
+	tickSit();
+	// 85 I1: Grabbables gliding home after a release (this peer let go, so this peer streams them)
+	stepGlides(performance.now(), (object) => sendMove(object), (object) => !!get(objectsGroup)?.getObjectByProperty('uuid', object.uuid));
 	// 30 P1: an Interact carry lives OUTSIDE play, so play's 'off' must not cancel it —
 	// leaving Interact (or entering play/VR) is what ends it, through the same
 	// zero-velocity cancel every other path uses
@@ -556,6 +589,7 @@ export function tickPlayInteract(delta, camera) {
 	}
 	const mode = cursorCarry ? 'grab' : interactionMode();
 	if (mode === 'off' || !camera) {
+		setHover('play', null);
 		if (grab) endGrab(false);
 		if (get(playInteractState).mode !== 'off')
 			playInteractState.set({ mode: 'off', distance: carryDistance, uuid: null, blocked: null });
@@ -563,10 +597,11 @@ export function tickPlayInteract(delta, camera) {
 	}
 
 	if (grab) {
+		setHover('play', grab.object.uuid);
 		// every cancel path releases with zero velocity — a body left kinematic
 		// forever is the failure mode this guards
 		const group = get(objectsGroup);
-		if (!simRunning() || !group?.getObjectByProperty('uuid', grab.object.uuid)) {
+		if ((!grab.kin && !simRunning()) || !group?.getObjectByProperty('uuid', grab.object.uuid)) {
 			endGrab(false);
 			return;
 		}
@@ -631,8 +666,9 @@ export function tickPlayInteract(delta, camera) {
 	const aimed = gameRayEntry(pickStack(aimFrom(camera), topLevelObjectOf, gamePass()), REACH);
 	const hit = aimed?.hit ?? null;
 	const target = aimed?.target ?? null;
+	setHover('play', target?.uuid ?? null);
 	const grabbable =
-		mode === 'grab' && !!target && simRunning() && dynamicUuids().has(target.uuid);
+		mode === 'grab' && !!target && ((simRunning() && dynamicUuids().has(target.uuid)) || !!kinematicGrab(target.uuid));
 	const state = get(playInteractState);
 	const verdict = grabbable ? inReach(hit.point, camera, target, true) : null;
 	const next = grabbable ? (verdict?.ok ? 'aiming' : 'toofar') : 'idle';

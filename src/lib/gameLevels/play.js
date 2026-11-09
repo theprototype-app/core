@@ -167,15 +167,16 @@ export async function enterPortal(portal) {
 		let ok = false;
 		try {
 			ok = (await travel.hopTo(target, { solo: true, loading: rec.loading ?? null })).ok;
+			if (ok) {
+				// a later Back portal returns here, in front of the portal just used
+				if (target.scene && target.scene !== here) lastPortal = from;
+				// LP3: a portal passed counts as a checkpoint (where a fall or a reload brings you back) — noted
+				// BEFORE the transition opens, so a fall while it plays already lands here
+				await (await import('./checkpoints.js')).notePortalPassed(target).catch(() => {});
+			}
 		} finally {
 			busyUntil = performance.now() + HOP_COOLDOWN_MS;
 			await tr.transitionIn();
-		}
-		if (ok) {
-			// a later Back portal returns here, in front of the portal just used
-			if (target.scene && target.scene !== here) lastPortal = from;
-			// LP3: a portal passed counts as a checkpoint (where a fall or a reload brings you back)
-			(await import('./checkpoints.js')).notePortalPassed(target);
 		}
 		return ok;
 	})();

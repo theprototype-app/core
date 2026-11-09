@@ -136,6 +136,9 @@ export async function withLoadingScreen(scene, hop, override = null) {
 		levelLoading.update((s) => ({ ...s, progress: Math.max(s.progress, progress) }));
 		return progress;
 	};
+	// every progress the load publishes (the object build reports ~10 times a second), plus a 100 ms poll for
+	// the sources with no store (the preload's bytes, the pack files)
+	const unsub = sceneLoad.subscribe(() => sample());
 	const timer = setInterval(sample, 100);
 	try {
 		await running;
@@ -151,6 +154,7 @@ export async function withLoadingScreen(scene, hop, override = null) {
 		const shown = Date.now() - shownAt;
 		if (shown < MIN_MS) await wait(MIN_MS - shown);
 	} finally {
+		unsub();
 		clearInterval(timer);
 		levelLoading.update((s) => ({ ...s, active: false }));
 	}

@@ -137,16 +137,21 @@ h.run(async () => {
 		window.__stores.objectActions.setEditorMode('interact');
 	});
 	await C.page.waitForTimeout(600);
+	// a slower device (6x CPU) for the cold hop: on a fast GPU box the 200-object build finishes inside the
+	// screen's first frames, and the bar has nothing between 0 and 1 to show
+	const cdp = await C.page.context().newCDPSession(C.page);
+	await cdp.send('Emulation.setCPUThrottlingRate', { rate: 6 });
 	// straight into the doorway from far away (no preload first: the hop loads the scene cold)
 	await stand(C, [0, 1.6, -20]);
-	await h.eventually(() => sceneName(C), (n) => n === 'Cave', 'walking into the portal took this player to the Cave', 30000);
+	await h.eventually(() => sceneName(C), (n) => n === 'Cave', 'walking into the portal took this player to the Cave', 60000);
+	await C.page.waitForFunction(() => window.__lvSamples.length > 0 && !window.__lvSamples[window.__lvSamples.length - 1].active, null, { timeout: 30000 }).catch(() => {});
+	await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
 	await h.eventually(() => kitLevel(C), (l) => l === 'cave', '…and the kit\'s current level is the Cave row', 10000);
 	const v = await vars(C);
 	h.check(v.coins === 3 && JSON.stringify(v.inventory) === '["lamp"]' && !('junk' in v), `the keep list carried coins and the inventory, and dropped junk (${JSON.stringify(v)})`);
 	const score = () => read(C, () => window.__stores.kit.kit.impls.score.total());
 	await h.eventually(score, (t) => t === 4, 'the kept score came through the hop (4)', 8000);
-	const arrived = await point(C);
-	h.check(arrived?.kind === 'portal' || arrived?.name === 'Cave entrance', `the arrival counts as a checkpoint (${JSON.stringify(arrived)})`);
+	await h.eventually(() => point(C), (a) => a?.kind === 'portal' || a?.name === 'Cave entrance', 'the arrival counts as a checkpoint', 8000);
 	await h.eventually(() => spawnOf(C), (s) => near(s?.position, [0, 0, -2], 0.4), 'this player\'s spawn is the Cave entrance pad', 8000);
 
 	console.log('\n=== 3. the loading screen ===');
@@ -186,6 +191,22 @@ h.run(async () => {
 	await C.page.waitForTimeout(400);
 	await C.page.evaluate(() => window.__stores.kit.kit.runNodeAction('kit-levels-respawn', {}, { rid: 'node:e2e-respawn:1' }));
 	await h.eventually(() => camAt(C), (p) => near(p, [8, 0, 8], 3), 'Back to checkpoint flew this player back to Mid', 8000);
+
+	console.log('\n=== 4b. the save cap, told to the author ===');
+	// a kept variable past 256 KB: the editor measures the save at the checkpoint (writes nothing) and the
+	// Levels panel says why an exported game would not keep it
+	await C.page.evaluate(() => window.__stores.gameState.setGameVar('coins', 'x'.repeat(300 * 1024)));
+	await C.page.evaluate(() => window.__stores.levelsCheckpoints.saveProgress());
+	await C.page.evaluate(() => window.__stores.openSceneSection('Levels'));
+	await h.eventually(
+		() => C.page.evaluate(() => document.getElementById('levels-save-problem')?.textContent ?? ''),
+		(t) => /over the 256 KB/.test(t),
+		'the Levels panel tells the author the save is over 256 KB',
+		10000
+	);
+	await C.page.evaluate(() => window.__stores.gameState.setGameVar('coins', 3));
+	await C.page.evaluate(() => window.__stores.levelsCheckpoints.saveProgress());
+	await h.eventually(() => C.page.evaluate(() => !!document.getElementById('levels-save-problem')), (on) => !on, '…and the warning goes once it fits again', 8000);
 
 	console.log('\n=== 5. New game ===');
 	await C.page.evaluate(() => window.__stores.kit.kit.runNodeAction('kit-levels-newGame', {}, { rid: 'node:e2e-new:1' }));

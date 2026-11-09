@@ -98,9 +98,12 @@ export async function buildSave() {
 }
 
 let warned = '';
-/** write this player's progress (exports only, unless a test says otherwise) */
+/**
+ * write this player's progress (exports only, unless a test says otherwise). The editor MEASURES the save
+ * without writing it, so an author whose kept variables grow past the cap reads why in the Levels panel
+ * before an exported game's players lose their progress.
+ */
 export async function saveProgress() {
-	if (!persisting()) return { ok: false, skipped: true };
 	const enc = encodeSave(await buildSave());
 	if (!enc.ok) {
 		saveProblem.set(enc.reason);
@@ -109,6 +112,7 @@ export async function saveProgress() {
 		return { ok: false, reason: enc.reason };
 	}
 	saveProblem.set('');
+	if (!persisting()) return { ok: false, skipped: true, bytes: enc.bytes };
 	safeStorage.setItem(saveKey(gameId()), enc.json);
 	return { ok: true, bytes: enc.bytes };
 }

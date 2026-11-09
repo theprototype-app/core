@@ -14,6 +14,7 @@
 	import { gameState } from '$lib/gameState';
 	import { isViewer } from '$lib/objectPermissions';
 	import { keepItems, slugLevelId } from '$lib/gameLevels/table.js';
+	import { saveProblem } from '$lib/gameLevels/checkpoints.js'; // LP5: the save cap, measured at each checkpoint
 
 	const table = $derived($scenePhysicsState_.levels ?? null);
 	const rows = $derived(table?.list ?? []);
@@ -199,6 +200,9 @@
 					onchange={(e) => setKeepVars(e.currentTarget.value)}
 				/>
 			</label>
+			{#if $saveProblem}
+				<p id="levels-save-problem" role="alert" class="text-xs text-warn-text">In an exported game: {$saveProblem}</p>
+			{/if}
 		</fieldset>
 		<LoadingScreenSettings value={table?.loading ?? null} disabled={viewer} onchange={(next) => edit((t) => (next ? (t.loading = next) : delete t.loading))} />
 	{/if}

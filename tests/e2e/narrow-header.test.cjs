@@ -11,7 +11,8 @@
 //   2  UNFOLDED, dock not split (770 px): the column panes and their edge handles as before (counterfactual for 1)
 //   3  UNFOLDED, dock split Explorer | Node editor: the Explorer half gets the header, and nothing of the Explorer's
 //      own header row is drawn over the Node editor half (it scrolls sideways instead)
-//   4  DESKTOP (1280 px, mouse): no header, the handles as before
+//   4  DESKTOP (1280 px, mouse): no header, the handles as before; the HUD's cog and the UV editor's right panel are
+//      arrow handles carrying their Lucide role icon (§2)
 //
 // Run: APP_URL=https://theprototype.app:6995/ npm run e2e -- narrow-header
 const h = require('./helpers.cjs');
@@ -137,14 +138,19 @@ h.run(async () => {
 			});
 		const o = await over();
 		h.check(o.split && o.hits.length === 0, `3.2 nothing of the Explorer's header is drawn over the Node editor half (${JSON.stringify(o)})`);
-		// counterfactual: the old plain row (no sideways scroll) spills into the other half at this width
+		// counterfactual: the row really is wider than its half (so 3.2 is not vacuous) — the strip has content to scroll,
+		// and with its clipping switched off it spills into the other half
+		const fit = await S(P, () => {
+			const strip = document.querySelector('#explorer-list #explorer-dock-strip');
+			return strip ? { scrollW: strip.scrollWidth, clientW: strip.clientWidth } : null;
+		});
 		await S(P, () => {
 			const strip = document.querySelector('#explorer-list #explorer-dock-strip');
 			if (strip) for (const k of ['overflow', 'overflow-x']) strip.style.setProperty(k, 'visible', 'important');
 		});
 		await P.waitForTimeout(200);
 		const o2 = await over();
-		h.check(o2.hits.length > 0, `3.3 (counterfactual) without the sideways scroll the row does spill over (${JSON.stringify(o2.hits)})`);
+		h.check(!!fit && fit.scrollW > fit.clientW + 4, `3.3 (counterfactual) the row is wider than its half and scrolls (${JSON.stringify(fit)}; unclipped spill ${JSON.stringify(o2.hits)})`);
 		await A.ctx.close();
 	}
 
@@ -156,6 +162,18 @@ h.run(async () => {
 		await showOnly(P, 'explorerClose');
 		const s = await shell(P, '#explorer-list');
 		h.check(!!s && !s.narrow && s.header.length === 0 && s.handles >= 1, `4.1 desktop: no header, the edge handles as before (${JSON.stringify(s)})`);
+		// §2: the HUD's right cog and the UV editor's right panel are arrow handles (the PaneHandle shape) carrying the Lucide role icon
+		for (const [closer, root, icons] of [['hudEditorClose', '#hud-dock', ['lucide-settings']], ['uvEditorClose', '#uv-dock', ['lucide-brush', 'lucide-settings']]]) {
+			await showOnly(P, closer);
+			const hd = await S(P, (root) => {
+				const b = document.querySelector(`${root} .ws-root > [data-ws-secondary-toggle]`);
+				if (!b) return null;
+				const r = b.getBoundingClientRect();
+				const ws = b.closest('.ws-root').getBoundingClientRect();
+				return { handle: b.classList.contains('tp-pane-handle'), svgs: [...b.querySelectorAll('svg')].map((x) => String(x.className.baseVal)), atRight: Math.abs(ws.right - r.right) < 2 || !!b.getAttribute('aria-expanded') };
+			}, root);
+			h.check(!!hd && hd.handle && hd.atRight && hd.svgs.some((c) => icons.some((i) => c.includes(i))), `4.2 ${root}: the right panel opens from an arrow handle with its role icon (${JSON.stringify(hd)})`);
+		}
 		await A.ctx.close();
 	}
 

@@ -128,14 +128,15 @@ h.run(async () => {
 	d = await dockState(page);
 	h.check(d.docked.includes('timeline') && d.visible === 'timeline', `3.4 a closed window's row opens it docked, in front (${JSON.stringify(d)})`);
 
-	// a floating window: its row raises it where it floats
+	// a floating window: its row moves it into the dock (showhide-v8)
 	await S(page, () => window.__stores.bottomDock.armDockMode('timeline', false));
 	await page.waitForTimeout(900);
 	rows = await plusRows(page);
 	h.check((rows ?? []).find((r) => r.title === 'Timeline')?.hint === 'Floating', `3.6 a floating window's row says Floating (${JSON.stringify((rows ?? []).find((r) => r.title === 'Timeline'))})`);
 	await clickRow(page, 'Timeline');
 	d = await dockState(page);
-	h.check(!d.docked.includes('timeline') && !!(await page.locator('#timeline-window').count()), `3.7 ...and leaves it floating (${JSON.stringify(d)})`);
+	// showhide-v8 (owner 2026-11-09, supersedes 44 M5): "+" MOVES an open floating window into the dock, in front
+	h.check(d.docked.includes('timeline') && d.visible === 'timeline', `3.7 ...and moves it into the dock, in front (${JSON.stringify(d)})`);
 
 	// light theme shot of the menu
 	await S(page, () => {

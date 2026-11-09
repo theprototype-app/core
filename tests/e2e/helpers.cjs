@@ -1298,4 +1298,21 @@ function envelopeDelta(a, b) {
 	return { maxDelta, meanDelta: n ? sum / n : 0, worstSlice };
 }
 
-module.exports = { URL, coverageKey, GPU_ARGS, PATIENT_CLICK_MS, APPROVE_LABEL, approveButton, watchPress, check, launch, setupPage, setupPageQuiet, connect, leavePlay, eventually, caughtUp, eventuallyAfter, projectPoint, freshReload, answerRestore, closePeer, finish, run, installModule, moduleZipPath, makeCollectibleChains, pageErrors, externalErrors, grabFrame, centeredClip, frameDelta, framePixelsOffColor, AUDIO_ARGS, audioMetrics, renderOffline, envelopeDelta, routeSkies, SKIES_DIR };
+/**
+ * showhide-v8: a WindowShell's side-panel tabs exist only while the panel is OPEN; closed, the panel is behind its
+ * edge handle. Open the panel through the handle when needed, then press the mode's tab.
+ * @param {any} page @param {string} scope a selector containing the shell ('' = the first shell on the page)
+ * @param {string} mode @param {{tap?: boolean}} [o]
+ */
+async function openWsMode(page, scope, mode, o = {}) {
+	const pre = scope ? scope + ' ' : '';
+	const tab = page.locator(`${pre}.ws-panel-head [data-ws-mode="${mode}"]`).first();
+	if (!(await tab.isVisible().catch(() => false))) {
+		const handle = page.locator(`${pre}.ws-root > [data-ws-secondary-toggle]`).first();
+		await (o.tap ? handle.tap() : handle.click());
+		await page.waitForTimeout(300);
+	}
+	if ((await tab.getAttribute('aria-selected').catch(() => null)) !== 'true') await (o.tap ? tab.tap() : tab.click());
+}
+
+module.exports = { URL, coverageKey, GPU_ARGS, PATIENT_CLICK_MS, APPROVE_LABEL, approveButton, watchPress, check, launch, setupPage, setupPageQuiet, connect, leavePlay, eventually, caughtUp, eventuallyAfter, projectPoint, freshReload, answerRestore, closePeer, finish, run, installModule, moduleZipPath, makeCollectibleChains, pageErrors, externalErrors, grabFrame, centeredClip, frameDelta, framePixelsOffColor, AUDIO_ARGS, audioMetrics, renderOffline, envelopeDelta, routeSkies, SKIES_DIR, openWsMode };

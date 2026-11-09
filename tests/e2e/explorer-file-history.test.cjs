@@ -33,12 +33,14 @@ h.run(async () => {
 	const browser = await h.launch();
 	const { page } = await h.setupPage(browser, 'A', { context: { viewport: { width: 1600, height: 950 } } });
 	await S(page, () => window.__stores.explorerClose.set(false));
-	await page.waitForSelector('#explorer-window, [data-panel="explorer"]', { timeout: 20000 });
+	// docked by default (#explorer-list), floating otherwise (#explorer-window)
+	await page.waitForSelector('#explorer-window, #explorer-list', { timeout: 20000 });
 	await page.waitForTimeout(800);
+	await h.openWsMode(page, ':is(#explorer-window, #explorer-list)', 'props');
 
 	// --- 1: one handle, three tabs ---
 	const shell = await S(page, () => {
-		const root = document.getElementById('explorer-window') ?? document.querySelector('[data-panel="explorer"]');
+		const root = document.getElementById('explorer-window') ?? document.getElementById('explorer-list');
 		return {
 			handles: root?.querySelectorAll('[data-ws-secondary-toggle]').length ?? -1,
 			tabs: [...(root?.querySelectorAll('[data-ws-mode]') ?? [])].map((b) => b.getAttribute('data-ws-mode'))
@@ -72,7 +74,7 @@ h.run(async () => {
 		await page.locator(`[data-card-id="${id}"]`).first().click({ button: 'right' });
 		await page.locator('[role="menu"] [role="menuitem"]').filter({ hasText: /^Properties/ }).first().click();
 		await page.waitForTimeout(300);
-		await page.locator('[data-ws-mode="history"]').first().click();
+		await h.openWsMode(page, ':is(#explorer-window, #explorer-list)', 'history');
 		await page.waitForTimeout(600);
 	};
 	await pickCard(red.id);
@@ -115,7 +117,7 @@ h.run(async () => {
 	const sceneId = await S(page, () => window.__stores.levels.levelItems().find((i) => i.name.startsWith('History scene'))?.id ?? null);
 	h.check(!!sceneId, '4.0 (premise) the scene was saved into the library');
 	if (sceneId) {
-		await page.locator('[data-ws-mode="props"]').first().click();
+		await h.openWsMode(page, ':is(#explorer-window, #explorer-list)', 'props');
 		await page.locator(`[data-card-id="${sceneId}"]`).first().click({ button: 'right' });
 		await page.locator('[role="menu"] [role="menuitem"]').filter({ hasText: 'Version history' }).first().click();
 		await page.waitForTimeout(800);

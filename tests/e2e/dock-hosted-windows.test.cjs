@@ -225,7 +225,11 @@ h.run(async () => {
 	await page.click('[role="menu"] [role="menuitem"]:has-text("Chat")');
 	await page.waitForTimeout(1200);
 	st = await hostState(page, '#chat-window');
-	h.check(!(await order(page)).includes('chat') && st.host !== 'shown', `6.3 "Chat" brings the floating chat forward where it floats — it is not docked (${JSON.stringify({ host: st.host })})`);
+	// showhide-v8 (owner 2026-11-09, supersedes 44 M5's focus-where-it-is): "+" MOVES an open window here — one copy, docked
+	h.check(
+		(await order(page)).includes('chat') && st.host === 'shown' && (await page.locator('#chat-window').count()) === 1,
+		`6.3 "Chat" moves the floating chat into the dock (one copy) (${JSON.stringify({ host: st.host, order: await order(page) })})`
+	);
 	// ...and docked the 41 G7 way instead (the Undock seam's twin: the dock arm), so section 7 reads as before
 	await S(page, () => window.__stores.bottomDock.armDockMode('chat', true));
 	await page.waitForTimeout(1200);

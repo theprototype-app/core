@@ -112,8 +112,8 @@ h.run(async () => {
 	});
 	await page.waitForTimeout(1200);
 	let r = await side(page, 'right');
-	h.check(r.strip && r.tabs.join() === 'inspector' && r.plus, `1.0 premise: Configure Scene is the right sidebar's only tab, and the strip has a "+" (${JSON.stringify(r)})`);
-	await clickAt(page, '[data-sidebar-tab-close="inspector"]');
+	h.check(r.strip && r.tabs.join() === 'scene' && r.plus, `1.0 premise: Configure Scene is the right sidebar's only tab, and the strip has a "+" (${JSON.stringify(r)})`);
+	await clickAt(page, '[data-sidebar-tab-close="scene"]');
 	await page.waitForTimeout(500);
 	r = await side(page, 'right');
 	h.check((await read(page, 'inspectorClose')) === true, '1.1 premise: its × closed Configure Scene');
@@ -290,7 +290,7 @@ h.run(async () => {
 	});
 	await U.page.waitForTimeout(1300);
 	const x = await S(U.page, () => {
-		const r = document.querySelector('[data-sidebar-tab-close="inspector"]').getBoundingClientRect();
+		const r = document.querySelector('[data-sidebar-tab-close="scene"]').getBoundingClientRect();
 		return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
 	});
 	await U.page.touchscreen.tap(x.x, x.y);

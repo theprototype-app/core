@@ -432,7 +432,7 @@ h.run(async () => {
 	// =====================================================================
 	// 6. THE PROPERTIES PANEL RESIZES (right-hand side) AND REMEMBERS
 	// =====================================================================
-	await A.page.locator('[data-ws-mode="props"]').click();
+	await h.openWsMode(A.page, ':is(#explorer-window, #explorer-list)', 'props');
 	await A.page.waitForTimeout(500);
 	let g = await shellGeom(A);
 	h.check(!!g.panel, 'the Properties panel is open');

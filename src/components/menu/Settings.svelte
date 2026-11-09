@@ -56,7 +56,8 @@
 	import ImportSettingsSection from './ImportSettingsSection.svelte'; // 46 P2
 	import PrivacySettings from './settings/PrivacySettings.svelte'; // 48 O1
 	import ConnectedAppsSettings from './settings/ConnectedAppsSettings.svelte'; // 86 B5
-	import { connectorProvider } from '$lib/cloudHooks';
+	import { connectorProvider, settingsSlots } from '$lib/cloudHooks';
+	import CloudSlot from '../CloudSlot.svelte';
 	import VRSettingsSection from './VRSettingsSection.svelte'; // the whole VR page
 	import AiSettings from './settings/AiSettings.svelte'; // 59 T4: the Tools & connections page (+ its provider forms)
 	import ConnectionSettings from './settings/ConnectionSettings.svelte';
@@ -89,6 +90,9 @@
 	// 86 B5: Settings ▸ Connected apps — signed-in cloud builds only (a connector provider is installed)
 	let connectedAppsExpanded = false;
 	$: if ((settingsQuery || '').trim() || ($settingsOpen && $settingsSection === 'connectedapps')) connectedAppsExpanded = true;
+	// profile-notify: Settings ▸ Account — only while the cloud plugin has mounted into it (cloudApi.mountSettingsSection)
+	let accountExpanded = false;
+	$: if ((settingsQuery || '').trim() || ($settingsOpen && $settingsSection === 'account')) accountExpanded = true;
 	let accessibilityExpanded = false; // 53: Settings ▸ Accessibility (AccessibilitySettings.svelte)
 	$: if ((settingsQuery || '').trim() || ($settingsOpen && $settingsSection === 'accessibility')) accessibilityExpanded = true;
 	let sceneExpanded = false;
@@ -602,6 +606,15 @@
 					{#snippet header()}Privacy{/snippet}
 					<PrivacySettings />
 				</AccordionItem>
+				{#if $settingsSlots.account}
+					<!-- profile-notify: the cloud plugin draws the groups (Email ▸ Product updates); core gives the page -->
+					<AccordionItem bind:open={accountExpanded}>
+						{#snippet header()}Account{/snippet}
+						<div id="settings-account" class="settings-account" data-keywords="account email updates newsletter sign in">
+							<CloudSlot mount={$settingsSlots.account} />
+						</div>
+					</AccordionItem>
+				{/if}
 				{#if $connectorProvider}
 					<AccordionItem bind:open={connectedAppsExpanded}>
 						{#snippet header()}Connected apps{/snippet}

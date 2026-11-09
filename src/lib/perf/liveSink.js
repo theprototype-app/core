@@ -11,7 +11,7 @@
 // documents themselves live in a Map beside it (`liveDoc(peerId)`), because a store holding a
 // growing array of 10 000 frames would hand every subscriber the whole thing twice a second.
 import { writable, get } from 'svelte/store';
-import { peers, userdata } from '../../stores/appStore';
+import { peers, userdata, profilerClose } from '../../stores/appStore';
 import { peerHands } from '../../stores/sceneStore';
 import { sameRoomOrUnknown } from '../peerScenes';
 import { TPPROF_VERSION } from './tpprof.js';
@@ -42,6 +42,19 @@ export const perfLive = writable({ sessions: {}, recording: {} });
 
 /** showhide-v8 §5: the Profiler is showing its Live row (the old "Live profiler" window lives there now); set it to open it */
 export const profilerLiveOpen = writable(false);
+// showhide-v8 §5: there is ONE Profiler window and the live profile is a row of its list. Setting this store (the
+// header's Live button, a saved layout, a module, the suites) OPENS the Profiler, which then selects its Live row;
+// closing the Profiler clears it, so the next open starts on the recordings. Wired HERE and not in Profiler.svelte,
+// because that component is only mounted while the Profiler is open, so an effect inside it never sees the
+// rising edge from a closed window.
+let liveWas = false;
+profilerLiveOpen.subscribe((v) => {
+	if (v && !liveWas && get(profilerClose)) profilerClose.set(false);
+	liveWas = v;
+});
+profilerClose.subscribe((closed) => {
+	if (closed && get(profilerLiveOpen)) profilerLiveOpen.set(false);
+});
 
 /** @type {Map<string, import('./tpprof.js').Tpprof>} */
 const docs = new Map();

@@ -485,9 +485,10 @@
 <!-- 56 C13: the "Save which libraries?" dialog, mounted only while it is open (lazy chunk) -->
 {#if $saveManyDialog}
 	{#await import('./SaveManyDialog.svelte') then m}<m.default />{/await}
-	{#if windowsMenu}<ContextMenu x={windowsMenu.x} y={windowsMenu.y} items={windowsItems()} sizeKey="burger-windows" onclose={() => (windowsMenu = null)} />{/if}
-	{#if saveAsMenu}<ContextMenu x={saveAsMenu.x} y={saveAsMenu.y} items={saveAsItems} sizeKey="burger-save-as" onclose={() => (saveAsMenu = null)} />{/if}
 {/if}
+<!-- showhide-v8 §6: the burger's Windows ▸ and Save as… menus, at the root for the same backdrop-filter reason -->
+{#if windowsMenu}<ContextMenu x={windowsMenu.x} y={windowsMenu.y} items={windowsItems()} sizeKey="burger-windows" onclose={() => (windowsMenu = null)} />{/if}
+{#if saveAsMenu}<ContextMenu x={saveAsMenu.x} y={saveAsMenu.y} items={saveAsItems} sizeKey="burger-save-as" onclose={() => (saveAsMenu = null)} />{/if}
 
 <style>
 	/* (no background here: an undefined --color-form blanked the utility's surface fill — a

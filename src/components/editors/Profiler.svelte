@@ -198,10 +198,13 @@
 		return null;
 	}
 
+	/** the row selected before the Live row, to return to when Live is left from outside the list */
+	let beforeLive = /** @type {string | null} */ (null);
 	/** @param {string} key */
 	async function select(key) {
 		// showhide-v8 §5: the Live row shows the live view in the main area; any other row leaves it
 		if (key === 'live-view') {
+			if (selected !== 'live-view') beforeLive = selected;
 			selected = key;
 			doc = null;
 			sel = null;
@@ -230,7 +233,14 @@
 				if (get(profilerClose)) profilerClose.set(false);
 				if (selected !== 'live-view') void select('live-view');
 			});
-		} else if (selected === 'live-view') untrack(() => (selected = null));
+		} else if (selected === 'live-view')
+			untrack(() => {
+				// leaving Live by the store (its button again, a module): back to the row that showed before it
+				const back = beforeLive;
+				beforeLive = null;
+				selected = null;
+				if (back) void select(back);
+			});
 	});
 	$effect(() => {
 		if ($profilerClose && untrack(() => get(profilerLiveOpen))) profilerLiveOpen.set(false);

@@ -350,11 +350,15 @@ export function createKit(host, pieces) {
 			.filter(Boolean)
 	];
 
-	/** forget everything (a scene clear: every peer clears too) — local, sends nothing */
-	const reset = () => {
-		// an authoritative LOCAL write: stamped fresh so it beats a stale document on arrival. `by` stays EMPTY:
-		// every peer clears at once, so naming ourselves would make each one the incumbent (authority.js tier 3)
-		doc = { ...freshDoc(), at: Math.max(now(), (doc.at ?? 0) + 1), by: '' };
+	/** forget everything (a scene clear: every peer clears too) — sends nothing.
+	 * `{local: true}` (78 F16): only THIS peer's world was replaced (a travel, a scene loaded
+	 * alone, a boot restore) — the document starts from nothing at stamp 0, so any live document
+	 * the room holds wins on arrival and this one can never wipe it.
+	 * @param {{local?: boolean}} [opts] */
+	const reset = (opts = {}) => {
+		// a SHARED clear is an authoritative write: stamped fresh so it beats a stale document on arrival. `by`
+		// stays EMPTY: every peer clears at once, so naming ourselves would make each one the incumbent (authority.js tier 3)
+		doc = { ...freshDoc(), at: opts.local ? 0 : Math.max(now(), (doc.at ?? 0) + 1), by: '' };
 		pending.clear();
 		for (const [name, def] of Object.entries(defs)) {
 			try {

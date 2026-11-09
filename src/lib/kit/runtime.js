@@ -195,9 +195,15 @@ function touchPickups() {
 	});
 }
 
-/** a scene clear / load: the next game starts from nothing (local; every peer clears too) */
-export function resetKit() {
-	kit.reset();
+/** a scene clear / load: the next game starts from nothing.
+ * 78 F16: `shared` = the room clears together (a replicated `/clear all`, a peer's
+ * `clearscene`) with somebody here to share it — stamped fresh, so it beats a stale document.
+ * Anything else (a travel, a boot restore, a scene loaded while alone) is LOCAL: the reset
+ * starts from nothing but outranks nobody, so the room's live document (a late joiner's
+ * handshake) is taken, and this peer's reset never wipes the room's game.
+ * @param {{shared?: boolean}} [opts] */
+export function resetKit(opts = {}) {
+	kit.reset({ local: !(opts.shared && openPeers().length > 0) });
 }
 
 /** 34 R2: the grab question every grab path asks (kit.rules.checkGrab): reach + vetoes.

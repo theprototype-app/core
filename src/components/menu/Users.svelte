@@ -180,6 +180,13 @@
 		e.preventDefault();
 		openPeerMenu(e.clientX, e.clientY, peerId, self, e.currentTarget as HTMLElement);
 	}
+	/** 78 PL31: the visible ⋯ — the same menu a right-click or a long press opens, now reachable by a tap */
+	function rowMoreClick(e: MouseEvent, peerId: string, self: boolean) {
+		e.stopPropagation();
+		const btn = e.currentTarget as HTMLElement;
+		const r = btn.getBoundingClientRect();
+		openPeerMenu(Math.max(8, r.right - 200), r.bottom + 4, peerId, self, btn.closest('.peers-row') as HTMLElement | null);
+	}
 	function rowKeydown(e: KeyboardEvent, peerId: string, self: boolean) {
 		if (e.key !== 'ContextMenu' && !(e.shiftKey && e.key === 'F10')) return;
 		e.preventDefault();
@@ -236,7 +243,10 @@
 	/** fly the editor camera to stand a few metres off their avatar, looking at it */
 	function goToPeer(peerId: string) {
 		const avatar = ($globalScene as any)?.getObjectByName?.(peerId);
-		if (!avatar) return;
+		if (!avatar) {
+			showToast(nameOf(peerId) + ' has no avatar in this scene yet.');
+			return;
+		}
 		const at = new THREE.Vector3();
 		avatar.getWorldPosition(at);
 		const cam = $globalCamera as any;
@@ -1071,13 +1081,14 @@
 				{#if $peerHands[user[0]]?.active}<span title="In VR"><Icon name="glasses" size={16} aria-hidden="true" /></span>{/if}
 				{#if !self && $peerQuality[user[0]]}
 					{@const q = $peerQuality[user[0]]}
+					<!-- 78 PL31 (O7): "relayed" is a fact, not a fault — it rides the tooltip, and shows only on a slow link -->
 					<span
-						title={q.rtt != null ? `${Math.round(q.rtt)} ms round-trip` : 'measuring…'}
+						title={(q.rtt != null ? `${Math.round(q.rtt)} ms round-trip` : 'measuring…') + (q.relayed ? ' · relayed through a TURN server' : '')}
 						style="color: {qColor(q.level)}">{qGlyph(q.level)}{q.rtt != null ? ` ${Math.round(q.rtt)}ms` : ''}</span
 					>
-					{#if q.relayed}<span class="text-ink-warn" title="Relayed through a TURN server">relayed</span>{/if}
+					{#if q.relayed && q.level === 'bad'}<span class="text-ink-warn" title="Relayed through a TURN server">relayed</span>{/if}
 				{/if}
-				<span class="peer-id" title={user[0]}>{shortId(user[0])}</span>
+				<span class="peer-id" title={user[0]}>{shortId(user[0]).toUpperCase()}</span>
 			</div>
 		</div>
 		<div class="peer-actions">
@@ -1165,8 +1176,28 @@
 				>
 					<Icon name="eye" size={16} class="mr-1" aria-hidden="true" />{$specatorMode === user[0] ? 'Watching' : 'Watch'}
 				</button>
+				{#if !$phoneShellActive && kindOfRow(user) !== 'agent'}
+					<!-- 78 PL31 (O4): Go to beside Watch — fly the camera to stand by their avatar (same scene; on a
+					     phone it stays in ⋯). Not .peer-goto: that class is the travel-to-their-scene button. -->
+					<button
+						type="button"
+						class="peer-find peer-icon-btn"
+						title={'Go to ' + displayName(user) + ' — fly your camera to them'}
+						aria-label={'Go to ' + displayName(user)}
+						onclick={() => goToPeer(user[0])}
+					><Icon name="locate-fixed" size={16} aria-hidden="true" /></button>
+				{/if}
 			{/if}
 		{/if}
+		<!-- 78 PL31 (O4): the peer menu as a visible button on every row (it was right-click / long-press only) -->
+		<button
+			type="button"
+			class="peer-more peer-icon-btn"
+			title={self ? 'Your menu' : 'More for ' + displayName(user)}
+			aria-label={self ? 'Your menu' : 'More for ' + displayName(user)}
+			aria-haspopup="menu"
+			onclick={(e) => rowMoreClick(e, user[0], self)}
+		><Icon name="ellipsis" size={16} aria-hidden="true" /></button>
 		</div>
 	</div>
 {/snippet}
@@ -1236,7 +1267,6 @@
 				<WindowChrome
 					size="tool"
 					title="Connected"
-					count={$userdata.length}
 					elevated
 					padded={false}
 					onclose={() => {
@@ -1732,6 +1762,11 @@
 	.peer-meta > .scene-chip { flex: 0 1 auto; }
 	.peer-id { color: var(--text-faint); }
 	.peer-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; white-space: nowrap; }
+	/* 78 PL31: the row's icon buttons (Go to, ⋯) — quiet until hovered, a 28 px target (44 on touch) */
+	.peer-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex: 0 0 auto; border: 0; border-radius: 6px; background: transparent; color: var(--text-muted); cursor: pointer; }
+	.peer-icon-btn:hover { background: var(--surface-hover); color: var(--text); }
+	.peer-icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+	@media (pointer: coarse) { .peer-icon-btn { width: 40px; height: 40px; } }
 	/* 21-F3 play-mode chip. Deliberately quieter than the role badge beside it: a role
 	   is an authority and a mode is a passing fact. */
 	.mode-chip { flex: 0 0 auto; font-size: 9px; font-weight: 600; letter-spacing: 0.02em; padding: 0 6px; border-radius: 9999px; text-transform: capitalize; line-height: 1.5; border: 1px solid transparent; }

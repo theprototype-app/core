@@ -93,7 +93,8 @@ h.run(async () => {
 		h.check(m.rows.every((r, i) => r.nameTitle === LONG[i]), `${label}: each name carries its full text as the tooltip`);
 		h.check(m.rows.some((r) => r.nameCut) || m.w < 421, `${label}: at the 420 px cap the longest name ellipsizes rather than wrapping`);
 		h.check(m.rows.slice(1).every((r) => r.actRight !== null && r.actRight <= 12), `${label}: actions sit on the right edge of each row (${m.rows.map((r) => r.actRight).join(',')})`);
-		h.check(m.title === 'Connected' && m.count === '5', `${label}: the header reads Connected + the count (${m.title} ${m.count})`);
+		// 78 PL31 (one count): the trigger keeps the count, the header no longer repeats it
+		h.check(m.title === 'Connected' && m.count === null, `${label}: the header reads Connected, the count stays on the trigger (${m.title} ${m.count})`);
 		// the notification centre's header, for comparison
 		await page.keyboard.press('Escape').catch(() => {});
 		await page.evaluate(() => {

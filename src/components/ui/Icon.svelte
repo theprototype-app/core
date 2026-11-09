@@ -119,6 +119,7 @@
 		Droplets,
 		Ellipsis,
 		ExternalLink,
+		Ellipsis, // 78 PL31: a roster row's menu
 		Eye,
 		EyeOff,
 		FileCode,
@@ -212,6 +213,7 @@
 		Plus,
 		Proportions,
 		Puzzle,
+		QrCode, // 78 PL37: the invite sheet's QR tab
 		Radar,
 		RectangleGoggles,
 		Redo2,
@@ -357,6 +359,7 @@
 		droplets: Droplets,
 		ellipsis: Ellipsis,
 		'external-link': ExternalLink,
+		ellipsis: Ellipsis,
 		eye: Eye,
 		'eye-off': EyeOff,
 		'file-code': FileCode,
@@ -452,6 +455,7 @@
 		plus: Plus,
 		proportions: Proportions,
 		puzzle: Puzzle,
+		'qr-code': QrCode,
 		radar: Radar,
 		'rectangle-goggles': RectangleGoggles,
 		'redo-2': Redo2,

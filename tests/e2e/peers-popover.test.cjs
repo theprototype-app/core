@@ -65,7 +65,8 @@ h.run(async () => {
 		};
 	});
 	h.check(popover.open, 'clicking the trigger opens the popover');
-	h.check(popover.header === 'Connected (5)', `the header counts the same people the list draws (${popover.header})`);
+	// 78 PL31 (one count): the TRIGGER says how many (checked above); the header no longer repeats it
+	h.check(popover.header === 'Connected (undefined)', `the header is the title alone, the count lives on the trigger (${popover.header})`);
 	h.check(popover.flatArmed === 'true', `All is the default view (aria-pressed ${popover.flatArmed})`);
 	h.check(popover.rowCount === 5, `every peer is listed (${popover.rowCount} rows incl. self)`);
 	h.check(popover.hasAnn && popover.hasBo, 'the first two peers (previously stacked) are visible');

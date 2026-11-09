@@ -7,8 +7,7 @@
 //   3. picking an item on a track opens the Item tab (the old bottom inspector); renaming the event there
 //      is one undo step; clearing the pick puts the transient tab away again
 //   4. layout: list | tracks | properties side by side, no sideways overflow; desktop 1920 + 1280,
-//      dark + light shots; the phone posture (N6 folded / unfolded viewports) keeps the bar's picker and no
-//      overflow
+//      dark + light shots (the N6 folded / unfolded postures: timeline-phone.test.cjs)
 // Run: APP_URL=https://localhost:7010/ npm run e2e -- timeline-panes   (SHOTS=<dir> keeps screenshots)
 const h = require('./helpers.cjs');
 const path = require('path');
@@ -177,30 +176,6 @@ h.run(async () => {
 	await shot(B.page, '05-desktop-1280-light.png');
 	await B.page.evaluate(() => window.__stores.themes.theme.set('dark'));
 
-	// the phone posture: the N6 folded (cover screen) and unfolded, emulated (the device rows run on the HONOR)
-	for (const [label, vp] of [
-		['folded', { width: 412, height: 915 }],
-		['unfolded', { width: 820, height: 900 }]
-	]) {
-		const C = await h.setupPage(browser, 'C-' + label, { context: { viewport: vp, isMobile: true, hasTouch: true, deviceScaleFactor: 2.6 } });
-		await C.page.evaluate(() => {
-			const q = window.__stores.sequences;
-			const s = q.createSequence('Phone cut');
-			q.addItem(s, q.addTrack(s, 'event'), { t: 0.5, name: 'beat' });
-		});
-		await C.page.evaluate(() => window.__stores.timelineClose.set(false));
-		await C.page.waitForSelector('.tl-root', { timeout: 15000 }); // a phone starts with the side panes put away
-		await C.page.waitForTimeout(500);
-		const phone = await C.page.evaluate(() => document.documentElement.classList.contains('phone-shell'));
-		o = await overflow(C.page);
-		h.check(o.root && o.scroll <= 1 && o.right <= 1, `${label}: no sideways overflow (${JSON.stringify(o)})`);
-		// both postures are a touch handheld: the side panes start put away (handheldPanels), so the bar keeps a picker
-		h.check(await C.page.locator('#timeline-seq-select').isVisible(), `${label}: the bar keeps a sequence picker (the side panes start hidden${phone ? ', phone shell' : ''})`);
-		await C.page.locator('.tl-root [data-ws-primary-toggle]').first().click();
-		await C.page.waitForTimeout(400);
-		h.check(await C.page.locator('#timeline-sequences').isVisible(), `${label}: the edge tab brings the Sequences list back`);
-		await shot(C.page, `06-phone-${label}.png`);
-		await C.page.context().close();
-	}
+	// the phone postures live in timeline-phone.test.cjs (four page boots in one suite ran past the 480 s cap)
 	await h.finish(browser);
 });

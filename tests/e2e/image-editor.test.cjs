@@ -282,7 +282,7 @@ h.run(async () => {
 	h.check((await texOf(A, box1)).url === box1Before.url, 'the texture picked from disk (no link) was left alone');
 
 	// ---- §7 Restore original ------------------------------------------------------------
-	await A.page.locator('[data-ws-mode="history"]').click();
+	await A.page.locator('#image-editor-window [data-ws-mode="history"]').click();
 	await A.page.locator('#image-editor-restore-original').click();
 	await until(async () => (await itemOf(A, quad.id))?.hash === quad.hash, 20000);
 	h.check((await itemOf(A, quad.id))?.hash === quad.hash, 'Restore original put the original bytes back');
@@ -294,7 +294,7 @@ h.run(async () => {
 	h.check(v2.length === 2, `restoring adds no duplicate version (${v2.length})`);
 	const current = await A.page.locator('.ie-version-current .ie-version-label').textContent();
 	h.check(/Original/.test(current ?? ''), `the Original row is marked current ("${current}")`);
-	await A.page.locator('[data-ws-mode="edit"]').click();
+	await A.page.locator('#image-editor-window [data-ws-mode="edit"]').click();
 
 	// ---- §8 Save as copy ---------------------------------------------------------------
 	await A.page.locator('#image-editor-flip-h').click();
@@ -449,7 +449,7 @@ h.run(async () => {
 	// the sidebar's scroller is shared by Edit and Versions: scrolled down in Edit, Versions
 	// must still open at its top (it opened scrolled past a short list, which read as empty)
 	await S(P, () => (document.querySelector('#image-editor-window .ws-panel-secondary .overflow-y-auto').scrollTop = 600));
-	await P.page.locator('[data-ws-mode="history"]').tap();
+	await P.page.locator('#image-editor-window [data-ws-mode="history"]').tap();
 	await P.page.waitForTimeout(300);
 	const vis = await S(P, () => {
 		const pane = document.querySelector('#image-editor-history').getBoundingClientRect();

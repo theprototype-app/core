@@ -4319,7 +4319,7 @@ export function triggerWhyOf(nodeId) {
 	const time = syncedNow();
 	const standing = standingWhy(node, time, runtimeCtx());
 	const check = lastCheck(node.id);
-	return { type: node.type, check, standing, card: whyCardLine(check, standing), ...whySentence(check, standing) };
+	return { type: node.type, check, standing, card: whyCardLine(check, standing), sentence: whySentence(check, standing) };
 }
 
 // ---- 78 F2: HOVER ANIMATE ---------------------------------------------------------------------

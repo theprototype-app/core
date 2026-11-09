@@ -60,6 +60,14 @@ async function emptyPaneSpot(page, fx = 0.72, fy = 0.7) {
 	);
 }
 
+/** Esc unwinds a search menu one step at a time (query, search, menu): press until it is gone */
+async function closeMenu(page) {
+	for (let i = 0; i < 4 && (await page.locator('.ctx-scroll').count()); i++) {
+		await page.keyboard.press('Escape');
+		await page.waitForTimeout(200);
+	}
+}
+
 /** drag a wire from a handle to a screen point with the real mouse */
 async function dragWire(page, fromSel, to) {
 	const a = await page.locator(fromSel).first().boundingBox();
@@ -186,10 +194,10 @@ h.run(async () => {
 	h.check(rows[rows.length - 1].trim() === 'Show all nodes', `§2 "Show all nodes" closes the list ("${rows[rows.length - 1]}")`);
 	h.check(rows.some((t) => /Counter · pulse/.test(t)) && rows.some((t) => /Counter · reset/.test(t)), '§2 several fitting sockets on one node = one row each');
 	await shotPair(p, 'f1-wire-search');
-	const offeredSel = rows.filter((t) => /Object Selector/.test(t));
-	h.check(!offeredSel.some((t) => /▸ Object Selector$/.test(t)), `§2 a node with no input the wire fits (Object Selector) is not offered (${offeredSel.join(' | ')})`);
+	h.check(rows.some((t) => t === 'Converts ▸ Object Selector'), '§2 the right way round is offered: On Click feeds an Object Selector');
+	h.check(!rows.some((t) => /▸ On Click$/.test(t)), '§2 a node with no input (On Click) is not offered');
 	// axe: serious / critical only, on the open search menu
-	const ax = await new AxeBuilder({ page: p }).include('[role="menu"]').withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice']).analyze();
+	const ax = await new AxeBuilder({ page: p }).include('.ctx-scroll').withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice']).analyze();
 	for (const v of ax.violations) console.log(`  [axe] ${v.impact} ${v.id} (${v.nodes.length}) ${v.nodes.slice(0, 3).map((n) => n.target.join(' ') + ' :: ' + (n.failureSummary ?? '').replace(/\s+/g, ' ')).join(' | ')}`);
 	const gated = ax.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical');
 	h.check(gated.length === 0, `§2 axe: no serious/critical violations in the search menu (${gated.map((v) => v.id).join(', ') || 'none'})`);
@@ -226,8 +234,9 @@ h.run(async () => {
 	await p.waitForTimeout(300);
 	rows = await menuRows(p);
 	console.log(`  (show all: ${rows.length} rows, last ${rows.slice(-2).join(' | ')})`);
-	h.check((await menu.isVisible()) && rows.some((t) => t.startsWith('All nodes ▸ Object Selector')), `§2 Show all keeps the menu open and lists the rest (${rows.filter((t) => t.startsWith('All')).length} more)`);
-	await p.keyboard.press('Escape');
+	h.check((await menu.isVisible()) && rows.some((t) => t === 'All nodes ▸ On Click'), `§2 Show all keeps the menu open and lists the rest (${rows.filter((t) => t.startsWith('All')).length} more)`);
+	await closeMenu(p);
+	h.check((await p.locator('.ctx-scroll').count()) === 0, '§2 Esc (step by step) closes the search');
 	await p.waitForTimeout(300);
 
 	// --- §3 F7 live state on the cards --------------------------------------------------------
@@ -326,7 +335,7 @@ h.run(async () => {
 	await p.waitForTimeout(400);
 	const tabHeader = await p.locator('[role="menu"] .ctx-header').first().textContent().catch(() => null);
 	h.check(/Wire from On Click/.test(tabHeader ?? ''), `§6 Tab with one node selected opens the same search from its output ("${tabHeader?.trim()}")`);
-	await p.keyboard.press('Escape');
+	await closeMenu(p);
 	await p.waitForTimeout(300);
 	// touch: a finger drags the wire from On Click into space
 	const cdp = await p.context().newCDPSession(p);

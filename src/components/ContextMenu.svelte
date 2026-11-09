@@ -488,7 +488,8 @@
 	use:minimalScroll
 	class="ctx-scroll tp-ui tp-menu fixed min-w-36 overflow-y-auto overflow-x-hidden"
 	style="left: 0; top: 0; z-index: calc(var(--z-portal) + 1);"
-	role="menu"
+	role={listMode ? 'dialog' : 'menu'}
+	aria-label={listMode ? 'Search' : undefined}
 	on:mousedown={keepFocus}
 	on:pointerdown|capture={() => (menuPressed = true)}
 	on:click|capture={guardLift}
@@ -500,10 +501,10 @@
 	{#if headerItem}
 		<ContextMenuItems items={[headerItem]} onrun={run} />
 	{/if}
-	<!-- always mounted (it owns the keyboard) but collapsed until there's a query. A labelled
-	     GROUP, not presentation: a menu may hold groups and items only, and a bare text field
+	<!-- always mounted (it owns the keyboard) but collapsed until there's a query. While
+	     SEARCHING the container is a labelled dialog and the matches are the menu: a text field
 	     inside role=menu is an axe critical (aria-required-children) — 78-wire -->
-	<div class="ctx-filter" class:on={listMode} role="group" aria-label="Filter">
+	<div class="ctx-filter" class:on={listMode} role="presentation">
 		<Icon name="search" size={16} />
 		<input
 			class="ctx-filter-input"
@@ -520,6 +521,7 @@
 	{#if listMode}
 		<!-- flattened command-palette view: matches for a query, or EVERY action when
 		     the query is empty (the browse list the node search box used to be) -->
+		<div class="ctx-list" role="menu" aria-label="Matches">
 		{#each matches as match, index}
 			<!-- pointer-driven like every other menu row (the filter input owns the
 			     keyboard: ↑/↓ move, Enter runs the highlighted hit) -->
@@ -546,6 +548,7 @@
 				{query ? 'No matching action' : 'Nothing to search here'}
 			</div>
 		{/if}
+		</div>
 		<!-- 16-Q5: drag to resize the search list (only while searching) -->
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
@@ -553,7 +556,7 @@
 			title="Drag to resize the list"
 			on:pointerdown={(event) => {
 				const startY = event.clientY;
-				const startH = (event.currentTarget as HTMLElement).closest('[role="menu"]')?.clientHeight ?? SEARCH_HEIGHT;
+				const startH = (event.currentTarget as HTMLElement).closest('.ctx-scroll')?.clientHeight ?? SEARCH_HEIGHT;
 				const move = (moveEvent: PointerEvent) => {
 					searchHeight = Math.max(MIN_LIST_HEIGHT, startH + (moveEvent.clientY - startY));
 					repositionMenu();

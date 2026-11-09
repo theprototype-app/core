@@ -1163,6 +1163,39 @@ export const nodeCatalog = [
 				],
 				note: 'Bends the look only (a vertex shader): physics and picking see the rest pose.'
 			},
+			// 85 N5: WIND — plants lean and sway in gusts, flags wave from their pole. A vertex
+			// deformer like Body Wave, so it composes with Jiggle / Body Wave on the same mesh.
+			{
+				type: 'windsway',
+				label: 'Wind Sway',
+				defaults: { mode: 'plant', anchor: 'bottom', strength: 0.15, frequency: 0.6, gust: 0.5, direction: 0, wavelength: 1, flutter: 0.3 },
+				params: [
+					{ key: 'mode', kind: 'select', options: ['plant', 'flag'] },
+					{ key: 'anchor', kind: 'select', options: ['bottom', 'top', 'left', 'right', 'front', 'back'], doc: 'the fixed end: bottom for a plant, left for a flag on a pole' },
+					{ key: 'strength', kind: 'range', min: 0, max: 2, step: 0.01, doc: 'metres the free end moves' },
+					{ key: 'frequency', kind: 'range', min: 0, max: 5, step: 0.05 },
+					{ key: 'gust', kind: 'range', min: 0, max: 1, step: 0.05 },
+					{ key: 'direction', kind: 'range', min: -180, max: 180, step: 1, doc: 'wind heading in degrees (0 = +x)' },
+					{ key: 'wavelength', kind: 'range', min: 0.1, max: 10, step: 0.05 },
+					{ key: 'flutter', kind: 'range', min: 0, max: 1, step: 0.05 }
+				],
+				note: 'Moves the look only (a vertex shader): physics and picking see the rest pose.'
+			},
+			// 85 N5: FLOWING WATER — the material's maps scroll with the current and the surface swells;
+			// a mesh with no normal map borrows the procedural ripples (the Water preset's)
+			{
+				type: 'waterflow',
+				label: 'Flowing Water',
+				defaults: { speed: 0.1, direction: 0, swell: 0.03, swellSize: 2, ripples: true },
+				params: [
+					{ key: 'speed', kind: 'range', min: -2, max: 2, step: 0.01, doc: 'texture tiles per second' },
+					{ key: 'direction', kind: 'range', min: -180, max: 180, step: 1 },
+					{ key: 'swell', kind: 'range', min: 0, max: 0.5, step: 0.005, doc: 'metres up and down' },
+					{ key: 'swellSize', kind: 'range', min: 0.2, max: 20, step: 0.1 },
+					{ key: 'ripples', kind: 'toggle', label: 'add ripples if the material has none' }
+				],
+				note: 'Best on the Water material preset; the look only (physics keeps the flat surface).'
+			},
 			{
 				// 17-E: the other half of Play Animation — pulses when a clip FINISHES,
 				// so a movement can hand off to whatever comes next (a door that has
@@ -1575,6 +1608,7 @@ export const animationTypes = [
 	'followpath', 'wander', 'orientvelocity', 'bodywave', // 40 F15 (motion/motionNodes.js)
 	'oscillate', 'moveto', 'rotateto', 'scaleto', // 85 N1/N2 (motion/tweenNodes.js)
 	'lightswitch', 'lightintensity', 'lightcycle', // 85 N4 (motion/lightNodes.js)
+	'windsway', 'waterflow', // 85 N5 (motion/swayNodes.js)
 	'lookat', 'setcolor', 'visibility', 'setuniform',
 	'camerarig', // 37 (R8)
 	'deviceparam', 'notetrigger' // 23-B3

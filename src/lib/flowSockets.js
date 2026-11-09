@@ -177,6 +177,8 @@ const INPUT = {
 	lightswitch: { trigger: 'event', back: 'event', toggle: 'event', on: 'boolean', fade: 'number' },
 	lightintensity: { level: 'number', fade: 'number' },
 	lightcycle: { period: 'number', saturation: 'number' },
+	windsway: { strength: 'number', direction: 'number', gust: 'number' }, // 85 N5
+	waterflow: { speed: 'number', swell: 'number' },
 	setcolor: { color: 'color' },
 	visibility: { on: 'boolean' },
 	setuniform: { value: 'number' },

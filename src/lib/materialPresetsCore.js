@@ -246,11 +246,29 @@ export const STARTER_PRESETS = [
 		metalness: 0,
 		emissive: '#ff2bd6',
 		emissiveIntensity: 2.5
+	},
+	{
+		// 85 N5: WATER — a glossy, see-through blue with a procedural ripple relief. Put a
+		// Flowing Water node on the object and the ripples run with the current.
+		version: 1,
+		id: 'water',
+		label: 'Water',
+		type: 'MeshPhysicalMaterial',
+		color: '#2f7fa8',
+		roughness: 0.06,
+		metalness: 0,
+		clearcoat: 1,
+		clearcoatRoughness: 0.05,
+		opacity: 0.78,
+		transparent: true,
+		procedural: 'water',
+		normalScale: 0.45,
+		repeat: [3, 3]
 	}
 ];
 
 /** the procedural map kinds a built-in may name (materialPresetMaps generates them) */
-export const PROCEDURAL_KINDS = ['wood', 'stone', 'scales'];
+export const PROCEDURAL_KINDS = ['wood', 'stone', 'scales', 'water'];
 
 /** @param {any} name */
 export function cleanName(name) {

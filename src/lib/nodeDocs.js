@@ -115,6 +115,8 @@ export const NODE_DOCS = {
 	lightswitch: "Switches the lights in the connected object (a light, or a lamp model with one inside) on and off with a fade, glowing parts included: trigger = on, back = off, toggle flips (On Click into toggle), or wire a boolean into on.",
 	lightintensity: "Fades the connected object's lights to a level (1 = their own intensity, 0 = off, 2 = twice as bright) whenever the level changes - wire a variable, a Proximity or a Map Range into level.",
 	lightcycle: "Cycles the colour of the connected object's lights (and glowing parts) through the rainbow or a list of colours - a disco light, a warning beacon, a mood lamp - identical on every peer.",
+	windsway: "Makes the connected object sway in the wind - a plant, a tree, grass lean and shiver in gusts from their foot (anchor bottom), a flag or a banner waves from its pole (mode flag, anchor left) - identical on every peer. A shader effect: physics and picking keep the rest pose.",
+	waterflow: "Makes the connected surface flow like water - its textures scroll with the current (speed, direction) and the surface swells gently - a river, a fountain basin, an aquarium top. Best with the Water material preset; a plain material gets ripples of its own.",
 	animfinished: "Fires a pulse when the connected object's animation clip reaches its end.",
 	animmarker: "Fires a pulse when the connected object's animation passes a named marker.",
 	animstate: "Reads the connected object's animation transport as a number - playing, position or progress.",

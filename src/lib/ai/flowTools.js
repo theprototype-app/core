@@ -132,6 +132,12 @@ const NODE_TYPE_ALIASES = /** @type {Record<string, string>} */ ({
 	colorcycle: 'lightcycle',
 	colourcycle: 'lightcycle',
 	disco: 'lightcycle',
+	// 85 N5
+	wind: 'windsway',
+	flag: 'windsway',
+	water: 'waterflow',
+	river: 'waterflow',
+	flowingwater: 'waterflow',
 	// 21-E4: the logic nodes. The four TYPES need no listing here - aiNodeTypes is
 	// derived from nodeCatalog, so adding them to the catalog put them in the enum -
 	// but a small model reaches for these four by FUNCTION rather than by name more

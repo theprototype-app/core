@@ -75,7 +75,8 @@ function writeIntensity(t, intensity) {
 function writeColour(t, rgb) {
 	const r = recOf(t);
 	const c = t.isLight ? t.color : t.emissive;
-	c.setRGB(rgb[0], rgb[1], rgb[2]);
+	// the core's colours are sRGB (hex, hsl): say so, or three reads them as linear and they wash out
+	c.setRGB(rgb[0], rgb[1], rgb[2], THREE.SRGBColorSpace);
 	r.writtenColor = c.getHex();
 }
 
@@ -154,7 +155,7 @@ export function applyLightCycle(object, data, time, key) {
 	mark(key, targets);
 	const rgb = cycleColour(data, time);
 	for (const t of targets) writeColour(t, rgb);
-	col.setRGB(rgb[0], rgb[1], rgb[2]);
+	col.setRGB(rgb[0], rgb[1], rgb[2], THREE.SRGBColorSpace);
 	reads.set(key, { color: '#' + col.getHexString(), seen: frameNo });
 	return rgb;
 }

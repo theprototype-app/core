@@ -122,6 +122,8 @@ export const DEBUG_HOOKS = [
 	['tweenNodes', () => import('./motion/tweenNodes.js')],
 	['lightNodes', () => import('./motion/lightNodes.js')],
 	['tweenCore', () => import('./motion/tweenCore.js')],
+	// 85 N5: Wind Sway + Flowing Water
+	['swayNodes', () => import('./motion/swayNodes.js')],
 	['objectActions', () => import('./objectActions')],
 	['commandsHandler', () => import('./commandsHandler.svelte')],
 	['moduleSDK', () => import('./moduleSDK')],

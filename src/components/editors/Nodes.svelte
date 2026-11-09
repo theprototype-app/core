@@ -201,6 +201,8 @@
 		lightswitch: AnimationNode, // 85 N4
 		lightintensity: AnimationNode,
 		lightcycle: AnimationNode,
+		windsway: AnimationNode, // 85 N5
+		waterflow: AnimationNode,
 		bounce: AnimationNode,
 		orbit: AnimationNode,
 		pulse: AnimationNode,

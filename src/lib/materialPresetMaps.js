@@ -103,7 +103,7 @@ export function scaleHeight(u, v) {
 
 /**
  * The height field of a kind, size×size in [0, 1], tileable in both directions.
- * @param {'wood'|'stone'|'scales'} kind @param {number} [size]
+ * @param {'wood'|'stone'|'scales'|'water'} kind @param {number} [size]
  * @returns {Float32Array}
  */
 export function heightField(kind, size = MAP_SIZE) {
@@ -126,6 +126,13 @@ export function heightField(kind, size = MAP_SIZE) {
 				h = Math.max(0, h - seam);
 			} else if (kind === 'scales') {
 				h = scaleHeight(u, v);
+			} else if (kind === 'water') {
+				// 85 N5: soft ripples — crossed tileable sines warped by low noise, plus a fine chop
+				const warp = tileFbm(u, v, 2, 2, 3, 83) * 1.5;
+				const a = Math.sin((u * 3 + warp) * Math.PI * 2) * Math.sin((v * 2 - warp * 0.7) * Math.PI * 2);
+				const b = Math.sin((u * 5 - v * 4 + warp) * Math.PI * 2);
+				const chop = tileFbm(u, v, 12, 12, 2, 97);
+				h = 0.5 + a * 0.22 + b * 0.12 + (chop - 0.5) * 0.3;
 			} else {
 				// stone: broad blotches, a crisp mid band and grit
 				const broad = tileFbm(u, v, 3, 3, 4, 41);
@@ -174,7 +181,7 @@ const cache = new Map();
 /**
  * The encoded maps of a procedural kind (browser only; null elsewhere). Cached per session,
  * so swatches, applies and the active-swatch compare all see the same strings.
- * @param {'wood'|'stone'|'scales'} kind
+ * @param {'wood'|'stone'|'scales'|'water'} kind
  * @returns {{map: string, normalMap: string} | null}
  */
 export function proceduralMaps(kind) {
@@ -183,7 +190,7 @@ export function proceduralMaps(kind) {
 	if (typeof document === 'undefined') return null;
 	try {
 		const size = MAP_SIZE;
-		const { color, normal } = mapBytes(heightField(kind, size), size, kind === 'wood' ? 2.5 : kind === 'scales' ? 3 : 4);
+		const { color, normal } = mapBytes(heightField(kind, size), size, kind === 'wood' ? 2.5 : kind === 'scales' ? 3 : kind === 'water' ? 2 : 4);
 		const encode = (/** @type {Uint8ClampedArray} */ bytes, /** @type {boolean} */ hq) => {
 			const canvas = document.createElement('canvas');
 			canvas.width = canvas.height = size;

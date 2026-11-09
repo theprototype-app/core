@@ -102,6 +102,8 @@ import { applyRotor, applyFlowFloat } from './sim/motionNodes.js'; // 36-fb F25/
 import { applyOscillate, applyTween, tweenPosition, noteTweenRead, tickTweenNodes } from './motion/tweenNodes.js';
 import { applyLightSwitch, applyLightIntensity, applyLightCycle, pruneLightNodes } from './motion/lightNodes.js';
 import { openEvent } from './motion/tweenCore.js';
+// 85 N5: Wind Sway + Flowing Water (vertex deformers + map scroll, a three leaf)
+import { applyWindSway, applyWaterFlow, pruneSwayNodes } from './motion/swayNodes.js';
 // 40 F15: general-purpose motion (a three leaf + its pure core)
 import {
 	applyFollowPath,
@@ -558,7 +560,7 @@ pathCaptureNode.subscribe((id) => (capturingPathNode = id));
  */
 // 36-fb F25: a rotor on a DYNAMIC body during a run drives it with torque (no pose write)
 // 85 N4: the light nodes write intensity / colour only
-const POSE_FREE_EFFECTS = new Set(['setcolor', 'setuniform', 'deviceparam', 'notetrigger', 'rotor', 'lightswitch', 'lightintensity', 'lightcycle']);
+const POSE_FREE_EFFECTS = new Set(['setcolor', 'setuniform', 'deviceparam', 'notetrigger', 'rotor', 'lightswitch', 'lightintensity', 'lightcycle', 'windsway', 'waterflow']);
 
 /** @param {any} object */
 function captureBase(object) {
@@ -4070,9 +4072,10 @@ export function fireObjectExit(uuid, otherUuid) {
  * 85 N1/N2 (debug + the two-peer suites): the pose ONE effect node gives `uuid` at shared time
  * `time`, computed on a detached copy from the object's base — so two peers asked about the same
  * moment answer for the same moment, whatever frame each happens to be drawing.
- * @param {string} nodeId @param {string} uuid @param {number} time
+ * @param {string} nodeId @param {string} uuid @param {number} [time] (default: now)
  */
 export function effectPoseAt(nodeId, uuid, time) {
+	if (typeof time !== 'number') time = effectClockNow();
 	const anim = nodeById(nodes, nodeId);
 	const object = sceneObjects?.getObjectByProperty('uuid', uuid);
 	if (!anim || !object || !['oscillate', 'moveto', 'rotateto', 'scaleto'].includes(anim.type)) return null;
@@ -4091,12 +4094,19 @@ export function effectPoseAt(nodeId, uuid, time) {
 	}
 }
 
+/** 85 (debug + suites): the shared clock effects read right now — the trigger stamps' domain */
+export function effectClockNow() {
+	return effectTime(syncedNow());
+}
+
 /** 85 N2: the tween nodes @type {Set<string>} */
 const TWEEN_TYPES = new Set(['moveto', 'rotateto', 'scaleto']);
 /** 85 N2/N4: the nodes whose `toggle` keeps a Latch-style parity in applyNodeTrigger @type {Set<string>} */
 const TOGGLE_TWEEN_TYPES = new Set(['moveto', 'rotateto', 'scaleto', 'lightswitch']);
 /** 85 N4: the light (node, object) keys driven this tick — the rest hand their lights back @type {Set<string>} */
 let liveLights = new Set();
+/** 85 N5: the Wind Sway / Flowing Water (node, object) keys driven this tick @type {Set<string>} */
+let liveSway = new Set();
 /** 85 N4: a Light Switch's wired `on` boolean, per (node, object), per peer @type {Map<string, any>} */
 const lightOpens = new Map();
 
@@ -4105,16 +4115,18 @@ const lightOpens = new Map();
  * (replicated), the toggle's stamp and the DIRECTION its parity gives (the Latch rule: the base
  * is whichever of trigger / back is newer, each odd flip after it inverts it), and which inputs
  * are wired at all.
- * @param {any} node @param {any} ctx
+ * `restDir` = where it stands before any trigger / back (a tween at rest = 0; a Light Switch that
+ * starts on = 1, so its first toggle switches it OFF).
+ * @param {any} node @param {any} ctx @param {0 | 1} [restDir]
  */
-function tweenStamps(node, ctx) {
+function tweenStamps(node, ctx, restDir = 0) {
 	const into = edgesInto(edges, node.id);
 	const wired = (/** @type {string} */ h) => into.some((/** @type {any} */ e) => e.targetHandle === h);
 	const trigger = freshStamp(node, handleStamp(node, 'trigger', ctx));
 	const back = freshStamp(node, handleStamp(node, 'back', ctx));
 	const flips = ctx?.triggers?.[node.id]?.count ?? 0;
 	const toggleT = flips > 0 ? handleStamp(node, 'toggle', ctx) : null;
-	const baseDir = trigger !== null && trigger >= (back ?? -Infinity) ? 1 : 0;
+	const baseDir = trigger === null && back === null ? restDir : trigger !== null && trigger >= (back ?? -Infinity) ? 1 : 0;
 	const toggleDir = flips % 2 === 1 ? 1 - baseDir : baseDir;
 	const openWired = wired('open');
 	const onWired = wired('on');
@@ -4210,7 +4222,7 @@ function applyAnimation(object, base, anim, time, ctx) {
 	if (anim.type === 'lightswitch') {
 		const key = anim.id + '|' + object.uuid;
 		liveLights.add(key);
-		const s = tweenStamps(anim, ctx);
+		const s = tweenStamps(anim, ctx, data.on !== false && !edgesInto(edges, anim.id).some((/** @type {any} */ e) => e.targetHandle === 'on') ? 1 : 0);
 		/** @type {any[]} */
 		let open = [];
 		if (s.onWired) {
@@ -4219,6 +4231,13 @@ function applyAnimation(object, base, anim, time, ctx) {
 			open = next.events;
 		}
 		applyLightSwitch(object, data, time, key, { ...s, open });
+		return;
+	}
+	if (anim.type === 'windsway' || anim.type === 'waterflow') {
+		const key = anim.id + '|' + object.uuid;
+		liveSway.add(key);
+		if (anim.type === 'windsway') applyWindSway(object, data, time, { key });
+		else applyWaterFlow(object, data, time, { key });
 		return;
 	}
 	if (anim.type === 'lightintensity' || anim.type === 'lightcycle') {
@@ -5025,6 +5044,9 @@ function runTick(now) {
 	pruneLightNodes(liveLights);
 	for (const k of [...lightOpens.keys()]) if (!liveLights.has(k)) lightOpens.delete(k);
 	liveLights = new Set();
+	// 85 N5: a sway / water node that went away puts the original material back
+	pruneSwayNodes(liveSway);
+	liveSway = new Set();
 	tickTweenNodes();
 
 	// sound nodes keep their own audio chains (97) — hand over the live pairs

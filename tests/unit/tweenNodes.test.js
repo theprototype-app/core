@@ -277,3 +277,15 @@ describe('light nodes (N4)', () => {
 		expect(lightLevel([{ t: 5, dir: 0 }], 5.15, 0.3, true)).toBeCloseTo(0.5);
 	});
 });
+
+describe('light colour space (N4)', () => {
+	it('a list colour lands on the light as that exact hex (sRGB, not read as linear)', () => {
+		resetLightNodes();
+		const light = new THREE.PointLight(0xffffff, 1);
+		const g = new THREE.Group();
+		g.add(light);
+		applyLightCycle(g, { mode: 'list', colors: '#ffcc00, #0a84ff', period: 100, step: true }, 1, 'n|f');
+		expect('#' + light.color.getHexString()).toBe('#ffcc00');
+		resetLightNodes();
+	});
+});

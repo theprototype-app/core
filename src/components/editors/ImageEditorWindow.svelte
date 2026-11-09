@@ -860,7 +860,10 @@
 			secondaryModes={[{ key: 'edit', icon: '✎', label: 'Edit' }, { key: 'history', icon: '⟲', label: 'Versions' }]}
 		>
 			{#snippet topbar()}
-				<div class="border-b border-border px-2 py-1">
+				<!-- uir-preview: Save is PINNED at the right, outside the scrolling strip — in a narrow pane
+				     (a split dock, a phone) the strip scrolls and Save must never be the part scrolled away -->
+				<div class="flex items-center gap-1 border-b border-border px-2 py-1">
+					<div class="min-w-0 flex-1">
 					<ScrollStrip label="Image editor tools" id="image-editor-toolbar">
 						<div class="flex shrink-0 items-center gap-1">
 							<UiButton id="image-editor-undo" variant="icon" size="sm" icon="undo-2" label="Undo (Ctrl+Z)" title="Undo (Ctrl+Z)" disabled={!undoStack.length} onclick={undo} />
@@ -880,9 +883,12 @@
 							{/if}
 							<span class="flex-1"></span>
 							<UiButton id="image-editor-save-copy" size="sm" variant="outline" icon="copy" disabled={!work || saving} title="Save the edit as a new image beside this one" onclick={saveCopy}>Save as copy</UiButton>
-							<UiButton id="image-editor-save" size="sm" variant="primary" icon="save" disabled={!dirty || saving} title="Save over this image (Ctrl+S) — its earlier version stays in Versions" onclick={save}>Save</UiButton>
 						</div>
 					</ScrollStrip>
+					</div>
+					<div class="shrink-0">
+						<UiButton id="image-editor-save" size="sm" variant="primary" icon="save" disabled={!dirty || saving} title="Save over this image (Ctrl+S) — its earlier version stays in Versions" onclick={save}>Save</UiButton>
+					</div>
 				</div>
 			{/snippet}
 

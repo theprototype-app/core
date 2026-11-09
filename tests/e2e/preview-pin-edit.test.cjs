@@ -184,12 +184,17 @@ h.run(async () => {
 	await page.keyboard.press(']');
 	await page.locator('#confirm-dialog-cancel').waitFor({ timeout: 5000 });
 	await page.locator('#confirm-dialog-cancel').click();
+	await until(async () => !(await page.locator('#confirm-dialog-cancel').count()), 4000);
 	await page.waitForTimeout(400);
+	const dialogs = () => S(A, () => [...document.querySelectorAll('dialog[open]')].map((d) => d.textContent.trim().slice(0, 80)));
+	h.check((await dialogs()).length === 0, `§6 "Keep editing" leaves no dialog behind (${JSON.stringify(await dialogs())})`);
 	st = await pv(A);
 	h.check(st.itemId === ids.b && /60 × 80/.test(st.size), `§6 walking away from an unsaved edit asks; "Keep editing" stays (${JSON.stringify(st)})`);
 	const hashBefore = await S(A, (id) => window.__stores.explorer.itemById(id)?.hash, ids.b);
+	const saveState = await S(A, () => ({ disabled: document.querySelector('#image-editor-save')?.disabled, dirty: document.querySelector('#image-editor-window')?.dataset.dirty ?? null }));
 	await page.locator('#image-editor-save').click();
 	await until(async () => (await S(A, (id) => window.__stores.explorer.itemById(id)?.hash, ids.b)) !== hashBefore, 8000);
+	console.log('  save diag: ' + JSON.stringify({ saveState, dialogs: await dialogs(), toasts: await S(A, () => document.querySelector('.toasts-stack')?.textContent?.slice(0, 200)) }));
 	h.check((await S(A, (id) => window.__stores.explorer.itemById(id)?.hash, ids.b)) !== hashBefore, '§6 Save writes the image');
 	await page.locator('#preview-view').click();
 	await until(async () => (await pv(A)).mode === 'view');
@@ -293,12 +298,14 @@ h.run(async () => {
 				save: hit('#image-editor-save'),
 				canvas: hit('#image-editor-canvas-wrap'),
 				winW: Math.round(win.width),
-				strip: !!document.querySelector('#image-editor-filmstrip')?.offsetParent
+				strip: !!document.querySelector('#image-editor-filmstrip')?.offsetParent,
+				// the filmstrip may start collapsed on a phone (WindowShell's phone rule): its edge toggle
+				stripToggle: hit('#image-editor-window [data-ws-primary-toggle]')
 			};
 		});
 		h.check(['view', 'close', 'save', 'canvas'].every((k) => r[k] === 'ok'), `§9 ${label}: the Edit face's controls are tappable (${JSON.stringify(r)})`);
 		if (label === 'folded') h.check(r.winW >= w - 2 && !r.strip, `§9 folded: the editor is a full-width sheet, filmstrip stood down (${JSON.stringify(r)})`);
-		else h.check(r.strip, `§9 unfolded: the filmstrip shows (${JSON.stringify(r)})`);
+		else h.check(r.strip || r.stripToggle === 'ok', `§9 unfolded: the filmstrip shows or its toggle is tappable (${JSON.stringify(r)})`);
 		await shot(P, `06-phone-${label}-edit`, 'dark');
 		await P.page.locator('#preview-view').tap();
 		await until(async () => (await pv(P)).mode === 'view');

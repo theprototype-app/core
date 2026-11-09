@@ -161,6 +161,19 @@ h.run(async () => {
 		cam.updateMatrixWorld(true);
 	});
 	await B.page.waitForTimeout(600);
+	console.log('B after the teleport: ' + JSON.stringify(await B.page.evaluate(() => (() => {
+			const s = window.__stores;
+			let cam, gc, ctl;
+			s.playerCam.subscribe((c) => (cam = c))();
+			s.globalCamera?.subscribe?.((c) => (gc = c))();
+			s.charController.charControl.subscribe((v) => (ctl = v))();
+			const T = s.THREE;
+			const w = (o) => (o ? o.getWorldPosition(new T.Vector3()).toArray().map((v) => +v.toFixed(2)) : null);
+			let locked;
+			s.isLocked.subscribe((v) => (locked = v))();
+			return { cam: w(cam), parent: w(cam?.parent), global: w(gc), same: cam === gc, locked, ctl: ctl?.mode ?? null, body: s.charController.localPlayerBody?.() ? { eye: s.charController.localPlayerBody().eye.toArray().map((v) => +v.toFixed(2)) } : null };
+		})())));
+	await h.eventually(() => near(B.page), (v) => v === true, 'B: Proximity turns true at the sensor', 4000);
 	const nearIn = await near(B.page);
 	const nearOnA = await near(A.page);
 	h.check(nearIn === true, `Proximity reads true once B's player stands at the sensor (${nearIn})`);

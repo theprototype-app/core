@@ -22,7 +22,7 @@ describe('Announce console (78 F14)', () => {
 		expect(entries().some((e) => e.scope === 'announce' && e.message.includes('Ring 1 reached'))).toBe(true);
 	});
 	it('in Play and in a headset: shown as a banner, not counted unread', () => {
-		isLocked.set(true);
+		isLocked.set(/** @type {any} */ (true));
 		announce('GOAL!');
 		isLocked.set(null);
 		isVRMode.set(true);

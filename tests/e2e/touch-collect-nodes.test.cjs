@@ -118,6 +118,19 @@ h.run(async () => {
 	await B.page.evaluate(() => window.__stores.isLocked.set(true));
 	await B.page.waitForTimeout(1200);
 	await stand(B.page, 4, 0);
+	await B.page.waitForTimeout(400);
+	console.log('B after the teleport: ' + JSON.stringify(await B.page.evaluate(() => (() => {
+			const s = window.__stores;
+			let cam, gc, ctl;
+			s.playerCam.subscribe((c) => (cam = c))();
+			s.globalCamera?.subscribe?.((c) => (gc = c))();
+			s.charController.charControl.subscribe((v) => (ctl = v))();
+			const T = s.THREE;
+			const w = (o) => (o ? o.getWorldPosition(new T.Vector3()).toArray().map((v) => +v.toFixed(2)) : null);
+			let locked;
+			s.isLocked.subscribe((v) => (locked = v))();
+			return { cam: w(cam), parent: w(cam?.parent), global: w(gc), same: cam === gc, locked, ctl: ctl?.mode ?? null, body: s.charController.localPlayerBody?.() ? { eye: s.charController.localPlayerBody().eye.toArray().map((v) => +v.toFixed(2)) } : null };
+		})())));
 	await h.eventually(() => doc(B.page), (d) => !!d.taken[ids[1]], 'B: standing on gem 2 takes it', 10000).catch(() => {});
 	await B.page.waitForTimeout(1500);
 	const a2 = await doc(A.page);

@@ -11,12 +11,12 @@
 //   APP_URL=https://theprototype.app:5802/ node tests/e2e/hover-toggle-nodes.test.cjs
 const h = require('./helpers.cjs');
 
-const NOW = () => (Date.now() % 86400000) / 1000;
 
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1280, height: 720 } } });
-	const B = await h.setupPage(browser, 'B', { context: { viewport: { width: 1280, height: 720 } } });
+	// B taps like a phone (a real touch, so the pointer is active and nothing throws on capture)
+	const B = await h.setupPage(browser, 'B', { context: { viewport: { width: 1280, height: 720 }, hasTouch: true } });
 	await h.connect(B, A);
 
 	// a bell and a door, made on A (they replicate with their uuids)
@@ -142,15 +142,10 @@ h.run(async () => {
 
 	// phone: a TAP is a hover
 	const atB = await h.projectPoint(B.page, [0, 0.6, 0]);
-	await B.page.evaluate(({ x, y }) => {
-		let r;
-		window.__stores.globalRenderer.subscribe((v) => (r = v))();
-		const el = r.domElement;
-		const o = { pointerType: 'touch', clientX: x, clientY: y, bubbles: true, isPrimary: true, pointerId: 7 };
-		el.dispatchEvent(new PointerEvent('pointerdown', o));
-		el.dispatchEvent(new PointerEvent('pointerup', o));
-	}, atB);
+	const topB = await B.page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName ?? null, atB);
+	await B.page.touchscreen.tap(atB.x, atB.y);
 	await h.eventually(both, (r) => r.a.enter === 2 && r.b.enter === 2, 'phone: a tap on the bell is a hover (enter 2 on both)', 6000);
+	console.log('  B tap at', Math.round(atB.x), Math.round(atB.y), topB, JSON.stringify(await B.page.evaluate(() => window.__stores.hoverInput?.hoverInputDebug?.() ?? null)));
 
 	// VR: the laser resolves through the same hover resolver
 	const laser = await A.page.evaluate(() => {
@@ -168,13 +163,12 @@ h.run(async () => {
 			let g;
 			s.objectsGroup.subscribe((v) => (g = v))();
 			const d = g.getObjectByProperty('uuid', uuid);
-			const v = s.flowRuntime.nodeValueOf('door');
 			const node = s.allNodes().find((n) => n.id === 'door');
-			return { ry: d ? +d.rotation.y.toFixed(3) : null, isOpen: v?.__handles?.isOpen ?? null, pose: v?.__handles?.pose ?? null, state: node?.data?.state ?? null };
+			return { ry: d ? +d.rotation.y.toFixed(3) : null, isOpen: s.flowRuntime.nodeValueOf('door', 'isOpen') ?? null, pose: s.flowRuntime.nodeValueOf('door', 'pose') ?? null, state: node?.data?.state ?? null };
 		}, ids.door);
 	const d0 = await doorOf(A.page);
 	h.check(Math.abs(d0.ry - ids.doorRot[1]) < 0.01 && d0.isOpen === false, `premise: the door rests closed (${JSON.stringify(d0)})`);
-	await A.page.evaluate((t) => window.__stores.flowRuntime.applyNodeTrigger('kToggle', t, true), NOW());
+	await A.page.evaluate(() => window.__stores.flowRuntime.applyNodeTrigger('kToggle', (Date.now() % 86400000) / 1000, true));
 	await A.page.waitForTimeout(1300);
 	const d1a = await doorOf(A.page);
 	const d1b = await doorOf(B.page);
@@ -193,14 +187,14 @@ h.run(async () => {
 	h.check(rc.opened === 0, `... and its "opened" did not fire on arrival (${JSON.stringify(rc)})`);
 
 	console.log('\n=== F8: named poses ===');
-	await A.page.evaluate((t) => window.__stores.flowRuntime.applyNodeTrigger('kAjar', t, true), NOW());
+	await A.page.evaluate(() => window.__stores.flowRuntime.applyNodeTrigger('kAjar', (Date.now() % 86400000) / 1000, true));
 	await A.page.waitForTimeout(1300);
 	const third = Math.PI / 6;
 	for (const [name, page] of [['A', A.page], ['B', B.page], ['C', C.page]]) {
 		const d = await doorOf(page);
 		h.check(Math.abs(d.ry - (ids.doorRot[1] + third)) < 0.02 && d.pose === 1, `go to "ajar": the door rests on the middle pose on ${name} (${JSON.stringify(d)})`);
 	}
-	await A.page.evaluate((t) => window.__stores.flowRuntime.applyNodeTrigger('kToggle', t, true), NOW());
+	await A.page.evaluate(() => window.__stores.flowRuntime.applyNodeTrigger('kToggle', (Date.now() % 86400000) / 1000, true));
 	await A.page.waitForTimeout(1300);
 	const d4 = await doorOf(B.page);
 	const r4 = await both();

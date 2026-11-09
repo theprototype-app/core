@@ -1015,11 +1015,12 @@ export function contactOtherOf(nodeId) {
 
 /** 78: test/debug view — a node's value NOW, evaluated with a live context (the suites read a
  * Proximity this way). @param {string} nodeId */
-export function nodeValueOf(nodeId) {
+export function nodeValueOf(nodeId, handle) {
 	const node = nodeById(nodes, nodeId);
 	if (!node) return null;
 	const time = synced ? (sessionNow() % 86400000) / 1000 : performance.now() / 1000;
-	return unwrapHandle(evalNode(node, nodes, edges, time, new Set(), runtimeCtx()), {});
+	// 78: `handle` reads one named output of a handle-map node (Toggle Animation's pose)
+	return unwrapHandle(evalNode(node, nodes, edges, time, new Set(), runtimeCtx()), handle ? { sourceHandle: handle } : {});
 }
 
 /**

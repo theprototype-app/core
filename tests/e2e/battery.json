@@ -290,6 +290,7 @@
 	"suites": {
 		"possess": 120,
 		"player-sensors": 300,
+		"static-level-play": 240,
 		"photo-mode": 420,
 		"text-path": 360,
 		"text-object": 480,

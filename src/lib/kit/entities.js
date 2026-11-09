@@ -790,9 +790,10 @@ export function createKitEntities(host, opts = {}) {
 		store,
 		debug: () => ({
 			authority: authority(),
-			// 78 F23: `count` is what the Count node reads (the living); `stored` includes the dead
-			// still waiting out their removeAfter
-			count: living(),
+			// `count` = every stored entity, the dead still waiting out their removeAfter included
+			// (suites wait on it for "all gone"); `living` is what the Count node reads. 78 F23: `stored`
+			// is the same number as count, named for what it is
+			count: store.ents.size,
 			living: living(),
 			stored: store.ents.size,
 			ceiling: store.ceiling,

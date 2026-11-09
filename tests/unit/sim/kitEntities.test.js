@@ -323,7 +323,7 @@ describe('78 F23: the dead leave the count, on every peer', () => {
 		expect(pulses.filter((p) => p.endsWith('despawned')).length).toBe(2);
 		expect(pulses.filter((p) => p.endsWith('emptied')).length).toBe(1); // the removals do not pulse it again
 	});
-	it('removeAfter: -1 keeps the dead (bodies on the floor) — the debug count says living, the store keeps them', () => {
+	it('removeAfter: -1 keeps the dead (bodies on the floor) — the store keeps them, living says 0', () => {
 		const sim = createSim({ peers: ['a'] });
 		sim.peer('a').kit.api({}).spawner.spawn({ kind: 'corpse', count: 1, hp: 1, removeAfter: -1 });
 		sim.settle();
@@ -331,7 +331,7 @@ describe('78 F23: the dead leave the count, on every peer', () => {
 		sim.peer('a').kit.api({}).health.damage(id, 5);
 		sim.advance(3000);
 		expect(rt(sim, 'a').store.ents.size).toBe(1);
-		expect(rt(sim, 'a').debug()).toMatchObject({ count: 0, stored: 1, living: 0 });
+		expect(rt(sim, 'a').debug()).toMatchObject({ count: 1, stored: 1, living: 0 });
 	});
 });
 

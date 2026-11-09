@@ -33,6 +33,18 @@ export function keptVarNames(table) {
 	return [...new Set([...k.vars, ...(k.inventory ? ['inventory'] : []), ...(k.health ? ['health'] : [])])];
 }
 
+/**
+ * New game: the game's variables without the kept ones (they start over), or null when none of them is set
+ * (nothing to write). Pure. @param {Record<string, any>} vars @param {any} table
+ */
+export function withoutKeptVars(vars, table) {
+	const names = keptVarNames(table).filter((n) => Object.prototype.hasOwnProperty.call(vars ?? {}, n));
+	if (!names.length) return null;
+	const out = { ...vars };
+	for (const n of names) delete out[n];
+	return out;
+}
+
 /** does the table carry a keep list at all? @param {any} table */
 export function hasKeepList(table) {
 	return !!table?.keep?.length;

@@ -8,12 +8,12 @@
 //   a checkpoint    belongs to its scene: after a hop to another scene the old one no longer applies
 import { writable, get } from 'svelte/store';
 import { kit } from '../kit/runtime.js';
-import { gameState } from '../gameState';
+import { gameState, commitGameState } from '../gameState';
 import { safeStorage } from '../safeStorage.js';
 import { exportConfig, exportMode } from '../export/exportBoot.js';
 import { runtimeSpawn } from '../playSettings';
 import { sceneLevelsTable } from './runtime.js';
-import { captureKept, resetOwnKept } from './keep.js';
+import { captureKept, resetOwnKept, withoutKeptVars } from './keep.js';
 import { spawnOfObject, setPlayerSpawn, clearPlayerSpawn, respawnNow, LEVELS_SPAWN_OWNER } from './spawn.js';
 import { SAVE_VERSION, saveKey, upgradeSave, encodeSave } from './save.js';
 
@@ -151,6 +151,9 @@ export async function newGame() {
 	clearPlayerSpawn();
 	const table = sceneLevelsTable();
 	resetOwnKept(table);
+	// the kept variables start over (a game-state write: shared variables, so for the whole session)
+	const vars = withoutKeptVars(get(gameState)?.vars ?? {}, table);
+	if (vars) commitGameState({ vars });
 	const score = kit.impls.score;
 	if (table?.keep?.includes('score') && score) {
 		score.set(0);

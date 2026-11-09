@@ -444,6 +444,12 @@ export const DEBUG_HOOKS = [
 	['hudArrange', () => import('./hudArrange')],
 	['gamePresence', () => import('./gamePresence')],
 	['levels', () => import('./levels')],
+	// 93: levels and progress (the table runtime, portals / checkpoints at play time, travel, loading, saves)
+	['levelsPlay', () => import('./gameLevels/play.js')],
+	['levelsTravel', () => import('./gameLevels/travel.js')],
+	['levelsCheckpoints', () => import('./gameLevels/checkpoints.js')],
+	['levelsLoading', () => import('./gameLevels/loading.js')],
+	['levelsSave', () => import('./gameLevels/save.js')],
 	['peerVars', () => import('./peerVars')],
 	['projectManifest', () => import('./projectManifest')],
 	['projectFile', () => import('./projectFile')],

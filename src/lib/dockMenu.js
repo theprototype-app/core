@@ -228,7 +228,6 @@ export function windowWhere(key) {
 /** where a floating editor window remembers its rect (dragWindow's key), for the reveal */
 const FLOAT_DRAG_KEYS = /** @type {Record<string, string>} */ ({
 	flow: 'flowWin',
-	flowcode: 'flowCode',
 	animation: 'animation',
 	uv: 'uv',
 	shader: 'shader',
@@ -463,7 +462,49 @@ export function addWindowItems({ target = 'dock', exclude = [] } = {}) {
 }
 
 /**
- * 44 M8 — WHERE THE DOCK'S "+" MENU IS OPEN (null = closed). Every docked panel draws its own strip
+ * showhide-v8 §6 (burger direction A) — the main menu's WINDOWS ▸ list: every window this posture has, its shortcut
+ * (`shortcutOf`, the caller's — this module may not import the shortcut registry) and an open mark. A click REVEALS:
+ * an open window is brought to the front where it is (`focusWindow`), a closed one opens where you work
+ * (`openWindowHere`); nothing here ever closes a window.
+ * @param {(key: string) => string | null} [shortcutOf] @returns {any[]}
+ */
+export function burgerWindowItems(shortcutOf = () => null) {
+	return windowsHere().map((view) => {
+		const where = windowWhere(view.key);
+		const title = DOCK_TITLES[view.key] ?? view.key;
+		return {
+			key: view.key,
+			label: title,
+			icon: DOCK_ICONS[view.key] ?? 'app-window',
+			hint: shortcutOf(view.key) ?? undefined,
+			checked: !!where,
+			tooltip: where ? `${title} is open (${whereHint(where).toLowerCase()}) — click to show it` : view.tooltip,
+			action: () => {
+				if (!focusWindow(view.key)) openWindowHere(view.key, () => dockView(view.key));
+			}
+		};
+	});
+}
+
+/** showhide-v8 §6: Windows ▸ Close all floating windows — every window open FLOATING closes (docked, sidebar and
+ * pop-out ones stay) @returns {number} how many closed */
+export function closeAllFloating() {
+	let n = 0;
+	for (const view of windowsHere()) {
+		if (windowWhere(view.key) !== 'floating') continue;
+		const closer = closeStoreFor(view.key);
+		if (closer) {
+			closer.set(true);
+			n++;
+		} else if (dockClosers[view.key]) {
+			dockClosers[view.key]();
+			n++;
+		}
+	}
+	return n;
+}
+
+ (null = closed). Every docked panel draws its own strip
  * (DockTabs), and the empty dock's strip unmounts the moment a window docks — so a menu owned by the
  * strip died on the first Ctrl-pick there. The strips only SET this; one always-mounted renderer
  * (PhoneDockHost) draws the menu, so it outlives whichever strip opened it.

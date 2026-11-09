@@ -38,7 +38,7 @@
 	import CloudSlot from '../CloudSlot.svelte';
 	import { whatsNewUnseen, openWhatsNew } from '$lib/whatsNew';
 	// 36 I5: own lines (not the shared icon list) so a merge with the menu's other lanes stays a union
-	import { checkpointsOpen, checkpointSaveOpen, explorerClose, armExplorerSceneSave } from '../../stores/appStore.js'; // 36 B14; showhide-v8 §6 Save as copy
+	import { checkpointsOpen, checkpointSaveOpen, explorerClose, armExplorerSceneSave, showToast } from '../../stores/appStore.js'; // 36 B14; showhide-v8 §6 Save as copy
 	import { commandPaletteOpen } from '../../stores/appStore'; // phone-polish item 5: the palette's touch entry
 	import { startEditorTour } from '$lib/tours/builtin.js';
 	import { statsOpen } from '$lib/sceneBudget';
@@ -49,7 +49,10 @@
 	import SaveOptionsModal from './SaveOptionsModal.svelte'; // 41b H14
 	import { saveManyDialog } from '$lib/saveManyState'; // 56 C13
 	import { openAssetBrowser } from '$lib/cc0/assetBrowserState.js'; // 47-cc0
-	import { openWindowHere } from '$lib/dockMenu'; // dock-fixes D: opens where you work
+	import { openWindowHere, burgerWindowItems, closeAllFloating } from '$lib/dockMenu'; // dock-fixes D: opens where you work; showhide-v8 §6 Windows ▸
+	import { bindingOf } from '$lib/shortcuts';
+	import { toggleViewportFocus } from '$lib/focusMode';
+	import { resetWindowLayout } from '$lib/dragWindow';
 	import { editedSinceSave, noteFileSaved } from '$lib/saveState.js'; // showhide-v8 §6
 	import ContextMenu from '../ContextMenu.svelte';
 
@@ -79,6 +82,29 @@
 	function openSaveAs(e: MouseEvent) {
 		const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
 		saveAsMenu = { x: r.left, y: r.bottom + 4 };
+	}
+	// showhide-v8 §6: Windows ▸ — every window with its shortcut and an open mark (a click reveals, never closes),
+	// then the window-wide commands. Layouts ▸ stays its own row.
+	const SHORTCUT_IDS: Record<string, string> = { objects: 'panels.object-list', flow: 'panels.node-editor', explorer: 'panels.explorer', animation: 'panels.animation', uv: 'panels.uv-editor', shader: 'panels.shader-editor', hud: 'panels.hud-editor', timeline: 'panels.timeline', chat: 'panels.chat', code: 'panels.flow-code' };
+	let windowsMenu = $state<{ x: number; y: number } | null>(null);
+	function openWindowsMenu(e: MouseEvent) {
+		const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		windowsMenu = $phoneShellActive ? { x: r.left + 12, y: r.bottom } : { x: r.right + 4, y: r.top };
+	}
+	function toggleFullScreen() {
+		if (typeof document === 'undefined') return;
+		if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => {});
+		else void document.documentElement.requestFullscreen?.().catch(() => showToast('Full screen is not available here'));
+	}
+	function windowsItems() {
+		return [
+			...burgerWindowItems((key) => (SHORTCUT_IDS[key] && key !== 'code' ? bindingOf(SHORTCUT_IDS[key]) : null)),
+			{ separator: true },
+			{ label: 'Focus mode', icon: 'focus', hint: bindingOf('view.focus') ?? 'Ctrl+Space', tooltip: 'The viewport alone, nothing over it; again to restore', action: () => { closeMenu.set(true); toggleViewportFocus(); } },
+			{ label: 'Full screen', icon: 'fullscreen', tooltip: 'The app fills the screen (Esc leaves)', action: () => toggleFullScreen() },
+			{ label: 'Reset positions and sizes', icon: 'rotate-ccw', tooltip: 'Every floating window back to where and how big it started', action: () => { resetWindowLayout(); showToast('Window positions and sizes reset'); } },
+			{ label: 'Close all floating windows', icon: 'x', tooltip: 'Docked, sidebar and pop-out windows stay', action: () => { const n = closeAllFloating(); showToast(n ? `Closed ${n} floating window${n === 1 ? '' : 's'}` : 'No floating windows were open'); } }
+		];
 	}
 	const saveAsItems = [
 		{ label: 'Save scene as file…', icon: 'download', tooltip: 'Download the open scene as a .tpscene', action: () => { saveFromMenu('tpscene'); closeMenu.set(true); } },
@@ -349,6 +375,11 @@
 		<button id="open-asset-browser" class="side-row" onclick={() => { openWindowHere('assets', openAssetBrowser); closeMenu.set(true); }}>
 			<span class="side-ico"><Icon name="package-open" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Free assets (CC0)</span>
 		</button>
+		<!-- showhide-v8 §6: Windows ▸ (every window, its shortcut, open mark; focus / full screen / reset / close floating) -->
+		<button id="open-windows-menu" class="side-row" aria-haspopup="menu" aria-expanded={!!windowsMenu} onclick={openWindowsMenu}>
+			<span class="side-ico"><Icon name="app-window" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Windows</span>
+			<Icon name="chevron-right" size={16} aria-hidden="true" />
+		</button>
 		<!-- 76 FW1: until a new user's first Play, Modules and Layouts wait under "More" -->
 		{#if !$simpleUntilPlay || sceneMore}
 			<button id="open-modules-manager" class="side-row" onclick={() => { modulesOpen.set(true); closeMenu.set(true); }}>
@@ -449,6 +480,7 @@
 <!-- 56 C13: the "Save which libraries?" dialog, mounted only while it is open (lazy chunk) -->
 {#if $saveManyDialog}
 	{#await import('./SaveManyDialog.svelte') then m}<m.default />{/await}
+	{#if windowsMenu}<ContextMenu x={windowsMenu.x} y={windowsMenu.y} items={windowsItems()} sizeKey="burger-windows" onclose={() => (windowsMenu = null)} />{/if}
 	{#if saveAsMenu}<ContextMenu x={saveAsMenu.x} y={saveAsMenu.y} items={saveAsItems} sizeKey="burger-save-as" onclose={() => (saveAsMenu = null)} />{/if}
 {/if}
 

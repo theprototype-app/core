@@ -332,7 +332,9 @@ export const VALIDATORS = {
 		!!d.doc.slices &&
 		typeof d.doc.slices === 'object' &&
 		!Array.isArray(d.doc.slices) &&
-		(d.ev === undefined || isArray(d.ev)),
+		(d.ev === undefined || isArray(d.ev)) &&
+		// 78 F17: the refusals this change made, with their reasons (each read through the kit's own normalize)
+		(d.refused === undefined || (isArray(d.refused) && d.refused.length <= 32)),
 	// fix-agenttest 10: a shared Set Variable's event for the authority (gameState.applyGameVarOp)
 	gamevarop: (d) =>
 		typeof d.rid === 'string' &&

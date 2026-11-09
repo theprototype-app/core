@@ -121,3 +121,22 @@ describe('kit.score — the leaderboard', () => {
 		expect(rankRows({ x: 1, a: 1 })[0].id).toBe('a');
 	});
 });
+
+describe('78 F18: the leader counts ANY player key, not only peers', () => {
+	it('set(7, "lab") from a node makes "lab" the leader on every peer, over a peer with 5', () => {
+		const sim = createSim({ peers: ['a', 'b'] });
+		sim.peer('b').kit.runNodeAction('kit-score-add', { amount: 5 }, { rid: 'node:add:1' });
+		sim.settle();
+		sim.peer('b').kit.runNodeAction('kit-score-set', { amount: 7, player: 'lab' }, { rid: 'node:set:2' });
+		sim.settle();
+		for (const id of ['a', 'b']) {
+			expect(S(sim, id).leader()).toBe('lab');
+			expect(sim.peer(id).kit.evalNodeValue('kit-score-leader', {})).toBe('lab');
+			expect(S(sim, id).extra.leaderboard().map((/** @type {any} */ r) => r.id)).toEqual(['lab', 'b']);
+		}
+		// what the research read: after a Reset score the leader is empty again (that row came next)
+		sim.peer('a').kit.runNodeAction('kit-score-reset', {}, { rid: 'node:reset:3' });
+		sim.settle();
+		expect(S(sim, 'a').leader()).toBe('');
+	});
+});

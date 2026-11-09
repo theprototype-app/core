@@ -31,6 +31,7 @@ export function behaviourReference() {
 			Object.keys(ALIASES).join(', ') +
 			'. Entity payloads have entity.is(glob), entity.hasTag(t).',
 		'kit calls: kit.round.start/win(reason)/lose(reason), kit.score.add(n), kit.spawner.spawn({kind, template: uuid, at, count, hp, mover: {speed}}), kit.health.damage(id, n), kit.mover.chase(kind, "nearestPlayer"), kit.rules.set({reach, jump}), kit.pickups.register({id, score, respawn, radius}) — register pickups in on.load (every peer must know them, or touching one does nothing), never in start.',
+		'A handler that throws is rolled back (state, after() timers, emits; kit calls already sent stay) and its error names the handler. A refused kit call answers {refused: true, reason}.',
 		'Forbidden (the load is refused): Math.random, Date / Date.now, performance.now, localStorage, document/window/globalThis, fetch, eval, setTimeout/setInterval, import. Unknown this.* members, unknown events and hook-named methods nothing calls are refused too.'
 	].join('\n');
 }
@@ -89,7 +90,7 @@ export function behaviourLint(source) {
 function errorsOf(st, live) {
 	const out = [];
 	if (st?.status === 'error') for (const e of st.errors ?? []) out.push({ where: 'load', message: String(e?.message ?? e) });
-	for (const e of live?.errors ?? []) out.push({ where: String(e?.where ?? ''), message: String(e?.message ?? ''), ...(Number.isFinite(e?.at) ? { at: e.at } : {}) });
+	for (const e of live?.errors ?? []) out.push({ where: String(e?.where ?? ''), message: String(e?.message ?? ''), ...(Number.isFinite(e?.at) ? { at: e.at } : {}), ...(e?.rolledBack ? { rolledBack: true } : {}) });
 	return out.slice(-5);
 }
 

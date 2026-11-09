@@ -43,7 +43,7 @@ describe('kit.rules — one value for the whole session', () => {
 	it('a malformed bounds is refused and changes nothing', () => {
 		const sim = createSim({ peers: ['a'] });
 		const r = rulesOf(sim, 'a');
-		expect(r.setBounds([0, 0], [1, 1, 1])).toEqual({ ok: false, reason: 'bounds need two finite corners' });
+		expect(r.setBounds([0, 0], [1, 1, 1])).toEqual({ ok: false, refused: true, reason: 'bounds need two finite corners' });
 		expect(r.extra.current().bounds).toBe(null);
 	});
 	it('a set node changes the rule once, from whichever peers saw the press', () => {

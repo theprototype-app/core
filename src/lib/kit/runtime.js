@@ -32,6 +32,7 @@ import { createKit, KIT_DOC, KIT_REQ } from './core.js';
 import { KIT_PIECES } from './index.js';
 import { kitNodeType } from './spec.js';
 import { entitiesOfKit } from './entityHub.js';
+import { log } from '../diagnostics';
 
 export { KIT_DOC, KIT_REQ };
 
@@ -141,6 +142,11 @@ const host = {
 				...(opts.vars ? { vars: opts.vars } : {})
 			})
 	},
+	// 78 F17: a refusal is written down where people and agents look — the diagnostics log (the
+	// agent's logs / status, the Debug console) — with its reason
+	onRefused(r) {
+		log('warn', 'kit', r.piece + '.' + r.op + ' refused: ' + r.reason, r.from ? { from: r.from } : undefined);
+	},
 	emit(piece, event, _payload, opts) {
 		const type = kitNodeType(piece, event);
 		// a LOCAL event keeps its pulse in this peer's trigger log (the perPlayer rule)
@@ -195,9 +201,15 @@ function touchPickups() {
 	});
 }
 
-/** a scene clear / load: the next game starts from nothing (local; every peer clears too) */
-export function resetKit() {
-	kit.reset();
+/** a scene clear / load: the next game starts from nothing.
+ * 78 F16: `shared` = the room clears together (a replicated `/clear all`, a peer's
+ * `clearscene`) with somebody here to share it — stamped fresh, so it beats a stale document.
+ * Anything else (a travel, a boot restore, a scene loaded while alone) is LOCAL: the reset
+ * starts from nothing but outranks nobody, so the room's live document (a late joiner's
+ * handshake) is taken, and this peer's reset never wipes the room's game.
+ * @param {{shared?: boolean}} [opts] */
+export function resetKit(opts = {}) {
+	kit.reset({ local: !(opts.shared && openPeers().length > 0) });
 }
 
 /** 34 R2: the grab question every grab path asks (kit.rules.checkGrab): reach + vetoes.
@@ -219,5 +231,5 @@ export function kitEntitiesRuntime() {
 
 /** the debug hook / suites */
 export function kitDebug() {
-	return { doc: kit.doc(), stats: { ...kit.stats }, pending: kit.pending.size, authority: kitAuthorityId(), me: me() };
+	return { doc: kit.doc(), stats: { ...kit.stats }, pending: kit.pending.size, authority: kitAuthorityId(), me: me(), refusals: kit.refusals.map((/** @type {any} */ r) => ({ ...r })) };
 }

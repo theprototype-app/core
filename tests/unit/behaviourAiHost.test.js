@@ -14,7 +14,8 @@ describe('the behaviour host (aiHost.js)', () => {
 	it('the reference is short and names the format, this, the events and the lint', () => {
 		const r = behaviourReference();
 		// 55: +inputs/outputs, no per-frame hook, no object moves (the rules a model guessed wrong) — 2000 → 2300
-		expect(r.length).toBeLessThan(2300);
+		// 78 F22/F17: + one line, a throw rolls back and a refusal says why — 2300 → 2500
+		expect(r.length).toBeLessThan(2500);
 		for (const word of ['export default behaviour', 'after(seconds', 'grabRequest', 'died', 'Math.random']) expect(r).toContain(word);
 	});
 	it('lint: a clean file has no issues; Math.random and an unknown event are reported with lines', () => {

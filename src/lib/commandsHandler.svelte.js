@@ -169,7 +169,7 @@ export function sceneCommand(command) {
                 // 15-J: viewer send-gate — peers drop a viewer's clearscene (cloud
                 // capability gate), so clearing locally would only desync this client.
                 if (isViewer()) { warnViewerReadOnly('View-only — ask an editor to clear the scene.'); return; }
-                clearSceneLocal();
+                clearSceneLocal({ shared: true });
                 peer.send({type: 'clearscene', peerId: peer.peer.id});
             } else {
                 let object = sceneObjects.getObjectByProperty('uuid', command.split(' ')[1])
@@ -285,7 +285,10 @@ function sceneRoot() {
     return scene ?? sceneObjects;
 }
 
-export function clearSceneLocal() {
+/** @param {{shared?: boolean}} [opts] `shared`: the room clears together (a replicated
+ * `/clear all` or a peer's `clearscene`); absent = only this peer's world is replaced (a
+ * travel, a non-replicated load), which must not outrank the room's live game state (78 F16) */
+export function clearSceneLocal(opts = {}) {
     // 33 (L4): what the scene uses is read BEFORE anything is wiped — those are the
     // modules a replacement may leave behind (sceneScope)
     noteSceneLeaving();
@@ -301,7 +304,7 @@ export function clearSceneLocal() {
         for (const child of doomed) disposeTree(child, { keep });
     }
     sceneObjects?.clear();
-    runSceneClearHandlers(); // modules remove their scene-root content
+    runSceneClearHandlers({ shared: !!opts.shared }); // modules remove their scene-root content
     annotations.set([]);
     lockedObjects.set([]);
     // animated-import bytes/mixers are per-object — all gone now
@@ -314,7 +317,7 @@ export function clearSceneLocal() {
 
 /** A peer wiped the shared scene @param {string} peerId */
 export function applyClearScene(peerId) {
-    clearSceneLocal();
+    clearSceneLocal({ shared: true });
     showToast(peerId + ' cleared the scene');
 }
 

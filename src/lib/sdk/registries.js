@@ -133,13 +133,14 @@ export function registerSystemGroup(name) {
 /** @type {(() => void)[]} scene-clear hooks (modules remove their content) */
 export const sceneClearHandlers = [];
 
-/** Called by the clear-scene path (local and remote) */
-export function runSceneClearHandlers() {
+/** Called by the clear-scene path (local and remote) @param {{shared?: boolean}} [opts] */
+export function runSceneClearHandlers(opts = {}) {
 	// 30b: a cleared scene takes its game's bursts and banner with it
 	effectsRef?.clearBursts?.();
 	clearAnnouncement();
-	// 34 R2: the next game starts with a fresh kit document (every peer clears; nothing is sent)
-	resetKit();
+	// 34 R2: the next game starts with a fresh kit document (every peer clears; nothing is sent).
+	// 78 F16: only a clear the ROOM shares may outrank the room's document
+	resetKit({ shared: !!opts.shared });
 	sceneClearHandlers.forEach((fn) => {
 		try {
 			fn();

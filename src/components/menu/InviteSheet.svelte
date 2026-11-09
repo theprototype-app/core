@@ -1,6 +1,6 @@
 <script>
-	// 55 A4 — THE INVITE SHEET (Connect ▸ Request AI). ONE mechanism, two tabs: *AI agent*
-	// and *Person* mint the same signed, host-verified invite (inviteCore/inviteStore). The
+	// 55 A4 — THE INVITE SHEET (Connect ▸ Invite; 78 PL36 folded the robot "Request AI" into it). ONE
+	// mechanism, two tabs: *Person* (first, the default) and *AI agent* mint the same signed, host-verified invite (inviteCore/inviteStore). The
 	// host picks the role (View preselected for people, Edit for agents — hidden in the OSS
 	// build, where every peer edits), the expiry and how many may use it; then copies the
 	// link, the ready MCP command (agents) or one sentence for any chat. Once used, the sheet
@@ -21,7 +21,7 @@
 	import { playUrl } from '$lib/playOrigin.js';
 
 	/** @type {'agent'|'person'} */
-	let tab = $state(get(inviteSheet) === 'person' ? 'person' : 'agent');
+	let tab = $state(get(inviteSheet) === 'agent' ? 'agent' : 'person');
 	let open = $state(true);
 	$effect(() => {
 		if (!open) inviteSheet.set(null);
@@ -34,7 +34,7 @@
 	});
 
 	// the settings per tab — the defaults the owner chose (View for people, Edit for agents)
-	let role = $state(/** @type {'view'|'edit'} */ (get(inviteSheet) === 'person' ? 'view' : 'edit'));
+	let role = $state(/** @type {'view'|'edit'} */ (get(inviteSheet) === 'agent' ? 'edit' : 'view'));
 	let expiry = $state('30m');
 	let uses = $state('1');
 	/** the invite minted in this sheet, per tab @type {Record<string, string>} */
@@ -124,8 +124,8 @@
 	{#snippet bar()}
 		<Tabs
 			tabs={[
-				{ id: 'agent', label: 'AI agent', icon: 'bot' },
-				{ id: 'person', label: 'Person', icon: 'user-plus' }
+				{ id: 'person', label: 'Person', icon: 'user-plus' },
+				{ id: 'agent', label: 'AI agent', icon: 'bot' }
 			]}
 			value={tab}
 			idPrefix="invite"

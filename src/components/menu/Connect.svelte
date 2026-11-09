@@ -23,7 +23,7 @@
 	import { connectionStatus } from '$lib/connectionStatus';
 	import CloudSlot from '../CloudSlot.svelte';
 	import ConnectInfoDrawer from './ConnectInfoDrawer.svelte';
-	// 55 A4: Request AI — the invite sheet
+	// 55 A4 + 78 PL36: the Invite button — the invite sheet (Person | AI agent)
 	import InviteSheet from './InviteSheet.svelte';
 	import { inviteSheet, kindOfRow } from '$lib/inviteStore';
 	import { rolesInfo } from '$lib/cloudHooks';
@@ -622,16 +622,18 @@
 			><span class="cx-id-text">{myidcap}</span><Icon name="copy" size={16} aria-hidden="true" /></button
 		>
 		{#if canInvite}
-			<!-- 55 A4: Request AI — the invite sheet (AI agent / Person tabs over one signed invite) -->
+			<!-- 78 PL36: ONE Invite button (was the robot "Request AI"): the invite sheet opens on Person,
+				 with the AI agent tab beside it (one signed invite either way) -->
 			<button
 				type="button"
-				id="connect-request-ai"
-				class="hud-cell cx-request-ai"
+				id="connect-invite"
+				class="hud-cell cx-invite"
 				class:on={!!$inviteSheet}
-				title="Request AI — an invite link for an AI agent (or a person) that joins without an approval card"
-				aria-label="Request AI: create an invite link"
-				onclick={() => inviteSheet.set($inviteSheet ? null : 'agent')}
-			><Icon name="bot" size={20} aria-hidden="true" /></button>
+				aria-expanded={!!$inviteSheet}
+				title="Invite — a link for a person or an AI agent that joins without an approval card"
+				aria-label="Invite: create an invite link"
+				onclick={() => inviteSheet.set($inviteSheet ? null : 'person')}
+			><Icon name="user-plus" size={20} aria-hidden="true" /></button>
 		{/if}
 		<span class="hud-sep"></span>
 

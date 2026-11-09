@@ -1894,7 +1894,8 @@
 		{#snippet end()}
 			<!-- 78-int PL14: the phone's header lock sits in the grip row (no inner title row any more) -->
 			<!-- on the phone SHELL the Inspector is a dock tab whose own grip is hidden: PhoneShell's dock grip carries it -->
-			{#if !$phoneShellActive && ($inspectorKind === 'scene' || ($inspectorKind !== 'file' && $selectedObject))}
+			<!-- the grip is display:none on a wider screen, where the strip holds the lock: render it only in sheet mode (one #inspector-sticky-head) -->
+			{#if sheetMode && !popped && !$phoneShellActive && ($inspectorKind === 'scene' || ($inspectorKind !== 'file' && $selectedObject))}
 				<InspectorLock panel={$inspectorKind === 'scene' ? 'scene' : 'properties'} />
 			{/if}
 		{/snippet}

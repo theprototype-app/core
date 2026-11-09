@@ -11,14 +11,16 @@ h.run(async () => {
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A, 8000);
 
-	// A picks a custom ping color + chime, then Alt+clicks the floor
+	// A picks a custom ping color + chime, then Ctrl+Alt+clicks the floor
 	await A.page.evaluate(() => {
 		window.__stores.ping.pingColor.set('#ff2200');
 		window.__stores.ping.pingSound.set('bell');
 	});
+	await A.page.keyboard.down('Control'); // ping = Ctrl+Alt+click since 36 F22 (Alt alone is the orbit modifier)
 	await A.page.keyboard.down('Alt');
 	await A.page.mouse.click(400, 550);
 	await A.page.keyboard.up('Alt');
+	await A.page.keyboard.up('Control');
 	await A.page.waitForTimeout(1200);
 
 	const bPing = await B.page.evaluate(

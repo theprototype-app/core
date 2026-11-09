@@ -3235,7 +3235,7 @@
 								size="sm"
 								onclick={() => setAnimationState($selectedObject.uuid, { playing: !anim.playing })}
 							>
-								{anim.playing ? '⏸ Pause' : '▶ Play'}
+								{anim.playing ? '❚❚ Pause' : '▶ Play'}
 							</UiButton>
 							<span class="text-xs text-text-muted">speed {anim.speed.toFixed(1)}×</span>
 							<input

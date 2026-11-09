@@ -2093,7 +2093,7 @@
 								title={clipState?.playing ? 'Pause the clip' : 'Play the clip'}
 								onclick={() => target && setAnimationState(target.uuid, { playing: !clipState?.playing })}
 							>
-								{clipState?.playing ? '⏸' : '▶'}
+								{clipState?.playing ? '❚❚' : '▶'}
 							</button>
 							<input
 								type="range" min="0.1" max="3" step="0.1"

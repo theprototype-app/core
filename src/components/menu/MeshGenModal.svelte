@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Icon from '../ui/Icon.svelte';
 	import { backClose } from '$lib/backStack.js'; // phone-polish: Android Back closes it
 	// Generate 3D model modal (roadmap #11, G6): a direct (no-LLM) entry point to
 	// mesh generation. Opened from the Add menu; kicks a meshJobs job (progress shows
@@ -140,7 +141,7 @@
 			aria-label="Generate 3D model"
 		>
 			<div class="flex items-center">
-				<span class="text-sm font-semibold">✨ Generate 3D model</span>
+				<span class="text-sm font-semibold"><Icon name="sparkles" size={16} class="inline-block shrink-0 align-[-2px]" /> Generate 3D model</span>
 				<span class="flex-1"></span>
 				<button class="ui-button-quiet" title="Close" aria-label="Close" onclick={close}>✕</button>
 			</div>

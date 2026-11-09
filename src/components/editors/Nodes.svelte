@@ -2426,18 +2426,18 @@
 			title={propsOpen ? 'Hide properties' : 'Show properties'} aria-label={propsOpen ? 'Hide properties' : 'Show properties'}
 			onclick={() => { propsOpen = !propsOpen; writePanelOpen('flowPropsOpen', propsOpen); }}
 		>
-			⚙
+			<Icon name="settings" size={16} data-icon="settings" />
 		</button>
 	</div>
 	{#if propsOpen}
 		<div id="flow-props" class="relative flex h-full w-52 shrink-0 flex-col gap-2 overflow-y-auto bg-surface-1 p-2 text-xs text-text-2" use:minimalScroll style="order: {propsSide === 'left' ? -1 : 5}">
 			<!-- 4.3: Explorer-style tabs — ⓘ = the selected node's PARAMETERS,
-			     ⚙ = graph settings + node name/note (as before) -->
+			     the cog = graph settings + node name/note (as before) -->
 			<div class="flex gap-1">
 				<button id="flow-tab-info" class="flex-1 rounded-sm px-2 py-1 {propsTab === 'info' ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 hover:bg-surface-active'}"
 					onclick={() => { propsTab = 'info'; LS?.setItem('flowPropsTab', 'info'); }}>ⓘ Params</button>
 				<button id="flow-tab-settings" class="flex-1 rounded-sm px-2 py-1 {propsTab === 'settings' ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 hover:bg-surface-active'}"
-					onclick={() => { propsTab = 'settings'; LS?.setItem('flowPropsTab', 'settings'); }}>⚙ Settings</button>
+					onclick={() => { propsTab = 'settings'; LS?.setItem('flowPropsTab', 'settings'); }}><Icon name="settings" size={16} class="inline-block shrink-0 align-[-2px]" /> Settings</button>
 			</div>
 			{#if propsTab === 'info'}
 				{#if selectedNode}

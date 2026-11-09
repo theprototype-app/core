@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Icon from '../../ui/Icon.svelte';
 	// 34 R3 (D2): A BEHAVIOUR'S DERIVED LIVE NODE VIEW, over the Node editor in the Flow dock.
 	//
 	// The graph is DERIVED from the source (analyze -> deriveGraph), read-only: events, params,
@@ -242,7 +243,7 @@
 		</div>
 		{#if errors.length || warnings.length}
 			<div class="max-h-24 shrink-0 overflow-auto border-t border-border px-2 py-1 text-[11px]" use:minimalScroll id="behaviour-view-problems">
-				{#each errors as e}<div class="text-ink-bad">⚠ {e.line ? 'line ' + e.line + ': ' : ''}{e.message}</div>{/each}
+				{#each errors as e}<div class="text-ink-bad"><Icon name="triangle-alert" size={16} class="inline-block shrink-0 align-[-2px]" /> {e.line ? 'line ' + e.line + ': ' : ''}{e.message}</div>{/each}
 				{#each warnings as w}<div class="text-ink-warn">△ {w.line ? 'line ' + w.line + ': ' : ''}{w.message}</div>{/each}
 			</div>
 		{/if}

@@ -777,7 +777,7 @@
 			secondaryDefaultWidth={240}
 			secondaryModes={[
 				{ key: 'details', icon: 'ⓘ', label: 'Details' },
-				{ key: 'settings', icon: '⚙', label: 'Settings' }
+				{ key: 'settings', icon: 'settings', label: 'Settings' }
 			]}
 		>
 			{#snippet primary()}

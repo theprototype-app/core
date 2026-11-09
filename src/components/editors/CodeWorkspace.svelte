@@ -425,7 +425,7 @@
 		const g = get(objectsGroup);
 		return g?.getObjectByProperty?.('uuid', id)?.name || 'Object ' + id.slice(0, 6);
 	}
-	const MARK = { function: 'ƒ', method: 'ƒ', handler: '⚡', param: '◆', state: '▣', input: '→', output: '←', class: 'C', const: '·', node: '◇' };
+	const MARK = { function: 'ƒ', method: 'ƒ', handler: 'ϟ', param: '◆', state: '▣', input: '→', output: '←', class: 'C', const: '·', node: '◇' };
 	/** Ctrl+P: every project script · Ctrl+Shift+O: the symbols of the active file @param {'files' | 'symbols'} mode */
 	function openQuick(mode) {
 		if (mode === 'files') {
@@ -662,7 +662,7 @@
 	{/if}
 	{#if problems.length}
 		<div id="code-ws-error" class="code-banner code-banner-bad" role="alert">
-			<button class="code-banner-text" title={active?.error ? 'Go to the line' : ''} onclick={revealError}>⚠ {problems[0]}{problems.length > 1 ? ' (+' + (problems.length - 1) + ' more)' : ''}</button>
+			<button class="code-banner-text" title={active?.error ? 'Go to the line' : ''} onclick={revealError}><Icon name="triangle-alert" size={16} class="inline-block shrink-0 align-[-2px]" /> {problems[0]}{problems.length > 1 ? ' (+' + (problems.length - 1) + ' more)' : ''}</button>
 			{#if active?.error && bound.length}<span class="code-muted">not applied — the nodes keep the last good version</span>{/if}
 		</div>
 	{/if}

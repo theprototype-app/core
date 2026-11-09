@@ -20,8 +20,9 @@ h.run(async () => {
 	h.check(!!pt && !!ft, 'palette + props toggles render');
 	h.check(ft.x > pt.x, 'by default the props toggle sits to the right of the palette toggle');
 	h.check(sep(pt, ft), 'the toggles do not overlap (default layout)');
-	const icon = await A.page.locator('#flow-props-toggle').innerText();
-	h.check(icon.includes('⚙'), 'the settings toggle shows a gear icon, not an arrow');
+	// 78-int PL42: a Lucide cog, not the emoji (owner rule: no emoji in the UI)
+	const icon = await A.page.locator('#flow-props-toggle svg[data-icon="settings"]').count();
+	h.check(icon === 1, 'the settings toggle shows a gear icon, not an arrow');
 
 	// move the palette to the right -> props toggle reflows to the LEFT
 	await A.page.locator('#palette-side').click();

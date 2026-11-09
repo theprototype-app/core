@@ -308,7 +308,7 @@
 				{#if entry.license}<span title={licenseLabel(entry.license)}>{entry.license}</span>{/if}
 				{#if entry.bytes}<span class="pl-1">{sizeLabel(entry.bytes)}</span>{/if}
 				<!-- 28-A6: provider-only facts, rendered ONLY when present (a GitHub row has none) -->
-				{#if entry.likeCount != null && !canLike}<span class="tpl-likes pl-1" title="Likes">♥ {entry.likeCount}</span>{/if}
+				{#if entry.likeCount != null && !canLike}<span class="tpl-likes pl-1" title="Likes"><Icon name="heart" size={16} class="inline-block shrink-0 align-[-2px]" /> {entry.likeCount}</span>{/if}
 				{#if entry.remixOf}<span class="tpl-remix pl-1" title="A remix of another published scene">remix{#if entry.remixOf.title}&nbsp;of {entry.remixOf.title}{/if}</span>{/if}
 			</p>
 		</div>

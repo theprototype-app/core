@@ -7440,13 +7440,13 @@
 		primaryLabel="folder tree"
 		secondaryModes={[
 			{ key: 'props', icon: 'ⓘ', label: 'Properties' },
-			{ key: 'settings', icon: '⚙', label: 'Settings' }
+			{ key: 'settings', icon: 'settings', label: 'Settings' }
 		]}
 	>
 		{#snippet topbar()}
 			<!-- 21-I2: the identity row that used to sit here is now the CHIP beside the
 			     search box. What is left is the LOCATION trail — which folder am I in —
-			     which is a different question and keeps its own ⚙ toggle. -->
+			     which is a different question and keeps its own cog toggle. -->
 			{#if showBreadcrumb}
 				<div id="explorer-crumbs" class="tp-noscrollbar flex items-center gap-0.5 overflow-x-auto whitespace-nowrap border-b border-border px-2 py-1 text-[11px] text-text-2">
 					{#each crumbs as c, i (c.id ?? 'root')}

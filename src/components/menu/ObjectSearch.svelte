@@ -35,7 +35,7 @@
 	const TYPE_ICONS = /** @type {Record<string, string>} */ ({ Mesh: '▣', Group: '⧉', Line: '✎' });
 	/** @param {any} child */
 	function iconFor(child) {
-		if (child.type?.endsWith('Light')) return '☀';
+		if (child.type?.endsWith('Light')) return '✹';
 		return TYPE_ICONS[child.type] ?? '▪';
 	}
 

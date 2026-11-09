@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Icon from '../ui/Icon.svelte';
 	import type { Snippet } from 'svelte'
 	import { minimalScroll } from '$lib/ui/minimalScroll.js'
 	// 41 G18: on a phone both sidebars start HIDDEN until the user opens them (per window, per device)
@@ -13,13 +14,14 @@
 	// (folders, nodes, ...). Consumers fill topbar/primary/main/secondary snippet
 	// slots; `secondary` receives the active mode key. Prefs are LOCAL, persisted
 	// per-window under `key`; nothing here is replicated.
+	// Mode.icon: a Lucide name from ui/Icon.svelte, or a text glyph (78-int PL42: no emoji)
 	type Mode = { key: string; icon: string; label: string }
 	let {
 		key,
 		primaryLabel = 'sidebar',
 		primaryDefaultOpen = true,
 		primaryDefaultWidth = 176,
-		secondaryModes = [{ key: 'settings', icon: '⚙', label: 'Settings' }] as Mode[],
+		secondaryModes = [{ key: 'settings', icon: 'settings', label: 'Settings' }] as Mode[],
 		secondaryDefaultOpen = false,
 		secondaryDefaultWidth = 224,
 		// 36 B14: Settings on a phone shows its sections as a chip strip in the topbar, so it
@@ -241,7 +243,7 @@
 				title={m.label}
 				data-ws-mode={m.key}
 				onclick={() => clickMode(m.key)}
-			>{m.icon}</button>
+			>{#if /^[a-z][a-z0-9-]*$/.test(m.icon)}<Icon name={m.icon} size={16} />{:else}{m.icon}{/if}</button>
 		{/each}
 		<!-- 21-I2: the secondary resize grip. It lives HERE rather than inside the panel
 		     because this column already hugs the panel's inner edge on either side, and a

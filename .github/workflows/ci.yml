@@ -95,6 +95,10 @@ jobs:
       # `z-ok: <reason>` on its line for a number code reads back.
       - name: z-index scale
         run: node scripts/check-zindex.cjs
+      # 78-int PL42 (owner rule 2026-11-09): no colour emoji in the UI — Lucide icons, text glyphs
+      # or a custom SVG. Non-UI text (a chat shortcode table) carries `emoji-ok` / `emoji-ok-file`.
+      - name: no emoji in the UI
+        run: node scripts/check-emoji.cjs
 
   # 34 B3: scene-lint over every scene core ships (the seed) and every scene of the scenes ref
   # the perf budget is about (perf/budgets.json), with the packs checkout for the kit rules.

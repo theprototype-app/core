@@ -520,7 +520,7 @@ export default {
 			if (read === 'levelStars') {
 				const row = table.find((/** @type {any} */ r) => r.id === String(Number(data?.level) || 0));
 				if (!row) return '';
-				return row.locked ? '🔒 locked' : starsText(row.stars);
+				return row.locked ? 'Locked' : starsText(row.stars);
 			}
 			if (read === 'menuLine') {
 				const total = table.reduce((/** @type {number} */ a, /** @type {any} */ r) => a + (r.stars || 0), 0);

@@ -360,7 +360,7 @@
 			</div>
 			{#if srv.didFallback}
 				<div class="cxd-warn" data-testid="drawer-fallback-warn">
-					⚠ Self-hosted server unreachable — using the public PeerJS cloud. Peers must be
+					<Icon name="triangle-alert" size={16} class="inline-block shrink-0 align-[-2px]" /> Self-hosted server unreachable — using the public PeerJS cloud. Peers must be
 					on the same server to connect (your copied invite links carry it).
 				</div>
 			{/if}

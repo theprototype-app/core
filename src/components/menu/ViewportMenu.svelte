@@ -223,7 +223,7 @@
 						]
 					: []),
 				{
-					label: $simulating ? '⏹ Stop simulation' : '▶ Simulate physics',
+					label: $simulating ? '■ Stop simulation' : '▶ Simulate physics',
 					disabled: !!$remoteSimulating,
 					tooltip: $remoteSimulating
 						? nameOf($remoteSimulating) + ' is simulating'
@@ -233,7 +233,7 @@
 				...($simulating
 					? [
 							{
-								label: $simPaused ? '▶ Resume simulation' : '⏸ Pause simulation',
+								label: $simPaused ? '▶ Resume simulation' : '❚❚ Pause simulation',
 								action: () => pauseSimulation()
 							},
 							{

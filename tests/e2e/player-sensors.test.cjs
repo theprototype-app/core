@@ -154,9 +154,11 @@ h.run(async () => {
 		const s = window.__stores;
 		let cam;
 		s.playerCam.subscribe((c) => (cam = c))();
-		const rig = cam.parent ?? cam;
-		rig.position.z = -3;
-		rig.updateMatrixWorld(true);
+		// the play camera IS the rig PointerLockControls moves (Player.svelte: its parent is the
+		// 0.9 m base group, which stays put); put it where the sensor stands
+		cam.position.x = 0;
+		cam.position.z = -3;
+		cam.updateMatrixWorld(true);
 	});
 	await B.page.waitForTimeout(600);
 	const nearIn = await near(B.page);

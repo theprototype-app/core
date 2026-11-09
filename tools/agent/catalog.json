@@ -3,7 +3,7 @@
 	"format": 2,
 	"generator": {
 		"source": "tpAgent.tools() via core scripts/agent-tool-catalog.cjs, mapped by tools/agent/src/catalog.js",
-		"hostTools": 78,
+		"hostTools": 79,
 		"dropped": []
 	},
 	"instructions": "You are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.\nWhen asked what you can do here, call what_can_you_do and say its \"say\" line.",
@@ -1905,6 +1905,133 @@
 			"annotations": {
 				"title": "List fonts for 3D text",
 				"readOnlyHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "create_path",
+			"title": "Add a path to walk along",
+			"description": "Add a Path object: a line through the scene that guards patrol, animals wander along or a camera rides. Points are WORLD positions; each point may also say how long to wait there, the speed and ease of the stretch after it, jump (skip straight to the next point), an event name fired on arrival (an On Path Event node hears it) and a facing to hold while waiting. walk: loop | pingpong | once | random. Hidden in Play unless show_in_play. walkers = object uuids that walk it at once (each gets a Path patrol node). Returns the path uuid; walk it later with create_flow_nodes pathpatrol {path: \"<uuid>\", offset}.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"points": {
+						"type": "array",
+						"minItems": 2,
+						"maxItems": 200,
+						"description": "at least 2: [x,y,z] or {pos: [x,y,z], wait?, speed?, ease?, jump?, event?, facing?}",
+						"items": {
+							"anyOf": [
+								{
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"minItems": 3,
+									"maxItems": 3
+								},
+								{
+									"type": "object",
+									"properties": {
+										"pos": {
+											"type": "array",
+											"items": {
+												"type": "number"
+											},
+											"minItems": 3,
+											"maxItems": 3
+										},
+										"wait": {
+											"type": "number",
+											"description": "seconds to stand at this point"
+										},
+										"speed": {
+											"type": "number",
+											"description": "m/s for the stretch AFTER this point (default: the path speed)"
+										},
+										"ease": {
+											"type": "string",
+											"enum": [
+												"linear",
+												"in",
+												"out",
+												"inout"
+											],
+											"description": "the stretch after this point: linear, in (speed up), out (slow down), inout"
+										},
+										"jump": {
+											"type": "boolean",
+											"description": "skip straight to the next point (no walking in between)"
+										},
+										"event": {
+											"type": "string",
+											"description": "a name fired when a walker arrives here"
+										},
+										"facing": {
+											"type": "number",
+											"description": "degrees of yaw to face while waiting (0 = +Z)"
+										}
+									},
+									"required": [
+										"pos"
+									]
+								}
+							]
+						}
+					},
+					"walk": {
+						"type": "string",
+						"enum": [
+							"loop",
+							"pingpong",
+							"once",
+							"random"
+						],
+						"description": "default loop"
+					},
+					"speed": {
+						"type": "number",
+						"description": "m/s, default 1.5"
+					},
+					"closed": {
+						"type": "boolean",
+						"description": "join the last point back to the first (3+ points)"
+					},
+					"smooth": {
+						"type": "boolean",
+						"description": "a smooth curve through the points (default) or straight lines"
+					},
+					"show_in_play": {
+						"type": "boolean",
+						"description": "draw the line while playing (default hidden)"
+					},
+					"seed": {
+						"type": "number",
+						"description": "random walk: which random order"
+					},
+					"name": {
+						"type": "string"
+					},
+					"walkers": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						},
+						"description": "object uuids that walk this path now"
+					},
+					"offset": {
+						"type": "number",
+						"description": "walkers: seconds between each one along the path (spreads them out)"
+					}
+				},
+				"required": [
+					"points"
+				]
+			},
+			"annotations": {
+				"title": "Add a path to walk along",
+				"readOnlyHint": false,
+				"destructiveHint": false,
 				"openWorldHint": false
 			}
 		},
@@ -4520,7 +4647,7 @@
 								},
 								"data": {
 									"type": "object",
-									"description": "node params, e.g. spin {axis:\"y\",speed:2}; bounce {amplitude:0.5,speed:2}; pathpatrol {points:[[x,y,z],…] (>=2 world waypoints), speed:1, mode:\"loop\"|\"pingpong\"}; setcolor {color:\"#ff0000\"}; latch {initial:false}; delay {seconds:3}; sequence {delay1:0,delay2:0.5,delay3:0.5,delay4:0.5} (delays are CUMULATIVE). Omit for defaults."
+									"description": "node params, e.g. spin {axis:\"y\",speed:2}; bounce {amplitude:0.5,speed:2}; pathpatrol {path:\"<Path object uuid from create_path>\", offset:0, face:true} (walks the Path: its waits/speeds/events live on the Path; legacy {points:[[x,y,z],…], speed, mode} still works); onpathevent {path, event} fires when a walker arrives at a point carrying that event; setcolor {color:\"#ff0000\"}; latch {initial:false}; delay {seconds:3}; sequence {delay1:0,delay2:0.5,delay3:0.5,delay4:0.5} (delays are CUMULATIVE). Omit for defaults."
 								}
 							},
 							"required": [
@@ -5625,6 +5752,7 @@
 				"mesh": "create_mesh",
 				"text": "create_text",
 				"import": "import_shape",
+				"path": "create_path",
 				"shapes": "create_shapes"
 			},
 			"edit_shape": {
@@ -6417,7 +6545,7 @@
 			{
 				"name": "create_shape",
 				"title": "Make a shape",
-				"description": "Make shapes the basic objects cannot: a lathe (a vase, a bowl, a lamp from a profile turned around an axis), a tube along a path (a rail, a pipe, a cable), an extruded outline (a sign, a star, a wall with a hole), a mesh from your own vertices (anything else), or text = 3D words (a sign, a title: flat, or solid with depth and a bevel; any bundled or Google Fonts font); import = a glTF / GLB / OBJ model file (base64, chunks or an https url) whose named parts come back as children animate_parts can move.\nCall it as {\"action\": \"lathe\", \"lathe\": {…its fields…}}; each action's fields and limits are in its object below.\nMany at once: {\"shapes\": [{\"action\": \"lathe\", \"lathe\": {…}}, …]} with no action — one call, one undo step.\nTake a screenshot after each change to check your work.",
+				"description": "Make shapes the basic objects cannot: a lathe (a vase, a bowl, a lamp from a profile turned around an axis), a tube along a path (a rail, a pipe, a cable), an extruded outline (a sign, a star, a wall with a hole), a mesh from your own vertices (anything else), or text = 3D words (a sign, a title: flat, or solid with depth and a bevel; any bundled or Google Fonts font); path = a Path object guards patrol along (points with waits, speeds, jumps and events; walkers walk it at once); import = a glTF / GLB / OBJ model file (base64, chunks or an https url) whose named parts come back as children animate_parts can move.\nCall it as {\"action\": \"lathe\", \"lathe\": {…its fields…}}; each action's fields and limits are in its object below.\nMany at once: {\"shapes\": [{\"action\": \"lathe\", \"lathe\": {…}}, …]} with no action — one call, one undo step.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -6429,7 +6557,8 @@
 								"extrude",
 								"mesh",
 								"text",
-								"import"
+								"import",
+								"path"
 							],
 							"description": "What to do. Put its fields in the object named after the action."
 						},
@@ -7098,6 +7227,123 @@
 								}
 							},
 							"description": "Bring in a 3D model file: glTF 2.0 (.glb, or .gltf JSON with everything embedded) or Wavefront .obj, as data (base64; for a big file send chunk: {id, index, total} parts, each a multiple of 4 base64 characters) or an https url (public addresses only, ≤ 25 MB; the file is copied into the library first, so the scene never needs the address again). Named sub-meshes become named children, returned in parts with uuids, so animate_parts can move them (a lid, a wheel, a door). position / rotation (radians) / scale as create_objects; with parentUuid they are the group's own space. castShadow / receiveShadow apply to every mesh in it. A model is data: nothing in it runs, and a file that points at outside files is refused. One undo step; everyone sees it."
+						},
+						"path": {
+							"type": "object",
+							"properties": {
+								"points": {
+									"type": "array",
+									"minItems": 2,
+									"maxItems": 200,
+									"description": "at least 2: [x,y,z] or {pos: [x,y,z], wait?, speed?, ease?, jump?, event?, facing?}",
+									"items": {
+										"anyOf": [
+											{
+												"type": "array",
+												"items": {
+													"type": "number"
+												},
+												"minItems": 3,
+												"maxItems": 3
+											},
+											{
+												"type": "object",
+												"properties": {
+													"pos": {
+														"type": "array",
+														"items": {
+															"type": "number"
+														},
+														"minItems": 3,
+														"maxItems": 3
+													},
+													"wait": {
+														"type": "number",
+														"description": "seconds to stand at this point"
+													},
+													"speed": {
+														"type": "number",
+														"description": "m/s for the stretch AFTER this point (default: the path speed)"
+													},
+													"ease": {
+														"type": "string",
+														"enum": [
+															"linear",
+															"in",
+															"out",
+															"inout"
+														],
+														"description": "the stretch after this point: linear, in (speed up), out (slow down), inout"
+													},
+													"jump": {
+														"type": "boolean",
+														"description": "skip straight to the next point (no walking in between)"
+													},
+													"event": {
+														"type": "string",
+														"description": "a name fired when a walker arrives here"
+													},
+													"facing": {
+														"type": "number",
+														"description": "degrees of yaw to face while waiting (0 = +Z)"
+													}
+												},
+												"required": [
+													"pos"
+												]
+											}
+										]
+									}
+								},
+								"walk": {
+									"type": "string",
+									"enum": [
+										"loop",
+										"pingpong",
+										"once",
+										"random"
+									],
+									"description": "default loop"
+								},
+								"speed": {
+									"type": "number",
+									"description": "m/s, default 1.5"
+								},
+								"closed": {
+									"type": "boolean",
+									"description": "join the last point back to the first (3+ points)"
+								},
+								"smooth": {
+									"type": "boolean",
+									"description": "a smooth curve through the points (default) or straight lines"
+								},
+								"show_in_play": {
+									"type": "boolean",
+									"description": "draw the line while playing (default hidden)"
+								},
+								"seed": {
+									"type": "number",
+									"description": "random walk: which random order"
+								},
+								"name": {
+									"type": "string"
+								},
+								"walkers": {
+									"type": "array",
+									"items": {
+										"type": "string"
+									},
+									"description": "object uuids that walk this path now"
+								},
+								"offset": {
+									"type": "number",
+									"description": "walkers: seconds between each one along the path (spreads them out)"
+								}
+							},
+							"required": [
+								"points"
+							],
+							"description": "Add a Path object: a line through the scene that guards patrol, animals wander along or a camera rides. Points are WORLD positions; each point may also say how long to wait there, the speed and ease of the stretch after it, jump (skip straight to the next point), an event name fired on arrival (an On Path Event node hears it) and a facing to hold while waiting. walk: loop | pingpong | once | random. Hidden in Play unless show_in_play. walkers = object uuids that walk it at once (each gets a Path patrol node). Returns the path uuid; walk it later with create_flow_nodes pathpatrol {path: \"<uuid>\", offset}."
 						},
 						"shapes": {
 							"type": "array",
@@ -10048,7 +10294,7 @@
 									},
 									"data": {
 										"type": "object",
-										"description": "node params, e.g. spin {axis:\"y\",speed:2}; bounce {amplitude:0.5,speed:2}; pathpatrol {points:[[x,y,z],…] (>=2 world waypoints), speed:1, mode:\"loop\"|\"pingpong\"}; setcolor {color:\"#ff0000\"}; latch {initial:false}; delay {seconds:3}; sequence {delay1:0,delay2:0.5,delay3:0.5,delay4:0.5} (delays are CUMULATIVE). Omit for defaults."
+										"description": "node params, e.g. spin {axis:\"y\",speed:2}; bounce {amplitude:0.5,speed:2}; pathpatrol {path:\"<Path object uuid from create_path>\", offset:0, face:true} (walks the Path: its waits/speeds/events live on the Path; legacy {points:[[x,y,z],…], speed, mode} still works); onpathevent {path, event} fires when a walker arrives at a point carrying that event; setcolor {color:\"#ff0000\"}; latch {initial:false}; delay {seconds:3}; sequence {delay1:0,delay2:0.5,delay3:0.5,delay4:0.5} (delays are CUMULATIVE). Omit for defaults."
 									}
 								},
 								"required": [

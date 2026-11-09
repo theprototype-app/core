@@ -80,7 +80,9 @@ describe('create_shapes batch (mcp-shapes item 2)', () => {
 	it("the actions are the connector's create_shape family", () => {
 		// 64-text: `text` (create_text) is a family action made one per call, not a batch entry
 		// diorama2: import is one model file per call (base64, chunks or a fetch), never a batch entry
-		const { shapes: _batch, text: _text, import: imp, ...actions } = CONNECTOR_FAMILIES.create_shape.actions;
+		const { shapes: _batch, text: _text, import: imp, path: _path, ...actions } = CONNECTOR_FAMILIES.create_shape.actions;
+		// 78 F4: `path` (create_path) is one Path object per call, not a batch entry
+		expect(_path).toBe('create_path');
 		expect(_text).toBe('create_text');
 		expect(imp).toBe('import_shape');
 		expect(actions).toEqual(SHAPE_ACTIONS);

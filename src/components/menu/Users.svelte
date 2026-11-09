@@ -1072,8 +1072,8 @@
 				{#if self}<span class="peer-you">(you)</span>{/if}
 				{#if presenceOf(user)}
 					<!-- uir-people: their status (a shape AND a colour, 53 A2) -->
-					<span class="peer-presence" data-presence={presenceOf(user)} title={PRESENCE_LABEL[presenceOf(user)]}
-						><Icon name={PRESENCE_ICON[presenceOf(user)]} size={16} aria-hidden="true" /><span class="sr-only">{PRESENCE_LABEL[presenceOf(user)]}</span></span
+					<span class="peer-presence" data-presence={presenceOf(user)} title={PRESENCE_LABEL[presenceOf(user) || 'available']}
+						><Icon name={PRESENCE_ICON[presenceOf(user) || 'available']} size={16} aria-hidden="true" /><span class="sr-only">{PRESENCE_LABEL[presenceOf(user) || 'available']}</span></span
 					>
 				{/if}
 			</div>

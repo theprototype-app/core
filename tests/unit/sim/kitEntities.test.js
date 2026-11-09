@@ -296,3 +296,41 @@ describe('entity pieces in the logic sim (2 peers)', () => {
 		expect([...rt(sim, 'b').store.ents.values()].map((e) => e.own)).toEqual(['other']);
 	});
 });
+
+describe('78 F23: the dead leave the count, on every peer', () => {
+	it('code spawns with no removeAfter leave 1 s after death (the node default), everywhere; emptied pulses once at the last death', () => {
+		const sim = createSim({ peers: ['a', 'b'] });
+		/** @type {string[]} */
+		const pulses = [];
+		for (const id of ['a', 'b'])
+			setEntityHost(sim.peer(id).kit, { pulse: (piece, ev) => pulses.push(id + ':' + piece + '-' + ev) });
+		const auth = sim.authorities()[0];
+		const other = auth === 'a' ? 'b' : 'a';
+		// research round 2's shape: a behaviour's spawn({kind, template, at, count, hp}) with no removeAfter
+		sim.peer(other).kit.api({}).spawner.spawn({ kind: 'labfoe', count: 2, hp: 30 });
+		sim.settle();
+		const ids = [...rt(sim, auth).store.ents.keys()];
+		expect(ids.length).toBe(2);
+		for (const id of ids) sim.peer(other).kit.api({}).health.damage(id, 999);
+		sim.settle();
+		for (const id of ['a', 'b']) expect(sim.peer(id).kit.evalNodeValue('kit-spawner-count', { kind: '' }), id).toBe(0);
+		expect(pulses.filter((p) => p.endsWith('emptied'))).toEqual([auth + ':spawner-emptied']);
+		sim.advance(1200);
+		for (const id of ['a', 'b']) {
+			expect(rt(sim, id).store.ents.size, id + ' still holds the dead').toBe(0);
+			expect(rt(sim, id).debug().count, id).toBe(0);
+		}
+		expect(pulses.filter((p) => p.endsWith('despawned')).length).toBe(2);
+		expect(pulses.filter((p) => p.endsWith('emptied')).length).toBe(1); // the removals do not pulse it again
+	});
+	it('removeAfter: -1 keeps the dead (bodies on the floor) — the debug count says living, the store keeps them', () => {
+		const sim = createSim({ peers: ['a'] });
+		sim.peer('a').kit.api({}).spawner.spawn({ kind: 'corpse', count: 1, hp: 1, removeAfter: -1 });
+		sim.settle();
+		const [id] = [...rt(sim, 'a').store.ents.keys()];
+		sim.peer('a').kit.api({}).health.damage(id, 5);
+		sim.advance(3000);
+		expect(rt(sim, 'a').store.ents.size).toBe(1);
+		expect(rt(sim, 'a').debug()).toMatchObject({ count: 0, stored: 1, living: 0 });
+	});
+});

@@ -3,7 +3,8 @@
 	// settings does not have quality preset setting to edit at it likely should be top option)".
 	// The preset is the device's (Auto = the governor decides; High / Medium / Low pin the same
 	// ladder a game's own Quality setting uses), so the section says "This device"; the two rows
-	// under it are the Settings ▸ Scene ▸ Performance rows on the same stores, here because this is
+	// under it are Settings ▸ Scene ▸ Performance rows on the same stores (78 PL18: the auto opt-out row
+	// is no longer repeated here — Auto is that switch; its help line says when Settings turned it off), here because this is
 	// where a person looks for quality (the two draw-call savers too — the I12 audit's cheap adds).
 	// A game's Quality setting wins while that game is played.
 	import Section from '../../ui/Section.svelte';
@@ -42,9 +43,14 @@
 	{:else if $qualityPreset === 'auto' && $qualityState.level > 0}
 		<p id="scene-quality-reduced-note" class="text-[length:var(--fs-badge)] text-text-muted">Lowered for now: {$qualityState.labels.join(', ').toLowerCase()}.</p>
 	{/if}
-	<InsToggle id="scene-auto-quality" bind:checked={$autoQuality} disabled={$qualityPreset !== 'auto'} title={$qualityPreset !== 'auto' ? 'A pinned preset holds its level — Auto lowers on its own' : undefined}>
-		Reduce quality when the scene is heavy
-	</InsToggle>
+	<!-- 78-int PL18 (scene panel item 8): no "Reduce quality when the scene is heavy" toggle here —
+	     Auto IS that switch (Auto adapts, High holds). The device-wide opt-out stays in Settings ▸ Scene ▸
+	     Performance; when it is off, Auto says so instead of looking like it adapts. -->
+	{#if !gameHolds && $qualityPreset === 'auto'}
+		<p id="scene-quality-help" class="text-[length:var(--fs-badge)] text-text-muted">
+			{#if $autoQuality}Auto: full quality, steps down by itself while the scene is too heavy for this device.{:else}Auto is not stepping down: turned off in Settings ▸ Scene ▸ Performance.{/if}
+		</p>
+	{/if}
 	<PropRow label="Shadows" valueBox={false} id="scene-shadow-quality-row">
 		{#snippet control()}
 			<Segmented id="scene-shadow-quality" label="Shadow quality" full options={SHADOWS} value={$shadowQuality} onchange={(v) => shadowQuality.set(/** @type {any} */ (v))} />

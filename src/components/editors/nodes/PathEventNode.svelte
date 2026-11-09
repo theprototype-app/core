@@ -14,7 +14,7 @@
 	export let id: string;
 	export let data;
 
-	$: paths = ($objectsGroup, pathObjectsIn($objectsGroup));
+	$: paths = pathObjectsIn($objectsGroup);
 	$: chosen = data.path ? paths.find((o: any) => o.uuid === data.path) : null;
 	$: names = [
 		...new Set(

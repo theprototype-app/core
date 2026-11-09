@@ -6,8 +6,8 @@
 //      path block and every per-point extra (a 2 s wait, a jump = gap, an event)
 //   §2 the schedule at fixed t on BOTH peers: walking, standing through the 2 s wait, the gap
 //      is a teleport (zero time between the two points), the period
-//   §3 the live walker: A's walker state recomputed on B (and B's on A) is the same pose; the two
-//      boxes sampled together stay within a frame's travel
+//   §3 the live walker: A's walker state recomputed on B (and B's on A) is the same pose, and each
+//      box sits exactly where its own walker state says
 //   §4 an edit on A (a longer wait) replicates and both peers' schedules move together
 //   §5 an old clicked-waypoint Path patrol (pre-1.64 data) converts: a Path object on both peers,
 //      the node points at it, and at the walker's own t it stands where the OLD walk would (no jump)
@@ -193,8 +193,9 @@ h.run(async () => {
 		h.check(close(re.poses[0].p, w.p.map((n) => +n.toFixed(6)), 1e-5), `§3 ${name}: the other peer recomputes the walker's exact pose at t=${w.t.toFixed(3)}`);
 		h.check(close(w.pos, w.p, 1e-4), `§3 ${name}: the box sits where the schedule says ${JSON.stringify([w.pos, w.p])}`);
 	}
-	const [pa, pb] = await Promise.all([worldPos(A.page, box), worldPos(B.page, box)]);
-	h.check(dist(pa, pb) < 0.5, `§3 the two boxes sampled together agree (drift ${dist(pa, pb).toFixed(3)} m)`);
+	// (no "sample both pages together and compare" row: two page.evaluate calls never read the same
+	// instant, so on a loaded slot that row measured the SAMPLING skew — 1.1 m in run 4 while the exact
+	// recompute rows above passed; path-node's own drift row is red on v1.63.0 for the same reason)
 
 	// §4 ------------------------------------------------------------------------------------
 	await A.page.evaluate((u) => window.__stores.pathActions.setPathPointFields(u, [1], { wait: 3 }), uuid);
@@ -208,6 +209,7 @@ h.run(async () => {
 		await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u, true), uuid);
 		await A.page.locator('#path-mode').waitFor({ state: 'visible', timeout: 15000 });
 		await A.page.evaluate(() => window.__stores.pathState?.pathSelectedPoints?.set?.([1]));
+		await A.page.locator('#path-mode').scrollIntoViewIfNeeded();
 		await A.page.waitForTimeout(800);
 		await A.page.screenshot({ path: path.join(OUT, 'path-inspector.png') });
 		console.log('picture: ' + path.join(OUT, 'path-inspector.png'));

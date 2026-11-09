@@ -21,13 +21,14 @@
 
 	$: capturing = $pathCaptureNode === id;
 	$: waypointCount = (data.points ?? []).length;
-	$: paths = ($objectsGroup, pathObjectsIn($objectsGroup));
+	$: paths = pathObjectsIn($objectsGroup);
 	$: chosen = data.path && data.path !== '-None-' ? paths.find((o: any) => o.uuid === data.path) : null;
 	$: legacy = !chosen && waypointCount > 0;
 	// F7-ready live state (the runtime's per-walker record; refreshed with the scene poke)
-	$: live = ($objectsGroup, chosen ? firstWalkerState() : null);
+	$: live = chosen ? firstWalkerState($objectsGroup) : null;
 	const graphOf = (nodeId: string) => findNodeAnyGraph((n: any) => n.id === nodeId)?.graphId;
-	function firstWalkerState() {
+	// the group argument is the reactive dependency: the card re-reads on every scene poke
+	function firstWalkerState(_group: unknown) {
 		return patrolStateOf(id);
 	}
 	function newPath() {

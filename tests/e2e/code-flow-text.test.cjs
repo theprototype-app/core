@@ -107,8 +107,9 @@ h.run(async () => {
 	await S(page, () => window.__stores.codeWorkspace.openCode({ source: 'graph', ref: { graphId: 'scene' } }));
 	await page.waitForTimeout(400);
 	h.check((await activeTab(page))?.format === 'json', '2.5 (setup) graph.json is the active tab');
-	// focus out of the editor without a click: (5, 450) is where the viewport's left column handle sits now
-	await S(page, () => /** @type {HTMLElement} */ (document.activeElement)?.blur?.());
+	// leave the Code pane's key scope (a press there keeps global shortcuts away, keyScope) with a press on the open
+	// viewport: (5, 450) is where the viewport's left column handle sits now, so press clear of it
+	await page.mouse.click(800, 200);
 	await page.keyboard.press('Alt+f');
 	await page.waitForTimeout(800);
 	h.check((await activeTab(page))?.format === 'text', '2.6 Alt+F raises the flow code tab');

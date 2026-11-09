@@ -173,6 +173,11 @@ h.run(async () => {
 		h.check(closed === true, `3.${row.keys} premise: ${row.dock} starts closed`);
 		await press(A.page, row.press);
 		closed = await storeVal(A.page, row.store);
+		// showhide-v8: Alt+F goes through flowCodeRedirect (a dynamic import, then the tab resolves) — slower than 400 ms cold
+		for (let i = 0; i < 20 && row.reopens && closed !== false; i++) {
+			await A.page.waitForTimeout(200);
+			closed = await storeVal(A.page, row.store);
+		}
 		const st = await dockState(A.page);
 		h.check(closed === false, `3.${row.keys} opens the ${row.dock} view (${row.store}=${closed})`);
 		h.check(st.visible === row.dock, `3.${row.keys} ...as the visible dock tab (visible=${st.visible})`);

@@ -126,6 +126,13 @@ export const DEBUG_HOOKS = [
 	['swayNodes', () => import('./motion/swayNodes.js')],
 	// 85 N3: Ambient Animal
 	['ambientNodes', () => import('./motion/ambientNodes.js')],
+	// 85 I1: a Grabbable's return glides (suites read grabReturnDebug)
+	['grabReturn', () => import('./grabReturn.js')],
+	// 85 I2: Highlight + Press Button, and what this device points at
+	['pressNodes', () => import('./motion/pressNodes.js')],
+	['hoverState', () => import('./hoverState.js')],
+	// 85 I3: Sit Spot
+	['sitSpot', () => import('./sitSpot.js')],
 	['objectActions', () => import('./objectActions')],
 	['commandsHandler', () => import('./commandsHandler.svelte')],
 	['moduleSDK', () => import('./moduleSDK')],

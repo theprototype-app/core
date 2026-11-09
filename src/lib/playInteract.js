@@ -62,6 +62,8 @@ const REACH = 6; // m: how far the crosshair can start a grab
 const CARRY_DEFAULT = 2.5; // m
 const CARRY_MIN = 0.8;
 import { perfMark } from './perf/perfMarks.js';
+import { setHover } from './hoverState.js'; // 85 I2: the crosshair is a hover pointer
+import { tickSit } from './sitSpot.js'; // 85 I3: hold the seat while seated (and load the Sit Spot)
 const CARRY_MAX = 6;
 const CARRY_STEP = 0.25;
 const SPRING_K = 14; // 1/s, scaled by 1/sqrt(mass) and clamped
@@ -572,6 +574,7 @@ function onWheel(event) {
  */
 export function tickPlayInteract(delta, camera) {
 	activeCamera = camera ?? activeCamera;
+	tickSit();
 	// 85 I1: Grabbables gliding home after a release (this peer let go, so this peer streams them)
 	stepGlides(performance.now(), (object) => sendMove(object), (object) => !!get(objectsGroup)?.getObjectByProperty('uuid', object.uuid));
 	// 30 P1: an Interact carry lives OUTSIDE play, so play's 'off' must not cancel it —
@@ -584,6 +587,7 @@ export function tickPlayInteract(delta, camera) {
 	}
 	const mode = cursorCarry ? 'grab' : interactionMode();
 	if (mode === 'off' || !camera) {
+		setHover('play', null);
 		if (grab) endGrab(false);
 		if (get(playInteractState).mode !== 'off')
 			playInteractState.set({ mode: 'off', distance: carryDistance, uuid: null, blocked: null });
@@ -591,6 +595,7 @@ export function tickPlayInteract(delta, camera) {
 	}
 
 	if (grab) {
+		setHover('play', grab.object.uuid);
 		// every cancel path releases with zero velocity — a body left kinematic
 		// forever is the failure mode this guards
 		const group = get(objectsGroup);
@@ -659,6 +664,7 @@ export function tickPlayInteract(delta, camera) {
 	const aimed = gameRayEntry(pickStack(aimFrom(camera), topLevelObjectOf, gamePass()), REACH);
 	const hit = aimed?.hit ?? null;
 	const target = aimed?.target ?? null;
+	setHover('play', target?.uuid ?? null);
 	const grabbable =
 		mode === 'grab' && !!target && ((simRunning() && dynamicUuids().has(target.uuid)) || !!kinematicGrab(target.uuid));
 	const state = get(playInteractState);

@@ -126,6 +126,18 @@ const NODE_TYPE_ALIASES = /** @type {Record<string, string>} */ ({
 	lighttoggle: 'lightswitch',
 	lightonoff: 'lightswitch',
 	lamp: 'lightswitch',
+	// 85 I2
+	hover: 'highlight',
+	hoverhighlight: 'highlight',
+	glow: 'highlight',
+	button: 'pressbutton',
+	press: 'pressbutton',
+	pushbutton: 'pressbutton',
+	// 85 I3
+	sit: 'sitspot',
+	seat: 'sitspot',
+	chair: 'sitspot',
+	sofa: 'sitspot',
 	dim: 'lightintensity',
 	dimmer: 'lightintensity',
 	lightfade: 'lightintensity',
@@ -270,7 +282,7 @@ function validatePoints(raw) {
 }
 
 /** 85b R10: flowRuntime's DIRECT_TARGET_TYPES (kept here too: flowRuntime is history-family) */
-const DIRECT_TARGET_TOOL_TYPES = new Set(['setcolor', 'visibility', 'spin', 'oscillate', 'moveto', 'rotateto', 'scaleto', 'lightswitch', 'lightintensity', 'lightcycle', 'windsway', 'waterflow', 'ambientanimal', 'grabbable']); // 85 N1-N5, I1 join
+const DIRECT_TARGET_TOOL_TYPES = new Set(['setcolor', 'visibility', 'spin', 'oscillate', 'moveto', 'rotateto', 'scaleto', 'lightswitch', 'lightintensity', 'lightcycle', 'windsway', 'waterflow', 'ambientanimal', 'grabbable', 'highlight', 'pressbutton', 'sitspot']); // 85 N1-N5, I1-I3 join
 /** a direct target: '' (none) or the uuid of an object in the scene, else null @param {any} v @returns {string | null} */
 function directTarget(v) {
 	if (v === '' || v === null) return '';

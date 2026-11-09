@@ -205,6 +205,9 @@
 		waterflow: AnimationNode,
 		ambientanimal: AnimationNode, // 85 N3
 		grabbable: AnimationNode, // 85 I1
+		highlight: AnimationNode, // 85 I2
+		pressbutton: AnimationNode,
+		sitspot: AnimationNode, // 85 I3
 		bounce: AnimationNode,
 		orbit: AnimationNode,
 		pulse: AnimationNode,

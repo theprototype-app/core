@@ -321,3 +321,37 @@ export function pivotPoint(pivot, box) {
 	}
 	return null;
 }
+
+// ---- 85 I2: Press Button ------------------------------------------------------------------
+
+export const PRESS_DEFAULTS = Object.freeze({ axis: '-y', depth: 0.04, down: 0.08, hold: 0.1, up: 0.3 });
+
+/** the press axes as local unit vectors */
+export const PRESS_AXES = /** @type {Record<string, [number, number, number]>} */ ({
+	'-y': [0, -1, 0],
+	'+y': [0, 1, 0],
+	'-z': [0, 0, -1],
+	'+z': [0, 0, 1],
+	'-x': [-1, 0, 0],
+	'+x': [1, 0, 0]
+});
+
+/**
+ * How far in (0..1, a little past 1 never; the spring back overshoots to about -0.08) a button is
+ * `dt` seconds after it was pressed: quick in, held, sprung back out. A pure function of the
+ * replicated press stamp and the shared clock, so every peer shows the same press.
+ * @param {number} dt seconds since the press (negative / not a number = untouched)
+ * @param {any} data
+ */
+export function pressDepthAt(dt, data) {
+	if (!Number.isFinite(dt) || dt < 0) return 0;
+	const down = clampNum(data?.down, PRESS_DEFAULTS.down, 0.01, 5);
+	const hold = clampNum(data?.hold, PRESS_DEFAULTS.hold, 0, 10);
+	const up = clampNum(data?.up, PRESS_DEFAULTS.up, 0.01, 10);
+	if (dt < down) return ease('ease out', dt / down);
+	if (dt < down + hold) return 1;
+	const u = (dt - down - hold) / up;
+	if (u >= 1) return 0;
+	// the spring back: out with a small overshoot past the rest position, settling to exactly 0
+	return 1 - ease('back', u);
+}

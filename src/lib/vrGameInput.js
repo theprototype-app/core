@@ -28,7 +28,8 @@ import { sceneHits } from './scenePick';
 import { pickStack, primaryIndex } from './selectThrough';
 import { gamePass } from './pickPass'; // 36 F22 / S6
 import { topLevelObjectOf } from './objectActions';
-import { objectHasOnClick, fireObjectClick } from './flowRuntime';
+import { objectHasOnClick, objectHasHoverHighlight, fireObjectClick } from './flowRuntime';
+import { setHover } from './hoverState'; // 85 I2
 import { moduleInteractiveGroups, runClickHandlers } from './moduleSDK';
 import { isModuleTopLevel } from './moduleWorld';
 import { registerVRFrameHook, registerVRTriggerHooks, registerPanelGroupProvider, controllerIndexFor, hapticPattern, triggerClaimed, withRayCamera } from './vrControls';
@@ -81,7 +82,7 @@ export function clickTargetOf(hit) {
 	if (!top) return null;
 	if (deviceBetween(mesh, top)) return { kind: 'object', key: mesh.uuid, mesh, top, point: hit.point, distance: hit.distance ?? 0, group: null };
 	// 33 P2: a functional pack item (a door, a lever) is pressed like a button
-	if (top.userData?.clickable === true || top.userData?.behavior || objectHasOnClick(top.uuid))
+	if (top.userData?.clickable === true || top.userData?.behavior || objectHasOnClick(top.uuid) || objectHasHoverHighlight(top.uuid))
 		return { kind: 'object', key: top.uuid, mesh, top, point: hit.point, distance: hit.distance ?? 0, group: null };
 	return null;
 }
@@ -148,10 +149,13 @@ const stats = { taps: 0, bumps: 0, sweepClicks: 0 };
 export function hoverFrame(index, ray = controllerRayOf(index)) {
 	if (!ray || !gameFeelActive()) {
 		hoverKey[index] = null;
+		setHover('vr' + index, null);
 		return null;
 	}
 	const target = clickTargetAlong(ray);
 	const key = target?.key ?? null;
+	// 85 I2: a Highlight node lights what this laser points at (the top-level object)
+	setHover('vr' + index, target?.top?.uuid ?? null);
 	if (key && key !== hoverKey[index]) {
 		hapticPattern('tap', handOf(index));
 		stats.taps++;
@@ -415,7 +419,10 @@ export function startVrGameInput() {
 			for (const index of [0, 1]) {
 				const ray = controllerRayOf(index);
 				// the laser on the board wins over the world behind it
-				if (panelHover(index, gameFeelActive() ? ray : null)) hoverKey[index] = null;
+				if (panelHover(index, gameFeelActive() ? ray : null)) {
+					hoverKey[index] = null;
+					setHover('vr' + index, null);
+				}
 				else hoverFrame(index, ray);
 				pokeFrame(index, gameFeelActive() ? tipOf(index) : null);
 				sweepFrame(index);
@@ -447,6 +454,8 @@ export function stopVrGameInput() {
 	for (const off of offs) off();
 	offs = [];
 	hoverKey[0] = hoverKey[1] = null;
+	setHover('vr0', null);
+	setHover('vr1', null);
 	sweeps[0] = sweeps[1] = null;
 	hideVrGamePanel();
 }

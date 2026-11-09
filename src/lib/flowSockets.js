@@ -175,6 +175,8 @@ const INPUT = {
 	rotateto: { trigger: 'event', back: 'event', toggle: 'event', open: 'boolean', amount: 'number', to: 'object', angle: 'number', duration: 'number' },
 	scaleto: { trigger: 'event', back: 'event', toggle: 'event', open: 'boolean', amount: 'number', to: 'object', factor: 'number', duration: 'number' },
 	lightswitch: { trigger: 'event', back: 'event', toggle: 'event', on: 'boolean', fade: 'number' },
+	highlight: { on: 'boolean', strength: 'number', fade: 'number' }, // 85 I2
+	pressbutton: { trigger: 'event', depth: 'number' },
 	lightintensity: { level: 'number', fade: 'number' },
 	lightcycle: { period: 'number', saturation: 'number' },
 	windsway: { strength: 'number', direction: 'number', gust: 'number' }, // 85 N5

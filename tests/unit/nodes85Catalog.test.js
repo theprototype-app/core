@@ -15,7 +15,14 @@ const NODES_85 = /** @type {Record<string, boolean>} */ ({
 	scaleto: true,
 	lightswitch: true,
 	lightintensity: true,
-	lightcycle: true
+	lightcycle: true,
+	windsway: true,
+	waterflow: true,
+	ambientanimal: true,
+	highlight: true,
+	pressbutton: true,
+	grabbable: false, // declarations: playInteract / sitSpot ask the runtime
+	sitspot: false
 });
 
 const SRC = {

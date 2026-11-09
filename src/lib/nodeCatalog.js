@@ -406,6 +406,20 @@ export const nodeCatalog = [
 				],
 				note: 'Works without the simulation. A dynamic body during a run is carried by physics as before.'
 			},
+			// 85 I3: SIT SPOT — a click on the object sits YOU down on top of it, facing its front; a
+			// move key, jump or a stick push stands you up. Local per player (your avatar shows it to
+			// the others). A declaration like Grabbable: sitSpot.js asks flowRuntime.sitSpotFor(uuid).
+			{
+				type: 'sitspot',
+				label: 'Sit Spot',
+				defaults: { facing: '+z', eyeHeight: 0.7, forward: 0 },
+				params: [
+					{ key: 'facing', kind: 'select', options: ['+z', '-z', '+x', '-x'], doc: 'the seat\'s front, in its own frame' },
+					{ key: 'eyeHeight', kind: 'range', min: 0.2, max: 1.5, step: 0.05, doc: 'eyes above the seat top, in metres' },
+					{ key: 'forward', kind: 'range', min: -1, max: 1, step: 0.05, doc: 'shift the spot toward the front (a sofa\'s cushion edge)' }
+				],
+				note: 'Desktop: in Play. VR: in Interact. A seat with someone on it says so.'
+			},
 			{
 				type: 'pointgrab',
 				label: 'Point Grab',
@@ -1562,6 +1576,37 @@ export const nodeCatalog = [
 					{ key: 'glow', kind: 'toggle', label: 'tint glowing parts too' }
 				]
 			},
+			// 85 I2: a HOVER HIGHLIGHT and a PRESS BUTTON. Highlight glows while this person points at
+			// the object (a VR laser or the play crosshair) or while a wired boolean is true — local per
+			// peer. Press Button goes in and springs back on each press, from the replicated stamp.
+			// motion/pressNodes.js
+			{
+				type: 'highlight',
+				label: 'Highlight',
+				defaults: { color: '#ffd54a', strength: 0.6, fade: 0.15 },
+				inputs: ['on'],
+				inputLabels: { on: 'on — unwired: while you point at it' },
+				params: [
+					{ key: 'color', kind: 'color' },
+					{ key: 'strength', kind: 'range', min: 0, max: 3, step: 0.05, doc: 'how bright the glow is' },
+					{ key: 'fade', kind: 'range', min: 0, max: 2, step: 0.05, doc: 'seconds to light up / go out' }
+				],
+				note: 'Each player sees what THEY point at. Works on materials with a glow (standard, physical, lambert, phong).'
+			},
+			{
+				type: 'pressbutton',
+				label: 'Press Button',
+				defaults: { axis: '-y', depth: 0.04, down: 0.08, hold: 0.1, up: 0.3 },
+				inputs: ['trigger'],
+				inputLabels: { trigger: 'press — On Click into here' },
+				params: [
+					{ key: 'axis', kind: 'select', options: ['-y', '+y', '-z', '+z', '-x', '+x'], doc: 'the way it goes in, in the object\'s own frame' },
+					{ key: 'depth', kind: 'range', min: 0, max: 0.5, step: 0.005, doc: 'metres' },
+					{ key: 'down', kind: 'range', min: 0.02, max: 1, step: 0.01, doc: 'seconds to go in' },
+					{ key: 'hold', kind: 'range', min: 0, max: 2, step: 0.05, doc: 'seconds held in' },
+					{ key: 'up', kind: 'range', min: 0.05, max: 2, step: 0.05, doc: 'seconds to spring back' }
+				]
+			},
 			{
 				// spatial audio on the connected object; file from the Explorer (97)
 				type: 'sound',
@@ -1651,6 +1696,7 @@ export const animationTypes = [
 	'lightswitch', 'lightintensity', 'lightcycle', // 85 N4 (motion/lightNodes.js)
 	'windsway', 'waterflow', // 85 N5 (motion/swayNodes.js)
 	'ambientanimal', // 85 N3 (motion/ambientNodes.js)
+	'highlight', 'pressbutton', // 85 I2 (motion/pressNodes.js)
 	'lookat', 'setcolor', 'visibility', 'setuniform',
 	'camerarig', // 37 (R8)
 	'deviceparam', 'notetrigger' // 23-B3

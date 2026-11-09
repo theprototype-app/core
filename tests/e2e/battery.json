@@ -290,6 +290,8 @@
 	"suites": {
 		"possess": 120,
 		"nodes85-motion": 240,
+		"nodes85-play": 200,
+		"nodes85-button-iwer": 240,
 		"photo-mode": 420,
 		"text-path": 360,
 		"text-object": 480,

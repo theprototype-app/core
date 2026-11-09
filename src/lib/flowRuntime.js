@@ -101,6 +101,8 @@ import { applyRotor, applyFlowFloat } from './sim/motionNodes.js'; // 36-fb F25/
 // 85 N1/N2/N4: Oscillate, the tweens and the light nodes (three leaves over a pure core)
 import { applyOscillate, applyTween, tweenPosition, noteTweenRead, tickTweenNodes } from './motion/tweenNodes.js';
 import { applyLightSwitch, applyLightIntensity, applyLightCycle, pruneLightNodes } from './motion/lightNodes.js';
+import { applyHighlight, applyPress, prunePressNodes } from './motion/pressNodes.js'; // 85 I2
+import { isHovered } from './hoverState.js'; // 85 I2
 import { openEvent } from './motion/tweenCore.js';
 // 85 N5: Wind Sway + Flowing Water (vertex deformers + map scroll, a three leaf)
 import { applyWindSway, applyWaterFlow, pruneSwayNodes } from './motion/swayNodes.js';
@@ -563,7 +565,7 @@ pathCaptureNode.subscribe((id) => (capturingPathNode = id));
  */
 // 36-fb F25: a rotor on a DYNAMIC body during a run drives it with torque (no pose write)
 // 85 N4: the light nodes write intensity / colour only
-const POSE_FREE_EFFECTS = new Set(['setcolor', 'setuniform', 'deviceparam', 'notetrigger', 'rotor', 'lightswitch', 'lightintensity', 'lightcycle', 'windsway', 'waterflow']);
+const POSE_FREE_EFFECTS = new Set(['setcolor', 'setuniform', 'deviceparam', 'notetrigger', 'rotor', 'lightswitch', 'lightintensity', 'lightcycle', 'windsway', 'waterflow', 'highlight']);
 
 /** @param {any} object */
 function captureBase(object) {
@@ -2428,7 +2430,7 @@ function targetUuidOf(edge) {
 
 /** 85b R10: the effect nodes that may name their object directly (`data.target`, an object uuid) — a
  * button drives a door with no Object Selector chain. Absent / '' = the old rules, byte-identical. */
-export const DIRECT_TARGET_TYPES = new Set(['setcolor', 'visibility', 'spin', 'oscillate', 'moveto', 'rotateto', 'scaleto', 'lightswitch', 'lightintensity', 'lightcycle', 'windsway', 'waterflow', 'ambientanimal', 'grabbable']); // 85 N1-N5, I1 join
+export const DIRECT_TARGET_TYPES = new Set(['setcolor', 'visibility', 'spin', 'oscillate', 'moveto', 'rotateto', 'scaleto', 'lightswitch', 'lightintensity', 'lightcycle', 'windsway', 'waterflow', 'ambientanimal', 'grabbable', 'highlight', 'pressbutton', 'sitspot']); // 85 N1-N5, I1-I3 join
 /** @param {any} node @returns {string | null} */
 function directTargetOf(node) {
 	if (!DIRECT_TARGET_TYPES.has(node?.type)) return null;
@@ -3884,6 +3886,14 @@ export function fireModuleTrigger(type, match, opts) {
 
 export function fireObjectClick(uuid) {
 	let fired = 0; // 30b: how many On Click nodes this reached (additive return)
+	// 85 I3: local click listeners (a Sit Spot sits THIS player down) — a leaf flowRuntime may not import
+	for (const hook of clickHooks) {
+		try {
+			if (hook(uuid)) fired++;
+		} catch (error) {
+			console.warn('click hook:', error);
+		}
+	}
 	nodes.forEach((node) => {
 		if (node.type !== 'onclick') return;
 		// H1: an unwired OnClick inside the clicked object's own graph also fires
@@ -3922,6 +3932,36 @@ export function fireObjectGrab(uuid) {
 export function objectHasOnClick(uuid) {
 	return nodes.some(
 		(node) => node.type === 'onclick' && (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid)
+	) || !!sitSpotFor(uuid); // 85 I3: a seat takes the click too
+}
+
+/** 85 I3: local click listeners, run by fireObjectClick before the On Click nodes @type {Set<(uuid: string) => boolean>} */
+const clickHooks = new Set();
+/** @param {(uuid: string) => boolean} fn returns true when it handled the click @returns {() => void} */
+export function registerClickHook(fn) {
+	clickHooks.add(fn);
+	return () => clickHooks.delete(fn);
+}
+
+/** 85 I3: the Sit Spot node on `uuid` (its data), or null — the kinematicGrab shape @param {string} uuid */
+export function sitSpotFor(uuid) {
+	if (!uuid || muted.includes(uuid)) return null;
+	for (const node of nodes) {
+		if (node.type !== 'sitspot') continue;
+		const t = node.data?.target;
+		if ((typeof t === 'string' && t === uuid) || implicitOwnerOf(node) === uuid || reachesObjectSelector(node.id, uuid)) return node.data ?? {};
+	}
+	return null;
+}
+
+/** 85 I2: does a hover-driven Highlight node (its `on` unwired) light `uuid` up? The VR laser
+ * treats such an object as something to point at. @param {string} uuid @returns {boolean} */
+export function objectHasHoverHighlight(uuid) {
+	return nodes.some(
+		(node) =>
+			node.type === 'highlight' &&
+			!edgesInto(edges, node.id).some((/** @type {any} */ e) => e.targetHandle === 'on') &&
+			(node.data?.target === uuid || reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid)
 	);
 }
 
@@ -4096,7 +4136,7 @@ export function effectPoseAt(nodeId, uuid, time) {
 	if (typeof time !== 'number') time = effectClockNow();
 	const anim = nodeById(nodes, nodeId);
 	const object = sceneObjects?.getObjectByProperty('uuid', uuid);
-	if (!anim || !object || !['oscillate', 'moveto', 'rotateto', 'scaleto'].includes(anim.type)) return null;
+	if (!anim || !object || !['oscillate', 'moveto', 'rotateto', 'scaleto', 'ambientanimal', 'pressbutton'].includes(anim.type)) return null;
 	const base = baseState.get(uuid) ?? captureBase(object);
 	const probe = object.clone(false);
 	probe.uuid = object.uuid + '#probe';
@@ -4127,6 +4167,8 @@ let liveLights = new Set();
 let tickPlayers = null;
 /** 85 N5: the Wind Sway / Flowing Water (node, object) keys driven this tick @type {Set<string>} */
 let liveSway = new Set();
+/** 85 I2: the Highlight (node, object) keys driven this tick @type {Set<string>} */
+let liveHighlights = new Set();
 /** 85 N4: a Light Switch's wired `on` boolean, per (node, object), per peer @type {Map<string, any>} */
 const lightOpens = new Map();
 
@@ -4251,6 +4293,18 @@ function applyAnimation(object, base, anim, time, ctx) {
 			open = next.events;
 		}
 		applyLightSwitch(object, data, time, key, { ...s, open });
+		return;
+	}
+	if (anim.type === 'highlight') {
+		// 85 I2: per peer — the wired `on`, else "this person points at it"
+		const key = anim.id + '|' + object.uuid;
+		liveHighlights.add(key);
+		const onWired = edgesInto(edges, anim.id).some((/** @type {any} */ e) => e.targetHandle === 'on');
+		applyHighlight(object, data, time, key, onWired ? !!data.on : isHovered(object.uuid));
+		return;
+	}
+	if (anim.type === 'pressbutton') {
+		applyPress(object, data, time, triggerStampFor(anim.id, ctx));
 		return;
 	}
 	if (anim.type === 'ambientanimal') {
@@ -5072,6 +5126,9 @@ function runTick(now) {
 	// 85 N5: a sway / water node that went away puts the original material back
 	pruneSwayNodes(liveSway);
 	liveSway = new Set();
+	// 85 I2: a highlight that went away puts the authored glow back
+	prunePressNodes(liveHighlights);
+	liveHighlights = new Set();
 	tickTweenNodes();
 	tickAmbientNodes();
 	tickPlayers = null;

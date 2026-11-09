@@ -220,7 +220,7 @@ h.run(async () => {
 			// ---- A': two columns would leave no usable viewport on the unfolded phone: the EARLIER one tucks away ----
 			await S(page, () => window.__stores.aiAssistantHidden.set(''));
 			await page.waitForTimeout(400);
-			await S(page, () => window.__stores.docking.dockToSide('aiAssistant', 'right'));
+			await S(page, () => window.__stores.docking.dockToSide('chat', 'right'));
 			await page.waitForTimeout(1200);
 			v = await read(page, 'sidebars.sidebarVisible');
 			const ah2 = await read(page, 'sidebars.sidebarAutoHidden');
@@ -235,7 +235,7 @@ h.run(async () => {
 			v = await read(page, 'sidebars.sidebarVisible');
 			h.check(v?.left === true && v?.right === false, `A7 hiding the right one keeps the left (${JSON.stringify(v)})`);
 			await S(page, () => {
-				window.__stores.dockHost.HOSTED.aiAssistant.close();
+				window.__stores.dockHost.HOSTED.chat.close();
 				window.__stores.sidebars.sidebarMode.update((m) => ({ ...m, right: 'auto' }));
 			});
 			await page.waitForTimeout(700);

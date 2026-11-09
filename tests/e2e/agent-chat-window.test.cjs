@@ -214,10 +214,11 @@ h.run(async () => {
 	await A.page.locator('#ai-send').click();
 	await A.page.locator('#ai-history-btn').click();
 	await A.page.locator('#ai-chat-history').waitFor({ timeout: 5000 });
-	const rows = await A.page.$$eval('#ai-chat-history .chist-row', (els) => els.map((e) => e.getAttribute('data-chat')));
+	// uir-chat: one History for both tabs — this scene's session row is listed too; the agent chats are data-kind="agent"
+	const rows = await A.page.$$eval('#ai-chat-history .chist-row[data-kind="agent"]', (els) => els.map((e) => e.getAttribute('data-chat')));
 	h.check(rows.length === 2 && rows[0] === fresh && rows[1] === chatId, `the history lists both chats, newest first (${rows.length})`);
 	await A.page.fill('#ai-chat-search', 'trees');
-	h.check((await A.page.locator('#ai-chat-history .chist-row').count()) === 1, 'search narrows it');
+	h.check((await A.page.locator('#ai-chat-history .chist-row').count()) === 1, 'search narrows it (the session row too)');
 	await A.page.locator(`#ai-chat-history .chist-row[data-chat="${chatId}"]`).click();
 	h.check((await read(A, 'agentChat.activeChatId')) === chatId && (await bubbles(A)).some((x) => /Planted three/.test(x.text)), 'picking a row reopens that chat, its thread intact');
 	await A.page.locator('#ai-new-chat').click();
@@ -235,9 +236,9 @@ h.run(async () => {
 	console.log('\n=== 8. axe on the window ===');
 	await A.page.locator('#ai-history-btn').click();
 	await A.page.locator('#ai-chat-history').waitFor({ timeout: 5000 });
-	const res = await new AxeBuilder({ page: A.page }).include('#ai-assistant-window').withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice']).analyze();
+	const res = await new AxeBuilder({ page: A.page }).include('#chat-window').withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice']).analyze();
 	await A.page.locator('#ai-chat-history .chist-close').click();
-	const res2 = await new AxeBuilder({ page: A.page }).include('#ai-assistant-window').withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice']).analyze();
+	const res2 = await new AxeBuilder({ page: A.page }).include('#chat-window').withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice']).analyze();
 	const gated = [...res.violations, ...res2.violations].filter((v) => v.impact === 'serious' || v.impact === 'critical');
 	for (const v of [...res.violations, ...res2.violations]) console.log(`  [axe] ${v.impact} ${v.id} (${v.nodes.length}) ${v.nodes.slice(0, 3).map((n) => n.target.join(' ')).join(' | ')}`);
 	h.check(gated.length === 0, `no serious/critical axe violations in the window (${gated.map((v) => v.id).join(', ') || 'none'})`);

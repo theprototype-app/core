@@ -175,8 +175,11 @@ export async function applyLayout(id) {
 			for (const [key, value] of writes.set) safeStorage.setItem(key, value);
 			if (profile === 'desktop') reloadDesktopChromePrefs();
 		}
-		// uir-chat: a layout saved before Chat and the AI assistant became one window names the
-		// assistant's own window ('aiAssistant') — read it as the one window, on its Assistant tab
+		// uir-chat: the tab the layout's Chat window showed; a layout saved before Chat and the AI assistant
+		// became one window names the assistant's own window ('aiAssistant') — read it as the one window,
+		// on its Assistant tab
+		const savedTab = safeStorage.getItem('chat:tab');
+		if (savedTab === 'session' || savedTab === 'assistant') chatTab.set(savedTab);
 		if (migrateChatKeys((k) => safeStorage.getItem(k), (k, v) => safeStorage.setItem(k, v), (k) => safeStorage.removeItem(k)).assistant) chatTab.set('assistant');
 		runLayoutReloaders();
 		await tick();

@@ -18,11 +18,26 @@
 	import { connectorSignInSlot } from '$lib/cloudHooks';
 	import { connectorAvailable } from '$lib/connector/connectorStore';
 	import { requestSignIn } from '$lib/connector/connectorSignIn.js';
-	import { chatTarget, activeChatId, agentChatState, seenCounts, myPeerId, newChat, openChatInAssistant } from '$lib/agentChat';
+	import {
+		chatTarget,
+		activeChatId,
+		agentChatState,
+		seenCounts,
+		myPeerId,
+		newChat,
+		openChatInAssistant
+	} from '$lib/agentChat';
 	import { samePeer } from '$lib/agentChatCore';
 	import { aiBusy } from '$lib/ai/assistant';
 	import { aiProviders, aiActiveProvider } from '$lib/ai/providers';
-	import { startChatSaves, newAiChat, openAiChat, viewLog, archiveView, activeAiChatId } from '$lib/chat/chatSaves.js';
+	import {
+		startChatSaves,
+		newAiChat,
+		openAiChat,
+		viewLog,
+		archiveView,
+		activeAiChatId
+	} from '$lib/chat/chatSaves.js';
 	import { rovingIndex } from '$lib/ui/roving.js';
 	import { dragWindow } from '$lib/dragWindow';
 	import { bottomDockable } from '$lib/bottomDockDrop';
@@ -86,7 +101,8 @@
 		const me = myPeerId();
 		for (const chat of Object.values($agentChatState.chats) as any[]) {
 			const seen = $seenCounts[chat.id] ?? 0;
-			if (chat.messages.slice(seen).some((m: any) => !samePeer(m.from, me))) return !(assistantShowing && chat.id === $activeChatId);
+			if (chat.messages.slice(seen).some((m: any) => !samePeer(m.from, me)))
+				return !(assistantShowing && chat.id === $activeChatId);
 		}
 		return false;
 	});
@@ -94,7 +110,9 @@
 
 	// ---- header actions -------------------------------------------------------------------------------
 	const agentId = $derived($chatTarget?.kind === 'agent' ? $chatTarget.id : null);
-	const headerSignIn = $derived(tab === 'assistant' && !!$connectorSignInSlot && !$connectorAvailable && !welcome);
+	const headerSignIn = $derived(
+		tab === 'assistant' && !!$connectorSignInSlot && !$connectorAvailable && !welcome
+	);
 
 	function startNewChat() {
 		historyOpen = false;
@@ -123,7 +141,11 @@
 		chatTab.set('assistant');
 		await openAiChat(row.id);
 	}
-	const historyActive = $derived(tab === 'session' ? ($archiveView?.key ?? null) : agentId ? $activeChatId : $activeAiChatId);
+	// 54i: the Assistant tab's welcome sets the window's height to its content (the old AI window's rule)
+	const fit = $derived(tab === 'assistant' && welcome);
+	const historyActive = $derived(
+		tab === 'session' ? ($archiveView?.key ?? null) : agentId ? $activeChatId : $activeAiChatId
+	);
 	function close() {
 		chatHidden.set('hidden');
 	}
@@ -133,17 +155,30 @@
 	<div id="chat" class={$chatHidden}>
 		<div
 			id="chat-window"
-			use:dragWindow={{ key: 'chat', defaultRect: { right: 15, bottom: 15 }, resizable: true, minW: 300, minH: 260 }}
+			use:dragWindow={{
+				key: 'chat',
+				defaultRect: { right: 15, bottom: 15 },
+				resizable: true,
+				minW: 300,
+				minH: 260
+			}}
 			use:bottomDockable={{ key: 'chat' }}
 			use:focusStack
-			use:tabbable={{ key: 'chat', title: 'Chat', openStore: chatHidden, isOpen: (v) => v === '', close }}
-			class="ui-panel tp-ui tp-window flex h-[460px] w-[min(500px,90vw)] flex-col overflow-hidden"
+			use:tabbable={{
+				key: 'chat',
+				title: 'Chat',
+				openStore: chatHidden,
+				isOpen: (v) => v === '',
+				close
+			}}
+			class="ui-panel tp-ui tp-window flex w-[min(500px,90vw)] flex-col overflow-hidden {fit ? '' : 'h-[460px]'}"
+			class:ai-fit={fit}
 			style="z-index: var(--z-window); max-height: calc(100dvh - 76px)"
 			data-tab={tab}
 		>
 			<!-- 38 R6: the one window header (ui/WindowChrome); `ui-panel-header move-handle` is the grip
 			     dragWindow / tabbing / docking read. Docked in a sidebar the column's tab is the title, so
-			     only the window's chrome stands down and the Session | Assistant tabs stay ('tools'). -->
+			     only the window's chrome stands down and the History / New chat actions stay ('tools'). -->
 			<WindowChrome
 				size="tool"
 				bare
@@ -156,40 +191,19 @@
 				role="region"
 				aria-label="Chat"
 			>
-				{#snippet heading()}
-					<div class="chat-tabs" role="tablist" aria-label="Chat">
-						{#each TABS as t, i (t.id)}
-							<button
-								bind:this={tabEls[i]}
-								type="button"
-								role="tab"
-								id={'chat-tab-' + t.id}
-								class="chat-tab"
-								aria-selected={tab === t.id}
-								aria-controls={t.id === 'session' ? 'chat-session' : 'ai-assistant-window'}
-								tabindex={tab === t.id ? 0 : -1}
-								onclick={() => pick(t.id)}
-								onkeydown={(e) => tabKey(e, i)}
-							>
-								<Icon name={t.icon} size={16} aria-hidden="true" />
-								<span>{t.label}</span>
-								{#if dots[t.id] && tab !== t.id}
-									<span
-										class="chat-tab-dot"
-										class:mention={t.id === 'session' && $chatMentioned}
-										data-unread={t.id}
-										aria-label={t.id === 'session' ? $chatUnread + ' unread' : 'New reply'}
-									></span>
-								{/if}
-							</button>
-						{/each}
-					</div>
-				{/snippet}
 				{#snippet actions()}
 					<!-- FW-AI (76): signed out on a cloud build, working with a provider of your own: connecting stays one press away -->
 					{#if headerSignIn}
-						<Button id="ai-header-signin" variant="secondary" size="sm" aria-label="Sign in to connect" title="Sign in to connect" onclick={requestSignIn}
-							><span class="ai-signin-long">Sign in to connect</span><span class="ai-signin-short">Sign in</span></Button
+						<Button
+							id="ai-header-signin"
+							variant="secondary"
+							size="sm"
+							aria-label="Sign in to connect"
+							title="Sign in to connect"
+							onclick={requestSignIn}
+							><span class="ai-signin-long">Sign in to connect</span><span class="ai-signin-short"
+								>Sign in</span
+							></Button
 						>
 					{/if}
 					<button
@@ -204,16 +218,63 @@
 						onclick={() => (historyOpen = !historyOpen)}><Icon name="history" size={16} /></button
 					>
 					{#if tab === 'assistant'}
-						<button type="button" id="ai-new-chat" class="wc-act" aria-label="New chat" title="New chat" onclick={startNewChat}><Icon name="plus" size={16} /></button>
+						<button
+							type="button"
+							id="ai-new-chat"
+							class="wc-act"
+							aria-label="New chat"
+							title="New chat"
+							onclick={startNewChat}><Icon name="plus" size={16} /></button
+						>
 					{/if}
 				{/snippet}
 			</WindowChrome>
+			<!-- the tabs: a row under the title, so the header stays the window's grip (a press on a tab is
+			     never a drag) and the row is the same in a floating window, a sidebar column and a phone sheet -->
+			<div class="chat-tabs" role="tablist" aria-label="Chat">
+				{#each TABS as t, i (t.id)}
+					<button
+						bind:this={tabEls[i]}
+						type="button"
+						role="tab"
+						id={'chat-tab-' + t.id}
+						class="chat-tab"
+						aria-selected={tab === t.id}
+						aria-controls={t.id === 'session' ? 'chat-session' : 'ai-assistant-window'}
+						tabindex={tab === t.id ? 0 : -1}
+						onclick={() => pick(t.id)}
+						onkeydown={(e) => tabKey(e, i)}
+					>
+						<Icon name={t.icon} size={16} aria-hidden="true" />
+						<span>{t.label}</span>
+						{#if dots[t.id] && tab !== t.id}
+							<span
+								class="chat-tab-dot"
+								class:mention={t.id === 'session' && $chatMentioned}
+								role="img"
+								data-unread={t.id}
+								aria-label={t.id === 'session' ? $chatUnread + ' unread' : 'New reply'}
+							></span>
+						{/if}
+					</button>
+				{/each}
+			</div>
 			<div class="chat-body relative flex min-h-0 flex-1 flex-col">
 				{#if historyOpen}
-					<ChatHistory activeId={historyActive} onnew={startNewChat} onclose={closeHistory} onpick={openRow} />
+					<ChatHistory
+						activeId={historyActive}
+						onnew={startNewChat}
+						onclose={closeHistory}
+						onpick={openRow}
+					/>
 				{/if}
 				<ChatSession visible={tab === 'session'} />
-				<ChatAssistant bind:this={assistant} bind:welcome visible={tab === 'assistant'} {historyOpen} />
+				<ChatAssistant
+					bind:this={assistant}
+					bind:welcome
+					visible={tab === 'assistant'}
+					{historyOpen}
+				/>
 			</div>
 		</div>
 	</div>
@@ -227,13 +288,17 @@
 	.chat-tabs {
 		display: flex;
 		align-items: stretch;
-		align-self: stretch;
+		flex-shrink: 0;
 		gap: 2px;
 		min-width: 0;
-		flex: 1;
+		height: 36px;
+		padding: 0 8px;
+		border-bottom: 1px solid var(--border);
+		container-type: inline-size;
 	}
 	.chat-tab {
 		position: relative;
+		margin-bottom: -1px;
 		display: inline-flex;
 		align-items: center;
 		gap: 6px;
@@ -271,6 +336,12 @@
 	.ai-signin-short {
 		display: none;
 	}
+	/* 54i: the welcome's height is its content, never taller than the screen below the top chrome —
+	   capped by the VIEWPORT, not by the window's own top (dock-fixes, owner 2026-11-08) */
+	.ai-fit {
+		height: auto;
+		max-height: calc(100dvh - 76px);
+	}
 	@container (max-width: 440px) {
 		.ai-signin-long {
 			display: none;
@@ -279,7 +350,7 @@
 			display: inline;
 		}
 	}
-	@container (max-width: 300px) {
+	@container (max-width: 220px) {
 		.chat-tab span:not(.chat-tab-dot) {
 			display: none;
 		}

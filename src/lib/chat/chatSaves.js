@@ -269,8 +269,11 @@ export async function startChatSaves(opts = {}) {
 	if (active && !get(ai.aiMessages).length) {
 		if (!(await openAiChat(active))) activeAiChatId.set(null);
 	}
-	ai.aiMessages.subscribe(() => {
+	ai.aiMessages.subscribe((/** @type {any[]} */ list) => {
 		if (restoring) return;
+		// an emptied conversation (New chat, or anything that resets it) is a NEW saved chat: the last one stays
+		// in History instead of being overwritten by the next turn
+		if (!list.length && get(activeAiChatId)) activeAiChatId.set(null);
 		clearTimeout(aiTimer);
 		aiTimer = setTimeout(() => saveAiNow(opts.providerLabel?.() ?? 'Assistant').catch(() => {}), 600);
 	});

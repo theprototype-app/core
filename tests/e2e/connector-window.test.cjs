@@ -157,10 +157,10 @@ h.run(async () => {
 		window.__stores.cloudHooks.setConnectorProvider(null);
 		window.__stores.cloudHooks.connectorSignInSlot.set(() => () => {});
 	});
-	const headerBtn = A.page.locator('#ai-assistant-window #ai-header-signin');
+	const headerBtn = A.page.locator('#chat-window #ai-header-signin');
 	await headerBtn.waitFor({ state: 'visible', timeout: 10000 });
 	h.check((await A.page.locator('#ai-welcome').count()) === 0 && (await A.page.locator('#connect-claude').count()) === 0, 'local model + signed out: no welcome and no Connect row, the header button is there');
-	const headBox = await A.page.locator('#ai-assistant-window .ui-panel-header').boundingBox();
+	const headBox = await A.page.locator('#chat-window .ui-panel-header').boundingBox();
 	const btnBox = await headerBtn.boundingBox();
 	h.check(!!headBox && !!btnBox && btnBox.y >= headBox.y - 1 && btnBox.y + btnBox.height <= headBox.y + headBox.height + 1, `the button is in the window's header (${JSON.stringify(btnBox)} in ${JSON.stringify(headBox)})`);
 	h.check((await A.page.locator('#ai-assistant-window textarea, #ai-assistant-window input[type="text"]').first().isEnabled()), 'the composer works: nothing waits for a sign-in');
@@ -199,7 +199,7 @@ h.run(async () => {
 		// at full height, the floating window grows to its content)
 		await P.page.waitForTimeout(600); // the sheet's height transition / the window's re-clamp
 		const fit = await P.page.evaluate(() => {
-			const win = document.querySelector('#ai-assistant-window');
+			const win = document.querySelector('#chat-window'); // uir-chat: the AI assistant is the Chat window's Assistant tab
 			const sc = document.querySelector('#ai-welcome')?.closest('.overflow-y-auto');
 			const w = win.getBoundingClientRect();
 			const own = document.querySelector('#ai-welcome-own').getBoundingClientRect();
@@ -215,7 +215,7 @@ h.run(async () => {
 			const R = (el) => el?.getBoundingClientRect();
 			const chrome = ['#hud-tr', '#avatar-trigger', '.connect-pill'].map((s) => [s, R(document.querySelector(s))]).filter(([, r]) => r && r.width && r.height);
 			const out = [];
-			for (const sel of ['#ai-assistant-window', '#flow-debugger']) {
+			for (const sel of ['#chat-window', '#flow-debugger']) {
 				const el = document.querySelector(sel);
 				if (!el || el.closest('[data-ps-host]') || el.hasAttribute('data-ps-host') || el.classList.contains('tbx-sheet')) continue; // a phone sheet is placed by the shell
 				const w = R(el);
@@ -246,12 +246,12 @@ h.run(async () => {
 		const hb = await fits('#ai-header-signin');
 		// 54i: the title keeps its words beside the button (the folded sheet says "Sign in")
 		const title = await P.page.evaluate(() => {
-			const t = document.querySelector('#ai-assistant-window .wc-title');
+			const t = document.querySelector('#chat-window .wc-title');
 			const b = document.querySelector('#ai-header-signin');
 			return { sw: t.scrollWidth, cw: t.clientWidth, text: t.textContent.trim(), name: b.getAttribute('aria-label') || b.textContent.trim() };
 		});
 		h.check(title.sw <= title.cw && title.name === 'Sign in to connect', `N6 ${name}: the header title is not cut short and the button keeps its name (${JSON.stringify(title)})`);
-		const closeFits = await fits('#ai-assistant-window .wc-close');
+		const closeFits = await fits('#chat-window .wc-close');
 		h.check(hb.ok && closeFits.hit && closeFits.box.x + closeFits.box.width <= viewport.width, `N6 ${name}: the header button fits and the close button stays on screen and pressable (${JSON.stringify(hb.box)}, hit ${hb.hit}/${closeFits.hit})`);
 		await P.page.screenshot({ path: path.join(OUT, `fw-ai-n6-${name}.png`) }).catch(() => {});
 		await P.page.locator('#ai-header-signin').click();

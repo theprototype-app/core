@@ -15,7 +15,7 @@ import {
 } from './physics';
 import { suspendAnimation, resumeAnimation, fireObjectClick, fireObjectGrab, kinematicGrab } from './flowRuntime';
 // 85 I1: Grabbables carried with no simulation, and their glide home (a leaf)
-import { grabRule, startGlide, cancelGlide, stepGlides } from './grabReturn.js';
+import { grabRule, startGlide, cancelGlide, stepGlides, homeFor } from './grabReturn.js';
 import { velocityFromSamples, cursorThrow } from './throwVelocity';
 import { resolvePlaySettings } from './playSettings';
 import { pickStack, primaryIndex, gameRayEntry } from './selectThrough';
@@ -320,6 +320,7 @@ function massOf(object) {
 /** Begin carrying. `kin` = a Grabbable node's data: a KINEMATIC carry with no body (85 I1).
  * @param {any} object @param {any} camera @param {any} [kin] */
 function beginGrab(object, camera, kin = null) {
+	const home = kin ? homeFor(object) : null; // before the cancel: a catch mid-glide keeps the real home
 	cancelGlide(object.uuid);
 	perfMark('grab', { source: 'play' }); // 34 PF: a profiler marker
 	// the object's rotation relative to the camera's YAW, so carrying does not
@@ -333,7 +334,7 @@ function beginGrab(object, camera, kin = null) {
 		held: !kin && isInitiator() ? holdBody(object.uuid) : false,
 		samples: [],
 		lastSent: 0,
-		kin: kin ? { rule: grabRule(kin), home: { pos: object.position.toArray(), quat: object.quaternion.toArray() } } : null
+		kin: kin && home ? { rule: grabRule(kin), home } : null
 	};
 	carryDistance = Math.min(
 		CARRY_MAX,

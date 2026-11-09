@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest';
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
-import { grabRule, startGlide, stepGlides, cancelGlide, gliding, grabReturnDebug } from '../../src/lib/grabReturn.js';
+import { grabRule, startGlide, stepGlides, cancelGlide, gliding, grabReturnDebug, homeFor } from '../../src/lib/grabReturn.js';
 
 /** @param {string} uuid */
 const box = (uuid) => {
@@ -51,5 +51,23 @@ describe('the return glide', () => {
 		startGlide(p, { pos: [0, 0, 0], quat: [0, 0, 0, 1] }, { delay: 0, duration: 1 }, 0);
 		stepGlides(100, () => {}, () => false);
 		expect(grabReturnDebug()).not.toContain('g3');
+	});
+});
+
+describe('homeFor', () => {
+	it('is where the object is when nothing glides it', () => {
+		const o = box('h1');
+		o.position.set(1, 2, 3);
+		expect(homeFor(o)).toEqual({ pos: [1, 2, 3], quat: [0, 0, 0, 1] });
+	});
+	it('keeps the glide home when the object is caught on its way back', () => {
+		const o = box('h2');
+		o.position.set(5, 0, 0);
+		startGlide(o, { pos: [0, 1, 0], quat: [0, 0, 0, 1] }, { delay: 0, duration: 1 }, 0);
+		stepGlides(500, () => {}, () => true);
+		expect(o.position.x).toBeGreaterThan(0);
+		expect(homeFor(o).pos).toEqual([0, 1, 0]);
+		cancelGlide('h2');
+		expect(homeFor(o).pos).toEqual(o.position.toArray());
 	});
 });

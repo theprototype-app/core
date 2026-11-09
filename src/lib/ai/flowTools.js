@@ -146,7 +146,6 @@ const NODE_TYPE_ALIASES = /** @type {Record<string, string>} */ ({
 	disco: 'lightcycle',
 	// 85 N5
 	wind: 'windsway',
-	flag: 'windsway',
 	water: 'waterflow',
 	river: 'waterflow',
 	flowingwater: 'waterflow',
@@ -156,6 +155,11 @@ const NODE_TYPE_ALIASES = /** @type {Record<string, string>} */ ({
 	critter: 'ambientanimal',
 	pet: 'ambientanimal',
 	graze: 'ambientanimal',
+	cat: 'ambientanimal',
+	dog: 'ambientanimal',
+	fish: 'ambientanimal',
+	bird: 'ambientanimal',
+	deer: 'ambientanimal',
 	// 85 I1
 	grab: 'grabbable',
 	pickup: 'grabbable',

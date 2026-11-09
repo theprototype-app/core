@@ -79,8 +79,6 @@ h.run(async () => {
 	});
 	await A.page.waitForTimeout(1500); // '/create box' re-seats after the call
 	await A.page.evaluate(() => window.__stores.lockedObjects.set([]));
-	// the mug and the tool start in front of the camera (before B joins, so B's first sync has it)
-	const mugHome = await placeInFront(A.page, ids.mug, 3);
 	await A.page.evaluate(({ nodes, edges, made }) => {
 		const S = window.__stores;
 		let g;
@@ -105,12 +103,26 @@ h.run(async () => {
 	}, { ...GRAPH, made: ids });
 	const B = await h.setupPage(browser, 'B');
 	// a restore offer can pop up on A while it builds (it covered the approve button on a pc run)
+	const dump = (p) =>
+		p.page.evaluate(() => {
+			let g;
+			window.__stores.objectsGroup.subscribe((x) => (g = x))();
+			const S = window.__stores;
+			const nodes = S.allNodes?.() ?? null;
+			let modal = !!document.querySelector('#restore-session-modal[open]');
+			return { objects: g.children.map((o) => (o.name || o.type) + ':' + o.uuid.slice(0, 6)), modal, hash: S.nodesHandler.graphHash(), runtime: Array.isArray(nodes) ? nodes.map((n) => n.id).join(',') : nodes, level: (() => { let l; S.levels?.currentLevel?.subscribe?.((v) => (l = v))(); return l ?? null; })() };
+		});
 	for (const p of [A, B]) {
 		await p.page.waitForTimeout(300);
-		if (await p.page.locator('#restore-session-modal[open]').count()) await p.page.locator('#restore-session-dismiss').click({ timeout: 10000 }).catch(() => {});
+		const d = await dump(p);
+		console.log(`  before connect ${p.id}: ${JSON.stringify(d)}`);
+		if (d.modal) await p.page.locator('#restore-session-dismiss').click({ timeout: 10000 }).catch(() => {});
 	}
+	console.log('  ids: ' + JSON.stringify(ids));
 	await h.connect(B, A);
 	const peers = [A, B];
+	await A.page.waitForTimeout(3000);
+	for (const p of peers) console.log(`  after connect ${p.id}: ${JSON.stringify(await dump(p))}`);
 	await h.eventually(() => Promise.all(peers.map((p) => p.page.evaluate(() => window.__stores.nodesHandler.graphHash()))), (hs) => hs[0] === hs[1], 'premise: B holds the graph', 30000);
 	await h.eventually(() => Promise.all(Object.values(ids).map((u) => posOf(B, u))), (ps) => ps.every(Boolean), 'premise: B holds every object', 30000);
 
@@ -125,6 +137,10 @@ h.run(async () => {
 		if (!a || !b || !near(a.pos, b.pos, 1e-6)) {
 			agree = false;
 			console.log(`  disagree @${T.toFixed(2)}: A ${JSON.stringify(a?.pos)} B ${JSON.stringify(b?.pos)}`);
+			if ((!a || !b) && !samples.dumped) {
+				samples.dumped = true; // once: which half is gone, the node or the object?
+				for (const p of peers) console.log(`  missing ${p.id}: ${JSON.stringify(await dump(p))}`);
+			}
 		}
 		samples.push(a?.pos ?? null);
 	}
@@ -146,6 +162,9 @@ h.run(async () => {
 	await A.page.evaluate(() => window.__stores.isLocked.set(true));
 	await A.page.waitForTimeout(500);
 	h.check((await piDebug(A.page)).mode === 'grab', 'I1 premise: play mode arms the grab');
+	// in front of the camera play aims with (placed now: play may aim with another camera than the editor's)
+	const mugHome = await placeInFront(A.page, ids.mug, 3);
+	await A.page.waitForTimeout(400);
 	const aim = await A.page.evaluate(() => {
 		let s;
 		window.__stores.playInteract.playInteractState.subscribe((v) => (s = v))();
@@ -159,7 +178,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(800);
 	const carried = await posOf(A, ids.mug);
 	h.check(!near(carried, mugHome, 0.3), `I1: the carry moved the mug (${carried.map((v) => v.toFixed(2))})`);
-	await h.eventually(() => posOf(B, ids.mug), (p) => near(p, carried, 0.05), 'I1: B sees the mug where A carries it', 10000);
+	await h.eventually(() => Promise.all(peers.map((p) => posOf(p, ids.mug))), (ps) => near(ps[0], ps[1], 0.05) && !near(ps[1], mugHome, 0.3), 'I1: B sees the mug where A carries it', 10000);
 	await pointer(A.page, 'pointerup');
 	await A.page.waitForTimeout(300);
 	const putDown = await posOf(A, ids.mug);
@@ -184,7 +203,7 @@ h.run(async () => {
 	await wheel(A.page, -100, 8);
 	await A.page.waitForTimeout(800);
 	const toolCarried = await posOf(A, ids.tool);
-	await h.eventually(() => posOf(B, ids.tool), (p) => near(p, toolCarried, 0.05), 'I1: B sees the tool carried', 10000);
+	await h.eventually(() => Promise.all(peers.map((p) => posOf(p, ids.tool))), (ps) => near(ps[0], ps[1], 0.05) && !near(ps[1], toolHome, 0.3), 'I1: B sees the tool carried', 10000);
 	await pointer(A.page, 'pointerup');
 	await A.page.waitForTimeout(200);
 	h.check(!near(await posOf(A, ids.tool), toolHome, 0.3), 'I1 return: it waits before it goes home');
@@ -208,7 +227,9 @@ h.run(async () => {
 	const eye = await eyeOf();
 	h.check(near(eye, [4, 0.5 + 0.7, -12], 1e-3), `I3: A's eyes are 0.7 m over the seat top, centred (${eye?.map((v) => v.toFixed(3))})`);
 	h.check(!!sat && Math.abs(-Math.cos(sat.yaw) - 1) < 1e-6, 'I3: facing the seat front (+z)');
-	h.check(await A.page.evaluate(() => window.__stores.inputRuntime.isClaimed('locomotion')), 'I3: walking is held while seated (the locomotion claim)');
+	h.check(await A.page.evaluate(() => window.__stores.inputRuntime.isClaimed('locomotion') && window.__stores.inputRuntime.isClaimed('keys')), 'I3: walking is held while seated (the keys + locomotion claims)');
+	await A.page.waitForTimeout(500);
+	h.check(near(await eyeOf(), [4, 1.2, -12], 1e-3), 'I3: and it stays seated over half a second of frames (the grounded pin stands down)');
 	await A.page.keyboard.down('KeyW');
 	await A.page.waitForTimeout(300);
 	await A.page.keyboard.up('KeyW');

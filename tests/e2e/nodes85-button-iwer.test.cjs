@@ -26,6 +26,9 @@ h.run(async () => {
 	});
 	await page.waitForTimeout(1500); // '/create box' re-seats after the call
 	await iwer.enter(page);
+	// VR's game mode: Interact (the Play FAB enters VR in Edit; the laser's game feel — and its hover — is Interact's)
+	await page.evaluate(() => window.__stores.objectActions.setEditorMode('interact'));
+	await iwer.frames(page, 6);
 	await iwer.pose(page, 'head', [0, 1.6, 0]);
 	await iwer.pose(page, 'right', [0.2, 1.3, -0.3], { yaw: 0, pitch: 0 });
 	await iwer.pose(page, 'left', [-0.3, 1.0, -0.2], { yaw: 1.2, pitch: -0.8 }); // the other hand points away and down
@@ -65,6 +68,15 @@ h.run(async () => {
 		15000
 	);
 
+	const glow = (p) =>
+		p.page.evaluate((u) => {
+			let g;
+			window.__stores.objectsGroup.subscribe((x) => (g = x))();
+			const m = g.getObjectByProperty('uuid', u).material;
+			return { hex: m.emissive.getHex(), intensity: m.emissiveIntensity };
+		}, uuid);
+	// the authored look, read BEFORE the graph exists: the laser already rests on the button, so it lights at once
+	const unlit = await glow(A);
 	// the graph goes in AFTER the placement: a driven object's pose is restored to its base every frame
 	await page.evaluate((u) => {
 		const S = window.__stores;
@@ -81,17 +93,24 @@ h.run(async () => {
 	await h.eventually(() => Promise.all(peers.map((p) => p.page.evaluate(() => window.__stores.nodesHandler.graphHash()))), (hs) => hs[0] === hs[1], 'premise: B holds the graph', 30000);
 
 	// ---- the laser lights it — for A only
-	const glow = (p) =>
-		p.page.evaluate((u) => {
-			let g;
-			window.__stores.objectsGroup.subscribe((x) => (g = x))();
-			const m = g.getObjectByProperty('uuid', u).material;
-			return { hex: m.emissive.getHex(), intensity: m.emissiveIntensity };
-		}, uuid);
-	const unlit = await glow(A);
 	await iwer.frames(page, 12);
 	const hov = await page.evaluate(() => window.__stores.hoverState.hoverDebug());
 	console.log('  hover (A): ' + JSON.stringify(hov));
+	console.log('  vrGameInput (A): ' + JSON.stringify(await page.evaluate(() => window.__stores.vrGameInput.vrGameInputDebug())));
+	console.log('  gameFeel / clickable / along: ' + JSON.stringify(await page.evaluate((u) => {
+		const S = window.__stores;
+		let mode;
+		S.editorMode?.subscribe((v) => (mode = v))();
+		let r;
+		S.globalRenderer.subscribe((v) => (r = v))();
+		const out = { mode, presenting: !!r?.xr?.isPresenting, hasClick: S.flowRuntime.objectHasOnClick(u), hasHl: S.flowRuntime.objectHasHoverHighlight(u), along: [] };
+		for (const i of [0, 1]) {
+			const ray = S.vrGameInput.controllerRayOf(i);
+			const t = ray ? S.vrGameInput.clickTargetAlong(ray) : null;
+			out.along.push({ hand: r.xr.getController(i).userData.handedness, key: t?.key ?? null, top: t?.top?.uuid ?? null });
+		}
+		return out;
+	}, uuid)));
 	h.check(Object.values(hov).includes(uuid), 'I2: the right laser on the button counts as pointing at it');
 	await h.eventually(() => glow(A), (gw) => gw.hex !== unlit.hex && gw.intensity === 1, 'I2: the button lights up under the laser on A', 10000);
 	const onB = await glow(B);

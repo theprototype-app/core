@@ -52,6 +52,15 @@ export function cancelGlide(uuid) {
 	glides.delete(uuid);
 }
 
+/** The pose a grab should come back to: a glide's own home when the object is caught on its way
+ * back (a re-grab mid-glide must not make the mid-air spot its new home), else where it is now.
+ * @param {any} object @returns {{pos: number[], quat: number[]}} */
+export function homeFor(object) {
+	const g = glides.get(object.uuid);
+	if (g) return { pos: g.home.pos.toArray(), quat: g.home.quat.toArray() };
+	return { pos: object.position.toArray(), quat: object.quaternion.toArray() };
+}
+
 /** @param {string} uuid */
 export function gliding(uuid) {
 	return glides.has(uuid);

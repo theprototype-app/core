@@ -55,7 +55,8 @@ import { originWorld } from '../objectOrigin';
 import { setGrabPivot, poseSetGrab } from './setGrab.js';
 import { snapEnabled, snapSettings, dropToSurface } from '../snapping';
 import { selectObject, topLevelObjectOf } from '../objectActions';
-import { suspendAnimation, resumeAnimation, fireObjectGrab } from '../flowRuntime';
+import { suspendAnimation, resumeAnimation, fireObjectGrab, kinematicGrab } from '../flowRuntime';
+import { grabRule, startGlide, cancelGlide, homeFor } from '../grabReturn.js'; // 85 I1: Grabbable 'return' in VR
 import { safeStorage } from '../safeStorage';
 import { S } from './state.js';
 import { renderer, tempVector } from './core.js';
@@ -601,6 +602,10 @@ export function onSqueezeStart(index) {
 	}
 
 	const interact = mode === 'interact';
+	// 85 I1: a player's grab of a Grabbable set to 'return' remembers home (the glide's own when caught mid-way)
+	const kinData = interact ? kinematicGrab(object.uuid) : null;
+	const returnTo = kinData && grabRule(kinData).release === 'return' ? { rule: grabRule(kinData), home: homeFor(object) } : null;
+	cancelGlide(object.uuid);
 	suspendAnimation(object.uuid); // animated objects park at their base while held
 	// PFX-C: mid-sim, a VR-grabbed dynamic body follows the hand kinematically
 	// and RELEASE throws it with the estimated hand velocity — the exact desktop
@@ -631,6 +636,7 @@ export function onSqueezeStart(index) {
 		prevPos: cPos,
 		prevQuat: cQuat,
 		before: transformStateOf(object),
+		returnTo,
 		// 52 (V5): where it was taken (world) and when — a second grip before it MOVES makes this the world
 		// grab; until it moves or GRAB_JOIN_MS pass it is TENTATIVE: not selected, nothing sent
 		startWorld: object.getWorldPosition(new THREE.Vector3()).toArray(),
@@ -939,6 +945,7 @@ export function onSqueezeEnd(index) {
 		grabs[index] = null;
 		commitTentative(grab); // 52 (V5): a grip tap on an object still selects it
 		endGrab(object, grab.interact ? null : grab.before);
+		if (grab.returnTo) startGlide(object, grab.returnTo.home, grab.returnTo.rule, performance.now()); // stepped by tickPlayInteract
 		syncGrabbedHand();
 		hapticPulse(0.18, 24);
 	}

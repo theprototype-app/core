@@ -51,6 +51,8 @@ function onClick(uuid) {
 	const cam = get(playerCam);
 	const standEye = !vr && cam?.isObject3D ? cam.getWorldPosition(new THREE.Vector3()).toArray() : null;
 	seated = { uuid, eye: pose.eye, yaw: pose.yaw, floor: pose.floor, standEye, vr };
+	// 'keys' stands PointerLockControls' walk + grounded eye pin down (mouse look stays), 'locomotion' the VR stick
+	claimInput('keys');
 	claimInput('locomotion');
 	if (vr) sitVR(pose);
 	else {
@@ -92,6 +94,7 @@ export function standUp(restore = true) {
 	if (!seated) return;
 	const s = seated;
 	seated = null;
+	releaseInput('keys');
 	releaseInput('locomotion');
 	if (!restore) return;
 	if (s.vr) {

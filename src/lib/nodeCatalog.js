@@ -858,6 +858,22 @@ export const nodeCatalog = [
 		items: [
 			// 134: EVENT nodes — ride small replicated trigger messages, not state
 			{ type: 'onclick', label: 'On Click', defaults: { pulse: 0.3 } },
+			// 78 F2: a pointer, a phone tap or a VR laser over the object (Play / Interact). The
+			// stamp replicates for `anyone` (everyone sees the bell swing) and stays on this peer
+			// for `me`. `over` holds while the pointer stays.
+			{
+				type: 'onhover',
+				label: 'On Hover',
+				defaults: { on: 'enter', who: 'anyone', cooldown: 0, pulse: 0.3 },
+				inputs: ['enabled'],
+				inputLabels: { enabled: 'enabled - wire a boolean (unwired = on)' },
+				params: [
+					{ key: 'on', kind: 'select', options: ['enter', 'leave', 'over'] },
+					{ key: 'who', kind: 'select', options: ['anyone', 'me'] },
+					{ key: 'cooldown', kind: 'range', min: 0, max: 10, step: 0.1 }
+				],
+				note: 'Wire it into an Object Selector, or put it in the object\'s own flow. Mouse in Interact, the crosshair in Play, a tap on a phone, the laser in VR.'
+			},
 			// 30b (core-games): a player picked the object up — desktop play/Interact carry or
 			// a VR Interact grip (never an editor move). Towers' crates sound on the lift.
 			{ type: 'ongrab', label: 'On Grab', defaults: { pulse: 0.3 } },
@@ -942,6 +958,43 @@ export const nodeCatalog = [
 	{
 		group: 'Animation',
 		items: [
+			// 78 F2: a swing / wobble / pop from hover stamps — every peer computes the same pose
+			{
+				type: 'hoveranimate',
+				label: 'Hover Animate',
+				defaults: { style: 'swing', mode: 'energy', amount: 20, axis: 'z', freq: 1.2, damping: 1.2, seconds: 0.25, sound: 'none', soundName: 'ring' },
+				inputs: ['trigger'],
+				inputLabels: { trigger: 'trigger - an On Hover (or any event)' },
+				params: [
+					{ key: 'style', kind: 'select', options: ['swing', 'wobble', 'pop'] },
+					{ key: 'mode', kind: 'select', options: ['energy', 'once', 'restart', 'while', 'stop', 'inout'] },
+					{ key: 'amount', kind: 'range', min: 0, max: 90, step: 1, label: 'amount (degrees, % for pop)' },
+					{ key: 'axis', kind: 'select', options: ['z', 'x', 'y'] },
+					{ key: 'freq', kind: 'range', min: 0.2, max: 6, step: 0.1, label: 'swings per second' },
+					{ key: 'damping', kind: 'range', min: 0, max: 6, step: 0.1 },
+					{ key: 'seconds', kind: 'range', min: 0.05, max: 2, step: 0.05, label: 'in-out seconds' },
+					{ key: 'sound', kind: 'select', options: ['none', 'start', 'extremes'] },
+					{ key: 'soundName', kind: 'select', options: [...GAME_SOUND_NAMES] }
+				],
+				note: 'energy: each hover adds a swing (a bell) · once · restart · while hovered · stop dead when it ends · in-out holds a hovered pose.'
+			},
+			// 78 F3 / F8: a door, a lid, a drawer — between captured poses, state saved in the node
+			{
+				type: 'toggleanim',
+				label: 'Toggle Animation',
+				defaults: { duration: 0.6, ease: 'smooth', interrupt: 'reverse', autoClose: 0, pose: '', openSound: 'none', closeSound: 'none', poses: [] },
+				inputs: ['trigger', 'open', 'close', 'goto', 'pose', 'enabled'],
+				params: [
+					{ key: 'duration', kind: 'range', min: 0, max: 5, step: 0.05 },
+					{ key: 'ease', kind: 'select', options: ['smooth', 'linear'] },
+					{ key: 'interrupt', kind: 'select', options: ['reverse', 'finish'] },
+					{ key: 'autoClose', kind: 'range', min: 0, max: 60, step: 0.5 },
+					{ key: 'pose', kind: 'text', placeholder: 'pose for "go to" (name or number)', maxLength: 40 },
+					{ key: 'openSound', kind: 'select', options: ['none', ...GAME_SOUND_NAMES] },
+					{ key: 'closeSound', kind: 'select', options: ['none', ...GAME_SOUND_NAMES] }
+				],
+				note: 'Open/closed is shared and saved: everyone, and anyone who joins later, sees the same door.'
+			},
 			{
 				type: 'shake',
 				label: 'Shake',
@@ -1488,6 +1541,7 @@ export const nodeCatalog = [
 // managed object actions: LookAt orients, Set Color paints, Visibility toggles)
 export const animationTypes = [
 	'shake', 'spin', 'bounce', 'orbit', 'pulse', 'blink', 'pathpatrol',
+	'hoveranimate', 'toggleanim', // 78 F2 / F3
 	'rotor', 'flowfloat', // 36-fb F25/F24 (sim/motionNodes.js)
 	'followpath', 'wander', 'orientvelocity', 'bodywave', // 40 F15 (motion/motionNodes.js)
 	'lookat', 'setcolor', 'visibility', 'setuniform',

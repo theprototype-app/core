@@ -40,6 +40,7 @@ const OUTPUT = {
 	colorpicker: 'color',
 	objectselector: 'object',
 	onclick: 'event',
+	onhover: 'event', // 78 F2
 	ongrab: 'event', // 30b (core-games)
 	keypress: 'event', // H3
 	// 21-E5: a pad button is an EVENT (the keypress channel), a stick is a NUMBER. Both
@@ -227,6 +228,10 @@ const INPUT = {
 	// Selector), and Game Music's on/off
 	// 36 (U10): `sub` — the second line, wired as text (a behaviour's bannerSub)
 	announce: { trigger: 'event', value: 'number', sub: 'any' },
+	// 78 F2 / F3
+	onhover: { enabled: 'boolean' },
+	hoveranimate: { trigger: 'event' },
+	toggleanim: { trigger: 'event', open: 'event', close: 'event', goto: 'event', pose: 'any', enabled: 'boolean' },
 	gamesound: { trigger: 'event', at: 'object' },
 	effectburst: { trigger: 'event', at: 'object' },
 	hapticpulse: { trigger: 'event' },
@@ -260,7 +265,9 @@ const OUTPUT_HANDLES = {
 	// 36 X6: the OTHER body of the contact, as an object (wire it into lookat/distance)
 	onimpact: { other: 'object' },
 	onenter: { other: 'object' },
-	onexit: { other: 'object' }
+	onexit: { other: 'object' },
+	// 78 F3: the door's state beside its effect output
+	toggleanim: { isOpen: 'boolean', moving: 'boolean', pose: 'number', opened: 'event', closed: 'event' }
 };
 
 /** 74 VH1: the NAMED source handles a node type declares beyond its plain output — the VR logic panel draws

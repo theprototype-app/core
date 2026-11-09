@@ -77,6 +77,9 @@ import {
 	localPlayerBody
 } from './charController';
 import { gameFeelActive } from './gameFeel'; // 78 F10: a leaf (sceneStore + svelte/store)
+// 78 F2/F3/F8: the pure halves of On Hover, Hover Animate and Toggle Animation (a leaf)
+import { hoverEnvelope, ringLength, OVER_WINDOW, doorApply, doorPoseAt, poseIndexOf } from './hoverCore.js';
+import { playGameSound, isGameSound } from './gameSfx';
 import { bodyDistance } from './playReach.js'; // 78 F10: Proximity to the player's body (a leaf)
 // 27-B: recovery paths report through the diagnostics ring instead of console.log,
 // so a user can hand over what happened (hardening audit H4). A zero-import leaf.
@@ -2342,6 +2345,8 @@ function stampOfSource(edge, ctx, seen) {
 	// 36 (U10): a NAMED event output keeps its own log entry, `<node>#<output>` (a behaviour's
 	// `this.emit('holeSunk')`) — several events on one node, each its own stamp
 	if (edge.sourceHandle && source?.type === 'behaviour') return ctx?.triggers?.[edge.source + '#' + edge.sourceHandle]?.lastT ?? null;
+	// 78 F3: a Toggle Animation's opened / closed are its own entries too (derived on every peer)
+	if (source?.type === 'toggleanim') return edge.sourceHandle === 'opened' || edge.sourceHandle === 'closed' ? (ctx?.triggers?.[edge.source + '#' + edge.sourceHandle]?.lastT ?? null) : null;
 	return ctx?.triggers?.[edge.source]?.lastT ?? null;
 }
 
@@ -2723,6 +2728,8 @@ export const valueTypes = [
 	'onclap', // 31: two hands brought together — a handle map: __default pulse + point/byMe
 	'gamesetting', // 31: a scene's own settings row, read on this device
 	'onenter', 'onexit', // CL-C: sensor overlap triggers
+	'onhover', // 78 F2: a pointer, a tap or a laser over the object (the On Click window)
+	'toggleanim', // 78 F3: isOpen / moving / pose / opened / closed beside its effect output
 	'velocity', // CL-C: live speed readout (m/s)
 	'measure', // B6: an object's top / bottom / height / y / speed
 	'animstate', // 17-E F3: the readable half of animfinished
@@ -3313,6 +3320,24 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			// 36 audit: listed as a value source since A3 but never evaluated, so a wire from
 			// it read undefined everywhere but its own card
 			return hudTimerRemaining(node, { ...d, duration: input('duration', d.duration) }, time, ctx);
+		case 'onhover': {
+			// 78 F2: the On Click window; an "over" node holds while its re-stamps keep coming
+			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
+			const dt = trig ? time - trig.lastT : Infinity;
+			const hold = d.on === 'over' ? Math.max(OVER_WINDOW, num(d.pulse ?? 0.3)) : num(d.pulse ?? 0.3);
+			return dt >= 0 && dt < hold ? 1 : 0;
+		}
+		case 'toggleanim': {
+			// 78 F3: the door's state (computed where it is posed, read here a frame later)
+			const door = doors.get(node.id);
+			const pulse = (/** @type {string} */ name) => {
+				const trig = ctx && ctx.triggers ? ctx.triggers[node.id + '#' + name] : null;
+				const dt = trig ? time - trig.lastT : Infinity;
+				return dt >= 0 && dt < 0.3 ? 1 : 0;
+			};
+			const isOpen = !!door && door.st.to !== 0;
+			return { __handles: { isOpen, moving: !!door?.moving, pose: door ? door.st.to : 0, opened: pulse('opened'), closed: pulse('closed') }, __default: isOpen };
+		}
 		case 'hudbutton': // 36 / DEVX #22: the press is the onclick pulse window — a wire
 		case 'onplaystart': // 78 F13: local pulses, derived on every peer (updatePlayEdgeNodes)
 		case 'onplaystop':
@@ -4027,6 +4052,294 @@ export function fireObjectGrab(uuid) {
 	return fired;
 }
 
+// ---- 78 F2: ON HOVER ---------------------------------------------------------------------------
+//
+// A pointer over the object (Interact, or Play's crosshair), a phone TAP (tap = hover) or a VR
+// laser — sampled by hoverInput.js at <= 15 Hz on the objects some On Hover node watches, with a
+// 120 ms hysteresis. Each edge is a STAMP: replicated for `who: anyone` (every peer's graph sees
+// it — the bell swings everywhere), kept on this peer for `who: me`. Nothing is streamed.
+
+/** node id -> the last time it fired (its cooldown) @type {Map<string, number>} */
+const hoverFiredAt = new Map();
+/** @type {{nodes: any, edges: any, set: Set<string>}} */
+let hoverTargetCache = { nodes: null, edges: null, set: new Set() };
+let hoverInputStarted = false;
+
+/** the objects some On Hover node watches (its owner, or the Object Selectors it reaches) @returns {Set<string>} */
+export function hoverTargetUuids() {
+	if (hoverTargetCache.nodes === nodes && hoverTargetCache.edges === edges) return hoverTargetCache.set;
+	/** @type {Set<string>} */
+	const set = new Set();
+	for (const node of nodes) {
+		if (node.type !== 'onhover') continue;
+		const owner = implicitOwnerOf(node);
+		if (owner) set.add(owner);
+		// every Object Selector the node reaches (directly or through a Hover Animate)
+		const seen = new Set([node.id]);
+		const stack = [node.id];
+		while (stack.length) {
+			const cur = stack.pop();
+			for (const edge of edges) {
+				if (edge.source !== cur || seen.has(edge.target)) continue;
+				const target = nodeById(nodes, edge.target);
+				seen.add(edge.target);
+				if (target?.type === 'objectselector') {
+					const sel = target.data?.selected;
+					if (sel && sel !== '-None-' && !muted.includes(sel)) set.add(sel);
+				} else stack.push(edge.target);
+			}
+		}
+	}
+	hoverTargetCache = { nodes, edges, set };
+	if (set.size && !hoverInputStarted) {
+		hoverInputStarted = true;
+		// primed: hoverInput imports this module (the vrGameInput shape)
+		import('./hoverInput.js').then((m) => m.ensureHoverInput()).catch((error) => console.warn('hover input failed to start', error));
+	}
+	return set;
+}
+
+/**
+ * The watched object a ray meets first — the nearest VISIBLE hit in the scene (a wall in front
+ * hides the bell), climbed to the object an On Hover node watches. The pointer, the tap and the
+ * VR laser all resolve through this. @param {any} ray a THREE.Raycaster @returns {string | null}
+ */
+export function hoverTargetAlong(ray) {
+	const watched = hoverTargetUuids();
+	if (!watched.size || !sceneObjects) return null;
+	let hits = [];
+	try {
+		hits = ray.intersectObject(sceneObjects, true);
+	} catch {
+		return null;
+	}
+	for (const hit of hits) {
+		let visible = true;
+		for (let o = hit.object; o && o !== sceneObjects; o = o.parent) if (o.visible === false) visible = false;
+		if (!visible || hit.object?.userData?.helper || hit.object?.isLine || hit.object?.isPoints) continue;
+		for (let o = hit.object; o && o !== sceneObjects; o = o.parent) if (watched.has(o.uuid)) return o.uuid;
+		return null; // something else is in front
+	}
+	return null;
+}
+
+/**
+ * A hover edge on `uuid`: 'enter' (the pointer arrived), 'leave' (it went, after the
+ * hysteresis), 'over' (the re-stamp while it stays). Pulses the On Hover nodes watching it whose
+ * `on` matches; `who: me` keeps the pulse on this peer. Returns how many fired.
+ * @param {string} uuid @param {'enter'|'leave'|'over'} phase @returns {number}
+ */
+export function fireObjectHover(uuid, phase) {
+	let fired = 0;
+	const now = syncedNow();
+	const ctx = runtimeCtx();
+	for (const node of nodes) {
+		if (node.type !== 'onhover') continue;
+		const on = node.data?.on ?? 'enter';
+		const wants = phase === 'enter' ? on === 'enter' || on === 'over' : phase === 'over' ? on === 'over' : on === 'leave';
+		if (!wants) continue;
+		if (!(reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid)) continue;
+		const data = resolveInputs(node, nodes, edges, now, ctx);
+		if (data.enabled === false || data.enabled === 0) continue;
+		const cooldown = phase === 'over' ? 0 : num(data.cooldown ?? 0);
+		const last = hoverFiredAt.get(node.id);
+		if (cooldown > 0 && typeof last === 'number' && now - last >= 0 && now - last < cooldown) continue;
+		hoverFiredAt.set(node.id, now);
+		applyNodeTrigger(node.id, now, (data.who ?? 'anyone') === 'me' ? false : replicatesPulse(node));
+		fired++;
+	}
+	return fired;
+}
+
+// ---- 78 F2: HOVER ANIMATE ---------------------------------------------------------------------
+
+/** node id -> the trigger stamps it has seen (synced seconds) and the swing's last samples
+ * @type {Map<string, {stamps: number[], last: number | null, prev: number[], hold: number, sounded: number}>} */
+const hoverStamps = new Map();
+
+/** how long one stamp of this node's trigger stays high (an "over" hover holds) @param {string} nodeId */
+function triggerHoldOf(nodeId) {
+	let hold = 0.3;
+	for (const edge of edgesInto(edges, nodeId)) {
+		if (edge.targetHandle && edge.targetHandle !== 'trigger') continue;
+		const source = nodeById(nodes, edge.source);
+		if (!source) continue;
+		const h = source.type === 'onhover' && source.data?.on === 'over' ? Math.max(OVER_WINDOW, num(source.data?.pulse ?? 0.3)) : num(source.data?.pulse ?? 0.3);
+		hold = Math.max(hold, h || 0.3);
+	}
+	return hold;
+}
+
+/** this node's stamp history, advanced to now @param {any} anim @param {any} ctx @param {number} time */
+function hoverRowFor(anim, ctx, time) {
+	const stamp = triggerStampFor(anim.id, ctx);
+	let row = hoverStamps.get(anim.id);
+	if (!row) {
+		row = { stamps: [], last: stamp, prev: [0, 0], hold: triggerHoldOf(anim.id), sounded: -Infinity };
+		hoverStamps.set(anim.id, row);
+		// a swing still ringing when we first see the node (a late joiner) shows its tail
+		if (typeof stamp === 'number' && time - stamp >= 0 && time - stamp < ringLength(num(anim.data?.damping ?? 1.2))) row.stamps.push(stamp);
+		return row;
+	}
+	row.hold = triggerHoldOf(anim.id);
+	if (typeof stamp === 'number' && stamp !== row.last) {
+		row.last = stamp;
+		row.stamps.push(stamp);
+		if (row.stamps.length > 64) row.stamps.splice(0, row.stamps.length - 64);
+	}
+	return row;
+}
+
+/** the swing's parameters, resolved @param {any} data */
+function hoverParams(data) {
+	return { mode: data.mode ?? 'energy', freq: num(data.freq ?? 1.2) || 1.2, damping: num(data.damping ?? 1.2), inoutSeconds: num(data.seconds ?? 0.25) || 0.25 };
+}
+
+/**
+ * 78 F2 test seam: the swing a Hover Animate node computes at `t` (synced seconds), or — with
+ * `t` null — `since` seconds after its newest trigger stamp. Equal on every peer that holds the
+ * same stamps (the release proof's "pose equality at a fixed t").
+ * @param {string} nodeId @param {number | null} t @param {number} [since]
+ */
+export function hoverAnimateDebug(nodeId, t, since = 0.2) {
+	const row = hoverStamps.get(nodeId);
+	const node = nodeById(nodes, nodeId);
+	if (!row || !node) return null;
+	const at = typeof t === 'number' ? t : (row.stamps[row.stamps.length - 1] ?? NaN) + since;
+	const env = hoverEnvelope(hoverParams(node.data ?? {}), row.stamps, row.hold, at);
+	return { t: at, env, angle: (env * num(node.data?.amount ?? 20) * Math.PI) / 180, stamps: row.stamps.length };
+}
+
+/** @param {any} object @param {any} base @param {any} anim @param {any} data @param {number} time @param {any} ctx */
+function applyHoverAnimate(object, base, anim, data, time, ctx) {
+	const row = hoverRowFor(anim, ctx, time);
+	if (!row.stamps.length) return;
+	const p = hoverParams(data);
+	const env = hoverEnvelope(p, row.stamps, row.hold, time);
+	const amount = num(data.amount ?? 20);
+	const style = data.style ?? 'swing';
+	const axis = data.axis === 'x' || data.axis === 'y' ? data.axis : 'z';
+	if (style === 'pop') {
+		const f = 1 + (p.mode === 'inout' ? env : Math.abs(env)) * (amount / 100);
+		object.scale.set(base.scale[0] * f, base.scale[1] * f, base.scale[2] * f);
+	} else if (style === 'wobble') {
+		const env2 = hoverEnvelope(p, row.stamps, row.hold, time - 0.25 / p.freq);
+		const k = ((amount * Math.PI) / 180) * 0.6;
+		object.rotation.x += env * k;
+		object.rotation.z += env2 * k;
+	} else {
+		const angle = (env * amount * Math.PI) / 180;
+		if (originOffsetOf(object)) {
+			originPivotOf(object, base);
+			object.rotation[axis] += angle;
+			object.position.fromArray(spinPositionAbout(base.pos, pivotVec, axis, angle));
+		} else object.rotation[axis] += angle;
+	}
+	// a sound on each new swing, or at the swing's extremes (LOCAL, from the same pose everywhere)
+	const sound = String(data.soundName ?? 'ring');
+	if (data.sound && data.sound !== 'none' && isGameSound(sound)) {
+		const at = object.getWorldPosition(new THREE.Vector3()).toArray();
+		const newest = row.stamps[row.stamps.length - 1];
+		if (data.sound === 'start') {
+			if (newest > row.sounded && time - newest < 0.5) {
+				row.sounded = newest;
+				playGameSound(sound, at);
+			}
+		} else if (data.sound === 'extremes') {
+			const [a, b] = row.prev;
+			if (Math.abs(b) > 0.3 && ((b > a && b > env) || (b < a && b < env)) && time - row.sounded > 0.15) {
+				row.sounded = time;
+				playGameSound(sound, at);
+			}
+		}
+	}
+	row.prev = [row.prev[1], env];
+}
+
+// ---- 78 F3 / F8: TOGGLE ANIMATION (Open / Close, named poses) -------------------------------------
+//
+// The door's state is DERIVED from the replicated stamps on its inputs (toggle / open / close /
+// go to), each applied at its own stamp, so every peer that saw the same presses stands the door
+// in the same place. The SETTLED pose is also written into the node (`state`, by the host only)
+// so a late joiner and a reload start where the room is, without replaying anything.
+
+/** @type {Map<string, {st: any, seen: Record<string, number | null>, arrived: number | null, moving: boolean, adopted: string}>} */
+const doors = new Map();
+/** @type {any} */ let connectionRef = null;
+
+/** the poses a Toggle Animation moves between: its captured ones, else closed = the base pose and
+ * open = a quarter turn about Y (a door works before anyone captures anything) @param {any} data @param {any} base */
+function doorPosesOf(data, base) {
+	const list = Array.isArray(data.poses) ? data.poses.filter((/** @type {any} */ p) => p && Array.isArray(p.p) && Array.isArray(p.r)) : [];
+	if (list.length >= 2) return list.map((/** @type {any} */ p, /** @type {number} */ i) => ({ name: String(p.name ?? (i === 0 ? 'closed' : 'pose ' + i)), p: p.p, r: p.r, s: Array.isArray(p.s) ? p.s : base.scale }));
+	const closed = { name: 'closed', p: [...base.pos], r: [...base.rot], s: [...base.scale] };
+	return [closed, { name: 'open', p: [...base.pos], r: [base.rot[0], base.rot[1] + Math.PI / 2, base.rot[2]], s: [...base.scale] }];
+}
+
+/** @param {any} object @param {any} base @param {any} anim @param {any} data @param {number} time @param {any} ctx */
+function applyToggleAnim(object, base, anim, data, time, ctx) {
+	const poses = doorPosesOf(data, base);
+	const stamps = {
+		toggle: triggerStampFor(anim.id, ctx),
+		open: handleStamp(anim, 'open', ctx),
+		close: handleStamp(anim, 'close', ctx),
+		goto: handleStamp(anim, 'goto', ctx)
+	};
+	const opts = { duration: num(data.duration ?? 0.6), interrupt: data.interrupt ?? 'reverse', ease: data.ease ?? 'smooth' };
+	let door = doors.get(anim.id);
+	if (!door) {
+		// FIRST SIGHT: the saved state, never a replay of old presses (the actionSeenAt rule)
+		const at = Math.max(0, poseIndexOf(poses, data.state));
+		door = { st: { from: null, fromPose: null, to: at, start: -Infinity, end: -Infinity }, seen: { ...stamps }, arrived: null, moving: false, adopted: String(data.state ?? '') };
+		doors.set(anim.id, door);
+	}
+	/** @type {{kind: any, t: number, pose?: any}[]} */
+	const events = [];
+	for (const [kind, t] of Object.entries(stamps)) {
+		if (typeof t === 'number' && t !== door.seen[kind]) {
+			if (door.seen[kind] === null || t > /** @type {number} */ (door.seen[kind])) events.push({ kind, t, ...(kind === 'goto' ? { pose: data.pose } : {}) });
+			door.seen[kind] = t;
+		}
+	}
+	const enabled = !(data.enabled === false || data.enabled === 0);
+	const autoClose = num(data.autoClose ?? 0);
+	const autoBefore = (/** @type {number} */ t) => {
+		if (autoClose > 0 && door.st.to !== 0 && door.st.end + autoClose <= t) door.st = doorApply(door.st, { kind: 'auto', t: door.st.end + autoClose }, poses, opts);
+	};
+	events.sort((a, b) => a.t - b.t);
+	for (const ev of events) {
+		autoBefore(ev.t);
+		if (!enabled) continue;
+		const before = door.st;
+		door.st = doorApply(door.st, ev, poses, opts);
+		if (door.st !== before && time - ev.t < 1) {
+			const sound = String(door.st.to === 0 ? data.closeSound ?? 'none' : data.openSound ?? 'none');
+			if (isGameSound(sound)) playGameSound(sound, object.getWorldPosition(new THREE.Vector3()).toArray());
+		}
+	}
+	autoBefore(time);
+	const at = doorPoseAt(door.st, poses, time, opts.ease);
+	door.moving = at.moving;
+	object.position.fromArray(at.pose.p);
+	object.rotation.set(at.pose.r[0], at.pose.r[1], at.pose.r[2]);
+	object.scale.fromArray(at.pose.s);
+	// ARRIVAL: opened / closed pulse on every peer at the same stamp (the move's end)
+	if (!at.moving && door.st.from !== null && door.arrived !== door.st.end) {
+		door.arrived = door.st.end;
+		applyNodeTrigger(anim.id + (door.st.to === 0 ? '#closed' : '#opened'), door.st.end, false);
+		// the host writes the settled pose into the node: saved, and what a late joiner starts at
+		const name = poses[door.st.to]?.name ?? '';
+		if (connectionRef && get(connectionRef.sessionHost) === null && name && data.state !== name)
+			import('./nodesHandler').then((m) => m.setNodeData(anim.id, { state: name }, anim.__graph ?? SCENE_GRAPH)).catch(() => {});
+	}
+}
+
+/** 78 F3 test seam: a door's state @param {string} nodeId */
+export function toggleAnimDebug(nodeId) {
+	const door = doors.get(nodeId);
+	return door ? { to: door.st.to, from: door.st.from, start: door.st.start, end: door.st.end, moving: door.moving } : null;
+}
+
 /** 30b (vr-play): would a click on `uuid` reach an On Click node? The same two rules
  * fireObjectClick fires by — the VR hover tap and the sweep ask it before touching
  * anything. @param {string} uuid @returns {boolean} */
@@ -4288,6 +4601,15 @@ function applyAnimation(object, base, anim, time, ctx) {
 	}
 	if (anim.type === 'bodywave') {
 		applyBodyWave(object, base, data, time, { key: anim.id + '|' + object.uuid });
+		return;
+	}
+	// 78 F2 / F3
+	if (anim.type === 'hoveranimate') {
+		applyHoverAnimate(object, base, anim, data, time, ctx);
+		return;
+	}
+	if (anim.type === 'toggleanim') {
+		applyToggleAnim(object, base, anim, data, time, ctx);
 		return;
 	}
 	if (anim.type === 'shake') {
@@ -5228,6 +5550,7 @@ function runTick(now) {
 	// the same replicated trigger stamps, so every peer takes the same decisions.
 	updateGameNodes(time, ctx);
 	updatePlayEdgeNodes(time, ctx); // 78 F13: On Play start / stop
+	hoverTargetUuids(); // 78 F2: cached on the graph; starts the hover input the first time one is watched
 	// 48 D1: the kit and the behaviours keep their own (live) clocks through a debugger pause, and
 	// behaviour inputs run on the authority — live with other players connected (ownCtx)
 	if (paused) toLive();
@@ -5559,6 +5882,7 @@ export function startFlowRuntime() {
 	// knock.js imports physics, which imports this module.
 	import('./knock').then((m) => m.registerHitListener((hit, local) => fireObjectHit(hit, local)));
 	import('./gamePresence').then((m) => (presenceRef = m));
+	import('./connectionState').then((m) => (connectionRef = m)); // 78 F3: the host saves a door's state
 	primeGameFeelActions(); // 30b: effectsBurst + vrControls, primed (see gameFeelActions)
 	primeKitRuntime(); // 34 R2: physics (the initiator) + flowRuntime (the event pulse), primed
 	installKitNodes(); // 34 R2: the kit nodes' outputs and named inputs, declared once

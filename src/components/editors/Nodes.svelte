@@ -34,6 +34,7 @@
 	import SwitcherNode from './nodes/SwitcherNode.svelte';
 	import ObjectSelectorNode from './nodes/ObjectSelectorNode.svelte';
 	import AnimationNode from './nodes/AnimationNode.svelte';
+	import ToggleAnimNode from './nodes/ToggleAnimNode.svelte'; // 78 F3
 	import HudNode from './nodes/HudNode.svelte';
 	import GameCameraNode from './nodes/GameCameraNode.svelte';
 	import TravelNode from './nodes/TravelNode.svelte';
@@ -295,6 +296,9 @@
 		// setcamera/gamestart/setlook get their own card for the camera picker.
 		setgamestate: AnimationNode,
 		ongamestate: AnimationNode,
+		onhover: AnimationNode, // 78 F2
+		hoveranimate: AnimationNode, // 78 F2
+		toggleanim: ToggleAnimNode, // 78 F3 / F8
 		onplaystart: AnimationNode, // 78 F13
 		onplaystop: AnimationNode,
 		setvariable: AnimationNode,

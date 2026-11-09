@@ -111,6 +111,18 @@ h.run(async () => {
 	h.check(top === 'CANVAS', `premise: the bell is on screen and nothing covers it (${top} at ${Math.round(at.x)},${Math.round(at.y)})`);
 	await A.page.mouse.move(at.x, at.y, { steps: 4 });
 	await h.eventually(both, (r) => r.a.enter === 1 && r.b.enter === 1, 'the mouse over the bell: On Hover (enter) fires once, on A AND on B', 6000);
+	// B's bell really moves (sampled over the first swing — nothing streamed, B derives it)
+	const rotB = await B.page.evaluate(async (uuid) => {
+		let g;
+		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		let most = 0;
+		for (let i = 0; i < 12; i++) {
+			most = Math.max(most, Math.abs(g.getObjectByProperty('uuid', uuid)?.rotation.z ?? 0));
+			await new Promise((r) => setTimeout(r, 60));
+		}
+		return most;
+	}, ids.bell);
+	h.check(rotB > 0.02, `B's bell swings (largest rotation.z ${rotB.toFixed(3)} rad)`);
 	await A.page.mouse.move(at.x + 3, at.y + 2, { steps: 2 });
 	await A.page.waitForTimeout(900);
 	const r1 = await both();
@@ -118,18 +130,12 @@ h.run(async () => {
 	h.check(r1.a.me === 1 && r1.b.me === 0, `who: me fires on the hovering peer only (${fmt(r1)})`);
 
 	// Hover Animate: the SAME swing on both peers at a fixed moment (no streaming)
-	const tFix = NOW() + 0.4;
-	const poseAt = (page) => page.evaluate((t) => window.__stores.flowRuntime.hoverAnimateDebug?.('swing', t) ?? null, tFix);
+	// the moment 0.2 s after the hover's stamp, asked of each peer's own stamp history
+	const poseAt = (page) => page.evaluate(() => window.__stores.flowRuntime.hoverAnimateDebug?.('swing', null, 0.2) ?? null);
 	const pa = await poseAt(A.page);
 	const pb = await poseAt(B.page);
 	h.check(pa !== null && Math.abs(pa.angle) > 0.01, `the bell swings on A (${JSON.stringify(pa)})`);
-	h.check(pa !== null && pb !== null && Math.abs(pa.angle - pb.angle) < 1e-6, `pose equality: A and B compute the same swing at the same t (${pa?.angle} / ${pb?.angle})`);
-	const rotB = await B.page.evaluate((uuid) => {
-		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
-		return g.getObjectByProperty('uuid', uuid)?.rotation.z ?? null;
-	}, ids.bell);
-	h.check(rotB !== null && Math.abs(rotB) > 1e-3, `... and B's bell really moves (rotation.z ${rotB})`);
+	h.check(pa !== null && pb !== null && pa.t === pb.t && Math.abs(pa.angle - pb.angle) < 1e-9, `pose equality: A and B compute the same swing at the same t (${pa?.t}: ${pa?.angle} / ${pb?.t}: ${pb?.angle})`);
 
 	await A.page.mouse.move(away.x, away.y, { steps: 2 });
 	await h.eventually(both, (r) => r.a.leave === 1 && r.b.leave === 1, 'the mouse leaves: On Hover (leave) fires once on both', 6000);

@@ -1,6 +1,7 @@
 import { writable, get } from 'svelte/store';
 import { tick } from 'svelte';
 import { safeStorage } from './safeStorage';
+import { migrateChatKeys } from './chat/chatKeys.js'; // uir-chat
 import {
 	pickLayoutStorage,
 	layoutWrites,
@@ -16,7 +17,7 @@ import {
 	chromeWrites
 } from './uiLayoutsCore';
 import { snapshotWorkspace, applyWorkspace, closeWorkspace } from './workspace';
-import { hudEditorClose, timelineClose, profilerClose, chatHidden, settingsOpen, floatingToolbar, toolbarAlwaysOnTop, hudStackLift, showRoomsButton, touchTools } from '../stores/appStore';
+import { hudEditorClose, timelineClose, profilerClose, chatHidden, chatTab, settingsOpen, floatingToolbar, toolbarAlwaysOnTop, hudStackLift, showRoomsButton, touchTools } from '../stores/appStore';
 import { phoneShell } from './ui/phoneShell';
 
 // 37 R14 — NAMED WORKSPACE LAYOUTS, the live half (the rules are in uiLayoutsCore).
@@ -174,6 +175,9 @@ export async function applyLayout(id) {
 			for (const [key, value] of writes.set) safeStorage.setItem(key, value);
 			if (profile === 'desktop') reloadDesktopChromePrefs();
 		}
+		// uir-chat: a layout saved before Chat and the AI assistant became one window names the
+		// assistant's own window ('aiAssistant') — read it as the one window, on its Assistant tab
+		if (migrateChatKeys((k) => safeStorage.getItem(k), (k, v) => safeStorage.setItem(k, v), (k) => safeStorage.removeItem(k)).assistant) chatTab.set('assistant');
 		runLayoutReloaders();
 		await tick();
 

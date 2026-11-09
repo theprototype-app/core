@@ -97,8 +97,9 @@ h.run(async () => {
 	const PHONE_ONLY = ['Properties', 'Objects', 'Notes', 'Layouts', 'Configure Scene', 'Statistics'];
 	const shared = sheet.filter((t) => !PHONE_ONLY.includes(t));
 	// 42 I6: the desktop "+" ALSO lists the floating windows the dock hosts there (Objects, Statistics,
-	// Live profiler, Chat, AI assistant) — after the shared rows; the phone keeps its content tabs
-	const HOSTED = ['Objects', 'Statistics', 'Live profiler', 'Chat', 'AI assistant', 'Free assets']; // 47 C1: the Asset Browser docks as a hosted tab
+	// Chat, AI assistant) — after the shared rows; the phone keeps its content tabs. showhide-v8: no Live profiler (it is
+	// a row of the Profiler's list now)
+	const HOSTED = ['Objects', 'Statistics', 'Chat', 'AI assistant', 'Free assets']; // 47 C1: the Asset Browser docks as a hosted tab
 	h.check(JSON.stringify(titles) === JSON.stringify([...shared, ...HOSTED]), `1.1 the desktop "+" lists the phone sheet's windows, same order, then the hosted windows (desktop ${JSON.stringify(titles)} vs phone ${JSON.stringify(shared)})`);
 	h.check(PHONE_ONLY.every((t) => sheet.includes(t)) && !titles.some((t) => PHONE_ONLY.includes(t) && !HOSTED.includes(t)), `1.1b the phone sheet adds the five content tabs, the desktop "+" only the ones that float there (Objects, Statistics) (${JSON.stringify(sheet)})`);
 	h.check(titles.includes('Node editor'), `2.1 ...the Node editor among them (${JSON.stringify(titles)})`);

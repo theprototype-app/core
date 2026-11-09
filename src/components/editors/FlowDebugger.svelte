@@ -25,6 +25,7 @@
 	import { findNodeSpec } from '$lib/nodeCatalog';
 	// 78 F14: the Console — what Announce nodes and modules said, with the time and the source
 	import { announceLog, announceUnread, clearAnnounceLog } from '$lib/gameAnnounce';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 
 	const playing = $derived($isLocked === true);
 	const paused = $derived($debugStatus.mode === 'paused');
@@ -171,7 +172,7 @@
 	</div>
 
 	<p class="tbx-label">Console</p>
-	<div class="tbx-row debug-console" id="debug-console">
+	<div class="tbx-row debug-console" id="debug-console" use:minimalScroll>
 		{#each consoleRows as row (row.id)}
 			<div class="debug-wire debug-line" data-announce={row.id} data-shown={row.shown}>
 				<span class="debug-handle">{clock(row.at)}</span>

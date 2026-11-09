@@ -130,7 +130,8 @@ export const DEBUG_HOOKS = [
 	['prefabSync', () => import('./prefabSync')],
 	['prefabLibrary', () => import('./prefabLibrary')],
 	['physics', () => import('./physics')],
-	['hoverInput', () => import('./hoverInput')], // 78 F2: the hover sampler's view (hoverInputDebug)
+	// 78 F2: the hover sampler's view (hoverInputDebug)
+	['hoverInput', () => import('./hoverInput')],
 	// 36-sim: buoyancy/jiggle/fluid/splash state
 	['sim', () => import('./sim/debug.js')],
 	// 49-fluid W2: the GPU fluid switch + verdict (gpuFluidDebug, remeasureGpuFluid, loseGpuDeviceForTest)

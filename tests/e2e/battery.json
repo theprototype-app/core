@@ -295,6 +295,8 @@
 		"play-start-nodes": 200,
 		"announce-console": 160,
 		"hover-toggle-nodes": 320,
+		"physics-pace": 180,
+		"gem-arena-nodes": 240,
 		"photo-mode": 420,
 		"text-path": 360,
 		"text-object": 480,

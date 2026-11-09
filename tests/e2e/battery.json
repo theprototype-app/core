@@ -296,6 +296,7 @@
 	},
 	"suites": {
 		"possess": 120,
+		"starter-recipes-78": 300,
 		"trigger-why-78": 240,
 		"profile-notify": 180,
 		"player-sensors": 300,

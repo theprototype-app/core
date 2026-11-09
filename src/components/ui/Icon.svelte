@@ -279,7 +279,10 @@
 		ZoomOut,
 		// 60 Q1 + Q5: Play here, reference image
 		MapPin,
-		ImageUp
+		ImageUp,
+		// 78 F27: the starter recipes (door, guard)
+		DoorOpen,
+		Shield
 	} from '@lucide/svelte';
 	import ToolIcon from './ToolIcon.svelte';
 	import { iconSize, ICON_STROKE } from '$lib/ui/icons.js';
@@ -308,6 +311,8 @@
 		atom: Atom,
 		'audio-lines': AudioLines,
 		bell: Bell,
+		'door-open': DoorOpen, // 78 F27
+		shield: Shield, // 78 F27
 		'book-open': BookOpen,
 		bone: Bone, // 57 M6: Character ▸ Skeleton…
 		bookmark: Bookmark,

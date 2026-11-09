@@ -94,6 +94,7 @@
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import { defDefaults } from '$lib/customNodes';
 	import { findNodeSpec, nodeCatalog } from '$lib/nodeCatalog';
+	import { STARTER_RECIPES, insertStarterRecipe } from '$lib/starterRecipes.js'; // 78 F27
 	import { nodeDoc } from '$lib/nodeDocs';
 	import { isValidFlowConnection, typeColor, socketShape, SOCKET_TYPES, replaceableInputEdges, groupSocketType, resolvedInputType } from '$lib/flowSockets';
 	import { lintFlowGraph, type FlowLintFinding } from '$lib/flowLint.js'; // 78 F24
@@ -2052,8 +2053,28 @@
 						]
 					: []),
 				{ section: 'Add' },
+				recipeItems(),
 				...addNodeItems(flowPos)
 			]
+		};
+	}
+
+	/** 78 F27: the starter recipes — one-click inserts into the selected object's own flow */
+	function recipeItems() {
+		const onObject = activeId !== SCENE_GRAPH;
+		return {
+			label: 'Recipes',
+			icon: 'wand-sparkles',
+			children: STARTER_RECIPES.map((r) => ({
+				label: r.label,
+				icon: r.icon,
+				tooltip: onObject ? r.tooltip : 'Select an object first: a recipe goes into its own flow',
+				disabled: !onObject,
+				action: () => {
+					const result = insertStarterRecipe(r.id, activeId);
+					showToast(result.ok ? `Added the ${r.label.replace(/ \(.*$/, '').toLowerCase()} recipe — press Play to try it` : result.error);
+				}
+			}))
 		};
 	}
 

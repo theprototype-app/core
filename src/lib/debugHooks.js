@@ -105,6 +105,9 @@ export const DEBUG_HOOKS = [
 	['annotationsHandler', () => import('./annotationsHandler')],
 	['noteHistory', () => import('./noteHistory')],
 	['flowRuntime', () => import('./flowRuntime')],
+	// 78 F27: the starter recipes (door, walk-up door, bell, guard)
+	['starterRecipes', () => import('./starterRecipes.js')],
+	['gameAnnounce', () => import('./gameAnnounce')],
 	// 48 D1: the node graph debugger (stores + requests; the runtime half is flowRuntime.flowDebugRuntime)
 	['flowDebug', () => import('./flowDebug.js')],
 	['history', () => import('./history')],

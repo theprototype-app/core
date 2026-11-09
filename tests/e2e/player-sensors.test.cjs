@@ -174,6 +174,16 @@ h.run(async () => {
 			return { cam: w(cam), parent: w(cam?.parent), global: w(gc), same: cam === gc, locked, ctl: ctl?.mode ?? null, body: JSON.parse(JSON.stringify(s.charController.localPlayerBody?.() ?? null)) };
 		})())));
 	await h.eventually(() => near(B.page), (v) => v === true, 'B: Proximity turns true at the sensor', 4000);
+	console.log('  B proximity inputs: ' + JSON.stringify(await B.page.evaluate(() => {
+		const s = window.__stores;
+		const fr = s.flowRuntime;
+		const node = s.allNodes().find((n) => n.id === 'near');
+		const sel = fr.nodeValueOf('s5');
+		let g;
+		s.objectsGroup.subscribe((v) => (g = v))();
+		const o = typeof sel === 'string' ? g.getObjectByProperty('uuid', sel) : null;
+		return { sel, zone: o ? o.getWorldPosition(new s.THREE.Vector3()).toArray() : null, data: node?.data ?? null, graph: node?.__graph ?? null, body: JSON.parse(JSON.stringify(s.charController.localPlayerBody?.() ?? null)) };
+	})));
 	const nearIn = await near(B.page);
 	const nearOnA = await near(A.page);
 	h.check(nearIn === true, `Proximity reads true once B's player stands at the sensor (${nearIn})`);

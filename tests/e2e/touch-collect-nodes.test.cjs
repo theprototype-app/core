@@ -132,6 +132,13 @@ h.run(async () => {
 			return { cam: w(cam), parent: w(cam?.parent), global: w(gc), same: cam === gc, locked, ctl: ctl?.mode ?? null, body: JSON.parse(JSON.stringify(s.charController.localPlayerBody?.() ?? null)) };
 		})())));
 	await h.eventually(() => doc(B.page), (d) => !!d.taken[ids[1]], 'B: standing on gem 2 takes it', 10000).catch(() => {});
+	console.log('  B after the wait: ' + JSON.stringify(await B.page.evaluate(() => {
+		const s = window.__stores;
+		const p = s.kit.kit.impls.pickups?.extra;
+		let gc;
+		s.globalCamera.subscribe((c) => (gc = c))();
+		return { body: JSON.parse(JSON.stringify(s.charController.localPlayerBody?.() ?? null)), cam: gc ? gc.getWorldPosition(new s.THREE.Vector3()).toArray() : null, ids: p?.ids?.() ?? null, raf: performance.now() };
+	})));
 	await B.page.waitForTimeout(1500);
 	const a2 = await doc(A.page);
 	const b2 = await doc(B.page);

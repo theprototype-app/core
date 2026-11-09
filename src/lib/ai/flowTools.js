@@ -138,6 +138,17 @@ const NODE_TYPE_ALIASES = /** @type {Record<string, string>} */ ({
 	water: 'waterflow',
 	river: 'waterflow',
 	flowingwater: 'waterflow',
+	// 85 N3
+	animal: 'ambientanimal',
+	ambient: 'ambientanimal',
+	critter: 'ambientanimal',
+	pet: 'ambientanimal',
+	graze: 'ambientanimal',
+	// 85 I1
+	grab: 'grabbable',
+	pickup: 'grabbable',
+	carry: 'grabbable',
+	holdable: 'grabbable',
 	// 21-E4: the logic nodes. The four TYPES need no listing here - aiNodeTypes is
 	// derived from nodeCatalog, so adding them to the catalog put them in the enum -
 	// but a small model reaches for these four by FUNCTION rather than by name more
@@ -259,7 +270,7 @@ function validatePoints(raw) {
 }
 
 /** 85b R10: flowRuntime's DIRECT_TARGET_TYPES (kept here too: flowRuntime is history-family) */
-const DIRECT_TARGET_TOOL_TYPES = new Set(['setcolor', 'visibility', 'spin', 'oscillate', 'moveto', 'rotateto', 'scaleto', 'lightswitch', 'lightintensity', 'lightcycle']); // 85 N1/N2/N4 join
+const DIRECT_TARGET_TOOL_TYPES = new Set(['setcolor', 'visibility', 'spin', 'oscillate', 'moveto', 'rotateto', 'scaleto', 'lightswitch', 'lightintensity', 'lightcycle', 'windsway', 'waterflow', 'ambientanimal', 'grabbable']); // 85 N1-N5, I1 join
 /** a direct target: '' (none) or the uuid of an object in the scene, else null @param {any} v @returns {string | null} */
 function directTarget(v) {
 	if (v === '' || v === null) return '';

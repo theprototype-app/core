@@ -203,6 +203,8 @@
 		lightcycle: AnimationNode,
 		windsway: AnimationNode, // 85 N5
 		waterflow: AnimationNode,
+		ambientanimal: AnimationNode, // 85 N3
+		grabbable: AnimationNode, // 85 I1
 		bounce: AnimationNode,
 		orbit: AnimationNode,
 		pulse: AnimationNode,

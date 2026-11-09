@@ -391,6 +391,21 @@ export const nodeCatalog = [
 			},
 			// POINT GRAB: while `enabled` reads false, players cannot pick things up by POINTING
 			// at them (the VR grip ray, the desktop carry) — only a hand that touches moves them.
+			// 85 I1: GRABBABLE — the object can be picked up in Play with NO simulation (a kinematic
+			// carry, streamed like a physics carry) and on release stays where it was put or glides
+			// back to where it was taken from. A declaration (no per-frame effect): playInteract asks
+			// flowRuntime.kinematicGrab(uuid). grabReturn.js
+			{
+				type: 'grabbable',
+				label: 'Grabbable',
+				defaults: { release: 'stay', returnAfter: 1, returnTime: 0.6 },
+				params: [
+					{ key: 'release', kind: 'select', options: ['stay', 'return'] },
+					{ key: 'returnAfter', kind: 'range', min: 0, max: 30, step: 0.5, doc: 'seconds before it glides home' },
+					{ key: 'returnTime', kind: 'range', min: 0.1, max: 5, step: 0.1, doc: 'seconds the glide takes' }
+				],
+				note: 'Works without the simulation. A dynamic body during a run is carried by physics as before.'
+			},
 			{
 				type: 'pointgrab',
 				label: 'Point Grab',
@@ -1119,6 +1134,32 @@ export const nodeCatalog = [
 					{ key: 'ground', kind: 'toggle' }
 				]
 			},
+			// 85 N3: AMBIENT ANIMALS — Wander with rests, facing where it goes, looking at the nearest
+			// player while resting, optionally shying away; an animated model plays its idle / walk /
+			// run clips (57's Blend by Speed). motion/ambientNodes.js
+			{
+				type: 'ambientanimal',
+				label: 'Ambient Animal',
+				defaults: { speed: 0.3, seed: 0, rx: 3, ry: 0.3, rz: 3, margin: 0.2, ground: true, rest: 0.35, restTime: 3, lookRadius: 4, fleeRadius: 0, fleeDistance: 2, turnSpeed: 4, forward: '+z', clips: true },
+				inputs: ['area'],
+				inputLabels: { area: 'area — stay inside this object (a pen, a tank)' },
+				params: [
+					{ key: 'speed', kind: 'range', min: 0, max: 3, step: 0.05 },
+					{ key: 'rest', kind: 'range', min: 0, max: 0.9, step: 0.05, doc: 'the share of time it stands still (0 = never)' },
+					{ key: 'restTime', kind: 'range', min: 0.5, max: 30, step: 0.5, doc: 'seconds per rest' },
+					{ key: 'lookRadius', kind: 'range', min: 0, max: 20, step: 0.5, doc: 'looks at a player this close while resting (0 = never)' },
+					{ key: 'fleeRadius', kind: 'range', min: 0, max: 20, step: 0.5, doc: 'shies away from a player this close (0 = tame)' },
+					{ key: 'fleeDistance', kind: 'range', min: 0, max: 10, step: 0.1 },
+					{ key: 'rx', kind: 'range', min: 0, max: 30, step: 0.1 },
+					{ key: 'ry', kind: 'range', min: 0, max: 10, step: 0.1 },
+					{ key: 'rz', kind: 'range', min: 0, max: 30, step: 0.1 },
+					{ key: 'seed', kind: 'range', min: 0, max: 999, step: 1 },
+					{ key: 'turnSpeed', kind: 'range', min: 0.5, max: 30, step: 0.5 },
+					{ key: 'forward', kind: 'select', options: ['+z', '-z', '+x', '-x'] },
+					{ key: 'ground', kind: 'toggle', label: 'walks on the ground (off: fish, birds)' },
+					{ key: 'clips', kind: 'toggle', label: 'play idle / walk / run clips' }
+				]
+			},
 			{
 				type: 'orientvelocity',
 				label: 'Orient to Velocity',
@@ -1609,6 +1650,7 @@ export const animationTypes = [
 	'oscillate', 'moveto', 'rotateto', 'scaleto', // 85 N1/N2 (motion/tweenNodes.js)
 	'lightswitch', 'lightintensity', 'lightcycle', // 85 N4 (motion/lightNodes.js)
 	'windsway', 'waterflow', // 85 N5 (motion/swayNodes.js)
+	'ambientanimal', // 85 N3 (motion/ambientNodes.js)
 	'lookat', 'setcolor', 'visibility', 'setuniform',
 	'camerarig', // 37 (R8)
 	'deviceparam', 'notetrigger' // 23-B3

@@ -124,6 +124,8 @@ export const DEBUG_HOOKS = [
 	['tweenCore', () => import('./motion/tweenCore.js')],
 	// 85 N5: Wind Sway + Flowing Water
 	['swayNodes', () => import('./motion/swayNodes.js')],
+	// 85 N3: Ambient Animal
+	['ambientNodes', () => import('./motion/ambientNodes.js')],
 	['objectActions', () => import('./objectActions')],
 	['commandsHandler', () => import('./commandsHandler.svelte')],
 	['moduleSDK', () => import('./moduleSDK')],

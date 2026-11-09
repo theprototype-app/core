@@ -104,6 +104,9 @@ import { applyLightSwitch, applyLightIntensity, applyLightCycle, pruneLightNodes
 import { openEvent } from './motion/tweenCore.js';
 // 85 N5: Wind Sway + Flowing Water (vertex deformers + map scroll, a three leaf)
 import { applyWindSway, applyWaterFlow, pruneSwayNodes } from './motion/swayNodes.js';
+// 85 N3: Ambient Animal (a three leaf over motionNodes' Wander) + where the players are (stores only)
+import { applyAmbientAnimal, ambientRead, tickAmbientNodes } from './motion/ambientNodes.js';
+import { playerPositions } from './motion/players.js';
 // 40 F15: general-purpose motion (a three leaf + its pure core)
 import {
 	applyFollowPath,
@@ -1101,6 +1104,21 @@ function updatePointGrabNodes(time, ctx) {
 		if (data.enabled === false || data.enabled === 0) enabled = false;
 	}
 	setPointGrabEnabled(enabled);
+}
+
+/**
+ * 85 I1: the Grabbable node that makes `uuid` carryable without a simulation — wired to it through an
+ * Object Selector, named as its direct target, or unwired inside its own graph — as its data, or null.
+ * playInteract asks this on a press and per frame for the reticle. @param {string} uuid
+ */
+export function kinematicGrab(uuid) {
+	if (!uuid || muted.includes(uuid)) return null;
+	for (const node of nodes) {
+		if (node.type !== 'grabbable') continue;
+		const t = node.data?.target;
+		if ((typeof t === 'string' && t === uuid) || implicitOwnerOf(node) === uuid || reachesObjectSelector(node.id, uuid)) return node.data ?? {};
+	}
+	return null;
 }
 
 /**
@@ -2410,7 +2428,7 @@ function targetUuidOf(edge) {
 
 /** 85b R10: the effect nodes that may name their object directly (`data.target`, an object uuid) — a
  * button drives a door with no Object Selector chain. Absent / '' = the old rules, byte-identical. */
-export const DIRECT_TARGET_TYPES = new Set(['setcolor', 'visibility', 'spin', 'oscillate', 'moveto', 'rotateto', 'scaleto', 'lightswitch', 'lightintensity', 'lightcycle']); // 85 N1/N2/N4 join
+export const DIRECT_TARGET_TYPES = new Set(['setcolor', 'visibility', 'spin', 'oscillate', 'moveto', 'rotateto', 'scaleto', 'lightswitch', 'lightintensity', 'lightcycle', 'windsway', 'waterflow', 'ambientanimal', 'grabbable']); // 85 N1-N5, I1 join
 /** @param {any} node @returns {string | null} */
 function directTargetOf(node) {
 	if (!DIRECT_TARGET_TYPES.has(node?.type)) return null;
@@ -4105,6 +4123,8 @@ const TWEEN_TYPES = new Set(['moveto', 'rotateto', 'scaleto']);
 const TOGGLE_TWEEN_TYPES = new Set(['moveto', 'rotateto', 'scaleto', 'lightswitch']);
 /** 85 N4: the light (node, object) keys driven this tick — the rest hand their lights back @type {Set<string>} */
 let liveLights = new Set();
+/** 85 N3: the players' positions, read once per tick by the first animal that needs them @type {number[][] | null} */
+let tickPlayers = null;
 /** 85 N5: the Wind Sway / Flowing Water (node, object) keys driven this tick @type {Set<string>} */
 let liveSway = new Set();
 /** 85 N4: a Light Switch's wired `on` boolean, per (node, object), per peer @type {Map<string, any>} */
@@ -4231,6 +4251,11 @@ function applyAnimation(object, base, anim, time, ctx) {
 			open = next.events;
 		}
 		applyLightSwitch(object, data, time, key, { ...s, open });
+		return;
+	}
+	if (anim.type === 'ambientanimal') {
+		if (!tickPlayers) tickPlayers = playerPositions();
+		applyAmbientAnimal(object, base, data, time, { root: sceneObjects, key: anim.id + '|' + object.uuid, players: tickPlayers });
 		return;
 	}
 	if (anim.type === 'windsway' || anim.type === 'waterflow') {
@@ -5048,6 +5073,8 @@ function runTick(now) {
 	pruneSwayNodes(liveSway);
 	liveSway = new Set();
 	tickTweenNodes();
+	tickAmbientNodes();
+	tickPlayers = null;
 
 	// sound nodes keep their own audio chains (97) — hand over the live pairs
 	// 21-E4: `trigger` is the wired event's STAMP (null when nothing is wired)
@@ -5145,6 +5172,24 @@ function runTick(now) {
 		if (node.type !== 'blendspeed') return;
 		const uuid = implicitOwnerOf(node);
 		if (uuid) blendPairs.push({ node: { ...node, data: resolveInputs(node, nodes, edges, time, ctx) }, uuid, wired: speedWired(node.id) });
+	});
+	// 85 N3: an Ambient Animal with `clips` drives the same blend from its own speed (0 resting,
+	// 1 walking, 2.5 fleeing) — idle / walk / run on a model that has them
+	const ambientClips = (/** @type {any} */ node, /** @type {string} */ uuid) => {
+		const read = ambientRead(node.id + '|' + uuid);
+		if (!read) return;
+		blendPairs.push({ node: { id: node.id + '#clips', data: { walkSpeed: 1, runSpeed: 2.5, crossfade: 0.3, speed: read.speed } }, uuid, wired: true });
+	};
+	edges.forEach((edge) => {
+		const source = nodeById(nodes, edge.source);
+		if (source?.type !== 'ambientanimal' || source.data?.clips === false) return;
+		const uuid = targetUuidOf(edge);
+		if (uuid) ambientClips(source, uuid);
+	});
+	nodes.forEach((node) => {
+		if (node.type !== 'ambientanimal' || node.data?.clips === false) return;
+		const uuid = directTargetOf(node) ?? implicitOwnerOf(node);
+		if (uuid) ambientClips(node, uuid);
 	});
 	if (blendPairs.length || blendTrackers.size) updateBlendSpeed(blendPairs, ctx, logicNow(), sceneObjects);
 

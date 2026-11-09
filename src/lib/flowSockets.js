@@ -179,6 +179,7 @@ const INPUT = {
 	lightcycle: { period: 'number', saturation: 'number' },
 	windsway: { strength: 'number', direction: 'number', gust: 'number' }, // 85 N5
 	waterflow: { speed: 'number', swell: 'number' },
+	ambientanimal: { area: 'object', speed: 'number' }, // 85 N3
 	setcolor: { color: 'color' },
 	visibility: { on: 'boolean' },
 	setuniform: { value: 'number' },

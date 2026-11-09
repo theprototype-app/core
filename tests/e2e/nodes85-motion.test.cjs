@@ -132,6 +132,9 @@ h.run(async () => {
 		'premise: B holds every object',
 		30000
 	);
+	const holds = (p) => p.page.evaluate((u) => { let g; window.__stores.objectsGroup.subscribe((x) => (g = x))(); return Object.fromEntries(Object.entries(u).map(([k, id]) => [k, !!g.getObjectByProperty('uuid', id)])); }, ids);
+	console.log('  objects held (A): ' + JSON.stringify(await holds(A)));
+	console.log('  objects held (B): ' + JSON.stringify(await holds(B)));
 	await A.page.waitForTimeout(800); // the actionSeenAt settle (a stamp minted before B's next tick is refused)
 
 	/** the pose node `nodeId` gives `uuid` at shared time T, on page p */

@@ -381,3 +381,311 @@ export function damp(rate, dt) {
 	if (!(rate > 0)) return 1;
 	return 1 - Math.exp(-rate * Math.max(0, dt));
 }
+
+// ---- 78 F4: the Path object's SCHEDULE --------------------------------------------------------
+//
+// Where a walker on a Path object is at shared time t, with per-point waits, per-span speed /
+// ease / gaps, and the four walk modes. `buildSchedule` turns the path into ONE CYCLE of
+// segments (wait at a point · move along a span), and `scheduleAt` is a binary search into it:
+// a PURE function of (path, t) — the same numbers give the same pose on every peer, with no
+// message, exactly like Spin and Follow Path (determinism IS the netcode). Random mode is pure
+// too: its "random" next points are a seeded hash, laid out once into a fixed cycle of
+// RANDOM_HOPS hops that ends back at the start, so the cycle repeats seamlessly.
+
+/** hops in one random-mode cycle (long enough that nobody sees it repeat) */
+export const RANDOM_HOPS = 64;
+/** the most arrival events one scheduleEvents call reports (a long pause never floods) */
+export const MAX_EVENTS_PER_CALL = 64;
+
+/** @param {number} u @param {string | undefined} ease */
+export function easeProgress(u, ease) {
+	const x = Math.min(1, Math.max(0, u));
+	switch (ease) {
+		case 'in':
+			return x * x;
+		case 'out':
+			return 1 - (1 - x) * (1 - x);
+		case 'inout':
+			return x < 0.5 ? 2 * x * x : 1 - 2 * (1 - x) * (1 - x);
+		default:
+			return x;
+	}
+}
+
+/**
+ * @typedef {{pos: number[], wait?: number, speed?: number, ease?: string, gap?: boolean, event?: string, facing?: number}} SchedPoint
+ * @typedef {{kind: 'wait', t0: number, t1: number, point: number, pass?: boolean}
+ *   | {kind: 'move', t0: number, t1: number, span: number, dir: 1 | -1, from: number, to: number, ease: string, jump: boolean, pass?: boolean}} Segment
+ * @typedef {{segs: Segment[], period: number, mode: string, spans: {pts: V3[], cum: number[], total: number}[], points: SchedPoint[], closed: boolean}} Schedule
+ */
+
+/** the samples of span k (from point k to k+1, wrapping when closed) @param {V3[]} ctrl @param {number} k @param {boolean} closed @param {boolean} smooth @param {number} per */
+function spanSamples(ctrl, k, closed, smooth, per) {
+	const n = ctrl.length;
+	const a = ctrl[k];
+	const b = ctrl[(k + 1) % n];
+	/** @type {V3[]} */
+	let pts;
+	if (!smooth || n < 3) pts = [a, b];
+	else {
+		const at = (/** @type {number} */ i) => {
+			if (closed) return ctrl[((i % n) + n) % n];
+			if (i < 0) return mirror(ctrl[0], ctrl[1]);
+			if (i >= n) return mirror(ctrl[n - 1], ctrl[n - 2]);
+			return ctrl[i];
+		};
+		pts = [];
+		for (let s = 0; s < per; s++) pts.push(catmullRom(at(k - 1), at(k), at(k + 1), at(k + 2), s / per));
+		pts.push(b);
+	}
+	const cum = [0];
+	for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + dist(pts[i - 1], pts[i]));
+	return { pts, cum, total: cum[cum.length - 1] };
+}
+
+/**
+ * One cycle of a Path's walk. `points` are WORLD positions with the Path point fields; `opts`
+ * carries the path block (mode, default speed, smooth, seed) and `closed`.
+ * @param {any[]} points @param {{closed?: boolean, smooth?: boolean, mode?: string, speed?: number, seed?: number, samples?: number}} [opts]
+ * @returns {Schedule | null}
+ */
+export function buildSchedule(points, opts = {}) {
+	if (!Array.isArray(points)) return null;
+	/** @type {SchedPoint[]} */
+	const pts = [];
+	for (const p of points.slice(0, MAX_PATH_POINTS)) {
+		const q = Array.isArray(p) ? p : p?.pos;
+		if (!Array.isArray(q) || q.length < 3) continue;
+		const pos = [+q[0], +q[1], +q[2]];
+		if (!pos.every(Number.isFinite)) continue;
+		pts.push({ ...(Array.isArray(p) ? {} : p), pos });
+	}
+	const n = pts.length;
+	if (n < 2) return null;
+	const closed = !!opts.closed && n >= 3;
+	const smooth = opts.smooth !== false;
+	const per = Math.max(1, Math.min(64, Math.round(opts.samples ?? SAMPLES_PER_SPAN)));
+	const mode = ['loop', 'pingpong', 'once', 'random'].includes(/** @type {string} */ (opts.mode)) ? /** @type {string} */ (opts.mode) : 'loop';
+	const baseSpeed = clampNum(opts.speed, 1.5, 0.01, 50);
+	const ctrl = /** @type {V3[]} */ (pts.map((p) => p.pos));
+	const nSpans = closed ? n : n - 1;
+	const spans = [];
+	for (let k = 0; k < nSpans; k++) spans.push(spanSamples(ctrl, k, closed, smooth, per));
+
+	/** @type {Segment[]} */
+	const segs = [];
+	let t = 0;
+	const wait = (/** @type {number} */ i, pass = false) => {
+		const w = pass ? 0 : clampNum(pts[i].wait, 0, 0, 3600);
+		if (w > 0) {
+			segs.push({ kind: 'wait', t0: t, t1: t + w, point: i });
+			t += w;
+		}
+	};
+	/** travel span k in direction dir (+1: k -> k+1) @param {number} k @param {1 | -1} dir @param {boolean} [pass] */
+	const move = (k, dir, pass = false) => {
+		const owner = pts[k];
+		const len = spans[k].total;
+		const jump = owner.gap === true;
+		const speed = clampNum(owner.speed, baseSpeed, 0.01, 50);
+		const d = jump ? 0 : len / speed;
+		const from = dir > 0 ? k : (k + 1) % n;
+		const to = dir > 0 ? (k + 1) % n : k;
+		segs.push({ kind: 'move', t0: t, t1: t + d, span: k, dir, from, to, ease: owner.ease ?? 'linear', jump, ...(pass ? { pass: true } : {}) });
+		t += d;
+	};
+
+	if (mode === 'random') {
+		// hop to a seeded-random other point, the short way round (open: the only way), passing
+		// the points between without stopping; the last hop returns to 0 so the cycle repeats
+		let at = 0;
+		const seed = clampNum(opts.seed, 0, 0, 1e9);
+		for (let h = 0; h < RANDOM_HOPS; h++) {
+			let target;
+			if (h === RANDOM_HOPS - 1) target = 0;
+			else {
+				target = Math.floor(hash01('path:' + seed + ':' + h) * (n - 1));
+				if (target >= at) target++;
+			}
+			if (target === at) continue;
+			wait(at);
+			let dir = /** @type {1 | -1} */ (target > at ? 1 : -1);
+			let steps = Math.abs(target - at);
+			if (closed) {
+				const fwd = (((target - at) % n) + n) % n;
+				dir = fwd <= n - fwd ? 1 : -1;
+				steps = dir > 0 ? fwd : n - fwd;
+			}
+			for (let s = 0; s < steps; s++) {
+				const k = dir > 0 ? at : (((at - 1) % n) + n) % n;
+				move(k, dir, s < steps - 1);
+				at = dir > 0 ? (at + 1) % n : (((at - 1) % n) + n) % n;
+			}
+		}
+	} else {
+		for (let k = 0; k < nSpans; k++) {
+			wait(k);
+			move(k, 1);
+		}
+		if (mode === 'pingpong') {
+			const end = closed ? 0 : n - 1;
+			wait(end);
+			for (let k = nSpans - 1; k >= 0; k--) {
+				if (k < nSpans - 1) wait((k + 1) % n);
+				move(k, -1);
+			}
+		} else if (mode === 'once') {
+			if (!closed) wait(n - 1);
+		} else if (!closed) {
+			// loop on an OPEN path: stand at the end, then start again from the first point
+			wait(n - 1);
+			segs.push({ kind: 'move', t0: t, t1: t, span: nSpans - 1, dir: 1, from: n - 1, to: 0, ease: 'linear', jump: true, pass: false });
+		}
+	}
+	return { segs, period: t, mode, spans, points: pts, closed };
+}
+
+/** the segment index live at cycle-local time x (the LAST one whose t0 <= x and t1 > x) @param {Segment[]} segs @param {number} x */
+function segmentAt(segs, x) {
+	let lo = 0;
+	let hi = segs.length - 1;
+	while (lo < hi) {
+		const mid = (lo + hi + 1) >> 1;
+		if (segs[mid].t0 <= x) lo = mid;
+		else hi = mid - 1;
+	}
+	// zero-length segments (jumps) never own time: step past them
+	while (lo < segs.length - 1 && segs[lo].t1 <= x) lo++;
+	return lo;
+}
+
+/** the travel direction at the END of move segment i (its arrival heading) @param {Schedule} sched @param {any} seg */
+function arrivalTangent(sched, seg) {
+	const path = sched.spans[seg.span];
+	const s = seg.dir > 0 ? path.total : 0;
+	const tan = samplePath(path, s).t;
+	return /** @type {V3} */ (tan.map((v) => v * seg.dir));
+}
+
+/**
+ * Where the walker is at `time`. `start` is the shared moment the walk began (a trigger's stamp
+ * for a once-walk; 0 for the clock-anchored loops), `offset` seconds shift a walker along it.
+ * @param {Schedule} sched @param {number} time @param {{start?: number, offset?: number}} [o]
+ * @returns {{p: V3, t: V3, yaw: number, kind: 'wait'|'move', point: number, next: number, progress: number, cycle: number, local: number}}
+ */
+export function scheduleAt(sched, time, o = {}) {
+	const segs = sched.segs;
+	const start = Number.isFinite(o.start) ? /** @type {number} */ (o.start) : 0;
+	let local = time - start + (Number.isFinite(o.offset) ? /** @type {number} */ (o.offset) : 0);
+	let cycle = 0;
+	const P = sched.period;
+	const once = sched.mode === 'once';
+	if (!segs.length || !(P > 0)) {
+		// nothing takes time (every span a gap, no waits): stand at the first point
+		const p0 = /** @type {V3} */ ([...sched.points[0].pos]);
+		return { p: p0, t: [0, 0, 1], yaw: 0, kind: 'wait', point: 0, next: 0, progress: 0, cycle: 0, local: 0 };
+	}
+	if (once) local = Math.min(P, Math.max(0, local));
+	else {
+		cycle = Math.floor(local / P);
+		local -= cycle * P;
+	}
+	// once, at (or past) the end: stand at the last arrival
+	const atEnd = once && local >= P;
+	const i = atEnd ? segs.length - 1 : segmentAt(segs, local);
+	const seg = segs[i];
+	/** @type {V3} */
+	let p;
+	/** @type {V3} */
+	let tan;
+	let progress = 0;
+	if (seg.kind === 'move' && !atEnd) {
+		const path = sched.spans[seg.span];
+		const d = seg.t1 - seg.t0;
+		const u = d > 0 ? easeProgress((local - seg.t0) / d, seg.ease) : 1;
+		progress = u;
+		const s = seg.dir > 0 ? u * path.total : (1 - u) * path.total;
+		const here = samplePath(path, s);
+		p = here.p;
+		tan = /** @type {V3} */ (here.t.map((v) => v * seg.dir));
+	} else {
+		const pointIdx = seg.kind === 'wait' ? seg.point : seg.to;
+		p = /** @type {V3} */ ([...sched.points[pointIdx].pos]);
+		progress = seg.kind === 'wait' && seg.t1 > seg.t0 ? (local - seg.t0) / (seg.t1 - seg.t0) : 1;
+		tan = standingTangent(sched, seg.kind === 'move' ? i + 1 : i);
+	}
+	const standing = seg.kind === 'wait' || atEnd;
+	const pointIdx = seg.kind === 'wait' ? seg.point : atEnd ? seg.kind === 'move' ? seg.to : seg.point : seg.from;
+	const facing = standing ? sched.points[pointIdx]?.facing : undefined;
+	const yaw = typeof facing === 'number' ? (facing * Math.PI) / 180 : Math.atan2(tan[0], tan[2]);
+	const next = seg.kind === 'move' ? seg.to : nextStopAfter(segs, i, pointIdx);
+	return { p, t: tan, yaw, kind: standing ? 'wait' : 'move', point: pointIdx, next, progress, cycle, local };
+}
+
+/**
+ * The heading held while standing at segment index `i`: the last arrival's in this cycle; at a
+ * cycle's start, the previous cycle's last arrival (a once-walk: its first departure).
+ * @param {Schedule} sched @param {number} i @returns {V3}
+ */
+function standingTangent(sched, i) {
+	const segs = sched.segs;
+	const real = (/** @type {Segment} */ s) => s.kind === 'move' && !s.jump;
+	for (let j = Math.min(i, segs.length) - 1; j >= 0; j--) if (real(segs[j])) return arrivalTangent(sched, segs[j]);
+	if (sched.mode === 'once') {
+		const first = segs.find(real);
+		return first ? departTangent(sched, first) : [0, 0, 1];
+	}
+	for (let j = segs.length - 1; j >= 0; j--) if (real(segs[j])) return arrivalTangent(sched, segs[j]);
+	return [0, 0, 1];
+}
+
+/** the departure heading of a move (for standing before the first move of a once-walk) @param {Schedule} sched @param {any} seg */
+function departTangent(sched, seg) {
+	const path = sched.spans[seg.span];
+	const tan = samplePath(path, seg.dir > 0 ? 0 : path.total).t;
+	return /** @type {V3} */ (tan.map((v) => v * seg.dir));
+}
+
+/** @param {Segment[]} segs @param {number} i @param {number} here */
+function nextStopAfter(segs, i, here) {
+	for (let j = i + 1; j < segs.length; j++) {
+		const s = segs[j];
+		if (s.kind === 'move') return s.to;
+	}
+	return here;
+}
+
+/**
+ * The arrivals at points between two shared times (a, b] — what fires a point's `event`. Each
+ * comes with the EXACT shared time it happened at, so every peer stamps the same moment. A
+ * window longer than four cycles reports only the last cycle's, capped at MAX_EVENTS_PER_CALL.
+ * @param {Schedule} sched @param {number} a @param {number} b @param {{start?: number, offset?: number}} [o]
+ * @returns {{at: number, point: number, event: string}[]}
+ */
+export function scheduleEvents(sched, a, b, o = {}) {
+	/** @type {{at: number, point: number, event: string}[]} */
+	const out = [];
+	if (!(b > a) || !sched.segs.length) return out;
+	const P = sched.period;
+	if (!(P > 0)) return out;
+	const start = Number.isFinite(o.start) ? /** @type {number} */ (o.start) : 0;
+	const shift = start - (Number.isFinite(o.offset) ? /** @type {number} */ (o.offset) : 0);
+	let la = a - shift;
+	const lb = b - shift;
+	if (sched.mode === 'once') {
+		if (lb <= 0 || la >= P) return out;
+	} else if (lb - la > 4 * P) la = lb - P;
+	const firstCycle = sched.mode === 'once' ? 0 : Math.floor(la / P);
+	const lastCycle = sched.mode === 'once' ? 0 : Math.floor(lb / P);
+	for (let c = firstCycle; c <= lastCycle && out.length < MAX_EVENTS_PER_CALL; c++) {
+		for (const s of sched.segs) {
+			if (s.kind !== 'move') continue;
+			const at = c * P + s.t1;
+			if (at <= la || at > lb) continue;
+			const ev = sched.points[s.to]?.event;
+			if (ev) out.push({ at: at + shift, point: s.to, event: ev });
+			if (out.length >= MAX_EVENTS_PER_CALL) break;
+		}
+	}
+	return out;
+}

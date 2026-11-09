@@ -1647,10 +1647,52 @@
 	// ---- environment v2 (70) -------------------------------------------------
 	const envPayload = $derived(presetPayload($environment));
 	// 38 R5: the preset chips (a saved custom preset joins the row as 'custom')
-	const envPresetOptions = $derived([
-		...Object.entries(ENVIRONMENT_PRESETS).map(([key, preset]) => ({ value: key, label: preset.label })),
-		...($environment.customPreset ? [{ value: 'custom', label: $environment.customPreset.label ?? 'Custom' }] : [])
-	]);
+	// 78-int PL15 (scene panel item 3, owner APPROVED 2026-11-08): SIX featured pills + More. The one
+	// row of choices stays short; More opens IN PLACE (no popover, the same on a phone) with the rest
+	// in groups. The applied preset is always on the row: one that lives under More takes the 6th slot.
+	const ENV_FEATURED = ['studio', 'daylight', 'sunset', 'night', 'clearsky', 'cinematic'];
+	/** @param {string} key */
+	const envOption = (key) =>
+		key === 'custom'
+			? { value: 'custom', label: $environment.customPreset?.label ?? 'Custom', title: 'This scene\'s own environment' }
+			: { value: key, label: ENVIRONMENT_PRESETS[key]?.label ?? key, icon: ENVIRONMENT_PRESETS[key]?.pro ? 'sparkles' : undefined, title: ENVIRONMENT_PRESETS[key]?.pro ? 'Pro look: also sets tone mapping and effects' : undefined };
+	const envPresetOptions = $derived.by(() => {
+		const keys = ENV_FEATURED.filter((k) => ENVIRONMENT_PRESETS[k]);
+		const now = $environment.preset;
+		const known = now === 'custom' ? !!$environment.customPreset : !!ENVIRONMENT_PRESETS[now];
+		if (known && !keys.includes(now)) keys[keys.length - 1] = now;
+		return keys.map(envOption);
+	});
+	/** the More groups: Simple · With a sky image · Pro looks (empty groups are not drawn) */
+	const envMoreGroups = $derived.by(() => {
+		const shown = new Set(envPresetOptions.map((o) => o.value));
+		/** @type {Record<string, string[]>} */
+		const by = { simple: [], sky: [], pro: [] };
+		for (const [key, preset] of Object.entries(ENVIRONMENT_PRESETS)) {
+			if (shown.has(key)) continue;
+			by[/** @type {any} */ (preset).pro ? 'pro' : /** @type {any} */ (preset).hdri ? 'sky' : 'simple'].push(key);
+		}
+		return [
+			{ id: 'simple', label: 'Simple', keys: by.simple },
+			{ id: 'sky', label: 'With a sky image', keys: by.sky },
+			{ id: 'pro', label: 'Pro looks', keys: by.pro }
+		].filter((g) => g.keys.length);
+	});
+	const envPeerLists = $derived(Object.entries($peerEnvPresets).filter(([, list]) => list.length));
+	const envMoreCount = $derived(
+		envMoreGroups.reduce((n, g) => n + g.keys.length, 0) +
+			($environment.customPreset && !envPresetOptions.some((o) => o.value === 'custom') ? 1 : 0) +
+			$envPresets.length +
+			envPeerLists.reduce((n, [, list]) => n + list.length, 0)
+	);
+	let envMoreOpen = $state(false);
+	/** apply a preset key (a pill or a More chip): custom re-applies the scene's own, a pro look its stack
+	 * @param {string} key */
+	function applyEnvKey(key) {
+		if (key === 'custom') applyCustomPreset($environment.customPreset);
+		else if (isProPreset(key)) applyProPreset(key);
+		else setEnvironment(key);
+	}
 	/** @type {any} */
 	const envFog = $derived(envPayload?.fog ?? null);
 	const selectedIsSceneLight = $derived(
@@ -1880,8 +1922,75 @@
 					label="Environment preset"
 					options={envPresetOptions}
 					value={$environment.preset}
-					onpress={(key) => (key === 'custom' ? applyCustomPreset($environment.customPreset) : isProPreset(key) ? applyProPreset(key) : setEnvironment(key))}
+					onpress={applyEnvKey}
 				/>
+				{#if envMoreCount}
+					<button
+						type="button"
+						id="environment-more-toggle"
+						class="env-more-btn"
+						aria-expanded={envMoreOpen}
+						aria-controls="environment-more"
+						onclick={() => (envMoreOpen = !envMoreOpen)}
+					>
+						More ({envMoreCount})
+						<Icon name={envMoreOpen ? 'chevron-up' : 'chevron-down'} size={16} aria-hidden="true" />
+					</button>
+				{/if}
+				{#if envMoreOpen}
+					<div id="environment-more" class="env-more">
+						{#each envMoreGroups as g (g.id)}
+							<p class="ui-section-label">{g.label}</p>
+							<Chips
+								id={'environment-more-' + g.id}
+								size="sm"
+								label={g.label}
+								options={g.keys.map(envOption)}
+								value={$environment.preset}
+								onpress={applyEnvKey}
+							/>
+						{/each}
+						{#if $environment.customPreset && !envPresetOptions.some((o) => o.value === 'custom')}
+							<p class="ui-section-label">In this scene</p>
+							<Chips id="environment-more-scene" size="sm" label="In this scene" options={[envOption('custom')]} value={$environment.preset} onpress={applyEnvKey} />
+						{/if}
+						{#if $envPresets.length}
+							<p class="ui-section-label">My library</p>
+							<div class="flex flex-wrap gap-1">
+								{#each $envPresets as saved (saved.name)}
+									<span class="ins-saved">
+										<button
+											class="ins-saved-apply"
+											title="Apply this preset (replicates to peers)"
+											onclick={() => applyCustomPreset(saved.payload)}
+										>
+											{saved.name}
+										</button>
+										<button
+											class="ins-saved-del"
+											aria-label="Delete saved preset {saved.name}"
+											title="Delete saved preset"
+											onclick={() => deleteEnvPreset(saved.name)}>✕</button>
+									</span>
+								{/each}
+							</div>
+						{/if}
+						{#each envPeerLists as [peerId, list] (peerId)}
+							<p class="ui-section-label">From {nameOf(peerId)}</p>
+							<div class="flex flex-wrap gap-1">
+								{#each list as saved (saved.name)}
+									<button
+										class="ui-chip"
+										title="Apply this peer preset (replicates to everyone)"
+										onclick={() => applyCustomPreset(saved.payload)}
+									>
+										{saved.name}
+									</button>
+								{/each}
+							</div>
+						{/each}
+					</div>
+				{/if}
 				<SliderRow
 					label="Exposure"
 					resetValue={1}
@@ -1893,41 +2002,6 @@
 				/>
 				<HdriSection />
 
-				{#if $envPresets.length}
-					<p class="ui-section-label">Saved presets</p>
-					<div class="flex flex-wrap gap-1">
-						{#each $envPresets as saved (saved.name)}
-							<span class="ins-saved">
-								<button
-									class="ins-saved-apply"
-									title="Apply this preset (replicates to peers)"
-									onclick={() => applyCustomPreset(saved.payload)}
-								>
-									{saved.name}
-								</button>
-								<button
-									class="ins-saved-del"
-									aria-label="Delete saved preset {saved.name}"
-									title="Delete saved preset"
-									onclick={() => deleteEnvPreset(saved.name)}>✕</button>
-							</span>
-						{/each}
-					</div>
-				{/if}
-				{#each Object.entries($peerEnvPresets).filter(([, list]) => list.length) as [peerId, list] (peerId)}
-					<p class="ui-section-label">{nameOf(peerId)}'s presets</p>
-					<div class="flex flex-wrap gap-1">
-						{#each list as saved (saved.name)}
-							<button
-								class="ui-chip"
-								title="Apply this peer preset (replicates to everyone)"
-								onclick={() => applyCustomPreset(saved.payload)}
-							>
-								{saved.name}
-							</button>
-						{/each}
-					</div>
-				{/each}
 
 				<p class="ui-section-label">Components</p>
 				{#if envPayload.hemi}
@@ -4884,6 +4958,32 @@
 		font-weight: 600;
 		letter-spacing: var(--tracking-section);
 		color: var(--text-faint);
+	}
+	/* 78-int PL15: More opens the rest of the presets in place, under the six pills */
+	.env-more-btn {
+		align-self: flex-start;
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		margin-top: -2px;
+		padding: 2px 6px;
+		border-radius: var(--radius-input);
+		font-size: var(--fs-badge);
+		font-weight: 600;
+		color: var(--accent-text);
+		background: transparent;
+	}
+	.env-more-btn:hover {
+		background: var(--surface-hover);
+	}
+	.env-more {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		padding: 6px 8px 8px;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-input);
+		background: var(--surface-1);
 	}
 	/* 78-int PL17: the two group labels of Configure Scene (The scene / This device) */
 	.ins-group-label {

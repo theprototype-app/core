@@ -42,6 +42,21 @@
 			"bytes": 3720,
 			"scene": "/templates/architecture-shell/scene.tpscene",
 			"thumb": "/templates/architecture-shell/thumb.webp"
+		},
+		{
+			"slug": "two-levels",
+			"title": "Two levels and a portal",
+			"description": "A starter game: a courtyard and a tower top in one scene, a portal between them, a checkpoint and a score that carries across",
+			"author": "theprototype",
+			"license": "CC0-1.0",
+			"tags": [
+				"game",
+				"levels",
+				"portal"
+			],
+			"bytes": 22034,
+			"scene": "/templates/two-levels/scene.tpscene",
+			"thumb": "/templates/two-levels/thumb.webp"
 		}
 	],
 	"examples": []

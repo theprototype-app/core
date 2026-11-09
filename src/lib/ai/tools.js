@@ -1306,8 +1306,11 @@ async function runAiTool(rawName, rawArgs, opts) {
 				return await sceneSetupTool(name, args);
 
 			case 'set_levels':
+			case 'set_portal':
+			case 'set_checkpoint':
+			case 'set_loading':
 				// 93 (levelsTools.js)
-				return await levelsTool(name, args);
+				return await levelsTool(name, args, createOne);
 
 			case 'inspect_runtime':
 			case 'validate_scene':

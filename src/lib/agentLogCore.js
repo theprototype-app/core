@@ -211,6 +211,12 @@ export function summarizeToolCall(tool, args, result, nameOf = () => '') {
 		// 93: the Levels table
 		case 'set_levels':
 			return result.levels ? 'set the levels (' + count(arr(result.levels.list).length, 'level') + ')' : 'removed the levels table';
+		case 'set_portal':
+			return (args?.object ? 'changed portal ' : 'placed portal ') + (nameOf(result.uuid) || 'Portal');
+		case 'set_checkpoint':
+			return (args?.object ? 'changed checkpoint ' : 'placed checkpoint ') + (nameOf(result.uuid) || 'Checkpoint');
+		case 'set_loading':
+			return result.loading ? 'set the loading screen (' + String(result.loading.preset) + ')' : 'reset the loading screen';
 		// 85 R6, pivots, images
 		case 'playtest': {
 			// 85b R2: a play session changes nothing authored (its clicks are the game's own runtime state)

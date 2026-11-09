@@ -3,7 +3,7 @@
 	"format": 2,
 	"generator": {
 		"source": "tpAgent.tools() via core scripts/agent-tool-catalog.cjs, mapped by tools/agent/src/catalog.js",
-		"hostTools": 79,
+		"hostTools": 82,
 		"dropped": []
 	},
 	"instructions": "You are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.\nWhen asked what you can do here, call what_can_you_do and say its \"say\" line.",
@@ -3537,6 +3537,247 @@
 			}
 		},
 		{
+			"name": "set_portal",
+			"title": "Set portal",
+			"description": "A Portal: a doorway that takes the player who walks through it somewhere else, ONE player at a time. Target: level (a Levels-table row id or name), or scene (a project scene) and / or spawn (an object name to arrive at), or back: true (where they came from). transition = fade | iris | card | none (VR always fades); loading = this portal's own loading screen. New: position or at; change one: object (uuid). What the game keeps (set_levels keep) carries through. One undo step.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"position": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"minItems": 3,
+						"maxItems": 3,
+						"description": "its base [x, y, z] (a new one)"
+					},
+					"at": {
+						"type": "object",
+						"description": "placement like create_objects: {ping: \"latest\"} = at the person's ping"
+					},
+					"yaw": {
+						"type": "number",
+						"description": "turn in radians; its arrow points -Z at 0 (arriving players face the arrow)"
+					},
+					"face_user": {
+						"type": "boolean"
+					},
+					"name": {
+						"type": "string"
+					},
+					"object": {
+						"type": "string",
+						"description": "uuid of an existing one to change (leave out to place a new one)"
+					},
+					"show": {
+						"type": "boolean",
+						"description": "false = invisible in Play (still works): a trigger inside your own doorway"
+					},
+					"level": {
+						"type": "string"
+					},
+					"scene": {
+						"type": "string"
+					},
+					"spawn": {
+						"type": "string"
+					},
+					"back": {
+						"type": "boolean"
+					},
+					"transition": {
+						"type": "string",
+						"enum": [
+							"fade",
+							"iris",
+							"card",
+							"none"
+						]
+					},
+					"loading": {
+						"type": [
+							"object",
+							"null"
+						],
+						"properties": {
+							"preset": {
+								"type": "string",
+								"enum": [
+									"fade",
+									"bar",
+									"logo",
+									"image",
+									"item"
+								]
+							},
+							"background": {
+								"type": "string",
+								"description": "#rrggbb"
+							},
+							"image": {
+								"type": "string",
+								"description": "an image URL or library item (the image preset)"
+							},
+							"logo": {
+								"type": "string"
+							},
+							"textColor": {
+								"type": "string"
+							},
+							"bar": {
+								"type": "object",
+								"properties": {
+									"style": {
+										"type": "string",
+										"enum": [
+											"thin",
+											"thick"
+										]
+									},
+									"color": {
+										"type": "string"
+									}
+								}
+							},
+							"tips": {
+								"type": "array",
+								"items": {
+									"type": "string"
+								}
+							},
+							"title": {
+								"type": "string"
+							}
+						}
+					}
+				}
+			},
+			"annotations": {
+				"title": "Set portal",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "set_checkpoint",
+			"title": "Set checkpoint",
+			"description": "A Checkpoint pad: stepping on it saves THAT player's progress there; after a fall (or Back to checkpoint, or reloading an exported game) they come back to it. New: position or at; change one: object (uuid). label = what the flash says. One undo step.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"position": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"minItems": 3,
+						"maxItems": 3,
+						"description": "its base [x, y, z] (a new one)"
+					},
+					"at": {
+						"type": "object",
+						"description": "placement like create_objects: {ping: \"latest\"} = at the person's ping"
+					},
+					"yaw": {
+						"type": "number",
+						"description": "turn in radians; its arrow points -Z at 0 (arriving players face the arrow)"
+					},
+					"face_user": {
+						"type": "boolean"
+					},
+					"name": {
+						"type": "string"
+					},
+					"object": {
+						"type": "string",
+						"description": "uuid of an existing one to change (leave out to place a new one)"
+					},
+					"show": {
+						"type": "boolean",
+						"description": "false = invisible in Play (still works): a trigger inside your own doorway"
+					},
+					"label": {
+						"type": "string"
+					}
+				}
+			},
+			"annotations": {
+				"title": "Set checkpoint",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "set_loading",
+			"title": "Set loading",
+			"description": "The loading screen every level change shows (only when the load takes a moment; at least 0.4 s once shown): preset fade | bar | logo | image | item, background, image, logo, bar {style, color}, tips (lines that rotate), title; clear: true = the default bar. Fields you leave out stay. Needs a Levels table (set_levels). No field reads it. One undo step.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"preset": {
+						"type": "string",
+						"enum": [
+							"fade",
+							"bar",
+							"logo",
+							"image",
+							"item"
+						]
+					},
+					"background": {
+						"type": "string",
+						"description": "#rrggbb"
+					},
+					"image": {
+						"type": "string",
+						"description": "an image URL or library item (the image preset)"
+					},
+					"logo": {
+						"type": "string"
+					},
+					"textColor": {
+						"type": "string"
+					},
+					"bar": {
+						"type": "object",
+						"properties": {
+							"style": {
+								"type": "string",
+								"enum": [
+									"thin",
+									"thick"
+								]
+							},
+							"color": {
+								"type": "string"
+							}
+						}
+					},
+					"tips": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						}
+					},
+					"title": {
+						"type": "string"
+					},
+					"clear": {
+						"type": "boolean"
+					}
+				}
+			},
+			"annotations": {
+				"title": "Set loading",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
 			"name": "search_assets",
 			"title": "Find assets",
 			"description": "Find assets to build with, by words and kind: models and prefabs to place, sounds, images, CC0 materials and HDRIs. Searches the shared library, the packs (models, and the sounds of the sound packs: pack:<name>/<file>), your prefabs and Poly Haven. Each result has an id, name, kind, source, licence, size when known, and how to use it. Read-only.",
@@ -5805,7 +6046,10 @@
 			"game_setup": {
 				"spawn": "place_spawn",
 				"play_camera": "set_play_camera",
-				"levels": "set_levels"
+				"levels": "set_levels",
+				"portal": "set_portal",
+				"checkpoint": "set_checkpoint",
+				"loading": "set_loading"
 			}
 		},
 		"tools": [
@@ -9896,8 +10140,8 @@
 			},
 			{
 				"name": "game_setup",
-				"title": "Game setup: spawn, play camera and levels",
-				"description": "How the game starts: spawn = where Play starts and which way the player faces; play_camera = first person walking or flying (speed, jump, eye height) and openingView = where the editor camera starts when the scene opens; levels = the game's one Levels table (order, scene or spawn point, goals) and what carries from level to level (score, inventory, health, named variables).\nCall it as {\"action\": \"spawn\", \"spawn\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
+				"title": "Game setup: spawn, play camera, levels, portals, checkpoints, loading",
+				"description": "How the game starts: spawn = where Play starts and which way the player faces; play_camera = first person walking or flying (speed, jump, eye height) and openingView = where the editor camera starts when the scene opens; levels = the game's one Levels table (order, scene or spawn point, goals) and what carries from level to level (score, inventory, health, named variables); portal = a doorway to a level, scene or spot (one player at a time, with a fade / iris / card); checkpoint = a pad that saves the player's progress; loading = the loading screen a level change shows.\nCall it as {\"action\": \"spawn\", \"spawn\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -9906,7 +10150,10 @@
 							"enum": [
 								"spawn",
 								"play_camera",
-								"levels"
+								"levels",
+								"portal",
+								"checkpoint",
+								"loading"
 							],
 							"description": "What to do. Put its fields in the object named after the action."
 						},
@@ -10113,6 +10360,217 @@
 								}
 							},
 							"description": "The game's ONE Levels table: the levels in play order, each {name, scene (a project scene), spawn (an object name to start at), goal}; keep = what carries from level to level (score, inventory, health, or \"var:<name>\" for a named variable; New game resets them); unlock = all | sequential. levels replaces the list, add appends, update [{id, …}] patches, remove [ids] drops, clear: true removes the table; no field reads it. The Go to level / Next level / Finish level nodes and portals use this same table. One undo step."
+						},
+						"portal": {
+							"type": "object",
+							"properties": {
+								"position": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"minItems": 3,
+									"maxItems": 3,
+									"description": "its base [x, y, z] (a new one)"
+								},
+								"at": {
+									"type": "object",
+									"description": "placement like create_objects: {ping: \"latest\"} = at the person's ping"
+								},
+								"yaw": {
+									"type": "number",
+									"description": "turn in radians; its arrow points -Z at 0 (arriving players face the arrow)"
+								},
+								"face_user": {
+									"type": "boolean"
+								},
+								"name": {
+									"type": "string"
+								},
+								"object": {
+									"type": "string",
+									"description": "uuid of an existing one to change (leave out to place a new one)"
+								},
+								"show": {
+									"type": "boolean",
+									"description": "false = invisible in Play (still works): a trigger inside your own doorway"
+								},
+								"level": {
+									"type": "string"
+								},
+								"scene": {
+									"type": "string"
+								},
+								"spawn": {
+									"type": "string"
+								},
+								"back": {
+									"type": "boolean"
+								},
+								"transition": {
+									"type": "string",
+									"enum": [
+										"fade",
+										"iris",
+										"card",
+										"none"
+									]
+								},
+								"loading": {
+									"type": [
+										"object",
+										"null"
+									],
+									"properties": {
+										"preset": {
+											"type": "string",
+											"enum": [
+												"fade",
+												"bar",
+												"logo",
+												"image",
+												"item"
+											]
+										},
+										"background": {
+											"type": "string",
+											"description": "#rrggbb"
+										},
+										"image": {
+											"type": "string",
+											"description": "an image URL or library item (the image preset)"
+										},
+										"logo": {
+											"type": "string"
+										},
+										"textColor": {
+											"type": "string"
+										},
+										"bar": {
+											"type": "object",
+											"properties": {
+												"style": {
+													"type": "string",
+													"enum": [
+														"thin",
+														"thick"
+													]
+												},
+												"color": {
+													"type": "string"
+												}
+											}
+										},
+										"tips": {
+											"type": "array",
+											"items": {
+												"type": "string"
+											}
+										},
+										"title": {
+											"type": "string"
+										}
+									}
+								}
+							},
+							"description": "A Portal: a doorway that takes the player who walks through it somewhere else, ONE player at a time. Target: level (a Levels-table row id or name), or scene (a project scene) and / or spawn (an object name to arrive at), or back: true (where they came from). transition = fade | iris | card | none (VR always fades); loading = this portal's own loading screen. New: position or at; change one: object (uuid). What the game keeps (game_setup {action: 'levels'} keep) carries through. One undo step."
+						},
+						"checkpoint": {
+							"type": "object",
+							"properties": {
+								"position": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"minItems": 3,
+									"maxItems": 3,
+									"description": "its base [x, y, z] (a new one)"
+								},
+								"at": {
+									"type": "object",
+									"description": "placement like create_objects: {ping: \"latest\"} = at the person's ping"
+								},
+								"yaw": {
+									"type": "number",
+									"description": "turn in radians; its arrow points -Z at 0 (arriving players face the arrow)"
+								},
+								"face_user": {
+									"type": "boolean"
+								},
+								"name": {
+									"type": "string"
+								},
+								"object": {
+									"type": "string",
+									"description": "uuid of an existing one to change (leave out to place a new one)"
+								},
+								"show": {
+									"type": "boolean",
+									"description": "false = invisible in Play (still works): a trigger inside your own doorway"
+								},
+								"label": {
+									"type": "string"
+								}
+							},
+							"description": "A Checkpoint pad: stepping on it saves THAT player's progress there; after a fall (or Back to checkpoint, or reloading an exported game) they come back to it. New: position or at; change one: object (uuid). label = what the flash says. One undo step."
+						},
+						"loading": {
+							"type": "object",
+							"properties": {
+								"preset": {
+									"type": "string",
+									"enum": [
+										"fade",
+										"bar",
+										"logo",
+										"image",
+										"item"
+									]
+								},
+								"background": {
+									"type": "string",
+									"description": "#rrggbb"
+								},
+								"image": {
+									"type": "string",
+									"description": "an image URL or library item (the image preset)"
+								},
+								"logo": {
+									"type": "string"
+								},
+								"textColor": {
+									"type": "string"
+								},
+								"bar": {
+									"type": "object",
+									"properties": {
+										"style": {
+											"type": "string",
+											"enum": [
+												"thin",
+												"thick"
+											]
+										},
+										"color": {
+											"type": "string"
+										}
+									}
+								},
+								"tips": {
+									"type": "array",
+									"items": {
+										"type": "string"
+									}
+								},
+								"title": {
+									"type": "string"
+								},
+								"clear": {
+									"type": "boolean"
+								}
+							},
+							"description": "The loading screen every level change shows (only when the load takes a moment; at least 0.4 s once shown): preset fade | bar | logo | image | item, background, image, logo, bar {style, color}, tips (lines that rotate), title; clear: true = the default bar. Fields you leave out stay. Needs a Levels table (game_setup {action: 'levels'}). No field reads it. One undo step."
 						}
 					},
 					"required": [
@@ -10120,7 +10578,7 @@
 					]
 				},
 				"annotations": {
-					"title": "Game setup: spawn, play camera and levels",
+					"title": "Game setup: spawn, play camera, levels, portals, checkpoints, loading",
 					"readOnlyHint": false,
 					"destructiveHint": true,
 					"openWorldHint": false

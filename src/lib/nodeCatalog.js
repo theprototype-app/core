@@ -817,7 +817,16 @@ export const nodeCatalog = [
 			},
 			{ type: 'timer', label: 'Timer', defaults: { delay: 1, a: 0 } },
 			{ type: 'distance', label: 'Distance', defaults: {} },
-			{ type: 'proximity', label: 'Proximity', defaults: { radius: 3 } },
+			{
+				type: 'proximity',
+				label: 'Proximity',
+				defaults: { radius: 3 },
+				// 78 F10: to: player — b is THIS peer's player (its body, feet to eye)
+				params: [
+					{ key: 'radius', kind: 'number', step: 0.1 },
+					{ key: 'to', kind: 'select', options: ['object', 'player'], legacy: 'object', doc: 'object = the object wired into b; player = your own player (each peer reads its own)' }
+				]
+			},
 			{ type: 'lookat', label: 'Look At', defaults: {} },
 			{ type: 'setcolor', label: 'Set Color', defaults: { color: '#ff4000' } },
 			{ type: 'visibility', label: 'Visibility', defaults: { on: true } },
@@ -1242,8 +1251,19 @@ export const nodeCatalog = [
 				]
 			},
 			// CL-C C2: sensor overlap edges (initiator-detected, replicated stamps)
-			{ type: 'onenter', label: 'On Enter', defaults: { pulse: 0.3 } },
-			{ type: 'onexit', label: 'On Exit', defaults: { pulse: 0.3 } },
+			// 78 F10: + the player (every peer feels its own); `who` picks anything / player / objects
+			{
+				type: 'onenter',
+				label: 'On Enter',
+				defaults: { pulse: 0.3 },
+				params: [{ key: 'who', kind: 'select', options: ['any', 'player', 'objects'], legacy: 'any', doc: 'any = objects and the player; player = only a player walking in; objects = only bodies' }]
+			},
+			{
+				type: 'onexit',
+				label: 'On Exit',
+				defaults: { pulse: 0.3 },
+				params: [{ key: 'who', kind: 'select', options: ['any', 'player', 'objects'], legacy: 'any', doc: 'any = objects and the player; player = only a player walking out; objects = only bodies' }]
+			},
 			{
 				type: 'mass',
 				label: 'Mass',

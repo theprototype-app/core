@@ -21,7 +21,7 @@ import {
 } from './flowRuntime';
 import { colliderSpecOf } from './colliderSpec';
 import { colliderDescsFor } from './colliderDescs';
-import { groupOf, interactionGroups, isGroupId } from './collisionGroups';
+import { groupOf, interactionGroups, isGroupId, playerInteractionGroups, groupsInteract } from './collisionGroups';
 import {
 	sceneGravity,
 	scenePhysicsGround,
@@ -2100,6 +2100,153 @@ function dispatchEnterExit() {
 		if (entered) fireObjectEnter(uuid, otherUuid);
 		else fireObjectExit(uuid, otherUuid);
 	});
+}
+
+// ---- 78 F10: THE PLAYER IS FELT BY SENSORS ------------------------------------
+//
+// The walker's capsule is created straight onto the world (charController.js) and holds no
+// colliderOwner entry, so queueSensorEvent above never saw the player — and only the STEPPING
+// peer has a world at all. A joiner's player could never be felt by anything.
+//
+// So the player is tested HERE, on EVERY peer, against the scene's sensors, with or without a
+// running simulation: each peer asks only for ITS OWN player (LOCAL — the kit.pickups touch
+// rule), and an edge rides the ordinary replicated trigger stamp (fireObjectEnter/Exit with
+// other = 'player'), so every peer sees the same pulse. The shapes are the SAME ones a sensor
+// body gets (colliderSpec -> colliderDescsFor), placed in world space and tested with rapier's
+// shape-vs-shape query — no world, no solver, nothing a peer has to agree on but the scene.
+// Collision groups count: a sensor whose "collides with" leaves Player out is not felt.
+
+/** the value `other` carries for the local player (a contact's other body is otherwise a uuid) */
+export const PLAYER_OTHER = 'player';
+/** uuid -> {key, parts} — a sensor's world-space shapes, rebuilt only when its pose or params move
+ * @type {Map<string, {key: string, parts: {shape: any, pos: any, rot: any, groups: number}[]}>} */
+let playerSensorShapes = new Map();
+/** the sensors THIS peer's player stands in @type {Set<string>} */
+let playerInside = new Set();
+/** collectParams is a graph walk: re-read on a graph edit, a scene revision, or every 500 ms */
+/** @type {{graphs: any, revision: any, at: number, sensors: [string, any][]}} */
+let playerSensorParams = { graphs: null, revision: null, at: 0, sensors: [] };
+/** @type {any} */ let playerCapsuleShape = null;
+let playerCapsuleKey = '';
+
+/** the sensors in the scene and their params (cached; see playerSensorParams) @param {any} group */
+function sensorParams(group) {
+	const graphs = get(flowGraphs);
+	const revision = get(sceneRevision);
+	const now = performance.now();
+	const c = playerSensorParams;
+	if (c.graphs === graphs && c.revision === revision && now - c.at < 500) return c.sensors;
+	const params = collectParams(group);
+	/** @type {[string, any][]} */
+	const sensors = [];
+	for (const [uuid, p] of Object.entries(params)) if (p?.sensor) sensors.push([uuid, p]);
+	playerSensorParams = { graphs, revision, at: now, sensors };
+	return sensors;
+}
+
+/** a sensor's shapes in WORLD space — a body at the origin with identity rotation, so the
+ * body frame IS the world (the objects group sits at the origin, physics' own assumption)
+ * @param {any} object @param {any} p */
+function sensorShapesOf(object, p) {
+	object.updateMatrixWorld?.();
+	const m = object.matrixWorld?.elements ?? [];
+	const geo = object.geometry?.uuid ?? '';
+	const key = JSON.stringify(p) + '|' + geo + '|' + Array.from(m, (v) => Math.round(v * 1e4)).join(',');
+	const held = playerSensorShapes.get(object.uuid);
+	if (held && held.key === key) return held.parts;
+	/** @type {{shape: any, pos: any, rot: any, groups: number}[]} */
+	let parts = [];
+	try {
+		const spec = specOf(object, p, false);
+		if (spec) {
+			const descs = colliderDescsFor(RAPIER, spec, {
+				origin: object.position.clone(),
+				center: spec.center.clone(),
+				relQuat: spec.quat.clone()
+			});
+			const groups = interactionGroups(p?.group ?? 'default', p?.collidesWith);
+			parts = descs.map((/** @type {any} */ d) => ({ shape: d.shape, pos: { ...d.translation }, rot: { ...d.rotation }, groups }));
+		}
+	} catch (error) {
+		console.log('player sensor shape failed', error);
+		parts = [];
+	}
+	playerSensorShapes.set(object.uuid, { key, parts });
+	return parts;
+}
+
+/**
+ * One frame of the LOCAL player against the scene's sensors (flowRuntime calls it while this
+ * peer plays and some On Enter / On Exit node exists). `body` = the player's eye (world), the
+ * height of its feet and its radius — the capsule the walker sweeps. Fires On Enter / On Exit
+ * with other = 'player' on the edges. Returns the sensors the player stands in.
+ * @param {{eye: {x: number, y: number, z: number}, feetY: number, radius: number} | null} body
+ * @returns {string[]}
+ */
+export function tickPlayerSensors(body) {
+	if (!RAPIER) {
+		warmup().catch(() => {});
+		return [];
+	}
+	const group = get(objectsGroup);
+	if (!group || !body) {
+		resetPlayerSensors();
+		return [];
+	}
+	const top = body.eye.y;
+	const bottom = Math.min(body.feetY, top);
+	const radius = Math.max(0.05, body.radius);
+	const half = Math.max(0.01, (top - bottom) / 2 - radius);
+	const capKey = half.toFixed(3) + '|' + radius.toFixed(3);
+	if (!playerCapsuleShape || capKey !== playerCapsuleKey) {
+		playerCapsuleShape = new RAPIER.Capsule(half, radius);
+		playerCapsuleKey = capKey;
+	}
+	const capPos = { x: body.eye.x, y: (top + bottom) / 2, z: body.eye.z };
+	const capRot = { x: 0, y: 0, z: 0, w: 1 };
+	const playerGroups = playerInteractionGroups();
+	/** @type {Set<string>} */
+	const inside = new Set();
+	/** @type {Set<string>} */
+	const seen = new Set();
+	for (const [uuid, p] of sensorParams(group)) {
+		const object = group.getObjectByProperty('uuid', uuid);
+		if (!object) continue;
+		seen.add(uuid);
+		for (const part of sensorShapesOf(object, p)) {
+			if (!groupsInteract(part.groups, playerGroups)) continue;
+			let hit = false;
+			try {
+				hit = playerCapsuleShape.intersectsShape(capPos, capRot, part.shape, part.pos, part.rot);
+			} catch {
+				hit = false;
+			}
+			if (hit) {
+				inside.add(uuid);
+				break;
+			}
+		}
+	}
+	// forget the shapes of sensors that left the scene (or stopped being sensors)
+	for (const uuid of [...playerSensorShapes.keys()]) if (!seen.has(uuid)) playerSensorShapes.delete(uuid);
+	const before = playerInside;
+	playerInside = inside;
+	for (const uuid of inside) if (!before.has(uuid)) fireObjectEnter(uuid, PLAYER_OTHER);
+	// a sensor deleted while we stood in it ends SILENTLY: there is nothing left to leave
+	for (const uuid of before) if (!inside.has(uuid) && seen.has(uuid)) fireObjectExit(uuid, PLAYER_OTHER);
+	return [...inside];
+}
+
+/** The player left play (or the scene went): forget what it stood in WITHOUT pulsing — leaving
+ * the game is not walking out of a door. */
+export function resetPlayerSensors() {
+	playerInside = new Set();
+	if (playerSensorShapes.size) playerSensorShapes = new Map();
+}
+
+/** the debug hook / suites: the sensors this peer's player stands in */
+export function playerSensorState() {
+	return { inside: [...playerInside], cached: playerSensorShapes.size };
 }
 
 /** Fire the collected impacts AFTER the substep loop (keeps the stepping tight

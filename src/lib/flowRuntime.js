@@ -73,8 +73,11 @@ import {
 	playMoveSpeed,
 	setCharControl,
 	setPlayMoveSpeed,
-	DEFAULT_FLY_SPEED
+	DEFAULT_FLY_SPEED,
+	localPlayerBody
 } from './charController';
+import { gameFeelActive } from './gameFeel'; // 78 F10: a leaf (sceneStore + svelte/store)
+import { bodyDistance } from './playReach.js'; // 78 F10: Proximity to the player's body (a leaf)
 // 27-B: recovery paths report through the diagnostics ring instead of console.log,
 // so a user can hand over what happened (hardening audit H4). A zero-import leaf.
 import { log } from './diagnostics';
@@ -1006,12 +1009,26 @@ export function contactOtherOf(nodeId) {
 	return contactOthers.has(nodeId) ? contactOthers.get(nodeId) : null;
 }
 
+/** 78: test/debug view — a node's value NOW, evaluated with a live context (the suites read a
+ * Proximity this way). @param {string} nodeId */
+export function nodeValueOf(nodeId) {
+	const node = nodeById(nodes, nodeId);
+	if (!node) return null;
+	const time = synced ? (sessionNow() % 86400000) / 1000 : performance.now() / 1000;
+	return unwrapHandle(evalNode(node, nodes, edges, time, new Set(), runtimeCtx()), {});
+}
+
 /**
  * 36 X6: a contact node's `filter` (an object wired into it) — fire only when the
  * other body is that object, or a transient COPY of it (the reachesObjectSelector rule).
  * No filter wired = every contact passes. @param {any} data resolved inputs @param {string} other
  */
 function contactPasses(data, other) {
+	// 78 F10: `who` — anything (the default: objects AND the player), only the player, or only
+	// objects. The player arrives as other = 'player' (physics' PLAYER_OTHER).
+	const who = data?.who;
+	if (who === 'player' && other !== 'player') return false;
+	if (who === 'objects' && other === 'player') return false;
 	const filter = data?.filter;
 	if (typeof filter !== 'string' || filter === '' || filter === '-None-') return true;
 	return other === filter || (!!other && spawnedFromOf(other) === filter);
@@ -3161,6 +3178,13 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 		}
 		case 'proximity': {
 			const pa = pointOf(input('a', d.a), ctx);
+			// 78 F10: `to: player` measures to THIS peer's player — its body (feet..eye, the reach
+			// rule), so a pad on the floor is near a standing player. LOCAL by design: each peer
+			// reads its own player (the gamepadaxis rule); a SHARED reaction goes through On Enter.
+			if (d.to === 'player') {
+				const body = gameFeelActive() ? localPlayerBody() : null;
+				return pa && body ? bodyDistance(pa, body.eye, body.feetY) <= num(d.radius ?? 3) : false;
+			}
 			const pb = pointOf(input('b', d.b), ctx);
 			return pa && pb ? pa.distanceTo(pb) <= num(d.radius ?? 3) : false;
 		}
@@ -5208,6 +5232,32 @@ function runTick(now) {
 			noteFrameFailure('post-tick hook', error);
 		}
 		phaseEnd(PHASE_PHYSICS);
+	}
+	// 78 F10: THIS peer's player against the scene's sensors — after the step, so a moving sensor
+	// is tested where it is now. Only while this peer plays and some On Enter / On Exit exists.
+	tickPlayerSensorNodes();
+}
+
+/** the node array the sensor-node check last ran on, and its answer */
+let sensorNodesSeen = /** @type {any[] | null} */ (null);
+let sensorNodesLive = false;
+let playerSensorsRan = false;
+/** 78 F10: run (or stand down) the local player's sensor probe */
+function tickPlayerSensorNodes() {
+	if (nodes !== sensorNodesSeen) {
+		sensorNodesSeen = nodes;
+		sensorNodesLive = nodes.some((/** @type {any} */ n) => n.type === 'onenter' || n.type === 'onexit');
+	}
+	if (sensorNodesLive && gameFeelActive() && physicsRef?.tickPlayerSensors) {
+		try {
+			physicsRef.tickPlayerSensors(localPlayerBody());
+			playerSensorsRan = true;
+		} catch (error) {
+			noteFrameFailure('player sensors', error);
+		}
+	} else if (playerSensorsRan) {
+		playerSensorsRan = false;
+		physicsRef?.resetPlayerSensors?.();
 	}
 }
 

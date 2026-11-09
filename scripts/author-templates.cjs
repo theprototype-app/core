@@ -129,6 +129,9 @@
 //   flow?, density?} (36: a water volume, userData.water — pool aquarium ocean lake river lava swamp toxic
 //   ice; a static sensor unless `physics` says otherwise) · bubbles {…} (a standalone bubble emitter) ·
 //   scale [x,y,z] | n · fluid 'none'|'collide'|'float' (36-fb: how a Fluid emitter's water meets it)
+//   93 types: portal (portal: {level | scene, spawn?, transition fade|iris|card|none, show}) · checkpoint
+//   (checkpoint: {label, show}) — the app's own doorway / pad; its arrow points -Z (rot turns it). The
+//   game's Levels table rides `physics: {levels: {list, keep, unlock, loading}}`
 //   36-fb types: fluidemitter (fluidEmitter: settings over the defaults, area merged) · flowpath
 //   (flowPath: {kind river|pipe, points (object-local), width, depth, speed, strength, recycle, show,
 //   color, opacity}) — graphs may carry `rotor` (Rotate / Motor) and `flowfloat` nodes
@@ -531,6 +534,10 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 			const simFluid = d.objects.some((/** @type {any} */ o) => o.type === 'fluidemitter' || o.type === 'flowpath')
 				? { ...(await import('/src/lib/sim/fluidEmitterObject.js')), ...(await import('/src/lib/sim/flowPathObject.js')), ...(await import('/src/lib/sim/fluidEmitterCore.js')) }
 				: null;
+			// 93: a Portal / a Checkpoint — the app's own geometry, stamp and record (gameLevels/objects.js)
+			const levelObjects = d.objects.some((/** @type {any} */ o) => o.type === 'portal' || o.type === 'checkpoint')
+				? await import('/src/lib/gameLevels/objects.js')
+				: null;
 			/** @param {any} o @param {{mirror?: boolean, prefix?: string, opacity?: number, shadow?: boolean}} [opts] */
 			const build = (o, opts = {}) => {
 				const mirror = !!opts.mirror;
@@ -644,6 +651,9 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 					// 36-fb: a spout / a flow path's ribbon (built again from its record below)
 					else if (o.type === 'fluidemitter') geo = simFluid.fluidEmitterGeometry();
 					else if (o.type === 'flowpath') geo = simFluid.flowPathGeometry(o.flowPath);
+					// 93: a portal's doorway / a checkpoint's pad (stamped with its record below)
+					else if (o.type === 'portal') geo = levelObjects.portalGeometry();
+					else if (o.type === 'checkpoint') geo = levelObjects.checkpointGeometry();
 					else throw new Error('object "' + o.name + '": unknown type "' + o.type + '"');
 					// 30 author-kit: MeshPhysicalMaterial when a def asks for `physical` or uses any
 					// field only it has; MeshToonMaterial for `toon`. Absent all of those it is the
@@ -715,6 +725,15 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 				if (o.type === 'flowpath') {
 					simFluid.stampFlowPath(object);
 					simFluid.applyFlowPathTo(object, { ...object.userData.flowPath, ...(o.flowPath ?? {}) });
+				}
+				// 93: the portal's / checkpoint's record (`portal` / `checkpoint` on the def, over the defaults)
+				if (o.type === 'portal') {
+					levelObjects.stampPortal(object);
+					object.userData.portal = levelObjects.normalizePortal({ ...object.userData.portal, ...(o.portal ?? {}) });
+				}
+				if (o.type === 'checkpoint') {
+					levelObjects.stampCheckpoint(object);
+					object.userData.checkpoint = levelObjects.normalizeCheckpoint({ ...object.userData.checkpoint, ...(o.checkpoint ?? {}) });
 				}
 				if (typeof o.fluid === 'string' && o.type !== 'fluidtank' && o.fluid !== 'auto') object.userData.fluidInteraction = o.fluid;
 				object.name = (opts.prefix ?? '') + o.name;

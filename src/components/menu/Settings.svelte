@@ -61,7 +61,7 @@
 	import VRSettingsSection from './VRSettingsSection.svelte'; // the whole VR page
 	import AiSettings from './settings/AiSettings.svelte'; // 59 T4: the Tools & connections page (+ its provider forms)
 	import ConnectionSettings from './settings/ConnectionSettings.svelte';
-	import { settingsOpen, settingsSection, settingsSearchSeed, hidePanels, restorePanels, showToast } from '../../stores/appStore.js';
+	import { settingsOpen, settingsSection, settingsSearchSeed, settingsAnchor, hidePanels, restorePanels, showToast } from '../../stores/appStore.js';
 	import { cloudPluginInfo } from '$lib/cloudHooks';
 	import { phoneShellActive } from '$lib/ui/phoneShell.js';
 	import { versionString } from '$lib/version.js';
@@ -87,12 +87,11 @@
 	// 48 O1: Settings ▸ Privacy — the error-report switch (opened by a search or a deep link)
 	let privacyExpanded = false;
 	$: if ((settingsQuery || '').trim() || ($settingsOpen && $settingsSection === 'privacy')) privacyExpanded = true;
-	// 86 B5: Settings ▸ Connected apps — signed-in cloud builds only (a connector provider is installed)
-	let connectedAppsExpanded = false;
-	$: if ((settingsQuery || '').trim() || ($settingsOpen && $settingsSection === 'connectedapps')) connectedAppsExpanded = true;
 	// profile-notify: Settings ▸ Account — only while the cloud plugin has mounted into it (cloudApi.mountSettingsSection)
+	// uir-account: + Connected apps (86 B5, its own page before: 'connectedapps' is now an alias of this page), so the
+	// page also exists while only a connector provider is installed
 	let accountExpanded = false;
-	$: if ((settingsQuery || '').trim() || ($settingsOpen && $settingsSection === 'account')) accountExpanded = true;
+	$: if ((settingsQuery || '').trim() || ($settingsOpen && ($settingsSection === 'account' || $settingsSection === 'connectedapps'))) accountExpanded = true;
 	let accessibilityExpanded = false; // 53: Settings ▸ Accessibility (AccessibilitySettings.svelte)
 	$: if ((settingsQuery || '').trim() || ($settingsOpen && $settingsSection === 'accessibility')) accessibilityExpanded = true;
 	let sceneExpanded = false;
@@ -403,6 +402,32 @@
 		control?.focus({ preventScroll: true });
 	}
 	(settingsNav as any).jumpTo = jumpTo;
+
+	/**
+	 * uir-account: a deep link may name an element of its page (`settingsAnchor`, set by openSettingsAt): bring it into
+	 * view once it exists — a plugin's rows arrive after an await, so this waits up to 4 s — flash it, then forget it.
+	 */
+	let anchorRun = 0;
+	$: if ($settingsOpen && $settingsAnchor) void revealAnchor($settingsAnchor);
+	async function revealAnchor(id: string) {
+		const run = ++anchorRun;
+		settingsAnchor.set(null);
+		const until = Date.now() + 4000;
+		while (run === anchorRun && Date.now() < until) {
+			await tick();
+			const named = document.getElementById(id);
+			// a `display: contents` wrapper (ConnectedAppsSettings' root) has no box: its first child is the place
+			const el = named && !named.getClientRects().length ? (named.firstElementChild as HTMLElement | null) : named;
+			if (el && el.closest('#settings-main') && el.getClientRects().length) {
+				await new Promise((r) => setTimeout(r, 50)); // after the nav's own scrollTop = 0 for the page switch
+				el.scrollIntoView({ block: 'start' });
+				el.classList.add('sr-flash');
+				setTimeout(() => el.classList.remove('sr-flash'), 1600);
+				return;
+			}
+			await new Promise((r) => setTimeout(r, 100));
+		}
+	}
 	// a page opens its sub-pages through the nav; while searching that is a jump first
 	const baseOpenSub = settingsNav.openSub;
 	settingsNav.openSub = (id: string, label: string, key?: string) => {
@@ -606,19 +631,15 @@
 					{#snippet header()}Privacy{/snippet}
 					<PrivacySettings />
 				</AccordionItem>
-				{#if $settingsSlots.account}
-					<!-- profile-notify: the cloud plugin draws the groups (Email ▸ Product updates); core gives the page -->
+				{#if $settingsSlots.account || $connectorProvider}
+					<!-- profile-notify: the cloud plugin draws its groups (Email, and since uir-account Sign-in methods + Devices);
+					     core gives the page and draws Connected apps (86 B5) under them. Each row carries its own keywords. -->
 					<AccordionItem bind:open={accountExpanded}>
 						{#snippet header()}Account{/snippet}
-						<div id="settings-account" class="settings-account" data-keywords="account email updates newsletter sign in">
-							<CloudSlot mount={$settingsSlots.account} />
+						<div id="settings-account" class="settings-account" data-keywords="account">
+							{#if $settingsSlots.account}<CloudSlot mount={$settingsSlots.account} />{/if}
+							<ConnectedAppsSettings />
 						</div>
-					</AccordionItem>
-				{/if}
-				{#if $connectorProvider}
-					<AccordionItem bind:open={connectedAppsExpanded}>
-						{#snippet header()}Connected apps{/snippet}
-						<ConnectedAppsSettings />
 					</AccordionItem>
 				{/if}
 				<AccordionItem bind:open={nodeTypesExpanded}>
@@ -860,7 +881,8 @@
 	}
 	/* a search result we jumped to */
 	:global(.setting-row.sr-flash),
-	:global(.tp-ui.nr.sr-flash) {
+	:global(.tp-ui.nr.sr-flash),
+	:global(.sec-card-wrap.sr-flash) {
 		animation: settings-flash 1.6s ease-out;
 	}
 	@keyframes -global-settings-flash {

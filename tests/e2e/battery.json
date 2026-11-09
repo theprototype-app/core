@@ -325,6 +325,8 @@
 		"shader-own-glsl-sync": 360,
 		"shader-reach": 360,
 		"connector-relay": 240,
+		"profile-notify": 150,
+		"uir-account": 150,
 		"connector-physics": 150,
 		"connector-window": 150,
 		"connector-join": 120,

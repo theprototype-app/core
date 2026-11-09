@@ -11,6 +11,10 @@ export const settingsSection = writable(null);
 /** 38 R8 (NOTES-38 #14): text to put in Settings' own search when it opens (the command
  *  palette's settings rows); Settings takes it once and clears it. */
 export const settingsSearchSeed = writable('');
+/** uir-account: an element id inside the page `settingsSection` opens (e.g. 'connected-apps-settings'): Settings scrolls
+ *  it into view once it renders (a plugin's rows arrive after an await) and clears it. Set through
+ *  $lib/settings/openSettingsAt.js. @type {import('svelte/store').Writable<string | null>} */
+export const settingsAnchor = writable(/** @type {string | null} */ (null));
 /** 38 R8 (NOTES-38 #14): the Ctrl+K command palette (CommandPalette.svelte) */
 export const commandPaletteOpen = writable(false);
 // unified inspector (phase 64): one drawer serves the selection (mesh/light/

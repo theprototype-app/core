@@ -198,7 +198,10 @@
 		setMusicPlaying,
 		setMusicVolume
 	} from '$lib/sceneMusic';
-	import { isProPreset } from '$lib/post/proPresetsCore.js';
+	import { isProPreset, PRO_LOOKS } from '$lib/post/proPresetsCore.js';
+	// 78-int PL16 + PL12: what a preset sets, what changed since, and the one-step resets
+	import { PRESET_WHY, presetSets, envChanges, presetExposure } from '$lib/envPresetCore.js';
+	import { envUndoable, resetEnvironmentPreset } from '$lib/envPresetActions.js';
 	import { applyProPreset } from '$lib/post/proPresets.js';
 	import {
 		environment,
@@ -219,7 +222,8 @@
 		exportEnvPreset,
 		importEnvPreset,
 		applyCustomPreset,
-		editEnvSky
+		editEnvSky,
+		resetEnvParts
 	} from '$lib/environment';
 	import {
 		globalScene,
@@ -1646,19 +1650,52 @@
 
 	// ---- environment v2 (70) -------------------------------------------------
 	const envPayload = $derived(presetPayload($environment));
+	// 78-int PL16: the preset the environment comes from (a named one, or an edited copy's basedOn) and
+	// what differs from it now — a pro look counts its effects too
+	const envState = $derived(
+		envChanges($environment, ENVIRONMENT_PRESETS, {
+			effects: ($scenePost?.effects ?? []).map((/** @type {any} */ e) => e.kind),
+			look: (() => {
+				const k = $environment.preset === 'custom' ? $environment.customPreset?.basedOn : $environment.preset;
+				return k && PRO_LOOKS[k] ? PRO_LOOKS[k].effects.map((e) => e.kind) : null;
+			})()
+		})
+	);
+	/** the base preset's own values, for the rows' changed marks @type {any} */
+	const envBase = $derived(envState.basedOn ? /** @type {any} */ (ENVIRONMENT_PRESETS)[envState.basedOn] : null);
+	const envSets = $derived(envBase ? presetSets(envBase, { effects: PRO_LOOKS[envState.basedOn ?? '']?.effects.length ?? 0 }) : []);
+	/** @param {unknown} a @param {unknown} b */
+	const envSame = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+	/** one row back to the base preset's value, as one undo step @param {() => void} fn */
+	const envRowReset = (fn) => envUndoable(fn);
 	// 38 R5: the preset chips (a saved custom preset joins the row as 'custom')
 	// 78-int PL15 (scene panel item 3, owner APPROVED 2026-11-08): SIX featured pills + More. The one
 	// row of choices stays short; More opens IN PLACE (no popover, the same on a phone) with the rest
 	// in groups. The applied preset is always on the row: one that lives under More takes the 6th slot.
 	const ENV_FEATURED = ['studio', 'daylight', 'sunset', 'night', 'clearsky', 'cinematic'];
+	/** the pill that reads as applied: an edited copy's base preset, else the state's own key */
+	const envPillValue = $derived($environment.preset === 'custom' && envState.basedOn ? envState.basedOn : $environment.preset);
 	/** @param {string} key */
 	const envOption = (key) =>
 		key === 'custom'
 			? { value: 'custom', label: $environment.customPreset?.label ?? 'Custom', title: 'This scene\'s own environment' }
-			: { value: key, label: ENVIRONMENT_PRESETS[key]?.label ?? key, icon: ENVIRONMENT_PRESETS[key]?.pro ? 'sparkles' : undefined, title: ENVIRONMENT_PRESETS[key]?.pro ? 'Pro look: also sets tone mapping and effects' : undefined };
+			: {
+					value: key,
+					label: ENVIRONMENT_PRESETS[key]?.label ?? key,
+					icon: ENVIRONMENT_PRESETS[key]?.pro ? 'sparkles' : undefined,
+					// 78-int PL16: the applied preset, edited since, wears a dot; a press re-applies it (= Reset)
+					count: key === envState.basedOn && envState.modified.length ? '•' : undefined,
+					title:
+						key === envState.basedOn && envState.modified.length
+							? 'Modified: ' + envState.modified.join(', ') + ' — press to reset to ' + (ENVIRONMENT_PRESETS[key]?.label ?? key)
+							: ENVIRONMENT_PRESETS[key]?.pro
+								? 'Pro look: also sets tone mapping and effects'
+								: undefined
+				};
 	const envPresetOptions = $derived.by(() => {
 		const keys = ENV_FEATURED.filter((k) => ENVIRONMENT_PRESETS[k]);
-		const now = $environment.preset;
+		// 78-int PL16: an edited copy keeps its preset's pill (with a dot); a plain custom one is "custom"
+		const now = envPillValue;
 		const known = now === 'custom' ? !!$environment.customPreset : !!ENVIRONMENT_PRESETS[now];
 		if (known && !keys.includes(now)) keys[keys.length - 1] = now;
 		return keys.map(envOption);
@@ -1689,7 +1726,8 @@
 	/** apply a preset key (a pill or a More chip): custom re-applies the scene's own, a pro look its stack
 	 * @param {string} key */
 	function applyEnvKey(key) {
-		if (key === 'custom') applyCustomPreset($environment.customPreset);
+		if (key === envState.basedOn && envState.modified.length) resetEnvironmentPreset();
+		else if (key === 'custom') applyCustomPreset($environment.customPreset);
 		else if (isProPreset(key)) applyProPreset(key);
 		else setEnvironment(key);
 	}
@@ -1921,9 +1959,25 @@
 					id="environment-presets"
 					label="Environment preset"
 					options={envPresetOptions}
-					value={$environment.preset}
+					value={envPillValue}
 					onpress={applyEnvKey}
 				/>
+				<!-- 78-int PL16 (scene panel item 4): what the applied preset is for and what it sets (read only;
+				     editing a preset is the presets lane's file), then what changed since + Reset -->
+				{#if envBase}
+					<div id="env-preset-info" class="env-info" data-based-on={envState.basedOn}>
+						<p id="env-preset-why">{PRESET_WHY[/** @type {keyof typeof PRESET_WHY} */ (envState.basedOn)] ?? ''}</p>
+						<p id="env-preset-sets"><span class="env-info-k">Sets:</span> {envSets.join(', ')}</p>
+						{#if envState.modified.length}
+							<p id="env-preset-modified" class="env-modified">
+								<span><b>{envState.label}</b> · Modified: {envState.modified.join(', ')}</span>
+								<button type="button" id="env-reset" class="env-reset-btn" title={'Back to ' + envState.label + ' as it ships — one undo step'} onclick={() => resetEnvironmentPreset()}>
+									<Icon name="rotate-ccw" size={16} aria-hidden="true" />Reset
+								</button>
+							</p>
+						{/if}
+					</div>
+				{/if}
 				{#if envMoreCount}
 					<button
 						type="button"
@@ -1946,11 +2000,11 @@
 								size="sm"
 								label={g.label}
 								options={g.keys.map(envOption)}
-								value={$environment.preset}
+								value={envPillValue}
 								onpress={applyEnvKey}
 							/>
 						{/each}
-						{#if $environment.customPreset && !envPresetOptions.some((o) => o.value === 'custom')}
+						{#if $environment.customPreset && !envPresetOptions.some((o) => o.value === 'custom') && !($environment.preset === 'custom' && envState.basedOn)}
 							<p class="ui-section-label">In this scene</p>
 							<Chips id="environment-more-scene" size="sm" label="In this scene" options={[envOption('custom')]} value={$environment.preset} onpress={applyEnvKey} />
 						{/if}
@@ -1993,7 +2047,9 @@
 				{/if}
 				<SliderRow
 					label="Exposure"
-					resetValue={1}
+					resetValue={envBase ? presetExposure(envBase) : 1}
+					resetLabel={envState.label}
+					onreset={() => envRowReset(() => setEnvironment($environment.preset, envBase ? presetExposure(envBase) : 1))}
 					min={0.4}
 					max={2}
 					step={0.05}
@@ -2006,8 +2062,14 @@
 				<p class="ui-section-label">Components</p>
 				{#if envPayload.hemi}
 					<SliderRow label="Sky light" min={0} max={4} step={0.05} value={envPayload.hemi.intensity}
+						resetValue={envBase?.hemi ? envBase.hemi.intensity : undefined}
+						resetLabel={envState.label}
+						onreset={() => envRowReset(() => resetEnvParts({ hemi: { ...envPayload.hemi, intensity: envBase.hemi.intensity } }))}
 						onchange={(v) => editRigComponent('hemi', { intensity: v })} />
-					<PropRow label="Sky / ground" valueBox={false}>
+					<PropRow label="Sky / ground" valueBox={false}
+						changed={!!envBase?.hemi && (envPayload.hemi.sky !== envBase.hemi.sky || envPayload.hemi.ground !== envBase.hemi.ground)}
+						resetLabel={envState.label}
+						onreset={() => envRowReset(() => resetEnvParts({ hemi: { ...envPayload.hemi, sky: envBase.hemi.sky, ground: envBase.hemi.ground } }))}>
 						{#snippet control()}
 							<FieldClip clip={colorClip('Sky colour', () => envPayload.hemi?.sky, (hex) => editRigComponent('hemi', { sky: hex }))}>
 							<input type="color" class="ins-swatch" aria-label="Sky colour" value={envPayload.hemi.sky}
@@ -2022,8 +2084,14 @@
 				{/if}
 				{#if envPayload.sun}
 					<SliderRow label="Sun" min={0} max={4} step={0.05} value={envPayload.sun.intensity}
+						resetValue={envBase?.sun ? envBase.sun.intensity : undefined}
+						resetLabel={envState.label}
+						onreset={() => envRowReset(() => editRigComponent('sun', { intensity: envBase.sun.intensity }))}
 						onchange={(v) => editRigComponent('sun', { intensity: v })} />
-					<PropRow label="Sun color" valueBox={false} clip={colorClip('Sun color', () => envPayload.sun?.color, (hex) => editRigComponent('sun', { color: hex }))}>
+					<PropRow label="Sun color" valueBox={false} clip={colorClip('Sun color', () => envPayload.sun?.color, (hex) => editRigComponent('sun', { color: hex }))}
+						changed={!!envBase?.sun && envPayload.sun.color !== envBase.sun.color}
+						resetLabel={envState.label}
+						onreset={() => envRowReset(() => editRigComponent('sun', { color: envBase.sun.color }))}>
 						{#snippet control()}
 							<input type="color" class="ins-swatch" aria-label="Sun colour" value={envPayload.sun.color}
 								onchange={(e) => editRigComponent('sun', { color: e.currentTarget.value })} />
@@ -2103,7 +2171,7 @@
 				<!-- 78-int PL17 (scene panel item 7): Background and Fog are rows of the environment, so they
 				     live here now (they sat eleven sections below it). The deep links "Background" / "Fog" are
 				     this section's aliases and land on these sub-headings. -->
-				<p class="ui-section-label" data-anchor="Background">Background</p>
+				<p class="ui-section-label" data-anchor="Background">Background{#if envBase && (!envSame(envPayload.background, envBase.background) || !envSame(envPayload.gradient, envBase.gradient))}<button type="button" id="env-background-reset" class="env-mark" data-row-changed title={'Differs from the ' + envState.label + ' preset — press to reset'} aria-label={'Background: differs from the ' + envState.label + ' preset — press to reset'} onclick={() => envRowReset(() => resetEnvParts({ background: envBase.background, gradient: envBase.gradient }))}></button>{/if}</p>
 				<FieldClip clip={colorClip('Background', () => $backgroundColor, (hex) => setBackground(hex))}>
 				<ColorPicker
 					isAlpha={false}
@@ -2125,7 +2193,7 @@
 					onInput={(/** @type {any} */ c) => setBackground(c.hex)}
 				/>
 				</FieldClip>
-				<p class="ui-section-label" data-anchor="Fog">Fog</p>
+				<p class="ui-section-label" data-anchor="Fog">Fog{#if envBase && !envSame(envPayload.fog, envBase.fog)}<button type="button" id="env-fog-reset" class="env-mark" data-row-changed title={'Differs from the ' + envState.label + ' preset — press to reset'} aria-label={'Fog: differs from the ' + envState.label + ' preset — press to reset'} onclick={() => envRowReset(() => resetEnvParts({ fog: envBase.fog }))}></button>{/if}</p>
 				<FieldClip clip={colorClip('Fog color', () => envFog?.color ?? FOG_DEFAULT, (hex) => editEnvSky({ fog: { color: hex } }), FOG_DEFAULT)}>
 				<ColorPicker
 					isAlpha={false}
@@ -4958,6 +5026,62 @@
 		font-weight: 600;
 		letter-spacing: var(--tracking-section);
 		color: var(--text-faint);
+	}
+	/* 78-int PL16: the read-only "what this preset sets" block and the Modified / Reset line */
+	.env-info {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		font-size: var(--fs-badge);
+		line-height: 1.35;
+		color: var(--text-muted);
+	}
+	.env-info-k {
+		font-weight: 600;
+		color: var(--text-2);
+	}
+	.env-modified {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 4px 8px;
+		color: var(--text-2);
+	}
+	.env-reset-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		padding: 1px 8px;
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius-input);
+		font-size: var(--fs-badge);
+		color: var(--text);
+		background: transparent;
+	}
+	.env-reset-btn:hover {
+		background: var(--surface-hover);
+	}
+	/* 78-int PL12: the changed mark on a sub-heading (Background, Fog) — PropRow's dot, same size */
+	.env-mark {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 16px;
+		height: 16px;
+		margin: -3px 0 -3px 2px;
+		padding: 0;
+		vertical-align: middle;
+		border: 0;
+		border-radius: 50%;
+		background: transparent;
+		cursor: pointer;
+	}
+	.env-mark::before {
+		content: '';
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--accent);
 	}
 	/* 78-int PL15: More opens the rest of the presets in place, under the six pills */
 	.env-more-btn {

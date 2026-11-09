@@ -4636,12 +4636,12 @@
 					]
 				},
 				{
-					"name": "Enter the selected group / leave the one you are in",
+					"name": "Enter the selected group / leave the one you are in / else search for a node to add (wired from the selected node)",
 					"controls": [
 						{
 							"kind": "button",
 							"id": "",
-							"label": "Rebind Enter the selected group / leave the one you are in",
+							"label": "Rebind Enter the selected group / leave the one you are in / else search for a node to add (wired from the selected node)",
 							"where": "control",
 							"default": "Tab",
 							"disabled": false,
@@ -12568,7 +12568,7 @@
 				]
 			},
 			{
-				"name": "Enter the selected group / leave the one you are in",
+				"name": "Enter the selected group / leave the one you are in / else search for a node to add (wired from the selected node)",
 				"controls": [
 					{
 						"kind": "button",

@@ -1608,6 +1608,11 @@
 			enterGroup(g.id);
 			return;
 		}
+		// nothing selected inside a group: Tab leaves it, as it always did
+		if (!sel.length && level) {
+			leaveGroup();
+			return;
+		}
 		const one = sel.length === 1 && !isNote(sel[0]) ? storeNodesNow().find((n) => n.id === sel[0].id) : null;
 		const from = one ? wireEndOf(one.id, candidateOutputs(String(one.type))[0] ?? null, 'source') : null;
 		if (!one || !from) {

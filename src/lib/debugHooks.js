@@ -124,6 +124,11 @@ export const DEBUG_HOOKS = [
 	['moduleLifecycle', () => import('./sdk/lifecycleEnv.js')],
 	['drawMode', () => import('./drawMode')],
 	['pathCapture', () => import('./pathCapture')],
+	// 78: the capture stack (F5), Animate in editor (F6), live card states (F7), the flow lint (F24)
+	['captureStack', () => import('./captureStack')],
+	['editorMotion', () => import('./editorMotion')],
+	['nodeLiveState', () => import('./nodeLiveState')],
+	['flowLint', () => import('./flowLint.js')],
 	['lockControl', () => import('./lockControl')],
 	['prefabs', () => import('./prefabs')],
 	['prefabLinks', () => import('./prefabLinks')],

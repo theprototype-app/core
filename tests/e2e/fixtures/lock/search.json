@@ -1154,9 +1154,9 @@
 				"Shortcuts"
 			]
 		},
-		"Enter the selected group / leave the one you are in": {
+		"Enter the selected group / leave the one you are in / else search for a node to add (wired from the selected node)": {
 			"rows": [
-				"Enter the selected group / leave the one you are in"
+				"Enter the selected group / leave the one you are in / else search for a node to add (wired from the selected node)"
 			],
 			"sections": [
 				"Shortcuts"
@@ -1296,7 +1296,7 @@
 		},
 		"Leave the group you are in": {
 			"rows": [
-				"Enter the selected group / leave the one you are in",
+				"Enter the selected group / leave the one you are in / else search for a node to add (wired from the selected node)",
 				"Leave the group you are in"
 			],
 			"sections": [
@@ -3357,7 +3357,7 @@
 				"Edit / Interact mode (Interact: clicks play with the scene instead of selecting)",
 				"Editor tour",
 				"Enter mesh edit mode (inside it Tab cycles Vertices/Edges/Faces; Esc exits) — on a measurement, edit its points",
-				"Enter the selected group / leave the one you are in",
+				"Enter the selected group / leave the one you are in / else search for a node to add (wired from the selected node)",
 				"Explorer: show / bring to front / hide",
 				"Fix overlaps and crossings, keeping the layout",
 				"Flip normals (faces); fill the hole (edges)",
@@ -3794,7 +3794,7 @@
 				"Duplicate the selection (wires between copies kept)",
 				"Edit / Interact mode (Interact: clicks play with the scene instead of selecting)",
 				"Enter mesh edit mode (inside it Tab cycles Vertices/Edges/Faces; Esc exits) — on a measurement, edit its points",
-				"Enter the selected group / leave the one you are in",
+				"Enter the selected group / leave the one you are in / else search for a node to add (wired from the selected node)",
 				"Explorer: show / bring to front / hide",
 				"Fix overlaps and crossings, keeping the layout",
 				"Flip normals (faces); fill the hole (edges)",
@@ -3917,7 +3917,7 @@
 				"Duplicate the selection (wires between copies kept)",
 				"Edit / Interact mode (Interact: clicks play with the scene instead of selecting)",
 				"Enter mesh edit mode (inside it Tab cycles Vertices/Edges/Faces; Esc exits) — on a measurement, edit its points",
-				"Enter the selected group / leave the one you are in",
+				"Enter the selected group / leave the one you are in / else search for a node to add (wired from the selected node)",
 				"Explorer: show / bring to front / hide",
 				"Fix overlaps and crossings, keeping the layout",
 				"Flip normals (faces); fill the hole (edges)",
@@ -4040,7 +4040,7 @@
 				"Duplicate the selection (wires between copies kept)",
 				"Edit / Interact mode (Interact: clicks play with the scene instead of selecting)",
 				"Enter mesh edit mode (inside it Tab cycles Vertices/Edges/Faces; Esc exits) — on a measurement, edit its points",
-				"Enter the selected group / leave the one you are in",
+				"Enter the selected group / leave the one you are in / else search for a node to add (wired from the selected node)",
 				"Explorer: show / bring to front / hide",
 				"Fix overlaps and crossings, keeping the layout",
 				"Flip normals (faces); fill the hole (edges)",

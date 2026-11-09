@@ -797,6 +797,7 @@
 	<div class="pf-body" class:pf-dropping={dropping} use:fileDrop>
 		<WindowShell
 			key="profiler"
+			mainLabel="Timeline"
 			primaryLabel="recordings"
 			primaryDefaultWidth={220}
 			secondaryDefaultOpen

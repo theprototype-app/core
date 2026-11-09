@@ -7438,6 +7438,7 @@
 {#snippet content()}
 	<WindowShell
 		key="explorer"
+		mainLabel="Files"
 		bind:this={shell}
 		primaryLabel="folder tree"
 		secondaryModes={[
@@ -8916,7 +8917,9 @@
 				{@render storageChip()}
 				{@render identityChip()}
 			{/snippet}
-			{#if $phoneShellActive}
+			<!-- showhide-v8 §3 (owner: "when split view and short in space in width, header breaks and covers interface of
+			     right window split"): in a SPLIT dock the row scrolls / drags sideways too, so it never runs into the other pane -->
+			{#if $phoneShellActive || $dockPaneOf['explorer']}
 				<!-- 40 F3: on the phone the toolbar SCROLLS sideways (ui/ScrollStrip) instead of
 				     squeezing the project name to "Unt…" — every chip stays reachable -->
 				<div class="mb-1" use:headerWidth>

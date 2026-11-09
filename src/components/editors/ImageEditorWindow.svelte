@@ -856,6 +856,7 @@
 	<div class="flex min-h-0 flex-1 flex-col">
 		<WindowShell
 			key="imageEditor"
+			narrowHeader={false}
 			hidePrimary
 			secondaryDefaultOpen
 			secondaryDefaultWidth={248}

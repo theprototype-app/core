@@ -7,6 +7,7 @@
 	import PaneHandle from '../ui/PaneHandle.svelte'
 	import Icon from '../ui/Icon.svelte'
 	import { paneLocks } from '$lib/ui/paneLocks.js'
+	import { edgeFade } from '$lib/ui/edgeFade.js'
 
 	// 197: reusable window CHROME. A MAIN area flanked by a collapsible PRIMARY
 	// sidebar and a SECONDARY panel that can show one of several MODES (e.g.
@@ -28,6 +29,11 @@
 		// 36 B14: Settings on a phone shows its sections as a chip strip in the topbar, so it
 		// draws no sidebar at all; and a window with no secondary modes draws no tab column
 		hidePrimary = false,
+		// showhide-v8 §3: what the MAIN area is called in the narrow header (Files, Layout, Image ...)
+		mainLabel = 'View',
+		// false = this window keeps its own narrow layout (the Image editor stacks its panel UNDER the canvas, because a
+		// crop is dragged on the image while the panel shows)
+		narrowHeader = true,
 		topbar,
 		primary,
 		main,
@@ -41,6 +47,8 @@
 		secondaryDefaultOpen?: boolean
 		secondaryDefaultWidth?: number
 		hidePrimary?: boolean
+		mainLabel?: string
+		narrowHeader?: boolean
 		topbar?: Snippet
 		primary?: Snippet
 		main?: Snippet
@@ -93,6 +101,29 @@
 	// why the clamp is not folded into the stored value.
 	let secondaryEff = $derived(Math.min(secondaryWidth, secondaryMax))
 
+	// showhide-v8 §3 — THE NARROW HEADER (owner: the Animation tab's phone view is the model for every docked window
+	// "instead of sidebars"). On a touch handheld, when the shell is narrower than NARROW_W design px (a folded phone,
+	// or one half of a split dock on the unfolded one), the side panes stop being columns with edge handles: ONE header
+	// row names every view — the primary pane, the main area, each secondary mode — and ONE shows at a time, full
+	// width. The main area stays MOUNTED (hidden) while a pane is up, so a canvas or a scroll position survives a
+	// look at the settings. The header scrolls sideways when its views do not fit (the edge fade says there is more).
+	// A pane picked here is remembered per window (`ws:<key>:narrowPane`), the phone rule the column panes keep.
+	const NARROW_W = 560
+	const touchHandheld = handheld()
+	const narrow = $derived(narrowHeader && touchHandheld && rootW > 0 && rootW / k < NARROW_W)
+	const paneKeys = $derived([...(hidePrimary || !primary ? [] : ['primary']), 'main', ...secondaryModes.map((m) => m.key)])
+	// svelte-ignore state_referenced_locally
+	let narrowPane = $state(LS?.getItem(`ws:${key}:narrowPane`) ?? 'main')
+	const pane = $derived(paneKeys.includes(narrowPane) ? narrowPane : 'main')
+	const narrowMode = $derived(narrow && pane !== 'main' && pane !== 'primary' ? pane : null)
+	/** a header tap: the view in front tapped again goes back to the main area (the old tab toggle) */
+	function pickPane(p: string) {
+		narrowPane = p === pane && p !== 'main' ? 'main' : p
+		if (narrowPane !== 'main' && narrowPane !== 'primary') secondaryMode = narrowPane
+		LS?.setItem(`ws:${key}:narrowPane`, narrowPane)
+	}
+	const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1)
+
 	// showhide-v8 (owner 2026-11-09, "allow locking sidebars"): a locked window's handles stop hiding / showing panes
 	const locked = $derived(!!$paneLocks[key])
 	function togglePrimary() {
@@ -135,17 +166,23 @@
 	// imperative API for consumers (e.g. open the inspector when an item is picked).
 	// Opening a CLOSED panel this way is transient (unpinned); if it's already open
 	// (pinned by the user) we keep the pin.
-	export function showSecondary(m: string) {
+	/** @param auto an AUTOMATIC open (an element selected, a brush armed): in the narrow header it leaves the view in
+	 *  front alone, or a tap on the layout would swap the layout away under the finger */
+	export function showSecondary(m: string, auto = false) {
 		if (!secondaryOpen) secondaryPinned = false
 		secondaryMode = m
 		secondaryOpen = true
 		persistSecondary()
+		// narrow: a user's pick (a menu's "Properties") shows that view for now (not remembered: not a header tap)
+		if (narrow && !auto) narrowPane = m
 	}
 	export function hideSecondary() {
 		secondaryOpen = false
 		persistSecondary()
+		if (narrow && narrowMode) narrowPane = 'main'
 	}
 	export function secondaryStatus() {
+		if (narrow) return { open: !!narrowMode, mode: narrowMode ?? secondaryMode, pinned: secondaryPinned, narrow: true }
 		return { open: secondaryOpen, mode: secondaryMode, pinned: secondaryPinned }
 	}
 
@@ -213,12 +250,31 @@
 	const handleTop = $derived(Math.round(topbarH + 8))
 </script>
 
-<div class="ws-root relative flex h-full w-full overflow-hidden" bind:clientWidth={rootW}>
+<div class="ws-root relative flex h-full w-full overflow-hidden" class:ws-narrow={narrow} data-ws-narrow={narrow ? '' : undefined} bind:clientWidth={rootW}>
+	<!-- showhide-v8 §3: the narrow header — every view of this window, one in front -->
+	{#if narrow}
+		<div class="ws-hdr tp-noscrollbar" role="tablist" aria-label="Views" use:edgeFade>
+			{#each paneKeys as p (p)}
+				{@const m = secondaryModes.find((x) => x.key === p)}
+				<button
+					type="button"
+					role="tab"
+					class="ws-hdr-btn"
+					aria-selected={pane === p}
+					data-ws-pane={p}
+					data-ws-primary-toggle={p === 'primary' ? '' : undefined}
+					data-ws-mode={m ? m.key : undefined}
+					title={p === 'primary' ? (pane === 'primary' ? 'Hide ' : 'Show ') + primaryLabel : p === 'main' ? mainLabel : m?.label}
+					onclick={() => pickPane(p)}
+				>{#if m}<Icon name={iconOf(m)} size={16} aria-hidden="true" />{/if}<span>{p === 'primary' ? cap(primaryLabel) : p === 'main' ? mainLabel : m?.label}</span></button>
+			{/each}
+		</div>
+	{/if}
 	<!-- PRIMARY panel; its resize grip rides its inner border (no chrome column: showhide-v8) -->
-	{#if primaryOpen && !hidePrimary}
-		<div class="ws-panel relative flex h-full shrink-0 flex-col" style="order: {primaryPanelOrder}; width: {primaryWidth * k}px">
+	{#if narrow ? pane === 'primary' : primaryOpen && !hidePrimary}
+		<div class="ws-panel relative flex h-full shrink-0 flex-col" style={narrow ? 'order: 1' : `order: ${primaryPanelOrder}; width: ${primaryWidth * k}px`}>
 			<div class="min-h-0 flex-1 overflow-y-auto" use:minimalScroll>{@render primary?.()}</div>
-			{#if !locked}
+			{#if !locked && !narrow}
 				<div
 					class="ws-resize"
 					class:ws-resize-left={side === 'left'}
@@ -235,7 +291,7 @@
 	{/if}
 
 	<!-- MAIN (+ optional topbar): full width when the panes are hidden -->
-	<div class="ws-main flex min-w-0 flex-1 flex-col" style="order: 3">
+	<div class="ws-main flex min-w-0 flex-1 flex-col" class:ws-off={narrow && pane !== 'main'} style="order: 3">
 		{#if topbar}
 			<div class="shrink-0" bind:clientHeight={topbarH}>{@render topbar()}</div>
 		{/if}
@@ -243,11 +299,12 @@
 	</div>
 
 	<!-- SECONDARY panel: its modes are TABS in its header, behind ONE handle (the node editor's right sidebar) -->
-	{#if secondaryOpen}
+	{#if narrow ? !!narrowMode : secondaryOpen}
 		<div
 			class="ws-panel ws-panel-secondary relative flex h-full shrink-0 flex-col"
-			style="order: {secondaryPanelOrder}; width: {secondaryEff * k}px"
+			style={narrow ? 'order: 1' : `order: ${secondaryPanelOrder}; width: ${secondaryEff * k}px`}
 		>
+			{#if !narrow}
 			<div class="ws-panel-head flex shrink-0 items-center gap-1 px-1 py-1">
 				<div class="ws-modes tp-noscrollbar flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto" role="tablist" aria-label="Panel">
 					{#each secondaryModes as m (m.key)}
@@ -265,8 +322,9 @@
 				<button class="ws-mini" title="Switch sidebar side" aria-label="Switch sidebar side" onclick={switchSide} data-ws-switch-side><Icon name="arrow-left-right" size={16} aria-hidden="true" /></button>
 				<button class="ws-mini" title="Close" aria-label="Close" disabled={locked} onclick={hideSecondary}><Icon name="x" size={16} aria-hidden="true" /></button>
 			</div>
-			<div class="min-h-0 flex-1 overflow-y-auto tp-noscrollbar" use:minimalScroll>{@render secondary?.(secondaryMode)}</div>
-			{#if !locked}
+			{/if}
+			<div class="min-h-0 flex-1 overflow-y-auto tp-noscrollbar" use:minimalScroll>{@render secondary?.(narrow ? (narrowMode ?? secondaryMode) : secondaryMode)}</div>
+			{#if !locked && !narrow}
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div
 					class="ws-resize"
@@ -287,7 +345,7 @@
 	<!-- showhide-v8: ONE arrow handle per side, hanging over the content's edge (no margin). The primary's on the
 	     window edge while it is hidden, on the panel's inner edge while it shows; the secondary's carries its
 	     active mode's role icon (the hybrid) -->
-	{#if !hidePrimary}
+	{#if !hidePrimary && !narrow}
 		<PaneHandle
 			edge={side}
 			open={primaryOpen}
@@ -298,7 +356,7 @@
 			style="top: {handleTop}px; {side === 'left' ? 'left' : 'right'}: {primaryOpen ? primaryWidth * k : 0}px"
 		/>
 	{/if}
-	{#if secondaryModes.length}
+	{#if secondaryModes.length && !narrow}
 		<PaneHandle
 			edge={secondarySide}
 			open={secondaryOpen}
@@ -387,5 +445,60 @@
 	}
 	.ws-mini:hover {
 		background: var(--surface-hover);
+	}
+	/* showhide-v8 §3: the narrow header — a column: the header row, then the ONE view in front at full width */
+	.ws-narrow {
+		flex-direction: column;
+	}
+	.ws-narrow > .ws-panel {
+		width: 100%;
+		height: auto;
+		flex: 1 1 0;
+		min-height: 0;
+		border-inline: 0;
+	}
+	.ws-narrow > .ws-main {
+		min-height: 0;
+	}
+	.ws-off {
+		display: none;
+	}
+	.ws-hdr {
+		order: 0;
+		display: flex;
+		flex-shrink: 0;
+		gap: 2px;
+		margin: 4px 8px;
+		padding: 2px;
+		overflow-x: auto;
+		border: 1px solid var(--border-input);
+		border-radius: var(--radius-button);
+	}
+	.ws-hdr-btn {
+		flex: 1 0 auto;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 6px;
+		min-height: calc(var(--control-h-sm) - 2px);
+		padding: 3px 12px;
+		border-radius: var(--radius-input);
+		color: var(--text-muted);
+		font-size: var(--fs-desc);
+		font-weight: 500;
+		white-space: nowrap;
+		cursor: pointer;
+	}
+	.ws-hdr-btn:hover {
+		color: var(--text);
+	}
+	.ws-hdr-btn[aria-selected='true'] {
+		background: var(--accent-fill);
+		color: var(--on-accent);
+	}
+	@media (pointer: coarse) {
+		.ws-hdr-btn {
+			min-height: 40px;
+		}
 	}
 </style>

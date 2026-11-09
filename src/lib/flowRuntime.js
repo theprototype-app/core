@@ -1014,7 +1014,7 @@ export function contactOtherOf(nodeId) {
 }
 
 /** 78: test/debug view — a node's value NOW, evaluated with a live context (the suites read a
- * Proximity this way). @param {string} nodeId */
+ * Proximity this way). @param {string} nodeId @param {string} [handle] a named output */
 export function nodeValueOf(nodeId, handle) {
 	const node = nodeById(nodes, nodeId);
 	if (!node) return null;

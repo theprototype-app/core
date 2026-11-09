@@ -67,6 +67,7 @@
 	import WorkspaceLayoutsSettings from './WorkspaceLayoutsSettings.svelte'; // 37 R14
 	import UndockButtonSettings from './UndockButtonSettings.svelte'; // 40 F8
 	import PanelsButtonSettings from './PanelsButtonSettings.svelte'; // dock-fixes item 8
+	import PresenceSettings from './PresenceSettings.svelte'; // uir-people
 	import PopOutWindowSettings from './PopOutWindowSettings.svelte'; // 70 W3/W5
 	import PanelHeaderSettings from './PanelHeaderSettings.svelte'; // 42 I1
 	import PhoneBarSettings from './PhoneBarSettings.svelte'; // 42 I5
@@ -164,6 +165,7 @@
 				}}>Customize</Button
 			>
 		</SettingRow>
+		<PresenceSettings />
 		<SettingRow id="row-classic-heads" label="Show others as classic heads" badge="This device" description="Lighter on headsets in busy rooms. Others still see your full character.">
 			<Toggle id="avatars-peers-classic" label="Show others as classic heads" bind:checked={$peersAsClassic} />
 		</SettingRow>

@@ -10,6 +10,7 @@
 //   A7 WHERE THE AGENT LOOKED — `{type:'agentview', pos, quat}` when its page renders a
 //      screenshot; every peer draws a small "AI" camera marker there (Settings, default on).
 import { writable, get } from 'svelte/store';
+import { notifyOn } from './notifyPrefs';
 import { peers, userdata, showToast, aiAssistantHidden } from '../stores/appStore';
 import { safeStorage } from './safeStorage.js';
 import { mergeEntries, AGENT_LOG_HANDSHAKE } from './agentLogCore.js';
@@ -59,7 +60,7 @@ const announced = new Set();
 function announce(peerId, entry) {
 	if (announced.has(peerId)) return;
 	announced.add(peerId);
-	if (get(aiAssistantHidden) === '') return;
+	if (get(aiAssistantHidden) === '' || !notifyOn('agent')) return; // profile-notify: the AI assistant switch
 	const who = String(entry?.name || '').trim() || 'An AI agent';
 	showToast(who + ' is building in this session — every step shows in the AI assistant.', [
 		{ label: 'Show', action: () => aiAssistantHidden.set('') }

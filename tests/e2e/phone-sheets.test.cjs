@@ -9,7 +9,7 @@
 //       a sheet's height is REMEMBERED across close/reopen;
 //       NO sheet covers Play or the selection strip (cover-play-and-handle), and the strip
 //       never goes under the top bar;
-//   F2  Customize character and Profile settings open from a TAP in the profile menu (the menu
+//   F2  Customize character and Edit profile… open from a TAP in the profile menu (the menu
 //       inherited `pointer-events: none` from the corner chrome — counterfactual below).
 // Then a DESKTOP page (1440x900, mouse) proves no phone grab bar leaks there.
 const h = require('./helpers.cjs');
@@ -199,7 +199,7 @@ h.run(async () => {
 	h.check((await playClear()) === 'ok', 'Add dragged all the way up: Play is not covered');
 
 	// ---- F2: the profile menu's rows answer a tap -----------------------------------------
-	for (const [label, st] of [['Customize character', 'characterModalOpen'], ['Profile settings', 'profileSettingsOpen']]) {
+	for (const [label, st] of [['Customize character', 'characterModalOpen'], ['Edit profile…', 'profileSettingsOpen']]) {
 		await rest();
 		await P.locator('#avatar-trigger').dispatchEvent('mousedown');
 		await P.waitForTimeout(600);

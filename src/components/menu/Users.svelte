@@ -792,6 +792,17 @@
 		focusAccount = true;
 		openDropdown = true;
 	});
+	/** profile-notify: a plugin row that opens a window (Cloud saves, Your games & stats, Staff) closes the menu
+	 * after its own click handler ran — a window opened beside an open menu was finding 7 of the review */
+	function closeOnPluginRows(node: HTMLElement) {
+		// a listener, not an onclick attribute: the block is not itself interactive (the rows inside are buttons)
+		const onClick = (e: MouseEvent) => {
+			const t = e.target as Element | null;
+			if (t?.closest?.('[data-pm-close]')) openDropdown = false;
+		};
+		node.addEventListener('click', onClick);
+		return () => node.removeEventListener('click', onClick);
+	}
 	/** focus moving OUT of the menu or its trigger (to a real element) closes it */
 	function dropdownFocusOut(e: FocusEvent) {
 		const to = e.relatedTarget as Node | null;
@@ -1496,10 +1507,14 @@
 		<!-- PM (roadmap #14): identity header — name, then the cloud email (or "You") under it.
 			 No avatar here (it's already the profile button, seated in the notch on the right).
 			 38 R8 (design page "Profile and peers"): the kit's NavRows below, one card. -->
+		<!-- profile-notify (direction A): with a cloud plugin and nobody signed in, the line under the name says so -->
 		<div class="pm-head" class:pm-head-phone={$phoneShellActive}>
 			<span class="pm-name">{effName}</span>
-			<span class="pm-sub">{cid?.email || 'You'}</span>
+			<span class="pm-sub">{cid?.email || ($profileSlot ? 'Not signed in' : 'You')}</span>
 		</div>
+		<!-- profile-notify: the groups wear small headings on a desktop (Profile · the plugin's Your stuff · Account);
+		     the phone sheet drops them (the proposal's folded layout) -->
+		{#if !$phoneShellActive}<div class="pm-group">Profile</div>{/if}
 		<div class="pm-card">
 			<NavRow
 				icon="user"
@@ -1511,7 +1526,7 @@
 			/>
 			<NavRow
 				icon="settings"
-				label="Profile settings"
+				label="Edit profile…"
 				description="Picture and name"
 				onclick={() => {
 					profileSettingsOpen.set(true);
@@ -1523,8 +1538,9 @@
 			 preferences here (moved out of the Connect pill). Plain block: the plugin
 			 owns its own clicks, so it is NOT a menu row. -->
 		{#if $profileSlot}
-			<div class="my-1 h-px bg-border"></div>
-			<div class="cloud-profile px-3 py-2">
+			<!-- profile-notify: the plugin brings its own groups (kit cards, like .pm-card), so no divider or padding here.
+			     A plugin row that opens a window carries `data-pm-close`: the menu closes after its click. -->
+			<div class="cloud-profile" class:cloud-profile-phone={$phoneShellActive} {@attach closeOnPluginRows}>
 				<CloudSlot mount={$profileSlot} />
 			</div>
 		{/if}
@@ -1552,7 +1568,7 @@
 	{/key}
 {/if}
 
-<ModalDialog title="Profile settings" bind:open={$profileSettingsOpen} outsideclose width="md" onkeydown={(e: KeyboardEvent) => { if (e.key === 'Escape') profileSettingsOpen.set(false); }}>
+<ModalDialog title="Edit profile" bind:open={$profileSettingsOpen} outsideclose width="md" onkeydown={(e: KeyboardEvent) => { if (e.key === 'Escape') profileSettingsOpen.set(false); }}>
 
 	<!-- 38 R8: kit rows (label left, control right) instead of the boxed label | input table.
 	     Same ids, same handlers: #avatar-file / #avatar-preview / #avatar-reset / #peer-id /
@@ -1596,12 +1612,27 @@
 		</div>
 		<div class="pf-row">
 			<label class="pf-label" for="peer-id">Peer ID<small>Your address in a session</small></label>
-			<input
-				id="peer-id"
-				class="tp-field pf-input pf-mono"
-				placeholder={$peers.peer.id}
-				disabled
-			/>
+			<!-- profile-notify (review decision 11): the id + Copy (it was a disabled field nobody could copy from) -->
+			<div class="pf-copy">
+				<input
+					id="peer-id"
+					class="tp-field pf-input pf-mono"
+					placeholder={$peers.peer.id}
+					disabled
+				/>
+				<UiButton
+					id="peer-id-copy"
+					variant="ghost"
+					size="sm"
+					disabled={!$peers.peer.id}
+					onclick={() => {
+						void navigator.clipboard?.writeText($peers.peer.id).then(
+							() => showToast('Peer ID copied'),
+							() => showToast('Could not copy the peer ID')
+						);
+					}}>Copy</UiButton
+				>
+			</div>
 		</div>
 	</div>
 </ModalDialog>
@@ -1735,6 +1766,18 @@
 		font-size: var(--fs-section);
 		color: var(--text-muted);
 	}
+	.pm-group {
+		margin: 4px 14px 4px;
+		font-size: var(--fs-section);
+		font-weight: 600;
+		letter-spacing: var(--tracking-section);
+		text-transform: uppercase;
+		color: var(--text-faint);
+	}
+	/* profile-notify: the phone sheet drops the plugin's group headings too */
+	.cloud-profile-phone :global(.tpc-pm-head) {
+		display: none;
+	}
 	.pm-card {
 		margin: 0 8px 8px;
 		border: 1px solid var(--border);
@@ -1745,7 +1788,7 @@
 	.pm-card > :global(* + *) {
 		border-top: 1px solid var(--border);
 	}
-	/* Profile settings: one card of SettingRow-shaped rows (label + hint left, control right) */
+	/* Edit profile: one card of SettingRow-shaped rows (label + hint left, control right) */
 	.pf-list {
 		margin: 4px 0;
 		border: 1px solid var(--border);
@@ -1775,6 +1818,11 @@
 	}
 	.pf-input {
 		width: min(260px, 100%);
+	}
+	.pf-copy {
+		display: flex;
+		align-items: center;
+		gap: 8px;
 	}
 	.pf-mono {
 		font-family: var(--font-ui-mono);

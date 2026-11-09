@@ -19,6 +19,7 @@
 	// (toolbar pill, round HUD buttons, touch-tools column, docked Connect bar) only under
 	// that class, so CSS and markup always agree about which shell is on screen.
 	import { onDestroy, tick, untrack } from 'svelte';
+	import { notifyPrefs } from '$lib/notifyPrefs';
 	import Icon from '../ui/Icon.svelte';
 	import { connectionStatus, connectionLabel } from '$lib/connectionStatus';
 	import SheetGrip from '../ui/SheetGrip.svelte';
@@ -436,7 +437,8 @@
 	$effect(() => {
 		if (chatOpen) seenChat = $messages.length;
 	});
-	const chatUnread = $derived(chatOpen ? 0 : Math.max(0, $messages.length - seenChat));
+	// profile-notify: the Chat badge switch (Settings ▸ Interface ▸ Notifications) gates this badge too
+	const chatUnread = $derived(chatOpen || $notifyPrefs.chat === false ? 0 : Math.max(0, $messages.length - seenChat));
 	// 41b H6/H7: a long press (contextmenu) on Play opens PLAY'S OWN phone menu. It used to forward to
 	// the desktop toolbar's play button, whose menu is about that toolbar — Move left / Move right
 	// walked a bar that is not drawn on a phone, and "Always on top", "Move toolbar", "Collapse"

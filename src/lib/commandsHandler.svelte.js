@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { notifyOn } from './notifyPrefs';
 import { globalScene, objectsGroup, showGrid, TControls, lockedObjects, selectedObject, globalCamera, peerHands, pokeScene, beginSceneBatch, endSceneBatch } from '../stores/sceneStore.js';
 import { receiveMapSlot, receiveTexTransform, receiveNormalStrength } from '$lib/materialMaps';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
@@ -344,7 +345,7 @@ export function handleDisconnected(peerId) {
     // peer is still known, so relayed duplicates don't stack toasts (172).
     delete rosterFirstSeen[peerId];
     const known = users.some((/** @type {any} */ u) => u[0] === peerId);
-    if (known) showToast(peerId + ' disconnected');
+    if (known && notifyOn('peerLeft')) showToast(peerId + ' disconnected'); // profile-notify: Settings ▸ Interface ▸ Notifications
     users = users.filter(u => u[0] !== peerId);
     userdata.set(users);
     userdata.update((value) => value);

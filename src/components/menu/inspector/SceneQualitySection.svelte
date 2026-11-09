@@ -28,11 +28,13 @@
 		{ value: 'medium', label: 'Med' },
 		{ value: 'high', label: 'High' }
 	];
+	/** 78-int PL17: collapsed by default; the group label (This device) replaces the badge */
+	let { closed = false } = $props();
 	/** a game holding its own preset right now outranks this one — say so rather than look dead */
 	const gameHolds = $derived($gameQualityState.level !== null);
 </script>
 
-<Section variant="panel" label="Quality" badge="This device" aliases={['Quality preset', 'Performance']}>
+<Section variant="panel" label="Quality" {closed} aliases={['Quality preset', 'Performance']}>
 	<PropRow label="Preset" valueBox={false} id="scene-quality-preset-row">
 		{#snippet control()}
 			<Segmented id="scene-quality-preset" label="Quality preset" full options={PRESETS} value={$qualityPreset} onchange={(v) => qualityPreset.set(/** @type {any} */ (v))} />

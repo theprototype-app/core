@@ -1867,9 +1867,12 @@
 		<InspectorHead filter placeholder="Filter scene settings" panel="scene" {popped} />
 
 		<div class="flex flex-col gap-3">
-			<!-- 42 I12: the device Quality preset is the TOP of Configure Scene -->
-			<SceneQualitySection />
-			<Section variant="panel" label="Environment" badge="Shared">
+			<!-- 78-int PL17 (scene panel item 7, owner APPROVED 2026-11-08): TWO labelled groups instead of a
+			     Shared / This device badge on each of 14 alternating sections — what everyone sees first, then
+			     what only this device keeps. Environment + Scene look start open, the rest closed (remembered
+			     per device by Section). Deep links and the filter key off the labels / aliases, unchanged. -->
+			<h3 id="scene-group-shared" class="ins-group-label">The scene <span class="ins-group-who">· everyone sees it</span></h3>
+			<Section variant="panel" label="Environment" aliases={['Background', 'Fog']}>
 				<!-- 38 R5: the presets are Chips in the one accent; a press re-applies the
 				     preset even when it is already selected, exactly as the old buttons did -->
 				<Chips
@@ -2023,95 +2026,65 @@
 				</UiButton>
 
 				<p class="ins-note">Your own lights dim the default rig automatically.</p>
-			</Section>
-
-			<Section variant="panel" label="Music">
-				<p class="ui-section-label">Scene track (shared)</p>
-				<!-- 38 NOTES-38 #24 (design page): the track and its Play/Stop on one row -->
-				<div class="flex items-center gap-2">
-				<select
-					class="ui-input min-w-0 flex-1"
-					value={$music.hash ?? ''}
-					onchange={(e) => {
-						const hash = e.currentTarget.value || null;
-						const item = $explorerItems.find((entry) => entry.hash === hash);
-						setMusicTrack(hash, item?.name ?? '');
+				<!-- 78-int PL17 (scene panel item 7): Background and Fog are rows of the environment, so they
+				     live here now (they sat eleven sections below it). The deep links "Background" / "Fog" are
+				     this section's aliases and land on these sub-headings. -->
+				<p class="ui-section-label" data-anchor="Background">Background</p>
+				<FieldClip clip={colorClip('Background', () => $backgroundColor, (hex) => setBackground(hex))}>
+				<ColorPicker
+					isAlpha={false}
+					isTextInput={true}
+					textInputModes={['hex', 'rgb', 'hsv']}
+					isDialog={false}
+					components={{ ...ChromeVariant, wrapper: CustomWrapper }}
+					isOpen={true}
+					sliderDirection="horizontal"
+					--picker-indicator-size="20px"
+					--cp-bg-color="var(--surface-1)"
+					--cp-border-color="var(--border)"
+					--cp-input-color="var(--surface-inset)"
+					--cp-text-color="var(--text)"
+					--picker-height="70px"
+					--picker-width="50px"
+					--slider-width="10px"
+					hex={$backgroundColor}
+					onInput={(/** @type {any} */ c) => setBackground(c.hex)}
+				/>
+				</FieldClip>
+				<p class="ui-section-label" data-anchor="Fog">Fog</p>
+				<FieldClip clip={colorClip('Fog color', () => envFog?.color ?? FOG_DEFAULT, (hex) => editEnvSky({ fog: { color: hex } }), FOG_DEFAULT)}>
+				<ColorPicker
+					isAlpha={false}
+					isTextInput={true}
+					textInputModes={['hex', 'rgb', 'hsv']}
+					isDialog={false}
+					components={{ ...ChromeVariant, wrapper: CustomWrapper }}
+					isOpen={true}
+					sliderDirection="horizontal"
+					--picker-indicator-size="20px"
+					--cp-bg-color="var(--surface-1)"
+					--cp-border-color="var(--border)"
+					--cp-input-color="var(--surface-inset)"
+					--cp-text-color="var(--text)"
+					--picker-height="70px"
+					--picker-width="50px"
+					--slider-width="10px"
+					hex={envFog?.color ?? FOG_DEFAULT}
+					onInput={(/** @type {any} */ c) => {
+						if (sameHex(c.hex, envFog?.color ?? FOG_DEFAULT)) return; // mount echo, not an edit
+						editEnvSky({ fog: { color: c.hex } });
 					}}
+				/>
+				</FieldClip>
+				<SliderRow id="fog-near" label="Near" min={0} max={Math.max(10, Math.ceil(envFog?.near ?? 0))} step={0.1} decimals={1} value={envFog?.near ?? 0}
+					onchange={(v) => editEnvSky({ fog: { near: v } })} />
+				<SliderRow id="fog-far" label="Far" min={0} max={Math.max(100, Math.ceil(envFog?.far ?? 0))} step={0.1} decimals={1} value={envFog?.far ?? 0}
+					onchange={(v) => editEnvSky({ fog: { far: v } })} />
+				<UiButton
+					size="sm"
+					variant="outline"
+					onclick={() => editEnvSky({ fog: null })}>Remove Fog</UiButton
 				>
-					<option value="">— no music —</option>
-					{#each $explorerItems.filter((item) => item.kind === 'audio') as item (item.id)}
-						<option value={item.hash}>{item.name}</option>
-					{/each}
-					{#if $music.hash && !$explorerItems.some((item) => item.hash === $music.hash)}
-						<option value={$music.hash}>{$music.name || 'shared track'} (fetching…)</option>
-					{/if}
-				</select>
-					<button
-						class="ui-chip shrink-0 {$music.playing ? 'ins-chip-on' : ''}"
-						disabled={!$music.hash}
-						onclick={() => setMusicPlaying(!$music.playing)}
-					>
-						{$music.playing ? '■ Stop' : '▶ Play'}
-					</button>
-				</div>
-				{#if $musicBlocked && $music.playing}
-					<span class="text-xs text-warn-text">click anywhere to enable audio</span>
-				{/if}
-				<SliderRow label="Shared volume" min={0} max={1} step={0.05} value={$music.volume} onchange={(v) => setMusicVolume(v)} />
-				<p class="ui-section-label">This device</p>
-				<SliderRow label="Local volume" min={0} max={1} step={0.05} value={$musicLocalVolume} onchange={(v) => musicLocalVolume.set(v)} />
-				<InsToggle bind:checked={$musicMuted}>Mute music on this device</InsToggle>
-				<p class="mt-1 text-xs text-text-muted">
-					One background track for everyone, synced to the same moment. Volume is shared; the local trim + mute affect only you.
-				</p>
-			</Section>
-
-			<Section variant="panel" label="View">
-				<p class="ui-section-label">Viewport — this device</p>
-				<div id="view-mode-switch" class="flex flex-wrap gap-1">
-					{#each [['shaded', 'Shaded'], ['shaded-ao', 'Shaded + AO'], ['wireframe', 'Wireframe']] as [mode, label] (mode)}
-						{@const aoTaken = mode === 'shaded-ao' && sceneProvidesAo($scenePost)}
-						<button
-							id={'view-mode-' + mode}
-							class={'ui-chip ' +
-								($viewMode === mode ? 'ins-chip-on' : '') +
-								(aoTaken ? ' cursor-not-allowed opacity-40' : '')}
-							disabled={aoTaken}
-							title={aoTaken
-								? 'This scene sets its own ambient occlusion, so your personal setting does not apply'
-								: ''}
-							onclick={() => viewMode.set(mode)}
-						>
-							{label}
-						</button>
-					{/each}
-				</div>
-				<p class="mb-1 text-xs text-text-muted">
-					How YOUR viewport shades the scene — not shown to peers. The scene's own look
-					(post-processing) renders for everyone regardless; switch it off below if you need to.
-				</p>
-				{#if sceneProvidesAo($scenePost)}
-					<p class="mb-1 text-[length:var(--fs-badge)] text-text-muted">
-						This scene sets its own ambient occlusion, so it is used instead of your personal
-						setting.
-					</p>
-				{/if}
-				<!-- B: ONE place for "the scene says X, but not on my screen". Layers 2 and 3
-					 add a key here rather than each inventing their own checkbox and their own
-					 "do my peers need to switch this on?" question. -->
-				<p class="ui-section-label" data-anchor="Overrides">Overrides — this device</p>
-				{#each OVERRIDES as override (override.key)}
-					<InsToggle
-						id={'override-' + override.key}
-						checked={$viewportOverrides[override.key] !== false}
-						onchange={(e) => setRenderLayer(override.key, e.currentTarget.checked)}
-					>
-						{override.label}
-					</InsToggle>
-					<p class="mb-1 text-[length:var(--fs-badge)] italic text-text-muted">{override.hint}</p>
-				{/each}
-				<InsToggle bind:checked={$showLightHelpers}>Show light helpers</InsToggle>
-				<InsToggle bind:checked={$showColliders}>Show colliders — this device</InsToggle>
 			</Section>
 
 			<!-- P6 — ONE STORY, not three. The post stack, the scene default material and
@@ -2123,7 +2096,7 @@
 				 The LABEL changed and the deep-link name did not: `openSceneSection` matches
 				 on it, so both names resolve (the 21-G1 rule — the user-visible word moves,
 				 the identifier already written down does not). -->
-			<Section variant="panel" label="Scene look" badge="Shared" aliases={['Post-processing']}>
+			<Section variant="panel" label="Scene look" aliases={['Post-processing']}>
 				<p class="mb-1 text-[length:var(--fs-badge)] text-text-muted">
 					Three layers, all of them scene data that everyone sees: effects over the
 					finished frame (below), a default material every object without its own
@@ -2147,563 +2120,115 @@
 				</button>
 			</Section>
 
-			<!-- 16-P4: everything about the VIEWPORT camera in one place (it used to be a
-			     "Camera lens" sub-label buried in View): lens, clip planes, orbit feel,
-			     framing shortcuts and the saved views. All LOCAL, never replicated —
-			     except 36 L2's start-view hold, which is scene data (CameraHoldSetting). -->
-			<Section variant="panel" label="Camera">
-				<div id="lens-presets" class="flex flex-wrap gap-1">
-					{#each LENS_PRESETS as p (p.label)}
-						<button
-							class={'ui-chip ' +
-								(Math.round($globalCamera?.fov ?? 0) === p.fov
-									? 'ins-chip-on'
-									: '')}
-							title={p.mm + 'mm equivalent · ' + p.fov + '° vertical FOV'}
-							onclick={() => {
-								if ($globalCamera) {
-									$globalCamera.fov = p.fov;
-									$globalCamera.updateProjectionMatrix();
-								}
-							}}
-						>
-							{p.label}
-						</button>
-					{/each}
-				</div>
-				<SliderRow
-					label="Camera FOV"
-					min={15}
-					max={120}
-					step={1}
-					decimals={0}
-					value={$globalCamera?.fov ?? 60}
-					onchange={(v) => {
-						$globalCamera.fov = v;
-						$globalCamera.updateProjectionMatrix();
-					}}
-				/>
-				<!-- 123: local per-device clip planes; far pairs with orbit zoom -->
-				<SliderRow
-					label="Near clip"
-					min={0.01}
-					max={2}
-					step={0.01}
-					decimals={2}
-					value={$cameraNear}
-					onchange={(v) => setCameraNear(v)}
-				/>
-				<div class="ui-row">
-					<span class="w-20 shrink-0 text-xs text-text-muted">Far clip</span>
-					<div class="w-24 shrink-0">
-						<DragRow
-							id="camera-far"
-							value={$cameraFar}
-							decimals={0}
-							min={10}
-							step={5}
-							snap={100}
-							ariaLabel="Far clip"
-							onchange={(v) => setCameraFar(v)}
-						/>
-					</div>
-					<span class="text-[length:var(--fs-badge)] text-text-faint">grows to fit the scene</span>
-				</div>
-				<p class="text-[length:var(--fs-badge)] italic text-text-muted">Clip planes are per-device (not shared).</p>
-				<p class="ui-section-label">Orbit feel</p>
-				<SliderRow
-					label="Rotate speed"
-					min={0.1}
-					max={3}
-					step={0.05}
-					decimals={2}
-					value={$orbitPrefs.rotateSpeed}
-					onchange={(v) => setOrbitPrefs({ rotateSpeed: v })}
-				/>
-				<SliderRow
-					label="Zoom speed"
-					min={0.1}
-					max={3}
-					step={0.05}
-					decimals={2}
-					value={$orbitPrefs.zoomSpeed}
-					onchange={(v) => setOrbitPrefs({ zoomSpeed: v })}
-				/>
-				<SliderRow
-					label="Pan speed"
-					min={0.1}
-					max={3}
-					step={0.05}
-					decimals={2}
-					value={$orbitPrefs.panSpeed}
-					onchange={(v) => setOrbitPrefs({ panSpeed: v })}
-				/>
+			<!-- 38 NOTES-38 #33: Play is its own section (it was the "Play mode" block inside Physics):
+			     how the pointer acts, grab reach, flying, the simulation, the Playing banner and where
+			     play starts. Same rows, same ids, same scene data (the play block). -->
+			<Section variant="panel" label="Play" closed aliases={['Play mode']}>
+				<PropRow label="Pointer" valueBox={false}>
+					{#snippet control()}
+					<ThemedSelect
+						id="physics-play-interaction"
+						class="flex-1"
+						value={$scenePlay.interaction}
+						items={[
+							{ value: 'grab', name: 'Grab and throw' },
+							{ value: 'click', name: 'Click only' },
+							{ value: 'off', name: 'Look only' }
+						]}
+						onchange={(/** @type {any} */ val) => setScenePhysics({ play: { interaction: val } })}
+					/>
+					{/snippet}
+				</PropRow>
+				<!-- 31-towers P1: grab REACH, measured from the player's body (absent = no limit) -->
 				<InsToggle
-					id="orbit-damping"
-					checked={$orbitPrefs.damping}
-					onchange={(/** @type {any} */ e) => setOrbitPrefs({ damping: e.currentTarget.checked })}
-					>Smooth (damped) orbiting</InsToggle
+					id="physics-play-reach-on"
+					checked={$scenePlay.reach != null}
+					onchange={(e) => setScenePhysics({ play: { reach: e.currentTarget.checked ? 1.3 : null } })}
 				>
-				<InsToggle
-					id="orbit-invert"
-					checked={$orbitPrefs.invertY}
-					onchange={(/** @type {any} */ e) => setOrbitPrefs({ invertY: e.currentTarget.checked })}
-					>Invert vertical orbit</InsToggle
-				>
-				<div class="ui-row items-center gap-2">
-					<button id="camera-frame-scene" class="ui-chip" onclick={() => frameScene()}>
-						Frame scene
-					</button>
-					<button id="camera-reset-view" class="ui-chip" onclick={() => resetView()}>
-						Reset view
-					</button>
-					<button id="orbit-reset" class="ui-chip" onclick={() => resetOrbitPrefs()}>
-						Reset feel
-					</button>
-				</div>
-				<CameraHoldSetting /><!-- 36 L2: scene data, saved + replicated -->
-				<SimOnLoadSetting /><!-- 36-fb-water F14: scene data, saved + replicated -->
-				<p class="ui-section-label" data-anchor="Saved views">Saved views</p>
-				<div class="ui-row items-center gap-2">
-					<button id="bookmark-save" class="ui-chip" onclick={() => saveBookmark()}>
-						Save current view
-					</button>
-					<span class="text-[length:var(--fs-badge)] text-text-faint">Shift+1..{SHORTCUT_SLOTS} recall the first {SHORTCUT_SLOTS}</span>
-				</div>
-				{#if $bookmarks.length === 0}
-					<p class="text-xs text-text-muted">No saved views yet. Frame something you like, then Save current view.</p>
-				{:else}
-					<div id="bookmark-list" class="flex flex-col gap-1">
-						{#each $bookmarks as bookmark, index (bookmark.id)}
-							<div class="bookmark-row flex items-center gap-1">
-								<span class="w-8 shrink-0 text-[length:var(--fs-badge)] text-text-faint">{index < SHORTCUT_SLOTS ? '⇧' + (index + 1) : ''}</span>
-								<input
-									class="ui-input min-w-0 flex-1 px-1 py-0.5 text-xs"
-									aria-label="View name"
-									value={bookmark.name}
-									onchange={(/** @type {any} */ e) => renameBookmark(bookmark.id, e.currentTarget.value)}
-								/>
-								<button class={bmBtn} title="Recall this view" onclick={() => recallBookmark(index)}>
-									<Icon name="eye" size={16} />
-								</button>
-								<button class={bmBtn} title="Overwrite with the current view" onclick={() => overwriteBookmark(bookmark.id)}>
-									<Icon name="camera" size={16} />
-								</button>
-								<button class={bmBtn} title="Move up" aria-label="Move up" disabled={index === 0} onclick={() => moveBookmark(bookmark.id, -1)}>↑</button>
-								<button
-									class={bmBtn}
-									title="Move down" aria-label="Move down"
-									disabled={index === $bookmarks.length - 1}
-									onclick={() => moveBookmark(bookmark.id, 1)}>↓</button
-								>
-								<button class="{bmBtn} text-warn-text" title="Delete this view" onclick={() => deleteBookmark(bookmark.id)}>
-									<Icon name="trash-2" size={16} />
-								</button>
-							</div>
-						{/each}
-					</div>
-					<p class="text-[length:var(--fs-badge)] italic text-text-muted">
-						Each view stores its lens (FOV + clip planes) and restores it on recall.
-					</p>
-				{/if}
-			</Section>
-
-			<!-- 46 P2: the scene's LOD distance (replicated) -->
-			<SceneLodSection />
-
-			<!-- 16-P3: grid + snapping are LOCAL view prefs (like the clip planes and
-			     the render mode above) — peers each get their own. -->
-			<Section variant="panel" label="Grid" badge="This device">
-				<InsToggle
-					id="grid-show"
-					checked={!!$showGrid}
-					onchange={() => {
-						showGrid.update((v) => !v);
-						if (safeStorage.getItem('showGrid')) safeStorage.removeItem('showGrid');
-						else safeStorage.setItem('showGrid', 'false');
-					}}>Show grid</InsToggle
-				>
-				<InsToggle
-					id="grid-match-snap"
-					checked={$gridSettings.matchSnapStep}
-					onchange={(/** @type {any} */ e) => setGrid({ matchSnapStep: e.currentTarget.checked })}
-				>
-					Match snapping step ({$snapSettings.translate})
+					Limit grab reach
 				</InsToggle>
-				<SliderRow
-					label="Cell size"
-					min={0.05}
-					max={10}
-					step={0.05}
-					decimals={2}
-					value={effectiveCell($gridSettings, $snapSettings.translate)}
-					onchange={(v) => setGrid({ cellSize: v, matchSnapStep: false })}
-				/>
-				<SliderRow
-					label="Major every"
-					min={2}
-					max={20}
-					step={1}
-					decimals={0}
-					value={$gridSettings.sectionEvery}
-					onchange={(v) => setGrid({ sectionEvery: Math.round(v) })}
-				/>
-				<div class="ui-row items-center gap-2">
-					<span class="w-20 shrink-0 text-xs text-text-muted">Colours</span>
-					<!-- plain swatches: the full picker is overkill for two grid lines,
-					     and v4 pickers must never take bind:hex (15-C) -->
-					<input
-						id="grid-cell-color"
-						type="color"
-						class="h-6 w-10 rounded-sm bg-transparent"
-						aria-label="Grid cell colour"
-						value={$gridSettings.cellColor}
-						oninput={(/** @type {any} */ e) => setGrid({ cellColor: e.currentTarget.value })}
-					/>
-					<input
-						id="grid-section-color"
-						type="color"
-						class="h-6 w-10 rounded-sm bg-transparent"
-						aria-label="Grid major-line colour"
-						value={$gridSettings.sectionColor}
-						oninput={(/** @type {any} */ e) => setGrid({ sectionColor: e.currentTarget.value })}
-					/>
-					<span class="text-[length:var(--fs-badge)] text-text-faint">cell · major</span>
-				</div>
-				<div class="ui-row items-center gap-1">
-					<span class="w-20 shrink-0 text-xs text-text-muted">Fade</span>
-					{#each [['auto', 'Auto'], ['fixed', 'Fixed']] as [mode, label]}
-						<button
-							class={'ui-chip ' +
-								($gridSettings.fadeMode === mode
-									? 'ins-chip-on'
-									: '')}
-							title={mode === 'auto' ? 'Fade scales with the camera distance' : 'A fixed fade radius'}
-							onclick={() => setGrid({ fadeMode: mode })}>{label}</button
-						>
-					{/each}
-				</div>
-				{#if $gridSettings.fadeMode === 'fixed'}
+				{#if $scenePlay.reach != null}
 					<SliderRow
-						label="Fade radius"
-						min={20}
-						max={5000}
-						step={10}
-						decimals={0}
-						value={$gridSettings.fadeDistance}
-						onchange={(v) => setGrid({ fadeDistance: v })}
+						id="physics-play-reach"
+						label="Reach (m)"
+						min={0.5}
+						max={5}
+						step={0.1}
+						decimals={1}
+						value={$scenePlay.reach}
+						onchange={(v) => setScenePhysics({ play: { reach: v } })}
 					/>
 				{/if}
-				<SliderRow
-					label="Fade edge"
-					min={0}
-					max={4}
-					step={0.1}
-					decimals={1}
-					value={$gridSettings.fadeStrength}
-					onchange={(v) => setGrid({ fadeStrength: v })}
-				/>
+				<!-- 37 R24: flying in Play is OPT-IN per game (players walk unless the game allows it),
+				     and a scene can remove it outright — over any module or Character Controller -->
+				<PropRow label="Flying" valueBox={false} id="physics-play-flying-row"
+					clip={{ kind: 'enum', options: FLY_CHOICES, get: () => flyChoiceOf($scenePlay), set: setFlyChoice, reset: 'off' }}>
+					{#snippet control()}
+						<Segmented
+							id="physics-play-flying"
+							label="Flying in Play"
+							full
+							options={FLY_CHOICES}
+							value={flyChoiceOf($scenePlay)}
+							onchange={setFlyChoice}
+						/>
+					{/snippet}
+				</PropRow>
 				<InsToggle
-					id="grid-infinite"
-					checked={$gridSettings.infinite}
-					onchange={(/** @type {any} */ e) => setGrid({ infinite: e.currentTarget.checked })}
-					>Infinite grid</InsToggle
+					id="physics-sim-on-play"
+					checked={$scenePlay.simOnPlay}
+					onchange={(e) => setScenePhysics({ play: { simOnPlay: e.currentTarget.checked } })}
 				>
-				{#if !$gridSettings.infinite}
-					<SliderRow
-						label="Extent"
-						min={10}
-						max={1000}
-						step={10}
-						decimals={0}
-						value={$gridSettings.size}
-						onchange={(v) => setGrid({ size: v })}
-					/>
+					Start the simulation when play mode opens
+				</InsToggle>
+				<!-- 38 NOTES-38 #4 / #33: the "Playing · Press Esc to stop" banner — shown by default;
+				     a game or an advanced scene hides it or says its own words (phone too: the
+				     banner reads the same scene setting). A game's Menu · Esc button is not this. -->
+				<PropRow label="Playing banner" valueBox={false} id="physics-play-banner-row"
+					clip={{ kind: 'enum', options: BANNER_CHOICES, get: () => $scenePlay.banner?.mode ?? 'hint', set: setBannerMode, reset: 'hint' }}>
+					{#snippet control()}
+						<Segmented
+							id="physics-play-banner"
+							label="Playing banner"
+							full
+							options={BANNER_CHOICES}
+							value={$scenePlay.banner?.mode ?? 'hint'}
+							onchange={setBannerMode}
+						/>
+					{/snippet}
+				</PropRow>
+				{#if $scenePlay.banner?.mode === 'custom'}
+					<PropRow label="Banner text" valueBox={false}>
+						{#snippet control()}
+						<input
+							id="physics-play-banner-text"
+							class="tp-field w-full"
+							type="text"
+							maxlength="80"
+							placeholder="e.g. Find the three keys"
+							value={$scenePlay.banner.text}
+							onchange={(e) => setScenePhysics({ play: { banner: { mode: 'custom', text: e.currentTarget.value } } })}
+						/>
+						{/snippet}
+					</PropRow>
 				{/if}
-				<!-- 16-Q2: three-way follow. The old checkbox tracked your POSITION, which
-				     is not what "follow the camera" should mean while you're looking
-				     somewhere else; Look-at centres the grid under your gaze. -->
-				<div id="grid-follow" class="ui-row items-center gap-1">
-					<span class="w-20 shrink-0 text-xs text-text-muted">Follow</span>
-					{#each [['off', 'Off'], ['lookat', 'Look-at'], ['camera', 'Camera']] as [mode, label]}
-						<button
-							class={'ui-chip ' +
-								($gridSettings.follow === mode
-									? 'ins-chip-on'
-									: '')}
-							title={mode === 'lookat'
-								? 'Centre the grid under what you are looking at (horizontal only)'
-								: mode === 'camera'
-									? 'Centre the grid under the camera itself'
-									: 'Keep the grid at the world origin'}
-							onclick={() => setGrid({ follow: mode })}>{label}</button
-						>
-					{/each}
-				</div>
-				<InsToggle
-					id="grid-axes"
-					checked={$gridSettings.showAxes}
-					onchange={(/** @type {any} */ e) => setGrid({ showAxes: e.currentTarget.checked })}
-					>Show origin axes</InsToggle
-				>
-				<div class="ui-row items-center gap-2">
-					<button id="grid-reset" class="ui-chip" onclick={() => resetGrid()}>
-						Reset grid
-					</button>
-					<span class="text-[length:var(--fs-badge)] italic text-text-muted">Per-device (not shared).</span>
+				<!-- 30c: where desktop play starts — feet position + heading, shared scene data -->
+				<PropRow label="Spawn point" valueBox={false}>
+					{#snippet control()}
+					<span id="physics-spawn-readout" class="text-[length:var(--fs-desc)] text-text-muted">{spawnText($scenePlay.spawn)}</span>
+					{/snippet}
+				</PropRow>
+				<div class="flex flex-wrap gap-2">
+					<UiButton id="physics-spawn-set" variant="outline" size="sm" title="Play starts at the point the view orbits around, facing the way the camera looks at it" onclick={setSpawnFromView}>Set to the view's focus</UiButton>
+					{#if $scenePlay.spawn}
+						<UiButton id="physics-spawn-clear" variant="ghost" size="sm" onclick={() => setScenePhysics({ play: { spawn: null } })}>Clear</UiButton>
+					{/if}
 				</div>
 			</Section>
 
-			<Section variant="panel" label="Snapping" badge="This device">
-				<InsToggle
-					id="snap-enabled"
-					checked={$snapEnabled}
-					onchange={(/** @type {any} */ e) => snapEnabled.set(e.currentTarget.checked)}
-					>Snap transforms to a grid</InsToggle
-				>
-				<div class="snap-row">
-					<span class="text-xs text-text-muted">Position</span>
-					<div class="snap-chips">
-					{#each [0.1, 0.25, 0.5, 1] as step}
-						<button
-							class={'ui-chip ' +
-								($snapSettings.translate === step
-									? 'ins-chip-on'
-									: '')}
-							onclick={() => snapSettings.update((s) => ({ ...s, translate: step }))}>{step}</button
-						>
-					{/each}
-					</div>
-					<div class="snap-field">
-						<DragRow
-							id="snap-translate"
-							value={$snapSettings.translate}
-							unit="length"
-							decimals={2}
-							min={0.01}
-							step={0.005}
-							snap={0.1}
-							ariaLabel="translate snap step"
-							onchange={(v) => snapSettings.update((s) => ({ ...s, translate: v || s.translate }))}
-						/>
-					</div>
-				</div>
-				<div class="snap-row">
-					<span class="text-xs text-text-muted">Rotation</span>
-					<div class="snap-chips">
-					{#each [5, 15, 45, 90] as step}
-						<button
-							class={'ui-chip ' +
-								($snapSettings.rotateDeg === step
-									? 'ins-chip-on'
-									: '')}
-							onclick={() => snapSettings.update((s) => ({ ...s, rotateDeg: step }))}>{step}°</button
-						>
-					{/each}
-					</div>
-					<div class="snap-field">
-						<DragRow
-							id="snap-rotate"
-							value={$snapSettings.rotateDeg}
-							unit="angleDeg"
-							decimals={1}
-							min={0.1}
-							step={0.2}
-							snap={5}
-							ariaLabel="rotateDeg snap step"
-							onchange={(v) => snapSettings.update((s) => ({ ...s, rotateDeg: v || s.rotateDeg }))}
-						/>
-					</div>
-				</div>
-				<div class="snap-row">
-					<span class="text-xs text-text-muted">Scale</span>
-					<div class="snap-chips">
-					{#each [0.05, 0.1, 0.25] as step}
-						<button
-							class={'ui-chip ' +
-								($snapSettings.scale === step
-									? 'ins-chip-on'
-									: '')}
-							onclick={() => snapSettings.update((s) => ({ ...s, scale: step }))}>{step}</button
-						>
-					{/each}
-					</div>
-					<div class="snap-field">
-						<DragRow
-							id="snap-scale"
-							value={$snapSettings.scale}
-							decimals={2}
-							min={0.01}
-							step={0.005}
-							snap={0.05}
-							ariaLabel="scale snap step"
-							onchange={(v) => snapSettings.update((s) => ({ ...s, scale: v || s.scale }))}
-						/>
-					</div>
-				</div>
-				<InsToggle
-					id="snap-surface"
-					checked={$surfaceSnap}
-					onchange={(/** @type {any} */ e) => surfaceSnap.set(e.currentTarget.checked)}
-					>Rest dragged objects on the surface below</InsToggle
-				>
-				<!-- 19-B: element snap targets. Same three-column grid as the steps
-				     above (label | chips | number), so every control in the section
-				     lines up on the same two edges. -->
-				<div class="snap-group">
-					<span class="ui-section-label">Snap to elements</span>
-					<span class="snap-group-hint">beats the grid steps</span>
-				</div>
-				<!-- five peer toggles are a chip CLOUD, not presets: right-aligning them
-				     in the numeric grid stranded the fifth chip alone against the right
-				     edge. Own line, left-aligned, wrapping naturally. -->
-				<div class="snap-sub">
-					<span class="text-xs text-text-muted">Targets</span>
-					<span class="snap-sub-hint">
-						{activeTargetCount === 0 ? 'none — element snap is idle' : `${activeTargetCount} on`}
-					</span>
-				</div>
-				<div class="snap-cloud">
-					{#each elementTargets as target}
-						<button
-							id={'snap-target-' + target[0]}
-							class={'ui-chip ' +
-								(targetOn($snapTargets, target[0])
-									? 'ins-chip-on'
-									: '')}
-							aria-pressed={targetOn($snapTargets, target[0])}
-							onclick={() => toggleTarget(target[0])}
-							>{target[1]}</button
-						>
-					{/each}
-				</div>
-				<div class="snap-row">
-					<span class="text-xs text-text-muted">Radius</span>
-					<div class="snap-chips">
-						{#each [15, 25, 40] as preset}
-							<button
-								class={'ui-chip ' +
-									($snapTargets.radiusPx === preset
-										? 'ins-chip-on'
-										: '')}
-								onclick={() => snapTargets.update((t) => ({ ...t, radiusPx: preset }))}
-								>{preset}</button
-							>
-						{/each}
-					</div>
-					<div class="snap-field">
-						<DragRow
-							id="snap-radius"
-							value={$snapTargets.radiusPx}
-							decimals={0}
-							min={5}
-							max={60}
-							step={1}
-							ariaLabel="element snap radius (screen px)"
-							onchange={(v) =>
-								snapTargets.update((t) => ({
-									...t,
-									radiusPx: Math.min(60, Math.max(5, Math.round(v) || 25))
-								}))}
-						/>
-					</div>
-				</div>
-				<!-- 19-B P4: align to the candidate normal (face/surface targets only) -->
-				<InsToggle
-					id="snap-align-normal"
-					checked={$snapTargets.alignNormal}
-					onchange={(/** @type {any} */ e) =>
-						snapTargets.update((t) => ({ ...t, alignNormal: e.currentTarget.checked }))}
-					>Rotate to the surface (align to normal)</InsToggle
-				>
-				<!-- Auto/Pivot are the MODE (two chips, so the numeric grid fits them);
-				     picking is an ACTION that arms the next viewport click, so it gets a
-				     full-width button of its own rather than a third, much wider chip -->
-				<div class="snap-row">
-					<span class="text-xs text-text-muted">Snap origin</span>
-					<div class="snap-chips">
-						<button
-							id="snap-anchor-auto"
-							class={'ui-chip ' +
-								($snapTargets.anchorMode === 'auto' && $snapAnchor.mode !== 'picked'
-									? 'ins-chip-on'
-									: '')}
-							title="Snap from the nearest point on the object's bounding box"
-							onclick={() => {
-								clearSnapAnchor();
-								snapTargets.update((t) => ({ ...t, anchorMode: 'auto' }));
-							}}>Auto</button
-						>
-						<button
-							id="snap-anchor-pivot"
-							class={'ui-chip ' +
-								($snapTargets.anchorMode === 'pivot' && $snapAnchor.mode !== 'picked'
-									? 'ins-chip-on'
-									: '')}
-							title="Snap from the object's own origin"
-							onclick={() => {
-								clearSnapAnchor();
-								snapTargets.update((t) => ({ ...t, anchorMode: 'pivot' }));
-							}}>Pivot</button
-						>
-					</div>
-				</div>
-				<!-- ARMED is a state the VIEWPORT is in, not a selection: it changes what
-				     the next click does, so it takes its own colour instead of the accent
-				     every other active control uses. -->
-				<button
-					id="snap-anchor-pick"
-					class={'snap-action ' + ($snapAnchorPicking ? 'snap-action-armed' : '')}
-					aria-pressed={$snapAnchorPicking}
-					title="Click a point on the selected object to snap from"
-					onclick={() => ($snapAnchorPicking ? cancelSnapAnchorPick() : startSnapAnchorPick())}
-				>
-					<span aria-hidden="true">⌖</span>
-					{$snapAnchorPicking ? 'Click a point on the object…' : 'Pick a point on the object'}
-				</button>
-				<!-- the anchor's STATE lives on its own line: crammed in beside the mode
-				     chips it wrapped them onto a second row the moment it appeared -->
-				{#if $snapAnchorPicking}
-					<div class="snap-status snap-status-armed">
-						<span class="snap-status-text">Selecting…</span>
-						<!-- the button above already says what to do; this line carries what
-						     it cannot — the way out that isn't a click -->
-						<span class="snap-status-hint">Esc cancels</span>
-						<button
-							id="snap-anchor-cancel"
-							class="ui-chip"
-							aria-label="cancel picking the snap origin"
-							title="Cancel (Esc)"
-							onclick={() => cancelSnapAnchorPick()}>✕</button
-						>
-					</div>
-				{:else if $snapAnchor.mode === 'picked'}
-					<div class="snap-status snap-status-picked">
-						<span class="snap-status-text">Picked ✓</span>
-						<button
-							id="snap-anchor-save-origin"
-							class="ui-chip"
-							title="Keep this point for good: it becomes the object's own origin — shared with peers, undoable, and it survives selecting something else"
-							onclick={() => saveSnapAnchorAsOrigin()}>Save as object origin</button
-						>
-						<button
-							id="snap-anchor-clear"
-							class="ui-chip"
-							aria-label="clear the picked snap origin"
-							title="Forget this point"
-							onclick={() => clearSnapAnchor()}>✕</button
-						>
-					</div>
-				{/if}
-				<p class="text-[length:var(--fs-badge)] italic text-text-muted">
-					A picked origin is local and lasts until you select something else — save it to keep it.
-				</p>
-				<p class="text-[length:var(--fs-badge)] italic text-text-muted">
-					Snapping is per-device; the same steps drive the viewport menu.
-				</p>
-			</Section>
+			<Section variant="panel" label="Levels" closed aliases={['Level', 'Portals', 'Checkpoints', 'Loading screen', 'Keep across levels']}><LevelsSection /></Section>
 
-			<Section variant="panel" label="Physics">
+			<Section variant="panel" label="Physics" closed>
 				<!-- B4: ONE section, three labelled sub-blocks (the Snapping section's
 					 internal grouping). Splitting it would break its collapse state, the
 					 openSceneSection('Physics') deep link AND inspectorFilter, all three
@@ -2957,174 +2482,656 @@
 
 			</Section>
 
-			<!-- 38 NOTES-38 #33: Play is its own section (it was the "Play mode" block inside Physics):
-			     how the pointer acts, grab reach, flying, the simulation, the Playing banner and where
-			     play starts. Same rows, same ids, same scene data (the play block). -->
-			<Section variant="panel" label="Play" badge="Shared" aliases={['Play mode']}>
-				<PropRow label="Pointer" valueBox={false}>
-					{#snippet control()}
-					<ThemedSelect
-						id="physics-play-interaction"
-						class="flex-1"
-						value={$scenePlay.interaction}
-						items={[
-							{ value: 'grab', name: 'Grab and throw' },
-							{ value: 'click', name: 'Click only' },
-							{ value: 'off', name: 'Look only' }
-						]}
-						onchange={(/** @type {any} */ val) => setScenePhysics({ play: { interaction: val } })}
-					/>
-					{/snippet}
-				</PropRow>
-				<!-- 31-towers P1: grab REACH, measured from the player's body (absent = no limit) -->
-				<InsToggle
-					id="physics-play-reach-on"
-					checked={$scenePlay.reach != null}
-					onchange={(e) => setScenePhysics({ play: { reach: e.currentTarget.checked ? 1.3 : null } })}
+			<Section variant="panel" label="Music" closed>
+				<p class="ui-section-label">Scene track (shared)</p>
+				<!-- 38 NOTES-38 #24 (design page): the track and its Play/Stop on one row -->
+				<div class="flex items-center gap-2">
+				<select
+					class="ui-input min-w-0 flex-1"
+					value={$music.hash ?? ''}
+					onchange={(e) => {
+						const hash = e.currentTarget.value || null;
+						const item = $explorerItems.find((entry) => entry.hash === hash);
+						setMusicTrack(hash, item?.name ?? '');
+					}}
 				>
-					Limit grab reach
-				</InsToggle>
-				{#if $scenePlay.reach != null}
-					<SliderRow
-						id="physics-play-reach"
-						label="Reach (m)"
-						min={0.5}
-						max={5}
-						step={0.1}
-						decimals={1}
-						value={$scenePlay.reach}
-						onchange={(v) => setScenePhysics({ play: { reach: v } })}
-					/>
-				{/if}
-				<!-- 37 R24: flying in Play is OPT-IN per game (players walk unless the game allows it),
-				     and a scene can remove it outright — over any module or Character Controller -->
-				<PropRow label="Flying" valueBox={false} id="physics-play-flying-row"
-					clip={{ kind: 'enum', options: FLY_CHOICES, get: () => flyChoiceOf($scenePlay), set: setFlyChoice, reset: 'off' }}>
-					{#snippet control()}
-						<Segmented
-							id="physics-play-flying"
-							label="Flying in Play"
-							full
-							options={FLY_CHOICES}
-							value={flyChoiceOf($scenePlay)}
-							onchange={setFlyChoice}
-						/>
-					{/snippet}
-				</PropRow>
-				<InsToggle
-					id="physics-sim-on-play"
-					checked={$scenePlay.simOnPlay}
-					onchange={(e) => setScenePhysics({ play: { simOnPlay: e.currentTarget.checked } })}
-				>
-					Start the simulation when play mode opens
-				</InsToggle>
-				<!-- 38 NOTES-38 #4 / #33: the "Playing · Press Esc to stop" banner — shown by default;
-				     a game or an advanced scene hides it or says its own words (phone too: the
-				     banner reads the same scene setting). A game's Menu · Esc button is not this. -->
-				<PropRow label="Playing banner" valueBox={false} id="physics-play-banner-row"
-					clip={{ kind: 'enum', options: BANNER_CHOICES, get: () => $scenePlay.banner?.mode ?? 'hint', set: setBannerMode, reset: 'hint' }}>
-					{#snippet control()}
-						<Segmented
-							id="physics-play-banner"
-							label="Playing banner"
-							full
-							options={BANNER_CHOICES}
-							value={$scenePlay.banner?.mode ?? 'hint'}
-							onchange={setBannerMode}
-						/>
-					{/snippet}
-				</PropRow>
-				{#if $scenePlay.banner?.mode === 'custom'}
-					<PropRow label="Banner text" valueBox={false}>
-						{#snippet control()}
-						<input
-							id="physics-play-banner-text"
-							class="tp-field w-full"
-							type="text"
-							maxlength="80"
-							placeholder="e.g. Find the three keys"
-							value={$scenePlay.banner.text}
-							onchange={(e) => setScenePhysics({ play: { banner: { mode: 'custom', text: e.currentTarget.value } } })}
-						/>
-						{/snippet}
-					</PropRow>
-				{/if}
-				<!-- 30c: where desktop play starts — feet position + heading, shared scene data -->
-				<PropRow label="Spawn point" valueBox={false}>
-					{#snippet control()}
-					<span id="physics-spawn-readout" class="text-[length:var(--fs-desc)] text-text-muted">{spawnText($scenePlay.spawn)}</span>
-					{/snippet}
-				</PropRow>
-				<div class="flex flex-wrap gap-2">
-					<UiButton id="physics-spawn-set" variant="outline" size="sm" title="Play starts at the point the view orbits around, facing the way the camera looks at it" onclick={setSpawnFromView}>Set to the view's focus</UiButton>
-					{#if $scenePlay.spawn}
-						<UiButton id="physics-spawn-clear" variant="ghost" size="sm" onclick={() => setScenePhysics({ play: { spawn: null } })}>Clear</UiButton>
+					<option value="">— no music —</option>
+					{#each $explorerItems.filter((item) => item.kind === 'audio') as item (item.id)}
+						<option value={item.hash}>{item.name}</option>
+					{/each}
+					{#if $music.hash && !$explorerItems.some((item) => item.hash === $music.hash)}
+						<option value={$music.hash}>{$music.name || 'shared track'} (fetching…)</option>
 					{/if}
+				</select>
+					<button
+						class="ui-chip shrink-0 {$music.playing ? 'ins-chip-on' : ''}"
+						disabled={!$music.hash}
+						onclick={() => setMusicPlaying(!$music.playing)}
+					>
+						{$music.playing ? '■ Stop' : '▶ Play'}
+					</button>
+				</div>
+				{#if $musicBlocked && $music.playing}
+					<span class="text-xs text-warn-text">click anywhere to enable audio</span>
+				{/if}
+				<SliderRow label="Shared volume" min={0} max={1} step={0.05} value={$music.volume} onchange={(v) => setMusicVolume(v)} />
+				<p class="ui-section-label">This device</p>
+				<SliderRow label="Local volume" min={0} max={1} step={0.05} value={$musicLocalVolume} onchange={(v) => musicLocalVolume.set(v)} />
+				<InsToggle bind:checked={$musicMuted}>Mute music on this device</InsToggle>
+				<p class="mt-1 text-xs text-text-muted">
+					One background track for everyone, synced to the same moment. Volume is shared; the local trim + mute affect only you.
+				</p>
+			</Section>
+
+			<!-- 46 P2: the scene's LOD distance (replicated) -->
+			<SceneLodSection closed />
+
+			<!-- 36 F22 / S8: scene data, saved + replicated -->
+			<Section variant="panel" label="Selection outline" closed aliases={['Advanced', 'Selection']}><SelectionPassSetting /></Section>
+
+			<h3 id="scene-group-device" class="ins-group-label">This device <span class="ins-group-who">· only you</span></h3>
+			<!-- 42 I12 put Quality on TOP; 78-int PL17 makes it the first of This device -->
+			<SceneQualitySection closed />
+			<Section variant="panel" label="View" closed>
+				<p class="ui-section-label">Viewport — this device</p>
+				<div id="view-mode-switch" class="flex flex-wrap gap-1">
+					{#each [['shaded', 'Shaded'], ['shaded-ao', 'Shaded + AO'], ['wireframe', 'Wireframe']] as [mode, label] (mode)}
+						{@const aoTaken = mode === 'shaded-ao' && sceneProvidesAo($scenePost)}
+						<button
+							id={'view-mode-' + mode}
+							class={'ui-chip ' +
+								($viewMode === mode ? 'ins-chip-on' : '') +
+								(aoTaken ? ' cursor-not-allowed opacity-40' : '')}
+							disabled={aoTaken}
+							title={aoTaken
+								? 'This scene sets its own ambient occlusion, so your personal setting does not apply'
+								: ''}
+							onclick={() => viewMode.set(mode)}
+						>
+							{label}
+						</button>
+					{/each}
+				</div>
+				<p class="mb-1 text-xs text-text-muted">
+					How YOUR viewport shades the scene — not shown to peers. The scene's own look
+					(post-processing) renders for everyone regardless; switch it off below if you need to.
+				</p>
+				{#if sceneProvidesAo($scenePost)}
+					<p class="mb-1 text-[length:var(--fs-badge)] text-text-muted">
+						This scene sets its own ambient occlusion, so it is used instead of your personal
+						setting.
+					</p>
+				{/if}
+				<!-- B: ONE place for "the scene says X, but not on my screen". Layers 2 and 3
+					 add a key here rather than each inventing their own checkbox and their own
+					 "do my peers need to switch this on?" question. -->
+				<p class="ui-section-label" data-anchor="Overrides">Overrides — this device</p>
+				{#each OVERRIDES as override (override.key)}
+					<InsToggle
+						id={'override-' + override.key}
+						checked={$viewportOverrides[override.key] !== false}
+						onchange={(e) => setRenderLayer(override.key, e.currentTarget.checked)}
+					>
+						{override.label}
+					</InsToggle>
+					<p class="mb-1 text-[length:var(--fs-badge)] italic text-text-muted">{override.hint}</p>
+				{/each}
+				<InsToggle bind:checked={$showLightHelpers}>Show light helpers</InsToggle>
+				<InsToggle bind:checked={$showColliders}>Show colliders — this device</InsToggle>
+			</Section>
+
+			<!-- 16-P4: everything about the VIEWPORT camera in one place (it used to be a
+			     "Camera lens" sub-label buried in View): lens, clip planes, orbit feel,
+			     framing shortcuts and the saved views. All LOCAL, never replicated —
+			     except 36 L2's start-view hold, which is scene data (CameraHoldSetting). -->
+			<Section variant="panel" label="Camera" closed>
+				<div id="lens-presets" class="flex flex-wrap gap-1">
+					{#each LENS_PRESETS as p (p.label)}
+						<button
+							class={'ui-chip ' +
+								(Math.round($globalCamera?.fov ?? 0) === p.fov
+									? 'ins-chip-on'
+									: '')}
+							title={p.mm + 'mm equivalent · ' + p.fov + '° vertical FOV'}
+							onclick={() => {
+								if ($globalCamera) {
+									$globalCamera.fov = p.fov;
+									$globalCamera.updateProjectionMatrix();
+								}
+							}}
+						>
+							{p.label}
+						</button>
+					{/each}
+				</div>
+				<SliderRow
+					label="Camera FOV"
+					min={15}
+					max={120}
+					step={1}
+					decimals={0}
+					value={$globalCamera?.fov ?? 60}
+					onchange={(v) => {
+						$globalCamera.fov = v;
+						$globalCamera.updateProjectionMatrix();
+					}}
+				/>
+				<!-- 123: local per-device clip planes; far pairs with orbit zoom -->
+				<SliderRow
+					label="Near clip"
+					min={0.01}
+					max={2}
+					step={0.01}
+					decimals={2}
+					value={$cameraNear}
+					onchange={(v) => setCameraNear(v)}
+				/>
+				<div class="ui-row">
+					<span class="w-20 shrink-0 text-xs text-text-muted">Far clip</span>
+					<div class="w-24 shrink-0">
+						<DragRow
+							id="camera-far"
+							value={$cameraFar}
+							decimals={0}
+							min={10}
+							step={5}
+							snap={100}
+							ariaLabel="Far clip"
+							onchange={(v) => setCameraFar(v)}
+						/>
+					</div>
+					<span class="text-[length:var(--fs-badge)] text-text-faint">grows to fit the scene</span>
+				</div>
+				<p class="text-[length:var(--fs-badge)] italic text-text-muted">Clip planes are per-device (not shared).</p>
+				<p class="ui-section-label">Orbit feel</p>
+				<SliderRow
+					label="Rotate speed"
+					min={0.1}
+					max={3}
+					step={0.05}
+					decimals={2}
+					value={$orbitPrefs.rotateSpeed}
+					onchange={(v) => setOrbitPrefs({ rotateSpeed: v })}
+				/>
+				<SliderRow
+					label="Zoom speed"
+					min={0.1}
+					max={3}
+					step={0.05}
+					decimals={2}
+					value={$orbitPrefs.zoomSpeed}
+					onchange={(v) => setOrbitPrefs({ zoomSpeed: v })}
+				/>
+				<SliderRow
+					label="Pan speed"
+					min={0.1}
+					max={3}
+					step={0.05}
+					decimals={2}
+					value={$orbitPrefs.panSpeed}
+					onchange={(v) => setOrbitPrefs({ panSpeed: v })}
+				/>
+				<InsToggle
+					id="orbit-damping"
+					checked={$orbitPrefs.damping}
+					onchange={(/** @type {any} */ e) => setOrbitPrefs({ damping: e.currentTarget.checked })}
+					>Smooth (damped) orbiting</InsToggle
+				>
+				<InsToggle
+					id="orbit-invert"
+					checked={$orbitPrefs.invertY}
+					onchange={(/** @type {any} */ e) => setOrbitPrefs({ invertY: e.currentTarget.checked })}
+					>Invert vertical orbit</InsToggle
+				>
+				<div class="ui-row items-center gap-2">
+					<button id="camera-frame-scene" class="ui-chip" onclick={() => frameScene()}>
+						Frame scene
+					</button>
+					<button id="camera-reset-view" class="ui-chip" onclick={() => resetView()}>
+						Reset view
+					</button>
+					<button id="orbit-reset" class="ui-chip" onclick={() => resetOrbitPrefs()}>
+						Reset feel
+					</button>
+				</div>
+				<CameraHoldSetting /><!-- 36 L2: scene data, saved + replicated -->
+				<SimOnLoadSetting /><!-- 36-fb-water F14: scene data, saved + replicated -->
+				<p class="ui-section-label" data-anchor="Saved views">Saved views</p>
+				<div class="ui-row items-center gap-2">
+					<button id="bookmark-save" class="ui-chip" onclick={() => saveBookmark()}>
+						Save current view
+					</button>
+					<span class="text-[length:var(--fs-badge)] text-text-faint">Shift+1..{SHORTCUT_SLOTS} recall the first {SHORTCUT_SLOTS}</span>
+				</div>
+				{#if $bookmarks.length === 0}
+					<p class="text-xs text-text-muted">No saved views yet. Frame something you like, then Save current view.</p>
+				{:else}
+					<div id="bookmark-list" class="flex flex-col gap-1">
+						{#each $bookmarks as bookmark, index (bookmark.id)}
+							<div class="bookmark-row flex items-center gap-1">
+								<span class="w-8 shrink-0 text-[length:var(--fs-badge)] text-text-faint">{index < SHORTCUT_SLOTS ? '⇧' + (index + 1) : ''}</span>
+								<input
+									class="ui-input min-w-0 flex-1 px-1 py-0.5 text-xs"
+									aria-label="View name"
+									value={bookmark.name}
+									onchange={(/** @type {any} */ e) => renameBookmark(bookmark.id, e.currentTarget.value)}
+								/>
+								<button class={bmBtn} title="Recall this view" onclick={() => recallBookmark(index)}>
+									<Icon name="eye" size={16} />
+								</button>
+								<button class={bmBtn} title="Overwrite with the current view" onclick={() => overwriteBookmark(bookmark.id)}>
+									<Icon name="camera" size={16} />
+								</button>
+								<button class={bmBtn} title="Move up" aria-label="Move up" disabled={index === 0} onclick={() => moveBookmark(bookmark.id, -1)}>↑</button>
+								<button
+									class={bmBtn}
+									title="Move down" aria-label="Move down"
+									disabled={index === $bookmarks.length - 1}
+									onclick={() => moveBookmark(bookmark.id, 1)}>↓</button
+								>
+								<button class="{bmBtn} text-warn-text" title="Delete this view" onclick={() => deleteBookmark(bookmark.id)}>
+									<Icon name="trash-2" size={16} />
+								</button>
+							</div>
+						{/each}
+					</div>
+					<p class="text-[length:var(--fs-badge)] italic text-text-muted">
+						Each view stores its lens (FOV + clip planes) and restores it on recall.
+					</p>
+				{/if}
+			</Section>
+
+			<!-- 16-P3: grid + snapping are LOCAL view prefs (like the clip planes and
+			     the render mode above) — peers each get their own. -->
+			<Section variant="panel" label="Grid" closed>
+				<InsToggle
+					id="grid-show"
+					checked={!!$showGrid}
+					onchange={() => {
+						showGrid.update((v) => !v);
+						if (safeStorage.getItem('showGrid')) safeStorage.removeItem('showGrid');
+						else safeStorage.setItem('showGrid', 'false');
+					}}>Show grid</InsToggle
+				>
+				<InsToggle
+					id="grid-match-snap"
+					checked={$gridSettings.matchSnapStep}
+					onchange={(/** @type {any} */ e) => setGrid({ matchSnapStep: e.currentTarget.checked })}
+				>
+					Match snapping step ({$snapSettings.translate})
+				</InsToggle>
+				<SliderRow
+					label="Cell size"
+					min={0.05}
+					max={10}
+					step={0.05}
+					decimals={2}
+					value={effectiveCell($gridSettings, $snapSettings.translate)}
+					onchange={(v) => setGrid({ cellSize: v, matchSnapStep: false })}
+				/>
+				<SliderRow
+					label="Major every"
+					min={2}
+					max={20}
+					step={1}
+					decimals={0}
+					value={$gridSettings.sectionEvery}
+					onchange={(v) => setGrid({ sectionEvery: Math.round(v) })}
+				/>
+				<div class="ui-row items-center gap-2">
+					<span class="w-20 shrink-0 text-xs text-text-muted">Colours</span>
+					<!-- plain swatches: the full picker is overkill for two grid lines,
+					     and v4 pickers must never take bind:hex (15-C) -->
+					<input
+						id="grid-cell-color"
+						type="color"
+						class="h-6 w-10 rounded-sm bg-transparent"
+						aria-label="Grid cell colour"
+						value={$gridSettings.cellColor}
+						oninput={(/** @type {any} */ e) => setGrid({ cellColor: e.currentTarget.value })}
+					/>
+					<input
+						id="grid-section-color"
+						type="color"
+						class="h-6 w-10 rounded-sm bg-transparent"
+						aria-label="Grid major-line colour"
+						value={$gridSettings.sectionColor}
+						oninput={(/** @type {any} */ e) => setGrid({ sectionColor: e.currentTarget.value })}
+					/>
+					<span class="text-[length:var(--fs-badge)] text-text-faint">cell · major</span>
+				</div>
+				<div class="ui-row items-center gap-1">
+					<span class="w-20 shrink-0 text-xs text-text-muted">Fade</span>
+					{#each [['auto', 'Auto'], ['fixed', 'Fixed']] as [mode, label]}
+						<button
+							class={'ui-chip ' +
+								($gridSettings.fadeMode === mode
+									? 'ins-chip-on'
+									: '')}
+							title={mode === 'auto' ? 'Fade scales with the camera distance' : 'A fixed fade radius'}
+							onclick={() => setGrid({ fadeMode: mode })}>{label}</button
+						>
+					{/each}
+				</div>
+				{#if $gridSettings.fadeMode === 'fixed'}
+					<SliderRow
+						label="Fade radius"
+						min={20}
+						max={5000}
+						step={10}
+						decimals={0}
+						value={$gridSettings.fadeDistance}
+						onchange={(v) => setGrid({ fadeDistance: v })}
+					/>
+				{/if}
+				<SliderRow
+					label="Fade edge"
+					min={0}
+					max={4}
+					step={0.1}
+					decimals={1}
+					value={$gridSettings.fadeStrength}
+					onchange={(v) => setGrid({ fadeStrength: v })}
+				/>
+				<InsToggle
+					id="grid-infinite"
+					checked={$gridSettings.infinite}
+					onchange={(/** @type {any} */ e) => setGrid({ infinite: e.currentTarget.checked })}
+					>Infinite grid</InsToggle
+				>
+				{#if !$gridSettings.infinite}
+					<SliderRow
+						label="Extent"
+						min={10}
+						max={1000}
+						step={10}
+						decimals={0}
+						value={$gridSettings.size}
+						onchange={(v) => setGrid({ size: v })}
+					/>
+				{/if}
+				<!-- 16-Q2: three-way follow. The old checkbox tracked your POSITION, which
+				     is not what "follow the camera" should mean while you're looking
+				     somewhere else; Look-at centres the grid under your gaze. -->
+				<div id="grid-follow" class="ui-row items-center gap-1">
+					<span class="w-20 shrink-0 text-xs text-text-muted">Follow</span>
+					{#each [['off', 'Off'], ['lookat', 'Look-at'], ['camera', 'Camera']] as [mode, label]}
+						<button
+							class={'ui-chip ' +
+								($gridSettings.follow === mode
+									? 'ins-chip-on'
+									: '')}
+							title={mode === 'lookat'
+								? 'Centre the grid under what you are looking at (horizontal only)'
+								: mode === 'camera'
+									? 'Centre the grid under the camera itself'
+									: 'Keep the grid at the world origin'}
+							onclick={() => setGrid({ follow: mode })}>{label}</button
+						>
+					{/each}
+				</div>
+				<InsToggle
+					id="grid-axes"
+					checked={$gridSettings.showAxes}
+					onchange={(/** @type {any} */ e) => setGrid({ showAxes: e.currentTarget.checked })}
+					>Show origin axes</InsToggle
+				>
+				<div class="ui-row items-center gap-2">
+					<button id="grid-reset" class="ui-chip" onclick={() => resetGrid()}>
+						Reset grid
+					</button>
+					<span class="text-[length:var(--fs-badge)] italic text-text-muted">Per-device (not shared).</span>
 				</div>
 			</Section>
 
-			<Section variant="panel" label="Levels" badge="Shared" aliases={['Level', 'Portals', 'Checkpoints', 'Loading screen', 'Keep across levels']}><LevelsSection /></Section>
-			<Section variant="panel" label="Background" badge="Shared">
-				<FieldClip clip={colorClip('Background', () => $backgroundColor, (hex) => setBackground(hex))}>
-				<ColorPicker
-					isAlpha={false}
-					isTextInput={true}
-					textInputModes={['hex', 'rgb', 'hsv']}
-					isDialog={false}
-					components={{ ...ChromeVariant, wrapper: CustomWrapper }}
-					isOpen={true}
-					sliderDirection="horizontal"
-					--picker-indicator-size="20px"
-					--cp-bg-color="var(--surface-1)"
-					--cp-border-color="var(--border)"
-					--cp-input-color="var(--surface-inset)"
-					--cp-text-color="var(--text)"
-					--picker-height="70px"
-					--picker-width="50px"
-					--slider-width="10px"
-					hex={$backgroundColor}
-					onInput={(/** @type {any} */ c) => setBackground(c.hex)}
-				/>
-				</FieldClip>
-			</Section>
-
-			<Section variant="panel" label="Fog" badge="Shared">
-				<FieldClip clip={colorClip('Fog color', () => envFog?.color ?? FOG_DEFAULT, (hex) => editEnvSky({ fog: { color: hex } }), FOG_DEFAULT)}>
-				<ColorPicker
-					isAlpha={false}
-					isTextInput={true}
-					textInputModes={['hex', 'rgb', 'hsv']}
-					isDialog={false}
-					components={{ ...ChromeVariant, wrapper: CustomWrapper }}
-					isOpen={true}
-					sliderDirection="horizontal"
-					--picker-indicator-size="20px"
-					--cp-bg-color="var(--surface-1)"
-					--cp-border-color="var(--border)"
-					--cp-input-color="var(--surface-inset)"
-					--cp-text-color="var(--text)"
-					--picker-height="70px"
-					--picker-width="50px"
-					--slider-width="10px"
-					hex={envFog?.color ?? FOG_DEFAULT}
-					onInput={(/** @type {any} */ c) => {
-						if (sameHex(c.hex, envFog?.color ?? FOG_DEFAULT)) return; // mount echo, not an edit
-						editEnvSky({ fog: { color: c.hex } });
-					}}
-				/>
-				</FieldClip>
-				<SliderRow id="fog-near" label="Near" min={0} max={Math.max(10, Math.ceil(envFog?.near ?? 0))} step={0.1} decimals={1} value={envFog?.near ?? 0}
-					onchange={(v) => editEnvSky({ fog: { near: v } })} />
-				<SliderRow id="fog-far" label="Far" min={0} max={Math.max(100, Math.ceil(envFog?.far ?? 0))} step={0.1} decimals={1} value={envFog?.far ?? 0}
-					onchange={(v) => editEnvSky({ fog: { far: v } })} />
-				<UiButton
-					size="sm"
-					variant="outline"
-					onclick={() => editEnvSky({ fog: null })}>Remove Fog</UiButton
+			<Section variant="panel" label="Snapping" closed>
+				<InsToggle
+					id="snap-enabled"
+					checked={$snapEnabled}
+					onchange={(/** @type {any} */ e) => snapEnabled.set(e.currentTarget.checked)}
+					>Snap transforms to a grid</InsToggle
 				>
+				<div class="snap-row">
+					<span class="text-xs text-text-muted">Position</span>
+					<div class="snap-chips">
+					{#each [0.1, 0.25, 0.5, 1] as step}
+						<button
+							class={'ui-chip ' +
+								($snapSettings.translate === step
+									? 'ins-chip-on'
+									: '')}
+							onclick={() => snapSettings.update((s) => ({ ...s, translate: step }))}>{step}</button
+						>
+					{/each}
+					</div>
+					<div class="snap-field">
+						<DragRow
+							id="snap-translate"
+							value={$snapSettings.translate}
+							unit="length"
+							decimals={2}
+							min={0.01}
+							step={0.005}
+							snap={0.1}
+							ariaLabel="translate snap step"
+							onchange={(v) => snapSettings.update((s) => ({ ...s, translate: v || s.translate }))}
+						/>
+					</div>
+				</div>
+				<div class="snap-row">
+					<span class="text-xs text-text-muted">Rotation</span>
+					<div class="snap-chips">
+					{#each [5, 15, 45, 90] as step}
+						<button
+							class={'ui-chip ' +
+								($snapSettings.rotateDeg === step
+									? 'ins-chip-on'
+									: '')}
+							onclick={() => snapSettings.update((s) => ({ ...s, rotateDeg: step }))}>{step}°</button
+						>
+					{/each}
+					</div>
+					<div class="snap-field">
+						<DragRow
+							id="snap-rotate"
+							value={$snapSettings.rotateDeg}
+							unit="angleDeg"
+							decimals={1}
+							min={0.1}
+							step={0.2}
+							snap={5}
+							ariaLabel="rotateDeg snap step"
+							onchange={(v) => snapSettings.update((s) => ({ ...s, rotateDeg: v || s.rotateDeg }))}
+						/>
+					</div>
+				</div>
+				<div class="snap-row">
+					<span class="text-xs text-text-muted">Scale</span>
+					<div class="snap-chips">
+					{#each [0.05, 0.1, 0.25] as step}
+						<button
+							class={'ui-chip ' +
+								($snapSettings.scale === step
+									? 'ins-chip-on'
+									: '')}
+							onclick={() => snapSettings.update((s) => ({ ...s, scale: step }))}>{step}</button
+						>
+					{/each}
+					</div>
+					<div class="snap-field">
+						<DragRow
+							id="snap-scale"
+							value={$snapSettings.scale}
+							decimals={2}
+							min={0.01}
+							step={0.005}
+							snap={0.05}
+							ariaLabel="scale snap step"
+							onchange={(v) => snapSettings.update((s) => ({ ...s, scale: v || s.scale }))}
+						/>
+					</div>
+				</div>
+				<InsToggle
+					id="snap-surface"
+					checked={$surfaceSnap}
+					onchange={(/** @type {any} */ e) => surfaceSnap.set(e.currentTarget.checked)}
+					>Rest dragged objects on the surface below</InsToggle
+				>
+				<!-- 19-B: element snap targets. Same three-column grid as the steps
+				     above (label | chips | number), so every control in the section
+				     lines up on the same two edges. -->
+				<div class="snap-group">
+					<span class="ui-section-label">Snap to elements</span>
+					<span class="snap-group-hint">beats the grid steps</span>
+				</div>
+				<!-- five peer toggles are a chip CLOUD, not presets: right-aligning them
+				     in the numeric grid stranded the fifth chip alone against the right
+				     edge. Own line, left-aligned, wrapping naturally. -->
+				<div class="snap-sub">
+					<span class="text-xs text-text-muted">Targets</span>
+					<span class="snap-sub-hint">
+						{activeTargetCount === 0 ? 'none — element snap is idle' : `${activeTargetCount} on`}
+					</span>
+				</div>
+				<div class="snap-cloud">
+					{#each elementTargets as target}
+						<button
+							id={'snap-target-' + target[0]}
+							class={'ui-chip ' +
+								(targetOn($snapTargets, target[0])
+									? 'ins-chip-on'
+									: '')}
+							aria-pressed={targetOn($snapTargets, target[0])}
+							onclick={() => toggleTarget(target[0])}
+							>{target[1]}</button
+						>
+					{/each}
+				</div>
+				<div class="snap-row">
+					<span class="text-xs text-text-muted">Radius</span>
+					<div class="snap-chips">
+						{#each [15, 25, 40] as preset}
+							<button
+								class={'ui-chip ' +
+									($snapTargets.radiusPx === preset
+										? 'ins-chip-on'
+										: '')}
+								onclick={() => snapTargets.update((t) => ({ ...t, radiusPx: preset }))}
+								>{preset}</button
+							>
+						{/each}
+					</div>
+					<div class="snap-field">
+						<DragRow
+							id="snap-radius"
+							value={$snapTargets.radiusPx}
+							decimals={0}
+							min={5}
+							max={60}
+							step={1}
+							ariaLabel="element snap radius (screen px)"
+							onchange={(v) =>
+								snapTargets.update((t) => ({
+									...t,
+									radiusPx: Math.min(60, Math.max(5, Math.round(v) || 25))
+								}))}
+						/>
+					</div>
+				</div>
+				<!-- 19-B P4: align to the candidate normal (face/surface targets only) -->
+				<InsToggle
+					id="snap-align-normal"
+					checked={$snapTargets.alignNormal}
+					onchange={(/** @type {any} */ e) =>
+						snapTargets.update((t) => ({ ...t, alignNormal: e.currentTarget.checked }))}
+					>Rotate to the surface (align to normal)</InsToggle
+				>
+				<!-- Auto/Pivot are the MODE (two chips, so the numeric grid fits them);
+				     picking is an ACTION that arms the next viewport click, so it gets a
+				     full-width button of its own rather than a third, much wider chip -->
+				<div class="snap-row">
+					<span class="text-xs text-text-muted">Snap origin</span>
+					<div class="snap-chips">
+						<button
+							id="snap-anchor-auto"
+							class={'ui-chip ' +
+								($snapTargets.anchorMode === 'auto' && $snapAnchor.mode !== 'picked'
+									? 'ins-chip-on'
+									: '')}
+							title="Snap from the nearest point on the object's bounding box"
+							onclick={() => {
+								clearSnapAnchor();
+								snapTargets.update((t) => ({ ...t, anchorMode: 'auto' }));
+							}}>Auto</button
+						>
+						<button
+							id="snap-anchor-pivot"
+							class={'ui-chip ' +
+								($snapTargets.anchorMode === 'pivot' && $snapAnchor.mode !== 'picked'
+									? 'ins-chip-on'
+									: '')}
+							title="Snap from the object's own origin"
+							onclick={() => {
+								clearSnapAnchor();
+								snapTargets.update((t) => ({ ...t, anchorMode: 'pivot' }));
+							}}>Pivot</button
+						>
+					</div>
+				</div>
+				<!-- ARMED is a state the VIEWPORT is in, not a selection: it changes what
+				     the next click does, so it takes its own colour instead of the accent
+				     every other active control uses. -->
+				<button
+					id="snap-anchor-pick"
+					class={'snap-action ' + ($snapAnchorPicking ? 'snap-action-armed' : '')}
+					aria-pressed={$snapAnchorPicking}
+					title="Click a point on the selected object to snap from"
+					onclick={() => ($snapAnchorPicking ? cancelSnapAnchorPick() : startSnapAnchorPick())}
+				>
+					<span aria-hidden="true">⌖</span>
+					{$snapAnchorPicking ? 'Click a point on the object…' : 'Pick a point on the object'}
+				</button>
+				<!-- the anchor's STATE lives on its own line: crammed in beside the mode
+				     chips it wrapped them onto a second row the moment it appeared -->
+				{#if $snapAnchorPicking}
+					<div class="snap-status snap-status-armed">
+						<span class="snap-status-text">Selecting…</span>
+						<!-- the button above already says what to do; this line carries what
+						     it cannot — the way out that isn't a click -->
+						<span class="snap-status-hint">Esc cancels</span>
+						<button
+							id="snap-anchor-cancel"
+							class="ui-chip"
+							aria-label="cancel picking the snap origin"
+							title="Cancel (Esc)"
+							onclick={() => cancelSnapAnchorPick()}>✕</button
+						>
+					</div>
+				{:else if $snapAnchor.mode === 'picked'}
+					<div class="snap-status snap-status-picked">
+						<span class="snap-status-text">Picked ✓</span>
+						<button
+							id="snap-anchor-save-origin"
+							class="ui-chip"
+							title="Keep this point for good: it becomes the object's own origin — shared with peers, undoable, and it survives selecting something else"
+							onclick={() => saveSnapAnchorAsOrigin()}>Save as object origin</button
+						>
+						<button
+							id="snap-anchor-clear"
+							class="ui-chip"
+							aria-label="clear the picked snap origin"
+							title="Forget this point"
+							onclick={() => clearSnapAnchor()}>✕</button
+						>
+					</div>
+				{/if}
+				<p class="text-[length:var(--fs-badge)] italic text-text-muted">
+					A picked origin is local and lasts until you select something else — save it to keep it.
+				</p>
+				<p class="text-[length:var(--fs-badge)] italic text-text-muted">
+					Snapping is per-device; the same steps drive the viewport menu.
+				</p>
 			</Section>
-			<!-- 36 F22 / S8: scene data, saved + replicated -->
-			<Section variant="panel" label="Advanced" aliases={['Selection']}><SelectionPassSetting /></Section>
 		</div>
 	{:else if $moduleSelection && !$selectedObjects.length}
 		<!-- 30 P3: a Module content row (a PROXY, not an object): whose it is, and where it
@@ -4877,6 +4884,24 @@
 		font-weight: 600;
 		letter-spacing: var(--tracking-section);
 		color: var(--text-faint);
+	}
+	/* 78-int PL17: the two group labels of Configure Scene (The scene / This device) */
+	.ins-group-label {
+		margin: 6px 0 -4px;
+		font-size: var(--fs-badge);
+		font-weight: 700;
+		letter-spacing: var(--tracking-section);
+		text-transform: uppercase;
+		color: var(--text-2);
+	}
+	.ins-group-label:first-child {
+		margin-top: 0;
+	}
+	.ins-group-who {
+		font-weight: 500;
+		text-transform: none;
+		letter-spacing: normal;
+		color: var(--text-muted);
 	}
 	/* the panel's legacy controls, drawn in the kit's look through the tokens (their markup,
 	   ids and handlers unchanged): choice chips with ONE accent for the selected state

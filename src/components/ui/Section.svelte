@@ -30,13 +30,19 @@
 	 * knows beyond its rows: `{count(), pasteAll(values)}` ("Paste to all selected" through a
 	 * section-specific write) or `{count(), fans: true}` (its rows already fan over the
 	 * selection, so a paste IS a paste to all). `clip={false}` opts a section out.
-	 * @type {{label?: string, aliases?: string[], collapsible?: boolean, open?: boolean, variant?: 'legacy'|'card'|'panel', badge?: string, children?: any, clip?: any}}
+	 *
+	 * 78-int PL17: `closed` = collapsed BY DEFAULT (Configure Scene shows only Environment and Scene
+	 * look open). The person's own choice, once made, is what the stored key says from then on.
+	 * An ALIAS that names a `data-anchor` inside the section lands on that sub-heading (Background and
+	 * Fog live inside Environment now; `openSceneSection('Fog')` still lands on the fog rows).
+	 * @type {{label?: string, aliases?: string[], collapsible?: boolean, open?: boolean, closed?: boolean, variant?: 'legacy'|'card'|'panel', badge?: string, children?: any, clip?: any}}
 	 */
 	let {
 		label = '',
 		aliases = [],
 		collapsible = true,
 		open = $bindable(true),
+		closed = false,
 		variant = 'legacy',
 		badge = '',
 		children = null,
@@ -71,7 +77,11 @@
 	// persisted collapse, keyed by the section label (static per instance — a
 	// deliberate one-time read)
 	// svelte-ignore state_referenced_locally
-	let collapsed = $state(LS?.getItem('inspector:sec:' + label) === 'closed');
+	let collapsed = $state(storedCollapse(LS?.getItem('inspector:sec:' + label), closed));
+	/** @param {string | null | undefined} stored @param {boolean} byDefault */
+	function storedCollapse(stored, byDefault) {
+		return stored === 'closed' || stored === 'open' ? stored === 'closed' : byDefault;
+	}
 	function toggle() {
 		collapsed = !collapsed;
 		try {
@@ -125,7 +135,10 @@
 			return null;
 		};
 		/** the label to land on: a named sub-heading, else the section itself */
-		const findTarget = () => (anchor ? node?.querySelector(`[data-anchor="${anchor}"]`) : null) ?? node;
+		const findTarget = () =>
+			(anchor ? node?.querySelector(`[data-anchor="${anchor}"]`) : null) ??
+			(wanted !== label ? node?.querySelector(`[data-anchor="${wanted}"]`) : null) ??
+			node;
 
 		let attempts = 0;
 		const settle = () => {

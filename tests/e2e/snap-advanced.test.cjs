@@ -137,7 +137,7 @@ h.run(async () => {
 	h.check(scores.tieFirstWins === 'first', 'equal scores: the first-built candidate wins (deterministic)');
 
 	// ---------- 3. Inspector chips ----------
-	await A.page.evaluate(() => window.__stores.showSidebar('scene'));
+	await A.page.evaluate(() => window.__stores.openSceneSection('Snapping')); // 78-int PL17: Configure Scene opens with only Environment + Scene look expanded — deep-link the section
 	await A.page.waitForTimeout(600);
 	const chips = await A.page.evaluate(() => ({
 		vertex: !!document.querySelector('#snap-target-vertex'),
@@ -155,7 +155,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(200);
 	t = await targets(A.page);
 	h.check(t.face === true, 'clicking the Face chip flips the store');
-	await A.page.evaluate(() => window.__stores.showSidebar('scene'));
+	await A.page.evaluate(() => window.__stores.openSceneSection('Snapping')); // 78-int PL17: Configure Scene opens with only Environment + Scene look expanded — deep-link the section
 	await A.page.waitForTimeout(300);
 
 	// ---------- 4. viewport menu: Elements section + hint tag ----------
@@ -636,7 +636,7 @@ h.run(async () => {
 		'a miss exits pick mode without an anchor'
 	);
 	// the Inspector anchor row
-	await A.page.evaluate(() => window.__stores.showSidebar('scene'));
+	await A.page.evaluate(() => window.__stores.openSceneSection('Snapping')); // 78-int PL17: Configure Scene opens with only Environment + Scene look expanded — deep-link the section
 	await A.page.waitForTimeout(500);
 	const anchorUi = await A.page.evaluate(() => ({
 		auto: !!document.querySelector('#snap-anchor-auto'),
@@ -652,7 +652,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(200);
 	// close the sidebar again — sections 9-11 want the bare viewport (and section
 	// 11 presses a bare key, which a focused panel widget could swallow)
-	await A.page.evaluate(() => window.__stores.showSidebar('scene'));
+	await A.page.evaluate(() => window.__stores.openSceneSection('Snapping')); // 78-int PL17: Configure Scene opens with only Environment + Scene look expanded — deep-link the section
 	await A.page.waitForTimeout(300);
 
 	// ---------- 9. P4: align to normal ----------
@@ -1030,7 +1030,7 @@ h.run(async () => {
 		`a face-centre aim skips the DIAGONAL and lands on a boundary edge (${edges.centre?.point?.map((v) => v.toFixed(3))})`
 	);
 	// the Edge chip is in both UIs now
-	await A.page.evaluate(() => window.__stores.showSidebar('scene'));
+	await A.page.evaluate(() => window.__stores.openSceneSection('Snapping')); // 78-int PL17: Configure Scene opens with only Environment + Scene look expanded — deep-link the section
 	await A.page.waitForTimeout(500);
 	const edgeChip = await A.page.evaluate(() => !!document.querySelector('#snap-target-edge'));
 	h.check(edgeChip, 'the Edge chip renders in Configure Scene ▸ Snapping');
@@ -1205,7 +1205,7 @@ h.run(async () => {
 		return g.getObjectByProperty('uuid', a).userData?.origin ?? null;
 	}, ids);
 	h.check(undoneOrigin === null, 'and ONE undo takes the promotion back');
-	await A.page.evaluate(() => window.__stores.showSidebar('scene'));
+	await A.page.evaluate(() => window.__stores.openSceneSection('Snapping')); // 78-int PL17: Configure Scene opens with only Environment + Scene look expanded — deep-link the section
 
 	await h.finish(browser);
 });

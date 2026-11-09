@@ -19,11 +19,8 @@ h.run(async () => {
 	h.check((await fovOf(A)) === 40, 'B3: default camera FOV is 40 degrees');
 
 	// --- B3: lens presets in Configure Scene ---------------------------------
-	await A.page.evaluate(() => {
-		window.__stores.inspectorKind.set('scene');
-		window.__stores.inspectorClose.set(false);
-	});
-	await A.page.waitForTimeout(400);
+	await A.page.evaluate(() => window.__stores.openSceneSection('Camera')); // 78-int PL17: Configure Scene opens with only Environment + Scene look expanded — deep-link the section
+	await A.page.waitForTimeout(600);
 	h.check(await A.page.locator('#lens-presets').first().isVisible(), 'B3: lens presets row renders in Configure Scene');
 
 	await A.page.locator('#lens-presets button', { hasText: 'Natural' }).click();

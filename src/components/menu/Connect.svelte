@@ -30,6 +30,9 @@
 	import { safeStorage } from '$lib/safeStorage';
 	// 44 M14: pinned to the top row (the full-width bar) or floating (the centred pill, compact when crowded)
 	import { connectPinned } from '$lib/connectPin';
+	// 78 PL34: the join asks for a name (a card under the pill, never a modal)
+	import JoinNameAsk from './JoinNameAsk.svelte';
+	import { joinNameAsk, displayName } from '$lib/guestName';
 
 	let peerIdToConnect = $state('');
 	let displayid = $state('Generating...');
@@ -425,7 +428,7 @@
 	const chipPeers = $derived(
 		remoteOpen.slice(0, 3).map((id) => {
 			const row = $userdata.find((u) => u[0] === id);
-			const name = row?.[1] || String(id);
+			const name = row ? displayName(row) : String(id); // 78 PL34: never a raw id or "Peer"
 			// 55 A7: an agent is a robot on the chip, never a voice avatar
 			return { id, name, initial: String(name).trim().charAt(0).toUpperCase() || '?', agent: kindOfRow(row) === 'agent' };
 		})
@@ -475,6 +478,16 @@
 	const connectToPeer = (peerIdToConnect) => {
 		if (peerIdToConnect) void requestConnect(peerIdToConnect);
 	};
+
+	// 78 PL34: a dial that ended without a session (cancelled, refused, expired) takes its name ask with it
+	let dialSeen = false;
+	$effect(() => {
+		if (connState !== 'idle') dialSeen = true;
+		else if (dialSeen) {
+			dialSeen = false;
+			joinNameAsk.set(false);
+		}
+	});
 
 	// cancel OUR pending outbound request (the pill covers the single-dial case;
 	// extra simultaneous dials get inline cancels in the info drawer)
@@ -772,6 +785,8 @@
 
 	{#if drawerVisible}
 		<ConnectInfoDrawer onClose={() => connectDrawerOpen.set(false)} />
+	{:else if $joinNameAsk && connState !== 'idle'}
+		<JoinNameAsk />
 	{/if}
 </div>
 {#if $inviteSheet}

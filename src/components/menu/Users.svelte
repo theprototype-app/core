@@ -34,7 +34,9 @@
 	} from '../../stores/appStore.js';
 	import WindowChrome from '../ui/WindowChrome.svelte';
 	// 55 A4/A7: agent rows (robot + "AI") and the active invites with Revoke / Revoke all
-	import { invites, listInvites, revokeInvite, revokeAllInvites, inviteSheet, kindOfRow } from '$lib/inviteStore';
+	import { invites, listInvites, revokeInvite, revokeAllInvites, inviteSheet, kindOfRow, myKind } from '$lib/inviteStore';
+	// 78 PL34: nobody is "Peer" — a nameless person is "Guest N" (the host 1, joiners from 2)
+	import { displayName, nextGuestName, guestClash } from '$lib/guestName';
 	import { globalScene, globalCamera, camSave, peerHands, isLocked, objectsGroup } from '../../stores/sceneStore.js';
 	// 21-F3: who is in play mode, and who may end the round
 	import { peerPlayModes, resetAllowed, requestResetGame } from '$lib/gamePresence';
@@ -227,7 +229,8 @@
 			.filter(Boolean);
 	}
 	function nameOf(peerId: string) {
-		return (($userdata as any[]).find((u) => u[0] === peerId)?.[1]) || shortId(peerId).toUpperCase();
+		const row = ($userdata as any[]).find((u) => u[0] === peerId);
+		return row?.[1] || (row ? displayName(row) : shortId(peerId).toUpperCase());
 	}
 	/** fly the editor camera to stand a few metres off their avatar, looking at it */
 	function goToPeer(peerId: string) {
@@ -683,6 +686,42 @@
 		});
 	});
 
+	// 78 PL34 — THE GUEST NAME. A person with no name of their own (none typed, no account) takes the smallest
+	// free "Guest N" once a session forms, and says it on the roster like any name — so the popover, the pill,
+	// the chat and the name tags agree on every screen. Never stored: it is dropped when the session ends.
+	let autoGuest = '';
+	$effect(() => {
+		const pc: any = $peers;
+		const rows: any[] = ($userdata as any[]) ?? [];
+		const host = $sessionHost;
+		void $cloudIdentity;
+		untrack(() => {
+			const me = pc?.peer?.id;
+			if (!me || myKind()) return;
+			const live = (pc?.openedPeers?.size ?? 0) > 0;
+			const mine = String($username ?? '').trim();
+			if (!live) {
+				// the session ended: an automatic name goes with it (a typed one is untouched)
+				if (autoGuest && mine === autoGuest) {
+					username.set('' as any);
+					for (const row of rows) if (row[0] === me) row[1] = '';
+				}
+				autoGuest = '';
+				return;
+			}
+			if (cid?.username && !usernameIsCustom()) return;
+			const isAuto = !!autoGuest && mine === autoGuest;
+			if (mine && !isAuto) return;
+			// re-pick only when the automatic name no longer fits: a clash, or a joiner holding the host's "Guest 1"
+			if (isAuto && !guestClash(rows, me, mine) && !(host && mine === 'Guest 1')) return;
+			const name = nextGuestName(rows, me, !host);
+			if (name === mine) return;
+			autoGuest = name;
+			username.set(name as any);
+			broadcastUserdata();
+		});
+	});
+
 	function onUsernameEdited() {
 		try {
 			safeStorage.setItem('username', $username || '');
@@ -971,7 +1010,7 @@
 		data-peer-id={user[0]}
 		role="group"
 		tabindex="0"
-		aria-label={(user[1] || 'Peer') + (self ? ' (you)' : '') + ' — menu: Shift+F10'}
+		aria-label={displayName(user) + (self ? ' (you)' : '') + ' — menu: Shift+F10'}
 		oncontextmenu={(e) => rowContextMenu(e, user[0], self)}
 		onkeydown={(e) => rowKeydown(e, user[0], self)}
 		onpointerdown={(e) => rowPointerDown(e, user[0], self)}
@@ -983,7 +1022,7 @@
 		{@render avatarImg(user[2], 'bg-surface-active h-8 w-8 shrink-0')}
 		<div class="peer-info">
 			<div class="peer-name">
-				<span class="truncate" title={user[1] || 'Peer'}>{user[1] || (kindOfRow(user) === 'agent' ? 'AI agent' : 'Peer')}</span>
+				<span class="truncate" title={displayName(user)}>{displayName(user)}</span>
 				{#if kindOfRow(user) === 'agent'}
 					<!-- 55 A7: an AI agent is not a person — no character, the robot and "AI" instead -->
 					<span class="peer-ai" title="AI agent — joined over MCP or an agent link; it has no character"

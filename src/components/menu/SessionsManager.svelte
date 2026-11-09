@@ -767,7 +767,7 @@
 				{#each shownSessions as meta (meta.id)}
 					<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
 					<div
-						class="session-card session-row flex items-center gap-2 rounded-sm border px-2 py-1 {picked.has(meta.id)
+						class="session-card session-row flex flex-wrap items-center gap-2 rounded-sm border px-2 py-1 {picked.has(meta.id)
 							? 'session-picked ss-on'
 							: 'border-border bg-surface-2'}"
 						onclick={(e) => pickEntry(meta.id, e)}
@@ -805,7 +805,7 @@
 								one and every file manager's — and it is why the two agree now.
 							-->
 							<span
-								class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-text"
+								class="min-w-[6rem] flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-text"
 								title="Double-click to rename"
 								ondblclick={(e) => {
 									e.stopPropagation();
@@ -824,7 +824,9 @@
 						<span class="shrink-0 text-[10px] text-text-faint">{meta.count} obj</span>
 						<span class="session-size shrink-0 text-[10px] text-text-faint">{fmtBytes(meta.bytes)}</span>
 						<span class="shrink-0 text-[10px] text-text-faint">{stamp(meta.createdAt)}</span>
-						<div class="flex shrink-0 gap-1">
+						<!-- showhide-v8 §3: the buttons stay ONE group on one line beside the facts when they fit, and move under
+						     them together (never one by one) when the window is too narrow -->
+						<div class="session-actions ml-auto flex shrink-0 flex-nowrap gap-1">
 							<button
 								class="ss-btn session-load inline-flex items-center gap-1"
 								title={meta.hasLibrary

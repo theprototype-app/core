@@ -99,6 +99,7 @@
 	id="flow-debugger"
 	key="flowDebugger"
 	title="Debugger"
+	icon="bug"
 	width={300}
 	minW={240}
 	defaultRect={{ right: 16, top: 76 }}
@@ -119,7 +120,7 @@
 				>
 			{/if}
 		{/if}
-		<button id="debug-close" class="tbx-hbtn" aria-label="Close" title="Close the debugger" onclick={() => setDebugOpen(false)}
+		<button id="debug-close" class="tbx-hbtn" data-tbx-close aria-label="Close" title="Close the debugger" onclick={() => setDebugOpen(false)}
 			><Icon name="x" size={16} aria-hidden="true" /></button
 		>
 	{/snippet}

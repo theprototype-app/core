@@ -26,6 +26,7 @@
 	import ObjectSearch from './menu/ObjectSearch.svelte';
 	import TabStrips from './menu/TabStrips.svelte';
 	import WindowMenu from './menu/WindowMenu.svelte';
+	import ChromeButtonMenu from './menu/ChromeButtonMenu.svelte'; // panel-gestures item 5
 	import VoiceChat from './menu/VoiceChat.svelte';
 	import AnnotationPopover from './menu/AnnotationPopover.svelte';
 	import AnnotationMarkers from './menu/AnnotationMarkers.svelte';
@@ -98,6 +99,7 @@
 <ObjectSearch />
 <TabStrips />
 <WindowMenu />
+<ChromeButtonMenu />
 <VoiceChat />
 <!-- screen-space note markers (badge + leader line); VR uses the in-scene pins -->
 <AnnotationMarkers />

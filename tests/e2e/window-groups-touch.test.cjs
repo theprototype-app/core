@@ -5,7 +5,9 @@
 //
 //   1  a touch drag on the group's strip follows the finger at EVERY step (no pointercancel —
 //      the strip had touch-action:auto, so the browser took the gesture as a pan)
-//   2  a touch drag on a TAB NAME moves the whole group the same way (QUESTIONS Q1)
+//   2  a touch drag on a TAB NAME moves the whole group the same way (QUESTIONS Q1) — REVERSED by
+//      panel-gestures item 7: a touch on a tab scrolls the tabs / does nothing / lifts on a long-press
+//      ($lib/ui/tabTouch, suite panel-gestures); the group moves by its touch GRIP (.ts-grip) instead
 //   3  a long-press on a tab opens the kit menu (44 M3: the floating-window menu — Float (undock) is the old
 //      Ungroup this tab, Dock to bottom the old Dock this tab),
 //      and each row does what it says
@@ -105,6 +107,7 @@ const tabCentre = (page, label) =>
 	page.evaluate((label) => {
 		const t = [...document.querySelectorAll('.tab-strip .ts-tab')].find((b) => b.textContent.trim() === label);
 		if (!t) return null;
+		t.scrollIntoView({ block: 'nearest', inline: 'nearest' }); // the tabs scroll sideways (a person swipes to it)
 		const r = t.getBoundingClientRect();
 		return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
 	}, label);
@@ -163,14 +166,32 @@ h.run(async () => {
 		h.check(follows(trail), `${name} 1.2 the group follows the finger at every step (${JSON.stringify(trail.slice(-3))})`);
 		await page.screenshot({ path: (process.env.OUT || '/tmp') + `/g6-${name}-strip-drag.png` });
 
-		// 2 — a TAB NAME is the grip on touch
+		// 2 — panel-gestures item 7: the GRIP moves the group on touch (a tab no longer does)
 		await page.evaluate(() => (window.__cancels = 0));
-		const tab = await tabCentre(page, 'Objects');
-		trail = await touchDrag(page, cdp, tab, { x: -100, y: -120 });
+		const grip = await page.evaluate(() => {
+			const r = document.querySelector('.tab-strip .ts-grip')?.getBoundingClientRect();
+			return r && r.width ? { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) } : null;
+		});
+		h.check(!!grip, `${name} 2.0 premise: the touch grip is drawn`);
+		trail = grip ? await touchDrag(page, cdp, grip, { x: 100, y: -120 }) : [];
 		cancels = await page.evaluate(() => window.__cancels);
 		const g2 = await groups(page);
-		h.check(cancels === 0 && follows(trail), `${name} 2.1 a touch drag on a tab name moves the whole group with the finger (cancels=${cancels}, ${JSON.stringify(trail.slice(-2))})`);
+		h.check(cancels === 0 && follows(trail), `${name} 2.1 a touch drag on the grip moves the whole group with the finger (cancels=${cancels}, ${JSON.stringify(trail.slice(-2))})`);
 		h.check(g2.length === 1 && g2[0].members.length === 2, `${name} 2.2 ...and the group stays whole (${JSON.stringify(g2.map((g) => g.members))})`);
+		const tab = await tabCentre(page, 'Objects');
+		const before = await stripPos(page);
+		// quick steps: a finger crosses the 8 px lock long before the 350 ms long-press lift (headless frames are slow)
+		if (tab && before) await touchDrag(page, cdp, tab, { x: 0, y: 120 }, 4);
+		const after = await stripPos(page);
+		h.check(!!tab && !!before && !!after && before.x === after.x && before.y === after.y && (await groups(page)).length === 1, `${name} 2.3 a plain vertical touch drag on a tab name moves nothing (${JSON.stringify({ tab, before, after })})`);
+
+		// the grip drag above moved the group right: park it back so its tabs are on a folded screen
+		await page.evaluate(() => {
+			let g;
+			window.__stores.windowTabs.tabGroups.subscribe((v) => (g = v))();
+			if (g[0]) window.__stores.windowTabs.moveGroup(g[0].id, 20 - g[0].rect.left, 300 - g[0].rect.top);
+		});
+		await page.waitForTimeout(300);
 
 		// 3 — long-press a tab → the kit menu
 		const fc = await tabCentre(page, 'Flow Code');

@@ -2,6 +2,8 @@ import { writable, derived, readable, get } from 'svelte/store';
 import { safeStorage } from './safeStorage';
 import { phoneShell } from './ui/phoneShell.js';
 import { SIDES, sidebarsWide, sidebarVisible, sidebarWanted, sidebarTabs, toggleSidebar } from './sidebars';
+import { registerChromeButton } from './chromeButtons';
+import { onLayoutRestore } from './uiLayoutsCore';
 
 // dock-fixes item 8 (owner 2026-11-08) — THE PANELS BUTTON. "On a phone UNFOLDED / tablet the sidebars
 // must always be reachable": Ctrl+B / Ctrl+Alt+B (44 M7) have no keyboard there, and a column hidden by
@@ -31,6 +33,9 @@ export const panelsButtonMode = writable(/** @type {PanelsButtonMode} */ (asMode
 panelsButtonMode.subscribe((v) => {
 	if (typeof localStorage !== 'undefined') safeStorage.setItem(KEY, v);
 });
+// panel-gestures item 5: the mode rides the named workspace layouts (a hidden Panels button is a hidden chrome
+// button, saved per layout like the rest); a layout just rewrote the key: re-read it
+onLayoutRestore(() => panelsButtonMode.set(asMode(safeStorage.getItem(KEY))));
 
 /** a touch screen (no hover, coarse pointer) — the unfolded phone and the tablet */
 const coarse = readable(false, (set) => {
@@ -74,7 +79,41 @@ export function togglePanels() {
 	for (const s of back) toggleSidebar(s, true);
 }
 
+/** the mode the button had before it was hidden, so Show brings back the same one @type {PanelsButtonMode|null} */
+let beforeHide = null;
+
 /** "Hide this button" (its menu) — Settings brings it back @returns {void} */
 export function hidePanelsButton() {
+	const m = get(panelsButtonMode);
+	if (m !== 'off') beforeHide = m;
 	panelsButtonMode.set('off');
 }
+
+/** "Show buttons ▸ Panels" / Customize buttons: back to the mode it had; with none known, 'auto' on a touch
+ * screen (where auto draws it) and 'on' with a mouse (where auto would leave it hidden) */
+function showPanelsButton() {
+	if (get(panelsButtonMode) !== 'off') return;
+	panelsButtonMode.set(beforeHide ?? (get(coarse) ? 'auto' : 'on'));
+}
+
+// panel-gestures item 5: the Panels button is one of the hideable chrome buttons. Its shown / hidden state is
+// its own mode (Settings ▸ Interface ▸ Panels button keeps working), so it registers BOUND — the generic menu,
+// Show buttons and Settings ▸ Customize buttons all switch that mode, and 'off' is what they read as hidden.
+registerChromeButton({
+	id: 'top.panels',
+	kind: 'top',
+	label: 'Panels',
+	icon: 'columns-3',
+	state: {
+		hidden: derived(panelsButtonMode, ($m) => $m === 'off'),
+		set: (hidden) => (hidden ? hidePanelsButton() : showPanelsButton())
+	},
+	menu: () => [
+		{
+			label: get(panelsOpen) ? 'Hide the sidebars' : 'Show the sidebars',
+			icon: 'columns-3',
+			tooltip: 'Show or hide both sidebars — their tabs stay open',
+			action: () => togglePanels()
+		}
+	]
+});

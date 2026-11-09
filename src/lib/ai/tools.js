@@ -61,6 +61,7 @@ import { SCENE_SETUP_TOOL_NAMES, SCENE_SETUP_AI_TOOLS, SCENE_SETUP_PROMPT, scene
 import { LEVELS_TOOL_NAMES, LEVELS_AI_TOOLS, LEVELS_PROMPT, levelsTool } from './levelsTools.js'; // 93
 import { WORLD_TOOL_NAMES, WORLD_AI_TOOLS, WORLD_PROMPT, worldTool, resolvePatterns } from './worldTools.js';
 import { RUNTIME_TOOL_NAMES, RUNTIME_AI_TOOLS, RUNTIME_PROMPT, runtimeTool } from './runtimeTools.js';
+import { beginAiEdit, endAiEdit } from '../sceneEditBy.js'; // 78-int PL13: "changed by Claude (AI)"
 
 // AI tool layer (roadmap #10, A4). Maps OpenAI-style function calls onto the
 // existing REPLICATED mutation surface — every tool applies locally AND broadcasts
@@ -1028,8 +1029,9 @@ export function repairToolCall(rawName, rawArgs) {
 const PHYSICS_DISABLED =
 	'physics tools are disabled — enable "Physics tools" for this provider in Settings → AI';
 
-/** @typedef {{physics?: boolean}} ToolOpts `physics`: offer + run the physics tools for THIS caller whatever the
- * provider's checkbox says (86-fix B1: the Claude connector; the person's own assistant keeps its setting) */
+/** @typedef {{physics?: boolean, by?: string}} ToolOpts `physics`: offer + run the physics tools for THIS caller whatever the
+ * provider's checkbox says (86-fix B1: the Claude connector; the person's own assistant keeps its setting).
+ * `by` (78-int PL13): who the scene panel says made the edit ("Claude" for the connector; absent = "AI assistant") */
 
 /** 55 A8: one observer of every tool call — `(name, args) => (result) => void`, set by the agent
  * page's action-log recorder. Null everywhere else (the call path is unchanged). @type {any} */
@@ -1047,6 +1049,17 @@ export function setAiToolObserver(fn) {
  * @returns {Promise<any>}
  */
 export async function executeAiTool(rawName, rawArgs, opts) {
+	// 78-int PL13: a scene edit made while the call runs is the AI's on the Configure Scene "changed by" line
+	beginAiEdit(opts?.by || 'AI assistant');
+	try {
+		return await observedAiTool(rawName, rawArgs, opts);
+	} finally {
+		endAiEdit();
+	}
+}
+
+/** @param {string} rawName @param {any} rawArgs @param {ToolOpts} [opts] @returns {Promise<any>} */
+async function observedAiTool(rawName, rawArgs, opts) {
 	if (!aiToolObserver) return runAiTool(rawName, rawArgs, opts);
 	const { name, args } = repairToolCall(rawName, rawArgs);
 	/** @type {any} */

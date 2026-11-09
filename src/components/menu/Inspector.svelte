@@ -267,7 +267,10 @@
 		clearSnapAnchor,
 		saveSnapAnchorAsOrigin
 	} from '$lib/snapEngine';
-	import { peers, inspectorClose, inspectorKind, inspectorPinned, showToast, inspectorFilter } from '../../stores/appStore.js';
+	import { peers, inspectorClose, inspectorKind, inspectorPinned, showToast, inspectorFilter, userdata } from '../../stores/appStore.js';
+	// 78-int PL13: "changed by <peer / agent> · time" under the shared Configure Scene sections
+	import { sceneSectionEdits } from '$lib/sceneEditBy.js';
+	import { editLine } from '$lib/sceneEditByCore.js';
 	import { safeStorage } from '$lib/safeStorage';
 	import {
 		isShaderDriven,
@@ -1672,6 +1675,15 @@
 	// 78-int PL15 (scene panel item 3, owner APPROVED 2026-11-08): SIX featured pills + More. The one
 	// row of choices stays short; More opens IN PLACE (no popover, the same on a phone) with the rest
 	// in groups. The applied preset is always on the row: one that lives under More takes the 6th slot.
+	// 78-int PL13: the "changed by" clock ticks twice a minute while the panel is up
+	let editClock = $state(Date.now());
+	$effect(() => {
+		const t = setInterval(() => (editClock = Date.now()), 30000);
+		return () => clearInterval(t);
+	});
+	/** the line under a shared section's header ('' = none) @param {string} label */
+	const sectionNote = (label) =>
+		editLine($sceneSectionEdits[label], { now: Math.max(editClock, $sceneSectionEdits[label]?.at ?? 0), others: (/** @type {any[]} */ ($userdata) ?? []).length > 1 });
 	const ENV_FEATURED = ['studio', 'daylight', 'sunset', 'night', 'clearsky', 'cinematic'];
 	/** the pill that reads as applied: an edited copy's base preset, else the state's own key */
 	const envPillValue = $derived($environment.preset === 'custom' && envState.basedOn ? envState.basedOn : $environment.preset);
@@ -1952,7 +1964,7 @@
 			     what only this device keeps. Environment + Scene look start open, the rest closed (remembered
 			     per device by Section). Deep links and the filter key off the labels / aliases, unchanged. -->
 			<h3 id="scene-group-shared" class="ins-group-label">The scene <span class="ins-group-who">· everyone sees it</span></h3>
-			<Section variant="panel" label="Environment" aliases={['Background', 'Fog']}>
+			<Section variant="panel" label="Environment" aliases={['Background', 'Fog']} note={sectionNote('Environment')}>
 				<!-- 38 R5: the presets are Chips in the one accent; a press re-applies the
 				     preset even when it is already selected, exactly as the old buttons did -->
 				<Chips
@@ -2238,7 +2250,7 @@
 				 The LABEL changed and the deep-link name did not: `openSceneSection` matches
 				 on it, so both names resolve (the 21-G1 rule — the user-visible word moves,
 				 the identifier already written down does not). -->
-			<Section variant="panel" label="Scene look" aliases={['Post-processing']}>
+			<Section variant="panel" label="Scene look" aliases={['Post-processing']} note={sectionNote('Scene look')}>
 				<p class="mb-1 text-[length:var(--fs-badge)] text-text-muted">
 					Three layers, all of them scene data that everyone sees: effects over the
 					finished frame (below), a default material every object without its own
@@ -2265,7 +2277,7 @@
 			<!-- 38 NOTES-38 #33: Play is its own section (it was the "Play mode" block inside Physics):
 			     how the pointer acts, grab reach, flying, the simulation, the Playing banner and where
 			     play starts. Same rows, same ids, same scene data (the play block). -->
-			<Section variant="panel" label="Play" closed aliases={['Play mode']}>
+			<Section variant="panel" label="Play" closed aliases={['Play mode']} note={sectionNote('Play')}>
 				<PropRow label="Pointer" valueBox={false}>
 					{#snippet control()}
 					<ThemedSelect
@@ -2368,9 +2380,9 @@
 				</div>
 			</Section>
 
-			<Section variant="panel" label="Levels" closed aliases={['Level', 'Portals', 'Checkpoints', 'Loading screen', 'Keep across levels']}><LevelsSection /></Section>
+			<Section variant="panel" label="Levels" closed aliases={['Level', 'Portals', 'Checkpoints', 'Loading screen', 'Keep across levels']} note={sectionNote('Levels')}><LevelsSection /></Section>
 
-			<Section variant="panel" label="Physics" closed>
+			<Section variant="panel" label="Physics" closed note={sectionNote('Physics')}>
 				<!-- B4: ONE section, three labelled sub-blocks (the Snapping section's
 					 internal grouping). Splitting it would break its collapse state, the
 					 openSceneSection('Physics') deep link AND inspectorFilter, all three
@@ -2624,7 +2636,7 @@
 
 			</Section>
 
-			<Section variant="panel" label="Music" closed>
+			<Section variant="panel" label="Music" closed note={sectionNote('Music')}>
 				<p class="ui-section-label">Scene track (shared)</p>
 				<!-- 38 NOTES-38 #24 (design page): the track and its Play/Stop on one row -->
 				<div class="flex items-center gap-2">
@@ -2666,10 +2678,10 @@
 			</Section>
 
 			<!-- 46 P2: the scene's LOD distance (replicated) -->
-			<SceneLodSection closed />
+			<SceneLodSection closed note={sectionNote('Level of detail')} />
 
 			<!-- 36 F22 / S8: scene data, saved + replicated -->
-			<Section variant="panel" label="Selection outline" closed aliases={['Advanced', 'Selection']}><SelectionPassSetting /></Section>
+			<Section variant="panel" label="Selection outline" closed aliases={['Advanced', 'Selection']} note={sectionNote('Selection outline')}><SelectionPassSetting /></Section>
 
 			<h3 id="scene-group-device" class="ins-group-label">This device <span class="ins-group-who">· only you</span></h3>
 			<!-- 42 I12 put Quality on TOP; 78-int PL17 makes it the first of This device -->

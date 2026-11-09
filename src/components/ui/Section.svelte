@@ -35,7 +35,7 @@
 	 * look open). The person's own choice, once made, is what the stored key says from then on.
 	 * An ALIAS that names a `data-anchor` inside the section lands on that sub-heading (Background and
 	 * Fog live inside Environment now; `openSceneSection('Fog')` still lands on the fog rows).
-	 * @type {{label?: string, aliases?: string[], collapsible?: boolean, open?: boolean, closed?: boolean, variant?: 'legacy'|'card'|'panel', badge?: string, children?: any, clip?: any}}
+	 * @type {{label?: string, aliases?: string[], collapsible?: boolean, open?: boolean, closed?: boolean, variant?: 'legacy'|'card'|'panel', badge?: string, note?: string, children?: any, clip?: any}}
 	 */
 	let {
 		label = '',
@@ -45,6 +45,7 @@
 		closed = false,
 		variant = 'legacy',
 		badge = '',
+		note = '',
 		children = null,
 		clip = undefined
 	} = $props();
@@ -192,6 +193,8 @@
 				{#if badge}<Badge tone="scope" text={badge} />{/if}
 			</div>
 		{/if}
+		<!-- 78-int PL13: "changed by <peer / agent> · time", shown open or closed -->
+		{#if note && !filtering}<p class="sec-note" data-section-note>{note}</p>{/if}
 		{#if showContent}
 			<div class="sec-panel-body">
 				{@render children?.()}
@@ -299,6 +302,12 @@
 	}
 	.sec-chev-open {
 		transform: rotate(90deg);
+	}
+	.sec-note {
+		margin: -4px 0 4px calc(16px + var(--space-2));
+		font-size: var(--fs-badge);
+		line-height: 1.3;
+		color: var(--text-muted);
 	}
 	.sec-panel-body {
 		display: flex;

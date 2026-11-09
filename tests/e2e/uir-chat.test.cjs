@@ -197,6 +197,20 @@ h.run(async () => {
 		return v.filter((m) => m.text === 'hello from A').length;
 	});
 	h.check(count === 1, `4.11 …and shows each line once (${count})`);
+	// the list's own guard: a line pushed again with an id already on screen (a caller that does not merge)
+	await press(A, '#chat-button', 'session');
+	const dup = await A.page.evaluate(() => {
+		const st = window.__stores.messages;
+		let v;
+		st.subscribe((x) => (v = x))();
+		const m = v.find((x) => x.text === 'hello from A');
+		st.update((l) => [...l, { ...m, saved: undefined, past: undefined }]);
+		st.subscribe((x) => (v = x))();
+		return v.filter((x) => x.id === m.id).length;
+	});
+	await A.page.waitForTimeout(500);
+	h.check(dup === 2, `4.12 premise (counterfactual): the store holds the line twice (${dup})`);
+	h.check((await A.page.locator('#messages li', { hasText: 'hello from A' }).count()) === 1 && h.pageErrors(A).length === 0, `4.13 the Session list shows it once and nothing throws (${h.pageErrors(A).slice(0, 1).join('')})`);
 
 	// ---- 6. another scene's log, read only ------------------------------------------------------------------
 	console.log('\n=== 6. another scene ===');

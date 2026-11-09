@@ -83,7 +83,19 @@
 
 	// what the list shows: the live chat, or a saved scene's log (read-only)
 	const archive = $derived($archiveView);
-	const lines = $derived(archive ? archive.lines : $messages);
+	// one row per id: the list is keyed by id, and since chats are saved a line can reach the store twice
+	// (a saved line and the same line pushed again by a caller that does not merge) — a repeated key would
+	// throw the whole list away, so the later copy is dropped
+	const lines = $derived.by(() => {
+		const list = archive ? archive.lines : $messages;
+		const seen = new Set();
+		return list.filter((m: any) => {
+			if (m?.id == null) return true;
+			if (seen.has(m.id)) return false;
+			seen.add(m.id);
+			return true;
+		});
+	});
 
 	// pin to bottom on new messages; count them as unread while scrolled up
 	let lastCount = 0;

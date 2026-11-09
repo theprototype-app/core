@@ -18,8 +18,9 @@ export const BASE_SUBSTEPS = 8;
 export const HARD_SUBSTEPS = 60;
 export const BASE_FEED = 0.25;
 export const MAX_FEED = 1.0;
-/** ms of stepping a frame may spend catching up (under the slow-step guard's 24 ms) */
-export const STEP_BUDGET_MS = 16;
+/** ms of stepping a frame may spend catching up (under the slow-step guard's 24 ms, with room
+ * for the write-back and the broadcast that follow the substeps) */
+export const STEP_BUDGET_MS = 14;
 
 export const HANDOFF_MARGIN = 0.6;
 export const HANDOFF_SUSTAIN_MS = 3000;
@@ -33,7 +34,9 @@ export const VOTE_STALE_MS = 6000;
  * @param {number} fixedDt @returns {{maxSub: number, feed: number}}
  */
 export function paceLimits(substepMs, fixedDt) {
-	const fit = substepMs > 0 ? Math.floor(STEP_BUDGET_MS / substepMs) : HARD_SUBSTEPS;
+	// an UNKNOWN cost (the first frame of a run) takes the old caps: a heavy scene's first frame
+	// must not try 60 substeps before anything has been measured
+	const fit = substepMs > 0 ? Math.floor(STEP_BUDGET_MS / substepMs) : BASE_SUBSTEPS;
 	const maxSub = Math.max(BASE_SUBSTEPS, Math.min(HARD_SUBSTEPS, fit));
 	const feed = Math.max(BASE_FEED, Math.min(MAX_FEED, maxSub * fixedDt));
 	return { maxSub, feed };

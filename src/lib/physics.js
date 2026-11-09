@@ -37,6 +37,9 @@ import { velocityFromSamples, clampThrow, MAX_LINVEL, MAX_ANGVEL } from './throw
 // decision is a pure function of four facts, so its truth table is a vitest unit.
 import { simulateVerdict } from './simAuthority';
 import { myKind } from './inviteStore'; // 55: an agent page never simulates
+// 78 F25: the pace caps + the handoff vote rules (a leaf: pure functions + the frame meter)
+import { paceLimits, handoffCandidate, handoffDue, currentFrameMs, startFrameMeter, VOTE_EVERY_MS, VOTE_STALE_MS } from './simPace';
+import { isViewer } from './objectPermissions'; // 78 F25: a viewer never takes the world
 // fix-batch-1 #14: the impact rule (closing speed along the contact normal, the legacy
 // downward channel beside it) as a leaf of pure functions
 import { closingSpeed, IMPACT_MIN_DOWN_VY, IMPACT_MIN_SPEED } from './impactSpeed';
@@ -109,6 +112,19 @@ let suspendedForRun = [];
 let lastStep = 0;
 let lastBroadcast = 0;
 let accumulator = 0; // fixed-timestep leftover (see step)
+// 78 F25: what this run's pace looks like (physicsPace) and what a substep costs here
+let substepEma = 0;
+/** @type {{simTime: number, startedAt: number, maxSub: number, feed: number, substeps: number, dropped: number}} */
+let pace = { simTime: 0, startedAt: 0, maxSub: 8, feed: 0.25, substeps: 0, dropped: 0 };
+/** @type {Map<string, {peerId: string, frameMs: number, at: number}>} the spectators' frame times (initiator) */
+const simVotes = new Map();
+let handoffState = { candidate: /** @type {string | null} */ (null), since: 0, lastHandoff: 0 };
+let handoffCount = 0;
+let handoffEnabled = true; // TEST/DEBUG knob (setSimHandoffEnabled)
+/** @type {{from: string, at: number, velocities: Record<string, number[]>, before: Record<string, any>} | null} */
+let pendingHandoff = null;
+/** @type {ReturnType<typeof setInterval> | null} */
+let paceTimer = null;
 // PFX-C: collision events. Rapier only reports contacts when an EventQueue is
 // passed to world.step AND a collider in the pair carries ActiveEvents flags —
 // neither existed before this phase. Impacts are INITIATOR-detected (only the
@@ -1079,7 +1095,9 @@ export function physicsAddBody(uuid) {
 	return true;
 }
 
-/** @param {{play?: boolean}} [opts] */
+/** 78 F25: `handoff` = this peer takes over a run a slower initiator handed it (the bodies'
+ * velocities and the run's original start poses ride along).
+ * @param {{play?: boolean, handoff?: {from: string, velocities: Record<string, number[]>, before: Record<string, any>}}} [opts] */
 async function startSimulation(opts = {}) {
 	const group = get(objectsGroup);
 	/** @type {any} */
@@ -1098,7 +1116,7 @@ async function startSimulation(opts = {}) {
 	// Character Controller in the scene, a run with no dynamic body is the player's world (walls,
 	// floors, sensors) — not "nothing to simulate", and never the selection fallback below (which
 	// would turn the platform you last placed into a falling crate the moment you press Play).
-	const levelRun = opts.play === true || get(isLocked) === true || get(charControl) !== null;
+	const levelRun = opts.play === true || get(isLocked) === true || get(charControl) !== null || !!opts.handoff;
 	if (dynamicUuids.length === 0 && !levelRun) {
 		const selected = get(selectedObject);
 		// 33 P2: never a FUNCTIONAL pack item (a door, a chest): its colliders are the frame
@@ -1228,12 +1246,36 @@ async function startSimulation(opts = {}) {
 		})
 	];
 
+	// 78 F25: A HANDED-OVER RUN CONTINUES, it does not restart. Every body carries on with the
+	// velocity it had on the old initiator, and the run keeps ITS start poses, so Stop's undo
+	// entry and Reset still go back to where the run began rather than to the handoff moment.
+	if (opts.handoff) {
+		const { velocities, before } = opts.handoff;
+		bodies.forEach((entry) => {
+			const v = velocities?.[entry.object.uuid];
+			if (entry.mode !== 'dynamic' || !Array.isArray(v) || v.length !== 6 || !v.every(Number.isFinite)) return;
+			entry.body.setLinvel({ x: v[0], y: v[1], z: v[2] }, true);
+			entry.body.setAngvel({ x: v[3], y: v[4], z: v[5] }, true);
+		});
+		beforeStates.forEach((row) => {
+			if (before?.[row.uuid]) row.before = before[row.uuid];
+		});
+	}
+
 	simulating.set(true);
 	simPaused.set(false);
-	if (peer) peer.send({ type: 'simulate', running: true, peerId: peer.peer.id });
+	if (peer) peer.send({ type: 'simulate', running: true, peerId: peer.peer.id, ...(opts.handoff ? { handoff: true } : {}) });
 	lastStep = performance.now();
 	accumulator = 0;
+	resetPace();
 	setPostTick(step); // steps at the end of every flowRuntime tick
+	ensurePaceTimer();
+	// 78 F25: a spectator that held on to the old initiator under the lower-id verdict (its stop
+	// had not landed when our start did) adopts us from this second start
+	if (opts.handoff && peer)
+		setTimeout(() => {
+			if (get(simulating) && peer) peer.send({ type: 'simulate', running: true, paused: get(simPaused), peerId: peer.peer.id, handoff: true });
+		}, 1000);
 }
 
 /**
@@ -1731,7 +1773,7 @@ export function bodyVelocityOf(uuid) {
 }
 
 const FIXED_DT = 1 / 60;
-const MAX_SUBSTEPS = 8;
+// 78 F25: the old fixed caps (8 substeps / 0.25 s) are simPace's BASE_SUBSTEPS / BASE_FEED now
 const buoyOut = buoyancyOut(); // 36-sim I1: one scratch result for every body
 
 /** @param {number} now */
@@ -1841,12 +1883,27 @@ function stepInner(now) {
 	// B4: global time scale. Scale the accumulator FEED, never world.timestep —
 	// changing the timestep changes solver behaviour, i.e. makes the sim
 	// differently wrong rather than slower.
-	accumulator += Math.min((now - lastStep) / 1000, 0.25) * (get(scenePhysicsDefaults).timeScale ?? 1);
+	// 78 F25: THE CAPS FOLLOW THIS DEVICE. They were 0.25 s of feed and 8 substeps a frame, and
+	// the backlog past them was thrown away, so below ~30 fps the whole session's world ran in
+	// slow motion (only the initiator steps it). paceLimits sizes both from the measured cost
+	// of a substep, and the backlog is KEPT up to one feed (beyond that it is dropped — the
+	// spiral guard), so sim time keeps up with wall time unless stepping itself is the slow part.
+	const timeScale = get(scenePhysicsDefaults).timeScale ?? 1;
+	const limits = paceLimits(substepEma, FIXED_DT);
+	pace.maxSub = limits.maxSub;
+	pace.feed = limits.feed;
+	accumulator += Math.min((now - lastStep) / 1000, limits.feed) * timeScale;
 	lastStep = now;
-	const substeps = Math.min(Math.floor(accumulator / FIXED_DT), MAX_SUBSTEPS);
+	const substeps = Math.min(Math.floor(accumulator / FIXED_DT), limits.maxSub);
 	if (substeps === 0) return; // sub-frame remainder — step next frame
 	accumulator -= substeps * FIXED_DT;
-	if (accumulator > FIXED_DT) accumulator = 0; // drop the capped backlog
+	const keep = Math.max(FIXED_DT, limits.feed * timeScale);
+	if (accumulator > keep) {
+		pace.dropped += accumulator - keep;
+		accumulator = keep;
+	}
+	if (timeScale > 0) pace.simTime += (substeps * FIXED_DT) / timeScale;
+	pace.substeps += substeps;
 
 	// EXTERNAL-write detection: a dynamic body's object transform is physics-
 	// owned between our write-backs — if it deviated, another writer (a peer's
@@ -1920,6 +1977,7 @@ function stepInner(now) {
 	const gravityY = floaters.length ? get(sceneGravity) : 0;
 	const stepPos = new THREE.Vector3();
 	const stepQuat = new THREE.Quaternion();
+	const substepsStarted = performance.now(); // 78 F25: what a substep costs on this device
 	for (let k = 1; k <= substeps; k++) {
 		const f = k / substeps;
 		for (const feed of feeds) {
@@ -1950,6 +2008,8 @@ function stepInner(now) {
 			queueSensorEvent(h1, h2, started); // A3: enter/exit edges
 		});
 	}
+	const perSubstep = (performance.now() - substepsStarted) / substeps;
+	substepEma = substepEma ? substepEma * 0.8 + perSubstep * 0.2 : perSubstep;
 	dispatchImpacts();
 	dispatchEnterExit();
 
@@ -2308,9 +2368,11 @@ export function pauseSimulation(paused) {
 	if (peer) peer.send({ type: 'simulate', running: true, paused: next, peerId: peer.peer.id });
 }
 
-/** @param {{reset?: boolean, reason?: string, yielded?: boolean}=} opts reset restores the
+/** @param {{reset?: boolean, reason?: string, yielded?: boolean, handoff?: boolean}=} opts reset restores the
  * initial layout (no undo entry); 27-C passes a `reason` when a failing step stops the run;
- * 29-F passes `yielded` when this run lost a Play race (see below). */
+ * 29-F passes `yielded` when this run lost a Play race (see below); 78 F25 passes `handoff`
+ * when the run moved to a faster peer (the settling moves still go out, so the new initiator
+ * starts from these exact poses, but no undo entry and no toast — the run did not end). */
 export function stopSimulation(opts = {}) {
 	if (!get(simulating)) return;
 	setPostTick(null); // clear the hook BEFORE freeing the world
@@ -2346,7 +2408,7 @@ export function stopSimulation(opts = {}) {
 		// `notifyExternalMove` still runs either way: our local poses are about to be
 		// replaced by the winner's stream, and a half-applied interpolation must not
 		// survive that.
-		if (!opts.reset && !opts.yielded && JSON.stringify(before) !== JSON.stringify(after))
+		if (!opts.reset && !opts.yielded && !opts.handoff && JSON.stringify(before) !== JSON.stringify(after))
 			items.push({ uuid, before, after });
 		notifyExternalMove(uuid);
 		if (peer && !opts.yielded)
@@ -2518,12 +2580,149 @@ export function applySimulate(data) {
 	remoteSimPaused.set(!!(data?.running && data?.paused));
 	// a finished run must not leave an interpolation half-applied
 	if (!data?.running) import('./moveSmoothing').then((m) => m.clearMoveSmoothing()).catch(() => {});
-	if (data?.running && !data?.paused && verdict !== 'yield')
+	// 78 F25: a handed-over run is the same run moving house — no "is simulating" toast
+	if (data?.running && !data?.paused && verdict !== 'yield' && !data?.handoff)
 		showToast('▶ ' + nameOf(data.peerId) + ' is simulating physics');
+	if (data?.running) ensurePaceTimer();
+	// 78 F25: the old initiator's stop is the cue to take the world it handed us (it arrives
+	// after its simhandoff and its settling moves on the same ordered connection)
+	if (!data?.running && pendingHandoff && theirs === pendingHandoff.from) takeHandoff();
+}
+
+// ---- 78 F25: the slow-initiator handoff -------------------------------------------------------
+//
+// Only the initiator steps the world, so its frame rate is everybody's clock. While a run is on,
+// every spectator reports its frame time (`simvote`, every VOTE_EVERY_MS); the initiator hands the
+// world to a clearly faster peer (simPace.handoffCandidate + handoffDue: at most 60 % of our frame
+// time, for 3 s running, at most once per 10 s) with every body's velocity and the run's start
+// poses (`simhandoff`), then stops quietly. The target starts on the stop. Never handed to or by:
+// an AI agent's page (1.48.0: an agent never steps), a viewer (its moves would be refused), and
+// never away from an initiator that is WALKING on its world in Play (its walls exist only there).
+
+function resetPace() {
+	pace = { simTime: 0, startedAt: performance.now(), maxSub: pace.maxSub, feed: pace.feed, substeps: 0, dropped: 0 };
+	simVotes.clear();
+	handoffState = { candidate: null, since: 0, lastHandoff: handoffState.lastHandoff };
+	pendingHandoff = null;
+}
+
+/** start the vote/handoff round timer (idempotent; it stops itself once no run is on) */
+function ensurePaceTimer() {
+	startFrameMeter();
+	if (paceTimer || typeof setInterval !== 'function') return;
+	paceTimer = setInterval(paceRound, VOTE_EVERY_MS);
+}
+
+function paceRound() {
+	/** @type {any} */
+	const peer = get(peers);
+	const mine = peer?.peer?.id;
+	if (get(simulating)) {
+		maybeHandOff(peer, mine);
+		return;
+	}
+	if (get(remoteSimulating)) {
+		// a spectator votes; an agent page and a viewer never take the world, so they never vote
+		if (!peer || !mine || myKind() === 'agent' || isViewer()) return;
+		const frameMs = currentFrameMs();
+		if (frameMs > 0) peer.send({ type: 'simvote', peerId: mine, frameMs: Math.round(frameMs * 10) / 10 });
+		return;
+	}
+	if (paceTimer) clearInterval(paceTimer);
+	paceTimer = null;
+}
+
+/** @param {any} peer @param {string | undefined} mine */
+function maybeHandOff(peer, mine) {
+	if (!peer || !mine || !handoffEnabled || get(simPaused)) return;
+	// walking on our own world in Play: the walls stop our player only here (fork 4)
+	if (get(isLocked) === true && get(charControl) !== null) return;
+	const now = Date.now();
+	const open = new Set(peer.openedPeers ?? []);
+	const votes = [...simVotes.values()].filter((v) => !open.size || open.has(v.peerId));
+	const due = handoffDue(handoffState, handoffCandidate(currentFrameMs(), votes, now), now);
+	if (!due) return;
+	/** @type {Record<string, number[]>} */
+	const velocities = {};
+	bodies.forEach((entry) => {
+		if (entry.mode !== 'dynamic') return;
+		const l = entry.body.linvel();
+		const a = entry.body.angvel();
+		velocities[entry.object.uuid] = [l.x, l.y, l.z, a.x, a.y, a.z].map((n) => Math.round(n * 1e4) / 1e4);
+	});
+	/** @type {Record<string, any>} */
+	const before = {};
+	beforeStates.forEach((row) => (before[row.uuid] = row.before));
+	handoffCount++;
+	console.info('[physics] handing the simulation to', due, '(frame', currentFrameMs().toFixed(1), 'ms here, theirs', simVotes.get(due)?.frameMs, 'ms)');
+	peer.send({ type: 'simhandoff', to: due, from: mine, velocities, before });
+	stopSimulation({ handoff: true });
+}
+
+/** a spectator's frame time (initiator side) @param {any} data @param {string} fromPeer the connection's peer */
+export function applySimVote(data, fromPeer) {
+	if (!get(simulating)) return;
+	const frameMs = Number(data?.frameMs);
+	if (!fromPeer || !Number.isFinite(frameMs) || frameMs <= 0) return;
+	simVotes.set(fromPeer, { peerId: fromPeer, frameMs, at: Date.now() });
+}
+
+/** the initiator picked us: remember it, and start on its stop (applySimulate)
+ * @param {any} data @param {string} fromPeer the connection's peer */
+export function applySimHandoff(data, fromPeer) {
+	/** @type {any} */
+	const peer = get(peers);
+	if (!peer?.peer?.id || data?.to !== peer.peer.id || !fromPeer) return;
+	if (get(simulating) || myKind() === 'agent') return;
+	const velocities = data?.velocities && typeof data.velocities === 'object' ? data.velocities : {};
+	const before = data?.before && typeof data.before === 'object' ? data.before : {};
+	pendingHandoff = { from: fromPeer, at: Date.now(), velocities, before };
+}
+
+function takeHandoff() {
+	const handoff = pendingHandoff;
+	pendingHandoff = null;
+	if (!handoff || Date.now() - handoff.at > VOTE_STALE_MS || get(simulating)) return;
+	handoffCount++;
+	// the settling moves are still easing in: land them before the world is built from the poses
+	import('./moveSmoothing')
+		.then((m) => m.clearMoveSmoothing())
+		.catch(() => {})
+		.then(() => startSimulation({ handoff }))
+		.catch((error) => console.warn('taking over the simulation failed', error));
+}
+
+/** TEST/DEBUG: switch the handoff off (or back on) on THIS peer @param {boolean} on */
+export function setSimHandoffEnabled(on) {
+	handoffEnabled = !!on;
+}
+
+/** 78 F25: this run's pace on THIS peer — sim seconds stepped (timeScale removed) since the run
+ * started here, the live caps, the measured costs, the frame time and the handoff count. */
+export function physicsPace() {
+	return {
+		running: !!world,
+		simTime: pace.simTime,
+		wallMs: world ? performance.now() - pace.startedAt : 0,
+		/** wall ms up to the last frame that stepped (simTime is exact at that moment, to one substep) */
+		steppedWallMs: world ? lastStep - pace.startedAt : 0,
+		maxSub: pace.maxSub,
+		feed: pace.feed,
+		substeps: pace.substeps,
+		dropped: pace.dropped,
+		substepMs: Math.round(substepEma * 1000) / 1000,
+		frameMs: Math.round(currentFrameMs() * 10) / 10,
+		votes: [...simVotes.values()],
+		handoffs: handoffCount,
+		pendingHandoff: pendingHandoff ? pendingHandoff.from : null,
+		handoffEnabled
+	};
 }
 
 /** @param {string} peerId */
 export function physicsPeerDisconnected(peerId) {
+	simVotes.delete(peerId); // 78 F25: a peer that left cannot take the world
+	if (pendingHandoff?.from === peerId) pendingHandoff = null;
 	if (get(remoteSimulating) === peerId) {
 		remoteSimulating.set(null);
 		remoteSimPaused.set(false);

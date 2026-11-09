@@ -616,7 +616,7 @@ export function roomsOfSession(map, mine, host) {
 export const ROOM_SCOPED = new Set([
 	// object lifecycle & geometry
 	'create', 'light', 'group', 'object', 'objectfile', 'duplicate', 'delete', 'name',
-	'move', 'throw', 'hit', 'behavior', 'simulate', 'color', 'objectParameters', 'geometry', 'lighttarget',
+	'move', 'throw', 'hit', 'behavior', 'simulate', 'simvote', 'simhandoff', 'color', 'objectParameters', 'geometry', 'lighttarget',
 	'verts', 'meshgeo', 'uvpaint', 'uvpaintend', 'splineedit', 'drawlive', 'drawend',
 	'clearscene', 'loading',
 	// flow

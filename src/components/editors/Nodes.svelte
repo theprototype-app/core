@@ -96,6 +96,8 @@
 	import { isValidFlowConnection, typeColor, socketShape, SOCKET_TYPES, replaceableInputEdges, groupSocketType, resolvedInputType } from '$lib/flowSockets';
 	import { lintFlowGraph, type FlowLintFinding } from '$lib/flowLint.js'; // 78 F24
 	import { fittingNodes, wireMenuRows, candidateOutputs, type WireEnd } from '$lib/wireSearch.js'; // 78 F1
+	import { animateInEditor, toggleAnimateInEditor } from '$lib/editorMotion'; // 78 F6
+	import { liveStateGraph, nodeLiveStates, clearLiveStates } from '$lib/nodeLiveState'; // 78 F7
 	import { variadicSocketExists, switcherItems, MAX_SWITCHER_ITEMS, SWITCHER_TYPES, switcherVType } from '$lib/variadicNodes.js'; // 37 (R6)
 	import { removeVariadicSocket, setSwitcherType, addSwitcherItem } from '$lib/variadicEdit.js'; // 37 (R6)
 	import KitButton from '../ui/Button.svelte'; // 37: the Switcher ⓘ rows on the redesign kit
@@ -1906,6 +1908,27 @@
 		};
 	}
 
+	// 78 F7: LIVE STATE ON THE CARDS — the runtime publishes one short line per card of the graph
+	// shown here (~4 Hz, $lib/nodeLiveState.js); each sits just under its card. Only while mounted.
+	$effect(() => {
+		liveStateGraph.set(activeId);
+	});
+	onMount(() => () => {
+		liveStateGraph.set(null);
+		clearLiveStates();
+	});
+	const liveChips = $derived.by(() => {
+		const states = $nodeLiveStates;
+		const out: { id: string; text: string; x: number; y: number; w: number }[] = [];
+		for (const n of nodes as any[]) {
+			const text = states[n.id];
+			if (!text || n.hidden || isPseudo(n)) continue;
+			const h = n.measured?.height ?? n.height ?? 40;
+			out.push({ id: n.id, text, x: n.position.x, y: n.position.y + h + 3, w: n.measured?.width ?? n.width ?? 150 });
+		}
+		return out;
+	});
+
 	// muted / collapsed cards: one generated stylesheet keyed by node id, so no node
 	// component has to learn about either (CSS.escape keeps a hostile id inert)
 	const bpSet = $derived(new Set($debugBreakpoints));
@@ -2283,6 +2306,17 @@
 				<ControlButton id="flow-tidy" title={'Tidy graph (' + (hint('nodes.tidy') || 'L') + ')'} aria-label="Tidy graph" onclick={() => tidyGraph('layout')}>
 					<Icon name="network" size={16} aria-hidden="true" />
 				</ControlButton>
+				<!-- 78 F6: Animate in editor — off rests every flow-moved object at its authored pose until Play -->
+				<ControlButton
+					id="flow-animate-edit"
+					class={$animateInEditor ? '' : 'flow-motion-off'}
+					title={$animateInEditor ? 'Animate in editor: on (click to rest every moving object until Play)' : 'Animate in editor: off — moving objects rest until Play (click to animate)'}
+					aria-label="Animate in editor"
+					aria-pressed={$animateInEditor}
+					onclick={() => toggleAnimateInEditor()}
+				>
+					<Icon name={$animateInEditor ? 'rotate-cw' : 'pause'} size={16} aria-hidden="true" />
+				</ControlButton>
 			</Controls>
 			{#if showMinimap}
 				<MiniMap
@@ -2294,6 +2328,12 @@
 					maskColor="color-mix(in srgb, var(--bg-app) 65%, transparent)"
 				/>
 			{/if}
+			<!-- 78 F7: what each node is doing right now, under its card -->
+			{#each liveChips as chip (chip.id)}
+				<ViewportPortal target="front">
+					<div class="flow-live-state" data-node-id={chip.id} style="transform: translate({chip.x}px, {chip.y}px); max-width: {chip.w}px">{chip.text}</div>
+				</ViewportPortal>
+			{/each}
 			<!-- 78 F24: a chip on every wire the lint flags (tooltip = what is wrong; press = the fix) -->
 			{#each lintChips as chip (chip.f.edgeId)}
 				<ViewportPortal target="front">
@@ -2470,6 +2510,24 @@
 	/* notes sit BEHIND the cards (drawn first, and never elevated when selected) */
 	:global(.svelte-flow__node-note) {
 		z-index: 0 !important;
+	}
+	/* 78 F7: a card's live line (status text, not a control: it never takes the pointer) */
+	.flow-live-state {
+		position: absolute;
+		pointer-events: none;
+		padding: 0 6px;
+		border-radius: 4px;
+		background: color-mix(in srgb, var(--bg-app) 80%, transparent);
+		color: var(--text-2);
+		font-size: 10px;
+		line-height: 16px;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	/* 78 F6: the motion switch reads as OFF at a glance (not by colour alone: the glyph is a pause) */
+	:global(.svelte-flow__controls-button.flow-motion-off) {
+		color: var(--accent);
 	}
 	/* 78 F24: the flagged-wire chip (a real button: focusable, named, its tooltip is the finding) */
 	.flow-lint-chip {

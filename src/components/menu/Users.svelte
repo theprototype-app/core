@@ -2,6 +2,7 @@
 	import { backClose } from '$lib/backStack.js'; // phone-polish: Android Back closes it
 	import { cameraPreviews, joinPeerPreview, previewLabel } from '$lib/cameraPreview';
 	import Icon from '../ui/Icon.svelte';
+	import PeerAvatar from '../ui/PeerAvatar.svelte'; // 78 PL33: one avatar everywhere
 	import { roving } from '$lib/keyboardNav'; // 53 A3: the top-right group is one tab stop
 	import * as THREE from 'three';
 	import { onMount, untrack } from 'svelte';
@@ -109,7 +110,7 @@
 		!self && map?.[peerId]?.private === true;
 	import { gameState } from '$lib/gameState';
 	import { sessionHost } from '$lib/connectionState';
-	import { mutedPeers, toggleMutePeer } from '$lib/voiceChat';
+	import { mutedPeers, toggleMutePeer, speakingPeers } from '$lib/voiceChat';
 	// 55 A9: the peer menu (Profile · Find · Character · Talk · For you only · Moderation)
 	import { buildPeerMenuItems } from '$lib/peerMenu';
 	import { removePeer, allowBack, blockedPeers, inviteStoreModule } from '$lib/peerModeration';
@@ -1019,7 +1020,8 @@
 		onpointercancel={rowPointerEnd}
 		onclickcapture={rowClickCapture}
 	>
-		{@render avatarImg(user[2], 'bg-surface-active h-8 w-8 shrink-0')}
+		<!-- 78 PL33: their photo, else their colour + initial, ringed in their lock / cursor colour; a speaking ring while they talk -->
+		<PeerAvatar id={user[0]} row={user} size={32} speaking={$speakingPeers.includes(user[0])} />
 		<div class="peer-info">
 			<div class="peer-name">
 				<span class="truncate" title={displayName(user)}>{displayName(user)}</span>
@@ -1216,9 +1218,9 @@
 			title="Connected peers"
 			onclick={() => peersPanelOpen.update((v) => !v)}
 		>
-			<div class="flex -space-x-2">
+			<div class="flex items-center gap-1.5 px-0.5">
 				{#each $userdata.slice(1, 4) as user (user[0])}
-					{@render avatarImg(user[2], 'bg-surface-active border-2 border-surface-1 not-first:-ms-4 hud-tr-av h-6 w-6')}
+					<PeerAvatar id={user[0]} row={user} size={22} speaking={$speakingPeers.includes(user[0])} class="hud-tr-av" />
 				{/each}
 			</div>
 			<span class="hud-tr-count">{$userdata.length}</span>

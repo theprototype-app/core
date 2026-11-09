@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { flowCursors, activeGraphId, SCENE_GRAPH } from '../../stores/flowStore';
-	import { hiddenPeers } from '$lib/peerHide'; // 55 A9: Hide takes their cursor off this screen
+	import { hiddenPeers } from '$lib/peerHide';
+	import { peerColor } from '$lib/lockControl'; // 55 A9: Hide takes their cursor off this screen
 
 	// Renders connected peers' cursors inside the flow editor. Coordinates arrive
 	// in flow space; the current viewport (pan/zoom) converts them to screen space.
@@ -23,12 +24,9 @@
 	});
 	onDestroy(() => clearInterval(sweep));
 
-	// stable per-peer color from the id
-	function colorOf(id: string) {
-		let hash = 0;
-		for (const char of id) hash = (hash * 31 + char.charCodeAt(0)) % 360;
-		return `hsl(${hash}, 70%, 50%)`;
-	}
+	// 78 PL33: ONE colour per person — the lock / ping / avatar colour (it was a second hash, so a peer's
+	// cursor here disagreed with their avatar and their lock box)
+	const colorOf = (id: string) => peerColor(id);
 </script>
 
 <div class="pointer-events-none absolute inset-0 overflow-hidden" style="z-index: 10;">

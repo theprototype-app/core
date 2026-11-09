@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { geometry as sidebarGeometry } from '$lib/sidebars'; // 42 I2
 	import { micActive, pttActive, toggleMic, speakingPeers } from '$lib/voiceChat';
-	import { peerColor } from '$lib/lockControl';
 	import Icon from '../ui/Icon.svelte';
+	import PeerAvatar from '../ui/PeerAvatar.svelte'; // 78 PL33: one avatar everywhere
 	import { phoneShellActive } from '$lib/ui/phoneShell.js';
 	import { tours } from '$lib/tours/index.js'; // 76 FW1: the copy is the first-win quest's share step
 	import { SIGNALS } from '$lib/onboarding/quests.js';
@@ -430,7 +430,7 @@
 			const row = $userdata.find((u) => u[0] === id);
 			const name = row ? displayName(row) : String(id); // 78 PL34: never a raw id or "Peer"
 			// 55 A7: an agent is a robot on the chip, never a voice avatar
-			return { id, name, initial: String(name).trim().charAt(0).toUpperCase() || '?', agent: kindOfRow(row) === 'agent' };
+			return { id, name, row: row ?? [id, ''], agent: kindOfRow(row) === 'agent' };
 		})
 	);
 	const selfSpeaking = $derived(!!$peers?.peer?.id && $speakingPeers.includes($peers.peer.id));
@@ -585,11 +585,10 @@
 				<span class="cx-dot cx-status-dot" data-tone={$connectionStatus.tone} aria-hidden="true"></span>
 				<span class="cx-avatars" aria-hidden="true">
 					{#each chipPeers as p (p.id)}
-						{#if p.agent}
-							<span class="cx-av cx-av-agent" style:background={peerColor(p.id)} title={p.name + ' (AI agent)'}><Icon name="bot" size={16} aria-hidden="true" /></span>
-						{:else}
-							<span class="cx-av" class:speaking={$speakingPeers.includes(p.id)} style:background={peerColor(p.id)} title={p.name}>{p.initial}</span>
-						{/if}
+						<!-- 78 PL33: the shared avatar (photo, else colour + initial; the robot for an agent) -->
+						<span class="cx-av-slot" class:cx-av-agent={p.agent} title={p.agent ? p.name + ' (AI agent)' : p.name}
+							><PeerAvatar id={p.id} row={p.row} size={24} speaking={!p.agent && $speakingPeers.includes(p.id)} /></span
+						>
 					{/each}
 					{#if remoteOpen.length > 3}<span class="cx-av cx-av-more">+{remoteOpen.length - 3}</span>{/if}
 				</span>
@@ -1101,15 +1100,20 @@
 		display: inline-flex;
 		padding-left: 6px;
 	}
+	.cx-av-slot {
+		display: inline-flex;
+		margin-left: -2px;
+	}
+	.cx-av-slot + .cx-av-slot {
+		margin-left: 2px;
+	}
 	.cx-av {
 		display: grid;
 		place-items: center;
 		width: 24px;
 		height: 24px;
-		margin-left: -6px;
+		margin-left: 4px;
 		border-radius: 50%;
-		color: var(--bg-app);
-		font: 600 11px var(--font-ui);
 		box-shadow: 0 0 0 2px var(--surface-1);
 	}
 	.cx-av-more {
@@ -1118,8 +1122,8 @@
 		font-family: var(--font-ui-mono);
 		font-size: 10px;
 	}
-	/* NOTES-38 #12: speaking = a soft pulsing ring in --speaking, never --live */
-	.cx-av.speaking,
+	/* NOTES-38 #12: speaking = a soft pulsing ring in --speaking, never --live (the avatars' own ring is
+	   PeerAvatar's, 78 PL33) */
 	.cx-mic.speaking {
 		box-shadow: 0 0 0 2px var(--surface-1), 0 0 0 4px var(--speaking);
 		animation: cx-speak 1.4s ease-in-out infinite;
@@ -1130,7 +1134,6 @@
 		}
 	}
 	@media (prefers-reduced-motion: reduce) {
-		.cx-av.speaking,
 		.cx-mic.speaking {
 			animation: none;
 		}

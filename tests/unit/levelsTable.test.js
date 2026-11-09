@@ -88,3 +88,34 @@ describe('93 LP0 (78 F19) — the Kit: Levels nodes drive the scene table with n
 		expect(kit.runNodeAction('kit-levels-next', {}, { rid: 'node:z:9' })).toMatchObject({ ok: false });
 	});
 });
+
+describe('93 LP0 — game_setup {levels} (set_levels) writes the same table the nodes drive', () => {
+	beforeEach(() => {
+		resetKit();
+		scenePhysicsRestore({});
+	});
+	it('plans: replace, add, update, remove, keep, clear, read; refusals say why', async () => {
+		const { planSetLevels } = await import('../../src/lib/gameLevels/agentCore.js');
+		expect(planSetLevels({}, null)).toEqual({ read: true, table: null });
+		const a = /** @type {any} */ (planSetLevels({ levels: ['Meadow', { name: 'Cave', spawn: 'Door' }], keep: ['score', 'var:coins'] }, null));
+		expect(a.table.list.map((/** @type {any} */ r) => r.id)).toEqual(['meadow', 'cave']);
+		const b = /** @type {any} */ (planSetLevels({ add: ['Peak'], update: [{ id: 'cave', goal: 'Light the torch' }], remove: ['meadow'] }, a.table));
+		expect(b.table.list.map((/** @type {any} */ r) => [r.id, r.goal ?? ''])).toEqual([['cave', 'Light the torch'], ['peak', '']]);
+		expect(planSetLevels({ keep: ['gold'] }, a.table)).toMatchObject({ error: expect.stringContaining('unknown gold') });
+		expect(planSetLevels({ update: [{ id: 'nope' }] }, a.table)).toMatchObject({ error: expect.stringContaining('no level "nope"') });
+		expect(planSetLevels({ clear: true }, a.table)).toEqual({ table: null, changed: ['clear'] });
+	});
+	it('the agent writes, the Next node follows the agent\'s order; one undo restores the old table', async () => {
+		const { levelsTool } = await import('../../src/lib/ai/levelsTools.js');
+		const { undo } = await import('../../src/lib/history.js');
+		setScenePhysics({ levels: TABLE });
+		const r = /** @type {any} */ (await levelsTool('set_levels', { levels: ['Alpha', 'Beta', 'Gamma'] }));
+		expect(r.note).toContain('3 levels');
+		syncKitLevels();
+		kit.runNodeAction('kit-levels-select', { level: 'beta' }, { rid: 'node:a:11' });
+		kit.runNodeAction('kit-levels-next', {}, { rid: 'node:b:12' });
+		expect(kit.impls.levels.current()).toBe('gamma');
+		undo();
+		expect(sceneLevelsTable()?.list.map((/** @type {any} */ x) => x.id)).toEqual(['meadow', 'cave']);
+	});
+});

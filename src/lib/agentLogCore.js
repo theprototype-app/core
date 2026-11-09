@@ -208,6 +208,9 @@ export function summarizeToolCall(tool, args, result, nameOf = () => '') {
 			return result.spawn ? 'set where Play starts' : 'removed the spawn';
 		case 'set_play_camera':
 			return result.playCamera ? 'set the play camera (' + String(result.playCamera.mode) + ')' : 'set the scene\'s opening view';
+		// 93: the Levels table
+		case 'set_levels':
+			return result.levels ? 'set the levels (' + count(arr(result.levels.list).length, 'level') + ')' : 'removed the levels table';
 		// 85 R6, pivots, images
 		case 'playtest': {
 			// 85b R2: a play session changes nothing authored (its clicks are the game's own runtime state)

@@ -43,7 +43,11 @@ async function sequenceTab(page) {
 	const before = await pane(page);
 	if (before.mode !== 'sequence') await page.click('.tl-root [data-ws-mode="sequence"]');
 	try {
-		await page.waitForSelector('#timeline-seq-props', { timeout: 8000 });
+		// a DOM poll, not waitForSelector: a starved headless page resolved the pane as visible and still timed out
+		await page.waitForFunction(() => {
+			const r = document.querySelector('#timeline-seq-props')?.getBoundingClientRect();
+			return !!r && r.width > 0 && r.height > 0;
+		}, null, { timeout: 30000 });
 	} catch (e) {
 		const after = await page.evaluate(() => ({
 			tabs: [...document.querySelectorAll('.tl-root [data-ws-mode]')].map((t) => t.getAttribute('data-ws-mode') + ':' + t.className),

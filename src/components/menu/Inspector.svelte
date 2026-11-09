@@ -14,6 +14,7 @@
 	import CameraHoldSetting from './scene/CameraHoldSetting.svelte';
 	import SelectionPassSetting from './scene/SelectionPassSetting.svelte'; // 36 F22 / S8
 	import SimOnLoadSetting from './scene/SimOnLoadSetting.svelte';
+	import LevelsSection from './scene/LevelsSection.svelte'; // 93 LP0
 	import FluidBudgetSetting from './scene/FluidBudgetSetting.svelte'; // 36-fb S3
 	import LodGroupPanel from './LodGroupPanel.svelte';
 	import LoadStatePanel from './LoadStatePanel.svelte';
@@ -42,6 +43,7 @@
 	import FluidEmitterSection from '../sim/FluidEmitterSection.svelte'; // 36-fb F23
 	import FluidInteractionRow from '../sim/FluidInteractionRow.svelte'; // 36-fb F23
 	import FlowPathSection from '../sim/FlowPathSection.svelte'; // 36-fb F24
+	import LevelObjectSection from './inspector/LevelObjectSection.svelte'; // 93 LP1/LP3
 	import TextPathSection from './TextPathSection.svelte'; // 64 D2
 	import TextOnPathButton from './TextOnPathButton.svelte'; // 64 D2
 	import PathSection from './inspector/PathSection.svelte'; // 78 F4
@@ -3061,6 +3063,7 @@
 				</div>
 			</Section>
 
+			<Section variant="panel" label="Levels" badge="Shared" aliases={['Level', 'Portals', 'Checkpoints', 'Loading screen', 'Keep across levels']}><LevelsSection /></Section>
 			<Section variant="panel" label="Background" badge="Shared">
 				<FieldClip clip={colorClip('Background', () => $backgroundColor, (hex) => setBackground(hex))}>
 				<ColorPicker
@@ -4351,6 +4354,7 @@
 			{#if $selectedObject.userData?.fluid}<FluidTankSection object={$selectedObject} />{/if}<!-- 36-sim U2b -->
 			{#if $selectedObject.userData?.fluidEmitter}<FluidEmitterSection object={$selectedObject} />{/if}<!-- 36-fb F23 -->
 			{#if $selectedObject.userData?.flowPath}<FlowPathSection object={$selectedObject} />{/if}<!-- 36-fb F24 -->
+			{#if $selectedObject.userData?.portal || $selectedObject.userData?.checkpoint}<LevelObjectSection object={$selectedObject} />{/if}<!-- 93 LP1/LP3 -->
 			{#if $selectedObject.userData?.textPath}<TextPathSection object={$selectedObject} />{/if}<!-- 64 D2 -->
 			{#if !$selectedObject.isLight}
 				<Section variant="panel" label="Physics" clip={{ count: () => insTargets.length, fans: true }}>

@@ -29,7 +29,8 @@
  *   quality: string,
  *   vrButton: boolean,
  *   preset: string,
- *   builtWith: string
+ *   builtWith: string,
+ *   loading?: any
  * }} ExportConfig
  */
 
@@ -70,8 +71,21 @@ export function normalizeExportConfig(raw) {
 		quality: EXPORT_QUALITIES.includes(quality) ? quality : 'auto',
 		vrButton: raw.vrButton !== false,
 		preset: String(raw.preset ?? 'static').slice(0, 20),
-		builtWith: String(raw.builtWith ?? '').slice(0, 40)
+		builtWith: String(raw.builtWith ?? '').slice(0, 40),
+		// 93 LP2: the author's loading screen — plain data (cleaned again by loading.normalizeLoading at use)
+		...(plainData(raw.loading, 8192) ? { loading: plainData(raw.loading, 8192) } : {})
 	};
+}
+
+/** a small plain-data object (a JSON round trip under a byte cap), else null @param {unknown} v @param {number} cap */
+function plainData(v, cap) {
+	if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+	try {
+		const json = JSON.stringify(v);
+		return json.length <= cap ? JSON.parse(json) : null;
+	} catch {
+		return null;
+	}
 }
 
 function readExportBoot() {

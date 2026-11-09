@@ -887,6 +887,13 @@ registerHistoryKind('props', (entry, state) => {
 		else delete object.userData.fluidEmitter;
 		if (peer) peer.send({ type: 'objectParameters', parameter: 'fluidEmitter', uuid: entry.uuid, fluidEmitter: state.fluidEmitter ?? null });
 	}
+	for (const key of ['portal', 'checkpoint']) {
+		if (!(key in state)) continue;
+		// 93 LP1 / LP3: a portal's / checkpoint's record (gameLevels/objectEdit.js is the write path)
+		if (state[key]) object.userData[key] = state[key];
+		else delete object.userData[key];
+		if (peer) peer.send({ type: 'objectParameters', parameter: key, uuid: entry.uuid, [key]: state[key] ?? null });
+	}
 	if ('flowPath' in state) {
 		// 36-fb F24: a flow path's record — the geometry is rebuilt from it (applyFlowPathTo)
 		if (state.flowPath) applyFlowPathTo(object, state.flowPath);

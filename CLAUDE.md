@@ -2751,10 +2751,36 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   · Old `pathpatrol` nodes with clicked `points` keep walking the legacy code; Convert (`convertPatrolNode`) makes a
   closed straight-line loop (ping-pong for 2 points or mode pingpong) re-centred on the waypoints' centroid —
   pose-identical, proven in `pathCore.test.js` against a verbatim copy of the old walker.
-  · `captureAdapter.js` is a one-file stand-in for 78-wire's F5 capture stack (Esc pops the top capture first);
-  78-int swaps its body for a re-export. Agent: `create_path` (`ai/pathTools.js`), connector `create_shape {action:
+  · `captureAdapter.js` maps the Path editor's Add points onto 78-wire's F5 capture stack (one banner; Esc pops
+  the top capture first; it pops only its own entries). Agent: `create_path` (`ai/pathTools.js`), connector `create_shape {action:
   'path'}`. Node `onpathevent` {path, event}. Suites: vitest `pathCore`, `pathRuntime78`, `pathTools78`; e2e
   `path-object` (two peers).
+- **ROADMAP 93 (78-93-levels, 1.64 via 78-int) — LEVELS AND PROGRESS.** ONE Levels table per game, on the scene-settings
+  singleton (`scenePhysics.levels`, normalized in `gameLevels/table.js`): rows `{id,name,scene?,spawn?,goal?}`, `unlock`,
+  `keep` (score/inventory/health/`var:<name>`; empty = everything carries, the pre-93 behaviour) and `loading`.
+  `gameLevels/runtime.js syncKitLevels` defines `kit.levels` FROM the table on every peer, so the Kit: Levels nodes, the
+  portals and the agent's `game_setup {levels}` read one list. `travel.js` = the hop (`hopTo`: scene under
+  `withLoadingScreen`, then the start object; `registerTravelCarry` in levels.js is the seam that carries ONLY the keep
+  list). Go to level / Next level move EVERYONE; a PORTAL moves only its walker (`solo`, the `selected` listeners
+  stay put). OBJECTS: Portal and Checkpoint kinds carry `userData.portal` / `userData.checkpoint` records (replicate as
+  `objectParameters`, undo as `props`); `play.js` scans them twice a second while `gameFeelActive()` (locked OR
+  `editorMode === 'interact'`), preloads a portal's scene when the player is near (`preload.js`), and hides a
+  `show:false` portal in Play only (a LOCAL visibility flip restored by a park hook, never saved). A checkpoint's
+  `show` is its reached MESSAGE, not pad visibility. CHECKPOINTS (`checkpoints.js`) are per player and LOCAL: the
+  arrival through a portal counts as one (noted BEFORE the transition opens), Back to checkpoint / New game are kit
+  actions marked `local: true` (spec.js: no authority op — the kitTable invariant skips them). SAVES (`save.js`):
+  `tp:levels-save:<gameId>`, version 1, `upgradeSave` drops removed levels (→ first level) and vars the game no longer
+  keeps, 256 KB cap. They are WRITTEN only in an export (`exportMode`, test seam `checkpointsForTest({persist})`), but
+  MEASURED in the editor too, so the cap sentence (`saveProblem`) shows in Configure Scene ▸ Levels.
+  LOADING (`loading.js` + `loadingConfig.js` leaf): five presets, a 150 ms show delay, 400 ms minimum, progress from
+  the preload bytes, every `sceneLoad` publish (subscribed, not only polled: a fast build finished inside one 100 ms
+  poll and the bar read 0 then 1) and `packTracker` (loadStates forgets a parsed file, so the tracker remembers it);
+  a scene preload-ready skips the screen; an export boots on the author's screen (`coverFirstLoad`). Agent:
+  `ai/levelsTools.js` (`set_levels/set_portal/set_checkpoint/set_loading`, one history batch per call) behind the
+  connector's existing `game_setup` (no new tool names). Template `scripts/templates/two-levels.cjs`.
+  Suites: units `levels*`; e2e `levels-progress` (two peers + one player; the cold hop runs at 6x CPU so the bar has
+  steps) and `levels-export` (BUILT app only: serve-build + `E2E_PC=`; SKIPs without export-manifest.json).
+
 ## UI design system (redesign epic)
 
 - All UI follows the redesign spec kept in the `cloud` repo: `docs/design/redesign/SPEC.md`

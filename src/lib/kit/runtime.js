@@ -42,6 +42,8 @@ export { KIT_DOC, KIT_REQ };
 export function primeKitRuntime() {
 	import('../physics').then((m) => (physicsRef = m)).catch(() => {});
 	import('../flowRuntime').then((m) => (flowRef = m)).catch(() => {});
+	// 93 LP0: the scene's Levels table defines kit.levels on every peer (78 F19: nodes need no module code)
+	import('../gameLevels/runtime.js').then((m) => m.installLevelsRuntime()).catch(() => {});
 	// the K3 pause menu's Restart restarts a kit round (a game using kit.round needs no hook of
 	// its own); a game that never started one is left alone. Dynamic: gameShell reaches
 	// playSettings, which reads this file.
@@ -174,6 +176,16 @@ export function kitPayload() {
 export function tickKit() {
 	kit.tick();
 	touchPickups();
+	for (const fn of tickHooks) fn();
+}
+
+/** 93 LP1: per-frame hooks beside the kit's own (portals / checkpoints) — a hook, so the levels runtime
+ * stays a dynamic import from here @type {Set<() => void>} */
+const tickHooks = new Set();
+/** @param {() => void} fn @returns {() => void} off */
+export function onKitTick(fn) {
+	tickHooks.add(fn);
+	return () => tickHooks.delete(fn);
 }
 
 /** 34 R2: kit.pickups' TOUCH — this player walking into a registered pickup takes it. ~10x a

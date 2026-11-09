@@ -16,7 +16,8 @@
 		"perf-beacon": "reads a hosts-mapped preview origin",
 		"timeline-export": "needs the built app (scripts/serve-build.cjs), not the dev server",
 		"stale-chunk": "needs the built app (scripts/serve-build.cjs): vite's preload helper is build-only, so it only SKIPs on a dev server",
-		"text-export": "needs the built app (scripts/serve-build.cjs): the exporter reads build/export-manifest.json, so it only SKIPs on a dev server"
+		"text-export": "needs the built app (scripts/serve-build.cjs): the exporter reads build/export-manifest.json, so it only SKIPs on a dev server",
+		"levels-export": "needs the built app (scripts/serve-build.cjs): the exporter reads build/export-manifest.json, so it only SKIPs on a dev server"
 	},
 	"optional": {
 		"path-object": "joined from 78-path (roadmap 78 F4 the Path object, 2026-11-09): not yet measured on a GitHub runner, so it reports and does not gate",
@@ -595,6 +596,8 @@
 		"lock-settings-b": 894,
 		"lock-shortcuts": 86,
 		"lock-ux": 180,
+		"levels-export": 300,
+		"levels-progress": 300,
 		"lod": 38,
 		"lod-group": 20,
 		"lod-panel": 56,

@@ -330,10 +330,10 @@ export const CONNECTOR_FAMILIES = Object.freeze({
 	},
 	// 85-scene (85b): 85 H3 + H6; levels / portal / loading / checkpoint join with 91 / 93
 	game_setup: {
-		title: 'Game setup: spawn and play camera',
+		title: 'Game setup: spawn, play camera, levels, portals, checkpoints, loading',
 		summary:
-			'How the game starts: spawn = where Play starts and which way the player faces; play_camera = first person walking or flying (speed, jump, eye height) and openingView = where the editor camera starts when the scene opens.',
-		actions: { spawn: 'place_spawn', play_camera: 'set_play_camera' }
+			'How the game starts: spawn = where Play starts and which way the player faces; play_camera = first person walking or flying (speed, jump, eye height) and openingView = where the editor camera starts when the scene opens; levels = the game\'s one Levels table (order, scene or spawn point, goals) and what carries from level to level (score, inventory, health, named variables); portal = a doorway to a level, scene or spot (one player at a time, with a fade / iris / card); checkpoint = a pad that saves the player\'s progress; loading = the loading screen a level change shows.',
+		actions: { spawn: 'place_spawn', play_camera: 'set_play_camera', levels: 'set_levels', portal: 'set_portal', checkpoint: 'set_checkpoint', loading: 'set_loading' }
 	}
 });
 

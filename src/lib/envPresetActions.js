@@ -6,12 +6,19 @@ import { get } from 'svelte/store';
 import { environment, setEnvironment, ENVIRONMENT_PRESETS } from './environment';
 import { basedOnOf, presetExposure } from './envPresetCore.js';
 
+/** @type {Promise<typeof import('./ai/sceneSetupHistory.js')> | null} */
+let loading = null;
+const historyKind = () => (loading ??= import('./ai/sceneSetupHistory.js'));
+// warmed as the panel loads: a first press must not wait on fetching the module (a dev server compiles it
+// on demand — the e2e caught a reset that landed only after the next action)
+if (typeof window !== 'undefined') setTimeout(historyKind, 0);
+
 /**
  * Run an environment edit as one undo step (and one message).
  * @param {() => void} fn
  */
 export async function envUndoable(fn) {
-	const { environmentNow, recordEnvironment } = await import('./ai/sceneSetupHistory.js');
+	const { environmentNow, recordEnvironment } = await historyKind();
 	const before = environmentNow();
 	fn();
 	recordEnvironment(before);

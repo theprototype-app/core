@@ -172,9 +172,9 @@ h.run(async () => {
 
 	// the row reset: one press, one undo step
 	await sunMark.click();
-	await page.waitForTimeout(500);
+	await h.eventually(() => env(page), (e) => Math.abs(/** @type {any} */ (e).customPreset?.sun?.intensity - 1.8) < 0.01, 'PL12.3 the mark resets the Sun to Studio\'s', 10000);
 	const e2 = /** @type {any} */ (await env(page));
-	h.check(Math.abs(e2.customPreset?.sun?.intensity - 1.8) < 0.01, `PL12.3 the mark resets the Sun to Studio's (${e2.customPreset?.sun?.intensity})`);
+	console.log('sun after the mark: ' + e2?.customPreset?.sun?.intensity);
 	h.check((await page.locator('#inspector .pr-mark[aria-label^="Sun:"]').count()) === 0, 'PL12.4 …and the mark goes');
 	await page.evaluate(() => window.__stores.history.undo());
 	await page.waitForTimeout(500);
@@ -182,8 +182,8 @@ h.run(async () => {
 	h.check(Math.abs(e3.customPreset?.sun?.intensity - 3.3) < 0.01, `PL12.5 one Undo brings the edit back (${e3.customPreset?.sun?.intensity})`);
 
 	// Reset: back to the preset as it ships, one undo step
-	await page.locator('#env-reset').click();
-	await page.waitForTimeout(600);
+	await page.locator('#env-reset').click({ timeout: 10000 });
+	await h.eventually(() => env(page), (e) => /** @type {any} */ (e).preset === 'studio', 'PL16.7 premise: the Reset lands', 10000);
 	const e4 = /** @type {any} */ (await env(page));
 	h.check(e4.preset === 'studio' && (await page.locator('#env-preset-modified').count()) === 0, `PL16.7 Reset re-applies Studio (${e4.preset})`);
 	await page.evaluate(() => window.__stores.history.undo());
@@ -219,12 +219,13 @@ h.run(async () => {
 		return JSON.parse(JSON.stringify(r ?? null));
 	});
 	console.log('[bake] ' + JSON.stringify(bake).slice(0, 300));
-	const line = await h.eventually(
+	await h.eventually(
 		() => text(page, '#stats-baked-light'),
 		(t) => /^\d+ px · [\d.<\s]+ MB · [1-9]\d* baked \/ [1-9]\d* shown$/.test(t ?? ''),
 		'PL1.2 after a bake: atlas px · MB · baked / shown, non-zero',
 		30000
 	);
+	const line = await text(page, '#stats-baked-light');
 	console.log('baked light line: ' + line);
 	const nums = /^(\d+) px/.exec(line ?? '');
 	h.check(!!nums && Number(nums[1]) > 0, `PL1.3 the atlas size is non-zero (${line})`);
@@ -240,8 +241,8 @@ h.run(async () => {
 	await openScene(page);
 	// B's live edit names B on A
 	await B.page.evaluate(() => window.__stores.environment.setEnvironment('night'));
-	const onA = await h.eventually(() => noteOf(page, 'Environment'), (t) => /^changed by .+ · just now$/.test(t) && !/you|\(AI\)/.test(t), 'PL13.2 A reads "changed by <B> · just now" under Environment', 15000);
-	console.log('A note: ' + onA);
+	await h.eventually(() => noteOf(page, 'Environment'), (t) => /^changed by .+ · just now$/.test(t) && !/you|\(AI\)/.test(t), 'PL13.2 A reads "changed by <B> · just now" under Environment', 15000);
+	console.log('A note: ' + (await noteOf(page, 'Environment')));
 	// a physics edit names its own section
 	await B.page.evaluate(() => window.__stores.scenePhysics.setScenePhysics({ gravity: -4 }));
 	await h.eventually(() => noteOf(page, 'Physics'), (t) => /^changed by .+ · just now$/.test(t), 'PL13.3 …and under Physics for a gravity edit', 15000);

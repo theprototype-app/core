@@ -43,6 +43,11 @@ async function press(peer, sel, tab) {
 	else await peer.page.evaluate((t) => window.__stores.chatWindow.toggleChatTab(t), tab);
 	await peer.page.waitForTimeout(400);
 }
+/** open the window on `tab` whatever it shows now (a button press toggles: on its own tab it closes the window) */
+async function openOn(peer, tab) {
+	await peer.page.evaluate((t) => window.__stores.chatWindow.openChatTab(t), tab);
+	await peer.page.waitForTimeout(400);
+}
 async function axe(page, label) {
 	const { default: AxeBuilder } = require('@axe-core/playwright');
 	const res = await new AxeBuilder({ page }).include('#chat-window').withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice']).analyze();
@@ -134,12 +139,14 @@ h.run(async () => {
 
 	// ---- 5. images stay attachments ------------------------------------------------------------------------
 	console.log('\n=== 5. pictures in the AI chat ===');
+	// a reply still settling skips the save until it settles: add the picture turn to a settled conversation
+	await h.eventually(() => read(A, 'aiAssistant.aiBusy'), (b) => b === false, '5.0a premise: the reply has settled', 20000);
 	await A.page.evaluate((png) => {
 		const m = window.__stores.aiAssistant.aiMessages;
 		m.update((list) => [...list, { role: 'user', content: 'like this one', images: [{ url: png, name: 'swatch.png' }] }]);
 	}, PNG);
 	h.check(JSON.stringify(await read(A, 'aiAssistant.aiMessages')).includes('base64'), '5.0 premise (counterfactual): the live message carries the picture as a data: URL');
-	await h.eventually(() => idb(A, 'aichat:' + aiId), (r) => r?.messages?.some((m) => m.images?.length), '5.1 the saved chat has the picture turn');
+	await h.eventually(() => idb(A, 'aichat:' + aiId), (r) => r?.messages?.some((m) => m.images?.length), '5.1 the saved chat has the picture turn', 20000);
 	const rec = await idb(A, 'aichat:' + aiId);
 	const stored = JSON.stringify(rec ?? {});
 	const key = rec?.messages?.find((m) => m.images?.length)?.images?.[0]?.key;
@@ -198,7 +205,7 @@ h.run(async () => {
 	});
 	h.check(count === 1, `4.11 …and shows each line once (${count})`);
 	// the list's own guard: a line pushed again with an id already on screen (a caller that does not merge)
-	await press(A, '#chat-button', 'session');
+	await openOn(A, 'session');
 	const dup = await A.page.evaluate(() => {
 		const st = window.__stores.messages;
 		let v;
@@ -220,7 +227,7 @@ h.run(async () => {
 		await idbPut('chatlog:scene:Castle', { key: 'scene:Castle', title: 'Castle', lines });
 		window.__stores.chatSaves.sessionLogs.update((l) => [...l, { key: 'scene:Castle', title: 'Castle', updatedAt: Date.now() - 86400000, count: 1, people: ['Sam'] }]);
 	});
-	await press(A, '#chat-button', 'session');
+	await openOn(A, 'session');
 	await A.page.locator('#ai-history-btn').click();
 	await A.page.locator('#ai-chat-history .chist-row[data-chat="scene:Castle"]').click();
 	await A.page.locator('#chat-archive-bar').waitFor({ timeout: 5000 });

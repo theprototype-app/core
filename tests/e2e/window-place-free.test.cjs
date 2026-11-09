@@ -170,7 +170,7 @@ h.run(async () => {
 	// ---- 5. header merge -------------------------------------------------------------------------------
 	await S(page, () => {
 		const s = window.__stores;
-		s.statsOpen.set(true);
+		s.sceneBudget.statsOpen.set(true);
 		s.chatHidden.set('');
 	});
 	await page.waitForTimeout(1200);

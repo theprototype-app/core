@@ -5,7 +5,7 @@
 //    transparent and highlight tabs to user knows it will be stacked there if he release the window)"
 //   Decision: ALL floating windows dock by dropping on the tab strip with 41 G7's caret + 0.6 opacity —
 //   G7's code generalised (FLOAT_DOCKABLE / canDockHere), not forked. The windows with no docked layout of
-//   their own (Objects, Statistics, Live profiler, Chat, AI assistant) are HOSTED by the dock frame.
+//   their own (Objects, Statistics, Live profiler, Chat — with the AI assistant as its tab) are HOSTED by the dock frame.
 //
 //   1  the Objects window dragged by its header over the strip: caret between the two tabs, strip outlined,
 //      window at 0.6 opacity; released, it docks AT that index and fills the dock body
@@ -202,7 +202,8 @@ h.run(async () => {
 	await page.waitForTimeout(300);
 	const rowsPlus = await S(page, () => [...document.querySelectorAll('[role="menu"] [role="menuitem"]')].map((e) => e.textContent.replace(/\s+/g, ' ').trim()));
 	await page.screenshot({ path: out + '/i6-dock-plus-hosted-' + THEME + '.png' });
-	h.check(['Objects', 'Statistics', 'Live profiler', 'Chat', 'AI assistant'].every((t) => rowsPlus.some((r) => r.startsWith(t))), `6.1 the dock's "+" lists Objects, Statistics, Live profiler, Chat and AI assistant (${JSON.stringify(rowsPlus)})`);
+	// uir-chat: Chat and the AI assistant are one window (Session | Assistant tabs), so the "+" lists Chat once
+	h.check(['Objects', 'Statistics', 'Live profiler', 'Chat'].every((t) => rowsPlus.some((r) => r.startsWith(t))) && !rowsPlus.some((r) => r.startsWith('AI assistant')), `6.1 the dock's "+" lists Objects, Statistics, Live profiler and Chat (one row for Chat + AI) (${JSON.stringify(rowsPlus)})`);
 	// 44 M5: ONE registry rule — a window open anywhere is FOCUSED where it is by every "+" (the user's
 	// '+ ▸ Statistics opened a second copy in the dock'); docking a floating window is its drag / its menu
 	h.check(rowsPlus.some((r) => /^Chat.*Floating/.test(r)), '6.2 ...the open floating Chat reads "Floating"');

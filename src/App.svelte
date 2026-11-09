@@ -58,7 +58,6 @@
   import StatsOverlay from './components/menu/StatsOverlay.svelte'
   import MomentReport from './components/menu/MomentReport.svelte'
   import ProblemReport from './components/menu/ProblemReport.svelte' // 37 R20
-  import ProfilerLive from './components/menu/ProfilerLive.svelte'
   import { startSceneMetrics, budgetSummary } from './lib/sceneBudget'
   import { startPerfRecorder } from './lib/perf/recorder'
   import { startDetailedProbe } from './lib/perf/detailed'
@@ -552,7 +551,6 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <StatsOverlay />
 <MomentReport />
 <ProblemReport />
-<ProfilerLive />
 <!-- 47-cc0: the Asset Browser — loaded the first time it opens, so the boot carries none of it -->
 {#if $assetBrowserOpen}
 {#await import('./components/editors/AssetBrowser.svelte') then m}<m.default />{/await}

@@ -160,8 +160,8 @@ h.run(async () => {
 	await touch.tap(st?.cx ?? 0, st?.cy ?? 0);
 	await page.waitForTimeout(500);
 	const liveOpen = await page.evaluate(() => !!document.getElementById('profiler-live'));
-	h.check(liveOpen, 'profiler: a tap on the reached Live control opens the live profiler');
-	await page.evaluate(() => document.getElementById('profiler-live-close')?.click());
+	h.check(liveOpen, 'profiler: a tap on the reached Live control opens the live view (showhide-v8: the Profiler\'s Live row)');
+	await page.evaluate(() => window.__stores.perfLiveSink.profilerLiveOpen.set(false));
 
 	// ---------------- #37 UV editor ----------------
 	await open('uv', 'uvEditorClose');

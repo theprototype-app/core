@@ -40,7 +40,7 @@ const LATEST_FRAMES = 30;
  */
 export const perfLive = writable({ sessions: {}, recording: {} });
 
-/** the minimal desktop viewer (ProfilerLive.svelte) is open — until the Profiler tab hosts it */
+/** showhide-v8 §5: the Profiler is showing its Live row (the old "Live profiler" window lives there now); set it to open it */
 export const profilerLiveOpen = writable(false);
 
 /** @type {Map<string, import('./tpprof.js').Tpprof>} */

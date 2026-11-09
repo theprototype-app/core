@@ -25,6 +25,7 @@
 	import ProfilerDetail from './profiler/ProfilerDetail.svelte';
 	import ProfilerRecordings from './profiler/ProfilerRecordings.svelte';
 	import ProfilerCompare from './profiler/ProfilerCompare.svelte';
+	import ProfilerLiveView from './profiler/ProfilerLiveView.svelte'; // showhide-v8 §5: the Live view lives here now
 	import { selectDrawn } from './profiler/profilerScene.js';
 	// 41 G17: the left (recordings) and right (Details / Settings) sidebars are WindowShell's, so they
 	// hide and resize like every other docked window's — and start hidden on a phone (G18)
@@ -199,6 +200,16 @@
 
 	/** @param {string} key */
 	async function select(key) {
+		// showhide-v8 §5: the Live row shows the live view in the main area; any other row leaves it
+		if (key === 'live-view') {
+			selected = key;
+			doc = null;
+			sel = null;
+			picked = null;
+			if (!get(profilerLiveOpen)) profilerLiveOpen.set(true);
+			return;
+		}
+		if (get(profilerLiveOpen)) profilerLiveOpen.set(false);
 		selected = key;
 		const d = await loadKey(key);
 		if (selected !== key) return; // a later click won
@@ -209,6 +220,21 @@
 		if (!d && key.startsWith('rec:'))
 			say('That recording could not be read (it may have been cleared).', 'warn');
 	}
+
+	// showhide-v8 §5: every old way into the "Live profiler" window (the header's Live button, a saved layout, a
+	// module, the suites) sets `profilerLiveOpen`; it now opens THIS window on its Live row. Closing the Profiler
+	// clears it, so the next open starts on the recordings.
+	$effect(() => {
+		if ($profilerLiveOpen) {
+			untrack(() => {
+				if (get(profilerClose)) profilerClose.set(false);
+				if (selected !== 'live-view') void select('live-view');
+			});
+		} else if (selected === 'live-view') untrack(() => (selected = null));
+	});
+	$effect(() => {
+		if ($profilerClose && untrack(() => get(profilerLiveOpen))) profilerLiveOpen.set(false);
+	});
 
 	// keep a selected LIVE source current (the stream may update many times a second)
 	let liveTimer = /** @type {any} */ (null);
@@ -814,7 +840,9 @@
 			{/snippet}
 			{#snippet main()}
 				<section class="pf-main" use:measure aria-label="Recording">
-					{#if compareOn}
+					{#if selected === 'live-view'}
+						<ProfilerLiveView />
+					{:else if compareOn}
 						{#if docA && docB}
 							<ProfilerCompare
 								a={docA}

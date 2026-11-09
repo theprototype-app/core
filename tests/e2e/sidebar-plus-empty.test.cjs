@@ -157,10 +157,11 @@ h.run(async () => {
 	h.check(await menuOpen(page), '3.3 Shift-click on Chat keeps it open too');
 	r = await side(page, 'right');
 	h.check(['explorer', 'stats', 'chat'].every((k) => r.tabs.includes(k)), `3.4 both landed in the right sidebar (${r.tabs.join(',')})`);
-	await clickRow(page, 'Live profiler');
-	h.check(!(await menuOpen(page)), '3.5 a plain click picks Live profiler and closes the menu');
+	// showhide-v8 §5: the Live profiler is a row of the Profiler now, so the plain-click case uses Objects
+	await clickRow(page, 'Objects');
+	h.check(!(await menuOpen(page)), '3.5 a plain click picks Objects and closes the menu');
 	r = await side(page, 'right');
-	h.check(r.tabs.includes('profilerLive'), `3.6 ...and it opened in the right sidebar too (${r.tabs.join(',')})`);
+	h.check(r.tabs.includes('objects'), `3.6 ...and it opened in the right sidebar too (${r.tabs.join(',')})`);
 
 	// ---- 4. the shortcuts -----------------------------------------------------------------------------
 	const reg = await S(page, () => {

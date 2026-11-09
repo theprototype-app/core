@@ -85,6 +85,13 @@
 </script>
 
 <ul id="profiler-recordings" class="pf-list" aria-label="Recordings">
+	<!-- showhide-v8 §5: the Live view is a list item beside the recorded ones (it was the "Live profiler" window) -->
+	<li class="pf-rec" class:pf-sel={selected === 'live-view'} data-key="live-view">
+		<button id="profiler-live-row" class="pf-rec-main" aria-current={selected === 'live-view'} onclick={() => onselect('live-view')}>
+			<span class="pf-rec-name"><span class="pf-live pf-live-on" aria-hidden="true"></span>Live</span>
+			<span class="pf-rec-meta">live · watch a peer in your room as it plays</span>
+		</button>
+	</li>
 	{#each live as src (src.id)}
 		{@const key = 'live:' + src.id}
 		<li class="pf-rec" class:pf-sel={selected === key} data-key={key}>
@@ -161,6 +168,7 @@
 							/>{/if}{row.name}</span
 					>
 					<span class="pf-rec-meta">
+						<span class="pf-recorded">recorded ·</span>
 						<span class="pf-badge pf-badge-{row.mode}">{kindLabel(row)}</span>
 						{fmtSec(row.durationMs || row.summary?.durationMs || 0)}
 						{#if row.summary?.fpsP50}· {Math.round(row.summary.fpsP50)} fps{/if}

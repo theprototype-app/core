@@ -99,13 +99,13 @@ h.run(async () => {
 	await A.page.keyboard.press('Shift+F10');
 	h.check(await A.page.locator('[data-testid="peer-menu-profile"]').isVisible({ timeout: 3000 }).catch(() => false), 'Shift+F10 on a focused row opens the menu');
 	await closeMenu(A);
-	// View profile opens the card
+	// View profile opens the card — uir-people: the Person card inside the People panel (it replaced the profile modal)
 	await menuOn(A, C.id);
 	await A.page.locator('[data-testid="peer-menu-profile"]').click();
-	const card = A.page.locator(`#peer-profile-card[data-peer-id="${C.id}"]`);
+	const card = A.page.locator(`#person-card[data-peer-id="${C.id}"]`);
 	h.check(await card.isVisible({ timeout: 5000 }).catch(() => false), 'View profile opens the card for C');
-	h.check(((await card.textContent().catch(() => '')) || '').includes(C.id), 'the card shows their peer id');
-	await A.page.locator('dialog[open]:has(#peer-profile-card) .wc-close').first().click({ timeout: 3000 }).catch(() => A.page.keyboard.press('Escape'));
+	h.check((await card.locator('[data-testid="person-copy-id"]').count()) === 1, 'the card offers their peer id (Copy peer id)');
+	await A.page.locator('#person-card-back').click({ timeout: 3000 }).catch(() => A.page.keyboard.press('Escape'));
 	await A.page.waitForTimeout(300);
 	h.check(!(await card.isVisible().catch(() => false)), 'the card closes');
 	await closePanel(A);

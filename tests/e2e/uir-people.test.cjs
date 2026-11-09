@@ -47,6 +47,7 @@ const cardPresence = (p) => p.page.locator('#person-card-presence').getAttribute
 
 h.run(async () => {
 	const browser = await h.launch();
+	// the app's light mode is the stored theme (themes.js), not prefers-color-scheme: a light page sets both
 	const ctx = (scheme) => ({ context: { viewport: { width: W, height: H }, colorScheme: scheme } });
 
 	// ---- 1. the idle pill ------------------------------------------------------------------------------
@@ -143,7 +144,7 @@ h.run(async () => {
 
 	// ---- 4. a late joiner ------------------------------------------------------------------------------
 	console.log('\n=== 4. C joins late ===');
-	const C = await h.setupPageQuiet(browser, 'C', [A, B], { ...ctx('light') });
+	const C = await h.setupPageQuiet(browser, 'C', [A, B], { ...ctx('light'), storage: { theme: 'light' } });
 	await h.connect(C, A);
 	h.check(
 		await until(C, async () => (await read(C, 'userdata')).some((r) => r[0] === B.id && r[1] === 'Sam' && r[6]?.presence === 'away'), 40000),

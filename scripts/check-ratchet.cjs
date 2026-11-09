@@ -36,12 +36,29 @@ function parseCounts(text) {
 	return null;
 }
 
+/**
+ * showhide-v8: A COLLAPSED RUN IS NOT AN IMPROVEMENT. svelte-check turns its TypeScript service OFF once the
+ * project's non-TS files (.js + .svelte) pass 20 MB (`maxProgramSizeForNonTsFiles`) and then reports a clean
+ * "663 FILES 0 ERRORS" in a second and a half. The repo sat a few hundred bytes under that line, so the next lane
+ * to add a comment crossed it and the ratchet called it IMPROVED. tsconfig's `disableSizeLimit` removes the
+ * limit; this refuses the shape of the collapse in case anything else ever produces it.
+ * @param {string} text @param {{errors: number, warnings: number}} counts @param {{errors: number}} baseline
+ * @returns {string | null} why the run cannot be trusted, or null
+ */
+function collapsedRun(text, counts, baseline) {
+	const files = [...text.matchAll(/COMPLETED\s+(\d+)\s+FILES/g)].pop();
+	if (files && Number(files[1]) < 2000) return 'svelte-check looked at only ' + files[1] + ' files (a healthy run checks ~7500)';
+	if (counts.errors === 0 && counts.warnings === 0 && baseline.errors >= 50)
+		return 'svelte-check reported 0 errors against a baseline of ' + baseline.errors + ', which no single change does';
+	return null;
+}
+
 function readBaseline() {
 	try {
 		const raw = JSON.parse(fs.readFileSync(BASELINE, 'utf8'));
 		if (typeof raw.errors !== 'number' || typeof raw.warnings !== 'number') throw new Error('shape');
 		return raw;
-	} catch (error) {
+	} catch (/** @type {any} */ error) {
 		console.error('check-ratchet: cannot read ' + BASELINE + ' (' + error.message + ')');
 		process.exit(2);
 	}
@@ -59,7 +76,7 @@ function main() {
 	} else {
 		try {
 			output = execSync('npm run check', { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-		} catch (error) {
+		} catch (/** @type {any} */ error) {
 			// svelte-check exits non-zero AT the legacy baseline, which is the normal case
 			// here — the counts on stdout are what decides, never the exit code.
 			output = (error.stdout || '') + (error.stderr || '');
@@ -70,6 +87,13 @@ function main() {
 	if (!counts) {
 		console.error('check-ratchet: could not parse svelte-check output');
 		console.error(output.split('\n').slice(-5).join('\n'));
+		process.exit(1);
+	}
+
+	const collapsed = collapsedRun(output, counts, baseline);
+	if (collapsed) {
+		console.error('check-ratchet: this run cannot be trusted: ' + collapsed + '.');
+		console.error('Usually the 20 MB non-TS size limit switched the TypeScript service off: keep "disableSizeLimit": true in tsconfig.json.');
 		process.exit(1);
 	}
 
@@ -104,4 +128,5 @@ function main() {
 	process.exit(0);
 }
 
-main();
+if (require.main === module) main();
+module.exports = { parseCounts, collapsedRun };

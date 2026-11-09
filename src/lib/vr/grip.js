@@ -329,7 +329,8 @@ export function updateWorldGrab() {
 	rig.updateMatrixWorld(true);
 }
 
-/** convert a real-space delta vector into rig-local (grabbed objects live there) */
+/** convert a real-space delta vector into rig-local (grabbed objects live there)
+ * @param {THREE.Vector3} vector */
 function realDeltaToRigLocal(vector) {
 	const rig = get(worldRig);
 	if (!rig) return vector;

@@ -105,7 +105,8 @@ const euler = new THREE.Euler(0, 0, 0, 'YXZ');
  * `depth` + `offset`: 41 G4 — where on the object it was taken (see cursorGrabStart).
  * @type {{object: any, relQuat: THREE.Quaternion, mass: number, held: boolean,
  *   samples: {t: number, pos: THREE.Vector3, quat: THREE.Quaternion}[], lastSent: number,
- *   cursor?: boolean, depth?: number, offset?: THREE.Vector3}|null} */
+ *   cursor?: boolean, depth?: number, offset?: THREE.Vector3,
+ *   kin?: {rule: ReturnType<typeof grabRule>, home: {pos: number[], quat: number[]}}|null}|null} */
 let grab = null;
 /** 30 P1: the cursor's NDC while an Interact carry runs (fed by Scene's pointermove) */
 const cursorNdc = new THREE.Vector2();

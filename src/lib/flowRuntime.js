@@ -3884,6 +3884,7 @@ export function fireModuleTrigger(type, match, opts) {
 	return fired;
 }
 
+/** @param {string} uuid */
 export function fireObjectClick(uuid) {
 	let fired = 0; // 30b: how many On Click nodes this reached (additive return)
 	// 85 I3: local click listeners (a Sit Spot sits THIS player down) — a leaf flowRuntime may not import

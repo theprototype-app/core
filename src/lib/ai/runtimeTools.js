@@ -159,7 +159,7 @@ async function authorityView() {
 	}
 	if (kit) {
 		try {
-			const d = kit.kitDebug();
+			const d = /** @type {any} */ (kit.kitDebug());
 			// 78-kit refusals ("<piece>.<op> refused: <reason>"), the newest few, once kitDebug carries them
 			const refusals = Array.isArray(d.refusals) ? d.refusals.slice(-5) : null;
 			out.kit = { authority: d.authority ?? null, me: d.me ?? null, ...(d.stats ? { stats: d.stats } : {}), ...kitDocSummary(d.doc), ...(refusals?.length ? { refusals } : {}) };

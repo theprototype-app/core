@@ -34,7 +34,7 @@ const dialed = (p, id) => inPage(p, `return !!pc.connections[arg];`, id);
 const raw = (p, to, msg) => inPage(p, `pc.connections[arg.to].send(arg.msg);`, { to, msg });
 const meshes = (p) => inPage(p, `return read('objectsGroup').children.filter((c) => c.isMesh).length;`);
 const pill = async (from, to) => {
-	await from.page.locator('input[placeholder="Enter peer ID to connect"]').fill(to.id);
+	await (await h.openDial(from.page)).fill(to.id);
 	await from.page.getByRole('button', { name: 'Connect', exact: true }).click();
 };
 

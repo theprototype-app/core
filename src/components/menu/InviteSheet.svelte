@@ -1,5 +1,5 @@
 <script>
-	// 55 A4 — THE INVITE SHEET (Connect ▸ Request AI). ONE mechanism, two tabs: *AI agent*
+	// 55 A4 — THE INVITE SHEET (Connect ▸ Invite; was Request AI until uir-people). ONE mechanism, two tabs: *AI agent*
 	// and *Person* mint the same signed, host-verified invite (inviteCore/inviteStore). The
 	// host picks the role (View preselected for people, Edit for agents — hidden in the OSS
 	// build, where every peer edits), the expiry and how many may use it; then copies the
@@ -124,8 +124,9 @@
 	{#snippet bar()}
 		<Tabs
 			tabs={[
-				{ id: 'agent', label: 'AI agent', icon: 'bot' },
-				{ id: 'person', label: 'Person', icon: 'user-plus' }
+				// uir-people (Connect B): Person first — the pill's Invite opens it there; AI agent is the second tab
+				{ id: 'person', label: 'Person', icon: 'user-plus' },
+				{ id: 'agent', label: 'AI agent', icon: 'bot' }
 			]}
 			value={tab}
 			idPrefix="invite"

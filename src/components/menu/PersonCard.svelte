@@ -138,19 +138,19 @@
 	<div class="pc-hero">
 		<span class="pc-av" class:speaking style:--pc-ring={colour} style:background={row?.[2] ? 'var(--surface-2)' : colour} aria-hidden="true">
 			{#if row?.[2]}<img src={row[2]} alt="" />{:else if isAgent}<Icon name="bot" size={24} />{:else}{initial}{/if}
-			{#if status}<span class="pc-av-status" data-presence={status}><Icon name={PRESENCE_ICON[status]} size={12} /></span>{/if}
+			{#if status}<span class="pc-av-status" data-presence={status}><Icon name={PRESENCE_ICON[status]} size={16} /></span>{/if}
 		</span>
 		<div class="pc-who">
 			<div class="pc-name">
 				<span class="truncate" title={name}>{name}</span>
 				{#if self}<span class="pc-you">(you)</span>{/if}
-				{#if isAgent}<span class="pc-chip pc-chip-ai"><Icon name="bot" size={12} aria-hidden="true" />AI</span>{/if}
+				{#if isAgent}<span class="pc-chip pc-chip-ai"><Icon name="bot" size={16} aria-hidden="true" />AI</span>{/if}
 			</div>
 			{#if sub}<div class="pc-sub" id="person-card-sub">{sub}</div>{/if}
 			<div class="pc-chips">
 				{#if role}<span class="pc-chip pc-role" data-role={role}>{role}</span>{/if}
-				{#if status}<span class="pc-chip pc-presence" id="person-card-presence" data-presence={status}><Icon name={PRESENCE_ICON[status]} size={12} aria-hidden="true" />{PRESENCE_LABEL[status]}</span>{/if}
-				{#if speaking}<span class="pc-chip pc-speaking"><Icon name="mic" size={12} aria-hidden="true" />speaking</span>{/if}
+				{#if status}<span class="pc-chip pc-presence" id="person-card-presence" data-presence={status}><Icon name={PRESENCE_ICON[status]} size={16} aria-hidden="true" />{PRESENCE_LABEL[status]}</span>{/if}
+				{#if speaking}<span class="pc-chip pc-speaking"><Icon name="mic" size={16} aria-hidden="true" />speaking</span>{/if}
 			</div>
 		</div>
 	</div>

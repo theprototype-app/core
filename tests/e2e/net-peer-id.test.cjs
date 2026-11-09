@@ -80,7 +80,7 @@ h.run(async () => {
 		window.__stores.peers.subscribe((p) => (pc = p))();
 		return pc.peer.id;
 	});
-	await B.page.locator('input[placeholder="Enter peer ID to connect"]').fill(live);
+	await (await h.openDial(B.page)).fill(live);
 	await B.page.getByRole('button', { name: 'Connect', exact: true }).click();
 	await h.approveButton(A.page).click({ timeout: 30000 });
 	await h.eventually(

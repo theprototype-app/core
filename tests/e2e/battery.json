@@ -288,6 +288,7 @@
 		"import-file": "agent"
 	},
 	"suites": {
+		"uir-people": 300,
 		"possess": 120,
 		"photo-mode": 420,
 		"text-path": 360,

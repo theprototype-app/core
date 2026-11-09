@@ -100,9 +100,9 @@ async function waitJoined(client, ms = 120000) {
 /** open the Request AI sheet, pick the tab (+ role on cloud), create, return the link; closes the sheet */
 async function mintInSheet(A, tab, role) {
 	// connected, the bar is the compact chip: a click on it shows the full bar (where Request AI lives)
-	if (!(await A.page.locator('#connect-request-ai').count()) && (await A.page.locator('.connect-pill button.cx-chip').count()))
+	if (!(await A.page.locator('#connect-invite').count()) && (await A.page.locator('.connect-pill button.cx-chip').count()))
 		await A.page.locator('.connect-pill button.cx-chip').click({ timeout: 5000 });
-	await A.page.locator('#connect-request-ai').click({ timeout: 10000 });
+	await A.page.locator('#connect-invite').click({ timeout: 10000 }); // uir-people: one Invite button (was Request AI)
 	await A.page.locator('#invite-sheet').waitFor({ timeout: 5000 });
 	if ((await A.page.locator('#invite-sheet').getAttribute('data-tab')) !== tab)
 		await A.page.getByRole('tab', { name: tab === 'agent' ? 'AI agent' : 'Person' }).click({ timeout: 5000 });

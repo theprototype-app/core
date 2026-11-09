@@ -49,7 +49,7 @@ h.run(async () => {
 		window.__cyl = g.children[g.children.length - 1].uuid;
 		window.__stores.objectActions.selectObject(window.__cyl);
 	});
-	await A.page.locator('input[placeholder="Enter peer ID to connect"]').focus();
+	await (await h.openDial(A.page)).focus();
 	await A.page.keyboard.press('Delete');
 	await A.page.waitForTimeout(150);
 	h.check(await inScene(A.page, await A.page.evaluate(() => window.__cyl)), 'Delete is ignored while a text field is focused');

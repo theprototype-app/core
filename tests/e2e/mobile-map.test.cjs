@@ -98,6 +98,9 @@ h.run(async () => {
 	await tap('#ps-connect-chip');
 	row(6, (await read(store('connectDrawerOpen'))) === true, 'Drawer toggle: tapping the chip opens the drawer');
 	row(2, await visible('.connect-wrap[data-ps-host] .connect-pill > button:first-of-type'), 'Copy invite link lives in the Connect sheet');
+	// uir-people (Connect B): the sheet's pill leads with Invite + Join…; Join… shows the field
+	row(3, await visible('.connect-wrap[data-ps-host] #connect-invite'), 'Invite lives in the Connect sheet');
+	await tap('.connect-wrap[data-ps-host] #connect-join');
 	row(3, await visible('.connect-wrap[data-ps-host] .cx-input'), 'Peer ID field lives in the Connect sheet');
 	row(4, await visible('.connect-wrap[data-ps-host] .cx-connect button'), 'Connect button lives in the Connect sheet');
 	const tabs = await read(() => [...document.querySelectorAll('.connect-wrap[data-ps-host] .cxd-tab')].filter((t) => t.offsetParent).map((t) => t.textContent.trim()));

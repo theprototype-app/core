@@ -359,6 +359,23 @@ async function setupPageQuiet(browser, name, others, options = {}) {
 	}
 }
 
+/**
+ * uir-people (Connect B, "Invite-first pill"): the idle pill leads with Invite + Join…, and the dial field
+ * ("Enter peer ID to connect") shows only after Join…. Bring it up — after the squeezed dot when the pill is
+ * compact (44 M14) — and return its locator. Safe to call when it is already showing.
+ * @param {any} page
+ */
+async function openDial(page) {
+	const field = page.locator('input[placeholder="Enter peer ID to connect"]');
+	if (await field.isVisible().catch(() => false)) return field;
+	const squeezedDot = page.locator('#connect-squeeze-dot');
+	if (await squeezedDot.isVisible().catch(() => false)) await squeezedDot.click();
+	const join = page.locator('#connect-join');
+	if (await join.isVisible().catch(() => false)) await join.click();
+	await field.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
+	return field;
+}
+
 /** Connect `from` to `to` (approve on `to`), then let the mesh settle. */
 async function connect(from, to, settleMs = 9000) {
 	// test-health-1: dial the id the page holds NOW. setupPage reads it before the signaling link
@@ -385,11 +402,8 @@ async function connect(from, to, settleMs = 9000) {
 	}
 	// 44 M14: on a narrow window (net-stress's 800 px) the floating pill is SQUEEZED to its status dot,
 	// and the dial input shows only after a tap on it — press it first when it is what is there
-	const squeezedDot = from.page.locator('#connect-squeeze-dot');
-	if (await squeezedDot.isVisible().catch(() => false)) await squeezedDot.click();
-	await step(from, 'fill the peer id', () =>
-		from.page.locator('input[placeholder="Enter peer ID to connect"]').fill(to.id)
-	);
+	// …and on the Invite-first pill (uir-people) the field shows after Join…
+	await step(from, 'fill the peer id', async () => (await openDial(from.page)).fill(to.id));
 	await step(from, 'press Connect', () =>
 		from.page.getByRole('button', { name: 'Connect', exact: true }).click()
 	);
@@ -1298,4 +1312,4 @@ function envelopeDelta(a, b) {
 	return { maxDelta, meanDelta: n ? sum / n : 0, worstSlice };
 }
 
-module.exports = { URL, coverageKey, GPU_ARGS, PATIENT_CLICK_MS, APPROVE_LABEL, approveButton, watchPress, check, launch, setupPage, setupPageQuiet, connect, leavePlay, eventually, caughtUp, eventuallyAfter, projectPoint, freshReload, answerRestore, closePeer, finish, run, installModule, moduleZipPath, makeCollectibleChains, pageErrors, externalErrors, grabFrame, centeredClip, frameDelta, framePixelsOffColor, AUDIO_ARGS, audioMetrics, renderOffline, envelopeDelta, routeSkies, SKIES_DIR };
+module.exports = { URL, coverageKey, openDial, GPU_ARGS, PATIENT_CLICK_MS, APPROVE_LABEL, approveButton, watchPress, check, launch, setupPage, setupPageQuiet, connect, leavePlay, eventually, caughtUp, eventuallyAfter, projectPoint, freshReload, answerRestore, closePeer, finish, run, installModule, moduleZipPath, makeCollectibleChains, pageErrors, externalErrors, grabFrame, centeredClip, frameDelta, framePixelsOffColor, AUDIO_ARGS, audioMetrics, renderOffline, envelopeDelta, routeSkies, SKIES_DIR };

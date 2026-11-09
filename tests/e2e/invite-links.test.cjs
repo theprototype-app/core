@@ -206,9 +206,12 @@ h.run(async () => {
 	console.log('\n=== 3. two real peers: the link → in, no card ===');
 	const A = await h.setupPage(browser, 'A');
 	await A.page.waitForFunction(() => window.__stores?.peers && (() => { let p; window.__stores.peers.subscribe((v) => (p = v))(); return !!p?.peer?.open; })(), null, { timeout: 30000 }).catch(() => {});
-	await A.page.locator('#connect-request-ai').click({ timeout: 30000, noWaitAfter: true });
+	// uir-people (Connect B): ONE Invite button — the sheet opens on Person, the AI agent tab is inside it
+	await A.page.locator('#connect-invite').click({ timeout: 30000, noWaitAfter: true });
 	await A.page.locator('#invite-sheet').waitFor({ timeout: 5000 });
-	h.check((await A.page.locator('#invite-sheet').getAttribute('data-tab')) === 'agent', 'Request AI opens the sheet on the AI agent tab');
+	h.check((await A.page.locator('#invite-sheet').getAttribute('data-tab')) === 'person', 'Invite opens the sheet on the Person tab');
+	await A.page.getByRole('tab', { name: 'AI agent' }).click({ timeout: 5000 });
+	await A.page.waitForFunction(() => document.querySelector('#invite-sheet')?.getAttribute('data-tab') === 'agent', null, { timeout: 5000 });
 	const rolesOn = await A.page.evaluate(() => { let r; window.__stores.cloudHooks.rolesInfo.subscribe((v) => (r = v))(); return !!r; });
 	if (rolesOn) h.check((await A.page.locator('#invite-role-edit[aria-checked="true"]').count()) === 1, 'a cloud build offers the role, Edit preselected for an agent');
 	else h.check((await A.page.locator('#invite-role-view').count()) === 0, 'no role choice in the OSS build (everyone edits)');

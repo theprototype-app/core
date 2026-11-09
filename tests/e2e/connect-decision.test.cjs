@@ -154,7 +154,7 @@ const addObject = async (p, command) => {
 /** The dial, by hand: this suite is about what the dial does NOT do, so it must not go
  *  through `h.connect`, which knows how to answer the round-31 question. */
 const dial = async (from, to) => {
-	await from.page.locator('input[placeholder="Enter peer ID to connect"]').fill(to.id);
+	await (await h.openDial(from.page)).fill(to.id);
 	await from.page.getByRole('button', { name: 'Connect', exact: true }).click();
 };
 

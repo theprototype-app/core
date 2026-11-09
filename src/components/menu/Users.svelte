@@ -1073,7 +1073,7 @@
 				{#if presenceOf(user)}
 					<!-- uir-people: their status (a shape AND a colour, 53 A2) -->
 					<span class="peer-presence" data-presence={presenceOf(user)} title={PRESENCE_LABEL[presenceOf(user)]}
-						><Icon name={PRESENCE_ICON[presenceOf(user)]} size={12} aria-hidden="true" /><span class="sr-only">{PRESENCE_LABEL[presenceOf(user)]}</span></span
+						><Icon name={PRESENCE_ICON[presenceOf(user)]} size={16} aria-hidden="true" /><span class="sr-only">{PRESENCE_LABEL[presenceOf(user)]}</span></span
 					>
 				{/if}
 			</div>

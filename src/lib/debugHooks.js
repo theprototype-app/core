@@ -55,6 +55,8 @@ export const DEBUG_HOOKS = [
 	['funnel', () => import('./onboarding/funnel.js')],
 	// 39: drag to place — the preview setting, the measured dims, the pack downloads, the ghost
 	['placementPrefs', () => import('./placementPrefs.js')],
+	// uir-people: the optional status (Available / Busy / Away) and its roster merge
+	['peoplePresence', () => import('./peoplePresence.js')],
 	['placementDims', () => import('./placementDims.js')],
 	['packCache', () => import('./packCache.js')],
 	// 60 Q6: the local asset cache (OPFS) — index, stats, clear, persist

@@ -73,7 +73,7 @@ const text = (loc) => loc.textContent({ timeout: 3000 }).catch(() => '');
 const click = (loc, timeout = 5000) => loc.click({ timeout }).then(() => true, () => false);
 
 async function dialVia(peer, id) {
-	await peer.page.locator('input[placeholder="Enter peer ID to connect"]').fill(id);
+	await (await h.openDial(peer.page)).fill(id);
 	await peer.page.getByRole('button', { name: 'Connect', exact: true }).click();
 	await peer.page.waitForTimeout(300);
 }

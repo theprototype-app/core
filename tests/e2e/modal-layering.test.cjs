@@ -49,7 +49,10 @@ h.run(async () => {
 	// backdrop-filter containing block
 	await A.page.evaluate(() => window.__stores.closeMenu.set(false)); // open the sidebar
 	await A.page.waitForTimeout(400);
-	await A.page.locator('#save-options-open').click();
+	// showhide-v8 §6: Save options is the last item of the burger's Save as… menu
+	await A.page.waitForSelector('#project-save-as', { timeout: 5000 });
+	await A.page.locator('#project-save-as').click();
+	await A.page.locator('[role="menu"] [role="menuitem"]', { hasText: 'Save options…' }).click();
 	await A.page.waitForSelector('#save-options-modal', { state: 'visible', timeout: 5000 });
 	const rect = await A.page.evaluate(() => {
 		const m = document.querySelector('#save-options-modal .wc, #save-options-modal > *')?.getBoundingClientRect() ?? document.querySelector('#save-options-modal').getBoundingClientRect();

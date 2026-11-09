@@ -38,7 +38,7 @@
 	import CloudSlot from '../CloudSlot.svelte';
 	import { whatsNewUnseen, openWhatsNew } from '$lib/whatsNew';
 	// 36 I5: own lines (not the shared icon list) so a merge with the menu's other lanes stays a union
-	import { checkpointsOpen, checkpointSaveOpen } from '../../stores/appStore.js'; // 36 B14
+	import { checkpointsOpen, checkpointSaveOpen, explorerClose, armExplorerSceneSave } from '../../stores/appStore.js'; // 36 B14; showhide-v8 §6 Save as copy
 	import { commandPaletteOpen } from '../../stores/appStore'; // phone-polish item 5: the palette's touch entry
 	import { startEditorTour } from '$lib/tours/builtin.js';
 	import { statsOpen } from '$lib/sceneBudget';
@@ -50,6 +50,8 @@
 	import { saveManyDialog } from '$lib/saveManyState'; // 56 C13
 	import { openAssetBrowser } from '$lib/cc0/assetBrowserState.js'; // 47-cc0
 	import { openWindowHere } from '$lib/dockMenu'; // dock-fixes D: opens where you work
+	import { editedSinceSave, noteFileSaved } from '$lib/saveState.js'; // showhide-v8 §6
+	import ContextMenu from '../ContextMenu.svelte';
 
 	// 203: redesigned as a compact floating panel — flat list (order preserved,
 	// no boxed group / section headers / vertical bar), a fast fade-in (was a
@@ -72,6 +74,19 @@
 	function openSaveOptions() {
 		saveOptionsOpen.set(true);
 	}
+	// showhide-v8 §6: the Save as… menu (the owner's order)
+	let saveAsMenu = $state<{ x: number; y: number } | null>(null);
+	function openSaveAs(e: MouseEvent) {
+		const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		saveAsMenu = { x: r.left, y: r.bottom + 4 };
+	}
+	const saveAsItems = [
+		{ label: 'Save scene as file…', icon: 'download', tooltip: 'Download the open scene as a .tpscene', action: () => { saveFromMenu('tpscene'); closeMenu.set(true); } },
+		{ label: 'Save project as file…', icon: 'package', tooltip: 'Download the whole project as a .tp: the scene, its library files and history', action: () => { saveFromMenu('tp'); closeMenu.set(true); } },
+		{ label: 'Save as copy…', icon: 'copy', tooltip: 'Save this scene under a new name in the Explorer (your library)', action: () => { explorerClose.set(false); armExplorerSceneSave(null); closeMenu.set(true); } },
+		{ separator: true },
+		{ label: 'Save options…', icon: 'settings', tooltip: 'Format and everything else a Save uses', action: () => openSaveOptions() }
+	];
 	/**
 	 * 56 C13 (addendum 2026-10-28f): Save PROJECT with several libraries open (my Library, a session I
 	 * joined, a mounted project with changes) goes through Settings ▸ Save options ▸ "When several
@@ -79,6 +94,7 @@
 	 * @param {string} format
 	 */
 	function saveFromMenu(format: string) {
+		noteFileSaved();
 		if (format !== 'tp') return save(format);
 		void import('$lib/saveProject').then((m) => m.saveProjectPressed('burger', () => save(format)));
 	}
@@ -238,12 +254,14 @@
 				<button id="project-load" class="side-row pa-btn" title="Open a .tp project, .tpscene scene or .json file" onclick={() => pickFile('load-file')}>
 					<span class="side-ico"><Icon name="folder-open" size={16} aria-hidden="true" /></span><span class="pa-label">Load</span>
 				</button>
+				<!-- showhide-v8 §6 (burger direction A): [Save] — greyed until something changed since the last save — and
+				     [Save as… ▾], a menu: Save scene as file… · Save project as file… · Save as copy… · Save options… -->
 				<div class="pa-split">
-					<button id="project-save" class="side-row pa-btn pa-split-main" title={'Save as ' + formatInfo.label + ' (' + formatInfo.ext + ') with your last-used options'} onclick={() => saveFromMenu(saveFormat)}>
+					<button id="project-save" class="side-row pa-btn pa-split-main" disabled={!$editedSinceSave} title={$editedSinceSave ? 'Save as ' + formatInfo.label + ' (' + formatInfo.ext + ') with your last-used options' : 'Nothing changed since the last save'} onclick={() => saveFromMenu(saveFormat)}>
 						<span class="side-ico"><Icon name="save" size={16} aria-hidden="true" /></span><span class="pa-label">Save</span>
 					</button>
-					<button id="save-options-open" class="side-row pa-btn pa-split-more" title="Save options…" aria-label="Save options" aria-haspopup="dialog" onclick={openSaveOptions}>
-						<Icon name="chevron-down" size={16} aria-hidden="true" />
+					<button id="project-save-as" class="side-row pa-btn pa-split-more pa-save-as" title="Save as a file, as a copy, or change the save options" aria-haspopup="menu" aria-expanded={!!saveAsMenu} onclick={openSaveAs}>
+						<span class="pa-label">Save as…</span><Icon name="chevron-down" size={16} aria-hidden="true" />
 					</button>
 				</div>
 				<button id="project-import" class="side-row pa-btn" title="Bring models, images or sounds into the scene" onclick={() => pickFile('import-file')}>
@@ -431,6 +449,7 @@
 <!-- 56 C13: the "Save which libraries?" dialog, mounted only while it is open (lazy chunk) -->
 {#if $saveManyDialog}
 	{#await import('./SaveManyDialog.svelte') then m}<m.default />{/await}
+	{#if saveAsMenu}<ContextMenu x={saveAsMenu.x} y={saveAsMenu.y} items={saveAsItems} sizeKey="burger-save-as" onclose={() => (saveAsMenu = null)} />{/if}
 {/if}
 
 <style>
@@ -638,6 +657,17 @@
 		flex: 1 1 auto;
 		border-top-right-radius: 0;
 		border-bottom-right-radius: 0;
+	}
+	/* showhide-v8 §6: Save as… carries its words, so it is as wide as they are; Save greys until an edit */
+	.pa-split > .pa-split-more.pa-save-as {
+		flex: 0 0 auto;
+		width: auto;
+		gap: 2px;
+		padding: 0 6px 0 8px;
+	}
+	.pa-split > .pa-split-main:disabled {
+		opacity: 0.45;
+		cursor: default;
 	}
 	.pa-split > .pa-split-more {
 		flex: 0 0 28px;

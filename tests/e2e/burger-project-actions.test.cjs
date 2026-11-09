@@ -46,10 +46,11 @@ const gridOf = (page) =>
 			load: r('#project-load'),
 			save: r('.pa-split'),
 			saveMain: r('#project-save'),
-			more: r('#save-options-open'),
+			more: r('#project-save-as'),
 			imp: r('#project-import'),
 			exp: r('#open-publish-export'),
-			icons: [...grid.querySelectorAll('button')].map((b) => {
+			// showhide-v8 §6: Save as… carries its words with the chevron AFTER them, so it is not an icon-label cell
+			icons: [...grid.querySelectorAll('button:not(#project-save-as)')].map((b) => {
 				const svg = b.querySelector('svg')?.getBoundingClientRect();
 				const label = b.querySelector('.pa-label')?.getBoundingClientRect();
 				return !svg || !label ? 'n/a' : Math.abs(svg.top + svg.height / 2 - (label.top + label.height / 2)) < 3 && svg.right <= label.left ? 'beside' : 'not-beside';
@@ -93,7 +94,7 @@ h.run(async () => {
 		const rowH = await page.evaluate(() => Math.round(document.querySelector('#sidebar70 #clear-scene')?.getBoundingClientRect().height ?? 0));
 		h.check(hs.every((x) => Math.abs(x - rowH) <= 2), `list-row height: every cell is a menu row tall (${JSON.stringify(hs)} vs Clear Scene ${rowH})`);
 		h.check(g.icons.every((i) => i !== 'not-beside'), `icons sit BESIDE their labels (${JSON.stringify(g.icons)})`);
-		h.check((g.more?.x ?? 0) >= (g.saveMain?.x ?? 0) + (g.saveMain?.w ?? 0) - 1 && (g.more?.w ?? 99) <= 32, `Save carries its ▾ on its right (${JSON.stringify(g.more)})`);
+		h.check((g.more?.x ?? 0) >= (g.saveMain?.x ?? 0) + (g.saveMain?.w ?? 0) - 1 && /Save as/.test(g.more?.text ?? ''), `Save carries "Save as… ▾" on its right (${JSON.stringify(g.more)})`);
 	}
 	const menuW = await page.evaluate(() => document.querySelector('#sidebar70')?.getBoundingClientRect().width ?? 0);
 	h.check(menuW <= 272 + 1, `the menu keeps its width (${Math.round(menuW)} px ≤ 17rem)`);
@@ -117,7 +118,15 @@ h.run(async () => {
 		window.__stores.objectActions.deselectObject();
 	});
 	await openMenu(page);
-	await page.locator('#save-options-open').click();
+	// showhide-v8 §6: Save as… ▾ is a menu in the owner's order; its last item opens Save options
+	await page.locator('#project-save-as').click();
+	await page.waitForSelector('[role="menu"] [role="menuitem"]', { timeout: 5000 });
+	const saveAs = await page.evaluate(() => [...document.querySelectorAll('[role="menu"] [role="menuitem"]')].map((e) => e.textContent?.trim()));
+	h.check(
+		JSON.stringify(saveAs) === JSON.stringify(['Save scene as file…', 'Save project as file…', 'Save as copy…', 'Save options…']),
+		`Save as… lists scene file / project file / copy / options (${JSON.stringify(saveAs)})`
+	);
+	await page.locator('[role="menu"] [role="menuitem"]', { hasText: 'Save options…' }).click();
 	await page.waitForSelector('#save-options-modal', { state: 'visible', timeout: 5000 });
 	const modal = await page.evaluate(() => ({
 		formats: [...document.querySelectorAll('#save-format .seg-opt')].map((b) => b.textContent?.trim()),
@@ -138,6 +147,15 @@ h.run(async () => {
 	h.check(/Scene/.test((await page.getAttribute('#project-save', 'title')) ?? ''), 'Save now says it saves a Scene (its tooltip)');
 	const [dl2] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }).catch(() => null), page.locator('#project-save').click()]);
 	h.check(!!dl2 && dl2.suggestedFilename().endsWith('.tpscene'), `Save (one press) saves with the last-used options (${dl2?.suggestedFilename()})`);
+	// showhide-v8 §6: Save greys until the next edit (the counterfactual: it was armed by the box above)
+	await page.waitForTimeout(300);
+	await openMenu(page);
+	h.check(await page.locator('#project-save').isDisabled(), 'after a Save, Save is greyed (nothing changed since)');
+	await page.evaluate(async () => {
+		window.__stores.commandsHandler.sceneCommand('/create box');
+		await new Promise((r) => setTimeout(r, 1100));
+	});
+	h.check(!(await page.locator('#project-save').isDisabled()), '...and an edit arms it again');
 	await closeMenu(page);
 
 	// the setting: List is an instant rollback, Auto comes back to Compact

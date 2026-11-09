@@ -92,7 +92,7 @@ import { sceneStorageKey, readStored, writeStored } from './gameStorage';
 import { GAME_FEEL_ACTIONS, runGameFeelAction, updateGameMusicNodes, primeGameFeelActions } from './gameFeelActions';
 // 34 R2 (T3): the game kit — its action nodes act on the stamp edge here, its document ticks here
 import { KIT_ACTION_TYPES, runKitNodeAction, installKitNodes } from './kit/nodes.js';
-import { tickKit, primeKitRuntime, kitAuthorityId } from './kit/runtime.js';
+import { tickKit, primeKitRuntime, kitAuthorityId, kit } from './kit/runtime.js';
 /** 34 R3: behaviours/app.js, primed in startFlowRuntime @type {any} */
 let behavioursRef = null;
 // 31 (Stars Room): a scene's own settings rows (31-game-shell's leaf), and the pointing switch
@@ -1095,6 +1095,56 @@ function updateGameSettingNodes() {
 		if (seen.has(id)) continue;
 		held.off?.();
 		settingRegistrations.delete(id);
+	}
+}
+
+// --- 78 F12: a Collect pickup node with "Collect on touch" registers its pickup for touch ---------
+/** node id -> {sig, id, off} @type {Map<string, {sig: string, id: string, off: () => void}>} */
+const touchRegistrations = new Map();
+let touchNodesSeen = /** @type {any[] | null} */ (null);
+let touchCheckedAt = 0;
+
+/**
+ * 78 F12: TOUCH-COLLECT WITHOUT CODE. kit.pickups takes a pickup a player walks over only when it
+ * is REGISTERED (kit.pickups.register — code, in a behaviour's on.load), so a scene built from
+ * nodes alone never collected a gem by walking. A Collect pickup node with "Collect on touch" on
+ * (the default) registers its pickup here — the object wired into `pickup`, else the object whose
+ * graph holds the node (the kit's implicit-owner rule) — with the node's score and respawn. Every
+ * peer runs the same graph, so every peer registers the same pickups (the register contract), and
+ * each peer's touch then asks only for its own player (kit runtime's touchPickups). Reconciled
+ * when the graph changes, and re-checked each second so a kit reset (a scene clear) re-registers.
+ * @param {number} time @param {any} ctx
+ */
+function updateTouchPickupNodes(time, ctx) {
+	const now = performance.now();
+	if (nodes === touchNodesSeen && now - touchCheckedAt < 1000) return;
+	touchNodesSeen = nodes;
+	touchCheckedAt = now;
+	const pickups = kit.impls.pickups?.extra;
+	if (!pickups?.register) return;
+	const live = new Set(pickups.ids());
+	const seen = new Set();
+	for (const node of nodes) {
+		if (node.type !== 'kit-pickups-collect') continue;
+		const d = resolveInputs(node, nodes, edges, time, ctx);
+		if (d.touch === false || d.touch === 0 || d.touch === 'false') continue;
+		const wired = typeof d.pickup === 'string' && d.pickup && d.pickup !== '-None-' ? d.pickup : null;
+		const owner = node.__graph && node.__graph !== SCENE_GRAPH ? node.__graph : null;
+		const id = wired ?? owner;
+		if (!id) continue;
+		seen.add(node.id);
+		const score = Number.isFinite(Number(d.score)) ? Number(d.score) : 1;
+		const respawn = Math.max(0, Number(d.respawn) || 0);
+		const sig = id + '|' + score + '|' + respawn;
+		const held = touchRegistrations.get(node.id);
+		if (held && held.sig === sig && live.has(id)) continue;
+		held?.off();
+		touchRegistrations.set(node.id, { sig, id, off: pickups.register({ id, score, respawn }) });
+	}
+	for (const [nodeId, held] of touchRegistrations) {
+		if (seen.has(nodeId)) continue;
+		held.off();
+		touchRegistrations.delete(nodeId);
 	}
 }
 
@@ -5145,6 +5195,7 @@ function runTick(now) {
 	if (paused) toLive();
 	// 34 R2: the kit's authority turns due moments into changes; everyone re-sends what was
 	// never acknowledged (after the game nodes, so a press this frame is already asked)
+	updateTouchPickupNodes(time, ctx); // 78 F12: before the touch check tickKit runs
 	tickKit();
 	if (paused && !ownLive) toView();
 	// 36 (U10): triggers wired INTO a behaviour's declared inputs run its handlers (authority)

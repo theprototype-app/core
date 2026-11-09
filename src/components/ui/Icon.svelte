@@ -279,7 +279,11 @@
 		ZoomOut,
 		// 60 Q1 + Q5: Play here, reference image
 		MapPin,
-		ImageUp
+		ImageUp,
+		// uir-people: the presence statuses (Busy / Away) and the pill's Join…
+		CircleMinus,
+		Clock,
+		LogIn
 	} from '@lucide/svelte';
 	import ToolIcon from './ToolIcon.svelte';
 	import { iconSize, ICON_STROKE } from '$lib/ui/icons.js';
@@ -329,6 +333,9 @@
 		circle: Circle,
 		'circle-alert': CircleAlert,
 		'circle-check': CircleCheck,
+		'circle-minus': CircleMinus, // uir-people
+		clock: Clock, // uir-people
+		'log-in': LogIn, // uir-people
 		'circle-dashed': CircleDashed,
 		'circle-x': CircleX,
 		'circle-help': CircleHelp,

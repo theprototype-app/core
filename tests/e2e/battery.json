@@ -296,6 +296,7 @@
 	},
 	"suites": {
 		"possess": 120,
+		"profile-notify": 180,
 		"player-sensors": 300,
 		"static-level-play": 240,
 		"touch-collect-nodes": 240,

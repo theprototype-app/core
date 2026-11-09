@@ -50,6 +50,7 @@
 	import { saveManyDialog } from '$lib/saveManyState'; // 56 C13
 	import { openAssetBrowser } from '$lib/cc0/assetBrowserState.js'; // 47-cc0
 	import { openWindowHere, burgerWindowItems, closeAllFloating } from '$lib/dockMenu'; // dock-fixes D: opens where you work; showhide-v8 §6 Windows ▸
+	import { snapToEdges, layoutLocked, layoutPerScene } from '$lib/windowPrefs.js';
 	import { bindingOf } from '$lib/shortcuts';
 	import { toggleViewportFocus } from '$lib/focusMode';
 	import { resetWindowLayout } from '$lib/dragWindow';
@@ -103,7 +104,11 @@
 			{ label: 'Focus mode', icon: 'focus', hint: bindingOf('view.focus') ?? 'Ctrl+Space', tooltip: 'The viewport alone, nothing over it; again to restore', action: () => { closeMenu.set(true); toggleViewportFocus(); } },
 			{ label: 'Full screen', icon: 'fullscreen', tooltip: 'The app fills the screen (Esc leaves)', action: () => toggleFullScreen() },
 			{ label: 'Reset positions and sizes', icon: 'rotate-ccw', tooltip: 'Every floating window back to where and how big it started', action: () => { resetWindowLayout(); showToast('Window positions and sizes reset'); } },
-			{ label: 'Close all floating windows', icon: 'x', tooltip: 'Docked, sidebar and pop-out windows stay', action: () => { const n = closeAllFloating(); showToast(n ? `Closed ${n} floating window${n === 1 ? '' : 's'}` : 'No floating windows were open'); } }
+			{ label: 'Close all floating windows', icon: 'x', tooltip: 'Docked, sidebar and pop-out windows stay', action: () => { const n = closeAllFloating(); showToast(n ? `Closed ${n} floating window${n === 1 ? '' : 's'}` : 'No floating windows were open'); } },
+			{ separator: true },
+			{ label: 'Snap to edges', checked: $snapToEdges, tooltip: 'A dragged window lands flush on a screen edge it comes close to', action: () => snapToEdges.set(!$snapToEdges) },
+			{ label: 'Lock layout', checked: $layoutLocked, tooltip: 'No window moves, resizes, undocks or tears off by a drag; opening, closing and the menus still work', action: () => layoutLocked.set(!$layoutLocked) },
+			{ label: 'Remember layout per scene', checked: $layoutPerScene, tooltip: 'Each saved scene keeps the window layout you left it with, and gets it back when it opens', action: () => layoutPerScene.set(!$layoutPerScene) }
 		];
 	}
 	const saveAsItems = [

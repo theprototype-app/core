@@ -6,6 +6,9 @@
 //      screen / Reset positions and sizes / Close all floating windows
 //   3. a click on an OPEN window's row reveals it and never closes it; on a closed one it opens it
 //   4. Close all floating windows closes the floating ones and leaves a docked one open
+//   5. the switches: Lock layout stops a header drag (the counterfactual: unlocked, the same drag moves it); Snap to
+//      edges lands a window dragged near the left edge flush on it (off: it stays where it was dropped); Remember
+//      layout per scene puts a scene's windows back when it opens again (off: nothing comes back)
 //
 // Run: APP_URL=https://theprototype.app:6995/ npm run e2e -- burger-windows
 const h = require('./helpers.cjs');
@@ -65,8 +68,10 @@ h.run(async () => {
 	h.check(names.some((t) => /^Node editor/.test(t)) && names.some((t) => /^Explorer/.test(t)) && names.some((t) => /^Code/.test(t)), '2.1 the windows are listed');
 	h.check(names.some((t) => /Explorer.*Alt\+E/.test(t)), '2.2 ...with their shortcuts');
 	h.check(rows.find((r) => /^Explorer/.test(r.text))?.checked === true && rows.find((r) => /^Animation/.test(r.text))?.checked === false, '2.3 an open mark on the open window only');
-	const tail = names.slice(-4).map((t) => t.replace(/Ctrl\+Space$/, '').trim());
+	const tail = names.slice(-7, -3).map((t) => t.replace(/Ctrl\+Space$/, '').trim());
 	h.check(JSON.stringify(tail) === JSON.stringify(['Focus mode', 'Full screen', 'Reset positions and sizes', 'Close all floating windows']), `2.4 then the window commands (${JSON.stringify(tail)})`);
+	const switches = rows.slice(-3);
+	h.check(JSON.stringify(switches.map((r) => r.text)) === JSON.stringify(['Snap to edges', 'Lock layout', 'Remember layout per scene']) && switches.every((r) => !r.checked), `2.5 then the three switches, all off by default (${JSON.stringify(switches)})`);
 
 	// --- 3: reveal, never close ---
 	await page.locator('[role="menu"] [role="menuitem"], [role="menu"] [role="menuitemcheckbox"]').filter({ hasText: /^Explorer/ }).first().click();
@@ -86,6 +91,54 @@ h.run(async () => {
 		window.__stores.timelineClose.set(false);
 	});
 	await page.waitForTimeout(900);
+
+	// --- 5a/5b: Lock layout and Snap to edges, on the floating Timeline ---
+	const win = page.locator('#timeline-window');
+	const box = async () => {
+		const b = await win.boundingBox();
+		return b && { x: Math.round(b.x), y: Math.round(b.y) };
+	};
+	/** drag the window by its header so its left edge lands at `toX` (and 40 px lower) */
+	const dragTo = async (toX) => {
+		const handle = win.locator('.move-handle').first();
+		const hb = await handle.boundingBox();
+		const wb = await win.boundingBox();
+		const sx = hb.x + Math.min(30, hb.width / 3);
+		const sy = hb.y + hb.height / 2;
+		await page.mouse.move(sx, sy);
+		await page.mouse.down();
+		await page.mouse.move(sx + (toX - wb.x) / 2, sy + 20, { steps: 4 });
+		await page.mouse.move(sx + (toX - wb.x), sy + 40, { steps: 4 });
+		await page.mouse.up();
+		await page.waitForTimeout(300);
+	};
+	const toggle = async (label) => {
+		await openBurger(page);
+		await page.locator('#open-windows-menu').click();
+		await page.waitForSelector('[role="menu"]', { timeout: 5000 });
+		await page.locator('[role="menu"] [role="menuitem"], [role="menu"] [role="menuitemcheckbox"]').filter({ hasText: label }).first().click();
+		await page.waitForTimeout(400);
+		await page.evaluate(() => window.__stores.closeMenu.set(true));
+		await page.waitForTimeout(300);
+	};
+	await dragTo(400);
+	const free = await box();
+	h.check(!!free && Math.abs(free.x - 400) <= 3, `5.1 (counterfactual) unlocked, a header drag moves the window (${JSON.stringify(free)})`);
+	await toggle('Lock layout');
+	h.check((await read(page, 'windowPrefs.layoutLocked')) === true, '5.2 the menu switch turns Lock layout on');
+	await dragTo(700);
+	const locked = await box();
+	h.check(!!locked && locked.x === free.x && locked.y === free.y, `5.3 locked, the same drag leaves it where it was (${JSON.stringify(locked)})`);
+	await toggle('Lock layout');
+	await dragTo(10);
+	const unsnapped = await box();
+	h.check(!!unsnapped && unsnapped.x >= 8, `5.4 (counterfactual) Snap off: dropped 10 px from the edge it stays there (${JSON.stringify(unsnapped)})`);
+	await toggle('Snap to edges');
+	await dragTo(300);
+	await dragTo(10);
+	const snapped = await box();
+	h.check(!!snapped && snapped.x === 0, `5.5 Snap on: the same drop lands flush on the left edge (${JSON.stringify(snapped)})`);
+	await page.evaluate(() => window.__stores.windowPrefs.snapToEdges.set(false));
 	const before = await page.evaluate(() => window.__stores.dockMenu.windowWhere('timeline'));
 	await openBurger(page);
 	await page.locator('#open-windows-menu').click();
@@ -97,6 +150,28 @@ h.run(async () => {
 	h.check(after.find((x) => x[0] === 'timeline')[1] === null, `4.1 Close all floating windows closes it (${JSON.stringify(after)})`);
 	h.check(after.filter((x) => x[0] !== 'timeline').every((x) => x[1] !== 'floating'), '4.2 nothing floating is left');
 	h.check(after.some((x) => x[1] === 'dock' || x[1] === 'left' || x[1] === 'right'), '4.3 ...and a docked or sidebar window stays open');
+
+	// --- 5c: Remember layout per scene ---
+	const setScene = (name) => page.evaluate((n) => window.__stores.levels.currentLevel.set(n ? { hash: '', name: n, unsaved: true } : null), name);
+	const explorerOpen = () => read(page, 'explorerClose').then((v) => v === false);
+	const roundTrip = async () => {
+		await setScene('Layout A');
+		await page.evaluate(() => window.__stores.explorerClose.set(false));
+		await page.waitForTimeout(500);
+		await setScene('Layout B');
+		await page.waitForTimeout(400);
+		await page.evaluate(() => window.__stores.explorerClose.set(true));
+		await page.waitForTimeout(400);
+		await setScene('Layout A');
+		await page.waitForTimeout(1500);
+		return explorerOpen();
+	};
+	h.check((await roundTrip()) === false, '5.6 (counterfactual) switch off: going back to scene A brings nothing back');
+	await toggle('Remember layout per scene');
+	await setScene(null);
+	await page.waitForTimeout(300);
+	h.check((await roundTrip()) === true, '5.7 switch on: scene A opens with the window layout it was left with (Explorer open again)');
+	await page.evaluate(() => window.__stores.windowPrefs.layoutPerScene.set(false));
 
 	await h.finish(browser);
 });

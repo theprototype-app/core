@@ -45,8 +45,11 @@
 		inspectorTabTitle,
 		sidebarVisible,
 		toggleSidebar,
-		memberPlacement
+		memberPlacement,
+		isInspectorKey,
+		MIN_W
 	} from '$lib/sidebars';
+	import { scaledPx } from '$lib/uiScale';
 	import { inspectorKind } from '../../stores/appStore.js';
 	import { DOCK_TITLES, DOCK_ICONS } from '$lib/bottomDock';
 
@@ -54,12 +57,15 @@
 
 	type Side = 'left' | 'right';
 
+	// showhide-v8 (owner R2): 'inspector' = the Properties tab (or a File), 'scene' = the Configure Scene tab
 	function titleOf(key: string, insTitle: string) {
 		if (key === 'inspector') return insTitle;
+		if (key === 'scene') return 'Configure Scene';
 		return DOCK_TITLES[key] ?? key;
 	}
 	function iconOf(key: string, kind: string) {
-		if (key === 'inspector') return kind === 'scene' ? 'sun' : kind === 'file' ? 'file-text' : 'sliders-horizontal';
+		if (key === 'scene') return 'sun';
+		if (key === 'inspector') return kind === 'file' ? 'file-text' : 'sliders-horizontal';
 		return DOCK_ICONS[key] ?? 'app-window';
 	}
 
@@ -120,7 +126,7 @@
 			key,
 			from: press.from,
 			canFloat: canFloatPanel(key),
-			canDock: key !== 'inspector' && canDockHere(key),
+			canDock: !isInspectorKey(key) && canDockHere(key),
 			size: floatSizeOf(key) ?? undefined
 		});
 		// item 7: a finger tears a tab off only TEAR_PX outside its strip (a mouse keeps its own rule)
@@ -199,8 +205,9 @@
 	// ---- J6: the Inspector's header lock, beside Full height ----
 	/** which panel the lock acts on when a side shows the Inspector ('' = none: a file, another tab) */
 	function lockPanelOf(shown: string | null, kind: string): '' | 'scene' | 'properties' {
+		if (shown === 'scene') return 'scene';
 		if (shown !== 'inspector') return '';
-		return kind === 'scene' ? 'scene' : kind === 'file' ? '' : 'properties';
+		return kind === 'file' || kind === 'scene' ? '' : 'properties';
 	}
 	function onTabClick(key: string) {
 		if (suppressClick) {
@@ -221,7 +228,12 @@
 	}
 
 	// ---- the column's resize grip ----
+	// showhide-v8 (owner 2026-11-09): on a desktop an open column CLOSES BY ITS BORDER (Blender style) — dragging the
+	// grip well past the narrowest width (COLLAPSE_PX beyond it) collapses the column on release; its handle on the
+	// screen edge brings it back at the width it had. The grip shows the "will close" state while the drag is there.
+	const COLLAPSE_PX = 80;
 	let sizing: { side: Side; x0: number; w0: number; id: number } | null = null;
+	let collapsing = $state<Side | null>(null);
 	function onGripDown(e: PointerEvent, side: Side) {
 		if (e.button !== 0) return;
 		e.preventDefault();
@@ -232,18 +244,24 @@
 	function onGripMove(e: PointerEvent) {
 		if (!sizing || e.pointerId !== sizing.id) return;
 		const delta = sizing.side === 'left' ? e.clientX - sizing.x0 : sizing.x0 - e.clientX;
-		setSidebarWidth(sizing.side, sizing.w0 + delta, false);
+		const want = sizing.w0 + delta;
+		collapsing = want < scaledPx(MIN_W) - COLLAPSE_PX ? sizing.side : null;
+		setSidebarWidth(sizing.side, collapsing ? sizing.w0 : want, false);
 	}
 	function onGripUp(e: PointerEvent) {
 		if (!sizing || e.pointerId !== sizing.id) return;
-		setSidebarWidth(sizing.side, $sidebarWidth[sizing.side], true);
+		const side = sizing.side;
+		setSidebarWidth(side, $sidebarWidth[side], true);
 		sizing = null;
 		sidebarResizing.set(null);
+		if (collapsing === side) toggleSidebar(side, false);
+		collapsing = null;
 	}
 	function onGripCancel() {
 		if (!sizing) return;
 		setSidebarWidth(sizing.side, $sidebarWidth[sizing.side], true);
 		sizing = null;
+		collapsing = null;
 		sidebarResizing.set(null);
 	}
 	/** double-click forgets the width (back to the default) */
@@ -365,10 +383,11 @@
 			<div
 				id="sidebar-grip-{side}"
 				class="sb-grip resize-cue"
+				class:sb-grip-collapse={collapsing === side}
 				role="separator"
 				aria-orientation="vertical"
 				aria-label="Resize the {side} sidebar"
-				title="Drag to resize · double-click to reset"
+				title="Drag to resize · drag far in to close the sidebar · double-click to reset"
 				style="top: var(--sb-{side}-top); bottom: var(--sb-{side}-bottom); {side === 'left'
 					? 'left: calc(var(--sb-left-x, 0px) + var(--sb-left-w) - 3px)'
 					: 'right: calc(var(--sb-right-w) - 3px)'}"
@@ -387,7 +406,7 @@
 		<div class="sb-ghost tp-ui" style="left: {drag.x + 12}px; top: {drag.y + 8}px">
 			<Icon name={iconOf(drag.key, $inspectorKind)} size={16} aria-hidden="true" />
 			{titleOf(drag.key, $inspectorTabTitle)}
-			{#if !drag.target}<span class="sb-ghost-hint">{drag.key === 'inspector' ? 'Drop on a side' : 'Stays here'}</span>{/if}
+			{#if !drag.target}<span class="sb-ghost-hint">{isInspectorKey(drag.key) ? 'Drop on a side' : 'Stays here'}</span>{/if}
 		</div>
 	{/if}
 {/if}
@@ -568,6 +587,12 @@
 		width: 6px;
 		cursor: ew-resize;
 		touch-action: none;
+	}
+	/* showhide-v8: a drag far enough in closes the column on release — the edge says so while it is there */
+	.sb-grip-collapse {
+		background: var(--accent);
+		opacity: 0.6;
+		cursor: w-resize;
 	}
 	/* under a DOCKED Connect bar the column's panel rides --z-chrome-top + 1 (ui.css), so the grip does too */
 	:global(:root.connect-docked) .sb-grip {

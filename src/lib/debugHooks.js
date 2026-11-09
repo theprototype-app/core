@@ -388,6 +388,9 @@ export const DEBUG_HOOKS = [
 	['undoToast', () => import('./undoToast')],
 	['docking', () => import('./docking')],
 	['sidebars', () => import('./sidebars')],
+	['sidebarHandles', () => import('./sidebarHandles')],
+	['deviceClass', () => import('./deviceClass.js')],
+	['paneLocks', () => import('./ui/paneLocks.js')],
 	// dock-fixes: the hosted windows' toggle tree + the Panels button (item 3 / item 8 suites)
 	['panelToggles', () => import('./panelToggles')],
 	['panelsButton', () => import('./panelsButton')],

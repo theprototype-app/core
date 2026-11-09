@@ -67,6 +67,7 @@
 	import WorkspaceLayoutsSettings from './WorkspaceLayoutsSettings.svelte'; // 37 R14
 	import UndockButtonSettings from './UndockButtonSettings.svelte'; // 40 F8
 	import PanelsButtonSettings from './PanelsButtonSettings.svelte'; // dock-fixes item 8
+	import SidebarHandlesSettings from './SidebarHandlesSettings.svelte'; // showhide-v8 (R3)
 	import PopOutWindowSettings from './PopOutWindowSettings.svelte'; // 70 W3/W5
 	import PanelHeaderSettings from './PanelHeaderSettings.svelte'; // 42 I1
 	import ChromeButtonsSettings from './ChromeButtonsSettings.svelte'; // panel-gestures item 5
@@ -300,6 +301,7 @@
 		<WorkspaceLayoutsSettings />
 		<UndockButtonSettings />
 		<PanelsButtonSettings />
+		<SidebarHandlesSettings />
 		<PopOutWindowSettings />
 		<PanelHeaderSettings />
 		<ChromeButtonsSettings />

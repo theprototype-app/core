@@ -18,7 +18,7 @@ import { activateDock, bottomInset, armDockMode, armDockModes, dockOccupants, do
 import { phoneShell } from './ui/phoneShell.js';
 import { queueMerge, groupOfKey, activateTab, nodeOf } from './windowTabs';
 import { maximizeDockTab } from './focusMode';
-import { sidebarTabs, sidebarVisible, activateSidebarTab, inspectorSide } from './sidebars';
+import { sidebarTabs, sidebarVisible, activateSidebarTab, inspectorSide, inspectorTabs, moveSidebarTab, keepSideOpen } from './sidebars';
 import { raiseWindow, raiseWindowNode } from './windowFocus';
 import { revealWindow } from './dragWindow';
 import { isAway, releasePanel, focusPanelWindow, popOutItems, popOutDockPanels, canPopOut } from './windows/panelPlaces.js';
@@ -56,7 +56,6 @@ import { isAway, releasePanel, focusPanelWindow, popOutItems, popOutDockPanels, 
  * @type {{key: string, tooltip: string}[]}
  */
 export const DOCK_VIEWS = [
-	{ key: 'flowcode', tooltip: 'Edit the graph as JSON' },
 	{ key: 'animation', tooltip: 'Animate the selected object' },
 	{ key: 'uv', tooltip: 'Edit the selected mesh’s UV map and textures' },
 	{ key: 'shader', tooltip: 'Drive this material from a node graph' },
@@ -64,7 +63,7 @@ export const DOCK_VIEWS = [
 	{ key: 'timeline', tooltip: 'Sequence cutscenes: camera shots, clips, audio and events' },
 	{ key: 'explorer', tooltip: 'Browse the asset library' },
 	{ key: 'profiler', tooltip: 'Record frame time and draw calls, and find what draws most' },
-	{ key: 'code', tooltip: 'Scripts, behaviours and graph JSON in tabs (Ctrl+S saves)' }
+	{ key: 'code', tooltip: 'Scripts, behaviours, flow code and graph JSON in tabs (Ctrl+S saves)' }
 ];
 
 /**
@@ -331,34 +330,81 @@ export function registerFloatOpener(key, fn) {
 
 /**
  * 44 M7 — the Configure Scene row a sidebar "+" offers: the Inspector lives only in the sidebars.
- * Open (as Configure Scene) it is focused where it is; open as Properties it swaps to the scene in
- * place (one panel, two kinds); closed it opens on THIS side.
+ * showhide-v8 (owner 2026-11-09): Configure Scene is its OWN tab beside Properties (R2), and "+" MOVES an
+ * already-open tab to where "+" was pressed: open on this side it is brought to the front; open on the OTHER side
+ * it comes here (Properties with it: the two tabs share one Inspector); closed it opens here as a new tab — an open
+ * Properties tab stays a tab beside it, never replaced.
  * @param {'left'|'right'} side
  */
 function sceneRow(side) {
-	const open = !get(inspectorClose);
-	const isScene = open && get(inspectorKind) === 'scene';
 	const tabs = get(sidebarTabs);
-	const at = tabs.left.includes('inspector') ? 'left' : tabs.right.includes('inspector') ? 'right' : null;
+	const at = tabs.left.includes('scene') ? 'left' : tabs.right.includes('scene') ? 'right' : null;
 	const title = 'Configure Scene';
 	const icon = 'sun';
-	if (isScene && at)
-		return { key: 'scene', label: title, icon, hint: whereHint(at), checked: true, multiPick: true, tooltip: `${title} is open in the ${at} sidebar — click to show it there`, action: () => activateSidebarTab('inspector') };
+	if (at === side)
+		return { key: 'scene', label: title, icon, hint: whereHint(at), checked: true, multiPick: true, tooltip: `${title} is open in this sidebar — click to show it`, action: () => activateSidebarTab('scene') };
+	if (at)
+		return {
+			key: 'scene',
+			label: title,
+			icon,
+			hint: whereHint(at),
+			checked: true,
+			multiPick: true,
+			tooltip: `${title} is open in the ${at} sidebar — click to move it here`,
+			action: () => moveSidebarTab('scene', side)
+		};
 	return {
 		key: 'scene',
 		label: title,
 		icon,
-		hint: open ? 'Show' : 'Open',
+		hint: 'Open',
 		checked: false,
 		multiPick: true,
 		tooltip: 'Sky, light, physics, grid and the rest of the scene’s settings',
 		action: () => {
-			if (!open) inspectorSide.set(side);
+			// the Inspector's two tabs share one column: a closed Inspector opens on THIS side, an open one brings
+			// its Properties tab along
+			const props = get(inspectorTabs).inspector;
+			if (props && get(inspectorSide) !== side) moveSidebarTab('inspector', side);
+			else if (!props) inspectorSide.set(side);
 			inspectorKind.set('scene');
 			inspectorClose.set(false);
-			queueMicrotask(() => activateSidebarTab('inspector'));
+			queueMicrotask(() => activateSidebarTab('scene'));
 		}
 	};
+}
+
+/**
+ * showhide-v8 — the seam "+" uses to take a SIDEBAR tab into the bottom dock (sidebarMenu registers its
+ * `sidebarTabToDock`; it imports this module, so it cannot be imported back).
+ * @type {((key: string) => boolean) | null}
+ */
+let sideToDock = null;
+/** @param {((key: string) => boolean) | null} fn */
+export function setSideToDock(fn) {
+	sideToDock = fn;
+}
+
+/**
+ * showhide-v8 (owner 2026-11-09, "+" moves an already-open tab): a window open ELSEWHERE — the other sidebar, the
+ * bottom dock, a floating window — MOVES to where "+" was pressed. No second copy, no no-op, and nothing else in the
+ * layout changes. False when it cannot live there (the caller falls back to showing it where it is).
+ * @param {string} key @param {'dock'|'left'|'right'|'floating'} where @param {'dock'|'left'|'right'} target
+ */
+function moveHere(key, where, target) {
+	if (target === 'dock') {
+		if (!canDockHere(key)) return false;
+		if (where === 'left' || where === 'right') return !!sideToDock?.(key);
+		dockView(key);
+		return true;
+	}
+	if (!canDockFloating(key)) return false;
+	if (where === 'left' || where === 'right') return !!moveSidebarTab(key, target);
+	if (where === 'dock') keepSideOpen(key);
+	if (!moveToSidebar(key, target)) return false;
+	queueMicrotask(() => activateSidebarTab(key));
+	return true;
 }
 
 /**
@@ -393,7 +439,22 @@ export function addWindowItems({ target = 'dock', exclude = [] } = {}) {
 		}
 		if (where) {
 			const place = where === 'dock' ? 'the dock' : where === 'floating' ? 'a floating window' : `the ${where} sidebar`;
-			rows.push({ key: view.key, label: title, icon, hint: whereHint(where), checked: true, multiPick: true, tooltip: `${title} is open in ${place} — click to show it there`, action: () => focusWindow(view.key) });
+			// showhide-v8: open HERE -> shown here; open elsewhere -> moved here (when it can live here)
+			const here = where === target;
+			const canMove = !here && (target === 'dock' ? canDockHere(view.key) : canDockFloating(view.key));
+			rows.push({
+				key: view.key,
+				label: title,
+				icon,
+				hint: whereHint(where),
+				checked: true,
+				multiPick: true,
+				tooltip: here || !canMove ? `${title} is open in ${place} — click to show it there` : `${title} is open in ${place} — click to move it here`,
+				action: () => {
+					if (!here && canMove && moveHere(view.key, /** @type {any} */ (where), target)) return;
+					focusWindow(view.key);
+				}
+			});
 			continue;
 		}
 		rows.push({ key: view.key, label: title, icon, hint: 'Open', checked: false, multiPick: true, tooltip: view.tooltip, action: open });

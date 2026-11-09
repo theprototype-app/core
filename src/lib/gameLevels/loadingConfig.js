@@ -15,7 +15,7 @@ const colour = (v) => (typeof v === 'string' && /^#[0-9a-f]{3,8}$/i.test(v.trim(
 export function normalizeLoading(raw) {
 	const r = raw && typeof raw === 'object' ? raw : {};
 	const preset = LOADING_PRESETS.includes(r.preset) ? r.preset : 'bar';
-	const tips = (Array.isArray(r.tips) ? r.tips : []).map((t) => text(t, 140)).filter(Boolean).slice(0, 20);
+	const tips = (Array.isArray(r.tips) ? r.tips : []).map((/** @type {any} */ t) => text(t, 140)).filter(Boolean).slice(0, 20);
 	const bar = r.bar && typeof r.bar === 'object' ? r.bar : {};
 	return {
 		preset,

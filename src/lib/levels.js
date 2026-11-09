@@ -1115,6 +1115,22 @@ export function resolveLevelItem(hash) {
 }
 
 /**
+ * 93 LP4 — WHAT A HOP CARRIES BESIDE THE GAME STATE: the Levels table (a level scene with no table of
+ * its own keeps the game's) and the keep-across-levels list (only the kept variables carry when the
+ * game has a list; the kit score is put back after the load's kit reset). gameLevels/travel.js
+ * registers it; absent = every hop byte-identical to 21-F fork 3.
+ * @typedef {{capture: () => any, shapeGame?: (carried: any, captured: any) => any, restore?: (captured: any) => any}} TravelCarry
+ * @type {TravelCarry | null} */
+let travelCarry = null;
+/** @param {TravelCarry} carry @returns {() => void} */
+export function registerTravelCarry(carry) {
+	travelCarry = carry;
+	return () => {
+		if (travelCarry === carry) travelCarry = null;
+	};
+}
+
+/**
  * TRAVEL: load a level on THIS peer. The caller (the travel node's stamp edge, or a
  * menu action that pulsed that node) already replicated the intent, so this applies
  * locally with nothing sent, skips the safety-stash (N peers stashing a backup per hop
@@ -1135,22 +1151,6 @@ export function resolveLevelItem(hash) {
  *   it fresh, and carrying Waves' round and variables into Towers was the L4 leak.
  * @returns {Promise<boolean>} did a load happen
  */
-/**
- * 93 LP4 — WHAT A HOP CARRIES BESIDE THE GAME STATE: the Levels table (a level scene with no table of
- * its own keeps the game's) and the keep-across-levels list (only the kept variables carry when the
- * game has a list; the kit score is put back after the load's kit reset). gameLevels/travel.js
- * registers it; absent = every hop byte-identical to 21-F fork 3.
- * @typedef {{capture: () => any, shapeGame?: (carried: any, captured: any) => any, restore?: (captured: any) => any}} TravelCarry
- * @type {TravelCarry | null} */
-let travelCarry = null;
-/** @param {TravelCarry} carry @returns {() => void} */
-export function registerTravelCarry(carry) {
-	travelCarry = carry;
-	return () => {
-		if (travelCarry === carry) travelCarry = null;
-	};
-}
-
 export async function travelToLevel(hash, name = '', opts = {}) {
 	const key = String(hash ?? '').trim();
 	if (!key) return false;

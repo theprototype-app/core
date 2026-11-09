@@ -44,8 +44,14 @@
 		return hit ?? '';
 	}
 	let imageTick = $state(0);
-	const bgUrl = $derived((imageTick, cfg.preset === 'image' && cfg.image ? imageUrl(cfg.image) : ''));
-	const logoUrl = $derived((imageTick, cfg.logo ? imageUrl(cfg.logo) : ''));
+	const bgUrl = $derived.by(() => {
+		void imageTick; // re-read once a pulled image lands
+		return cfg.preset === 'image' && cfg.image ? imageUrl(cfg.image) : '';
+	});
+	const logoUrl = $derived.by(() => {
+		void imageTick;
+		return cfg.logo ? imageUrl(cfg.logo) : '';
+	});
 
 	// tips rotate every 4 s while the screen is up
 	let tipIndex = $state(0);

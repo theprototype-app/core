@@ -171,7 +171,8 @@ h.run(async () => {
 	await toggle('Lock layout');
 	await dragTo(10);
 	const unsnapped = await box();
-	h.check(!!unsnapped && unsnapped.x >= 8, `5.4 (counterfactual) Snap off: dropped 10 px from the edge it stays there (${JSON.stringify(unsnapped)})`);
+	const prefs54 = { snap: await read(page, 'windowPrefs.snapToEdges'), locked: await read(page, 'windowPrefs.layoutLocked') };
+	h.check(!!unsnapped && unsnapped.x >= 8, `5.4 (counterfactual) Snap off: dropped 10 px from the edge it stays there (${JSON.stringify(unsnapped)}; ${JSON.stringify(prefs54)})`);
 	await toggle('Snap to edges');
 	await dragTo(300);
 	await dragTo(10);

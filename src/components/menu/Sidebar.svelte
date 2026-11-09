@@ -185,6 +185,9 @@
 		if ($closeMenu) return;
 		const outside = (e: PointerEvent) => {
 			if ($saveOptionsOpen) return;
+			// showhide-v8 §6: the burger's own submenus (Save as… ▾, Windows ▸) are portaled out of #sidebar70; a press
+			// in one is still inside the menu, and a press outside both closes the submenu first (its own dismiss)
+			if (saveAsMenu || windowsMenu) return;
 			const t = e.target as Element | null;
 			if (!t || !t.isConnected || t.closest('#sidebar70, #logo-menu, #tour-card, #save-options-modal')) return;
 			closeMenu.set(true);

@@ -88,8 +88,12 @@ h.run(async () => {
 	h.check(rows[0]?.label?.includes('current') && !rows[0]?.restore && rows.slice(1).every((r) => r.restore), '2.2 newest first, the current one marked, the rest restorable');
 	const hashBefore = await S(page, (id) => window.__stores.explorer.itemById?.(id)?.hash ?? null, red.id);
 	await page.locator('#explorer-file-history [data-ih-restore]').last().click();
-	await page.waitForTimeout(1200);
-	const hashAfter = await S(page, (id) => window.__stores.explorer.itemById?.(id)?.hash ?? null, red.id);
+	// a restore re-reads the version and updates the textures that use it: seconds on a loaded box, so poll
+	let hashAfter = hashBefore;
+	for (let i = 0; i < 40 && hashAfter === hashBefore; i++) {
+		await page.waitForTimeout(250);
+		hashAfter = await S(page, (id) => window.__stores.explorer.itemById?.(id)?.hash ?? null, red.id);
+	}
 	h.check(hashAfter === red.hash && hashAfter !== hashBefore, `2.3 Restore puts the original back (${hashBefore} -> ${hashAfter}, original ${red.hash})`);
 	await pickCard(plain.id);
 	const empty = await S(page, () => ({

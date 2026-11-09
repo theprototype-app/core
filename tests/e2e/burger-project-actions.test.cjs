@@ -121,9 +121,10 @@ h.run(async () => {
 	// showhide-v8 §6: Save as… ▾ is a menu in the owner's order; its last item opens Save options
 	await page.locator('#project-save-as').click();
 	await page.waitForSelector('[role="menu"] [role="menuitem"]', { timeout: 5000 });
-	const saveAs = await page.evaluate(() => [...document.querySelectorAll('[role="menu"] [role="menuitem"]')].map((e) => e.textContent?.trim()));
+	// (the owner's order puts a separator before Save options; a separator row has no text)
+	const saveAs = await page.evaluate(() => [...document.querySelectorAll('[role="menu"] [role="menuitem"]')].map((e) => e.textContent?.trim() || '|'));
 	h.check(
-		JSON.stringify(saveAs) === JSON.stringify(['Save scene as file…', 'Save project as file…', 'Save as copy…', 'Save options…']),
+		JSON.stringify(saveAs) === JSON.stringify(['Save scene as file…', 'Save project as file…', 'Save as copy…', '|', 'Save options…']),
 		`Save as… lists scene file / project file / copy / options (${JSON.stringify(saveAs)})`
 	);
 	await page.locator('[role="menu"] [role="menuitem"]', { hasText: 'Save options…' }).click();

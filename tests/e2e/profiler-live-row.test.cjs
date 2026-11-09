@@ -51,9 +51,15 @@ h.run(async () => {
 	await page.locator('#profiler-record').click();
 	await page.waitForTimeout(1500);
 	await page.locator('#profiler-stop').click();
-	await page.waitForTimeout(1500);
-	st = await state(page);
-	const rec = st.rows.find((r) => r.key?.startsWith('rec:'));
+	// the save goes through IndexedDB and the list reloads after it: 0.3-1.5 s on an idle Deck, longer under load (probe
+	// test-results/showhide-v8-probe/liverec.cjs), so poll for the row and its selection
+	let rec;
+	for (let i = 0; i < 40; i++) {
+		await page.waitForTimeout(250);
+		st = await state(page);
+		rec = st.rows.find((r) => r.key?.startsWith('rec:'));
+		if (rec?.sel && st.live === false) break;
+	}
 	const said = await page.evaluate(() => document.querySelector('#profiler-status')?.textContent?.trim() ?? null);
 	h.check(!!rec && /^recorded\b/.test(rec.meta), `2.2 a recording made here is marked recorded (${JSON.stringify(rec)}; rows ${JSON.stringify(st.rows.map((r) => r.key))}; status ${JSON.stringify(said)})`);
 

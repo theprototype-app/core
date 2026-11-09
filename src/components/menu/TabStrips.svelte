@@ -4,6 +4,8 @@
 	// drag the strip background to move the whole group, drag a tab out to
 	// re-float it, ✕ closes the active member through its own path.
 	import { stripScroll } from '$lib/ui/stripScroll.js';
+	import { tabTouch, outsideBy } from '$lib/ui/tabTouch.js';
+	import { chromeButton } from '$lib/chromeButtons';
 	import { tabGroups, activateTab, moveGroup, tearOff, titleOf, closeGroup, closeMember, nodeOf } from '$lib/windowTabs';
 	import { focusTick, raiseWindowNode } from '$lib/windowFocus';
 	import { windowMenu, openWindowMenu } from '$lib/windowMenu';
@@ -39,16 +41,15 @@
 	// `pointercancel` — the drag simply stopped. The strip and its tabs now say
 	// `touch-action: none` (style block), the pressed element CAPTURES the pointer so a finger
 	// that outruns the strip keeps feeding it, and a cancel ends the gesture cleanly.
-	// A tab is the grip on touch: the tabs fill most of a phone-width strip, so a touch drag
-	// on a tab MOVES THE GROUP (QUESTIONS-41-windows Q1); tearing one out is the long-press
-	// menu's "Ungroup this tab". A mouse keeps the desktop meaning: drag a tab out to detach.
+	//
+	// panel-gestures item 7 (owner, N6: "a vertical drag moves the tabs") REPLACES 41 G6's "a tab is the
+	// group's grip on touch": a touch on a tab is now $lib/ui/tabTouch — a sideways swipe scrolls the
+	// tabs, up / down does nothing, a still LONG-PRESS lifts the tab and only then does travel tear it
+	// out (past TEAR_PX outside the strip; it then follows like the mouse's torn tab and docks where it
+	// is dropped), held still = the tab's menu. The GROUP moves by its strip background and, on a touch
+	// screen, by the grip at the strip's start (the tabs can fill a phone-width strip). A mouse keeps
+	// the desktop meaning: drag a tab out to detach.
 	const SLOP = 6; // px of travel before a press is a drag, not a tap
-	const LONG_PRESS_MS = 500;
-	/** @type {any} */ let pressTimer = null;
-	function clearPress() {
-		if (pressTimer) clearTimeout(pressTimer);
-		pressTimer = null;
-	}
 
 	/** @param {any} e */
 	function capture(e) {
@@ -68,22 +69,60 @@
 	/** @param {any} e @param {string} groupId @param {string} key */
 	function onTabDown(e, groupId, key) {
 		raiseWindowNode(nodeOf(key)); // clicking a tab brings the group forward
-		const touch = e.pointerType === 'touch' || e.pointerType === 'pen';
+		if (e.pointerType !== 'mouse') return; // touch / pen: $lib/ui/tabTouch (touchTab below)
 		const el = e.currentTarget?.closest?.('.tab-strip') ?? null;
-		tabDrag = { groupId, key, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, id: e.pointerId, touch, torn: false, moving: false, menu: false, el, hit: null };
+		tabDrag = { groupId, key, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, id: e.pointerId, touch: false, torn: false, moving: false, menu: false, el, hit: null };
 		capture(e);
-		clearPress();
-		if (touch) {
-			// a STILL press opens the tab's menu (Android's own long-press `contextmenu` is not
-			// guaranteed once the element claims the touch, so the timer is the promise)
-			const at = tabDrag;
-			pressTimer = setTimeout(() => {
-				pressTimer = null;
-				if (tabDrag !== at || at.moving) return;
-				at.menu = true;
-				openTabMenu(at.sx, at.sy, key);
-			}, LONG_PRESS_MS);
+	}
+	/** panel-gestures item 7 — a group tab's touch gesture ($lib/ui/tabTouch): the lifted tab tears out
+	 * once it is TEAR_PX outside its strip, then follows the finger like the mouse's torn tab
+	 * @param {string} groupId @param {string} key */
+	function touchTab(groupId, key) {
+		return {
+			onlift(/** @type {number} */ x, /** @type {number} */ y) {
+				const el = /** @type {HTMLElement | null} */ (document.querySelector(`.tab-strip[data-group-id="${groupId}"]`));
+				const r = el?.getBoundingClientRect();
+				tabDrag = { groupId, key, x, y, sx: x, sy: y, id: -1, touch: true, torn: false, moving: false, menu: false, el, hit: null, strip: r ? { left: r.left, top: r.top, right: r.right, bottom: r.bottom } : null };
+			},
+			onmove(/** @type {PointerEvent} */ e) {
+				if (!tabDrag || tabDrag.key !== key || !tabDrag.touch) return;
+				if (!tabDrag.torn) {
+					if (!tabDrag.strip || !outsideBy(tabDrag.strip, e.clientX, e.clientY)) return;
+					tearOff(key, e.clientX, e.clientY);
+					tabDrag = { ...tabDrag, torn: true };
+				}
+				followTorn(e);
+			},
+			ondrop() {
+				if (!tabDrag || tabDrag.key !== key || !tabDrag.touch) return;
+				const { torn, hit } = tabDrag;
+				tabDrag = null;
+				paintTarget(null, []);
+				clearStripFeedback();
+				if (torn && hit) dockTornAt(key, hit); // else: released inside the strip = nothing, or floating where it is
+			},
+			oncancel() {
+				if (!tabDrag || tabDrag.key !== key || !tabDrag.touch) return;
+				tabDrag = null;
+				paintTarget(null, []);
+				clearStripFeedback();
+			},
+			onmenu(/** @type {number} */ x, /** @type {number} */ y) {
+				if (tabDrag?.touch && tabDrag.key === key) tabDrag = null;
+				openTabMenu(x, y, key);
+			}
+		};
+	}
+	/** a torn-out tab follows the pointer and asks the drop model where it would land @param {any} e */
+	function followTorn(e) {
+		const node = nodeOf(tabDrag.key);
+		if (node) {
+			node.style.left = Math.max(0, e.clientX - 100) + 'px';
+			node.style.top = Math.max(0, e.clientY - 12) + 'px';
 		}
+		const k = tabDrag.key;
+		const would = windowDropTarget({ x: e.clientX, y: e.clientY, key: k, canDock: canDockHere(k), canSide: canSideHere(k) });
+		tabDrag.hit = freeOr(would, e, [node]);
 	}
 	/** 41 G6 / 44 M3: a group tab's menu (long-press on touch, right-click with a mouse) is the floating
 	 * window menu ($lib/windowMenu) for that tab's window — Float (undock) takes it out of the group
@@ -163,37 +202,14 @@
 			stripDrag = { ...stripDrag, x: e.clientX, y: e.clientY };
 			stripDrag.hit = groupHit(stripDrag, e);
 		}
-		if (!tabDrag || e.pointerId !== tabDrag.id || tabDrag.menu) return;
-		if (tabDrag.touch) {
-			// touch: the tab is the group's grip — past the slop the group follows the finger,
-			// catching up on the slop so the strip stays under the finger where it was pressed
-			if (!tabDrag.moving) {
-				if (Math.hypot(e.clientX - tabDrag.sx, e.clientY - tabDrag.sy) < SLOP) return;
-				clearPress();
-				tabDrag.moving = true;
-			}
-			moveGroup(tabDrag.groupId, e.clientX - tabDrag.x, e.clientY - tabDrag.y);
-			tabDrag = { ...tabDrag, x: e.clientX, y: e.clientY };
-			tabDrag.hit = groupHit(tabDrag, e);
-			return;
-		}
+		if (!tabDrag || e.pointerId !== tabDrag.id || tabDrag.menu || tabDrag.touch) return;
 		if (!tabDrag.torn) {
 			// pulling a tab away from the strip re-floats its window under the cursor
 			if (Math.abs(e.clientY - tabDrag.sy) > 26 || Math.abs(e.clientX - tabDrag.sx) > 120) {
 				tearOff(tabDrag.key, e.clientX, e.clientY);
 				tabDrag = { ...tabDrag, torn: true };
 			}
-		} else {
-			// keep following the pointer until release
-			const node = nodeOf(tabDrag.key);
-			if (node) {
-				node.style.left = Math.max(0, e.clientX - 100) + 'px';
-				node.style.top = Math.max(0, e.clientY - 12) + 'px';
-			}
-			const k = tabDrag.key;
-			const would = windowDropTarget({ x: e.clientX, y: e.clientY, key: k, canDock: canDockHere(k), canSide: canSideHere(k) });
-			tabDrag.hit = freeOr(would, e, [node]);
-		}
+		} else followTorn(e); // keep following the pointer until release
 	}
 	/** @param {any} e */
 	function onUp(e) {
@@ -204,8 +220,7 @@
 			clearStripFeedback();
 			if (hit) dockGroupAt(groupId, hit);
 		}
-		if (!tabDrag || e.pointerId !== tabDrag.id) return;
-		clearPress();
+		if (!tabDrag || e.pointerId !== tabDrag.id || tabDrag.touch) return;
 		const drop = tabDrag.hit;
 		if (drop) {
 			paintTarget(null, []);
@@ -228,10 +243,7 @@
 			clearStripFeedback();
 		}
 		if (stripDrag && e.pointerId === stripDrag.id) stripDrag = null;
-		if (tabDrag && e.pointerId === tabDrag.id) {
-			clearPress();
-			tabDrag = null;
-		}
+		if (tabDrag && e.pointerId === tabDrag.id) tabDrag = null;
 	}
 </script>
 
@@ -244,6 +256,7 @@
 		role="tablist"
 		tabindex="-1"
 		data-key-scope="panel"
+		data-group-id={group.id}
 		onpointerdown={(e) => onStripDown(e, group)}
 		oncontextmenu={(e) => {
 			if (/** @type {any} */ (e.target).closest('.tab-note, button')) return;
@@ -251,6 +264,9 @@
 			openTabMenu(e.clientX, e.clientY, group.active);
 		}}
 	>
+		<!-- panel-gestures item 7: on a touch screen the tabs scroll and lift (long-press), so the GROUP
+		     moves by this grip (and the strip's free space); a mouse drags the strip anywhere -->
+		<span class="ts-grip" aria-hidden="true" title="Drag to move this window"><Icon name="grip-vertical" size={16} /></span>
 		<!-- NOTES-38 #39: more tabs than width scroll sideways (wheel / swipe, fade edge); the
 		     close-all ✕ stays pinned at the end -->
 		<div class="ts-scroll tp-noscrollbar flex min-w-0 items-center overflow-x-auto" use:stripScroll>
@@ -262,16 +278,16 @@
 						role="tab"
 						aria-selected={key === group.active}
 						title="Click to switch — drag out to detach — right-click (long-press) to dock, float, group or close"
-						onpointerdown={(e) => {
+						use:tabTouch={touchTab(group.id, key)}
+						onpointerdown={(/** @type {PointerEvent} */ e) => {
 							e.stopPropagation();
 							onTabDown(e, group.id, key);
 						}}
-						oncontextmenu={(e) => {
+						oncontextmenu={(/** @type {MouseEvent} */ e) => {
 							e.preventDefault();
 							e.stopPropagation();
 							// Android's own long-press may ALSO fire this: one menu, not two
 							if ($windowMenu?.key === key) return;
-							clearPress();
 							if (tabDrag) tabDrag.menu = true;
 							openTabMenu(e.clientX, e.clientY, key);
 						}}
@@ -298,7 +314,8 @@
 				data-group-dock={group.id}
 				title="Dock all tabs in this window"
 				aria-label="Dock all tabs in this window"
-				onpointerdown={(e) => e.stopPropagation()}
+				use:chromeButton={'group.dock'}
+				onpointerdown={(/** @type {PointerEvent} */ e) => e.stopPropagation()}
 				onclick={() => dockAllOf(group.members, group.active)}
 			>
 				<Icon name="panel-bottom" size={16} />
@@ -308,6 +325,7 @@
 			class="ts-close tp-dtab tp-dtab-icon shrink-0"
 			title="Close all tabs in this window"
 			aria-label="Close all tabs in this window"
+			use:chromeButton={'group.close'}
 			onclick={() => closeGroup(group.active)}
 		>
 			<Icon name="x" size={16} />
@@ -331,13 +349,31 @@
 		background: var(--surface-inset);
 		gap: 2px;
 	}
-	/* 41 G6: the strip and every tab claim the touch gesture — with `auto` the browser turned a
-	   drag into a pan after a few px and cancelled the pointer ("drags a bit, then sticks"). The
-	   tab scroller needs it too: touch-action is cut off at the nearest scroll container. */
-	.tab-strip,
-	.tab-strip :global(.ts-scroll),
-	.tab-strip :global(.ts-tab) {
+	/* 41 G6: the strip claims the touch gesture — with `auto` the browser turned a drag into a pan
+	   after a few px and cancelled the pointer ("drags a bit, then sticks"). panel-gestures item 7:
+	   the tab SCROLLER and its tabs are pan-x now (stripScroll / tabTouch set it inline): a sideways
+	   swipe scrolls the tabs, a long-press lifts one */
+	.tab-strip {
 		touch-action: none;
+	}
+	.tab-strip :global(.tab-lifted) {
+		box-shadow: 0 0 0 2px var(--accent);
+	}
+	/* the touch grip: only where a finger needs it (a mouse drags the strip anywhere) */
+	.ts-grip {
+		display: none;
+		flex: 0 0 auto;
+		align-items: center;
+		justify-content: center;
+		width: 24px;
+		align-self: stretch;
+		color: var(--text-faint);
+		cursor: move;
+	}
+	@media (pointer: coarse) {
+		.ts-grip {
+			display: inline-flex;
+		}
 	}
 	@media (max-width: 639.98px) {
 		.tab-strip {

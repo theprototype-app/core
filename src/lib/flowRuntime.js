@@ -4145,7 +4145,10 @@ export function hoverTargetUuids() {
 	/** @type {Set<string>} */
 	const set = new Set();
 	for (const node of nodes) {
-		if (node.type !== 'onhover') continue;
+		// 78-int (85 Q2 / Q7): an unwired Highlight glows under THIS person's pointer — the same
+		// sampler watches its object, and publishes what the mouse / tap is over into hoverState
+		const highlight = node.type === 'highlight' && !edgesInto(edges, node.id).some((e) => e.targetHandle === 'on');
+		if (node.type !== 'onhover' && !highlight) continue;
 		const owner = implicitOwnerOf(node);
 		if (owner) set.add(owner);
 		// every Object Selector the node reaches (directly or through a Hover Animate)

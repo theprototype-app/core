@@ -20,6 +20,7 @@ import { gameFeelActive } from './gameFeel';
 import { hoverStep, OVER_RESTAMP } from './hoverCore.js';
 import { hoverTargetUuids, hoverTargetAlong, fireObjectHover } from './flowRuntime';
 import { controllerRayOf } from './vrGameInput';
+import { setHover } from './hoverState.js'; // 78-int: 85's Highlight reads what this person points at
 
 /** how often the pointer is sampled (ms) — 15 Hz */
 const SAMPLE_MS = 66;
@@ -113,6 +114,9 @@ function sample() {
 		}
 	}
 	const { entered, left } = hoverStep(over, seen, now);
+	// 78-int (85 Q2 / Q7): the mouse in Interact and the phone tap feed the Highlight node's
+	// "while you point at it" too (the VR laser and Play's crosshair already did, each its own source)
+	setHover('pointer', over.size ? [...over.keys()][0] : null);
 	for (const uuid of entered) {
 		stats.enters++;
 		overStamped.set(uuid, now);

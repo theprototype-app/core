@@ -3,7 +3,7 @@
 // nothing, so vrGameInput / playInteract write it and flowRuntime's Highlight node reads it with
 // no cycle. LOCAL by design: a hover highlight shows what YOU point at; nothing is sent.
 
-/** source ('vr0', 'vr1', 'play') -> the top-level object uuid it points at @type {Map<string, string>} */
+/** source ('vr0', 'vr1', 'play', and 78-int's 'pointer' = the mouse in Interact / a phone tap) -> the top-level object uuid it points at @type {Map<string, string>} */
 const hovers = new Map();
 
 /** @param {string} source @param {string | null | undefined} uuid */

@@ -5,6 +5,7 @@
 //   §2 Door (click): a click opens it a quarter turn on A and B; a second click closes it.
 //   §3 Door (walk up): the player entering its zone opens it on both peers, leaving closes it.
 //   §4 Bell: a click swings it (A and B), and the swing settles.
+//   §6 85 Q2/Q7: the mouse in Interact lights an unwired Highlight (one hover source).
 //   §5 Guard: it walks its closed route (A and B agree on its place); a player within 4 m gets
 //      "Spotted!" in the announce log.
 //
@@ -165,5 +166,30 @@ h.run(async () => {
 	);
 
 	for (const x of [A, B]) await S(x.page, () => window.__stores.isLocked.set(null));
+
+	// --- §6 85 Q2/Q7 rewire: the mouse in Interact lights an unwired Highlight ------------------
+	console.log('\n=== §6 Highlight under the mouse ===');
+	const lamp = await box('Lamp', [0, 1, 2]);
+	await S(p, ([u]) => {
+		const st = window.__stores;
+		st.restoreGraphs({ [u]: { nodes: [{ id: 'hl', type: 'highlight', position: { x: 0, y: 0 }, data: { type: 'highlight', label: 'Highlight', color: '#ffd54a', strength: 0.6, fade: 0.15 } }], edges: [] } });
+		st.objectActions.applySelectionSet([]);
+		st.editorMode.set('interact');
+	}, [lamp]);
+	await p.waitForTimeout(600);
+	const at = await h.projectPoint(p, [0, 1, 2]);
+	await p.mouse.move(at.x, at.y, { steps: 4 });
+	await h.eventually(() => S(p, () => window.__stores.hoverState.hoverDebug().pointer ?? null), (v) => v === lamp, '§6 the mouse over the lamp is this person\'s pointer hover');
+	await h.eventually(
+		() => S(p, (u) => {
+			/** @type {any} */ let g;
+			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			const m = g.getObjectByProperty('uuid', u)?.material;
+			return m?.emissive ? m.emissive.r + m.emissive.g + m.emissive.b : 0;
+		}, lamp),
+		(v) => v > 0.05,
+		'§6 the unwired Highlight glows under the mouse'
+	);
+	await S(p, () => window.__stores.editorMode.set('edit'));
 	await browser.close();
 });

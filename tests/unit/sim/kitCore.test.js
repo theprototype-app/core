@@ -368,3 +368,33 @@ describe('the fake clock', () => {
 		expect(sim.now() - t0).toBe(FRAME_MS * 3 + 100);
 	});
 });
+
+describe('78 F16: a late joiner adopts the room\'s kit document', () => {
+	it('a joiner whose kit was reset before it joined (a scene load / boot restore) takes the authority document', () => {
+		const sim = createSim({ peers: ['a'], pieces: PIECES });
+		sim.peer('a').kit.impls.tally.add(3);
+		sim.settle();
+		sim.advance(5000);
+		// the joiner opened the app later and loaded a scene on its own (a local reset, stamped NOW)
+		const b = sim.add('b');
+		b.kit.reset({ local: true });
+		sim.advance(100);
+		sim.join('b');
+		sim.settle();
+		expect(b.kit.impls.tally.total()).toBe(3);
+		expect(agree(sim)).toBe(true);
+	});
+	it('a joiner that played on its own, then travelled in (reset while connected elsewhere), takes the author\'s document', () => {
+		const sim = createSim({ peers: ['a'], pieces: PIECES });
+		sim.peer('a').kit.impls.tally.add(2);
+		sim.settle();
+		const b = sim.add('b');
+		b.kit.impls.tally.add(7); // b alone: its own game
+		sim.advance(3000);
+		b.kit.reset({ local: true }); // b travels into a's room (a local reset)
+		sim.join('b');
+		sim.settle();
+		expect(b.kit.impls.tally.total()).toBe(2);
+		expect(sim.peer('a').kit.impls.tally.total()).toBe(2);
+	});
+});

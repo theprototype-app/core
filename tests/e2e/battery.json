@@ -555,6 +555,7 @@
 		"joints-fx": 183,
 		"keyboard-walk": 48,
 		"kit-core": 74,
+		"kit-late-pickups": 80,
 		"kit-instancing": 139,
 		"knock-node": 104,
 		"knock-physics": 216,

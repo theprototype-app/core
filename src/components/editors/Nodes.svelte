@@ -12,6 +12,7 @@
 		MarkerType,
 		SelectionMode,
 		useSvelteFlow,
+		ViewportPortal,
 		type Node,
 		type Edge,
 		type Connection
@@ -93,6 +94,7 @@
 	import { findNodeSpec, nodeCatalog } from '$lib/nodeCatalog';
 	import { nodeDoc } from '$lib/nodeDocs';
 	import { isValidFlowConnection, typeColor, socketShape, SOCKET_TYPES, replaceableInputEdges, groupSocketType } from '$lib/flowSockets';
+	import { lintFlowGraph, type FlowLintFinding } from '$lib/flowLint.js'; // 78 F24
 	import { variadicSocketExists, switcherItems, MAX_SWITCHER_ITEMS, SWITCHER_TYPES, switcherVType } from '$lib/variadicNodes.js'; // 37 (R6)
 	import { removeVariadicSocket, setSwitcherType, addSwitcherItem } from '$lib/variadicEdit.js'; // 37 (R6)
 	import KitButton from '../ui/Button.svelte'; // 37: the Switcher ⓘ rows on the redesign kit
@@ -1736,6 +1738,54 @@
 		return list;
 	});
 
+	// =================================================================================
+	// 78 F24 — WRONG WIRING IS VISIBLE: the flow lint (pure, $lib/flowLint.js — the agent tools ask
+	// the same function) runs over the drawn graph; a flagged wire is dashed red, carries a chip
+	// at its middle whose tooltip says what is wrong, and the chip and the wire's own menu offer
+	// the fix (Reverse) as ONE undo step.
+	// =================================================================================
+	const lintFindings: FlowLintFinding[] = $derived.by(() => {
+		const drawn = (nodes as any[]).filter((n) => !n.hidden);
+		const ids = new Set(drawn.map((n) => n.id));
+		return lintFlowGraph(drawn, (edges as any[]).filter((e) => !e.hidden && ids.has(e.source) && ids.has(e.target)));
+	});
+	/** where a flagged wire's chip sits: halfway between the source's right edge and the target's left */
+	const lintChips = $derived.by(() => {
+		const byId = new Map((nodes as any[]).map((n) => [n.id, n]));
+		return lintFindings
+			.map((f) => {
+				const a = byId.get(f.source);
+				const b = byId.get(f.target);
+				if (!a || !b) return null;
+				const aw = a.measured?.width ?? a.width ?? 150;
+				const ah = a.measured?.height ?? a.height ?? 40;
+				const bh = b.measured?.height ?? b.height ?? 40;
+				return { f, x: (a.position.x + aw + b.position.x) / 2, y: (a.position.y + ah / 2 + b.position.y + bh / 2) / 2 };
+			})
+			.filter((c): c is { f: FlowLintFinding; x: number; y: number } => !!c);
+	});
+	/** Apply a finding's fix: the flagged wire goes, the reversed one comes — ONE undo step. */
+	function reverseWire(f: FlowLintFinding) {
+		const fresh = makeEdge(f.fix);
+		const exists = storeEdgesNow().some((e) => e.id === fresh.id);
+		inBatch('Reverse wire', () => {
+			commitDelete([], [f.edgeId]);
+			if (!exists) commitCreate([], [fresh]);
+		});
+		showToast(exists ? 'Removed the backwards wire (the right one was already there)' : 'Wire reversed');
+	}
+	function lintMenu(f: FlowLintFinding, x: number, y: number) {
+		menu = {
+			x,
+			y,
+			items: [
+				{ header: { title: 'Backwards wire', badge: 'never fires' } },
+				{ label: 'Reverse wire', icon: 'arrow-left-right', tooltip: f.message, action: () => reverseWire(f) },
+				{ label: 'Disconnect', icon: 'x', action: () => commitDelete([], [f.edgeId]) }
+			]
+		};
+	}
+
 	// muted / collapsed cards: one generated stylesheet keyed by node id, so no node
 	// component has to learn about either (CSS.escape keeps a hostile id inert)
 	const bpSet = $derived(new Set($debugBreakpoints));
@@ -1754,6 +1804,8 @@
 			// 48 D1: a breakpoint is a red dot on the card's top-left corner (LOCAL, never node data)
 			if (bpSet.has(n.id)) rules.push(`${sel}::before{content:'';position:absolute;z-index:1;top:-5px;left:-5px;width:11px;height:11px;border-radius:9999px;background:var(--danger);box-shadow:0 0 0 2px var(--bg-app)}`);
 		}
+		// 78 F24: a wire the lint flags draws dashed in the danger colour (the chip on it says why)
+		for (const f of lintFindings) rules.push(`.svelteFlow .svelte-flow__edge[data-id="${esc(f.edgeId)}"] .svelte-flow__edge-path{stroke:var(--danger)!important;stroke-dasharray:6 4}`);
 		return rules.join('\n');
 	});
 
@@ -1920,10 +1972,14 @@
 
 	const onEdgeContextMenu = ({ edge, event }: { edge: Edge; event: MouseEvent }) => {
 		event.preventDefault();
+		const finding = lintFindings.find((f) => f.edgeId === edge.id); // 78 F24
 		menu = {
 			x: event.clientX,
 			y: event.clientY,
-			items: [{ label: (edge as any).data?.proxy ? 'Disconnect (the wire inside the group)' : 'Disconnect', action: () => deleteEdge(edge) }]
+			items: [
+				...(finding ? [{ header: { title: 'Backwards wire', badge: 'never fires' } }, { label: 'Reverse wire', icon: 'arrow-left-right', tooltip: finding.message, action: () => reverseWire(finding) }] : []),
+				{ label: (edge as any).data?.proxy ? 'Disconnect (the wire inside the group)' : 'Disconnect', action: () => deleteEdge(edge) }
+			]
 		};
 	};
 
@@ -2117,6 +2173,22 @@
 					maskColor="color-mix(in srgb, var(--bg-app) 65%, transparent)"
 				/>
 			{/if}
+			<!-- 78 F24: a chip on every wire the lint flags (tooltip = what is wrong; press = the fix) -->
+			{#each lintChips as chip (chip.f.edgeId)}
+				<ViewportPortal target="front">
+					<button
+						type="button"
+						class="flow-lint-chip nodrag nopan"
+						data-edge-id={chip.f.edgeId}
+						style="transform: translate({chip.x}px, {chip.y}px) translate(-50%, -50%)"
+						title={chip.f.message}
+						aria-label={'Wire warning: ' + chip.f.message}
+						onclick={(e) => lintMenu(chip.f, e.clientX, e.clientY)}
+					>
+						<Icon name="triangle-alert" size={16} aria-hidden="true" />
+					</button>
+				</ViewportPortal>
+			{/each}
 		</SvelteFlow>
 		<PeerCursors {viewport} />
 	</div>
@@ -2277,6 +2349,25 @@
 	/* notes sit BEHIND the cards (drawn first, and never elevated when selected) */
 	:global(.svelte-flow__node-note) {
 		z-index: 0 !important;
+	}
+	/* 78 F24: the flagged-wire chip (a real button: focusable, named, its tooltip is the finding) */
+	.flow-lint-chip {
+		position: absolute;
+		pointer-events: all;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 24px;
+		height: 24px;
+		border-radius: 9999px;
+		border: 1px solid var(--danger);
+		background: var(--bg-app);
+		color: var(--danger);
+		cursor: pointer;
+	}
+	.flow-lint-chip:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
 	}
 	:global(.svelte-flow__edge.tp-proxy-edge .svelte-flow__edge-path) {
 		stroke-dasharray: 6 3;

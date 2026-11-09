@@ -4,7 +4,12 @@ import { lintFlowGraph, lintFlowGraphs, isReversedTriggerEdge, SELECTOR_TRIGGERS
 // 78 F24 (research round 2): an Object Selector wired INTO On Click silently never fires —
 // the runtime walks forward from the trigger to the selector. The lint names it and says how to fix it.
 const node = (/** @type {string} */ id, /** @type {string} */ type, data = {}) => ({ id, type, data: { label: '', ...data } });
-const edge = (/** @type {string} */ source, /** @type {string} */ target, sourceHandle = null, targetHandle = null) => ({
+const edge = (
+	/** @type {string} */ source,
+	/** @type {string} */ target,
+	/** @type {string | null} */ sourceHandle = null,
+	/** @type {string | null} */ targetHandle = null
+) => ({
 	id: `e-${source}${sourceHandle ? '.' + sourceHandle : ''}-${target}${targetHandle ? '.' + targetHandle : ''}`,
 	source,
 	target,

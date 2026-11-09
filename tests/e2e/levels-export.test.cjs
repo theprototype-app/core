@@ -189,7 +189,8 @@ h.run(async () => {
 		return { level: window.__stores.kit.kit.impls.levels?.current?.() ?? null, point: window.__stores.levelsCheckpoints.checkpointsForTest().point, vars: { ...(g?.vars ?? {}) } };
 	});
 	h.check(after.level === 'start', `it starts the FIRST level (${after.level})`);
-	h.check(!after.point, `the removed level's checkpoint is dropped (${JSON.stringify(after.point)})`);
+	// the player now spawns ON the Start pad, which makes it the checkpoint; what must be gone is the removed level's
+	h.check(!after.point || (after.point.name !== 'Lava gate' && !near(after.point.spawn?.position, [40, 0, 40], 1)), `the removed level's checkpoint is dropped (${JSON.stringify(after.point)})`);
 	h.check(after.vars.coins === 7 && !('gold' in after.vars), `kept coins (${after.vars.coins}), dropped what the game no longer keeps (${JSON.stringify(after.vars)})`);
 	const note = logs.find((l) => l.includes('saved progress'));
 	h.check(!!note && note.includes('lava') && note.includes('gold'), `the console says what changed (${note})`);

@@ -13,7 +13,7 @@ import { safeStorage } from '../safeStorage.js';
 import { exportConfig, exportMode } from '../export/exportBoot.js';
 import { runtimeSpawn } from '../playSettings';
 import { sceneLevelsTable } from './runtime.js';
-import { captureKept, resetOwnKept, withoutKeptVars } from './keep.js';
+import { captureKept, resetOwnKept, withoutKeptVars, withKeptVars } from './keep.js';
 import { spawnOfObject, setPlayerSpawn, clearPlayerSpawn, respawnNow, LEVELS_SPAWN_OWNER } from './spawn.js';
 import { SAVE_VERSION, saveKey, upgradeSave, encodeSave } from './save.js';
 
@@ -140,6 +140,9 @@ export async function resumeSavedGame() {
 	if (save.level) await travel.goToLevel(save.level, { transition: false });
 	else if (save.scene && save.scene !== (await sceneNow())) await travel.hopTo({ scene: save.scene }, { transition: false });
 	travel.restoreKept(save.kept);
+	// the kept variables: a hop re-asserts them through the travel carry, a reload has no hop to do it
+	const vars = withKeptVars(get(gameState)?.vars, save.kept);
+	if (vars) commitGameState({ vars });
 	if (save.point?.spawn) {
 		checkpointPoint.set({ ...save.point, scene: await sceneNow() });
 		setPlayerSpawn(save.point.spawn);

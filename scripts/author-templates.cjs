@@ -321,7 +321,7 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 	// 36 F11: the in-page graphTidy report
 	page.on('console', (m) => m.text().startsWith('[graphTidy]') && console.log(m.text()));
 	await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
-	await page.waitForFunction(() => window.__stores && !!window.__stores.sessions, { timeout: 40000 });
+	await page.waitForFunction(() => window.__stores && !!window.__stores.sessions, null, { timeout: 180000 }); // options are the 3rd arg
 	await page.waitForTimeout(2000);
 	// 30 author-kit: say which GPU the thumbnails are rendered on — a SwiftShader card is
 	// not the one a user's display would show, and nothing else in the run would tell

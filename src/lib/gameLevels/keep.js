@@ -45,6 +45,16 @@ export function withoutKeptVars(vars, table) {
 	return out;
 }
 
+/**
+ * A resumed save: the game's variables with the saved kept ones laid over them, or null when the save keeps no
+ * variable (nothing to write). Pure. @param {Record<string, any> | undefined} vars @param {any} kept
+ */
+export function withKeptVars(vars, kept) {
+	const saved = kept?.vars && typeof kept.vars === 'object' ? kept.vars : {};
+	if (!Object.keys(saved).length) return null;
+	return { ...(vars ?? {}), ...saved };
+}
+
 /** does the table carry a keep list at all? @param {any} table */
 export function hasKeepList(table) {
 	return !!table?.keep?.length;

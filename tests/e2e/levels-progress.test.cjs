@@ -104,12 +104,19 @@ h.run(async () => {
 	// =====================================================================
 	const C = await h.setupPage(browser, 'C');
 	console.log('\n=== 2. a portal with kept state ===');
-	// the Cave: 200 boxes (a load that takes a moment) and its entrance pad
+	// the Cave: 200 dense spheres (96 x 64 segments: each one's geometry is rebuilt as the load parses it, so the
+	// object phase spans several of the loader's 100 ms progress publishes) and its entrance pad
 	for (let k = 0; k < 2; k++) {
-		const objects = Array.from({ length: 100 }, (_, i) => ({ kind: 'primitive', primitive: 'Box', params: [0.4, 0.4, 0.4], position: [(i % 10) * 1.2 - 6 + k * 0.3, 0.2, Math.floor(i / 10) * 1.2 + 4] }));
+		const objects = Array.from({ length: 100 }, (_, i) => ({ kind: 'primitive', primitive: 'Sphere', params: [0.3, 96, 64], position: [(i % 10) * 1.2 - 6 + k * 0.3, 0.3, Math.floor(i / 10) * 1.2 + 4] }));
 		const made = await tool(C, 'create_objects', { objects });
-		h.check(!made.error, `premise: 100 boxes for the Cave (${made.error || 'ok'})`);
+		h.check(!made.error, `premise: 100 dense spheres for the Cave (${made.error || 'ok'})`);
 	}
+	const dense = await read(C, () => {
+		let n = 0;
+		window.__stores.objectsGroup.subscribe((g) => g.traverse((o) => (n = Math.max(n, o.geometry?.attributes?.position?.count ?? 0))))();
+		return n;
+	});
+	h.check(dense > 5000, `premise: the spheres are dense (${dense} vertices each)`);
 	const entrance = await tool(C, 'set_checkpoint', { position: [0, 0, -2], name: 'Cave entrance' });
 	h.check(!entrance.error, 'premise: the Cave entrance pad');
 	const cave = await C.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Cave'));
@@ -161,7 +168,7 @@ h.run(async () => {
 	const first = shown[0]?.t ?? 0;
 	const off = samples.find((s, i) => i > 0 && !s.active && samples[i - 1].active)?.t ?? 0;
 	h.check(shown.length > 0 && shown[0].tips === 1, `the author's screen showed during the cold hop (${shown.length} samples, tips ${shown[0]?.tips})`);
-	h.check(mids.length >= 2, `its progress came from the load: ${mids.length} values between 0 and 1 (${mids.slice(0, 8).map((p) => p.toFixed(2))})`);
+	h.check(mids.length >= 2, `its progress came from the load: ${mids.length} values between 0 and 1 (${mids.slice(0, 8).map((p) => p.toFixed(2))}; all: ${shown.map((s) => s.progress.toFixed(2) + '@' + (s.t - (shown[0]?.t ?? 0))).join(' ')})`);
 	h.check(shown.every((s, i) => i === 0 || s.progress >= shown[i - 1].progress), 'progress only rises');
 	h.check(shown.some((s) => s.progress === 1), 'it reached 1 before going away');
 	h.check(off - first >= 380, `shown at least ~0.4 s (${off - first} ms)`);

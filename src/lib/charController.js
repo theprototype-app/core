@@ -81,6 +81,8 @@ export const walkerState = writable({ vy: 0, grounded: false, ground: 0, source:
 
 let vy = 0;
 let grounded = false;
+/** 78-int u1: the ground plane's height on the walker's last frame (null = no frame yet) @type {number|null} */
+let lastFloor = null;
 /** is the jump key physically down? A browser REPEATS keydown while a key is held, so
  * the edge has to be tracked here rather than trusted from the event. */
 let jumpHeld = false;
@@ -428,6 +430,18 @@ export function resolveWalk(feetPos, height, dt, desired, opts = {}) {
 	carryZ = 0;
 	let dy = useGravity ? vy * step : Number(desired?.dy ?? 0) || 0;
 
+	// 78-int u1: THE GROUND CARRIES ITS STANDER. A ground-height change while a simulation runs rebuilds the
+	// ground slab under a capsule that stood on the OLD top, and the character controller cannot climb out of a
+	// slab it starts inside (measured: raised 0 -> 0.3 m, the walker stayed at 0.05 m). A walker standing on the
+	// ground plane when its height changes moves with it; one in the air or on something else is untouched.
+	const floorNow = floorHeight();
+	let lift = 0;
+	if (lastFloor !== null && floorNow !== lastFloor && grounded && Math.abs(feet - lastFloor) < 0.05) {
+		lift = floorNow - feet;
+		feet = floorNow;
+	}
+	lastFloor = floorNow;
+
 	const built = ensureCapsule(physicsRuntime(), eyeHeight);
 	if (built && capsule && controller) {
 		try {
@@ -503,7 +517,7 @@ export function resolveWalk(feetPos, height, dt, desired, opts = {}) {
 		Math.abs(previous.ground - state.ground) > 1e-4
 	)
 		walkerState.set(state);
-	return { dx, dy, dz, feet, grounded, vy, source };
+	return { dx, dy: dy + lift, dz, feet, grounded, vy, source };
 }
 
 /** the head-sized capsule the built-in flier collides with: eye .. eye - FLY_BODY */
@@ -554,6 +568,7 @@ export function resetWalker() {
 	grounded = false;
 	jumpRequested = false;
 	jumpHeld = false;
+	lastFloor = null;
 	dropCapsule();
 	walkerState.set({ vy: 0, grounded: false, ground: 0, source: 'none' });
 }

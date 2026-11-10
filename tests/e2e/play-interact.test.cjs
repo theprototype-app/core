@@ -510,7 +510,9 @@ h.run(async () => {
 		return { before, after: rig.position.y };
 	});
 	h.check(
-		flyBlocked && Math.abs(flyBlocked.after - 0.8) < 0.001,
+		// 78 F11: a grounded scene with no dynamic body runs its world on Play and the default walker stands the rig
+		// on it through rapier's character controller, whose 2 cm skin (createCharacterController(0.02)) lifts the eye
+		flyBlocked && flyBlocked.after >= 0.8 - 0.001 && flyBlocked.after <= 0.8 + 0.03,
 		'7.5 grounded pins the rig to eye height and Q cannot fly (' + JSON.stringify(flyBlocked) + ')'
 	);
 

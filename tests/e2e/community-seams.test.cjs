@@ -322,10 +322,13 @@ h.run(async () => {
 	await A.page.evaluate(() => window.__stores.templatesModalOpen.set(true));
 	await A.page.waitForTimeout(400);
 	await A.page.locator('#templates-tab-community').click();
+	// the example provider lists every bundled template (static/templates/index.json): 3 until 1.64 added
+	// "Two levels and a portal" (93) and "Doors, a bell and a guard" (F27), so the count is read, not pinned
+	const bundled = await A.page.evaluate(async () => ((await (await fetch('/templates/index.json')).json()).templates || []).length);
 	await h.eventually(
 		() => A.page.locator('#templates-modal [data-scene-slug]').count(),
-		(n) => n === 3,
-		'A6: the Community tab lists the provider rows (3 bundled templates)'
+		(n) => n === bundled && n >= 3,
+		`A6: the Community tab lists the provider rows (${bundled} bundled templates)`
 	);
 	const provided = await A.page.evaluate(() => {
 		const modal = document.querySelector('#templates-modal');
@@ -343,7 +346,7 @@ h.run(async () => {
 	check(provided.notice.includes('Community (example)'), 'A6: the provider\'s notice row renders above the grid');
 	check(provided.submitTag === 'BUTTON' && provided.submitText === 'Publish from the app (example)', 'A6: "Submit yours on GitHub" is swapped for the provider\'s submit action');
 	check(provided.prCopy === false, 'A6: the pull-request copy stands down while a provider is installed');
-	check(provided.likes === 3 && provided.remix === 1, `A6: cards render likeCount/remixOf only when present (${provided.likes} likes badges, ${provided.remix} remix)`);
+	check(provided.likes === bundled && provided.remix === 1, `A6: cards render likeCount/remixOf only when present (${provided.likes} likes badges, ${provided.remix} remix)`);
 	check(provided.slugs.includes('level-blockout') && provided.slugs.includes('physics-playground'), 'A6: the rows are the bundled index entries');
 	galleryFetches = 0;
 

@@ -287,6 +287,9 @@ h.run(async () => {
 	c = await tabCentre(page, 'left', 'flow');
 	await page.mouse.click(c[0], c[1]);
 	await page.waitForTimeout(300);
+	// 78-int PL14: the strip also carries the Inspector's pin now, so three tabs can outgrow the column and the
+	// strip scrolls its front tab into view — the drag starts where the Flow tab IS after the click
+	c = await tabCentre(page, 'left', 'flow');
 	const flowD = await probe(page, '#flow-window');
 	await drag(page, c, [flowD.x + flowD.w + 300, flowD.y + 220], 12);
 	await page.mouse.up();

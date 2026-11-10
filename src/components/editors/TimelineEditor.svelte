@@ -18,6 +18,13 @@
 	// or step the playhead, Home/End, K adds on the selected track at the playhead,
 	// Delete removes, Esc cancels a drag or clears the selection, Ctrl+A selects all.
 	// Wheel zooms, Shift+wheel pans. The ruler scrubs.
+	//
+	// uir-timeline — THREE PANES on WindowShell: the SEQUENCES list on the left (pick, new, rename,
+	// duplicate, delete), the tracks in the middle, PROPERTIES on the right with two tabs: Sequence
+	// (name, length, frame rate, autoplay, loop) and Item (the selected item's fields, the old bottom
+	// inspector). Picking one item opens the Item tab for a moment (WindowShell's showSecondary); a
+	// tab the user pressed stays. The ids the suites and docs know (#timeline-inspector,
+	// #timeline-duration, #timeline-autoplay, #timeline-item-*) moved with their fields.
 	import { untrack } from 'svelte';
 	import { get } from 'svelte/store';
 	import Icon from '../ui/Icon.svelte';
@@ -29,6 +36,10 @@
 	import ContextMenu from '../ContextMenu.svelte';
 	import DockTabs from '../DockTabs.svelte';
 	import WindowChrome from '../ui/WindowChrome.svelte';
+	// uir-timeline (owner 2026-11-09): Sequences on the left, Properties (Sequence | Item) on the right — the
+	// shared side-pane chrome every tabbed window uses (showhide-v8 turns its edges into the one arrow pattern)
+	import WindowShell from '../shared/WindowShell.svelte';
+	import { phoneShell } from '$lib/ui/phoneShell.js';
 	import { timelineClose, showToast } from '../../stores/appStore.js';
 	import { objectsGroup, selectedObjects } from '../../stores/sceneStore';
 	import { onLayoutRestore, storedPanelLayout } from '$lib/uiLayoutsCore';
@@ -102,6 +113,9 @@
 	import { animatedObjects, clipInfo } from '$lib/animatedImports';
 	import { explorerItems } from '$lib/explorer';
 	import { sendAsset } from '$lib/assetShare';
+	import { handheld } from '$lib/ui/handheldPanels.js';
+	// a touch handheld (folded OR unfolded) opens every side pane put away: keep the sequence picker in the bar
+	const HAND = handheld();
 
 	const KEY = 'timeline';
 	const KIND_ICON: Record<string, string> = {
@@ -645,33 +659,39 @@
 
 	// ---- menus + renames ----------------------------------------------------------------
 	let menu: { x: number; y: number; items: any[] } | null = $state(null);
-	let renaming = $state(false);
+	/** the sequence whose name is being typed (the list row, or the phone bar's picker) */
+	let renamingSeq = $state<string | null>(null);
 	let renameText = $state('');
 	let renamingTrack = $state<string | null>(null);
-	function seqMenu(e: MouseEvent) {
-		if (!seqId || !seq) return;
-		const id = seqId;
+	function pickSequence(id: string) {
+		if (id === seqId) return;
+		activeSequence.set(id);
+		sequenceSelection.set([]);
+	}
+	function startRename(id: string) {
+		const s = ($sequences as any)[id];
+		if (!s) return;
+		renameText = s.name;
+		renamingSeq = id;
+	}
+	function seqMenu(e: MouseEvent, id: string | null = seqId) {
+		e.preventDefault();
+		const s = id ? ($sequences as any)[id] : null;
+		if (!id || !s) return;
 		menu = {
 			x: e.clientX,
 			y: e.clientY,
 			items: [
-				{
-					label: 'Rename…',
-					action: () => {
-						renameText = seq.name;
-						renaming = true;
-					}
-				},
-				{ label: 'Duplicate', action: () => duplicateSequence(id) },
-				{ label: 'Fit view', action: fitView },
+				{ label: 'Rename…', icon: 'pencil', action: () => startRename(id) },
+				{ label: 'Duplicate', icon: 'copy', action: () => duplicateSequence(id) },
+				...(id === seqId ? [{ label: 'Fit view', icon: 'maximize-2', action: fitView }] : []),
 				{
 					label: 'Grow to fit items',
-					disabled: contentEnd(seq) <= seq.duration,
-					action: () =>
-						updateSequence(id, { duration: Math.ceil(contentEnd(seq) * seq.fps) / seq.fps })
+					disabled: contentEnd(s) <= s.duration,
+					action: () => updateSequence(id, { duration: Math.ceil(contentEnd(s) * s.fps) / s.fps })
 				},
 				{ section: ' ' },
-				{ label: 'Delete sequence', danger: true, action: () => deleteSequence(id) }
+				{ label: 'Delete sequence', icon: 'trash-2', danger: true, action: () => deleteSequence(id) }
 			]
 		};
 	}
@@ -713,8 +733,38 @@
 		};
 	}
 	function commitRename() {
-		if (seqId && renameText.trim()) renameSequence(seqId, renameText);
-		renaming = false;
+		if (renamingSeq && renameText.trim()) renameSequence(renamingSeq, renameText);
+		renamingSeq = null;
+	}
+
+	// ---- the panes (uir-timeline) ----------------------------------------------------------
+	/** the Properties tabs; the glyphs are the ones showhide-v8's WindowShell maps onto Lucide icons */
+	const PANE_MODES = [
+		{ key: 'sequence', icon: '⚙', label: 'Sequence' },
+		{ key: 'item', icon: 'ⓘ', label: 'Item' }
+	];
+	let shell: any = $state(null);
+	// picking ONE item brings its tab forward (transient unless the user pressed the tab); clearing the
+	// pick puts a transient pane away again — the UvEditor rule
+	let shownFor = '';
+	$effect(() => {
+		const id = oneSel?.item?.id ?? '';
+		untrack(() => {
+			if (id && id !== shownFor) shell?.showSecondary('item');
+			else if (!id && shownFor) {
+				const st = shell?.secondaryStatus?.();
+				if (st?.open && st.mode === 'item' && !st.pinned) shell?.hideSecondary();
+			}
+			shownFor = id;
+		});
+	});
+	const itemCount = $derived(seq ? seq.tracks.reduce((n: number, tr: any) => n + (tr.items?.length ?? 0), 0) : 0);
+	/** frame rates people pick; anything 1-120 types in the field */
+	const FPS_PRESETS = [24, 25, 30, 60];
+	function setFps(v: number) {
+		if (!seqId) return;
+		const fps = Math.min(120, Math.max(1, Math.round(Number(v) || 0)));
+		if (fps !== seq?.fps) updateSequence(seqId, { fps });
 	}
 
 	// a gesture for DragRow scrubs in the inspector (one undo step per scrub)
@@ -730,15 +780,141 @@
 	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 	<div
 		class="tl-root"
+		class:tl-hand={HAND}
 		bind:this={root}
 		use:keys
 		tabindex="-1"
 		role="application"
 		aria-label="Timeline"
-		data-keywords="timeline cutscene sequence camera shot animation audio event"
+		data-keywords="timeline cutscene sequence sequences fps frame rate camera shot animation audio event properties"
 		onpointerdown={focusRoot}
 		onpointerenter={() => listTick++}
 	>
+		<WindowShell
+			bind:this={shell}
+			key="timeline"
+			primaryLabel="sequences"
+			primaryDefaultWidth={176}
+			secondaryModes={PANE_MODES}
+			secondaryDefaultOpen={!$phoneShell}
+			secondaryDefaultWidth={236}
+			topbar={seq ? tlBar : undefined}
+			primary={tlSequences}
+			main={tlMain}
+			secondary={tlProps}
+		/>
+	</div>
+{/snippet}
+
+<!-- LEFT: the sequences of this scene -->
+{#snippet tlSequences()}
+	<div class="tl-seqs" id="timeline-sequences">
+		<div class="tl-pane-head">
+			<span class="tl-pane-title">Sequences</span>
+			<Button size="sm" variant="ghost" icon="plus" title="Add a sequence" id="timeline-new" onclick={newSequence} />
+		</div>
+		{#if !list.length}
+			<p class="tl-hint tl-pad">None yet. A sequence is one cutscene.</p>
+		{/if}
+		<div class="tl-seq-list" role="listbox" aria-label="Sequences">
+			{#each list as s (s.id)}
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div class="tl-seq-row" class:tl-seq-active={s.id === seqId} data-seq-row={s.id} oncontextmenu={(e) => seqMenu(e, s.id)}>
+					{#if renamingSeq === s.id}
+						<!-- svelte-ignore a11y_autofocus -->
+						<input
+							class="tl-rename"
+							id="timeline-rename"
+							aria-label="Sequence name"
+							autofocus
+							bind:value={renameText}
+							onkeydown={(e) => {
+								if (e.key === 'Enter') commitRename();
+								if (e.key === 'Escape') renamingSeq = null;
+								e.stopPropagation();
+							}}
+							onblur={commitRename}
+						/>
+					{:else}
+						<button
+							class="tl-seq-pick-btn"
+							role="option"
+							aria-selected={s.id === seqId}
+							data-seq-id={s.id}
+							title="{s.name} — double-click to rename"
+							onclick={() => pickSequence(s.id)}
+							ondblclick={() => startRename(s.id)}
+						>
+							<Icon name="video" size={16} aria-hidden="true" />
+							<span class="tl-seq-name">{s.name}</span>
+							{#if s.autoplay}<span class="tl-seq-flag" title="Autoplay"><Icon name="play" size={16} aria-hidden="true" /></span>{/if}
+							{#if s.loop}<span class="tl-seq-flag" title="Loop"><Icon name="repeat" size={16} aria-hidden="true" /></span>{/if}
+							<span class="tl-seq-len">{formatTime(s.duration, s.fps)}</span>
+						</button>
+					{/if}
+					<button class="tl-icon-btn" title="Sequence menu" aria-label="Sequence menu for {s.name}" data-seq-menu={s.id} onclick={(e) => seqMenu(e, s.id)}
+						><Icon name="ellipsis" size={16} /></button
+					>
+				</div>
+			{/each}
+		</div>
+	</div>
+{/snippet}
+
+<!-- TOP of the middle pane: the transport and the view tools -->
+{#snippet tlBar()}
+	<div class="tl-bar">
+		<!-- a phone or a handheld opens with the side panes put away: the picker keeps switching one tap away -->
+		<div class="tl-seq-pick tl-phone-only" title="Sequence">
+			<ThemedSelect
+				id="timeline-seq-select"
+				clip={false}
+				items={list.map((s: any) => ({ value: s.id, name: s.name }))}
+				value={seqId}
+				onchange={(v: any) => pickSequence(v)}
+			/>
+		</div>
+		<Button size="sm" variant="ghost" icon="skip-back" title="Back to the start (Home)" id="timeline-home" onclick={() => scrubTo(0, true)} />
+		<Button
+			size="sm"
+			variant={playing ? 'primary' : 'secondary'}
+			icon={playing ? 'pause' : 'play'}
+			title={playing ? 'Pause (Space)' : 'Preview (Space) — local to you; graph events fire only in Play'}
+			id="timeline-play"
+			onclick={togglePlay}
+		/>
+		<Button size="sm" variant="ghost" icon="square" title="Stop and rewind" id="timeline-stop" onclick={stopAll} />
+		<span class="tl-time" id="timeline-time">{formatTime(playhead, seq.fps)} / {formatTime(seq.duration, seq.fps)}</span>
+		{#if runningGame}<span class="tl-live" title="Running in the game (Play Sequence / autoplay)"
+				><Icon name="circle" size={16} aria-hidden="true" /> live</span
+			>{/if}
+		<span class="flex-1"></span>
+		<Button
+			size="sm"
+			variant="ghost"
+			icon="magnet"
+			pressed={snapOn}
+			title={snapOn ? 'Snapping on (Alt drags freely)' : 'Snapping off'}
+			id="timeline-snap"
+			onclick={() => setSnap(!snapOn)}
+		/>
+		<Button
+			size="sm"
+			variant="ghost"
+			icon={$previewShots ? 'eye' : 'eye-off'}
+			pressed={$previewShots}
+			title={$previewShots ? 'Previews look through the camera shots' : 'Previews keep your view'}
+			id="timeline-shots"
+			onclick={() => previewShots.set(!$previewShots)}
+		/>
+		<Button size="sm" variant="ghost" icon="maximize-2" title="Fit the whole sequence" id="timeline-fit" onclick={fitView} />
+		<Button size="sm" variant="secondary" icon="plus" text="Track" id="timeline-add-track" onclick={addTrackMenu} />
+	</div>
+{/snippet}
+
+<!-- MIDDLE: the tracks -->
+{#snippet tlMain()}
+	<div class="tl-main">
 		{#if !seq}
 			<EmptyState
 				icon="video"
@@ -748,156 +924,6 @@
 				onaction={newSequence}
 			/>
 		{:else}
-			<div class="tl-bar">
-				{#if renaming}
-					<input
-						class="tl-rename"
-						id="timeline-rename"
-						bind:value={renameText}
-						onkeydown={(e) => {
-							if (e.key === 'Enter') commitRename();
-							if (e.key === 'Escape') renaming = false;
-							e.stopPropagation();
-						}}
-						onblur={commitRename}
-					/>
-				{:else}
-					<div class="tl-seq-pick" title="Sequence">
-						<ThemedSelect
-							id="timeline-seq-select"
-							clip={false}
-							items={list.map((s: any) => ({ value: s.id, name: s.name }))}
-							value={seqId}
-							onchange={(v: any) => {
-								activeSequence.set(v);
-								sequenceSelection.set([]);
-							}}
-						/>
-					</div>
-				{/if}
-				<Button
-					size="sm"
-					variant="ghost"
-					icon="plus"
-					title="New sequence"
-					id="timeline-new"
-					onclick={newSequence}
-				/>
-				<Button
-					size="sm"
-					variant="ghost"
-					icon="ellipsis"
-					title="Sequence menu"
-					id="timeline-seq-menu"
-					onclick={seqMenu}
-				/>
-				<span class="tl-sep"></span>
-				<Button
-					size="sm"
-					variant="ghost"
-					icon="skip-back"
-					title="Back to the start (Home)"
-					id="timeline-home"
-					onclick={() => scrubTo(0, true)}
-				/>
-				<Button
-					size="sm"
-					variant={playing ? 'primary' : 'secondary'}
-					icon={playing ? 'pause' : 'play'}
-					title={playing
-						? 'Pause (Space)'
-						: 'Preview (Space) — local to you; graph events fire only in Play'}
-					id="timeline-play"
-					onclick={togglePlay}
-				/>
-				<Button
-					size="sm"
-					variant="ghost"
-					icon="square"
-					title="Stop and rewind"
-					id="timeline-stop"
-					onclick={stopAll}
-				/>
-				<span class="tl-time" id="timeline-time"
-					>{formatTime(playhead, seq.fps)} / {formatTime(seq.duration, seq.fps)}</span
-				>
-				{#if runningGame}<span
-						class="tl-live"
-						title="Running in the game (Play Sequence / autoplay)">● live</span
-					>{/if}
-				<span class="tl-sep"></span>
-				<div class="tl-dur" title="Length (seconds)">
-					<DragRow
-						id="timeline-duration"
-						label="Length"
-						value={seq.duration}
-						step={0.05}
-						decimals={2}
-						min={0.1}
-						max={3600}
-						onscrubstart={scrubStart}
-						onscrubend={scrubEnd}
-						onchange={(v: number) => seqId && updateSequence(seqId, { duration: v })}
-					/>
-				</div>
-				<label
-					class="tl-flag"
-					title="Start this sequence when a player enters Play (and in exported games)"
-				>
-					<Toggle
-						id="timeline-autoplay"
-						checked={seq.autoplay}
-						onchange={(v: boolean) => seqId && updateSequence(seqId, { autoplay: v })}
-					/>
-					<span>Autoplay</span>
-				</label>
-				<label class="tl-flag" title="Loop">
-					<Toggle
-						id="timeline-loop"
-						checked={seq.loop}
-						onchange={(v: boolean) => seqId && updateSequence(seqId, { loop: v })}
-					/>
-					<span>Loop</span>
-				</label>
-				<span class="flex-1"></span>
-				<Button
-					size="sm"
-					variant="ghost"
-					icon="magnet"
-					pressed={snapOn}
-					title={snapOn ? 'Snapping on (Alt drags freely)' : 'Snapping off'}
-					id="timeline-snap"
-					onclick={() => setSnap(!snapOn)}
-				/>
-				<Button
-					size="sm"
-					variant="ghost"
-					icon={$previewShots ? 'eye' : 'eye-off'}
-					pressed={$previewShots}
-					title={$previewShots
-						? 'Previews look through the camera shots'
-						: 'Previews keep your view'}
-					id="timeline-shots"
-					onclick={() => previewShots.set(!$previewShots)}
-				/>
-				<Button
-					size="sm"
-					variant="ghost"
-					icon="maximize-2"
-					title="Fit the whole sequence"
-					id="timeline-fit"
-					onclick={fitView}
-				/>
-				<Button
-					size="sm"
-					variant="secondary"
-					icon="plus"
-					text="Track"
-					id="timeline-add-track"
-					onclick={addTrackMenu}
-				/>
-			</div>
-
 			<div class="tl-grid" use:wheel use:minimalScroll>
 				<div class="tl-corner"></div>
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1063,10 +1089,23 @@
 				{/each}
 			</div>
 
-			{#if oneSel}
-				{@const kind = oneSel.track.kind}
-				{@const it = oneSel.item}
-				<div class="tl-inspector" id="timeline-inspector" data-kind={kind}>
+		{/if}
+	</div>
+{/snippet}
+
+<!-- RIGHT: Properties — the sequence, or the picked item -->
+{#snippet tlProps(mode: string)}
+	{#if mode === 'item'}
+		{#if oneSel}
+			{@const kind = oneSel.track.kind}
+			{@const it = oneSel.item}
+			<div class="tl-pane tl-inspector" id="timeline-inspector" data-kind={kind}>
+				<div class="tl-pane-head">
+					<span class="tl-kind" style="color: {KIND_COLOR[kind]}"><Icon name={KIND_ICON[kind]} size={16} /></span>
+					<span class="tl-pane-title">{isTrackKind(kind) ? TRACK_LABELS[kind] : 'Item'}</span>
+					<span class="flex-1"></span>
+					<Button size="sm" variant="ghost" icon="trash-2" title="Delete (Del)" id="timeline-item-delete" onclick={deleteSelection} />
+				</div>
 					<span class="tl-kind" style="color: {KIND_COLOR[kind]}"
 						><Icon name={KIND_ICON[kind]} size={16} /></span
 					>
@@ -1226,25 +1265,90 @@
 							onchange={(e) => patchItem({ name: e.currentTarget.value.trim() || it.name })}
 						/>
 					{/if}
-					<span class="flex-1"></span>
-					<Button
-						size="sm"
-						variant="ghost"
-						icon="trash-2"
-						title="Delete (Del)"
-						id="timeline-item-delete"
-						onclick={deleteSelection}
-					/>
-				</div>
-			{:else if selection.length > 1}
-				<div class="tl-inspector">
-					<span class="tl-hint"
-						>{selection.length} items — drag to move together, ←/→ to nudge, Del to delete</span
-					>
-				</div>
-			{/if}
+			</div>
+		{:else if selection.length > 1}
+			<div class="tl-pane" id="timeline-inspector-many">
+				<span class="tl-hint">{selection.length} items — drag to move together, ←/→ to nudge, Del to delete</span>
+			</div>
+		{:else}
+			<div class="tl-pane" id="timeline-inspector-none">
+				<span class="tl-hint">Pick an item on a track to edit it here. Double-click an empty lane to add one.</span>
+			</div>
 		{/if}
-	</div>
+	{:else if seq}
+		<div class="tl-pane" id="timeline-seq-props">
+			<label class="tl-row-label" for="timeline-seq-name">Name</label>
+			<input
+				class="tl-event-name"
+				id="timeline-seq-name"
+				value={seq.name}
+				maxlength="80"
+				onkeydown={(e) => {
+					if (e.key === 'Enter') e.currentTarget.blur();
+					if (e.key === 'Escape') {
+						e.currentTarget.value = seq.name;
+						e.currentTarget.blur();
+					}
+					e.stopPropagation();
+				}}
+				onchange={(e) => seqId && renameSequence(seqId, e.currentTarget.value)}
+			/>
+			<div class="tl-field" title="Length (seconds)">
+				<DragRow
+					id="timeline-duration"
+					label="Length"
+					value={seq.duration}
+					step={0.05}
+					decimals={2}
+					min={0.1}
+					max={3600}
+					onscrubstart={scrubStart}
+					onscrubend={scrubEnd}
+					onchange={(v: number) => seqId && updateSequence(seqId, { duration: v })}
+				/>
+			</div>
+			<div class="tl-field" title="Frames per second: the grid items snap to and the readout counts in">
+				<DragRow
+					id="timeline-fps"
+					label="Frame rate"
+					value={seq.fps}
+					step={1}
+					decimals={0}
+					min={1}
+					max={120}
+					onscrubstart={scrubStart}
+					onscrubend={scrubEnd}
+					onchange={setFps}
+				/>
+			</div>
+			<div class="tl-chips" role="group" aria-label="Common frame rates">
+				{#each FPS_PRESETS as f (f)}
+					<button class="tl-chip" aria-pressed={seq.fps === f} data-fps={f} onclick={() => setFps(f)}>{f}</button>
+				{/each}
+			</div>
+			<label class="tl-flag" title="Start this sequence when a player enters Play (and in exported games)">
+				<Toggle id="timeline-autoplay" checked={seq.autoplay} onchange={(v: boolean) => seqId && updateSequence(seqId, { autoplay: v })} />
+				<span>Autoplay</span>
+			</label>
+			<label class="tl-flag" title="Loop">
+				<Toggle id="timeline-loop" checked={seq.loop} onchange={(v: boolean) => seqId && updateSequence(seqId, { loop: v })} />
+				<span>Loop</span>
+			</label>
+			<span class="tl-hint" id="timeline-seq-count">{seq.tracks.length} {seq.tracks.length === 1 ? 'track' : 'tracks'} · {itemCount} {itemCount === 1 ? 'item' : 'items'}</span>
+			{#if contentEnd(seq) > seq.duration}
+				<Button
+					size="sm"
+					variant="secondary"
+					icon="chevrons-left-right"
+					text="Grow to fit items"
+					id="timeline-grow"
+					onclick={() => seqId && updateSequence(seqId, { duration: Math.ceil(contentEnd(seq) * seq.fps) / seq.fps })}
+				/>
+			{/if}
+		</div>
+	{:else}
+		<div class="tl-pane"><span class="tl-hint">No sequence yet.</span></div>
+	{/if}
 {/snippet}
 
 {#if !$timelineClose}
@@ -1350,25 +1454,169 @@
 		min-height: 0;
 		flex: 1 1 auto;
 		flex-direction: column;
-		gap: 6px;
 		outline: none;
 		font-size: var(--fs-body);
 		color: var(--text);
+	}
+	.tl-root > :global(.ws-root) {
+		flex: 1 1 auto;
+		min-height: 0;
+	}
+	.tl-main {
+		display: flex;
+		height: 100%;
+		min-height: 0;
+		flex-direction: column;
+		padding: 0 6px 4px;
 	}
 	.tl-bar {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
 		gap: 4px;
+		padding: 0 6px 6px;
+	}
+	/* uir-timeline: the side panes */
+	.tl-seqs {
+		display: flex;
+		min-height: 0;
+		flex-direction: column;
+	}
+	.tl-pane-head {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		min-height: 28px;
+		padding: 2px 4px 2px 8px;
+	}
+	.tl-pane-title {
+		flex: 1 1 auto;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: var(--fs-desc);
+		font-weight: 600;
+		color: var(--text-2);
+	}
+	.tl-seq-list {
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+		padding: 0 4px 6px;
+	}
+	.tl-seq-row {
+		display: flex;
+		align-items: center;
+		gap: 2px;
+		border-radius: var(--radius-button, 6px);
+	}
+	.tl-seq-row:hover {
+		background: var(--surface-hover);
+	}
+	.tl-seq-row.tl-seq-active {
+		background: var(--surface-active);
+		box-shadow: inset 2px 0 0 var(--accent);
+	}
+	.tl-seq-pick-btn {
+		display: flex;
+		min-width: 0;
+		min-height: 30px;
+		flex: 1 1 auto;
+		align-items: center;
+		gap: 6px;
+		padding: 0 4px 0 8px;
+		border: 0;
+		background: transparent;
+		color: var(--text);
+		font: inherit;
+		text-align: left;
+		cursor: pointer;
+	}
+	.tl-seq-name {
+		min-width: 0;
+		flex: 1 1 auto;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.tl-seq-flag {
+		display: inline-flex;
+		color: var(--text-muted);
+	}
+	.tl-seq-len {
+		font-family: var(--font-ui-mono);
+		font-size: var(--fs-badge);
+		color: var(--text-muted);
+		font-variant-numeric: tabular-nums;
+	}
+	.tl-seq-row .tl-rename {
+		flex: 1 1 auto;
+		width: auto;
+		margin: 2px 0 2px 4px;
+	}
+	.tl-pad {
+		padding: 0 8px;
+	}
+	.tl-pane {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		padding: 4px 8px 10px;
+	}
+	.tl-pane .tl-pane-head {
+		padding: 0;
+	}
+	.tl-pane .tl-field,
+	.tl-pane .tl-pick,
+	.tl-pane .tl-pick.tl-narrow,
+	.tl-pane .tl-event-name {
+		width: 100%;
+	}
+	.tl-row-label {
+		margin-bottom: -4px;
+		font-size: var(--fs-desc);
+		color: var(--text-2);
+	}
+	.tl-chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px;
+	}
+	.tl-chip {
+		min-width: 36px;
+		min-height: 24px;
+		padding: 0 8px;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-button, 6px);
+		background: var(--surface-1);
+		color: var(--text-2);
+		font-size: var(--fs-desc);
+		font-variant-numeric: tabular-nums;
+		cursor: pointer;
+	}
+	.tl-chip:hover {
+		background: var(--surface-hover);
+	}
+	.tl-chip[aria-pressed='true'] {
+		border-color: var(--accent);
+		background: var(--accent-fill);
+		color: var(--on-accent);
+	}
+	.tl-chip:focus-visible,
+	.tl-seq-pick-btn:focus-visible {
+		outline: 2px solid var(--focus-ring, var(--accent));
+		outline-offset: -2px;
+	}
+	.tl-phone-only {
+		display: none;
+	}
+	:global(:root.phone-shell) .tl-phone-only,
+	.tl-hand .tl-phone-only {
+		display: block;
 	}
 	.tl-seq-pick {
 		width: 170px;
-	}
-	.tl-sep {
-		width: 1px;
-		height: 18px;
-		margin: 0 2px;
-		background: var(--border);
 	}
 	.tl-time {
 		min-width: 9.5em;
@@ -1378,11 +1626,11 @@
 		font-variant-numeric: tabular-nums;
 	}
 	.tl-live {
+		display: inline-flex;
+		align-items: center;
+		gap: 3px;
 		font-size: var(--fs-desc);
 		color: var(--ink-good);
-	}
-	.tl-dur {
-		width: 130px;
 	}
 	.tl-flag {
 		display: inline-flex;
@@ -1626,16 +1874,6 @@
 		background: var(--tl-kind);
 		transform: rotate(45deg) scale(1.35);
 	}
-	.tl-inspector {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 6px;
-		padding: 4px 6px;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-card, 8px);
-		background: var(--surface-1);
-	}
 	.tl-field {
 		width: 120px;
 	}
@@ -1654,13 +1892,11 @@
 		--tl-head: 104px;
 		--tl-row: 42px;
 	}
-	:global(:root.phone-shell) .tl-dur,
 	:global(:root.phone-shell) .tl-seq-pick {
 		width: 128px;
 	}
-	:global(:root.phone-shell) .tl-pick,
-	:global(:root.phone-shell) .tl-field {
-		width: calc(50% - 20px);
+	:global(:root.phone-shell) .tl-seq-pick-btn {
+		min-height: 40px;
 	}
 	/* the name needs the room: Mute lives in the track menu there */
 	:global(:root.phone-shell) .tl-mute {

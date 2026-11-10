@@ -423,10 +423,11 @@ export const templatesModalTab = writable(null);
  * Drawers, floating windows and menus are deliberately NOT included (they're
  * meant to coexist with viewport work).
  */
+// uir-timeline: the Generate window (meshGenModalOpen) is a floating / docked window now, not a modal
 export const anyModalOpen = derived(
-	[settingsOpen, sessionsOpen, modulesOpen, characterModalOpen, profileSettingsOpen, meshGenModalOpen, templatesModalOpen, checkpointsOpen, checkpointSaveOpen],
-	([$settings, $sessions, $modules, $character, $profile, $meshGen, $templates, $checkpoints, $checkpointSave]) =>
-		!!$settings || !!$sessions || !!$modules || !!$character || !!$profile || !!$meshGen || !!$templates || !!$checkpoints || !!$checkpointSave
+	[settingsOpen, sessionsOpen, modulesOpen, characterModalOpen, profileSettingsOpen, templatesModalOpen, checkpointsOpen, checkpointSaveOpen],
+	([$settings, $sessions, $modules, $character, $profile, $templates, $checkpoints, $checkpointSave]) =>
+		!!$settings || !!$sessions || !!$modules || !!$character || !!$profile || !!$templates || !!$checkpoints || !!$checkpointSave
 );
 
 // viewport right-click menu (77): { x, y, point: [x,y,z] } | null — rendered

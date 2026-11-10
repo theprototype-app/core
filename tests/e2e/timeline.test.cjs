@@ -67,6 +67,14 @@ async function pointAt(page, t, kind) {
 	);
 }
 
+/** uir-timeline: Autoplay / Loop / Length live in Properties ▸ Sequence — bring that tab forward (a press on the
+ *  tab already in front would put the pane away) */
+async function sequenceTab(page) {
+	if (await page.locator('#timeline-seq-props').isVisible().catch(() => false)) return;
+	await page.click('.tl-root [data-ws-mode="sequence"]');
+	await page.waitForSelector('#timeline-seq-props', { timeout: 5000 });
+}
+
 /** the single item of a track kind (the newest when several) */
 const itemsOf = (seq, kind) =>
 	seq.tracks.filter((tr) => tr.kind === kind).flatMap((tr) => tr.items);
@@ -503,6 +511,7 @@ h.run(async () => {
 	);
 
 	// ---------- 8. autoplay (the exported game's start path) ----------
+	await sequenceTab(pa);
 	await pa.locator('#timeline-autoplay').click();
 	await h.eventually(
 		() => seqs(B.page),
@@ -529,6 +538,7 @@ h.run(async () => {
 	// the editor unmounts in Play and comes back with its open state (do not toggle it shut)
 	await pa.evaluate(() => window.__stores.timelineClose.set(false));
 	await pa.locator('.tl-root').first().waitFor({ state: 'visible', timeout: 10000 });
+	await sequenceTab(pa);
 	await pa.locator('#timeline-autoplay').click(); // off again for the rest of the suite
 
 	// ---------- 9. undo replicates; a late joiner ----------

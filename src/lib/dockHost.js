@@ -1,5 +1,5 @@
 import { writable, derived, get } from 'svelte/store';
-import { objectListClose, chatHidden } from '../stores/appStore';
+import { objectListClose, chatHidden, meshGenModalOpen } from '../stores/appStore';
 import { isLocked } from '../stores/sceneStore';
 import { statsOpen } from './sceneBudget';
 import { assetBrowserOpen } from './cc0/assetBrowserState.js';
@@ -51,7 +51,9 @@ export const HOSTED = {
 	assets: { sel: '#asset-browser-window', ls: 'assetBrowserDocked', store: assetBrowserOpen, isOpen: (v) => !!v, open: () => assetBrowserOpen.set(true), close: () => assetBrowserOpen.set(false) },
 	// uir-preview: THE Preview tab — the FIRST preview window (#image-preview-window), pinned so it
 	// follows the Explorer selection; its ✕ asks before dropping unsaved image edits
-	preview: { sel: '#image-preview-window', ls: 'previewDocked', store: previewWindows, isOpen: (v) => Array.isArray(v) && v.length > 0, open: openPinnedPreview, close: closePinnedPreview }
+	preview: { sel: '#image-preview-window', ls: 'previewDocked', store: previewWindows, isOpen: (v) => Array.isArray(v) && v.length > 0, open: openPinnedPreview, close: closePinnedPreview },
+	// uir-timeline: the Generate window (its store keeps the modal's name; a value = open, seeded)
+	meshGen: { sel: '#mesh-gen-window', ls: 'meshGenDocked', store: meshGenModalOpen, isOpen: (v) => !!v, open: () => meshGenModalOpen.update((v) => v ?? {}), close: () => meshGenModalOpen.set(null) }
 };
 
 // uir-preview: the Image editor was its own dock tab; it is the Preview's Edit face now, so a

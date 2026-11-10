@@ -47,7 +47,7 @@ h.run(async () => {
 	await B.page.evaluate(TAP);
 
 	// B dials; A sees the request but does NOT approve through the card
-	await B.page.locator('input[placeholder="Enter peer ID to connect"]').fill(A.id);
+	await (await h.openDial(B.page)).fill(A.id);
 	await B.page.getByRole('button', { name: 'Connect', exact: true }).click();
 	await h.eventually(
 		() => A.page.evaluate((id) => new Promise((r) => window.__stores.pendingApprovals.subscribe((v) => r(v.some((p) => p.peerId === id)))()), B.id),

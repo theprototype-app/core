@@ -71,7 +71,7 @@ h.run(async () => {
 		// a cloud build: the host approves the joiner VIEW ONLY, so it stays a viewer for the whole
 		// session ("Editor access" is granted on the host before the requests arrive, which hides
 		// the gap — measured green on 1.39.0 that way)
-		await C.page.locator('input[placeholder="Enter peer ID to connect"]').fill(A.id);
+		await (await h.openDial(C.page)).fill(A.id);
 		await C.page.getByRole('button', { name: 'Connect', exact: true }).click();
 		await A.page.getByRole('button', { name: 'View only' }).first().click({ timeout: 30000 });
 		await C.page.waitForTimeout(9000);

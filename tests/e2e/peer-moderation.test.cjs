@@ -99,13 +99,13 @@ h.run(async () => {
 	await A.page.keyboard.press('Shift+F10');
 	h.check(await A.page.locator('[data-testid="peer-menu-profile"]').isVisible({ timeout: 3000 }).catch(() => false), 'Shift+F10 on a focused row opens the menu');
 	await closeMenu(A);
-	// View profile opens the card
+	// View profile opens the card — uir-people: the Person card inside the People panel (it replaced the profile modal)
 	await menuOn(A, C.id);
 	await A.page.locator('[data-testid="peer-menu-profile"]').click();
-	const card = A.page.locator(`#peer-profile-card[data-peer-id="${C.id}"]`);
+	const card = A.page.locator(`#person-card[data-peer-id="${C.id}"]`);
 	h.check(await card.isVisible({ timeout: 5000 }).catch(() => false), 'View profile opens the card for C');
-	h.check(((await card.textContent().catch(() => '')) || '').includes(C.id), 'the card shows their peer id');
-	await A.page.locator('dialog[open]:has(#peer-profile-card) .wc-close').first().click({ timeout: 3000 }).catch(() => A.page.keyboard.press('Escape'));
+	h.check((await card.locator('[data-testid="person-copy-id"]').count()) === 1, 'the card offers their peer id (Copy peer id)');
+	await A.page.locator('#person-card-back').click({ timeout: 3000 }).catch(() => A.page.keyboard.press('Escape'));
 	await A.page.waitForTimeout(300);
 	h.check(!(await card.isVisible().catch(() => false)), 'the card closes');
 	await closePanel(A);
@@ -186,10 +186,10 @@ h.run(async () => {
 
 	// ---- 5. a blocked re-dial is refused --------------------------------------------------
 	console.log('\n=== 5. C re-dials A ===');
-	const dialReady = await waitUntil(() => C.page.locator('input[placeholder="Enter peer ID to connect"]').isVisible(), 20000);
+	const dialReady = await waitUntil(async () => (await C.page.locator('#connect-join').isVisible()) || (await C.page.locator('input[placeholder="Enter peer ID to connect"]').isVisible()), 20000);
 	if (!dialReady)
 		console.log('  C pill: ' + JSON.stringify(await inPage(C, 'let w, r; s.waitingForApproval.subscribe((x) => (w = x))(); s.connectionState.joinRefusal.subscribe((x) => (r = x))(); return { opened: [...pc.openedPeers], conns: Object.keys(pc.connections), waiting: w, refusal: r, pill: document.querySelector("#connect-pill, .cx-pill, [data-state]")?.getAttribute("data-state"), inputs: [...document.querySelectorAll("input")].map((i) => i.placeholder || i.value).slice(0, 6) };')));
-	await C.page.locator('input[placeholder="Enter peer ID to connect"]').fill(A.id);
+	await (await h.openDial(C.page)).fill(A.id);
 	await C.page.getByRole('button', { name: 'Connect', exact: true }).click();
 	await waitUntil(async () => (await read(C, 'connectionState.joinRefusal'))?.result === 'removed', 20000);
 	h.check((await read(C, 'connectionState.joinRefusal'))?.result === 'removed', 'the re-dial is refused with `removed`');

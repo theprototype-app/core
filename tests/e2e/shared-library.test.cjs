@@ -2185,8 +2185,8 @@ h.run(async () => {
 	});
 	await C.page.waitForTimeout(2500);
 	h.check(
-		await C.page.locator('input[placeholder="Enter peer ID to connect"]').count() === 1,
-		'premise: leaving the session gives C its dial input back'
+		(await C.page.locator('#connect-join').count()) === 1 || (await C.page.locator('input[placeholder="Enter peer ID to connect"]').count()) === 1,
+		'premise: leaving the session gives C its Join… (dial) back'
 	);
 	await h.connect(C, D);
 	// a generous window: the connect dance can close and reopen the conn (the documented

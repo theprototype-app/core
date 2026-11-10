@@ -402,7 +402,7 @@ async function runSize(N) {
 		for (let k = 1; k < N; k++) {
 			const J = peers[k];
 			const t0 = Date.now();
-			await J.page.locator('input[placeholder="Enter peer ID to connect"]').fill(A.id);
+			await (await h.openDial(J.page)).fill(A.id);
 			await J.page.getByRole('button', { name: 'Connect', exact: true }).click();
 			await h.approveButton(A.page).click({ timeout: 45000 });
 			const meshed = await waitFor(() => openCount(J), (c) => c >= k, 60000);

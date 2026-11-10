@@ -14,9 +14,15 @@ h.run(async () => {
 		(await A.page.locator('.connect-pill').getAttribute('data-state')) === 'idle',
 		'CN: pill starts in idle state'
 	);
+	// uir-people (Connect B): idle leads with Invite + Join…; the dial field shows after Join…
+	h.check(
+		(await A.page.locator('#connect-join').isVisible()) && (await A.page.locator('#connect-ready').innerText()).trim().length > 0,
+		'CN: idle shows Join… and the one-word status'
+	);
+	await h.openDial(A.page);
 	h.check(
 		await A.page.locator('input[placeholder="Enter peer ID to connect"]').first().isVisible(),
-		'CN: idle shows the dial input'
+		'CN: Join… shows the dial input'
 	);
 
 	// --- idle -> pending (dial a bogus id) --------------------------------------

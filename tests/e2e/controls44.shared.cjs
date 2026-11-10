@@ -219,16 +219,16 @@ module.exports = (/** @type {string[]} */ parts) => {
 				d = await dock(P);
 				const pill = await rect(P, '.connect-pill');
 				h.check(d.squeezed === true && d.docked === false && pill.width <= 120, T + `M13/M14: no room on the top row → compact (dot + chevron), not its own row (${Math.round(pill.width)} px, needs ${Math.round(d.naturalWidth)} in ${Math.round(d.available)})`);
-				h.check((await hits(P)).length === 0 && !(await P.locator('.connect-pill input.cx-input').count()), T + `M13: compact, it overlaps nothing (${(await hits(P)).join(',') || 'clear'})`);
+				h.check((await hits(P)).length === 0 && !(await P.locator('.connect-pill #connect-join, .connect-pill input.cx-input').first().count()), T + `M13: compact, it overlaps nothing (${(await hits(P)).join(',') || 'clear'})`);
 				await shot(P, `m14-compact-${theme}`);
 				// the dot shows the full bar over the row; a press elsewhere puts it back
 				await P.locator('#connect-squeeze-dot').click();
 				await P.waitForTimeout(300);
-				h.check(await P.locator('.connect-pill input.cx-input').isVisible(), T + 'M14: the dot shows the full bar (the dial field is there)');
+				h.check(await P.locator('.connect-pill #connect-join, .connect-pill input.cx-input').first().isVisible(), T + 'M14: the dot shows the full bar (the dial field is there)');
 				await shot(P, `m14-peek-${theme}`);
 				await P.mouse.click(450, 500);
 				await P.waitForTimeout(400);
-				h.check((await dock(P)).squeezed && !(await P.locator('.connect-pill input.cx-input').count()), T + 'M14: a press elsewhere folds it back to compact');
+				h.check((await dock(P)).squeezed && !(await P.locator('.connect-pill #connect-join, .connect-pill input.cx-input').first().count()), T + 'M14: a press elsewhere folds it back to compact');
 				// the chevron still opens the drawer, readable width
 				await P.locator('#connect-info-button').click();
 				await P.waitForTimeout(400);
@@ -240,7 +240,7 @@ module.exports = (/** @type {string[]} */ parts) => {
 				await setBar(P, SPARSE);
 				await P.waitForTimeout(600);
 				d = await dock(P);
-				h.check(!d.squeezed && !d.docked && (await P.locator('.connect-pill input.cx-input').isVisible()), T + `M13: room returns → the full pill, centred (${JSON.stringify({ n: d.naturalWidth, a: d.available })})`);
+				h.check(!d.squeezed && !d.docked && (await P.locator('.connect-pill #connect-join, .connect-pill input.cx-input').first().isVisible()), T + `M13: room returns → the full pill, centred (${JSON.stringify({ n: d.naturalWidth, a: d.available })})`);
 				await setBar(P, null);
 				await P.evaluate(() => window.__stores.touchTools.set(false));
 				await P.setViewportSize({ width: 1440, height: 900 });

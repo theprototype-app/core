@@ -230,11 +230,19 @@ h.run(async () => {
 	h.check(await A.page.evaluate(() => window.__stores.inputRuntime.isClaimed('locomotion') && window.__stores.inputRuntime.isClaimed('keys')), 'I3: walking is held while seated (the keys + locomotion claims)');
 	await A.page.waitForTimeout(500);
 	h.check(near(await eyeOf(), [4, 1.2, -12], 1e-3), 'I3: and it stays seated over half a second of frames (the grounded pin stands down)');
-	await A.page.keyboard.down('KeyW');
+	// (a document event bubbles on to window, where inputRuntime listens)
+	// W stands A up; it is let go on the first frame A is standing. The built-in walk moves 0.1 m PER FRAME
+	// (PointerLockControls, unchanged), so a 300 ms hold walked 1.8 m at 60 fps and only passed on a slow runner
+	const stood = await A.page.evaluate(async () => {
+		const sit = window.__stores.sitSpot;
+		document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW', key: 'w', bubbles: true }));
+		const t0 = performance.now();
+		while (sit.sitDebug() !== null && performance.now() - t0 < 3000) await new Promise((r) => requestAnimationFrame(r));
+		document.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW', key: 'w', bubbles: true }));
+		return { ms: Math.round(performance.now() - t0) };
+	});
 	await A.page.waitForTimeout(300);
-	await A.page.keyboard.up('KeyW');
-	await A.page.waitForTimeout(300);
-	h.check((await A.page.evaluate(() => window.__stores.sitSpot.sitDebug())) === null, 'I3: W stands A up');
+	h.check((await A.page.evaluate(() => window.__stores.sitSpot.sitDebug())) === null, `I3: W stands A up (${JSON.stringify(stood)})`);
 	const after = await eyeOf();
 	h.check(near(after, before, 0.6), `I3: back where A sat down from (${before?.map((v) => v.toFixed(2))} -> ${after?.map((v) => v.toFixed(2))}; walker ${JSON.stringify(await A.page.evaluate(() => window.__stores.charController?.charControllerDebug?.()?.walker ?? null))})`);
 	await A.page.evaluate(() => window.__stores.isLocked.set(false));

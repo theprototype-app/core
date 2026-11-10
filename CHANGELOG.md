@@ -53,6 +53,12 @@
 - **One avatar everywhere**: your photo, or your colour with an initial, ringed in the same colour as your cursor and locks. The People list shows its menu (⋯) and **Go to** on every row and counts people once. <!-- 78-pl-peers PL31 PL33 -->
 - The Connect drawer says **Ready** when you are not in a session (no more "Offline" with a working connection), says the state once and folds the network details under one **Network** row; the Connect Claude steps name the **Sign in to connect** button when you are signed out. <!-- 78-pl-peers PL10 PL35 -->
 - **A person who joins no longer appears inside your view**: an avatar near your camera fades out, and a joiner arrives beside you. <!-- 78-pl-peers PL32 -->
+- **Configure Scene is tidier**: two groups, **The scene** (everyone sees it) and **This device** (only you), with only Environment and Scene look open at first. <!-- 78-pl-scene PL17 -->
+- **Environment** shows six preset pills plus **More**, says what the preset sets, and after an edit shows *Studio · Modified: sun* with a one-press **Reset**; a dot beside a changed value puts it back, for everyone, in one undo step. <!-- 78-pl-scene PL15 PL16 PL12 -->
+- Under each shared Configure Scene section you can see **who changed it last** and when, an AI included. <!-- 78-pl-scene PL13 -->
+- The side panel has **one header**: the follow-selection pin sits in the sidebar strip (on a phone, in the tab's long-press menu, with the lock in the grab bar), and the filter box says what it filters. <!-- 78-pl-scene PL14 -->
+- **Statistics** shows the baked light: atlas size, MB and objects baked / shown, or *none*. <!-- 78-pl-scene PL1 -->
+- The sky-image picture cards and their tour are gone, and the *Reduce quality when heavy* switch left Configure Scene (a line says what Auto does; the switch stays in Settings). <!-- 78-pl-scene PL29 PL18 -->
 
 ### AI apps
 - Agents can build all of this: `create_shape` with `action: "path"`, `game_setup` with `portal`, `checkpoint` and `loading`, and `describe_node_types` knows the new nodes (common words like door, lamp, cat, button and hover work as aliases). `inspect_runtime` shows the game kit's round, score and pickups. <!-- 78-path, 93-levels, 85-nodes -->

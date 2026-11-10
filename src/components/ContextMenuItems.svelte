@@ -46,6 +46,7 @@
 	// and keyboard. Hover-intent lives here: 120ms to open, 150ms to close.
 	import { tick } from 'svelte';
 	import Icon from './ui/Icon.svelte';
+	import { rowIcon } from '$lib/ui/menuIcons.js';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	export let items: any[] = [];
 	export let onrun: (item: any, e?: MouseEvent) => void;
@@ -177,7 +178,8 @@
 
 	// icon column: reserve the slot for EVERY row of a level when any sibling has
 	// an icon, so labels align into one column instead of ragged starts
-	$: hasIcons = items.some((item) => item?.icon);
+	// 78 PL2: a row with no icon of its own shows its verb's (ui/menuIcons.js)
+	$: hasIcons = items.some((item) => rowIcon(item));
 
 	// 38 R6: the row's box (32px, 6px corners) lives in .ctx-row below — one menu style
 	const itemClass = 'cursor-pointer whitespace-nowrap';
@@ -225,7 +227,7 @@
 		>
 			<span class="flex items-center gap-2">
 				{#if hasIcons}
-					<span class="ctx-ico">{#if item.icon}<Icon name={item.icon} size={16} />{/if}</span>
+					<span class="ctx-ico">{#if rowIcon(item)}<Icon name={rowIcon(item) ?? ""} size={16} />{/if}</span>
 				{/if}
 				<span class="flex-1">{item.label}</span>
 				{#if item.hint}
@@ -280,7 +282,7 @@
 		>
 			<span class="flex items-center gap-2">
 				{#if hasIcons}
-					<span class="ctx-ico">{#if item.icon}<Icon name={item.icon} size={16} />{/if}</span>
+					<span class="ctx-ico">{#if rowIcon(item)}<Icon name={rowIcon(item) ?? ""} size={16} />{/if}</span>
 				{/if}
 				<span class="flex-1">{item.label}</span>
 				{#if item.hint}

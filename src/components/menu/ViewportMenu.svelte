@@ -223,7 +223,8 @@
 						]
 					: []),
 				{
-					label: $simulating ? '■ Stop simulation' : '▶ Simulate physics',
+					label: $simulating ? 'Stop simulation' : 'Simulate physics',
+					icon: $simulating ? 'square' : 'play',
 					disabled: !!$remoteSimulating,
 					tooltip: $remoteSimulating
 						? nameOf($remoteSimulating) + ' is simulating'
@@ -233,11 +234,13 @@
 				...($simulating
 					? [
 							{
-								label: $simPaused ? '▶ Resume simulation' : '❚❚ Pause simulation',
+								label: $simPaused ? 'Resume simulation' : 'Pause simulation',
+								icon: $simPaused ? 'play' : 'pause',
 								action: () => pauseSimulation()
 							},
 							{
-								label: '↺ Reset simulation',
+								label: 'Reset simulation',
+								icon: 'rotate-ccw',
 								tooltip: 'Restore the initial layout (no undo entry)',
 								action: () => resetSimulation()
 							}

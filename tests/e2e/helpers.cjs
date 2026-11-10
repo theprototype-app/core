@@ -146,6 +146,12 @@ const GPU_ARGS = [
 // makes silently. (Same family as the GPU_ARGS rate-assertion rule in the e2e skill.)
 const AUDIO_ARGS = ['--autoplay-policy=no-user-gesture-required', ...GPU_ARGS];
 
+// showhide-v8 ($lib/deviceClass): an unfolded foldable counts as a PHONE only when the browser says "mobile". Chromium
+// reports navigator.userAgentData.mobile from Playwright's isMobile ONLY when a userAgent override is set, so an N6
+// context without one reads as a TABLET (viewport handles on, no Panels button). The real N6 runs Chrome with a phone
+// UA (this one); use it with { hasTouch: true, isMobile: true } to emulate the unfolded phone.
+const N6_UA = 'Mozilla/5.0 (Linux; Android 15; PLK110) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36';
+
 /**
  * Run a press gesture (`act`) on one element and say whether it ARRIVED: which of pointerdown /
  * pointerup / click reached the element, what sat under its centre first, and whether it was still
@@ -1315,4 +1321,4 @@ async function openWsMode(page, scope, mode, o = {}) {
 	if ((await tab.getAttribute('aria-selected').catch(() => null)) !== 'true') await (o.tap ? tab.tap() : tab.click());
 }
 
-module.exports = { URL, coverageKey, GPU_ARGS, PATIENT_CLICK_MS, APPROVE_LABEL, approveButton, watchPress, check, launch, setupPage, setupPageQuiet, connect, leavePlay, eventually, caughtUp, eventuallyAfter, projectPoint, freshReload, answerRestore, closePeer, finish, run, installModule, moduleZipPath, makeCollectibleChains, pageErrors, externalErrors, grabFrame, centeredClip, frameDelta, framePixelsOffColor, AUDIO_ARGS, audioMetrics, renderOffline, envelopeDelta, routeSkies, SKIES_DIR, openWsMode };
+module.exports = { URL, coverageKey, GPU_ARGS, N6_UA, PATIENT_CLICK_MS, APPROVE_LABEL, approveButton, watchPress, check, launch, setupPage, setupPageQuiet, connect, leavePlay, eventually, caughtUp, eventuallyAfter, projectPoint, freshReload, answerRestore, closePeer, finish, run, installModule, moduleZipPath, makeCollectibleChains, pageErrors, externalErrors, grabFrame, centeredClip, frameDelta, framePixelsOffColor, AUDIO_ARGS, audioMetrics, renderOffline, envelopeDelta, routeSkies, SKIES_DIR, openWsMode };

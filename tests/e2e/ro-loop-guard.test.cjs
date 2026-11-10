@@ -383,7 +383,8 @@ h.run(async () => {
 			if (!g) throw new Error('no right grip');
 			const x = Math.round(g.x + g.w / 2);
 			const y = Math.round(g.y + Math.min(300, g.h / 2));
-			await touch.drag([x, y], [760, y], 20);
+			// showhide-v8: past the minimum but short of the border-close zone (MIN_W - 80 px closes the column now)
+			await touch.drag([x, y], [770 - 210, y], 20);
 			await P.waitForTimeout(400);
 			await touch.drag([Math.round((await rect(P, '#sidebar-grip-right')).x + 3), y], [300, y], 20);
 			await P.waitForTimeout(400);

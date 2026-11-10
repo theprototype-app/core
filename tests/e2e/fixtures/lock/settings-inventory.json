@@ -399,11 +399,6 @@
 			"desc": ""
 		},
 		{
-			"name": "Flow Code: show / bring to front / hide",
-			"kind": "button:Rebind Flow Code: show / bring to front / hide",
-			"desc": ""
-		},
-		{
 			"name": "Animation: show / bring to front / hide",
 			"kind": "button:Rebind Animation: show / bring to front / hide",
 			"desc": ""

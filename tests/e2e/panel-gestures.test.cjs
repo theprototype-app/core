@@ -14,7 +14,8 @@ const h = require('./helpers.cjs');
 
 const touch = (w, hgt) => ({ viewport: { width: w, height: hgt }, hasTouch: true, isMobile: true, deviceScaleFactor: 2.9 });
 const VIEWS = [
-	['unfolded', touch(770, 850)],
+	// showhide-v8: the phone UA, or deviceClass reads the unfolded N6 as a tablet (h.N6_UA)
+	['unfolded', { ...touch(770, 850), userAgent: h.N6_UA }],
 	['folded', touch(390, 896)],
 	['landscape', touch(896, 390)]
 ];

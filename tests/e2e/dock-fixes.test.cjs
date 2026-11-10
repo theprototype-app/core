@@ -35,7 +35,8 @@ const OUT = process.env.OUT || '/tmp';
 
 const DESK = { viewport: { width: 1440, height: 900 } };
 const SMALL = { viewport: { width: 1000, height: 760 } };
-const UNFOLD = { viewport: { width: 770, height: 850 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2.9 };
+// showhide-v8: the phone UA, or deviceClass reads the unfolded N6 as a tablet (h.N6_UA; the Panels button is the phone's)
+const UNFOLD = { viewport: { width: 770, height: 850 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2.9, userAgent: h.N6_UA };
 const FOLD = { viewport: { width: 390, height: 896 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2.9 };
 const BASE_STORAGE = { explorerDocked: 'false', statsDocked: 'false', chatDocked: 'false', aiAssistantDocked: 'false', 'sidebar:inspectorSide': 'right' };
 
@@ -150,7 +151,7 @@ h.run(async () => {
 	// ---- D1: the hide button beside a tab ----
 	await openScene(page);
 	let t = await tabs(page);
-	h.check(t?.right?.join() === 'inspector', `D1.0 premise: Configure Scene is the right column's tab (${JSON.stringify(t)})`);
+	h.check(t?.right?.join() === 'scene', `D1.0 premise: Configure Scene is the right column's tab (${JSON.stringify(t)})`);
 	h.check(!!(await rectOf(page, '#sidebar-hide-right')), 'D1.1 the right column shows its hide button WITH a tab in it (item 1)');
 	await clickAt(page, '#sidebar-hide-right');
 	let v = await sides(page);
@@ -222,7 +223,7 @@ h.run(async () => {
 	t = await tabs(page);
 	h.check((await read(page, 'aiAssistantHidden')) === '' && t?.right?.includes('aiAssistant') && (await sides(page))?.right === true, `D3.4 again: open, back as the right column's tab (${JSON.stringify(t)})`);
 	await openScene(page);
-	h.check((await read(page, 'sidebars.sidebarShown'))?.right === 'inspector', 'D3.5 premise: Configure Scene covers it');
+	h.check((await read(page, 'sidebars.sidebarShown'))?.right === 'scene', 'D3.5 premise: Configure Scene covers it');
 	await pressAi(page);
 	await page.waitForTimeout(400);
 	h.check((await read(page, 'aiAssistantHidden')) === '' && (await read(page, 'sidebars.sidebarShown'))?.right === 'aiAssistant', 'D3.6 covered, the AI button brings its tab forward instead of closing it');
@@ -302,17 +303,23 @@ h.run(async () => {
 		if (theme === 'dark') {
 			// ---- U2: the Panels button ----
 			h.check(!!(await rectOf(page, '#panels-toggle')), 'U2.1 the Panels button is in the top-right group on the unfolded phone (Auto, touch) (item 8)');
+			// showhide-v8 (owner 2026-11-09): the press CYCLES left -> right -> none (an empty side skipped); the AI
+			// assistant shows on the left, so the first tap moves on to the right
+			await tapAt(page, '#panels-toggle');
+			await page.waitForTimeout(400);
+			v = await sides(page);
+			h.check(v?.left === false && v?.right === true, `U2.2 a tap moves on to the right column alone (the cycle left -> right -> none) (${JSON.stringify(v)})`);
 			await tapAt(page, '#panels-toggle');
 			await page.waitForTimeout(400);
 			v = await sides(page);
 			t = await tabs(page);
-			h.check(v?.left === false && v?.right === false, `U2.2 a tap hides both columns (${JSON.stringify(v)})`);
-			h.check(t?.left?.includes('aiAssistant') && t?.right?.includes('inspector'), `U2.3 …with their tabs still open (${JSON.stringify(t)})`);
+			h.check(v?.left === false && v?.right === false, `U2.2b …the next tap hides both columns (${JSON.stringify(v)})`);
+			h.check(t?.left?.includes('aiAssistant') && t?.right?.includes('scene'), `U2.3 …with their tabs still open (${JSON.stringify(t)})`);
 			await page.screenshot({ path: `${OUT}/dock-fixes-u2-panels-hidden.png` });
 			await tapAt(page, '#panels-toggle');
 			await page.waitForTimeout(500);
 			v = await sides(page);
-			h.check(v?.left === true && v?.right === false, `U2.4 another tap brings back the column that was showing (${JSON.stringify(v)})`);
+			h.check(v?.left === true && v?.right === false, `U2.4 …and the next starts the cycle again on the left (${JSON.stringify(v)})`);
 			await clickAt(page, '#panels-toggle', { button: 'right' });
 			const rows = await menuRows(page);
 			h.check(rows.some((r) => r.title === 'Hide this button' && r.icon), `U2.5 its menu offers "Hide this button" (${rows.map((r) => r.title).join(', ')})`);

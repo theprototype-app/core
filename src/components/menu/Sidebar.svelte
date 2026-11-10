@@ -220,6 +220,12 @@
 			// UI-6 (HONOR 718x587): it scrolled, but ran to the very bottom edge — it now ends 8 px inside the viewport
 			let bottom = window.innerHeight - 8;
 			if (p && p.width && p.left < m.right && p.right > m.left && p.top < m.bottom) bottom = Math.min(bottom, p.top - 8);
+			// 78 PL7 (UI-6, HONOR 718x587): and above the bottom-left corner stack (+, AI) it shares the left edge with —
+			// the menu's last rows ran under the + button, which is drawn on its own tier over the menu's corner
+			for (const el of document.querySelectorAll('#hud-stack-left > *')) {
+				const r = el.getBoundingClientRect();
+				if (r.width && r.height && r.left < m.right && r.right > m.left && r.top > m.top + 160 && r.top < m.bottom) bottom = Math.min(bottom, r.top - 8);
+			}
 			if (m.bottom > bottom) node.style.maxHeight = Math.max(160, Math.floor(bottom - m.top)) + 'px';
 		};
 		const raf = requestAnimationFrame(fit);

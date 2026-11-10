@@ -113,7 +113,7 @@ const tabCentre = (page, label) =>
 	}, label);
 
 // 44 M3: the group tab's menu is the floating-window menu ($lib/windowMenu)
-const ROWS = ['Dock to bottom', 'Move to left sidebar', 'Move to right sidebar', 'Float (undock)', 'Group with…', 'Bring to front', 'Reset size', 'Close'];
+const ROWS = ['Dock to bottom', 'Move to left sidebar', 'Move to right sidebar', 'Float (undock)', 'Group with…', 'Bring to front', 'Reset size', 'Size', 'Close'];
 const menuRows = (page) =>
 	page.evaluate(
 		(rows) =>

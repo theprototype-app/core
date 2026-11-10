@@ -382,6 +382,9 @@ h.run(async () => {
 	h.check(JSON.stringify(await barIds()) === JSON.stringify(['ps-add', 'ps-objects', 'ps-play', 'ps-explorer', 'ps-more']) && (await lsBar()) === null, 'Reset bar restores the bar and forgets the key');
 
 	// ---- NOTES-38 #15: each sheet remembers its own height, per device ----------------------
+	// (78 PL23: on the folded phone Chat is a DOCK TAB; it is a framed sheet only with "Allow undocking on
+	// touch screens" on, which is the sheet this section measures)
+	await P.evaluate(() => window.__stores.mobileUndockAllowed.set(true));
 	await rest();
 	const detents = () => read(() => { let m; window.__stores.phoneShell.phoneDetents.subscribe((v) => (m = v))(); return m; });
 	await tap('#ps-more');
@@ -399,6 +402,7 @@ h.run(async () => {
 	h.check(otherDet === 'half', `another window keeps its own height (notifications: ${otherDet})`);
 	const saved = await read(() => JSON.parse(localStorage.getItem('phoneSheetDetents') || '{}'));
 	h.check(saved.chat === 'full', `the heights are saved on this device (${JSON.stringify(saved)})`);
+	await P.evaluate(() => window.__stores.mobileUndockAllowed.set(false));
 	await P.evaluate(() => window.__stores.settingsOpen.set(false));
 
 	// ---- rows 34-35: Settings ---------------------------------------------------------

@@ -422,38 +422,6 @@
 		chipPopup = false;
 	}
 
-	// 80.2: the chip row scrolls horizontally (wheel + drag), never overflows
-	function chipScroll(node: HTMLElement) {
-		const onWheel = (e: WheelEvent) => {
-			if (!e.deltaY) return;
-			node.scrollLeft += e.deltaY;
-			e.preventDefault();
-		};
-		let dragging = false;
-		let startX = 0;
-		let startScroll = 0;
-		const down = (e: PointerEvent) => {
-			dragging = true;
-			startX = e.clientX;
-			startScroll = node.scrollLeft;
-		};
-		const move = (e: PointerEvent) => {
-			if (dragging) node.scrollLeft = startScroll - (e.clientX - startX);
-		};
-		const up = () => (dragging = false);
-		node.addEventListener('wheel', onWheel, { passive: false });
-		node.addEventListener('pointerdown', down);
-		window.addEventListener('pointermove', move);
-		window.addEventListener('pointerup', up);
-		return {
-			destroy() {
-				node.removeEventListener('wheel', onWheel);
-				node.removeEventListener('pointerdown', down);
-				window.removeEventListener('pointermove', move);
-				window.removeEventListener('pointerup', up);
-			}
-		};
-	}
 
 	// Drop-to-share: dragging a LOCAL object anywhere over the shared object-list body
 	// shares it to the scene root (a shared object just moves to root). Uses an action
@@ -4198,9 +4166,10 @@
 		{/snippet}
 	</WindowChrome>
 	<div class="obj-filters flex flex-col gap-1">
-		<div class="relative flex items-center gap-1">
-			<!-- 80.2: one scrollable chip row that never overflows the window -->
-			<div id="filter-chips" class="tp-noscrollbar flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap scrollbar-none" use:chipScroll use:edgeFade>
+		<div class="relative flex items-start gap-1">
+			<!-- 80.2: a chip row that never overflows the window. 78 PL20 (device lab PC-4): it WRAPS — as one
+			     scrolling row the last chip was cut under the settings button ("St…") with no cue that it scrolled -->
+			<div id="filter-chips" class="tp-noscrollbar flex min-w-0 flex-1 flex-wrap items-center gap-1 whitespace-nowrap" use:edgeFade>
 				<button
 					class="obj-chip"
 					aria-pressed={!searchTypes.size && !viewMode}

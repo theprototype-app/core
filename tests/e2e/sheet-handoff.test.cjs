@@ -262,7 +262,11 @@ h.run(async () => {
 	// ---- rubber band past the max: a framed sheet (Chat) at full, pulled up on the grab bar
 	// (41b H1: Objects is a dock tab now, and the dock frame never stretched past its max) -----------------
 	await rest();
-	await P.evaluate(() => window.__stores.chatHidden.set(''));
+	// 78 PL23: Chat is a dock tab now; a framed sheet where undocking is allowed (Settings ▸ Interface)
+	await P.evaluate(() => {
+		window.__stores.mobileUndockAllowed.set(true);
+		window.__stores.chatHidden.set('');
+	});
 	await P.waitForTimeout(900);
 	{
 		const g = await rect('#ps-sheet-handle');
@@ -289,6 +293,7 @@ h.run(async () => {
 	await rest();
 	await P.evaluate(() => {
 		window.__stores.chatHidden.set('hidden');
+		window.__stores.mobileUndockAllowed.set(false);
 		window.__stores.objectListClose.set(false);
 	});
 	await P.waitForTimeout(900);

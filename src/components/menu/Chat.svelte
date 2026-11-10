@@ -114,7 +114,7 @@
 <div id="chat" class={$chatHidden}>
 	<div
 		id="chat-window"
-		use:dragWindow={{ key: 'chat', defaultRect: { right: 15, bottom: 15 } }}
+		use:dragWindow={{ key: 'chat', defaultRect: { right: 15, bottom: 15 }, resizable: true, minW: 300, minH: 240 }}
 		use:bottomDockable={{ key: 'chat' }}
 		use:focusStack
 		use:tabbable={{ key: 'chat', title: 'Chat', openStore: chatHidden, isOpen: (v) => v === '', close: () => chatHidden.set('hidden') }}

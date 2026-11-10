@@ -16,7 +16,7 @@ import {
 	chromeWrites
 } from './uiLayoutsCore';
 import { snapshotWorkspace, applyWorkspace, closeWorkspace } from './workspace';
-import { hudEditorClose, timelineClose, profilerClose, chatHidden, settingsOpen, floatingToolbar, toolbarAlwaysOnTop, hudStackLift, showRoomsButton, touchTools } from '../stores/appStore';
+import { settingsOpen, floatingToolbar, toolbarAlwaysOnTop, hudStackLift, showRoomsButton, touchTools } from '../stores/appStore';
 import { phoneShell } from './ui/phoneShell';
 import { layoutPerScene, readSceneLayouts, writeSceneLayouts, upsertSceneLayout, sceneLayoutOf } from './windowPrefs.js';
 
@@ -84,13 +84,9 @@ export function captureLayout(name) {
 		name: cleanName(name),
 		savedAt: Date.now(),
 		viewport: typeof window !== 'undefined' ? { w: window.innerWidth, h: window.innerHeight } : null,
-		open: {
-			...ws.open,
-			hud: !get(hudEditorClose),
-			timeline: !get(timelineClose),
-			profiler: !get(profilerClose),
-			chat: get(chatHidden) === ''
-		},
+		// 78 PL3: the HUD editor, Timeline, Profiler and Chat are in the workspace table now (with Statistics,
+		// Free assets and the AI assistant), so one record says what is open
+		open: { ...ws.open },
 		dockTab: ws.dockTab,
 		inspector: ws.inspector,
 		storage: pickLayoutStorage(safeStorage.keys(), (key) => safeStorage.getItem(key)),
@@ -133,14 +129,6 @@ export function renameLayoutTo(id, name) {
 	return true;
 }
 
-/** the panels a layout opens beyond the workspace record's own table */
-const EXTRA = [
-	{ name: 'hud', open: () => hudEditorClose.set(false), close: () => hudEditorClose.set(true) },
-	{ name: 'timeline', open: () => timelineClose.set(false), close: () => timelineClose.set(true) },
-	{ name: 'profiler', open: () => profilerClose.set(false), close: () => profilerClose.set(true) },
-	{ name: 'chat', open: () => chatHidden.set(''), close: () => chatHidden.set('hidden') }
-];
-
 let applying = false;
 
 /**
@@ -169,7 +157,6 @@ export async function applyLayoutRecord(layout, activeId = null) {
 			await tick();
 		}
 		closeWorkspace();
-		for (const extra of EXTRA) extra.close();
 		await tick();
 
 		const { set, remove } = layoutWrites(layout.storage, safeStorage.keys());
@@ -189,7 +176,6 @@ export async function applyLayoutRecord(layout, activeId = null) {
 		await tick();
 
 		applyWorkspace({ open: layout.open, dockTab: layout.dockTab, inspector: layout.inspector });
-		for (const extra of EXTRA) if (layout.open?.[extra.name] === true) extra.open();
 		await tick();
 		if (activeId) setActive(activeId);
 		return true;

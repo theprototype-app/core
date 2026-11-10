@@ -681,6 +681,17 @@
 {/if}
 
 <style>
+	/* 78 PL8 (device lab UI-7, the folded phone): the kind tabs WRAP onto a second row in a narrow window —
+	   as one scrolling row the last one was cut ("Ava…") at the window's edge. One row wherever they fit. */
+	.ab-top :global(.tabs-list) {
+		flex-wrap: wrap;
+		row-gap: 0;
+		column-gap: var(--space-4);
+		overflow-x: visible;
+	}
+	.ab-top :global(.tabs-list .tab) {
+		height: 34px;
+	}
 	.ab-filters {
 		display: flex;
 		flex-wrap: wrap;

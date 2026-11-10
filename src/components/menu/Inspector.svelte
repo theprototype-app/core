@@ -2787,22 +2787,21 @@
 					value={$cameraNear}
 					onchange={(v) => setCameraNear(v)}
 				/>
-				<div class="ui-row">
-					<span class="w-20 shrink-0 text-xs text-text-muted">Far clip</span>
-					<div class="w-24 shrink-0">
-						<DragRow
-							id="camera-far"
-							value={$cameraFar}
-							decimals={0}
-							min={10}
-							step={5}
-							snap={100}
-							ariaLabel="Far clip"
-							onchange={(v) => setCameraFar(v)}
-						/>
-					</div>
-					<span class="text-[length:var(--fs-badge)] text-text-faint">grows to fit the scene</span>
-				</div>
+				<!-- 78 PL21 (device lab PC-8): a PropRow like Near clip above it — the label in the label column (it sat
+				     4 px right of the others) and the box in the value column (it sat in the middle one) -->
+				<PropRow
+					label="Far clip"
+					id="camera-far"
+					value={$cameraFar}
+					decimals={0}
+					min={10}
+					step={5}
+					snap={100}
+					ariaLabel="Far clip"
+					onchange={(v) => setCameraFar(v)}
+				>
+					{#snippet control()}<span class="text-[length:var(--fs-badge)] text-text-faint">grows to fit the scene</span>{/snippet}
+				</PropRow>
 				<p class="text-[length:var(--fs-badge)] italic text-text-muted">Clip planes are per-device (not shared).</p>
 				<p class="ui-section-label">Orbit feel</p>
 				<SliderRow

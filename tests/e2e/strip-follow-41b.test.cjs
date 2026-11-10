@@ -57,6 +57,7 @@ h.run(async () => {
 			s.notificationCenterOpen.set(false);
 			s.notesDrawerOpen.set(false);
 			s.chatHidden.set('hidden');
+			s.mobileUndockAllowed.set(false);
 			s.inspectorClose.set(true);
 			s.closeMenu.set(true);
 			s.explorerClose.set(true);
@@ -131,7 +132,11 @@ h.run(async () => {
 			await touch.tap(b.x + b.w / 2, b.y + b.h / 2);
 		}, '.tp-dock-panel:not(.hidden)', '#ps-dock-grip [data-sheet-grip]'],
 		// 41b-int: Objects is a dock tab since 41b H1, so the framed-sheet row drives Chat (still a framed sheet)
-		['a framed sheet (Chat)', async () => P.evaluate(() => window.__stores.chatHidden.set('')), '.ps-sheet', '#ps-sheet-handle']
+		// 78 PL23: Chat is a dock tab now; it is still a framed sheet where undocking is allowed (Settings ▸ Interface)
+		['a framed sheet (Chat)', async () => P.evaluate(() => {
+			window.__stores.mobileUndockAllowed.set(true);
+			window.__stores.chatHidden.set('');
+		}), '.ps-sheet', '#ps-sheet-handle']
 		// 41b-int: the Inspector is the Properties dock tab on a phone since 41b H1 (the dock row covers its grip)
 	];
 

@@ -753,3 +753,19 @@ html:root[data-focus='dock'] [data-pd-host='shown'] {
 :root[data-dock-split][data-focus='dock']:not(.phone-shell) .tp-dock-panel[data-dock-pane='a'] .dt-row {
 	right: calc(var(--focus-exit-reach, 208px) - var(--dock-split-bw));
 }
+
+/* 78 PL39 (owner 2026-11-09) — A 28 PX TOUCH GRIP. The corner resize grips keep their drawn size (16 px for
+   dragWindow's, 14 px for the editors' own); on a coarse pointer the area a finger can grab grows to 28 px,
+   inward from the corner (a pseudo-element hit counts as the grip's own), so a window can be resized by
+   finger without hunting for a 14 px square. */
+@media (pointer: coarse) {
+	.dw-resize::after,
+	.resize-cue.cursor-se-resize::after {
+		content: '';
+		position: absolute;
+		right: 0;
+		bottom: 0;
+		width: 28px;
+		height: 28px;
+	}
+}

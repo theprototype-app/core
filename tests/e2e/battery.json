@@ -280,6 +280,7 @@
 		"window-dock-menu": "red on the GitHub runner (SwiftShader, no retry) with unchanged code: deps-auto run 5, 2026-10-24",
 		"window-header-ranking": "flaky on the GitHub runner (SwiftShader): red or green-on-retry in deps-auto run 5 or 6 with unchanged code, 2026-10-24",
 		"window-size-clamp": "red on the GitHub runner (SwiftShader, no retry) with unchanged code: deps-auto run 5, 2026-10-24",
+		"windows-polish": "78 pl-windows (1.64): new, not yet measured on a GitHub runner, so it reports and does not gate until a deps run has seen it green",
 		"workspace-restore": "joined from the 1.43 desk battery (pipeline-1): not yet measured on a GitHub runner, so it reports and does not gate until a deps run has seen it green"
 	},
 	"setup": {
@@ -910,6 +911,7 @@
 		"window-leftovers-48": 172,
 		"window-over-dock": 127,
 		"window-place-free": 518,
+		"windows-polish": 240,
 		"window-size-clamp": 64,
 		"window-tabs": 285,
 		"window-tabs-move": 25,

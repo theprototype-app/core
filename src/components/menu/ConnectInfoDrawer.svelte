@@ -33,7 +33,6 @@
 	import { connectPinned, setConnectPinned } from '$lib/connectPin';
 	import { phoneShellActive } from '$lib/ui/phoneShell.js';
 	// 78 PL35: the header's words follow the ONE connection status (Ready while the peer server answers)
-	import { connectionStatus } from '$lib/connectionStatus';
 	import { registerBack } from '$lib/backStack.js'; // phone-polish: Android Back closes the open drawer
 
 	/** @type {{ onClose?: () => void }} */

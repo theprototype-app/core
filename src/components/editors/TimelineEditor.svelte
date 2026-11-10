@@ -740,7 +740,7 @@
 	// ---- the panes (uir-timeline) ----------------------------------------------------------
 	/** the Properties tabs; the glyphs are the ones showhide-v8's WindowShell maps onto Lucide icons */
 	const PANE_MODES = [
-		{ key: 'sequence', icon: '⚙', label: 'Sequence' },
+		{ key: 'sequence', icon: 'settings', label: 'Sequence' },
 		{ key: 'item', icon: 'ⓘ', label: 'Item' }
 	];
 	let shell: any = $state(null);

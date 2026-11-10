@@ -126,13 +126,14 @@ function buildRecipe(id, owner) {
 		// (who: player) — the walk-up door's pattern, and shared, because sensor edges replicate.
 		const sight = makeZone((owner.name || 'Guard') + ' sight', [at[0], y, at[2]], [8, 2.4, 8], 0.08);
 		if (!sight) return { error: 'Could not add the guard\'s sight.' };
+		// two rows, side by side: a Path patrol card is ~320 units tall, so a 160 step stacked them over each other
 		const patrol = makeNode('pathpatrol', 260, 0, { path: pathUuid, face: true });
-		const sightPatrol = makeNode('pathpatrol', 260, 160, { path: pathUuid, face: false });
-		const sightSel = makeNode('objectselector', 520, 160, { label: 'Sight', selected: sight.uuid });
-		const spot = makeNode('onenter', 0, 320, { who: 'player' });
-		const spotSel = makeNode('objectselector', -240, 320, { label: 'Sight', selected: sight.uuid });
-		const spotted = makeNode('announce', 260, 320, { text: 'Spotted!', sub: '', seconds: 1.5, color: '#ff6a5a' });
-		const alarm = makeNode('gamesound', 260, 480, { sound: 'whistle' });
+		const sightPatrol = makeNode('pathpatrol', 560, 0, { path: pathUuid, face: false });
+		const sightSel = makeNode('objectselector', 860, 0, { label: 'Sight', selected: sight.uuid });
+		const spot = makeNode('onenter', 0, 380, { who: 'player' });
+		const spotSel = makeNode('objectselector', -240, 380, { label: 'Sight', selected: sight.uuid });
+		const spotted = makeNode('announce', 260, 380, { text: 'Spotted!', sub: '', seconds: 1.5, color: '#ff6a5a' });
+		const alarm = makeNode('gamesound', 560, 380, { sound: 'whistle' });
 		const nodes = [patrol, sightPatrol, sightSel, spot, spotSel, spotted, alarm];
 		const edges = [makeEdge(sightPatrol, sightSel), makeEdge(spot, spotSel), makeEdge(spot, spotted, 'trigger'), makeEdge(spot, alarm, 'trigger')];
 		return { nodes, edges, made: [pathUuid, sight.uuid] };

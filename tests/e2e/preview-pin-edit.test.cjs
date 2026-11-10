@@ -310,6 +310,17 @@ h.run(async () => {
 		await P.page.locator('#preview-view').tap();
 		await until(async () => (await pv(P)).mode === 'view');
 		h.check((await pv(P)).mode === 'view', `§9 ${label}: a tap on View goes back to the picture`);
+		// uir-int (real HONOR folded): View kept its fixed 520 px and the header ran its close button off the edge
+		await P.page.waitForTimeout(600);
+		const v = await S(P, () => {
+			const win = document.getElementById('image-preview-window').getBoundingClientRect();
+			const c = document.getElementById('preview-close');
+			const b = c?.getBoundingClientRect();
+			const at = b ? document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2) : null;
+			return { at: at ? at.tagName + '#' + at.id + '.' + String(at.className).slice(0, 60) : null, cr: b ? [Math.round(b.left), Math.round(b.right), Math.round(b.top)] : null, left: Math.round(win.left), right: Math.round(win.right), innerW: innerWidth, close: !!b && b.right <= innerWidth + 1 && b.right <= win.right + 1 && !!document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2)?.closest('#preview-close') };
+		});
+		h.check(v.left >= -1 && v.right <= v.innerW + 1 && v.close, `§9 ${label}: the View face fits the screen and its close is tappable (${JSON.stringify(v)})`);
+		await shot(P, `07-phone-${label}-view`, 'dark');
 		h.check((h.pageErrors(P) || []).length === 0, `no page errors (${label}) (${(h.pageErrors(P) || []).slice(-3).join(' | ')})`);
 		await P.ctx.close();
 	}

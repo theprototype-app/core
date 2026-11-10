@@ -187,6 +187,11 @@
 	const hideZoom = $derived(headerW < 380);
 	const hideExtras = $derived(headerW < 320);
 	const hideTitle = $derived(headerW < 250);
+	/** uir-int (real HONOR, both postures): View | Edit (~150 px with its words) and the pin joined this row after the
+	 * thresholds above were measured, so the whole image row is ~535 px — the close ran 15 px past a 520 px window and
+	 * 48 px past a 337 px one, and the title was squeezed to nothing. The words go first (the icons and their names
+	 * stay), which gives a 520 px window its title and zoom back; the pin goes with the title (the dock menu pins too). */
+	const compactMode = $derived(headerW < 600);
 	/**
 	 * R22 ROUND 21 (user): "for animated objects show statistic below player, same as sounds
 	 * have filename below player".
@@ -814,7 +819,8 @@
 						class="tp-seg-btn"
 						aria-pressed={!editing}
 						title="View the file"
-						onclick={() => void setMode('view')}><Icon name="eye" size={16} aria-hidden="true" /><span class="pv-mode-label">View</span></button
+						aria-label="View"
+						onclick={() => void setMode('view')}><Icon name="eye" size={16} aria-hidden="true" /><span class="pv-mode-label" class:pv-gone={compactMode}>View</span></button
 					>
 					<button
 						id="preview-edit"
@@ -822,13 +828,15 @@
 						aria-pressed={editing}
 						disabled={!editable}
 						title={editable ? 'Edit image — crop, rotate, resize, adjust' : 'Only an image in your Library can be edited'}
-						onclick={() => void setMode('edit')}><Icon name="square-pen" size={16} aria-hidden="true" /><span class="pv-mode-label">Edit</span></button
+						aria-label="Edit"
+						onclick={() => void setMode('edit')}><Icon name="square-pen" size={16} aria-hidden="true" /><span class="pv-mode-label" class:pv-gone={compactMode}>Edit</span></button
 					>
 				</span>
 			{/if}
 			{#if first}
 				<button
 					id="preview-pin"
+					class:pv-gone={hideTitle}
 					class="ui-button-quiet {pinned ? 'pv-cog-on' : ''}"
 					aria-pressed={pinned}
 					title={pinned
@@ -1424,6 +1432,12 @@
 		}
 		.pv-editing :global(.dw-resize) {
 			display: none;
+		}
+		/* uir-int (real HONOR folded, 353 px): View opened at its fixed 520 px and dragWindow only clamps a SAVED
+		   size, so the header ran off the right edge with the close button. The header sheds its pieces on a
+		   measured width, so capping the window is enough; dragWindow's clamp then places it on screen. */
+		.tp-window:not(.pv-editing) {
+			max-width: calc(100vw - 16px) !important;
 		}
 	}
 	/* the phone shell's top bar is 64 px and its bottom bar holds Play (the Inspector's rule) */

@@ -285,7 +285,10 @@ h.run(async () => {
 	const focusPlot = async () => {
 		const box = await A.page.locator('#animation-timeline').boundingBox();
 		if (!box) return false;
-		await A.page.mouse.click(box.x + 6, box.y + box.height - 6);
+		// showhide-v8: the channel list's arrow handle owns the plot's left 16 px (a press there toggles the list and
+		// takes the focus) — click just right of it, as animation-curves does
+		const handle = await A.page.locator('#animation-list-toggle').boundingBox();
+		await A.page.mouse.click(Math.max(box.x + 6, handle ? handle.x + handle.width + 2 : 0), box.y + box.height - 6);
 		await A.page.waitForTimeout(200);
 		return true;
 	};

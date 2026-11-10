@@ -205,7 +205,7 @@ h.run(async () => {
 				// open it first (a closed panel is no tab to move), then move it beside Properties
 				await page.evaluate(() => window.__stores.explorerClose?.set?.(false));
 				await page.waitForTimeout(600);
-				await page.evaluate((s) => window.__stores.sidebars.moveSidebarTab?.('explorer', s), side);
+				await page.evaluate((s) => window.__stores.dockMenu.moveToSidebar('explorer', s), side);
 				await page.waitForTimeout(600);
 			}
 			const tabs2 = await page.evaluate(() => {

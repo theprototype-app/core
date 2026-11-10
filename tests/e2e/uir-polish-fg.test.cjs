@@ -150,10 +150,11 @@ h.run(async () => {
 	for (const key of ['flow', 'timeline', 'explorer', 'profiler']) {
 		await page.evaluate((k) => {
 			const s = window.__stores;
-			if (s.dockMenu.windowWhere(k) !== 'dock') s.panelToggles.togglePanel(k);
+			if (!s.dockMenu.windowWhere(k)) s.panelToggles.togglePanel(k); // open it only when closed (a toggle closes an open one)
 		}, key);
 		await page.waitForTimeout(900);
 		await toDock(page, key); // F1 left some of these in the right sidebar
+		h.check((await page.evaluate((k) => window.__stores.dockMenu.windowWhere(k), key)) === 'dock', `G2 ${key}: (premise) docked before floating`);
 		await page.evaluate((k) => window.__stores.bottomDock.armDockMode(k, false), key);
 		await page.waitForTimeout(1200);
 		const g = await page.evaluate((k) => {
@@ -182,11 +183,14 @@ h.run(async () => {
 		await page.evaluate(w.open);
 		await page.waitForTimeout(900);
 		if ((await page.evaluate((k) => window.__stores.dockMenu.windowWhere(k), w.key)) !== 'floating') {
+			await toDock(page, w.key); // F1 left Objects in the right sidebar: via the dock, then out
 			await page.evaluate((k) => window.__stores.dockMenu.undockFromDock?.(k), w.key);
 			await page.waitForTimeout(900);
 		}
 		const where0 = await page.evaluate((k) => window.__stores.dockMenu.windowWhere(k), w.key);
 		h.check(where0 === 'floating', `G2 ${w.key}: (premise) it floats (${where0})`);
+		// Free assets builds its header after its catalogue loads
+		await page.locator(`[data-head-dock="${w.key}"]`).first().waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
 		const g = await page.evaluate((k) => {
 			const d = [...document.querySelectorAll(`[data-head-dock="${k}"]`)].find((e) => e.getClientRects().length > 0);
 			const p = [...document.querySelectorAll(`[data-head-popout="${k}"]`)].find((e) => e.getClientRects().length > 0);

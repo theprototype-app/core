@@ -88,7 +88,8 @@ h.run(async () => {
 		return { openedOnSelect, stillOpen, kind };
 	});
 	h.check(pinned.openedOnSelect, 'pinned: selecting opens the properties panel');
-	h.check(pinned.stillOpen && pinned.kind === 'scene', `pinned: deselect falls back to Scene (${pinned.kind})`);
+	// uir-polish E3 (owner 2026-11-11): on a wide desktop a deselect KEEPS the last object (it used to fall back to Scene)
+	h.check(pinned.stillOpen && pinned.kind === 'selection', `deselect keeps the last object in Properties (${pinned.kind})`);
 
 	// the pin button renders in the header
 	await A.page.evaluate(() => {

@@ -9,6 +9,7 @@
 	//     unfolded N6 drops that chrome under the Connect bar, so a fixed top would land on it) AND below the profile
 	//     menu's bottom edge, open or not (1.64, owner: the profile click used to move them), plus the offset the
 	//     person dragged it to along the edge (saved per side)
+	//   - never on the bottom dock: drawn clamped above the dock's top, the saved offset untouched (1.64)
 	//   - a press toggles the column; a press that TRAVELS up / down moves the handle; right-click / long-press = its
 	//     menu (Hide handles · Move up / down · Reset position · Dim at rest)
 	//   - on a touch screen it stays while the column is open, on the column's inner edge (it is how the column
@@ -29,6 +30,7 @@
 		noteProfileMenuBottom,
 		MENU_BELOW_TRIGGER
 	} from '$lib/sidebarHandles';
+	import { bottomInset } from '$lib/bottomDock.js';
 	import { coarsePointer } from '$lib/deviceClass.js';
 	import { bindingOf } from '$lib/shortcuts';
 	import { offerUndo } from '$lib/undoToast';
@@ -115,9 +117,19 @@
 		requestAnimationFrame(remeasure);
 	});
 
+	/** the handle's box height (the hit area: taller on touch) */
+	const boxH = () => ($coarsePointer ? 56 : 44);
+	/**
+	 * Where a handle is drawn: its saved spot (the floor + the offset the person dragged it to), clamped into the
+	 * free band between the floor and the bottom dock's top. THE CLAMP IS A RENDERING, never a write: the saved offset
+	 * stays the person's intent, so the handle slides up with the dock when the spot is under it and goes back when
+	 * the dock closes. A band too short to hold it puts it at the band's top.
+	 */
 	function topOf(side: Side, dragY = 0) {
+		void $bottomInset;
 		const base = floorOf(side) + GAP;
-		const max = Math.max(base, window.innerHeight - TAB_H - 96);
+		let max = Math.max(base, window.innerHeight - TAB_H - 96);
+		if ($bottomInset > 0) max = Math.max(base, Math.min(max, window.innerHeight - $bottomInset - GAP - boxH()));
 		return Math.min(max, base + $sidebarHandleY[side] + dragY);
 	}
 
@@ -168,7 +180,11 @@
 		if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
 			e.preventDefault();
 			const step = e.shiftKey ? 48 : 8;
-			setSidebarHandleY(side, $sidebarHandleY[side] + (e.key === 'ArrowUp' ? -step : step));
+			// from where it is DRAWN (the dock may be holding it up), and saved within the band, like a drag
+			const base = floorOf(side) + GAP;
+			const drawn = topOf(side) - base;
+			const bandEnd = topOf(side, 1e6) - base;
+			setSidebarHandleY(side, Math.min(bandEnd, drawn + (e.key === 'ArrowUp' ? -step : step)));
 		} else if (e.key === 'Enter' || e.key === 'Escape' || e.key === ' ') {
 			e.preventDefault();
 			e.stopPropagation();
@@ -289,6 +305,16 @@
 		cursor: pointer;
 		touch-action: none;
 		-webkit-tap-highlight-color: transparent;
+		/* slides with the bottom dock's top (the clamp above); a drag follows the finger with none */
+		transition: top 0.2s ease;
+	}
+	.sbh-moving {
+		transition: none;
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.sbh {
+			transition: none;
+		}
 	}
 	.sbh-left {
 		justify-content: flex-start;

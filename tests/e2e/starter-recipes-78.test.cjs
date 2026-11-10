@@ -140,7 +140,9 @@ h.run(async () => {
 	const moved = Math.hypot(q2.p[0] - q1.p[0], q2.p[2] - q1.p[2]);
 	h.check(moved > 0.5, `§5 the guard walks its route (${moved.toFixed(2)} m in 1.5 s)`);
 	const onRoute = Math.max(Math.abs(q2.p[0] + 8), Math.abs(q2.p[2])) ;
-	h.check(near(onRoute, 3, 0.4), `§5 it stays on its square route around where it stood (${onRoute.toFixed(2)} m out)`);
+	// paths are smooth by default: the closed curve through the 4 corners (3 m out) bulges to ~3.7 m between them, so
+	// the band is the whole curve, not the corners (3 +- 0.4 passed only when the sample landed near a corner)
+	h.check(onRoute > 2.6 && onRoute < 3.9, `§5 it stays on its route around where it stood (${onRoute.toFixed(2)} m out, 2.6-3.9)`);
 	const both = await Promise.all([A, B].map((x) => S(x.page, (u) => {
 		const f = window.__stores.flowRuntime;
 		/** @type {any} */ let g;

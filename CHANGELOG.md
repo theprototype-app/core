@@ -17,7 +17,7 @@
 - **New nodes for a room that feels alive**: Oscillate, Move To / Rotate To / Scale To, Light Switch, Light Intensity, Colour Cycle, Wind Sway, Flowing Water and Ambient Animal; **Grabbable** (pick things up in Play or with the VR grip, no physics needed); **Highlight** + **Press Button**; **Sit Spot** (click a chair to sit, a move key stands you up). <!-- 85-nodes -->
 - **Node-only gems**: the Collect pickup node has *Collect on touch* (on by default), so walking over a gem takes it. <!-- 78-nodes -->
 - **On Play start / On Play stop** pulse once when the session (or just you) starts or stops playing; *Game Start* is now called **Start camera**. <!-- 78-nodes -->
-- **Announce** no longer flashes over the editor: in Edit its line goes to the Debugger's new **Console**; the banner shows in Play. <!-- 78-nodes -->
+- **Announce** no longer flashes over the editor: in Edit its line goes to the Debugger's new **Console**; the banner shows in Play and in Interact. <!-- 78-nodes, 78-int -->
 
 ### Paths
 - **Add ▸ Path** draws a route you can edit: waits, speeds, eases, jumps, facing and events per point; loop, ping-pong, once or random walks; hidden in Play. **Path patrol** walks a Path and every peer sees each walker in the same place; older patrols convert in one click. <!-- 78-path -->
@@ -79,6 +79,9 @@
 - *Lowered for now* names the one resolution in force instead of listing four. <!-- 78-int PL9 -->
 - The AI window no longer covers the toolbar on small screens, and the main menu ends above the toolbar. <!-- 78-pl-windows PL6 PL7 -->
 - The Objects filter chips and the Free assets tabs wrap instead of being cut off; Far clip lines up with the other camera rows. <!-- 78-pl-windows PL8 PL20 PL21 -->
+- A walker standing on a floor that rises or sinks rides with it instead of sinking in or floating. <!-- 78-int -->
+- The physics no longer moves to another device while someone is carrying or has just thrown an object, so a throw keeps its speed. <!-- 78-int F25 -->
+- After a hitch the physics catches up at most a quarter of a second, so crates no longer jump forward. <!-- 78-int F25 -->
 
 ## 1.63.0 — Pro look 📸
 

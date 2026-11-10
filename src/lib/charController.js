@@ -1,7 +1,7 @@
 import { writable, get } from 'svelte/store';
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
-import { globalScene, globalCamera } from '../stores/sceneStore';
+import { globalScene, globalCamera, isLocked } from '../stores/sceneStore';
 import { sceneGravity, scenePhysicsGround } from './scenePhysics';
 import { dungeonData, slideMove } from './dungeonPlay';
 import { kitPlayRules } from './kit/runtime.js'; // 34 R2: kit.rules' jump height
@@ -55,6 +55,8 @@ import { playerInteractionGroups } from './collisionGroups'; // 36 X5: a leaf
 export const DEFAULT_FLY_SPEED = 0.1;
 /** the capsule's radius; also the dungeon raster's walk radius */
 const CAPSULE_RADIUS = 0.3;
+/** 78-int: the longest stretch of time one character-controller sweep covers; a longer frame is cut into parts */
+const KCC_MAX_DT = 1 / 30;
 
 /**
  * @typedef {{mode: 'fly'|'walk', speed: number, jumpHeight: number, eyeHeight: number,
@@ -76,7 +78,7 @@ export const playMoveSpeed = writable(null);
 /** The walker's own state, published for the suite (and anything that wants to draw
  * it): vertical velocity, whether we stand on something, the resolved floor and WHICH
  * tier answered.
- * @type {import('svelte/store').Writable<{vy: number, grounded: boolean, ground: number, source: 'rapier'|'dungeon'|'plane'|'none'}>} */
+ * @type {import('svelte/store').Writable<{vy: number, grounded: boolean, ground: number, source: 'rapier'|'dungeon'|'plane'|'wait'|'none'}>} */
 export const walkerState = writable({ vy: 0, grounded: false, ground: 0, source: 'none' });
 
 let vy = 0;
@@ -94,6 +96,43 @@ let jumpRequested = false;
  * no caller nothing changes. */
 let carryX = 0;
 let carryZ = 0;
+
+/** 78-int: WAIT FOR THE WORLD. Play starts the simulation a few frames AFTER the walker's first step (sim-on-play
+ * resolves through dynamic imports), and a new world's colliders are not in its scene queries until it has stepped.
+ * At 8 fps one frame of gravity in that gap dropped the walker 10 cm, from its spawn INTO the 0.4 m platform it
+ * stood over; the character controller never resolves what it starts inside, so it fell on through to -14 cm in the
+ * ground slab. Play entry sets 'unknown'; sim-on-play answers 'coming' (a world is being built: hold until it has
+ * stepped) or 'none' (walk now). Both holds are capped, so a refused start can never freeze a player. */
+/** @type {'none'|'unknown'|'coming'} */
+let worldPlan = 'none';
+let worldPlanAt = 0;
+// sim-on-play ALWAYS answers (none / coming, its catch says none); the cap is only for a Play entry it never sees.
+// Not shorter: on a slow device its imports took 0.5-1.4 s, and an early release fell straight into the platform
+const WORLD_UNKNOWN_MS = 3000;
+const WORLD_COMING_MS = 3000;
+isLocked.subscribe((v) => {
+	if (v === true) {
+		worldPlan = 'unknown';
+		worldPlanAt = Date.now();
+	}
+});
+/** sim-on-play's verdict at Play entry (playMode.maybeSimOnPlay). @param {'coming'|'none'} plan */
+export function expectWorld(plan) {
+	worldPlan = plan === 'coming' ? 'coming' : 'none';
+	worldPlanAt = Date.now();
+}
+/** is the walker holding still for a world that is about to exist? @param {any} rt */
+function waitingForWorld(rt) {
+	if (worldPlan === 'none') return false;
+	if (rt && (rt.steps ?? 1) > 0) {
+		worldPlan = 'none';
+		return false;
+	}
+	const waited = Date.now() - worldPlanAt;
+	if (waited < (worldPlan === 'coming' ? WORLD_COMING_MS : WORLD_UNKNOWN_MS)) return true;
+	worldPlan = 'none';
+	return false;
+}
 /** @param {number} dx @param {number} dz world metres this frame */
 export function addWalkCarry(dx, dz) {
 	if (Number.isFinite(dx) && Number.isFinite(dz) && Math.abs(dx) < 1 && Math.abs(dz) < 1) {
@@ -398,7 +437,7 @@ export function tickWalker(rig, settings, dt, desired) {
  * @param {{dx: number, dz: number, dy?: number}} desired the wanted step, world units
  *   (`dy` only without gravity — a flier's vertical intent)
  * @param {{gravity?: boolean, jumpHeight?: number}} [opts]
- * @returns {{dx: number, dy: number, dz: number, feet: number, grounded: boolean, vy: number, source: 'rapier'|'dungeon'|'plane'}}
+ * @returns {{dx: number, dy: number, dz: number, feet: number, grounded: boolean, vy: number, source: 'rapier'|'dungeon'|'plane'|'wait'}}
  */
 export function resolveWalk(feetPos, height, dt, desired, opts = {}) {
 	const step = Math.max(0, Math.min(dt, 0.1)); // a tab that was backgrounded
@@ -407,6 +446,17 @@ export function resolveWalk(feetPos, height, dt, desired, opts = {}) {
 	const g = Math.abs(Number(get(sceneGravity)) || 9.81);
 	_worldPos.set(feetPos.x, feetPos.y + eyeHeight, feetPos.z);
 	let feet = feetPos.y;
+
+	if (waitingForWorld(physicsRuntime())) {
+		// hold still: no gravity, no walk, nothing integrated (the world it would fall or walk into is not built yet)
+		vy = 0;
+		carryX = 0;
+		carryZ = 0;
+		const held = { vy: 0, grounded: false, ground: feet, source: /** @type {'wait'} */ ('wait') };
+		const previous = get(walkerState);
+		if (previous.source !== 'wait' || Math.abs(previous.ground - feet) > 1e-4) walkerState.set(held);
+		return { dx: 0, dy: 0, dz: 0, feet, grounded: false, vy: 0, source: 'wait' };
+	}
 
 	// gravity + the jump edge. The jump is spent only while we are ON something, so a
 	// press in mid-air is DROPPED rather than queued — a queued one fires on landing,
@@ -449,33 +499,61 @@ export function resolveWalk(feetPos, height, dt, desired, opts = {}) {
 	}
 	lastFloor = floorNow;
 
-	const built = ensureCapsule(physicsRuntime(), eyeHeight);
+	// 78-int: a world that has not stepped yet has an EMPTY scene query (its colliders reach the broad phase on the first
+	// step), so sweeping it finds nothing and the walker falls through every floor: until it steps (a start that is slow,
+	// or paused), walk on the plane tier as with no world at all
+	const rtNow = physicsRuntime();
+	const built = rtNow && (rtNow.steps ?? 1) > 0 ? ensureCapsule(rtNow, eyeHeight) : rtNow ? null : ensureCapsule(null, eyeHeight);
 	if (built && capsule && controller) {
 		try {
-			// the capsule's CENTRE sits half a body above the feet
-			capsule.setTranslation({ x: _worldPos.x, y: feet + eyeHeight / 2, z: _worldPos.z });
-			// 33-scenes: SENSORS are pass-through — a trigger volume, grass, flowers, a rug, a trim
-			// a level marks so. Without the flag the sweep treated every one as a wall (measured: the
-			// open front door of the Tavern held the walker at its threshold, a sensor trim there)
-			controller.computeColliderMovement(capsule, { x: dx, y: dy, z: dz }, sensorsExcluded, playerInteractionGroups());
-			const moved = controller.computedMovement();
-			dx = moved.x;
-			dy = moved.y;
-			dz = moved.z;
-			// 30b: a dungeon raster clamps the capsule's step too (see resolveWalk)
+			// 78-int: THE MOVE IS SUBSTEPPED at <= KCC_MAX_DT. At 8 fps one frame is 0.1 s, so gravity alone asked
+			// the capsule to fall ~10 cm (and a walk 0.3 m) in ONE sweep; the controller ended such a sweep inside the
+			// platform or the ground slab, and it never resolves what it starts inside (measured at 8 fps: the walker
+			// at -28.6 cm under a 0.4 m platform). Same total motion, same gravity: the frame is cut into equal parts,
+			// each its own sweep from where the last one ended (vy integrated per part, zeroed on landing).
 			const raster = dungeonData(get(globalScene));
-			if (raster && (dx || dz)) {
-				const slid = slideMove(raster, _worldPos.x, _worldPos.z, dx, dz, CAPSULE_RADIUS);
-				dx = slid.x - _worldPos.x;
-				dz = slid.z - _worldPos.z;
+			const parts = Math.max(1, Math.ceil(step / KCC_MAX_DT - 1e-6));
+			const sub = step / parts;
+			let vyPart = useGravity ? vy + g * step : 0; // the velocity before this frame's integration (a jump included)
+			let x = _worldPos.x;
+			let z = _worldPos.z;
+			let fell = 0;
+			for (let i = 0; i < parts; i++) {
+				let pdy;
+				if (useGravity) {
+					vyPart -= g * sub;
+					pdy = vyPart * sub;
+				} else pdy = dy / parts;
+				// the capsule's CENTRE sits half a body above the feet
+				capsule.setTranslation({ x, y: feet + eyeHeight / 2, z });
+				// 33-scenes: SENSORS are pass-through — a trigger volume, grass, flowers, a rug, a trim
+				// a level marks so. Without the flag the sweep treated every one as a wall (measured: the
+				// open front door of the Tavern held the walker at its threshold, a sensor trim there)
+				controller.computeColliderMovement(capsule, { x: dx / parts, y: pdy, z: dz / parts }, sensorsExcluded, playerInteractionGroups());
+				const moved = controller.computedMovement();
+				let mx = moved.x;
+				let mz = moved.z;
+				// 30b: a dungeon raster clamps the capsule's step too (see resolveWalk)
+				if (raster && (mx || mz)) {
+					const slid = slideMove(raster, x, z, mx, mz, CAPSULE_RADIUS);
+					mx = slid.x - x;
+					mz = slid.z - z;
+				}
+				x += mx;
+				z += mz;
+				feet += moved.y;
+				fell += moved.y;
+				grounded = !!controller.computedGrounded();
+				if (grounded && vyPart < 0) vyPart = 0;
 			}
-			grounded = !!controller.computedGrounded();
-			feet += dy;
-			if (grounded && vy < 0) vy = 0;
+			if (useGravity) vy = vyPart;
+			dx = x - _worldPos.x;
+			dz = z - _worldPos.z;
+			dy = fell;
 			source = 'rapier';
 			// leave the collider where we actually ENDED UP, so the next frame's query
 			// starts from the truth rather than from where we asked to be
-			capsule.setTranslation({ x: _worldPos.x + dx, y: feet + eyeHeight / 2, z: _worldPos.z + dz });
+			capsule.setTranslation({ x, y: feet + eyeHeight / 2, z });
 		} catch (error) {
 			console.log('character controller step failed', error);
 			dropCapsule();

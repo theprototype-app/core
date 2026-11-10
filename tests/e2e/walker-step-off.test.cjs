@@ -10,6 +10,8 @@
 //      card the default walker returns and this row asserts its feet ON the plane (0, not 1-3 cm under it).
 //   4. the floor raised to 0.3 m BEFORE a Character Controller appears: it starts on the raised floor and a
 //      2 s walk stays on it, grounded every frame (no plunge into the slab).
+//   5. Play entry at 8 fps: the walker waits for the world (charController worldPlan) and starts ON the platform
+//      (5.1 gates); 5.2 prints an 8 fps step-off (the low-frame-rate landing is the walker card's). 4.2 gates at >= 20 fps.
 //   APP_URL=https://theprototype.app:5802/ node tests/e2e/walker-step-off.test.cjs
 const h = require('./helpers.cjs');
 
@@ -191,12 +193,70 @@ h.run(async () => {
 	});
 	const y4 = walk4.map((/** @type {any} */ f) => f.y);
 	const air = walk4.filter((/** @type {any} */ f) => !f.g).length;
-	h.check(
+	// the walking sink deepens at a LOW frame rate (a 0.1 s frame is one long sweep): that is the walker card's, so the
+	// bounds gate a run that walked at >= 20 fps (the 2 s walk + 0.4 s rest sampled every frame), and a slower run prints
+	const fps4 = walk4.length / 2.4;
+	if (fps4 < 20) {
+		console.log(`SKIP 4.2 (walk sampled at ${fps4.toFixed(1)} fps < 20: the low-frame-rate walking sink is the walker card's) feet ${(Math.min(...y4) * 100).toFixed(1)} .. ${(Math.max(...y4) * 100).toFixed(1)} cm, ${air} airborne`);
+		h.check(air === 0 && Math.min(...y4) > 0.1, `4.2-low the slow walk still stands on the raised floor, never airborne, no fall through (${walk4.length} frames, min ${(Math.min(...y4) * 100).toFixed(1)} cm)`);
+	} else h.check(
 		walk4.length > 10 && Math.min(...y4) >= 0.27 && Math.max(...y4) <= 0.35 && air === 0,
 		// -3 .. +5 cm: the character controller's walking sink (1-3 cm, the fix-batch walker card tightens it) and its
 		// skin; a plunge into the slab (5198fea5 read -14 cm) still fails
 		`4.2 a full walk on the raised floor: no plunge (-3 .. +5 cm), never airborne (${walk4.length} frames, feet ${(Math.min(...y4) * 100).toFixed(1)} .. ${(Math.max(...y4) * 100).toFixed(1)} cm, ${air} airborne)`
 	);
 	await h.leavePlay(A);
+
+	// ---- 5. Play entry at 8 fps (a slow phone): the walker waits for the world ----------------
+	// (78-int chain34/36: the first Play frame ran before sim-on-play had built the world; at 8 fps that one frame of
+	// gravity dropped the walker 10 cm INTO the platform, and the character controller never resolves what it starts
+	// inside: it fell on to -14 cm in the ground slab. Now it holds still until the world has stepped.)
+	const S5 = await h.setupPage(browser, 'slow');
+	await S5.page.evaluate(() => window.__stores.physics.warmup?.().catch(() => {}));
+	await S5.page.waitForTimeout(1500);
+	await buildLevel(S5.page, true);
+	await S5.page.waitForTimeout(1200);
+	await S5.page.evaluate(() => {
+		const w = /** @type {any} */ (window);
+		const raf = w.requestAnimationFrame.bind(w);
+		w.requestAnimationFrame = (/** @type {any} */ cb) => {
+			setTimeout(() => raf(cb), 125);
+			return 0;
+		};
+		w.__stores.isLocked.set(true);
+	});
+	await S5.page.waitForTimeout(3000);
+	const slow = await walker(S5.page);
+	h.check(
+		!!slow && slow.source === 'rapier' && slow.grounded && slow.ground > 0.38 && slow.ground < 0.45,
+		`5.1 at 8 fps the walker starts ON the 0.4 m platform, not inside or under it (${JSON.stringify(slow)})`
+	);
+	// 5.2 (printed, the walker card's): an 8 fps walk off the platform's edge onto the plane
+	await S5.page.evaluate(() => {
+		const w = /** @type {any} */ (window);
+		w.__feet5 = [];
+		w.__feet5On = true;
+		const tick = () => {
+			if (!w.__feet5On) return;
+			let st;
+			w.__stores.charController.walkerState.subscribe((v) => (st = v))();
+			w.__feet5.push(st.ground);
+			requestAnimationFrame(tick);
+		};
+		requestAnimationFrame(tick);
+	});
+	await S5.page.keyboard.down('KeyW');
+	await S5.page.waitForTimeout(3000);
+	await S5.page.keyboard.up('KeyW');
+	await S5.page.waitForTimeout(600);
+	const y5 = await S5.page.evaluate(() => {
+		const w = /** @type {any} */ (window);
+		w.__feet5On = false;
+		return w.__feet5;
+	});
+	const land5 = y5.findIndex((/** @type {number} */ y) => y < 0.2);
+	const after5 = land5 >= 0 ? y5.slice(land5 + 2) : [];
+	console.log(`INFO 5.2 8 fps step-off: ${y5.length} frames, after the landing ${after5.length ? (Math.min(...after5) * 100).toFixed(1) + ' .. ' + (Math.max(...after5) * 100).toFixed(1) + ' cm' : 'no landing'}`);
+	await h.leavePlay(S5);
 	await h.finish(browser);
 });

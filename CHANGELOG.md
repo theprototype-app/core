@@ -80,6 +80,7 @@
 - The AI window no longer covers the toolbar on small screens, and the main menu ends above the toolbar. <!-- 78-pl-windows PL6 PL7 -->
 - The Objects filter chips and the Free assets tabs wrap instead of being cut off; Far clip lines up with the other camera rows. <!-- 78-pl-windows PL8 PL20 PL21 -->
 - A walker standing on a floor that rises or sinks rides with it instead of sinking in or floating. <!-- 78-int -->
+- On a slow device, a player who starts Play over a platform now lands on it: the player waits for the level's physics to be ready instead of falling into the platform or the ground. <!-- 78-int -->
 - The physics no longer moves to another device while someone is carrying or has just thrown an object, so a throw keeps its speed. <!-- 78-int F25 -->
 - After a hitch the physics catches up at most a quarter of a second, so crates no longer jump forward. <!-- 78-int F25 -->
 - In the Animation editor, the first and last keys of a clip can be clicked and dragged again; the side-panel arrows no longer cover them. <!-- 78-fix-547 -->

@@ -138,6 +138,9 @@ let colliderOwner = new Map();
 let groundHandle = -1;
 /** B4: the live ground collider, so a config change can swap it mid-sim */
 /** @type {any} */ let groundCollider = null;
+/** 78-int: steps this world has taken. Its scene queries (the broad-phase BVH the character controller sweeps
+ * against) are built by a step, so a world at 0 has colliders the walker cannot hit yet. */
+let worldSteps = 0;
 /** 36-fb-water F12: the ground is SEVERAL slabs once water cuts holes in it (groundHoles.js);
  * every slab's handle, so the impact/ground tests stay one Set lookup. groundCollider/
  * groundHandle keep naming the first slab (debug views + the "is there a ground" reads). */
@@ -1144,6 +1147,7 @@ async function startSimulation(opts = {}) {
 	// CL-A A6: scene gravity is a replicated singleton (scenePhysics.js); the
 	// live subscription below applies mid-sim changes on the stepping peer
 	world = new RAPIER.World({ x: 0, y: get(sceneGravity), z: 0 });
+	worldSteps = 0;
 	groundCollider = null;
 	groundHandle = -1;
 	groundColliders = []; // the old world's colliders died with it
@@ -2009,6 +2013,7 @@ function stepInner(now) {
 			if (!f.entry.hold && f.entry.buoy)
 				applyBuoyancy(f.entry.body, f.entry.buoy, queryWater, f.floats, gravityY, FIXED_DT, buoyOut);
 		world.step(eventQueue);
+		worldSteps++;
 		// drain per SUBSTEP or events from early substeps get merged/lost
 		eventQueue.drainCollisionEvents((/** @type {number} */ h1, /** @type {number} */ h2, /** @type {boolean} */ started) => {
 			if (started) queueContact(h1, h2, now);
@@ -2760,10 +2765,10 @@ export function physicsPeerDisconnected(peerId) {
  * A caller building a collider through this owns it entirely: it gets no `colliderOwner`
  * entry, so physics.js's own body list, write-back, impact and sensor paths all skip it
  * (both already look every handle up and bail on an unknown one).
- * @returns {{world: any, RAPIER: any} | null}
+ * @returns {{world: any, RAPIER: any, steps: number} | null}
  */
 export function physicsRuntime() {
-	return world && RAPIER ? { world, RAPIER } : null;
+	return world && RAPIER ? { world, RAPIER, steps: worldSteps } : null;
 }
 
 /** B4: test/debug view of the world-level state (ground, bounds, timing) */

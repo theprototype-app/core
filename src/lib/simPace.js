@@ -76,6 +76,22 @@ export function handoffDue(state, candidate, now) {
 	return candidate;
 }
 
+/** 78-int u1: how long after the last carry ends the handoff still waits (a throw is in flight) */
+export const HANDOFF_SETTLE_MS = 2000;
+
+/**
+ * 78-int u1: NO HANDOFF WHILE SOMETHING IS CARRIED. A body held by a player (ours, 'user', or a peer's
+ * move stream, 'external') lives in THIS world's hold; handing the world over mid-carry dropped the hold and
+ * the release then landed on a world that had no carry (a throw arrived at 0 m/s). The vote waits while any
+ * body is held and for HANDOFF_SETTLE_MS after the last one was let go. PURE.
+ * @param {boolean} holding is any body held right now @param {number} lastHeldAt ms (0 = never) @param {number} now
+ * @returns {boolean}
+ */
+export function handoffBlocked(holding, lastHeldAt, now) {
+	if (holding) return true;
+	return lastHeldAt > 0 && now - lastHeldAt < HANDOFF_SETTLE_MS;
+}
+
 // ---- this device's frame time (EMA of rAF deltas) ------------------------------------------
 
 /** ms per frame on this device, smoothed (0 until measured) */

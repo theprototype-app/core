@@ -4,6 +4,8 @@ import {
 	paceLimits,
 	handoffCandidate,
 	handoffDue,
+	handoffBlocked,
+	HANDOFF_SETTLE_MS,
 	BASE_SUBSTEPS,
 	BASE_FEED,
 	HARD_SUBSTEPS,
@@ -86,5 +88,19 @@ describe('handoffDue (hysteresis)', () => {
 		handoffDue(st, 'c', HANDOFF_SUSTAIN_MS + 1);
 		expect(handoffDue(st, 'c', HANDOFF_SUSTAIN_MS * 2 + 1)).toBe(null); // inside the cooldown
 		expect(handoffDue(st, 'c', HANDOFF_SUSTAIN_MS + HANDOFF_COOLDOWN_MS)).toBe('c');
+	});
+});
+
+describe('handoffBlocked (78-int u1: never mid-carry or mid-throw)', () => {
+	it('a held body blocks the handoff', () => {
+		expect(handoffBlocked(true, 0, 1000)).toBe(true);
+		expect(handoffBlocked(true, 1000, 1000)).toBe(true);
+	});
+	it('it waits HANDOFF_SETTLE_MS after the last carry ended, then allows', () => {
+		expect(handoffBlocked(false, 1000, 1000 + HANDOFF_SETTLE_MS - 1)).toBe(true);
+		expect(handoffBlocked(false, 1000, 1000 + HANDOFF_SETTLE_MS)).toBe(false);
+	});
+	it('a run that never carried is not blocked', () => {
+		expect(handoffBlocked(false, 0, 5)).toBe(false);
 	});
 });

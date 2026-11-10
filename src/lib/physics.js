@@ -38,7 +38,7 @@ import { velocityFromSamples, clampThrow, MAX_LINVEL, MAX_ANGVEL } from './throw
 import { simulateVerdict } from './simAuthority';
 import { myKind } from './inviteStore'; // 55: an agent page never simulates
 // 78 F25: the pace caps + the handoff vote rules (a leaf: pure functions + the frame meter)
-import { paceLimits, handoffCandidate, handoffDue, currentFrameMs, startFrameMeter, VOTE_EVERY_MS, VOTE_STALE_MS } from './simPace';
+import { paceLimits, handoffCandidate, handoffDue, handoffBlocked, currentFrameMs, startFrameMeter, VOTE_EVERY_MS, VOTE_STALE_MS } from './simPace';
 import { isViewer } from './objectPermissions'; // 78 F25: a viewer never takes the world
 // fix-batch-1 #14: the impact rule (closing speed along the contact normal, the legacy
 // downward channel beside it) as a leaf of pure functions
@@ -121,6 +121,8 @@ const simVotes = new Map();
 let handoffState = { candidate: /** @type {string | null} */ (null), since: 0, lastHandoff: 0 };
 let handoffCount = 0;
 let handoffEnabled = true; // TEST/DEBUG knob (setSimHandoffEnabled)
+/** 78-int u1: when a body was last seen held at a vote round (0 = never this run) */
+let lastHeldAt = 0;
 /** @type {{from: string, at: number, velocities: Record<string, number[]>, before: Record<string, any>} | null} */
 let pendingHandoff = null;
 /** @type {ReturnType<typeof setInterval> | null} */
@@ -1511,6 +1513,7 @@ function recordHoldSample(entry, now) {
  */
 function releaseHold(entry, velocity = null) {
 	entry.hold = null;
+	lastHeldAt = Date.now(); // 78-int u1: a carry starts/ends — the handoff waits (simPace.handoffBlocked)
 	entry.holdUntil = 0;
 	entry.holdPeer = null;
 	entry.body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
@@ -1549,6 +1552,7 @@ export function holdBody(uuid) {
 	const entry = bodies.find((e) => e.object.uuid === uuid && e.mode === 'dynamic');
 	if (!entry || !world) return false;
 	entry.hold = 'user';
+	lastHeldAt = Date.now(); // 78-int u1: a carry starts/ends — the handoff waits (simPace.handoffBlocked)
 	entry.samples = [];
 	entry.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
 	return true;
@@ -1637,6 +1641,7 @@ export function physicsExternalMove(uuid, peerId = null) {
 		return false;
 	if (entry.hold !== 'external') {
 		entry.hold = 'external';
+		lastHeldAt = Date.now(); // 78-int u1: a carry starts/ends — the handoff waits (simPace.handoffBlocked)
 		entry.samples = [];
 		entry.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
 	}
@@ -1703,6 +1708,7 @@ export function applyThrow(data) {
 		true
 	);
 	entry.hold = null;
+	lastHeldAt = Date.now(); // 78-int u1: a carry starts/ends — the handoff waits (simPace.handoffBlocked)
 	entry.holdUntil = 0;
 	entry.holdPeer = null;
 	entry.samples = [];
@@ -1928,6 +1934,7 @@ function stepInner(now) {
 		if (!deviated) return;
 		if (entry.hold !== 'external') {
 			entry.hold = 'external';
+			lastHeldAt = Date.now(); // 78-int u1: a carry starts/ends — the handoff waits (simPace.handoffBlocked)
 			entry.samples = [];
 			entry.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
 		}
@@ -2638,6 +2645,13 @@ function maybeHandOff(peer, mine) {
 	// walking on our own world in Play: the walls stop our player only here (fork 4)
 	if (get(isLocked) === true && get(charControl) !== null) return;
 	const now = Date.now();
+	// 78-int u1: never mid-carry or mid-throw (simPace.handoffBlocked): the hold lives in this world
+	let holding = false;
+	bodies.forEach((entry) => {
+		if (entry.hold === 'user' || entry.hold === 'external') holding = true;
+	});
+	if (holding) lastHeldAt = now;
+	if (handoffBlocked(holding, lastHeldAt, now)) return;
 	const open = new Set(peer.openedPeers ?? []);
 	const votes = [...simVotes.values()].filter((v) => !open.size || open.has(v.peerId));
 	const due = handoffDue(handoffState, handoffCandidate(currentFrameMs(), votes, now), now);

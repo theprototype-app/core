@@ -9,22 +9,22 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 
-	// open the Object List + an undocked Flow Code window
+	// open the Object List + an undocked Timeline window
 	await A.page.evaluate(() => {
-		localStorage.setItem('flowCodeDocked', 'false');
+		localStorage.setItem('timelineDocked', 'false');
 	});
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
 	await A.page.waitForFunction(() => window.__stores && !!window.__stores.bottomDock, { timeout: 30000 });
 	await A.page.evaluate(() => {
 		window.__stores.objectListClose.set(false);
-		window.__stores.flowCodeClose.set(false);
+		window.__stores.timelineClose.set(false);
 	});
 	await A.page.waitForTimeout(700);
 
-	// merge: drag the Flow Code header onto the Object List header (windowTabs drag-merge)
+	// merge: drag the Timeline header onto the Object List header (windowTabs drag-merge)
 	const merged = await A.page.evaluate(async () => {
 		const ol = document.getElementById('object-list');
-		const fc = document.getElementById('flow-code-window');
+		const fc = document.getElementById('timeline-window');
 		if (!ol || !fc) return { ok: false };
 		const olr = ol.getBoundingClientRect();
 		const handle = fc.querySelector('.move-handle');
@@ -39,19 +39,19 @@ h.run(async () => {
 	h.check(merged.ok, 'both windows are present to merge');
 	h.check(merged.strip, 'dragging one window onto another forms a tab group with a tab strip');
 
-	// grouped Flow Code must still show its Apply/Reload buttons — they live in the
+	// grouped Timeline must still show its content button (New sequence) — it lives in the
 	// content, below the strip, so the tab strip doesn't cover them
 	const fcButtons = await A.page.evaluate(() => {
-		const win = document.getElementById('flow-code-window');
+		const win = document.getElementById('timeline-window');
 		const strip = document.querySelector('.tab-strip');
 		if (!win || !strip) return { ok: false };
-		const apply = [...win.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Apply');
+		const apply = [...win.querySelectorAll('button')].find((b) => b.textContent.trim() === 'New sequence');
 		if (!apply) return { ok: true, hasApply: false };
 		const ar = apply.getBoundingClientRect();
 		const sr = strip.getBoundingClientRect();
 		return { ok: true, hasApply: true, visible: ar.width > 0 && ar.height > 0, belowStrip: ar.top >= sr.bottom - 2 };
 	});
-	h.check(fcButtons.hasApply && fcButtons.visible && fcButtons.belowStrip, 'grouped Flow Code shows its Apply button in the content, below the tab strip (not hidden behind it)');
+	h.check(fcButtons.hasApply && fcButtons.visible && fcButtons.belowStrip, 'grouped Timeline shows its New sequence button in the content, below the tab strip (not hidden behind it)');
 
 	// move the group by dragging the strip background; the visible member must follow
 	const moved = await A.page.evaluate(async () => {
@@ -65,7 +65,7 @@ h.run(async () => {
 		await new Promise((r) => setTimeout(r, 200));
 		const strip2 = document.querySelector('.tab-strip').getBoundingClientRect();
 		// the active member is the visible one (not display:none)
-		const members = ['#object-list', '#flow-code-window']
+		const members = ['#object-list', '#timeline-window']
 			.map((s) => document.querySelector(s))
 			.filter((n) => n && getComputedStyle(n).display !== 'none');
 		const win = members[0]?.getBoundingClientRect();
@@ -80,8 +80,8 @@ h.run(async () => {
 	// resizing a grouped window resizes the WHOLE group (all tabs share one size),
 	// not just the active tab — the other member's node picks up the new width too
 	const grpResize = await A.page.evaluate(async () => {
-		const active = ['#object-list', '#flow-code-window'].map((s) => document.querySelector(s)).find((n) => n && getComputedStyle(n).display !== 'none');
-		const other = ['#object-list', '#flow-code-window'].map((s) => document.querySelector(s)).find((n) => n && getComputedStyle(n).display === 'none');
+		const active = ['#object-list', '#timeline-window'].map((s) => document.querySelector(s)).find((n) => n && getComputedStyle(n).display !== 'none');
+		const other = ['#object-list', '#timeline-window'].map((s) => document.querySelector(s)).find((n) => n && getComputedStyle(n).display === 'none');
 		const grip = active.querySelector('.resize-cue, .resize-handle');
 		const r = grip.getBoundingClientRect();
 		const beforeOther = parseInt(other.style.width);

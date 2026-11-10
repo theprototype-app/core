@@ -37,6 +37,8 @@
 	import { openApplyClip } from '$lib/characterUi.js';
 	import ClipToolsPanel from './ClipToolsPanel.svelte'; // 57 M3/M8
 	import Icon from '../ui/Icon.svelte';
+	import PaneHandle from '../ui/PaneHandle.svelte'; // showhide-v8: the one pane-handle pattern
+	import { readPanelOpen, writePanelOpen } from '$lib/ui/handheldPanels.js';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import ContextMenu from '../ContextMenu.svelte';
 	import DockTabs from '../DockTabs.svelte';
@@ -1055,6 +1057,10 @@
 	}
 	/** which pane a compact editor shows @type {'list'|'plot'|'key'|'clip'} */
 	let phonePane = $state('plot');
+	// showhide-v8 (owner 2026-11-09): on a wider body the two side panes hide behind ARROW handles like every other
+	// tabbed window (per device; a phone-narrow body keeps its pane switch, the header model)
+	let listOpen = $state(readPanelOpen('animationListOpen', true));
+	let keyOpen = $state(readPanelOpen('animationKeyOpen', true));
 	// a coarse pointer (a finger) gets invisible hit areas around keys and easing handles: an
 	// 8px diamond is a mouse target. Rendered only for touch, so the desktop DOM is unchanged.
 	const coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
@@ -1933,10 +1939,12 @@
 {/snippet}
 
 {#snippet paneSwitch()}
-	<!-- one pane at a time when the editor is phone-narrow (NOTES-38 #35) -->
+	<!-- one pane at a time when the editor is phone-narrow (NOTES-38 #35). showhide-v8 §3: `full` — equal columns across
+	     the row, so the header is not a short strip hugging the left edge (the owner's folded shot) -->
 	<Segmented
 		label="Animation pane"
 		id="animation-pane"
+		full
 		bind:value={phonePane}
 		options={[
 			{ value: 'list', label: 'Channels' },
@@ -2049,7 +2057,7 @@
 				class="flex w-56 shrink-0 flex-col overflow-y-auto border-r border-border"
 				use:minimalScroll
 				class:an-pane-full={compact}
-				class:an-pane-off={compact && phonePane !== 'list'}
+				class:an-pane-off={compact ? phonePane !== 'list' : !listOpen}
 				bind:clientHeight={sideH}
 			>
 				{#if clips.length}
@@ -2256,6 +2264,23 @@
 				{/if}
 			</div>
 
+			{#if !compact}
+				<!-- showhide-v8: the channel list's arrow handle, LOWER than the plot's tool rows so it covers none -->
+				<div class="an-handle-hold">
+					<PaneHandle
+						id="animation-list-toggle"
+						edge="left"
+						open={listOpen}
+						label="the channel list"
+						windowKey="animation"
+						style="top: 5.5rem; left: 0"
+						onclick={() => {
+							listOpen = !listOpen;
+							writePanelOpen('animationListOpen', listOpen);
+						}}
+					/>
+				</div>
+			{/if}
 			<!-- CENTRE: the timeline (dope sheet / value graph) -->
 			<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 			<div class="flex min-w-0 flex-1 flex-col" class:an-pane-off={compact && phonePane !== 'plot'} data-key-scope="animation" tabindex="-1" bind:this={plotHost} use:keyNav>
@@ -2624,11 +2649,28 @@
 			{#if compact && phonePane === 'clip'}
 				<div class="min-w-0 flex-1 overflow-y-auto p-2" use:minimalScroll>{@render clipSettings(true)}</div>
 			{/if}
+			{#if !compact}
+				<div class="an-handle-hold">
+					<PaneHandle
+						id="animation-key-toggle"
+						edge="right"
+						open={keyOpen}
+						label="the key properties"
+						role="info"
+						windowKey="animation"
+						style="top: 5.5rem; right: 0"
+						onclick={() => {
+							keyOpen = !keyOpen;
+							writePanelOpen('animationKeyOpen', keyOpen);
+						}}
+					/>
+				</div>
+			{/if}
 			<!-- RIGHT: selected key + the easing that leaves it -->
 			<div
 				class="w-52 shrink-0 overflow-y-auto border-l border-border p-2"
 				class:an-pane-full={compact}
-				class:an-pane-off={compact && phonePane !== 'key'}
+				class:an-pane-off={compact ? phonePane !== 'key' : !keyOpen}
 				use:minimalScroll
 			>
 				{#if selTrack}
@@ -2756,7 +2798,7 @@
 					<span class="tp-dock-title">Animation</span>
 					<span class="tp-dock-sub" id="animation-target-name" use:fullName>{target.name || 'object'}</span>
 				</div>
-				<div class="flex shrink-0 items-center gap-2 pb-1">{@render paneSwitch()}</div>
+				<div class="flex w-full shrink-0 items-center gap-2 pb-1">{@render paneSwitch()}</div>
 			{:else}
 				<div class="flex min-w-0 shrink-0 items-center gap-2 pb-1">
 					<span class="tp-dock-title">Animation</span>
@@ -2800,7 +2842,7 @@
 					<button data-wc-chrome class="wc-act-text" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={16} />Dock</button>
 				{/snippet}
 			</WindowChrome>
-			{#if compact && target}<div class="flex shrink-0 items-center gap-2 px-2 py-1">{@render paneSwitch()}</div>{/if}
+			{#if compact && target}<div class="flex w-full shrink-0 items-center gap-2 px-2 py-1">{@render paneSwitch()}</div>{/if}
 			{@render body()}
 			<div
 				class="resize-cue absolute bottom-0 right-0 z-10 h-3.5 w-3.5 cursor-se-resize rounded-tl bg-border-strong/40"
@@ -2857,6 +2899,8 @@
 	/* compact (NOTES-38 #35): the one visible pane takes the whole width */
 	.an-pane-full { width: auto; flex: 1 1 auto; border-left: 0; border-right: 0; }
 	.an-pane-off { display: none; }
+	/* showhide-v8: the pane handles hang from zero-width holders (no margin) */
+	.an-handle-hold { position: relative; flex: 0 0 0; width: 0; z-index: 6; }
 	/* phone-polish item 5: on a touch screen the clip settings and the timeline tools WRAP instead of
 	   scrolling sideways — in landscape on the HONOR, Loop mode and Fit sat past the edge of a strip
 	   nobody knew to swipe */

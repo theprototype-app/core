@@ -83,7 +83,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(400);
 	await A.page.locator('#explorer-list [data-pack="mockpack"]').click();
 	await A.page.waitForTimeout(600);
-	await A.page.locator('#bottom-dock [data-ws-mode="props"], [data-ws-mode="props"]').first().click();
+	await h.openWsMode(A.page, ':is(#explorer-window, #explorer-list)', 'props');
 	await A.page.waitForTimeout(300);
 	const srcBtn = A.page.locator('#pack-source');
 	h.check(

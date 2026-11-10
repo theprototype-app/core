@@ -21,7 +21,7 @@ const GROSS = 3;
 /** each surface: how to open it, how to close it, what to measure */
 const SURFACES = [
 	{ id: 'flow', open: (s) => s.flowGraphClose.set(false), close: (s) => s.flowGraphClose.set(true), root: 'body' },
-	{ id: 'flowcode', open: (s) => s.flowCodeClose.set(false), close: (s) => s.flowCodeClose.set(true), root: 'body' },
+	{ id: 'timeline', open: (s) => s.timelineClose.set(false), close: (s) => s.timelineClose.set(true), root: 'body' },
 	{ id: 'animation', open: (s) => s.animationClose.set(false), close: (s) => s.animationClose.set(true), root: 'body' },
 	{ id: 'uv', open: (s) => s.uvEditorClose.set(false), close: (s) => s.uvEditorClose.set(true), root: 'body' },
 	{ id: 'shader', open: (s) => s.shaderEditorClose.set(false), close: (s) => s.shaderEditorClose.set(true), root: 'body' },

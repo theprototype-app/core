@@ -466,6 +466,11 @@
 :root.phone-shell .peers-backdrop {
 	display: none !important;
 }
+/* showhide-v8 §3: ONE model for the folded notification centre — the DRAWER (its grab bar swipes it away, its scrim
+   closes it on a tap). Its window close button was a second way out of the same sheet, so it goes there */
+:root.phone-shell #notif-panel .wc-close {
+	display: none !important;
+}
 /* 41b H15: the connected-peers panel is a framed drawer too — it scrolls as one list there, where the
    desktop popover caps its list at a few rows */
 :root.phone-shell #peers-popover[data-ps-host] {

@@ -19,7 +19,7 @@
 //      conflict for either; Settings ▸ Shortcuts lists both rows; rebinding the left one to Ctrl+[ moves
 //      the key (and resetting puts Ctrl+B back)
 //   5  a floating window dragged over the EMPTY left column (not its edge) joins it as its tab
-//   6  M8 on the dock "+": on the empty dock, Ctrl-click Flow Code and Shift-click Animation dock both
+//   6  M8 on the dock "+": on the empty dock, Ctrl-click Timeline and Shift-click Animation dock both
 //      with the menu still up; a plain click on the UV editor docks it and closes the menu
 //   7  unfolded phone (touch): the right sidebar emptied by its × stays open with "+", and a tap on "+"
 //      opens the window list
@@ -112,8 +112,8 @@ h.run(async () => {
 	});
 	await page.waitForTimeout(1200);
 	let r = await side(page, 'right');
-	h.check(r.strip && r.tabs.join() === 'inspector' && r.plus, `1.0 premise: Configure Scene is the right sidebar's only tab, and the strip has a "+" (${JSON.stringify(r)})`);
-	await clickAt(page, '[data-sidebar-tab-close="inspector"]');
+	h.check(r.strip && r.tabs.join() === 'scene' && r.plus, `1.0 premise: Configure Scene is the right sidebar's only tab, and the strip has a "+" (${JSON.stringify(r)})`);
+	await clickAt(page, '[data-sidebar-tab-close="scene"]');
 	await page.waitForTimeout(500);
 	r = await side(page, 'right');
 	h.check((await read(page, 'inspectorClose')) === true, '1.1 premise: its × closed Configure Scene');
@@ -157,10 +157,11 @@ h.run(async () => {
 	h.check(await menuOpen(page), '3.3 Shift-click on Chat keeps it open too');
 	r = await side(page, 'right');
 	h.check(['explorer', 'stats', 'chat'].every((k) => r.tabs.includes(k)), `3.4 both landed in the right sidebar (${r.tabs.join(',')})`);
-	await clickRow(page, 'Live profiler');
-	h.check(!(await menuOpen(page)), '3.5 a plain click picks Live profiler and closes the menu');
+	// showhide-v8 §5: the Live profiler is a row of the Profiler now, so the plain-click case uses Objects
+	await clickRow(page, 'Objects');
+	h.check(!(await menuOpen(page)), '3.5 a plain click picks Objects and closes the menu');
 	r = await side(page, 'right');
-	h.check(r.tabs.includes('profilerLive'), `3.6 ...and it opened in the right sidebar too (${r.tabs.join(',')})`);
+	h.check(r.tabs.includes('objects'), `3.6 ...and it opened in the right sidebar too (${r.tabs.join(',')})`);
 
 	// ---- 4. the shortcuts -----------------------------------------------------------------------------
 	const reg = await S(page, () => {
@@ -253,14 +254,14 @@ h.run(async () => {
 	const empty = await read(page, 'bottomDock.dockEmptyShown');
 	h.check(empty === true, '6.0 premise: the empty dock');
 	await clickAt(page, '#phone-dock #dock-add-view');
-	await clickRow(page, 'Flow Code', 'Control');
-	h.check(await menuOpen(page), '6.1 Ctrl-click on Flow Code keeps the dock menu open — even though the empty dock it was opened from has gone');
+	await clickRow(page, 'Timeline', 'Control');
+	h.check(await menuOpen(page), '6.1 Ctrl-click on Timeline keeps the dock menu open — even though the empty dock it was opened from has gone');
 	await clickRow(page, 'Animation', 'Shift');
 	h.check(await menuOpen(page), '6.2 Shift-click on Animation keeps it open');
 	await clickRow(page, 'UV editor');
 	h.check(!(await menuOpen(page)), '6.3 a plain click on the UV editor closes it');
 	const docked = ((await read(page, 'bottomDock.dockTabs')) ?? []).map((t) => t.key);
-	h.check(['flowcode', 'animation', 'uv'].every((k) => docked.includes(k)), `6.4 all three are docked (${docked.join(',')})`);
+	h.check(['timeline', 'animation', 'uv'].every((k) => docked.includes(k)), `6.4 all three are docked (${docked.join(',')})`);
 	// the keyboard: Ctrl+Enter picks and keeps the menu up
 	await S(page, () => document.querySelector('#dock-add-view:not([style*="display: none"])'));
 	const plus = await S(page, () => {
@@ -289,7 +290,7 @@ h.run(async () => {
 	});
 	await U.page.waitForTimeout(1300);
 	const x = await S(U.page, () => {
-		const r = document.querySelector('[data-sidebar-tab-close="inspector"]').getBoundingClientRect();
+		const r = document.querySelector('[data-sidebar-tab-close="scene"]').getBoundingClientRect();
 		return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
 	});
 	await U.page.touchscreen.tap(x.x, x.y);

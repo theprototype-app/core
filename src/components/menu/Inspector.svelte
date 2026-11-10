@@ -371,8 +371,11 @@
 	const insSide = $derived($inspectorSide);
 	// 70 W2: `popped` = this instance lives in a pop-out window ($lib/windows/panelHost): no column, no sheet
 	let { popped = false } = $props();
-	const insCovered = $derived(!popped && !sheetMode && $sidebarShown[insSide] !== 'inspector' && $sidebarTabs[insSide].includes('inspector'));
-	const columnShared = $derived($sidebarTabs[insSide].some((k) => k !== 'inspector'));
+	// showhide-v8 (R2): Properties ('inspector') and Configure Scene ('scene') are two tabs over this one element
+	const insCovered = $derived(
+		!popped && !sheetMode && !['inspector', 'scene'].includes($sidebarShown[insSide] ?? '') && $sidebarTabs[insSide].some((k) => k === 'inspector' || k === 'scene')
+	);
+	const columnShared = $derived($sidebarTabs[insSide].some((k) => k !== 'inspector' && k !== 'scene'));
 	// 53 A5: instant under reduced motion
 	const insTransition = $derived(
 		popped

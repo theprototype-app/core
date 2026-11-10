@@ -94,12 +94,22 @@ h.run(async () => {
 			if (d) for (let i = 0; i < d.length; i += 4) h = (h * 31 + d[i] + d[i + 1] * 3 + d[i + 2] * 7) >>> 0;
 			return String(h);
 		});
+	// showhide-v8 §5: the live view now takes the Profiler's main area, so the timeline canvas is only drawn while
+	// a recording is in front — leave Live (back to the recording) BEFORE the theme changes, so the canvas is
+	// mounted through the change and a stale one would keep the old ink
+	await page.evaluate(() => window.__stores.perfLiveSink.profilerLiveOpen.set(false));
+	await page.waitForSelector('#profiler-timeline canvas', { timeout: 8000 }).catch(() => {});
+	await page.waitForTimeout(500);
 	let lastPrint = await canvasPrint();
 	for (const id of themes) {
+		await page.evaluate(() => window.__stores.perfLiveSink.profilerLiveOpen.set(false));
+		await page.waitForSelector('#profiler-timeline canvas', { timeout: 8000 }).catch(() => {});
+		await page.waitForTimeout(300);
 		await page.evaluate((t) => window.__stores.themes.theme.set(t), id);
 		await page.waitForTimeout(500);
 		const print = await canvasPrint();
-		if (id !== 'dark') h.check(print !== lastPrint, `${id}: the timeline canvas repainted in the new theme's ink`);
+		if (!print) console.log(`  ${id}: no timeline canvas in front`);
+		if (id !== 'dark') h.check(!!print && print !== lastPrint, `${id}: the timeline canvas repainted in the new theme's ink`);
 		lastPrint = print;
 		let worst = Infinity;
 		let count = 0;

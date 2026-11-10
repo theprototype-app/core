@@ -14,7 +14,7 @@ const h = require('./helpers.cjs');
 
 const PHONE = { viewport: { width: 390, height: 896 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2.9 };
 const DESK = { viewport: { width: 1440, height: 900 } };
-const STORAGE = { flowDocked: 'true', explorerDocked: 'true', flowCodeDocked: 'false' };
+const STORAGE = { flowDocked: 'true', explorerDocked: 'true', timelineDocked: 'false' };
 
 const S = (page, fn, arg) => page.evaluate(fn, arg);
 
@@ -97,15 +97,16 @@ h.run(async () => {
 	const PHONE_ONLY = ['Properties', 'Objects', 'Notes', 'Layouts', 'Configure Scene', 'Statistics'];
 	const shared = sheet.filter((t) => !PHONE_ONLY.includes(t));
 	// 42 I6: the desktop "+" ALSO lists the floating windows the dock hosts there (Objects, Statistics,
-	// Live profiler, Chat, AI assistant) — after the shared rows; the phone keeps its content tabs
-	const HOSTED = ['Objects', 'Statistics', 'Live profiler', 'Chat', 'AI assistant', 'Free assets']; // 47 C1: the Asset Browser docks as a hosted tab
+	// Chat, AI assistant) — after the shared rows; the phone keeps its content tabs. showhide-v8: no Live profiler (it is
+	// a row of the Profiler's list now)
+	const HOSTED = ['Objects', 'Statistics', 'Chat', 'AI assistant', 'Free assets']; // 47 C1: the Asset Browser docks as a hosted tab
 	h.check(JSON.stringify(titles) === JSON.stringify([...shared, ...HOSTED]), `1.1 the desktop "+" lists the phone sheet's windows, same order, then the hosted windows (desktop ${JSON.stringify(titles)} vs phone ${JSON.stringify(shared)})`);
 	h.check(PHONE_ONLY.every((t) => sheet.includes(t)) && !titles.some((t) => PHONE_ONLY.includes(t) && !HOSTED.includes(t)), `1.1b the phone sheet adds the five content tabs, the desktop "+" only the ones that float there (Objects, Statistics) (${JSON.stringify(sheet)})`);
 	h.check(titles.includes('Node editor'), `2.1 ...the Node editor among them (${JSON.stringify(titles)})`);
 	h.check(titles.includes('Image editor'), `2.2 ...and the Image editor (G24)`);
 	const flowRow = (rows ?? []).find((r) => r.title === 'Node editor');
 	const exRow = (rows ?? []).find((r) => r.title === 'Explorer');
-	const fcRow = (rows ?? []).find((r) => r.title === 'Flow Code');
+	const fcRow = (rows ?? []).find((r) => r.title === 'Timeline');
 	// 44 M5: ONE registry rule — an OPEN window (docked, in a sidebar, floating) is checked, its hint says
 	// where, and its row brings it to the front THERE; only a closed one opens (into the dock). The 41 G22
 	// "Remove" / "Dock" rows are gone (closing is the tab's ×; docking a floating window is its drag/menu).
@@ -123,18 +124,19 @@ h.run(async () => {
 	h.check(d.docked.includes('flow') && d.docked.includes('explorer') && d.visible === 'flow', `3.3 its row brings the docked Node editor to the front — nothing is removed (${JSON.stringify(d)})`);
 	// a closed window opens docked, in front
 	rows = await plusRows(page);
-	await clickRow(page, 'Flow Code');
+	await clickRow(page, 'Timeline');
 	d = await dockState(page);
-	h.check(d.docked.includes('flowcode') && d.visible === 'flowcode', `3.4 a closed window's row opens it docked, in front (${JSON.stringify(d)})`);
+	h.check(d.docked.includes('timeline') && d.visible === 'timeline', `3.4 a closed window's row opens it docked, in front (${JSON.stringify(d)})`);
 
-	// a floating window: its row raises it where it floats
-	await S(page, () => window.__stores.bottomDock.armDockMode('flowcode', false));
+	// a floating window: its row moves it into the dock (showhide-v8)
+	await S(page, () => window.__stores.bottomDock.armDockMode('timeline', false));
 	await page.waitForTimeout(900);
 	rows = await plusRows(page);
-	h.check((rows ?? []).find((r) => r.title === 'Flow Code')?.hint === 'Floating', `3.6 a floating window's row says Floating (${JSON.stringify((rows ?? []).find((r) => r.title === 'Flow Code'))})`);
-	await clickRow(page, 'Flow Code');
+	h.check((rows ?? []).find((r) => r.title === 'Timeline')?.hint === 'Floating', `3.6 a floating window's row says Floating (${JSON.stringify((rows ?? []).find((r) => r.title === 'Timeline'))})`);
+	await clickRow(page, 'Timeline');
 	d = await dockState(page);
-	h.check(!d.docked.includes('flowcode') && !!(await page.locator('#flow-code-window').count()), `3.7 ...and leaves it floating (${JSON.stringify(d)})`);
+	// showhide-v8 (owner 2026-11-09, supersedes 44 M5): "+" MOVES an open floating window into the dock, in front
+	h.check(d.docked.includes('timeline') && d.visible === 'timeline', `3.7 ...and moves it into the dock, in front (${JSON.stringify(d)})`);
 
 	// light theme shot of the menu
 	await S(page, () => {

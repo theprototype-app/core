@@ -18,9 +18,9 @@
 // gestures are a real mouse. Run: APP_URL='https://theprototype.app:5393/' npm run e2e -- dock-chrome-40
 const h = require('./helpers.cjs');
 
-const VIEWS = ['flow', 'flowcode', 'animation', 'uv', 'shader', 'hud', 'explorer', 'profiler'];
-const CLOSERS = { flow: 'flowGraphClose', flowcode: 'flowCodeClose', animation: 'animationClose', uv: 'uvEditorClose', shader: 'shaderEditorClose', hud: 'hudEditorClose', explorer: 'explorerClose', profiler: 'profilerClose' };
-const DOCKED_KEYS = { flowDocked: 'true', flowCodeDocked: 'true', animationDocked: 'true', uvDocked: 'true', shaderDocked: 'true', hudDocked: 'true', explorerDocked: 'true', profilerDocked: 'true', codeDocked: 'true' };
+const VIEWS = ['flow', 'timeline', 'animation', 'uv', 'shader', 'hud', 'explorer', 'profiler'];
+const CLOSERS = { flow: 'flowGraphClose', timeline: 'timelineClose', animation: 'animationClose', uv: 'uvEditorClose', shader: 'shaderEditorClose', hud: 'hudEditorClose', explorer: 'explorerClose', profiler: 'profilerClose' };
+const DOCKED_KEYS = { flowDocked: 'true', timelineDocked: 'true', animationDocked: 'true', uvDocked: 'true', shaderDocked: 'true', hudDocked: 'true', explorerDocked: 'true', profilerDocked: 'true', codeDocked: 'true' };
 const STRIP = '.dt-scroll';
 const LONG = 'B2ack wall super — the long name of an imported wall piece.glb';
 
@@ -138,7 +138,7 @@ h.run(async () => {
 		});
 		h.check(under === 'ok', `F9.1d the phone's Play (#ps-play, the top of its raised circle) is on top while the Windows sheet is open (${under})`);
 		h.check(!!bar.toggleRight && bar.toggleRight <= bar.vw, `F9.1c every row's switch is on screen (${JSON.stringify(bar)})`);
-		h.check(['flow', 'explorer', 'animation', 'uv', 'shader', 'hud', 'profiler', 'code', 'flowcode'].every((k) => sheet.rows.includes(k)), `F9.2 ...listing EVERY window, the Node editor too (${sheet.rows.join(',')})`);
+		h.check(['flow', 'explorer', 'animation', 'uv', 'shader', 'hud', 'profiler', 'code', 'timeline'].every((k) => sheet.rows.includes(k)), `F9.2 ...listing EVERY window, the Node editor too (${sheet.rows.join(',')})`);
 		const exToggle = page.locator('#dock-view-toggle-explorer');
 		h.check((await exToggle.getAttribute('aria-pressed')) === 'false', 'F9.3 a closed window reads OFF');
 		await exToggle.tap();

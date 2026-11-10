@@ -310,9 +310,11 @@ h.run(async () => {
 	h.check(await page.locator('#code-ws-left').isVisible(), 'F6: the header toggle brings it back');
 	const lg = await page.locator('.code-side-grip-l').boundingBox();
 	const w0 = await read(page, 'codeSidebars.codeLeftWidth');
-	await page.mouse.move(lg.x + 3, lg.y + 40);
+	// showhide-v8: the files sidebar's edge handle hangs on this edge 40-108 px down, so grab the grip below it
+	const gy = lg.y + Math.max(140, lg.height / 2);
+	await page.mouse.move(lg.x + 3, gy);
 	await page.mouse.down();
-	await page.mouse.move(lg.x + 63, lg.y + 40, { steps: 6 });
+	await page.mouse.move(lg.x + 63, gy, { steps: 6 });
 	await page.mouse.up();
 	const w1 = await read(page, 'codeSidebars.codeLeftWidth');
 	h.check(w1 >= w0 + 50, 'F6: dragging its edge widens it (' + w0 + ' -> ' + w1 + ')');

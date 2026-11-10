@@ -68,13 +68,13 @@ h.run(async () => {
 	const sys = await ring('tools');
 	const prof = await ring('profile');
 	h.check(sys.includes('nav:profile') && !sys.includes('moment'), `1.1 Tools has "Profile ▸" (${sys.join(', ')})`);
-	h.check(prof.join(',') === 'perf:record,perf:detailed,moment', `1.2 Profile = Record, Record detailed, Report moment (${prof.join(', ')})`);
+	h.check(prof.join(',') === 'perf:record,perf:detailed,moment,problem', `1.2 Profile = Record, Record detailed, Report moment, Report a problem (37 R20) (${prof.join(', ')})`);
 	h.check(!(await pill()).visible, '1.3 no pill while nothing records and nobody watches');
 	await menu('perf:record');
 	await hp.waitForTimeout(600);
 	const rec1 = await hRec();
 	h.check(rec1?.mode === 'light', `1.4 Record started a light recording on the headset (${JSON.stringify(rec1)})`);
-	h.check((await ring('profile')).join(',') === 'perf:stop,moment', '1.5 while recording, Stop replaces Record / Record detailed');
+	h.check((await ring('profile')).join(',') === 'perf:stop,moment,problem', '1.5 while recording, Stop replaces Record / Record detailed');
 	await hp.waitForTimeout(1200);
 	const p1 = await pill();
 	h.check(p1.visible && /^● REC 0:0[1-9]$/.test(p1.text), `1.6 the pill says REC and the clock ("${p1.text}")`);

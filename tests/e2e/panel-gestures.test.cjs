@@ -18,7 +18,7 @@ const VIEWS = [
 	['folded', touch(390, 896)],
 	['landscape', touch(896, 390)]
 ];
-const STORAGE = { mobileUndockAllowed: 'true', flowCodeDocked: 'false', animationDocked: 'false' };
+const STORAGE = { mobileUndockAllowed: 'true', timelineDocked: 'false', animationDocked: 'false' };
 const OUT = process.env.OUT || 'test-results/panel-gestures';
 
 const groups = (page) =>
@@ -28,16 +28,16 @@ const groups = (page) =>
 		return g;
 	});
 
-/** Objects + Flow Code + Animation as one floating group, parked at `at`, narrowed so its tabs overflow */
+/** Objects + Timeline + Animation as one floating group, parked at `at`, narrowed so its tabs overflow */
 async function makeGroup(page, at) {
 	await page.evaluate(async (at) => {
 		const s = window.__stores;
 		s.objectListClose.set(false);
-		s.flowCodeClose.set(false);
+		s.timelineClose.set(false);
 		s.animationClose.set(false);
 		await new Promise((r) => setTimeout(r, 900));
 		const wt = s.windowTabs;
-		wt.mergeWindows('objects', 'flowcode');
+		wt.mergeWindows('objects', 'timeline');
 		wt.mergeWindows('objects', 'animation');
 		await new Promise((r) => setTimeout(r, 300));
 		let g;
@@ -216,7 +216,7 @@ h.run(async () => {
 			const wt = window.__stores.windowTabs;
 			let g;
 			wt.tabGroups.subscribe((v) => (g = v))();
-			for (const k of ['objects', 'flowcode', 'animation']) if (g[0] && !g[0].members.includes(k)) wt.mergeWindows('objects', k);
+			for (const k of ['objects', 'timeline', 'animation']) if (g[0] && !g[0].members.includes(k)) wt.mergeWindows('objects', k);
 			await new Promise((r) => setTimeout(r, 300));
 			wt.tabGroups.subscribe((v) => (g = v))();
 			if (g[0]) wt.moveGroup(g[0].id, at.x - g[0].rect.left, at.y - g[0].rect.top);
@@ -378,9 +378,9 @@ h.run(async () => {
 		const docked = await page.evaluate(async () => {
 			const s = window.__stores;
 			// close what E does not use, so nothing floats over the dock row (on a folded phone S's windows float;
-			// the Flow Code text window would catch the E4 drop)
+			// the floating Timeline window would catch the E4 drop)
 			s.sceneBudget.statsOpen.set(false);
-			s.flowCodeClose.set(true);
+			s.timelineClose.set(true);
 			s.explorerClose.set(true);
 			s.toastStore.set([]); // an auto-quality card sits over the dock row on a loaded headless page
 			await new Promise((r) => setTimeout(r, 300));

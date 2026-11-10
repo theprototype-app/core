@@ -54,7 +54,7 @@
 	/** @type {{ id: string, title: string, key: string,
 	 *   defaultRect?: { left?: number, top?: number, right?: number, bottom?: number },
 	 *   minW?: number, width?: number, tabs?: any, actions?: any, status?: any, children: any,
-	 *   onclose?: () => void }} */
+	 *   onclose?: () => void, icon?: string }} */
 	let {
 		id,
 		title,
@@ -68,7 +68,9 @@
 		children,
 		// 40 F1: what a swipe-away does on the phone sheet; absent = the sheet only resizes (a
 		// toolbox that belongs to an edit session closes through its own Done)
-		onclose = undefined
+		onclose = undefined,
+		// showhide-v8 §3: a role icon before the title (Lucide name); the six-dot grip is gone (the whole header drags)
+		icon = ''
 	} = $props();
 
 	// 18-C3: the exact 640 breakpoint the Inspector and the notes drawer use for
@@ -124,7 +126,7 @@
 		</div>
 	{/if}
 	<div class="toolbox-header move-handle">
-		<Icon name="grip-vertical" size={16} aria-hidden="true" />
+		{#if icon}<Icon name={icon} size={16} aria-hidden="true" />{/if}
 		<span class="toolbox-title">{title}</span>
 		<span class="toolbox-spacer"></span>
 		{@render actions?.()}
@@ -145,6 +147,10 @@
 </div>
 
 <style>
+	/* showhide-v8 §3: on the phone sheet a swipe down closes the toolbox, so its own close button is redundant there */
+	.tbx-sheet :global([data-tbx-close]) {
+		display: none;
+	}
 	.toolbox {
 		/* alias tokens (the redesign tokens, defined in every theme) */
 		--tbx-hover: var(--surface-hover);

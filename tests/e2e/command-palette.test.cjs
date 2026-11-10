@@ -24,6 +24,39 @@ h.run(async () => {
 		await page.evaluate(() => document.activeElement?.id === 'command-palette-input'),
 		'the search field has focus when the palette opens'
 	);
+	// showhide-v8 §5 — the palette is a PANEL: field above list, a background of its own, at every width. A merge left the
+	// panel styling inside the on-screen-keyboard rule, so without a keyboard the field and the list sat side by side on
+	// the bare scene (the owner's shots on desktop, unfolded and folded).
+	const panelShape = () =>
+		page.evaluate(() => {
+			const cp = document.getElementById('command-palette');
+			const f = document.querySelector('#command-palette .cp-search')?.getBoundingClientRect();
+			const l = document.getElementById('command-palette-list')?.getBoundingClientRect();
+			const cs = cp ? getComputedStyle(cp) : null;
+			const bg = cs?.backgroundColor ?? '';
+			return {
+				dir: cs?.flexDirection,
+				bg,
+				painted: !!bg && bg !== 'transparent' && !/rgba\(.*,\s*0\)$/.test(bg),
+				stacked: !!f && !!l && l.top >= f.bottom - 1 && Math.abs(l.left - f.left) < 4,
+				kb: document.documentElement.classList.contains('kb-open')
+			};
+		});
+	const vp0 = page.viewportSize();
+	const isPanel = (s) => s.dir === 'column' && s.painted && s.stacked;
+	for (const [label, vp] of [['desktop', { width: 1600, height: 950 }], ['unfolded', { width: 1080, height: 1200 }], ['folded', { width: 412, height: 915 }]]) {
+		await page.setViewportSize(vp);
+		await page.waitForTimeout(250);
+		const s = await panelShape();
+		h.check(!s.kb && isPanel(s), `palette is a panel (field above list, own background) on ${label} (${JSON.stringify(s)})`);
+	}
+	// counterfactual: the side-by-side layout the bug drew fails the same check
+	await page.evaluate(() => document.getElementById('command-palette').style.setProperty('flex-direction', 'row'));
+	h.check(!isPanel(await panelShape()), '(counterfactual) a row layout is caught');
+	await page.evaluate(() => document.getElementById('command-palette').style.removeProperty('flex-direction'));
+	if (vp0) await page.setViewportSize(vp0);
+	await page.waitForTimeout(250);
+
 	const listed = await page.evaluate(() => {
 		const kinds = new Set([...document.querySelectorAll('#command-palette .cp-item')].map((b) => b.dataset.kind));
 		return [...kinds];

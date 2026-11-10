@@ -198,6 +198,11 @@
 		PanelBottom,
 		PanelLeft,
 		PanelLeftClose,
+		PanelLeftOpen, // showhide-v8: the pane handles' menus
+		PanelRightOpen,
+		MoveVertical, // showhide-v8: the sidebar handle's Move up / down
+		SunDim, // showhide-v8: the sidebar handle's Dim at rest
+		Fullscreen, // showhide-v8: Windows ▸ Full screen
 		PanelRight,
 		PanelRightClose,
 		Pause,
@@ -438,6 +443,11 @@
 		'panel-bottom': PanelBottom,
 		'panel-left': PanelLeft,
 		'panel-left-close': PanelLeftClose,
+		'panel-left-open': PanelLeftOpen,
+		'panel-right-open': PanelRightOpen,
+		'move-vertical': MoveVertical,
+		'sun-dim': SunDim,
+		fullscreen: Fullscreen,
 		'panel-right': PanelRight,
 		'panel-right-close': PanelRightClose,
 		pause: Pause,

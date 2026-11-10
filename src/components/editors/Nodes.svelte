@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { untrack, tick, onMount } from 'svelte';
+	import PaneHandle from '../ui/PaneHandle.svelte'; // showhide-v8: the one pane-handle pattern
 	import Icon from '../ui/Icon.svelte';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import {
@@ -2205,32 +2206,32 @@
 			</div>
 		</div>
 	{/if}
-	<!-- palette collapse/side controls: notebook-tab buttons on the divider (82) -->
+	<!-- showhide-v8 (owner 2026-11-09): the palette's ARROW handle (the one pane-handle pattern, $components/ui/PaneHandle)
+	     on the divider, taking no margin; the swap button went — "Move the palette to the other side" is in its menu -->
 	<div class="relative z-10 w-0" style="order: 2">
-		<button
+		<PaneHandle
 			id="palette-toggle"
-			class="palette-tab {paletteSide === 'right' ? 'palette-tab-mirrored' : ''} absolute top-8 flex h-14 w-4 items-center justify-center bg-surface-2 text-[10px] text-text-2 hover:bg-surface-active"
-			style="{paletteSide === 'right' ? 'right' : 'left'}: -1px"
-			title={paletteOpen ? 'Hide the node palette' : 'Show the node palette'}
+			edge={paletteSide === 'right' ? 'right' : 'left'}
+			open={paletteOpen}
+			label="the node palette"
+			windowKey="flow"
+			style="top: 2.5rem; {paletteSide === 'right' ? 'right' : 'left'}: 0"
 			onclick={() => {
 				paletteOpen = !paletteOpen;
 				writePanelOpen('flowPaletteOpen', paletteOpen);
 			}}
-		>
-			{paletteOpen ? (paletteSide === 'right' ? '▸' : '◂') : paletteSide === 'right' ? '◂' : '▸'}
-		</button>
-		<button
-			id="palette-side"
-			class="palette-tab {paletteSide === 'right' ? 'palette-tab-mirrored' : ''} absolute top-24 flex h-9 w-4 items-center justify-center bg-surface-2 text-[9px] text-text-2 hover:bg-surface-active"
-			style="{paletteSide === 'right' ? 'right' : 'left'}: -1px"
-			title="Move the palette to the other side" aria-label="Move the palette to the other side"
-			onclick={() => {
-				paletteSide = paletteSide === 'right' ? 'left' : 'right';
-				safeStorage.setItem('flowPaletteSide', paletteSide);
-			}}
-		>
-			⇄
-		</button>
+			extraItems={[
+				{
+					label: 'Move the palette to the other side',
+					icon: 'arrow-left-right',
+					tooltip: 'The palette and the properties trade sides',
+					action: () => {
+						paletteSide = paletteSide === 'right' ? 'left' : 'right';
+						safeStorage.setItem('flowPaletteSide', paletteSide);
+					}
+				}
+			]}
+		/>
 	</div>
 	<!-- 41 G15: the graph column = the breadcrumb bar (in the layout flow, so it can never cover
 	     the graph — the old floating chips wrapped into a tower over the nodes on a phone) + the pane -->
@@ -2417,17 +2418,22 @@
 		<PeerCursors {viewport} />
 	</div>
 	</div>
-	<!-- 166/179: flow PROPERTIES panel, auto-reflowed opposite the palette -->
+	<!-- 166/179: flow PROPERTIES panel, auto-reflowed opposite the palette; showhide-v8: its arrow handle carries
+	     the panel's role icon (the hybrid) -->
 	<div class="relative z-10 w-0" style="order: {propsSide === 'left' ? 0 : 4}">
-		<button
+		<PaneHandle
 			id="flow-props-toggle"
-			class="palette-tab {propsSide === 'left' ? '' : 'palette-tab-mirrored'} absolute top-8 flex h-14 w-4 items-center justify-center bg-surface-2 text-xs text-text-2 hover:bg-surface-active"
-			style="{propsSide === 'left' ? 'left' : 'right'}: -1px"
-			title={propsOpen ? 'Hide properties' : 'Show properties'} aria-label={propsOpen ? 'Hide properties' : 'Show properties'}
-			onclick={() => { propsOpen = !propsOpen; writePanelOpen('flowPropsOpen', propsOpen); }}
-		>
-			<Icon name="settings" size={16} data-icon="settings" />
-		</button>
+			edge={propsSide === 'left' ? 'left' : 'right'}
+			open={propsOpen}
+			label="properties"
+			role={propsTab === 'info' ? 'info' : 'settings'}
+			windowKey="flow"
+			style="top: 2.5rem; {propsSide === 'left' ? 'left' : 'right'}: 0"
+			onclick={() => {
+				propsOpen = !propsOpen;
+				writePanelOpen('flowPropsOpen', propsOpen);
+			}}
+		/>
 	</div>
 	{#if propsOpen}
 		<div id="flow-props" class="relative flex h-full w-52 shrink-0 flex-col gap-2 overflow-y-auto bg-surface-1 p-2 text-xs text-text-2" use:minimalScroll style="order: {propsSide === 'left' ? -1 : 5}">

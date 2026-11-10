@@ -4274,10 +4274,12 @@
 	</div>
 	<div class="obj-scroller flex min-h-0 flex-1 flex-col overflow-y-auto rounded-lg rounded-br rounded-bl bg-transparent text-text-muted" use:minimalScroll>
 		<!-- 24-B2: the tree is the keyboard surface — focusable, arrows/Enter/F2/type-ahead
-		     walk the VISIBLE rows (see listKeydown); a subtle ring says it has focus -->
+		     walk the VISIBLE rows (see listKeydown); a subtle ring says it has focus.
+		     showhide-v8 §5: w-full, not Tailwind's `container` — that one caps max-width per breakpoint
+		     (1280 px at xl), so the docked list stopped short of the dock's right edge on a wide screen -->
 		<div
 			id="object-tree"
-			class="container outline-none focus-visible:ring-1 focus-visible:ring-accent"
+			class="w-full outline-none focus-visible:ring-1 focus-visible:ring-accent"
 			role="tree"
 			tabindex="0"
 			aria-label="Objects"

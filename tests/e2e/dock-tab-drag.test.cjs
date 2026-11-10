@@ -25,7 +25,7 @@
 const h = require('./helpers.cjs');
 
 const VISIBLE_PANEL =
-	'#flow-list, #explorer-list, #flow-code-dock, #uv-dock, #shader-editor, #hud-dock, #animation-dock';
+	'#flow-list, #explorer-list, #timeline-dock, #uv-dock, #shader-editor, #hud-dock, #animation-dock';
 
 const state = (page) =>
 	page.evaluate((sel) => {

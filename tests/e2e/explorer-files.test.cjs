@@ -27,7 +27,7 @@ h.run(async () => {
 
 	// 197 note: single-click SELECTS; the Properties (ⓘ) panel shows the details
 	// once it's open (via its tab or right-click Properties). Open the tab, pick.
-	await A.page.locator('[data-ws-mode="props"]').first().click();
+	await h.openWsMode(A.page, ':is(#explorer-window, #explorer-list)', 'props');
 	await A.page.waitForTimeout(200);
 	await A.page.locator('.explorer-card', { hasText: 'notes.txt' }).click();
 	await A.page.waitForTimeout(700);

@@ -9,6 +9,8 @@ import { bodyDrag } from './windowBodyDrag';
 import { onLayoutRestore } from './uiLayoutsCore';
 import { scaledPx } from './uiScale'; // 53 A1: a window's minimum size follows the UI scale
 import { isForeign } from './windows/winEnv.js';
+import { get } from 'svelte/store';
+import { snapToEdges, layoutLocked, snapRectToEdges } from './windowPrefs.js'; // showhide-v8 §6 Windows ▸ switches
 
 // 169: live reset registry — every draggable window (this action + the object
 // list's own dragMe) registers a reset fn so Settings can rescue windows stuck
@@ -423,6 +425,7 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 	/** @param {any} e */
 	function down(e) {
 		if (suspended()) return;
+		if (get(layoutLocked)) return; // showhide-v8 §6: Lock layout — no accidental drag
 		// 36 F4: header controls stay clickable — a TAB in the header too (windowGrip.js)
 		if (e.button !== 0 || !isHeaderDrag(e.target)) return;
 		dragging = true;
@@ -444,6 +447,13 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 		rect.left = e.clientX - grabX;
 		rect.top = e.clientY - grabY;
 		clamp(false, true); // partial off-screen allowed, and over the dock/bottom chrome
+		if (get(snapToEdges)) {
+			// showhide-v8 §6: Snap to edges — a magnet while dragging; the rest clamp in up() still lifts the header
+			// out from under the bottom chrome, so a bottom snap never hides it
+			const at = snapRectToEdges(rect.left, rect.top, node.offsetWidth, node.offsetHeight, window.innerWidth, window.innerHeight);
+			rect.left = at.left;
+			rect.top = at.top;
+		}
 		apply();
 	}
 
@@ -470,7 +480,7 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 	node.addEventListener('pointercancel', cancel);
 	// 44 M1: an ungrouped floating window also moves by a press-and-drag on its body (windowBodyDrag
 	// hands the gesture to the header above once it travels)
-	const body = bodyDrag(node, { enabled: () => !suspended() });
+	const body = bodyDrag(node, { enabled: () => !suspended() && !get(layoutLocked) });
 
 	// --- B7: opt-in resize grabber (bottom-right), Flow's corner-resize feel ---
 	/** @type {any} */
@@ -491,6 +501,12 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 		let sizing = false;
 		/** @param {any} e */
 		const gdown = (e) => {
+			if (get(layoutLocked)) {
+				// showhide-v8 §6: Lock layout — the corner does not resize (and still never starts a drag)
+				e.preventDefault();
+				e.stopPropagation();
+				return;
+			}
 			sizing = true;
 			atRest = false;
 			// take the CURRENT rendered size as the baseline (the window may still be

@@ -188,7 +188,7 @@
 	// auto-open stays UNPINNED so it does not fight a user who closed it.
 	let shell = $state(/** @type {any} */ (null));
 	$effect(() => {
-		if (one) untrack(() => shell?.showSecondary('props'));
+		if (one) untrack(() => shell?.showSecondary('props', true));
 	});
 
 	// --- D2: the left column, split between the screens list and the palette ------
@@ -995,7 +995,7 @@
 <svelte:window onresize={fitToViewport} bind:innerWidth={viewW} bind:innerHeight={viewH} />
 
 {#snippet body()}
-	<WindowShell bind:this={shell} key="hud" primaryLabel="Screens" secondaryModes={[{ key: 'props', icon: 'settings', label: 'Properties' }]}>
+	<WindowShell bind:this={shell} key="hud" mainLabel="Layout" primaryLabel="Screens" secondaryModes={[{ key: 'props', icon: 'settings', label: 'Properties' }]}>
 		{#snippet topbar()}
 			<div class="flex flex-wrap items-center gap-1.5">
 				<!-- 21-F1: the four Add shortcuts are gone. The palette in the left column is the

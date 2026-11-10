@@ -13,7 +13,7 @@
 //      with only "+" and the dock chrome, the helper line, its height reserved; T again closes it
 //   2  the empty strip and body take a drop: a floating window dropped on the empty body docks
 //   3  "+" on the empty dock: the floating Node editor's row is checked "Floating" and RAISES it (it
-//      stays floating); a closed view (Flow Code) opens docked and ends the empty state
+//      stays floating); a closed view (Timeline) opens docked and ends the empty state
 //   4  Statistics in the RIGHT sidebar behind Configure Scene: "+" ▸ Statistics brings its SIDEBAR tab
 //      to the front — no second copy, nothing docked; the Explorer in the LEFT sidebar the same
 //   5  a floating Chat: "+" ▸ Chat raises it where it is (not docked)
@@ -124,7 +124,7 @@ const topWindow = (page) =>
 
 h.run(async () => {
 	const browser = await h.launch();
-	const D = await h.setupPage(browser, 'desk', { context: DESK, storage: { flowDocked: 'true', explorerDocked: 'false', flowCodeDocked: 'true', statsDocked: 'false', chatDocked: 'false' } });
+	const D = await h.setupPage(browser, 'desk', { context: DESK, storage: { flowDocked: 'true', explorerDocked: 'false', timelineDocked: 'true', statsDocked: 'false', chatDocked: 'false' } });
 	const page = D.page;
 
 	// ---- 1. T after the last docked view was dragged out ---------------------------------------
@@ -219,12 +219,12 @@ h.run(async () => {
 	h.check((await topWindow(page)) === 'flow-window', `3.3 ...it is brought to the front (${await topWindow(page)})`);
 
 	rows = await plusRows(page);
-	const fc = (rows ?? []).find((r) => r.title === 'Flow Code');
+	const fc = (rows ?? []).find((r) => r.title === 'Timeline');
 	h.check(!!fc && !fc.checked && fc.hint === 'Open', `3.4 a closed window's row says Open (${JSON.stringify(fc)})`);
-	await clickRow(page, 'Flow Code');
+	await clickRow(page, 'Timeline');
 	docked = (await read(page, 'bottomDock.dockTabs')) ?? [];
 	v = await dockView(page);
-	h.check(docked.map((t) => t.key).join() === 'flowcode' && !v.empty && v.tabs === 1, `3.5 ...and opens it docked, which ends the empty state (${docked.map((t) => t.key)} ${JSON.stringify(v)})`);
+	h.check(docked.map((t) => t.key).join() === 'timeline' && !v.empty && v.tabs === 1, `3.5 ...and opens it docked, which ends the empty state (${docked.map((t) => t.key)} ${JSON.stringify(v)})`);
 	h.check(!(await read(page, 'bottomDock.dockEmptyOpen')), '3.6 the empty flag cleared itself when a tab arrived');
 
 	// ---- 4. a window in a SIDEBAR: "+" focuses its sidebar tab --------------------------------------
@@ -315,7 +315,7 @@ h.run(async () => {
 	h.check(Math.abs(m6.statsRight - (m6.w - m6.col)) <= 1 && Math.abs(m6.statsRight - m6.frameRight) <= 1, `6.1 the docked Statistics stops at the full-height column, like the dock frame (${JSON.stringify(m6)})`);
 	await page.screenshot({ path: OUT + '/m6-hosted-beside-full-sidebar.png' });
 	// ...and every EDITOR's own docked pane (the Shader editor's scoped rule ran under it too)
-	const panes = { flow: '#flow-list', flowcode: '#flow-code-dock', animation: '#animation-dock', uv: '#uv-dock', shader: '#shader-editor', hud: '#hud-dock', explorer: '#explorer-list', profiler: '#profiler-dock', code: '#code-ws-dock' };
+	const panes = { flow: '#flow-list', timeline: '#timeline-dock', animation: '#animation-dock', uv: '#uv-dock', shader: '#shader-editor', hud: '#hud-dock', explorer: '#explorer-list', profiler: '#profiler-dock', code: '#code-ws-dock' };
 	/** @type {Record<string, number>} */
 	const rights = {};
 	for (const key of Object.keys(panes)) {

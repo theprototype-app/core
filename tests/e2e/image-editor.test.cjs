@@ -282,7 +282,7 @@ h.run(async () => {
 	h.check((await texOf(A, box1)).url === box1Before.url, 'the texture picked from disk (no link) was left alone');
 
 	// ---- §7 Restore original ------------------------------------------------------------
-	await A.page.locator('[data-ws-mode="history"]').click();
+	await h.openWsMode(A.page, '#image-editor-window', 'history');
 	await A.page.locator('#image-editor-restore-original').click();
 	await until(async () => (await itemOf(A, quad.id))?.hash === quad.hash, 20000);
 	h.check((await itemOf(A, quad.id))?.hash === quad.hash, 'Restore original put the original bytes back');
@@ -294,7 +294,7 @@ h.run(async () => {
 	h.check(v2.length === 2, `restoring adds no duplicate version (${v2.length})`);
 	const current = await A.page.locator('.ie-version-current .ie-version-label').textContent();
 	h.check(/Original/.test(current ?? ''), `the Original row is marked current ("${current}")`);
-	await A.page.locator('[data-ws-mode="edit"]').click();
+	await h.openWsMode(A.page, '#image-editor-window', 'edit');
 
 	// ---- §8 Save as copy ---------------------------------------------------------------
 	await A.page.locator('#image-editor-flip-h').click();
@@ -397,7 +397,7 @@ h.run(async () => {
 	// 41 G18: on a phone the panel starts HIDDEN until the user opens it (the ✎ tab)
 	const hiddenFirst = await S(P, () => document.querySelectorAll('#image-editor-window .ws-panel-secondary').length);
 	h.check(hiddenFirst === 0, `on a phone the Edit panel starts hidden (${hiddenFirst})`);
-	await P.page.locator('#image-editor-window [data-ws-mode="edit"]').tap();
+	await h.openWsMode(P.page, '#image-editor-window', 'edit', { tap: true });
 	await P.page.waitForTimeout(400);
 	const stack = await S(P, () => {
 		const c = document.querySelector('#image-editor-canvas-wrap').getBoundingClientRect();
@@ -449,7 +449,7 @@ h.run(async () => {
 	// the sidebar's scroller is shared by Edit and Versions: scrolled down in Edit, Versions
 	// must still open at its top (it opened scrolled past a short list, which read as empty)
 	await S(P, () => (document.querySelector('#image-editor-window .ws-panel-secondary .overflow-y-auto').scrollTop = 600));
-	await P.page.locator('[data-ws-mode="history"]').tap();
+	await h.openWsMode(P.page, '#image-editor-window', 'history', { tap: true });
 	await P.page.waitForTimeout(300);
 	const vis = await S(P, () => {
 		const pane = document.querySelector('#image-editor-history').getBoundingClientRect();

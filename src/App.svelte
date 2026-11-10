@@ -41,7 +41,7 @@
   import CharacterDialogs from './components/characters/CharacterDialogs.svelte'
   import PlaceholderTooltip from './components/menu/PlaceholderTooltip.svelte'
   import Flow from './components/Flow.svelte'
-  import FlowCode from './components/editors/FlowCode.svelte'
+  import { startFlowCodeRedirect } from '$lib/flowCodeRedirect.js'
   import AnimationWindow from './components/editors/AnimationWindow.svelte'
   import UvEditor from './components/editors/UvEditor.svelte'
   import ShaderEditor from './components/editors/ShaderEditor.svelte'
@@ -58,7 +58,6 @@
   import StatsOverlay from './components/menu/StatsOverlay.svelte'
   import MomentReport from './components/menu/MomentReport.svelte'
   import ProblemReport from './components/menu/ProblemReport.svelte' // 37 R20
-  import ProfilerLive from './components/menu/ProfilerLive.svelte'
   import { startSceneMetrics, budgetSummary } from './lib/sceneBudget'
   import { startPerfRecorder } from './lib/perf/recorder'
   import { startDetailedProbe } from './lib/perf/detailed'
@@ -228,6 +227,9 @@ import { startMusicToolbox } from './lib/musicToolbox'
 
   // node graph animations keep running even when the flow drawer is closed
   onMount(() => {
+    startFlowCodeRedirect() // showhide-v8 §4: the old Flow code tab opens Code's flow code tab
+    // showhide-v8 §6: Windows ▸ Remember layout per scene (both modules lazily: neither belongs on the boot path)
+    void Promise.all([import('$lib/uiLayouts'), import('$lib/levels')]).then(([u, l]) => u.startSceneLayouts(l.currentLevel))
     // 27-B: FIRST, so a failure during the rest of this boot is already recorded.
     startDiagnostics()
     startWireErrors()
@@ -474,7 +476,6 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <!-- 70 W2: a panel in a pop-out window is unmounted here (one panel, one place); it remounts in its
      own last dock / float mode when it comes back -->
 {#if !$panelAway.flow}<Flow />{/if}
-{#if !$panelAway.flowcode}<FlowCode />{/if}
 {#if !$panelAway.animation}<AnimationWindow />{/if}
 {#if !$panelAway.uv}<UvEditor />{/if}
 {#if !$panelAway.shader}<SvelteFlowProvider><ShaderEditor /></SvelteFlowProvider>{/if}
@@ -556,7 +557,6 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <StatsOverlay />
 <MomentReport />
 <ProblemReport />
-<ProfilerLive />
 <!-- 47-cc0: the Asset Browser — loaded the first time it opens, so the boot carries none of it -->
 {#if $assetBrowserOpen}
 {#await import('./components/editors/AssetBrowser.svelte') then m}<m.default />{/await}

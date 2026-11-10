@@ -26,7 +26,7 @@ const h = require('./helpers.cjs');
 
 /** the visible docked panel — ids repeat across hidden panels, so every read scopes here */
 const VISIBLE_PANEL =
-	'#flow-list, #explorer-list, #flow-code-dock, #uv-dock, #shader-editor, #hud-dock, #animation-dock';
+	'#flow-list, #explorer-list, #timeline-dock, #uv-dock, #shader-editor, #hud-dock, #animation-dock';
 
 const dockState = (page) =>
 	page.evaluate(() => {
@@ -42,7 +42,7 @@ const dockState = (page) =>
 		// a docked panel renders as #flow-list / #explorer-list etc. and hides itself
 		// with a `hidden` class rather than unmounting (the ShaderEditor is the one
 		// {#if}); "rendered" therefore means present AND not hidden
-		const boxes = ['#flow-list', '#explorer-list', '#flow-code-dock', '#uv-dock'];
+		const boxes = ['#flow-list', '#explorer-list', '#timeline-dock', '#uv-dock'];
 		const shown = boxes
 			.map((sel) => document.querySelector(sel))
 			.filter((el) => el && !el.classList.contains('hidden'));
@@ -420,7 +420,7 @@ h.run(async () => {
 
 	// add one more tab and it is marked too — the state is read per open, not a fixed list
 	await A.page.evaluate(() => {
-		window.__stores.flowCodeClose.set(false);
+		window.__stores.timelineClose.set(false);
 		window.__stores.bottomDock.activateDock('flow');
 	});
 	await A.page.waitForTimeout(600);
@@ -429,9 +429,9 @@ h.run(async () => {
 	const marked2 = await A.page.evaluate(() =>
 		[...document.querySelectorAll('[role="menuitem"].ctx-checked')].map((el) => el.querySelector('.flex-1')?.textContent.trim())
 	);
-	h.check(marked2.includes('Flow Code') && marked2.length === 3, `7.3 docking Flow Code marks its row too (${marked2.join(' | ')})`);
+	h.check(marked2.includes('Timeline') && marked2.length === 3, `7.3 docking Timeline marks its row too (${marked2.join(' | ')})`);
 	await closeMenu();
-	await A.page.evaluate(() => window.__stores.flowCodeClose.set(true));
+	await A.page.evaluate(() => window.__stores.timelineClose.set(true));
 	await A.page.waitForTimeout(500);
 
 	// --- 8. a TAB's own context menu ---

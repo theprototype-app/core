@@ -432,7 +432,7 @@ h.run(async () => {
 	// =====================================================================
 	// 6. THE PROPERTIES PANEL RESIZES (right-hand side) AND REMEMBERS
 	// =====================================================================
-	await A.page.locator('[data-ws-mode="props"]').click();
+	await h.openWsMode(A.page, ':is(#explorer-window, #explorer-list)', 'props');
 	await A.page.waitForTimeout(500);
 	let g = await shellGeom(A);
 	h.check(!!g.panel, 'the Properties panel is open');
@@ -515,8 +515,9 @@ h.run(async () => {
 		`the width follows it across (${left.panel.width | 0}px)`
 	);
 	h.check(
-		left.grip.left >= left.panel.right - 2,
-		`the grip is on the panel's INNER edge again, not stranded on the far side (grip ${left.grip.left | 0}, panel right ${left.panel.right | 0})`
+		// showhide-v8: no chrome column any more — the grip straddles the panel's inner border (centred on it)
+		Math.abs((left.grip.left + left.grip.right) / 2 - left.panel.right) <= 4,
+		`the grip is on the panel's INNER edge again, not stranded on the far side (grip ${left.grip.left | 0}..${left.grip.right | 0}, panel right ${left.panel.right | 0})`
 	);
 	// mirrored: on the LEFT the grip is on the panel's RIGHT edge, so dragging RIGHT widens
 	await dragBy(A, left.grip, 70);

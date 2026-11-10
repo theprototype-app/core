@@ -69,7 +69,7 @@ async function closeAll(page) {
 		set(s.viewportMenu, null);
 		set(s.closeMenu, true);
 		set(s.connectDrawerOpen, false);
-		for (const k of ['flowGraphClose', 'flowCodeClose', 'animationClose', 'uvEditorClose', 'shaderEditorClose', 'hudEditorClose', 'profilerClose', 'codeWorkspaceClose', 'explorerClose', 'objectListClose', 'inspectorClose']) set(s[k], true);
+		for (const k of ['flowGraphClose', 'timelineClose', 'animationClose', 'uvEditorClose', 'shaderEditorClose', 'hudEditorClose', 'profilerClose', 'codeWorkspaceClose', 'explorerClose', 'objectListClose', 'inspectorClose']) set(s[k], true);
 	});
 	await page.waitForTimeout(350);
 }
@@ -117,7 +117,7 @@ const SURFACES = [
 	{ name: 'inspector-scene', kind: 'inspector', open: (p) => p.evaluate(() => window.__stores.showSidebar('scene')), shown: '#environment-presets' },
 	{ name: 'explorer', kind: 'dock', open: (p) => openDock(p, 'explorer', 'explorerClose'), shown: '#explorer-filter' },
 	{ name: 'flow', kind: 'dock', open: (p) => openDock(p, 'flow', 'flowGraphClose'), shown: '[data-key-scope="nodes"]' },
-	{ name: 'flowcode', kind: 'dock', open: (p) => openDock(p, 'flowcode', 'flowCodeClose'), shown: '.cm-editor, #flow-code' },
+	{ name: 'timeline', kind: 'dock', open: (p) => openDock(p, 'timeline', 'timelineClose'), shown: '#timeline-dock' },
 	{ name: 'animation', kind: 'dock', open: (p) => openDock(p, 'animation', 'animationClose'), shown: '#animation-speed' },
 	{ name: 'uv', kind: 'dock', open: (p) => openDock(p, 'uv', 'uvEditorClose'), shown: '[data-key-scope="uv"]' },
 	{ name: 'shader', kind: 'dock', open: (p) => openDock(p, 'shader', 'shaderEditorClose'), shown: '#shader-editor' },

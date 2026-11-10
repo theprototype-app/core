@@ -43,6 +43,8 @@ import { stripEditOverlays, isEditOverlay } from './editOverlays';
 import { markTransient } from './transientObjects';
 // 30 P3: a LEAF (THREE + stores), so a static import here closes no cycle
 import { clearModuleSelection } from './moduleContent';
+import { sidebarsWide, addInspectorTabQuietly } from './sidebars'; // showhide-v8: Properties + Configure Scene tabs
+import { phoneShell } from './ui/phoneShell.js';
 import { desktopSpawn, spawnEyePose } from './playSpawn'; // 30b P4 (+ vrOnly: core-games)
 // D2: a LEAF (svelte stores + THREE), so a static import here closes no cycle
 import { shareDuplicatedMaterials, linkMaterials } from './materialSharing';
@@ -254,9 +256,25 @@ export function applySelectionSet(uuids, openProperties = false) {
 	// 15-O: explicit request (double-click / context menu / object list), a
 	// PINNED panel (follows every selection), or a panel already showing the
 	// selection. A plain viewport click alone no longer forces it open.
-	if (openProperties || get(inspectorPinned) || (!get(inspectorClose) && get(inspectorKind) === 'selection')) {
-		showSidebar('properties', { focus: !!openProperties }); // 42 I3: following the selection never steals a covered tab's place
+	followSelection(openProperties); // 42 I3: following the selection never steals a covered tab's place
+}
+
+/**
+ * 15-O / 42 I3 + showhide-v8 (owner 2026-11-09, R2): what a selection does to the Inspector. An explicit request
+ * (double-click, context menu, the object list's ⓘ) opens Properties and brings it forward. Otherwise a PINNED panel,
+ * or one showing the selection, follows it — but "selecting no longer swaps Properties in place of Configure Scene":
+ * with Configure Scene in front, a pinned panel only makes sure a Properties tab is there behind it (it shows the
+ * new selection when it comes to the front) and the scene tab stays where it is.
+ * @param {boolean | undefined} openProperties
+ */
+function followSelection(openProperties) {
+	if (openProperties) return showSidebar('properties', { focus: true });
+	const open = !get(inspectorClose);
+	if (open && get(inspectorKind) === 'scene') {
+		if (get(inspectorPinned) && get(sidebarsWide) && !get(phoneShell)) addInspectorTabQuietly('inspector');
+		return;
 	}
+	if (get(inspectorPinned) || (open && get(inspectorKind) === 'selection')) showSidebar('properties', { focus: false });
 }
 
 /** 41 G13: what Interact took away, given back when it ends @type {string[]} */
@@ -343,9 +361,7 @@ export function selectObject(uuid, openProperties = false, additive = false) {
 		selectedObjects.set([]);
 		if (controls && !get(isVRMode)) controls.detach();
 		selectedObject.set(object);
-		if (openProperties || get(inspectorPinned) || (!get(inspectorClose) && get(inspectorKind) === 'selection')) {
-			showSidebar('properties', { focus: !!openProperties });
-		}
+		followSelection(openProperties);
 		return;
 	}
 	applySelectionSet([uuid], openProperties);

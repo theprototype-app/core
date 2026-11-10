@@ -55,6 +55,7 @@
 	import ContextMenu from './ContextMenu.svelte';
 	import Icon from './ui/Icon.svelte';
 	import { tearOffAt } from '$lib/windows/panelPlaces.js';
+	import { layoutLocked } from '$lib/windowPrefs.js';
 
 	// 40 F9: on a phone (with floating windows off) "+" is a sheet listing EVERY window with
 	// a show/hide toggle; with floating windows on, a phone behaves like the desktop.
@@ -255,6 +256,9 @@
 			cleanup();
 			if (!state || !dragged) return; // never travelled: the click activates the tab
 			draggedAt = performance.now();
+			// showhide-v8 §6: Lock layout — a tab dragged anywhere stays where it was (the menu's Undock still works:
+			// a menu pick is never an accident)
+			if ($layoutLocked) return;
 			// 44 M9: dropped onto a pane of the split — it shows there (a pair dragged by its tab
 			// moves its LEFT half; the half it replaces stays a tab)
 			if (pane && setSplitPane(pane.pair, pane.pane, dragged)) {

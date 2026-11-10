@@ -37,15 +37,20 @@ function probe(page, sel) {
 	}, sel);
 }
 /** the tabs of a side's strip, in order, and which one is in front */
+// showhide-v8 (fork 1): the Inspector is TWO tabs now, Properties ('inspector') and Configure Scene ('scene'), that
+// share a side and move together. This suite is about the column model, so `strip` reads them as ONE Inspector
+// (`raw` keeps what the strip really shows; section 2 checks the pair once).
 function strip(page, side) {
 	return page.evaluate((side) => {
+		const ins = (k) => (k === 'scene' ? 'inspector' : k);
 		const el = document.querySelector('#sidebar-strip-' + side);
 		if (!el) return null;
 		const tabs = [...el.querySelectorAll('[data-sidebar-tab]')];
 		const r = el.getBoundingClientRect();
 		return {
-			tabs: tabs.map((t) => t.getAttribute('data-sidebar-tab')),
-			front: tabs.find((t) => t.getAttribute('aria-selected') === 'true')?.getAttribute('data-sidebar-tab') ?? null,
+			raw: tabs.map((t) => t.getAttribute('data-sidebar-tab')),
+			tabs: tabs.map((t) => ins(t.getAttribute('data-sidebar-tab'))).filter((k, i, a) => a.indexOf(k) === i),
+			front: ins(tabs.find((t) => t.getAttribute('aria-selected') === 'true')?.getAttribute('data-sidebar-tab') ?? null),
 			x: Math.round(r.x),
 			y: Math.round(r.y),
 			w: Math.round(r.width),
@@ -107,8 +112,8 @@ h.run(async () => {
 	h.check(right && right.tabs.join() === 'objects,inspector' && right.front === 'inspector', `Configure Scene joins the right sidebar as a tab, in front (${JSON.stringify(right)})`);
 	h.check(ins?.shown && Math.abs(ins.right - VW) < 3, `the Inspector fills the right column (${JSON.stringify(ins)})`);
 	h.check(list && !list.shown, `the list is behind its tab — not pushed inward as a second column (${JSON.stringify(list)})`);
-	const insLabel = await page.evaluate(() => document.querySelector('#sidebar-strip-right [data-sidebar-tab="inspector"]')?.textContent?.trim());
-	h.check(insLabel === 'Configure Scene', `the Inspector's tab is named after what it shows (${insLabel})`);
+	const insLabel = await page.evaluate(() => document.querySelector('#sidebar-strip-right [data-sidebar-tab="scene"]')?.textContent?.trim());
+	h.check(insLabel === 'Configure Scene' && right?.raw.includes('scene'), `Configure Scene is its own tab, named for what it shows (${insLabel}; ${JSON.stringify(right?.raw)})`);
 
 	// ---------- 3. a tab press switches, instantly, in the same column ----------
 	const sample = async (sel, run) => {

@@ -94,7 +94,7 @@ h.run(async () => {
 	const out = process.env.OUT || '/tmp';
 	const P = await h.setupPage(browser, 'D', {
 		context: { viewport: { width: 1440, height: 900 } },
-		storage: { flowCodeDocked: 'true', flowDockHeight: '300', 'sidebar:full:right': 'true', theme: THEME }
+		storage: { timelineDocked: 'true', flowDockHeight: '300', 'sidebar:full:right': 'true', theme: THEME }
 	});
 	const page = P.page;
 	// something to look at in the PiP (and to select / move in it)
@@ -109,9 +109,9 @@ h.run(async () => {
 		s.objectActions.deselectObject();
 		s.inspectorKind?.set?.('scene');
 		s.inspectorClose.set(false);
-		s.flowCodeClose.set(false);
+		s.timelineClose.set(false);
 		await new Promise((r) => setTimeout(r, 700));
-		s.bottomDock.activateDock('flowcode');
+		s.bottomDock.activateDock('timeline');
 		return box.uuid;
 	});
 	await page.waitForTimeout(1500);
@@ -434,7 +434,7 @@ h.run(async () => {
 	// ---- 11. unfolded N6 (touch, desktop layout): the same, with fingers -----------------------------
 	const T = await h.setupPage(browser, 'T', {
 		context: { viewport: { width: 770, height: 850 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2.9 },
-		storage: { flowCodeDocked: 'true', flowDockHeight: '300', theme: THEME }
+		storage: { timelineDocked: 'true', flowDockHeight: '300', theme: THEME }
 	});
 	const tp = T.page;
 	const cdp = await tp.context().newCDPSession(tp);
@@ -447,12 +447,12 @@ h.run(async () => {
 		s.objectsGroup.subscribe((v) => (g = v))();
 		const box = g.children[g.children.length - 1];
 		s.objectActions.deselectObject();
-		s.flowCodeClose.set(false);
+		s.timelineClose.set(false);
 		await new Promise((r) => setTimeout(r, 700));
-		s.bottomDock.activateDock('flowcode');
+		s.bottomDock.activateDock('timeline');
 		await new Promise((r) => setTimeout(r, 900));
 		// the touch way in: the dock tab menu's Maximize
-		s.focusMode.maximizeDockTab('flowcode');
+		s.focusMode.maximizeDockTab('timeline');
 		return box.uuid;
 	});
 	await tp.waitForTimeout(1200);

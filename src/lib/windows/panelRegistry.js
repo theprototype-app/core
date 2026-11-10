@@ -10,7 +10,6 @@
 import { derived, get } from 'svelte/store';
 import {
 	flowGraphClose,
-	flowCodeClose,
 	animationClose,
 	uvEditorClose,
 	shaderEditorClose,
@@ -50,7 +49,6 @@ const dockTitle = (key) => () => DOCK_TITLES[key] ?? key;
 /** @type {PanelEntry[]} */
 const ENTRIES = [
 	{ key: 'flow', title: dockTitle('flow'), icon: DOCK_ICONS.flow, load: () => import('../../components/Flow.svelte'), ...closeStore(flowGraphClose) },
-	{ key: 'flowcode', title: dockTitle('flowcode'), icon: DOCK_ICONS.flowcode, load: () => import('../../components/editors/FlowCode.svelte'), ...closeStore(flowCodeClose) },
 	{ key: 'animation', title: dockTitle('animation'), icon: DOCK_ICONS.animation, load: () => import('../../components/editors/AnimationWindow.svelte'), ...closeStore(animationClose) },
 	{ key: 'uv', title: dockTitle('uv'), icon: DOCK_ICONS.uv, load: () => import('../../components/editors/UvEditor.svelte'), ...closeStore(uvEditorClose) },
 	{ key: 'shader', title: dockTitle('shader'), icon: DOCK_ICONS.shader, load: () => import('../../components/editors/ShaderEditor.svelte'), wrap: 'flow', ...closeStore(shaderEditorClose) },

@@ -20,9 +20,10 @@ h.run(async () => {
 	h.check(!!pt && !!ft, 'palette + props toggles render');
 	h.check(ft.x > pt.x, 'by default the props toggle sits to the right of the palette toggle');
 	h.check(sep(pt, ft), 'the toggles do not overlap (default layout)');
-	// 78-int PL42: a Lucide cog, not the emoji (owner rule: no emoji in the UI)
-	const icon = await A.page.locator('#flow-props-toggle svg[data-icon="settings"]').count();
-	h.check(icon === 1, 'the settings toggle shows a gear icon, not an arrow');
+	// showhide-v8 + 78-int PL42: a PaneHandle — the chevron plus the panel's role icon (Lucide, never the emoji)
+	const icons = await A.page.locator('#flow-props-toggle svg').count();
+	const text = await A.page.locator('#flow-props-toggle').innerText();
+	h.check(icons === 2 && !text.includes('⚙'), `the properties handle shows the chevron and its role icon (${icons} svg)`);
 
 	// move the palette to the right -> props toggle reflows to the LEFT
 	await A.page.locator('#palette-side').click();

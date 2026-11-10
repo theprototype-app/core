@@ -8,6 +8,8 @@
 //   3. walk mode with NO controller node (1.64: the F11 default walker is off, flowRuntime DEFAULT_WALKER_ON):
 //      no walker, and the eye-height pin keeps the eye at 1.7 m over the plane while walking. With the fix-batch
 //      card the default walker returns and this row asserts its feet ON the plane (0, not 1-3 cm under it).
+//   4. the floor raised to 0.3 m BEFORE a Character Controller appears: it starts on the raised floor and a
+//      2 s walk stays on it, grounded every frame (no plunge into the slab).
 //   APP_URL=https://theprototype.app:5802/ node tests/e2e/walker-step-off.test.cjs
 const h = require('./helpers.cjs');
 
@@ -139,6 +141,59 @@ h.run(async () => {
 	h.check(
 		samples.every((s) => s.mode === null && Math.abs(s.eye - 1.7) <= 0.01),
 		`3.1 1.64: no default walker, the pin keeps the eye 1.7 m over the plane while walking (eye m: ${samples.map((s) => s.eye.toFixed(3)).join(' ')}; walker ${samples[0]?.mode})`
+	);
+	await h.leavePlay(A);
+	await page.evaluate(() => window.__stores.physics.stopSimulation?.());
+	await page.waitForTimeout(800);
+
+	// ---- 4. the floor is raised BEFORE a controller appears, then a full walk -----------------
+	// (a8ab5616: a walker that STARTS under the plane's top starts on it — on its first frame only; the per-frame
+	// clamp 5198fea5 tried plunged the capsule. Over the whole walk: on the raised floor, grounded, no plunge)
+	await page.evaluate(() => {
+		const s = window.__stores;
+		s.commandsHandler.sceneCommand('/clear all');
+		s.scenePhysics.setScenePhysics({ ground: { enabled: true, height: 0 }, play: { simOnPlay: true, grounded: true, spawn: { position: [0, 0.05, 1], yaw: 0 } } });
+		s.flowNodes.set([]);
+		s.flowEdges.set([]);
+	});
+	await page.waitForTimeout(800);
+	await page.evaluate(() => window.__stores.isLocked.set(true));
+	await page.waitForTimeout(1200);
+	await page.evaluate(() => {
+		const s = window.__stores;
+		s.scenePhysics.setScenePhysics({ ground: { enabled: true, height: 0.3 }, play: { grounded: false } });
+		s.setActiveGraph(s.SCENE_GRAPH);
+		s.flowNodes.set([{ id: 'cc', type: 'charcontroller', position: { x: 0, y: 0 }, data: { type: 'charcontroller', mode: 'walk', speed: 0.05, jumpHeight: 1, eyeHeight: 1.7, gravity: true } }]);
+		s.flowEdges.set([]);
+	});
+	await h.eventually(() => walker(page), (st) => st && st.source === 'rapier' && st.grounded && Math.abs(st.ground - 0.3) < 0.05, '4.1 the late controller stands on the raised 0.3 m floor', 10000);
+	await page.evaluate(() => {
+		const w = /** @type {any} */ (window);
+		w.__feet = [];
+		w.__feetOn = true;
+		const tick = () => {
+			if (!w.__feetOn) return;
+			let st;
+			w.__stores.charController.walkerState.subscribe((v) => (st = v))();
+			w.__feet.push({ y: st.ground, g: st.grounded });
+			requestAnimationFrame(tick);
+		};
+		requestAnimationFrame(tick);
+	});
+	await page.keyboard.down('KeyW');
+	await page.waitForTimeout(2000);
+	await page.keyboard.up('KeyW');
+	await page.waitForTimeout(400);
+	const walk4 = await page.evaluate(() => {
+		const w = /** @type {any} */ (window);
+		w.__feetOn = false;
+		return w.__feet;
+	});
+	const y4 = walk4.map((/** @type {any} */ f) => f.y);
+	const air = walk4.filter((/** @type {any} */ f) => !f.g).length;
+	h.check(
+		walk4.length > 10 && Math.min(...y4) >= 0.29 && Math.max(...y4) <= 0.35 && air === 0,
+		`4.2 a full walk on the raised floor: no plunge, never airborne (${walk4.length} frames, feet ${(Math.min(...y4) * 100).toFixed(1)} .. ${(Math.max(...y4) * 100).toFixed(1)} cm, ${air} airborne)`
 	);
 	await h.leavePlay(A);
 	await h.finish(browser);

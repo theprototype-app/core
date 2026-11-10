@@ -373,12 +373,19 @@ async function setupPageQuiet(browser, name, others, options = {}) {
  */
 async function openDial(page) {
 	const field = page.locator('input[placeholder="Enter peer ID to connect"]');
-	if (await field.isVisible().catch(() => false)) return field;
 	const squeezedDot = page.locator('#connect-squeeze-dot');
-	if (await squeezedDot.isVisible().catch(() => false)) await squeezedDot.click();
 	const join = page.locator('#connect-join');
-	if (await join.isVisible().catch(() => false)) await join.click();
-	await field.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
+	// Join… is drawn only while the pill is idle, and a peer that has just lost its last conn takes a few
+	// seconds to get there (colocation-phone U: the headset dials again after the phone left) — the old
+	// always-there field simply waited, so poll for either (30 s, the old fill's own timeout)
+	for (const until = Date.now() + 30000; Date.now() < until; await page.waitForTimeout(250)) {
+		if (await field.isVisible().catch(() => false)) return field;
+		if (await squeezedDot.isVisible().catch(() => false)) await squeezedDot.click().catch(() => {});
+		if (await join.isVisible().catch(() => false)) {
+			await join.click().catch(() => {});
+			await field.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+		}
+	}
 	return field;
 }
 

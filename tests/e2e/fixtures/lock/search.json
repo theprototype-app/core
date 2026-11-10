@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-11-10T11:42:02.305Z",
+	"recordedAt": "2026-11-10T16:57:36.333Z",
 	"settings": {
 		"Theme": {
 			"rows": [
@@ -2021,9 +2021,11 @@
 		},
 		"Turning": {
 			"rows": [
+				"Show my status",
 				"Turning"
 			],
 			"sections": [
+				"Interface",
 				"VR"
 			]
 		},
@@ -2541,6 +2543,7 @@
 				"Reset tours",
 				"Show FPS and draw calls",
 				"Show everything",
+				"Show my status",
 				"Show others as classic heads",
 				"Show pop-ups only in the drawer",
 				"Show system objects in the object list",
@@ -3235,6 +3238,7 @@
 				"Reset tours",
 				"Show FPS and draw calls",
 				"Show everything",
+				"Show my status",
 				"Show others as classic heads",
 				"Show pop-ups only in the drawer",
 				"Show system objects in the object list",
@@ -3302,6 +3306,7 @@
 				"Show FPS and draw calls",
 				"Show captions",
 				"Show everything",
+				"Show my status",
 				"Show others as classic heads",
 				"Show pop-ups only in the drawer",
 				"Show system objects in the object list",
@@ -3716,6 +3721,7 @@
 				"Ping colour",
 				"Selection outline colour",
 				"Session size",
+				"Show my status",
 				"Show others as classic heads",
 				"Show where AI agents look",
 				"Signaling server",
@@ -4605,6 +4611,7 @@
 				"Reverse trackpad pan",
 				"Rigging and animation services",
 				"Show everything",
+				"Show my status",
 				"Show where AI agents look",
 				"Stance",
 				"Storage breakdown",

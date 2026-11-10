@@ -441,7 +441,9 @@ h.run(async () => {
 	// display:none there — logs/r1-p-probe7.log), so 420px measured a hidden element. At 900px
 	// the undocked Connect pill (centred, ~444px) starts left of where a three-button row beside
 	// the logo would end — the same "no room" the measurement exists for, on the desktop layout.
-	await A.page.setViewportSize({ width: 900, height: 800 });
+	// uir-people (1.65): the Invite-first pill is ~388 px, centred at 900 px it starts right of the row's end — 760 px
+	// (still the desktop layout) is where it crowds the logo row again
+	await A.page.setViewportSize({ width: 760, height: 800 });
 	await A.page.waitForTimeout(700);
 	const narrow = await A.page.evaluate(() => {
 		const tools = document.querySelector('#touch-tools')?.getBoundingClientRect();

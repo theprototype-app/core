@@ -54,7 +54,14 @@ const headOf = (page, sel) =>
 		const el = document.querySelector(sel);
 		if (!el) return null;
 		const r = el.getBoundingClientRect();
-		return { x: Math.round(r.left + 14), y: Math.round(r.top + r.height / 2) };
+		const y = Math.round(r.top + r.height / 2);
+		// a spot ON TOP on the header's own background (uir: the one Chat window is 500 px wide, so its left end
+		// can lie under the Statistics window it is aimed at — a press there grabbed Statistics instead)
+		for (let x = Math.round(r.left + 14); x < r.right - 4; x += 6) {
+			const at = document.elementFromPoint(x, y);
+			if (at && el.contains(at) && !at.closest('button, input, select, a, [role="tab"]')) return { x, y };
+		}
+		return { x: Math.round(r.left + 14), y };
 	}, sel);
 const rectOf = (page, sel) =>
 	S(page, (sel) => {

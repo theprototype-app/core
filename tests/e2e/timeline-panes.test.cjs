@@ -44,7 +44,9 @@ const pane = (page) =>
 /** open the Sequence tab without toggling it shut when it is already in front */
 async function sequenceTab(page) {
 	const before = await pane(page);
-	if (before.mode !== 'sequence') await page.click('.tl-root [data-ws-mode="sequence"]');
+	// showhide-v8 (1.64): a shell's mode tabs exist only while its pane is open — the pane closes when the transient Item
+	// tab is put away, so open it through its edge handle first (h.openWsMode)
+	if (before.mode !== 'sequence') await h.openWsMode(page, '.tl-root', 'sequence');
 	try {
 		// a DOM poll, not waitForSelector: a starved headless page resolved the pane as visible and still timed out
 		await page.waitForFunction(() => {

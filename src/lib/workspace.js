@@ -45,7 +45,7 @@ import { assetBrowserOpen } from './cc0/assetBrowserState.js';
  * (true = closed) — a bug factory if each site re-derives it, so the sense is recorded
  * ONCE here and `open` in the record always means open. `hidden` (78 PL3) marks the two
  * windows whose store holds a CLASS ('' open, 'hidden' closed): Chat and the AI assistant.
- * @type {{name: string, store: any, closed: boolean, hidden?: boolean}[]}
+ * @type {{name: string, store: any, closed: boolean, hidden?: boolean, openOnly?: boolean}[]}
  */
 const PANELS = [
 	{ name: 'inspector', store: inspectorClose, closed: true },
@@ -72,7 +72,10 @@ const PANELS = [
 	{ name: 'stats', store: statsOpen, closed: false },
 	{ name: 'assets', store: assetBrowserOpen, closed: false },
 	{ name: 'chat', store: chatHidden, closed: false, hidden: true },
-	{ name: 'aiAssistant', store: aiAssistantHidden, closed: false, hidden: true }
+	// uir-chat (1.65): the AI assistant is the Chat window's Assistant tab, and `aiAssistantHidden` an alias over chatHidden +
+	// chatTab. `true` = Chat open with Assistant in front; `false` says nothing — `chat` above decides open or closed. An alias
+	// that CLOSED on false would shut Chat itself whenever a record (a 1.64 one, or Chat open on Session) met Assistant in front.
+	{ name: 'aiAssistant', store: aiAssistantHidden, closed: false, hidden: true, openOnly: true }
 ];
 
 /** is this panel open right now @param {{store: any, closed: boolean, hidden?: boolean}} panel */
@@ -81,7 +84,7 @@ function isOpenNow(panel) {
 	if (panel.hidden) return v === '';
 	return panel.closed ? !v : !!v;
 }
-/** open / close one panel @param {{store: any, closed: boolean, hidden?: boolean}} panel @param {boolean} open */
+/** open / close one panel @param {{store: any, closed: boolean, hidden?: boolean, openOnly?: boolean}} panel @param {boolean} open */
 function setOpen(panel, open) {
 	if (panel.hidden) panel.store.set(open ? '' : 'hidden');
 	else panel.store.set(panel.closed ? !open : open);
@@ -131,6 +134,7 @@ export function applyWorkspace(record) {
 	for (const panel of PANELS) {
 		const want = open[panel.name];
 		if (typeof want !== 'boolean') continue;
+		if (panel.openOnly && !want) continue;
 		setOpen(panel, want);
 	}
 	if (typeof record.dockTab === 'string') bottomDockActive.set(record.dockTab);

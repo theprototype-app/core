@@ -211,8 +211,9 @@ module.exports = (/** @type {string[]} */ parts) => {
 				await P.locator('#restore-session-dismiss').click({ timeout: 3000 }).catch(() => {});
 				let d = await dock(P);
 				h.check(d && d.pinned === false && !d.docked && !d.squeezed, T + `M14: desktop default = floating, the pill centred (${JSON.stringify(d)})`);
-				// M13: crowd the top row at 900 px → the floating pill goes COMPACT, never its own row
-				await P.setViewportSize({ width: 900, height: 900 });
+				// M13: crowd the top row → the floating pill goes COMPACT, never its own row. uir-people (1.65): the Invite-first
+				// pill is ~388 px, which FITS the 416 px a 900 px top row leaves, so the crowd is made at 760 px (still desktop)
+				await P.setViewportSize({ width: 760, height: 900 });
 				await P.evaluate(() => window.__stores.touchTools.set(true));
 				await setBar(P, CROWDED);
 				await P.waitForTimeout(500);

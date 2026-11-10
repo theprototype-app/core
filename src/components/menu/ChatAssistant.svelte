@@ -183,8 +183,14 @@
 		if (!scroller) return;
 		if (len !== lastLen || busy || visible) {
 			lastLen = len;
+			// uir-int (connector-relay, N6 folded): with no messages the pane is the WELCOME, read from the top — its first
+			// card is Connect Claude, and showing the tab scrolled it out of a short dock
+			// …and on a short dock (folded phone) the welcome's primary button sits under the composer, so it is
+			// brought just into view (block: nearest — the card's heading stays above it)
 			requestAnimationFrame(() => {
-				if (scroller) scroller.scrollTop = scroller.scrollHeight;
+				if (!scroller) return;
+				scroller.scrollTop = len ? scroller.scrollHeight : 0;
+				if (!len) scroller.querySelector('#connect-claude-button')?.scrollIntoView({ block: 'nearest' });
 			});
 		}
 	});

@@ -2,14 +2,14 @@
 //   desktop 1920x1080 (mouse), HONOR 718x587 (touch, the desktop layout), OPPO N6 unfolded 770x837 -> folded 353x681.
 //
 //   PL4  (PC-14)  a floating window that OPENS never sits under an open sidebar column, nor off-screen
-//   PL38          Chat and the AI assistant have a corner resize grip; the size is kept (win:<key>) across a reload
+//   PL38          Chat (one window with the AI assistant since 1.65) has a corner resize grip; the size is kept (win:chat) across a reload
 //   PL39          Small / Half / Full: a double click on the header cycles them (Half -> Full -> Small), the header
 //                 menu's Size row offers them, a double TAP does it by finger, and on a touch screen the corner grip
 //                 takes a finger 22 px in from the corner (the 28 px touch grip)
 //   PL3           the workspace record (Restore, layouts) covers Chat, AI, Statistics, Free assets, HUD, Timeline, Profiler
 //   PL20 (PC-4)   the Objects filter chips wrap: none is cut
 //   PL21 (PC-8)   Far clip / Look for sit in the panel's label column; the Far clip box in the value column
-//   PL6  (UI-5)   HONOR: a tall AI window (a long welcome) ends above the toolbar instead of covering it
+//   PL6  (UI-5)   HONOR: a tall Chat window (the assistant's long welcome) ends above the toolbar instead of covering it
 //   PL7  (UI-6)   HONOR: the main menu ends above the toolbar and the + corner stack, and scrolls (bottom edge fades)
 //   PL8  (UI-7)   folded: the Free assets kind tabs wrap, none is cut
 //   PL23 (G19)    folded: Chat, the AI assistant and Free assets docked on the unfolded phone (bottom dock or a sidebar
@@ -29,7 +29,7 @@ const read = (page, path) =>
 		(name ? window.__stores[mod][name] : window.__stores[mod]).subscribe((x) => (v = x))();
 		return v;
 	}, path);
-const FLOATING = { explorerDocked: 'false', statsDocked: 'false', chatDocked: 'false', aiAssistantDocked: 'false', assetBrowserDocked: 'false', 'sidebar:inspectorSide': 'right' };
+const FLOATING = { explorerDocked: 'false', statsDocked: 'false', chatDocked: 'false', assetBrowserDocked: 'false', 'sidebar:inspectorSide': 'right' };
 const rectOf = (page, sel) =>
 	S(page, (sel) => {
 		const el = document.querySelector(sel);
@@ -81,7 +81,6 @@ h.run(async () => {
 		const WINS = [
 			['Statistics', '#stats-window', () => window.__stores.dockHost.HOSTED.stats.open()],
 			['Chat', '#chat-window', () => window.__stores.chatHidden.set('')],
-			['AI assistant', '#ai-assistant-window', () => window.__stores.aiAssistantHidden.set('')],
 			['Explorer', '#explorer-window', () => window.__stores.explorerClose.set(false)],
 			['Free assets', '#asset-browser-window', () => window.__stores.dockHost.HOSTED.assets.open()],
 			['Objects', '#object-list', () => window.__stores.objectListClose.set(false)]
@@ -97,8 +96,6 @@ h.run(async () => {
 		await shots(page, 'desk-1920-columns-windows');
 		// ...except a window placed over a column ON PURPOSE (the 45 N7 Ctrl drop): it reopens where it was put
 		{
-			// (the AI window opened after Chat lies over Chat's header)
-			await S(page, () => window.__stores.aiAssistantHidden.set('hidden'));
 			await page.waitForTimeout(400);
 			const p = await headerPoint(page, '#chat-window');
 			await page.keyboard.down('Control');
@@ -182,12 +179,11 @@ h.run(async () => {
 
 		// ---- PL38: Chat and AI have the corner grip, and it resizes
 		await S(page, () => {
-			window.__stores.aiAssistantHidden.set('hidden');
+			window.__stores.chatHidden.set('');
 			for (const s of ['left', 'right']) window.__stores.sidebars.toggleSidebar(s, false);
 		});
 		await page.waitForTimeout(900);
-		for (const [name, sel, key] of [['Chat', '#chat-window', 'chat'], ['AI assistant', '#ai-assistant-window', 'aiAssistant']]) {
-			if (key === 'aiAssistant') await S(page, () => window.__stores.aiAssistantHidden.set(''));
+		for (const [name, sel, key] of [['Chat', '#chat-window', 'chat']]) {
 			await page.waitForTimeout(700);
 			const g = await S(page, (sel) => {
 				const grip = document.querySelector(sel + ' > .dw-resize');
@@ -209,7 +205,6 @@ h.run(async () => {
 
 		// ---- PL39: a double click on the header cycles Half -> Full -> Small, inside the free area
 		await S(page, () => {
-			window.__stores.aiAssistantHidden.set('hidden');
 			window.__stores.sidebars.toggleSidebar('right', true);
 		});
 		await page.waitForTimeout(1000);
@@ -277,23 +272,23 @@ h.run(async () => {
 		await S(page, (snap) => window.__stores.workspace.applyWorkspace(snap), snap);
 		await page.waitForTimeout(1000);
 		await page.waitForFunction(() => (document.querySelector('#asset-browser-window')?.getBoundingClientRect().width ?? 0) > 0, null, { timeout: 15000 }).catch(() => {});
-		const back = await S(page, () => ['#chat-window', '#ai-assistant-window', '#stats-window', '#asset-browser-window'].map((sel) => {
+		const back = await S(page, () => ['#chat-window', '#stats-window', '#asset-browser-window'].map((sel) => {
 			const el = document.querySelector(sel);
 			return !!el && el.getBoundingClientRect().width > 0;
 		}));
-		h.check(closed.chat === 'hidden' && closed.ai === 'hidden' && back.every(Boolean), `PL3 closed, then the record applied: Chat, AI, Statistics and Free assets come back (${JSON.stringify({ closed, back })})`);
+		h.check(closed.chat === 'hidden' && closed.ai === 'hidden' && back.every(Boolean), `PL3 closed, then the record applied: Chat (on Assistant), Statistics and Free assets come back (${JSON.stringify({ closed, back, tab: await read(page, 'chatTab') })})`);
 		// the size of a resized window across a real reload
-		const sized = await S(page, () => JSON.parse(localStorage.getItem('win:aiAssistant') ?? 'null'));
+		const sized = await S(page, () => JSON.parse(localStorage.getItem('win:chat') ?? 'null'));
 		await h.freshReload(P);
 		await h.answerRestore(P);
 		await page.waitForTimeout(1500);
-		await S(page, () => window.__stores.aiAssistantHidden.set(''));
+		await S(page, () => window.__stores.chatHidden.set(''));
 		await page.waitForTimeout(1200);
-		const ai = await rectOf(page, '#ai-assistant-window');
-		h.check(!!sized && !!ai && Math.abs(ai.w - sized.w) <= 1 && Math.abs(ai.h - sized.h) <= 1, `PL3/PL38 the AI window's size survives a reload (${JSON.stringify({ sized, ai })})`);
+		const ai = await rectOf(page, '#chat-window');
+		h.check(!!sized && !!ai && Math.abs(ai.w - sized.w) <= 1 && Math.abs(ai.h - sized.h) <= 1, `PL3/PL38 the Chat window's size survives a reload (${JSON.stringify({ sized, ai })})`);
 
 		// ---- PL2: the viewport menu's rows carry icons (a row's own, else its verb's); no glyph-prefixed labels
-		await S(page, () => window.__stores.aiAssistantHidden.set('hidden'));
+		await S(page, () => window.__stores.chatHidden.set('hidden'));
 		await page.waitForTimeout(400);
 		const bareRows = async () =>
 			S(page, () => {
@@ -319,32 +314,32 @@ h.run(async () => {
 	{
 		const P = await h.setupPage(browser, 'honor', { context: { viewport: { width: 718, height: 587 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 }, storage: FLOATING });
 		const page = P.page;
-		// ---- PL6: a TALL AI window (the long welcome the device lab saw; the dev build's is short) ends above the toolbar
-		await S(page, () => window.__stores.aiAssistantHidden.set(''));
+		// ---- PL6: a TALL Chat window (the assistant's long welcome the device lab saw; the dev build's is short) ends above the toolbar
+		await S(page, () => window.__stores.aiAssistantHidden.set('')); // Chat on its Assistant tab
 		await page.waitForTimeout(900);
 		await S(page, () => {
-			const win = document.getElementById('ai-assistant-window');
+			const win = document.getElementById('chat-window');
 			const pad = document.createElement('div');
 			pad.id = 'e2e-tall-welcome';
 			pad.style.cssText = 'height: 900px; flex-shrink: 0';
 			win.appendChild(pad);
-			window.__stores.aiAssistantHidden.set('hidden');
+			window.__stores.chatHidden.set('hidden');
 		});
 		await page.waitForTimeout(600);
-		await S(page, () => window.__stores.aiAssistantHidden.set(''));
+		await S(page, () => window.__stores.chatHidden.set(''));
 		await page.waitForTimeout(1200);
-		const ai = await rectOf(page, '#ai-assistant-window');
+		const ai = await rectOf(page, '#chat-window');
 		const pill = await rectOf(page, '#controls-pill');
 		const onTop = await S(page, () => {
 			const p = document.getElementById('controls-pill').getBoundingClientRect();
 			const t = document.elementFromPoint(p.left + p.width / 2, p.top + p.height / 2);
 			return !!t?.closest('#controls-pill');
 		});
-		h.check(!!ai && !!pill && ai.b <= pill.t && onTop, `PL6 HONOR: the tall AI window ends above the toolbar, which stays on top (${JSON.stringify({ ai, pill, onTop })})`);
+		h.check(!!ai && !!pill && ai.b <= pill.t && onTop, `PL6 HONOR: the tall Chat window ends above the toolbar, which stays on top (${JSON.stringify({ ai, pill, onTop })})`);
 		await shots(page, 'honor-ai-tall');
 		await S(page, () => {
 			document.getElementById('e2e-tall-welcome')?.remove();
-			window.__stores.aiAssistantHidden.set('hidden');
+			window.__stores.chatHidden.set('hidden');
 		});
 
 		// ---- PL7: the main menu ends above the toolbar and the + stack, inside the screen, and scrolls with a fade
@@ -390,10 +385,10 @@ h.run(async () => {
 		const FOLDED = { width: 353, height: 681 };
 		const P = await h.setupPage(browser, 'n6', { context: { viewport: UNFOLDED, hasTouch: true, isMobile: true, deviceScaleFactor: 2.8 }, storage: FLOATING });
 		const page = P.page;
-		// ---- PL23 bottom dock: Free assets, AI, Chat docked, Chat in front
+		// ---- PL23 bottom dock: Free assets and Chat (the AI assistant's window too) docked, Chat in front
 		await S(page, () => {
 			const d = window.__stores.dockHost;
-			for (const k of ['assets', 'aiAssistant', 'chat']) d.setHostedDocked(k, true);
+			for (const k of ['assets', 'chat']) d.setHostedDocked(k, true);
 			window.__stores.bottomDock.activateDock('chat');
 		});
 		await page.waitForTimeout(1500);
@@ -402,7 +397,7 @@ h.run(async () => {
 			window.__stores.dockHost.hostedTabsOpen.subscribe((x) => (v = x))();
 			return v;
 		});
-		h.check(wide.chat && wide.aiAssistant && wide.assets, `PL23 premise: unfolded, Chat / AI / Free assets are bottom-dock tabs (${JSON.stringify(wide)})`);
+		h.check(wide.chat && wide.assets && !('aiAssistant' in wide && wide.aiAssistant), `PL23 premise: unfolded, Chat and Free assets are bottom-dock tabs (${JSON.stringify(wide)})`);
 		await page.setViewportSize(FOLDED);
 		await page.waitForTimeout(2500);
 		const folded = await S(page, () => {
@@ -417,11 +412,11 @@ h.run(async () => {
 			};
 			return { shell: document.documentElement.classList.contains('phone-shell'), phoneTabs, key, sheet: !!document.querySelector('.ps-sheet'), chat: el('#chat-window'), ai: el('#ai-assistant-window'), assets: el('#asset-browser-window'), strip: [...document.querySelectorAll('[data-dock-tab]')].filter((t) => t.getBoundingClientRect().width > 0).map((t) => t.getAttribute('data-dock-tab')) };
 		});
-		h.check(folded.shell && folded.phoneTabs.chat && folded.phoneTabs.aiAssistant && folded.phoneTabs.assets, `PL23 folded: Chat, AI and Free assets are phone dock tabs (${JSON.stringify(folded.phoneTabs)})`);
+		h.check(folded.shell && folded.phoneTabs.chat && folded.phoneTabs.assets, `PL23 folded: Chat and Free assets are phone dock tabs (${JSON.stringify(folded.phoneTabs)})`);
 		h.check(folded.chat?.pd === 'shown' && folded.chat.w === FOLDED.width && folded.key === 'chat', `PL23 folded: Chat — in front before the fold — is the tab in front, full width in the dock (${JSON.stringify({ chat: folded.chat, key: folded.key })})`);
-		h.check(folded.ai?.pd === 'hidden' && folded.assets?.pd === 'hidden', `PL23 folded: AI and Free assets wait behind it as tabs, mounted (${JSON.stringify({ ai: folded.ai, assets: folded.assets })})`);
-		h.check(!folded.sheet && !folded.chat?.ps && !folded.ai?.ps, `PL23 folded: no floating sheet piled over the bar`);
-		h.check(['chat', 'aiAssistant', 'assets'].every((k) => folded.strip.includes(k)), `PL23 folded: the strip shows their three tabs (${JSON.stringify(folded.strip)})`);
+		h.check(!folded.ai?.pd && !folded.ai?.ps && folded.assets?.pd === 'hidden', `PL23 folded: Free assets waits behind it as a tab, mounted; the assistant (inside Chat) is no dock tab of its own (${JSON.stringify({ ai: folded.ai, assets: folded.assets })})`);
+		h.check(!folded.sheet && !folded.chat?.ps, `PL23 folded: no floating sheet piled over the bar`);
+		h.check(['chat', 'assets'].every((k) => folded.strip.includes(k)) && !folded.strip.includes('aiAssistant'), `PL23 folded: the strip shows their two tabs (${JSON.stringify(folded.strip)})`);
 		await shots(page, 'folded-chat-tab');
 		// ---- PL8: Free assets in front, its kind tabs wrap (none cut)
 		await S(page, () => window.__stores.bottomDock.activateDock('assets'));
@@ -458,13 +453,12 @@ h.run(async () => {
 			st.dockHost.hostedDocked.subscribe((x) => (docked = x))();
 			return { shell: document.documentElement.classList.contains('phone-shell'), hosted, docked, ps: !!document.querySelector('[data-ps-host]') };
 		});
-		h.check(!back.shell && back.hosted.chat && back.hosted.aiAssistant && back.hosted.assets && !back.ps, `PL23 unfolded again: all three are bottom-dock tabs as before (${JSON.stringify(back)})`);
+		h.check(!back.shell && back.hosted.chat && back.hosted.assets && !back.ps, `PL23 unfolded again: both are bottom-dock tabs as before (${JSON.stringify(back)})`);
 		await shots(page, 'unfolded-again-dock');
 		// ---- PL23 side column: Chat in the right column, fold, unfold
 		await S(page, () => {
 			const d = window.__stores.dockHost;
-			for (const k of ['assets', 'aiAssistant', 'chat']) d.setHostedDocked(k, false);
-			window.__stores.aiAssistantHidden.set('hidden');
+			for (const k of ['assets', 'chat']) d.setHostedDocked(k, false);
 			window.__stores.dockHost.HOSTED.assets.close();
 		});
 		await page.waitForTimeout(800);

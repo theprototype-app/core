@@ -193,7 +193,7 @@ h.run(async () => {
 		s.gameKit.gameMusic.gameMusicState.subscribe((v) => (music = v))();
 		s.isLocked.subscribe((v) => (locked = v))();
 		s.templatesModalOpen.subscribe((v) => (open = v))();
-		return { music, locked, open, tab: document.querySelector('[role="tab"][aria-selected="true"]')?.textContent?.trim() ?? null };
+		return { music, locked, open, tab: document.querySelector('#templates-modal [role="tab"][aria-selected="true"]')?.textContent?.trim() ?? null }; // the modal's own tabs (the Chat window draws Session / Assistant tabs too since 1.65)
 	});
 	h.check(r6.locked !== true, '6.1 play ended (' + r6.locked + ')');
 	h.check(r6.music === null, '6.2 the music stopped');

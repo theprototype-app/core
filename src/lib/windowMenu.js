@@ -6,7 +6,7 @@ import { dockTab, canDockHere, moveToSidebar } from './dockMenu';
 import { canSideHere } from './bottomDockDrop';
 import { groupOfKey, groupCandidates, keyOfNode, mergeWindows, ungroupTab, closeMember, titleOf, nodeOf } from './windowTabs';
 import { raiseWindowNode } from './windowFocus';
-import { sizeResetOf } from './windowSize';
+import { sizeResetOf, sizePresetsOf, SIZE_PRESETS, SIZE_PRESET_LABELS } from './windowSize';
 import { popOutItems } from './windows/panelPlaces.js';
 
 // 44 M3 — A FLOATING WINDOW'S MENU (the user, preview-1-34: "right click or holding header of window or
@@ -81,6 +81,16 @@ function canClose(m) {
 	return !!m.node.querySelector('.move-handle .wc-close, .move-handle [aria-label^="Close"]');
 }
 
+/** 78 PL39: the Size rows' icons and tooltips */
+/** @type {Record<string, string>} */
+const PRESET_ICONS = { small: 'minimize-2', half: 'columns-2', full: 'maximize-2' };
+/** @type {Record<string, string>} */
+const PRESET_TIPS = {
+	small: 'A compact window, where it is',
+	half: 'Half of the free screen, on the side the window is on',
+	full: 'All of the free screen between the sidebars'
+};
+
 /**
  * The menu's rows, in the decision's order.
  * @param {WindowMenuState} m
@@ -93,6 +103,7 @@ export function windowMenuItems(m) {
 	const side = !!key && canSideHere(key);
 	const others = key ? groupCandidates(key) : [];
 	const reset = grouped ? null : sizeResetOf(m.node);
+	const presets = grouped ? null : sizePresetsOf(m.node);
 	const group = key ? groupOfKey(key) : null;
 	const front = group ? nodeOf(group.active) : m.node;
 	return [
@@ -145,6 +156,22 @@ export function windowMenuItems(m) {
 			tooltip: reset ? `Back to ${title}'s default size (its place is kept)` : grouped ? 'A group shares one size across its tabs' : `${title} sizes itself`,
 			disabled: !reset,
 			action: () => reset?.()
+		},
+		// 78 PL39: Small / Half / Full (a double tap on the header cycles them)
+		{
+			label: 'Size',
+			icon: 'scaling',
+			tooltip: presets ? `Size ${title}: Small, Half or Full (a double tap on the header cycles them)` : grouped ? 'A group shares one size across its tabs' : `${title} sizes itself`,
+			disabled: !presets,
+			...(presets && {
+				children: SIZE_PRESETS.map((p) => ({
+					label: SIZE_PRESET_LABELS[p],
+					icon: PRESET_ICONS[p],
+					checked: m.node.dataset.sizePreset === p,
+					tooltip: PRESET_TIPS[p],
+					action: () => presets(p)
+				}))
+			})
 		},
 		{
 			label: 'Close',

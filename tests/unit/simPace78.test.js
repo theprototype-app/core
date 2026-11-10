@@ -27,7 +27,11 @@ describe('paceLimits', () => {
 		expect(cheap.feed).toBeCloseTo(Math.min(MAX_FEED, HARD_SUBSTEPS * DT), 6);
 		const mid = paceLimits(0.5, DT); // 14 ms budget / 0.5 = 28
 		expect(mid.maxSub).toBe(28);
-		expect(mid.feed).toBeCloseTo(28 * DT, 6);
+		expect(mid.feed).toBeCloseTo(Math.min(MAX_FEED, 28 * DT), 6);
+	});
+	it('78-int u1: a hitch never feeds more than 0.25 s, however cheap a substep is', () => {
+		expect(MAX_FEED).toBe(0.25);
+		for (const ms of [0.01, 0.05, 0.3, 1, 3]) expect(paceLimits(ms, DT).feed).toBeLessThanOrEqual(0.25 + 1e-9);
 	});
 	it('an expensive substep never goes below the old caps', () => {
 		expect(paceLimits(10, DT)).toEqual({ maxSub: BASE_SUBSTEPS, feed: BASE_FEED });

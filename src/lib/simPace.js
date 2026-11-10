@@ -5,8 +5,8 @@
 //   1. PACE: the feed was capped at 0.25 s of sim time per frame and 8 substeps, and the backlog
 //      beyond that was thrown away — below ~30 fps the world ran in slow motion. Now the caps
 //      follow what this device can afford: as many substeps as fit a stepping budget (measured
-//      substep cost), up to 60, and up to 1 s of feed per frame, so sim time keeps up with wall
-//      time unless the STEPPING itself is what is slow (the 26-G slow-step guard stays the
+//      substep cost), up to 60, and (78-int u1) 0.25 s of feed per frame, so sim time keeps up with wall
+//      time unless the STEPPING itself is what is slow (78-int u1: the feed is back to 0.25 s, see MAX_FEED) (the 26-G slow-step guard stays the
 //      backstop: the budget keeps a frame's stepping well under its 24 ms line).
 //   2. HANDOFF: every peer reports its frame time while a run is on (`simvote`); the initiator
 //      hands the world — with each body's velocity — to a peer that is clearly faster (at most
@@ -17,7 +17,12 @@ import { writable } from 'svelte/store';
 export const BASE_SUBSTEPS = 8;
 export const HARD_SUBSTEPS = 60;
 export const BASE_FEED = 0.25;
-export const MAX_FEED = 1.0;
+// 78-int u1: the feed stays at 0.25 s a frame (it was 1 s). Only the initiator steps the world, so no
+// cross-peer determinism needs more, and a 1 s / 60-substep catch-up after a hitch (a Quest, a phone, a tab
+// switch) moved every body a whole second in one frame — crates teleported and a throw read on the next frame
+// had already landed. A hitch past 0.25 s is dropped as before F25; the adaptive SUBSTEPS still keep a steadily
+// slow device in real time (14 ms budget, up to 60)
+export const MAX_FEED = BASE_FEED;
 /** ms of stepping a frame may spend catching up (under the slow-step guard's 24 ms, with room
  * for the write-back and the broadcast that follow the substeps) */
 export const STEP_BUDGET_MS = 14;

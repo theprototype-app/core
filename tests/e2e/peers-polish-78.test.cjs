@@ -41,7 +41,10 @@ async function shots(peer, name) {
 /** the full Connect bar (a connected pill may be the compact chip) */
 async function fullBar(peer) {
 	if (!(await peer.page.locator('#connect-invite').count()) && (await peer.page.locator('.connect-pill button.cx-chip:not(.cx-squeeze)').count()))
-		await peer.page.locator('.connect-pill button.cx-chip:not(.cx-squeeze)').click({ timeout: 5000 });
+		await peer.page
+			.locator('.connect-pill button.cx-chip:not(.cx-squeeze)')
+			.click({ timeout: 5000 })
+			.catch(() => peer.page.evaluate(() => document.querySelector('.connect-pill button.cx-chip:not(.cx-squeeze)')?.click()));
 }
 
 const drawerState = (peer) =>
@@ -126,6 +129,7 @@ h.run(async () => {
 	const B = await h.setupPageQuiet(browser, 'B', [A], { storage: { 'joinName:e2e': '1' } });
 	await h.connect(B, A);
 	const askOn = await B.page.locator('#join-name-ask').isVisible().catch(() => false);
+	if (!askOn) console.log('  ask store: ' + JSON.stringify(await inPage(B, 'let v; s.guestName.joinNameAsk.subscribe((x) => (v = x))(); return { ask: v, own: s.guestName.hasOwnName(), e2e: localStorage.getItem("joinName:e2e"), wd: navigator.webdriver };').catch((e) => e.message)));
 	h.check(askOn, 'the joiner is asked "What should others call you?"');
 	const placeholder = await B.page.locator('#join-name-input').getAttribute('placeholder').catch(() => '');
 	h.check(placeholder === 'Guest 2', `the suggestion is Guest 2, never Peer (${placeholder})`);

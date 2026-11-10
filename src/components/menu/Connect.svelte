@@ -480,13 +480,20 @@
 	};
 
 	// 78 PL34: a dial that ended without a session (cancelled, refused, expired) takes its name ask with it
+	// (the pill blinks through idle for a moment on approval — the request row goes before the conn
+	// opens — so only an idle that LASTS closes the card)
 	let dialSeen = false;
 	$effect(() => {
-		if (connState !== 'idle') dialSeen = true;
-		else if (dialSeen) {
+		if (connState !== 'idle') {
+			dialSeen = true;
+			return;
+		}
+		if (!dialSeen) return;
+		const t = setTimeout(() => {
 			dialSeen = false;
 			joinNameAsk.set(false);
-		}
+		}, 2500);
+		return () => clearTimeout(t);
 	});
 
 	// cancel OUR pending outbound request (the pill covers the single-dial case;

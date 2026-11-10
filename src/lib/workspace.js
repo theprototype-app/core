@@ -11,9 +11,16 @@ import {
 	explorerClose,
 	objectListClose,
 	notesDrawerOpen,
-	codeWorkspaceClose
+	codeWorkspaceClose,
+	hudEditorClose,
+	timelineClose,
+	profilerClose,
+	chatHidden,
+	aiAssistantHidden
 } from '../stores/appStore';
 import { bottomDockActive } from './bottomDock';
+import { statsOpen } from './sceneBudget';
+import { assetBrowserOpen } from './cc0/assetBrowserState.js';
 
 // #20 P5: the WORKSPACE — which panels, windows and drawers were open.
 //
@@ -36,8 +43,9 @@ import { bottomDockActive } from './bottomDock';
 /**
  * The panel stores, by the name they persist under. The `*Close` ones are INVERTED
  * (true = closed) — a bug factory if each site re-derives it, so the sense is recorded
- * ONCE here and `open` in the record always means open.
- * @type {{name: string, store: any, closed: boolean}[]}
+ * ONCE here and `open` in the record always means open. `hidden` (78 PL3) marks the two
+ * windows whose store holds a CLASS ('' open, 'hidden' closed): Chat and the AI assistant.
+ * @type {{name: string, store: any, closed: boolean, hidden?: boolean}[]}
  */
 const PANELS = [
 	{ name: 'inspector', store: inspectorClose, closed: true },
@@ -54,8 +62,30 @@ const PANELS = [
 	// `applyWorkspace` walks the TABLE — so an old record restores everything it still
 	// recognises and ignores that key without so much as a warning. That is the
 	// "restore less, never more" rule doing its job, not a special case for it.
-	{ name: 'notes', store: notesDrawerOpen, closed: false }
+	{ name: 'notes', store: notesDrawerOpen, closed: false },
+	// 78 PL3 (the open / size audit): the windows a reload + Restore did NOT bring back — the HUD editor,
+	// the Timeline, the Profiler, Statistics, Free assets, Chat and the AI assistant. An older record has
+	// none of these names, so it leaves them alone ("restore less, never more").
+	{ name: 'hud', store: hudEditorClose, closed: true },
+	{ name: 'timeline', store: timelineClose, closed: true },
+	{ name: 'profiler', store: profilerClose, closed: true },
+	{ name: 'stats', store: statsOpen, closed: false },
+	{ name: 'assets', store: assetBrowserOpen, closed: false },
+	{ name: 'chat', store: chatHidden, closed: false, hidden: true },
+	{ name: 'aiAssistant', store: aiAssistantHidden, closed: false, hidden: true }
 ];
+
+/** is this panel open right now @param {{store: any, closed: boolean, hidden?: boolean}} panel */
+function isOpenNow(panel) {
+	const v = get(panel.store);
+	if (panel.hidden) return v === '';
+	return panel.closed ? !v : !!v;
+}
+/** open / close one panel @param {{store: any, closed: boolean, hidden?: boolean}} panel @param {boolean} open */
+function setOpen(panel, open) {
+	if (panel.hidden) panel.store.set(open ? '' : 'hidden');
+	else panel.store.set(panel.closed ? !open : open);
+}
 
 /**
  * Read the live workspace, for a save payload. `always` (a named layout) returns the record
@@ -74,7 +104,7 @@ export function snapshotWorkspace({ always = false } = {}) {
 	const open = {};
 	let any = false;
 	for (const panel of PANELS) {
-		const isOpen = panel.closed ? !get(panel.store) : !!get(panel.store);
+		const isOpen = isOpenNow(panel);
 		open[panel.name] = isOpen;
 		if (isOpen) any = true;
 	}
@@ -101,7 +131,7 @@ export function applyWorkspace(record) {
 	for (const panel of PANELS) {
 		const want = open[panel.name];
 		if (typeof want !== 'boolean') continue;
-		panel.store.set(panel.closed ? !want : want);
+		setOpen(panel, want);
 	}
 	if (typeof record.dockTab === 'string') bottomDockActive.set(record.dockTab);
 	if (record.inspector && typeof record.inspector === 'object') {
@@ -114,5 +144,5 @@ export function applyWorkspace(record) {
 /** Close every panel this module knows about — the state a plain reload lands in, and
  *  what a restore of a scene that had nothing open should produce. */
 export function closeWorkspace() {
-	for (const panel of PANELS) panel.store.set(panel.closed ? true : false);
+	for (const panel of PANELS) setOpen(panel, false);
 }

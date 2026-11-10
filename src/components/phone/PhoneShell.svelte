@@ -172,9 +172,10 @@
 		more: [null, 'More', true]
 	};
 
+	// 78 PL23: Chat and the AI assistant are phone DOCK tabs (PhoneDockHost) — a sheet only where undocking is allowed
 	const openNow = $derived(/** @type {Record<string, boolean>} */ ({
-		chat: $chatHidden === '',
-		ai: $aiAssistantHidden === '',
+		chat: $chatHidden === '' && !$phoneTabsOpen.chat,
+		ai: $aiAssistantHidden === '' && !$phoneTabsOpen.aiAssistant,
 		notif: $notificationCenterOpen,
 		peers: $peersPanelOpen,
 		conn: $phoneSheet === 'conn',
@@ -434,11 +435,13 @@
 	// unread chat: messages that arrived while the chat sheet was closed
 	let seenChat = $state(0);
 	const chatOpen = $derived($chatHidden === '');
+	// 78 PL23: as a dock tab the chat is SEEN only while its tab is in front (open behind another tab = unread counts)
+	const chatSeen = $derived(chatOpen && (!$phoneTabsOpen.chat || ($visibleDockKey === 'chat' && !$dockMinimized)));
 	$effect(() => {
-		if (chatOpen) seenChat = $messages.length;
+		if (chatSeen) seenChat = $messages.length;
 	});
 	// profile-notify: the Chat badge switch (Settings ▸ Interface ▸ Notifications) gates this badge too
-	const chatUnread = $derived(chatOpen || $notifyPrefs.chat === false ? 0 : Math.max(0, $messages.length - seenChat));
+	const chatUnread = $derived(chatSeen || $notifyPrefs.chat === false ? 0 : Math.max(0, $messages.length - seenChat));
 	// 41b H6/H7: a long press (contextmenu) on Play opens PLAY'S OWN phone menu. It used to forward to
 	// the desktop toolbar's play button, whose menu is about that toolbar — Move left / Move right
 	// walked a bar that is not drawn on a phone, and "Always on top", "Move toolbar", "Collapse"
@@ -480,7 +483,8 @@
 	// 86-fix N1: always opens; with no provider the window offers Connect Claude or Settings ▸ AI
 	function openAi() {
 		phoneSheet.set(null);
-		aiAssistantHidden.set('');
+		// 78 PL23: a dock tab — a tap on the one in front minimizes the dock, like the other dock tabs
+		phoneBarTap('aiAssistant');
 	}
 	/** close the shell's own sheet, then run (a destination opened from More replaces it) */
 	const fromMore = (/** @type {() => void} */ fn) => () => {
@@ -518,15 +522,12 @@
 		objects: { label: 'Objects', icon: 'list', run: fromMore(() => phoneBarTap('objects')), pressed: () => $visibleDockKey === 'objects' && !$dockMinimized },
 		// 43 J1: Statistics is a dock tab too (a floating window only where undocking is allowed)
 		stats: { label: 'Statistics', short: 'Stats', icon: 'gauge', run: fromMore(() => phoneBarTap('stats')), pressed: () => ($visibleDockKey === 'stats' && !$dockMinimized) || ($statsOpen && !$phoneTabsOpen.stats) },
+		// 78 PL23: a dock tab — the bar shows / minimizes it like Objects (a sheet only where undocking is allowed)
 		chat: {
 			label: 'Chat',
 			icon: 'message-square',
-			run: () => {
-				const open = chatOpen;
-				phoneSheet.set(null);
-				chatHidden.set(open ? 'hidden' : '');
-			},
-			pressed: () => chatOpen,
+			run: fromMore(() => phoneBarTap('chat')),
+			pressed: () => ($visibleDockKey === 'chat' && !$dockMinimized) || (chatOpen && !$phoneTabsOpen.chat),
 			badge: () => chatUnread
 		},
 		scene: {
@@ -535,7 +536,7 @@
 			run: fromMore(() => phoneBarTap('scene')),
 			pressed: () => $visibleDockKey === 'scene' && !$dockMinimized
 		},
-		ai: { label: 'AI assistant', short: 'AI', icon: 'sparkles', run: () => openAi(), pressed: () => $aiAssistantHidden === '' },
+		ai: { label: 'AI assistant', short: 'AI', icon: 'sparkles', run: () => openAi(), pressed: () => ($visibleDockKey === 'aiAssistant' && !$dockMinimized) || ($aiAssistantHidden === '' && !$phoneTabsOpen.aiAssistant) },
 		notes: {
 			label: 'Notes',
 			icon: 'sticky-note',

@@ -33,7 +33,10 @@ export const DOCK_FAMILY = [...FLOW_FAMILY, 'explorer', 'profiler', 'code', 'ima
 // 43 J1: Statistics too ("statistics also as tab in mobile view, not its floating window") — like the
 // Objects list it is a floating window on a wider screen and keeps that mode on a phone that allows
 // undocking (Settings ▸ Interface)
-export const PHONE_DOCK_TABS = ['properties', 'objects', 'notes', 'layouts', 'scene', 'stats'];
+// 78 PL23 (owner bug G19, option a): Chat, the AI assistant and Free assets too — on a fold they became floating
+// sheets piled over the bar (they were docked a moment before); they are phone dock tabs now, and take their
+// wider-screen place back on the unfold (bottom dock, a sidebar column or floating: their own mode, untouched)
+export const PHONE_DOCK_TABS = ['properties', 'objects', 'notes', 'layouts', 'scene', 'stats', 'chat', 'aiAssistant', 'assets'];
 /**
  * 42 I6 — floating windows that have NO docked layout of their own (no `docked` flag, no
  * second render branch) and still dock as tabs on a wider screen: the dock frame HOSTS their

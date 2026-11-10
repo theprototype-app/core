@@ -12,7 +12,9 @@ import {
 	PHONE_DOCK_TABS,
 	HOSTED_DOCK_TABS
 } from './bottomDock';
-import { hostedTabsOpen, dockHostedView } from './dockHost';
+import { hostedTabsOpen, dockHostedView, hostedDocked, HOSTED } from './dockHost';
+import { chatHidden, aiAssistantHidden } from '../stores/appStore';
+import { assetBrowserOpen } from './cc0/assetBrowserState.js';
 import { statsOpen } from './sceneBudget';
 import { registerDockOpener, registerDockCloser, closeStoreFor } from './dockMenu';
 import { togglePanel } from './panelToggles';
@@ -76,20 +78,26 @@ function quietly(fn) {
 // "Allow undocking on touch screens" on, a phone keeps it a floating, tab-groupable window — 41 G6 —
 // and only the panels with no floating mode are dock tabs)
 // 43 J1: Statistics follows the Objects list's rule — a dock tab unless undocking is allowed
+// 78 PL23: Chat, the AI assistant and Free assets follow the same rule (a sheet / window only where undocking is allowed)
 export const phoneTabsOpen = derived(
-	[phoneShell, inspTabs, objectListClose, notesDrawerOpen, layoutsMenuOpen, mobileUndockAllowed, statsOpen],
-	([$phone, $ins, $objClosed, $notes, $layouts, $undock, $stats]) => ({
+	[phoneShell, inspTabs, objectListClose, notesDrawerOpen, layoutsMenuOpen, mobileUndockAllowed, statsOpen, chatHidden, aiAssistantHidden, assetBrowserOpen],
+	([$phone, $ins, $objClosed, $notes, $layouts, $undock, $stats, $chat, $ai, $assets]) => ({
 		properties: $phone && $ins.properties,
 		scene: $phone && $ins.scene,
 		objects: $phone && !$undock && !$objClosed,
 		notes: $phone && !!$notes,
 		layouts: $phone && !!$layouts,
-		stats: $phone && !$undock && !!$stats
+		stats: $phone && !$undock && !!$stats,
+		chat: $phone && !$undock && $chat === '',
+		aiAssistant: $phone && !$undock && $ai === '',
+		assets: $phone && !$undock && !!$assets
 	})
 );
 
 /** the content tabs that are floating WINDOWS elsewhere (and on a phone that allows undocking) */
-const WINDOW_TABS = ['objects', 'stats'];
+const WINDOW_TABS = ['objects', 'stats', 'chat', 'aiAssistant', 'assets'];
+/** 78 PL23: the hosted windows whose open store is dockHost's HOSTED entry (no phone-only store of their own) */
+const HOSTED_PHONE_TABS = ['chat', 'aiAssistant', 'assets'];
 
 /** the phone content tab on screen right now (null: none, or the dock is minimized) */
 export const phoneDockShown = derived([phoneShell, visibleDockKey, dockMinimized], ([$phone, $key, $min]) =>
@@ -116,6 +124,7 @@ export function openPhoneTab(key) {
 	else if (key === 'notes') notesDrawerOpen.set(true);
 	else if (key === 'layouts') layoutsMenuOpen.set(true);
 	else if (key === 'stats') statsOpen.set(true);
+	else if (HOSTED_PHONE_TABS.includes(key)) HOSTED[key].open();
 	activateDock(key);
 }
 
@@ -136,6 +145,7 @@ export function closePhoneTab(key) {
 	else if (key === 'notes') notesDrawerOpen.set(false);
 	else if (key === 'layouts') layoutsMenuOpen.set(false);
 	else if (key === 'stats') statsOpen.set(false);
+	else if (HOSTED_PHONE_TABS.includes(key)) HOSTED[key].close();
 }
 
 /** the dock shows an Inspector tab: make the one Inspector element show that tab's kind */
@@ -179,6 +189,11 @@ export function phoneBarTap(key) {
 		closeFloating(key);
 		return;
 	}
+	// 78 PL23: Chat / AI / Free assets have no entry in togglePanel's tree — a closed one opens (as a sheet / window)
+	if (HOSTED_PHONE_TABS.includes(key)) {
+		HOSTED[key].open();
+		return;
+	}
 	togglePanel(key);
 }
 
@@ -187,12 +202,14 @@ const floatStore = (key) => (key === 'objects' ? objectListClose : closeStoreFor
 /** @param {string} key */
 function floatingOpen(key) {
 	if (key === 'stats') return get(statsOpen); // an open flag, not a close store
+	if (HOSTED_PHONE_TABS.includes(key)) return HOSTED[key].isOpen(get(HOSTED[key].store));
 	const store = floatStore(key);
 	return !!store && get(store) === false;
 }
 /** @param {string} key */
 function closeFloating(key) {
 	if (key === 'stats') statsOpen.set(false);
+	else if (HOSTED_PHONE_TABS.includes(key)) HOSTED[key].close();
 	else floatStore(key)?.set(true);
 }
 
@@ -232,7 +249,9 @@ function enterPosture(next) {
 		return;
 	}
 	const now = openNow(prev);
-	const active = prev === 'phone' ? phoneActive() : get(inspectorClose) ? null : tabOfKind(get(inspectorKind));
+	// 78 PL23: on a wider screen the view in front may be a HOSTED dock tab (Chat docked and showing): it stays in
+	// front as the phone's tab on the fold
+	const active = prev === 'phone' ? phoneActive() : (wideHostedFront() ?? (get(inspectorClose) ? null : tabOfKind(get(inspectorKind))));
 	memory[prev] = { open: now, active };
 	// what the user opened or closed during this posture carries over to the next one; the rest of
 	// the next posture comes back as it was left there (its own memory) — which is what keeps a
@@ -250,6 +269,13 @@ function enterPosture(next) {
 	posture = next;
 	applyPosture(next, target, opened, active);
 	openAtEntry = openNow(next);
+}
+
+/** 78 PL23: the hosted window (Chat, AI, Free assets) the wider screen's dock shows in front, else null — read
+ *  from the dock itself, not `hostedDockShown`, which is derived from the posture that is changing right now */
+function wideHostedFront() {
+	const key = get(visibleDockKey);
+	return key && !get(dockMinimized) && HOSTED_PHONE_TABS.includes(key) && get(hostedDocked)[key] ? key : null;
 }
 
 /** the phone tab the dock was showing (a content tab or a docked view), for the memory */
@@ -298,7 +324,10 @@ function applyPosture(p, target, opened, prevActive) {
 	inspTabs.set({ properties: has('properties'), scene: has('scene') });
 	const remembered = memory.phone?.active ?? null;
 	const fresh = opened.find((k) => target.includes(k)) ?? null;
-	const front = fresh ?? (remembered && (target.includes(remembered) || !PHONE_DOCK_TABS.includes(remembered)) ? remembered : null);
+	// 78 PL23: the hosted window that was in front of the wider screen's dock is the phone's front tab
+	const hostedFront =
+		prevActive && HOSTED_PHONE_TABS.includes(prevActive) && !get(mobileUndockAllowed) && HOSTED[prevActive].isOpen(get(HOSTED[prevActive].store)) ? prevActive : null;
+	const front = hostedFront ?? fresh ?? (remembered && (target.includes(remembered) || !PHONE_DOCK_TABS.includes(remembered)) ? remembered : null);
 	if (front) activateDock(front);
 	if (!has('properties') && !has('scene')) {
 		quietly(() => inspectorClose.set(true));
@@ -415,7 +444,11 @@ export function startPhoneDock() {
 		['objects', objectListClose, (v) => !v],
 		['notes', notesDrawerOpen, (v) => !!v],
 		['layouts', layoutsMenuOpen, (v) => !!v],
-		['stats', statsOpen, (v) => !!v]
+		['stats', statsOpen, (v) => !!v],
+		// 78 PL23
+		['chat', chatHidden, (v) => v === ''],
+		['aiAssistant', aiAssistantHidden, (v) => v === ''],
+		['assets', assetBrowserOpen, (v) => !!v]
 	])) {
 		let was = isOpen(get(store));
 		offs.push(

@@ -194,7 +194,8 @@ h.run(async () => {
 	const TOOLS = [
 		// 41b H1: Objects is a dock tab on the phone — the dock frame, the list placed into it, the dock's grab bar
 		['Objects', async () => P.evaluate(() => window.__stores.objectListClose.set(false)), ['#phone-dock', '#object-list', '#ps-dock-grip']],
-		['Chat', async () => P.evaluate(() => window.__stores.chatHidden.set('')), ['.ps-sheet', '[data-ps-host="top"]']],
+		// 78 PL23: Chat is a phone dock tab too (was a framed sheet)
+		['Chat', async () => P.evaluate(() => window.__stores.chatHidden.set('')), ['#phone-dock', '#chat-window', '#ps-dock-grip']],
 		['Inspector', async () => tapSel('#ps-inspect'), ['#inspector']],
 		['Configure Scene', async () => P.evaluate(() => window.__stores.showSidebar('scene')), ['#inspector']],
 		['scene notes', async () => P.evaluate(() => window.__stores.notesDrawerOpen.set(true)), ['#notes-drawer']],

@@ -60,6 +60,30 @@ export function resetSidebarHandleY(side) {
 }
 onLayoutRestore(() => sidebarHandleY.set({ left: readY('left'), right: readY('right') }));
 
+/**
+ * 1.64 (owner): THE HANDLES REST BELOW THE PROFILE MENU, open or not. Clicking the profile used to move them: the open
+ * menu answered the chrome measurement, the handles jumped down below it and back up when it closed. The owner liked
+ * the lower place (clear of the header and the top buttons) and asked for it always, so the menu's bottom edge is a
+ * floor of its own: measured whenever the menu is open, remembered here (LOCAL, persisted), and before it has ever
+ * opened on this device the desktop menu's own height below its trigger (MENU_BELOW_TRIGGER, measured).
+ */
+const MENU_KEY = 'sidebarHandles:menuBottom';
+/** px from the profile button's top to the bottom of the desktop profile menu with no cloud rows (measured 2026-11-10: the menu opens level with the button, 288 x 233; desktop 8 -> 241, tablet 60 -> 293) */
+export const MENU_BELOW_TRIGGER = 233;
+function readMenuBottom() {
+	const v = ls ? parseInt(safeStorage.getItem(MENU_KEY) ?? '') : NaN;
+	return Number.isFinite(v) && v > 0 ? v : 0;
+}
+/** the profile menu's bottom edge (px from the top of the screen), 0 = never measured here */
+export const profileMenuBottom = writable(readMenuBottom());
+/** the open menu was measured @param {number} px */
+export function noteProfileMenuBottom(px) {
+	const next = Math.round(px);
+	if (!(next > 0) || Math.abs(next - get(profileMenuBottom)) <= 1) return;
+	profileMenuBottom.set(next);
+	if (ls) safeStorage.setItem(MENU_KEY, String(next));
+}
+
 /** are the handles on here: the person's choice, else the device's default (off on the unfolded phone) */
 export const sidebarHandlesOn = derived([sidebarHandlesMode, deviceClass], ([$mode, $class]) => ($mode === 'auto' ? $class !== 'phone' : $mode === 'on'));
 

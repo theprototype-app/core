@@ -6,7 +6,8 @@
 	//   - slim to look at (12 px, 16 on hover), a bigger hit area on touch (44 px, the Properties value-field rule)
 	//   - dim at rest, full opacity on hover / focus (Settings, or the menu's "Dim at rest")
 	//   - never over the logo or the profile button: it sits BELOW the top chrome on its edge, measured live (the
-	//     unfolded N6 drops that chrome under the Connect bar, so a fixed top would land on it), plus the offset the
+	//     unfolded N6 drops that chrome under the Connect bar, so a fixed top would land on it) AND below the profile
+	//     menu's bottom edge, open or not (1.64, owner: the profile click used to move them), plus the offset the
 	//     person dragged it to along the edge (saved per side)
 	//   - a press toggles the column; a press that TRAVELS up / down moves the handle; right-click / long-press = its
 	//     menu (Hide handles · Move up / down · Reset position · Dim at rest)
@@ -23,7 +24,10 @@
 		setSidebarHandleY,
 		resetSidebarHandleY,
 		pressSidebarHandle,
-		hideSidebarHandles
+		hideSidebarHandles,
+		profileMenuBottom,
+		noteProfileMenuBottom,
+		MENU_BELOW_TRIGGER
 	} from '$lib/sidebarHandles';
 	import { coarsePointer } from '$lib/deviceClass.js';
 	import { bindingOf } from '$lib/shortcuts';
@@ -45,6 +49,11 @@
 		return side === 'left' ? w : window.innerWidth - w;
 	}
 
+	/** not top chrome: the columns' own parts, and anything that opens OVER the chrome (the profile menu, a context
+	 *  menu, a dialog) — measured, the profile menu's rows pushed the right handle down and its cover hid the
+	 *  chrome from the left one, so a click on the profile moved both handles */
+	const NOT_CHROME =
+		'.sbh, .sb-strip, #inspector, [data-docked], [data-sidebar-side], .sb-empty, [data-pd-host], #avatar-dropdown, [popover], [role=menu], [role=tooltip], [role=dialog], dialog';
 	/** what a handle must sit below: buttons of the top chrome within reach of its edge (not the columns' own) */
 	function measure(side: Side) {
 		const x0 = edgeX(side);
@@ -52,17 +61,39 @@
 		let b = 0;
 		for (const x of xs)
 			for (let y = 4; y <= 220; y += 8) {
-				const el = document.elementFromPoint(x, y) as HTMLElement | null;
-				const hit = el?.closest('button, a, [role=button], #avatar-trigger, .hud-cell') as HTMLElement | null;
-				if (!hit || hit.closest('.sbh, .sb-strip, #inspector, [data-docked], [data-sidebar-side], .sb-empty, [data-pd-host]')) continue;
-				const r = hit.getBoundingClientRect();
-				if (r.top > 160) continue; // a viewport button lower down is not top chrome
-				b = Math.max(b, r.bottom);
+				// every layer at the point, not only the top one: an open menu or its cover must not hide the
+				// chrome under it (the handle would jump up to the fallback and back when it closes)
+				for (const el of document.elementsFromPoint(x, y) as HTMLElement[]) {
+					if (el.closest(NOT_CHROME)) continue;
+					const hit = el.closest('button, a, [role=button], #avatar-trigger, .hud-cell') as HTMLElement | null;
+					if (!hit) continue;
+					const r = hit.getBoundingClientRect();
+					if (r.top <= 160) b = Math.max(b, r.bottom); // a viewport button lower down is not top chrome
+					break;
+				}
 			}
 		return Math.round(b || 56);
 	}
+	/** the profile menu's bottom edge while it is open on a desktop layout (a phone sheet is not up there) */
+	function measureMenu() {
+		const dd = document.getElementById('avatar-dropdown');
+		if (!dd) return;
+		const r = dd.getBoundingClientRect();
+		if (r.width > 0 && r.height > 0 && r.top < 160) noteProfileMenuBottom(r.bottom);
+	}
+	/** the floor under the top chrome both handles rest at: the chrome on that edge, and the profile menu's bottom
+	 *  (remembered; before the menu has opened here, its measured height below the profile button) */
+	function floorOf(side: Side) {
+		let menu = $profileMenuBottom;
+		if (!menu) {
+			const av = document.getElementById('avatar-trigger')?.getBoundingClientRect();
+			menu = av && av.height ? Math.round(av.top) + MENU_BELOW_TRIGGER : 0;
+		}
+		return Math.max(chromeBottom[side], menu);
+	}
 	function remeasure() {
 		if (!$sidebarsWide) return;
+		measureMenu();
 		const next = { left: measure('left'), right: measure('right') };
 		if (next.left !== chromeBottom.left || next.right !== chromeBottom.right) chromeBottom = next;
 	}
@@ -85,7 +116,7 @@
 	});
 
 	function topOf(side: Side, dragY = 0) {
-		const base = chromeBottom[side] + GAP;
+		const base = floorOf(side) + GAP;
 		const max = Math.max(base, window.innerHeight - TAB_H - 96);
 		return Math.min(max, base + $sidebarHandleY[side] + dragY);
 	}
@@ -112,7 +143,7 @@
 		press = null;
 		if (moving) {
 			const top = topOf(p.side, moving.dy);
-			setSidebarHandleY(p.side, top - (chromeBottom[p.side] + GAP));
+			setSidebarHandleY(p.side, top - (floorOf(p.side) + GAP));
 			moving = null;
 			suppress = true;
 		}

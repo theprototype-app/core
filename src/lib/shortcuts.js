@@ -6,7 +6,6 @@ import { keyOf } from './keyOf';
 import { scopeOfEvent, pickForScope, startKeyScope, setVrScopeProbe } from './keyScope';
 import { runNodeAction, hasNodeAction, nodeEditorInsideGroup } from './nodeEditorActions';
 import {
-	chatHidden,
 	settingsOpen,
 	commandPaletteOpen,
 	anyModalOpen,
@@ -41,6 +40,7 @@ import { cycleViewMode } from './viewMode'; // 37 R18
 import { toggleFocusAtPointer, focusActive, exitFocus } from './focusMode'; // 42 I14 (a leaf: appStore/sceneStore/bottomDock)
 import { viewportPipOpen, framePipSelection } from './viewportPip'; // 43 K5 (a leaf: sceneStore + three)
 import { togglePanel, toggleDock } from './panelToggles';
+import { toggleChatTab } from './chat/chatWindow.js'; // uir-chat
 import { toggleSidebar } from './sidebars'; // 44 M7 (a leaf: app stores + safeStorage)
 // Phase 5: the play FAB's own entry point. playMode.js imports sceneStore +
 // svelte/store ONLY (it says so at the top of the file, and that is deliberate),
@@ -549,7 +549,7 @@ export const shortcuts = [
 		group: 'Panels',
 		scope: 'viewport',
 		label: 'Toggle chat',
-		action: () => chatHidden.update((value) => (value === 'hidden' ? '' : 'hidden'))
+		action: () => toggleChatTab('session') // uir-chat: the Session tab of the one Chat window
 	},
 	{
 		id: 'panels.ai-prompt',

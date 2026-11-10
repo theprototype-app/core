@@ -36,7 +36,7 @@ export const DOCK_FAMILY = [...FLOW_FAMILY, 'explorer', 'profiler', 'code'];
 // 78 PL23 (owner bug G19, option a): Chat, the AI assistant and Free assets too — on a fold they became floating
 // sheets piled over the bar (they were docked a moment before); they are phone dock tabs now, and take their
 // wider-screen place back on the unfold (bottom dock, a sidebar column or floating: their own mode, untouched)
-export const PHONE_DOCK_TABS = ['properties', 'objects', 'notes', 'layouts', 'scene', 'stats', 'chat', 'aiAssistant', 'assets'];
+export const PHONE_DOCK_TABS = ['properties', 'objects', 'notes', 'layouts', 'scene', 'stats', 'chat', 'assets']; // uir-chat: the AI assistant is Chat's Assistant tab
 /**
  * 42 I6 — floating windows that have NO docked layout of their own (no `docked` flag, no
  * second render branch) and still dock as tabs on a wider screen: the dock frame HOSTS their
@@ -45,7 +45,7 @@ export const PHONE_DOCK_TABS = ['properties', 'objects', 'notes', 'layouts', 'sc
  * docks by dropping on the strip. These are the content/tool windows; the one-off viewers
  * (file/model previews, the text viewer), What's new and the tool palettes keep floating.
  */
-export const HOSTED_DOCK_TABS = ['objects', 'stats', 'chat', 'aiAssistant', 'assets', 'preview'];
+export const HOSTED_DOCK_TABS = ['objects', 'stats', 'chat', 'assets', 'preview']; // uir-chat: Chat + AI = one window
 /** every key the strip can hold (the tab order may name any of them) */
 export const DOCK_KEYS = [...new Set([...DOCK_FAMILY, ...PHONE_DOCK_TABS, ...HOSTED_DOCK_TABS])];
 /**

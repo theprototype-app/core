@@ -52,6 +52,8 @@ const EXACT = new Set([
 	'profilerLiveDocked',
 	'chatDocked',
 	'aiAssistantDocked',
+	// uir-chat: which tab the one Chat window shows (Session | Assistant)
+	'chat:tab',
 	...PANEL_PREFIXES.flatMap((p) => [p + 'Docked', p + 'WinW', p + 'WinH'])
 ]);
 /** key families that belong to the layout */

@@ -19,8 +19,7 @@ import {
 	profilerClose,
 	codeWorkspaceClose,
 	inspectorClose,
-	chatHidden,
-	aiAssistantHidden
+	chatHidden
 } from '../../stores/appStore';
 import { debugOpen, setDebugOpen } from '../flowDebug';
 import { DOCK_TITLES, DOCK_ICONS } from '../bottomDock';
@@ -67,8 +66,7 @@ const ENTRIES = [
 		open: () => setDebugOpen(true),
 		close: () => setDebugOpen(false)
 	},
-	{ key: 'aiAssistant', title: dockTitle('aiAssistant'), icon: DOCK_ICONS.aiAssistant, load: () => import('../../components/menu/AiAssistant.svelte'), ...hiddenClass(aiAssistantHidden) },
-	{ key: 'chat', title: dockTitle('chat'), icon: DOCK_ICONS.chat, load: () => import('../../components/menu/Chat.svelte'), ...hiddenClass(chatHidden) }
+	{ key: 'chat', title: dockTitle('chat'), icon: DOCK_ICONS.chat, load: () => import('../../components/menu/Chat.svelte'), ...hiddenClass(chatHidden) } // uir-chat: Session | Assistant
 ];
 
 /** key -> entry */

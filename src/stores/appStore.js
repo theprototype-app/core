@@ -2,6 +2,7 @@ import { writable, derived, get } from 'svelte/store';
 import { safeStorage } from '../lib/safeStorage';
 import { notifyOn } from '../lib/notifyPrefs';
 import { mentionsIn, mergeChat } from '../lib/chatTokens'; // 37 R15 (a zero-import leaf)
+import { migrateChatKeys } from '../lib/chat/chatKeys.js'; // uir-chat (a zero-import leaf)
 
 /** @type {import('svelte/store').Writable<any>} */
 export const settingsOpen = writable(null);
@@ -127,9 +128,38 @@ export function revealExplorerItem(name, hash = '') {
 // the tab strip's context menu can undock any of them — and it moved in with the rest of
 // the dock bookkeeping: `dockModeArm` / `armDockMode(key, docked)` in $lib/bottomDock.
 export const objectListClose = writable(true);
+// uir-chat: Chat and the AI assistant are ONE window (#chat-window) with two tabs, Session and
+// Assistant. `chatHidden` is the WINDOW's open state ('' open, 'hidden' closed) — the dock, the
+// sidebars and the layouts open and close the window with it; `chatTab` is the tab it shows.
 export const chatHidden = writable('hidden');
-// AI assistant (roadmap #10): '' = window open, 'hidden' = closed (mirrors chat).
-export const aiAssistantHidden = writable('hidden');
+/** @typedef {'session' | 'assistant'} ChatTab */
+// old saved state that named the assistant's own window ('aiAssistant') is read as this window
+// (chatKeys.js), BEFORE any window module reads its stored place
+const chatKeyMigration = migrateChatKeys(
+	(k) => safeStorage.getItem(k),
+	(k, v) => safeStorage.setItem(k, v),
+	(k) => safeStorage.removeItem(k)
+);
+/** @type {import('svelte/store').Writable<ChatTab>} */
+export const chatTab = writable(chatKeyMigration.assistant || safeStorage.getItem('chat:tab') === 'assistant' ? 'assistant' : 'session');
+chatTab.subscribe((v) => safeStorage.setItem('chat:tab', v));
+// AI assistant (roadmap #10): an ALIAS since uir-chat — '' while the one window is open ON the
+// Assistant tab. set('') opens the window on that tab (every "open the assistant" caller keeps
+// working unchanged); set('hidden') closes the window only while the Assistant tab is what it shows.
+const aiAssistantView = derived([chatHidden, chatTab], ([$hidden, $tab]) => ($hidden === '' && $tab === 'assistant' ? '' : 'hidden'));
+/** @param {string} v */
+function setAiAssistantHidden(v) {
+	if (v === '') {
+		chatTab.set('assistant');
+		chatHidden.set('');
+	} else if (get(aiAssistantView) === '') chatHidden.set('hidden');
+}
+/** @type {import('svelte/store').Writable<string>} */
+export const aiAssistantHidden = {
+	subscribe: aiAssistantView.subscribe,
+	set: setAiAssistantHidden,
+	update: (fn) => setAiAssistantHidden(fn(get(aiAssistantView)))
+};
 // Quick prompt pill — toggled by the backquote shortcut; session-only (not persisted).
 export const aiPromptBarOpen = writable(false);
 // Mesh-generation modal (roadmap #11): { position: number[]|null } when open, else null.
@@ -938,7 +968,8 @@ export const chatUnread = writable(0);
 export const chatMentioned = writable(false);
 /** @param {string} text */
 function noteUnreadChat(text) {
-	if (get(chatHidden) !== 'hidden') return;
+	// uir-chat: read = the one window open on its Session tab
+	if (get(chatHidden) === '' && get(chatTab) === 'session') return;
 	if (!notifyOn('chat')) return; // profile-notify: the Chat badge switch (Settings ▸ Interface ▸ Notifications)
 	chatUnread.update((n) => n + 1);
 	/** @type {any} */
@@ -947,8 +978,8 @@ function noteUnreadChat(text) {
 	if (me && mentionsIn(text, chatPeople()).includes(me)) chatMentioned.set(true);
 }
 // opening the chat reads it (chatHidden is declared above: the module-level subscribe rule)
-chatHidden.subscribe((v) => {
-	if (v === 'hidden') return;
+derived([chatHidden, chatTab], ([$hidden, $tab]) => $hidden === '' && $tab === 'session').subscribe((reading) => {
+	if (!reading) return;
 	chatUnread.set(0);
 	chatMentioned.set(false);
 });

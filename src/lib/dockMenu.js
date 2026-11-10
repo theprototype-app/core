@@ -111,8 +111,7 @@ export const PHONE_DOCK_WINDOWS = [
 export const HOSTED_DOCK_WINDOWS = [
 	{ key: 'objects', tooltip: 'Every object in the scene, as a tree' },
 	{ key: 'stats', tooltip: 'Scene budget: draw calls, triangles, textures and memory' },
-	{ key: 'chat', tooltip: 'Talk to the people in this session' },
-	{ key: 'aiAssistant', tooltip: 'Ask the AI assistant to build or change the scene' },
+	{ key: 'chat', tooltip: 'Talk to the people in this session and ask the AI assistant' }, // uir-chat
 	{ key: 'assets', tooltip: 'Free CC0 models, skies and materials from Poly Haven and ambientCG' },
 	{ key: 'preview', tooltip: 'Preview the file selected in the Explorer; Edit opens an image in the editor' }
 ];

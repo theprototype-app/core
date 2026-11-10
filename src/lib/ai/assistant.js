@@ -43,6 +43,18 @@ export function resetAiConversation() {
 	aiMessages.set([]);
 }
 
+/**
+ * uir-chat: put a SAVED conversation back (a reload, a pick in History). The window shows what it
+ * showed; the model gets a text-only transcript rebuilt from it (old tool calls and pictures are not
+ * re-sent — the next prompt carries a fresh scene summary as always).
+ * @param {UiMessage[]} list @param {{role: string, content: string}[]} turns
+ */
+export function restoreAiConversation(list, turns) {
+	stopAi();
+	aiMessages.set(list);
+	apiHistory = turns.length ? [{ role: 'system', content: buildSystemPrompt() }, ...turns.slice(-(MAX_TRANSCRIPT - 1))] : [];
+}
+
 /** @param {UiMessage} msg */
 function push(msg) {
 	aiMessages.update((list) => [...list, msg]);

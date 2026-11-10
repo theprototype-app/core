@@ -13,7 +13,7 @@ import {
 	HOSTED_DOCK_TABS
 } from './bottomDock';
 import { hostedTabsOpen, dockHostedView, hostedDocked, HOSTED } from './dockHost';
-import { chatHidden, aiAssistantHidden } from '../stores/appStore';
+import { chatHidden, chatTab } from '../stores/appStore';
 import { assetBrowserOpen } from './cc0/assetBrowserState.js';
 import { statsOpen } from './sceneBudget';
 import { registerDockOpener, registerDockCloser, closeStoreFor } from './dockMenu';
@@ -80,8 +80,8 @@ function quietly(fn) {
 // 43 J1: Statistics follows the Objects list's rule — a dock tab unless undocking is allowed
 // 78 PL23: Chat, the AI assistant and Free assets follow the same rule (a sheet / window only where undocking is allowed)
 export const phoneTabsOpen = derived(
-	[phoneShell, inspTabs, objectListClose, notesDrawerOpen, layoutsMenuOpen, mobileUndockAllowed, statsOpen, chatHidden, aiAssistantHidden, assetBrowserOpen],
-	([$phone, $ins, $objClosed, $notes, $layouts, $undock, $stats, $chat, $ai, $assets]) => ({
+	[phoneShell, inspTabs, objectListClose, notesDrawerOpen, layoutsMenuOpen, mobileUndockAllowed, statsOpen, chatHidden, assetBrowserOpen],
+	([$phone, $ins, $objClosed, $notes, $layouts, $undock, $stats, $chat, $assets]) => ({
 		properties: $phone && $ins.properties,
 		scene: $phone && $ins.scene,
 		objects: $phone && !$undock && !$objClosed,
@@ -89,15 +89,14 @@ export const phoneTabsOpen = derived(
 		layouts: $phone && !!$layouts,
 		stats: $phone && !$undock && !!$stats,
 		chat: $phone && !$undock && $chat === '',
-		aiAssistant: $phone && !$undock && $ai === '',
 		assets: $phone && !$undock && !!$assets
 	})
 );
 
 /** the content tabs that are floating WINDOWS elsewhere (and on a phone that allows undocking) */
-const WINDOW_TABS = ['objects', 'stats', 'chat', 'aiAssistant', 'assets'];
+const WINDOW_TABS = ['objects', 'stats', 'chat', 'assets']; // uir-chat: the AI assistant is Chat's Assistant tab
 /** 78 PL23: the hosted windows whose open store is dockHost's HOSTED entry (no phone-only store of their own) */
-const HOSTED_PHONE_TABS = ['chat', 'aiAssistant', 'assets'];
+const HOSTED_PHONE_TABS = ['chat', 'assets'];
 
 /** the phone content tab on screen right now (null: none, or the dock is minimized) */
 export const phoneDockShown = derived([phoneShell, visibleDockKey, dockMinimized], ([$phone, $key, $min]) =>
@@ -195,6 +194,23 @@ export function phoneBarTap(key) {
 		return;
 	}
 	togglePanel(key);
+}
+
+/**
+ * uir-int (78 PL23 + uir-chat): the phone bar's Chat and AI assistant buttons are the two tabs of the ONE
+ * Chat window, which is one phone dock tab. Asked for the tab the window is not showing, it switches the
+ * tab and brings the window up (never minimizes); asked for the tab it shows, it is the bar's own tap.
+ * @param {import('../stores/appStore').ChatTab} tab
+ */
+export function phoneChatTap(tab) {
+	const open = get(chatHidden) === '';
+	if (open && get(chatTab) !== tab) {
+		chatTab.set(tab);
+		if (get(dockOccupants).chat?.present) activateDock('chat');
+		return;
+	}
+	chatTab.set(tab);
+	phoneBarTap('chat');
 }
 
 /** @param {string} key */
@@ -447,7 +463,6 @@ export function startPhoneDock() {
 		['stats', statsOpen, (v) => !!v],
 		// 78 PL23
 		['chat', chatHidden, (v) => v === ''],
-		['aiAssistant', aiAssistantHidden, (v) => v === ''],
 		['assets', assetBrowserOpen, (v) => !!v]
 	])) {
 		let was = isOpen(get(store));

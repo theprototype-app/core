@@ -234,6 +234,22 @@ export function toggleHostedWindow(key) {
 }
 
 /**
+ * uir-chat: bring an OPEN hosted window forward where it lives (its covered sidebar tab, its bottom-dock
+ * tab that is not showing) — the first two branches of `toggleHostedWindow`, never its close. Used when
+ * the Chat window's other tab is asked for while it is already open.
+ * @param {string} key a HOSTED key
+ */
+export function revealHostedWindow(key) {
+	const h = HOSTED[key];
+	if (!h || !h.isOpen(get(h.store))) return;
+	if (sidebarSideOf(key)) {
+		if (sidebarTabCovered(key)) activateSidebarTab(key);
+		return;
+	}
+	if (!get(phoneShell) && get(hostedDocked)[key] && (get(dockMinimized) || !get(dockShownKeys).includes(key))) activateDock(key);
+}
+
+/**
  * THE DOCK ITSELF, as one key (T). `togglePanel` answers for a NAMED view; this one
  * answers for the strip that holds them, which had no keyboard affordance at all.
  *

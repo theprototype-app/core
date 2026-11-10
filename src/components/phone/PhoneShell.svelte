@@ -68,7 +68,7 @@
 		userdata,
 		messages,
 		chatHidden,
-		aiAssistantHidden,
+		chatTab,
 		notificationCenterOpen,
 		peersPanelOpen,
 		inspectorKind,
@@ -84,7 +84,7 @@
 	import { selectedObjects, transformMode, editorMode } from '../../stores/sceneStore';
 	import { undo, redo, canUndo, canRedo } from '$lib/history';
 	import { setTransformMode, toggleEditorMode } from '$lib/objectActions';
-	import { phoneBarTap, openPhoneTab, closePhoneTab, phoneDockShown, phoneTabsOpen } from '$lib/phoneDock';
+	import { phoneBarTap, phoneChatTap, openPhoneTab, closePhoneTab, phoneDockShown, phoneTabsOpen } from '$lib/phoneDock';
 	import { toggleViewportFocus } from '$lib/focusMode';
 	import { requestPlay, willEnterXR, willEnterAR, playAsItems } from '$lib/playMode';
 	// 50 R1: the AR table — a phone places the scene on a real table (Android Chrome, WebXR immersive-ar)
@@ -164,8 +164,8 @@
 	 * @type {Record<string, [string|null, string|null, boolean]>} */
 	// 41b H1: Objects is a DOCK TAB now (PhoneDockHost), not a framed sheet
 	const HOSTS = {
+		// uir-chat: Chat and the AI assistant are one window (Session | Assistant tabs), one sheet
 		chat: ['#chat-window', null, false],
-		ai: ['#ai-assistant-window', null, false],
 		notif: ['#notif-panel', null, true],
 		// 41b H15: the connected-peers panel is a drawer like the notifications (it draws its own header)
 		peers: ['#peers-popover', null, true],
@@ -175,8 +175,7 @@
 
 	// 78 PL23: Chat and the AI assistant are phone DOCK tabs (PhoneDockHost) — a sheet only where undocking is allowed
 	const openNow = $derived(/** @type {Record<string, boolean>} */ ({
-		chat: $chatHidden === '' && !$phoneTabsOpen.chat,
-		ai: $aiAssistantHidden === '' && !$phoneTabsOpen.aiAssistant,
+		chat: $chatHidden === '' && !$phoneTabsOpen.chat, // 78 PL23 + uir-chat: one window, one phone dock tab
 		notif: $notificationCenterOpen,
 		peers: $peersPanelOpen,
 		conn: $phoneSheet === 'conn',
@@ -245,7 +244,6 @@
 	function closeKind(/** @type {string|null} */ k) {
 		dragH = null;
 		if (k === 'chat') chatHidden.set('hidden');
-		else if (k === 'ai') aiAssistantHidden.set('hidden');
 		else if (k === 'notif') notificationCenterOpen.set(false);
 		else if (k === 'peers') peersPanelOpen.set(false);
 		else if (k === 'conn') closeConn();
@@ -435,9 +433,12 @@
 
 	// unread chat: messages that arrived while the chat sheet was closed
 	let seenChat = $state(0);
-	const chatOpen = $derived($chatHidden === '');
-	// 78 PL23: as a dock tab the chat is SEEN only while its tab is in front (open behind another tab = unread counts)
+	// uir-chat: the Session tab of the one Chat window is what reads the chat; 78 PL23: as a dock tab it is
+	// SEEN only while its tab is in front (open behind another tab = unread counts)
+	const chatOpen = $derived($chatHidden === '' && $chatTab === 'session');
 	const chatSeen = $derived(chatOpen && (!$phoneTabsOpen.chat || ($visibleDockKey === 'chat' && !$dockMinimized)));
+	/** the one Chat window is on screen (its dock tab in front, or its sheet / window open) */
+	const chatShown = $derived(($visibleDockKey === 'chat' && !$dockMinimized) || ($chatHidden === '' && !$phoneTabsOpen.chat));
 	$effect(() => {
 		if (chatSeen) seenChat = $messages.length;
 	});
@@ -484,8 +485,7 @@
 	// 86-fix N1: always opens; with no provider the window offers Connect Claude or Settings ▸ AI
 	function openAi() {
 		phoneSheet.set(null);
-		// 78 PL23: a dock tab — a tap on the one in front minimizes the dock, like the other dock tabs
-		phoneBarTap('aiAssistant');
+		phoneChatTap('assistant'); // uir-chat + 78 PL23: the Assistant tab of the one Chat window (a phone dock tab)
 	}
 	/** close the shell's own sheet, then run (a destination opened from More replaces it) */
 	const fromMore = (/** @type {() => void} */ fn) => () => {
@@ -527,8 +527,8 @@
 		chat: {
 			label: 'Chat',
 			icon: 'message-square',
-			run: fromMore(() => phoneBarTap('chat')),
-			pressed: () => ($visibleDockKey === 'chat' && !$dockMinimized) || (chatOpen && !$phoneTabsOpen.chat),
+			run: fromMore(() => phoneChatTap('session')), // uir-chat + 78 PL23
+			pressed: () => chatShown && $chatTab === 'session',
 			badge: () => chatUnread
 		},
 		scene: {
@@ -537,7 +537,7 @@
 			run: fromMore(() => phoneBarTap('scene')),
 			pressed: () => $visibleDockKey === 'scene' && !$dockMinimized
 		},
-		ai: { label: 'AI assistant', short: 'AI', icon: 'sparkles', run: () => openAi(), pressed: () => ($visibleDockKey === 'aiAssistant' && !$dockMinimized) || ($aiAssistantHidden === '' && !$phoneTabsOpen.aiAssistant) },
+		ai: { label: 'AI assistant', short: 'AI', icon: 'sparkles', run: () => openAi(), pressed: () => chatShown && $chatTab === 'assistant' },
 		notes: {
 			label: 'Notes',
 			icon: 'sticky-note',

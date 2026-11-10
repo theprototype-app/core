@@ -91,6 +91,9 @@
 - The sidebar handles never sit on top of the bottom dock: they slide up with it and go back to your chosen spot when it closes. <!-- 78-fix-547 -->
 - In the file preview, stepping with the Left and Right arrows no longer draws a blue ring round the whole window. <!-- 78-fix-547 -->
 
+### Known issues
+- In Play, the default walker (a walking scene with no Character Controller) can rest 1 to 3 cm lower than the floor, so a player's character may look slightly sunk into it. A fix is planned. <!-- 78-int card: KCC rest bias -->
+
 ## 1.63.0 — Pro look 📸
 
 ### 📸 Pro look

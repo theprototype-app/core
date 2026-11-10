@@ -54,7 +54,7 @@ h.run(async () => {
 	// ungrouped floating Timeline keeps its Dock action in its HEADER (not a content row)
 	const hdrApply = await A.page.evaluate(() => {
 		const hdr = document.querySelector('#timeline-window .ui-panel-header');
-		return hdr ? [...hdr.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Dock') : false;
+		return hdr ? !!hdr.querySelector('[data-head-dock="timeline"]') : false; // uir-polish G3: icon-only
 	});
 	h.check(hdrApply, 'ungrouped floating Timeline shows Dock in its header (not a content row)');
 	const resized = await A.page.evaluate(async () => {

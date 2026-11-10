@@ -3,6 +3,7 @@
 	import { showChoice, showConfirm } from '$lib/confirmDialog.js';
 	import { safeHtml } from '$lib/sandbox/sanitize.js';
 	import Icon from '../ui/Icon.svelte';
+	import HeadDockPop from '../ui/HeadDockPop.svelte'; // uir-polish G2/G3
 	import EmptyState from '../ui/EmptyState.svelte';
 	import { FILE_TEMPLATES } from '$lib/codeFilesCore.js';
 	import { isViewer } from '$lib/objectPermissions';
@@ -9004,7 +9005,7 @@
 					</div>
 				{/snippet}
 				{#snippet actions()}
-					<button id="explorer-dock" data-wc-chrome class="wc-act-text" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={16} />Dock</button>
+					<HeadDockPop key="explorer" title="Explorer" ondock={() => setDocked(true)} dockId="explorer-dock" />
 				{/snippet}
 			</WindowChrome>
 			<div class="min-h-0 flex-1 p-1">

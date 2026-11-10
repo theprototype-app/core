@@ -19,6 +19,8 @@
 	import { bottomDockable } from '$lib/bottomDockDrop';
 	import { safeStorage } from '$lib/safeStorage';
 	import Icon from '../ui/Icon.svelte';
+	import HeadDockPop from '../ui/HeadDockPop.svelte'; // uir-polish G2
+	import { dockTab } from '$lib/dockMenu';
 	import Button from '../ui/Button.svelte';
 	import Tabs from '../ui/Tabs.svelte';
 	import { meshProviders, meshActiveProvider, setMeshActiveProvider, meshTakesImage } from '$lib/ai/meshProviders';
@@ -235,7 +237,8 @@
 			<Icon name="wand-sparkles" size={16} aria-hidden="true" />
 			<span class="flex-1 truncate text-sm font-semibold">Generate 3D model</span>
 			{#if runningCount}<span class="mg-badge" id="mesh-gen-running" title="Running jobs">{runningCount} running</span>{/if}
-			<button id="mesh-gen-close" class="rounded-sm p-1 hover:brightness-150" title="Close (jobs keep running)" aria-label="Close the Generate window" onclick={close}
+			<HeadDockPop key="meshGen" title="Generate 3D" ondock={() => dockTab('meshGen')} btnClass="rounded-sm p-1 hover:brightness-150" />
+			<button id="mesh-gen-close" data-wc-x class="rounded-sm p-1 hover:brightness-150" title="Close (jobs keep running)" aria-label="Close the Generate window" onclick={close}
 				><Icon name="x" size={16} aria-hidden="true" /></button
 			>
 		</div>

@@ -1,5 +1,7 @@
 <script lang="ts">
 	import Icon from '../ui/Icon.svelte';
+	import HeadDockPop from '../ui/HeadDockPop.svelte'; // uir-polish G2
+	import { dockTab } from '$lib/dockMenu';
 	import { untrack } from 'svelte';
 	// R22 round 11 — WAS ImagePreviewWindow, and it is the FILE preview now: image, audio
 	// or 3D, with arrows that walk the folder you are looking at.
@@ -856,7 +858,8 @@
 				onclick={() => openPreviewCog.set(cogOpen ? null : winId)}
 				><Icon name="settings" size={16} aria-hidden="true" /></button
 			>
-			<button id="preview-close" class="ui-button-quiet" title="Close" aria-label="Close" onclick={() => void close()}><Icon name="x" size={16} aria-hidden="true" /></button>
+			{#if first}<HeadDockPop key="preview" title="Preview" ondock={() => dockTab('preview')} btnClass="ui-button-quiet" />{/if}
+			<button id="preview-close" data-wc-x class="ui-button-quiet" title="Close" aria-label="Close" onclick={() => void close()}><Icon name="x" size={16} aria-hidden="true" /></button>
 		</div>
 
 		{#if cogOpen && !editing}

@@ -13,6 +13,7 @@
 	// DOWN in canvas space, so every mapping flips Y.
 	import { onMount, untrack } from 'svelte';
 	import Icon from '../ui/Icon.svelte';
+	import HeadDockPop from '../ui/HeadDockPop.svelte'; // uir-polish G2/G3
 	import ScrollStrip from '../ui/ScrollStrip.svelte';
 	import { selectedObject, selectedObjects, objectsGroup, globalScene } from '../../stores/sceneStore';
 	import { uvEditorClose, showToast } from '../../stores/appStore.js';
@@ -2066,7 +2067,7 @@
 					<span class="flex-1"></span>
 				{/snippet}
 				{#snippet actions()}
-					<button data-wc-chrome class="wc-act-text" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={16} />Dock</button>
+					<HeadDockPop key="uv" title="UV editor" ondock={() => setDocked(true)} />
 				{/snippet}
 			</WindowChrome>
 			<div class="flex min-h-0 flex-1 flex-col">

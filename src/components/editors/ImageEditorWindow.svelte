@@ -15,6 +15,15 @@
 	// The editor's undo (Ctrl+Z / Ctrl+Shift+Z) is LOCAL to the window and never touches the
 	// scene's history: an unsaved edit is not scene state. Save is the step that reaches the
 	// scene, and the material re-texturing it does is ONE scene undo entry.
+	//
+	// uir-preview (owner 2026-11-09, "Preview + image editor = one window, View | Edit"): this is no
+	// longer a window. It is the EDIT FACE of the preview window (FilePreviewWindow renders it in its
+	// body while that window's mode is 'edit'), so the floating window, its dock tab and its own
+	// header are gone and the preview's header (walk, View | Edit, pin, close) is the chrome. The
+	// region keeps the id `#image-editor-window` and every inner id (the 21-G1 rule). The left pane is
+	// an IMAGES FILMSTRIP — the folder's library images, the same list `[` `]` walk — and tools join
+	// it later. Leaving an unsaved edit by ANY route (View, Esc, close, walking, the pinned preview
+	// following the Explorer) asks through the one guard registered below.
 	import { tick, untrack } from 'svelte';
 	import Icon from '../ui/Icon.svelte';
 	import UiButton from '../ui/Button.svelte';
@@ -22,17 +31,10 @@
 	import SliderRow from '../ui/SliderRow.svelte';
 	import DragRow from '../ui/DragRow.svelte';
 	import Toggle from '../ui/Toggle.svelte';
-	import WindowChrome from '../ui/WindowChrome.svelte';
 	import WindowShell from '../shared/WindowShell.svelte';
 	import ScrollStrip from '../ui/ScrollStrip.svelte';
-	import { dragWindow } from '$lib/dragWindow';
-	import { focusStack } from '$lib/windowFocus';
-	import { tabbable } from '$lib/windowTabs';
-	import DockTabs from '../DockTabs.svelte';
-	import { safeStorage } from '$lib/safeStorage';
-	import { setDockOccupant, dockHeight, visibleDockKey, dockShownKeys, dockPaneOf, dockMinimized, activateDock, dockModeArm, forgetDockTab } from '$lib/bottomDock';
-	import { bottomDockable } from '$lib/bottomDockDrop';
-	import { registerDockCloser } from '$lib/dockMenu';
+	import { previewSiblings, imageWalk, previewIdOf } from '$lib/filePreview';
+	import { registerEditorGuard, imageEditorDirty } from '$lib/image/imageEditorState';
 	import { explorerItems, hiddenItems, itemBlob } from '$lib/explorer';
 	import { showToast } from '../../stores/appStore';
 	import { showChoice } from '$lib/confirmDialog';
@@ -65,6 +67,10 @@
 	import { texturesFromSource } from '$lib/materialsHandler';
 
 	/** @typedef {import('$lib/image/imageOps').Raster} Raster */
+
+	/** uir-preview: the preview window walks to a filmstrip image (it owns the target, and asks
+	 * through the guard below before it leaves an unsaved edit) */
+	let { onPick = /** @type {(entry: any) => void} */ (() => {}) } = $props();
 
 	const target = $derived($imageEditorTarget);
 	const item = $derived.by(() => {
@@ -344,16 +350,44 @@
 	/** @param {number} b */
 	const bytes = (b) => (b < 1048576 ? Math.max(1, Math.round(b / 1024)) + ' KB' : (b / 1048576).toFixed(1) + ' MB');
 
+	/**
+	 * uir-preview — THE ONE QUESTION before an unsaved edit is left, whatever left it: the View tab,
+	 * Esc, the window's close, `[` `]`, the filmstrip, or the pinned preview following the Explorer.
+	 * Worded for what is about to happen; "Keep editing" is the safe answer everywhere.
+	 * @param {'leave' | 'switch' | 'close'} [action] @returns {Promise<boolean>}
+	 */
+	async function askLeave(action = 'leave') {
+		if (!dirty) return true;
+		const words = {
+			close: { title: 'Close without saving?', label: 'Discard and close' },
+			switch: { title: 'Open another image without saving?', label: 'Discard and open' },
+			leave: { title: 'Leave without saving?', label: 'Discard edits' }
+		}[action];
+		const go = await showChoice({
+			title: words.title,
+			message: 'Your edits to ' + (item?.name ?? 'this image') + ' are not saved.',
+			// the choice's value names the action, so its button id reads #confirm-dialog-close /
+			// -switch / -leave (the close one is the id the editor's ask always had)
+			choices: [{ value: action, label: words.label }],
+			cancelLabel: 'Keep editing'
+		});
+		if (go !== action) return false;
+		// the edit is discarded: the next image (or this one, reopened) loads fresh
+		loadedFor = '';
+		undoStack = [];
+		redoStack = [];
+		brightness = contrast = saturation = 0;
+		return true;
+	}
+	$effect(() => registerEditorGuard(askLeave));
+	$effect(() => {
+		imageEditorDirty.set(dirty);
+		return () => imageEditorDirty.set(false);
+	});
+
+	/** leave the editor (Esc): back to the preview's View face, after the ask */
 	async function close() {
-		if (dirty) {
-			const go = await showChoice({
-				title: 'Close without saving?',
-				message: 'Your edits to ' + (item?.name ?? 'this image') + ' are not saved.',
-				choices: [{ value: 'close', label: 'Discard and close' }],
-				cancelLabel: 'Keep editing'
-			});
-			if (go !== 'close') return;
-		}
+		if (!(await askLeave('leave'))) return;
 		loadedFor = '';
 		work = null;
 		closeImageEditor();
@@ -698,61 +732,24 @@
 		return { destroy: () => node.removeEventListener('keydown', onKey, true) };
 	}
 
-	// ---- 41 G24: a bottom-dock tab too (the 40-image Q2 answer) ---------------------------
-	// The Profiler's shape: `docked` is this component's own mode, read once and asked to
-	// change through `dockModeArm` (the tab strip's Undock, a drag onto the strip, the "+"
-	// row); docked + open = a dock occupant. Floating stays the default.
-	let docked = $state(typeof localStorage !== 'undefined' && safeStorage.getItem('imageEditorDocked') === 'true');
-	function setDocked(/** @type {boolean} */ v) {
-		docked = v;
-		safeStorage.setItem('imageEditorDocked', String(v));
-		if (v) activateDock('imageEditor');
-		else forgetDockTab('imageEditor');
-	}
-	$effect(() => {
-		const arm = $dockModeArm;
-		if (!arm || arm.key !== 'imageEditor') return;
-		dockModeArm.set(null);
-		untrack(() => {
-			if (arm.docked !== docked) setDocked(arm.docked);
-			// "+ Image editor" with nothing open: open it empty (it says how to pick an image)
-			if (!$imageEditorTarget) imageEditorTarget.set({ itemId: '', raise: 1 });
-		});
-	});
-	$effect(() => {
-		setDockOccupant('imageEditor', !!target && docked, $dockHeight);
-		return () => setDockOccupant('imageEditor', false);
-	});
-	// the tab ✕ asks first when there are unsaved edits, exactly like the header ✕
-	$effect(() => registerDockCloser('imageEditor', () => void close()));
-	const dockVisible = $derived($dockShownKeys.includes('imageEditor'));
-	let dockResizing = false;
-	const clampDockH = (/** @type {number} */ h) => Math.min(Math.max(h || 320, 200), Math.round(window.innerHeight * 0.8));
-	function startDockResize(/** @type {any} */ e) {
-		dockResizing = true;
-		e.currentTarget.setPointerCapture(e.pointerId);
-		e.preventDefault();
-	}
-	function doDockResize(/** @type {any} */ e) {
-		if (dockResizing) dockHeight.update((h) => clampDockH(h - e.movementY));
-	}
-	function endDockResize(/** @type {any} */ e) {
-		if (!dockResizing) return;
-		dockResizing = false;
-		e.currentTarget.releasePointerCapture?.(e.pointerId);
-	}
-
-	// come forward when asked for again
+	// come forward when asked for again (the preview window raises; the canvas takes the keys)
 	let winEl = $state(/** @type {HTMLDivElement | null} */ (null));
 	$effect(() => {
 		void target?.raise;
 		if (!target) return;
-		untrack(() => {
-			if (docked) activateDock('imageEditor');
-			winEl?.focus?.();
-		});
+		untrack(() => wrapEl?.focus?.());
 	});
+
+	// ---- uir-preview: the IMAGES FILMSTRIP (the left pane) ----------------------------------
+	const strip = $derived(imageWalk($previewSiblings.entries));
+	/** keep the current image's frame in view as `[` `]` walk */
+	function stripCurrent(/** @type {HTMLElement} */ node, /** @type {boolean} */ on) {
+		const go = (/** @type {boolean} */ v) => v && node.scrollIntoView?.({ block: 'nearest' });
+		go(on);
+		return { update: go };
+	}
 </script>
+
 
 {#snippet versionsPanel()}
 	<div class="ie-pane" id="image-editor-history" use:fromTop>
@@ -857,13 +854,17 @@
 		<WindowShell
 			key="imageEditor"
 			narrowHeader={false}
-			hidePrimary
+			primaryLabel="images"
+			primaryDefaultWidth={112}
 			secondaryDefaultOpen
 			secondaryDefaultWidth={248}
 			secondaryModes={[{ key: 'edit', icon: '✎', label: 'Edit' }, { key: 'history', icon: '⟲', label: 'Versions' }]}
 		>
 			{#snippet topbar()}
-				<div class="border-b border-border px-2 py-1">
+				<!-- uir-preview: Save is PINNED at the right, outside the scrolling strip — in a narrow pane
+				     (a split dock, a phone) the strip scrolls and Save must never be the part scrolled away -->
+				<div class="flex items-center gap-1 border-b border-border px-2 py-1">
+					<div class="min-w-0 flex-1">
 					<ScrollStrip label="Image editor tools" id="image-editor-toolbar">
 						<div class="flex shrink-0 items-center gap-1">
 							<UiButton id="image-editor-undo" variant="icon" size="sm" icon="undo-2" label="Undo (Ctrl+Z)" title="Undo (Ctrl+Z)" disabled={!undoStack.length} onclick={undo} />
@@ -883,10 +884,40 @@
 							{/if}
 							<span class="flex-1"></span>
 							<UiButton id="image-editor-save-copy" size="sm" variant="outline" icon="copy" disabled={!work || saving} title="Save the edit as a new image beside this one" onclick={saveCopy}>Save as copy</UiButton>
-							<UiButton id="image-editor-save" size="sm" variant="primary" icon="save" disabled={!dirty || saving} title="Save over this image (Ctrl+S) — its earlier version stays in Versions" onclick={save}>Save</UiButton>
 						</div>
 					</ScrollStrip>
+					</div>
+					<div class="shrink-0">
+						<UiButton id="image-editor-save" size="sm" variant="primary" icon="save" disabled={!dirty || saving} title="Save over this image (Ctrl+S) — its earlier version stays in Versions" onclick={save}>Save</UiButton>
+					</div>
 				</div>
+			{/snippet}
+
+			{#snippet primary()}
+				<!-- uir-preview: the folder's library images; a press opens one here (asking first when
+				     the current one has unsaved edits). `[` `]` and Ctrl+arrows walk the same list. -->
+				<ul id="image-editor-filmstrip" class="ie-strip" aria-label="Images in this folder">
+					{#each strip as entry (previewIdOf(entry))}
+						{@const it = entry.item}
+						{@const current = it.id === target?.itemId}
+						<li>
+							<button
+								class="ie-frame"
+								class:ie-frame-current={current}
+								data-strip-id={it.id}
+								aria-current={current ? 'true' : undefined}
+								title={it.name}
+								use:stripCurrent={current}
+								onclick={() => !current && onPick(entry)}
+							>
+								{#if it.thumbnail}<img src={it.thumbnail} alt="" class="ie-frame-img" />{:else}<span class="ie-frame-img ie-frame-blank"><Icon name="image" size={20} aria-hidden="true" /></span>{/if}
+								<span class="ie-frame-name">{it.name}</span>
+							</button>
+						</li>
+					{:else}
+						<li class="ie-note">The images in the folder the Explorer is showing appear here.</li>
+					{/each}
+				</ul>
 			{/snippet}
 
 			{#snippet main()}
@@ -930,80 +961,22 @@
 	</div>
 {/snippet}
 
-{#if target && docked}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div
-		id="image-editor-dock"
-		bind:this={winEl}
-		tabindex="-1"
-		use:ownKeys
-		class="tp-themed fixed inset-x-0 bottom-0 tp-ui tp-dock-panel flex flex-col p-2 outline-hidden {dockVisible ? '' : 'hidden'}"
-		data-dock-pane={$dockPaneOf['imageEditor']}
-		style="z-index: var(--z-dock); height: {$dockHeight}px; border-top: 1px solid var(--tp-line)"
-		data-key-scope="panel"
-		role="region"
-		aria-label="Image editor (docked)"
-	>
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div
-			class="resize-cue hover:bg-accent/30 absolute -top-1 right-0 left-0 z-28 h-2 cursor-ns-resize"
-			style="touch-action: none"
-			title="Drag to resize"
-			onpointerdown={startDockResize}
-			onpointermove={doDockResize}
-			onpointerup={endDockResize}
-		></div>
-		<DockTabs />
-		<div class="flex shrink-0 items-center gap-2 pb-1">
-			<span class="tp-dock-title">Image editor</span>
-			<span class="wc-sub ie-title" title={item?.name ?? ''}>{item?.name ?? ''}{dirty ? ' •' : ''}</span>
-		</div>
-		{@render editorBody()}
-	</div>
-{:else if target}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
+{#if target}
+	<!-- uir-preview: the Edit face of the preview window — a region inside it, not a window -->
 	<div
 		id="image-editor-window"
 		bind:this={winEl}
-		tabindex="-1"
-		class="ui-panel tp-ui tp-window fixed flex flex-col overflow-hidden outline-hidden"
-		use:dragWindow={{ key: 'imageEditor', defaultRect: { left: 180, top: 110 }, resizable: true, minW: 420, minH: 320 }}
-		use:focusStack={'imageEditor'}
-		use:tabbable={{ key: 'imageEditor', title: 'Image editor', openStore: imageEditorTarget, isOpen: (v) => !!v, close: () => void close(), minW: 420, minH: 320 }}
-		use:bottomDockable={{ key: 'imageEditor' }}
+		class="ie-embedded flex min-h-0 flex-1 flex-col outline-hidden"
 		use:ownKeys
-		style="z-index: var(--z-window); width: 820px; height: 560px"
+		role="region"
+		aria-label={'Image editor' + (item ? ': ' + item.name : '')}
+		data-dirty={dirty ? 'true' : undefined}
 	>
-		<WindowChrome
-			size="tool"
-			bare
-			dockedHead="tools"
-			body={false}
-			title="Image editor"
-			headerClass="ui-panel-header move-handle cursor-move select-none"
-			onclose={() => void close()}
-			closeAttrs={{ title: 'Close', id: 'image-editor-close' }}
-		>
-			{#snippet heading()}
-				<span class="wc-label">Image editor</span>
-				<span class="wc-sub ie-title" title={item?.name ?? ''}>{item?.name ?? ''}{dirty ? ' •' : ''}</span>
-				<span class="flex-1"></span>
-			{/snippet}
-			{#snippet actions()}
-				<button data-wc-chrome class="wc-act-text" id="image-editor-dock-btn" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={16} />Dock</button>
-			{/snippet}
-		</WindowChrome>
 		{@render editorBody()}
 	</div>
 {/if}
 
 <style>
-	.ie-title {
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
 	.ie-pane {
 		display: flex;
 		flex-direction: column;
@@ -1143,58 +1116,92 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}
-	/* PHONE: the editor is a full-width sheet between the top chrome and the Controls bar —
-	   it never covers Play or the selection toolbar (NOTES-38 #32). dragWindow positions with
-	   inline styles, so the sheet's own geometry has to win them. */
+	/* uir-preview — THE IMAGES FILMSTRIP: one column of frames, the current one ringed */
+	.ie-strip {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		margin: 0;
+		padding: 6px;
+		list-style: none;
+	}
+	.ie-frame {
+		display: flex;
+		width: 100%;
+		flex-direction: column;
+		align-items: stretch;
+		gap: 2px;
+		border-radius: 4px;
+		border: 1px solid transparent;
+		padding: 3px;
+		background: transparent;
+		color: var(--text-2);
+		cursor: pointer;
+	}
+	.ie-frame:hover {
+		background: var(--surface-2);
+	}
+	.ie-frame:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 1px;
+	}
+	.ie-frame-current {
+		border-color: var(--accent);
+		background: var(--accent-soft);
+		color: var(--text);
+	}
+	.ie-frame-img {
+		display: flex;
+		width: 100%;
+		aspect-ratio: 1;
+		align-items: center;
+		justify-content: center;
+		border-radius: 3px;
+		object-fit: cover;
+		background: var(--surface-2);
+	}
+	.ie-frame-blank {
+		color: var(--text-faint);
+	}
+	.ie-frame-name {
+		overflow: hidden;
+		font-size: var(--fs-badge);
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	/* PHONE: the preview window is the sheet (its own rules); inside it a phone is too narrow for
+	   canvas + sidebar side by side (measured: a 232 px canvas beside a 158 px sidebar that clipped
+	   its own labels), so the panel STACKS under the canvas: canvas, then the Edit/Versions tabs as a
+	   row, then the panel. The filmstrip stands down there — `[` `]` and the header arrows walk. */
 	@media (max-width: 640px) {
-		#image-editor-window {
-			left: 0 !important;
-			right: 0 !important;
-			top: var(--connect-bottom, 56px) !important;
-			bottom: var(--controls-inset, 0px) !important;
-			width: 100vw !important;
-			height: auto !important;
-			max-width: none !important;
-			border-radius: 12px 12px 0 0;
+		#image-editor-window :global(.ws-panel:not(.ws-panel-secondary)),
+		#image-editor-window :global(.ws-edge) {
+			display: none !important;
 		}
-		#image-editor-window :global(.dw-resize) {
-			display: none;
-		}
-		/* a phone is too narrow for canvas + sidebar side by side (measured: a 232 px canvas
-		   beside a 158 px sidebar that clipped its own labels), so the panel STACKS under the
-		   canvas: canvas, then the Edit/Versions tabs as a row, then the panel. Order is pinned
-		   whichever side the sidebar was switched to on a desktop. */
-		#image-editor-window :global(.ws-root),
-		#image-editor-dock :global(.ws-root) {
+		#image-editor-window :global(.ws-root) {
 			flex-direction: column;
 		}
-		#image-editor-window :global(.ws-main),
-		#image-editor-dock :global(.ws-main) {
+		#image-editor-window :global(.ws-main) {
 			order: 1 !important;
 			flex: 1 1 0;
 			min-height: 160px;
 		}
-		#image-editor-window :global(.ws-tabs),
-		#image-editor-dock :global(.ws-tabs) {
+		#image-editor-window :global(.ws-tabs) {
 			order: 2 !important;
 			flex-direction: row;
 			width: 100%;
 			padding-top: 0;
 			border-top: 1px solid var(--border);
 		}
-		#image-editor-window :global(.ws-tab-btn),
-		#image-editor-dock :global(.ws-tab-btn) {
+		#image-editor-window :global(.ws-tab-btn) {
 			flex: 1 1 0;
 			height: 44px;
 		}
 		#image-editor-window :global(.ws-tabs .ws-resize),
-		#image-editor-dock :global(.ws-tabs .ws-resize),
-		#image-editor-window :global([data-ws-switch-side]),
-		#image-editor-dock :global([data-ws-switch-side]) {
+		#image-editor-window :global([data-ws-switch-side]) {
 			display: none;
 		}
-		#image-editor-window :global(.ws-panel-secondary),
-		#image-editor-dock :global(.ws-panel-secondary) {
+		#image-editor-window :global(.ws-panel-secondary) {
 			order: 3 !important;
 			width: 100% !important;
 			height: auto;
@@ -1202,12 +1209,5 @@
 			min-height: 0;
 			border-inline: 0;
 		}
-	}
-	/* on the phone shell the top bar (logo, bell, avatar) is 64 px tall and the bottom bar
-	   holds Play: the sheet sits between the two, so neither covers its header (the close
-	   button) and Play stays tappable — the Inspector's phone-shell rule (ui.css). */
-	:global(:root.phone-shell) #image-editor-window {
-		top: 64px !important;
-		bottom: var(--ps-bar-h) !important;
 	}
 </style>

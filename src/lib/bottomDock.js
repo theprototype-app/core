@@ -19,7 +19,7 @@ import { phoneShell } from './ui/phoneShell.js';
 
 export const FLOW_FAMILY = ['flow', 'flowcode', 'animation', 'uv', 'shader', 'hud', 'timeline'];
 /** every panel that can be a dock tab, in strip order (Node editor first) */
-export const DOCK_FAMILY = [...FLOW_FAMILY, 'explorer', 'profiler', 'code', 'imageEditor'];
+export const DOCK_FAMILY = [...FLOW_FAMILY, 'explorer', 'profiler', 'code'];
 /**
  * 41b H1 — the PHONE's content tabs. On a phone the content panels that are side drawers or
  * floating windows on a wider screen (the Inspector as Properties / Configure Scene, the Objects
@@ -45,7 +45,7 @@ export const PHONE_DOCK_TABS = ['properties', 'objects', 'notes', 'layouts', 'sc
  * docks by dropping on the strip. These are the content/tool windows; the one-off viewers
  * (file/model previews, the text viewer), What's new and the tool palettes keep floating.
  */
-export const HOSTED_DOCK_TABS = ['objects', 'stats', 'chat', 'aiAssistant', 'assets'];
+export const HOSTED_DOCK_TABS = ['objects', 'stats', 'chat', 'aiAssistant', 'assets', 'preview'];
 /** every key the strip can hold (the tab order may name any of them) */
 export const DOCK_KEYS = [...new Set([...DOCK_FAMILY, ...PHONE_DOCK_TABS, ...HOSTED_DOCK_TABS])];
 /**
@@ -60,10 +60,10 @@ export function canDockFloating(key) {
 	return FLOAT_DOCKABLE.includes(key);
 }
 /** @type {Record<string, string>} */
-export const DOCK_TITLES = { flow: 'Node editor', flowcode: 'Flow Code', animation: 'Animation', uv: 'UV editor', shader: 'Shader editor', hud: 'HUD editor', timeline: 'Timeline', explorer: 'Explorer', profiler: 'Profiler', code: 'Code', imageEditor: 'Image editor', properties: 'Properties', objects: 'Objects', notes: 'Notes', layouts: 'Layouts', scene: 'Configure Scene', stats: 'Statistics', chat: 'Chat', aiAssistant: 'AI assistant', assets: 'Free assets' };
+export const DOCK_TITLES = { flow: 'Node editor', flowcode: 'Flow Code', animation: 'Animation', uv: 'UV editor', shader: 'Shader editor', hud: 'HUD editor', timeline: 'Timeline', explorer: 'Explorer', profiler: 'Profiler', code: 'Code', imageEditor: 'Image editor', properties: 'Properties', objects: 'Objects', notes: 'Notes', layouts: 'Layouts', scene: 'Configure Scene', stats: 'Statistics', chat: 'Chat', aiAssistant: 'AI assistant', assets: 'Free assets', preview: 'Preview' };
 /** 38 NOTES-38 #23: the view icon each dock tab shows before its name (ui/Icon names) */
 /** @type {Record<string, string>} */
-export const DOCK_ICONS = { flow: 'workflow', flowcode: 'code', animation: 'clapperboard', uv: 'grid-3x3', shader: 'sparkles', hud: 'app-window', timeline: 'video', explorer: 'folder-open', profiler: 'activity', code: 'code', imageEditor: 'image', properties: 'sliders-horizontal', objects: 'list', notes: 'sticky-note', layouts: 'panels-top-left', scene: 'sun', stats: 'gauge', chat: 'message-square', aiAssistant: 'sparkles', assets: 'package-open' };
+export const DOCK_ICONS = { flow: 'workflow', flowcode: 'code', animation: 'clapperboard', uv: 'grid-3x3', shader: 'sparkles', hud: 'app-window', timeline: 'video', explorer: 'folder-open', profiler: 'activity', code: 'code', imageEditor: 'image', properties: 'sliders-horizontal', objects: 'list', notes: 'sticky-note', layouts: 'panels-top-left', scene: 'sun', stats: 'gauge', chat: 'message-square', aiAssistant: 'sparkles', assets: 'package-open', preview: 'eye' };
 
 const ls = typeof localStorage !== 'undefined' ? localStorage : null;
 

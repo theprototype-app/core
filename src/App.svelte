@@ -49,7 +49,6 @@
   import Explorer from './components/editors/Explorer.svelte'
   import TextEditorWindow from './components/editors/TextEditorWindow.svelte'
   import FilePreviewWindow from './components/editors/FilePreviewWindow.svelte'
-  import ImageEditorWindow from './components/editors/ImageEditorWindow.svelte'
   import { previewWindows } from './lib/fileWindows'
   import ModelPreviewWindow from './components/editors/ModelPreviewWindow.svelte'
   import DungeonMinimap from './components/play/DungeonMinimap.svelte'
@@ -490,7 +489,6 @@ import { startMusicToolbox } from './lib/musicToolbox'
 {/if}
 <TextEditorWindow />
 <!-- 40-image (F13): the Image editor; renders nothing until an image is opened in it -->
-<ImageEditorWindow />
 <!-- R22 round 12: ONE INSTANCE PER OPEN PREVIEW. With the multi-window pref off the list
      never holds more than one, so this renders exactly what it always did. -->
 {#each $previewWindows as w, i (w.id)}

@@ -19,6 +19,7 @@ import {
 } from './bottomDock';
 import { registerDockOpener, registerDockCloser, registerDockOpenState, registerFloatOpener } from './dockMenu';
 import { groupOfKey, removeFromGroup } from './windowTabs';
+import { previewWindows, openPinnedPreview, closePinnedPreview } from './fileWindows';
 
 // 42 I6 — HOSTED DOCK TABS: the floating windows with no docked layout of their own — the
 // Objects list, Statistics, the Live profiler, Chat and the AI assistant — dock as tabs on a
@@ -47,8 +48,17 @@ export const HOSTED = {
 	chat: { sel: '#chat-window', ls: 'chatDocked', store: chatHidden, isOpen: (v) => v === '', open: () => chatHidden.set(''), close: () => chatHidden.set('hidden') },
 	aiAssistant: { sel: '#ai-assistant-window', ls: 'aiAssistantDocked', store: aiAssistantHidden, isOpen: (v) => v === '', open: () => aiAssistantHidden.set(''), close: () => aiAssistantHidden.set('hidden') },
 	// 47-cc0: the free CC0 asset browser
-	assets: { sel: '#asset-browser-window', ls: 'assetBrowserDocked', store: assetBrowserOpen, isOpen: (v) => !!v, open: () => assetBrowserOpen.set(true), close: () => assetBrowserOpen.set(false) }
+	assets: { sel: '#asset-browser-window', ls: 'assetBrowserDocked', store: assetBrowserOpen, isOpen: (v) => !!v, open: () => assetBrowserOpen.set(true), close: () => assetBrowserOpen.set(false) },
+	// uir-preview: THE Preview tab — the FIRST preview window (#image-preview-window), pinned so it
+	// follows the Explorer selection; its ✕ asks before dropping unsaved image edits
+	preview: { sel: '#image-preview-window', ls: 'previewDocked', store: previewWindows, isOpen: (v) => Array.isArray(v) && v.length > 0, open: openPinnedPreview, close: closePinnedPreview }
 };
+
+// uir-preview: the Image editor was its own dock tab; it is the Preview's Edit face now, so a
+// device that kept it docked keeps its editor in the dock (once, before the flags are read)
+try {
+	if (safeStorage.getItem('imageEditorDocked') === 'true' && safeStorage.getItem('previewDocked') === null) safeStorage.setItem('previewDocked', 'true');
+} catch {}
 
 function readDocked() {
 	/** @type {Record<string, boolean>} */

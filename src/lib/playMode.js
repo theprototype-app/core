@@ -8,7 +8,8 @@ import { showToast } from '../stores/appStore';
 // SvelteKit's router" warning, and it is right: its own popstate handler reads the index
 // keys only ITS pushState writes. `$app/navigation` is SSR-safe to IMPORT (only a CALL on
 // the server throws, and the marker is only ever pushed from a browser play press).
-import { pushState } from '$app/navigation';
+// sk3: through shallowHistory.js — SvelteKit 3's `goto(..., { shallow: true })`, which is async.
+import { afterShallowPush, currentShallowState, pushShallow } from './shallowHistory.js';
 // 36-export: an exported game is an embed for its whole life too (a leaf, read once at eval)
 import { exportMode } from './export/exportBoot.js';
 import { onPlayOrigin, appUrl } from './playOrigin.js';
@@ -193,35 +194,34 @@ export function exitPlay() {
 // nothing of the user's can be underneath ours. The flag is the whole guard — see
 // `consumePlayMarker` for the double-pop it prevents.
 //
-// 30 P0: the entry is a SvelteKit SHALLOW entry (`pushState` from $app/navigation) —
-// same url, same navigation index, so the router's popstate handler treats the Back
-// that spends it as a state change and never navigates; our listener below still sees
-// the popstate. The state object lands under the router's `sveltekit:states` key, which
-// is where `playMarkerState()` reads it.
+// 30 P0: the entry is a SvelteKit SHALLOW entry (now `goto('', { shallow: true })`, via
+// shallowHistory.js) — same url, same navigation index, so the router's popstate handler treats
+// the Back that spends it as a state change and never navigates; our listener below still sees
+// the popstate. `playMarkerState()` reads the state object off the current entry.
+// sk3: the push is ASYNC in SvelteKit 3 (a few microtasks), so the flag goes up at once and the
+// pop waits for the push in flight — an enter+exit in one tick used to be able to pop the
+// user's real previous page otherwise. A refused push takes the flag back down.
 let backMarker = false;
+/** @type {object | null} which push the flag belongs to (a refusal of an older one must not lower it) */
+let markerToken = null;
 
 function pushPlayMarker() {
 	if (backMarker || typeof history === 'undefined') return;
-	try {
-		// the SAME url ('' resolves to the current one) with a state object: no
-		// navigation, nothing to load, and `playMarkerState()` is a readable answer to
-		// "is the marker up?"
-		pushState('', { tpPlay: true });
-		backMarker = true;
-	} catch {
-		/* a sandboxed frame can refuse pushState (and the router refuses before it has
-		   started); play simply keeps its normal exits */
-	}
+	const token = {};
+	markerToken = token;
+	backMarker = true;
+	// the SAME url ('' resolves to the current one) with a state object: no
+	// navigation, nothing to load, and `playMarkerState()` is a readable answer to
+	// "is the marker up?". A sandboxed frame can refuse it (and the router refuses
+	// before it has started); play simply keeps its normal exits.
+	pushShallow({ tpPlay: true }).then((ok) => {
+		if (!ok && markerToken === token) backMarker = false;
+	});
 }
 
 /** the marker's state object as the router stored it on the CURRENT entry (test/debug view) */
 export function playMarkerState() {
-	try {
-		const st = /** @type {any} */ (typeof history === 'undefined' ? null : history.state);
-		return !!st?.['sveltekit:states']?.tpPlay;
-	} catch {
-		return false;
-	}
+	return !!currentShallowState()?.tpPlay;
 }
 
 function consumePlayMarker() {
@@ -230,11 +230,15 @@ function consumePlayMarker() {
 	// below then reads "not ours" and does nothing. Without this the exit that a Back
 	// press just caused would pop a SECOND entry, i.e. the user's real previous page.
 	backMarker = false;
-	try {
-		history.back();
-	} catch {
-		/* nothing to go back to; the marker is spent either way */
-	}
+	markerToken = null;
+	afterShallowPush((ok) => {
+		if (!ok) return; // never pushed: nothing of ours to pop
+		try {
+			history.back();
+		} catch {
+			/* nothing to go back to; the marker is spent either way */
+		}
+	});
 }
 
 /** was the marker pushed? (test/debug view — the state object is the user-visible half) */

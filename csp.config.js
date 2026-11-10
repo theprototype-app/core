@@ -1,6 +1,6 @@
 // 69 T3 — THE CONTENT SECURITY POLICY A BUILD SHIPS, in one place.
 //
-// Two consumers read this file: svelte.config.js (kit.csp — SvelteKit hashes its own inline boot
+// Two consumers read this file: vite.config.ts (the sveltekit() `csp` option — SvelteKit hashes its own inline boot
 // script and writes the policy into every prerendered page as a <meta http-equiv>) and
 // scripts/csp-headers.cjs (postbuild — `frame-ancestors`, which a meta tag cannot carry, as a real
 // header in build/_headers for Cloudflare Pages; a self-hoster's server sends the same line). The

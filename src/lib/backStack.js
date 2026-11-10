@@ -2,47 +2,41 @@
 //
 // The marker is a SvelteKit SHALLOW entry, for the reason playMode.js W4 gives: the router
 // patches a raw history.pushState with a warning, and its popstate handler treats a shallow
-// entry's Back as a state change, never a navigation. Its state object is `{ tpBack: true }`,
-// stored by the router under `sveltekit:states` (play's marker is `{ tpPlay: true }`).
+// entry's Back as a state change, never a navigation. Its state object is `{ tpBack: true }`
+// (play's marker is `{ tpPlay: true }`); shallowHistory.js pushes both and reads the current
+// entry in SvelteKit 3's shape (sk3: the push is async there — back() waits for it).
 //
 // Surfaces join through:
 //   - WindowChrome — every window, panel and modal with a close button (one line covers ~25);
 //   - `use:backClose={fn}` — any other surface (menus, popovers, the sidebar, the palette):
 //     the element exists only while the surface is open, so mount = open and destroy = closed.
 // Suspended by playMode (playing, and player-only pages — they keep play's own Back).
-import { pushState } from '$app/navigation';
+import { afterShallowPush, currentShallowState, pushShallow } from './shallowHistory.js';
 import { createBackStack } from './backStackCore.js';
-
-/** @returns {any} */
-function routerState() {
-	try {
-		return typeof history === 'undefined' ? null : history.state?.['sveltekit:states'] ?? null;
-	} catch {
-		return null;
-	}
-}
 
 export const backStack = createBackStack({
 	push() {
 		if (typeof history === 'undefined') return false;
-		try {
-			pushState('', { tpBack: true });
-			return true;
-		} catch {
-			// before the router has started, or a sandboxed frame: the surface simply keeps
-			// its other ways out
-			return false;
-		}
+		// optimistic: the entry lands a few microtasks later; a refusal (before the router has
+		// started, a sandboxed frame) hands the marker back, and the surface simply keeps its
+		// other ways out
+		pushShallow({ tpBack: true }).then((ok) => {
+			if (!ok) backStack.pushFailed();
+		});
+		return true;
 	},
 	back() {
-		try {
-			history.back();
-		} catch {
-			/* nothing to go back to */
-		}
+		afterShallowPush((ok) => {
+			if (!ok) return;
+			try {
+				history.back();
+			} catch {
+				/* nothing to go back to */
+			}
+		});
 	},
-	onTop: () => !!routerState()?.tpBack,
-	busy: () => !!routerState()?.tpPlay
+	onTop: () => !!currentShallowState()?.tpBack,
+	busy: () => !!currentShallowState()?.tpPlay
 });
 
 if (typeof window !== 'undefined') {
@@ -93,5 +87,5 @@ export function suspendBack(reason, on) {
 
 /** test/debug view: {open, marker, spending, suspended} + whether the marker is the top entry */
 export function backStackState() {
-	return { ...backStack.state(), onTop: !!routerState()?.tpBack };
+	return { ...backStack.state(), onTop: !!currentShallowState()?.tpBack };
 }

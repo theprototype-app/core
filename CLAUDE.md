@@ -2345,8 +2345,8 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   so every template uses a GAME-SPECIFIC key (`towers-best`, `stars-best`, `jam-best-bpm`) or two
   games' bests collide. hudActions "Save best score" (an additive `via` on the press role).
   · **CONSOLE HYGIENE**: `<Canvas shadows={PCFShadowMap}>` (PCFSoft is deprecated in three
-  0.18x); the play back-marker is a SvelteKit shallow entry (`pushState` from `$app/navigation` +
-  `playMarkerState()`); rapier-compat's own init warning is filtered for that one call (the call is
+  0.18x); the play back-marker is a SvelteKit shallow entry (`shallowHistory.js` — `goto('', {shallow})`
+  since sk3 — + `playMarkerState()`); rapier-compat's own init warning is filtered for that one call (the call is
   inside the frozen dependency — exact prefix, restored in `finally`). helpers.cjs `page.__console`
   captures every console message from BEFORE the first navigation (suite `console-hygiene`).
 - **ROADMAP 30 — THE AUTHOR KIT** (`scripts/author-templates.cjs`; THE DEF SCHEMA is the comment
@@ -2842,6 +2842,17 @@ sub-entry with its line: grep the index for a word, then read this file from tha
    a viewer's bytes; peers also drop gated types via `canApply`.
 
 ## Hard-won gotchas (do not rediscover)
+
+- **SVELTEKIT 3 SHALLOW ENTRIES ARE ASYNC, AND THEIR STATE IS A STRING (sk3).** Both history markers
+  (play's `tpPlay`, the Back stack's `tpBack`) go through `src/lib/shallowHistory.js` and nowhere else.
+  `goto(url, {shallow, state})` (and the deprecated `pushState`) push the entry only after an awaited route
+  resolve, so a `history.back()` sent in the same tick pops the USER'S previous page — `afterShallowPush`
+  waits for the push in flight, and `currentShallowState()` answers with the in-flight state meanwhile. The
+  entry's state is `history.state['sveltekit:metadata'].state`, a devalue STRING (2.x had a plain object
+  under `sveltekit:states`); `page.state` is set after an await in the router's own popstate handler, so a
+  popstate listener reading it sees the entry it just left. `$lib` is OUR alias since sk3 (vite.config.ts
+  `resolve.alias` + tsconfig `paths`); tsconfig's `include` mirrors kit 2's globs exactly — a bare
+  `"tests"` pulls in every e2e `.cjs` and reads 55k errors.
 
 - **RAPIER'S KinematicCharacterController COLLIDES WITH SENSORS unless the query passes `EXCLUDE_SENSORS`** — the
   walker treated every grass patch, flower bed, rug and trim of the 30c levels as a wall (33-scenes, suite

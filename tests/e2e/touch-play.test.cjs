@@ -95,7 +95,7 @@ const watchClaims = (page) =>
 const historyState = (page) =>
 	page.evaluate(() => ({
 		// 30 P0: the marker is a SvelteKit SHALLOW entry now, so its state object sits under
-		// the router's `sveltekit:states` key — playMarkerState() reads it there
+		// the router's current entry (shallowHistory.js reads both kit 2 and kit 3 shapes)
 		tpPlay: window.__stores.playMode.playMarkerState(),
 		marker: window.__stores.playMode.playBackMarker(),
 		href: location.href,

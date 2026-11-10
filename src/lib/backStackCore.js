@@ -124,6 +124,10 @@ export function createBackStack(host) {
 			if (on) held.add(reason);
 			else if (held.delete(reason)) schedule();
 		},
+		/** the host's push was refused after it said yes (an async router): no marker after all */
+		pushFailed() {
+			if (marker && !spending) marker = false;
+		},
 		/** test/debug view */
 		state() {
 			return { open: live().map((e) => e.id), marker, spending, suspended: [...held] };

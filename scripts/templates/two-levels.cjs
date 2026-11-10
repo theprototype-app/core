@@ -3,6 +3,7 @@
 // scripts/author-templates.cjs (the def schema is the comment block at its top); the table is ./index.cjs.
 
 const { gray } = require('./_builders.cjs');
+const { walkGraph } = require('./_level-kit.cjs');
 
 module.exports = {
 	kind: 'template',
@@ -40,5 +41,9 @@ module.exports = {
 			loading: { preset: 'bar', title: 'Two levels', tips: ['Portals take you to the next level', 'Step on a checkpoint to save your place'] }
 		}
 	},
+	// 78-int (device-lab A5): the player WALKS: a Character Controller (walk) stands them on the tower top after the
+	// portal hop. Without it walk mode is the eye-height pin over the ground plane (1.64 holds the default walker
+	// back), which put the player inside the tower. All-static, so Play starts its world by itself (78 F11).
+	graphs: { scene: walkGraph() },
 	view: { pos: [16, 12, 22], target: [6, 1, -2] }
 };

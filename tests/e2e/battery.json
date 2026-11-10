@@ -614,6 +614,7 @@
 		"lock-ux": 180,
 		"levels-export": 300,
 		"levels-progress": 300,
+		"two-levels-template": 240,
 		"lod": 38,
 		"lod-group": 20,
 		"lod-panel": 56,

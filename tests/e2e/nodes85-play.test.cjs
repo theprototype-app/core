@@ -235,7 +235,8 @@ h.run(async () => {
 	await A.page.keyboard.up('KeyW');
 	await A.page.waitForTimeout(300);
 	h.check((await A.page.evaluate(() => window.__stores.sitSpot.sitDebug())) === null, 'I3: W stands A up');
-	h.check(near(await eyeOf(), before, 0.6), 'I3: back where A sat down from');
+	const after = await eyeOf();
+	h.check(near(after, before, 0.6), `I3: back where A sat down from (${before?.map((v) => v.toFixed(2))} -> ${after?.map((v) => v.toFixed(2))}; walker ${JSON.stringify(await A.page.evaluate(() => window.__stores.charController?.charControllerDebug?.()?.walker ?? null))})`);
 	await A.page.evaluate(() => window.__stores.isLocked.set(false));
 
 	for (const p of peers) {

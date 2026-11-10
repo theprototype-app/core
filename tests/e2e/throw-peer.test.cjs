@@ -107,6 +107,10 @@ h.run(async () => {
 		'1.1 (premise) B has the crate'
 	);
 	await sp(A.page, 'sp.setScenePhysics({ ground: { enabled: true, height: 0 }, play: { interaction: "grab" } })');
+	// 78 F25: a spectator whose frames are clearly faster takes the world by vote (simvote/simhandoff). This
+	// suite is about the relay to a FIXED initiator (physics-pace covers the handoff), and headless frame
+	// times differ a lot between two pages, so the handoff is switched off on both (the F25 debug knob)
+	for (const P of [A, B]) await phys(P.page, 'return p.setSimHandoffEnabled(false)');
 	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
 	await h.eventually(
 		() => phys(A.page, 'return p.physicsDebug().length'),
@@ -188,6 +192,7 @@ h.run(async () => {
 	const applied = await bodyOf(A.page, crate);
 	const appliedVec = [applied?.linvel?.x ?? 0, applied?.linvel?.y ?? 0, applied?.linvel?.z ?? 0];
 	const appliedSpeed = Math.hypot(...appliedVec);
+	console.log('  pace: A ' + JSON.stringify(await phys(A.page, 'const x = p.physicsPace(); return { handoffs: x.handoffs, on: x.handoffEnabled, running: x.running }')) + ' B ' + JSON.stringify(await phys(B.page, 'const x = p.physicsPace(); return { handoffs: x.handoffs, on: x.handoffEnabled, running: x.running }')));
 	h.check(applied?.hold === null, '2.3 A released the hold at once');
 	h.check(
 		applied?.bodyType === 0,

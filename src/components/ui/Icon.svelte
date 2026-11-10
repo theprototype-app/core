@@ -119,7 +119,6 @@
 		Droplets,
 		Ellipsis,
 		ExternalLink,
-		Ellipsis, // 78 PL31: a roster row's menu
 		Eye,
 		EyeOff,
 		FileCode,
@@ -359,7 +358,6 @@
 		droplets: Droplets,
 		ellipsis: Ellipsis,
 		'external-link': ExternalLink,
-		ellipsis: Ellipsis,
 		eye: Eye,
 		'eye-off': EyeOff,
 		'file-code': FileCode,

@@ -392,6 +392,9 @@ export const inspectorTabs = writable({ inspector: false, scene: false });
 
 /** the Properties tab's label (a File shows in the same tab) */
 export const inspectorTabTitle = derived(inspectorKind, ($k) => ($k === 'file' ? 'File' : 'Properties'));
+/** the Inspector ELEMENT's name where it is one panel of its own (a pop-out window's tab and title): it names what it
+ * shows, Configure Scene included — 78-fix-547: a popped Inspector switched to the scene kept saying "Properties" */
+export const inspectorPanelTitle = derived(inspectorKind, ($k) => ($k === 'scene' ? 'Configure Scene' : $k === 'file' ? 'File' : 'Properties'));
 /** the label of either Inspector tab @param {string} key @param {string} kind */
 export function inspectorTabLabel(key, kind) {
 	if (key === 'scene') return 'Configure Scene';

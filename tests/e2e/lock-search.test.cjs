@@ -87,7 +87,11 @@ h.run(async () => {
 		await page.evaluate(() => window.__stores.inspectorFilter.set(''));
 		await page.waitForTimeout(400);
 		const all = await sectionsShown();
-		const qs = [...new Set([...all.map((s) => s.toLowerCase()), 'position', 'rotation', 'scale', 'color', 'colour', 'shadow', 'physics', 'material', 'intensity', 'fog', 'grid', 'camera', 'water', 'lod', 'render', 'light', 'sky', 'environment', 'origin', 'snap', 'zz-no-match'])];
+		const qs = [...new Set([...all.map((s) => s.toLowerCase()), 'position', 'rotation', 'scale', 'color', 'colour', 'shadow', 'physics', 'material', 'intensity', 'fog', 'grid', 'camera', 'water', 'lod', 'render', 'light', 'sky', 'environment', 'origin', 'snap',
+			// 78 PL17: most Configure Scene sections start CLOSED, so their sub-sections are no longer visible labels at an
+			// empty filter; these keep the lock asking for them (the filter must reach inside a closed section)
+			'orbit feel', 'saved views', 'start view', 'snap to elements', 'scene track', 'selection passes through', 'this device',
+			'zz-no-match'])];
 		/** @type {Record<string, string[]>} */
 		const table = { '': all.slice().sort() };
 		for (const q of qs) {

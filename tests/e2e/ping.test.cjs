@@ -28,12 +28,12 @@ h.run(async () => {
 
 	const aPings = await readPings(A.page);
 	const bPings = await readPings(B.page);
-	h.check(aPings.length === 1, 'local ping recorded');
+	h.check(aPings.length === 1, `local ping recorded (A ${aPings.length}, B ${bPings.length})`);
 	h.check(
 		bPings.length === 1 &&
 			Math.abs(bPings[0].pos[0] - aPings[0].pos[0]) < 0.001 &&
 			Math.abs(bPings[0].pos[2] - aPings[0].pos[2]) < 0.001,
-		'ping replicated at the same spot'
+		`ping replicated at the same spot (${JSON.stringify({ a: aPings[0]?.pos, b: bPings[0]?.pos })})`
 	);
 
 	const markerOnB = await B.page.evaluate(

@@ -39,8 +39,9 @@ const pressedPill = (page) =>
 /** the note under a section header @param {any} page @param {string} label */
 const noteOf = (page, label) =>
 	page.evaluate((l) => {
-		const sec = [...document.querySelectorAll('#inspector .sec-panel')].find((s) => s.querySelector('.sec-title')?.textContent?.trim() === l);
-		return sec?.querySelector('[data-section-note]')?.textContent?.trim() ?? '';
+		// every rendered copy of the section (a host page can hold more than one panel instance): the shown note
+		const secs = [...document.querySelectorAll('.sec-panel')].filter((s) => s.querySelector('.sec-title')?.textContent?.trim() === l);
+		return secs.map((s) => s.querySelector('[data-section-note]')?.textContent?.trim() ?? '').find(Boolean) ?? '';
 	}, label);
 /** @param {any} page */
 async function openScene(page) {

@@ -125,17 +125,23 @@
 	 * stays the person's intent, so the handle slides up with the dock when the spot is under it and goes back when
 	 * the dock closes. A band too short to hold it puts it at the band's top.
 	 */
-	function topOf(side: Side, dragY = 0) {
-		void $bottomInset;
+	function clampTop(side: Side, want: number) {
 		const base = floorOf(side) + GAP;
 		let max = Math.max(base, window.innerHeight - TAB_H - 96);
 		if ($bottomInset > 0) max = Math.max(base, Math.min(max, window.innerHeight - $bottomInset - GAP - boxH()));
-		return Math.min(max, base + $sidebarHandleY[side] + dragY);
+		return Math.max(base, Math.min(max, want));
+	}
+	function topOf(side: Side) {
+		return clampTop(side, floorOf(side) + GAP + $sidebarHandleY[side]);
+	}
+	/** a drag moves the handle from where it is DRAWN (the dock may be holding it above its saved spot) */
+	function dragTop(side: Side, dy: number) {
+		return clampTop(side, (moving?.from ?? topOf(side)) + dy);
 	}
 
 	// ---- press / drag along the edge ----
 	let press: { side: Side; y0: number; id: number; base: number } | null = null;
-	let moving = $state<{ side: Side; dy: number } | null>(null);
+	let moving = $state<{ side: Side; dy: number; from: number } | null>(null);
 	let suppress = false;
 	function onDown(e: PointerEvent, side: Side) {
 		if (e.button !== 0) return;
@@ -147,14 +153,14 @@
 		if (!press || e.pointerId !== press.id) return;
 		const dy = e.clientY - press.y0;
 		if (!moving && Math.abs(dy) < SLOP) return;
-		moving = { side: press.side, dy };
+		moving = { side: press.side, dy, from: moving?.from ?? topOf(press.side) };
 	}
 	function onUp(e: PointerEvent) {
 		if (!press || e.pointerId !== press.id) return;
 		const p = press;
 		press = null;
 		if (moving) {
-			const top = topOf(p.side, moving.dy);
+			const top = dragTop(p.side, moving.dy);
 			setSidebarHandleY(p.side, top - (floorOf(p.side) + GAP));
 			moving = null;
 			suppress = true;
@@ -182,9 +188,7 @@
 			const step = e.shiftKey ? 48 : 8;
 			// from where it is DRAWN (the dock may be holding it up), and saved within the band, like a drag
 			const base = floorOf(side) + GAP;
-			const drawn = topOf(side) - base;
-			const bandEnd = topOf(side, 1e6) - base;
-			setSidebarHandleY(side, Math.min(bandEnd, drawn + (e.key === 'ArrowUp' ? -step : step)));
+			setSidebarHandleY(side, clampTop(side, topOf(side) + (e.key === 'ArrowUp' ? -step : step)) - base);
 		} else if (e.key === 'Enter' || e.key === 'Escape' || e.key === ' ') {
 			e.preventDefault();
 			e.stopPropagation();
@@ -249,7 +253,7 @@
 {#each SIDES as side (side)}
 	{#if mounted && $sidebarHandleShown[side]}
 		{@const open = $sidebarVisible[side]}
-		{@const top = topOf(side, moving?.side === side ? moving.dy : 0)}
+		{@const top = moving?.side === side ? dragTop(side, moving.dy) : topOf(side)}
 		<button
 			type="button"
 			id="sidebar-handle-{side}"

@@ -151,6 +151,10 @@ h.run(async () => {
 		await page.waitForTimeout(500);
 
 		// ---- PL21: Far clip / Look for in the label column, the Far clip box in the value column
+		// 78-int: Configure Scene opens with only Environment + Scene look expanded (PL17) - deep-link Camera open first
+		await S(page, () => window.__stores.openSceneSection('Camera'));
+		await page.waitForFunction(() => !!document.getElementById('camera-far'), null, { timeout: 8000 }).catch(() => {});
+		await page.waitForTimeout(400);
 		const cols = await S(page, () => {
 			const rowOf = (txt) => [...document.querySelectorAll('#inspector .pr')].find((r) => r.querySelector('.pr-label')?.textContent.trim() === txt);
 			const out = {};

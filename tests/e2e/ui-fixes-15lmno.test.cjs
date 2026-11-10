@@ -96,8 +96,8 @@ h.run(async () => {
 	});
 	await A.page.waitForTimeout(400);
 	h.check(
-		await A.page.evaluate(() => !!document.querySelector('#inspector-pin')),
-		'the header renders a pin toggle'
+		await A.page.evaluate(() => !document.querySelector('#inspector-pin')),
+		'uir-polish E1: no pin toggle any more (the pinned posture stays a runtime switch)'
 	);
 
 	// ---------- L3: no duplicate hex textboxes under the pickers ----------

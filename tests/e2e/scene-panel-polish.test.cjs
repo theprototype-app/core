@@ -92,14 +92,8 @@ h.run(async () => {
 	});
 	h.check(head.placeholder === 'Filter scene settings', `PL14.1 the filter says what it filters ("${head.placeholder}")`);
 	h.check(!head.title, 'PL14.2 no inner title row in the panel');
-	h.check(head.pinShown && !head.pinInPanel, `PL14.3 the pin is a strip button outside the panel (shown ${head.pinShown}, in panel ${head.pinInPanel})`);
-	const pinned0 = (await page.locator('#inspector-pin').getAttribute('aria-pressed')) === 'true';
-	await page.locator('#inspector-pin').click();
-	await page.waitForTimeout(250);
-	const pinned1 = (await page.locator('#inspector-pin').getAttribute('aria-pressed')) === 'true';
-	h.check(pinned1 !== pinned0, `PL14.4 the strip pin toggles Follow the selection (${pinned0} -> ${pinned1})`);
-	if (pinned1 !== pinned0) await page.locator('#inspector-pin').click();
-	await shots(page, 'strip-pin');
+	// uir-polish E1 (owner 2026-11-11): the strip's pin and lock are gone
+	h.check(!head.pinShown && (await page.locator('#inspector-sticky-head').count()) === 0, `PL14.3 no pin and no lock (E1) (pin ${head.pinShown})`);
 
 	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
 	await page.waitForTimeout(800);
@@ -113,7 +107,7 @@ h.run(async () => {
 		const firstSection = Math.min(...[...(ins?.querySelectorAll('.sec-panel') ?? [])].map((s) => s.getBoundingClientRect().top));
 		return { placeholder: document.querySelector('#inspector-search')?.getAttribute('placeholder') ?? '', name: name?.value ?? '', first: nameTop < firstSection };
 	});
-	h.check(/^Filter properties of /.test(props.placeholder) && props.placeholder.includes(props.name), `PL14.5 a selection's filter names it ("${props.placeholder}")`);
+	h.check(props.placeholder === props.name, `PL14.5 a selection's filter placeholder is its name alone (E2) ("${props.placeholder}")`);
 	h.check(props.first, 'PL14.6 the object name is the first Properties row');
 	await shots(page, 'properties-head');
 
@@ -313,8 +307,8 @@ h.run(async () => {
 		h.check(!fit.guide, `PL29.1 ${dev.id}: no sky picture cards or guide`);
 		h.check(fit.scrollTop === 0 && fit.rows.every((r) => r.ok) && fit.exposure, `PL29.2 ${dev.id}: the presets, Exposure and the sky row show without scrolling (${JSON.stringify(fit.rows)})`);
 		await shots(P.page, `sky-${dev.id}`);
-		// the lock sits in the sheet's grip row; the pin is the first item of the tab's long-press menu
-		h.check((await P.page.locator('#ps-dock-grip #inspector-sticky-head').count()) === 1, `PL14.7 ${dev.id}: the header lock is in the grip row`);
+		// uir-polish E1: no header lock in the grip row and no "Follow the selection" in the long-press menu
+		h.check((await P.page.locator('#inspector-sticky-head').count()) === 0, `PL14.7 ${dev.id}: no header lock`);
 		const tab = P.page.locator('[data-dock-tab="scene"]').first();
 		if (await tab.count()) {
 			await tab.dispatchEvent('contextmenu');
@@ -326,7 +320,7 @@ h.run(async () => {
 				const items = menu ? [...menu.querySelectorAll('[role="menuitem"]')] : [];
 				return { testid: items[0]?.getAttribute('data-testid') ?? '', text: items[0]?.textContent?.trim() ?? '', found: !!pin };
 			});
-			h.check(first.testid === 'inspector-pin', `PL14.8 ${dev.id}: "Follow the selection" is the first long-press item (${JSON.stringify(first)})`);
+			h.check(!first.found, `PL14.8 ${dev.id}: no "Follow the selection" in the long-press menu (${JSON.stringify(first)})`);
 			await shots(P.page, `tab-menu-${dev.id}`);
 			await P.page.keyboard.press('Escape');
 		} else h.check(false, `PL14.8 ${dev.id}: premise — the scene dock tab is on screen`);

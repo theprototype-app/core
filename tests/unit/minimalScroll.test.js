@@ -24,4 +24,14 @@ describe('thumbGeometry', () => {
 		const g = thumbGeometry({ scrollTop: 900, scrollHeight: 800, clientHeight: 400 });
 		expect(g.top + g.height).toBeCloseTo(900 + 400 - 2, 5);
 	});
+	it('runs below a sticky header (uir-polish E6)', () => {
+		const top = thumbGeometry({ scrollTop: 0, scrollHeight: 800, clientHeight: 400 }, 24, 50);
+		expect(top.top).toBe(52);
+		const end = thumbGeometry({ scrollTop: 400, scrollHeight: 800, clientHeight: 400 }, 24, 50);
+		expect(end.top + end.height).toBeCloseTo(400 + 400 - 2, 5);
+		// a header taller than the viewport still leaves a minimum thumb
+		const tiny = thumbGeometry({ scrollTop: 0, scrollHeight: 800, clientHeight: 100 }, 24, 500);
+		expect(tiny.height).toBeGreaterThanOrEqual(24);
+		expect(tiny.top + tiny.height).toBeLessThanOrEqual(100);
+	});
 });

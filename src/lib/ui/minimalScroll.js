@@ -33,27 +33,41 @@ function ensureStyle() {
 /** Pure geometry, exported for the unit test: where the thumb sits for a scroll state.
  * @param {{scrollTop: number, scrollHeight: number, clientHeight: number}} s
  * @param {number} [min] smallest thumb, px
+ * @param {number} [topInset] px of the viewport a sticky header covers (uir-polish E6): the track starts below it
  * @returns {{visible: boolean, top: number, height: number}} `top` is in CONTENT coordinates
  *   (the thumb is a child of the scroller, so it scrolls with the content and is offset back) */
-export function thumbGeometry(s, min = 24) {
+export function thumbGeometry(s, min = 24, topInset = 0) {
 	const { scrollTop, scrollHeight, clientHeight } = s;
 	const range = scrollHeight - clientHeight;
 	if (!(range > 1) || clientHeight <= 0) return { visible: false, top: 0, height: 0 };
 	const inset = 2;
-	const track = clientHeight - inset * 2;
+	const top0 = Math.max(0, Math.min(topInset, clientHeight - inset * 2 - min));
+	const track = clientHeight - inset * 2 - top0;
 	const height = Math.max(min, Math.min(track, (clientHeight / scrollHeight) * track));
 	const t = Math.min(1, Math.max(0, scrollTop / range));
-	return { visible: true, top: scrollTop + inset + t * (track - height), height };
+	return { visible: true, top: scrollTop + top0 + inset + t * (track - height), height };
 }
 
 /**
  * @param {HTMLElement} node the scrolling element
- * @param {{hideAfter?: number} | undefined} [opts]
+ * @param {{hideAfter?: number, stickyTop?: string} | undefined} [opts] `stickyTop` = a selector for a sticky
+ *   header INSIDE the scroller (uir-polish E6): the thumb runs below it instead of sliding under it
  */
 export function minimalScroll(node, opts) {
 	if (typeof window === 'undefined') return {};
 	ensureStyle();
 	let hideAfter = opts?.hideAfter ?? 900;
+	let stickyTop = opts?.stickyTop ?? '';
+	/** how much of the scroller's viewport the sticky header covers (0 without one) */
+	function topInset() {
+		if (!stickyTop) return 0;
+		const head = /** @type {HTMLElement | null} */ (node.querySelector(stickyTop));
+		if (!head || !head.offsetParent) return 0;
+		const r = head.getBoundingClientRect();
+		const n = node.getBoundingClientRect();
+		return Math.max(0, Math.round(r.bottom - n.top - node.clientTop));
+	}
+	let inset0 = 0;
 	node.classList.add('tp-scroll');
 	if (getComputedStyle(node).position === 'static') node.style.position = 'relative';
 
@@ -74,7 +88,8 @@ export function minimalScroll(node, opts) {
 		// the thumb up by its inset — the view drained 2 px a frame for seconds, items out of
 		// sight above. Measure with the thumb out of layout: the offset clamps at once.
 		thumb.style.display = 'none';
-		geo = thumbGeometry(node);
+		inset0 = topInset();
+		geo = thumbGeometry(node, 24, inset0);
 		thumb.style.display = geo.visible ? '' : 'none';
 		if (!geo.visible) return;
 		thumb.style.height = geo.height + 'px';
@@ -116,7 +131,7 @@ export function minimalScroll(node, opts) {
 	/** @param {PointerEvent} e */
 	function onMove(e) {
 		if (!thumb.hasAttribute('data-drag')) return;
-		const track = node.clientHeight - 4 - geo.height;
+		const track = node.clientHeight - 4 - inset0 - geo.height;
 		const range = node.scrollHeight - node.clientHeight;
 		if (track > 0) node.scrollTop = dragTop + ((e.clientY - dragY) / track) * range;
 	}
@@ -148,9 +163,11 @@ export function minimalScroll(node, opts) {
 	place();
 
 	return {
-		/** @param {{hideAfter?: number} | undefined} next */
+		/** @param {{hideAfter?: number, stickyTop?: string} | undefined} next */
 		update(next) {
 			hideAfter = next?.hideAfter ?? 900;
+			stickyTop = next?.stickyTop ?? '';
+			place();
 		},
 		destroy() {
 			if (timer) clearTimeout(timer);

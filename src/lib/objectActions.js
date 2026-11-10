@@ -395,7 +395,18 @@ export function deselectObject() {
 	if (controls && !get(isVRMode)) controls.detach();
 	// selectedObject keeps the last object on purpose — the open inspector binds
 	// to $selectedObject.position/material and would crash on an empty value
+	// uir-polish E3 (owner 2026-11-11): on a wider screen the Properties tab KEEPS showing that last object
+	// (a deselect is not a reason to lose the panel you were reading). The phone's sheet still closes — it
+	// covers the viewport. The read-only "<name> is editing" state for a kept object a peer takes is 80a K1.
+	if (keepsLastObject()) return;
 	closeSelectionInspector();
+}
+
+/** E3: does a deselect leave Properties on the last object (wide posture, the object still in the scene) */
+function keepsLastObject() {
+	if (!get(sidebarsWide) || get(phoneShell)) return false;
+	const last = /** @type {any} */ (get(selectedObject));
+	return !!last?.uuid && get(objectsGroup)?.getObjectByProperty('uuid', last.uuid) === last;
 }
 
 /**

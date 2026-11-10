@@ -151,7 +151,7 @@
 				<img id="problem-shot" class="shot" src={$problemDraft.shotUrl} alt="What the viewport showed" draggable="false" />
 				{#each marks as m, i (i)}
 					<span class="problem-mark" style={boxStyle(m)}>
-						<button class="mark-x" aria-label="Remove this box" onclick={() => (marks = marks.filter((_, j) => j !== i))}><Icon name="x" size={12} strokeWidth={3} aria-hidden="true" /></button>
+						<button class="mark-x" aria-label="Remove this box" onclick={() => (marks = marks.filter((_, j) => j !== i))}><Icon name="x" size={16} strokeWidth={3} aria-hidden="true" /></button>
 					</span>
 				{/each}
 				{#if drawing}
@@ -272,11 +272,11 @@
 	}
 	.mark-x {
 		position: absolute;
-		top: -9px;
-		right: -9px;
-		width: 18px;
-		height: 18px;
-		border-radius: 9px;
+		top: -10px;
+		right: -10px;
+		width: 20px;
+		height: 20px;
+		border-radius: 10px;
 		display: grid;
 		place-items: center;
 		background: var(--ink-warn);

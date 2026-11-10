@@ -31,15 +31,13 @@ export const inspectorKind = writable('selection');
  * its properties, nothing selected → the scene's (deselecting no longer closes
  * it). LOCAL preference.
  */
-export const inspectorPinned = writable(
-	typeof localStorage !== 'undefined' && safeStorage.getItem('inspectorPinned') === 'true'
-);
-if (typeof localStorage !== 'undefined')
-	inspectorPinned.subscribe((v) => {
-		try {
-			safeStorage.setItem('inspectorPinned', String(v));
-		} catch {}
-	});
+export const inspectorPinned = writable(false);
+// uir-polish E1 (owner 2026-11-11): the pin button is GONE from every surface, so the flag is no longer a
+// preference — it stays a runtime switch (default off) for the suites that drive the old "follow every
+// selection" posture through __stores, and the value an older build saved is dropped once.
+try {
+	if (typeof localStorage !== 'undefined') safeStorage.removeItem('inspectorPinned');
+} catch {}
 export const flowGraphClose = writable(true);
 // Flow Code: an editable JSON view of the flow graph (roadmap 9). Added via the
 // Flow tab "+"; a standalone floating window that can tab-group with Flow.
@@ -257,8 +255,11 @@ export function showSidebar(store, { focus = true } = {}) {
 	}
 	libraryClose.set(true);
 	if (open && get(inspectorKind) === kind) {
-		revealInspector?.(kind);
-		if (focus) focusInspector?.();
+		// uir-polish E4: a selection (focus: false) leaves a covered Properties tab covered on the phone too
+		if (focus) {
+			revealInspector?.(kind);
+			focusInspector?.();
+		}
 		return; // already showing this target
 	}
 	// 42 I4: an OPEN panel swaps its content in place. Closing it and reopening 50 ms later
@@ -266,8 +267,10 @@ export function showSidebar(store, { focus = true } = {}) {
 	// sidebar "shook". The slide belongs to a panel opening from CLOSED, never to a swap.
 	if (open) {
 		inspectorKind.set(kind);
-		revealInspector?.(kind);
-		if (focus) focusInspector?.();
+		if (focus) {
+			revealInspector?.(kind);
+			focusInspector?.();
+		}
 		return;
 	}
 	inspectorClose.set(true);

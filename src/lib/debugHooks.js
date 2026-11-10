@@ -534,7 +534,6 @@ export const DEBUG_HOOKS = [
 	['projectActions', () => import('./projectActions.js')],
 	['saveOptions', () => import('./saveOptions.js')],
 	// 42 I1: sticky panel headers
-	['panelHeaderPrefs', () => import('./panelHeaderPrefs.js')],
 	['rowFit', () => import('./ui/rowFit.js')],
 	['exportBoot', () => import('./export/exportBoot.js')],
 	['exportRuntime', () => import('./export/exportRuntime.js')],

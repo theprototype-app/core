@@ -464,18 +464,6 @@ export function resolveWalk(feetPos, height, dt, desired, opts = {}) {
 			}
 			grounded = !!controller.computedGrounded();
 			feet += dy;
-			// 78-int u2: NOTHING STANDS BELOW THE GROUND PLANE. A grounded capsule settles a little into the ground
-			// slab and the controller lifts it out only slowly (avatar-feet: the default walker's origin read -2.5 ->
-			// -1.6 cm over a walk, so a body drawn from `feet` stood in the floor). A grounded walker within 5 cm under
-			// the plane's top stands ON it; anything deeper (a fall through, a pit) is left alone.
-			const plane = get(scenePhysicsGround);
-			if (grounded && plane?.enabled) {
-				const top = floorHeight();
-				if (feet < top && feet > top - 0.05) {
-					dy += top - feet;
-					feet = top;
-				}
-			}
 			if (grounded && vy < 0) vy = 0;
 			source = 'rapier';
 			// leave the collider where we actually ENDED UP, so the next frame's query

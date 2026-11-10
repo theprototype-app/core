@@ -3,7 +3,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
 import { announce, announceLog, announceUnread, clearAnnounceLog, ANNOUNCE_LOG_CAP } from '../../src/lib/gameAnnounce.js';
-import { isLocked, isVRMode } from '../../src/stores/sceneStore';
+import { isLocked, isVRMode, editorMode } from '../../src/stores/sceneStore';
 import { entries } from '../../src/lib/diagnostics.js';
 
 describe('Announce console (78 F14)', () => {
@@ -11,6 +11,7 @@ describe('Announce console (78 F14)', () => {
 		clearAnnounceLog();
 		isLocked.set(null);
 		isVRMode.set(false);
+		editorMode.set('edit');
 	});
 	it('in Edit: a console line with its time and source node, counted unread', () => {
 		const id = announce('Ring 1 reached', { sub: 'go on', source: { nodeId: 'n1', label: 'Ring banner', graph: 'scene' } });
@@ -30,6 +31,12 @@ describe('Announce console (78 F14)', () => {
 		const rows = get(announceLog);
 		expect(rows.map((r) => r.shown)).toEqual(['banner', 'banner']);
 		expect(rows[1].source).toEqual({ kind: 'module', label: 'module fx' });
+		expect(get(announceUnread)).toBe(0);
+	});
+	it('in Interact (a game played there, e.g. Untangle): a banner too (78-int u1)', () => {
+		editorMode.set('interact');
+		announce('Level 12 solved');
+		expect(get(announceLog).map((r) => r.shown)).toEqual(['banner']);
 		expect(get(announceUnread)).toBe(0);
 	});
 	it('keeps the newest lines only, and an empty line writes nothing', () => {

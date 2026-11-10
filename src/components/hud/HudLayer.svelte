@@ -15,7 +15,7 @@
 	import { bottomFootprint, hudBottomLift, hudCenterFit, hudTopShift, playChromeRects, topFootprint } from '$lib/play/hudSafeArea.js';
 	import HudElement from './HudElement.svelte';
 	import { hudDocs, hudRuntime, hudScreenOverride, hudPreviewInViewport, hudIsGame, visibleScreen, activeHudKeys, setHudValue, hudValueOf } from '$lib/hudDocs';
-	import { isVRMode, isLocked, playPointerFree } from '../../stores/sceneStore';
+	import { isVRMode, isLocked, playPointerFree, editorMode } from '../../stores/sceneStore';
 	import { arTable } from '$lib/arTableState.js'; // 50 R1: a phone playing a scene on a table
 	import { hudEditorClose } from '../../stores/appStore.js';
 	import { viewportOverrides, renderLayer } from '$lib/viewportOverrides';
@@ -78,6 +78,9 @@
 	// `arPortal`) instead of on the headset's VR board, and they count as played, not authored.
 	const arPlaying = $derived(($arTable.phase === 'placed' || $arTable.phase === 'room') && $arTable.playing); // VH2: a room plays too
 	const shown = $derived(playing || arPlaying);
+	// 78-int u1: the Announce banner also draws in Interact — it is IN the game (gameShell.shellPlaying; Untangle is
+	// played there). Only the banner: the rest of the layer keeps its Play-only `shown`
+	const bannerShown = $derived(shown || $editorMode === 'interact');
 
 	// 30 P1: THE EDITOR STOPS MASQUERADING AS THE GAME. Outside Play a GAME's screens (the
 	// `hudIsGame` rule: a screen bound to a game state) are not drawn at all — the menu of
@@ -451,7 +454,7 @@
 </script>
 
 <!-- 78 F14: full-screen only while playing — in Edit the line goes to the Debugger's Console -->
-{#if $gameAnnouncement && shown && (!$isVRMode || arPlaying) && layerAllowed}
+{#if $gameAnnouncement && bannerShown && (!$isVRMode || arPlaying) && layerAllowed}
 	{#key $gameAnnouncement.id}
 		<div id="game-announce" class="game-announce" role="status" aria-live="polite" style="--announce-ms: {$gameAnnouncement.ms}ms" use:arPortal={arPlaying}>
 			<div class="game-announce-title" style:color={$gameAnnouncement.color}>{$gameAnnouncement.text}</div>

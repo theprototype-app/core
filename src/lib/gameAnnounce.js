@@ -8,14 +8,14 @@
 // A new announcement REPLACES the one showing — a banner queue would still be showing
 // "Ring 1" when the player reached ring 3.
 //
-// 78 F14 — EDIT IS NOT THE GAME. The banner draws only while somebody is PLAYING (Play, an AR
+// 78 F14 — EDIT IS NOT THE GAME. The banner draws only while somebody is PLAYING (Play, Interact, an AR
 // table playing, a headset); in Edit it flashed full-screen over the floating windows the author
 // was building with. Every announcement is also WRITTEN DOWN (`announceLog`, newest last, with its
 // time and its source — the node that announced, or a module) and logged to diagnostics, so the
 // Debugger panel's Console and the agent's logs/status read it whatever mode it fired in. The
 // store above still holds the latest announcement in every mode: the RENDERERS decide.
 import { writable, get } from 'svelte/store';
-import { isLocked, isVRMode } from '../stores/sceneStore';
+import { isLocked, isVRMode, editorMode } from '../stores/sceneStore';
 import { log } from './diagnostics';
 
 /** @typedef {{id: number, text: string, sub: string, color: string, ms: number, at: number}} Announcement */
@@ -67,7 +67,8 @@ export function announce(text, options = {}) {
 	// 78 F14: written down in every mode; `shown` says whether a banner drew it
 	const source = cleanSource(options?.source);
 	/** @type {'banner' | 'console'} */
-	const shown = get(isLocked) === true || get(isVRMode) === true ? 'banner' : 'console';
+	// 78-int u1: Interact is IN the game too (gameShell.shellPlaying: a desktop puzzle like Untangle is played there)
+	const shown = get(isLocked) === true || get(editorMode) === 'interact' || get(isVRMode) === true ? 'banner' : 'console';
 	announceLog.update((rows) => [...rows, { id, at, text: line, sub, source, shown }].slice(-ANNOUNCE_LOG_CAP));
 	if (shown === 'console') announceUnread.update((n) => n + 1);
 	const from = source ? (source.kind === 'node' ? 'node ' + (source.label || source.nodeId) : source.label) : '';

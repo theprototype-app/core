@@ -55,6 +55,8 @@ export const DEBUG_HOOKS = [
 	['funnel', () => import('./onboarding/funnel.js')],
 	// 39: drag to place — the preview setting, the measured dims, the pack downloads, the ghost
 	['placementPrefs', () => import('./placementPrefs.js')],
+	// uir-people: the optional status (Available / Busy / Away) and its roster merge
+	['peoplePresence', () => import('./peoplePresence.js')],
 	['placementDims', () => import('./placementDims.js')],
 	['packCache', () => import('./packCache.js')],
 	// 60 Q6: the local asset cache (OPFS) — index, stats, clear, persist
@@ -316,6 +318,9 @@ export const DEBUG_HOOKS = [
 	// 56 C1: the agent chat window; `tpchatStore` = the same module as `tpchats` below (56-chat's suites read it by this name)
 	['agentChat', () => import('./agentChat')],
 	['tpchatStore', () => import('./chat/tpchatStore.js')],
+	// uir-chat: the one Chat window's tab routing + the chats this device keeps
+	['chatWindow', () => import('./chat/chatWindow.js')],
+	['chatSaves', () => import('./chat/chatSaves.js')],
 	// 86: the Claude connector's UI state (a leaf — the connector itself stays a lazy chunk)
 	['connectorStore', () => import('./connector/connectorStore.js')],
 	['peerModeration', () => import('./peerModeration')],

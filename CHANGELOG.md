@@ -6,6 +6,32 @@
      rendering, so maintainer notes stay out of the user-facing window. No emoji from
      1.64 on (owner rule: no emoji in the UI); the app strips them from older entries. -->
 
+## 1.65.0 — New menus and panels
+
+### Chat and the AI assistant
+- **One window, two tabs**: Chat and the AI assistant are one window with **Session** and **Assistant** tabs. The Chat button (or C) opens it on Session, the AI button on Assistant; one **History** lists both kinds of chat, and chats come back after a reload. <!-- uir-chat -->
+
+### People
+- **Person card**: press anyone in the People list for their card: what they are doing, their connection, and every action in one place. <!-- uir-people -->
+- **Invite first**: the Connect bar leads with **Invite** and **Join…**; Join takes a pasted invite link or a peer id. <!-- uir-people -->
+- **Show my status**: let others see whether you are Available, Busy or Away (Settings ▸ Interface ▸ Show my status, off by default). <!-- uir-people -->
+- Someone who joins with your invite is announced by name ("Guest 2 joined with your invite"), not by an id. <!-- uir-int, device-lab D4 -->
+
+### Files and preview
+- **Preview follows the Explorer**: the file preview pins to the dock as a **Preview** tab that shows whatever you select in the Explorer. <!-- uir-preview -->
+- **Edit images in the preview**: images open for editing in the same window (**View | Edit**) with a filmstrip of the folder's images. The separate Image editor window is gone; a saved layout that had it opens the Preview instead. <!-- uir-preview Q5 -->
+
+### Timeline and Generate 3D
+- **Timeline panes**: the Sequences list on the left, Properties (Sequence with its frame rate | Item) on the right. <!-- uir-timeline -->
+- **Generate 3D is a window**: dock it like any other; its **Jobs** and **History** survive a reload, and a running job carries on after a reload without starting again. <!-- uir-timeline -->
+
+### Account
+- **Settings ▸ Account**: Sign-in methods, Devices and Connected apps moved here. The profile menu keeps the email-updates question and Sign out, with a **Manage** link to the new page; settings search finds every row. <!-- uir-account -->
+
+### Under the hood
+- Layouts and window positions saved by earlier versions open the new windows (the AI assistant's window becomes Chat's Assistant tab, the Image editor's tab becomes Preview). <!-- uir-chat, uir-preview, uir-int uir-migration -->
+- TypeScript 6. <!-- core #558 -->
+
 ## 1.64.0 — Doors, paths and levels
 
 ### Rooms that react

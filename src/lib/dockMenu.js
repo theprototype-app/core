@@ -73,7 +73,8 @@ export const DOCK_VIEWS = [
  * Explorer image, so a toolbar button for it would open an empty editor.
  * @type {{key: string, tooltip: string}[]}
  */
-export const DOCK_EXTRA_VIEWS = [{ key: 'imageEditor', tooltip: 'Crop, rotate, resize and adjust an Explorer image' }];
+// uir-preview: the Image editor is the Preview's Edit face now — the "+" offers Preview (hosted)
+export const DOCK_EXTRA_VIEWS = [];
 
 /**
  * 41 G22 — THE WINDOW REGISTRY: every window that can live in the dock, in menu order. Both
@@ -110,9 +111,10 @@ export const PHONE_DOCK_WINDOWS = [
 export const HOSTED_DOCK_WINDOWS = [
 	{ key: 'objects', tooltip: 'Every object in the scene, as a tree' },
 	{ key: 'stats', tooltip: 'Scene budget: draw calls, triangles, textures and memory' },
-	{ key: 'chat', tooltip: 'Talk to the people in this session' },
-	{ key: 'aiAssistant', tooltip: 'Ask the AI assistant to build or change the scene' },
-	{ key: 'assets', tooltip: 'Free CC0 models, skies and materials from Poly Haven and ambientCG' }
+	{ key: 'chat', tooltip: 'Talk to the people in this session and ask the AI assistant' }, // uir-chat
+	{ key: 'assets', tooltip: 'Free CC0 models, skies and materials from Poly Haven and ambientCG' },
+	{ key: 'preview', tooltip: 'Preview the file selected in the Explorer; Edit opens an image in the editor' },
+	{ key: 'meshGen', tooltip: 'Make a 3D model from words or a picture; its jobs and your prompt history' }
 ];
 /** the registry rows for the posture we are in @returns {{key: string, tooltip: string}[]} */
 function windowsHere() {

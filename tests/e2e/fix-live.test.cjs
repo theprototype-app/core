@@ -161,7 +161,7 @@ h.run(async () => {
 	h.check(await A.page.locator('#connect-setting-badge').isVisible(), 'F-5: the Connect pill shows the badge');
 	h.check(((await A.page.locator('#connect-setting-badge').textContent()) || '').includes('Public · guests join'), 'F-5: badge text');
 	// C dials; no approval card is pressed
-	await C.page.locator('input[placeholder="Enter peer ID to connect"]').fill(A.id);
+	await (await h.openDial(C.page)).fill(A.id);
 	await C.page.getByRole('button', { name: 'Connect', exact: true }).click();
 	await h.eventually(() => opened(A.page, C.id), (v) => v === true, 'F-5: C was admitted automatically', 30000);
 	const admitText = C.id.toUpperCase() + ' joined as a guest';
@@ -222,6 +222,7 @@ h.run(async () => {
 	await h.eventually(pillState, (v) => v === 'idle', 'F-5: (setup) C is idle again after the leave', 15000);
 	const dot = C.page.locator('#connect-squeeze-dot');
 	if (!(await dial.isVisible().catch(() => false)) && (await dot.isVisible().catch(() => false))) await dot.click();
+	await h.openDial(C.page); // uir-people: the field shows after Join…
 	if (!(await dial.isVisible().catch(() => false))) {
 		await C.page.screenshot({ path: (process.env.OUT || 'test-results') + '/fix-live-C-dial.png' }).catch(() => {});
 		console.log('  (C dial missing: pill ' + (await pillState()) + ')');
@@ -235,7 +236,7 @@ h.run(async () => {
 	await h.eventually(() => inRoster(A.page, C.id), (v) => v === false, 'F-5: Remove drops C from Users', 8000);
 	await h.eventually(() => opened(A.page, C.id), (v) => v === false, 'F-5: and closes the link');
 	await C.page.waitForTimeout(16000); // past C's own reconnect window
-	await C.page.locator('input[placeholder="Enter peer ID to connect"]').fill(A.id).catch(() => {});
+	await (await h.openDial(C.page)).fill(A.id).catch(() => {});
 	await C.page.getByRole('button', { name: 'Connect', exact: true }).click().catch(() => {});
 	await A.page.waitForTimeout(8000);
 	h.check((await opened(A.page, C.id)) === false && (await inRoster(A.page, C.id)) === false, 'F-5: a removed peer cannot dial back in');

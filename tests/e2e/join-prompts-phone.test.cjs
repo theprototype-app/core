@@ -39,7 +39,7 @@ const tappable = (p, selectors) =>
 const dial = async (from, to) => {
 	const dot = from.page.locator('#connect-squeeze-dot');
 	if (await dot.isVisible().catch(() => false)) await dot.click();
-	const input = from.page.locator('input[placeholder="Enter peer ID to connect"]');
+	const input = await h.openDial(from.page); // uir-people: the field shows after Join…
 	if (await input.isVisible().catch(() => false)) {
 		await input.fill(to.id);
 		await from.page.getByRole('button', { name: 'Connect', exact: true }).click();

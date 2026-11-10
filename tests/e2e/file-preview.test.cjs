@@ -99,8 +99,8 @@ h.run(async () => {
 			walk: v.previewWalk(entries).map(v.previewIdOf).join(','),
 			faces: entries.map((e) => v.previewFaceOf(e) ?? '-').join(','),
 			next: id(v.stepPreview(entries, 'i1', 1)),
-			// b.txt has no face, so the walk goes straight past it
-			skipped: id(v.stepPreview(entries, 'i1', 1)) === 'i3',
+			// uir-preview: b.txt HAS a face now (read-only text), so the walk stops on it
+			skipped: id(v.stepPreview(entries, 'i1', 1)) === 'i2',
 			prevFromFirst: v.stepPreview(entries, 'f1', -1),
 			nextFromLast: v.stepPreview(entries, 'i4', 1),
 			lost: id(v.stepPreview(entries, 'gone', 1)),
@@ -109,19 +109,19 @@ h.run(async () => {
 			opacity: [v.clampPreviewOpacity(0), v.clampPreviewOpacity(2), v.clampPreviewOpacity(0.5)].join('|')
 		};
 	});
-	h.check(pure.walk === 'f1,i1,i3,i4', `the walk holds folders and previewable files only (${pure.walk})`);
+	h.check(pure.walk === 'f1,i1,i2,i3,i4', `the walk holds folders and previewable files only (${pure.walk})`);
 	h.check(
-		pure.faces === 'folder,image,-,audio,object,-,-',
-		`a text file, a row whose bytes are elsewhere and a pack card have no face (${pure.faces})`
+		pure.faces === 'folder,image,text,audio,object,-,-',
+		`a row whose bytes are elsewhere and a pack card have no face; a text file does (uir-preview) (${pure.faces})`
 	);
-	h.check(pure.skipped, `stepping past a text file lands on the next thing it CAN show (${pure.next})`);
+	h.check(pure.skipped, `stepping from the image lands on the text file (${pure.next})`);
 	h.check(
 		pure.prevFromFirst === null && pure.nextFromLast === null,
 		'the walk CLAMPS rather than wrapping — an arrow that returns you to the start reads as a dead button'
 	);
 	h.check(pure.lost === 'f1', 'an id the list no longer holds restarts the walk instead of stranding the arrows');
 	h.check(
-		pure.place.at === 3 && pure.place.of === 4,
+		pure.place.at === 4 && pure.place.of === 5,
 		`the readout counts within the walk, not the grid (${JSON.stringify(pure.place)})`
 	);
 	h.check(pure.clock === '0:00|1:05|0:00', `the transport clock (${pure.clock})`);
@@ -164,23 +164,31 @@ h.run(async () => {
 	let t = await targetOf(A);
 	h.check(t?.kind === 'image' && t.hasUrl, `showing the image (${JSON.stringify(t)})`);
 	h.check(
-		(await page.locator('#preview-place').innerText()).trim() === '2/3',
-		`the header says where you are in the WALK (the text file is not in it) (${await page.locator('#preview-place').innerText()})`
+		(await page.locator('#preview-place').innerText()).trim() === '2/4',
+		`the header says where you are in the WALK (${await page.locator('#preview-place').innerText()})`
 	);
 
-	// ---- 3. one window, four faces -----------------------------------------------------
+	// ---- 3. one window, five faces ------------------------------------------------------
+	await page.locator('#preview-next').click();
+	await page.waitForTimeout(800);
+	t = await targetOf(A);
+	h.check(t?.kind === 'text' && t.title === 'b-note.txt', `→ steps onto the text file (uir-preview) (${JSON.stringify(t)})`);
+	await page.waitForTimeout(400);
+	h.check(/never previewed/.test((await page.locator('#preview-text').textContent()) ?? ''), '…and shows its text, read-only');
 	await page.locator('#preview-next').click();
 	await page.waitForTimeout(800);
 	t = await targetOf(A);
 	h.check(
 		t?.kind === 'audio' && t.title === 'c-tone.wav',
-		`→ steps PAST the text file onto the sound, in the same window (${JSON.stringify(t)})`
+		`→ again: the sound, in the same window (${JSON.stringify(t)})`
 	);
 	h.check(await page.locator('#audio-seek').isVisible(), '…and draws a transport instead of a picture');
 	await page.locator('#preview-prev').click();
+	await page.waitForTimeout(600);
+	await page.locator('#preview-prev').click();
 	await page.waitForTimeout(800);
 	t = await targetOf(A);
-	h.check(t?.kind === 'image' && t.title === 'a-pic.png', `← comes back (${JSON.stringify(t)})`);
+	h.check(t?.kind === 'image' && t.title === 'a-pic.png', `← ← comes back (${JSON.stringify(t)})`);
 	// the KEYS do the same thing
 	await page.locator(W).focus();
 	await page.keyboard.press('ArrowLeft');
@@ -956,10 +964,17 @@ h.run(async () => {
 			title: x('.pv-title'),
 			zoom: x('#image-zoom'),
 			cog: x('#preview-cog'),
-			close: x('button[title="Close"]')
+			close: x('button[title="Close"]'),
+			// diagnostics for a red premise: what the window shows, and how wide its header is
+			why: (() => {
+				let list;
+				window.__stores.fileWindows.previewWindows.subscribe((v) => (list = v))();
+				return JSON.stringify({ kinds: list.map((w) => (w.kind ?? 'image') + ':' + (w.mode ?? 'view')), headW: win?.querySelector('.ui-panel-header')?.clientWidth });
+			})()
 		};
 	});
 	const seq = ['prev', 'place', 'next', 'title', 'zoom', 'cog', 'close'];
+	console.log('  header diag: ' + headerOrder.why);
 	const missing = seq.filter((k) => headerOrder[k] === null);
 	h.check(missing.length === 0, 'premise: every header piece is rendered (' + JSON.stringify(headerOrder) + ')');
 	h.check(

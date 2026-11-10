@@ -36,7 +36,7 @@ async function reset(page) {
 		document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
 		st.inspectorClose.set(true);
 		st.dockHost?.HOSTED?.stats?.close();
-		st.dockHost?.HOSTED?.aiAssistant?.close();
+		st.dockHost?.HOSTED?.chat?.close();
 		st.aiAssistantHidden?.set('hidden');
 		st.bottomDock.setDockEmptyOpen(false);
 		st.bottomDock.dockMinimized.set(true);
@@ -54,7 +54,7 @@ const STATES = [
 			window.__stores.aiAssistantHidden.set('');
 		});
 		await page.waitForTimeout(400);
-		await S(page, () => window.__stores.docking.dockToSide('aiAssistant', 'left'));
+		await S(page, () => window.__stores.docking.dockToSide('chat', 'left'));
 		await page.waitForTimeout(900);
 	} },
 	{ id: 'dock-tall', run: async (page) => {

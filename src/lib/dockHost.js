@@ -1,5 +1,5 @@
 import { writable, derived, get } from 'svelte/store';
-import { objectListClose, chatHidden, aiAssistantHidden } from '../stores/appStore';
+import { objectListClose, chatHidden, meshGenModalOpen } from '../stores/appStore';
 import { isLocked } from '../stores/sceneStore';
 import { statsOpen } from './sceneBudget';
 import { assetBrowserOpen } from './cc0/assetBrowserState.js';
@@ -19,6 +19,7 @@ import {
 } from './bottomDock';
 import { registerDockOpener, registerDockCloser, registerDockOpenState, registerFloatOpener } from './dockMenu';
 import { groupOfKey, removeFromGroup } from './windowTabs';
+import { previewWindows, openPinnedPreview, closePinnedPreview } from './fileWindows';
 
 // 42 I6 — HOSTED DOCK TABS: the floating windows with no docked layout of their own — the
 // Objects list, Statistics, the Live profiler, Chat and the AI assistant — dock as tabs on a
@@ -45,10 +46,21 @@ export const HOSTED = {
 	objects: { sel: '#object-list', ls: 'objectListDocked', store: objectListClose, isOpen: (v) => !v, open: () => objectListClose.set(false), close: () => objectListClose.set(true) },
 	stats: { sel: '#stats-window', ls: 'statsDocked', store: statsOpen, isOpen: (v) => !!v, open: () => statsOpen.set(true), close: () => statsOpen.set(false) },
 	chat: { sel: '#chat-window', ls: 'chatDocked', store: chatHidden, isOpen: (v) => v === '', open: () => chatHidden.set(''), close: () => chatHidden.set('hidden') },
-	aiAssistant: { sel: '#ai-assistant-window', ls: 'aiAssistantDocked', store: aiAssistantHidden, isOpen: (v) => v === '', open: () => aiAssistantHidden.set(''), close: () => aiAssistantHidden.set('hidden') },
+	// uir-chat: the AI assistant is the Assistant tab of this one window (no key of its own any more)
 	// 47-cc0: the free CC0 asset browser
-	assets: { sel: '#asset-browser-window', ls: 'assetBrowserDocked', store: assetBrowserOpen, isOpen: (v) => !!v, open: () => assetBrowserOpen.set(true), close: () => assetBrowserOpen.set(false) }
+	assets: { sel: '#asset-browser-window', ls: 'assetBrowserDocked', store: assetBrowserOpen, isOpen: (v) => !!v, open: () => assetBrowserOpen.set(true), close: () => assetBrowserOpen.set(false) },
+	// uir-preview: THE Preview tab — the FIRST preview window (#image-preview-window), pinned so it
+	// follows the Explorer selection; its ✕ asks before dropping unsaved image edits
+	preview: { sel: '#image-preview-window', ls: 'previewDocked', store: previewWindows, isOpen: (v) => Array.isArray(v) && v.length > 0, open: openPinnedPreview, close: closePinnedPreview },
+	// uir-timeline: the Generate window (its store keeps the modal's name; a value = open, seeded)
+	meshGen: { sel: '#mesh-gen-window', ls: 'meshGenDocked', store: meshGenModalOpen, isOpen: (v) => !!v, open: () => meshGenModalOpen.update((v) => v ?? {}), close: () => meshGenModalOpen.set(null) }
 };
+
+// uir-preview: the Image editor was its own dock tab; it is the Preview's Edit face now, so a
+// device that kept it docked keeps its editor in the dock (once, before the flags are read)
+try {
+	if (safeStorage.getItem('imageEditorDocked') === 'true' && safeStorage.getItem('previewDocked') === null) safeStorage.setItem('previewDocked', 'true');
+} catch {}
 
 function readDocked() {
 	/** @type {Record<string, boolean>} */

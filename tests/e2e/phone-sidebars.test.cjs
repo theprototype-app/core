@@ -180,7 +180,8 @@ h.run(async () => {
 			const open = await P.evaluate(() => document.querySelectorAll('#image-editor-window .ws-panel-secondary').length);
 			if (label === 'folded') await shot(P, `phone-${label}-image-editor`);
 			h.check(open === 0, `${label}: the Image editor starts with its panel hidden (${open})`);
-			await P.evaluate(() => window.__stores.imageEditor.closeImageEditor());
+			// uir-preview: the editor is the preview window's Edit face — close the window itself
+			await P.evaluate(() => window.__stores.fileWindows.previewWindows.set([]));
 			await P.waitForTimeout(400);
 		});
 		await A.ctx.close();

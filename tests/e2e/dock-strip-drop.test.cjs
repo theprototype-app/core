@@ -257,24 +257,35 @@ h.run(async () => {
 	);
 	h.check((await read(page, 'bottomDock.visibleDockKey')) === 'uv', '5.3 ...showing the tab that was active in the group');
 
-	// ---- 6. G24 — the Image editor in the dock ---------------------------------------------------
+	// ---- 6. G24 -> uir-preview — the Preview tab (the Image editor is its Edit face now) ----------
 	await S(page, () => {
 		const b = document.getElementById('dock-add-view');
 		b.click();
 	});
 	await page.waitForTimeout(400);
 	const rows = await S(page, () => [...document.querySelectorAll('[role="menuitem"]')].map((r) => r.textContent.trim()));
-	h.check(rows.some((r) => /Image editor/.test(r)), `6.1 the dock "+" lists the Image editor (${JSON.stringify(rows)})`);
-	await S(page, () => [...document.querySelectorAll('[role="menuitem"]')].find((r) => /Image editor/.test(r.textContent))?.click());
+	h.check(rows.some((r) => /^Preview/.test(r)) && !rows.some((r) => /Image editor/.test(r)), `6.1 the dock "+" lists Preview, no separate Image editor (${JSON.stringify(rows)})`);
+	await S(page, () => [...document.querySelectorAll('[role="menuitem"]')].find((r) => /^Preview/.test(r.textContent.trim()))?.click());
 	await page.waitForTimeout(1200);
-	let ie = await S(page, () => ({
-		dock: !!document.querySelector('#image-editor-dock:not(.hidden)'),
-		win: !!document.getElementById('image-editor-window'),
-		empty: !!document.getElementById('image-editor-empty'),
-		tab: !!document.querySelector('[data-dock-tab="imageEditor"]')
-	}));
-	h.check(ie.dock && !ie.win && ie.tab && ie.empty, `6.2 "+ Image editor" opens it as a dock tab, saying how to pick an image (${JSON.stringify(ie)})`);
-	await page.screenshot({ path: (process.env.OUT || '/tmp') + '/g24-image-editor-docked-empty-dark.png' });
+	const pv = () =>
+		S(page, () => {
+			const w = document.getElementById('image-preview-window');
+			let v;
+			window.__stores.bottomDock.visibleDockKey.subscribe((x) => (v = x))();
+			return {
+				hosted: w?.getAttribute('data-pd-host') ?? null,
+				win: !!w,
+				pinned: w?.dataset.previewPinned === 'true',
+				mode: w?.dataset.previewMode ?? null,
+				empty: !!document.getElementById('preview-empty'),
+				tab: !!document.querySelector('[data-dock-tab="preview"]'),
+				visible: v,
+				size: w?.querySelector('#image-editor-size')?.textContent ?? ''
+			};
+		});
+	let ie = await pv();
+	h.check(ie.hosted === 'shown' && ie.tab && ie.pinned && ie.empty, `6.2 "+ Preview" opens it as a pinned dock tab, saying what to do (${JSON.stringify(ie)})`);
+	await page.screenshot({ path: (process.env.OUT || '/tmp') + '/uir-preview-docked-empty-dark.png' });
 	const img = await S(page, async () => {
 		const c = document.createElement('canvas');
 		c.width = 64;
@@ -293,24 +304,20 @@ h.run(async () => {
 		return rec.id;
 	});
 	await page.waitForTimeout(1500);
-	ie = await S(page, () => ({
-		visible: (() => {
-			let v;
-			window.__stores.bottomDock.visibleDockKey.subscribe((x) => (v = x))();
-			return v;
-		})(),
-		size: document.querySelector('#image-editor-dock #image-editor-size')?.textContent ?? ''
-	}));
-	h.check(!!img && ie.visible === 'imageEditor' && /64 × 48/.test(ie.size), `6.3 opening an Explorer image brings the docked editor forward with it (${JSON.stringify(ie)})`);
-	await page.screenshot({ path: (process.env.OUT || '/tmp') + '/g24-image-editor-docked-dark.png' });
+	ie = await pv();
+	h.check(!!img && ie.visible === 'preview' && ie.mode === 'edit' && /64 × 48/.test(ie.size), `6.3 Edit image… brings the docked Preview forward, in Edit (${JSON.stringify(ie)})`);
+	await page.screenshot({ path: (process.env.OUT || '/tmp') + '/uir-preview-docked-edit-dark.png' });
 	await S(page, () => document.getElementById('dock-undock').click());
 	await page.waitForTimeout(1000);
-	ie = await S(page, () => ({ dock: !!document.getElementById('image-editor-dock'), win: !!document.getElementById('image-editor-window'), size: document.querySelector('#image-editor-window #image-editor-size')?.textContent ?? '' }));
-	h.check(!ie.dock && ie.win && /64 × 48/.test(ie.size), `6.4 undock: it floats again, same image (${JSON.stringify(ie)})`);
-	await S(page, () => document.getElementById('image-editor-dock-btn').click());
+	ie = await pv();
+	h.check(ie.win && !ie.hosted && ie.mode === 'edit' && /64 × 48/.test(ie.size), `6.4 undock: it floats again, same image, still pinned (${JSON.stringify(ie)})`);
+	h.check(ie.pinned, '6.4b ...and still pinned');
+	await S(page, () => document.getElementById('preview-pin').click()); // unpin
+	await page.waitForTimeout(300);
+	await S(page, () => document.getElementById('preview-pin').click()); // Pin to dock
 	await page.waitForTimeout(1000);
-	ie = await S(page, () => ({ dock: !!document.querySelector('#image-editor-dock:not(.hidden)'), win: !!document.getElementById('image-editor-window') }));
-	h.check(ie.dock && !ie.win, `6.5 its header's Dock button docks it again (${JSON.stringify(ie)})`);
+	ie = await pv();
+	h.check(ie.hosted === 'shown' && ie.pinned, `6.5 its header's Pin to dock docks it again (${JSON.stringify(ie)})`);
 	await page.reload({ waitUntil: 'domcontentloaded' });
 	await page.waitForFunction(() => window.__stores && !!window.__stores.moduleSDK, { timeout: 30000 });
 	await page.waitForTimeout(2500);
@@ -319,12 +326,12 @@ h.run(async () => {
 		window.__stores.imageEditor.openImageEditor(id);
 	}, img);
 	await page.waitForTimeout(1500);
-	ie = await S(page, () => ({ dock: !!document.querySelector('#image-editor-dock:not(.hidden)'), win: !!document.getElementById('image-editor-window') }));
-	h.check(ie.dock && !ie.win, `6.6 the docked mode survives a reload (${JSON.stringify(ie)})`);
+	ie = await pv();
+	h.check(ie.hosted === 'shown' && ie.mode === 'edit', `6.6 the docked mode survives a reload (${JSON.stringify(ie)})`);
 	// light theme shot of the strip feedback for the record
 	await S(page, () => { document.documentElement.dataset.theme = 'light'; document.documentElement.classList.remove('dark'); });
 	await page.waitForTimeout(300);
-	await page.screenshot({ path: (process.env.OUT || '/tmp') + '/g24-image-editor-docked-light.png' });
+	await page.screenshot({ path: (process.env.OUT || '/tmp') + '/uir-preview-docked-light.png' });
 
 	h.check((h.pageErrors(P) || []).length === 0, `no page errors (${(h.pageErrors(P) || []).join(' | ')})`);
 	await h.finish(browser);

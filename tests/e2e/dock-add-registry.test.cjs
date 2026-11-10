@@ -4,7 +4,7 @@
 //
 //   1  the desktop dock "+" lists EVERY window the phone "+" Windows sheet lists (one registry,
 //      `dockMenu.DOCK_WINDOWS`) — read from both real surfaces, the phone's in a phone context
-//   2  it includes the Node editor and the Image editor (G24)
+//   2  it includes the Node editor and the image editor — the Preview's Edit view since 1.65 (G24)
 //   3  44 M5: an open row is marked with WHERE it is and brings it to the front there; a closed one
 //      opens docked (the Node editor too); a floating one stays floating
 //
@@ -99,11 +99,13 @@ h.run(async () => {
 	// 42 I6: the desktop "+" ALSO lists the floating windows the dock hosts there (Objects, Statistics,
 	// Chat, AI assistant) — after the shared rows; the phone keeps its content tabs. showhide-v8: no Live profiler (it is
 	// a row of the Profiler's list now)
-	const HOSTED = ['Objects', 'Statistics', 'Chat', 'AI assistant', 'Free assets']; // 47 C1: the Asset Browser docks as a hosted tab
+	// 47 C1: the Asset Browser docks as a hosted tab; uir (1.65): Chat and the AI assistant are one window, the Preview
+	// (which edits images in place) and Generate 3D dock as hosted tabs
+	const HOSTED = ['Objects', 'Statistics', 'Chat', 'Free assets', 'Preview', 'Generate 3D'];
 	h.check(JSON.stringify(titles) === JSON.stringify([...shared, ...HOSTED]), `1.1 the desktop "+" lists the phone sheet's windows, same order, then the hosted windows (desktop ${JSON.stringify(titles)} vs phone ${JSON.stringify(shared)})`);
 	h.check(PHONE_ONLY.every((t) => sheet.includes(t)) && !titles.some((t) => PHONE_ONLY.includes(t) && !HOSTED.includes(t)), `1.1b the phone sheet adds the five content tabs, the desktop "+" only the ones that float there (Objects, Statistics) (${JSON.stringify(sheet)})`);
 	h.check(titles.includes('Node editor'), `2.1 ...the Node editor among them (${JSON.stringify(titles)})`);
-	h.check(titles.includes('Image editor'), `2.2 ...and the Image editor (G24)`);
+	h.check(titles.includes('Preview') && !titles.includes('Image editor'), `2.2 ...and the image editor, which is the Preview's Edit view since 1.65 (G24)`);
 	const flowRow = (rows ?? []).find((r) => r.title === 'Node editor');
 	const exRow = (rows ?? []).find((r) => r.title === 'Explorer');
 	const fcRow = (rows ?? []).find((r) => r.title === 'Timeline');

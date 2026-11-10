@@ -158,11 +158,18 @@ h.run(async () => {
 	await inPage(H, "s.cloudHooks.setAuthProvider({ decide() { return 'admit'; }, admitNotice: (id) => ({ text: id + ' joined as a guest (view-only)', turnOff() {} }) })");
 	const guestRoomInv = await mint({ kind: 'agent' });
 	await dial('cccc4', { kind: 'agent', invite: core.dialInvite(tokenOfLink(guestRoomInv.link), 'cccc4', H.id) });
-	await H.page.waitForTimeout(150);
-	const notesNow = await inPage(H, 'let n; s.notifications.subscribe((v) => (n = v.map((x) => x.text)))(); return n;');
+	// uir-int (device-lab-4 D4): the notice names the joiner (their roster name, else "An AI agent" / "A guest"
+	// after ~2.5 s) — never the peer id
+	const notesOf = () => inPage(H, 'let n; s.notifications.subscribe((v) => (n = v.map((x) => x.text)))(); return n;');
+	let notesNow = [];
+	for (let i = 0; i < 40; i++) {
+		notesNow = await notesOf();
+		if (notesNow.some((t) => /joined with your invite/.test(t))) break;
+		await H.page.waitForTimeout(150);
+	}
 	h.check(
-		(await roster(H)).some((u) => u[0] === 'cccc4') && notesNow.some((t) => /CCCC4 joined with your invite/.test(t)) && !notesNow.some((t) => /cccc4 joined as a guest/i.test(t)),
-		'an invite into a guest-admitting room says "joined with your invite", not "as a guest": ' + JSON.stringify(notesNow.filter((t) => /cccc4/i.test(t)))
+		(await roster(H)).some((u) => u[0] === 'cccc4') && notesNow.some((t) => /^An AI agent joined with your invite/.test(t)) && !notesNow.some((t) => /cccc4 joined/i.test(t)),
+		'an invite into a guest-admitting room says "<who> joined with your invite" (a name, not the peer id, not "as a guest"): ' + JSON.stringify(notesNow.filter((t) => /invite|cccc4/i.test(t)))
 	);
 	await inPage(H, 's.inviteStore.agentsAsGuests.set(false); s.cloudHooks.setAuthProvider(null)');
 	// approving the agent's card by hand gives it a kind:agent row too

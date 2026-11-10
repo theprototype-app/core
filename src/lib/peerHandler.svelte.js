@@ -229,6 +229,32 @@ selectedObject.subscribe(value => { selected = value });
 //Access userData
 let users = $state();
 userdata.subscribe(value => { users = value });
+
+/** how long an invite notice waits for the joiner's roster name before it says "A guest" */
+const ADMIT_NAME_WAIT_MS = 2500;
+/**
+ * The name an admission notice uses (uir-int D4): the joiner's roster name once their row carries one,
+ * else "An AI agent" / "A guest" after ADMIT_NAME_WAIT_MS.
+ * @param {string} peerId @param {any} cloudMeta @returns {Promise<string>}
+ */
+function admittedName(peerId, cloudMeta) {
+	const rowOf = () => (/** @type {any[]} */ (get(userdata)) ?? []).find((/** @type {any} */ u) => Array.isArray(u) && u[0] === peerId);
+	const named = () => String(rowOf()?.[1] ?? '').trim();
+	const fallback = () => (rowOf()?.[6]?.kind === 'agent' || cloudMeta?.kind === 'agent' ? 'An AI agent' : 'A guest');
+	return new Promise((resolve) => {
+		if (named()) return resolve(named());
+		/** @type {() => void} */
+		let stop = () => {};
+		const t = setTimeout(() => { stop(); resolve(fallback()); }, ADMIT_NAME_WAIT_MS);
+		stop = userdata.subscribe(() => {
+			const n = named();
+			if (!n) return;
+			clearTimeout(t);
+			queueMicrotask(() => stop());
+			resolve(n);
+		});
+	});
+}
 trackSceneStore('environment', environmentStore);
 trackSceneStore('scenepost', scenePostStore);
 trackSceneStore('scenephysics', scenePhysicsState_);
@@ -2434,13 +2460,23 @@ export class PeerConnection {
 	// join automatically") and Remove. The provider says why; without one, a generic line.
 	// 55 owner finding 4: an INVITE admission is the invite's notice, never the provider's
 	// ("joined as a guest (view-only)" for an Edit invite, with a Turn off that is not why).
+	// uir-int (device-lab-4 D4, 78 PL34): the notice names the person — their roster name ("Guest 2", or the
+	// one they typed) — never a peer id. The name rides their userdata row, which lands a moment AFTER the
+	// admission, so an invite notice waits for it (ADMIT_NAME_WAIT_MS at most), then says "A guest" /
+	// "An AI agent".
 	/** @param {string} peerId @param {any} auth @param {any} cloudMeta @param {string} [invitedRole] */
 	announceAutoAdmit(peerId, auth, cloudMeta, invitedRole) {
-		let provided = null;
-		if (invitedRole) {
-			const canEdit = invitedRole === 'edit' || !get(rolesInfo);
-			provided = { text: shortPeer(peerId) + ' joined with your invite (' + (canEdit ? 'can edit' : 'view-only') + ').' };
-		} else try {
+		if (!invitedRole) return this.showAutoAdmit(peerId, auth, cloudMeta, null);
+		const canEdit = invitedRole === 'edit' || !get(rolesInfo);
+		void admittedName(peerId, cloudMeta).then((who) =>
+			this.showAutoAdmit(peerId, auth, cloudMeta, { text: who + ' joined with your invite (' + (canEdit ? 'can edit' : 'view-only') + ').' })
+		);
+	}
+
+	/** @param {string} peerId @param {any} auth @param {any} cloudMeta @param {any} invited the invite's own notice, or null */
+	showAutoAdmit(peerId, auth, cloudMeta, invited) {
+		let provided = invited;
+		if (!provided) try {
 			provided = typeof auth?.admitNotice === 'function' ? auth.admitNotice(peerId, cloudMeta) : null;
 		} catch (e) {
 			console.error('cloud auth provider admitNotice threw:', e);

@@ -54,7 +54,14 @@ const headOf = (page, sel) =>
 		const el = document.querySelector(sel);
 		if (!el) return null;
 		const r = el.getBoundingClientRect();
-		return { x: Math.round(r.left + 14), y: Math.round(r.top + r.height / 2) };
+		const y = Math.round(r.top + r.height / 2);
+		// a spot ON TOP on the header's own background (uir: the one Chat window is 500 px wide, so its left end
+		// can lie under the Statistics window it is aimed at — a press there grabbed Statistics instead)
+		for (let x = Math.round(r.left + 14); x < r.right - 4; x += 6) {
+			const at = document.elementFromPoint(x, y);
+			if (at && el.contains(at) && !at.closest('button, input, select, a, [role="tab"]')) return { x, y };
+		}
+		return { x: Math.round(r.left + 14), y };
 	}, sel);
 const rectOf = (page, sel) =>
 	S(page, (sel) => {
@@ -170,35 +177,36 @@ h.run(async () => {
 	// ---- 5. header merge -------------------------------------------------------------------------------
 	await S(page, () => {
 		const s = window.__stores;
-		s.aiAssistantHidden.set('');
+		s.sceneBudget.statsOpen.set(true);
 		s.chatHidden.set('');
 	});
 	await page.waitForTimeout(1200);
-	// the AI assistant out of the way, mid-left; Chat dragged onto its header (both tabbable windows)
-	head = await headOf(page, '#ai-assistant-window .move-handle');
-	h.check(!!head, '5.0 premise: the AI assistant floats');
+	// uir-chat: the AI assistant is Chat's own tab now, so the second tabbable window is Statistics.
+	// Statistics out of the way, mid-left; Chat dragged onto its header (both tabbable windows)
+	head = await headOf(page, '#stats-window .move-handle');
+	h.check(!!head, '5.0 premise: Statistics floats');
 	await dragTo(page, head, { x: 300, y: 160 });
 	await page.mouse.up();
 	await page.waitForTimeout(500);
-	const statsHead = await headOf(page, '#ai-assistant-window .move-handle');
+	const statsHead = await headOf(page, '#stats-window .move-handle');
 	const chatHead = await headOf(page, '#chat-window .move-handle');
 	h.check(!!chatHead, '5.0 premise: Chat floats');
 	await page.keyboard.down('Control');
 	await dragTo(page, chatHead, { x: statsHead.x + 60, y: statsHead.y });
 	f = await feedback(page);
-	h.check(!f.merge, `5.1 Ctrl held over the AI assistant's header: no merge highlight (${JSON.stringify(f)})`);
+	h.check(!f.merge, `5.1 Ctrl held over the Statistics header: no merge highlight (${JSON.stringify(f)})`);
 	await page.mouse.up();
 	await page.keyboard.up('Control');
 	await page.waitForTimeout(800);
 	h.check(((await read(page, 'windowTabs.tabGroups')) ?? []).length === 0, `5.2 dropped with Ctrl: no tab group (${JSON.stringify(await read(page, 'windowTabs.tabGroups'))})`);
-	// (Chat now lies over the AI assistant's header: move it aside, then aim again)
+	// (Chat now lies over the Statistics header: move it aside, then aim again)
 	await dragTo(page, await headOf(page, '#chat-window .move-handle'), { x: 760, y: 320 });
 	await page.mouse.up();
 	await page.waitForTimeout(500);
 	const chatHead2 = await headOf(page, '#chat-window .move-handle');
 	await dragTo(page, chatHead2, { x: statsHead.x + 60, y: statsHead.y });
 	f = await feedback(page);
-	h.check(f.merge, `5.3 no key: the AI assistant's header lights up (${JSON.stringify(f)})`);
+	h.check(f.merge, `5.3 no key: the Statistics header lights up (${JSON.stringify(f)})`);
 	await page.mouse.up();
 	await page.waitForTimeout(800);
 	const groups = (await read(page, 'windowTabs.tabGroups')) ?? [];

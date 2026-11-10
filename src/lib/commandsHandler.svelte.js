@@ -36,6 +36,7 @@ import { get, writable } from 'svelte/store'
 import { addMessage, loading, loadingcount, showToast, fixLight, specatorMode } from '../stores/appStore';
 import { dropWireErrors } from './wireErrors';
 import { peers, userdata } from '../stores/appStore';
+import { mergeRowMeta } from '$lib/peoplePresence' // uir-people: the optional status on roster slot 6
 // 27-G (audit H6): removing an object frees NOTHING on the GPU. These free what only
 // the departing object was using, and never what the rest of the scene still holds.
 import { disposeTree, keepSet } from '$lib/disposeTree';
@@ -112,7 +113,9 @@ export function userData(data) {
             // avatar config (slot 5) from newer clients
             if (element[5]) users[index][5] = element[5];
             // 55 A7: the peer's kind (slot 6, `{kind: 'agent'}`) — self-declared presence
-            if (element[6] && typeof element[6] === 'object') users[index][6] = { kind: element[6].kind === 'agent' ? 'agent' : 'person' };
+            // uir-people: + the optional status (Available / Busy / Away), latest-wins on its OWNER's stamp,
+            // and never taken for our own row ($lib/peoplePresence)
+            if (element[6] && typeof element[6] === 'object') users[index][6] = mergeRowMeta(users[index][6], element[6], { self: element[0] === get(peers)?.peer?.id });
         }
 
     })

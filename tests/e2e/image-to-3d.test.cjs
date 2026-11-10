@@ -47,7 +47,7 @@ async function waitPicture(page) {
 		await page.waitForSelector('#mesh-gen-image', { timeout: 60000 });
 	} catch (e) {
 		const state = await page.evaluate(() => ({
-			modal: !!document.querySelector('.mesh-gen-modal'),
+			modal: !!document.querySelector('#mesh-gen-window'),
 			row: document.querySelector('#mesh-gen-picture')?.innerText,
 			preparing: !!document.querySelector('#mesh-gen-preparing'),
 			toasts: [...document.querySelectorAll('.tp-toast')].map((t) => t.innerText.slice(0, 160))
@@ -59,8 +59,8 @@ async function waitPicture(page) {
 
 /** @param {any} page @param {boolean} [consent] a picture for Meshy: answer AI7's question with Send */
 async function generate(page, consent = false) {
-	await page.locator('.mesh-gen-modal button', { hasText: 'Generate' }).last().click();
-	await page.waitForSelector('.mesh-gen-modal', { state: 'detached', timeout: 5000 });
+	// uir-timeline: the Generate window stays open after a submit (the job shows under the form)
+	await page.click('#mesh-gen-submit');
 	if (consent) {
 		await page.waitForSelector('#confirm-mesh-picture-consent', { timeout: 8000 });
 		await page.click('#confirm-dialog-send');
@@ -125,10 +125,10 @@ h.run(async () => {
 	await page.waitForSelector('#mesh-gen-picture');
 	h.check(/2048 px/.test((await page.locator('#mesh-gen-limits').innerText().catch(() => '')) ?? ''), 'AI8: the picture limits are stated before a pick');
 	h.check((await page.locator('#mesh-gen-tip').count()) === 1, 'AI6: the first-use tip shows on the picture row');
-	h.check(await page.locator('.mesh-gen-modal button', { hasText: 'Generate' }).last().isDisabled(), 'no words and no picture: Generate is off');
+	h.check(await page.locator('#mesh-gen-submit').isDisabled(), 'no words and no picture: Generate is off');
 	await page.setInputFiles('#mesh-gen-file-input', PHOTO);
 	await waitPicture(page);
-	h.check(!(await page.locator('.mesh-gen-modal button', { hasText: 'Generate' }).last().isDisabled()), 'a picture alone is enough to generate');
+	h.check(!(await page.locator('#mesh-gen-submit').isDisabled()), 'a picture alone is enough to generate');
 	const prep = await page.evaluate(() => {
 		let v;
 		window.__stores.chatAttach.lastPrepare.subscribe((x) => (v = x))();
@@ -184,7 +184,7 @@ h.run(async () => {
 	await page.waitForSelector('#mesh-gen-viewport');
 	await page.click('#mesh-gen-viewport');
 	await waitPicture(page);
-	await page.fill('.mesh-gen-modal input[placeholder="Treasure chest"]', 'Viewport copy');
+	await page.fill('#mesh-gen-name', 'Viewport copy');
 	await generate(page, true);
 	await waitCount(A, base + 2, 'the viewport model is placed');
 	h.check(imageTasks.length === 2 && /^data:image\//.test(imageTasks[1].image_url), 'the viewport went to image-to-3d');
@@ -212,7 +212,7 @@ h.run(async () => {
 
 	// ---- 5. counterfactual: words alone ------------------------------------------------------------------
 	await page.evaluate(OPEN);
-	await page.fill('.mesh-gen-modal textarea', 'a clay pot');
+	await page.fill('#mesh-gen-prompt', 'a clay pot');
 	await generate(page);
 	await waitCount(A, base + 4, 'the text model is placed');
 	h.check(textTasks.length === 1 && imageTasks.length === 3, 'words alone stay on text-to-3d');
@@ -239,7 +239,7 @@ h.run(async () => {
 	}, { COMFY });
 	await setProvider(page, 'comfyui');
 	await page.evaluate(OPEN);
-	await page.waitForSelector('.mesh-gen-modal');
+	await page.waitForSelector('#mesh-gen-window');
 	h.check((await page.locator('#mesh-gen-picture').count()) === 0, 'a workflow without {{IMAGE}} offers no picture');
 	await page.evaluate(() => window.__stores.meshGenModalOpen.set(null));
 	await page.evaluate((cfg) => {
@@ -289,7 +289,7 @@ h.run(async () => {
 	await page.waitForSelector('#mesh-gen-no-provider');
 	await page.click('#mesh-gen-setup');
 	await h.eventually(() => page.evaluate(() => !!document.querySelector('#settings-sections')), (v) => v === true, 'AI4: Set one up opens Settings', 8000);
-	h.check(!(await page.locator('.mesh-gen-modal').count()), 'AI4: and the dialog made way');
+	h.check(!(await page.locator('#mesh-gen-window').count()), 'AI4: and the dialog made way');
 	await B.page.close();
 	await page.close();
 
@@ -307,7 +307,7 @@ h.run(async () => {
 		await P.page.setViewportSize(viewport);
 		await P.page.waitForTimeout(400);
 		const r = await P.page.evaluate(() => {
-			const b = document.querySelector('.mesh-gen-modal').getBoundingClientRect();
+			const b = document.querySelector('#mesh-gen-window').getBoundingClientRect();
 			return { l: b.left, t: b.top, r: b.right, b: b.bottom, docW: document.documentElement.scrollWidth, vw: innerWidth, vh: innerHeight, cam: !!document.querySelector('#mesh-gen-camera') };
 		});
 		h.check(r.l >= 0 && r.t >= 0 && r.r <= r.vw && r.b <= r.vh && r.docW <= r.vw, `N6 ${label}: the dialog fits (${JSON.stringify(r)})`);

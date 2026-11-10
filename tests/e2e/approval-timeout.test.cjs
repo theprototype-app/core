@@ -56,7 +56,7 @@ h.run(async () => {
 		Object.defineProperty(pc.peer, 'open', { value: true, configurable: true });
 		pc.peer.connect = (id) => ({ peer: id, open: false, on() {}, close() {}, send() {} });
 	});
-	await page.locator('input[placeholder="Enter peer ID to connect"]').fill('aaaa1');
+	await (await h.openDial(page)).fill('aaaa1');
 	await page.getByRole('button', { name: 'Connect', exact: true }).click();
 	await page.waitForTimeout(600);
 
@@ -108,7 +108,7 @@ h.run(async () => {
 	h.check(!roster.includes('aaaa1'), 'and the optimistic whitelist row was taken back');
 
 	// ---- 3. peer-unavailable ends the request --------------------------------------------
-	await page.locator('input[placeholder="Enter peer ID to connect"]').fill('bbbb2');
+	await (await h.openDial(page)).fill('bbbb2');
 	await page.getByRole('button', { name: 'Connect', exact: true }).click();
 	await page.waitForTimeout(400);
 	h.check((await waiting(page)).some((w) => w[0] === 'bbbb2'), 'premise: a second request is pending');

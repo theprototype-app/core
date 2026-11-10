@@ -26,6 +26,7 @@ import {
 	settleRoles
 } from './cloudHooks';
 import { notifyOn } from './notifyPrefs';
+import { openSettingsAt } from './settings/openSettingsAt.js'; // uir-account: cloudApi.openSettings
 // 21-G5 (F7): the two reads a rooms roster wants — which scene this session is in,
 // and who is playing. Both leaves (levels reaches sessions, but nothing on the
 // cloudPlugin path is in history's import subtree — App alone imports this module).
@@ -385,6 +386,10 @@ export function makeCloudApi() {
 			});
 			return true;
 		},
+		/** uir-account: open Settings on a page (a deep-link key: 'account', 'interface'…) and, optionally, at an element
+		 *  of it (an id the page — or the plugin's own section — renders). Returns false for a malformed request. Additive
+		 *  (no version bump): probe with typeof. @param {string} section @param {string} [anchor] */
+		openSettings: (/** @type {string} */ section, /** @type {string | undefined} */ anchor) => openSettingsAt(String(section ?? ''), anchor ?? null),
 		/** render into the Connect info drawer (room / host settings) — v2 */
 		mountConnectDrawer: (/** @type {any} */ mountFn) =>
 			drawerSlot.set(typeof mountFn === 'function' ? mountFn : null),
@@ -668,7 +673,7 @@ export function makeCloudApi() {
 		setPeerMenuItems: (/** @type {any} */ items) => setPeerMenuItems(items),
 		/** 86 B1/B5: the Claude connector's account half — `{pair({resume}), connections(), revoke(id),
 		 *  revokeAll(), account()}` (see cloudHooks.connectorProvider) or null. Core shows Connect Claude
-		 *  and Settings ▸ Connected apps only while one is installed. Probe with typeof. */
+		 *  and Settings ▸ Account ▸ Connected apps only while one is installed. Probe with typeof. */
 		setConnectorProvider: (/** @type {any} */ provider) => setConnectorProvider(provider),
 		/** 86-fix N1: a `(el) => cleanup` "Sign in to connect" for the AI window's welcome while the connector is
 		 *  built in and nobody is signed in; null removes it. Probe with typeof. */

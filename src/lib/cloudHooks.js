@@ -327,8 +327,10 @@ export const drawerSlot = writable(null);
 export const profileSlot = writable(null);
 
 /** profile-notify (the profile-menu review's direction C seam): Settings sections a cloud plugin fills, keyed by
- * section. Only `account` exists — Settings ▸ Account (its Email part: Product updates). Core draws the section's
- * page (title, nav row, search) only while a plugin has mounted into it, so the OSS Settings has no Account page.
+ * section. Only `account` exists — Settings ▸ Account: the plugin's Email, Sign-in methods and Devices groups
+ * (uir-account moved the last two out of the profile menu), then core's Connected apps. Core draws the page (title,
+ * nav row, search) only while a plugin has mounted into it or a connector provider is installed, so the OSS Settings
+ * has no Account page.
  * @type {import('svelte/store').Writable<Record<string, (el: HTMLElement) => (() => void) | void>>} */
 export const settingsSlots = writable({});
 /** the section keys `mountSettingsSection` accepts */
@@ -648,7 +650,7 @@ export function setPeerMenuItems(items) {
  * presses Connect Claude in their own tab; the PLUGIN (signed in) asks the connector service for a
  * single-use pairing and lists / revokes the account's connected apps. Core draws every button and runs
  * every relayed call (src/lib/connector/). NULL is the OSS state: no Connect Claude button anywhere, no
- * Settings ▸ Connected apps — the OSS build points to the local `serve` instead.
+ * Settings ▸ Account ▸ Connected apps — the OSS build points to the local `serve` instead.
  *
  * Shape (the plugin owns the logic; core reads defensively):
  *   { pair({resume}) → Promise<{wsUrl, pairingToken, expiresAt?, replaces?, connections?}>

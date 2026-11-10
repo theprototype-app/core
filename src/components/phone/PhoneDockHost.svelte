@@ -81,7 +81,7 @@
 	// ---- the reused elements -------------------------------------------------------------
 	/** content tab -> the element it reuses (Layouts renders in the frame) */
 	// 78 PL23: Chat, the AI assistant and Free assets are phone dock tabs too (their windows, re-seated)
-	const HOST_OF = { properties: '#inspector', scene: '#inspector', objects: '#object-list', notes: '#notes-drawer', stats: '#stats-window', chat: '#chat-window', aiAssistant: '#ai-assistant-window', assets: '#asset-browser-window' };
+	const HOST_OF = { properties: '#inspector', scene: '#inspector', objects: '#object-list', notes: '#notes-drawer', stats: '#stats-window', chat: '#chat-window', assets: '#asset-browser-window' };
 	/** 42 I6: hosted tab -> its window element, on a wider screen */
 	const WIDE_HOST_OF = Object.fromEntries(Object.entries(HOSTED).map(([k, h]) => [k, h.sel]));
 	function clearHosts() {

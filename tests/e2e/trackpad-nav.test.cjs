@@ -32,7 +32,7 @@ h.run(async () => {
 	/** dispatch a wheel on a UI element (the logo area); returns defaultPrevented */
 	const wheelUi = (init) =>
 		A.page.evaluate((opts) => {
-			const el = document.querySelector('input[placeholder="Enter peer ID to connect"]') || document.body;
+			const el = document.querySelector('input[placeholder="Enter peer ID to connect"]') || document.querySelector('#connect-join') || document.body;
 			const e = new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaMode: 0, ...opts });
 			el.dispatchEvent(e);
 			return e.defaultPrevented;

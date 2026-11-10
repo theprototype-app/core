@@ -34,6 +34,7 @@ import { recordImageVersion, imageVersionBlob } from './imageVersions';
 import { makeRaster, fitSize, encodingFor } from './imageOps';
 
 import { imageEditorTarget } from './imageEditorState';
+import { openPreviewEditor } from '../fileWindows';
 // the open state lives in a leaf so the dock can address the editor (41 G24)
 export { imageEditorTarget, closeImageEditor, imageEditorClose } from './imageEditorState';
 
@@ -44,6 +45,9 @@ export function openImageEditor(itemId) {
 		showToast('Only an image can be edited here');
 		return false;
 	}
+	// uir-preview: the editor is the preview window's Edit face — open it there (with the name, so
+	// the header reads right at once), then point the editor at it
+	openPreviewEditor(item.id, item.name);
 	const now = get(imageEditorTarget);
 	imageEditorTarget.set({ itemId: item.id, raise: (now?.raise ?? 0) + 1 });
 	return true;

@@ -122,6 +122,10 @@
 	import { selectObject, focusObject, flyTo } from '$lib/objectActions';
 	import { lockedObjects } from '../../stores/sceneStore.js';
 	import PeerProfileCard from './PeerProfileCard.svelte';
+	// uir-people (Peers B): a row press flips the popover to that person's card
+	import PersonCard from './PersonCard.svelte';
+	import { presenceOf, publishPresence, presenceEnabled, myPresence, PRESENCE_ICON, PRESENCE_LABEL } from '$lib/peoplePresence';
+	import { settingsOpen, settingsSection } from '../../stores/appStore.js';
 	import { peerQuality, qGlyph } from '$lib/networkQuality';
 	import ContextMenu from '../ContextMenu.svelte';
 	import { panelsButtonShown, panelsOpen, togglePanels } from '$lib/panelsButton';
@@ -146,6 +150,35 @@
     let openDropdown = $state(false);
 	/** 55 A9: the open peer menu (was `muteMenu`, which offered Mute voice alone) */
 	let peerMenu: { x: number; y: number; peerId: string; self: boolean; row: HTMLElement | null } | null = $state(null);
+	/** uir-people: the Person card open in the popover (null = the list) */
+	let cardFor: { peerId: string; self: boolean; x: number; y: number } | null = $state(null);
+	function openCard(peerId: string, self: boolean, from: HTMLElement | null) {
+		const r = from?.getBoundingClientRect?.();
+		cardFor = { peerId, self, x: r ? r.left + 24 : window.innerWidth / 2, y: r ? r.bottom : 120 };
+		peerMenu = null;
+		peersPanelOpen.set(true);
+	}
+	/** a press on the ROW itself (not on one of its buttons) opens the card */
+	function rowClick(e: MouseEvent, peerId: string, self: boolean) {
+		if ((e.target as HTMLElement)?.closest?.('button, a, input, select, [role="listbox"]')) return;
+		openCard(peerId, self, e.currentTarget as HTMLElement);
+	}
+	// the popover closing, or the person leaving, ends the card
+	$effect(() => {
+		if (!$peersPanelOpen) cardFor = null;
+	});
+	$effect(() => {
+		if (cardFor && !($userdata as any[]).some((u) => u[0] === cardFor!.peerId)) cardFor = null;
+	});
+	// our own status rides our roster row (slot 6); write it whenever the row or the setting changes —
+	// publishPresence sends only when there is something new to say
+	$effect(() => {
+		void $userdata;
+		void $peers;
+		void $presenceEnabled;
+		void $myPresence;
+		untrack(() => publishPresence());
+	});
 	/** the View profile / View character card */
 	let profileFor: { peerId: string; focus: 'profile' | 'character' } | null = $state(null);
 	/** "Show their recent changes" */
@@ -188,6 +221,11 @@
 		openPeerMenu(Math.max(8, r.right - 200), r.bottom + 4, peerId, self, btn.closest('.peers-row') as HTMLElement | null);
 	}
 	function rowKeydown(e: KeyboardEvent, peerId: string, self: boolean) {
+		if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) {
+			e.preventDefault();
+			openCard(peerId, self, e.currentTarget as HTMLElement);
+			return;
+		}
 		if (e.key !== 'ContextMenu' && !(e.shiftKey && e.key === 'F10')) return;
 		e.preventDefault();
 		e.stopPropagation();
@@ -313,7 +351,8 @@
 				editProfile: () => profileSettingsOpen.set(true),
 				changeCharacter: () => characterModalOpen.set(true),
 				copyId: () => copyPeerId(id),
-				viewProfile: () => (profileFor = { peerId: id, focus: 'profile' }),
+				// uir-people (F5): View profile IS the Person card now; View character keeps the turntable
+					viewProfile: () => openCard(id, false, (m as any).row ?? null),
 				viewCharacter: () => (profileFor = { peerId: id, focus: 'character' }),
 				goTo: () => goToPeer(id),
 				goToScene: () => (away === UNNAMED_ROOM ? doJoinWorld() : goToScene(id)),
@@ -1029,6 +1068,8 @@
 		onpointerup={rowPointerEnd}
 		onpointercancel={rowPointerEnd}
 		onclickcapture={rowClickCapture}
+		onclick={(e) => rowClick(e, user[0], self)}
+		title={self ? 'Your card' : 'Open ' + (user[1] || 'their') + ' card'}
 	>
 		<!-- 78 PL33: their photo, else their colour + initial, ringed in their lock / cursor colour; a speaking ring while they talk -->
 		<PeerAvatar id={user[0]} row={user} size={32} speaking={$speakingPeers.includes(user[0])} />
@@ -1042,6 +1083,12 @@
 					>
 				{/if}
 				{#if self}<span class="peer-you">(you)</span>{/if}
+				{#if presenceOf(user)}
+					<!-- uir-people: their status (a shape AND a colour, 53 A2) -->
+					<span class="peer-presence" data-presence={presenceOf(user)} title={PRESENCE_LABEL[presenceOf(user) || 'available']}
+						><Icon name={PRESENCE_ICON[presenceOf(user) || 'available']} size={16} aria-hidden="true" /><span class="sr-only">{PRESENCE_LABEL[presenceOf(user) || 'available']}</span></span
+					>
+				{/if}
 			</div>
 			<div class="peer-meta">
 				<!-- P2b: where this peer is. Absent means we have not been told — which is
@@ -1299,6 +1346,25 @@
 						>
 					</div>
 				{/snippet}
+				{#if cardFor}
+					<div class="peers-body peers-card-body" use:minimalScroll>
+						{#key cardFor.peerId}
+							<PersonCard
+								peerId={cardFor.peerId}
+								self={cardFor.self}
+								items={peerMenuRows({ x: cardFor.x, y: cardFor.y, peerId: cardFor.peerId, self: cardFor.self, row: null } as any)}
+								where={chipFor($peerScenes, $currentLevel, cardFor.peerId, cardFor.self)}
+								onback={() => (cardFor = null)}
+								onshowediting={() => showEditing(cardFor!.peerId)}
+								onopensettings={() => {
+									peersPanelOpen.set(false);
+									settingsSection.set('interface');
+									settingsOpen.set(true);
+								}}
+							/>
+						{/key}
+					</div>
+				{:else}
 				<div class="peers-body">
 				<!-- R22 round 35: OUR OWN private state, said once at the top rather than as a
 					 badge on our row — it is a fact about this whole list (nobody in it can see
@@ -1468,6 +1534,7 @@
 					</div>
 				{/if}
 				</div>
+				{/if}
 				</WindowChrome>
 			</div>
 			<!-- role dropdown — PORTALED to <body> (fixed position) so it isn't clipped by
@@ -1741,6 +1808,13 @@
 	/* 41b H15: the peers panel — 320 px at least, as wide as its rows up to 420 px (then they ellipsize) */
 	.peers-pop { width: max-content; min-width: min(320px, calc(100vw - 24px)); max-width: min(420px, calc(100vw - 24px)); }
 	.peers-body { padding: 6px; }
+	/* uir-people: the Person card takes the list's place — as tall as a short screen allows, then it scrolls */
+	.peers-card-body { padding: 0; max-height: min(70vh, 560px); overflow-y: auto; width: min(380px, calc(100vw - 24px)); }
+	.peers-row { cursor: pointer; }
+	.peer-presence { display: inline-flex; flex: 0 0 auto; }
+	.peer-presence[data-presence='available'] { color: var(--ink-good); }
+	.peer-presence[data-presence='busy'] { color: var(--ink-bad); }
+	.peer-presence[data-presence='away'] { color: var(--ink-warn); }
 	/* 55 A9: a peer you hid stays in the list (it is still in the session), dimmed */
 	.peers-row-hidden .peer-info { opacity: 0.6; }
 	.peers-blocked-row .peer-meta { gap: 6px; }
@@ -1850,8 +1924,9 @@
 		text-transform: uppercase;
 		color: var(--text-faint);
 	}
-	/* profile-notify: the phone sheet drops the plugin's group headings too */
-	.cloud-profile-phone :global(.tpc-pm-head) {
+	/* profile-notify: the phone sheet drops the plugin's group headings too — except one that carries an action
+	   (uir-account: Account's "Manage", the menu's only road to Settings ▸ Account) */
+	.cloud-profile-phone :global(.tpc-pm-head:not(:has(.tpc-pm-head-action))) {
 		display: none;
 	}
 	.pm-card {

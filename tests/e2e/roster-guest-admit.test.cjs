@@ -33,7 +33,7 @@ const until = async (p, fn, ms = 40000) => {
 };
 
 const pill = async (from, to) => {
-	await from.page.locator('input[placeholder="Enter peer ID to connect"]').fill(to.id);
+	await (await h.openDial(from.page)).fill(to.id);
 	await from.page.getByRole('button', { name: 'Connect', exact: true }).click();
 };
 

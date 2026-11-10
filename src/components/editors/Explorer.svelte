@@ -77,7 +77,7 @@
 	// R22 round 11: the preview window's arrows walk THIS folder, in the order THIS grid is
 	// showing it — a question only the Explorer can answer (filters, search, view mode,
 	// sort), so it is published rather than derived over there. The noteMarkers shape.
-	import { previewSiblings } from '$lib/filePreview';
+	import { previewSiblings, explorerSelection } from '$lib/filePreview';
 	import AudioPlayer from './AudioPlayer.svelte';
 	// 21-F4: scenes as LEVELS — .tpscene items in a Levels folder, saved from here
 	// 21-G9: `currentLevel` is WHERE WE ARE — the header breadcrumb's scene half and
@@ -2139,6 +2139,14 @@
 				? ($explorerFolders.find((f: any) => f.id === folderId)?.parentId ?? null)
 				: null;
 		untrack(() => previewSiblings.set({ folderId, parentId, entries }));
+	});
+	/**
+	 * uir-preview — WHAT THE PINNED PREVIEW FOLLOWS: the single-click anchor (`selected`, the card the
+	 * Properties pane shows), published the same one-way way as the siblings above.
+	 */
+	$effect(() => {
+		const sel = selected;
+		untrack(() => explorerSelection.set(sel ? { ...sel } : null));
 	});
 
 	/**

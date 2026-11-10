@@ -57,6 +57,21 @@
 			"bytes": 22034,
 			"scene": "/templates/two-levels/scene.tpscene",
 			"thumb": "/templates/two-levels/thumb.webp"
+		},
+		{
+			"slug": "starter-recipes",
+			"title": "Doors, a bell and a guard",
+			"description": "The starter recipes at work: click a door, walk up to the other, ring the bell, and keep away from the guard",
+			"author": "theprototype",
+			"license": "CC0-1.0",
+			"tags": [
+				"game",
+				"recipes",
+				"nodes"
+			],
+			"bytes": 15351,
+			"scene": "/templates/starter-recipes/scene.tpscene",
+			"thumb": "/templates/starter-recipes/thumb.webp"
 		}
 	],
 	"examples": []

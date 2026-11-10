@@ -304,7 +304,7 @@ h.run(async () => {
 		await page.locator('[role=menu] [role=menuitem]', { hasText: /^\s*Tools/ }).first().hover();
 		await page.waitForTimeout(500);
 		const tools = await bareRows();
-		h.check(top.n >= 6 && top.bare.length === 0 && tools.glyph.length === 0, `PL2 the viewport menu: every row has an icon, no glyph-prefixed label (${JSON.stringify({ top, tools })})`);
+		h.check(top.n >= 6 && top.bare.length === 0 && tools.bare.length === 0 && tools.glyph.length === 0, `PL2 the viewport menu and its Tools submenu: every row has an icon, no glyph-prefixed label (${JSON.stringify({ top, tools })})`);
 		await shots(page, 'desk-viewport-menu-tools');
 		await page.keyboard.press('Escape');
 		await page.waitForTimeout(300);

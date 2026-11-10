@@ -179,6 +179,7 @@
 				},
 				{
 					label: 'Draw mode',
+					icon: 'pen-tool',
 					checked: $drawMode,
 					tooltip: 'Drag on surfaces to draw 3D strokes (Esc exits)',
 					action: toggleDrawMode
@@ -207,6 +208,7 @@
 				},
 				{
 					label: $measureMode ? 'Stop measuring' : 'Measure distance',
+					icon: 'ruler',
 					checked: $measureMode,
 					tooltip: 'Click points (they snap to corners, edges and faces); ✓ or Enter keeps the measurement in the scene; Esc cancels',
 					action: () => toggleMeasure()

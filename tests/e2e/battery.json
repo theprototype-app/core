@@ -350,6 +350,7 @@
 		"agent-chat-vr": 300,
 		"agent-chat-window": 480,
 		"uir-chat": 300,
+		"uir-migration": 180,
 		"chat-media": 480,
 		"image-to-3d": 420,
 		"mesh-gen-window": 240,

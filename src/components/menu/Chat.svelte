@@ -14,7 +14,8 @@
 	import ChatSession from './ChatSession.svelte';
 	import ChatAssistant from './ChatAssistant.svelte';
 	import ChatHistory from './ChatHistory.svelte';
-	import { chatHidden, chatTab, chatUnread, chatMentioned } from '../../stores/appStore';
+	import { chatHidden, chatTab, chatUnread, chatMentioned, showToastById } from '../../stores/appStore';
+	import { chatHintOnce } from '$lib/chat/chatHint.js'; // uir-int: the release's first-use hint
 	import { connectorSignInSlot } from '$lib/cloudHooks';
 	import { connectorAvailable } from '$lib/connector/connectorStore';
 	import { requestSignIn } from '$lib/connector/connectorSignIn.js';
@@ -50,6 +51,10 @@
 	let { popped = false }: { popped?: boolean } = $props();
 
 	const open = $derived($chatHidden === '');
+	// uir-int: the first open on this device says, once, that Chat and the AI assistant share the window
+	$effect(() => {
+		if (open) chatHintOnce({ show: showToastById });
+	});
 	const tab = $derived($chatTab);
 	let historyOpen = $state(false);
 	let historyBtn: any = $state(null);

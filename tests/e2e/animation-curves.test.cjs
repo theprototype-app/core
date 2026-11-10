@@ -13,6 +13,13 @@
 //  * several objects play at once (a preview is no longer exclusive).
 const h = require('./helpers.cjs');
 
+/** showhide-v8: the channel list's arrow handle hangs over the plot's left edge (its hit area reaches 16 px in); the
+ * focus click on the plot's bottom-left lands just right of it, still left of the clip's first key */
+async function clickPlotEdge(page, plotArea) {
+	const handle = await page.locator('#animation-list-toggle').boundingBox();
+	await page.mouse.click(Math.max(plotArea.x + 6, handle ? handle.x + handle.width + 2 : 0), plotArea.y + plotArea.height - 6);
+}
+
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
@@ -852,7 +859,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(350);
 	// click the plot so it owns the keyboard, then walk the playhead by frames
 	const plotArea = await A.page.locator('#animation-timeline').boundingBox();
-	await A.page.mouse.click(plotArea.x + 6, plotArea.y + plotArea.height - 6);
+	await clickPlotEdge(A.page, plotArea);
 	await A.page.waitForTimeout(150);
 	const head = () => A.page.evaluate((id) => window.__stores.animationPreview.playheadOf(id), first);
 	await A.page.evaluate((id) => window.__stores.animationPreview.scrub(id, 0), first);
@@ -934,7 +941,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(200);
 	// a press in the plot body hands the keyboard back (the menu had it) without
 	// touching the selection
-	await A.page.mouse.click(plotArea.x + 6, plotArea.y + plotArea.height - 6);
+	await clickPlotEdge(A.page, plotArea);
 	await A.page.waitForTimeout(150);
 	await A.page.keyboard.press('Shift+ArrowRight');
 	await A.page.waitForTimeout(200);
@@ -1206,7 +1213,7 @@ h.run(async () => {
 		return { shown };
 	}, first);
 	h.check(gridFollows.shown === '24', `the fps field shows the clip's rate (${gridFollows.shown})`);
-	await A.page.mouse.click(plotArea.x + 6, plotArea.y + plotArea.height - 6);
+	await clickPlotEdge(A.page, plotArea);
 	await A.page.keyboard.press('ArrowRight');
 	await A.page.waitForTimeout(150);
 	const step24 = await head();

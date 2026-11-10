@@ -407,12 +407,21 @@
 	// side, so sizing the svg from it overflowed the content box by 12px — no visible
 	// bar (overflow-x is hidden) but a scrollable width all the same
 	const plotAvail = $derived(Math.max(80, plotW - 16));
-	const innerW = $derived(Math.max(60, plotAvail - PAD_X * 2));
+	// 78-fix-547: the side panes' arrow handles (showhide-v8, PaneHandle) hang over the plot's two edges and take no
+	// margin, so the TIME AXIS starts and ends clear of them: with the clip fitted, its first and last keys sat under
+	// the handles and a press on either key toggled the pane instead (and the left edge, the plot's own click-to-focus
+	// spot, did the same). PAD_L / PAD_R = the handle's hit width past the plot's 8 px padding + a key's half + 2.
+	// The phone-narrow (compact) body has no handles and keeps PAD_X.
+	const edgeCoarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
+	const PAD_EDGE = Math.max(PAD_X, (edgeCoarse ? 44 : 24) - 8 + (edgeCoarse ? 14 : 6) + 2);
+	const PAD_L = $derived.by(() => (compact ? PAD_X : PAD_EDGE));
+	const PAD_R = $derived.by(() => (compact ? PAD_X : PAD_EDGE));
+	const innerW = $derived(Math.max(60, plotAvail - PAD_L - PAD_R));
 	const sheetH = $derived(TOP_H + Math.max(1, tracks.length) * ROW_H + 6);
 	const plotH = $derived(view === 'graph' ? TOP_H + GRAPH_H + 6 : sheetH);
 	// x maps the VISIBLE window, so zooming and panning move every channel together
-	const tx = (/** @type {number} */ t) => PAD_X + ((t - viewStart) / viewSpan) * innerW;
-	const xt = (/** @type {number} */ x) => viewStart + ((x - PAD_X) / innerW) * viewSpan;
+	const tx = (/** @type {number} */ t) => PAD_L + ((t - viewStart) / viewSpan) * innerW;
+	const xt = (/** @type {number} */ x) => viewStart + ((x - PAD_L) / innerW) * viewSpan;
 	const rowY = (/** @type {number} */ i) => TOP_H + i * ROW_H + ROW_H / 2;
 
 	// Value range of the selected track, for the graph's y axis. FROZEN while a key
@@ -1121,7 +1130,7 @@
 		// keep the time first under the fingers' midpoint under it as they move: that one
 		// line is both the pan and the zoom anchor
 		const mid = (a.x + b.x) / 2 - r.left;
-		const from = Math.min(Math.max(pinch.t0 - ((mid - PAD_X) / innerW) * span, 0), Math.max(0, duration - span));
+		const from = Math.min(Math.max(pinch.t0 - ((mid - PAD_L) / innerW) * span, 0), Math.max(0, duration - span));
 		viewStart = from;
 		viewEnd = Math.min(from + span, duration);
 	}
@@ -2608,10 +2617,10 @@
 										/>
 									{/if}
 								{/each}
-								<text x={PAD_X} y={TOP_H + 10} font-size="9" class="an-faint">
+								<text x={PAD_L} y={TOP_H + 10} font-size="9" class="an-faint">
 									{dispVal(range.hi, selTrack.channel)}
 								</text>
-								<text x={PAD_X} y={TOP_H + GRAPH_H - 2} font-size="9" class="an-faint">
+								<text x={PAD_L} y={TOP_H + GRAPH_H - 2} font-size="9" class="an-faint">
 									{dispVal(range.lo, selTrack.channel)}
 								</text>
 							{/if}

@@ -529,6 +529,7 @@
 				class:ctx-active={index === highlight}
 				data-ctx-active={index === highlight}
 				role="menuitem"
+				aria-disabled={match.item.disabled ? 'true' : undefined}
 				title={match.item.tooltip ?? ''}
 				on:mouseenter={() => (highlight = index)}
 				on:click={() => run(match.item)}

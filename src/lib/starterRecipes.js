@@ -4,8 +4,9 @@
 //   · Door (walk up)     a sensor zone around the door; On Enter (player) opens, On Exit closes
 //                        (85-nodes Q9 "On Near": shared, because sensor edges replicate)
 //   · Bell               On Click / On Hover / On Hit → Hover Animate (swing + ring)
-//   · Guard              a closed Path around it + Path patrol; a player within 4 m → Announce
-//                        "Spotted!" + an alarm (each player hears their own; a chase waits for 61-nav)
+//   · Guard              a closed Path around it + Path patrol; a sensor "sight" box (8 x 8 m) walks the
+//                        same route, and a player stepping into it → Announce "Spotted!" + a whistle
+//                        (shared: sensor edges replicate; a chase waits for 61-nav)
 // Everything a recipe makes — the extra objects, their settings and the nodes in the object's own
 // flow — is ONE undo step (a history batch), and every write goes through the replicated paths
 // (`/create`, setPhysicsFor, setMaterialParam, nodecreate / edgecreate), so peers see it at once.
@@ -32,7 +33,7 @@ export const STARTER_RECIPES = [
 	{ id: 'door', label: 'Door (click to open)', icon: 'door-open', tooltip: 'On Click opens and closes it: a quarter turn, shared and saved' },
 	{ id: 'door-walk', label: 'Door (opens when you walk up)', icon: 'door-open', tooltip: 'A sensor zone around the door: walking in opens it, walking out closes it' },
 	{ id: 'bell', label: 'Bell', icon: 'bell', tooltip: 'Click, point at or knock it: it swings and rings for everyone' },
-	{ id: 'guard', label: 'Guard', icon: 'shield', tooltip: 'Walks a loop path around where it stands; says "Spotted!" when a player comes close' }
+	{ id: 'guard', label: 'Guard', icon: 'shield', tooltip: 'Walks a loop path around where it stands; says "Spotted!" when a player steps into its sight' }
 ];
 
 let seq = 0;
@@ -58,8 +59,9 @@ function objectOf(uuid) {
 	return get(objectsGroup)?.getObjectByProperty('uuid', uuid) ?? null;
 }
 
-/** a translucent sensor box around a world point, `size` [x, y, z] metres @param {string} name @param {number[]} at @param {number[]} size */
-function makeZone(name, at, size) {
+/** a translucent sensor box around a world point, `size` [x, y, z] metres
+ * @param {string} name @param {number[]} at @param {number[]} size @param {number} [opacity] */
+function makeZone(name, at, size, opacity = 0.15) {
 	const zone = spawnAtPoint('/create Box', [at[0], at[1], at[2]]);
 	if (!zone?.uuid) return null;
 	zone.scale.set(size[0], size[1], size[2]);
@@ -68,7 +70,7 @@ function makeZone(name, at, size) {
 	peer?.send({ type: 'move', uuid: zone.uuid, pos: zone.position.toArray(), rot: zone.rotation.toArray(), scale: zone.scale.toArray() });
 	renameObject(zone.uuid, name);
 	setMaterialParam(zone.uuid, 'transparent', true);
-	setMaterialParam(zone.uuid, 'opacity', 0.15);
+	setMaterialParam(zone.uuid, 'opacity', opacity);
 	setPhysicsFor(zone.uuid, { mode: 'static', sensor: true });
 	return zone;
 }
@@ -119,14 +121,21 @@ function buildRecipe(id, owner) {
 		const made = createPath({ points, closed: true, mode: 'loop', speed: 1.2, name: (owner.name || 'Guard') + ' route' });
 		if ('error' in made) return { error: made.error };
 		const pathUuid = made.object.uuid;
+		// its SIGHT: a sensor box walking the same route in step (same path, same clock, so the same pose on
+		// every peer). Proximity is a VALUE and an Announce acts on a pulse, so the pulse is the sight's On Enter
+		// (who: player) — the walk-up door's pattern, and shared, because sensor edges replicate.
+		const sight = makeZone((owner.name || 'Guard') + ' sight', [at[0], y, at[2]], [8, 2.4, 8], 0.08);
+		if (!sight) return { error: 'Could not add the guard\'s sight.' };
 		const patrol = makeNode('pathpatrol', 260, 0, { path: pathUuid, face: true });
-		const self = makeNode('objectselector', -240, 200, { label: owner.name || 'Guard', selected: owner.uuid });
-		const near = makeNode('proximity', 0, 200, { radius: 4, to: 'player' });
-		const spotted = makeNode('announce', 260, 200, { text: 'Spotted!', sub: '', seconds: 1.5, color: '#ff6a5a' });
-		const alarm = makeNode('gamesound', 260, 360, { sound: 'whistle' });
-		const nodes = [patrol, self, near, spotted, alarm];
-		const edges = [makeEdge(self, near, 'a'), makeEdge(near, spotted, 'trigger'), makeEdge(near, alarm, 'trigger')];
-		return { nodes, edges, made: [pathUuid] };
+		const sightPatrol = makeNode('pathpatrol', 260, 160, { path: pathUuid, face: false });
+		const sightSel = makeNode('objectselector', 520, 160, { label: 'Sight', selected: sight.uuid });
+		const spot = makeNode('onenter', 0, 320, { who: 'player' });
+		const spotSel = makeNode('objectselector', -240, 320, { label: 'Sight', selected: sight.uuid });
+		const spotted = makeNode('announce', 260, 320, { text: 'Spotted!', sub: '', seconds: 1.5, color: '#ff6a5a' });
+		const alarm = makeNode('gamesound', 260, 480, { sound: 'whistle' });
+		const nodes = [patrol, sightPatrol, sightSel, spot, spotSel, spotted, alarm];
+		const edges = [makeEdge(sightPatrol, sightSel), makeEdge(spot, spotSel), makeEdge(spot, spotted, 'trigger'), makeEdge(spot, alarm, 'trigger')];
+		return { nodes, edges, made: [pathUuid, sight.uuid] };
 	}
 	return { error: 'Unknown recipe.' };
 }

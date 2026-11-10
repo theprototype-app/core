@@ -9,7 +9,7 @@
 ## 1.64.0 — Doors, paths and levels
 
 ### Rooms that react
-- **Starter recipes**: select an object, open the node editor and pick **Recipes** in the node search: **Door** (click to open), **Door that opens when you walk up**, **Bell** (click, point at or knock it) and **Guard** (walks a loop and says *Spotted!* when you come close). One undo takes a recipe back, and everyone in the session sees it at once. <!-- 78-int F27 -->
+- **Starter recipes**: select an object, open the node editor and pick **Recipes** in the node search: **Door** (click to open), **Door that opens when you walk up**, **Bell** (click, point at or knock it) and **Guard** (walks a loop and says *Spotted!* when you step into its sight). One undo takes a recipe back, and everyone in the session sees it at once. <!-- 78-int F27 -->
 - **Why did this not fire?** Trigger nodes (On Enter, On Exit, On Hover, On Click, Collect pickup, Timer) remember their last check: the card says *fired 2 s ago*, *blocked: not the player* or *won't fire: in Edit mode (use Play)*, and the Flow debugger says who, when and what stopped it. <!-- 78-int F26 -->
 - **On Hover** fires when a player's pointer, phone tap or VR laser goes over an object; **Hover Animate** swings, wobbles or pops it, and every player sees the same swing. An unwired **Highlight** now lights under the mouse in Interact and under a phone tap too. <!-- 78-nodes F2; 78-int I2 rewire -->
 - **Toggle Animation** opens and closes doors, lids and drawers between poses you capture (or named poses like "ajar"); the state is shared and saved, so late joiners see the same door. <!-- 78-nodes -->

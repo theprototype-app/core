@@ -6,7 +6,7 @@
 //   §3 Door (walk up): the player entering its zone opens it on both peers, leaving closes it.
 //   §4 Bell: a click swings it (A and B), and the swing settles.
 //   §6 85 Q2/Q7: the mouse in Interact lights an unwired Highlight (one hover source).
-//   §5 Guard: it walks its closed route (A and B agree on its place); a player within 4 m gets
+//   §5 Guard: it walks its closed route (A and B agree on its place); a player stepping into its sight gets
 //      "Spotted!" in the announce log.
 //
 //   APP_URL=https://theprototype.app:5800/ node tests/e2e/starter-recipes-78.test.cjs
@@ -119,15 +119,17 @@ h.run(async () => {
 	// --- §4 bell -------------------------------------------------------------------------------
 	console.log('\n=== §4 Bell ===');
 	await S(p, (u) => window.__stores.flowRuntime.fireObjectClick(u), bell);
-	for (const x of [A, B]) {
+	// sample both peers AT ONCE: one after the other, B's window opened after the swing had settled
+	const peaks = await Promise.all([A, B].map(async (x) => {
 		let peak = 0;
-		for (let i = 0; i < 12; i++) {
+		for (let i = 0; i < 14; i++) {
 			const q = await pose(x.page, bell);
 			peak = Math.max(peak, Math.abs(q?.r[2] ?? 0));
-			await x.page.waitForTimeout(100);
+			await x.page.waitForTimeout(80);
 		}
-		h.check(peak > 0.05, `§4 the bell swings on ${x === A ? 'A' : 'B'} (peak ${peak.toFixed(3)} rad)`);
-	}
+		return peak;
+	}));
+	peaks.forEach((peak, i) => h.check(peak > 0.05, `§4 the bell swings on ${i ? 'B' : 'A'} (peak ${peak.toFixed(3)} rad)`));
 	await h.eventually(() => pose(p, bell), (q) => q && Math.abs(q.r[2]) < 0.01, '§4 the swing settles', 15000);
 
 	// --- §5 guard ------------------------------------------------------------------------------
@@ -149,6 +151,18 @@ h.run(async () => {
 	const drift = Math.hypot(both[0].p[0] - both[1].p[0], both[0].p[2] - both[1].p[2]);
 	const dt = Math.abs(both[0].t - both[1].t);
 	h.check(drift <= 1.2 * dt + 0.25, `§5 A and B agree on the guard (${drift.toFixed(2)} m apart, ${dt.toFixed(2)} s between samples)`);
+	// its sight walks with it (same path, same clock) on both peers
+	const sight = rGuard.made?.[1];
+	h.check(!!sight, '§5 the guard recipe made its sight zone');
+	for (const x of [A, B]) {
+		const gs = await S(x.page, ([u, v]) => {
+			/** @type {any} */ let g;
+			window.__stores.objectsGroup.subscribe((w) => (g = w))();
+			const a = g.getObjectByProperty('uuid', u), b = g.getObjectByProperty('uuid', v);
+			return a && b ? Math.hypot(a.position.x - b.position.x, a.position.z - b.position.z) : -1;
+		}, [guard, sight]);
+		h.check(gs >= 0 && gs < 0.3, `§5 the sight walks with the guard on ${x === A ? 'A' : 'B'} (${gs.toFixed(2)} m apart)`);
+	}
 	// a player walks up: the camera (Play's eye) next to the guard
 	await S(p, () => window.__stores.gameAnnounce.clearAnnounceLog());
 	await S(p, (u) => {
@@ -162,7 +176,12 @@ h.run(async () => {
 	await h.eventually(
 		() => S(p, () => new Promise((r) => window.__stores.gameAnnounce.announceLog.subscribe((rows) => r(rows.map((x) => x.text)))())),
 		(rows) => rows.some((t) => /Spotted!/.test(t)),
-		'§5 a player within 4 m is spotted'
+		'§5 a player stepping into the guard\'s sight is spotted'
+	);
+	await h.eventually(
+		() => S(B.page, () => new Promise((r) => window.__stores.gameAnnounce.announceLog.subscribe((rows) => r(rows.map((x) => x.text)))())),
+		(rows) => rows.some((t) => /Spotted!/.test(t)),
+		'§5 the peer sees "Spotted!" too (sensor edges replicate)'
 	);
 
 	for (const x of [A, B]) await S(x.page, () => window.__stores.isLocked.set(null));

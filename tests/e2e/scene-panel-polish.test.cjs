@@ -292,6 +292,8 @@ h.run(async () => {
 				return null;
 			};
 			const sc = scroller(document.querySelector('#environment-presets'));
+			// the panel as it opens: at its top (the deep link that opened it scrolls Environment to the top edge)
+			if (sc) sc.scrollTop = 0;
 			const box = sc ? sc.getBoundingClientRect() : { top: 0, bottom: innerHeight };
 			const bottom = Math.min(box.bottom, innerHeight);
 			const rows = ['#environment-presets', '#hdri-upload', '#hdri-none'].map((s) => {

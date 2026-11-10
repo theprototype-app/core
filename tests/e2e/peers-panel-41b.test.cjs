@@ -20,6 +20,8 @@ async function seed(page) {
 		s.peers.subscribe((x) => (p = x))();
 		const self = p?.peer?.id || 'self';
 		const ids = [self, 'p1', 'p2', 'p3', 'p4'];
+		// 78 PL34: a nameless self takes "Guest N" once a session is live; the own row follows the username store
+		s.username.set(names[0]);
 		s.userdata.set(ids.map((id, i) => [id, names[i], null, null, null, {}]));
 		s.peers.update((x) => {
 			ids.slice(1).forEach((id) => x.openedPeers.add(id));

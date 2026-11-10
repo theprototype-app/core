@@ -16,6 +16,9 @@ h.run(async () => {
 	await A.page.evaluate(() => {
 		const selfId = window.__stores.peers && (() => { let p; window.__stores.peers.subscribe((x) => (p = x))(); return p?.peer?.id; })();
 		window.__self = selfId || 'self';
+		// 78 PL34: a nameless person takes "Guest N" once a session is live — the injected self row is
+		// "Me" because THIS page is called Me (the roster's own row follows the username store)
+		window.__stores.username.set('Me');
 		window.__stores.userdata.set([
 			[window.__self, 'Me', null, null, null, {}],
 			['p1', 'Ann', null, null, null, {}],

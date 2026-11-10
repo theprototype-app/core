@@ -480,15 +480,17 @@
 	};
 
 	// 78 PL34: a dial that ended without a session (cancelled, refused, expired) takes its name ask with it
-	// (the pill blinks through idle for a moment on approval — the request row goes before the conn
-	// opens — so only an idle that LASTS closes the card)
+	// (on approval the pill passes through idle — the request row goes before the host's conn opens, which
+	// took seconds on a slow box — while `sessionHost` already names the host: that is not an ended dial;
+	// only an idle with no host that LASTS closes the card)
 	let dialSeen = false;
 	$effect(() => {
+		const host = $sessionHost;
 		if (connState !== 'idle') {
 			dialSeen = true;
 			return;
 		}
-		if (!dialSeen) return;
+		if (!dialSeen || host) return;
 		const t = setTimeout(() => {
 			dialSeen = false;
 			joinNameAsk.set(false);

@@ -127,9 +127,14 @@ h.run(async () => {
 	// ==================================================================== join, with the name ask
 	console.log('\n=== PL34 the join ask and guest names ===');
 	const B = await h.setupPageQuiet(browser, 'B', [A], { storage: { 'joinName:e2e': '1' } });
+	await B.page.evaluate(() => {
+		window.__askLog = [];
+		const t0 = Date.now();
+		window.__stores.guestName.joinNameAsk.subscribe((v) => window.__askLog.push([Date.now() - t0, v]));
+	});
 	await h.connect(B, A);
 	const askOn = await B.page.locator('#join-name-ask').isVisible().catch(() => false);
-	if (!askOn) console.log('  ask store: ' + JSON.stringify(await inPage(B, 'let v; s.guestName.joinNameAsk.subscribe((x) => (v = x))(); return { ask: v, own: s.guestName.hasOwnName(), e2e: localStorage.getItem("joinName:e2e"), wd: navigator.webdriver };').catch((e) => e.message)));
+	if (!askOn) console.log('  ask store: ' + JSON.stringify(await inPage(B, 'let v; s.guestName.joinNameAsk.subscribe((x) => (v = x))(); return { ask: v, own: s.guestName.hasOwnName(), e2e: localStorage.getItem("joinName:e2e"), wd: navigator.webdriver, log: window.__askLog };').catch((e) => e.message)));
 	h.check(askOn, 'the joiner is asked "What should others call you?"');
 	const placeholder = await B.page.locator('#join-name-input').getAttribute('placeholder').catch(() => '');
 	h.check(placeholder === 'Guest 2', `the suggestion is Guest 2, never Peer (${placeholder})`);

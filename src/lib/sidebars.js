@@ -470,15 +470,21 @@ function onInspector(closed, kind) {
 	}
 	// a close: wait out showSidebar's close-then-reopen (a switch), then close the tab that was showing
 	const was = tabOfKind(kind);
-	closeTimer = setTimeout(() => {
+	const other = was === 'scene' ? 'inspector' : 'scene';
+	const settle = () => {
 		if (!get(inspectorClose)) return;
 		const tabs = get(inspectorTabs);
-		const other = was === 'scene' ? 'inspector' : 'scene';
 		if (tabs[other] && !get(panelAway).inspector) {
 			inspectorTabs.set({ ...tabs, [was]: false });
 			showInspectorKind(other);
 		} else if (tabs.inspector || tabs.scene) inspectorTabs.set({ inspector: false, scene: false });
-	}, 80);
+	};
+	// 78-fix-547: with no other Inspector tab to fall back to, the column closes AT ONCE — waiting the 80 ms left an
+	// empty column on screen for five frames and the top clusters and the profile jumped after it (controls-clusters
+	// N3: they move with the column, never after it). A switch only waits when the other tab can take the element.
+	const tabs = get(inspectorTabs);
+	if (!(tabs[other] && !get(panelAway).inspector)) return settle();
+	closeTimer = setTimeout(settle, 80);
 }
 
 let wired = false;

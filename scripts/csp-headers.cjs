@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // 69 T3 — build/_headers: the response headers a static host should send with the build.
 //
-// The Content-Security-Policy itself is in every page's <meta> (svelte.config.js → kit.csp, with the
+// The Content-Security-Policy itself is in every page's <meta> (vite.config.ts → sveltekit({ csp }), with the
 // hash of SvelteKit's inline boot script). A meta policy cannot carry `frame-ancestors`, so that one
 // directive goes here, as a header, beside two plain hardening headers. Cloudflare Pages reads
 // `_headers` as is; any other server can send the same lines (the docs' self-hosting page says how).

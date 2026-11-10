@@ -184,4 +184,22 @@ describe('back stack', () => {
 		tick();
 		expect(h.depth).toBe(0);
 	});
+	it('sk3: a push the async router refuses hands the marker back, and the next open retries', () => {
+		const { h, bs, tick } = setup();
+		const rel = bs.register(() => {}, 'menu');
+		tick();
+		expect(bs.state().marker).toBe(true);
+		// the router said no a few microtasks later: undo what push() pushed, then report it
+		h.back();
+		h.flush(() => {});
+		bs.pushFailed();
+		expect(bs.state().marker).toBe(false);
+		rel();
+		tick();
+		expect(h.depth).toBe(0); // nothing of ours to spend
+		bs.register(() => {}, 'dialog');
+		tick();
+		expect(h.top).toBe('back');
+		expect(bs.state().marker).toBe(true);
+	});
 });

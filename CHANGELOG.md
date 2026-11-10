@@ -69,6 +69,8 @@
 - A behaviour handler that throws is rolled back (its state, timers and events) and its error says so. <!-- 78-kit -->
 - Things spawned from code that die stop counting at once and are removed after 1 second, like the Spawn node's. <!-- 78-kit -->
 - The scene load bar moves while a scene's objects are being built (it used to sit still, then jump to the end). <!-- 93-levels -->
+- **Phones are judged as phones**: the scene budget held a phone's frames to a headset's limits, so every phone scene showed a red cross; it now uses phone limits, and while quality is already lowered the dot is a calm grey note instead of a warning beside *Reduced quality*. <!-- 78-int PL11 PL22 -->
+- *Lowered for now* names the one resolution in force instead of listing four. <!-- 78-int PL9 -->
 
 ## 1.63.0 — Pro look 📸
 

@@ -563,6 +563,11 @@ export const DEBUG_HOOKS = [
 	['gameKit', () => import('./gameKit')],
 	['moduleWorld', () => import('./moduleWorld')],
 	['playSpawn', () => import('./playSpawn')],
+	// 78 PL32: the joiner's side step (lastJoinSideStep) + the near-avatar fade maths
+	['joinSideStep', () => import('./joinSideStep.js')],
+	['nearAvatars', () => import('./nearAvatars.js')],
+	// 78 PL34: the join name ask + guest names
+	['guestName', () => import('./guestName.js')],
 	['packRefs', () => import('./packRefs')],
 	// 36 U9: per-file load states + the placeholder renderer
 	['loadStates', () => import('./loadStates')],

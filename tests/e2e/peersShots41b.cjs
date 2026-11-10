@@ -12,6 +12,7 @@ async function seed(page) {
 		let p;
 		s.peers.subscribe((x) => (p = x))();
 		const self = p?.peer?.id || 'self';
+		s.username.set('Alexandra Konstantinopoulou'); // 78 PL34: else a nameless self becomes "Guest 1"
 		s.userdata.set([
 			[self, 'Alexandra Konstantinopoulou', null, null, null, {}],
 			['p1', 'Maximilian von Hohenzollern-Sigmaringen', null, null, null, {}],

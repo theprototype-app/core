@@ -217,6 +217,7 @@
 		Plus,
 		Proportions,
 		Puzzle,
+		QrCode, // 78 PL37: the invite sheet's QR tab
 		Radar,
 		RectangleGoggles,
 		Redo2,
@@ -462,6 +463,7 @@
 		plus: Plus,
 		proportions: Proportions,
 		puzzle: Puzzle,
+		'qr-code': QrCode,
 		radar: Radar,
 		'rectangle-goggles': RectangleGoggles,
 		'redo-2': Redo2,

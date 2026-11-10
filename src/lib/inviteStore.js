@@ -73,8 +73,8 @@ const dialKinds = new Map();
 
 // ---------------------------------------------------------------- the sheet
 
-/** the invite sheet: which tab is open, null = closed (Connect ▸ Request AI opens 'agent',
- * Users ▸ Invite a person opens 'person') @type {import('svelte/store').Writable<null | 'agent' | 'person'>} */
+/** the invite sheet: which tab is open, null = closed (Connect ▸ Invite and Users ▸ New… open
+ * 'person'; Settings ▸ Agents ▸ Set up opens 'agent') @type {import('svelte/store').Writable<null | 'agent' | 'person'>} */
 export const inviteSheet = writable(/** @type {null | 'agent' | 'person'} */ (null));
 
 // ---------------------------------------------------------------- settings

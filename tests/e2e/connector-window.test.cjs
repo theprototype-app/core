@@ -91,6 +91,9 @@ h.run(async () => {
 	h.check(true, 'signed out: the first choice offers Sign in to connect');
 	h.check(/Connect Claude/.test((await A.page.locator('#connect-claude-title').textContent()) ?? '') && /no API key/.test((await A.page.locator('#connect-claude .cc-desc').textContent()) ?? ''), 'the choice says what it is: Connect Claude, your Claude account, no API key');
 	h.check(/profile, top right/.test((await A.page.locator('#connect-claude .cc-text').textContent()) ?? ''), 'the window says to sign in from the profile, top right');
+	// 78 PL10: one wording: signed out, step 2 names the button the user sees (Sign in to connect), not Connect Claude
+	const step2Out = (await A.page.locator('#connect-claude-step-2').textContent()) ?? '';
+	h.check(/press Sign in to connect/.test(step2Out) && !/press Connect Claude here/.test(step2Out), `signed out: step 2 names the Sign in to connect button (${step2Out.trim().slice(0, 90)})`);
 	h.check((await A.page.locator('#ai-header-signin').count()) === 0, 'the welcome carries the button: none in the header too');
 	await pressOpensProfile(A.page, '#connect-claude-signin', 'welcome');
 	h.check((await read(A.page, 'aiAssistantHidden')) === '', 'on a desktop the AI window stays open behind the pop-up');

@@ -2,6 +2,7 @@
 	import { backClose } from '$lib/backStack.js'; // phone-polish: Android Back closes it
 	import { cameraPreviews, joinPeerPreview, previewLabel } from '$lib/cameraPreview';
 	import Icon from '../ui/Icon.svelte';
+	import PeerAvatar from '../ui/PeerAvatar.svelte'; // 78 PL33: one avatar everywhere
 	import { roving } from '$lib/keyboardNav'; // 53 A3: the top-right group is one tab stop
 	import * as THREE from 'three';
 	import { onMount, untrack } from 'svelte';
@@ -34,7 +35,9 @@
 	} from '../../stores/appStore.js';
 	import WindowChrome from '../ui/WindowChrome.svelte';
 	// 55 A4/A7: agent rows (robot + "AI") and the active invites with Revoke / Revoke all
-	import { invites, listInvites, revokeInvite, revokeAllInvites, inviteSheet, kindOfRow } from '$lib/inviteStore';
+	import { invites, listInvites, revokeInvite, revokeAllInvites, inviteSheet, kindOfRow, myKind } from '$lib/inviteStore';
+	// 78 PL34: nobody is "Peer" — a nameless person is "Guest N" (the host 1, joiners from 2)
+	import { displayName, nextGuestName, guestClash } from '$lib/guestName';
 	import { globalScene, globalCamera, camSave, peerHands, isLocked, objectsGroup } from '../../stores/sceneStore.js';
 	// 21-F3: who is in play mode, and who may end the round
 	import { peerPlayModes, resetAllowed, requestResetGame } from '$lib/gamePresence';
@@ -107,7 +110,7 @@
 		!self && map?.[peerId]?.private === true;
 	import { gameState } from '$lib/gameState';
 	import { sessionHost } from '$lib/connectionState';
-	import { mutedPeers, toggleMutePeer } from '$lib/voiceChat';
+	import { mutedPeers, toggleMutePeer, speakingPeers } from '$lib/voiceChat';
 	// 55 A9: the peer menu (Profile · Find · Character · Talk · For you only · Moderation)
 	import { buildPeerMenuItems } from '$lib/peerMenu';
 	import { removePeer, allowBack, blockedPeers, inviteStoreModule } from '$lib/peerModeration';
@@ -177,6 +180,13 @@
 		e.preventDefault();
 		openPeerMenu(e.clientX, e.clientY, peerId, self, e.currentTarget as HTMLElement);
 	}
+	/** 78 PL31: the visible ⋯ — the same menu a right-click or a long press opens, now reachable by a tap */
+	function rowMoreClick(e: MouseEvent, peerId: string, self: boolean) {
+		e.stopPropagation();
+		const btn = e.currentTarget as HTMLElement;
+		const r = btn.getBoundingClientRect();
+		openPeerMenu(Math.max(8, r.right - 200), r.bottom + 4, peerId, self, btn.closest('.peers-row') as HTMLElement | null);
+	}
 	function rowKeydown(e: KeyboardEvent, peerId: string, self: boolean) {
 		if (e.key !== 'ContextMenu' && !(e.shiftKey && e.key === 'F10')) return;
 		e.preventDefault();
@@ -227,12 +237,16 @@
 			.filter(Boolean);
 	}
 	function nameOf(peerId: string) {
-		return (($userdata as any[]).find((u) => u[0] === peerId)?.[1]) || shortId(peerId).toUpperCase();
+		const row = ($userdata as any[]).find((u) => u[0] === peerId);
+		return row?.[1] || (row ? displayName(row) : shortId(peerId).toUpperCase());
 	}
 	/** fly the editor camera to stand a few metres off their avatar, looking at it */
 	function goToPeer(peerId: string) {
 		const avatar = ($globalScene as any)?.getObjectByName?.(peerId);
-		if (!avatar) return;
+		if (!avatar) {
+			showToast(nameOf(peerId) + ' has no avatar in this scene yet.');
+			return;
+		}
 		const at = new THREE.Vector3();
 		avatar.getWorldPosition(at);
 		const cam = $globalCamera as any;
@@ -683,6 +697,42 @@
 		});
 	});
 
+	// 78 PL34 — THE GUEST NAME. A person with no name of their own (none typed, no account) takes the smallest
+	// free "Guest N" once a session forms, and says it on the roster like any name — so the popover, the pill,
+	// the chat and the name tags agree on every screen. Never stored: it is dropped when the session ends.
+	let autoGuest = '';
+	$effect(() => {
+		const pc: any = $peers;
+		const rows: any[] = ($userdata as any[]) ?? [];
+		const host = $sessionHost;
+		void $cloudIdentity;
+		untrack(() => {
+			const me = pc?.peer?.id;
+			if (!me || myKind()) return;
+			const live = (pc?.openedPeers?.size ?? 0) > 0;
+			const mine = String($username ?? '').trim();
+			if (!live) {
+				// the session ended: an automatic name goes with it (a typed one is untouched)
+				if (autoGuest && mine === autoGuest) {
+					username.set('' as any);
+					for (const row of rows) if (row[0] === me) row[1] = '';
+				}
+				autoGuest = '';
+				return;
+			}
+			if (cid?.username && !usernameIsCustom()) return;
+			const isAuto = !!autoGuest && mine === autoGuest;
+			if (mine && !isAuto) return;
+			// re-pick only when the automatic name no longer fits: a clash, or a joiner holding the host's "Guest 1"
+			if (isAuto && !guestClash(rows, me, mine) && !(host && mine === 'Guest 1')) return;
+			const name = nextGuestName(rows, me, !host);
+			if (name === mine) return;
+			autoGuest = name;
+			username.set(name as any);
+			broadcastUserdata();
+		});
+	});
+
 	function onUsernameEdited() {
 		try {
 			safeStorage.setItem('username', $username || '');
@@ -971,7 +1021,7 @@
 		data-peer-id={user[0]}
 		role="group"
 		tabindex="0"
-		aria-label={(user[1] || 'Peer') + (self ? ' (you)' : '') + ' — menu: Shift+F10'}
+		aria-label={displayName(user) + (self ? ' (you)' : '') + ' — menu: Shift+F10'}
 		oncontextmenu={(e) => rowContextMenu(e, user[0], self)}
 		onkeydown={(e) => rowKeydown(e, user[0], self)}
 		onpointerdown={(e) => rowPointerDown(e, user[0], self)}
@@ -980,10 +1030,11 @@
 		onpointercancel={rowPointerEnd}
 		onclickcapture={rowClickCapture}
 	>
-		{@render avatarImg(user[2], 'bg-surface-active h-8 w-8 shrink-0')}
+		<!-- 78 PL33: their photo, else their colour + initial, ringed in their lock / cursor colour; a speaking ring while they talk -->
+		<PeerAvatar id={user[0]} row={user} size={32} speaking={$speakingPeers.includes(user[0])} />
 		<div class="peer-info">
 			<div class="peer-name">
-				<span class="truncate" title={user[1] || 'Peer'}>{user[1] || (kindOfRow(user) === 'agent' ? 'AI agent' : 'Peer')}</span>
+				<span class="truncate" title={displayName(user)}>{displayName(user)}</span>
 				{#if kindOfRow(user) === 'agent'}
 					<!-- 55 A7: an AI agent is not a person — no character, the robot and "AI" instead -->
 					<span class="peer-ai" title="AI agent — joined over MCP or an agent link; it has no character"
@@ -1030,13 +1081,14 @@
 				{#if $peerHands[user[0]]?.active}<span title="In VR"><Icon name="glasses" size={16} aria-hidden="true" /></span>{/if}
 				{#if !self && $peerQuality[user[0]]}
 					{@const q = $peerQuality[user[0]]}
+					<!-- 78 PL31 (O7): "relayed" is a fact, not a fault — it rides the tooltip, and shows only on a slow link -->
 					<span
-						title={q.rtt != null ? `${Math.round(q.rtt)} ms round-trip` : 'measuring…'}
+						title={(q.rtt != null ? `${Math.round(q.rtt)} ms round-trip` : 'measuring…') + (q.relayed ? ' · relayed through a TURN server' : '')}
 						style="color: {qColor(q.level)}">{qGlyph(q.level)}{q.rtt != null ? ` ${Math.round(q.rtt)}ms` : ''}</span
 					>
-					{#if q.relayed}<span class="text-ink-warn" title="Relayed through a TURN server">relayed</span>{/if}
+					{#if q.relayed && q.level === 'bad'}<span class="text-ink-warn" title="Relayed through a TURN server">relayed</span>{/if}
 				{/if}
-				<span class="peer-id" title={user[0]}>{shortId(user[0])}</span>
+				<span class="peer-id" title={user[0]}>{shortId(user[0]).toUpperCase()}</span>
 			</div>
 		</div>
 		<div class="peer-actions">
@@ -1124,8 +1176,28 @@
 				>
 					<Icon name="eye" size={16} class="mr-1" aria-hidden="true" />{$specatorMode === user[0] ? 'Watching' : 'Watch'}
 				</button>
+				{#if !$phoneShellActive && kindOfRow(user) !== 'agent'}
+					<!-- 78 PL31 (O4): Go to beside Watch — fly the camera to stand by their avatar (same scene; on a
+					     phone it stays in ⋯). Not .peer-goto: that class is the travel-to-their-scene button. -->
+					<button
+						type="button"
+						class="peer-find peer-icon-btn"
+						title={'Go to ' + displayName(user) + ' — fly your camera to them'}
+						aria-label={'Go to ' + displayName(user)}
+						onclick={() => goToPeer(user[0])}
+					><Icon name="locate-fixed" size={16} aria-hidden="true" /></button>
+				{/if}
 			{/if}
 		{/if}
+		<!-- 78 PL31 (O4): the peer menu as a visible button on every row (it was right-click / long-press only) -->
+		<button
+			type="button"
+			class="peer-more peer-icon-btn"
+			title={self ? 'Your menu' : 'More for ' + displayName(user)}
+			aria-label={self ? 'Your menu' : 'More for ' + displayName(user)}
+			aria-haspopup="menu"
+			onclick={(e) => rowMoreClick(e, user[0], self)}
+		><Icon name="ellipsis" size={16} aria-hidden="true" /></button>
 		</div>
 	</div>
 {/snippet}
@@ -1177,9 +1249,9 @@
 			title="Connected peers"
 			onclick={() => peersPanelOpen.update((v) => !v)}
 		>
-			<div class="flex -space-x-2">
+			<div class="flex items-center gap-1.5 px-0.5">
 				{#each $userdata.slice(1, 4) as user (user[0])}
-					{@render avatarImg(user[2], 'bg-surface-active border-2 border-surface-1 not-first:-ms-4 hud-tr-av h-6 w-6')}
+					<PeerAvatar id={user[0]} row={user} size={22} speaking={$speakingPeers.includes(user[0])} class="hud-tr-av" />
 				{/each}
 			</div>
 			<span class="hud-tr-count">{$userdata.length}</span>
@@ -1195,7 +1267,6 @@
 				<WindowChrome
 					size="tool"
 					title="Connected"
-					count={$userdata.length}
 					elevated
 					padded={false}
 					onclose={() => {
@@ -1691,6 +1762,11 @@
 	.peer-meta > .scene-chip { flex: 0 1 auto; }
 	.peer-id { color: var(--text-faint); }
 	.peer-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; white-space: nowrap; }
+	/* 78 PL31: the row's icon buttons (Go to, ⋯) — quiet until hovered, a 28 px target (44 on touch) */
+	.peer-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex: 0 0 auto; border: 0; border-radius: 6px; background: transparent; color: var(--text-muted); cursor: pointer; }
+	.peer-icon-btn:hover { background: var(--surface-hover); color: var(--text); }
+	.peer-icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+	@media (pointer: coarse) { .peer-icon-btn { width: 40px; height: 40px; } }
 	/* 21-F3 play-mode chip. Deliberately quieter than the role badge beside it: a role
 	   is an authority and a mode is a passing fact. */
 	.mode-chip { flex: 0 0 auto; font-size: 9px; font-weight: 600; letter-spacing: 0.02em; padding: 0 6px; border-radius: 9999px; text-transform: capitalize; line-height: 1.5; border: 1px solid transparent; }

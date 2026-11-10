@@ -307,6 +307,7 @@
 		"profile-notify": 180,
 		"player-sensors": 300,
 		"static-level-play": 240,
+		"walker-step-off": 180,
 		"touch-collect-nodes": 240,
 		"play-start-nodes": 200,
 		"announce-console": 160,

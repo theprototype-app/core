@@ -25,8 +25,14 @@ h.run(async () => {
 	const text = await A.page.locator('#flow-props-toggle').innerText();
 	h.check(icons === 2 && !text.includes('⚙'), `the properties handle shows the chevron and its role icon (${icons} svg)`);
 
+	// showhide-v8 (owner 2026-11-09, "Flow: remove the swap button"): the palette moves sides from its arrow
+	// handle's menu ("Move the palette to the other side"), the dock-inset pattern
+	const paletteSwap = async () => {
+		await A.page.locator('#palette-toggle').click({ button: 'right' });
+		await A.page.locator('[role=menu] [role=menuitem]', { hasText: 'Move the palette to the other side' }).first().click();
+	};
 	// move the palette to the right -> props toggle reflows to the LEFT
-	await A.page.locator('#palette-side').click();
+	await paletteSwap();
 	await A.page.waitForTimeout(400);
 	const pt2 = await box('#palette-toggle');
 	const ft2 = await box('#flow-props-toggle');
@@ -34,7 +40,7 @@ h.run(async () => {
 	h.check(sep(pt2, ft2), 'the toggles still do not overlap after the reflow');
 
 	// move back -> props toggle returns to the right
-	await A.page.locator('#palette-side').click();
+	await paletteSwap();
 	await A.page.waitForTimeout(400);
 	const ft3 = await box('#flow-props-toggle');
 	const pt3 = await box('#palette-toggle');

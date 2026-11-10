@@ -55,7 +55,7 @@
 	import { APP_VERSION } from '$lib/version.js'; // showhide-v8 §6: the footer's version
 	import { toggleViewportFocus } from '$lib/focusMode';
 	import { resetWindowLayout } from '$lib/dragWindow';
-	import { editedSinceSave, noteFileSaved } from '$lib/saveState.js'; // showhide-v8 §6
+	import { editedSinceSave, editMark, noteFileSaved } from '$lib/saveState.js'; // showhide-v8 §6
 	import ContextMenu from '../ContextMenu.svelte';
 
 	// 203: redesigned as a compact floating panel — flat list (order preserved,
@@ -127,9 +127,18 @@
 	 * @param {string} format
 	 */
 	function saveFromMenu(format: string) {
-		noteFileSaved();
-		if (format !== 'tp') return save(format);
-		void import('$lib/saveProject').then((m) => m.saveProjectPressed('burger', () => save(format)));
+		// 1.64 (78-fix-547): Save greys only once the scene really was saved — a Cancel in the "unsaved changes"
+		// question, or "Save project without these changes", leaves it armed (it used to grey at the press)
+		const at = editMark();
+		if (format !== 'tp') {
+			const r = save(format);
+			void Promise.resolve(r).then(() => noteFileSaved(at), () => {});
+			return r;
+		}
+		void import('$lib/saveProject').then(async (m) => {
+			const r = await m.saveProjectPressed('burger', () => save(format));
+			if (!r.dialog && r.scene !== 'cancel' && r.scene !== 'without') noteFileSaved(at);
+		});
 	}
 	// Clearing value (instead of the old {#key} recreate) lets the same file be
 	// re-picked without detaching the input mid-dialog — a detached input's event

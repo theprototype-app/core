@@ -202,7 +202,7 @@ h.run(async () => {
 
 	// ================================ N6 unfolded ================================
 	for (const theme of ['dark', 'light']) {
-		const U = await h.setupPage(browser, 'unfold-' + theme, { context: { ...UNFOLD, colorScheme: theme }, storage: { ...BASE_STORAGE, theme, 'sidebar:inspectorSide': 'left' } });
+		const U = await h.setupPage(browser, 'unfold-' + theme, { context: { ...UNFOLD, colorScheme: theme }, storage: { ...BASE_STORAGE, theme, 'sidebar:inspectorSide': 'left', 'inspector:sec:Quality': 'open' } }); // 78-int PL17: Quality starts collapsed
 		page = U.page;
 		await openScene(page);
 		// ---- C: the Quality preset and every other segmented control in Configure Scene fit ----

@@ -137,7 +137,11 @@ h.run(async () => {
 	h.check(scores.tieFirstWins === 'first', 'equal scores: the first-built candidate wins (deterministic)');
 
 	// ---------- 3. Inspector chips ----------
-	await A.page.evaluate(() => window.__stores.showSidebar('scene'));
+	// 78-int PL17: Configure Scene opens with only Environment + Scene look expanded — deep-link the section (twice: the first
+	// ask can land before a closed panel has mounted its sections)
+	await A.page.evaluate(() => window.__stores.openSceneSection('Snapping'));
+	await A.page.waitForTimeout(500);
+	await A.page.evaluate(() => window.__stores.openSceneSection('Snapping'));
 	await A.page.waitForTimeout(600);
 	const chips = await A.page.evaluate(() => ({
 		vertex: !!document.querySelector('#snap-target-vertex'),
@@ -636,7 +640,11 @@ h.run(async () => {
 		'a miss exits pick mode without an anchor'
 	);
 	// the Inspector anchor row
-	await A.page.evaluate(() => window.__stores.showSidebar('scene'));
+	// 78-int PL17: Configure Scene opens with only Environment + Scene look expanded — deep-link the section (twice: the first
+	// ask can land before a closed panel has mounted its sections)
+	await A.page.evaluate(() => window.__stores.openSceneSection('Snapping'));
+	await A.page.waitForTimeout(500);
+	await A.page.evaluate(() => window.__stores.openSceneSection('Snapping'));
 	await A.page.waitForTimeout(500);
 	const anchorUi = await A.page.evaluate(() => ({
 		auto: !!document.querySelector('#snap-anchor-auto'),
@@ -1030,7 +1038,11 @@ h.run(async () => {
 		`a face-centre aim skips the DIAGONAL and lands on a boundary edge (${edges.centre?.point?.map((v) => v.toFixed(3))})`
 	);
 	// the Edge chip is in both UIs now
-	await A.page.evaluate(() => window.__stores.showSidebar('scene'));
+	// 78-int PL17: Configure Scene opens with only Environment + Scene look expanded — deep-link the section (twice: the first
+	// ask can land before a closed panel has mounted its sections)
+	await A.page.evaluate(() => window.__stores.openSceneSection('Snapping'));
+	await A.page.waitForTimeout(500);
+	await A.page.evaluate(() => window.__stores.openSceneSection('Snapping'));
 	await A.page.waitForTimeout(500);
 	const edgeChip = await A.page.evaluate(() => !!document.querySelector('#snap-target-edge'));
 	h.check(edgeChip, 'the Edge chip renders in Configure Scene ▸ Snapping');

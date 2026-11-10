@@ -23,6 +23,7 @@
 	import Icon from '../ui/Icon.svelte';
 	import { connectionStatus, connectionLabel } from '$lib/connectionStatus';
 	import SheetGrip from '../ui/SheetGrip.svelte';
+	import InspectorLock from '../menu/inspector/InspectorLock.svelte'; // 78-int PL14
 	import { stripScroll } from '$lib/ui/stripScroll.js';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import {
@@ -908,7 +909,14 @@
 		<!-- 42 I5: with More ▸ "Grab handle" off the grip is a thin invisible band ON the panel's top
 		     edge (12 px in, 2 px out — clear of the tab row above), which still drags -->
 		<div class="ps-dockgrip" id="ps-dock-grip" data-bare={$phoneGrabHandle ? undefined : ''} style:bottom="calc(var(--ps-bar-h) + {dockShown - ($phoneGrabHandle ? 24 : 12)}px)">
-			<SheetGrip label="dock" height={dockShown} min={160} max={dockMax} surface={dockPanels} onresize={dockResize} onclose={dockClose} />
+			<SheetGrip label="dock" height={dockShown} min={160} max={dockMax} surface={dockPanels} onresize={dockResize} onclose={dockClose}>
+				{#snippet end()}
+					<!-- 78-int PL14: the Inspector's header lock rides the grip row (it lost its inner header) -->
+					{#if $phoneDockShown === 'properties' || $phoneDockShown === 'scene'}
+						<InspectorLock panel={$phoneDockShown} />
+					{/if}
+				{/snippet}
+			</SheetGrip>
 		</div>
 	{/if}
 

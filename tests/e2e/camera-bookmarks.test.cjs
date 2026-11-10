@@ -85,7 +85,7 @@ h.run(async () => {
 	);
 
 	// ---------- management: rename / overwrite / reorder / delete ----------
-	await A.page.evaluate(() => window.__stores.showSidebar('scene'));
+	await A.page.evaluate(() => window.__stores.openSceneSection('Camera')); // 78-int PL17: Configure Scene opens with only Environment + Scene look expanded — deep-link the section
 	await A.page.waitForTimeout(600);
 	const rows = await A.page.evaluate(() => document.querySelectorAll('#bookmark-list .bookmark-row').length);
 	h.check(rows === 6, `Configure Scene lists every view (${rows} rows)`);

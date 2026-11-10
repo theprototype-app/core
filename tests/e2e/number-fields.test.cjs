@@ -117,7 +117,7 @@ h.run(async () => {
 
 	// ---------- the boxes beside sliders are the same field ----------
 	const sliderBox = await A.page.evaluate(async () => {
-		window.__stores.showSidebar('scene');
+		window.__stores.openSceneSection('Camera'); // 78-int PL17: Configure Scene opens with only Environment + Scene look expanded — deep-link the section
 		await new Promise((r) => setTimeout(r, 600));
 		window.__stores.inspectorScrollTo.set('Camera');
 		await new Promise((r) => setTimeout(r, 400));

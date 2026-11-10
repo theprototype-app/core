@@ -188,3 +188,24 @@ export function mapChoice(record, tier) {
 	if (fits(record.lite)) return 'lite';
 	return null;
 }
+
+/**
+ * 78-int PL1 — the Statistics window's "Baked light" line: a bake moves no draw calls or triangles
+ * (by design), only texture memory, so the line names what this device actually shows: the atlas
+ * side in px, its size in MB (the map this device loaded: the full one, else the small copy), and
+ * how many recorded objects carry it here out of how many the bake holds. No record = "none".
+ * @param {any} record the normalized bake record (or null)
+ * @param {{ map?: string, applied?: number } | null} [shown] bakeShown: 'full' | 'lite' | 'none' + applied count
+ * @returns {{ none: true, text: string } | { none: false, text: string, px: number, mb: number, baked: number, shown: number, map: string }}
+ */
+export function bakedLightLine(record, shown) {
+	if (!record || !record.full) return { none: true, text: 'none' };
+	const map = shown?.map === 'lite' && record.lite ? 'lite' : 'full';
+	const m = record[map];
+	const px = Math.round(Number(m.side) || 0);
+	const mb = Math.round(((Number(m.bytes) || 0) / 1048576) * 10) / 10;
+	const baked = Array.isArray(record.objects) ? record.objects.length : 0;
+	const on = shown?.map === 'none' ? 0 : Math.max(0, Math.min(baked, Math.round(Number(shown?.applied) || 0)));
+	const mbText = mb >= 0.1 ? mb.toFixed(1) : '< 0.1';
+	return { none: false, text: px + ' px · ' + mbText + ' MB · ' + baked + ' baked / ' + on + ' shown', px, mb, baked, shown: on, map };
+}

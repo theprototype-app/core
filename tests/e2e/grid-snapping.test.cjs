@@ -85,8 +85,8 @@ h.run(async () => {
 	await A.page.evaluate(() => window.__stores.viewportMenu.set(null));
 
 	// ---------- Configure Scene: Grid + Snapping sections ----------
-	await A.page.evaluate(() => window.__stores.showSidebar('scene'));
-	await A.page.waitForTimeout(500);
+	await A.page.evaluate(() => { window.__stores.openSceneSection('Grid'); setTimeout(() => window.__stores.openSceneSection('Snapping'), 400); }); // 78-int PL17: Configure Scene opens with only Environment + Scene look expanded — deep-link the section
+	await A.page.waitForTimeout(1000);
 	const sections = await A.page.evaluate(() =>
 		[...document.querySelectorAll('#drawer-label, .ui-section-label, button, span, h3, h4, p')]
 			.map((el) => el.textContent?.trim())
@@ -150,8 +150,8 @@ h.run(async () => {
 	h.check(g.showAxes === true && g.infinite === false && g.matchSnapStep === true, 'grid prefs persist across a reload');
 
 	// snapping numbers accept a free value
-	await A.page.evaluate(() => window.__stores.showSidebar('scene'));
-	await A.page.waitForTimeout(500);
+	await A.page.evaluate(() => { window.__stores.openSceneSection('Grid'); setTimeout(() => window.__stores.openSceneSection('Snapping'), 400); }); // 78-int PL17: Configure Scene opens with only Environment + Scene look expanded — deep-link the section
+	await A.page.waitForTimeout(1000);
 	await A.page.locator('#snap-rotate').fill('7.5');
 	await A.page.locator('#snap-rotate').dispatchEvent('change');
 	await A.page.waitForTimeout(250);

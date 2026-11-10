@@ -12,6 +12,7 @@
 	import Segmented from '../../ui/Segmented.svelte';
 	import InsToggle from './InsToggle.svelte';
 	import { qualityPreset, autoQuality, gameQualityState, qualityState } from '$lib/qualityGovernor';
+	import { holdingLabels } from '$lib/qualityGovernorCore';
 	import { shadowQuality } from '$lib/lightParams';
 	import { lodEnabled } from '$lib/lod';
 	import { kitInstancingEnabled } from '$lib/kitInstancing';
@@ -43,7 +44,7 @@
 	{#if gameHolds}
 		<p id="scene-quality-game-note" class="text-[length:var(--fs-badge)] text-text-muted">The game being played holds its own Quality setting ({$gameQualityState.preset}) until you leave it.</p>
 	{:else if $qualityPreset === 'auto' && $qualityState.level > 0}
-		<p id="scene-quality-reduced-note" class="text-[length:var(--fs-badge)] text-text-muted">Lowered for now: {$qualityState.labels.join(', ').toLowerCase()}.</p>
+		<p id="scene-quality-reduced-note" class="text-[length:var(--fs-badge)] text-text-muted">Lowered for now: {holdingLabels($qualityState.labels).join(', ').toLowerCase()}.</p>
 	{/if}
 	<!-- 78-int PL18 (scene panel item 8): no "Reduce quality when the scene is heavy" toggle here —
 	     Auto IS that switch (Auto adapts, High holds). The device-wide opt-out stays in Settings ▸ Scene ▸

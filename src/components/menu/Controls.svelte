@@ -9,6 +9,7 @@
 	import { visibleObjectRows, withExpanded, typeAheadIndex } from '$lib/objectListNav';
 	import { sceneMetrics, statsOpen, worstTier, budgetRows } from '$lib/sceneBudget';
 	import { qualityState, pinQuality, releaseQuality } from '$lib/qualityGovernor';
+	import { holdingLabels } from '$lib/qualityGovernorCore';
 	import { showToast as showQualityToast } from '../../stores/appStore';
 	import { keyOf } from '$lib/keyOf';
 	import { setLastScope } from '$lib/keyScope';
@@ -651,7 +652,7 @@
 	// same reason as openStats.
 	const qualityTitle = $derived.by(() => {
 		const q = $qualityState;
-		const what = q.labels.join(', ').toLowerCase();
+		const what = holdingLabels(q.labels).join(', ').toLowerCase();
 		// UI-9: a phone in Auto STARTS lighter (qualityGovernor's PHONE_START_LEVEL) before it has judged the scene
 		if (!q.pinned && String(q.reason).startsWith('phone'))
 			return 'Phones start with lighter drawing so the first seconds stay smooth: ' + what + '. Full quality comes back on its own when the frames allow. Click to keep it this way.';

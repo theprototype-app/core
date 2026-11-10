@@ -39,13 +39,14 @@ const pressedPill = (page) =>
 /** the note under a section header @param {any} page @param {string} label */
 const noteOf = (page, label) =>
 	page.evaluate((l) => {
-		// every rendered copy of the section (a host page can hold more than one panel instance): the shown note
+		// the section's note (any copy that shows one)
 		const secs = [...document.querySelectorAll('.sec-panel')].filter((s) => s.querySelector('.sec-title')?.textContent?.trim() === l);
 		return secs.map((s) => s.querySelector('[data-section-note]')?.textContent?.trim() ?? '').find(Boolean) ?? '';
 	}, label);
 /** @param {any} page */
 async function openScene(page) {
-	await page.evaluate(() => window.__stores.showSidebar('scene'));
+	// openSceneSection always OPENS (showSidebar toggles: on an open panel it closes it)
+	await page.evaluate(() => window.__stores.openSceneSection('Environment'));
 	await page.locator('#environment-presets').waitFor({ state: 'visible', timeout: 15000 });
 	await page.waitForTimeout(400);
 }
@@ -258,8 +259,6 @@ h.run(async () => {
 	// with someone else here, your own edit says you
 	await page.evaluate(() => window.__stores.environment.setEnvironment('daylight'));
 	await h.eventually(() => noteOf(page, 'Environment'), (t) => /^changed by you · just now$/.test(t), 'PL13.5 with a peer here, your own edit reads "changed by you"', 10000);
-	await page.evaluate(() => window.__stores.showSidebar('scene'));
-	await page.waitForTimeout(300);
 	await shots(page, 'changed-by');
 
 	// the Reset reaches the peer

@@ -36,7 +36,7 @@
 
 ### Physics and the game kit
 - **The fastest device runs the physics**: when the device running a simulation is much slower than another player's, the run moves there by itself; a slow device alone keeps real time instead of slow motion. <!-- 78-nodes -->
-- A level made only of static objects runs its physics when Play starts (walls stop you), and a walking scene with no Character Controller gets a default walker. <!-- 78-nodes -->
+- A level made only of static objects runs its physics when Play starts, so a Character Controller's walls stop you. <!-- 78-nodes; default walker held back, 78-int -->
 
 ### Interface
 - **No emoji anywhere in the app**: icons are drawn as icons, so they look the same on every phone. <!-- 78-int PL42 -->
@@ -90,9 +90,6 @@
 - The sidebar handles now sit lower, below the profile menu, and stay put when you open the profile menu or any other menu. <!-- 78-fix-547 -->
 - The sidebar handles never sit on top of the bottom dock: they slide up with it and go back to your chosen spot when it closes. <!-- 78-fix-547 -->
 - In the file preview, stepping with the Left and Right arrows no longer draws a blue ring round the whole window. <!-- 78-fix-547 -->
-
-### Known issues
-- In Play, the default walker (a walking scene with no Character Controller) can rest 1 to 3 cm lower than the floor, so a player's character may look slightly sunk into it. A fix is planned. <!-- 78-int card: KCC rest bias -->
 
 ## 1.63.0 — Pro look 📸
 

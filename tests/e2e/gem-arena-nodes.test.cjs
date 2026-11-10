@@ -3,7 +3,8 @@
 // On Enter wiring:
 //   · each gem's own graph holds ONE Collect pickup node (F12 "Collect on touch", default on)
 //   · the scene graph: Score -> HUD text "Gems: {v}/3"; Score >= 3 -> Not -> Visibility (the gate)
-//   · Play on A starts the physics world for the all-static arena (F11) and A walks (default walker)
+//   · Play on A starts the physics world for the all-static arena (F11) and A walks (1.64: the eye-height pin;
+//     the F11 default walker is off until its fix-batch card)
 // Two peers: A walks over gem 1, B (fly Play) stands on gems 2 and 3. Both HUDs read "Gems: 3/3"
 // and the gate is gone on both.
 //

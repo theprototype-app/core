@@ -5,7 +5,9 @@
 //      under the plane's top, never above it);
 //   2. walking off its edge, the feet fall and land on the plane with no upward jump on landing
 //      (a "pop" of up to 5 cm would show as a rise between two frames) and settle at 0;
-//   3. the default walker (walk mode, no controller node) on the plane reads 0, not 1-3 cm under it.
+//   3. walk mode with NO controller node (1.64: the F11 default walker is off, flowRuntime DEFAULT_WALKER_ON):
+//      no walker, and the eye-height pin keeps the eye at 1.7 m over the plane while walking. With the fix-batch
+//      card the default walker returns and this row asserts its feet ON the plane (0, not 1-3 cm under it).
 //   APP_URL=https://theprototype.app:5802/ node tests/e2e/walker-step-off.test.cjs
 const h = require('./helpers.cjs');
 
@@ -121,13 +123,20 @@ h.run(async () => {
 	const samples = [];
 	for (let i = 0; i < 8; i++) {
 		await page.waitForTimeout(250);
-		samples.push(await walker(page));
+		samples.push(
+			await page.evaluate(() => {
+				const s = window.__stores;
+				let cam, ctrl;
+				s.playerCam.subscribe((c) => (cam = c))();
+				s.charController.charControl.subscribe((v) => (ctrl = v))();
+				return { eye: cam.getWorldPosition(new s.THREE.Vector3()).y, mode: ctrl?.mode ?? null };
+			})
+		);
 	}
 	await page.keyboard.up('KeyW');
-	const feet = samples.map((s) => s?.ground ?? NaN);
 	h.check(
-		samples.every((s) => s && Math.abs(s.ground) <= 0.01),
-		`3.1 the default walker walks ON the plane, not in it (feet cm: ${feet.map((y) => (y * 100).toFixed(1)).join(' ')}; ${samples[0]?.source})`
+		samples.every((s) => s.mode === null && Math.abs(s.eye - 1.7) <= 0.01),
+		`3.1 1.64: no default walker, the pin keeps the eye 1.7 m over the plane while walking (eye m: ${samples.map((s) => s.eye.toFixed(3)).join(' ')}; walker ${samples[0]?.mode})`
 	);
 	await h.leavePlay(A);
 	await h.finish(browser);

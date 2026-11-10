@@ -2219,6 +2219,11 @@ function playerCodeSettings(node, settings, time) {
 	return /** @type {T} */ (merged.settings);
 }
 
+/** 78-int (1.64): the F11 default walker is OFF for 1.64 — on rapier's character controller it rested 1-3 cm and at
+ * times up to ~30 cm under the floor (u2 avatar-feet, walker-step-off), so walk mode with no controller node keeps
+ * 1.63's eye-height pin. The rest of F11 stays (an all-static level still runs its world on Play). Back on with the
+ * fix-batch card "default walker on the KCC" */
+const DEFAULT_WALKER_ON = false;
 /** 78 F11: the default walker's settings — a standing person, the built-in speed */
 const DEFAULT_WALKER = Object.freeze({ mode: /** @type {'walk'} */ ('walk'), speed: DEFAULT_FLY_SPEED, jumpHeight: 1.1, gravity: true });
 /** the play camera's base group height (Player.svelte): play.eyeHeight is LOCAL to it */
@@ -2234,6 +2239,7 @@ const PLAY_BASE_Y = 0.9;
  * `sourceNodeId: 'default'` marks it. @returns {any}
  */
 function defaultWalker() {
+	if (!DEFAULT_WALKER_ON) return null;
 	if (get(isLocked) !== true || !playSettingsRef || !physicsRef?.isInitiator?.()) return null;
 	/** @type {any} */
 	const scene = get(globalScene);

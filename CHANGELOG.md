@@ -44,6 +44,10 @@
 - **Hide chrome buttons you do not use** (right-click or long press ▸ Hide this button); Show buttons and Settings ▸ Customize buttons bring them back, saved per layout. <!-- panel-gestures -->
 - **Bigger tap areas on touch screens** are on: small buttons answer a finger that lands just beside them. <!-- hitslop-fix -->
 - **Profile menu** regrouped (Profile, Your stuff, Account), with a one-time card about email updates and **Settings ▸ Account ▸ Email**. <!-- profile-notify -->
+- **The menu is regrouped**: search on top, then File, Scene, Versions, Window, Help and Settings, with the version at the foot. Its **Windows** list and **Save as…** submenu open again. <!-- showhide-v8 #547 -->
+- **The dock and sidebar "+" now move a window** that is open elsewhere (floating or on the other side) to where you pressed it, instead of only bringing it to the front. <!-- showhide-v8 #547 -->
+- **Docked windows on a narrow phone** show one header of views instead of side-by-side panes; panel handles show the panel's own icon. <!-- showhide-v8 #547 -->
+- **The Profiler is one window**: the live profile is a row of its list, and Live opens it even when it is closed. Flow code opens in the Code window. <!-- showhide-v8 #547 -->
 
 ### AI apps
 - Agents can build all of this: `create_shape` with `action: "path"`, `game_setup` with `portal`, `checkpoint` and `loading`, and `describe_node_types` knows the new nodes (common words like door, lamp, cat, button and hover work as aliases). `inspect_runtime` shows the game kit's round, score and pickups. <!-- 78-path, 93-levels, 85-nodes -->

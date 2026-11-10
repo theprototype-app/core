@@ -521,7 +521,7 @@
 	--focus-ring-width: 2px;
 	--focus-ring-offset: 1px;
 }
-:root[data-theme='contrast'] :focus-visible {
+:root[data-theme='contrast'] :focus-visible:not([data-focus-shell]) {
 	outline: var(--focus-ring-width) solid var(--focus-ring) !important;
 	outline-offset: var(--focus-ring-offset);
 }

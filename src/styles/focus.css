@@ -14,3 +14,11 @@
 :focus-visible:not(input:is(:not([type]), [type='text'], [type='search'], [type='url'], [type='tel'], [type='email'], [type='password'], [type='number'], [type='date'], [type='datetime-local'], [type='month'], [type='time'], [type='week']), textarea, [contenteditable]:not([contenteditable='false']), .cm-editor *, canvas, #viewport, dialog, [role='dialog'], [role='menu']) {
 	outline: var(--focus-ring-width) solid var(--focus-ring) !important;
 }
+
+/* A FOCUS SHELL is a window that takes focus only so its own keys reach it (the file preview: ArrowLeft / Right walk
+   the folder and refocus it). It is not a control, and a ring round the whole window after an arrow press read as
+   "everything is selected" (owner, 1.64). Its controls inside keep their rings. */
+[data-focus-shell]:focus-visible,
+.tp-ui[data-focus-shell]:focus-visible {
+	outline: none !important;
+}

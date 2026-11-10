@@ -4,7 +4,7 @@
 </script>
 
 <script>
-	// 86 B5 — Settings ▸ Connected apps: the apps this ACCOUNT allowed to use theprototype (claude.ai,
+	// 86 B5 — Settings ▸ Account ▸ Connected apps (uir-account: its own page before, now the Account page's last groups): the apps this ACCOUNT allowed to use theprototype (claude.ai,
 	// Claude Code…), each with its last use and Revoke, plus this tab's own link. Rendered only while the
 	// cloud plugin installs a connector provider (a signed-in cloud build); the plugin talks to the
 	// connector service, core draws the rows. Its own file so the settings index stays a one-line union.

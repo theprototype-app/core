@@ -1850,8 +1850,9 @@
 		text-transform: uppercase;
 		color: var(--text-faint);
 	}
-	/* profile-notify: the phone sheet drops the plugin's group headings too */
-	.cloud-profile-phone :global(.tpc-pm-head) {
+	/* profile-notify: the phone sheet drops the plugin's group headings too — except one that carries an action
+	   (uir-account: Account's "Manage", the menu's only road to Settings ▸ Account) */
+	.cloud-profile-phone :global(.tpc-pm-head:not(:has(.tpc-pm-head-action))) {
 		display: none;
 	}
 	.pm-card {

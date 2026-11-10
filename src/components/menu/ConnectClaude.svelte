@@ -13,7 +13,8 @@
 	import { connectorState, connectorAvailable, connectorLine, connectClaude, disconnectClaude } from '$lib/connector/connectorStore';
 	import { CONNECTOR_DIRECTORY_URL, CONNECTOR_DOCS_URL, CONNECTOR_MCP_URL } from '$lib/connector/connectorLinks.js';
 	import { connectorSignInSlot } from '$lib/cloudHooks';
-	import { settingsOpen, settingsSection, showToast } from '../../stores/appStore';
+	import { showToast } from '../../stores/appStore';
+	import { openSettingsAt } from '$lib/settings/openSettingsAt.js';
 	import { requestSignIn } from '$lib/connector/connectorSignIn.js';
 	import { tipShown, dismissTip, TIP_AGENT_SHAPES, AGENT_TIP_TOOLS, TIP_AGENT_GAMES, AGENT_GAMES_TIP_TOOLS } from '$lib/tips.js';
 
@@ -52,8 +53,8 @@
 	}
 
 	function openConnectedApps() {
-		settingsSection.set('connectedapps');
-		settingsOpen.set(true);
+		// uir-account: Connected apps lives in Settings ▸ Account now
+		openSettingsAt('account', 'connected-apps-settings');
 	}
 </script>
 

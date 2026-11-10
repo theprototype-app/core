@@ -96,8 +96,8 @@ export function fadeAvatar(roots, alpha) {
 	}
 }
 
-/** the distance from a world point to an object's world position @param {THREE.Vector3} at @param {THREE.Object3D} obj */
 const tmp = new THREE.Vector3();
+/** the distance from a world point to an object's world position @param {THREE.Vector3} at @param {THREE.Object3D} obj */
 export function distanceTo(at, obj) {
 	obj.getWorldPosition(tmp);
 	return tmp.distanceTo(at);

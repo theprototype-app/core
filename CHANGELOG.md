@@ -48,6 +48,11 @@
 - **The dock and sidebar "+" now move a window** that is open elsewhere (floating or on the other side) to where you pressed it, instead of only bringing it to the front. <!-- showhide-v8 #547 -->
 - **Docked windows on a narrow phone** show one header of views instead of side-by-side panes; panel handles show the panel's own icon. <!-- showhide-v8 #547 -->
 - **The Profiler is one window**: the live profile is a row of its list, and Live opens it even when it is closed. Flow code opens in the Code window. <!-- showhide-v8 #547 -->
+- **One Invite button** (person-plus) with **Person** and **AI agent** tabs replaces "Request AI"; the Person tab shows a **QR code** of the join link that a phone can scan, made on your device. <!-- 78-pl-peers PL36 PL37 -->
+- **Your name when you join**: you are asked once what others should call you, and it is remembered; anyone without a name is **Guest 1**, **Guest 2**… instead of "Peer". <!-- 78-pl-peers PL34 -->
+- **One avatar everywhere**: your photo, or your colour with an initial, ringed in the same colour as your cursor and locks. The People list shows its menu (⋯) and **Go to** on every row and counts people once. <!-- 78-pl-peers PL31 PL33 -->
+- The Connect drawer says **Ready** when you are not in a session (no more "Offline" with a working connection), says the state once and folds the network details under one **Network** row; the Connect Claude steps name the **Sign in to connect** button when you are signed out. <!-- 78-pl-peers PL10 PL35 -->
+- **A person who joins no longer appears inside your view**: an avatar near your camera fades out, and a joiner arrives beside you. <!-- 78-pl-peers PL32 -->
 
 ### AI apps
 - Agents can build all of this: `create_shape` with `action: "path"`, `game_setup` with `portal`, `checkpoint` and `loading`, and `describe_node_types` knows the new nodes (common words like door, lamp, cat, button and hover work as aliases). `inspect_runtime` shows the game kit's round, score and pickups. <!-- 78-path, 93-levels, 85-nodes -->

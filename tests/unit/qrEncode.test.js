@@ -1,3 +1,4 @@
+// @ts-nocheck — a decoder fixture over the encoder's own output (checkJs covers tests/unit)
 // 78 PL37 — the local QR encoder. The decode proof (66 strings, levels L/M/Q/H, versions 1-40, read
 // back by jsQR outside the repo) lives in the lane's evidence; this pins the structure and one matrix.
 import { describe, it, expect } from 'vitest';

@@ -124,6 +124,8 @@
 						? 'Connecting…'
 						: 'Ready · not in a session'
 	);
+	/** @param {any} id */
+	const nameOf = (id) => $userdata.find((u) => u[0] === id)?.[1] || '';
 	const statusTitle = $derived(
 		connState === 'connected'
 			? ($sessionHost ? 'In ' + (nameOf($sessionHost) || String($sessionHost).toUpperCase()) + "'s session" : 'You are hosting') +
@@ -135,7 +137,6 @@
 	const myId = $derived($peers?.peer?.id ? String($peers.peer.id).toUpperCase() : '…');
 
 	/** @param {string} id */
-	const nameOf = (id) => $userdata.find((u) => u[0] === id)?.[1] || '';
 	/** @param {number|undefined} ts */
 	function ago(ts) {
 		if (!ts) return '';

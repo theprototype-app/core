@@ -82,6 +82,14 @@
 - A walker standing on a floor that rises or sinks rides with it instead of sinking in or floating. <!-- 78-int -->
 - The physics no longer moves to another device while someone is carrying or has just thrown an object, so a throw keeps its speed. <!-- 78-int F25 -->
 - After a hitch the physics catches up at most a quarter of a second, so crates no longer jump forward. <!-- 78-int F25 -->
+- In the Animation editor, the first and last keys of a clip can be clicked and dragged again; the side-panel arrows no longer cover them. <!-- 78-fix-547 -->
+- The menu's Save stays available after you cancel the unsaved-changes question or save without the scene's changes. <!-- 78-fix-547 -->
+- A popped-out Inspector says Configure Scene when it shows the scene settings. <!-- 78-fix-547 -->
+- Closing Configure Scene or Properties closes its sidebar at once. <!-- 78-fix-547 -->
+- On a phone, a menu row brought into view no longer hides under the Settings footer. <!-- 78-fix-547 -->
+- The sidebar handles now sit lower, below the profile menu, and stay put when you open the profile menu or any other menu. <!-- 78-fix-547 -->
+- The sidebar handles never sit on top of the bottom dock: they slide up with it and go back to your chosen spot when it closes. <!-- 78-fix-547 -->
+- In the file preview, stepping with the Left and Right arrows no longer draws a blue ring round the whole window. <!-- 78-fix-547 -->
 
 ## 1.63.0 — Pro look 📸
 

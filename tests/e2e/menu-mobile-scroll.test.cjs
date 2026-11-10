@@ -57,7 +57,7 @@ async function readMenu(page) {
 		const cs = getComputedStyle(nav);
 		const borders = parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth);
 		const rows = [...nav.querySelectorAll('.side-row')];
-		const last = /** @type {HTMLElement} */ (nav.querySelector('#open-whats-new'));
+		const last = /** @type {HTMLElement} */ (nav.querySelector('#report-bug'));
 		return {
 			vh: window.innerHeight,
 			vw: window.innerWidth,
@@ -104,7 +104,7 @@ async function swipeMenu(page, m) {
 	await page.waitForTimeout(500);
 	return page.evaluate(() => {
 		const nav = /** @type {HTMLElement} */ (document.getElementById('sidebar70'));
-		const last = /** @type {HTMLElement} */ (nav.querySelector('#open-whats-new'));
+		const last = /** @type {HTMLElement} */ (nav.querySelector('#report-bug'));
 		const nr = nav.getBoundingClientRect();
 		const lr = last.getBoundingClientRect();
 		return {
@@ -112,6 +112,8 @@ async function swipeMenu(page, m) {
 			lastTop: Math.round(lr.top),
 			lastBottom: Math.round(lr.bottom),
 			visBottom: Math.round(Math.min(nr.bottom, window.innerHeight)),
+			// uir-polish C3: the sticky Settings footer reaches the menu's bottom edge (no see-through strip under it)
+			footGap: Math.round(nr.bottom - parseFloat(getComputedStyle(nav).borderBottomWidth) - /** @type {HTMLElement} */ (nav.querySelector('.side-foot')).getBoundingClientRect().bottom),
 			pageScrolled: Math.round(window.scrollY + document.documentElement.scrollTop)
 		};
 	});
@@ -137,6 +139,7 @@ async function checkPosture(page, label) {
 			s.lastBottom <= s.visBottom + 1 && s.lastTop >= 0,
 			`${label}: ...and brings the last row fully into view (${s.lastTop}..${s.lastBottom} within ..${s.visBottom})`
 		);
+		h.check(Math.abs(s.footGap) <= 1, `${label}: C3 scrolled, the Settings footer covers the menu down to its bottom edge (gap ${s.footGap}px)`);
 		await page.screenshot({ path: path.join(SHOTS, `menu-${PHASE}-${label}-swiped.png`) }).catch(() => {});
 	}
 	await page.evaluate(() => window.__stores.closeMenu.set(true));

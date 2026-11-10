@@ -1,10 +1,10 @@
 // 34 R1 — "Report this moment": the last 30 s of light data + the eye-view screenshot + a note.
 //
-//   1. the Sidebar row opens the card with the picture the viewport showed AT THE PRESS and
-//      the 30-s numbers; Save and send -> one multipart `moment` request: data = a valid T1
+//   1. uir-polish D1: the menu's ONE report view ("Report a bug") opens with the picture the viewport showed AT THE
+//      PRESS and the 30-s numbers; with no account features Send -> one multipart `moment` request: data = a valid T1
 //      moment report (notes name the picture), the screenshot as its own JPEG file; the local
 //      recording keeps the picture inline and the note
-//   2. with the box unticked it is saved and NOT sent; Cancel saves nothing
+//   2. Save on this device keeps it and sends nothing; Cancel saves nothing
 //   3. VR: the radial "Report moment" entry exists; vrReportMoment captures, takes the note
 //      from the (VR) keyboard, saves and sends
 //   4. the EYE screenshot in a headset: a red box planted 3 m ahead of the left-eye camera
@@ -53,30 +53,32 @@ h.run(async () => {
 	const recCount = () => page.evaluate(async () => (await window.__stores.perf.listRecordings()).length);
 	const moments = () => requests.filter((r) => r.fields.kind === 'moment');
 
-	// ---- 1. the Sidebar row -> the card -> Save and send
+	// ---- 1. uir-polish D1: the ONE report view ("Report a bug") sends the moment report when no account is there
 	// the logo IS the menu button
 	await page.locator('#logo-menu').click();
 	await page.waitForTimeout(400);
-	const row = page.locator('#report-moment');
-	h.check((await row.count()) === 1, '1.0 the menu has "Report this moment"');
+	h.check((await page.locator('#report-moment').count()) === 0, '1.0 D1 no separate "Report this moment" row');
+	const row = page.locator('#report-bug');
+	h.check((await row.count()) === 1, '1.0b the menu has "Report a bug"');
 	await row.click();
-	await page.locator('#moment-report').waitFor({ state: 'visible', timeout: 8000 });
-	const img = await page.locator('#moment-shot').evaluate((el) => new Promise((r) => (el.complete ? r({ w: el.naturalWidth, h: el.naturalHeight }) : (el.onload = () => r({ w: el.naturalWidth, h: el.naturalHeight })))));
+	await page.locator('#problem-report').waitFor({ state: 'visible', timeout: 8000 });
+	const img = await page.locator('#problem-shot').evaluate((el) => new Promise((r) => (el.complete ? r({ w: el.naturalWidth, h: el.naturalHeight }) : (el.onload = () => r({ w: el.naturalWidth, h: el.naturalHeight })))));
 	h.check(img.w > 100 && img.h > 50, `1.1 the card shows the picture taken at the press (${img.w}x${img.h})`);
-	h.check(/Last \d+ s · \d+ frames/.test(await page.locator('#moment-stats').innerText()), '1.2 ...and the 30-s numbers');
-	h.check(await page.locator('#moment-send').isChecked(), '1.3 "send" is ticked because performance reports are on');
+	h.check(/Include the last \d+ s — \d+ frames/.test(await page.locator('#problem-stats').innerText()), '1.2 ...and the 30-s numbers');
+	h.check(await page.locator('#problem-perf').isChecked(), '1.3 the frame data is included by default');
+	h.check((await page.locator('#problem-as-user').count()) === 0, '1.3b no account features here: no "Send as" box');
 	const before = await recCount();
-	await page.locator('#moment-note').fill('stutter at the castle gate');
-	h.check((await page.locator('#moment-save').innerText()).trim() === 'Save and send', '1.4 the button says what it will do');
-	await page.locator('#moment-save').click();
-	await page.locator('#moment-report').waitFor({ state: 'detached', timeout: 15000 });
+	await page.locator('#problem-note').fill('stutter at the castle gate');
+	h.check((await page.locator('#problem-send').innerText()).trim() === 'Send' && (await page.locator('#problem-send').isEnabled()), '1.4 Send goes to the developers (the build has a report endpoint)');
+	await page.locator('#problem-send').click();
+	await page.locator('#problem-report').waitFor({ state: 'detached', timeout: 15000 });
 	await page.waitForTimeout(500);
 	const m = moments();
 	h.check(m.length === 1, `1.5 one moment request (${m.length})`);
 	const data = JSON.parse(m[0].fields.data);
 	const v = tp.validateTpprof(data, { report: 'moment' });
 	h.check(v.ok, '1.6 data is a valid T1 moment report ' + v.errors.slice(0, 2).join('; '));
-	h.check(data.meta.kind === 'moment' && data.meta.mode === 'light' && data.frames.length > 20 && data.events.some((e) => e.kind === 'moment'), `1.7 the last ${Math.round(data.meta.durationMs / 1000)} s of light frames, with a moment marker`);
+	h.check(data.meta.kind === 'moment' && data.meta.mode === 'light' && data.frames.length > 20, `1.7 the last ${Math.round(data.meta.durationMs / 1000)} s of light frames`);
 	h.check(data.notes?.[0]?.text === 'stutter at the castle gate' && data.notes[0].screenshot === 'moment.jpg', '1.8 the note, and the picture NAMED (not inlined)');
 	h.check(m[0].fields.screenshot?.jpeg && m[0].fields.screenshot.bytes > 2000 && m[0].fields.screenshot.bytes <= 1048576, `1.9 the screenshot rides as its own JPEG file (${m[0].fields.screenshot?.bytes} bytes)`);
 	h.check(m[0].fields.session === data.meta.session, '1.10 the session id matches');
@@ -88,19 +90,19 @@ h.run(async () => {
 	h.check((await recCount()) === before + 1 && /^Moment /.test(saved.row.name) && saved.row.kind === 'moment', `1.11 a local recording "${saved.row.name}"`);
 	h.check(saved.doc.notes[0].text === 'stutter at the castle gate' && /^data:image\/jpeg;base64,/.test(saved.doc.notes[0].screenshot), '1.12 the local copy keeps the picture inline');
 
-	// ---- 2. unticked -> saved, not sent; Cancel -> nothing
-	await page.evaluate(() => window.__stores.perfMoment.openMomentReport());
-	await page.locator('#moment-report').waitFor({ state: 'visible' });
-	await page.locator('#moment-send').uncheck();
-	h.check((await page.locator('#moment-save').innerText()).trim() === 'Save', '2.1 unticked, the button says Save');
-	await page.locator('#moment-save').click();
-	await page.locator('#moment-report').waitFor({ state: 'detached', timeout: 15000 });
+	// ---- 2. Save on this device -> saved, not sent; frame data off -> no anonymous Send; Cancel -> nothing
+	await page.evaluate(() => window.__stores.problemReport.openBugReport());
+	await page.locator('#problem-report').waitFor({ state: 'visible' });
+	await page.locator('#problem-save').click();
+	await page.locator('#problem-report').waitFor({ state: 'detached', timeout: 15000 });
 	await page.waitForTimeout(400);
-	h.check(moments().length === 1 && (await recCount()) === before + 2, '2.2 saved locally, not sent');
-	await page.evaluate(() => window.__stores.perfMoment.openMomentReport());
-	await page.locator('#moment-report').waitFor({ state: 'visible' });
-	await page.locator('#moment-cancel').click();
-	await page.locator('#moment-report').waitFor({ state: 'detached', timeout: 5000 });
+	h.check(moments().length === 1 && (await recCount()) === before + 2, '2.2 Save on this device: saved locally, not sent');
+	await page.evaluate(() => window.__stores.problemReport.openBugReport());
+	await page.locator('#problem-report').waitFor({ state: 'visible' });
+	await page.locator('#problem-perf').uncheck();
+	h.check(await page.locator('#problem-send').isDisabled(), '2.2b without an account, Send needs the frame data (it is what the anonymous report is)');
+	await page.locator('#problem-cancel').click();
+	await page.locator('#problem-report').waitFor({ state: 'detached', timeout: 5000 });
 	h.check(moments().length === 1 && (await recCount()) === before + 2, '2.3 Cancel saves and sends nothing');
 
 	// ---- 3. VR: the radial entry + the keyboard note

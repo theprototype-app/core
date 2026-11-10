@@ -7,8 +7,8 @@
 	import { chatHidden, flowGraphClose, flowCodeClose, animationClose, uvEditorClose, shaderEditorClose, hudEditorClose, timelineClose, explorerClose, profilerClose, codeWorkspaceClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, floatingToolbar, toolbarAlwaysOnTop, hudStackLift, showSimControls, expandedObjects } from '../../stores/appStore.js';
 	// 24-B2: keyboard navigation in the object list (the Explorer's gridKeydown shape)
 	import { visibleObjectRows, withExpanded, typeAheadIndex } from '$lib/objectListNav';
-	import { sceneMetrics, statsOpen, worstTier, budgetRows } from '$lib/sceneBudget';
-	import { qualityState, pinQuality, releaseQuality } from '$lib/qualityGovernor';
+	import { sceneMetrics, statsOpen, footerTier, budgetRows } from '$lib/sceneBudget';
+	import { qualityState, pinQuality, releaseQuality, isPhoneDevice } from '$lib/qualityGovernor';
 	import { holdingLabels } from '$lib/qualityGovernorCore';
 	import { showToast as showQualityToast } from '../../stores/appStore';
 	import { keyOf } from '$lib/keyOf';
@@ -627,8 +627,10 @@
 	// 26-A: the meter's dot and its tooltip. The reading is the sampler's; this only
 	// picks the worst tier and spells out what is over budget, so the tooltip answers
 	// "over budget on WHAT" without opening anything.
-	const budgetProfileNow = $derived($sceneMetrics.profile === 'vr' ? 'vr' : 'desktop');
-	const budgetTier = $derived(worstTier($sceneMetrics, budgetProfileNow));
+	// 78 PL11: a phone is judged by phone frame limits, and frames the governor is already answering read as a note
+	const phoneNow = isPhoneDevice();
+	const budgetProfileNow = $derived(phoneNow ? 'phone' : $sceneMetrics.profile === 'vr' ? 'vr' : 'desktop');
+	const budgetTier = $derived(footerTier($sceneMetrics, budgetProfileNow, $qualityState.level > 0));
 	/** A DIRECT listener, not `on:click`/`onclick`: this file is written in the `on:`
 	 * style throughout, so an attribute handler here is a hard "mixing syntaxes" error,
 	 * and the `on:` form is deprecated in runes mode — the action is the way out of both,
@@ -641,7 +643,8 @@
 	}
 	const budgetTitle = $derived.by(() => {
 		const over = budgetRows($sceneMetrics, budgetProfileNow).filter((r) => r.tier === 'amber' || r.tier === 'red');
-		if (!over.length) return 'Scene budget — within the ' + (budgetProfileNow === 'vr' ? 'VR / mobile' : 'desktop') + ' budget. Click for statistics.';
+		if (!over.length) return 'Scene budget — within the ' + (budgetProfileNow === 'vr' ? 'VR' : budgetProfileNow === 'phone' ? 'phone' : 'desktop') + ' budget. Click for statistics.';
+		if (budgetTier === 'note') return 'Heavy for this device right now; quality is lowered to keep it smooth. Click for statistics.';
 		return 'Scene budget: over on ' + over.map((r) => r.label.toLowerCase()).join(', ') + '. Click for statistics.';
 	});
 

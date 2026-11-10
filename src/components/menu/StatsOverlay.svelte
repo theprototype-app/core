@@ -26,6 +26,7 @@
 		resetWireStats,
 		sampleSceneMetrics
 	} from '$lib/sceneBudget';
+	import { isPhoneDevice } from '$lib/qualityGovernor';
 	// 46 B2: the Budget section — the scene against the device you ship to (the chip's numbers)
 	import { tick } from 'svelte';
 	import Segmented from '../ui/Segmented.svelte';
@@ -38,7 +39,9 @@
 	import { bakeRecord, bakeShown } from '$lib/sceneBake';
 	import { bakedLightLine } from '$lib/bake/bakeRecordCore.js';
 
-	const profile = $derived($sceneMetrics.profile === 'vr' ? 'vr' : 'desktop');
+	// 78 PL11: a phone reads frames against its own limits (the footer dot's rule)
+	const phoneNow = isPhoneDevice();
+	const profile = $derived(phoneNow ? 'phone' : $sceneMetrics.profile === 'vr' ? 'vr' : 'desktop');
 	const rows = $derived(budgetRows($sceneMetrics, profile));
 	const overall = $derived(worstTier($sceneMetrics, profile));
 	// the wire table is not a store — it is a counter read on demand, so it re-reads
@@ -201,7 +204,7 @@
 			</section>
 
 			<p class="mb-1.5 text-[11px] text-text-muted">
-				Judged against the <strong>{profile === 'vr' ? 'VR / mobile' : 'desktop'}</strong> budget.
+				Judged against the <strong>{profile === 'vr' ? 'VR' : profile === 'phone' ? 'phone' : 'desktop'}</strong> budget.
 				Nothing here leaves this device.
 			</p>
 
@@ -294,6 +297,11 @@
 		background: transparent;
 		box-shadow: inset 0 0 0 2px var(--text-faint);
 		vertical-align: middle;
+	}
+	/* 78 PL11: frames the governor is already answering: a calm grey dot, not a warning */
+	:global(.budget-dot[data-tier='note']) {
+		background: var(--text-muted);
+		box-shadow: none;
 	}
 	:global(.budget-dot[data-tier='green']) {
 		background: var(--status-good);

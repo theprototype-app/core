@@ -586,6 +586,9 @@
 		/* a swipe that reaches the end stops here instead of dragging the page/canvas */
 		overscroll-behavior: contain;
 		touch-action: pan-y;
+		/* 78-fix-547: the sticky footer (Settings + version, showhide-v8 §6) covers the menu's last ~53 px, so a row
+		   brought into view (keyboard focus, scrollIntoView) parked UNDER it and a tap there pressed Settings */
+		scroll-padding-bottom: 3.75rem;
 	}
 	.app-sidebar::-webkit-scrollbar {
 		display: none; /* Chrome/Safari — scroll, no bar */

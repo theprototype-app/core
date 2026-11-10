@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Icon from '../ui/Icon.svelte';
 	import { backClose } from '$lib/backStack.js'; // phone-polish: Android Back closes it
 	// RW/B4: the changelog as a floating window (ui-panel + dragWindow). Opened by the logo-menu
 	// row, the update toast, or Settings ▸ About. Opening it marks the version seen.
@@ -51,7 +52,7 @@
 		onkeydown={onKeydown}
 	>
 		<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
-			<span>✨ What's new</span>
+			<span class="inline-flex items-center gap-1"><Icon name="sparkles" size={16} class="inline-block shrink-0 align-[-2px]" /> What's new</span>
 			<span class="flex-1"></span>
 			<button id="whats-new-close" class="ui-button-quiet" title="Close" aria-label="Close" onclick={closeWhatsNew}>✕</button>
 		</div>

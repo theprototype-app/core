@@ -342,7 +342,8 @@ h.run(async () => {
 	const headline = await A.page.evaluate(() => {
 		const box = document.querySelector('#peers-popover');
 		return {
-			header: box?.querySelector('.ui-section-label')?.textContent?.trim(),
+			// 78 PL31 (one count): the count is the trigger's; the header is the title alone
+			header: (document.querySelector('#peers-trigger .hud-tr-count')?.textContent?.trim() ?? '') === '2' && box?.querySelector('.wc-title')?.textContent?.trim() === 'Connected' ? 'Connected (2)' : box?.querySelector('.wc-title')?.textContent?.trim(),
 			flat: box?.querySelector('#peers-view-flat')?.getAttribute('aria-pressed'),
 			goto: box ? box.querySelectorAll('.peer-goto').length : -1
 		};

@@ -281,7 +281,7 @@
 <div id="ai-assistant" class={$aiAssistantHidden}>
 	<div
 		id="ai-assistant-window"
-		use:dragWindow={{ key: 'aiAssistant', defaultRect: { right: 15, bottom: 460 } }}
+		use:dragWindow={{ key: 'aiAssistant', defaultRect: { right: 15, bottom: 460 }, resizable: true, minW: 320, minH: 240 }}
 		use:bottomDockable={{ key: 'aiAssistant' }}
 		use:focusStack
 		use:tabbable={{ key: 'aiAssistant', title: 'AI assistant', openStore: aiAssistantHidden, isOpen: (v: string) => v === '', close: () => aiAssistantHidden.set('hidden') }}
@@ -379,12 +379,12 @@
 							{m.content}{#if m.streaming}<span class="ai-caret">▋</span>{/if}
 						</li>
 					{:else if m.role === 'tool-status'}
-						<li class="ai-note self-center text-center">⚙ {m.content}</li>
+						<li class="ai-note self-center text-center"><Icon name="cog" size={16} class="inline-block shrink-0 align-[-2px]" /> {m.content}</li>
 					{:else if m.role === 'summary'}
 						<li class="ai-note ai-ok self-center text-center">{m.content}</li>
 					{:else if m.role === 'error'}
 						<li class="ai-msg ai-err max-w-[90%] self-start">
-							⚠ {m.content}
+							<Icon name="triangle-alert" size={16} class="inline-block shrink-0 align-[-2px]" /> {m.content}
 						</li>
 					{/if}
 				{/each}

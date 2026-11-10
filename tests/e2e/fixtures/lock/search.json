@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-11-08T14:07:39.484Z",
+	"recordedAt": "2026-11-10T11:42:02.305Z",
 	"settings": {
 		"Theme": {
 			"rows": [
@@ -42,6 +42,7 @@
 		"Your character": {
 			"rows": [
 				"Knocked-off idle",
+				"Ping sounds",
 				"Show others as classic heads",
 				"Your character"
 			],
@@ -165,6 +166,7 @@
 		},
 		"Toolbar always on top": {
 			"rows": [
+				"Customize buttons",
 				"Toolbar always on top"
 			],
 			"sections": [
@@ -703,14 +705,6 @@
 				"Shortcuts"
 			]
 		},
-		"Flow Code: show / bring to front / hide": {
-			"rows": [
-				"Flow Code: show / bring to front / hide"
-			],
-			"sections": [
-				"Shortcuts"
-			]
-		},
 		"Animation: show / bring to front / hide": {
 			"rows": [
 				"Animation: show / bring to front / hide"
@@ -810,6 +804,7 @@
 		"Undo": {
 			"rows": [
 				"Allow undocking on touch screens",
+				"Customize buttons",
 				"Touch tools",
 				"Undo",
 				"Undock button"
@@ -1154,9 +1149,9 @@
 				"Shortcuts"
 			]
 		},
-		"Enter the selected group / leave the one you are in": {
+		"Enter the selected group / leave the one you are in / else search for a node to add (wired from the selected node)": {
 			"rows": [
-				"Enter the selected group / leave the one you are in"
+				"Enter the selected group / leave the one you are in / else search for a node to add (wired from the selected node)"
 			],
 			"sections": [
 				"Shortcuts"
@@ -1296,7 +1291,7 @@
 		},
 		"Leave the group you are in": {
 			"rows": [
-				"Enter the selected group / leave the one you are in",
+				"Enter the selected group / leave the one you are in / else search for a node to add (wired from the selected node)",
 				"Leave the group you are in"
 			],
 			"sections": [
@@ -1444,9 +1439,11 @@
 		"Ping sound": {
 			"rows": [
 				"Ping colour",
-				"Ping sound"
+				"Ping sound",
+				"Ping sounds"
 			],
 			"sections": [
+				"Interface",
 				"Scene"
 			]
 		},
@@ -1917,6 +1914,7 @@
 				"Angle",
 				"Animation speed",
 				"Auto checkpoints on large scenes",
+				"Auto quality",
 				"Auto-restore on load",
 				"Automatic checkpoint every",
 				"Autosave",
@@ -1967,6 +1965,7 @@
 				"Wireframe colour"
 			],
 			"sections": [
+				"Interface",
 				"Scene",
 				"Export"
 			]
@@ -2093,20 +2092,25 @@
 		},
 		"Height": {
 			"rows": [
+				"Customize buttons",
 				"Height",
 				"Show dimensions",
 				"Stance"
 			],
 			"sections": [
+				"Interface",
 				"Scene",
 				"VR"
 			]
 		},
 		"Menu hand": {
 			"rows": [
+				"Dim the handles at rest",
 				"Menu hand",
 				"One-handed",
+				"Panels button",
 				"Phone grab handle",
+				"Show viewport sidebar handles",
 				"Theme"
 			],
 			"sections": [
@@ -2448,6 +2452,7 @@
 		},
 		"colour": {
 			"rows": [
+				"Chat badge",
 				"Custom theme",
 				"Edit mesh wireframe colour",
 				"Grid colour",
@@ -2503,12 +2508,17 @@
 		},
 		"appearance": {
 			"rows": [
+				"AI assistant",
 				"Allow text selection everywhere",
 				"Allow undocking on touch screens",
 				"Always show tab strip in windows",
 				"Announce new versions",
+				"Auto quality",
+				"Chat badge",
 				"Custom theme",
+				"Customize buttons",
 				"Density",
+				"Dim the handles at rest",
 				"Dock resizes the viewport",
 				"Editor tour",
 				"First-game quest",
@@ -2520,9 +2530,11 @@
 				"Object search in the right-click menu",
 				"Offer Enter VR in a headset browser",
 				"Panels button",
+				"People leaving",
 				"Phone dock tab row",
 				"Phone grab handle",
 				"Phone selection toolbar",
+				"Ping sounds",
 				"Project actions",
 				"Remember windows per screen setup",
 				"Reset tips",
@@ -2534,6 +2546,7 @@
 				"Show system objects in the object list",
 				"Show the environment in the object list",
 				"Show tours automatically",
+				"Show viewport sidebar handles",
 				"Sticky panel headers",
 				"Theme",
 				"Toolbar always on top",
@@ -2561,6 +2574,7 @@
 			"rows": [
 				"Game sounds",
 				"Music",
+				"Ping sounds",
 				"Show captions",
 				"Spatial voice"
 			],
@@ -2586,6 +2600,7 @@
 				"Angle",
 				"Animation speed",
 				"Auto checkpoints on large scenes",
+				"Auto quality",
 				"Auto-restore on load",
 				"Automatic checkpoint every",
 				"Autosave",
@@ -2767,6 +2782,7 @@
 		},
 		"fps": {
 			"rows": [
+				"Auto quality",
 				"Include VR button",
 				"Optimize for",
 				"Quality",
@@ -3104,11 +3120,13 @@
 		},
 		"claude": {
 			"rows": [
+				"AI assistant",
 				"Coding agents",
 				"Let AI agents join as guests",
 				"Voice typing"
 			],
 			"sections": [
+				"Interface",
 				"Tools & connections",
 				"Connection"
 			]
@@ -3183,12 +3201,17 @@
 		},
 		"toolbar": {
 			"rows": [
+				"AI assistant",
 				"Allow text selection everywhere",
 				"Allow undocking on touch screens",
 				"Always show tab strip in windows",
 				"Announce new versions",
+				"Auto quality",
+				"Chat badge",
 				"Custom theme",
+				"Customize buttons",
 				"Density",
+				"Dim the handles at rest",
 				"Dock resizes the viewport",
 				"Editor tour",
 				"First-game quest",
@@ -3201,9 +3224,11 @@
 				"Object search in the right-click menu",
 				"Offer Enter VR in a headset browser",
 				"Panels button",
+				"People leaving",
 				"Phone dock tab row",
 				"Phone grab handle",
 				"Phone selection toolbar",
+				"Ping sounds",
 				"Project actions",
 				"Remember windows per screen setup",
 				"Reset tips",
@@ -3215,6 +3240,7 @@
 				"Show system objects in the object list",
 				"Show the environment in the object list",
 				"Show tours automatically",
+				"Show viewport sidebar handles",
 				"Sticky panel headers",
 				"Theme",
 				"Toolbar always on top",
@@ -3235,13 +3261,18 @@
 		},
 		"menu": {
 			"rows": [
+				"AI assistant",
 				"Allow text selection everywhere",
 				"Allow undocking on touch screens",
 				"Always show tab strip in windows",
 				"Announce new versions",
+				"Auto quality",
 				"Button hints",
+				"Chat badge",
 				"Custom theme",
+				"Customize buttons",
 				"Density",
+				"Dim the handles at rest",
 				"Dock resizes the viewport",
 				"Editor tour",
 				"First-game quest",
@@ -3256,9 +3287,11 @@
 				"Offer Enter VR in a headset browser",
 				"One-handed",
 				"Panels button",
+				"People leaving",
 				"Phone dock tab row",
 				"Phone grab handle",
 				"Phone selection toolbar",
+				"Ping sounds",
 				"Project actions",
 				"Remember windows per screen setup",
 				"Reset panel positions",
@@ -3274,6 +3307,7 @@
 				"Show system objects in the object list",
 				"Show the environment in the object list",
 				"Show tours automatically",
+				"Show viewport sidebar handles",
 				"Sticky panel headers",
 				"Theme",
 				"Toolbar always on top",
@@ -3309,6 +3343,7 @@
 				"Reverse trackpad pan",
 				"Shift+A opens the Add menu",
 				"Show helpers in Play",
+				"Show viewport sidebar handles",
 				"Trackpad gestures",
 				"Two-finger pan",
 				"Wheel diagnostics"
@@ -3357,11 +3392,11 @@
 				"Edit / Interact mode (Interact: clicks play with the scene instead of selecting)",
 				"Editor tour",
 				"Enter mesh edit mode (inside it Tab cycles Vertices/Edges/Faces; Esc exits) — on a measurement, edit its points",
-				"Enter the selected group / leave the one you are in",
+				"Enter the selected group / leave the one you are in / else search for a node to add (wired from the selected node)",
 				"Explorer: show / bring to front / hide",
 				"Fix overlaps and crossings, keeping the layout",
 				"Flip normals (faces); fill the hole (edges)",
-				"Flow Code: show / bring to front / hide",
+				"Flow code: open it in the Code window",
 				"Fly 3x faster",
 				"Fly down / up",
 				"Fly the camera (horizontal)",
@@ -3655,6 +3690,7 @@
 		},
 		"assistant": {
 			"rows": [
+				"AI assistant",
 				"Blender and other 3D tools",
 				"Coding agents",
 				"Keep sent pictures in Explorer",
@@ -3663,6 +3699,7 @@
 				"Your own GPU box"
 			],
 			"sections": [
+				"Interface",
 				"Tools & connections"
 			]
 		},
@@ -3675,6 +3712,7 @@
 				"Keep a recycle bin",
 				"Let AI agents join as guests",
 				"Peer hands",
+				"People leaving",
 				"Ping colour",
 				"Selection outline colour",
 				"Session size",
@@ -3745,6 +3783,7 @@
 				"Clear saved session",
 				"Diagnostics",
 				"Let AI agents join as guests",
+				"People leaving",
 				"Session size",
 				"Show where AI agents look",
 				"Signaling server",
@@ -3753,6 +3792,7 @@
 				"Who can unshare a file"
 			],
 			"sections": [
+				"Interface",
 				"Explorer",
 				"Save options",
 				"Connection",
@@ -3794,11 +3834,11 @@
 				"Duplicate the selection (wires between copies kept)",
 				"Edit / Interact mode (Interact: clicks play with the scene instead of selecting)",
 				"Enter mesh edit mode (inside it Tab cycles Vertices/Edges/Faces; Esc exits) — on a measurement, edit its points",
-				"Enter the selected group / leave the one you are in",
+				"Enter the selected group / leave the one you are in / else search for a node to add (wired from the selected node)",
 				"Explorer: show / bring to front / hide",
 				"Fix overlaps and crossings, keeping the layout",
 				"Flip normals (faces); fill the hole (edges)",
-				"Flow Code: show / bring to front / hide",
+				"Flow code: open it in the Code window",
 				"Fly 3x faster",
 				"Fly down / up",
 				"Fly the camera (horizontal)",
@@ -3917,11 +3957,11 @@
 				"Duplicate the selection (wires between copies kept)",
 				"Edit / Interact mode (Interact: clicks play with the scene instead of selecting)",
 				"Enter mesh edit mode (inside it Tab cycles Vertices/Edges/Faces; Esc exits) — on a measurement, edit its points",
-				"Enter the selected group / leave the one you are in",
+				"Enter the selected group / leave the one you are in / else search for a node to add (wired from the selected node)",
 				"Explorer: show / bring to front / hide",
 				"Fix overlaps and crossings, keeping the layout",
 				"Flip normals (faces); fill the hole (edges)",
-				"Flow Code: show / bring to front / hide",
+				"Flow code: open it in the Code window",
 				"Fly 3x faster",
 				"Fly down / up",
 				"Fly the camera (horizontal)",
@@ -4040,11 +4080,11 @@
 				"Duplicate the selection (wires between copies kept)",
 				"Edit / Interact mode (Interact: clicks play with the scene instead of selecting)",
 				"Enter mesh edit mode (inside it Tab cycles Vertices/Edges/Faces; Esc exits) — on a measurement, edit its points",
-				"Enter the selected group / leave the one you are in",
+				"Enter the selected group / leave the one you are in / else search for a node to add (wired from the selected node)",
 				"Explorer: show / bring to front / hide",
 				"Fix overlaps and crossings, keeping the layout",
 				"Flip normals (faces); fill the hole (edges)",
-				"Flow Code: show / bring to front / hide",
+				"Flow code: open it in the Code window",
 				"Fly 3x faster",
 				"Fly down / up",
 				"Fly the camera (horizontal)",
@@ -4381,9 +4421,10 @@
 				"Always show tab strip in windows",
 				"Animation: show / bring to front / hide",
 				"Collapse / expand the selected nodes",
+				"Customize buttons",
 				"Dock resizes the viewport",
 				"Explorer: show / bring to front / hide",
-				"Flow Code: show / bring to front / hide",
+				"Flow code: open it in the Code window",
 				"HUD editor: show / bring to front / hide",
 				"High contrast",
 				"Left sidebar: show / hide",
@@ -4399,6 +4440,7 @@
 				"Reverse trackpad pan",
 				"Right sidebar: show / hide",
 				"Shader editor: show / bring to front / hide",
+				"Show viewport sidebar handles",
 				"Spatial voice",
 				"Sticky panel headers",
 				"Timeline: show / bring to front / hide",
@@ -4436,6 +4478,7 @@
 		},
 		"hand": {
 			"rows": [
+				"Dim the handles at rest",
 				"Ghost hands",
 				"Grab style",
 				"High contrast",
@@ -4443,8 +4486,10 @@
 				"Menu hand",
 				"My hand model",
 				"One-handed",
+				"Panels button",
 				"Peer hands",
 				"Phone grab handle",
+				"Show viewport sidebar handles",
 				"Statistics card",
 				"Theme"
 			],
@@ -4529,11 +4574,13 @@
 		},
 		"ai": {
 			"rows": [
+				"AI assistant",
 				"Both grips scale the world",
 				"Cached downloads",
 				"Coding agents",
 				"Colocation probe",
 				"Compress textures (KTX2)",
+				"Dim the handles at rest",
 				"Download shared files automatically",
 				"Focus mode — maximize the area under the pointer (the viewport alone, or a docked window filling the window); again to restore",
 				"GPU fluid",
@@ -4626,7 +4673,12 @@
 				"LOD"
 			],
 			"water": [
+				"Emission",
+				"Maps",
+				"Material",
 				"Physics",
+				"Shadow",
+				"Texture",
 				"Water"
 			],
 			"scatter": [
@@ -4717,6 +4769,15 @@
 			"snap": [
 				"Transform"
 			],
+			"orbit feel": [],
+			"saved views": [],
+			"start view": [],
+			"snap to elements": [],
+			"scene track": [],
+			"selection passes through": [],
+			"this device": [
+				"Physics"
+			],
 			"zz-no-match": []
 		},
 		"light": {
@@ -4777,11 +4838,17 @@
 			"snap": [
 				"Transform"
 			],
+			"orbit feel": [],
+			"saved views": [],
+			"start view": [],
+			"snap to elements": [],
+			"scene track": [],
+			"selection passes through": [],
+			"this device": [],
 			"zz-no-match": []
 		},
 		"scene": {
 			"": [
-				"Advanced",
 				"Background",
 				"Baked light",
 				"Camera",
@@ -4790,93 +4857,58 @@
 				"Fog",
 				"Grid",
 				"Level of detail",
+				"Levels",
 				"Music",
-				"Orbit feel",
-				"Overrides — this device",
 				"Physics",
 				"Play",
 				"Quality",
-				"Saved views",
 				"Scene look",
-				"Scene track (shared)",
-				"Selection passes through",
+				"Selection outline",
 				"Shader materials",
-				"Sky image (HDRI)",
-				"Snap to elements",
+				"Sky image",
 				"Snapping",
-				"Start view",
-				"This device",
-				"View",
-				"Viewport — this device"
-			],
-			"quality": [
-				"Baked light",
-				"Quality",
-				"Scene look",
-				"Shader materials"
+				"View"
 			],
 			"environment": [
+				"Background",
 				"Baked light",
 				"Components",
 				"Environment",
+				"Fog",
 				"Scene look",
 				"Shader materials",
-				"Sky image (HDRI)"
+				"Sky image"
 			],
-			"sky image (hdri)": [
+			"sky image": [
+				"Background",
 				"Components",
 				"Environment",
-				"Sky image (HDRI)"
+				"Fog",
+				"Sky image"
 			],
 			"components": [
+				"Background",
 				"Components",
 				"Environment",
-				"Sky image (HDRI)"
+				"Fog",
+				"Sky image"
 			],
-			"music": [
+			"background": [
+				"Background",
+				"Components",
+				"Environment",
+				"Fog",
 				"Music",
 				"Scene track (shared)",
+				"Sky image",
 				"This device"
 			],
-			"scene track (shared)": [
-				"Music",
-				"Scene track (shared)",
-				"This device"
-			],
-			"this device": [
-				"Music",
-				"Overrides — this device",
-				"Scene track (shared)",
-				"This device",
-				"View",
-				"Viewport — this device"
-			],
-			"view": [
-				"Advanced",
-				"Baked light",
-				"Camera",
-				"Orbit feel",
-				"Overrides — this device",
-				"Play",
-				"Saved views",
-				"Scene look",
-				"Selection passes through",
-				"Shader materials",
-				"Snap to elements",
-				"Snapping",
-				"Start view",
-				"View",
-				"Viewport — this device"
-			],
-			"viewport — this device": [
-				"Overrides — this device",
-				"View",
-				"Viewport — this device"
-			],
-			"overrides — this device": [
-				"Overrides — this device",
-				"View",
-				"Viewport — this device"
+			"fog": [
+				"Background",
+				"Components",
+				"Environment",
+				"Fog",
+				"Sky image"
 			],
 			"scene look": [
 				"Baked light",
@@ -4896,6 +4928,63 @@
 				"Scene look",
 				"Shader materials"
 			],
+			"play": [
+				"Baked light",
+				"Levels",
+				"Music",
+				"Physics",
+				"Play",
+				"Scene look",
+				"Scene track (shared)",
+				"Shader materials",
+				"This device"
+			],
+			"levels": [
+				"Level of detail",
+				"Levels"
+			],
+			"physics": [
+				"Camera",
+				"Orbit feel",
+				"Physics",
+				"Saved views",
+				"Start view"
+			],
+			"music": [
+				"Music",
+				"Scene track (shared)",
+				"This device"
+			],
+			"level of detail": [
+				"Level of detail"
+			],
+			"selection outline": [
+				"Selection outline",
+				"Selection passes through"
+			],
+			"quality": [
+				"Baked light",
+				"Quality",
+				"Scene look",
+				"Shader materials"
+			],
+			"view": [
+				"Baked light",
+				"Camera",
+				"Orbit feel",
+				"Overrides — this device",
+				"Play",
+				"Saved views",
+				"Scene look",
+				"Selection outline",
+				"Selection passes through",
+				"Shader materials",
+				"Snap to elements",
+				"Snapping",
+				"Start view",
+				"View",
+				"Viewport — this device"
+			],
 			"camera": [
 				"Baked light",
 				"Camera",
@@ -4909,27 +4998,6 @@
 				"View",
 				"Viewport — this device"
 			],
-			"orbit feel": [
-				"Camera",
-				"Orbit feel",
-				"Saved views",
-				"Start view"
-			],
-			"start view": [
-				"Camera",
-				"Orbit feel",
-				"Saved views",
-				"Start view"
-			],
-			"saved views": [
-				"Camera",
-				"Orbit feel",
-				"Saved views",
-				"Start view"
-			],
-			"level of detail": [
-				"Level of detail"
-			],
 			"grid": [
 				"Grid",
 				"Snap to elements",
@@ -4939,45 +5007,6 @@
 				"Grid",
 				"Snap to elements",
 				"Snapping"
-			],
-			"snap to elements": [
-				"Snap to elements",
-				"Snapping"
-			],
-			"physics": [
-				"Camera",
-				"Orbit feel",
-				"Physics",
-				"Saved views",
-				"Start view"
-			],
-			"play": [
-				"Baked light",
-				"Music",
-				"Physics",
-				"Play",
-				"Scene look",
-				"Scene track (shared)",
-				"Shader materials",
-				"This device"
-			],
-			"background": [
-				"Background",
-				"Music",
-				"Scene track (shared)",
-				"This device"
-			],
-			"fog": [
-				"Fog"
-			],
-			"advanced": [
-				"Advanced",
-				"Physics",
-				"Selection passes through"
-			],
-			"selection passes through": [
-				"Advanced",
-				"Selection passes through"
 			],
 			"position": [
 				"Snap to elements",
@@ -4993,9 +5022,11 @@
 				"Snapping"
 			],
 			"color": [
+				"Background",
 				"Components",
 				"Environment",
-				"Sky image (HDRI)"
+				"Fog",
+				"Sky image"
 			],
 			"colour": [
 				"Baked light",
@@ -5020,7 +5051,7 @@
 			],
 			"intensity": [],
 			"water": [
-				"Advanced",
+				"Selection outline",
 				"Selection passes through"
 			],
 			"lod": [
@@ -5032,21 +5063,25 @@
 				"Viewport — this device"
 			],
 			"light": [
+				"Background",
 				"Baked light",
 				"Components",
 				"Environment",
+				"Fog",
 				"Level of detail",
 				"Overrides — this device",
 				"Scene look",
 				"Shader materials",
-				"Sky image (HDRI)",
+				"Sky image",
 				"View",
 				"Viewport — this device"
 			],
 			"sky": [
+				"Background",
 				"Components",
 				"Environment",
-				"Sky image (HDRI)"
+				"Fog",
+				"Sky image"
 			],
 			"origin": [
 				"Grid",
@@ -5057,6 +5092,46 @@
 				"Grid",
 				"Snap to elements",
 				"Snapping"
+			],
+			"orbit feel": [
+				"Camera",
+				"Orbit feel",
+				"Saved views",
+				"Start view"
+			],
+			"saved views": [
+				"Camera",
+				"Orbit feel",
+				"Saved views",
+				"Start view"
+			],
+			"start view": [
+				"Camera",
+				"Orbit feel",
+				"Saved views",
+				"Start view"
+			],
+			"snap to elements": [
+				"Snap to elements",
+				"Snapping"
+			],
+			"scene track": [
+				"Music",
+				"Scene track (shared)",
+				"This device"
+			],
+			"selection passes through": [
+				"Selection outline",
+				"Selection passes through"
+			],
+			"this device": [
+				"Music",
+				"Overrides — this device",
+				"Quality",
+				"Scene track (shared)",
+				"This device",
+				"View",
+				"Viewport — this device"
 			],
 			"zz-no-match": []
 		}

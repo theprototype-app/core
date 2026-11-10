@@ -8,7 +8,7 @@ import { get } from 'svelte/store';
 import { phaseBegin, phaseEnd, PHASE_INPUT, PHASE_FLOW, PHASE_MODULES, PHASE_PHYSICS } from './perf/perfMarks.js'; // 34 PF: an import-free leaf
 import { flowGraphs, mutedFlowObjects, syncedAnimations, flowValues, flowTriggers, SCENE_GRAPH, startGraphMirror, allNodes, allEdges, flowPaused, runtimeGraph, orphanGraphIds } from '../stores/flowStore';
 // 21-F2: `isLocked` is the LOCAL play substate the recipe gate reads — see gamePlayActive
-import { objectsGroup, isLocked, sceneRevision } from '../stores/sceneStore';
+import { objectsGroup, isLocked, sceneRevision, globalScene } from '../stores/sceneStore';
 import { peers, showToast, showInfoToast, dismissToastById} from '../stores/appStore';
 import { animationTypes, findNodeSpec } from './nodeCatalog';
 // 21-E7.6: hudKinds is a leaf (it reads only moduleHudKinds, itself svelte/store-only)
@@ -73,8 +73,14 @@ import {
 	playMoveSpeed,
 	setCharControl,
 	setPlayMoveSpeed,
-	DEFAULT_FLY_SPEED
+	DEFAULT_FLY_SPEED,
+	localPlayerBody
 } from './charController';
+import { gameFeelActive } from './gameFeel'; // 78 F10: a leaf (sceneStore + svelte/store)
+// 78 F2/F3/F8: the pure halves of On Hover, Hover Animate and Toggle Animation (a leaf)
+import { hoverEnvelope, ringLength, OVER_WINDOW, doorApply, doorPoseAt, poseIndexOf } from './hoverCore.js';
+import { playGameSound, isGameSound } from './gameSfx';
+import { bodyDistance } from './playReach.js'; // 78 F10: Proximity to the player's body (a leaf)
 // 27-B: recovery paths report through the diagnostics ring instead of console.log,
 // so a user can hand over what happened (hardening audit H4). A zero-import leaf.
 import { log } from './diagnostics';
@@ -89,7 +95,7 @@ import { sceneStorageKey, readStored, writeStored } from './gameStorage';
 import { GAME_FEEL_ACTIONS, runGameFeelAction, updateGameMusicNodes, primeGameFeelActions } from './gameFeelActions';
 // 34 R2 (T3): the game kit — its action nodes act on the stamp edge here, its document ticks here
 import { KIT_ACTION_TYPES, runKitNodeAction, installKitNodes } from './kit/nodes.js';
-import { tickKit, primeKitRuntime, kitAuthorityId } from './kit/runtime.js';
+import { tickKit, primeKitRuntime, kitAuthorityId, kit } from './kit/runtime.js';
 /** 34 R3: behaviours/app.js, primed in startFlowRuntime @type {any} */
 let behavioursRef = null;
 // 31 (Stars Room): a scene's own settings rows (31-game-shell's leaf), and the pointing switch
@@ -97,7 +103,22 @@ import { registerGameSetting, gameSettingValue } from './gameSettings';
 import { setPointGrabEnabled } from './pointGrab';
 import { spawnedFromOf } from './transientObjects'; // 31: a copy answers to its template (a leaf)
 import { pathCaptureNode } from './pathCaptureState'; // fix-batch-2: a leaf
+import { animateInEditor, EDITOR_MOTION_TYPES } from './editorMotion'; // 78 F6: a leaf
+import { publishLiveStates, liveStatesWanted } from './nodeLiveState'; // 78 F7: a leaf
+import { noteCheck, lastCheck, whyCardLine, whySentence, WHY_TYPES } from './triggerWhy.js'; // 78 F26: a leaf
+import { applyPatrolOnPath, pathPreviewHeld } from './path/pathRuntime.js'; // 78 F4: a three leaf
 import { applyRotor, applyFlowFloat } from './sim/motionNodes.js'; // 36-fb F25/F24 (a three leaf)
+// 85 N1/N2/N4: Oscillate, the tweens and the light nodes (three leaves over a pure core)
+import { applyOscillate, applyTween, tweenPosition, noteTweenRead, tickTweenNodes } from './motion/tweenNodes.js';
+import { applyLightSwitch, applyLightIntensity, applyLightCycle, pruneLightNodes } from './motion/lightNodes.js';
+import { applyHighlight, applyPress, prunePressNodes } from './motion/pressNodes.js'; // 85 I2
+import { isHovered } from './hoverState.js'; // 85 I2
+import { openEvent } from './motion/tweenCore.js';
+// 85 N5: Wind Sway + Flowing Water (vertex deformers + map scroll, a three leaf)
+import { applyWindSway, applyWaterFlow, pruneSwayNodes } from './motion/swayNodes.js';
+// 85 N3: Ambient Animal (a three leaf over motionNodes' Wander) + where the players are (stores only)
+import { applyAmbientAnimal, ambientRead, tickAmbientNodes } from './motion/ambientNodes.js';
+import { playerPositions } from './motion/players.js';
 // 40 F15: general-purpose motion (a three leaf + its pure core)
 import {
 	applyFollowPath,
@@ -131,6 +152,7 @@ import { newTracker, trackPose } from './avatars/locomotion.js'; // 57 M3: a str
 // animationPreview and this module statically
 /** @type {any} */ let seqRef = null;
 /** @type {any} */ let physicsRef = null;
+/** @type {any} */ let playSettingsRef = null; // 78 F11 (primed: playSettings reaches module code)
 /** @type {any} */ let jointsRef = null;
 /** @type {any} */ let spawnerRef = null;
 /** B6: which On Rest nodes have already fired for the current rest episode
@@ -532,6 +554,9 @@ const suspended = new Set();
 /** fix-batch-2: the Path patrol node placing waypoints (paused while it does) @type {string | null} */
 let capturingPathNode = null;
 pathCaptureNode.subscribe((id) => (capturingPathNode = id));
+/** 78 F6: the viewer's "Animate in editor" switch (off = motion nodes rest outside Play) */
+let editorMotionOn = true;
+animateInEditor.subscribe((on) => (editorMotionOn = on));
 
 /**
  * 24-A A4: the effects a SUSPENDED object still gets.
@@ -553,7 +578,8 @@ pathCaptureNode.subscribe((id) => (capturingPathNode = id));
  * custom nodes (all of them may write a pose).
  */
 // 36-fb F25: a rotor on a DYNAMIC body during a run drives it with torque (no pose write)
-const POSE_FREE_EFFECTS = new Set(['setcolor', 'setuniform', 'deviceparam', 'notetrigger', 'rotor']);
+// 85 N4: the light nodes write intensity / colour only
+const POSE_FREE_EFFECTS = new Set(['setcolor', 'setuniform', 'deviceparam', 'notetrigger', 'rotor', 'lightswitch', 'lightintensity', 'lightcycle', 'windsway', 'waterflow', 'highlight']);
 
 /** @param {any} object */
 function captureBase(object) {
@@ -1006,12 +1032,27 @@ export function contactOtherOf(nodeId) {
 	return contactOthers.has(nodeId) ? contactOthers.get(nodeId) : null;
 }
 
+/** 78: test/debug view — a node's value NOW, evaluated with a live context (the suites read a
+ * Proximity this way). @param {string} nodeId @param {string} [handle] a named output */
+export function nodeValueOf(nodeId, handle) {
+	const node = nodeById(nodes, nodeId);
+	if (!node) return null;
+	const time = synced ? (sessionNow() % 86400000) / 1000 : performance.now() / 1000;
+	// 78: `handle` reads one named output of a handle-map node (Toggle Animation's pose)
+	return unwrapHandle(evalNode(node, nodes, edges, time, new Set(), runtimeCtx()), handle ? { sourceHandle: handle } : {});
+}
+
 /**
  * 36 X6: a contact node's `filter` (an object wired into it) — fire only when the
  * other body is that object, or a transient COPY of it (the reachesObjectSelector rule).
  * No filter wired = every contact passes. @param {any} data resolved inputs @param {string} other
  */
 function contactPasses(data, other) {
+	// 78 F10: `who` — anything (the default: objects AND the player), only the player, or only
+	// objects. The player arrives as other = 'player' (physics' PLAYER_OTHER).
+	const who = data?.who;
+	if (who === 'player' && other !== 'player') return false;
+	if (who === 'objects' && other === 'player') return false;
 	const filter = data?.filter;
 	if (typeof filter !== 'string' || filter === '' || filter === '-None-') return true;
 	return other === filter || (!!other && spawnedFromOf(other) === filter);
@@ -1080,6 +1121,56 @@ function updateGameSettingNodes() {
 	}
 }
 
+// --- 78 F12: a Collect pickup node with "Collect on touch" registers its pickup for touch ---------
+/** node id -> {sig, id, off} @type {Map<string, {sig: string, id: string, off: () => void}>} */
+const touchRegistrations = new Map();
+let touchNodesSeen = /** @type {any[] | null} */ (null);
+let touchCheckedAt = 0;
+
+/**
+ * 78 F12: TOUCH-COLLECT WITHOUT CODE. kit.pickups takes a pickup a player walks over only when it
+ * is REGISTERED (kit.pickups.register — code, in a behaviour's on.load), so a scene built from
+ * nodes alone never collected a gem by walking. A Collect pickup node with "Collect on touch" on
+ * (the default) registers its pickup here — the object wired into `pickup`, else the object whose
+ * graph holds the node (the kit's implicit-owner rule) — with the node's score and respawn. Every
+ * peer runs the same graph, so every peer registers the same pickups (the register contract), and
+ * each peer's touch then asks only for its own player (kit runtime's touchPickups). Reconciled
+ * when the graph changes, and re-checked each second so a kit reset (a scene clear) re-registers.
+ * @param {number} time @param {any} ctx
+ */
+function updateTouchPickupNodes(time, ctx) {
+	const now = performance.now();
+	if (nodes === touchNodesSeen && now - touchCheckedAt < 1000) return;
+	touchNodesSeen = nodes;
+	touchCheckedAt = now;
+	const pickups = kit.impls.pickups?.extra;
+	if (!pickups?.register) return;
+	const live = new Set(pickups.ids());
+	const seen = new Set();
+	for (const node of nodes) {
+		if (node.type !== 'kit-pickups-collect') continue;
+		const d = resolveInputs(node, nodes, edges, time, ctx);
+		if (d.touch === false || d.touch === 0 || d.touch === 'false') continue;
+		const wired = typeof d.pickup === 'string' && d.pickup && d.pickup !== '-None-' ? d.pickup : null;
+		const owner = node.__graph && node.__graph !== SCENE_GRAPH ? node.__graph : null;
+		const id = wired ?? owner;
+		if (!id) continue;
+		seen.add(node.id);
+		const score = Number.isFinite(Number(d.score)) ? Number(d.score) : 1;
+		const respawn = Math.max(0, Number(d.respawn) || 0);
+		const sig = id + '|' + score + '|' + respawn;
+		const held = touchRegistrations.get(node.id);
+		if (held && held.sig === sig && live.has(id)) continue;
+		held?.off();
+		touchRegistrations.set(node.id, { sig, id, off: pickups.register({ id, score, respawn }) });
+	}
+	for (const [nodeId, held] of touchRegistrations) {
+		if (seen.has(nodeId)) continue;
+		held.off();
+		touchRegistrations.delete(nodeId);
+	}
+}
+
 /**
  * THE POINT GRAB NODE: while any one reads `enabled` false, a player cannot pick objects up by
  * pointing at them (the VR grip ray, the desktop carry) — only a hand touching them moves them.
@@ -1094,6 +1185,21 @@ function updatePointGrabNodes(time, ctx) {
 		if (data.enabled === false || data.enabled === 0) enabled = false;
 	}
 	setPointGrabEnabled(enabled);
+}
+
+/**
+ * 85 I1: the Grabbable node that makes `uuid` carryable without a simulation — wired to it through an
+ * Object Selector, named as its direct target, or unwired inside its own graph — as its data, or null.
+ * playInteract asks this on a press and per frame for the reticle. @param {string} uuid
+ */
+export function kinematicGrab(uuid) {
+	if (!uuid || muted.includes(uuid)) return null;
+	for (const node of nodes) {
+		if (node.type !== 'grabbable') continue;
+		const t = node.data?.target;
+		if ((typeof t === 'string' && t === uuid) || implicitOwnerOf(node) === uuid || reachesObjectSelector(node.id, uuid)) return node.data ?? {};
+	}
+	return null;
 }
 
 /**
@@ -1860,7 +1966,7 @@ function updateGameNodes(time, ctx) {
 			// 30b (core-games): a banner, a sound, a burst or a buzz — LOCAL on every peer from
 			// the replicated stamp, inside the actionSeenAt family above like storevalue (a
 			// fresh node adopting an old stamp must not announce on connect)
-			runGameFeelAction(type, data);
+			runGameFeelAction(type, data, node);
 		} else if (type === 'storevalue') {
 			// 30 P4: a LOCAL write on the stamp edge, inside the actionSeenAt family above (a
 			// fresh node adopting an old stamp must not overwrite a best on connect). It
@@ -2003,6 +2109,40 @@ function updateGameNodes(time, ctx) {
 	}
 }
 
+/** 78 F13: what On Play start / stop last saw — `me` (this peer plays) and `session` (anyone in
+ * this session plays); null until the first tick, which takes the state without pulsing (arriving
+ * in a session that already plays is not "Play began") */
+const playEdgeSeen = { me: /** @type {boolean | null} */ (null), session: /** @type {boolean | null} */ (null) };
+
+/**
+ * 78 F13: ON PLAY START / ON PLAY STOP. Pressing Play changed no game state, so "reset the score
+ * when Play begins" had no event to hang on (Game Start, now Start camera, never pulsed). Each peer
+ * derives both edges itself: `me` from its own play store, `session` from the replicated play
+ * presence (gamePresence.anyonePlaying) — so the pulse is LOCAL (replicate: false, the ongamestate
+ * rule: every peer reaches the transition itself and a broadcast would count it N times).
+ * @param {any} _time @param {any} _ctx
+ */
+function updatePlayEdgeNodes(_time, _ctx) {
+	const me = get(isLocked) === true;
+	const session = me || !!presenceRef?.anyonePlaying?.();
+	/** @type {[('me' | 'session'), boolean][]} */
+	const now = [
+		['me', me],
+		['session', session]
+	];
+	for (const [who, on] of now) {
+		const before = playEdgeSeen[who];
+		playEdgeSeen[who] = on;
+		if (before === null || before === on) continue;
+		const type = on ? 'onplaystart' : 'onplaystop';
+		for (const node of nodes) {
+			if (node.type !== type) continue;
+			if ((node.data?.who === 'me' ? 'me' : 'session') !== who) continue;
+			applyNodeTrigger(node.id, logicNow(), false);
+		}
+	}
+}
+
 /** A late joiner arrives with the state ALREADY set, so there is no transition to react
  * to — this is the one-shot catch-up the `gamestart` node needs to work for them too.
  * Called once the graph and the game state have both landed. */
@@ -2079,6 +2219,42 @@ function playerCodeSettings(node, settings, time) {
 	return /** @type {T} */ (merged.settings);
 }
 
+/** 78-int (1.64): the F11 default walker is OFF for 1.64 — on rapier's character controller it rested 1-3 cm and at
+ * times up to ~30 cm under the floor (u2 avatar-feet, walker-step-off), so walk mode with no controller node keeps
+ * 1.63's eye-height pin. The rest of F11 stays (an all-static level still runs its world on Play). Back on with the
+ * fix-batch card "default walker on the KCC" */
+const DEFAULT_WALKER_ON = false;
+/** 78 F11: the default walker's settings — a standing person, the built-in speed */
+const DEFAULT_WALKER = Object.freeze({ mode: /** @type {'walk'} */ ('walk'), speed: DEFAULT_FLY_SPEED, jumpHeight: 1.1, gravity: true });
+/** the play camera's base group height (Player.svelte): play.eyeHeight is LOCAL to it */
+const PLAY_BASE_Y = 0.9;
+
+/**
+ * 78 F11: WALK MODE WITHOUT A CHARACTER CONTROLLER NODE GETS ONE. While THIS peer plays on its own
+ * physics world (the run it steps — an all-static level starts one on Play) and the scene walks
+ * (flying is off, the 37 R24 default), the player is the walker — gravity, a jump, standing on
+ * boxes and climbing steps — instead of the eye-height pin that stood on the flat ground plane.
+ * Everything else keeps the old path byte-for-byte: no world here (a joiner, the editor), a
+ * scene that flies, a module that publishes its own play contract (the dungeon walks its raster).
+ * `sourceNodeId: 'default'` marks it. @returns {any}
+ */
+function defaultWalker() {
+	if (!DEFAULT_WALKER_ON) return null;
+	if (get(isLocked) !== true || !playSettingsRef || !physicsRef?.isInitiator?.()) return null;
+	/** @type {any} */
+	const scene = get(globalScene);
+	if (!scene) return null;
+	try {
+		if (playSettingsRef.playPublishers(scene).length) return null;
+		const play = playSettingsRef.resolvePlaySettings(scene);
+		if (!play.grounded) return null;
+		const eye = Number(play.eyeHeight);
+		return { ...DEFAULT_WALKER, eyeHeight: (Number.isFinite(eye) ? eye : 0.8) + PLAY_BASE_Y, sourceNodeId: 'default' };
+	} catch {
+		return null;
+	}
+}
+
 /** @param {number} time @param {any} ctx */
 function updateCharNodes(time, ctx) {
 	// 1. THE DECLARATION. charcontroller is not an action and has no trigger: it is
@@ -2087,7 +2263,8 @@ function updateCharNodes(time, ctx) {
 	// to a threlte task and a subscribed component).
 	const declarations = nodes.filter((/** @type {any} */ n) => n.type === 'charcontroller');
 	if (!declarations.length) {
-		setCharControl(null);
+		// 78 F11: walking with no controller node gets the DEFAULT walker (see defaultWalker)
+		setCharControl(defaultWalker());
 		charMultipleWarned = false;
 	} else {
 		// which one wins has to be DECIDED THE SAME WAY ON EVERY PEER or two players get
@@ -2209,6 +2386,8 @@ function stampOfSource(edge, ctx, seen) {
 	// 36 (U10): a NAMED event output keeps its own log entry, `<node>#<output>` (a behaviour's
 	// `this.emit('holeSunk')`) — several events on one node, each its own stamp
 	if (edge.sourceHandle && source?.type === 'behaviour') return ctx?.triggers?.[edge.source + '#' + edge.sourceHandle]?.lastT ?? null;
+	// 78 F3: a Toggle Animation's opened / closed are its own entries too (derived on every peer)
+	if (source?.type === 'toggleanim') return edge.sourceHandle === 'opened' || edge.sourceHandle === 'closed' ? (ctx?.triggers?.[edge.source + '#' + edge.sourceHandle]?.lastT ?? null) : null;
 	return ctx?.triggers?.[edge.source]?.lastT ?? null;
 }
 
@@ -2403,7 +2582,7 @@ function targetUuidOf(edge) {
 
 /** 85b R10: the effect nodes that may name their object directly (`data.target`, an object uuid) — a
  * button drives a door with no Object Selector chain. Absent / '' = the old rules, byte-identical. */
-export const DIRECT_TARGET_TYPES = new Set(['setcolor', 'visibility', 'spin']);
+export const DIRECT_TARGET_TYPES = new Set(['setcolor', 'visibility', 'spin', 'oscillate', 'moveto', 'rotateto', 'scaleto', 'lightswitch', 'lightintensity', 'lightcycle', 'windsway', 'waterflow', 'ambientanimal', 'grabbable', 'highlight', 'pressbutton', 'sitspot']); // 85 N1-N5, I1-I3 join
 /** @param {any} node @returns {string | null} */
 function directTargetOf(node) {
 	if (!DIRECT_TARGET_TYPES.has(node?.type)) return null;
@@ -2590,6 +2769,8 @@ export const valueTypes = [
 	'onclap', // 31: two hands brought together — a handle map: __default pulse + point/byMe
 	'gamesetting', // 31: a scene's own settings row, read on this device
 	'onenter', 'onexit', // CL-C: sensor overlap triggers
+	'onhover', // 78 F2: a pointer, a tap or a laser over the object (the On Click window)
+	'toggleanim', // 78 F3: isOpen / moving / pose / opened / closed beside its effect output
 	'velocity', // CL-C: live speed readout (m/s)
 	'measure', // B6: an object's top / bottom / height / y / speed
 	'animstate', // 17-E F3: the readable half of animfinished
@@ -2600,6 +2781,7 @@ export const valueTypes = [
 	'hudinput', // 21-D4: the HUD as a SOURCE - what the player set on a slider/toggle/etc
 	// 21-D6 the game shell
 	'ongamestate', 'getvariable', 'gametime',
+	'onplaystart', 'onplaystop', // 78 F13: Play began / ended (session or me)
 	'storedvalue', // 30 P4: what Store Value saved on this device
 	// 24-A A4: `peervariable` was MISSING here since 21-G4, and the omission was silent in
 	// every direction that is easy to look at — it has an OUTPUT type in flowSockets, an
@@ -3161,6 +3343,13 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 		}
 		case 'proximity': {
 			const pa = pointOf(input('a', d.a), ctx);
+			// 78 F10: `to: player` measures to THIS peer's player — its body (feet..eye, the reach
+			// rule), so a pad on the floor is near a standing player. LOCAL by design: each peer
+			// reads its own player (the gamepadaxis rule); a SHARED reaction goes through On Enter.
+			if (d.to === 'player') {
+				const body = gameFeelActive() ? localPlayerBody() : null;
+				return pa && body ? bodyDistance(pa, body.eye, body.feetY) <= num(d.radius ?? 3) : false;
+			}
 			const pb = pointOf(input('b', d.b), ctx);
 			return pa && pb ? pa.distanceTo(pb) <= num(d.radius ?? 3) : false;
 		}
@@ -3172,7 +3361,27 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			// 36 audit: listed as a value source since A3 but never evaluated, so a wire from
 			// it read undefined everywhere but its own card
 			return hudTimerRemaining(node, { ...d, duration: input('duration', d.duration) }, time, ctx);
+		case 'onhover': {
+			// 78 F2: the On Click window; an "over" node holds while its re-stamps keep coming
+			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
+			const dt = trig ? time - trig.lastT : Infinity;
+			const hold = d.on === 'over' ? Math.max(OVER_WINDOW, num(d.pulse ?? 0.3)) : num(d.pulse ?? 0.3);
+			return dt >= 0 && dt < hold ? 1 : 0;
+		}
+		case 'toggleanim': {
+			// 78 F3: the door's state (computed where it is posed, read here a frame later)
+			const door = doors.get(node.id);
+			const pulse = (/** @type {string} */ name) => {
+				const trig = ctx && ctx.triggers ? ctx.triggers[node.id + '#' + name] : null;
+				const dt = trig ? time - trig.lastT : Infinity;
+				return dt >= 0 && dt < 0.3 ? 1 : 0;
+			};
+			const isOpen = !!door && door.st.to !== 0;
+			return { __handles: { isOpen, moving: !!door?.moving, pose: door ? door.st.to : 0, opened: pulse('opened'), closed: pulse('closed') }, __default: isOpen };
+		}
 		case 'hudbutton': // 36 / DEVX #22: the press is the onclick pulse window — a wire
+		case 'onplaystart': // 78 F13: local pulses, derived on every peer (updatePlayEdgeNodes)
+		case 'onplaystop':
 		case 'ongamestate': // into a module input or a Math read undefined before (silent)
 		case 'onclick': {
 			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
@@ -3692,6 +3901,13 @@ function nextTriggerLog(map, nodeId, t, walkId, walkHandle, touched) {
 				next[target.id] = { count: flips + 1, lastT: t };
 			} else if (handle === 'set' || handle === 'reset')
 				next[target.id] = { count: 0, lastT: t };
+		} else if (TOGGLE_TWEEN_TYPES.has(target.type)) {
+			// 85 N2/N4: a tween's / a light switch's `toggle` is the Latch's toggle — parity counted
+			// here (a stamp cannot carry it), cleared by trigger / back, which re-base it
+			if (handle === 'toggle') {
+				const held = next[target.id];
+				next[target.id] = { count: (held?.count ?? 0) + 1, lastT: t };
+			} else if (handle === 'trigger' || handle === 'back') next[target.id] = { count: 0, lastT: t };
 		} else if (target.type === 'random') {
 			// B6 shipped `reroll` as a DEAD input, and this is where it died: the roll
 			// reads `ctx.triggers[<the random node>]`, and NOTHING ever wrote an entry
@@ -3825,6 +4041,28 @@ export function fireSequenceEvent(seqId, seqName, name) {
 }
 
 /**
+ * 78 F4: a walker on a Path object ARRIVED at a point carrying an `event` — pulse every On Path
+ * Event node listening for it (`path` empty = any path, `event` empty = any event). LOCAL on
+ * every peer, like fireSequenceEvent: each peer walks the same schedule and stamps the SAME
+ * arrival moment (`at`, on the trigger clock), so the pulse agrees without a message.
+ * @param {string} pathUuid @param {string} name @param {number} at
+ */
+export function firePathEvent(pathUuid, name, at) {
+	const want = String(name ?? '').trim().toLowerCase();
+	let fired = 0;
+	nodes.forEach((node) => {
+		if (node.type !== 'onpathevent') return;
+		const path = String(node.data?.path ?? '').trim();
+		if (path && path !== '-None-' && path !== pathUuid) return;
+		const ev = String(node.data?.event ?? '').trim().toLowerCase();
+		if (ev && ev !== want) return;
+		applyNodeTrigger(node.id, at, false);
+		fired++;
+	});
+	return fired;
+}
+
+/**
  * A1: a module fired one of its own EVENT nodes. `fireObjectClick`'s body with the
  * target filter swapped for a caller-supplied match, ending in the same replicated
  * applyNodeTrigger — a module event is a real event on ONE peer, not a derivation,
@@ -3850,12 +4088,22 @@ export function fireModuleTrigger(type, match, opts) {
 	return fired;
 }
 
+/** @param {string} uuid */
 export function fireObjectClick(uuid) {
 	let fired = 0; // 30b: how many On Click nodes this reached (additive return)
+	// 85 I3: local click listeners (a Sit Spot sits THIS player down) — a leaf flowRuntime may not import
+	for (const hook of clickHooks) {
+		try {
+			if (hook(uuid)) fired++;
+		} catch (error) {
+			console.warn('click hook:', error);
+		}
+	}
 	nodes.forEach((node) => {
 		if (node.type !== 'onclick') return;
 		// H1: an unwired OnClick inside the clicked object's own graph also fires
 		if (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid) {
+			noteCheck(node.id, { who: objectNameOf(uuid) ?? 'an object', fired: true }); // 78 F26
 			// 21-G4: a perPlayer On Click keeps its pulse LOCAL — that one bit is the
 			// whole per-player collectible (see replicatesPulse)
 			applyNodeTrigger(node.id, syncedNow(), replicatesPulse(node));
@@ -3884,12 +4132,443 @@ export function fireObjectGrab(uuid) {
 	return fired;
 }
 
+// ---- 78 F2: ON HOVER ---------------------------------------------------------------------------
+//
+// A pointer over the object (Interact, or Play's crosshair), a phone TAP (tap = hover) or a VR
+// laser — sampled by hoverInput.js at <= 15 Hz on the objects some On Hover node watches, with a
+// 120 ms hysteresis. Each edge is a STAMP: replicated for `who: anyone` (every peer's graph sees
+// it — the bell swings everywhere), kept on this peer for `who: me`. Nothing is streamed.
+
+/** node id -> the last time it fired (its cooldown) @type {Map<string, number>} */
+const hoverFiredAt = new Map();
+/** @type {{nodes: any, edges: any, set: Set<string>}} */
+let hoverTargetCache = { nodes: null, edges: null, set: new Set() };
+let hoverInputStarted = false;
+
+/** the objects some On Hover node watches (its owner, or the Object Selectors it reaches) @returns {Set<string>} */
+export function hoverTargetUuids() {
+	if (hoverTargetCache.nodes === nodes && hoverTargetCache.edges === edges) return hoverTargetCache.set;
+	/** @type {Set<string>} */
+	const set = new Set();
+	for (const node of nodes) {
+		// 78-int (85 Q2 / Q7): an unwired Highlight glows under THIS person's pointer — the same
+		// sampler watches its object, and publishes what the mouse / tap is over into hoverState
+		const highlight = node.type === 'highlight' && !edgesInto(edges, node.id).some((e) => e.targetHandle === 'on');
+		if (node.type !== 'onhover' && !highlight) continue;
+		const owner = implicitOwnerOf(node);
+		if (owner) set.add(owner);
+		// every Object Selector the node reaches (directly or through a Hover Animate)
+		const seen = new Set([node.id]);
+		const stack = [node.id];
+		while (stack.length) {
+			const cur = stack.pop();
+			for (const edge of edges) {
+				if (edge.source !== cur || seen.has(edge.target)) continue;
+				const target = nodeById(nodes, edge.target);
+				seen.add(edge.target);
+				if (target?.type === 'objectselector') {
+					const sel = target.data?.selected;
+					if (sel && sel !== '-None-' && !muted.includes(sel)) set.add(sel);
+				} else stack.push(edge.target);
+			}
+		}
+	}
+	hoverTargetCache = { nodes, edges, set };
+	if (set.size && !hoverInputStarted) {
+		hoverInputStarted = true;
+		// primed: hoverInput imports this module (the vrGameInput shape)
+		import('./hoverInput.js').then((m) => m.ensureHoverInput()).catch((error) => console.warn('hover input failed to start', error));
+	}
+	return set;
+}
+
+/**
+ * The watched object a ray meets first — the nearest VISIBLE hit in the scene (a wall in front
+ * hides the bell), climbed to the object an On Hover node watches. The pointer, the tap and the
+ * VR laser all resolve through this. @param {any} ray a THREE.Raycaster @returns {string | null}
+ */
+export function hoverTargetAlong(ray) {
+	const watched = hoverTargetUuids();
+	if (!watched.size || !sceneObjects) return null;
+	let hits = [];
+	try {
+		hits = ray.intersectObject(sceneObjects, true);
+	} catch {
+		return null;
+	}
+	for (const hit of hits) {
+		let visible = true;
+		for (let o = hit.object; o && o !== sceneObjects; o = o.parent) if (o.visible === false) visible = false;
+		if (!visible || hit.object?.userData?.helper || hit.object?.isLine || hit.object?.isPoints) continue;
+		for (let o = hit.object; o && o !== sceneObjects; o = o.parent) if (watched.has(o.uuid)) return o.uuid;
+		return null; // something else is in front
+	}
+	return null;
+}
+
+/**
+ * A hover edge on `uuid`: 'enter' (the pointer arrived), 'leave' (it went, after the
+ * hysteresis), 'over' (the re-stamp while it stays). Pulses the On Hover nodes watching it whose
+ * `on` matches; `who: me` keeps the pulse on this peer. Returns how many fired.
+ * @param {string} uuid @param {'enter'|'leave'|'over'} phase @returns {number}
+ */
+export function fireObjectHover(uuid, phase) {
+	let fired = 0;
+	const now = syncedNow();
+	const ctx = runtimeCtx();
+	for (const node of nodes) {
+		if (node.type !== 'onhover') continue;
+		const on = node.data?.on ?? 'enter';
+		const wants = phase === 'enter' ? on === 'enter' || on === 'over' : phase === 'over' ? on === 'over' : on === 'leave';
+		if (!wants) continue;
+		if (!(reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid)) continue;
+		const data = resolveInputs(node, nodes, edges, now, ctx);
+		const who = (objectNameOf(uuid) ?? 'an object') + ' · ' + phase;
+		if (data.enabled === false || data.enabled === 0) {
+			noteCheck(node.id, { who, reason: 'disabled' }); // 78 F26
+			continue;
+		}
+		const cooldown = phase === 'over' ? 0 : num(data.cooldown ?? 0);
+		const last = hoverFiredAt.get(node.id);
+		if (cooldown > 0 && typeof last === 'number' && now - last >= 0 && now - last < cooldown) {
+			noteCheck(node.id, { who, reason: 'cooldown' }); // 78 F26
+			continue;
+		}
+		if (phase !== 'over' || !lastCheck(node.id)?.fired) noteCheck(node.id, { who, fired: true });
+		hoverFiredAt.set(node.id, now);
+		applyNodeTrigger(node.id, now, (data.who ?? 'anyone') === 'me' ? false : replicatesPulse(node));
+		fired++;
+	}
+	return fired;
+}
+
+// ---- 78 F26: WHY DID THIS NOT FIRE? -----------------------------------------------------------
+//
+// The checks themselves are written where each trigger decides (fireSensorEdge, fireObjectHover,
+// fireObjectClick, the kit's pickup refusals below); this is the STANDING half — what stops the
+// node right now on this device, from facts only the runtime holds. triggerWhy.js words both.
+
+/** the objects a trigger node watches: its graph's owner and every Object Selector it reaches @param {any} node @returns {string[]} */
+function watchedObjectsOf(node) {
+	/** @type {Set<string>} */
+	const set = new Set();
+	const owner = implicitOwnerOf(node);
+	if (owner) set.add(owner);
+	const seen = new Set([node.id]);
+	const stack = [node.id];
+	while (stack.length) {
+		const cur = stack.pop();
+		for (const edge of edges) {
+			if (edge.source !== cur || seen.has(edge.target)) continue;
+			seen.add(edge.target);
+			const target = nodeById(nodes, edge.target);
+			if (target?.type === 'objectselector') {
+				const sel = target.data?.selected;
+				if (sel && sel !== '-None-') set.add(sel);
+			} else stack.push(edge.target);
+		}
+	}
+	return [...set];
+}
+
+/** the kit refusals already turned into checks @type {WeakSet<object>} */
+const refusalsSeen = new WeakSet();
+
+/**
+ * What stops `node` from firing on this device right now, or null.
+ * @param {any} node @param {number} time @param {any} ctx @returns {import('./triggerWhy.js').WhyReason | null}
+ */
+function standingWhy(node, time, ctx) {
+	const playing = gameFeelActive();
+	if (node.type === 'timer') return edgesInto(edges, node.id).some((e) => e.targetHandle === 'a') ? null : 'nothing-wired';
+	if (node.type === 'kit-pickups-collect') {
+		// a refusal the kit heard for a pickup becomes this node's check (the reason travels with it)
+		for (const r of kit.refusals ?? []) {
+			if (refusalsSeen.has(r) || r.piece !== 'pickups') continue;
+			refusalsSeen.add(r);
+			noteCheck(node.id, { who: r.from ? 'a player' : '', reason: 'refused', detail: r.reason });
+		}
+		const d = resolveInputs(node, nodes, edges, time, ctx);
+		const touch = !(d.touch === false || d.touch === 0 || d.touch === 'false');
+		if (!touch && !edgesInto(edges, node.id).length) return 'touch-off';
+		return touch && !playing ? 'edit' : null;
+	}
+	const watched = watchedObjectsOf(node);
+	if (!watched.length) return 'no-target';
+	if (watched.every((u) => muted.includes(u))) return 'muted';
+	if (node.type === 'onclick') return playing ? null : 'edit';
+	if (node.type === 'onhover') {
+		if (!playing) return 'edit';
+		const d = resolveInputs(node, nodes, edges, time, ctx);
+		return d.enabled === false || d.enabled === 0 ? 'disabled' : null;
+	}
+	if (node.type === 'onenter' || node.type === 'onexit') {
+		const who = node.data?.who ?? 'any';
+		const initiator = !!physicsRef?.isInitiator?.();
+		const remote = !!(physicsRef?.remoteSimulating && get(physicsRef.remoteSimulating));
+		const sensorOn = watched.some((u) => !!sceneObjects?.getObjectByProperty('uuid', u)?.userData?.physics?.sensor);
+		if (who === 'player') {
+			if (!playing) return 'edit';
+			return sensorOn ? null : 'no-sensor';
+		}
+		if (who === 'any' && playing && sensorOn) return null; // the player can set it off
+		if (!initiator && !remote) return 'no-sim';
+		if (!initiator) return 'authority';
+	}
+	return null;
+}
+
+/**
+ * 78 F26 (the card, the debugger and the suites): what one trigger node says about itself.
+ * @param {string} nodeId
+ */
+export function triggerWhyOf(nodeId) {
+	const node = nodeById(nodes, nodeId);
+	if (!node || !WHY_TYPES.has(node.type)) return null;
+	const time = syncedNow();
+	const standing = standingWhy(node, time, runtimeCtx());
+	const check = lastCheck(node.id);
+	return { type: node.type, check, standing, card: whyCardLine(check, standing), sentence: whySentence(check, standing) };
+}
+
+// ---- 78 F2: HOVER ANIMATE ---------------------------------------------------------------------
+
+/** node id -> the trigger stamps it has seen (synced seconds) and the swing's last samples
+ * @type {Map<string, {stamps: number[], last: number | null, prev: number[], hold: number, sounded: number}>} */
+const hoverStamps = new Map();
+
+/** how long one stamp of this node's trigger stays high (an "over" hover holds) @param {string} nodeId */
+function triggerHoldOf(nodeId) {
+	let hold = 0.3;
+	for (const edge of edgesInto(edges, nodeId)) {
+		if (edge.targetHandle && edge.targetHandle !== 'trigger') continue;
+		const source = nodeById(nodes, edge.source);
+		if (!source) continue;
+		const h = source.type === 'onhover' && source.data?.on === 'over' ? Math.max(OVER_WINDOW, num(source.data?.pulse ?? 0.3)) : num(source.data?.pulse ?? 0.3);
+		hold = Math.max(hold, h || 0.3);
+	}
+	return hold;
+}
+
+/** this node's stamp history, advanced to now @param {any} anim @param {any} ctx @param {number} time */
+function hoverRowFor(anim, ctx, time) {
+	const stamp = triggerStampFor(anim.id, ctx);
+	let row = hoverStamps.get(anim.id);
+	if (!row) {
+		row = { stamps: [], last: stamp, prev: [0, 0], hold: triggerHoldOf(anim.id), sounded: -Infinity };
+		hoverStamps.set(anim.id, row);
+		// a swing still ringing when we first see the node (a late joiner) shows its tail
+		if (typeof stamp === 'number' && time - stamp >= 0 && time - stamp < ringLength(num(anim.data?.damping ?? 1.2))) row.stamps.push(stamp);
+		return row;
+	}
+	row.hold = triggerHoldOf(anim.id);
+	if (typeof stamp === 'number' && stamp !== row.last) {
+		row.last = stamp;
+		row.stamps.push(stamp);
+		if (row.stamps.length > 64) row.stamps.splice(0, row.stamps.length - 64);
+	}
+	return row;
+}
+
+/** the swing's parameters, resolved @param {any} data */
+function hoverParams(data) {
+	return { mode: data.mode ?? 'energy', freq: num(data.freq ?? 1.2) || 1.2, damping: num(data.damping ?? 1.2), inoutSeconds: num(data.seconds ?? 0.25) || 0.25 };
+}
+
+/**
+ * 78 F2 test seam: the swing a Hover Animate node computes at `t` (synced seconds), or — with
+ * `t` null — `since` seconds after its newest trigger stamp. Equal on every peer that holds the
+ * same stamps (the release proof's "pose equality at a fixed t").
+ * @param {string} nodeId @param {number | null} t @param {number} [since]
+ */
+export function hoverAnimateDebug(nodeId, t, since = 0.2) {
+	const row = hoverStamps.get(nodeId);
+	const node = nodeById(nodes, nodeId);
+	if (!row || !node) return null;
+	const at = typeof t === 'number' ? t : (row.stamps[row.stamps.length - 1] ?? NaN) + since;
+	const env = hoverEnvelope(hoverParams(node.data ?? {}), row.stamps, row.hold, at);
+	return { t: at, env, angle: (env * num(node.data?.amount ?? 20) * Math.PI) / 180, stamps: row.stamps.length };
+}
+
+/** @param {any} object @param {any} base @param {any} anim @param {any} data @param {number} time @param {any} ctx */
+function applyHoverAnimate(object, base, anim, data, time, ctx) {
+	const row = hoverRowFor(anim, ctx, time);
+	if (!row.stamps.length) return;
+	const p = hoverParams(data);
+	const env = hoverEnvelope(p, row.stamps, row.hold, time);
+	const amount = num(data.amount ?? 20);
+	const style = data.style ?? 'swing';
+	const axis = data.axis === 'x' || data.axis === 'y' ? data.axis : 'z';
+	if (style === 'pop') {
+		const f = 1 + (p.mode === 'inout' ? env : Math.abs(env)) * (amount / 100);
+		object.scale.set(base.scale[0] * f, base.scale[1] * f, base.scale[2] * f);
+	} else if (style === 'wobble') {
+		const env2 = hoverEnvelope(p, row.stamps, row.hold, time - 0.25 / p.freq);
+		const k = ((amount * Math.PI) / 180) * 0.6;
+		object.rotation.x += env * k;
+		object.rotation.z += env2 * k;
+	} else {
+		const angle = (env * amount * Math.PI) / 180;
+		if (originOffsetOf(object)) {
+			originPivotOf(object, base);
+			object.rotation[axis] += angle;
+			object.position.fromArray(spinPositionAbout(base.pos, pivotVec, axis, angle));
+		} else object.rotation[axis] += angle;
+	}
+	// a sound on each new swing, or at the swing's extremes (LOCAL, from the same pose everywhere)
+	const sound = String(data.soundName ?? 'ring');
+	if (data.sound && data.sound !== 'none' && isGameSound(sound)) {
+		const at = object.getWorldPosition(new THREE.Vector3()).toArray();
+		const newest = row.stamps[row.stamps.length - 1];
+		if (data.sound === 'start') {
+			if (newest > row.sounded && time - newest < 0.5) {
+				row.sounded = newest;
+				playGameSound(sound, at);
+			}
+		} else if (data.sound === 'extremes') {
+			const [a, b] = row.prev;
+			if (Math.abs(b) > 0.3 && ((b > a && b > env) || (b < a && b < env)) && time - row.sounded > 0.15) {
+				row.sounded = time;
+				playGameSound(sound, at);
+			}
+		}
+	}
+	row.prev = [row.prev[1], env];
+}
+
+// ---- 78 F3 / F8: TOGGLE ANIMATION (Open / Close, named poses) -------------------------------------
+//
+// The door's state is DERIVED from the replicated stamps on its inputs (toggle / open / close /
+// go to), each applied at its own stamp, so every peer that saw the same presses stands the door
+// in the same place. The SETTLED pose is also written into the node (`state`, by the host only)
+// so a late joiner and a reload start where the room is, without replaying anything.
+
+/** @type {Map<string, {st: any, seen: Record<string, number | null>, arrived: number | null, moving: boolean, adopted: string}>} */
+const doors = new Map();
+/** @type {any} */ let connectionRef = null;
+
+/** the poses a Toggle Animation moves between: its captured ones, else closed = the base pose and
+ * open = a quarter turn about Y (a door works before anyone captures anything) @param {any} data @param {any} base */
+function doorPosesOf(data, base) {
+	const list = Array.isArray(data.poses) ? data.poses.filter((/** @type {any} */ p) => p && Array.isArray(p.p) && Array.isArray(p.r)) : [];
+	if (list.length >= 2) return list.map((/** @type {any} */ p, /** @type {number} */ i) => ({ name: String(p.name ?? (i === 0 ? 'closed' : 'pose ' + i)), p: p.p, r: p.r, s: Array.isArray(p.s) ? p.s : base.scale }));
+	const closed = { name: 'closed', p: [...base.pos], r: [...base.rot], s: [...base.scale] };
+	return [closed, { name: 'open', p: [...base.pos], r: [base.rot[0], base.rot[1] + Math.PI / 2, base.rot[2]], s: [...base.scale] }];
+}
+
+/** @param {any} object @param {any} base @param {any} anim @param {any} data @param {number} time @param {any} ctx */
+function applyToggleAnim(object, base, anim, data, time, ctx) {
+	const poses = doorPosesOf(data, base);
+	const stamps = {
+		toggle: triggerStampFor(anim.id, ctx),
+		open: handleStamp(anim, 'open', ctx),
+		close: handleStamp(anim, 'close', ctx),
+		goto: handleStamp(anim, 'goto', ctx)
+	};
+	const opts = { duration: num(data.duration ?? 0.6), interrupt: data.interrupt ?? 'reverse', ease: data.ease ?? 'smooth' };
+	let door = doors.get(anim.id);
+	if (!door) {
+		// FIRST SIGHT: the saved state, never a replay of old presses (the actionSeenAt rule)
+		const at = Math.max(0, poseIndexOf(poses, data.state));
+		door = { st: { from: null, fromPose: null, to: at, start: -Infinity, end: -Infinity }, seen: { ...stamps }, arrived: null, moving: false, adopted: String(data.state ?? '') };
+		doors.set(anim.id, door);
+		seeActionNode(anim, time);
+	}
+	/** @type {{kind: any, t: number, pose?: any}[]} */
+	const events = [];
+	for (const [kind, t] of Object.entries(stamps)) {
+		if (typeof t === 'number' && t !== door.seen[kind]) {
+			// a LATE JOINER's restored trigger log is history (the door already stands where the
+			// host saved it): it moves nothing and pulses nothing — the shared staleTrigger rule
+			const fresh = !staleTrigger(anim, t);
+			if (fresh && (door.seen[kind] === null || t > /** @type {number} */ (door.seen[kind]))) events.push({ kind, t, ...(kind === 'goto' ? { pose: data.pose } : {}) });
+			door.seen[kind] = t;
+		}
+	}
+	// the host's saved state changed under a door at rest (it arrived after our first sight, or
+	// a reload/undo wrote it): stand there, silently
+	const savedState = String(data.state ?? '');
+	if (savedState !== door.adopted) {
+		door.adopted = savedState;
+		const at = poseIndexOf(poses, savedState);
+		if (at >= 0 && !events.length && !door.moving && at !== door.st.to)
+			door.st = { from: null, fromPose: null, to: at, start: -Infinity, end: -Infinity };
+	}
+	const enabled = !(data.enabled === false || data.enabled === 0);
+	const autoClose = num(data.autoClose ?? 0);
+	const autoBefore = (/** @type {number} */ t) => {
+		if (autoClose > 0 && door.st.to !== 0 && door.st.end + autoClose <= t) door.st = doorApply(door.st, { kind: 'auto', t: door.st.end + autoClose }, poses, opts);
+	};
+	events.sort((a, b) => a.t - b.t);
+	for (const ev of events) {
+		autoBefore(ev.t);
+		if (!enabled) continue;
+		const before = door.st;
+		door.st = doorApply(door.st, ev, poses, opts);
+		if (door.st !== before && time - ev.t < 1) {
+			const sound = String(door.st.to === 0 ? data.closeSound ?? 'none' : data.openSound ?? 'none');
+			if (isGameSound(sound)) playGameSound(sound, object.getWorldPosition(new THREE.Vector3()).toArray());
+		}
+	}
+	autoBefore(time);
+	const at = doorPoseAt(door.st, poses, time, opts.ease);
+	door.moving = at.moving;
+	object.position.fromArray(at.pose.p);
+	object.rotation.set(at.pose.r[0], at.pose.r[1], at.pose.r[2]);
+	object.scale.fromArray(at.pose.s);
+	// ARRIVAL: opened / closed pulse on every peer at the same stamp (the move's end)
+	if (!at.moving && door.st.from !== null && door.arrived !== door.st.end) {
+		door.arrived = door.st.end;
+		applyNodeTrigger(anim.id + (door.st.to === 0 ? '#closed' : '#opened'), door.st.end, false);
+		// the host writes the settled pose into the node: saved, and what a late joiner starts at
+		const name = poses[door.st.to]?.name ?? '';
+		if (connectionRef && get(connectionRef.sessionHost) === null && name && data.state !== name)
+			import('./nodesHandler').then((m) => m.setNodeData(anim.id, { state: name }, anim.__graph ?? SCENE_GRAPH)).catch(() => {});
+	}
+}
+
+/** 78 F3 test seam: a door's state @param {string} nodeId */
+export function toggleAnimDebug(nodeId) {
+	const door = doors.get(nodeId);
+	return door ? { to: door.st.to, from: door.st.from, start: door.st.start, end: door.st.end, moving: door.moving } : null;
+}
+
 /** 30b (vr-play): would a click on `uuid` reach an On Click node? The same two rules
  * fireObjectClick fires by — the VR hover tap and the sweep ask it before touching
  * anything. @param {string} uuid @returns {boolean} */
 export function objectHasOnClick(uuid) {
 	return nodes.some(
 		(node) => node.type === 'onclick' && (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid)
+	) || !!sitSpotFor(uuid); // 85 I3: a seat takes the click too
+}
+
+/** 85 I3: local click listeners, run by fireObjectClick before the On Click nodes @type {Set<(uuid: string) => boolean>} */
+const clickHooks = new Set();
+/** @param {(uuid: string) => boolean} fn returns true when it handled the click @returns {() => void} */
+export function registerClickHook(fn) {
+	clickHooks.add(fn);
+	return () => clickHooks.delete(fn);
+}
+
+/** 85 I3: the Sit Spot node on `uuid` (its data), or null — the kinematicGrab shape @param {string} uuid */
+export function sitSpotFor(uuid) {
+	if (!uuid || muted.includes(uuid)) return null;
+	for (const node of nodes) {
+		if (node.type !== 'sitspot') continue;
+		const t = node.data?.target;
+		if ((typeof t === 'string' && t === uuid) || implicitOwnerOf(node) === uuid || reachesObjectSelector(node.id, uuid)) return node.data ?? {};
+	}
+	return null;
+}
+
+/** 85 I2: does a hover-driven Highlight node (its `on` unwired) light `uuid` up? The VR laser
+ * treats such an object as something to point at. @param {string} uuid @returns {boolean} */
+export function objectHasHoverHighlight(uuid) {
+	return nodes.some(
+		(node) =>
+			node.type === 'highlight' &&
+			!edgesInto(edges, node.id).some((/** @type {any} */ e) => e.targetHandle === 'on') &&
+			(node.data?.target === uuid || reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid)
 	);
 }
 
@@ -4039,8 +4718,16 @@ function fireSensorEdge(type, uuid, otherUuid) {
 		if (node.type !== type) return;
 		if (!(reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid)) return;
 		// 36 X6: the filter input gates on the other body; the other rides the stamp
-		if (!contactPasses(resolveInputs(node, nodes, edges, syncedNow(), ctx), otherUuid ?? '')) return;
-		fireContact(node, otherUuid ?? '');
+		const data = resolveInputs(node, nodes, edges, syncedNow(), ctx);
+		const other = otherUuid ?? '';
+		const who = other === 'player' ? 'the player' : (objectNameOf(other) ?? 'an object');
+		if (!contactPasses(data, other)) {
+			// 78 F26: say which rule refused it
+			noteCheck(node.id, { who, reason: data?.who === 'player' && other !== 'player' ? 'not-player' : data?.who === 'objects' && other === 'player' ? 'not-objects' : 'filter' });
+			return;
+		}
+		noteCheck(node.id, { who, fired: true });
+		fireContact(node, other);
 	});
 }
 
@@ -4052,6 +4739,85 @@ export function fireObjectEnter(uuid, otherUuid) {
 /** A sensor overlap ended. @param {string} uuid @param {string} otherUuid */
 export function fireObjectExit(uuid, otherUuid) {
 	fireSensorEdge('onexit', uuid, otherUuid);
+}
+
+/**
+ * 85 N1/N2 (debug + the two-peer suites): the pose ONE effect node gives `uuid` at shared time
+ * `time`, computed on a detached copy from the object's base — so two peers asked about the same
+ * moment answer for the same moment, whatever frame each happens to be drawing.
+ * @param {string} nodeId @param {string} uuid @param {number} [time] (default: now)
+ */
+export function effectPoseAt(nodeId, uuid, time) {
+	if (typeof time !== 'number') time = effectClockNow();
+	const anim = nodeById(nodes, nodeId);
+	const object = sceneObjects?.getObjectByProperty('uuid', uuid);
+	if (!anim || !object || !['oscillate', 'moveto', 'rotateto', 'scaleto', 'ambientanimal', 'pressbutton'].includes(anim.type)) return null;
+	const base = baseState.get(uuid) ?? captureBase(object);
+	const probe = object.clone(false);
+	probe.uuid = object.uuid + '#probe';
+	// parented WITHOUT joining the children list: the parent frame is what Move To's world goal
+	// needs, and an add() would fire the scene's child-added listeners for a throwaway
+	probe.parent = object.parent;
+	try {
+		restoreBase(probe, base);
+		applyAnimation(probe, base, anim, time, runtimeCtx());
+		return { pos: probe.position.toArray(), rot: [probe.rotation.x, probe.rotation.y, probe.rotation.z], scale: probe.scale.toArray() };
+	} finally {
+		probe.parent = null;
+	}
+}
+
+/** 85 (debug + suites): the shared clock effects read right now — the trigger stamps' domain */
+export function effectClockNow() {
+	return effectTime(syncedNow());
+}
+
+/** 85 N2: the tween nodes @type {Set<string>} */
+const TWEEN_TYPES = new Set(['moveto', 'rotateto', 'scaleto']);
+/** 85 N2/N4: the nodes whose `toggle` keeps a Latch-style parity in applyNodeTrigger @type {Set<string>} */
+const TOGGLE_TWEEN_TYPES = new Set(['moveto', 'rotateto', 'scaleto', 'lightswitch']);
+/** 85 N4: the light (node, object) keys driven this tick — the rest hand their lights back @type {Set<string>} */
+let liveLights = new Set();
+/** 85 N3: the players' positions, read once per tick by the first animal that needs them @type {number[][] | null} */
+let tickPlayers = null;
+/** 85 N5: the Wind Sway / Flowing Water (node, object) keys driven this tick @type {Set<string>} */
+let liveSway = new Set();
+/** 85 I2: the Highlight (node, object) keys driven this tick @type {Set<string>} */
+let liveHighlights = new Set();
+/** 85 N4: a Light Switch's wired `on` boolean, per (node, object), per peer @type {Map<string, any>} */
+const lightOpens = new Map();
+
+/**
+ * 85 N2/N4: what a tween / light switch reads off the graph — the newest trigger / back stamps
+ * (replicated), the toggle's stamp and the DIRECTION its parity gives (the Latch rule: the base
+ * is whichever of trigger / back is newer, each odd flip after it inverts it), and which inputs
+ * are wired at all.
+ * `restDir` = where it stands before any trigger / back (a tween at rest = 0; a Light Switch that
+ * starts on = 1, so its first toggle switches it OFF).
+ * @param {any} node @param {any} ctx @param {0 | 1} [restDir]
+ */
+function tweenStamps(node, ctx, restDir = 0) {
+	const into = edgesInto(edges, node.id);
+	const wired = (/** @type {string} */ h) => into.some((/** @type {any} */ e) => e.targetHandle === h);
+	const trigger = freshStamp(node, handleStamp(node, 'trigger', ctx));
+	const back = freshStamp(node, handleStamp(node, 'back', ctx));
+	const flips = ctx?.triggers?.[node.id]?.count ?? 0;
+	const toggleT = flips > 0 ? handleStamp(node, 'toggle', ctx) : null;
+	const baseDir = trigger === null && back === null ? restDir : trigger !== null && trigger >= (back ?? -Infinity) ? 1 : 0;
+	const toggleDir = flips % 2 === 1 ? 1 - baseDir : baseDir;
+	const openWired = wired('open');
+	const onWired = wired('on');
+	return {
+		trigger,
+		back,
+		toggle: toggleT,
+		// tweenEvents reads an ODD count as "to the goal"
+		toggleCount: toggleDir === 1 ? 1 : 2,
+		openWired,
+		onWired,
+		amountWired: wired('amount'),
+		anyWired: wired('trigger') || wired('back') || wired('toggle') || openWired || onWired
+	};
 }
 
 /** @param {any} object @param {any} base @param {any} anim @param {number} time @param {any} ctx */
@@ -4115,6 +4881,66 @@ function applyAnimation(object, base, anim, time, ctx) {
 		}
 		return;
 	}
+	// 85 N1/N2/N4: Oscillate, the tweens, the light nodes (motion/tweenNodes.js, lightNodes.js)
+	if (anim.type === 'oscillate') {
+		const start = triggerStampFor(anim.id, ctx);
+		const armed = edgesInto(edges, anim.id).some((/** @type {any} */ e) => e.targetHandle === 'trigger');
+		applyOscillate(object, data, time, { start, armed });
+		return;
+	}
+	if (TWEEN_TYPES.has(anim.type)) {
+		const key = anim.id + '|' + object.uuid;
+		const s = tweenStamps(anim, ctx);
+		const read = tweenPosition(key, data, time, s);
+		noteTweenRead(key, read);
+		applyTween(anim.type, object, base, data, read.pos, { root: sceneObjects });
+		return;
+	}
+	if (anim.type === 'lightswitch') {
+		const key = anim.id + '|' + object.uuid;
+		liveLights.add(key);
+		const s = tweenStamps(anim, ctx, data.on !== false && !edgesInto(edges, anim.id).some((/** @type {any} */ e) => e.targetHandle === 'on') ? 1 : 0);
+		/** @type {any[]} */
+		let open = [];
+		if (s.onWired) {
+			const next = openEvent(lightOpens.get(key), data.on, time);
+			lightOpens.set(key, next);
+			open = next.events;
+		}
+		applyLightSwitch(object, data, time, key, { ...s, open });
+		return;
+	}
+	if (anim.type === 'highlight') {
+		// 85 I2: per peer — the wired `on`, else "this person points at it"
+		const key = anim.id + '|' + object.uuid;
+		liveHighlights.add(key);
+		const onWired = edgesInto(edges, anim.id).some((/** @type {any} */ e) => e.targetHandle === 'on');
+		applyHighlight(object, data, time, key, onWired ? !!data.on : isHovered(object.uuid));
+		return;
+	}
+	if (anim.type === 'pressbutton') {
+		applyPress(object, data, time, triggerStampFor(anim.id, ctx));
+		return;
+	}
+	if (anim.type === 'ambientanimal') {
+		if (!tickPlayers) tickPlayers = playerPositions();
+		applyAmbientAnimal(object, base, data, time, { root: sceneObjects, key: anim.id + '|' + object.uuid, players: tickPlayers });
+		return;
+	}
+	if (anim.type === 'windsway' || anim.type === 'waterflow') {
+		const key = anim.id + '|' + object.uuid;
+		liveSway.add(key);
+		if (anim.type === 'windsway') applyWindSway(object, data, time, { key });
+		else applyWaterFlow(object, data, time, { key });
+		return;
+	}
+	if (anim.type === 'lightintensity' || anim.type === 'lightcycle') {
+		const key = anim.id + '|' + object.uuid;
+		liveLights.add(key);
+		if (anim.type === 'lightintensity') applyLightIntensity(object, data, time, key);
+		else applyLightCycle(object, data, time, key);
+		return;
+	}
 	// 36-fb F25/F24: the water machinery (sim/motionNodes.js, a leaf)
 	if (anim.type === 'rotor') {
 		applyRotor(object, base, data, time, {
@@ -4145,6 +4971,15 @@ function applyAnimation(object, base, anim, time, ctx) {
 	}
 	if (anim.type === 'bodywave') {
 		applyBodyWave(object, base, data, time, { key: anim.id + '|' + object.uuid });
+		return;
+	}
+	// 78 F2 / F3
+	if (anim.type === 'hoveranimate') {
+		applyHoverAnimate(object, base, anim, data, time, ctx);
+		return;
+	}
+	if (anim.type === 'toggleanim') {
+		applyToggleAnim(object, base, anim, data, time, ctx);
 		return;
 	}
 	if (anim.type === 'shake') {
@@ -4178,7 +5013,27 @@ function applyAnimation(object, base, anim, time, ctx) {
 	} else if (anim.type === 'pathpatrol') {
 		// fix-batch-2: the node whose waypoints are being placed holds still at its base
 		// pose, so the object stays where you can click it
-		if (anim.id !== capturingPathNode) applyPathPatrol(object, data, time);
+		// 78 F4: on a Path object (`path` = its uuid, picked on the card or wired), the walk is
+		// the Path's schedule (waits, speeds, gaps, events); clicked waypoints are the legacy walk
+		if (anim.id !== capturingPathNode) {
+			const onPath = typeof data.path === 'string' && data.path && data.path !== '-None-';
+			if (!onPath) applyPathPatrol(object, data, time);
+			else if (!pathPreviewHeld(sceneObjects, data.path, get(isLocked) === true)) {
+				// the walk's start in the EFFECT clock: a wired trigger's stamp, else the round's start
+				const shift = pauseOffset;
+				const stamp = triggerStampFor(anim.id, ctx);
+				const rc = synced ? roundCutoff() : null;
+				const roundStart = rc !== null && rc !== Infinity ? toSyncedStamp(rc) : null;
+				const start = typeof stamp === 'number' ? stamp - shift : roundStart !== null ? roundStart - shift : null;
+				applyPatrolOnPath(object, data, time, {
+					root: sceneObjects,
+					key: anim.id + '|' + object.uuid,
+					nodeId: anim.id,
+					start,
+					onEvent: (pathUuid, name, at) => firePathEvent(pathUuid, name, at + shift)
+				});
+			}
+		}
 	} else if (anim.type === 'lookat') {
 		// face a target object (uuid) or point ([x,y,z]) — 134
 		let target = null;
@@ -4729,7 +5584,9 @@ function publishDebug(time, ctx, now) {
 		return { key, label, text: formatValue(w.handle ? unwrapHandle(v, { sourceHandle: w.handle }) : v, objectNameOf), missing: false };
 	});
 	const eventless = !!focus && outputType(focus.type) !== 'event' && !SCHEDULED_TYPES.includes(focus.type) && !inputs.some((r) => r.kind === 'event');
-	debugValues.set({ focus: focus ? { id: focus.id, label: debugLabel(focus), type: focus.type, eventless } : null, inputs, outputs, watches });
+	// 78 F26: a trigger node says when it was last checked and what blocks it
+	const why = focus && WHY_TYPES.has(focus.type) ? whySentence(lastCheck(focus.id), standingWhy(focus, time, ctx)) : null;
+	debugValues.set({ focus: focus ? { id: focus.id, label: debugLabel(focus), type: focus.type, eventless, why } : null, inputs, outputs, watches });
 }
 
 /** test/debug view of the runtime half */
@@ -4819,6 +5676,9 @@ function runTick(now) {
 	const active = new Map(); // uuid -> anim nodes
 	// 21-F2: read the gate ONCE per tick, not once per node
 	const playActive = gamePlayActive();
+	// 78 F6: "Animate in editor" off — every MOTION node stands down outside Play mode the same way,
+	// so its object rests at its authored pose (and comes back to the shared clock when it is on)
+	const motionRests = !editorMotionOn && get(isLocked) !== true;
 	/**
 	 * 21-F2: a Visibility node the recipe marked `whilePlaying` STANDS DOWN outside play.
 	 * Dropping it out of `active` (rather than skipping its apply) is the whole fix: the
@@ -4833,7 +5693,7 @@ function runTick(now) {
 	 * gets the restore-loop hand-back for free instead of reimplementing it wrong.
 	 * @param {any} node
 	 */
-	const dormant = (node) => !!node.data?.whilePlaying && !playActive;
+	const dormant = (node) => (!!node.data?.whilePlaying && !playActive) || (motionRests && EDITOR_MOTION_TYPES.has(node.type));
 	/** @param {any} node */
 	const isEffectNode = (node) =>
 		(animationTypes.includes(node.type) ||
@@ -4908,6 +5768,19 @@ function runTick(now) {
 	// 40 F15: a Body Wave whose node or object went away puts its original materials back
 	pruneBodyWaves(liveWaves);
 	tickMotionNodes();
+	// 85 N4: lights no node drives any more get their authored values back
+	pruneLightNodes(liveLights);
+	for (const k of [...lightOpens.keys()]) if (!liveLights.has(k)) lightOpens.delete(k);
+	liveLights = new Set();
+	// 85 N5: a sway / water node that went away puts the original material back
+	pruneSwayNodes(liveSway);
+	liveSway = new Set();
+	// 85 I2: a highlight that went away puts the authored glow back
+	prunePressNodes(liveHighlights);
+	liveHighlights = new Set();
+	tickTweenNodes();
+	tickAmbientNodes();
+	tickPlayers = null;
 
 	// sound nodes keep their own audio chains (97) — hand over the live pairs
 	// 21-E4: `trigger` is the wired event's STAMP (null when nothing is wired)
@@ -5006,6 +5879,24 @@ function runTick(now) {
 		const uuid = implicitOwnerOf(node);
 		if (uuid) blendPairs.push({ node: { ...node, data: resolveInputs(node, nodes, edges, time, ctx) }, uuid, wired: speedWired(node.id) });
 	});
+	// 85 N3: an Ambient Animal with `clips` drives the same blend from its own speed (0 resting,
+	// 1 walking, 2.5 fleeing) — idle / walk / run on a model that has them
+	const ambientClips = (/** @type {any} */ node, /** @type {string} */ uuid) => {
+		const read = ambientRead(node.id + '|' + uuid);
+		if (!read) return;
+		blendPairs.push({ node: { id: node.id + '#clips', data: { walkSpeed: 1, runSpeed: 2.5, crossfade: 0.3, speed: read.speed } }, uuid, wired: true });
+	};
+	edges.forEach((edge) => {
+		const source = nodeById(nodes, edge.source);
+		if (source?.type !== 'ambientanimal' || source.data?.clips === false) return;
+		const uuid = targetUuidOf(edge);
+		if (uuid) ambientClips(source, uuid);
+	});
+	nodes.forEach((node) => {
+		if (node.type !== 'ambientanimal' || node.data?.clips === false) return;
+		const uuid = directTargetOf(node) ?? implicitOwnerOf(node);
+		if (uuid) ambientClips(node, uuid);
+	});
 	if (blendPairs.length || blendTrackers.size) updateBlendSpeed(blendPairs, ctx, logicNow(), sceneObjects);
 
 	// 57 M11: Set Animation Parameter (the same pair collection) + priming for On Animation State
@@ -5084,11 +5975,14 @@ function runTick(now) {
 	// 21-D6: the game shell. Runs BEFORE the HUD pass would matter next frame, and reads
 	// the same replicated trigger stamps, so every peer takes the same decisions.
 	updateGameNodes(time, ctx);
+	updatePlayEdgeNodes(time, ctx); // 78 F13: On Play start / stop
+	hoverTargetUuids(); // 78 F2: cached on the graph; starts the hover input the first time one is watched
 	// 48 D1: the kit and the behaviours keep their own (live) clocks through a debugger pause, and
 	// behaviour inputs run on the authority — live with other players connected (ownCtx)
 	if (paused) toLive();
 	// 34 R2: the kit's authority turns due moments into changes; everyone re-sends what was
 	// never acknowledged (after the game nodes, so a press this frame is already asked)
+	updateTouchPickupNodes(time, ctx); // 78 F12: before the touch check tickKit runs
 	tickKit();
 	if (paused && !ownLive) toView();
 	// 36 (U10): triggers wired INTO a behaviour's declared inputs run its handlers (authority)
@@ -5179,6 +6073,20 @@ function runTick(now) {
 	valueStats = { evals: ctx.evals, nodes: nodes.length, cuts: ctx.cuts };
 	// 48 D1: what the Debugger panel shows (status, the focused node's wires, the watch list)
 	if (dbg.armed) publishDebug(time, ctx, now);
+	// 78 F7: the live line under each card of the graph the node editor shows (~4 Hz, only while shown)
+	if (liveStatesWanted())
+		publishLiveStates({
+			nodes,
+			now,
+			time,
+			motionTime: effectTime(time),
+			motionRests: !editorMotionOn && get(isLocked) !== true,
+			capturing: capturingPathNode,
+			value: (node) => evalNode(node, nodes, edges, time, new Set(), ctx),
+			pulseAt: (id) => ctx.triggers?.[id]?.lastT ?? null,
+			// 78 F26: the trigger nodes' "why not" line
+			why: (node) => (WHY_TYPES.has(node.type) ? whyCardLine(lastCheck(node.id), standingWhy(node, time, ctx)) : null)
+		});
 	if (paused) toLive();
 	phaseEnd(PHASE_FLOW);
 
@@ -5208,6 +6116,32 @@ function runTick(now) {
 			noteFrameFailure('post-tick hook', error);
 		}
 		phaseEnd(PHASE_PHYSICS);
+	}
+	// 78 F10: THIS peer's player against the scene's sensors — after the step, so a moving sensor
+	// is tested where it is now. Only while this peer plays and some On Enter / On Exit exists.
+	tickPlayerSensorNodes();
+}
+
+/** the node array the sensor-node check last ran on, and its answer */
+let sensorNodesSeen = /** @type {any[] | null} */ (null);
+let sensorNodesLive = false;
+let playerSensorsRan = false;
+/** 78 F10: run (or stand down) the local player's sensor probe */
+function tickPlayerSensorNodes() {
+	if (nodes !== sensorNodesSeen) {
+		sensorNodesSeen = nodes;
+		sensorNodesLive = nodes.some((/** @type {any} */ n) => n.type === 'onenter' || n.type === 'onexit');
+	}
+	if (sensorNodesLive && gameFeelActive() && physicsRef?.tickPlayerSensors) {
+		try {
+			physicsRef.tickPlayerSensors(localPlayerBody());
+			playerSensorsRan = true;
+		} catch (error) {
+			noteFrameFailure('player sensors', error);
+		}
+	} else if (playerSensorsRan) {
+		playerSensorsRan = false;
+		physicsRef?.resetPlayerSensors?.();
 	}
 }
 
@@ -5367,6 +6301,7 @@ export function startFlowRuntime() {
 	// joints.js calls registerHistoryKind in its module BODY, so it may never be
 	// reachable from history's own import subtree.
 	import('./physics').then((m) => (physicsRef = m));
+	import('./playSettings').then((m) => (playSettingsRef = m)); // 78 F11: the default walker
 	import('./joints').then((m) => (jointsRef = m));
 	// B7: the spawner reaches objectActions AND physics, both of which reach history, so
 	// a static edge from here would close history -> flowRuntime -> spawner -> history
@@ -5387,6 +6322,7 @@ export function startFlowRuntime() {
 	// knock.js imports physics, which imports this module.
 	import('./knock').then((m) => m.registerHitListener((hit, local) => fireObjectHit(hit, local)));
 	import('./gamePresence').then((m) => (presenceRef = m));
+	import('./connectionState').then((m) => (connectionRef = m)); // 78 F3: the host saves a door's state
 	primeGameFeelActions(); // 30b: effectsBurst + vrControls, primed (see gameFeelActions)
 	primeKitRuntime(); // 34 R2: physics (the initiator) + flowRuntime (the event pulse), primed
 	installKitNodes(); // 34 R2: the kit nodes' outputs and named inputs, declared once

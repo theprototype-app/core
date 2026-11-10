@@ -29,11 +29,16 @@
  * @typedef {{key: string, type: KitArgType, label?: string, default?: any, min?: number,
  *   max?: number, step?: number, options?: string[]}} KitArg
  * @typedef {{name: string, kind: 'action'|'value'|'event', label: string, doc?: string,
- *   args?: KitArg[], vtype?: string, authority?: boolean, node?: boolean, local?: boolean, owned?: boolean}} KitCall
+ *   args?: KitArg[], vtype?: string, authority?: boolean, node?: boolean, local?: boolean, owned?: boolean,
+ *   nodeArgs?: KitArg[]}} KitCall
+ * `nodeArgs` (78 F12): settings on the NODE only — a param on the card, never passed to the call
+ * (the call's own args stay positional), read by whatever the app does for that node type.
  * `owned` (actions): the SDK face appends the calling module's id after the spec args and
  * journals ONE `impl.disown(moduleId)` per module per piece (the node path passes no owner).
- * `local` (events only): the event is witnessed on ONE peer and stays there — its listeners
+ * `local` (events): the event is witnessed on ONE peer and stays there — its listeners
  * and its node pulse (kept local, the perPlayer rule) — e.g. "your grab was refused".
+ * `local` (actions, 93 LP3): the action acts on THIS peer's player only and changes no shared kit
+ * state, so it has no authority op (a checkpoint respawn); a Per-player chain keeps it to the presser.
  * @typedef {{piece: string, group: string, calls: KitCall[]}} KitSpec
  */
 
@@ -217,6 +222,13 @@ export function kitNodeItems(spec) {
 				const param = paramOf(arg);
 				if (param) params.push(param);
 				inputs[arg.key] = socketTypeOf(arg);
+			}
+			// 78 F12: node-only settings — a param with a default, no socket, never an op arg
+			for (const arg of call.nodeArgs ?? []) {
+				const d = argDefault(arg);
+				if (d !== null) defaults[arg.key] = Array.isArray(d) ? [...d] : d;
+				const param = paramOf(arg);
+				if (param) params.push(param);
 			}
 			if (call.kind === 'action') inputs.trigger = 'event';
 			const output = call.kind === 'value' ? call.vtype ?? 'number' : call.kind === 'event' ? 'event' : 'effect';

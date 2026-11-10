@@ -34,6 +34,7 @@
   import TouchPlayControls from './components/play/TouchPlayControls.svelte';
   import DungeonMinimap from './components/play/DungeonMinimap.svelte';
   import HudLayer from './components/hud/HudLayer.svelte';
+  import LevelTransition from './components/hud/LevelTransition.svelte'; // 93 LP1/LP2
   import GameShellMenu from './components/hud/GameShellMenu.svelte';
   import CaptionOverlay from './components/play/CaptionOverlay.svelte';
   import PlayerColorFilter from './components/play/PlayerColorFilter.svelte';
@@ -171,6 +172,8 @@
 <PlayBanner />
 <TouchPlayControls />
 <HudLayer />
+<!-- 93: the level-change cover, the game's loading screen, the checkpoint flash (LOCAL) -->
+<LevelTransition />
 <LiveRegions />
 <AutoQualityNotice />
 <GameShellMenu />

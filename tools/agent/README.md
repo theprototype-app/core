@@ -10,7 +10,7 @@ to everyone in the session with undo, exactly like a person editing.
 claude mcp add theprototype -- npx -y @theprototype/agent mcp 'https://theprototype.app/#F0FD3'
 ```
 
-That is the whole setup. Replace the link with yours: in the app, **Connect ▸ Request AI** gives
+That is the whole setup. Replace the link with yours: in the app, **Connect ▸ Invite ▸ AI agent** gives
 you a link with an invite in it (the agent joins at once, with the role you picked), or copy
 your plain session link (the agent knocks and you press **Approve**).
 

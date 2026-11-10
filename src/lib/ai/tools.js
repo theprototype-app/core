@@ -50,6 +50,7 @@ import {
 } from './flowTools.js';
 import { GEOMETRY_TOOL_NAMES, GEOMETRY_AI_TOOLS, GEOMETRY_PROMPT, geometryTool, MIN_SIZE } from './geometryTools.js';
 import { TEXT_TOOL_NAMES, TEXT_AI_TOOLS, TEXT_PROMPT, textTool } from './textTools.js';
+import { PATH_TOOL_NAMES, PATH_AI_TOOLS, PATH_PROMPT, pathTool } from './pathTools.js'; // 78 F4
 import { shapePose } from './shapeBatchCore.js';
 import { meshStats } from './meshStats.js';
 import { applyShadowFlags, SHADOW_SCHEMA } from './shadowFlags.js';
@@ -57,8 +58,10 @@ import { duplicatePlan, DUPLICATE_MAX } from './duplicateCore.js';
 import { LOOK_TOOL_NAMES, LOOK_AI_TOOLS, LOOK_PROMPT, lookTool } from './lookTools.js';
 import { HUD_TOOL_NAMES, HUD_AI_TOOLS, HUD_PROMPT, hudTool } from './hudTools.js';
 import { SCENE_SETUP_TOOL_NAMES, SCENE_SETUP_AI_TOOLS, SCENE_SETUP_PROMPT, sceneSetupTool } from './sceneSetupTools.js';
+import { LEVELS_TOOL_NAMES, LEVELS_AI_TOOLS, LEVELS_PROMPT, levelsTool } from './levelsTools.js'; // 93
 import { WORLD_TOOL_NAMES, WORLD_AI_TOOLS, WORLD_PROMPT, worldTool, resolvePatterns } from './worldTools.js';
 import { RUNTIME_TOOL_NAMES, RUNTIME_AI_TOOLS, RUNTIME_PROMPT, runtimeTool } from './runtimeTools.js';
+import { beginAiEdit, endAiEdit } from '../sceneEditBy.js'; // 78-int PL13: "changed by Claude (AI)"
 
 // AI tool layer (roadmap #10, A4). Maps OpenAI-style function calls onto the
 // existing REPLICATED mutation surface — every tool applies locally AND broadcasts
@@ -796,9 +799,11 @@ const TOOL_NAMES = [
 	'import_shape', // diorama2 item 9: glTF / GLB / OBJ by data / chunks / https url (offered to agents; the connector's create_shape import)
 	...GEOMETRY_TOOL_NAMES, // 85 G1-G6 (geometryTools.js)
 	...TEXT_TOOL_NAMES, // 64-text TX7: create_text, list_fonts (textTools.js)
+	...PATH_TOOL_NAMES, // 78 F4: create_path (pathTools.js)
 	...LOOK_TOOL_NAMES, // 85 L1-L5 (lookTools.js)
 	...HUD_TOOL_NAMES, // 85 H1 / H2 + hud panel (hudTools.js)
 	...SCENE_SETUP_TOOL_NAMES, // 85 H3-H7: sky, light, spawn, play camera, opening view (sceneSetupTools.js)
+	...LEVELS_TOOL_NAMES, // 93: the Levels table, portals, loading screens, checkpoints (levelsTools.js)
 	...WORLD_TOOL_NAMES, // 85b W1-W7 (worldTools.js)
 	...ASSIST_TOOL_NAMES, // 85 undo_last, pivots, images (assistTools.js): unlisted, their arguments read as create_objects / update_objects
 	...RUNTIME_TOOL_NAMES // 85b R1-R4 (runtimeTools.js): inspect, validate, logs, playtest
@@ -1024,8 +1029,9 @@ export function repairToolCall(rawName, rawArgs) {
 const PHYSICS_DISABLED =
 	'physics tools are disabled — enable "Physics tools" for this provider in Settings → AI';
 
-/** @typedef {{physics?: boolean}} ToolOpts `physics`: offer + run the physics tools for THIS caller whatever the
- * provider's checkbox says (86-fix B1: the Claude connector; the person's own assistant keeps its setting) */
+/** @typedef {{physics?: boolean, by?: string}} ToolOpts `physics`: offer + run the physics tools for THIS caller whatever the
+ * provider's checkbox says (86-fix B1: the Claude connector; the person's own assistant keeps its setting).
+ * `by` (78-int PL13): who the scene panel says made the edit ("Claude" for the connector; absent = "AI assistant") */
 
 /** 55 A8: one observer of every tool call — `(name, args) => (result) => void`, set by the agent
  * page's action-log recorder. Null everywhere else (the call path is unchanged). @type {any} */
@@ -1043,6 +1049,17 @@ export function setAiToolObserver(fn) {
  * @returns {Promise<any>}
  */
 export async function executeAiTool(rawName, rawArgs, opts) {
+	// 78-int PL13: a scene edit made while the call runs is the AI's on the Configure Scene "changed by" line
+	beginAiEdit(opts?.by || 'AI assistant');
+	try {
+		return await observedAiTool(rawName, rawArgs, opts);
+	} finally {
+		endAiEdit();
+	}
+}
+
+/** @param {string} rawName @param {any} rawArgs @param {ToolOpts} [opts] @returns {Promise<any>} */
+async function observedAiTool(rawName, rawArgs, opts) {
 	if (!aiToolObserver) return runAiTool(rawName, rawArgs, opts);
 	const { name, args } = repairToolCall(rawName, rawArgs);
 	/** @type {any} */
@@ -1248,6 +1265,9 @@ async function runAiTool(rawName, rawArgs, opts) {
 			case 'list_fonts':
 				// 64-text TX7: 3D text objects and their fonts (textTools.js)
 				return await textTool(name, args);
+			case 'create_path':
+				// 78 F4: the Path object (pathTools.js)
+				return await pathTool(name, args);
 
 			case 'search_assets':
 			case 'place_asset':
@@ -1302,6 +1322,13 @@ async function runAiTool(rawName, rawArgs, opts) {
 			case 'set_play_camera':
 				// 85 H3-H7 (sceneSetupTools.js)
 				return await sceneSetupTool(name, args);
+
+			case 'set_levels':
+			case 'set_portal':
+			case 'set_checkpoint':
+			case 'set_loading':
+				// 93 (levelsTools.js)
+				return await levelsTool(name, args, createOne);
 
 			case 'inspect_runtime':
 			case 'validate_scene':
@@ -1669,7 +1696,7 @@ function flowToolSchemas(physics) {
 									data: {
 										type: 'object',
 										description:
-											'node params, e.g. spin {axis:"y",speed:2}; bounce {amplitude:0.5,speed:2}; pathpatrol {points:[[x,y,z],…] (>=2 world waypoints), speed:1, mode:"loop"|"pingpong"}; setcolor {color:"#ff0000"}; latch {initial:false}; delay {seconds:3}; sequence {delay1:0,delay2:0.5,delay3:0.5,delay4:0.5} (delays are CUMULATIVE). Omit for defaults.'
+											'node params, e.g. spin {axis:"y",speed:2}; bounce {amplitude:0.5,speed:2}; pathpatrol {path:"<Path object uuid from create_path>", offset:0, face:true} (walks the Path: its waits/speeds/events live on the Path; legacy {points:[[x,y,z],…], speed, mode} still works); onpathevent {path, event} fires when a walker arrives at a point carrying that event; setcolor {color:"#ff0000"}; latch {initial:false}; delay {seconds:3}; sequence {delay1:0,delay2:0.5,delay3:0.5,delay4:0.5} (delays are CUMULATIVE). Omit for defaults.'
 									}
 								},
 								required: ['type']
@@ -1769,7 +1796,7 @@ const PHYSICS_AI_TOOLS = [
 								},
 								sensor: {
 									type: 'boolean',
-									description: 'true = a trigger volume: no collision response, fires On Enter/On Exit nodes'
+									description: 'true = a trigger volume: no collision response, fires On Enter/On Exit nodes — for bodies AND for the player walking in (on every peer; set the node\'s who: player to react only to players)'
 								},
 								group: {
 									type: 'string',
@@ -1854,7 +1881,7 @@ const PHYSICS_AI_TOOLS = [
  * Call this per turn (readiness can change). @param {ToolOpts} [opts] @returns {any[]} */
 export function getAiTools(opts) {
 	const physics = !!opts?.physics || physicsToolsEnabled();
-	const tools = [...AI_TOOLS, ...GEOMETRY_AI_TOOLS, ...TEXT_AI_TOOLS, ...LOOK_AI_TOOLS, ...HUD_AI_TOOLS, ...SCENE_SETUP_AI_TOOLS, ...WORLD_AI_TOOLS, ...ASSIST_AI_TOOLS, ...RUNTIME_AI_TOOLS, ...flowToolSchemas(physics), ...behaviourToolSchemas()];
+	const tools = [...AI_TOOLS, ...GEOMETRY_AI_TOOLS, ...TEXT_AI_TOOLS, ...PATH_AI_TOOLS, ...LOOK_AI_TOOLS, ...HUD_AI_TOOLS, ...SCENE_SETUP_AI_TOOLS, ...LEVELS_AI_TOOLS, ...WORLD_AI_TOOLS, ...ASSIST_AI_TOOLS, ...RUNTIME_AI_TOOLS, ...flowToolSchemas(physics), ...behaviourToolSchemas()];
 	if (physics) tools.push(...PHYSICS_AI_TOOLS);
 	if (meshGenReady()) tools.push(MESH_TOOL);
 	return tools;
@@ -1885,7 +1912,7 @@ export function buildSystemPrompt(opts) {
 		'GRAPH TEXT — the scene summary shows graphs, and create_flow_nodes accepts `text`, as lines:',
 		'  id = type "label" {params}   one node; params omitted = the node\'s defaults',
 		'  a.out -> b.in                one wire, from a node\'s output to another\'s input',
-		'pathpatrol walks world waypoints: points = [[x,y,z],…] (at least 2).',
+		'pathpatrol walks a Path object: make one with create_path (or pass walkers there), then pathpatrol {path: "<uuid>"}; the old points = [[x,y,z],…] form still walks straight lines.',
 		'Logic + timing (latch, delay, sequence, once, counter) are THE EXCEPTION to that',
 		'rule: they do nothing unwired, so they always need edges with toHandle. latch',
 		'toHandle "set"/"reset"/"toggle" turns a ~0.3s pulse into a boolean that HOLDS',
@@ -1959,6 +1986,6 @@ export function buildSystemPrompt(opts) {
 		"an object's name as the tool name — the name of a thing you create belongs in that object's",
 		'`name` field inside create_objects. Every call takes effect immediately, so never repeat a',
 		'call that already came back without an error — once the scene matches the request, stop',
-		'calling tools and write the summary.' + meshLine + toolsLine + GEOMETRY_PROMPT + TEXT_PROMPT + LOOK_PROMPT + HUD_PROMPT + SCENE_SETUP_PROMPT + WORLD_PROMPT + ASSIST_PROMPT + RUNTIME_PROMPT + flowBlock + extraBlock + physicsBlock
+		'calling tools and write the summary.' + meshLine + toolsLine + GEOMETRY_PROMPT + TEXT_PROMPT + PATH_PROMPT + LOOK_PROMPT + HUD_PROMPT + SCENE_SETUP_PROMPT + LEVELS_PROMPT + WORLD_PROMPT + ASSIST_PROMPT + RUNTIME_PROMPT + flowBlock + extraBlock + physicsBlock
 	].join('\n');
 }

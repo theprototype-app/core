@@ -13,7 +13,7 @@
 //   3  its header no longer drags it while docked (a dock tab moves by its tab)
 //   4  its tab dragged off the strip floats it again where it was; the tab menu offers Undock too
 //   5  Statistics dropped on the 44px bottom edge docks at the end of the strip
-//   6  the dock's "+" lists the hosted windows; "Chat" docks the open floating chat
+//   6  the dock's "+" lists the hosted windows (no Live profiler since showhide-v8); "Chat" docks the open floating chat
 //   7  the docked mode is remembered: closed and reopened (the O key), and across a reload, Objects
 //      comes back as a dock tab
 //
@@ -143,6 +143,22 @@ h.run(async () => {
 	h.check(!(await S(page, () => !!document.querySelector('.dock-drag-ghost') || !!document.getElementById('dock-strip-caret'))), '1.7 no drag feedback is left behind');
 	const rows = await S(page, () => document.querySelectorAll('#object-list [role="treeitem"], #object-list .obj-row, #object-list [data-uuid]').length);
 	h.check((await S(page, () => !!document.querySelector('#object-list #object-search, #object-list .obj-filters'))), `1.8 its own chrome (search / filter chips) is there inside the dock (rows ${rows})`);
+	// showhide-v8 §5 (owner: "when docked its layout right side glitches a bit as its not full width"): the tree had
+	// Tailwind's `container`, which caps max-width per breakpoint (1280 px at xl), so on this 1440 px screen the rows and
+	// the selection highlight stopped 160 px short of the dock's right edge
+	const treeReach = () =>
+		S(page, () => {
+			const host = document.getElementById('object-list').getBoundingClientRect();
+			const tree = document.getElementById('object-tree')?.getBoundingClientRect();
+			const scroller = document.querySelector('#object-list .obj-scroller')?.getBoundingClientRect();
+			return { host: Math.round(host.right), tree: tree ? Math.round(tree.right) : null, scroller: scroller ? Math.round(scroller.right) : null };
+		});
+	const reach = await treeReach();
+	const fills = (r) => r.tree !== null && r.scroller !== null && r.tree >= r.scroller - 16 && r.scroller >= r.host - 2;
+	h.check(fills(reach), `1.9 the tree runs to the dock's right edge (less a scrollbar) (${JSON.stringify(reach)})`);
+	await S(page, () => document.getElementById('object-tree').classList.add('container'));
+	h.check(!fills(await treeReach()), '1.9b (counterfactual) the old `container` cap is caught at this width');
+	await S(page, () => document.getElementById('object-tree').classList.remove('container'));
 
 	// ---- 2. another tab in front hides it (mounted), its tab brings it back ----------------------
 	await page.locator('[data-dock-tab="flow"]:visible').first().click();
@@ -202,14 +218,18 @@ h.run(async () => {
 	await page.waitForTimeout(300);
 	const rowsPlus = await S(page, () => [...document.querySelectorAll('[role="menu"] [role="menuitem"]')].map((e) => e.textContent.replace(/\s+/g, ' ').trim()));
 	await page.screenshot({ path: out + '/i6-dock-plus-hosted-' + THEME + '.png' });
-	h.check(['Objects', 'Statistics', 'Live profiler', 'Chat', 'AI assistant'].every((t) => rowsPlus.some((r) => r.startsWith(t))), `6.1 the dock's "+" lists Objects, Statistics, Live profiler, Chat and AI assistant (${JSON.stringify(rowsPlus)})`);
+	h.check(['Objects', 'Statistics', 'Chat', 'AI assistant'].every((t) => rowsPlus.some((r) => r.startsWith(t))) && !rowsPlus.some((r) => r.startsWith('Live profiler')), `6.1 the dock's "+" lists Objects, Statistics, Chat and AI assistant, and no Live profiler (showhide-v8: it is a row of the Profiler) (${JSON.stringify(rowsPlus)})`);
 	// 44 M5: ONE registry rule — a window open anywhere is FOCUSED where it is by every "+" (the user's
 	// '+ ▸ Statistics opened a second copy in the dock'); docking a floating window is its drag / its menu
 	h.check(rowsPlus.some((r) => /^Chat.*Floating/.test(r)), '6.2 ...the open floating Chat reads "Floating"');
 	await page.click('[role="menu"] [role="menuitem"]:has-text("Chat")');
 	await page.waitForTimeout(1200);
 	st = await hostState(page, '#chat-window');
-	h.check(!(await order(page)).includes('chat') && st.host !== 'shown', `6.3 "Chat" brings the floating chat forward where it floats — it is not docked (${JSON.stringify({ host: st.host })})`);
+	// showhide-v8 (owner 2026-11-09, supersedes 44 M5's focus-where-it-is): "+" MOVES an open window here — one copy, docked
+	h.check(
+		(await order(page)).includes('chat') && st.host === 'shown' && (await page.locator('#chat-window').count()) === 1,
+		`6.3 "Chat" moves the floating chat into the dock (one copy) (${JSON.stringify({ host: st.host, order: await order(page) })})`
+	);
 	// ...and docked the 41 G7 way instead (the Undock seam's twin: the dock arm), so section 7 reads as before
 	await S(page, () => window.__stores.bottomDock.armDockMode('chat', true));
 	await page.waitForTimeout(1200);

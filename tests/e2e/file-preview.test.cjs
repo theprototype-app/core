@@ -191,6 +191,23 @@ h.run(async () => {
 		(await page.locator('#preview-prev').isDisabled()) === true,
 		'…and the arrow disables at the end rather than wrapping round'
 	);
+	// 1.64 owner bug: an arrow press drew the keyboard focus ring round the WHOLE window (the shell refocuses
+	// itself so its keys keep reaching it); it is not a control, so no ring, and nothing gets selected
+	const shellRing = () =>
+		page.evaluate((sel) => {
+			const w = /** @type {HTMLElement} */ (document.querySelector(sel));
+			const cs = getComputedStyle(w);
+			return { focused: document.activeElement === w || w.contains(document.activeElement), style: cs.outlineStyle, width: cs.outlineWidth, selection: String(window.getSelection() ?? '') };
+		}, W);
+	await page.keyboard.press('ArrowRight');
+	await page.waitForTimeout(700);
+	let ring = await shellRing();
+	h.check(ring.focused && (ring.style === 'none' || ring.width === '0px') && ring.selection === '', `after ArrowRight the window keeps the keys and draws no focus ring, nothing selected (${JSON.stringify(ring)})`);
+	await page.keyboard.press('ArrowLeft');
+	await page.waitForTimeout(700);
+	ring = await shellRing();
+	h.check(ring.focused && (ring.style === 'none' || ring.width === '0px') && ring.selection === '', `...and after ArrowLeft (${JSON.stringify(ring)})`);
+	h.check((await targetOf(A))?.kind === 'folder', 'premise: back on the folder for section 4');
 
 	// ---- 4. Enter walks in, Backspace walks out ----------------------------------------
 	h.check((await activeFolderOf(A)) === null, 'premise: the Explorer is at the library root');

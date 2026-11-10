@@ -408,8 +408,8 @@ h.run(async () => {
 	await A.page.waitForTimeout(300);
 	h.check(!(await A.page.locator('#spline-edit-toolbar').isVisible()), 'Done closes the session');
 	await A.page.evaluate((uuid) => window.__stores.objectActions.selectObject(uuid, true), spline.uuid);
-	await A.page.waitForTimeout(700);
-	h.check(await A.page.locator('#spline-thickness').isVisible(), 'the Properties panel grows a Spline section');
+	// the Inspector opens on a timer that takes 0.5-1.5 s under e2e load (showSidebar): poll, never sleep
+	await h.eventually(() => A.page.locator('#spline-thickness').isVisible(), (v) => v === true, 'the Properties panel grows a Spline section', 8000);
 	await A.page.evaluate((uuid) => {
 		window.__stores.splineTool.setSplineColor(uuid, '#ff00aa');
 		window.__stores.splineTool.setSplineRadiusAll(uuid, 0.2);

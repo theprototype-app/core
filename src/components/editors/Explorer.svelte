@@ -112,6 +112,7 @@
 	// route that replaces the world.
 	import { guardSceneReplace, travelToPeerScene } from '$lib/sceneOpenGuard';
 	import VersionHistory from './VersionHistory.svelte';
+	import ImageHistory from './ImageHistory.svelte'; // showhide-v8 §2: File history tab
 	import ImportSettingsPanel from './ImportSettingsPanel.svelte'; // 46 P2
 	import Cc0Credit from './Cc0Credit.svelte'; // 47-cc0: a CC0 download names its source
 	// 21-G2: the "update available" dot on old scene versions. The manifest store is
@@ -2713,7 +2714,7 @@
 				);
 				return;
 			}
-			showProperties({ kind: 'item', item });
+			showProperties({ kind: 'item', item }, 'history');
 		});
 	});
 
@@ -4945,7 +4946,7 @@
 								label: 'Version history',
 								icon: 'history',
 								tooltip: 'Earlier versions of this scene — restore, pin or free their bytes',
-								action: () => showProperties({ kind: 'item', item })
+								action: () => showProperties({ kind: 'item', item }, 'history')
 							},
 							// R4: one Join per peer standing in this scene
 							...joinEntries(item),
@@ -6480,10 +6481,11 @@
 	}
 	// right-click Properties: select AND open the panel. A plain single-click only
 	// selects — it never forces the (closed) Properties panel open (197 note).
-	function showProperties(t: any) {
+	/** @param mode showhide-v8 §2: 'history' lands on the File history tab (the Version history route) */
+	function showProperties(t: any, mode: 'props' | 'history' = 'props') {
 		if (t.kind === 'item') inspectItem(t.item);
 		else selectFolder(t.folder);
-		shell?.showSecondary('props');
+		shell?.showSecondary(mode);
 	}
 	function openFolder(id: string | null) {
 		search = '';
@@ -7436,17 +7438,20 @@
 {#snippet content()}
 	<WindowShell
 		key="explorer"
+		mainLabel="Files"
 		bind:this={shell}
 		primaryLabel="folder tree"
 		secondaryModes={[
 			{ key: 'props', icon: 'ⓘ', label: 'Properties' },
-			{ key: 'settings', icon: '⚙', label: 'Settings' }
+			// showhide-v8 §2: one right handle, three tabs; a file's past has its own tab (scenes and images today)
+			{ key: 'history', icon: '⟲', label: 'File history' },
+			{ key: 'settings', icon: 'settings', label: 'Settings' }
 		]}
 	>
 		{#snippet topbar()}
 			<!-- 21-I2: the identity row that used to sit here is now the CHIP beside the
 			     search box. What is left is the LOCATION trail — which folder am I in —
-			     which is a different question and keeps its own ⚙ toggle. -->
+			     which is a different question and keeps its own cog toggle. -->
 			{#if showBreadcrumb}
 				<div id="explorer-crumbs" class="tp-noscrollbar flex items-center gap-0.5 overflow-x-auto whitespace-nowrap border-b border-border px-2 py-1 text-[11px] text-text-2">
 					{#each crumbs as c, i (c.id ?? 'root')}
@@ -8720,11 +8725,9 @@
 							{/if}
 						{/if}
 					</div>
-					<!-- 21-G7: a scene file's PAST belongs with the rest of its facts. Renders
-					     itself away for every other kind, and for a pack card (no history to have). -->
 					<!-- 47-cc0: where a free CC0 download came from (site / authors / licence / link) -->
 					<Cc0Credit id="explorer-cc0-source" source={selItem.source} />
-					<VersionHistory item={selItem} onDownloadAll={downloadSceneVersions} />
+					<!-- showhide-v8 §2: a scene's Version history moved to the File history tab -->
 					<!-- 46 P2: a model's import settings (per-asset override + Reimport); away for other kinds -->
 					<ImportSettingsPanel item={selItem} />
 				{:else if selected?.kind === 'folder'}
@@ -8746,6 +8749,25 @@
 					<p class="leading-relaxed text-text-muted">
 						Select a folder or file (or right-click ▸ Properties) to see its details here.
 					</p>
+				{/if}
+			</div>
+		{:else if mode === 'history'}
+			<!-- showhide-v8 §2: THE FILE HISTORY TAB. 21-G7's scene Version history (it renders itself away for every other
+			     kind and for a pack card) and the image editor's versions; other kinds have no past yet (proposal B) -->
+			<div id="explorer-file-history" class="flex flex-col gap-2 p-2 text-xs text-text-2">
+				{#if selItem}
+					<div class="flex items-center gap-2">
+						<span class="min-w-0 flex-1 wrap-break-word font-semibold">{selItem.name}</span>
+					</div>
+					{#if selItem.kind === 'scene' && !selItem.packEntry}
+						<VersionHistory item={selItem} onDownloadAll={downloadSceneVersions} />
+					{:else if selItem.kind === 'image' && !selItem.packEntry}
+						<ImageHistory item={selItem} />
+					{:else}
+						<p class="leading-relaxed text-text-muted">Scenes and images keep a history here. This kind of file has none yet.</p>
+					{/if}
+				{:else}
+					<p class="leading-relaxed text-text-muted">Select a scene or an image to see its earlier versions here.</p>
 				{/if}
 			</div>
 		{:else}
@@ -8895,7 +8917,9 @@
 				{@render storageChip()}
 				{@render identityChip()}
 			{/snippet}
-			{#if $phoneShellActive}
+			<!-- showhide-v8 §3 (owner: "when split view and short in space in width, header breaks and covers interface of
+			     right window split"): in a SPLIT dock the row scrolls / drags sideways too, so it never runs into the other pane -->
+			{#if $phoneShellActive || $dockPaneOf['explorer']}
 				<!-- 40 F3: on the phone the toolbar SCROLLS sideways (ui/ScrollStrip) instead of
 				     squeezing the project name to "Unt…" — every chip stays reachable -->
 				<div class="mb-1" use:headerWidth>

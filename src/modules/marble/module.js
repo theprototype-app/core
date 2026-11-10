@@ -551,7 +551,7 @@ export default {
 			const read = String(data?.read ?? 'title');
 			if (read === 'levelStars') {
 				const id = Number(data?.level) || 0;
-				if (!(kit.levels.unlocked?.(String(id)) ?? true)) return '🔒 locked';
+				if (!(kit.levels.unlocked?.(String(id)) ?? true)) return 'Locked';
 				const row = prog().levels?.[String(id)];
 				return row ? starsText(row.stars ?? 0) : '☆☆☆';
 			}

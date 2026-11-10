@@ -5,6 +5,7 @@ import { normalizeLocomotion, normalizeSpawn } from './locomotionPolicy'; // 30b
 import { normalizeBounds } from './teleportRules'; // 31 K1
 import { normalizeReach } from './playReach'; // 31-towers P1
 import { normalizePassThrough, PASS_DEFAULTS } from './selectThrough'; // 36 F22 (a leaf)
+import { normalizeLevelsTable } from './gameLevels/table.js'; // 93 LP0 (a leaf)
 
 // CL-A A6 / 21-B B1: scene-wide physics settings. ONE shared object for the
 // whole session, replicated as its OWN latest-wins singleton message (the
@@ -246,6 +247,9 @@ export function normalizeScenePhysics(raw) {
 		...(typeof source.fluidBudget === 'number' && Number.isFinite(source.fluidBudget)
 			? { fluidBudget: Math.round(Math.max(200, Math.min(20000, source.fluidBudget))) }
 			: {}),
+		// 93 LP0: the game's ONE Levels table (+ its keep list and loading screen) — present only when
+		// authored, so a scene that never used it stays byte-identical (gameLevels/table.js)
+		...optional('levels', normalizeLevelsTable(source.levels)),
 		changedAt: typeof source.changedAt === 'number' ? source.changedAt : 0
 	};
 	return withUnknown(source, state, [
@@ -263,6 +267,7 @@ export function normalizeScenePhysics(raw) {
 		'pick',
 		'simOnLoad',
 		'fluidBudget',
+		'levels',
 		'changedAt',
 		'type' // the wire envelope's own field, never state
 	]);

@@ -92,7 +92,7 @@ const rect = (page, sel) => page.evaluate((s) => { const el = document.querySele
 const barCells = (page) => page.evaluate(() => [...document.querySelector('#controls-pill .hud-bar-row').children].map((el) => (el.querySelector('#play-button') ? '__spacer' : el.id || el.getAttribute('title'))));
 const folded = (page) => page.evaluate(() => document.getElementById('toolbar-overflow')?.dataset.folded?.split(',').filter(Boolean) ?? []);
 /** every bar-able button on the bar (the user's "enable all icons"), Play in the middle */
-const ALL_ON = JSON.stringify({ order: ['move', 'rotate', 'scale', 'pivot', 'mode', 'objects', 'flow', 'explorer', 'animation', 'flowcode', 'uv', 'shader', 'hud', 'profiler', 'code'], hidden: [], spacerIndex: 5, seen: ['move', 'rotate', 'scale', 'pivot', 'mode', 'objects', 'flow', 'explorer', 'animation', 'flowcode', 'uv', 'shader', 'hud', 'profiler', 'code', 'ai', 'add', 'chat', 'mic', 'notes', 'notifications', 'peers', 'undo', 'redo', 'multiselect'] });
+const ALL_ON = JSON.stringify({ order: ['move', 'rotate', 'scale', 'pivot', 'mode', 'objects', 'flow', 'explorer', 'animation', 'timeline', 'uv', 'shader', 'hud', 'profiler', 'code'], hidden: [], spacerIndex: 5, seen: ['move', 'rotate', 'scale', 'pivot', 'mode', 'objects', 'flow', 'explorer', 'animation', 'timeline', 'uv', 'shader', 'hud', 'profiler', 'code', 'ai', 'add', 'chat', 'mic', 'notes', 'notifications', 'peers', 'undo', 'redo', 'multiselect'] });
 
 // ONLY=j2,j8menu,j9,j5,j8clamp,j8edit,j10 runs those sections alone — each row's COUNTERFACTUAL is
 // then its own red on a base that lacks the others
@@ -592,7 +592,7 @@ h.run(async () => {
 					h.check(rows[rows.length - 1] === 'Customize toolbar…' && rows.length === f.length + 1, T + `J10: "»" lists the folded buttons + Customize toolbar… (${rows.join(' | ')})`);
 					await shot(P, `j10-menu-${theme}`);
 					const pick = f[f.length - 1];
-					const closeStore = { code: 'codeWorkspaceClose', profiler: 'profilerClose', hud: 'hudEditorClose', shader: 'shaderEditorClose', uv: 'uvEditorClose', flowcode: 'flowCodeClose', animation: 'animationClose' }[pick];
+					const closeStore = { code: 'codeWorkspaceClose', profiler: 'profilerClose', hud: 'hudEditorClose', shader: 'shaderEditorClose', uv: 'uvEditorClose', timeline: 'timelineClose', animation: 'animationClose' }[pick];
 					await P.locator('[role="menu"] [role="menuitem"]').nth(f.length - 1).click();
 					await P.waitForTimeout(700);
 					h.check(!!closeStore && (await flag(P, closeStore)) === false, T + `J10: the "${pick}" row opens its panel (${closeStore})`);

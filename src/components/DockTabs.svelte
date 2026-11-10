@@ -50,9 +50,12 @@
 	import { mobileUndockAllowed } from '../stores/appStore.js';
 	import DockViewsSheet from './DockViewsSheet.svelte';
 	import { stripScroll } from '$lib/ui/stripScroll.js';
+	import { tabTouch } from '$lib/ui/tabTouch.js'; // panel-gestures item 7
+	import { chromeButton, hiddenChromeIds, showButtonsItems } from '$lib/chromeButtons'; // panel-gestures item 5
 	import ContextMenu from './ContextMenu.svelte';
 	import Icon from './ui/Icon.svelte';
 	import { tearOffAt } from '$lib/windows/panelPlaces.js';
+	import { layoutLocked } from '$lib/windowPrefs.js';
 
 	// 40 F9: on a phone (with floating windows off) "+" is a sheet listing EVERY window with
 	// a show/hide toggle; with floating windows on, a phone behaves like the desktop.
@@ -72,7 +75,12 @@
 	/** @param {MouseEvent} e @param {string} key */
 	function openTabMenu(e, key) {
 		e.preventDefault();
-		tabMenu = { x: e.clientX, y: e.clientY, items: dockTabItems(key) };
+		openTabMenuAt(e.clientX, e.clientY, key);
+	}
+	/** the tab's menu at a point (a right-click, or item 7's touch long-press); item 5: + the dock buttons
+	 * this person hid ("Show buttons ▸") @param {number} x @param {number} y @param {string} key */
+	function openTabMenuAt(x, y, key) {
+		tabMenu = { x, y, items: [...dockTabItems(key), ...showButtonsItems('dock', $hiddenChromeIds)] };
 	}
 
 	// --- 44 M9: the split pair's tab --------------------------------------------------
@@ -131,6 +139,8 @@
 	// touch stands down, like docking.js and the bottom-dock band: a horizontal drag
 	// inside a 22px strip is exactly the gesture the strip's own `overflow-x-auto`
 	// scrolling owns. The tab menu's Move left / Move right is the touch path.
+	// panel-gestures item 7: ...and a still LONG-PRESS lifts the tab ($lib/ui/tabTouch), after which the same
+	// drag runs (reorder, or out of the strip to undock / join a sidebar) — the swipe still scrolls
 	const coarse = typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
 
 	let stripEl = $state(/** @type {HTMLElement|null} */ (null));
@@ -188,9 +198,9 @@
 		// DIRECT listener: svelte delegates `onpointerdown` to the app root, and panel
 		// chrome swallows delegated events on the way up (the repo's standing rule for
 		// pointer gestures inside a panel).
-		/** @param {PointerEvent} e */
-		const down = (e) => {
-			if (coarse || e.button !== 0 || !stripEl) return;
+		/** @param {number} x @param {number} y */
+		const begin = (x, y) => {
+			if (!stripEl) return false;
 			// GEOMETRY IS FROZEN AT THE START. The insertion index is read against the tab
 			// rects as they were when the gesture began, so a reorder preview cannot move
 			// the boundaries that decide the next reorder — the feedback loop that makes a
@@ -198,13 +208,18 @@
 			const tabs = [...stripEl.querySelectorAll('[data-dock-tab]')];
 			pending = {
 				key,
-				x: e.clientX,
-				y: e.clientY,
+				x,
+				y,
 				order: tabs.map((el) => /** @type {HTMLElement} */ (el).dataset.dockTab ?? ''),
 				rects: tabs.map((el) => el.getBoundingClientRect()),
 				strip: stripEl.getBoundingClientRect(),
 				scroll: stripEl.scrollLeft
 			};
+			return true;
+		};
+		/** @param {PointerEvent} e */
+		const down = (e) => {
+			if (coarse || e.button !== 0 || !begin(e.clientX, e.clientY)) return;
 			window.addEventListener('pointermove', move);
 			window.addEventListener('pointerup', up);
 			window.addEventListener('pointercancel', cancel);
@@ -241,6 +256,9 @@
 			cleanup();
 			if (!state || !dragged) return; // never travelled: the click activates the tab
 			draggedAt = performance.now();
+			// showhide-v8 §6: Lock layout — a tab dragged anywhere stays where it was (the menu's Undock still works:
+			// a menu pick is never an accident)
+			if ($layoutLocked) return;
 			// 44 M9: dropped onto a pane of the split — it shows there (a pair dragged by its tab
 			// moves its LEFT half; the half it replaces stays a tab)
 			if (pane && setSplitPane(pane.pair, pane.pane, dragged)) {
@@ -285,6 +303,19 @@
 			window.removeEventListener('pointercancel', cancel);
 		}
 		node.addEventListener('pointerdown', down);
+		// item 7: on a touch screen the long-pressed tab runs the same drag (the tabTouch callbacks ARE move / up)
+		const touch = coarse
+			? tabTouch(node, {
+					onlift: (x, y) => void begin(x, y),
+					onmove: move,
+					ondrop: up,
+					oncancel: cancel,
+					onmenu: (x, y) => {
+						cleanup();
+						openTabMenuAt(x, y, key);
+					}
+				})
+			: null;
 		return {
 			/** @param {{key: string}} next */
 			update(next) {
@@ -292,6 +323,7 @@
 			},
 			destroy() {
 				node.removeEventListener('pointerdown', down);
+				touch?.destroy();
 				cleanup();
 			}
 		};
@@ -473,6 +505,7 @@
 			<button
 				id="dock-split"
 				class="tab-note dt-btn tp-dtab tp-dtab-icon"
+				use:chromeButton={'dock.split'}
 				class:dt-btn-on={!!$dockSplitView}
 				aria-pressed={!!$dockSplitView}
 				title={$dockSplitView ? 'Unsplit: show the two views as tabs again' : 'Split: show this view beside the next tab (or an empty pane)'}
@@ -484,6 +517,7 @@
 			<button
 				id="dock-undock"
 				class="tab-note dt-btn tp-dtab tp-dtab-icon"
+				use:chromeButton={'dock.undock'}
 				title={$undockButtonMode === 'group' ? 'Undock all tabs as one floating window' : 'Undock this view into a floating window'}
 				aria-label={$undockButtonMode === 'group' ? 'Undock all tabs' : 'Undock into a floating window'}
 				onclick={() => undockFromDock()}><Icon name="app-window" size={16} aria-hidden="true" /></button
@@ -492,6 +526,7 @@
 		<button
 			id="dock-minimize"
 			class="tab-note dt-btn tp-dtab tp-dtab-icon"
+			use:chromeButton={'dock.minimize'}
 			title="Minimize the dock"
 			aria-label="Minimize the dock"
 			onclick={() => ($dockTabs.length ? dockMinimized.set(true) : setDockEmptyOpen(false))}><Icon name="panel-bottom" size={16} aria-hidden="true" /></button

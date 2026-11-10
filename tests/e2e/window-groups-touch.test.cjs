@@ -5,7 +5,9 @@
 //
 //   1  a touch drag on the group's strip follows the finger at EVERY step (no pointercancel —
 //      the strip had touch-action:auto, so the browser took the gesture as a pan)
-//   2  a touch drag on a TAB NAME moves the whole group the same way (QUESTIONS Q1)
+//   2  a touch drag on a TAB NAME moves the whole group the same way (QUESTIONS Q1) — REVERSED by
+//      panel-gestures item 7: a touch on a tab scrolls the tabs / does nothing / lifts on a long-press
+//      ($lib/ui/tabTouch, suite panel-gestures); the group moves by its touch GRIP (.ts-grip) instead
 //   3  a long-press on a tab opens the kit menu (44 M3: the floating-window menu — Float (undock) is the old
 //      Ungroup this tab, Dock to bottom the old Dock this tab),
 //      and each row does what it says
@@ -18,7 +20,7 @@ const h = require('./helpers.cjs');
 
 const UNFOLDED = { viewport: { width: 770, height: 850 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2.9 };
 const FOLDED = { viewport: { width: 390, height: 896 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2.9 };
-const STORAGE = { mobileUndockAllowed: 'true', flowCodeDocked: 'false', animationDocked: 'false' };
+const STORAGE = { mobileUndockAllowed: 'true', timelineDocked: 'false', animationDocked: 'false' };
 
 const groups = (page) =>
 	page.evaluate(() => {
@@ -27,17 +29,17 @@ const groups = (page) =>
 		return g;
 	});
 
-/** group Objects + Flow Code (+ Animation) and park the group in clear space (toasts live at the top) */
+/** group Objects + Timeline (+ Animation) and park the group in clear space (toasts live at the top) */
 async function makeGroup(page, at, extra = []) {
 	await page.evaluate(
 		async ({ at, extra }) => {
 			const s = window.__stores;
 			s.objectListClose.set(false);
-			s.flowCodeClose.set(false);
+			s.timelineClose.set(false);
 			for (const k of extra) s[k].set(false);
 			await new Promise((r) => setTimeout(r, 900));
 			const wt = s.windowTabs;
-			wt.mergeWindows('objects', 'flowcode');
+			wt.mergeWindows('objects', 'timeline');
 			if (extra.includes('animationClose')) wt.mergeWindows('objects', 'animation');
 			await new Promise((r) => setTimeout(r, 300));
 			let g;
@@ -105,12 +107,13 @@ const tabCentre = (page, label) =>
 	page.evaluate((label) => {
 		const t = [...document.querySelectorAll('.tab-strip .ts-tab')].find((b) => b.textContent.trim() === label);
 		if (!t) return null;
+		t.scrollIntoView({ block: 'nearest', inline: 'nearest' }); // the tabs scroll sideways (a person swipes to it)
 		const r = t.getBoundingClientRect();
 		return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
 	}, label);
 
 // 44 M3: the group tab's menu is the floating-window menu ($lib/windowMenu)
-const ROWS = ['Dock to bottom', 'Move to left sidebar', 'Move to right sidebar', 'Float (undock)', 'Group with…', 'Bring to front', 'Reset size', 'Close'];
+const ROWS = ['Dock to bottom', 'Move to left sidebar', 'Move to right sidebar', 'Float (undock)', 'Group with…', 'Bring to front', 'Reset size', 'Size', 'Close'];
 const menuRows = (page) =>
 	page.evaluate(
 		(rows) =>
@@ -144,7 +147,7 @@ h.run(async () => {
 		const cdp = await page.context().newCDPSession(page);
 		await makeGroup(page, { x: 20, y: 300 });
 		await watchCancels(page);
-		h.check((await groups(page)).length === 1, `${name}: premise — Objects + Flow Code form one group`);
+		h.check((await groups(page)).length === 1, `${name}: premise — Objects + Timeline form one group`);
 
 		// 1 — the strip's empty part (the spacer before the dock/close buttons)
 		const bg = await page.evaluate(() => {
@@ -163,17 +166,35 @@ h.run(async () => {
 		h.check(follows(trail), `${name} 1.2 the group follows the finger at every step (${JSON.stringify(trail.slice(-3))})`);
 		await page.screenshot({ path: (process.env.OUT || '/tmp') + `/g6-${name}-strip-drag.png` });
 
-		// 2 — a TAB NAME is the grip on touch
+		// 2 — panel-gestures item 7: the GRIP moves the group on touch (a tab no longer does)
 		await page.evaluate(() => (window.__cancels = 0));
-		const tab = await tabCentre(page, 'Objects');
-		trail = await touchDrag(page, cdp, tab, { x: -100, y: -120 });
+		const grip = await page.evaluate(() => {
+			const r = document.querySelector('.tab-strip .ts-grip')?.getBoundingClientRect();
+			return r && r.width ? { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) } : null;
+		});
+		h.check(!!grip, `${name} 2.0 premise: the touch grip is drawn`);
+		trail = grip ? await touchDrag(page, cdp, grip, { x: 100, y: -120 }) : [];
 		cancels = await page.evaluate(() => window.__cancels);
 		const g2 = await groups(page);
-		h.check(cancels === 0 && follows(trail), `${name} 2.1 a touch drag on a tab name moves the whole group with the finger (cancels=${cancels}, ${JSON.stringify(trail.slice(-2))})`);
+		h.check(cancels === 0 && follows(trail), `${name} 2.1 a touch drag on the grip moves the whole group with the finger (cancels=${cancels}, ${JSON.stringify(trail.slice(-2))})`);
 		h.check(g2.length === 1 && g2[0].members.length === 2, `${name} 2.2 ...and the group stays whole (${JSON.stringify(g2.map((g) => g.members))})`);
+		const tab = await tabCentre(page, 'Objects');
+		const before = await stripPos(page);
+		// quick steps: a finger crosses the 8 px lock long before the 350 ms long-press lift (headless frames are slow)
+		if (tab && before) await touchDrag(page, cdp, tab, { x: 0, y: 120 }, 4);
+		const after = await stripPos(page);
+		h.check(!!tab && !!before && !!after && before.x === after.x && before.y === after.y && (await groups(page)).length === 1, `${name} 2.3 a plain vertical touch drag on a tab name moves nothing (${JSON.stringify({ tab, before, after })})`);
+
+		// the grip drag above moved the group right: park it back so its tabs are on a folded screen
+		await page.evaluate(() => {
+			let g;
+			window.__stores.windowTabs.tabGroups.subscribe((v) => (g = v))();
+			if (g[0]) window.__stores.windowTabs.moveGroup(g[0].id, 20 - g[0].rect.left, 300 - g[0].rect.top);
+		});
+		await page.waitForTimeout(300);
 
 		// 3 — long-press a tab → the kit menu
-		const fc = await tabCentre(page, 'Flow Code');
+		const fc = await tabCentre(page, 'Timeline');
 		await longPress(page, cdp, fc);
 		const rows = await menuRows(page);
 		h.check(
@@ -187,13 +208,13 @@ h.run(async () => {
 				const n = document.querySelector(s);
 				return !!n && getComputedStyle(n).display !== 'none' && n.getBoundingClientRect().width > 0;
 			};
-			return { strip: !!document.querySelector('.tab-strip'), fc: vis('#flow-code-window'), ol: vis('#object-list'), tm: document.querySelector('#flow-code-window')?.dataset.tabMember ?? null };
+			return { strip: !!document.querySelector('.tab-strip'), fc: vis('#timeline-window'), ol: vis('#object-list'), tm: document.querySelector('#timeline-window')?.dataset.tabMember ?? null };
 		});
 		h.check(!un.strip && un.fc && un.ol && un.tm === null, `${name} 3.3 Ungroup: both windows float on their own, both visible (${JSON.stringify(un)})`);
 
 		// Dock this tab
 		await makeGroup(page, { x: 20, y: 300 });
-		await longPress(page, cdp, await tabCentre(page, 'Flow Code'));
+		await longPress(page, cdp, await tabCentre(page, 'Timeline'));
 		await tapRow(page, cdp, 'Dock to bottom');
 		await page.waitForTimeout(600);
 		const dk = await page.evaluate(() => {
@@ -201,13 +222,13 @@ h.run(async () => {
 			window.__stores.bottomDock.dockOccupants.subscribe((v) => (o = v))();
 			window.__stores.bottomDock.visibleDockKey.subscribe((v) => (a = v))();
 			const ol = document.querySelector('#object-list');
-			return { present: !!o.flowcode?.present, visible: a, strip: !!document.querySelector('.tab-strip'), ol: !!ol && getComputedStyle(ol).display !== 'none' };
+			return { present: !!o.timeline?.present, visible: a, strip: !!document.querySelector('.tab-strip'), ol: !!ol && getComputedStyle(ol).display !== 'none' };
 		});
-		h.check(dk.present && dk.visible === 'flowcode' && !dk.strip && dk.ol, `${name} 3.4 Dock to bottom: Flow Code is the visible dock tab, Objects floats alone (${JSON.stringify(dk)})`);
+		h.check(dk.present && dk.visible === 'timeline' && !dk.strip && dk.ol, `${name} 3.4 Dock to bottom: Timeline is the visible dock tab, Objects floats alone (${JSON.stringify(dk)})`);
 
 		// Close (on a window that has no docked mode, Dock is offered but disabled)
-		await page.evaluate(() => localStorage.setItem('flowCodeDocked', 'false'));
-		await page.evaluate(() => window.__stores.bottomDock.armDockMode('flowcode', false));
+		await page.evaluate(() => localStorage.setItem('timelineDocked', 'false'));
+		await page.evaluate(() => window.__stores.bottomDock.armDockMode('timeline', false));
 		await page.waitForTimeout(700);
 		await makeGroup(page, { x: 20, y: 300 });
 		await longPress(page, cdp, await tabCentre(page, 'Objects'));
@@ -235,7 +256,7 @@ h.run(async () => {
 		const P = await h.setupPage(browser, 'desk', { context: { viewport: { width: 1440, height: 900 } }, storage: STORAGE });
 		const page = P.page;
 		await makeGroup(page, { x: 300, y: 300 });
-		const fc = await tabCentre(page, 'Flow Code');
+		const fc = await tabCentre(page, 'Timeline');
 		await page.mouse.click(fc.x, fc.y, { button: 'right' });
 		await page.waitForTimeout(300);
 		const rows = await menuRows(page);

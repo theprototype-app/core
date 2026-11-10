@@ -179,6 +179,7 @@
 				},
 				{
 					label: 'Draw mode',
+					icon: 'pen-tool',
 					checked: $drawMode,
 					tooltip: 'Drag on surfaces to draw 3D strokes (Esc exits)',
 					action: toggleDrawMode
@@ -207,6 +208,7 @@
 				},
 				{
 					label: $measureMode ? 'Stop measuring' : 'Measure distance',
+					icon: 'ruler',
 					checked: $measureMode,
 					tooltip: 'Click points (they snap to corners, edges and faces); ✓ or Enter keeps the measurement in the scene; Esc cancels',
 					action: () => toggleMeasure()
@@ -223,7 +225,8 @@
 						]
 					: []),
 				{
-					label: $simulating ? '⏹ Stop simulation' : '▶ Simulate physics',
+					label: $simulating ? 'Stop simulation' : 'Simulate physics',
+					icon: $simulating ? 'square' : 'play',
 					disabled: !!$remoteSimulating,
 					tooltip: $remoteSimulating
 						? nameOf($remoteSimulating) + ' is simulating'
@@ -233,11 +236,13 @@
 				...($simulating
 					? [
 							{
-								label: $simPaused ? '▶ Resume simulation' : '⏸ Pause simulation',
+								label: $simPaused ? 'Resume simulation' : 'Pause simulation',
+								icon: $simPaused ? 'play' : 'pause',
 								action: () => pauseSimulation()
 							},
 							{
-								label: '↺ Reset simulation',
+								label: 'Reset simulation',
+								icon: 'rotate-ccw',
 								tooltip: 'Restore the initial layout (no undo entry)',
 								action: () => resetSimulation()
 							}

@@ -15,7 +15,7 @@
 //      Revoke all ends them
 //   2  the JOINER: a captured invite rides the dial as {v, i, p} for that host only, with
 //      kind: agent, and the token is nowhere in the dial
-//   3  two real peers (+ a late joiner): the host mints the link in the Request AI sheet, the
+//   3  two real peers (+ a late joiner): the host mints the link in the Invite sheet, the
 //      agent page opens it and is IN with no card; the token is gone from its URL; the host
 //      shows the robot + AI and builds no avatar for it; the agent's tool call lands as a
 //      line in the host's AI window, a click selects it, Undo undoes it for everyone; the
@@ -206,9 +206,16 @@ h.run(async () => {
 	console.log('\n=== 3. two real peers: the link → in, no card ===');
 	const A = await h.setupPage(browser, 'A');
 	await A.page.waitForFunction(() => window.__stores?.peers && (() => { let p; window.__stores.peers.subscribe((v) => (p = v))(); return !!p?.peer?.open; })(), null, { timeout: 30000 }).catch(() => {});
-	await A.page.locator('#connect-request-ai').click({ timeout: 30000, noWaitAfter: true });
+	// 78 PL36: ONE Invite button (person-plus) replaced the robot Request AI; it opens on Person
+	h.check((await A.page.locator('#connect-request-ai').count()) === 0, 'no robot Request AI button any more');
+	await A.page.locator('#connect-invite').click({ timeout: 30000, noWaitAfter: true });
 	await A.page.locator('#invite-sheet').waitFor({ timeout: 5000 });
-	h.check((await A.page.locator('#invite-sheet').getAttribute('data-tab')) === 'agent', 'Request AI opens the sheet on the AI agent tab');
+	h.check((await A.page.locator('#invite-sheet').getAttribute('data-tab')) === 'person', 'Invite opens the sheet on the Person tab');
+	const tabNames = await A.page.locator('#invite-sheet').locator('xpath=ancestor::dialog').getByRole('tab').allInnerTexts().catch(() => []);
+	h.check(tabNames.map((t) => t.trim()).join('|') === 'Person|AI agent', `the tabs read Person | AI agent (${tabNames.join('|')})`);
+	await A.page.locator('#invite-tab-agent').click({ timeout: 5000 });
+	await A.page.waitForFunction(() => document.querySelector('#invite-sheet')?.getAttribute('data-tab') === 'agent', null, { timeout: 5000 });
+	h.check(true, 'the AI agent tab keeps the agent flow');
 	const rolesOn = await A.page.evaluate(() => { let r; window.__stores.cloudHooks.rolesInfo.subscribe((v) => (r = v))(); return !!r; });
 	if (rolesOn) h.check((await A.page.locator('#invite-role-edit[aria-checked="true"]').count()) === 1, 'a cloud build offers the role, Edit preselected for an agent');
 	else h.check((await A.page.locator('#invite-role-view').count()) === 0, 'no role choice in the OSS build (everyone edits)');

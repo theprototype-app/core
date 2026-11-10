@@ -105,6 +105,9 @@ export const DEBUG_HOOKS = [
 	['annotationsHandler', () => import('./annotationsHandler')],
 	['noteHistory', () => import('./noteHistory')],
 	['flowRuntime', () => import('./flowRuntime')],
+	// 78 F27: the starter recipes (door, walk-up door, bell, guard)
+	['starterRecipes', () => import('./starterRecipes.js')],
+	['gameAnnounce', () => import('./gameAnnounce')],
 	// 48 D1: the node graph debugger (stores + requests; the runtime half is flowRuntime.flowDebugRuntime)
 	['flowDebug', () => import('./flowDebug.js')],
 	['history', () => import('./history')],
@@ -118,18 +121,40 @@ export const DEBUG_HOOKS = [
 	['materialTiers', () => import('./materialTiers.js')],
 	// 40 F15: the motion nodes (motionNodesDebug, resetMotionNodes)
 	['motionNodes', () => import('./motion/motionNodes.js')],
+	// 85 N1/N2/N4: the swing / tween / light nodes (tweenNodesDebug, lightNodesDebug) + the pure core
+	['tweenNodes', () => import('./motion/tweenNodes.js')],
+	['lightNodes', () => import('./motion/lightNodes.js')],
+	['tweenCore', () => import('./motion/tweenCore.js')],
+	// 85 N5: Wind Sway + Flowing Water
+	['swayNodes', () => import('./motion/swayNodes.js')],
+	// 85 N3: Ambient Animal
+	['ambientNodes', () => import('./motion/ambientNodes.js')],
+	// 85 I1: a Grabbable's return glides (suites read grabReturnDebug)
+	['grabReturn', () => import('./grabReturn.js')],
+	// 85 I2: Highlight + Press Button, and what this device points at
+	['pressNodes', () => import('./motion/pressNodes.js')],
+	['hoverState', () => import('./hoverState.js')],
+	// 85 I3: Sit Spot
+	['sitSpot', () => import('./sitSpot.js')],
 	['objectActions', () => import('./objectActions')],
 	['commandsHandler', () => import('./commandsHandler.svelte')],
 	['moduleSDK', () => import('./moduleSDK')],
 	['moduleLifecycle', () => import('./sdk/lifecycleEnv.js')],
 	['drawMode', () => import('./drawMode')],
 	['pathCapture', () => import('./pathCapture')],
+	// 78: the capture stack (F5), Animate in editor (F6), live card states (F7), the flow lint (F24)
+	['captureStack', () => import('./captureStack')],
+	['editorMotion', () => import('./editorMotion')],
+	['nodeLiveState', () => import('./nodeLiveState')],
+	['flowLint', () => import('./flowLint.js')],
 	['lockControl', () => import('./lockControl')],
 	['prefabs', () => import('./prefabs')],
 	['prefabLinks', () => import('./prefabLinks')],
 	['prefabSync', () => import('./prefabSync')],
 	['prefabLibrary', () => import('./prefabLibrary')],
 	['physics', () => import('./physics')],
+	// 78 F2: the hover sampler's view (hoverInputDebug)
+	['hoverInput', () => import('./hoverInput')],
 	// 36-sim: buoyancy/jiggle/fluid/splash state
 	['sim', () => import('./sim/debug.js')],
 	// 49-fluid W2: the GPU fluid switch + verdict (gpuFluidDebug, remeasureGpuFluid, loseGpuDeviceForTest)
@@ -388,6 +413,10 @@ export const DEBUG_HOOKS = [
 	['undoToast', () => import('./undoToast')],
 	['docking', () => import('./docking')],
 	['sidebars', () => import('./sidebars')],
+	['sidebarHandles', () => import('./sidebarHandles')],
+	['windowPrefs', () => import('./windowPrefs.js')],
+	['deviceClass', () => import('./deviceClass.js')],
+	['paneLocks', () => import('./ui/paneLocks.js')],
 	// dock-fixes: the hosted windows' toggle tree + the Panels button (item 3 / item 8 suites)
 	['panelToggles', () => import('./panelToggles')],
 	['panelsButton', () => import('./panelsButton')],
@@ -444,6 +473,12 @@ export const DEBUG_HOOKS = [
 	['hudArrange', () => import('./hudArrange')],
 	['gamePresence', () => import('./gamePresence')],
 	['levels', () => import('./levels')],
+	// 93: levels and progress (the table runtime, portals / checkpoints at play time, travel, loading, saves)
+	['levelsPlay', () => import('./gameLevels/play.js')],
+	['levelsTravel', () => import('./gameLevels/travel.js')],
+	['levelsCheckpoints', () => import('./gameLevels/checkpoints.js')],
+	['levelsLoading', () => import('./gameLevels/loading.js')],
+	['levelsSave', () => import('./gameLevels/save.js')],
 	['peerVars', () => import('./peerVars')],
 	['projectManifest', () => import('./projectManifest')],
 	['projectFile', () => import('./projectFile')],
@@ -460,6 +495,7 @@ export const DEBUG_HOOKS = [
 	['filePreview', () => import('./filePreview')],
 	['saveAs', () => import('./saveAs')],
 	['windowTabs', () => import('./windowTabs')],
+	['chromeButtons', () => import('./chromeButtons')],
 	['colocation', () => import('./colocation')],
 	['colocationCalibrate', () => import('./colocationCalibrate')],
 	['colocationPresence', () => import('./colocationPresence')],
@@ -527,6 +563,11 @@ export const DEBUG_HOOKS = [
 	['gameKit', () => import('./gameKit')],
 	['moduleWorld', () => import('./moduleWorld')],
 	['playSpawn', () => import('./playSpawn')],
+	// 78 PL32: the joiner's side step (lastJoinSideStep) + the near-avatar fade maths
+	['joinSideStep', () => import('./joinSideStep.js')],
+	['nearAvatars', () => import('./nearAvatars.js')],
+	// 78 PL34: the join name ask + guest names
+	['guestName', () => import('./guestName.js')],
 	['packRefs', () => import('./packRefs')],
 	// 36 U9: per-file load states + the placeholder renderer
 	['loadStates', () => import('./loadStates')],
@@ -594,7 +635,13 @@ export const DEBUG_HOOKS = [
 	// 64-text: fonts (bundled + Library + Google), the solid build, the export licence walk
 	['textFonts', () => import('./textFonts.js')],
 	['text3dBuild', () => import('./text3dBuild.js')],
-	['sceneLicences', () => import('./sceneLicences.js')]
+	['sceneLicences', () => import('./sceneLicences.js')],
+	// 78 F4: the Path object (pathOf = the F9 read API, the actions, the agent tool)
+	['pathRuntime', () => import('./path/pathRuntime.js')],
+	['pathActions', () => import('./path/pathActions.js')],
+	['pathObject', () => import('./path/pathObject.js')],
+	['pathState', () => import('./path/pathState.js')],
+	['pathTools', () => import('./ai/pathTools.js')]
 ];
 
 /** Load every row and publish `window.__stores`. @returns {Promise<Record<string, any>>} */

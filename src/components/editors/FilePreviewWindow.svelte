@@ -539,6 +539,7 @@
 		data-preview-id={winId}
 		bind:this={winEl}
 		tabindex="-1"
+		data-focus-shell
 		class="ui-panel tp-ui tp-window fixed flex flex-col overflow-hidden outline-hidden"
 		class:pv-through={winPassthrough}
 		class:pv-faded={winOpacity < 1}

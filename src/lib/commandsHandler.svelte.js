@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { notifyOn } from './notifyPrefs';
 import { globalScene, objectsGroup, showGrid, TControls, lockedObjects, selectedObject, globalCamera, peerHands, pokeScene, beginSceneBatch, endSceneBatch } from '../stores/sceneStore.js';
 import { receiveMapSlot, receiveTexTransform, receiveNormalStrength } from '$lib/materialMaps';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
@@ -25,6 +26,7 @@ import { normalizeLodGroup } from '$lib/lodGroupCore'
 import { normalizeFluid } from '$lib/sim/fluidCore.js'; // 36-sim
 import { normalizeEmitter, normalizeInteraction } from '$lib/sim/fluidEmitterCore.js'; // 36-fb F23
 import { applyFlowPathTo } from '$lib/sim/flowPathObject.js'; // 36-fb F24
+import { normalizePortal, normalizeCheckpoint } from '$lib/gameLevels/objects.js'; // 93 LP1 / LP3
 import { applyTextPathTo, bumpTextTurn } from '$lib/textPathObject.js'; // 64 D2
 import { runSceneClearHandlers } from '$lib/moduleSDK'
 import { annotations } from '$lib/annotationsHandler'
@@ -169,7 +171,7 @@ export function sceneCommand(command) {
                 // 15-J: viewer send-gate — peers drop a viewer's clearscene (cloud
                 // capability gate), so clearing locally would only desync this client.
                 if (isViewer()) { warnViewerReadOnly('View-only — ask an editor to clear the scene.'); return; }
-                clearSceneLocal();
+                clearSceneLocal({ shared: true });
                 peer.send({type: 'clearscene', peerId: peer.peer.id});
             } else {
                 let object = sceneObjects.getObjectByProperty('uuid', command.split(' ')[1])
@@ -285,7 +287,10 @@ function sceneRoot() {
     return scene ?? sceneObjects;
 }
 
-export function clearSceneLocal() {
+/** @param {{shared?: boolean}} [opts] `shared`: the room clears together (a replicated
+ * `/clear all` or a peer's `clearscene`); absent = only this peer's world is replaced (a
+ * travel, a non-replicated load), which must not outrank the room's live game state (78 F16) */
+export function clearSceneLocal(opts = {}) {
     // 33 (L4): what the scene uses is read BEFORE anything is wiped — those are the
     // modules a replacement may leave behind (sceneScope)
     noteSceneLeaving();
@@ -301,7 +306,7 @@ export function clearSceneLocal() {
         for (const child of doomed) disposeTree(child, { keep });
     }
     sceneObjects?.clear();
-    runSceneClearHandlers(); // modules remove their scene-root content
+    runSceneClearHandlers({ shared: !!opts.shared }); // modules remove their scene-root content
     annotations.set([]);
     lockedObjects.set([]);
     // animated-import bytes/mixers are per-object — all gone now
@@ -314,7 +319,7 @@ export function clearSceneLocal() {
 
 /** A peer wiped the shared scene @param {string} peerId */
 export function applyClearScene(peerId) {
-    clearSceneLocal();
+    clearSceneLocal({ shared: true });
     showToast(peerId + ' cleared the scene');
 }
 
@@ -340,7 +345,7 @@ export function handleDisconnected(peerId) {
     // peer is still known, so relayed duplicates don't stack toasts (172).
     delete rosterFirstSeen[peerId];
     const known = users.some((/** @type {any} */ u) => u[0] === peerId);
-    if (known) showToast(peerId + ' disconnected');
+    if (known && notifyOn('peerLeft')) showToast(peerId + ' disconnected'); // profile-notify: Settings ▸ Interface ▸ Notifications
     users = users.filter(u => u[0] !== peerId);
     userdata.set(users);
     userdata.update((value) => value);
@@ -690,6 +695,16 @@ export async function objectParameters(data) {
         if (mesh) {
             if (data.flowPath) applyFlowPathTo(mesh, data.flowPath);
             else delete mesh.userData.flowPath;
+            pokeScene();
+        }
+    } else if (data.parameter == 'portal' || data.parameter == 'checkpoint') {
+        // 93 LP1 / LP3: a portal's / checkpoint's record, normalized at the boundary
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            const key = data.parameter;
+            const value = data[key];
+            if (value) mesh.userData[key] = key === 'portal' ? normalizePortal(value) : normalizeCheckpoint(value);
+            else delete mesh.userData[key];
             pokeScene();
         }
     } else if (data.parameter == 'textPath') {

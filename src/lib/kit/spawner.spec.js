@@ -12,7 +12,7 @@ export default {
 			name: 'spawn',
 			kind: 'action',
 			label: 'Spawn entities',
-			doc: 'Make COUNT entities of a KIND, drawn as copies of the TEMPLATE object, at a place (unwired: where the template stands). Each carries its own health and, with a speed above 0, a mover. Code: spawn({kind, template, at, count, spread, hp, speed, removeAfter, tags, data, mover}) -> ids.',
+			doc: 'Make COUNT entities of a KIND, drawn as copies of the TEMPLATE object, at a place (unwired: where the template stands). Each carries its own health and, with a speed above 0, a mover. Code: spawn({kind, template, at, count, spread, hp, speed, removeAfter, tags, data, mover}) -> ids. A dead entity stops counting at once and leaves after removeAfter seconds (default 1, from code too); removeAfter: null keeps the bodies (to revive them later).',
 			authority: true,
 			// T2: a module's call carries its id (kitApi), so its entities leave with it
 			owned: true,

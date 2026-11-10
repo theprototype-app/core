@@ -61,7 +61,7 @@
 	<div
 		id="text-editor-window"
 		class="ui-panel tp-ui tp-window fixed flex flex-col overflow-hidden"
-		use:dragWindow={{ key: 'textEditorWin', defaultRect: { left: 220, top: 110 } }}
+		use:dragWindow={{ key: 'textEditorWin', defaultRect: { left: 220, top: 110 }, resizable: true, minW: 360, minH: 240 }}
 		use:focusStack
 		style="z-index: var(--z-window); width: 620px; height: 440px"
 		onkeydown={onKeydown}

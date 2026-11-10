@@ -10,7 +10,6 @@
 import { derived, get } from 'svelte/store';
 import {
 	flowGraphClose,
-	flowCodeClose,
 	animationClose,
 	uvEditorClose,
 	shaderEditorClose,
@@ -25,7 +24,7 @@ import {
 } from '../../stores/appStore';
 import { debugOpen, setDebugOpen } from '../flowDebug';
 import { DOCK_TITLES, DOCK_ICONS } from '../bottomDock';
-import { inspectorTabTitle } from '../sidebars';
+import { inspectorPanelTitle } from '../sidebars';
 
 /**
  * @typedef {{
@@ -50,7 +49,6 @@ const dockTitle = (key) => () => DOCK_TITLES[key] ?? key;
 /** @type {PanelEntry[]} */
 const ENTRIES = [
 	{ key: 'flow', title: dockTitle('flow'), icon: DOCK_ICONS.flow, load: () => import('../../components/Flow.svelte'), ...closeStore(flowGraphClose) },
-	{ key: 'flowcode', title: dockTitle('flowcode'), icon: DOCK_ICONS.flowcode, load: () => import('../../components/editors/FlowCode.svelte'), ...closeStore(flowCodeClose) },
 	{ key: 'animation', title: dockTitle('animation'), icon: DOCK_ICONS.animation, load: () => import('../../components/editors/AnimationWindow.svelte'), ...closeStore(animationClose) },
 	{ key: 'uv', title: dockTitle('uv'), icon: DOCK_ICONS.uv, load: () => import('../../components/editors/UvEditor.svelte'), ...closeStore(uvEditorClose) },
 	{ key: 'shader', title: dockTitle('shader'), icon: DOCK_ICONS.shader, load: () => import('../../components/editors/ShaderEditor.svelte'), wrap: 'flow', ...closeStore(shaderEditorClose) },
@@ -59,7 +57,7 @@ const ENTRIES = [
 	{ key: 'explorer', title: dockTitle('explorer'), icon: DOCK_ICONS.explorer, load: () => import('../../components/editors/Explorer.svelte'), ...closeStore(explorerClose) },
 	{ key: 'profiler', title: dockTitle('profiler'), icon: DOCK_ICONS.profiler, load: () => import('../../components/editors/Profiler.svelte'), ...closeStore(profilerClose) },
 	{ key: 'code', title: dockTitle('code'), icon: DOCK_ICONS.code, load: () => import('../../components/editors/CodeWorkspace.svelte'), ...closeStore(codeWorkspaceClose) },
-	{ key: 'inspector', title: () => get(inspectorTabTitle), icon: 'sliders-horizontal', load: () => import('../../components/menu/Inspector.svelte'), ...closeStore(inspectorClose) },
+	{ key: 'inspector', title: () => get(inspectorPanelTitle), icon: 'sliders-horizontal', load: () => import('../../components/menu/Inspector.svelte'), ...closeStore(inspectorClose) },
 	{
 		key: 'debugger',
 		title: () => 'Debugger',
@@ -85,7 +83,7 @@ export function isPoppable(key) {
 
 /** every panel's name, live (the Inspector's is Properties / Configure Scene / File): the window chrome
  * and the popups' document titles follow it */
-export const panelTitles = derived(inspectorTabTitle, () => /** @type {Record<string, string>} */ (Object.fromEntries(ENTRIES.map((e) => [e.key, e.title()]))));
+export const panelTitles = derived(inspectorPanelTitle, () => /** @type {Record<string, string>} */ (Object.fromEntries(ENTRIES.map((e) => [e.key, e.title()]))));
 
 /** the panel's name (a tab label, a window title) @param {string} key */
 export function panelTitle(key) {

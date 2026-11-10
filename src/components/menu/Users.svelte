@@ -2,6 +2,7 @@
 	import { backClose } from '$lib/backStack.js'; // phone-polish: Android Back closes it
 	import { cameraPreviews, joinPeerPreview, previewLabel } from '$lib/cameraPreview';
 	import Icon from '../ui/Icon.svelte';
+	import PeerAvatar from '../ui/PeerAvatar.svelte'; // 78 PL33: one avatar everywhere
 	import { roving } from '$lib/keyboardNav'; // 53 A3: the top-right group is one tab stop
 	import * as THREE from 'three';
 	import { onMount, untrack } from 'svelte';
@@ -34,7 +35,9 @@
 	} from '../../stores/appStore.js';
 	import WindowChrome from '../ui/WindowChrome.svelte';
 	// 55 A4/A7: agent rows (robot + "AI") and the active invites with Revoke / Revoke all
-	import { invites, listInvites, revokeInvite, revokeAllInvites, inviteSheet, kindOfRow } from '$lib/inviteStore';
+	import { invites, listInvites, revokeInvite, revokeAllInvites, inviteSheet, kindOfRow, myKind } from '$lib/inviteStore';
+	// 78 PL34: nobody is "Peer" — a nameless person is "Guest N" (the host 1, joiners from 2)
+	import { displayName, nextGuestName, guestClash } from '$lib/guestName';
 	import { globalScene, globalCamera, camSave, peerHands, isLocked, objectsGroup } from '../../stores/sceneStore.js';
 	// 21-F3: who is in play mode, and who may end the round
 	import { peerPlayModes, resetAllowed, requestResetGame } from '$lib/gamePresence';
@@ -107,7 +110,7 @@
 		!self && map?.[peerId]?.private === true;
 	import { gameState } from '$lib/gameState';
 	import { sessionHost } from '$lib/connectionState';
-	import { mutedPeers, toggleMutePeer } from '$lib/voiceChat';
+	import { mutedPeers, toggleMutePeer, speakingPeers } from '$lib/voiceChat';
 	// 55 A9: the peer menu (Profile · Find · Character · Talk · For you only · Moderation)
 	import { buildPeerMenuItems } from '$lib/peerMenu';
 	import { removePeer, allowBack, blockedPeers, inviteStoreModule } from '$lib/peerModeration';
@@ -121,7 +124,8 @@
 	import PeerProfileCard from './PeerProfileCard.svelte';
 	import { peerQuality, qGlyph } from '$lib/networkQuality';
 	import ContextMenu from '../ContextMenu.svelte';
-	import { panelsButtonShown, panelsOpen, togglePanels, hidePanelsButton } from '$lib/panelsButton';
+	import { panelsButtonShown, panelsOpen, togglePanels } from '$lib/panelsButton';
+	import { chromeButton } from '$lib/chromeButtons'; // panel-gestures item 5: the Panels button's menu
 	import NotificationCenter from './NotificationCenter.svelte';
 	// 42 I9: which of the group's own buttons are placed here, in what order (Controls' layout)
 	import { toolbarSlots, slotOrder, TOP_DEFAULT } from '$lib/toolbarSlots';
@@ -176,6 +180,13 @@
 		e.preventDefault();
 		openPeerMenu(e.clientX, e.clientY, peerId, self, e.currentTarget as HTMLElement);
 	}
+	/** 78 PL31: the visible ⋯ — the same menu a right-click or a long press opens, now reachable by a tap */
+	function rowMoreClick(e: MouseEvent, peerId: string, self: boolean) {
+		e.stopPropagation();
+		const btn = e.currentTarget as HTMLElement;
+		const r = btn.getBoundingClientRect();
+		openPeerMenu(Math.max(8, r.right - 200), r.bottom + 4, peerId, self, btn.closest('.peers-row') as HTMLElement | null);
+	}
 	function rowKeydown(e: KeyboardEvent, peerId: string, self: boolean) {
 		if (e.key !== 'ContextMenu' && !(e.shiftKey && e.key === 'F10')) return;
 		e.preventDefault();
@@ -226,12 +237,16 @@
 			.filter(Boolean);
 	}
 	function nameOf(peerId: string) {
-		return (($userdata as any[]).find((u) => u[0] === peerId)?.[1]) || shortId(peerId).toUpperCase();
+		const row = ($userdata as any[]).find((u) => u[0] === peerId);
+		return row?.[1] || (row ? displayName(row) : shortId(peerId).toUpperCase());
 	}
 	/** fly the editor camera to stand a few metres off their avatar, looking at it */
 	function goToPeer(peerId: string) {
 		const avatar = ($globalScene as any)?.getObjectByName?.(peerId);
-		if (!avatar) return;
+		if (!avatar) {
+			showToast(nameOf(peerId) + ' has no avatar in this scene yet.');
+			return;
+		}
 		const at = new THREE.Vector3();
 		avatar.getWorldPosition(at);
 		const cam = $globalCamera as any;
@@ -682,6 +697,42 @@
 		});
 	});
 
+	// 78 PL34 — THE GUEST NAME. A person with no name of their own (none typed, no account) takes the smallest
+	// free "Guest N" once a session forms, and says it on the roster like any name — so the popover, the pill,
+	// the chat and the name tags agree on every screen. Never stored: it is dropped when the session ends.
+	let autoGuest = '';
+	$effect(() => {
+		const pc: any = $peers;
+		const rows: any[] = ($userdata as any[]) ?? [];
+		const host = $sessionHost;
+		void $cloudIdentity;
+		untrack(() => {
+			const me = pc?.peer?.id;
+			if (!me || myKind()) return;
+			const live = (pc?.openedPeers?.size ?? 0) > 0;
+			const mine = String($username ?? '').trim();
+			if (!live) {
+				// the session ended: an automatic name goes with it (a typed one is untouched)
+				if (autoGuest && mine === autoGuest) {
+					username.set('' as any);
+					for (const row of rows) if (row[0] === me) row[1] = '';
+				}
+				autoGuest = '';
+				return;
+			}
+			if (cid?.username && !usernameIsCustom()) return;
+			const isAuto = !!autoGuest && mine === autoGuest;
+			if (mine && !isAuto) return;
+			// re-pick only when the automatic name no longer fits: a clash, or a joiner holding the host's "Guest 1"
+			if (isAuto && !guestClash(rows, me, mine) && !(host && mine === 'Guest 1')) return;
+			const name = nextGuestName(rows, me, !host);
+			if (name === mine) return;
+			autoGuest = name;
+			username.set(name as any);
+			broadcastUserdata();
+		});
+	});
+
 	function onUsernameEdited() {
 		try {
 			safeStorage.setItem('username', $username || '');
@@ -791,6 +842,17 @@
 		focusAccount = true;
 		openDropdown = true;
 	});
+	/** profile-notify: a plugin row that opens a window (Cloud saves, Your games & stats, Staff) closes the menu
+	 * after its own click handler ran — a window opened beside an open menu was finding 7 of the review */
+	function closeOnPluginRows(node: HTMLElement) {
+		// a listener, not an onclick attribute: the block is not itself interactive (the rows inside are buttons)
+		const onClick = (e: MouseEvent) => {
+			const t = e.target as Element | null;
+			if (t?.closest?.('[data-pm-close]')) openDropdown = false;
+		};
+		node.addEventListener('click', onClick);
+		return () => node.removeEventListener('click', onClick);
+	}
 	/** focus moving OUT of the menu or its trigger (to a real element) closes it */
 	function dropdownFocusOut(e: FocusEvent) {
 		const to = e.relatedTarget as Node | null;
@@ -880,41 +942,9 @@
 	// 43 K3: the phone shell keeps the group's default ORDER, but a native the person took out (Edit
 	// positions / Customize, on the unfolded screen) stays out here too — hidden stays hidden
 	const trSlots = $derived($phoneShell ? { top: TOP_DEFAULT.filter((id) => $toolbarSlots.top.includes(id)), editing: false } : $toolbarSlots);
-	// dock-fixes item 8 — the Panels button's press, menu and long press (touch has no right button; the
-	// timer opens the menu while the finger is still down — ContextMenu's press-and-click backdrop keeps
-	// the lift from closing it)
-	let panelsMenu = $state<{ x: number; y: number } | null>(null);
-	let panelsTimer: ReturnType<typeof setTimeout> | null = null;
-	let panelsSwallow = false;
-	function clearPanelsPress() {
-		if (panelsTimer) clearTimeout(panelsTimer);
-		panelsTimer = null;
-	}
-	function onPanelsDown(e: PointerEvent) {
-		clearPanelsPress();
-		panelsSwallow = false;
-		if (e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
-		const x = e.clientX;
-		const y = e.clientY;
-		panelsTimer = setTimeout(() => {
-			panelsTimer = null;
-			panelsSwallow = true; // the click the lift produces is not a toggle
-			panelsMenu = { x, y };
-		}, 500);
-	}
-	function onPanelsClick() {
-		if (panelsSwallow) {
-			panelsSwallow = false;
-			return;
-		}
-		togglePanels();
-	}
-	function onPanelsMenu(e: MouseEvent) {
-		e.preventDefault();
-		clearPanelsPress();
-		// Android's own long-press may ALSO fire this: one menu, not two
-		if (!panelsMenu) panelsMenu = { x: e.clientX, y: e.clientY };
-	}
+	// dock-fixes item 8 — the Panels button. panel-gestures item 5: its menu (right-click, a long press on
+	// touch) is the generic chrome-button one — `use:chromeButton={'top.panels'}`, registered BOUND in
+	// $lib/panelsButton with its own "Show / Hide the sidebars" row on top
 	// dock-fixes item 4 — the top row between two columns that both reach it (a pinned left one + a right one under a
 	// docked Connect bar: the unfolded N6) can be narrower than the group + the profile. The group then STACKS into a
 	// column under the profile, inside the free width, instead of drawing over the left column. The row width is
@@ -944,24 +974,6 @@
 			window.removeEventListener('resize', measureTr);
 		};
 	});
-
-	const panelsMenuItems = $derived([
-		{
-			label: $panelsOpen ? 'Hide the sidebars' : 'Show the sidebars',
-			icon: 'columns-3',
-			tooltip: 'Show or hide both sidebars — their tabs stay open',
-			action: () => togglePanels()
-		},
-		{
-			label: 'Hide this button',
-			icon: 'eye-off',
-			tooltip: 'Remove the Panels button — Settings ▸ Interface ▸ Panels button brings it back',
-			action: () => {
-				hidePanelsButton();
-				showToast('Panels button hidden — Settings ▸ Interface ▸ Panels button brings it back');
-			}
-		}
-	]);
 
 	const trOrder = (id: string) => slotOrder(trSlots.top, id);
 	const trShown = (id: string) => !trSlots.editing && trOrder(id) != null;
@@ -1009,7 +1021,7 @@
 		data-peer-id={user[0]}
 		role="group"
 		tabindex="0"
-		aria-label={(user[1] || 'Peer') + (self ? ' (you)' : '') + ' — menu: Shift+F10'}
+		aria-label={displayName(user) + (self ? ' (you)' : '') + ' — menu: Shift+F10'}
 		oncontextmenu={(e) => rowContextMenu(e, user[0], self)}
 		onkeydown={(e) => rowKeydown(e, user[0], self)}
 		onpointerdown={(e) => rowPointerDown(e, user[0], self)}
@@ -1018,10 +1030,11 @@
 		onpointercancel={rowPointerEnd}
 		onclickcapture={rowClickCapture}
 	>
-		{@render avatarImg(user[2], 'bg-surface-active h-8 w-8 shrink-0')}
+		<!-- 78 PL33: their photo, else their colour + initial, ringed in their lock / cursor colour; a speaking ring while they talk -->
+		<PeerAvatar id={user[0]} row={user} size={32} speaking={$speakingPeers.includes(user[0])} />
 		<div class="peer-info">
 			<div class="peer-name">
-				<span class="truncate" title={user[1] || 'Peer'}>{user[1] || (kindOfRow(user) === 'agent' ? 'AI agent' : 'Peer')}</span>
+				<span class="truncate" title={displayName(user)}>{displayName(user)}</span>
 				{#if kindOfRow(user) === 'agent'}
 					<!-- 55 A7: an AI agent is not a person — no character, the robot and "AI" instead -->
 					<span class="peer-ai" title="AI agent — joined over MCP or an agent link; it has no character"
@@ -1068,13 +1081,14 @@
 				{#if $peerHands[user[0]]?.active}<span title="In VR"><Icon name="glasses" size={16} aria-hidden="true" /></span>{/if}
 				{#if !self && $peerQuality[user[0]]}
 					{@const q = $peerQuality[user[0]]}
+					<!-- 78 PL31 (O7): "relayed" is a fact, not a fault — it rides the tooltip, and shows only on a slow link -->
 					<span
-						title={q.rtt != null ? `${Math.round(q.rtt)} ms round-trip` : 'measuring…'}
+						title={(q.rtt != null ? `${Math.round(q.rtt)} ms round-trip` : 'measuring…') + (q.relayed ? ' · relayed through a TURN server' : '')}
 						style="color: {qColor(q.level)}">{qGlyph(q.level)}{q.rtt != null ? ` ${Math.round(q.rtt)}ms` : ''}</span
 					>
-					{#if q.relayed}<span class="text-ink-warn" title="Relayed through a TURN server">relayed</span>{/if}
+					{#if q.relayed && q.level === 'bad'}<span class="text-ink-warn" title="Relayed through a TURN server">relayed</span>{/if}
 				{/if}
-				<span class="peer-id" title={user[0]}>{shortId(user[0])}</span>
+				<span class="peer-id" title={user[0]}>{shortId(user[0]).toUpperCase()}</span>
 			</div>
 		</div>
 		<div class="peer-actions">
@@ -1162,8 +1176,28 @@
 				>
 					<Icon name="eye" size={16} class="mr-1" aria-hidden="true" />{$specatorMode === user[0] ? 'Watching' : 'Watch'}
 				</button>
+				{#if !$phoneShellActive && kindOfRow(user) !== 'agent'}
+					<!-- 78 PL31 (O4): Go to beside Watch — fly the camera to stand by their avatar (same scene; on a
+					     phone it stays in ⋯). Not .peer-goto: that class is the travel-to-their-scene button. -->
+					<button
+						type="button"
+						class="peer-find peer-icon-btn"
+						title={'Go to ' + displayName(user) + ' — fly your camera to them'}
+						aria-label={'Go to ' + displayName(user)}
+						onclick={() => goToPeer(user[0])}
+					><Icon name="locate-fixed" size={16} aria-hidden="true" /></button>
+				{/if}
 			{/if}
 		{/if}
+		<!-- 78 PL31 (O4): the peer menu as a visible button on every row (it was right-click / long-press only) -->
+		<button
+			type="button"
+			class="peer-more peer-icon-btn"
+			title={self ? 'Your menu' : 'More for ' + displayName(user)}
+			aria-label={self ? 'Your menu' : 'More for ' + displayName(user)}
+			aria-haspopup="menu"
+			onclick={(e) => rowMoreClick(e, user[0], self)}
+		><Icon name="ellipsis" size={16} aria-hidden="true" /></button>
 		</div>
 	</div>
 {/snippet}
@@ -1215,9 +1249,9 @@
 			title="Connected peers"
 			onclick={() => peersPanelOpen.update((v) => !v)}
 		>
-			<div class="flex -space-x-2">
+			<div class="flex items-center gap-1.5 px-0.5">
 				{#each $userdata.slice(1, 4) as user (user[0])}
-					{@render avatarImg(user[2], 'bg-surface-active border-2 border-surface-1 not-first:-ms-4 hud-tr-av h-6 w-6')}
+					<PeerAvatar id={user[0]} row={user} size={22} speaking={$speakingPeers.includes(user[0])} class="hud-tr-av" />
 				{/each}
 			</div>
 			<span class="hud-tr-count">{$userdata.length}</span>
@@ -1233,7 +1267,6 @@
 				<WindowChrome
 					size="tool"
 					title="Connected"
-					count={$userdata.length}
 					elevated
 					padded={false}
 					onclose={() => {
@@ -1462,12 +1495,8 @@
 		aria-pressed={$panelsOpen}
 		aria-label={$panelsOpen ? 'Hide the sidebars' : 'Show the sidebars'}
 		title={$panelsOpen ? 'Hide the sidebars (their tabs stay open) — right-click or long-press for more' : 'Show the sidebars — right-click or long-press for more'}
-		onclick={onPanelsClick}
-		oncontextmenu={onPanelsMenu}
-		onpointerdown={onPanelsDown}
-		onpointerup={clearPanelsPress}
-		onpointercancel={clearPanelsPress}
-		onpointerleave={clearPanelsPress}
+		onclick={() => togglePanels()}
+		use:chromeButton={'top.panels'}
 	>
 		<Icon name="columns-3" size={20} aria-hidden="true" />
 	</button>
@@ -1549,10 +1578,14 @@
 		<!-- PM (roadmap #14): identity header — name, then the cloud email (or "You") under it.
 			 No avatar here (it's already the profile button, seated in the notch on the right).
 			 38 R8 (design page "Profile and peers"): the kit's NavRows below, one card. -->
+		<!-- profile-notify (direction A): with a cloud plugin and nobody signed in, the line under the name says so -->
 		<div class="pm-head" class:pm-head-phone={$phoneShellActive}>
 			<span class="pm-name">{effName}</span>
-			<span class="pm-sub">{cid?.email || 'You'}</span>
+			<span class="pm-sub">{cid?.email || ($profileSlot ? 'Not signed in' : 'You')}</span>
 		</div>
+		<!-- profile-notify: the groups wear small headings on a desktop (Profile · the plugin's Your stuff · Account);
+		     the phone sheet drops them (the proposal's folded layout) -->
+		{#if !$phoneShellActive}<div class="pm-group">Profile</div>{/if}
 		<div class="pm-card">
 			<NavRow
 				icon="user"
@@ -1564,7 +1597,7 @@
 			/>
 			<NavRow
 				icon="settings"
-				label="Profile settings"
+				label="Edit profile…"
 				description="Picture and name"
 				onclick={() => {
 					profileSettingsOpen.set(true);
@@ -1576,8 +1609,9 @@
 			 preferences here (moved out of the Connect pill). Plain block: the plugin
 			 owns its own clicks, so it is NOT a menu row. -->
 		{#if $profileSlot}
-			<div class="my-1 h-px bg-border"></div>
-			<div class="cloud-profile px-3 py-2">
+			<!-- profile-notify: the plugin brings its own groups (kit cards, like .pm-card), so no divider or padding here.
+			     A plugin row that opens a window carries `data-pm-close`: the menu closes after its click. -->
+			<div class="cloud-profile" class:cloud-profile-phone={$phoneShellActive} {@attach closeOnPluginRows}>
 				<CloudSlot mount={$profileSlot} />
 			</div>
 		{/if}
@@ -1590,10 +1624,6 @@
 {#if peerMenu}
 	<!-- 55 A9: the peer menu (lib/peerMenu.js builds it; the VR panel renders the same list) -->
 	<ContextMenu x={peerMenu.x} y={peerMenu.y} sizeKey="peer" items={peerMenuRows(peerMenu)} onclose={closePeerMenu} />
-{/if}
-{#if panelsMenu}
-	<!-- dock-fixes item 8: the Panels button's menu -->
-	<ContextMenu x={panelsMenu.x} y={panelsMenu.y} sizeKey="panels-button" items={panelsMenuItems} onclose={() => (panelsMenu = null)} />
 {/if}
 {#if changesMenu}
 	<ContextMenu x={changesMenu.x} y={changesMenu.y} sizeKey="peer-changes" items={changesItems(changesMenu.peerId)} onclose={() => (changesMenu = null)} />
@@ -1609,7 +1639,7 @@
 	{/key}
 {/if}
 
-<ModalDialog title="Profile settings" bind:open={$profileSettingsOpen} outsideclose width="md" onkeydown={(e: KeyboardEvent) => { if (e.key === 'Escape') profileSettingsOpen.set(false); }}>
+<ModalDialog title="Edit profile" bind:open={$profileSettingsOpen} outsideclose width="md" onkeydown={(e: KeyboardEvent) => { if (e.key === 'Escape') profileSettingsOpen.set(false); }}>
 
 	<!-- 38 R8: kit rows (label left, control right) instead of the boxed label | input table.
 	     Same ids, same handlers: #avatar-file / #avatar-preview / #avatar-reset / #peer-id /
@@ -1653,12 +1683,27 @@
 		</div>
 		<div class="pf-row">
 			<label class="pf-label" for="peer-id">Peer ID<small>Your address in a session</small></label>
-			<input
-				id="peer-id"
-				class="tp-field pf-input pf-mono"
-				placeholder={$peers.peer.id}
-				disabled
-			/>
+			<!-- profile-notify (review decision 11): the id + Copy (it was a disabled field nobody could copy from) -->
+			<div class="pf-copy">
+				<input
+					id="peer-id"
+					class="tp-field pf-input pf-mono"
+					placeholder={$peers.peer.id}
+					disabled
+				/>
+				<UiButton
+					id="peer-id-copy"
+					variant="ghost"
+					size="sm"
+					disabled={!$peers.peer.id}
+					onclick={() => {
+						void navigator.clipboard?.writeText($peers.peer.id).then(
+							() => showToast('Peer ID copied'),
+							() => showToast('Could not copy the peer ID')
+						);
+					}}>Copy</UiButton
+				>
+			</div>
 		</div>
 	</div>
 </ModalDialog>
@@ -1717,6 +1762,11 @@
 	.peer-meta > .scene-chip { flex: 0 1 auto; }
 	.peer-id { color: var(--text-faint); }
 	.peer-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; white-space: nowrap; }
+	/* 78 PL31: the row's icon buttons (Go to, ⋯) — quiet until hovered, a 28 px target (44 on touch) */
+	.peer-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex: 0 0 auto; border: 0; border-radius: 6px; background: transparent; color: var(--text-muted); cursor: pointer; }
+	.peer-icon-btn:hover { background: var(--surface-hover); color: var(--text); }
+	.peer-icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+	@media (pointer: coarse) { .peer-icon-btn { width: 40px; height: 40px; } }
 	/* 21-F3 play-mode chip. Deliberately quieter than the role badge beside it: a role
 	   is an authority and a mode is a passing fact. */
 	.mode-chip { flex: 0 0 auto; font-size: 9px; font-weight: 600; letter-spacing: 0.02em; padding: 0 6px; border-radius: 9999px; text-transform: capitalize; line-height: 1.5; border: 1px solid transparent; }
@@ -1792,6 +1842,18 @@
 		font-size: var(--fs-section);
 		color: var(--text-muted);
 	}
+	.pm-group {
+		margin: 4px 14px 4px;
+		font-size: var(--fs-section);
+		font-weight: 600;
+		letter-spacing: var(--tracking-section);
+		text-transform: uppercase;
+		color: var(--text-faint);
+	}
+	/* profile-notify: the phone sheet drops the plugin's group headings too */
+	.cloud-profile-phone :global(.tpc-pm-head) {
+		display: none;
+	}
 	.pm-card {
 		margin: 0 8px 8px;
 		border: 1px solid var(--border);
@@ -1802,7 +1864,7 @@
 	.pm-card > :global(* + *) {
 		border-top: 1px solid var(--border);
 	}
-	/* Profile settings: one card of SettingRow-shaped rows (label + hint left, control right) */
+	/* Edit profile: one card of SettingRow-shaped rows (label + hint left, control right) */
 	.pf-list {
 		margin: 4px 0;
 		border: 1px solid var(--border);
@@ -1832,6 +1894,11 @@
 	}
 	.pf-input {
 		width: min(260px, 100%);
+	}
+	.pf-copy {
+		display: flex;
+		align-items: center;
+		gap: 8px;
 	}
 	.pf-mono {
 		font-family: var(--font-ui-mono);

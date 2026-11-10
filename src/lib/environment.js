@@ -1,3 +1,4 @@
+import { basedOnOf } from './envPresetCore.js'; // 78-int PL16
 import * as THREE from 'three';
 import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import { writable, get } from 'svelte/store';
@@ -603,6 +604,21 @@ export function applyCustomPreset(payload) {
 }
 
 /**
+ * The live custom payload an edit writes into: a copy of what renders now, labelled Custom as before.
+ * 78-int PL16: it REMEMBERS the preset it came from (`basedOn`, an additive key — older peers and old
+ * scenes simply have none), so the panel can say "Cinematic · Modified: sun" and Reset to it.
+ */
+function detachedPayload() {
+	const state = get(environment);
+	const payload = JSON.parse(JSON.stringify(presetPayload(state)));
+	payload.label = 'Custom';
+	const basedOn = basedOnOf(state, PRESETS);
+	if (basedOn) payload.basedOn = basedOn;
+	else delete payload.basedOn;
+	return payload;
+}
+
+/**
  * 15-C: the scene inspector's Background / Fog controls wrote the scene (and
  * the backgroundColor store) DIRECTLY, and the next applyEnvironment() restored
  * the preset's values — so the edit looked like it did nothing. (Invisible
@@ -616,8 +632,7 @@ export function applyCustomPreset(payload) {
  * @param {{replicate?: boolean}} [opts]
  */
 export function editEnvSky(patch, opts = {}) {
-	const payload = JSON.parse(JSON.stringify(presetPayload()));
-	payload.label = 'Custom';
+	const payload = detachedPayload();
 	if (patch.background !== undefined) payload.background = patch.background;
 	if (patch.hdri !== undefined) {
 		const next = mergeHdriPatch(payload.hdri, patch.hdri);
@@ -633,11 +648,27 @@ export function editEnvSky(patch, opts = {}) {
 	commit({ preset: 'custom', customPreset: payload }, opts.replicate !== false);
 }
 
+/**
+ * 78-int PL12: put parts of the environment back to a preset's own values (the row reset). Unlike
+ * the edit paths it REPLACES each part (a fog reset must not pick up `fit: false`, which a near/far
+ * patch adds) and `undefined`/null removes it. One detach + ONE commit, so one message for peers.
+ * @param {Partial<Record<'fog'|'background'|'gradient'|'hemi'|'sun', any>>} parts
+ */
+export function resetEnvParts(parts) {
+	const payload = detachedPayload();
+	for (const [part, value] of Object.entries(parts)) {
+		if (value === undefined || value === null) {
+			if (part === 'fog') payload.fog = null;
+			else delete payload[part];
+		} else payload[part] = typeof value === 'object' ? JSON.parse(JSON.stringify(value)) : value;
+	}
+	commit({ preset: 'custom', customPreset: payload });
+}
+
 /** Editing a rig component detaches into a live custom payload
  * @param {'hemi'|'sun'} part @param {any} patch */
 export function editRigComponent(part, patch) {
-	const payload = JSON.parse(JSON.stringify(presetPayload()));
-	payload.label = 'Custom';
+	const payload = detachedPayload();
 	payload[part] = { ...(payload[part] ?? {}), ...patch };
 	commit({ preset: 'custom', customPreset: payload });
 }
@@ -737,12 +768,15 @@ const PRESET_KEY = 'envpreset:';
 /** Snapshot the current environment as a named payload @param {string} name */
 export function snapshotPreset(name) {
 	const state = get(environment);
-	return {
+	const out = {
 		...JSON.parse(JSON.stringify(presetPayload(state))),
 		label: name,
 		exposure: state.exposure ?? 1,
 		lights: JSON.parse(JSON.stringify(state.lights ?? []))
 	};
+	// 78-int PL16: a NAMED preset of your own is its own origin — it must not read as "<built-in> · Modified"
+	delete out.basedOn;
+	return out;
 }
 
 export async function loadEnvPresets() {

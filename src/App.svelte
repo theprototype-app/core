@@ -41,7 +41,7 @@
   import CharacterDialogs from './components/characters/CharacterDialogs.svelte'
   import PlaceholderTooltip from './components/menu/PlaceholderTooltip.svelte'
   import Flow from './components/Flow.svelte'
-  import FlowCode from './components/editors/FlowCode.svelte'
+  import { startFlowCodeRedirect } from '$lib/flowCodeRedirect.js'
   import AnimationWindow from './components/editors/AnimationWindow.svelte'
   import UvEditor from './components/editors/UvEditor.svelte'
   import ShaderEditor from './components/editors/ShaderEditor.svelte'
@@ -58,7 +58,6 @@
   import StatsOverlay from './components/menu/StatsOverlay.svelte'
   import MomentReport from './components/menu/MomentReport.svelte'
   import ProblemReport from './components/menu/ProblemReport.svelte' // 37 R20
-  import ProfilerLive from './components/menu/ProfilerLive.svelte'
   import { startSceneMetrics, budgetSummary } from './lib/sceneBudget'
   import { startPerfRecorder } from './lib/perf/recorder'
   import { startDetailedProbe } from './lib/perf/detailed'
@@ -78,6 +77,8 @@
   import SplineToolbar from './components/menu/SplineToolbar.svelte'
   import MeasureToolbar from './components/menu/MeasureToolbar.svelte' // 47 M1
   import PathCaptureToolbar from './components/menu/PathCaptureToolbar.svelte' // fix-batch-2
+  import CaptureBanner from './components/menu/CaptureBanner.svelte' // 78 F5
+  import { startCaptureModes } from '$lib/captureModes' // 78 F5: the viewport capture stack
   import UnderlayWindow from './components/menu/UnderlayWindow.svelte' // 60 Q5
   import { underlayDropMenu } from '$lib/underlays'
   import ModuleToolboxLayer from './components/ui/ModuleToolboxLayer.svelte'
@@ -178,6 +179,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
   import AutoQualityNotice from './components/AutoQualityNotice.svelte' // 40 F12 (was SimplifiedWaterNotice)
   import ShortcutSheet from './components/menu/ShortcutSheet.svelte' // 36 I3
   import HudLayer from './components/hud/HudLayer.svelte'
+  import LevelTransition from './components/hud/LevelTransition.svelte' // 93 LP1/LP2
   import ARTableOverlay from './components/play/ARTableOverlay.svelte' // 50 R1
   import PickCycleHint from './components/menu/PickCycleHint.svelte' // 36 F22 / S6 / S12
   import LiveRegions from './components/ui/LiveRegions.svelte' // 53-reader: toasts, errors, selection read aloud
@@ -225,6 +227,9 @@ import { startMusicToolbox } from './lib/musicToolbox'
 
   // node graph animations keep running even when the flow drawer is closed
   onMount(() => {
+    startFlowCodeRedirect() // showhide-v8 §4: the old Flow code tab opens Code's flow code tab
+    // showhide-v8 §6: Windows ▸ Remember layout per scene (both modules lazily: neither belongs on the boot path)
+    void Promise.all([import('$lib/uiLayouts'), import('$lib/levels')]).then(([u, l]) => u.startSceneLayouts(l.currentLevel))
     // 27-B: FIRST, so a failure during the rest of this boot is already recorded.
     startDiagnostics()
     startWireErrors()
@@ -235,6 +240,8 @@ import { startMusicToolbox } from './lib/musicToolbox'
     // it keeps measuring while the canvas is remounting — which is exactly when a
     // report about the app freezing tends to be written.
     startSceneMetrics()
+    // 78 F5: the viewport capture stack (one Esc owner, installed before any tool arms)
+    startCaptureModes()
     // 34 PF/R1: the always-on light ring (moments, beacon windows) + user recordings
     startPerfRecorder()
     startDetailedProbe()
@@ -469,7 +476,6 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <!-- 70 W2: a panel in a pop-out window is unmounted here (one panel, one place); it remounts in its
      own last dock / float mode when it comes back -->
 {#if !$panelAway.flow}<Flow />{/if}
-{#if !$panelAway.flowcode}<FlowCode />{/if}
 {#if !$panelAway.animation}<AnimationWindow />{/if}
 {#if !$panelAway.uv}<UvEditor />{/if}
 {#if !$panelAway.shader}<SvelteFlowProvider><ShaderEditor /></SvelteFlowProvider>{/if}
@@ -519,6 +525,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <SplineToolbar />
 <MeasureToolbar />
 <PathCaptureToolbar />
+<CaptureBanner />
 <!-- 60 Q5: Reference images (+ the image-drop "Use as reference" menu) -->
 <UnderlayWindow />
 <!-- A5: module toolboxes. OUTSIDE the {#if !$isLocked} block — a toolbox that opted
@@ -550,7 +557,6 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <StatsOverlay />
 <MomentReport />
 <ProblemReport />
-<ProfilerLive />
 <!-- 47-cc0: the Asset Browser — loaded the first time it opens, so the boot carries none of it -->
 {#if $assetBrowserOpen}
 {#await import('./components/editors/AssetBrowser.svelte') then m}<m.default />{/await}
@@ -568,6 +574,8 @@ import { startMusicToolbox } from './lib/musicToolbox'
      above (a game HUD that dies when you press play is no HUD at all). --z-hud, no
      new tier: it beats the camera PiP and loses to modal/toast/menu. -->
 <HudLayer />
+<!-- 93: the level-change cover, the game's loading screen, the checkpoint flash (LOCAL) -->
+<LevelTransition />
 <!-- 50 R1: the AR table's dom-overlay root (rendered always, hidden until a phone asks for AR) -->
 <ARTableOverlay />
 <PickCycleHint />

@@ -6,30 +6,21 @@
 	// .hdr/.exr (it becomes an Explorer item, pulled by peers by content hash), or None; then turn,
 	// brighten, blur or hide it. Every edit goes through editEnvSky, so it persists and replicates
 	// on the environment singleton like a background colour. The quality pin is LOCAL (Settings).
-	// 59 T3: the bundled skies download on first pick (hdri/skyFetch.js); the cards stay bundled.
+	// 59 T3: the bundled skies download on first pick (hdri/skyFetch.js).
 	import SliderRow from '../../ui/SliderRow.svelte';
 	import ThemedSelect from '../../ui/ThemedSelect.svelte';
-	import { environment, presetPayload, setEnvironment, editEnvSky } from '$lib/environment';
-	import { BUNDLED_HDRIS, bundledHdri } from '$lib/hdri/catalog.js';
+	import { environment, presetPayload, editEnvSky } from '$lib/environment';
+	import { bundledHdri } from '$lib/hdri/catalog.js';
 	import { hdriOf, skyMaxLabelHere } from '$lib/hdri/hdriCore.js';
 	// fix-play-link (r1590-09): what Max loads on this device
 	const MAX_LABEL = skyMaxLabelHere();
 	import { hdriStatus } from '$lib/hdri/skyEnv.js';
 	import { explorerItems, addItemFromBytes } from '$lib/explorer';
 	import { showToast } from '../../../stores/appStore';
-	import { pageUrl } from '$lib/export/exportBoot.js';
-	import { onMount } from 'svelte';
-	import { tours } from '$lib/tours/index.js';
-	import { autoStartAllowed } from '$lib/tours/builtin.js';
-	import { HDRI_TOUR } from '$lib/hdri/hdriTour.js';
-
-	// T1: the first time the cards are on screen, a two-step tour points at them
-	onMount(() => {
-		const t = setTimeout(() => {
-			if (autoStartAllowed()) tours.maybeAutoStart?.(HDRI_TOUR);
-		}, 600);
-		return () => clearTimeout(t);
-	});
+	// 78-int PL29 (owner 2026-11-08): no sky-image picture cards and no "Sky images" tour here any
+	// more — on a phone they pushed the sky controls a screen down. The bundled skies ARE environment
+	// presets (Clear sky, Meadow, Sunrise, Starlight, Photo studio): the preset pills above pick them.
+	// What stays: None, the person's own uploaded skies (small text chips), Upload, and the knobs.
 
 	const MAX_UPLOAD = 25 * 1024 * 1024; // the asset-share cap: a bigger file could not reach peers
 
@@ -39,10 +30,6 @@
 		$explorerItems.filter((/** @type {any} */ item) => item.kind === 'hdri' || /\.(hdr|exr)$/i.test(item.name ?? ''))
 	);
 
-	/** @param {string} key */
-	function pickBundled(key) {
-		setEnvironment(key);
-	}
 	/** @param {any} item */
 	function pickCustom(item) {
 		editEnvSky({ hdri: { src: 'hash:' + item.hash, name: item.name } });
@@ -90,44 +77,30 @@
 	);
 </script>
 
-<div id="env-hdri" data-tour="env-hdri" data-keywords="hdri hdr exr ultrahdr sky quality minimum resolution sky image skybox environment map ibl image based lighting reflections exposure tone mapping rotation">
-	<p class="ui-section-label">Sky image (HDRI)</p>
-	<div class="hdri-grid">
+<div id="env-hdri" data-keywords="hdri hdr exr ultrahdr sky quality minimum resolution sky image skybox environment map ibl image based lighting reflections exposure tone mapping rotation">
+	<p class="ui-section-label">Sky image</p>
+	<div class="hdri-row">
 		<button
 			id="hdri-none"
-			class="hdri-card hdri-none"
+			class="hdri-chip"
 			class:active={!hdri}
 			title="No sky image — the colour sky and the light rig"
 			onclick={() => edit(null)}
 			disabled={!hdri}
 		>
-			<span>None</span>
+			None
 		</button>
-		{#each Object.entries(BUNDLED_HDRIS) as [key, row] (key)}
-			<button
-				id={'hdri-' + key}
-				class="hdri-card"
-				class:active={hdri?.src === 'bundled:' + key}
-				title={row.label + ' — ' + row.credit}
-				onclick={() => pickBundled(key)}
-			>
-				<img src={pageUrl(row.card)} alt="" loading="lazy" />
-				<span>{row.label}</span>
-			</button>
-		{/each}
 		{#each customs as item (item.id)}
 			<button
-				class="hdri-card hdri-custom"
+				class="hdri-chip hdri-custom"
 				class:active={hdri?.src === 'hash:' + item.hash}
 				title={'Light the scene with ' + item.name + ' (peers pull the file)'}
 				onclick={() => pickCustom(item)}
 			>
-				<span class="hdri-file">{item.name}</span>
+				{item.name}
 			</button>
 		{/each}
-	</div>
-	<div class="flex flex-wrap gap-1">
-		<button id="hdri-upload" class="ui-button-quiet" title="Use your own .hdr or .exr (equirectangular) — it is added to the Explorer and shared with peers"
+		<button id="hdri-upload" class="hdri-chip" title="Use your own .hdr or .exr (equirectangular) — it is added to the Explorer and shared with peers"
 			onclick={() => document.getElementById('hdri-upload-file')?.click()}>
 			Upload HDRI…
 		</button>
@@ -206,59 +179,34 @@
 </div>
 
 <style>
-	.hdri-grid {
-		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
+	.hdri-row {
+		display: flex;
+		flex-wrap: wrap;
 		gap: 4px;
 		margin-bottom: 4px;
 	}
-	.hdri-card {
-		position: relative;
-		display: flex;
-		flex-direction: column;
-		align-items: stretch;
-		overflow: hidden;
+	.hdri-chip {
+		max-width: 100%;
+		min-height: 28px;
+		padding: 2px 8px;
 		border-radius: 6px;
-		border: 2px solid transparent;
+		border: 1px solid var(--border);
 		background: var(--surface-2);
 		color: var(--text);
-		font-size: 10px;
-		line-height: 1.2;
-		min-height: 44px;
-		cursor: pointer;
-	}
-	.hdri-card:hover {
-		border-color: var(--border);
-	}
-	.hdri-card.active {
-		border-color: var(--accent);
-	}
-	.hdri-card:disabled {
-		cursor: default;
-	}
-	.hdri-card img {
-		width: 100%;
-		aspect-ratio: 2 / 1;
-		object-fit: cover;
-		display: block;
-	}
-	.hdri-card span {
-		padding: 2px 4px;
-		text-align: left;
+		font-size: var(--fs-badge);
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+		cursor: pointer;
 	}
-	.hdri-none,
-	.hdri-custom {
-		justify-content: center;
+	.hdri-chip:hover {
+		border-color: var(--text-muted);
 	}
-	.hdri-none span,
-	.hdri-custom span {
-		text-align: center;
+	.hdri-chip.active {
+		border-color: var(--accent);
+		color: var(--accent);
 	}
-	.hdri-file {
-		word-break: break-all;
-		white-space: normal !important;
+	.hdri-chip:disabled {
+		cursor: default;
 	}
 </style>

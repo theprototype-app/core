@@ -28,7 +28,7 @@ import { coarsePointer } from './inputDevice';
 
 /**
  * @typedef {'green'|'amber'|'red'|'unknown'} Tier
- * @typedef {{key: string, label: string, unit: string, desktop: [number, number], vr: [number, number], why: string}} Budget
+ * @typedef {{key: string, label: string, unit: string, desktop: [number, number], vr: [number, number], phone?: [number, number], why: string}} Budget
  */
 
 /**
@@ -94,6 +94,8 @@ export const BUDGETS = [
 		unit: 'ms',
 		desktop: [20, 33],
 		vr: [11, 13.9],
+		// 78 PL11: a phone held to the desktop's 33 ms read every phone scene as red; a phone at a steady 30 fps is fine
+		phone: [34, 50],
 		why: 'FPS averages a stutter away; p95 is the frame you actually feel'
 	},
 	{
@@ -102,6 +104,7 @@ export const BUDGETS = [
 		unit: '',
 		desktop: [2, 12],
 		vr: [1, 6],
+		phone: [6, 24],
 		why: 'the direct measure of "the window froze" — a task over 50ms blocks input'
 	}
 ];
@@ -169,16 +172,26 @@ export function profileFor(renderer) {
 	return coarsePointer() ? 'vr' : 'desktop';
 }
 
+/** 78 PL11: the limits a profile is judged by. A PHONE was judged as 'vr' (profileFor's coarse pointer), so its
+ * frames were held to a headset's 11-14 ms and every phone scene read red; it keeps the VR (mobile) limits for what a
+ * scene HOLDS and uses its own limits where a row has them (frames, long tasks).
+ * @param {Budget} budget @param {string} profile @returns {[number, number]} */
+function limitsOf(budget, profile) {
+	if (profile === 'vr') return budget.vr;
+	if (profile === 'phone') return budget.phone ?? budget.vr;
+	return budget.desktop;
+}
+
 /**
  * The tier one reading falls in. PURE — this is the part that has to be right, and it
  * is testable with no browser and no GPU.
- * @param {string} key @param {number | null | undefined} value @param {'desktop'|'vr'} profile
+ * @param {string} key @param {number | null | undefined} value @param {'desktop'|'vr'|'phone'} profile
  * @returns {Tier}
  */
 export function tierOf(key, value, profile) {
 	const budget = byKey.get(key);
 	if (!budget || value == null || !Number.isFinite(value)) return 'unknown';
-	const [green, amber] = profile === 'vr' ? budget.vr : budget.desktop;
+	const [green, amber] = limitsOf(budget, profile);
 	if (value <= green) return 'green';
 	if (value <= amber) return 'amber';
 	return 'red';
@@ -190,7 +203,7 @@ const ORDER = { unknown: 0, green: 1, amber: 2, red: 3 };
  * The meter's single dot: the worst tier across everything we can read. An UNKNOWN
  * never darkens the dot — "we have not measured it" is not "it is fine", but it is
  * certainly not a warning either.
- * @param {Record<string, any>} metrics @param {'desktop'|'vr'} profile @returns {Tier}
+ * @param {Record<string, any>} metrics @param {'desktop'|'vr'|'phone'} profile @returns {Tier}
  */
 export function worstTier(metrics, profile) {
 	/** @type {Tier} */
@@ -202,15 +215,34 @@ export function worstTier(metrics, profile) {
 	return worst;
 }
 
+/** the rows that measure FRAMES (what the quality governor answers by lowering quality) */
+const FRAME_KEYS = new Set(['frameP95', 'longTasks']);
+
+/**
+ * 78 PL11 + PL22: the footer dot. While the quality governor is already lowering quality, a scene that is over only
+ * on FRAME rows is being handled: the dot says so calmly ('note', grey) instead of a red cross or an amber triangle
+ * beside "Reduced quality". Anything over on what the scene HOLDS (calls, triangles, memory, lights) still shows.
+ * @param {Record<string, any>} metrics @param {'desktop'|'vr'|'phone'} profile @param {boolean} reducing @returns {Tier | 'note'}
+ */
+export function footerTier(metrics, profile, reducing) {
+	const worst = worstTier(metrics, profile);
+	if (!reducing || (worst !== 'amber' && worst !== 'red')) return worst;
+	const over = BUDGETS.filter((b) => {
+		const t = tierOf(b.key, metrics?.[b.key], profile);
+		return t === 'amber' || t === 'red';
+	});
+	return over.every((b) => FRAME_KEYS.has(b.key)) ? 'note' : worst;
+}
+
 /**
  * Every budget with its current reading and tier — what the overlay renders and what a
  * diagnostics bundle carries.
- * @param {Record<string, any>} metrics @param {'desktop'|'vr'} profile
+ * @param {Record<string, any>} metrics @param {'desktop'|'vr'|'phone'} profile
  */
 export function budgetRows(metrics, profile) {
 	return BUDGETS.map((budget) => {
 		const value = metrics?.[budget.key];
-		const [green, amber] = profile === 'vr' ? budget.vr : budget.desktop;
+		const [green, amber] = limitsOf(budget, profile);
 		return { ...budget, value: value ?? null, green, amber, tier: tierOf(budget.key, value, profile) };
 	});
 }

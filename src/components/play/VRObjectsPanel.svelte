@@ -34,7 +34,7 @@
 		Line: '✎'
 	}
 	function iconFor(child: any) {
-		if (child.type?.endsWith('Light')) return '☀'
+		if (child.type?.endsWith('Light')) return '✹'
 		return TYPE_ICONS[child.type] ?? '▪'
 	}
 

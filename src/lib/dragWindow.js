@@ -2,13 +2,15 @@
 // stay inside the viewport, persist the position per `key` in localStorage.
 // Windows sit on the --z-window tier; the caller sets size and z-index.
 
-import { clampWinSize, clampResize, bottomReserve, registerSizeReset, TOP_CHROME, topChromeFloor } from './windowSize';
+import { clampWinSize, clampResize, bottomReserve, registerSizeReset, registerSizePresets, presetRect, nextPreset, TOP_CHROME, topChromeFloor } from './windowSize';
 import { safeStorage } from './safeStorage';
 import { isHeaderDrag, startWindowDragGuard } from './windowGrip';
 import { bodyDrag } from './windowBodyDrag';
 import { onLayoutRestore } from './uiLayoutsCore';
 import { scaledPx } from './uiScale'; // 53 A1: a window's minimum size follows the UI scale
 import { isForeign } from './windows/winEnv.js';
+import { get } from 'svelte/store';
+import { snapToEdges, layoutLocked, snapRectToEdges } from './windowPrefs.js'; // showhide-v8 §6 Windows ▸ switches
 
 // 169: live reset registry — every draggable window (this action + the object
 // list's own dragMe) registers a reset fn so Settings can rescue windows stuck
@@ -59,6 +61,30 @@ export function resetWindowLayout() {
 			fn();
 		} catch {}
 	});
+}
+
+/**
+ * 78 PL4/PL39: the FREE area a window may open in — between the open sidebar columns (sidebars.js
+ * publishes `--sb-free-left/-right`, 0px with no column), under the top chrome and above the bottom
+ * chrome (the Controls band, and the centred toolbar when it sits in the bottom half).
+ * @returns {{left: number, right: number, top: number, bottom: number}}
+ */
+export function freeArea() {
+	if (typeof window === 'undefined' || typeof document === 'undefined') return { left: 0, right: 0, top: 0, bottom: 0 };
+	let fl = 0;
+	let fr = 0;
+	try {
+		const cs = getComputedStyle(document.documentElement);
+		fl = parseFloat(cs.getPropertyValue('--sb-free-left')) || 0;
+		fr = parseFloat(cs.getPropertyValue('--sb-free-right')) || 0;
+	} catch {}
+	const left = Math.max(0, fl);
+	const right = Math.max(left + 120, window.innerWidth - Math.max(0, fr));
+	const top = topChromeFloor(left, right - left, TOP_CHROME.map((sel) => document.querySelector(sel)?.getBoundingClientRect() ?? null));
+	let bottom = window.innerHeight - bottomReserve({ dock: false });
+	const pill = document.getElementById('controls-pill')?.getBoundingClientRect();
+	if (pill && pill.height > 0 && pill.top > window.innerHeight / 2) bottom = Math.min(bottom, Math.round(pill.top) - 4);
+	return { left, right, top, bottom: Math.max(top + 120, bottom) };
 }
 
 /**
@@ -204,10 +230,12 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 		const r = pill?.getBoundingClientRect();
 		const w = typeof rect.w === 'number' ? rect.w : node.offsetWidth || 0;
 		if (!r || !r.height || r.top <= window.innerHeight / 2 || rect.left >= r.right || rect.left + w <= r.left || rect.top >= r.top) return h;
-		// item 2: a window left hanging off the bottom edge on purpose keeps its height (its NATURAL height — a cap this
-		// module set shows in scrollHeight, not offsetHeight)
-		const natural = typeof rect.h === 'number' ? rect.h : Math.max(node.offsetHeight || 0, node.scrollHeight || 0);
-		if (rect.top + natural > window.innerHeight + 1) return h;
+		// item 2: a window left hanging off the bottom edge on purpose keeps its height. 78 PL6 (UI-5, HONOR 718x587):
+		// only a SAVED height can say so — a window whose height follows its content (the AI window's welcome) measured
+		// its natural height from scrollHeight, a long welcome is taller than the screen below its top, and so it read as
+		// "hanging off on purpose" and covered the whole toolbar. A content window dragged low on purpose is the
+		// `overToolbar` case (noteOverToolbar), which returned above.
+		if (typeof rect.h === 'number' && rect.top + rect.h > window.innerHeight + 1) return h;
 		const room = Math.floor(r.top - 8 - rect.top);
 		return room >= scaledPx(minH) ? Math.min(h, room) : h;
 	}
@@ -222,6 +250,29 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 		if (over) rect.overToolbar = true;
 		else delete rect.overToolbar;
 	}
+	/** 78 PL4 (PC-14): a window that OPENS — from its defaults, or revealed again — never sits under an open
+	 *  sidebar column: it moves sideways into the free area between the columns when it fits there, else to the
+	 *  free area's left edge. A display decision like the reveal clamp (never saved), and a no-op with no column
+	 *  open, so a window parked by hand keeps its spot until a column takes that room. */
+	function fitFree() {
+		if (typeof document === 'undefined' || node.dataset.tabMember || node.dataset.docked || rect.overColumn || typeof rect.left !== 'number') return;
+		const w = node.offsetWidth || 0;
+		if (!w) return;
+		const a = freeArea();
+		if (a.left <= 0 && a.right >= window.innerWidth) return;
+		if (rect.left >= a.left && rect.left + w <= a.right) return;
+		const lo = a.left + 8;
+		const hi = a.right - 8;
+		rect.left = hi - lo >= w ? Math.min(Math.max(lo, rect.left), hi - w) : Math.max(0, Math.min(lo, window.innerWidth - w));
+	}
+
+	/** the window's box reaches into an open sidebar column */
+	function overlapsColumn() {
+		const a = freeArea();
+		const b = node.getBoundingClientRect();
+		return (a.left > 0 && b.left < a.left) || (a.right < window.innerWidth && b.right > a.right);
+	}
+
 	function apply() {
 		if (suspended()) return;
 		if (resizable) {
@@ -265,6 +316,8 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 			if (axis !== 'x') payload.h = rect.h;
 		}
 		if (rect.overToolbar) payload.overToolbar = true;
+		if (rect.preset) payload.preset = rect.preset;
+		if (rect.overColumn) payload.overColumn = true;
 		safeStorage.setItem('win:' + key, JSON.stringify(payload));
 	}
 
@@ -279,6 +332,7 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 			typeof rect.bottom === 'number' ? window.innerHeight - node.offsetHeight - rect.bottom : rect.top ?? 60;
 		delete rect.right;
 		delete rect.bottom;
+		fitFree();
 		clamp(true);
 		apply();
 		return true;
@@ -289,9 +343,11 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 		});
 		observer.observe(node);
 	} else {
+		fitFree();
 		clamp(true);
 		apply();
 	}
+	if (rect.preset) node.dataset.sizePreset = rect.preset;
 
 	// 18-B: a window that GROWS must be pulled back on-screen. The consumers that
 	// own their own sizing (Explorer, UV, Animation, Flow) apply their height after
@@ -343,6 +399,7 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 					// owns its rect, and a reveal (reopening it after a reload) would throw
 					// it back to wherever it last floated, half out of its column.
 					if (vis && !wasVisible && !node.dataset.tabMember && !node.dataset.docked && typeof rect.left === 'number') {
+						fitFree();
 						clamp(true);
 						apply();
 					}
@@ -406,6 +463,7 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 			resolveDefaults();
 			return;
 		}
+		fitFree();
 		clamp(true);
 		apply();
 	};
@@ -419,10 +477,16 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 	let grabX = 0;
 	let grabY = 0;
 	let dragId = -1;
+	// 78 PL39: a double tap / double click on the header cycles the size presets (resizable windows)
+	const presetsOn = resizable && axis !== 'x';
+	let press = { x: 0, y: 0, t: 0 };
+	/** @type {{x: number, y: number, t: number} | null} */
+	let lastTap = null;
 
 	/** @param {any} e */
 	function down(e) {
 		if (suspended()) return;
+		if (get(layoutLocked)) return; // showhide-v8 §6: Lock layout — no accidental drag
 		// 36 F4: header controls stay clickable — a TAB in the header too (windowGrip.js)
 		if (e.button !== 0 || !isHeaderDrag(e.target)) return;
 		dragging = true;
@@ -434,6 +498,7 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 		rect.top = box.top;
 		grabX = e.clientX - box.left;
 		grabY = e.clientY - box.top;
+		press = { x: e.clientX, y: e.clientY, t: performance.now() };
 		node.setPointerCapture?.(e.pointerId);
 		e.preventDefault();
 	}
@@ -444,6 +509,13 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 		rect.left = e.clientX - grabX;
 		rect.top = e.clientY - grabY;
 		clamp(false, true); // partial off-screen allowed, and over the dock/bottom chrome
+		if (get(snapToEdges)) {
+			// showhide-v8 §6: Snap to edges — a magnet while dragging; the rest clamp in up() still lifts the header
+			// out from under the bottom chrome, so a bottom snap never hides it
+			const at = snapRectToEdges(rect.left, rect.top, node.offsetWidth, node.offsetHeight, window.innerWidth, window.innerHeight);
+			rect.left = at.left;
+			rect.top = at.top;
+		}
 		apply();
 	}
 
@@ -453,8 +525,47 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 		dragging = false;
 		atRest = true;
 		node.releasePointerCapture?.(e.pointerId);
+		const now = performance.now();
+		const still = Math.hypot(e.clientX - press.x, e.clientY - press.y) < 6 && now - press.t < 400;
+		// a window MOVED by hand is on no preset any more (its size is kept)
+		if (!still) {
+			delete rect.preset;
+			delete node.dataset.sizePreset;
+			// 78 PL4: a window placed over a sidebar column ON PURPOSE (the 45 N7 Ctrl/Cmd drop) stays there when it
+			// opens again; any other drop forgets that
+			if ((e.ctrlKey || e.metaKey) && overlapsColumn()) rect.overColumn = true;
+			else delete rect.overColumn;
+		}
 		noteOverToolbar();
 		clamp(false); // at rest the header comes out from under the bottom chrome
+		apply();
+		save();
+		if (!still) {
+			lastTap = null;
+			return;
+		}
+		if (presetsOn && lastTap && now - lastTap.t < 450 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 30) {
+			lastTap = null;
+			applyPreset(nextPreset(rect.preset));
+			return;
+		}
+		lastTap = { x: e.clientX, y: e.clientY, t: now };
+	}
+
+	/** 78 PL39: size the window to a preset inside the free area, and remember it (the `win:<key>` record)
+	 * @param {import('./windowSize').SizePreset} name */
+	function applyPreset(name) {
+		if (!presetsOn || suspended() || node.dataset.tabMember || node.dataset.docked) return;
+		const box = node.getBoundingClientRect();
+		const r = presetRect(name, freeArea(), { left: box.left, top: box.top, w: box.width, h: box.height }, { minW: scaledPx(minW), minH: scaledPx(minH) });
+		rect.left = r.left;
+		rect.top = r.top;
+		rect.w = r.w;
+		rect.h = r.h;
+		rect.preset = name;
+		delete rect.overToolbar;
+		delete rect.overColumn;
+		node.dataset.sizePreset = name;
 		apply();
 		save();
 	}
@@ -470,7 +581,7 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 	node.addEventListener('pointercancel', cancel);
 	// 44 M1: an ungrouped floating window also moves by a press-and-drag on its body (windowBodyDrag
 	// hands the gesture to the header above once it travels)
-	const body = bodyDrag(node, { enabled: () => !suspended() });
+	const body = bodyDrag(node, { enabled: () => !suspended() && !get(layoutLocked) });
 
 	// --- B7: opt-in resize grabber (bottom-right), Flow's corner-resize feel ---
 	/** @type {any} */
@@ -491,8 +602,16 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 		let sizing = false;
 		/** @param {any} e */
 		const gdown = (e) => {
+			if (get(layoutLocked)) {
+				// showhide-v8 §6: Lock layout — the corner does not resize (and still never starts a drag)
+				e.preventDefault();
+				e.stopPropagation();
+				return;
+			}
 			sizing = true;
 			atRest = false;
+			delete rect.preset; // 78 PL39: a size dragged by hand is on no preset
+			delete node.dataset.sizePreset;
 			// take the CURRENT rendered size as the baseline (the window may still be
 			// on its CSS default size, with nothing persisted yet)
 			rect.w = node.offsetWidth;
@@ -546,12 +665,16 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 
 	// 44 M3: the header menu's "Reset size" is this grip's double-click
 	const unregisterSize = resizable ? registerSizeReset(node, () => resetSize()) : null;
+	// 78 PL39: the header menu's Size ▸ Small / Half / Full
+	const unregisterPresets = presetsOn ? registerSizePresets(node, (name) => applyPreset(name)) : null;
 
 	/** Drop the persisted size, keeping the position (18-B). */
 	function resetSize() {
 		delete rect.w;
 		delete rect.h;
 		delete rect.overToolbar;
+		delete rect.preset;
+		delete node.dataset.sizePreset;
 		node.style.removeProperty('width');
 		node.style.removeProperty('height');
 		clamp(true);
@@ -584,6 +707,7 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 			unregisterReset();
 			unregisterReload();
 			unregisterSize?.();
+			unregisterPresets?.();
 			// only if it is still OURS — a remount can register the new node before the old
 			// one tears down, and deleting blindly would strand the live window
 			if (revealers.get(key) === reveal) revealers.delete(key);

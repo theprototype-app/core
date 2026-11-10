@@ -83,7 +83,17 @@ h.run(async () => {
 	h.check((await L.storeValue(page, 'inspectorClose')) === false && (await L.storeValue(page, 'inspectorKind')) === 'scene', 'pinned, deselecting keeps it open on the scene');
 	await page.evaluate((u) => window.__stores.objectActions.selectObject(u), ctx.sphere);
 	await page.waitForTimeout(400);
-	h.check((await L.storeValue(page, 'inspectorClose')) === false && (await L.storeValue(page, 'inspectorKind')) === 'selection', 'pinned, a plain selection shows that object (follows the selection)');
+	// showhide-v8 (R2): with Configure Scene in front, a pinned panel no longer SWAPS to the selection: Configure Scene
+	// stays in front and a Properties tab joins it (it shows the selection when brought forward)
+	const tabsNow = await page.evaluate(() => {
+		let v;
+		window.__stores.sidebars?.sidebarTabs.subscribe((x) => (v = x))();
+		return v ? [...v.left, ...v.right] : null;
+	});
+	h.check(
+		(await L.storeValue(page, 'inspectorClose')) === false && (await L.storeValue(page, 'inspectorKind')) === 'scene' && !!tabsNow?.includes('inspector'),
+		`pinned, a plain selection keeps Configure Scene in front and adds the Properties tab (no swap) (${JSON.stringify(tabsNow)})`
+	);
 	await page.locator('#inspector-pin').click();
 	await page.waitForTimeout(200);
 	h.check(!(await pinnedAt()), 'and unpins');

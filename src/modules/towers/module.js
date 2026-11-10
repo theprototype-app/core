@@ -567,7 +567,7 @@ export default {
 				const id = Number(data?.level) || 0;
 				if (!levelById(id)) return '';
 				const progress = prog();
-				if (!isUnlocked(progress, id)) return '🔒 locked';
+				if (!isUnlocked(progress, id)) return 'Locked';
 				const row = progress.levels[String(id)];
 				return row ? starsText(row.stars) : '☆☆☆';
 			}

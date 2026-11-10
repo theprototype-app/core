@@ -49,9 +49,9 @@ async function dockCode(page) {
 		s.commandsHandler.sceneCommand('/create Box 2 2 2');
 		await new Promise((r) => setTimeout(r, 400));
 		s.objectActions.deselectObject();
-		s.flowCodeClose.set(false);
+		s.timelineClose.set(false);
 		await new Promise((r) => setTimeout(r, 700));
-		s.bottomDock.activateDock('flowcode');
+		s.bottomDock.activateDock('timeline');
 	});
 	await page.waitForTimeout(1200);
 }
@@ -60,7 +60,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	const P = await h.setupPage(browser, 'D', {
 		context: { viewport: { width: 1440, height: 900 } },
-		storage: { flowCodeDocked: 'true', flowDockHeight: '300', theme: THEME }
+		storage: { timelineDocked: 'true', flowDockHeight: '300', theme: THEME }
 	});
 	const page = P.page;
 	await dockCode(page);
@@ -124,11 +124,11 @@ h.run(async () => {
 	// ---- 5. unfolded N6, real taps -----------------------------------------------------------------
 	const U = await h.setupPage(browser, 'U', {
 		context: { viewport: { width: 770, height: 850 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2.9 },
-		storage: { flowCodeDocked: 'true', flowDockHeight: '300', theme: THEME, toursSeen: '{"editor-touch":true,"editor":true}' }
+		storage: { timelineDocked: 'true', flowDockHeight: '300', theme: THEME, toursSeen: '{"editor-touch":true,"editor":true}' }
 	});
 	const up = U.page;
 	await dockCode(up);
-	await S(up, () => window.__stores.focusMode.maximizeDockTab('flowcode'));
+	await S(up, () => window.__stores.focusMode.maximizeDockTab('timeline'));
 	await up.waitForTimeout(1200);
 	st = await look(up);
 	h.check(st.focus === 'dock' && st.pip && !!st.toggle, `5.1 unfolded: Maximize shows the preview and the toggle (${JSON.stringify(st.toggle)})`);

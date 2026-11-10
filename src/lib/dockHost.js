@@ -2,7 +2,6 @@ import { writable, derived, get } from 'svelte/store';
 import { objectListClose, chatHidden, aiAssistantHidden } from '../stores/appStore';
 import { isLocked } from '../stores/sceneStore';
 import { statsOpen } from './sceneBudget';
-import { profilerLiveOpen } from './perf/liveSink.js';
 import { assetBrowserOpen } from './cc0/assetBrowserState.js';
 import { phoneShell } from './ui/phoneShell.js';
 import { safeStorage } from './safeStorage';
@@ -45,7 +44,6 @@ import { groupOfKey, removeFromGroup } from './windowTabs';
 export const HOSTED = {
 	objects: { sel: '#object-list', ls: 'objectListDocked', store: objectListClose, isOpen: (v) => !v, open: () => objectListClose.set(false), close: () => objectListClose.set(true) },
 	stats: { sel: '#stats-window', ls: 'statsDocked', store: statsOpen, isOpen: (v) => !!v, open: () => statsOpen.set(true), close: () => statsOpen.set(false) },
-	profilerLive: { sel: '#profiler-live', ls: 'profilerLiveDocked', store: profilerLiveOpen, isOpen: (v) => !!v, open: () => profilerLiveOpen.set(true), close: () => profilerLiveOpen.set(false) },
 	chat: { sel: '#chat-window', ls: 'chatDocked', store: chatHidden, isOpen: (v) => v === '', open: () => chatHidden.set(''), close: () => chatHidden.set('hidden') },
 	aiAssistant: { sel: '#ai-assistant-window', ls: 'aiAssistantDocked', store: aiAssistantHidden, isOpen: (v) => v === '', open: () => aiAssistantHidden.set(''), close: () => aiAssistantHidden.set('hidden') },
 	// 47-cc0: the free CC0 asset browser

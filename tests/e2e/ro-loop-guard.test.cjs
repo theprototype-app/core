@@ -64,7 +64,7 @@ const S = (P, fn, arg) => P.evaluate(fn, arg);
 const rect = (P, sel) => S(P, (s) => { const el = document.querySelector(s); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; }, sel);
 
 /** every bar-able button on the bar (the J10 driver's record) */
-const ALL_ON = { order: ['move', 'rotate', 'scale', 'pivot', 'mode', 'objects', 'flow', 'explorer', 'animation', 'flowcode', 'uv', 'shader', 'hud', 'profiler', 'code'], hidden: [], spacerIndex: 5, seen: ['move', 'rotate', 'scale', 'pivot', 'mode', 'objects', 'flow', 'explorer', 'animation', 'flowcode', 'uv', 'shader', 'hud', 'profiler', 'code', 'ai', 'add', 'chat', 'mic', 'notes', 'notifications', 'peers', 'undo', 'redo', 'multiselect'] };
+const ALL_ON = { order: ['move', 'rotate', 'scale', 'pivot', 'mode', 'objects', 'flow', 'explorer', 'animation', 'timeline', 'uv', 'shader', 'hud', 'profiler', 'code'], hidden: [], spacerIndex: 5, seen: ['move', 'rotate', 'scale', 'pivot', 'mode', 'objects', 'flow', 'explorer', 'animation', 'timeline', 'uv', 'shader', 'hud', 'profiler', 'code', 'ai', 'add', 'chat', 'mic', 'notes', 'notifications', 'peers', 'undo', 'redo', 'multiselect'] };
 const CROWDED = { ...ALL_ON, left: [], right: [], top: ['notes', 'notifications', 'chat', 'mic'], touch: ['undo', 'redo', 'multiselect', 'ai'] };
 const SPARSE = { ...ALL_ON, top: [], touch: [] };
 /** swap the stored toolbar record in place (no reload) */
@@ -130,7 +130,7 @@ h.run(async () => {
 		const T = `[desk ${THEME}] `;
 		const A = await h.setupPage(browser, 'desk', {
 			context: { viewport: { width: 1440, height: 900 } },
-			storage: { theme: THEME, toastsInDrawerOnly: 'true', flowCodeDocked: 'true', flowDockHeight: '300' },
+			storage: { theme: THEME, toastsInDrawerOnly: 'true', timelineDocked: 'true', flowDockHeight: '300' },
 			init: LISTEN
 		});
 		const P = A.page;
@@ -265,9 +265,9 @@ h.run(async () => {
 			await sidebar(P, { side: 'right', full: true, w: 320 });
 			await S(P, async () => {
 				const s = window.__stores;
-				s.flowCodeClose.set(false);
+				s.timelineClose.set(false);
 				await new Promise((r) => setTimeout(r, 700));
-				s.bottomDock.activateDock('flowcode');
+				s.bottomDock.activateDock('timeline');
 			});
 			await P.waitForTimeout(900);
 			const dock = await S(P, () => {
@@ -361,7 +361,7 @@ h.run(async () => {
 		const T = `[unfolded ${THEME}] `;
 		const A = await h.setupPage(browser, 'unfolded', {
 			context: { viewport: { width: 770, height: 850 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2.9 },
-			storage: { theme: THEME, toastsInDrawerOnly: 'true', toursSeen: '{"editor-touch":true,"editor":true}', flowCodeDocked: 'true', flowDockHeight: '300' },
+			storage: { theme: THEME, toastsInDrawerOnly: 'true', toursSeen: '{"editor-touch":true,"editor":true}', timelineDocked: 'true', flowDockHeight: '300' },
 			init: LISTEN
 		});
 		const P = A.page;
@@ -383,7 +383,8 @@ h.run(async () => {
 			if (!g) throw new Error('no right grip');
 			const x = Math.round(g.x + g.w / 2);
 			const y = Math.round(g.y + Math.min(300, g.h / 2));
-			await touch.drag([x, y], [760, y], 20);
+			// showhide-v8: past the minimum but short of the border-close zone (MIN_W - 80 px closes the column now)
+			await touch.drag([x, y], [770 - 210, y], 20);
 			await P.waitForTimeout(400);
 			await touch.drag([Math.round((await rect(P, '#sidebar-grip-right')).x + 3), y], [300, y], 20);
 			await P.waitForTimeout(400);
@@ -405,11 +406,11 @@ h.run(async () => {
 		await phase(P, T, 'K5 Maximize + PiP (touch)', async () => {
 			await S(P, async () => {
 				const s = window.__stores;
-				s.flowCodeClose.set(false);
+				s.timelineClose.set(false);
 				await new Promise((r) => setTimeout(r, 700));
-				s.bottomDock.activateDock('flowcode');
+				s.bottomDock.activateDock('timeline');
 				await new Promise((r) => setTimeout(r, 900));
-				s.focusMode.maximizeDockTab('flowcode');
+				s.focusMode.maximizeDockTab('timeline');
 			});
 			await P.waitForTimeout(1200);
 			const pip = await rect(P, '#viewport-pip canvas');

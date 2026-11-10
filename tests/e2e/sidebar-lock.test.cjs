@@ -27,7 +27,9 @@ function lockPlace(page) {
 			gapToPin: r && pr ? Math.round(pr.left - r.right) : null,
 			sameRow: r && pr ? Math.abs(r.top + r.height / 2 - (pr.top + pr.height / 2)) < 3 : null,
 			pressed: one?.getAttribute('aria-pressed') ?? null,
-			headerHasLock: !!document.querySelector('#drawer-label #inspector-sticky-head')
+			headerHasLock: !!document.querySelector('#drawer-label #inspector-sticky-head'),
+			// 78-int PL14: the phone's lock rides the sheet-grip row (the Inspector has no inner title row)
+			inGrip: !!one?.closest('.sg-end')
 		};
 	});
 }
@@ -100,14 +102,20 @@ h.run(async () => {
 		await P.ctx.close();
 	}
 
-	// ---------- 4. the phone keeps the lock in the panel header ----------
+	// ---------- 4. the phone keeps the lock on the panel: in its sheet-grip row (78-int PL14) ----------
 	const F = await h.setupPage(browser, 'folded', {
 		context: { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2.9 },
 		storage: { toursSeen: '{"editor-touch":true,"editor":true}' }
 	});
 	await openProperties(F.page);
 	const ph = await lockPlace(F.page);
-	h.check(ph.count === 1 && ph.inHeader && !ph.inStrip, `phone: the lock stays in the Properties header (${JSON.stringify(ph)})`);
+	h.check(ph.count === 1 && ph.inGrip && !ph.inHeader && !ph.inStrip, `phone: the lock sits in the Properties sheet-grip row (${JSON.stringify(ph)})`);
+	// and still locks the header (the filter row)
+	const s0 = await F.page.evaluate(() => document.querySelector('#drawer-label')?.getAttribute('data-sticky'));
+	await F.page.locator('.sg-end #inspector-sticky-head').first().tap();
+	await F.page.waitForTimeout(400);
+	const s1 = await F.page.evaluate(() => document.querySelector('#drawer-label')?.getAttribute('data-sticky'));
+	h.check(s0 === 'true' && s1 === 'false', `phone: a tap on the grip-row lock lets the header scroll away (${s0} -> ${s1})`);
 
 	await h.finish(browser);
 });

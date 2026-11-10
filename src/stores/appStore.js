@@ -1,5 +1,6 @@
 import { writable, derived, get } from 'svelte/store';
 import { safeStorage } from '../lib/safeStorage';
+import { notifyOn } from '../lib/notifyPrefs';
 import { mentionsIn, mergeChat } from '../lib/chatTokens'; // 37 R15 (a zero-import leaf)
 
 /** @type {import('svelte/store').Writable<any>} */
@@ -934,6 +935,7 @@ export const chatMentioned = writable(false);
 /** @param {string} text */
 function noteUnreadChat(text) {
 	if (get(chatHidden) !== 'hidden') return;
+	if (!notifyOn('chat')) return; // profile-notify: the Chat badge switch (Settings ▸ Interface ▸ Notifications)
 	chatUnread.update((n) => n + 1);
 	/** @type {any} */
 	const peer = get(peers);

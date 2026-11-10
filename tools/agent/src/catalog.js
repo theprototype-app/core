@@ -48,6 +48,7 @@ export const TOOL_ANNOTATIONS = /** @type {Record<string, {title: string, read?:
 	create_lathe: { title: 'Make a lathed shape', destructive: false },
 	create_text: { title: 'Add 3D text', destructive: false, openWorld: true },
 	list_fonts: { title: 'List fonts for 3D text', read: true },
+	create_path: { title: 'Add a path to walk along', destructive: false }, // 78 F4
 	create_tube: { title: 'Make a tube along a path', destructive: false },
 	extrude_shape: { title: 'Extrude an outline', destructive: false },
 	create_mesh: { title: 'Make a mesh from data', destructive: false },
@@ -263,8 +264,8 @@ export const CONNECTOR_FAMILIES = Object.freeze({
 	create_shape: {
 		title: 'Make a shape',
 		summary:
-			'Make shapes the basic objects cannot: a lathe (a vase, a bowl, a lamp from a profile turned around an axis), a tube along a path (a rail, a pipe, a cable), an extruded outline (a sign, a star, a wall with a hole), a mesh from your own vertices (anything else), or text = 3D words (a sign, a title: flat, or solid with depth and a bevel; any bundled or Google Fonts font); import = a glTF / GLB / OBJ model file (base64, chunks or an https url) whose named parts come back as children animate_parts can move.',
-		actions: { lathe: 'create_lathe', tube: 'create_tube', extrude: 'extrude_shape', mesh: 'create_mesh', text: 'create_text', import: 'import_shape' },
+			'Make shapes the basic objects cannot: a lathe (a vase, a bowl, a lamp from a profile turned around an axis), a tube along a path (a rail, a pipe, a cable), an extruded outline (a sign, a star, a wall with a hole), a mesh from your own vertices (anything else), or text = 3D words (a sign, a title: flat, or solid with depth and a bevel; any bundled or Google Fonts font); path = a Path object guards patrol along (points with waits, speeds, jumps and events; walkers walk it at once); import = a glTF / GLB / OBJ model file (base64, chunks or an https url) whose named parts come back as children animate_parts can move.',
+		actions: { lathe: 'create_lathe', tube: 'create_tube', extrude: 'extrude_shape', mesh: 'create_mesh', text: 'create_text', import: 'import_shape', path: 'create_path' }, // 78 F4: a new ACTION, no new connector tool name
 		batch: { key: 'shapes', tool: 'create_shapes' }
 	},
 	edit_shape: {
@@ -329,10 +330,10 @@ export const CONNECTOR_FAMILIES = Object.freeze({
 	},
 	// 85-scene (85b): 85 H3 + H6; levels / portal / loading / checkpoint join with 91 / 93
 	game_setup: {
-		title: 'Game setup: spawn and play camera',
+		title: 'Game setup: spawn, play camera, levels, portals, checkpoints, loading',
 		summary:
-			'How the game starts: spawn = where Play starts and which way the player faces; play_camera = first person walking or flying (speed, jump, eye height) and openingView = where the editor camera starts when the scene opens.',
-		actions: { spawn: 'place_spawn', play_camera: 'set_play_camera' }
+			'How the game starts: spawn = where Play starts and which way the player faces; play_camera = first person walking or flying (speed, jump, eye height) and openingView = where the editor camera starts when the scene opens; levels = the game\'s one Levels table (order, scene or spawn point, goals) and what carries from level to level (score, inventory, health, named variables); portal = a doorway to a level, scene or spot (one player at a time, with a fade / iris / card); checkpoint = a pad that saves the player\'s progress; loading = the loading screen a level change shows.',
+		actions: { spawn: 'place_spawn', play_camera: 'set_play_camera', levels: 'set_levels', portal: 'set_portal', checkpoint: 'set_checkpoint', loading: 'set_loading' }
 	}
 });
 

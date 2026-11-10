@@ -12,6 +12,7 @@
 	import { expandShortcodes, tokenizeChat, shortcodeSuggestions, mentionSuggestions } from '$lib/chatTokens';
 	import { isLocked } from '../../stores/sceneStore';
 	import { nameOf, peerColor } from '$lib/lockControl';
+	import PeerAvatar from '../ui/PeerAvatar.svelte'; // 78 PL33: one avatar everywhere
 	import { dragWindow } from '$lib/dragWindow';
 	import { bottomDockable } from '$lib/bottomDockDrop';
 	import { focusStack } from '$lib/windowFocus';
@@ -113,7 +114,7 @@
 <div id="chat" class={$chatHidden}>
 	<div
 		id="chat-window"
-		use:dragWindow={{ key: 'chat', defaultRect: { right: 15, bottom: 15 } }}
+		use:dragWindow={{ key: 'chat', defaultRect: { right: 15, bottom: 15 }, resizable: true, minW: 300, minH: 240 }}
 		use:bottomDockable={{ key: 'chat' }}
 		use:focusStack
 		use:tabbable={{ key: 'chat', title: 'Chat', openStore: chatHidden, isOpen: (v) => v === '', close: () => chatHidden.set('hidden') }}
@@ -144,7 +145,7 @@
 							{@const tokens = tokenizeChat(m.text, people)}
 							<li class={'chat-message chat-msg ' + m.type} class:chat-mine={isMine(m)}
 								class:chat-mentions-me={!isMine(m) && mentionsMe(tokens)}>
-								<span class="chat-av" style={'background:' + peerColor(m.sender)} aria-hidden="true">{(authorName(m) || '?').slice(0, 1).toUpperCase()}</span>
+								<span class="chat-av"><PeerAvatar id={m.sender} row={($userdata ?? []).find((u: any) => u[0] === m.sender)} name={authorName(m)} size={22} /></span>
 								<span class="min-w-0">
 									<span class="chat-who">{authorName(m)}<small>{stamp(m)}</small></span>
 									<!-- 37 R15: TEXT NODES ONLY — a peer's string never becomes markup -->
@@ -239,12 +240,6 @@
 		width: 24px;
 		height: 24px;
 		border-radius: 50%;
-		color: var(--on-accent);
-		font-size: var(--fs-badge);
-		font-weight: 600;
-	}
-	.chat-mine .chat-av {
-		box-shadow: 0 0 0 2px var(--accent);
 	}
 	.chat-who {
 		display: block;

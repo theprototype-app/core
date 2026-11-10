@@ -1,5 +1,5 @@
 import { derived, get, writable } from 'svelte/store';
-import { isLocked, isVRMode, vrOverride, vrPassthrough } from '../stores/sceneStore';
+import { isLocked, isVRMode, vrOverride, vrPassthrough, globalScene } from '../stores/sceneStore';
 // appStore is a LEAF (svelte/store and nothing else — sceneStore already pulls in more
 // than it does), so this does not widen the cycle surface the note below is about.
 import { showToast } from '../stores/appStore';
@@ -295,6 +295,9 @@ export function simOnPlay() {
 
 /* ------------------------------------------------------------- sim on play ---- */
 
+/** 78 F11: the "walls will not stop you" notice, once per page */
+let walkNoticeShown = false;
+
 // 21-B B8: honour `scenePhysics.play.simOnPlay`. A game template asks for its physics
 // to run the moment someone is IN the world — its whole rule surface (spawn nodes,
 // sensor triggers, grab/throw) is a documented silent no-op without a stepping sim,
@@ -308,16 +311,41 @@ export function simOnPlay() {
 // Dynamic imports for the reason shortcuts.js uses one: physics.js is history-family
 // and this module is imported from shortcuts.
 function maybeSimOnPlay() {
-	Promise.all([import('./scenePhysics'), import('./physics')])
-		.then(([sp, ph]) => {
-			if (get(sp.scenePlay).simOnPlay !== true) return;
+	Promise.all([import('./scenePhysics'), import('./physics'), import('./charController'), import('./playSettings')])
+		.then(([sp, ph, cc, ps]) => {
+			// 78-int: the walker holds still at Play entry until this says whether a world is coming (cc.expectWorld)
+			const start = () => {
+				cc.expectWorld?.('coming');
+				// a start that was refused or failed builds no world: stop holding at once, not after the cap
+				return Promise.resolve(ph.toggleSimulation({ play: true })).finally(() => {
+					if (!ph.physicsRuntime()) cc.expectWorld?.('none');
+				});
+			};
+			const none = () => cc.expectWorld?.('none');
+			const play = get(sp.scenePlay);
 			// a sim already running anywhere (ours or a peer's) means there is nothing
 			// to start — the quiet skip, never toggleSimulation's busy toast
-			if (get(ph.simulating) || get(ph.remoteSimulating)) return;
-			return ph.toggleSimulation();
+			if (get(ph.simulating) || get(ph.remoteSimulating)) return none();
+			if (play.simOnPlay === true) return start();
+			// 78 F11: A WALK LEVEL RUNS ITS WORLD BY ITSELF. Set to walk (or a walking Character
+			// Controller) with nothing dynamic in it, the run is only the player's world — walls,
+			// floors, sensors — so it starts with no flag: without it the walker stood on the flat
+			// ground plane and went through every wall. A scene WITH dynamic bodies keeps the
+			// author's choice (the flag), and Play says why walls do not stop you.
+			const walking = play.grounded === true || get(cc.charControl)?.mode === 'walk';
+			if (!walking) return none();
+			// a module's play contract owns its world (the dungeon walks its own raster)
+			if (ps.playPublishers(get(globalScene)).length) return none();
+			if (!ph.sceneHasDynamicBodies()) return start();
+			none();
+			if (!walkNoticeShown) {
+				walkNoticeShown = true;
+				showToast('Physics is not running, so walls will not stop you here. Turn on "Start the simulation when play mode opens" (Scene, Physics) or press P.');
+			}
 		})
 		.catch(() => {
 			/* physics failing to load must never take the play button down */
+			import('./charController').then((cc) => cc.expectWorld?.('none')).catch(() => {});
 		});
 }
 

@@ -146,7 +146,10 @@ h.run(async () => {
 	});
 	const plot = await A.page.locator('#animation-timeline').boundingBox();
 	h.check(!!plot, 'the timeline renders for the pane checks');
-	await A.page.mouse.click(plot.x + 6, plot.y + plot.height - 6);
+	// showhide-v8: the channel list's arrow handle hangs over the plot's left edge (its hit area reaches 16 px in); the
+	// focus click lands just right of it, still left of the clip's first key
+	const listHandle = await A.page.locator('#animation-list-toggle').boundingBox();
+	await A.page.mouse.click(Math.max(plot.x + 6, listHandle ? listHandle.x + listHandle.width + 2 : 0), plot.y + plot.height - 6);
 	await A.page.waitForTimeout(150);
 
 	// select a key, copy it, move the playhead, paste — the pane's own Ctrl+C/V

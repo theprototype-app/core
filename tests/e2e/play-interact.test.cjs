@@ -510,7 +510,9 @@ h.run(async () => {
 		return { before, after: rig.position.y };
 	});
 	h.check(
-		flyBlocked && Math.abs(flyBlocked.after - 0.8) < 0.001,
+		// 78 F11: a grounded scene with no dynamic body runs its world on Play; 1.64 keeps the eye-height pin (the default
+		// walker is off), and the +3 cm stays for the walker's 2 cm controller skin when the card turns it back on
+		flyBlocked && flyBlocked.after >= 0.8 - 0.001 && flyBlocked.after <= 0.8 + 0.03,
 		'7.5 grounded pins the rig to eye height and Q cannot fly (' + JSON.stringify(flyBlocked) + ')'
 	);
 

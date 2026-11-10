@@ -1,5 +1,6 @@
 <script>
 	import { backClose } from '$lib/backStack.js'; // phone-polish: Android Back closes it
+	import PaneHandle from '../ui/PaneHandle.svelte'; // showhide-v8: the one pane-handle pattern
 	import { onLayoutRestore, storedPanelLayout } from '$lib/uiLayoutsCore';
 	// The Shader editor dock tab (plan SH3).
 	//
@@ -761,13 +762,18 @@
 				</div>
 			{/if}
 			{#if !compact}
-			<button
-				id="shader-palette-toggle"
-				class="shader-divider"
-				title={paletteOpen ? 'Hide the node palette' : 'Show the node palette'}
-				aria-label="Toggle the node palette"
-				onclick={() => (paletteOpen = !paletteOpen)}>{paletteOpen ? '‹' : '›'}</button
-			>
+			<!-- showhide-v8 (owner 2026-11-09): the one ARROW pattern — a pane handle on the divider, no 12 px column -->
+			<div class="shader-handle-hold">
+				<PaneHandle
+					id="shader-palette-toggle"
+					edge="left"
+					open={paletteOpen}
+					label="the node palette"
+					windowKey="shader"
+					style="top: 2.5rem; left: 0"
+					onclick={() => (paletteOpen = !paletteOpen)}
+				/>
+			</div>
 			{/if}
 
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -868,13 +874,18 @@
 			</div>
 
 			{#if !compact}
-			<button
-				id="shader-props-toggle"
-				class="shader-divider"
-				title={propsOpen ? 'Hide properties' : 'Show properties'}
-				aria-label="Toggle the properties panel"
-				onclick={() => (propsOpen = !propsOpen)}>{propsOpen ? '›' : '‹'}</button
-			>
+			<div class="shader-handle-hold">
+				<PaneHandle
+					id="shader-props-toggle"
+					edge="right"
+					open={propsOpen}
+					label="properties"
+					role="info"
+					windowKey="shader"
+					style="top: 2.5rem; right: 0"
+					onclick={() => (propsOpen = !propsOpen)}
+				/>
+			</div>
 			{/if}
 			{#if propsOpen && !compact}
 				<div class="shader-side shader-side-right" id="shader-props" use:minimalScroll>
@@ -1211,15 +1222,12 @@
 		flex-basis: 172px;
 		border-left: 1px solid var(--border);
 	}
-	.shader-divider {
-		flex: 0 0 12px;
-		background: color-mix(in srgb, var(--text) 4%, transparent);
-		color: var(--text-muted);
-		font-size: 10px;
-	}
-	.shader-divider:hover {
-		background: var(--surface-hover);
-		color: var(--text);
+	/* showhide-v8: the pane handles hang from a zero-width holder on each divider (no margin) */
+	.shader-handle-hold {
+		position: relative;
+		flex: 0 0 0;
+		width: 0;
+		z-index: 6;
 	}
 	.shader-canvas {
 		position: relative;

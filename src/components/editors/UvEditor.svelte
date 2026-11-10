@@ -197,7 +197,7 @@
 	// seam — an auto-open stays UNPINNED, so it does not fight the user).
 	let shell = $state(/** @type {any} */ (null));
 	$effect(() => {
-		if ($uvTool === 'paint') untrack(() => shell?.showSecondary('tool'));
+		if ($uvTool === 'paint') untrack(() => shell?.showSecondary('tool', true));
 	});
 
 	// --- canvas view state ---
@@ -1667,9 +1667,10 @@
 	<WindowShell
 		bind:this={shell}
 		key="uv"
+		mainLabel="UV map"
 		primaryLabel="materials"
 		primaryDefaultWidth={168}
-		secondaryModes={[{ key: 'tool', icon: '🖌', label: 'Tool' }, { key: 'settings', icon: '⚙', label: 'Settings' }]}
+		secondaryModes={[{ key: 'tool', icon: 'brush', label: 'Tool' }, { key: 'settings', icon: 'settings', label: 'Settings' }]}
 	>
 		{#snippet topbar()}
 			<div class="relative border-b border-border px-2 py-1" bind:this={topbarEl}>

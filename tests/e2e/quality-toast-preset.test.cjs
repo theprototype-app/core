@@ -107,9 +107,11 @@ h.run(async () => {
 		const labels = [...ins.querySelectorAll('.sec-label, [data-section-label], .section-label, h3')].map((e) => e.textContent?.trim() ?? '').filter(Boolean);
 		const first = ins.querySelector('#scene-quality-preset')?.getBoundingClientRect().top ?? 1e9;
 		const env = ins.querySelector('#environment-presets')?.getBoundingClientRect().top ?? -1;
-		return { labels: labels.slice(0, 4), qualityAboveEnvironment: first < env };
+		const device = ins.querySelector('#scene-group-device')?.getBoundingClientRect().top ?? 1e9;
+		return { labels: labels.slice(0, 4), firstOfDevice: device < first && env < device };
 	});
-	h.check(order.qualityAboveEnvironment, `2.1 the Quality preset sits above Environment, the top of Configure Scene (${JSON.stringify(order)})`);
+	// 78-int PL17 (owner-approved order): Quality is the FIRST section of "This device", after the scene group
+	h.check(order.firstOfDevice, `2.1 the Quality preset heads the This device group, under the scene's Environment (${JSON.stringify(order)})`);
 	const opts = await page.evaluate(() => [...document.querySelectorAll('#scene-quality-preset [role="radio"]')].map((b) => b.textContent?.trim()));
 	h.check(opts.join() === 'Auto,High,Medium,Low', `2.2 Auto / High / Medium / Low (${opts.join(',')})`);
 	if (OUT) {

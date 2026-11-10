@@ -1,4 +1,5 @@
 import { writable, get } from 'svelte/store';
+import { notifyOn } from './notifyPrefs';
 import { peers, userdata, pendingApprovals, waitingForApproval, showToast } from '../stores/appStore';
 import { sessionHost, noteJoinRefusal, clearApprovalStarted } from './connectionState';
 import { rolesInfo } from './cloudHooks';
@@ -160,7 +161,7 @@ export function applyKick(data, sender, pc) {
 	state.remove(data.peer, { block: !!data.block, name, by: sender });
 	publish();
 	dropLocally(pc, data.peer);
-	if (known && !data.replay) showToast(name + ' was removed from the session' + (data.block ? ' and blocked.' : '.'));
+	if (known && !data.replay && notifyOn('peerLeft')) showToast(name + ' was removed from the session' + (data.block ? ' and blocked.' : '.'));
 	return verdict;
 }
 

@@ -91,6 +91,9 @@ h.run(async () => {
 	h.check(true, 'signed out: the first choice offers Sign in to connect');
 	h.check(/Connect Claude/.test((await A.page.locator('#connect-claude-title').textContent()) ?? '') && /no API key/.test((await A.page.locator('#connect-claude .cc-desc').textContent()) ?? ''), 'the choice says what it is: Connect Claude, your Claude account, no API key');
 	h.check(/profile, top right/.test((await A.page.locator('#connect-claude .cc-text').textContent()) ?? ''), 'the window says to sign in from the profile, top right');
+	// 78 PL10: one wording: signed out, step 2 names the button the user sees (Sign in to connect), not Connect Claude
+	const step2Out = (await A.page.locator('#connect-claude-step-2').textContent()) ?? '';
+	h.check(/press Sign in to connect/.test(step2Out) && !/press Connect Claude here/.test(step2Out), `signed out: step 2 names the Sign in to connect button (${step2Out.trim().slice(0, 90)})`);
 	h.check((await A.page.locator('#ai-header-signin').count()) === 0, 'the welcome carries the button: none in the header too');
 	await pressOpensProfile(A.page, '#connect-claude-signin', 'welcome');
 	h.check((await read(A.page, 'aiAssistantHidden')) === '', 'on a desktop the AI window stays open behind the pop-up');
@@ -200,12 +203,16 @@ h.run(async () => {
 		await P.page.waitForTimeout(600); // the sheet's height transition / the window's re-clamp
 		const fit = await P.page.evaluate(() => {
 			const win = document.querySelector('#ai-assistant-window');
+			// 78 PL23: on the folded phone the AI assistant is a phone DOCK TAB at the dock's height (not a full-height
+			// sheet), so the welcome may scroll there; the own-provider card must still be reachable inside the window
+			const docked = win.getAttribute('data-pd-host') === 'shown';
+			if (docked) document.querySelector('#ai-welcome-own')?.scrollIntoView({ block: 'nearest' });
 			const sc = document.querySelector('#ai-welcome')?.closest('.overflow-y-auto');
 			const w = win.getBoundingClientRect();
 			const own = document.querySelector('#ai-welcome-own').getBoundingClientRect();
-			return { sh: sc?.scrollHeight, ch: sc?.clientHeight, ownB: Math.round(own.bottom), winB: Math.round(w.bottom), vh: innerHeight };
+			return { docked, sh: sc?.scrollHeight, ch: sc?.clientHeight, ownB: Math.round(own.bottom), winB: Math.round(w.bottom), vh: innerHeight };
 		});
-		h.check(fit.sh <= fit.ch + 1 && fit.ownB <= fit.winB && fit.winB <= fit.vh, `N6 ${name}: the welcome fits without an inner scroll, own provider card in view (${JSON.stringify(fit)})`);
+		h.check((fit.docked || fit.sh <= fit.ch + 1) && fit.ownB <= fit.winB + 1 && fit.winB <= fit.vh, `N6 ${name}: the welcome fits without an inner scroll (a phone dock tab: scrolls inside the dock), own provider card in view (${JSON.stringify(fit)})`);
 		// 54i f: no window header under the top chrome (the bell cluster, the profile circle, the Connect bar);
 		// the Debugger stands for every toolbox that opens at the top right
 		await P.page.evaluate(() => window.__stores.flowDebug.setDebugOpen(true));

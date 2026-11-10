@@ -326,6 +326,14 @@ export const drawerSlot = writable(null);
  * @type {import('svelte/store').Writable<((el: HTMLElement) => (() => void) | void) | null>} */
 export const profileSlot = writable(null);
 
+/** profile-notify (the profile-menu review's direction C seam): Settings sections a cloud plugin fills, keyed by
+ * section. Only `account` exists — Settings ▸ Account (its Email part: Product updates). Core draws the section's
+ * page (title, nav row, search) only while a plugin has mounted into it, so the OSS Settings has no Account page.
+ * @type {import('svelte/store').Writable<Record<string, (el: HTMLElement) => (() => void) | void>>} */
+export const settingsSlots = writable({});
+/** the section keys `mountSettingsSection` accepts */
+export const SETTINGS_SLOT_KEYS = ['account'];
+
 /** 28-A5 (roadmap #28, publish · play · remix): THE SAVE ROW'S NEIGHBOUR. Rendered
  * directly under the Save row's format segment in the logo menu (Sidebar.svelte),
  * because a Publish row anywhere else is a row nobody finds. The plugin renders its

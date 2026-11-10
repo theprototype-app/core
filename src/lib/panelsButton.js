@@ -2,23 +2,20 @@ import { writable, derived, readable, get } from 'svelte/store';
 import { safeStorage } from './safeStorage';
 import { phoneShell } from './ui/phoneShell.js';
 import { SIDES, sidebarsWide, sidebarVisible, sidebarWanted, sidebarTabs, toggleSidebar } from './sidebars';
+import { unfoldedPhone } from './deviceClass.js';
+import { sidebarHandlesOn } from './sidebarHandles.js';
+import { registerChromeButton } from './chromeButtons';
+import { onLayoutRestore } from './uiLayoutsCore';
 
 // dock-fixes item 8 (owner 2026-11-08) — THE PANELS BUTTON. "On a phone UNFOLDED / tablet the sidebars
-// must always be reachable": Ctrl+B / Ctrl+Alt+B (44 M7) have no keyboard there, and a column hidden by
-// its strip's hide button (item 1) left nothing on screen to bring it back. One round button in the
-// top-right group, beside the profile, shows / hides BOTH sidebars:
+// must always be reachable": Ctrl+B / Ctrl+Alt+B (44 M7) have no keyboard there. One round button in the
+// top-right group, beside the profile.
 //
-//   any column on screen  -> hide every visible column (its tabs stay open and mounted — 44 M7 'hidden'),
-//                            remembering WHICH sides were showing
-//   none on screen        -> show the remembered sides again; with nothing remembered, every side that
-//                            holds tabs; with no tabs anywhere, the right column empty with its "+"
-//
-// WHERE: ON by default on a touch screen wide enough for sidebars (the unfolded N6, a tablet); off on a
-// mouse desktop (its shortcuts are there) and absent on a folded / narrow phone (the phone shell has no
-// sidebars and keeps today's behaviour). The person can switch it either way — the button's own menu
-// (right-click, or a long press on touch: "Hide this button") and Settings ▸ Interface ▸ Panels button.
-// LOCAL (this device), persisted. The generic "pin / unpin every chrome button" (item 5) is a proposal;
-// this is its minimal form for one button.
+// showhide-v8 (owner 2026-11-09): the button STAYS on the unfolded phone (the 1.64 "remove it" is cancelled), its
+// press CYCLES the sides (left -> right -> none, an empty side skipped: `togglePanels`), and its "Auto" follows the
+// owner's device table — shown on the unfolded phone only; a desktop and a tablet use the viewport sidebar handles
+// ($lib/sidebarHandles) instead, and turning the handles on by hand hides it the same way. Customize / Settings ▸
+// Interface ▸ Panels button can still add it anywhere ('on') or remove it ('off'). LOCAL (this device), persisted.
 
 /** @typedef {'auto'|'on'|'off'} PanelsButtonMode */
 const KEY = 'panelsButton';
@@ -31,50 +28,88 @@ export const panelsButtonMode = writable(/** @type {PanelsButtonMode} */ (asMode
 panelsButtonMode.subscribe((v) => {
 	if (typeof localStorage !== 'undefined') safeStorage.setItem(KEY, v);
 });
+// panel-gestures item 5: the mode rides the named workspace layouts (a hidden Panels button is a hidden chrome
+// button, saved per layout like the rest); a layout just rewrote the key: re-read it
+onLayoutRestore(() => panelsButtonMode.set(asMode(safeStorage.getItem(KEY))));
 
-/** a touch screen (no hover, coarse pointer) — the unfolded phone and the tablet */
-const coarse = readable(false, (set) => {
-	if (typeof window === 'undefined' || !window.matchMedia) return;
-	const mq = window.matchMedia('(pointer: coarse)');
-	set(mq.matches);
-	const on = () => set(mq.matches);
-	mq.addEventListener?.('change', on);
-	return () => mq.removeEventListener?.('change', on);
-});
-
-/** is the button drawn: sidebars exist here (not the phone shell, not <= 640 px) and the mode says so */
-export const panelsButtonShown = derived([panelsButtonMode, coarse, sidebarsWide, phoneShell], ([$mode, $coarse, $wide, $phone]) => {
+/**
+ * showhide-v8 (owner 2026-11-09) — WHERE THE BUTTON IS DRAWN. "Auto" now follows the owner's device table
+ * ($lib/deviceClass): shown on the UNFOLDED PHONE only; hidden on a desktop (Customize adds it) and on a tablet (the
+ * viewport sidebar handles replace it). Turning the handles on by hand anywhere hides it the same way. 'on' (Customize
+ * ▸ add it back, Settings ▸ On) draws it wherever sidebars exist; 'off' never.
+ */
+export const panelsButtonShown = derived([panelsButtonMode, unfoldedPhone, sidebarHandlesOn, sidebarsWide, phoneShell], ([$mode, $unfolded, $handles, $wide, $phone]) => {
 	if ($phone || !$wide) return false;
-	return $mode === 'on' || ($mode === 'auto' && $coarse);
+	return $mode === 'on' || ($mode === 'auto' && $unfolded && !$handles);
 });
 
 /** is any sidebar column on screen (the button's pressed state) */
 export const panelsOpen = derived(sidebarVisible, ($v) => !!($v.left || $v.right));
 
-/** the sides that were on screen when the button hid them @type {('left'|'right')[]} */
-let remembered = [];
-
-/** the button press: hide every visible column, or bring the remembered ones back.
- * dock-fixes A': it hides every column the person ASKED for, an auto-hidden one included — hiding only the visible
- * one gave its room back and the auto-hidden one came straight back by itself. They are remembered with the visible
- * ones LAST, so bringing them back reopens those last and the free-space rule keeps the same one on screen. */
+/**
+ * showhide-v8 (owner 2026-11-09) — THE PRESS CYCLES THE SIDES: press 1 opens the LEFT side, press 2 closes it and
+ * opens the RIGHT, press 3 hides all. A side with no tabs is skipped, so with only one side holding tabs the button
+ * just opens and closes that side ("one sidebar by default on mobile" — drag a window to the other side and that
+ * side joins the cycle). Both columns on screen (a shortcut, a wider screen): the press hides all. With no tabs
+ * anywhere, the right column opens empty with its "+". Hiding keeps every tab open (44 M7 'hidden').
+ */
 export function togglePanels() {
 	const vis = get(sidebarVisible);
-	const showing = SIDES.filter((s) => vis[s]);
-	if (showing.length) {
-		const want = get(sidebarWanted);
-		const tucked = SIDES.filter((s) => want[s] && !vis[s]);
-		remembered = [...tucked, ...showing];
-		for (const s of remembered) toggleSidebar(s, false);
-		return;
-	}
+	const want = get(sidebarWanted);
 	const tabs = get(sidebarTabs);
-	let back = remembered.length ? remembered : SIDES.filter((s) => tabs[s].length);
-	if (!back.length) back = ['right'];
-	for (const s of back) toggleSidebar(s, true);
+	const cycle = SIDES.filter((s) => tabs[s].length > 0);
+	/** @param {('left'|'right')[]} show */
+	const showOnly = (show) => {
+		for (const s of SIDES) if (!show.includes(s) && (vis[s] || want[s])) toggleSidebar(s, false);
+		for (const s of show) if (!vis[s]) toggleSidebar(s, true);
+	};
+	if (!cycle.length) {
+		// nothing docked anywhere: the right column, empty with its "+", or close whatever is open
+		return showOnly(vis.left || vis.right ? [] : ['right']);
+	}
+	const showing = SIDES.filter((s) => vis[s]);
+	if (!showing.length) return showOnly([cycle[0]]);
+	if (showing.length > 1) return showOnly([]);
+	const i = cycle.indexOf(showing[0]);
+	const next = i >= 0 ? cycle[i + 1] : cycle[0];
+	showOnly(next ? [next] : []);
 }
+
+/** the mode the button had before it was hidden, so Show brings back the same one @type {PanelsButtonMode|null} */
+let beforeHide = null;
 
 /** "Hide this button" (its menu) — Settings brings it back @returns {void} */
 export function hidePanelsButton() {
+	const m = get(panelsButtonMode);
+	if (m !== 'off') beforeHide = m;
 	panelsButtonMode.set('off');
 }
+
+/** "Show buttons ▸ Panels" / Customize buttons: back to the mode it had; with none known, 'auto' where auto draws it
+ * (the unfolded phone with the handles off) and 'on' everywhere else (where auto would leave it hidden) */
+function showPanelsButton() {
+	if (get(panelsButtonMode) !== 'off') return;
+	panelsButtonMode.set(beforeHide ?? (get(unfoldedPhone) && !get(sidebarHandlesOn) ? 'auto' : 'on'));
+}
+
+// panel-gestures item 5: the Panels button is one of the hideable chrome buttons. Its shown / hidden state is
+// its own mode (Settings ▸ Interface ▸ Panels button keeps working), so it registers BOUND — the generic menu,
+// Show buttons and Settings ▸ Customize buttons all switch that mode, and 'off' is what they read as hidden.
+registerChromeButton({
+	id: 'top.panels',
+	kind: 'top',
+	label: 'Panels',
+	icon: 'columns-3',
+	state: {
+		hidden: derived(panelsButtonMode, ($m) => $m === 'off'),
+		set: (hidden) => (hidden ? hidePanelsButton() : showPanelsButton())
+	},
+	menu: () => [
+		{
+			label: get(panelsOpen) ? 'Hide the sidebars' : 'Show the sidebars',
+			icon: 'columns-3',
+			tooltip: 'Show or hide both sidebars — their tabs stay open',
+			action: () => togglePanels()
+		}
+	]
+});

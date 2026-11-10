@@ -79,10 +79,7 @@ h.run(async () => {
 	h.check(!!flowRow && flowRow.mode === 'dynamic' && flowRow.mass === 2 && flowRow.flow, 'flow row: dynamic mass 2, flagged flow');
 
 	// the Inspector scene-mode section renders the rows; row click selects
-	await A.page.evaluate(() => {
-		window.__stores.inspectorKind.set('scene');
-		window.__stores.inspectorClose.set(false);
-	});
+	await A.page.evaluate(() => window.__stores.openSceneSection('Physics')); // 78-int PL17: Configure Scene opens with only Environment + Scene look expanded — deep-link the section
 	await A.page.waitForSelector('#physics-objects', { timeout: 10000 });
 	const rowCount = await A.page.locator('#physics-objects button').count();
 	h.check(rowCount === 2, 'Inspector Physics section renders 2 rows');

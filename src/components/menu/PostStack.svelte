@@ -11,6 +11,7 @@
 	// TypeScript annotation breaks the build with a useless error.
 	import DragRow from '../ui/DragRow.svelte';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
+	import PropRow from '../ui/PropRow.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import InsToggle from './inspector/InsToggle.svelte';
 	import { onMount } from 'svelte';
@@ -286,8 +287,9 @@
 	 top of it while you are looking through that camera, so switching cameras
 	 switches the grade. Same picker shape as the HUD editor, because it is the same
 	 idea: the document is keyed 'scene' | cameraUuid. -->
-<div class="ui-row items-center gap-2">
-	<span class="w-20 shrink-0 text-xs text-text-2">Look for</span>
+<!-- 78 PL21 (device lab PC-8): a PropRow, so "Look for" sits in the panel's label column like every row below it -->
+<PropRow label="Look for" valueBox={false}>
+	{#snippet control()}
 	<ThemedSelect
 		id="post-doc-key"
 		class="min-w-0 flex-1"
@@ -301,10 +303,11 @@
 			openId = '';
 		}}
 	/>
-</div>
+	{/snippet}
+</PropRow>
 {#if onCamera}
-	<div class="ui-row items-center gap-2">
-		<span class="w-20 shrink-0 text-xs text-text-2">Combine</span>
+	<PropRow label="Combine" valueBox={false}>
+		{#snippet control()}
 		<ThemedSelect
 			id="post-doc-mode"
 			class="min-w-0 flex-1"
@@ -315,7 +318,8 @@
 			value={doc.mode === 'replace' ? 'replace' : 'append'}
 			onchange={(v) => setCameraLookMode(docKey, String(v))}
 		/>
-	</div>
+		{/snippet}
+	</PropRow>
 	<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 		This look applies while anyone is looking through that camera — switch camera (a Set
 		Active Camera node, or Control on the camera) and the grade switches with it.

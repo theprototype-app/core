@@ -58,6 +58,9 @@ h.run(async () => {
 		await surface(page, tag("What's new"), () => page.evaluate(() => window.__stores.whatsNew.openWhatsNew()), '#whats-new-window');
 		await surface(page, tag('main menu'), () => set(page, 'closeMenu', false), '#sidebar70');
 		await surface(page, tag('Explorer'), () => openExplorer(page), '#explorer-list');
+		// 78 PL23: on the folded phone Chat is a dock TAB, so the Explorer Back only minimized (still open) would be
+		// the tab behind it once Chat closes — close it first, so Chat is the dock's one tab
+		await set(page, 'explorerClose', true);
 		await surface(page, tag('Chat (mounted while hidden)'), () => set(page, 'chatHidden', ''), '#chat-window');
 		// the Connect drawer is not a window (HONOR audit: Back left the app with it open)
 		// (the folded phone shell has no drawer: its connect chip opens a sheet)

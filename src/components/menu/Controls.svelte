@@ -7,8 +7,9 @@
 	import { chatHidden, flowGraphClose, flowCodeClose, animationClose, uvEditorClose, shaderEditorClose, hudEditorClose, timelineClose, explorerClose, profilerClose, codeWorkspaceClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, floatingToolbar, toolbarAlwaysOnTop, hudStackLift, showSimControls, expandedObjects } from '../../stores/appStore.js';
 	// 24-B2: keyboard navigation in the object list (the Explorer's gridKeydown shape)
 	import { visibleObjectRows, withExpanded, typeAheadIndex } from '$lib/objectListNav';
-	import { sceneMetrics, statsOpen, worstTier, budgetRows } from '$lib/sceneBudget';
-	import { qualityState, pinQuality, releaseQuality } from '$lib/qualityGovernor';
+	import { sceneMetrics, statsOpen, footerTier, budgetRows } from '$lib/sceneBudget';
+	import { qualityState, pinQuality, releaseQuality, isPhoneDevice } from '$lib/qualityGovernor';
+	import { holdingLabels } from '$lib/qualityGovernorCore';
 	import { showToast as showQualityToast } from '../../stores/appStore';
 	import { keyOf } from '$lib/keyOf';
 	import { setLastScope } from '$lib/keyScope';
@@ -68,6 +69,7 @@
 	import { simpleUntilPlay, holdAdvanced } from '$lib/onboarding/onboardState.js'; // 76 FW1
 	// 60 Q1: Play here — a roster button (Customize), a row in Play's own menu, Ctrl+Shift+Enter
 	import { playHere, playHereItems, playingHere } from '$lib/playHere';
+	import { animateInEditor, toggleAnimateInEditor } from '$lib/editorMotion'; // 78 F6
 	import { arPlayItems } from '$lib/arTable';
 	// 30 P2: Test play — the play button's right-click row beside the game chip's button
 	import { testPlay } from '$lib/gamePresence';
@@ -420,38 +422,6 @@
 		chipPopup = false;
 	}
 
-	// 80.2: the chip row scrolls horizontally (wheel + drag), never overflows
-	function chipScroll(node: HTMLElement) {
-		const onWheel = (e: WheelEvent) => {
-			if (!e.deltaY) return;
-			node.scrollLeft += e.deltaY;
-			e.preventDefault();
-		};
-		let dragging = false;
-		let startX = 0;
-		let startScroll = 0;
-		const down = (e: PointerEvent) => {
-			dragging = true;
-			startX = e.clientX;
-			startScroll = node.scrollLeft;
-		};
-		const move = (e: PointerEvent) => {
-			if (dragging) node.scrollLeft = startScroll - (e.clientX - startX);
-		};
-		const up = () => (dragging = false);
-		node.addEventListener('wheel', onWheel, { passive: false });
-		node.addEventListener('pointerdown', down);
-		window.addEventListener('pointermove', move);
-		window.addEventListener('pointerup', up);
-		return {
-			destroy() {
-				node.removeEventListener('wheel', onWheel);
-				node.removeEventListener('pointerdown', down);
-				window.removeEventListener('pointermove', move);
-				window.removeEventListener('pointerup', up);
-			}
-		};
-	}
 
 	// Drop-to-share: dragging a LOCAL object anywhere over the shared object-list body
 	// shares it to the scene root (a shared object just moves to root). Uses an action
@@ -625,8 +595,10 @@
 	// 26-A: the meter's dot and its tooltip. The reading is the sampler's; this only
 	// picks the worst tier and spells out what is over budget, so the tooltip answers
 	// "over budget on WHAT" without opening anything.
-	const budgetProfileNow = $derived($sceneMetrics.profile === 'vr' ? 'vr' : 'desktop');
-	const budgetTier = $derived(worstTier($sceneMetrics, budgetProfileNow));
+	// 78 PL11: a phone is judged by phone frame limits, and frames the governor is already answering read as a note
+	const phoneNow = isPhoneDevice();
+	const budgetProfileNow = $derived(phoneNow ? 'phone' : $sceneMetrics.profile === 'vr' ? 'vr' : 'desktop');
+	const budgetTier = $derived(footerTier($sceneMetrics, budgetProfileNow, $qualityState.level > 0));
 	/** A DIRECT listener, not `on:click`/`onclick`: this file is written in the `on:`
 	 * style throughout, so an attribute handler here is a hard "mixing syntaxes" error,
 	 * and the `on:` form is deprecated in runes mode — the action is the way out of both,
@@ -639,7 +611,8 @@
 	}
 	const budgetTitle = $derived.by(() => {
 		const over = budgetRows($sceneMetrics, budgetProfileNow).filter((r) => r.tier === 'amber' || r.tier === 'red');
-		if (!over.length) return 'Scene budget — within the ' + (budgetProfileNow === 'vr' ? 'VR / mobile' : 'desktop') + ' budget. Click for statistics.';
+		if (!over.length) return 'Scene budget — within the ' + (budgetProfileNow === 'vr' ? 'VR' : budgetProfileNow === 'phone' ? 'phone' : 'desktop') + ' budget. Click for statistics.';
+		if (budgetTier === 'note') return 'Heavy for this device right now; quality is lowered to keep it smooth. Click for statistics.';
 		return 'Scene budget: over on ' + over.map((r) => r.label.toLowerCase()).join(', ') + '. Click for statistics.';
 	});
 
@@ -650,7 +623,7 @@
 	// same reason as openStats.
 	const qualityTitle = $derived.by(() => {
 		const q = $qualityState;
-		const what = q.labels.join(', ').toLowerCase();
+		const what = holdingLabels(q.labels).join(', ').toLowerCase();
 		// UI-9: a phone in Auto STARTS lighter (qualityGovernor's PHONE_START_LEVEL) before it has judged the scene
 		if (!q.pinned && String(q.reason).startsWith('phone'))
 			return 'Phones start with lighter drawing so the first seconds stay smooth: ' + what + '. Full quality comes back on its own when the frames allow. Click to keep it this way.';
@@ -1370,6 +1343,24 @@
 			tint: () => ($playingHere ? ICON_ON : ICON_OFF),
 			run: () => playHere()
 		},
+		// 78 F6: ANIMATE IN EDITOR — an OPTIONAL roster button (Customize toolbar / the "+" list): off,
+		// every flow motion node rests at its authored pose while you edit; Play runs as always. The
+		// node editor's own controls carry the same switch. LOCAL (editorMotion.js).
+		animateedit: {
+			get title() {
+				return $animateInEditor
+					? 'Animate in editor: on — flow motion plays while you edit (click to rest every moving object)'
+					: 'Animate in editor: off — moving objects rest at their authored pose until Play (click to animate)';
+			},
+			label: 'Animate in editor',
+			slot: 'animate-edit-button',
+			get iconName() {
+				return $animateInEditor ? 'rotate-cw' : 'pause';
+			},
+			tint: () => ($animateInEditor ? ICON_ON : ICON_OFF),
+			pressed: () => $animateInEditor,
+			run: () => toggleAnimateInEditor()
+		},
 		multiselect: {
 			get title() {
 				return $multiSelectMode
@@ -1393,7 +1384,7 @@
 	 *  may only live in the top-right group (moved, removed, re-added there — never elsewhere) */
 	const HOME_ONLY: Record<string, Region> = { notifications: 'top', peers: 'top' };
 	/** 60 Q1: optional tool buttons (listed in Customize unchecked, like the optional views) */
-	const OPTIONAL_TOOLS = ['playhere'];
+	const OPTIONAL_TOOLS = ['playhere', 'animateedit'];
 	const ROSTER_IDS = [...DEFAULT_ORDER, ...OPTIONAL_VIEWS, ...OPTIONAL_TOOLS, ...CORNER_LEFT, ...CORNER_RIGHT, ...TOP_DEFAULT, ...TOUCH_DEFAULT];
 	/** 42 I7: the name a MENU prints for a button (its short label, else its title) */
 	function labelOf(id: string) {
@@ -4175,9 +4166,10 @@
 		{/snippet}
 	</WindowChrome>
 	<div class="obj-filters flex flex-col gap-1">
-		<div class="relative flex items-center gap-1">
-			<!-- 80.2: one scrollable chip row that never overflows the window -->
-			<div id="filter-chips" class="tp-noscrollbar flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap scrollbar-none" use:chipScroll use:edgeFade>
+		<div class="relative flex items-start gap-1">
+			<!-- 80.2: a chip row that never overflows the window. 78 PL20 (device lab PC-4): it WRAPS — as one
+			     scrolling row the last chip was cut under the settings button ("St…") with no cue that it scrolled -->
+			<div id="filter-chips" class="tp-noscrollbar flex min-w-0 flex-1 flex-wrap items-center gap-1 whitespace-nowrap" use:edgeFade>
 				<button
 					class="obj-chip"
 					aria-pressed={!searchTypes.size && !viewMode}
@@ -4255,10 +4247,12 @@
 	</div>
 	<div class="obj-scroller flex min-h-0 flex-1 flex-col overflow-y-auto rounded-lg rounded-br rounded-bl bg-transparent text-text-muted" use:minimalScroll>
 		<!-- 24-B2: the tree is the keyboard surface — focusable, arrows/Enter/F2/type-ahead
-		     walk the VISIBLE rows (see listKeydown); a subtle ring says it has focus -->
+		     walk the VISIBLE rows (see listKeydown); a subtle ring says it has focus.
+		     showhide-v8 §5: w-full, not Tailwind's `container` — that one caps max-width per breakpoint
+		     (1280 px at xl), so the docked list stopped short of the dock's right edge on a wide screen -->
 		<div
 			id="object-tree"
-			class="container outline-none focus-visible:ring-1 focus-visible:ring-accent"
+			class="w-full outline-none focus-visible:ring-1 focus-visible:ring-accent"
 			role="tree"
 			tabindex="0"
 			aria-label="Objects"

@@ -31,6 +31,8 @@
 	// 44 M14: the pill pinned to the top row or floating — this shell's answer ($lib/connectPin)
 	import { connectPinned, setConnectPinned } from '$lib/connectPin';
 	import { phoneShellActive } from '$lib/ui/phoneShell.js';
+	// 78 PL35: the header's words follow the ONE connection status (Ready while the peer server answers)
+	import { connectionStatus } from '$lib/connectionStatus';
 	import { registerBack } from '$lib/backStack.js'; // phone-polish: Android Back closes the open drawer
 
 	/** @type {{ onClose?: () => void }} */
@@ -107,26 +109,34 @@
 	const connState = $derived(
 		remoteOpen.length > 0 ? 'connected' : pendingOut.length > 0 ? 'pending' : 'idle'
 	);
-	// header status (moved out of the Connect pill, per the redesign)
+	// header status (moved out of the Connect pill, per the redesign). 78 PL35 (Connect A): the ONE place the
+	// drawer says the state — the Info body has no State row any more. A fresh page whose peer server answers
+	// is READY, not "Offline": Offline is kept for a server that keeps failing.
+	const people = $derived(remoteOpen.length + 1);
 	const statusLabel = $derived(
 		connState === 'connected'
-			? 'Connected' + (remoteOpen.length > 1 ? ' +' + (remoteOpen.length - 1) : '')
+			? ($sessionHost ? 'In a session' : 'Hosting') + ' · ' + people + ' people'
 			: connState === 'pending'
 				? 'Waiting…'
-				: 'Offline'
+				: $connectionStatus.tone === 'failed'
+					? 'Offline'
+					: $connectionStatus.tone === 'connecting'
+						? 'Connecting…'
+						: 'Ready · not in a session'
 	);
+	/** @param {any} id */
+	const nameOf = (id) => $userdata.find((u) => u[0] === id)?.[1] || '';
 	const statusTitle = $derived(
 		connState === 'connected'
-			? ($sessionHost ? "In " + String($sessionHost).toUpperCase() + "'s session" : 'You are hosting') +
-				' · ' + remoteOpen.length + ' peer' + (remoteOpen.length > 1 ? 's' : '')
+			? ($sessionHost ? 'In ' + (nameOf($sessionHost) || String($sessionHost).toUpperCase()) + "'s session" : 'You are hosting') +
+				' · ' + people + ' people with you'
 			: connState === 'pending'
 				? 'Waiting for a peer to accept your request'
-				: 'Not connected'
+				: $connectionStatus.words
 	);
 	const myId = $derived($peers?.peer?.id ? String($peers.peer.id).toUpperCase() : '…');
 
 	/** @param {string} id */
-	const nameOf = (id) => $userdata.find((u) => u[0] === id)?.[1] || '';
 	/** @param {number|undefined} ts */
 	function ago(ts) {
 		if (!ts) return '';
@@ -179,6 +189,17 @@
 		}
 	}
 	onMount(probe);
+
+	// 78 PL35 (C7): the signalling details fold into one Network line — they open by themselves when the
+	// server is unhealthy (unreachable, fallen back to the public cloud, or reconnecting)
+	let networkOpen = $state(false);
+	const networkTrouble = $derived(!!srv?.didFallback || ping === null || !!$signalingRetry.retrying);
+	$effect(() => {
+		if (networkTrouble) networkOpen = true;
+	});
+	const pingWords = $derived(
+		ping === '…' ? 'measuring…' : ping === null ? 'unreachable' : ping >= 1000 ? (ping / 1000).toFixed(1) + ' s · slow' : ping + ' ms'
+	);
 </script>
 
 <svelte:window onpointerdown={onWindowDown} />
@@ -284,16 +305,8 @@
 		</div>
 	{:else}
 	<div class="cxd-body" use:minimalScroll>
-		<!-- Session -->
+		<!-- Session — 78 PL35: no State row (the tab header says it, once) -->
 		<p class="ui-section-label">Session</p>
-		<div class="cxd-row">
-			<span class="cxd-key">State</span>
-			<span class="cxd-val">
-				{#if connState === 'connected'}<span class="cxd-badge cxd-badge-live">connected</span>
-				{:else if connState === 'pending'}<span class="cxd-badge cxd-badge-wait">waiting for approval</span>
-				{:else}<span class="cxd-badge">not connected</span>{/if}
-			</span>
-		</div>
 		<div class="cxd-row">
 			<span class="cxd-key">Your ID</span>
 			<span class="cxd-val cxd-mono">{myId}</span>
@@ -347,8 +360,23 @@
 			</div>
 		{/each}
 
-		<!-- Server -->
-		<p class="ui-section-label">Signaling server</p>
+		<!-- Server — 78 PL35: folded into one Network line; the rows stay in the DOM (hidden) -->
+		<button
+			type="button"
+			id="drawer-network-toggle"
+			class="cxd-network"
+			class:trouble={networkTrouble}
+			aria-expanded={networkOpen}
+			aria-controls="drawer-network-body"
+			onclick={() => (networkOpen = !networkOpen)}
+		>
+			<Icon name={networkOpen ? 'chevron-down' : 'chevron-right'} size={16} aria-hidden="true" />
+			<span class="cxd-network-title">Network</span>
+			<span class="cxd-network-sum" data-testid="drawer-network-summary"
+				>{srv ? (srv.didFallback ? 'public (fallback)' : srv.label) + ' · ' + pingWords : 'no signalling server yet'}</span
+			>
+		</button>
+		<div id="drawer-network-body" hidden={!networkOpen}>
 		{#if srv}
 			<div class="cxd-row" data-testid="drawer-server-row" data-kind={srv.didFallback ? 'fallback' : srv.kind}>
 				<span class="cxd-key">Server</span>
@@ -360,7 +388,7 @@
 			</div>
 			{#if srv.didFallback}
 				<div class="cxd-warn" data-testid="drawer-fallback-warn">
-					⚠ Self-hosted server unreachable — using the public PeerJS cloud. Peers must be
+					<Icon name="triangle-alert" size={16} class="inline-block shrink-0 align-[-2px]" /> Self-hosted server unreachable — using the public PeerJS cloud. Peers must be
 					on the same server to connect (your copied invite links carry it).
 				</div>
 			{/if}
@@ -385,6 +413,7 @@
 		{:else}
 			<div class="cxd-row"><span class="cxd-val cxd-muted">Not connected to a signaling server yet.</span></div>
 		{/if}
+		</div>
 	</div>
 	{/if}
 	{/if}
@@ -584,7 +613,48 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-		max-width: 120px;
+		max-width: 190px;
+	}
+	/* 78 PL35: the folded Network line — one row, a chevron, the server and its ping */
+	.cxd-network {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+		width: 100%;
+		min-height: 32px;
+		margin-top: var(--space-2);
+		padding: 0 var(--space-1);
+		border: 0;
+		border-radius: var(--radius-button);
+		background: transparent;
+		color: var(--text-muted);
+		font: inherit;
+		font-size: var(--fs-desc);
+		text-align: left;
+		cursor: pointer;
+	}
+	.cxd-network:hover {
+		background: var(--surface-hover);
+		color: var(--text);
+	}
+	.cxd-network:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: -2px;
+	}
+	.cxd-network-title {
+		font-weight: 600;
+		color: var(--text-2);
+	}
+	.cxd-network-sum {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		color: var(--text-faint);
+	}
+	.cxd-network.trouble .cxd-network-sum {
+		color: var(--warn-text);
 	}
 	.cxd-req-badge {
 		font-size: var(--fs-badge);
@@ -692,21 +762,6 @@
 	.cxd-bad {
 		color: var(--ink-bad, var(--danger));
 	}
-	.cxd-badge {
-		font-size: var(--fs-badge);
-		padding: 1px 8px;
-		border-radius: var(--radius-pill);
-		background: var(--badge-bg);
-		color: var(--badge-text);
-	}
-	.cxd-badge-live {
-		background: color-mix(in srgb, var(--ink-good, var(--speaking)) 18%, transparent);
-		color: var(--ink-good, var(--speaking));
-	}
-	.cxd-badge-wait {
-		background: color-mix(in srgb, var(--warn-text) 18%, transparent);
-		color: var(--warn-text);
-	}
 	.cxd-peer {
 		display: flex;
 		align-items: center;
@@ -734,7 +789,7 @@
 		font-size: var(--fs-badge);
 	}
 	.cxd-relay {
-		color: var(--warn-text);
+		color: var(--text-faint);
 		font-size: var(--fs-badge);
 	}
 	.cxd-cancel {

@@ -71,6 +71,17 @@ export function stepLabelsAt(level) {
 }
 
 /**
+ * 78 PL9: the steps that are HOLDING at a level, for a sentence. The resolution steps replace each other (85% -> 72% ->
+ * 61% -> 50%), so "Lowered for now" listed four resolutions; only the deepest one is in force. Keeps the order.
+ * @param {string[]} labels @returns {string[]}
+ */
+export function holdingLabels(labels) {
+	const res = labels.filter((l) => /^Resolution /.test(l));
+	const last = res[res.length - 1];
+	return labels.filter((l) => !/^Resolution /.test(l) || l === last);
+}
+
+/**
  * Thresholds per profile. Desktop: slower than 30fps, and recovery under 20ms. The roadmap
  * said "p95 > 33ms"; 26-E measured why that cannot be the number — frames are VSYNC-
  * QUANTISED, so a scene holding a steady 30fps reads 33.3-33.4ms at every percentile, and a

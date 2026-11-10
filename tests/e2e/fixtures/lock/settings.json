@@ -3178,31 +3178,6 @@
 					]
 				},
 				{
-					"name": "Flow Code: show / bring to front / hide",
-					"controls": [
-						{
-							"kind": "button",
-							"id": "",
-							"label": "Rebind Flow Code: show / bring to front / hide",
-							"where": "control",
-							"default": "Alt+F",
-							"disabled": false,
-							"state": "Press keys… Esc cancels",
-							"effects": {
-								"storage": {},
-								"stores": {},
-								"html": [],
-								"body": [],
-								"dialogs": [],
-								"broadcasts": [],
-								"events": []
-							},
-							"scope": "device",
-							"exercise": "done"
-						}
-					]
-				},
-				{
 					"name": "Animation: show / bring to front / hide",
 					"controls": [
 						{
@@ -4636,12 +4611,12 @@
 					]
 				},
 				{
-					"name": "Enter the selected group / leave the one you are in",
+					"name": "Enter the selected group / leave the one you are in / else search for a node to add (wired from the selected node)",
 					"controls": [
 						{
 							"kind": "button",
 							"id": "",
-							"label": "Rebind Enter the selected group / leave the one you are in",
+							"label": "Rebind Enter the selected group / leave the one you are in / else search for a node to add (wired from the selected node)",
 							"where": "control",
 							"default": "Tab",
 							"disabled": false,
@@ -11980,16 +11955,6 @@
 				]
 			},
 			{
-				"name": "Flow Code: show / bring to front / hide",
-				"controls": [
-					{
-						"kind": "button",
-						"id": "",
-						"default": "Alt+F"
-					}
-				]
-			},
-			{
 				"name": "Animation: show / bring to front / hide",
 				"controls": [
 					{
@@ -12568,7 +12533,7 @@
 				]
 			},
 			{
-				"name": "Enter the selected group / leave the one you are in",
+				"name": "Enter the selected group / leave the one you are in / else search for a node to add (wired from the selected node)",
 				"controls": [
 					{
 						"kind": "button",

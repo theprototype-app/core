@@ -109,7 +109,7 @@
 					<a id="connect-claude-how" class="cc-link cc-how" href={CONNECTOR_DOCS_URL} target="_blank" rel="noopener noreferrer"><Icon name="circle-help" size={16} aria-hidden="true" />How it works</a>
 				</li>
 				<li id="connect-claude-step-2">
-					{#if signIn}Then sign in from your profile, press Connect Claude here and keep this tab open.{:else}Then press Connect Claude here and keep this tab open.{/if}
+					{#if signIn}Then press Sign in to connect above. Once you are signed in, the same button reads Connect Claude: press it and keep this tab open.{:else}Then press Connect Claude here and keep this tab open.{/if}
 				</li>
 			</ol>
 		{/if}

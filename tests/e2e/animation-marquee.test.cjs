@@ -157,7 +157,9 @@ h.run(async () => {
 	await A.page.mouse.up();
 	await A.page.waitForTimeout(200);
 	h.check((await selection())?.length === 2, 'something is selected again');
-	await A.page.mouse.click(plot.x + plot.width - 14, plot.y + plot.height - 3);
+	// showhide-v8: the key-properties arrow handle owns the plot's right 16 px — the empty-body click lands left of it
+	const keyHandle = await A.page.locator('#animation-key-toggle').boundingBox();
+	await A.page.mouse.click(Math.min(plot.x + plot.width - 14, keyHandle ? keyHandle.x - 4 : Infinity), plot.y + plot.height - 3);
 	await A.page.waitForTimeout(250);
 	h.check(
 		(await selection())?.length === 2,
@@ -177,7 +179,9 @@ h.run(async () => {
 
 	// draw a loop around the first row's LAST TWO keys only
 	const lx0 = firstRow[2].x - 10;
-	const lx1 = firstRow[3].x + 10;
+	// ...and the loop's right side stays left of the key-properties handle (it owns the plot's right 16 px)
+	const keyHandle2 = await A.page.locator('#animation-key-toggle').boundingBox();
+	const lx1 = Math.min(firstRow[3].x + 10, keyHandle2 ? keyHandle2.x - 2 : Infinity);
 	const ly0 = rowYs[0] - 8;
 	const ly1 = rowYs[0] + 8;
 	await A.page.mouse.move(lx0, ly0);

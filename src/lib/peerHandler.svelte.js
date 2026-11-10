@@ -72,16 +72,16 @@ import { applyModuleMessage, moduleVersions, checkModuleVersions, checkPeerAppVe
 import { APP_VERSION, COMMIT_SHA } from '$lib/version.js';
 import { applyLockRequest, applyUnlock, applyLockDenied } from '$lib/lockControl';
 import { applyDrawLive, applyDrawEnd } from '$lib/drawMode';
-import { applySimulate, physicsExternalMove, applyThrow, applyHit, simulating, simPaused } from '$lib/physics';
+import { applySimulate, applySimVote, applySimHandoff, physicsExternalMove, applyThrow, applyHit, simulating, simPaused } from '$lib/physics';
 import { noteRemoteMove } from '$lib/moveSmoothing';
 import { noteRemoteHit, endKnockPrediction } from '$lib/knock';
 import { applyJointCreate, applyJointDelete, applyJointsSnapshot, sendJoints } from '$lib/joints';
 import { applyAnimData, applyAnimPlay, applyAnimationsSnapshot, sendAnimations } from '$lib/animationPreview';
 import { applyHandModel, handModelState, dropPeerHandModel } from '$lib/handModels';
-import { applyRemoteEnvironment, environmentState, envPresetsState, applyRemoteEnvPresets, dropPeerEnvPresets } from '$lib/environment';
+import { applyRemoteEnvironment, environmentState, envPresetsState, applyRemoteEnvPresets, dropPeerEnvPresets, environment as environmentStore } from '$lib/environment';
 import { materialPresetsState, applyRemoteMaterialPresets, dropPeerMaterialPresets, answerMaterialPresetRequest, applyMaterialPresetPart } from '$lib/materialPresets'; // 37 R5, 48 F2
-import { applyRemoteMusic, musicState } from '$lib/sceneMusic';
-import { applyRemoteScenePhysics, scenePhysicsState } from '$lib/scenePhysics';
+import { applyRemoteMusic, musicState, music as musicStore } from '$lib/sceneMusic';
+import { applyRemoteScenePhysics, scenePhysicsState, scenePhysicsState_ } from '$lib/scenePhysics';
 // CO1: where the physical room's origin sits in content coords. The scenephysics
 // shape — one latest-wins singleton + a getroomanchor reply. The per-device ALIGNMENT
 // that composes with it is deliberately not on the wire at all.
@@ -90,7 +90,9 @@ import { applyRoomAnchorRemote, sendRoomAnchor } from '$lib/colocation';
 // message, a reply riding getmodulestate, a drop at every disconnect site). Everything it
 // drives is LOCAL receive-side filtering; nobody stops broadcasting because of it.
 import { applyRemoteColocation, dropPeerColocation, sendColocationState } from '$lib/colocationPresence';
-import { applyRemoteScenePost, scenePostStates, sendScenePost } from '$lib/scenePost';
+import { applyRemoteScenePost, scenePostStates, sendScenePost, scenePost as scenePostStore } from '$lib/scenePost';
+// 78-int PL13: "changed by <peer / agent> · time" under the shared Configure Scene sections
+import { trackSceneStore, noteLocalSceneEdit, noteRemoteSceneEdit } from '$lib/sceneEditBy.js';
 import { applyRemoteSceneBake, sceneBakeState, sendSceneBake } from '$lib/sceneBake'; // 98 P1
 // 23-A2: the musical transport (a latest-wins singleton like scenephysics) and the
 // peer clock-offset estimate it carries alongside
@@ -227,6 +229,15 @@ selectedObject.subscribe(value => { selected = value });
 //Access userData
 let users = $state();
 userdata.subscribe(value => { users = value });
+trackSceneStore('environment', environmentStore);
+trackSceneStore('scenepost', scenePostStore);
+trackSceneStore('scenephysics', scenePhysicsState_);
+trackSceneStore('music', musicStore);
+/** 78-int PL13: who a scene-singleton edit came from @param {any} data @param {string} peerId */
+function noteSceneEditFrom(data, peerId) {
+	const row = (users ?? []).find((/** @type {any} */ r) => Array.isArray(r) && r[0] === peerId);
+	noteRemoteSceneEdit(data, { peerName: (row && row[1]) || peerId, peerIsAgent: isAgentPeer(peerId) });
+}
 
 
 /** P2b: the only messages `broadcast` will withhold from a peer in another scene.
@@ -1290,6 +1301,10 @@ export class PeerConnection {
 					noteRemoteHit(data, conn.peer);
 				} else if(data.type == 'simulate') {
 					applySimulate(data);
+				} else if(data.type == 'simvote') {
+					applySimVote(data, conn.peer); // 78 F25: the connection's peer, never the payload's
+				} else if(data.type == 'simhandoff') {
+					applySimHandoff(data, conn.peer);
 				} else if(data.type == 'jointcreate') {
 					applyJointCreate(data);
 				} else if(data.type == 'jointdelete') {
@@ -1318,10 +1333,13 @@ export class PeerConnection {
 					applyHandModel(data);
 				} else if(data.type == 'environment') {
 					applyRemoteEnvironment(data);
+					noteSceneEditFrom(data, conn.peer);
 				} else if(data.type == 'music') {
 					applyRemoteMusic(data);
+					noteSceneEditFrom(data, conn.peer);
 				} else if(data.type == 'scenephysics') {
 					applyRemoteScenePhysics(data);
+					noteSceneEditFrom(data, conn.peer);
 				} else if(data.type == 'roomanchor') {
 					// CO1: the room anchor, latest-wins on `at`. Applying it never re-poses
 					// the rig here — a peer that is not colocated has no alignment to
@@ -1338,6 +1356,7 @@ export class PeerConnection {
 					// L1/L2: the authored post stack, latest-wins on changedAt. An effect
 					// KIND we don't know is kept and skipped at render time, never dropped.
 					applyRemoteScenePost(data);
+					noteSceneEditFrom(data, conn.peer);
 				} else if(data.type == 'getscenepost') {
 					if (sameRoomOrUnknown(conn.peer)) sendScenePost(data.sender);
 				} else if(data.type == 'scenebake') {
@@ -2811,6 +2830,9 @@ export class PeerConnection {
 		// viewer perms: a viewer's object CREATIONS never leave this machine — mark
 		// them local-only + warn, and skip the broadcast (peers drop them anyway).
 		if (gateCreationBroadcast(data)) return;
+		// 78-int PL13: a live scene-singleton edit says it is one (`by`, additive; older peers ignore it)
+		const by = noteLocalSceneEdit(data);
+		if (by) data.by = by;
 		if(data.type == 'create')
 		this.sendMessage('created a ' + data.command.split(' ')[1], 'info');
 		this.broadcast(data, opts);

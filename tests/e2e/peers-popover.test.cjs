@@ -16,6 +16,9 @@ h.run(async () => {
 	await A.page.evaluate(() => {
 		const selfId = window.__stores.peers && (() => { let p; window.__stores.peers.subscribe((x) => (p = x))(); return p?.peer?.id; })();
 		window.__self = selfId || 'self';
+		// 78 PL34: a nameless person takes "Guest N" once a session is live — the injected self row is
+		// "Me" because THIS page is called Me (the roster's own row follows the username store)
+		window.__stores.username.set('Me');
 		window.__stores.userdata.set([
 			[window.__self, 'Me', null, null, null, {}],
 			['p1', 'Ann', null, null, null, {}],
@@ -65,7 +68,8 @@ h.run(async () => {
 		};
 	});
 	h.check(popover.open, 'clicking the trigger opens the popover');
-	h.check(popover.header === 'Connected (5)', `the header counts the same people the list draws (${popover.header})`);
+	// 78 PL31 (one count): the TRIGGER says how many (checked above); the header no longer repeats it
+	h.check(popover.header === 'Connected (undefined)', `the header is the title alone, the count lives on the trigger (${popover.header})`);
 	h.check(popover.flatArmed === 'true', `All is the default view (aria-pressed ${popover.flatArmed})`);
 	h.check(popover.rowCount === 5, `every peer is listed (${popover.rowCount} rows incl. self)`);
 	h.check(popover.hasAnn && popover.hasBo, 'the first two peers (previously stacked) are visible');

@@ -1,9 +1,96 @@
 # Changelog
 
 <!-- This file is rendered INSIDE the app (What's new, from the logo menu) as well as
-     on GitHub, so keep entries short, human and emoji-led: one "## <version>" heading
+     on GitHub, so keep entries short and human: one "## <version>" heading
      per release, newest first. HTML comments like this one are stripped before
-     rendering, so maintainer notes stay out of the user-facing window. -->
+     rendering, so maintainer notes stay out of the user-facing window. No emoji from
+     1.64 on (owner rule: no emoji in the UI); the app strips them from older entries. -->
+
+## 1.64.0 — Doors, paths and levels
+
+### Rooms that react
+- **Starter recipes**: select an object, open the node editor and pick **Recipes** in the node search: **Door** (click to open), **Door that opens when you walk up**, **Bell** (click, point at or knock it) and **Guard** (walks a loop and says *Spotted!* when you step into its sight). One undo takes a recipe back, and everyone in the session sees it at once. New template: **Doors, a bell and a guard**. <!-- 78-int F27 -->
+- **Why did this not fire?** Trigger nodes (On Enter, On Exit, On Hover, On Click, Collect pickup, Timer) remember their last check: the card says *fired 2 s ago*, *blocked: not the player* or *won't fire: in Edit mode (use Play)*, and the Flow debugger says who, when and what stopped it. <!-- 78-int F26 -->
+- **On Hover** fires when a player's pointer, phone tap or VR laser goes over an object; **Hover Animate** swings, wobbles or pops it, and every player sees the same swing. An unwired **Highlight** now lights under the mouse in Interact and under a phone tap too. <!-- 78-nodes F2; 78-int I2 rewire -->
+- **Toggle Animation** opens and closes doors, lids and drawers between poses you capture (or named poses like "ajar"); the state is shared and saved, so late joiners see the same door. <!-- 78-nodes -->
+- **On Enter / On Exit work for the player** (every peer's own player, joiners too) with a new *who* option (anything / the player / objects only), and **Proximity** can measure to your own player. <!-- 78-nodes -->
+- **New nodes for a room that feels alive**: Oscillate, Move To / Rotate To / Scale To, Light Switch, Light Intensity, Colour Cycle, Wind Sway, Flowing Water and Ambient Animal; **Grabbable** (pick things up in Play or with the VR grip, no physics needed); **Highlight** + **Press Button**; **Sit Spot** (click a chair to sit, a move key stands you up). <!-- 85-nodes -->
+- **Node-only gems**: the Collect pickup node has *Collect on touch* (on by default), so walking over a gem takes it. <!-- 78-nodes -->
+- **On Play start / On Play stop** pulse once when the session (or just you) starts or stops playing; *Game Start* is now called **Start camera**. <!-- 78-nodes -->
+- **Announce** no longer flashes over the editor: in Edit its line goes to the Debugger's new **Console**; the banner shows in Play and in Interact. <!-- 78-nodes, 78-int -->
+
+### Paths
+- **Add ▸ Path** draws a route you can edit: waits, speeds, eases, jumps, facing and events per point; loop, ping-pong, once or random walks; hidden in Play. **Path patrol** walks a Path and every peer sees each walker in the same place; older patrols convert in one click. <!-- 78-path -->
+
+### Wiring
+- **Drag a wire into empty space to add a node**: a search opens right there with the nodes that fit; picking one adds the node and the wire in one undo step. **Tab** opens the same search for the selected node. <!-- 78-wire F1 -->
+- **Backwards wires are flagged**: a wire from an Object Selector *into* On Click (and other triggers) is drawn dashed red with a chip that offers **Reverse wire**. <!-- 78-wire -->
+- **Live state on node cards**: while the node editor is open, cards say what they are doing ("count 3", "fired 1.2 s ago", "to point 3"). <!-- 78-wire F7 -->
+- **One banner for click-to-place tools** (waypoints, measuring, drawing a spline, a flatten point): it names the tool that owns your next click, and Esc leaves only the top one. <!-- 78-wire F5 -->
+- **Animate in editor** (optional toolbar button): switch it off and Spin, Bounce, Orbit, Path patrol and friends rest at their pose while you edit. <!-- 78-wire F6 -->
+
+### Levels and portals
+- **Levels and progress**: one Levels table per game (Configure Scene ▸ Levels) shared by the Kit: Levels nodes, portals and Claude, with a keep-across-levels list (score, inventory, health, variables). <!-- 93-levels -->
+- **Portals** to another level, scene or spot, one player at a time, with fade, iris or card transitions and background preloading; **Checkpoints** with Back to checkpoint and New game nodes. <!-- 93-levels -->
+- **Loading screens** with real progress (five styles), and exported games **remember progress** and resume at the last checkpoint. New template: **Two levels and a portal**. <!-- 93-levels -->
+
+### Physics and the game kit
+- **The fastest device runs the physics**: when the device running a simulation is much slower than another player's, the run moves there by itself; a slow device alone keeps real time instead of slow motion. <!-- 78-nodes -->
+- A level made only of static objects runs its physics when Play starts (walls stop you). <!-- 78-nodes; the default walker is held back, 78-int -->
+
+### Interface
+- **No emoji anywhere in the app**: icons are drawn as icons, so they look the same on every phone. <!-- 78-int PL42 -->
+- **Touch**: tab rows scroll with a sideways swipe instead of tearing tabs off; moving or tearing off a tab takes a long press. <!-- panel-gestures -->
+- **Hide chrome buttons you do not use** (right-click or long press ▸ Hide this button); Show buttons and Settings ▸ Customize buttons bring them back, saved per layout. <!-- panel-gestures -->
+- **Bigger tap areas on touch screens** are on: small buttons answer a finger that lands just beside them. <!-- hitslop-fix -->
+- **Profile menu** regrouped (Profile, Your stuff, Account), with a one-time card about email updates and **Settings ▸ Account ▸ Email**. <!-- profile-notify -->
+- **The menu is regrouped**: search on top, then File, Scene, Versions, Window, Help and Settings, with the version at the foot. Its **Windows** list and **Save as…** submenu open again. <!-- showhide-v8 #547 -->
+- **The dock and sidebar "+" now move a window** that is open elsewhere (floating or on the other side) to where you pressed it, instead of only bringing it to the front. <!-- showhide-v8 #547 -->
+- **Docked windows on a narrow phone** show one header of views instead of side-by-side panes; panel handles show the panel's own icon. <!-- showhide-v8 #547 -->
+- **The Profiler is one window**: the live profile is a row of its list, and Live opens it even when it is closed. Flow code opens in the Code window. <!-- showhide-v8 #547 -->
+- **One Invite button** (person-plus) with **Person** and **AI agent** tabs replaces "Request AI"; the Person tab shows a **QR code** of the join link that a phone can scan, made on your device. <!-- 78-pl-peers PL36 PL37 -->
+- **Your name when you join**: you are asked once what others should call you, and it is remembered; anyone without a name is **Guest 1**, **Guest 2**… instead of "Peer". <!-- 78-pl-peers PL34 -->
+- **One avatar everywhere**: your photo, or your colour with an initial, ringed in the same colour as your cursor and locks. The People list shows its menu (⋯) and **Go to** on every row and counts people once. <!-- 78-pl-peers PL31 PL33 -->
+- The Connect drawer says **Ready** when you are not in a session (no more "Offline" with a working connection), says the state once and folds the network details under one **Network** row; the Connect Claude steps name the **Sign in to connect** button when you are signed out. <!-- 78-pl-peers PL10 PL35 -->
+- **A person who joins no longer appears inside your view**: an avatar near your camera fades out, and a joiner arrives beside you. <!-- 78-pl-peers PL32 -->
+- **Configure Scene is tidier**: two groups, **The scene** (everyone sees it) and **This device** (only you), with only Environment and Scene look open at first. <!-- 78-pl-scene PL17 -->
+- **Environment** shows six preset pills plus **More**, says what the preset sets, and after an edit shows *Studio · Modified: sun* with a one-press **Reset**; a dot beside a changed value puts it back, for everyone, in one undo step. <!-- 78-pl-scene PL15 PL16 PL12 -->
+- Under each shared Configure Scene section you can see **who changed it last** and when, an AI included. <!-- 78-pl-scene PL13 -->
+- The side panel has **one header**: the follow-selection pin sits in the sidebar strip (on a phone, in the tab's long-press menu, with the lock in the grab bar), and the filter box says what it filters. <!-- 78-pl-scene PL14 -->
+- **Statistics** shows the baked light: atlas size, MB and objects baked / shown, or *none*. <!-- 78-pl-scene PL1 -->
+- The sky-image picture cards and their tour are gone, and the *Reduce quality when heavy* switch left Configure Scene (a line says what Auto does; the switch stays in Settings). <!-- 78-pl-scene PL29 PL18 -->
+- **Floating windows have Small, Half and Full sizes**: double-click or double-tap the header to cycle them, or use the header menu's **Size** row. <!-- 78-pl-windows PL39 -->
+- **Chat and the AI assistant can be resized** and keep their size; the text viewer and the 3D preview keep theirs too. On a touch screen the resize corner is easier to grab. <!-- 78-pl-windows PL3 PL38 PL39 -->
+- A window that opens while a sidebar is open appears beside the sidebar, not under it. <!-- 78-pl-windows PL4 -->
+- **Restore and saved layouts** now bring back Chat, the AI assistant, Statistics, Free assets, the HUD editor, the Timeline and the Profiler. <!-- 78-pl-windows PL3 -->
+- **On a folded phone**, Chat, the AI assistant and Free assets are tabs of the phone dock, and go back where they were when you unfold. <!-- 78-pl-windows PL23 -->
+- Context-menu rows show an icon for what they do. <!-- 78-pl-windows PL2 -->
+
+### AI apps
+- Agents can build all of this: `create_shape` with `action: "path"`, `game_setup` with `portal`, `checkpoint` and `loading`, and `describe_node_types` knows the new nodes (common words like door, lamp, cat, button and hover work as aliases). `inspect_runtime` shows the game kit's round, score and pickups. <!-- 78-path, 93-levels, 85-nodes -->
+
+### Fixes
+- Someone joining a session late now sees the pickups already taken (and cannot take them again); loading or clearing a scene alone before joining no longer resets the room's game. <!-- 78-kit -->
+- A kit action that cannot run right now (Win during the results, for example) says why, in the session log on every peer and to the AI. <!-- 78-kit -->
+- A behaviour handler that throws is rolled back (its state, timers and events) and its error says so. <!-- 78-kit -->
+- Things spawned from code that die stop counting at once and are removed after 1 second, like the Spawn node's. <!-- 78-kit -->
+- The scene load bar moves while a scene's objects are being built (it used to sit still, then jump to the end). <!-- 93-levels -->
+- **Phones are judged as phones**: the scene budget held a phone's frames to a headset's limits, so every phone scene showed a red cross; it now uses phone limits, and while quality is already lowered the dot is a calm grey note instead of a warning beside *Reduced quality*. <!-- 78-int PL11 PL22 -->
+- *Lowered for now* names the one resolution in force instead of listing four. <!-- 78-int PL9 -->
+- The AI window no longer covers the toolbar on small screens, and the main menu ends above the toolbar. <!-- 78-pl-windows PL6 PL7 -->
+- The Objects filter chips and the Free assets tabs wrap instead of being cut off; Far clip lines up with the other camera rows. <!-- 78-pl-windows PL8 PL20 PL21 -->
+- A walker standing on a floor that rises or sinks rides with it instead of sinking in or floating. <!-- 78-int -->
+- On a slow device, a player who starts Play over a platform now lands on it: the player waits for the level's physics to be ready instead of falling into the platform or the ground. <!-- 78-int -->
+- The physics no longer moves to another device while someone is carrying or has just thrown an object, so a throw keeps its speed. <!-- 78-int F25 -->
+- After a hitch the physics catches up at most a quarter of a second, so crates no longer jump forward. <!-- 78-int F25 -->
+- In the Animation editor, the first and last keys of a clip can be clicked and dragged again; the side-panel arrows no longer cover them. <!-- 78-fix-547 -->
+- The menu's Save stays available after you cancel the unsaved-changes question or save without the scene's changes. <!-- 78-fix-547 -->
+- A popped-out Inspector says Configure Scene when it shows the scene settings. <!-- 78-fix-547 -->
+- Closing Configure Scene or Properties closes its sidebar at once. <!-- 78-fix-547 -->
+- On a phone, a menu row brought into view no longer hides under the Settings footer. <!-- 78-fix-547 -->
+- The sidebar handles now sit lower, below the profile menu, and stay put when you open the profile menu or any other menu. <!-- 78-fix-547 -->
+- The sidebar handles never sit on top of the bottom dock: they slide up with it and go back to your chosen spot when it closes. <!-- 78-fix-547 -->
+- In the file preview, stepping with the Left and Right arrows no longer draws a blue ring round the whole window. <!-- 78-fix-547 -->
 
 ## 1.63.0 — Pro look 📸
 

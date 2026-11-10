@@ -386,7 +386,7 @@ h.run(async () => {
 		`the Node editor cell offers Open (${menu.length} rows)`
 	);
 	h.check(
-		!menu.some((r) => r.label.includes('＋')) && !menu.some((r) => r.label.includes('Flow Code')),
+		!menu.some((r) => r.label.includes('＋')) && !menu.some((r) => r.label.includes('Timeline')),
 		`and NO "Add a view" rows any more (${menu.map((r) => r.label).join(' | ')})`
 	);
 	h.check(
@@ -409,7 +409,7 @@ h.run(async () => {
 		[...document.querySelectorAll('[role="menu"] [role="menuitem"]')].map((el) => (el.textContent ?? '').trim())
 	);
 	h.check(
-		stripAdd.some((t) => t.includes('Flow Code')),
+		stripAdd.some((t) => t.includes('Timeline')),
 		`the dock strip's ＋ still offers the add list (${stripAdd.join(' | ') || 'none'})`
 	);
 	await closeMenus(A.page);
@@ -596,7 +596,7 @@ h.run(async () => {
 	await openCustomize();
 	menu = await rows(A.page);
 	// 33 E1: Animation is a DEFAULT button now, so four views remain opt-in
-	const OPTIONAL = ['Flow Code', 'UV editor', 'Shader editor', 'HUD editor'];
+	const OPTIONAL = ['Timeline', 'UV editor', 'Shader editor', 'HUD editor'];
 	h.check(
 		OPTIONAL.every((t) => menu.some((r) => r.label === t)),
 		`the four remaining dock views are LISTED in Customize (${menu.map((r) => r.label).join(' | ')})`
@@ -611,7 +611,7 @@ h.run(async () => {
 	);
 	h.check(
 		await A.page.evaluate(() =>
-			['Flow Code', 'UV editor', 'Shader editor', 'HUD editor'].every(
+			['Timeline', 'UV editor', 'Shader editor', 'HUD editor'].every(
 				(t) => document.querySelector(`[role="menu"] button[aria-label="Move ${t} up"]`)?.disabled === true
 			)
 		),
@@ -740,37 +740,37 @@ h.run(async () => {
 
 	// ---- OPTIONAL VIEWS BECOME REAL BUTTONS -----------------------------------------
 	await openCustomize();
-	await pick(A.page, 'Flow Code');
+	await pick(A.page, 'Timeline');
 	titles = await barTitles(A.page);
 	h.check(
-		titles.includes('Flow Code') && titles.length === 11,
-		`enabling Flow Code put it on the bar (${titles.join(' | ')})`
+		titles.includes('Timeline') && titles.length === 11,
+		`enabling Timeline put it on the bar (${titles.join(' | ')})`
 	);
 	h.check(
-		titles.join(' | ') === [...DEFAULT, 'Flow Code'].join(' | '),
+		titles.join(' | ') === [...DEFAULT, 'Timeline'].join(' | '),
 		'...appended at the right end, every existing cell untouched'
 	);
 	await closeMenus(A.page);
 	await h.freshReload(A);
 	await A.page.waitForTimeout(700);
 	h.check(
-		(await barTitles(A.page)).includes('Flow Code'),
+		(await barTitles(A.page)).includes('Timeline'),
 		'the optional button SURVIVES a reload (loadLayout used to filter it straight back out)'
 	);
 	// and it is a real button: pressing it runs the same decision tree the Node editor
 	// button and the N key run, which is the whole reason it is worth having
-	await A.page.locator('#controls-pill p[title="Flow Code"]').click();
-	await h.eventually(dockKey, (k) => k === 'flowcode', 'pressing it opens the Flow Code dock tab');
-	await A.page.locator('#controls-pill p[title="Flow Code"]').click();
+	await A.page.locator('#controls-pill p[title="Timeline"]').click();
+	await h.eventually(dockKey, (k) => k === 'timeline', 'pressing it opens the Timeline dock tab');
+	await A.page.locator('#controls-pill p[title="Timeline"]').click();
 	await h.eventually(
-		() => A.page.evaluate(() => !!document.querySelector('#controls-pill p[title="Flow Code"] .text-accent')),
+		() => A.page.evaluate(() => !!document.querySelector('#controls-pill p[title="Timeline"] .text-accent')),
 		(v) => v === false,
 		'...and pressing it again hides the panel, which the "+" list can never do'
 	);
 	await openCustomize();
-	await pick(A.page, 'Flow Code');
+	await pick(A.page, 'Timeline');
 	h.check(
-		!(await barTitles(A.page)).includes('Flow Code'),
+		!(await barTitles(A.page)).includes('Timeline'),
 		'disabling it takes it off the bar again'
 	);
 	await closeMenus(A.page);

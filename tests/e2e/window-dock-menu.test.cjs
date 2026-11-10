@@ -9,7 +9,7 @@
 //   1  desktop: Objects dragged by its BODY onto the dock's tab strip shows the caret and docks there
 //   2  desktop: Statistics dragged by its body to the left edge lights the left column (the one drop model,
 //      `#dock-zone`) and becomes a left sidebar tab
-//   3  desktop: right-click on Objects' header opens the menu with the eight rows in order; Dock to bottom,
+//   3  desktop: right-click on Objects' header opens the menu with the nine rows in order (78 PL39: + Size); Dock to bottom,
 //      Move to right sidebar, Group with… ▸ Chat, (the group tab) Float (undock), Bring to front,
 //      Reset size and Close each do what they say; a right-click on the header SEARCH keeps its own menu
 //   4  the header looks as it did: the same children, no new button
@@ -33,7 +33,7 @@ const STORAGE = {
 	flowDockHeight: '300',
 	objectListRect: JSON.stringify({ left: 420, top: 150, width: 300, height: 300 })
 };
-const ROWS = ['Dock to bottom', 'Move to left sidebar', 'Move to right sidebar', 'Float (undock)', 'Group with…', 'Bring to front', 'Reset size', 'Close'];
+const ROWS = ['Dock to bottom', 'Move to left sidebar', 'Move to right sidebar', 'Float (undock)', 'Group with…', 'Bring to front', 'Reset size', 'Size', 'Close'];
 
 const S = (page, fn, arg) => page.evaluate(fn, arg);
 async function shot(page, name) {
@@ -202,7 +202,7 @@ h.run(async () => {
 	h.check(await onHeader(page, '#object-list', hp0), `premise: the header point is Objects' header (${JSON.stringify(hp0)})`);
 	await rightClick(page, hp0);
 	const rows = await menuRows(page);
-	h.check(JSON.stringify(rows) === JSON.stringify(ROWS), `3.1 right-click on the header: the eight rows in order (${JSON.stringify({ rows, open: await S(page, () => window.__stores.windowMenu?.windowMenuOpen?.() ?? 'no menu module') })})`);
+	h.check(JSON.stringify(rows) === JSON.stringify(ROWS), `3.1 right-click on the header: the nine rows in order (78 PL39: + Size) (${JSON.stringify({ rows, open: await S(page, () => window.__stores.windowMenu?.windowMenuOpen?.() ?? 'no menu module') })})`);
 	const fl = await rowState(page, 'Float (undock)');
 	h.check(fl?.disabled, `3.2 Float (undock) is disabled for a window already floating, saying why (${JSON.stringify(fl)})`);
 	await shot(page, '03-header-menu');

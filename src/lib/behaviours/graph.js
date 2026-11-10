@@ -138,7 +138,7 @@ export function deriveGraph(model) {
 		}
 		// 36 (U10): an emitted event output (`this.emit('holeSunk')`) — the wire out to the graph
 		for (const e of f.emits ?? []) {
-			const xid = add(2, 'x:' + e, 'action', { key: 'emit:' + e, label: 'emit ' + e + ' ⚡', line: f.line });
+			const xid = add(2, 'x:' + e, 'action', { key: 'emit:' + e, label: 'emit ' + e + ' ϟ', line: f.line });
 			link(f.fid, xid, 'action');
 		}
 	}

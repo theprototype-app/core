@@ -110,7 +110,7 @@ function hudIndex() {
 /** the World runtimeCore reads @returns {Promise<import('./runtimeCore.js').World>} */
 async function world() {
 	const info = await typeInfo();
-	const [scenePhysics] = await Promise.all([import('$lib/scenePhysics').catch(() => null)]);
+	const [scenePhysics, physics] = await Promise.all([import('$lib/scenePhysics').catch(() => null), import('$lib/physics').catch(() => null)]);
 	const host = /** @type {any} */ (behaviourHost());
 	/** @type {{name: string, issues: any[]}[]} */
 	const behaviours = [];
@@ -132,6 +132,8 @@ async function world() {
 		hudElements: hud.elements,
 		hudScreens: hud.screens,
 		play: scenePhysics ? get(scenePhysics.scenePlay) : undefined,
+		// 78 F11: a walk scene with moving bodies does not start its world on Play by itself
+		dynamicBodies: physics?.sceneHasDynamicBodies ? physics.sceneHasDynamicBodies() : undefined,
 		envLit: environmentLights(),
 		behaviours,
 		...info
@@ -159,24 +161,30 @@ async function authorityView() {
 	}
 	if (kit) {
 		try {
-			const d = kit.kitDebug();
-			out.kit = { authority: d.authority ?? null, me: d.me ?? null, ...(d.stats ? { stats: d.stats } : {}), ...kitDocSummary(d.doc) };
+			const d = /** @type {any} */ (kit.kitDebug());
+			// 78-kit refusals ("<piece>.<op> refused: <reason>"), the newest few, once kitDebug carries them
+			const refusals = Array.isArray(d.refusals) ? d.refusals.slice(-5) : null;
+			out.kit = { authority: d.authority ?? null, me: d.me ?? null, ...(d.stats ? { stats: d.stats } : {}), ...kitDocSummary(d.doc), ...(refusals?.length ? { refusals } : {}) };
 		} catch {}
 	}
 	return out;
 }
 
 /** the kit document, trimmed to what an agent reads (scores, round, pickups taken) @param {any} doc */
-function kitDocSummary(doc) {
+export function kitDocSummary(doc) {
 	if (!doc || typeof doc !== 'object') return {};
+	// 85 (78-kit Q6): the kit document is {rev, at, by, rids, slices: {piece: slice}} — the pieces
+	// live under `slices` (walking the top level found none, so round / score / pickups never showed)
+	const slices = doc.slices && typeof doc.slices === 'object' ? doc.slices : doc;
 	/** @type {any} */
 	const out = {};
-	for (const [piece, state] of Object.entries(doc)) {
-		if (!state || typeof state !== 'object' || piece === 'by' || piece === 'at') continue;
+	for (const [piece, state] of Object.entries(slices)) {
+		if (!state || typeof state !== 'object') continue;
 		const s = /** @type {any} */ (state);
 		if (piece === 'pickups') out.pickups = { taken: Object.keys(s.taken ?? {}).length };
 		else if (piece === 'score') out.score = { total: s.total, players: s.players ?? s.rows };
-		else if (piece === 'round') out.round = { state: s.state, number: s.round ?? s.number };
+		// the round's state is its PHASE (menu, intro, playing, paused, won, lost, results)
+		else if (piece === 'round') out.round = { phase: s.phase ?? s.state, number: s.round ?? s.number, ...(s.outcome ? { outcome: s.outcome } : {}) };
 	}
 	return Object.keys(out).length ? { doc: out } : {};
 }
@@ -472,7 +480,7 @@ export const RUNTIME_AI_TOOLS = [
 		function: {
 			name: 'logs',
 			description:
-				'The page\'s recent log: errors, warnings, console lines and the toasts people saw, oldest first. Pass since (the "now" of the previous answer) for only what is new. status shows the newest few.',
+				'The page\'s recent log: errors, warnings, console lines, Announce lines (scope announce: in Edit an Announce node draws no banner, its line lands here with the node that said it) and the toasts people saw, oldest first. Pass since (the "now" of the previous answer) for only what is new. status shows the newest few.',
 			parameters: {
 				type: 'object',
 				properties: {

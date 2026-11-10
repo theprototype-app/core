@@ -64,6 +64,8 @@ export async function startExportRuntime() {
 	if (started || !exportConfig) return;
 	started = true;
 	const cfg = exportConfig;
+	/** 93 LP2: ends the first-load cover @type {(v?: any) => void} */
+	let coverDone = () => {};
 	try {
 		exportRuntimeState.phase = 'engine';
 		await waitFor(() => get(objectsGroup) && get(globalRenderer));
@@ -78,6 +80,11 @@ export async function startExportRuntime() {
 			}
 		}
 
+		// 93 LP2: the author's loading screen covers the first load (scene bytes, objects, pack files)
+		if (cfg.loading) {
+			const { coverFirstLoad } = await import('../gameLevels/loading.js');
+			void coverFirstLoad(cfg.loading, new Promise((r) => (coverDone = r)));
+		}
 		exportRuntimeState.phase = 'scene';
 		const { readSessionZip, applySession } = await import('../sessions');
 		const payload = await readSessionZip(await fetchBytes(cfg.scene));
@@ -90,13 +97,23 @@ export async function startExportRuntime() {
 
 		exportRuntimeState.phase = 'settings';
 		await applyGameDefaults(cfg);
+		// 93 LP5: a returning player resumes where they saved (level, kept state, checkpoint)
+		try {
+			const { resumeSavedGame } = await import('../gameLevels/checkpoints.js');
+			const resumed = await resumeSavedGame();
+			if (resumed.notes.length) console.info('levels: saved progress — ' + resumed.notes.join('; '));
+		} catch (error) {
+			console.warn('levels: the saved progress was not resumed', error);
+		}
 
+		coverDone();
 		exportRuntimeState.phase = 'play';
 		// fix-play-link: flat on a screen; on an XR-capable device the start card (Enter VR) stays
 		await autoPlay();
 		exportRuntimeState.phase = 'playing';
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
+		coverDone();
 		exportRuntimeState.phase = 'failed';
 		exportRuntimeState.error = message;
 		console.error('export runtime:', error);

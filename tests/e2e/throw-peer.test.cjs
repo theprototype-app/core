@@ -188,6 +188,12 @@ h.run(async () => {
 	const applied = await bodyOf(A.page, crate);
 	const appliedVec = [applied?.linvel?.x ?? 0, applied?.linvel?.y ?? 0, applied?.linvel?.z ?? 0];
 	const appliedSpeed = Math.hypot(...appliedVec);
+	// 78 F25 + 78-int u1: the vote handoff is ON here, and it must wait while B carries and while the throw flies
+	// (headless frame times differ a lot between two pages, so without that guard B took the world mid-carry and
+	// the throw landed at 0 m/s)
+	const paceA = await phys(A.page, 'const x = p.physicsPace(); return { handoffs: x.handoffs, on: x.handoffEnabled, running: x.running, frameMs: x.frameMs, maxSub: x.maxSub, feed: x.feed, substeps: x.substeps, dropped: x.dropped, simTime: x.simTime, wallMs: x.wallMs }');
+	console.log('  A at the read: ' + JSON.stringify({ pace: paceA, body: applied, sentPos: message.pos }));
+	h.check(paceA?.on === true && paceA.handoffs === 0 && paceA.running, `2.0 the world did not change hands during the carry or the throw (A ${JSON.stringify(paceA)})`);
 	h.check(applied?.hold === null, '2.3 A released the hold at once');
 	h.check(
 		applied?.bodyType === 0,

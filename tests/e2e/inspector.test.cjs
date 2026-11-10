@@ -102,11 +102,13 @@ h.run(async () => {
 	await A.page.waitForTimeout(500);
 	h.check(
 		// wait for the THING: the scene head can take ~2 s to mount on a cold dev server
+		// 78-int PL14: no kind badge on the scene (the tab says Configure Scene); the filter says what it filters
 		await A.page
-			.locator('#drawer-label [data-inspector-badge]', { hasText: 'Scene' })
+			.locator('#drawer-label #inspector-search[placeholder="Filter scene settings"], #drawer-label input[placeholder="Filter scene settings"]')
+			.first()
 			.waitFor({ state: 'visible', timeout: 5000 })
 			.then(() => true, () => false),
-		'scene badge shown'
+		'scene filter shown ("Filter scene settings")'
 	);
 	h.check(
 		await A.page.locator('#environment-presets').isVisible(),

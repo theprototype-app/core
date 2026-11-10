@@ -1,5 +1,6 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
+import { isPathRecord, normalizePathBlock, normalizePathPointExtras } from './path/pathCore.js';
 
 // 57.1: VARIABLE-RADIUS tube builder. three's TubeGeometry sweeps ONE radius
 // along a curve, so a spline whose thickness changes per control point has to
@@ -42,27 +43,35 @@ function num(value, fallback = 0) {
  * Coerce anything that claims to be spline data into the canonical record.
  * Applied on BOTH sides of the wire (a remote `splineedit`, a GLTF round-trip,
  * an AI/undo replay) so a malformed payload can never poison the builder.
- * @param {any} spline @returns {{points: {pos: number[], radius: number}[], color: string, closed: boolean, radialSegments: number, segmentsPerSpan: number}}
+ * @param {any} spline @returns {{points: ({pos: number[], radius: number} & Record<string, any>)[], color: string, closed: boolean, radialSegments: number, segmentsPerSpan: number, path?: ReturnType<typeof normalizePathBlock>}}
  */
 export function normalizeSpline(spline) {
 	const raw = Array.isArray(spline?.points) ? spline.points.slice(0, MAX_POINTS) : [];
+	// 78 F4: a PATH record (the `path` block) keeps its per-point extras; a plain spline
+	// normalizes byte-identically to before (no extras, no block)
+	const isPath = isPathRecord(spline);
 	const points = raw.map((/** @type {any} */ point) => ({
+		...(isPath ? normalizePathPointExtras(point) : {}),
 		pos: [num(point?.pos?.[0]), num(point?.pos?.[1]), num(point?.pos?.[2])],
 		radius: clamp(num(point?.radius, SPLINE_DEFAULTS.radius) || SPLINE_DEFAULTS.radius, MIN_RADIUS, MAX_RADIUS)
 	}));
-	return {
+	/** @type {any} */
+	const out = {
 		points,
 		color: typeof spline?.color === 'string' ? spline.color : SPLINE_DEFAULTS.color,
 		closed: !!spline?.closed && points.length > 2,
 		radialSegments: Math.round(clamp(num(spline?.radialSegments, SPLINE_DEFAULTS.radialSegments), 3, 32)),
 		segmentsPerSpan: Math.round(clamp(num(spline?.segmentsPerSpan, SPLINE_DEFAULTS.segmentsPerSpan), 2, 64))
 	};
+	if (isPath) out.path = normalizePathBlock(spline.path);
+	return out;
 }
 
 /** Deep copy of a normalized record — history entries must not alias live data. @param {any} spline */
 export function cloneSpline(spline) {
 	const data = normalizeSpline(spline);
-	return { ...data, points: data.points.map((p) => ({ pos: [...p.pos], radius: p.radius })) };
+	// 78 F4: a Path point's extras are plain scalars, so a spread copies them safely
+	return { ...data, ...(data.path ? { path: { ...data.path } } : {}), points: data.points.map((p) => ({ ...p, pos: [...p.pos], radius: p.radius })) };
 }
 
 /**
@@ -91,6 +100,9 @@ export function splineCurve(spline) {
 	const data = normalizeSpline(spline);
 	if (data.points.length < 2) return null;
 	const points = data.points.map((p) => new THREE.Vector3(p.pos[0], p.pos[1], p.pos[2]));
+	// 78 F4: a LINEAR path (smooth off) — Catmull-Rom with zero tension has zero tangents, so
+	// every span is its own chord: straight lines through the points, one curve class for both
+	if (data.path && data.path.smooth === false) return new THREE.CatmullRomCurve3(points, data.closed, 'catmullrom', 0);
 	return new THREE.CatmullRomCurve3(points, data.closed, 'centripetal', 0.5);
 }
 

@@ -40,6 +40,7 @@ const OUTPUT = {
 	colorpicker: 'color',
 	objectselector: 'object',
 	onclick: 'event',
+	onhover: 'event', // 78 F2
 	ongrab: 'event', // 30b (core-games)
 	keypress: 'event', // H3
 	// 21-E5: a pad button is an EVENT (the keypress channel), a stick is a NUMBER. Both
@@ -61,6 +62,7 @@ const OUTPUT = {
 	animmarker: 'event', // 17-E F5: the playhead crossed a named point in a clip
 	onanimstate: 'event', // 57 M11: an Animation states machine entered a state
 	onseqevent: 'event', // 48 S2: a running sequence crossed an event item (or ended)
+	onpathevent: 'event', // 78 F4: a walker on a Path arrived at a point with an event
 	animstate: 'number', // 17-E F3: progress / playing / position, one at a time
 	velocity: 'number', // CL-C: live speed readout
 	measure: 'number', // B6: top / bottom / height / y / speed
@@ -90,6 +92,8 @@ const OUTPUT = {
 	hudinput: 'number',
 	// 21-D6 game shell: the event half and the two readable ones
 	ongamestate: 'event',
+	onplaystart: 'event', // 78 F13
+	onplaystop: 'event',
 	getvariable: 'number',
 	gametime: 'number',
 	// 30 P4: the readable half of Store Value (a number socket; `output: text` carries a
@@ -167,7 +171,22 @@ const INPUT = {
 	rotor: { on: 'boolean' }, // 36-fb F25
 	flowfloat: { path: 'object' }, // 36-fb F24
 	followpath: { path: 'object' }, // 40 F15
+	pathpatrol: { path: 'object' }, // 78 F4: the Path object it walks
 	wander: { area: 'object' }, // 40 F15
+	// 85 N1/N2/N4: the swing's trigger; the tweens' go / back / toggle events, held boolean,
+	// hand-driven amount and goal (a point, or an object off a selector); the light switch
+	oscillate: { trigger: 'event', amplitude: 'number', period: 'number', phase: 'number', damping: 'number' },
+	moveto: { trigger: 'event', back: 'event', toggle: 'event', open: 'boolean', amount: 'number', to: 'vector3', x: 'number', y: 'number', z: 'number', duration: 'number' },
+	rotateto: { trigger: 'event', back: 'event', toggle: 'event', open: 'boolean', amount: 'number', to: 'object', angle: 'number', duration: 'number' },
+	scaleto: { trigger: 'event', back: 'event', toggle: 'event', open: 'boolean', amount: 'number', to: 'object', factor: 'number', duration: 'number' },
+	lightswitch: { trigger: 'event', back: 'event', toggle: 'event', on: 'boolean', fade: 'number' },
+	highlight: { on: 'boolean', strength: 'number', fade: 'number' }, // 85 I2
+	pressbutton: { trigger: 'event', depth: 'number' },
+	lightintensity: { level: 'number', fade: 'number' },
+	lightcycle: { period: 'number', saturation: 'number' },
+	windsway: { strength: 'number', direction: 'number', gust: 'number' }, // 85 N5
+	waterflow: { speed: 'number', swell: 'number' },
+	ambientanimal: { area: 'object', speed: 'number' }, // 85 N3
 	setcolor: { color: 'color' },
 	visibility: { on: 'boolean' },
 	setuniform: { value: 'number' },
@@ -225,6 +244,10 @@ const INPUT = {
 	// Selector), and Game Music's on/off
 	// 36 (U10): `sub` — the second line, wired as text (a behaviour's bannerSub)
 	announce: { trigger: 'event', value: 'number', sub: 'any' },
+	// 78 F2 / F3
+	onhover: { enabled: 'boolean' },
+	hoveranimate: { trigger: 'event' },
+	toggleanim: { trigger: 'event', open: 'event', close: 'event', goto: 'event', pose: 'any', enabled: 'boolean' },
 	gamesound: { trigger: 'event', at: 'object' },
 	effectburst: { trigger: 'event', at: 'object' },
 	hapticpulse: { trigger: 'event' },
@@ -258,7 +281,9 @@ const OUTPUT_HANDLES = {
 	// 36 X6: the OTHER body of the contact, as an object (wire it into lookat/distance)
 	onimpact: { other: 'object' },
 	onenter: { other: 'object' },
-	onexit: { other: 'object' }
+	onexit: { other: 'object' },
+	// 78 F3: the door's state beside its effect output
+	toggleanim: { isOpen: 'boolean', moving: 'boolean', pose: 'number', opened: 'event', closed: 'event' }
 };
 
 /** 74 VH1: the NAMED source handles a node type declares beyond its plain output — the VR logic panel draws

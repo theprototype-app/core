@@ -229,6 +229,12 @@ export const VALIDATORS = {
 				(d.roll === undefined || (typeof d.roll === 'number' && Number.isFinite(d.roll))))),
 	lookstate: (d) => typeof d.peerId === 'string' && (d.overrides === undefined || typeof d.overrides === 'object'),
 	simulate: (d) => typeof d.running === 'boolean' || typeof d.paused === 'boolean',
+	// 78 F25: a spectator's frame time, and the initiator handing the world over
+	simvote: (d) => typeof d.frameMs === 'number' && Number.isFinite(d.frameMs) && d.frameMs > 0,
+	simhandoff: (d) =>
+		typeof d.to === 'string' &&
+		(d.velocities === undefined ||
+			(!!d.velocities && typeof d.velocities === 'object' && Object.values(d.velocities).every((v) => isFiniteArray(v, 6)))),
 	loading: (d) => isArray(d.uuids),
 	object: (d) => d.element !== undefined,
 	group: (d) => d.uuid !== undefined,
@@ -332,7 +338,9 @@ export const VALIDATORS = {
 		!!d.doc.slices &&
 		typeof d.doc.slices === 'object' &&
 		!Array.isArray(d.doc.slices) &&
-		(d.ev === undefined || isArray(d.ev)),
+		(d.ev === undefined || isArray(d.ev)) &&
+		// 78 F17: the refusals this change made, with their reasons (each read through the kit's own normalize)
+		(d.refused === undefined || (isArray(d.refused) && d.refused.length <= 32)),
 	// fix-agenttest 10: a shared Set Variable's event for the authority (gameState.applyGameVarOp)
 	gamevarop: (d) =>
 		typeof d.rid === 'string' &&

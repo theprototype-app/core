@@ -264,7 +264,20 @@ h.run(async () => {
 	});
 	await fp.waitForSelector('#inspector', { state: 'visible', timeout: 15000 }).catch(() => {});
 	await fp.waitForTimeout(500);
-	oneRow('Inspector', await head('#inspector', '.wc-title'));
+	// 78-int PL14: the Inspector has no inner title row any more — on the phone its title and ✕ are the phone dock's
+	// tab (the hosting tab owns title and close), so the one-row rule is measured on that tab row
+	const dockHead = await fp.evaluate(() => {
+		const row = [...document.querySelectorAll('.dt-tabs')].find((e) => e.getBoundingClientRect().width > 0);
+		if (!row) return null;
+		const b = row.getBoundingClientRect();
+		const tab = row.querySelector('[data-dock-tab][aria-selected="true"]');
+		const key = tab?.getAttribute('data-dock-tab');
+		const title = tab?.getBoundingClientRect();
+		const x = key ? row.querySelector(`[data-dock-tab-close="${key}"]`)?.getBoundingClientRect() : null;
+		const mid = x ? x.top + x.height / 2 : -1;
+		return { key, h: Math.round(b.height), w: Math.round(b.width), titleW: Math.round(title?.width ?? 0), sameRow: !!title && !!x && mid >= title.top && mid <= title.bottom, closeIn: !!x && x.right <= innerWidth + 1 };
+	});
+	oneRow('Inspector (its phone dock tab)', dockHead);
 	await closeAll(fp);
 	await fp.evaluate(() => /** @type {any} */ (window).__stores.objectListClose.set(false));
 	await fp.waitForTimeout(900);

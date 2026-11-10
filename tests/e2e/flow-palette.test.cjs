@@ -25,13 +25,19 @@ h.run(async () => {
 	await A.page.waitForTimeout(300);
 	h.check(await A.page.locator('#palette-filter').isVisible(), 'palette reopens');
 
+	// showhide-v8 (owner 2026-11-09, "Flow: remove the swap button"): the palette moves sides from its arrow
+	// handle's menu ("Move the palette to the other side"), the dock-inset pattern
+	const paletteSwap = async () => {
+		await A.page.locator('#palette-toggle').click({ button: 'right' });
+		await A.page.locator('[role=menu] [role=menuitem]', { hasText: 'Move the palette to the other side' }).first().click();
+	};
 	// side toggle flips the palette across the editor
 	const beforeX = (await A.page.locator('#palette-filter').boundingBox()).x;
-	await A.page.locator('#palette-side').click();
+	await paletteSwap();
 	await A.page.waitForTimeout(300);
 	const afterX = (await A.page.locator('#palette-filter').boundingBox()).x;
 	h.check(afterX > beforeX + 300, `palette sticks to the right (${beforeX} → ${afterX})`);
-	await A.page.locator('#palette-side').click();
+	await paletteSwap();
 	await A.page.waitForTimeout(200);
 
 	// click-to-front: open chat + object list, drag chat over the list, compare z
@@ -72,8 +78,12 @@ h.run(async () => {
 	const late = await A.page.evaluate(() =>
 		getComputedStyle(document.querySelector('#flow-list .resize-cue')).backgroundColor
 	);
+	// the computed colour's ALPHA decides, whatever the format: pc Chromium serialises a transparent mix as
+	// oklab(0 0 0 / 0) where the Deck's says rgba(0, 0, 0, 0) (uir-chat)
+	const clear = (c) =>
+		c === 'transparent' || /rgba\([^)]*,\s*0(\.0+)?\s*\)$/.test(c) || /\/\s*0(\.0+)?\s*\)$/.test(c);
 	h.check(
-		(early.includes('0, 0, 0, 0') || early === 'transparent') && !late.includes('0, 0, 0, 0') && late !== 'transparent',
+		clear(early) && !clear(late),
 		`resize cue waits for the hover delay (${early} → ${late})`
 	);
 

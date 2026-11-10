@@ -1,6 +1,6 @@
 // Phase 126: sidebar reorg — Library leaves the sidebar (its packs open from
-// the Explorer), and the Scene group order is Configure Scene, Clear Scene,
-// Modules, Sessions.
+// the Explorer). showhide-v8 §6 (burger direction A): Scene is Configure Scene, Modules, then
+// "Clear scene…" last behind a divider; Sessions moved to Versions, after it.
 const h = require('./helpers.cjs');
 
 h.run(async () => {
@@ -22,14 +22,14 @@ h.run(async () => {
 			hasModules: has('Modules'),
 			hasSessions: has('Sessions'),
 			order:
-				idx('Configure Scene') < idx('Clear Scene') &&
-				idx('Clear Scene') < idx('Modules') &&
-				idx('Modules') < idx('Sessions')
+				idx('Configure Scene') < idx('Modules') &&
+				idx('Modules') < idx('Clear scene') &&
+				idx('Clear scene') < idx('Sessions')
 		};
 	});
 	h.check(!sidebar.hasLibrary, 'the sidebar has no Library item');
 	h.check(sidebar.hasModules && sidebar.hasSessions, 'Modules + Sessions are in the sidebar');
-	h.check(sidebar.order, 'order is Configure Scene, Clear Scene, Modules, Sessions');
+	h.check(sidebar.order, 'order is Configure Scene, Modules, Clear scene…, Sessions');
 
 	// --- Modules + Sessions still open their managers ---
 	const read = (s) => A.page.evaluate((name) => {

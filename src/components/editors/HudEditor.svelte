@@ -188,7 +188,7 @@
 	// auto-open stays UNPINNED so it does not fight a user who closed it.
 	let shell = $state(/** @type {any} */ (null));
 	$effect(() => {
-		if (one) untrack(() => shell?.showSecondary('props'));
+		if (one) untrack(() => shell?.showSecondary('props', true));
 	});
 
 	// --- D2: the left column, split between the screens list and the palette ------
@@ -995,7 +995,7 @@
 <svelte:window onresize={fitToViewport} bind:innerWidth={viewW} bind:innerHeight={viewH} />
 
 {#snippet body()}
-	<WindowShell bind:this={shell} key="hud" primaryLabel="Screens" secondaryModes={[{ key: 'props', icon: '⚙', label: 'Properties' }]}>
+	<WindowShell bind:this={shell} key="hud" mainLabel="Layout" primaryLabel="Screens" secondaryModes={[{ key: 'props', icon: 'settings', label: 'Properties' }]}>
 		{#snippet topbar()}
 			<div class="flex flex-wrap items-center gap-1.5">
 				<!-- 21-F1: the four Add shortcuts are gone. The palette in the left column is the
@@ -1075,7 +1075,7 @@
 					<!-- 21-E2.5: which document you are authoring, in words. A camera HUD renders
 											   only while that camera is being looked through, so the name is the
 											   difference between "nothing shows" and "nothing shows YET". -->
-					{#if attachedCamera}📷 {attachedCamera.name || 'Camera'} ·{/if}
+					{#if attachedCamera}<Icon name="camera" size={16} class="inline-block shrink-0 align-[-2px]" /> {attachedCamera.name || 'Camera'} ·{/if}
 					{STAGE.w}×{STAGE.h}
 				</span>
 				<span class="hud-hint">{elements.length} element{elements.length === 1 ? '' : 's'}</span>

@@ -26,7 +26,7 @@ const h = require('./helpers.cjs');
 
 /** the visible docked panel — ids repeat across hidden panels, so every read scopes here */
 const VISIBLE_PANEL =
-	'#flow-list, #explorer-list, #flow-code-dock, #uv-dock, #shader-editor, #hud-dock, #animation-dock';
+	'#flow-list, #explorer-list, #timeline-dock, #uv-dock, #shader-editor, #hud-dock, #animation-dock';
 
 const dockState = (page) =>
 	page.evaluate(() => {
@@ -42,7 +42,7 @@ const dockState = (page) =>
 		// a docked panel renders as #flow-list / #explorer-list etc. and hides itself
 		// with a `hidden` class rather than unmounting (the ShaderEditor is the one
 		// {#if}); "rendered" therefore means present AND not hidden
-		const boxes = ['#flow-list', '#explorer-list', '#flow-code-dock', '#uv-dock'];
+		const boxes = ['#flow-list', '#explorer-list', '#timeline-dock', '#uv-dock'];
 		const shown = boxes
 			.map((sel) => document.querySelector(sel))
 			.filter((el) => el && !el.classList.contains('hidden'));
@@ -420,7 +420,7 @@ h.run(async () => {
 
 	// add one more tab and it is marked too — the state is read per open, not a fixed list
 	await A.page.evaluate(() => {
-		window.__stores.flowCodeClose.set(false);
+		window.__stores.timelineClose.set(false);
 		window.__stores.bottomDock.activateDock('flow');
 	});
 	await A.page.waitForTimeout(600);
@@ -429,9 +429,9 @@ h.run(async () => {
 	const marked2 = await A.page.evaluate(() =>
 		[...document.querySelectorAll('[role="menuitem"].ctx-checked')].map((el) => el.querySelector('.flex-1')?.textContent.trim())
 	);
-	h.check(marked2.includes('Flow Code') && marked2.length === 3, `7.3 docking Flow Code marks its row too (${marked2.join(' | ')})`);
+	h.check(marked2.includes('Timeline') && marked2.length === 3, `7.3 docking Timeline marks its row too (${marked2.join(' | ')})`);
 	await closeMenu();
-	await A.page.evaluate(() => window.__stores.flowCodeClose.set(true));
+	await A.page.evaluate(() => window.__stores.timelineClose.set(true));
 	await A.page.waitForTimeout(500);
 
 	// --- 8. a TAB's own context menu ---
@@ -735,8 +735,10 @@ h.run(async () => {
 	);
 	await A.page.waitForTimeout(900);
 	f = await floatState();
-	h.check(!f.docked && f.window, `11.3 clicking it brings the floating window forward and does NOT dock it (docked=${f.docked}, window=${f.window})`);
-	h.check(f.visible === 'flow', `11.4 ...the dock keeps its own tab (${f.visible})`);
+	// showhide-v8 (owner 2026-11-09, supersedes 44 M5 here): "+" MOVES a window open elsewhere to where it was pressed,
+	// so the floating Animation window docks — the section's original report ("it should dock that window") again
+	h.check(f.docked && !f.window, `11.3 clicking it moves the floating window into the dock (v8 "+" moves) (docked=${f.docked}, window=${f.window})`);
+	h.check(f.visible === 'animation', `11.4 ...and its tab is the one shown (${f.visible})`);
 	h.check(f.open, '11.6 ...and it was never closed on the way');
 
 	await h.finish(browser);

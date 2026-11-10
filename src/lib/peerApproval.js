@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { peers, userdata, pendingApprovals, waitingForApproval, showToast } from '../stores/appStore';
+import { peers, userdata, pendingApprovals, waitingForApproval, showToast, cloudIdentity } from '../stores/appStore';
 import {
 	sessionHost,
 	APPROVAL_WINDOW_MS,
@@ -12,8 +12,10 @@ import {
 	clearJoinRefusal
 } from './connectionState';
 // 55 A4: how a peer got in + the dial's kind on its roster row (store-only, no cycle)
-import { noteJoinedVia, isAgentPeer } from './inviteStore';
+import { noteJoinedVia, isAgentPeer, myKind } from './inviteStore';
 import { forgetRemoved } from './peerModeration';
+// 78 PL34: a join asks for a name (once it is remembered, never again)
+import { maybeAskJoinName } from './guestName';
 
 // Pending-connection approval (211). Kept in its own store-only module so VR
 // (vrControls -> executeVRMenuAction) can call it WITHOUT statically importing
@@ -221,6 +223,7 @@ export async function requestConnect(rawId, cloudMeta) {
 		showToast('Not connected to a signaling server yet — try again in a moment.');
 		return;
 	}
+	maybeAskJoinName({ accountName: /** @type {any} */ (get(cloudIdentity))?.username, agent: !!myKind() });
 	dial(peerId, cloudMeta);
 }
 

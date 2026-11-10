@@ -162,10 +162,13 @@ h.run(async () => {
 	await writeTab(page, activeId, 'object.position.x = 4;');
 
 	// ---------------------------------------------------------------- 5 delegated events, tabs, menus
-	await pop.locator('#code-ws-open-graph').click();
-	tabs = await read(page, 'codeWorkspace.codeTabs');
+	// showhide-v8 §4: the Graph JSON header button is gone; graph.json is a row of the file tree
+	const graphRow = pop.locator('#code-ws-project button[data-tree-key="g:scene"]');
+	if (!(await graphRow.isVisible().catch(() => false))) await pop.locator('#code-ws-toggle-left').click();
+	await graphRow.click();
 	await pop.waitForTimeout(600);
-	h.check(tabs.length === 2 && (await read(page, 'codeWorkspace.activeCodeTab')) === tabs[1].id, 'a button click in the popup works (Graph JSON opened a second tab)');
+	tabs = await read(page, 'codeWorkspace.codeTabs');
+	h.check(tabs.length === 2 && (await read(page, 'codeWorkspace.activeCodeTab')) === tabs[1].id, 'a button click in the popup works (the tree graph.json row opened a second tab)');
 	await pop.locator(`.code-tab[data-tab-id="${activeId}"]`).click();
 	await pop.waitForTimeout(300);
 	h.check((await read(page, 'codeWorkspace.activeCodeTab')) === activeId, 'clicking a tab in the popup switches tabs (delegated onclick reaches the popup)');

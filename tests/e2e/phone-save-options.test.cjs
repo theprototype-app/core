@@ -18,8 +18,13 @@ async function openSaveOptions(page) {
 	await page.evaluate(() => window.__stores.closeMenu.set(false));
 	await page.waitForSelector('#sidebar70', { timeout: 5000 });
 	await page.waitForTimeout(350);
-	const cog = page.locator('#export-settings-cog, #save-options-open').first();
-	await cog.tap().catch(() => cog.click());
+	// List shows the cog; Compact reaches it through Save as… ▾ (showhide-v8 §6: its last item is Save options…)
+	const cog = page.locator('#export-settings-cog');
+	if (await cog.isVisible()) await cog.tap().catch(() => cog.click());
+	else {
+		await page.locator('#project-save-as').click();
+		await page.locator('[role="menu"] [role="menuitem"]', { hasText: 'Save options…' }).click();
+	}
 	await page.waitForSelector('#save-options-modal', { state: 'visible', timeout: 5000 });
 	await page.waitForTimeout(300);
 }

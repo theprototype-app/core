@@ -10,6 +10,7 @@
 //          saved chats come with the scene through the `.tpchat` store (56-media).
 //   FILES  one writer per session saves each chat through the store (`saveChat`, debounced).
 import { writable, derived, get } from 'svelte/store';
+import { notifyOn } from './notifyPrefs';
 import { peers, userdata, username, showToast, aiAssistantHidden } from '../stores/appStore';
 import { rolesInfo } from './cloudHooks';
 import { sessionHost } from './connectionState';
@@ -199,7 +200,7 @@ export function applyAgentChatMessage(fromPeer, data) {
 	if (next === before) return;
 	agentChatState.set(next);
 	const k = kindOf(data);
-	if ((k === 'reply' || k === 'ask') && !data.partial && samePeer(data.to, myPeerId()) && get(aiAssistantHidden) !== '') {
+	if ((k === 'reply' || k === 'ask') && !data.partial && samePeer(data.to, myPeerId()) && get(aiAssistantHidden) !== '' && notifyOn('agent')) {
 		showToast(peerLabel(fromPeer) + ' answered you in the AI assistant.', [{ label: 'Show', action: () => openChatInAssistant(data.chatId) }]);
 	}
 }

@@ -2725,6 +2725,79 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   on `online`, never an error. e2e: `h.routeSkies` (OPT-IN — a route disables the context's HTTP cache) serves them
   from a local packs checkout. Suites: vitest `toolStatus` (incl. the storage migration); e2e `tools-connections`,
   `sky-cdn`.
+- **ROADMAP 78 F4 + F9 (78-path) — THE PATH OBJECT.** A Path is a SPLINE OBJECT (`userData.spline`) whose record
+  carries a `path` block `{version, mode: loop|pingpong|once|random, speed, smooth, showInPlay, preview, seed}` plus
+  optional per-point extras: the POINT's own `wait`/`event`/`facing`, and the SPAN LEAVING it (point k owns k→k+1)
+  `speed`/`ease`/`gap` (a gap = a JUMP, zero time). `src/lib/path/pathCore.js` is the pure record leaf (normalize,
+  reverse — span keys move to the span's other end —, split, join, `recordFromPatrol`); `splineTube.normalizeSpline`
+  keeps the extras ONLY when the block is present, so a plain spline is byte-identical. Every write is the SPLINE
+  write path (`commitSplineEdit` → `splineedit` wire + `spline` undo kind): no new message, no new history kind.
+  Creation is the replicated `/create Path` (`customGeometryBuilders` + `stampPathObject` in geometries.svelte.js).
+  · DETERMINISM IS THE NETCODE: `motionCore.buildSchedule(points, {closed, smooth, mode, speed, seed})` → timed
+  segments, `scheduleAt(sched, t, {start, offset})` → pose; the walker's t is the shared EFFECT clock (pauses folded
+  in), its start is the node's trigger stamp − pauseOffset, else the round start, else 0 (a `once` walk with neither
+  stands at its first point). Events fire on arrival stamps, which every peer derives alike; the runtime's event
+  clock SEEDS (fires nothing) on first sight, a clock going back, or a jump > 5 s, so a reload never replays the past.
+  · F9, THE READ API (61's Patrol calls this — never a fourth list of points): `pathOf(root, uuid)` /
+  `pathOfObject(o)` in `path/pathRuntime.js` → `{uuid, name, points (WORLD + extras), closed, smooth, mode, speed,
+  seed, showInPlay, preview, schedule, period, length, poseAt(t, o), eventsBetween(a, b, o)}`, cached on the record
+  JSON + matrixWorld. `applyPatrolOnPath` is what the `pathpatrol` node runs when `data.path` is set; walker state
+  (`patrolStateOf(key)`, key = nodeId|objectUuid) carries `t/start/offset/p`, which is how the two-peer suite proves
+  agreement: the other peer recomputes the exact pose.
+  · Leaves: pathCore, pathState (editing uuid, scrub, picked points), pathRuntime — flowRuntime imports pathRuntime,
+  so it may never reach history. `pathActions.js` is history-family (create/settings/point fields/reverse/split/
+  join/convert). A Path is a physics SENSOR (never a collider) and hides in Play through `material.visible` + a
+  raycast no-op, NEVER `object.visible` (that is replicated authored state).
+  · Old `pathpatrol` nodes with clicked `points` keep walking the legacy code; Convert (`convertPatrolNode`) makes a
+  closed straight-line loop (ping-pong for 2 points or mode pingpong) re-centred on the waypoints' centroid —
+  pose-identical, proven in `pathCore.test.js` against a verbatim copy of the old walker.
+  · `captureAdapter.js` maps the Path editor's Add points onto 78-wire's F5 capture stack (one banner; Esc pops
+  the top capture first; it pops only its own entries). Agent: `create_path` (`ai/pathTools.js`), connector `create_shape {action:
+  'path'}`. Node `onpathevent` {path, event}. Suites: vitest `pathCore`, `pathRuntime78`, `pathTools78`; e2e
+  `path-object` (two peers).
+- **ROADMAP 93 (78-93-levels, 1.64 via 78-int) — LEVELS AND PROGRESS.** ONE Levels table per game, on the scene-settings
+  singleton (`scenePhysics.levels`, normalized in `gameLevels/table.js`): rows `{id,name,scene?,spawn?,goal?}`, `unlock`,
+  `keep` (score/inventory/health/`var:<name>`; empty = everything carries, the pre-93 behaviour) and `loading`.
+  `gameLevels/runtime.js syncKitLevels` defines `kit.levels` FROM the table on every peer, so the Kit: Levels nodes, the
+  portals and the agent's `game_setup {levels}` read one list. `travel.js` = the hop (`hopTo`: scene under
+  `withLoadingScreen`, then the start object; `registerTravelCarry` in levels.js is the seam that carries ONLY the keep
+  list). Go to level / Next level move EVERYONE; a PORTAL moves only its walker (`solo`, the `selected` listeners
+  stay put). OBJECTS: Portal and Checkpoint kinds carry `userData.portal` / `userData.checkpoint` records (replicate as
+  `objectParameters`, undo as `props`); `play.js` scans them twice a second while `gameFeelActive()` (locked OR
+  `editorMode === 'interact'`), preloads a portal's scene when the player is near (`preload.js`), and hides a
+  `show:false` portal in Play only (a LOCAL visibility flip restored by a park hook, never saved). A checkpoint's
+  `show` is its reached MESSAGE, not pad visibility. CHECKPOINTS (`checkpoints.js`) are per player and LOCAL: the
+  arrival through a portal counts as one (noted BEFORE the transition opens), Back to checkpoint / New game are kit
+  actions marked `local: true` (spec.js: no authority op — the kitTable invariant skips them). SAVES (`save.js`):
+  `tp:levels-save:<gameId>`, version 1, `upgradeSave` drops removed levels (→ first level) and vars the game no longer
+  keeps, 256 KB cap. They are WRITTEN only in an export (`exportMode`, test seam `checkpointsForTest({persist})`), but
+  MEASURED in the editor too, so the cap sentence (`saveProblem`) shows in Configure Scene ▸ Levels.
+  LOADING (`loading.js` + `loadingConfig.js` leaf): five presets, a 150 ms show delay, 400 ms minimum, progress from
+  the preload bytes, every `sceneLoad` publish (subscribed, not only polled: a fast build finished inside one 100 ms
+  poll and the bar read 0 then 1) and `packTracker` (loadStates forgets a parsed file, so the tracker remembers it);
+  a scene preload-ready skips the screen; an export boots on the author's screen (`coverFirstLoad`). Agent:
+  `ai/levelsTools.js` (`set_levels/set_portal/set_checkpoint/set_loading`, one history batch per call) behind the
+  connector's existing `game_setup` (no new tool names). Template `scripts/templates/two-levels.cjs`.
+  Suites: units `levels*`; e2e `levels-progress` (two peers + one player; the cold hop runs at 6x CPU so the bar has
+  steps) and `levels-export` (BUILT app only: serve-build + `E2E_PC=`; SKIPs without export-manifest.json).
+- **ROADMAP 78 F26 + F27 + PL42 (built in 78-int, 1.64).** F26 "WHY DID THIS NOT FIRE": `triggerWhy.js` is a LEAF (the
+  check map + the words): `noteCheck(nodeId, {who, fired, reason})` is called at the fire sites in flowRuntime
+  (`fireObjectClick`, `fireObjectHover`, `fireSensorEdge`, the Collect refusals), and `standingWhy(node)` in flowRuntime
+  answers "why can it not fire RIGHT NOW" (Edit mode, no sim, not the physics peer, no object, no sensor, disabled,
+  muted, touch off, nothing wired). LOCAL per device (a check is what THIS device saw; nothing replicates).
+  `whyCardLine` (<= 40 chars, a FRESH check wins for 10 s, then the standing reason) feeds the node card through
+  nodeLiveState's `WHY_TRIGGERS` readers; `whySentence` feeds the Flow debugger's `#debug-why` row (live in Play only).
+  `flowRuntime.triggerWhyOf(id)` -> `{type, check, standing (a reason KEY), card, sentence}` is the test seam. F27
+  STARTER RECIPES: `starterRecipes.js` (`STARTER_RECIPES` data + `insertStarterRecipe(id, ownerUuid)`) builds ONLY from
+  existing nodes into the OWNER'S own flow, in one history batch ('Add recipe'), every write on the replicated paths
+  (spawnAtPoint, setPhysicsFor, setMaterialParam, createPath, nodecreate/edgecreate); the walk-up door IS 85's Q9 "On
+  Near" (a static sensor zone + On Enter/Exit who:player). Nodes.svelte puts them under "Recipes" in the pane menu,
+  greyed on the scene graph. I2: hoverInput's F2 sampler writes `hoverState` source `pointer`, so an unwired Highlight
+  lights under the mouse in Interact and a phone tap. PL42 NO EMOJI: `scripts/check-emoji.cjs` (`npm run check:emoji`,
+  CI) fails on a colour emoji in src (comments skipped; `emoji-ok` per line, `emoji-ok-file` for user content such as
+  chatTokens.js); WindowShell mode tabs take a Lucide NAME (lowercase-dash = an icon, anything else = a text glyph);
+  `changelog.js stripEmoji` keeps the emoji-led older CHANGELOG entries out of What's new. Suites: unit `triggerWhy78`,
+  `checkEmoji`; e2e `trigger-why-78`, `starter-recipes-78`.
 
 ## UI design system (redesign epic)
 

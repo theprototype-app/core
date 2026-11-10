@@ -26,7 +26,7 @@ import { parse } from 'acorn';
  *   readOnly?: boolean, stale?: boolean, external?: string, error?: CodeError | null,
  *   nodeId?: string, graphId?: string, itemId?: string | null, hash?: string, name?: string,
  *   moduleId?: string, line?: number, fromNode?: { nodeId: string, graphId: string } | null,
- *   nodeType?: string
+ *   nodeType?: string, format?: 'json' | 'text'
  * }} CodeTab
  */
 
@@ -45,7 +45,8 @@ export function tabMatches(tab, spec) {
 		case 'module':
 			return tab.moduleId === spec.moduleId && (tab.name ?? '') === (spec.name ?? '');
 		case 'graph':
-			return (tab.graphId ?? 'scene') === (spec.graphId ?? 'scene');
+			// showhide-v8 §4: one graph opens two ways — graph.json and the compact flow code text
+			return (tab.graphId ?? 'scene') === (spec.graphId ?? 'scene') && (tab.format ?? 'json') === (spec.format ?? 'json');
 	}
 	return false;
 }
@@ -260,7 +261,7 @@ export function normalizeCodeRequest(req) {
 		} else if (req.source === 'customnode') ref = { defId: ref };
 		else ref = { nodeId: ref };
 	}
-	if (req?.graphId && !ref.graphId && (ref.nodeId || req.source === 'graph')) ref = { ...ref, graphId: req.graphId };
+	if (req?.graphId && !ref.graphId && (ref.nodeId || req.source === 'graph' || req.source === 'flowtext')) ref = { ...ref, graphId: req.graphId };
 	return { ...req, ref };
 }
 

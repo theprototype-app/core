@@ -385,7 +385,7 @@ function agentTools(opts) {
 }
 
 /** A6: generate_mesh goes to the host's provider when this page has none
- * @param {string} name @param {any} args @param {{physics?: boolean, localSim?: boolean}} [opts] */
+ * @param {string} name @param {any} args @param {{physics?: boolean, localSim?: boolean, by?: string}} [opts] */
 async function agentRun(name, args, opts) {
 	const real = repairToolCall(name, args).name;
 	if (real === 'generate_mesh' && !meshGenReady()) {
@@ -411,7 +411,7 @@ async function agentRun(name, args, opts) {
 		const { requestHostSim } = await import('./simRelay.js');
 		return requestHostSim(host, String(repairToolCall(name, args).args?.action ?? ''));
 	}
-	return executeAiTool(name, args, { physics: opts?.physics });
+	return executeAiTool(name, args, { physics: opts?.physics, by: opts?.by });
 }
 
 /**
@@ -424,7 +424,7 @@ async function agentRun(name, args, opts) {
  *   no agent-page tools (the person keeps those buttons), and it counts its own session as one
  */
 export function createTpAgent(extra = {}) {
-	const toolOpts = { physics: !!extra.physics, localSim: !!extra.localSim };
+	const toolOpts = { physics: !!extra.physics, localSim: !!extra.localSim, ...(extra.connector ? { by: 'Claude' } : {}) };
 	/** @type {ReturnType<typeof createAgentCore>} */
 	let core;
 	const inbox = agentInbox();

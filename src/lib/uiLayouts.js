@@ -16,8 +16,9 @@ import {
 	chromeWrites
 } from './uiLayoutsCore';
 import { snapshotWorkspace, applyWorkspace, closeWorkspace } from './workspace';
-import { hudEditorClose, timelineClose, profilerClose, chatHidden, settingsOpen, floatingToolbar, toolbarAlwaysOnTop, hudStackLift, showRoomsButton, touchTools } from '../stores/appStore';
+import { settingsOpen, floatingToolbar, toolbarAlwaysOnTop, hudStackLift, showRoomsButton, touchTools } from '../stores/appStore';
 import { phoneShell } from './ui/phoneShell';
+import { layoutPerScene, readSceneLayouts, writeSceneLayouts, upsertSceneLayout, sceneLayoutOf } from './windowPrefs.js';
 
 // 37 R14 — NAMED WORKSPACE LAYOUTS, the live half (the rules are in uiLayoutsCore).
 //
@@ -83,13 +84,9 @@ export function captureLayout(name) {
 		name: cleanName(name),
 		savedAt: Date.now(),
 		viewport: typeof window !== 'undefined' ? { w: window.innerWidth, h: window.innerHeight } : null,
-		open: {
-			...ws.open,
-			hud: !get(hudEditorClose),
-			timeline: !get(timelineClose),
-			profiler: !get(profilerClose),
-			chat: get(chatHidden) === ''
-		},
+		// 78 PL3: the HUD editor, Timeline, Profiler and Chat are in the workspace table now (with Statistics,
+		// Free assets and the AI assistant), so one record says what is open
+		open: { ...ws.open },
 		dockTab: ws.dockTab,
 		inspector: ws.inspector,
 		storage: pickLayoutStorage(safeStorage.keys(), (key) => safeStorage.getItem(key)),
@@ -132,14 +129,6 @@ export function renameLayoutTo(id, name) {
 	return true;
 }
 
-/** the panels a layout opens beyond the workspace record's own table */
-const EXTRA = [
-	{ name: 'hud', open: () => hudEditorClose.set(false), close: () => hudEditorClose.set(true) },
-	{ name: 'timeline', open: () => timelineClose.set(false), close: () => timelineClose.set(true) },
-	{ name: 'profiler', open: () => profilerClose.set(false), close: () => profilerClose.set(true) },
-	{ name: 'chat', open: () => chatHidden.set(''), close: () => chatHidden.set('hidden') }
-];
-
 let applying = false;
 
 /**
@@ -148,6 +137,16 @@ let applying = false;
  */
 export async function applyLayout(id) {
 	const layout = get(uiLayouts).find((l) => l.id === id);
+	if (!layout) return false;
+	return applyLayoutRecord(layout, id);
+}
+
+/**
+ * Put a layout RECORD back (a saved one, or a scene's remembered one). `activeId` marks a saved layout as the
+ * active one; a remembered scene layout passes null and leaves the Layouts menu's mark alone.
+ * @param {any} layout @param {string | null} [activeId]
+ */
+export async function applyLayoutRecord(layout, activeId = null) {
 	if (!layout || applying) return false;
 	applying = true;
 	try {
@@ -158,7 +157,6 @@ export async function applyLayout(id) {
 			await tick();
 		}
 		closeWorkspace();
-		for (const extra of EXTRA) extra.close();
 		await tick();
 
 		const { set, remove } = layoutWrites(layout.storage, safeStorage.keys());
@@ -178,13 +176,42 @@ export async function applyLayout(id) {
 		await tick();
 
 		applyWorkspace({ open: layout.open, dockTab: layout.dockTab, inspector: layout.inspector });
-		for (const extra of EXTRA) if (layout.open?.[extra.name] === true) extra.open();
 		await tick();
-		setActive(id);
+		if (activeId) setActive(activeId);
 		return true;
 	} finally {
 		applying = false;
 	}
+}
+
+/**
+ * showhide-v8 §6: Windows ▸ "Remember layout per scene". While the switch is on, leaving a NAMED scene stores the
+ * window layout it was left with, and opening a scene that has one puts it back. Unnamed scenes are not remembered
+ * (there is no name to file them under). The store is passed in, so this module never imports the level machinery.
+ * @param {import('svelte/store').Readable<{name?: string} | null>} levelStore @returns {() => void}
+ */
+export function startSceneLayouts(levelStore) {
+	/** @type {string | null} */
+	let current = null;
+	const remember = () => {
+		if (current && get(layoutPerScene)) writeSceneLayouts(upsertSceneLayout(readSceneLayouts(), current, captureLayout(current)));
+	};
+	const unsub = levelStore.subscribe((level) => {
+		const name = level?.name || null;
+		if (name === current) return;
+		remember();
+		current = name;
+		if (!name || !get(layoutPerScene)) return;
+		const stored = sceneLayoutOf(readSceneLayouts(), name);
+		if (stored) void applyLayoutRecord(stored);
+	});
+	// a reload or a closed tab keeps what the scene was left with too
+	const onHide = () => remember();
+	if (typeof window !== 'undefined') window.addEventListener('pagehide', onHide);
+	return () => {
+		unsub();
+		if (typeof window !== 'undefined') window.removeEventListener('pagehide', onHide);
+	};
 }
 
 /** 42 I8: the toolbar prefs that live in appStore stores, re-read from the keys a layout just

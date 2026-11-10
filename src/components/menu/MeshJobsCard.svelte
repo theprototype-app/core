@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Icon from '../ui/Icon.svelte';
 	// Mesh-generation progress cards (roadmap #11, G2). Renders the meshJobs store as
 	// a small stack near the top-right — one card per active/finished job with a
 	// progress bar, cancel (while running) and dismiss (when finished).
@@ -35,7 +36,7 @@
 		{#each $meshJobs as job (job.id)}
 			<div class="ui-panel mesh-job bg-surface-1/90 backdrop-blur-sm">
 				<div class="flex items-center gap-2">
-					<span class="text-sm">✨</span>
+					<span class="text-sm"><Icon name="sparkles" size={16} class="inline-block shrink-0 align-[-2px]" /></span>
 					<span class="min-w-0 flex-1 truncate text-xs text-text-2" title={job.prompt}>{job.prompt}</span>
 					{#if RUNNING.has(job.status)}
 						<button class="ui-button-quiet text-[11px]" onclick={() => cancelMeshJob(job.id)}>Cancel</button>

@@ -54,6 +54,7 @@ export function register(api) {
   api.mountConnect(fn)             // into the Connect pill (login / Browse Rooms)
   api.mountUsersSection(fn)        // into the Users popover (roles)
   api.mountProfile(fn)             // into the profile dropdown (account) — v2
+  api.mountSettingsSection('account', fn) // Settings ▸ Account (only while mounted) — profile-notify
   api.mountConnectDrawer(fn)       // into the Connect info drawer (room settings) — v2
   api.mountSidebar(fn)             // a ROW under Save in the logo menu (Publish) — v3
 
@@ -265,6 +266,8 @@ static|embed>`. Core never talks to a server about it.
 | `setPeerMenuItems(items)` | fix-live: `[{id, label, run(peerId, {name})}]` (≤ 8, labels ≤ 40) appended to the Users peer menu (right-click a peer) under core's own entries — the cloud's "Report…"; `[]` clears |
 | `setConnectorProvider(p)` | 86 B1/B5: the Claude connector's account half — `{pair({resume}) → {wsUrl, pairingToken, replaces?, connections?}, connections() → {connections, tab?}, revoke(id), revokeAll(), account() → {signedIn, name?}}` (`pair` rejects `{code:'signin'}` signed out); core draws Connect Claude, the connected indicator and Settings ▸ Connected apps only while one is installed and runs every relayed call through tpAgent; null removes it |
 | `mountConnectorSignIn(fn)` | 86-fix N1, FW-AI (76): any function = the connector is built in and nobody is signed in. Core draws "Sign in to connect" in the AI window (welcome card, or the header when a provider is set up) and it opens the profile pop-up, where `mountProfile`'s section signs in; `fn` itself is not rendered. Once signed in, install the provider and pass null |
+| `mountSettingsSection(key, fn)` → boolean | profile-notify (1.64): fill a Settings section; only `'account'` so far — Settings ▸ Account, a page in its own "Account" group that exists only while a plugin has mounted into it (the OSS Settings has none). Draw cards as `section.sec-card-wrap` with an `[data-section-label]` title and rows as `.setting-row` with an `.sr-name`, so Settings search finds them. A non-function removes it; an unknown key returns false. Probe with `typeof` |
+| `notificationOn(kind)` → boolean | profile-notify (1.64): the per-device switches in Settings ▸ Interface ▸ Notifications (`src/lib/notifyPrefs.js`). The plugin asks before an automatic pop-up: `'roomInvites'`, `'contests'`; an unknown kind is `true`. Probe with `typeof` (absent = show, as before) |
 | `setConnectBadge(badge \| null)` | fix-live F-5: `{text, title?, onClick?}` — a small badge on the Connect pill for a standing setting (e.g. "Public · guests join"); `null` hides it. Probe with `typeof` |
 | `setSceneHeart(info \| null)` | the heart on the play-link start card (`#embed-heart`) and a game's pause menu (`#game-shell-heart`): `{count, liked, toggle() → Promise<{liked, count} \| null>}`; `null` from `toggle` rolls the optimistic flip back |
 

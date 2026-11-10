@@ -16,7 +16,8 @@ import {
 	showToast,
 	showSimControls,
 	armExplorerSceneSave,
-	explorerClose
+	explorerClose,
+	flowCodeClose
 } from '../stores/appStore';
 import { explainMissing } from './tools/toolLinks.js';
 import {
@@ -498,8 +499,9 @@ export const shortcuts = [
 		keys: 'Alt+F',
 		group: 'Panels',
 		scope: 'global',
-		label: 'Flow Code: show / bring to front / hide',
-		action: () => togglePanel('flowcode')
+		label: 'Flow code: open it in the Code window',
+		// showhide-v8 §4: the old open store is the seam (flowCodeRedirect opens Code on the active graph's flow code)
+		action: () => flowCodeClose.set(false)
 	},
 	{
 		id: 'panels.animation',
@@ -871,7 +873,7 @@ export const shortcuts = [
 		['nodes.collapse', 'H', 'collapse', 'Collapse / expand the selected nodes'],
 		['nodes.group', 'Ctrl+G', 'group', 'Group the selection'],
 		['nodes.ungroup', 'Ctrl+Shift+G', 'ungroup', 'Ungroup (the selected group, or the one you are in)'],
-		['nodes.enter-group', 'Tab', 'toggleGroup', 'Enter the selected group / leave the one you are in'],
+		['nodes.enter-group', 'Tab', 'toggleGroup', 'Enter the selected group / leave the one you are in / else search for a node to add (wired from the selected node)'],
 		['nodes.add-note', 'N', 'addNote', 'Add a note at the cursor'],
 		['nodes.note-around', 'Shift+N', 'noteAround', 'Add a note around the selection (a frame)'],
 		['nodes.tidy', 'L', 'tidy', 'Tidy the graph: lay it out left to right, nothing overlapping, no wire across a card'],

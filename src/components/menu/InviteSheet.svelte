@@ -1,6 +1,6 @@
 <script>
-	// 55 A4 — THE INVITE SHEET (Connect ▸ Request AI). ONE mechanism, two tabs: *AI agent*
-	// and *Person* mint the same signed, host-verified invite (inviteCore/inviteStore). The
+	// 55 A4 — THE INVITE SHEET (Connect ▸ Invite; 78 PL36 folded the robot "Request AI" into it). ONE
+	// mechanism, two tabs: *Person* (first, the default) and *AI agent* mint the same signed, host-verified invite (inviteCore/inviteStore). The
 	// host picks the role (View preselected for people, Edit for agents — hidden in the OSS
 	// build, where every peer edits), the expiry and how many may use it; then copies the
 	// link, the ready MCP command (agents) or one sentence for any chat. Once used, the sheet
@@ -12,6 +12,8 @@
 	import Segmented from '../ui/Segmented.svelte';
 	import Button from '../ui/Button.svelte';
 	import Icon from '../ui/Icon.svelte';
+	// 78 PL37: the join link as a QR code, drawn here (no network)
+	import QrCode from '../ui/QrCode.svelte';
 	import { peers, showToast } from '../../stores/appStore';
 	import { rolesInfo } from '$lib/cloudHooks';
 	import { peerServerStatus, inviteServerParam } from '$lib/peerServer';
@@ -21,7 +23,7 @@
 	import { playUrl } from '$lib/playOrigin.js';
 
 	/** @type {'agent'|'person'} */
-	let tab = $state(get(inviteSheet) === 'person' ? 'person' : 'agent');
+	let tab = $state(get(inviteSheet) === 'agent' ? 'agent' : 'person');
 	let open = $state(true);
 	$effect(() => {
 		if (!open) inviteSheet.set(null);
@@ -34,7 +36,7 @@
 	});
 
 	// the settings per tab — the defaults the owner chose (View for people, Edit for agents)
-	let role = $state(/** @type {'view'|'edit'} */ (get(inviteSheet) === 'person' ? 'view' : 'edit'));
+	let role = $state(/** @type {'view'|'edit'} */ (get(inviteSheet) === 'agent' ? 'edit' : 'view'));
 	let expiry = $state('30m');
 	let uses = $state('1');
 	/** the invite minted in this sheet, per tab @type {Record<string, string>} */
@@ -124,8 +126,8 @@
 	{#snippet bar()}
 		<Tabs
 			tabs={[
-				{ id: 'agent', label: 'AI agent', icon: 'bot' },
-				{ id: 'person', label: 'Person', icon: 'user-plus' }
+				{ id: 'person', label: 'Person', icon: 'user-plus' },
+				{ id: 'agent', label: 'AI agent', icon: 'bot' }
 			]}
 			value={tab}
 			idPrefix="invite"
@@ -197,6 +199,13 @@
 						<Button variant="secondary" size="sm" id="invite-copy-link" icon="copy" onclick={() => copyText(strings.link, 'Invite link')}>Copy</Button>
 					</div>
 				</div>
+				{#if tab === 'person'}
+					<!-- 78 PL37: a phone joins by pointing its camera at the screen -->
+					<div class="inv-qr" id="invite-qr-wrap">
+						<QrCode id="invite-qr" text={strings.link} size={176} label="QR code of the invite link" />
+						<p class="inv-qr-note"><Icon name="qr-code" size={16} aria-hidden="true" /><span>Scan with a phone camera to join. Made on this device, nothing is sent anywhere.</span></p>
+					</div>
+				{/if}
 				{#if playLink}
 					<div class="inv-field">
 						<span class="inv-label" id="invite-play-label">Play link — opens straight into the game, no editor</span>
@@ -301,6 +310,25 @@
 	.inv-state[data-state='revoked'],
 	.inv-state[data-state='expired'] {
 		color: var(--ink-warn);
+	}
+	.inv-qr {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+	}
+	.inv-qr-note {
+		display: flex;
+		gap: 6px;
+		align-items: flex-start;
+		margin: 0;
+		color: var(--text-muted);
+		font-size: var(--fs-desc);
+	}
+	@media (max-width: 420px) {
+		.inv-qr {
+			flex-direction: column;
+			align-items: flex-start;
+		}
 	}
 	.inv-used {
 		margin: 0;

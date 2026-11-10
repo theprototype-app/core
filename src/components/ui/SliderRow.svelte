@@ -15,7 +15,7 @@
 	// unchanged (SPEC §0).
 	import PropRow from './PropRow.svelte';
 
-	/** @type {{label?: string, value?: number, min?: number, max?: number, step?: number, decimals?: number, id?: string, mixed?: boolean, onchange?: (next: number) => void, resetValue?: number, clipKey?: string}} */
+	/** @type {{label?: string, value?: number, min?: number, max?: number, step?: number, decimals?: number, id?: string, mixed?: boolean, onchange?: (next: number) => void, resetValue?: number, clipKey?: string, resetLabel?: string, onreset?: (() => void) | null}} */
 	let {
 		label = '',
 		value = 0,
@@ -30,7 +30,10 @@
 		onchange = () => {},
 		// 43 J3: the default the field menu's Reset puts back, and the row's name in a copied section
 		resetValue = undefined,
-		clipKey = undefined
+		clipKey = undefined,
+		// 78-int PL12: the changed mark names a preset / takes its own reset path
+		resetLabel = '',
+		onreset = null
 	} = $props();
 </script>
 
@@ -47,6 +50,8 @@
 	snap={step * 10}
 	ariaLabel={label}
 	{resetValue}
+	{resetLabel}
+	{onreset}
 	{clipKey}
 	onchange={(next) => onchange(next)}
 />

@@ -178,3 +178,75 @@ export function topChromeFloor(left, width, rects, gap = 4) {
 	}
 	return floor;
 }
+
+// 78 PL39 (owner 2026-11-09) — SIZE PRESETS for a floating window: Small / Half / Full, cycled by a
+// double tap (or double click) on the header and offered in the header menu (windowMenu "Size").
+// The rect is computed here, pure, from the FREE area the caller measured: between the open
+// sidebar columns (sidebars.js `--sb-free-left/-right`), under the top chrome and above the bottom
+// chrome (the Controls band, the centred toolbar). Full fills that area, Half takes the half of it
+// the window's centre is on, Small is a compact size that keeps the window where it is.
+/** @typedef {'small'|'half'|'full'} SizePreset */
+/** @type {SizePreset[]} */
+export const SIZE_PRESETS = ['small', 'half', 'full'];
+/** the label each preset shows (menu rows, tooltips) @type {Record<SizePreset, string>} */
+export const SIZE_PRESET_LABELS = { small: 'Small', half: 'Half', full: 'Full' };
+/** the compact size Small asks for (design px; never under the window's own minimum) */
+export const SMALL_PRESET = { w: 380, h: 320 };
+
+/**
+ * The preset a double tap moves to: a window on no preset (sized by hand, or its default) goes to
+ * Half first (a clear change whatever its size), then Half -> Full -> Small -> Half.
+ * @param {string|null|undefined} cur @returns {SizePreset}
+ */
+export function nextPreset(cur) {
+	if (cur === 'half') return 'full';
+	if (cur === 'full') return 'small';
+	return 'half';
+}
+
+/**
+ * The rect of a preset inside the free area.
+ * @param {SizePreset} name
+ * @param {{left: number, right: number, top: number, bottom: number}} area the free area (viewport px)
+ * @param {{left: number, top: number, w: number, h: number}} cur the window's current rect
+ * @param {{minW?: number, minH?: number, margin?: number}} [options]
+ * @returns {{left: number, top: number, w: number, h: number}}
+ */
+export function presetRect(name, area, cur, { minW = 260, minH = 180, margin = WIN_MARGIN } = {}) {
+	const lo = area.left + margin;
+	const hi = area.right - margin;
+	const top = area.top + margin;
+	const bottom = area.bottom - margin;
+	const W = Math.max(120, hi - lo);
+	const H = Math.max(120, bottom - top);
+	const fitW = (/** @type {number} */ w) => Math.round(Math.min(W, Math.max(Math.min(minW, W), w)));
+	const fitH = (/** @type {number} */ h) => Math.round(Math.min(H, Math.max(Math.min(minH, H), h)));
+	if (name === 'full') return { left: Math.round(lo), top: Math.round(top), w: fitW(W), h: fitH(H) };
+	if (name === 'half') {
+		const w = fitW(Math.floor((W - margin) / 2));
+		const centre = cur.left + cur.w / 2;
+		const left = centre < lo + W / 2 ? lo : hi - w;
+		return { left: Math.round(left), top: Math.round(top), w, h: fitH(H) };
+	}
+	const w = fitW(SMALL_PRESET.w);
+	const h = fitH(SMALL_PRESET.h);
+	// Small keeps the window where it is, pulled inside the area
+	const left = Math.min(Math.max(lo, cur.left), hi - w);
+	const t = Math.min(Math.max(top, cur.top), bottom - h);
+	return { left: Math.round(left), top: Math.round(t), w, h };
+}
+
+// the windows that answer the presets register how, against their NODE (the sizeResets shape)
+/** @type {WeakMap<object, (name: SizePreset) => void>} */
+const sizePresets = new WeakMap();
+/** @param {object} node @param {(name: SizePreset) => void} fn @returns {() => void} unregister */
+export function registerSizePresets(node, fn) {
+	sizePresets.set(node, fn);
+	return () => {
+		if (sizePresets.get(node) === fn) sizePresets.delete(node);
+	};
+}
+/** @param {object} node @returns {((name: SizePreset) => void) | null} */
+export function sizePresetsOf(node) {
+	return sizePresets.get(node) ?? null;
+}

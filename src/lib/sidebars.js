@@ -357,7 +357,8 @@ export function setDockMover(fn) {
 /** move a panel to a side (the tab drag's drop) @param {string} key @param {Side} side */
 export function moveSidebarTab(key, side) {
 	if (get(members)[key]?.side !== side) keepSideOpen(key);
-	if (key === 'inspector') inspectorSide.set(side);
+	// showhide-v8: the Inspector's two tabs share one element, so they move together
+	if (isInspectorKey(key)) inspectorSide.set(side);
 	else if (!dockMover?.(key, side)) return false;
 	activateSidebarTab(key);
 	return true;
@@ -365,21 +366,160 @@ export function moveSidebarTab(key, side) {
 
 // ---- the Inspector is a member -----------------------------------------------------------------
 
-/** the Inspector's tab label */
-export const inspectorTabTitle = derived(inspectorKind, ($k) => ($k === 'scene' ? 'Configure Scene' : $k === 'file' ? 'File' : 'Properties'));
+// ---- showhide-v8 (owner 2026-11-09, R2): Properties and Configure Scene are TWO TABS -----------------
+//
+// The owner's reversal: Object Properties and Configure Scene stay separate Inspector tabs that can BOTH be open at
+// once, and selecting an object no longer swaps Properties in place of Configure Scene. They are two column members
+// over ONE Inspector element (the phone dock's model, phoneDock.js `inspTabs`): `'inspector'` is the Properties tab
+// (the selection, or a File), `'scene'` the Configure Scene tab. Both live on `inspectorSide` (one element cannot be
+// drawn in two columns at once), `inspectorClose` / `inspectorKind` stay the app's truth — every caller keeps writing
+// them — and this module keeps the tab set and the element in step:
+//   - the Inspector OPENS with a kind  -> that kind's tab is open (and comes to the front, as a member arriving does)
+//   - a tab comes to the FRONT          -> the element shows its kind
+//   - the Inspector CLOSES              -> the tab that was showing closes; with the other tab still open, the
+//                                          element reopens on it (a close is a tab's close, not the panel's)
+// Off the wide posture (the phone shell) phoneDock owns the same two tabs; this half stands down there.
+
+/** the Inspector's two column members: the Properties tab (selection / file) and the Configure Scene tab */
+export const INSPECTOR_KEYS = ['inspector', 'scene'];
+/** @param {string} key */
+export const isInspectorKey = (key) => key === 'inspector' || key === 'scene';
+/** @param {string} kind @returns {'inspector'|'scene'} */
+export const tabOfKind = (kind) => (kind === 'scene' ? 'scene' : 'inspector');
+
+/** which Inspector tabs are open in the wide posture (LOCAL, not persisted — the Inspector's open state is not) */
+export const inspectorTabs = writable({ inspector: false, scene: false });
+
+/** the Properties tab's label (a File shows in the same tab) */
+export const inspectorTabTitle = derived(inspectorKind, ($k) => ($k === 'file' ? 'File' : 'Properties'));
+/** the Inspector ELEMENT's name where it is one panel of its own (a pop-out window's tab and title): it names what it
+ * shows, Configure Scene included — 78-fix-547: a popped Inspector switched to the scene kept saying "Properties" */
+export const inspectorPanelTitle = derived(inspectorKind, ($k) => ($k === 'scene' ? 'Configure Scene' : $k === 'file' ? 'File' : 'Properties'));
+/** the label of either Inspector tab @param {string} key @param {string} kind */
+export function inspectorTabLabel(key, kind) {
+	if (key === 'scene') return 'Configure Scene';
+	return kind === 'file' ? 'File' : 'Properties';
+}
+
+/** the kind last shown in the Properties tab (a File stays a File when its tab comes back to the front) */
+let propsKind = /** @type {'selection'|'file'} */ ('selection');
+/** writes this module makes to the Inspector stores, so its own listener does not answer them */
+let insOurs = 0;
+/** @param {() => void} fn */
+function insQuietly(fn) {
+	insOurs++;
+	try {
+		fn();
+	} finally {
+		queueMicrotask(() => insOurs--);
+	}
+}
+/** the pending "was that a close or a switch?" check (showSidebar closes + reopens across a 50 ms timer) */
+let closeTimer = /** @type {any} */ (0);
+
+/** the element shows `key`'s kind @param {'inspector'|'scene'} key */
+function showInspectorKind(key) {
+	const want = key === 'scene' ? 'scene' : propsKind;
+	if (!get(inspectorClose) && get(inspectorKind) === want) return;
+	insQuietly(() => {
+		inspectorKind.set(/** @type {any} */ (want));
+		inspectorClose.set(false);
+	});
+}
+
+/**
+ * Close ONE Inspector tab (its ×, Close in its menu, Close others). The other tab, when open, keeps the element.
+ * @param {'inspector'|'scene'} key
+ */
+export function closeInspectorTab(key) {
+	const tabs = get(inspectorTabs);
+	if (!tabs[key]) return;
+	const other = key === 'scene' ? 'inspector' : 'scene';
+	const showing = !get(inspectorClose) && tabOfKind(get(inspectorKind)) === key;
+	inspectorTabs.set({ ...tabs, [key]: false });
+	if (!showing) return;
+	if (tabs[other]) showInspectorKind(other);
+	else insQuietly(() => inspectorClose.set(true));
+}
+
+/**
+ * Open an Inspector tab WITHOUT bringing it to the front (a pinned Properties tab following the selection while
+ * Configure Scene is in front: "selecting fills an open Properties tab, it does not replace another tab").
+ * @param {'inspector'|'scene'} key
+ */
+export function addInspectorTabQuietly(key) {
+	if (get(inspectorTabs)[key]) return;
+	const side = get(inspectorSide);
+	const front = get(sidebarShown)[side];
+	inspectorTabs.update((t) => ({ ...t, [key]: true }));
+	// a member arriving comes to the front (reportMember): put the front tab back where it was
+	if (front && front !== key) activateSidebarTab(front);
+}
+
+/** the app opened / switched / closed the Inspector (wide posture only) @param {boolean} closed @param {string} kind */
+function onInspector(closed, kind) {
+	if (insOurs || !get(sidebarsWide)) return;
+	clearTimeout(closeTimer);
+	if (!closed) {
+		const key = tabOfKind(kind);
+		if (key === 'inspector') propsKind = kind === 'file' ? 'file' : 'selection';
+		const tabs = get(inspectorTabs);
+		if (!tabs[key]) inspectorTabs.set({ ...tabs, [key]: true });
+		else activateSidebarTab(key); // an open of a covered tab brings it forward (the old one-member arrival)
+		return;
+	}
+	// a close: wait out showSidebar's close-then-reopen (a switch), then close the tab that was showing
+	const was = tabOfKind(kind);
+	const other = was === 'scene' ? 'inspector' : 'scene';
+	const settle = () => {
+		if (!get(inspectorClose)) return;
+		const tabs = get(inspectorTabs);
+		if (tabs[other] && !get(panelAway).inspector) {
+			inspectorTabs.set({ ...tabs, [was]: false });
+			showInspectorKind(other);
+		} else if (tabs.inspector || tabs.scene) inspectorTabs.set({ inspector: false, scene: false });
+	};
+	// 78-fix-547: with no other Inspector tab to fall back to, the column closes AT ONCE — waiting the 80 ms left an
+	// empty column on screen for five frames and the top clusters and the profile jumped after it (controls-clusters
+	// N3: they move with the column, never after it). A switch only waits when the other tab can take the element.
+	const tabs = get(inspectorTabs);
+	if (!(tabs[other] && !get(panelAway).inspector)) return settle();
+	closeTimer = setTimeout(settle, 80);
+}
 
 let wired = false;
 /** wire the Inspector's membership + the CSS bus (once, from the always-mounted editor chrome) */
 export function startSidebars() {
 	if (wired || typeof document === 'undefined') return;
 	wired = true;
+	// showhide-v8: seed the tab set from an Inspector already open at boot
+	if (!get(inspectorClose)) inspectorTabs.set({ inspector: get(inspectorKind) !== 'scene', scene: get(inspectorKind) === 'scene' });
+	derived([inspectorClose, inspectorKind], (x) => x).subscribe(([closed, kind]) => onInspector(closed, kind));
+	// back from the phone posture (phoneDock owned the tabs there): the column's tabs follow the Inspector as it is now
+	sidebarsWide.subscribe((wide) => {
+		if (!wide) return;
+		const closed = get(inspectorClose);
+		const key = tabOfKind(get(inspectorKind));
+		const tabs = get(inspectorTabs);
+		if (closed && (tabs.inspector || tabs.scene)) inspectorTabs.set({ inspector: false, scene: false });
+		else if (!closed && !tabs[key]) inspectorTabs.set({ ...tabs, [key]: true });
+	});
 	// 70 W2: an Inspector in a pop-out window is no column member (it keeps its side for coming back)
-	derived([inspectorClose, inspectorSide, panelAway], (x) => x).subscribe(([closed, side, away]) => reportMember('inspector', side, !closed && !away.inspector));
+	derived([inspectorTabs, inspectorSide, panelAway], (x) => x).subscribe(([tabs, side, away]) => {
+		reportMember('inspector', side, tabs.inspector && !away.inspector);
+		reportMember('scene', side, tabs.scene && !away.inspector);
+	});
+	// a tab brought to the front shows its kind in the one element
+	sidebarShown.subscribe((shown) => {
+		const key = shown[get(inspectorSide)];
+		if (key && isInspectorKey(key) && get(inspectorTabs)[/** @type {'inspector'|'scene'} */ (key)]) showInspectorKind(/** @type {any} */ (key));
+	});
 	// an explicit open of an Inspector that is already open (Configure Scene, double-click,
 	// a deep link) brings its tab to the front of the column
 	setInspectorFocuser(() => {
-		const covered = sidebarTabCovered('inspector');
-		activateSidebarTab('inspector');
+		const key = tabOfKind(get(inspectorKind));
+		const covered = sidebarTabCovered(key);
+		activateSidebarTab(key);
 		return covered;
 	});
 	geometry.subscribe(publish);

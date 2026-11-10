@@ -32,6 +32,7 @@ import { createKit, KIT_DOC, KIT_REQ } from './core.js';
 import { KIT_PIECES } from './index.js';
 import { kitNodeType } from './spec.js';
 import { entitiesOfKit } from './entityHub.js';
+import { log } from '../diagnostics';
 
 export { KIT_DOC, KIT_REQ };
 
@@ -41,6 +42,8 @@ export { KIT_DOC, KIT_REQ };
 export function primeKitRuntime() {
 	import('../physics').then((m) => (physicsRef = m)).catch(() => {});
 	import('../flowRuntime').then((m) => (flowRef = m)).catch(() => {});
+	// 93 LP0: the scene's Levels table defines kit.levels on every peer (78 F19: nodes need no module code)
+	import('../gameLevels/runtime.js').then((m) => m.installLevelsRuntime()).catch(() => {});
 	// the K3 pause menu's Restart restarts a kit round (a game using kit.round needs no hook of
 	// its own); a game that never started one is left alone. Dynamic: gameShell reaches
 	// playSettings, which reads this file.
@@ -141,6 +144,11 @@ const host = {
 				...(opts.vars ? { vars: opts.vars } : {})
 			})
 	},
+	// 78 F17: a refusal is written down where people and agents look — the diagnostics log (the
+	// agent's logs / status, the Debug console) — with its reason
+	onRefused(r) {
+		log('warn', 'kit', r.piece + '.' + r.op + ' refused: ' + r.reason, r.from ? { from: r.from } : undefined);
+	},
 	emit(piece, event, _payload, opts) {
 		const type = kitNodeType(piece, event);
 		// a LOCAL event keeps its pulse in this peer's trigger log (the perPlayer rule)
@@ -168,6 +176,16 @@ export function kitPayload() {
 export function tickKit() {
 	kit.tick();
 	touchPickups();
+	for (const fn of tickHooks) fn();
+}
+
+/** 93 LP1: per-frame hooks beside the kit's own (portals / checkpoints) — a hook, so the levels runtime
+ * stays a dynamic import from here @type {Set<() => void>} */
+const tickHooks = new Set();
+/** @param {() => void} fn @returns {() => void} off */
+export function onKitTick(fn) {
+	tickHooks.add(fn);
+	return () => tickHooks.delete(fn);
 }
 
 /** 34 R2: kit.pickups' TOUCH — this player walking into a registered pickup takes it. ~10x a
@@ -195,9 +213,15 @@ function touchPickups() {
 	});
 }
 
-/** a scene clear / load: the next game starts from nothing (local; every peer clears too) */
-export function resetKit() {
-	kit.reset();
+/** a scene clear / load: the next game starts from nothing.
+ * 78 F16: `shared` = the room clears together (a replicated `/clear all`, a peer's
+ * `clearscene`) with somebody here to share it — stamped fresh, so it beats a stale document.
+ * Anything else (a travel, a boot restore, a scene loaded while alone) is LOCAL: the reset
+ * starts from nothing but outranks nobody, so the room's live document (a late joiner's
+ * handshake) is taken, and this peer's reset never wipes the room's game.
+ * @param {{shared?: boolean}} [opts] */
+export function resetKit(opts = {}) {
+	kit.reset({ local: !(opts.shared && openPeers().length > 0) });
 }
 
 /** 34 R2: the grab question every grab path asks (kit.rules.checkGrab): reach + vetoes.
@@ -219,5 +243,5 @@ export function kitEntitiesRuntime() {
 
 /** the debug hook / suites */
 export function kitDebug() {
-	return { doc: kit.doc(), stats: { ...kit.stats }, pending: kit.pending.size, authority: kitAuthorityId(), me: me() };
+	return { doc: kit.doc(), stats: { ...kit.stats }, pending: kit.pending.size, authority: kitAuthorityId(), me: me(), refusals: kit.refusals.map((/** @type {any} */ r) => ({ ...r })) };
 }

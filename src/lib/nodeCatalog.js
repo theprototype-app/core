@@ -22,6 +22,17 @@ import { MUSIC_PRESET_IDS } from './gameMusicPresets';
 // 34 R2: the kit's node groups (a pure leaf over the piece specs)
 import { kitCatalogGroups } from './kit/catalog.js';
 import { BEHAVIOUR_STARTER } from './behaviours/starter.js';
+// 85 N1/N2: the easing + pivot names live in the pure core the runtime reads (a leaf)
+import { EASINGS, PIVOTS } from './motion/tweenCore.js';
+/** 85 N2: the tween sockets' labels (shared by Move / Rotate / Scale To) */
+const TWEEN_LABELS = {
+	trigger: 'trigger — go to the goal',
+	back: 'back — return to rest',
+	toggle: 'toggle — each pulse goes / returns',
+	open: 'open — at the goal while true',
+	amount: 'amount — 0 rest … 1 goal, by hand',
+	to: 'to — a point or an object (optional)'
+};
 /** Announce's value mark, spelled once OUTSIDE the catalog literals: a brace inside a node's
  * strings breaks the brace-matching scan flow-node-docs reads this file with */
 const V_MARK = '{v}';
@@ -217,7 +228,24 @@ export const nodeCatalog = [
 			// "which camera does the game start from" — placed in the SCENE graph. Every peer
 			// acts on it when the state enters `playing`, including a late joiner, which is
 			// what makes it the answer rather than a one-shot button action.
-			{ type: 'gamestart', label: 'Game Start', defaults: { camera: '', state: 'playing' } },
+			// 78 F13: labelled "Start camera" — "Game Start" read like an event and is not one (it
+			// never pulses). The type id stays `gamestart`: it is in saved graphs and on the wire.
+			{ type: 'gamestart', label: 'Start camera', defaults: { camera: '', state: 'playing' } },
+			// 78 F13: the events "Game Start" was mistaken for. `who`: session = the first player
+			// presses Play / the last one leaves (every peer pulses, derived from the replicated play
+			// presence); me = THIS peer presses Play / leaves (this peer only). Never sent.
+			{
+				type: 'onplaystart',
+				label: 'On Play start',
+				defaults: { who: 'session', pulse: 0.3 },
+				params: [{ key: 'who', kind: 'select', options: ['session', 'me'], doc: 'session = when the first player presses Play (every peer); me = when you press Play' }]
+			},
+			{
+				type: 'onplaystop',
+				label: 'On Play stop',
+				defaults: { who: 'session', pulse: 0.3 },
+				params: [{ key: 'who', kind: 'select', options: ['session', 'me'], doc: 'session = when the last player leaves Play (every peer); me = when you leave Play' }]
+			},
 			// 21-F4: SCENE TRAVEL. Acts on the trigger's STAMP EDGE like Set Game State;
 			// every peer loads the scene ITSELF (a peer missing the bytes pulls them
 			// first), the game state CARRIES across the hop, and the scene is picked by
@@ -306,7 +334,7 @@ export const nodeCatalog = [
 					{ key: 'seconds', kind: 'range', min: 0.3, max: 15, step: 0.1 },
 					{ key: 'color', kind: 'text', placeholder: '#ffd76a', maxLength: 20 }
 				],
-				note: 'A big banner on every screen (and in VR) — each player sees it from the same pulse.'
+				note: 'A big banner on every screen (and in VR) in Play — each player sees it from the same pulse. In Edit it goes to the Debugger console instead.'
 			},
 			{
 				type: 'gamesound',
@@ -380,6 +408,35 @@ export const nodeCatalog = [
 			},
 			// POINT GRAB: while `enabled` reads false, players cannot pick things up by POINTING
 			// at them (the VR grip ray, the desktop carry) — only a hand that touches moves them.
+			// 85 I1: GRABBABLE — the object can be picked up in Play with NO simulation (a kinematic
+			// carry, streamed like a physics carry) and on release stays where it was put or glides
+			// back to where it was taken from. A declaration (no per-frame effect): playInteract asks
+			// flowRuntime.kinematicGrab(uuid). grabReturn.js
+			{
+				type: 'grabbable',
+				label: 'Grabbable',
+				defaults: { release: 'stay', returnAfter: 1, returnTime: 0.6 },
+				params: [
+					{ key: 'release', kind: 'select', options: ['stay', 'return'] },
+					{ key: 'returnAfter', kind: 'range', min: 0, max: 30, step: 0.5, doc: 'seconds before it glides home' },
+					{ key: 'returnTime', kind: 'range', min: 0.1, max: 5, step: 0.1, doc: 'seconds the glide takes' }
+				],
+				note: 'Works without the simulation. A dynamic body during a run is carried by physics as before.'
+			},
+			// 85 I3: SIT SPOT — a click on the object sits YOU down on top of it, facing its front; a
+			// move key, jump or a stick push stands you up. Local per player (your avatar shows it to
+			// the others). A declaration like Grabbable: sitSpot.js asks flowRuntime.sitSpotFor(uuid).
+			{
+				type: 'sitspot',
+				label: 'Sit Spot',
+				defaults: { facing: '+z', eyeHeight: 0.7, forward: 0 },
+				params: [
+					{ key: 'facing', kind: 'select', options: ['+z', '-z', '+x', '-x'], doc: 'the seat\'s front, in its own frame' },
+					{ key: 'eyeHeight', kind: 'range', min: 0.2, max: 1.5, step: 0.05, doc: 'eyes above the seat top, in metres' },
+					{ key: 'forward', kind: 'range', min: -1, max: 1, step: 0.05, doc: 'shift the spot toward the front (a sofa\'s cushion edge)' }
+				],
+				note: 'Desktop: in Play. VR: in Interact. A seat with someone on it says so.'
+			},
 			{
 				type: 'pointgrab',
 				label: 'Point Grab',
@@ -817,7 +874,16 @@ export const nodeCatalog = [
 			},
 			{ type: 'timer', label: 'Timer', defaults: { delay: 1, a: 0 } },
 			{ type: 'distance', label: 'Distance', defaults: {} },
-			{ type: 'proximity', label: 'Proximity', defaults: { radius: 3 } },
+			{
+				type: 'proximity',
+				label: 'Proximity',
+				defaults: { radius: 3 },
+				// 78 F10: to: player — b is THIS peer's player (its body, feet to eye)
+				params: [
+					{ key: 'radius', kind: 'number', step: 0.1 },
+					{ key: 'to', kind: 'select', options: ['object', 'player'], legacy: 'object', doc: 'object = the object wired into b; player = your own player (each peer reads its own)' }
+				]
+			},
 			{ type: 'lookat', label: 'Look At', defaults: {} },
 			{ type: 'setcolor', label: 'Set Color', defaults: { color: '#ff4000' } },
 			{ type: 'visibility', label: 'Visibility', defaults: { on: true } },
@@ -832,6 +898,22 @@ export const nodeCatalog = [
 		items: [
 			// 134: EVENT nodes — ride small replicated trigger messages, not state
 			{ type: 'onclick', label: 'On Click', defaults: { pulse: 0.3 } },
+			// 78 F2: a pointer, a phone tap or a VR laser over the object (Play / Interact). The
+			// stamp replicates for `anyone` (everyone sees the bell swing) and stays on this peer
+			// for `me`. `over` holds while the pointer stays.
+			{
+				type: 'onhover',
+				label: 'On Hover',
+				defaults: { on: 'enter', who: 'anyone', cooldown: 0, pulse: 0.3 },
+				inputs: ['enabled'],
+				inputLabels: { enabled: 'enabled - wire a boolean (unwired = on)' },
+				params: [
+					{ key: 'on', kind: 'select', options: ['enter', 'leave', 'over'] },
+					{ key: 'who', kind: 'select', options: ['anyone', 'me'] },
+					{ key: 'cooldown', kind: 'range', min: 0, max: 10, step: 0.1 }
+				],
+				note: 'Wire it into an Object Selector, or put it in the object\'s own flow. Mouse in Interact, the crosshair in Play, a tap on a phone, the laser in VR.'
+			},
 			// 30b (core-games): a player picked the object up — desktop play/Interact carry or
 			// a VR Interact grip (never an editor move). Towers' crates sound on the lift.
 			{ type: 'ongrab', label: 'On Grab', defaults: { pulse: 0.3 } },
@@ -916,6 +998,43 @@ export const nodeCatalog = [
 	{
 		group: 'Animation',
 		items: [
+			// 78 F2: a swing / wobble / pop from hover stamps — every peer computes the same pose
+			{
+				type: 'hoveranimate',
+				label: 'Hover Animate',
+				defaults: { style: 'swing', mode: 'energy', amount: 20, axis: 'z', freq: 1.2, damping: 1.2, seconds: 0.25, sound: 'none', soundName: 'ring' },
+				inputs: ['trigger'],
+				inputLabels: { trigger: 'trigger - an On Hover (or any event)' },
+				params: [
+					{ key: 'style', kind: 'select', options: ['swing', 'wobble', 'pop'] },
+					{ key: 'mode', kind: 'select', options: ['energy', 'once', 'restart', 'while', 'stop', 'inout'] },
+					{ key: 'amount', kind: 'range', min: 0, max: 90, step: 1, label: 'amount (degrees, % for pop)' },
+					{ key: 'axis', kind: 'select', options: ['z', 'x', 'y'] },
+					{ key: 'freq', kind: 'range', min: 0.2, max: 6, step: 0.1, label: 'swings per second' },
+					{ key: 'damping', kind: 'range', min: 0, max: 6, step: 0.1 },
+					{ key: 'seconds', kind: 'range', min: 0.05, max: 2, step: 0.05, label: 'in-out seconds' },
+					{ key: 'sound', kind: 'select', options: ['none', 'start', 'extremes'] },
+					{ key: 'soundName', kind: 'select', options: [...GAME_SOUND_NAMES] }
+				],
+				note: 'energy: each hover adds a swing (a bell) · once · restart · while hovered · stop dead when it ends · in-out holds a hovered pose.'
+			},
+			// 78 F3 / F8: a door, a lid, a drawer — between captured poses, state saved in the node
+			{
+				type: 'toggleanim',
+				label: 'Toggle Animation',
+				defaults: { duration: 0.6, ease: 'smooth', interrupt: 'reverse', autoClose: 0, pose: '', openSound: 'none', closeSound: 'none', poses: [] },
+				inputs: ['trigger', 'open', 'close', 'goto', 'pose', 'enabled'],
+				params: [
+					{ key: 'duration', kind: 'range', min: 0, max: 5, step: 0.05 },
+					{ key: 'ease', kind: 'select', options: ['smooth', 'linear'] },
+					{ key: 'interrupt', kind: 'select', options: ['reverse', 'finish'] },
+					{ key: 'autoClose', kind: 'range', min: 0, max: 60, step: 0.5 },
+					{ key: 'pose', kind: 'text', placeholder: 'pose for "go to" (name or number)', maxLength: 40 },
+					{ key: 'openSound', kind: 'select', options: ['none', ...GAME_SOUND_NAMES] },
+					{ key: 'closeSound', kind: 'select', options: ['none', ...GAME_SOUND_NAMES] }
+				],
+				note: 'Open/closed is shared and saved: everyone, and anyone who joins later, sees the same door.'
+			},
 			{
 				type: 'shake',
 				label: 'Shake',
@@ -981,10 +1100,95 @@ export const nodeCatalog = [
 					{ key: 'speed', kind: 'range', min: -5, max: 5, step: 0.1 }
 				]
 			},
+			// 85 N1: a swing / sway / bob — a sine on rotation, position or scale from the shared clock,
+			// about a PIVOT face (a sign on its hook, a door on its hinge). A wired trigger starts a
+			// swing that dies away with damping (a struck bell). motion/tweenNodes.js
 			{
+				type: 'oscillate',
+				label: 'Oscillate / Swing',
+				defaults: { property: 'rotation', axis: 'z', amplitude: 20, period: 2, phase: 0, damping: 0, wave: 'sine', pivot: 'top' },
+				inputs: ['trigger'],
+				inputLabels: { trigger: 'trigger — start a swing that dies away (optional)' },
+				params: [
+					{ key: 'property', kind: 'select', options: ['rotation', 'position', 'scale'] },
+					{ key: 'axis', kind: 'select', options: ['x', 'y', 'z', 'all'] },
+					{ key: 'amplitude', kind: 'range', min: -180, max: 180, step: 0.01, doc: 'degrees (rotation), metres (position) or a fraction (scale)' },
+					{ key: 'period', kind: 'range', min: 0.1, max: 20, step: 0.05, doc: 'seconds per full swing' },
+					{ key: 'phase', kind: 'range', min: 0, max: 1, step: 0.01 },
+					{ key: 'damping', kind: 'range', min: 0, max: 5, step: 0.05, doc: 'how fast a triggered swing dies away' },
+					{ key: 'wave', kind: 'select', options: ['sine', 'triangle', 'bob'] },
+					{ key: 'pivot', kind: 'select', options: PIVOTS }
+				],
+				note: 'Rotation swings about the pivot face: top for a hanging sign or lamp, left / right for a door.'
+			},
+			// 85 N2: the TWEENS — go to a goal over a duration with easing, and back. Every peer computes
+			// the pose from the same replicated trigger stamps (trigger = go, back = return, toggle =
+			// alternate, open = a boolean held true / false). motion/tweenNodes.js
+			{
+				type: 'moveto',
+				label: 'Move To',
+				defaults: { x: 0, y: 1, z: 0, space: 'offset', duration: 1, easing: 'smooth', repeat: 'none' },
+				inputs: ['trigger', 'back', 'toggle', 'open', 'amount', 'to'],
+				inputLabels: TWEEN_LABELS,
+				params: [
+					{ key: 'x', kind: 'range', min: -20, max: 20, step: 0.05 },
+					{ key: 'y', kind: 'range', min: -20, max: 20, step: 0.05 },
+					{ key: 'z', kind: 'range', min: -20, max: 20, step: 0.05 },
+					{ key: 'space', kind: 'select', options: ['offset', 'world'] },
+					{ key: 'duration', kind: 'range', min: 0.05, max: 10, step: 0.05 },
+					{ key: 'easing', kind: 'select', options: EASINGS },
+					{ key: 'repeat', kind: 'select', options: ['none', 'pingpong', 'loop'] }
+				]
+			},
+			{
+				type: 'rotateto',
+				label: 'Rotate To',
+				defaults: { axis: 'y', angle: 90, pivot: 'origin', duration: 1, easing: 'smooth', repeat: 'none' },
+				inputs: ['trigger', 'back', 'toggle', 'open', 'amount', 'to'],
+				inputLabels: { ...TWEEN_LABELS, to: 'to — match this object\'s rotation (optional)' },
+				params: [
+					{ key: 'axis', kind: 'select', options: ['x', 'y', 'z'] },
+					{ key: 'angle', kind: 'range', min: -360, max: 360, step: 1, doc: 'degrees from the rest pose' },
+					{ key: 'pivot', kind: 'select', options: PIVOTS },
+					{ key: 'duration', kind: 'range', min: 0.05, max: 10, step: 0.05 },
+					{ key: 'easing', kind: 'select', options: EASINGS },
+					{ key: 'repeat', kind: 'select', options: ['none', 'pingpong', 'loop'] }
+				],
+				note: 'A door: pivot left (or right), axis y, angle 90 — wire On Click into toggle.'
+			},
+			{
+				type: 'scaleto',
+				label: 'Scale To',
+				defaults: { factor: 2, axis: 'all', pivot: 'origin', duration: 1, easing: 'smooth', repeat: 'none' },
+				inputs: ['trigger', 'back', 'toggle', 'open', 'amount', 'to'],
+				inputLabels: { ...TWEEN_LABELS, to: 'to — match this object\'s size (optional)' },
+				params: [
+					{ key: 'factor', kind: 'range', min: 0, max: 10, step: 0.05, doc: 'times the rest size' },
+					{ key: 'axis', kind: 'select', options: ['all', 'x', 'y', 'z'] },
+					{ key: 'pivot', kind: 'select', options: PIVOTS },
+					{ key: 'duration', kind: 'range', min: 0.05, max: 10, step: 0.05 },
+					{ key: 'easing', kind: 'select', options: EASINGS },
+					{ key: 'repeat', kind: 'select', options: ['none', 'pingpong', 'loop'] }
+				]
+			},
+			{
+				// 78 F4: walks a PATH OBJECT (`path`, picked on the card or wired) on its schedule —
+				// waits, speeds, gaps, events, loop modes all live on the Path. `trigger` starts a
+				// once-walk; `offset` (s) spreads several guards on one path. Clicked waypoints
+				// (`points`) are the legacy walk, and the card offers Convert
 				type: 'pathpatrol',
 				label: 'Path patrol',
-				defaults: { points: [], speed: 1, mode: 'loop' }
+				defaults: { points: [], speed: 1, mode: 'loop', path: '', offset: 0, face: true },
+				inputs: ['path', 'trigger'],
+				inputLabels: { path: 'path — a Path object', trigger: 'trigger — starts a Once walk' }
+			},
+			{
+				// 78 F4: a walker on a Path arrived at a point carrying an EVENT (named on the point).
+				// Blank path / event = any. Fired LOCALLY on every peer at the SAME shared moment
+				// (each walks the same schedule), the onseqevent reasoning
+				type: 'onpathevent',
+				label: 'On Path Event',
+				defaults: { path: '', event: '', pulse: 0.3 }
 			},
 			// 40 F15: GENERAL-PURPOSE motion (motion/motionNodes.js). Movers first (Follow Path,
 			// Wander are pure functions of the shared clock), then the followers that read the
@@ -1037,6 +1241,32 @@ export const nodeCatalog = [
 					{ key: 'ground', kind: 'toggle' }
 				]
 			},
+			// 85 N3: AMBIENT ANIMALS — Wander with rests, facing where it goes, looking at the nearest
+			// player while resting, optionally shying away; an animated model plays its idle / walk /
+			// run clips (57's Blend by Speed). motion/ambientNodes.js
+			{
+				type: 'ambientanimal',
+				label: 'Ambient Animal',
+				defaults: { speed: 0.3, seed: 0, rx: 3, ry: 0.3, rz: 3, margin: 0.2, ground: true, rest: 0.35, restTime: 3, lookRadius: 4, fleeRadius: 0, fleeDistance: 2, turnSpeed: 4, forward: '+z', clips: true },
+				inputs: ['area'],
+				inputLabels: { area: 'area — stay inside this object (a pen, a tank)' },
+				params: [
+					{ key: 'speed', kind: 'range', min: 0, max: 3, step: 0.05 },
+					{ key: 'rest', kind: 'range', min: 0, max: 0.9, step: 0.05, doc: 'the share of time it stands still (0 = never)' },
+					{ key: 'restTime', kind: 'range', min: 0.5, max: 30, step: 0.5, doc: 'seconds per rest' },
+					{ key: 'lookRadius', kind: 'range', min: 0, max: 20, step: 0.5, doc: 'looks at a player this close while resting (0 = never)' },
+					{ key: 'fleeRadius', kind: 'range', min: 0, max: 20, step: 0.5, doc: 'shies away from a player this close (0 = tame)' },
+					{ key: 'fleeDistance', kind: 'range', min: 0, max: 10, step: 0.1 },
+					{ key: 'rx', kind: 'range', min: 0, max: 30, step: 0.1 },
+					{ key: 'ry', kind: 'range', min: 0, max: 10, step: 0.1 },
+					{ key: 'rz', kind: 'range', min: 0, max: 30, step: 0.1 },
+					{ key: 'seed', kind: 'range', min: 0, max: 999, step: 1 },
+					{ key: 'turnSpeed', kind: 'range', min: 0.5, max: 30, step: 0.5 },
+					{ key: 'forward', kind: 'select', options: ['+z', '-z', '+x', '-x'] },
+					{ key: 'ground', kind: 'toggle', label: 'walks on the ground (off: fish, birds)' },
+					{ key: 'clips', kind: 'toggle', label: 'play idle / walk / run clips' }
+				]
+			},
 			{
 				type: 'orientvelocity',
 				label: 'Orient to Velocity',
@@ -1080,6 +1310,39 @@ export const nodeCatalog = [
 					{ key: 'reverse', kind: 'toggle' }
 				],
 				note: 'Bends the look only (a vertex shader): physics and picking see the rest pose.'
+			},
+			// 85 N5: WIND — plants lean and sway in gusts, flags wave from their pole. A vertex
+			// deformer like Body Wave, so it composes with Jiggle / Body Wave on the same mesh.
+			{
+				type: 'windsway',
+				label: 'Wind Sway',
+				defaults: { mode: 'plant', anchor: 'bottom', strength: 0.15, frequency: 0.6, gust: 0.5, direction: 0, wavelength: 1, flutter: 0.3 },
+				params: [
+					{ key: 'mode', kind: 'select', options: ['plant', 'flag'] },
+					{ key: 'anchor', kind: 'select', options: ['bottom', 'top', 'left', 'right', 'front', 'back'], doc: 'the fixed end: bottom for a plant, left for a flag on a pole' },
+					{ key: 'strength', kind: 'range', min: 0, max: 2, step: 0.01, doc: 'metres the free end moves' },
+					{ key: 'frequency', kind: 'range', min: 0, max: 5, step: 0.05 },
+					{ key: 'gust', kind: 'range', min: 0, max: 1, step: 0.05 },
+					{ key: 'direction', kind: 'range', min: -180, max: 180, step: 1, doc: 'wind heading in degrees (0 = +x)' },
+					{ key: 'wavelength', kind: 'range', min: 0.1, max: 10, step: 0.05 },
+					{ key: 'flutter', kind: 'range', min: 0, max: 1, step: 0.05 }
+				],
+				note: 'Moves the look only (a vertex shader): physics and picking see the rest pose.'
+			},
+			// 85 N5: FLOWING WATER — the material's maps scroll with the current and the surface swells;
+			// a mesh with no normal map borrows the procedural ripples (the Water preset's)
+			{
+				type: 'waterflow',
+				label: 'Flowing Water',
+				defaults: { speed: 0.1, direction: 0, swell: 0.03, swellSize: 2, ripples: true },
+				params: [
+					{ key: 'speed', kind: 'range', min: -2, max: 2, step: 0.01, doc: 'texture tiles per second' },
+					{ key: 'direction', kind: 'range', min: -180, max: 180, step: 1 },
+					{ key: 'swell', kind: 'range', min: 0, max: 0.5, step: 0.005, doc: 'metres up and down' },
+					{ key: 'swellSize', kind: 'range', min: 0.2, max: 20, step: 0.1 },
+					{ key: 'ripples', kind: 'toggle', label: 'add ripples if the material has none' }
+				],
+				note: 'Best on the Water material preset; the look only (physics keeps the flat surface).'
 			},
 			{
 				// 17-E: the other half of Play Animation — pulses when a clip FINISHES,
@@ -1242,8 +1505,19 @@ export const nodeCatalog = [
 				]
 			},
 			// CL-C C2: sensor overlap edges (initiator-detected, replicated stamps)
-			{ type: 'onenter', label: 'On Enter', defaults: { pulse: 0.3 } },
-			{ type: 'onexit', label: 'On Exit', defaults: { pulse: 0.3 } },
+			// 78 F10: + the player (every peer feels its own); `who` picks anything / player / objects
+			{
+				type: 'onenter',
+				label: 'On Enter',
+				defaults: { pulse: 0.3 },
+				params: [{ key: 'who', kind: 'select', options: ['any', 'player', 'objects'], legacy: 'any', doc: 'any = objects and the player; player = only a player walking in; objects = only bodies' }]
+			},
+			{
+				type: 'onexit',
+				label: 'On Exit',
+				defaults: { pulse: 0.3 },
+				params: [{ key: 'who', kind: 'select', options: ['any', 'player', 'objects'], legacy: 'any', doc: 'any = objects and the player; player = only a player walking out; objects = only bodies' }]
+			},
 			{
 				type: 'mass',
 				label: 'Mass',
@@ -1368,6 +1642,75 @@ export const nodeCatalog = [
 				defaults: { speed: 2 },
 				params: [{ key: 'speed', kind: 'range', min: 0.2, max: 10, step: 0.1 }]
 			},
+			// 85 N4: LIGHT CONTROL — a lamp you switch, a light that fades, a colour cycle. Drives every
+			// light in the object (a lamp model's bulb light too) and, with glow on, its emissive
+			// meshes. Local per peer from replicated stamps / the shared clock. motion/lightNodes.js
+			{
+				type: 'lightswitch',
+				label: 'Light Switch',
+				defaults: { on: true, fade: 0.3, glow: true },
+				inputs: ['trigger', 'back', 'toggle', 'on'],
+				inputLabels: { trigger: 'switch on', back: 'switch off', toggle: 'toggle — each pulse flips it', on: 'on — wire a boolean' },
+				params: [
+					{ key: 'on', kind: 'toggle', label: 'on at start' },
+					{ key: 'fade', kind: 'range', min: 0, max: 5, step: 0.05 },
+					{ key: 'glow', kind: 'toggle', label: 'dim glowing parts too' }
+				]
+			},
+			{
+				type: 'lightintensity',
+				label: 'Light Intensity',
+				defaults: { level: 1, fade: 0.5, glow: true },
+				params: [
+					{ key: 'level', kind: 'range', min: 0, max: 10, step: 0.05, doc: 'times the light\'s own intensity' },
+					{ key: 'fade', kind: 'range', min: 0, max: 10, step: 0.05 },
+					{ key: 'glow', kind: 'toggle', label: 'dim glowing parts too' }
+				]
+			},
+			{
+				type: 'lightcycle',
+				label: 'Light Colour Cycle',
+				defaults: { mode: 'rainbow', period: 4, saturation: 1, colors: '#ff3b30, #ffcc00, #34c759, #0a84ff', step: false, glow: true },
+				params: [
+					{ key: 'mode', kind: 'select', options: ['rainbow', 'list'] },
+					{ key: 'period', kind: 'range', min: 0.2, max: 60, step: 0.1 },
+					{ key: 'saturation', kind: 'range', min: 0, max: 1, step: 0.05 },
+					{ key: 'colors', kind: 'text', placeholder: '#ff0000, #00ff00, #0000ff', maxLength: 120 },
+					{ key: 'step', kind: 'toggle', label: 'jump between colours' },
+					{ key: 'glow', kind: 'toggle', label: 'tint glowing parts too' }
+				]
+			},
+			// 85 I2: a HOVER HIGHLIGHT and a PRESS BUTTON. Highlight glows while this person points at
+			// the object (a VR laser or the play crosshair) or while a wired boolean is true — local per
+			// peer. Press Button goes in and springs back on each press, from the replicated stamp.
+			// motion/pressNodes.js
+			{
+				type: 'highlight',
+				label: 'Highlight',
+				defaults: { color: '#ffd54a', strength: 0.6, fade: 0.15 },
+				inputs: ['on'],
+				inputLabels: { on: 'on — unwired: while you point at it' },
+				params: [
+					{ key: 'color', kind: 'color' },
+					{ key: 'strength', kind: 'range', min: 0, max: 3, step: 0.05, doc: 'how bright the glow is' },
+					{ key: 'fade', kind: 'range', min: 0, max: 2, step: 0.05, doc: 'seconds to light up / go out' }
+				],
+				note: 'Each player sees what THEY point at. Works on materials with a glow (standard, physical, lambert, phong).'
+			},
+			{
+				type: 'pressbutton',
+				label: 'Press Button',
+				defaults: { axis: '-y', depth: 0.04, down: 0.08, hold: 0.1, up: 0.3 },
+				inputs: ['trigger'],
+				inputLabels: { trigger: 'press — On Click into here' },
+				params: [
+					{ key: 'axis', kind: 'select', options: ['-y', '+y', '-z', '+z', '-x', '+x'], doc: 'the way it goes in, in the object\'s own frame' },
+					{ key: 'depth', kind: 'range', min: 0, max: 0.5, step: 0.005, doc: 'metres' },
+					{ key: 'down', kind: 'range', min: 0.02, max: 1, step: 0.01, doc: 'seconds to go in' },
+					{ key: 'hold', kind: 'range', min: 0, max: 2, step: 0.05, doc: 'seconds held in' },
+					{ key: 'up', kind: 'range', min: 0.05, max: 2, step: 0.05, doc: 'seconds to spring back' }
+				]
+			},
 			{
 				// spatial audio on the connected object; file from the Explorer (97)
 				type: 'sound',
@@ -1451,8 +1794,14 @@ export const nodeCatalog = [
 // managed object actions: LookAt orients, Set Color paints, Visibility toggles)
 export const animationTypes = [
 	'shake', 'spin', 'bounce', 'orbit', 'pulse', 'blink', 'pathpatrol',
+	'hoveranimate', 'toggleanim', // 78 F2 / F3
 	'rotor', 'flowfloat', // 36-fb F25/F24 (sim/motionNodes.js)
 	'followpath', 'wander', 'orientvelocity', 'bodywave', // 40 F15 (motion/motionNodes.js)
+	'oscillate', 'moveto', 'rotateto', 'scaleto', // 85 N1/N2 (motion/tweenNodes.js)
+	'lightswitch', 'lightintensity', 'lightcycle', // 85 N4 (motion/lightNodes.js)
+	'windsway', 'waterflow', // 85 N5 (motion/swayNodes.js)
+	'ambientanimal', // 85 N3 (motion/ambientNodes.js)
+	'highlight', 'pressbutton', // 85 I2 (motion/pressNodes.js)
 	'lookat', 'setcolor', 'visibility', 'setuniform',
 	'camerarig', // 37 (R8)
 	'deviceparam', 'notetrigger' // 23-B3

@@ -367,7 +367,7 @@ export function chatToMarkdown(doc, opts = {}) {
 	for (const e of doc.log ?? []) {
 		const at = num(e?.at);
 		if (!at) continue;
-		rows.push({ at, md: '> ⚙ ' + logLine(e) });
+		rows.push({ at, md: '> · ' + logLine(e) });
 	}
 	// stable: messages keep their order; a log line slots in after the last message not newer than it
 	rows.sort((a, b) => (a.at && b.at ? a.at - b.at : 0));

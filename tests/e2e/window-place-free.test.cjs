@@ -88,7 +88,7 @@ h.run(async () => {
 		s.explorerClose.set(false);
 	});
 	await page.waitForTimeout(1500);
-	h.check((await rightTabs(page)).join() === 'inspector' && (await dockKeys(page)).includes('flow'), `0 premise: Configure Scene in the right sidebar, the Node editor docked (${await rightTabs(page)} / ${await dockKeys(page)})`);
+	h.check((await rightTabs(page)).join() === 'scene' && (await dockKeys(page)).includes('flow'), `0 premise: Configure Scene in the right sidebar, the Node editor docked (${await rightTabs(page)} / ${await dockKeys(page)})`);
 	h.check(!!(await rectOf(page, '#explorer-window')), '0 premise: the Explorer floats');
 
 	// ---- 1. over the right column: the hint, the live toggle, the free drop -------------------------------

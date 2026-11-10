@@ -206,6 +206,15 @@ export function createKitEntities(host, opts = {}) {
 		return [...store.ents.values()].filter((e) => !e.dead && (!k || e.kind === k));
 	}
 
+	/** 78 F23: seconds the dead stay before they leave. ABSENT = 1 s, the Spawn node's default — the
+	 * code face used to keep every dead entity for ever (still drawn, still in the store, still
+	 * under the ceiling); null or a negative number keeps the bodies on purpose @param {any} v */
+	function removeAfterOf(v) {
+		if (v === undefined) return 1;
+		if (v === null || !Number.isFinite(Number(v)) || Number(v) < 0) return null;
+		return Number(v);
+	}
+
 	/** spawn(spec) or spawn(kind, template, at, count, spread, hp, speed, removeAfter) — the code
 	 * face takes one options object, the node face its positional args @param {any[]} args */
 	function spawnSpec(args) {
@@ -213,7 +222,8 @@ export function createKitEntities(host, opts = {}) {
 		// T2: a module's call carries its id AFTER the spec's eight args (kitApi `owned`), so the
 		// module's entities can leave with it (disown)
 		const owner = typeof args[8] === 'string' ? args[8] : '';
-		if (a0 && typeof a0 === 'object' && !Array.isArray(a0)) return { ...a0, own: a0.own ?? owner };
+		if (a0 && typeof a0 === 'object' && !Array.isArray(a0))
+			return { ...a0, own: a0.own ?? owner, removeAfter: removeAfterOf(a0.removeAfter) };
 		const [kind, template, at, count, spread, hp, speed, removeAfter] = args;
 		/** @type {any} */
 		const spec = {
@@ -223,7 +233,7 @@ export function createKitEntities(host, opts = {}) {
 			count,
 			spread,
 			hp,
-			removeAfter,
+			removeAfter: removeAfterOf(removeAfter),
 			own: owner
 		};
 		if (Number(speed) > 0) spec.mover = { speed: Number(speed) };
@@ -780,8 +790,12 @@ export function createKitEntities(host, opts = {}) {
 		store,
 		debug: () => ({
 			authority: authority(),
+			// `count` = every stored entity, the dead still waiting out their removeAfter included
+			// (suites wait on it for "all gone"); `living` is what the Count node reads. 78 F23: `stored`
+			// is the same number as count, named for what it is
 			count: store.ents.size,
 			living: living(),
+			stored: store.ents.size,
 			ceiling: store.ceiling,
 			refused: store.refused,
 			seq: store.seq,

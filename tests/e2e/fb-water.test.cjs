@@ -666,11 +666,16 @@ h.run(async () => {
 			'both objects carry an enabled bubble emitter (userData.bubbles)'
 		);
 		await A.page.evaluate(() => window.__stores.objectActions.deselectObject?.());
+		// showhide-v8: Configure Scene is its own Inspector tab and stays open past a deselect, so the column S7 opened
+		// would cover the dry emitter's clip at the right edge; close it as the user would
+		await A.page.evaluate(() => window.__stores.sidebars.closeInspectorTab('scene'));
 		await look(A.page, [0, 1.6, 7.2], [0, -0.2, 2]);
 		await A.page.waitForTimeout(1500);
 		/** pixels the bubbles change around an emitter: on vs off, same frame otherwise */
 		const delta = async (/** @type {string} */ uuid, /** @type {number[]} */ at) => {
 			const clip = await h.centeredClip(A, at, 220);
+			const onCanvas = await A.page.evaluate((c) => document.elementFromPoint(c.x + c.width / 2, c.y + c.height / 2)?.tagName === 'CANVAS', clip);
+			h.check(onCanvas, `premise: the 3D view, not a panel, is under the clip at ${clip.x},${clip.y}`);
 			const on = await A.page.screenshot({ clip });
 			await A.page.evaluate((u) => window.__stores.waterActions.updateObjectBubbles(u, { enabled: false }, { immediate: true }), uuid);
 			await A.page.waitForTimeout(500);

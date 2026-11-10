@@ -59,6 +59,12 @@
 - The side panel has **one header**: the follow-selection pin sits in the sidebar strip (on a phone, in the tab's long-press menu, with the lock in the grab bar), and the filter box says what it filters. <!-- 78-pl-scene PL14 -->
 - **Statistics** shows the baked light: atlas size, MB and objects baked / shown, or *none*. <!-- 78-pl-scene PL1 -->
 - The sky-image picture cards and their tour are gone, and the *Reduce quality when heavy* switch left Configure Scene (a line says what Auto does; the switch stays in Settings). <!-- 78-pl-scene PL29 PL18 -->
+- **Floating windows have Small, Half and Full sizes**: double-click or double-tap the header to cycle them, or use the header menu's **Size** row. <!-- 78-pl-windows PL39 -->
+- **Chat and the AI assistant can be resized** and keep their size; the text viewer and the 3D preview keep theirs too. On a touch screen the resize corner is easier to grab. <!-- 78-pl-windows PL3 PL38 PL39 -->
+- A window that opens while a sidebar is open appears beside the sidebar, not under it. <!-- 78-pl-windows PL4 -->
+- **Restore and saved layouts** now bring back Chat, the AI assistant, Statistics, Free assets, the HUD editor, the Timeline and the Profiler. <!-- 78-pl-windows PL3 -->
+- **On a folded phone**, Chat, the AI assistant and Free assets are tabs of the phone dock, and go back where they were when you unfold. <!-- 78-pl-windows PL23 -->
+- Context-menu rows show an icon for what they do. <!-- 78-pl-windows PL2 -->
 
 ### AI apps
 - Agents can build all of this: `create_shape` with `action: "path"`, `game_setup` with `portal`, `checkpoint` and `loading`, and `describe_node_types` knows the new nodes (common words like door, lamp, cat, button and hover work as aliases). `inspect_runtime` shows the game kit's round, score and pickups. <!-- 78-path, 93-levels, 85-nodes -->
@@ -71,6 +77,8 @@
 - The scene load bar moves while a scene's objects are being built (it used to sit still, then jump to the end). <!-- 93-levels -->
 - **Phones are judged as phones**: the scene budget held a phone's frames to a headset's limits, so every phone scene showed a red cross; it now uses phone limits, and while quality is already lowered the dot is a calm grey note instead of a warning beside *Reduced quality*. <!-- 78-int PL11 PL22 -->
 - *Lowered for now* names the one resolution in force instead of listing four. <!-- 78-int PL9 -->
+- The AI window no longer covers the toolbar on small screens, and the main menu ends above the toolbar. <!-- 78-pl-windows PL6 PL7 -->
+- The Objects filter chips and the Free assets tabs wrap instead of being cut off; Far clip lines up with the other camera rows. <!-- 78-pl-windows PL8 PL20 PL21 -->
 
 ## 1.63.0 — Pro look 📸
 

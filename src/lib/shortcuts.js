@@ -42,6 +42,7 @@ import { viewportPipOpen, framePipSelection } from './viewportPip'; // 43 K5 (a 
 import { togglePanel, toggleDock } from './panelToggles';
 import { toggleChatTab } from './chat/chatWindow.js'; // uir-chat
 import { toggleSidebar } from './sidebars'; // 44 M7 (a leaf: app stores + safeStorage)
+import { togglePaneOfTarget } from './ui/paneKeys.js'; // uir-polish B5 (a leaf)
 // Phase 5: the play FAB's own entry point. playMode.js imports sceneStore +
 // svelte/store ONLY (it says so at the top of the file, and that is deliberate),
 // so this static edge adds nothing to shortcuts' subtree — which matters, because
@@ -475,16 +476,16 @@ export const shortcuts = [
 		keys: 'Ctrl+B',
 		group: 'Panels',
 		scope: 'global',
-		label: 'Left sidebar: show / hide',
-		action: () => toggleSidebar('left')
+		label: 'Left sidebar: show / hide (a docked window\'s left pane when it has the focus or the mouse)',
+		action: () => togglePaneOfTarget('left') || toggleSidebar('left')
 	},
 	{
 		id: 'panels.sidebar-right',
 		keys: 'Ctrl+Alt+B',
 		group: 'Panels',
 		scope: 'global',
-		label: 'Right sidebar: show / hide',
-		action: () => toggleSidebar('right')
+		label: 'Right sidebar: show / hide (a docked window\'s right pane when it has the focus or the mouse)',
+		action: () => togglePaneOfTarget('right') || toggleSidebar('right')
 	},
 	{
 		id: 'panels.explorer',

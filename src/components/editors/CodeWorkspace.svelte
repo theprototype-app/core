@@ -749,7 +749,8 @@
 				<div class="code-side-grip code-side-grip-l" title="Drag to resize" onpointerdown={(e) => startSide(e, 'left')} onpointermove={moveSide} onpointerup={endSide}></div>
 			</div>
 		{/if}
-		<div class="code-center">
+		<!-- uir-polish B4: the right handle owns the window's edge — the editor (and its scrollbar) ends where the handle's tab starts -->
+		<div class="code-center" style:padding-right={narrow ? null : rightShown ? '16px' : '8px'}>
 			{@render strip()}
 			{@render body()}
 		</div>

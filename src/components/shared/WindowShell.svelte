@@ -5,6 +5,7 @@
 	import { readPanelOpen, writePanelOpen, handheld } from '$lib/ui/handheldPanels.js'
 	import { uiScale } from '$lib/uiScale'
 	import PaneHandle from '../ui/PaneHandle.svelte'
+	import ContextMenu from '../ContextMenu.svelte'
 	import Icon from '../ui/Icon.svelte'
 	import { paneLocks } from '$lib/ui/paneLocks.js'
 	import { edgeFade } from '$lib/ui/edgeFade.js'
@@ -249,9 +250,65 @@
 	// the handles sit BELOW the topbar (owner: "placed lower, covering no controls")
 	let topbarH = $state(0)
 	const handleTop = $derived(Math.round(topbarH + 8))
+
+	// uir-polish B1 (owner 2026-11-11): a COLLAPSED pane's handle sits flush against the window's edge. A docked window
+	// (and a floating one) wraps this shell in its frame's padding, which left the tab floating a few px in from the
+	// edge with a dark strip beside it: the gap to the frame is MEASURED and the closed handle is drawn across it
+	// (the root clips with a margin as wide as that gap instead of at its own box).
+	const FRAME = '.tp-dock-panel, .tp-window, [data-pd-host], [data-docked]'
+	let rootEl = $state<HTMLElement | null>(null)
+	let gap = $state({ left: 0, right: 0 })
+	function measureGap() {
+		const el = rootEl
+		const frame = el?.parentElement?.closest(FRAME) as HTMLElement | null
+		if (!el || !frame) return
+		const r = el.getBoundingClientRect()
+		const f = frame.getBoundingClientRect()
+		const cap = (v: number) => Math.max(0, Math.min(12, Math.round(v)))
+		const next = { left: cap(r.left - f.left - frame.clientLeft), right: cap(f.right - r.right - (frame.offsetWidth - frame.clientWidth - frame.clientLeft)) }
+		if (next.left !== gap.left || next.right !== gap.right) gap = next
+	}
+	$effect(() => {
+		void rootW
+		void narrow
+		const raf = requestAnimationFrame(measureGap)
+		return () => cancelAnimationFrame(raf)
+	})
+	const clipMargin = $derived(Math.max(gap.left, gap.right))
+	// B4: the handle on the RIGHT edge owns that edge — the main area's scroller ends where the handle's tab starts, so
+	// a vertical scrollbar is never under it (a closed pane's tab sits on the frame edge, across the measured gap)
+	const TAB_ROOM = 16
+	const rightPaneOpen = $derived(side === 'right' ? primaryOpen && !hidePrimary : secondaryOpen)
+	const rightHandle = $derived(side === 'right' ? !hidePrimary : secondaryModes.length > 0)
+	// (an OPEN pane's handle hangs from the pane's inner edge into the main area: the same room keeps its scrollbar clear)
+	const mainRoomRight = $derived(narrow || !rightHandle ? 0 : Math.max(0, TAB_ROOM - (rightPaneOpen ? 0 : gap.right)))
+	/** where a handle is drawn on its edge: the panel's inner edge when the pane shows, else across the frame gap */
+	const handleAt = (edge: 'left' | 'right', open: boolean, width: number) => (open ? width * k : -gap[edge])
+
+	// uir-polish B6 (owner 2026-11-11): "Switch sidebar side" lives in the sidebars' CONTEXT MENU (each pane handle's,
+	// and the secondary pane's header) instead of a button in that header
+	const switchItem = $derived({
+		label: 'Switch sidebar side',
+		icon: 'arrow-left-right',
+		tooltip: `Move ${primaryLabel} to the ${side === 'left' ? 'right' : 'left'} and the other pane to the ${side}`,
+		action: switchSide
+	})
+	let headMenu = $state<{ x: number; y: number } | null>(null)
+	function onHeadMenu(e: MouseEvent) {
+		e.preventDefault()
+		e.stopPropagation()
+		headMenu = { x: e.clientX, y: e.clientY }
+	}
 </script>
 
-<div class="ws-root relative flex h-full w-full overflow-hidden" class:ws-narrow={narrow} data-ws-narrow={narrow ? '' : undefined} bind:clientWidth={rootW}>
+<div
+	class="ws-root relative flex h-full w-full overflow-hidden"
+	class:ws-narrow={narrow}
+	data-ws-narrow={narrow ? '' : undefined}
+	bind:clientWidth={rootW}
+	bind:this={rootEl}
+	style={clipMargin ? `overflow: clip; overflow-clip-margin: ${clipMargin}px` : undefined}
+>
 	<!-- showhide-v8 §3: the narrow header — every view of this window, one in front -->
 	{#if narrow}
 		<div class="ws-hdr tp-noscrollbar" role="tablist" aria-label="Views" use:edgeFade>
@@ -296,7 +353,7 @@
 		{#if topbar}
 			<div class="shrink-0" bind:clientHeight={topbarH}>{@render topbar()}</div>
 		{/if}
-		<div class="min-h-0 flex-1 overflow-hidden">{@render main?.()}</div>
+		<div class="min-h-0 flex-1 overflow-hidden" data-ws-main-body style={mainRoomRight ? `padding-right: ${mainRoomRight}px` : undefined}>{@render main?.()}</div>
 	</div>
 
 	<!-- SECONDARY panel: its modes are TABS in its header, behind ONE handle (the node editor's right sidebar) -->
@@ -306,7 +363,8 @@
 			style={narrow ? 'order: 1' : `order: ${secondaryPanelOrder}; width: ${secondaryEff * k}px`}
 		>
 			{#if !narrow}
-			<div class="ws-panel-head flex shrink-0 items-center gap-1 px-1 py-1">
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div class="ws-panel-head flex shrink-0 items-center gap-1 px-1 py-1" oncontextmenu={onHeadMenu} data-ws-panel-head>
 				<div class="ws-modes tp-noscrollbar flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto" role="tablist" aria-label="Panel">
 					{#each secondaryModes as m (m.key)}
 						<button
@@ -320,7 +378,6 @@
 						><Icon name={iconOf(m)} size={16} aria-hidden="true" /><span class="truncate">{m.label}</span></button>
 					{/each}
 				</div>
-				<button class="ws-mini" title="Switch sidebar side" aria-label="Switch sidebar side" onclick={switchSide} data-ws-switch-side><Icon name="arrow-left-right" size={16} aria-hidden="true" /></button>
 				<button class="ws-mini" title="Close" aria-label="Close" disabled={locked} onclick={hideSecondary}><Icon name="x" size={16} aria-hidden="true" /></button>
 			</div>
 			{/if}
@@ -352,9 +409,10 @@
 			open={primaryOpen}
 			label={primaryLabel}
 			windowKey={key}
+			extraItems={secondaryModes.length ? [switchItem] : []}
 			onclick={togglePrimary}
 			data-ws-primary-toggle
-			style="top: {handleTop}px; {side === 'left' ? 'left' : 'right'}: {primaryOpen ? primaryWidth * k : 0}px"
+			style="top: {handleTop}px; {side === 'left' ? 'left' : 'right'}: {handleAt(side, primaryOpen, primaryWidth)}px"
 		/>
 	{/if}
 	{#if secondaryModes.length && !narrow}
@@ -364,12 +422,22 @@
 			label={secondaryModes.length > 1 ? secondaryModes.map((m) => m.label).join(' / ') : (activeMode?.label ?? 'the panel')}
 			role={iconOf(activeMode)}
 			windowKey={key}
+			extraItems={hidePrimary ? [] : [switchItem]}
 			onclick={toggleSecondary}
 			data-ws-secondary-toggle
-			style="top: {handleTop}px; {secondarySide === 'left' ? 'left' : 'right'}: {secondaryOpen ? secondaryEff * k : 0}px"
+			style="top: {handleTop}px; {secondarySide === 'left' ? 'left' : 'right'}: {handleAt(secondarySide, secondaryOpen, secondaryEff)}px"
 		/>
 	{/if}
 </div>
+{#if headMenu}
+	<ContextMenu
+		x={headMenu.x}
+		y={headMenu.y}
+		items={[...(hidePrimary ? [] : [switchItem]), { label: 'Hide this pane', icon: secondarySide === 'left' ? 'panel-left-close' : 'panel-right-close', disabled: locked, action: hideSecondary }]}
+		sizeKey="wspanehead"
+		onclose={() => (headMenu = null)}
+	/>
+{/if}
 
 <style>
 	.ws-panel {

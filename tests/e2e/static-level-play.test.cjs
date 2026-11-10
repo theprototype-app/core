@@ -6,9 +6,9 @@
 //   1. All-static level + a walk Character Controller + Run physics on Play: Play starts the
 //      world (static bodies only) and the wall stops the walker.
 //   2. All-static level, play set to walk, NO controller node, Run physics on Play OFF: Play starts the
-//      static world by itself. 1.64: NO default walker (flowRuntime DEFAULT_WALKER_ON is off), so the
-//      eye-height pin walks through the wall as in 1.63; with the fix-batch card the default walker
-//      returns and this section asserts the wall stop again.
+//      static world by itself and the wall stops the player. 1.64: NO default walker (flowRuntime
+//      DEFAULT_WALKER_ON is off), so it is the eye-height pin the wall stops; the default walker returns
+//      with the fix-batch card.
 //   3. Counterfactual kept: in the editor, Simulate in a scene with no dynamic body and no
 //      controller still says "Nothing to simulate" (and starts nothing).
 //
@@ -104,11 +104,11 @@ h.run(async () => {
 	await page.waitForTimeout(1200);
 	const r2a = await rig(page);
 	// 78-int (1.64): the F11 default walker is OFF (flowRuntime DEFAULT_WALKER_ON) — on the character controller it
-	// rested under the floor; walk mode with no controller node keeps 1.63's eye-height pin, which walls do not stop.
-	// The default walker comes back with the fix-batch card, and these two rows flip back with it
+	// rested under the floor; walk mode with no controller node keeps 1.63's eye-height pin. The world still runs on
+	// Play and its walls still stop the pinned player. The default walker comes back with the fix-batch card
 	h.check(r2a.mode === null, `1.64: walk mode with no controller node keeps the eye-height pin, no default walker (${r2a.mode} from ${r2a.from})`);
 	const r2 = await walkInto('eye-height pin');
-	h.check(r2.z < -4.5, `1.64: the pin walks through the wall at z -4, as in 1.63 (z ${r2.z.toFixed(2)})`);
+	h.check(r2.z > -3.75, `the wall at z -4 still STOPS the pinned player (the level's world runs on Play) (z ${r2.z.toFixed(2)})`);
 	await h.leavePlay(A);
 	const after = await rig(page);
 	h.check(after.mode === null, `out of Play there is no walker (${after.mode})`);

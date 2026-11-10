@@ -36,7 +36,7 @@
 
 ### Physics and the game kit
 - **The fastest device runs the physics**: when the device running a simulation is much slower than another player's, the run moves there by itself; a slow device alone keeps real time instead of slow motion. <!-- 78-nodes -->
-- A level made only of static objects runs its physics when Play starts, so a Character Controller's walls stop you. <!-- 78-nodes; default walker held back, 78-int -->
+- A level made only of static objects runs its physics when Play starts (walls stop you). <!-- 78-nodes; the default walker is held back, 78-int -->
 
 ### Interface
 - **No emoji anywhere in the app**: icons are drawn as icons, so they look the same on every phone. <!-- 78-int PL42 -->

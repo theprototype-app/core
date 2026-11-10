@@ -436,7 +436,14 @@ export function resolveWalk(feetPos, height, dt, desired, opts = {}) {
 	// ground plane when its height changes moves with it; one in the air or on something else is untouched.
 	const floorNow = floorHeight();
 	let lift = 0;
-	if (lastFloor !== null && floorNow !== lastFloor && grounded && Math.abs(feet - lastFloor) < 0.05) {
+	// 78-int v30: ...and a walker that STARTS under the enabled ground plane's top starts ON it. A controller that
+	// appears after the floor was raised (the eye-height pin had no walker to carry) put its capsule inside the slab
+	// and stayed there (avatar-feet 2.x: 0.3 m floor, feet at 0.04 m); the pin it replaces always stood on the floor
+	const planeOn = !!get(scenePhysicsGround)?.enabled;
+	if (lastFloor === null && planeOn && feet < floorNow - 1e-4) {
+		lift = floorNow - feet;
+		feet = floorNow;
+	} else if (lastFloor !== null && floorNow !== lastFloor && grounded && Math.abs(feet - lastFloor) < 0.05) {
 		lift = floorNow - feet;
 		feet = floorNow;
 	}

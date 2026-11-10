@@ -312,16 +312,18 @@ h.run(async () => {
 	// palette tabs mirror when the palette moves right
 	await A.page.locator('p[title="Node editor (N)"]').click();
 	await A.page.waitForTimeout(600);
-	const before = await A.page.evaluate(() =>
-		document.querySelector('#palette-toggle')?.classList.contains('palette-tab-mirrored')
-	);
-	await A.page.locator('#palette-side').click();
-	await A.page.waitForTimeout(300);
-	const after = await A.page.evaluate(() =>
-		document.querySelector('#palette-toggle')?.classList.contains('palette-tab-mirrored')
-	);
+	// showhide-v8 (owner 2026-11-09, "Flow: remove the swap button"): the palette moves sides from its arrow handle's
+	// menu ("Move the palette to the other side"); the handle hangs from the right edge there (ph-right)
+	const paletteSwap = async () => {
+		await A.page.locator('#palette-toggle').click({ button: 'right' });
+		await A.page.locator('[role=menu] [role=menuitem]', { hasText: 'Move the palette to the other side' }).first().click();
+		await A.page.waitForTimeout(300);
+	};
+	const before = await A.page.evaluate(() => document.querySelector('#palette-toggle')?.classList.contains('ph-right'));
+	await paletteSwap();
+	const after = await A.page.evaluate(() => document.querySelector('#palette-toggle')?.classList.contains('ph-right'));
 	h.check(before === false && after === true, 'palette tabs mirror on the right side');
-	await A.page.locator('#palette-side').click();
+	await paletteSwap();
 
 	await h.finish(browser);
 });

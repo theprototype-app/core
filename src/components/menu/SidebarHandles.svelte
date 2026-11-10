@@ -6,8 +6,10 @@
 	//   - slim to look at (12 px, 16 on hover), a bigger hit area on touch (44 px, the Properties value-field rule)
 	//   - dim at rest, full opacity on hover / focus (Settings, or the menu's "Dim at rest")
 	//   - never over the logo or the profile button: it sits BELOW the top chrome on its edge, measured live (the
-	//     unfolded N6 drops that chrome under the Connect bar, so a fixed top would land on it), plus the offset the
+	//     unfolded N6 drops that chrome under the Connect bar, so a fixed top would land on it) AND below the profile
+	//     menu's bottom edge, open or not (1.64, owner: the profile click used to move them), plus the offset the
 	//     person dragged it to along the edge (saved per side)
+	//   - never on the bottom dock: drawn clamped above the dock's top, the saved offset untouched (1.64)
 	//   - a press toggles the column; a press that TRAVELS up / down moves the handle; right-click / long-press = its
 	//     menu (Hide handles · Move up / down · Reset position · Dim at rest)
 	//   - on a touch screen it stays while the column is open, on the column's inner edge (it is how the column
@@ -23,8 +25,12 @@
 		setSidebarHandleY,
 		resetSidebarHandleY,
 		pressSidebarHandle,
-		hideSidebarHandles
+		hideSidebarHandles,
+		profileMenuBottom,
+		noteProfileMenuBottom,
+		MENU_BELOW_TRIGGER
 	} from '$lib/sidebarHandles';
+	import { bottomInset } from '$lib/bottomDock.js';
 	import { coarsePointer } from '$lib/deviceClass.js';
 	import { bindingOf } from '$lib/shortcuts';
 	import { offerUndo } from '$lib/undoToast';
@@ -45,6 +51,11 @@
 		return side === 'left' ? w : window.innerWidth - w;
 	}
 
+	/** not top chrome: the columns' own parts, and anything that opens OVER the chrome (the profile menu, a context
+	 *  menu, a dialog) — measured, the profile menu's rows pushed the right handle down and its cover hid the
+	 *  chrome from the left one, so a click on the profile moved both handles */
+	const NOT_CHROME =
+		'.sbh, .sb-strip, #inspector, [data-docked], [data-sidebar-side], .sb-empty, [data-pd-host], #avatar-dropdown, [popover], [role=menu], [role=tooltip], [role=dialog], dialog';
 	/** what a handle must sit below: buttons of the top chrome within reach of its edge (not the columns' own) */
 	function measure(side: Side) {
 		const x0 = edgeX(side);
@@ -52,17 +63,39 @@
 		let b = 0;
 		for (const x of xs)
 			for (let y = 4; y <= 220; y += 8) {
-				const el = document.elementFromPoint(x, y) as HTMLElement | null;
-				const hit = el?.closest('button, a, [role=button], #avatar-trigger, .hud-cell') as HTMLElement | null;
-				if (!hit || hit.closest('.sbh, .sb-strip, #inspector, [data-docked], [data-sidebar-side], .sb-empty, [data-pd-host]')) continue;
-				const r = hit.getBoundingClientRect();
-				if (r.top > 160) continue; // a viewport button lower down is not top chrome
-				b = Math.max(b, r.bottom);
+				// every layer at the point, not only the top one: an open menu or its cover must not hide the
+				// chrome under it (the handle would jump up to the fallback and back when it closes)
+				for (const el of document.elementsFromPoint(x, y) as HTMLElement[]) {
+					if (el.closest(NOT_CHROME)) continue;
+					const hit = el.closest('button, a, [role=button], #avatar-trigger, .hud-cell') as HTMLElement | null;
+					if (!hit) continue;
+					const r = hit.getBoundingClientRect();
+					if (r.top <= 160) b = Math.max(b, r.bottom); // a viewport button lower down is not top chrome
+					break;
+				}
 			}
 		return Math.round(b || 56);
 	}
+	/** the profile menu's bottom edge while it is open on a desktop layout (a phone sheet is not up there) */
+	function measureMenu() {
+		const dd = document.getElementById('avatar-dropdown');
+		if (!dd) return;
+		const r = dd.getBoundingClientRect();
+		if (r.width > 0 && r.height > 0 && r.top < 160) noteProfileMenuBottom(r.bottom);
+	}
+	/** the floor under the top chrome both handles rest at: the chrome on that edge, and the profile menu's bottom
+	 *  (remembered; before the menu has opened here, its measured height below the profile button) */
+	function floorOf(side: Side) {
+		let menu = $profileMenuBottom;
+		if (!menu) {
+			const av = document.getElementById('avatar-trigger')?.getBoundingClientRect();
+			menu = av && av.height ? Math.round(av.top) + MENU_BELOW_TRIGGER : 0;
+		}
+		return Math.max(chromeBottom[side], menu);
+	}
 	function remeasure() {
 		if (!$sidebarsWide) return;
+		measureMenu();
 		const next = { left: measure('left'), right: measure('right') };
 		if (next.left !== chromeBottom.left || next.right !== chromeBottom.right) chromeBottom = next;
 	}
@@ -84,15 +117,31 @@
 		requestAnimationFrame(remeasure);
 	});
 
-	function topOf(side: Side, dragY = 0) {
-		const base = chromeBottom[side] + GAP;
-		const max = Math.max(base, window.innerHeight - TAB_H - 96);
-		return Math.min(max, base + $sidebarHandleY[side] + dragY);
+	/** the handle's box height (the hit area: taller on touch) */
+	const boxH = () => ($coarsePointer ? 56 : 44);
+	/**
+	 * Where a handle is drawn: its saved spot (the floor + the offset the person dragged it to), clamped into the
+	 * free band between the floor and the bottom dock's top. THE CLAMP IS A RENDERING, never a write: the saved offset
+	 * stays the person's intent, so the handle slides up with the dock when the spot is under it and goes back when
+	 * the dock closes. A band too short to hold it puts it at the band's top.
+	 */
+	function clampTop(side: Side, want: number) {
+		const base = floorOf(side) + GAP;
+		let max = Math.max(base, window.innerHeight - TAB_H - 96);
+		if ($bottomInset > 0) max = Math.max(base, Math.min(max, window.innerHeight - $bottomInset - GAP - boxH()));
+		return Math.max(base, Math.min(max, want));
+	}
+	function topOf(side: Side) {
+		return clampTop(side, floorOf(side) + GAP + $sidebarHandleY[side]);
+	}
+	/** a drag moves the handle from where it is DRAWN (the dock may be holding it above its saved spot) */
+	function dragTop(side: Side, dy: number) {
+		return clampTop(side, (moving?.from ?? topOf(side)) + dy);
 	}
 
 	// ---- press / drag along the edge ----
 	let press: { side: Side; y0: number; id: number; base: number } | null = null;
-	let moving = $state<{ side: Side; dy: number } | null>(null);
+	let moving = $state<{ side: Side; dy: number; from: number } | null>(null);
 	let suppress = false;
 	function onDown(e: PointerEvent, side: Side) {
 		if (e.button !== 0) return;
@@ -104,15 +153,15 @@
 		if (!press || e.pointerId !== press.id) return;
 		const dy = e.clientY - press.y0;
 		if (!moving && Math.abs(dy) < SLOP) return;
-		moving = { side: press.side, dy };
+		moving = { side: press.side, dy, from: moving?.from ?? topOf(press.side) };
 	}
 	function onUp(e: PointerEvent) {
 		if (!press || e.pointerId !== press.id) return;
 		const p = press;
 		press = null;
 		if (moving) {
-			const top = topOf(p.side, moving.dy);
-			setSidebarHandleY(p.side, top - (chromeBottom[p.side] + GAP));
+			const top = dragTop(p.side, moving.dy);
+			setSidebarHandleY(p.side, top - (floorOf(p.side) + GAP));
 			moving = null;
 			suppress = true;
 		}
@@ -137,7 +186,9 @@
 		if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
 			e.preventDefault();
 			const step = e.shiftKey ? 48 : 8;
-			setSidebarHandleY(side, $sidebarHandleY[side] + (e.key === 'ArrowUp' ? -step : step));
+			// from where it is DRAWN (the dock may be holding it up), and saved within the band, like a drag
+			const base = floorOf(side) + GAP;
+			setSidebarHandleY(side, clampTop(side, topOf(side) + (e.key === 'ArrowUp' ? -step : step)) - base);
 		} else if (e.key === 'Enter' || e.key === 'Escape' || e.key === ' ') {
 			e.preventDefault();
 			e.stopPropagation();
@@ -202,7 +253,7 @@
 {#each SIDES as side (side)}
 	{#if mounted && $sidebarHandleShown[side]}
 		{@const open = $sidebarVisible[side]}
-		{@const top = topOf(side, moving?.side === side ? moving.dy : 0)}
+		{@const top = moving?.side === side ? dragTop(side, moving.dy) : topOf(side)}
 		<button
 			type="button"
 			id="sidebar-handle-{side}"
@@ -258,6 +309,16 @@
 		cursor: pointer;
 		touch-action: none;
 		-webkit-tap-highlight-color: transparent;
+		/* slides with the bottom dock's top (the clamp above); a drag follows the finger with none */
+		transition: top 0.2s ease;
+	}
+	.sbh-moving {
+		transition: none;
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.sbh {
+			transition: none;
+		}
 	}
 	.sbh-left {
 		justify-content: flex-start;

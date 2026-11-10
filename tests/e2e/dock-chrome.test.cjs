@@ -735,8 +735,10 @@ h.run(async () => {
 	);
 	await A.page.waitForTimeout(900);
 	f = await floatState();
-	h.check(!f.docked && f.window, `11.3 clicking it brings the floating window forward and does NOT dock it (docked=${f.docked}, window=${f.window})`);
-	h.check(f.visible === 'flow', `11.4 ...the dock keeps its own tab (${f.visible})`);
+	// showhide-v8 (owner 2026-11-09, supersedes 44 M5 here): "+" MOVES a window open elsewhere to where it was pressed,
+	// so the floating Animation window docks — the section's original report ("it should dock that window") again
+	h.check(f.docked && !f.window, `11.3 clicking it moves the floating window into the dock (v8 "+" moves) (docked=${f.docked}, window=${f.window})`);
+	h.check(f.visible === 'animation', `11.4 ...and its tab is the one shown (${f.visible})`);
 	h.check(f.open, '11.6 ...and it was never closed on the way');
 
 	await h.finish(browser);

@@ -74,7 +74,9 @@ h.run(async () => {
 	await A.page.waitForTimeout(700);
 	const sel = await stopSampler(A.page);
 	const kindAfterSelect = await A.page.evaluate(() => new Promise((r) => /** @type {any} */ (window).__stores.inspectorKind.subscribe(r)()));
-	h.check(kindAfterSelect === 'selection', `premise: selecting swapped the panel to Properties (${kindAfterSelect})`);
+	// showhide-v8 (owner R2, 2026-11-09): selecting no longer swaps Configure Scene for Properties — the two are tabs of
+	// their own, and the open Configure Scene stays in front; the no-motion checks below still hold
+	h.check(kindAfterSelect === 'scene', `premise: selecting leaves Configure Scene in front (v8: no swap) (${kindAfterSelect})`);
 	h.check(sel.frames >= 10, `premise: sampled every frame across the gesture (${sel.frames} frames)`);
 	h.check(sel.missing === 0 && sel.replaced === 0, `select: the panel was never closed or replaced (missing ${sel.missing}, replaced ${sel.replaced})`);
 	h.check(sel.spread < 1, `select: the panel did not move on any frame (spread ${sel.spread}px, ${sel.first} -> ${sel.last})`);
@@ -87,8 +89,15 @@ h.run(async () => {
 	h.check(desel.missing === 0 && desel.replaced === 0 && desel.spread < 1, `deselect: still no motion (spread ${desel.spread}, replaced ${desel.replaced})`);
 
 	// ---------- 3. a panel opening from CLOSED still slides in ----------
-	await A.page.evaluate(() => /** @type {any} */ (window).__stores.inspectorClose.set(true));
+	// showhide-v8: Properties and Configure Scene are two tabs over one Inspector, and closing the front one shows the
+	// other; close BOTH so the column really is closed before it opens again
+	await A.page.evaluate(() => {
+		const sb = /** @type {any} */ (window).__stores.sidebars;
+		sb.closeInspectorTab('scene');
+		sb.closeInspectorTab('inspector');
+	});
 	await A.page.waitForTimeout(500);
+	h.check((await A.page.locator('#inspector').count()) === 0 || (await A.page.evaluate(() => new Promise((r) => /** @type {any} */ (window).__stores.inspectorClose.subscribe(r)()))) === true, 'premise: the Inspector column is closed (both tabs)');
 	await startSampler(A.page);
 	await A.page.evaluate(() => /** @type {any} */ (window).__stores.showSidebar('scene'));
 	await A.page.waitForTimeout(800);

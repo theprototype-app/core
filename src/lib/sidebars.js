@@ -392,6 +392,9 @@ export const inspectorTabs = writable({ inspector: false, scene: false });
 
 /** the Properties tab's label (a File shows in the same tab) */
 export const inspectorTabTitle = derived(inspectorKind, ($k) => ($k === 'file' ? 'File' : 'Properties'));
+/** the Inspector ELEMENT's name where it is one panel of its own (a pop-out window's tab and title): it names what it
+ * shows, Configure Scene included — 78-fix-547: a popped Inspector switched to the scene kept saying "Properties" */
+export const inspectorPanelTitle = derived(inspectorKind, ($k) => ($k === 'scene' ? 'Configure Scene' : $k === 'file' ? 'File' : 'Properties'));
 /** the label of either Inspector tab @param {string} key @param {string} kind */
 export function inspectorTabLabel(key, kind) {
 	if (key === 'scene') return 'Configure Scene';
@@ -467,15 +470,21 @@ function onInspector(closed, kind) {
 	}
 	// a close: wait out showSidebar's close-then-reopen (a switch), then close the tab that was showing
 	const was = tabOfKind(kind);
-	closeTimer = setTimeout(() => {
+	const other = was === 'scene' ? 'inspector' : 'scene';
+	const settle = () => {
 		if (!get(inspectorClose)) return;
 		const tabs = get(inspectorTabs);
-		const other = was === 'scene' ? 'inspector' : 'scene';
 		if (tabs[other] && !get(panelAway).inspector) {
 			inspectorTabs.set({ ...tabs, [was]: false });
 			showInspectorKind(other);
 		} else if (tabs.inspector || tabs.scene) inspectorTabs.set({ inspector: false, scene: false });
-	}, 80);
+	};
+	// 78-fix-547: with no other Inspector tab to fall back to, the column closes AT ONCE — waiting the 80 ms left an
+	// empty column on screen for five frames and the top clusters and the profile jumped after it (controls-clusters
+	// N3: they move with the column, never after it). A switch only waits when the other tab can take the element.
+	const tabs = get(inspectorTabs);
+	if (!(tabs[other] && !get(panelAway).inspector)) return settle();
+	closeTimer = setTimeout(settle, 80);
 }
 
 let wired = false;

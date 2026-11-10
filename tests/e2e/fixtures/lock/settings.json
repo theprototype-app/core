@@ -3178,31 +3178,6 @@
 					]
 				},
 				{
-					"name": "Flow Code: show / bring to front / hide",
-					"controls": [
-						{
-							"kind": "button",
-							"id": "",
-							"label": "Rebind Flow Code: show / bring to front / hide",
-							"where": "control",
-							"default": "Alt+F",
-							"disabled": false,
-							"state": "Press keys… Esc cancels",
-							"effects": {
-								"storage": {},
-								"stores": {},
-								"html": [],
-								"body": [],
-								"dialogs": [],
-								"broadcasts": [],
-								"events": []
-							},
-							"scope": "device",
-							"exercise": "done"
-						}
-					]
-				},
-				{
 					"name": "Animation: show / bring to front / hide",
 					"controls": [
 						{
@@ -11976,16 +11951,6 @@
 						"kind": "button",
 						"id": "",
 						"default": "Alt+E"
-					}
-				]
-			},
-			{
-				"name": "Flow Code: show / bring to front / hide",
-				"controls": [
-					{
-						"kind": "button",
-						"id": "",
-						"default": "Alt+F"
 					}
 				]
 			},

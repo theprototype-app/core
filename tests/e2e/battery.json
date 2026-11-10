@@ -510,6 +510,8 @@
 		"flow-wiring-78": 360,
 		"code-flow-text": 240,
 		"sidebar-handles-devices": 420,
+		"profile-handles-still": 240,
+		"sidebar-handles-dock": 240,
 		"burger-windows": 240,
 		"explorer-file-history": 240,
 		"profiler-live-row": 180,

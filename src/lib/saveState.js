@@ -12,7 +12,16 @@ const savedAt = writable(get(dirtyPulse));
 /** has the scene changed since it was last saved to a file from the menu? */
 export const editedSinceSave = derived([dirtyPulse, savedAt], ([$pulse, $at]) => $pulse !== $at);
 
-/** a Save went through: disarm until the next edit */
-export function noteFileSaved() {
-	savedAt.set(get(dirtyPulse));
+/** the edit count right now: take it when Save is PRESSED and hand it to noteFileSaved once the save went through */
+export function editMark() {
+	return get(dirtyPulse);
+}
+
+/**
+ * a Save went through: disarm until the next edit. `at` = the edit count when Save was pressed (editMark), so an
+ * edit made while the save ran keeps Save armed; a Cancel or "without these changes" never calls this
+ * @param {number} [at]
+ */
+export function noteFileSaved(at = get(dirtyPulse)) {
+	savedAt.set(at);
 }

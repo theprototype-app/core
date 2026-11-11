@@ -13,8 +13,8 @@ const graph = (page) =>
 	page.evaluate(() => {
 		let ns;
 		let es;
-		window.__stores.flowNodes.subscribe((v) => (ns = v))();
-		window.__stores.flowEdges.subscribe((v) => (es = v))();
+		window.__tp.test.v1.flowNodes.subscribe((v) => (ns = v))();
+		window.__tp.test.v1.flowEdges.subscribe((v) => (es = v))();
 		return {
 			nodes: ns.map((n) => ({ id: n.id, type: n.type, data: n.data })),
 			edges: es.map((e) => ({ id: e.id, source: e.source, sourceHandle: e.sourceHandle ?? null, target: e.target, targetHandle: e.targetHandle ?? null }))
@@ -23,12 +23,12 @@ const graph = (page) =>
 const value = (page, id) =>
 	page.evaluate((id) => {
 		let v;
-		window.__stores.flowValues.subscribe((x) => (v = x))();
+		window.__tp.test.v1.flowValues.subscribe((x) => (v = x))();
 		const r = v[id];
 		return r && typeof r === 'object' && r.__handles ? { handles: r.__handles, def: r.__default } : r;
 	}, id);
 const select = (page, ids) =>
-	page.evaluate((ids) => window.__stores.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: ids.includes(n.id) }))), ids);
+	page.evaluate((ids) => window.__tp.test.v1.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: ids.includes(n.id) }))), ids);
 const handle = (node, id) => `.svelteFlow .svelte-flow__handle[data-nodeid="${node}"]` + (id === null ? ':not([data-handleid])' : `[data-handleid="${id}"]`);
 const card = (id) => `.svelteFlow .svelte-flow__node[data-id="${id}"]`;
 const into = (g, target) =>
@@ -85,8 +85,8 @@ h.run(async () => {
 			edges: [E('v0', 's', 'in0'), E('v1', 's', 'in1'), E('v2', 's', 'in2'), E('s', 'sum', 'a', 'value'), E('s', 'idx', 'a')]
 		}
 	};
-	await p.evaluate((doc) => window.__stores.restoreGraphs(JSON.parse(JSON.stringify(doc))), MUX);
-	await p.evaluate((id) => window.__stores.nodesHandler.sendNodes(id), B.id);
+	await p.evaluate((doc) => window.__tp.test.v1.restoreGraphs(JSON.parse(JSON.stringify(doc))), MUX);
+	await p.evaluate((id) => window.__tp.test.v1.nodesHandler.sendNodes(id), B.id);
 	await p.waitForTimeout(900);
 	h.check((await p.locator(handle('s', 'in2')).count()) === 1 && (await p.locator(handle('s', 'value')).count()) === 1, 'the Switcher draws one input socket per item and a value output');
 	await h.eventually(() => value(p, 'sum'), (v) => v === 10, 'the multiplexer passes item 0\'s input (10)');
@@ -110,11 +110,11 @@ h.run(async () => {
 	h.check(JSON.stringify(sw.data.items) === '["mid","high"]', 'the ⓘ ✕ removes item 0');
 	h.check(into(g, 's') === 'ix>index v1>in0 v2>in1', `its socket goes and the wires after it move down (${into(g, 's')})`);
 	await h.eventually(() => value(p, 'sum'), (v) => v === 30, 'the wired index 2 clamps to the last item, still 30');
-	await p.evaluate(() => window.__stores.nodesHandler.setNodeData('ix', { value: 0 }));
+	await p.evaluate(() => window.__tp.test.v1.nodesHandler.setNodeData('ix', { value: 0 }));
 	await h.eventually(() => value(p, 'sum'), (v) => v === 20, 'index 0 is now "mid" (20)');
 	await h.eventually(() => graph(B.page), (gb) => into(gb, 's') === 'ix>index v1>in0 v2>in1', 'the peer gets the moved wires');
 	// a type change drops the wires the new type refuses, in one undo step
-	const removed = await p.evaluate(() => window.__stores.variadic.setSwitcherType('s', 'object'));
+	const removed = await p.evaluate(() => window.__tp.test.v1.variadic.setSwitcherType('s', 'object'));
 	g = await graph(p);
 	h.check(removed === 3 && into(g, 's') === 'ix>index' && !g.edges.some((e) => e.source === 's' && e.sourceHandle === 'value'), `"object" refuses the number wires and the value->math wire (${removed} removed)`);
 	h.check(g.edges.some((e) => e.source === 's' && !e.sourceHandle && e.target === 'idx'), 'the unnamed index wire stays (it is always a number)');

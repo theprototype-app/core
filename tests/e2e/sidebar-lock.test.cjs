@@ -35,10 +35,10 @@ function lockPlace(page) {
 }
 
 async function openProperties(page) {
-	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await page.waitForTimeout(900);
 	await page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let g;
 		w.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.children[g.children.length - 1];
@@ -69,7 +69,7 @@ h.run(async () => {
 		at = await lockPlace(page);
 		h.check(sticky0 === 'true' && sticky1 === 'false' && at.pressed === 'false', `${tag}: a press lets the Properties header scroll away (${sticky0} -> ${sticky1}, pressed ${at.pressed})`);
 		// Configure Scene keeps its own flag
-		await page.evaluate(() => window.__stores.showSidebar('scene'));
+		await page.evaluate(() => window.__tp.test.v1.showSidebar('scene'));
 		await page.waitForTimeout(800);
 		at = await lockPlace(page);
 		const sceneSticky = await page.evaluate(() => document.querySelector('#drawer-label')?.getAttribute('data-sticky'));
@@ -93,11 +93,11 @@ h.run(async () => {
 			await page.locator('#sidebar-strip-right [data-sidebar-tab="inspector"]').click();
 			await page.waitForTimeout(400);
 			for (const t of ['dark', 'light']) {
-				await page.evaluate((th) => window.__stores.themes.theme.set(th), t);
+				await page.evaluate((th) => window.__tp.test.v1.themes.theme.set(th), t);
 				await page.waitForTimeout(350);
 				await page.screenshot({ path: `${process.env.OUT}/j6-lock-beside-full-height-${t}.png`, clip: { x: vw - 420, y: 40, width: 420, height: 160 } });
 			}
-			await page.evaluate(() => window.__stores.themes.theme.set('dark'));
+			await page.evaluate(() => window.__tp.test.v1.themes.theme.set('dark'));
 		}
 		await P.ctx.close();
 	}

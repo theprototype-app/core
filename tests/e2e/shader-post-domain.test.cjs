@@ -18,7 +18,7 @@ const src = (f) => pathToFileURL(path.join(__dirname, '..', '..', 'src', 'lib', 
 const stackOf = (page) =>
 	page.evaluate(() => {
 		let state = null;
-		window.__stores.scenePost.scenePost.subscribe((s) => (state = s))();
+		window.__tp.test.v1.scenePost.scenePost.subscribe((s) => (state = s))();
 		return state.effects.map((e) => ({ id: e.id, kind: e.kind, params: e.params }));
 	});
 
@@ -27,7 +27,7 @@ const postDebug = (page) => page.evaluate(() => window.__postDebug());
 const graphsOn = (page) =>
 	page.evaluate(() => {
 		let map = null;
-		window.__stores.shaderGraph.shaderGraphs.subscribe((m) => (map = m))();
+		window.__tp.test.v1.shaderGraph.shaderGraphs.subscribe((m) => (map = m))();
 		return Object.keys(map);
 	});
 
@@ -111,7 +111,7 @@ h.run(async () => {
 
 	console.log('\n=== 2. the kind, and a graph entering the scene look ===');
 	const registered = await page.evaluate(() =>
-		window.__stores.scenePost.postEffectKinds().find((d) => d.kind === 'graph')
+		window.__tp.test.v1.scenePost.postEffectKinds().find((d) => d.kind === 'graph')
 	);
 	h.check(
 		!!registered && registered.group === 'graph',
@@ -120,18 +120,18 @@ h.run(async () => {
 
 	// a lit box to look at, and a clean stack
 	await page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 900));
-		window.__stores.objectActions.deselectObject();
-		window.__stores.viewMode.set('shaded');
-		window.__stores.scenePost.postStacks.set({});
+		window.__tp.test.v1.objectActions.deselectObject();
+		window.__tp.test.v1.viewMode.set('shaded');
+		window.__tp.test.v1.scenePost.postStacks.set({});
 		await new Promise((r) => setTimeout(r, 900));
 	});
 	const clip = await h.centeredClip(A, [0, 0, 0], 420);
 	const base = await h.grabFrame(A, clip);
 	h.check((await postDebug(page)).stackPasses === 0, '2.2 premise: nothing in the stack to start with');
 
-	const made = await page.evaluate(() => window.__stores.postGraphs.addPostGraphToLook({ preset: 'posterise' }));
+	const made = await page.evaluate(() => window.__tp.test.v1.postGraphs.addPostGraphToLook({ preset: 'posterise' }));
 	await page.waitForTimeout(1500);
 	const stack = await stackOf(page);
 	h.check(
@@ -152,8 +152,8 @@ h.run(async () => {
 	/** swap the look to one preset and return its frame */
 	async function framePreset(preset) {
 		const key = await page.evaluate((p) => {
-			const pg = window.__stores.postGraphs;
-			const post = window.__stores.scenePost;
+			const pg = window.__tp.test.v1.postGraphs;
+			const post = window.__tp.test.v1.scenePost;
 			post.postStacks.set({});
 			return pg.addPostGraphToLook({ preset: p }).key;
 		}, preset);
@@ -203,12 +203,12 @@ h.run(async () => {
 	const before = await postDebug(page);
 	const stepsNode = await page.evaluate((key) => {
 		let map = null;
-		window.__stores.shaderGraph.shaderGraphs.subscribe((m) => (map = m))();
+		window.__tp.test.v1.shaderGraph.shaderGraphs.subscribe((m) => (map = m))();
 		return (map[key]?.nodes ?? []).find((n) => n.type === 'posterize')?.id ?? '';
 	}, poster.key);
 	h.check(!!stepsNode, '5.1 premise: the preset has a Posterise node to retune');
 	await page.evaluate(
-		({ key, id }) => window.__stores.shaderGraph.setShaderParam(key, id, 'steps', 2),
+		({ key, id }) => window.__tp.test.v1.shaderGraph.setShaderParam(key, id, 'steps', 2),
 		{ key: poster.key, id: stepsNode }
 	);
 	await page.waitForTimeout(1200);
@@ -223,9 +223,9 @@ h.run(async () => {
 	await page.evaluate(
 		({ key, id }) => {
 			let map = null;
-			window.__stores.shaderGraph.shaderGraphs.subscribe((m) => (map = m))();
+			window.__tp.test.v1.shaderGraph.shaderGraphs.subscribe((m) => (map = m))();
 			const doc = map[key];
-			window.__stores.shaderGraph.setShaderGraphFor(key, {
+			window.__tp.test.v1.shaderGraph.setShaderGraphFor(key, {
 				nodes: doc.nodes.filter((n) => n.id !== id),
 				edges: doc.edges.filter((e) => e.source !== id && e.target !== id)
 			});
@@ -240,17 +240,17 @@ h.run(async () => {
 	);
 	const errs = await page.evaluate((key) => {
 		let map = null;
-		window.__stores.shaderGraph.shaderErrors.subscribe((m) => (map = m))();
+		window.__tp.test.v1.shaderGraph.shaderErrors.subscribe((m) => (map = m))();
 		return map[key] ?? [];
 	}, poster.key);
 	h.check(errs.length > 0, '5.5 ...and says why, under the graph key the editor reads: ' + JSON.stringify(errs));
 
 	console.log('\n=== 6. the editor: one surface, two domains ===');
 	await page.evaluate(() => {
-		window.__stores.objectActions.deselectObject();
-		window.__stores.postGraphs.shaderDomain.set('surface');
-		window.__stores.shaderEditorClose.set(false);
-		window.__stores.bottomDock.activateDock('shader');
+		window.__tp.test.v1.objectActions.deselectObject();
+		window.__tp.test.v1.postGraphs.shaderDomain.set('surface');
+		window.__tp.test.v1.shaderEditorClose.set(false);
+		window.__tp.test.v1.bottomDock.activateDock('shader');
 	});
 	await page.waitForTimeout(1200);
 	const surfaceGroups = await page.evaluate(() =>
@@ -288,8 +288,8 @@ h.run(async () => {
 	console.log('\n=== 7. two peers ===');
 	const B = await h.setupPage(browser, 'B');
 	await B.page.evaluate(() => {
-		window.__stores.objectActions.deselectObject();
-		window.__stores.viewMode.set('shaded');
+		window.__tp.test.v1.objectActions.deselectObject();
+		window.__tp.test.v1.viewMode.set('shaded');
 	});
 	// a clean, working look to replicate
 	const shared = await framePreset('edges');
@@ -315,8 +315,8 @@ h.run(async () => {
 
 	console.log('\n=== 8. it saves like any other look ===');
 	const saved = await page.evaluate(() => ({
-		graphs: Object.keys(window.__stores.shaderGraph.shaderGraphsSnapshot()),
-		post: window.__stores.scenePost.scenePostSnapshot()
+		graphs: Object.keys(window.__tp.test.v1.shaderGraph.shaderGraphsSnapshot()),
+		post: window.__tp.test.v1.scenePost.scenePostSnapshot()
 	}));
 	h.check(
 		saved.graphs.includes(shared.key),

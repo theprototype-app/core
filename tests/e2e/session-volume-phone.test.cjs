@@ -26,15 +26,15 @@ const MB = 1024 * 1024;
 const vols = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.sessionVolumes.sessionVolumes.subscribe((x) => (v = x))();
+		window.__tp.test.v1.sessionVolumes.sessionVolumes.subscribe((x) => (v = x))();
 		return (v ?? []).map((x) => ({ id: x.id, host: x.host, items: x.items.map((i) => ({ id: i.id, name: i.name, size: i.size, thumb: !!i.thumbnail })) }));
 	});
-const debug = (p) => p.page.evaluate(() => window.__stores.sessionVolumes.volumeDebug());
+const debug = (p) => p.page.evaluate(() => window.__tp.test.v1.sessionVolumes.volumeDebug());
 const answers = async (H) => (await debug(H)).log.filter((l) => /^(answer|refused) volget/.test(l)).length;
 const library = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.explorer.explorerItems.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((x) => (v = x))();
 		return (v ?? []).map((i) => i.name + ':' + i.hash).sort();
 	});
 
@@ -43,9 +43,9 @@ h.run(async () => {
 	const H = await h.setupPage(browser, 'H', { context: { viewport: { width: 1440, height: 900 } } });
 	const G = await h.setupPage(browser, 'G', { context: { viewport: { width: 390, height: 896 }, deviceScaleFactor: 2.9, hasTouch: true, isMobile: true } });
 	for (const peer of [H, G]) {
-		await peer.page.waitForFunction(() => !!window.__stores?.sessionVolumes && !!window.__stores?.explorer, null, { timeout: 90000 });
+		await peer.page.waitForFunction(() => !!window.__tp?.test.v1?.sessionVolumes && !!window.__tp?.test.v1?.explorer, null, { timeout: 90000 });
 		await peer.page.evaluate(async () => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			await s.explorer.loadExplorer();
 			await s.explorer.clearLibrary();
 			s.levels.currentLevel.set(null);
@@ -53,7 +53,7 @@ h.run(async () => {
 	}
 
 	const made = await H.page.evaluate(async (size) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const c = document.createElement('canvas');
 		c.width = c.height = 32;
 		const g = c.getContext('2d');
@@ -78,7 +78,7 @@ h.run(async () => {
 	// ---- 1. rows + thumbnails within the join wait ----------------------------------------------
 	// the folded phone keeps the Connect field inside a sheet, so dial through the same function the
 	// pill calls (requestConnect), then approve on the host and wait the helper's ordinary 9 s settle
-	await G.page.evaluate((id) => window.__stores.peerApproval.requestConnect(id), H.id);
+	await G.page.evaluate((id) => window.__tp.test.v1.peerApproval.requestConnect(id), H.id);
 	await h.approveButton(H.page).click({ timeout: 30000 });
 	await G.page.waitForTimeout(9000);
 	await h.eventually(() => vols(G), (x) => x.length === 1 && x[0].items.length === 4, 'premise: the volume arrived', 20000);
@@ -124,7 +124,7 @@ h.run(async () => {
 	// ---- 3. > 50 MB asks; Cancel moves nothing ---------------------------------------------------
 	const before = await library(G);
 	await G.page.evaluate((id) => {
-		const s = window.__stores.sessionVolumes;
+		const s = window.__tp.test.v1.sessionVolumes;
 		let v;
 		s.sessionVolumes.subscribe((x) => (v = x))();
 		const ids = v[0].items.filter((i) => i.name.startsWith('take-')).map((i) => i.id);
@@ -143,7 +143,7 @@ h.run(async () => {
 
 	// ---- 4. a pull cancelled while running leaves nothing ---------------------------------------
 	const cancelled = await G.page.evaluate(async (id) => {
-		const s = window.__stores.sessionVolumes;
+		const s = window.__tp.test.v1.sessionVolumes;
 		let v;
 		s.sessionVolumes.subscribe((x) => (v = x))();
 		const row = v[0].items.find((i) => i.name === 'take-1.txt');
@@ -162,7 +162,7 @@ h.run(async () => {
 	// ---- 5. Open pulls exactly the one file -------------------------------------------------------
 	const pullsBefore = (await debug(G)).pullCount;
 	const got = await G.page.evaluate(async (id) => {
-		const s = window.__stores.sessionVolumes;
+		const s = window.__tp.test.v1.sessionVolumes;
 		let v;
 		s.sessionVolumes.subscribe((x) => (v = x))();
 		const row = v[0].items.find((i) => i.name === 'photo.png');

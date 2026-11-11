@@ -15,7 +15,7 @@ const h = require('./helpers.cjs');
 const SIDES = ['left', 'right'];
 const state = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const g = (st) => {
 			let v;
 			st.subscribe((x) => (v = x))();
@@ -51,8 +51,8 @@ h.run(async () => {
 	const base = { left: st.left.top - st.saved.left, right: st.right.top - st.saved.right };
 	await page.evaluate(
 		([l, r]) => {
-			window.__stores.sidebarHandles.setSidebarHandleY('left', l);
-			window.__stores.sidebarHandles.setSidebarHandleY('right', r);
+			window.__tp.test.v1.sidebarHandles.setSidebarHandleY('left', l);
+			window.__tp.test.v1.sidebarHandles.setSidebarHandleY('right', r);
 		},
 		[820 - base.left, 860 - base.right]
 	);
@@ -71,7 +71,7 @@ h.run(async () => {
 
 	// ---- 3. the dock grows: the handle follows ----
 	const was = st;
-	await page.evaluate((hh) => window.__stores.bottomDock.dockHeight.set(hh), Math.round(was.inset + 120));
+	await page.evaluate((hh) => window.__tp.test.v1.bottomDock.dockHeight.set(hh), Math.round(was.inset + 120));
 	await settle(page, 900);
 	st = await state(page);
 	h.check(st.dockTop !== null && st.dockTop < was.dockTop - 60, `premise: the dock grew (top ${was.dockTop} -> ${st.dockTop})`);
@@ -93,8 +93,8 @@ h.run(async () => {
 	h.check(st.saved.left === home.saved.left, '4 ...the other side keeps its own');
 	await page.evaluate(() => {
 		let v;
-		window.__stores.sidebars.sidebarVisible.subscribe((x) => (v = x))();
-		if (v.right) window.__stores.sidebars.toggleSidebar('right', false);
+		window.__tp.test.v1.sidebars.sidebarVisible.subscribe((x) => (v = x))();
+		if (v.right) window.__tp.test.v1.sidebars.toggleSidebar('right', false);
 	});
 
 	// ---- 5. the dock closes ----

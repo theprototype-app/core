@@ -15,7 +15,7 @@ const h = require('./helpers.cjs');
 
 const sp = (page, fn, arg) =>
 	page.evaluate(
-		([body, a]) => new Function('sp', 'arg', body)(window.__stores.scenePhysics, a),
+		([body, a]) => new Function('sp', 'arg', body)(window.__tp.test.v1.scenePhysics, a),
 		[fn, arg ?? null]
 	);
 

@@ -75,7 +75,7 @@ const disarm = (page) =>
 
 const sceneState = (page, marker) =>
 	page.evaluate((marker) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		/** @type {any} */ let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		/** @type {any} */ let pending;
@@ -135,15 +135,15 @@ h.run(async () => {
 	const fresh = async ({ keepRestore = false } = {}) => {
 		if (cdp) await throttle(1).catch(() => {});
 		await page.reload({ waitUntil: 'domcontentloaded' });
-		await page.waitForFunction(() => window.__stores && !!window.__stores.moduleSDK, null, { timeout: 60000 });
+		await page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.moduleSDK, null, { timeout: 60000 });
 		await page.waitForTimeout(1500);
 		await page.evaluate(PROBE);
-		if (!keepRestore) await page.evaluate(() => window.__stores.autosave.dismissRestore());
+		if (!keepRestore) await page.evaluate(() => window.__tp.test.v1.autosave.dismissRestore());
 		cdp = await page.context().newCDPSession(page);
 	};
 	await fresh();
-	const urlOf = (rel) => page.evaluate((p) => window.__stores.sceneTemplates.resolveUrl(p, window.__stores.sceneTemplates.SCENES_BASE), rel);
-	const open = (url) => page.evaluate((url) => void window.__stores.sceneTemplates.loadRemoteScene({ slug: 'x', title: 'x', sceneUrl: url }), url);
+	const urlOf = (rel) => page.evaluate((p) => window.__tp.test.v1.sceneTemplates.resolveUrl(p, window.__tp.test.v1.sceneTemplates.SCENES_BASE), rel);
+	const open = (url) => page.evaluate((url) => void window.__tp.test.v1.sceneTemplates.loadRemoteScene({ slug: 'x', title: 'x', sceneUrl: url }), url);
 	const castleUrl = await urlOf(CASTLE);
 	const forestUrl = await urlOf(FOREST);
 	/** sample the load job (store) and the bar (DOM) until `until` holds */
@@ -157,7 +157,7 @@ h.run(async () => {
 		while (Date.now() - t0 < timeout) {
 			const r = await page.evaluate(() => {
 				/** @type {any} */ let job;
-				window.__stores.sceneLoader.sceneLoad.subscribe((v) => (job = v))();
+				window.__tp.test.v1.sceneLoader.sceneLoad.subscribe((v) => (job = v))();
 				const el = document.querySelector('#scene-load-bar');
 				return { job, bar: el ? el.textContent?.replace(/\s+/g, ' ').trim() : '' };
 			});
@@ -214,7 +214,7 @@ h.run(async () => {
 						const m = document.querySelector('#open-templates');
 						if (m && m.getBoundingClientRect().height > 0) {
 							/** @type {any} */ let job;
-							window.__stores.sceneLoader.sceneLoad.subscribe((v) => (job = v))();
+							window.__tp.test.v1.sceneLoader.sceneLoad.subscribe((v) => (job = v))();
 							return resolve({ ms: Math.round(performance.now() - t0), loading: !!job });
 						}
 						if (performance.now() - t0 > 8000) return resolve({ ms: -1, loading: false });
@@ -261,12 +261,12 @@ h.run(async () => {
 	h.check((await page.locator('#scene-load-cancel').count()) === 0, '4.1 the bar offers no Cancel button (36 S5)');
 	// cancel once the castle is being BUILT (a cancel during the download has nothing to take back)
 	await h.eventually(
-		() => page.evaluate(() => { let v; window.__stores.sceneLoader.sceneLoad.subscribe((x) => (v = x))(); return v?.phase ?? null; }),
+		() => page.evaluate(() => { let v; window.__tp.test.v1.sceneLoader.sceneLoad.subscribe((x) => (v = x))(); return v?.phase ?? null; }),
 		(p) => p === 'objects' || p === 'models',
 		'4.1b (premise) the castle is being built',
 		30000
 	);
-	await page.evaluate(() => window.__stores.sceneLoader.cancelLoad());
+	await page.evaluate(() => window.__tp.test.v1.sceneLoader.cancelLoad());
 	await throttle(1);
 	await h.eventually(() => sceneState(page, null), (s) => !s.job && s.top === 0, '4.2 Cancel stops the load and takes back what it had added', 20000);
 	await page.waitForTimeout(3500);
@@ -280,7 +280,7 @@ h.run(async () => {
 	await watch({ marker: 'Castle gate', done: whole }, '5.0 (premise) the castle is back');
 	// one EDITED piece: a pristine fingerprint no longer matches, so it must be written full
 	const edited = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		/** @type {any} */ let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		const piece = g.children.find((/** @type {any} */ c) => c.userData?.packRef && c.children.length && c.getObjectByProperty('isMesh', true));
@@ -289,11 +289,11 @@ h.run(async () => {
 		return { uuid: piece.uuid, mesh: mesh.uuid };
 	});
 	const meshesBefore = (await sceneState(page, 'Castle gate')).meshes;
-	await page.evaluate(() => window.__stores.autosave.saveNow());
+	await page.evaluate(() => window.__tp.test.v1.autosave.saveNow());
 	const meshesAfter = (await sceneState(page, 'Castle gate')).meshes;
 	h.check(meshesAfter === meshesBefore, `5.1 every piece is back in the scene right after the save (${meshesBefore} -> ${meshesAfter} meshes)`);
 	const snap = await page.evaluate(async () => {
-		const s = await window.__stores.idb.idbGet('latest');
+		const s = await window.__tp.test.v1.idb.idbGet('latest');
 		let stubs = 0;
 		for (const n of s?.scene?.nodes ?? []) if (n.extras?.packStub) stubs++;
 		return { bytes: JSON.stringify(s?.scene ?? '').length, stubs, objects: s?.objects };
@@ -318,7 +318,7 @@ h.run(async () => {
 	h.check(probe.max <= LONG_MS, `6.3 no long task over ${LONG_MS} ms while it restores (max ${probe.max} ms of ${probe.longtasks.length}; longest frame gap ${probe.maxGap} ms)`);
 	console.log('   restore long tasks: ' + JSON.stringify(probe.longtasks.slice().sort((a, b) => b - a).slice(0, 10)));
 	const kept = await page.evaluate((e) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		/** @type {any} */ let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		const mesh = g.getObjectByProperty('uuid', e.mesh);
@@ -333,7 +333,7 @@ h.run(async () => {
 	// loop is one task (300 and 1200 bare boxes were measured too cheap to tell, 166 ms unsliced).
 	await fresh();
 	const many = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		/** @type {any} */ let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		for (let i = 0; i < 1000; i++) {
@@ -348,10 +348,10 @@ h.run(async () => {
 		window.__manyPayload = payload;
 		return payload.objects.length;
 	});
-	await page.evaluate(() => window.__stores.sceneLoader.cancelLoad());
+	await page.evaluate(() => window.__tp.test.v1.sceneLoader.cancelLoad());
 	await arm(page);
 	await throttle(CPU);
-	await page.evaluate(() => void window.__stores.sessions.applySession(window.__manyPayload, { backup: false }));
+	await page.evaluate(() => void window.__tp.test.v1.sessions.applySession(window.__manyPayload, { backup: false }));
 	await h.eventually(() => sceneState(page, null), (s) => s.top === many && !s.job, '7.0 a scene of ' + many + ' ordinary meshes loads', 120000);
 	await page.waitForTimeout(1500);
 	await throttle(1);

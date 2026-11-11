@@ -23,7 +23,7 @@ async function installUndoCounter(page) {
 		const w = /** @type {any} */ (window);
 		w.__r26Seen = new WeakSet();
 		w.__r26New = 0;
-		w.__stores.history.undoStack.subscribe((/** @type {any[]} */ stack) => {
+		w.__tp.test.v1.history.undoStack.subscribe((/** @type {any[]} */ stack) => {
 			for (const e of stack)
 				if (e && typeof e === 'object' && !w.__r26Seen.has(e)) {
 					w.__r26Seen.add(e);
@@ -163,7 +163,7 @@ async function contract(page, f) {
 function markStack(page) {
 	return page.evaluate(() => {
 		const w = /** @type {any} */ (window);
-		w.__stores.history.undoStack.subscribe((/** @type {any[]} */ s) => (w.__r26Mark = new Set(s)))();
+		w.__tp.test.v1.history.undoStack.subscribe((/** @type {any[]} */ s) => (w.__r26Mark = new Set(s)))();
 	});
 }
 /** entries on the undo stack that were not there at markStack (eviction-proof) @param {any} page */
@@ -171,14 +171,14 @@ function stackAdded(page) {
 	return page.evaluate(() => {
 		const w = /** @type {any} */ (window);
 		let stack = /** @type {any[]} */ ([]);
-		w.__stores.history.undoStack.subscribe((/** @type {any[]} */ s) => (stack = s))();
+		w.__tp.test.v1.history.undoStack.subscribe((/** @type {any[]} */ s) => (stack = s))();
 		return stack.filter((e) => !w.__r26Mark.has(e)).length;
 	});
 }
 
 /** the selected object's transform component @param {any} page @param {string} field @param {string} axis */
 const transformReader = (page, field, axis) => () =>
-	page.evaluate(({ field, axis }) => new Promise((r) => window.__stores.selectedObject.subscribe((o) => r(o?.[field]?.[axis]))()), { field, axis });
+	page.evaluate(({ field, axis }) => new Promise((r) => window.__tp.test.v1.selectedObject.subscribe((o) => r(o?.[field]?.[axis]))()), { field, axis });
 
 h.run(async () => {
 	const browser = await h.launch({ args: [...h.GPU_ARGS] });
@@ -187,12 +187,12 @@ h.run(async () => {
 	await installUndoCounter(page);
 
 	// ---- the Inspector: transforms ---------------------------------------------------------
-	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await page.waitForTimeout(1500);
 	const box = await page.evaluate(async () => {
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const b = g.children.find((c) => c.name === 'Box') ?? g.children[g.children.length - 1];
-		window.__stores.objectActions.selectObject(b.uuid, true);
+		window.__tp.test.v1.objectActions.selectObject(b.uuid, true);
 		b.position.set(0, 1, 0); // park it: a fresh /create box is dynamic
 		b.rotation.set(0, 0, 0);
 		b.scale.set(1, 1, 1);
@@ -202,7 +202,7 @@ h.run(async () => {
 	await page.waitForTimeout(800);
 	await page.locator('#inspector-position').waitFor({ state: 'visible', timeout: 10000 });
 	// show the parked pose, so every check starts from what the rows say
-	await page.evaluate(() => window.__stores.selectedObject.update((v) => v));
+	await page.evaluate(() => window.__tp.test.v1.selectedObject.update((v) => v));
 	await page.waitForTimeout(150);
 
 	await contract(page, {
@@ -221,38 +221,38 @@ h.run(async () => {
 	// ---- the Inspector: values that recorded no undo at all -------------------------------
 	await contract(page, {
 		name: 'render order', root: '*:has(> .dn-wrap > #inspector-render-order)', index: 0, typed: '12', typedValue: 12,
-		read: () => page.evaluate(() => new Promise((r) => window.__stores.selectedObject.subscribe((o) => r(o?.renderOrder))())),
+		read: () => page.evaluate(() => new Promise((r) => window.__tp.test.v1.selectedObject.subscribe((o) => r(o?.renderOrder))())),
 		shows: (v) => v
 	});
 
-	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/light directional'));
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/light directional'));
 	await page.waitForTimeout(1200);
 	await page.evaluate(async () => {
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const l = g.children.find((c) => c.type === 'DirectionalLight');
-		window.__stores.objectActions.selectObject(l.uuid, true);
+		window.__tp.test.v1.objectActions.selectObject(l.uuid, true);
 	});
 	await page.waitForTimeout(700);
 	await page.locator('#inspector-intensity').waitFor({ state: 'visible', timeout: 10000 });
 	await contract(page, {
 		name: 'light intensity', root: '#inspector-intensity', index: 0, typed: '2.5', typedValue: 2.5,
-		read: () => page.evaluate(() => new Promise((r) => window.__stores.selectedObject.subscribe((o) => r(o?.intensity))())),
+		read: () => page.evaluate(() => new Promise((r) => window.__tp.test.v1.selectedObject.subscribe((o) => r(o?.intensity))())),
 		shows: (v) => v
 	});
 
 	// ---- a light's range slider: one DRAG of the range is one step too --------------------
-	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/light point'));
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/light point'));
 	await page.waitForTimeout(1200);
 	await page.evaluate(async () => {
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const l = g.children.find((c) => c.type === 'PointLight');
-		window.__stores.objectActions.selectObject(l.uuid, true);
+		window.__tp.test.v1.objectActions.selectObject(l.uuid, true);
 	});
 	await page.waitForTimeout(700);
 	const range = page.locator('input[type=range][aria-label="Distance"]').first();
 	await range.waitFor({ state: 'visible', timeout: 10000 });
 	await range.evaluate((/** @type {any} */ el) => el.scrollIntoView({ block: 'center' }));
-	const distance = () => page.evaluate(() => new Promise((r) => window.__stores.selectedObject.subscribe((o) => r(o?.distance))()));
+	const distance = () => page.evaluate(() => new Promise((r) => window.__tp.test.v1.selectedObject.subscribe((o) => r(o?.distance))()));
 	const dist0 = await distance();
 	let dr0 = await undoEntries(page);
 	const rb = await range.boundingBox();
@@ -273,7 +273,7 @@ h.run(async () => {
 	// pending seals first) — not the step before it (the light's creation)
 	{
 		const before = await distance();
-		const stackLen = () => page.evaluate(() => new Promise((r) => window.__stores.history.undoStack.subscribe((/** @type {any[]} */ st) => r(st.length))()));
+		const stackLen = () => page.evaluate(() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((/** @type {any[]} */ st) => r(st.length))()));
 		const stack0 = await stackLen();
 		const rb2 = await range.boundingBox();
 		await page.mouse.move(rb2.x + rb2.width * 0.2, rb2.y + rb2.height / 2);
@@ -281,7 +281,7 @@ h.run(async () => {
 		await page.mouse.move(rb2.x + rb2.width * 0.7, rb2.y + rb2.height / 2, { steps: 8 });
 		await page.mouse.up();
 		const moved = await distance();
-		await page.evaluate(() => window.__stores.history.undo());
+		await page.evaluate(() => window.__tp.test.v1.history.undo());
 		await page.waitForTimeout(700);
 		h.check(!near(moved, before) && near(await distance(), before), `light distance slider: an immediate Ctrl+Z undoes the drag just made: ${fmt(before)} -> ${fmt(moved)} -> ${fmt(await distance())}`);
 		const stack1 = await stackLen();
@@ -295,10 +295,10 @@ h.run(async () => {
 	});
 
 	// ---- a shader vector (it recorded two steps per scrub) --------------------------------
-	await page.evaluate((u) => window.__stores.objectActions.selectObject(u, true), box);
+	await page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u, true), box);
 	await page.waitForTimeout(400);
 	await page.evaluate((u) => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		S.shaderGraph.setShaderGraphFor(u, {
 			nodes: [
 				{ id: 'tl', type: 'tilingOffset', position: { x: 70, y: 60 }, data: {} },
@@ -314,14 +314,14 @@ h.run(async () => {
 		name: 'shader vec2 x', root: '#shader-editor .shader-vec', index: 0, typed: '3', typedValue: 3,
 		read: () =>
 			page.evaluate(
-				(u) => new Promise((r) => window.__stores.shaderGraph.shaderGraphs.subscribe((all) => r(Number((all[u]?.nodes ?? []).find((n) => n.type === 'tilingOffset')?.data?.tiling?.[0] ?? 1)))()),
+				(u) => new Promise((r) => window.__tp.test.v1.shaderGraph.shaderGraphs.subscribe((all) => r(Number((all[u]?.nodes ?? []).find((n) => n.type === 'tilingOffset')?.data?.tiling?.[0] ?? 1)))()),
 				box
 			)
 	});
 
 	// ---- the Animation window (length/fps/step: one step PER CHANGE; speed: none) -----------
 	await page.evaluate((u) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		const obj = g.getObjectByProperty('uuid', u);
@@ -335,7 +335,7 @@ h.run(async () => {
 	const anim = (/** @type {string} */ key) => () =>
 		page.evaluate(
 			({ u, key }) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				let set;
 				s.animationPreview.animations.subscribe((v) => (set = v))();
 				const doc = set?.[u];

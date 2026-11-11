@@ -5,7 +5,7 @@ const objState = (page, uuid) =>
 	page.evaluate(
 		(uuid) =>
 			new Promise((resolve) => {
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const o = g?.getObjectByProperty('uuid', uuid);
 					resolve(o ? { x: o.position.x, y: o.position.y, ry: o.rotation.y } : null);
 				})();
@@ -20,9 +20,9 @@ h.run(async () => {
 	await h.connect(B, A);
 
 	const uuid = await A.page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		return new Promise((resolve) =>
-			window.__stores.objectsGroup.subscribe((g) => resolve(g.children[g.children.length - 1].uuid))()
+			window.__tp.test.v1.objectsGroup.subscribe((g) => resolve(g.children[g.children.length - 1].uuid))()
 		);
 	});
 	await A.page.evaluate((uuid) => {
@@ -43,10 +43,10 @@ h.run(async () => {
 			}
 		];
 		const edge = { id: 'e1', source: 'sc1', target: 'sel1' };
-		window.__stores.flowNodes.set(nodes);
-		window.__stores.flowEdges.set([edge]);
+		window.__tp.test.v1.flowNodes.set(nodes);
+		window.__tp.test.v1.flowEdges.set([edge]);
 		return new Promise((resolve) => {
-			window.__stores.peers.subscribe((peer) => {
+			window.__tp.test.v1.peers.subscribe((peer) => {
 				nodes.forEach((node) => peer.send({ type: 'nodecreate', node }));
 				peer.send({ type: 'edgecreate', edge });
 				resolve();
@@ -86,7 +86,7 @@ h.run(async () => {
 	});
 	await A.page.waitForTimeout(600);
 	const err = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.scriptErrors.subscribe((m) => r(m['sc1']))())
+		() => new Promise((r) => window.__tp.test.v1.scriptErrors.subscribe((m) => r(m['sc1']))())
 	);
 	h.check(!!err, 'script error reported');
 	await A.page.evaluate(async () => {
@@ -95,12 +95,12 @@ h.run(async () => {
 	});
 	await A.page.waitForTimeout(600);
 	const errAfter = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.scriptErrors.subscribe((m) => r(m['sc1']))())
+		() => new Promise((r) => window.__tp.test.v1.scriptErrors.subscribe((m) => r(m['sc1']))())
 	);
 	h.check(!errAfter, 'script error cleared after fix');
 
 	// the editor's scope follows the selection, and /create selects the box (21-E): show the scene graph
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await A.page.locator('p[title="Node editor (N)"]').click().catch(async (e) => {
 		if (process.env.CW_SHOTS) await A.page.screenshot({ path: process.env.CW_SHOTS + '/zz-script-nodes-fail.png' });
 		throw e;
@@ -132,10 +132,10 @@ h.run(async () => {
 			class: 'w-[150px]'
 		};
 		const edge = { id: 'e2', source: 'cn1', target: 'sel1' };
-		window.__stores.flowNodes.update((n) => [...n, node]);
-		window.__stores.flowEdges.update((e) => [...e, edge]);
+		window.__tp.test.v1.flowNodes.update((n) => [...n, node]);
+		window.__tp.test.v1.flowEdges.update((e) => [...e, edge]);
 		await new Promise((resolve) => {
-			window.__stores.peers.subscribe((peer) => {
+			window.__tp.test.v1.peers.subscribe((peer) => {
 				peer.send({ type: 'nodecreate', node });
 				peer.send({ type: 'edgecreate', edge });
 				resolve();
@@ -145,7 +145,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(3000);
 
 	const bDef = await B.page.evaluate(
-		() => new Promise((r) => window.__stores.customNodeDefs.subscribe((d) => r(d.find((x) => x.id === 'def-wobble')))())
+		() => new Promise((r) => window.__tp.test.v1.customNodeDefs.subscribe((d) => r(d.find((x) => x.id === 'def-wobble')))())
 	);
 	h.check(!!bDef, 'custom def replicated to B');
 	const br1 = await objState(B.page, uuid);
@@ -164,7 +164,7 @@ h.run(async () => {
 	});
 	await A.page.waitForTimeout(2000);
 	const bDef2 = await B.page.evaluate(
-		() => new Promise((r) => window.__stores.customNodeDefs.subscribe((d) => r(d.find((x) => x.id === 'def-wobble'))))
+		() => new Promise((r) => window.__tp.test.v1.customNodeDefs.subscribe((d) => r(d.find((x) => x.id === 'def-wobble'))))
 	);
 	h.check(bDef2?.name === 'Wobble2', 'def edit replicated to B');
 
@@ -174,7 +174,7 @@ h.run(async () => {
 	// to C is open) — read once right after connect it raced that answer on a loaded box. Wait
 	// for it, bounded: a joiner that never gets them still reads red.
 	await h.eventually(
-		() => C.page.evaluate(() => { let d; window.__stores.customNodeDefs.subscribe((x) => (d = x))(); return !!d.find((x) => x.id === 'def-wobble'); }),
+		() => C.page.evaluate(() => { let d; window.__tp.test.v1.customNodeDefs.subscribe((x) => (d = x))(); return !!d.find((x) => x.id === 'def-wobble'); }),
 		(v) => v === true,
 		'late joiner received custom defs',
 		30000

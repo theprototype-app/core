@@ -55,12 +55,12 @@ async function pressLock(page, touch) {
 /** a scene with enough rows to scroll, the box selected and its Properties open @param {any} page */
 async function openProperties(page) {
 	await page.evaluate(() => {
-		const w = /** @type {any} */ (window).__stores;
+		const w = /** @type {any} */ (window).__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create box');
 	});
 	await page.waitForTimeout(900);
 	await page.evaluate(() => {
-		const w = /** @type {any} */ (window).__stores;
+		const w = /** @type {any} */ (window).__tp?.test.v1;
 		let g;
 		w.objectsGroup.subscribe((/** @type {any} */ v) => (g = v))();
 		const o = g.children[g.children.length - 1];
@@ -76,11 +76,11 @@ async function openProperties(page) {
 async function shots(page, name) {
 	if (!OUT) return;
 	for (const t of ['dark', 'light']) {
-		await page.evaluate((th) => window.__stores.themes.theme.set(th), t);
+		await page.evaluate((th) => window.__tp.test.v1.themes.theme.set(th), t);
 		await page.waitForTimeout(350);
 		await page.screenshot({ path: path.join(OUT, `${name}-${t}.png`) });
 	}
-	await page.evaluate(() => window.__stores.themes.theme.set('dark'));
+	await page.evaluate(() => window.__tp.test.v1.themes.theme.set('dark'));
 }
 
 h.run(async () => {
@@ -114,7 +114,7 @@ h.run(async () => {
 		await measure(page, 'bottom');
 		await shots(page, `i1-${tag}-properties-unlocked-scrolled`);
 		// per panel: Configure Scene keeps its own (default) setting
-		await page.evaluate(() => window.__stores.showSidebar('scene'));
+		await page.evaluate(() => window.__tp.test.v1.showSidebar('scene'));
 		await page.waitForTimeout(900);
 		await page.waitForSelector('#scene-quality-preset, #environment-presets', { state: 'visible', timeout: 10000 }).catch(() => {});
 		m = await measure(page, 'bottom');
@@ -127,7 +127,7 @@ h.run(async () => {
 			// 78-int PL17: the device sections start closed, so open the ones below the target first — a
 			// deep link can only land a section at the top when there is a panel's height of content under it
 			for (const label of ['Snapping', 'Grid', 'Camera', 'View']) {
-				await page.evaluate((l) => window.__stores.openSceneSection(l), label);
+				await page.evaluate((l) => window.__tp.test.v1.openSceneSection(l), label);
 				await page.waitForTimeout(500);
 			}
 			await page.waitForTimeout(400);
@@ -143,7 +143,7 @@ h.run(async () => {
 			await pressLock(page, false);
 			// Settings ▸ Interface ▸ Sticky panel headers: mixed while they differ, one press sets both
 			await page.evaluate(() => {
-				const w = /** @type {any} */ (window).__stores;
+				const w = /** @type {any} */ (window).__tp?.test.v1;
 				w.settingsSection.set('interface');
 				w.settingsOpen.set(true);
 			});
@@ -154,7 +154,7 @@ h.run(async () => {
 			await page.waitForTimeout(300);
 			let both = await page.evaluate(() => {
 				let v;
-				window.__stores.panelHeaderPrefs.stickyPanelHeads.subscribe((/** @type {any} */ x) => (v = x))();
+				window.__tp.test.v1.panelHeaderPrefs.stickyPanelHeads.subscribe((/** @type {any} */ x) => (v = x))();
 				return v;
 			});
 			h.check(both?.scene === true && both?.properties === true, `${tag}: one press makes both sticky (${JSON.stringify(both)})`);
@@ -162,7 +162,7 @@ h.run(async () => {
 			await page.waitForTimeout(300);
 			both = await page.evaluate(() => {
 				let v;
-				window.__stores.panelHeaderPrefs.stickyPanelHeads.subscribe((/** @type {any} */ x) => (v = x))();
+				window.__tp.test.v1.panelHeaderPrefs.stickyPanelHeads.subscribe((/** @type {any} */ x) => (v = x))();
 				return v;
 			});
 			h.check(both?.scene === false && both?.properties === false, `${tag}: …and another unsticks both (${JSON.stringify(both)})`);
@@ -177,21 +177,21 @@ h.run(async () => {
 			await page.waitForTimeout(700);
 			const found2 = await page.evaluate(() => !!document.querySelector('#row-sticky-panel-heads') && /** @type {any} */ (document.querySelector('#row-sticky-panel-heads')).offsetParent !== null);
 			h.check(found2, `${tag}: …and "filter properties" too (keywords)`);
-			await page.evaluate(() => window.__stores.settingsOpen.set(false));
+			await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 			// survives a reload (both unstuck now)
 			await h.freshReload(P);
 			await page.locator('#restore-session-dismiss').click({ timeout: 6000 }).catch(() => {});
-			await page.evaluate(() => window.__stores.showSidebar('scene'));
+			await page.evaluate(() => window.__tp.test.v1.showSidebar('scene'));
 			await page.waitForSelector('#inspector-sticky-head', { state: 'visible', timeout: 10000 });
 			await page.waitForTimeout(700);
 			m = await measure(page, 'bottom');
 			h.check(m?.sticky === 'false' && m.headBottom <= 0, `${tag}: after a reload the choice holds (${m?.sticky}, bottom ${m?.headBottom})`);
-			await page.evaluate(() => window.__stores.panelHeaderPrefs.setAllStickyHeads(true));
+			await page.evaluate(() => window.__tp.test.v1.panelHeaderPrefs.setAllStickyHeads(true));
 			await page.waitForTimeout(300);
 			h.check((await page.evaluate(() => localStorage.getItem('panels:stickyHeads'))) === null, `${tag}: back to the default stores nothing`);
 		} else {
 			// put Properties back for the next device, through the header again (a tap)
-			await page.evaluate(() => window.__stores.showSidebar('properties'));
+			await page.evaluate(() => window.__tp.test.v1.showSidebar('properties'));
 			await page.waitForTimeout(900);
 			await pressLock(page, dev.touch);
 			m = await measure(page, 'bottom');

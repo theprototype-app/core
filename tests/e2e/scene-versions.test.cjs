@@ -38,21 +38,21 @@ const h = require('./helpers.cjs');
 const manifestOf = (peer) =>
 	peer.page.evaluate(() => {
 		let m;
-		window.__stores.projectManifest.projectManifest.subscribe((v) => (m = v))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((v) => (m = v))();
 		return m;
 	});
 
 const historyOf = (peer, name) =>
 	peer.page.evaluate((n) => {
 		let m;
-		window.__stores.projectManifest.projectManifest.subscribe((v) => (m = v))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((v) => (m = v))();
 		return m.scenes[n]?.history ?? [];
 	}, name);
 
 /** the two shelves, as {visible, hidden} name lists for one scene name */
 const shelves = (peer, fileName) =>
 	peer.page.evaluate((n) => {
-		const s = window.__stores.explorer;
+		const s = window.__tp.test.v1.explorer;
 		let vis, hid;
 		s.explorerItems.subscribe((v) => (vis = v))();
 		s.hiddenItems.subscribe((v) => (hid = v))();
@@ -65,33 +65,33 @@ const shelves = (peer, fileName) =>
 /** does this peer still hold BYTES for each hash — through the ordinary hash lookup */
 const heldByHash = (peer, hashes) =>
 	peer.page.evaluate(
-		(list) => list.map((hash) => !!window.__stores.explorer.itemByHash(hash)),
+		(list) => list.map((hash) => !!window.__tp.test.v1.explorer.itemByHash(hash)),
 		hashes
 	);
 
 const childUuids = (peer) =>
 	peer.page.evaluate(() => {
 		let group;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		return (group?.children ?? []).map((c) => c.uuid).sort();
 	});
 
 const addBox = (peer) =>
 	peer.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1100));
 		s.objectActions.deselectObject();
 	});
 
 const saveScene = (peer, name) =>
-	peer.page.evaluate((n) => window.__stores.levels.saveSceneAsLevel(n), name);
+	peer.page.evaluate((n) => window.__tp.test.v1.levels.saveSceneAsLevel(n), name);
 
 /** the scene we are IN (21-I1: what gates the save row) */
 const currentLevelName = (peer) =>
 	peer.page.evaluate(() => {
 		let v;
-		window.__stores.levels.currentLevel.subscribe((x) => (v = x))();
+		window.__tp.test.v1.levels.currentLevel.subscribe((x) => (v = x))();
 		return v?.name ?? null;
 	});
 
@@ -105,7 +105,7 @@ const currentLevelName = (peer) =>
 const craftOrphan = (peer, sceneName, createdAt) =>
 	peer.page.evaluate(
 		async ({ n, at }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const payload = s.sessions.emptySessionPayload(n);
 			const bytes = await s.sessions.exportSessionZip(payload, {
 				assets: false,
@@ -130,7 +130,7 @@ const craftOrphan = (peer, sceneName, createdAt) =>
 const openPanel = async (peer, fileName) => {
 	if (await peer.page.locator('[role="menu"]').first().isVisible().catch(() => false))
 		await peer.page.keyboard.press('Escape');
-	await peer.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await peer.page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await peer.page.waitForTimeout(400);
 	const card = peer.page.locator(`.explorer-card[title="${fileName}"]`).first();
 	await card.waitFor({ state: 'visible', timeout: 15000 });
@@ -170,14 +170,14 @@ const panelRows = (peer) =>
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
-	await A.page.waitForFunction(() => !!window.__stores?.levels && !!window.__stores?.projectManifest, {
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.levels && !!window.__tp?.test.v1?.projectManifest, {
 		timeout: 30000
 	});
 
 	h.check(
 		await A.page.evaluate(() => {
 			let host;
-			window.__stores.connectionState.sessionHost.subscribe((v) => (host = v))();
+			window.__tp.test.v1.connectionState.sessionHost.subscribe((v) => (host = v))();
 			return host === null;
 		}),
 		'premise: A is alone, so A is the session writer (every version write is gated on it)'
@@ -185,7 +185,7 @@ h.run(async () => {
 	h.check(
 		(await A.page.evaluate(() => {
 			let n;
-			window.__stores.projectManifest.keepVersionsSetting.subscribe((v) => (n = v))();
+			window.__tp.test.v1.projectManifest.keepVersionsSetting.subscribe((v) => (n = v))();
 			return n;
 		})) === 10,
 		'premise: "Keep versions per scene" starts at the documented default of 10'
@@ -227,15 +227,15 @@ h.run(async () => {
 	);
 	h.check(
 		await A.page.evaluate(async (hash) => {
-			const item = window.__stores.explorer.itemByHash(hash);
-			const blob = await window.__stores.explorer.itemBlob(item.id);
+			const item = window.__tp.test.v1.explorer.itemByHash(hash);
+			const blob = await window.__tp.test.v1.explorer.itemBlob(item.id);
 			return !!blob && blob.size > 0;
 		}, v[0]),
 		'a hidden version still has its bytes on disk (the blob is id-addressed, so the move cost nothing)'
 	);
 	// the travel picker lists scenes to GO to, and there is one Arena to go to
 	h.check(
-		(await A.page.evaluate(() => window.__stores.levels.levelItems().map((i) => i.name))).filter(
+		(await A.page.evaluate(() => window.__tp.test.v1.levels.levelItems().map((i) => i.name))).filter(
 			(n) => n === 'Arena.tpscene'
 		).length === 1,
 		'the travel picker offers Arena exactly once (it reads the visible library)'
@@ -245,7 +245,7 @@ h.run(async () => {
 	// 2. THE MIGRATION — a crafted pre-G7 library folds on demand
 	// =====================================================================
 	const unfolded = await A.page.evaluate(() => {
-		const s = window.__stores.explorer;
+		const s = window.__tp.test.v1.explorer;
 		let hid;
 		s.hiddenItems.subscribe((x) => (hid = x))();
 		for (const item of [...hid]) s.setItemHidden(item.id, false);
@@ -254,7 +254,7 @@ h.run(async () => {
 		return vis.filter((i) => i.name === 'Arena.tpscene').length;
 	});
 	h.check(unfolded === 3, `premise: the pre-G7 state really is three cards for one scene (${unfolded})`);
-	const folded = await A.page.evaluate(() => window.__stores.levels.foldSceneVersions());
+	const folded = await A.page.evaluate(() => window.__tp.test.v1.levels.foldSceneVersions());
 	shelf = await shelves(A, 'Arena.tpscene');
 	h.check(
 		folded === 2 && shelf.visible.length === 1 && shelf.visible[0] === v[2],
@@ -276,12 +276,12 @@ h.run(async () => {
 	h.check(
 		(await A.page.evaluate(() => {
 			let f;
-			window.__stores.explorer.explorerFolders.subscribe((x) => (f = x))();
+			window.__tp.test.v1.explorer.explorerFolders.subscribe((x) => (f = x))();
 			return f.length;
 		})) === 0,
 		'premise: the saves created no folders at all — every card is at the root'
 	);
-	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await A.page.waitForTimeout(500);
 	const card = A.page.locator('.explorer-card[title="Arena.tpscene"]');
 	h.check((await card.count()) === 1, `premise: exactly one Arena card is in the grid (${await card.count()})`);
@@ -383,7 +383,7 @@ h.run(async () => {
 	);
 	h.check(
 		(await A.page.evaluate(async () => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let m;
 			s.projectManifest.projectManifest.subscribe((x) => (m = x))();
 			const check = m.scenes.Arena.history[m.scenes.Arena.history.length - 2];
@@ -437,45 +437,45 @@ h.run(async () => {
 	// 7. THE SETTING AT ZERO — no versions cut behind your back, everything
 	//    you ASK for still works
 	// =====================================================================
-	await A.page.evaluate(() => window.__stores.levels.newLevel('Sandbox'));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.newLevel('Sandbox'));
 	const sandbox = await A.page.evaluate(() => {
 		let items;
-		window.__stores.explorer.explorerItems.subscribe((v2) => (items = v2))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((v2) => (items = v2))();
 		const item = items.find((i) => i.name === 'Sandbox.tpscene');
-		window.__stores.projectManifest.publishSceneVersion('Sandbox', item.hash);
+		window.__tp.test.v1.projectManifest.publishSceneVersion('Sandbox', item.hash);
 		return item.hash;
 	});
-	await A.page.evaluate(() => window.__stores.levels.travelToScene('Sandbox'));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.travelToScene('Sandbox'));
 	await h.eventually(() => childUuids(A), (u) => u.length === 0, 'premise: on the empty Sandbox scene');
-	await A.page.evaluate(() => window.__stores.projectManifest.keepVersionsSetting.set(0));
+	await A.page.evaluate(() => window.__tp.test.v1.projectManifest.keepVersionsSetting.set(0));
 	await addBox(A); // a real edit, so only the SETTING can be what stops the publish
 	const sandboxBefore = (await historyOf(A, 'Sandbox')).length;
-	await A.page.evaluate(() => window.__stores.levels.travelToScene('Arena'));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.travelToScene('Arena'));
 	await h.eventually(() => childUuids(A), (u) => u.length === 1, 'travelled away from Sandbox');
 	h.check(
 		(await historyOf(A, 'Sandbox')).length === sandboxBefore,
 		`at keep-0 the travel-away auto-save publishes NOTHING (${sandboxBefore} → ${(await historyOf(A, 'Sandbox')).length})`
 	);
 	// the counterfactual, in-test: the SAME departure with the setting back on does publish
-	await A.page.evaluate(() => window.__stores.levels.travelToScene('Sandbox'));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.travelToScene('Sandbox'));
 	await h.eventually(() => childUuids(A), (u) => u.length === 0, 'back on Sandbox (its saved, empty content)');
 	await addBox(A);
-	await A.page.evaluate(() => window.__stores.projectManifest.keepVersionsSetting.set(10));
-	await A.page.evaluate(() => window.__stores.levels.travelToScene('Arena'));
+	await A.page.evaluate(() => window.__tp.test.v1.projectManifest.keepVersionsSetting.set(10));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.travelToScene('Arena'));
 	await h.eventually(() => childUuids(A), (u) => u.length === 1, 'left Sandbox again, setting restored');
 	h.check(
 		(await historyOf(A, 'Sandbox')).length === sandboxBefore + 1,
 		`COUNTERFACTUAL: the identical departure with the setting on DOES publish (${(await historyOf(A, 'Sandbox')).length})`
 	);
 	// and an explicit save is never gated by it — it is the user asking
-	await A.page.evaluate(() => window.__stores.projectManifest.keepVersionsSetting.set(0));
+	await A.page.evaluate(() => window.__tp.test.v1.projectManifest.keepVersionsSetting.set(0));
 	const manualAtZero = await saveScene(A, 'Arena');
 	h.check(
 		!!manualAtZero?.hash && (await historyOf(A, 'Arena')).includes(manualAtZero.hash),
 		'an explicit Save scene still publishes at keep-0 — off means "stop cutting versions unasked"'
 	);
 	const keep0 = await A.page.evaluate(() => [
-		...window.__stores.projectManifest.keepableHashes('Arena')
+		...window.__tp.test.v1.projectManifest.keepableHashes('Arena')
 	]);
 	const pointerNow = (await historyOf(A, 'Arena')).slice(-1)[0];
 	h.check(
@@ -499,7 +499,7 @@ h.run(async () => {
 	//    A FRESH scene, because §7 deliberately left Arena with one held version
 	//    and a prune with nothing to drop would prove nothing.
 	// =====================================================================
-	await A.page.evaluate(() => window.__stores.projectManifest.keepVersionsSetting.set(10));
+	await A.page.evaluate(() => window.__tp.test.v1.projectManifest.keepVersionsSetting.set(10));
 	/** @type {string[]} */
 	const t = [];
 	for (let i = 0; i < 4; i++) {
@@ -513,19 +513,19 @@ h.run(async () => {
 	// t[0] is deliberately OUTSIDE the newest two — a pin already inside the window
 	// would prove nothing about pinning
 	await A.page.evaluate((hash) => {
-		const s = window.__stores.projectManifest;
+		const s = window.__tp.test.v1.projectManifest;
 		s.keepVersionsSetting.set(2);
 		s.pinSceneVersion('Tower', hash, true);
 	}, t[0]);
 	const pinnedKeep = await A.page.evaluate(() => [
-		...window.__stores.projectManifest.keepableHashes('Tower')
+		...window.__tp.test.v1.projectManifest.keepableHashes('Tower')
 	]);
 	h.check(
 		pinnedKeep.length === 3 && pinnedKeep.includes(t[0]) && pinnedKeep.includes(t[3]),
 		`keep-2 plus one pin OUTSIDE the window = three keepable hashes (${pinnedKeep.length})`
 	);
 	const towerHist = await historyOf(A, 'Tower');
-	const dropped = await A.page.evaluate(() => window.__stores.levels.pruneSceneVersions('Tower'));
+	const dropped = await A.page.evaluate(() => window.__tp.test.v1.levels.pruneSceneVersions('Tower'));
 	h.check(dropped === 1, `the prune dropped exactly the one unkeepable version (${dropped})`);
 	h.check(
 		JSON.stringify(await historyOf(A, 'Tower')) === JSON.stringify(towerHist),
@@ -540,13 +540,13 @@ h.run(async () => {
 		towerHist.every((hash, i) => survivors[i] === pinnedKeep.includes(hash)),
 		`exactly the keepable set survived — nothing more, nothing less (${JSON.stringify(survivors)})`
 	);
-	await A.page.evaluate(() => window.__stores.projectManifest.keepVersionsSetting.set(10));
+	await A.page.evaluate(() => window.__tp.test.v1.projectManifest.keepVersionsSetting.set(10));
 
 	// =====================================================================
 	// 9. THE .tp ROUND TRIP — hidden versions ride out and fold back in
 	// =====================================================================
 	const exported = await A.page.evaluate(async () => {
-		const r = await window.__stores.projectFile.exportProject();
+		const r = await window.__tp.test.v1.projectFile.exportProject();
 		return { scenes: r.scenes, skipped: r.skippedScenes, bytes: [...r.bytes] };
 	});
 	h.check(
@@ -559,12 +559,12 @@ h.run(async () => {
 	);
 	// a clean library, then import: the versions land VISIBLE and the migration folds them
 	await A.page.evaluate(async () => {
-		const s = window.__stores.explorer;
+		const s = window.__tp.test.v1.explorer;
 		let vis, hid;
 		s.explorerItems.subscribe((x) => (vis = x))();
 		s.hiddenItems.subscribe((x) => (hid = x))();
 		for (const item of [...vis, ...hid]) await s.deleteItem(item.id);
-		window.__stores.projectManifest.manifestRestore(null);
+		window.__tp.test.v1.projectManifest.manifestRestore(null);
 	});
 	h.check(
 		(await shelves(A, 'Tower.tpscene')).visible.length === 0,
@@ -574,13 +574,13 @@ h.run(async () => {
 	// WARNS) — take whichever this build has, answering the warning when it exists, so
 	// this suite is green on the G7 branch alone AND after G8 lands under it
 	const importPending = A.page.evaluate((bytes) => {
-		const pf = window.__stores.projectFile;
+		const pf = window.__tp.test.v1.projectFile;
 		const buffer = new Uint8Array(bytes).buffer;
 		return pf.openProject ? pf.openProject(buffer) : pf.importProject(buffer);
 	}, exported.bytes);
 	await A.page.evaluate(async () => {
-		if (!window.__stores.projectFile.openProject) return; // pre-G8: no warning to answer
-		const cd = window.__stores.confirmDialog;
+		if (!window.__tp.test.v1.projectFile.openProject) return; // pre-G8: no warning to answer
+		const cd = window.__tp.test.v1.confirmDialog;
 		for (let i = 0; i < 100; i++) {
 			let d;
 			cd.confirmDialog.subscribe((v) => (d = v))();
@@ -618,7 +618,7 @@ h.run(async () => {
 	//     would be worse than the bug — hidden bytes with no door — so it is
 	//     ADOPTED into the history first, and the POINTER may not move.
 	// =====================================================================
-	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	const depotPointer = (await saveScene(A, 'Depot'))?.hash;
 	h.check(!!depotPointer, 'premise: Depot saved once, so its history is exactly one hash');
 	// three files nothing ever published: two BACKDATED (the pre-manifest case) and one
@@ -641,7 +641,7 @@ h.run(async () => {
 		'premise: and the manifest has never heard of three of them — which is exactly why the' +
 			' hash-only fold could never touch them'
 	);
-	const foldedByName = await A.page.evaluate(() => window.__stores.levels.foldSceneVersions());
+	const foldedByName = await A.page.evaluate(() => window.__tp.test.v1.levels.foldSceneVersions());
 	h.check(
 		foldedByName >= 3,
 		`the sweep folded the three orphans (${foldedByName} items moved shelf)`
@@ -672,7 +672,7 @@ h.run(async () => {
 	// IDEMPOTENT: adoption writes the manifest, and a manifest write re-runs this sweep.
 	// A second pass must find nothing, or the two would feed each other forever.
 	const stampBefore = (await manifestOf(A)).changedAt;
-	await A.page.evaluate(() => window.__stores.levels.foldSceneVersions());
+	await A.page.evaluate(() => window.__tp.test.v1.levels.foldSceneVersions());
 	await A.page.waitForTimeout(400);
 	h.check(
 		(await manifestOf(A)).changedAt === stampBefore &&
@@ -771,10 +771,10 @@ h.run(async () => {
 	//     nothing, so the manifest has no entry — which used to render the
 	//     whole component away, leaving no way to take a first version of it.
 	// =====================================================================
-	await A.page.evaluate(() => window.__stores.levels.newLevel('Draft'));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.newLevel('Draft'));
 	const draftHash = await A.page.evaluate(() => {
 		let items;
-		window.__stores.explorer.explorerItems.subscribe((v2) => (items = v2))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((v2) => (items = v2))();
 		return items.find((i) => i.name === 'Draft.tpscene')?.hash ?? null;
 	});
 	h.check(
@@ -794,7 +794,7 @@ h.run(async () => {
 		(await countOf(A, '#version-save')) === 0,
 		'and no save row, because the draft is not the scene we are in'
 	);
-	await A.page.evaluate((hash) => window.__stores.levels.travelToLevel(hash, 'Draft'), draftHash);
+	await A.page.evaluate((hash) => window.__tp.test.v1.levels.travelToLevel(hash, 'Draft'), draftHash);
 	await h.eventually(() => currentLevelName(A), (n) => n === 'Draft', 'opened the draft');
 	await openPanel(A, 'Draft.tpscene');
 	h.check(
@@ -836,20 +836,20 @@ h.run(async () => {
 	// LAST, and with a scene name of its own, on purpose: it saves — which moves
 	// `currentLevel` — and every earlier section reasons about Arena being the open scene.
 	const chapters = await A.page.evaluate(
-		() => window.__stores.explorer.createFolder('Chapters', null)?.id ?? null
+		() => window.__tp.test.v1.explorer.createFolder('Chapters', null)?.id ?? null
 	);
 	h.check(!!chapters, 'premise: a real library folder to keep a scene in');
 	const folderOfHash = (hash) =>
-		A.page.evaluate((h2) => window.__stores.explorer.itemByHash(h2)?.folderId ?? null, hash);
+		A.page.evaluate((h2) => window.__tp.test.v1.explorer.itemByHash(h2)?.folderId ?? null, hash);
 	const archiveV1 = await A.page.evaluate(async (folderId) => {
-		const item = await window.__stores.levels.saveSceneAsLevel('Archive', folderId);
+		const item = await window.__tp.test.v1.levels.saveSceneAsLevel('Archive', folderId);
 		return item?.hash ?? null;
 	}, chapters);
 	h.check((await folderOfHash(archiveV1)) === chapters, 'premise: Archive was saved INTO that folder');
 	// no edit needed to make the next version differ: a .tpscene embeds a fresh uuid,
 	// createdAt and thumbnail per save, which is the very reason `sceneSignature` exists
 	const archiveV2 = await A.page.evaluate(async () => {
-		const item = await window.__stores.levels.saveSceneVersion('Archive', 'Chapter two');
+		const item = await window.__tp.test.v1.levels.saveSceneVersion('Archive', 'Chapter two');
 		return item?.hash ?? null;
 	});
 	const archiveFolder2 = await folderOfHash(archiveV2);
@@ -869,12 +869,12 @@ h.run(async () => {
 	// 14. A PEER — a label is ordinary manifest data
 	// =====================================================================
 	const B = await h.setupPage(browser, 'B');
-	await B.page.waitForFunction(() => !!window.__stores?.projectManifest, { timeout: 30000 });
+	await B.page.waitForFunction(() => !!window.__tp?.test.v1?.projectManifest, { timeout: 30000 });
 	await h.connect(B, A); // B dials A, so A stays the writer
 	await h.eventually(
 		() => B.page.evaluate(() => {
 			let m;
-			window.__stores.projectManifest.projectManifest.subscribe((v2) => (m = v2))();
+			window.__tp.test.v1.projectManifest.projectManifest.subscribe((v2) => (m = v2))();
 			return m.scenes?.Arena?.labels ?? null;
 		}),
 		(labels) => !!labels && Object.values(labels).includes('Client review'),
@@ -890,19 +890,19 @@ h.run(async () => {
 	// apart from a real older version. B must fold it to one card and adopt NOTHING.
 	const historyBefore = await B.page.evaluate(() => {
 		let m;
-		window.__stores.projectManifest.projectManifest.subscribe((v2) => (m = v2))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((v2) => (m = v2))();
 		return [...(m.scenes?.Arena?.history ?? [])];
 	});
 	const strayHash = await B.page.evaluate(async () => {
 		const bytes = new TextEncoder().encode('B’s own unrelated Arena, from another project');
-		const item = await window.__stores.explorer.addItemFromBytes(bytes.buffer, 'Arena.tpscene', null);
-		await window.__stores.levels.foldSceneVersions();
+		const item = await window.__tp.test.v1.explorer.addItemFromBytes(bytes.buffer, 'Arena.tpscene', null);
+		await window.__tp.test.v1.levels.foldSceneVersions();
 		await new Promise((r) => setTimeout(r, 400));
 		return item.hash;
 	});
 	const historyAfter = await B.page.evaluate(() => {
 		let m;
-		window.__stores.projectManifest.projectManifest.subscribe((v2) => (m = v2))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((v2) => (m = v2))();
 		return [...(m.scenes?.Arena?.history ?? [])];
 	});
 	h.check(

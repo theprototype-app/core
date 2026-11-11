@@ -11,7 +11,7 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1280, height: 860 } } });
 	const page = A.page;
-	await page.evaluate(() => window.__stores.settingsOpen.set(true));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 	await page.waitForSelector('#settings-search', { timeout: 10000 });
 
 	/** visible setting rows' first line of text */
@@ -141,7 +141,7 @@ h.run(async () => {
 	await page.waitForTimeout(400);
 	const closed = await page.evaluate(() => {
 		let v;
-		window.__stores.settingsOpen.subscribe((x) => (v = x))();
+		window.__tp.test.v1.settingsOpen.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(!closed, `the second Esc closes Settings (${closed})`);

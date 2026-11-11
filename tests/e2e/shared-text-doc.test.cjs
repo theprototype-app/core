@@ -9,7 +9,7 @@ const SHOTS = process.env.YJS_SHOTS || '';
 const shot = async (page, name) => SHOTS && page.screenshot({ path: SHOTS + '/' + name });
 
 const tabsOf = (page) =>
-	page.evaluate(() => new Promise((r) => window.__stores.codeWorkspace.codeTabs.subscribe((v) => r(JSON.parse(JSON.stringify(v))))()));
+	page.evaluate(() => new Promise((r) => window.__tp.test.v1.codeWorkspace.codeTabs.subscribe((v) => r(JSON.parse(JSON.stringify(v))))()));
 const tabFor = async (page, pred) => (await tabsOf(page)).find(pred) ?? null;
 const paneOf = async (page, pred) => {
 	const t = await tabFor(page, pred);
@@ -43,7 +43,7 @@ h.run(async () => {
 	const ids = {};
 	for (const [name, P] of [['A', A], ['B', B]]) {
 		ids[name] = await P.page.evaluate(async (text) => {
-			const ex = window.__stores.explorer;
+			const ex = window.__tp.test.v1.explorer;
 			await ex.loadExplorer();
 			const item = await ex.addItemFromBytes(new TextEncoder().encode(text).buffer, 'notes.txt', null);
 			return item.id;
@@ -52,8 +52,8 @@ h.run(async () => {
 
 	// ---------------------------------------------------------------- 1 "Edit" opens a Code tab
 	await A.page.evaluate(() => {
-		window.__stores.explorerClose.set(false);
-		window.__stores.bottomDock.bottomDockActive.set('explorer');
+		window.__tp.test.v1.explorerClose.set(false);
+		window.__tp.test.v1.bottomDock.bottomDockActive.set('explorer');
 	});
 	await A.page.locator('.explorer-card', { hasText: 'notes.txt' }).first().click({ timeout: 30000 });
 	await A.page.waitForTimeout(500);
@@ -82,7 +82,7 @@ h.run(async () => {
 	);
 
 	// ---------------------------------------------------------------- 2 both type at once
-	await B.page.evaluate((itemId) => window.__stores.codeWorkspace.openCode({ source: 'text', ref: { itemId } }), ids.B);
+	await B.page.evaluate((itemId) => window.__tp.test.v1.codeWorkspace.openCode({ source: 'text', ref: { itemId } }), ids.B);
 	const n1 = await waitShared(A.page, isNotes, 'A notes');
 	const n2 = await waitShared(B.page, isNotes, 'B notes');
 	h.check(n1 && n2, "both peers' notes.txt tabs bind to one shared document");
@@ -104,7 +104,7 @@ h.run(async () => {
 	await nB.locator('.cm-content').click();
 	await B.page.keyboard.press('Control+S');
 	await h.eventually(
-		() => B.page.evaluate(async (id) => await (await window.__stores.explorer.itemBlob(id)).text(), ids.B),
+		() => B.page.evaluate(async (id) => await (await window.__tp.test.v1.explorer.itemBlob(id)).text(), ids.B),
 		(t) => t === NOTES2,
 		"Ctrl+S writes the document's bytes to the file, as plain text",
 		15000

@@ -21,14 +21,14 @@ const h = require('./helpers.cjs');
 const at = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.levels.currentLevel.subscribe((x) => (v = x))();
+		window.__tp.test.v1.levels.currentLevel.subscribe((x) => (v = x))();
 		return v;
 	});
 
 const scenesOfPeers = (p) =>
 	p.page.evaluate(() => {
 		let m;
-		window.__stores.peerScenes.peerScenes.subscribe((x) => (m = x))();
+		window.__tp.test.v1.peerScenes.peerScenes.subscribe((x) => (m = x))();
 		return Object.fromEntries(Object.entries(m).map(([id, r]) => [id, r.scene]));
 	});
 
@@ -62,23 +62,23 @@ const answerGuard = async (p, value) => {
 	await p.page.waitForTimeout(700);
 	const open = await p.page.evaluate(() => {
 		let d;
-		window.__stores.confirmDialog.confirmDialog.subscribe((x) => (d = x))();
+		window.__tp.test.v1.confirmDialog.confirmDialog.subscribe((x) => (d = x))();
 		return !!d;
 	});
-	if (open) await p.page.evaluate((v) => window.__stores.confirmDialog.resolveConfirm(v), value);
+	if (open) await p.page.evaluate((v) => window.__tp.test.v1.confirmDialog.resolveConfirm(v), value);
 	return open;
 };
 
 const addBox = (p) =>
 	p.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1100));
-		window.__stores.objectActions.deselectObject();
+		window.__tp.test.v1.objectActions.deselectObject();
 	});
 
 const wipe = async (p) => {
 	await p.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		const uuids = (g?.children ?? []).map((c) => c.uuid);
@@ -91,13 +91,13 @@ const wipe = async (p) => {
 };
 
 const openExplorer = async (p) => {
-	await p.page.waitForFunction(() => !!window.__stores?.peerScenes, { timeout: 30000 });
+	await p.page.waitForFunction(() => !!window.__tp?.test.v1?.peerScenes, { timeout: 30000 });
 	await p.page.locator('#explorer-slot').click();
 	await p.page.waitForTimeout(700);
-	await p.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await p.page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 };
 
-const nameOf = (p, id) => p.page.evaluate((id) => window.__stores.lockControl.nameOf(id), id);
+const nameOf = (p, id) => p.page.evaluate((id) => window.__tp.test.v1.lockControl.nameOf(id), id);
 
 h.run(async () => {
 	const browser = await h.launch();
@@ -108,7 +108,7 @@ h.run(async () => {
 	// 1. THE ROSTER, PURE OVER THE MAP
 	// =====================================================================
 	const pure = await A.page.evaluate(() => {
-		const s = window.__stores.peerScenes;
+		const s = window.__tp.test.v1.peerScenes;
 		const map = { b: { scene: 'Arena', hash: '', at: 1 }, c: { scene: 'Forge', hash: '', at: 1 }, d: { scene: '', hash: '', at: 1 }, e: { scene: '', hash: '', at: 1, private: true } };
 		return {
 			arenaMe: s.peersAtScene(map, 'Arena', 'Arena', null),
@@ -143,11 +143,11 @@ h.run(async () => {
 	// =====================================================================
 	await wipe(A);
 	await addBox(A);
-	await A.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Arena'));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('Arena'));
 	await h.eventually(() => at(A), (v) => v?.name === 'Arena', 'premise: A saved and stands in Arena');
-	await A.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Forge'));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('Forge'));
 	await h.eventually(() => at(A), (v) => v?.name === 'Forge', 'premise: A saved a second scene, Forge, and stands in it');
-	await A.page.evaluate(() => window.__stores.levels.travelToScene('Arena'));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.travelToScene('Arena'));
 	await h.eventually(() => at(A), (v) => v?.name === 'Arena', 'premise: A travelled back to Arena');
 	await h.eventually(
 		() => badges(A),
@@ -157,7 +157,7 @@ h.run(async () => {
 	const solo = await badges(A);
 	h.check(solo['Arena.tpscene']?.title === 'You are here', `§2 …and it says so in words ("${solo['Arena.tpscene']?.title}")`);
 	// the badge is drawn in the LIST view too
-	await A.page.evaluate(() => window.__stores.explorerView?.explorerViewMode?.set?.('list'));
+	await A.page.evaluate(() => window.__tp.test.v1.explorerView?.explorerViewMode?.set?.('list'));
 	await A.page.waitForTimeout(400);
 	const listBadge = await A.page.evaluate(() => {
 		const row = [...document.querySelectorAll('.explorer-card')].find((el) => el.getAttribute('title') === 'Arena.tpscene');
@@ -168,7 +168,7 @@ h.run(async () => {
 		listBadge.row && listBadge.count === '1' && /1 here/.test(listBadge.here ?? ''),
 		`§2 the list row carries the same reading (${JSON.stringify(listBadge)})`
 	);
-	await A.page.evaluate(() => window.__stores.explorerView?.explorerViewMode?.set?.('thumbnails'));
+	await A.page.evaluate(() => window.__tp.test.v1.explorerView?.explorerViewMode?.set?.('thumbnails'));
 	await A.page.waitForTimeout(400);
 
 	// =====================================================================
@@ -216,7 +216,7 @@ h.run(async () => {
 	// =====================================================================
 	// 4. TRAVEL MOVES THE ROSTER; JOIN FROM A CARD TRAVELS YOU THERE
 	// =====================================================================
-	await A.page.evaluate(() => window.__stores.levels.travelToScene('Forge'));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.travelToScene('Forge'));
 	await h.eventually(() => at(A), (v) => v?.name === 'Forge', 'premise: A travelled to Forge');
 	await h.eventually(
 		() => badges(A),
@@ -252,7 +252,7 @@ h.run(async () => {
 	// 5. STRIP THE TAG → THE ROSTER EMPTIES; RE-PUBLISH → IT FILLS
 	// =====================================================================
 	await A.page.evaluate((id) => {
-		window.__stores.peerScenes.peerScenes.update((m) => {
+		window.__tp.test.v1.peerScenes.peerScenes.update((m) => {
 			const out = { ...m };
 			delete out[id];
 			return out;
@@ -263,7 +263,7 @@ h.run(async () => {
 		(b) => b['Forge.tpscene']?.count === 1,
 		'§5 COUNTERFACTUAL: with the joiner\'s tag stripped, the card counts only me — the badge is presence and nothing else'
 	);
-	await B.page.evaluate(() => window.__stores.peerScenes.publishMyScene(true));
+	await B.page.evaluate(() => window.__tp.test.v1.peerScenes.publishMyScene(true));
 	await h.eventually(
 		() => badges(A),
 		(b) => b['Forge.tpscene']?.count === 2,
@@ -294,10 +294,10 @@ h.run(async () => {
 		'§6 …and the host counts three too'
 	);
 	const roomsOnC = await C.page.evaluate(() => {
-		const s = window.__stores.peerScenes;
+		const s = window.__tp.test.v1.peerScenes;
 		let m, host;
 		s.peerScenes.subscribe((x) => (m = x))();
-		window.__stores.connectionState.sessionHost.subscribe((x) => (host = x))();
+		window.__tp.test.v1.connectionState.sessionHost.subscribe((x) => (host = x))();
 		return s.roomsOfSession(m, s.myScene(), host).map((r) => ({ scene: r.scene, peers: r.peerIds.length, mine: r.mine }));
 	});
 	h.check(
@@ -309,7 +309,7 @@ h.run(async () => {
 	// 7. THE INVITE LINK IS THE SESSION
 	// =====================================================================
 	const link = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let st, p;
 		s.peerServer.peerServerStatus.subscribe((x) => (st = x))();
 		s.peers.subscribe((x) => (p = x))();

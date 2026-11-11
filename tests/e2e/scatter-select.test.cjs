@@ -11,7 +11,7 @@ const scatterOf = (page, uuid) =>
 	page.evaluate(
 		(u) =>
 			new Promise((resolve) => {
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const o = g?.getObjectByProperty('uuid', u);
 					resolve(o ? JSON.stringify(o.userData.terrainScatter ?? null) : 'missing');
 				})();
@@ -21,7 +21,7 @@ const scatterOf = (page, uuid) =>
 /** The decoded lists, per set id. @param {any} page @param {string} uuid */
 const listsOf = (page, uuid) =>
 	page.evaluate((u) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		const t = g.getObjectByProperty('uuid', u);
@@ -31,18 +31,18 @@ const listsOf = (page, uuid) =>
 		for (const set of block?.sets ?? []) out[set.id] = s.terrainScatterCore.decodeInstances(s.terrainPaintCore.base64ToBytes(set.data), b);
 		return out;
 	}, uuid);
-const undoDepth = (page) => page.evaluate(() => new Promise((r) => window.__stores.history.undoStack.subscribe((s) => r(s.length))()));
-const state = (page) => page.evaluate(() => window.__stores.scatterEdit.scatterEditState());
+const undoDepth = (page) => page.evaluate(() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((s) => r(s.length))()));
+const state = (page) => page.evaluate(() => window.__tp.test.v1.scatterEdit.scatterEditState());
 /** @param {any} page */
-const objectCount = (page) => page.evaluate(() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g.children.length))()));
+const objectCount = (page) => page.evaluate(() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g.children.length))()));
 
 /** @param {any} page @param {number[]} pos @param {number[]} target */
 async function look(page, pos, target) {
 	await page.evaluate(
 		([p, t]) => {
 			let cam, orbit;
-			window.__stores.editorCam.subscribe((v) => (cam = v))();
-			window.__stores.orbitControls.subscribe((v) => (orbit = v))();
+			window.__tp.test.v1.editorCam.subscribe((v) => (cam = v))();
+			window.__tp.test.v1.orbitControls.subscribe((v) => (orbit = v))();
 			cam.position.set(p[0], p[1], p[2]);
 			orbit?.target?.set(t[0], t[1], t[2]);
 			orbit?.update?.();
@@ -56,7 +56,7 @@ async function look(page, pos, target) {
 async function stroke(page, uuid, x, z, steps = 10, dt = 0.05) {
 	await page.evaluate(
 		async ([u, x, z, steps, dt]) => {
-			const ts = window.__stores.terrainSculpt;
+			const ts = window.__tp.test.v1.terrainSculpt;
 			ts.beginStroke(u);
 			for (let i = 0; i < steps; i++) {
 				ts.strokeMove(u, x, z, dt);
@@ -73,7 +73,7 @@ async function stroke(page, uuid, x, z, steps = 10, dt = 0.05) {
 async function screenOf(page, uuid, inst) {
 	const world = await page.evaluate(
 		([u, x, z]) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let g;
 			s.objectsGroup.subscribe((v) => (g = v))();
 			const t = g.getObjectByProperty('uuid', u);
@@ -99,8 +99,8 @@ h.run(async () => {
 	await h.connect(B, A);
 
 	const uuid = await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create Terrain 24 48');
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create Terrain 24 48');
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		return group.children[group.children.length - 1].uuid;
 	});
 	await h.eventuallyAfter(A, B, () => scatterOf(B.page, uuid), (v) => v !== 'missing', 'B has the terrain', 20000);
@@ -109,7 +109,7 @@ h.run(async () => {
 
 	// ---- paint two models ---------------------------------------------------------------------
 	const entered = await A.page.evaluate((u) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ok = s.terrainSculpt.enterSculpt(u);
 		s.terrainSculpt.sculptOp.set('scatter');
 		s.terrainSculpt.sculptRadius.set(3);
@@ -121,7 +121,7 @@ h.run(async () => {
 	h.check(entered, 'A enters the sculpt session, Scatter brush, Paint tool');
 	await stroke(A.page, uuid, 0, 0, 6);
 	await stroke(A.page, uuid, -6, -6, 6);
-	await A.page.evaluate(() => window.__stores.terrainPaint.scatterSource.set({ kind: 'primitive', type: 'Box' }));
+	await A.page.evaluate(() => window.__tp.test.v1.terrainPaint.scatterSource.set({ kind: 'primitive', type: 'Box' }));
 	await stroke(A.page, uuid, 0, 0, 6); // boxes fill the gaps between the cones in the same circle
 	let lists = await listsOf(A.page, uuid);
 	h.check(lists['p:Cone']?.length > 20 && lists['p:Box']?.length > 0, `two models scattered (${lists['p:Cone']?.length} cones, ${lists['p:Box']?.length} boxes)`);
@@ -130,8 +130,8 @@ h.run(async () => {
 	let d0 = 0;
 	// ---- E4 select: real click, real box, gizmo -------------------------------------------------
 	await A.page.evaluate(() => {
-		window.__stores.scatterEdit.scatterAffects.set('p:Cone');
-		window.__stores.scatterEdit.setScatterTool('select');
+		window.__tp.test.v1.scatterEdit.scatterAffects.set('p:Cone');
+		window.__tp.test.v1.scatterEdit.setScatterTool('select');
 	});
 	if (SHOTS) await A.page.screenshot({ path: `${SHOTS}/01-select-tool.png` });
 	lists = await listsOf(A.page, uuid);
@@ -152,7 +152,7 @@ h.run(async () => {
 		let st = await state(A.page);
 		h.check(st.count === 1 && st.gizmo, `a REAL click selects one instance and seats the gizmo (${st.count}, gizmo ${st.gizmo})`);
 		// a real box over the middle (from an empty selection: the gizmo would own a press on it)
-		await A.page.evaluate(() => window.__stores.scatterEdit.clearScatterSelection());
+		await A.page.evaluate(() => window.__tp.test.v1.scatterEdit.clearScatterSelection());
 		const c = await h.projectPoint(A.page, [0, 0, 0]);
 		await A.page.mouse.move(c.x - 70, c.y - 70);
 		await A.page.mouse.down();
@@ -164,8 +164,8 @@ h.run(async () => {
 		const expect = await A.page.evaluate(
 			([u, r]) => {
 				let cam;
-				window.__stores.editorCam.subscribe((v) => (cam = v))();
-				const m = window.__stores.scatterEdit.instancesInScreenRect(u, r, cam);
+				window.__tp.test.v1.editorCam.subscribe((v) => (cam = v))();
+				const m = window.__tp.test.v1.scatterEdit.instancesInScreenRect(u, r, cam);
 				let n = 0;
 				for (const ids of m.values()) n += ids.size;
 				return n;
@@ -189,7 +189,7 @@ h.run(async () => {
 			await A.page.screenshot({ path: `${SHOTS}/02-box-selected.png` });
 			// the new toolbox UI in three themes (53: tokens only, every theme)
 			for (const t of ['dark', 'light', 'contrast']) {
-				await A.page.evaluate((id) => window.__stores.themes.theme.set(id), t);
+				await A.page.evaluate((id) => window.__tp.test.v1.themes.theme.set(id), t);
 				await A.page.waitForTimeout(250);
 				const r = await A.page.evaluate(() => {
 					const b = document.getElementById('sculpt-toolbar')?.getBoundingClientRect();
@@ -197,7 +197,7 @@ h.run(async () => {
 				});
 				if (r) await A.page.screenshot({ path: `${SHOTS}/03-toolbox-select-${t}.png`, clip: r });
 			}
-			await A.page.evaluate(() => window.__stores.themes.theme.set('dark'));
+			await A.page.evaluate(() => window.__tp.test.v1.themes.theme.set('dark'));
 		}
 
 		// gizmo: move, turn, scale — each drag ONE entry, absolute from the drag start
@@ -207,7 +207,7 @@ h.run(async () => {
 		d0 = await undoDepth(A.page);
 		const drag = (fn) =>
 			A.page.evaluate((src) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				let c;
 				s.TControls.subscribe((v) => (c = v))();
 				const proxy = c.object;
@@ -233,13 +233,13 @@ h.run(async () => {
 		h.check(sel.every((k) => Math.abs(post[k].scale / pre[k].scale - 2) < 0.02), 'Size doubles each selected instance');
 		h.check((await undoDepth(A.page)) === d0 + 3, 'three gizmo drags = three undo entries');
 		await h.eventuallyAfter(A, B, async () => (await scatterOf(B.page, uuid)) === (await scatterOf(A.page, uuid)), (v) => v, 'B sees the gizmo edits', 10000);
-		await A.page.evaluate(() => window.__stores.history.undo());
+		await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 		post = (await listsOf(A.page, uuid))['p:Cone'];
 		h.check(sel.every((k) => Math.abs(post[k].scale - pre[k].scale) < 0.01), 'undo takes the last drag (the size) back');
 
 		// toolbox ops by their buttons (re-select: an undo drops the selection, by design)
 		await A.page.evaluate(
-			([u, ids]) => window.__stores.scatterEdit.setScatterSelection(u, new Map([['p:Cone', new Set(ids)]])),
+			([u, ids]) => window.__tp.test.v1.scatterEdit.setScatterSelection(u, new Map([['p:Cone', new Set(ids)]])),
 			[uuid, sel]
 		);
 		const before = (await listsOf(A.page, uuid))['p:Cone'];
@@ -261,16 +261,16 @@ h.run(async () => {
 		h.check(post.length === coneN - sel.length, `Delete removes the selected instances (${coneN} -> ${post.length})`);
 		h.check((await objectCount(A.page)) === objs, 'and NOT the terrain');
 		await h.eventuallyAfter(A, B, async () => (await scatterOf(B.page, uuid)) === (await scatterOf(A.page, uuid)), (v) => v, 'B sees the delete', 10000);
-		await A.page.evaluate(() => window.__stores.history.undo());
+		await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 		h.check((await listsOf(A.page, uuid))['p:Cone'].length === coneN, 'one undo brings them back');
 
 		// Escape: first drops the selection, then leaves the session
-		await A.page.evaluate((u) => window.__stores.scatterEdit.selectAllInstances(u), uuid);
+		await A.page.evaluate((u) => window.__tp.test.v1.scatterEdit.selectAllInstances(u), uuid);
 		await A.page.keyboard.press('Escape');
 		const afterEsc = await A.page.evaluate(() => {
 			let o;
-			window.__stores.terrainSculpt.sculptObject.subscribe((v) => (o = v))();
-			return { count: window.__stores.scatterEdit.scatterEditState().count, sculpt: o };
+			window.__tp.test.v1.terrainSculpt.sculptObject.subscribe((v) => (o = v))();
+			return { count: window.__tp.test.v1.scatterEdit.scatterEditState().count, sculpt: o };
 		});
 		h.check(afterEsc.count === 0 && afterEsc.sculpt === uuid, 'the first Escape drops the selection and stays in the session');
 	}

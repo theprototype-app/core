@@ -58,7 +58,7 @@ function strip(page, side) {
 		};
 	}, side);
 }
-const store = (page, name) => page.evaluate((n) => new Promise((r) => window.__stores[n].subscribe(r)()), name);
+const store = (page, name) => page.evaluate((n) => new Promise((r) => window.__tp.test.v1[n].subscribe(r)()), name);
 
 /** real-pointer drag from a to b */
 async function drag(page, a, b, steps = 14) {
@@ -150,7 +150,7 @@ h.run(async () => {
 	h.check(insOpen === false, 'the covered Inspector stays OPEN (a tab, not a close)');
 
 	// ---------- 4. asking for a covered panel brings its tab forward (never closes it) ----------
-	await page.evaluate(() => window.__stores.showSidebar('scene')); // Configure Scene TOGGLES when in front
+	await page.evaluate(() => window.__tp.test.v1.showSidebar('scene')); // Configure Scene TOGGLES when in front
 	await page.waitForTimeout(400);
 	right = await strip(page, 'right');
 	h.check(right?.front === 'inspector' && (await store(page, 'inspectorClose')) === false, `Configure Scene on a covered tab reveals it rather than closing it (${right?.front})`);
@@ -162,7 +162,7 @@ h.run(async () => {
 
 	// ---------- 5. a pinned panel following the selection does not steal the list's place ----------
 	await page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		await new Promise((r) => setTimeout(r, 400));
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
@@ -171,16 +171,16 @@ h.run(async () => {
 		w.inspectorPinned.set(true);
 	});
 	await page.waitForTimeout(300);
-	await page.evaluate(() => window.__stores.objectActions.selectObject(window.__box.uuid)); // a list click
+	await page.evaluate(() => window.__tp.test.v1.objectActions.selectObject(window.__box.uuid)); // a list click
 	await page.waitForTimeout(400);
 	right = await strip(page, 'right');
 	const kind = await store(page, 'inspectorKind');
 	h.check(right?.front === 'objects' && kind === 'selection', `pinned: a plain select keeps the list in front, Properties follows behind it (${right?.front}, ${kind})`);
-	await page.evaluate(() => window.__stores.objectActions.selectObject(window.__box.uuid, true)); // double-click / menu
+	await page.evaluate(() => window.__tp.test.v1.objectActions.selectObject(window.__box.uuid, true)); // double-click / menu
 	await page.waitForTimeout(400);
 	right = await strip(page, 'right');
 	h.check(right?.front === 'inspector', `an explicit Properties request brings its tab forward (${right?.front})`);
-	await page.evaluate(() => window.__stores.inspectorPinned.set(false));
+	await page.evaluate(() => window.__tp.test.v1.inspectorPinned.set(false));
 
 	// ---------- 6. drag the Inspector's tab to the LEFT half: it docks there, with a highlight ----------
 	c = await tabCentre(page, 'right', 'inspector');
@@ -268,7 +268,7 @@ h.run(async () => {
 	await page.locator('#restore-session-dismiss').click({ timeout: 6000 }).catch(() => {});
 	await page.waitForTimeout(800);
 	await page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.objectListClose.set(false);
 		w.flowGraphClose.set(false);
 		w.showSidebar('scene');
@@ -309,8 +309,8 @@ h.run(async () => {
 	await page.locator('#restore-session-dismiss').click({ timeout: 6000 }).catch(() => {});
 	await page.waitForTimeout(800);
 	await page.evaluate(() => {
-		window.__stores.objectListClose.set(false);
-		window.__stores.flowGraphClose.set(false);
+		window.__tp.test.v1.objectListClose.set(false);
+		window.__tp.test.v1.flowGraphClose.set(false);
 	});
 	await page.waitForTimeout(1200);
 	const l = await probe(page, '#object-list');

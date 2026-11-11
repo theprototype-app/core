@@ -34,14 +34,14 @@ const h = require('./helpers.cjs');
 const sceneNameOf = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.levels.currentLevel.subscribe((x) => (v = x))();
+		window.__tp.test.v1.levels.currentLevel.subscribe((x) => (v = x))();
 		return v?.name ?? null;
 	});
 
 const levelAt = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.levels.currentLevel.subscribe((x) => (v = x))();
+		window.__tp.test.v1.levels.currentLevel.subscribe((x) => (v = x))();
 		return v;
 	});
 
@@ -50,13 +50,13 @@ const levelAt = (p) =>
 const said = (p) =>
 	p.page.evaluate(() => {
 		let list;
-		window.__stores.notifications.subscribe((v) => (list = v))();
+		window.__tp.test.v1.notifications.subscribe((v) => (list = v))();
 		return list.map((e) => e.text);
 	});
 
 const rooms = (p) =>
 	p.page.evaluate(() => {
-		const s = window.__stores.peerScenes;
+		const s = window.__tp.test.v1.peerScenes;
 		let m;
 		s.peerScenes.subscribe((x) => (m = x))();
 		return s
@@ -68,21 +68,21 @@ const objectCount = (p) =>
 	p.page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => r((g?.children ?? []).length))()
+				window.__tp.test.v1.objectsGroup.subscribe((g) => r((g?.children ?? []).length))()
 			)
 	);
 
 const addBox = (p) =>
 	p.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1200));
-		window.__stores.objectActions.deselectObject();
+		window.__tp.test.v1.objectActions.deselectObject();
 	});
 
 /** What this peer's `manifest` messages would carry — the C4 send boundary itself. */
 const outboundScenes = (p) =>
 	p.page.evaluate(() => {
-		const s = window.__stores.projectManifest;
+		const s = window.__tp.test.v1.projectManifest;
 		let doc;
 		s.projectManifest.subscribe((x) => (doc = x))();
 		return Object.keys(s.outboundManifest(doc).scenes ?? {});
@@ -131,8 +131,8 @@ h.run(async () => {
 	// =====================================================================
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
-	await A.page.waitForFunction(() => !!window.__stores?.peerScenes, { timeout: 30000 });
-	await B.page.waitForFunction(() => !!window.__stores?.peerScenes, { timeout: 30000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.peerScenes, { timeout: 30000 });
+	await B.page.waitForFunction(() => !!window.__tp?.test.v1?.peerScenes, { timeout: 30000 });
 	await addBox(A);
 	h.check(
 		(await objectCount(A)) === 1 && (await objectCount(B)) === 0,
@@ -159,7 +159,7 @@ h.run(async () => {
 	// =====================================================================
 	await B.page.locator('#explorer-slot').click();
 	await B.page.waitForTimeout(800);
-	await B.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await B.page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await saveSceneByHand(B, 'Depot34');
 
 	await h.eventually(
@@ -175,7 +175,7 @@ h.run(async () => {
 		25000
 	);
 
-	const bName = await A.page.evaluate((id) => window.__stores.lockControl.nameOf(id), B.id);
+	const bName = await A.page.evaluate((id) => window.__tp.test.v1.lockControl.nameOf(id), B.id);
 	h.check(
 		(await said(A)).some((t) => t === bName + ' saved this scene as "Depot34"'),
 		`…and says who did it, in words (${JSON.stringify((await said(A)).slice(-3))})`
@@ -205,7 +205,7 @@ h.run(async () => {
 	// the repeat gate)
 	const beforeRepeat = await levelAt(A);
 	await A.page.evaluate(
-		(id) => window.__stores.levels.applyRemoteSceneAdopt({ name: 'Somewhere Else', hash: '', peerId: id }),
+		(id) => window.__tp.test.v1.levels.applyRemoteSceneAdopt({ name: 'Somewhere Else', hash: '', peerId: id }),
 		B.id
 	);
 	await A.page.waitForTimeout(600);
@@ -225,7 +225,7 @@ h.run(async () => {
 	// read directly, before and after.
 	const U = await h.setupPage(browser, 'U');
 	await U.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.projectManifest.resetSessionScope();
 		s.projectManifest.manifestRestore(
 			{ scenes: { Ghost: { history: ['deadbeef'], pinned: [] } }, assets: [], changedAt: 5 },
@@ -239,14 +239,14 @@ h.run(async () => {
 		`premise: a joiner publishes nothing it never opened (${JSON.stringify(await outboundScenes(U))})`
 	);
 	await U.page.evaluate(() =>
-		window.__stores.levels.applyRemoteSceneAdopt({ name: 'Ghost', hash: 'deadbeef', peerId: 'zz' })
+		window.__tp.test.v1.levels.applyRemoteSceneAdopt({ name: 'Ghost', hash: 'deadbeef', peerId: 'zz' })
 	);
 	await h.eventually(() => sceneNameOf(U), (n) => n === 'Ghost', 'premise: the name was adopted');
 	h.check(
 		(await outboundScenes(U)).length === 0,
 		`ADOPTION IS NOT CONSENT — the outbound scope is unchanged (${JSON.stringify(await outboundScenes(U))})`
 	);
-	await U.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Ghost'));
+	await U.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('Ghost'));
 	await h.eventually(
 		() => outboundScenes(U),
 		(names) => names.includes('Ghost'),
@@ -261,19 +261,19 @@ h.run(async () => {
 	// so the peer standing in it keeps its own (lack of) identity. B is put back to unnamed
 	// by hand — the state every peer is in before anybody saves, and the only state adoption
 	// can act on, so without it the check would pass on the wrong gate.
-	await B.page.evaluate(() => window.__stores.levels.currentLevel.set(null));
+	await B.page.evaluate(() => window.__tp.test.v1.levels.currentLevel.set(null));
 	await B.page.waitForTimeout(800);
 	const saidBefore = (await said(B)).length;
-	await A.page.evaluate(() => window.__stores.levels.newLevel('Arena'));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.newLevel('Arena'));
 	await h.eventually(
-		() => A.page.evaluate(() => window.__stores.levels.levelItems().map((i) => i.name)),
+		() => A.page.evaluate(() => window.__tp.test.v1.levels.levelItems().map((i) => i.name)),
 		(names) => names.some((n) => n.includes('Arena')),
 		'premise: there is a second scene to travel to'
 	);
 	const arenaHash = await A.page.evaluate(
-		() => window.__stores.levels.levelItems().find((i) => i.name.includes('Arena')).hash
+		() => window.__tp.test.v1.levels.levelItems().find((i) => i.name.includes('Arena')).hash
 	);
-	await A.page.evaluate((hash) => window.__stores.levels.travelToLevel(hash, 'Arena'), arenaHash);
+	await A.page.evaluate((hash) => window.__tp.test.v1.levels.travelToLevel(hash, 'Arena'), arenaHash);
 	await h.eventually(
 		() => sceneNameOf(A),
 		(n) => n === 'Arena',
@@ -296,7 +296,7 @@ h.run(async () => {
 	// share-or-stash modal to re-prove a branch that treats every ROOM_SCOPED type alike
 	// would measure the gate, not this message).
 	const gate = await A.page.evaluate(() => {
-		const s = window.__stores.peerScenes;
+		const s = window.__tp.test.v1.peerScenes;
 		// a synthetic row: somebody demonstrably in another scene than our 'Arena'
 		s.peerScenes.update((m) => ({ ...m, ghost: { scene: 'Somewhere', hash: '', at: Date.now() } }));
 		const out = {

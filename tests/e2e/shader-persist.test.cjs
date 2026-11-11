@@ -17,12 +17,12 @@ h.run(async () => {
 	const browser = await h.launch();
 	const peer = await h.setupPage(browser, 'persist');
 	const page = peer.page;
-	await page.waitForFunction(() => !!window.__stores?.shaderGraph, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.shaderGraph, { timeout: 30000 });
 
-	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await page.waitForTimeout(1500);
 	const uuid = await page.evaluate(async () => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		const group = await new Promise((r) => S.objectsGroup.subscribe((g) => r(g))());
 		let mesh = null;
 		group.traverse((n) => { if (n.isMesh && !mesh) mesh = n; });
@@ -31,16 +31,16 @@ h.run(async () => {
 	});
 	h.check(!!uuid, 'premise — a cube exists: ' + uuid);
 
-	await page.evaluate(([u, g]) => window.__stores.shaderGraph.setShaderGraphFor(u, g), [uuid, GRAPH('#e62610')]);
+	await page.evaluate(([u, g]) => window.__tp.test.v1.shaderGraph.setShaderGraphFor(u, g), [uuid, GRAPH('#e62610')]);
 	await h.eventually(
-		() => page.evaluate((u) => window.__stores.shaderGraph.isShaderDriven(u), uuid),
+		() => page.evaluate((u) => window.__tp.test.v1.shaderGraph.isShaderDriven(u), uuid),
 		(d) => d === true,
 		'premise — the object is shader-driven'
 	);
 
 	// ---- 1. PARK: every serializer must read the object's OWN material ----------
 	const park = await page.evaluate(async (u) => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		const group = await new Promise((r) => S.objectsGroup.subscribe((g) => r(g))());
 		const mesh = group.getObjectByProperty('uuid', u);
 		const driven = mesh.material.type;
@@ -73,16 +73,16 @@ h.run(async () => {
 	// ---- 2. AUTOSAVE (GLTF-based): save, RELOAD, restore -----------------------
 	// The realistic path: the restore is offered as a sticky prompt at load and never
 	// applied automatically, so this reloads and calls restoreSnapshot() explicitly.
-	await page.evaluate(() => window.__stores.autosave.saveNow());
+	await page.evaluate(() => window.__tp.test.v1.autosave.saveNow());
 	await page.waitForTimeout(2500);
 	await h.freshReload(peer);
-	await page.waitForFunction(() => !!window.__stores?.shaderGraph, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.shaderGraph, { timeout: 30000 });
 	await page.waitForTimeout(1500);
 
 	const offered = await page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.autosave.restoreAvailable.subscribe((offer) => {
+				window.__tp.test.v1.autosave.restoreAvailable.subscribe((offer) => {
 					const snap = offer?.snapshot;
 					r({
 						has: !!snap,
@@ -104,13 +104,13 @@ h.run(async () => {
 	h.check(!offered.sceneHasOurs, 'and the GLTF scene itself carries no injected material');
 
 	// nothing is shader-driven yet — this is a fresh page that has not restored
-	const beforeRestore = await page.evaluate(() => Object.keys(window.__stores.shaderGraph.shaderGraphsSnapshot()).length);
+	const beforeRestore = await page.evaluate(() => Object.keys(window.__tp.test.v1.shaderGraph.shaderGraphsSnapshot()).length);
 	h.check(beforeRestore === 0, 'premise — the fresh page holds no graphs before restoring');
 
-	await page.evaluate(() => window.__stores.autosave.restoreSnapshot());
+	await page.evaluate(() => window.__tp.test.v1.autosave.restoreSnapshot());
 	await page.waitForTimeout(2500);
 	const afterRestore = await page.evaluate(() => {
-		const S = window.__stores.shaderGraph;
+		const S = window.__tp.test.v1.shaderGraph;
 		const all = S.shaderGraphsSnapshot();
 		const key = Object.keys(all)[0];
 		return { key, nodes: all[key]?.nodes?.length ?? -1, colour: all[key]?.nodes?.[0]?.data?.value, driven: key ? S.isShaderDriven(key) : false };
@@ -123,7 +123,7 @@ h.run(async () => {
 	// so the graph has to find its target again and RECOMPILE — the reconcile's real job
 	await h.eventually(
 		() => page.evaluate(() => {
-			const S = window.__stores.shaderGraph;
+			const S = window.__tp.test.v1.shaderGraph;
 			const key = Object.keys(S.shaderGraphsSnapshot())[0];
 			return key ? S.isShaderDriven(key) : false;
 		}),
@@ -131,11 +131,11 @@ h.run(async () => {
 		'and the object is shader-driven again (the graph found its restored target)'
 	);
 	// everything below works on the RESTORED uuid
-	const liveUuid = await page.evaluate(() => Object.keys(window.__stores.shaderGraph.shaderGraphsSnapshot())[0]);
+	const liveUuid = await page.evaluate(() => Object.keys(window.__tp.test.v1.shaderGraph.shaderGraphsSnapshot())[0]);
 
 	// ---- 3. SESSIONS / .tpscene (toJSON-based) -------------------------------
 	const session = await page.evaluate(async (u) => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		const payload = await S.sessions.buildSessionPayload?.('shader-persist-test');
 		if (!payload) return { built: false };
 		return {
@@ -161,7 +161,7 @@ h.run(async () => {
 
 	// ---- 4. UNDO: attach/detach round trip ----------------------------------
 	const undo = await page.evaluate(async (u) => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		const H = S.history;
 		const driven = S.shaderGraph.isShaderDriven(u);
 		S.shaderGraph.setShaderGraphFor(u, null); // detach, recorded
@@ -177,14 +177,14 @@ h.run(async () => {
 		'ONE undo brings the whole graph back: ' + (undo.afterUndo?.nodes?.length ?? 'gone')
 	);
 	await h.eventually(
-		() => page.evaluate((u) => window.__stores.shaderGraph.isShaderDriven(u), liveUuid),
+		() => page.evaluate((u) => window.__tp.test.v1.shaderGraph.isShaderDriven(u), liveUuid),
 		(d) => d === true,
 		'and it recompiles onto the object'
 	);
 
 	// ---- 5. the GLTF export path is HONEST about what it drops --------------
 	const exportInfo = await page.evaluate(() => ({
-		count: window.__stores.shaderGraph.shaderDrivenCount()
+		count: window.__tp.test.v1.shaderGraph.shaderDrivenCount()
 	}));
 	h.check(
 		exportInfo.count >= 1,

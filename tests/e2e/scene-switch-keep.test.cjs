@@ -36,11 +36,11 @@ h.run(async () => {
 		const s = await S.shell();
 		h.check(s.levelsOwner === 'towers' && s.helpOwner === 'towers', `1.10 the menu is Towers' — levels ${s.levelsOwner}, help ${s.helpOwner}`);
 		h.check(!s.rows.some((r) => r.startsWith('waves:') || r.startsWith('health:')), `1.11 no Waves row in Settings (${s.rows})`);
-		const raw = await page.evaluate(() => { let v; window.__stores.playSettings.runtimeSpawn.subscribe((x) => (v = x))(); return v; });
+		const raw = await page.evaluate(() => { let v; window.__tp.test.v1.playSettings.runtimeSpawn.subscribe((x) => (v = x))(); return v; });
 		const spawn = await page.evaluate(() => {
 			let sc;
-			window.__stores.globalScene.subscribe((v) => (sc = v))();
-			return window.__stores.playSettings.resolvePlaySettings(sc).spawn ?? null;
+			window.__tp.test.v1.globalScene.subscribe((v) => (sc = v))();
+			return window.__tp.test.v1.playSettings.resolvePlaySettings(sc).spawn ?? null;
 		});
 		h.check(raw?.owner === 'waves', `1.12 premise: Waves set a runtime spawn (${JSON.stringify(raw)})`);
 		h.check(JSON.stringify(spawn?.position) !== JSON.stringify(raw?.position), `1.13 Waves' spawn does not place the Towers player (${JSON.stringify(spawn)})`);
@@ -59,19 +59,19 @@ h.run(async () => {
 
 	await section('3 settings row', async () => {
 		await page.evaluate(() => {
-			window.__stores.settingsSection.set('scene');
-			window.__stores.settingsOpen.set(true);
+			window.__tp.test.v1.settingsSection.set('scene');
+			window.__tp.test.v1.settingsOpen.set(true);
 		});
 		await ev(() => page.locator('#modules-on-open').isVisible(), (v) => v, '3.1 Settings ▸ Scene has the row', 10000);
 		// 37-settings: a segmented control — the checked option is the value
 		const text = (await page.locator('#modules-on-open [aria-checked="true"]').textContent()).trim();
 		h.check(/^Keep$/.test(text), `3.2 "When opening another scene" reads Keep (${text})`);
-		await page.evaluate(() => window.__stores.settingsOpen.set(false));
+		await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 		await page.waitForTimeout(400);
 	});
 
 	await section('4 setting unload', async () => {
-		await page.evaluate(() => window.__stores.sceneSwitch.modulesOnOpen.set('unload'));
+		await page.evaluate(() => window.__tp.test.v1.sceneSwitch.modulesOnOpen.set('unload'));
 		const asks = (await S.dbg()).asks;
 		await S.openGame('towers');
 		await ev(() => S.hasObject('Towers game'), (v) => v, '4.1 Towers opened');
@@ -79,7 +79,7 @@ h.run(async () => {
 		h.check((await S.dbg()).asks === asks, '4.2 the setting decided — no ask');
 		h.check(!(await S.loaded()).includes('waves'), '4.3 Waves unloaded by the setting');
 		h.check((await S.notes()).some((t) => /^Unloaded \(your setting\)/.test(t)), '4.4 a toast says the setting unloaded it');
-		await page.evaluate(() => window.__stores.sceneSwitch.modulesOnOpen.set('ask'));
+		await page.evaluate(() => window.__tp.test.v1.sceneSwitch.modulesOnOpen.set('ask'));
 	});
 
 	await section('5 enable live', async () => {

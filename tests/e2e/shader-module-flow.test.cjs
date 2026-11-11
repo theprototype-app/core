@@ -19,14 +19,14 @@ h.run(async () => {
 		if (/peer error|peerjs|Lost connection/i.test(t)) return;
 		if (/Shader Error|ERROR: \d|VALIDATE_STATUS/i.test(t)) glsl.push(t.slice(0, 400));
 	});
-	await page.waitForFunction(() => !!window.__stores?.shaderGraph, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.shaderGraph, { timeout: 30000 });
 
-	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await page.waitForTimeout(1500);
 
 	const uuid = await page.evaluate(() => {
 		const read = (s) => new Promise((r) => s.subscribe((v) => r(v))());
-		return read(window.__stores.objectsGroup).then((g) => {
+		return read(window.__tp.test.v1.objectsGroup).then((g) => {
 			let m = null;
 			g.traverse((n) => {
 				if (n.isMesh && !m) m = n;
@@ -40,7 +40,7 @@ h.run(async () => {
 
 	// ---- 1. a MODULE supplies a backend, through the real api ----------------
 	const registered = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const calls = [];
 		await s.moduleSDK.initModules([
 			{
@@ -100,7 +100,7 @@ h.run(async () => {
 
 	const used = await page.evaluate(
 		async (args) => {
-			const S = window.__stores;
+			const S = window.__tp?.test.v1;
 			const read = (s) => new Promise((r) => s.subscribe((v) => r(v))());
 			S.shaderGraph.setShaderGraphFor(args.u, args.g);
 			await S.shaderGraph.compileAndApply(args.u);
@@ -129,7 +129,7 @@ h.run(async () => {
 
 	// ---- 3. disabling the module falls the graph BACK to the built-in -------
 	const afterOff = await page.evaluate(async (u) => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		const read = (s) => new Promise((r) => s.subscribe((v) => r(v))());
 		await S.moduleSDK.deactivateModule('testshader');
 		// the teardown journal drops the registration AND asks the graphs to recompile
@@ -165,7 +165,7 @@ h.run(async () => {
 	// a peer that NEVER had the module is the same path, and must not throw
 	const neverHad = await page.evaluate(
 		async (args) => {
-			const S = window.__stores;
+			const S = window.__tp?.test.v1;
 			const read = (s) => new Promise((r) => s.subscribe((v) => r(v))());
 			S.shaderGraph.setShaderGraphFor(args.u, args.g);
 			const res = await S.shaderGraph.compileAndApply(args.u);
@@ -193,7 +193,7 @@ h.run(async () => {
 	// compiler's `u_<nodeId>_<param>`. Wire: Number -> Set Shader Uniform -> Object Selector.
 	const flow = await page.evaluate(
 		async (args) => {
-			const S = window.__stores;
+			const S = window.__tp?.test.v1;
 			const read = (s) => new Promise((r) => s.subscribe((v) => r(v))());
 			// a graph whose ROUGHNESS is a live float uniform, on the built-in backend
 			S.shaderGraph.setShaderGraphFor(args.u, {
@@ -244,7 +244,7 @@ h.run(async () => {
 
 	// changing the flow VALUE moves the uniform again — it is driven, not set once
 	const moved = await page.evaluate(async (name) => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		const read = (s) => new Promise((r) => s.subscribe((v) => r(v))());
 		const nodes = await read(S.flowNodes);
 		// the 'value' input is WIRED, so the upstream Number node is what decides it —
@@ -268,7 +268,7 @@ h.run(async () => {
 
 	// an unknown uniform name must be a harmless no-op, not a crash
 	const bogus = await page.evaluate(async () => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		const read = (s) => new Promise((r) => s.subscribe((v) => r(v))());
 		const nodes = await read(S.flowNodes);
 		S.flowNodes.set(
@@ -280,8 +280,8 @@ h.run(async () => {
 	h.check(bogus, 'naming a uniform that does not exist is a no-op');
 
 	// ---- 5. the editor SHOWS the uniform name, or nobody can address it -----
-	await page.evaluate((u) => window.__stores.objectActions.selectObject(u, false), uuid);
-	await page.evaluate(() => window.__stores.shaderGraph.openShaderEditor());
+	await page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u, false), uuid);
+	await page.evaluate(() => window.__tp.test.v1.shaderGraph.openShaderEditor());
 	await page.waitForTimeout(1400);
 	h.check((await page.locator('#shader-editor').count()) === 1, 'premise — the shader editor is open');
 	// select the Float node in the graph, then read the ⓘ pane
@@ -307,7 +307,7 @@ h.run(async () => {
 		docShown.trim().length > 20,
 		'the info pane shows the node manual line: "' + docShown.trim().slice(0, 60) + '..."'
 	);
-	const catalogDoc = await page.evaluate(() => window.__stores.shaderCatalog?.shaderNodeDoc?.('float') ?? '');
+	const catalogDoc = await page.evaluate(() => window.__tp.test.v1.shaderCatalog?.shaderNodeDoc?.('float') ?? '');
 	h.check(
 		!catalogDoc || docShown.trim() === catalogDoc.trim(),
 		'and it is the SAME text the catalog carries, so the pane cannot drift from the docs'

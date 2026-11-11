@@ -8,8 +8,8 @@ const snapshot = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.globalScene.subscribe((scene) => {
-					window.__stores.globalRenderer.subscribe((renderer) => {
+				window.__tp.test.v1.globalScene.subscribe((scene) => {
+					window.__tp.test.v1.globalRenderer.subscribe((renderer) => {
 						const sun = scene?.getObjectByName('env-rig-sun');
 						const catcher = scene?.getObjectByName('env-shadow-catcher');
 						let box = null;
@@ -33,7 +33,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await A.page.waitForTimeout(500);
 
 	let s = await snapshot(A.page);
@@ -48,7 +48,7 @@ h.run(async () => {
 	const inObjects = await A.page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) =>
+				window.__tp.test.v1.objectsGroup.subscribe((g) =>
 					r(g?.children.some((c) => c.name === 'env-shadow-catcher') ?? false)
 				)()
 			)
@@ -56,14 +56,14 @@ h.run(async () => {
 	h.check(inObjects === false, 'catcher is not part of the replicated objects');
 
 	// shadowQuality 'off' disables the renderer shadow map
-	await A.page.evaluate(() => window.__stores.lightParams.shadowQuality.set('off'));
+	await A.page.evaluate(() => window.__tp.test.v1.lightParams.shadowQuality.set('off'));
 	await A.page.waitForTimeout(300);
 	s = await snapshot(A.page);
 	h.check(s.shadowMapEnabled === false, "shadowQuality 'off' disables the shadow map");
 	h.check(s.catcherPresent === true && s.catcherReceives === true, 'catcher still exists when off');
 
 	// back to high re-enables
-	await A.page.evaluate(() => window.__stores.lightParams.shadowQuality.set('high'));
+	await A.page.evaluate(() => window.__tp.test.v1.lightParams.shadowQuality.set('high'));
 	await A.page.waitForTimeout(300);
 	s = await snapshot(A.page);
 	h.check(s.shadowMapEnabled === true, "shadowQuality back to 'high' re-enables the shadow map");

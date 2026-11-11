@@ -37,10 +37,10 @@ const rect = (page, sel) =>
 	}, sel);
 
 async function openProperties(page) {
-	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await page.waitForTimeout(900);
 	await page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let g;
 		w.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.children[g.children.length - 1];
@@ -152,7 +152,7 @@ h.run(async () => {
 		h.check(ins && ins.w === 250, `the resize stops at the minimum width (${ins?.w}px)`);
 		for (const kind of ['properties', 'scene']) {
 			if (kind === 'scene') {
-				await page.evaluate(() => window.__stores.showSidebar('scene'));
+				await page.evaluate(() => window.__tp.test.v1.showSidebar('scene'));
 				await page.waitForTimeout(1000);
 			}
 			let sw = await sideways(page);

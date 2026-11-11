@@ -23,7 +23,7 @@ h.run(async () => {
 
 	// ---- 1. the pure part ---------------------------------------------------
 	const pure = await A.page.evaluate(() => {
-		const b = window.__stores.sceneBudget;
+		const b = window.__tp.test.v1.sceneBudget;
 		return {
 			budgets: b.BUDGETS.length,
 			// objects: desktop 1000 / 3000, vr 500 / 1500
@@ -63,7 +63,7 @@ h.run(async () => {
 
 	// ---- 2. the sampler reads the LIVE renderer and scene --------------------
 	const live = await A.page.evaluate(async () => {
-		const { sceneBudget, THREE, objectsGroup, pokeScene } = window.__stores;
+		const { sceneBudget, THREE, objectsGroup, pokeScene } = window.__tp?.test.v1;
 		let group; { const s = objectsGroup.subscribe((/** @type {any} */ g) => (group = g)); s(); }
 		group.clear();
 		const geo = new THREE.BoxGeometry(1, 1, 1);
@@ -93,7 +93,7 @@ h.run(async () => {
 	// frame rows leave it to the objects.
 	const tierOf = (/** @type {string} */ key) =>
 		A.page.evaluate((k) => {
-			const b = window.__stores.sceneBudget;
+			const b = window.__tp.test.v1.sceneBudget;
 			let m;
 			b.sceneMetrics.subscribe((v) => (m = v))();
 			return b.budgetRows(m, m?.profile ?? 'desktop').find((r) => r.key === k)?.tier ?? null;
@@ -105,7 +105,7 @@ h.run(async () => {
 	} else console.log('  (frame time is over budget on this renderer — the status-line dot is not the objects reading here)');
 
 	await A.page.evaluate(async () => {
-		const { THREE, objectsGroup, pokeScene } = window.__stores;
+		const { THREE, objectsGroup, pokeScene } = window.__tp?.test.v1;
 		let group; { const s = objectsGroup.subscribe((/** @type {any} */ g) => (group = g)); s(); }
 		const geo = new THREE.BoxGeometry(1, 1, 1);
 		const mat = new THREE.MeshStandardMaterial();
@@ -129,7 +129,7 @@ h.run(async () => {
 
 	// ---- 4. the panel, through its real entry point --------------------------
 	await A.page.evaluate(() => {
-		const { THREE, objectsGroup, pokeScene } = window.__stores;
+		const { THREE, objectsGroup, pokeScene } = window.__tp?.test.v1;
 		let group; { const s = objectsGroup.subscribe((/** @type {any} */ g) => (group = g)); s(); }
 		group.clear();
 		group.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial()));
@@ -143,7 +143,7 @@ h.run(async () => {
 	if ((await menuRow.count()) === 0) {
 		// the burger opener differs across layouts; fall back to the store, and SAY SO
 		h.check(false, 'the burger menu offers a Statistics row (#open-stats not reachable — check the opener)');
-		await A.page.evaluate(() => window.__stores.sceneBudget.statsOpen.set(true));
+		await A.page.evaluate(() => window.__tp.test.v1.sceneBudget.statsOpen.set(true));
 	} else {
 		await menuRow.click();
 		h.check(true, 'the burger menu offers a Statistics row and it opens the window');
@@ -168,7 +168,7 @@ h.run(async () => {
 
 	// ---- 5. wire counters + the diagnostics bundle ---------------------------
 	const wire = await A.page.evaluate(() => {
-		const b = window.__stores.sceneBudget;
+		const b = window.__tp.test.v1.sceneBudget;
 		b.resetWireStats();
 		for (let i = 0; i < 40; i++) b.noteWire('out', { type: 'camera', pos: [i, 0, 0] });
 		for (let i = 0; i < 5; i++) b.noteWire('in', { type: 'move', uuid: 'x' });
@@ -187,7 +187,7 @@ h.run(async () => {
 	h.check(typeof wire.busiest?.bytes === 'number', `bytes are estimated from a sample (≈${wire.busiest?.bytes})`);
 
 	const bundle = await A.page.evaluate(() => {
-		const text = window.__stores.diagnostics.bundleText();
+		const text = window.__tp.test.v1.diagnostics.bundleText();
 		return { hasSection: /scene-budget/.test(text), hasTriangles: /triangles/.test(text) };
 	});
 	h.check(bundle.hasSection, 'the diagnostics bundle carries a scene-budget section');

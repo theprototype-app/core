@@ -18,11 +18,11 @@ h.run(async () => {
 		localStorage.setItem('hasSeenWelcome', 'true');
 	});
 	await page.goto(h.URL, { waitUntil: 'load' });
-	await page.waitForFunction(() => window.__stores && window.__stores.peers, { timeout: 30000 });
+	await page.waitForFunction(() => window.__tp?.test.v1 && window.__tp.test.v1.peers, { timeout: 30000 });
 	await page.waitForTimeout(1500);
 
 	// Add search: open via Shift+A (opt-in pref, default off), results list scrolls
-	await page.evaluate(() => window.__stores.enableShiftAdd.set(true));
+	await page.evaluate(() => window.__tp.test.v1.enableShiftAdd.set(true));
 	await page.keyboard.press('Shift+KeyA');
 	await page.waitForTimeout(300);
 	h.check(await page.locator('#add-search-box').isVisible(), 'add search opens');

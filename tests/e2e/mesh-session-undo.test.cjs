@@ -12,7 +12,7 @@ h.run(async () => {
 	// setup: a box to edit + a second object whose undone creation leaves a
 	// PRE-session redo entry to protect
 	const pre = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create Box 1 1 1');
 		s.commandsHandler.sceneCommand('/create Sphere 1');
 		let g;
@@ -26,7 +26,7 @@ h.run(async () => {
 
 	// --- in-session stepping + the barrier ---
 	const inSession = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		const undoLen = () => {
 			let n;
@@ -74,7 +74,7 @@ h.run(async () => {
 
 	// --- Done collapses the session into EXACTLY one compacted meshgeo ---
 	const sealed = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		const undoLen = () => {
 			let n;
@@ -105,7 +105,7 @@ h.run(async () => {
 
 	// --- a VR-style grab commit collapses into the same single entry ---
 	const vrStyle = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		const undoLen = () => {
 			let n;
@@ -133,7 +133,7 @@ h.run(async () => {
 
 	// --- mixed kinds (meshgeo + props) seal as a 'session' composite ---
 	const mixed = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		const undoLen = () => {
 			let n;
@@ -168,7 +168,7 @@ h.run(async () => {
 
 	// --- undoing the only op, then Done: the seal records nothing ---
 	const emptySeal = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		const undoLen = () => {
 			let n;
@@ -191,7 +191,7 @@ h.run(async () => {
 	const collider = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				const fe = s.faceEdit;
 				const ce = s.colliderEdit;
 				const undoLen = () => {

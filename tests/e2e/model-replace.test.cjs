@@ -21,7 +21,7 @@ const shot = (page, name) => (process.env.SHOTS_DIR ? page.screenshot({ path: re
 /** in-page: the object at uuid, as plain facts */
 const factsOf = (page, uuid) =>
 	page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		const o = g?.getObjectByProperty('uuid', uuid);
@@ -54,13 +54,13 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);
-	await A.page.evaluate(() => window.__stores.modelDrop.forgetDropChoice());
+	await A.page.evaluate(() => window.__tp.test.v1.modelDrop.forgetDropChoice());
 
 	// ---------- fixtures: the shipped knight (a skinned mesh) + its clip library ----------
 	// v1 = knight + Idle + Cheer; v2 ("re-rigged" elsewhere) = knight + Interact only — the SAME
 	// skeleton, so Idle and Cheer must survive the replace by bone name
 	const fixtures = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fetchBytes = async (u) => (await fetch(u)).arrayBuffer();
 		const parse = (bytes) => new Promise((res, rej) => s.animatedImports.createGltfLoader().parse(bytes, '', res, rej));
 		const knight = await fetchBytes('/avatars/knight.glb');
@@ -76,13 +76,13 @@ h.run(async () => {
 
 	// ---------- T1 setup: the animated import, posed, with physics and a flow ----------
 	const uuid = await A.page.evaluate(async (v1) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const id = await s.fileHandler.importFile(new File([new Uint8Array(v1)], 'knight.glb'), 'Knight');
 		return id;
 	}, fixtures.v1);
 	await h.eventually(() => factsOf(B.page, uuid), (f) => f?.animated, 'B received the knight (objectfile)', 20000);
 	await A.page.evaluate((id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		const o = g.getObjectByProperty('uuid', id);
@@ -109,14 +109,14 @@ h.run(async () => {
 	h.check(before.animated && before.clips.join() === 'Cheer,Idle', `A: the knight is an animated import with Idle, Cheer (${before.clips})`);
 
 	// ---------- the Inspector shows the Model row for it ----------
-	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u, true), uuid);
+	await A.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u, true), uuid);
 	await h.eventually(() => A.page.locator('#model-source-replace').isVisible().catch(() => false), (v) => v, 'Inspector ▸ Model shows Replace model…', 15000);
 	h.check(await A.page.locator('#model-source-blender').isVisible(), 'Inspector ▸ Model shows Edit in Blender…');
 	await shot(A.page, '01-inspector-model-section.png');
 
 	// the object menu carries both rows too (single object, not locked)
 	const menuRows = await A.page.evaluate((u) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const items = s.objectMenu.buildObjectMenuItems(u, { selection: [u] });
 		return ['Replace model…', 'Edit in Blender…'].map((l) => !!s.objectMenu.findMenuItem(items, l) && !s.objectMenu.findMenuItem(items, l).disabled);
 	}, uuid);
@@ -124,7 +124,7 @@ h.run(async () => {
 
 	// ---------- T1: Inspector ▸ Replace model… through a REAL click + file chooser ----------
 	// (a file chooser needs a user activation: a programmatic input.click() from evaluate is refused)
-	const undoDepth = () => A.page.evaluate(() => new Promise((r) => window.__stores.history.undoStack.subscribe((s) => r(s.length))()));
+	const undoDepth = () => A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((s) => r(s.length))()));
 	const depth0 = await undoDepth();
 	const chooser = A.page.waitForEvent('filechooser', { timeout: 15000 });
 	await A.page.locator('#model-source-replace').click();
@@ -137,9 +137,9 @@ h.run(async () => {
 	h.check(after.physics?.mode === 'dynamic' && after.physics?.mass === 2, 'T1: physics kept');
 	h.check(after.graphNodes.join() === 'onclick,playanim', `T1: the flow wiring kept (${after.graphNodes})`);
 	h.check((await undoDepth()) === depth0 + 1, 'T1: ONE undo step');
-	const report = await A.page.evaluate(() => window.__stores.modelReplace.lastReplaceReport());
+	const report = await A.page.evaluate(() => window.__tp.test.v1.modelReplace.lastReplaceReport());
 	h.check([...(report?.kept ?? [])].sort().join() === 'Cheer,Idle' && report.dropped.length === 0, `the report names the kept clips (${report?.kept})`);
-	const toast = await A.page.evaluate(() => new Promise((r) => window.__stores.toastStore.subscribe((t) => r(JSON.stringify(t)))()));
+	const toast = await A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.toastStore.subscribe((t) => r(JSON.stringify(t)))()));
 	h.check(/Replaced \\"Knight\\" from knight-rerig\.glb — kept clips (Idle, Cheer|Cheer, Idle)/.test(toast), 'the toast lists the kept clips');
 
 	await h.eventually(() => factsOf(B.page, uuid), (f) => f?.clips?.join() === 'Cheer,Idle,Interact', 'B: the replaced model arrived with the kept clips (bytes)', 20000);
@@ -148,7 +148,7 @@ h.run(async () => {
 	h.check(onB.graphNodes.join() === 'onclick,playanim', `B: the flow wiring kept (${onB.graphNodes})`);
 
 	// the flow still plays the KEPT clip, on every peer
-	await A.page.evaluate((u) => window.__stores.flowRuntime.fireObjectClick(u), uuid);
+	await A.page.evaluate((u) => window.__tp.test.v1.flowRuntime.fireObjectClick(u), uuid);
 	await h.eventually(() => factsOf(A.page, uuid), (f) => f?.playing && f.clip === 'Idle', 'A: On Click -> Play Animation plays the kept "Idle"', 10000);
 	await h.eventually(() => factsOf(B.page, uuid), (f) => f?.playing && f.clip === 'Idle', 'B: ...and so does B', 10000);
 
@@ -163,36 +163,36 @@ h.run(async () => {
 	await h.closePeer(C);
 
 	// ---------- ONE undo puts the old model back everywhere; redo the new ----------
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => factsOf(A.page, uuid), (f) => f?.clips?.join() === 'Cheer,Idle', 'undo: A has the old model back', 10000);
 	await h.eventually(() => factsOf(B.page, uuid), (f) => f?.clips?.join() === 'Cheer,Idle', 'undo: B has the old model back', 20000);
 	const undone = await factsOf(A.page, uuid);
 	h.check(JSON.stringify([undone.pos, undone.rot, undone.scale]) === JSON.stringify([before.pos, before.rot, before.scale]) && undone.graphNodes.length === 2, 'undo: pose and flow intact');
-	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 	await h.eventually(() => factsOf(B.page, uuid), (f) => f?.clips?.includes('Interact'), 'redo: B has the replacement again', 20000);
 
 	// ---------- 59-int + 57: a `.tpanim` clip survives by bone names, stays a ref, plays on ----------
 	await A.page.evaluate(async () => {
 		const r = await fetch('/avatars/clips.glb');
-		await window.__stores.explorer.importFiles([new File([await r.arrayBuffer()], 'clips.glb')], null);
+		await window.__tp.test.v1.explorer.importFiles([new File([await r.arrayBuffer()], 'clips.glb')], null);
 	});
-	const walkOf = () => A.page.evaluate(() => new Promise((res) => window.__stores.explorer.explorerItems.subscribe((l) => {
+	const walkOf = () => A.page.evaluate(() => new Promise((res) => window.__tp.test.v1.explorer.explorerItems.subscribe((l) => {
 		const w = (l ?? []).find((i) => /Walking_A\.tpanim$/.test(i.name));
 		res(w ? { id: w.id, hash: w.hash, name: w.name } : null);
 	})()));
 	await h.eventually(walkOf, (w) => !!w?.hash, 'the walk clip is an Explorer asset', 30000);
 	const walkItem = await walkOf();
-	const walkName = await A.page.evaluate(({ uuid, walkItem }) => window.__stores.clipAssets.assignClipAsset(uuid, walkItem, { play: true }), { uuid, walkItem });
+	const walkName = await A.page.evaluate(({ uuid, walkItem }) => window.__tp.test.v1.clipAssets.assignClipAsset(uuid, walkItem, { play: true }), { uuid, walkItem });
 	await h.eventually(() => factsOf(A.page, uuid), (f) => f?.clips?.includes(walkName) && f.playing && f.clip === walkName, 'A plays the .tpanim clip', 15000);
 	await h.eventually(() => factsOf(B.page, uuid), (f) => f?.clips?.includes(walkName), 'B has the .tpanim clip', 30000);
 	const refsOf = (page) => page.evaluate((u) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		return (g.getObjectByProperty('uuid', u)?.userData.clipRefs ?? []).map((r) => r.name);
 	}, uuid);
 	const depth1 = await undoDepth();
 	const rerig = await A.page.evaluate(async ({ uuid, v1 }) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const report = await s.modelReplace.replaceModelFromFile(uuid, new File([new Uint8Array(v1)], 'knight-v3.glb'), { fixes: 'skip', source: 'menu' });
 		const bytes = s.animatedImports.animatedImportPayload(uuid);
 		const gltf = await new Promise((res, rej) => s.animatedImports.createGltfLoader().parse(bytes, '', res, rej));
@@ -206,7 +206,7 @@ h.run(async () => {
 	h.check((await refsOf(B.page)).join() === walkName, 'B: the ref arrived with the replaced model');
 	const provenance = await A.page.evaluate((u) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		return (g.getObjectByProperty('uuid', u)?.userData.provenance ?? []).map((p) => p.tool);
 	}, uuid);
 	h.check(provenance.at(-1) === 'replace', `provenance records the replace (${provenance})`);
@@ -230,19 +230,19 @@ h.run(async () => {
 		accessors: [{ bufferView: 0, componentType: 5126, count: 3, type: 'VEC3', min: [0, 0, 0], max: [1, 1, 0] }]
 	});
 	const plain = await A.page.evaluate(async ({ uuid, text }) => {
-		const report = await window.__stores.modelReplace.replaceModelFromFile(uuid, new File([text], 'plain.gltf'), { fixes: 'skip', source: 'menu' });
+		const report = await window.__tp.test.v1.modelReplace.replaceModelFromFile(uuid, new File([text], 'plain.gltf'), { fixes: 'skip', source: 'menu' });
 		return report?.dropped ?? [];
 	}, { uuid, text: NO_BONES });
 	h.check(plain.some((d) => d.name === walkName), `a model without the bones drops the .tpanim clip and lists it (${plain.map((d) => d.name)})`);
 	h.check((await refsOf(A.page)).length === 0, 'the dropped ref is gone from the object');
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => refsOf(A.page), (r) => r.join() === walkName, 'undo: the ref is back', 10000);
 	await h.eventually(() => factsOf(A.page, uuid), (f) => f?.clips?.includes(walkName), 'undo: the .tpanim clip binds again', 20000);
 	await h.eventually(() => factsOf(B.page, uuid), (f) => f?.clips?.includes(walkName), 'undo: B has it back', 30000);
 
 	// ---------- T2: Edit in Blender on a STATIC model (two named parts) ----------
 	const crate = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		const root = new THREE.Group();
 		const body = new THREE.Mesh(new THREE.BoxGeometry(1, 0.8, 1), new THREE.MeshStandardMaterial({ color: 0x996633 }));
@@ -267,7 +267,7 @@ h.run(async () => {
 	await h.eventually(() => factsOf(B.page, crate), (f) => f?.pos?.[0] === -2, 'B holds the crate', 20000);
 	const download = A.page.waitForEvent('download', { timeout: 15000 });
 	await A.page.evaluate((u) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.objectMenu.findMenuItem(s.objectMenu.buildObjectMenuItems(u, { selection: [u] }), 'Edit in Blender…').action();
 	}, crate);
 	const dl = await download;
@@ -280,7 +280,7 @@ h.run(async () => {
 	h.check(settings.some((t) => /\+Y Up/.test(t)) && settings.some((t) => /Custom Properties/.test(t)), `the card lists the export settings (${settings.length})`);
 	const roundTrip = await A.page.evaluate(
 		async ({ bytes, uuid }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const buf = new Uint8Array(bytes).buffer;
 			const stamp = s.glbEdit.readTpExtras(buf);
 			const g2 = await new Promise((res, rej) => s.animatedImports.createGltfLoader().parse(buf, '', res, rej));
@@ -316,7 +316,7 @@ h.run(async () => {
 		);
 	const crateChildren = (await factsOf(A.page, crate)).childUuids;
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.selectedObject.set(null);
 		s.selectedObjects.set([]);
 	});
@@ -325,14 +325,14 @@ h.run(async () => {
 	await shot(A.page, '03-update-crate-ask.png');
 	h.check(await A.page.getByText('Update "Crate"?', { exact: true }).first().isVisible().catch(() => false), 'the ask names the object');
 	await A.page.locator('#confirm-dialog-update').click();
-	await h.eventually(() => A.page.evaluate(() => window.__stores.modelReplace.lastReplaceReport()), (r) => r?.uuid === crate, 'T7b: Update replaced the crate in place', 10000);
+	await h.eventually(() => A.page.evaluate(() => window.__tp.test.v1.modelReplace.lastReplaceReport()), (r) => r?.uuid === crate, 'T7b: Update replaced the crate in place', 10000);
 	const updated = await factsOf(A.page, crate);
 	h.check(updated.childUuids.join() === crateChildren.join(), 'T7b: same shape, so the parts keep their uuids');
 	h.check(updated.pos[0] === -2, 'T7b: the crate stays where it stood');
 
 	// ---------- F1: a file dropped ONTO the selected object asks Replace / Add ----------
 	const plainBox = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		const m = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 1.2), new THREE.MeshStandardMaterial());
 		m.name = 'Plain';
@@ -340,12 +340,12 @@ h.run(async () => {
 		return Array.from(new Uint8Array(bytes));
 	});
 	await A.page.evaluate((u) => {
-		window.__stores.objectActions.selectObject(u);
-		window.__stores.objectActions.focusObject(u);
+		window.__tp.test.v1.objectActions.selectObject(u);
+		window.__tp.test.v1.objectActions.focusObject(u);
 	}, crate);
 	await A.page.waitForTimeout(1500); // the focus glide
 	const at = await h.projectPoint(A.page, [-2, 0.5, 0]);
-	const count = () => A.page.evaluate(() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g.children.length))()));
+	const count = () => A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g.children.length))()));
 	const n0 = await count();
 	await dropFile(A.page, plainBox, 'plain.glb', at.x, at.y);
 	await h.eventually(() => A.page.locator('#confirm-model-drop-replace').isVisible().catch(() => false), (v) => v, 'F1: dropping onto the selected object asks Replace or add', 10000);
@@ -353,7 +353,7 @@ h.run(async () => {
 	await shot(A.page, '04-replace-or-add.png');
 	await A.page.locator('#confirm-dialog-add').click();
 	await h.eventually(count, (n) => n === n0 + 1, 'F1: Add imports a new object', 10000);
-	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u), crate);
+	await A.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), crate);
 	await dropFile(A.page, plainBox, 'plain.glb', at.x, at.y);
 	await h.eventually(() => A.page.locator('#confirm-model-drop-replace').isVisible().catch(() => false), (v) => v, 'F1: asked again (nothing remembered)', 10000);
 	await A.page.locator('#confirm-dialog-replace').click();
@@ -371,13 +371,13 @@ h.run(async () => {
 		},
 		{ bytes: exported }
 	);
-	await A.page.evaluate((u) => window.__stores.editInBlender.editInBlender(u), crate);
+	await A.page.evaluate((u) => window.__tp.test.v1.editInBlender.editInBlender(u), crate);
 	await h.eventually(() => A.page.locator('#edit-in-blender-watch').isVisible().catch(() => false), (v) => v, 'T7a: Chromium desktop offers "Watch the exported file…"', 10000);
 	await A.page.locator('#edit-in-blender-watch').click();
-	await h.eventually(() => A.page.evaluate(() => new Promise((r) => window.__stores.modelWatch.watchedModels.subscribe((m) => r(Object.keys(m)))())), (k) => k.length === 1, 'T7a: the file is watched');
+	await h.eventually(() => A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.modelWatch.watchedModels.subscribe((m) => r(Object.keys(m)))())), (k) => k.length === 1, 'T7a: the file is watched');
 	await A.page.evaluate(async () => {
 		window.__saveAgain();
-		await window.__stores.modelWatch.pollAll();
+		await window.__tp.test.v1.modelWatch.pollAll();
 	});
 	// the toast store is rendered twice (the stack + the Connect drawer's Toasts tab): scope to one card
 	const reloadToast = A.page.locator('.tp-toast', { hasText: 'Crate.glb changed — reload "Crate"?' }).first();
@@ -385,7 +385,7 @@ h.run(async () => {
 	await shot(A.page, '05-watch-reload-toast.png');
 	await reloadToast.getByRole('button', { name: 'Reload', exact: true }).click();
 	await h.eventually(() => factsOf(A.page, crate), (f) => f?.childUuids?.length === 2, 'T7a: Reload put the exported crate back (two parts)', 10000);
-	await A.page.evaluate((u) => window.__stores.modelWatch.stopWatching(u), crate);
+	await A.page.evaluate((u) => window.__tp.test.v1.modelWatch.stopWatching(u), crate);
 
 	// ---------- T7c: a 100× FBX gets the scale fix ----------
 	const fbx = (() => {
@@ -397,7 +397,7 @@ h.run(async () => {
 	})();
 	const sizeBefore = (await factsOf(A.page, crate)).size;
 	const fixing = A.page.evaluate(
-		({ u, text }) => window.__stores.modelReplace.replaceModelFromFile(u, new File([text], 'crate-cm.fbx'), { source: 'menu' }),
+		({ u, text }) => window.__tp.test.v1.modelReplace.replaceModelFromFile(u, new File([text], 'crate-cm.fbx'), { source: 'menu' }),
 		{ u: crate, text: fbx }
 	);
 	await h.eventually(() => A.page.locator('#confirm-replace-model-sanity').isVisible().catch(() => false), (v) => v, 'T7c: the 100× FBX is flagged before it is placed', 10000);

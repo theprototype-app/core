@@ -9,7 +9,7 @@ const h = require('./helpers.cjs');
 
 const editBox = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create Box 2 2 2');
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
@@ -27,7 +27,7 @@ h.run(async () => {
 	// (1,-1,1) and (1,1,-1) — the block below finds that handle through the public API
 	// (select each and watch where the proxy lands) rather than guessing an index.
 	const slide = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const me = s.meshEdit;
 		const positionsOf = () => {
 			const p = window.__box.geometry.attributes.position;
@@ -83,7 +83,7 @@ h.run(async () => {
 
 	// --- the clamp: a huge drag stops at the far END of the edge -------------
 	const clamped = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const me = s.meshEdit;
 		let controls;
 		s.TControls.subscribe((c) => (controls = c))();
@@ -110,7 +110,7 @@ h.run(async () => {
 
 	// --- disarming restores a free drag -------------------------------------
 	const disarmed = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const me = s.meshEdit;
 		let controls;
 		s.TControls.subscribe((c) => (controls = c))();
@@ -133,7 +133,7 @@ h.run(async () => {
 	// direction, and a scene-root LANDING MARKER shows where it will go while
 	// the parameter is outside the edge.
 	const extend = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const me = s.meshEdit;
 		const mt = s.meshToolParams;
 		// a fresh box — earlier sections deformed the current one
@@ -213,7 +213,7 @@ h.run(async () => {
 
 	// clamped drags never show the marker (t is pinned inside [0, 1])
 	const clampMarker = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const me = s.meshEdit;
 		let controls;
 		s.TControls.subscribe((c) => (controls = c))();
@@ -235,7 +235,7 @@ h.run(async () => {
 
 	// the pane: arming Slide focuses its options and #slide-clamp drives the store
 	const pane = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		document.querySelector('#mesh-slide')?.click(); // disarm (left armed above)
 		await new Promise((r) => setTimeout(r, 80));
 		const before = !!document.querySelector('#slide-clamp');
@@ -260,7 +260,7 @@ h.run(async () => {
 
 	// --- the tool disarms itself when the session ends -----------------------
 	const reset = await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const me = s.meshEdit;
 		me.vertexSlide.set(true);
 		me.exitEditMode();
@@ -271,6 +271,6 @@ h.run(async () => {
 	}, await A.page.evaluate(() => window.__box.uuid));
 	h.check(reset === false, 'leaving the session disarms Slide (an armed tool must not outlive it)');
 
-	await A.page.evaluate(() => window.__stores.meshEdit.exitEditMode());
+	await A.page.evaluate(() => window.__tp.test.v1.meshEdit.exitEditMode());
 	await h.finish(browser);
 });

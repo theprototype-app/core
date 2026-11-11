@@ -5,7 +5,7 @@ const h = require('./helpers.cjs');
 
 const geoInfo = (page, uuid) =>
 	page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const mesh = g.getObjectByProperty('uuid', uuid);
 		const geo = mesh.geometry;
@@ -31,7 +31,7 @@ h.run(async () => {
 
 	// -------------------------------- 1. recalculate normals on an inside-out box
 	const flipped = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.children[g.children.length - 1];
@@ -44,27 +44,27 @@ h.run(async () => {
 	const inside = await geoInfo(A.page, flipped);
 	h.check(inside.volume < 0, 'the box is inside-out after flipping every face (premise, vol ' + inside.volume + ')');
 
-	const fixed = await A.page.evaluate(() => window.__stores.faceEdit.recalculateNormals());
+	const fixed = await A.page.evaluate(() => window.__tp.test.v1.faceEdit.recalculateNormals());
 	const outside = await geoInfo(A.page, flipped);
 	h.check(fixed === true, 'Recalculate normals commits');
 	h.check(outside.volume > 0, 'THE FIX: every face now points outward (vol ' + outside.volume + ')');
 	h.check(outside.tris === inside.tris, '...without changing the triangle count');
 
 	// running it again is a no-op with a toast, not a re-flip
-	const again = await A.page.evaluate(() => window.__stores.faceEdit.recalculateNormals());
+	const again = await A.page.evaluate(() => window.__tp.test.v1.faceEdit.recalculateNormals());
 	const stillOut = await geoInfo(A.page, flipped);
 	h.check(again === false, 'running it again reports "already outward" instead of re-flipping');
 	h.check(stillOut.volume > 0, '...and leaves the mesh outward-facing');
 
 	// undo restores the inside-out state in one step
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	const undone = await geoInfo(A.page, flipped);
 	h.check(undone.volume < 0, 'ONE undo restores the previous winding');
-	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 
 	// ------------------------------------------- 2. merge by distance
 	const dup = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.faceEdit.exitFaceEdit();
 		w.commandsHandler.sceneCommand('/clear all');
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
@@ -81,12 +81,12 @@ h.run(async () => {
 	const beforeMerge = await geoInfo(A.page, dup);
 	h.check(beforeMerge.tris === 2, 'two nearly-touching triangles (premise)');
 
-	const tooTight = await A.page.evaluate(() => window.__stores.faceEdit.mergeByDistance(0.0001));
+	const tooTight = await A.page.evaluate(() => window.__tp.test.v1.faceEdit.mergeByDistance(0.0001));
 	h.check(tooTight === false, 'a threshold BELOW the gap merges nothing');
 
-	const mergedOk = await A.page.evaluate(() => window.__stores.faceEdit.mergeByDistance(0.01));
+	const mergedOk = await A.page.evaluate(() => window.__tp.test.v1.faceEdit.mergeByDistance(0.01));
 	const afterMerge = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const geo = g.getObjectByProperty('uuid', uuid).geometry;
 		const pos = geo.attributes.position;
@@ -110,7 +110,7 @@ h.run(async () => {
 
 	// a fully collapsed triangle IS dropped
 	const degenerate = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.faceEdit.exitFaceEdit();
 		w.commandsHandler.sceneCommand('/clear all');
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
@@ -130,7 +130,7 @@ h.run(async () => {
 
 	// ------------------------------------------------- 3. smooth / flat shading
 	const shading = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.faceEdit.exitFaceEdit();
 		w.commandsHandler.sceneCommand('/clear all');
 		// a BOX, not a sphere: SphereGeometry already ships smooth normals, so
@@ -167,12 +167,12 @@ h.run(async () => {
 	h.check(shading.backToFlat === 'flat', 'clicking again returns to flat');
 
 	// ------------------------------------------------------- 4. two peers
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);
 	const netUuid = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Sphere 0.5');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const s = g.children[g.children.length - 1];
@@ -185,7 +185,7 @@ h.run(async () => {
 		'B received the sphere (premise)',
 		20000
 	);
-	await A.page.evaluate(() => window.__stores.faceEdit.setShadingSmooth(true));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.setShadingSmooth(true));
 	await h.eventually(
 		() => geoInfo(B.page, netUuid),
 		(i) => i?.shading === 'smooth',

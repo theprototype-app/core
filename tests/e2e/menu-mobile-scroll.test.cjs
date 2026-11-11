@@ -45,8 +45,8 @@ async function mobilePage(browser, name, vp, dpr) {
 /** open the menu and read its geometry @param {any} page */
 async function readMenu(page) {
 	await page.evaluate(() => {
-		window.__stores.settingsOpen.set(false);
-		window.__stores.closeMenu.set(false);
+		window.__tp.test.v1.settingsOpen.set(false);
+		window.__tp.test.v1.closeMenu.set(false);
 	});
 	await page.waitForSelector('#sidebar70', { timeout: 5000 });
 	await page.waitForTimeout(350); // the fade-in
@@ -139,7 +139,7 @@ async function checkPosture(page, label) {
 		);
 		await page.screenshot({ path: path.join(SHOTS, `menu-${PHASE}-${label}-swiped.png`) }).catch(() => {});
 	}
-	await page.evaluate(() => window.__stores.closeMenu.set(true));
+	await page.evaluate(() => window.__tp.test.v1.closeMenu.set(true));
 	await page.waitForTimeout(250);
 }
 
@@ -190,7 +190,7 @@ h.run(async () => {
 
 	// ---- 4. the Live view's new home: the Profiler tab header opens it (desktop)
 	const D = await h.setupPage(browser, 'desk', { context: { viewport: { width: 1440, height: 900 } } });
-	await D.page.evaluate(() => window.__stores.profilerView.openProfiler());
+	await D.page.evaluate(() => window.__tp.test.v1.profilerView.openProfiler());
 	await D.page.click('#profiler-open-live', { timeout: 15000 });
 	await D.page.waitForSelector('#profiler-live', { timeout: 5000 });
 	h.check(true, 'the Profiler tab header opens the Live profiler (#profiler-open-live)');

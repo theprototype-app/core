@@ -64,7 +64,7 @@ export default { id: 'lc-shadow', name: 'Shadow', version: '1.0.0', register(api
 `;
 
 async function installZip(page, name, buffer) {
-	await page.evaluate(() => window.__stores.modulesOpen.set(true));
+	await page.evaluate(() => window.__tp.test.v1.modulesOpen.set(true));
 	await page.waitForTimeout(300);
 	await page.getByRole('tab', { name: /^User/ }).click();
 	await page
@@ -107,7 +107,7 @@ h.run(async () => {
 	// ---------------------------------------------------------------- §1 the contract ---
 	await page.addScriptTag({ path: FIXTURES });
 	await page.evaluate(async () => {
-		window.__lcEnv = await window.__stores.moduleLifecycle.lifecycleEnv();
+		window.__lcEnv = await window.__tp.test.v1.moduleLifecycle.lifecycleEnv();
 	});
 	if (want(1)) {
 		const contract = await page.evaluate(async () =>
@@ -168,12 +168,12 @@ h.run(async () => {
 			})
 		);
 		await h.eventually(
-			() => page.evaluate(() => window.__stores.moduleSDK.isModuleLoaded('lc-probe')),
+			() => page.evaluate(() => window.__tp.test.v1.moduleSDK.isModuleLoaded('lc-probe')),
 			(v) => v === true,
 			'2.0 the probe module installed',
 			20000
 		);
-		await page.evaluate(() => window.__stores.modulesOpen.set(false));
+		await page.evaluate(() => window.__tp.test.v1.modulesOpen.set(false));
 		await page.waitForTimeout(400);
 		const live = await page.evaluate(async () => {
 			const probe = window.__lcProbe;
@@ -184,7 +184,7 @@ h.run(async () => {
 			return {
 				before,
 				after: { ...probe },
-				scope: window.__stores.moduleSDK.moduleScopeDebug()['lc-probe'] ?? null
+				scope: window.__tp.test.v1.moduleSDK.moduleScopeDebug()['lc-probe'] ?? null
 			};
 		});
 		h.check(
@@ -209,7 +209,7 @@ h.run(async () => {
 				JSON.stringify(live.scope)
 		);
 		const removed = await page.evaluate(async () => {
-			const S = window.__stores;
+			const S = window.__tp?.test.v1;
 			await S.userModules.removeUserModule('lc-probe');
 			const probe = window.__lcProbe;
 			await new Promise((r) => setTimeout(r, 100));
@@ -256,14 +256,14 @@ h.run(async () => {
 		await h.eventually(
 			() =>
 				page.evaluate(() => [
-					window.__stores.moduleSDK.isModuleLoaded('lc-shadow'),
+					window.__tp.test.v1.moduleSDK.isModuleLoaded('lc-shadow'),
 					window.__lcShadow === true
 				]),
 			(v) => v[0] && v[1],
 			'2.10 a module declaring setTimeout itself still loads (evaluated without the prologue)',
 			20000
 		);
-		await page.evaluate(() => window.__stores.userModules.removeUserModule('lc-shadow'));
+		await page.evaluate(() => window.__tp.test.v1.userModules.removeUserModule('lc-shadow'));
 
 		// live update: v1 counts `ticks`, v2 counts `ticks2` — the old code stops, the new runs
 		await page.evaluate(() => (window.__lcProbe = {}));
@@ -296,7 +296,7 @@ h.run(async () => {
 			return {
 				v1: [a, window.__lcProbe.ticks],
 				v2: [b, window.__lcProbe.ticks2],
-				scope: window.__stores.moduleSDK.moduleScopeDebug()['lc-up']
+				scope: window.__tp.test.v1.moduleSDK.moduleScopeDebug()['lc-up']
 			};
 		});
 		h.check(
@@ -307,8 +307,8 @@ h.run(async () => {
 			updated.v2[1] > updated.v2[0] && updated.scope?.intervals === 1,
 			"2.14 the NEW version's interval kept running " + JSON.stringify(updated)
 		);
-		await page.evaluate(() => window.__stores.userModules.removeUserModule('lc-up'));
-		await page.evaluate(() => window.__stores.modulesOpen.set(false));
+		await page.evaluate(() => window.__tp.test.v1.userModules.removeUserModule('lc-up'));
+		await page.evaluate(() => window.__tp.test.v1.modulesOpen.set(false));
 		evidence.installed = { live, removed, updated };
 	}
 
@@ -459,11 +459,11 @@ h.run(async () => {
 			// cycle 0 is a WARM-UP, not counted: a freshly booted page still uploads textures and
 			// fills caches lazily, which reads as growth that is not the module's
 			for (let cycle = 0; cycle <= 3; cycle++) {
-				await page.evaluate((id) => window.__stores.moduleSDK.unloadModule(id), id);
+				await page.evaluate((id) => window.__tp.test.v1.moduleSDK.unloadModule(id), id);
 				await page.waitForTimeout(500);
 				const u = {
 					...(await metrics()),
-					mine: await page.evaluate((id) => window.__stores.moduleSDK.registrationCount(id), id)
+					mine: await page.evaluate((id) => window.__tp.test.v1.moduleSDK.registrationCount(id), id)
 				};
 				strays.push(...(await strayListeners((url) => url.includes('/src/modules/' + id + '/'))));
 				if (cycle > 0) unloaded.push(u);

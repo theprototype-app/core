@@ -24,14 +24,14 @@ const nap = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const state = (page) =>
 	page.evaluate(() => {
-		const m = window.__stores.measure;
+		const m = window.__tp.test.v1.measure;
 		const read = (s) => {
 			let v;
 			s.subscribe((x) => (v = x))();
 			return v;
 		};
 		const cur = read(m.measurement);
-		const mi = window.__stores.measureItems;
+		const mi = window.__tp.test.v1.measureItems;
 		const items = mi.measurementItems().map((o) => ({ uuid: o.uuid, name: o.name, points: mi.worldPointsOf(o) }));
 		const labels = [...document.querySelectorAll('#measure-labels .measure-label')]
 			.filter((el) => el.dataset.hidden !== '1')
@@ -61,7 +61,7 @@ async function aimInside(page, corner, toward = TOP_CENTRE, px = 6) {
 }
 
 async function setView(page, view) {
-	await page.evaluate((v) => window.__stores.objectActions.flyTo(v.pos, v.target, 0), view);
+	await page.evaluate((v) => window.__tp.test.v1.objectActions.flyTo(v.pos, v.target, 0), view);
 	await page.waitForTimeout(600);
 }
 
@@ -72,7 +72,7 @@ const underOf = (page, p) =>
 	page.evaluate(({ x, y }) => {
 		const el = document.elementFromPoint(x, y);
 		let r;
-		window.__stores.globalRenderer.subscribe((v) => (r = v))();
+		window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
 		if (el === r.domElement) return 'CANVAS';
 		return el ? `${el.tagName}#${el.id}.${String(el.className?.baseVal ?? el.className).slice(0, 60)}` : 'nothing';
 	}, p);
@@ -103,14 +103,14 @@ h.run(async () => {
 
 	// --- the fixture: a 2 x 1 x 1 box, posed on A and replicated ---
 	const uuid = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 2 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		return g.children[g.children.length - 1].uuid;
 	});
 	await A.page.waitForTimeout(1500); // /create re-seats after it returns
 	await A.page.evaluate((id) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let g; w.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByProperty('uuid', id);
 		o.position.set(0, 0.5, 0);
@@ -122,14 +122,14 @@ h.run(async () => {
 	}, uuid);
 	const boxOn = (page) =>
 		page.evaluate((id) => {
-			let g; window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const o = g.getObjectByProperty('uuid', id);
 			if (!o) return null;
 			return { x: o.position.x, y: o.position.y, z: o.position.z };
 		}, uuid);
 	await h.eventually(() => boxOn(B.page), (p) => p && Math.abs(p.y - 0.5) < 1e-6 && Math.abs(p.x) < 1e-6, 'premise: B holds the posed box', 20000);
 	const size = await A.page.evaluate((id) => {
-		let g; window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByProperty('uuid', id);
 		o.geometry.computeBoundingBox();
 		const bb = o.geometry.boundingBox;
@@ -140,7 +140,7 @@ h.run(async () => {
 	// --- 1. counterfactual first: snapping OFF, the same pixels do NOT read the box size ---
 	await setView(A.page, VIEW);
 	await A.page.evaluate(() => {
-		const m = window.__stores.measure;
+		const m = window.__tp.test.v1.measure;
 		m.measureSnap.set(false);
 		m.startMeasure();
 	});
@@ -155,7 +155,7 @@ h.run(async () => {
 
 	// --- 2. snapped two-point distance equals the box size ---
 	await A.page.evaluate(() => {
-		const m = window.__stores.measure;
+		const m = window.__tp.test.v1.measure;
 		m.discardMeasurement();
 		m.measureSnap.set(true);
 	});
@@ -225,13 +225,13 @@ h.run(async () => {
 	h.check(!!bItem && bItem.points.every((p, k) => dist(p, item.points[k]) < 1e-5), `B holds the same points under the same uuid (A ${JSON.stringify(item.points)} B ${JSON.stringify(bItem?.points)})`);
 	h.check(onB.labels.filter((l) => l.item).length >= 4, `B draws the item's labels (${onB.labels.length})`);
 	// the object list lists it
-	await A.page.evaluate(() => window.__stores.objectListClose.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.objectListClose.set(false));
 	await A.page.waitForTimeout(500);
 	const listed = await A.page.evaluate(() => (document.querySelector('#object-list')?.textContent ?? '').match(/Measurement/g)?.length ?? 0);
 	h.check(listed >= 2, `the object list has a row per measurement (${listed})`);
-	await A.page.evaluate(() => window.__stores.objectListClose.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.objectListClose.set(true));
 	// no physics body: an empty node has no collider
-	const colliders = await A.page.evaluate((u) => window.__stores.colliderSpec?.colliderSpecOf?.(window.__stores.measureItems.measurementOf(u)) ?? 'n/a', item.uuid);
+	const colliders = await A.page.evaluate((u) => window.__tp.test.v1.colliderSpec?.colliderSpecOf?.(window.__tp.test.v1.measureItems.measurementOf(u)) ?? 'n/a', item.uuid);
 	h.check(colliders === null || colliders === 'n/a', `a measurement has no collider spec (${JSON.stringify(colliders)})`);
 
 	// --- 5. select by clicking its line; Tab edits its points with the same snapping ---
@@ -239,17 +239,17 @@ h.run(async () => {
 	const mid = await h.projectPoint(A.page, [0, 1, 0.5]);
 	const miss = { x: mid.x, y: mid.y + 40 };
 	h.check((await underIsCanvas(A.page, mid)) && (await underIsCanvas(A.page, miss)), 'premise: the line and the miss point are bare viewport');
-	const sel = () => A.page.evaluate(() => new Promise((r) => window.__stores.selectedObjects.subscribe(r)()));
+	const sel = () => A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.selectedObjects.subscribe(r)()));
 	await click(A.page, miss); // on the box face, 40 px off the line
 	h.check(!(await sel()).includes(item.uuid), 'COUNTERFACTUAL: a click 40 px off the line does not select the measurement');
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await click(A.page, mid);
 	h.check((await sel()).includes(item.uuid), 'a click ON the line selects the measurement (over the box face it lies on)');
 	await A.page.keyboard.press('Tab');
 	await A.page.waitForTimeout(400);
 	s = await state(A.page);
 	h.check(s.mode && s.editing?.uuid === item.uuid && s.editing.active === -1, `Tab on the selected measurement opens its EDITOR (${JSON.stringify(s.editing)})`);
-	h.check((await A.page.evaluate(() => new Promise((r) => window.__stores.gizmoSuppressed.subscribe(r)()))) === true, 'no gizmo while editing (a press would move the whole item)');
+	h.check((await A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.gizmoSuppressed.subscribe(r)()))) === true, 'no gizmo while editing (a press would move the whole item)');
 	// pick up the middle point (the front-right corner) and put it on the back-left corner
 	const pickAt = await h.projectPoint(A.page, CORNER_FR);
 	const CORNER_BL = [-1, 1, -0.5];
@@ -257,18 +257,18 @@ h.run(async () => {
 	// the editor's start toast can sit over the box for its few seconds — a click there is the toast's
 	await h.eventually(async () => [await underOf(A.page, pickAt), await underOf(A.page, putAt)], (u) => u.every((x) => x === 'CANVAS'), 'premise: the pick and put points are bare viewport', 12000);
 	// counterfactual: snapping OFF, the same pixels do not land on the corner
-	await A.page.evaluate(() => window.__stores.measure.measureSnap.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.measure.measureSnap.set(false));
 	await click(A.page, pickAt);
 	h.check((await state(A.page)).editing?.active === 1, 'a click on a point PICKS IT UP (point 2)');
 	await click(A.page, putAt);
 	let edited = (await state(A.page)).items.find((i) => i.uuid === item.uuid);
 	const rawOff = edited ? dist(edited.points[1], CORNER_BL) : NaN;
 	h.check(rawOff > 0.01, `COUNTERFACTUAL: placed with snapping off it misses the corner (${rawOff.toFixed(4)} m off)`);
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(300);
 	edited = (await state(A.page)).items.find((i) => i.uuid === item.uuid);
 	h.check(!!edited && dist(edited.points[1], CORNER_FR) < 1e-5, 'ONE undo puts the point back');
-	await A.page.evaluate(() => window.__stores.measure.measureSnap.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.measure.measureSnap.set(true));
 	await click(A.page, pickAt);
 	h.check((await state(A.page)).editing?.active === 1, 'premise: point 2 is picked up again');
 	await click(A.page, putAt);
@@ -298,12 +298,12 @@ h.run(async () => {
 	await A.page.waitForTimeout(400);
 	s = await state(A.page);
 	h.check(!s.mode && !s.editing, 'Tab again finishes editing');
-	h.check((await A.page.evaluate(() => new Promise((r) => window.__stores.gizmoSuppressed.subscribe(r)()))) === false, 'the gizmo comes back on the item');
+	h.check((await A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.gizmoSuppressed.subscribe(r)()))) === false, 'the gizmo comes back on the item');
 
 	// --- 6. labels of SHORT segments never overlap ---
 	const shortUuid = await A.page.evaluate(() => {
 		const pts = [[-1, 0, 1.2], [-0.97, 0, 1.2], [-0.94, 0, 1.2], [-0.91, 0, 1.2], [-0.88, 0, 1.2]];
-		return window.__stores.measureItems.createMeasurement(pts)?.uuid;
+		return window.__tp.test.v1.measureItems.createMeasurement(pts)?.uuid;
 	});
 	await setView(A.page, { pos: [6, 6, 9], target: [0, 0.5, 0] });
 	s = await state(A.page);
@@ -323,7 +323,7 @@ h.run(async () => {
 	// --- 7. the touch tap path: B (phone) measures with two finger taps and keeps it ---
 	// a portrait 380-px screen sees a narrow horizontal field: stand back so the whole box fits
 	await setView(B.page, { pos: [6, 7, 9], target: [0, 0.5, 0] });
-	await B.page.evaluate(() => window.__stores.measure.startMeasure());
+	await B.page.evaluate(() => window.__tp.test.v1.measure.startMeasure());
 	await B.page.waitForTimeout(500);
 	const cdp = await B.ctx.newCDPSession(B.page);
 	const qFL = await aimInside(B.page, CORNER_FL, TOP_CENTRE, 5);
@@ -342,20 +342,20 @@ h.run(async () => {
 	s = await state(B.page);
 	h.check(s.items.length === bItems + 1, `a tap on Keep keeps it on the phone (${bItems} -> ${s.items.length})`);
 	await h.eventually(() => state(A.page), (a) => a.items.length === bItems + 1, 'the phone\'s measurement reaches A', 10000);
-	await B.page.evaluate(() => window.__stores.measure.stopMeasure({ keep: false }));
+	await B.page.evaluate(() => window.__tp.test.v1.measure.stopMeasure({ keep: false }));
 
 	// --- 8. save / load, and the late-joiner send path ---
 	const itemCount = (await state(A.page)).items.length;
 	const zip = await A.page.evaluate(async () => {
-		const ss = window.__stores.sessions;
+		const ss = window.__tp.test.v1.sessions;
 		const out = await ss.exportSessionZip(ss.buildSessionPayload('Measured'));
 		return Array.from(new Uint8Array(out instanceof Blob ? await out.arrayBuffer() : out));
 	});
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	await A.page.waitForTimeout(800);
 	h.check((await state(A.page)).items.length === 0, 'premise: the scene is cleared');
 	await A.page.evaluate(async (arr) => {
-		const ss = window.__stores.sessions;
+		const ss = window.__tp.test.v1.sessions;
 		await ss.applySession(await ss.readSessionZip(new Uint8Array(arr).buffer), { backup: false });
 	}, zip);
 	await h.eventually(() => state(A.page), (a) => a.items.length === itemCount, `a save/load round trip brings back all ${itemCount} measurements`, 15000);
@@ -363,17 +363,17 @@ h.run(async () => {
 	h.check(!!reloaded && dist(reloaded.points[1], CORNER_BL) < 1e-5, 'with their edited points');
 	const sent = await A.page.evaluate(() => {
 		const out = [];
-		window.__stores.commandsHandler.sendObject({ send: (m) => out.push(m) });
+		window.__tp.test.v1.commandsHandler.sendObject({ send: (m) => out.push(m) });
 		return out.filter((m) => m.type === 'object' && m.element?.object?.userData?.measure).map((m) => m.element.object.userData.measure.points.length);
 	});
 	h.check(sent.length === itemCount, `the late-joiner sync sends every measurement as toJSON with its record (${sent.length} of ${itemCount})`);
 
 	// --- 9. Delete measurements: every item, one undo ---
-	await A.page.evaluate(() => window.__stores.measureItems.deleteAllMeasurements());
+	await A.page.evaluate(() => window.__tp.test.v1.measureItems.deleteAllMeasurements());
 	await A.page.waitForTimeout(500);
 	h.check((await state(A.page)).items.length === 0, 'Delete measurements removes every item');
 	await h.eventually(() => state(B.page), (b) => b.items.length === 0, '…on B too', 10000);
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => state(A.page), (a) => a.items.length === itemCount, 'ONE undo brings them all back', 10000);
 
 	await h.finish(browser);

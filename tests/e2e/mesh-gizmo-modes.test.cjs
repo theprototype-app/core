@@ -11,7 +11,7 @@ const h = require('./helpers.cjs');
 const seated = (page) =>
 	page.evaluate(() => {
 		let controls;
-		window.__stores.TControls.subscribe((c) => (controls = c))();
+		window.__tp.test.v1.TControls.subscribe((c) => (controls = c))();
 		const object = controls?.object;
 		if (!object) return null;
 		if (object.userData?.isFaceProxy) return 'face';
@@ -25,7 +25,7 @@ h.run(async () => {
 
 	// a box at the origin, big enough that its faces cover plenty of pixels
 	const uuid = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create Box 2 2 2');
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
@@ -36,7 +36,7 @@ h.run(async () => {
 
 	// --- REAL click on an edge seats the EDGE gizmo ---------------------------
 	await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.faceEdit.enterFaceEdit(uuid);
 		s.faceEdit.setFaceSubmode('edges');
 	}, uuid);
@@ -48,12 +48,12 @@ h.run(async () => {
 	const target = await h.projectPoint(A.page, [0, 0.94, 0.94]);
 	await A.page.mouse.click(Math.round(target.x), Math.round(target.y));
 	await A.page.waitForTimeout(300);
-	const picked = await A.page.evaluate(() => window.__stores.faceEdit.edgeSelectionSize());
+	const picked = await A.page.evaluate(() => window.__tp.test.v1.faceEdit.edgeSelectionSize());
 	h.check(picked === 1, `a real viewport click picked one edge (${picked})`);
 	const afterClick = await seated(A.page);
 	h.check(afterClick === 'face', 'that click SEATS the gizmo (the proxy is the shared face proxy)');
 	const onEdge = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const target = s.faceEdit.edgeGrabTarget();
 		let controls;
 		s.TControls.subscribe((c) => (controls = c))();
@@ -66,7 +66,7 @@ h.run(async () => {
 
 	// --- the space control reaches the edge gizmo ----------------------------
 	const space = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let controls;
 		s.TControls.subscribe((c) => (controls = c))();
 		s.faceEdit.faceGizmoSpace.set('world');
@@ -80,7 +80,7 @@ h.run(async () => {
 
 	// --- the on/off switch works in EVERY mode ------------------------------
 	const off = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.faceEdit.meshGizmoEnabled.set(false);
 		let controls;
 		s.TControls.subscribe((c) => (controls = c))();
@@ -102,7 +102,7 @@ h.run(async () => {
 	h.check(!off.afterAttempt, '...and a re-seat attempt keeps it off');
 	h.check(!off.inFaces, '...and no gizmo seats in face mode either');
 	const backOn = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.faceEdit.meshGizmoEnabled.set(true);
 		let controls;
 		s.TControls.subscribe((c) => (controls = c))();
@@ -112,7 +112,7 @@ h.run(async () => {
 
 	// --- VERTEX mode: the same switch, and the space pref applies ------------
 	const vertex = await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.faceEdit.exitFaceEdit();
 		s.meshEdit.enterEditMode(uuid);
 		let controls;
@@ -135,7 +135,7 @@ h.run(async () => {
 
 	// --- the vertex SELECTION survives a trip through another mode ----------
 	const stash = await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const me = s.meshEdit;
 		// build a real multi-selection
 		me.selectHandle(0);
@@ -163,7 +163,7 @@ h.run(async () => {
 	// early when the submode already IS the requested one — which it always is coming back
 	// from Vertices. So they survived Faces <-> Edges and died through Vertices (reported).
 	const faceStash = await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		const me = s.meshEdit;
 		const count = () => {
@@ -221,15 +221,15 @@ h.run(async () => {
 		`the edge selection came back through Vertices (${faceStash.restoredEdges}/${faceStash.builtEdges})`
 	);
 	await A.page.evaluate((uuid) => {
-		window.__stores.faceEdit.exitFaceEdit();
-		window.__stores.meshEdit.enterEditMode(uuid);
+		window.__tp.test.v1.faceEdit.exitFaceEdit();
+		window.__tp.test.v1.meshEdit.enterEditMode(uuid);
 	}, uuid);
 	// --- handle size: adjustable, live, and ADAPTIVE (constant screen size) --
 	// The size lives in the instance MATRICES now, not in the sphere geometry, which is
 	// what lets one slider mean "x bigger" in fixed mode and "x more pixels" in adaptive
 	// mode — with the multiplier baked into the geometry it cancelled itself out.
 	const dots = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		const handleMesh = () => {
 			let mesh = null;
@@ -295,6 +295,6 @@ h.run(async () => {
 		`the slider still means something in adaptive mode — it scales the PIXEL size (${dots.adaptiveBig.toFixed(4)})`
 	);
 	h.check(dots.keptSelection === 3, 'resizing the dots does not disturb the selection');
-	await A.page.evaluate(() => window.__stores.meshEdit.exitEditMode());
+	await A.page.evaluate(() => window.__tp.test.v1.meshEdit.exitEditMode());
 	await h.finish(browser);
 });

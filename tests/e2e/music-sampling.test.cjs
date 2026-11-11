@@ -5,7 +5,7 @@
 // real bytes with no hardware.
 const h = require('./helpers.cjs');
 const inPage = (page, body, arg) =>
-	page.evaluate(([src, a]) => Object.getPrototypeOf(async function () {}).constructor('s', 'mc', 'ad', 'arg', src)(window.__stores, window.__stores.micCapture, window.__stores.audioDevices, a), [body, arg ?? null]);
+	page.evaluate(([src, a]) => Object.getPrototypeOf(async function () {}).constructor('s', 'mc', 'ad', 'arg', src)(window.__tp?.test.v1, window.__tp.test.v1.micCapture, window.__tp.test.v1.audioDevices, a), [body, arg ?? null]);
 const MEDIA_ARGS = ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'];
 
 h.run(async () => {
@@ -35,7 +35,7 @@ h.run(async () => {
 	h.check(took >= 1900 && took < 4500, '2.4 the cap is a real length (' + took + ' ms for a 2 s take)');
 	const decoded = await inPage(page, "const b = await s.moduleSDK.moduleAudioSample ? null : (await s.soundRuntime.sampleBuffer(arg, { timeoutMs: 8000 })); return b ? { seconds: b.duration, ch: b.numberOfChannels } : null", item.item.hash);
 	h.check(!!decoded && decoded.seconds > 1.5 && decoded.seconds < 3, '2.5 and decodes through the engine\'s own sample path (' + (decoded ? decoded.seconds.toFixed(2) + ' s' : 'null') + ')');
-	await h.eventually(() => B.page.evaluate((hash) => !!window.__stores.explorer.itemByHash(hash), item.item.hash), (v) => v === true, '2.6 B received the bytes by content hash (assetShare)', 20000);
+	await h.eventually(() => B.page.evaluate((hash) => !!window.__tp.test.v1.explorer.itemByHash(hash), item.item.hash), (v) => v === true, '2.6 B received the bytes by content hash (assetShare)', 20000);
 
 	const bounced = await inPage(page, "const ctx = s.audioEngine.ensureAudioContext(); const osc = ctx.createOscillator(); osc.frequency.value = 440; const dest = ctx.createMediaStreamDestination(); osc.connect(dest); osc.start(); const it = await mc.startRecording({ maxSeconds: 1, name: 'bounce', stream: dest.stream }); osc.stop(); osc.disconnect(); if (!it) return null; const b = await s.soundRuntime.sampleBuffer(it.hash, { timeoutMs: 8000 }); const d = b.getChannelData(0); let peak = 0; for (let i = 0; i < d.length; i++) peak = Math.max(peak, Math.abs(d[i])); return { name: it.name, seconds: b.duration, peak }");
 	h.check(!!bounced && bounced.seconds > 0.7 && bounced.seconds < 1.6 && bounced.peak > 0.2, '2.7 a take of a NODE (opts.stream, the looper\'s path) lands too, with the node\'s signal in it (' + JSON.stringify(bounced) + ')');

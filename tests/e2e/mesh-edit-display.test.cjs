@@ -14,7 +14,7 @@ const wireSegments = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					let n = 0;
 					g?.getObjectByProperty('uuid', window.__box.uuid)?.traverse((o) => {
 						if (o.name === 'edit-overlay') n = o.geometry.attributes.position.count / 2;
@@ -29,7 +29,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create Box 1 1 1');
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
@@ -42,15 +42,15 @@ h.run(async () => {
 	const selectedOutline = await outlineSize(A.page);
 	h.check(selectedOutline > 0, 'a selected object is outlined outside edit mode (premise)');
 
-	await A.page.evaluate(() => window.__stores.faceEdit.enterFaceEdit(window.__box.uuid));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.enterFaceEdit(window.__box.uuid));
 	await A.page.waitForTimeout(200);
 	h.check((await outlineSize(A.page)) === 0, 'entering face edit drops the outline');
 
-	await A.page.evaluate(() => window.__stores.faceEdit.meshEditOutline.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.meshEditOutline.set(true));
 	await A.page.waitForTimeout(200);
 	h.check((await outlineSize(A.page)) > 0, 'the Display toggle brings it back mid-session');
 
-	await A.page.evaluate(() => window.__stores.faceEdit.meshEditOutline.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.meshEditOutline.set(false));
 	// ---- the wireframe must never be left behind by its object -------------
 	// Reported as "the wireframe detaches from the object, from time to time,
 	// in different occasions". The overlay is a CHILD of the edited mesh, so it
@@ -62,7 +62,7 @@ h.run(async () => {
 	// break the invariant on purpose and demand the next frames heal it.
 	const parented = await A.page.evaluate(() => {
 		let g = null;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		const obj = g?.getObjectByProperty('uuid', window.__box.uuid);
 		const w = obj?.children.find((c) => c.name === 'edit-overlay');
 		return { found: !!w, isChild: w?.parent === obj };
@@ -72,11 +72,11 @@ h.run(async () => {
 	// 1. ORPHAN it the way a re-parent would, then let the loop run
 	const healed = await A.page.evaluate(async () => {
 		let g = null;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		const obj = g.getObjectByProperty('uuid', window.__box.uuid);
 		const w = obj.children.find((c) => c.name === 'edit-overlay');
 		let scene = null;
-		window.__stores.globalScene.subscribe((x) => (scene = x))();
+		window.__tp.test.v1.globalScene.subscribe((x) => (scene = x))();
 		scene.add(w); // three re-parents: the overlay is now loose in the scene
 		const orphaned = w.parent !== obj;
 		await new Promise((r) => setTimeout(r, 500)); // a few frames
@@ -89,9 +89,9 @@ h.run(async () => {
 	// 2. a geometry swapped BEHIND the wire's back (a swap site that forgot its
 	//    refresh) must degrade to one stale frame, not a permanently wrong wire
 	const rebuilt = await A.page.evaluate(async () => {
-		const THREE = window.__stores.THREE;
+		const THREE = window.__tp.test.v1.THREE;
 		let g = null;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		const obj = g.getObjectByProperty('uuid', window.__box.uuid);
 		const segs = () => {
 			const w = obj.children.find((c) => c.name === 'edit-overlay');
@@ -120,20 +120,20 @@ h.run(async () => {
 		`and restoring the geometry restores the wire (${rebuilt.restored})`
 	);
 
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
 	await A.page.waitForTimeout(200);
 	h.check((await outlineSize(A.page)) > 0, 'leaving the session restores it');
 
 	// vertex mode honours the same pref
-	await A.page.evaluate(() => window.__stores.meshEdit.enterEditMode(window.__box.uuid));
+	await A.page.evaluate(() => window.__tp.test.v1.meshEdit.enterEditMode(window.__box.uuid));
 	await A.page.waitForTimeout(200);
 	h.check((await outlineSize(A.page)) === 0, 'vertex mode drops it too');
-	await A.page.evaluate(() => window.__stores.meshEdit.exitEditMode());
+	await A.page.evaluate(() => window.__tp.test.v1.meshEdit.exitEditMode());
 	await A.page.waitForTimeout(200);
 
 	// ------------------------------------------------- 2. quad wireframe
 	const wire = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		fe.meshEditTriWire.set(false); // quad view (the default)
 		fe.enterFaceEdit(window.__box.uuid);
@@ -161,7 +161,7 @@ h.run(async () => {
 
 	// the toggle must survive a geometry swap (the wire is rebuilt from scratch)
 	const afterOp = await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		fe.pickFaceUnit(0);
 		fe.commitFaceOp('extrude', 0.4);
 		let n = 0;
@@ -177,7 +177,7 @@ h.run(async () => {
 	h.check(afterOp.n > 12, 'an extrude adds edges to the quad wire (premise)');
 	h.check(afterOp.diag === 0, '...and the rebuilt wire still draws no quad diagonals');
 
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
 
 	// ---- the wireframe must never be SAVED (user report: a scene file whose
 	// object came back permanently wireframed) ------------------------------
@@ -200,7 +200,7 @@ h.run(async () => {
 	};
 
 	const saved = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.faceEdit.enterFaceEdit(window.__box.uuid);
 		await new Promise((r) => setTimeout(r, 300));
 		const liveBefore = window.__box.children.filter((/** @type {any} */ c) => c.name === 'edit-overlay').length;
@@ -218,7 +218,7 @@ h.run(async () => {
 	// ...and the two paths that made the reported file grow a SECOND overlay:
 	// `clone(true)` copies children, and an undo snapshot is a serialize
 	const copied = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.faceEdit.enterFaceEdit(window.__box.uuid);
 		await new Promise((r) => setTimeout(r, 300));
 		const copy = w.objectActions.duplicateObject(window.__box.uuid, { select: false });
@@ -242,7 +242,7 @@ h.run(async () => {
 	// ...and a file that already contains one is HEALED on the way in, or the
 	// scenes users already saved stay broken forever
 	const strippedOnLoad = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.faceEdit.exitFaceEdit();
 		await new Promise((r) => setTimeout(r, 200));
 		// hand-build the shape the reported file has: a mesh with two stale

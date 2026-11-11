@@ -17,7 +17,7 @@ const shareState = (page, a, b) =>
 	page.evaluate(
 		({ a, b }) => {
 			let group = null;
-			window.__stores.objectsGroup.subscribe((g) => (group = g))();
+			window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 			const oa = group?.getObjectByProperty('uuid', a);
 			const ob = group?.getObjectByProperty('uuid', b);
 			return {
@@ -35,7 +35,7 @@ const shareState = (page, a, b) =>
 const colours = (page, list) =>
 	page.evaluate((uuids) => {
 		let group = null;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		return uuids.map((u) => group?.getObjectByProperty('uuid', u)?.material?.color?.getHexString?.() ?? '');
 	}, list);
 
@@ -43,16 +43,16 @@ const colours = (page, list) =>
 const duplicate = async (page, uuid) => {
 	const before = await page.evaluate(() => {
 		let group = null;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		const out = [];
 		group.traverse((n) => n.isMesh && out.push(n.uuid));
 		return out;
 	});
-	await page.evaluate((u) => window.__stores.objectActions.duplicateObject(u), uuid);
+	await page.evaluate((u) => window.__tp.test.v1.objectActions.duplicateObject(u), uuid);
 	await page.waitForTimeout(900);
 	const after = await page.evaluate(() => {
 		let group = null;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		const out = [];
 		group.traverse((n) => n.isMesh && out.push(n.uuid));
 		return out;
@@ -68,10 +68,10 @@ h.run(async () => {
 	// ---------------------------------------------------------------- section 1
 	console.log('\n=== 1. COPY is still the default ===');
 	const boxU = await page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 900));
 		let group = null;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		let found = '';
 		group.traverse((n) => {
 			if (n.isMesh && !found) found = n.uuid;
@@ -82,7 +82,7 @@ h.run(async () => {
 	h.check(
 		!(await page.evaluate(() => {
 			let on = null;
-			window.__stores.materialSharing.shareDuplicatedMaterials.subscribe((v) => (on = v))();
+			window.__tp.test.v1.materialSharing.shareDuplicatedMaterials.subscribe((v) => (on = v))();
 			return on;
 		})),
 		'1.2 the setting is OFF out of the box — a duplicate is a working copy'
@@ -92,7 +92,7 @@ h.run(async () => {
 	h.check(copied.found && !copied.same, '1.3 the copy gets its OWN material instance');
 	h.check(!copied.idA && !copied.idB, '1.4 ...and neither object carries a material id');
 	// prove it by EDITING: this is the behaviour sharing is the opposite of
-	await page.evaluate((u) => window.__stores.materialsHandler.setObjectColor(u, '#ff0000'), copyU);
+	await page.evaluate((u) => window.__tp.test.v1.materialsHandler.setObjectColor(u, '#ff0000'), copyU);
 	await page.waitForTimeout(600);
 	const afterCopyEdit = await shareState(page, boxU, copyU);
 	h.check(
@@ -103,7 +103,7 @@ h.run(async () => {
 	// ---------------------------------------------------------------- section 2
 	console.log('\n=== 2. sharing ON: one material, two objects ===');
 	await page.evaluate(() =>
-		window.__stores.materialSharing.shareDuplicatedMaterials.set(true)
+		window.__tp.test.v1.materialSharing.shareDuplicatedMaterials.set(true)
 	);
 	const sharedU = await duplicate(page, boxU);
 	const shared = await shareState(page, boxU, sharedU);
@@ -113,14 +113,14 @@ h.run(async () => {
 		'2.2 ...and both carry the same material id: ' + shared.idA + ' / ' + shared.idB
 	);
 	h.check(
-		await page.evaluate((u) => window.__stores.materialSharing.isSharedMaterial(u), boxU),
+		await page.evaluate((u) => window.__tp.test.v1.materialSharing.isSharedMaterial(u), boxU),
 		'2.3 the source knows it is shared now too (sharing is symmetric, not a property of the copy)'
 	);
 	// GEOMETRY is still copied — the two questions are separate and only one has a setting
 	const geometrySeparate = await page.evaluate(
 		({ a, b }) => {
 			let group = null;
-			window.__stores.objectsGroup.subscribe((g) => (group = g))();
+			window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 			return (
 				group.getObjectByProperty('uuid', a).geometry !== group.getObjectByProperty('uuid', b).geometry
 			);
@@ -129,7 +129,7 @@ h.run(async () => {
 	);
 	h.check(geometrySeparate, '2.4 geometry is still its OWN — a vertex edit must not deform the original');
 
-	await page.evaluate((u) => window.__stores.materialsHandler.setObjectColor(u, '#2244ff'), sharedU);
+	await page.evaluate((u) => window.__tp.test.v1.materialsHandler.setObjectColor(u, '#2244ff'), sharedU);
 	await page.waitForTimeout(700);
 	const afterShareEdit = await shareState(page, boxU, sharedU);
 	h.check(
@@ -139,7 +139,7 @@ h.run(async () => {
 
 	// ---------------------------------------------------------------- section 3
 	console.log('\n=== 3. Unlink gives one object its material back ===');
-	await page.evaluate((u) => window.__stores.materialSharing.unlinkMaterial(u), sharedU);
+	await page.evaluate((u) => window.__tp.test.v1.materialSharing.unlinkMaterial(u), sharedU);
 	await page.waitForTimeout(700);
 	const unlinked = await shareState(page, boxU, sharedU);
 	h.check(!unlinked.same, '3.1 the unlinked object has its own instance again');
@@ -148,7 +148,7 @@ h.run(async () => {
 		unlinked.colourA === unlinked.colourB,
 		'3.3 ...keeping the material it was WEARING (unlink is not a revert): ' + unlinked.colourB
 	);
-	await page.evaluate((u) => window.__stores.materialsHandler.setObjectColor(u, '#00cc44'), sharedU);
+	await page.evaluate((u) => window.__tp.test.v1.materialsHandler.setObjectColor(u, '#00cc44'), sharedU);
 	await page.waitForTimeout(600);
 	const afterUnlinkEdit = await shareState(page, boxU, sharedU);
 	h.check(
@@ -165,7 +165,7 @@ h.run(async () => {
 	const split = await page.evaluate(
 		({ a, b }) => {
 			let group = null;
-			window.__stores.objectsGroup.subscribe((g) => (group = g))();
+			window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 			const ob = group.getObjectByProperty('uuid', b);
 			ob.material = ob.material.clone(); // the id stays; the instance does not
 			const oa = group.getObjectByProperty('uuid', a);
@@ -175,7 +175,7 @@ h.run(async () => {
 	);
 	h.check(!split.same && split.idsMatch, '4.2 premise: instances split, ids still equal');
 	const repointed = await page.evaluate(() =>
-		window.__stores.materialSharing.reconcileSharedMaterials()
+		window.__tp.test.v1.materialSharing.reconcileSharedMaterials()
 	);
 	const healed = await shareState(page, boxU, pairU);
 	h.check(
@@ -183,14 +183,14 @@ h.run(async () => {
 		'4.3 the reconcile re-unifies them by id (' + repointed + ' re-pointed)'
 	);
 	h.check(
-		(await page.evaluate(() => window.__stores.materialSharing.reconcileSharedMaterials())) === 0,
+		(await page.evaluate(() => window.__tp.test.v1.materialSharing.reconcileSharedMaterials())) === 0,
 		'4.4 ...and is a no-op the second time (it only assigns where they differ)'
 	);
 
 	// ---------------------------------------------------------------- section 5
 	console.log('\n=== 5. a .tpscene round trip keeps ONE material ===');
 	const roundTrip = await page.evaluate(() => {
-		const payload = window.__stores.sessions.buildSessionPayload('material-sharing');
+		const payload = window.__tp.test.v1.sessions.buildSessionPayload('material-sharing');
 		if (!payload) return { skipped: true };
 		// `objects` is an ARRAY of per-child toJSON results, each `{geometries, materials,
 		// object}` — the shape cost this check one red run, so it is walked explicitly
@@ -220,7 +220,7 @@ h.run(async () => {
 		// and THAT is all the save needs to carry: the instance is re-unified on load by
 		// the reconcile, which section 4 measures on its own
 		h.check(
-			(await page.evaluate(() => window.__stores.materialSharing.reconcileSharedMaterials())) === 0,
+			(await page.evaluate(() => window.__tp.test.v1.materialSharing.reconcileSharedMaterials())) === 0,
 			'5.3 ...because the instance is the reconcile\'s job, not the file\'s'
 		);
 	}
@@ -249,7 +249,7 @@ h.run(async () => {
 	);
 
 	// the edit crosses — the send-side fan is the whole mechanism
-	await page.evaluate((u) => window.__stores.materialsHandler.setObjectColor(u, '#ffaa00'), boxU);
+	await page.evaluate((u) => window.__tp.test.v1.materialsHandler.setObjectColor(u, '#ffaa00'), boxU);
 	await h.eventually(
 		() => colours(B.page, [boxU, pairU]),
 		(c) => c[0] === 'ffaa00' && c[1] === 'ffaa00',
@@ -257,7 +257,7 @@ h.run(async () => {
 		20000
 	);
 	// and in the other direction, from the object that was not edited
-	await B.page.evaluate((u) => window.__stores.materialsHandler.setObjectColor(u, '#8800ff'), pairU);
+	await B.page.evaluate((u) => window.__tp.test.v1.materialsHandler.setObjectColor(u, '#8800ff'), pairU);
 	await h.eventually(
 		() => colours(page, [boxU, pairU]),
 		(c) => c[0] === '8800ff' && c[1] === '8800ff',
@@ -275,10 +275,10 @@ h.run(async () => {
 	console.log('\n=== 6b. a FIRST share made while connected ===');
 	const freshU = await page.evaluate(async () => {
 		let group = null;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		const before = [];
 		group.traverse((n) => n.isMesh && before.push(n.uuid));
-		window.__stores.commandsHandler.sceneCommand('/create sphere');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create sphere');
 		await new Promise((r) => setTimeout(r, 1200));
 		let found = '';
 		group.traverse((n) => {
@@ -310,7 +310,7 @@ h.run(async () => {
 		'6b.3 ...with the same material id AND the same instance — the applier links it too',
 		20000
 	);
-	await page.evaluate((u) => window.__stores.materialsHandler.setObjectColor(u, '#44ff88'), liveCopyU);
+	await page.evaluate((u) => window.__tp.test.v1.materialsHandler.setObjectColor(u, '#44ff88'), liveCopyU);
 	await h.eventually(
 		() => colours(B.page, [freshU, liveCopyU]),
 		(c) => c[0] === '44ff88' && c[1] === '44ff88',
@@ -327,7 +327,7 @@ h.run(async () => {
 	const typeOf = (p, list) =>
 		p.evaluate((uuids) => {
 			let group = null;
-			window.__stores.objectsGroup.subscribe((g) => (group = g))();
+			window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 			return uuids.map((u) => group?.getObjectByProperty('uuid', u)?.material?.type ?? '');
 		}, list);
 	const beforeTypes = await typeOf(B.page, [freshU, liveCopyU]);
@@ -336,7 +336,7 @@ h.run(async () => {
 		'6c.1 premise: both are MeshStandardMaterial on B: ' + JSON.stringify(beforeTypes)
 	);
 	await page.evaluate((u) =>
-		window.__stores.materialsHandler.switchMaterialType(u, 'MeshPhongMaterial'), freshU);
+		window.__tp.test.v1.materialsHandler.switchMaterialType(u, 'MeshPhongMaterial'), freshU);
 	await page.waitForTimeout(900);
 	const aTypes = await typeOf(page, [freshU, liveCopyU]);
 	h.check(
@@ -360,9 +360,9 @@ h.run(async () => {
 	console.log('\n=== 6d. the fan, isolated: a receiver whose instances are still split ===');
 	const staged = await B.page.evaluate(
 		({ a, b }) => {
-			window.__stores.materialSharing.stopMaterialSharing();
+			window.__tp.test.v1.materialSharing.stopMaterialSharing();
 			let group = null;
-			window.__stores.objectsGroup.subscribe((g) => (group = g))();
+			window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 			const ob = group.getObjectByProperty('uuid', b);
 			ob.material = ob.material.clone();
 			const oa = group.getObjectByProperty('uuid', a);
@@ -377,7 +377,7 @@ h.run(async () => {
 		staged.split && staged.idsMatch,
 		'6d.1 premise: B holds two instances with one id, and its reconcile is stopped'
 	);
-	await page.evaluate((u) => window.__stores.materialsHandler.setObjectColor(u, '#ff00aa'), freshU);
+	await page.evaluate((u) => window.__tp.test.v1.materialsHandler.setObjectColor(u, '#ff00aa'), freshU);
 	await h.eventually(
 		() => colours(B.page, [freshU, liveCopyU]),
 		(c) => c[0] === 'ff00aa' && c[1] === 'ff00aa',
@@ -385,8 +385,8 @@ h.run(async () => {
 		20000
 	);
 	await B.page.evaluate(() => {
-		window.__stores.materialSharing.startMaterialSharing();
-		window.__stores.materialSharing.reconcileSharedMaterials();
+		window.__tp.test.v1.materialSharing.startMaterialSharing();
+		window.__tp.test.v1.materialSharing.reconcileSharedMaterials();
 	});
 	await B.page.waitForTimeout(600);
 	h.check(
@@ -404,7 +404,7 @@ h.run(async () => {
 		'7.1 a late joiner receives the share, not two materials that happen to match',
 		35000
 	);
-	await page.evaluate((u) => window.__stores.materialsHandler.setObjectColor(u, '#11ddcc'), freshU);
+	await page.evaluate((u) => window.__tp.test.v1.materialsHandler.setObjectColor(u, '#11ddcc'), freshU);
 	await h.eventually(
 		() => colours(C.page, [freshU, liveCopyU]),
 		(c) => c[0] === '11ddcc' && c[1] === '11ddcc',

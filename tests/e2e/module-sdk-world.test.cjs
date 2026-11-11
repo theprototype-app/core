@@ -11,7 +11,7 @@ const fs = require('fs');
 const REPO = require('path').resolve(__dirname, '../../../theprototype.app-modules') + '/';
 
 async function install(page, id) {
-	await page.evaluate(() => window.__stores.modulesOpen.set(true));
+	await page.evaluate(() => window.__tp.test.v1.modulesOpen.set(true));
 	await page.waitForTimeout(300);
 	await page.getByRole('tab', { name: /^User/ }).click();
 	await page.waitForTimeout(200);
@@ -23,11 +23,11 @@ async function install(page, id) {
 	await page.waitForTimeout(1500);
 }
 const loaded = (page) =>
-	page.evaluate(() => window.__stores.moduleSDK.loadedModules.map((m) => m.id));
+	page.evaluate(() => window.__tp.test.v1.moduleSDK.loadedModules.map((m) => m.id));
 const objectCount = (page) =>
 	page.evaluate(
 		() =>
-			new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g?.children.length ?? 0))())
+			new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g?.children.length ?? 0))())
 	);
 
 h.run(async () => {
@@ -52,7 +52,7 @@ h.run(async () => {
 			A.page.evaluate(
 				() =>
 					new Promise((r) =>
-						window.__stores.globalScene.subscribe((s) => r(!!s?.getObjectByName('piano-module')))()
+						window.__tp.test.v1.globalScene.subscribe((s) => r(!!s?.getObjectByName('piano-module')))()
 					)
 			),
 		(v) => v === true,
@@ -70,7 +70,7 @@ h.run(async () => {
 	const placed = await A.page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const ess = (g?.children ?? []).filter((c) => c.name?.startsWith('Ess'));
 					r(ess.map((c) => [c.name, +c.position.x.toFixed(2)]));
 				})()
@@ -92,7 +92,7 @@ h.run(async () => {
 	const carState = await A.page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const body = (g?.children ?? []).find((c) => c.name === 'Carbody');
 					r({ physics: body?.userData?.physics ?? null, pos: body?.position?.toArray() });
 				})()
@@ -106,7 +106,7 @@ h.run(async () => {
 		Math.abs((carState.pos?.[1] ?? 0) - 0.55) < 0.01,
 		`car body placed via api.moveObject (y=${carState.pos?.[1]})`
 	);
-	const joints = await A.page.evaluate(() => window.__stores.joints.jointsSnapshot().length);
+	const joints = await A.page.evaluate(() => window.__tp.test.v1.joints.jointsSnapshot().length);
 	h.check(joints >= 4, `car created 4 axle joints via api.physics.createJoint (${joints})`);
 
 	const real = errors.filter((e) => !/ResizeObserver|Pointer Lock/.test(e));

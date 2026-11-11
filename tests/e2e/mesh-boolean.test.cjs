@@ -13,7 +13,7 @@ const h = require('./helpers.cjs');
 
 const info = (page, uuid) =>
 	page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		const object = g.getObjectByProperty('uuid', uuid);
@@ -39,14 +39,14 @@ const info = (page, uuid) =>
 const exists = (page, uuid) =>
 	page.evaluate((uuid) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return !!g.getObjectByProperty('uuid', uuid);
 	}, uuid);
 
 /** two unit boxes, the second at (dx, 0, 0) — moved through the replicated path */
 const twoBoxes = (page, dx) =>
 	page.evaluate((dx) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/clear all');
 		s.commandsHandler.sceneCommand('/create Box 1 1 1');
 		s.commandsHandler.sceneCommand('/create Box 1 1 1');
@@ -66,8 +66,8 @@ const twoBoxes = (page, dx) =>
 const runMenu = (page, a, b, label) =>
 	page.evaluate(
 		async ({ a, b, label }) => {
-			const items = window.__stores.objectMenu.buildObjectMenuItems(a, { selection: [a, b] });
-			const boolean = window.__stores.objectMenu.findMenuItem(items, 'Boolean');
+			const items = window.__tp.test.v1.objectMenu.buildObjectMenuItems(a, { selection: [a, b] });
+			const boolean = window.__tp.test.v1.objectMenu.findMenuItem(items, 'Boolean');
 			if (!boolean) return { found: false };
 			const entry = boolean.children.find((c) => c.label === label);
 			const result = await entry.action();
@@ -86,7 +86,7 @@ h.run(async () => {
 	let [a, b] = await twoBoxes(A.page, 0.5);
 	const gating = await A.page.evaluate(
 		({ a, b }) => {
-			const m = window.__stores.objectMenu;
+			const m = window.__tp.test.v1.objectMenu;
 			const one = !!m.findMenuItem(m.buildObjectMenuItems(a, { selection: [a] }), 'Boolean');
 			const two = m.findMenuItem(m.buildObjectMenuItems(a, { selection: [a, b] }), 'Boolean');
 			return { one, labels: two?.children.map((c) => c.label) ?? [] };
@@ -113,7 +113,7 @@ h.run(async () => {
 	await h.eventually(() => info(B.page, a), (v) => v && v.checksum === after.checksum, `B holds A's result byte for byte (${after.checksum})`, 20000);
 	await h.eventually(() => exists(B.page, b), (v) => v === false, 'B lost the cutter too', 20000);
 
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	const undone = await info(A.page, a);
 	h.check(Math.abs(undone.volume - 1) < 1e-6 && undone.tris === 12, 'ONE undo restores the box...');
 	h.check(await exists(A.page, b), '...AND brings the cutter back in the same step');
@@ -124,18 +124,18 @@ h.run(async () => {
 	const uni = await runMenu(A.page, a, b, 'Union');
 	after = await info(A.page, a);
 	h.check(uni.result === true && Math.abs(after.volume - 1.5) < 1e-4 && after.open === 0, `Union: volume ${after.volume.toFixed(4)} = 1 + 1 - 0.5, closed`);
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	const inter = await runMenu(A.page, a, b, 'Intersect');
 	after = await info(A.page, a);
 	h.check(inter.result === true && Math.abs(after.volume - 0.5) < 1e-4 && after.open === 0, `Intersect: volume ${after.volume.toFixed(4)} = the slab, closed`);
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 
 	// ------------------------------------------------------------ KEEP CUTTER
 	const keep = await runMenu(A.page, a, b, 'Subtract, keep the cutter');
 	after = await info(A.page, a);
 	h.check(keep.result === true && Math.abs(after.volume - 0.5) < 1e-4, 'Subtract, keep the cutter: the same cut...');
 	h.check(await exists(A.page, b), '...and the cutter stays');
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	h.check((await info(A.page, a)).tris === 12, 'undo restores it');
 
 	// --------------------------------------------------------------- REFUSALS

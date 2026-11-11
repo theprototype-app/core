@@ -13,7 +13,7 @@ const h = require('./helpers.cjs');
 
 const poseOf = (page, uuid) =>
 	page.evaluate(async (id) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const o = g.getObjectByProperty('uuid', id);
 		return o ? { y: o.position.y, x: o.position.x, ry: o.rotation.y } : null;
@@ -26,7 +26,7 @@ h.run(async () => {
 	await h.connect(B, A);
 
 	const uuid = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		return g.children[g.children.length - 1].uuid;
@@ -38,7 +38,7 @@ h.run(async () => {
 	// lift + turn it on A and replicate that pose with a plain 3-number move first, so B
 	// starts from a known pose that differs from where Align to ground will put it
 	await A.page.evaluate((id) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let g; w.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByProperty('uuid', id);
 		o.userData.physics = { mode: 'static' };
@@ -53,13 +53,13 @@ h.run(async () => {
 	await A.page.evaluate(() => {
 		const w = window;
 		w.__moves = [];
-		let p; w.__stores.peers.subscribe((v) => (p = v))();
+		let p; w.__tp.test.v1.peers.subscribe((v) => (p = v))();
 		const orig = p.send.bind(p);
 		p.send = (d) => { if (d && d.type === 'move') w.__moves.push(d.rot); return orig(d); };
 	});
-	const errsBefore = await B.page.evaluate(() => window.__stores.wireErrors.wireErrors().filter((e) => e.type === 'invalid:move').reduce((n, e) => n + e.count, 0));
+	const errsBefore = await B.page.evaluate(() => window.__tp.test.v1.wireErrors.wireErrors().filter((e) => e.type === 'invalid:move').reduce((n, e) => n + e.count, 0));
 
-	await A.page.evaluate((id) => window.__stores.objectActions.alignToGround(id), uuid);
+	await A.page.evaluate((id) => window.__tp.test.v1.objectActions.alignToGround(id), uuid);
 	const aPose = await poseOf(A.page, uuid);
 	const sent = await A.page.evaluate(() => window.__moves);
 	h.check(aPose && aPose.y < 5, `premise: Align to ground moved the box on A (y ${aPose && aPose.y.toFixed(2)})`);
@@ -76,7 +76,7 @@ h.run(async () => {
 	);
 	const bPose = await poseOf(B.page, uuid);
 	h.check(bPose && Math.abs(bPose.ry - 0.7) < 0.01 && Math.abs(bPose.x - 1.5) < 0.01, `B keeps the rest of the pose (x ${bPose && bPose.x.toFixed(2)}, ry ${bPose && bPose.ry.toFixed(2)})`);
-	const errsAfter = await B.page.evaluate(() => window.__stores.wireErrors.wireErrors().filter((e) => e.type === 'invalid:move').reduce((n, e) => n + e.count, 0));
+	const errsAfter = await B.page.evaluate(() => window.__tp.test.v1.wireErrors.wireErrors().filter((e) => e.type === 'invalid:move').reduce((n, e) => n + e.count, 0));
 	h.check(errsAfter === errsBefore, `B recorded no invalid:move (${errsBefore} -> ${errsAfter})`);
 
 	await h.finish(browser);

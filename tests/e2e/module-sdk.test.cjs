@@ -5,7 +5,7 @@ const rotationZ = (page, uuid) =>
 	page.evaluate(
 		(uuid) =>
 			new Promise((resolve) => {
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					resolve(g?.getObjectByProperty('uuid', uuid)?.rotation.z ?? null);
 				})();
 			}),
@@ -26,7 +26,7 @@ const phaseResidual = (page, uuid) =>
 				const sample = () =>
 					new Promise((r) =>
 						requestAnimationFrame(() => {
-							window.__stores.objectsGroup.subscribe((g) => {
+							window.__tp.test.v1.objectsGroup.subscribe((g) => {
 								const object = g?.getObjectByProperty('uuid', uuid);
 								const time = (Date.now() % 86400000) / 1000;
 								r(object ? object.rotation.z - Math.sin(time * 3) : null);
@@ -51,7 +51,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 
-	const loaded = await A.page.evaluate(() => window.__stores.moduleSDK.loadedModules);
+	const loaded = await A.page.evaluate(() => window.__tp.test.v1.moduleSDK.loadedModules);
 	h.check(loaded.some((m) => m.id === 'hello'), 'hello module loaded');
 
 	await A.page.locator('p[title="Node editor (N)"]').click();
@@ -61,17 +61,17 @@ h.run(async () => {
 	await A.page.locator('p[title="Node editor (N)"]').click();
 
 	const uuid = await A.page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		return new Promise((resolve) =>
-			window.__stores.objectsGroup.subscribe((g) => resolve(g.children[g.children.length - 1].uuid))()
+			window.__tp.test.v1.objectsGroup.subscribe((g) => resolve(g.children[g.children.length - 1].uuid))()
 		);
 	});
 	await A.page.evaluate((uuid) => {
-		window.__stores.flowNodes.set([
+		window.__tp.test.v1.flowNodes.set([
 			{ id: 'w1', type: 'wave', position: { x: 0, y: 0 }, data: { amplitude: 1, speed: 3 } },
 			{ id: 's1', type: 'objectselector', position: { x: 250, y: 0 }, data: { selected: uuid } }
 		]);
-		window.__stores.flowEdges.set([{ id: 'e1', source: 'w1', target: 's1' }]);
+		window.__tp.test.v1.flowEdges.set([{ id: 'e1', source: 'w1', target: 's1' }]);
 	}, uuid);
 	await A.page.waitForTimeout(400);
 	const z1 = await rotationZ(A.page, uuid);
@@ -80,7 +80,7 @@ h.run(async () => {
 	h.check(z1 !== z2 && z1 !== null, 'wave effect animates locally');
 
 	await A.page.evaluate(() =>
-		window.__stores.moduleSDK.checkModuleVersions([{ id: 'hello', version: '9.9.9' }])
+		window.__tp.test.v1.moduleSDK.checkModuleVersions([{ id: 'hello', version: '9.9.9' }])
 	);
 	const toastShown = await A.page.getByText(/version differs/).first().isVisible().catch(() => false);
 	h.check(toastShown, 'version mismatch toast shown');

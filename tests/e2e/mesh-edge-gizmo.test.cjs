@@ -11,7 +11,7 @@ const h = require('./helpers.cjs');
 
 const editBox = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create Box 1 1 1');
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
@@ -24,7 +24,7 @@ const editBox = (page) =>
 /** pick a real (non-diagonal) edge of the top face and return its key + endpoints */
 const pickTopEdge = (page) =>
 	page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		const tris = fe.readTriangles(window.__box.geometry);
 		for (let ti = 0; ti < tris.length; ti++) {
 			const t = tris[ti];
@@ -50,7 +50,7 @@ h.run(async () => {
 
 	// --- the gizmo seats on the EDGE, with an edge-shaped basis ---------------
 	const seat = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		const THREE = s.THREE;
 		fe.setFaceOp('move');
@@ -83,7 +83,7 @@ h.run(async () => {
 
 	// --- dragging it moves the edge, stretches neighbours, keeps the count ----
 	const drag = await A.page.evaluate((key) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		const THREE = s.THREE;
 		const ends = () => {
@@ -153,7 +153,7 @@ h.run(async () => {
 
 	// --- undo restores it, and switching to faces detaches ------------------
 	const rest = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		const maxY = () => {
 			let m = -1e9;
@@ -183,12 +183,12 @@ h.run(async () => {
 	// release, and (b) the commit changed the keys and the selection stopped
 	// resolving — overlay gone, gizmo detached. Both guards proven red by
 	// reverting the fix lines (see the P7b handoff notes).
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
 	await editBox(A.page);
 	const picked3 = await pickTopEdge(A.page);
 	h.check(!!picked3, 'picked a fresh edge for the live-overlay section (premise)');
 	const live = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		const THREE = s.THREE;
 		fe.setFaceOp('move');
@@ -267,7 +267,7 @@ h.run(async () => {
 	// item 3, faces flank: the FACE overlay must track a live grab too (it
 	// already did — this pins the behaviour so the edge fix can't regress it)
 	const faceLive = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		const THREE = s.THREE;
 		// a FRESH box: the edge section tilted the previous one's top face
@@ -321,7 +321,7 @@ h.run(async () => {
 	const maxYOn = (page, uuid) =>
 		page.evaluate((uuid) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const object = g.getObjectByProperty('uuid', uuid);
 			const position = object?.geometry?.attributes?.position;
 			if (!position) return null;
@@ -336,7 +336,7 @@ h.run(async () => {
 		20000
 	);
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		fe.setFaceOp('move');
 		let controls;
@@ -353,6 +353,6 @@ h.run(async () => {
 		20000
 	);
 
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit?.());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit?.());
 	await h.finish(browser);
 });

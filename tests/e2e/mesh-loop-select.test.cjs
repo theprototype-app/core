@@ -9,14 +9,14 @@ const sel = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.faceEdit.faceEditSelectedTris.subscribe((v) => r([...v].sort((a, b) => a - b)))()
+				window.__tp.test.v1.faceEdit.faceEditSelectedTris.subscribe((v) => r([...v].sort((a, b) => a - b)))()
 			)
 	);
 
 /** a box subdivided into a grid on every side, in face-edit mode */
 const editBox = (page, subdivisions = 0) =>
 	page.evaluate(async (n) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.children[g.children.length - 1];
@@ -37,7 +37,7 @@ h.run(async () => {
 	// ------------------------------------------- 1. a plain box: loop = 4 quads
 	await editBox(A.page, 0);
 	const plain = await A.page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const top = w.faceEdit.currentFaces().find((f) => f.normal.y > 0.99);
 		w.faceEdit.pickFaceUnit(top.triIndices[0]);
 		const ok = w.faceEdit.selectFaceLoop();
@@ -58,7 +58,7 @@ h.run(async () => {
 
 	// pressing again walks the PERPENDICULAR loop through the same quad
 	const second = await A.page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let before;
 		w.faceEdit.faceEditSelectedTris.subscribe((v) => (before = [...v]))();
 		w.faceEdit.selectFaceLoop();
@@ -72,11 +72,11 @@ h.run(async () => {
 	);
 
 	// ---------------------------------- 2. a subdivided box: a real quad ring
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	await editBox(A.page, 3); // 3x3 quads per side
 	const grid = await A.page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const tris = w.faceEdit.currentFaces().reduce((n, f) => n + f.triIndices.length, 0);
 		// a middle quad on the +Y face
 		const faces = w.faceEdit.currentFaces();
@@ -94,7 +94,7 @@ h.run(async () => {
 
 	// ------------------------------------------------- 3. grow / shrink
 	const growth = await A.page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const top = w.faceEdit.currentFaces().find((f) => f.normal.y > 0.99);
 		w.faceEdit.pickFaceUnit(top.triIndices[0]);
 		const read = () => {
@@ -120,7 +120,7 @@ h.run(async () => {
 	);
 	// every grown selection stays whole quads (never half a quad)
 	const wholeQuads = await A.page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let picked;
 		w.faceEdit.faceEditSelectedTris.subscribe((v) => (picked = [...v]))();
 		const set = new Set(picked);
@@ -130,7 +130,7 @@ h.run(async () => {
 
 	// -------------------------------------- 4. select all / invert / linked
 	const setOps = await A.page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const read = () => {
 			let v;
 			w.faceEdit.faceEditSelectedTris.subscribe((x) => (v = [...x]))();
@@ -159,10 +159,10 @@ h.run(async () => {
 	h.check(setOps.linked === 108, 'Select linked takes the whole connected island (' + setOps.linked + ')');
 
 	// linked stops at a SHELL boundary
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	const twoShell = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const mk = async (x) => {
 			w.commandsHandler.sceneCommand('/create Box 1 1 1');
 			const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
@@ -183,7 +183,7 @@ h.run(async () => {
 
 	// ------------------------------------ 5. a lone triangle has no loop
 	const lone = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.faceEdit.exitFaceEdit();
 		w.commandsHandler.sceneCommand('/clear all');
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');

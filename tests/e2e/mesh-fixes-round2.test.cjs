@@ -3,12 +3,12 @@ const h = require('./helpers.cjs');
 
 const sel = (page) =>
 	page.evaluate(
-		() => new Promise((r) => window.__stores.faceEdit.faceEditSelectedTris.subscribe((v) => r([...v]))())
+		() => new Promise((r) => window.__tp.test.v1.faceEdit.faceEditSelectedTris.subscribe((v) => r([...v]))())
 	);
 
 const editBox = (page, textured = false) =>
 	page.evaluate(async (textured) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.children[g.children.length - 1];
@@ -31,7 +31,7 @@ h.run(async () => {
 	// extrude stacked another degenerate band.
 	const uuid = await editBox(A.page, true);
 	const uvSpans = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const top = w.faceEdit.currentFaces().find((f) => f.normal.y > 0.99);
 		w.faceEdit.pickFaceUnit(top.triIndices[0]);
@@ -72,7 +72,7 @@ h.run(async () => {
 	// A closed surface has no border to extrude from, so every vertex just
 	// translates. Refuse and say why instead of silently sliding the object.
 	const closed = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.faceEdit.exitFaceEdit();
 		w.commandsHandler.sceneCommand('/clear all');
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
@@ -112,14 +112,14 @@ h.run(async () => {
 	// ---- REPORT: "shift-click on a selected quad should DESELECT it" --------
 	// Driven through the REAL pointer path, not the store: the report is about
 	// what the click handler does.
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	const clickUuid = await editBox(A.page);
 	// park the camera so the top face is unambiguous, then click its centre.
 	// NOTE duration must be > 0: flyTo divides by it, and 0 makes the first frame
 	// NaN the camera (which then NaNs the spatial-audio panner too).
 	await A.page.evaluate(() =>
-		window.__stores.objectActions.flyTo([2.2, 2.4, 2.6], [0, 0, 0], 200)
+		window.__tp.test.v1.objectActions.flyTo([2.2, 2.4, 2.6], [0, 0, 0], 200)
 	);
 	await A.page.waitForTimeout(700);
 	const topPt = await h.projectPoint(A.page, [0, 0.5, 0]);
@@ -142,7 +142,7 @@ h.run(async () => {
 
 	// ---- REPORT: "edge loop with two edges of a quad picked" ---------------
 	const edges = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.faceEdit.exitFaceEdit();
 		w.commandsHandler.sceneCommand('/clear all');
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
@@ -196,7 +196,7 @@ h.run(async () => {
 
 	// ---- REPORT: "dissolve on a quad's edge does nothing" ------------------
 	const dissolve = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.faceEdit.exitFaceEdit();
 		w.commandsHandler.sceneCommand('/clear all');
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
@@ -243,7 +243,7 @@ h.run(async () => {
 
 	// ---- REPORT: "keep selections when switching modes" --------------------
 	const memory = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.faceEdit.exitFaceEdit();
 		w.commandsHandler.sceneCommand('/clear all');
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
@@ -281,8 +281,8 @@ h.run(async () => {
 	);
 
 	// ---- the key list is now a movable window ------------------------------
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	await editBox(A.page);
 	await A.page.waitForSelector('#mesh-keys-help');
 	await A.page.evaluate(() => document.querySelector('#mesh-keys-help').click());

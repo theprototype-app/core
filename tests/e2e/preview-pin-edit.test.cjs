@@ -193,7 +193,9 @@ h.run(async () => {
 	const hashBefore = await S(A, (id) => window.__stores.explorer.itemById(id)?.hash, ids.b);
 	const saveState = await S(A, () => ({ disabled: document.querySelector('#image-editor-save')?.disabled, dirty: document.querySelector('#image-editor-window')?.dataset.dirty ?? null }));
 	await page.locator('#image-editor-save').click();
-	await until(async () => (await S(A, (id) => window.__stores.explorer.itemById(id)?.hash, ids.b)) !== hashBefore, 8000);
+	// a loaded Deck slot takes 16-20 s for this Save on v1.65.0 and on uir-polish alike (A/B 2026-11-11, ~19 s of long
+	// tasks on the unbundled dev app) — the old 8 s wait was the known "Save missed its wait" flake
+	await until(async () => (await S(A, (id) => window.__stores.explorer.itemById(id)?.hash, ids.b)) !== hashBefore, 40000);
 	console.log('  save diag: ' + JSON.stringify({ saveState, dialogs: await dialogs(), toasts: await S(A, () => document.querySelector('.toasts-stack')?.textContent?.slice(0, 200)) }));
 	h.check((await S(A, (id) => window.__stores.explorer.itemById(id)?.hash, ids.b)) !== hashBefore, '§6 Save writes the image');
 	await page.locator('#preview-view').click();
@@ -203,7 +205,7 @@ h.run(async () => {
 			const im = document.querySelector('#image-preview-window #preview-body img');
 			return im && im.complete ? [im.naturalWidth, im.naturalHeight] : null;
 		});
-	await until(async () => JSON.stringify(await dims()) === '[60,80]', 8000);
+	await until(async () => JSON.stringify(await dims()) === '[60,80]', 20000);
 	h.check(JSON.stringify(await dims()) === '[60,80]', `§6 back in View, the window shows the SAVED picture (${JSON.stringify(await dims())})`);
 
 	// ---- §7 floating: still pinned, still follows; unpinned it stops ----------------------

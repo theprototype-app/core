@@ -155,8 +155,23 @@ h.run(async () => {
 		await page.waitForTimeout(900);
 		await toDock(page, key); // F1 left some of these in the right sidebar
 		h.check((await page.evaluate((k) => window.__stores.dockMenu.windowWhere(k), key)) === 'dock', `G2 ${key}: (premise) docked before floating`);
-		await page.evaluate((k) => window.__stores.bottomDock.armDockMode(k, false), key);
+		// out through the dock's own undock button (armDockMode(k, false) restores a LAST SIDEBAR place, and F1 gave
+		// some of these one — order-dependent): the shown tab leaves the dock floating
+		await page.evaluate((k) => {
+			const s = window.__stores;
+			s.bottomDock.activateDock(k);
+			s.dockMenu.undockFromDock('active');
+		}, key);
 		await page.waitForTimeout(1200);
+		// a window that lived in a sidebar column before it was docked may go back THERE (docking.js remembers its
+		// side): float it out of the column the way its tab menu's "Undock into a floating window" does
+		await page.evaluate((k) => {
+			const s = window.__stores;
+			if (['left', 'right'].includes(s.dockMenu.windowWhere(k))) s.docking.undock(k);
+		}, key);
+		await page.waitForTimeout(600);
+		const whereF = await page.evaluate((k) => window.__stores.dockMenu.windowWhere(k), key);
+		h.check(whereF === 'floating', `G2 ${key}: (premise) floating (${whereF})`);
 		const g = await page.evaluate((k) => {
 			const d = [...document.querySelectorAll(`[data-head-dock="${k}"]`)].find((e) => e.getClientRects().length > 0);
 			const p = [...document.querySelectorAll(`[data-head-popout="${k}"]`)].find((e) => e.getClientRects().length > 0);

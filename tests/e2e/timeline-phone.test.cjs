@@ -19,7 +19,25 @@ const overflow = (page) =>
 		const root = document.querySelector('.tl-root');
 		if (!root) return { root: false };
 		const r = root.getBoundingClientRect();
-		return { root: true, scroll: root.scrollWidth - root.clientWidth, right: r.right - window.innerWidth, w: r.width };
+		// uir-polish B1: a CLOSED pane handle shifts flush across the dock frame's padding to the frame's edge
+		// ([data-ph-shift]) — by design past the root, never past the frame. Anything else poking out is overflow.
+		const frame = root.closest('.tp-dock-panel, .tp-window, [data-pd-host], [data-docked]');
+		const fr = frame ? frame.getBoundingClientRect() : null;
+		let poke = 0;
+		for (const e of root.querySelectorAll('*')) {
+			if (e.closest('[data-ph-shift]')) continue;
+			const b = e.getBoundingClientRect();
+			if (b.width) poke = Math.max(poke, b.right - r.right);
+		}
+		const shifted = [...root.querySelectorAll('[data-ph-shift]')].map((e) => e.getBoundingClientRect().right - (fr ? fr.right : window.innerWidth));
+		return {
+			root: true,
+			scroll: Math.round(poke),
+			frameScroll: frame ? frame.scrollWidth - frame.clientWidth : 0,
+			handlePastFrame: shifted.length ? Math.round(Math.max(...shifted)) : null,
+			right: r.right - window.innerWidth,
+			w: r.width
+		};
 	});
 
 h.run(async () => {
@@ -39,7 +57,7 @@ h.run(async () => {
 		await C.page.waitForTimeout(500);
 		const phone = await C.page.evaluate(() => document.documentElement.classList.contains('phone-shell'));
 		const o = await overflow(C.page);
-		h.check(o.root && o.scroll <= 1 && o.right <= 1, `${label}: no sideways overflow (${JSON.stringify(o)})`);
+		h.check(o.root && o.scroll <= 1 && o.frameScroll <= 1 && (o.handlePastFrame ?? 0) <= 1 && o.right <= 1, `${label}: no sideways overflow (${JSON.stringify(o)})`);
 		// both postures are a touch handheld: the side panes start put away (handheldPanels), so the bar keeps a picker
 		h.check(await C.page.locator('#timeline-seq-select').isVisible(), `${label}: the bar keeps a sequence picker (the side panes start hidden${phone ? ', phone shell' : ''})`);
 		await C.page.locator('.tl-root [data-ws-primary-toggle]').first().click();

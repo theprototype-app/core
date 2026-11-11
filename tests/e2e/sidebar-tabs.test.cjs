@@ -71,6 +71,9 @@ async function tabCentre(page, side, key) {
 	const r = await page.evaluate(
 		([side, key]) => {
 			const t = document.querySelector(`#sidebar-strip-${side} [data-sidebar-tab="${key}"]`);
+			// uir-polish F1/F2: tabs keep their whole name, so two can already overflow a 320 px column; the strip
+			// scrolls (wheel / "...") — bring the tab into view the way the wheel would before pressing it
+			t?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 			const b = t?.getBoundingClientRect();
 			return b ? [b.x + b.width / 2, b.y + b.height / 2] : null;
 		},
@@ -160,7 +163,7 @@ h.run(async () => {
 	right = await strip(page, 'right');
 	h.check(right?.front === 'objects' && (await store(page, 'objectListClose')) === false, `the Object list button on a covered tab brings it forward (${right?.front})`);
 
-	// ---------- 5. a pinned panel following the selection does not steal the list's place ----------
+	// ---------- 5. Properties following the selection does not steal the list's place (uir-polish E4: no pin needed) ----------
 	await page.evaluate(async () => {
 		const w = window.__stores;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
@@ -168,19 +171,22 @@ h.run(async () => {
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		window.__box = g.children[g.children.length - 1];
 		w.objectActions.deselectObject();
-		w.inspectorPinned.set(true);
 	});
 	await page.waitForTimeout(300);
 	await page.evaluate(() => window.__stores.objectActions.selectObject(window.__box.uuid)); // a list click
 	await page.waitForTimeout(400);
 	right = await strip(page, 'right');
 	const kind = await store(page, 'inspectorKind');
-	h.check(right?.front === 'objects' && kind === 'selection', `pinned: a plain select keeps the list in front, Properties follows behind it (${right?.front}, ${kind})`);
+	// uir-polish E1/E4: no pin — a plain select neither pulls a tab forward nor turns Configure Scene into Properties
+	h.check(right?.front === 'objects' && kind === 'scene', `a plain select keeps the list in front and Configure Scene as it was (${right?.front}, ${kind})`);
 	await page.evaluate(() => window.__stores.objectActions.selectObject(window.__box.uuid, true)); // double-click / menu
 	await page.waitForTimeout(400);
 	right = await strip(page, 'right');
 	h.check(right?.front === 'inspector', `an explicit Properties request brings its tab forward (${right?.front})`);
-	await page.evaluate(() => window.__stores.inspectorPinned.set(false));
+	// uir-polish E5: Properties and Configure Scene move separately now — close Configure Scene so this section drags
+	// the one Inspector tab (sticky-panel-header covers the two moving apart)
+	await page.evaluate(() => window.__stores.sidebars.closeInspectorTab('scene'));
+	await page.waitForTimeout(300);
 
 	// ---------- 6. drag the Inspector's tab to the LEFT half: it docks there, with a highlight ----------
 	c = await tabCentre(page, 'right', 'inspector');
@@ -276,7 +282,9 @@ h.run(async () => {
 	await page.waitForTimeout(1200);
 	const back = await strip(page, 'left');
 	ins = await probe(page, '#inspector');
-	h.check(back?.tabs.join() === 'inspector,objects,flow', `after a reload the left sidebar has the same three tabs (${JSON.stringify(back)})`);
+	// uir-polish E5: the column held Properties; the reload opens Configure Scene, its own tab now, which joins at the
+	// end on the side Properties left it — the SET of tabs is what persists
+	h.check([...(back?.tabs ?? [])].sort().join() === 'flow,inspector,objects', `after a reload the left sidebar has the same three tabs (${JSON.stringify(back)})`);
 	h.check(ins?.shown && ins.x < 3 && Math.abs(ins.w - flowWide.w) < 3, `...the Inspector still docks left at the dragged width (${JSON.stringify(ins)})`);
 	const empty2 = await strip(page, 'right');
 	h.check(!empty2 || empty2.tabs.length === 0, `...and no tab came back on the right (44 M7: the emptied column is remembered open) (${JSON.stringify(empty2)})`);
@@ -297,7 +305,7 @@ h.run(async () => {
 	const flowF = await probe(page, '#flow-window');
 	const left4 = await strip(page, 'left');
 	h.check(flowF?.docked === null && flowF.shown && flowF.h < VH * 0.8, `dragging a docked header away floats it (${JSON.stringify(flowF)})`);
-	h.check(left4?.tabs.join() === 'inspector,objects' && !!left4.front, `the other tabs keep the column (${JSON.stringify(left4)})`);
+	h.check([...(left4?.tabs ?? [])].sort().join() === 'inspector,objects' && !!left4.front, `the other tabs keep the column (${JSON.stringify(left4)})`);
 
 	// ---------- 12. a stored 81.4 SPLIT pair comes back as two tabs, not stacked ----------
 	await page.evaluate(() => {

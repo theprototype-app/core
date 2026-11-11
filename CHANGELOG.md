@@ -6,9 +6,28 @@
      rendering, so maintainer notes stay out of the user-facing window. No emoji from
      1.64 on (owner rule: no emoji in the UI); the app strips them from older entries. -->
 
+## 1.66.0 — Menus and panels, polished
+
+### Sidebars and the dock
+- **Handles stay out of the way**: when the bottom dock leaves no room above it, the sidebar handles go behind it and come back when it hides; each handle keeps its place in proportion when the window is resized. <!-- uir-polish A1/A2 -->
+- **Docked windows' side panes**: a closed pane's handle sits flush against the window edge, the main area keeps its scrollbar clear of it, and **Ctrl+B** / **Ctrl+Alt+B** open and close the panes of the docked window under the mouse or holding the focus. **Switch sidebar side** moved into the handles' right-click menu. <!-- uir-polish B1-B6 -->
+- **Tabs keep their names**: sidebar tabs never shrink; when they do not fit, a **...** button lists them all and the mouse wheel scrolls the strip. A menu row that moves a window reads **Move here**. <!-- uir-polish F1-F3 -->
+
+### Properties and Configure Scene
+- **No pin, no lock**: Properties follows your selection and keeps showing the last object after you click away (it closes when that object is deleted); its header always stays at the top. <!-- uir-polish E1-E4 -->
+- **Configure Scene moves on its own**: drag its tab to the other sidebar and Properties stays where it is. <!-- uir-polish E5 -->
+
+### Windows
+- **Dock and Pop out in every floating header**: one icon-only **Dock** button (and **Pop out** where a window can pop out) in the Node editor, Timeline, Explorer, Objects, Chat, Free assets and the other dockable windows. Docked, a window closes from its dock tab; Code docked has no header row at all. <!-- uir-polish G1-G4 -->
+
+### Main menu and reports
+- **Layouts** is the first row of **Window**; **What's new** is the version line at the bottom, with a dot when there is something new. The menu is solid to its bottom edge, and **Help** is a grid with a bug icon on **Report a bug**. <!-- uir-polish C1-C4 -->
+- **One Report a bug view**: the moment report and the bug report are one form. It names the seconds it holds ("the last 16 s"), and with no account it sends through the anonymous channel. <!-- uir-polish D1 -->
+
 ## 1.65.1 — Safer loading
 
 - **Objects and materials from other people and from files are checked before they load.** Anything that does not pass loads like a missing file, and the rest of the scene is unchanged.
+
 
 ## 1.65.0 — New menus and panels
 

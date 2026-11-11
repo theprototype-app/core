@@ -193,7 +193,9 @@ h.run(async () => {
 	const hashBefore = await S(A, (id) => window.__stores.explorer.itemById(id)?.hash, ids.b);
 	const saveState = await S(A, () => ({ disabled: document.querySelector('#image-editor-save')?.disabled, dirty: document.querySelector('#image-editor-window')?.dataset.dirty ?? null }));
 	await page.locator('#image-editor-save').click();
-	await until(async () => (await S(A, (id) => window.__stores.explorer.itemById(id)?.hash, ids.b)) !== hashBefore, 8000);
+	// a loaded Deck slot takes 16-20 s for this Save on v1.65.0 and on uir-polish alike (A/B 2026-11-11, ~19 s of long
+	// tasks on the unbundled dev app) — the old 8 s wait was the known "Save missed its wait" flake
+	await until(async () => (await S(A, (id) => window.__stores.explorer.itemById(id)?.hash, ids.b)) !== hashBefore, 40000);
 	console.log('  save diag: ' + JSON.stringify({ saveState, dialogs: await dialogs(), toasts: await S(A, () => document.querySelector('.toasts-stack')?.textContent?.slice(0, 200)) }));
 	h.check((await S(A, (id) => window.__stores.explorer.itemById(id)?.hash, ids.b)) !== hashBefore, '§6 Save writes the image');
 	await page.locator('#preview-view').click();
@@ -203,7 +205,7 @@ h.run(async () => {
 			const im = document.querySelector('#image-preview-window #preview-body img');
 			return im && im.complete ? [im.naturalWidth, im.naturalHeight] : null;
 		});
-	await until(async () => JSON.stringify(await dims()) === '[60,80]', 8000);
+	await until(async () => JSON.stringify(await dims()) === '[60,80]', 20000);
 	h.check(JSON.stringify(await dims()) === '[60,80]', `§6 back in View, the window shows the SAVED picture (${JSON.stringify(await dims())})`);
 
 	// ---- §7 floating: still pinned, still follows; unpinned it stops ----------------------
@@ -268,7 +270,9 @@ h.run(async () => {
 		};
 		return { save: hit('#image-editor-save'), close: hit('#preview-close'), view: hit('#preview-view'), canvas: hit('#image-editor-canvas-wrap') };
 	});
-	h.check(Object.values(reach).every((v) => v === 'ok'), `§8 the Edit face fits at 1280 docked: Save, View, close and the canvas are reachable (${JSON.stringify(reach)})`);
+	// uir-polish G4 (owner 2026-11-11): docked, the Preview has no header ✕ — its dock tab closes it
+	const { close: closeHit, ...rest } = reach;
+	h.check(Object.values(rest).every((v) => v === 'ok') && closeHit === 'zero', `§8 the Edit face fits at 1280 docked: Save, View and the canvas are reachable, no header close (${JSON.stringify(reach)})`);
 	await shot(B, '05-split-edit-1280', 'dark');
 	await shot(B, '05-split-edit-1280', 'light');
 	h.check((h.pageErrors(B) || []).length === 0, `no page errors at 1280 (${(h.pageErrors(B) || []).slice(-3).join(' | ')})`);

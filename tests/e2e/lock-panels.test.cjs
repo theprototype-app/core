@@ -64,39 +64,18 @@ h.run(async () => {
 	}
 	await S.closeAll(page);
 
-	// ---- 2. the Properties pin ----------------------------------------------------------------------
+	// ---- 2. Properties after a deselect (uir-polish E1/E3: no pin; the wide panel keeps the last object) ----
 	await page.evaluate((u) => window.__stores.objectActions.selectObject(u, true), ctx.box);
-	await page.locator('#inspector-pin').waitFor({ state: 'visible', timeout: 8000 });
-	const pinnedAt = async () => (await page.locator('#inspector-pin').getAttribute('aria-pressed')) === 'true';
-	if (await pinnedAt()) await page.locator('#inspector-pin').click();
-	h.check(!(await pinnedAt()), 'Properties starts unpinned');
+	await page.waitForTimeout(400);
+	h.check((await page.locator('#inspector-pin').count()) === 0, 'Properties has no pin (E1)');
 	await page.evaluate(() => window.__stores.objectActions.deselectObject());
 	await page.waitForTimeout(400);
-	h.check((await L.storeValue(page, 'inspectorClose')) === true, 'unpinned, deselecting closes the Properties panel');
-	await page.evaluate((u) => window.__stores.objectActions.selectObject(u, true), ctx.box);
-	await page.locator('#inspector-pin').click();
-	await page.waitForTimeout(200);
-	h.check(await pinnedAt(), 'the pin toggles on (aria-pressed)');
-	h.check((await L.storeValue(page, 'inspectorPinned')) === true, 'and is the inspectorPinned setting');
-	await page.evaluate(() => window.__stores.objectActions.deselectObject());
-	await page.waitForTimeout(400);
-	h.check((await L.storeValue(page, 'inspectorClose')) === false && (await L.storeValue(page, 'inspectorKind')) === 'scene', 'pinned, deselecting keeps it open on the scene');
-	await page.evaluate((u) => window.__stores.objectActions.selectObject(u), ctx.sphere);
-	await page.waitForTimeout(400);
-	// showhide-v8 (R2): with Configure Scene in front, a pinned panel no longer SWAPS to the selection: Configure Scene
-	// stays in front and a Properties tab joins it (it shows the selection when brought forward)
-	const tabsNow = await page.evaluate(() => {
-		let v;
-		window.__stores.sidebars?.sidebarTabs.subscribe((x) => (v = x))();
-		return v ? [...v.left, ...v.right] : null;
+	const kept = await page.evaluate(() => {
+		let o;
+		window.__stores.selectedObject.subscribe((v) => (o = v))();
+		return o?.uuid ?? null;
 	});
-	h.check(
-		(await L.storeValue(page, 'inspectorClose')) === false && (await L.storeValue(page, 'inspectorKind')) === 'scene' && !!tabsNow?.includes('inspector'),
-		`pinned, a plain selection keeps Configure Scene in front and adds the Properties tab (no swap) (${JSON.stringify(tabsNow)})`
-	);
-	await page.locator('#inspector-pin').click();
-	await page.waitForTimeout(200);
-	h.check(!(await pinnedAt()), 'and unpins');
+	h.check((await L.storeValue(page, 'inspectorClose')) === false && (await L.storeValue(page, 'inspectorKind')) === 'selection' && kept === ctx.box, `a deselect keeps Properties on the last object (E3) (${kept})`);
 	await S.closeAll(page);
 
 	// ---- 3. the toolbar cells ----------------------------------------------------------------------

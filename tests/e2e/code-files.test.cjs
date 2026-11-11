@@ -56,6 +56,13 @@ async function until(fn, pred, label, ms = 10000) {
 /** a menu row by its label (the shared ContextMenu) */
 const menuItem = (page, label) => page.locator('[role="menuitem"]', { hasText: label }).first();
 
+
+/** uir-polish G1: DOCKED, Code has no pop-out button (no header row at all) — float it first; its window header has one */
+async function floatCode(page) {
+	await page.evaluate(() => window.__stores.bottomDock.armDockMode('code', false));
+	await page.locator('#code-ws-popout').first().waitFor({ state: 'visible', timeout: 15000 });
+}
+
 h.run(async () => {
 	const browser = await h.launch();
 	const storage = { 'shared:shareNewFiles': 'always' };
@@ -235,6 +242,7 @@ h.run(async () => {
 	await page.evaluate(() => window.__stores.cloudHooks.rolesInfo.set(null));
 
 	// ------------------------------------------------------------ 7 the same tree in the pop-out window
+	await floatCode(page);
 	const [pop] = await Promise.all([page.context().waitForEvent('page', { timeout: 20000 }), page.locator('#code-ws-popout').first().click()]);
 	const popFiles = pop.locator('#code-ws-popped [data-tree-key="grp:files"]');
 	await popFiles.waitFor({ state: 'visible', timeout: 30000 });

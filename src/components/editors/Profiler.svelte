@@ -17,6 +17,7 @@
 	import { onMount, untrack } from 'svelte';
 	import { get } from 'svelte/store';
 	import Icon from '../ui/Icon.svelte';
+	import HeadDockPop from '../ui/HeadDockPop.svelte'; // uir-polish G2/G3
 	import { profilerLiveOpen } from '$lib/perf/liveSink';
 	import DockTabs from '../DockTabs.svelte';
 	import WindowChrome from '../ui/WindowChrome.svelte';
@@ -1016,7 +1017,7 @@
 					{#if !myGroup}<ScrollStrip class="pf-strip" label="Profiler tools" id="profiler-toolbar">{@render controls()}</ScrollStrip>{:else}<span class="flex-1"></span>{/if}
 				{/snippet}
 				{#snippet actions()}
-					<button data-wc-chrome class="wc-act-text" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={16} />Dock</button>
+					<HeadDockPop key="profiler" title="Profiler" ondock={() => setDocked(true)} />
 				{/snippet}
 			</WindowChrome>
 			{#if myGroup}

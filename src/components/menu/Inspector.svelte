@@ -11,7 +11,6 @@
 	import { reducedMotion } from '$lib/motion';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import InspectorHead from './inspector/InspectorHead.svelte';
-	import InspectorLock from './inspector/InspectorLock.svelte'; // 78-int PL14
 	import Section from '../ui/Section.svelte';
 	import CameraHoldSetting from './scene/CameraHoldSetting.svelte';
 	import SelectionPassSetting from './scene/SelectionPassSetting.svelte'; // 36 F22 / S8
@@ -57,7 +56,7 @@
 	import SheetGrip from '../ui/SheetGrip.svelte';
 	import { saveSheetH } from '$lib/ui/sheetDrag.js';
 	import { phoneSheetMaxH, phoneShellActive } from '$lib/ui/phoneShell.js';
-	import { inspectorSide, sidebarShown, sidebarTabs, memberPlacement } from '$lib/sidebars'; // 42 I2/I3
+	import { inspectorSide, sidebarShown, sidebarTabs, memberPlacement, sceneSide, inspectorElementSide, inspectorDual } from '$lib/sidebars'; // 42 I2/I3 + uir-polish E5
 	import Segmented from '../ui/Segmented.svelte';
 	import ParticleMotionRows from '../fx/ParticleMotionRows.svelte';
 	import ColorPicker, { ChromeVariant } from 'svelte-awesome-color-picker';
@@ -268,7 +267,7 @@
 		clearSnapAnchor,
 		saveSnapAnchorAsOrigin
 	} from '$lib/snapEngine';
-	import { peers, inspectorClose, inspectorKind, inspectorPinned, showToast, inspectorFilter, userdata } from '../../stores/appStore.js';
+	import { peers, inspectorClose, inspectorKind, showToast, inspectorFilter, userdata, closeSelectionInspector } from '../../stores/appStore.js';
 	// 78-int PL13: "changed by <peer / agent> · time" under the shared Configure Scene sections
 	import { sceneSectionEdits } from '$lib/sceneEditBy.js';
 	import { editLine } from '$lib/sceneEditByCore.js';
@@ -377,12 +376,25 @@
 	// column's place from the CSS bus, hides while another tab of the side is in front, and slides
 	// only when its side was EMPTY — opening onto (or closing off) a column that stays on screen is a
 	// tab change, and a tab change is instant.
-	const insSide = $derived($inspectorSide);
 	// 70 W2: `popped` = this instance lives in a pop-out window ($lib/windows/panelHost): no column, no sheet
-	let { popped = false } = $props();
-	// showhide-v8 (R2): Properties ('inspector') and Configure Scene ('scene') are two tabs over this one element
+	// uir-polish E5: `pane = 'scene'` = the SECOND instance Menu.svelte mounts while Properties and Configure Scene are
+	// open in different columns ($lib/sidebars inspectorDual): it always shows Configure Scene, in Configure Scene's
+	// own column; the first instance ('all') keeps every other state exactly as before.
+	/** @type {{popped?: boolean, pane?: 'all' | 'scene'}} */
+	let { popped = false, pane = 'all' } = $props();
+	/** what this instance shows: the scene pane is always Configure Scene */
+	const kind = $derived(pane === 'scene' ? 'scene' : $inspectorKind);
+	const insSide = $derived(pane === 'scene' ? $sceneSide : $inspectorElementSide);
+	// showhide-v8 (R2): Properties ('inspector') and Configure Scene ('scene') are two tabs over this one element —
+	// E5: in the dual state each instance is ONE tab, hidden while another tab of its column is in front
 	const insCovered = $derived(
-		!popped && !sheetMode && !['inspector', 'scene'].includes($sidebarShown[insSide] ?? '') && $sidebarTabs[insSide].some((k) => k === 'inspector' || k === 'scene')
+		!popped &&
+			!sheetMode &&
+			(pane === 'scene'
+				? $sidebarShown[insSide] !== 'scene'
+				: $inspectorDual
+					? $sidebarShown[insSide] !== 'inspector'
+					: !['inspector', 'scene'].includes($sidebarShown[insSide] ?? '') && $sidebarTabs[insSide].some((k) => k === 'inspector' || k === 'scene'))
 	);
 	const columnShared = $derived($sidebarTabs[insSide].some((k) => k !== 'inspector' && k !== 'scene'));
 	// 53 A5: instant under reduced motion
@@ -410,6 +422,16 @@
 		inspectorH = Math.round(h);
 		if (done) saveSheetH('inspectorSheetH', inspectorH);
 	}
+
+	// uir-polish E3: after a deselect a wider screen keeps showing the LAST object (objectActions.deselectObject).
+	// When that kept object leaves the scene (a peer deletes it, an undo takes it away) the panel closes the way
+	// a deselect used to, instead of editing an object nobody can see.
+	$effect(() => {
+		const group = $objectsGroup;
+		const kept = /** @type {any} */ ($selectedObject);
+		if (pane === 'scene' || $inspectorClose || $inspectorKind !== 'selection' || ($selectedObjects ?? []).length || !kept?.uuid || !group) return;
+		if (group.getObjectByProperty('uuid', kept.uuid) !== kept) closeSelectionInspector();
+	});
 
 	// C1 (roadmap #13): scene-mode physics-objects list. Recomputes on scene/graph
 	// changes AND selection updates (setPhysics only pokes selectedObject).
@@ -1030,7 +1052,7 @@
 
 	// Explorer file properties (107)
 	const inspectedItem = $derived(
-		$inspectorKind === 'file' ? $explorerItems.find((item) => item.id === $inspectedFile) ?? null : null
+		kind === 'file' ? $explorerItems.find((item) => item.id === $inspectedFile) ?? null : null
 	);
 	const fileFolderPath = $derived.by(() => {
 		if (!inspectedItem) return '';
@@ -1870,41 +1892,33 @@
 <!-- flowbite-svelte 1.x turned Drawer into a native <dialog> (focus-stealing, modal
      semantics) — this persistent tool panel is a plain div reproducing the v0 drawer
      chrome (fixed inset-e-0 top-16 w-80 + fly) exactly. -->
-{#if !$inspectorClose}
+{#if pane === 'scene' || !$inspectorClose}
 <div
 	style={insPlacement + '; --inspector-h: ' + inspectorH + 'px'}
 	data-sidebar-side={sheetMode || popped ? null : insSide}
 	data-sidebar-hidden={insCovered ? '' : null}
 	transition:fly={insTransition}
 	class={'tp-ui ins-shell fixed inset-e-0 top-16 z-(--z-side-panel) w-80 overflow-y-auto overflow-x-hidden touch-pan-y p-4 pt-0' + (bottomRounded ? ' ins-rounded-bl' : '')}
-	use:minimalScroll
+	use:minimalScroll={{ stickyTop: ':scope > #drawer-label' }}
 	use:fieldClip={nativeFieldSpec}
-	id="inspector"
+	id={pane === 'scene' ? 'inspector-scene' : 'inspector'}
+	data-inspector-pane={pane}
 	data-key-scope="panel"
 	role="region"
-	aria-label="Properties"
+	aria-label={kind === 'scene' ? 'Configure Scene' : 'Properties'}
 >
 	<!-- bottom-sheet grab bar (shown only in the narrow bottom-sheet layout): STICKY, so
 	     scrolling the properties never takes it away (40 F1) -->
 	<SheetGrip
 		class="ins-resize"
-		label={$inspectorKind === 'scene' ? 'Configure Scene' : 'Properties'}
+		label={kind === 'scene' ? 'Configure Scene' : 'Properties'}
 		height={Math.min(inspectorH, $phoneSheetMaxH || inspectorH)}
 		min={160}
 		inset={16}
 		onresize={insResize}
 		onclose={() => inspectorClose.set(true)}
-	>
-		{#snippet end()}
-			<!-- 78-int PL14: the phone's header lock sits in the grip row (no inner title row any more) -->
-			<!-- on the phone SHELL the Inspector is a dock tab whose own grip is hidden: PhoneShell's dock grip carries it -->
-			<!-- the grip is display:none on a wider screen, where the strip holds the lock: render it only in sheet mode (one #inspector-sticky-head) -->
-			{#if sheetMode && !popped && !$phoneShellActive && ($inspectorKind === 'scene' || ($inspectorKind !== 'file' && $selectedObject))}
-				<InspectorLock panel={$inspectorKind === 'scene' ? 'scene' : 'properties'} />
-			{/if}
-		{/snippet}
-	</SheetGrip>
-	{#if $inspectorKind === 'file'}
+	/>
+	{#if kind === 'file'}
 		<!-- Explorer file properties (107) -->
 		<!-- 78-int PL14: no inner header — the tab says "File" and its name is the first row -->
 		{#if inspectedItem}
@@ -1962,7 +1976,7 @@
 		{:else}
 			<p class="p-3 text-sm italic text-text-muted">The file was removed.</p>
 		{/if}
-	{:else if $inspectorKind === 'scene'}
+	{:else if kind === 'scene'}
 		<InspectorHead filter placeholder="Filter scene settings" panel="scene" {popped} />
 
 		<div class="flex flex-col gap-3">
@@ -3311,7 +3325,7 @@
 		<InspectorHead
 			badge={multiCount ? `${multiCount} objects` : $selectedObject.type}
 			filter
-			placeholder={multiCount ? `Filter properties of ${multiCount} objects` : `Filter properties of ${$selectedObject.name || 'this object'}`}
+			placeholder={multiCount ? `${multiCount} objects` : $selectedObject.name || $selectedObject.type || 'Object'}
 			panel="properties"
 			{popped}
 		/>

@@ -856,7 +856,7 @@
 				onclick={() => openPreviewCog.set(cogOpen ? null : winId)}
 				><Icon name="settings" size={16} aria-hidden="true" /></button
 			>
-			<button id="preview-close" class="ui-button-quiet" title="Close" aria-label="Close" onclick={() => void close()}><Icon name="x" size={16} aria-hidden="true" /></button>
+			<button id="preview-close" data-wc-x class="ui-button-quiet" title="Close" aria-label="Close" onclick={() => void close()}><Icon name="x" size={16} aria-hidden="true" /></button>
 		</div>
 
 		{#if cogOpen && !editing}

@@ -649,6 +649,13 @@
 	z-index: calc(var(--z-dock) + 1) !important;
 	background: var(--surface-1);
 }
+/* uir-polish G4 (owner 2026-11-11): a window HOSTED in the bottom dock closes from its dock tab's ×, so its header
+   ✕ stands down — and so do its Dock / pop-out buttons (HeadDockPop: it is docked). A hand-made ✕ marks itself
+   `data-wc-x`; the same mark also drops it in a sidebar column (the J7 rule above covers WindowChrome's ✕). */
+:root:not(.phone-shell) [data-pd-host] :is(.wc-head .wc-close, [data-wc-x], [data-head-dock], [data-head-popout]),
+[data-docked] [data-wc-x] {
+	display: none !important;
+}
 :root:not(.phone-shell) [data-pd-host='hidden'] {
 	display: none !important;
 }

@@ -43,6 +43,13 @@ const mainWorkspaceShown = (page) => page.locator('#code-ws-dock:visible, #code-
 
 const START = 'let speed = 1;\nreturn speed;';
 
+
+/** uir-polish G1: DOCKED, Code has no pop-out button (no header row at all) — float it first; its window header has one */
+async function floatCode(page) {
+	await page.evaluate(() => window.__stores.bottomDock.armDockMode('code', false));
+	await page.locator('#code-ws-popout').first().waitFor({ state: 'visible', timeout: 15000 });
+}
+
 h.run(async () => {
 	const browser = await h.launch();
 	const storage = { 'shared:shareNewFiles': 'never' };
@@ -75,6 +82,7 @@ h.run(async () => {
 	h.check(badStrip.length === 0, `U3: the "Editing with you" strip has no serious/critical axe violation (${badStrip.join(', ') || 'none'})`);
 
 	// ---- U1: pop out while shared -------------------------------------------------------------------------------
+	await floatCode(A.page).catch(() => {});
 	const hasButton = (await A.page.locator('#code-ws-popout').count()) > 0;
 	h.check(hasButton, 'U1: the shared Code tab offers Pop out (COUNTERFACTUAL: v1.41.0 has none)');
 	if (!hasButton) return h.finish(browser);

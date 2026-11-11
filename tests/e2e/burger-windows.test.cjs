@@ -63,11 +63,11 @@ h.run(async () => {
 	// --- 0: the direction A order + the footer ---
 	const order = await page.evaluate(() => {
 		const nav = document.querySelector('#sidebar70');
-		const kids = [...nav.querySelectorAll('.side-label, #open-command-palette, #clear-scene, #open-sessions-manager, #open-windows-menu, #open-settings, #open-version, #report-problem')];
+		const kids = [...nav.querySelectorAll('.side-label, #open-command-palette, #clear-scene, #open-sessions-manager, #open-layouts, #open-windows-menu, #open-settings, #open-version, #report-bug')];
 		return kids.map((e) => (e.classList.contains('side-label') ? 'L:' + e.textContent.trim() : '#' + e.id));
 	});
-	const want = ['#open-command-palette', 'L:File', 'L:Scene', '#clear-scene', 'L:Versions', '#open-sessions-manager', 'L:Window', '#open-windows-menu', 'L:Help', '#report-problem', '#open-settings', '#open-version'];
-	h.check(JSON.stringify(order) === JSON.stringify(want), `0.1 search, File, Scene (Clear scene… last), Versions, Window, Help, footer (${JSON.stringify(order)})`);
+	const want = ['#open-command-palette', 'L:File', 'L:Scene', '#clear-scene', 'L:Versions', '#open-sessions-manager', 'L:Window', '#open-layouts', '#open-windows-menu', 'L:Help', '#report-bug', '#open-settings', '#open-version'];
+	h.check(JSON.stringify(order) === JSON.stringify(want), `0.1 search, File, Scene (Clear scene… last), Versions, Window (Layouts above Windows, uir-polish C1), Help, footer (${JSON.stringify(order)})`);
 	const lastScene = await page.evaluate(() => {
 		const rows = [...document.querySelectorAll('#sidebar70 > *')];
 		const i = rows.findIndex((e) => e.id === 'clear-scene');
@@ -76,6 +76,37 @@ h.run(async () => {
 	h.check(/side-div/.test(lastScene.prev) && /side-div/.test(lastScene.next) && lastScene.text === 'Clear scene…', `0.2 "Clear scene…" sits alone behind a divider (${JSON.stringify(lastScene)})`);
 	h.check((await page.locator('#open-version').innerText()).trim().match(/^\d+\.\d+\.\d+/), '0.3 the footer shows the version');
 	h.check((await page.locator('#sidebar70 .side-row', { hasText: 'Undo' }).count()) === 0, '0.4 no Undo / Redo row (owner)');
+	// uir-polish C2: no "What's new" row; the version carries the dot until this version's notes are opened
+	h.check((await page.locator('#open-whats-new').count()) === 0 && (await page.locator('#report-problem, #report-moment').count()) === 0, '0.8 C2/D1 no "What\'s new" row and one report row');
+	// uir-polish C4: Help two per row on the desktop: Docs | Shortcuts, Tour | Report a bug (the bug icon)
+	const help = await page.evaluate(() => {
+		const r = (id) => {
+			const b = document.getElementById(id).getBoundingClientRect();
+			return { top: Math.round(b.top), left: Math.round(b.left), text: document.getElementById(id).innerText.trim() };
+		};
+		return { docs: r('open-docs'), keys: r('open-shortcuts'), tour: r('open-tour'), bug: r('report-bug'), bugIcon: !!document.querySelector('#report-bug svg.lucide-bug, #report-bug svg[class*="bug"]') };
+	});
+	h.check(
+		help.docs.top === help.keys.top && help.keys.left > help.docs.left && help.tour.top === help.bug.top && help.bug.left > help.tour.left && help.tour.top > help.docs.top,
+		`0.9 C4 Help is two per row: Docs | Shortcuts, Tour | Report a bug (${JSON.stringify(help)})`
+	);
+	h.check(help.keys.text === 'Shortcuts' && help.tour.text === 'Tour' && help.bug.text === 'Report a bug', `0.10 C4 ...with the short labels (${help.keys.text} / ${help.tour.text} / ${help.bug.text})`);
+	await page.evaluate(() => window.__stores.closeMenu.set(true));
+	await page.evaluate(() => window.__stores.whatsNew.whatsNewUnseen.set(true));
+	await openBurger(page);
+	const dotOn = await page.evaluate(() => {
+		const d = document.querySelector('#open-version .version-dot');
+		return !!d && getComputedStyle(d).display !== 'none' && getComputedStyle(d).visibility !== 'hidden';
+	});
+	h.check(dotOn, '0.11 C2 a new version: the version carries a dot');
+	await page.locator('#open-version').click();
+	await page.waitForTimeout(500);
+	h.check((await page.locator('#whats-new-window').count()) === 1, '0.12 C2 ...the version opens the release notes');
+	h.check((await read(page, 'whatsNew.whatsNewUnseen')) === false, '0.13 C2 ...and that clears the dot');
+	await page.evaluate(() => window.__stores.whatsNew?.whatsNewOpen?.set(false));
+	await page.waitForTimeout(300);
+	await openBurger(page);
+	h.check(await page.evaluate(() => getComputedStyle(document.querySelector('#open-version .version-dot')).display === 'none'), '0.14 C2 ...the menu again: no dot');
 	await page.evaluate(() => window.__stores.closeMenu.set(true));
 	await page.setViewportSize({ width: 1440, height: 560 });
 	await openBurger(page);
@@ -84,11 +115,25 @@ h.run(async () => {
 		nav.scrollTop = 0;
 		const n = nav.getBoundingClientRect();
 		const f = document.querySelector('#sidebar70 .side-foot').getBoundingClientRect();
-		const last = document.querySelector('#report-moment').getBoundingClientRect();
+		const last = document.querySelector('#report-bug').getBoundingClientRect();
 		return { scrolls: nav.scrollHeight > nav.clientHeight + 8, navBottom: Math.round(n.bottom), footBottom: Math.round(f.bottom), footTop: Math.round(f.top), lastTop: Math.round(last.top) };
 	});
 	h.check(foot.scrolls && foot.lastTop > foot.footTop, `0.5 (premise) on a short window the menu scrolls and the last Help row is hidden below (${JSON.stringify(foot)})`);
 	h.check(Math.abs(foot.footBottom - foot.navBottom) <= 12 && foot.footTop < foot.navBottom, `0.6 ...while the Settings footer stays at the menu's bottom, in view (${JSON.stringify(foot)})`);
+	// uir-polish C3: the footer reaches the menu's bottom edge (no see-through strip under Settings), scrolled or not
+	const strip = await page.evaluate(() => {
+		const nav = document.querySelector('#sidebar70');
+		const out = [];
+		for (const top of [0, 40, 99999]) {
+			nav.scrollTop = top;
+			// the menu's INNER bottom edge (its own border is not a gap)
+			const n = nav.getBoundingClientRect().bottom - parseFloat(getComputedStyle(nav).borderBottomWidth);
+			const f = document.querySelector('#sidebar70 .side-foot').getBoundingClientRect();
+			out.push(Math.round(n - f.bottom));
+		}
+		return out;
+	});
+	h.check(strip.every((g) => Math.abs(g) <= 1), `0.7 C3 the footer covers the menu's bottom padding at every scroll position (gaps ${JSON.stringify(strip)})`);
 	await page.evaluate(() => window.__stores.closeMenu.set(true));
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await openBurger(page);

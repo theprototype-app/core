@@ -16,7 +16,7 @@
 // read back — one extra render on demand. (A render target gets no tone mapping, three's
 // rule, so a headset shot can look a little flatter than the eye did.)
 import * as THREE from 'three';
-import { writable, get } from 'svelte/store';
+import { get } from 'svelte/store';
 import { globalRenderer, globalScene, globalCamera } from '../../stores/sceneStore';
 import { showToast } from '../../stores/appStore';
 import { lightWindow, saveDocument } from './recorder.js';
@@ -26,12 +26,6 @@ import { MOMENT_MS, REPORT_LIMITS } from './tpprof.js';
 
 /** the screenshot's longest side */
 export const SHOT_MAX = 960;
-
-/**
- * The dialog's draft (desktop): what was captured at the press. null = closed.
- * @type {import('svelte/store').Writable<null | {doc: import('./tpprof.js').Tpprof, shot: Blob | null, shotUrl: string | null, at: number}>}
- */
-export const momentDraft = writable(null);
 
 /** @param {HTMLCanvasElement} canvas @param {number} quality */
 function toJpeg(canvas, quality) {
@@ -166,27 +160,6 @@ export async function finishMoment(draft, opts = {}) {
 	}
 	if (draft.shotUrl) URL.revokeObjectURL(draft.shotUrl);
 	return { id, sent };
-}
-
-/** Desktop: capture now, then let the dialog ask for the note. */
-export async function openMomentReport() {
-	const draft = await captureMoment();
-	momentDraft.set(draft);
-	return draft;
-}
-
-/** The dialog's answer. @param {{note?: string, send?: boolean} | null} answer null = cancel */
-export async function closeMomentReport(answer) {
-	const draft = get(momentDraft);
-	momentDraft.set(null);
-	if (!draft) return null;
-	if (!answer) {
-		if (draft.shotUrl) URL.revokeObjectURL(draft.shotUrl);
-		return null;
-	}
-	const result = await finishMoment(draft, answer);
-	showToast(result.sent ? 'Moment saved and sent — thank you' : 'Moment saved (Profiler ▸ recordings)');
-	return result;
 }
 
 /**

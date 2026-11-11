@@ -668,7 +668,11 @@ h.run(async () => {
 		await A.page.evaluate(() => window.__stores.objectActions.deselectObject?.());
 		// showhide-v8: Configure Scene is its own Inspector tab and stays open past a deselect, so the column S7 opened
 		// would cover the dry emitter's clip at the right edge; close it as the user would
-		await A.page.evaluate(() => window.__stores.sidebars.closeInspectorTab('scene'));
+		// uir-polish E3: Properties keeps the last object past a deselect too — close both tabs
+		await A.page.evaluate(() => {
+			window.__stores.sidebars.closeInspectorTab('scene');
+			window.__stores.sidebars.closeInspectorTab('inspector');
+		});
 		await look(A.page, [0, 1.6, 7.2], [0, -0.2, 2]);
 		await A.page.waitForTimeout(1500);
 		/** pixels the bubbles change around an emitter: on vs off, same frame otherwise */

@@ -61,6 +61,7 @@ function renamedView(mod, renames) {
  * Build the v1 facade over a LIVE hook table (`window.__stores`).
  * @param {Record<string, any>} stores
  * @param {{ renamed?: Record<string, Record<string, string>>, moved?: Record<string, (s: Record<string, any>) => any> }} [tables] for the unit test
+ * @returns {Record<string, any>}
  */
 export function makeTestFacadeV1(stores, tables = {}) {
 	const renamed = tables.renamed ?? TEST_V1_RENAMED_EXPORTS;

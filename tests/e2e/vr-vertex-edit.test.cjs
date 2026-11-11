@@ -11,7 +11,7 @@ h.run(async () => {
 
 	// --- eligibility: simple mesh yes, over-cap no ---
 	const eligible = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		const group = await new Promise((r) => s.objectsGroup.subscribe(r)());
 		const box = group.children[group.children.length - 1];
@@ -45,7 +45,7 @@ h.run(async () => {
 	// (137: obj:editmesh opens the side-menu defaulting to Faces, then
 	// edit:mode:vertices switches to vertex editing) ---
 	const entered = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.objectActions.selectObject(window.__box.uuid);
 		s.vrMenuOpen.set(true);
 		s.vrControls.executeVRMenuAction('obj:editmesh');
@@ -69,7 +69,7 @@ h.run(async () => {
 
 	// --- drag handle 0 to a world position → local vertex + verts broadcast ---
 	const dragged = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const m = s.meshEdit;
 		const THREE = s.THREE;
 		const captured = [];
@@ -106,7 +106,7 @@ h.run(async () => {
 
 	// --- history: the drag is one undoable entry ---
 	const undone = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const before = s.THREE ? window.__box.geometry.attributes.position.getX(0) : null;
 		s.history.undo();
 		const after = window.__box.geometry.attributes.position.getX(0);
@@ -116,7 +116,7 @@ h.run(async () => {
 
 	// --- exit restores state ---
 	const exited = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.meshEdit.exitEditMode();
 		let editing;
 		s.meshEdit.editingObject.subscribe((v) => (editing = v))();
@@ -128,7 +128,7 @@ h.run(async () => {
 
 	// --- locked objects refuse ---
 	const locked = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.objectActions.selectObject(window.__box.uuid);
 		s.lockedObjects.set([['peerX', window.__box.uuid]]);
 		s.vrControls.executeVRMenuAction('obj:editmesh'); // 137: refuses a locked object

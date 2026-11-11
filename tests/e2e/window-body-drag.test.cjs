@@ -39,7 +39,7 @@ const rect = (page, sel) =>
 const selection = (page) =>
 	S(page, () => {
 		let v;
-		window.__stores.selectedObjects.subscribe((x) => (v = x))();
+		window.__tp.test.v1.selectedObjects.subscribe((x) => (v = x))();
 		return [...(v || [])];
 	});
 
@@ -54,7 +54,7 @@ const bodyPoint = (page, sel, fx = 0.5, fy = 0.6, clear = 0) =>
 		// base (no M1) has no predicate: the same rule, written out, so the counterfactual presses the same spot
 		// (a [role] INSIDE the window is a control; the window's own role=region is not)
 		const isBodyDragStart =
-			window.__stores.windowBodyDrag?.isBodyDragStart ??
+			window.__tp.test.v1.windowBodyDrag?.isBodyDragStart ??
 			((el, n) => n.contains(el) && !el.closest('button, input, select, textarea, label, a[href], .move-handle, canvas, [draggable="true"]') && !(el.closest('[role]') !== n && n.contains(el.closest('[role]'))) && getComputedStyle(el).overflowY !== 'auto');
 		const cands = [];
 		for (let y = top; y < r.bottom - 4; y += 3) for (let x = r.left + 3; x < r.right - 4; x += 3) cands.push([x, y]);
@@ -95,10 +95,10 @@ const still = (v) => Math.abs(v.x) < 3 && Math.abs(v.y) < 3;
 
 async function seedScene(page) {
 	await S(page, async () => {
-		for (let i = 0; i < 3; i++) window.__stores.addObjects.spawnAtPoint('/create Box 1 1 1', [i * 2 - 2, 0.5, -4]);
+		for (let i = 0; i < 3; i++) window.__tp.test.v1.addObjects.spawnAtPoint('/create Box 1 1 1', [i * 2 - 2, 0.5, -4]);
 		await new Promise((r) => setTimeout(r, 800));
-		window.__stores.objectActions?.applySelectionSet?.([]);
-		window.__stores.objectListClose.set(false);
+		window.__tp.test.v1.objectActions?.applySelectionSet?.([]);
+		window.__tp.test.v1.objectListClose.set(false);
 	});
 	await page.waitForTimeout(900);
 }
@@ -159,7 +159,7 @@ h.run(async () => {
 	h.check(near(moved(r4, r5), { x: -60, y: 40 }), `1.8 the header drags as before (${JSON.stringify(moved(r4, r5))})`);
 
 	// ---------- 2. Statistics: a dragWindow consumer ----------
-	await S(page, () => window.__stores.sceneBudget.statsOpen.set(true));
+	await S(page, () => window.__tp.test.v1.sceneBudget.statsOpen.set(true));
 	await page.waitForTimeout(700);
 	const st0 = await rect(page, '#stats-window');
 	const stPt = await bodyPoint(page, '#stats-window', 0.5, 0.7);
@@ -173,7 +173,7 @@ h.run(async () => {
 
 	// ---------- 3. a grouped window keeps its strip as the grip ----------
 	await S(page, async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.chatHidden.set('');
 		await new Promise((r) => setTimeout(r, 700));
 		s.windowTabs.mergeWindows('objects', 'chat');
@@ -191,7 +191,7 @@ h.run(async () => {
 	await mouseDrag(page, gPt, { x: 120, y: 60 });
 	const g1 = await rect(page, '#object-list');
 	h.check(still(moved(g0, g1)), `3.1 a grouped window does not move by its body (${JSON.stringify(moved(g0, g1))})`);
-	await S(page, () => window.__stores.windowTabs.removeFromGroup('chat'));
+	await S(page, () => window.__tp.test.v1.windowTabs.removeFromGroup('chat'));
 	await page.waitForTimeout(300);
 
 	await D.ctx.close();

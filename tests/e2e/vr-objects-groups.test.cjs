@@ -8,7 +8,7 @@ const panelRows = (A) =>
 	A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.globalScene.subscribe((scene) => {
+				window.__tp.test.v1.globalScene.subscribe((scene) => {
 					const panel = scene?.getObjectByName('vr-objects-panel');
 					const selects = [];
 					const expands = [];
@@ -24,7 +24,7 @@ const panelRows = (A) =>
 const selectedUuid = (A) =>
 	A.page.evaluate(() => {
 		let v;
-		window.__stores.selectedObject.subscribe((x) => (v = x))();
+		window.__tp.test.v1.selectedObject.subscribe((x) => (v = x))();
 		return v?.uuid;
 	});
 
@@ -34,10 +34,10 @@ h.run(async () => {
 
 	// two boxes grouped, plus one standalone top-level box; open the panel in VR
 	const setup = await A.page.evaluate(() => {
-		const { commandsHandler, objectActions } = window.__stores;
+		const { commandsHandler, objectActions } = window.__tp?.test.v1;
 		const root = () => {
 			let v;
-			window.__stores.objectsGroup.subscribe((x) => (v = x))();
+			window.__tp.test.v1.objectsGroup.subscribe((x) => (v = x))();
 			return v;
 		};
 		commandsHandler.sceneCommand('/create box');
@@ -53,8 +53,8 @@ h.run(async () => {
 		commandsHandler.sceneCommand('/create box'); // standalone
 		r = root();
 		const solo = r.children[r.children.length - 1].uuid;
-		window.__stores.isVRMode.set(true);
-		window.__stores.vrObjectsPanelOpen.set(true);
+		window.__tp.test.v1.isVRMode.set(true);
+		window.__tp.test.v1.vrObjectsPanelOpen.set(true);
 		return { group: grp.uuid, b1, b2, solo, topCount: r.children.length };
 	});
 	await A.page.waitForTimeout(500);
@@ -73,7 +73,7 @@ h.run(async () => {
 	h.check(rows.expands.length === 1 && rows.expands[0] === setup.group, 'the group row shows an expand caret');
 
 	// expand: children inline
-	await A.page.evaluate((g) => window.__stores.vrControls.executeVRMenuAction('panel:expand:' + g), setup.group);
+	await A.page.evaluate((g) => window.__tp.test.v1.vrControls.executeVRMenuAction('panel:expand:' + g), setup.group);
 	await A.page.waitForTimeout(400);
 	rows = await panelRows(A);
 	h.check(
@@ -82,15 +82,15 @@ h.run(async () => {
 	);
 
 	// tap a child row selects the child
-	await A.page.evaluate((c) => window.__stores.vrControls.executeVRMenuAction('panel:select:' + c), setup.b1);
+	await A.page.evaluate((c) => window.__tp.test.v1.vrControls.executeVRMenuAction('panel:select:' + c), setup.b1);
 	h.check((await selectedUuid(A)) === setup.b1, 'tapping a child row selects the child');
 
 	// tap the group row selects the whole group
-	await A.page.evaluate((g) => window.__stores.vrControls.executeVRMenuAction('panel:select:' + g), setup.group);
+	await A.page.evaluate((g) => window.__tp.test.v1.vrControls.executeVRMenuAction('panel:select:' + g), setup.group);
 	h.check((await selectedUuid(A)) === setup.group, 'tapping the group row selects the group');
 
 	// collapse: children hidden again
-	await A.page.evaluate((g) => window.__stores.vrControls.executeVRMenuAction('panel:expand:' + g), setup.group);
+	await A.page.evaluate((g) => window.__tp.test.v1.vrControls.executeVRMenuAction('panel:expand:' + g), setup.group);
 	await A.page.waitForTimeout(400);
 	rows = await panelRows(A);
 	h.check(
@@ -98,6 +98,6 @@ h.run(async () => {
 		`collapsing hides the children again (${rows.selects.length})`
 	);
 
-	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('panel:close'));
+	await A.page.evaluate(() => window.__tp.test.v1.vrControls.executeVRMenuAction('panel:close'));
 	await h.finish(browser);
 });

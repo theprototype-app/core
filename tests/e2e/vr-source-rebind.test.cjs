@@ -11,7 +11,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	const res = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const vc = s.vrControls;
 		const g1 = (store) => {
 			let v;

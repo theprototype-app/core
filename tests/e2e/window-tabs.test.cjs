@@ -109,8 +109,8 @@ h.run(async () => {
 		() =>
 			new Promise((r) => {
 				let chatV, listV;
-				window.__stores.chatHidden.subscribe((v) => (chatV = v))();
-				window.__stores.objectListClose.subscribe((v) => (listV = v))();
+				window.__tp.test.v1.chatHidden.subscribe((v) => (chatV = v))();
+				window.__tp.test.v1.objectListClose.subscribe((v) => (listV = v))();
 				r(chatV === 'hidden' && listV === true);
 			})
 	);
@@ -124,7 +124,7 @@ h.run(async () => {
 	// through its shortcut store, reopen it — it must come back (the tab group
 	// used to leave display:none behind and the window vanished until reload)
 	await A.page.locator('#chat-button').click();
-	await A.page.evaluate(() => window.__stores.objectListClose.set(false)); // close-all shut it (128)
+	await A.page.evaluate(() => window.__tp.test.v1.objectListClose.set(false)); // close-all shut it (128)
 	await A.page.waitForTimeout(300);
 	const chat3 = await A.page.locator('#chat-window').boundingBox();
 	const list3 = await A.page.locator('#object-list').boundingBox();
@@ -134,9 +134,9 @@ h.run(async () => {
 	await A.page.mouse.up();
 	await A.page.waitForTimeout(300);
 	// list is the INACTIVE member now (chat active) — toggle it closed + open
-	await A.page.evaluate(() => window.__stores.objectListClose.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.objectListClose.set(true));
 	await A.page.waitForTimeout(200);
-	await A.page.evaluate(() => window.__stores.objectListClose.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.objectListClose.set(false));
 	await A.page.waitForTimeout(300);
 	const listBack = await A.page.evaluate(() => {
 		const el = document.querySelector('#object-list');
@@ -146,7 +146,7 @@ h.run(async () => {
 
 	// 92: the corner grip resizes the floating list (chat closed so nothing
 	// overlaps the corner)
-	await A.page.evaluate(() => window.__stores.chatHidden.set('hidden'));
+	await A.page.evaluate(() => window.__tp.test.v1.chatHidden.set('hidden'));
 	await A.page.waitForTimeout(200);
 	const before = await A.page.locator('#object-list').boundingBox();
 	await A.page.mouse.move(before.x + before.width - 6, before.y + before.height - 6);

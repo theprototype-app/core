@@ -10,8 +10,8 @@ h.run(async () => {
 
 	// --- extrude walls face radially outward (visible), perpendicular to N ---
 	const walls = await A.page.evaluate(() => {
-		const f = window.__stores.faceEdit;
-		const THREE = window.__stores.THREE;
+		const f = window.__tp.test.v1.faceEdit;
+		const THREE = window.__tp.test.v1.THREE;
 		const box = new THREE.BoxGeometry(1, 1, 1);
 		const tris = f.readTriangles(box);
 		const faces = f.groupFaces(tris);
@@ -43,8 +43,8 @@ h.run(async () => {
 
 	// --- negative extrude still produces outward walls ---
 	const neg = await A.page.evaluate(() => {
-		const f = window.__stores.faceEdit;
-		const THREE = window.__stores.THREE;
+		const f = window.__tp.test.v1.faceEdit;
+		const THREE = window.__tp.test.v1.THREE;
 		const tris = f.readTriangles(new THREE.BoxGeometry(1, 1, 1));
 		const faces = f.groupFaces(tris);
 		const yFace = faces.find((fc) => fc.normal.y > 0.9);
@@ -67,8 +67,8 @@ h.run(async () => {
 
 	// --- inset frame ring faces the same way the face did (normal ~ N) ---
 	const inset = await A.page.evaluate(() => {
-		const f = window.__stores.faceEdit;
-		const THREE = window.__stores.THREE;
+		const f = window.__tp.test.v1.faceEdit;
+		const THREE = window.__tp.test.v1.THREE;
 		const tris = f.readTriangles(new THREE.BoxGeometry(1, 1, 1));
 		const faces = f.groupFaces(tris);
 		const zFace = faces.find((fc) => fc.normal.z > 0.9);
@@ -88,15 +88,15 @@ h.run(async () => {
 
 	// --- hover: change reported once, clears on ray-leave, overlay rebuilds once ---
 	await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const box = group.children[group.children.length - 1];
-		window.__stores.objectActions.selectObject(box.uuid);
-		window.__stores.faceEdit.enterFaceEdit(box.uuid);
+		window.__tp.test.v1.objectActions.selectObject(box.uuid);
+		window.__tp.test.v1.faceEdit.enterFaceEdit(box.uuid);
 	});
 	await A.page.waitForTimeout(300);
 	const hover = await A.page.evaluate(() => {
-		const f = window.__stores.faceEdit;
+		const f = window.__tp.test.v1.faceEdit;
 		const read = () => {
 			let v;
 			f.faceEditHighlight.subscribe((x) => (v = x))();
@@ -115,6 +115,6 @@ h.run(async () => {
 	h.check(hover.c3 === true, 'moving to another face reports change');
 	h.check(hover.cleared === true && hover.clearedAgain === false && hover.after === -1, 'ray-leave clears once');
 
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
 	await h.finish(browser);
 });

@@ -10,11 +10,11 @@ h.run(async () => {
 	await h.connect(A, B);
 
 	// B2.3: assert the sphere style (the default is cuboid-bone hands now)
-	await B.page.evaluate(() => window.__stores.peerHandStyle.set('spheres'));
+	await B.page.evaluate(() => window.__tp.test.v1.peerHandStyle.set('spheres'));
 	// A broadcasts articulated hands (left) + a controller hand (right), as the VR
 	// presence loop would
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let peer;
 		s.peers.subscribe((p) => (peer = p))();
 		const joints = [];
@@ -31,7 +31,7 @@ h.run(async () => {
 	await h.eventually(
 		() =>
 			B.page.evaluate((aid) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				let ph;
 				s.peerHands.subscribe((x) => (ph = x))();
 				let scene;

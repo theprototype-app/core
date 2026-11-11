@@ -7,7 +7,7 @@ const h = require('./helpers.cjs');
 const read = (A, path) =>
 	A.page.evaluate((p) => {
 		let v;
-		const store = p.split('.').reduce((o, k) => o[k], window.__stores);
+		const store = p.split('.').reduce((o, k) => o[k], window.__tp?.test.v1);
 		store.subscribe((x) => (v = x))();
 		return v;
 	}, path);
@@ -18,7 +18,7 @@ h.run(async () => {
 
 	// --- a VR-driven extrude, then radial undo/redo, cache stays valid ---
 	const face = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const rd = (st) => {
 			let v;
 			st.subscribe((x) => (v = x))();
@@ -61,7 +61,7 @@ h.run(async () => {
 
 	// --- a VR stretch, then radial undo ---
 	const stretch = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const rd = (st) => {
 			let v;
 			st.subscribe((x) => (v = x))();

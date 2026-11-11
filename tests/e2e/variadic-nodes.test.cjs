@@ -19,8 +19,8 @@ const graph = (page) =>
 	page.evaluate(() => {
 		let ns;
 		let es;
-		window.__stores.flowNodes.subscribe((v) => (ns = v))();
-		window.__stores.flowEdges.subscribe((v) => (es = v))();
+		window.__tp.test.v1.flowNodes.subscribe((v) => (ns = v))();
+		window.__tp.test.v1.flowEdges.subscribe((v) => (es = v))();
 		return {
 			nodes: ns.map((n) => ({ id: n.id, type: n.type, data: n.data })),
 			edges: es.map((e) => ({ id: e.id, source: e.source, sourceHandle: e.sourceHandle ?? null, target: e.target, targetHandle: e.targetHandle ?? null }))
@@ -29,12 +29,12 @@ const graph = (page) =>
 const value = (page, id) =>
 	page.evaluate((id) => {
 		let v;
-		window.__stores.flowValues.subscribe((x) => (v = x))();
+		window.__tp.test.v1.flowValues.subscribe((x) => (v = x))();
 		const r = v[id];
 		return r && typeof r === 'object' && r.__handles ? { handles: r.__handles, def: r.__default } : r;
 	}, id);
 const select = (page, ids) =>
-	page.evaluate((ids) => window.__stores.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: ids.includes(n.id) }))), ids);
+	page.evaluate((ids) => window.__tp.test.v1.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: ids.includes(n.id) }))), ids);
 const handle = (node, id) => `.svelteFlow .svelte-flow__handle[data-nodeid="${node}"]` + (id === null ? ':not([data-handleid])' : `[data-handleid="${id}"]`);
 const card = (id) => `.svelteFlow .svelte-flow__node[data-id="${id}"]`;
 const into = (g, target) =>
@@ -88,10 +88,10 @@ h.run(async () => {
 			edges: [E('n1', 'm', 'a'), E('n2', 'm', 'b'), E('sw0', 'm0', 'a')]
 		}
 	};
-	await p.evaluate((doc) => window.__stores.restoreGraphs(JSON.parse(JSON.stringify(doc))), DOC);
+	await p.evaluate((doc) => window.__tp.test.v1.restoreGraphs(JSON.parse(JSON.stringify(doc))), DOC);
 	await p.locator('p[title="Node editor (N)"]').click();
 	await p.waitForTimeout(1500);
-	await p.evaluate((id) => window.__stores.nodesHandler.sendNodes(id), B.id);
+	await p.evaluate((id) => window.__tp.test.v1.nodesHandler.sendNodes(id), B.id);
 	await h.eventually(() => graph(B.page), (g) => g.nodes.length === 7, 'the peer holds the graph');
 	await h.eventually(() => value(p, 'm'), (v) => v === 3, 'a saved two-input Math still reads a + b (3)');
 	await h.eventually(() => value(p, 'm0'), (v) => v === 1, 'a saved Switcher wired by its unnamed output still feeds its INDEX (1)');
@@ -112,12 +112,12 @@ h.run(async () => {
 	await h.eventually(() => value(p, 'm'), (v) => v === 10, 'four wired inputs fold to 10 (1 + 2 + 3 + 4)');
 	await h.eventually(() => graph(B.page), (gb) => gb.nodes.find((n) => n.id === 'm')?.data.sockets === 4 && into(gb, 'm') === 'n1>a n2>b n3>c n4>d', 'the peer gets the sockets and the wires');
 	await h.eventually(() => value(B.page, 'm'), (v) => v === 10, 'and evaluates the same fold on its own (10)');
-	await p.evaluate(() => window.__stores.nodesHandler.setNodeData('m', { op: 'mul' }));
+	await p.evaluate(() => window.__tp.test.v1.nodesHandler.setNodeData('m', { op: 'mul' }));
 	await h.eventually(() => value(p, 'm'), (v) => v === 24, 'mul folds too (24)');
-	await p.evaluate(() => window.__stores.nodesHandler.setNodeData('m', { op: 'pow' }));
+	await p.evaluate(() => window.__tp.test.v1.nodesHandler.setNodeData('m', { op: 'pow' }));
 	await h.eventually(() => value(p, 'm'), (v) => v === 1, 'a non-folding op (pow) reads a and b only (1² = 1)');
 	h.check((await p.locator(card('m') + ' [data-socket="c"].opacity-50').count()) === 1, 'and the card greys out the sockets it does not read');
-	await p.evaluate(() => window.__stores.nodesHandler.setNodeData('m', { op: 'add' }));
+	await p.evaluate(() => window.__tp.test.v1.nodesHandler.setNodeData('m', { op: 'add' }));
 	await h.eventually(() => value(p, 'm'), (v) => v === 10, 'back to add (10)');
 	await p.screenshot({ path: OUT + '01-math-four-inputs.png' });
 
@@ -153,22 +153,22 @@ h.run(async () => {
 			edges: [0, 1, 2, 3, 4].map((i) => E('t' + i, 'g', 'abcde'[i]))
 		}
 	};
-	await p.evaluate((doc) => window.__stores.restoreGraphs(JSON.parse(JSON.stringify(doc))), GATE);
-	await p.evaluate((id) => window.__stores.nodesHandler.sendNodes(id), B.id);
+	await p.evaluate((doc) => window.__tp.test.v1.restoreGraphs(JSON.parse(JSON.stringify(doc))), GATE);
+	await p.evaluate((id) => window.__tp.test.v1.nodesHandler.sendNodes(id), B.id);
 	await p.waitForTimeout(900);
 	await h.eventually(() => value(p, 'g'), (v) => v === true, 'OR over five: one true input is enough');
-	await p.evaluate(() => window.__stores.nodesHandler.setNodeData('g', { op: 'and' }));
+	await p.evaluate(() => window.__tp.test.v1.nodesHandler.setNodeData('g', { op: 'and' }));
 	await h.eventually(() => value(p, 'g'), (v) => v === false, 'AND over five: one true is not');
 	// one write per step, each confirmed: a burst of setNodeData writes in one task does not all land
 	// (the documented write-chain cost), which read here as "AND over five is still false"
 	for (const id of ['t1', 't2', 't3', 't4']) {
-		await p.evaluate((id) => window.__stores.nodesHandler.setNodeData(id, { on: true }), id);
+		await p.evaluate((id) => window.__tp.test.v1.nodesHandler.setNodeData(id, { on: true }), id);
 		await h.eventually(() => graph(p), (gr) => gr.nodes.find((n) => n.id === id)?.data.on === true, `toggle ${id} is on`);
 	}
 	await h.eventually(() => value(p, 'g'), (v) => v === true, 'AND over five: all five true');
-	await p.evaluate(() => window.__stores.nodesHandler.setNodeData('g', { op: 'xor' }));
+	await p.evaluate(() => window.__tp.test.v1.nodesHandler.setNodeData('g', { op: 'xor' }));
 	await h.eventually(() => value(p, 'g'), (v) => v === true, 'XOR over five trues = odd parity = true');
-	await p.evaluate(() => window.__stores.nodesHandler.setNodeData('t4', { on: false }));
+	await p.evaluate(() => window.__tp.test.v1.nodesHandler.setNodeData('t4', { on: false }));
 	await h.eventually(() => value(p, 'g'), (v) => v === false, 'XOR over four trues = false');
 	const socketTypes = await p.evaluate(() =>
 		['a', 'c', 'e'].map((k) => document.querySelector(`.svelte-flow__handle[data-nodeid="g"][data-handleid="${k}"]`)?.getAttribute('style') ?? '')
@@ -215,7 +215,7 @@ h.run(async () => {
 	g = await graph(p);
 	h.check(!g.nodes.some((n) => n.type === 'group') && g.nodes.find((n) => n.id === 'g').data.sockets === 4 && into(g, 'g') === 't0>a t1>b t2>c t3>d', 'ungroup leaves the gate, its four sockets and its wires');
 	const rt = await p.evaluate(() => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		const before = S.nodesHandler.graphHash();
 		const doc = S.flowGraphsCtl.serializeGraphs(S.nodesHandler.serializeNode, S.nodesHandler.serializeEdge);
 		S.restoreGraphs(JSON.parse(JSON.stringify(doc)));

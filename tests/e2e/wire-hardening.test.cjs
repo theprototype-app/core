@@ -20,22 +20,22 @@
 // Run: APP_URL=https://theprototype.app:5175/ npm run e2e -- wire-hardening
 const h = require('./helpers.cjs');
 
-const errorsFor = (page) => page.evaluate(() => window.__stores.wireErrors.wireErrors());
+const errorsFor = (page) => page.evaluate(() => window.__tp.test.v1.wireErrors.wireErrors());
 
 h.run(async () => {
 	const browser = await h.launch();
 	const peer = await h.setupPage(browser, 'wire');
 	const page = peer.page;
-	await page.waitForFunction(() => !!window.__stores?.wireErrors && !!window.__stores?.wireValidate, {
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.wireErrors && !!window.__tp?.test.v1?.wireValidate, {
 		timeout: 30000
 	});
 
 	// a real object to aim `move` at
-	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await page.waitForTimeout(700);
 	const uuid = await page.evaluate(() => {
 		let group = null;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		return group.children[group.children.length - 1].uuid;
 	});
 	h.check(!!uuid, `premise: there is an object to move (${uuid})`);
@@ -43,7 +43,7 @@ h.run(async () => {
 	// ---- feed the REAL dispatcher a hostile stream through a stubbed conn --------------
 	await page.evaluate(
 		({ id }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.wireErrors.clearWireErrors();
 			let pc = null;
 			s.peers.subscribe((v) => (pc = v))();
@@ -71,7 +71,7 @@ h.run(async () => {
 	// ---- 1. the handler survived, and the LAST message applied -------------------------
 	const moved = await page.evaluate((id) => {
 		let group = null;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		const o = group.getObjectByProperty('uuid', id);
 		return { pos: o.position.toArray(), finite: o.position.toArray().every(Number.isFinite) };
 	}, uuid);
@@ -127,20 +127,20 @@ h.run(async () => {
 	// and re-broadcast it; the object surviving IS the assertion.
 	const survived = await page.evaluate((id) => {
 		let group = null;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		return !!group.getObjectByProperty('uuid', id);
 	}, uuid);
 	h.check(survived, "a peer's raw string can no longer reach sceneCommand and clear the scene");
 
 	// ---- 6. the counters reach the diagnostics bundle ------------------------------------
-	const section = await page.evaluate(() => window.__stores.diagnostics.bundle().sections.wire);
+	const section = await page.evaluate(() => window.__tp.test.v1.diagnostics.bundle().sections.wire);
 	h.check(
 		!!section && section.total >= 6 && Array.isArray(section.failures),
 		`the wire counters ride the diagnostics bundle (${JSON.stringify(section).slice(0, 120)})`
 	);
 
 	// ---- 7. a departed peer's rows are dropped (golden rule 3) ---------------------------
-	await page.evaluate(() => window.__stores.wireErrors.dropWireErrors('badpeer1'));
+	await page.evaluate(() => window.__tp.test.v1.wireErrors.dropWireErrors('badpeer1'));
 	const after = await errorsFor(page);
 	h.check(
 		after.every((e) => e.peerId !== 'badpeer1'),

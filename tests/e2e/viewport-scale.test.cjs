@@ -18,12 +18,12 @@ const geom = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.globalRenderer.subscribe((r) => {
-					window.__stores.globalCamera.subscribe((cam) => {
+				window.__tp.test.v1.globalRenderer.subscribe((r) => {
+					window.__tp.test.v1.globalCamera.subscribe((cam) => {
 						const el = r?.domElement;
 						const rect = el?.getBoundingClientRect();
-						const size = r ? r.getSize(new window.__stores.THREE.Vector2()) : null;
-						window.__stores.bottomDock.bottomInset.subscribe((inset) => {
+						const size = r ? r.getSize(new window.__tp.test.v1.THREE.Vector2()) : null;
+						window.__tp.test.v1.bottomDock.bottomInset.subscribe((inset) => {
 							resolve({
 								css: rect
 									? {
@@ -45,16 +45,16 @@ const geom = (page) =>
 
 const openDock = (page) =>
 	page.evaluate(() => {
-		window.__stores.explorerClose.set(false);
-		window.__stores.bottomDock.activateDock('explorer');
-		window.__stores.bottomDock.dockHeight.set(260);
+		window.__tp.test.v1.explorerClose.set(false);
+		window.__tp.test.v1.bottomDock.activateDock('explorer');
+		window.__tp.test.v1.bottomDock.dockHeight.set(260);
 	});
 
-const closeDock = (page) => page.evaluate(() => window.__stores.explorerClose.set(true));
+const closeDock = (page) => page.evaluate(() => window.__tp.test.v1.explorerClose.set(true));
 
 const selection = (page) =>
 	page.evaluate(
-		() => new Promise((r) => window.__stores.selectedObjects.subscribe((s) => r([...(s ?? [])]))())
+		() => new Promise((r) => window.__tp.test.v1.selectedObjects.subscribe((s) => r([...(s ?? [])]))())
 	);
 
 h.run(async () => {
@@ -130,13 +130,13 @@ h.run(async () => {
 		'3.3 ...and the canvas, the dock and the drawing buffer all still agree'
 	);
 	// back to a workable size for the picking sections
-	await A.page.evaluate(() => window.__stores.bottomDock.dockHeight.set(260));
+	await A.page.evaluate(() => window.__tp.test.v1.bottomDock.dockHeight.set(260));
 	await A.page.waitForTimeout(800);
 
 	// --------------------------------------- 4. THE COORDINATE CLASS: picking + drops
 	// A box parked low in the frame, so an error of the dock's height is unmissable.
 	const uuid = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 2 2 2');
 		await new Promise((r) => setTimeout(r, 900));
 		const group = await new Promise((r) => w.objectsGroup.subscribe(r)());
@@ -161,7 +161,7 @@ h.run(async () => {
 		at
 	);
 	h.check(overCanvas === 'CANVAS', `4.2 premise: that pixel really is the canvas (${overCanvas})`);
-	await A.page.evaluate(() => window.__stores.selectedObjects.set([]));
+	await A.page.evaluate(() => window.__tp.test.v1.selectedObjects.set([]));
 	await A.page.mouse.click(Math.round(at.x), Math.round(at.y));
 	await A.page.waitForTimeout(700);
 	let sel = await selection(A.page);
@@ -173,7 +173,7 @@ h.run(async () => {
 	// explorerDrop: the drop must land where the cursor is, not a dock-height below it.
 	// This reads the ray directly, which is what the real drag-drop handler calls.
 	const drop = await A.page.evaluate(
-		(p) => window.__stores.explorerDrop.dropTarget(p.x, p.y),
+		(p) => window.__tp.test.v1.explorerDrop.dropTarget(p.x, p.y),
 		at
 	);
 	h.check(
@@ -188,23 +188,23 @@ h.run(async () => {
 	const rayHit = await A.page.evaluate(async (p) => {
 		window.dispatchEvent(new PointerEvent('pointermove', { clientX: p.x, clientY: p.y }));
 		await new Promise((r) => setTimeout(r, 60));
-		const ray = window.__stores.moduleSDK.pointerRayNow();
+		const ray = window.__tp.test.v1.moduleSDK.pointerRayNow();
 		if (!ray) return null;
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const hits = ray.intersectObjects(group.children, true);
-		return hits[0] ? window.__stores.objectActions.topLevelObjectOf(hits[0].object).uuid : null;
+		return hits[0] ? window.__tp.test.v1.objectActions.topLevelObjectOf(hits[0].object).uuid : null;
 	}, at);
 	h.check(rayHit === uuid, '4.6 api.pointerRay() hits what is under the cursor, not below it');
 
 	// --------------------------------------------- 5. the PiP stays out of the dock
 	await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Camera');
 		await new Promise((r) => setTimeout(r, 800));
 	});
 	await A.page.waitForTimeout(900);
 	const camUuid = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const group = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const cam = group.children.find((c) => c.userData?.camera);
 		if (cam) w.selectedObjects.set([cam.uuid]);
@@ -212,7 +212,7 @@ h.run(async () => {
 	});
 	await A.page.waitForTimeout(900);
 	h.check(!!camUuid, '5.1 premise: a camera object exists and is selected');
-	let pip = await A.page.evaluate(() => window.__stores.cameraPip.pipDebug());
+	let pip = await A.page.evaluate(() => window.__tp.test.v1.cameraPip.pipDebug());
 	g = await geom(A.page);
 	h.check(
 		!!pip.rect && pip.rect.y + pip.rect.h <= g.css.height + 1,
@@ -220,30 +220,30 @@ h.run(async () => {
 	);
 	// drag it hard into the dock band: the clamp must refuse
 	await A.page.evaluate((winH) => {
-		window.__stores.cameraPip.pipPosition.set({ x: 300, y: winH + 400 });
+		window.__tp.test.v1.cameraPip.pipPosition.set({ x: 300, y: winH + 400 });
 	}, 720);
 	await A.page.waitForTimeout(600);
-	pip = await A.page.evaluate(() => window.__stores.cameraPip.pipDebug());
+	pip = await A.page.evaluate(() => window.__tp.test.v1.cameraPip.pipDebug());
 	g = await geom(A.page);
 	h.check(
 		!!pip.rect && pip.rect.y + pip.rect.h <= g.css.height + 1,
 		`5.3 a PiP dragged past the bottom is clamped ABOVE the dock, where its picture still draws (bottom ${pip.rect ? pip.rect.y + pip.rect.h : '-'} <= ${g.css.height})`
 	);
 	await A.page.evaluate(() => {
-		window.__stores.cameraPip.resetPipPosition();
-		window.__stores.selectedObjects.set([]);
+		window.__tp.test.v1.cameraPip.resetPipPosition();
+		window.__tp.test.v1.selectedObjects.set([]);
 	});
 	await A.page.waitForTimeout(400);
 
 	// ------------------------------------------------------------ 6. play mode
-	await A.page.evaluate(() => window.__stores.isLocked.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await A.page.waitForTimeout(1400);
 	g = await geom(A.page);
 	h.check(
 		Math.abs(g.css.height - g.win.h) <= 1,
 		`6.1 play mode gives the viewport its full height back (${g.css.height} of ${g.win.h}px)`
 	);
-	await A.page.evaluate(() => window.__stores.isLocked.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(null));
 	await A.page.waitForTimeout(1600);
 	g = await geom(A.page);
 	h.check(
@@ -252,7 +252,7 @@ h.run(async () => {
 	);
 
 	// --------------------------------- 7. the pref, through the REAL Settings row
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 	await A.page.waitForTimeout(600);
 	await A.page.locator('#settings-nav .sn-row', { hasText: 'Interface' }).first().click();
 	await A.page.waitForTimeout(500);
@@ -265,7 +265,7 @@ h.run(async () => {
 	// control itself rather than its coordinates (dock-chrome's idiom)
 	await toggle.evaluate((el) => el.click());
 	await A.page.waitForTimeout(700);
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await A.page.waitForTimeout(900);
 	g = await geom(A.page);
 	h.check(
@@ -284,7 +284,7 @@ h.run(async () => {
 
 	// back ON, and the viewport shrinks again — the toggle works in both directions
 	await A.page.evaluate(() =>
-		window.__stores.viewPrefs.setViewPrefs({ dockPushesViewport: true })
+		window.__tp.test.v1.viewPrefs.setViewPrefs({ dockPushesViewport: true })
 	);
 	await A.page.waitForTimeout(900);
 	g = await geom(A.page);
@@ -315,7 +315,7 @@ h.run(async () => {
 	await openDock(A.page);
 	await A.page.waitForTimeout(1200);
 	const knife = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		const THREE = s.THREE;
 		s.commandsHandler.sceneCommand('/create Box 2 2 2');

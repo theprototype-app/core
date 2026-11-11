@@ -41,7 +41,7 @@ h.run(async () => {
 		if (OUT) console.log('  saved ' + (await eyes.save(page, path.join(OUT, name))).pair);
 	};
 	await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.viewMode.set('shaded');
 		await s.moduleSDK.initModules([{ id: 'eyes34', name: 'Eyes', version: '1.0.0', description: '34 B4', register(api) { window.__api = api; } }]);
 	});
@@ -53,7 +53,7 @@ h.run(async () => {
 	// ---- 1. which eye sees the light helper ---------------------------------------------------
 	console.log('\n=== 1 which eye sees the helper ===');
 	const lightAt = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/light point');
 		s.objectActions.deselectObject();
 		let g;
@@ -68,18 +68,18 @@ h.run(async () => {
 	await h.eventually(
 		() => page.evaluate(() => {
 			let sc;
-			window.__stores.globalScene.subscribe((v) => (sc = v))();
+			window.__tp.test.v1.globalScene.subscribe((v) => (sc = v))();
 			return sc.children.some((c) => /LightHelper$/.test(c.type || ''));
 		}),
 		(v) => v,
 		'the light has its helper',
 		10000
 	);
-	await page.evaluate((at) => window.__stores.objectActions.flyTo([at[0], at[1], at[2] + 1.6], at, 0), lightAt);
+	await page.evaluate((at) => window.__tp.test.v1.objectActions.flyTo([at[0], at[1], at[2] + 1.6], at, 0), lightAt);
 	await page.waitForTimeout(500);
 	const helperType = await page.evaluate(() => {
 		let sc;
-		window.__stores.globalScene.subscribe((v) => (sc = v))();
+		window.__tp.test.v1.globalScene.subscribe((v) => (sc = v))();
 		return sc.children.find((c) => /LightHelper$/.test(c.type || '')).type;
 	});
 
@@ -88,18 +88,18 @@ h.run(async () => {
 	h.check(v.left.visiblePx > 40 && v.right.visiblePx > 40, `1a Edit: BOTH eyes draw the helper (L ${v.left.visiblePx} px, R ${v.right.visiblePx} px)`);
 	await keep('1a-edit-both-eyes');
 
-	await page.evaluate(() => window.__stores.objectActions.setEditorMode('interact'));
+	await page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('interact'));
 	await page.waitForTimeout(400);
 	v = await eyes.visibility(page, helperType);
 	h.check(v.left.visiblePx === 0 && v.right.visiblePx === 0, `1b Interact: NEITHER eye draws it (L ${v.left.visiblePx} px, R ${v.right.visiblePx} px)`);
 	await keep('1b-interact-no-eye');
-	await page.evaluate(() => window.__stores.objectActions.setEditorMode('edit'));
+	await page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('edit'));
 	await page.waitForTimeout(400);
 
 	// the 30b bug, planted: the helper on layer 1 (three's LEFT-eye layer)
 	const was = await page.evaluate((type) => {
 		let sc;
-		window.__stores.globalScene.subscribe((x) => (sc = x))();
+		window.__tp.test.v1.globalScene.subscribe((x) => (sc = x))();
 		const hlp = sc.children.find((c) => c.type === type);
 		const mask = hlp.layers.mask;
 		hlp.traverse((o) => o.layers.set(1));
@@ -111,13 +111,13 @@ h.run(async () => {
 	await page.evaluate(
 		({ type, mask }) => {
 			let sc;
-			window.__stores.globalScene.subscribe((x) => (sc = x))();
+			window.__tp.test.v1.globalScene.subscribe((x) => (sc = x))();
 			sc.children.find((c) => c.type === type).traverse((o) => (o.layers.mask = mask));
 		},
 		{ type: helperType, mask: was }
 	);
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let sc;
 		s.globalScene.subscribe((x) => (sc = x))();
 		for (const c of sc.children.filter((c) => /LightHelper$/.test(c.type || ''))) c.visible = false;
@@ -141,7 +141,7 @@ h.run(async () => {
 		box.position.set(at[0], at[1], at[2] + 1);
 		target.updateMatrixWorld(true);
 		box.updateMatrixWorld(true);
-		window.__stores.objectActions.flyTo([at[0], at[1], at[2] + 2], at, 0);
+		window.__tp.test.v1.objectActions.flyTo([at[0], at[1], at[2] + 2], at, 0);
 	}, AT);
 	await page.waitForTimeout(500);
 	v = await eyes.visibility(page, 'b4-target');
@@ -152,7 +152,7 @@ h.run(async () => {
 	const panel = await page.evaluate(() => {
 		const api = window.__api;
 		let sc;
-		window.__stores.globalScene.subscribe((x) => (sc = x))();
+		window.__tp.test.v1.globalScene.subscribe((x) => (sc = x))();
 		const t = sc.getObjectByName('b4-target');
 		window.__b4off = api.vrPanel(t);
 		return { order: t.renderOrder, off: typeof window.__b4off };
@@ -169,7 +169,7 @@ h.run(async () => {
 	h.check(!shot.left.equals(shot.right), 'the two eyes are different pictures (parallax at the IPD)');
 	const cam = await page.evaluate(() => {
 		let c;
-		window.__stores.globalCamera.subscribe((x) => (c = x))();
+		window.__tp.test.v1.globalCamera.subscribe((x) => (c = x))();
 		return c.layers.mask;
 	});
 	h.check(shot.masks.left === ((cam | 0b110) & ~0b100) && shot.masks.right === ((cam | 0b110) & ~0b010), `the eye masks are three's (L ${shot.masks.left.toString(2)}, R ${shot.masks.right.toString(2)})`);

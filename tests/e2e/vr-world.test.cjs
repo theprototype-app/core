@@ -18,20 +18,20 @@ h.run(async () => {
 	const wait = (ms = 250) => page.waitForTimeout(ms);
 	const g = (fn, arg) => page.evaluate(fn, arg);
 
-	await g(() => window.__stores.isVRMode.set(true));
+	await g(() => window.__tp.test.v1.isVRMode.set(true));
 	await xr.install(page);
 	await xr.installSpace(page, { head: [0, 1.6, 0], yaw: 0 });
 	const rig = () =>
 		g(() => {
 			let r;
-			window.__stores.worldRig.subscribe((v) => (r = v))();
-			const THREE = window.__stores.THREE;
+			window.__tp.test.v1.worldRig.subscribe((v) => (r = v))();
+			const THREE = window.__tp.test.v1.THREE;
 			const yaw = new THREE.Euler().setFromQuaternion(r.quaternion, 'YXZ').y;
 			return { scale: r.scale.x, pos: r.position.toArray(), yaw: (yaw * 180) / Math.PI };
 		});
 	const menuHand = await g(() => {
 		let v;
-		window.__stores.vrMenuHand.subscribe((x) => (v = x))();
+		window.__tp.test.v1.vrMenuHand.subscribe((x) => (v = x))();
 		return v;
 	});
 	const pointer = menuHand === 'right' ? 'left' : 'right';
@@ -40,14 +40,14 @@ h.run(async () => {
 
 	// ---- 1. world-grab snapping -------------------------------------------------------------
 	console.log('\n=== 1. world-grab snapping ===');
-	const snapDbg = () => g(() => window.__stores.vrWorldSnap.worldSnapDebug());
+	const snapDbg = () => g(() => window.__tp.test.v1.vrWorldSnap.worldSnapDebug());
 	await xr.pose(page, 'left', [-0.5, 1.2, -0.3]);
 	await xr.pose(page, 'right', [0.5, 1.2, -0.3]);
 	await wait();
 	await xr.button(page, 'left', 1, true);
 	await xr.button(page, 'right', 1, true);
 	await wait();
-	h.check((await g(() => window.__stores.vrControls.vrGripDebug())).worldGrab, 'premise: two grips in empty air start the world grab');
+	h.check((await g(() => window.__tp.test.v1.vrControls.vrGripDebug())).worldGrab, 'premise: two grips in empty air start the world grab');
 	const ticks0 = (await snapDbg()).ticks;
 	await xr.pose(page, 'left', [-1.05, 1.2, -0.3]);
 	await xr.pose(page, 'right', [1.05, 1.2, -0.3]);
@@ -74,8 +74,8 @@ h.run(async () => {
 	h.check(!d.readoutVisible && !d.active, `releasing a grip hides the readout (visible ${d.readoutVisible})`);
 	// counterfactual: snapping off, the same spread is free
 	await g(() => {
-		window.__stores.vrControls.resetWorldRig();
-		window.__stores.vrPrefs.vrWorldSnap.set(false);
+		window.__tp.test.v1.vrControls.resetWorldRig();
+		window.__tp.test.v1.vrPrefs.vrWorldSnap.set(false);
 	});
 	await xr.pose(page, 'left', [-0.5, 1.2, -0.3]);
 	await xr.pose(page, 'right', [0.5, 1.2, -0.3]);
@@ -92,16 +92,16 @@ h.run(async () => {
 	await xr.button(page, 'right', 1, false);
 	await wait();
 	await g(() => {
-		window.__stores.vrControls.resetWorldRig();
-		window.__stores.vrPrefs.vrWorldSnap.set(true);
+		window.__tp.test.v1.vrControls.resetWorldRig();
+		window.__tp.test.v1.vrPrefs.vrWorldSnap.set(true);
 	});
-	const row = await g(() => window.__stores.vrSettingsSchema.VR_SETTINGS.find((x) => x.id === 'worldSnap'));
+	const row = await g(() => window.__tp.test.v1.vrSettingsSchema.VR_SETTINGS.find((x) => x.id === 'worldSnap'));
 	h.check(row?.page === 'controls' && row?.keywords?.includes('world grab'), 'Settings > VR > Controls lists "World grab snapping" with search keywords');
 
 	// ---- 2. the dollhouse -------------------------------------------------------------------
 	console.log('\n=== 2. the dollhouse ===');
 	const box = await g(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((res) => setTimeout(res, 500));
 		let grp;
@@ -115,9 +115,9 @@ h.run(async () => {
 		return b.uuid;
 	});
 	await wait(400);
-	const dh = () => g(() => window.__stores.vrDollhouse.dollhouseDebug());
+	const dh = () => g(() => window.__tp.test.v1.vrDollhouse.dollhouseDebug());
 	await g(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.vrMenuOpen.set(true);
 		s.vrControls.executeVRMenuAction('nav:scene');
 		s.vrControls.executeVRMenuAction('dollhouse');
@@ -127,7 +127,7 @@ h.run(async () => {
 	r = await rig();
 	const menuOpen = await g(() => {
 		let v;
-		window.__stores.vrMenuOpen.subscribe((x) => (v = x))();
+		window.__tp.test.v1.vrMenuOpen.subscribe((x) => (v = x))();
 		return v;
 	});
 	// one 2 m box: the 4 m minimum frame applies (a lone cube still reads as a room), so 0.9 / 4
@@ -140,9 +140,9 @@ h.run(async () => {
 	// aim the pointer hand straight down onto the box top in the model
 	const boxTopW = await g((uuid) => {
 		let grp;
-		window.__stores.objectsGroup.subscribe((v) => (grp = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (grp = v))();
 		const b = grp.getObjectByProperty('uuid', uuid);
-		return b.localToWorld(new window.__stores.THREE.Vector3(0, 0.5, 0)).toArray();
+		return b.localToWorld(new window.__tp.test.v1.THREE.Vector3(0, 0.5, 0)).toArray();
 	}, box);
 	await xr.pose(page, pointer, [boxTopW[0], boxTopW[1] + 0.15, boxTopW[2]], { pitch: -Math.PI / 2 });
 	await wait(400);
@@ -150,8 +150,8 @@ h.run(async () => {
 	h.check(st.discVisible && st.valid, `the pointer lands the disc on the box (visible ${st.discVisible}, valid ${st.valid})`);
 	h.check(st.target && Math.abs(st.target[0] - 5) < 0.05 && Math.abs(st.target[1] - 1) < 0.05 && Math.abs(st.target[2] + 6) < 0.05, `the disc is on the box top in content metres (${JSON.stringify(st.target?.map((v) => +v.toFixed(2)))})`);
 	const headBefore = await xr.head(page);
-	const took = await g((slot) => window.__stores.vrControls.vrModuleTriggerStart(slot), pointerSlot);
-	const swallowed = await g(() => window.__stores.vrControls.vrModuleSelectSwallowed());
+	const took = await g((slot) => window.__tp.test.v1.vrControls.vrModuleTriggerStart(slot), pointerSlot);
+	const swallowed = await g(() => window.__tp.test.v1.vrControls.vrModuleSelectSwallowed());
 	await wait(300);
 	st = await dh();
 	r = await rig();
@@ -160,16 +160,16 @@ h.run(async () => {
 	h.check(!st.open && r.scale === 1 && r.pos.every((v) => v === 0), `landing closes it and puts the rig back at 1:1 (scale ${r.scale})`);
 	h.check(Math.abs(headAfter.x - 5) < 0.02 && Math.abs(headAfter.z + 6) < 0.02, `you stand over the box (head ${headAfter.x.toFixed(2)}, ${headAfter.z.toFixed(2)}; was ${headBefore.x.toFixed(2)}, ${headBefore.z.toFixed(2)})`);
 	h.check(Math.abs(headAfter.y - (1 + 1.6)) < 0.05, `feet on the box top: head at ${headAfter.y.toFixed(2)} (top 1 + 1.6)`);
-	h.check(!(await g(() => window.__stores.vrControls.vrModuleSelectSwallowed())), 'the swallow is spent after one click (the next press picks normally)');
+	h.check(!(await g(() => window.__tp.test.v1.vrControls.vrModuleSelectSwallowed())), 'the swallow is spent after one click (the next press picks normally)');
 	// a trigger at the sky leaves without moving
-	await g(() => window.__stores.vrDollhouse.openDollhouse());
+	await g(() => window.__tp.test.v1.vrDollhouse.openDollhouse());
 	await wait(200);
 	await xr.pose(page, pointer, [0.3, 1.2, -0.4], { pitch: 1.2 });
 	await wait(300);
 	const head2 = await xr.head(page);
 	const cancels0 = (await dh()).cancels;
-	await g((slot) => window.__stores.vrControls.vrModuleTriggerStart(slot), pointerSlot);
-	await g(() => window.__stores.vrControls.vrModuleSelectSwallowed());
+	await g((slot) => window.__tp.test.v1.vrControls.vrModuleTriggerStart(slot), pointerSlot);
+	await g(() => window.__tp.test.v1.vrControls.vrModuleSelectSwallowed());
 	await wait(200);
 	st = await dh();
 	r = await rig();
@@ -177,33 +177,33 @@ h.run(async () => {
 	h.check(!st.open && st.cancels === cancels0 + 1 && r.scale === 1, `a trigger at the sky closes it, rig back (cancels ${st.cancels})`);
 	h.check(Math.abs(head3.x - head2.x) < 1e-6 && Math.abs(head3.z - head2.z) < 1e-6, 'and does not move you');
 	// World 1:1 closes it; so does switching to Interact
-	await g(() => window.__stores.vrDollhouse.openDollhouse());
+	await g(() => window.__tp.test.v1.vrDollhouse.openDollhouse());
 	await wait(150);
-	await g(() => window.__stores.vrControls.executeVRMenuAction('world'));
+	await g(() => window.__tp.test.v1.vrControls.executeVRMenuAction('world'));
 	await wait(150);
 	h.check(!(await dh()).open && (await rig()).scale === 1, 'World 1:1 closes the dollhouse at 1:1');
-	await g(() => window.__stores.vrDollhouse.openDollhouse());
+	await g(() => window.__tp.test.v1.vrDollhouse.openDollhouse());
 	await wait(150);
-	await g(() => window.__stores.objectActions.setEditorMode('interact'));
+	await g(() => window.__tp.test.v1.objectActions.setEditorMode('interact'));
 	await wait(400);
 	h.check(!(await dh()).open, 'switching to Interact drops the dollhouse');
-	await g(() => window.__stores.objectActions.setEditorMode('edit'));
+	await g(() => window.__tp.test.v1.objectActions.setEditorMode('edit'));
 	await wait(400);
 	// navigation stands down while it is up (the arc would aim into the model)
-	await g(() => window.__stores.vrDollhouse.openDollhouse());
+	await g(() => window.__tp.test.v1.vrDollhouse.openDollhouse());
 	await wait(150);
-	h.check(await g(() => window.__stores.vrControls.vrNavigationSuppressed()), 'stick navigation stands down while the dollhouse is up');
-	await g(() => window.__stores.vrDollhouse.closeDollhouse());
+	h.check(await g(() => window.__tp.test.v1.vrControls.vrNavigationSuppressed()), 'stick navigation stands down while the dollhouse is up');
+	await g(() => window.__tp.test.v1.vrDollhouse.closeDollhouse());
 	await wait(150);
-	h.check(!(await g(() => window.__stores.vrControls.vrNavigationSuppressed())), '...and comes back when it closes');
+	h.check(!(await g(() => window.__tp.test.v1.vrControls.vrNavigationSuppressed())), '...and comes back when it closes');
 
 	// ---- 3. VR sculpt -----------------------------------------------------------------------
 	console.log('\n=== 3. VR sculpt ===');
 	await xr.installSpace(page, { head: [0, 1.6, 0], yaw: 0 }); // stand at the origin again
-	const sc = () => g(() => window.__stores.vrSculpt.vrSculptDebug());
+	const sc = () => g(() => window.__tp.test.v1.vrSculpt.vrSculptDebug());
 	const terrainState = () =>
 		g(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let grp;
 			s.objectsGroup.subscribe((v) => (grp = v))();
 			const t = grp.children.find((c) => c.userData?.terrain);
@@ -215,12 +215,12 @@ h.run(async () => {
 			s.history.undoStack?.subscribe?.((v) => (undo = v.length))();
 			return { uuid: t.uuid, pos: t.position.toArray(), maxY, undo };
 		});
-	const ring = await g(() => window.__stores.vrRadialMenu.ringEntries('add').map((e) => e.id));
+	const ring = await g(() => window.__tp.test.v1.vrRadialMenu.ringEntries('add').map((e) => e.id));
 	h.check(ring.includes('terrain') && ring.indexOf('terrain') < ring.indexOf('prefabs'), `the Add ring has Terrain (before Prefabs): ${ring.join(' ')}`);
 	// fakeXR's frame carries no views, so three never drives the camera from the fake head: "ahead" is measured
 	// from the camera the app placed it from (on a headset that camera IS the head)
 	const ahead = await g(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let cam;
 		s.globalCamera.subscribe((v) => (cam = v))();
 		const THREE = s.THREE;
@@ -238,26 +238,26 @@ h.run(async () => {
 	let s3 = await sc();
 	h.check(t && s3.uuid === t.uuid, 'on the new terrain');
 	h.check(t && Math.abs(t.pos[0] - ahead[0]) < 0.05 && Math.abs(t.pos[2] - ahead[1]) < 0.05, `the terrain's centre lands 6 m ahead of the view, level (${t?.pos.map((v) => v.toFixed(2))} vs ${ahead.map((v) => v.toFixed(2))})`);
-	await g(() => window.__stores.vrMenuOpen.set(true));
+	await g(() => window.__tp.test.v1.vrMenuOpen.set(true));
 	await wait(100);
 	const activeRing = await g(() => {
 		let v;
-		window.__stores.vrRadialMenu.activeRing.subscribe((x) => (v = x))();
+		window.__tp.test.v1.vrRadialMenu.activeRing.subscribe((x) => (v = x))();
 		return v;
 	});
-	const sculptRing = await g(() => window.__stores.vrRadialMenu.ringEntries('sculpt').map((e) => e.id));
+	const sculptRing = await g(() => window.__tp.test.v1.vrRadialMenu.ringEntries('sculpt').map((e) => e.id));
 	h.check(activeRing === 'sculpt', `while sculpting the menu opens on the Sculpt ring (${activeRing})`);
 	// 52 (V3): + the Paint ▸ and Scatter ▸ brush wheels (vr-brushes-iwer)
 	h.check(sculptRing.join() === 'sculpt:raise,sculpt:lower,sculpt:smooth,sculpt:flatten,nav:sculpt-paint,nav:sculpt-scatter,sculpt:done', `Raise / Lower / Smooth / Flatten / Paint ▸ / Scatter ▸ / Done (${sculptRing.join(' ')})`);
-	await g(() => window.__stores.vrControls.executeVRMenuAction('sculpt:raise'));
+	await g(() => window.__tp.test.v1.vrControls.executeVRMenuAction('sculpt:raise'));
 	await wait(300);
-	h.check(!(await g(() => { let v; window.__stores.vrMenuOpen.subscribe((x) => (v = x))(); return v; })) && (await sc()).op === 'raise', 'Raise picks the brush and closes the ring');
+	h.check(!(await g(() => { let v; window.__tp.test.v1.vrMenuOpen.subscribe((x) => (v = x))(); return v; })) && (await sc()).op === 'raise', 'Raise picks the brush and closes the ring');
 	// aim the pointer down at the terrain, 2 m ahead
 	await xr.pose(page, pointer, [0, 1.2, -2], { pitch: -Math.PI / 2 });
 	await wait(400);
 	const cursor = await g(() => {
 		let sc;
-		window.__stores.globalScene.subscribe((v) => (sc = v))();
+		window.__tp.test.v1.globalScene.subscribe((v) => (sc = v))();
 		const c = sc.getObjectByName('sculpt-cursor');
 		return c ? { visible: c.visible, pos: c.position.toArray() } : null;
 	});
@@ -266,20 +266,20 @@ h.run(async () => {
 	h.check(s3.label.startsWith('Raise · ') && s3.labelHand === pointer, `the label on the ${pointer} hand reads "${s3.label}"`);
 	t = await terrainState();
 	const before = t;
-	const tookS = await g((slot) => window.__stores.vrControls.vrModuleTriggerStart(slot), pointerSlot);
+	const tookS = await g((slot) => window.__tp.test.v1.vrControls.vrModuleTriggerStart(slot), pointerSlot);
 	await wait(700);
 	h.check(tookS && (await sc()).stroking, 'a trigger on the terrain starts a stroke');
-	await g((slot) => window.__stores.vrControls.vrModuleTriggerEnd(slot), pointerSlot);
-	await g(() => window.__stores.vrControls.vrModuleSelectSwallowed());
+	await g((slot) => window.__tp.test.v1.vrControls.vrModuleTriggerEnd(slot), pointerSlot);
+	await g(() => window.__tp.test.v1.vrControls.vrModuleSelectSwallowed());
 	await wait(400);
 	t = await terrainState();
 	h.check(t.maxY > before.maxY + 0.05, `the stroke raised the terrain (max y ${before.maxY.toFixed(3)} -> ${t.maxY.toFixed(3)})`);
 	h.check(t.undo === before.undo + 1, `ONE undo entry for the stroke (${before.undo} -> ${t.undo})`);
-	await g(() => window.__stores.history.undo());
+	await g(() => window.__tp.test.v1.history.undo());
 	await wait(300);
 	const undone = await terrainState();
 	h.check(Math.abs(undone.maxY - before.maxY) < 1e-6, `Ctrl+Z puts it back (max y ${undone.maxY.toFixed(3)})`);
-	await g(() => window.__stores.history.redo());
+	await g(() => window.__tp.test.v1.history.redo());
 	await wait(200);
 	// the pointer stick sizes the brush, and does not walk you
 	const r0 = (await sc()).radius;
@@ -297,28 +297,28 @@ h.run(async () => {
 	h.check(s3.strength > s0 + 0.1, `stick up raises the strength (${s0} -> ${s3.strength})`);
 	h.check(s3.ticks > 0, `size/strength steps tick (${s3.ticks})`);
 	h.check(Math.hypot(head5.x - head4.x, head5.z - head4.z) < 1e-6, `that stick does not move or turn you while sculpting (moved ${Math.hypot(head5.x - head4.x, head5.z - head4.z).toFixed(3)} m)`);
-	await g(() => window.__stores.vrControls.executeVRMenuAction('sculpt:smooth'));
+	await g(() => window.__tp.test.v1.vrControls.executeVRMenuAction('sculpt:smooth'));
 	await wait(200);
 	h.check((await sc()).op === 'smooth', 'Smooth picks the smooth brush (the desktop toolbar store)');
-	await g(() => window.__stores.vrControls.executeVRMenuAction('sculpt:done'));
+	await g(() => window.__tp.test.v1.vrControls.executeVRMenuAction('sculpt:done'));
 	await wait(300);
 	s3 = await sc();
 	h.check(!s3.active && !s3.uuid, 'Done ends the session (sculpt mode off, the terrain released)');
-	h.check(!(await g(() => window.__stores.vrControls.stickOwned('left') || window.__stores.vrControls.stickOwned('right'))), 'no stick is owned after Done');
+	h.check(!(await g(() => window.__tp.test.v1.vrControls.stickOwned('left') || window.__tp.test.v1.vrControls.stickOwned('right'))), 'no stick is owned after Done');
 	// a terrain selection's Selected ring: Sculpt terrain instead of Edit mesh
-	await g((uuid) => window.__stores.objectActions.selectObject(uuid), t.uuid);
+	await g((uuid) => window.__tp.test.v1.objectActions.selectObject(uuid), t.uuid);
 	await wait(200);
-	const obj = await g(() => window.__stores.vrRadialMenu.ringEntries('object').map((e) => e.id));
+	const obj = await g(() => window.__tp.test.v1.vrRadialMenu.ringEntries('object').map((e) => e.id));
 	h.check(obj.includes('obj:sculpt') && !obj.includes('obj:editmesh'), `a terrain's Selected ring offers Sculpt terrain, not Edit mesh (${obj.join(' ')})`);
-	await g(() => window.__stores.vrControls.executeVRMenuAction('obj:sculpt'));
+	await g(() => window.__tp.test.v1.vrControls.executeVRMenuAction('obj:sculpt'));
 	await h.eventually(sc, (x) => x.active && x.uuid === t.uuid, 'Selected > Sculpt terrain starts a session on it');
-	await g(() => window.__stores.objectActions.setEditorMode('interact'));
+	await g(() => window.__tp.test.v1.objectActions.setEditorMode('interact'));
 	await wait(400);
 	h.check(!(await sc()).active, 'switching to Interact ends the sculpt session');
-	await g(() => window.__stores.objectActions.setEditorMode('edit'));
-	await g((uuid) => window.__stores.objectActions.selectObject(uuid), box);
+	await g(() => window.__tp.test.v1.objectActions.setEditorMode('edit'));
+	await g((uuid) => window.__tp.test.v1.objectActions.selectObject(uuid), box);
 	await wait(200);
-	const objBox = await g(() => window.__stores.vrRadialMenu.ringEntries('object').map((e) => e.id));
+	const objBox = await g(() => window.__tp.test.v1.vrRadialMenu.ringEntries('object').map((e) => e.id));
 	h.check(objBox.includes('obj:editmesh') && !objBox.includes('obj:sculpt'), 'a box keeps Edit mesh and gets no Sculpt');
 
 	await h.finish(browser);

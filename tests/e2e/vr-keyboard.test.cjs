@@ -11,7 +11,7 @@ h.run(async () => {
 
 	// --- pure buffer semantics ---
 	const buffer = await A.page.evaluate(() => {
-		const k = window.__stores.vrKeyboard;
+		const k = window.__tp.test.v1.vrKeyboard;
 		let s = { buffer: '', shift: false };
 		const feed = (key) => (s = k.keyPress(key, s));
 		feed('h');
@@ -53,7 +53,7 @@ h.run(async () => {
 
 	// --- target lifecycle: open → route → commit ---
 	const lifecycle = await A.page.evaluate(() => {
-		const k = window.__stores.vrKeyboard;
+		const k = window.__tp.test.v1.vrKeyboard;
 		let committed = null;
 		let cancelled = false;
 		k.openVRKeyboard({ title: 'Type', initial: 'ab', onCommit: (t) => (committed = t), onCancel: () => (cancelled = true) });
@@ -80,13 +80,13 @@ h.run(async () => {
 
 	// --- rendered key grid ---
 	await A.page.evaluate(() =>
-		window.__stores.vrKeyboard.openVRKeyboard({ title: 'Test', onCommit: () => {} })
+		window.__tp.test.v1.vrKeyboard.openVRKeyboard({ title: 'Test', onCommit: () => {} })
 	);
 	await A.page.waitForTimeout(400);
 	const keys = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.globalScene.subscribe((scene) => {
+				window.__tp.test.v1.globalScene.subscribe((scene) => {
 					const panel = scene?.getObjectByName('vr-keyboard');
 					const names = [];
 					panel?.traverse((o) => {
@@ -101,23 +101,23 @@ h.run(async () => {
 			keys.includes('space') && keys.includes('enter') && keys.includes('esc'),
 		`key grid renders letters + specials (${keys.length} keys)`
 	);
-	await A.page.evaluate(() => window.__stores.vrKeyboard.closeVRKeyboard());
+	await A.page.evaluate(() => window.__tp.test.v1.vrKeyboard.closeVRKeyboard());
 
 	// --- Objects panel row actions v2: visibility + delete + rename ---
 	await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		window.__stores.commandsHandler.sceneCommand('/create sphere');
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create sphere');
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		window.__crate = group.children[group.children.length - 2];
 		window.__crate.name = 'Crate';
 		window.__ball = group.children[group.children.length - 1];
 		window.__ball.name = 'Ball';
-		window.__stores.vrObjectsPanelOpen.set(true);
+		window.__tp.test.v1.vrObjectsPanelOpen.set(true);
 	});
 	await A.page.waitForTimeout(400);
 
 	const rowActions = await A.page.evaluate(() => {
-		const v = window.__stores.vrControls;
+		const v = window.__tp.test.v1.vrControls;
 		const crate = window.__crate;
 		v.executeVRMenuAction('panel:visible:' + crate.uuid);
 		const hidden = crate.visible === false;
@@ -129,8 +129,8 @@ h.run(async () => {
 
 	// rename opens the keyboard seeded with the current name; typing + Enter renames
 	const renamed = await A.page.evaluate(() => {
-		const v = window.__stores.vrControls;
-		const k = window.__stores.vrKeyboard;
+		const v = window.__tp.test.v1.vrControls;
+		const k = window.__tp.test.v1.vrKeyboard;
 		v.executeVRMenuAction('panel:rename:' + window.__crate.uuid);
 		const seeded = (() => {
 			let x;
@@ -147,13 +147,13 @@ h.run(async () => {
 
 	// delete refuses when another peer holds the lock
 	const lockedDelete = await A.page.evaluate(async () => {
-		const v = window.__stores.vrControls;
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const v = window.__tp.test.v1.vrControls;
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const before = group.children.length;
-		window.__stores.lockedObjects.set([['peerX', window.__ball.uuid]]);
+		window.__tp.test.v1.lockedObjects.set([['peerX', window.__ball.uuid]]);
 		v.executeVRMenuAction('panel:delete:' + window.__ball.uuid);
 		const afterLocked = group.children.length;
-		window.__stores.lockedObjects.set([]);
+		window.__tp.test.v1.lockedObjects.set([]);
 		v.executeVRMenuAction('panel:delete:' + window.__ball.uuid);
 		const afterFree = group.children.length;
 		return { before, afterLocked, afterFree };
@@ -165,16 +165,16 @@ h.run(async () => {
 	// message (the receive path is covered by the object-sync suites)
 	const sends = await A.page.evaluate(() => {
 		const captured = [];
-		const v = window.__stores.vrControls;
-		const k = window.__stores.vrKeyboard;
+		const v = window.__tp.test.v1.vrControls;
+		const k = window.__tp.test.v1.vrKeyboard;
 		let original;
-		window.__stores.peers.subscribe((p) => (original = p))();
-		window.__stores.peers.set({ ...(original ?? {}), send: (m) => captured.push(m) });
+		window.__tp.test.v1.peers.subscribe((p) => (original = p))();
+		window.__tp.test.v1.peers.set({ ...(original ?? {}), send: (m) => captured.push(m) });
 		v.executeVRMenuAction('panel:rename:' + window.__crate.uuid);
 		for (let i = 0; i < 8; i++) k.pressVRKey('backspace');
 		['k', 'e', 'g'].forEach((c) => k.pressVRKey(c));
 		k.pressVRKey('enter');
-		window.__stores.peers.set(original);
+		window.__tp.test.v1.peers.set(original);
 		return captured;
 	});
 	const nameMsg = sends.find((m) => m.type === 'name');

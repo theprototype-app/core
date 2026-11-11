@@ -9,7 +9,7 @@ h.run(async () => {
 
 	// --- 2.1 frame-rate picker (fake session over the real renderer.xr) ---
 	const hz = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let r;
 		s.globalRenderer.subscribe((x) => (r = x))();
 		const calls = [];
@@ -34,7 +34,7 @@ h.run(async () => {
 
 	// --- 2.2 rep-flip send decision (the hands->controllers fix) ---
 	const send = await A.page.evaluate(() => {
-		const f = window.__stores.vrControls.shouldSendHands;
+		const f = window.__tp.test.v1.vrControls.shouldSendHands;
 		return {
 			stuckBefore: f({ moved: false, hasJoints: false, prevLens: [75, 75], lens: [0, 0] }), // the old bug: must be true now
 			idleController: f({ moved: false, hasJoints: false, prevLens: [0, 0], lens: [0, 0] }),
@@ -49,7 +49,7 @@ h.run(async () => {
 	const bones = await A.page.evaluate(() => {
 		const joints = [];
 		for (let i = 0; i < 25; i++) joints.push(i * 0.01, 0, 0); // a straight line hand
-		const segs = window.__stores.vrControls.handBoneSegments(joints);
+		const segs = window.__tp.test.v1.vrControls.handBoneSegments(joints);
 		return { count: segs.length, allPositive: segs.every((b) => b.len > 0), first: segs[0] };
 	});
 	h.check(bones.count === 24, `24 bone segments (${bones.count})`);
@@ -57,7 +57,7 @@ h.run(async () => {
 
 	// --- 2.4 pinch-HOLD toggles the radial on the menu hand ---
 	const pinch = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let hand;
 		s.vrMenuHand.subscribe((x) => (hand = x))();
 		const read = () => {
@@ -85,7 +85,7 @@ h.run(async () => {
 	h.check(pinch.quick === false && pinch.afterQuick === false, 'quick pinch does not toggle the radial');
 	h.check(pinch.held === true && pinch.afterHeld === true, 'pinch-hold >=500ms toggles the radial');
 	h.check(pinch.wrong === false, 'the pointer hand pinch never opens the menu');
-	await A.page.evaluate(() => window.__stores.vrMenuOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.vrMenuOpen.set(false));
 
 	await h.finish(browser);
 });

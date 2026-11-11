@@ -12,7 +12,7 @@ const answer = (text) =>
 
 const store = (page, path) =>
 	page.evaluate((p) => {
-		let node = window.__stores;
+		let node = window.__tp?.test.v1;
 		for (const k of p.split('.')) node = node[k];
 		let v;
 		node.subscribe((x) => (v = x))();
@@ -44,15 +44,15 @@ h.run(async () => {
 		route.fulfill({ status: 200, contentType: 'text/event-stream', body: answer('On it.') })
 	);
 	await A.page.evaluate((o) => {
-		window.__stores.aiProviders.addAiProvider({ preset: 'custom', label: 'Mock', baseUrl: o + '/mock-ai/v1', apiKey: 'k', model: 'mock' });
-		window.__stores.aiProviders.setAiEnabled(true);
+		window.__tp.test.v1.aiProviders.addAiProvider({ preset: 'custom', label: 'Mock', baseUrl: o + '/mock-ai/v1', apiKey: 'k', model: 'mock' });
+		window.__tp.test.v1.aiProviders.setAiEnabled(true);
 	}, origin);
 
 	// --- 1. Settings ▸ Tools & connections ▸ Voice typing: the rows, the presets, persistence ---
 	// (59 T4: the 'ai' deep link lands on Tools & connections; the Voice typing row's Set up opens the form)
 	await A.page.evaluate(() => {
-		window.__stores.settingsSection.set('ai');
-		window.__stores.settingsOpen.set(true);
+		window.__tp.test.v1.settingsSection.set('ai');
+		window.__tp.test.v1.settingsOpen.set(true);
 	});
 	await A.page.waitForSelector('#tool-chat-voice-configure', { state: 'visible', timeout: 10000 });
 	await A.page.click('#tool-chat-voice-configure');
@@ -65,7 +65,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(200);
 	const groq = await A.page.evaluate(() => {
 		let v;
-		window.__stores.aiStt.sttConfig.subscribe((x) => (v = x))();
+		window.__tp.test.v1.aiStt.sttConfig.subscribe((x) => (v = x))();
 		return { cfg: v, saved: JSON.parse(localStorage.getItem('aiStt') || 'null') };
 	});
 	h.check(groq.cfg.baseUrl === 'https://api.groq.com/openai/v1' && groq.cfg.model === 'whisper-large-v3', 'Groq fills its URL and model');
@@ -88,17 +88,17 @@ h.run(async () => {
 	h.check((await A.page.locator('#tool-chat-voice [data-tool-status]').getAttribute('data-tool-status')) === 'ready', '…and the Tools & connections row reads ready');
 	const testCall = sttCalls[sttCalls.length - 1];
 	h.check(testCall?.fileField && testCall?.model === 'whisper-1' && testCall?.auth === 'Bearer stt-key', `the request is multipart file + model with the bearer key (${JSON.stringify(testCall)})`);
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await A.page.waitForTimeout(300);
 
 	// --- 2. the desktop AI window's mic: the transcript lands in the input, nothing is sent ---
-	await A.page.evaluate(() => window.__stores.aiAssistantHidden.set(''));
+	await A.page.evaluate(() => window.__tp.test.v1.aiAssistantHidden.set(''));
 	await A.page.waitForSelector('#ai-mic', { state: 'visible' });
 	const before = (await store(A.page, 'aiAssistant.aiMessages')).length;
 	await A.page.click('#ai-mic');
 	await A.page.waitForFunction(() => {
 		let v;
-		window.__stores.sttCapture.dictation.subscribe((x) => (v = x))();
+		window.__tp.test.v1.sttCapture.dictation.subscribe((x) => (v = x))();
 		return v.state === 'recording';
 	}, null, { timeout: 8000 });
 	h.check((await A.page.getAttribute('#ai-mic', 'aria-pressed')) === 'true', 'the mic shows it is listening');
@@ -108,12 +108,12 @@ h.run(async () => {
 	h.check(true, 'the transcript lands in the AI window input');
 	h.check((await store(A.page, 'aiAssistant.aiMessages')).length === before, 'desktop voice typing does not send (the input stays editable)');
 	h.check(sttCalls[sttCalls.length - 1].bytes > 500, `a real recording was uploaded (${sttCalls[sttCalls.length - 1].bytes} bytes)`);
-	await A.page.evaluate(() => window.__stores.aiAssistantHidden.set('hidden'));
+	await A.page.evaluate(() => window.__tp.test.v1.aiAssistantHidden.set('hidden'));
 
 	// --- 3. VR: the mic button is a trigger HOLD that sends ---
 	const pose = () =>
 		A.page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const THREE = s.THREE;
 			let scene, r;
 			s.globalScene.subscribe((v) => (scene = v))();
@@ -128,11 +128,11 @@ h.run(async () => {
 			c.updateMatrixWorld(true);
 			return s.vrAiPanel.raycastAi(0);
 		});
-	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('ai'));
+	await A.page.evaluate(() => window.__tp.test.v1.vrControls.executeVRMenuAction('ai'));
 	await A.page.waitForTimeout(400);
 	h.check((await pose()) === 'ai:mic', 'the ray finds the mic button');
 	const vrSent = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const get = (st) => {
 			let v;
 			st.subscribe((x) => (v = x))();
@@ -156,11 +156,11 @@ h.run(async () => {
 	// a tap is not speech: nothing is uploaded, nothing sent
 	await A.page.waitForFunction(() => {
 		let v;
-		window.__stores.aiAssistant.aiBusy.subscribe((x) => (v = x))();
+		window.__tp.test.v1.aiAssistant.aiBusy.subscribe((x) => (v = x))();
 		return !v;
 	}, null, { timeout: 10000 });
 	const tap = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const get = (st) => {
 			let v;
 			st.subscribe((x) => (v = x))();
@@ -186,7 +186,7 @@ h.run(async () => {
 
 	// --- 4. the talk binding (A by default) dictates while the panel is up; peers hear nothing ---
 	const talk = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const get = (st) => {
 			let v;
 			st.subscribe((x) => (v = x))();
@@ -213,11 +213,11 @@ h.run(async () => {
 	// --- 5. voice chat's mic is shared: dictating borrows it and leaves it running ---
 	await A.page.waitForFunction(() => {
 		let v;
-		window.__stores.aiAssistant.aiBusy.subscribe((x) => (v = x))();
+		window.__tp.test.v1.aiAssistant.aiBusy.subscribe((x) => (v = x))();
 		return !v;
 	}, null, { timeout: 10000 });
 	const shared = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		await s.voiceChat.toggleMic(); // open voice chat's own stream
 		const opened = s.voiceChat.voiceDebug();
 		s.vrAiPanel.aiTalkHold(true);
@@ -232,7 +232,7 @@ h.run(async () => {
 
 	// --- 6. no speech provider: the mic says where to set it up and does not listen ---
 	const unset = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const get = (st) => {
 			let v;
 			st.subscribe((x) => (v = x))();
@@ -250,7 +250,7 @@ h.run(async () => {
 	// --- 7. a server refusal is said on the panel ---
 	sttStatus = 401;
 	const refused = await A.page.evaluate(async (o) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const get = (st) => {
 			let v;
 			st.subscribe((x) => (v = x))();
@@ -270,7 +270,7 @@ h.run(async () => {
 	sttStatus = 200;
 	const callsBeforeDrop = sttCalls.length;
 	const dropped = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const get = (st) => {
 			let v;
 			st.subscribe((x) => (v = x))();

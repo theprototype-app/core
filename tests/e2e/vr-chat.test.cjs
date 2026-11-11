@@ -17,7 +17,7 @@ h.run(async () => {
 			store.subscribe((x) => (v = x))();
 			return v;
 		};
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.vrPaletteOpen.set(true);
 		s.vrMenuOpen.set(true);
 		s.vrControls.executeVRMenuAction('chat');
@@ -33,14 +33,14 @@ h.run(async () => {
 	);
 
 	// --- messages render; unread badge counts while closed, clears on open ---
-	await A.page.evaluate(() => window.__stores.vrChatPanelOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.vrChatPanelOpen.set(false));
 	const badge = await A.page.evaluate(() => {
 		const read = (store) => {
 			let v;
 			store.subscribe((x) => (v = x))();
 			return v;
 		};
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.vrControls.vrChatUnread.set(0);
 		// two incoming messages while the panel is closed
 		s.addMessage({ message: 'hello VR', type: 'received', sender: 'peerX' });
@@ -57,7 +57,7 @@ h.run(async () => {
 	const rendered = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.globalScene.subscribe((scene) => {
+				window.__tp.test.v1.globalScene.subscribe((scene) => {
 					const panel = scene?.getObjectByName('vr-chat-panel');
 					const controls = [];
 					let texts = 0;
@@ -81,7 +81,7 @@ h.run(async () => {
 			store.subscribe((x) => (v = x))();
 			return v;
 		};
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const captured = [];
 		let original;
 		s.peers.subscribe((p) => (original = p))();
@@ -112,7 +112,7 @@ h.run(async () => {
 
 	// --- chat:close closes the panel ---
 	const closed = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.vrControls.executeVRMenuAction('chat:close');
 		let v;
 		s.vrChatPanelOpen.subscribe((x) => (v = x))();
@@ -122,7 +122,7 @@ h.run(async () => {
 
 	// --- nested System ▸ Mic ▸ back-stack (117.1 shuffle, 109 stack) ---
 	const stack = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ring = () => {
 			let r;
 			s.vrRadialMenu.activeRing.subscribe((x) => (r = x))();

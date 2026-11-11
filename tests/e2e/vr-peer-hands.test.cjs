@@ -12,7 +12,7 @@ h.run(async () => {
 	const r = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				s.peerHandStyle.set('spheres'); // B2.3: default is 'hands' (cuboid bones) now
 				const joints = [];
 				for (let i = 0; i < 25; i++) joints.push(i * 0.001, i * 0.002, i * 0.003); // 25 * 3
@@ -49,9 +49,9 @@ h.run(async () => {
 	const bones = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.peerHandStyle.set('hands');
+				window.__tp.test.v1.peerHandStyle.set('hands');
 				setTimeout(() => {
-					window.__stores.globalScene.subscribe((scene) => {
+					window.__tp.test.v1.globalScene.subscribe((scene) => {
 						const g = scene.getObjectByName('fakepeer-hand-left');
 						let n = 0;
 						g?.traverse((o) => {

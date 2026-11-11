@@ -45,7 +45,7 @@ const read = (page, p) =>
 	S(page, (p) => {
 		const [m, n] = p.split('.');
 		let v;
-		(n ? window.__stores[m][n] : window.__stores[m]).subscribe((x) => (v = x))();
+		(n ? window.__tp.test.v1[m][n] : window.__tp.test.v1[m]).subscribe((x) => (v = x))();
 		return v;
 	}, p);
 const order = async (page) => (await read(page, 'bottomDock.dockTabs')).map((t) => t.key);
@@ -64,7 +64,7 @@ const bodyPoint = (page, sel, fy = 0.25, clear = 0) =>
 		const r = node.getBoundingClientRect();
 		const head = node.querySelector('.move-handle')?.getBoundingClientRect();
 		const pred =
-			window.__stores.windowBodyDrag?.isBodyDragStart ??
+			window.__tp.test.v1.windowBodyDrag?.isBodyDragStart ??
 			((el, n) => n.contains(el) && !el.closest('button, input, select, textarea, label, a[href], .move-handle, canvas, [draggable="true"]') && !(el.closest('[role]') !== n && n.contains(el.closest('[role]'))));
 		const ty = r.top + r.height * fy;
 		const cands = [];
@@ -133,17 +133,17 @@ const parkObjects = (page, left = 420, top = 150) =>
 	}, { left, top });
 const undockObjects = async (page, left, top) => {
 	await S(page, async () => {
-		window.__stores.bottomDock.armDockMode('objects', false);
+		window.__tp.test.v1.bottomDock.armDockMode('objects', false);
 		await new Promise((r) => setTimeout(r, 900));
 	});
 	await parkObjects(page, left, top);
 };
 /** does a press at pt land on the window's header chrome? */
-const onHeader = (page, sel, pt) => S(page, ({ sel, pt }) => window.__stores.windowGrip.isHeaderDrag(document.elementFromPoint(pt.x, pt.y)) && !!document.elementFromPoint(pt.x, pt.y)?.closest(sel), { sel, pt });
+const onHeader = (page, sel, pt) => S(page, ({ sel, pt }) => window.__tp.test.v1.windowGrip.isHeaderDrag(document.elementFromPoint(pt.x, pt.y)) && !!document.elementFromPoint(pt.x, pt.y)?.closest(sel), { sel, pt });
 
 async function openDock(page) {
 	await S(page, async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphClose.set(false);
 		await new Promise((r) => setTimeout(r, 600));
 		s.bottomDock.activateDock('flow');
@@ -179,7 +179,7 @@ h.run(async () => {
 	await undockObjects(page);
 
 	// ---- 2. Statistics by its body to the left edge ----
-	await S(page, () => window.__stores.sceneBudget.statsOpen.set(true));
+	await S(page, () => window.__tp.test.v1.sceneBudget.statsOpen.set(true));
 	await page.waitForTimeout(700);
 	const sFrom = await bodyPoint(page, '#stats-window', 0.7);
 	await mouseDrag(page, sFrom, { x: 14, y: 380 }, { hold: true });
@@ -192,7 +192,7 @@ h.run(async () => {
 	await page.waitForTimeout(800);
 	let st = await win(page, '#stats-window');
 	h.check(st?.docked === 'left' && (await sideTabs(page, 'left')).includes('stats'), `2.2 Statistics is a left sidebar tab (${JSON.stringify(st)})`);
-	await S(page, () => window.__stores.docking.undock('stats', 900, 300));
+	await S(page, () => window.__tp.test.v1.docking.undock('stats', 900, 300));
 	await page.waitForTimeout(600);
 
 	// ---- 3. the header menu ----
@@ -202,7 +202,7 @@ h.run(async () => {
 	h.check(await onHeader(page, '#object-list', hp0), `premise: the header point is Objects' header (${JSON.stringify(hp0)})`);
 	await rightClick(page, hp0);
 	const rows = await menuRows(page);
-	h.check(JSON.stringify(rows) === JSON.stringify(ROWS), `3.1 right-click on the header: the nine rows in order (78 PL39: + Size) (${JSON.stringify({ rows, open: await S(page, () => window.__stores.windowMenu?.windowMenuOpen?.() ?? 'no menu module') })})`);
+	h.check(JSON.stringify(rows) === JSON.stringify(ROWS), `3.1 right-click on the header: the nine rows in order (78 PL39: + Size) (${JSON.stringify({ rows, open: await S(page, () => window.__tp.test.v1.windowMenu?.windowMenuOpen?.() ?? 'no menu module') })})`);
 	const fl = await rowState(page, 'Float (undock)');
 	h.check(fl?.disabled, `3.2 Float (undock) is disabled for a window already floating, saying why (${JSON.stringify(fl)})`);
 	await shot(page, '03-header-menu');
@@ -214,12 +214,12 @@ h.run(async () => {
 	await pick(page, 'Move to right sidebar');
 	ob = await win(page, '#object-list');
 	h.check(ob?.docked === 'right' && (await sideTabs(page, 'right')).includes('objects'), `3.5 Move to right sidebar: Objects is a right sidebar tab (${JSON.stringify(ob)})`);
-	await S(page, () => window.__stores.docking.undock('objects', 560, 220));
+	await S(page, () => window.__tp.test.v1.docking.undock('objects', 560, 220));
 	await page.waitForTimeout(700);
 
 	// Group with… ▸ Chat (a floating tab-able window; Statistics is not one, the flow family opens IN the
 	// dock here, and a closed one — the AI assistant — is not offered)
-	await S(page, () => window.__stores.chatHidden.set(''));
+	await S(page, () => window.__tp.test.v1.chatHidden.set(''));
 	await page.waitForTimeout(900);
 	await rightClick(page, await headerPoint(page, '#object-list'));
 	await page.locator('[role=menu] [role=menuitem]', { hasText: 'Group with' }).first().hover();
@@ -229,7 +229,7 @@ h.run(async () => {
 		const row = [...document.querySelectorAll('[role=menu] [role=menuitem]')].find((r) => r.textContent.trim().startsWith('Group with'));
 		return row ? [...row.querySelectorAll('[role=menuitem]')].map((r) => r.textContent.trim()) : [];
 	});
-	const cands = await S(page, () => window.__stores.windowTabs.groupCandidates?.('objects')?.map((c) => c.title));
+	const cands = await S(page, () => window.__tp.test.v1.windowTabs.groupCandidates?.('objects')?.map((c) => c.title));
 	h.check(sub.includes('Chat') && !sub.includes('AI assistant') && !sub.includes('Objects'), `3.6 Group with… lists the other OPEN tab-able windows (${JSON.stringify({ sub, cands })})`);
 	const hit = await S(page, () => {
 		const row = [...document.querySelectorAll('[role=menu] [role=menuitem]')].find((r) => r.textContent.trim().startsWith('Group with'));
@@ -262,14 +262,14 @@ h.run(async () => {
 	h.check(!(await rowState(page, 'Float (undock)'))?.disabled, '3.9 ...where Float (undock) is live');
 	await pick(page, 'Float (undock)');
 	h.check((await read(page, 'windowTabs.tabGroups')).length === 0, '3.10 Float (undock) takes Objects out of the group (a group of one dissolves)');
-	await S(page, () => window.__stores.chatHidden.set('hidden'));
+	await S(page, () => window.__tp.test.v1.chatHidden.set('hidden'));
 	await page.waitForTimeout(500);
 	await parkObjects(page);
 	ob = await win(page, '#object-list');
 	h.check(ob?.shown && (await onHeader(page, '#object-list', await headerPoint(page, '#object-list'))), `premise: Objects floats on its own again, its header free (${JSON.stringify(ob)})`);
 
 	// Bring to front
-	await S(page, () => window.__stores.windowFocus?.raiseWindowNode?.(document.querySelector('#stats-window')));
+	await S(page, () => window.__tp.test.v1.windowFocus?.raiseWindowNode?.(document.querySelector('#stats-window')));
 	await page.waitForTimeout(200);
 	await rightClick(page, await headerPoint(page, '#object-list'));
 	await pick(page, 'Bring to front');
@@ -310,7 +310,7 @@ h.run(async () => {
 	h.check((await read(page, 'objectListClose')) === true, '3.15 Close closes Objects through its own path');
 
 	// ---- 4. the header looks as it did ----
-	await S(page, () => window.__stores.objectListClose.set(false));
+	await S(page, () => window.__tp.test.v1.objectListClose.set(false));
 	await page.waitForTimeout(600);
 	const headHtml1 = await S(page, () => [...document.querySelectorAll('#object-list .move-handle *')].map((e) => e.tagName + '.' + (typeof e.className === 'string' ? e.className : '')).join('|'));
 	h.check(headHtml1 === headHtml0, '4.1 the Objects header has exactly the children it had (no new button)');
@@ -339,7 +339,7 @@ h.run(async () => {
 	await shot(tp, '04-unfolded-objects-docked');
 	await undockObjects(tp);
 
-	await S(tp, () => window.__stores.sceneBudget.statsOpen.set(true));
+	await S(tp, () => window.__tp.test.v1.sceneBudget.statsOpen.set(true));
 	await tp.waitForTimeout(700);
 	const ts = await win(tp, '#stats-window');
 	await tdrag(await headerPoint(tp, '#stats-window'), { x: 762, y: 360 });

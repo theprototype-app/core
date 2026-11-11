@@ -19,7 +19,7 @@ h.run(async () => {
 
 	// ---- the fixture: floor (top 0), a wall ahead, a 0.25 m step, a 0.6 m block --------------
 	await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const get = (store) => { let v; store.subscribe((x) => (v = x))(); return v; };
 		for (let i = 0; i < 5; i++) s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 600));
@@ -35,9 +35,9 @@ h.run(async () => {
 		s.objectActions.deselectObject();
 	});
 	await A.page.waitForTimeout(800);
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await h.eventually(
-		() => A.page.evaluate(() => window.__stores.physics.physicsWorldDebug().running),
+		() => A.page.evaluate(() => window.__tp.test.v1.physics.physicsWorldDebug().running),
 		(ok) => ok,
 		'premise: a simulation is running (the capsule tier needs a world)',
 		15000
@@ -47,7 +47,7 @@ h.run(async () => {
 	// charController primes physics with a LAZY dynamic import (a scene with no walker never
 	// loads rapier), so the very first steps resolve on the plane tier: wait for the capsule
 	await h.eventually(
-		() => A.page.evaluate(() => window.__stores.vrControls.vrWalkStep({ head: { x: 6, y: 1.6, z: 6 }, headHeight: 1.6, yaw: 0, stick: { x: 0, y: 0 }, dt: 0.016 }).source),
+		() => A.page.evaluate(() => window.__tp.test.v1.vrControls.vrWalkStep({ head: { x: 6, y: 1.6, z: 6 }, headHeight: 1.6, yaw: 0, stick: { x: 0, y: 0 }, dt: 0.016 }).source),
 		(src) => src === 'rapier',
 		'premise: the walker has its rapier capsule',
 		10000
@@ -55,7 +55,7 @@ h.run(async () => {
 	const walk = (input, steps) =>
 		A.page.evaluate(
 			({ input, steps }) => {
-				const vr = window.__stores.vrControls;
+				const vr = window.__tp.test.v1.vrControls;
 				const head = { ...input.head };
 				let last = null;
 				for (let i = 0; i < steps; i++) {
@@ -83,10 +83,10 @@ h.run(async () => {
 	h.check(r.feet > 1, `a flier (only when allowed) climbs along its aim (feet ${r.feet.toFixed(2)})`);
 
 	// ---- 2. the real per-frame path: Interact walks into the wall and stops ----------------------
-	await A.page.evaluate(() => window.__stores.isVRMode.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.isVRMode.set(true));
 	await xr.install(A.page);
 	await xr.installSpace(A.page, { head: [0, 1.6, 0], yaw: 0 });
-	await A.page.evaluate(() => window.__stores.objectActions.setEditorMode('interact'));
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('interact'));
 	await A.page.waitForTimeout(300);
 	let head = await xr.head(A.page);
 	h.check(Math.abs(head.z) < 0.05 && Math.abs(head.y - 1.6) < 0.05, `premise: the head starts at the origin, 1.6 m up (${JSON.stringify(head)})`);
@@ -102,32 +102,32 @@ h.run(async () => {
 	const teleportArms = async () => {
 		await xr.stick(A.page, 'right', 0, -1);
 		await A.page.waitForTimeout(300);
-		const st = await A.page.evaluate(() => window.__stores.vrControls.teleportState());
+		const st = await A.page.evaluate(() => window.__tp.test.v1.vrControls.teleportState());
 		await xr.stick(A.page, 'right', 0, 0);
 		await A.page.waitForTimeout(300);
 		return st.engaged;
 	};
 	h.check((await teleportArms()) === false, 'Interact: the right stick does NOT arm a teleport');
-	await A.page.evaluate(() => window.__stores.scenePhysics.setScenePhysics({ play: { locomotion: { teleport: true } } }));
+	await A.page.evaluate(() => window.__tp.test.v1.scenePhysics.setScenePhysics({ play: { locomotion: { teleport: true } } }));
 	await A.page.waitForTimeout(200);
 	h.check((await teleportArms()) === true, 'Interact + play.locomotion.teleport: the teleport arc arms');
 	const saved = await A.page.evaluate(() => {
 		let v;
-		window.__stores.scenePhysics.scenePlay.subscribe((x) => (v = x))();
+		window.__tp.test.v1.scenePhysics.scenePlay.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(saved.locomotion?.teleport === true && saved.locomotion.fly === undefined, `the play block stores only what was authored (${JSON.stringify(saved.locomotion)})`);
-	await A.page.evaluate(() => window.__stores.scenePhysics.setScenePhysics({ play: { locomotion: null } }));
+	await A.page.evaluate(() => window.__tp.test.v1.scenePhysics.setScenePhysics({ play: { locomotion: null } }));
 	await A.page.waitForTimeout(200);
 	const cleared = await A.page.evaluate(() => {
 		let v;
-		window.__stores.scenePhysics.scenePlay.subscribe((x) => (v = x))();
+		window.__tp.test.v1.scenePhysics.scenePlay.subscribe((x) => (v = x))();
 		return 'locomotion' in v;
 	});
 	h.check(cleared === false, 'clearing the block removes the key (a scene that never used it saves byte-identically)');
 
 	// ---- 4. Edit flies through the same wall ----------------------------------------------------
-	await A.page.evaluate(() => window.__stores.objectActions.setEditorMode('edit'));
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('edit'));
 	h.check((await teleportArms()) === true, 'Edit: the teleport arc arms as it always did');
 	await xr.stick(A.page, 'left', 0, -1);
 	await A.page.waitForTimeout(2500);
@@ -135,25 +135,25 @@ h.run(async () => {
 	head = await xr.head(A.page);
 	h.check(head.z < -3.2, `Edit: the same stick flies THROUGH the wall (z ${head.z.toFixed(2)})`);
 	await xr.uninstall(A.page);
-	await A.page.evaluate(() => window.__stores.isVRMode.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.isVRMode.set(false));
 	await A.page.waitForTimeout(300);
 
 	// ---- 5. desktop Play's built-in flier stops at the wall too ------------------------------------
 	const cam = () =>
 		A.page.evaluate(() => {
 			let c;
-			window.__stores.playerCam.subscribe((x) => (c = x))();
-			return c.getWorldPosition(new window.__stores.THREE.Vector3()).toArray();
+			window.__tp.test.v1.playerCam.subscribe((x) => (c = x))();
+			return c.getWorldPosition(new window.__tp.test.v1.THREE.Vector3()).toArray();
 		});
 	await A.page.evaluate(() => {
 		let c;
-		window.__stores.playerCam.subscribe((x) => (c = x))();
-		const THREE = window.__stores.THREE;
+		window.__tp.test.v1.playerCam.subscribe((x) => (c = x))();
+		const THREE = window.__tp.test.v1.THREE;
 		const target = new THREE.Vector3(0, 1.7, 0);
 		c.parent.worldToLocal(target);
 		c.position.copy(target);
 		c.quaternion.identity();
-		window.__stores.isLocked.set(true);
+		window.__tp.test.v1.isLocked.set(true);
 	});
 	await A.page.waitForTimeout(400);
 	await A.page.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW', bubbles: true })));
@@ -162,8 +162,8 @@ h.run(async () => {
 	const p = await cam();
 	h.check(p[2] < -1, `desktop Play: W flies you forward (z ${p[2].toFixed(2)})`);
 	h.check(p[2] > -2.6, `desktop Play: ...and the wall stops you while a sim runs (z ${p[2].toFixed(2)})`);
-	await A.page.evaluate(() => window.__stores.isLocked.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(false));
 
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await h.finish(browser);
 });

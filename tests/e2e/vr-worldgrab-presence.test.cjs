@@ -13,7 +13,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	const res = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		const w2c = s.vrControls.worldToContentPose;
 		if (!THREE || !w2c) return { missing: true };

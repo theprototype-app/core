@@ -6,7 +6,7 @@
 // joiner seeing the same water. Visual LOOK is judged on the shots in the lane folder.
 const h = require('./helpers.cjs');
 
-const dbg = (page) => page.evaluate(() => window.__stores.waterRuntime.waterDebug());
+const dbg = (page) => page.evaluate(() => window.__tp.test.v1.waterRuntime.waterDebug());
 
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
@@ -18,7 +18,7 @@ h.run(async () => {
 
 	// ---- 1. Create → Water (the Add menu's own action) -------------------------------
 	const made = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.environment.setEnvironment('daylight');
 		const add = s.addObjects;
 		const children = add.buildAddChildren(() => [0, 0.75, 0]);
@@ -38,7 +38,7 @@ h.run(async () => {
 	await h.eventually(() => dbg(A.page), (d) => d.volumes === 1 && d.entries[0]?.body && d.entries[0].vertices > 100, 'renderer builds one volume (surface + body)');
 
 	const tree = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let group;
 		s.objectsGroup.subscribe((g) => (group = g))();
 		let leaked = 0;
@@ -60,8 +60,8 @@ h.run(async () => {
 
 	// ---- 2. pixels + the desktop tier ------------------------------------------------
 	await A.page.evaluate(() => {
-		window.__stores.selectedObjects.set([]);
-		window.__stores.objectActions.flyTo([6, 4, 6], [0, 0.5, 0], 0);
+		window.__tp.test.v1.selectedObjects.set([]);
+		window.__tp.test.v1.objectActions.flyTo([6, 4, 6], [0, 0.5, 0], 0);
 	});
 	await A.page.waitForTimeout(1500);
 	let d = await dbg(A.page);
@@ -70,13 +70,13 @@ h.run(async () => {
 	const withWater = await h.grabFrame(A);
 	await A.page.evaluate(() => {
 		delete window.__pool.userData.water;
-		window.__stores.pokeScene();
+		window.__tp.test.v1.pokeScene();
 	});
 	await A.page.waitForTimeout(1200);
 	const without = await h.grabFrame(A);
 	const delta = await h.frameDelta(A.page, withWater, without);
 	h.check(delta.changed > 20000, `the water draws something (${delta.changed} pixels differ from the plain box)`);
-	await A.page.evaluate(() => window.__stores.waterActions.applyWaterPreset(window.__pool.uuid, 'pool'));
+	await A.page.evaluate(() => window.__tp.test.v1.waterActions.applyWaterPreset(window.__pool.uuid, 'pool'));
 	await h.eventually(() => dbg(A.page), (x) => x.volumes === 1, 'water comes back on a preset write');
 
 	// ---- 2b. W-BUG-1: the gizmo never enters the refraction (it was drawn twice) ---------
@@ -86,7 +86,7 @@ h.run(async () => {
 	// higher; with them hidden for the nested render the two match.
 	const gizmoPixels = () =>
 		A.page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let r;
 			s.globalRenderer.subscribe((x) => (r = x))();
 			const t = s.waterRuntime.waterPrepassTarget();
@@ -102,7 +102,7 @@ h.run(async () => {
 			return n;
 		});
 	const inside = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create Box 0.6 0.6 0.6');
 		await new Promise((r) => setTimeout(r, 400));
 		const o = await new Promise((r) => s.selectedObject.subscribe(r)());
@@ -113,15 +113,15 @@ h.run(async () => {
 		s.objectActions.flyTo([3.2, 3.2, 3.2], [0.4, 0.1, 0.2], 0);
 		return o.uuid;
 	});
-	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u), inside);
+	await A.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), inside);
 	await A.page.waitForTimeout(1500);
 	const withGizmo = await gizmoPixels();
 	const hiddenNow = (await dbg(A.page)).helpersHidden;
 	await A.page.screenshot({ path: process.env.GIZMO_SHOT || '/tmp/water-gizmo-desktop.png' });
 	await A.page.evaluate(() => {
-		window.__stores.objectActions.deselectObject?.();
-		window.__stores.selectedObjects.set([]);
-		window.__stores.TControls.subscribe((tc) => tc?.detach?.())();
+		window.__tp.test.v1.objectActions.deselectObject?.();
+		window.__tp.test.v1.selectedObjects.set([]);
+		window.__tp.test.v1.TControls.subscribe((tc) => tc?.detach?.())();
 	});
 	await A.page.waitForTimeout(1200);
 	const noGizmo = await gizmoPixels();
@@ -129,28 +129,28 @@ h.run(async () => {
 	h.check(withGizmo - noGizmo < 300, `the gizmo is not in the refraction texture (gizmo-coloured pixels ${withGizmo} with vs ${noGizmo} without)`);
 
 	// ---- 3. Quest tier ----------------------------------------------------------------
-	await A.page.evaluate(() => window.__stores.waterPrefs.waterQuality.set('low'));
+	await A.page.evaluate(() => window.__tp.test.v1.waterPrefs.waterQuality.set('low'));
 	await h.eventually(() => dbg(A.page), (x) => x.tier === 'quest' && !x.entries[0].defines.includes('WATER_SS'), 'Low = Quest tier, no screen-space program');
 	const frameQ = (await dbg(A.page)).prepass.frame;
 	await A.page.waitForTimeout(500);
 	d = await dbg(A.page);
 	h.check(d.prepass.frame === frameQ && d.drawCalls <= 3, `Quest tier: no pre-pass runs, ${d.drawCalls} draw calls for one volume`);
-	await A.page.evaluate(() => window.__stores.waterPrefs.waterQuality.set('auto'));
+	await A.page.evaluate(() => window.__tp.test.v1.waterPrefs.waterQuality.set('auto'));
 
 	// ---- 4. underwater: fog swapped per render, restored after -----------------------
-	await A.page.evaluate(() => window.__stores.objectActions.flyTo([0.5, 0.4, 0.3], [2, 0.4, 1], 0));
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.flyTo([0.5, 0.4, 0.3], [2, 0.4, 1], 0));
 	await h.eventually(() => dbg(A.page), (x) => x.underwater === made.uuid, 'camera inside the pool → underwater');
 	const fog = await A.page.evaluate(() => {
 		let sc;
-		window.__stores.globalScene.subscribe((v) => (sc = v))();
+		window.__tp.test.v1.globalScene.subscribe((v) => (sc = v))();
 		return { fog: sc.fog?.far ?? null, bg: sc.background?.isColor ? sc.background.getHexString() : 'tex' };
 	});
 	h.check(fog.fog === null || fog.fog > 30, `between renders the scene keeps its own fog (far ${fog.fog})`);
-	await A.page.evaluate(() => window.__stores.objectActions.flyTo([6, 4, 6], [0, 0.5, 0], 0));
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.flyTo([6, 4, 6], [0, 0.5, 0], 0));
 	await h.eventually(() => dbg(A.page), (x) => x.underwater === null, 'out of the water again');
 
 	// ---- 5. W2 ripples ----------------------------------------------------------------
-	const rip = await A.page.evaluate(() => window.__stores.waterVolumes.waterVolumes.disturb(window.__pool.uuid, [0, 1.5, 0], 0.5, 1));
+	const rip = await A.page.evaluate(() => window.__tp.test.v1.waterVolumes.waterVolumes.disturb(window.__pool.uuid, [0, 1.5, 0], 0.5, 1));
 	h.check(rip === true, 'disturb() accepts a ripple on a water object');
 	await h.eventually(() => dbg(A.page), (x) => x.entries[0].ripples >= 1, 'the ripple reaches the surface uniforms');
 	await A.page.waitForTimeout(3300);
@@ -158,10 +158,10 @@ h.run(async () => {
 	h.check(d.entries[0].ripples === 0, 'and expires after its life');
 
 	// ---- 6. bubbles -------------------------------------------------------------------
-	await A.page.evaluate(() => window.__stores.waterActions.applyWaterPreset(window.__pool.uuid, 'aquarium'));
+	await A.page.evaluate(() => window.__tp.test.v1.waterActions.applyWaterPreset(window.__pool.uuid, 'aquarium'));
 	await h.eventually(() => dbg(A.page), (x) => x.entries[0].bubbles === true, 'the aquarium preset turns bubbles on (one instanced draw)');
 	const burst = await A.page.evaluate(() => {
-		const w = window.__stores.waterActions;
+		const w = window.__tp.test.v1.waterActions;
 		w.updateObjectWater(window.__pool.uuid, { bubbles: { mode: 'burst' } }, { immediate: true });
 		w.burstWaterBubbles(window.__pool.uuid);
 		return window.__pool.userData.water.bubbles.burstAt;
@@ -170,7 +170,7 @@ h.run(async () => {
 
 	// ---- 7. one undo per slider gesture ------------------------------------------------
 	const undo = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const w = s.waterActions;
 		const u = window.__pool.uuid;
 		w.flushWaterEdits();
@@ -191,14 +191,14 @@ h.run(async () => {
 
 	// ---- 8. Inspector section ---------------------------------------------------------
 	await A.page.evaluate(() => {
-		window.__stores.objectActions.selectObject(window.__pool.uuid);
-		window.__stores.showSidebar?.('properties');
+		window.__tp.test.v1.objectActions.selectObject(window.__pool.uuid);
+		window.__tp.test.v1.showSidebar?.('properties');
 	});
 	await h.eventually(() => A.page.evaluate(() => !!document.querySelector('#water-preset') && !!document.querySelector('#water-level')), (x) => x, 'the Inspector shows the Water section (preset + level)');
 
 	// ---- 9. VR props rows ---------------------------------------------------------------
 	const vr = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const panels = s.waterVrPanels;
 		s.vrPropsPanelOpen.set(true);
 		await new Promise((r) => setTimeout(r, 600));
@@ -216,14 +216,14 @@ h.run(async () => {
 
 	// ---- 10. api.water + the wire validator ---------------------------------------------
 	const api = await A.page.evaluate(async () => {
-		const { makeApi } = window.__stores.waterSdk;
+		const { makeApi } = window.__tp.test.v1.waterSdk;
 		const a = makeApi('water-e2e');
 		const q = a.water.query([0, 0.2, 0]);
 		const tank = await a.water.create({ kind: 'tank', size: [2, 1, 1], at: [6, 0.5, 0] });
 		a.water.configure(tank, { look: { deepColor: '#ff0000' } });
 		let o;
-		window.__stores.objectsGroup.subscribe((g) => (o = g.getObjectByProperty('uuid', tank)))();
-		const wv = window.__stores.wireValidate;
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (o = g.getObjectByProperty('uuid', tank)))();
+		const wv = window.__tp.test.v1.wireValidate;
 		return {
 			q: q && q.uuid === window.__pool.uuid && q.depth > 0,
 			tank: !!o?.userData.water,
@@ -245,24 +245,24 @@ h.run(async () => {
 		h.eventually(
 			() => peer.page.evaluate((u) => {
 				let o;
-				window.__stores.objectsGroup.subscribe((g) => (o = g?.getObjectByProperty('uuid', u)))();
-				return { preset: o?.userData?.water?.preset ?? null, vols: window.__stores.waterRuntime.waterDebug().volumes };
+				window.__tp.test.v1.objectsGroup.subscribe((g) => (o = g?.getObjectByProperty('uuid', u)))();
+				return { preset: o?.userData?.water?.preset ?? null, vols: window.__tp.test.v1.waterRuntime.waterDebug().volumes };
 			}, made.uuid),
 			(x) => x.preset !== null && x.vols >= 2,
 			label,
 			30000
 		);
 	await sameOn(B, 'B (joined after the water existed) holds the pool blob and renders both volumes');
-	await A.page.evaluate(() => window.__stores.waterActions.applyWaterPreset(window.__pool.uuid, 'lava'));
+	await A.page.evaluate(() => window.__tp.test.v1.waterActions.applyWaterPreset(window.__pool.uuid, 'lava'));
 	await h.eventually(
-		() => B.page.evaluate((u) => { let o; window.__stores.objectsGroup.subscribe((g) => (o = g.getObjectByProperty('uuid', u)))(); return o?.userData?.water?.preset; }, made.uuid),
+		() => B.page.evaluate((u) => { let o; window.__tp.test.v1.objectsGroup.subscribe((g) => (o = g.getObjectByProperty('uuid', u)))(); return o?.userData?.water?.preset; }, made.uuid),
 		(p) => p === 'lava',
 		'a preset change replicates (lava on B)',
 		15000
 	);
-	await A.page.evaluate(() => window.__stores.waterActions.removeObjectWater(window.__pool.uuid));
+	await A.page.evaluate(() => window.__tp.test.v1.waterActions.removeObjectWater(window.__pool.uuid));
 	await h.eventually(
-		() => B.page.evaluate((u) => { let o; window.__stores.objectsGroup.subscribe((g) => (o = g.getObjectByProperty('uuid', u)))(); return !!o?.userData?.water; }, made.uuid),
+		() => B.page.evaluate((u) => { let o; window.__tp.test.v1.objectsGroup.subscribe((g) => (o = g.getObjectByProperty('uuid', u)))(); return !!o?.userData?.water; }, made.uuid),
 		(has) => has === false,
 		'removing the water replicates',
 		15000

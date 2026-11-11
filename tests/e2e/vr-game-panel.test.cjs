@@ -29,7 +29,7 @@ h.run(async () => {
 	const page = A.page;
 
 	await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		await s.moduleSDK.initModules([
 			{ id: 'panel30b', name: 'Panel test', version: '1.0.0', description: 'the 30b VR panel', register(api) { window.__api = api; } }
 		]);
@@ -111,14 +111,14 @@ h.run(async () => {
 	const frame = (opts = '{}') =>
 		page.evaluate((o) => {
 			const T = window.__T;
-			const k = window.__stores.gameKit.vrGamePanel;
+			const k = window.__tp.test.v1.gameKit.vrGamePanel;
 			return k.vrGamePanelFrame({ head: T.head(o.yaw ?? 0), hands: [o.hand === false ? null : T.leftHand(o.facing !== false), null], dt: o.dt ?? 1 / 72 });
 		}, JSON.parse(opts));
 
 	console.log('\n=== 1. the menu screen becomes the world panel ===');
 	const f1 = await frame();
 	const panel = await page.evaluate(() => {
-		const k = window.__stores.gameKit.vrGamePanel;
+		const k = window.__tp.test.v1.gameKit.vrGamePanel;
 		const surf = k.vrGameSurface('vr-game-panel');
 		const g = surf.canvas.getContext('2d');
 		const data = g.getImageData(0, 0, surf.canvas.width, surf.canvas.height).data;
@@ -127,12 +127,12 @@ h.run(async () => {
 		const start = k.vrGamePanelDebug().hits['vr-game-panel'].find((x) => x.id === 'start');
 		const px = g.getImageData(Math.round(start.x + 8), Math.round(start.y + start.h / 2), 1, 1).data;
 		let scene;
-		window.__stores.globalScene.subscribe((v) => (scene = v))();
+		window.__tp.test.v1.globalScene.subscribe((v) => (scene = v))();
 		return {
 			pos: surf.mesh.position.toArray(),
 			visible: surf.mesh.visible,
 			parentIsScene: surf.mesh.parent === scene,
-			layer0: surf.mesh.layers.test(new window.__stores.THREE.Layers()),
+			layer0: surf.mesh.layers.test(new window.__tp.test.v1.THREE.Layers()),
 			ink,
 			width: surf.mesh.geometry.parameters.width,
 			startPx: Array.from(px)
@@ -146,14 +146,14 @@ h.run(async () => {
 	h.check(panel.startPx[2] > 200 && panel.startPx[0] < 80, '1.5 the Start button is drawn in its authored blue (' + panel.startPx + ')');
 
 	console.log('\n=== 2. the buttons are hit rects, ours included ===');
-	const ids = await page.evaluate(() => window.__stores.gameKit.vrGamePanel.vrGamePanelDebug().hits['vr-game-panel'].map((x) => x.id));
+	const ids = await page.evaluate(() => window.__tp.test.v1.gameKit.vrGamePanel.vrGamePanelDebug().hits['vr-game-panel'].map((x) => x.id));
 	h.check(ids.includes('start') && ids.includes('music') && !ids.includes('title'), '2.1 Start and the toggle press, the title does not (' + ids + ')');
 	h.check(ids.includes('footer:edit') && ids.includes('footer:hud'), '2.2 our Edit mode and HUD placement buttons are on the footer');
 
 	console.log('\n=== 3. laser + trigger presses Start through the real trigger hook ===');
 	await page.waitForTimeout(700); // a fresh binding must be seen by a tick before its first press (actionSeenAt)
 	const press = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const T = window.__T;
 		const target = T.rectPoint('vr-game-panel', 'start');
 		T.aim(1, new s.THREE.Vector3(0.25, 1.3, -0.3), target);
@@ -176,7 +176,7 @@ h.run(async () => {
 	h.check(f4.panel === null, '4.1 the panel goes when the menu does');
 	h.check(JSON.stringify(f4.lines) === JSON.stringify(['Height: 0 m', '1:30']), '4.2 the overlay reads as lines (' + JSON.stringify(f4.lines) + ')');
 	h.check(f4.wrist && f4.hud, '4.3 the wrist card and the HUD band are up');
-	const band = await page.evaluate(() => window.__stores.gameKit.vrHud.vrHudDebug());
+	const band = await page.evaluate(() => window.__tp.test.v1.gameKit.vrHud.vrHudDebug());
 	h.check(band.visible && band.groups.some((g) => g.ids.includes('score')) && band.groups.some((g) => g.ids.includes('time')), '4.4 the band carries the score and the clock (' + JSON.stringify(band.groups.map((g) => g.ids)) + ')');
 
 	console.log('\n=== 5. the wrist shows only when turned to the face ===');
@@ -188,7 +188,7 @@ h.run(async () => {
 	console.log('\n=== 6. a POKE presses once and re-arms on retreat ===');
 	await frame();
 	const poke = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const T = window.__T;
 		const k = s.gameKit.vrGamePanel;
 		const at = T.rectPoint('vr-game-wrist', 'footer:hud');
@@ -207,16 +207,16 @@ h.run(async () => {
 	h.check(poke.again === 'footer:hud' && poke.after === 'wrist', '6.3 pulling back re-arms it: the next push presses');
 
 	console.log('\n=== 7. the HUD placement: wrist only ===');
-	await page.evaluate(() => window.__stores.gameKit.vrHudPrefs.setVrHudPlacement('wrist'));
+	await page.evaluate(() => window.__tp.test.v1.gameKit.vrHudPrefs.setVrHudPlacement('wrist'));
 	const off = await frame();
 	h.check(off.hud === false && off.wrist === true, '7.1 wrist only: the band goes, the wrist stays');
 	h.check((await page.evaluate(() => localStorage.getItem('vr:hudPlacement'))) === 'wrist', '7.2 persisted locally');
-	await page.evaluate(() => window.__stores.gameKit.vrHudPrefs.setVrHudPlacement('head'));
+	await page.evaluate(() => window.__tp.test.v1.gameKit.vrHudPrefs.setVrHudPlacement('head'));
 
 	console.log('\n=== 8. Edit mode leaves Interact, and everything goes ===');
 	await frame();
 	const edit = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const T = window.__T;
 		const at = T.rectPoint('vr-game-wrist', 'footer:edit');
 		T.aim(1, at.clone().add(new s.THREE.Vector3(0.1, 0.25, 0.1)), at);
@@ -231,15 +231,15 @@ h.run(async () => {
 	const f8 = await frame();
 	h.check(!f8.panel && !f8.wrist && !f8.hud, '8.2 in Edit no game surface shows (' + JSON.stringify(f8) + ')');
 	await page.evaluate(() => {
-		window.__stores.objectActions.setEditorMode('interact');
-		window.__stores.gameState.setGameState('menu');
+		window.__tp.test.v1.objectActions.setEditorMode('interact');
+		window.__tp.test.v1.gameState.setGameState('menu');
 	});
 
 	console.log('\n=== 9. the panel follows the head LAZILY ===');
-	await page.evaluate(() => window.__stores.gameKit.vrGamePanel.hideVrGamePanel());
+	await page.evaluate(() => window.__tp.test.v1.gameKit.vrGamePanel.hideVrGamePanel());
 	await frame('{"yaw": 0}');
 	const yaws = await page.evaluate(() => {
-		const k = window.__stores.gameKit.vrGamePanel;
+		const k = window.__tp.test.v1.gameKit.vrGamePanel;
 		const T = window.__T;
 		const pos = () => k.vrGameSurface('vr-game-panel').mesh.position.clone();
 		const at0 = pos();
@@ -256,7 +256,7 @@ h.run(async () => {
 
 	console.log('\n=== 10. the announce banner, head-locked ===');
 	const ann = await page.evaluate(async () => {
-		const k = window.__stores.gameKit.vrGamePanel;
+		const k = window.__tp.test.v1.gameKit.vrGamePanel;
 		const T = window.__T;
 		window.__api.announce('Ring 2 reached', { sub: '+50', ms: 500 });
 		const on = k.vrGamePanelFrame({ head: T.head(0), hands: [null, null] }).banner;
@@ -269,13 +269,13 @@ h.run(async () => {
 	h.check(ann.later === false, '10.2 and it goes after its ms');
 
 	console.log('\n=== 11. not presenting: nothing ===');
-	const flat = await page.evaluate(() => window.__stores.gameKit.vrGamePanel.vrGamePanelFrame({ hands: [null, null] }));
+	const flat = await page.evaluate(() => window.__tp.test.v1.gameKit.vrGamePanel.vrGamePanelFrame({ hands: [null, null] }));
 	h.check(!flat.panel && !flat.wrist && !flat.hud && !flat.banner, '11.1 with no headset session nothing is drawn (' + JSON.stringify(flat) + ')');
 
 	console.log('\n=== 12. a toggle flips its value ===');
 	await frame();
 	const tog = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const T = window.__T;
 		const at = T.rectPoint('vr-game-panel', 'music');
 		T.aim(1, new s.THREE.Vector3(0.2, 1.3, -0.2), at);
@@ -292,13 +292,13 @@ h.run(async () => {
 	else {
 		const bytes = Array.from(fs.readFileSync(TOWERS));
 		await page.evaluate(async (arr) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 			await s.sessions.applySession(payload, { backup: false });
 		}, bytes);
 		await page.waitForTimeout(2500);
 		const towers = await page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.gameState.setGameState('menu');
 			s.objectActions.setEditorMode('interact');
 			const k = s.gameKit.vrGamePanel;
@@ -313,7 +313,7 @@ h.run(async () => {
 		h.check(!!towers.panel && towers.hits.length > 0, '13.1 the Towers menu is on the VR panel with pressable controls (' + JSON.stringify(towers) + ')');
 		const startId = towers.hits.find((id, i) => /start|play/i.test(towers.labels[i] ?? '')) ?? towers.hits[0];
 		const started = await page.evaluate(async (id) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const T = window.__T;
 			const at = T.rectPoint('vr-game-panel', id);
 			T.aim(1, new s.THREE.Vector3(0.2, 1.3, -0.2), at);
@@ -328,7 +328,7 @@ h.run(async () => {
 		}, startId);
 		h.check(started.state === 'playing', '13.2 pressing its Start in VR starts the round (' + JSON.stringify(started) + ')');
 		h.check(started.f.lines.length > 0, '13.3 the round\'s HUD reads on the wrist (' + JSON.stringify(started.f.lines) + ')');
-		const towersBand = await page.evaluate(() => window.__stores.gameKit.vrHud.vrHudDebug());
+		const towersBand = await page.evaluate(() => window.__tp.test.v1.gameKit.vrHud.vrHudDebug());
 		h.check(
 			started.f.hud === true && towersBand.groups.length >= 2 && towersBand.groups.every((g) => g.texelRatio >= 1 - 1e-9),
 			'13.4 the round\'s HUD is on the band, as Towers lays it out, crisp (' + JSON.stringify(towersBand.groups.map((g) => g.ids)) + ')'

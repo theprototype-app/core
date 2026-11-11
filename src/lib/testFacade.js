@@ -24,7 +24,10 @@
 
 /** Hook-level renames: `{ hook: { v1ExportName: 'currentExportName' } }`.
  * @type {Record<string, Record<string, string>>} */
-export const TEST_V1_RENAMED_EXPORTS = {};
+export const TEST_V1_RENAMED_EXPORTS = {
+	// 101 F5 proof: backStack.js renamed its debug view; phone-back still calls backStackState()
+	backStack: { backStackState: 'backStackSnapshot' }
+};
 
 /** Top-level names that moved: `{ v1Name: (stores) => value }`.
  * @type {Record<string, (stores: Record<string, any>) => any>} */

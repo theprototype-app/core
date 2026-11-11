@@ -1,8 +1,12 @@
 // 101 F5: the e2e facade `__tp.test.v1` forwards to the live hook table, is read-only, stays live
 // for late registrations, and absorbs an internal rename with one table row (0 suite edits).
-import { describe, test, expect } from 'vitest';
+import { describe, test, expect, vi } from 'vitest';
+
+// backStack.js pushes SvelteKit history; node has no router
+vi.mock('$app/navigation', () => ({ pushState: () => {} }));
 import { makeTestFacadeV1, TEST_V1_RENAMED_EXPORTS, TEST_V1_MOVED } from '../../src/lib/testFacade.js';
 import { DEBUG_HOOKS } from '../../src/lib/debugHooks.js';
+import * as backStack from '../../src/lib/backStack.js';
 
 const fakeStores = () => {
 	/** @type {Record<string, any>} */
@@ -60,5 +64,11 @@ describe('__tp.test.v1 facade (101 F5)', () => {
 		const names = new Set(DEBUG_HOOKS.map(([n]) => n));
 		for (const hook of Object.keys(TEST_V1_RENAMED_EXPORTS)) expect(names.has(hook), hook).toBe(true);
 		for (const v1 of Object.keys(TEST_V1_MOVED)) expect(names.has(v1), `${v1} is still a live name: drop the row`).toBe(false);
+	});
+	test('PROOF (real module): backStack renamed backStackState -> backStackSnapshot, phone-back unchanged', () => {
+		const t = makeTestFacadeV1({ backStack });
+		expect(/** @type {any} */ (backStack).backStackState).toBeUndefined();
+		expect(t.backStack.backStackState).toBe(backStack.backStackSnapshot);
+		expect(t.backStack.suspendBack).toBe(backStack.suspendBack);
 	});
 });

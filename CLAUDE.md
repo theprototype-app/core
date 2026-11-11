@@ -3643,6 +3643,26 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   must be unique (vitest `debugHooks` checks uniqueness, the one-line shape, that every loader
   file exists, and that no tail crept back into App.svelte). Code holding an object can call
   `registerDebugHook(name, obj)` instead. A merge of two lanes' rows is a plain union.
+- **SUITES TALK TO `window.__tp.test.v1`, NOT `__stores` (101 F5).** `installDebugHooks` publishes the
+  read-only, LIVE facade (`src/lib/testFacade.js`) over the same hook table; `__stores` stays as an
+  alias for one release. RENAMING an export a suite reads, or moving a hook: add ONE row to
+  `TEST_V1_RENAMED_EXPORTS` / `TEST_V1_MOVED` and touch no suite (the proof: `backStack.backStackState`
+  is now `backStackSnapshot`). The facade is read-only (a write throws): stub through the module. From
+  Node, `h.t(page)` = `{ready, run(fn, arg), get(path), call(path, ...args)}`. A suite written against
+  `__stores` moves with `node scripts/e2e-facade-codemod.cjs --write <file>` (keeps pre-install
+  semantics: `X.__stores.y` throws before the install, `X.__stores &&` is undefined, exactly as before).
+  battery.json `gpu: {suite: false}` = renderer-neutral suites (`scripts/ci/gpu-neutral-suites.cjs`).
+- **EVERY RENDERER AND RENDER TARGET COMES FROM `src/lib/render/` (101 F3, CI `check-render-seam`).**
+  `createMainRenderer` (threlte `<Canvas createRenderer>`, threlte 8.6.1's defaults verbatim) +
+  `MAIN_SHADOW_MAP` on both Canvas lines; `setToneMapping` / `setExposure` / `mainPixelRatio` /
+  `watchContextLoss` are the hooks; `createRenderTarget` replaces `new WebGLRenderTarget`;
+  `readPixels` returns a PROMISE (the read happens AT THE CALL, the await only hands it back;
+  `readPixelsSync` only where a caller cannot wait — photoRender's cubeUvToEquirect). Thumbnails and
+  live previews borrow ONE shared off-screen renderer (`renderOffscreen` one-shot, `acquireOffscreen`
+  + `blitOffscreen` for a live preview, which copies into its own 2D canvas — a preview canvas has NO
+  WebGL context). Borrowers get a FRESH renderer's state; never call `dispose()` on a borrowed one.
+  `disposeRenderer()` releases what the seam made; `recycleMainRenderer()` loses + restores the main
+  context on purpose (the path roadmap 100's switch runs).
 - **A derived cutoff consulted on both the READ and the MUTATE side needs TWO rules.**
   21-F2's round cutoff returns Infinity in menu/over so latches READ as un-collected
   there (the locked fork) — but `applyNodeTrigger`'s re-arm honoured it too, so in menu

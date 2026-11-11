@@ -107,6 +107,9 @@ function newId() {
 	return 'fx' + Date.now().toString(36) + (idCounter++).toString(36);
 }
 
+/** The most effects one look may hold. */
+export const MAX_POST_EFFECTS = 32;
+
 /**
  * ONE normalizer, run at EVERY store boundary (local edit, remote apply, save
  * restore) so an old save and a NEWER peer both load.
@@ -126,6 +129,8 @@ export function normalizeScenePost(raw) {
 	const effects = [];
 	const seen = new Set();
 	for (const item of list) {
+		// each entry becomes a render pass (some with full-size targets): a stack is a handful
+		if (effects.length >= MAX_POST_EFFECTS) break;
 		if (!item || typeof item !== 'object') continue;
 		const kind = typeof item.kind === 'string' ? item.kind : '';
 		if (!kind) continue;

@@ -6,6 +6,7 @@
 //
 // Loaded on demand by the Explorer's import (explorer.js asks only for these extensions).
 
+import { embeddedOnlyManager, checkFbx, refusal } from '../loadGuard.js';
 import * as THREE from 'three';
 import { decodeTpanim, encodeTpanim, tpFromThreeClip, toHumanoid, glbAnimationNames, glbHasMeshes, TPANIM_EXT, sanitizeName } from './format.js';
 import { humanoidMapOfNames } from './humanoidMap.js';
@@ -91,7 +92,8 @@ export async function convertAnimationFile(file) {
 	if (ext === 'fbx') {
 		// @ts-ignore
 		const { FBXLoader } = await import('three/addons/loaders/FBXLoader.js');
-		const obj = new FBXLoader().parse(buf, '');
+		if (!checkFbx(buf, 'file', 'clip')) throw refusal('model');
+		const obj = new FBXLoader(embeddedOnlyManager('file', 'clip')).parse(buf, '');
 		let meshes = false;
 		obj.traverse((/** @type {any} */ o) => {
 			if (o.isMesh) meshes = true;

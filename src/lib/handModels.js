@@ -1,3 +1,4 @@
+import { checkGltf, embeddedOnlyManager } from './loadGuard.js';
 // @ts-ignore - no bundled three type declarations (project-wide)
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { writable, get } from 'svelte/store';
@@ -67,10 +68,13 @@ export function dropPeerHandModel(peerId) {
 	});
 }
 
+/** hashes the load check refused: not retried (the bytes of a hash never change) */
+const refusedHands = new Set();
+
 /** Load + parse a hand GLB by content hash into the cache (idempotent).
  * Retries via the reconcile tick until the assetShare pull lands. @param {string} hash */
 export async function ensureHandModel(hash) {
-	if (!hash || loading.has(hash) || get(handModelCache)[hash]) return;
+	if (!hash || loading.has(hash) || refusedHands.has(hash) || get(handModelCache)[hash]) return;
 	const item = itemByHash(hash);
 	if (!item) {
 		requestAsset(hash); // pull once; retried by the interval below
@@ -81,8 +85,13 @@ export async function ensureHandModel(hash) {
 		const blob = await itemBlob(item.id);
 		if (!blob) throw new Error('no bytes');
 		const buffer = await blob.arrayBuffer();
+		// a hand model is somebody's file: no outside address, no impossible sizes (loadGuard.js)
+		if (!checkGltf(buffer, 'peer', 'handmodel')) {
+			refusedHands.add(hash);
+			throw new Error('hand model refused by the load check');
+		}
 		const gltf = await new Promise((resolve, reject) =>
-			new GLTFLoader().parse(buffer, '', resolve, reject)
+			new GLTFLoader(embeddedOnlyManager('peer', 'handmodel')).parse(buffer, '', resolve, reject)
 		);
 		handModelCache.update((map) => ({ ...map, [hash]: /** @type {any} */ (gltf).scene }));
 	} catch (error) {

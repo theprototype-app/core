@@ -6,6 +6,10 @@
      rendering, so maintainer notes stay out of the user-facing window. No emoji from
      1.64 on (owner rule: no emoji in the UI); the app strips them from older entries. -->
 
+## 1.65.1 — Safer loading
+
+- **Objects and materials from other people and from files are checked before they load.** Anything that does not pass loads like a missing file, and the rest of the scene is unchanged.
+
 ## 1.65.0 — New menus and panels
 
 ### Chat and the AI assistant

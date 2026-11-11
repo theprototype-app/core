@@ -1,3 +1,4 @@
+import { parseCheckedObject } from './loadGuard.js';
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { objectsGroup, pokeScene } from '../stores/sceneStore';
@@ -130,7 +131,7 @@ function renderThumbnail(element) {
 		renderer.setSize(128, 128);
 		const scene = new THREE.Scene();
 		scene.add(new THREE.HemisphereLight(0xffffff, 0x444466, 2.5));
-		const clone = new THREE.ObjectLoader().parse(element);
+		const clone = parseCheckedObject(element, 'library', 'prefab');
 		clone.position.set(0, 0, 0);
 		scene.add(clone);
 		const box = new THREE.Box3().setFromObject(clone);
@@ -440,7 +441,7 @@ export function prefabObject(id) {
 	/** @type {any} */
 	let object;
 	try {
-		object = new THREE.ObjectLoader().parse(entry.element);
+		object = parseCheckedObject(entry.element, 'library', 'prefab');
 	} catch (error) {
 		console.log('prefab parse failed', error);
 		return null;
@@ -544,7 +545,7 @@ export function instantiatePrefab(prefab, position) {
 	if (!group) return null;
 	let object;
 	try {
-		object = new THREE.ObjectLoader().parse(prefab.element);
+		object = parseCheckedObject(prefab.element, 'library', 'prefab');
 	} catch (error) {
 		console.log('prefab parse failed', error);
 		showToast('This prefab could not be loaded');

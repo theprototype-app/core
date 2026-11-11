@@ -1,3 +1,4 @@
+import { parseCheckedObject } from './loadGuard.js';
 import * as THREE from 'three';
 import './threeFixes.js'; // 36-fb-water F14: transmissive materials survive a JSON trip (the export runtime loads scenes here too)
 import { writable, get } from 'svelte/store';
@@ -98,6 +99,7 @@ import { APP_VERSION } from './version.js';
 import { oldRulesGame, RETIRED_GAME_NODES } from './oldGameScene.js';
 // 36-community (C4): the scene's permanent game id rides session.json; a load takes it from the file
 import { gameFields, noteLoadedGame } from './gameIdentity.js';
+import { localThumb } from './loadGuardCore.js';
 
 // Multi-slot sessions (phase 50) on top of the autosave format. Each session
 // stores its top-level objects as individual ObjectLoader jsons — that makes
@@ -234,7 +236,7 @@ function metaOf(payload) {
 		name: payload.name,
 		createdAt: payload.createdAt,
 		count: payload.count,
-		thumbnail: payload.thumbnail,
+		thumbnail: localThumb(payload.thumbnail),
 		// R22 round 9: the PROJECT/SCENE distinction is not a new field to store — a project
 		// entry is one that carries a library, which is exactly what `saveSessionWithLibrary`
 		// adds. Derived, so every session ever saved answers correctly with no migration.
@@ -1186,7 +1188,7 @@ export function sessionFileList(payload) {
 		name: (payload?.name ?? 'Scene') + '.tpscene',
 		kind: 'scene',
 		own: true,
-		thumbnail: payload?.thumbnail ?? null,
+		thumbnail: localThumb(payload?.thumbnail),
 		objects: (payload?.objects ?? []).length
 	};
 	const files = (payload?.library?.items ?? []).map((/** @type {any} */ row, /** @type {number} */ index) => ({
@@ -1194,7 +1196,7 @@ export function sessionFileList(payload) {
 		name: row.name,
 		kind: row.kind,
 		own: false,
-		thumbnail: row.thumbnail ?? null,
+		thumbnail: localThumb(row.thumbnail),
 		bytes: Number(row.blob?.size) || 0
 	}));
 	return [own, ...files];
@@ -1251,7 +1253,7 @@ function fileRow(entry, depth, path) {
 		path: path + '/' + entry.row.name,
 		index: entry.index,
 		kindOf: entry.row.kind,
-		thumbnail: entry.row.thumbnail ?? null,
+		thumbnail: localThumb(entry.row.thumbnail),
 		bytes: Number(entry.row.blob?.size) || 0
 	};
 }
@@ -1364,7 +1366,7 @@ export function importObjects(payload, indices) {
 		if (!element) continue;
 		let object;
 		try {
-			object = new THREE.ObjectLoader().parse(element);
+			object = parseCheckedObject(element, 'file', 'import');
 		} catch {
 			continue;
 		}
@@ -1635,7 +1637,7 @@ async function applySessionNow(payload, opts, job) {
 			await slice(job);
 			let object;
 			try {
-				object = new THREE.ObjectLoader().parse(element);
+				object = parseCheckedObject(element, 'file', 'scene');
 			} catch {
 				progress(job);
 				continue;

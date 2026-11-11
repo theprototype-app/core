@@ -1,4 +1,5 @@
 <script>
+	import { mapPreviewUrl } from '$lib/loadGuard.js';
 	import { onLayoutRestore, storedPanelLayout } from '$lib/uiLayoutsCore';
 	import { isHeicFileLike } from '$lib/heicCore.js';
 	// UV editor (UV1). A 2D view of the selected mesh's `uv` attribute: the slot's
@@ -101,7 +102,7 @@
 			slot: i,
 			name: m?.name || '',
 			type: m?.type || '',
-			mapUrl: m?.userData?.mapDataUrl ?? null
+			mapUrl: mapPreviewUrl(m)
 		}));
 	});
 	const slotTotal = $derived(target ? slotCount(target) : 0);
@@ -1626,7 +1627,7 @@
 		>
 			<span
 				class="h-7 w-7 shrink-0 rounded-sm border border-border bg-surface-inset bg-cover bg-center"
-				style={material.mapUrl ? `background-image:url(${material.mapUrl})` : ''}
+				style={material.mapUrl ? `background-image:url("${material.mapUrl}")` : ''}
 			></span>
 			<span class="min-w-0 flex-1 truncate">{material?.name || material?.type || `Slot ${index}`}</span>
 		</button>

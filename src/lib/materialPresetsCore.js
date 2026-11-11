@@ -315,7 +315,8 @@ export const EXTRA_MAP_FIELDS = ['roughnessMap', 'metalnessMap', 'emissiveMap', 
 
 /** a data:image URL or null — presets never carry a remote URL (a library would fetch it) @param {any} v */
 function imageUrlOrNull(v) {
-	return typeof v === 'string' && /^data:image\/(png|jpeg|webp);base64,/.test(v) ? v : null;
+	// the WHOLE value: it is written into a CSS url() for the swatch
+	return typeof v === 'string' && /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]*$/.test(v) ? v : null;
 }
 
 /**

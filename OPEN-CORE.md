@@ -346,6 +346,29 @@ everyone leaving). Each is inert without a plugin: nothing subscribes until `onS
 A plugin restoring a SCENE uses `loadRemoteScene({sceneUrl, keepGameId: true})` — the owner reopening their own
 scene keeps its game id instead of forking it as a remix.
 
+### 6. Object schema (roadmap 101 F2) — a contract, not a hook
+
+Objects and materials are validated on receive and on load. Every three.js object JSON core takes from a
+peer, a file or its own stores passes [src/lib/sceneSchema.js](src/lib/sceneSchema.js) (through
+`src/lib/loadGuard.js`) before three parses it, and so does every multi-slot `materials` payload. A CI step
+(`npm run check:loaders`) fails on a generic three loader called anywhere else in `src/`.
+
+What a module or plugin can rely on, and what it must keep to:
+
+| | the rule |
+|---|---|
+| object types | three's own (`Object3D`, `Group`, `Mesh`, `SkinnedMesh`, `InstancedMesh`, `Line*`, `Points`, `Sprite`, `LOD`, `Bone`, the two cameras, the lights). Anything else arrives as an `Object3D` with its children |
+| material types | the standard ones (`Mesh*Material`, `Line*Material`, `PointsMaterial`, `SpriteMaterial`, `ShadowMaterial`). Any other material arrives as the standard fallback material; custom looks are made with the shader graph |
+| fields | the fields three's `toJSON()` writes for that type, each with a value rule. An unknown field is stripped; a bad value is stripped and three uses its default |
+| images | embedded data URLs only, each under a size cap |
+| `userData` | any plain JSON under a size cap (no `__proto__` / `constructor` / `prototype` keys, bounded depth). The keys core and the shipped modules write keep a per-key kind |
+
+Every change is counted (the wire diagnostics and one toast per session), never silent. The inventory
+(`scripts/schema-inventory.cjs`, kept as `tests/fixtures/schema-1.65/inventory.json`) found that the shipped
+modules build only the types above and write only plain-JSON `userData`, so modules get no registration
+call. A later release that saves a new field adds it to the type's table in `sceneSchema.js` with a value
+rule and a fixture in `tests/unit/sceneSchema.test.js`; a new `userData` key needs nothing.
+
 ## Versioning
 
 `CLOUD_HOOKS_VERSION` ([src/lib/cloudHooks.js](src/lib/cloudHooks.js)) is the contract

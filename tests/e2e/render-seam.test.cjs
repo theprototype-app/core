@@ -8,8 +8,8 @@
 //   4. DISPOSE AND RECREATE: `recycleMainRenderer()` releases everything the seam made, loses the
 //      main context on purpose and restores it — the path roadmap 100's switch runs — and the next
 //      frame is the SAME frame (pixel diff against the frame before; the before/before pair is the
-//      noise floor) with the GPU memory counts back where they were (within 5 %), no "3D view has
-//      stopped" overlay, and the JS heap within 5 %.
+//      noise floor), GPU memory counts not above +5 % (a leak bound), no "3D view has
+//      stopped" overlay, and the JS heap not above +5 %.
 const h = require('./helpers.cjs');
 
 h.run(async () => {
@@ -119,10 +119,13 @@ h.run(async () => {
 	const delta = await h.frameDelta(p, frame2, frame3, 0);
 	console.log(`frames: noise ${JSON.stringify(noise)} · after recycle ${JSON.stringify(delta)}`);
 	h.check(!delta.error && delta.changed <= Math.max(noise.changed ?? 0, 0), `the frame after dispose + recreate is the same frame (${delta.changed} px changed, noise floor ${noise.changed})`);
-	const within = (/** @type {number} */ a, /** @type {number} */ b) => Math.abs(a - b) <= Math.max(1, 0.05 * Math.max(a, b));
+	// "memory within 5 %" is a LEAK bound: nothing may GROW past +5 %. Fewer is expected — a restore
+	// rebuilds three's `info` and it counts only what the frames since have uploaded (measured 20 -> 6
+	// geometries with the frame pixel-identical), while everything the scene still draws is back.
+	const noGrowth = (/** @type {number} */ a, /** @type {number} */ b) => b <= a + Math.max(1, 0.05 * a);
 	console.log(`memory before ${JSON.stringify(memBefore)} after ${JSON.stringify(memAfter)}`);
-	h.check(within(memBefore.geometries, memAfter.geometries) && within(memBefore.textures, memAfter.textures), `GPU memory back within 5 % (geometries ${memBefore.geometries} -> ${memAfter.geometries}, textures ${memBefore.textures} -> ${memAfter.textures})`);
-	h.check(!memBefore.heap || Math.abs(memAfter.heap - memBefore.heap) <= 0.05 * memBefore.heap, `JS heap within 5 % (${(memBefore.heap / 1e6).toFixed(1)} -> ${(memAfter.heap / 1e6).toFixed(1)} MB)`);
+	h.check(noGrowth(memBefore.geometries, memAfter.geometries) && noGrowth(memBefore.textures, memAfter.textures) && noGrowth(memBefore.programs, memAfter.programs), `GPU memory not above +5 % after dispose + recreate (geometries ${memBefore.geometries} -> ${memAfter.geometries}, textures ${memBefore.textures} -> ${memAfter.textures}, programs ${memBefore.programs} -> ${memAfter.programs})`);
+	h.check(!memBefore.heap || memAfter.heap <= 1.05 * memBefore.heap, `JS heap not above +5 % (${(memBefore.heap / 1e6).toFixed(1)} -> ${(memAfter.heap / 1e6).toFixed(1)} MB)`);
 	const after = await T.run((t) => {
 		const rd = (/** @type {any} */ s) => { let v; s.subscribe((/** @type {any} */ x) => (v = x))(); return v; };
 		return { lost: rd(t.contextLost), shown: rd(t.contextLossShown), main: t.renderSeam.seamState().main };

@@ -17,6 +17,7 @@
 // VRM 0.x faces -Z; `rotateVRM0` turns the ROOT, so the model faces +Z in the world like every
 // other import (the retarget reads the bones' own facing and conjugates — retarget.js).
 
+import { embeddedOnlyManager, checkGltf, refusal } from '../loadGuard.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 import { createGltfLoader } from '../gltfLoader';
 import { licenceFromVrmMeta } from '../provenance.js';
@@ -32,7 +33,8 @@ let last = 0;
  * @param {ArrayBuffer} bytes @returns {Promise<{root: any, animations: any[], vrm: any, gltf: any}>}
  */
 export async function parseVrmBytes(bytes) {
-	const loader = createGltfLoader();
+	if (!checkGltf(bytes, 'file', 'model', { uris: false })) throw refusal('model');
+	const loader = createGltfLoader(embeddedOnlyManager('file', 'model'));
 	loader.register((/** @type {any} */ parser) => new VRMLoaderPlugin(parser));
 	const gltf = await loader.parseAsync(bytes, '');
 	const vrm = gltf.userData?.vrm ?? null;

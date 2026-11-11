@@ -1,4 +1,5 @@
 <script>
+	import { mapPreviewUrl } from '$lib/loadGuard.js';
 	import Icon from '../ui/Icon.svelte';
 	import { showConfirm } from '$lib/confirmDialog.js';
 	// Unified inspector (phase 64): one drawer serves every target — mesh, group,
@@ -4332,9 +4333,9 @@
 							}}
 						/>
 						<div class="flex items-center gap-3">
-							{#if material.userData?.mapDataUrl}
+							{#if mapPreviewUrl(material)}
 								<img
-									src={material.userData.mapDataUrl}
+									src={mapPreviewUrl(material)}
 									alt="texture"
 									class="h-10 w-10 cursor-pointer rounded-sm border border-border-strong object-cover"
 									role="presentation"

@@ -1,3 +1,4 @@
+import { embeddedOnlyManager, checkGltf } from './loadGuard.js';
 import * as THREE from 'three';
 import { createGltfLoader } from './gltfLoader';
 import { writable, get } from 'svelte/store';
@@ -5,7 +6,7 @@ import { globalScene, objectsGroup } from '../stores/sceneStore';
 import { registerLodPass, simplifiedGeometry, swapGeometryForPass, swapMaterialForPass, overlayMaterial } from './lod';
 import { normalizeLodGroup, pickGroupLevel, pickFallbackLevel, thresholdsOf, groupFromPackLods } from './lodGroupCore';
 import { addLodTree, removeLodTree } from './lodTrees.js';
-import { packRefOf, packRefUrl, loadPackFile } from './packRefs';
+import { packRefOf, packRefUrl, packAddress, loadPackFile } from './packRefs';
 import { PACKS_BASE } from './packs';
 import { fetchIndex } from './contentBase';
 import { explorerItems, itemByHash, itemBlob } from './explorer';
@@ -184,11 +185,13 @@ function levelKey(level) {
  */
 export function packLevelUrl(root, ref) {
 	// 34 R7: blob:/data: too — api.loadModel's P1 levels of a PACKAGED model are module blobs
-	if (/^(https?:\/\/|blob:|data:)/.test(ref)) return ref;
-	if (ref.includes('/')) return String(PACKS_BASE).replace(/\/+$/, '') + '/' + ref.replace(/^\/+/, '');
+	if (/^(blob:|data:)/.test(ref)) return ref;
+	// a level path arrives with the object, so it gets the pack reference's address rule
+	if (/^https?:\/\//i.test(ref) || ref.includes('/')) return packAddress(ref);
 	const pr = packRefOf(root);
 	if (!pr) return null;
 	const own = packRefUrl(pr);
+	if (own === 'data:,' || /^\.\.?$|\\|%/.test(ref)) return null;
 	return own.slice(0, own.lastIndexOf('/') + 1) + ref;
 }
 
@@ -297,7 +300,7 @@ export function removeLodRoot(root) {
 const loader = (() => {
 	/** @type {any} */
 	let l = null;
-	return () => (l ??= createGltfLoader());
+	return () => (l ??= createGltfLoader(embeddedOnlyManager('file', 'model')));
 })();
 
 /** @param {string} a */
@@ -376,6 +379,7 @@ function asTree(object) {
 
 /** @param {ArrayBuffer} buffer */
 function parseGlb(buffer) {
+	if (!checkGltf(buffer, 'file', 'model', { uris: false })) return Promise.reject(new Error('model refused by the load check'));
 	return new Promise((resolve, reject) => loader().parse(buffer, '', (/** @type {any} */ g) => resolve(g.scene), reject));
 }
 

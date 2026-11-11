@@ -3,7 +3,7 @@ import { get } from 'svelte/store';
 import { objectsGroup, pokeScene } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 import { recordEntry, registerHistoryKind } from './history';
-import { GEOMETRY_PARAMS, geometrySpec } from './geometryParams';
+import { GEOMETRY_PARAMS, geometrySpec, boundGeometryParams } from './geometryParams';
 
 // Live geometry parameter editing (phase 78). Params live in
 // object.userData.geometryParams = { gtype, params } — userData survives the
@@ -65,7 +65,7 @@ function terrainParamsOf(object) {
  * @param {string} gtype @param {any} params */
 function cleanFor(gtype, params) {
 	const clean = geometrySpec(gtype)?.clean;
-	return clean ? clean(params) : params;
+	return clean ? clean(params) : boundGeometryParams(gtype, params);
 }
 
 /** Current editable params for a mesh (userData first, live geometry second)

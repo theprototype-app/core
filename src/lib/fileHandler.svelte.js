@@ -1,3 +1,4 @@
+import { embeddedOnlyManager, checkFbx, refusal, checkStl } from './loadGuard.js';
 import { addProvenance } from '$lib/provenance';
 import { APP_VERSION } from '$lib/version';
 import { glbIsVrm } from '$lib/vrm/vrmDetect';
@@ -538,7 +539,7 @@ export function addImported(imported, name, position) {
 export function importGeneratedGlb(buffer, opts = {}) {
 	return new Promise((resolve, reject) => {
 		try {
-			createGltfLoader().parse(
+			createGltfLoader(embeddedOnlyManager('file', 'model')).parse(
 				buffer,
 				'',
 				async (/** @type {any} */ result) => {
@@ -661,7 +662,8 @@ async function applyObjMaterials(loader, objFile, extras) {
 					current = named[1];
 					return line;
 				}
-				const map = line.match(/^(\s*map_\w+\s+)(.+?)\s*$/);
+				// every line MTLLoader loads a texture from (map_*, and the bump/normal/displacement forms)
+				const map = line.match(/^(\s*(?:map_\w+|norm|bump|disp|refl)\s+)(.+?)\s*$/i);
 				if (!map) return line;
 				const tokens = map[2].split(/\s+/);
 				const filename = String(tokens[tokens.length - 1]).split(/[\\/]/).pop()?.toLowerCase() ?? '';
@@ -676,7 +678,7 @@ async function applyObjMaterials(loader, objFile, extras) {
 			})
 			.filter((line) => line !== null)
 			.join('\n');
-		const materials = new MTLLoader().parse(rewritten, '');
+		const materials = new MTLLoader(embeddedOnlyManager('file', 'model')).parse(rewritten, '');
 		materials.preload();
 		loader.setMaterials(materials);
 		return { applied: true, dropped, maps };
@@ -785,14 +787,17 @@ export async function parseModelFile(file, extension, extras) {
 		return { root: object, animated: null, notes };
 	}
 	if (extension === 'stl') {
-		const geometry = new STLLoader().parse(await readAs(file, 'buffer'));
+		const stlBytes = await readAs(file, 'buffer');
+		if (!checkStl(stlBytes, 'file', 'model')) throw refusal('model');
+		const geometry = new STLLoader().parse(stlBytes);
 		geometry.computeVertexNormals();
 		const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0xcccccc }));
 		return { root: mesh, animated: null, notes };
 	}
 	if (extension === 'fbx') {
 		const buffer = await readAs(file, 'buffer');
-		const object = new FBXLoader().parse(buffer, '');
+		if (!checkFbx(buffer, 'file', 'model')) throw refusal('model');
+		const object = new FBXLoader(embeddedOnlyManager('file', 'model')).parse(buffer, '');
 		// 17-D2: FBX clips used to be dropped on the floor (the loader parsed
 		// them, nothing read them). Animated rigs now take the SAME raw-bytes
 		// route as animated GLB — peers reparse the original file.
@@ -1389,7 +1394,7 @@ try {
 		reader.onerror = () => reject(reader.error);
 	});
 	const json = JSON.parse(reader.result);
-	const loader = new GLTFLoader();
+	const loader = new GLTFLoader(embeddedOnlyManager('file', 'model'));
 	const result = await new Promise((resolve, reject) => {
 		loader.parse(
 			json,

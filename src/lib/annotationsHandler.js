@@ -23,6 +23,7 @@ import { registerAnnotationsPersistence, markAnnotationsDirty } from './autosave
 import { flyTo } from './objectActions';
 import { safeStorage } from './safeStorage';
 import { normalizeReplies, mergeReplies } from './noteReplies';
+import { isSafeCssValue } from './loadGuardCore.js';
 
 // Synced note pins on objects. Offsets are object-local so pins follow their
 // object; one note per pin. Replication mirrors the flow-graph pattern:
@@ -96,7 +97,8 @@ export function normalizeAnnotation(a) {
 		...a,
 		text: typeof a?.text === 'string' ? a.text : '',
 		name: typeof a?.name === 'string' ? a.name : '',
-		color: typeof a?.color === 'string' && a.color ? a.color : DEFAULT_NOTE_COLOR,
+		// rendered into style attributes: a colour, never something that could load an address
+		color: typeof a?.color === 'string' && a.color && isSafeCssValue(a.color) ? a.color : DEFAULT_NOTE_COLOR,
 		label: typeof a?.label === 'string' ? a.label : '',
 		shape: NOTE_SHAPES.includes(a?.shape) ? a.shape : 'round',
 		// H11: an authored FRAMING for the note (replicated). Opening flies here

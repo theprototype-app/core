@@ -301,6 +301,7 @@
 		"import-file": "agent"
 	},
 	"suites": {
+		"load-check": 240,
 		"uir-people": 300,
 		"possess": 120,
 		"starter-recipes-78": 300,

@@ -1,3 +1,4 @@
+import { embeddedOnlyManager, checkGltf, noteRefusedFetch } from './loadGuard.js';
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
 import { createGltfLoader } from './gltfLoader';
@@ -94,8 +95,79 @@ export function packRefOf(object) {
 
 /** Where a reference's bytes live. @param {PackRef} ref */
 export function packRefUrl(ref) {
-	if (/^https?:\/\//.test(ref.path)) return ref.path;
-	return String(PACKS_BASE).replace(/\/+$/, '') + '/' + ref.path.replace(/^\/+/, '');
+	return packAddress(ref?.path);
+}
+
+/** Where pack files may come from besides the packs CDN: the upstream repo the pack lists point
+ * their sample models at. A reference arrives with scenes and with peers' objects, so an address
+ * outside these is not fetched. */
+const PACK_UPSTREAMS = ['https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/'];
+
+/** Extra pack sources a test adds through the debug hook (a local file server); empty outside tests. @type {string[]} */
+const testSources = [];
+
+/**
+ * Test seam (through the opt-in debug hook only): treat `origin` as a pack source, so a suite can
+ * serve pack files from its own local server.
+ * @param {string} origin like `https://host:port`
+ */
+export function allowPackSourceForTest(origin) {
+	const prefix = new URL(origin).origin + '/';
+	if (!testSources.includes(prefix)) testSources.push(prefix);
+}
+
+/** The packs repo at ANY ref (a scene saved against `@format-1` still loads under `@main`). */
+function packsRepoPrefix() {
+	const base = String(PACKS_BASE).replace(/\/+$/, '');
+	const at = base.indexOf('@');
+	return at > 0 ? base.slice(0, at + 1) : base + '/';
+}
+
+/** @param {string} url */
+function isPackSource(url) {
+	let href;
+	try {
+		const parsed = new URL(url);
+		if (parsed.username || parsed.password) return false;
+		href = parsed.href;
+	} catch {
+		return false;
+	}
+	let base = packsRepoPrefix();
+	try {
+		base = new URL(base, typeof location !== 'undefined' ? location.href : undefined).href;
+	} catch {
+		/* keep it as written */
+	}
+	// this page's own server (bundled packs under /library/, a dev or exported build) is not outside
+	const own = typeof location !== 'undefined' && location.origin && location.origin !== 'null' ? location.origin + '/' : null;
+	return href.startsWith(base) || (!!own && href.startsWith(own)) || PACK_UPSTREAMS.some((prefix) => href.startsWith(prefix)) || testSources.some((prefix) => href.startsWith(prefix));
+}
+
+/**
+ * The address of a pack file from a reference path: relative to PACKS_BASE, or an absolute
+ * address under a pack source. Anything else (another server, a path that climbs out of the
+ * packs folder) becomes an empty data URL, which fails to load like a missing file.
+ * @param {unknown} path @returns {string}
+ */
+export function packAddress(path) {
+	if (typeof path !== 'string' || !path) return 'data:,';
+	if (/^[a-z][a-z0-9+.-]*:/i.test(path)) {
+		if (/^https?:\/\//i.test(path) && isPackSource(path)) return path;
+		noteRefusedFetch('file', 'pack');
+		return 'data:,';
+	}
+	let decoded = path;
+	try {
+		decoded = decodeURIComponent(path);
+	} catch {
+		/* a stray % — checked as written */
+	}
+	if (/\\|(^|\/)\.\.(\/|$)|^\/\//.test(decoded)) {
+		noteRefusedFetch('file', 'pack');
+		return 'data:,';
+	}
+	return String(PACKS_BASE).replace(/\/+$/, '') + '/' + path.replace(/^\/+/, '');
 }
 
 /**
@@ -115,7 +187,7 @@ export function packRefFromUrl(url, names = {}) {
 	return { pack, item, path };
 }
 
-const createLoader = createGltfLoader;
+const createLoader = () => createGltfLoader(embeddedOnlyManager('library', 'pack'));
 
 /**
  * The bytes of every IMAGE in a GLB, by glTF image index — read from the file's own JSON
@@ -329,6 +401,7 @@ export function loadPackTemplate(url) {
 				try {
 					noteParsing(url);
 					const hash = await hashBytes(buffer);
+					if (!checkGltf(buffer, 'library', 'pack', { uris: false })) throw new Error('model refused by the load check');
 					/** @type {any} */
 					const gltf = await new Promise((resolve, reject) => createLoader().parse(buffer, '', resolve, reject));
 					// 39 P4: what the file IS, for a row that did not say (an old pack, a Khronos row)
@@ -376,6 +449,7 @@ export function loadPackFile(url) {
 		job = (async () => {
 			// 39 P5: an item's LOD files are part of its download (the pack cache)
 			const buffer = await fetchPackBuffer(url);
+			if (!checkGltf(buffer, 'library', 'pack', { uris: false })) throw new Error('model refused by the load check');
 			/** @type {any} */
 			const gltf = await new Promise((resolve, reject) => createLoader().parse(buffer, '', resolve, reject));
 			await shareTextures(gltf, buffer);

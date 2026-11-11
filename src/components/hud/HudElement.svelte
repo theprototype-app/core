@@ -15,6 +15,7 @@
 	// the runtime fallback; it is not a second source of truth.
 	import { hudImageFor, resolveHudImage, registerHudImageListener } from '$lib/hudImages';
 	import { hudValues, setHudValue } from '$lib/hudDocs';
+	import { isSafeCssValue } from '$lib/loadGuardCore.js';
 	import { parseHudRichText } from '$lib/hudRichText';
 	import { moduleHudKindDef, moduleHudKinds } from '$lib/moduleHudKinds';
 	import { subPressIds } from '$lib/hudKinds';
@@ -52,6 +53,8 @@
 	/** @param {any} value @param {string} fallback */
 	function paint(value, fallback) {
 		if (value === undefined || value === null || value === '') return fallback;
+		// a value from content (a rich-text run, a peer's style) that could load something: the default
+		if (!isSafeCssValue(value)) return fallback;
 		const text = String(value);
 		// a bare token name ('accent', 'surface') resolves through the theme with a literal
 		// fallback; anything else (a hex, an rgb(), a keyword) is used as authored
@@ -370,8 +373,8 @@
 			// 53 (A6): the player's HUD text size rides a CSS var the runtime layer sets (1 in the editor)
 			`font-size: calc(${Number(style.size ?? 14)}px * var(--hud-text-scale, 1))`,
 			`font-weight: ${Number(style.weight ?? 400)}`,
-			style.font ? `font-family: ${style.font}` : '',
-			`text-align: ${style.align ?? 'left'}`,
+			style.font && isSafeCssValue(style.font) ? `font-family: ${style.font}` : '',
+			`text-align: ${['left', 'center', 'right'].includes(style.align) ? style.align : 'left'}`,
 			`opacity: ${Number(style.opacity ?? 1) * (element?.enabled === false ? 0.45 : 1)}`
 		]
 			.filter(Boolean)
@@ -731,7 +734,7 @@
 	     re-send the bytes on every slider nudge -->
 	<div class="hud-el hud-image" style={boxStyle}>
 		{#if imageUrl}
-			<img src={imageUrl} alt={element?.label ?? ''} style="object-fit: {element?.fit ?? 'contain'}" />
+			<img src={imageUrl} alt={element?.label ?? ''} style="object-fit: {['contain', 'cover', 'fill', 'none', 'scale-down'].includes(element?.fit) ? element.fit : 'contain'}" />
 		{:else if hash}
 			<span class="hud-image-wait">waiting for peer…</span>
 		{:else if editor}

@@ -1,6 +1,6 @@
+import { parseCheckedObject, embeddedOnlyManager } from './loadGuard.js';
 // @ts-ignore - no bundled three type declarations (project-wide)
 import { groupUuidsOf, regroup } from './groupRestore.js';
-import * as THREE from 'three';
 import { rejoinOutcome } from './rejoin'; // fix-agenttest 6
 import { get, writable } from 'svelte/store';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
@@ -630,14 +630,13 @@ function restoreMultiMaterial(entries) {
 	if (!entries.length) return;
 	const group = get(objectsGroup);
 	if (!group) return;
-	const loader = new THREE.ObjectLoader();
 	for (const entry of entries) {
 		const twin = group.getObjectByProperty('uuid', entry.uuid);
 		if (!twin) continue;
 		/** @type {any} */
 		let mesh;
 		try {
-			mesh = loader.parse(entry.element);
+			mesh = parseCheckedObject(entry.element, 'device', 'autosave');
 		} catch (error) {
 			log('warn', 'autosave', 'multi-material restore failed', String(error));
 			continue;
@@ -710,7 +709,7 @@ async function applyRestore(snapshot, offer = null) {
 		if (!isLive(job)) return null;
 		holdFrames();
 		if (snapshot.scene && group) {
-			const loader = new GLTFLoader();
+			const loader = new GLTFLoader(embeddedOnlyManager('device', 'autosave'));
 			/** @type {any} */
 			const result = await new Promise((resolve, reject) =>
 				loader.parse(snapshot.scene, '', resolve, reject)

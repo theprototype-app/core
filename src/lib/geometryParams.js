@@ -226,3 +226,60 @@ export const GEOMETRY_PARAMS = {
 export function geometrySpec(gtype) {
 	return GEOMETRY_PARAMS[gtype] ?? null;
 }
+
+/** How far past a count's own slider range a value from a message or a file may go: the slider is
+ * a UI range, so a little more is allowed, but not the millions of vertices a raw number can ask for. */
+const COUNT_HEADROOM = 4;
+/** Sizes, offsets and angles from a message or a file: any finite number within this. */
+const NUMBER_LIMIT = 10_000;
+
+/** @param {ParamSpec | undefined} spec @param {unknown} value */
+function boundValue(spec, value) {
+	if (typeof value !== 'number') return value;
+	if (!Number.isFinite(value)) return spec && typeof spec.def === 'number' ? spec.def : undefined;
+	if (spec?.kind === 'int') {
+		const lo = spec.min ?? 0;
+		const hi = Math.max(lo, (spec.max ?? 64) * COUNT_HEADROOM);
+		return Math.round(Math.min(hi, Math.max(lo, value)));
+	}
+	return Math.min(NUMBER_LIMIT, Math.max(-NUMBER_LIMIT, value));
+}
+
+/**
+ * The params of a geometry message or a saved row with every number kept in bounds: counts
+ * within a few times their slider range, other numbers finite and within NUMBER_LIMIT. Types
+ * with their own `clean` already do this (and more); this is for the rest.
+ * @param {string} gtype @param {any} params @returns {Record<string, any>}
+ */
+export function boundGeometryParams(gtype, params) {
+	const spec = geometrySpec(gtype);
+	/** @type {Record<string, any>} */
+	const out = { ...(params && typeof params === 'object' ? params : {}) };
+	if (!spec) return out;
+	for (const key of Object.keys(out)) {
+		const row = spec.params.find((p) => p.key === key);
+		const value = boundValue(row, out[key]);
+		if (value === undefined) delete out[key];
+		else out[key] = value;
+	}
+	return out;
+}
+
+/**
+ * The numbers of a `/create <type> a b c d` command in bounds, by the type's constructor order
+ * (the same numbers reach every peer, so every peer bounds them the same way). A type with no
+ * spec (a custom builder) gets the plain number bound, and anything with no spec at all that
+ * three would treat as a count is capped by the same limit as a size.
+ * @param {string} gtype @param {(number|undefined)[]} args @returns {(number|undefined)[]}
+ */
+export function boundCreateArgs(gtype, args) {
+	const spec = geometrySpec(gtype);
+	if (spec?.fromArgs) return args; // fromArgs + clean bound these already
+	return args.map((value, i) => {
+		const key = spec?.order?.[i];
+		const row = key ? spec?.params.find((p) => p.key === key) : undefined;
+		if (row) return /** @type {number|undefined} */ (boundValue(row, value));
+		if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+		return Math.min(256, Math.max(-NUMBER_LIMIT, value));
+	});
+}

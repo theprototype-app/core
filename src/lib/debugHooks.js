@@ -551,6 +551,8 @@ export const DEBUG_HOOKS = [
 	['diagnostics', () => import('./diagnostics')],
 	['wireValidate', () => import('./wireValidate')],
 	['wireErrors', () => import('./wireErrors')],
+	// the load check in front of three's generic loaders (totals + reset for the suites)
+	['loadGuard', () => import('./loadGuard.js')],
 	['safeStorage', () => import('./safeStorage')],
 	['sceneBudget', () => import('./sceneBudget')],
 	// 46 B1/B2: the budget chip + Statistics ▸ Budget (budgetTarget, sceneCost, sampleBudget, openBudget, TARGETS)

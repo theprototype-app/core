@@ -24,6 +24,11 @@
 - **Layouts** is the first row of **Window**; **What's new** is the version line at the bottom, with a dot when there is something new. The menu is solid to its bottom edge, and **Help** is a grid with a bug icon on **Report a bug**. <!-- uir-polish C1-C4 -->
 - **One Report a bug view**: the moment report and the bug report are one form. It names the seconds it holds ("the last 16 s"), and with no account it sends through the anonymous channel. <!-- uir-polish D1 -->
 
+## 1.65.1 — Safer loading
+
+- **Objects and materials from other people and from files are checked before they load.** Anything that does not pass loads like a missing file, and the rest of the scene is unchanged.
+
+
 ## 1.65.0 — New menus and panels
 
 ### Chat and the AI assistant

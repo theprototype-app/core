@@ -114,6 +114,8 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A', { storage: { placeholderStuckSeconds: '2' } });
 	const shot = async (name) => SHOTS && A.page.screenshot({ path: SHOTS + '/' + name });
+	// pack files load only from pack sources (the load check): this suite's own server is one
+	await A.page.evaluate((u) => window.__stores.packRefs.allowPackSourceForTest(u), fsrv.url('ok'));
 	// record outgoing peer messages (send works with zero connections)
 	await A.page.evaluate(async () => {
 		window.__sent = [];

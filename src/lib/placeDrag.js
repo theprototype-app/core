@@ -1,3 +1,4 @@
+import { parseCheckedObject } from './loadGuard.js';
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
@@ -761,7 +762,7 @@ function decodePrefab(id) {
 	try {
 		const prefab = get(prefabsRef.prefabs).find((/** @type {any} */ p) => p.id === id);
 		if (!prefab?.element) return;
-		const root = new THREE.ObjectLoader().parse(prefab.element);
+		const root = parseCheckedObject(prefab.element, 'library', 'prefab');
 		keepDecoded('prefab:' + id, root);
 	} catch {}
 }

@@ -1,3 +1,4 @@
+import { parseCheckedObject } from './loadGuard.js';
 import * as THREE from 'three';
 
 // LIGHTS IN THE AUTOSAVE (fix-agenttest item 1). The autosave scene goes through a GLTF
@@ -90,14 +91,13 @@ export function restoreLights(root, entries, onError = () => {}) {
 	/** @type {any[]} */
 	const replaced = [];
 	if (!root || !Array.isArray(entries) || !entries.length) return replaced;
-	const loader = new THREE.ObjectLoader();
 	for (const entry of entries) {
 		const twin = root.getObjectByProperty('uuid', entry?.uuid);
 		if (!twin || twin === root) continue;
 		/** @type {any} */
 		let light;
 		try {
-			light = loader.parse(entry.element);
+			light = parseCheckedObject(entry.element, 'file', 'light');
 		} catch (error) {
 			onError(error);
 			continue;

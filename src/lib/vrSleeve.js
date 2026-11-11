@@ -1,3 +1,4 @@
+import { parseCheckedObject } from './loadGuard.js';
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
@@ -161,7 +162,7 @@ function rebuildCustomRow() {
 	get(sleeveSlots).forEach((slot, i) => {
 		let ghost;
 		try {
-			ghost = ghostify(new THREE.ObjectLoader().parse(slot.element));
+			ghost = ghostify(parseCheckedObject(slot.element, 'library', 'prefab'));
 		} catch {
 			ghost = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), ghostMaterial(0xffc46b));
 		}
@@ -237,7 +238,7 @@ function previewFor(entry) {
 	}
 	let object;
 	try {
-		object = ghostify(new THREE.ObjectLoader().parse(entry.slot.element));
+		object = ghostify(parseCheckedObject(entry.slot.element, 'library', 'prefab'));
 	} catch {
 		object = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), ghostMaterial(0xbfd6ff));
 	}

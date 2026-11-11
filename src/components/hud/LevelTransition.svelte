@@ -11,6 +11,7 @@
 	import { isVRMode } from '../../stores/sceneStore';
 	import { hudImageFor, resolveHudImage } from '../../lib/hudImages.js';
 	import { bundledLoadingPath } from '../../lib/gameLevels/exportLoading.js';
+	import { isLocalImageUrl } from '../../lib/loadGuardCore.js';
 
 	const t = $derived($levelTransition);
 	const covering = $derived(t.phase === 'out' || t.phase === 'covered');
@@ -34,10 +35,12 @@
 	/** announced at 25 % steps (a screen reader is not read every 100 ms) */
 	const spoken = $derived(Math.floor(pct / 25) * 25);
 
-	/** a library image (an Explorer hash) or a plain URL @param {string} ref */
+	/** a library image (an Explorer hash), an embedded image or an export's own copy; the setting
+	 * arrives with the scene, so an address on another server is not shown @param {string} ref */
 	function imageUrl(ref) {
 		if (!ref) return '';
-		if (/^(https?:|data:image\/|blob:)/.test(ref)) return ref;
+		if (isLocalImageUrl(ref)) return ref;
+		if (/^[a-z][a-z0-9+.-]*:|^\/\//i.test(ref)) return '';
 		if (bundledLoadingPath(ref)) return ref; // an export's own copy
 		const hit = hudImageFor(ref);
 		if (!hit) void resolveHudImage(ref).then(() => (imageTick += 1));

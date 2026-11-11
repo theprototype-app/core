@@ -1,3 +1,4 @@
+import { parseCheckedObject, embeddedOnlyManager, checkGltf, refusal } from './loadGuard.js';
 import * as THREE from 'three';
 import { notifyOn } from './notifyPrefs';
 import { globalScene, objectsGroup, showGrid, TControls, lockedObjects, selectedObject, globalCamera, peerHands, pokeScene, beginSceneBatch, endSceneBatch } from '../stores/sceneStore.js';
@@ -84,7 +85,6 @@ specatorMode.subscribe(value => { specating = value });
 let camera = $state();
 globalCamera.subscribe(value => { camera = value });
 
-const loader = new THREE.ObjectLoader();
 
 
 export function userData(data) {
@@ -591,7 +591,8 @@ export async function colorObject(uuid, color, near, far) {
     }
 }
 
-export async function objectParameters(data) {
+/** @param {any} data @param {string} [from] the sending peer */
+export async function objectParameters(data, from = 'peer') {
     if (data.parameter == 'visible') {
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
         if (mesh) mesh.visible = data.visible;
@@ -602,7 +603,7 @@ export async function objectParameters(data) {
         // UV4: the whole slot list + geometry groups. Both halves must arrive
         // together — an array material with no groups renders nothing.
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
-        if (mesh) applyMaterials(mesh, data.payload, false);
+        if (mesh) applyMaterials(mesh, data.payload, false, from);
     } else if (data.parameter == 'map') {
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
         // UV2: `slot` addresses one material of an ARRAY. Absent (an older peer,
@@ -840,9 +841,10 @@ export async function deleteObject(uuid) {
  * tolerate a uuid we do not hold — an override for an unknown object is just a create.
  * @param {any} object @param {string[]|null} uuid @param {boolean} [override]
  * @param {string} [groupuuid] @param {number[]} [pos] @param {number[]} [rot] @param {number[]} [scale]
+ * @param {string} [from] the sending peer (counts what the load check changed)
  */
-export async function createObject(object, uuid, override, groupuuid, pos, rot, scale) {
-    return enqueueIngest([object, uuid, override, groupuuid, pos, rot, scale]);
+export async function createObject(object, uuid, override, groupuuid, pos, rot, scale, from) {
+    return enqueueIngest([object, uuid, override, groupuuid, pos, rot, scale, from]);
 }
 
 // ---------------------------------------------------------------------------
@@ -981,7 +983,9 @@ async function drainIngest() {
                     console.log('Failed to create an incoming object: ' + error);
                     const uuid = job.args[1];
                     noteLoadFailed(Array.isArray(uuid) ? uuid : [job.args[0]?.element?.object?.uuid].filter(Boolean));
-                    job.reject(error);
+                    // a refusal is counted and told once by the check; it is not a failure to raise
+                    if (/** @type {any} */ (error)?.loadCheck) job.resolve(undefined);
+                    else job.reject(error);
                 }
             }
             if (ingestQueue.length && !ingestHeld) await new Promise((r) => setTimeout(r, 0));
@@ -1015,11 +1019,14 @@ registerMetricSource('ingestBacklog', ingestBacklog);
 /**
  * @param {any} object @param {string[]|null} uuid @param {boolean} [override]
  * @param {string} [groupuuid] @param {number[]} [pos] @param {number[]} [rot] @param {number[]} [scale]
+ * @param {string} [from]
  */
-async function applyCreateObject(object, uuid, override, groupuuid, pos, rot, scale) {
+async function applyCreateObject(object, uuid, override, groupuuid, pos, rot, scale, from = 'peer') {
     let parent;
     if (uuid == null) {
-    let mesh = loader.parse(object.element);
+    // checked before three's loader sees it (loadGuardCore.js); a refusal throws into the
+    // ingest queue's failure path like any other object that cannot be built
+    let mesh = parseCheckedObject(object.element, from, 'object');
     // an incoming object can only carry a STALE edit wireframe (a peer on an
     // older build, or a scene saved with a session open) — never a live one
     stripEditOverlays(mesh);
@@ -1043,7 +1050,10 @@ async function applyCreateObject(object, uuid, override, groupuuid, pos, rot, sc
     }
     } else {
         // console.log("Adding GLTF object " + uuid)
-        const loader = new GLTFLoader();
+        // a glTF made by the sender's exporter embeds everything it needs: a uri that is not a data
+        // URL (or an absurd size) refuses the object, and the loader cannot fetch either way
+        if (!checkGltf(object.element, from, 'object')) throw refusal('object');
+        const loader = new GLTFLoader(embeddedOnlyManager(from, 'object'));
         const result = await new Promise((resolve, reject) => {
           loader.parse(object.element, '', (gltf) => resolve(gltf), (error) => reject(error));
         });

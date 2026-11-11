@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { parseCheckedObject } from '$lib/loadGuard.js';
 	import { onLayoutRestore, storedPanelLayout } from '$lib/uiLayoutsCore';
 	import { showChoice, showConfirm } from '$lib/confirmDialog.js';
 	import { safeHtml } from '$lib/sandbox/sanitize.js';
@@ -6110,7 +6111,7 @@
 				holder.name = record.name.replace(/\.tpscene$/i, '');
 				for (const el of payload?.objects ?? []) {
 					try {
-						holder.add(new THREE.ObjectLoader().parse(el));
+						holder.add(parseCheckedObject(el, 'file', 'prefab'));
 					} catch {}
 				}
 				element = holder.children.length ? holder.toJSON() : null;

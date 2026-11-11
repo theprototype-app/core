@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { toggleExpand, fixLight } from '../stores/appStore.js';
 import { customGeometryBuilders } from '$lib/customGeometries';
 import { stampGeometryParams } from '$lib/geometryEdit';
-import { GEOMETRY_PARAMS } from '$lib/geometryParams';
+import { GEOMETRY_PARAMS, boundCreateArgs } from '$lib/geometryParams';
 import { paletteColorFor } from '$lib/palette';
 import { stampFluidTank } from '$lib/sim/fluidTank.js';
 import { stampFluidEmitter } from '$lib/sim/fluidEmitterObject.js';
@@ -65,6 +65,8 @@ export function createGeometry(command, uuid) {
         const value = parseFloat(command.split(' ')[index]);
         return Number.isNaN(value) ? undefined : value;
     });
+    // the command arrives from peers too: counts and sizes in bounds before anything is built
+    options = boundCreateArgs(geometry, options);
     let geometryList = ["Box","Capsule","Circle","Cone","Cylinder","Dodecahedron","Edges","Extrude","Icosahedron","Lathe","Octahedron","Plane","Polyhedron","Ring","Shape","Sphere","Tetrahedron","Torus","TorusKnot","Tube","Wireframe"]
     // 37 R3: a parametric architecture primitive maps its /create numbers to PARAMS
     // (fromArgs) and builds from them, so the variant (a door in the wall, an L stair)

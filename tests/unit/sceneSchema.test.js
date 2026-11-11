@@ -10,7 +10,7 @@ import fs from 'fs';
 import path from 'path';
 import * as THREE from 'three';
 import { unzipSync, strFromU8 } from 'fflate';
-import { validateObjectJson, validateMaterialSet, MAX_DEPTH, MAX_IMAGE_CHARS, isPlainJson } from '../../src/lib/sceneSchema.js';
+import { validateObjectJson, validateMaterialSet, validateGltfElement, MAX_DEPTH, MAX_IMAGE_CHARS, isPlainJson } from '../../src/lib/sceneSchema.js';
 
 const ROOT = path.resolve(__dirname, '../..');
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
@@ -80,6 +80,88 @@ describe('real content: nothing is dropped', () => {
 			expect(mats.has(t)).toBe(true);
 		expect(elements.length).toBeGreaterThanOrEqual(40);
 		expect(sets.length).toBe(0);
+	});
+});
+
+/** every .glb under a dir @param {string} dir @returns {string[]} */
+function glbFiles(dir) {
+	if (!fs.existsSync(dir)) return [];
+	return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? glbFiles(path.join(dir, e.name)) : e.name.endsWith('.glb') ? [path.join(dir, e.name)] : []));
+}
+
+describe('real glTF: nothing is dropped', () => {
+	it('every glTF `object` message of the 1.65 handshake capture passes unchanged', () => {
+		const wire = JSON.parse(fs.readFileSync(path.join(ROOT, 'tests/fixtures/schema-1.65/wire.json'), 'utf8'));
+		const gltf = wire.filter((m) => m.type === 'object' && m.uuids != null);
+		expect(gltf.length).toBeGreaterThanOrEqual(30); // premise
+		for (const m of gltf) {
+			const before = JSON.stringify(m.element);
+			const r = validateGltfElement(m.element);
+			expect(r.ok).toBe(true);
+			expect(r.dropped).toEqual([]);
+			expect(JSON.stringify(m.element)).toBe(before);
+		}
+	});
+	it('every shipped .glb passes (sizes only, as their loaders check them)', () => {
+		const files = glbFiles(path.join(ROOT, 'static'));
+		expect(files.length).toBeGreaterThanOrEqual(10); // premise
+		for (const f of files) {
+			const r = validateGltfElement(new Uint8Array(fs.readFileSync(f)).buffer, { uris: false });
+			expect(r.ok, path.relative(ROOT, f)).toBe(true);
+			expect(r.dropped).toEqual([]);
+		}
+	});
+});
+
+describe('glTF out of schema: extras follow the userData rules', () => {
+	const doc = (over = {}) => ({
+		asset: { version: '2.0' },
+		scenes: [{ nodes: [0] }],
+		nodes: [{ name: 'n', extras: { physics: { mass: 1 } } }],
+		materials: [{ name: 'm', extras: { tpEdited: true } }],
+		...over
+	});
+	it('a clean document is unchanged', () => {
+		const d = doc();
+		const before = JSON.stringify(d);
+		const r = validateGltfElement(d);
+		expect(r.ok).toBe(true);
+		expect(r.dropped).toEqual([]);
+		expect(JSON.stringify(d)).toBe(before);
+	});
+	it('a reserved key in a node\'s extras is dropped, as in userData', () => {
+		const d = doc({ nodes: [JSON.parse('{"name":"n","extras":{"__proto__":{"physics":{"mass":1e9}},"ok":1}}')] });
+		const r = validateGltfElement(d);
+		expect(r.ok).toBe(true);
+		expect(r.dropped.map((x) => x.reason + ' ' + x.path)).toEqual(['userData nodes[0].userData.__proto__']);
+		expect(Object.hasOwn(d.nodes[0].extras, '__proto__')).toBe(false);
+		expect(d.nodes[0].extras.ok).toBe(1);
+	});
+	it('a known key of the wrong kind is dropped, in every place three reads extras', () => {
+		const d = doc({
+			extras: { physics: 'x' },
+			nodes: [{ extras: { physics: 7 } }],
+			materials: [{ extras: { tpEdited: 'x' } }],
+			textures: [{ source: 0, extras: [1, 2] }],
+			meshes: [{ primitives: [{ attributes: {}, extras: { __topo: 3 } }] }],
+			extensions: { KHR_lights_punctual: { lights: [{ type: 'point', extras: { physics: false } }] } }
+		});
+		const r = validateGltfElement(d);
+		expect(r.ok).toBe(true);
+		expect(r.dropped.length).toBe(6);
+		expect(d.textures[0].extras).toBeUndefined();
+	});
+	it('a .glb or JSON text that breaks the rule is refused (it cannot be cleaned in place)', () => {
+		const text = JSON.stringify({ asset: { version: '2.0' }, nodes: [{ extras: { physics: 7 } }] });
+		const r = validateGltfElement(text);
+		expect(r.ok).toBe(false);
+		expect(r.reason).toBe('userData');
+		expect(validateGltfElement(JSON.stringify(doc())).ok).toBe(true);
+	});
+	it('loadGuardCore\'s own glTF rules still refuse first', () => {
+		const r = validateGltfElement(doc({ buffers: [{ uri: 'https://example.com/b.bin', byteLength: 4 }] }));
+		expect(r.ok).toBe(false);
+		expect(r.reason).toBe('uri');
 	});
 });
 

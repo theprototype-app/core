@@ -27,7 +27,7 @@
 // key needs nothing (plain JSON under the cap always passes); give it a kind in USERDATA_KINDS when
 // a wrong kind must not reach its reader. See OPEN-CORE.md "Object schema".
 
-import { guardObjectJson, guardMaterialSet, measureObjectJson, isStandardMaterial, fallbackMaterial, STANDARD_MATERIAL_TYPES, isEmbeddedUrl, MAX_NODES, MAX_NUMBERS, MAX_GENERATED_VERTICES } from './loadGuardCore.js';
+import { guardObjectJson, guardMaterialSet, guardGltfElement, gltfJsonOf, measureObjectJson, isStandardMaterial, fallbackMaterial, STANDARD_MATERIAL_TYPES, isEmbeddedUrl, MAX_NODES, MAX_NUMBERS, MAX_GENERATED_VERTICES } from './loadGuardCore.js';
 
 /** @typedef {{path: string, reason: string}} Dropped */
 /** @typedef {{ok: boolean, json: any, dropped: Dropped[], reason?: string, materials: number, images: number, textures: number}} SchemaResult */
@@ -669,6 +669,60 @@ export function validateMaterialSet(payload) {
 		});
 	const guard = guardMaterialSet(payload);
 	return result(r, payload, guard);
+}
+
+/**
+ * Where three's GLTFLoader copies a glTF definition's `extras` into `userData`, so they follow the userData
+ * rules, and the userData scope each one lands in.
+ * @type {[string, 'object'|'material'|'geometry'|'texture'][]}
+ */
+const GLTF_EXTRAS = [
+	['scenes', 'object'],
+	['nodes', 'object'],
+	['meshes', 'object'],
+	['cameras', 'object'],
+	['animations', 'object'],
+	['materials', 'material'],
+	['textures', 'texture']
+];
+
+/**
+ * Validate one glTF element (a parsed document, a JSON string or .glb bytes): loadGuardCore's
+ * glTF rules (embedded buffers and images, sizes), then every `extras` block three turns into
+ * `userData` under the same rules as an ObjectLoader userData. A parsed document is cleaned IN
+ * PLACE; a string or .glb cannot be, so a block that breaks a rule refuses it instead.
+ * `{uris: false}` = sizes only, for a loader that already refuses fetches.
+ * @param {any} element @param {{uris?: boolean}} [opts] @returns {SchemaResult}
+ */
+export function validateGltfElement(element, opts) {
+	const r = new Report();
+	const none = { materials: 0, images: 0, textures: 0 };
+	const guard = guardGltfElement(element, opts);
+	if (!guard.ok) return result(r, element, { ok: false, reason: guard.reason, ...none });
+	const json = gltfJsonOf(element);
+	if (!json) return result(r, element, { ok: false, reason: 'shape', ...none });
+	/** @param {any} def @param {'object'|'material'|'geometry'|'texture'} scope @param {string} at */
+	const extras = (def, scope, at) => {
+		if (!def || typeof def !== 'object' || !('extras' in def) || def.extras === null || typeof def.extras !== 'object') return;
+		const holder = { userData: def.extras };
+		checkUserData(holder, scope, at, r);
+		if ('userData' in holder) def.extras = holder.userData;
+		else delete def.extras;
+	};
+	extras(json, 'object', 'gltf');
+	for (const [key, scope] of GLTF_EXTRAS) {
+		const list = json[key];
+		if (!Array.isArray(list)) continue;
+		list.forEach((def, i) => extras(def, scope, `${key}[${i}]`));
+	}
+	if (Array.isArray(json.meshes))
+		json.meshes.forEach((/** @type {any} */ mesh, /** @type {number} */ i) => {
+			if (Array.isArray(mesh?.primitives)) mesh.primitives.forEach((/** @type {any} */ p, /** @type {number} */ j) => extras(p, 'geometry', `meshes[${i}].primitives[${j}]`));
+		});
+	const lights = json.extensions?.KHR_lights_punctual?.lights;
+	if (Array.isArray(lights)) lights.forEach((/** @type {any} */ l, /** @type {number} */ i) => extras(l, 'object', `lights[${i}]`));
+	if (r.count && json !== element) return result(r, element, { ok: false, reason: 'userData', ...none });
+	return result(r, element, { ok: true, ...none });
 }
 
 /**

@@ -2,9 +2,9 @@
 // from JSON it did not just make itself goes through here, so the check, the count and the one
 // toast are the same everywhere. See loadGuardCore.js for the rules.
 import * as THREE from 'three';
-import { guardChanged, guardGltfElement, isEmbeddedUrl, isLocalImageUrl, stlWithinLimits } from './loadGuardCore.js';
+import { guardChanged, isEmbeddedUrl, isLocalImageUrl, stlWithinLimits } from './loadGuardCore.js';
 // 101 F2: the full object / material schema runs here, on top of loadGuardCore's rules
-import { validateObjectJson, validateMaterialSet } from './sceneSchema.js';
+import { validateObjectJson, validateMaterialSet, validateGltfElement } from './sceneSchema.js';
 import { fbxWithinLimits } from './fbxGuard.js';
 export { isLocalImageUrl };
 import { noteWireError } from './wireErrors.js';
@@ -81,9 +81,9 @@ export function checkMaterialSet(payload, from, what) {
  * @param {any} element @param {string} from @param {string} what @param {{uris?: boolean}} [opts]
  */
 export function checkGltf(element, from, what, opts) {
-	const r = guardGltfElement(element, opts);
-	if (!r.ok) report(from, what, { ok: false, reason: r.reason, materials: 0, images: 0, textures: 0 });
-	return r.ok;
+	const result = validateGltfElement(element, opts);
+	report(from, what, result);
+	return result.ok;
 }
 
 /**

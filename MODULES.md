@@ -178,6 +178,19 @@ sdkThing.surface = { registerThing: 'registers', onThing: 'registers', thingCoun
 
 ## API reference (v1)
 
+### Which api you have: `api.version` (101 F6)
+
+`api.version` is the module api's contract number: **2** since roadmap 101 (absent before,
+read it as 1). Feature-probe with `(api.version ?? 1) >= 2`. Version 2 adds nothing else to the api; it
+ships with one notice:
+
+> **The raw renderer is leaving the contract.** Today a module can still reach the `THREE.WebGLRenderer`
+> (the `renderer` handed to a shader backend or post effect hook, and through `api.camera()`'s
+> XR check). It stays for now, but roadmap 100 (Cinematic view) swaps the renderer at run time and
+> 2.0 renders through WebGPU, so a module that calls renderer methods will break then. Use the look
+> and post calls instead (`api.registerPostEffect`, the scene look, `api.quality`); a module that
+> truly needs a renderer feature should ask for an SDK call.
+
 ### Flow nodes
 
 ```js

@@ -43,6 +43,14 @@
   trap and the replication rules an agent must respect (AGENT-SESSIONS.md).
 - [Build with an AI agent](https://docs.theprototype.app/ai/build-with-an-agent/):
   the same for people.
+- Model round trip (1.53): a person presses Edit in Blender… (a `.glb` carrying
+  `extras.theprototype`), an agent with [blender-mcp](https://github.com/ahujasid/blender-mcp) edits it,
+  and the person drops it back: "Update <name>?" keeps the object, its flows, physics and clips.
+  Agent tools cannot export or replace in place yet.
+  [Edit in Blender](https://docs.theprototype.app/edit-in-blender/),
+  [Agents + Blender](https://docs.theprototype.app/ai/agents-and-blender/).
+- Setup status: [Tools & connections](https://docs.theprototype.app/tools-and-connections/); an agent reads
+  what is missing from `status().missingTools`.
 
 ## Key concepts
 
@@ -445,6 +453,19 @@ sdkThing.surface = { registerThing: 'registers', onThing: 'registers', thingCoun
   heap measured) and `module-lifecycle-repo` (every zip in the modules repo through 3 cycles).
 
 ## API reference (v1)
+
+### Which api you have: `api.version` (101 F6)
+
+`api.version` is the module api's contract number: **2** since roadmap 101 (absent before,
+read it as 1). Feature-probe with `(api.version ?? 1) >= 2`. Version 2 adds nothing else to the api; it
+ships with one notice:
+
+> **The raw renderer is leaving the contract.** Today a module can still reach the `THREE.WebGLRenderer`
+> (the `renderer` handed to a shader backend or post effect hook, and through `api.camera()`'s
+> XR check). It stays for now, but roadmap 100 (Cinematic view) swaps the renderer at run time and
+> 2.0 renders through WebGPU, so a module that calls renderer methods will break then. Use the look
+> and post calls instead (`api.registerPostEffect`, the scene look, `api.quality`); a module that
+> truly needs a renderer feature should ask for an SDK call.
 
 ### Flow nodes
 

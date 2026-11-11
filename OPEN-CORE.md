@@ -356,6 +356,12 @@ when `N` is **newer** than the engine, and a new engine always accepts an older 
 drawer mounts, roles bridge) · **3 (roadmap #28-A: the publish · play · remix seams above)**.
 A coupled change therefore deploys the engine first and the plugin after.
 
+**The module api has its own number** (101 F6): `api.version` on the module api (`src/lib/sdk/core.js`
+`SDK_API_VERSION`, now **2**) is NOT the plugin `api.version` above. Version 2 also notes that the raw
+renderer handle a module (or a plugin's `captureThumbnail` path) can reach today stays for now and will
+leave the contract once roadmap 100 swaps renderers: modules use the look / post SDK calls. Every
+renderer the app makes is created in `src/lib/render/` (a CI check keeps it that way).
+
 ## Rules for plugin authors
 
 - **Never trust the sender.** The capability gate is receive-side truth; send-side UI

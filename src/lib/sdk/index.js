@@ -28,7 +28,10 @@ import { sdkBehavior } from './behavior.js';
 import { sdkQuality } from './quality.js';
 import { sdkPeerVars } from './peerVars.js';
 import { sdkPossess } from './possess.js';
-import { sdkCore } from './core.js';
+import { sdkCore, SDK_API_VERSION } from './core.js';
+
+// 101 F6: `api.version` (2) — re-exported so a caller can compare without building an api
+export { SDK_API_VERSION };
 import { sdkBackends } from './backends.js';
 import { sdkAudio } from './audio.js';
 import { sdkPost } from './post.js';
@@ -61,7 +64,7 @@ export const SDK_TABLE = [
 	['peerVars', sdkPeerVars], // api.peerVars
 	['flow', sdkFlow], // api.flow
 	['possess', sdkPossess], // possess, releasePossess, possessModes
-	['core', sdkCore], // selectedUuid, scene, objectsGroup, sceneAssets, peerId, toast, now, THREE, assetUrl
+	['core', sdkCore], // version (101 F6), selectedUuid, scene, objectsGroup, sceneAssets, peerId, toast, now, THREE, assetUrl
 	['backends', sdkBackends], // registerUnwrapBackend, registerShaderBackend, registerAudioDevice
 	['audio', sdkAudio], // api.audio
 	['post', sdkPost], // registerPostEffect, registerPostBackend

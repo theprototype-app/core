@@ -2,7 +2,7 @@
 const h = require('./helpers.cjs');
 
 const lockedState = (page) =>
-	page.evaluate(() => new Promise((r) => window.__stores.isLocked.subscribe((v) => r(v))()));
+	page.evaluate(() => new Promise((r) => window.__tp.test.v1.isLocked.subscribe((v) => r(v))()));
 
 h.run(async () => {
 	const browser = await h.launch();
@@ -40,9 +40,9 @@ h.run(async () => {
 
 	// Exit VR action resets the VR flag (session end is a no-op outside XR)
 	const vrReset = await A.page.evaluate(() => {
-		window.__stores.isVRMode.set(true);
-		window.__stores.vrControls.executeVRMenuAction('exitvr');
-		return new Promise((r) => window.__stores.isVRMode.subscribe((v) => r(v))());
+		window.__tp.test.v1.isVRMode.set(true);
+		window.__tp.test.v1.vrControls.executeVRMenuAction('exitvr');
+		return new Promise((r) => window.__tp.test.v1.isVRMode.subscribe((v) => r(v))());
 	});
 	h.check(vrReset === false, 'Exit VR tile resets VR mode');
 

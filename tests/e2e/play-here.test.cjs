@@ -10,7 +10,7 @@
 // IWER (the headset) lives in play-here-iwer.test.cjs.
 const h = require('./helpers.cjs');
 
-const store = (name) => `(() => { let v; window.__stores.${name}.subscribe((x) => (v = x))(); return v; })()`;
+const store = (name) => `(() => { let v; window.__tp.test.v1.${name}.subscribe((x) => (v = x))(); return v; })()`;
 const near = (a, b, eps = 0.06) => Math.abs(a - b) < eps;
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const SPAWN = { position: [3, 0, -4], yaw: Math.PI / 2 };
@@ -25,7 +25,7 @@ const BAR = JSON.stringify({
 /** the play camera's world eye + heading, the editor camera's pose + orbit target */
 const cams = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		const get = (st) => { let v; st.subscribe((x) => (v = x))(); return v; };
 		const pc = get(s.playerCam);
@@ -46,7 +46,7 @@ const cams = (page) =>
 const aim = (page, pos, target) =>
 	page.evaluate(
 		({ pos, target }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const get = (st) => { let v; st.subscribe((x) => (v = x))(); return v; };
 			const cam = get(s.editorCam);
 			const oc = get(s.orbitControls);
@@ -73,10 +73,10 @@ h.run(async () => {
 	const P = A.page;
 
 	// ---- the world: a wide box far from the origin (top at y = 5), the scene's spawn elsewhere ----
-	await P.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await P.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await P.waitForTimeout(500);
 	const box = await P.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		const b = g.children.at(-1);
@@ -92,13 +92,13 @@ h.run(async () => {
 	});
 	h.check(box.top > 4, `premise: a box with its top at ${box.top.toFixed(2)} m, far from the origin`);
 	// flying allowed: the spawn's height is honoured (the grounded case is row 1b)
-	await P.evaluate((spawn) => window.__stores.scenePhysics.setScenePhysics({ play: { spawn, locomotion: { fly: true } } }), SPAWN);
+	await P.evaluate((spawn) => window.__tp.test.v1.scenePhysics.setScenePhysics({ play: { spawn, locomotion: { fly: true } } }), SPAWN);
 
 	// ---- 1. Ctrl+Shift+Enter from a far corner: on the box roof, facing the view ------------------
 	const EYE_AT = [40, 14, -32];
 	await aim(P, EYE_AT, [30, 0, -42]);
 	const before = await cams(P);
-	const resolved = await P.evaluate(() => window.__stores.playHere.resolvePlayHere());
+	const resolved = await P.evaluate(() => window.__tp.test.v1.playHere.resolvePlayHere());
 	h.check(resolved?.source === 'surface' && near(resolved.position[1], box.top), `the resolver lands on the roof (${JSON.stringify(resolved)})`);
 	await P.mouse.move(700, 450);
 	await P.keyboard.press('Control+Shift+Enter');
@@ -119,11 +119,11 @@ h.run(async () => {
 	h.check(c.editorQ.every((v, i) => near(v, before.editorQ[i], 0.01)), '...with the same orientation');
 	const sel = await P.evaluate(store('selectedObjects'));
 	h.check(sel.map((o) => o?.uuid ?? o).includes(box.uuid), `the selection is back (${JSON.stringify(sel.map((o) => o?.uuid ?? o))})`);
-	const dbg = await P.evaluate(() => window.__stores.playHere.playHereDebug());
+	const dbg = await P.evaluate(() => window.__tp.test.v1.playHere.playHereDebug());
 	h.check(dbg.override === null && dbg.playing === false, `the override is gone with the round (${JSON.stringify({ o: dbg.override, p: dbg.playing })})`);
 
 	// ---- 1b. a GROUNDED scene (the default): X/Z and facing from the camera, the scene's eye height --
-	await P.evaluate(() => window.__stores.scenePhysics.setScenePhysics({ play: { locomotion: { fly: false } } }));
+	await P.evaluate(() => window.__tp.test.v1.scenePhysics.setScenePhysics({ play: { locomotion: { fly: false } } }));
 	await P.keyboard.press('Control+Shift+Enter');
 	h.check(await waitLocked(P, true), 'grounded: Play here');
 	await P.waitForTimeout(400);
@@ -131,7 +131,7 @@ h.run(async () => {
 	h.check(near(c.player[0], 40) && near(c.player[2], -32) && near(c.player[1], 1.7), `grounded: under the camera at the scene's eye height (${c.player.map((v) => v.toFixed(2))})`);
 	h.check(near(wrap(c.playerYaw - Math.PI / 4), 0, 0.03), `grounded: facing the view (${c.playerYaw.toFixed(3)})`);
 	await h.leavePlay(A);
-	await P.evaluate(() => window.__stores.scenePhysics.setScenePhysics({ play: { locomotion: { fly: true } } }));
+	await P.evaluate(() => window.__tp.test.v1.scenePhysics.setScenePhysics({ play: { locomotion: { fly: true } } }));
 
 	// ---- 2. the next ORDINARY Play lands on the scene's spawn (the override does not leak) --------
 	await P.keyboard.press('Control+Enter');
@@ -151,14 +151,14 @@ h.run(async () => {
 	h.check(await waitLocked(P, true), 'the menu row enters Play');
 	await P.waitForTimeout(400);
 	c = await cams(P);
-	const last = (await P.evaluate(() => window.__stores.playHere.playHereDebug())).last;
+	const last = (await P.evaluate(() => window.__tp.test.v1.playHere.playHereDebug())).last;
 	h.check(last?.source === 'spawn', `nothing under the camera: the scene's spawn (${JSON.stringify(last)})`);
 	h.check(near(c.player[0], 3) && near(c.player[2], -4), `...the player is on it (${c.player.map((v) => v.toFixed(2))})`);
 	h.check(near(wrap(c.playerYaw - SPAWN.yaw), 0, 0.03), `...facing the spawn's own yaw (${c.playerYaw.toFixed(3)})`);
 	await h.leavePlay(A);
 
 	// ---- 4. the toolbar button; no ground, no spawn → the camera's own eye ------------------------
-	await P.evaluate(() => window.__stores.scenePhysics.setScenePhysics({ ground: { enabled: false }, play: { spawn: null } }));
+	await P.evaluate(() => window.__tp.test.v1.scenePhysics.setScenePhysics({ ground: { enabled: false }, play: { spawn: null } }));
 	await aim(P, [70, 9, 70], [60, 9, 60]);
 	h.check(await P.locator('#play-here-button').isVisible(), 'the optional toolbar button is on the bar when placed');
 	await P.click('#play-here-button');
@@ -168,7 +168,7 @@ h.run(async () => {
 	h.check(near(c.player[0], 70) && near(c.player[1], 9) && near(c.player[2], 70), `no surface, no spawn: the eye stays at the camera (${c.player.map((v) => v.toFixed(2))})`);
 	h.check(near(wrap(c.playerYaw - Math.PI / 4), 0, 0.03), `...facing the view (${c.playerYaw.toFixed(3)})`);
 	await h.leavePlay(A);
-	await P.evaluate(() => window.__stores.scenePhysics.setScenePhysics({ ground: { enabled: true } }));
+	await P.evaluate(() => window.__tp.test.v1.scenePhysics.setScenePhysics({ ground: { enabled: true } }));
 	await A.page.context().close();
 
 	// ---- 5. a phone (N6 folded): Play's long-press row and More ▸ Play here ------------------------
@@ -178,10 +178,10 @@ h.run(async () => {
 		storage: { toursSeen: '{"editor-touch":true,"editor":true}' }
 	});
 	const Q = B.page;
-	await Q.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await Q.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await Q.waitForTimeout(500);
 	await Q.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		const b = g.children.at(-1);
@@ -190,7 +190,7 @@ h.run(async () => {
 		b.updateMatrixWorld(true);
 	});
 	const top = await Q.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		return new s.THREE.Box3().setFromObject(g.children.at(-1)).max.y;
@@ -212,7 +212,7 @@ h.run(async () => {
 	// the touch ✕ is the phone's way out
 	const exitBtn = Q.locator('#touch-play-exit, [data-touch-exit], button[aria-label="Exit play"]').first();
 	if (await exitBtn.isVisible().catch(() => false)) await exitBtn.click();
-	else await Q.evaluate(() => window.__stores.playMode.exitPlay());
+	else await Q.evaluate(() => window.__tp.test.v1.playMode.exitPlay());
 	h.check(await waitLocked(Q, null), 'phone: Play ends');
 	await Q.waitForTimeout(300);
 	c = await cams(Q);
@@ -228,7 +228,7 @@ h.run(async () => {
 	await Q.waitForTimeout(300);
 	c = await cams(Q);
 	h.check(near(c.player[0], -20) && near(c.player[2], 15), `phone (More): under the camera again (${c.player.map((v) => v.toFixed(2))})`);
-	await Q.evaluate(() => window.__stores.playMode.exitPlay());
+	await Q.evaluate(() => window.__tp.test.v1.playMode.exitPlay());
 	await waitLocked(Q, null);
 
 	await h.finish(browser);

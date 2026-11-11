@@ -25,14 +25,14 @@ const OUT = process.env.OUT || 'test-results/panel-gestures';
 const groups = (page) =>
 	page.evaluate(() => {
 		let g;
-		window.__stores.windowTabs.tabGroups.subscribe((v) => (g = v))();
+		window.__tp.test.v1.windowTabs.tabGroups.subscribe((v) => (g = v))();
 		return g;
 	});
 
 /** Objects + Timeline + Animation as one floating group, parked at `at`, narrowed so its tabs overflow */
 async function makeGroup(page, at) {
 	await page.evaluate(async (at) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.objectListClose.set(false);
 		s.timelineClose.set(false);
 		s.animationClose.set(false);
@@ -214,7 +214,7 @@ h.run(async () => {
 		await page.screenshot({ path: `${OUT}/g4-${name}-torn.png` });
 		// put the torn window back (a folded phone draws it over the strip) and the group where it was
 		await page.evaluate(async (at) => {
-			const wt = window.__stores.windowTabs;
+			const wt = window.__tp.test.v1.windowTabs;
 			let g;
 			wt.tabGroups.subscribe((v) => (g = v))();
 			for (const k of ['objects', 'timeline', 'animation']) if (g[0] && !g[0].members.includes(k)) wt.mergeWindows('objects', k);
@@ -250,7 +250,7 @@ h.run(async () => {
 
 		// ---- S: the sidebar strip (wider screens only — a folded phone has no sidebars) ----
 		await page.evaluate(async () => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let g;
 			s.windowTabs.tabGroups.subscribe((v) => (g = v))();
 			for (const grp of g) for (const k of [...grp.members]) s.windowTabs.ungroupTab(k);
@@ -287,7 +287,7 @@ h.run(async () => {
 		// dock-fixes A': an UNPINNED column with less than 240 px under its strip hides itself (the folded landscape
 		// phone is 390 px tall) — pin the right column to full height there, as a person would, so S still covers it
 		if (name === 'landscape') {
-			await page.evaluate(() => window.__stores.sidebars.toggleSidebarFull('right', true));
+			await page.evaluate(() => window.__tp.test.v1.sidebars.toggleSidebarFull('right', true));
 			await page.waitForTimeout(800);
 		}
 		const sb0 = await side();
@@ -339,7 +339,7 @@ h.run(async () => {
 			h.check(rows.includes('Show buttons'), `${name} S5.3 the sidebar tab's long-press menu lists Show buttons (${JSON.stringify(rows)})`);
 			await page.screenshot({ path: `${OUT}/s5-${name}-sidebar-show-buttons.png` });
 			await closeMenus(page);
-			await page.evaluate(() => window.__stores.chromeButtons.showAllChromeButtons());
+			await page.evaluate(() => window.__tp.test.v1.chromeButtons.showAllChromeButtons());
 			await page.waitForTimeout(300);
 
 			// P (item 5 x dock-fixes item 8) — the Panels button wears the generic button menu, BOUND to its own
@@ -357,18 +357,18 @@ h.run(async () => {
 				await page.screenshot({ path: `${OUT}/p1-${name}-panels-menu.png` });
 				await tapRow(page, cdp, 'Hide this button');
 				const off = await page.evaluate(() => {
-					const s = window.__stores;
+					const s = window.__tp?.test.v1;
 					let m, ids;
 					s.panelsButton.panelsButtonMode.subscribe((v) => (m = v))();
 					s.chromeButtons.hiddenChromeIds.subscribe((v) => (ids = v))();
 					return { m, ids, drawn: !!document.querySelector('#panels-toggle') };
 				});
 				h.check(off.m === 'off' && !off.drawn && off.ids.includes('top.panels'), `${name} P3 Hide this button switches its mode off and it is listed as hidden (${JSON.stringify(off)})`);
-				await page.evaluate(() => window.__stores.chromeButtons.setChromeButtonShown('top.panels', true));
+				await page.evaluate(() => window.__tp.test.v1.chromeButtons.setChromeButtonShown('top.panels', true));
 				await page.waitForTimeout(400);
 				const on = await page.evaluate(() => {
 					let m;
-					window.__stores.panelsButton.panelsButtonMode.subscribe((v) => (m = v))();
+					window.__tp.test.v1.panelsButton.panelsButtonMode.subscribe((v) => (m = v))();
 					return { m, drawn: !!document.querySelector('#panels-toggle') };
 				});
 				h.check(on.m === 'auto' && on.drawn, `${name} P4 Show (Customize buttons) brings back the mode it had (${JSON.stringify(on)})`);
@@ -377,7 +377,7 @@ h.run(async () => {
 
 		// ---- E (item 5) — the dock's own buttons: long-press Minimize ▸ Hide; a dock tab's menu brings it back ----
 		const docked = await page.evaluate(async () => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			// close what E does not use, so nothing floats over the dock row (on a folded phone S's windows float;
 			// the floating Timeline window would catch the E4 drop)
 			s.sceneBudget.statsOpen.set(false);
@@ -430,7 +430,7 @@ h.run(async () => {
 				h.check(r2.includes('Show buttons'), `${name} E3 a dock tab's long-press menu lists Show buttons (${JSON.stringify(r2)})`);
 				await closeMenus(page);
 			}
-			await page.evaluate(() => window.__stores.chromeButtons.showAllChromeButtons());
+			await page.evaluate(() => window.__tp.test.v1.chromeButtons.showAllChromeButtons());
 			await page.waitForTimeout(300);
 			// E4 (item 7) — a long-press + a drag along the dock strip reorders its tabs (touch had no drag at all)
 			const order = () => page.evaluate(() => [...document.querySelectorAll('[data-dock-tab]')].filter((t) => t.getClientRects().length).map((t) => t.dataset.dockTab));
@@ -477,7 +477,7 @@ h.run(async () => {
 		await clickRow(page, 'Hide this button');
 		const hid = await page.evaluate(() => {
 			let v;
-			window.__stores.chromeButtons?.hiddenChromeButtons.subscribe((x) => (v = x))();
+			window.__tp.test.v1.chromeButtons?.hiddenChromeButtons.subscribe((x) => (v = x))();
 			const b = document.querySelector('.tab-strip .ts-close');
 			return { list: v ?? null, display: b ? getComputedStyle(b).display : 'gone', kept: !!b };
 		});
@@ -497,7 +497,7 @@ h.run(async () => {
 		h.check(back !== 'none', `B5 Show buttons ▸ Close all tabs brings it back (${back}; rows ${JSON.stringify(sub)})`);
 		// Settings ▸ Customize buttons switches it off and on
 		await page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.settingsSection?.set?.('interface');
 			s.settingsSearchSeed?.set?.('Customize buttons');
 			s.settingsOpen?.set?.(true);
@@ -524,12 +524,12 @@ h.run(async () => {
 			const on = await page.evaluate(() => getComputedStyle(document.querySelector('.tab-strip .ts-close')).display + ' ' + document.querySelector('#cb-toggle-group-close')?.getAttribute('aria-pressed'));
 			h.check(off.startsWith('none') && !on.startsWith('none'), `B7 the Settings switch hides and shows it (${off} -> ${on})`);
 			// the same two surfaces in the LIGHT theme (the shots above are dark)
-			await page.evaluate(() => window.__stores.themes?.theme.set('light'));
+			await page.evaluate(() => window.__tp.test.v1.themes?.theme.set('light'));
 			await flip();
 			await page.waitForTimeout(500);
 			await page.screenshot({ path: `${OUT}/b8-desk-settings-light.png` });
 			await flip();
-			await page.evaluate(() => window.__stores.settingsOpen?.set?.(false));
+			await page.evaluate(() => window.__tp.test.v1.settingsOpen?.set?.(false));
 			await page.waitForTimeout(500);
 			const c2 = await centreOf(page, '.tab-strip .ts-close');
 			await page.mouse.click(c2.x, c2.y, { button: 'right' });
@@ -539,7 +539,7 @@ h.run(async () => {
 			await page.screenshot({ path: `${OUT}/b8-desk-button-menu-light.png` });
 			h.check(light === 'light' && lightRows[0] === 'Hide this button', `B8 the button menu in the light theme (${light}, ${JSON.stringify(lightRows)})`);
 			await closeMenus(page);
-			await page.evaluate(() => window.__stores.themes?.theme.set('dark'));
+			await page.evaluate(() => window.__tp.test.v1.themes?.theme.set('dark'));
 		}
 		await P.ctx.close();
 	}

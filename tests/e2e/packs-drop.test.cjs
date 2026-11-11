@@ -23,7 +23,7 @@ const dropFile = (page, name, type, arr) =>
 const itemCount = (page) =>
 	page.evaluate(() => {
 		let it;
-		window.__stores.explorer.explorerItems.subscribe((x) => (it = x))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((x) => (it = x))();
 		return it.length;
 	});
 
@@ -33,7 +33,7 @@ h.run(async () => {
 
 	// a real pack .zip (a box glb), built in Node (bare fflate import fails in the page)
 	const glbArr = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const mesh = new s.THREE.Mesh(new s.THREE.BoxGeometry(1, 1, 1), new s.THREE.MeshStandardMaterial());
 		const glb = await new Promise((res, rej) =>
 			new s.GLTFExporterModule.GLTFExporter().parse(mesh, (r) => res(r), (e) => rej(e), { binary: true })
@@ -62,7 +62,7 @@ h.run(async () => {
 		() =>
 			A.page.evaluate(() => {
 				let list;
-				window.__stores.packs.packs.subscribe((x) => (list = x))();
+				window.__tp.test.v1.packs.packs.subscribe((x) => (list = x))();
 				return list.some((p) => p.name === 'dropped');
 			}),
 		(v) => v === true,
@@ -71,7 +71,7 @@ h.run(async () => {
 	);
 
 	// drop a non-zip into Packs -> rejected, NOT imported into the library
-	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set('packs'));
+	await A.page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set('packs'));
 	await A.page.waitForTimeout(200);
 	const before = await itemCount(A.page);
 	await dropFile(A.page, 'foo.png', 'image/png', Array.from(Uint8Array.from(atob(TINY_PNG), (c) => c.charCodeAt(0))));
@@ -81,7 +81,7 @@ h.run(async () => {
 		() =>
 			A.page.evaluate(() => {
 				let n;
-				window.__stores.notifications.subscribe((x) => (n = x))();
+				window.__tp.test.v1.notifications.subscribe((x) => (n = x))();
 				return n.some((x) => /Only pack \.zip files can be dropped into Packs/.test(x.text));
 			}),
 		(v) => v === true,
@@ -91,14 +91,14 @@ h.run(async () => {
 	h.check((await itemCount(A.page)) === before, 'a non-zip dropped into Packs is rejected (not imported)');
 
 	// drop a supported file in the Library root -> still imports (regression)
-	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await A.page.waitForTimeout(200);
 	await dropFile(A.page, 'lib.png', 'image/png', Array.from(Uint8Array.from(atob(TINY_PNG), (c) => c.charCodeAt(0))));
 	await h.eventually(
 		() =>
 			A.page.evaluate(() => {
 				let it;
-				window.__stores.explorer.explorerItems.subscribe((x) => (it = x))();
+				window.__tp.test.v1.explorer.explorerItems.subscribe((x) => (it = x))();
 				return it.some((i) => i.name === 'lib.png');
 			}),
 		(v) => v === true,

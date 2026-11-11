@@ -23,13 +23,13 @@ async function routeStarterPack(peer) {
 		const type = /\.json$/.test(file) ? 'application/json' : /\.glb$/.test(file) ? 'model/gltf-binary' : /\.png$/.test(file) ? 'image/png' : 'text/html';
 		return route.fulfill({ contentType: type, body: fs.readFileSync(file) });
 	});
-	await peer.page.evaluate(() => window.__stores.packs.loadPacks());
+	await peer.page.evaluate(() => window.__tp.test.v1.packs.loadPacks());
 }
 
 async function openStarterPack(page) {
-	await page.evaluate(() => window.__stores.explorerClose.set(false));
+	await page.evaluate(() => window.__tp.test.v1.explorerClose.set(false));
 	await page.waitForTimeout(500);
-	await page.evaluate(() => window.__stores.explorer.activeFolder.set('pack:default'));
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set('pack:default'));
 	const card = page.locator('.explorer-card', { hasText: 'Duck' }).first();
 	await card.waitFor({ timeout: 15000 });
 	return card;
@@ -38,7 +38,7 @@ async function openStarterPack(page) {
 async function freeCanvasPoint(page, spots = [[0.5, 0.62], [0.42, 0.55], [0.6, 0.5], [0.35, 0.7], [0.65, 0.68], [0.5, 0.4], [0.5, 0.25]]) {
 	return page.evaluate((spots) => {
 		let renderer;
-		window.__stores.globalRenderer.subscribe((v) => (renderer = v))();
+		window.__tp.test.v1.globalRenderer.subscribe((v) => (renderer = v))();
 		const r = renderer.domElement.getBoundingClientRect();
 		for (const [fx, fy] of spots) {
 			const x = Math.round(r.left + r.width * fx);
@@ -49,12 +49,12 @@ async function freeCanvasPoint(page, spots = [[0.5, 0.62], [0.42, 0.55], [0.6, 0
 	}, spots);
 }
 
-const pd = (page) => page.evaluate(() => window.__stores.placeDrag.state());
-const ghost = (page) => page.evaluate(() => window.__stores.placeDrag.ghostInfo());
+const pd = (page) => page.evaluate(() => window.__tp.test.v1.placeDrag.state());
+const ghost = (page) => page.evaluate(() => window.__tp.test.v1.placeDrag.ghostInfo());
 const DUCK_URL = 'https://cdn.jsdelivr.net/gh/theprototype-app/packs@format-1/default/Duck/glTF-Binary/Duck.glb';
 const cacheFacts = (page) =>
 	page.evaluate(async (url) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let index;
 		s.packCache.packCacheIndex.subscribe((v) => (index = v))();
 		const urls = [...index.keys()];
@@ -80,9 +80,9 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 	await routeStarterPack(A);
 	await A.page.evaluate(async () => {
-		await window.__stores.packCache.clearPackCache();
-		window.__stores.placementPrefs.placementPreview.set('budget');
-		window.__stores.placementPrefs.placementTriBudget.set(50000);
+		await window.__tp.test.v1.packCache.clearPackCache();
+		window.__tp.test.v1.placementPrefs.placementPreview.set('budget');
+		window.__tp.test.v1.placementPrefs.placementTriBudget.set(50000);
 	});
 	const card = await openStarterPack(A.page);
 	const spot = await freeCanvasPoint(A.page);
@@ -137,8 +137,8 @@ h.run(async () => {
 	// ---- 4. the preview setting decides the tier (the template is decoded by now) -----------------
 	const tierWith = async (mode, budget) => {
 		await A.page.evaluate(({ mode, budget }) => {
-			window.__stores.placementPrefs.placementPreview.set(mode);
-			window.__stores.placementPrefs.placementTriBudget.set(budget);
+			window.__tp.test.v1.placementPrefs.placementPreview.set(mode);
+			window.__tp.test.v1.placementPrefs.placementTriBudget.set(budget);
 		}, { mode, budget });
 		await pickUp(A.page, card, spot);
 		// the swap is async (never inside the pointer event): give the expected tier a moment
@@ -159,28 +159,28 @@ h.run(async () => {
 	h.check((await tierWith('full', 1000)) === 'model', 'Full model ignores the budget');
 	h.check((await tierWith('box', 50000)) === 'box', 'Box only: always the box');
 	await A.page.evaluate(() => {
-		window.__stores.placementPrefs.placementPreview.set('budget');
-		window.__stores.placementPrefs.placementTriBudget.set(50000);
+		window.__tp.test.v1.placementPrefs.placementPreview.set('budget');
+		window.__tp.test.v1.placementPrefs.placementTriBudget.set(50000);
 	});
 
 	// ---- 5. Settings ▸ Scene ▸ Performance rows drive the same stores --------------------------
 	await A.page.evaluate(() => {
-		window.__stores.settingsSection.set('scene');
-		window.__stores.settingsOpen.set(true);
+		window.__tp.test.v1.settingsSection.set('scene');
+		window.__tp.test.v1.settingsOpen.set(true);
 	});
 	const row = A.page.locator('#row-placement-preview');
 	await row.waitFor({ timeout: 10000 });
 	await row.getByText('Box only').click();
 	await A.page.waitForTimeout(200);
-	h.check((await A.page.evaluate(() => { let v; window.__stores.placementPrefs.placementPreview.subscribe((x) => (v = x))(); return v; })) === 'box', 'the Placement preview row sets the mode (Box only)');
+	h.check((await A.page.evaluate(() => { let v; window.__tp.test.v1.placementPrefs.placementPreview.subscribe((x) => (v = x))(); return v; })) === 'box', 'the Placement preview row sets the mode (Box only)');
 	h.check(await A.page.locator('#placement-tri-budget').isDisabled(), 'the budget field is off unless the mode is Within budget');
 	await row.getByText('Within budget').click();
 	await A.page.locator('#placement-tri-budget').fill('20000');
 	await A.page.locator('#placement-tri-budget').press('Enter');
 	await A.page.waitForTimeout(200);
-	h.check((await A.page.evaluate(() => { let v; window.__stores.placementPrefs.placementTriBudget.subscribe((x) => (v = x))(); return v; })) === 20000, 'the budget field writes the triangle budget');
+	h.check((await A.page.evaluate(() => { let v; window.__tp.test.v1.placementPrefs.placementTriBudget.subscribe((x) => (v = x))(); return v; })) === 20000, 'the budget field writes the triangle budget');
 	h.check((await A.page.evaluate(() => localStorage.getItem('placement:triBudget'))) === '20000', 'persisted (safeStorage)');
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(null));
 	await A.page.waitForTimeout(300);
 
 	// ---- 6. Storage: the pack downloads and "Clear all pack downloads" ---------------------------
@@ -188,9 +188,9 @@ h.run(async () => {
 	await A.page.waitForTimeout(300);
 	await A.page.mouse.up();
 	await h.eventually(() => cacheFacts(A.page), (x) => x.inCache, 'placing it again downloads it again (its cache was deleted)', 15000);
-	await A.page.evaluate(() => window.__stores.storageUsage.openStorageModal());
+	await A.page.evaluate(() => window.__tp.test.v1.storageUsage.openStorageModal());
 	await h.eventually(
-		() => A.page.evaluate(() => { let s; window.__stores.storageUsage.storageScan.subscribe((v) => (s = v))(); const cat = s?.categories?.find((c) => c.key === 'packcache'); return cat ? { rows: cat.rows.length, bytes: cat.bytes } : null; }),
+		() => A.page.evaluate(() => { let s; window.__tp.test.v1.storageUsage.storageScan.subscribe((v) => (s = v))(); const cat = s?.categories?.find((c) => c.key === 'packcache'); return cat ? { rows: cat.rows.length, bytes: cat.bytes } : null; }),
 		(x) => !!x && x.rows >= 1 && x.bytes >= 120484,
 		'Storage lists the pack downloads (a row per pack, with the bytes)'
 	);
@@ -199,13 +199,13 @@ h.run(async () => {
 	await A.page.waitForTimeout(800);
 	c = await cacheFacts(A.page);
 	h.check(c.urls.length === 0 && !c.inCache, '"Clear all pack downloads" empties the pack cache');
-	await A.page.evaluate(() => window.__stores.storageUsage.storageModalOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.storageUsage.storageModalOpen.set(false));
 
 	// ---- 7. touch: a long-press drag at 390 × 844 --------------------------------------------
 	const T = await h.setupPage(browser, 'T', { context: { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2.7 } });
 	await routeStarterPack(T);
 	const tcard = await openStarterPack(T.page);
-	const before = await T.page.evaluate(() => { let g; window.__stores.objectsGroup.subscribe((v) => (g = v))(); return g.children.length; });
+	const before = await T.page.evaluate(() => { let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))(); return g.children.length; });
 	const b = await tcard.boundingBox();
 	const cdp = await T.ctx.newCDPSession(T.page);
 	const sx = b.x + b.width / 2;
@@ -227,11 +227,11 @@ h.run(async () => {
 		await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: sx + ((tspot.x - sx) * i) / 10, y: sy + ((tspot.y - sy) * i) / 10 }] });
 	await T.page.waitForTimeout(300);
 	const ts = await pd(T.page);
-	if (!ts) console.log('  touch drag ended: ' + JSON.stringify(await T.page.evaluate(() => window.__stores.placeDrag.last())));
+	if (!ts) console.log('  touch drag ended: ' + JSON.stringify(await T.page.evaluate(() => window.__tp.test.v1.placeDrag.last())));
 	h.check(ts?.over === 'viewport' && ts?.items?.[0]?.dims?.source === 'row', 'the finger over the viewport shows the Duck ghost sized from its row');
 	await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 	await h.eventually(
-		() => T.page.evaluate(() => { let g; window.__stores.objectsGroup.subscribe((v) => (g = v))(); return g.children.length; }),
+		() => T.page.evaluate(() => { let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))(); return g.children.length; }),
 		(n) => n === before + 1,
 		'lifting the finger over the viewport places it'
 	);

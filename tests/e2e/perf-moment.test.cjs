@@ -47,10 +47,10 @@ h.run(async () => {
 		await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: '{"id":"m"}' });
 	});
 	// the batch must not interfere with counting moment requests
-	await page.evaluate(() => window.__stores.perfBeacon.perfReportsOn.set(false));
-	await page.evaluate(() => window.__stores.perfBeacon.perfReportsOn.set(true));
+	await page.evaluate(() => window.__tp.test.v1.perfBeacon.perfReportsOn.set(false));
+	await page.evaluate(() => window.__tp.test.v1.perfBeacon.perfReportsOn.set(true));
 	await page.waitForTimeout(2500); // some frames in the ring
-	const recCount = () => page.evaluate(async () => (await window.__stores.perf.listRecordings()).length);
+	const recCount = () => page.evaluate(async () => (await window.__tp.test.v1.perf.listRecordings()).length);
 	const moments = () => requests.filter((r) => r.fields.kind === 'moment');
 
 	// ---- 1. the Sidebar row -> the card -> Save and send
@@ -81,7 +81,7 @@ h.run(async () => {
 	h.check(m[0].fields.screenshot?.jpeg && m[0].fields.screenshot.bytes > 2000 && m[0].fields.screenshot.bytes <= 1048576, `1.9 the screenshot rides as its own JPEG file (${m[0].fields.screenshot?.bytes} bytes)`);
 	h.check(m[0].fields.session === data.meta.session, '1.10 the session id matches');
 	const saved = await page.evaluate(async () => {
-		const p = window.__stores.perf;
+		const p = window.__tp.test.v1.perf;
 		const row = (await p.listRecordings())[0];
 		return { row, doc: await p.getRecording(row.id) };
 	});
@@ -89,7 +89,7 @@ h.run(async () => {
 	h.check(saved.doc.notes[0].text === 'stutter at the castle gate' && /^data:image\/jpeg;base64,/.test(saved.doc.notes[0].screenshot), '1.12 the local copy keeps the picture inline');
 
 	// ---- 2. unticked -> saved, not sent; Cancel -> nothing
-	await page.evaluate(() => window.__stores.perfMoment.openMomentReport());
+	await page.evaluate(() => window.__tp.test.v1.perfMoment.openMomentReport());
 	await page.locator('#moment-report').waitFor({ state: 'visible' });
 	await page.locator('#moment-send').uncheck();
 	h.check((await page.locator('#moment-save').innerText()).trim() === 'Save', '2.1 unticked, the button says Save');
@@ -97,7 +97,7 @@ h.run(async () => {
 	await page.locator('#moment-report').waitFor({ state: 'detached', timeout: 15000 });
 	await page.waitForTimeout(400);
 	h.check(moments().length === 1 && (await recCount()) === before + 2, '2.2 saved locally, not sent');
-	await page.evaluate(() => window.__stores.perfMoment.openMomentReport());
+	await page.evaluate(() => window.__tp.test.v1.perfMoment.openMomentReport());
 	await page.locator('#moment-report').waitFor({ state: 'visible' });
 	await page.locator('#moment-cancel').click();
 	await page.locator('#moment-report').waitFor({ state: 'detached', timeout: 5000 });
@@ -105,7 +105,7 @@ h.run(async () => {
 
 	// ---- 3. VR: the radial entry + the keyboard note
 	const vr = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const r = await s.perfMoment.vrReportMoment((opts) => setTimeout(() => opts.onCommit('from the headset'), 50));
 		return { r };
 	});
@@ -113,7 +113,7 @@ h.run(async () => {
 	const vm = moments();
 	h.check(vr.r && vr.r.sent && vm.length === 2 && JSON.parse(vm[1].fields.data).notes[0].text === 'from the headset', '3.1 VR: captured, the keyboard note, saved and sent');
 	const entry = await page.evaluate(() => {
-		const radial = window.__stores.vrRadialMenu;
+		const radial = window.__tp.test.v1.vrRadialMenu;
 		const e = radial.findMenuEntry('moment');
 		return { label: e?.label, closes: e?.closes, action: typeof e?.action, ring: radial.ringEntries('profile').map((x) => x.id), tools: radial.ringEntries('tools').map((x) => x.id) };
 	});
@@ -122,7 +122,7 @@ h.run(async () => {
 
 	// ---- 4. the eye screenshot in a (simulated) headset
 	const eye = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const read = (store) => {
 			let v;
 			store.subscribe((x) => (v = x))();

@@ -1,6 +1,6 @@
 // 21-B B3 — play mode becomes interact mode.
 //
-// isLocked is set through window.__stores (the dungeon-play pattern): real
+// isLocked is set through window.__tp?.test.v1 (the dungeon-play pattern): real
 // pointer lock is unavailable headless AND unnecessary here, because the ray is
 // NDC (0,0) every frame and every listener is on `window`.
 //
@@ -12,19 +12,19 @@
 const h = require('./helpers.cjs');
 
 const sp = (page, body) =>
-	page.evaluate((b) => new Function('sp', b)(window.__stores.scenePhysics), body);
+	page.evaluate((b) => new Function('sp', b)(window.__tp.test.v1.scenePhysics), body);
 const play = (page, body) =>
-	page.evaluate((b) => new Function('pi', b)(window.__stores.playInteract), body);
+	page.evaluate((b) => new Function('pi', b)(window.__tp.test.v1.playInteract), body);
 const phys = (page, body) =>
-	page.evaluate((b) => new Function('p', b)(window.__stores.physics), body);
+	page.evaluate((b) => new Function('p', b)(window.__tp.test.v1.physics), body);
 
 const bodyOf = (page, uuid) =>
-	page.evaluate((uuid) => window.__stores.physics.physicsDebug().find((b) => b.uuid === uuid), uuid);
+	page.evaluate((uuid) => window.__tp.test.v1.physics.physicsDebug().find((b) => b.uuid === uuid), uuid);
 
 const posOf = (page, uuid) =>
 	page.evaluate((uuid) => {
 		let group = null;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		const o = group.getObjectByProperty('uuid', uuid);
 		return o ? o.position.toArray() : null;
 	}, uuid);
@@ -41,18 +41,18 @@ const posOf = (page, uuid) =>
 async function placeInFront(page, uuid, distance) {
 	return page.evaluate(
 		([uuid, distance]) => {
-			const THREE = window.__stores.THREE;
+			const THREE = window.__tp.test.v1.THREE;
 			let camera = null;
 			let group = null;
-			window.__stores.globalCamera.subscribe((v) => (camera = v))();
-			window.__stores.objectsGroup.subscribe((v) => (group = v))();
+			window.__tp.test.v1.globalCamera.subscribe((v) => (camera = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 			const at = camera
 				.getWorldPosition(new THREE.Vector3())
 				.addScaledVector(camera.getWorldDirection(new THREE.Vector3()), distance);
 			const object = group.getObjectByProperty('uuid', uuid);
 			object.position.copy(at);
 			object.updateMatrixWorld();
-			window.__stores.objectsGroup.update((v) => v);
+			window.__tp.test.v1.objectsGroup.update((v) => v);
 			return at.toArray();
 		},
 		[uuid, distance]
@@ -62,11 +62,11 @@ async function placeInFront(page, uuid, distance) {
 /** how far is the object from the camera doing the aiming? */
 const rangeOf = (page, uuid) =>
 	page.evaluate((uuid) => {
-		const THREE = window.__stores.THREE;
+		const THREE = window.__tp.test.v1.THREE;
 		let camera = null;
 		let group = null;
-		window.__stores.globalCamera.subscribe((v) => (camera = v))();
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.globalCamera.subscribe((v) => (camera = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		const object = group.getObjectByProperty('uuid', uuid);
 		if (!object) return null;
 		return camera
@@ -78,7 +78,7 @@ const rangeOf = (page, uuid) =>
 const rigY = (page) =>
 	page.evaluate(() => {
 		let cam = null;
-		window.__stores.playerCam.subscribe((v) => (cam = v))();
+		window.__tp.test.v1.playerCam.subscribe((v) => (cam = v))();
 		return cam?.parent ? cam.parent.position.y : null;
 	});
 
@@ -90,7 +90,7 @@ const wheel = (page, deltaY, times = 1) =>
 	page.evaluate(
 		([deltaY, times]) => {
 			let renderer = null;
-			window.__stores.globalRenderer.subscribe((v) => (renderer = v))();
+			window.__tp.test.v1.globalRenderer.subscribe((v) => (renderer = v))();
 			const target = renderer?.domElement ?? document.body;
 			let prevented = false;
 			for (let i = 0; i < times; i++) {
@@ -114,7 +114,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(4000);
 		await warm.ctx.close();
 	}
@@ -123,11 +123,11 @@ h.run(async () => {
 
 	// a dynamic crate and a STATIC plinth, four metres in front of the camera
 	const ids = await page.evaluate(() => {
-		const cmd = window.__stores.commandsHandler.sceneCommand;
+		const cmd = window.__tp.test.v1.commandsHandler.sceneCommand;
 		let group = null;
 		cmd('/create box');
 		cmd('/create box');
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		const [crate, plinth] = group.children.slice(-2);
 		crate.name = 'Crate';
 		crate.position.set(0, 1, 0);
@@ -135,10 +135,10 @@ h.run(async () => {
 		plinth.name = 'Plinth';
 		plinth.position.set(3, 1, 0);
 		plinth.userData.physics = { mode: 'static' };
-		window.__stores.objectsGroup.update((v) => v);
+		window.__tp.test.v1.objectsGroup.update((v) => v);
 		return { crate: crate.uuid, plinth: plinth.uuid };
 	});
-	await page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await sp(page, 'sp.setScenePhysics({ play: { interaction: "grab" }, ground: { enabled: true, height: 0 } })');
 
 	// ---------------------------------------------------------------- section 1
@@ -148,7 +148,7 @@ h.run(async () => {
 	h.check(offMode.started === true, '1.1 startPlayInteract ran from Scene onMount');
 	h.check(offMode.mode === 'off', '1.2 ...and the interact mode is off outside play mode');
 
-	await page.evaluate(() => window.__stores.isLocked.set(true));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await page.waitForTimeout(400);
 	const onMode = await play(page, 'return pi.playInteractDebug()');
 	h.check(onMode.mode === 'grab', '1.3 entering play mode arms the grab (got ' + onMode.mode + ')');
@@ -156,7 +156,7 @@ h.run(async () => {
 	// ---------------------------------------------------------------- section 2
 	console.log('\n=== 2. grab, carry, and the crosshair ===');
 
-	await page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await h.eventually(
 		() => phys(page, 'return p.physicsDebug().length'),
 		(n) => n > 0,
@@ -167,7 +167,7 @@ h.run(async () => {
 
 	const aiming = await page.evaluate(() => {
 		let s = null;
-		window.__stores.playInteract.playInteractState.subscribe((v) => (s = v))();
+		window.__tp.test.v1.playInteract.playInteractState.subscribe((v) => (s = v))();
 		return s;
 	});
 	h.check(aiming.mode === 'aiming', '2.2 the crosshair reports a grabbable target (' + aiming.mode + ')');
@@ -211,7 +211,7 @@ h.run(async () => {
 			// the rig PointerLockControls drives is the play CAMERA itself — its
 			// cameraParent is useParent(), and it throws unless that is a Camera
 			let rig = null;
-			window.__stores.playerCam.subscribe((v) => (rig = v))();
+			window.__tp.test.v1.playerCam.subscribe((v) => (rig = v))();
 			if (!rig) return null;
 			const from = rig.position.clone();
 			document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW', bubbles: true }));
@@ -279,7 +279,7 @@ h.run(async () => {
 		(await play(page, 'return pi.playInteractDebug()')).carrying === ids.crate,
 		'4.4 (premise) carrying again'
 	);
-	await page.evaluate(() => window.__stores.isLocked.set(false));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(false));
 	await page.waitForTimeout(400);
 	const cancelled = await bodyOf(page, ids.crate);
 	// HORIZONTAL speed: the body is read a few frames after the cancel and has
@@ -294,13 +294,13 @@ h.run(async () => {
 	h.check(cancelSpeed < 0.6, '4.7 ...and a cancel is not a throw (horizontal |v| = ' + cancelSpeed.toFixed(2) + ' m/s)');
 
 	// cancel: the simulation stopping under a live carry
-	await page.evaluate(() => window.__stores.isLocked.set(true));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await placeInFront(page, ids.crate, 3);
 	await page.waitForTimeout(500);
 	await pointer(page, 'pointerdown');
 	await page.waitForTimeout(300);
 	const grabbedAgain = (await play(page, 'return pi.playInteractDebug()')).carrying;
-	await page.evaluate(() => window.__stores.physics.stopSimulation());
+	await page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 	await page.waitForTimeout(400);
 	const afterStop = await play(page, 'return pi.playInteractDebug()');
 	h.check(grabbedAgain === ids.crate, '4.8 (premise) carrying when the sim stops');
@@ -309,7 +309,7 @@ h.run(async () => {
 	// ---------------------------------------------------------------- section 5
 	console.log('\n=== 5. what may NOT be grabbed ===');
 
-	await page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await page.waitForTimeout(600);
 	await placeInFront(page, ids.plinth, 3); // the STATIC plinth
 	await placeInFront(page, ids.crate, 30); // and the crate far out of reach
@@ -324,7 +324,7 @@ h.run(async () => {
 
 	// a peer-locked object
 	await page.evaluate(
-		(uuid) => window.__stores.lockedObjects.set([['peer-x', uuid]]),
+		(uuid) => window.__tp.test.v1.lockedObjects.set([['peer-x', uuid]]),
 		ids.crate
 	);
 	await placeInFront(page, ids.plinth, 30);
@@ -337,18 +337,18 @@ h.run(async () => {
 		'5.2 a peer-LOCKED object refuses the grab'
 	);
 	await pointer(page, 'pointerup');
-	await page.evaluate(() => window.__stores.lockedObjects.set([]));
+	await page.evaluate(() => window.__tp.test.v1.lockedObjects.set([]));
 
 	// with NO simulation there is no body to hold, so a grab is inert — which is
 	// what bounds the blast radius of shipping 'grab' as the default: in an
 	// ordinary shared scene nobody is simulating until someone presses P
 	await sp(page, 'sp.setScenePhysics({ play: { interaction: "grab" } })');
-	await page.evaluate(() => window.__stores.physics.stopSimulation());
+	await page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 	await placeInFront(page, ids.crate, 3);
 	await page.waitForTimeout(500);
 	const aimNoSim = await page.evaluate(() => {
 		let value = null;
-		window.__stores.playInteract.playInteractState.subscribe((v) => (value = v))();
+		window.__tp.test.v1.playInteract.playInteractState.subscribe((v) => (value = v))();
 		return value;
 	});
 	await pointer(page, 'pointerdown');
@@ -362,7 +362,7 @@ h.run(async () => {
 		'5.5 ...and the crosshair does not even offer it (' + aimNoSim.mode + ')'
 	);
 	await pointer(page, 'pointerup');
-	await page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await page.waitForTimeout(600);
 
 	// interaction: 'off'
@@ -393,15 +393,15 @@ h.run(async () => {
 			{ id: 'e-clk1-selC', source: 'clk1', target: 'selC' },
 			{ id: 'e-clk1-cnt1', source: 'clk1', target: 'cnt1' }
 		];
-		window.__stores.flowGraphs.update((graphs) => ({ ...graphs, scene: { nodes, edges } }));
-		window.__stores.flowNodes.set(nodes);
-		window.__stores.flowEdges.set(edges);
+		window.__tp.test.v1.flowGraphs.update((graphs) => ({ ...graphs, scene: { nodes, edges } }));
+		window.__tp.test.v1.flowNodes.set(nodes);
+		window.__tp.test.v1.flowEdges.set(edges);
 	}, ids.crate);
 	await placeInFront(page, ids.crate, 3);
 	await page.waitForTimeout(500);
 	const countBefore = await page.evaluate(() => {
 		let map = {};
-		window.__stores.flowTriggers.subscribe((v) => (map = v))();
+		window.__tp.test.v1.flowTriggers.subscribe((v) => (map = v))();
 		return map.cnt1?.count ?? 0;
 	});
 	// ONE in-page gesture: a tap is defined by the gap between down and up (180
@@ -420,7 +420,7 @@ h.run(async () => {
 	await page.waitForTimeout(400);
 	const countAfter = await page.evaluate(() => {
 		let map = {};
-		window.__stores.flowTriggers.subscribe((v) => (map = v))();
+		window.__tp.test.v1.flowTriggers.subscribe((v) => (map = v))();
 		return map.cnt1?.count ?? 0;
 	});
 	h.check(
@@ -435,7 +435,7 @@ h.run(async () => {
 	// a long press is NOT a tap
 	const beforeLong = await page.evaluate(() => {
 		let map = {};
-		window.__stores.flowTriggers.subscribe((v) => (map = v))();
+		window.__tp.test.v1.flowTriggers.subscribe((v) => (map = v))();
 		return map.cnt1?.count ?? 0;
 	});
 	await pointer(page, 'pointerdown');
@@ -444,7 +444,7 @@ h.run(async () => {
 	await page.waitForTimeout(400);
 	const afterLong = await page.evaluate(() => {
 		let map = {};
-		window.__stores.flowTriggers.subscribe((v) => (map = v))();
+		window.__tp.test.v1.flowTriggers.subscribe((v) => (map = v))();
 		return map.cnt1?.count ?? 0;
 	});
 	h.check(afterLong === beforeLong, '6.3 a long press is not a tap (' + beforeLong + ' -> ' + afterLong + ')');
@@ -454,8 +454,8 @@ h.run(async () => {
 
 	const resolved = await page.evaluate(() => {
 		let scene = null;
-		window.__stores.globalScene.subscribe((v) => (scene = v))();
-		return window.__stores.playSettings.resolvePlaySettings(scene);
+		window.__tp.test.v1.globalScene.subscribe((v) => (scene = v))();
+		return window.__tp.test.v1.playSettings.resolvePlaySettings(scene);
 	});
 	h.check(resolved.interaction === 'click', '7.1 the scene block drives the resolved interaction');
 	h.check(resolved.eyeHeight === 0.8, '7.2 eye height defaults to the value the spawn always used');
@@ -464,8 +464,8 @@ h.run(async () => {
 	// not depend on scene.children order, which is per-peer
 	const sorted = await page.evaluate(() => {
 		let scene = null;
-		window.__stores.globalScene.subscribe((v) => (scene = v))();
-		const THREE = window.__stores.THREE;
+		window.__tp.test.v1.globalScene.subscribe((v) => (scene = v))();
+		const THREE = window.__tp.test.v1.THREE;
 		const make = (name, play) => {
 			const group = new THREE.Group();
 			group.name = name;
@@ -475,11 +475,11 @@ h.run(async () => {
 		const alpha = make('alpha-module', { interaction: 'grab' });
 		const zulu = make('zulu-module', { interaction: 'off', grounded: true });
 		scene.add(alpha, zulu);
-		const forwards = window.__stores.playSettings.resolvePlaySettings(scene);
+		const forwards = window.__tp.test.v1.playSettings.resolvePlaySettings(scene);
 		// now reverse the ADD order, which is what differs between peers
 		scene.remove(alpha, zulu);
 		scene.add(zulu, alpha);
-		const backwards = window.__stores.playSettings.resolvePlaySettings(scene);
+		const backwards = window.__tp.test.v1.playSettings.resolvePlaySettings(scene);
 		scene.remove(alpha, zulu);
 		return { forwards, backwards };
 	});
@@ -500,7 +500,7 @@ h.run(async () => {
 	await page.waitForTimeout(300);
 	const flyBlocked = await page.evaluate(async () => {
 		let rig = null;
-		window.__stores.playerCam.subscribe((v) => (rig = v))();
+		window.__tp.test.v1.playerCam.subscribe((v) => (rig = v))();
 		if (!rig) return null;
 		rig.position.y = 3;
 		const before = rig.position.y;
@@ -522,7 +522,7 @@ h.run(async () => {
 	await page.waitForTimeout(300);
 	const flies = await page.evaluate(async () => {
 		let rig = null;
-		window.__stores.playerCam.subscribe((v) => (rig = v))();
+		window.__tp.test.v1.playerCam.subscribe((v) => (rig = v))();
 		if (!rig) return null;
 		rig.position.y = 3;
 		const before = rig.position.y;
@@ -539,8 +539,8 @@ h.run(async () => {
 	);
 	void rigY;
 
-	await page.evaluate(() => window.__stores.isLocked.set(false));
-	await page.evaluate(() => window.__stores.physics.stopSimulation());
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(false));
+	await page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 
 	// ---------------------------------------------------------------- section 8
 	console.log('\n=== 8. the wheel sets the FLY SPEED in play mode ===');
@@ -551,15 +551,15 @@ h.run(async () => {
 	// guard is `enableZoom` and not `enabled`, because <TransformControls>' auto-pause
 	// observer force-restores `enabled = true` on cleanup and re-runs on selection
 	// changes; it never touches enableZoom.
-	await page.evaluate(() => window.__stores.playMode?.exitPlay?.());
+	await page.evaluate(() => window.__tp.test.v1.playMode?.exitPlay?.());
 	await page.waitForTimeout(600);
 	const camDist = () =>
 		page.evaluate(
 			() =>
 				new Promise((r) => {
 					let c, ctl;
-					window.__stores.globalCamera.subscribe((v) => (c = v))();
-					window.__stores.orbitControls.subscribe((v) => (ctl = v))();
+					window.__tp.test.v1.globalCamera.subscribe((v) => (c = v))();
+					window.__tp.test.v1.orbitControls.subscribe((v) => (ctl = v))();
 					r(ctl ? c.position.distanceTo(ctl.target) : -1);
 				})
 		);
@@ -572,9 +572,9 @@ h.run(async () => {
 
 	await page.locator('#play-button').click();
 	await page.waitForTimeout(900);
-	h.check((await page.evaluate(() => new Promise((r) => window.__stores.isLocked.subscribe((v) => r(v))()))) === true, '8.2 (premise) play mode is on');
+	h.check((await page.evaluate(() => new Promise((r) => window.__tp.test.v1.isLocked.subscribe((v) => r(v))()))) === true, '8.2 (premise) play mode is on');
 	const camPos = () =>
-		page.evaluate(() => new Promise((r) => window.__stores.globalCamera.subscribe((c) => r(c.getWorldPosition(new window.__stores.THREE.Vector3()).toArray()))()));
+		page.evaluate(() => new Promise((r) => window.__tp.test.v1.globalCamera.subscribe((c) => r(c.getWorldPosition(new window.__tp.test.v1.THREE.Vector3()).toArray()))()));
 	const travel = async () => {
 		const a = await camPos();
 		await page.keyboard.down('w');
@@ -603,8 +603,8 @@ h.run(async () => {
 			() =>
 				new Promise((r) => {
 					let cam, ctl;
-					window.__stores.editorCam.subscribe((v) => (cam = v))();
-					window.__stores.orbitControls.subscribe((v) => (ctl = v))();
+					window.__tp.test.v1.editorCam.subscribe((v) => (cam = v))();
+					window.__tp.test.v1.orbitControls.subscribe((v) => (ctl = v))();
 					r(cam && ctl ? cam.position.distanceTo(ctl.target) : -1);
 				})
 		);
@@ -613,9 +613,9 @@ h.run(async () => {
 	await page.waitForTimeout(400);
 	h.check(Math.abs((await editorDist()) - editorBefore) < 0.001, '8.6 and none of it dollied the EDITOR camera underneath (' + editorBefore.toFixed(3) + ')');
 	void dolly1;
-	const speedStore = await page.evaluate(() => { let v; window.__stores.charController.playMoveSpeed.subscribe((x) => (v = x))(); return v; });
+	const speedStore = await page.evaluate(() => { let v; window.__tp.test.v1.charController.playMoveSpeed.subscribe((x) => (v = x))(); return v; });
 	h.check(typeof speedStore === 'number', '8.7 the speed went through `playMoveSpeed`, so a Move Speed node can read it (' + speedStore + ')');
-	await page.evaluate(() => window.__stores.playMode?.exitPlay?.());
+	await page.evaluate(() => window.__tp.test.v1.playMode?.exitPlay?.());
 	await page.waitForTimeout(600);
 
 	await h.finish(browser);

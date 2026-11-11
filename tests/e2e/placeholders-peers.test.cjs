@@ -28,7 +28,7 @@ async function until(fn, predicate, label, timeout = 15000) {
 
 const facts = (peer, uuid) =>
 	peer.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByProperty('uuid', uuid);
@@ -48,7 +48,7 @@ const facts = (peer, uuid) =>
 const shareStub = (peer, url, pos) =>
 	peer.page.evaluate(
 		({ url, pos, box }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let g, p;
 			s.objectsGroup.subscribe((v) => (g = v))();
 			s.peers.subscribe((v) => (p = v))();
@@ -75,7 +75,7 @@ h.run(async () => {
 	const held = await shareStub(A, fsrv.url('hold', 'Shared'), [0, 0, 0]);
 	await until(() => facts(B, held), (f) => f?.stub && f.drawn, 'B receives the stub and draws its placeholder');
 	h.check((await facts(A, held))?.drawn, 'A draws it too');
-	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u, true), held);
+	await A.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u, true), held);
 	await A.page.waitForSelector('#load-state-panel', { timeout: 8000 }).catch(() => {});
 	await A.page.locator('#inspector-position .dn-wrap').first().click();
 	await A.page.locator('#inspector-position .dn-input').first().fill('2.5');
@@ -91,7 +91,7 @@ h.run(async () => {
 	await until(() => facts(A, gone), (f) => f?.phase === 'failed', 'a 404 is red on A');
 	await until(() => facts(B, gone), (f) => f?.phase === 'failed', '…and on B (each peer fetches for itself)');
 	const okUrl = fsrv.url('ok', 'Instead');
-	await A.page.evaluate(({ u, url }) => window.__stores.replaceModel.replaceWithPackItem(u, { glbUrl: url, name: 'Instead', packName: 'test' }), { u: gone, url: okUrl });
+	await A.page.evaluate(({ u, url }) => window.__tp.test.v1.replaceModel.replaceWithPackItem(u, { glbUrl: url, name: 'Instead', packName: 'test' }), { u: gone, url: okUrl });
 	const rb = await until(() => facts(B, gone), (f) => f && !f.stub && f.children > 0, "A's Replace model… fills on B under the same uuid");
 	h.check(rb?.path === okUrl && rb?.pos[0] === -2, `B points at the new file at the old place (${rb?.pos})`);
 

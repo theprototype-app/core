@@ -11,7 +11,7 @@ const h = require('./helpers.cjs');
 /** a value read off one object on a page @param {any} peer @param {string} uuid */
 const probe = (peer, uuid) =>
 	peer.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		const o = g?.getObjectByProperty('uuid', uuid);
@@ -34,7 +34,7 @@ h.run(async () => {
 
 	// ---- 0. a prefab that carries a flow graph -------------------------------------------
 	const setup = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 400));
 		let g;
@@ -57,7 +57,7 @@ h.run(async () => {
 
 	// ---- 1. an override on copy 2, an edit on copy 1 applied back to the prefab ------------
 	await A.page.evaluate(({ one, two }) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.materialsHandler.setObjectColor(two, '#123456');
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
@@ -71,11 +71,11 @@ h.run(async () => {
 		s.clearToast();
 	}, setup);
 	await h.eventually(() => probe(B, setup.two), (v) => v?.color === '123456', "B sees copy 2's own colour", 8000);
-	const overrides = await A.page.evaluate((two) => window.__stores.prefabLinks.instanceOverrides(two), setup.two);
+	const overrides = await A.page.evaluate((two) => window.__tp.test.v1.prefabLinks.instanceOverrides(two), setup.two);
 	h.check(Array.isArray(overrides) && overrides.length === 1 && /material/.test(overrides[0]), `copy 2 reports its one override (${JSON.stringify(overrides)})`);
 
-	const before = await A.page.evaluate(() => new Promise((r) => window.__stores.history.undoStack.subscribe((s) => r(s.length))()));
-	await A.page.evaluate((one) => window.__stores.prefabLinks.applyInstanceToPrefab(one), setup.one);
+	const before = await A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((s) => r(s.length))()));
+	await A.page.evaluate((one) => window.__tp.test.v1.prefabLinks.applyInstanceToPrefab(one), setup.one);
 	const offer = A.page.getByText('Update 1 instance', { exact: true });
 	await offer.waitFor({ timeout: 8000 });
 	h.check(true, 'applying an edit offers "Update 1 instance"');
@@ -90,35 +90,35 @@ h.run(async () => {
 	h.check(a2?.pos?.[0] === -3, `copy 2 stayed where it was placed (${a2?.pos})`);
 	h.check(a2?.link?.rev === 1, `copy 2 is at revision 1 (${a2?.link?.rev})`);
 	h.check(a2?.nodes === 2, `copy 2's graph took the prefab's second node (${a2?.nodes})`);
-	const after = await A.page.evaluate(() => new Promise((r) => window.__stores.history.undoStack.subscribe((s) => r(s.length))()));
+	const after = await A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((s) => r(s.length))()));
 	h.check(after >= before + 1, `the update is on the undo stack (${before} -> ${after})`);
 	await h.eventually(() => probe(B, setup.two), (v) => v?.scale === 2 && v.color === '123456' && v.link?.rev === 1, 'B sees copy 2 updated, override kept', 10000);
 	await h.eventually(() => probe(B, setup.two), (v) => v?.nodes === 2, "B sees copy 2's graph updated", 10000);
 
 	// ---- 2. one undo puts it back, on both peers -----------------------------------------
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(600);
 	a2 = await probe(A, setup.two);
 	h.check(a2?.scale === 1 && a2.link?.rev === 0 && a2.nodes === 1, `one undo restores copy 2 (scale ${a2?.scale}, rev ${a2?.link?.rev}, nodes ${a2?.nodes})`);
 	await h.eventually(() => probe(B, setup.two), (v) => v?.scale === 1 && v.link?.rev === 0, 'B sees the undo', 10000);
 	await h.eventually(() => probe(B, setup.two), (v) => v?.nodes === 1, "B sees the graph's undo", 10000);
-	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 	await h.eventually(() => probe(A, setup.two), (v) => v?.scale === 2, 'redo applies it again', 5000);
 
 	// ---- 3. reset overrides, then unlink ---------------------------------------------------
-	await A.page.evaluate((two) => window.__stores.prefabLinks.resetInstance(two), setup.two);
+	await A.page.evaluate((two) => window.__tp.test.v1.prefabLinks.resetInstance(two), setup.two);
 	await A.page.waitForTimeout(600);
 	a2 = await probe(A, setup.two);
 	h.check(a2?.color !== '123456' && a2?.pos?.[0] === -3, `reset overrides drops the colour, keeps the placement (${a2?.color} at ${a2?.pos})`);
 	await h.eventually(() => probe(B, setup.two), (v) => v && v.color !== '123456', 'B sees the reset', 10000);
 
-	const menu = await A.page.evaluate((two) => window.__stores.objectMenu.buildObjectMenuItems(two).map((i) => i.label).filter(Boolean), setup.two);
+	const menu = await A.page.evaluate((two) => window.__tp.test.v1.objectMenu.buildObjectMenuItems(two).map((i) => i.label).filter(Boolean), setup.two);
 	h.check(menu.includes('Prefab: Crate'), `the object menu has the Prefab submenu (${menu.filter((l) => /Prefab/.test(l))})`);
 
-	await A.page.evaluate((two) => window.__stores.prefabLinks.unlinkInstance(two), setup.two);
+	await A.page.evaluate((two) => window.__tp.test.v1.prefabLinks.unlinkInstance(two), setup.two);
 	await A.page.waitForTimeout(400);
 	a2 = await probe(A, setup.two);
-	const count = await A.page.evaluate((id) => window.__stores.prefabLinks.prefabInstances(id).length, setup.id);
+	const count = await A.page.evaluate((id) => window.__tp.test.v1.prefabLinks.prefabInstances(id).length, setup.id);
 	h.check(!a2?.link && count === 1, `unlink cuts the copy loose (${JSON.stringify(a2?.link)}, ${count} left)`);
 	await h.eventually(() => probe(B, setup.two), (v) => v && !v.link, 'B sees the unlink', 10000);
 

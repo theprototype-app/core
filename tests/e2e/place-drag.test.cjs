@@ -27,18 +27,18 @@ async function routeStarterPack(peer) {
 		const type = /\.json$/.test(file) ? 'application/json' : /\.glb$/.test(file) ? 'model/gltf-binary' : /\.png$/.test(file) ? 'image/png' : 'text/html';
 		return route.fulfill({ contentType: type, body: fs.readFileSync(file) });
 	});
-	await peer.page.evaluate(() => window.__stores.packs.loadPacks());
+	await peer.page.evaluate(() => window.__tp.test.v1.packs.loadPacks());
 }
 
 /** open the Explorer on the starter pack and return the Duck card's centre */
 async function openStarterPack(peer) {
 	const { page } = peer;
 	await page.evaluate(() => {
-		window.__stores.explorerClose?.set?.(false);
+		window.__tp.test.v1.explorerClose?.set?.(false);
 	});
 	if (!(await page.locator('#explorer-window, #explorer-list').count())) await page.locator('#explorer-slot').click();
 	await page.waitForTimeout(400);
-	await page.evaluate(() => window.__stores.explorer.activeFolder.set('pack:default'));
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set('pack:default'));
 	const card = page.locator('.explorer-card', { hasText: 'Duck' }).first();
 	await card.waitFor({ timeout: 15000 });
 	return card;
@@ -49,7 +49,7 @@ async function canvasPoint(page, fx = 0.5, fy = 0.6) {
 	return page.evaluate(
 		({ fx, fy }) => {
 			let renderer;
-			window.__stores.globalRenderer.subscribe((v) => (renderer = v))();
+			window.__tp.test.v1.globalRenderer.subscribe((v) => (renderer = v))();
 			const r = renderer.domElement.getBoundingClientRect();
 			return { x: Math.round(r.left + r.width * fx), y: Math.round(r.top + r.height * fy) };
 		},
@@ -63,7 +63,7 @@ async function freeCanvasPoint(page) {
 		const p = await canvasPoint(page, fx, fy);
 		const ok = await page.evaluate(({ x, y }) => {
 			let renderer;
-			window.__stores.globalRenderer.subscribe((v) => (renderer = v))();
+			window.__tp.test.v1.globalRenderer.subscribe((v) => (renderer = v))();
 			return document.elementFromPoint(x, y) === renderer.domElement;
 		}, p);
 		if (ok) return p;
@@ -71,12 +71,12 @@ async function freeCanvasPoint(page) {
 	return canvasPoint(page);
 }
 
-const pd = (page) => page.evaluate(() => window.__stores.placeDrag.state());
-const last = (page) => page.evaluate(() => window.__stores.placeDrag.last());
-const ghost = (page) => page.evaluate(() => window.__stores.placeDrag.ghostInfo());
+const pd = (page) => page.evaluate(() => window.__tp.test.v1.placeDrag.state());
+const last = (page) => page.evaluate(() => window.__tp.test.v1.placeDrag.last());
+const ghost = (page) => page.evaluate(() => window.__tp.test.v1.placeDrag.ghostInfo());
 const counts = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g, undo;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		s.history.undoStack.subscribe((v) => (undo = v))();
@@ -108,7 +108,7 @@ h.run(async () => {
 	const before = await counts(A.page);
 
 	// ---- 1. the box ghost from the row's dims -----------------------------------------------
-	await A.page.evaluate(() => window.__stores.placementPrefs?.placementTriBudget?.set?.(50000));
+	await A.page.evaluate(() => window.__tp.test.v1.placementPrefs?.placementTriBudget?.set?.(50000));
 	await pickUp(A.page, card, spot);
 	await A.page.waitForTimeout(300);
 	let s = await pd(A.page);
@@ -182,7 +182,7 @@ h.run(async () => {
 	const fresh = after.uuids.find((u) => !before.uuids.includes(u));
 	const facts = await A.page.evaluate((uuid) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByProperty('uuid', uuid);
 		return { pos: o.position.toArray(), quat: o.quaternion.toArray(), ref: o.userData.packRef ?? null, name: o.name };
 	}, fresh);
@@ -192,7 +192,7 @@ h.run(async () => {
 	await h.eventually(
 		() => A.page.evaluate((uuid) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const o = g.getObjectByProperty('uuid', uuid);
 			return o ? o.children.length : -1;
 		}, fresh),
@@ -203,7 +203,7 @@ h.run(async () => {
 	const onB = (uuid) =>
 		B.page.evaluate((uuid) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const o = g.getObjectByProperty('uuid', uuid);
 			return o ? { pos: o.position.toArray(), quat: o.quaternion.toArray(), kids: o.children.length, ref: o.userData.packRef ?? null } : null;
 		}, uuid);
@@ -230,7 +230,7 @@ h.run(async () => {
 			const y = Math.round(r.top + r.height / 2);
 			const hit = document.elementFromPoint(x, y);
 			let renderer;
-			window.__stores.globalRenderer.subscribe((v) => (renderer = v))();
+			window.__tp.test.v1.globalRenderer.subscribe((v) => (renderer = v))();
 			if (hit && hit !== renderer.domElement && !hit.closest('#explorer-window, #explorer-list')) return { x, y, sel };
 		}
 		return null;
@@ -252,7 +252,7 @@ h.run(async () => {
 	// ---- 9. a LIBRARY model: its ghost uses the size recorded at import, and the card's other
 	//         HTML5 targets still work through the bridge (dropped on a folder card = moved) -----
 	const lib = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const mesh = new s.THREE.Mesh(new s.THREE.BoxGeometry(2, 1, 0.5), new s.THREE.MeshStandardMaterial());
 		mesh.position.y = 0.5;
 		const glb = await new Promise((res, rej) => new s.GLTFExporterModule.GLTFExporter().parse(mesh, res, rej, { binary: true }));
@@ -274,7 +274,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(200);
 	await A.page.mouse.up();
 	await h.eventually(
-		() => A.page.evaluate((id) => { let it; window.__stores.explorer.explorerItems.subscribe((v) => (it = v))(); return it.find((i) => i.id === id)?.folderId ?? null; }, lib.id),
+		() => A.page.evaluate((id) => { let it; window.__tp.test.v1.explorer.explorerItems.subscribe((v) => (it = v))(); return it.find((i) => i.id === id)?.folderId ?? null; }, lib.id),
 		(f) => f === lib.folder,
 		'dropped on a Library folder card it MOVES there (the HTML5 bridge kept the Explorer target)'
 	);

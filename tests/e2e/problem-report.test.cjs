@@ -12,22 +12,22 @@ h.run(async () => {
 		if (!dir) return;
 		const before = await page.evaluate(() => {
 			let v;
-			window.__stores.themes.theme.subscribe((x) => (v = x))();
+			window.__tp.test.v1.themes.theme.subscribe((x) => (v = x))();
 			return v;
 		});
 		for (const t of ['dark', 'light']) {
-			await page.evaluate((x) => window.__stores.themes.theme.set(x), t);
+			await page.evaluate((x) => window.__tp.test.v1.themes.theme.set(x), t);
 			await page.waitForTimeout(300);
 			await page.locator(sel).first().screenshot({ path: require('path').join(dir, `${name}-${t}.png`) }).catch((e) => console.log('screenshot failed: ' + e.message));
 		}
-		await page.evaluate((x) => window.__stores.themes.theme.set(x), before);
+		await page.evaluate((x) => window.__tp.test.v1.themes.theme.set(x), before);
 	}
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 	const page = A.page;
-	const dbg = () => page.evaluate(() => ({ ...window.__stores.problemReport.problemDebug }));
+	const dbg = () => page.evaluate(() => ({ ...window.__tp.test.v1.problemReport.problemDebug }));
 	const open = async () => {
-		await page.evaluate(() => window.__stores.closeMenu.set(false));
+		await page.evaluate(() => window.__tp.test.v1.closeMenu.set(false));
 		await page.waitForTimeout(300);
 		await page.locator('#report-problem').click();
 		await h.eventually(() => page.locator('#problem-report').isVisible(), (v) => v, 'the Report a problem card opens', 15000);
@@ -36,7 +36,7 @@ h.run(async () => {
 	const stub = (/** @type {any} */ opts) =>
 		page.evaluate((o) => {
 			window.__problems = [];
-			window.__stores.cloudHooks.problemReporter.set({
+			window.__tp.test.v1.cloudHooks.problemReporter.set({
 				account: () => (o.signedIn ? { signedIn: true, name: 'Tester' } : { signedIn: false }),
 				submit: async (r) => {
 					window.__problems.push({ note: r.note, marks: r.marks, meta: r.meta, perf: !!r.perf, shot: r.shot ? r.shot.size : 0, type: r.shot?.type });
@@ -121,7 +121,7 @@ h.run(async () => {
 	await stub({ signedIn: true });
 	const vr = await page.evaluate(async () => {
 		let title = '';
-		const res = await window.__stores.problemReport.vrReportProblem((o) => {
+		const res = await window.__tp.test.v1.problemReport.vrReportProblem((o) => {
 			title = o.title;
 			setTimeout(() => o.onCommit('seen in the headset'), 10);
 		});
@@ -129,7 +129,7 @@ h.run(async () => {
 	});
 	h.check(/Enter SENDS/.test(vr.title) && vr.sent === true, `5.1 VR: the keyboard says Enter sends, and it does (${vr.title})`);
 	h.check((await sent())[0]?.note === 'seen in the headset' && (await sent())[0].marks.length === 0, '5.2 the note arrives, no boxes');
-	const vrCancel = await page.evaluate(() => window.__stores.problemReport.vrReportProblem((o) => setTimeout(() => o.onCancel(), 10)));
+	const vrCancel = await page.evaluate(() => window.__tp.test.v1.problemReport.vrReportProblem((o) => setTimeout(() => o.onCancel(), 10)));
 	h.check(vrCancel === null && (await sent()).length === 1, '5.3 Cancel on the keyboard sends nothing');
 
 	await h.finish(browser);

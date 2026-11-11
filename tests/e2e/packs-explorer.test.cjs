@@ -44,7 +44,7 @@ h.run(async () => {
 
 	// import a .zip pack (box glb) via the store
 	const glbArr = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const mesh = new s.THREE.Mesh(new s.THREE.BoxGeometry(1, 1, 1), new s.THREE.MeshStandardMaterial());
 		const glb = await new Promise((res, rej) =>
 			new s.GLTFExporterModule.GLTFExporter().parse(mesh, (r) => res(r), (e) => rej(e), { binary: true })
@@ -60,7 +60,7 @@ h.run(async () => {
 		{ level: 6 }
 	);
 	await A.page.evaluate(async (zipArr) => {
-		await window.__stores.packs.importPackZip(new File([new Uint8Array(zipArr)], 'testpack.zip'));
+		await window.__tp.test.v1.packs.importPackZip(new File([new Uint8Array(zipArr)], 'testpack.zip'));
 	}, Array.from(zipBytes));
 	await A.page.waitForTimeout(300);
 	h.check((await A.page.locator('#explorer-list [data-pack="testpack"]').count()) === 1, 'the imported pack appears in the tree');
@@ -77,7 +77,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(400);
 	h.check((await A.page.locator('#explorer-list .explorer-card').count()) === 1, 'the imported pack shows its one item');
 	const placed = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let items;
 		s.packs.openPackItems.subscribe((x) => (items = x))();
 		const g0 = (() => { let g; s.objectsGroup.subscribe((x) => (g = x))(); return g.children.length; })();

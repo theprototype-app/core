@@ -22,16 +22,16 @@ h.run(async () => {
 	console.log('scene', FILE);
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
-	await A.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+	await A.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 	const bytes = Array.from(fs.readFileSync(FILE));
 	await A.page.evaluate(async (arr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 		await s.sessions.applySession(payload, { backup: false });
 	}, bytes);
 	// the scene starts its own simulation on load (Start simulation on load)
 	await h.eventually(
-		() => A.page.evaluate(() => new Promise((r) => window.__stores.physics.simulating.subscribe(r)())),
+		() => A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.physics.simulating.subscribe(r)())),
 		(v) => v === true,
 		'premise: the Pool party simulates on load',
 		15000
@@ -40,7 +40,7 @@ h.run(async () => {
 
 	const sample = () =>
 		A.page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let g;
 			s.objectsGroup.subscribe((v) => (g = v))();
 			const vol = s.sim.waterVolumes.list()[0];

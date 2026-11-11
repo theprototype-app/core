@@ -19,7 +19,7 @@ h.run(async () => {
 
 	// ---- 1. the registry, and where the fallback lives -------------------------
 	const registry = await A.page.evaluate(async () => {
-		const pb = window.__stores.postBackends;
+		const pb = window.__tp.test.v1.postBackends;
 		const before = pb.ensurePostBackends().map((b) => b.key);
 
 		// a key NOBODY registered — the peer-without-the-module case
@@ -64,7 +64,7 @@ h.run(async () => {
 	// ---- 2. the compiled Effect really carries the authored GLSL ---------------
 	// A registry that returned a default Effect would pass section 1.
 	const compiled = await A.page.evaluate(async () => {
-		const pb = window.__stores.postBackends;
+		const pb = window.__tp.test.v1.postBackends;
 		const { effect } = await pb.compilePostShader(
 			{
 				name: 'Tint',
@@ -88,7 +88,7 @@ h.run(async () => {
 	// Getting the attribute wrong is SILENT — the sampler is simply never filled — which
 	// is the shader lane's "a stage-specific value fails silently" trap in post form.
 	const depth = await A.page.evaluate(async () => {
-		const pb = window.__stores.postBackends;
+		const pb = window.__tp.test.v1.postBackends;
 		const plain = await pb.compilePostShader({ fragment: 'outputColor = inputColor;' }, { scene: null, camera: null });
 		const reads = await pb.compilePostShader(
 			{ fragment: 'outputColor = inputColor;', readsDepth: true },
@@ -103,9 +103,9 @@ h.run(async () => {
 
 	// ---- 4. a MODULE can supply both, and both are torn down ------------------
 	const mod = await A.page.evaluate(async () => {
-		const sdk = window.__stores.moduleSDK;
-		const scenePost = window.__stores.scenePost;
-		const pb = window.__stores.postBackends;
+		const sdk = window.__tp.test.v1.moduleSDK;
+		const scenePost = window.__tp.test.v1.scenePost;
+		const pb = window.__tp.test.v1.postBackends;
 
 		const testModule = {
 			id: 'posttest',
@@ -122,7 +122,7 @@ h.run(async () => {
 						// EffectPass constructor, and an object literal here took the whole
 						// viewport down before that construction was guarded
 						make: () =>
-							new window.__stores.postprocessing.Effect(
+							new window.__tp.test.v1.postprocessing.Effect(
 								'TestTint',
 								'void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor) { outputColor = inputColor; }'
 							)
@@ -206,8 +206,8 @@ h.run(async () => {
 	// entry, which is what lets the effect come back when the module does — and is the
 	// same state a peer who never had the module is in.
 	const preserved = await A.page.evaluate(async () => {
-		const scenePost = window.__stores.scenePost;
-		const sdk = window.__stores.moduleSDK;
+		const scenePost = window.__tp.test.v1.scenePost;
+		const sdk = window.__tp.test.v1.moduleSDK;
 		// author an entry naming a kind nothing has registered
 		scenePost.scenePostRestore(
 			{ enabled: true, effects: [{ id: 'e1', kind: 'mod-posttest-tint', enabled: true, params: {} }], changedAt: 1 },
@@ -238,7 +238,7 @@ h.run(async () => {
 	// return something that is not an Effect, and postprocessing only finds out inside
 	// the EffectPass constructor — where the throw escaped into Outline's $effect.
 	const malformed = await A.page.evaluate(async () => {
-		const scenePost = window.__stores.scenePost;
+		const scenePost = window.__tp.test.v1.scenePost;
 		const off = scenePost.registerPostEffect('badtest', {
 			label: 'Bad',
 			group: 'other',
@@ -250,7 +250,7 @@ h.run(async () => {
 			group: 'other',
 			params: [],
 			make: () =>
-				new window.__stores.postprocessing.Effect(
+				new window.__tp.test.v1.postprocessing.Effect(
 					'GoodTest',
 					'void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor) { outputColor = inputColor; }'
 				)
@@ -262,9 +262,9 @@ h.run(async () => {
 		let threw = null;
 		let out = null;
 		try {
-			out = window.__stores.postEffects.compilePostStack(entries, {
+			out = window.__tp.test.v1.postEffects.compilePostStack(entries, {
 				scene: null,
-				camera: new window.__stores.THREE.PerspectiveCamera(),
+				camera: new window.__tp.test.v1.THREE.PerspectiveCamera(),
 				width: 400,
 				height: 300,
 				dpr: 1

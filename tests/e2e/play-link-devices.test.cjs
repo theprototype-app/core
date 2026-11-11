@@ -103,8 +103,8 @@ async function playPage(browser, name, opts = {}) {
 	return { ctx, page };
 }
 const loadedOf = (page, ms = 120000) => page.evaluate((ms) => Promise.race([window.tpPlay.loaded, new Promise((r) => setTimeout(() => r('timeout'), ms))]), ms);
-const waitApi = (page) => page.waitForFunction(() => !!window.tpPlay && !!window.__stores?.moduleSDK, null, { timeout: 90000 });
-const locked = (page) => page.evaluate((r) => eval(r)(window.__stores.isLocked), read);
+const waitApi = (page) => page.waitForFunction(() => !!window.tpPlay && !!window.__tp?.test.v1?.moduleSDK, null, { timeout: 90000 });
+const locked = (page) => page.evaluate((r) => eval(r)(window.__tp.test.v1.isLocked), read);
 
 h.run(async () => {
 	const browser = await h.launch();
@@ -151,11 +151,11 @@ h.run(async () => {
 	// ------------------------------------------------------------- F. folded: a centred menu fits
 	const fitOf = async (page) => {
 		await page.evaluate(() => {
-			window.__stores.hudDocs.setHudDocFor('scene', {
+			window.__tp.test.v1.hudDocs.setHudDocFor('scene', {
 				active: 'fit',
 				screens: [{ id: 'fit', name: 'Fit', elements: [{ id: 'fit-panel', kind: 'panel', anchor: 'center', x: 0, y: 20, w: 640, h: 520, z: 0, style: {} }, { id: 'fit-text', kind: 'text', label: 'Carry pieces from the racks to the glowing zone and build up to the gold ring.', wrap: true, anchor: 'center', x: 0, y: -154, w: 580, h: 44, z: 1, style: { size: 13 } }] }]
 			});
-			window.__stores.playMode.requestPlay({ flat: true });
+			window.__tp.test.v1.playMode.requestPlay({ flat: true });
 		});
 		await h.eventually(() => locked(page), (v) => v === true, 'F: in play', 20000);
 		await page.waitForTimeout(1500); // the fit is measured twice a second
@@ -176,7 +176,7 @@ h.run(async () => {
 	console.log('F unfolded', JSON.stringify(unfoldFit));
 	check(!!unfoldFit && unfoldFit.width === 640, `F: unfolded (${unfoldFit?.vw} px): the menu keeps its authored 640 px (${unfoldFit?.width})`);
 	const startFont = await U.page.evaluate(() => {
-		window.__stores.playMode.exitPlay();
+		window.__tp.test.v1.playMode.exitPlay();
 		return new Promise((r) => setTimeout(() => r(getComputedStyle(document.querySelector('#embed-hint, .embed-access') ?? document.body).fontFamily), 800));
 	});
 	check(!serif(startFont), `F: the start card text is not serif on the unfolded phone ("${String(startFont).slice(0, 40)}")`);
@@ -186,13 +186,13 @@ h.run(async () => {
 	const B = await playPage(browser, 'B', { gallery: 'official', query: modQ });
 	await waitApi(B.page);
 	const bLoaded = await loadedOf(B.page);
-	const bState = await B.page.evaluate(() => ({ asked: window.__askSeen, mods: window.__stores.moduleSDK.loadedModules.map((m) => m.id) }));
+	const bState = await B.page.evaluate(() => ({ asked: window.__askSeen, mods: window.__tp.test.v1.moduleSDK.loadedModules.map((m) => m.id) }));
 	check(bLoaded === true && !bState.asked && bState.mods.includes(MOD.id), `B: an official module installs without the ask (asked ${bState.asked}, loaded ${bState.mods.includes(MOD.id)})`);
 	B.ctx.__gallery = 'down';
 	const B2 = await playPage(browser, 'B2', { ctx: B.ctx, query: modQ });
 	await waitApi(B2.page);
 	const b2Loaded = await loadedOf(B2.page);
-	const b2 = await B2.page.evaluate(() => ({ asked: window.__askSeen, mods: window.__stores.moduleSDK.loadedModules.map((m) => m.id) }));
+	const b2 = await B2.page.evaluate(() => ({ asked: window.__askSeen, mods: window.__tp.test.v1.moduleSDK.loadedModules.map((m) => m.id) }));
 	check(b2Loaded === true && !b2.asked && b2.mods.includes(MOD.id), `B: the next visit restores it from this device with the gallery down (asked ${b2.asked}, loaded ${b2.mods.includes(MOD.id)})`);
 	await B.ctx.close();
 
@@ -203,11 +203,11 @@ h.run(async () => {
 	await loadedOf(C.page);
 	// the plugin's play=1 calls cloudApi.startPlay, which is playMode.autoPlay (the seam is primed only
 	// when a plugin loads — a dev server has none), so the suite drives autoPlay itself
-	const cAuto = await C.page.evaluate(() => (window.__stores.playMode.autoPlay ?? (() => (window.__stores.playMode.requestPlay({ flat: true }), 'base: requestPlay flat')))());
+	const cAuto = await C.page.evaluate(() => (window.__tp.test.v1.playMode.autoPlay ?? (() => (window.__tp.test.v1.playMode.requestPlay({ flat: true }), 'base: requestPlay flat')))());
 	console.log('C autoPlay returned', cAuto);
 	await C.page.waitForTimeout(3500);
 	const cv = await C.page.evaluate((r) => ({
-		locked: eval(r)(window.__stores.isLocked),
+		locked: eval(r)(window.__tp.test.v1.isLocked),
 		card: !!document.querySelector('#embed-start'),
 		first: document.querySelector('.embed-actions button')?.id ?? null,
 		vrButton: !!document.querySelector('#vrButtonVr button')
@@ -235,32 +235,32 @@ h.run(async () => {
 	const flatXr = await Dk.page.evaluate(async (r) => ({
 		xr: !!navigator.xr,
 		probe: navigator.xr ? await navigator.xr.isSessionSupported('immersive-vr').catch((e) => 'err ' + e) : null,
-		store: eval(r)(window.__stores.playMode.vrSupported),
-		locked: eval(r)(window.__stores.isLocked)
+		store: eval(r)(window.__tp.test.v1.playMode.vrSupported),
+		locked: eval(r)(window.__tp.test.v1.isLocked)
 	}), read);
 	console.log('C flat desktop', JSON.stringify(flatXr));
-	const dAuto = await Dk.page.evaluate(() => (window.__stores.playMode.autoPlay ?? (() => (window.__stores.playMode.requestPlay({ flat: true }), 'base: requestPlay flat')))());
+	const dAuto = await Dk.page.evaluate(() => (window.__tp.test.v1.playMode.autoPlay ?? (() => (window.__tp.test.v1.playMode.requestPlay({ flat: true }), 'base: requestPlay flat')))());
 	console.log('flat autoPlay returned', dAuto);
 	await h.eventually(() => locked(Dk.page), (v) => v === true, 'C: on a flat screen the play=1 autoplay still enters play', 15000);
 	// E measures where play starts: make sure it started, whatever the autoplay did
-	if ((await locked(Dk.page)) !== true) await Dk.page.evaluate(() => window.__stores.playMode.requestPlay({ flat: true }));
+	if ((await locked(Dk.page)) !== true) await Dk.page.evaluate(() => window.__tp.test.v1.playMode.requestPlay({ flat: true }));
 	await h.eventually(() => locked(Dk.page), (v) => v === true, 'E: in play (first start)', 15000);
 
 	// ------------------------------------------------------------- E. a joining camera clears an avatar
 	const camAt = () =>
 		Dk.page.evaluate((r) => {
-			const cam = eval(r)(window.__stores.playerCam);
+			const cam = eval(r)(window.__tp.test.v1.playerCam);
 			const v = cam.getWorldPosition(new cam.position.constructor());
 			return [v.x, v.y, v.z];
 		}, read);
 	await Dk.page.waitForTimeout(800);
 	const p1 = await camAt();
-	await Dk.page.evaluate(() => window.__stores.playMode.exitPlay());
+	await Dk.page.evaluate(() => window.__tp.test.v1.playMode.exitPlay());
 	await h.eventually(() => locked(Dk.page), (v) => v !== true, 'E: out of play', 10000);
 	await Dk.page.waitForTimeout(600);
 	// another player joins: a roster row mounts their AvatarRig (a group named by peer id), and their
 	// pose puts it exactly where play starts (where the first player stands)
-	await Dk.page.evaluate(() => window.__stores.userdata.update((u) => [...u, ['peer-e2e-other', 'Other']]));
+	await Dk.page.evaluate(() => window.__tp.test.v1.userdata.update((u) => [...u, ['peer-e2e-other', 'Other']]));
 	await Dk.page.waitForTimeout(1500);
 	const placed = await Dk.page.evaluate(([x, y, z]) => {
 		const rd = (s) => {
@@ -268,11 +268,11 @@ h.run(async () => {
 			s.subscribe((x) => (v = x))();
 			return v;
 		};
-		const scene = rd(window.__stores.globalScene);
+		const scene = rd(window.__tp.test.v1.globalScene);
 		let rigs = scene.getObjectsByProperty('name', 'peer-e2e-other');
 		if (!rigs.length) {
 			// no AvatarRig on this page: a bare Object3D stands in for it
-			let proto = Object.getPrototypeOf(rd(window.__stores.playerCam));
+			let proto = Object.getPrototypeOf(rd(window.__tp.test.v1.playerCam));
 			while (Object.getPrototypeOf(Object.getPrototypeOf(proto)) !== Object.prototype) proto = Object.getPrototypeOf(proto);
 			const g = new proto.constructor();
 			g.name = 'peer-e2e-other';
@@ -288,7 +288,7 @@ h.run(async () => {
 		return rigs.length;
 	}, p1);
 	console.log('E avatar rigs placed', placed);
-	await Dk.page.evaluate(() => window.__stores.playMode.requestPlay({ flat: true }));
+	await Dk.page.evaluate(() => window.__tp.test.v1.playMode.requestPlay({ flat: true }));
 	await h.eventually(() => locked(Dk.page), (v) => v === true, 'E: in play again', 15000);
 	await Dk.page.waitForTimeout(800);
 	const p2 = await camAt();
@@ -302,7 +302,7 @@ h.run(async () => {
 	await waitApi(J.page);
 	await J.page.waitForTimeout(3000);
 	const before = await J.page.evaluate(() => window.tpPlay.state);
-	await J.page.evaluate(() => window.__stores.connectionState.sessionHost.set('host-e2e'));
+	await J.page.evaluate(() => window.__tp.test.v1.connectionState.sessionHost.set('host-e2e'));
 	await h.eventually(() => J.page.evaluate(() => window.tpPlay.state), (v) => v === 'ready', `D: let into a session, tpPlay.state leaves '${before}' for 'ready'`, 10000);
 	await J.ctx.close();
 

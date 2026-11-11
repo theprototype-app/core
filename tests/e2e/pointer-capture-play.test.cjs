@@ -25,7 +25,7 @@ const PRESSES = 20;
 async function pressCanvas(page, n) {
 	const box = await page.evaluate(() => {
 		let renderer = null;
-		window.__stores.globalRenderer.subscribe((v) => (renderer = v))();
+		window.__tp.test.v1.globalRenderer.subscribe((v) => (renderer = v))();
 		const r = renderer.domElement.getBoundingClientRect();
 		window.__p0downs = 0;
 		renderer.domElement.addEventListener('pointerdown', () => window.__p0downs++, { once: false });
@@ -53,7 +53,7 @@ h.run(async () => {
 		Object.defineProperty(document, 'pointerLockElement', { configurable: true, get: () => locked });
 		window.__p0lock = (on) => {
 			let renderer = null;
-			window.__stores.globalRenderer.subscribe((v) => (renderer = v))();
+			window.__tp.test.v1.globalRenderer.subscribe((v) => (renderer = v))();
 			locked = on ? renderer.domElement : null;
 		};
 		const real = Element.prototype.setPointerCapture;
@@ -66,7 +66,7 @@ h.run(async () => {
 
 	// a game-like scene: a floor, a crate, a collectible-ish marker
 	await page.evaluate(() => {
-		const cmd = window.__stores.commandsHandler.sceneCommand;
+		const cmd = window.__tp.test.v1.commandsHandler.sceneCommand;
 		cmd('/create box');
 		cmd('/create sphere');
 	});
@@ -90,12 +90,12 @@ h.run(async () => {
 	const before = captureErrors(A).length;
 	await page.evaluate(() => {
 		window.__p0lock(true);
-		window.__stores.isLocked.set(true);
+		window.__tp.test.v1.isLocked.set(true);
 	});
 	await page.waitForTimeout(600);
 	const orbitInPlay = await page.evaluate(() => {
 		let oc = null;
-		window.__stores.orbitControls.subscribe((v) => (oc = v))();
+		window.__tp.test.v1.orbitControls.subscribe((v) => (oc = v))();
 		return oc ? oc.enabled : 'none';
 	});
 	h.check(orbitInPlay === false, `the editor OrbitControls stands down in play (enabled=${orbitInPlay})`);
@@ -110,16 +110,16 @@ h.run(async () => {
 	const guardBefore = captureErrors(A).length;
 	await page.evaluate(() => {
 		let oc = null;
-		window.__stores.orbitControls.subscribe((v) => (oc = v))();
+		window.__tp.test.v1.orbitControls.subscribe((v) => (oc = v))();
 		oc.enabled = true;
 	});
 	// press straight away, before the next frame can stand it down again
 	const stomped = await page.evaluate(() => {
 		let renderer = null;
-		window.__stores.globalRenderer.subscribe((v) => (renderer = v))();
+		window.__tp.test.v1.globalRenderer.subscribe((v) => (renderer = v))();
 		const wrapper = renderer.domElement.parentElement;
 		let oc = null;
-		window.__stores.orbitControls.subscribe((v) => (oc = v))();
+		window.__tp.test.v1.orbitControls.subscribe((v) => (oc = v))();
 		oc.enabled = true;
 		const errors = [];
 		const onErr = (e) => { if (/setPointerCapture|InvalidStateError/.test(String(e.message))) errors.push(String(e.message)); };
@@ -137,7 +137,7 @@ h.run(async () => {
 	h.check(stompErrors === 0, `a re-enabled OrbitControls under the lock still captures nothing (${stompErrors} errors)`);
 	const reDisabled = await page.evaluate(() => {
 		let oc = null;
-		window.__stores.orbitControls.subscribe((v) => (oc = v))();
+		window.__tp.test.v1.orbitControls.subscribe((v) => (oc = v))();
 		return oc.enabled;
 	});
 	h.check(reDisabled === false, `...and the next frame stands it down again (enabled=${reDisabled})`);
@@ -145,32 +145,32 @@ h.run(async () => {
 	// ---- leave play: no "Something went wrong", and the editor still orbits ----
 	await page.evaluate(() => {
 		window.__p0lock(false);
-		window.__stores.isLocked.set(false);
+		window.__tp.test.v1.isLocked.set(false);
 	});
 	await page.waitForTimeout(2600); // Controls' own effect walks false -> null
 	const toast = await page.evaluate(() => document.body.innerText.includes('Something went wrong'));
 	h.check(!toast, 'no "Something went wrong" toast after leaving play');
 	const locked = await page.evaluate(() => {
 		let v;
-		window.__stores.isLocked.subscribe((x) => (v = x))();
+		window.__tp.test.v1.isLocked.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(locked !== true, `back in the editor (isLocked=${locked})`);
 	const enabledAfter = await page.evaluate(() => {
 		let oc = null;
-		window.__stores.orbitControls.subscribe((v) => (oc = v))();
+		window.__tp.test.v1.orbitControls.subscribe((v) => (oc = v))();
 		return oc.enabled;
 	});
 	h.check(enabledAfter === true, `the editor OrbitControls is enabled again (${enabledAfter})`);
 
 	const camBefore = await page.evaluate(() => {
 		let cam = null;
-		window.__stores.globalCamera.subscribe((v) => (cam = v))();
+		window.__tp.test.v1.globalCamera.subscribe((v) => (cam = v))();
 		return cam.position.toArray();
 	});
 	const box = await page.evaluate(() => {
 		let renderer = null;
-		window.__stores.globalRenderer.subscribe((v) => (renderer = v))();
+		window.__tp.test.v1.globalRenderer.subscribe((v) => (renderer = v))();
 		const r = renderer.domElement.getBoundingClientRect();
 		return { x: r.left + r.width * 0.3, y: r.top + r.height * 0.6 };
 	});
@@ -181,7 +181,7 @@ h.run(async () => {
 	await page.waitForTimeout(600);
 	const camAfter = await page.evaluate(() => {
 		let cam = null;
-		window.__stores.globalCamera.subscribe((v) => (cam = v))();
+		window.__tp.test.v1.globalCamera.subscribe((v) => (cam = v))();
 		return cam.position.toArray();
 	});
 	const moved = Math.hypot(camAfter[0] - camBefore[0], camAfter[1] - camBefore[1], camAfter[2] - camBefore[2]);

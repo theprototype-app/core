@@ -22,7 +22,7 @@ h.run(async () => {
 
 	// a heavy mesh: a box whose geometry is swapped for 60 000 triangles, plus two light boxes
 	const planted = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const read = (store) => {
 			let v;
 			store.subscribe((x) => (v = x))();
@@ -63,13 +63,13 @@ h.run(async () => {
 	});
 
 	const rec = await page.evaluate(async () => {
-		const p = window.__stores.perf;
+		const p = window.__tp.test.v1.perf;
 		const t0 = performance.now();
 		const id = p.startRecording({ mode: 'detailed', name: 'Suite detailed', durationMs: 3500 });
-		const during = window.__stores.perfDetailed.detailedDebug();
+		const during = window.__tp.test.v1.perfDetailed.detailedDebug();
 		while (p.recordingInfo() && performance.now() - t0 < 10000) await new Promise((r) => setTimeout(r, 100));
 		await new Promise((r) => setTimeout(r, 300));
-		return { id, during, after: window.__stores.perfDetailed.detailedDebug(), stoppedAfter: performance.now() - t0, doc: await p.getRecording(id) };
+		return { id, during, after: window.__tp.test.v1.perfDetailed.detailedDebug(), stoppedAfter: performance.now() - t0, doc: await p.getRecording(id) };
 	});
 	const doc = rec.doc;
 	const v = tp.validateTpprof(doc);
@@ -111,7 +111,7 @@ h.run(async () => {
 
 	// hooks restored exactly
 	const restored = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let scene;
 		s.globalScene.subscribe((x) => (scene = x))();
 		let own = 0;
@@ -126,12 +126,12 @@ h.run(async () => {
 
 	// a light recording costs no detailed work: no cpu columns, no captures
 	const light = await page.evaluate(async () => {
-		const p = window.__stores.perf;
+		const p = window.__tp.test.v1.perf;
 		p.startRecording({ mode: 'light' });
 		await new Promise((r) => setTimeout(r, 800));
 		const id = await p.stopRecording();
 		const d = await p.getRecording(id);
-		return { cpu: d.frames.some((f) => f.cpu), caps: !!d.captures, phasesOn: window.__stores.perfDetailed.detailedDebug().on };
+		return { cpu: d.frames.some((f) => f.cpu), caps: !!d.captures, phasesOn: window.__tp.test.v1.perfDetailed.detailedDebug().on };
 	});
 	h.check(!light.cpu && !light.caps && !light.phasesOn, 'a light recording leaves the phases off and takes no captures');
 

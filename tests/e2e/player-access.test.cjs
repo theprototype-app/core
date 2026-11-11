@@ -34,7 +34,7 @@ const GAME = {
 };
 
 const rd = `(st) => { let v; st.subscribe((x) => (v = x))(); return v; }`;
-const dbg = (page) => page.evaluate(() => ({ access: window.__stores.gameKit.playerAccess.accessDebug(), captions: window.__stores.gameKit.captions.captionsDebug() }));
+const dbg = (page) => page.evaluate(() => ({ access: window.__tp.test.v1.gameKit.playerAccess.accessDebug(), captions: window.__tp.test.v1.gameKit.captions.captionsDebug() }));
 
 h.run(async () => {
 	const browser = await h.launch();
@@ -44,7 +44,7 @@ h.run(async () => {
 
 	await page.evaluate(
 		({ doc }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.gameKit.gameSettings.forceGameId('access-a');
 			s.hudDocs.setHudDocFor('scene', doc);
 			s.gameState.setGameState('playing');
@@ -64,13 +64,13 @@ h.run(async () => {
 		},
 		{ doc: GAME }
 	);
-	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await page.waitForTimeout(500);
 
 	console.log('\n=== 1. the pause menu lists Accessibility; its page ===');
-	await page.evaluate(() => window.__stores.playMode.requestPlay());
+	await page.evaluate(() => window.__tp.test.v1.playMode.requestPlay());
 	await page.waitForTimeout(400);
-	await page.evaluate(() => window.__stores.gameKit.gameShell.openShellMenu('main'));
+	await page.evaluate(() => window.__tp.test.v1.gameKit.gameShell.openShellMenu('main'));
 	await page.waitForTimeout(300);
 	const items = await page.$$eval('[data-shell-item]', (els) => els.map((e) => e.getAttribute('data-shell-item')));
 	h.check(items.includes('access'), '1.1 the pause menu has an Accessibility row (' + items + ')');
@@ -85,17 +85,17 @@ h.run(async () => {
 
 	console.log('\n=== 2. captions ===');
 	await page.keyboard.press('Escape'); // back to the main page? (in Play Esc closes the menu)
-	await page.evaluate(() => window.__stores.gameKit.gameShell.closeShellMenu());
+	await page.evaluate(() => window.__tp.test.v1.gameKit.gameShell.closeShellMenu());
 	await page.waitForTimeout(200);
 	await page.keyboard.press('KeyR');
 	await page.waitForTimeout(500);
 	let d = await dbg(page);
 	h.check(d.captions.last.includes('[coin]'), '2.1 premise: the bus heard the Game Sound default caption with captions off (' + d.captions.last + ')');
 	h.check(!(await page.locator('#game-captions').isVisible().catch(() => false)), '2.2 captions OFF: nothing is drawn');
-	await page.evaluate(() => window.__stores.gameKit.gameShell.openShellMenu('access'));
+	await page.evaluate(() => window.__tp.test.v1.gameKit.gameShell.openShellMenu('access'));
 	await page.waitForTimeout(200);
 	await page.click('[data-access-setting="captions"] input[type="checkbox"]');
-	await page.evaluate(() => window.__stores.gameKit.gameShell.closeShellMenu());
+	await page.evaluate(() => window.__tp.test.v1.gameKit.gameShell.closeShellMenu());
 	await page.waitForTimeout(200);
 	await page.keyboard.press('KeyT');
 	await page.waitForTimeout(400);
@@ -107,7 +107,7 @@ h.run(async () => {
 	h.check(lines2.includes('[coin]'), '2.4 a Game Sound with no caption text shows its default "[coin]" (' + lines2 + ')');
 
 	console.log('\n=== 3. remap ===');
-	await page.evaluate(() => window.__stores.gameKit.gameShell.openShellMenu('access'));
+	await page.evaluate(() => window.__tp.test.v1.gameKit.gameShell.openShellMenu('access'));
 	await page.waitForTimeout(200);
 	await page.click('[data-remap="keys:KeyR"] button');
 	await page.keyboard.press('ArrowUp');
@@ -115,8 +115,8 @@ h.run(async () => {
 	d = await dbg(page);
 	h.check(d.access.remap.keys.KeyR === 'ArrowUp', '3.1 pressing ↑ while the row waits binds Collect to ↑ (' + JSON.stringify(d.access.remap) + ')');
 	h.check((await page.textContent('[data-remap="keys:KeyR"] button')).trim() === '↑', '3.2 the row shows ↑');
-	await page.evaluate(() => window.__stores.gameKit.gameShell.closeShellMenu());
-	await page.evaluate(() => window.__stores.gameKit.captions.clearCaptions());
+	await page.evaluate(() => window.__tp.test.v1.gameKit.gameShell.closeShellMenu());
+	await page.evaluate(() => window.__tp.test.v1.gameKit.captions.clearCaptions());
 	await page.waitForTimeout(3200); // let the coin's merge window pass
 	const before = (await dbg(page)).captions.pushed;
 	await page.keyboard.press('KeyR');
@@ -129,7 +129,7 @@ h.run(async () => {
 	h.check(afterUp === afterR + 1, '3.4 ↑ fires it — the Game Sound downstream captions (' + afterR + ' → ' + afterUp + ')');
 	// the walker: W → I
 	const walk = await page.evaluate(async (rdSrc) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.gameKit.playerAccess.remapControl('keys', 'KeyW', 'KeyI', ['KeyW', 'KeyS', 'KeyA', 'KeyD', 'Space', 'KeyR']);
 		const cam = eval(rdSrc)(s.playerCam);
 		return cam ? cam.getWorldPosition(new s.THREE.Vector3()).toArray() : null;
@@ -138,8 +138,8 @@ h.run(async () => {
 	await page.waitForTimeout(500);
 	await page.keyboard.up('KeyW');
 	const camAt = (rdSrc) => {
-		const cam = eval(rdSrc)(window.__stores.playerCam);
-		return cam ? cam.getWorldPosition(new window.__stores.THREE.Vector3()).toArray() : null;
+		const cam = eval(rdSrc)(window.__tp.test.v1.playerCam);
+		return cam ? cam.getWorldPosition(new window.__tp.test.v1.THREE.Vector3()).toArray() : null;
 	};
 	const afterW = await page.evaluate(camAt, rd);
 	await page.keyboard.down('KeyI');
@@ -152,7 +152,7 @@ h.run(async () => {
 
 	console.log('\n=== 4. per game, local ===');
 	const perGame = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const pa = s.gameKit.playerAccess;
 		const storedA = JSON.parse(localStorage.getItem('tp:game:access-a:access') || 'null');
 		s.gameKit.gameSettings.forceGameId('access-b');
@@ -165,7 +165,7 @@ h.run(async () => {
 	h.check(perGame.b.values.captions === true && !Object.keys(perGame.b.remap.keys).length, '4.2 game B inherits the last choices (captions on) but not the remap');
 	h.check(perGame.a.remap.keys.KeyR === 'ArrowUp' && perGame.a.remap.keys.KeyW === 'KeyI', '4.3 back in game A its remap is there again');
 	const wire = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let sent = 0;
 		const peers = (() => {
 			let v;
@@ -184,7 +184,7 @@ h.run(async () => {
 	h.check(wire === 0, '4.4 changing accessibility settings sends nothing to peers (' + wire + ' sends)');
 
 	console.log('\n=== 5. colour filter ===');
-	await page.evaluate(() => window.__stores.gameKit.playerAccess.setAccess('colorFilter', 'deutan'));
+	await page.evaluate(() => window.__tp.test.v1.gameKit.playerAccess.setAccess('colorFilter', 'deutan'));
 	await page.waitForTimeout(200);
 	const filt = await page.evaluate(() => ({
 		attr: document.documentElement.getAttribute('data-player-filter'),
@@ -198,7 +198,7 @@ h.run(async () => {
 
 	console.log('\n=== 6. HUD text size ===');
 	const hud = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const read = () => {
 			const el = document.querySelector('[data-hud-id="score"]');
 			const pic = document.querySelector('[data-hud-id="pic"]');
@@ -217,7 +217,7 @@ h.run(async () => {
 
 	console.log('\n=== 7. caption size ===');
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.gameKit.playerAccess.setAccess('captionSize', 'large');
 		s.gameKit.captions.showCaption({ text: 'A door creaks open', source: 'test' });
 	});
@@ -228,7 +228,7 @@ h.run(async () => {
 
 	console.log('\n=== 8. the VR board ===');
 	const vr = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		const head = { position: new THREE.Vector3(0, 1.6, 0), quaternion: new THREE.Quaternion() };
 		s.gameKit.gameShell.openShellMenu('access');
@@ -249,7 +249,7 @@ h.run(async () => {
 
 	console.log('\n=== 9. a Timeline audio clip caption ===');
 	const tl = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const id = s.sequences.createSequence('Captioned');
 		const track = s.sequences.addTrack(id, 'audio');
 		s.sequences.addItem(id, track, { t: 0, dur: 2, sound: '', caption: 'Thunder rumbles' });
@@ -262,7 +262,7 @@ h.run(async () => {
 	h.check(tl.last.includes('Thunder rumbles'), '9.2 the clip caption shows when the clip starts (' + tl.last.slice(-3) + ')');
 
 	console.log('\n=== 5b. leaving play drops the filter ===');
-	await page.evaluate(() => window.__stores.playMode.exitPlay());
+	await page.evaluate(() => window.__tp.test.v1.playMode.exitPlay());
 	await page.waitForTimeout(400);
 	h.check((await page.evaluate(() => document.documentElement.getAttribute('data-player-filter'))) === null, '5.3 out of play: no filter');
 

@@ -13,7 +13,7 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
 	const page = A.page;
-	await page.waitForFunction(() => !!window.__stores?.hudDocs, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.hudDocs, { timeout: 30000 });
 
 	// ---- 0. spies + fixtures --------------------------------------------------
 	await page.evaluate(() => {
@@ -34,7 +34,7 @@ h.run(async () => {
 	});
 
 	const built = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.hudEditorClose.set(false);
 		s.bottomDock.activateDock('hud');
 		await new Promise((r) => setTimeout(r, 1500));
@@ -66,7 +66,7 @@ h.run(async () => {
 
 	// ---- 1. normalize: the field is absent-means-game --------------------------
 	const norm = await page.evaluate(() => {
-		const n = window.__stores.hudDocs.normalizeHudScreen;
+		const n = window.__tp.test.v1.hudDocs.normalizeHudScreen;
 		return {
 			absent: n({ id: 's', name: 's', elements: [] }).input,
 			junk: n({ id: 's', name: 's', input: 'weird', elements: [] }).input,
@@ -79,7 +79,7 @@ h.run(async () => {
 
 	// ---- 2. claims are refcounted ----------------------------------------------
 	const claims = await page.evaluate(() => {
-		const s = window.__stores.inputRuntime;
+		const s = window.__tp.test.v1.inputRuntime;
 		const read = () => {
 			let v; s.inputClaims.subscribe((x) => (v = x))(); return v.includes('keys');
 		};
@@ -99,7 +99,7 @@ h.run(async () => {
 	// ---- 3. the menu substate machine -------------------------------------------
 	// enter play (headless: the lock request fails, but isLocked itself is the state)
 	const cycle = await page.evaluate(async (b) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const w = /** @type {any} */ (window);
 		/** @type {string[]} */
 		const log = [];
@@ -138,7 +138,7 @@ h.run(async () => {
 
 	// ---- 4. movement is dead over the menu --------------------------------------
 	const moved = await page.evaluate(async (b) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.hudDocs.showHudScreen('scene', b.menuScreen);
 		await new Promise((r) => setTimeout(r, 400));
 		const cam = s.globalCamera ? null : null;
@@ -166,7 +166,7 @@ h.run(async () => {
 
 	// ---- 5. the ring reaches the inputs ------------------------------------------
 	const ring = await page.evaluate(async (b) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.hudDocs.showHudScreen('scene', b.menuScreen);
 		await new Promise((r) => setTimeout(r, 500));
 		// under lock the ring owns the arrows; headless holds no lock, but the handler
@@ -190,7 +190,7 @@ h.run(async () => {
 
 	// ---- 6. Esc exits play, even with the menu open -------------------------------
 	const esc = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape', bubbles: true }));
 		await new Promise((r) => setTimeout(r, 400));
 		let l; s.isLocked.subscribe((v) => (l = v))();
@@ -202,13 +202,13 @@ h.run(async () => {
 
 	// ---- 7. keypress edges ----------------------------------------------------------
 	await page.evaluate(() => {
-		window.__stores.objectActions.deselectObject();
-		window.__stores.flowGraphClose.set(false);
-		window.__stores.bottomDock.activateDock('flow');
+		window.__tp.test.v1.objectActions.deselectObject();
+		window.__tp.test.v1.flowGraphClose.set(false);
+		window.__tp.test.v1.bottomDock.activateDock('flow');
 	});
 	await page.waitForTimeout(1200);
 	const edges = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const mk = (id, type, data) =>
 			s.nodesHandler.createFlowNode({ id, type, position: { x: 40, y: 40 }, data: { type, ...data } });
 		mk('kp-down', 'keypress', { code: 'KeyJ', edge: 'down', pulse: 0.3 });
@@ -233,7 +233,7 @@ h.run(async () => {
 
 	// ---- 8. pause pauses -------------------------------------------------------------
 	const paused = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		// a spinning cube driven by flow
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1200));
@@ -285,11 +285,11 @@ h.run(async () => {
 
 	// ---- 9. two peers: the field replicates, the pause is shared ---------------------
 	const B = await h.setupPage(browser, 'B');
-	await B.page.waitForFunction(() => !!window.__stores?.hudDocs, { timeout: 30000 });
+	await B.page.waitForFunction(() => !!window.__tp?.test.v1?.hudDocs, { timeout: 30000 });
 	await h.connect(B, A);
 	await B.page.waitForTimeout(3000);
 	const onPeer = await B.page.evaluate((b) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const doc = s.hudDocs.hudDocOf('scene');
 		const menu = doc?.screens?.find((sc) => sc.id === b.menuScreen);
 		let g; s.gameState.gameState.subscribe((v) => (g = v))();

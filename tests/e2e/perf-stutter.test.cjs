@@ -27,7 +27,7 @@ h.run(async () => {
 
 	// ---- the guards ------------------------------------------------------------
 	const deep = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		window.__deepReads = 0;
 		await s.moduleSDK.initModules([
 			{
@@ -68,7 +68,7 @@ h.run(async () => {
 	h.check(deep.reads === 0, '1 COUNTERFACTUAL GUARD: refreshing the Module content rows never deep-reads a module group (' + deep.reads + ' getter reads; a deep $state walks the scene graph)');
 
 	const index = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const nodes = [];
 		const edges = [];
 		for (let i = 0; i < 200; i++) nodes.push({ id: 'n' + i, type: 'number', data: { value: i } });
@@ -91,7 +91,7 @@ h.run(async () => {
 	h.check(index.reads <= index.edges + 10, '3 COUNTERFACTUAL GUARD: 51 resolutions read the edge list ONCE (' + index.reads + ' element reads for ' + index.edges + ' edges; a per-call scan reads ~' + index.edges * 51 + ')');
 
 	const dungeon = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		const scene = new THREE.Scene();
 		let lookups = 0;
@@ -118,7 +118,7 @@ h.run(async () => {
 	h.check(dungeon.hitLookups === 1 && dungeon.missLookups === 1, '5 COUNTERFACTUAL GUARD: 100 walker frames cost ONE scene traversal, hit or miss (' + dungeon.hitLookups + ' / ' + dungeon.missLookups + '; per-frame was 100 / 100)');
 
 	const ease = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		const group = read(s.objectsGroup);
 		const box = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial());
@@ -157,7 +157,7 @@ h.run(async () => {
 
 
 	const panel = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		const g = read(s.objectsGroup);
 		// a top-level object whose `type` counts reads made from inside flattenPanelRows only

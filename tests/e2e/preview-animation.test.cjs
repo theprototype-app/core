@@ -40,13 +40,13 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1440, height: 900 } } });
 	const page = A.page;
 
-	await page.waitForFunction(() => !!window.__stores?.filePreview && !!window.__stores?.explorer, null, {
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.filePreview && !!window.__tp?.test.v1?.explorer, null, {
 		timeout: 30000
 	});
 	await page.evaluate(async () => {
-		await window.__stores.explorer.loadExplorer();
-		await window.__stores.explorer.clearLibrary();
-		const f = window.__stores.filePreview;
+		await window.__tp.test.v1.explorer.loadExplorer();
+		await window.__tp.test.v1.explorer.clearLibrary();
+		const f = window.__tp.test.v1.filePreview;
 		f.previewAutoPlay.set(true);
 		f.previewAutoRotate.set(false); // one moving thing at a time, or "did it move" is ambiguous
 		// round 19 turned these OFF by default; this suite measures them, so it asks. That
@@ -59,7 +59,7 @@ h.run(async () => {
 	// ---- the fixture: a 2s clip that lifts a box, exported as a real .glb ---------------
 	// 2s at 30fps is 60 frames, which is a number a human can check the readout against.
 	const made = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		const mesh = new THREE.Mesh(
 			new THREE.BoxGeometry(1, 1, 1),
@@ -577,7 +577,7 @@ h.run(async () => {
 	// <label for> resolves to the FIRST match anywhere, so the second window's label toggled
 	// the first window's setting. Since round 14 made these per-window, that moves a setting
 	// on a window you are not even looking at.
-	await page.evaluate(() => window.__stores.filePreview.previewMultiWindow.set(true));
+	await page.evaluate(() => window.__tp.test.v1.filePreview.previewMultiWindow.set(true));
 	await page.waitForTimeout(300);
 	await page.locator('[data-card-id="' + made.stillId + '"]').dblclick();
 	await page.waitForTimeout(1800);
@@ -663,7 +663,7 @@ h.run(async () => {
 		moved === 1,
 		'clicking the label changes exactly ONE window (' + JSON.stringify({ before: throughBefore, after: throughAfter }) + ')'
 	);
-	await page.evaluate(() => window.__stores.filePreview.previewMultiWindow.set(false));
+	await page.evaluate(() => window.__tp.test.v1.filePreview.previewMultiWindow.set(false));
 
 	// ---- 15. A FADED WINDOW PUTS ITS PLAYER AWAY (round 22, user) -------------------------
 	//
@@ -672,7 +672,7 @@ h.run(async () => {
 	// A faded window is a reference laid over the scene, and the transport is the largest
 	// piece of chrome on it. The two readings already stood down for that reason; leaving
 	// the player up made them look like an oversight rather than a rule.
-	await page.evaluate(() => window.__stores.filePreview.previewMultiWindow.set(false));
+	await page.evaluate(() => window.__tp.test.v1.filePreview.previewMultiWindow.set(false));
 	await page.locator('#image-preview-window button[title="Close"]').first().click();
 	await page.waitForTimeout(600);
 	await page.locator('[data-card-id="' + made.id + '"]').dblclick();
@@ -742,12 +742,12 @@ h.run(async () => {
 		str(36, 'data');
 		view.setUint32(40, n * 2, true);
 		for (let i = 0; i < n; i++) view.setInt16(44 + i * 2, Math.sin(i / 18) * 1500, true);
-		return (await window.__stores.explorer.addItemFromBytes(buf, 'lock-tone.wav', null)).id;
+		return (await window.__tp.test.v1.explorer.addItemFromBytes(buf, 'lock-tone.wav', null)).id;
 	});
 	await page.waitForTimeout(700);
 	await page.locator('#image-preview-window button[title="Close"]').first().click();
 	await page.waitForTimeout(500);
-	await page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await page.waitForTimeout(500);
 	await page.locator('[data-card-id="' + wav + '"]').dblclick();
 	await page.waitForTimeout(1500);

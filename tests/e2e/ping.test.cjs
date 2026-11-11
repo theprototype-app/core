@@ -7,7 +7,7 @@ const readPings = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.ping.pings.subscribe((list) =>
+				window.__tp.test.v1.ping.pings.subscribe((list) =>
 					resolve(list.map((p) => ({ name: p.name, pos: p.pos })))
 				)();
 			})
@@ -39,7 +39,7 @@ h.run(async () => {
 	const markerOnB = await B.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.globalScene.subscribe((scene) => {
+				window.__tp.test.v1.globalScene.subscribe((scene) => {
 					let rings = 0;
 					scene?.traverse((o) => {
 						if (o.geometry?.type === 'RingGeometry') rings++;

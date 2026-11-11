@@ -12,7 +12,7 @@ const card = (page) =>
 		const parked = t.closest('.toasts-parked');
 		return { top: Math.round(r.top), bottom: Math.round(r.bottom), vh: innerHeight, parked: !!parked, z: parked ? getComputedStyle(parked).zIndex : null, shown: getComputedStyle(parked || t).display !== 'none' };
 	});
-const raise = (page) => page.evaluate(() => window.__stores.showToastById('auto-quality', 'Lowered particles to keep it smooth', [{ label: 'Keep full quality', action: () => {} }]));
+const raise = (page) => page.evaluate(() => window.__tp.test.v1.showToastById('auto-quality', 'Lowered particles to keep it smooth', [{ label: 'Keep full quality', action: () => {} }]));
 
 h.run(async () => {
 	const browser = await h.launch();

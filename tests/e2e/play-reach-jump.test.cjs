@@ -17,17 +17,17 @@ const REACH = 1.3;
 const camWorld = (page) =>
 	page.evaluate(() => {
 		let cam;
-		window.__stores.playerCam.subscribe((c) => (cam = c))();
-		const w = cam.getWorldPosition(new window.__stores.THREE.Vector3());
+		window.__tp.test.v1.playerCam.subscribe((c) => (cam = c))();
+		const w = cam.getWorldPosition(new window.__tp.test.v1.THREE.Vector3());
 		return { x: w.x, y: w.y, z: w.z };
 	});
 /** put the play eye at a world point, looking at another */
 const aimRig = (page, eye, at) =>
 	page.evaluate(
 		({ eye, at }) => {
-			const THREE = window.__stores.THREE;
+			const THREE = window.__tp.test.v1.THREE;
 			let cam;
-			window.__stores.playerCam.subscribe((c) => (cam = c))();
+			window.__tp.test.v1.playerCam.subscribe((c) => (cam = c))();
 			const v = new THREE.Vector3(...eye);
 			if (cam.parent) cam.parent.worldToLocal(v);
 			cam.position.copy(v);
@@ -41,18 +41,18 @@ const aimRig = (page, eye, at) =>
 const interact = (page) =>
 	page.evaluate(() => {
 		let s;
-		window.__stores.playInteract.playInteractState.subscribe((v) => (s = v))();
-		return { ...window.__stores.playInteract.playInteractDebug(), ...s };
+		window.__tp.test.v1.playInteract.playInteractState.subscribe((v) => (s = v))();
+		return { ...window.__tp.test.v1.playInteract.playInteractDebug(), ...s };
 	});
 const setReach = (page, reach) =>
-	page.evaluate((reach) => window.__stores.scenePhysics.setScenePhysics({ play: { reach } }), reach);
+	page.evaluate((reach) => window.__tp.test.v1.scenePhysics.setScenePhysics({ play: { reach } }), reach);
 const setGraph = (page, nodes) =>
 	page.evaluate((nodes) => {
-		window.__stores.setActiveGraph(window.__stores.SCENE_GRAPH);
-		window.__stores.flowNodes.set(
+		window.__tp.test.v1.setActiveGraph(window.__tp.test.v1.SCENE_GRAPH);
+		window.__tp.test.v1.flowNodes.set(
 			nodes.map((n) => ({ id: n.id, type: n.type, position: { x: 0, y: 0 }, data: { type: n.type, ...n.data }, class: 'w-[150px]' }))
 		);
-		window.__stores.flowEdges.set([]);
+		window.__tp.test.v1.flowEdges.set([]);
 	}, nodes);
 const CONTROLLER = (jumpHeight) => ({
 	id: 'cc',
@@ -64,7 +64,7 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(4000);
 		await warm.ctx.close();
 	}
@@ -73,7 +73,7 @@ h.run(async () => {
 
 	// ---- the fixture: a floor (top 0), a NEAR crate, a FAR crate, a crate to jump on --------
 	const ids = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const get = (store) => { let v; store.subscribe((x) => (v = x))(); return v; };
 		for (let i = 0; i < 4; i++) s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 700));
@@ -92,23 +92,23 @@ h.run(async () => {
 	});
 	const play = await page.evaluate(() => {
 		let v;
-		window.__stores.scenePhysics.scenePlay.subscribe((x) => (v = x))();
+		window.__tp.test.v1.scenePhysics.scenePlay.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(play.reach === REACH, `the play block stores the reach (${play.reach})`);
 	await setReach(page, 999);
-	const clamped = await page.evaluate(() => { let v; window.__stores.scenePhysics.scenePlay.subscribe((x) => (v = x))(); return v.reach; });
+	const clamped = await page.evaluate(() => { let v; window.__tp.test.v1.scenePhysics.scenePlay.subscribe((x) => (v = x))(); return v.reach; });
 	h.check(clamped === 20, `an absurd reach clamps at the boundary (${clamped})`);
 	await setReach(page, REACH);
 
-	await page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await h.eventually(
-		() => page.evaluate(() => window.__stores.physics.physicsWorldDebug().running),
+		() => page.evaluate(() => window.__tp.test.v1.physics.physicsWorldDebug().running),
 		(ok) => ok,
 		'premise: a simulation is running (only dynamic bodies of a running sim are grabbable)',
 		15000
 	);
-	await page.evaluate(() => window.__stores.isLocked.set(true));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await page.waitForTimeout(800);
 
 	// ---- 1. desktop Play: the crosshair knows what is within reach of your BODY ------------------
@@ -139,7 +139,7 @@ h.run(async () => {
 	for (let i = 0; i < 24; i++) await page.evaluate(() => window.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true })));
 	await page.waitForTimeout(1500);
 	const held = await page.evaluate((uuid) => {
-		let g; window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByProperty('uuid', uuid);
 		return { x: o.position.x, y: o.position.y, z: o.position.z };
 	}, ids.near);
@@ -152,9 +152,9 @@ h.run(async () => {
 
 	// ---- 2. desktop jump: a Character Controller in walk mode stands ON a piece ---------------
 	await setGraph(page, [CONTROLLER(1.0)]);
-	await h.eventually(() => page.evaluate(() => window.__stores.charController.charControllerDebug().control?.mode), (m) => m === 'walk', 'premise: the walk controller is declared', 5000);
+	await h.eventually(() => page.evaluate(() => window.__tp.test.v1.charController.charControllerDebug().control?.mode), (m) => m === 'walk', 'premise: the walk controller is declared', 5000);
 	await aimRig(page, [5, 1.7, 1.5], null); // 1.5 m south of the step crate, looking -Z at it
-	await h.eventually(() => page.evaluate(() => window.__stores.charController.charControllerDebug().walker), (w) => w.source === 'rapier' && w.grounded, 'premise: the walker stands on the floor through the rapier capsule', 8000);
+	await h.eventually(() => page.evaluate(() => window.__tp.test.v1.charController.charControllerDebug().walker), (w) => w.source === 'rapier' && w.grounded, 'premise: the walker stands on the floor through the rapier capsule', 8000);
 	await page.keyboard.down('KeyW');
 	await page.waitForTimeout(1200);
 	await page.keyboard.up('KeyW');
@@ -170,10 +170,10 @@ h.run(async () => {
 	await page.keyboard.up('Space');
 	await page.waitForTimeout(1200);
 	eye = await camWorld(page);
-	const walker = (await page.evaluate(() => window.__stores.charController.charControllerDebug())).walker;
+	const walker = (await page.evaluate(() => window.__tp.test.v1.charController.charControllerDebug())).walker;
 	h.check(Math.abs(eye.y - 2.3) < 0.12 && walker.grounded, `JUMP: Space + W lands you ON the crate (eye ${eye.y.toFixed(2)} = 0.6 + 1.7, grounded ${walker.grounded})`);
 	const stepNow = await page.evaluate((uuid) => {
-		let g; window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByProperty('uuid', uuid);
 		return [o.position.x, o.position.z];
 	}, ids.step);
@@ -192,20 +192,20 @@ h.run(async () => {
 	await page.waitForTimeout(600);
 	eye = await camWorld(page);
 	h.check(Math.abs(eye.y - 1.7) < 0.08, `COUNTERFACTUAL: with jumpHeight 0 the same keys leave you on the floor (eye ${eye.y.toFixed(2)})`);
-	await page.evaluate(() => window.__stores.isLocked.set(null));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(null));
 	await page.waitForTimeout(500);
 
 	// ---- 3. VR Interact: a grip takes only what is within reach of the body ---------------------
 	await setGraph(page, [CONTROLLER(1.0)]);
-	await page.evaluate(() => window.__stores.isVRMode.set(true));
+	await page.evaluate(() => window.__tp.test.v1.isVRMode.set(true));
 	await xr.install(page);
 	await xr.installSpace(page, { head: [0, 1.6, 0], yaw: 0 });
-	await page.evaluate(() => window.__stores.objectActions.setEditorMode('interact'));
+	await page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('interact'));
 	await page.waitForTimeout(400);
 	const gripAt = (target) =>
 		page.evaluate(
 			({ target }) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				const THREE = s.THREE;
 				let cam; s.globalCamera.subscribe((c) => (cam = c))();
 				cam.position.set(0, 1.6, 0);
@@ -230,7 +230,7 @@ h.run(async () => {
 	const before = await xr.pulses(page);
 	await xr.button(page, 'right', 1, true);
 	await page.waitForTimeout(400);
-	const grip = await page.evaluate(() => window.__stores.vrControls.vrGripDebug());
+	const grip = await page.evaluate(() => window.__tp.test.v1.vrControls.vrGripDebug());
 	const after = await xr.pulses(page);
 	await xr.button(page, 'right', 1, false);
 	await page.waitForTimeout(200);
@@ -240,7 +240,7 @@ h.run(async () => {
 	// ---- 4. VR jump: right A leaves the ground while the controller can jump ---------------------
 	await xr.installSpace(page, { head: [-6, 1.6, 6], yaw: 0 });
 	await page.waitForTimeout(600);
-	h.check((await page.evaluate(() => window.__stores.vrControls.vrJumpHeight())) === 1, 'VR: Interact + a walk controller with jumpHeight 1 can jump');
+	h.check((await page.evaluate(() => window.__tp.test.v1.vrControls.vrJumpHeight())) === 1, 'VR: Interact + a walk controller with jumpHeight 1 can jump');
 	const sampleHead = async (ms) => {
 		let max = -Infinity;
 		const t0 = Date.now();
@@ -258,21 +258,21 @@ h.run(async () => {
 	let hd = await xr.head(page);
 	h.check(peak > 2.2, `VR: pressing A lifts the head well off the ground (peak ${peak.toFixed(2)}, standing 1.60)`);
 	h.check(Math.abs(hd.y - 1.6) < 0.1, `VR: ...and it lands again (${hd.y.toFixed(2)})`);
-	const ptt = await page.evaluate(() => { let v; window.__stores.voiceChat.pttActive.subscribe((x) => (v = x))(); return v; });
+	const ptt = await page.evaluate(() => { let v; window.__tp.test.v1.voiceChat.pttActive.subscribe((x) => (v = x))(); return v; });
 	h.check(!ptt, `VR: while A jumps it is not push-to-talk (${ptt})`);
 	// counterfactual: no controller node, no jump
 	await setGraph(page, []);
-	await h.eventually(() => page.evaluate(() => window.__stores.vrControls.vrJumpHeight()), (v) => v === 0, 'with no controller node the VR jump is off', 4000);
+	await h.eventually(() => page.evaluate(() => window.__tp.test.v1.vrControls.vrJumpHeight()), (v) => v === 0, 'with no controller node the VR jump is off', 4000);
 	await xr.button(page, 'right', 4, true);
 	const flat = await sampleHead(600);
 	await xr.button(page, 'right', 4, false);
 	h.check(flat < 1.7, `COUNTERFACTUAL: A no longer jumps (peak ${flat.toFixed(2)})`);
 	await xr.uninstall(page);
-	await page.evaluate(() => window.__stores.isVRMode.set(false));
-	await page.evaluate(() => window.__stores.objectActions.setEditorMode('edit'));
+	await page.evaluate(() => window.__tp.test.v1.isVRMode.set(false));
+	await page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('edit'));
 
 	// ---- 5. Configure Scene ▸ Play (its own section since 38 #33): the Limit grab reach row -------
-	await page.evaluate(() => window.__stores.openSceneSection('Play'));
+	await page.evaluate(() => window.__tp.test.v1.openSceneSection('Play'));
 	await page.waitForTimeout(1200);
 	const row = await page.evaluate(() => ({
 		on: ((e) => (e ? e.getAttribute('aria-pressed') === 'true' : null))(document.querySelector('#physics-play-reach-on')),
@@ -281,11 +281,11 @@ h.run(async () => {
 	h.check(row.on === true && row.slider, `the Inspector row reads the scene's reach (${JSON.stringify(row)})`);
 	await page.click('#physics-play-reach-on');
 	await page.waitForTimeout(400);
-	const off = await page.evaluate(() => { let v; window.__stores.scenePhysics.scenePlay.subscribe((x) => (v = x))(); return { has: 'reach' in v, slider: !!document.querySelector('#physics-play-reach') }; });
+	const off = await page.evaluate(() => { let v; window.__tp.test.v1.scenePhysics.scenePlay.subscribe((x) => (v = x))(); return { has: 'reach' in v, slider: !!document.querySelector('#physics-play-reach') }; });
 	h.check(!off.has && !off.slider, `unticking removes the key (a scene without a reach saves as before) and folds the slider (${JSON.stringify(off)})`);
 	await page.click('#physics-play-reach-on');
 	await page.waitForTimeout(400);
-	const on = await page.evaluate(() => { let v; window.__stores.scenePhysics.scenePlay.subscribe((x) => (v = x))(); return v.reach; });
+	const on = await page.evaluate(() => { let v; window.__tp.test.v1.scenePhysics.scenePlay.subscribe((x) => (v = x))(); return v.reach; });
 	h.check(on === 1.3, `ticking it sets a 1.3 m reach (${on})`);
 
 	await h.finish(browser);

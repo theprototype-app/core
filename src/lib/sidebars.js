@@ -96,7 +96,28 @@ inspectorSide.subscribe((v) => ls && safeStorage.setItem('sidebar:inspectorSide'
  * they differ.
  */
 export const sceneSide = writable(/** @type {Side} */ (ls && safeStorage.getItem('sidebar:sceneSide') ? asSide(safeStorage.getItem('sidebar:sceneSide')) : get(inspectorSide)));
-sceneSide.subscribe((v) => ls && safeStorage.setItem('sidebar:sceneSide', v));
+// stored only while the two are APART: a stored inspectorSide alone (an older layout, a reload after a direct write)
+// then means "together", never a stale split
+const persistSceneSide = () => {
+	if (!ls) return;
+	const v = get(sceneSide);
+	if (v === get(inspectorSide)) safeStorage.removeItem('sidebar:sceneSide');
+	else safeStorage.setItem('sidebar:sceneSide', v);
+};
+sceneSide.subscribe(persistSceneSide);
+// uir-polish E5: only a TAB move (moveSidebarTab) splits the two. Any other write of inspectorSide — a layout restore, a
+// pop-out coming back, a module or a test that places "the Inspector" — moves Configure Scene along while the two
+// share a side, which is what every writer before E5 meant by it.
+let inspectorMovesAlone = false;
+{
+	let prevInspectorSide = get(inspectorSide);
+	inspectorSide.subscribe((v) => {
+		const was = prevInspectorSide;
+		prevInspectorSide = v;
+		if (v !== was && !inspectorMovesAlone && get(sceneSide) === was) sceneSide.set(v);
+		persistSceneSide();
+	});
+}
 
 /** the Full-height pin, per side (LOCAL, persisted) */
 export const sidebarFull = writable({
@@ -371,7 +392,12 @@ export function moveSidebarTab(key, side) {
 	else if (key === 'inspector') {
 		// Properties alone carries the element's side; with Configure Scene CLOSED its side follows (it opens beside)
 		if (!get(inspectorTabs).scene) sceneSide.set(side);
-		inspectorSide.set(side);
+		inspectorMovesAlone = true;
+		try {
+			inspectorSide.set(side);
+		} finally {
+			inspectorMovesAlone = false;
+		}
 	} else if (!dockMover?.(key, side)) return false;
 	activateSidebarTab(key);
 	return true;

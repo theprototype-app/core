@@ -281,7 +281,8 @@
 	const rightPaneOpen = $derived(side === 'right' ? primaryOpen && !hidePrimary : secondaryOpen)
 	const rightHandle = $derived(side === 'right' ? !hidePrimary : secondaryModes.length > 0)
 	// (an OPEN pane's handle hangs from the pane's inner edge into the main area: the same room keeps its scrollbar clear)
-	const mainRoomRight = $derived(narrow || !rightHandle ? 0 : Math.max(0, TAB_ROOM - (rightPaneOpen ? 0 : gap.right)))
+	// (not on a touch handheld: its scrollbars overlay the content, and a stacked layout has no handle on that edge)
+	const mainRoomRight = $derived(narrow || touchHandheld || !rightHandle ? 0 : Math.max(0, TAB_ROOM - (rightPaneOpen ? 0 : gap.right)))
 	/** where a handle is drawn on its edge: the panel's inner edge when the pane shows, else across the frame gap */
 	const handleAt = (edge: 'left' | 'right', open: boolean, width: number) => (open ? width * k : -gap[edge])
 

@@ -224,7 +224,8 @@
 	}
 	/* phone-polish item 2: with the on-screen keyboard up, sit in what is left above it (Send and
 	   Cancel stayed under it on the HONOR) — the card scrolls inside that */
-	:global(:root.kb-open) .problem {
+	:global(:root.kb-open) .problem,
+	:global(:root.phone-shell.kb-open) .problem {
 		top: calc(var(--kb-top, 0px) + 8px);
 		max-height: calc(100dvh - var(--kb-inset, 0px) - var(--kb-top, 0px) - 16px);
 	}

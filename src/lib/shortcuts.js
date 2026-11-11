@@ -476,7 +476,8 @@ export const shortcuts = [
 		keys: 'Ctrl+B',
 		group: 'Panels',
 		scope: 'global',
-		label: 'Left sidebar: show / hide (a docked window\'s left pane when it has the focus or the mouse)',
+		// uir-polish B5: a docked window's left pane when it has the focus or the mouse (the label stays: Settings search)
+		label: 'Left sidebar: show / hide',
 		action: () => togglePaneOfTarget('left') || toggleSidebar('left')
 	},
 	{
@@ -484,7 +485,8 @@ export const shortcuts = [
 		keys: 'Ctrl+Alt+B',
 		group: 'Panels',
 		scope: 'global',
-		label: 'Right sidebar: show / hide (a docked window\'s right pane when it has the focus or the mouse)',
+		// uir-polish B5: a docked window's right pane when it has the focus or the mouse (the label stays: Settings search)
+		label: 'Right sidebar: show / hide',
 		action: () => togglePaneOfTarget('right') || toggleSidebar('right')
 	},
 	{

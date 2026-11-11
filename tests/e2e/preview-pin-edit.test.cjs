@@ -268,7 +268,9 @@ h.run(async () => {
 		};
 		return { save: hit('#image-editor-save'), close: hit('#preview-close'), view: hit('#preview-view'), canvas: hit('#image-editor-canvas-wrap') };
 	});
-	h.check(Object.values(reach).every((v) => v === 'ok'), `§8 the Edit face fits at 1280 docked: Save, View, close and the canvas are reachable (${JSON.stringify(reach)})`);
+	// uir-polish G4 (owner 2026-11-11): docked, the Preview has no header ✕ — its dock tab closes it
+	const { close: closeHit, ...rest } = reach;
+	h.check(Object.values(rest).every((v) => v === 'ok') && closeHit === 'zero', `§8 the Edit face fits at 1280 docked: Save, View and the canvas are reachable, no header close (${JSON.stringify(reach)})`);
 	await shot(B, '05-split-edit-1280', 'dark');
 	await shot(B, '05-split-edit-1280', 'light');
 	h.check((h.pageErrors(B) || []).length === 0, `no page errors at 1280 (${(h.pageErrors(B) || []).slice(-3).join(' | ')})`);

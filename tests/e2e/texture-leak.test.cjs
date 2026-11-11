@@ -12,7 +12,7 @@ const h = require('./helpers.cjs');
 const texCount = (p) =>
 	p.page.evaluate(() => {
 		let r;
-		window.__stores.globalRenderer?.subscribe?.((v) => (r = v))();
+		window.__tp.test.v1.globalRenderer?.subscribe?.((v) => (r = v))();
 		return r?.info?.memory?.textures ?? null;
 	});
 
@@ -26,13 +26,13 @@ h.run(async () => {
 
 	// ---- 1. lights: create, draw a few frames (so the shadow map exists), delete --------------------
 	for (const [label, remove] of [
-		['/clear all', (uuid) => page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'))],
-		['delete', (uuid) => page.evaluate((u) => window.__stores.commandsHandler.sceneCommand('/clear ' + u), uuid)]
+		['/clear all', (uuid) => page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'))],
+		['delete', (uuid) => page.evaluate((u) => window.__tp.test.v1.commandsHandler.sceneCommand('/clear ' + u), uuid)]
 	]) {
 		for (const kind of ['spot', 'point', 'directional']) {
 			const cycle = async () => {
 				const uuid = await page.evaluate((k) => {
-					const S = window.__stores;
+					const S = window.__tp?.test.v1;
 					S.commandsHandler.sceneCommand('/light ' + k);
 					let g;
 					S.objectsGroup.subscribe((v) => (g = v))();
@@ -66,7 +66,7 @@ h.run(async () => {
 		}, color);
 	const publish = (p, patch) =>
 		p.page.evaluate((patch) => {
-			const S = window.__stores;
+			const S = window.__tp?.test.v1;
 			let peer;
 			S.peers.subscribe((v) => (peer = v))();
 			const id = peer.peer.id;
@@ -88,7 +88,7 @@ h.run(async () => {
 	const cardMap = (bid) =>
 		page.evaluate((id) => {
 			let scene;
-			window.__stores.globalScene.subscribe((v) => (scene = v))();
+			window.__tp.test.v1.globalScene.subscribe((v) => (scene = v))();
 			const card = scene?.getObjectByName(id + '-face-card');
 			const map = card?.material?.map ?? null;
 			if (map && !window.__cardMaps.some((e) => e.map === map)) {

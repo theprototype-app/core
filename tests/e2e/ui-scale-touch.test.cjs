@@ -35,16 +35,16 @@ h.run(async () => {
 	const page = P.page;
 	const open = async () => {
 		await page.evaluate(() => {
-			window.__stores.explorerClose.set(false);
-			window.__stores.bottomDock.dockMinimized.set(false);
-			window.__stores.objectListClose.set(false);
-			window.__stores.inspectorClose.set(false);
+			window.__tp.test.v1.explorerClose.set(false);
+			window.__tp.test.v1.bottomDock.dockMinimized.set(false);
+			window.__tp.test.v1.objectListClose.set(false);
+			window.__tp.test.v1.inspectorClose.set(false);
 		});
 		await nap(1500);
 	};
 	await open();
 	const a = await measure(page);
-	await page.evaluate(() => window.__stores.uiScale.uiScale.set(130));
+	await page.evaluate(() => window.__tp.test.v1.uiScale.uiScale.set(130));
 	await nap(2000);
 	await open();
 	const b = await measure(page);
@@ -60,7 +60,7 @@ h.run(async () => {
 	h.check(!!b.logo && !!b.pill && b.pill.t >= b.logo.b, `130 %: the Controls bar stays below the top row (bar top ${b.pill?.t}, logo bottom ${b.logo?.b})`);
 
 	// a menu at 130 %: the Add menu stays on the screen
-	await page.evaluate(() => { window.__stores.explorerClose.set(true); window.__stores.objectListClose.set(true); window.__stores.inspectorClose.set(true); });
+	await page.evaluate(() => { window.__tp.test.v1.explorerClose.set(true); window.__tp.test.v1.objectListClose.set(true); window.__tp.test.v1.inspectorClose.set(true); });
 	await nap(600);
 	await page.locator('#mobile-add-button').first().tap();
 	await nap(900);
@@ -72,7 +72,7 @@ h.run(async () => {
 	});
 	h.check(!!m && m.t >= -1 && m.b <= m.vh + 1, `130 %: the Add menu stays on screen (${JSON.stringify(m)})`);
 	await page.screenshot({ path: `${process.env.SHOT_DIR || 'test-results'}/ui-scale-130-add.png` }).catch(() => {});
-	await page.evaluate(() => window.__stores.uiScale.uiScale.set(100));
+	await page.evaluate(() => window.__tp.test.v1.uiScale.uiScale.set(100));
 	await h.closePeer(P);
 	await h.finish(browser);
 });

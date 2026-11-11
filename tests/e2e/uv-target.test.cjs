@@ -8,8 +8,8 @@ const h = require('./helpers.cjs');
 
 const openEditor = async (page) => {
 	await page.evaluate(() => {
-		window.__stores.uvEditorClose.set(false);
-		window.__stores.bottomDock.activateDock('uv');
+		window.__tp.test.v1.uvEditorClose.set(false);
+		window.__tp.test.v1.bottomDock.activateDock('uv');
 	});
 	await page.waitForTimeout(600);
 };
@@ -29,7 +29,7 @@ const shown = (page) =>
 
 const makeBox = (page, name) =>
 	page.evaluate(async (name) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.children[g.children.length - 1];
@@ -46,11 +46,11 @@ h.run(async () => {
 	const second = await makeBox(A.page, 'boxTwo');
 
 	// ---------- deselect must EMPTY the editor ----------
-	await A.page.evaluate((uuid) => window.__stores.objectActions.selectObject(uuid), first);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.objectActions.selectObject(uuid), first);
 	await A.page.waitForTimeout(400);
 	const selected = await shown(A.page);
 	h.check(selected.hasCanvas && selected.tris === 12, `a selected box shows its UV map (${selected.tris} tris)`);
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await A.page.waitForTimeout(400);
 	const afterDeselect = await shown(A.page);
 	h.check(
@@ -61,7 +61,7 @@ h.run(async () => {
 	// ---------- right-click > Edit Mesh, with NO primary selection ----------
 	// that entry point never sets the primary, which is why the editor was blank
 	await A.page.evaluate((uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.objectActions.deselectObject();
 		w.faceEdit.enterFaceEdit(uuid);
 	}, second);
@@ -71,13 +71,13 @@ h.run(async () => {
 		editing.hasCanvas && editing.tris === 12,
 		`THE BUG: entering Edit Mesh alone is enough to show the object (${editing.tris} tris)`
 	);
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
 	await A.page.waitForTimeout(300);
 
 	// ---------- multi-select edits the primary and SAYS so ----------
 	await A.page.evaluate(
 		({ a, b }) => {
-			const w = window.__stores;
+			const w = window.__tp?.test.v1;
 			w.objectActions.selectObject(a);
 			w.selectedObjects.set([a, b]);
 		},
@@ -96,7 +96,7 @@ h.run(async () => {
 	// carries the geometry, and a texture that never went through applyMap (so
 	// there is no mapDataUrl for the editor to decode).
 	const importedChild = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const group = new w.THREE.Group();
 		group.name = 'importedModel';
@@ -119,7 +119,7 @@ h.run(async () => {
 	});
 	await A.page.waitForTimeout(600);
 	const imported = await A.page.evaluate(async ({ mesh }) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const target = w.uvEditor.meshWithUvs(g.getObjectByProperty('uuid', mesh).parent);
 		return {

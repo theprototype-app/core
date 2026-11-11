@@ -13,7 +13,7 @@ const KEY = 'mod-smart-unwrap-xatlas';
 /** uv facts of an object: range, degenerate triangles, and an overlap count on a raster */
 const uvFacts = (page, uuid) =>
 	page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		const object = g.getObjectByProperty('uuid', uuid);
@@ -73,7 +73,7 @@ h.run(async () => {
 		return;
 	}
 	await h.eventually(
-		() => A.page.evaluate(() => window.__stores.uvUnwrap.unwrapBackends().map((b) => b.key + '=' + b.label)),
+		() => A.page.evaluate(() => window.__tp.test.v1.uvUnwrap.unwrapBackends().map((b) => b.key + '=' + b.label)),
 		(list) => list.includes(KEY + '=Smart (xatlas)'),
 		'the module registered "Smart (xatlas)" in the unwrap registry',
 		20000
@@ -84,7 +84,7 @@ h.run(async () => {
 		['a sphere', '/create Sphere 1 24 16']
 	]) {
 		const uuid = await A.page.evaluate((command) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.commandsHandler.sceneCommand(command);
 			let g;
 			s.objectsGroup.subscribe((v) => (g = v))();
@@ -93,13 +93,13 @@ h.run(async () => {
 		const depth = () =>
 			A.page.evaluate(() => {
 				let st;
-				window.__stores.history.undoStack.subscribe((v) => (st = v))();
+				window.__tp.test.v1.history.undoStack.subscribe((v) => (st = v))();
 				return st.length;
 			});
 		const before = await uvFacts(A.page, uuid);
 		const d0 = await depth();
 		const ok = await A.page.evaluate(
-			({ uuid, KEY }) => window.__stores.uvEditor.unwrapObject(uuid, KEY, { margin: 0.02 }),
+			({ uuid, KEY }) => window.__tp.test.v1.uvEditor.unwrapObject(uuid, KEY, { margin: 0.02 }),
 			{ uuid, KEY }
 		);
 		h.check(ok === true, `${what}: the Smart unwrap ran and committed`);
@@ -118,7 +118,7 @@ h.run(async () => {
 			`${what}: peer B holds the same unwrap`,
 			20000
 		);
-		await A.page.evaluate(() => window.__stores.history.undo());
+		await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 		const undone = await uvFacts(A.page, uuid);
 		h.check(
 			undone.distinct === (before?.distinct ?? undone.distinct),
@@ -128,7 +128,7 @@ h.run(async () => {
 
 	// the UV editor's menu lists it even though the module arrived after boot
 	const listed = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.uvEditorClose?.set?.(false);
 		return s.uvUnwrap.unwrapBackends().some((b) => b.key === 'mod-smart-unwrap-xatlas');
 	});

@@ -62,7 +62,7 @@ h.run(async () => {
 
 	// ---- reload ---------------------------------------------------------------------------
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.moduleSDK, { timeout: 30000 });
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.moduleSDK, { timeout: 30000 });
 	await A.page.waitForTimeout(1500);
 	const after = await cells(A.page);
 	await A.page.screenshot({ path: process.env.SHOT_DIR ? `${process.env.SHOT_DIR}/g23-after-reload.png` : '/dev/null', clip: { x: 300, y: 780, width: 840, height: 120 } }).catch(() => {});
@@ -83,7 +83,7 @@ h.run(async () => {
 		)
 	);
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.moduleSDK, { timeout: 30000 });
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.moduleSDK, { timeout: 30000 });
 	await A.page.waitForTimeout(1500);
 	const repaired = await cells(A.page);
 	const titles = repaired.map((c) => c.title);

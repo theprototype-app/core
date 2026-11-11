@@ -13,8 +13,8 @@ const h = require('./helpers.cjs');
 /** Read the selected object's real, internal transform. */
 const XFORM = () => {
 	let g, sel;
-	window.__stores.objectsGroup.subscribe((v) => (g = v))();
-	window.__stores.selectedObject.subscribe((v) => (sel = v))();
+	window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
+	window.__tp.test.v1.selectedObject.subscribe((v) => (sel = v))();
 	const o = g.getObjectByProperty('uuid', sel.uuid);
 	return {
 		pos: [o.position.x, o.position.y, o.position.z],
@@ -40,7 +40,7 @@ h.run(async () => {
 	// Parsing and conversion are pure, so assert them exactly rather than through
 	// a field: a wrong factor here is a wrong scene everywhere.
 	const pure = await A.page.evaluate(() => {
-		const u = window.__stores.units;
+		const u = window.__tp.test.v1.units;
 		return {
 			// a SUFFIX wins over whatever is on display
 			cmInMetres: u.parseValue('12cm', 'length', 'm'),
@@ -96,7 +96,7 @@ h.run(async () => {
 
 	// ---- 2. an Inspector row RE-RENDERS without moving the object ---------------
 	const uuid = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create box 1 1 1');
 		await new Promise((r) => setTimeout(r, 900));
 		let g;
@@ -119,7 +119,7 @@ h.run(async () => {
 	h.check(rotFirst.unit === '°', `the rotation row is labelled in degrees by default (got ${rotFirst.unit})`);
 
 	const beforeSwitch = await A.page.evaluate(XFORM);
-	await A.page.evaluate(() => window.__stores.units.lengthUnit.set('cm'));
+	await A.page.evaluate(() => window.__tp.test.v1.units.lengthUnit.set('cm'));
 	await A.page.waitForTimeout(400);
 	const inCm = await A.page.evaluate(ROW, '#inspector-position .dn-input');
 	h.check(inCm.text === '150', `switching to cm shows 150 (got ${inCm.text})`);
@@ -140,8 +140,8 @@ h.run(async () => {
 		input.dispatchEvent(new Event('input', { bubbles: true }));
 		await new Promise((r) => setTimeout(r, 300));
 		let g, sel;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
-		window.__stores.selectedObject.subscribe((v) => (sel = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.selectedObject.subscribe((v) => (sel = v))();
 		return g.getObjectByProperty('uuid', sel.uuid).position.x;
 	});
 	h.check(Math.abs(typedBare - 2.5) < 1e-6, `250 typed into a cm field stored 2.5 m (got ${typedBare})`);
@@ -153,8 +153,8 @@ h.run(async () => {
 		input.dispatchEvent(new Event('input', { bubbles: true }));
 		await new Promise((r) => setTimeout(r, 300));
 		let g, sel;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
-		window.__stores.selectedObject.subscribe((v) => (sel = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.selectedObject.subscribe((v) => (sel = v))();
 		return g.getObjectByProperty('uuid', sel.uuid).position.x;
 	});
 	h.check(
@@ -166,7 +166,7 @@ h.run(async () => {
 	// `step` is internal, so the same pixel travel must move the object identically in
 	// metres and in cm. This is the check that would catch a factor applied twice.
 	const scrub = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let g, sel;
 		w.objectsGroup.subscribe((v) => (g = v))();
 		w.selectedObject.subscribe((v) => (sel = v))();
@@ -208,7 +208,7 @@ h.run(async () => {
 	// rotation is pi/2, so the VALUE is the check — a label alone would pass with the
 	// conversion missing.
 	const angles = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		// snapSettings lives on the snapping MODULE, not the store spread
 		w.snapping.snapSettings.update((s) => ({ ...s, rotateDeg: 45 }));
 		w.units.angleUnit.set('deg');
@@ -259,7 +259,7 @@ h.run(async () => {
 	// kinds rather than one. The snap step lives in the SCENE inspector, a different
 	// panel from the rotation rows, so it needs its own deep link and its own read.
 	const snapRow = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.openSceneSection('Snapping');
 		await new Promise((r) => setTimeout(r, 900));
 		const read = () => {

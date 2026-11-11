@@ -23,7 +23,7 @@ fs.mkdirSync(OUT, { recursive: true });
 const S = (page, fn, arg) => page.evaluate(fn, arg);
 const read = (page, path) =>
 	S(page, (path) => {
-		const s = path.split('.').reduce((o, k) => o?.[k], window.__stores);
+		const s = path.split('.').reduce((o, k) => o?.[k], window.__tp?.test.v1);
 		if (!s?.subscribe) return undefined;
 		let v;
 		s.subscribe((x) => (v = x))();
@@ -46,7 +46,7 @@ const OLD_164 = {
 	// the release's first-use hint is quiet under automation unless a suite opts in (chatHint.js)
 	'chatHint:e2e': '1'
 };
-const notes = (page) => S(page, () => { let n = []; window.__stores.notifications.subscribe((v) => (n = v.map((x) => x.text)))(); return n; });
+const notes = (page) => S(page, () => { let n = []; window.__tp.test.v1.notifications.subscribe((v) => (n = v.map((x) => x.text)))(); return n; });
 const HINT = /^Chat and the AI assistant are one window now/;
 
 h.run(async () => {
@@ -71,11 +71,11 @@ h.run(async () => {
 	h.check((await read(page, 'chatTab')) === 'assistant', `M3.1 the Chat window's tab is Assistant (the old state named only the assistant): ${await read(page, 'chatTab')}`);
 
 	await S(page, () => {
-		window.__stores.flowGraphClose.set(false);
-		window.__stores.chatHidden.set('');
+		window.__tp.test.v1.flowGraphClose.set(false);
+		window.__tp.test.v1.chatHidden.set('');
 	});
 	await page.waitForTimeout(1500);
-	await S(page, () => window.__stores.bottomDock.activateDock('chat'));
+	await S(page, () => window.__tp.test.v1.bottomDock.activateDock('chat'));
 	await page.waitForTimeout(1200);
 	const keys = ((await read(page, 'bottomDock.dockTabs')) ?? []).map((t) => t.key);
 	const win = await S(page, () => {
@@ -89,9 +89,9 @@ h.run(async () => {
 	h.check(!labels.some((l) => /AI assistant|Image editor/.test(l)), `M4 the strip draws no "AI assistant" and no "Image editor" tab (${JSON.stringify(labels)})`);
 	const n1 = (await notes(page)).filter((t) => HINT.test(t));
 	h.check(n1.length === 1, `M4.0 the first open says once that Chat and the AI assistant share the window (${n1.length} hint)`);
-	await S(page, () => window.__stores.chatHidden.set('hidden'));
+	await S(page, () => window.__tp.test.v1.chatHidden.set('hidden'));
 	await page.waitForTimeout(500);
-	await S(page, () => window.__stores.chatHidden.set(''));
+	await S(page, () => window.__tp.test.v1.chatHidden.set(''));
 	await page.waitForTimeout(800);
 	h.check((await notes(page)).filter((t) => HINT.test(t)).length === 1 && (await S(page, () => localStorage.getItem('tp:chat-hint'))) === '1', 'M4.0b …and not again on the next open (remembered on this device)');
 	h.check((page.__errors ?? []).length === 0, `M4.1 no page error after opening the windows (${JSON.stringify(page.__errors ?? [])})`);
@@ -102,7 +102,7 @@ h.run(async () => {
 	console.log('\n=== counterfactual: a fresh profile ===');
 	const F = await h.setupPage(browser, 'fresh', {});
 	const fs0 = await stored(F.page);
-	await S(F.page, () => window.__stores.chatHidden.set(''));
+	await S(F.page, () => window.__tp.test.v1.chatHidden.set(''));
 	await F.page.waitForTimeout(800);
 	h.check(!(await notes(F.page)).some((t) => HINT.test(t)), 'M5.0 counterfactual: without the suite opt-in an automated browser gets no hint (it would sit under every suite\'s header)');
 	h.check((await read(F.page, 'chatTab')) === 'session' && fs0.previewDocked !== 'true' && fs0.chatDocked !== 'true', `M5 a fresh profile: Chat opens on Session, neither Preview nor Chat docked (${JSON.stringify(fs0)})`);

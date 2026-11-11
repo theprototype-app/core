@@ -25,7 +25,7 @@ const shot = async (page, name) => {
 
 const seqs = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let m;
 		let a;
 		s.sequences.sequences.subscribe((v) => (m = v))();
@@ -67,7 +67,7 @@ async function sequenceTab(page) {
 }
 
 async function openTimeline(page) {
-	await page.evaluate(() => window.__stores.timelineClose.set(false));
+	await page.evaluate(() => window.__tp.test.v1.timelineClose.set(false));
 	await page.waitForSelector('#timeline-sequences', { timeout: 15000 });
 }
 
@@ -89,7 +89,7 @@ h.run(async () => {
 
 	// two sequences; Intro gets an event track with one event at 1 s
 	const ids = await pa.evaluate(() => {
-		const q = window.__stores.sequences;
+		const q = window.__tp.test.v1.sequences;
 		const intro = q.createSequence('Intro');
 		const outro = q.createSequence('Outro');
 		const track = q.addTrack(intro, 'event');
@@ -132,7 +132,7 @@ h.run(async () => {
 	await pa.keyboard.press('Control+z');
 	await h.eventually(() => seqs(pa), (s) => s.all?.[ids.intro]?.fps === 24, 'one Ctrl+Z puts 24 back (one step for the typed edit)');
 	await h.eventually(() => seqs(B.page), (s) => s.all?.[ids.intro]?.fps === 24, 'and the undo replicates');
-	await pa.evaluate(() => window.__stores.history.undo());
+	await pa.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => seqs(pa), (s) => s.all?.[ids.intro]?.fps === 30, 'a second undo puts 30 back');
 	await shot(pa, '01-desktop-1920-dark-sequence.png');
 
@@ -146,7 +146,7 @@ h.run(async () => {
 	await pa.locator('#timeline-item-event').press('Enter');
 	await h.eventually(() => seqs(B.page), (s) => s.all?.[ids.intro]?.tracks?.[0]?.items?.[0]?.name === 'go', 'the event is renamed from the Item tab (B sees "go")');
 	await shot(pa, '02-desktop-1920-dark-item.png');
-	await pa.evaluate(() => window.__stores.history.undo());
+	await pa.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => seqs(pa), (s) => s.all?.[ids.intro]?.tracks?.[0]?.items?.[0]?.name === 'start', 'one undo gives the event its name back');
 	await pa.keyboard.press('Escape'); // clears the pick (the editor's own Esc)
 	await pa.locator('.tl-root').first().focus();
@@ -166,10 +166,10 @@ h.run(async () => {
 	h.check(!!props && !!grid2 && grid2.right <= props.left + 1, 'Properties sits right of the tracks');
 	let o = await overflow(pa);
 	h.check(o.root && o.scroll <= 1 && o.right <= 1, `no sideways overflow at 1920 (${JSON.stringify(o)})`);
-	await pa.evaluate(() => window.__stores.themes.theme.set('light'));
+	await pa.evaluate(() => window.__tp.test.v1.themes.theme.set('light'));
 	await pa.waitForTimeout(300);
 	await shot(pa, '03-desktop-1920-light-sequence.png');
-	await pa.evaluate(() => window.__stores.themes.theme.set('dark'));
+	await pa.evaluate(() => window.__tp.test.v1.themes.theme.set('dark'));
 
 	// B at 1280 (opened fresh: its panes are this device's defaults)
 	await openTimeline(B.page);
@@ -177,10 +177,10 @@ h.run(async () => {
 	h.check(o.root && o.scroll <= 1 && o.right <= 1, `no sideways overflow at 1280 (${JSON.stringify(o)})`);
 	h.check((await B.page.locator('#timeline-sequences [data-seq-id]').count()) === 2, '1280: the list shows both sequences');
 	await shot(B.page, '04-desktop-1280-dark.png');
-	await B.page.evaluate(() => window.__stores.themes.theme.set('light'));
+	await B.page.evaluate(() => window.__tp.test.v1.themes.theme.set('light'));
 	await B.page.waitForTimeout(300);
 	await shot(B.page, '05-desktop-1280-light.png');
-	await B.page.evaluate(() => window.__stores.themes.theme.set('dark'));
+	await B.page.evaluate(() => window.__tp.test.v1.themes.theme.set('dark'));
 
 	// the phone postures live in timeline-phone.test.cjs (four page boots in one suite ran past the 480 s cap)
 	await h.finish(browser);

@@ -11,8 +11,8 @@ h.run(async () => {
 
 	const read = () =>
 		A.page.evaluate(() => {
-			let cam; window.__stores.globalCamera.subscribe((v) => (cam = v))();
-			let ctl; window.__stores.orbitControls.subscribe((v) => (ctl = v))();
+			let cam; window.__tp.test.v1.globalCamera.subscribe((v) => (cam = v))();
+			let ctl; window.__tp.test.v1.orbitControls.subscribe((v) => (ctl = v))();
 			return {
 				target: ctl.target.toArray(),
 				distance: cam.position.distanceTo(ctl.target),
@@ -23,7 +23,7 @@ h.run(async () => {
 	/** dispatch a wheel on the viewport canvas; returns defaultPrevented */
 	const wheelCanvas = (init) =>
 		A.page.evaluate((opts) => {
-			let renderer; window.__stores.globalRenderer.subscribe((v) => (renderer = v))();
+			let renderer; window.__tp.test.v1.globalRenderer.subscribe((v) => (renderer = v))();
 			const e = new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaMode: 0, ...opts });
 			renderer.domElement.dispatchEvent(e);
 			return e.defaultPrevented;
@@ -58,7 +58,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(150);
 	const afterDefault = await read();
 	const dxDefault = afterDefault.target[0] - beforeDir.target[0];
-	await A.page.evaluate(() => window.__stores.trackpadNav.reversePan.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.trackpadNav.reversePan.set(true));
 	await wheelCanvas({ deltaX: 40, deltaY: 0 });
 	await A.page.waitForTimeout(150);
 	const afterReversed = await read();
@@ -67,7 +67,7 @@ h.run(async () => {
 		dxDefault !== 0 && dxReversed !== 0 && Math.sign(dxDefault) !== Math.sign(dxReversed),
 		`reverse toggle flips pan direction (${dxDefault.toFixed(3)} vs ${dxReversed.toFixed(3)})`
 	);
-	await A.page.evaluate(() => window.__stores.trackpadNav.reversePan.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.trackpadNav.reversePan.set(false));
 
 	// --- gesture window: a fast FLICK (big deltaY) right after fine deltas stays a PAN
 	const preFlick = await read();
@@ -79,7 +79,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(400); // let the gesture window expire
 
 	// --- pan toggle off: swipes fall through (no pan)
-	await A.page.evaluate(() => window.__stores.trackpadNav.panEnabled.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.trackpadNav.panEnabled.set(false));
 	const prePanOff = await read();
 	await wheelCanvas({ deltaX: 12, deltaY: 8.5 });
 	await A.page.waitForTimeout(150);
@@ -87,17 +87,17 @@ h.run(async () => {
 	const panOffMoved = Math.hypot(
 		s.target[0] - prePanOff.target[0], s.target[1] - prePanOff.target[1], s.target[2] - prePanOff.target[2]);
 	h.check(panOffMoved < 0.001, 'Two-finger pan OFF: swipes no longer pan');
-	await A.page.evaluate(() => window.__stores.trackpadNav.panEnabled.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.trackpadNav.panEnabled.set(true));
 
 	// --- pinch-zoom toggle off: ctrl+wheel over canvas changes nothing (page still guarded)
-	await A.page.evaluate(() => window.__stores.trackpadNav.pinchZoomEnabled.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.trackpadNav.pinchZoomEnabled.set(false));
 	const prePinchOff = await read();
 	const prevented = await wheelCanvas({ deltaY: -120, ctrlKey: true });
 	await A.page.waitForTimeout(250);
 	s = await read();
 	h.check(prevented, 'Pinch zoom OFF: page zoom still guarded');
 	h.check(Math.abs(s.distance - prePinchOff.distance) < 0.01, 'Pinch zoom OFF: camera does not dolly');
-	await A.page.evaluate(() => window.__stores.trackpadNav.pinchZoomEnabled.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.trackpadNav.pinchZoomEnabled.set(true));
 
 	// --- classic mouse wheel still ZOOMS (distance changes, target holds)
 	const preZoom = await read();
@@ -113,7 +113,7 @@ h.run(async () => {
 	h.check(await wheelUi({ deltaY: -40, ctrlKey: true }), 'pinch over UI is prevented (no page zoom)');
 
 	// --- mode off: swipes stop panning
-	await A.page.evaluate(() => window.__stores.trackpadNav.trackpadMode.set('off'));
+	await A.page.evaluate(() => window.__tp.test.v1.trackpadNav.trackpadMode.set('off'));
 	const preOff = await read();
 	await wheelCanvas({ deltaX: 12, deltaY: 8.5 });
 	await A.page.waitForTimeout(150);
@@ -121,15 +121,15 @@ h.run(async () => {
 	const offMoved = Math.hypot(
 		s.target[0] - preOff.target[0], s.target[1] - preOff.target[1], s.target[2] - preOff.target[2]);
 	h.check(offMoved < 0.001, 'mode Off: swipes no longer pan');
-	await A.page.evaluate(() => window.__stores.trackpadNav.trackpadMode.set('auto'));
+	await A.page.evaluate(() => window.__tp.test.v1.trackpadNav.trackpadMode.set('auto'));
 
 	// --- accessibility escape hatch: browser zoom allowed again
-	await A.page.evaluate(() => window.__stores.trackpadNav.allowBrowserZoom.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.trackpadNav.allowBrowserZoom.set(true));
 	await A.page.waitForTimeout(100);
 	h.check(!(await wheelUi({ deltaY: -40, ctrlKey: true })), 'allowBrowserZoom: pinch over UI is NOT prevented');
 	s = await read();
 	h.check(s.touchAction === '', 'allowBrowserZoom clears the body touch-action guard');
-	await A.page.evaluate(() => window.__stores.trackpadNav.allowBrowserZoom.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.trackpadNav.allowBrowserZoom.set(false));
 
 	await h.finish(browser);
 });

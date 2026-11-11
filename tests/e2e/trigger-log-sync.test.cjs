@@ -37,7 +37,7 @@ const h = require('./helpers.cjs');
 const store = (peer, name) =>
 	peer.page.evaluate((n) => {
 		let v;
-		window.__stores[n].subscribe((x) => (v = x))();
+		window.__tp.test.v1[n].subscribe((x) => (v = x))();
 		return v;
 	}, name);
 
@@ -51,46 +51,46 @@ const countOf = async (peer, id) => (await entryOf(peer, id))?.count ?? null;
 const valueOf = (peer, id) =>
 	peer.page.evaluate((nid) => {
 		let v;
-		window.__stores.flowValues.subscribe((x) => (v = x))();
+		window.__tp.test.v1.flowValues.subscribe((x) => (v = x))();
 		return v[nid];
 	}, id);
 
 const visibleOf = (peer, uuids) =>
 	peer.page.evaluate((ids) => {
 		let group;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		return ids.map((id) => group?.getObjectByProperty('uuid', id)?.visible ?? null);
 	}, uuids);
 
-const varOf = (peer, name) => peer.page.evaluate((n) => window.__stores.gameState.gameVar(n, 0), name);
+const varOf = (peer, name) => peer.page.evaluate((n) => window.__tp.test.v1.gameState.gameVar(n, 0), name);
 
 const gstate = (peer) =>
 	peer.page.evaluate(() => {
 		let g;
-		window.__stores.gameState.gameState.subscribe((v) => (g = v))();
+		window.__tp.test.v1.gameState.gameState.subscribe((v) => (g = v))();
 		return { state: g.state, round: g.round, startedAt: g.startedAt };
 	});
 
 const graphIds = (peer) =>
 	peer.page.evaluate(() => {
 		let g;
-		window.__stores.flowGraphs.subscribe((v) => (g = v))();
+		window.__tp.test.v1.flowGraphs.subscribe((v) => (g = v))();
 		return (g.scene?.nodes ?? []).map((/** @type {any} */ n) => n.id);
 	});
 
 /** The THREE-state play store, written exactly as Controls writes it. */
-const setPlay = (peer, state) => peer.page.evaluate((s) => window.__stores.isLocked.set(s), state);
+const setPlay = (peer, state) => peer.page.evaluate((s) => window.__tp.test.v1.isLocked.set(s), state);
 
 /** Fire an event node the way a click does — one shared synced stamp, replicated. */
 const pulse = (peer, id, replicate = true) =>
 	peer.page.evaluate(
 		({ id, replicate }) =>
-			window.__stores.flowRuntime.applyNodeTrigger(id, (Date.now() % 86400000) / 1000, replicate),
+			window.__tp.test.v1.flowRuntime.applyNodeTrigger(id, (Date.now() % 86400000) / 1000, replicate),
 		{ id, replicate }
 	);
 
 const collect = async (peer, uuid, settle = 700) => {
-	await peer.page.evaluate((id) => window.__stores.flowRuntime.fireObjectClick(id), uuid);
+	await peer.page.evaluate((id) => window.__tp.test.v1.flowRuntime.fireObjectClick(id), uuid);
 	await peer.page.waitForTimeout(settle);
 };
 
@@ -124,7 +124,7 @@ const edge = (source, target, targetHandle) => ({
 const addNodes = (peer, nodes, edges) =>
 	peer.page.evaluate(
 		([nodes, edges]) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let next = { nodes: [], edges: [] };
 			s.flowGraphs.update((graphs) => {
 				const g = graphs.scene ?? { nodes: [], edges: [] };
@@ -148,17 +148,17 @@ const addNodes = (peer, nodes, edges) =>
 const wipe = async (peers) => {
 	for (const p of peers)
 		await p.page.evaluate(() => {
-			window.__stores.clearGraphs();
-			window.__stores.flowTriggers.set({});
-			window.__stores.gameState.clearGameState();
-			window.__stores.isLocked.set(null);
+			window.__tp.test.v1.clearGraphs();
+			window.__tp.test.v1.flowTriggers.set({});
+			window.__tp.test.v1.gameState.clearGameState();
+			window.__tp.test.v1.isLocked.set(null);
 		});
 	await peers[0].page.waitForTimeout(900);
 };
 
 const makeBox = (peer) =>
 	peer.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1200));
 		let group;
@@ -175,7 +175,7 @@ const makeBox = (peer) =>
 const chainOf = (peer, uuid) =>
 	peer.page.evaluate((id) => {
 		let g;
-		window.__stores.flowGraphs.subscribe((v) => (g = v))();
+		window.__tp.test.v1.flowGraphs.subscribe((v) => (g = v))();
 		const nodes = g.scene?.nodes ?? [];
 		const edges = g.scene?.edges ?? [];
 		const back = (targetId, handle) => {
@@ -197,7 +197,7 @@ h.run(async () => {
 	// simulation start pays the download inside the section that measures it
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(4000);
 		await warm.ctx.close();
 	}
@@ -205,7 +205,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
 	for (const p of [A, B])
-		await p.page.waitForFunction(() => !!window.__stores?.triggerSync && !!window.__stores?.nodesHandler, {
+		await p.page.waitForFunction(() => !!window.__tp?.test.v1?.triggerSync && !!window.__tp?.test.v1?.nodesHandler, {
 			timeout: 30000
 		});
 	h.check(true, 'premise: both peers expose the triggerSync seam');
@@ -302,14 +302,14 @@ h.run(async () => {
 	await setPlay(A, null);
 	await A.page.waitForTimeout(700);
 	const C = await h.setupPage(browser, 'C');
-	await C.page.waitForFunction(() => !!window.__stores?.triggerSync, { timeout: 30000 });
+	await C.page.waitForFunction(() => !!window.__tp?.test.v1?.triggerSync, { timeout: 30000 });
 	// a connected peer's pill has no dial input, so the NEWCOMER dials
 	await h.connect(C, A);
 
 	await h.eventually(
 		() => C.page.evaluate((id) => {
 			let group;
-			window.__stores.objectsGroup.subscribe((v) => (group = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 			return !!group?.getObjectByProperty('uuid', id);
 		}, gem),
 		(/** @type {boolean} */ ok) => ok === true,
@@ -387,7 +387,7 @@ h.run(async () => {
 	// and section 4 needs C's real one intact (the first version of this suite drove it on
 	// C and read 0 -> 0, a check that could not fail)
 	const merge = await B.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const read = () => {
 			let v;
 			s.flowTriggers.subscribe((x) => (v = x))();
@@ -434,7 +434,7 @@ h.run(async () => {
 	// the payload prunes to LIVE nodes: an id for a node nobody has is unusable, and the
 	// prune is what bounds the message by the graph instead of by session history
 	const payload = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowTriggers.update((m) => ({ ...m, 'ghost-of-a-deleted-node': { count: 3, lastT: 12 } }));
 		const p = s.triggerSync.triggerLogPayload();
 		return { ids: Object.keys(p.triggers), debug: s.triggerSync.triggerSyncDebug() };
@@ -464,7 +464,7 @@ h.run(async () => {
 		`premise: C's own local pulse advanced its Counter (${beforeOwn} -> ${ownBefore})`
 	);
 	await C.page.evaluate(
-		(log) => window.__stores.triggerSync.applyRemoteTriggers({ type: 'triggers', triggers: log }),
+		(log) => window.__tp.test.v1.triggerSync.applyRemoteTriggers({ type: 'triggers', triggers: log }),
 		logA
 	);
 	await C.page.waitForTimeout(400);
@@ -497,9 +497,9 @@ h.run(async () => {
 			edge('n-click', 'n-screen', 'trigger')
 		]
 	);
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await h.eventually(
-		() => A.page.evaluate(() => window.__stores.physics.physicsDebug().length),
+		() => A.page.evaluate(() => window.__tp.test.v1.physics.physicsDebug().length),
 		(/** @type {number} */ n) => n > 0,
 		'premise: a simulation is running, so a Spawn node CAN spawn'
 	);
@@ -507,14 +507,14 @@ h.run(async () => {
 	// `actionSeenAt` cutoffs are OLD. History stamped `now` is then NEWER than every
 	// cutoff — exactly a peer that loaded the scene, sat in the editor, and dialled.
 	await A.page.waitForTimeout(2500);
-	const seenBefore = await A.page.evaluate(() => window.__stores.flowRuntime.triggerHistoryEpoch());
+	const seenBefore = await A.page.evaluate(() => window.__tp.test.v1.flowRuntime.triggerHistoryEpoch());
 	h.check(seenBefore === 0 || seenBefore > 0, `premise: the history epoch is readable (${seenBefore})`);
 
 	const baseState = await gstate(A);
-	const baseTransient = await A.page.evaluate(() => window.__stores.transientObjects.transientUuids().length);
+	const baseTransient = await A.page.evaluate(() => window.__tp.test.v1.transientObjects.transientUuids().length);
 	const baseScreens = await A.page.evaluate(() => {
 		let v;
-		window.__stores.hudDocs.hudScreenOverride.subscribe((x) => (v = x))();
+		window.__tp.test.v1.hudDocs.hudScreenOverride.subscribe((x) => (v = x))();
 		return JSON.stringify(v);
 	});
 	h.check(baseState.state !== 'playing', `premise: the game is not playing (${baseState.state})`);
@@ -527,7 +527,7 @@ h.run(async () => {
 	const now = (await syncedNow(A)) - 0.5;
 	await A.page.evaluate(
 		(t) =>
-			window.__stores.triggerSync.applyRemoteTriggers({
+			window.__tp.test.v1.triggerSync.applyRemoteTriggers({
 				type: 'triggers',
 				triggers: { 'n-click': { count: 1, lastT: t } }
 			}),
@@ -541,19 +541,19 @@ h.run(async () => {
 		`arriving history does NOT change the game state (${baseState.state} -> ${afterState.state})`
 	);
 	h.check(
-		(await A.page.evaluate(() => window.__stores.transientObjects.transientUuids().length)) === 0,
+		(await A.page.evaluate(() => window.__tp.test.v1.transientObjects.transientUuids().length)) === 0,
 		'arriving history does NOT spawn'
 	);
 	h.check(
 		(await A.page.evaluate(() => {
 			let v;
-			window.__stores.hudDocs.hudScreenOverride.subscribe((x) => (v = x))();
+			window.__tp.test.v1.hudDocs.hudScreenOverride.subscribe((x) => (v = x))();
 			return JSON.stringify(v);
 		})) === baseScreens,
 		'arriving history does NOT flip a HUD screen'
 	);
 	h.check(
-		(await A.page.evaluate(() => window.__stores.flowRuntime.triggerHistoryEpoch())) > 0,
+		(await A.page.evaluate(() => window.__tp.test.v1.flowRuntime.triggerHistoryEpoch())) > 0,
 		'premise: the epoch was marked by the reply — that is the only thing refusing the three above'
 	);
 
@@ -562,25 +562,25 @@ h.run(async () => {
 	await A.page.waitForTimeout(1600);
 	h.check((await gstate(A)).state === 'playing', `a LIVE pulse through the same node DOES set the game state (${(await gstate(A)).state})`);
 	h.check(
-		(await A.page.evaluate(() => window.__stores.transientObjects.transientUuids().length)) === 1,
+		(await A.page.evaluate(() => window.__tp.test.v1.transientObjects.transientUuids().length)) === 1,
 		'...and DOES spawn'
 	);
 	h.check(
 		(await A.page.evaluate(() => {
 			let v;
-			window.__stores.hudDocs.hudScreenOverride.subscribe((x) => (v = x))();
+			window.__tp.test.v1.hudDocs.hudScreenOverride.subscribe((x) => (v = x))();
 			return JSON.stringify(v);
 		})) !== baseScreens,
 		'...and DOES flip the HUD screen. Every refusal above was a refusal, not a dead wire.'
 	);
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await A.page.waitForTimeout(600);
 
 	// ---- 5b. Travel: the one that would replace the whole scene ----------------
 	console.log('\n--- 5b. travel ---');
 	await wipe([A, B, C]);
 	const level = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create sphere');
 		await new Promise((r) => setTimeout(r, 1200));
 		s.objectActions.deselectObject();
@@ -588,7 +588,7 @@ h.run(async () => {
 		return saved?.hash ?? saved ?? null;
 	});
 	h.check(!!level, `premise: a real scene asset exists to travel to (${String(level).slice(0, 12)})`);
-	await A.page.evaluate(() => window.__stores.levels.currentLevel.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.currentLevel.set(null));
 	await addNodes(
 		A,
 		[node('v-click', 'onclick', {}, 0, 0), node('v-travel', 'travel', { level, levelName: 'TriggerLogArena' }, 240, 0)],
@@ -598,7 +598,7 @@ h.run(async () => {
 
 	await A.page.evaluate(
 		(t) =>
-			window.__stores.triggerSync.applyRemoteTriggers({
+			window.__tp.test.v1.triggerSync.applyRemoteTriggers({
 				type: 'triggers',
 				triggers: { 'v-click': { count: 1, lastT: t } }
 			}),
@@ -607,7 +607,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(2500);
 	const travelledOnHistory = await A.page.evaluate(() => {
 		let v;
-		window.__stores.levels.currentLevel.subscribe((x) => (v = x))();
+		window.__tp.test.v1.levels.currentLevel.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(travelledOnHistory === null, `arriving history does NOT travel (currentLevel=${JSON.stringify(travelledOnHistory)})`);
@@ -620,7 +620,7 @@ h.run(async () => {
 		() =>
 			A.page.evaluate(() => {
 				let v;
-				window.__stores.levels.currentLevel.subscribe((x) => (v = x))();
+				window.__tp.test.v1.levels.currentLevel.subscribe((x) => (v = x))();
 				return v?.name ?? null;
 			}),
 		(/** @type {string|null} */ name) => name === 'TriggerLogArena',

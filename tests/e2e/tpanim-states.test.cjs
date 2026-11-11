@@ -5,7 +5,7 @@ const h = require('./helpers.cjs');
 
 const readingOf = (page, uuid) =>
 	page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const r = s.animGraphRuntime.animGraphReading(uuid);
 		const w = s.animatedImports.poseDriverOf(uuid)?.weights ?? null;
 		return r ? { state: r.state, params: r.params, weights: w } : null;
@@ -15,14 +15,14 @@ const readingOf = (page, uuid) =>
 const watchStates = (page, uuid) =>
 	page.evaluate((uuid) => {
 		window.__seen57 = [];
-		window.__stores.animGraphRuntime.onAnimStateEnter((u, id) => u === uuid && window.__seen57.push(id));
+		window.__tp.test.v1.animGraphRuntime.onAnimStateEnter((u, id) => u === uuid && window.__seen57.push(id));
 	}, uuid);
 const seenStates = (page) => page.evaluate(() => window.__seen57 ?? []);
 /** what a peer holds for a parts model — printed beside its checks so a red says which link broke */
 const heliState = (page, uuid, hash) =>
 	page.evaluate(
 		({ uuid, hash }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let g;
 			s.objectsGroup.subscribe((x) => (g = x))();
 			const root = g.getObjectByProperty('uuid', uuid);
@@ -50,7 +50,7 @@ const hop = (page, uuid) =>
 	page.evaluate(
 		(uuid) =>
 			new Promise((resolve) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				let g;
 				s.objectsGroup.subscribe((x) => (g = x))();
 				const o = g.getObjectByProperty('uuid', uuid);
@@ -85,7 +85,7 @@ h.run(async () => {
 	await h.connect(B, A);
 
 	const uuid = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const knight = await (await fetch('/avatars/knight.glb')).arrayBuffer();
 		const id = await s.fileHandler.importFile(new File([knight], 'knight.glb'), 'Knight');
 		const clips = await (await fetch('/avatars/clips.glb')).arrayBuffer();
@@ -96,13 +96,13 @@ h.run(async () => {
 		}
 		return id;
 	});
-	const bound = (page) => page.evaluate((uuid) => window.__stores.animatedImports.clipInfo(uuid).filter((c) => c.asset).length, uuid);
+	const bound = (page) => page.evaluate((uuid) => window.__tp.test.v1.animatedImports.clipInfo(uuid).filter((c) => c.asset).length, uuid);
 	await h.eventually(() => bound(A.page), (n) => n === 4, 'four clips bound on A', 20000);
 	await h.eventually(() => bound(B.page), (n) => n === 4, '...and on B', 30000);
 
 	// ---------- the window: one click builds the Locomotion preset ----------
 	await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.objectActions.selectObject(uuid);
 		s.animationClose.set(false);
 	}, uuid);
@@ -111,7 +111,7 @@ h.run(async () => {
 	const graphOn = (page) =>
 		page.evaluate((uuid) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((x) => (g = x))();
+			window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 			return g.getObjectByProperty('uuid', uuid)?.userData?.animGraph ?? null;
 		}, uuid);
 	await h.eventually(() => graphOn(B.page), (g) => g?.states?.length === 3 && g.driver === 'motion', 'M11: the Locomotion preset replicated (Move / Jump / Fall, motion driver)');
@@ -126,13 +126,13 @@ h.run(async () => {
 
 	// ---------- walk + run under the Player controller (possess), host and peer ----------
 	const drive = async (speed, label) => {
-		await A.page.evaluate(({ uuid, speed }) => window.__stores.possess.possess(uuid, { speed, camera: 'none' }), { uuid, speed });
+		await A.page.evaluate(({ uuid, speed }) => window.__tp.test.v1.possess.possess(uuid, { speed, camera: 'none' }), { uuid, speed });
 		await A.page.keyboard.down('W');
 		await A.page.waitForTimeout(1600);
 		const a = await readingOf(A.page, uuid);
 		const b = await readingOf(B.page, uuid);
 		await A.page.keyboard.up('W');
-		await A.page.evaluate(() => window.__stores.possess.release());
+		await A.page.evaluate(() => window.__tp.test.v1.possess.release());
 		return { a, b };
 	};
 	const walk = await drive(1.4, 'walk');
@@ -156,7 +156,7 @@ h.run(async () => {
 
 	// ---------- the nodes: On Click -> Set Animation Parameter (jump trigger); On Animation State ----------
 	await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphsCtl.createObjectGraph(uuid);
 		const nh = s.nodesHandler;
 		nh.createFlowNode({ id: 'k-click', type: 'onclick', position: { x: 0, y: 0 }, data: { type: 'onclick', pulse: 1 } }, uuid);
@@ -169,7 +169,7 @@ h.run(async () => {
 	await h.eventually(
 		() =>
 			B.page.evaluate((uuid) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				let v;
 				let fg;
 				s.flowValues.subscribe((x) => (v = x))();
@@ -184,7 +184,7 @@ h.run(async () => {
 	await watchStates(B.page, uuid);
 	// on a red: B's view of the click over time (stamp landing vs B's clock, the On Click output, the jump param)
 	await B.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const now = () => +((s.connectionState.sessionNow() % 86400000) / 1000).toFixed(3);
 		const log = (window.__clk57 = []);
 		let last = null;
@@ -201,7 +201,7 @@ h.run(async () => {
 		setTimeout(() => (clearInterval(iv), stop()), 3000);
 	}, uuid);
 	const firedAt = await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowRuntime.fireObjectClick(uuid);
 		return (s.connectionState.sessionNow() % 86400000) / 1000;
 	}, uuid);
@@ -214,7 +214,7 @@ h.run(async () => {
 		'  B trigger view:',
 		JSON.stringify(
 			await B.page.evaluate((uuid) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				let t;
 				let fg;
 				let st;
@@ -233,7 +233,7 @@ h.run(async () => {
 	);
 	const pulsed = await A.page.evaluate(() => {
 		let t;
-		window.__stores.flowTriggers.subscribe((v) => (t = v))();
+		window.__tp.test.v1.flowTriggers.subscribe((v) => (t = v))();
 		return !!t?.['k-onjump'];
 	});
 	h.check(pulsed, 'M11: On Animation State pulsed when the machine entered Jump');
@@ -242,7 +242,7 @@ h.run(async () => {
 	const heli = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				const T = s.THREE;
 				const root = new T.Group();
 				const body = new T.Mesh(new T.BoxGeometry(2, 1, 1), new T.MeshStandardMaterial());
@@ -255,15 +255,15 @@ h.run(async () => {
 				new s.GLTFExporterModule.GLTFExporter().parse(root, async (buf) => resolve(await s.fileHandler.importFile(new File([buf], 'heli.glb'), 'Heli')), () => resolve(null), { binary: true });
 			})
 	);
-	h.check(!!heli && !(await A.page.evaluate((id) => window.__stores.animatedImports.hasAnimatedImport(id), heli)), 'M12: a plain model (no rig, no clips) placed');
+	h.check(!!heli && !(await A.page.evaluate((id) => window.__tp.test.v1.animatedImports.hasAnimatedImport(id), heli)), 'M12: a plain model (no rig, no clips) placed');
 	const res = await A.page.evaluate(
-		(heli) => window.__stores.aiTools.executeAiTool('animate_parts', { object: heli, clip: 'Spin', tracks: [{ part: 'rotor', keys: [{ t: 0, rot: [0, 0, 0] }, { t: 1, rot: [0, 360, 0] }] }], loop: true }),
+		(heli) => window.__tp.test.v1.aiTools.executeAiTool('animate_parts', { object: heli, clip: 'Spin', tracks: [{ part: 'rotor', keys: [{ t: 0, rot: [0, 0, 0] }, { t: 1, rot: [0, 360, 0] }] }], loop: true }),
 		heli
 	);
 	h.check(res?.ok && res.parts?.[0] === 'rotor', `M12: animate_parts writes one clip on the named part (${JSON.stringify(res).slice(0, 120)})`);
 	const rotorYaw = (page) =>
 		page.evaluate((heli) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let g;
 			s.objectsGroup.subscribe((x) => (g = x))();
 			const r = g.getObjectByProperty('uuid', heli)?.getObjectByName('rotor');
@@ -282,7 +282,7 @@ h.run(async () => {
 	// imports a model and animates it at once) is parked and applied when the object arrives.
 	// Delivered on B by hand, in that order, so the race is not left to timing.
 	const earlyOk = await B.page.evaluate(async (hash) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const T = s.THREE;
 		const uuid = T.MathUtils.generateUUID();
 		await s.commandsHandler.objectParameters({ type: 'objectParameters', parameter: 'clipRefs', uuid, clipRefs: [{ hash, name: 'Spin' }] });
@@ -310,15 +310,15 @@ h.run(async () => {
 		return false;
 	}, res.hash);
 	h.check(earlyOk, 'M12: clip refs + play that arrive before their object are applied when it lands (B)');
-	const clipOnHeli = (page) => page.evaluate((heli) => window.__stores.animatedImports.clipInfo(heli).map((c) => c.name), heli);
-	await A.page.evaluate(() => window.__stores.history.undo());
+	const clipOnHeli = (page) => page.evaluate((heli) => window.__tp.test.v1.animatedImports.clipInfo(heli).map((c) => c.name), heli);
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => clipOnHeli(B.page), (l) => !l.includes('Spin'), 'M12: one undo takes the clip off on B');
-	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 	await h.eventually(() => clipOnHeli(B.page), (l) => l.includes('Spin'), 'M12: redo puts it back');
 
 	// ---------- M12: keys on a part in the Animation window -> one clip FILE on the model ----------
 	const fromKeys = await A.page.evaluate(async (heli) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		const model = g.getObjectByProperty('uuid', heli);
@@ -338,7 +338,7 @@ h.run(async () => {
 
 	// ---------- M12: Attach to Socket — a box rides the rotor tip ----------
 	const box = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create Box 0.2 0.2 0.2');
 		const group = await new Promise((r) => s.objectsGroup.subscribe(r)());
 		const b = group.children[group.children.length - 1];
@@ -346,11 +346,11 @@ h.run(async () => {
 		return b.uuid;
 	});
 	await B.page.waitForTimeout(1200);
-	await A.page.evaluate(({ box, heli }) => window.__stores.animatedImports.attachToSocket(box, heli, 'rotor', { snap: false }), { box, heli });
+	await A.page.evaluate(({ box, heli }) => window.__tp.test.v1.animatedImports.attachToSocket(box, heli, 'rotor', { snap: false }), { box, heli });
 	const boxAt = (page) =>
 		page.evaluate((box) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((x) => (g = x))();
+			window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 			const o = g.getObjectByProperty('uuid', box);
 			return o ? [o.position.x, o.position.z] : null;
 		}, box);
@@ -363,7 +363,7 @@ h.run(async () => {
 	await h.eventually(() => circles(A.page), (v) => v, 'M12: the attached box follows the spinning rotor on A', 10000);
 	console.log('  A heli:', JSON.stringify(await heliState(A.page, heli, res.hash)), 'box', JSON.stringify(await boxAt(A.page)));
 	await h.eventually(() => circles(B.page), (v) => v, 'M12: ...and on B (the attach replicated; each peer follows its own socket)', 15000);
-	await A.page.evaluate((box) => window.__stores.animatedImports.attachToSocket(box, null, null), box);
+	await A.page.evaluate((box) => window.__tp.test.v1.animatedImports.attachToSocket(box, null, null), box);
 	const s1 = await boxAt(A.page);
 	await A.page.waitForTimeout(300);
 	const s2 = await boxAt(A.page);

@@ -12,11 +12,11 @@ h.run(async () => {
 	// a box, selected with the properties inspector open -> the Material section
 	// renders the #select-material ThemedSelect
 	await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const box = group.children[group.children.length - 1];
 		window.__box = box;
-		window.__stores.objectActions.selectObject(box.uuid, true);
+		window.__tp.test.v1.objectActions.selectObject(box.uuid, true);
 	});
 	await A.page.waitForTimeout(600);
 
@@ -92,7 +92,7 @@ h.run(async () => {
 
 	// --- the popup recolors with the theme (green console -> dark green) ---
 	const themed = await A.page.evaluate(() => {
-		window.__stores.themes.theme.set('green');
+		window.__tp.test.v1.themes.theme.set('green');
 		document.querySelector('#select-material').click();
 		return new Promise((resolve) =>
 			setTimeout(() => {
@@ -106,7 +106,7 @@ h.run(async () => {
 	h.check(themed === 'rgb(4, 23, 10)', `the popup follows the theme tokens (green surface ${themed})`);
 
 	// restore
-	await A.page.evaluate(() => window.__stores.themes.theme.set('dark'));
+	await A.page.evaluate(() => window.__tp.test.v1.themes.theme.set('dark'));
 
 	// --- 15-B1: the popup fits the LONGEST option, not the selected label ------
 	// (picking a short option like "Box" used to shrink the trigger, and the
@@ -115,8 +115,8 @@ h.run(async () => {
 		const sel = () => document.querySelector('#physics-collider');
 		// the Physics section renders the collider select — enable physics first
 		window.__box.userData.physics = { mode: 'dynamic', mass: 1, collider: 'box' };
-		window.__stores.objectsGroup.update((v) => v);
-		window.__stores.selectedObject.update((v) => v);
+		window.__tp.test.v1.objectsGroup.update((v) => v);
+		window.__tp.test.v1.selectedObject.update((v) => v);
 		await new Promise((r) => setTimeout(r, 400));
 		if (!sel()) return null;
 		sel().click();

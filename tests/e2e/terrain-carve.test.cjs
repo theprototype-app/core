@@ -195,7 +195,7 @@ h.run(async () => {
 	await h.connect(B, A);
 
 	const built = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Terrain 24 24');
 		await new Promise((r) => setTimeout(r, 700));
 		const group = await new Promise((r) => w.objectsGroup.subscribe(r)());
@@ -242,8 +242,8 @@ h.run(async () => {
 		const spots = await A.page.evaluate(
 			(id) =>
 				new Promise((r) =>
-					window.__stores.objectsGroup.subscribe((g) => {
-						const THREE = window.__stores.THREE;
+					window.__tp.test.v1.objectsGroup.subscribe((g) => {
+						const THREE = window.__tp.test.v1.THREE;
 						const object = g.getObjectByProperty('uuid', id);
 						if (!object) return r([]);
 						object.updateMatrixWorld(true);
@@ -272,10 +272,10 @@ h.run(async () => {
 				([x, y, id]) =>
 					new Promise((r) => {
 						if (document.elementFromPoint(x, y)?.tagName !== 'CANVAS') return r(false);
-						window.__stores.globalRenderer.subscribe((rend) => {
-							window.__stores.globalCamera.subscribe((cam) => {
-								window.__stores.objectsGroup.subscribe((g) => {
-									const THREE = window.__stores.THREE;
+						window.__tp.test.v1.globalRenderer.subscribe((rend) => {
+							window.__tp.test.v1.globalCamera.subscribe((cam) => {
+								window.__tp.test.v1.objectsGroup.subscribe((g) => {
+									const THREE = window.__tp.test.v1.THREE;
 									const rect = rend.domElement.getBoundingClientRect();
 									const ndc = new THREE.Vector2(
 										((x - rect.left) / rect.width) * 2 - 1,
@@ -301,7 +301,7 @@ h.run(async () => {
 	 * change — earlier sections legitimately flatten the bed, and a carve is idempotent */
 	const reseedHills = async (seed) => {
 		await A.page.evaluate(
-			([uuid, s]) => window.__stores.geometryEdit.applyGeometry(uuid, { amplitude: 5, seed: s, frequency: 0.07 }),
+			([uuid, s]) => window.__tp.test.v1.geometryEdit.applyGeometry(uuid, { amplitude: 5, seed: s, frequency: 0.07 }),
 			[built.terrain, seed]
 		);
 		await A.page.waitForTimeout(600);
@@ -311,7 +311,7 @@ h.run(async () => {
 		page.evaluate(
 			(id) =>
 				new Promise((r) =>
-					window.__stores.objectsGroup.subscribe((g) => {
+					window.__tp.test.v1.objectsGroup.subscribe((g) => {
 						const mesh = g.getObjectByProperty('uuid', id);
 						if (!mesh) return r(null);
 						const p = mesh.geometry.attributes.position;
@@ -344,9 +344,9 @@ h.run(async () => {
 	const menu = await A.page.evaluate((uuid) => {
 		// (uuid FIRST, opts second — passing one object silently builds a menu for
 		// "no object", which has no Flatten entry and would read as a green check)
-		const items = window.__stores.objectMenu.buildObjectMenuItems(uuid, { selection: [uuid] });
-		const labels = window.__stores.objectMenu.flattenMenuItems(items).map((i) => i.label ?? '');
-		const flatten = window.__stores.objectMenu.findMenuItem(items, 'Flatten');
+		const items = window.__tp.test.v1.objectMenu.buildObjectMenuItems(uuid, { selection: [uuid] });
+		const labels = window.__tp.test.v1.objectMenu.flattenMenuItems(items).map((i) => i.label ?? '');
+		const flatten = window.__tp.test.v1.objectMenu.findMenuItem(items, 'Flatten');
 		const children = (flatten?.children ?? []).map((c) => c.label ?? '');
 		return {
 			hasFlatten: !!flatten,
@@ -375,7 +375,7 @@ h.run(async () => {
 
 	const commit = await A.page.evaluate(
 		async ([roadUuid, terrainUuid]) => {
-			const w = window.__stores;
+			const w = window.__tp?.test.v1;
 			const group = await new Promise((r) => w.objectsGroup.subscribe(r)());
 			const terrain = group.getObjectByProperty('uuid', terrainUuid);
 			const before = Array.from(terrain.geometry.attributes.position.array);
@@ -469,7 +469,7 @@ h.run(async () => {
 	// real button, not the store behind it.
 	await A.page.evaluate((uuid) => {
 		localStorage.setItem('inspector:sec:Spline', 'open');
-		window.__stores.objectActions.selectObject(uuid, true);
+		window.__tp.test.v1.objectActions.selectObject(uuid, true);
 	}, built.road);
 	await h.eventually(
 		() =>
@@ -492,7 +492,7 @@ h.run(async () => {
 		A.page.evaluate(
 			() =>
 				new Promise((r) =>
-					window.__stores.toastStore.subscribe((t) => {
+					window.__tp.test.v1.toastStore.subscribe((t) => {
 						const texts = t.map((entry) => (typeof entry === 'string' ? entry : (entry?.text ?? '')));
 						r(texts.filter((text) => /Carved \d+ vertices|already carved|not under this spline/i.test(text)).pop() ?? '');
 					})()
@@ -500,7 +500,7 @@ h.run(async () => {
 		);
 	// clear the stack first: the earlier carve left its own "Carved N vertices" toast,
 	// which would satisfy the wait below without the button ever running
-	await A.page.evaluate(() => window.__stores.toastStore.set([]));
+	await A.page.evaluate(() => window.__tp.test.v1.toastStore.set([]));
 	// stash the height FIELD too, because the second pass has to be measured the same
 	// way the first was: the toast counts VERTICES, and the first commit turned 625
 	// indexed vertices into a 3456 soup, so comparing its 876 against the first pass's
@@ -509,7 +509,7 @@ h.run(async () => {
 		page.evaluate(
 			([id, store]) =>
 				new Promise((r) =>
-					window.__stores.objectsGroup.subscribe((g) => {
+					window.__tp.test.v1.objectsGroup.subscribe((g) => {
 						const p = g.getObjectByProperty('uuid', id).geometry.attributes.position;
 						const field = new Map();
 						for (let i = 0; i < p.count; i++) field.set(p.getX(i) + ',' + p.getZ(i), p.getY(i));
@@ -528,7 +528,7 @@ h.run(async () => {
 	// idempotent, which would leave nothing to measure
 	await reseedHills(21);
 	await A.page.evaluate(
-		(b) => window.__stores.flattenActions.carveTerrainAlong(b.road, b.terrain),
+		(b) => window.__tp.test.v1.flattenActions.carveTerrainAlong(b.road, b.terrain),
 		built
 	);
 	await A.page.waitForTimeout(600);
@@ -537,11 +537,11 @@ h.run(async () => {
 	// click the terrain in the viewport
 	const beforeProps = await surfaceOf(A.page, built.terrain);
 	const depthBefore = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.history.undoStack.subscribe((s) => r(s.length))())
+		() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((s) => r(s.length))())
 	);
 	await A.page.evaluate(() => document.querySelector('#spline-carve-pick').click());
 	await h.eventually(
-		() => A.page.evaluate(() => new Promise((r) => window.__stores.flattenActions.flattenPicking.subscribe(r)())),
+		() => A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.flattenActions.flattenPicking.subscribe(r)())),
 		(armed) => armed?.kind === 'carve',
 		'pressing it arms the pick rather than guessing a terrain',
 		20000
@@ -561,7 +561,7 @@ h.run(async () => {
 	const secondToast = await carveToast();
 	const afterProps = await surfaceOf(A.page, built.terrain);
 	const depthAfter = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.history.undoStack.subscribe((s) => r(s.length))())
+		() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((s) => r(s.length))())
 	);
 	h.check(
 		afterProps.verts % 3 === 0 && afterProps.worstEdge < 3,
@@ -611,11 +611,11 @@ h.run(async () => {
 	// would otherwise just select the terrain, and it has to survive a mis-aim.
 	const armed = () =>
 		A.page.evaluate(
-			() => new Promise((r) => window.__stores.flattenActions.flattenPicking.subscribe(r)())
+			() => new Promise((r) => window.__tp.test.v1.flattenActions.flattenPicking.subscribe(r)())
 		);
 
 	await A.page.evaluate(
-		(uuid) => window.__stores.flattenActions.startFlattenPick('carve', uuid),
+		(uuid) => window.__tp.test.v1.flattenActions.startFlattenPick('carve', uuid),
 		built.road
 	);
 	h.check(!!(await armed()), 'PREMISE: the carve pick is armed');
@@ -627,7 +627,7 @@ h.run(async () => {
 
 	// arm again and click the TERRAIN in the viewport
 	await A.page.evaluate(
-		(uuid) => window.__stores.flattenActions.startFlattenPick('carve', uuid),
+		(uuid) => window.__tp.test.v1.flattenActions.startFlattenPick('carve', uuid),
 		built.road
 	);
 	// fresh hills, so "did the click carve" is a question with a visible answer
@@ -652,7 +652,7 @@ h.run(async () => {
 		A.page.evaluate(
 			(uuid) =>
 				new Promise((r) =>
-					window.__stores.objectsGroup.subscribe((g) => {
+					window.__tp.test.v1.objectsGroup.subscribe((g) => {
 						const road = g.getObjectByProperty('uuid', uuid);
 						const record = road?.userData?.spline;
 						r(record ? record.points.map((/** @type {any} */ p) => p.pos[1]) : null);
@@ -663,7 +663,7 @@ h.run(async () => {
 	const terrainBefore = await surfaceOf(A.page, built.terrain);
 	const heightsBefore = await roadHeights();
 	await A.page.evaluate(
-		(uuid) => window.__stores.flattenActions.startFlattenPick('drape', uuid),
+		(uuid) => window.__tp.test.v1.flattenActions.startFlattenPick('drape', uuid),
 		built.road
 	);
 	const px2 = await aimAtSurfaceOf(built.terrain);
@@ -684,8 +684,8 @@ h.run(async () => {
 	const resting = await A.page.evaluate(
 		([roadUuid, terrainUuid]) =>
 			new Promise((r) => {
-				window.__stores.objectsGroup.subscribe((g) => {
-					const THREE = window.__stores.THREE;
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
+					const THREE = window.__tp.test.v1.THREE;
 					const road = g.getObjectByProperty('uuid', roadUuid);
 					const terrain = g.getObjectByProperty('uuid', terrainUuid);
 					road.updateMatrixWorld(true);
@@ -720,7 +720,7 @@ h.run(async () => {
 			B.page.evaluate(
 				(uuid) =>
 					new Promise((r) =>
-						window.__stores.objectsGroup.subscribe((g) => {
+						window.__tp.test.v1.objectsGroup.subscribe((g) => {
 							const road = g.getObjectByProperty('uuid', uuid);
 							r(road?.userData?.spline?.points?.map((/** @type {any} */ p) => p.pos[1]) ?? null);
 						})()

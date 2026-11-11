@@ -12,17 +12,17 @@
 const h = require('./helpers.cjs');
 
 const sp = (page, body) =>
-	page.evaluate((b) => new Function('sp', b)(window.__stores.scenePhysics), body);
+	page.evaluate((b) => new Function('sp', b)(window.__tp.test.v1.scenePhysics), body);
 const phys = (page, body) =>
-	page.evaluate((b) => new Function('p', b)(window.__stores.physics), body);
+	page.evaluate((b) => new Function('p', b)(window.__tp.test.v1.physics), body);
 
 const bodyOf = (page, uuid) =>
-	page.evaluate((uuid) => window.__stores.physics.physicsDebug().find((b) => b.uuid === uuid), uuid);
+	page.evaluate((uuid) => window.__tp.test.v1.physics.physicsDebug().find((b) => b.uuid === uuid), uuid);
 
 const posOf = (page, uuid) =>
 	page.evaluate((uuid) => {
 		let group = null;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		const o = group.getObjectByProperty('uuid', uuid);
 		return o ? o.position.toArray() : null;
 	}, uuid);
@@ -30,18 +30,18 @@ const posOf = (page, uuid) =>
 async function placeInFront(page, uuid, distance) {
 	return page.evaluate(
 		([uuid, distance]) => {
-			const THREE = window.__stores.THREE;
+			const THREE = window.__tp.test.v1.THREE;
 			let camera = null;
 			let group = null;
-			window.__stores.globalCamera.subscribe((v) => (camera = v))();
-			window.__stores.objectsGroup.subscribe((v) => (group = v))();
+			window.__tp.test.v1.globalCamera.subscribe((v) => (camera = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 			const at = camera
 				.getWorldPosition(new THREE.Vector3())
 				.addScaledVector(camera.getWorldDirection(new THREE.Vector3()), distance);
 			const object = group.getObjectByProperty('uuid', uuid);
 			object.position.copy(at);
 			object.updateMatrixWorld();
-			window.__stores.objectsGroup.update((v) => v);
+			window.__tp.test.v1.objectsGroup.update((v) => v);
 			return at.toArray();
 		},
 		[uuid, distance]
@@ -57,7 +57,7 @@ async function aimAtCrate(page, uuid, distance) {
 		await page.waitForTimeout(350);
 		const state = await page.evaluate(() => {
 			let value = null;
-			window.__stores.playInteract.playInteractState.subscribe((v) => (value = v))();
+			window.__tp.test.v1.playInteract.playInteractState.subscribe((v) => (value = v))();
 			return value;
 		});
 		if (state?.mode === 'aiming' && state.uuid === uuid) return true;
@@ -74,7 +74,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(4000);
 		await warm.ctx.close();
 	}
@@ -82,21 +82,21 @@ h.run(async () => {
 	const B = await h.setupPage(browser, 'B');
 
 	const crate = await A.page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		let group = null;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		const box = group.children[group.children.length - 1];
 		box.name = 'Crate';
 		box.position.set(0, 1, 0);
 		box.userData.physics = { mode: 'dynamic', mass: 1 };
-		window.__stores.objectsGroup.update((v) => v);
+		window.__tp.test.v1.objectsGroup.update((v) => v);
 		return box.uuid;
 	});
 	await h.connect(A, B);
 	// deselect AFTER connecting: creating the crate selected it on A, and the
 	// handshake pushes that selection to B as a lock. Until A broadcasts the
 	// unlock, B correctly refuses to grab a peer-locked object.
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 
 	// ---------------------------------------------------------------- section 1
 	console.log('\n=== 1. A hosts the world; B carries ===');
@@ -107,14 +107,14 @@ h.run(async () => {
 		'1.1 (premise) B has the crate'
 	);
 	await sp(A.page, 'sp.setScenePhysics({ ground: { enabled: true, height: 0 }, play: { interaction: "grab" } })');
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await h.eventually(
 		() => phys(A.page, 'return p.physicsDebug().length'),
 		(n) => n > 0,
 		'1.2 (premise) A is the simulating peer'
 	);
 	await h.eventually(
-		() => B.page.evaluate(() => new Promise((r) => window.__stores.physics.remoteSimulating.subscribe(r)())),
+		() => B.page.evaluate(() => new Promise((r) => window.__tp.test.v1.physics.remoteSimulating.subscribe(r)())),
 		(v) => !!v,
 		'1.3 (premise) B knows a remote peer is simulating'
 	);
@@ -123,7 +123,7 @@ h.run(async () => {
 	await B.page.evaluate(() => {
 		window.__sent = [];
 		let peer = null;
-		window.__stores.peers.subscribe((p) => (peer = p))();
+		window.__tp.test.v1.peers.subscribe((p) => (peer = p))();
 		const original = peer.send.bind(peer);
 		peer.send = (message) => {
 			window.__sent.push(message);
@@ -135,13 +135,13 @@ h.run(async () => {
 	// move every ~100 ms, and those would yank it back out of B's view between
 	// the placement and the grab
 	await A.page.waitForTimeout(2500);
-	await B.page.evaluate(() => window.__stores.isLocked.set(true));
+	await B.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	const aimed = await aimAtCrate(B.page, crate, 3.5);
 	await h.eventually(
 		() =>
 			B.page.evaluate(() => {
 				let list = [];
-				window.__stores.lockedObjects.subscribe((v) => (list = v))();
+				window.__tp.test.v1.lockedObjects.subscribe((v) => (list = v))();
 				return list.length;
 			}),
 		(n) => n === 0,
@@ -150,7 +150,7 @@ h.run(async () => {
 	h.check(aimed, '1.5 (premise) B crosshair is on the crate');
 	await pointer(B.page, 'pointerdown');
 	await B.page.waitForTimeout(400);
-	const carried = await B.page.evaluate(() => window.__stores.playInteract.playInteractDebug());
+	const carried = await B.page.evaluate(() => window.__tp.test.v1.playInteract.playInteractDebug());
 	h.check(carried.carrying === crate, '1.6 B is carrying the crate');
 	h.check(carried.held === false, '1.7 ...WITHOUT a local body — B is not the initiator');
 
@@ -292,7 +292,7 @@ h.run(async () => {
 	await pointer(B.page, 'pointerdown');
 	await B.page.waitForTimeout(500);
 	const carriedAgain = await B.page.evaluate(() =>
-		window.__stores.playInteract.playInteractDebug()
+		window.__tp.test.v1.playInteract.playInteractDebug()
 	);
 	h.check(carriedAgain.carrying === crate, '4.1 (premise) B is carrying again');
 	const heldOnA = await bodyOf(A.page, crate);
@@ -322,7 +322,7 @@ h.run(async () => {
 	const B2 = await h.setupPage(browser, 'B2');
 	// B2 DIALS: A is already in a session, so its connect input is gone
 	await h.connect(B2, A);
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await phys(
 		A.page,
 		'return p.applyThrow({ uuid: "' + crate + '", pos: [0, 6, 0], rot: [0, 0, 0], linvel: [0, 0, 0], angvel: [0, 0, 0] })'
@@ -344,7 +344,7 @@ h.run(async () => {
 			'", pos: [0, 6, 0], rot: [0, 0, 0], linvel: [7, 3, 0], angvel: [0, 0, 0] })'
 	);
 	await A.page.waitForTimeout(900);
-	const smoothing = await B2.page.evaluate(() => window.__stores.moveSmoothing.moveSmoothingDebug());
+	const smoothing = await B2.page.evaluate(() => window.__tp.test.v1.moveSmoothing.moveSmoothingDebug());
 	h.check(
 		Array.isArray(smoothing?.intervals) && smoothing.intervals.length > 0,
 		'5.1 the watching peer interpolates the move stream instead of snapping to each pose (' + JSON.stringify(smoothing) + ')'
@@ -378,6 +378,6 @@ h.run(async () => {
 		'5.3 interpolation adds no drift — a parked crate lands on the SAME pose on both peers (' + drift.toFixed(4) + ' m apart)'
 	);
 
-	await A.page.evaluate(() => window.__stores.physics.stopSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 	await h.finish(browser);
 });

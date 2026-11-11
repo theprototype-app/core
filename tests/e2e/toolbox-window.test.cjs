@@ -9,7 +9,7 @@ const h = require('./helpers.cjs');
 /** open a face-edit session on a fresh box */
 const openFaceEdit = (page) =>
 	page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.children[g.children.length - 1];
@@ -172,7 +172,7 @@ h.run(async () => {
 
 	// one-shot: flashes (tbx-flash appears) and never keeps mesh-op-active
 	const flash = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		// give subdivide a target: select the top face
 		const top = w.faceEdit.currentFaces().find((f) => f.normal.y > 0.99);
 		w.faceEdit.pickFaceUnit(top.triIndices[0]);
@@ -197,13 +197,13 @@ h.run(async () => {
 		const root = document.querySelector('#mesh-edit-popup');
 		const results = {};
 		for (const id of ['light', 'green', 'bit8', 'contrast', 'dark']) {
-			window.__stores.themes.theme.set(id); // the subscriber applies it
+			window.__tp.test.v1.themes.theme.set(id); // the subscriber applies it
 			await new Promise((r) => setTimeout(r, 50));
 			const bg = getComputedStyle(root).backgroundColor;
 			const fg = getComputedStyle(root.querySelector('.toolbox-title')).color;
 			results[id] = { bg, fg, readable: bg !== fg };
 		}
-		window.__stores.themes.theme.set('dark');
+		window.__tp.test.v1.themes.theme.set('dark');
 		return results;
 	});
 	const bgs = new Set(Object.values(themed).map((t) => t.bg));
@@ -214,9 +214,9 @@ h.run(async () => {
 	);
 
 	// ------------------------------------------------ 6. sculpt toolbox parity
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
 	await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.children[g.children.length - 1];
 		w.terrainSculpt.enterSculpt(box.uuid);
@@ -239,7 +239,7 @@ h.run(async () => {
 	h.check(/Sculpt mesh/.test(sculpt.text), '...titled "Sculpt mesh"');
 	h.check(sculpt.square && sculpt.headerHandle, '...same shell: square buttons + header drag');
 	h.check(sculpt.armed, 'the active brush is accent-filled (radio behavior)');
-	await A.page.evaluate(() => window.__stores.terrainSculpt.exitSculpt());
+	await A.page.evaluate(() => window.__tp.test.v1.terrainSculpt.exitSculpt());
 
 	await h.finish(browser);
 });

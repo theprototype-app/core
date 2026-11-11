@@ -33,14 +33,14 @@ function makeZip() {
 }
 
 const loadedIds = (page) =>
-	page.evaluate(() => window.__stores.moduleSDK.loadedModules.map((m) => m.id));
+	page.evaluate(() => window.__tp.test.v1.moduleSDK.loadedModules.map((m) => m.id));
 
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 
 	// install via the manager's file input
-	await A.page.evaluate(() => window.__stores.modulesOpen.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.modulesOpen.set(true));
 	await A.page.waitForTimeout(400);
 	// the manager tabs are role="tab" (real tabs since the mobile polish) — a
 	// button-role query never matches and was the suite's known failure
@@ -131,7 +131,7 @@ h.run(async () => {
 	await h.eventually(
 		() =>
 			A.page.evaluate(
-				() => new Promise((r) => window.__stores.toastStore.subscribe((t) => r(JSON.stringify(t)))())
+				() => new Promise((r) => window.__tp.test.v1.toastStore.subscribe((t) => r(JSON.stringify(t)))())
 			),
 		(t) => t.includes('testmod alive'),
 		'its menu action works from the card'
@@ -140,33 +140,33 @@ h.run(async () => {
 	// persists + auto-activates on reload
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
 	await A.page.waitForTimeout(4500);
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.moduleSDK, { timeout: 30000 });
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.moduleSDK, { timeout: 30000 });
 	await h.eventually(() => loadedIds(A.page), (ids) => ids.includes('testmod'), 'auto-activates after reload', 15000);
 
 	// disable -> reload -> not loaded (but still installed)
 	await A.page.evaluate(() => {
-		window.__stores.moduleSDK.disabledModules.update((l) => [...l, 'testmod']);
+		window.__tp.test.v1.moduleSDK.disabledModules.update((l) => [...l, 'testmod']);
 	});
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
 	await A.page.waitForTimeout(4500);
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.moduleSDK, { timeout: 30000 });
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.moduleSDK, { timeout: 30000 });
 	const ids = await loadedIds(A.page);
 	const stillInstalled = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.userModules.userModules.subscribe((l) => r(l.length))())
+		() => new Promise((r) => window.__tp.test.v1.userModules.userModules.subscribe((l) => r(l.length))())
 	);
 	h.check(!ids.includes('testmod'), 'disabled module does not activate on boot');
 	h.check(stillInstalled === 1, 'record stays installed while disabled');
 
 	// URL helpers: github tree link normalizes to raw; unreachable URL fails with a toast
 	const normalized = await A.page.evaluate(() =>
-		window.__stores.userModules.normalizeRepoUrl('https://github.com/user/repo/tree/main/mymod/')
+		window.__tp.test.v1.userModules.normalizeRepoUrl('https://github.com/user/repo/tree/main/mymod/')
 	);
 	h.check(
 		normalized === 'https://raw.githubusercontent.com/user/repo/main/mymod',
 		`github link normalized (${normalized})`
 	);
 	const badInstall = await A.page.evaluate(() =>
-		window.__stores.userModules.installUrl('https://theprototype.app:5173/definitely-not-a-module')
+		window.__tp.test.v1.userModules.installUrl('https://theprototype.app:5173/definitely-not-a-module')
 	);
 	h.check(badInstall === false, 'unreachable URL fails gracefully');
 
@@ -210,7 +210,7 @@ export default {
 
 	const sdkCounts = (page) =>
 		page.evaluate(() => {
-			const sdk = window.__stores.moduleSDK;
+			const sdk = window.__tp.test.v1.moduleSDK;
 			return new Promise((resolve) =>
 				sdk.moduleMenuItems.subscribe((items) =>
 					resolve({
@@ -225,7 +225,7 @@ export default {
 
 	const clicksBefore = (await sdkCounts(A.page)).clicks;
 	const installedDev = await A.page.evaluate(() =>
-		window.__stores.userModules.installUrl('https://dev.local/devmod')
+		window.__tp.test.v1.userModules.installUrl('https://dev.local/devmod')
 	);
 	h.check(installedDev === true, 'dev module installs from the routed URL');
 	h.check((await A.page.evaluate(() => window.__devmodVersion)) === 1, 'v1 code ran');
@@ -244,7 +244,7 @@ export default {
 
 	// mutate the served body, click Reload in the manager — new code live, NO page.reload()
 	servedVersion = 2;
-	await A.page.evaluate(() => window.__stores.modulesOpen.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.modulesOpen.set(true));
 	await A.page.waitForTimeout(400);
 	// the manager tabs are role="tab" (real tabs since the mobile polish) — a
 	// button-role query never matches and was the suite's known failure
@@ -271,7 +271,7 @@ export default {
 	// a broken served body keeps the old instance running
 	serveBroken = true;
 	const brokenReload = await A.page.evaluate(() =>
-		window.__stores.userModules.reloadUserModule({ id: 'devmod' })
+		window.__tp.test.v1.userModules.reloadUserModule({ id: 'devmod' })
 	);
 	h.check(brokenReload === false, 'broken body reports failure');
 	h.check((await A.page.evaluate(() => window.__devmodVersion)) === 2, 'v2 keeps running after a broken reload');
@@ -281,7 +281,7 @@ export default {
 	// auto-poll: enable, mutate the source, the change lands without any click
 	servedVersion = 3;
 	await A.page.evaluate(() => {
-		const um = window.__stores.userModules;
+		const um = window.__tp.test.v1.userModules;
 		return new Promise((resolve) =>
 			um.userModules.subscribe((list) => {
 				um.setDevPoll(list.find((m) => m.id === 'devmod'), true);
@@ -296,7 +296,7 @@ export default {
 		15000
 	);
 	await A.page.evaluate(() => {
-		const um = window.__stores.userModules;
+		const um = window.__tp.test.v1.userModules;
 		um.setDevPoll({ id: 'devmod' }, false);
 	});
 

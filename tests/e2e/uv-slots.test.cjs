@@ -16,7 +16,7 @@ const h = require('./helpers.cjs');
 
 const openOnBox = async (page) => {
 	const uuid = await page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.children[g.children.length - 1];
@@ -33,7 +33,7 @@ const openOnBox = async (page) => {
 /** slots + which slot each triangle belongs to */
 const slotState = (page, uuid) =>
 	page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const o = g.getObjectByProperty('uuid', uuid);
 		if (!o) return null;
@@ -58,12 +58,12 @@ const slotState = (page, uuid) =>
 	}, uuid);
 
 const undoDepth = (page) =>
-	page.evaluate(() => new Promise((r) => window.__stores.history.undoStack.subscribe((v) => r(v.length))()));
+	page.evaluate(() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((v) => r(v.length))()));
 
 /** pick the top face in Edit Mesh and return its triangle indices */
 const pickTopFace = (page, uuid) =>
 	page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.faceEdit.enterFaceEdit(uuid);
 		const top = w.faceEdit.currentFaces().find((f) => f.normal.y > 0.99);
 		w.faceEdit.pickFaceUnit(top.triIndices[0]);
@@ -125,7 +125,7 @@ h.run(async () => {
 	h.check(depthAfter === depthBefore + 1, `assigning records ONE undo entry (${depthBefore}->${depthAfter})`);
 
 	// ---------- undo both steps ----------
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(500);
 	const undoneAssign = await slotState(A.page, uuid);
 	h.check(undoneAssign.inSlot1 === 0, `undo puts the faces back on slot 0 (${undoneAssign.inSlot1} left on slot 1)`);
@@ -134,16 +134,16 @@ h.run(async () => {
 	// session-scoped 'selection' entry, so the next Ctrl+Z inside the session walks
 	// the PICK back, not the slot — which is the intended behaviour. endHistorySession
 	// filters those entries out, leaving the slot entry on top.
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
 	await A.page.waitForTimeout(400);
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(500);
 	const undoneAdd = await slotState(A.page, uuid);
 	h.check(undoneAdd.slots === 1, `undoing past the session removes the added slot (${undoneAdd.slots})`);
 
 	// ---------- a slot cannot be assigned when it does not exist ----------
 	const refused = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		return w.uvEditor.assignTrisToSlot(uuid, [0, 1], 5);
 	}, uuid);
 	h.check(refused === false, 'assigning to a slot the object does not have is refused');
@@ -155,7 +155,7 @@ h.run(async () => {
 	});
 	const beforeSwitch = await slotState(A.page, uuid);
 	await A.page.evaluate(
-		(uuid) => window.__stores.materialsHandler.switchMaterialType(uuid, 'MeshBasicMaterial', true),
+		(uuid) => window.__tp.test.v1.materialsHandler.switchMaterialType(uuid, 'MeshBasicMaterial', true),
 		uuid
 	);
 	await A.page.waitForTimeout(400);
@@ -168,7 +168,7 @@ h.run(async () => {
 	// ---------- both halves replicate LIVE ----------
 	// leave Edit Mesh first: an ACTIVE session is the UV editor's target, so a stale
 	// one would aim the next add/assign at the PREVIOUS object
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
 	await A.page.waitForTimeout(300);
 
 	const B = await h.setupPage(browser, 'B');

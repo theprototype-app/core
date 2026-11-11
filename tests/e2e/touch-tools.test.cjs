@@ -13,7 +13,7 @@ const h = require('./helpers.cjs');
 
 const SELECTION = () => {
 	let set;
-	window.__stores.selectedObjects.subscribe((v) => (set = v))();
+	window.__tp.test.v1.selectedObjects.subscribe((v) => (set = v))();
 	return set.slice();
 };
 
@@ -24,7 +24,7 @@ h.run(async () => {
 	// ---- 1. the cluster is OFF by default on a plain desktop context ------------
 	const desktopDefault = await A.page.evaluate(() => {
 		let on;
-		window.__stores.touchTools.subscribe((v) => (on = v))();
+		window.__tp.test.v1.touchTools.subscribe((v) => (on = v))();
 		return { on, present: !!document.querySelector('#touch-tools') };
 	});
 	h.check(
@@ -33,7 +33,7 @@ h.run(async () => {
 	);
 
 	// ---- 2. turning it on renders the three buttons -----------------------------
-	await A.page.evaluate(() => window.__stores.touchTools.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.touchTools.set(true));
 	await A.page.waitForTimeout(400);
 	const shown = await A.page.evaluate(() => ({
 		root: !!document.querySelector('#touch-tools'),
@@ -56,7 +56,7 @@ h.run(async () => {
 
 	// ---- 3. Undo/Redo drive the REAL history ------------------------------------
 	const box = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create box 1 1 1');
 		await new Promise((r) => setTimeout(r, 900));
 		let g;
@@ -74,7 +74,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(600);
 	const afterUndo = await A.page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return g.children.length;
 	});
 	h.check(afterUndo === box.count - 1, `the Undo button removed the box (${box.count} -> ${afterUndo})`);
@@ -83,14 +83,14 @@ h.run(async () => {
 	await A.page.waitForTimeout(600);
 	const afterRedo = await A.page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return g.children.length;
 	});
 	h.check(afterRedo === box.count, `and Redo brought it back (${afterRedo})`);
 
 	// ---- 4. Multi-select makes a TAP additive ----------------------------------
 	const two = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create box 1 1 1');
 		await new Promise((r) => setTimeout(r, 700));
 		w.commandsHandler.sceneCommand('/create box 1 1 1');
@@ -111,7 +111,7 @@ h.run(async () => {
 	const pb = await h.projectPoint(A.page, two.bPos);
 
 	// mode OFF: the second tap REPLACES
-	await A.page.evaluate(() => window.__stores.multiSelectMode.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.multiSelectMode.set(false));
 	await A.page.mouse.click(pa.x, pa.y);
 	await A.page.waitForTimeout(350);
 	await A.page.mouse.click(pb.x, pb.y);
@@ -124,8 +124,8 @@ h.run(async () => {
 
 	// mode ON: the second tap ADDS
 	await A.page.evaluate(() => {
-		window.__stores.objectActions.deselectObject();
-		window.__stores.multiSelectMode.set(true);
+		window.__tp.test.v1.objectActions.deselectObject();
+		window.__tp.test.v1.multiSelectMode.set(true);
 	});
 	await A.page.waitForTimeout(300);
 	await A.page.mouse.click(pa.x, pa.y);
@@ -155,7 +155,7 @@ h.run(async () => {
 	);
 
 	// with the mode OFF the same tap clears, which is the behaviour it must not break
-	await A.page.evaluate(() => window.__stores.multiSelectMode.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.multiSelectMode.set(false));
 	await A.page.mouse.click(emptySpot.x, emptySpot.y);
 	await A.page.waitForTimeout(450);
 	const cleared = await A.page.evaluate(SELECTION);
@@ -163,7 +163,7 @@ h.run(async () => {
 
 	// ---- 6. a drag on empty space BOXES, without Shift --------------------------
 	const boxed = await A.page.evaluate(async () => {
-		window.__stores.multiSelectMode.set(true);
+		window.__tp.test.v1.multiSelectMode.set(true);
 		await new Promise((r) => setTimeout(r, 250));
 		return true;
 	});
@@ -195,8 +195,8 @@ h.run(async () => {
 	await h.answerRestore(A);
 	const afterReload = await A.page.evaluate(() => {
 		let mode, tools;
-		window.__stores.multiSelectMode.subscribe((v) => (mode = v))();
-		window.__stores.touchTools.subscribe((v) => (tools = v))();
+		window.__tp.test.v1.multiSelectMode.subscribe((v) => (mode = v))();
+		window.__tp.test.v1.touchTools.subscribe((v) => (tools = v))();
 		return { mode, tools };
 	});
 	h.check(afterReload.mode === false, `multi-select does not survive a reload (${afterReload.mode})`);
@@ -218,11 +218,11 @@ h.run(async () => {
 		localStorage.setItem('hasSeenDisclaimer', 'true');
 	});
 	await P.goto(h.URL, { waitUntil: 'domcontentloaded' });
-	await P.waitForFunction(() => !!window.__stores?.moduleSDK, { timeout: 25000 });
+	await P.waitForFunction(() => !!window.__tp?.test.v1?.moduleSDK, { timeout: 25000 });
 	await P.waitForTimeout(1500);
 	const onPhone = await P.evaluate(() => {
 		let on;
-		window.__stores.touchTools.subscribe((v) => (on = v))();
+		window.__tp.test.v1.touchTools.subscribe((v) => (on = v))();
 		return { on, coarse: matchMedia('(pointer: coarse)').matches, present: !!document.querySelector('#touch-tools') };
 	});
 	h.check(onPhone.coarse, `the phone context really reports a coarse pointer (premise: ${onPhone.coarse})`);
@@ -237,7 +237,7 @@ h.run(async () => {
 	// OBJECT selection paths and stopped, but the mesh editor reads its own additive flag
 	// from the modifiers — so vertices, edges and faces ignored it entirely.
 	const elements = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create box 1 1 1');
 		await new Promise((r) => setTimeout(r, 900));
 		let g;
@@ -262,7 +262,7 @@ h.run(async () => {
 
 	const pickTwice = async (mode) => {
 		await A.page.evaluate(async (on) => {
-			const w = window.__stores;
+			const w = window.__tp?.test.v1;
 			w.multiSelectMode.set(on);
 			w.faceEdit.clearFaceSelection();
 			await new Promise((r) => setTimeout(r, 250));
@@ -273,14 +273,14 @@ h.run(async () => {
 		await A.page.waitForTimeout(500);
 		return A.page.evaluate(() => {
 			let tris;
-			window.__stores.faceEdit.faceEditSelectedTris.subscribe((v) => (tris = v))();
+			window.__tp.test.v1.faceEdit.faceEditSelectedTris.subscribe((v) => (tris = v))();
 			return (tris ?? []).length;
 		});
 	};
 
 	const withMode = await pickTwice(true);
 	const withoutMode = await pickTwice(false);
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
 	h.check(
 		withoutMode > 0,
 		`a plain face click selects something at all (premise: ${withoutMode} tris)`
@@ -294,7 +294,7 @@ h.run(async () => {
 	// Reported by the user: with Connect docked the cluster landed on the logo, because the
 	// docked `top` was written straight onto the element and overrode the stacked position.
 	const layout = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const rect = (sel) => {
 			const el = document.querySelector(sel);
 			if (!el) return null;
@@ -341,7 +341,7 @@ h.run(async () => {
 	// elements could only be picked one click at a time. The object marquee deliberately
 	// excludes a session, so this is its own branch and its own selector.
 	const boxSetup = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create box 2 2 2');
 		await new Promise((r) => setTimeout(r, 900));
 		let g;
@@ -376,7 +376,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(600);
 	const boxed2 = await A.page.evaluate(() => {
 		let tris;
-		window.__stores.faceEdit.faceEditSelectedTris.subscribe((v) => (tris = v))();
+		window.__tp.test.v1.faceEdit.faceEditSelectedTris.subscribe((v) => (tris = v))();
 		return (tris ?? []).length;
 	});
 	h.check(boxed2 > 2, `a Shift-drag box selected several FACES at once (${boxed2} tris)`);
@@ -386,7 +386,7 @@ h.run(async () => {
 
 	// the same gesture in VERTEX mode, which is a different module and a different pick
 	const vertBox = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.faceEdit.exitFaceEdit();
 		await new Promise((r) => setTimeout(r, 400));
 		w.objectActions.applySelectionSet([uuid]);
@@ -409,8 +409,8 @@ h.run(async () => {
 	await A.page.waitForTimeout(600);
 	const vertAfter = await A.page.evaluate(() => {
 		let size;
-		window.__stores.meshEdit.vertexSelectionSize.subscribe((v) => (size = v))();
-		window.__stores.meshEdit.exitEditMode();
+		window.__tp.test.v1.meshEdit.vertexSelectionSize.subscribe((v) => (size = v))();
+		window.__tp.test.v1.meshEdit.exitEditMode();
 		return size;
 	});
 	h.check(vertAfter > 1, `and box-selected several VERTICES (${vertAfter})`);
@@ -420,7 +420,7 @@ h.run(async () => {
 	// decision is a measurement now. And when it does stack, its button CENTRES line up
 	// with the bottom-left cluster (44px at a 16px inset vs these 48px).
 	const placement = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const read = () => {
 			const el = document.querySelector('#touch-tools');
 			if (!el) return null;
@@ -478,7 +478,7 @@ h.run(async () => {
 	// because their own `setAnchor` seats it. Move is the default armed op, so a boxed
 	// selection should come up ready to drag.
 	const gizmo = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.objectActions.applySelectionSet([uuid]);
 		w.faceEdit.enterFaceEdit(uuid);
 		await new Promise((r) => setTimeout(r, 700));
@@ -501,7 +501,7 @@ h.run(async () => {
 	await A.page.keyboard.up("Shift");
 	await A.page.waitForTimeout(700);
 	const seated = await A.page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let controls, tris;
 		w.TControls.subscribe((v) => (controls = v))();
 		w.faceEdit.faceEditSelectedTris.subscribe((v) => (tris = v))();
@@ -515,7 +515,7 @@ h.run(async () => {
 	// BOX returned zero, because `edgeKey` takes two welded VERTEX KEYS and it was being
 	// handed two positions, so every key it built matched nothing in the real-edge map.
 	const edgeBox = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.faceEdit.setFaceSubmode('edges');
 		await new Promise((r) => setTimeout(r, 500));
 		w.faceEdit.clearEdgeSelection();
@@ -538,8 +538,8 @@ h.run(async () => {
 	await A.page.waitForTimeout(700);
 	const edgesPicked = await A.page.evaluate(() => {
 		let sel;
-		window.__stores.faceEdit.edgeEditSelected.subscribe((v) => (sel = v))();
-		window.__stores.faceEdit.exitFaceEdit();
+		window.__tp.test.v1.faceEdit.edgeEditSelected.subscribe((v) => (sel = v))();
+		window.__tp.test.v1.faceEdit.exitFaceEdit();
 		return (sel ?? []).length;
 	});
 	h.check(edgesPicked > 1, `a box in EDGE mode selected several edges (${edgesPicked})`);
@@ -558,7 +558,7 @@ h.run(async () => {
 	// same two questions: is the description ONE flow (a non-flex block, or a flex cell with one
 	// item), and does it wrap as prose rather than one fragment per line?
 	const desc = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.settingsSection.set('explorer');
 		w.settingsOpen.set(true);
 		await new Promise((r) => setTimeout(r, 1800));

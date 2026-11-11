@@ -87,7 +87,7 @@ async function closeMenus(page) {
 /** a docked panel at the bottom, and its height (the inset a lift adds) */
 async function openDock(page) {
 	await page.evaluate(() => {
-		window.__stores.explorerClose.set(false);
+		window.__tp.test.v1.explorerClose.set(false);
 	});
 	await page.waitForTimeout(900);
 	return page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bottom-inset')) || 0);
@@ -176,18 +176,18 @@ h.run(async () => {
 			await cellMenu(P, 'Move (1)');
 			h.check((await menuRows(P)).find((r) => r.label === 'Lift corner buttons above docked panels')?.checked === true, T + 'I10: the row now reads checked');
 			await closeMenus(P);
-			await P.evaluate(() => window.__stores.settingsOpen.set(true));
+			await P.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 			await P.waitForTimeout(600);
 			// ui/Toggle is a <button aria-pressed>, not a checkbox
 			const row = await P.evaluate(() => ({ row: !!document.getElementById('row-corner-lift'), on: document.getElementById('corner-lift')?.getAttribute('aria-pressed') === 'true' }));
 			h.check(row.row && row.on === true, T + `I10: Settings ▸ Interface carries the same switch, in step (${JSON.stringify(row)})`);
 			await P.evaluate(() => {
-				window.__stores.settingsOpen.set(false);
-				window.__stores.hudStackLift.set(false);
+				window.__tp.test.v1.settingsOpen.set(false);
+				window.__tp.test.v1.hudStackLift.set(false);
 			});
 			await P.waitForTimeout(400);
 			h.check((await bottomGap(P, '#hud-stack-right')) === 16, T + 'I10 off again: back on the floor');
-			await P.evaluate(() => window.__stores.explorerClose.set(true));
+			await P.evaluate(() => window.__tp.test.v1.explorerClose.set(true));
 			await P.waitForTimeout(500);
 		}
 
@@ -251,8 +251,8 @@ h.run(async () => {
 			// the moved Explorer button still does its job from the corner of the screen
 			await P.locator('#hud-tr #explorer-slot').click();
 			await P.waitForTimeout(600);
-			h.check((await P.evaluate(() => { let v; window.__stores.explorerClose.subscribe((x) => (v = x))(); return v; })) === false, T + 'I9: the Explorer button works from the top-right group');
-			await P.evaluate(() => window.__stores.explorerClose.set(true));
+			h.check((await P.evaluate(() => { let v; window.__tp.test.v1.explorerClose.subscribe((x) => (v = x))(); return v; })) === false, T + 'I9: the Explorer button works from the top-right group');
+			await P.evaluate(() => window.__tp.test.v1.explorerClose.set(true));
 			// Customize lists the new sections
 			await P.locator('#toolbar-customize').click();
 			await P.waitForTimeout(400);
@@ -279,8 +279,8 @@ h.run(async () => {
 			}
 			const before = await stored(P);
 			const liveBefore = { tr: await topRight(P), left: await stackIds(P, 'left'), bar: await P.evaluate(() => [...document.querySelector('#controls-pill .hud-bar-row').children].map((el) => el.id || el.getAttribute('title'))) };
-			await P.evaluate(() => window.__stores.hudStackLift.set(true));
-			const saved = await P.evaluate(() => window.__stores.uiLayouts.saveLayout('Arranged'));
+			await P.evaluate(() => window.__tp.test.v1.hudStackLift.set(true));
+			const saved = await P.evaluate(() => window.__tp.test.v1.uiLayouts.saveLayout('Arranged'));
 			const rec8 = await P.evaluate(() => JSON.parse(localStorage.getItem('uiLayouts')).find((l) => l.name === 'Arranged'));
 			h.check(saved.ok && rec8?.v === 2 && !!rec8?.chrome?.desktop?.controlsLayout && !rec8?.chrome?.phone, T + `I8: a desktop save carries the desktop chrome profile only (${JSON.stringify(Object.keys(rec8?.chrome ?? {}))})`);
 			// wreck it: Reset toolbar, corner lift off
@@ -289,7 +289,7 @@ h.run(async () => {
 			await P.getByRole('menuitem', { name: 'Reset toolbar', exact: true }).click();
 			await P.waitForTimeout(300);
 			await closeMenus(P);
-			await P.evaluate(() => window.__stores.hudStackLift.set(false));
+			await P.evaluate(() => window.__tp.test.v1.hudStackLift.set(false));
 			await P.waitForTimeout(300);
 			// the default top right also holds the peers trigger, drawn only while someone is there to show — on a
 			// DEPLOYED build the cloud plugin's cross-scene presence (other people online anywhere) is enough
@@ -297,19 +297,19 @@ h.run(async () => {
 			// made this premise red on production only; the default ORDER is what is asserted.
 			const trReset = (await topRight(P)).filter((id) => id !== 'peers-trigger');
 			h.check((await stored(P)) === null && trReset.join() === 'notes-toggle,notif-bell', T + `premise: the toolbar is back to the default (${trReset.join()})`);
-			const ok = await P.evaluate((id) => window.__stores.uiLayouts.applyLayout(id), rec8.id);
+			const ok = await P.evaluate((id) => window.__tp.test.v1.uiLayouts.applyLayout(id), rec8.id);
 			await P.waitForTimeout(600);
 			const after = await stored(P);
 			h.check(ok === true && JSON.stringify(after) === JSON.stringify(before), T + 'I8: applying the layout restores the toolbar record exactly');
 			const liveAfter = { tr: await topRight(P), left: await stackIds(P, 'left'), bar: await P.evaluate(() => [...document.querySelector('#controls-pill .hud-bar-row').children].map((el) => el.id || el.getAttribute('title'))) };
 			h.check(JSON.stringify(liveAfter) === JSON.stringify(liveBefore), T + `I8: …and the live bar, corners and top-right group follow at once, no reload (${JSON.stringify(liveAfter)})`);
 			h.check((await P.evaluate(() => document.documentElement.classList.contains('hud-stacks-lifted'))) === true, T + 'I8: …and the corner-lift pref');
-			await P.evaluate(() => window.__stores.uiLayouts.layoutsMenuOpen.set(true));
+			await P.evaluate(() => window.__tp.test.v1.uiLayouts.layoutsMenuOpen.set(true));
 			await P.waitForTimeout(400);
 			const marks = await P.evaluate((id) => [...document.querySelectorAll(`[data-layout-id="${id}"] .wl-prof`)].map((el) => el.dataset.profile), rec8.id);
 			h.check(marks.join() === 'desktop', T + `I8: the Layouts list marks what the layout carries (${marks.join()})`);
 			await shot(P, 'i8-layouts-list-desktop');
-			await P.evaluate(() => window.__stores.uiLayouts.layoutsMenuOpen.set(false));
+			await P.evaluate(() => window.__tp.test.v1.uiLayouts.layoutsMenuOpen.set(false));
 			// a pre-42 layout (v1, no chrome) leaves the toolbar alone
 			await P.evaluate(() => {
 				const list = JSON.parse(localStorage.getItem('uiLayouts'));
@@ -322,11 +322,11 @@ h.run(async () => {
 			const pre = await stored(P);
 			const old = await P.evaluate(() => {
 				let list;
-				window.__stores.uiLayouts.uiLayouts.subscribe((v) => (list = v))();
+				window.__tp.test.v1.uiLayouts.uiLayouts.subscribe((v) => (list = v))();
 				return list.find((l) => l.id === 'lay-old1');
 			});
 			h.check(old?.v === 2 && JSON.stringify(old?.chrome) === '{}', T + `I8: a pre-42 layout migrates to v2 with no chrome (${JSON.stringify(old?.chrome)})`);
-			await P.evaluate(() => window.__stores.uiLayouts.applyLayout('lay-old1'));
+			await P.evaluate(() => window.__tp.test.v1.uiLayouts.applyLayout('lay-old1'));
 			await P.waitForTimeout(500);
 			h.check(JSON.stringify(await stored(P)) === JSON.stringify(pre), T + 'I8: …and applying it leaves the toolbar as it was');
 		}
@@ -404,7 +404,7 @@ h.run(async () => {
 				}));
 				h.check(live.touch.join() === 'touch-redo,touch-undo' && live.right.join() === 'chat-button,mic-button,touch-multiselect', T + `I9: ✓ applies by touch — the cluster and the corner draw it (${JSON.stringify(live)})`);
 				await tap(P.locator('#hud-stack-right #touch-multiselect'));
-				h.check((await P.evaluate(() => { let v; window.__stores.multiSelectMode.subscribe((x) => (v = x))(); return v; })) === true, T + 'I9: Multi-select still toggles from its new place');
+				h.check((await P.evaluate(() => { let v; window.__tp.test.v1.multiSelectMode.subscribe((x) => (v = x))(); return v; })) === true, T + 'I9: Multi-select still toggles from its new place');
 				await tap(P.locator('#hud-stack-right #touch-multiselect'));
 				await shot(P, `i9-touch-applied-${theme}`);
 			} else {
@@ -416,23 +416,23 @@ h.run(async () => {
 		if (theme === 'dark' && want('i8')) {
 			await closeMenus(P);
 			const rightBefore = await stackIds(P, 'right');
-			const deskSave = await P.evaluate(() => window.__stores.uiLayouts.saveLayout('Both'));
+			const deskSave = await P.evaluate(() => window.__tp.test.v1.uiLayouts.saveLayout('Both'));
 			const deskRec = await stored(P);
 			await P.setViewportSize({ width: 390, height: 896 });
 			await P.waitForTimeout(1000);
 			h.check(await P.evaluate(() => document.documentElement.classList.contains('phone-shell')), T + 'premise: folded, the phone shell takes over');
-			await P.evaluate(() => { window.__stores.phoneBar.setBar(['objects', 'chat', 'more']); window.__stores.phonePrefs.phoneGrabHandle.set(false); });
-			const phoneSave = await P.evaluate(() => window.__stores.uiLayouts.saveLayout('Both'));
+			await P.evaluate(() => { window.__tp.test.v1.phoneBar.setBar(['objects', 'chat', 'more']); window.__tp.test.v1.phonePrefs.phoneGrabHandle.set(false); });
+			const phoneSave = await P.evaluate(() => window.__tp.test.v1.uiLayouts.saveLayout('Both'));
 			const both = await P.evaluate(() => JSON.parse(localStorage.getItem('uiLayouts')).find((l) => l.name === 'Both'));
 			h.check(deskSave.ok && phoneSave.ok && phoneSave.updated && !!both?.chrome?.desktop && both?.chrome?.phone?.phoneBar === '["objects","chat","more"]' && both?.chrome?.phone?.phoneGrabHandle === '0', T + `I8: a save from the FOLDED phone adds the phone profile and keeps the desktop one (${JSON.stringify(both?.chrome)})`);
 			// change both, then apply from the folded phone
-			await P.evaluate(() => { window.__stores.phoneBar.setBar(['add', 'objects', 'explorer', 'more']); window.__stores.phonePrefs.phoneGrabHandle.set(true); });
+			await P.evaluate(() => { window.__tp.test.v1.phoneBar.setBar(['add', 'objects', 'explorer', 'more']); window.__tp.test.v1.phonePrefs.phoneGrabHandle.set(true); });
 			await P.evaluate(() => localStorage.setItem('controlsLayout', JSON.stringify({ order: ['move'], hidden: [], spacerIndex: 0 })));
-			await P.evaluate((id) => window.__stores.uiLayouts.applyLayout(id), both.id);
+			await P.evaluate((id) => window.__tp.test.v1.uiLayouts.applyLayout(id), both.id);
 			await P.waitForTimeout(600);
-			const phoneBar = await P.evaluate(() => { let v; window.__stores.phoneBar.phoneBar.subscribe((x) => (v = x))(); return v; });
+			const phoneBar = await P.evaluate(() => { let v; window.__tp.test.v1.phoneBar.phoneBar.subscribe((x) => (v = x))(); return v; });
 			h.check(phoneBar.join() === 'objects,chat,more', T + `I8: applying it brings the phone bar back (${phoneBar.join()})`);
-			const grab = await P.evaluate(() => { let v; window.__stores.phonePrefs.phoneGrabHandle.subscribe((x) => (v = x))(); return v; });
+			const grab = await P.evaluate(() => { let v; window.__tp.test.v1.phonePrefs.phoneGrabHandle.subscribe((x) => (v = x))(); return v; });
 			h.check(grab === false, T + `I8 (42-int): …and More's Show switches with it (Grab handle ${grab})`);
 			await shot(P, 'i8-folded-applied');
 			await P.setViewportSize({ width: 770, height: 850 });

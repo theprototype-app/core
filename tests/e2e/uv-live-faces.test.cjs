@@ -12,7 +12,7 @@ const h = require('./helpers.cjs');
 
 const openOnBox = async (page) => {
 	const uuid = await page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.children[g.children.length - 1];
@@ -33,7 +33,7 @@ const openOnBox = async (page) => {
  */
 const uvByTri = (page, uuid) =>
 	page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const geo = g.getObjectByProperty('uuid', uuid).geometry;
 		const uv = geo.attributes.uv;
@@ -57,7 +57,7 @@ h.run(async () => {
 
 	// ---------- the premise the user hit ----------
 	const layout = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.getObjectByProperty('uuid', uuid);
 		const uv = box.geometry.attributes.uv;
@@ -77,7 +77,7 @@ h.run(async () => {
 
 	// ---------- 2. face-scoped editing ----------
 	const scoped = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.getObjectByProperty('uuid', uuid);
 		// enter Edit Mesh and pick ONE face (the top), then turn the filter on
@@ -112,7 +112,7 @@ h.run(async () => {
 	// dragging inside the scope must move ONLY the picked face's triangles
 	const before = await uvByTri(A.page, uuid);
 	const dragged = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.getObjectByProperty('uuid', uuid);
 		const scopeTris = w.uvEditor.selectedFaceTris(uuid);
@@ -136,15 +136,15 @@ h.run(async () => {
 		`THE USER'S BUG: only the PICKED face's triangles moved — the other 5 sides are untouched (${outsideScope.length} strays)`
 	);
 	await A.page.evaluate(() => {
-		window.__stores.history.undo();
-		window.__stores.uvEditor.uvFaceFilter.set('all');
-		window.__stores.faceEdit.exitFaceEdit();
+		window.__tp.test.v1.history.undo();
+		window.__tp.test.v1.uvEditor.uvFaceFilter.set('all');
+		window.__tp.test.v1.faceEdit.exitFaceEdit();
 	});
 	await A.page.waitForTimeout(400);
 
 	// with the filter ON but nothing picked, the view falls back to every face
 	const noPick = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.uvEditor.uvFaceFilter.set('selection');
 		await new Promise((r) => setTimeout(r, 300));
 		const dbg = window.__uvDebug();
@@ -173,7 +173,7 @@ h.run(async () => {
 
 	// ---------- 1. the live paint backdrop ----------
 	const livePreview = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		document.getElementById('uv-tool-paint')?.click();
 		await new Promise((r) => setTimeout(r, 200));
 		const idle = window.__uvDebug();
@@ -205,7 +205,7 @@ h.run(async () => {
 
 	// the redraw is actually driven: the tick advances per dab
 	const ticks = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const read = () => new Promise((r) => w.uvEditor.uvPaintTick.subscribe((v) => r(v))());
 		const t0 = await read();
 		await w.uvEditor.beginPaintStroke(uuid, 0);
@@ -221,7 +221,7 @@ h.run(async () => {
 
 	// after an UNDO the cached canvas is stale — the backdrop must fall back
 	const afterUndo = await A.page.evaluate(async () => {
-		window.__stores.history.undo();
+		window.__tp.test.v1.history.undo();
 		await new Promise((r) => setTimeout(r, 700));
 		return window.__uvDebug().backdropIsLiveCanvas;
 	});

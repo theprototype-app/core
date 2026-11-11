@@ -18,14 +18,14 @@ async function look(page, pos, target) {
 	await page.evaluate(
 		([p, t]) => {
 			let cam, orbit;
-			window.__stores.editorCam.subscribe((v) => (cam = v))();
-			window.__stores.orbitControls.subscribe((v) => (orbit = v))();
+			window.__tp.test.v1.editorCam.subscribe((v) => (cam = v))();
+			window.__tp.test.v1.orbitControls.subscribe((v) => (orbit = v))();
 			cam.position.set(p[0], p[1], p[2]);
 			orbit?.target?.set(t[0], t[1], t[2]);
 			orbit?.update?.();
 			cam.lookAt(t[0], t[1], t[2]);
 			cam.updateMatrixWorld(true);
-			window.__stores.objectActions.deselectObject?.();
+			window.__tp.test.v1.objectActions.deselectObject?.();
 		},
 		[pos, target]
 	);
@@ -33,7 +33,7 @@ async function look(page, pos, target) {
 /** record every W2 ripple this page makes: [volumeUuid, x, y, z, radius, strength] */
 const spyRipples = (page) =>
 	page.evaluate(() => {
-		const wv = window.__stores.sim.waterVolumes;
+		const wv = window.__tp.test.v1.sim.waterVolumes;
 		window.__ripples = window.__ripples ?? [];
 		if (wv.__spied) return;
 		wv.__spied = true;
@@ -46,7 +46,7 @@ const spyRipples = (page) =>
 		};
 	});
 /** @param {any} page @param {string} uuid */
-const tankOf = (page, uuid) => page.evaluate((u) => window.__stores.sim.fluidDebug().find((t) => t.uuid === u) ?? null, uuid);
+const tankOf = (page, uuid) => page.evaluate((u) => window.__tp.test.v1.sim.fluidDebug().find((t) => t.uuid === u) ?? null, uuid);
 
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
@@ -58,7 +58,7 @@ h.run(async () => {
 	// the scene, made on A before B joins (B gets it through the handshake): a pool, two tanks
 	// standing in it (one pouring, one resting), and a tank on the ground beside a second pool
 	const ids = await A.page.evaluate(() => {
-		const st = window.__stores;
+		const st = window.__tp?.test.v1;
 		let g;
 		st.objectsGroup.subscribe((v) => (g = v))();
 		const last = () => g.children[g.children.length - 1];
@@ -82,7 +82,7 @@ h.run(async () => {
 		return { pool: pool.uuid, pour: pour.uuid, rest: rest.uuid, pool2: pool2.uuid, tip: tip.uuid };
 	});
 	const surface = await A.page.evaluate((u) => {
-		const v = window.__stores.sim.waterVolumes.list().find((x) => x.uuid === u);
+		const v = window.__tp.test.v1.sim.waterVolumes.list().find((x) => x.uuid === u);
 		v.object.updateMatrixWorld(true);
 		return v.object.localToWorld(v.object.position.clone().set(0, v.level, 0)).y;
 	}, ids.pool);
@@ -116,7 +116,7 @@ h.run(async () => {
 	for (let i = 1; i <= 20; i++) {
 		await A.page.evaluate(([u, a]) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const t = g.getObjectByProperty('uuid', u);
 			t.rotation.z = -a;
 			t.updateMatrixWorld(true);
@@ -137,7 +137,7 @@ h.run(async () => {
 	await A.page.evaluate(() => {
 		window.__sent = [];
 		let peer;
-		window.__stores.peers.subscribe((p) => (peer = p))();
+		window.__tp.test.v1.peers.subscribe((p) => (peer = p))();
 		for (const k of ['send', 'broadcast']) {
 			if (typeof peer[k] !== 'function' || peer['__w1' + k]) continue;
 			const orig = peer[k].bind(peer);
@@ -156,8 +156,8 @@ h.run(async () => {
 	const diagB = await B.page.evaluate((u) => ({
 		total: window.__ripples.length,
 		ids: [...new Set(window.__ripples.map((r) => r[0]))],
-		vols: window.__stores.sim.waterVolumes.list().map((v) => v.uuid),
-		spied: !!window.__stores.sim.waterVolumes.__spied,
+		vols: window.__tp.test.v1.sim.waterVolumes.list().map((v) => v.uuid),
+		spied: !!window.__tp.test.v1.sim.waterVolumes.__spied,
 		first: window.__ripples.slice(0, 2),
 		pool: u
 	}), ids.pool);

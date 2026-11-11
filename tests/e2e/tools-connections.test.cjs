@@ -98,8 +98,8 @@ h.run(async () => {
 	const before = await page.evaluate(() => localStorage.getItem('aiProviders'));
 
 	await page.evaluate(() => {
-		window.__stores.settingsSection.set('tools');
-		window.__stores.settingsOpen.set(true);
+		window.__tp.test.v1.settingsSection.set('tools');
+		window.__tp.test.v1.settingsOpen.set(true);
 	});
 	await page.waitForSelector('#settings-main [data-tool-section="chat"]', {
 		state: 'visible',
@@ -223,7 +223,7 @@ h.run(async () => {
 	);
 	// a broken key on the ACTIVE provider: ✗ and the dot turns red; a ComfyUI with no workflow: ✗
 	await page.evaluate((o) => {
-		const st = window.__stores;
+		const st = window.__tp?.test.v1;
 		st.aiProviders.updateAiProvider('p-good', { baseUrl: o + '/mock-bad/v1' });
 		st.meshProviders.addMeshProvider({
 			kind: 'comfyui',
@@ -247,7 +247,7 @@ h.run(async () => {
 	t = await runTest(comfyDom);
 	h.check(t.startsWith('✗') && /workflow/.test(t), `ComfyUI without a workflow: ✗ says so (${t})`);
 	await page.evaluate(
-		(o) => window.__stores.aiProviders.updateAiProvider('p-good', { baseUrl: o + '/mock-ai/v1' }),
+		(o) => window.__tp.test.v1.aiProviders.updateAiProvider('p-good', { baseUrl: o + '/mock-ai/v1' }),
 		origin
 	);
 
@@ -255,7 +255,7 @@ h.run(async () => {
 	await page.click('#tool-chat-p-good-enable');
 	await page.waitForTimeout(150);
 	let st = await page.evaluate(
-		`(() => ({ on: (${GET})(window.__stores.aiProviders.aiEnabled), ready: window.__stores.toolStatus.featureStatus('assistant').ready, row: document.querySelector('[data-tool-row="chat:p-good"]')?.getAttribute('data-tool-state') }))()`
+		`(() => ({ on: (${GET})(window.__tp.test.v1.aiProviders.aiEnabled), ready: window.__tp.test.v1.toolStatus.featureStatus('assistant').ready, row: document.querySelector('[data-tool-row="chat:p-good"]')?.getAttribute('data-tool-state') }))()`
 	);
 	h.check(
 		st.on === false && st.ready === false && st.row === 'off',
@@ -263,10 +263,10 @@ h.run(async () => {
 	);
 
 	// ---- 5. T5: a missing tool explains itself and opens its row --------------------------------
-	await page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await page.waitForTimeout(300);
 	await page.evaluate(() =>
-		window.__stores.viewportMenu.set({ x: 260, y: 160, point: [0, 0, 0], only: 'add' })
+		window.__tp.test.v1.viewportMenu.set({ x: 260, y: 160, point: [0, 0, 0], only: 'add' })
 	);
 	const gen = page
 		.locator('[role="menu"] [role="menuitem"]', { hasText: 'Generate 3D model' })
@@ -299,13 +299,13 @@ h.run(async () => {
 		return a.top >= b.top - 1 && a.bottom <= b.bottom + 1;
 	});
 	h.check(meshInView, '…and opens Tools & connections at the Mesh provider row');
-	await page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await page.waitForTimeout(300);
 	// 86-fix N1: the AI button always opens the window; the quick prompt bar is the one that explains
 	await page.locator('#ai-hud-button').first().click();
 	await page.waitForSelector('#ai-assistant-window #ai-welcome', { state: 'visible', timeout: 10000 });
 	await page.evaluate(() => {
-		window.__stores.aiAssistantHidden.set('hidden');
+		window.__tp.test.v1.aiAssistantHidden.set('hidden');
 		document.activeElement?.blur?.();
 	});
 	await page.keyboard.press('Backquote');
@@ -324,23 +324,23 @@ h.run(async () => {
 	);
 
 	// ---- 6. the assistant reads the same status -------------------------------------------------
-	const prompt = await page.evaluate(() => window.__stores.aiTools.buildSystemPrompt());
+	const prompt = await page.evaluate(() => window.__tp.test.v1.aiTools.buildSystemPrompt());
 	h.check(
 		/Not set up on this device: [^\n]*Generate 3D model \(needs a Mesh provider\)/.test(prompt),
 		'the system prompt lists Generate 3D model as not set up'
 	);
 	await page.evaluate(() => {
-		window.__stores.meshProviders.setMeshActiveProvider('m-meshy');
-		window.__stores.meshProviders.setMeshGenEnabled(true);
+		window.__tp.test.v1.meshProviders.setMeshActiveProvider('m-meshy');
+		window.__tp.test.v1.meshProviders.setMeshGenEnabled(true);
 	});
-	const prompt2 = await page.evaluate(() => window.__stores.aiTools.buildSystemPrompt());
+	const prompt2 = await page.evaluate(() => window.__tp.test.v1.aiTools.buildSystemPrompt());
 	h.check(
 		!/Generate 3D model \(needs/.test(prompt2) && /generate_mesh/.test(prompt2),
 		'with Meshy enabled the line is gone and generate_mesh is offered'
 	);
 
 	// ---- 7. axe: serious / critical only ---------------------------------------------------------
-	await page.evaluate(() => window.__stores.settingsSection.set('tools'));
+	await page.evaluate(() => window.__tp.test.v1.settingsSection.set('tools'));
 	await page.waitForTimeout(400);
 	const res = await new AxeBuilder({ page })
 		.include('dialog.settings-dialog')
@@ -375,7 +375,7 @@ h.run(async () => {
 	// ---- 59-int: Edit in Blender asks the Desktop tools row (T5) --------------------------------
 	await page.click('#tool-desktop-blender-enable');
 	const gate = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		const o = new s.THREE.Mesh(new s.THREE.BoxGeometry(1, 1, 1), new s.THREE.MeshStandardMaterial());
@@ -398,7 +398,7 @@ h.run(async () => {
 	// ---- 59-int: the Agents row makes the invite link + the MCP command -------------------------
 	await page.click('#tool-agents-session-configure');
 	await page.waitForSelector('#invite-sheet', { timeout: 10000 });
-	h.check((await page.evaluate(() => new Promise((r) => window.__stores.settingsOpen.subscribe((v) => r(v))()))) === false, 'Set up leaves Settings for the invite sheet');
+	h.check((await page.evaluate(() => new Promise((r) => window.__tp.test.v1.settingsOpen.subscribe((v) => r(v))()))) === false, 'Set up leaves Settings for the invite sheet');
 	await page.click('#invite-create');
 	await page.waitForSelector('#invite-mcp', { timeout: 10000 });
 	h.check(/^claude mcp add theprototype -- npx -y @theprototype\/agent mcp /.test(await page.locator('#invite-mcp').inputValue()), 'the MCP setup command is ready to copy');

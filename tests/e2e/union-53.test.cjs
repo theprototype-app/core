@@ -14,7 +14,7 @@ const { AxeBuilder } = require('@axe-core/playwright');
 /** @param {any} page @param {string} key */
 async function openSettings(page, key) {
 	await page.evaluate((k) => {
-		const s = /** @type {any} */ (window).__stores;
+		const s = /** @type {any} */ (window).__tp?.test.v1;
 		s.settingsOpen.set(false);
 		s.settingsSection.set(k);
 		s.settingsOpen.set(true);
@@ -23,7 +23,7 @@ async function openSettings(page, key) {
 	await page.waitForTimeout(300);
 }
 /** @param {any} page */
-const closeSettings = (page) => page.evaluate(() => /** @type {any} */ (window).__stores.settingsOpen.set(false));
+const closeSettings = (page) => page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.settingsOpen.set(false));
 /** @param {any} page */
 const themeNow = (page) => page.evaluate(() => document.documentElement.dataset.theme || '');
 /** @param {any} page */
@@ -43,7 +43,7 @@ h.run(async () => {
 	await h.answerRestore(P).catch(() => {});
 
 	// ---- U1: the High contrast switch in Settings ▸ Accessibility ------------------------------------------------
-	await page.evaluate(() => /** @type {any} */ (window).__stores.themes.theme.set('light'));
+	await page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.themes.theme.set('light'));
 	await page.waitForTimeout(200);
 	h.check((await themeNow(page)) === 'light', `premise: the page starts in Light (${await themeNow(page)})`);
 	await openSettings(page, 'accessibility');
@@ -64,14 +64,14 @@ h.run(async () => {
 		h.check((await themeNow(page)) === 'light', `U1: off goes back to the theme that was on before (${await themeNow(page)})`);
 		await page.click('#high-contrast');
 		await page.waitForTimeout(200);
-		await page.evaluate(() => /** @type {any} */ (window).__stores.settingsReset.resetCategory('accessibility'));
+		await page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.settingsReset.resetCategory('accessibility'));
 		await page.waitForTimeout(200);
 		h.check((await themeNow(page)) === 'dark', `U1: resetting Accessibility turns High contrast off (${await themeNow(page)})`);
 	}
 	await closeSettings(page);
 
 	// ---- U2: the HC ring is the focus TOKENS -------------------------------------------------------------------
-	await page.evaluate(() => /** @type {any} */ (window).__stores.themes.theme.set('contrast'));
+	await page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.themes.theme.set('contrast'));
 	await page.waitForTimeout(300);
 	await page.mouse.click(5, 360); // the 3D view, then the keyboard: a real focus-visible ring
 	await page.keyboard.press('Escape');
@@ -89,7 +89,7 @@ h.run(async () => {
 	const r1 = await ring(page);
 	h.check(Math.abs(r1.width - 5) < 0.1, `U2: the HC ring follows --focus-ring-width (5px -> ${r1.width}; COUNTERFACTUAL: a hard-coded 2px)`);
 	await page.evaluate(() => document.documentElement.style.removeProperty('--focus-ring-width'));
-	await page.evaluate(() => /** @type {any} */ (window).__stores.uiScale.uiScale.set(150));
+	await page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.uiScale.uiScale.set(150));
 	await page.waitForTimeout(400);
 	const r2 = await ring(page);
 	h.check(Math.abs(r2.width - 3) < 0.15, `U2: at 150 % UI scale the HC ring is 1.5x (${r2.width}px)`);
@@ -110,7 +110,7 @@ h.run(async () => {
 	const res = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice']).analyze();
 	const bad = res.violations.filter((/** @type {any} */ v) => v.impact === 'serious' || v.impact === 'critical');
 	h.check(bad.length === 0, `U3: the editor shell at 150 % in High contrast has no serious/critical axe violation (${bad.map((/** @type {any} */ v) => `${v.id}x${v.nodes.length}`).join(', ') || 'none'})`);
-	await page.evaluate(() => /** @type {any} */ (window).__stores.uiScale.uiScale.set(100));
+	await page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.uiScale.uiScale.set(100));
 
 	await h.finish(browser);
 });

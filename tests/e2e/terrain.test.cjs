@@ -6,14 +6,14 @@ const terrainInfo = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					let t = null;
 					g?.traverse((o) => {
 						if (o.isMesh && o.name === 'Terrain') t = o;
 					});
 					if (!t) return resolve(null);
 					t.geometry.computeBoundingBox();
-					const size = t.geometry.boundingBox.getSize(new window.__stores.THREE.Vector3());
+					const size = t.geometry.boundingBox.getSize(new window.__tp.test.v1.THREE.Vector3());
 					resolve({
 						uuid: t.uuid,
 						tris: t.geometry.index ? t.geometry.index.count / 3 : t.geometry.attributes.position.count / 3,
@@ -34,7 +34,7 @@ h.run(async () => {
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);
 
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create Terrain 24 48'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create Terrain 24 48'));
 	await B.page.waitForTimeout(1200);
 
 	const a = await terrainInfo(A.page);
@@ -50,12 +50,12 @@ h.run(async () => {
 	h.check(b && b.tris === a.tris && b.terrainFlag === true, 'B terrain matches geometry + flag');
 
 	// segments clamp: a hand-typed over-cap count is limited to 48
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create Terrain 30 100'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create Terrain 30 100'));
 	await A.page.waitForTimeout(400);
 	const clamped = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					let max = 0;
 					g?.traverse((o) => {
 						if (o.isMesh && o.name === 'Terrain') {

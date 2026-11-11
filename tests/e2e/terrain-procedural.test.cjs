@@ -53,7 +53,7 @@ const terrainInfo = (page) =>
 	page.evaluate(
 		([hashSrc, fieldSrc]) =>
 			new Promise((resolve) => {
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const mesh = g?.children.find((c) => c.userData?.terrain);
 					if (!mesh) return resolve(null);
 					const hashOf = eval(hashSrc);
@@ -176,8 +176,8 @@ h.run(async () => {
 	// real vertices, so before this phase a Terrain resolved to NOTHING and had
 	// no Geometry section at all.
 	const resolution = await A.page.evaluate(() => {
-		const ge = window.__stores.geometryEdit;
-		const THREE = window.__stores.THREE;
+		const ge = window.__tp.test.v1.geometryEdit;
+		const THREE = window.__tp.test.v1.THREE;
 		const old = new THREE.PlaneGeometry(24, 24, 48, 48);
 		old.rotateX(-Math.PI / 2);
 		const baked = new THREE.BufferGeometry().copy(old);
@@ -211,14 +211,14 @@ h.run(async () => {
 	);
 
 	// ---- amplitude 0 is byte-identical to the flat plane -------------------
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create Terrain 24 48'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create Terrain 24 48'));
 	await A.page.waitForTimeout(900);
 	const flat = await terrainInfo(A.page);
 	h.check(!!flat && flat.gtype === 'Terrain', 'a fresh /create Terrain is STAMPED with Terrain params');
 	h.check(flat.params?.amplitude === 0, 'it starts FLAT (amplitude 0) — nothing about the old behaviour changed');
 	const flatRef = await A.page.evaluate(
 		([hashSrc]) => {
-			const THREE = window.__stores.THREE;
+			const THREE = window.__tp.test.v1.THREE;
 			const old = new THREE.PlaneGeometry(24, 24, 48, 48);
 			old.rotateX(-Math.PI / 2);
 			return { hash: eval(hashSrc)(old.attributes.position), verts: old.attributes.position.count };
@@ -233,7 +233,7 @@ h.run(async () => {
 	// ---- a noise edit: params on the wire, geometry rebuilt per peer -------
 	const wire = await A.page.evaluate(
 		async ([uuid]) => {
-			const peer = await new Promise((r) => window.__stores.peers.subscribe((p) => r(p))());
+			const peer = await new Promise((r) => window.__tp.test.v1.peers.subscribe((p) => r(p))());
 			/** @type {any[]} */
 			const seen = [];
 			const send = peer.send.bind(peer); // PASS THROUGH: a dropping spy makes
@@ -245,7 +245,7 @@ h.run(async () => {
 				);
 				return send(m);
 			};
-			const ok = window.__stores.geometryEdit.applyGeometry(uuid, {
+			const ok = window.__tp.test.v1.geometryEdit.applyGeometry(uuid, {
 				amplitude: 6,
 				seed: 42,
 				frequency: 0.08,
@@ -281,7 +281,7 @@ h.run(async () => {
 	);
 
 	// a different seed is a different world, and both peers still agree
-	await A.page.evaluate((uuid) => window.__stores.geometryEdit.applyGeometry(uuid, { seed: 1234 }), flat.uuid);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.geometryEdit.applyGeometry(uuid, { seed: 1234 }), flat.uuid);
 	await A.page.waitForTimeout(500);
 	const reseeded = await terrainInfo(A.page);
 	h.check(reseeded.hash !== hilly.hash, 'changing the seed changes the terrain');
@@ -298,7 +298,7 @@ h.run(async () => {
 	// second half of this measures rather than asserts from memory.
 	const counter = await A.page.evaluate(
 		([uuid, hashSrc]) => {
-			const ge = window.__stores.geometryEdit;
+			const ge = window.__tp.test.v1.geometryEdit;
 			const hashOf = eval(hashSrc);
 			const spec = ge.GEOMETRY_PARAMS.Terrain;
 			const params = { ...spec.params.reduce((a, p) => ({ ...a, [p.key]: p.def }), {}), amplitude: 6, seed: 42 };
@@ -352,7 +352,7 @@ h.run(async () => {
 
 	// ---- tiling: one field, offsets as PARAMS, so the seam matches ---------
 	const tiling = await A.page.evaluate(() => {
-		const ge = window.__stores.geometryEdit;
+		const ge = window.__tp.test.v1.geometryEdit;
 		const base = { size: 24, segments: 24, seed: 77, amplitude: 8, frequency: 0.05, octaves: 4, warp: 0, falloff: 'flat', offsetX: 0, offsetZ: 0, ridged: false };
 		const left = ge.buildGeometry('Terrain', base);
 		const right = ge.buildGeometry('Terrain', { ...base, offsetX: 24 });
@@ -389,7 +389,7 @@ h.run(async () => {
 
 	// the segments cap is load-bearing (the 45k live-preview budget), not cosmetic
 	const capped = await A.page.evaluate(() => {
-		const geo = window.__stores.geometryEdit.buildGeometry('Terrain', { size: 24, segments: 400, amplitude: 3 });
+		const geo = window.__tp.test.v1.geometryEdit.buildGeometry('Terrain', { size: 24, segments: 400, amplitude: 3 });
 		return { verts: geo.attributes.position.count, floats: geo.attributes.position.count * 3 };
 	});
 	h.check(capped.verts === 49 * 49, `segments clamp at 48 whatever is asked for (${capped.verts} vertices)`);
@@ -399,7 +399,7 @@ h.run(async () => {
 	// NO children, so the flag has to be set before the panel first mounts it
 	await A.page.evaluate((uuid) => {
 		localStorage.setItem('inspector:sec:Geometry', 'open');
-		window.__stores.objectActions.selectObject(uuid, true);
+		window.__tp.test.v1.objectActions.selectObject(uuid, true);
 	}, flat.uuid);
 	// WAIT ON THE PANEL, never on a clock: a fixed sleep here asserts the scheduler,
 	// and on a loaded box (this suite after another) the section legitimately takes
@@ -424,9 +424,9 @@ h.run(async () => {
 	// PIN the panel first: the point of the check below is that the lock appears
 	// while the panel is OPEN, with no reselect. (exitSculpt() deselects, which
 	// closes an unpinned panel — so an unpinned flow could never show this.)
-	await A.page.evaluate(() => window.__stores.inspectorPinned?.set?.(true));
+	await A.page.evaluate(() => window.__tp.test.v1.inspectorPinned?.set?.(true));
 	const stroke = await A.page.evaluate((uuid) => {
-		const ts = window.__stores.terrainSculpt;
+		const ts = window.__tp.test.v1.terrainSculpt;
 		const ok = ts.enterSculpt(uuid);
 		ts.beginStroke(uuid);
 		for (let i = 0; i < 10; i++) ts.applyBrushAt(uuid, 0, 0, 'raise', 4, 1, 0.05);
@@ -456,8 +456,8 @@ h.run(async () => {
 	// and the same after the natural flow — leave sculpt (which deselects) and
 	// click the terrain again
 	await A.page.evaluate((uuid) => {
-		window.__stores.terrainSculpt.exitSculpt();
-		window.__stores.objectActions.selectObject(uuid, true);
+		window.__tp.test.v1.terrainSculpt.exitSculpt();
+		window.__tp.test.v1.objectActions.selectObject(uuid, true);
 	}, flat.uuid);
 	await h.eventually(
 		inspectorDom,
@@ -543,7 +543,7 @@ h.run(async () => {
 	);
 	const rebuilt = await C.page.evaluate(
 		([params, hashSrc]) => {
-			const geo = window.__stores.geometryEdit.buildGeometry('Terrain', params);
+			const geo = window.__tp.test.v1.geometryEdit.buildGeometry('Terrain', params);
 			return geo ? eval(hashSrc)(geo.attributes.position) : 0;
 		},
 		[arrived?.params ?? late.params, HASH_FN]
@@ -553,7 +553,7 @@ h.run(async () => {
 		`and rebuilding from those params on C reproduces A's terrain bit for bit (${rebuilt} vs ${late.hash})`
 	);
 	const cEdit = await C.page.evaluate(
-		(uuid) => window.__stores.geometryEdit.applyGeometry(uuid, { amplitude: 12 }),
+		(uuid) => window.__tp.test.v1.geometryEdit.applyGeometry(uuid, { amplitude: 12 }),
 		late.uuid
 	);
 	h.check(cEdit, 'the late joiner can edit it too (the params are not a one-way stamp)');

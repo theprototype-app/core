@@ -18,11 +18,11 @@ async function axeBad(page, include) {
 }
 /** @param {any} page */
 const tabsOf = (page) =>
-	page.evaluate(() => new Promise((r) => /** @type {any} */ (window).__stores.codeWorkspace.codeTabs.subscribe((/** @type {any} */ v) => r(JSON.parse(JSON.stringify(v))))()));
+	page.evaluate(() => new Promise((r) => /** @type {any} */ (window).__tp.test.v1.codeWorkspace.codeTabs.subscribe((/** @type {any} */ v) => r(JSON.parse(JSON.stringify(v))))()));
 /** @param {any} page @param {string} id */
 const tabCode = async (page, id) => (/** @type {any[]} */ (await tabsOf(page))).find((t) => t.nodeId === id)?.code ?? null;
 /** @param {any} page @param {string} nodeId */
-const openNodeTab = (page, nodeId) => page.evaluate((nodeId) => /** @type {any} */ (window).__stores.codeWorkspace.openCode({ source: 'script', ref: { nodeId } }), nodeId);
+const openNodeTab = (page, nodeId) => page.evaluate((nodeId) => /** @type {any} */ (window).__tp.test.v1.codeWorkspace.openCode({ source: 'script', ref: { nodeId } }), nodeId);
 /** the shared editor's pane for node `id` in `page` @param {any} page @param {string} id */
 async function pane(page, id) {
 	const t = (/** @type {any[]} */ (await tabsOf(page))).find((t) => t.nodeId === id);
@@ -51,14 +51,14 @@ h.run(async () => {
 	await h.connect(B, A);
 
 	await A.page.evaluate(async (code) => {
-		const s = /** @type {any} */ (window).__stores;
+		const s = /** @type {any} */ (window).__tp?.test.v1;
 		const node = { id: 'u50', type: 'script', position: { x: 0, y: 0 }, data: { type: 'script', code }, class: 'w-[150px]' };
 		s.flowNodes.update((/** @type {any[]} */ n) => [...n, node]);
 		const peer = await new Promise((r) => s.peers.subscribe(r)());
 		/** @type {any} */ (peer).send({ type: 'nodecreate', node });
 	}, START);
 	await h.eventually(
-		() => B.page.evaluate(() => new Promise((r) => /** @type {any} */ (window).__stores.flowGraphs.subscribe((/** @type {any} */ all) => r(Object.values(all).some((g) => /** @type {any} */ (g).nodes.some((/** @type {any} */ n) => n.id === 'u50'))))())),
+		() => B.page.evaluate(() => new Promise((r) => /** @type {any} */ (window).__tp.test.v1.flowGraphs.subscribe((/** @type {any} */ all) => r(Object.values(all).some((g) => /** @type {any} */ (g).nodes.some((/** @type {any} */ n) => n.id === 'u50'))))())),
 		(v) => v === true,
 		'premise: the Script node reached B'
 	);
@@ -96,7 +96,7 @@ h.run(async () => {
 
 	// ---- U2: High contrast + UI scale reach the popup; axe on the popup ---------------------------------------------
 	await A.page.evaluate(() => {
-		const s = /** @type {any} */ (window).__stores;
+		const s = /** @type {any} */ (window).__tp?.test.v1;
 		s.themes.theme.set('contrast');
 		s.uiScale.uiScale.set(150);
 	});
@@ -120,7 +120,7 @@ h.run(async () => {
 	const badPop = await axeBad(pop, '#code-ws-popped');
 	h.check(badPop.length === 0, `U2: the popped-out editor at 150 % in High contrast has no serious/critical axe violation (${badPop.join(', ') || 'none'})`);
 	await A.page.evaluate(() => {
-		const s = /** @type {any} */ (window).__stores;
+		const s = /** @type {any} */ (window).__tp?.test.v1;
 		s.themes.theme.set('dark');
 		s.uiScale.uiScale.set(100);
 	});

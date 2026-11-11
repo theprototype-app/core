@@ -9,7 +9,7 @@ const h = require('./helpers.cjs');
 /** a selected box with a real uv attribute, UV editor open */
 const openOnBox = async (page) => {
 	const uuid = await page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.children[g.children.length - 1];
@@ -27,7 +27,7 @@ const openOnBox = async (page) => {
 const mapState = (page, uuid, slot = 0) =>
 	page.evaluate(
 		async ({ uuid, slot }) => {
-			const w = window.__stores;
+			const w = window.__tp?.test.v1;
 			const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 			const o = g.getObjectByProperty('uuid', uuid);
 			if (!o) return null;
@@ -40,7 +40,7 @@ const mapState = (page, uuid, slot = 0) =>
 	);
 
 const undoDepth = (page) =>
-	page.evaluate(() => new Promise((r) => window.__stores.history.undoStack.subscribe((v) => r(v.length))()));
+	page.evaluate(() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((v) => r(v.length))()));
 
 /** paint a horizontal stroke across UV space at height `v`, through the lib.
  * `v` matters: two strokes at the SAME height cover each other exactly, which
@@ -48,7 +48,7 @@ const undoDepth = (page) =>
 const paintStroke = (page, uuid, slot, color, size, v = 0.5) =>
 	page.evaluate(
 		async ({ uuid, slot, color, size, v }) => {
-			const w = window.__stores;
+			const w = window.__tp?.test.v1;
 			const opened = await w.uvEditor.beginPaintStroke(uuid, slot);
 			if (!opened) return { opened: false };
 			for (let i = 0; i <= 10; i++) w.uvEditor.paintMove(0.1 + i * 0.08, v, color, size);
@@ -97,7 +97,7 @@ h.run(async () => {
 	const entry = await A.page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.history.undoStack.subscribe((v) => {
+				window.__tp.test.v1.history.undoStack.subscribe((v) => {
 					const e = v[v.length - 1];
 					r({ kind: e?.kind, param: e?.param });
 				})()
@@ -110,7 +110,7 @@ h.run(async () => {
 
 	// the paint is really IN the image: decode it and look for the brush colour
 	const pixels = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const o = g.getObjectByProperty('uuid', uuid);
 		const url = o.material.userData.mapDataUrl;
@@ -138,11 +138,11 @@ h.run(async () => {
 	h.check(pixels.whiteish > pixels.reddish, 'the rest of the texture stays the white base, not a full repaint');
 
 	// ---------- undo restores the previous texture (here: none) ----------
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(600);
 	const undone = await mapState(A.page, uuid);
 	h.check(!undone.hasUrl && !undone.hasMap, 'ONE undo removes the whole stroke (back to no texture)');
-	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 	await A.page.waitForTimeout(600);
 	const redone = await mapState(A.page, uuid);
 	h.check(redone.hasUrl, 'redo puts the painted texture back');
@@ -152,7 +152,7 @@ h.run(async () => {
 	await paintStroke(A.page, uuid, 0, '#0000ff', 40, 0.25); // its OWN row
 	await A.page.waitForTimeout(800);
 	const twoColours = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const o = g.getObjectByProperty('uuid', uuid);
 		const img = await new Promise((res, rej) => {
@@ -217,7 +217,7 @@ h.run(async () => {
 
 	// watch B mid-stroke: it must be drawing the live segments before any commit
 	const live = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		await w.uvEditor.beginPaintStroke(uuid, 0);
 		for (let i = 0; i <= 6; i++) {
 			w.uvEditor.paintMove(0.15 + i * 0.1, 0.35, '#00cc00', 48);
@@ -227,14 +227,14 @@ h.run(async () => {
 	}, netUuid);
 	h.check(live, 'A streamed a stroke without committing it');
 	await h.eventually(
-		() => B.page.evaluate(() => window.__stores.uvEditor.liveStrokeCount()),
+		() => B.page.evaluate(() => window.__tp.test.v1.uvEditor.liveStrokeCount()),
 		(n) => n > 0,
 		'THE WIRE: B is tracking A’s live stroke before the commit',
 		15000
 	);
 	await A.page.evaluate((uuid) => {
 		void uuid;
-		window.__stores.uvEditor.endPaintStroke('#00cc00', 48);
+		window.__tp.test.v1.uvEditor.endPaintStroke('#00cc00', 48);
 	}, netUuid);
 	await h.eventually(
 		() => mapState(B.page, netUuid),
@@ -243,7 +243,7 @@ h.run(async () => {
 		25000
 	);
 	await h.eventually(
-		() => B.page.evaluate(() => window.__stores.uvEditor.liveStrokeCount()),
+		() => B.page.evaluate(() => window.__tp.test.v1.uvEditor.liveStrokeCount()),
 		(n) => n === 0,
 		'the uvpaintend message clears B’s live-stroke entry',
 		15000
@@ -251,7 +251,7 @@ h.run(async () => {
 
 	// a peer that vanishes mid-stroke must not leak a live entry forever
 	const swept = await B.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.uvEditor.applyUvPaint({
 			id: 'ghost-stroke',
 			uuid: 'nope',

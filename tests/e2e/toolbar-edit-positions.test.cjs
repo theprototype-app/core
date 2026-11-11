@@ -170,7 +170,7 @@ h.run(async () => {
 		await shot(P, `g1-${theme}-desktop-applied`, { x: 0, y: 700, width: 1440, height: 200 });
 		const barNow = await P.evaluate(() => [...document.querySelector('#controls-pill .hud-bar-row').children].map((el) => el.querySelector('#play-button') ? '__spacer' : el.id || el.getAttribute('title')));
 		await P.reload({ waitUntil: 'domcontentloaded' });
-		await P.waitForFunction(() => window.__stores && !!window.__stores.moduleSDK, { timeout: 30000 });
+		await P.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.moduleSDK, { timeout: 30000 });
 		await P.waitForTimeout(1500);
 		const barAfter = await P.evaluate(() => [...document.querySelector('#controls-pill .hud-bar-row').children].map((el) => el.querySelector('#play-button') ? '__spacer' : el.id || el.getAttribute('title')));
 		h.check(barAfter.join() === barNow.join() && barAfter[0] === '__spacer', T + `the applied bar survives a reload (${barAfter.join(',')})`);

@@ -25,7 +25,7 @@ const TOOLS = ['undo_last', 'set_pivot', 'create_pivot', 'add_image'];
 
 const read = (page, expr) =>
 	page.evaluate(
-		(e) => new Promise((r) => e.split('.').reduce((o, k) => o[k], window.__stores).subscribe((v) => r(JSON.parse(JSON.stringify(v ?? null))))()),
+		(e) => new Promise((r) => e.split('.').reduce((o, k) => o[k], window.__tp?.test.v1).subscribe((v) => r(JSON.parse(JSON.stringify(v ?? null))))()),
 		expr
 	);
 
@@ -33,7 +33,7 @@ const read = (page, expr) =>
 const onHost = (page, uuid) =>
 	page.evaluate((u) => {
 		/** @type {any} */ let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		const o = g?.getObjectByProperty('uuid', u);
 		if (!o) return null;
 		o.updateMatrixWorld(true);
@@ -54,7 +54,7 @@ const onHost = (page, uuid) =>
 /** does the host's library hold this file, unhidden? @param {any} page @param {string} hash */
 const inLibrary = (page, hash) =>
 	page.evaluate(
-		(x) => new Promise((r) => window.__stores.explorer.explorerItems.subscribe((items) => r(items.some((i) => i.hash === x)))()),
+		(x) => new Promise((r) => window.__tp.test.v1.explorer.explorerItems.subscribe((items) => r(items.some((i) => i.hash === x)))()),
 		hash
 	);
 
@@ -103,7 +103,7 @@ h.run(async () => {
 		const tools = (await B.client.listTools()).tools;
 		h.check(TOOLS.every((n) => tools.some((t) => t.name === n)), '1. the four tools are listed');
 		const hostSchema = await A.page.evaluate(() => {
-			const t = window.__stores.aiTools.getAiTools().find((x) => (x.function || x).name === 'add_image');
+			const t = window.__tp.test.v1.aiTools.getAiTools().find((x) => (x.function || x).name === 'add_image');
 			return JSON.stringify((t.function || t).parameters);
 		});
 		h.check(JSON.stringify(tools.find((t) => t.name === 'add_image')?.inputSchema) === hostSchema, '1. add_image schema = the host registry, verbatim');
@@ -186,11 +186,11 @@ h.run(async () => {
 		const reachable = publicName && (await A.page.evaluate((u) => fetch(u, { mode: 'no-cors' }).then(() => true, () => false), blockedUrl));
 		if (!publicName) console.log('   (no CORS row skipped: served from ' + new URL(BASE).hostname + ', a private name)');
 		await A.page.route('https://html.example.test/**', (route) => route.fulfill({ status: 200, headers: { 'access-control-allow-origin': '*', 'content-type': 'image/png' }, body: '<!doctype html><html>log in</html>' }));
-		const exec = (tool, args) => A.page.evaluate(([t, a]) => window.__stores.aiTools.executeAiTool(t, a), [tool, args]);
+		const exec = (tool, args) => A.page.evaluate(([t, a]) => window.__tp.test.v1.aiTools.executeAiTool(t, a), [tool, args]);
 		const fromUrl = await exec('add_image', { url: 'https://images.example.test/swatch.jpg?token=SECRET', name: 'fetched', licence: 'CC0' });
 		h.check(/\.webp$/.test(fromUrl.name || ''), 'a URL: fetched and re-encoded: ' + short(fromUrl));
 		const held = await A.page.evaluate(async (hash) => {
-			const ex = window.__stores.explorer;
+			const ex = window.__tp.test.v1.explorer;
 			const item = ex.itemByHash(hash);
 			const blob = await ex.itemBlob(item.id);
 			return { text: new TextDecoder('latin1').decode(await blob.arrayBuffer()), provenance: JSON.stringify(item) };
@@ -250,10 +250,10 @@ h.run(async () => {
 		const log = await read(A.page, 'agentLog.agentLog');
 		for (const e of (log || []).filter((x) => TOOLS.includes(x.tool))) console.log('   · ' + e.tool + ': ' + e.text);
 		const pivotLine = log.find((e) => e.tool === 'set_pivot');
-		await A.page.evaluate((e) => window.__stores.agentLog.requestAgentUndo(e), pivotLine);
+		await A.page.evaluate((e) => window.__tp.test.v1.agentLog.requestAgentUndo(e), pivotLine);
 		await h.eventually(() => onHost(A.page, head), (o) => o && o.origin === null, '5. per-line Undo on the set_pivot line clears it on the host', 20000);
 		const groupLine = log.find((e) => e.tool === 'create_pivot');
-		await A.page.evaluate((e) => window.__stores.agentLog.requestAgentUndo(e), groupLine);
+		await A.page.evaluate((e) => window.__tp.test.v1.agentLog.requestAgentUndo(e), groupLine);
 		await h.eventually(() => onHost(A.page, piv.groupUuid), (o) => o === null, '5. per-line Undo on the create_pivot line removes the group on the host', 20000);
 		await h.eventually(() => onHost(A.page, upper), (o) => o?.parent === 'root', '5. and Upper is back at the root', 20000);
 	} finally {
@@ -280,19 +280,19 @@ h.run(async () => {
 				relaying--;
 			}
 		};
-		const tools = window.__stores.aiTools;
+		const tools = window.__tp.test.v1.aiTools;
 		const made = await relayed('create_objects', { objects: [{ kind: 'primitive', primitive: 'Box', name: 'Mine' }] });
 		const uuid = made.created[0].uuid;
 		await new Promise((r) => setTimeout(r, 100));
 		await tools.executeAiTool('update_objects', { updates: [{ uuid, position: [0, 4, 0] }] }); // the person, by hand
 		const refused = await relayed('undo_last', {});
-		window.__stores.history.undo(); // their own step off the stack
+		window.__tp.test.v1.history.undo(); // their own step off the stack
 		const undone = await relayed('undo_last', {});
 		await new Promise((r) => setTimeout(r, 500)); // the line lands a beat after the result
 		/** @type {any} */ let group;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		/** @type {any} */ let log;
-		window.__stores.agentLog.agentLog.subscribe((l) => (log = l))();
+		window.__tp.test.v1.agentLog.agentLog.subscribe((l) => (log = l))();
 		return { refused, undone, gone: !group.getObjectByProperty('uuid', uuid), names: log.map((l) => l.name + ': ' + l.text) };
 	});
 	h.check(tabResult.refused.refused === true && /this tab/.test(tabResult.refused.error), '6. the person\'s own edit at the tab refuses it: ' + String(tabResult.refused.error).slice(0, 100));
@@ -304,9 +304,9 @@ h.run(async () => {
 	await V.page.waitForFunction(() => !!window.tpAgent, null, { timeout: 30000 });
 	await h.connect(V, A);
 	await V.page.evaluate(() =>
-		window.__stores.cloudHooks.rolesInfo.set({ myId: '', myRole: 'viewer', amAdmin: false, order: [], roleOf: () => 'viewer', setRole: () => {}, synced: () => true })
+		window.__tp.test.v1.cloudHooks.rolesInfo.set({ myId: '', myRole: 'viewer', amAdmin: false, order: [], roleOf: () => 'viewer', setRole: () => {}, synced: () => true })
 	);
-	const before = await A.page.evaluate(() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g.children.length))()));
+	const before = await A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g.children.length))()));
 	for (const [tool, args] of [
 		['undo_last', {}],
 		['set_pivot', { updates: [{ uuid: 'x', at: [0, 0, 0] }] }],
@@ -316,11 +316,11 @@ h.run(async () => {
 		const r = await V.page.evaluate(([t, a]) => window.tpAgent.exec(t, a), [tool, args]);
 		h.check(r?.refused === true || r?.viewOnly === true, '7. a viewer\'s ' + tool + ' is refused: ' + String(r?.error).slice(0, 70));
 		// the page's own executor too (the in-app assistant's way in)
-		const direct = await V.page.evaluate(([t, a]) => window.__stores.aiTools.executeAiTool(t, a), [tool, args]);
+		const direct = await V.page.evaluate(([t, a]) => window.__tp.test.v1.aiTools.executeAiTool(t, a), [tool, args]);
 		h.check(direct?.viewOnly === true, '7. and through the assistant\'s executor: ' + tool);
 	}
 	await new Promise((r) => setTimeout(r, 1500));
-	const after = await A.page.evaluate(() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g.children.length))()));
+	const after = await A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g.children.length))()));
 	h.check(after === before, '7. nothing reached the host from the viewer (' + before + ' → ' + after + ')');
 
 	await bounded(h.finish(browser), 30000);

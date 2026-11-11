@@ -20,7 +20,7 @@ const BASE = h.URL.replace(/\/+$/, '');
 
 const read = (page, expr) =>
 	page.evaluate(
-		(e) => new Promise((r) => e.split('.').reduce((o, k) => o[k], window.__stores).subscribe((v) => r(JSON.parse(JSON.stringify(v ?? null))))()),
+		(e) => new Promise((r) => e.split('.').reduce((o, k) => o[k], window.__tp?.test.v1).subscribe((v) => r(JSON.parse(JSON.stringify(v ?? null))))()),
 		expr
 	);
 
@@ -28,7 +28,7 @@ const read = (page, expr) =>
 const onHost = (page, uuid) =>
 	page.evaluate((u) => {
 		/** @type {any} */ let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		const o = g?.getObjectByProperty('uuid', u);
 		if (!o) return null;
 		g.updateMatrixWorld(true);
@@ -178,7 +178,7 @@ h.run(async () => {
 		const log = await read(A.page, 'agentLog.agentLog');
 		const lines = (log || []).filter((e) => e.tool === 'create_shapes' && /made \d+ shapes/.test(e.text || ''));
 		h.check(lines.length === 1 && /made 3 shapes/.test(lines[0].text), '7. one line: ' + lines[0]?.text);
-		await A.page.evaluate((e) => window.__stores.agentLog.requestAgentUndo(e), lines[0]);
+		await A.page.evaluate((e) => window.__tp.test.v1.agentLog.requestAgentUndo(e), lines[0]);
 		await h.eventually(
 			async () => [await onHost(A.page, paintedId), await onHost(A.page, twoId), await onHost(A.page, poleId)],
 			(r) => r.every((o) => o === null),

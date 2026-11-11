@@ -16,7 +16,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	const setup = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const ap = w.animationPreview;
 		w.commandsHandler.sceneCommand('/create box 1 1 1');
 		await new Promise((r) => setTimeout(r, 800));
@@ -35,7 +35,7 @@ h.run(async () => {
 
 	const loopKind = await A.page.evaluate((s) => {
 		let set;
-		window.__stores.animationPreview.animations.subscribe((v) => (set = v))();
+		window.__tp.test.v1.animationPreview.animations.subscribe((v) => (set = v))();
 		const clip = set[s.uuid].clips[s.clipId];
 		return { loop: clip.loop, duration: clip.duration };
 	}, setup);
@@ -46,7 +46,7 @@ h.run(async () => {
 
 	// play well past the first lap, then pause
 	const paused = await A.page.evaluate(async (s) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const ap = w.animationPreview;
 		// start the run 2.4s IN — deterministic, and exactly the reported situation:
 		// a raw elapsed already past the end of a 1s loop. Waiting on the wall clock
@@ -109,7 +109,7 @@ h.run(async () => {
 
 	// the playhead and the pose must describe the SAME frame — they diverged before
 	const agree = await A.page.evaluate((s) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const ap = w.animationPreview;
 		let set;
 		ap.animations.subscribe((v) => (set = v))();
@@ -129,7 +129,7 @@ h.run(async () => {
 
 	// resuming from a folded pause still works, and a SECOND pause behaves
 	const second = await A.page.evaluate(async (s) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const ap = w.animationPreview;
 		ap.play(s.uuid);
 		await new Promise((r) => setTimeout(r, 1400)); // another lap and a bit

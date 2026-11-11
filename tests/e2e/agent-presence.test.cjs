@@ -41,16 +41,16 @@ h.run(async () => {
 	const B = await h.setupPage(browser, 'B', { context: { viewport: { width: 1280, height: 720 } } });
 	await h.connect(B, A);
 	const a = A.page;
-	const dbg = () => a.evaluate(() => window.__stores.agentPresence.agentPresenceDebug());
+	const dbg = () => a.evaluate(() => window.__tp.test.v1.agentPresence.agentPresenceDebug());
 	const markerOf = async () => (await dbg()).markers.find((m) => m.peerId === B.id) || null;
-	const tool = (name, args) => B.page.evaluate(([n, ar]) => window.__stores.aiTools.executeAiTool(n, ar), [name, args]);
+	const tool = (name, args) => B.page.evaluate(([n, ar]) => window.__tp.test.v1.aiTools.executeAiTool(n, ar), [name, args]);
 	const objectOn = (p, uuid) =>
 		p.evaluate((u) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const o = g.getObjectByProperty('uuid', u);
 			if (!o) return null;
-			const T = window.__stores.THREE;
+			const T = window.__tp.test.v1.THREE;
 			const box = new T.Box3().setFromObject(o);
 			return { name: o.name, top: box.max.y, cx: (box.min.x + box.max.x) / 2, cz: (box.min.z + box.max.z) / 2 };
 		}, uuid);
@@ -58,7 +58,7 @@ h.run(async () => {
 	const setAgent = (on) =>
 		a.evaluate(
 			([id, flag]) => {
-				window.__stores.userdata.update((rows) =>
+				window.__tp.test.v1.userdata.update((rows) =>
 					rows.map((r) => {
 						if (!Array.isArray(r) || r[0] !== id) return r;
 						const row = [...r];
@@ -69,14 +69,14 @@ h.run(async () => {
 					})
 				);
 				let v;
-				window.__stores.userdata.subscribe((x) => (v = x))();
+				window.__tp.test.v1.userdata.subscribe((x) => (v = x))();
 				return v.some((r) => r[0] === id);
 			},
 			[B.id, on]
 		);
 	const shot = async (name) => {
 		if (!SHOTS) return;
-		const url = await a.evaluate((id) => window.__stores.agentPresence.agentMarkerImage(id), B.id);
+		const url = await a.evaluate((id) => window.__tp.test.v1.agentPresence.agentMarkerImage(id), B.id);
 		if (url) fs.writeFileSync(path.join(SHOTS, name + '-marker.png'), Buffer.from(url.split(',')[1], 'base64'));
 		await a.screenshot({ path: path.join(SHOTS, name + '-A.png') }).catch(() => {});
 	};
@@ -134,11 +134,11 @@ h.run(async () => {
 	console.log('\n=== F. idle ===');
 	await tool('update_objects', { updates: [{ uuid: lamp, position: [2, 1, -1] }] });
 	await h.eventually(markerOf, (x) => x && x.visible && x.uuid === lamp, 'premise: the marker is back', 8000);
-	await a.evaluate(() => window.__stores.agentPresence.ageAgentMarkersForTest(25000));
+	await a.evaluate(() => window.__tp.test.v1.agentPresence.ageAgentMarkersForTest(25000));
 	m = await until(markerOf, (x) => x && x.idle && x.opacity < 0.9 && x.opacity > 0.4, 'after 25 s idle it is fading', 4000);
 	h.check(m && /was editing Lamp/.test(m.sig), `and says so: ${m?.sig} (${m?.opacity?.toFixed(2)})`);
 	await shot('vh3-F-idle');
-	await a.evaluate(() => window.__stores.agentPresence.ageAgentMarkersForTest(120000));
+	await a.evaluate(() => window.__tp.test.v1.agentPresence.ageAgentMarkersForTest(120000));
 	m = await until(markerOf, (x) => x && Math.abs(x.opacity - 0.3) < 0.01, 'long idle holds the floor', 4000);
 	h.check(m && m.visible, `still there at ${m?.opacity?.toFixed(2)}`);
 	await tool('update_objects', { updates: [{ uuid: lamp, color: '#22cc66' }] });
@@ -167,9 +167,9 @@ h.run(async () => {
 		() =>
 			a.evaluate((id) => {
 				let r, sc;
-				window.__stores.globalRenderer.subscribe((v) => (r = v))();
-				window.__stores.globalScene.subscribe((v) => (sc = v))();
-				const T = window.__stores.THREE;
+				window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
+				window.__tp.test.v1.globalScene.subscribe((v) => (sc = v))();
+				const T = window.__tp.test.v1.THREE;
 				let sprite = null;
 				sc.traverse((o) => {
 					if (o.userData?.agentMarker === id) sprite = o;
@@ -189,15 +189,15 @@ h.run(async () => {
 	h.check(xr && xr.h > 0.1 && xr.h < 0.6, `readable size at ~3 m (${xr?.h?.toFixed(2)} m tall)`);
 	await shot('vh3-V');
 	// Play hides editor helpers: the editor camera (which the XR camera copies) loses the layer
-	await a.evaluate(() => window.__stores.isLocked.set(true));
+	await a.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await iwer.frames(a, 6);
 	const inPlay = await a.evaluate(() => {
 		let r;
-		window.__stores.globalRenderer.subscribe((v) => (r = v))();
+		window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
 		return r.xr.getCamera().layers.isEnabled(30);
 	});
 	h.check(inPlay === false, `in Play the helper layer is off, so the marker is not drawn (layer 30 on: ${inPlay})`);
-	await a.evaluate(() => window.__stores.isLocked.set(false));
+	await a.evaluate(() => window.__tp.test.v1.isLocked.set(false));
 	await iwer.frames(a, 4);
 
 	// ---- X. leaves ----------------------------------------------------------------------------------------

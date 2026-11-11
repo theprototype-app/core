@@ -20,7 +20,7 @@ h.run(async () => {
 	const page = A.page;
 
 	await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		await s.moduleSDK.initModules([{ id: 'ann78', name: 'Announce test', version: '1.0.0', description: 'api.announce in Edit', register(api) { window.__api = api; } }]);
 		const N = (id, type, data) => ({ id, type, position: { x: 0, y: 0 }, data: { label: id, ...data } });
 		const nodes = [
@@ -40,12 +40,12 @@ h.run(async () => {
 	});
 
 	const pulse = async () => {
-		await page.evaluate((t) => window.__stores.flowRuntime.applyNodeTrigger('aKey', t, false), NOW());
+		await page.evaluate((t) => window.__tp.test.v1.flowRuntime.applyNodeTrigger('aKey', t, false), NOW());
 		await page.waitForTimeout(400);
 	};
 	const state = () =>
 		page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const ga = s.gameKit.gameAnnounce;
 			let log = [];
 			ga.announceLog?.subscribe((v) => (log = v))();
@@ -71,7 +71,7 @@ h.run(async () => {
 	h.check(e1.diag.some((l) => /Ring 1 reached/.test(l) && /Ring banner/.test(l)), `the page log the AI assistant reads has the line and the node (${JSON.stringify(e1.diag)})`);
 
 	console.log('\n=== 2. the Debugger panel shows it ===');
-	await page.evaluate(() => window.__stores.flowDebug.setDebugOpen(true));
+	await page.evaluate(() => window.__tp.test.v1.flowDebug.setDebugOpen(true));
 	// the panel is a lazy import: on a cold dev server its first mount takes seconds
 	await page.waitForSelector('#debug-console', { timeout: 15000 }).catch(() => {});
 	await page.waitForTimeout(300);
@@ -81,13 +81,13 @@ h.run(async () => {
 	await page.waitForTimeout(300);
 	const focus = await page.evaluate(() => {
 		let f;
-		window.__stores.flowDebug.debugFocus.subscribe((v) => (f = v))();
+		window.__tp.test.v1.flowDebug.debugFocus.subscribe((v) => (f = v))();
 		return f;
 	});
 	h.check(focus === 'aAnn', `pressing the row focuses the node that announced (${focus})`);
 
 	console.log('\n=== 3. Play: the banner ===');
-	await page.evaluate(() => window.__stores.isLocked.set(true));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await page.waitForTimeout(600);
 	await pulse();
 	const p3 = await state();

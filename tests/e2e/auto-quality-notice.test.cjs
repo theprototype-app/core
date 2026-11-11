@@ -30,7 +30,7 @@ const DESKTOP = { viewport: { width: 1440, height: 900 } };
 async function load(page, slug) {
 	const bytes = Array.from(fs.readFileSync(path.join(/** @type {string} */ (SC), slug, 'scene.tpscene')));
 	await page.evaluate(async (arr) => {
-		const s = /** @type {any} */ (window).__stores;
+		const s = /** @type {any} */ (window).__tp?.test.v1;
 		const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 		await s.sessions.applySession(payload, { backup: false });
 	}, bytes);
@@ -41,7 +41,7 @@ async function freeze(page, level) {
 	await page.evaluate((lv) => {
 		const w = /** @type {any} */ (window);
 		w.__f12 = { t: 1e9 };
-		w.__stores.qualityGovernor.governorForTest.setLevel(lv, w.__f12.t);
+		w.__tp.test.v1.qualityGovernor.governorForTest.setLevel(lv, w.__f12.t);
 		w.__f12.t += 1000;
 		/**
 		 * frames at `slow` ms on every third frame while the level is below `cheapFrom` (the
@@ -49,7 +49,7 @@ async function freeze(page, level) {
 		 * @param {number} dur @param {number} cheapFrom @param {{slow?: number, noLock?: boolean}} [o]
 		 */
 		w.__f12drive = (dur, cheapFrom, o = {}) => {
-			const Q = w.__stores.qualityGovernor;
+			const Q = w.__tp.test.v1.qualityGovernor;
 			const g = Q.governorForTest;
 			const slow = o.slow ?? 33.3;
 			/** @type {number[]} */ const moves = [];
@@ -76,7 +76,7 @@ async function freeze(page, level) {
 /** @param {any} page */
 const state = (page) =>
 	page.evaluate(() => {
-		const S = /** @type {any} */ (window).__stores;
+		const S = /** @type {any} */ (window).__tp?.test.v1;
 		let q;
 		S.qualityGovernor.qualityState.subscribe((/** @type {any} */ v) => (q = v))();
 		return {
@@ -109,11 +109,11 @@ function switches(levels, start) {
 async function shots(page, name) {
 	if (!OUT) return;
 	for (const t of ['dark', 'light']) {
-		await page.evaluate((th) => /** @type {any} */ (window).__stores.themes.theme.set(th), t);
+		await page.evaluate((th) => /** @type {any} */ (window).__tp.test.v1.themes.theme.set(th), t);
 		await page.waitForTimeout(400);
 		await page.screenshot({ path: path.join(OUT, `${name}-${t}.png`) });
 	}
-	await page.evaluate(() => /** @type {any} */ (window).__stores.themes.theme.set('dark'));
+	await page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.themes.theme.set('dark'));
 }
 
 /** h.eventually, returning the state it accepted (null on timeout)
@@ -138,7 +138,7 @@ async function until(fn, pred, label, timeout = 10000) {
 const postLevel = (page) =>
 	page.evaluate(() => {
 		const w = /** @type {any} */ (window);
-		return (w.__f12P = w.__stores.qualityGovernor.governorForTest.levelOf('post'));
+		return (w.__f12P = w.__tp.test.v1.qualityGovernor.governorForTest.levelOf('post'));
 	});
 
 /** @param {any} page @param {RegExp} re */
@@ -151,7 +151,7 @@ h.run(async () => {
 
 	// ── 1. the phone's lighter start, announced once ─────────────────────────────────────────────
 	const A = await h.setupPage(browser, 'f12-phone', { context: PHONE });
-	h.check(await A.page.evaluate(() => /** @type {any} */ (window).__stores.qualityGovernor.phoneQuality()), 'the app judges this device a phone');
+	h.check(await A.page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.qualityGovernor.phoneQuality()), 'the app judges this device a phone');
 	await until(() => state(A.page), (s) => s.toasts.some((t) => /^Lowered shadows, resolution and ambient occlusion to keep it smooth$/.test(t)), '1.1 the lighter start is announced: "Lowered shadows, resolution and ambient occlusion to keep it smooth"', 8000);
 	h.check(await A.page.evaluate(() => [...document.querySelectorAll('.tp-toast-action')].some((b) => b.textContent?.trim() === 'Keep full quality')), '1.2 …with a "Keep full quality" action');
 	h.check((await A.page.$('#simplified-water-notice')) === null, '1.3 the old "Simplified water" strip is gone (one notice for every toggle)');
@@ -164,7 +164,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(2500);
 	await A.page.evaluate(() => {
 		const w = /** @type {any} */ (window);
-		w.__stores.qualityGovernor.governorForTest.setLevel(w.__f12P - 1, w.__f12.t);
+		w.__tp.test.v1.qualityGovernor.governorForTest.setLevel(w.__f12P - 1, w.__f12.t);
 		w.__f12.t += 1000;
 	});
 	await h.eventually(() => state(A.page), (s) => s.water === 'medium', `2.0 (premise) level ${POST - 1}: Aquarium refracts on the half-res screen-space tier`, 8000);
@@ -193,8 +193,8 @@ h.run(async () => {
 	// counterfactual: the 1.31 rule (no lock) on the same page and the same frames
 	await A.page.evaluate(() => {
 		const w = /** @type {any} */ (window);
-		w.__stores.qualityGovernor.governorForTest.clearFlapLock();
-		w.__stores.qualityGovernor.governorForTest.setLevel(w.__f12P - 1, w.__f12.t);
+		w.__tp.test.v1.qualityGovernor.governorForTest.clearFlapLock();
+		w.__tp.test.v1.qualityGovernor.governorForTest.setLevel(w.__f12P - 1, w.__f12.t);
 		w.__f12.t += 1000;
 	});
 	const old = await A.page.evaluate(() => /** @type {any} */ (window).__f12drive(600000, /** @type {any} */ (window).__f12P, { noLock: true }));
@@ -203,7 +203,7 @@ h.run(async () => {
 	// a new scene clears the lock
 	await A.page.evaluate(() => {
 		const w = /** @type {any} */ (window);
-		w.__stores.qualityGovernor.governorForTest.setLevel(w.__f12P - 1, w.__f12.t);
+		w.__tp.test.v1.qualityGovernor.governorForTest.setLevel(w.__f12P - 1, w.__f12.t);
 		w.__f12.t += 1000;
 	});
 	await A.page.evaluate(() => /** @type {any} */ (window).__f12drive(20000, /** @type {any} */ (window).__f12P));
@@ -220,14 +220,14 @@ h.run(async () => {
 	await B.page.waitForTimeout(2500);
 	await B.page.evaluate(() => {
 		const w = /** @type {any} */ (window);
-		w.__stores.qualityGovernor.governorForTest.setLevel(w.__f12P - 1, w.__f12.t);
+		w.__tp.test.v1.qualityGovernor.governorForTest.setLevel(w.__f12P - 1, w.__f12.t);
 		w.__f12.t += 1000;
-		w.__stores.isLocked.set(true);
+		w.__tp.test.v1.isLocked.set(true);
 	});
 	await B.page.evaluate(() => /** @type {any} */ (window).__f12drive(3000, /** @type {any} */ (window).__f12P));
 	await B.page.waitForTimeout(1500);
 	h.check(!(await toastLike(B.page, /^Lowered water quality/)), '3.1 a drop while playing is not announced in Play');
-	await B.page.evaluate(() => /** @type {any} */ (window).__stores.isLocked.set(null));
+	await B.page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.isLocked.set(null));
 	await h.eventually(() => toastLike(B.page, /^Lowered water quality/), (v) => v, '3.2 …it is, once you are back in the editor', 8000);
 	if (OUT) await B.page.screenshot({ path: path.join(OUT, '23-after-phone-toast-before-tap.png') });
 	const keep = B.page.locator('.tp-toast', { hasText: 'Lowered water quality' }).locator('.tp-toast-action', { hasText: 'Keep full quality' });
@@ -242,13 +242,13 @@ h.run(async () => {
 
 	// ── 4. desktop: the same rule for every toggle (shadows) ─────────────────────────────────────
 	const D = await h.setupPage(browser, 'f12-desktop', { context: DESKTOP });
-	h.check(!(await D.page.evaluate(() => /** @type {any} */ (window).__stores.qualityGovernor.phoneQuality())), '4.0 (premise) a desktop');
+	h.check(!(await D.page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.qualityGovernor.phoneQuality())), '4.0 (premise) a desktop');
 	await freeze(D.page, 0);
 	await load(D.page, 'aquarium');
 	await D.page.waitForTimeout(2500);
 	await D.page.evaluate(() => {
 		// a heavy scene for the desktop budget (the governor only acts on one)
-		/** @type {any} */ (window).__stores.sceneBudget.qualityBaseline.set({ objects: 0, triangles: 0, calls: 5000 });
+		/** @type {any} */ (window).__tp.test.v1.sceneBudget.qualityBaseline.set({ objects: 0, triangles: 0, calls: 5000 });
 	});
 	const d1 = await D.page.evaluate(() => /** @type {any} */ (window).__f12drive(2500, 99, { slow: 60 }));
 	h.check(d1.moves.join() === '1', `4.1 missed frames on a heavy scene: shadows off (${d1.moves.join(',')})`);

@@ -8,14 +8,14 @@ const names = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => r((g?.children ?? []).map((c) => c.name)))()
+				window.__tp.test.v1.objectsGroup.subscribe((g) => r((g?.children ?? []).map((c) => c.name)))()
 			)
 	);
 const posOf = (page, name) =>
 	page.evaluate(
 		(name) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) =>
+				window.__tp.test.v1.objectsGroup.subscribe((g) =>
 					r(g?.children.find((c) => c.name === name)?.position.toArray())
 				)()
 			),
@@ -50,7 +50,7 @@ h.run(async () => {
 	await A.page.keyboard.press('Shift+KeyA');
 	await A.page.waitForTimeout(400);
 	h.check((await A.page.locator('#add-search-box').count()) === 0, 'Shift+A is inert by default');
-	await A.page.evaluate(() => window.__stores.enableShiftAdd.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.enableShiftAdd.set(true));
 
 	// --- opens at the cursor ---------------------------------------------------
 	await openAt(A.page, 500, 300);

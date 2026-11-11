@@ -19,13 +19,13 @@ const inPage = (peer, body, arg) =>
 	peer.page.evaluate(
 		([src, a]) => {
 			let pc = null;
-			window.__stores.peers.subscribe((v) => (pc = v))();
+			window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
 			const get = (st) => {
 				let v;
 				st.subscribe((x) => (v = x))();
 				return v;
 			};
-			return Object.getPrototypeOf(async function () {}).constructor('s', 'pc', 'arg', 'get', src)(window.__stores, pc, a, get);
+			return Object.getPrototypeOf(async function () {}).constructor('s', 'pc', 'arg', 'get', src)(window.__tp?.test.v1, pc, a, get);
 		},
 		[body, arg ?? null]
 	);
@@ -106,7 +106,7 @@ h.run(async () => {
 	await B.page.evaluate(() => {
 		window.__seen = [];
 		let pc;
-		window.__stores.peers.subscribe((v) => (pc = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
 		for (const c of Object.values(pc.connections)) c.on('data', (d) => d?.type === 'agentchat' && d.cancel && window.__seen.push(d));
 	});
 	await inPage(A, "s.vrControls.executeVRMenuAction('ai:stop')");

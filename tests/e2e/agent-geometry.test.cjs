@@ -22,7 +22,7 @@ const TOOLS = ['set_geometry', 'create_lathe', 'create_tube', 'extrude_shape', '
 
 const read = (page, expr) =>
 	page.evaluate(
-		(e) => new Promise((r) => e.split('.').reduce((o, k) => o[k], window.__stores).subscribe((v) => r(JSON.parse(JSON.stringify(v ?? null))))()),
+		(e) => new Promise((r) => e.split('.').reduce((o, k) => o[k], window.__tp?.test.v1).subscribe((v) => r(JSON.parse(JSON.stringify(v ?? null))))()),
 		expr
 	);
 
@@ -30,7 +30,7 @@ const read = (page, expr) =>
 const onHost = (page, uuid) =>
 	page.evaluate((u) => {
 		/** @type {any} */ let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		const o = g?.getObjectByProperty('uuid', u);
 		if (!o?.geometry) return null;
 		const pos = o.geometry.attributes.position;
@@ -92,7 +92,7 @@ h.run(async () => {
 		const tools = (await B.client.listTools()).tools;
 		h.check(TOOLS.every((n) => tools.some((t) => t.name === n)), '1. the six geometry tools are listed');
 		const hostSchema = await A.page.evaluate(() => {
-			const t = window.__stores.aiTools.getAiTools().find((x) => (x.function || x).name === 'edit_mesh');
+			const t = window.__tp.test.v1.aiTools.getAiTools().find((x) => (x.function || x).name === 'edit_mesh');
 			return JSON.stringify((t.function || t).parameters);
 		});
 		h.check(JSON.stringify(tools.find((t) => t.name === 'edit_mesh')?.inputSchema) === hostSchema, '1. edit_mesh schema = the host registry, verbatim');
@@ -169,11 +169,11 @@ h.run(async () => {
 			return line;
 		};
 		// the newest line first (a plain undo), then a deep one (out of order)
-		await A.page.evaluate((e) => window.__stores.agentLog.requestAgentUndo(e), lineOf('edit_mesh'));
+		await A.page.evaluate((e) => window.__tp.test.v1.agentLog.requestAgentUndo(e), lineOf('edit_mesh'));
 		await h.eventually(() => onHost(A.page, towerId), (o) => o && Math.abs(o.maxY - 0.5) < 0.001, '5. Undo on the edit_mesh line: the host\'s Tower is a plain box again', 20000);
-		await A.page.evaluate((e) => window.__stores.agentLog.requestAgentUndo(e), lineOf('create_lathe'));
+		await A.page.evaluate((e) => window.__tp.test.v1.agentLog.requestAgentUndo(e), lineOf('create_lathe'));
 		await h.eventually(() => onHost(A.page, vaseId), (o) => o === null, '5. Undo on the create_lathe line: the Vase is gone from the host', 20000);
-		await A.page.evaluate((e) => window.__stores.agentLog.requestAgentUndo(e), lineOf('set_geometry'));
+		await A.page.evaluate((e) => window.__tp.test.v1.agentLog.requestAgentUndo(e), lineOf('set_geometry'));
 		await h.eventually(() => onHost(A.page, postId), (o) => o?.type === 'BoxGeometry', '5. Undo on the set_geometry line: the Post is a box again', 20000);
 	} finally {
 		await bounded(B.client.close().catch(() => {}), 10000);
@@ -187,9 +187,9 @@ h.run(async () => {
 	await V.page.waitForFunction(() => !!window.tpAgent, null, { timeout: 30000 });
 	await h.connect(V, A);
 	await V.page.evaluate(() =>
-		window.__stores.cloudHooks.rolesInfo.set({ myId: '', myRole: 'viewer', amAdmin: false, order: [], roleOf: () => 'viewer', setRole: () => {}, synced: () => true })
+		window.__tp.test.v1.cloudHooks.rolesInfo.set({ myId: '', myRole: 'viewer', amAdmin: false, order: [], roleOf: () => 'viewer', setRole: () => {}, synced: () => true })
 	);
-	const before = await A.page.evaluate(() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g.children.length))()));
+	const before = await A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g.children.length))()));
 	for (const [tool, args] of [
 		['create_lathe', { profile: [[0, 0], [1, 1]] }],
 		['create_mesh', { vertices: [[0, 0, 0], [1, 0, 0], [0, 1, 0]], faces: [[0, 1, 2]] }],
@@ -200,7 +200,7 @@ h.run(async () => {
 		h.check(r?.refused === true || r?.viewOnly === true, '6. a viewer\'s ' + tool + ' is refused: ' + String(r?.error).slice(0, 70));
 	}
 	await new Promise((r) => setTimeout(r, 1500));
-	const after = await A.page.evaluate(() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g.children.length))()));
+	const after = await A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g.children.length))()));
 	h.check(after === before, '6. nothing reached the host from the viewer (' + before + ' → ' + after + ')');
 
 	await bounded(h.finish(browser), 30000);

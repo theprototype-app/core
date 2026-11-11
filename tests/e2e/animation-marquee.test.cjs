@@ -13,11 +13,11 @@ const h = require('./helpers.cjs');
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
-	await A.page.waitForFunction(() => !!window.__stores?.animationPreview, { timeout: 20000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.animationPreview, { timeout: 20000 });
 
 	// ---------- two channels, four keys each, at known times ----------
 	const uuid = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 400));
 		let g;
@@ -207,7 +207,7 @@ h.run(async () => {
 	// that took everything on the row would also report 2 if the row had only 2
 	const lassoTimes = await A.page.evaluate((id) => {
 		const dbg = /** @type {any} */ (window).__animationDebug;
-		const ap = window.__stores.animationPreview;
+		const ap = window.__tp.test.v1.animationPreview;
 		const clip = ap.activeClip(id);
 		return dbg.selKeys().map((/** @type {string} */ s) => {
 			const [tid, i] = s.split(':');
@@ -254,14 +254,14 @@ h.run(async () => {
 
 	// and the selection it made is usable: Del removes exactly those keys
 	const before = await A.page.evaluate((id) => {
-		const clip = window.__stores.animationPreview.activeClip(id);
+		const clip = window.__tp.test.v1.animationPreview.activeClip(id);
 		return clip.tracks.reduce((n, /** @type {any} */ t) => n + t.keys.length, 0);
 	}, uuid);
 	const picked = graphSel.length;
 	await A.page.keyboard.press('Delete');
 	await A.page.waitForTimeout(300);
 	const after = await A.page.evaluate((id) => {
-		const clip = window.__stores.animationPreview.activeClip(id);
+		const clip = window.__tp.test.v1.animationPreview.activeClip(id);
 		return clip.tracks.reduce((n, /** @type {any} */ t) => n + t.keys.length, 0);
 	}, uuid);
 	h.check(

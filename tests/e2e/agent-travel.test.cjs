@@ -17,8 +17,8 @@ const inPage = (peer, body, arg) =>
 	peer.page.evaluate(
 		([src, a]) => {
 			let pc = null;
-			window.__stores.peers.subscribe((v) => (pc = v))();
-			return Object.getPrototypeOf(async function () {}).constructor('s', 'pc', 'arg', src)(window.__stores, pc, a);
+			window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
+			return Object.getPrototypeOf(async function () {}).constructor('s', 'pc', 'arg', src)(window.__tp?.test.v1, pc, a);
 		},
 		[body, arg ?? null]
 	);
@@ -81,14 +81,14 @@ h.run(async () => {
 	h.check(st0.withHost === true && st0.scene === '' && st0.hostScene === '', `status says it is with the host, both in the unnamed world (${JSON.stringify({ scene: st0.scene, hostScene: st0.hostScene, withHost: st0.withHost })})`);
 
 	console.log('\n=== 2. the host NAMES the world (unnamed → Run1): everybody is still in one room ===');
-	await A.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Run1'));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('Run1'));
 	const st1 = await until(() => status(B), (st) => st.hostScene === 'Run1', 15000);
 	h.check(st1?.hostScene === 'Run1' && st1?.withHost === true, `after a naming save the agent is still with the host (${JSON.stringify({ scene: st1?.scene, hostScene: st1?.hostScene, withHost: st1?.withHost })})`);
 
 	console.log('\n=== 3. the host SAVES AS another scene (Run1 → Run2): the agent follows ===');
 	// DIAG: a timeline on the agent page — load phases, its level, transfers — read only on a red
 	await B.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const t0 = Date.now();
 		const log = (window.__followLog = []);
 		const at = (what) => log.push(Date.now() - t0 + 'ms ' + what);
@@ -97,7 +97,7 @@ h.run(async () => {
 		s.transferLedger.transfers.subscribe((t) => at('tx ' + (t ?? []).map((r) => r.dir + ':' + String(r.hash).slice(0, 6) + ':' + r.state).join(',')));
 		s.toastStore?.subscribe?.((l) => { const last = (l ?? [])[l.length - 1]; if (last) at('toast ' + String(last.text ?? last.message ?? last).slice(0, 60)); });
 	});
-	await A.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Run2'));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('Run2'));
 	const gap = await until(() => status(B), (st) => st.hostScene === 'Run2', 15000);
 	h.check(gap?.hostScene === 'Run2', `status() reports the host's new scene (${gap?.hostScene})`);
 	await hostTruth(A, B, 'right after the Save as');
@@ -124,8 +124,8 @@ h.run(async () => {
 	console.log('\n=== 4. a PRIVATE host cannot be followed: the agent says so and refuses edits ===');
 	// the host re-opens Run1 PRIVATELY (R22 round 35): its row says private, nobody may follow
 	await A.page.evaluate(() => {
-		const hash = window.__stores.projectManifest.latestSceneHash('Run1');
-		return window.__stores.levels.travelToLevel(hash, 'Run1', { private: true });
+		const hash = window.__tp.test.v1.projectManifest.latestSceneHash('Run1');
+		return window.__tp.test.v1.levels.travelToLevel(hash, 'Run1', { private: true });
 	}).catch((e) => console.log('private open threw: ' + e.message));
 	const priv = await until(() => status(B), (st) => st.withHost === false, 15000);
 	if (priv?.withHost === false) {
@@ -137,13 +137,13 @@ h.run(async () => {
 
 	console.log('\n=== 5. an agent page never admits a stranger (it is nobody\'s host) ===');
 	const C = await h.setupPage(browser, 'C-stranger');
-	await C.page.evaluate((id) => { let p; window.__stores.peers.subscribe((v) => (p = v))(); p.connectToPeer(id, true); }, B.id).catch((e) => console.log('dial threw: ' + e.message));
+	await C.page.evaluate((id) => { let p; window.__tp.test.v1.peers.subscribe((v) => (p = v))(); p.connectToPeer(id, true); }, B.id).catch((e) => console.log('dial threw: ' + e.message));
 	await wait(6000);
 	h.check(!(await where(B)).open.includes(C.id), 'a peer that dials the agent directly is not let in by it');
 
 	console.log('\n=== 6. the host opens a NEW EMPTY scene: the agent follows and brings NOTHING with it ===');
 	// back to a shared built room: Run2 (A + B both hold AfterSave there); add objects and a flow so there is a world to leak
-	await A.page.evaluate(() => window.__stores.levels.travelToLevel(window.__stores.projectManifest.latestSceneHash('Run2'), 'Run2'));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.travelToLevel(window.__tp.test.v1.projectManifest.latestSceneHash('Run2'), 'Run2'));
 	const back = await until(() => status(B), (st) => st.withHost === true && st.hostScene === 'Run2' && st.scene === 'Run2', 30000);
 	h.check(back?.withHost === true, `host and agent together in Run2 again (${JSON.stringify(back && { scene: back.scene, hostScene: back.hostScene, withHost: back.withHost })})`);
 	const built = await exec(B, 'create_objects', { objects: [1, 2, 3, 4, 5, 6].map((i) => ({ kind: 'primitive', primitive: 'Box', name: 'Gem' + i, position: [i, 0.5, -2] })) });
@@ -152,13 +152,13 @@ h.run(async () => {
 	h.check(built?.created?.length === 6 && !!flow && !flow.error, 'the agent built 6 gems + a spin flow in Run2: ' + JSON.stringify(flow).slice(0, 100));
 	await until(() => where(A), (w) => w.objects.filter((n) => /^Gem\d$/.test(n)).length === 6 && w.flowNodes > 0);
 	await wait(1500); // every node the spin brought along has landed
-	await A.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Run2'));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('Run2'));
 	const full = await where(A);
 	console.log(`  host in Run2: ${full.objects.length} objects, ${full.flowNodes} flow nodes ${JSON.stringify(full.nodeList)}`);
 	// the owner's steps: Explorer ▸ New scene "Gem test" (empty), then open it
 	await A.page.evaluate(async () => {
-		const item = await window.__stores.levels.newLevel('Gem test');
-		return window.__stores.levels.travelToLevel(item.hash, '', { freshGame: true });
+		const item = await window.__tp.test.v1.levels.newLevel('Gem test');
+		return window.__tp.test.v1.levels.travelToLevel(item.hash, '', { freshGame: true });
 	});
 	const fresh = await where(A);
 	h.check(fresh.scene === 'Gem test' && fresh.objects.length === 0 && fresh.flowNodes === 0, `the host stands in the empty "Gem test" (${fresh.objects.length} objects, ${fresh.flowNodes} flow nodes)`);
@@ -173,7 +173,7 @@ h.run(async () => {
 	h.check(!!gemEdit?.created?.length && JSON.stringify(gaw.objects) === '["InGem"]', `an edit there reaches the host and is all it holds (${JSON.stringify(gaw.objects)})`);
 
 	console.log('\n=== 7. the host opens an EXISTING other scene (Run2): both hold exactly that scene ===');
-	await A.page.evaluate(() => window.__stores.levels.travelToLevel(window.__stores.projectManifest.latestSceneHash('Run2'), 'Run2'));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.travelToLevel(window.__tp.test.v1.projectManifest.latestSceneHash('Run2'), 'Run2'));
 	const r2 = await until(() => status(B), (st) => st.withHost === true && st.scene === 'Run2', 45000);
 	h.check(r2?.scene === 'Run2' && r2?.withHost === true, 'the agent followed into Run2');
 	await wait(5000);

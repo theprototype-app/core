@@ -28,7 +28,7 @@ const box = (page, sel) =>
 /** @param {any} page @param {string} key */
 async function openSettings(page, key) {
 	await page.evaluate((k) => {
-		const s = /** @type {any} */ (window).__stores;
+		const s = /** @type {any} */ (window).__tp?.test.v1;
 		s.settingsOpen.set(false);
 		s.settingsSection.set(k);
 		s.settingsOpen.set(true);
@@ -39,7 +39,7 @@ async function openSettings(page, key) {
 /** @param {any} page */
 const closeAll = (page) =>
 	page.evaluate(() => {
-		const s = /** @type {any} */ (window).__stores;
+		const s = /** @type {any} */ (window).__tp?.test.v1;
 		s.settingsOpen.set(false);
 		s.inspectorClose.set(true);
 	});
@@ -87,7 +87,7 @@ h.run(async () => {
 
 	// the default sidebar column follows the scale; the Inspector stays on screen with its segmented rows inside it
 	await page.evaluate(() => {
-		const s = /** @type {any} */ (window).__stores;
+		const s = /** @type {any} */ (window).__tp?.test.v1;
 		s.inspectorKind?.set?.('scene');
 		s.inspectorClose.set(false);
 	});
@@ -130,7 +130,7 @@ h.run(async () => {
 	await page.reload({ waitUntil: 'commit' });
 	const early = await page.waitForFunction(() => document.documentElement && document.readyState !== 'loading' && document.documentElement.style.getPropertyValue('--ui-scale'), null, { timeout: 30000 }).then((v) => v.jsonValue(), () => '');
 	h.check(early === '1.3', `a reload applies the saved 130 % from app.html (${early})`);
-	await page.waitForFunction(() => /** @type {any} */ (window).__stores?.settingsOpen, null, { timeout: 90000 });
+	await page.waitForFunction(() => /** @type {any} */ (window).__tp?.test.v1?.settingsOpen, null, { timeout: 90000 });
 	await page.waitForTimeout(1500);
 	await h.answerRestore(P).catch(() => {});
 
@@ -174,7 +174,7 @@ h.run(async () => {
 	/** @param {number} waitMs */
 	const fly = (waitMs) =>
 		page.evaluate(async (ms) => {
-			const s = /** @type {any} */ (window).__stores;
+			const s = /** @type {any} */ (window).__tp?.test.v1;
 			const cam = s.globalCamera && (s.globalCamera.subscribe ? await new Promise((r) => s.globalCamera.subscribe(r)()) : s.globalCamera);
 			const start = cam.position.toArray();
 			const goal = [start[0] + 6, start[1] + 2, start[2] + 6];
@@ -195,7 +195,7 @@ h.run(async () => {
 	/** push a line the way a Timeline audio clip does, then read the overlay */
 	const caption = (text) =>
 		page.evaluate(async (t) => {
-			const c = /** @type {any} */ (window).__stores.gameKit.captions;
+			const c = /** @type {any} */ (window).__tp.test.v1.gameKit.captions;
 			c.showCaption({ text: t, source: 'timeline', seconds: 4 });
 			await new Promise((r) => setTimeout(r, 300));
 			const el = document.getElementById('game-captions');
@@ -258,7 +258,7 @@ h.run(async () => {
 	oneRow('Settings', await head('dialog.settings-dialog', '.wc-title'));
 	await closeAll(fp);
 	await fp.evaluate(() => {
-		const s = /** @type {any} */ (window).__stores;
+		const s = /** @type {any} */ (window).__tp?.test.v1;
 		s.inspectorKind?.set?.('scene');
 		s.inspectorClose.set(false);
 	});
@@ -279,10 +279,10 @@ h.run(async () => {
 	});
 	oneRow('Inspector (its phone dock tab)', dockHead);
 	await closeAll(fp);
-	await fp.evaluate(() => /** @type {any} */ (window).__stores.objectListClose.set(false));
+	await fp.evaluate(() => /** @type {any} */ (window).__tp.test.v1.objectListClose.set(false));
 	await fp.waitForTimeout(900);
 	oneRow('object list', await head('#object-list', '.wc-label'));
-	await fp.evaluate(() => /** @type {any} */ (window).__stores.objectListClose.set(true));
+	await fp.evaluate(() => /** @type {any} */ (window).__tp.test.v1.objectListClose.set(true));
 	h.check(h.pageErrors(F).length === 0, `folded: no page errors (${JSON.stringify(h.pageErrors(F)).slice(0, 200)})`);
 	await h.finish(browser);
 });

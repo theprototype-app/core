@@ -33,8 +33,8 @@ const inPage = (peer, body, arg) =>
 	peer.page.evaluate(
 		([src, a]) => {
 			let pc = null;
-			window.__stores.peers.subscribe((v) => (pc = v))();
-			return Object.getPrototypeOf(async function () {}).constructor('s', 'pc', 'arg', src)(window.__stores, pc, a);
+			window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
+			return Object.getPrototypeOf(async function () {}).constructor('s', 'pc', 'arg', src)(window.__tp?.test.v1, pc, a);
 		},
 		[body, arg ?? null]
 	);
@@ -127,7 +127,7 @@ async function openPanel(peer) {
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A-host');
-	await A.page.waitForFunction(() => { let p; window.__stores.peers.subscribe((v) => (p = v))(); return !!p?.peer?.open; }, null, { timeout: 60000 });
+	await A.page.waitForFunction(() => { let p; window.__tp.test.v1.peers.subscribe((v) => (p = v))(); return !!p?.peer?.open; }, null, { timeout: 60000 });
 	const cloud = (await read(A, 'cloudHooks.rolesInfo')) != null;
 	console.log('build: ' + (cloud ? 'CLOUD (roles plugin)' : 'OSS (no roles)') + ' at ' + BASE);
 

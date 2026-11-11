@@ -27,7 +27,7 @@ const TOOLS = ['inspect_runtime', 'validate_scene', 'logs', 'playtest'];
 
 const read = (page, expr) =>
 	page.evaluate(
-		(e) => new Promise((r) => e.split('.').reduce((o, k) => o[k], window.__stores).subscribe((v) => r(JSON.parse(JSON.stringify(v ?? null))))()),
+		(e) => new Promise((r) => e.split('.').reduce((o, k) => o[k], window.__tp?.test.v1).subscribe((v) => r(JSON.parse(JSON.stringify(v ?? null))))()),
 		expr
 	);
 
@@ -35,11 +35,11 @@ const read = (page, expr) =>
 const onHost = (page, uuid) =>
 	page.evaluate((u) => {
 		/** @type {any} */ let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		const o = g?.getObjectByProperty('uuid', u);
 		if (!o) return null;
 		o.updateWorldMatrix(true, true);
-		const THREE = window.__stores.THREE;
+		const THREE = window.__tp.test.v1.THREE;
 		const box = THREE ? new THREE.Box3().setFromObject(o) : null;
 		return {
 			name: o.name,
@@ -214,15 +214,15 @@ h.run(async () => {
 			A.page.evaluate(
 				([u, f, d]) => {
 					/** @type {any} */ let g;
-					window.__stores.objectsGroup.subscribe((x) => (g = x))();
+					window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 					const o = g.getObjectByProperty('uuid', u);
 					// a click comes after a frame drew the object; the test can land before one (onHost does the same)
 					o.updateWorldMatrix(true, true);
-					const THREE = window.__stores.THREE;
+					const THREE = window.__tp.test.v1.THREE;
 					const ray = new THREE.Raycaster(new THREE.Vector3().fromArray(f), new THREE.Vector3().fromArray(d).normalize());
 					const hit = ray.intersectObject(o, true)[0];
 					if (!hit) return null;
-					window.__stores.ping.sendPing(hit.point, undefined, hit);
+					window.__tp.test.v1.ping.sendPing(hit.point, undefined, hit);
 					return hit.point.toArray();
 				},
 				[uuid, from, dir]
@@ -249,7 +249,7 @@ h.run(async () => {
 		const lampLine = (log || []).filter((e) => e.tool === 'create_objects' && (e.uuids ?? []).includes(lampId)).pop();
 		h.check(!!lampLine, '7. a line for the lamp');
 		if (lampLine) {
-			await A.page.evaluate((e) => window.__stores.agentLog.requestAgentUndo(e), lampLine);
+			await A.page.evaluate((e) => window.__tp.test.v1.agentLog.requestAgentUndo(e), lampLine);
 			await h.eventually(() => onHost(A.page, lampId), (o) => o === null, '7. Undo on the lamp\'s line: gone on the host', 20000);
 		}
 	} finally {
@@ -264,9 +264,9 @@ h.run(async () => {
 	await V.page.waitForFunction(() => !!window.tpAgent, null, { timeout: 30000 });
 	await h.connect(V, A);
 	await V.page.evaluate(() =>
-		window.__stores.cloudHooks.rolesInfo.set({ myId: '', myRole: 'viewer', amAdmin: false, order: [], roleOf: () => 'viewer', setRole: () => {}, synced: () => true })
+		window.__tp.test.v1.cloudHooks.rolesInfo.set({ myId: '', myRole: 'viewer', amAdmin: false, order: [], roleOf: () => 'viewer', setRole: () => {}, synced: () => true })
 	);
-	const before = await A.page.evaluate(() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g.children.length))()));
+	const before = await A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g.children.length))()));
 	for (const [tool, args] of [
 		['playtest', { steps: [{ wait: 0.1 }] }],
 		['create_objects', { objects: [{ kind: 'primitive', primitive: 'Box', at: { ping: 'latest' } }] }],
@@ -278,7 +278,7 @@ h.run(async () => {
 	const read1 = await V.page.evaluate(() => window.tpAgent.exec('validate_scene', {}));
 	h.check(!read1?.refused && Array.isArray(read1?.issues), '8. …but a viewer may validate (read-only)');
 	await new Promise((r) => setTimeout(r, 1500));
-	const after = await A.page.evaluate(() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g.children.length))()));
+	const after = await A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g.children.length))()));
 	h.check(after === before, '8. nothing reached the host from the viewer (' + before + ' → ' + after + ')');
 
 	await bounded(h.finish(browser), 30000);

@@ -13,7 +13,7 @@ const EPS = 1e-6;
 /** world boxes + positions of the named uuids on a page */
 const poses = (page, uuids) =>
 	page.evaluate((ids) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let g; w.objectsGroup.subscribe((v) => (g = v))();
 		return ids.map((id) => {
 			const o = g.getObjectByProperty('uuid', id);
@@ -27,14 +27,14 @@ const poses = (page, uuids) =>
 
 const depth = (page) =>
 	page.evaluate(() => {
-		let d; window.__stores.history.undoStack.subscribe((v) => (d = v.length))();
+		let d; window.__tp.test.v1.history.undoStack.subscribe((v) => (d = v.length))();
 		return d;
 	});
 
 /** pose the boxes on A and replicate (the move path) */
 async function place(A, items) {
 	await A.page.evaluate((list) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let g; w.objectsGroup.subscribe((v) => (g = v))();
 		let p; w.peers.subscribe((v) => (p = v))();
 		for (const it of list) {
@@ -65,7 +65,7 @@ h.run(async () => {
 	await h.connect(B, A);
 
 	const uuids = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const out = [];
 		for (const dims of ['1 1 1', '2 1 1', '0.5 1 1']) {
 			w.commandsHandler.sceneCommand('/create Box ' + dims);
@@ -85,7 +85,7 @@ h.run(async () => {
 	await onBoth(A, B, uuids, (p) => p.every((q, i) => q && near(q.pos[0], START[i].pos[0])), 'premise: three boxes posed on both peers');
 
 	// select all three and open the Inspector (properties of a SET)
-	await A.page.evaluate((ids) => window.__stores.objectActions.applySelectionSet(ids, true), uuids);
+	await A.page.evaluate((ids) => window.__tp.test.v1.objectActions.applySelectionSet(ids, true), uuids);
 	await A.page.waitForSelector('#arrange-section', { timeout: 15000 }).catch(() => {});
 	h.check(await A.page.locator('#arrange-section').isVisible().catch(() => false), 'the multi-select Inspector shows the Arrange section');
 	const press = async (id) => {
@@ -95,7 +95,7 @@ h.run(async () => {
 		await A.page.waitForTimeout(400);
 	};
 	const undo = async () => {
-		await A.page.evaluate(() => window.__stores.history.undo());
+		await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 		await A.page.waitForTimeout(400);
 	};
 	const restored = (p) => p.every((q, i) => q && START[i].pos.every((v, a) => near(q.pos[a], v)));
@@ -156,7 +156,7 @@ h.run(async () => {
 	];
 	await place(A, DROP);
 	await onBoth(A, B, uuids, (p) => near(p[0].pos[1], 4) && near(p[2].pos[1], 3), 'premise: two boxes lifted');
-	await A.page.evaluate((ids) => window.__stores.objectActions.applySelectionSet([ids[0], ids[2]], true), uuids);
+	await A.page.evaluate((ids) => window.__tp.test.v1.objectActions.applySelectionSet([ids[0], ids[2]], true), uuids);
 	await A.page.waitForSelector('#arrange-drop', { timeout: 15000 }).catch(() => {});
 	const dd = await depth(A.page);
 	await press('arrange-drop');
@@ -167,7 +167,7 @@ h.run(async () => {
 
 	// --- 5. the object menu row does the same, as one entry ---
 	const menu = await A.page.evaluate((ids) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const items = s.objectMenu.flattenMenuItems(s.objectMenu.buildObjectMenuItems(ids[0], { selection: [ids[0], ids[2]] }));
 		return items.map((i) => i.label);
 	}, uuids);
@@ -175,7 +175,7 @@ h.run(async () => {
 	h.check(menu.some((l) => /^X min/.test(l)) && menu.some((l) => /^Y centre/.test(l)), 'the object menu offers Align rows per axis');
 	const dm = await depth(A.page);
 	await A.page.evaluate((ids) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const item = s.objectMenu.flattenMenuItems(s.objectMenu.buildObjectMenuItems(ids[0], { selection: [ids[0], ids[2]] })).find((i) => i.label === 'Drop to ground (2)');
 		item.action();
 	}, uuids);

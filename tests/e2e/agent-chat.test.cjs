@@ -27,21 +27,21 @@ const sdk = (f) => import(pathToFileURL(path.join(agentDir, 'node_modules/@model
 const BASE = h.URL.replace(/\/+$/, '');
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 
-/** read a store off window.__stores; 'mod.store' reaches into a lazily imported module (agentLog.agentLog) */
+/** read a store off window.__tp?.test.v1; 'mod.store' reaches into a lazily imported module (agentLog.agentLog) */
 const read = (page, expr) =>
 	page.evaluate(
-		(e) => new Promise((r) => e.split('.').reduce((o, k) => o[k], window.__stores).subscribe((v) => r(JSON.parse(JSON.stringify(v ?? null))))()),
+		(e) => new Promise((r) => e.split('.').reduce((o, k) => o[k], window.__tp?.test.v1).subscribe((v) => r(JSON.parse(JSON.stringify(v ?? null))))()),
 		expr
 	);
 const sceneNames = (page) =>
-	page.evaluate(() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g ? g.children.map((c) => c.name) : []))()));
+	page.evaluate(() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g ? g.children.map((c) => c.name) : []))()));
 
 /** send an agentchat message from a page (what 56-chat's window does) */
 const sendChat = (page, msg) =>
 	page.evaluate(
 		(m) =>
 			new Promise((r) =>
-				window.__stores.peers.subscribe((p) => {
+				window.__tp.test.v1.peers.subscribe((p) => {
 					p.send({ type: 'agentchat', from: p.peer.id, ...m });
 					r(true);
 				})()
@@ -56,7 +56,7 @@ const seen = (page, agentId) =>
 		const w = /** @type {any} */ (window);
 		w.__ac = w.__ac || [];
 		let P;
-		w.__stores.peers.subscribe((p) => (P = p))();
+		w.__tp.test.v1.peers.subscribe((p) => (P = p))();
 		if (!w.__acTapped) {
 			const conn = Object.values(P?.peer?.connections ?? {}).flat()[0];
 			const proto = conn && Object.getPrototypeOf(conn);
@@ -119,7 +119,7 @@ h.run(async () => {
 		initScript,
 		`localStorage.setItem('debugStores', 'true');
 		 (function poll() {
-		   const h = window.__stores && window.__stores.cloudHooks;
+		   const h = window.__tp?.test.v1 && window.__tp.test.v1.cloudHooks;
 		   if (!h || !h.rolesInfo) return setTimeout(poll, 200);
 		   const roles = ${JSON.stringify({ [C.id]: 'viewer' })};
 		   h.rolesInfo.set({ myId: null, myRole: 'editor', amAdmin: false, order: [], roleOf: (id) => roles[id] || 'editor', setRole: () => {} });
@@ -335,5 +335,5 @@ h.run(async () => {
 });
 
 function openedPeersOf(page) {
-	return page.evaluate(() => new Promise((r) => window.__stores.peers.subscribe((p) => r(p?.openedPeers ? [...p.openedPeers] : []))()));
+	return page.evaluate(() => new Promise((r) => window.__tp.test.v1.peers.subscribe((p) => r(p?.openedPeers ? [...p.openedPeers] : []))()));
 }

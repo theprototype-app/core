@@ -14,11 +14,11 @@ const h = require('./helpers.cjs');
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
-	await A.page.waitForFunction(() => !!window.__stores?.animationPreview, { timeout: 20000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.animationPreview, { timeout: 20000 });
 
 	// an object with an authored clip, so the clip list (and its grip) exist
 	await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 400));
 		let g;
@@ -61,7 +61,7 @@ h.run(async () => {
 	// its ceiling — a 900px drag then moved it 2px, and the travel check below read a full
 	// pane as a frozen grip. The SHORT pane (the report's own order) is driven at the end.
 	await A.page.evaluate(async () => {
-		window.__stores.bottomDock.dockHeight.set(560);
+		window.__tp.test.v1.bottomDock.dockHeight.set(560);
 		await new Promise((r) => setTimeout(r, 500));
 	});
 	const start = await geom();
@@ -130,8 +130,8 @@ h.run(async () => {
 	// a height that was legal at the old size would otherwise leave the grip outside
 	const shrunk = await A.page.evaluate(async () => {
 		let before = 0;
-		window.__stores.bottomDock.dockHeight.subscribe((/** @type {number} */ v) => (before = v))();
-		window.__stores.bottomDock.dockHeight.set(220);
+		window.__tp.test.v1.bottomDock.dockHeight.subscribe((/** @type {number} */ v) => (before = v))();
+		window.__tp.test.v1.bottomDock.dockHeight.set(220);
 		await new Promise((r) => setTimeout(r, 600));
 		const grip = document.getElementById('animation-clips-resize')?.getBoundingClientRect();
 		const side = document.getElementById('authored-clips')?.parentElement?.getBoundingClientRect();

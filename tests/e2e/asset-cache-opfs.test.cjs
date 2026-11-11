@@ -52,7 +52,7 @@ h.run(async () => {
 
 	const facts = () =>
 		A.page.evaluate(async () => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			await s.assetCache.assetCacheReady();
 			let idx;
 			s.assetCache.assetCacheIndex.subscribe((v) => (idx = v))();
@@ -81,7 +81,7 @@ h.run(async () => {
 	// ---- §1 first load: downloads -----------------------------------------------------------------
 	const first = await A.page.evaluate(
 		async ({ duck, sky }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const a = await s.packCache.fetchPackBuffer(duck);
 			const b = await s.assetCache.fetchCached(new URL(sky, document.baseURI).href, {
 				kind: 'sky',
@@ -102,11 +102,11 @@ h.run(async () => {
 	await h.eventually(facts, (x) => x.keys.length >= 2, 'both are in the cache index');
 
 	// §5: the legacy copy moved over and the old cache is gone
-	await A.page.evaluate(() => window.__stores.packCache.loadPackCacheIndex());
+	await A.page.evaluate(() => window.__tp.test.v1.packCache.loadPackCacheIndex());
 	const legacy = await A.page.evaluate(
 		async (url) => ({
 			old: await caches.has('tp-pack-files-v1'),
-			held: !!(await window.__stores.packCache.cachedPackBuffer(url))
+			held: !!(await window.__tp.test.v1.packCache.cachedPackBuffer(url))
 		}),
 		LEGACY
 	);
@@ -132,7 +132,7 @@ h.run(async () => {
 	await h.answerRestore(A).catch(() => {});
 	const second = await A.page.evaluate(
 		async ({ duck, sky }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const a = await s.packCache.fetchPackBuffer(duck);
 			const b = await s.assetCache.fetchCached(new URL(sky, document.baseURI).href, {
 				kind: 'sky',
@@ -174,8 +174,8 @@ h.run(async () => {
 
 	// ---- §4 Settings ▸ Storage -----------------------------------------------------------------------
 	await A.page.evaluate(() => {
-		window.__stores.settingsSection.set('storage');
-		window.__stores.settingsOpen.set(true);
+		window.__tp.test.v1.settingsSection.set('storage');
+		window.__tp.test.v1.settingsOpen.set(true);
 	});
 	const usage = A.page.locator('#asset-cache-usage');
 	await usage.waitFor({ timeout: 15000 });

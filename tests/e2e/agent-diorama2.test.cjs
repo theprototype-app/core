@@ -32,7 +32,7 @@ let bridgeSeq = 0;
 const onHost = (page, uuid) =>
 	page.evaluate((u) => {
 		/** @type {any} */ let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		const o = g?.getObjectByProperty('uuid', u);
 		if (!o) return null;
 		g.updateMatrixWorld(true);
@@ -102,7 +102,7 @@ const EAR = { vertices: [[0.2, 0, 0], [0.6, 0, 0], [0.3, 0.5, 0.2]], faces: [[0,
 /** join a bridge to `page`'s session and wait until it is in @param {any} A */
 async function joinBridge(A) {
 	let changed = 0;
-	const id = await A.page.evaluate(() => new Promise((r) => window.__stores.peers.subscribe((p) => r(p?.peer?.id))()));
+	const id = await A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.peers.subscribe((p) => r(p?.peer?.id))()));
 	const B = await startBridge([BASE + '/#' + id], () => changed++);
 	await h.approveButton(A.page).click({ timeout: 120000 });
 	await h.eventually(async () => changed, (n) => n > 0, 'the host tools arrived (tools/list_changed)', 60000);
@@ -126,7 +126,7 @@ async function phone(browser, name, viewport, askQuality) {
 	const P = await h.setupPage(browser, name, { context: { viewport, deviceScaleFactor: 2.9, hasTouch: true, isMobile: true } });
 	await h.answerRestore(P);
 	const added = await P.page.evaluate(() => {
-		const sp = /** @type {any} */ (window).__stores.scenePost;
+		const sp = /** @type {any} */ (window).__tp.test.v1.scenePost;
 		sp.addPostEffect('bloom');
 		return sp.postStackFor('scene').effects.map((/** @type {any} */ e) => e.kind);
 	});
@@ -170,7 +170,7 @@ h.run(async () => {
 		await h.eventually(() => onHost(A.page, bodyId), (o) => o?.parent === foxId, '1. premise: the host has Body inside Fox', 20000);
 		await closeBridge(B);
 		await A.page.waitForTimeout(3000);
-		await A.page.evaluate(() => window.__stores.autosave.saveNow());
+		await A.page.evaluate(() => window.__tp.test.v1.autosave.saveNow());
 		await A.page.waitForTimeout(1500);
 		await h.freshReload(A);
 		h.check(await h.answerRestore(A, 'restore', 60000), '1. the host was offered its session back and restored it');
@@ -186,7 +186,7 @@ h.run(async () => {
 		const tailId = tail.created?.[0]?.uuid;
 		h.check(!!tailId && !tail.created[0].warnings, '1. a new mesh goes INTO the restored group: ' + short(tail));
 		await h.eventually(() => onHost(A.page, tailId), (o) => o?.parent === foxId && near(o.pos, [0.5, 0, 0]), '1. the host: Tail in Fox at local [0.5, 0, 0]', 20000);
-		const count = async () => (await A.page.evaluate(() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g.children.length))())));
+		const count = async () => (await A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g.children.length))())));
 		const before = await count();
 		const lost = json(await call(B.client, 'create_mesh', { ...CUBE, name: 'Lost', parentUuid: '00000000-0000-4000-8000-000000000000' }));
 		h.check(/nothing was made/.test(lost.error || ''), '1. a missing parent is an error: ' + short(lost.error));
@@ -240,7 +240,7 @@ h.run(async () => {
 			json(await call(B.client, 'update_objects', { updates: [{ uuid: lidPart.uuid, position: [0, 0.3, 0] }] }));
 			await h.eventually(() => onHost(A.page, lidPart.uuid), (o) => o && near(o.pos, [0, 0.3, 0]), '6. the Lid part is addressable (moved by its uuid)', 20000);
 		}
-		const lib = await A.page.evaluate((hash) => new Promise((r) => window.__stores.explorer.explorerItems.subscribe((items) => r(items.some((i) => i.hash === hash)))()), chest.file?.hash);
+		const lib = await A.page.evaluate((hash) => new Promise((r) => window.__tp.test.v1.explorer.explorerItems.subscribe((items) => r(items.some((i) => i.hash === hash)))()), chest.file?.hash);
 		h.check(lib === true, '6. the file was copied into the library first: ' + short(chest.file));
 		const pos = Buffer.from(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]).buffer).toString('base64');
 		const gltf = { asset: { version: '2.0' }, scene: 0, scenes: [{ nodes: [0] }], nodes: [{ name: 'Wing', mesh: 0 }], meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }], accessors: [{ bufferView: 0, componentType: 5126, count: 3, type: 'VEC3', min: [0, 0, 0], max: [1, 1, 0] }], bufferViews: [{ buffer: 0, byteLength: 36 }], buffers: [{ byteLength: 36, uri: 'data:application/octet-stream;base64,' + pos }] };
@@ -323,7 +323,7 @@ h.run(async () => {
 		h.check(/height/.test(tRow?.paintedBy ?? ''), '22. paintBy height painted the layers: ' + short(tRow?.paintedBy));
 		if (tRow?.uuid) {
 			await h.eventually(
-				() => A.page.evaluate((u) => { const d = window.__stores.terrainPaint?.splatDigest?.(u); return typeof d === 'string' ? d.length : 0; }, tRow.uuid),
+				() => A.page.evaluate((u) => { const d = window.__tp.test.v1.terrainPaint?.splatDigest?.(u); return typeof d === 'string' ? d.length : 0; }, tRow.uuid),
 				(len) => len > 0,
 				'22. the host has the splat (layers draw)',
 				30000
@@ -340,7 +340,7 @@ h.run(async () => {
 			// the set reaches the host over the wire: wait for it before reading where the instances landed
 			let inst = [];
 			for (let i = 0; i < 60 && !inst.length; i++) {
-				inst = await A.page.evaluate(({ u, id }) => (window.__stores.terrainPaint.scatterInstancesOf(u, id) ?? []).map((p) => [p.x, p.z]), { u: padId, id: setRow.set });
+				inst = await A.page.evaluate(({ u, id }) => (window.__tp.test.v1.terrainPaint.scatterInstancesOf(u, id) ?? []).map((p) => [p.x, p.z]), { u: padId, id: setRow.set });
 				if (!inst.length) await A.page.waitForTimeout(500);
 			}
 			h.check(inst.length > 0, '23. the host drew the set: ' + inst.length);
@@ -352,7 +352,7 @@ h.run(async () => {
 		const aimed = json(await call(B.client, 'create_objects', { objects: [{ kind: 'primitive', primitive: 'Box', name: 'Arrow', position: [0, 1, 10], lookAt: [5, 1, 10], front: '+x' }] }));
 		const arrowId = aimed.created?.[0]?.uuid;
 		const axisOut = await A.page.evaluate((u) => {
-			let g; window.__stores.objectsGroup.subscribe((x) => (g = x))();
+			let g; window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 			const o = g?.getObjectByProperty('uuid', u);
 			if (!o) return null;
 			o.updateMatrixWorld(true);
@@ -370,12 +370,12 @@ h.run(async () => {
 		h.check(!has(byOrigin) && has(byTouch), '28. a box at the wall\'s end finds it by touches, not by origin: ' + short({ origin: has(byOrigin), touches: has(byTouch) }));
 
 		console.log('\n=== 26. screenshot camera / hud / avatars ===');
-		await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create Camera'));
+		await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create Camera'));
 		// no agent tool makes a camera: the person does (the camera-objects suite's way), and the agent finds it
 		let camRow = null;
 		for (let i = 0; i < 40 && !camRow; i++) {
 			camRow = await A.page.evaluate(() => {
-				let g; window.__stores.objectsGroup.subscribe((x) => (g = x))();
+				let g; window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 				let found = null;
 				g?.traverse((o) => { if (!found && o.userData?.camera) found = o.uuid; });
 				return found;

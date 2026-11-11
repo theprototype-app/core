@@ -18,19 +18,19 @@ h.run(async () => {
 	const eyeY = () =>
 		page.evaluate(() => {
 			let cam;
-			window.__stores.playerCam.subscribe((c) => (cam = c))();
-			return cam ? cam.getWorldPosition(new window.__stores.THREE.Vector3()).y : null;
+			window.__tp.test.v1.playerCam.subscribe((c) => (cam = c))();
+			return cam ? cam.getWorldPosition(new window.__tp.test.v1.THREE.Vector3()).y : null;
 		});
 	const touch = () =>
 		page.evaluate(() => {
 			let spec;
-			window.__stores.touchSpec.touchSpec.subscribe((v) => (spec = v))();
+			window.__tp.test.v1.touchSpec.touchSpec.subscribe((v) => (spec = v))();
 			return { preset: spec.preset, ids: spec.actions.map((a) => a.id) };
 		});
-	const fly = () => page.evaluate(() => window.__stores.playSettings.resolvePlaySettings(null).fly);
+	const fly = () => page.evaluate(() => window.__tp.test.v1.playSettings.resolvePlaySettings(null).fly);
 	/** enter Play, hold a key, leave: how far the eye rose */
 	const holdIn = async (code, ms = 900) => {
-		await page.evaluate(() => window.__stores.isLocked.set(true));
+		await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 		await page.waitForTimeout(500);
 		const y0 = await eyeY();
 		await page.keyboard.down(code);
@@ -41,7 +41,7 @@ h.run(async () => {
 		return { y0, y1, dy: y1 - y0 };
 	};
 	const pick = async (label) => {
-		await page.evaluate(() => window.__stores.openSceneSection('Play')); // 38 #33: its own section
+		await page.evaluate(() => window.__tp.test.v1.openSceneSection('Play')); // 38 #33: its own section
 		const opt = page.locator('#physics-play-flying [role="radio"]', { hasText: label });
 		await opt.waitFor({ state: 'visible', timeout: 10000 });
 		await opt.scrollIntoViewIfNeeded();
@@ -64,7 +64,7 @@ h.run(async () => {
 	if (SHOTS) await page.screenshot({ path: SHOTS + '/05-flying-setting.png' });
 	const playBlock = await page.evaluate(() => {
 		let p;
-		window.__stores.scenePhysics.scenePlay.subscribe((v) => (p = v))();
+		window.__tp.test.v1.scenePhysics.scenePlay.subscribe((v) => (p = v))();
 		return p;
 	});
 	h.check(playBlock?.locomotion?.fly === true && !playBlock.locomotion.noFly, '2.2 the scene play block carries locomotion.fly (shared scene data)');
@@ -79,14 +79,14 @@ h.run(async () => {
 	// a REAL fly-mode Character Controller node (the runtime re-declares charControl from the graph)
 	const ccNode = (mode) =>
 		page.evaluate((mode) => {
-			window.__stores.setActiveGraph(window.__stores.SCENE_GRAPH);
-			window.__stores.flowNodes.set(
+			window.__tp.test.v1.setActiveGraph(window.__tp.test.v1.SCENE_GRAPH);
+			window.__tp.test.v1.flowNodes.set(
 				mode ? [{ id: 'cc', type: 'charcontroller', position: { x: 0, y: 0 }, data: { type: 'charcontroller', mode, speed: 0.1, jumpHeight: 1, eyeHeight: 1.7, gravity: true }, class: 'w-[150px]' }] : []
 			);
-			window.__stores.flowEdges.set([]);
+			window.__tp.test.v1.flowEdges.set([]);
 		}, mode);
 	await ccNode('fly');
-	await h.eventually(() => page.evaluate(() => { let c; window.__stores.charController.charControl.subscribe((v) => (c = v))(); return c?.mode; }), (m) => m === 'fly', '3.0 (premise) a fly-mode Character Controller is declared', 6000);
+	await h.eventually(() => page.evaluate(() => { let c; window.__tp.test.v1.charController.charControl.subscribe((v) => (c = v))(); return c?.mode; }), (m) => m === 'fly', '3.0 (premise) a fly-mode Character Controller is declared', 6000);
 	h.check((await fly()) === 'removed', '3.1 Removed wins over a Character Controller in fly mode');
 	const up3 = await holdIn('KeyE');
 	h.check(Math.abs(up3.dy) < 0.02, `3.2 E in Play does not rise (${up3.dy.toFixed(3)} m)`);
@@ -103,11 +103,11 @@ h.run(async () => {
 	await h.eventually(() => fly(), (f) => f === 'off', '4.1 Off and no controller: flying hidden again', 6000);
 	const camY0 = await page.evaluate(() => {
 		let c;
-		window.__stores.globalCamera.subscribe((x) => (c = x))();
+		window.__tp.test.v1.globalCamera.subscribe((x) => (c = x))();
 		return c.position.y;
 	});
 	// give the VIEWPORT the keyboard (the last click was in the Configure Scene panel)
-	await page.evaluate(() => window.__stores.sceneInspectorOpen?.set?.(false));
+	await page.evaluate(() => window.__tp.test.v1.sceneInspectorOpen?.set?.(false));
 	await page.keyboard.press('Escape');
 	await page.mouse.click(640, 420);
 	await page.waitForTimeout(300);
@@ -116,7 +116,7 @@ h.run(async () => {
 	await page.keyboard.up('KeyE');
 	const camY1 = await page.evaluate(() => {
 		let c;
-		window.__stores.globalCamera.subscribe((x) => (c = x))();
+		window.__tp.test.v1.globalCamera.subscribe((x) => (c = x))();
 		return c.position.y;
 	});
 	h.check(Math.abs(camY1 - camY0) > 0.05, `4.2 the EDITOR's own E still flies the view (${(camY1 - camY0).toFixed(2)} m)`);

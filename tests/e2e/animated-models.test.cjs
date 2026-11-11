@@ -7,7 +7,7 @@ const animState = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.animatedImports.animatedObjects.subscribe((map) => {
+				window.__tp.test.v1.animatedImports.animatedObjects.subscribe((map) => {
 					const [uuid, state] = Object.entries(map)[0] ?? [];
 					resolve(uuid ? { uuid, ...state } : null);
 				})();
@@ -18,7 +18,7 @@ const moverX = (page, uuid) =>
 	page.evaluate(
 		(uuid) =>
 			new Promise((resolve) => {
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const root = g?.getObjectByProperty('uuid', uuid);
 					resolve(root?.getObjectByName('mover')?.position.x ?? null);
 				})();
@@ -38,8 +38,8 @@ h.run(async () => {
 	const bytes = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				const THREE = window.__stores.THREE;
-				const { GLTFExporter } = window.__stores.GLTFExporterModule;
+				const THREE = window.__tp.test.v1.THREE;
+				const { GLTFExporter } = window.__tp.test.v1.GLTFExporterModule;
 				const root = new THREE.Group();
 				const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
 				mesh.name = 'mover';
@@ -58,7 +58,7 @@ h.run(async () => {
 
 	await A.page.evaluate((bytes) => {
 		const file = new File([new Uint8Array(bytes)], 'anim.glb');
-		window.__stores.fileHandler.importFile(file, 'AnimTest');
+		window.__tp.test.v1.fileHandler.importFile(file, 'AnimTest');
 	}, bytes);
 
 	await h.eventually(() => animState(A.page), (s) => s?.clips?.includes('slide'), 'animated import registered on A');
@@ -70,7 +70,7 @@ h.run(async () => {
 	const s1 = await moverX(A.page, uuid);
 	await A.page.waitForTimeout(400);
 	h.check(s1 === (await moverX(A.page, uuid)), '33: ...and the model stands still');
-	await A.page.evaluate((uuid) => window.__stores.animatedImports.setAnimationState(uuid, { playing: true }), uuid);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.animatedImports.setAnimationState(uuid, { playing: true }), uuid);
 
 	// the clip actually animates on A once played
 	const a1 = await moverX(A.page, uuid);
@@ -90,7 +90,7 @@ h.run(async () => {
 	// read each page's clip time AND wall clock in one task, and compare the clocks instead.
 	const phaseOf = (page) =>
 		page.evaluate((uuid) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.animatedImports.tickAnimatedMixers();
 			const g = (() => { let v; s.objectsGroup.subscribe((x) => (v = x))(); return v; })();
 			return { t: s.moduleSDK.runtimeNow(), wall: Date.now() / 1000, x: g.getObjectByProperty('uuid', uuid)?.getObjectByName('mover')?.position.x ?? null };
@@ -100,13 +100,13 @@ h.run(async () => {
 	h.check(Math.abs(skew) < 0.15 && pa.x !== null && pb.x !== null, `peers in phase: their clip clocks agree within ${(skew * 1000).toFixed(0)} ms (A x ${pa.x?.toFixed(2)}, B x ${pb.x?.toFixed(2)})`);
 
 	// pause replicates and freezes
-	await A.page.evaluate((uuid) => window.__stores.animatedImports.setAnimationState(uuid, { playing: false }), uuid);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.animatedImports.setAnimationState(uuid, { playing: false }), uuid);
 	await h.eventually(() => animState(B.page), (s) => s?.playing === false, 'pause replicated to B');
 	const f1 = await moverX(B.page, uuid);
 	await B.page.waitForTimeout(400);
 	const f2 = await moverX(B.page, uuid);
 	h.check(f1 === f2, 'pose frozen on B while paused');
-	await A.page.evaluate((uuid) => window.__stores.animatedImports.setAnimationState(uuid, { playing: true }), uuid);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.animatedImports.setAnimationState(uuid, { playing: true }), uuid);
 
 	// late joiner receives the same file via the handshake
 	const C = await h.setupPage(browser, 'C');
@@ -114,10 +114,10 @@ h.run(async () => {
 	await h.eventually(() => moverX(C.page, uuid), (x) => x !== null, 'late joiner received the animated model', 20000);
 
 	// undo removes it everywhere; redo brings it back animating
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => moverX(A.page, uuid), (x) => x === null, 'undo removes it on A');
 	await h.eventually(() => moverX(B.page, uuid), (x) => x === null, 'undo replicated to B');
-	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 	await h.eventually(() => moverX(B.page, uuid), (x) => x !== null, 'redo restores it on B', 15000);
 
 	await h.finish(browser);

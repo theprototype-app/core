@@ -16,26 +16,26 @@ const BASE = h.URL.replace(/\/$/, '') + '/mock-flow-ai/v1';
 
 const simulating = (peer) =>
 	peer.page.evaluate(
-		() => new Promise((r) => window.__stores.physics.simulating.subscribe((s) => r(s))())
+		() => new Promise((r) => window.__tp.test.v1.physics.simulating.subscribe((s) => r(s))())
 	);
 const count = (peer) =>
 	peer.page.evaluate(
-		() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g ? g.children.length : 0))())
+		() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g ? g.children.length : 0))())
 	);
 const msgs = (peer) =>
 	peer.page.evaluate(
-		() => new Promise((r) => window.__stores.aiAssistant.aiMessages.subscribe((m) => r(m))())
+		() => new Promise((r) => window.__tp.test.v1.aiAssistant.aiMessages.subscribe((m) => r(m))())
 	);
 const busy = (peer) =>
 	peer.page.evaluate(
-		() => new Promise((r) => window.__stores.aiAssistant.aiBusy.subscribe((b) => r(b))())
+		() => new Promise((r) => window.__tp.test.v1.aiAssistant.aiBusy.subscribe((b) => r(b))())
 	);
 /** {name -> uuid} for every object in the replicated group (recursive). */
 const uuidsByName = (peer) =>
 	peer.page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const map = {};
 					g?.traverse((o) => {
 						if (o !== g && o.name) map[o.name] = o.uuid;
@@ -48,7 +48,7 @@ const graphsSnapshot = (peer) =>
 	peer.page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.flowGraphs.subscribe((all) => {
+				window.__tp.test.v1.flowGraphs.subscribe((all) => {
 					const out = {};
 					for (const [id, g] of Object.entries(all))
 						out[id] = { nodes: g.nodes.map((n) => ({ id: n.id, type: n.type, data: { ...n.data } })), edges: g.edges.length };
@@ -63,7 +63,7 @@ h.run(async () => {
 	// throwaway page warms the vite dep-optimizer for the lazy rapier import
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(4000);
 		await warm.ctx.close();
 	}
@@ -198,7 +198,7 @@ h.run(async () => {
 
 	// provider: unstreamed + physics tools ON
 	await A.page.evaluate((base) => {
-		window.__stores.aiProviders.addAiProvider({
+		window.__tp.test.v1.aiProviders.addAiProvider({
 			preset: 'custom',
 			label: 'FlowMock',
 			baseUrl: base,
@@ -207,14 +207,14 @@ h.run(async () => {
 			stream: false,
 			physicsTools: true
 		});
-		window.__stores.aiProviders.setAiEnabled(true);
+		window.__tp.test.v1.aiProviders.setAiEnabled(true);
 	}, BASE);
 
 	// capture every peer broadcast type (no peers connected — wrap send)
 	await A.page.evaluate(() => {
 		window.__sent = [];
 		let peerRef;
-		window.__stores.peers.subscribe((p) => (peerRef = p))();
+		window.__tp.test.v1.peers.subscribe((p) => (peerRef = p))();
 		const orig = peerRef.send.bind(peerRef);
 		peerRef.send = (data) => {
 			window.__sent.push(data?.type);
@@ -224,7 +224,7 @@ h.run(async () => {
 
 	// ---- the spider scenario ---------------------------------------------------------
 	const base0 = await count(A);
-	await A.page.evaluate(() => window.__stores.aiAssistant.runPrompt('create a moving spider'));
+	await A.page.evaluate(() => window.__tp.test.v1.aiAssistant.runPrompt('create a moving spider'));
 	await h.eventually(() => busy(A), (b) => b === false, 'spider prompt finished', 90000);
 
 	await h.eventually(() => count(A), (n) => n === base0 + 3, 'scene has ground + pebble + spider group (3 top-level)');
@@ -245,7 +245,7 @@ h.run(async () => {
 	);
 
 	await h.eventually(
-		() => A.page.evaluate((u) => window.__stores.flowRuntime.isAnimatedTarget(u), spiderUuid),
+		() => A.page.evaluate((u) => window.__tp.test.v1.flowRuntime.isAnimatedTarget(u), spiderUuid),
 		(v) => v === true,
 		'group is a live animated target (implicit owner)'
 	);
@@ -253,14 +253,14 @@ h.run(async () => {
 	const groundPhysics = await A.page.evaluate(
 		(u) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => r(g.getObjectByProperty('uuid', u)?.userData?.physics ?? null))()
+				window.__tp.test.v1.objectsGroup.subscribe((g) => r(g.getObjectByProperty('uuid', u)?.userData?.physics ?? null))()
 			),
 		names.Ground
 	);
 	h.check(groundPhysics?.mode === 'static', 'ground userData.physics is static');
 
 	const joints0 = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.joints.sceneJoints.subscribe((j) => r(j))())
+		() => new Promise((r) => window.__tp.test.v1.joints.sceneJoints.subscribe((j) => r(j))())
 	);
 	h.check(joints0.length === 1 && joints0[0].kind === 'revolute', 'one revolute joint def in sceneJoints');
 
@@ -279,19 +279,19 @@ h.run(async () => {
 	);
 
 	// ---- one undo reverts everything (after reset), redo restores without sim -------
-	await A.page.evaluate(() => window.__stores.physics.resetSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.resetSimulation());
 	await h.eventually(() => simulating(A), (s) => s === false, 'simulation reset/stopped');
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => count(A), (n) => n === base0, 'one undo removed all spider objects');
 	await h.eventually(
-		() => A.page.evaluate(() => new Promise((r) => window.__stores.joints.sceneJoints.subscribe((j) => r(j.length))())),
+		() => A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.joints.sceneJoints.subscribe((j) => r(j.length))())),
 		(n) => n === 0,
 		'undo removed the joint def'
 	);
 	const graphsAfterUndo = await graphsSnapshot(A);
 	h.check(!graphsAfterUndo[spiderUuid], 'undo removed the group graph document');
 
-	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 	await h.eventually(() => count(A), (n) => n === base0 + 3, 'redo restored the spider');
 	const graphsAfterRedo = await graphsSnapshot(A);
 	h.check(
@@ -301,15 +301,15 @@ h.run(async () => {
 	h.check((await simulating(A)) === false, 'redo did NOT restart the simulation');
 
 	// ---- gating: physics tools OFF ---------------------------------------------------
-	await A.page.evaluate(() => window.__stores.aiAssistant.resetAiConversation());
+	await A.page.evaluate(() => window.__tp.test.v1.aiAssistant.resetAiConversation());
 	await A.page.evaluate(() => {
 		let providers;
-		window.__stores.aiProviders.aiProviders.subscribe((p) => (providers = p))();
-		window.__stores.aiProviders.updateAiProvider(providers[0].id, { physicsTools: false });
+		window.__tp.test.v1.aiProviders.aiProviders.subscribe((p) => (providers = p))();
+		window.__tp.test.v1.aiProviders.updateAiProvider(providers[0].id, { physicsTools: false });
 		window.__sent.length = 0;
 	});
 	scenario = 'gated';
-	await A.page.evaluate(() => window.__stores.aiAssistant.runPrompt('make the ground static'));
+	await A.page.evaluate(() => window.__tp.test.v1.aiAssistant.runPrompt('make the ground static'));
 	await h.eventually(() => busy(A), (b) => b === false, 'gated prompt finished', 60000);
 	list = await msgs(A);
 	h.check(
@@ -323,9 +323,9 @@ h.run(async () => {
 	h.check((sceneGraph?.nodes ?? []).some((n) => n.type === 'spin'), 'non-physics node in the same call still created');
 
 	// ---- repair: invented add_behavior name with nodes[] args -------------------------
-	await A.page.evaluate(() => window.__stores.aiAssistant.resetAiConversation());
+	await A.page.evaluate(() => window.__tp.test.v1.aiAssistant.resetAiConversation());
 	scenario = 'repair';
-	await A.page.evaluate(() => window.__stores.aiAssistant.runPrompt('spin something'));
+	await A.page.evaluate(() => window.__tp.test.v1.aiAssistant.runPrompt('spin something'));
 	await h.eventually(() => busy(A), (b) => b === false, 'repair prompt finished', 60000);
 	const sceneAfter = (await graphsSnapshot(A)).scene;
 	h.check(

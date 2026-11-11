@@ -14,7 +14,7 @@ h.run(async () => {
 
 	// --- easing math: linear is identity; ease-in starts slow (< linear) ---
 	const ease = await A.page.evaluate(() => {
-		const { cubicBezierEase, EASINGS } = window.__stores.animationPreview;
+		const { cubicBezierEase, EASINGS } = window.__tp.test.v1.animationPreview;
 		return {
 			lin: cubicBezierEase(EASINGS.linear, 0.5),
 			easeIn: cubicBezierEase(EASINGS['ease-in'], 0.5),
@@ -27,7 +27,7 @@ h.run(async () => {
 
 	// --- open the window on a selected object ---
 	const uuid = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
@@ -42,7 +42,7 @@ h.run(async () => {
 
 	// --- add a movement track: it shows on the left ---
 	await A.page.evaluate((id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		const obj = g.getObjectByProperty('uuid', id);
@@ -66,7 +66,7 @@ h.run(async () => {
 	h.check(!!dropColor && (dropColor.r + dropColor.g + dropColor.b) / 3 > 140, `docked dropdowns use a light text color (${JSON.stringify(dropColor)})`);
 
 	// --- Play drives the object per frame ---
-	await A.page.evaluate((id) => window.__stores.animationPreview.play(id), uuid);
+	await A.page.evaluate((id) => window.__tp.test.v1.animationPreview.play(id), uuid);
 	await A.page.waitForTimeout(280);
 	// Play drives the object PER RENDERED FRAME, and a loaded e2e box renders software GL at
 	// ~4 fps (frames 230-270 ms apart, measured: logs/p1-probe4.log) — so 280 ms after Play
@@ -76,7 +76,7 @@ h.run(async () => {
 		.waitForFunction(
 			(id) => {
 				let g;
-				window.__stores.objectsGroup.subscribe((x) => (g = x))();
+				window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 				return (g.getObjectByProperty('uuid', id)?.position.y ?? 0) > 0.01;
 			},
 			uuid,
@@ -84,7 +84,7 @@ h.run(async () => {
 		)
 		.catch(() => {});
 	const during = await A.page.evaluate((id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		const obj = g.getObjectByProperty('uuid', id);
@@ -96,10 +96,10 @@ h.run(async () => {
 	h.check(during.y > 0.01 && during.y < 4.1, `the object is driven along pos.y while playing (y=${during.y.toFixed(2)})`);
 
 	// --- Stop restores the pose captured at Play ---
-	await A.page.evaluate((id) => window.__stores.animationPreview.stop(id), uuid);
+	await A.page.evaluate((id) => window.__tp.test.v1.animationPreview.stop(id), uuid);
 	await A.page.waitForTimeout(80);
 	const after = await A.page.evaluate((id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		const obj = g.getObjectByProperty('uuid', id);
@@ -114,7 +114,7 @@ h.run(async () => {
 	// (it stays off userData: a uuid-keyed store is what the save/replication paths
 	//  read, and userData would ride the lossy GLTF round trip)
 	const shape = await A.page.evaluate((id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		const obj = g.getObjectByProperty('uuid', id);
@@ -148,7 +148,7 @@ h.run(async () => {
 	// visible to a store-reading check, which is why the helper now fails a suite on
 	// a render error at all.
 	await A.page.evaluate((id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		const clip = ap.activeClip(id);
 		const track = clip.tracks[0];
@@ -163,7 +163,7 @@ h.run(async () => {
 	}, uuid);
 	await A.page.waitForTimeout(400);
 	const survived = await A.page.evaluate((id) => {
-		const ap = window.__stores.animationPreview;
+		const ap = window.__tp.test.v1.animationPreview;
 		return {
 			dock: !!document.querySelector('#animation-dock'),
 			timeline: !!document.querySelector('#animation-timeline'),
@@ -181,12 +181,12 @@ h.run(async () => {
 	);
 
 	// closing and reopening it must work too — that is the actual reported symptom
-	await A.page.evaluate(() => window.__stores.animationClose.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.animationClose.set(true));
 	await A.page.waitForTimeout(250);
 	const closed = await A.page.evaluate(() => !document.querySelector('#animation-dock'));
 	await A.page.evaluate(() => {
-		window.__stores.animationClose.set(false);
-		window.__stores.bottomDock.activateDock('animation');
+		window.__tp.test.v1.animationClose.set(false);
+		window.__tp.test.v1.bottomDock.activateDock('animation');
 	});
 	await A.page.waitForTimeout(500);
 	const reopened = await A.page.evaluate(() => ({

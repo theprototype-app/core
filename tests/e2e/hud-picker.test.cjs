@@ -22,18 +22,18 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
 	const page = A.page;
-	await page.waitForFunction(() => !!window.__stores?.hudDocs, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.hudDocs, { timeout: 30000 });
 
 	// ---- 0. two screens with named elements, so grouping has something to group ----
 	// The EDITOR is what creates a document (ensureDoc on open), so open it first — the
 	// same order a user works in.
 	await page.evaluate(() => {
-		window.__stores.hudEditorClose.set(false);
-		window.__stores.bottomDock.activateDock('hud');
+		window.__tp.test.v1.hudEditorClose.set(false);
+		window.__tp.test.v1.bottomDock.activateDock('hud');
 	});
 	await page.waitForTimeout(1700);
 	const built = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const doc = s.hudDocs.hudDocOf('scene');
 		const menu = doc.screens[0].id;
 		const start = s.hudDocs.addHudElement('scene', menu, { kind: 'button', label: 'Start' }).id;
@@ -54,7 +54,7 @@ h.run(async () => {
 	});
 	h.check(!!built.start && !!built.score, 'premise: two screens carry three named elements');
 
-	const choices = await page.evaluate(() => window.__stores.hudDocs.elementChoices('scene'));
+	const choices = await page.evaluate(() => window.__tp.test.v1.hudDocs.elementChoices('scene'));
 	h.check(
 		choices.length === 3 && choices.every((c) => typeof c.label === 'string'),
 		`elementChoices carries the LABEL, which is what a person recognises (${choices.length})`
@@ -67,10 +67,10 @@ h.run(async () => {
 	// resolveElement / resolveScreen are what the field renders from
 	const resolved = await page.evaluate(
 		(ids) => ({
-			hit: window.__stores.hudDocs.resolveElement('scene', ids.start),
-			miss: window.__stores.hudDocs.resolveElement('scene', 'no-such-element'),
-			byName: window.__stores.hudDocs.resolveScreen(window.__stores.hudDocs.hudDocOf('scene'), 'Playing')?.id,
-			byId: window.__stores.hudDocs.resolveScreen(window.__stores.hudDocs.hudDocOf('scene'), ids.play)?.id
+			hit: window.__tp.test.v1.hudDocs.resolveElement('scene', ids.start),
+			miss: window.__tp.test.v1.hudDocs.resolveElement('scene', 'no-such-element'),
+			byName: window.__tp.test.v1.hudDocs.resolveScreen(window.__tp.test.v1.hudDocs.hudDocOf('scene'), 'Playing')?.id,
+			byId: window.__tp.test.v1.hudDocs.resolveScreen(window.__tp.test.v1.hudDocs.hudDocOf('scene'), ids.play)?.id
 		}),
 		built
 	);
@@ -81,13 +81,13 @@ h.run(async () => {
 	// ---- 1. a hud node's field renders the resolved name, not the id ---------
 	await page.evaluate(() => {
 		// the node editor, scene graph: an object graph would address a different document
-		window.__stores.objectActions.deselectObject();
-		window.__stores.flowGraphClose.set(false);
-		window.__stores.bottomDock.activateDock('flow');
+		window.__tp.test.v1.objectActions.deselectObject();
+		window.__tp.test.v1.flowGraphClose.set(false);
+		window.__tp.test.v1.bottomDock.activateDock('flow');
 	});
 	await page.waitForTimeout(1500);
 	const nodeId = await page.evaluate(async (id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const nid = 'pick-' + Date.now();
 		// createFlowNode takes a WHOLE node - the applier's shape
 		s.nodesHandler.createFlowNode({ id: nid, type: 'hudtext', position: { x: 60, y: 60 }, data: { type: 'hudtext', label: 'HUD Text', element: id } });
@@ -118,7 +118,7 @@ h.run(async () => {
 
 	// ---- 2. the UNRESOLVED state is visible, not silent ----------------------
 	const unresolved = await page.evaluate(async (id) => {
-		window.__stores.nodesHandler.setNodeData(id, { element: 'ghost-element-id' });
+		window.__tp.test.v1.nodesHandler.setNodeData(id, { element: 'ghost-element-id' });
 		await new Promise((r) => setTimeout(r, 700));
 		const el = document.querySelector('.hud-ep');
 		const name = el?.querySelector('.hud-ep-name');
@@ -159,7 +159,7 @@ h.run(async () => {
 		row?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 		await new Promise((r) => setTimeout(r, 800));
 		let g;
-		window.__stores.flowGraphs.subscribe((v) => (g = v))();
+		window.__tp.test.v1.flowGraphs.subscribe((v) => (g = v))();
 		return g.scene.nodes.find((n) => n.type === 'hudtext')?.data?.element ?? null;
 	});
 	h.check(picked === built.start, 'picking a row writes that element onto the node');
@@ -169,7 +169,7 @@ h.run(async () => {
 		document.querySelector('[aria-label="Clear"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 		await new Promise((r) => setTimeout(r, 700));
 		let g;
-		window.__stores.flowGraphs.subscribe((v) => (g = v))();
+		window.__tp.test.v1.flowGraphs.subscribe((v) => (g = v))();
 		const node = g.scene.nodes.find((n) => n.type === 'hudtext');
 		return { element: node?.data?.element ?? '', state: document.querySelector('.hud-ep')?.getAttribute('data-state') };
 	});
@@ -184,7 +184,7 @@ h.run(async () => {
 			?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 		await new Promise((r) => setTimeout(r, 300));
 		let t;
-		window.__stores.hudDocs.hudPickArm.subscribe((v) => (t = v))();
+		window.__tp.test.v1.hudDocs.hudPickArm.subscribe((v) => (t = v))();
 		return { token: t, armedClass: !!document.querySelector('.hud-ep-armed') };
 	});
 	h.check(!!armed.token, 'the eyedropper arms a token');
@@ -192,12 +192,12 @@ h.run(async () => {
 
 	// open the HUD editor and click the Start button ON THE ARTBOARD
 	await page.evaluate(() => {
-		window.__stores.hudEditorClose.set(false);
-		window.__stores.bottomDock.activateDock('hud');
+		window.__tp.test.v1.hudEditorClose.set(false);
+		window.__tp.test.v1.bottomDock.activateDock('hud');
 	});
 	await page.waitForTimeout(1600);
 	const beforePick = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let sel;
 		s.hudDocs.hudSelection.subscribe((v) => (sel = v))();
 		const el = s.hudDocs.hudDocOf('scene').screens[0].elements[0];
@@ -216,7 +216,7 @@ h.run(async () => {
 			})
 		);
 		await new Promise((r2) => setTimeout(r2, 800));
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.flowGraphs.subscribe((v) => (g = v))();
 		let sel;
@@ -242,7 +242,7 @@ h.run(async () => {
 
 	// ---- 6. Escape cancels an armed pick and keeps the selection -------------
 	const escaped = await page.evaluate(async (id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		// select something first, so we can see Escape spare it
 		s.hudDocs.hudSelection.set({ [s.hudDocs.hudDocOf('scene').screens[0].id]: [id] });
 		s.hudDocs.armHudPick('probe-token');
@@ -261,7 +261,7 @@ h.run(async () => {
 
 	// ---- 7. a typed id this editor cannot enumerate still works --------------
 	const manual = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		// what "enter id manually" writes: an id from a module, or another document
 		const nid = 'manual-' + Date.now();
 		s.nodesHandler.createFlowNode({ id: nid, type: 'hudbar', position: { x: 60, y: 220 }, data: { type: 'hudbar', label: 'HUD Bar', element: 'made-by-a-module' } });

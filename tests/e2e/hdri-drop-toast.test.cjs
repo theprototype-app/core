@@ -7,7 +7,7 @@ const toasts = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.toastStore.subscribe((list) =>
+				window.__tp.test.v1.toastStore.subscribe((list) =>
 					r(list.map((t) => (typeof t === 'string' ? { text: t, actions: [] } : { text: t.text, actions: (t.actions ?? []).map((a) => a.label) })))
 				)()
 			)
@@ -21,18 +21,18 @@ h.run(async () => {
 	// a minimal Radiance header is enough: the drop never decodes it
 	const id = await page.evaluate(async () => {
 		const bytes = new TextEncoder().encode('#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y 1 +X 1\n\u0080\u0080\u0080\u0081');
-		const item = await window.__stores.explorer.addItemFromBytes(bytes.buffer, 'sky-test.hdr', null);
+		const item = await window.__tp.test.v1.explorer.addItemFromBytes(bytes.buffer, 'sky-test.hdr', null);
 		return item?.id ?? null;
 	});
 	h.check(!!id, '§0 an .hdr item is in the Explorer');
 	const kind = await page.evaluate(
-		(id) => new Promise((r) => window.__stores.explorer.explorerItems.subscribe((l) => r(l.find((i) => i.id === id)?.kind))()),
+		(id) => new Promise((r) => window.__tp.test.v1.explorer.explorerItems.subscribe((l) => r(l.find((i) => i.id === id)?.kind))()),
 		id
 	);
 	h.check(kind === 'hdri', `§0 ... of kind hdri (${kind})`);
 
 	const vp = page.viewportSize() ?? { width: 1280, height: 720 };
-	await page.evaluate(({ id, x, y }) => window.__stores.explorerDrop.dropExplorerItem({ id, kind: 'hdri', name: 'sky-test.hdr' }, x, y), {
+	await page.evaluate(({ id, x, y }) => window.__tp.test.v1.explorerDrop.dropExplorerItem({ id, kind: 'hdri', name: 'sky-test.hdr' }, x, y), {
 		id,
 		x: Math.round(vp.width / 2),
 		y: Math.round(vp.height * 0.7)

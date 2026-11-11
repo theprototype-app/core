@@ -16,7 +16,7 @@ h.run(async () => {
 	const page = A.page;
 
 	await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		await s.moduleSDK.initModules([
 			{ id: 'haptic30b', name: 'Haptic test', version: '1.0.0', description: 'the 30b haptic seams', register(api) { window.__api = api; } }
 		]);
@@ -33,12 +33,12 @@ h.run(async () => {
 		renderer.xr.getController(1).userData.handedness = 'right';
 	});
 	const buzz = () => page.evaluate(() => window.__buzz.splice(0));
-	const mode = (m) => page.evaluate((m) => window.__stores.objectActions.setEditorMode(m), m);
+	const mode = (m) => page.evaluate((m) => window.__tp.test.v1.objectActions.setEditorMode(m), m);
 
 	console.log('\n=== 1. Edit mode is silent ===');
 	await mode('edit');
 	const edit = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const before = s.vrControls.hapticDebug().suppressed;
 		window.__api.haptic(0.6, 50, 'left');
 		s.vrControls.hapticPulse(0.4, 40); // a core pulse (menus, teleport, the sleeve)
@@ -55,7 +55,7 @@ h.run(async () => {
 	await page.evaluate(() => window.__api.haptic(0.6, 50, 'left'));
 	const one = await buzz();
 	h.check(one.length === 1 && one[0].hand === 'left' && one[0].i === 0.6 && one[0].ms === 50, '2.1 api.haptic pulses the LEFT actuator in Interact (' + JSON.stringify(one) + ')');
-	await page.evaluate(() => window.__stores.vrControls.hapticPulse(0.3, 20));
+	await page.evaluate(() => window.__tp.test.v1.vrControls.hapticPulse(0.3, 20));
 	const both = await buzz();
 	h.check(both.length === 2 && both.some((b) => b.hand === 'left') && both.some((b) => b.hand === 'right'), '2.2 a pulse with no hand reaches both');
 
@@ -72,7 +72,7 @@ h.run(async () => {
 	h.check(success.length === 3 && success[2].t - success[0].t > 120, '3.3 they are spaced in time, not fired at once (' + (success.length === 3 ? (success[2].t - success[0].t).toFixed(0) : '-') + ' ms)');
 	await page.evaluate(() => {
 		window.__api.hapticPattern('rumble', 'left');
-		window.__stores.objectActions.setEditorMode('edit');
+		window.__tp.test.v1.objectActions.setEditorMode('edit');
 	});
 	await page.waitForTimeout(2000); // past the whole rumble even with late timers
 	const cut = await buzz();
@@ -81,7 +81,7 @@ h.run(async () => {
 
 	console.log('\n=== 4. the hover-enter tap ===');
 	const ids = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const make = async (at) => {
 			const [uuid] = await window.__api.create('/create box 1 1 1', { at });
 			return uuid;
@@ -98,7 +98,7 @@ h.run(async () => {
 	});
 	await page.waitForTimeout(500);
 	const hover = await page.evaluate((ids) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		const k = s.gameKit.vrGameInput;
 		let g;
@@ -138,7 +138,7 @@ h.run(async () => {
 
 	console.log('\n=== 5. the press bump ===');
 	const press = await page.evaluate((ids) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
@@ -159,12 +159,12 @@ h.run(async () => {
 
 	console.log('\n=== 6. the knock is scaled by its strength ===');
 	await page.evaluate(() => {
-		const v = window.__stores.vrControls;
+		const v = window.__tp.test.v1.vrControls;
 		v.hapticKnock(Math.min(1, 0.2 + 0.4 / 10), 30, 'right'); // a brush at 0.4 m/s
 	});
 	await page.waitForFunction(() => window.__buzz.length >= 2, null, { timeout: 5000 }).catch(() => {});
 	const soft = await buzz();
-	await page.evaluate(() => window.__stores.vrControls.hapticKnock(Math.min(1, 0.2 + 6 / 10), 30, 'right')); // a swing at 6 m/s
+	await page.evaluate(() => window.__tp.test.v1.vrControls.hapticKnock(Math.min(1, 0.2 + 6 / 10), 30, 'right')); // a swing at 6 m/s
 	await page.waitForFunction(() => window.__buzz.length >= 2, null, { timeout: 5000 }).catch(() => {});
 	const hard = await buzz();
 	h.check(soft.length === 2 && hard.length === 2, '6.1 a knock plays the two-pulse hit (' + soft.length + ', ' + hard.length + ')');

@@ -18,7 +18,7 @@ h.run(async () => {
 	await h.connect(B, A);
 
 	const ids = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const cmd = s.commandsHandler.sceneCommand;
 		/** @type {any} */ let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
@@ -55,7 +55,7 @@ h.run(async () => {
 	// the graphs + the HUD, applied identically on both pages (same ids)
 	const build = (page) =>
 		page.evaluate(({ gate, gems }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.hudDocs.setHudDocFor('scene', {
 				screens: [{ id: 'main', name: 'Main', elements: [{ id: 'score', kind: 'text', label: '', anchor: 'top-right', x: 20, y: 20, w: 180, h: 26 }] }],
 				active: 'main'
@@ -90,7 +90,7 @@ h.run(async () => {
 
 	const state = (page) =>
 		page.evaluate((gate) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const d = s.kit.kitDebug().doc;
 			/** @type {any} */ let g;
 			s.objectsGroup.subscribe((v) => (g = v))();
@@ -107,7 +107,7 @@ h.run(async () => {
 		page.evaluate(
 			([px, pz]) => {
 				let cam;
-				window.__stores.playerCam.subscribe((c) => (cam = c))();
+				window.__tp.test.v1.playerCam.subscribe((c) => (cam = c))();
 				cam.position.x = px;
 				cam.position.z = pz;
 				cam.updateMatrixWorld(true);
@@ -120,8 +120,8 @@ h.run(async () => {
 	h.check(s0.hud === 'Gems: 0/3', `premise: the HUD reads "Gems: 0/3" (${JSON.stringify(s0.hud)})`);
 
 	// A: Play starts the arena's world (all static) and A walks over gem 1
-	await A.page.evaluate(() => window.__stores.isLocked.set(true));
-	await h.eventually(() => A.page.evaluate(() => window.__stores.physics.isInitiator()), (on) => on === true, 'Play on A runs the all-static arena\'s world (F11)', 10000);
+	await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
+	await h.eventually(() => A.page.evaluate(() => window.__tp.test.v1.physics.isInitiator()), (on) => on === true, 'Play on A runs the all-static arena\'s world (F11)', 10000);
 	await A.page.keyboard.down('KeyW');
 	await h.eventually(() => state(A.page), (s) => !!s.taken[ids.gems[0]], 'A walks over gem 1 and takes it', 15000).catch(() => {});
 	await A.page.keyboard.up('KeyW');
@@ -130,7 +130,7 @@ h.run(async () => {
 	await h.eventually(() => state(B.page), (s) => s.hud === 'Gems: 1/3', 'B\'s HUD reads "Gems: 1/3"', 8000);
 
 	// B (fly Play) stands on gems 2 and 3
-	await B.page.evaluate(() => window.__stores.isLocked.set(true));
+	await B.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await B.page.waitForTimeout(1200);
 	await stand(B.page, 4, 0);
 	await h.eventually(() => state(B.page), (s) => !!s.taken[ids.gems[1]], 'B stands on gem 2 and takes it', 10000);

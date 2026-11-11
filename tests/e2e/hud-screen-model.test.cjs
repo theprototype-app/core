@@ -19,8 +19,8 @@ const h = require('./helpers.cjs');
 /** the HUD editor, opened the way the deep link does */
 async function openEditor(page) {
 	await page.evaluate(() => {
-		window.__stores.hudEditorClose.set(false);
-		window.__stores.bottomDock.activateDock('hud');
+		window.__tp.test.v1.hudEditorClose.set(false);
+		window.__tp.test.v1.bottomDock.activateDock('hud');
 	});
 	await page.waitForTimeout(1400);
 }
@@ -29,7 +29,7 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
 	const page = A.page;
-	await page.waitForFunction(() => !!window.__stores?.hudDocs, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.hudDocs, { timeout: 30000 });
 
 	// ======================================================================
 	// 1. E2.1 — a nullable default screen
@@ -38,7 +38,7 @@ h.run(async () => {
 	// did. This is the migration rule, and it is the reason the opt-out is an explicit
 	// empty string rather than "absent".
 	const oldShape = await page.evaluate(() => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		H.clearHudDocs();
 		const norm = H.normalizeHudDoc({
 			screens: [
@@ -55,7 +55,7 @@ h.run(async () => {
 
 	// and it renders, exactly as before
 	const oldRenders = await page.evaluate(async () => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		H.hudPreviewInViewport.set(true);
 		H.hudDocsRestore(
 			{
@@ -82,7 +82,7 @@ h.run(async () => {
 
 	// (b) an EXPLICITLY EMPTY active is the new state: nothing renders until asked
 	const unstarred = await page.evaluate(async () => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		const doc = H.hudDocOf('scene');
 		H.setHudDocFor('scene', { ...doc, active: '' });
 		await new Promise((r) => setTimeout(r, 800));
@@ -101,10 +101,10 @@ h.run(async () => {
 
 	// ...until something asks. A per-peer request is exactly the mechanism a menu uses.
 	const asked = await page.evaluate(async () => {
-		window.__stores.hudDocs.showHudScreen('scene', 'play');
+		window.__tp.test.v1.hudDocs.showHudScreen('scene', 'play');
 		await new Promise((r) => setTimeout(r, 700));
 		return {
-			visible: window.__stores.hudDocs.visibleScreen('scene')?.id ?? null,
+			visible: window.__tp.test.v1.hudDocs.visibleScreen('scene')?.id ?? null,
 			painted: [...document.querySelectorAll('#hud-layer [data-hud-id]')].map((e) => e.getAttribute('data-hud-id'))
 		};
 	});
@@ -112,13 +112,13 @@ h.run(async () => {
 		asked.visible === 'play' && asked.painted.length === 1,
 		`asking for a screen still shows it (${asked.visible}, ${JSON.stringify(asked.painted)})`
 	);
-	await page.evaluate(() => window.__stores.hudDocs.showHudScreen('scene', null));
+	await page.evaluate(() => window.__tp.test.v1.hudDocs.showHudScreen('scene', null));
 	await page.waitForTimeout(400);
 
 	// (c) it survives the SAVE paths and the WIRE — the normalize-at-every-boundary rule
 	const roundTrip = await page.evaluate(() => {
-		const H = window.__stores.hudDocs;
-		const S = window.__stores.hudSync;
+		const H = window.__tp.test.v1.hudDocs;
+		const S = window.__tp.test.v1.hudSync;
 		const snap = JSON.parse(JSON.stringify(H.hudDocsSnapshot()));
 		const savedActive = snap.scene.active;
 		// a save/load round trip
@@ -150,17 +150,17 @@ h.run(async () => {
 	);
 	await page.locator('#hud-dock [data-hud-star]').first().click();
 	await page.waitForTimeout(600);
-	const starred = await page.evaluate(() => window.__stores.hudDocs.hudDocOf('scene').active);
+	const starred = await page.evaluate(() => window.__tp.test.v1.hudDocs.hudDocOf('scene').active);
 	h.check(!!starred, `clicking a star sets the default (${starred})`);
 	await page.locator(`#hud-dock [data-hud-star="${starred}"]`).click();
 	await page.waitForTimeout(600);
 	const unstarredUi = await page.evaluate(async () => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		const active = H.hudDocOf('scene').active;
 		// the editor pins the local override to the screen it is EDITING, and an override
 		// outranks the default (step 1 of visibleScreen) — so close it before reading what a
 		// viewer would see
-		window.__stores.hudEditorClose.set(true);
+		window.__tp.test.v1.hudEditorClose.set(true);
 		await new Promise((r) => setTimeout(r, 900));
 		return { active, visible: H.visibleScreen('scene')?.id ?? null };
 	});
@@ -177,8 +177,8 @@ h.run(async () => {
 	// 2. E2.2 — one doc-key resolution, and the stranded object graph
 	// ======================================================================
 	const keys = await page.evaluate(async () => {
-		const H = window.__stores.hudDocs;
-		const s = window.__stores;
+		const H = window.__tp.test.v1.hudDocs;
+		const s = window.__tp?.test.v1;
 		// a real object with a real object graph, the case that stranded
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1400));
@@ -218,7 +218,7 @@ h.run(async () => {
 	// and the RUNTIME half: a hudscreen node inside that object's graph switches the SCENE
 	// screen. It used to write an override for a document that does not exist.
 	const runtime = await page.evaluate(async (uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const H = s.hudDocs;
 		H.showHudScreen('scene', null);
 		// the SOURCE lives in the same object graph: a trigger reaches a node through an
@@ -256,7 +256,7 @@ h.run(async () => {
 	// the picker NAMES the document it enumerates, so "these are my object's screens" —
 	// which they are not — cannot be read into it
 	const header = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.hudEditorClose.set(true);
 		s.flowGraphClose.set(false);
 		s.bottomDock.activateDock('flow');
@@ -280,8 +280,8 @@ h.run(async () => {
 	// 3. E2.3 — "New screen..." and "Open HUD editor" in the picker
 	// ======================================================================
 	const before = await page.evaluate(() => ({
-		screens: window.__stores.hudDocs.hudDocOf('scene').screens.length,
-		entries: window.__stores.history.historyLength?.() ?? null
+		screens: window.__tp.test.v1.hudDocs.hudDocOf('scene').screens.length,
+		entries: window.__tp.test.v1.history.historyLength?.() ?? null
 	}));
 	const madeScreen = await page.evaluate(async () => {
 		const rows = [...document.querySelectorAll('[role="menu"] *')].filter((el) => el.children.length === 0);
@@ -289,9 +289,9 @@ h.run(async () => {
 		if (!row) return { missing: true, labels: rows.map((r) => (r.textContent ?? '').trim()) };
 		row.click();
 		await new Promise((r) => setTimeout(r, 900));
-		const doc = window.__stores.hudDocs.hudDocOf('scene');
+		const doc = window.__tp.test.v1.hudDocs.hudDocOf('scene');
 		let nodes;
-		window.__stores.flowGraphs.subscribe((g) => (nodes = g))();
+		window.__tp.test.v1.flowGraphs.subscribe((g) => (nodes = g))();
 		const graph = Object.values(nodes ?? {}).find((g) => g.nodes?.some((n) => n.id === 'e2-screen'));
 		const node = graph?.nodes.find((n) => n.id === 'e2-screen');
 		return {
@@ -314,9 +314,9 @@ h.run(async () => {
 		`and SELECTS it as the node's value (${madeScreen.nodeScreen})`
 	);
 	const undone = await page.evaluate(async () => {
-		window.__stores.history.undo();
+		window.__tp.test.v1.history.undo();
 		await new Promise((r) => setTimeout(r, 700));
-		return window.__stores.hudDocs.hudDocOf('scene').screens.length;
+		return window.__tp.test.v1.hudDocs.hudDocOf('scene').screens.length;
 	});
 	h.check(
 		undone === before.screens,
@@ -325,7 +325,7 @@ h.run(async () => {
 
 	// "Open HUD editor" — the openShaderEditor deep-link shape
 	const deepLink = await page.evaluate(async () => {
-		window.__stores.hudEditorClose.set(true);
+		window.__tp.test.v1.hudEditorClose.set(true);
 		await new Promise((r) => setTimeout(r, 400));
 		const field = document.querySelector('.hud-ep-field');
 		field?.click();
@@ -337,8 +337,8 @@ h.run(async () => {
 		row.click();
 		await new Promise((r) => setTimeout(r, 1500));
 		let closed, dock;
-		window.__stores.hudEditorClose.subscribe((v) => (closed = v))();
-		window.__stores.bottomDock.visibleDockKey.subscribe((v) => (dock = v))();
+		window.__tp.test.v1.hudEditorClose.subscribe((v) => (closed = v))();
+		window.__tp.test.v1.bottomDock.visibleDockKey.subscribe((v) => (dock = v))();
 		return { closed, dock, board: !!document.querySelector('#hud-board') };
 	});
 	h.check(!deepLink.missing, 'the picker offers "Open HUD editor"');
@@ -351,7 +351,7 @@ h.run(async () => {
 	// 4. E2.4 — right-drag an element in the VIEWPORT
 	// ======================================================================
 	const setup = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const H = s.hudDocs;
 		// the editor closed, the preview on, not playing: the state the gate describes
 		s.hudEditorClose.set(true);
@@ -401,17 +401,17 @@ h.run(async () => {
 	);
 
 	const beforeDrag = await page.evaluate(() => {
-		const el = window.__stores.hudDocs.elementById('scene', 'drag-me');
+		const el = window.__tp.test.v1.hudDocs.elementById('scene', 'drag-me');
 		return { x: el.x, y: el.y };
 	});
 	await page.mouse.move(setup.rect.x, setup.rect.y);
 	await page.mouse.down({ button: 'right' });
 	for (let i = 1; i <= 10; i++) await page.mouse.move(setup.rect.x + i * 8, setup.rect.y + i * 4);
-	const midDrag = await page.evaluate(() => window.__stores.hudViewportDrag.hudViewportDragging());
+	const midDrag = await page.evaluate(() => window.__tp.test.v1.hudViewportDrag.hudViewportDragging());
 	await page.mouse.up({ button: 'right' });
 	await page.waitForTimeout(800);
 	const afterDrag = await page.evaluate(() => {
-		const el = window.__stores.hudDocs.elementById('scene', 'drag-me');
+		const el = window.__tp.test.v1.hudDocs.elementById('scene', 'drag-me');
 		return { x: el.x, y: el.y };
 	});
 	h.check(midDrag, 'a right-drag on the element opens a HUD gesture');
@@ -420,9 +420,9 @@ h.run(async () => {
 		`and moves it by the pointer delta, in its OWN anchor frame (${beforeDrag.x},${beforeDrag.y} -> ${afterDrag.x},${afterDrag.y}; expected +80,+40)`
 	);
 	const dragUndone = await page.evaluate(async () => {
-		window.__stores.history.undo();
+		window.__tp.test.v1.history.undo();
 		await new Promise((r) => setTimeout(r, 700));
-		const el = window.__stores.hudDocs.elementById('scene', 'drag-me');
+		const el = window.__tp.test.v1.hudDocs.elementById('scene', 'drag-me');
 		return { x: el.x, y: el.y };
 	});
 	h.check(
@@ -433,7 +433,7 @@ h.run(async () => {
 	// ANCHOR AWARENESS: a bottom-right element's x/y count from the other corner, so the
 	// SAME pointer motion must write the opposite sign
 	const anchored = await page.evaluate(async () => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		H.updateHudElement('scene', 'main', 'drag-me', { anchor: 'bottom-right', x: 200, y: 150 });
 		await new Promise((r) => setTimeout(r, 800));
 		const slot = document.querySelector('#hud-layer [data-hud-id="drag-me"]');
@@ -450,7 +450,7 @@ h.run(async () => {
 	await page.mouse.up({ button: 'right' });
 	await page.waitForTimeout(800);
 	const anchoredAfter = await page.evaluate(() => {
-		const el = window.__stores.hudDocs.elementById('scene', 'drag-me');
+		const el = window.__tp.test.v1.hudDocs.elementById('scene', 'drag-me');
 		return { x: el.x, y: el.y };
 	});
 	h.check(
@@ -461,8 +461,8 @@ h.run(async () => {
 	// A SUB-THRESHOLD RIGHT-CLICK STILL MENUS. Suppressing the canvas press also suppresses
 	// the viewport menu, and "right-click does nothing over my HUD" is the worse bug.
 	const tapMenu = await page.evaluate(() => {
-		window.__stores.viewportMenu.set(null);
-		window.__stores.objectContextMenu.set(null);
+		window.__tp.test.v1.viewportMenu.set(null);
+		window.__tp.test.v1.objectContextMenu.set(null);
 		const slot = document.querySelector('#hud-layer [data-hud-id="drag-me"]');
 		const r = slot.getBoundingClientRect();
 		return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
@@ -471,13 +471,13 @@ h.run(async () => {
 	await page.waitForTimeout(900);
 	const menuOpened = await page.evaluate(() => {
 		let vp, obj;
-		window.__stores.viewportMenu.subscribe((v) => (vp = v))();
-		window.__stores.objectContextMenu.subscribe((v) => (obj = v))();
+		window.__tp.test.v1.viewportMenu.subscribe((v) => (vp = v))();
+		window.__tp.test.v1.objectContextMenu.subscribe((v) => (obj = v))();
 		return {
 			vp: !!vp,
 			obj: !!obj,
 			dom: !!document.querySelector('[role="menu"]'),
-			moved: window.__stores.hudDocs.elementById('scene', 'drag-me')
+			moved: window.__tp.test.v1.hudDocs.elementById('scene', 'drag-me')
 		};
 	});
 	h.check(
@@ -494,7 +494,7 @@ h.run(async () => {
 	// the GATE: play mode with the preview off is the one state where the HUD is a game's
 	// UI and must not be editable by a right-drag
 	const gated = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.hudDocs.hudPreviewInViewport.set(false);
 		s.isLocked.set(true);
 		await new Promise((r) => setTimeout(r, 700));
@@ -514,7 +514,7 @@ h.run(async () => {
 	// 5. E2.5 — camera attach clarity, and no paint when the preview is off
 	// ======================================================================
 	const noPaint = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.hudEditorClose.set(false);
 		s.bottomDock.activateDock('hud');
 		s.hudDocs.hudPreviewInViewport.set(false);
@@ -533,7 +533,7 @@ h.run(async () => {
 	h.check(/1280/.test(noPaint.ref), `and the topbar states the reference resolution (${noPaint.ref})`);
 
 	const camDoc = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create camera');
 		await new Promise((r) => setTimeout(r, 1600));
 		const cams = s.cameraObjects.listCameraObjects();
@@ -559,7 +559,7 @@ h.run(async () => {
 	// 6. review feedback — the focus RING is play-only too
 	// ======================================================================
 	const ring = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.hudEditorClose.set(true);
 		s.hudDocs.hudPreviewInViewport.set(true);
 		s.hudDocs.clearHudDocs();

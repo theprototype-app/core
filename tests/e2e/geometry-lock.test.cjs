@@ -8,10 +8,10 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		window.__box = g.children[g.children.length - 1];
-		window.__stores.objectActions.selectObject(window.__box.uuid, true); // open inspector
+		window.__tp.test.v1.objectActions.selectObject(window.__box.uuid, true); // open inspector
 	});
 	await A.page.waitForTimeout(600);
 
@@ -24,7 +24,7 @@ h.run(async () => {
 	// flag it mesh-edited (what a face/vertex edit sets) + refresh the inspector
 	await A.page.evaluate(() => {
 		window.__box.userData.faceEdited = true;
-		window.__stores.selectedObject.update((v) => v);
+		window.__tp.test.v1.selectedObject.update((v) => v);
 	});
 	await A.page.waitForTimeout(300);
 

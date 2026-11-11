@@ -24,9 +24,9 @@ const h = require('./helpers.cjs');
 /** the HUD editor, opened and pointed at a known document */
 async function openEditor(page) {
 	await page.evaluate(() => {
-		window.__stores.hudDocs.clearHudDocs();
-		window.__stores.hudEditorClose.set(false);
-		window.__stores.bottomDock.activateDock('hud');
+		window.__tp.test.v1.hudDocs.clearHudDocs();
+		window.__tp.test.v1.hudEditorClose.set(false);
+		window.__tp.test.v1.bottomDock.activateDock('hud');
 	});
 	await page.waitForTimeout(1400);
 }
@@ -77,7 +77,7 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
 	const page = A.page;
-	await page.waitForFunction(() => !!window.__stores?.hudDocs, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.hudDocs, { timeout: 30000 });
 
 	// ======================================================================
 	// 0. E1.8 — THE KEY PRESS NODE, before anything opens (nothing focused)
@@ -87,7 +87,7 @@ h.run(async () => {
 	// reaches, because the key is up again before the next tick looks. So the honest
 	// assertions are BOTH the latency and that a tap fires at all.
 	const tapped = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowNodes.set([
 			{ id: 'kp-1', type: 'keypress', position: { x: 0, y: 0 }, data: { type: 'keypress', code: 'KeyJ', pulse: 0.3 } },
 			{ id: 'kc-1', type: 'counter', position: { x: 240, y: 0 }, data: { type: 'counter', step: 1, op: 'up' } }
@@ -102,7 +102,7 @@ h.run(async () => {
 	await page.evaluate(() => {
 		document.body.focus();
 		window.__kp = { at: null, t0: 0, count: 0 };
-		window.__kpStop = window.__stores.flowTriggers.subscribe((t) => {
+		window.__kpStop = window.__tp.test.v1.flowTriggers.subscribe((t) => {
 			if (!t) return;
 			if (window.__kp.at === null && t['kp-1']) window.__kp.at = performance.now();
 			window.__kp.count = t['kc-1']?.count ?? 0;
@@ -130,8 +130,8 @@ h.run(async () => {
 		`one tap counts exactly once (${preCount} -> ${kp.count})`
 	);
 	await page.evaluate(() => {
-		window.__stores.flowNodes.set([]);
-		window.__stores.flowEdges.set([]);
+		window.__tp.test.v1.flowNodes.set([]);
+		window.__tp.test.v1.flowEdges.set([]);
 	});
 
 	// ======================================================================
@@ -178,7 +178,7 @@ h.run(async () => {
 	);
 	await page.waitForTimeout(700);
 	const landed = await page.evaluate((d) => {
-		const doc = window.__stores.hudDocs.hudDocOf('scene');
+		const doc = window.__tp.test.v1.hudDocs.hudDocOf('scene');
 		const els = doc.screens[0].elements;
 		if (els.length !== 1) return { count: els.length };
 		const el = els[0];
@@ -241,7 +241,7 @@ h.run(async () => {
 	});
 	await page.waitForTimeout(700);
 	const fromMenu = await page.evaluate((pt) => {
-		const doc = window.__stores.hudDocs.hudDocOf('scene');
+		const doc = window.__tp.test.v1.hudDocs.hudDocOf('scene');
 		const el = doc.screens[0].elements.find((e) => e.kind === 'crosshair');
 		if (!el) return null;
 		const r = document.querySelector(`#hud-board [data-hud-item="${el.id}"]`)?.getBoundingClientRect();
@@ -262,7 +262,7 @@ h.run(async () => {
 	// two elements added at two different points must not be on top of each other, which
 	// the wrapping cascade could not promise
 	const spread = await page.evaluate(() => {
-		const els = window.__stores.hudDocs.hudDocOf('scene').screens[0].elements;
+		const els = window.__tp.test.v1.hudDocs.hudDocOf('scene').screens[0].elements;
 		return els.map((e) => e.x + ',' + e.y);
 	});
 	h.check(new Set(spread).size === spread.length, `every add has its own position (${spread.join(' · ')})`);
@@ -273,7 +273,7 @@ h.run(async () => {
 	// 21-D5 hides the HUD in the viewport while the editor is open, so the comparison needs
 	// the preview on — through the eye toggle's OWN store, never a test-only door.
 	const par = await page.evaluate(async () => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		H.hudPreviewInViewport.set(true);
 		H.clearHudDocs();
 		H.setHudDocFor('scene', {});
@@ -300,7 +300,7 @@ h.run(async () => {
 			if (!item || !live || !board) return null;
 			const artText = item.querySelector('.hud-el');
 			const liveText = live.querySelector('.hud-el');
-			const el = window.__stores.hudDocs.hudDocOf('scene').screens[0].elements.find((e) => e.id === d.id);
+			const el = window.__tp.test.v1.hudDocs.hudDocOf('scene').screens[0].elements.find((e) => e.id === d.id);
 			const br = board.getBoundingClientRect();
 			return {
 				w: el.w,
@@ -345,7 +345,7 @@ h.run(async () => {
 		const range = document.createRange();
 		range.selectNodeContents(live);
 		const need = Math.ceil(range.getBoundingClientRect().width);
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		H.updateHudElement('scene', d.sid, d.id, { w: need + 4 });
 		await new Promise((r) => setTimeout(r, 700));
 		return need;
@@ -360,7 +360,7 @@ h.run(async () => {
 		`and the artboard agrees — TEXT-CLIP PARITY (artboard clips=${fitted.artClips}, runtime clips=${fitted.liveClips})`
 	);
 	await page.evaluate(async (d) => {
-		window.__stores.hudDocs.updateHudElement('scene', d.sid, d.id, { w: Math.max(16, d.need - 24) });
+		window.__tp.test.v1.hudDocs.updateHudElement('scene', d.sid, d.id, { w: Math.max(16, d.need - 24) });
 		await new Promise((r) => setTimeout(r, 700));
 	}, { ...par, need: justFits });
 	const clipped = await measure();
@@ -391,7 +391,7 @@ h.run(async () => {
 		const cy = Math.round(wr.y + wr.height / 2);
 		// a BUTTON (pointer-events: auto — the kind that swallowed clicks) placed over the
 		// window. Runtime coords are real window px, so x/y go straight in.
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		const doc = H.hudDocOf('scene');
 		const sid = doc.screens[0].id;
 		const el = H.addHudElement('scene', sid, {
@@ -435,7 +435,7 @@ h.run(async () => {
 
 	// ...and in PLAY it keeps 45, which is the 21-A rule and must not have moved
 	const zPlaying = await page.evaluate(async () => {
-		window.__stores.isLocked.set(true);
+		window.__tp.test.v1.isLocked.set(true);
 		await new Promise((r) => setTimeout(r, 900));
 		const layer = document.querySelector('#hud-layer');
 		return {
@@ -450,7 +450,7 @@ h.run(async () => {
 	// the focus-ring capture handler is play-mode-only now: in the editor it stole
 	// Tab/arrows/Space from every panel whenever a screen had a button
 	const ringKeys = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.isLocked.set(null);
 		await new Promise((r) => setTimeout(r, 700));
 		window.__tabSeen = 0;
@@ -478,7 +478,7 @@ h.run(async () => {
 	// 5. E1.7 — the guides are DRAWN, and the snap prefs persist
 	// ======================================================================
 	const guideSetup = await page.evaluate(async () => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		H.clearHudDocs();
 		H.setHudDocFor('scene', {});
 		const sid = H.hudDocOf('scene').screens[0].id;
@@ -518,7 +518,7 @@ h.run(async () => {
 	await page.mouse.up();
 	await page.waitForTimeout(600);
 	const afterDrag = await page.evaluate((g) => {
-		const els = window.__stores.hudDocs.hudDocOf('scene').screens[0].elements;
+		const els = window.__tp.test.v1.hudDocs.hudDocOf('scene').screens[0].elements;
 		return {
 			moverX: els.find((e) => e.id === g.mover).x,
 			guides: document.querySelectorAll('#hud-board [data-hud-guide]').length
@@ -530,7 +530,7 @@ h.run(async () => {
 	// the snap settings live in the no-selection pane, and they PERSIST
 	const prefs = await page.evaluate(async () => {
 		// nothing selected -> the settings pane
-		window.__stores.hudDocs.hudSelection.set({});
+		window.__tp.test.v1.hudDocs.hudSelection.set({});
 		document.querySelector('#hud-board')?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }));
 		await new Promise((r) => setTimeout(r, 600));
 		const box = document.querySelector('#hud-snap-on');
@@ -552,8 +552,8 @@ h.run(async () => {
 	await h.freshReload(A);
 	await page.waitForTimeout(1200);
 	const survived = await page.evaluate(async () => {
-		window.__stores.hudEditorClose.set(false);
-		window.__stores.bottomDock.activateDock('hud');
+		window.__tp.test.v1.hudEditorClose.set(false);
+		window.__tp.test.v1.bottomDock.activateDock('hud');
 		await new Promise((r) => setTimeout(r, 1400));
 		const box = document.querySelector('#hud-snap-on');
 		return { checked: box?.checked, raw: localStorage.getItem('hud:snapOn') };
@@ -569,7 +569,7 @@ h.run(async () => {
 	// 6. E1.6 — the colour swatch opens a picker, and merely OPENING it writes nothing
 	// ======================================================================
 	const cp = await page.evaluate(async () => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		H.clearHudDocs();
 		H.setHudDocFor('scene', {});
 		const sid = H.hudDocOf('scene').screens[0].id;
@@ -597,7 +597,7 @@ h.run(async () => {
 	await page.waitForTimeout(900);
 	const popped = await page.evaluate((d) => {
 		const pop = document.querySelector('[data-hud-colorpicker]');
-		const el = window.__stores.hudDocs.hudDocOf('scene').screens[0].elements.find((e) => e.id === d.id);
+		const el = window.__tp.test.v1.hudDocs.hudDocOf('scene').screens[0].elements.find((e) => e.id === d.id);
 		return {
 			open: !!pop,
 			portaled: pop?.parentElement === document.body,
@@ -617,7 +617,7 @@ h.run(async () => {
 	await page.locator('[data-hud-token="text-2"]').click();
 	await page.waitForTimeout(600);
 	const chose = await page.evaluate(
-		(d) => window.__stores.hudDocs.hudDocOf('scene').screens[0].elements.find((e) => e.id === d.id)?.style?.color,
+		(d) => window.__tp.test.v1.hudDocs.hudDocOf('scene').screens[0].elements.find((e) => e.id === d.id)?.style?.color,
 		cp
 	);
 	h.check(chose === 'text-2', `a chip writes the TOKEN NAME, not a hex (${chose})`);
@@ -634,10 +634,10 @@ h.run(async () => {
 	// 7. E1.8 — the two small consolidations
 	// ======================================================================
 	const small = await page.evaluate(() => {
-		const cat = window.__stores.nodeCatalog.nodeCatalog;
+		const cat = window.__tp.test.v1.nodeCatalog.nodeCatalog;
 		const game = cat.find((g) => g.group === 'Game');
 		const setcamera = game.items.find((i) => i.type === 'setcamera');
-		const states = window.__stores.gameState.GAME_STATES;
+		const states = window.__tp.test.v1.gameState.GAME_STATES;
 		const stateParams = game.items
 			.filter((i) => i.params?.some((p) => p.key === 'state'))
 			.map((i) => i.params.find((p) => p.key === 'state').options.join('|'));

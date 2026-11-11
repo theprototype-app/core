@@ -33,11 +33,11 @@ h.run(async () => {
 			await h.finish(browser);
 			return;
 		}
-	await page.evaluate(() => window.__stores.modulesOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.modulesOpen.set(false));
 
 	const bytes = Array.from(fs.readFileSync(TPSCENE));
 	await page.evaluate(async (arr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 		await s.sessions.applySession(payload, { backup: false });
 	}, bytes);
@@ -45,7 +45,7 @@ h.run(async () => {
 
 	const snap = () =>
 		page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const g = (st) => { let v; st.subscribe((x) => (v = x))(); return v; };
 			const group = g(s.objectsGroup);
 			const kinds = [];
@@ -63,7 +63,7 @@ h.run(async () => {
 	// 30b: what the VR wrist card / top strip would SAY right now (vr-play's overlay split)
 	const vrLines = () =>
 		page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const k = s.gameKit.vrGamePanel;
 			let rt; s.hudDocs.hudRuntime.subscribe((v) => (rt = v))();
 			const { panel, overlay } = k.vrScreens();
@@ -82,7 +82,7 @@ h.run(async () => {
 	let st = await snap();
 	h.check(st.kinds.length === 12, `the twelve devices arrived (${st.kinds.length}: ${[...new Set(st.kinds)].map((k) => k.replace(/^mod-music-(lab|fx)-/, '')).join(', ')})`);
 	const look = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const g = (st) => { let v; st.subscribe((x) => (v = x))(); return v; };
 		const group = g(s.objectsGroup);
 		const env = g(s.environment.environment);
@@ -107,7 +107,7 @@ h.run(async () => {
 	// every instrument (piano, drums, sampler, transport, mixer) at hand height, and the laser
 	// has a clear line to every pedal and speaker. Measured from the scene, not believed.
 	const reach = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		let scene, group;
 		s.globalScene.subscribe((v) => (scene = v))();
@@ -159,7 +159,7 @@ h.run(async () => {
 	h.check(laserReach.length === 12 && laserReach.every(([, r]) => r && !r.blocked && r.laser <= 3.5), `30b: the laser has a clear line to all twelve devices (${JSON.stringify(laserReach.filter(([, r]) => !r || r.blocked || r.laser > 3.5))})`);
 
 	// 2 — Play: no pointer lock, the start screen
-	await page.evaluate(() => window.__stores.isLocked.set(true));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await page.waitForTimeout(1500);
 	st = await snap();
 	const lockEl = await page.evaluate(() => !!document.pointerLockElement);
@@ -168,7 +168,7 @@ h.run(async () => {
 	// 30b: how to play, on a desktop and in VR; no music over the band; a desktop keeps its view
 	h.check(/HOW TO PLAY/.test(await hud()) && /VR: hold the trigger and sweep/.test(await hud()), '30b: the start screen says how to play, VR included');
 	const quiet = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let m, cam;
 		s.gameKit.gameMusic.gameMusicState.subscribe((v) => (m = v))();
 		s.playerCam.subscribe((v) => (cam = v))();
@@ -201,7 +201,7 @@ h.run(async () => {
 
 	// 4 — the transport runs (the device's ▶, here through the same shared clock) at 240 BPM:
 	// eight bars are 32 beats, eight seconds
-	await page.evaluate(() => { const m = window.__stores.musicClock; m.setBpm(240); m.playTransport(); });
+	await page.evaluate(() => { const m = window.__tp.test.v1.musicClock; m.setBpm(240); m.playTransport(); });
 	await h.eventually(async () => await hud(), (t) => /Keep the band going\s+·\s+240 BPM/.test(t), 'the hint follows the transport (playing, 240 BPM)', 4000);
 	await h.eventually(async () => await hud(), (t) => /Bar [1-7] \/ 8/.test(t), 'the bars count up', 6000);
 	const vr = await vrLines();
@@ -209,7 +209,7 @@ h.run(async () => {
 	await h.eventually(() => snap().then((v) => v.state), (v) => v === 'over', 'eight bars complete the session (over)', 14000);
 	await h.eventually(async () => await hud(), (t) => /SESSION COMPLETE/.test(t) && /8 bars at 240 BPM/.test(t) && /Your best tempo: 240 BPM/.test(t), 'Session complete names the tempo and the best', 4000);
 	h.check((await stored())['jam-best-bpm'] === 240, 'the best tempo is saved on this device (jam-best-bpm 240)');
-	const done = await page.evaluate(() => window.__stores.gameKit.gameFeelActions.gameFeelActionsDebug());
+	const done = await page.evaluate(() => window.__tp.test.v1.gameKit.gameFeelActions.gameFeelActionsDebug());
 	h.check(done.last.some((e) => e.type === 'effectburst' && e.kind === 'confetti') && (done.sounds.levelup ?? 0) >= 1 && done.last.some((e) => e.type === 'hapticpulse' && e.pattern === 'success'), '30b: the session ends in confetti, the fanfare and a success buzz');
 	h.check(!done.last.some((e) => e.type === 'announce' && /complete/i.test(e.text)), '30b: and no banner over the Session complete panel (it read twice)');
 
@@ -222,7 +222,7 @@ h.run(async () => {
 	let barsNow = {};
 	await h.eventually(
 		async () => (barsNow = await page.evaluate(() => {
-			let v; window.__stores.flowValues.subscribe((x) => (v = x))();
+			let v; window.__tp.test.v1.flowValues.subscribe((x) => (v = x))();
 			return { bars: v['bars'], beat: v['tbeat'], start: v['startbeat'] };
 		})),
 		(v) => v.start > 16, 'the count-in kept the beat it ended on (a replicated sample-and-hold)', 4000
@@ -239,7 +239,7 @@ h.run(async () => {
 	await h.eventually(() => snap().then((v) => `${v.state}/${v.screen}`), (v) => v === 'menu/start', 'Quit returns to the start screen', 6000);
 	h.check(/Your best tempo: 240 BPM/.test(await hud()), 'the start screen shows the saved best');
 
-	await page.evaluate(() => { window.__stores.musicClock.stopTransport(); window.__stores.isLocked.set(false); });
+	await page.evaluate(() => { window.__tp.test.v1.musicClock.stopTransport(); window.__tp.test.v1.isLocked.set(false); });
 	await page.waitForTimeout(400);
 
 	// 7 — 31 (J1): the user, on a Quest 3: "In Jam Room I would like to be able to fly around
@@ -249,7 +249,7 @@ h.run(async () => {
 	// 40 -> 60 cm), then a held trigger sweeps three piano keys and three drum steps.
 	console.log('\n=== 7. 31 J1: fly, world grab, bounded teleport; a 1.5x world still plays ===');
 	const play = await page.evaluate(() => {
-		let p; window.__stores.scenePhysics.scenePlay.subscribe((v) => (p = v))();
+		let p; window.__tp.test.v1.scenePhysics.scenePlay.subscribe((v) => (p = v))();
 		return p;
 	});
 	h.check(
@@ -262,7 +262,7 @@ h.run(async () => {
 		`31 J1: teleport is bounded to the studio, the cockpit inside it (${JSON.stringify(b)})`
 	);
 	const k1 = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const v = s.vrControls;
 		if (typeof v.teleportVerdict !== 'function') return null;
 		let p; s.scenePhysics.scenePlay.subscribe((x) => (p = x))();
@@ -274,7 +274,7 @@ h.run(async () => {
 	if (k1) h.check(k1.inside && !k1.outside, `31 J1: bounded teleport — the studio floor lands, past the right wall is refused (${JSON.stringify(k1)})`);
 	else console.log('SKIP 31 J1 verdict: no vrControls.teleportVerdict (31-vr-core not merged)');
 	const scaled = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		let r; s.globalRenderer.subscribe((v) => (r = v))();
 		let rig; s.worldRig.subscribe((v) => (rig = v))();

@@ -17,16 +17,16 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
 	const page = A.page;
-	await page.waitForFunction(() => !!window.__stores?.hudDocs, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.hudDocs, { timeout: 30000 });
 
 	// ---- 1. it is a FLOW_FAMILY member, opened from the real add-menu --------
-	const family = await page.evaluate(() => window.__stores.bottomDock.FLOW_FAMILY);
+	const family = await page.evaluate(() => window.__tp.test.v1.bottomDock.FLOW_FAMILY);
 	h.check(
 		// a position check broke when the timeline joined the family after it (896cdb93)
 		family.includes('hud'),
 		`'hud' is a FLOW_FAMILY member (${JSON.stringify(family)})`
 	);
-	const title = await page.evaluate(() => window.__stores.bottomDock.DOCK_TITLES.hud);
+	const title = await page.evaluate(() => window.__tp.test.v1.bottomDock.DOCK_TITLES.hud);
 	h.check(title === 'HUD editor', `and has a dock title (${title})`);
 
 	// open the Node editor dock first, so its tab strip (with the "+") is on screen
@@ -64,10 +64,10 @@ h.run(async () => {
 		board: !!document.querySelector('#hud-board'),
 		visible: (() => {
 			let k;
-			window.__stores.bottomDock.visibleDockKey.subscribe((v) => (k = v))();
+			window.__tp.test.v1.bottomDock.visibleDockKey.subscribe((v) => (k = v))();
 			return k;
 		})(),
-		docCreated: !!window.__stores.hudDocs.hudDocOf('scene')
+		docCreated: !!window.__tp.test.v1.hudDocs.hudDocOf('scene')
 	}));
 	h.check(opened.dock && opened.board, 'clicking it opens the HUD dock with its artboard');
 	h.check(opened.visible === 'hud', `and makes it the visible dock panel (${opened.visible})`);
@@ -81,7 +81,7 @@ h.run(async () => {
 		const btn = document.querySelector('#hud-palette [data-hud-kind="text"]');
 		/** @type {any} */ (btn)?.click();
 		await new Promise((r) => setTimeout(r, 600));
-		const doc = window.__stores.hudDocs.hudDocOf('scene');
+		const doc = window.__tp.test.v1.hudDocs.hudDocOf('scene');
 		return {
 			count: doc.screens[0].elements.length,
 			items: document.querySelectorAll('#hud-board [data-hud-item]').length,
@@ -96,7 +96,7 @@ h.run(async () => {
 	// This is the whole reason the artboard reuses HudElement instead of drawing on a
 	// canvas. Compared as FRACTIONS of their stage, since the artboard is scaled to fit.
 	const agree = await page.evaluate(async () => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		// 21-D5 hides the HUD in the VIEWPORT while the editor is open (a user asked why they
 		// were seeing it twice), so this comparison - artboard rect vs RUNTIME rect - needs
 		// the preview on. That is the eye toggle's own store, not a test-only door.
@@ -144,7 +144,7 @@ h.run(async () => {
 
 	// ---- 4. a DRAG is ONE undo entry ---------------------------------------
 	const drag = await page.evaluate(() => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		const doc = H.hudDocOf('scene');
 		const sid = doc.screens[0].id;
 		const id = doc.screens[0].elements[0].id;
@@ -165,7 +165,7 @@ h.run(async () => {
 	h.check(underGrip === drag.id, `premise: the press lands on the element (${underGrip})`);
 
 	const before = await page.evaluate((d) => {
-		const el = window.__stores.hudDocs.hudDocOf('scene').screens[0].elements.find((e) => e.id === d.id);
+		const el = window.__tp.test.v1.hudDocs.hudDocOf('scene').screens[0].elements.find((e) => e.id === d.id);
 		return { x: el.x, y: el.y };
 	}, drag);
 	await page.mouse.move(grip.x, grip.y);
@@ -175,7 +175,7 @@ h.run(async () => {
 	await page.mouse.up();
 	await page.waitForTimeout(700);
 	const afterDrag = await page.evaluate((d) => {
-		const el = window.__stores.hudDocs.hudDocOf('scene').screens[0].elements.find((e) => e.id === d.id);
+		const el = window.__tp.test.v1.hudDocs.hudDocOf('scene').screens[0].elements.find((e) => e.id === d.id);
 		return { x: el.x, y: el.y };
 	}, drag);
 	h.check(
@@ -189,9 +189,9 @@ h.run(async () => {
 		`by an amount proportional to the pointer, not compounded (dx=${afterDrag.x - before.x}, dy=${afterDrag.y - before.y})`
 	);
 	const undone = await page.evaluate(async (d) => {
-		window.__stores.history.undo();
+		window.__tp.test.v1.history.undo();
 		await new Promise((r) => setTimeout(r, 500));
-		const el = window.__stores.hudDocs.hudDocOf('scene').screens[0].elements.find((e) => e.id === d.id);
+		const el = window.__tp.test.v1.hudDocs.hudDocOf('scene').screens[0].elements.find((e) => e.id === d.id);
 		return { x: el.x, y: el.y };
 	}, drag);
 	h.check(
@@ -202,14 +202,14 @@ h.run(async () => {
 	// ---- 5. anchor + offset survive a DOCK RESIZE --------------------------
 	// The reason anchors are a 9-grid plus pixels rather than fractions.
 	const beforeResize = await page.evaluate((d) => {
-		const el = window.__stores.hudDocs.hudDocOf('scene').screens[0].elements.find((e) => e.id === d.id);
+		const el = window.__tp.test.v1.hudDocs.hudDocOf('scene').screens[0].elements.find((e) => e.id === d.id);
 		const live = document.querySelector(`#hud-layer [data-hud-id="${d.id}"]`).getBoundingClientRect();
 		return { x: el.x, y: el.y, anchor: el.anchor, liveLeft: Math.round(live.left), liveW: Math.round(live.width) };
 	}, drag);
-	await page.evaluate(() => window.__stores.bottomDock.dockHeight.set(520));
+	await page.evaluate(() => window.__tp.test.v1.bottomDock.dockHeight.set(520));
 	await page.waitForTimeout(900);
 	const afterResize = await page.evaluate((d) => {
-		const el = window.__stores.hudDocs.hudDocOf('scene').screens[0].elements.find((e) => e.id === d.id);
+		const el = window.__tp.test.v1.hudDocs.hudDocOf('scene').screens[0].elements.find((e) => e.id === d.id);
 		const live = document.querySelector(`#hud-layer [data-hud-id="${d.id}"]`).getBoundingClientRect();
 		const board = document.querySelector('#hud-board').getBoundingClientRect();
 		return {
@@ -229,16 +229,16 @@ h.run(async () => {
 		afterResize.liveLeft === beforeResize.liveLeft && afterResize.liveW === beforeResize.liveW,
 		`and the runtime element does not move or stretch (${beforeResize.liveLeft}/${beforeResize.liveW} -> ${afterResize.liveLeft}/${afterResize.liveW})`
 	);
-	await page.evaluate(() => window.__stores.bottomDock.dockHeight.set(320));
+	await page.evaluate(() => window.__tp.test.v1.bottomDock.dockHeight.set(320));
 	await page.waitForTimeout(600);
 
 	// ---- 6. DELETE removes the element and NOT the selected object ---------
 	// Unhandled, Delete deletes the 3D object — the exact trap the UV editor documented.
-	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await page.waitForTimeout(1600);
 	const withObject = await page.evaluate(() => {
 		const read = (s) => new Promise((r) => s.subscribe((v) => r(v))());
-		return read(window.__stores.objectsGroup).then((g) => {
+		return read(window.__tp.test.v1.objectsGroup).then((g) => {
 			let n = 0;
 			g.traverse((o) => {
 				if (o.isMesh) n++;
@@ -249,7 +249,7 @@ h.run(async () => {
 	h.check(withObject > 0, `premise: a box exists and is selected (${withObject} meshes)`);
 
 	const deleted = await page.evaluate(async () => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		const doc = H.hudDocOf('scene');
 		const sid = doc.screens[0].id;
 		// add a second element and select it, so there is something to delete
@@ -265,14 +265,14 @@ h.run(async () => {
 	await page.waitForTimeout(900);
 	const afterDelete = await page.evaluate(() => {
 		const read = (s) => new Promise((r) => s.subscribe((v) => r(v))());
-		return read(window.__stores.objectsGroup).then((g) => {
+		return read(window.__tp.test.v1.objectsGroup).then((g) => {
 			let meshes = 0;
 			g.traverse((o) => {
 				if (o.isMesh) meshes++;
 			});
 			return {
 				meshes,
-				elements: window.__stores.hudDocs.hudDocOf('scene').screens[0].elements.map((e) => e.label)
+				elements: window.__tp.test.v1.hudDocs.hudDocOf('scene').screens[0].elements.map((e) => e.label)
 			};
 		});
 	});
@@ -287,7 +287,7 @@ h.run(async () => {
 
 	// ---- 7. a screen switch keeps PER-SCREEN selection ---------------------
 	const perScreen = await page.evaluate(async () => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		const doc = H.hudDocOf('scene');
 		const first = doc.screens[0].id;
 		const second = H.addHudScreen('scene', 'Second');
@@ -384,7 +384,7 @@ h.run(async () => {
 	// closes the HUD tab, and the tab that is SHOWING does not change when the one
 	// behind it closes.
 	const playRound = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const wasOpen = !s.hudEditorClose ? null : (() => {
 			let v;
 			s.hudEditorClose.subscribe((x) => (v = x))();
@@ -397,15 +397,15 @@ h.run(async () => {
 	// tree only CLOSES the tab that is showing (a covered tab is called back instead),
 	// so this is the arrangement in which the old family sweep could take the HUD.
 	await page.evaluate(() => {
-		window.__stores.flowGraphClose.set(false);
-		window.__stores.bottomDock.activateDock('flow');
+		window.__tp.test.v1.flowGraphClose.set(false);
+		window.__tp.test.v1.bottomDock.activateDock('flow');
 	});
 	await page.waitForTimeout(900);
 	const both = await page.evaluate(() => {
 		let hud, flow, visible;
-		window.__stores.hudEditorClose.subscribe((v) => (hud = v))();
-		window.__stores.flowGraphClose.subscribe((v) => (flow = v))();
-		window.__stores.bottomDock.visibleDockKey.subscribe((v) => (visible = v))();
+		window.__tp.test.v1.hudEditorClose.subscribe((v) => (hud = v))();
+		window.__tp.test.v1.flowGraphClose.subscribe((v) => (flow = v))();
+		window.__tp.test.v1.bottomDock.visibleDockKey.subscribe((v) => (visible = v))();
 		return { hud, flow, visible };
 	});
 	h.check(
@@ -416,9 +416,9 @@ h.run(async () => {
 	await page.waitForTimeout(1000);
 	const after = await page.evaluate(() => {
 		let hud, flow, visible;
-		window.__stores.hudEditorClose.subscribe((v) => (hud = v))();
-		window.__stores.flowGraphClose.subscribe((v) => (flow = v))();
-		window.__stores.bottomDock.visibleDockKey.subscribe((v) => (visible = v))();
+		window.__tp.test.v1.hudEditorClose.subscribe((v) => (hud = v))();
+		window.__tp.test.v1.flowGraphClose.subscribe((v) => (flow = v))();
+		window.__tp.test.v1.bottomDock.visibleDockKey.subscribe((v) => (visible = v))();
 		return { hud, flow, visible, dockInDom: !!document.querySelector('#hud-dock') };
 	});
 	h.check(after.flow === true, 'the Node editor button closes the Node editor tab');

@@ -11,7 +11,7 @@
 const h = require('./helpers.cjs');
 
 const AUTHOR = () => {
-	const H = window.__stores.hudDocs;
+	const H = window.__tp.test.v1.hudDocs;
 	H.setHudDocFor('scene', {
 		screens: [
 			{
@@ -29,7 +29,7 @@ const AUTHOR = () => {
 };
 
 const READ = () => {
-	const doc = window.__stores.hudDocs.hudDocOf('scene');
+	const doc = window.__tp.test.v1.hudDocs.hudDocOf('scene');
 	return doc
 		? {
 				screens: doc.screens.map((s) => s.id),
@@ -45,13 +45,13 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 	const page = A.page;
-	await page.waitForFunction(() => !!window.__stores?.hudDocs, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.hudDocs, { timeout: 30000 });
 
 	// ---- 1. a DEFAULT scene saves byte-identically (null, not {}) ------------
 	// The scenePostSnapshot rule: absent means default, so an older build reading the file
 	// sees no field at all and a scene with no HUD is unchanged on disk.
 	const empty = await page.evaluate(() => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		H.clearHudDocs();
 		return { snapshot: H.hudDocsSnapshot(), isNull: H.hudDocsSnapshot() === null };
 	});
@@ -64,7 +64,7 @@ h.run(async () => {
 	h.check(authored?.ids.length === 3, `premise: three elements authored (${authored?.ids.length})`);
 
 	const session = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		// the real save path, then wipe and reload it
 		const payload = s.sessions.buildSessionPayload('hud-test');
 		const hasHud = !!payload.hud;
@@ -104,7 +104,7 @@ h.run(async () => {
 	// a restore stamps FRESH — an authoritative local write must beat the file's stale
 	// changedAt, or a peer holding a newer document would refuse it
 	const stamp = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = s.sessions.buildSessionPayload('hud-test');
 		const fileStamp = payload.hud.scene.changedAt;
 		// pretend the file is ancient
@@ -125,11 +125,11 @@ h.run(async () => {
 	// autosave REFUSES to write an empty snapshot ("never overwrite a good snapshot with
 	// emptiness"), so a scene with no objects never produces one and `dirty` can never
 	// settle. One object is the premise, not decoration.
-	await page.evaluate(() => window.__stores.autosave.autosaveEnabled.set(true));
-	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await page.evaluate(() => window.__tp.test.v1.autosave.autosaveEnabled.set(true));
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await page.waitForTimeout(1800);
 	const dirtyCheck = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.hudDocs.clearHudDocs();
 		await new Promise((r) => setTimeout(r, 200));
 		// settle: write once, so `dirty` is false with nothing outstanding
@@ -159,7 +159,7 @@ h.run(async () => {
 
 	// and the whole round trip through the real snapshot store
 	const roundTrip = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		await s.autosave.saveNow();
 		await new Promise((r) => setTimeout(r, 1200));
 		const stored = await s.idb.idbGet('latest');
@@ -174,7 +174,7 @@ h.run(async () => {
 
 	// the RESTORE path: wipe the live store, then restore from that snapshot
 	const restored = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const stored = await s.idb.idbGet('latest');
 		const snapshot = stored;
 		s.hudDocs.clearHudDocs();
@@ -207,7 +207,7 @@ h.run(async () => {
 	// The wire proves it in hud-sync; the FILE has its own serializer, so it needs its own
 	// check — a normalize that dropped it here would lose a newer peer's work on save.
 	const future = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.hudDocs.clearHudDocs();
 		s.hudDocs.setHudDocFor('scene', {
 			screens: [

@@ -13,13 +13,13 @@ const h = require('./helpers.cjs');
 
 const camPos = (page) =>
 	page.evaluate(
-		() => new Promise((r) => window.__stores.globalCamera.subscribe((c) => r(c?.position?.toArray()))())
+		() => new Promise((r) => window.__tp.test.v1.globalCamera.subscribe((c) => r(c?.position?.toArray()))())
 	);
 const moved = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
 const childCount = (page) =>
-	page.evaluate(() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g.children.length))()));
+	page.evaluate(() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g.children.length))()));
 const transformMode = (page) =>
-	page.evaluate(() => new Promise((r) => window.__stores.transformMode.subscribe((m) => r(m))()));
+	page.evaluate(() => new Promise((r) => window.__tp.test.v1.transformMode.subscribe((m) => r(m))()));
 
 /** dispatch a synthetic keydown (and optional keyup) on window */
 const press = (page, init, holdMs = 0) =>
@@ -40,7 +40,7 @@ h.run(async () => {
 
 	// --- 1. the registry is byte-identical for US-layout presses --------------------
 	const pin = await A.page.evaluate(() => {
-		const { shortcuts, comboOf } = window.__stores.shortcutsRegistry;
+		const { shortcuts, comboOf } = window.__tp.test.v1.shortcutsRegistry;
 		const NAMED_CODE = { '?': 'Slash', '/': 'Slash', '.': 'Period', ',': 'Comma', '[': 'BracketLeft', ']': 'BracketRight', '`': 'Backquote', '-': 'Minus', '=': 'Equal', ' ': 'Space' };
 		const rows = shortcuts.filter((s) => s.keys && !/\s/.test(s.keys));
 		const bad = [];
@@ -65,7 +65,7 @@ h.run(async () => {
 
 	// --- 2. the leaf's edge cases -------------------------------------------------
 	const edges = await A.page.evaluate(() => {
-		const { comboOf } = window.__stores.shortcutsRegistry;
+		const { comboOf } = window.__tp.test.v1.shortcutsRegistry;
 		const ev = (init) => new KeyboardEvent('keydown', init);
 		return {
 			cyrillicG: comboOf(ev({ key: 'п', code: 'KeyG' })),
@@ -102,18 +102,18 @@ h.run(async () => {
 	h.check(edges.nothing === '', `an event with neither key nor code does not throw (${JSON.stringify(edges.nothing)})`);
 
 	// --- 3. Cyrillic G grabs (transform mode -> translate) -----------------------------
-	await A.page.evaluate(() => window.__stores.objectActions.setTransformMode('rotate'));
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.setTransformMode('rotate'));
 	h.check((await transformMode(A.page)) === 'rotate', 'precondition: mode is rotate');
 	await press(A.page, { key: 'п', code: 'KeyG' });
 	await A.page.waitForTimeout(150);
 	h.check((await transformMode(A.page)) === 'translate', 'п on the G key (Russian layout) switches to Move');
 	// and the layout flag is up for Settings
-	const seen = await A.page.evaluate(() => new Promise((r) => window.__stores.shortcutsRegistry.nonLatinLayoutSeen.subscribe((v) => r(v))()));
+	const seen = await A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.shortcutsRegistry.nonLatinLayoutSeen.subscribe((v) => r(v))()));
 	h.check(seen === true, 'nonLatinLayoutSeen flips after a non-Latin keydown');
 
 	// --- 4. Cyrillic Ctrl+Z undoes a create ------------------------------------------
 	const before = await childCount(A.page);
-	await A.page.evaluate(() => window.__stores.addObjects.spawnAtPoint('/create Box 1 1 1', [3, 0.5, -2]));
+	await A.page.evaluate(() => window.__tp.test.v1.addObjects.spawnAtPoint('/create Box 1 1 1', [3, 0.5, -2]));
 	await A.page.waitForTimeout(300);
 	const after = await childCount(A.page);
 	h.check(after === before + 1, `a box was created (${before} -> ${after})`);
@@ -123,18 +123,18 @@ h.run(async () => {
 	h.check(undone === before, `Ctrl+я on the Z key undoes it (${after} -> ${undone})`);
 
 	// --- 5. Dvorak-style f on KeyU still focuses (key wins when ASCII) ---------------
-	await A.page.evaluate(() => window.__stores.addObjects.spawnAtPoint('/create Box 1 1 1', [6, 0.5, -4]));
+	await A.page.evaluate(() => window.__tp.test.v1.addObjects.spawnAtPoint('/create Box 1 1 1', [6, 0.5, -4]));
 	await A.page.waitForTimeout(300);
 	const uuid = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g.children[g.children.length - 1].uuid))())
+		() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g.children[g.children.length - 1].uuid))())
 	);
-	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u), uuid);
+	await A.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), uuid);
 	await A.page.keyboard.press('Escape'); // close whatever the create opened
 	await A.page.waitForTimeout(200);
-	const targetBefore = await A.page.evaluate(() => new Promise((r) => window.__stores.orbitControls.subscribe((c) => r(c?.target?.toArray()))()));
+	const targetBefore = await A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.orbitControls.subscribe((c) => r(c?.target?.toArray()))()));
 	await press(A.page, { key: 'f', code: 'KeyU' });
 	await A.page.waitForTimeout(900); // flyTo eases over 400ms
-	const targetAfter = await A.page.evaluate(() => new Promise((r) => window.__stores.orbitControls.subscribe((c) => r(c?.target?.toArray()))()));
+	const targetAfter = await A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.orbitControls.subscribe((c) => r(c?.target?.toArray()))()));
 	const toBox = Math.hypot(targetAfter[0] - 6, targetAfter[1] - 0.5, targetAfter[2] + 4);
 	h.check(
 		moved(targetBefore, targetAfter) > 0.5 && toBox < 1.5,
@@ -142,7 +142,7 @@ h.run(async () => {
 	);
 
 	// --- 6. Cyrillic ц on KeyW flies the camera forward -----------------------------
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await A.page.waitForTimeout(200);
 	const c0 = await camPos(A.page);
 	await press(A.page, { key: 'ц', code: 'KeyW' }, 500);
@@ -166,8 +166,8 @@ h.run(async () => {
 	});
 	await h.freshReload(A);
 	await A.page.evaluate(() => {
-		window.__stores.settingsSection.set('shortcuts');
-		window.__stores.settingsOpen.set(true);
+		window.__tp.test.v1.settingsSection.set('shortcuts');
+		window.__tp.test.v1.settingsOpen.set(true);
 	});
 	await A.page.waitForSelector('#shortcut-grid', { timeout: 15000 });
 	await A.page.waitForTimeout(500);
@@ -182,7 +182,7 @@ h.run(async () => {
 	h.check(!note, 'no "physical key" note while the browser can map labels itself');
 
 	// --- 8. ...and the note where the API is missing (Firefox/Safari) after a non-Latin press
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await A.ctx.addInitScript(() => {
 		Object.defineProperty(navigator, 'keyboard', { configurable: true, value: undefined });
 	});
@@ -190,8 +190,8 @@ h.run(async () => {
 	await press(A.page, { key: 'п', code: 'KeyG' });
 	await A.page.waitForTimeout(100);
 	await A.page.evaluate(() => {
-		window.__stores.settingsSection.set('shortcuts');
-		window.__stores.settingsOpen.set(true);
+		window.__tp.test.v1.settingsSection.set('shortcuts');
+		window.__tp.test.v1.settingsOpen.set(true);
 	});
 	await A.page.waitForSelector('#shortcut-grid', { timeout: 15000 });
 	await A.page.waitForTimeout(300);

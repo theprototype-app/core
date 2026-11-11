@@ -24,12 +24,12 @@ const h = require('./helpers.cjs');
 const transformMode = (page) =>
 	page.evaluate(() => {
 		let v;
-		window.__stores.transformMode.subscribe((x) => (v = x))();
+		window.__tp.test.v1.transformMode.subscribe((x) => (v = x))();
 		return v;
 	});
 
 const setMode = async (page, mode) => {
-	await page.evaluate((m) => window.__stores.objectActions.setTransformMode(m), mode);
+	await page.evaluate((m) => window.__tp.test.v1.objectActions.setTransformMode(m), mode);
 	await page.waitForTimeout(200);
 };
 
@@ -42,20 +42,20 @@ async function press(page, key) {
 
 async function openSettings(page) {
 	await page.evaluate(() => {
-		window.__stores.settingsSection.set('shortcuts');
-		window.__stores.settingsOpen.set(true);
+		window.__tp.test.v1.settingsSection.set('shortcuts');
+		window.__tp.test.v1.settingsOpen.set(true);
 	});
 	await page.waitForSelector('#shortcut-grid', { timeout: 15000 });
 	await page.waitForTimeout(250);
 }
 const closeSettings = async (page) => {
-	await page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await page.waitForTimeout(400);
 };
 
 const regOf = (page, id) =>
 	page.evaluate((sid) => {
-		const s = window.__stores.shortcutsRegistry.shortcuts.find((x) => x.id === sid);
+		const s = window.__tp.test.v1.shortcutsRegistry.shortcuts.find((x) => x.id === sid);
 		return s ? { keys: s.keys, defaultKeys: s.defaultKeys, group: s.group, scope: s.scope ?? null, external: !!s.external } : null;
 	}, id);
 
@@ -72,7 +72,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 	await A.page.evaluate(() => localStorage.removeItem('shortcutOverrides'));
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => !!window.__stores?.shortcutsRegistry, { timeout: 30000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.shortcutsRegistry, { timeout: 30000 });
 	await A.page.waitForTimeout(600);
 
 	// =================================================== 1. the registry rows exist
@@ -92,7 +92,7 @@ h.run(async () => {
 		`1.3 the timeline row is external and scoped (${JSON.stringify(animGrab)})`
 	);
 	const rebindable = await A.page.evaluate(() => {
-		const r = window.__stores.shortcutsRegistry;
+		const r = window.__tp.test.v1.shortcutsRegistry;
 		const of = (id) => r.isRebindable(r.shortcuts.find((s) => s.id === id));
 		return { grab: of('transform.grab'), uv: of('uv.grab'), anim: of('animation.grab'), fly: of('movement.fly') };
 	});
@@ -116,7 +116,7 @@ h.run(async () => {
 
 	// ======================================================= 2. the viewport G works
 	const uuid = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 500));
 		let g;
@@ -140,11 +140,11 @@ h.run(async () => {
 
 	// a live mesh session owns G — the registry stands down (MESH_EDIT_KEYS)
 	await setMode(A.page, 'rotate');
-	await A.page.evaluate((u) => window.__stores.meshEdit.enterEditMode(u), uuid);
+	await A.page.evaluate((u) => window.__tp.test.v1.meshEdit.enterEditMode(u), uuid);
 	await A.page.waitForTimeout(500);
 	await press(A.page, 'g');
 	const inSession = await transformMode(A.page);
-	await A.page.evaluate(() => window.__stores.meshEdit.exitEditMode());
+	await A.page.evaluate(() => window.__tp.test.v1.meshEdit.exitEditMode());
 	await A.page.waitForTimeout(400);
 	h.check(
 		inSession === 'rotate',
@@ -178,13 +178,13 @@ h.run(async () => {
 		`3.3 ...and Alt+G does (${await transformMode(A.page)})`
 	);
 	// reset, so the rest of the suite reasons about the default
-	await A.page.evaluate(() => window.__stores.shortcutsRegistry.resetShortcut('transform.grab'));
+	await A.page.evaluate(() => window.__tp.test.v1.shortcutsRegistry.resetShortcut('transform.grab'));
 	await A.page.waitForTimeout(200);
 	h.check((await regOf(A.page, 'transform.grab')).keys === 'G', '3.4 reset puts it back on G');
 
 	// ============================================================ 4. the UV editor
 	await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let g;
 		w.objectsGroup.subscribe((x) => (g = x))();
 		const box = g.children[g.children.length - 1];
@@ -255,14 +255,14 @@ h.run(async () => {
 	await A.page.keyboard.up('Alt');
 	await A.page.waitForTimeout(250);
 	h.check((await uvXform()) === 'move', `4.6 ...and Alt+G does — bindingOf is honoured (${await uvXform()})`);
-	await A.page.evaluate(() => window.__stores.shortcutsRegistry.resetShortcut('uv.grab'));
+	await A.page.evaluate(() => window.__tp.test.v1.shortcutsRegistry.resetShortcut('uv.grab'));
 	await A.page.waitForTimeout(200);
-	await A.page.evaluate(() => window.__stores.uvEditorClose.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.uvEditorClose.set(true));
 	await A.page.waitForTimeout(400);
 
 	// ============================================================ 5. the timeline
 	await A.page.evaluate(async (u) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		const obj = g.getObjectByProperty('uuid', u);
@@ -328,12 +328,12 @@ h.run(async () => {
 	await A.page.keyboard.up('Alt');
 	await A.page.waitForTimeout(250);
 	h.check((await animXform()) === 'move', `5.6 ...and Alt+G does (${await animXform()})`);
-	await A.page.evaluate(() => window.__stores.shortcutsRegistry.resetShortcut('animation.grab'));
+	await A.page.evaluate(() => window.__tp.test.v1.shortcutsRegistry.resetShortcut('animation.grab'));
 	await A.page.waitForTimeout(200);
 
 	// ================================================= 6. the conflict scope rule
 	const verdicts = await A.page.evaluate(() => {
-		const r = window.__stores.shortcutsRegistry;
+		const r = window.__tp.test.v1.shortcutsRegistry;
 		const name = (v) => (v.shortcut ? v.shortcut.id : null);
 		return {
 			// each of the three G rows, asked who else answers to G in ITS scope
@@ -370,10 +370,10 @@ h.run(async () => {
 	// correctly by luck; put the external row first and a matcher without the guard
 	// returns it, finds no action and RETURNS — the viewport G silently dead. So the
 	// premise of this check is the hostile order, restored afterwards.
-	await A.page.evaluate(() => window.__stores.animationClose.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.animationClose.set(true));
 	await A.page.waitForTimeout(400);
 	const reordered = await A.page.evaluate(() => {
-		const list = window.__stores.shortcutsRegistry.shortcuts;
+		const list = window.__tp.test.v1.shortcutsRegistry.shortcuts;
 		const i = list.findIndex((s) => s.id === 'uv.grab');
 		const j = list.findIndex((s) => s.id === 'transform.grab');
 		if (i < 0 || j < 0) return null;
@@ -392,11 +392,11 @@ h.run(async () => {
 		`6.5 an external row never shadows a real command, whatever the order (${await transformMode(A.page)})`
 	);
 	await A.page.evaluate(() => {
-		const list = window.__stores.shortcutsRegistry.shortcuts;
+		const list = window.__tp.test.v1.shortcutsRegistry.shortcuts;
 		const [row] = list.splice(list.findIndex((s) => s.id === 'uv.grab'), 1);
 		list.splice(list.findIndex((s) => s.id === 'transform.grab') + 1, 0, row);
 	});
-	await A.page.evaluate(() => window.__stores.shortcutsRegistry.resetAllShortcuts());
+	await A.page.evaluate(() => window.__tp.test.v1.shortcutsRegistry.resetAllShortcuts());
 	await A.page.waitForTimeout(200);
 	h.check(
 		(await regOf(A.page, 'transform.grab')).keys === 'G' && (await regOf(A.page, 'uv.grab')).keys === 'G',

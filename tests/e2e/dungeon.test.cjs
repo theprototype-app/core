@@ -5,7 +5,7 @@ const dungeonData = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.globalScene.subscribe((scene) => {
+				window.__tp.test.v1.globalScene.subscribe((scene) => {
 					const group = scene?.getObjectByName('dungeon-module');
 					resolve(group ? { ...group.userData } : null);
 				})();
@@ -30,7 +30,7 @@ h.run(async () => {
 	// open the panel through the registered module menu action
 	await A.page.evaluate(() => {
 		return new Promise((resolve) => {
-			window.__stores.moduleSDK.moduleMenuItems.subscribe((items) => {
+			window.__tp.test.v1.moduleSDK.moduleMenuItems.subscribe((items) => {
 				items.find((i) => i.label === 'Dungeon generator').action();
 				resolve();
 			})();

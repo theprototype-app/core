@@ -96,18 +96,18 @@ h.run(async () => {
 		ctx.fillStyle = '#c03030';
 		ctx.fillRect(0, 0, 64, 48);
 		const blob = /** @type {Blob} */ (await new Promise((r) => c.toBlob(r, 'image/png')));
-		const rec = await window.__stores.explorer.addItemFromBytes(await blob.arrayBuffer(), 'n5.png', null, { imported: true });
+		const rec = await window.__tp.test.v1.explorer.addItemFromBytes(await blob.arrayBuffer(), 'n5.png', null, { imported: true });
 		return rec.id;
 	});
 	await S(page, () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphClose.set(false);
 		s.sceneBudget.statsOpen.set(true);
 		s.chatHidden.set('');
 		s.objectListClose.set(false);
 	});
 	await page.waitForTimeout(900);
-	await S(page, (id) => window.__stores.imageEditor.imageEditorTarget.set({ itemId: id, raise: 1 }), id);
+	await S(page, (id) => window.__tp.test.v1.imageEditor.imageEditorTarget.set({ itemId: id, raise: 1 }), id);
 	await page.waitForTimeout(1800);
 	const tabs = await S(page, () =>
 		[...document.querySelectorAll('[data-dock-tab]')].filter((t) => t.getBoundingClientRect().width > 0).map((t) => t.getAttribute('data-dock-tab') + (t.getAttribute('aria-selected') === 'true' ? '*' : ''))

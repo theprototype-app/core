@@ -21,7 +21,7 @@ const S = (page, fn, arg) => page.evaluate(fn, arg);
 const read = (page, path) =>
 	S(page, (path) => {
 		const [mod, name] = path.split('.');
-		const st = name ? window.__stores[mod]?.[name] : window.__stores[mod];
+		const st = name ? window.__tp.test.v1[mod]?.[name] : window.__tp.test.v1[mod];
 		if (!st?.subscribe) return null;
 		let v;
 		st.subscribe((x) => (v = x))();
@@ -43,8 +43,8 @@ async function clickAt(page, sel, opts = {}) {
 }
 async function openScene(page) {
 	await S(page, () => {
-		window.__stores.inspectorKind.set('scene');
-		window.__stores.inspectorClose.set(false);
+		window.__tp.test.v1.inspectorKind.set('scene');
+		window.__tp.test.v1.inspectorClose.set(false);
 	});
 	await page.waitForTimeout(1200);
 }
@@ -93,8 +93,8 @@ h.run(async () => {
 	// ---- A': the dock is never clamped; a column without room auto-hides and comes back ----
 	const auto = () => read(page, 'sidebars.sidebarAutoHidden');
 	await S(page, () => {
-		window.__stores.bottomDock.setDockEmptyOpen(true);
-		window.__stores.bottomDock.dockHeight.set(2000); // clampH -> the dock's own max
+		window.__tp.test.v1.bottomDock.setDockEmptyOpen(true);
+		window.__tp.test.v1.bottomDock.dockHeight.set(2000); // clampH -> the dock's own max
 	});
 	await page.waitForTimeout(900);
 	v = await read(page, 'sidebars.sidebarVisible');
@@ -103,34 +103,34 @@ h.run(async () => {
 	h.check(v?.right === false && ah?.right === true && tallH >= 600, `A1 the dock grown tall (${tallH} px, not clamped): the right column auto-hides instead of being squashed (${JSON.stringify(v)}) (owner A')`);
 	h.check((await read(page, 'sidebars.sidebarMode'))?.right !== 'hidden', `A2 …a free-space hide, not the person's: its mode is untouched`);
 	await page.screenshot({ path: `${OUT}/dock-fixes-b-a-dock-tall.png` });
-	await S(page, () => window.__stores.bottomDock.dockHeight.set(300));
+	await S(page, () => window.__tp.test.v1.bottomDock.dockHeight.set(300));
 	await page.waitForTimeout(900);
 	v = await read(page, 'sidebars.sidebarVisible');
 	h.check(v?.right === true, `A3 the dock lowered again: the column comes back by itself (${JSON.stringify(v)})`);
-	await S(page, () => window.__stores.bottomDock.dockHeight.set(2000));
+	await S(page, () => window.__tp.test.v1.bottomDock.dockHeight.set(2000));
 	await page.waitForTimeout(700);
-	await S(page, () => window.__stores.sidebars.toggleSidebar('right', true));
+	await S(page, () => window.__tp.test.v1.sidebars.toggleSidebar('right', true));
 	await page.waitForTimeout(900);
 	v = await read(page, 'sidebars.sidebarVisible');
 	const madeRoom = await read(page, 'bottomDock.dockHeight');
 	h.check(v?.right === true && madeRoom < tallH, `A4 an explicit show of the tucked-away column wins: the dock gives back just the room it needs (${tallH} -> ${madeRoom})`);
-	await S(page, () => window.__stores.bottomDock.dockHeight.set(300));
+	await S(page, () => window.__tp.test.v1.bottomDock.dockHeight.set(300));
 	await page.waitForTimeout(500);
 
 	// ---- D: Free assets from the main menu opens in the dock on screen ----
-	await S(page, () => window.__stores.closeMenu.set(false));
+	await S(page, () => window.__tp.test.v1.closeMenu.set(false));
 	await page.waitForTimeout(500);
 	await clickAt(page, '#open-asset-browser');
 	await page.waitForTimeout(900);
-	const whereD = await S(page, () => window.__stores.dockMenu.windowWhere('assets'));
+	const whereD = await S(page, () => window.__tp.test.v1.dockMenu.windowWhere('assets'));
 	h.check(whereD === 'dock', `D1 the dock on screen: main menu ▸ Free assets opens as a dock tab (${whereD}) (owner D)`);
 	await S(page, () => {
-		window.__stores.dockHost.HOSTED.assets.close();
-		window.__stores.bottomDock.setDockEmptyOpen(false);
-		window.__stores.bottomDock.dockMinimized.set(true);
+		window.__tp.test.v1.dockHost.HOSTED.assets.close();
+		window.__tp.test.v1.bottomDock.setDockEmptyOpen(false);
+		window.__tp.test.v1.bottomDock.dockMinimized.set(true);
 	});
 	await page.waitForTimeout(600);
-	await S(page, () => window.__stores.closeMenu.set(false));
+	await S(page, () => window.__tp.test.v1.closeMenu.set(false));
 	await page.waitForTimeout(500);
 	await clickAt(page, '#open-asset-browser');
 	// the Free assets window is a lazy chunk: on a dev server it MOUNTS ~2 s after the press (until then it reads
@@ -138,22 +138,22 @@ h.run(async () => {
 	let whereD2 = null;
 	for (let i = 0; i < 30 && whereD2 !== 'right'; i++) {
 		await page.waitForTimeout(200);
-		whereD2 = await S(page, () => (document.getElementById('asset-browser-window') ? window.__stores.dockMenu.windowWhere('assets') : 'mounting'));
+		whereD2 = await S(page, () => (document.getElementById('asset-browser-window') ? window.__tp.test.v1.dockMenu.windowWhere('assets') : 'mounting'));
 	}
 	const ctxD2 = await S(page, () => {
 		const g = (st) => { let v; st.subscribe((x) => (v = x))(); return v; };
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		return { vis: g(s.sidebars.sidebarVisible), auto: g(s.sidebars.sidebarAutoHidden), inset: g(s.bottomDock.bottomInset), tabs: g(s.sidebars.sidebarTabs) };
 	});
 	h.check(whereD2 === 'right', `D2 no dock, the right column open: it opens as a tab of that column (${whereD2}; ${JSON.stringify(ctxD2)})`);
 	await S(page, () => {
-		window.__stores.dockHost.HOSTED.assets.close();
-		window.__stores.bottomDock.dockMinimized.set(false);
+		window.__tp.test.v1.dockHost.HOSTED.assets.close();
+		window.__tp.test.v1.bottomDock.dockMinimized.set(false);
 	});
 	await page.waitForTimeout(500);
 
 	// ---- PC-5: the Templates dialog keeps one height whatever the tab (it jumped ~44 px at 1920) ----
-	await S(page, () => window.__stores.templatesModalOpen.set(true));
+	await S(page, () => window.__tp.test.v1.templatesModalOpen.set(true));
 	await page.waitForSelector('#templates-tab-examples', { timeout: 15000 });
 	const tplH = [];
 	for (const t of ['general', 'examples', 'games', 'general']) {
@@ -162,11 +162,11 @@ h.run(async () => {
 		tplH.push(await S(page, () => Math.round(document.getElementById('templates-modal')?.getBoundingClientRect().height || 0)));
 	}
 	h.check(tplH[0] > 0 && tplH.every((x) => Math.abs(x - tplH[0]) <= 1), `PC5 the Templates dialog keeps one height across General / Examples / Games (${tplH.join(' / ')})`);
-	await S(page, () => window.__stores.templatesModalOpen.set(false));
+	await S(page, () => window.__tp.test.v1.templatesModalOpen.set(false));
 	await page.waitForTimeout(400);
 
 	// ---- PC-4: the Objects window's filter chips fade the edge they scroll past instead of cutting "St…" ----
-	await S(page, () => window.__stores.objectListClose.set(false));
+	await S(page, () => window.__tp.test.v1.objectListClose.set(false));
 	await page.waitForTimeout(800);
 	const chips = await S(page, () => {
 		const n = document.getElementById('filter-chips');
@@ -176,14 +176,14 @@ h.run(async () => {
 		return new Promise((res) => setTimeout(() => res({ ...before, after: n.dataset.fade || '' }), 150));
 	});
 	h.check(!!chips && (chips.more <= 1 ? chips.fade === '' : chips.fade === 'end' && chips.after === 'start'), `PC4 the chip row fades its scrolling edge: 'end' at rest, 'start' scrolled to the end (${JSON.stringify(chips)})`);
-	await S(page, () => window.__stores.objectListClose.set(true));
+	await S(page, () => window.__tp.test.v1.objectListClose.set(true));
 	await page.waitForTimeout(300);
 
 	// ---- UI-6 (PC 1280, 98-int): the main menu runs below a short screen with its scrollbar hidden — the bottom edge
 	//      fades while rows wait below, the top one once scrolled to the end ----
 	await page.setViewportSize({ width: 1280, height: 560 });
 	await page.waitForTimeout(600);
-	await S(page, () => window.__stores.closeMenu.set(false));
+	await S(page, () => window.__tp.test.v1.closeMenu.set(false));
 	await page.waitForSelector('#sidebar70', { timeout: 10000 });
 	await page.waitForTimeout(600);
 	const menuFade = await S(page, () => {
@@ -194,7 +194,7 @@ h.run(async () => {
 		return new Promise((res) => setTimeout(() => res({ ...before, after: n.dataset.fadeY || '' }), 150));
 	});
 	h.check(!!menuFade && menuFade.more > 1 && menuFade.fade === 'end' && menuFade.after === 'start', `UI-6 the main menu at 1280x560 fades its bottom edge while rows wait below, the top once scrolled to the end (${JSON.stringify(menuFade)})`);
-	await S(page, () => window.__stores.closeMenu.set(true));
+	await S(page, () => window.__tp.test.v1.closeMenu.set(true));
 	await page.setViewportSize(DESK.viewport);
 	await page.waitForTimeout(400);
 
@@ -218,32 +218,32 @@ h.run(async () => {
 
 		if (theme === 'dark') {
 			// ---- A': two columns would leave no usable viewport on the unfolded phone: the EARLIER one tucks away ----
-			await S(page, () => window.__stores.aiAssistantHidden.set(''));
+			await S(page, () => window.__tp.test.v1.aiAssistantHidden.set(''));
 			await page.waitForTimeout(400);
-			await S(page, () => window.__stores.docking.dockToSide('chat', 'right'));
+			await S(page, () => window.__tp.test.v1.docking.dockToSide('chat', 'right'));
 			await page.waitForTimeout(1200);
 			v = await read(page, 'sidebars.sidebarVisible');
 			const ah2 = await read(page, 'sidebars.sidebarAutoHidden');
 			h.check(v?.right === true && v?.left === false && ah2?.left === true, `A5 unfolded: the AI assistant opened on the right — Configure Scene (left, opened earlier) tucks away (${JSON.stringify(v)})`);
 			await page.screenshot({ path: `${OUT}/dock-fixes-b-a-two-columns-unfolded.png` });
-			await S(page, () => window.__stores.sidebars.toggleSidebar('left', true));
+			await S(page, () => window.__tp.test.v1.sidebars.toggleSidebar('left', true));
 			await page.waitForTimeout(900);
 			v = await read(page, 'sidebars.sidebarVisible');
 			h.check(v?.left === true && v?.right === false, `A6 showing the left one again: now the right one gives way (${JSON.stringify(v)})`);
-			await S(page, () => window.__stores.sidebars.toggleSidebar('right', false));
+			await S(page, () => window.__tp.test.v1.sidebars.toggleSidebar('right', false));
 			await page.waitForTimeout(700);
 			v = await read(page, 'sidebars.sidebarVisible');
 			h.check(v?.left === true && v?.right === false, `A7 hiding the right one keeps the left (${JSON.stringify(v)})`);
 			await S(page, () => {
-				window.__stores.dockHost.HOSTED.chat.close();
-				window.__stores.sidebars.sidebarMode.update((m) => ({ ...m, right: 'auto' }));
+				window.__tp.test.v1.dockHost.HOSTED.chat.close();
+				window.__tp.test.v1.sidebars.sidebarMode.update((m) => ({ ...m, right: 'auto' }));
 			});
 			await page.waitForTimeout(700);
 			await openScene(page);
 			// ---- B: the menu overlays the left column, the column does not move ----
 			const colBefore = await rectOf(page, '#sidebar-strip-left');
 			const rightBefore = await rectOf(page, '#sidebar-strip-right');
-			await S(page, () => window.__stores.closeMenu.set(false));
+			await S(page, () => window.__tp.test.v1.closeMenu.set(false));
 			await page.waitForTimeout(700);
 			const colAfter = await rectOf(page, '#sidebar-strip-left');
 			const menuTop = await S(page, () => {
@@ -261,7 +261,7 @@ h.run(async () => {
 			const under = ePill && eMenu && ePill.left < eMenu.right && ePill.right > eMenu.left;
 			h.check(!under || eMenu.bottom <= ePill.top + 1, `E1 the open menu ends above the bottom toolbar (menu bottom ${eMenu?.bottom}, toolbar top ${ePill?.top}, under ${!!under}) (owner E)`);
 			await page.screenshot({ path: `${OUT}/dock-fixes-b-b-menu-over-column.png` });
-			await S(page, () => window.__stores.closeMenu.set(true));
+			await S(page, () => window.__tp.test.v1.closeMenu.set(true));
 			await page.waitForTimeout(500);
 			// the budget chip never sits on a HUD button
 			const chip = await S(page, () => {

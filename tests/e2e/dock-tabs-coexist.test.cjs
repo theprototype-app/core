@@ -6,7 +6,7 @@ const h = require('./helpers.cjs');
 
 const snap = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let tabs, occ, visible, fc, ec, dh;
 		s.bottomDock.dockTabs.subscribe((v) => (tabs = v))();
 		s.bottomDock.dockOccupants.subscribe((v) => (occ = v))();
@@ -48,9 +48,9 @@ h.run(async () => {
 		localStorage.removeItem('explorerHeight');
 	});
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.bottomDock, { timeout: 30000 });
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.bottomDock, { timeout: 30000 });
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphClose.set(false);
 		s.explorerClose.set(false);
 		s.bottomDock.activateDock('flow');
@@ -65,7 +65,7 @@ h.run(async () => {
 	// flowTabs stays flow-family-only: it is what the Node editor BUTTON owns
 	const ft = await A.page.evaluate(() => {
 		let t;
-		window.__stores.bottomDock.flowTabs.subscribe((v) => (t = v))();
+		window.__tp.test.v1.bottomDock.flowTabs.subscribe((v) => (t = v))();
 		return t.map((x) => x.key);
 	});
 	h.check(ft.join(',') === 'flow', `1.4 flowTabs stays the flow FAMILY only (${ft.join(',') || 'none'})`);
@@ -86,7 +86,7 @@ h.run(async () => {
 	// --- 3. ONE height for the whole dock ---
 	await clickTab(A.page, 'Explorer');
 	await A.page.waitForTimeout(300);
-	await A.page.evaluate(() => window.__stores.bottomDock.dockHeight.set(430));
+	await A.page.evaluate(() => window.__tp.test.v1.bottomDock.dockHeight.set(430));
 	await A.page.waitForTimeout(350);
 	s = await snap(A.page);
 	h.check(s.shown === 'explorer-list' && Math.abs(s.shownH - 430) < 3, `3.1 the docked Explorer takes the shared height (${s.shownH}px)`);
@@ -101,11 +101,11 @@ h.run(async () => {
 	// --- 4. the explorerHeight -> dockHeight migration ---
 	await A.page.evaluate(() => localStorage.setItem('explorerHeight', '365'));
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.bottomDock, { timeout: 30000 });
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.bottomDock, { timeout: 30000 });
 	await A.page.waitForTimeout(600);
 	const migrated = await A.page.evaluate(() => {
 		let dh;
-		window.__stores.bottomDock.dockHeight.subscribe((v) => (dh = v))();
+		window.__tp.test.v1.bottomDock.dockHeight.subscribe((v) => (dh = v))();
 		return { dh, legacy: localStorage.getItem('explorerHeight'), shared: localStorage.getItem('flowDockHeight') };
 	});
 	h.check(migrated.dh === 365, `4.1 the old explorerHeight is adopted as the shared dock height (${migrated.dh}, was 430)`);

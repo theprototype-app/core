@@ -44,7 +44,7 @@ const S = (page, fn, arg) => page.evaluate(fn, arg);
 const read = (page, path) =>
 	S(page, (path) => {
 		const [mod, name] = path.split('.');
-		const st = name ? window.__stores[mod]?.[name] : window.__stores[mod];
+		const st = name ? window.__tp.test.v1[mod]?.[name] : window.__tp.test.v1[mod];
 		if (!st?.subscribe) return null;
 		let v;
 		st.subscribe((x) => (v = x))();
@@ -127,8 +127,8 @@ const overlays = (page) =>
 
 async function openScene(page) {
 	await S(page, () => {
-		window.__stores.inspectorKind.set('scene');
-		window.__stores.inspectorClose.set(false);
+		window.__tp.test.v1.inspectorKind.set('scene');
+		window.__tp.test.v1.inspectorClose.set(false);
 	});
 	await page.waitForTimeout(1200);
 }
@@ -136,7 +136,7 @@ async function openScene(page) {
 /** the AI button wherever the layout put it (a corner stack by default); the toggle tree directly when absent */
 async function pressAi(page) {
 	if (await clickAt(page, '#ai-hud-button')) return 'button';
-	await S(page, () => window.__stores.chatWindow.toggleChatTab('assistant'));
+	await S(page, () => window.__tp.test.v1.chatWindow.toggleChatTab('assistant'));
 	await page.waitForTimeout(500);
 	return 'tree';
 }
@@ -157,7 +157,7 @@ h.run(async () => {
 	let v = await sides(page);
 	h.check(v?.right === false, `D1.2 the hide button hides the column (${JSON.stringify(v)})`);
 	h.check((await read(page, 'inspectorClose')) === false, 'D1.3 …and Configure Scene stays open behind it');
-	await S(page, () => window.__stores.sidebars.toggleSidebar('right', true));
+	await S(page, () => window.__tp.test.v1.sidebars.toggleSidebar('right', true));
 	await page.waitForTimeout(500);
 	h.check((await sides(page))?.right === true, 'D1.4 the column comes back with its tab');
 	await page.screenshot({ path: `${OUT}/dock-fixes-01-hide-button.png` });
@@ -171,15 +171,15 @@ h.run(async () => {
 	const pill = await rectOf(page, '#controls-pill');
 	h.check(!!pill && Math.abs((pill.left + pill.right) / 2 - (1440 - colW) / 2) <= 12, `D4.3 the toolbar is centred in the free width (centre ${pill && (pill.left + pill.right) / 2} vs ${(1440 - colW) / 2})`);
 	// pinned: the top row gives way too
-	await S(page, () => window.__stores.sidebars.toggleSidebarFull('right', true));
+	await S(page, () => window.__tp.test.v1.sidebars.toggleSidebarFull('right', true));
 	await page.waitForTimeout(700);
 	o = await overlays(page);
 	h.check(o.hits.length === 0, `D4.4 pinned (full height), nothing over the column — the profile and the top-right group step inward (${o.hits.join(' | ') || 'none'})`);
-	await S(page, () => window.__stores.sidebars.toggleSidebarFull('right', false));
+	await S(page, () => window.__tp.test.v1.sidebars.toggleSidebarFull('right', false));
 	await page.waitForTimeout(500);
 
 	// ---- D2: the AI window keeps its size off the bottom ----
-	await S(page, () => window.__stores.aiAssistantHidden.set(''));
+	await S(page, () => window.__tp.test.v1.aiAssistantHidden.set(''));
 	await page.waitForTimeout(1200);
 	// uir-chat: the AI assistant is the Chat window's Assistant tab, so the window measured is #chat-window
 	const a0 = await rectOf(page, '#chat-window');
@@ -199,16 +199,16 @@ h.run(async () => {
 		h.check(!!a1 && Math.abs(a1.h - a0.h) <= 1 && a1.bottom > 900, `D2.2 …and after the release, partly off the bottom (${a0.h} -> ${a1?.h}, bottom ${a1?.bottom})`);
 		h.check(!!a1 && a1.top < 900 - 20, `D2.3 its header stays on screen (top ${a1?.top})`);
 	}
-	await S(page, () => window.__stores.aiAssistantHidden.set('hidden'));
+	await S(page, () => window.__tp.test.v1.aiAssistantHidden.set('hidden'));
 	await page.waitForTimeout(400);
 
 	// ---- D3: the AI button and its sidebar tab ----
-	await S(page, () => window.__stores.inspectorClose.set(true));
+	await S(page, () => window.__tp.test.v1.inspectorClose.set(true));
 	await page.waitForTimeout(500);
-	await S(page, () => window.__stores.sidebars.sidebarMode.set({ left: 'auto', right: 'auto' }));
-	await S(page, () => window.__stores.aiAssistantHidden.set(''));
+	await S(page, () => window.__tp.test.v1.sidebars.sidebarMode.set({ left: 'auto', right: 'auto' }));
+	await S(page, () => window.__tp.test.v1.aiAssistantHidden.set(''));
 	await page.waitForTimeout(500);
-	await S(page, () => window.__stores.docking.dockToSide('chat', 'right'));
+	await S(page, () => window.__tp.test.v1.docking.dockToSide('chat', 'right'));
 	await page.waitForTimeout(900);
 	t = await tabs(page);
 	h.check(t?.right?.join() === 'chat', `D3.0 premise: the AI assistant is the right column's only tab (${JSON.stringify(t)})`);
@@ -229,7 +229,7 @@ h.run(async () => {
 	await page.waitForTimeout(400);
 	h.check((await read(page, 'aiAssistantHidden')) === '' && (await read(page, 'sidebars.sidebarShown'))?.right === 'chat', 'D3.6 covered, the AI button brings its tab forward instead of closing it');
 	// a column kept open EMPTY (its last tab closed by ×) still collapses when the button closes the tab
-	await S(page, () => window.__stores.inspectorClose.set(true));
+	await S(page, () => window.__tp.test.v1.inspectorClose.set(true));
 	await page.waitForTimeout(400);
 	await clickAt(page, '[data-sidebar-tab-close="chat"]');
 	await page.waitForTimeout(400);
@@ -243,10 +243,10 @@ h.run(async () => {
 
 	// ---- D5: the bottom dock's tab menu ----
 	await S(page, () => {
-		window.__stores.flowGraphClose.set(false);
+		window.__tp.test.v1.flowGraphClose.set(false);
 	});
 	await page.waitForTimeout(400);
-	await S(page, () => window.__stores.bottomDock.activateDock('flow'));
+	await S(page, () => window.__tp.test.v1.bottomDock.activateDock('flow'));
 	await page.waitForTimeout(1200);
 	const dockTab = (await rectOf(page, '[data-dock-tab="flow"]')) ? '[data-dock-tab="flow"]' : '[data-dock-tab]';
 	if (await clickAt(page, dockTab, { button: 'right' })) {
@@ -266,9 +266,9 @@ h.run(async () => {
 	const N = await h.setupPage(browser, 'small', { context: SMALL, storage: { ...BASE_STORAGE, 'win:aiAssistant': JSON.stringify({ left: 300, top: 160 }) } });
 	page = N.page;
 	await openScene(page);
-	await S(page, () => window.__stores.aiAssistantHidden.set(''));
+	await S(page, () => window.__tp.test.v1.aiAssistantHidden.set(''));
 	await page.waitForTimeout(500);
-	await S(page, () => window.__stores.docking.dockToSide('chat', 'left'));
+	await S(page, () => window.__tp.test.v1.docking.dockToSide('chat', 'left'));
 	await page.waitForTimeout(1200);
 	v = await sides(page);
 	o = await overlays(page);
@@ -287,11 +287,11 @@ h.run(async () => {
 		const docked = await read(page, 'connectDocked');
 		o = await overlays(page);
 		h.check(o.hits.length === 0, `U1.1 [${theme}] Connect ${docked ? 'docked' : 'floating'}: nothing over the right column's header or body — cols ${o.cols.join(' | ')}; hits ${o.hits.join(' | ') || 'none'}`);
-		await S(page, () => window.__stores.aiAssistantHidden.set(''));
+		await S(page, () => window.__tp.test.v1.aiAssistantHidden.set(''));
 		await page.waitForTimeout(400);
 		await S(page, () => {
-			window.__stores.docking.dockToSide('chat', 'left');
-			window.__stores.sidebars.toggleSidebarFull('left', true);
+			window.__tp.test.v1.docking.dockToSide('chat', 'left');
+			window.__tp.test.v1.sidebars.toggleSidebarFull('left', true);
 		});
 		await page.waitForTimeout(1200);
 		o = await overlays(page);
@@ -326,7 +326,7 @@ h.run(async () => {
 			h.check(rows.some((r) => r.title === 'Hide this button' && r.icon), `U2.5 its menu offers "Hide this button" (${rows.map((r) => r.title).join(', ')})`);
 			await clickRow(page, 'Hide this button');
 			h.check(!(await rectOf(page, '#panels-toggle')) && (await read(page, 'panelsButton.panelsButtonMode')) === 'off', 'U2.6 …which removes it (Settings ▸ Panels button brings it back)');
-			await S(page, () => window.__stores.panelsButton?.panelsButtonMode.set('auto'));
+			await S(page, () => window.__tp.test.v1.panelsButton?.panelsButtonMode.set('auto'));
 		}
 		await U.ctx.close();
 	}

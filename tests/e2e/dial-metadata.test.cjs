@@ -25,13 +25,13 @@
 // Run: APP_URL=https://theprototype.app:5219/ PEER_CONFIG=... npm run e2e -- dial-metadata
 const h = require('./helpers.cjs');
 
-/** run a snippet with `s = window.__stores` and `pc` (the PeerConnection) in scope */
+/** run a snippet with `s = window.__tp?.test.v1` and `pc` (the PeerConnection) in scope */
 const inPage = (peer, body, arg) =>
 	peer.page.evaluate(
 		([src, a]) => {
 			let pc = null;
-			window.__stores.peers.subscribe((v) => (pc = v))();
-			return Object.getPrototypeOf(async function () {}).constructor('s', 'pc', 'arg', src)(window.__stores, pc, a);
+			window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
+			return Object.getPrototypeOf(async function () {}).constructor('s', 'pc', 'arg', src)(window.__tp?.test.v1, pc, a);
 		},
 		[body, arg ?? null]
 	);
@@ -83,7 +83,7 @@ h.run(async () => {
 
 	// ==================================================================== the joiner
 	const J = await h.setupPage(browser, 'joiner');
-	await J.page.waitForFunction(() => !!window.__stores?.peerApproval?.requestConnect, { timeout: 30000 });
+	await J.page.waitForFunction(() => !!window.__tp?.test.v1?.peerApproval?.requestConnect, { timeout: 30000 });
 	await inPage(J, DIAL_STUB);
 
 	console.log('\n=== 1. no metadata: the dial is byte-identical ===');
@@ -124,7 +124,7 @@ h.run(async () => {
 
 	// ==================================================================== the host
 	const H = await h.setupPage(browser, 'host');
-	await H.page.waitForFunction(() => !!window.__stores?.cloudHooks?.setAuthProvider, { timeout: 30000 });
+	await H.page.waitForFunction(() => !!window.__tp?.test.v1?.cloudHooks?.setAuthProvider, { timeout: 30000 });
 	await inPage(H, DIAL_STUB);
 	const cards = () => read(H, 'pendingApprovals');
 	const decided = () => inPage(H, 'return window.__decided');
@@ -216,7 +216,7 @@ h.run(async () => {
 	console.log('\n=== 4. two real peers ===');
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
-	await A.page.waitForFunction(() => !!window.__stores?.cloudHooks?.setAuthProvider, { timeout: 30000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.cloudHooks?.setAuthProvider, { timeout: 30000 });
 	await inPage(A, DECIDER, { label: LABEL });
 	await inPage(B, 's.peerApproval.requestConnect(arg.id, arg.meta)', { id: A.id, meta: { v: 1, room: 'amber-mesa', name: 'Ada' } });
 	const acard = A.page.locator('.tp-toast--req', { hasText: String(B.id).slice(0, 6).toUpperCase() });

@@ -14,14 +14,14 @@ const h = require('./helpers.cjs');
 const memory = (peer) =>
 	peer.page.evaluate(() => {
 		let r = null;
-		window.__stores.globalRenderer.subscribe((v) => (r = v))();
+		window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
 		return r?.info?.memory ? { geometries: r.info.memory.geometries, textures: r.info.memory.textures } : null;
 	});
 
 const objectCount = (peer) =>
 	peer.page.evaluate(() => {
 		let g = null;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return g ? g.children.length : -1;
 	});
 
@@ -37,8 +37,8 @@ h.run(async () => {
 	// 18 -> 26 -> 18, i.e. disposal returning to the real floor exactly.
 	const warmUuid = await A.page.evaluate(() => {
 		let g = null;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
-		window.__stores.addObjects.spawnAtPoint('/create Box 1 1 1', [0, 0.5, -6]);
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.addObjects.spawnAtPoint('/create Box 1 1 1', [0, 0.5, -6]);
 		return g.children[g.children.length - 1].uuid;
 	});
 	// It has to RENDER before being deleted. The transform gizmo's geometries are uploaded
@@ -46,7 +46,7 @@ h.run(async () => {
 	// and deleting inside one evaluate leaves them for the next section to allocate, and
 	// the floor reads 4 when the true floor is 18.
 	await A.page.waitForTimeout(2000);
-	await A.page.evaluate((id) => window.__stores.commandsHandler.deleteObject(id), warmUuid);
+	await A.page.evaluate((id) => window.__tp.test.v1.commandsHandler.deleteObject(id), warmUuid);
 	await A.page.waitForTimeout(1500);
 	const before = await memory(A);
 	h.check(!!before, `premise: the renderer reports its memory (${JSON.stringify(before)})`);
@@ -54,9 +54,9 @@ h.run(async () => {
 	const uuids = await A.page.evaluate(() => {
 		const made = [];
 		let g = null;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		for (let i = 0; i < 10; i++) {
-			window.__stores.addObjects.spawnAtPoint('/create Box 1 1 1', [i * 2 - 9, 0.5, -3]);
+			window.__tp.test.v1.addObjects.spawnAtPoint('/create Box 1 1 1', [i * 2 - 9, 0.5, -3]);
 			made.push(g.children[g.children.length - 1].uuid);
 		}
 		return made;
@@ -71,7 +71,7 @@ h.run(async () => {
 	);
 
 	await A.page.evaluate((ids) => {
-		for (const id of ids) window.__stores.commandsHandler.deleteObject(id);
+		for (const id of ids) window.__tp.test.v1.commandsHandler.deleteObject(id);
 	}, uuids);
 	await A.page.waitForTimeout(1500);
 
@@ -85,7 +85,7 @@ h.run(async () => {
 	// the leak this phase is about — and that is the thing worth asserting.
 	const residual = await A.page.evaluate(() => {
 		let s = null;
-		window.__stores.globalScene.subscribe((v) => (s = v))();
+		window.__tp.test.v1.globalScene.subscribe((v) => (s = v))();
 		const seen = new Set();
 		/** @type {Record<string, number>} */
 		const byOwner = {};
@@ -109,13 +109,13 @@ h.run(async () => {
 	// ---- 2. clearing a scene frees it too ------------------------------------------------
 	await A.page.evaluate(() => {
 		for (let i = 0; i < 8; i++)
-			window.__stores.addObjects.spawnAtPoint('/create Box 1 1 1', [i - 4, 0.5, 2]);
+			window.__tp.test.v1.addObjects.spawnAtPoint('/create Box 1 1 1', [i - 4, 0.5, 2]);
 	});
 	await A.page.waitForTimeout(1200);
 	const filled = await memory(A);
 	h.check(filled.geometries > after.geometries, `premise: eight more objects are resident (${filled.geometries})`);
 
-	await A.page.evaluate(() => window.__stores.commandsHandler.clearSceneLocal());
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.clearSceneLocal());
 	await A.page.waitForTimeout(1200);
 	const cleared = await memory(A);
 	h.check(
@@ -126,7 +126,7 @@ h.run(async () => {
 	// ---- 3. a real lost context raises the overlay ----------------------------------------
 	const canLose = await A.page.evaluate(() => {
 		let r = null;
-		window.__stores.globalRenderer.subscribe((v) => (r = v))();
+		window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
 		const gl = r?.getContext?.();
 		// HOLD the extension. Once the context is lost, getExtension returns null, so
 		// fetching it again in order to RESTORE throws — which it did, on the first run.
@@ -176,7 +176,7 @@ h.run(async () => {
 			() =>
 				new Promise((resolve) => {
 					let r = null;
-					window.__stores.globalRenderer.subscribe((v) => (r = v))();
+					window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
 					const first = r?.info?.render?.frame ?? -1;
 					let ticks = 0;
 					const t0 = performance.now();

@@ -30,7 +30,7 @@ const read = (page, path) =>
 	S(page, (path) => {
 		const [mod, name] = path.split('.');
 		let v;
-		(name ? window.__stores[mod][name] : window.__stores[mod]).subscribe((x) => (v = x))();
+		(name ? window.__tp.test.v1[mod][name] : window.__tp.test.v1[mod]).subscribe((x) => (v = x))();
 		return v;
 	}, path);
 const order = async (page) => (await read(page, 'bottomDock.dockTabs')).map((t) => t.key);
@@ -101,7 +101,7 @@ async function drag(page, from, to, { steps = 10, hold = false } = {}) {
 
 async function openDock(page) {
 	await S(page, async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphClose.set(false);
 		s.explorerClose.set(false);
 		await new Promise((r) => setTimeout(r, 600));
@@ -122,7 +122,7 @@ h.run(async () => {
 	h.check(JSON.stringify(await order(page)) === '["flow","explorer"]', `premise: the dock holds Node editor | Explorer (${JSON.stringify(await order(page))})`);
 
 	// ---- 1. Objects onto the strip, between the two tabs ---------------------------------------
-	await S(page, () => window.__stores.objectListClose.set(false));
+	await S(page, () => window.__tp.test.v1.objectListClose.set(false));
 	await page.waitForTimeout(900);
 	const floatRect = await hostState(page, '#object-list');
 	h.check(floatRect.visible && !floatRect.host, `1.0 premise: the Objects window is open and floating (${JSON.stringify(floatRect)})`);
@@ -198,7 +198,7 @@ h.run(async () => {
 	h.check(!(await order(page)).includes('objects') && (await S(page, () => localStorage.getItem('objectListDocked'))) === 'false', `4.3 ...out of the strip, remembered floating (${JSON.stringify(await order(page))})`);
 
 	// ---- 5. Statistics on the bottom edge band: docks at the end ---------------------------------
-	await S(page, () => window.__stores.sceneBudget.statsOpen.set(true));
+	await S(page, () => window.__tp.test.v1.sceneBudget.statsOpen.set(true));
 	await page.waitForTimeout(900);
 	await drag(page, await headerPoint(page, '#stats-window'), { x: 500, y: 892 }, { hold: true });
 	fb = await feedback(page, '#stats-window');
@@ -211,7 +211,7 @@ h.run(async () => {
 	await page.screenshot({ path: out + '/i6-stats-docked-' + THEME + '.png' });
 
 	// ---- 6. the "+" lists the hosted windows; Chat docks from it -------------------------------
-	await S(page, () => window.__stores.chatHidden.set(''));
+	await S(page, () => window.__tp.test.v1.chatHidden.set(''));
 	await page.waitForTimeout(700);
 	// the visible strip's "+" (every docked panel draws a strip; only the one in front is visible)
 	await page.locator('#dock-add-view:visible').first().click();
@@ -232,16 +232,16 @@ h.run(async () => {
 		`6.3 "Chat" moves the floating chat into the dock (one copy) (${JSON.stringify({ host: st.host, order: await order(page) })})`
 	);
 	// ...and docked the 41 G7 way instead (the Undock seam's twin: the dock arm), so section 7 reads as before
-	await S(page, () => window.__stores.bottomDock.armDockMode('chat', true));
+	await S(page, () => window.__tp.test.v1.bottomDock.armDockMode('chat', true));
 	await page.waitForTimeout(1200);
 	st = await hostState(page, '#chat-window');
 	h.check((await order(page)).includes('chat') && st.host === 'shown' && st.width === st.vw, `6.4 docked through the dock arm, Chat shows in the dock (${JSON.stringify({ host: st.host, w: st.width })})`);
 
 	// ---- 7. remembered: reopen and reload -------------------------------------------------------
-	await S(page, () => window.__stores.dockMenu.setDockViewShown('objects', true));
+	await S(page, () => window.__tp.test.v1.dockMenu.setDockViewShown('objects', true));
 	await page.waitForTimeout(1200);
 	h.check((await read(page, 'bottomDock.visibleDockKey')) === 'objects' && (await hostState(page, '#object-list')).host === 'shown', '7.1 setup: Objects docked again (the "+" row path)');
-	await S(page, () => window.__stores.objectListClose.set(true));
+	await S(page, () => window.__tp.test.v1.objectListClose.set(true));
 	await page.waitForTimeout(600);
 	h.check(!(await order(page)).includes('objects'), '7.2 closed, its tab leaves the strip');
 	await page.mouse.click(700, 200);
@@ -251,9 +251,9 @@ h.run(async () => {
 	h.check(st.host === 'shown' && (await read(page, 'bottomDock.visibleDockKey')) === 'objects', `7.3 the O key reopens it IN THE DOCK (${JSON.stringify({ host: st.host })})`);
 	await page.reload({ waitUntil: 'domcontentloaded' });
 	await page.waitForTimeout(4000);
-	await page.waitForFunction(() => window.__stores && !!window.__stores.moduleSDK, { timeout: 30000 });
+	await page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.moduleSDK, { timeout: 30000 });
 	await openDock(page);
-	await S(page, () => window.__stores.objectListClose.set(false));
+	await S(page, () => window.__tp.test.v1.objectListClose.set(false));
 	await page.waitForTimeout(1500);
 	st = await hostState(page, '#object-list');
 	h.check(st.host === 'shown' && (await order(page)).includes('objects'), `7.4 after a reload the Objects list opens as a dock tab (${JSON.stringify({ host: st.host, order: await order(page) })})`);

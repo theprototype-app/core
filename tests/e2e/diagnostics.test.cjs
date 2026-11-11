@@ -26,12 +26,12 @@ h.run(async () => {
 	const browser = await h.launch();
 	const peer = await h.setupPage(browser, 'diagnostics');
 	const page = peer.page;
-	await page.waitForFunction(() => !!window.__stores?.diagnostics, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.diagnostics, { timeout: 30000 });
 	h.check(true, 'premise: the diagnostics module is live in the app');
 
 	// ---- 1. the ring caps, dropping the OLDEST ------------------------------------
 	const ring = await page.evaluate(() => {
-		const d = window.__stores.diagnostics;
+		const d = window.__tp.test.v1.diagnostics;
 		d.clearDiagnostics();
 		for (let i = 0; i < 320; i++) d.log('info', 'test', 'line ' + i);
 		const lines = d.lines();
@@ -47,9 +47,9 @@ h.run(async () => {
 	// a section that captured an IMPORT instead of reading the store stays empty forever, so
 	// waiting for it keeps the counterfactual.
 	await page
-		.waitForFunction(() => (window.__stores.diagnostics.bundle().sections?.session?.peerId ?? '').length > 0, null, { timeout: 30000 })
+		.waitForFunction(() => (window.__tp.test.v1.diagnostics.bundle().sections?.session?.peerId ?? '').length > 0, null, { timeout: 30000 })
 		.catch(() => {});
-	const bundle = await page.evaluate(() => window.__stores.diagnostics.bundle());
+	const bundle = await page.evaluate(() => window.__tp.test.v1.diagnostics.bundle());
 	h.check(
 		!!bundle.version && !!bundle.at && typeof bundle.ua === 'string',
 		`the bundle carries version (${bundle.version}), time and user agent`
@@ -67,7 +67,7 @@ h.run(async () => {
 
 	// a section that throws must not be able to break the bundle
 	const resilient = await page.evaluate(() => {
-		const d = window.__stores.diagnostics;
+		const d = window.__tp.test.v1.diagnostics;
 		const off = d.registerDiagnosticsSection('broken', () => {
 			throw new Error('section-boom');
 		});
@@ -82,14 +82,14 @@ h.run(async () => {
 
 	// ---- 3. an uncaught error ------------------------------------------------------
 	await page.evaluate(() => {
-		window.__stores.diagnostics.clearDiagnostics();
+		window.__tp.test.v1.diagnostics.clearDiagnostics();
 		setTimeout(() => {
 			throw new Error('boom-diagnostics');
 		}, 0);
 	});
 	await page.waitForTimeout(800);
 	const caught = await page.evaluate(() => {
-		const d = window.__stores.diagnostics;
+		const d = window.__tp.test.v1.diagnostics;
 		let last = null;
 		d.lastUncaught.subscribe((/** @type {any} */ v) => (last = v))();
 		return { lines: d.lines(), last };
@@ -108,11 +108,11 @@ h.run(async () => {
 
 	// ---- 4. an unhandled rejection takes the same path -----------------------------
 	await page.evaluate(() => {
-		window.__stores.diagnostics.clearDiagnostics();
+		window.__tp.test.v1.diagnostics.clearDiagnostics();
 		Promise.reject(new Error('rejected-diagnostics'));
 	});
 	await page.waitForTimeout(600);
-	const rejected = await page.evaluate(() => window.__stores.diagnostics.lines());
+	const rejected = await page.evaluate(() => window.__tp.test.v1.diagnostics.lines());
 	h.check(
 		rejected.some((/** @type {string} */ l) => l.includes('rejected-diagnostics') && l.includes('[promise]')),
 		'an unhandled rejection lands in the ring, scoped to promise'
@@ -134,7 +134,7 @@ h.run(async () => {
 	}
 
 	// the bundle text is valid JSON a user can paste into an issue
-	const text = await page.evaluate(() => window.__stores.diagnostics.bundleText());
+	const text = await page.evaluate(() => window.__tp.test.v1.diagnostics.bundleText());
 	let parsed = null;
 	try {
 		parsed = JSON.parse(text);
@@ -144,7 +144,7 @@ h.run(async () => {
 	h.check(!!parsed && !!parsed.version, 'the clipboard payload is valid JSON carrying the version');
 
 	// ---- 6. Settings ▸ About offers it too ------------------------------------------
-	await page.evaluate(() => window.__stores.settingsOpen.set(true));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 	await page.waitForTimeout(700);
 	await page.locator('#settings-nav .sn-row', { hasText: 'About' }).first().click().catch(() => {});
 	await page.waitForTimeout(500);
@@ -152,7 +152,7 @@ h.run(async () => {
 		await page.locator('#about-copy-diagnostics').isVisible().catch(() => false),
 		'Settings ▸ About offers Copy diagnostics'
 	);
-	await page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 
 	await h.finish(browser);
 });

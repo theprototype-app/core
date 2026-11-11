@@ -24,12 +24,17 @@ const overflow = (page) =>
 		// shift taken out (anything else poking out still counts), the handle against the frame.
 		const frame = root.closest('.tp-dock-panel, .tp-window, [data-pd-host], [data-docked]');
 		const fr = frame ? frame.getBoundingClientRect() : null;
+		// WindowShell draws its closed handles across the same gap and clips with a margin that wide (overflow-clip-margin)
 		const shifted = /** @type {HTMLElement[]} */ ([...root.querySelectorAll('[data-ph-shift]')]);
-		const past = shifted.map((e) => e.getBoundingClientRect().right - (fr ? fr.right : window.innerWidth));
+		const shells = /** @type {HTMLElement[]} */ ([...root.querySelectorAll('.ws-root')].filter((e) => /** @type {HTMLElement} */ (e).style.overflowClipMargin));
+		const past = [...root.querySelectorAll('.tp-pane-handle')].filter((e) => e.getClientRects().length).map((e) => e.getBoundingClientRect().right - (fr ? fr.right : window.innerWidth));
 		const keep = shifted.map((e) => e.style.translate);
+		const keepM = shells.map((e) => e.style.overflowClipMargin);
 		for (const e of shifted) e.style.translate = 'none';
+		for (const e of shells) e.style.overflowClipMargin = '0px';
 		const poke = root.scrollWidth - root.clientWidth;
 		shifted.forEach((e, i) => (e.style.translate = keep[i]));
+		shells.forEach((e, i) => (e.style.overflowClipMargin = keepM[i]));
 		return {
 			root: true,
 			scroll: poke,

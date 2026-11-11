@@ -1,4 +1,4 @@
-import { checkMaterialSet, embeddedOnlyManager, isLocalImageUrl, mapPreviewUrl } from './loadGuard.js';
+import { parseCheckedMaterials, isLocalImageUrl, mapPreviewUrl } from './loadGuard.js';
 import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { objectsGroup, pokeScene } from '../stores/sceneStore';
@@ -162,12 +162,9 @@ function serializeMaterials(materials) {
  */
 export function applyMaterials(object, payload, replicate = false, from = 'device') {
 	if (!object || !payload?.materials?.length) return;
-	// checked in place before three's loaders see it (loadGuardCore.js)
-	if (!checkMaterialSet(payload, from, 'materials')) return;
-	const loader = new THREE.ObjectLoader(embeddedOnlyManager(from, 'materials'));
-	const images = loader.parseImages(payload.images ?? [], () => {});
-	const textures = loader.parseTextures(payload.textures ?? [], images);
-	const materials = loader.parseMaterials(payload.materials, textures);
+	// checked in place before three's loaders see it (loadGuard.js: sceneSchema + loadGuardCore)
+	const materials = parseCheckedMaterials(payload, from, 'materials');
+	if (!materials) return;
 	const next = payload.materials.map((/** @type {any} */ entry) => materials[entry.uuid]).filter(Boolean);
 	if (!next.length) return;
 	// carry the thumbnail dataURL the UI reads (material.toJSON does not keep it)

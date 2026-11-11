@@ -268,3 +268,33 @@ describe('out of schema: cleaned and counted', () => {
 	});
 });
 
+describe('wireValidate rows use the schema verdicts', async () => {
+	const { validateWireMessage } = await import('../../src/lib/wireValidate.js');
+	const { objectJsonVerdict, materialSetVerdict } = await import('../../src/lib/sceneSchema.js');
+	it('object: the ObjectLoader form needs a sane element; the uuids form is left to its applier check', () => {
+		expect(validateWireMessage({ type: 'object', element: mesh() })).toBe(true);
+		expect(validateWireMessage({ type: 'object', element: 'junk' })).toBe(false);
+		expect(validateWireMessage({ type: 'object', element: { object: null } })).toBe(false);
+		expect(validateWireMessage({ type: 'object', element: mesh({ materials: { length: 3 } }) })).toBe(false);
+		expect(validateWireMessage({ type: 'object', element: mesh({ geometries: [{ uuid: 'g', type: 'BoxGeometry', widthSegments: 1e6, heightSegments: 1e6 }] }) })).toBe(false);
+		expect(validateWireMessage({ type: 'object', element: {}, uuids: ['a'] })).toBe(true);
+	});
+	it('objectParameters materials: refused unless it is a slot list', () => {
+		const ok = { materials: [{ uuid: 'a', type: 'MeshBasicMaterial' }], textures: [], images: [] };
+		expect(validateWireMessage({ type: 'objectParameters', parameter: 'materials', uuid: 'u', payload: ok })).toBe(true);
+		expect(validateWireMessage({ type: 'objectParameters', parameter: 'materials', uuid: 'u', payload: 'junk' })).toBe(false);
+		expect(validateWireMessage({ type: 'objectParameters', parameter: 'materials', uuid: 'u', payload: { materials: [] } })).toBe(false);
+		expect(validateWireMessage({ type: 'objectParameters', parameter: 'materials', uuid: 'u', payload: { materials: [1] } })).toBe(false);
+		expect(validateWireMessage({ type: 'objectParameters', parameter: 'materials', payload: ok })).toBe(false);
+	});
+	it('the verdicts edit nothing', () => {
+		const el = mesh({ extra: 1 });
+		const before = JSON.stringify(el);
+		expect(objectJsonVerdict(el)).toBe(true);
+		const set = { materials: [{ uuid: 'a', type: 'RawShaderMaterial', vertexShader: 'x' }], odd: 1 };
+		const setBefore = JSON.stringify(set);
+		expect(materialSetVerdict(set)).toBe(true);
+		expect(JSON.stringify(el)).toBe(before);
+		expect(JSON.stringify(set)).toBe(setBefore);
+	});
+});

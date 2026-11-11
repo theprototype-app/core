@@ -2,15 +2,17 @@
 // from JSON it did not just make itself goes through here, so the check, the count and the one
 // toast are the same everywhere. See loadGuardCore.js for the rules.
 import * as THREE from 'three';
-import { guardObjectJson, guardMaterialSet, guardChanged, guardGltfElement, isEmbeddedUrl, isLocalImageUrl, stlWithinLimits } from './loadGuardCore.js';
+import { guardChanged, guardGltfElement, isEmbeddedUrl, isLocalImageUrl, stlWithinLimits } from './loadGuardCore.js';
+// 101 F2: the full object / material schema runs here, on top of loadGuardCore's rules
+import { validateObjectJson, validateMaterialSet } from './sceneSchema.js';
 import { fbxWithinLimits } from './fbxGuard.js';
 export { isLocalImageUrl };
 import { noteWireError } from './wireErrors.js';
 import { showToast } from '../stores/appStore';
 
 let toldThisSession = false;
-/** @type {{refused: number, materials: number, images: number, textures: number, fetches: number}} */
-const totals = { refused: 0, materials: 0, images: 0, textures: 0, fetches: 0 };
+/** @type {{refused: number, materials: number, images: number, textures: number, fetches: number, fields: number}} */
+const totals = { refused: 0, materials: 0, images: 0, textures: 0, fetches: 0, fields: 0 };
 
 /** What the checks changed since the page loaded (diagnostics and tests). */
 export function loadGuardTotals() {
@@ -35,13 +37,19 @@ function tellOnce() {
  * @param {import('./loadGuardCore.js').GuardResult} result
  */
 function report(from, what, result) {
-	if (!guardChanged(result)) return;
+	const rows = /** @type {import('./sceneSchema.js').Dropped[]} */ (/** @type {any} */ (result).dropped ?? []).filter((d) => d.path !== '');
+	if (!guardChanged(result) && !rows.length) return;
 	if (!result.ok) totals.refused++;
-	totals.materials += result.materials;
+	// the schema's own material replacements are rows (loadGuardCore saw a standard material by then)
+	const schemaMaterials = rows.filter((d) => /^materials\[\d+\]$/.test(d.path) && (d.reason === 'type' || d.reason === 'program')).length;
+	const fields = rows.length - schemaMaterials;
+	totals.materials += result.materials + schemaMaterials;
 	totals.images += result.images;
 	totals.textures += result.textures;
+	totals.fields += fields;
 	const detail = result.ok
-		? `materials ${result.materials}, images ${result.images}, textures ${result.textures}`
+		? `materials ${result.materials + schemaMaterials}, images ${result.images}, textures ${result.textures}, fields ${fields}` +
+			(rows.length ? ' (' + rows.slice(0, 3).map((d) => d.reason + ' ' + d.path).join('; ') + ')' : '')
 		: `refused (${result.reason})`;
 	noteWireError(from || '?', 'checked:' + what, detail, { quiet: true });
 	tellOnce();
@@ -52,7 +60,7 @@ function report(from, what, result) {
  * @param {any} json @param {string} from @param {string} what
  */
 export function checkObjectJson(json, from, what) {
-	const result = guardObjectJson(json);
+	const result = validateObjectJson(json);
 	report(from, what, result);
 	return result.ok;
 }
@@ -62,7 +70,7 @@ export function checkObjectJson(json, from, what) {
  * @param {any} payload @param {string} from @param {string} what
  */
 export function checkMaterialSet(payload, from, what) {
-	const result = guardMaterialSet(payload);
+	const result = validateMaterialSet(payload);
 	report(from, what, result);
 	return result.ok;
 }
@@ -152,4 +160,17 @@ export function refusal(what) {
 export function parseCheckedObject(json, from, what) {
 	if (!checkObjectJson(json, from, what)) throw refusal('object');
 	return new THREE.ObjectLoader(embeddedOnlyManager(from, what)).parse(json);
+}
+
+/**
+ * Check a `{materials, textures, images}` payload, then build its materials with a loader that cannot
+ * fetch. Returns the materials keyed by uuid, or null when the payload is refused.
+ * @param {any} payload @param {string} from @param {string} what @returns {Record<string, any> | null}
+ */
+export function parseCheckedMaterials(payload, from, what) {
+	if (!checkMaterialSet(payload, from, what)) return null;
+	const loader = new THREE.ObjectLoader(embeddedOnlyManager(from, what));
+	const images = loader.parseImages(payload.images ?? [], () => {});
+	const textures = loader.parseTextures(payload.textures ?? [], images);
+	return loader.parseMaterials(payload.materials, textures);
 }

@@ -25,6 +25,7 @@
 		"sync-llms": "node scripts/sync-llms.cjs",
 		"test:unit": "vitest run",
 		"check:emoji": "node scripts/check-emoji.cjs",
+		"check:loaders": "node scripts/check-loaders.cjs",
 		"check:storage": "node scripts/check-storage.cjs",
 		"check:tokens": "node scripts/check-tokens.cjs",
 		"check:zindex": "node scripts/check-zindex.cjs"

@@ -185,7 +185,7 @@ function renderSceneThumbnail(group) {
 		const scene = new THREE.Scene();
 		scene.background = new THREE.Color('#232a33');
 		scene.add(new THREE.HemisphereLight(0xffffff, 0x444466, 2.2));
-		const clone = new THREE.ObjectLoader().parse(group.toJSON());
+		const clone = parseCheckedObject(group.toJSON(), 'device', 'thumbnail');
 		scene.add(clone);
 		const box = new THREE.Box3().setFromObject(clone);
 		if (!isFinite(box.min.x)) return null;

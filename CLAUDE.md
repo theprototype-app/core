@@ -2631,7 +2631,7 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   it hears one, is alone, or `GRACE_MS` (2 s) after its last connection change — under the smallest-id rule a
   joiner IS the authority on connect, and its initial state would overwrite the game. LOADING: `analyze` (acorn;
   the LINT bans Math.random/Date/performance.now/storage/DOM/globalThis/network/eval/bare timers/import — an error
-  stops the load on EVERY peer), then the MODULE LOADER (`userModules.importModuleText`, a fresh blob import) with
+  stops the load on EVERY peer), then `behaviours/source.js compileBehaviour(source, importer)` (the caller's importer; `dataUrlImporter` in node/tests) with
   `source.js`'s one-line prologue ON line 1 (`behaviour, kit, dist, clamp, lerp`; `kit` is a proxy bound to the
   behaviour's traced kit face when it starts) and the 27-D loop guard (counter reset per dispatch by an appended
   epilogue line). T2: one lifecycle module per behaviour, `behaviour:<nodeId>`, with ONE kit face for its whole

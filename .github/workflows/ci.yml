@@ -99,6 +99,9 @@ jobs:
       # or a custom SVG. Non-UI text (a chat shortcode table) carries `emoji-ok` / `emoji-ok-file`.
       - name: no emoji in the UI
         run: node scripts/check-emoji.cjs
+      # 101 F2: three's generic loaders only through src/lib/loadGuard.js (the object schema runs first)
+      - name: object loaders behind the schema
+        run: node scripts/check-loaders.cjs
 
   # 34 B3: scene-lint over every scene core ships (the seed) and every scene of the scenes ref
   # the perf budget is about (perf/budgets.json), with the packs checkout for the kit rules.

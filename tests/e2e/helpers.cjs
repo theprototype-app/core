@@ -1342,4 +1342,48 @@ async function openWsMode(page, scope, mode, o = {}) {
 	if ((await tab.getAttribute('aria-selected').catch(() => null)) !== 'true') await (o.tap ? tab.tap() : tab.click());
 }
 
-module.exports = { URL, coverageKey, openDial, GPU_ARGS, N6_UA, PATIENT_CLICK_MS, APPROVE_LABEL, approveButton, watchPress, check, launch, setupPage, setupPageQuiet, connect, leavePlay, eventually, caughtUp, eventuallyAfter, projectPoint, freshReload, answerRestore, closePeer, finish, run, installModule, moduleZipPath, makeCollectibleChains, pageErrors, externalErrors, grabFrame, centeredClip, frameDelta, framePixelsOffColor, AUDIO_ARGS, audioMetrics, renderOffline, envelopeDelta, routeSkies, SKIES_DIR, openWsMode };
+/**
+ * 101 F5: the TEST FACADE from the runner side — `h.t(page)` reaches `window.__tp.test.v1` (the
+ * versioned, read-only name space the app publishes beside `__stores` when `debugStores` is on).
+ * Inside page code use `window.__tp.test.v1.<hook>` directly; from Node:
+ *   await h.t(page).ready()                       // the facade is installed
+ *   await h.t(page).run((t, a) => t.history.undoStack, arg)   // fn(t, arg) in the page
+ *   await h.t(page).get('isLocked')               // a svelte store's value (or a plain value)
+ *   await h.t(page).call('history.undo')          // call a facade function by path
+ * A path is dot-separated from the facade root.
+ * @param {any} page
+ */
+function t(page) {
+	return {
+		/** wait until the facade answers @param {number} [timeout] */
+		ready: (timeout = 90000) => page.waitForFunction(() => !!(/** @type {any} */ (window).__tp?.test?.v1), null, { timeout }),
+		/** run `fn(t, arg)` in the page with the facade as `t` (`arg` JSON-serialisable; a string
+		 * evaluate, so the page's CSP never sees an eval) @param {(t: any, arg?: any) => any} fn @param {any} [arg] */
+		run: (fn, arg) => page.evaluate(`(${fn.toString()})(window.__tp.test.v1, ${arg === undefined ? 'undefined' : JSON.stringify(arg)})`),
+		/** the value at `path` — a svelte store is read once (subscribe + unsubscribe) @param {string} path */
+		get: (path) =>
+			page.evaluate((p) => {
+				let v = /** @type {any} */ (window).__tp.test.v1;
+				for (const k of p.split('.')) v = v?.[k];
+				if (v && typeof v.subscribe === 'function') {
+					let out;
+					v.subscribe((/** @type {any} */ x) => (out = x))();
+					return out;
+				}
+				return v;
+			}, path),
+		/** call the function at `path` with `args` (awaited in the page) @param {string} path @param {...any} args */
+		call: (path, ...args) =>
+			page.evaluate(
+				async ([p, a]) => {
+					const keys = p.split('.');
+					let owner = /** @type {any} */ (window).__tp.test.v1;
+					for (const k of keys.slice(0, -1)) owner = owner?.[k];
+					return await owner[keys[keys.length - 1]](...a);
+				},
+				[path, args]
+			)
+	};
+}
+
+module.exports = { t, URL, coverageKey, openDial, GPU_ARGS, N6_UA, PATIENT_CLICK_MS, APPROVE_LABEL, approveButton, watchPress, check, launch, setupPage, setupPageQuiet, connect, leavePlay, eventually, caughtUp, eventuallyAfter, projectPoint, freshReload, answerRestore, closePeer, finish, run, installModule, moduleZipPath, makeCollectibleChains, pageErrors, externalErrors, grabFrame, centeredClip, frameDelta, framePixelsOffColor, AUDIO_ARGS, audioMetrics, renderOffline, envelopeDelta, routeSkies, SKIES_DIR, openWsMode };

@@ -17,6 +17,8 @@
 // 94 SP1: the runtime registry lives in a leaf (the play entry imports it without this table)
 import { registeredDebugHooks as registered, registerDebugHook } from './debugHookRegistry.js';
 export { registerDebugHook };
+// 101 F5: `window.__tp.test.v1`, the versioned read-only facade the e2e suites use (a leaf)
+import { installTestFacade } from './testFacade.js';
 
 /** @type {[string, () => Promise<any>][]} */
 export const DEBUG_HOOKS = [
@@ -649,7 +651,9 @@ export const DEBUG_HOOKS = [
 	['pathTools', () => import('./ai/pathTools.js')]
 ];
 
-/** Load every row and publish `window.__stores`. @returns {Promise<Record<string, any>>} */
+/** Load every row and publish `window.__stores` + the 101 F5 facade `window.__tp.test.v1` over it
+ * (the facade forwards to this same live object, so a later registerDebugHook shows on both).
+ * @returns {Promise<Record<string, any>>} */
 export function installDebugHooks() {
 	return Promise.all(DEBUG_HOOKS.map(([, load]) => load())).then((mods) => {
 		/** @type {Record<string, any>} */
@@ -662,6 +666,7 @@ export function installDebugHooks() {
 		});
 		Object.assign(stores, registered);
 		/** @type {any} */ (window).__stores = stores;
+		installTestFacade(stores);
 		return stores;
 	});
 }

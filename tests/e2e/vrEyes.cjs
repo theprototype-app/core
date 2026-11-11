@@ -34,7 +34,7 @@ const fs = require('fs');
 
 /** In-page. Everything this needs lives inside it (it is passed to page.evaluate). */
 function inPageEyes(opts) {
-	const s = window.__stores;
+	const s = window.__tp?.test.v1;
 	const THREE = s.THREE;
 	const get = (store) => {
 		let v;

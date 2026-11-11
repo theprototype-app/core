@@ -16,7 +16,7 @@ const CUSTOM_THEME = path.join(__dirname, 'fixtures', 'lock', 'lock-custom.theme
 const setStore = (page, name, value) =>
 	page.evaluate(
 		({ name, value }) => {
-			const s = name.split('.').reduce((o, k) => o?.[k], /** @type {any} */ (window).__stores);
+			const s = name.split('.').reduce((o, k) => o?.[k], /** @type {any} */ (window).__tp?.test.v1);
 			s?.set?.(value);
 		},
 		{ name, value }
@@ -26,14 +26,14 @@ const setStore = (page, name, value) =>
  * an animation track on the box so the Animation window has rows. @param {any} page */
 async function seedScene(page) {
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		s.commandsHandler.sceneCommand('/create sphere');
 		s.commandsHandler.sceneCommand('/light directional');
 	});
 	await page.waitForTimeout(1500);
 	return page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const g = await new Promise((r) => s.objectsGroup.subscribe(r)());
 		const box = g.children.find((c) => c.name === 'Box');
 		const sphere = g.children.find((c) => c.name === 'Sphere');
@@ -56,7 +56,7 @@ async function seedScene(page) {
 /** Close every surface this registry knows how to open. @param {any} page */
 async function closeAll(page) {
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const set = (/** @type {any} */ st, /** @type {any} */ v) => st?.set?.(v);
 		set(s.settingsOpen, false);
 		for (const k of ['modulesOpen', 'sessionsOpen', 'checkpointsOpen', 'templatesModalOpen', 'characterModalOpen', 'profileSettingsOpen', 'notesDrawerOpen', 'notificationCenterOpen', 'connectDrawerOpen', 'aiPromptBarOpen']) set(s[k], false);
@@ -78,7 +78,7 @@ async function closeAll(page) {
 async function openDock(page, key, closeStore) {
 	await page.evaluate(
 		({ key, closeStore }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s[closeStore]?.set?.(false);
 			s.bottomDock.dockMinimized?.set?.(false);
 			s.bottomDock.activateDock(key);
@@ -112,9 +112,9 @@ const SURFACES = [
 	{ name: 'addmenu', kind: 'menu', open: (p) => setStore(p, 'addMenu', { x: 560, y: 220, point: null }), shown: '#add-search-box, [role=menu]' },
 	{ name: 'viewportmenu', kind: 'menu', open: (p) => setStore(p, 'viewportMenu', { x: 560, y: 220, point: [0, 0, 0] }), shown: '[role=menu]' },
 	{ name: 'shortcut-sheet', kind: 'modal', open: (p) => setStore(p, 'shortcutsRegistry.cheatSheetOpen', true), shown: '#shortcut-sheet', closer: '#shortcut-sheet-close', escapeCloses: true },
-	{ name: 'inspector-object', kind: 'inspector', open: (p, ctx) => p.evaluate((u) => window.__stores.objectActions.selectObject(u, true), ctx.box), shown: '#inspector-position' },
-	{ name: 'inspector-light', kind: 'inspector', open: (p, ctx) => p.evaluate((u) => window.__stores.objectActions.selectObject(u, true), ctx.light), shown: '#inspector-intensity' },
-	{ name: 'inspector-scene', kind: 'inspector', open: (p) => p.evaluate(() => window.__stores.showSidebar('scene')), shown: '#environment-presets' },
+	{ name: 'inspector-object', kind: 'inspector', open: (p, ctx) => p.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u, true), ctx.box), shown: '#inspector-position' },
+	{ name: 'inspector-light', kind: 'inspector', open: (p, ctx) => p.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u, true), ctx.light), shown: '#inspector-intensity' },
+	{ name: 'inspector-scene', kind: 'inspector', open: (p) => p.evaluate(() => window.__tp.test.v1.showSidebar('scene')), shown: '#environment-presets' },
 	{ name: 'explorer', kind: 'dock', open: (p) => openDock(p, 'explorer', 'explorerClose'), shown: '#explorer-filter' },
 	{ name: 'flow', kind: 'dock', open: (p) => openDock(p, 'flow', 'flowGraphClose'), shown: '[data-key-scope="nodes"]' },
 	{ name: 'timeline', kind: 'dock', open: (p) => openDock(p, 'timeline', 'timelineClose'), shown: '#timeline-dock' },
@@ -133,7 +133,7 @@ const SURFACES = [
 	{ name: 'storage', kind: 'modal', open: (p) => setStore(p, 'storageUsage.storageModalOpen', true), shown: '#storage-modal', escapeCloses: true },
 	{ name: 'meshgen', kind: 'modal', open: (p) => setStore(p, 'meshGenModalOpen', { position: [0, 0, 0] }), shown: 'div[role=dialog]', escapeCloses: true },
 	{ name: 'toasts', kind: 'hud', open: (p) => p.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.showToast('Saved "Lock scene"');
 		s.showToast('Element snapping on', [{ label: 'Undo', action: () => {} }]);
 		s.showInfoToast?.('lock-info', 'This scene uses modules you do not have.', [{ label: 'Modules', action: () => {} }]);
@@ -147,8 +147,8 @@ for (const key of SETTINGS_SECTIONS) {
 		name: 'settings-' + key,
 		kind: 'settings',
 		open: (p) => p.evaluate((k) => {
-			window.__stores.settingsSection.set(k);
-			window.__stores.settingsOpen.set(true);
+			window.__tp.test.v1.settingsSection.set(k);
+			window.__tp.test.v1.settingsOpen.set(true);
 		}, key),
 		shown: '#settings-main',
 		escapeCloses: true
@@ -161,12 +161,12 @@ async function applyTheme(page, which) {
 	if (which === 'custom') {
 		const json = fs.readFileSync(CUSTOM_THEME, 'utf8');
 		await page.evaluate(async (text) => {
-			const T = window.__stores.themes;
+			const T = window.__tp.test.v1.themes;
 			const existing = (await new Promise((r) => T.customThemes.subscribe(r)())).find((/** @type {any} */ t) => t.name === 'Lock plum');
 			if (existing) T.theme.set(existing.id);
 			else await T.importThemeFile(new File([text], 'lock-custom.theme.json', { type: 'application/json' }));
 		}, json);
-	} else await page.evaluate((id) => window.__stores.themes.theme.set(id), which);
+	} else await page.evaluate((id) => window.__tp.test.v1.themes.theme.set(id), which);
 	await page.waitForTimeout(250);
 }
 

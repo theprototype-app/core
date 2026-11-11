@@ -5,7 +5,7 @@ const OUT = process.env.OUT || '.';
 
 const makeBox = (page) =>
 	page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		await new Promise((r) => setTimeout(r, 300));
 		let g = null;

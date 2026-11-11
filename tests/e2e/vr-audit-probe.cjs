@@ -14,7 +14,7 @@ h.run(async () => {
 	const settle = () => page.waitForTimeout(180);
 	const read = () =>
 		page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const g = (st) => {
 				let v;
 				st?.subscribe?.((x) => (v = x))();
@@ -32,7 +32,7 @@ h.run(async () => {
 	const hand = (await read()).hand;
 
 	// B1: hold-to-menu, release over a NAV sector
-	await page.evaluate(() => window.__stores.vrMenuHold.set(true));
+	await page.evaluate(() => window.__tp.test.v1.vrMenuHold.set(true));
 	await xr.button(page, hand, 5, true);
 	await settle();
 	// stick toward sector 1 (Add ▸, 1 o'clock)
@@ -45,12 +45,12 @@ h.run(async () => {
 	await settle();
 	const released = await read();
 	out.B1_holdReleaseOverNav = { hoveredWhileHeld: held.hov, afterRelease: released };
-	await page.evaluate(() => window.__stores.vrMenuHold.set(false));
-	await page.evaluate(() => window.__stores.vrRadialMenu.resetRings());
+	await page.evaluate(() => window.__tp.test.v1.vrMenuHold.set(false));
+	await page.evaluate(() => window.__tp.test.v1.vrRadialMenu.resetRings());
 
 	// B2: System ▸ Settings, then can the settings panel be reached while the radial stays up?
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.vrMenuOpen.set(true);
 		s.vrControls.executeVRMenuAction('nav:system');
 		s.vrControls.executeVRMenuAction('settings');
@@ -58,14 +58,14 @@ h.run(async () => {
 	await settle();
 	out.B2_settingsFromRadial = await read();
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.vrMenuOpen.set(false);
 		s.vrSettingsPanelOpen.set(false);
 	});
 
 	// B3/B4: comfort vignette + smooth turning OUTSIDE a game (Edit, plain scene)
 	out.B3_B4 = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const v = s.vrControls;
 		return {
 			turning: v.turningInForce(),
@@ -75,13 +75,13 @@ h.run(async () => {
 	});
 
 	// B6: the settings panel has no stick navigation (objects/props panels do)
-	await page.evaluate(() => window.__stores.vrSettingsPanelOpen.set(true));
+	await page.evaluate(() => window.__tp.test.v1.vrSettingsPanelOpen.set(true));
 	await settle();
 	await xr.stick(page, hand === 'left' ? 'right' : 'left', 0, 1);
 	await settle();
 	await xr.stick(page, hand === 'left' ? 'right' : 'left', 0, 0);
 	out.B6_settingsStick = await read();
-	await page.evaluate(() => window.__stores.vrSettingsPanelOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.vrSettingsPanelOpen.set(false));
 
 	console.log('PROBE ' + JSON.stringify(out, null, 1));
 	await h.finish(browser);

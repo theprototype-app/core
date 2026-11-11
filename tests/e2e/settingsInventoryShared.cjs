@@ -178,7 +178,7 @@ const PAGES = {
 /** @param {any} page @param {string} key */
 async function openPage(page, key) {
 	await page.evaluate((k) => {
-		const s = /** @type {any} */ (window).__stores;
+		const s = /** @type {any} */ (window).__tp?.test.v1;
 		s.settingsOpen.set(false);
 		s.settingsSection.set(k);
 		s.settingsOpen.set(true);
@@ -322,7 +322,7 @@ async function walk(keys, extras) {
 	h.check((await read('enableShiftAdd')) === 'true', 'Cancel on the reset question changes nothing');
 
 	}
-	await page.evaluate(() => /** @type {any} */ (window).__stores.settingsOpen.set(false));
+	await page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.settingsOpen.set(false));
 	await h.finish(browser);
 }
 

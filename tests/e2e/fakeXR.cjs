@@ -12,7 +12,7 @@
 async function install(page) {
 	await page.evaluate(() => {
 		if (window.__fakeXR) return;
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let r;
 		s.globalRenderer.subscribe((v) => (r = v))();
 		const pad = () => ({
@@ -48,7 +48,7 @@ async function pose(page, hand, pos, aim = {}) {
 	await page.evaluate(
 		({ hand, pos, aim }) => {
 			const { renderer } = window.__fakeXR;
-			const THREE = window.__stores.THREE;
+			const THREE = window.__tp.test.v1.THREE;
 			const c = renderer.xr.getController(hand === 'left' ? 0 : 1);
 			const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(aim.pitch ?? 0, aim.yaw ?? 0, 0, 'YXZ'));
 			c.matrix.compose(new THREE.Vector3(...pos), q, new THREE.Vector3(1, 1, 1));
@@ -103,7 +103,7 @@ async function pulses(page) {
 async function installSpace(page, opts = {}) {
 	await page.evaluate(({ head, yaw }) => {
 		const fx = window.__fakeXR;
-		const THREE = window.__stores.THREE;
+		const THREE = window.__tp.test.v1.THREE;
 		const r = fx.renderer;
 		if (typeof window.XRRigidTransform === 'undefined') {
 			window.XRRigidTransform = class {
@@ -151,7 +151,7 @@ async function installSpace(page, opts = {}) {
 			const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(new THREE.Quaternion(o.x, o.y, o.z, o.w));
 			return { x: p.x, y: p.y, z: p.z, yaw: Math.atan2(-fwd.x, -fwd.z) };
 		};
-		window.__stores.vrControls.noteXRBaseSpace();
+		window.__tp.test.v1.vrControls.noteXRBaseSpace();
 	}, { head: opts.head ?? [0, 1.6, 0], yaw: opts.yaw ?? 0 });
 }
 

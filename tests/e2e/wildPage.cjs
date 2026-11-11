@@ -60,7 +60,7 @@ async function openWildPage(browser, locate, answers, options = {}) {
 		return file ? route.fulfill({ body: fs.readFileSync(file), contentType: 'application/octet-stream' }) : route.fulfill({ status: 404 });
 	});
 	await A.page.evaluate((answers) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		/** @type {any} */
 		const w = window;
 		w.__wild = { dialogs: [], answers };

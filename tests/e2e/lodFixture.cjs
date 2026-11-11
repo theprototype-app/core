@@ -6,7 +6,7 @@
 /** @param {any} page */
 async function setupLodFixture(page) {
 	const fixture = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		const { GLTFExporter } = s.GLTFExporterModule;
 		const make = async (w, hgt) => {
@@ -44,7 +44,7 @@ async function setupLodFixture(page) {
 		r.fulfill(glb(fixture.lod2.b64));
 	});
 	await page.evaluate((base) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const read = (store) => {
 			let v;
 			store.subscribe((x) => (v = x))();

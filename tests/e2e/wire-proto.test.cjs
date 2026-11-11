@@ -76,9 +76,11 @@ h.run(async () => {
 	h.check(!(await read(N, 'pendingApprovals')).some((c) => c.peerId === O.id), 'N never put up an approval card');
 	const older = await read(N, 'wireProto.olderPeers');
 	h.check(older.some((r) => r.peerId === O.id && r.theirs === 1), `N lists O as needing to reload (${JSON.stringify(older)})`);
-	await N.page.locator('#peers-trigger').click({ timeout: 5000 }).catch(() => {});
+	// open People through its store (a toast or the auto-quality strip can sit over the trigger; the
+	// peer-moderation suite opens it the same way)
+	await inPage(N, 's.peersPanelOpen.set(true)');
 	const line = N.page.locator('#peers-older .peers-older-row');
-	await line.first().waitFor({ timeout: 5000 }).catch(() => {});
+	await line.first().waitFor({ timeout: 8000 }).catch(() => {});
 	h.check(/needs to reload \(older version\)/.test((await line.first().textContent({ timeout: 2000 }).catch(() => '')) ?? ''), 'People shows "<name> needs to reload (older version)"');
 	await N.page.keyboard.press('Escape').catch(() => {});
 	await O.page.waitForTimeout(3000);

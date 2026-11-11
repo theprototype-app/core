@@ -35,7 +35,7 @@ const chip = (page) =>
 /** add `n` plain boxes (one call, 12 triangles each) to the objects group @param {any} page @param {number} n */
 const addBoxes = (page, n) =>
 	page.evaluate(async (count) => {
-		const { THREE, objectsGroup, pokeScene } = window.__stores;
+		const { THREE, objectsGroup, pokeScene } = window.__tp?.test.v1;
 		let g;
 		objectsGroup.subscribe((v) => (g = v))();
 		const geo = new THREE.BoxGeometry(0.3, 0.3, 0.3);
@@ -50,7 +50,7 @@ const addBoxes = (page, n) =>
 
 const clearScene = (page) =>
 	page.evaluate(() => {
-		const { objectsGroup, pokeScene } = window.__stores;
+		const { objectsGroup, pokeScene } = window.__tp?.test.v1;
 		let g;
 		objectsGroup.subscribe((v) => (g = v))();
 		g.clear();
@@ -59,7 +59,7 @@ const clearScene = (page) =>
 
 const store = (page, path) =>
 	page.evaluate((p) => {
-		let o = window.__stores;
+		let o = window.__tp?.test.v1;
 		for (const k of p.split('.')) o = o?.[k];
 		let v;
 		o.subscribe((x) => (v = x))();
@@ -70,7 +70,7 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'desk', { context: { viewport: { width: 1440, height: 900 } }, storage: { toursSeen: '{"editor":true,"editor-touch":true}' } });
 	const P = A.page;
-	await P.evaluate(() => window.__stores.toastStore?.set?.([]));
+	await P.evaluate(() => window.__tp.test.v1.toastStore?.set?.([]));
 	await clearScene(P);
 	await addBoxes(P, 3);
 
@@ -91,7 +91,7 @@ h.run(async () => {
 	});
 	h.check(free, 'the chip is on top at its own centre (nothing covers it)');
 	// the gate's numbers: Quest IS perf/budgets.json defaults
-	const quest = await P.evaluate(() => window.__stores.budgetMeter.TARGETS.quest);
+	const quest = await P.evaluate(() => window.__tp.test.v1.budgetMeter.TARGETS.quest);
 	const file = require('../../perf/budgets.json');
 	h.check(quest.calls === file.defaults.calls && quest.triangles === file.defaults.triangles && quest.lights === file.defaults.lights && quest.textureMB === file.defaults.textureMB, `the Quest target is the perf gate's own defaults (${quest.calls} calls, ${quest.triangles} tris)`);
 
@@ -161,7 +161,7 @@ h.run(async () => {
 	// ---------- 5. the heaviest list: the heavy object first, savings, click selects ----------
 	await clearScene(P);
 	const statue = await P.evaluate(async () => {
-		const { THREE, objectsGroup, pokeScene } = window.__stores;
+		const { THREE, objectsGroup, pokeScene } = window.__tp?.test.v1;
 		let g;
 		objectsGroup.subscribe((v) => (g = v))();
 		const canvas = document.createElement('canvas');
@@ -198,7 +198,7 @@ h.run(async () => {
 	await P.evaluate(startRecorder);
 	await P.waitForTimeout(400);
 	const gate = await P.evaluate(readScene);
-	const mine = await P.evaluate(() => window.__stores.budgetMeter.sampleBudget().totals);
+	const mine = await P.evaluate(() => window.__tp.test.v1.budgetMeter.sampleBudget().totals);
 	h.check(gate.lights === mine.lights, `lights agree with the perf gate's probe (gate ${gate.lights}, meter ${mine.lights})`);
 	h.check(Math.abs(gate.textureMB - mine.textureMB) <= 0.2, `texture memory agrees with the perf gate's probe (gate ${gate.textureMB} MB, meter ${mine.textureMB} MB)`);
 	await P.locator('#stats-close').click();
@@ -218,7 +218,7 @@ h.run(async () => {
 		storage: { toursSeen: '{"editor":true,"editor-touch":true}' }
 	});
 	const Q = F.page;
-	await Q.evaluate(() => window.__stores.toastStore?.set?.([]));
+	await Q.evaluate(() => window.__tp.test.v1.toastStore?.set?.([]));
 	await clearScene(Q);
 	await addBoxes(Q, 200);
 	await Q.waitForTimeout(1500);

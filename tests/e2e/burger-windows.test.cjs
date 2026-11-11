@@ -20,7 +20,7 @@ const read = (page, path) =>
 	page.evaluate((p) => {
 		let v;
 		const [a, b] = p.split('.');
-		(b ? window.__stores[a][b] : window.__stores[a]).subscribe((x) => (v = x))();
+		(b ? window.__tp.test.v1[a][b] : window.__tp.test.v1[a]).subscribe((x) => (v = x))();
 		return v;
 	}, path);
 const menuRows = (page) =>
@@ -31,7 +31,7 @@ const menuRows = (page) =>
 		}))
 	);
 const openBurger = async (page) => {
-	await page.evaluate(() => window.__stores.closeMenu.set(false));
+	await page.evaluate(() => window.__tp.test.v1.closeMenu.set(false));
 	await page.waitForSelector('#sidebar70', { timeout: 5000 });
 	await page.waitForTimeout(400);
 };
@@ -76,7 +76,7 @@ h.run(async () => {
 	h.check(/side-div/.test(lastScene.prev) && /side-div/.test(lastScene.next) && lastScene.text === 'Clear scene…', `0.2 "Clear scene…" sits alone behind a divider (${JSON.stringify(lastScene)})`);
 	h.check((await page.locator('#open-version').innerText()).trim().match(/^\d+\.\d+\.\d+/), '0.3 the footer shows the version');
 	h.check((await page.locator('#sidebar70 .side-row', { hasText: 'Undo' }).count()) === 0, '0.4 no Undo / Redo row (owner)');
-	await page.evaluate(() => window.__stores.closeMenu.set(true));
+	await page.evaluate(() => window.__tp.test.v1.closeMenu.set(true));
 	await page.setViewportSize({ width: 1440, height: 560 });
 	await openBurger(page);
 	const foot = await page.evaluate(() => {
@@ -89,12 +89,12 @@ h.run(async () => {
 	});
 	h.check(foot.scrolls && foot.lastTop > foot.footTop, `0.5 (premise) on a short window the menu scrolls and the last Help row is hidden below (${JSON.stringify(foot)})`);
 	h.check(Math.abs(foot.footBottom - foot.navBottom) <= 12 && foot.footTop < foot.navBottom, `0.6 ...while the Settings footer stays at the menu's bottom, in view (${JSON.stringify(foot)})`);
-	await page.evaluate(() => window.__stores.closeMenu.set(true));
+	await page.evaluate(() => window.__tp.test.v1.closeMenu.set(true));
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await openBurger(page);
 
 	// --- 2: the menu ---
-	await page.evaluate(() => window.__stores.explorerClose.set(false));
+	await page.evaluate(() => window.__tp.test.v1.explorerClose.set(false));
 	await page.waitForTimeout(800);
 	await page.locator('#open-windows-menu').click();
 	await page.waitForSelector('[role="menu"]', { timeout: 5000 });
@@ -126,8 +126,8 @@ h.run(async () => {
 	// --- 4: close all floating ---
 	await page.evaluate(() => {
 		localStorage.setItem('timelineDocked', 'false');
-		window.__stores.bottomDock.dockModeArm.set({ key: 'timeline', docked: false });
-		window.__stores.timelineClose.set(false);
+		window.__tp.test.v1.bottomDock.dockModeArm.set({ key: 'timeline', docked: false });
+		window.__tp.test.v1.timelineClose.set(false);
 	});
 	await page.waitForTimeout(900);
 
@@ -159,7 +159,7 @@ h.run(async () => {
 		await page.waitForSelector('[role="menu"]', { timeout: 5000 });
 		await page.locator('[role="menu"] [role="menuitem"], [role="menu"] [role="menuitemcheckbox"]').filter({ hasText: label }).first().click();
 		await page.waitForTimeout(400);
-		await page.evaluate(() => window.__stores.closeMenu.set(true));
+		await page.evaluate(() => window.__tp.test.v1.closeMenu.set(true));
 		await page.waitForTimeout(300);
 	};
 	await dragTo(400);
@@ -173,39 +173,39 @@ h.run(async () => {
 	await toggle('Lock layout');
 	await dragTo(10);
 	const unsnapped = await box();
-	const prefs54 = { snap: await read(page, 'windowPrefs.snapToEdges'), locked: await read(page, 'windowPrefs.layoutLocked'), where: await page.evaluate(() => window.__stores.dockMenu.windowWhere('timeline')) };
+	const prefs54 = { snap: await read(page, 'windowPrefs.snapToEdges'), locked: await read(page, 'windowPrefs.layoutLocked'), where: await page.evaluate(() => window.__tp.test.v1.dockMenu.windowWhere('timeline')) };
 	h.check(prefs54.where === 'floating', `5.4a (premise) the drop near the edge leaves it floating, not docked (${prefs54.where})`);
 	h.check(!!unsnapped && unsnapped.x >= 8, `5.4 (counterfactual) Snap off: dropped 10 px from the edge it stays there (${JSON.stringify(unsnapped)}; ${JSON.stringify(prefs54)})`);
 	await toggle('Snap to edges');
 	await dragTo(300);
 	await dragTo(10);
 	const snapped = await box();
-	const where55 = await page.evaluate(() => window.__stores.dockMenu.windowWhere('timeline'));
+	const where55 = await page.evaluate(() => window.__tp.test.v1.dockMenu.windowWhere('timeline'));
 	h.check(where55 === 'floating', `5.5a (premise) still floating, so the x is the snap and not a dock (${where55})`);
 	h.check(!!snapped && snapped.x === 0, `5.5 Snap on: the same drop lands flush on the left edge (${JSON.stringify(snapped)})`);
-	await page.evaluate(() => window.__stores.windowPrefs.snapToEdges.set(false));
-	const before = await page.evaluate(() => window.__stores.dockMenu.windowWhere('timeline'));
+	await page.evaluate(() => window.__tp.test.v1.windowPrefs.snapToEdges.set(false));
+	const before = await page.evaluate(() => window.__tp.test.v1.dockMenu.windowWhere('timeline'));
 	await openBurger(page);
 	await page.locator('#open-windows-menu').click();
 	await page.waitForSelector('[role="menu"]', { timeout: 5000 });
 	await page.locator('[role="menu"] [role="menuitem"]').filter({ hasText: 'Close all floating windows' }).click();
 	await page.waitForTimeout(700);
-	const after = await page.evaluate(() => ['timeline', 'animation', 'explorer'].map((k) => [k, window.__stores.dockMenu.windowWhere(k)]));
+	const after = await page.evaluate(() => ['timeline', 'animation', 'explorer'].map((k) => [k, window.__tp.test.v1.dockMenu.windowWhere(k)]));
 	h.check(before === 'floating', `4.0 (premise) the Timeline floats (${before})`);
 	h.check(after.find((x) => x[0] === 'timeline')[1] === null, `4.1 Close all floating windows closes it (${JSON.stringify(after)})`);
 	h.check(after.filter((x) => x[0] !== 'timeline').every((x) => x[1] !== 'floating'), '4.2 nothing floating is left');
 	h.check(after.some((x) => x[1] === 'dock' || x[1] === 'left' || x[1] === 'right'), '4.3 ...and a docked or sidebar window stays open');
 
 	// --- 5c: Remember layout per scene ---
-	const setScene = (name) => page.evaluate((n) => window.__stores.levels.currentLevel.set(n ? { hash: '', name: n, unsaved: true } : null), name);
+	const setScene = (name) => page.evaluate((n) => window.__tp.test.v1.levels.currentLevel.set(n ? { hash: '', name: n, unsaved: true } : null), name);
 	const explorerOpen = () => read(page, 'explorerClose').then((v) => v === false);
 	const roundTrip = async () => {
 		await setScene('Layout A');
-		await page.evaluate(() => window.__stores.explorerClose.set(false));
+		await page.evaluate(() => window.__tp.test.v1.explorerClose.set(false));
 		await page.waitForTimeout(500);
 		await setScene('Layout B');
 		await page.waitForTimeout(400);
-		await page.evaluate(() => window.__stores.explorerClose.set(true));
+		await page.evaluate(() => window.__tp.test.v1.explorerClose.set(true));
 		await page.waitForTimeout(400);
 		await setScene('Layout A');
 		await page.waitForTimeout(1500);
@@ -216,7 +216,7 @@ h.run(async () => {
 	await setScene(null);
 	await page.waitForTimeout(300);
 	h.check((await roundTrip()) === true, '5.7 switch on: scene A opens with the window layout it was left with (Explorer open again)');
-	await page.evaluate(() => window.__stores.windowPrefs.layoutPerScene.set(false));
+	await page.evaluate(() => window.__tp.test.v1.windowPrefs.layoutPerScene.set(false));
 
 	await h.finish(browser);
 });

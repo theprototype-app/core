@@ -158,7 +158,7 @@ h.run(async () => {
 	h.check(pm.visible && Math.abs(pm.rect.y - placed.rect.y) < 1, 'F1: placed, its chevron menu still leaves it drawn in place');
 	await closeMenus(P);
 	// a layout reload keeps it (the record is the source)
-	await P.evaluate(() => window.__stores.uiLayoutsCore?.runLayoutReloaders());
+	await P.evaluate(() => window.__tp.test.v1.uiLayoutsCore?.runLayoutReloaders());
 	await P.waitForTimeout(800);
 	const again = await chip(P);
 	h.check(Math.abs(again.rect.x - placed.rect.x) < 3 && Math.abs(again.rect.y - placed.rect.y) < 3, 'F1: re-read from the stored record, it comes back to the same spot');

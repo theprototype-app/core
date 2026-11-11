@@ -102,7 +102,7 @@ const UNFOLDED = { viewport: { width: 770, height: 850 }, deviceScaleFactor: 2, 
 const contentOf = (page, pts) =>
 	page.evaluate((pts) => {
 		let rig;
-		window.__stores.worldRig.subscribe((v) => (rig = v))();
+		window.__tp.test.v1.worldRig.subscribe((v) => (rig = v))();
 		rig.updateMatrixWorld(true);
 		const V = rig.position.constructor;
 		return pts.map((p) => rig.worldToLocal(new V(p[0], p[1], p[2])).toArray());
@@ -111,7 +111,7 @@ const contentOf = (page, pts) =>
 /** the phone side: one page, its debug, its taps */
 function phone(P) {
 	const page = P.page;
-	const dbg = () => page.evaluate(() => window.__stores.arTable.arTableDebug());
+	const dbg = () => page.evaluate(() => window.__tp.test.v1.arTable.arTableDebug());
 	const settle = (n = 6) => iwer.frames(page, n);
 	/** aim the reticle at a PHYSICAL floor point: the head 1 m above and 0.5 m back, pitched onto it */
 	const aimAt = async (phys) => {
@@ -163,17 +163,17 @@ h.run(async () => {
 	// Q calibrates first, on the same two marks, in its own tracking space (the CO2 functions the
 	// trigger hook calls with the controller tip and the controller's forward)
 	const qAlign = await Q.page.evaluate(({ a, dir, key }) => {
-		const c = window.__stores.colocationCalibrate;
+		const c = window.__tp.test.v1.colocationCalibrate;
 		c.startCalibration({ roomKey: key });
 		c.samplePoint({ x: a[0], y: a[1], z: a[2] });
 		return c.sampleAim({ x: dir[0], y: dir[1], z: dir[2] });
 	}, { a: toDevice(QUEST, MARK_A), dir: dirToDevice(QUEST, [MARK_B[0] - MARK_A[0], 0, MARK_B[2] - MARK_A[2]]), key: KEY });
 	h.check(qAlign && qAlign.roomKey === KEY, `the headset is colocated in ${KEY} (${qAlign?.source})`);
-	await h.eventually(() => g(() => { let v; window.__stores.colocationPresence.peerColocation.subscribe((x) => (v = x))(); return v; }), (m) => Object.values(m).includes(KEY), "the phone hears the headset's room key", 10000);
+	await h.eventually(() => g(() => { let v; window.__tp.test.v1.colocationPresence.peerColocation.subscribe((x) => (v = x))(); return v; }), (m) => Object.values(m).includes(KEY), "the phone hears the headset's room key", 10000);
 
 	// ---- E. entry --------------------------------------------------------------------------------------
 	console.log('\n=== E. More ▸ Join room (AR) ===');
-	await h.eventually(() => g(() => { let v; window.__stores.arTable.arTableEntry.subscribe((x) => (v = x))(); return v; }), (v) => v === 'ready', 'the AR entry is ready', 10000);
+	await h.eventually(() => g(() => { let v; window.__tp.test.v1.arTable.arTableEntry.subscribe((x) => (v = x))(); return v; }), (v) => v === 'ready', 'the AR entry is ready', 10000);
 	await P.page.tap('#ps-more');
 	await P.page.waitForSelector('#ps-tile-arroom', { timeout: 10000 });
 	const tileNote = await g(() => document.getElementById('ps-tile-arroom-note')?.textContent ?? '');
@@ -244,7 +244,7 @@ h.run(async () => {
 		console.log('\n=== V. presence ===');
 		await g(() => {
 			let p;
-			window.__stores.peers.subscribe((v) => (p = v))();
+			window.__tp.test.v1.peers.subscribe((v) => (p = v))();
 			if (p.__vh2Spy) return;
 			const send = p.send.bind(p);
 			p.send = (msg, ...rest) => {
@@ -262,7 +262,7 @@ h.run(async () => {
 		// offset of a few cm), taken to the physical room and read through the HEADSET's alignment
 		const camAt = await g(() => {
 			let r;
-			window.__stores.globalRenderer.subscribe((v) => (r = v))();
+			window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
 			const cam = r.xr.getCamera();
 			cam.updateMatrixWorld(true);
 			return [cam.matrixWorld.elements[12], cam.matrixWorld.elements[13], cam.matrixWorld.elements[14]];
@@ -270,16 +270,16 @@ h.run(async () => {
 		console.log(`  (IWER's XR camera sits ${(dist(camAt, toDevice(PHONE, head)) * 100).toFixed(1)} cm from the posed device origin)`);
 		const [expect] = await contentOf(Q.page, [toDevice(QUEST, fromDevice(PHONE, camAt))]);
 		h.check(sent && dist(sent, expect) < 0.005, `the phone's camera stream carries its physical place in content coords (${sent?.map((v) => v.toFixed(3))} vs the headset's reading ${expect.map((v) => v.toFixed(3))})`);
-		const qSet = await Q.page.evaluate(() => { let v; window.__stores.colocationPresence.colocatedPeers.subscribe((x) => (v = x))(); return [...v]; });
-		const pSet = await g(() => { let v; window.__stores.colocationPresence.colocatedPeers.subscribe((x) => (v = x))(); return [...v]; });
+		const qSet = await Q.page.evaluate(() => { let v; window.__tp.test.v1.colocationPresence.colocatedPeers.subscribe((x) => (v = x))(); return [...v]; });
+		const pSet = await g(() => { let v; window.__tp.test.v1.colocationPresence.colocatedPeers.subscribe((x) => (v = x))(); return [...v]; });
 		h.check(qSet.includes(P0.id) && pSet.includes(Q.id), `the pair count each other as colocated (Q: ${JSON.stringify(qSet)}, P: ${JSON.stringify(pSet)})`);
 	}
 
 	// ---- K. the anchor moves -----------------------------------------------------------------------------------
 	if (want('K')) {
 		console.log('\n=== K. a headset moves the room anchor ===');
-		await Q.page.evaluate(() => window.__stores.colocation.setRoomAnchor({ roomKey: 'room-vh2', pos: [1.2, 0, -0.6], quat: [0, Math.sin(0.35), 0, Math.cos(0.35)] }));
-		await h.eventually(() => g(() => window.__stores.colocation.colocationDebug().anchor?.pos?.[0]), (x) => Math.abs((x ?? 0) - 1.2) < 1e-6, 'the anchor reaches the phone', 10000);
+		await Q.page.evaluate(() => window.__tp.test.v1.colocation.setRoomAnchor({ roomKey: 'room-vh2', pos: [1.2, 0, -0.6], quat: [0, Math.sin(0.35), 0, Math.cos(0.35)] }));
+		await h.eventually(() => g(() => window.__tp.test.v1.colocation.colocationDebug().anchor?.pos?.[0]), (x) => Math.abs((x ?? 0) - 1.2) < 1e-6, 'the anchor reaches the phone', 10000);
 		await P.settle(3);
 		await agree('after the anchor moved');
 	}
@@ -332,13 +332,13 @@ h.run(async () => {
 		await h.eventually(() => iwer.state(P.page), (s) => !s.presenting, 'the session ends', 10000);
 		await P.page.waitForTimeout(300);
 		d = await P.dbg();
-		const co = await g(() => window.__stores.colocation.colocationDebug());
+		const co = await g(() => window.__tp.test.v1.colocation.colocationDebug());
 		h.check(d.phase === 'off' && !co.alignment && co.roomKey === null, `phase off, no alignment, no key (${d.phase}, ${JSON.stringify(co.alignment)}, ${co.roomKey})`);
 		h.check(d.rig.visible && d.rig.position.every((v) => v === 0) && Math.abs(d.rig.quaternion[3]) === 1, 'the rig is 1:1 again');
-		const left = await g(() => { let sc; window.__stores.globalScene.subscribe((v) => (sc = v))(); return !!sc.getObjectByName('ar-room-mark') || !!sc.getObjectByName('ar-reticle'); });
+		const left = await g(() => { let sc; window.__tp.test.v1.globalScene.subscribe((v) => (sc = v))(); return !!sc.getObjectByName('ar-room-mark') || !!sc.getObjectByName('ar-reticle'); });
 		h.check(!left, 'no mark or reticle left in the scene');
-		await h.eventually(() => Q.page.evaluate(() => { let v; window.__stores.colocationPresence.colocatedPeers.subscribe((x) => (v = x))(); return [...v]; }), (s) => !s.includes(P0.id), 'the headset stops counting the phone as in the room', 10000);
-		h.check(!!(await Q.page.evaluate(() => window.__stores.colocation.colocationDebug().alignment)), "the headset's own alignment is untouched");
+		await h.eventually(() => Q.page.evaluate(() => { let v; window.__tp.test.v1.colocationPresence.colocatedPeers.subscribe((x) => (v = x))(); return [...v]; }), (s) => !s.includes(P0.id), 'the headset stops counting the phone as in the room', 10000);
+		h.check(!!(await Q.page.evaluate(() => window.__tp.test.v1.colocation.colocationDebug().alignment)), "the headset's own alignment is untouched");
 	}
 
 	h.check(h.pageErrors(P0).length === 0, `no page errors on the phone (${h.pageErrors(P0).join(' | ').slice(0, 300)})`);
@@ -351,7 +351,7 @@ h.run(async () => {
 		const U0 = await h.setupPage(browser, 'U', { init: initScript(), context: UNFOLDED });
 		await h.connect(Q, U0);
 		const U = phone(U0);
-		await h.eventually(() => U.page.evaluate(() => { let v; window.__stores.arTable.arTableEntry.subscribe((x) => (v = x))(); return v; }), (v) => v === 'ready', 'the AR entry is ready (unfolded)', 10000);
+		await h.eventually(() => U.page.evaluate(() => { let v; window.__tp.test.v1.arTable.arTableEntry.subscribe((x) => (v = x))(); return v; }), (v) => v === 'ready', 'the AR entry is ready (unfolded)', 10000);
 		// unfolded is wide enough for the desktop toolbar, not the phone bar: the way in is Play's menu
 		h.check(!(await U.page.locator('#ps-more').count()), 'unfolded gets the desktop toolbar (no phone bar)');
 		await U.page.locator('#play-button').dispatchEvent('contextmenu', { clientX: 700, clientY: 800 });

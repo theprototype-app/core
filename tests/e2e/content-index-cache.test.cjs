@@ -120,9 +120,9 @@ h.run(async () => {
 	try {
 		const A = await h.setupPage(browser, 'A');
 		const bases = await A.page.evaluate(() => ({
-			scenes: window.__stores.sceneTemplates.SCENES_BASE,
-			packs: window.__stores.packs.PACKS_BASE,
-			modules: window.__stores.moduleGallery.MODULES_BASE
+			scenes: window.__tp.test.v1.sceneTemplates.SCENES_BASE,
+			packs: window.__tp.test.v1.packs.PACKS_BASE,
+			modules: window.__tp.test.v1.moduleGallery.MODULES_BASE
 		}));
 		console.log('bases: ' + JSON.stringify(bases));
 		const onCdn = (/** @type {string} */ base) => base.startsWith('https://cdn.jsdelivr.net/gh/theprototype-app/');
@@ -134,7 +134,7 @@ h.run(async () => {
 
 		/** the General tab's remote slugs, through the real modal */
 		async function openGeneral(/** @type {any} */ page) {
-			await page.evaluate(() => window.__stores.templatesModalOpen.set(false));
+			await page.evaluate(() => window.__tp.test.v1.templatesModalOpen.set(false));
 			await page.waitForTimeout(200);
 			await page.locator('#logo-menu').click();
 			await page.waitForTimeout(300);
@@ -147,7 +147,7 @@ h.run(async () => {
 			);
 		const readStore = (/** @type {any} */ page, /** @type {string} */ expr) =>
 			page.evaluate((expr) => {
-				const store = expr.split('.').reduce((o, k) => o[k], window.__stores);
+				const store = expr.split('.').reduce((o, k) => o[k], window.__tp?.test.v1);
 				let v;
 				store.subscribe((x) => (v = x))();
 				return v;
@@ -155,20 +155,20 @@ h.run(async () => {
 		const packNames = async (/** @type {any} */ page) => (await readStore(page, 'packs.packs')).map((/** @type {any} */ p) => p.name).filter((n) => n.startsWith('cache-'));
 		const kitItemCount = (/** @type {any} */ page) =>
 			page.evaluate(async () => {
-				const s = window.__stores.packs;
+				const s = window.__tp.test.v1.packs;
 				let list = [];
 				s.packs.subscribe((x) => (list = x))();
 				const pack = list.find((p) => p.name === 'cache-old-kit');
 				return pack ? (await s.loadPackItems(pack)).length : -1;
 			});
 		const galleryIds = async (/** @type {any} */ page) => {
-			await page.evaluate(() => window.__stores.moduleGallery.loadModuleGallery());
+			await page.evaluate(() => window.__tp.test.v1.moduleGallery.loadModuleGallery());
 			return (await readStore(page, 'moduleGallery.galleryModules')).map((/** @type {any} */ m) => m.id).filter((n) => n.startsWith('cache-'));
 		};
 
 		// -- 1: seed last week's lists through the real UI (Explorer loads the packs list
 		// when it mounts; ask once more so the read does not depend on that timing)
-		await A.page.evaluate(() => window.__stores.packs.loadPacks());
+		await A.page.evaluate(() => window.__tp.test.v1.packs.loadPacks());
 		await openGeneral(A.page);
 		await h.eventually(() => generalSlugs(A.page), (v) => JSON.stringify(v) === '["cache-old-level"]', '1: General shows the v1 list (Cache Old Level only)');
 		h.check(JSON.stringify(await packNames(A.page)) === '["cache-old-kit"]', '1: packs list = v1 (cache-old-kit)');
@@ -209,7 +209,7 @@ h.run(async () => {
 		version = 3;
 		const B = await A.ctx.newPage();
 		await B.goto(h.URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
-		await B.waitForFunction(() => window.__stores && !!window.__stores.moduleSDK, { timeout: 30000 });
+		await B.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.moduleSDK, { timeout: 30000 });
 		await B.waitForTimeout(1500);
 		await openGeneral(B);
 		await h.eventually(
@@ -224,7 +224,7 @@ h.run(async () => {
 		// -- 5: revalidation, not re-download: the index was asked conditionally, and an
 		// unchanged one comes back 304
 		const before = hits.length;
-		await B.evaluate(() => window.__stores.sceneTemplates.loadTemplatesIndex(true));
+		await B.evaluate(() => window.__tp.test.v1.sceneTemplates.loadTemplatesIndex(true));
 		const after = hits.slice(before).filter((x) => SCENES_INDEX.test(x.path));
 		h.check(after.length === 1 && after[0].conditional && after[0].status === 304, '5: an unchanged index revalidates to a 304 (got ' + JSON.stringify(after) + ')');
 		h.check(hits.filter((x) => SCENES_INDEX.test(x.path) && x.conditional).length >= 2, '5: the scenes index was revalidated with If-None-Match, not re-downloaded blind');

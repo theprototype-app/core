@@ -15,10 +15,10 @@ const path = require('path');
 const SHOTS = process.env.CF_SHOTS || '';
 const shot = async (page, name) => SHOTS && page.screenshot({ path: path.join(SHOTS, name) });
 
-/** a store under window.__stores, by dotted path */
+/** a store under window.__tp?.test.v1, by dotted path */
 const read = (page, p) =>
 	page.evaluate((p) => {
-		let obj = window.__stores;
+		let obj = window.__tp?.test.v1;
 		for (const k of p.split('.')) obj = obj[k];
 		let v;
 		obj.subscribe((x) => (v = x))();
@@ -30,7 +30,7 @@ const tabs = (page) => read(page, 'codeWorkspace.codeTabs');
 const itemNamed = async (page, name) => (await items(page)).find((i) => i.name === name) ?? null;
 const folderNamed = async (page, name) => (await folders(page)).find((f) => f.name === name) ?? null;
 const row = (page, key) => page.locator(`#code-ws-project [data-tree-key="${key}"]`);
-const debug = (page) => page.evaluate(() => window.__stores.codeFiles.codeFilesDebug());
+const debug = (page) => page.evaluate(() => window.__tp.test.v1.codeFiles.codeFilesDebug());
 
 /** type a name into the inline field and commit it */
 async function nameIt(page, name) {
@@ -67,7 +67,7 @@ h.run(async () => {
 	// the Code tab, empty (asked again if a cold page had not mounted the dock yet)
 	for (let i = 0; i < 4; i++) {
 		await page.evaluate(async () => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.codeWorkspace.startCodeWorkspace();
 			s.codeWorkspaceClose.set(false);
 			s.bottomDock.activateDock('code');
@@ -147,7 +147,7 @@ h.run(async () => {
 	await page.locator('#code-ws-name-input').press('Escape');
 
 	// ------------------------------------------------------------ 4 rename + move keep the tab
-	const made = await page.evaluate((fid) => window.__stores.codeFiles.createCodeFile({ template: 'script', name: 'enemy', folderId: fid }), enemies.id);
+	const made = await page.evaluate((fid) => window.__tp.test.v1.codeFiles.createCodeFile({ template: 'script', name: 'enemy', folderId: fid }), enemies.id);
 	const enemy = made.item;
 	h.check(made.ok && !!made.tabId, 'premise: "enemy.js" made in Enemies and open in a tab');
 	await h.eventually(() => itemNamed(B.page, 'enemy.js'), (i) => !!i, 'premise: it reached B', 20000);
@@ -173,10 +173,10 @@ h.run(async () => {
 	await h.eventually(async () => (await items(page)).find((i) => i.id === enemy.id)?.folderId, (f) => f === scripts.id, 'Ctrl+V on a folder puts it there', 6000);
 	const tab = (await tabs(page)).find((x) => x.id === made.tabId);
 	h.check(tab?.itemId === enemy.id && tab?.name === 'boss.js', 'after both moves the tab still points at the file');
-	await page.evaluate((id) => window.__stores.codeWorkspace.setTabCode(id, '// boss\nexport default { start() {} };\n'), made.tabId);
-	await page.evaluate((id) => window.__stores.codeWorkspace.saveCodeTab(id), made.tabId);
+	await page.evaluate((id) => window.__tp.test.v1.codeWorkspace.setTabCode(id, '// boss\nexport default { start() {} };\n'), made.tabId);
+	await page.evaluate((id) => window.__tp.test.v1.codeWorkspace.saveCodeTab(id), made.tabId);
 	const saved = await until(
-		() => page.evaluate(async (id) => (await (await window.__stores.explorer.itemBlob(id))?.text()) ?? '', enemy.id),
+		() => page.evaluate(async (id) => (await (await window.__tp.test.v1.explorer.itemBlob(id))?.text()) ?? '', enemy.id),
 		(t) => /\/\/ boss/.test(t),
 		'Save writes that same item (moved and renamed)',
 		6000
@@ -185,7 +185,7 @@ h.run(async () => {
 	await shot(page, '02-after-rename-move-dark.png');
 
 	// ------------------------------------------------------------ 5 delete + undo
-	await page.evaluate(() => window.__stores.codeWorkspace.saveAllCodeTabs());
+	await page.evaluate(() => window.__tp.test.v1.codeWorkspace.saveAllCodeTabs());
 	await fileRow().focus();
 	await page.keyboard.press('Delete');
 	await page.locator('#code-ws-delete-confirm').waitFor({ state: 'visible', timeout: 4000 });
@@ -201,18 +201,18 @@ h.run(async () => {
 
 	// ------------------------------------------------------------ screenshots, both themes
 	await shot(page, '03-tree-dark.png');
-	await page.evaluate(() => window.__stores.themes.theme.set('light'));
+	await page.evaluate(() => window.__tp.test.v1.themes.theme.set('light'));
 	await page.waitForTimeout(400);
 	await row(page, 'dir:' + scripts.id).click({ button: 'right' });
 	await page.waitForTimeout(300);
 	await shot(page, '04-menu-light.png');
 	await page.keyboard.press('Escape');
-	await page.evaluate(() => window.__stores.themes.theme.set('dark'));
+	await page.evaluate(() => window.__tp.test.v1.themes.theme.set('dark'));
 
 	// ------------------------------------------------------------ 6 a viewer
 	const before = { items: (await items(page)).length, folders: (await folders(page)).length };
 	await page.evaluate(() =>
-		window.__stores.cloudHooks.rolesInfo.set({ myId: 'a', myRole: 'viewer', amAdmin: false, order: ['viewer', 'editor', 'admin'], roleOf: () => 'viewer', setRole: () => {} })
+		window.__tp.test.v1.cloudHooks.rolesInfo.set({ myId: 'a', myRole: 'viewer', amAdmin: false, order: ['viewer', 'editor', 'admin'], roleOf: () => 'viewer', setRole: () => {} })
 	);
 	await page.waitForTimeout(300);
 	h.check((await page.locator('#code-ws-new-file').getAttribute('aria-disabled')) === 'true', "a viewer's New file is disabled");
@@ -220,7 +220,7 @@ h.run(async () => {
 	await page.locator('#code-ws-new-folder').click({ force: true }); // aria-disabled: Playwright would wait for it
 	await page.waitForTimeout(300);
 	h.check((await page.locator('#code-ws-name-input').count()) === 0, 'pressing it opens nothing');
-	const r = await page.evaluate(() => window.__stores.codeFiles.createCodeFolder({ name: 'Nope' }));
+	const r = await page.evaluate(() => window.__tp.test.v1.codeFiles.createCodeFolder({ name: 'Nope' }));
 	h.check(!r.ok && /View only/.test(r.reason ?? ''), 'the verb itself refuses a viewer, with the reason');
 	const rowOf = await itemNamed(page, 'boss.js');
 	await row(page, 'f:' + rowOf.id).focus();
@@ -232,7 +232,7 @@ h.run(async () => {
 	const after = { items: (await items(page)).length, folders: (await folders(page)).length };
 	h.check(JSON.stringify(after) === JSON.stringify(before), 'nothing changed in the library');
 	await shot(page, '05-viewer-dark.png');
-	await page.evaluate(() => window.__stores.cloudHooks.rolesInfo.set(null));
+	await page.evaluate(() => window.__tp.test.v1.cloudHooks.rolesInfo.set(null));
 
 	// ------------------------------------------------------------ 7 the same tree in the pop-out window
 	const [pop] = await Promise.all([page.context().waitForEvent('page', { timeout: 20000 }), page.locator('#code-ws-popout').first().click()]);

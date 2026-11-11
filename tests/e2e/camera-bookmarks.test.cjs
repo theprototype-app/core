@@ -9,7 +9,7 @@ const list = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.cameraBookmarks.bookmarks.subscribe((v) =>
+				window.__tp.test.v1.cameraBookmarks.bookmarks.subscribe((v) =>
 					r(v.map((b) => ({ id: b.id, name: b.name, hasLens: !!b.lens, fov: b.lens?.fov ?? null })))
 				)()
 			)
@@ -19,7 +19,7 @@ const camState = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.globalCamera.subscribe((c) =>
+				window.__tp.test.v1.globalCamera.subscribe((c) =>
 					r({ fov: Math.round(c.fov), pos: c.position.toArray().map((n) => Math.round(n * 10) / 10) })
 				)()
 			)
@@ -46,13 +46,13 @@ h.run(async () => {
 
 	// ---------- save captures the lens ----------
 	await A.page.evaluate(() => {
-		window.__stores.cameraBookmarks.clearBookmarks();
+		window.__tp.test.v1.cameraBookmarks.clearBookmarks();
 		let cam = null;
-		window.__stores.globalCamera.subscribe((c) => (cam = c))();
+		window.__tp.test.v1.globalCamera.subscribe((c) => (cam = c))();
 		cam.fov = 70;
 		cam.updateProjectionMatrix();
 		cam.position.set(12, 6, 12);
-		window.__stores.cameraBookmarks.saveBookmark('Wide shot');
+		window.__tp.test.v1.cameraBookmarks.saveBookmark('Wide shot');
 	});
 	await A.page.waitForTimeout(300);
 	entries = await list(A.page);
@@ -61,7 +61,7 @@ h.run(async () => {
 
 	// no 5-entry cap any more: a sixth save keeps all six
 	await A.page.evaluate(() => {
-		for (let i = 0; i < 5; i++) window.__stores.cameraBookmarks.saveBookmark();
+		for (let i = 0; i < 5; i++) window.__tp.test.v1.cameraBookmarks.saveBookmark();
 	});
 	await A.page.waitForTimeout(300);
 	entries = await list(A.page);
@@ -70,12 +70,12 @@ h.run(async () => {
 	// ---------- recall restores position AND lens ----------
 	await A.page.evaluate(() => {
 		let cam = null;
-		window.__stores.globalCamera.subscribe((c) => (cam = c))();
+		window.__tp.test.v1.globalCamera.subscribe((c) => (cam = c))();
 		cam.fov = 25;
 		cam.updateProjectionMatrix();
 		cam.position.set(-3, 2, -3);
 	});
-	await A.page.evaluate(() => window.__stores.cameraBookmarks.recallBookmark(0));
+	await A.page.evaluate(() => window.__tp.test.v1.cameraBookmarks.recallBookmark(0));
 	await A.page.waitForTimeout(900); // flyTo tween is 400ms
 	const after = await camState(A.page);
 	h.check(after.fov === 70, `recall restored the FOV (${after.fov}°)`);
@@ -85,7 +85,7 @@ h.run(async () => {
 	);
 
 	// ---------- management: rename / overwrite / reorder / delete ----------
-	await A.page.evaluate(() => window.__stores.openSceneSection('Camera')); // 78-int PL17: Configure Scene opens with only Environment + Scene look expanded — deep-link the section
+	await A.page.evaluate(() => window.__tp.test.v1.openSceneSection('Camera')); // 78-int PL17: Configure Scene opens with only Environment + Scene look expanded — deep-link the section
 	await A.page.waitForTimeout(600);
 	const rows = await A.page.evaluate(() => document.querySelectorAll('#bookmark-list .bookmark-row').length);
 	h.check(rows === 6, `Configure Scene lists every view (${rows} rows)`);
@@ -102,12 +102,12 @@ h.run(async () => {
 	// overwrite re-shoots the entry from the current view, keeping the name
 	await A.page.evaluate(() => {
 		let cam = null;
-		window.__stores.globalCamera.subscribe((c) => (cam = c))();
+		window.__tp.test.v1.globalCamera.subscribe((c) => (cam = c))();
 		cam.fov = 33;
 		cam.updateProjectionMatrix();
 		cam.position.set(1, 9, 1);
 	});
-	await A.page.evaluate((id) => window.__stores.cameraBookmarks.overwriteBookmark(id), ids[1]);
+	await A.page.evaluate((id) => window.__tp.test.v1.cameraBookmarks.overwriteBookmark(id), ids[1]);
 	await A.page.waitForTimeout(250);
 	entries = await list(A.page);
 	h.check(
@@ -116,13 +116,13 @@ h.run(async () => {
 	);
 
 	// reorder: moving up changes which Shift+N reaches it
-	await A.page.evaluate((id) => window.__stores.cameraBookmarks.moveBookmark(id, -1), ids[1]);
+	await A.page.evaluate((id) => window.__tp.test.v1.cameraBookmarks.moveBookmark(id, -1), ids[1]);
 	await A.page.waitForTimeout(250);
 	entries = await list(A.page);
 	h.check(entries[0].id === ids[1], 'moveBookmark reorders the list');
 
 	// delete
-	await A.page.evaluate((id) => window.__stores.cameraBookmarks.deleteBookmark(id), ids[1]);
+	await A.page.evaluate((id) => window.__tp.test.v1.cameraBookmarks.deleteBookmark(id), ids[1]);
 	await A.page.waitForTimeout(250);
 	entries = await list(A.page);
 	h.check(entries.length === 5 && !entries.some((b) => b.id === ids[1]), `delete removes one (${entries.length} left)`);
@@ -131,7 +131,7 @@ h.run(async () => {
 	const secondFov = entries[1].fov;
 	await A.page.evaluate(() => {
 		let cam = null;
-		window.__stores.globalCamera.subscribe((c) => (cam = c))();
+		window.__tp.test.v1.globalCamera.subscribe((c) => (cam = c))();
 		cam.fov = 55;
 		cam.updateProjectionMatrix();
 	});
@@ -145,19 +145,19 @@ h.run(async () => {
 	);
 
 	// ---------- orbit prefs ----------
-	await A.page.evaluate(() => window.__stores.cameraClip.setOrbitPrefs({ rotateSpeed: 1.8, invertY: true }));
+	await A.page.evaluate(() => window.__tp.test.v1.cameraClip.setOrbitPrefs({ rotateSpeed: 1.8, invertY: true }));
 	await A.page.waitForTimeout(200);
 	const orbit = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.orbitControls.subscribe((o) => r({ rotate: o?.rotateSpeed, zoom: o?.zoomSpeed }))())
+		() => new Promise((r) => window.__tp.test.v1.orbitControls.subscribe((o) => r({ rotate: o?.rotateSpeed, zoom: o?.zoomSpeed }))())
 	);
 	h.check(
 		Math.abs(orbit.rotate + 1.8) < 0.001,
 		`orbit prefs reach the live controls, invert flips the sign (${orbit.rotate})`
 	);
-	await A.page.evaluate(() => window.__stores.cameraClip.resetOrbitPrefs());
+	await A.page.evaluate(() => window.__tp.test.v1.cameraClip.resetOrbitPrefs());
 	await A.page.waitForTimeout(200);
 	const reset = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.orbitControls.subscribe((o) => r(o?.rotateSpeed))())
+		() => new Promise((r) => window.__tp.test.v1.orbitControls.subscribe((o) => r(o?.rotateSpeed))())
 	);
 	h.check(reset === 1, `reset restores the default feel (${reset})`);
 

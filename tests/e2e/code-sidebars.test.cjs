@@ -29,10 +29,10 @@ const SHOTS = process.env.CS_SHOTS || '';
 const shot = async (page, name) => SHOTS && page.screenshot({ path: path.join(SHOTS, name) });
 
 const S = (page, fn, arg) => page.evaluate(fn, arg);
-/** a store under window.__stores, by dotted path */
+/** a store under window.__tp?.test.v1, by dotted path */
 const read = (page, p) =>
 	page.evaluate((p) => {
-		let obj = window.__stores;
+		let obj = window.__tp?.test.v1;
 		for (const k of p.split('.')) obj = obj[k];
 		let v;
 		obj.subscribe((x) => (v = x))();
@@ -43,7 +43,7 @@ const tabIds = async (page) => (await tabs(page)).map((t) => t.id);
 const nodeData = (page, id) =>
 	page.evaluate((id) => {
 		let g;
-		window.__stores.flowGraphs.subscribe((v) => (g = v))();
+		window.__tp.test.v1.flowGraphs.subscribe((v) => (g = v))();
 		for (const doc of Object.values(g)) {
 			const n = doc.nodes.find((x) => x.id === id);
 			if (n) return JSON.parse(JSON.stringify(n.data));
@@ -63,7 +63,7 @@ async function waitFor(fn, pred, ms = 15000) {
 
 async function loadGolf(page) {
 	await page.evaluate(async (arr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 		await s.sessions.applySession(payload, { backup: false });
 	}, Array.from(fs.readFileSync(TPSCENE)));
@@ -87,17 +87,17 @@ h.run(async () => {
 	// ------------------------------------------------------------ 1 F5 the Player node's code
 	await page.locator('p[title="Node editor (N)"]').click();
 	await page.waitForTimeout(1200);
-	await S(page, () => window.__stores.bottomDock.dockHeight.set(560));
+	await S(page, () => window.__tp.test.v1.bottomDock.dockHeight.set(560));
 	const center = (id) =>
 		S(page, (id) => {
 			let ns;
-			window.__stores.flowNodes.subscribe((v) => (ns = v))();
+			window.__tp.test.v1.flowNodes.subscribe((v) => (ns = v))();
 			const n = ns.find((x) => x.id === id);
 			window.__flowViewport?.setViewport({ x: -n.position.x + 300, y: -n.position.y + 120, zoom: 1 });
 		}, id);
 	const group = await S(page, () => {
 		let ns;
-		window.__stores.flowNodes.subscribe((v) => (ns = v))();
+		window.__tp.test.v1.flowNodes.subscribe((v) => (ns = v))();
 		return ns.find((n) => (n.data?.children ?? []).includes('body'))?.id ?? null;
 	});
 	h.check(!!group, 'premise: the Player sits inside a group (' + group + ')');
@@ -131,37 +131,37 @@ h.run(async () => {
 	h.check(!!ctl, 'F5: the runtime runs it — the walker speed is 0.06 x 3 = 0.18 (was ' + speedBefore + ', now ' + ctl?.speed + ')');
 	const ctlB = await waitFor(() => read(B.page, 'charController.charControl'), (c) => c && Math.abs(c.speed - 0.18) < 1e-6, 6000);
 	h.check(!!ctlB, 'F5: the other peer runs the same code (speed ' + ctlB?.speed + ')');
-	await S(page, () => window.__stores.history.undo());
+	await S(page, () => window.__tp.test.v1.history.undo());
 	const undone = await waitFor(() => nodeData(B.page, 'body'), (d) => !d?.code);
 	h.check(!!undone, 'F5: one undo removes the code on both peers');
 	const back = await waitFor(() => read(page, 'charController.charControl'), (c) => c && Math.abs(c.speed - 0.06) < 1e-6, 6000);
 	h.check(!!back, 'F5: …and the card\'s own speed is back (0.06)');
 	// a broken return is a badge, not a silent no-op
-	await S(page, (id) => window.__stores.codeWorkspace.setTabCode(id, 'return { sped: 1 };'), playerTab.id);
-	await S(page, (id) => window.__stores.codeWorkspace.saveCodeTab(id), playerTab.id);
+	await S(page, (id) => window.__tp.test.v1.codeWorkspace.setTabCode(id, 'return { sped: 1 };'), playerTab.id);
+	await S(page, (id) => window.__tp.test.v1.codeWorkspace.saveCodeTab(id), playerTab.id);
 	const badge = await waitFor(() => read(page, 'scriptErrors'), (e) => /unknown key "sped"/.test(e?.body ?? ''), 6000);
 	h.check(!!badge, 'F5: an unknown returned key shows on the node\'s error badge');
-	await S(page, () => window.__stores.history.undo());
+	await S(page, () => window.__tp.test.v1.history.undo());
 	h.check(!!(await waitFor(() => read(page, 'scriptErrors'), (e) => !e?.body, 6000)), 'F5: undoing the bad code clears the badge (no stale error)');
 	// Engine source: the core file, read-only
-	await S(page, (id) => window.__stores.codeWorkspace.activeCodeTab.set(id), playerTab.id);
+	await S(page, (id) => window.__tp.test.v1.codeWorkspace.activeCodeTab.set(id), playerTab.id);
 	await page.locator('#code-ws-engine').click();
 	list = await waitFor(() => tabs(page), (t) => t?.some((x) => x.kind === 'module' && x.name === 'charController.js'));
 	const engine = list?.find((x) => x.kind === 'module');
 	h.check(!!engine?.readOnly && /KinematicCharacterController|charControl/.test(engine?.code ?? ''), 'F5: "Engine source" opens the core walker code read-only');
 	h.check((await page.locator('#code-ws-fork').count()) === 0, 'F5: the engine source offers no copy (nothing could run it)');
-	h.check((await S(page, (t) => window.__stores.codeWorkspace.nodesUsingModuleFile(t).map((b) => b.node.id), engine)).includes('body'), 'F5: Bound nodes of the engine source names the Player that steers it');
+	h.check((await S(page, (t) => window.__tp.test.v1.codeWorkspace.nodesUsingModuleFile(t).map((b) => b.node.id), engine)).includes('body'), 'F5: Bound nodes of the engine source names the Player that steers it');
 	// counterfactual: a node with no code still opens nothing
 	const plain = await S(page, () => {
 		let ns;
-		window.__stores.flowNodes.subscribe((v) => (ns = v))();
+		window.__tp.test.v1.flowNodes.subscribe((v) => (ns = v))();
 		return ns.find((n) => n.type === 'spin' && !n.hidden)?.id ?? null;
 	});
 	if (plain) {
 		const before = (await tabs(page)).length;
 		await S(page, async (id) => {
 			let ns;
-			window.__stores.flowNodes.subscribe((v) => (ns = v))();
+			window.__tp.test.v1.flowNodes.subscribe((v) => (ns = v))();
 			const n = ns.find((x) => x.id === id);
 			const { nodeHasCode } = await import('/src/lib/graphContract.js');
 			window.__plainHasCode = nodeHasCode(n);
@@ -178,9 +178,9 @@ h.run(async () => {
 			ids.push(id);
 			nodes.push({ id, type: 'script', position: { x: 4000 + i * 10, y: 4000 }, data: { type: 'script', label: 'Script number ' + (i + 1), code: '// script ' + (i + 1) + '\nobject.position.y = ' + i + ';' }, class: 'w-[150px]' });
 		}
-		window.__stores.flowNodes.update((n) => [...n, ...nodes]);
+		window.__tp.test.v1.flowNodes.update((n) => [...n, ...nodes]);
 		await new Promise((r) => setTimeout(r, 300));
-		for (const id of ids) await window.__stores.codeWorkspace.openCode({ source: 'script', ref: { nodeId: id, graphId: 'scene' } });
+		for (const id of ids) await window.__tp.test.v1.codeWorkspace.openCode({ source: 'script', ref: { nodeId: id, graphId: 'scene' } });
 		return ids;
 	});
 	await page.waitForTimeout(800);
@@ -192,7 +192,7 @@ h.run(async () => {
 	const inView = () =>
 		strip.evaluate((el) => {
 			let active;
-			window.__stores.codeWorkspace.activeCodeTab.subscribe((v) => (active = v))();
+			window.__tp.test.v1.codeWorkspace.activeCodeTab.subscribe((v) => (active = v))();
 			const tab = el.querySelector(`[data-tab-id="${active}"]`);
 			const a = el.getBoundingClientRect();
 			const b = tab?.getBoundingClientRect();
@@ -208,7 +208,7 @@ h.run(async () => {
 	h.check(sl > 50, 'F8: the mouse wheel scrolls the strip sideways (scrollLeft ' + sl + ')');
 	// reopening the FIRST tab scrolls back to it
 	const firstId = (await tabs(page)).find((t) => t.nodeId === many[0]).id;
-	await S(page, (id) => window.__stores.codeWorkspace.activeCodeTab.set(id), firstId);
+	await S(page, (id) => window.__tp.test.v1.codeWorkspace.activeCodeTab.set(id), firstId);
 	await page.waitForTimeout(400);
 	h.check(await inView(), 'F8: activating a scrolled-away tab scrolls it into view');
 	// a real-mouse drag reorders; a plain click still activates
@@ -286,7 +286,7 @@ h.run(async () => {
 	h.check((await project.locator(`.cs-on [data-tree-key="${kitKey}"]`).count()) === 1, 'F6: the tree marks the source the active tab shows');
 	const itemsBefore = await S(page, () => {
 		let v;
-		window.__stores.explorer.explorerItems.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((x) => (v = x))();
 		return v.length;
 	});
 	await page.locator('#code-ws-fork').click();
@@ -295,7 +295,7 @@ h.run(async () => {
 	h.check(!!copy && !copy.readOnly && copy.code === modTab.code, '"Make editable copy" opens an EDITABLE file with the module\'s text (' + copy?.title + ')');
 	const itemsAfter = await S(page, () => {
 		let v;
-		window.__stores.explorer.explorerItems.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((x) => (v = x))();
 		return v.length;
 	});
 	h.check(itemsAfter === itemsBefore + 1, 'F6: …stored in the Library (' + itemsBefore + ' -> ' + itemsAfter + ' items)');
@@ -322,7 +322,7 @@ h.run(async () => {
 
 	// ------------------------------------------------------------ 4 F7 the right sidebar
 	h.check(await page.locator('#code-ws-right').isVisible(), 'F7: the right sidebar is open by default');
-	await S(page, () => window.__stores.codeWorkspace.openCode({ source: 'behaviour', ref: { nodeId: 'rules', graphId: 'scene' } }));
+	await S(page, () => window.__tp.test.v1.codeWorkspace.openCode({ source: 'behaviour', ref: { nodeId: 'rules', graphId: 'scene' } }));
 	await page.locator('#code-ws-right [data-panel="outline"]').click();
 	const handlers = await waitFor(() => page.locator('#code-ws-outline [data-outline="handler"]').count(), (n) => n > 0);
 	h.check(handlers > 0, 'F7: Outline lists the Golf rules behaviour\'s handlers (' + handlers + ')');
@@ -342,31 +342,31 @@ h.run(async () => {
 	await shot(page, '12-after-outline-dark.png');
 	// Problems: a syntax error typed into a script tab, unsaved
 	const scriptTab = (await tabs(page)).find((t) => t.nodeId === many[3]);
-	await S(page, (id) => window.__stores.codeWorkspace.setTabCode(id, 'const a = ;\nreturn {'), scriptTab.id);
+	await S(page, (id) => window.__tp.test.v1.codeWorkspace.setTabCode(id, 'const a = ;\nreturn {'), scriptTab.id);
 	await page.locator('#code-ws-right [data-panel="problems"]').click();
 	const errs = await waitFor(() => page.locator(`#code-ws-problems .rs-problem[data-severity="error"][data-tab="${scriptTab.id}"]`).count(), (n) => n > 0);
 	h.check(errs > 0, 'F7: Problems lists the syntax error of an open, unsaved file');
 	const badgeN = Number(await page.locator('#code-ws-right [data-panel="problems"] .rs-badge').getAttribute('data-count'));
 	h.check(badgeN >= 1, 'F7: the Problems tab carries a count badge (' + badgeN + ')');
-	await S(page, (id) => window.__stores.codeWorkspace.setTabCode(id, 'const x = Math.random();\nobject.position.y = x;'), scriptTab.id);
+	await S(page, (id) => window.__tp.test.v1.codeWorkspace.setTabCode(id, 'const x = Math.random();\nobject.position.y = x;'), scriptTab.id);
 	const warns = await waitFor(() => page.locator(`#code-ws-problems .rs-problem[data-severity="warning"][data-tab="${scriptTab.id}"]`).count(), (n) => n > 0);
 	h.check(warns > 0, 'F7: …and lint advice (Math.random breaks peer sync) as a warning');
 	await page.locator(`#code-ws-problems .rs-problem[data-tab="${scriptTab.id}"]`).first().click();
 	h.check((await read(page, 'codeWorkspace.activeCodeTab')) === scriptTab.id, 'F7: clicking a problem opens its file');
 	await shot(page, '13-after-problems-dark.png');
-	await S(page, (id) => window.__stores.codeWorkspace.reloadCodeTab(id), scriptTab.id);
+	await S(page, (id) => window.__tp.test.v1.codeWorkspace.reloadCodeTab(id), scriptTab.id);
 	// Bound nodes: the Player tab -> the node, selected inside its group
-	await S(page, (id) => window.__stores.codeWorkspace.activeCodeTab.set(id), playerTab.id);
+	await S(page, (id) => window.__tp.test.v1.codeWorkspace.activeCodeTab.set(id), playerTab.id);
 	await page.locator('#code-ws-right [data-panel="bound"]').click();
 	h.check((await page.locator('#code-ws-bound [data-bound-node="body"]').count()) === 1, 'F7: Bound nodes names the node the Player tab edits');
 	// leave the group first, so the click has to enter it
-	await S(page, () => window.__stores.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: false }))));
+	await S(page, () => window.__tp.test.v1.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: false }))));
 	await page.keyboard.press('Escape');
 	await page.locator('#code-ws-bound [data-bound-node="body"]').click();
 	const sel = await waitFor(
 		() => S(page, () => {
 			let ns;
-			window.__stores.flowNodes.subscribe((v) => (ns = v))();
+			window.__tp.test.v1.flowNodes.subscribe((v) => (ns = v))();
 			return ns.filter((n) => n.selected).map((n) => n.id);
 		}),
 		(s) => Array.isArray(s) && s.length === 1 && s[0] === 'body',
@@ -375,7 +375,7 @@ h.run(async () => {
 	h.check(Array.isArray(sel) && sel[0] === 'body', 'F7: clicking it SELECTS the node in the Node editor (' + JSON.stringify(sel) + ')');
 	h.check(await page.locator('.svelte-flow__node[data-id="body"]').isVisible(), 'F7: …entering its group so it is on screen');
 	// going to the node showed the Node editor in the dock; bring the Code tab back
-	await S(page, () => window.__stores.bottomDock.activateDock('code'));
+	await S(page, () => window.__tp.test.v1.bottomDock.activateDock('code'));
 	await page.waitForTimeout(500);
 	// Find in files: Ctrl+Shift+F, a word from the behaviour, a hit opens at its line
 	await page.locator(`[data-pane="${playerTab.id}"] .cm-content`).click();
@@ -412,13 +412,13 @@ h.run(async () => {
 	// ------------------------------------------------------------ 6 S8 undo/redo + peers · S7 guard + quick picks · S12 keys
 	const undoNode = { id: 'cs-undo', type: 'script', position: { x: 4200, y: 4300 }, data: { type: 'script', label: 'Undo me', code: 'object.position.y = 1;' }, class: 'w-[150px]' };
 	await S(page, (node) => {
-		window.__stores.flowNodes.update((n) => [...n, node]);
+		window.__tp.test.v1.flowNodes.update((n) => [...n, node]);
 		let p;
-		window.__stores.peers.subscribe((v) => (p = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (p = v))();
 		p.send({ type: 'nodecreate', node });
 	}, undoNode);
 	h.check(!!(await waitFor(() => nodeData(B.page, 'cs-undo'), (d) => !!d)), 'S8 premise: the peer holds the script node');
-	const uTab = await S(page, () => window.__stores.codeWorkspace.openCode({ source: 'script', ref: { nodeId: 'cs-undo', graphId: 'scene' } }));
+	const uTab = await S(page, () => window.__tp.test.v1.codeWorkspace.openCode({ source: 'script', ref: { nodeId: 'cs-undo', graphId: 'scene' } }));
 	await page.waitForTimeout(500);
 	const typeInto = async (tabId, text) => {
 		await page.locator(`[data-pane="${tabId}"] .cm-content`).click();
@@ -431,22 +431,22 @@ h.run(async () => {
 	await typeInto(uTab, 'object.position.y = 3;');
 	await page.keyboard.press('Control+S');
 	h.check(!!(await waitFor(() => nodeData(B.page, 'cs-undo'), (d) => /= 3;/.test(d?.code ?? ''))), 'S8: a second save reaches the peer');
-	await S(page, () => window.__stores.history.undo());
+	await S(page, () => window.__tp.test.v1.history.undo());
 	h.check(!!(await waitFor(() => nodeData(B.page, 'cs-undo'), (d) => /= 2;/.test(d?.code ?? ''))), 'S8: undo steps back ONE save, on the peer too (= 2)');
 	const tabAfterUndo = await waitFor(() => tabs(page), (t) => /= 2;/.test(t.find((x) => x.id === uTab)?.code ?? ''));
 	h.check(!!tabAfterUndo && !(tabAfterUndo.find((x) => x.id === uTab)?.stale), 'S8: …and the open tab follows the undo (clean, not stale)');
-	await S(page, () => window.__stores.history.undo());
+	await S(page, () => window.__tp.test.v1.history.undo());
 	h.check(!!(await waitFor(() => nodeData(B.page, 'cs-undo'), (d) => /= 1;/.test(d?.code ?? ''))), 'S8: a second undo restores the original (= 1) everywhere');
-	await S(page, () => window.__stores.history.redo());
-	await S(page, () => window.__stores.history.redo());
+	await S(page, () => window.__tp.test.v1.history.redo());
+	await S(page, () => window.__tp.test.v1.history.redo());
 	h.check(!!(await waitFor(() => nodeData(B.page, 'cs-undo'), (d) => /= 3;/.test(d?.code ?? ''))), 'S8: two redos bring back the last save on the peer (= 3)');
 	h.check(!!(await waitFor(() => tabs(page), (t) => /= 3;/.test(t.find((x) => x.id === uTab)?.code ?? ''))), 'S8: …and in the tab');
 	// a peer's edit while our tab is clean: the tab follows
-	await B.page.evaluate(() => window.__stores.nodesHandler.setNodeData('cs-undo', { code: 'object.position.y = 4; // from B' }, 'scene'));
+	await B.page.evaluate(() => window.__tp.test.v1.nodesHandler.setNodeData('cs-undo', { code: 'object.position.y = 4; // from B' }, 'scene'));
 	h.check(!!(await waitFor(() => tabs(page), (t) => /from B/.test(t.find((x) => x.id === uTab)?.code ?? ''))), 'S8: a peer\'s edit shows up in the open (clean) tab');
 
 	// S7: closing the workspace with unsaved code asks
-	await S(page, (id) => window.__stores.codeWorkspace.setTabCode(id, 'object.position.y = 5;'), uTab);
+	await S(page, (id) => window.__tp.test.v1.codeWorkspace.setTabCode(id, 'object.position.y = 5;'), uTab);
 	const beforeUnload = await S(page, () => {
 		const ev = new Event('beforeunload', { cancelable: true });
 		window.dispatchEvent(ev);
@@ -463,9 +463,9 @@ h.run(async () => {
 	await page.waitForTimeout(500);
 	h.check((await read(page, 'codeWorkspaceClose')) === true, 'S7: Save all closes it');
 	h.check(!!(await waitFor(() => nodeData(B.page, 'cs-undo'), (d) => /= 5;/.test(d?.code ?? ''))), 'S7: …having saved the file (the peer has it)');
-	await S(page, () => window.__stores.codeWorkspace.openCode({ source: 'script', ref: { nodeId: 'cs-undo', graphId: 'scene' } }));
+	await S(page, () => window.__tp.test.v1.codeWorkspace.openCode({ source: 'script', ref: { nodeId: 'cs-undo', graphId: 'scene' } }));
 	await page.waitForTimeout(600);
-	await S(page, (id) => window.__stores.codeWorkspace.setTabCode(id, 'object.position.y = ;'), uTab);
+	await S(page, (id) => window.__tp.test.v1.codeWorkspace.setTabCode(id, 'object.position.y = ;'), uTab);
 	await page.locator('#code-ws-close:visible, [data-dock-tab-close="code"]:visible').first().click();
 	await page.locator('#code-ws-confirm-all-save').click();
 	await page.waitForTimeout(500);
@@ -473,10 +473,10 @@ h.run(async () => {
 	await page.locator('#code-ws-confirm-all-discard').click();
 	await page.waitForTimeout(400);
 	h.check((await read(page, 'codeWorkspaceClose')) === true && (await read(page, 'codeWorkspace.codeTabs')).every((t) => t.code === t.saved || t.readOnly), 'S7: Don\'t save closes and throws the edits away');
-	const reTab = await S(page, () => window.__stores.codeWorkspace.openCode({ source: 'script', ref: { nodeId: 'cs-undo', graphId: 'scene' } }));
+	const reTab = await S(page, () => window.__tp.test.v1.codeWorkspace.openCode({ source: 'script', ref: { nodeId: 'cs-undo', graphId: 'scene' } }));
 	// 50 Y1 (6e6c95ca): "Don't save" discards THIS view and leaves the room's shared buffer alone, so the
 	// reopen rejoins the edits; revert the shared copy (for everyone) to reach "nothing unsaved"
-	await S(page, (id) => window.__stores.codeWorkspace.reloadCodeTab(id), reTab);
+	await S(page, (id) => window.__tp.test.v1.codeWorkspace.reloadCodeTab(id), reTab);
 	await h.eventually(() => read(page, 'codeWorkspace.codeTabs'), (tabs) => tabs.every((t) => t.code === t.saved || t.readOnly), 'S7 (premise) after the revert nothing is unsaved');
 	h.check((await S(page, () => {
 		const ev = new Event('beforeunload', { cancelable: true });
@@ -497,7 +497,7 @@ h.run(async () => {
 	await page.waitForTimeout(400);
 	const activeNow = await read(page, 'codeWorkspace.activeCodeTab');
 	h.check((await tabs(page)).find((t) => t.id === activeNow)?.nodeId === 'body' && (await page.locator('#code-ws-quick-open').count()) === 0, 'S7: Enter opens it and closes the picker');
-	const rulesTab = await S(page, () => window.__stores.codeWorkspace.openCode({ source: 'behaviour', ref: { nodeId: 'rules', graphId: 'scene' } }));
+	const rulesTab = await S(page, () => window.__tp.test.v1.codeWorkspace.openCode({ source: 'behaviour', ref: { nodeId: 'rules', graphId: 'scene' } }));
 	await page.waitForTimeout(400);
 	await page.locator(`[data-pane="${rulesTab}"] .cm-content`).click();
 	await page.keyboard.press('Control+Shift+O');
@@ -514,7 +514,7 @@ h.run(async () => {
 	// S12: the keyboard reaches everything
 	const stripIds = await tabIds(page);
 	const focusTab = stripIds[1];
-	await S(page, (id) => window.__stores.codeWorkspace.activeCodeTab.set(id), focusTab);
+	await S(page, (id) => window.__tp.test.v1.codeWorkspace.activeCodeTab.set(id), focusTab);
 	await page.waitForTimeout(200);
 	await page.locator(`.code-tab[data-tab-id="${focusTab}"]`).focus();
 	await page.keyboard.press('ArrowRight');
@@ -551,12 +551,12 @@ h.run(async () => {
 	h.check((await page.locator('#code-ws-rpanel[role="tabpanel"]').count()) === 1, 'S12: the panel is a labelled tabpanel');
 
 	// ------------------------------------------------------------ 5 F9 floating + themes
-	await S(page, () => window.__stores.themes.theme.set('light'));
+	await S(page, () => window.__tp.test.v1.themes.theme.set('light'));
 	await page.waitForTimeout(500);
 	await shot(page, '15-after-workspace-light.png');
 	const lightBg = await page.locator('#code-ws-left').evaluate((el) => getComputedStyle(el).backgroundColor);
 	h.check(/rgb\((2[0-5]\d|1[89]\d), /.test(lightBg), 'F9: the sidebars follow the light theme (' + lightBg + ')');
-	await S(page, () => window.__stores.themes.theme.set('dark'));
+	await S(page, () => window.__tp.test.v1.themes.theme.set('dark'));
 	await page.waitForTimeout(300);
 	await page.locator('#code-ws-dock #dock-undock').click();
 	await page.waitForTimeout(800);
@@ -567,10 +567,10 @@ h.run(async () => {
 	await page.waitForTimeout(200);
 	h.check((await read(page, 'codeWorkspace.activeCodeTab')) === ftabs[1], 'F9: floating, a tab click activates it (the strip is outside the drag handle)');
 	await shot(page, '16-after-floating-dark.png');
-	await S(page, () => window.__stores.themes.theme.set('light'));
+	await S(page, () => window.__tp.test.v1.themes.theme.set('light'));
 	await page.waitForTimeout(400);
 	await shot(page, '17-after-floating-light.png');
-	await S(page, () => window.__stores.themes.theme.set('dark'));
+	await S(page, () => window.__tp.test.v1.themes.theme.set('dark'));
 	// narrow: the sidebars overlay the editor instead of squeezing it
 	const win = page.locator('#code-ws-window');
 	const wb = await win.boundingBox();

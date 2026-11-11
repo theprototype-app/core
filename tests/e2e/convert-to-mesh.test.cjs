@@ -12,7 +12,7 @@ const sceneInfo = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) =>
+				window.__tp.test.v1.objectsGroup.subscribe((g) =>
 					r(
 						g.children.map((o) => ({
 							uuid: o.uuid,
@@ -46,7 +46,7 @@ const sceneInfo = (page) =>
 
 const selectionSet = (page) =>
 	page.evaluate(
-		() => new Promise((r) => window.__stores.selectedObjects.subscribe((v) => r([...v]))())
+		() => new Promise((r) => window.__tp.test.v1.selectedObjects.subscribe((v) => r([...v]))())
 	);
 
 /** labels of the object context menu built for `uuid` */
@@ -54,8 +54,8 @@ const menuLabels = (page, uuid) =>
 	page.evaluate(
 		(uuid) =>
 			// 38 NOTES-38 #22: every REACHABLE action, submenus walked (Convert to mesh lives in Mesh ▸)
-			window.__stores.objectMenu
-				.flattenMenuItems(window.__stores.objectMenu.buildObjectMenuItems(uuid))
+			window.__tp.test.v1.objectMenu
+				.flattenMenuItems(window.__tp.test.v1.objectMenu.buildObjectMenuItems(uuid))
 				.map((item) => item.label)
 				.filter(Boolean),
 		uuid
@@ -64,7 +64,7 @@ const menuLabels = (page, uuid) =>
 /** two boxes 2m apart with distinct colors; returns their uuids */
 const makeTwoBoxes = (page) =>
 	page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
@@ -89,7 +89,7 @@ h.run(async () => {
 		.filter((o) => boxes.includes(o.uuid))
 		.reduce((sum, o) => sum + o.vertices, 0);
 
-	await A.page.evaluate((ids) => window.__stores.objectActions.applySelectionSet(ids), boxes);
+	await A.page.evaluate((ids) => window.__tp.test.v1.objectActions.applySelectionSet(ids), boxes);
 	h.check((await selectionSet(A.page)).length === 2, 'both boxes are in the selection set (premise)');
 	// the "tint is not baked in" check below can only fail if the tint is REALLY on
 	// the sources at merge time
@@ -101,7 +101,7 @@ h.run(async () => {
 	);
 
 	const mergedUuid = await A.page.evaluate(
-		(ids) => window.__stores.objectActions.convertToMesh(ids),
+		(ids) => window.__tp.test.v1.objectActions.convertToMesh(ids),
 		boxes
 	);
 	h.check(!!mergedUuid, 'convertToMesh returns the new mesh uuid');
@@ -130,7 +130,7 @@ h.run(async () => {
 
 	// world geometry survived: the merge spans both original positions (-1 and +1)
 	const bounds = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const mesh = g.getObjectByProperty('uuid', uuid);
 		const box = new w.THREE.Box3().setFromObject(mesh);
@@ -147,7 +147,7 @@ h.run(async () => {
 	h.check((await selectionSet(A.page))[0] === mergedUuid, 'the merged mesh becomes the selection');
 
 	// ------------------------------------------------------------ 2. undo/redo
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	after = await sceneInfo(A.page);
 	h.check(
 		boxes.every((uuid) => after.some((o) => o.uuid === uuid)),
@@ -155,7 +155,7 @@ h.run(async () => {
 	);
 	h.check(!after.some((o) => o.uuid === mergedUuid), '...and removes the merged mesh');
 
-	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 	after = await sceneInfo(A.page);
 	h.check(
 		after.some((o) => o.uuid === mergedUuid) && !after.some((o) => boxes.includes(o.uuid)),
@@ -170,7 +170,7 @@ h.run(async () => {
 
 	// ------------------------------------------------------------ 3. group path
 	const groupUuid = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		for (let i = 0; i < 3; i++) w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const kids = g.children.slice(-3);
@@ -182,7 +182,7 @@ h.run(async () => {
 		return uuid;
 	});
 	const groupMerged = await A.page.evaluate(
-		(uuid) => window.__stores.objectActions.convertToMesh([uuid]),
+		(uuid) => window.__tp.test.v1.objectActions.convertToMesh([uuid]),
 		groupUuid
 	);
 	after = await sceneInfo(A.page);
@@ -198,7 +198,7 @@ h.run(async () => {
 	// already on it, so a source that already carries a material ARRAY has to be
 	// split along its own groups first — otherwise every slot but the first is lost.
 	const reMerged = await A.page.evaluate(async (mergedUuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const extra = g.children[g.children.length - 1];
@@ -222,7 +222,7 @@ h.run(async () => {
 
 	// ---------------------------------------------------------------- 4. guards
 	const guards = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const out = {};
 		const count = async () =>
 			(await new Promise((r) => w.objectsGroup.subscribe(r)())).children.length;
@@ -273,7 +273,7 @@ h.run(async () => {
 
 	// ------------------------------------------------------- 5. menu audit
 	const pair = await makeTwoBoxes(A.page);
-	await A.page.evaluate((ids) => window.__stores.objectActions.applySelectionSet(ids), pair);
+	await A.page.evaluate((ids) => window.__tp.test.v1.objectActions.applySelectionSet(ids), pair);
 	const multiMenu = await menuLabels(A.page, pair[0]);
 	h.check(multiMenu.includes('Convert to mesh (2)'), 'a multi-selection offers "Convert to mesh (2)"');
 	h.check(!multiMenu.includes('Rename'), 'multi-select hides Rename (single-target)');
@@ -285,7 +285,7 @@ h.run(async () => {
 
 	// Properties during a multi-select must keep the SET, not collapse it
 	await A.page.evaluate((uuid) => {
-		const items = window.__stores.objectMenu.buildObjectMenuItems(uuid);
+		const items = window.__tp.test.v1.objectMenu.buildObjectMenuItems(uuid);
 		items.find((item) => item.label === 'Properties').action();
 	}, pair[0]);
 	h.check(
@@ -294,7 +294,7 @@ h.run(async () => {
 	);
 
 	// a lone mesh is not mergeable, a lone GROUP is
-	await A.page.evaluate((uuid) => window.__stores.objectActions.selectObject(uuid), pair[0]);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.objectActions.selectObject(uuid), pair[0]);
 	const singleMenu = await menuLabels(A.page, pair[0]);
 	h.check(
 		!singleMenu.some((label) => label.startsWith('Convert to mesh')),
@@ -304,7 +304,7 @@ h.run(async () => {
 	h.check(singleMenu.includes('Add note'), '...and Add note');
 
 	const soloGroup = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		for (let i = 0; i < 2; i++) w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const kids = g.children.slice(-2);
@@ -320,7 +320,7 @@ h.run(async () => {
 
 	// ------------------------------------------- 6. one replicated object message
 	const sent = await A.page.evaluate(async (ids) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const peer = await new Promise((r) => w.peers.subscribe(r)());
 		const captured = [];
 		// shadow the prototype method so everything else on the instance survives
@@ -344,7 +344,7 @@ h.run(async () => {
 
 	// -------------------------------------------------- 7. ungroup = ONE undo
 	const ungroup = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		for (let i = 0; i < 3; i++) w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		let g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const kids = g.children.slice(-3).map((o) => o.uuid);
@@ -365,7 +365,7 @@ h.run(async () => {
 	// ------------------------------------------------------------ 8. two peers
 	// start B against an EMPTY scene: a joiner with 0 objects never triggers the
 	// share-or-stash gate, so the handshake replies straight away
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);
 
@@ -379,7 +379,7 @@ h.run(async () => {
 	);
 
 	const netMerged = await A.page.evaluate(async (ids) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.objectActions.applySelectionSet(ids);
 		return await w.objectActions.convertToMesh(ids);
 	}, netBoxes);

@@ -16,15 +16,15 @@ const { installProvider, fakeRelay, connectorPhase } = require('./connectorFake.
 const simState = (peer) =>
 	peer.page.evaluate(() => {
 		const s = {};
-		window.__stores.physics.simulating.subscribe((v) => (s.on = v))();
-		window.__stores.physics.remoteSimulating.subscribe((v) => (s.remote = v))();
+		window.__tp.test.v1.physics.simulating.subscribe((v) => (s.on = v))();
+		window.__tp.test.v1.physics.remoteSimulating.subscribe((v) => (s.remote = v))();
 		return s;
 	});
 
 /** the person's OWN assistant: its tool names and the checkbox-driven gate */
 const ownAssistant = (peer) =>
 	peer.page.evaluate(() => {
-		const names = window.__stores.aiTools.getAiTools().map((t) => t?.function?.name ?? t?.name);
+		const names = window.__tp.test.v1.aiTools.getAiTools().map((t) => t?.function?.name ?? t?.name);
 		return { physicsTools: ['set_physics', 'create_joints', 'control_simulation'].filter((n) => names.includes(n)) };
 	});
 
@@ -34,7 +34,7 @@ const timeFall = (peer, id, fromY, toY) =>
 		({ id, fromY, toY }) =>
 			new Promise((resolve) => {
 				let g, t0 = 0, frames = 0;
-				window.__stores.objectsGroup.subscribe((x) => (g = x))();
+				window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 				const end = performance.now() + 60000;
 				const step = (now) => {
 					const y = g?.getObjectByProperty('uuid', id)?.position.y ?? 99;
@@ -52,7 +52,7 @@ const timeFall = (peer, id, fromY, toY) =>
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
-	await A.page.evaluate(() => window.__stores.aiAssistantHidden.set(''));
+	await A.page.evaluate(() => window.__tp.test.v1.aiAssistantHidden.set(''));
 	const relayA = await fakeRelay(A.page);
 	await installProvider(A.page);
 
@@ -100,7 +100,7 @@ h.run(async () => {
 	// ---- B2: a GUEST's connector simulates in its own tab (the host refuses a non-agent relay) -------------
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);
-	await B.page.evaluate(() => window.__stores.aiAssistantHidden.set(''));
+	await B.page.evaluate(() => window.__tp.test.v1.aiAssistantHidden.set(''));
 	const relayB = await fakeRelay(B.page);
 	await installProvider(B.page);
 	await B.page.locator('#connect-claude-button').click();

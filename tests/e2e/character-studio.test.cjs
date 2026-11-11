@@ -21,7 +21,7 @@ const TAG = process.env.CHAR_SHOTS_TAG || 'after';
 const shot = async (page, name) => {
 	if (SHOTS) await page.screenshot({ path: `${SHOTS}/${TAG}-${name}.png` });
 };
-const store = (name) => `(() => { let v; window.__stores.${name}.subscribe((x) => (v = x))(); return v; })()`;
+const store = (name) => `(() => { let v; window.__tp.test.v1.${name}.subscribe((x) => (v = x))(); return v; })()`;
 const LOOK_KEYS = ['character', 'head', 'shape', 'face', 'hat', 'outfit', 'body'];
 
 /** @param {import('playwright').Page} page */
@@ -48,7 +48,7 @@ async function touchApi(page) {
 const draftLook = (page) =>
 	page.evaluate((keys) => {
 		let p;
-		window.__stores.avatars.avatarPreview.subscribe((x) => (p = x))();
+		window.__tp.test.v1.avatars.avatarPreview.subscribe((x) => (p = x))();
 		if (!p) return null;
 		const out = {};
 		for (const k of keys) out[k] = String(p.config?.[k] ?? '').toLowerCase();
@@ -59,7 +59,7 @@ const sig = (l) => (l ? LOOK_KEYS.map((k) => `${k}=${l[k]}`).join('|') : 'none')
 /** the preview character's projected bounds, and the free part of the canvas (css px) */
 const framing = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let cam, r;
 		s.globalCamera.subscribe((v) => (cam = v))();
 		s.globalRenderer.subscribe((v) => (r = v))();
@@ -115,7 +115,7 @@ const fmt = (f) => (f ? `[${Math.round(f.l)},${Math.round(f.t)} - ${Math.round(f
 /** wait until the preview body has loaded and the framing has settled */
 async function settled(page, t) {
 	await h.eventually(
-		() => page.evaluate(() => window.__stores.avatars.avatarsDebug()['avatar-preview'] ?? null),
+		() => page.evaluate(() => window.__tp.test.v1.avatars.avatarsDebug()['avatar-preview'] ?? null),
 		(s) => s && s.ready && s.visible,
 		t('the preview body is ready'),
 		20000
@@ -130,12 +130,12 @@ async function settled(page, t) {
 	return last;
 }
 
-const studioState = (page) => page.evaluate(() => window.__stores.characterStudio?.state?.() ?? null);
+const studioState = (page) => page.evaluate(() => window.__tp.test.v1.characterStudio?.state?.() ?? null);
 const camPose = (page) =>
 	page.evaluate(() => {
 		let c, o;
-		window.__stores.globalCamera.subscribe((x) => (c = x))();
-		window.__stores.orbitControls.subscribe((x) => (o = x))();
+		window.__tp.test.v1.globalCamera.subscribe((x) => (c = x))();
+		window.__tp.test.v1.orbitControls.subscribe((x) => (o = x))();
 		return { pose: [...c.position.toArray(), ...(o ? o.target.toArray() : [0, 0, 0])], mask: c.layers.mask, view: !!(c.view && c.view.enabled) };
 	});
 
@@ -153,9 +153,9 @@ h.run(async () => {
 		const touch = await touchApi(P);
 
 		// a scene object, so "the scene is hidden" has something to hide
-		await P.evaluate(() => window.__stores.objectActions?.flyTo?.([2, 1.6, 4], [0, 1, 0], 0));
+		await P.evaluate(() => window.__tp.test.v1.objectActions?.flyTo?.([2, 1.6, 4], [0, 1, 0], 0));
 		await P.evaluate(async () => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let g;
 			s.objectsGroup.subscribe((v) => (g = v))();
 			const m = new s.THREE.Mesh(new s.THREE.BoxGeometry(1, 1, 1), new s.THREE.MeshStandardMaterial());
@@ -169,7 +169,7 @@ h.run(async () => {
 		// count sends while the panel is open (the studio must send nothing)
 		await P.evaluate(() => {
 			let p;
-			window.__stores.peers.subscribe((x) => (p = x))();
+			window.__tp.test.v1.peers.subscribe((x) => (p = x))();
 			window.__sent = [];
 			const orig = p.send.bind(p);
 			p.send = (m) => {
@@ -178,7 +178,7 @@ h.run(async () => {
 			};
 		});
 
-		await P.evaluate(() => window.__stores.characterModalOpen.set(true));
+		await P.evaluate(() => window.__tp.test.v1.characterModalOpen.set(true));
 		await P.waitForSelector('#character-panel');
 		let f = await settled(P, t);
 
@@ -188,7 +188,7 @@ h.run(async () => {
 		h.check(!!st && st.cameraMask === 1 << st.studioLayer, t(`G10.2 the camera sees only the studio layer (mask ${st?.cameraMask})`));
 		const probe = await P.evaluate(() => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const m = g.getObjectByName('studio-probe-box');
 			return m ? { visible: m.visible, mask: m.layers.mask } : null;
 		});
@@ -258,27 +258,27 @@ h.run(async () => {
 		}
 
 		// ---- leaving restores everything ----
-		await P.evaluate(() => window.__stores.characterModalOpen.set(false));
+		await P.evaluate(() => window.__tp.test.v1.characterModalOpen.set(false));
 		await P.waitForSelector('#character-panel', { state: 'detached' });
 		await P.waitForTimeout(900);
 		const after = await camPose(P);
 		const off = Math.max(...after.pose.map((v, i) => Math.abs(v - home.pose[i])));
 		h.check(off < 1e-3, t(`G10.6 leaving puts the camera pose back exactly (off ${off.toExponential(1)})`));
 		h.check(after.mask === home.mask && !after.view, t(`G10.7 ...the camera mask and a plain projection (mask ${after.mask}, view offset ${after.view})`));
-		h.check((await P.evaluate(() => (window.__stores.characterStudio?.state ? 1 : 0) && document.documentElement.classList.contains('character-studio'))) === false, t('G10.8 ...and the studio overlay class is gone'));
+		h.check((await P.evaluate(() => (window.__tp.test.v1.characterStudio?.state ? 1 : 0) && document.documentElement.classList.contains('character-studio'))) === false, t('G10.8 ...and the studio overlay class is gone'));
 		// your own head pose ('camera' presence) follows the camera as it always did; no SCENE content may go
 		const sent = await P.evaluate(() => window.__sent.filter((type) => type !== 'camera'));
 		h.check(!sent.length, t(`G10.9 no scene content was sent to peers while customising (${sent.join(',') || 'none'})`));
 
 		// reopen: the remembered choice holds, then back to the studio for the next run
-		await P.evaluate(() => window.__stores.characterModalOpen.set(true));
+		await P.evaluate(() => window.__tp.test.v1.characterModalOpen.set(true));
 		await P.waitForSelector('#character-panel');
 		await P.waitForTimeout(400);
 		h.check((await P.locator('#character-show-in-scene[aria-pressed="true"]').count()) === 1, t('G10.10 reopened: Show in scene is still on'));
 		const reopened = await studioState(P);
 		h.check(!!reopened && !reopened.shown, t('G10.11 ...and the studio stays hidden'));
-		await P.evaluate(() => window.__stores.avatars.studioInScene?.set(false));
-		await P.evaluate(() => window.__stores.characterModalOpen.set(false));
+		await P.evaluate(() => window.__tp.test.v1.avatars.studioInScene?.set(false));
+		await P.evaluate(() => window.__tp.test.v1.characterModalOpen.set(false));
 		await A.ctx.close();
 	}
 
@@ -290,9 +290,9 @@ h.run(async () => {
 			storage: { theme, 'characterStudio:inScene': '0' }
 		});
 		const P = D.page;
-		await P.evaluate(() => window.__stores.objectActions?.flyTo?.([2, 1.6, 4], [0, 1, 0], 0));
+		await P.evaluate(() => window.__tp.test.v1.objectActions?.flyTo?.([2, 1.6, 4], [0, 1, 0], 0));
 		await P.waitForTimeout(600);
-		await P.evaluate(() => window.__stores.characterModalOpen.set(true));
+		await P.evaluate(() => window.__tp.test.v1.characterModalOpen.set(true));
 		await P.waitForSelector('#character-panel');
 		let f = await settled(P, t);
 		h.check(inFree(f) && !f.sheet, t(`G8.5 desktop: the whole character is left of the drawer ${fmt(f)}`));

@@ -9,8 +9,8 @@ const mixamoGlb = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				const THREE = window.__stores.THREE;
-				const { GLTFExporter } = window.__stores.GLTFExporterModule;
+				const THREE = window.__tp.test.v1.THREE;
+				const { GLTFExporter } = window.__tp.test.v1.GLTFExporterModule;
 				const bones = {};
 				const mk = (name, parent, x, y, z) => {
 					const b = new THREE.Bone();
@@ -68,7 +68,7 @@ const states = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.animatedImports.animatedObjects.subscribe((m) =>
+				window.__tp.test.v1.animatedImports.animatedObjects.subscribe((m) =>
 					r(JSON.parse(JSON.stringify(m)))
 				)()
 			)
@@ -79,7 +79,7 @@ const uuidOf = (page, name) =>
 	page.evaluate(
 		(name) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) =>
+				window.__tp.test.v1.objectsGroup.subscribe((g) =>
 					r(g?.children.find((c) => c.name === name)?.uuid ?? null)
 				)()
 			),
@@ -91,7 +91,7 @@ const boneQ = (page, uuid, bone) =>
 	page.evaluate(
 		({ uuid, bone }) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) =>
+				window.__tp.test.v1.objectsGroup.subscribe((g) =>
 					r(
 						g?.getObjectByProperty('uuid', uuid)?.getObjectByName(bone)?.quaternion.toArray() ??
 							null
@@ -104,7 +104,7 @@ const boneQ = (page, uuid, bone) =>
 /** a cheap content digest of the bytes the model replicates as */
 const bytesDigest = (page, uuid) =>
 	page.evaluate((uuid) => {
-		const b = window.__stores.animatedImports.animatedImportPayload(uuid);
+		const b = window.__tp.test.v1.animatedImports.animatedImportPayload(uuid);
 		if (!b) return null;
 		const u = new Uint8Array(b);
 		let x = 0;
@@ -125,13 +125,13 @@ h.run(async () => {
 	h.check(Array.isArray(mixamo) && mixamo.length > 1000, 'premise: the Mixamo-named rig exported');
 	await A.page.evaluate(async (mixamo) => {
 		const knight = await (await fetch('avatars/knight.glb')).arrayBuffer();
-		await window.__stores.fileHandler.importFile(
+		await window.__tp.test.v1.fileHandler.importFile(
 			new File([knight], 'knight.glb'),
 			'Knight',
 			undefined,
 			[-1, 0, 0]
 		);
-		await window.__stores.fileHandler.importFile(
+		await window.__tp.test.v1.fileHandler.importFile(
 			new File([new Uint8Array(mixamo)], 'mixamo.glb'),
 			'MixamoRig',
 			undefined,
@@ -159,7 +159,7 @@ h.run(async () => {
 
 	// 2. the Inspector names each rig
 	const rigLabel = async (uuid) => {
-		await A.page.evaluate((uuid) => window.__stores.objectActions.selectObject(uuid, true), uuid);
+		await A.page.evaluate((uuid) => window.__tp.test.v1.objectActions.selectObject(uuid, true), uuid);
 		await A.page.waitForSelector('#character-rig', { timeout: 15000 });
 		return A.page.evaluate(
 			() =>
@@ -183,11 +183,11 @@ h.run(async () => {
 		timeout: 20000
 	});
 	// preselect the walk (ThemedSelect is a portaled list; reopen with the source preset instead)
-	await A.page.evaluate(() => window.__stores.characterUi.applyClipRequest.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.characterUi.applyClipRequest.set(null));
 	await A.page.waitForTimeout(200);
 	await A.page.evaluate(
 		(rig) =>
-			window.__stores.characterUi.openApplyClip({
+			window.__tp.test.v1.characterUi.openApplyClip({
 				targets: [rig],
 				src: { lib: 'avatars', clip: 'Walking_A' }
 			}),
@@ -209,7 +209,7 @@ h.run(async () => {
 		'the dialog counts both characters'
 	);
 	const undoBase = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.history.undoStack.subscribe((s) => r(s.length))())
+		() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((s) => r(s.length))())
 	);
 	await A.page.click('#apply-clip-go');
 	await h.eventually(
@@ -223,7 +223,7 @@ h.run(async () => {
 		'A: and both play it'
 	);
 	const undoAfter = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.history.undoStack.subscribe((s) => r(s.length))())
+		() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((s) => r(s.length))())
 	);
 	h.check(undoAfter === undoBase + 1, `one undo step for the apply (${undoBase} -> ${undoAfter})`);
 
@@ -243,7 +243,7 @@ h.run(async () => {
 			(await bytesDigest(A.page, rig)) === before.rig,
 		"the models' bytes never changed"
 	);
-	const cfg = await A.page.evaluate((u) => window.__stores.humanoidRig.configOf(u), knight);
+	const cfg = await A.page.evaluate((u) => window.__tp.test.v1.humanoidRig.configOf(u), knight);
 	h.check(
 		cfg.clips?.length === 1 &&
 			cfg.clips[0].src.lib === 'avatars' &&
@@ -278,7 +278,7 @@ h.run(async () => {
 	);
 
 	// 7. undo takes it off everywhere
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(
 		() => states(A.page),
 		(m) => !m[knight]?.clips?.includes('Walking_A') && !m[rig]?.clips?.includes('Walking_A'),
@@ -292,7 +292,7 @@ h.run(async () => {
 
 	// 8. a rig that is not a humanoid is refused with a reason (a lone bone)
 	const refused = await A.page.evaluate(async (rig) => {
-		const r = await window.__stores.humanoidRig.applyClipTo(
+		const r = await window.__tp.test.v1.humanoidRig.applyClipTo(
 			[rig, 'nope'],
 			{ lib: 'avatars', clip: 'Idle' },
 			{ play: false }

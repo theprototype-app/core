@@ -24,9 +24,9 @@ const camWorld = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.playerCam.subscribe((cam) => {
+				window.__tp.test.v1.playerCam.subscribe((cam) => {
 					if (!cam) return resolve(null);
-					const w = cam.getWorldPosition(new window.__stores.THREE.Vector3());
+					const w = cam.getWorldPosition(new window.__tp.test.v1.THREE.Vector3());
 					resolve({ x: w.x, y: w.y, z: w.z });
 				})();
 			})
@@ -36,9 +36,9 @@ const setRigWorld = (page, x, y, z) =>
 	page.evaluate(
 		({ x, y, z }) =>
 			new Promise((resolve) => {
-				window.__stores.playerCam.subscribe((cam) => {
+				window.__tp.test.v1.playerCam.subscribe((cam) => {
 					if (!cam) return resolve(false);
-					const v = new window.__stores.THREE.Vector3(x, y, z);
+					const v = new window.__tp.test.v1.THREE.Vector3(x, y, z);
 					if (cam.parent) cam.parent.worldToLocal(v);
 					cam.position.copy(v);
 					cam.updateMatrixWorld(true);
@@ -63,7 +63,7 @@ const levelCamera = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.playerCam.subscribe((cam) => {
+				window.__tp.test.v1.playerCam.subscribe((cam) => {
 					if (!cam) return resolve(false);
 					cam.rotation.set(0, 0, 0); // looking down -Z, level
 					cam.updateMatrixWorld(true);
@@ -79,8 +79,8 @@ const sampleY = (page, ms) =>
 		(ms) =>
 			new Promise((resolve) => {
 				let cam = null;
-				window.__stores.playerCam.subscribe((c) => (cam = c))();
-				const V = window.__stores.THREE.Vector3;
+				window.__tp.test.v1.playerCam.subscribe((c) => (cam = c))();
+				const V = window.__tp.test.v1.THREE.Vector3;
 				let max = -Infinity;
 				let min = Infinity;
 				const t0 = performance.now();
@@ -98,12 +98,12 @@ const sampleY = (page, ms) =>
 		ms
 	);
 
-const charDebug = (page) => page.evaluate(() => window.__stores.charController.charControllerDebug());
+const charDebug = (page) => page.evaluate(() => window.__tp.test.v1.charController.charControllerDebug());
 
 const values = (page) =>
 	page.evaluate(() => {
 		let v;
-		window.__stores.flowValues.subscribe((x) => (v = x))();
+		window.__tp.test.v1.flowValues.subscribe((x) => (v = x))();
 		return v;
 	});
 
@@ -119,8 +119,8 @@ const distXZ = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 async function travel(page, code, ms) {
 	await page.evaluate(() => {
 		let cam = null;
-		window.__stores.playerCam.subscribe((c) => (cam = c))();
-		const V = window.__stores.THREE.Vector3;
+		window.__tp.test.v1.playerCam.subscribe((c) => (cam = c))();
+		const V = window.__tp.test.v1.THREE.Vector3;
 		const w0 = cam ? cam.getWorldPosition(new V()) : null;
 		const s = (window.__travelSampler = { frames: 0, on: true, start: w0, last: w0, moved: 0, steps: [] });
 		const step = () => {
@@ -166,8 +166,8 @@ const perFrameText = (t) => `${t.perFrame.toFixed(4)}/frame (median) over ${t.fr
 const setGraph = (page, nodes, edges) =>
 	page.evaluate(
 		({ nodes, edges }) => {
-			window.__stores.setActiveGraph(window.__stores.SCENE_GRAPH);
-			window.__stores.flowNodes.set(
+			window.__tp.test.v1.setActiveGraph(window.__tp.test.v1.SCENE_GRAPH);
+			window.__tp.test.v1.flowNodes.set(
 				nodes.map((n) => ({
 					id: n.id,
 					type: n.type,
@@ -176,7 +176,7 @@ const setGraph = (page, nodes, edges) =>
 					class: 'w-[150px]'
 				}))
 			);
-			window.__stores.flowEdges.set(edges ?? []);
+			window.__tp.test.v1.flowEdges.set(edges ?? []);
 		},
 		{ nodes, edges }
 	);
@@ -193,7 +193,7 @@ const wire = (source, target, targetHandle) => ({
 const pulse = (page, id, replicate = true) =>
 	page.evaluate(
 		({ id, replicate }) =>
-			window.__stores.flowRuntime.applyNodeTrigger(id, (Date.now() % 86400000) / 1000, replicate),
+			window.__tp.test.v1.flowRuntime.applyNodeTrigger(id, (Date.now() % 86400000) / 1000, replicate),
 		{ id, replicate }
 	);
 
@@ -210,13 +210,13 @@ h.run(async () => {
 	// physics-suite ritual) — section 3 needs a world on its first try
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(4000);
 		await warm.ctx.close();
 	}
 
 	const A = await h.setupPage(browser, 'A');
-	await A.page.evaluate(() => window.__stores.isLocked.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await A.page.waitForTimeout(600);
 	h.check(await levelCamera(A.page), 'the rig starts level, so forward is horizontal in both modes');
 	await setRigWorld(A.page, 0, 1.7, 0);
@@ -385,13 +385,13 @@ h.run(async () => {
 	// collider came out at y=0.249 (top 0.499) instead of 1.0, the walker correctly stood
 	// on it at 0.519, and it read as a broken feature rather than a broken fixture.
 	await A.page.evaluate(() => {
-		const cmd = window.__stores.commandsHandler.sceneCommand;
+		const cmd = window.__tp.test.v1.commandsHandler.sceneCommand;
 		cmd('/create box');
 		cmd('/create box');
 	});
 	await A.page.waitForTimeout(1200);
 	const built = await A.page.evaluate(async () => {
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const [floor, faller] = group.children;
 		floor.scale.set(4, 0.5, 4);
 		floor.position.set(0, 1, 0);
@@ -403,16 +403,16 @@ h.run(async () => {
 		// and the walker then correctly stands on it wherever it came to rest. That cost
 		// two probe runs: the slab's collider read y=0.249 with the object at y=1, which
 		// looks exactly like a broken capsule. Say STATIC out loud.
-		window.__stores.physics.setPhysicsFor(floor.uuid, { mode: 'static' });
+		window.__tp.test.v1.physics.setPhysicsFor(floor.uuid, { mode: 'static' });
 		// and startSimulation refuses a world with no dynamic body at all, so keep one
-		window.__stores.physics.setPhysicsFor(faller.uuid, { mode: 'dynamic', mass: 1 });
+		window.__tp.test.v1.physics.setPhysicsFor(faller.uuid, { mode: 'dynamic', mass: 1 });
 		return { floor: floor.uuid, faller: faller.uuid };
 	});
 	await A.page.waitForTimeout(800);
 	const slab = await A.page.evaluate(
 		(uuid) =>
 			new Promise((resolve) => {
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const o = g?.getObjectByProperty('uuid', uuid);
 					resolve(o ? { y: o.position.y, sy: o.scale.y } : null);
 				})();
@@ -425,9 +425,9 @@ h.run(async () => {
 		`PREMISE: the 4x0.5x4 slab really is at y=1, so its top is ${slabTop.toFixed(3)} (want 1.250)`
 	);
 
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await A.page.waitForTimeout(2500);
-	const world = await A.page.evaluate(() => window.__stores.physics.physicsWorldDebug());
+	const world = await A.page.evaluate(() => window.__tp.test.v1.physics.physicsWorldDebug());
 	if (!world.running) {
 		h.check(true, 'SKIPPED the rapier tier: the wasm world did not start in this browser');
 	} else {
@@ -439,7 +439,7 @@ h.run(async () => {
 		// RAPIER, not out of THREE. The suite is asserting a contact height, so the thing
 		// that must be right is the collider the contact happens against.
 		const colliderTop = await A.page.evaluate(() => {
-			const rt = window.__stores.physics.physicsRuntime();
+			const rt = window.__tp.test.v1.physics.physicsRuntime();
 			if (!rt) return null;
 			let best = -Infinity;
 			rt.world.forEachCollider((/** @type {any} */ c) => {
@@ -479,8 +479,8 @@ h.run(async () => {
 		// the capsule is OURS: created straight onto the world, so it must add NOTHING to
 		// physics.js's own bookkeeping — no colliderOwner entry and no rigid body
 		const after = await A.page.evaluate(() => ({
-			owned: window.__stores.physics.physicsWorldDebug().ownerHandles.length,
-			bodies: window.__stores.physics.physicsDebug().length
+			owned: window.__tp.test.v1.physics.physicsWorldDebug().ownerHandles.length,
+			bodies: window.__tp.test.v1.physics.physicsDebug().length
 		}));
 		h.check(
 			after.owned === ownedBefore,
@@ -491,7 +491,7 @@ h.run(async () => {
 			`nor a rigid body physics.js would write back to (${world.bodies} -> ${after.bodies})`
 		);
 	}
-	await A.page.evaluate(() => window.__stores.physics.stopSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 	await A.page.waitForTimeout(600);
 	const afterStop = await charDebug(A.page);
 	h.check(
@@ -569,8 +569,8 @@ h.run(async () => {
 	// 5. POSSESS + CAMERA FOLLOW — possess.js as trigger-edge nodes
 	// =========================================================================
 	const ride = await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const object = group.children[group.children.length - 1];
 		object.position.set(-6, 0.5, 0);
 		object.updateMatrixWorld(true);
@@ -588,13 +588,13 @@ h.run(async () => {
 	await A.page.waitForTimeout(400);
 	await pulse(A.page, 'go');
 	await h.eventually(
-		() => A.page.evaluate(() => new Promise((r) => window.__stores.possess.possessed.subscribe(r)())),
+		() => A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.possess.possessed.subscribe(r)())),
 		(v) => v === ride,
 		'Possess Object takes control on its trigger stamp'
 	);
 	await pulse(A.page, 'stop');
 	await h.eventually(
-		() => A.page.evaluate(() => new Promise((r) => window.__stores.possess.possessed.subscribe(r)())),
+		() => A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.possess.possessed.subscribe(r)())),
 		(v) => v === null,
 		'and the `release` input hands it back'
 	);
@@ -611,13 +611,13 @@ h.run(async () => {
 	await A.page.waitForTimeout(400);
 	await pulse(A.page, 'go');
 	await h.eventually(
-		() => A.page.evaluate(() => new Promise((r) => window.__stores.possess.followingCam.subscribe(r)())),
+		() => A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.possess.followingCam.subscribe(r)())),
 		(v) => v === ride,
 		'Camera Follow starts the chase cam (LOCAL, per the setcamera rule)'
 	);
 	await pulse(A.page, 'stop');
 	await h.eventually(
-		() => A.page.evaluate(() => new Promise((r) => window.__stores.possess.followingCam.subscribe(r)())),
+		() => A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.possess.followingCam.subscribe(r)())),
 		(v) => v === null,
 		'and `stop` lets go'
 	);
@@ -630,17 +630,17 @@ h.run(async () => {
 	// (measured: the button is in the DOM and `locator.click` times out). Move Input
 	// reads inputRuntime, whose key listeners are live in the editor too, so this
 	// section does not need play mode at all.
-	await A.page.evaluate(() => window.__stores.isLocked.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(false));
 	await A.page.waitForTimeout(600);
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);
 	await setGraph(A.page, [CONTROLLER(), { id: 'mv', type: 'moveinput', data: {} }], []);
 	// flowNodes.set does NOT broadcast — push explicitly (the hud-nodes pattern)
-	await A.page.evaluate((peerId) => window.__stores.nodesHandler.sendNodes(peerId), B.id);
+	await A.page.evaluate((peerId) => window.__tp.test.v1.nodesHandler.sendNodes(peerId), B.id);
 	const peerTypes = () =>
 		B.page.evaluate(() => {
 			let g;
-			window.__stores.flowGraphs.subscribe((x) => (g = x))();
+			window.__tp.test.v1.flowGraphs.subscribe((x) => (g = x))();
 			return (g?.scene?.nodes ?? []).map((n) => n.type);
 		});
 	await h.eventually(
@@ -678,7 +678,7 @@ h.run(async () => {
 	// =========================================================================
 	// 7. PARITY AGAIN — removing the nodes restores the built-in exactly
 	// =========================================================================
-	await A.page.evaluate(() => window.__stores.isLocked.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await A.page.waitForTimeout(600);
 	await setGraph(A.page, [], []);
 	await h.eventually(
@@ -702,6 +702,6 @@ h.run(async () => {
 		'and the walker capsule is gone with it (nothing left in any physics world)'
 	);
 
-	await A.page.evaluate(() => window.__stores.isLocked.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(false));
 	await h.finish(browser);
 });

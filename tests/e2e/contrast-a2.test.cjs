@@ -42,18 +42,18 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1440, height: 900 } } });
 	const page = A.page;
 	const setTheme = async (t) => {
-		await page.evaluate((id) => window.__stores.themes.theme.set(id), t);
+		await page.evaluate((id) => window.__tp.test.v1.themes.theme.set(id), t);
 		await page.waitForTimeout(250);
 	};
 
 	// ---- 1. the 3D view -------------------------------------------------------------------
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 	});
 	await page.waitForTimeout(800);
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let group;
 		s.objectsGroup.subscribe((g) => (group = g))();
 		const box = group?.children?.[group.children.length - 1];
@@ -61,7 +61,7 @@ h.run(async () => {
 	});
 	const viewport = () =>
 		page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let c;
 			s.TControls.subscribe((x) => (c = x))();
 			const lib = c?._gizmo?.materialLib;
@@ -79,18 +79,18 @@ h.run(async () => {
 	check(hc.size === 1.35, `High contrast: the gizmo is bigger (${hc.size})`);
 	check(hc.x === 'ff6b5b' && hc.z === '4daaff', `High contrast: the gizmo axes take the theme's hues (x ${hc.x}, z ${hc.z})`);
 	// the person's own outline colour wins over the theme's
-	await page.evaluate(() => window.__stores.viewPrefs?.setViewPrefs?.({ outlineColor: '#00ff00' }));
+	await page.evaluate(() => window.__tp.test.v1.viewPrefs?.setViewPrefs?.({ outlineColor: '#00ff00' }));
 	await page.waitForTimeout(200);
 	const own = await viewport();
 	check(own.outline === '00ff00' || !own.outline, `High contrast: a chosen outline colour still wins (${own.outline})`);
-	await page.evaluate(() => window.__stores.viewPrefs?.resetViewPrefs?.());
+	await page.evaluate(() => window.__tp.test.v1.viewPrefs?.resetViewPrefs?.());
 	await setTheme('dark');
 	const back = await viewport();
 	check(back.outline === '353535' && back.size === 1 && back.x === 'ff0000' && back.kernel === 0, `back in dark, everything is given back (${JSON.stringify(back)})`);
 	await page.screenshot({ path: path.join(OUT, `e2e-${BEFORE ? 'before' : 'after'}-viewport-dark.png`) }).catch(() => {});
 	await setTheme('contrast');
 	await page.screenshot({ path: path.join(OUT, `e2e-${BEFORE ? 'before' : 'after'}-viewport-contrast.png`) }).catch(() => {});
-	await page.evaluate(() => window.__stores.selectedObjects.set([]));
+	await page.evaluate(() => window.__tp.test.v1.selectedObjects.set([]));
 
 	// ---- 2. the shared budget dot is a shape per tier ------------------------------------
 	for (const theme of ['dark', 'light', 'contrast']) {
@@ -117,7 +117,7 @@ h.run(async () => {
 		check(/^polygon/.test(dots.amber.clip) && dots.amber.clip !== dots.red.clip, `${theme}: careful is a triangle, over a cross (${dots.amber.clip.slice(0, 30)} / ${dots.red.clip.slice(0, 30)})`);
 		check(/inset/.test(dots.unknown.ring) && /rgba\(0, 0, 0, 0\)/.test(dots.unknown.bg), `${theme}: "not measured" is a hollow ring (${dots.unknown.ring})`);
 		const real = await page.evaluate(() => {
-			window.__stores.objectListClose.set(false);
+			window.__tp.test.v1.objectListClose.set(false);
 			return null;
 		});
 		void real;
@@ -127,12 +127,12 @@ h.run(async () => {
 			return el ? { tier: el.dataset.tier, clip: getComputedStyle(el).clipPath } : null;
 		});
 		check(!objDot || (objDot.tier === 'green' ? /^circle/.test(objDot.clip) : /^polygon|none/.test(objDot.clip)) || objDot.tier === 'unknown', `${theme}: the object list's budget dot wears its tier's shape (${JSON.stringify(objDot)})`);
-		await page.evaluate(() => window.__stores.objectListClose.set(true));
+		await page.evaluate(() => window.__tp.test.v1.objectListClose.set(true));
 	}
 
 	// ---- 3. the toggle in High contrast --------------------------------------------------
 	await setTheme('contrast');
-	await page.evaluate(() => window.__stores.settingsOpen.set(true));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 	await page.waitForTimeout(900);
 	const toggle = await page.evaluate(() => {
 		const lum = (c) => {
@@ -157,12 +157,12 @@ h.run(async () => {
 	});
 	check(toggle.true && toggle.true.knobOnTrack >= 3, `High contrast: an ON toggle's knob reads on its track (${JSON.stringify(toggle.true)})`);
 	check(toggle.false && toggle.false.knobOnTrack >= 3 && toggle.false.trackOnSurface >= 3, `High contrast: an OFF toggle is visible and its knob reads (${JSON.stringify(toggle.false)})`);
-	await page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 
 	// ---- 4. AA text on the main surfaces, High contrast ---------------------------------
 	const under = [];
 	for (const surf of SURFACES) {
-		const ok = await page.evaluate(([src]) => (0, eval)(src)(window.__stores), [surf.open.toString()]).then(
+		const ok = await page.evaluate(([src]) => (0, eval)(src)(window.__tp?.test.v1), [surf.open.toString()]).then(
 			() => true,
 			(e) => String(e)
 		);
@@ -174,7 +174,7 @@ h.run(async () => {
 		const rows = (await contrastRows(page, 'body')).filter((r) => r.text !== '[canvas ink]');
 		for (const r of rows) if (r.ratio < 4.5) under.push({ surface: surf.id, ...r });
 		await page.screenshot({ path: path.join(OUT, `e2e-${BEFORE ? 'before' : 'after'}-contrast-${surf.id}.png`) }).catch(() => {});
-		await page.evaluate(([src]) => (0, eval)(src)(window.__stores), [surf.close.toString()]).catch(() => {});
+		await page.evaluate(([src]) => (0, eval)(src)(window.__tp?.test.v1), [surf.close.toString()]).catch(() => {});
 		await page.waitForTimeout(200);
 	}
 	const uniq = new Map();

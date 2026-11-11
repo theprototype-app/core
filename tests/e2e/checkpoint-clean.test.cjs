@@ -10,10 +10,10 @@ const h = require('./helpers.cjs');
 
 const SHOTS = process.env.CC_SHOTS || '';
 const S = (page, fn, arg) => page.evaluate(fn, arg);
-const rows = (page) => S(page, () => new Promise((r) => window.__stores.checkpoints.checkpoints.subscribe((v) => r(JSON.parse(JSON.stringify(v))))()));
+const rows = (page) => S(page, () => new Promise((r) => window.__tp.test.v1.checkpoints.checkpoints.subscribe((v) => r(JSON.parse(JSON.stringify(v))))()));
 const storeVal = (page, path) =>
 	S(page, (path) => new Promise((r) => {
-		let o = window.__stores;
+		let o = window.__tp?.test.v1;
 		for (const p of path.split('.')) o = o[p];
 		o.subscribe((v) => r(JSON.parse(JSON.stringify(v ?? null))))();
 	}), path);
@@ -34,7 +34,7 @@ const diffPixels = (page, a, b, tol = 24) =>
 /** a RAW frame of what the editor shows now (no clean view) — the premise for section 1 */
 const rawFrame = (page) =>
 	S(page, () => new Promise((r) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const get = (st) => { let v; st.subscribe((x) => (v = x))(); return v; };
 		const renderer = get(s.globalRenderer), scene = get(s.globalScene), camera = get(s.globalCamera);
 		renderer.render(scene, camera);
@@ -49,38 +49,38 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 	const page = A.page;
-	await S(page, () => window.__stores.checkpoints.autoCheckpoints.set(true));
+	await S(page, () => window.__tp.test.v1.checkpoints.autoCheckpoints.set(true));
 	// optional: a base without C2 still reaches the pixel A/B below (the counterfactual)
-	await S(page, () => window.__stores.checkpoints.autoCheckpointsLarge?.set(false));
+	await S(page, () => window.__tp.test.v1.checkpoints.autoCheckpointsLarge?.set(false));
 
 	// ---------------------------------------------------------------- 1 clean thumbnails (A/B)
 	await S(page, async () => {
-		window.__stores.commandsHandler.sceneCommand('/create pointlight');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create pointlight');
 		await new Promise((r) => setTimeout(r, 400));
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 600));
 	});
 	await page.waitForTimeout(1500); // let the camera settle (damping) and the light helper appear
 	const editorState = await S(page, () => {
 		const get = (st) => { let v; st.subscribe((x) => (v = x))(); return v; };
-		const scene = get(window.__stores.globalScene);
-		const tc = get(window.__stores.TControls);
-		return { selected: get(window.__stores.selectedObjects)?.length ?? 0, gizmo: !!(tc && tc.object), grid: !!scene.getObjectByName('editor-grid')?.visible };
+		const scene = get(window.__tp.test.v1.globalScene);
+		const tc = get(window.__tp.test.v1.TControls);
+		return { selected: get(window.__tp.test.v1.selectedObjects)?.length ?? 0, gizmo: !!(tc && tc.object), grid: !!scene.getObjectByName('editor-grid')?.visible };
 	});
 	h.check(editorState.selected === 1 && editorState.gizmo && editorState.grid, 'premise: the box is selected with the gizmo on it, the grid shows (' + JSON.stringify(editorState) + ')');
-	const dirty = await S(page, async () => (await window.__stores.checkpoints.saveCheckpoint({ name: 'With gizmo', quiet: true }))?.thumbnail ?? null);
+	const dirty = await S(page, async () => (await window.__tp.test.v1.checkpoints.saveCheckpoint({ name: 'With gizmo', quiet: true }))?.thumbnail ?? null);
 	const rawDirty = await rawFrame(page);
 	// the reference: nothing selected, no gizmo, grid and helpers switched off by hand
 	await S(page, () => {
 		const get = (st) => { let v; st.subscribe((x) => (v = x))(); return v; };
-		window.__stores.objectActions.deselectObject();
-		get(window.__stores.TControls)?.detach?.();
+		window.__tp.test.v1.objectActions.deselectObject();
+		get(window.__tp.test.v1.TControls)?.detach?.();
 	});
 	await page.waitForTimeout(500);
 	const restore = await S(page, () => {
 		const get = (st) => { let v; st.subscribe((x) => (v = x))(); return v; };
-		const scene = get(window.__stores.globalScene);
-		const cam = get(window.__stores.globalCamera);
+		const scene = get(window.__tp.test.v1.globalScene);
+		const cam = get(window.__tp.test.v1.globalCamera);
 		const grid = scene.getObjectByName('editor-grid');
 		const was = { grid: grid?.visible, layer: cam.layers.isEnabled(30) };
 		if (grid) grid.visible = false;
@@ -92,7 +92,7 @@ h.run(async () => {
 	await S(page, () => window.__cleanRestore());
 	// a SECOND checkpoint needs different content (an identical scene is the same row)… the reference
 	// picture is the thumbnail path itself, called directly in the clean state
-	const ref = await S(page, () => window.__stores.sessions.viewportThumbnail(256));
+	const ref = await S(page, () => window.__tp.test.v1.sessions.viewportThumbnail(256));
 	const premise = await diffPixels(page, rawDirty, rawClean);
 	h.check(premise.n > 30, 'premise: a raw frame of the editor state differs from the clean one (' + premise.n + ' px — gizmo, grid, helper)');
 	h.check(!!dirty && !!ref, 'both pictures exist');
@@ -103,10 +103,10 @@ h.run(async () => {
 	// the picture still shows the scene: hiding the box changes it
 	const noBox = await S(page, () => {
 		const get = (st) => { let v; st.subscribe((x) => (v = x))(); return v; };
-		const g = get(window.__stores.objectsGroup);
+		const g = get(window.__tp.test.v1.objectsGroup);
 		const box = g.children.find((c) => c.isMesh);
 		box.visible = false;
-		const url = window.__stores.sessions.viewportThumbnail(256);
+		const url = window.__tp.test.v1.sessions.viewportThumbnail(256);
 		box.visible = true;
 		return url;
 	});
@@ -114,8 +114,8 @@ h.run(async () => {
 	h.check(sceneShown.n > 100, 'the clean picture still holds the scene (hiding the box changes ' + sceneShown.n + ' px)');
 	const after = await S(page, () => {
 		const get = (st) => { let v; st.subscribe((x) => (v = x))(); return v; };
-		const scene = get(window.__stores.globalScene);
-		const cam = get(window.__stores.globalCamera);
+		const scene = get(window.__tp.test.v1.globalScene);
+		const cam = get(window.__tp.test.v1.globalCamera);
 		return { grid: scene.getObjectByName('editor-grid')?.visible, layer: cam.layers.isEnabled(30) };
 	});
 	h.check(after.grid === restore.grid && after.layer === restore.layer, 'the editor view is exactly as it was after a clean render (grid, helper layer)');
@@ -127,17 +127,17 @@ h.run(async () => {
 
 	// ---------------------------------------------------------------- 2 large scene: skip + notice
 	await S(page, () => {
-		const t = window.__stores.budgetMeter.TARGETS.desktop;
+		const t = window.__tp.test.v1.budgetMeter.TARGETS.desktop;
 		window.__realDesktop = { triangles: t.triangles, textureMB: t.textureMB };
 		t.triangles = 2; // the suite's scene is "very large" against this line
 	});
-	const notices = () => S(page, () => new Promise((r) => window.__stores.notifications.subscribe((l) => r(l.filter((n) => String(n.text ?? n.message ?? n).includes('Automatic checkpoints are paused')).length))()));
+	const notices = () => S(page, () => new Promise((r) => window.__tp.test.v1.notifications.subscribe((l) => r(l.filter((n) => String(n.text ?? n.message ?? n).includes('Automatic checkpoints are paused')).length))()));
 	const before = (await rows(page)).length;
 	await S(page, async () => {
-		window.__stores.objectsGroup.subscribe((g) => g.children.find((c) => c.isMesh).position.x += 1)();
-		window.__stores.checkpoints.checkpointsDebug.resetLargeNotice();
-		window.__stores.checkpoints.checkpointsDebug.resetAutoClock(0);
-		await window.__stores.checkpoints.checkpointsDebug.maybeAuto();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => g.children.find((c) => c.isMesh).position.x += 1)();
+		window.__tp.test.v1.checkpoints.checkpointsDebug.resetLargeNotice();
+		window.__tp.test.v1.checkpoints.checkpointsDebug.resetAutoClock(0);
+		await window.__tp.test.v1.checkpoints.checkpointsDebug.maybeAuto();
 	});
 	h.check((await rows(page)).length === before, 'a very large scene cuts NO automatic checkpoint');
 	const verdict = await storeVal(page, 'checkpoints.largeSceneSkip');
@@ -155,37 +155,37 @@ h.run(async () => {
 	h.check((await storeVal(page, 'checkpoints.autoCheckpointsLarge')) === true, 'switching it on writes the setting');
 	h.check((await S(page, () => localStorage.getItem('checkpoints:autoLarge'))) === 'true', 'and persists it (this device)');
 	if (SHOTS) await page.locator('#row-checkpoints-large').screenshot({ path: SHOTS + '/05-settings-row.png' });
-	await S(page, () => window.__stores.settingsOpen.set(false));
+	await S(page, () => window.__tp.test.v1.settingsOpen.set(false));
 	// the notice is one-time, and a named checkpoint is never skipped (setting back OFF for these)
-	await S(page, () => window.__stores.checkpoints.autoCheckpointsLarge.set(false));
+	await S(page, () => window.__tp.test.v1.checkpoints.autoCheckpointsLarge.set(false));
 	await S(page, async () => {
-		window.__stores.checkpoints.checkpointsDebug.resetAutoClock(0);
-		await window.__stores.checkpoints.checkpointsDebug.maybeAuto();
+		window.__tp.test.v1.checkpoints.checkpointsDebug.resetAutoClock(0);
+		await window.__tp.test.v1.checkpoints.checkpointsDebug.maybeAuto();
 	});
 	h.check((await notices()) === 1, 'the notice is one-time (a second skip says nothing)');
-	const named = await S(page, async () => (await window.__stores.checkpoints.saveCheckpoint({ name: 'Big but named', quiet: true }))?.name ?? null);
+	const named = await S(page, async () => (await window.__tp.test.v1.checkpoints.saveCheckpoint({ name: 'Big but named', quiet: true }))?.name ?? null);
 	h.check(named === 'Big but named', 'a NAMED checkpoint of the large scene still saves');
 
-	await S(page, () => window.__stores.checkpoints.autoCheckpointsLarge.set(true));
+	await S(page, () => window.__tp.test.v1.checkpoints.autoCheckpointsLarge.set(true));
 	const n0 = (await rows(page)).length;
 	await S(page, async () => {
-		window.__stores.objectsGroup.subscribe((g) => g.children.find((c) => c.isMesh).position.x += 1)();
-		window.__stores.checkpoints.checkpointsDebug.resetAutoClock(0);
-		await window.__stores.checkpoints.checkpointsDebug.maybeAuto();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => g.children.find((c) => c.isMesh).position.x += 1)();
+		window.__tp.test.v1.checkpoints.checkpointsDebug.resetAutoClock(0);
+		await window.__tp.test.v1.checkpoints.checkpointsDebug.maybeAuto();
 	});
 	const withSetting = await rows(page);
 	h.check(withSetting.length === n0 + 1 && withSetting[0].auto, 'with the setting ON the large scene cuts its automatic row');
 
 	// ---------------------------------------------------------------- 3 a normal scene is unaffected
 	await S(page, () => {
-		Object.assign(window.__stores.budgetMeter.TARGETS.desktop, window.__realDesktop);
-		window.__stores.checkpoints.autoCheckpointsLarge.set(false);
+		Object.assign(window.__tp.test.v1.budgetMeter.TARGETS.desktop, window.__realDesktop);
+		window.__tp.test.v1.checkpoints.autoCheckpointsLarge.set(false);
 	});
 	const n1 = (await rows(page)).length;
 	await S(page, async () => {
-		window.__stores.objectsGroup.subscribe((g) => g.children.find((c) => c.isMesh).position.x += 1)();
-		window.__stores.checkpoints.checkpointsDebug.resetAutoClock(0);
-		await window.__stores.checkpoints.checkpointsDebug.maybeAuto();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => g.children.find((c) => c.isMesh).position.x += 1)();
+		window.__tp.test.v1.checkpoints.checkpointsDebug.resetAutoClock(0);
+		await window.__tp.test.v1.checkpoints.checkpointsDebug.maybeAuto();
 	});
 	const normal = await rows(page);
 	h.check(normal.length === n1 + 1 && normal[0].auto, 'a scene inside the line still cuts automatic rows with the setting OFF');

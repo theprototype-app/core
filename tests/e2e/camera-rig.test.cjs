@@ -17,7 +17,7 @@ const OUT = '/home/deck/.code/lanes-30/after-37/37-nodes/';
 const pose = (page, uuid) =>
 	page.evaluate((uuid) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByProperty('uuid', uuid);
 		if (!o) return null;
 		o.updateWorldMatrix(true, false);
@@ -30,7 +30,7 @@ const pose = (page, uuid) =>
 const editorCam = (page) =>
 	page.evaluate(() => {
 		let c;
-		window.__stores.globalCamera.subscribe((v) => (c = v))();
+		window.__tp.test.v1.globalCamera.subscribe((v) => (c = v))();
 		c.updateMatrixWorld(true);
 		return c.matrixWorld.elements.slice();
 	});
@@ -47,8 +47,8 @@ const moveTo = (page, uuid, pos) =>
 		({ uuid, pos }) => {
 			let g;
 			let peer;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
-			window.__stores.peers.subscribe((v) => (peer = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.peers.subscribe((v) => (peer = v))();
 			const o = g.getObjectByProperty('uuid', uuid);
 			o.position.set(...pos);
 			o.updateMatrixWorld(true);
@@ -65,10 +65,10 @@ const setRig = async (page, data, label) => {
 	for (let i = 0; i < 6; i++) {
 		const ok = await page.evaluate((data) => {
 			let g;
-			window.__stores.flowGraphs.subscribe((v) => (g = v))();
+			window.__tp.test.v1.flowGraphs.subscribe((v) => (g = v))();
 			const n = g.scene?.nodes.find((x) => x.id === 'rig');
 			if (n && Object.entries(data).every(([k, v]) => n.data[k] === v)) return true;
-			window.__stores.nodesHandler.setNodeData('rig', data);
+			window.__tp.test.v1.nodesHandler.setNodeData('rig', data);
 			return false;
 		}, data);
 		if (ok) return;
@@ -87,7 +87,7 @@ h.run(async () => {
 
 	// --- setup: a camera, a target box, a second box; the graph ------------------------------
 	const made = await p.evaluate(async () => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		const list = () => {
 			let g;
 			S.objectsGroup.subscribe((v) => (g = v))();
@@ -131,8 +131,8 @@ h.run(async () => {
 			]
 		}
 	};
-	await p.evaluate((doc) => window.__stores.restoreGraphs(JSON.parse(JSON.stringify(doc))), DOC);
-	await p.evaluate((id) => window.__stores.nodesHandler.sendNodes(id), B.id);
+	await p.evaluate((doc) => window.__tp.test.v1.restoreGraphs(JSON.parse(JSON.stringify(doc))), DOC);
+	await p.evaluate((id) => window.__tp.test.v1.nodesHandler.sendNodes(id), B.id);
 
 	// --- 1. follow + look at, on both peers -------------------------------------------------
 	await h.eventually(() => pose(p, made.cam), (c) => c && near(c.pos, [6, 3, 5]), 'the camera object goes to the target + offset (6, 3, 5)');
@@ -145,7 +145,7 @@ h.run(async () => {
 	h.check(sameMatrix(await editorCam(B.page), editB0), "the peer's editor camera did not move");
 	const traffic = await p.evaluate(async (cam) => {
 		let peer;
-		window.__stores.peers.subscribe((v) => (peer = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (peer = v))();
 		const seen = [];
 		const orig = peer.send.bind(peer);
 		peer.send = (m) => {
@@ -181,8 +181,8 @@ h.run(async () => {
 	await p.evaluate(({ box }) => {
 		let g;
 		let peer;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
-		window.__stores.peers.subscribe((v) => (peer = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (peer = v))();
 		const o = g.getObjectByProperty('uuid', box);
 		o.rotation.set(0, Math.PI / 2, 0);
 		o.updateMatrixWorld(true);
@@ -207,11 +207,11 @@ h.run(async () => {
 	// the SAME document on BOTH peers: restoreGraphs does not broadcast, a `nodes` push MERGES
 	// (the old rig stays on the receiver) and nodesync's drift heal then copies the bigger graph
 	// back — runs 6/7 read that as "the camera never returned to its authored pose"
-	for (const page of [p, B.page]) await page.evaluate((doc) => window.__stores.restoreGraphs(doc), BOX_DOC);
+	for (const page of [p, B.page]) await page.evaluate((doc) => window.__tp.test.v1.restoreGraphs(doc), BOX_DOC);
 	const holdsRig2 = (page) =>
 		page.evaluate(() => {
 			let g;
-			window.__stores.flowGraphs.subscribe((v) => (g = v))();
+			window.__tp.test.v1.flowGraphs.subscribe((v) => (g = v))();
 			const ids = (g.scene?.nodes ?? []).map((n) => n.id);
 			return ids.includes('rig2') && !ids.includes('rig');
 		});

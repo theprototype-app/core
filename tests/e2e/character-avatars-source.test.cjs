@@ -73,7 +73,7 @@ h.run(async () => {
 		})
 	);
 
-	await page.evaluate(() => window.__stores.cc0State.assetBrowserOpen.set(true));
+	await page.evaluate(() => window.__tp.test.v1.cc0State.assetBrowserOpen.set(true));
 	await page.waitForSelector('#asset-browser-window', { timeout: 20000 });
 	await page.click('#asset-browser-tab-avatars');
 	await h.eventually(
@@ -98,7 +98,7 @@ h.run(async () => {
 		page.evaluate(
 			() =>
 				new Promise((r) =>
-					window.__stores.objectsGroup.subscribe((g) =>
+					window.__tp.test.v1.objectsGroup.subscribe((g) =>
 						r(g?.children.find((c) => c.name === 'Credited')?.uuid ?? null)
 					)()
 				)
@@ -106,15 +106,15 @@ h.run(async () => {
 	await h.eventually(uuidOf, (u) => !!u, 'Add to scene: the avatar is placed');
 	const u = await uuidOf();
 	h.check(
-		(await page.evaluate((u) => window.__stores.animatedImports.animatedImportKind(u), u)) ===
+		(await page.evaluate((u) => window.__tp.test.v1.animatedImports.animatedImportKind(u), u)) ===
 			'vrm',
 		'as a VRM character'
 	);
 	const lic = await page.evaluate(
 		(u) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) =>
-					r(window.__stores.provenance.licenceOf(g.getObjectByProperty('uuid', u).userData))
+				window.__tp.test.v1.objectsGroup.subscribe((g) =>
+					r(window.__tp.test.v1.provenance.licenceOf(g.getObjectByProperty('uuid', u).userData))
 				)()
 			),
 		u
@@ -125,7 +125,7 @@ h.run(async () => {
 	);
 
 	const ex = await page.evaluate(() => {
-		const s = window.__stores.exportStores;
+		const s = window.__tp.test.v1.exportStores;
 		s.publishExportTab.set('export');
 		s.publishExportOpen.set(true);
 		return true;

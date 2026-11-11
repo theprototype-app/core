@@ -10,7 +10,7 @@ const states = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.animatedImports.animatedObjects.subscribe((m) =>
+				window.__tp.test.v1.animatedImports.animatedObjects.subscribe((m) =>
 					r(JSON.parse(JSON.stringify(m)))
 				)()
 			)
@@ -19,7 +19,7 @@ const uuidOf = (page, name) =>
 	page.evaluate(
 		(name) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) =>
+				window.__tp.test.v1.objectsGroup.subscribe((g) =>
 					r(g?.children.find((c) => c.name === name)?.uuid ?? null)
 				)()
 			),
@@ -30,7 +30,7 @@ const swingOf = (page, uuid, bone) =>
 	page.evaluate(
 		({ uuid, bone }) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const b = g?.getObjectByProperty('uuid', uuid)?.getObjectByName(bone);
 					if (!b) return r(-1);
 					const q0 = b.quaternion.clone();
@@ -56,14 +56,14 @@ h.run(async () => {
 	// 1. the source rig (its own Kick) and the target (the KayKit knight, no clips)
 	const hero = await mixamoGlb(A.page, { clip: true });
 	await A.page.evaluate(async (hero) => {
-		await window.__stores.fileHandler.importFile(
+		await window.__tp.test.v1.fileHandler.importFile(
 			new File([new Uint8Array(hero)], 'hero.glb'),
 			'Hero',
 			undefined,
 			[1, 0, 0]
 		);
 		const knight = await (await fetch('avatars/knight.glb')).arrayBuffer();
-		await window.__stores.fileHandler.importFile(
+		await window.__tp.test.v1.fileHandler.importFile(
 			new File([knight], 'knight.glb'),
 			'Knight',
 			undefined,
@@ -85,7 +85,7 @@ h.run(async () => {
 
 	// 2. Hero's Kick as a humanoid .tpanim (57 M1's writer), into the Explorer
 	const made = await A.page.evaluate(async (u) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const root =
 			s.objectsGroup && (await new Promise((r) => s.objectsGroup.subscribe((g) => r(g))()));
 		const model = root.getObjectByProperty('uuid', u);
@@ -108,7 +108,7 @@ h.run(async () => {
 
 	// 3. Apply clip… lists it under "Clip files"
 	const listed = await A.page.evaluate(async () =>
-		(await window.__stores.humanoidRig.clipSourcesInScene()).filter((s) => s.group === 'Clip files')
+		(await window.__tp.test.v1.humanoidRig.clipSourcesInScene()).filter((s) => s.group === 'Clip files')
 	);
 	h.check(
 		listed.some((s) => s.label === 'Kick' && s.src.asset === made.hash),
@@ -117,7 +117,7 @@ h.run(async () => {
 
 	// 4. apply it to the knight: a clip ASSET on it (one ref), playing, retargeted onto KayKit bones
 	const res = await A.page.evaluate(
-		({ knight, hash }) => window.__stores.humanoidRig.applyClipTo([knight], { asset: hash }),
+		({ knight, hash }) => window.__tp.test.v1.humanoidRig.applyClipTo([knight], { asset: hash }),
 		{ knight, hash: made.hash }
 	);
 	h.check(
@@ -132,7 +132,7 @@ h.run(async () => {
 	const refs = await A.page.evaluate(
 		(u) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) =>
+				window.__tp.test.v1.objectsGroup.subscribe((g) =>
 					r(g.getObjectByProperty('uuid', u)?.userData?.clipRefs ?? null)
 				)()
 			),
@@ -156,7 +156,7 @@ h.run(async () => {
 	h.check(swingB > 0.005, `B: the knight's left thigh kicks there too (${swingB.toFixed(4)})`);
 
 	// 6. one undo takes the clip away everywhere
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(
 		() => states(B.page),
 		(m) => !m[knight]?.clips?.includes('Kick'),

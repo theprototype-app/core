@@ -22,17 +22,17 @@ h.run(async () => {
 
 	// a script node runs (the QuickJS engine is wasm)
 	const uuid = await page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		return new Promise((resolve) => window.__stores.objectsGroup.subscribe((g) => resolve(g.children[g.children.length - 1].uuid))());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		return new Promise((resolve) => window.__tp.test.v1.objectsGroup.subscribe((g) => resolve(g.children[g.children.length - 1].uuid))());
 	});
 	await page.evaluate((uuid) => {
-		window.__stores.flowNodes.set([
+		window.__tp.test.v1.flowNodes.set([
 			{ id: 'sc1', type: 'script', position: { x: 0, y: 0 }, data: { type: 'script', code: 'object.position.x = base.pos[0] + Math.sin(time * 3);' } },
 			{ id: 'sel1', type: 'objectselector', position: { x: 300, y: 0 }, data: { type: 'objectselector', selected: uuid } }
 		]);
-		window.__stores.flowEdges.set([{ id: 'e1', source: 'sc1', target: 'sel1' }]);
+		window.__tp.test.v1.flowEdges.set([{ id: 'e1', source: 'sc1', target: 'sel1' }]);
 	}, uuid);
-	const xOf = () => page.evaluate((uuid) => { let g; window.__stores.objectsGroup.subscribe((v) => (g = v))(); return g.getObjectByProperty('uuid', uuid)?.position.x; }, uuid);
+	const xOf = () => page.evaluate((uuid) => { let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))(); return g.getObjectByProperty('uuid', uuid)?.position.x; }, uuid);
 	let moved = false;
 	for (let i = 0; i < 60 && !moved; i++) {
 		const a = await xOf();
@@ -42,12 +42,12 @@ h.run(async () => {
 	h.check(moved, 'a script node animates under the policy (QuickJS wasm loads)');
 
 	// physics (rapier wasm)
-	await page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
-	await page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
+	await page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await page.waitForTimeout(1500);
-	const bodies = await page.evaluate(() => window.__stores.physics.physicsDebug().length);
+	const bodies = await page.evaluate(() => window.__tp.test.v1.physics.physicsDebug().length);
 	h.check(bodies > 0, 'the physics engine starts under the policy (' + bodies + ' bodies)');
-	await page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 
 	// KTX2 (ktx2-noeval): the basis transcoder is wasm too, but its embind glue used to build
 	// functions with `new Function`, and KTX2Loader's blob: worker inherits this policy — every KTX2
@@ -59,7 +59,7 @@ h.run(async () => {
 	const ktx2Files = [];
 	for (const mode of ['etc1s', 'uastc']) ktx2Files.push(Buffer.from(await fx.nodeEnv().encodeKtx2({ data, width: size, height: size }, { mode, srgb: true, normal: false })).toString('base64'));
 	const ktx2 = await page.evaluate(async (files) => {
-		const loader = await window.__stores.gltfLoader.getKtx2Loader();
+		const loader = await window.__tp.test.v1.gltfLoader.getKtx2Loader();
 		const out = [];
 		for (const b64 of files) {
 			const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));

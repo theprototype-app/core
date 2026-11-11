@@ -42,7 +42,7 @@ import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo, rolesPendin
 // dispatcher can reject a malformed message before any applier sees it.
 import { validateWireMessage } from '$lib/wireValidate';
 import { acceptedRosterRows, acceptedMeshIds, acceptsGoneReport, asSendersOwn, acceptedChatLines } from '$lib/rosterTrust';
-import { holdForWireBatch } from '$lib/wireBatch';
+import { holdForWireBatch, withWireBatch } from '$lib/wireBatch';
 // 60 Q2: the fast movement channel (an unordered, unreliable second channel for pose streams)
 import { tapAgentEdit } from '$lib/agentPresence';
 import { createFastLinks, createStaleFilter, createKeyframer, stampPose, poseKey, fastChannelEnabled, setPoseTap, tapPose } from '$lib/fastChannel';
@@ -473,7 +473,8 @@ export class PeerConnection {
 			olderPeers,
 			staleNotice,
 			budget: this.inboundBudget,
-			approxSize
+			approxSize,
+			withWireBatch // the flood suite's 500-object batch goes through the real envelope
 		});
 		// 60 Q2: the fast movement channel (fastChannel.js). `fastLinks` = one unreliable channel per
 		// peer that advertised `fc: 1`; `staleFilter` drops a pose older than the newest applied from

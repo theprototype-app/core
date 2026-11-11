@@ -929,6 +929,8 @@
 		"window-tabs": 285,
 		"window-tabs-move": 25,
 		"wire-hardening": 14,
+		"wire-flood": 360,
+		"wire-proto": 420,
 		"workspace-layouts": 193,
 		"workspace-restore": 52,
 		"z-scale-layering": 117

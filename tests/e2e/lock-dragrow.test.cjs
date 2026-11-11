@@ -280,7 +280,7 @@ async function fieldContract(page, f) {
 /** the selected object's transform component @param {any} page @param {string} field @param {string} axis */
 const transformReader = (page, field, axis) => () =>
 	page.evaluate(
-		({ field, axis }) => new Promise((r) => window.__stores.selectedObject.subscribe((o) => r(o?.[field]?.[axis]))()),
+		({ field, axis }) => new Promise((r) => window.__tp.test.v1.selectedObject.subscribe((o) => r(o?.[field]?.[axis]))()),
 		{ field, axis }
 	);
 
@@ -292,12 +292,12 @@ h.run(async () => {
 	await L.installUndoCounter(page);
 
 	// ---- 1. OBJECT TRANSFORMS --------------------------------------------------------------
-	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await page.waitForTimeout(1500);
 	const box = await page.evaluate(async () => {
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const b = g.children.find((c) => c.name === 'Box') ?? g.children[g.children.length - 1];
-		window.__stores.objectActions.selectObject(b.uuid, true);
+		window.__tp.test.v1.objectActions.selectObject(b.uuid, true);
 		// park it: a fresh /create box is dynamic and the suite must not race a fall
 		b.position.set(0, 1, 0);
 		b.rotation.set(0, 0, 0);
@@ -338,7 +338,7 @@ h.run(async () => {
 	const posX = transformReader(page, 'position', 'x');
 	const rotY = transformReader(page, 'rotation', 'y');
 	const setUnit = (/** @type {string} */ kind, /** @type {string} */ unit) =>
-		page.evaluate(({ kind, unit }) => window.__stores.units[kind === 'length' ? 'lengthUnit' : 'angleUnit'].set(unit), { kind, unit });
+		page.evaluate(({ kind, unit }) => window.__tp.test.v1.units[kind === 'length' ? 'lengthUnit' : 'angleUnit'].set(unit), { kind, unit });
 	const typeInto = async (/** @type {string} */ root, /** @type {number} */ i, /** @type {string} */ text) => {
 		await L.fieldInput(page, root, i).click();
 		await page.waitForTimeout(60);
@@ -370,8 +370,8 @@ h.run(async () => {
 	h.check((await L.fieldText(page, '#inspector-rotation', 1)) === '90.0', `in degrees it reads 90.0 (${await L.fieldText(page, '#inspector-rotation', 1)})`);
 	// the Settings rows drive the same stores (the inventory lock covers the rows; this ties them to the field)
 	await page.evaluate(() => {
-		window.__stores.settingsSection.set('scene');
-		window.__stores.settingsOpen.set(true);
+		window.__tp.test.v1.settingsSection.set('scene');
+		window.__tp.test.v1.settingsOpen.set(true);
 	});
 	await page.locator('#length-unit').waitFor({ state: 'visible', timeout: 10000 });
 	await page.locator('#length-unit').click();
@@ -382,38 +382,38 @@ h.run(async () => {
 	await page.locator('[role=listbox]:visible [role=option]').first().click();
 	await page.waitForTimeout(150);
 	h.check((await L.storeValue(page, 'units.lengthUnit')) === 'm', 'and back to metres');
-	await page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await page.waitForTimeout(300);
 
 	// ---- 3. INSPECTOR VALUES: render order (integer), light intensity (min 0) -------------------
-	await page.evaluate((u) => window.__stores.objectActions.selectObject(u, true), box);
+	await page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u, true), box);
 	await page.locator('#inspector-render-order').waitFor({ state: 'visible', timeout: 10000 });
 	await fieldContract(page, {
 		name: 'render order', root: '*:has(> .dn-wrap > #inspector-render-order)', index: 0, step: 0.2, snap: 5,
-		read: () => page.evaluate(() => new Promise((r) => window.__stores.selectedObject.subscribe((o) => r(o?.renderOrder))())),
+		read: () => page.evaluate(() => new Promise((r) => window.__tp.test.v1.selectedObject.subscribe((o) => r(o?.renderOrder))())),
 		typed: '3', typedValue: 3, nextAria: undefined, tol: 0.6
 	});
 
-	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/light directional'));
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/light directional'));
 	await page.waitForTimeout(1200);
 	await page.evaluate(async () => {
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const l = g.children.find((c) => c.type === 'DirectionalLight');
-		window.__stores.objectActions.selectObject(l.uuid, true);
+		window.__tp.test.v1.objectActions.selectObject(l.uuid, true);
 	});
 	await page.waitForTimeout(700);
 	await page.locator('#inspector-intensity').waitFor({ state: 'visible', timeout: 10000 });
 	await fieldContract(page, {
 		name: 'light intensity', root: '#inspector-intensity', index: 0, step: 0.02, snap: 0.5, min: 0,
-		read: () => page.evaluate(() => new Promise((r) => window.__stores.selectedObject.subscribe((o) => r(o?.intensity))())),
+		read: () => page.evaluate(() => new Promise((r) => window.__tp.test.v1.selectedObject.subscribe((o) => r(o?.intensity))())),
 		typed: '2.5', typedValue: 2.5, message: 'object'
 	});
 
 	// ---- 4. SHADER VECTOR INPUTS ------------------------------------------------------------------
-	await page.evaluate((u) => window.__stores.objectActions.selectObject(u, true), box);
+	await page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u, true), box);
 	await page.waitForTimeout(400);
 	await page.evaluate((u) => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		S.shaderGraph.setShaderGraphFor(u, {
 			nodes: [
 				{ id: 'tl', type: 'tilingOffset', position: { x: 70, y: 60 }, data: {} },
@@ -427,7 +427,7 @@ h.run(async () => {
 	await page.locator('#shader-editor .shader-vec').first().waitFor({ state: 'visible', timeout: 15000 });
 	const tiling = (/** @type {number} */ i) => () =>
 		page.evaluate(
-			({ u, i }) => new Promise((r) => window.__stores.shaderGraph.shaderGraphs.subscribe((all) => r(Number((all[u]?.nodes ?? []).find((n) => n.type === 'tilingOffset')?.data?.tiling?.[i] ?? 1)))()),
+			({ u, i }) => new Promise((r) => window.__tp.test.v1.shaderGraph.shaderGraphs.subscribe((all) => r(Number((all[u]?.nodes ?? []).find((n) => n.type === 'tilingOffset')?.data?.tiling?.[i] ?? 1)))()),
 			{ u: box, i }
 		);
 	const vecCount = await page.locator('#shader-editor .shader-vec .dn-input').count();
@@ -439,7 +439,7 @@ h.run(async () => {
 
 	// ---- 5. ANIMATION FIELDS ------------------------------------------------------------------------
 	await page.evaluate((u) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		const obj = g.getObjectByProperty('uuid', u);
@@ -453,7 +453,7 @@ h.run(async () => {
 	const anim = (/** @type {string} */ key) => () =>
 		page.evaluate(
 			({ u, key }) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				let set;
 				s.animationPreview.animations.subscribe((v) => (set = v))();
 				const doc = set?.[u];
@@ -477,7 +477,7 @@ h.run(async () => {
 	// key time / value: put the clip back to 2 s at normal speed (the clamp checks above left
 	// it at its extremes), then select the first key of the track in the dope sheet
 	await page.evaluate((u) => {
-		const s = window.__stores.animationPreview;
+		const s = window.__tp.test.v1.animationPreview;
 		s.updateAnim(u, { duration: 2, fps: 30, step: 0 });
 		s.setSpeed(u, 1);
 	}, box);
@@ -496,7 +496,7 @@ h.run(async () => {
 		page.evaluate(
 			({ u, k }) => {
 				let set;
-				window.__stores.animationPreview.animations.subscribe((v) => (set = v))();
+				window.__tp.test.v1.animationPreview.animations.subscribe((v) => (set = v))();
 				const clip = set?.[u]?.clips?.[set[u].active];
 				return Number(clip?.tracks?.[0]?.keys?.[1]?.[k] ?? NaN);
 			},

@@ -12,10 +12,10 @@ const h = require('./helpers.cjs');
 const lightInfo = (page, name) =>
 	page.evaluate((name) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		const l = g?.children.find((c) => c.name === name);
 		if (!l) return null;
-		const T = window.__stores.THREE;
+		const T = window.__tp.test.v1.THREE;
 		l.updateMatrixWorld(true);
 		const q = new T.Quaternion();
 		l.getWorldQuaternion(q);
@@ -47,7 +47,7 @@ h.run(async () => {
 	await h.connect(B, A);
 
 	// ---- 1. a directional light: rotate it via the rotation rows' path, the target follows
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/light directional'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/light directional'));
 	// the target is placed by the per-frame helper hook (after the 100ms helper sync)
 	await h.eventually(() => lightInfo(A.page, 'Directional'), (x) => !!x && x.targetParented, "premise: the directional light's target is in the scene", 8000);
 	let a = await lightInfo(A.page, 'Directional');
@@ -55,13 +55,13 @@ h.run(async () => {
 	// the Inspector rows write rotation + send the ordinary `move`; do the same here
 	await A.page.evaluate((uuid) => {
 		let g, p;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
-		window.__stores.peers.subscribe((x) => (p = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.peers.subscribe((x) => (p = x))();
 		const l = g.getObjectByProperty('uuid', uuid);
 		l.position.set(0, 4, 0);
 		l.rotation.set(0, Math.PI / 2, 0);
 		p.send({ type: 'move', uuid, pos: l.position.toArray(), rot: l.rotation.toArray(), scale: l.scale.toArray() });
-		window.__stores.objectsGroup.update((v) => v);
+		window.__tp.test.v1.objectsGroup.update((v) => v);
 	}, a.uuid);
 	await A.page.waitForTimeout(400);
 	a = await lightInfo(A.page, 'Directional');
@@ -79,18 +79,18 @@ h.run(async () => {
 	const shadowBefore = a.shadowCam;
 	await A.page.evaluate((uuid) => {
 		let g, p;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
-		window.__stores.peers.subscribe((x) => (p = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.peers.subscribe((x) => (p = x))();
 		const l = g.getObjectByProperty('uuid', uuid);
-		window.__stores.lightParams.aimLight(l, [3, 0, 0]);
+		window.__tp.test.v1.lightParams.aimLight(l, [3, 0, 0]);
 		p.send({ type: 'move', uuid, pos: l.position.toArray(), rot: l.rotation.toArray(), scale: l.scale.toArray() });
-		window.__stores.objectsGroup.update((v) => v);
+		window.__tp.test.v1.objectsGroup.update((v) => v);
 	}, a.uuid);
 	await A.page.waitForTimeout(500);
 	a = await lightInfo(A.page, 'Directional');
 	const want = norm(sub([3, 0, 0], a.pos));
 	h.check(Math.abs(dot(a.forward, want) - 1) < 1e-3, `Aim at (3,0,0): the forward points at it (${fmt(a.forward)} vs ${fmt(want)})`);
-	const shadowMoved = await A.page.evaluate(() => { let r; window.__stores.globalRenderer.subscribe((x) => (r = x))(); return !!r?.shadowMap?.enabled; });
+	const shadowMoved = await A.page.evaluate(() => { let r; window.__tp.test.v1.globalRenderer.subscribe((x) => (r = x))(); return !!r?.shadowMap?.enabled; });
 	if (shadowMoved && shadowBefore && a.shadowCam)
 		h.check(shadowBefore.some((n, i) => Math.abs(n - a.shadowCam[i]) > 1e-4), 'the shadow camera followed the aim');
 	else console.log('  (shadow map disabled in this renderer — shadow camera check skipped)');
@@ -102,7 +102,7 @@ h.run(async () => {
 	);
 
 	// ---- 3. the old spot model migrates: userData.spotTarget → a rotation, key gone ----
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/light spot'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/light spot'));
 	await A.page.waitForTimeout(500);
 	let s = await lightInfo(A.page, 'Spot');
 	h.check(!!s, 'premise: a spot exists');
@@ -110,12 +110,12 @@ h.run(async () => {
 	//     helper sync migrates it on the next objectsGroup poke
 	await A.page.evaluate((uuid) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		const l = g.getObjectByProperty('uuid', uuid);
 		l.position.set(2, 3, 2);
 		l.rotation.set(0, 0, 0);
 		l.userData.spotTarget = [2, 0, -2];
-		window.__stores.objectsGroup.update((v) => v);
+		window.__tp.test.v1.objectsGroup.update((v) => v);
 	}, s.uuid);
 	await A.page.waitForTimeout(600);
 	s = await lightInfo(A.page, 'Spot');
@@ -124,7 +124,7 @@ h.run(async () => {
 	// (b) an OLD peer's `lighttarget` message lands as the same one-shot lookAt
 	await B.page.evaluate((uuid) => {
 		let p;
-		window.__stores.peers.subscribe((x) => (p = x))();
+		window.__tp.test.v1.peers.subscribe((x) => (p = x))();
 		p.send({ type: 'lighttarget', uuid, pos: [-4, 0, 2] });
 	}, s.uuid);
 	await h.eventually(
@@ -136,7 +136,7 @@ h.run(async () => {
 
 	// ---- 4. a light gets an Origin: with it at world zero, Rotate orbits the light ----
 	await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.objectActions.deselectObject();
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
@@ -147,9 +147,9 @@ h.run(async () => {
 		s.objectActions.selectObject(uuid);
 	}, a.uuid);
 	await A.page.waitForTimeout(400);
-	const seated = await A.page.evaluate(() => { let c; window.__stores.TControls.subscribe((x) => (c = x))(); const o = c?.object; return { pivot: !!o?.userData?.isMultiPivot, at: o?.position?.toArray() ?? null }; });
+	const seated = await A.page.evaluate(() => { let c; window.__tp.test.v1.TControls.subscribe((x) => (c = x))(); const o = c?.object; return { pivot: !!o?.userData?.isMultiPivot, at: o?.position?.toArray() ?? null }; });
 	h.check(seated.pivot && seated.at && Math.hypot(seated.at[0], seated.at[1], seated.at[2]) < 1e-3, `selecting the light seats the pivot on its origin at world zero (${JSON.stringify(seated)})`);
-	await A.page.evaluate(() => window.__stores.multiTransform.applyPivotTransform((p) => { p.rotation.y = Math.PI / 2; }));
+	await A.page.evaluate(() => window.__tp.test.v1.multiTransform.applyPivotTransform((p) => { p.rotation.y = Math.PI / 2; }));
 	await A.page.waitForTimeout(400);
 	a = await lightInfo(A.page, 'Directional');
 	h.check(Math.abs(a.pos[0]) < 1e-3 && Math.abs(a.pos[1] - 4) < 1e-3 && Math.abs(a.pos[2] + 5) < 1e-3, `rotating 90° about the origin moves the sun on a circle: (5,4,0) -> ${fmt(a.pos)}`);
@@ -162,7 +162,7 @@ h.run(async () => {
 	);
 
 	// ---- 5. the Inspector: Aim rows for both light types, Origin section for a light --
-	await A.page.evaluate((uuid) => window.__stores.objectActions.selectObject(uuid, true), a.uuid);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.objectActions.selectObject(uuid, true), a.uuid);
 	await A.page.waitForTimeout(600);
 	const ui = await A.page.evaluate(() => ({
 		aim: !!document.querySelector('#inspector-light-aim'),
@@ -176,7 +176,7 @@ h.run(async () => {
 	h.check(ui.aim && ui.pick, `a directional light shows Aim at rows + Pick in viewport (${JSON.stringify(ui)})`);
 	h.check(ui.origin && ui.world0 && !ui.bottom && !ui.meshPick, 'a light has an Origin section without the geometry presets');
 	h.check(!ui.oldSpotRows, 'the old spot-target rows are gone');
-	await A.page.evaluate((uuid) => window.__stores.objectActions.selectObject(uuid, true), s.uuid);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.objectActions.selectObject(uuid, true), s.uuid);
 	await A.page.waitForTimeout(500);
 	h.check(await A.page.evaluate(() => !!document.querySelector('#inspector-light-aim')), 'a spot shows the same Aim at rows');
 

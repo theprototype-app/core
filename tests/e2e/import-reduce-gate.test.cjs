@@ -17,7 +17,7 @@ const h = require('./helpers.cjs');
 
 const install = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		window.__glbOf = async (/** @type {any} */ object, /** @type {string} */ name, /** @type {any} */ opts = {}) => {
 			const glb = await new Promise((resolve, reject) =>
@@ -89,7 +89,7 @@ h.run(async () => {
 	h.check(!!uuid && reduced.triangles <= planned * 1.02 && reduced.triangles >= planned * 0.9, `the placed model is what the label promised (${reduced.triangles} for ~${planned})`);
 	const after = await A.page.evaluate(() => {
 		let v = null;
-		window.__stores.fileHandler.lastReduction.subscribe((/** @type {any} */ x) => (v = x))();
+		window.__tp.test.v1.fileHandler.lastReduction.subscribe((/** @type {any} */ x) => (v = x))();
 		return v;
 	});
 	h.check(after.stillOver === false, 'the reduced model FITS: re-judged after the reduction, it no longer asks');
@@ -101,14 +101,14 @@ h.run(async () => {
 	h.check((await restoreButton.count()) === 1, 'Restore original is offered IN the report');
 	await restoreButton.click();
 	await h.eventually(() => A.page.evaluate((u) => window.__probe(u), uuid), (p) => p?.triangles > 19000, 'clicking it brings the full model back', 15000);
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(400);
 	const undone = await A.page.evaluate((u) => window.__probe(u), uuid);
 	h.check(undone?.triangles === reduced.triangles, `Ctrl+Z returns the reduced one (${undone?.triangles})`);
 
 	// ---- 3. the way back outlasts the toast -----------------------------------
 	const menu = await A.page.evaluate((u) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		const find = (/** @type {any[]} */ items) => s.objectMenu.findMenuItem(items, 'Restore original model');
 		const mine = find(s.objectMenu.buildObjectMenuItems(u, { selection: [u] }));
@@ -136,7 +136,7 @@ h.run(async () => {
 		window.__removeNamed('crossing');
 	});
 	await A.page.evaluate(() => {
-		const THREE = window.__stores.THREE;
+		const THREE = window.__tp.test.v1.THREE;
 		const canvas = document.createElement('canvas');
 		canvas.width = 5000;
 		canvas.height = 8;
@@ -152,7 +152,7 @@ h.run(async () => {
 	h.check(banner?.maxTexture === 4096 && banner.triangles === 2, `the texture is drawn down (${banner?.maxTexture}px) and the geometry left alone (${banner?.triangles} triangles)`);
 
 	await A.page.evaluate(() => {
-		const THREE = window.__stores.THREE;
+		const THREE = window.__tp.test.v1.THREE;
 		const fixture = new THREE.Group();
 		fixture.name = 'calls-fixture';
 		const geo = new THREE.BoxGeometry();
@@ -174,7 +174,7 @@ h.run(async () => {
 	await A.page.evaluate(() => window.__removeNamed('calls-fixture'));
 
 	await A.page.evaluate(() => {
-		const THREE = window.__stores.THREE;
+		const THREE = window.__tp.test.v1.THREE;
 		const canvas = document.createElement('canvas');
 		canvas.width = 5000;
 		canvas.height = 8;

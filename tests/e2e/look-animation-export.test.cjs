@@ -12,7 +12,7 @@ const OUT = process.env.EVIDENCE_DIR || path.join('test-results', '72-materials'
 const exportGlb = (page, uuids, opts = {}) =>
 	page.evaluate(
 		async ({ uuids, opts }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let group = null;
 			s.objectsGroup.subscribe((g) => (group = g))();
 			const roots = uuids.map((id) => group.getObjectByProperty('uuid', id));
@@ -65,10 +65,10 @@ const near = (a, b, eps = 1e-3) => Math.abs(a - b) <= eps;
 
 const createObject = (page, command) =>
 	page.evaluate(async (cmd) => {
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const before = new Set();
 		group.traverse((n) => before.add(n.uuid));
-		window.__stores.commandsHandler.sceneCommand(cmd);
+		window.__tp.test.v1.commandsHandler.sceneCommand(cmd);
 		for (let i = 0; i < 40; i++) {
 			await new Promise((r) => setTimeout(r, 100));
 			const made = group.children.find((c) => !before.has(c.uuid));
@@ -81,9 +81,9 @@ const createObject = (page, command) =>
 const addClip = (page, uuid, tracks, duration = 2) =>
 	page.evaluate(
 		({ uuid, tracks, duration }) => {
-			const ap = window.__stores.animationPreview;
+			const ap = window.__tp.test.v1.animationPreview;
 			let group = null;
-			window.__stores.objectsGroup.subscribe((g) => (group = g))();
+			window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 			const object = group.getObjectByProperty('uuid', uuid);
 			for (const [channel, keys] of Object.entries(tracks)) {
 				ap.addTrack(uuid, channel, object);
@@ -109,9 +109,9 @@ h.run(async () => {
 	const camera = await createObject(page, '/create camera');
 	h.check(!!camera, '1.0 premise: a camera marker exists');
 	const channelInfo = await page.evaluate((id) => {
-		const ap = window.__stores.animationPreview;
+		const ap = window.__tp.test.v1.animationPreview;
 		let group = null;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		const object = group.getObjectByProperty('uuid', id);
 		let box = null;
 		group.traverse((n) => { if (n.isMesh && !n.userData.camera && !box) box = n; });
@@ -130,9 +130,9 @@ h.run(async () => {
 	const camTracks = await addClip(page, camera, { 'camera.fov': [{ t: 0, v: 60 }, { t: 2, v: 20 }] });
 	h.check(camTracks.some(([c, keys]) => c === 'camera.fov' && keys[0][1] === 60 && keys[1][1] === 20), '1.5 keyed 60 to 20: ' + JSON.stringify(camTracks));
 	const played = await page.evaluate(async (id) => {
-		const ap = window.__stores.animationPreview;
+		const ap = window.__tp.test.v1.animationPreview;
 		let group = null;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		const object = group.getObjectByProperty('uuid', id);
 		const clip = ap.getAnim(id);
 		const mid = ap.evaluateClip(clip, 1)['camera.fov'];
@@ -141,7 +141,7 @@ h.run(async () => {
 	}, camera);
 	h.check(played.mid > 20 && played.mid < 60, '1.6 the clip evaluates between the keys: ' + played.mid);
 	await h.eventually(
-		() => B.page.evaluate((id) => window.__stores.animationPreview.getAnim(id)?.tracks?.some((t) => t.channel === 'camera.fov') ?? false, camera),
+		() => B.page.evaluate((id) => window.__tp.test.v1.animationPreview.getAnim(id)?.tracks?.some((t) => t.channel === 'camera.fov') ?? false, camera),
 		(v) => v === true,
 		'1.7 the track reached B',
 		20000
@@ -150,7 +150,7 @@ h.run(async () => {
 	console.log('\n=== 2. a material clip ===');
 	const box = await createObject(page, '/create box');
 	await page.evaluate((id) => {
-		const M = window.__stores.materialsHandler;
+		const M = window.__tp.test.v1.materialsHandler;
 		M.setObjectColor(id, '#336699');
 		M.setMaterialParam(id, 'roughness', 0.7);
 	}, box);
@@ -195,7 +195,7 @@ h.run(async () => {
 	// green and blue are unkeyed: they hold the base colour, in the linear space glTF stores
 	const base = await page.evaluate((id) => {
 		let group = null;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		const c = group.getObjectByProperty('uuid', id).material.color;
 		return [c.r, c.g, c.b];
 	}, box);
@@ -208,7 +208,7 @@ h.run(async () => {
 	h.check(near(rough.output.values[0], 1) && near(rough.output.values.at(-1), 0), '4.13 roughness 1 to 0');
 	// a value the app plays is the value in the file, mid-clip too
 	const midApp = await page.evaluate((id) => {
-		const ap = window.__stores.animationPreview;
+		const ap = window.__tp.test.v1.animationPreview;
 		return ap.evaluateClip(ap.getAnim(id), 1);
 	}, box);
 	const sampleAt = (c, t) => {
@@ -266,18 +266,18 @@ h.run(async () => {
 	console.log('\n=== 6. only exports carry it ===');
 	const plain = await exportGlb(page, [box], { lookAnimation: false });
 	h.check(!plain.channels.some((c) => c.pointer) && !plain.json.extensionsUsed?.includes('KHR_animation_pointer'), '6.1 the Quest path asks for no pointers and gets none');
-	const scene = await page.evaluate(() => JSON.stringify(window.__stores.sessions.buildSessionPayload('look')).includes('KHR_animation_pointer'));
+	const scene = await page.evaluate(() => JSON.stringify(window.__tp.test.v1.sessions.buildSessionPayload('look')).includes('KHR_animation_pointer'));
 	h.check(!scene, '6.2 a saved scene stays free of it: the clip itself is what a scene saves');
 	const fovAfter = await page.evaluate((id) => {
 		let group = null;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		return group.getObjectByProperty('uuid', id).userData.camera.fov;
 	}, camera);
 	h.check(fovAfter === 50, '6.3 exporting leaves the live lens at its base: ' + fovAfter);
 
 	console.log('\n=== 7. an origin baked on a clone keeps its pointers ===');
 	const door = await createObject(page, '/create box');
-	await page.evaluate((id) => window.__stores.objectOrigin.setOriginFor(id, [0.5, 0, 0]), door);
+	await page.evaluate((id) => window.__tp.test.v1.objectOrigin.setOriginFor(id, [0.5, 0, 0]), door);
 	await addClip(page, door, { metalness: [{ t: 0, v: 0 }, { t: 1, v: 1 }], 'rot.y': [{ t: 0, v: 0 }, { t: 1, v: 1 }] }, 1);
 	const doorFile = await exportGlb(page, [door]);
 	h.check(doorFile.channels.some((c) => c.pointer?.endsWith('/metallicFactor')), '7.1 the pointer survives the clone path');

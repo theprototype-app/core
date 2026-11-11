@@ -52,7 +52,7 @@ function serve(dir) {
 	return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(server)));
 }
 
-const tool = (page, name, args) => page.evaluate(([n, a]) => window.__stores.aiTools.executeAiTool(n, a), [name, args]);
+const tool = (page, name, args) => page.evaluate(([n, a]) => window.__tp.test.v1.aiTools.executeAiTool(n, a), [name, args]);
 const near = (a, b, tol) => !!a && !!b && Math.hypot(a[0] - b[0], a[2] - b[2]) <= tol;
 
 h.run(async () => {
@@ -82,9 +82,9 @@ h.run(async () => {
 	h.check(!set.error, 'premise: the Levels table (' + (set.error || set.note) + ')');
 	const load = await tool(A.page, 'set_loading', { preset: 'logo', title: 'Crystal Caves', tips: ['Coins carry between levels'], background: '#101820' });
 	h.check(!load.error, 'premise: the author\'s loading screen (' + (load.error || load.note) + ')');
-	await A.page.evaluate(() => window.__stores.gameState.setGameVar('coins', 0));
+	await A.page.evaluate(() => window.__tp.test.v1.gameState.setGameVar('coins', 0));
 	const out = await A.page.evaluate(async () => {
-		const b = window.__stores.exportBuilder;
+		const b = window.__tp.test.v1.exportBuilder;
 		const res = await b.buildExport({ preset: 'static', title: 'Crystal Caves', thumbnail: false, startFullscreen: false, showFps: false, quality: 'auto', vrButton: false, useCdnForPacks: false });
 		const buf = new Uint8Array(await res.blob.arrayBuffer());
 		let s = '';
@@ -123,29 +123,29 @@ h.run(async () => {
 	p.on('console', (m) => logs.push(m.text()));
 	const boot = async (label) => {
 		await p.goto(gameUrl, { waitUntil: 'domcontentloaded' });
-		await p.waitForFunction(() => window.__stores?.exportRuntime?.exportRuntimeState, null, { timeout: 90000 });
-		await h.eventually(() => p.evaluate(() => window.__stores.exportRuntime.exportRuntimeState.phase), (v) => v === 'playing' || v === 'failed', label, 90000);
-		const st = await p.evaluate(() => ({ phase: window.__stores.exportRuntime.exportRuntimeState.phase, error: window.__stores.exportRuntime.exportRuntimeState.error }));
+		await p.waitForFunction(() => window.__tp?.test.v1?.exportRuntime?.exportRuntimeState, null, { timeout: 90000 });
+		await h.eventually(() => p.evaluate(() => window.__tp.test.v1.exportRuntime.exportRuntimeState.phase), (v) => v === 'playing' || v === 'failed', label, 90000);
+		const st = await p.evaluate(() => ({ phase: window.__tp.test.v1.exportRuntime.exportRuntimeState.phase, error: window.__tp.test.v1.exportRuntime.exportRuntimeState.error }));
 		h.check(st.phase === 'playing', `…and it is playing (${JSON.stringify(st)})`);
 		// a headless page may not get pointer lock: Interact is the same game on the player's own view
 		await p.evaluate(() => {
 			let locked;
-			window.__stores.isLocked.subscribe((v) => (locked = v))();
-			if (locked !== true) window.__stores.objectActions.setEditorMode('interact');
+			window.__tp.test.v1.isLocked.subscribe((v) => (locked = v))();
+			if (locked !== true) window.__tp.test.v1.objectActions.setEditorMode('interact');
 		});
 	};
 	await boot('the export boots into play');
-	const key = await p.evaluate(() => window.__stores.levelsCheckpoints.checkpointsForTest().key);
-	h.check(/^tp:levels-save:[\w.-]+$/.test(key) && (await p.evaluate(() => window.__stores.levelsCheckpoints.checkpointsForTest().persisting)), `an export persists progress under one key per game (${key})`);
-	await p.evaluate(() => window.__stores.gameState.setGameVar('coins', 5));
+	const key = await p.evaluate(() => window.__tp.test.v1.levelsCheckpoints.checkpointsForTest().key);
+	h.check(/^tp:levels-save:[\w.-]+$/.test(key) && (await p.evaluate(() => window.__tp.test.v1.levelsCheckpoints.checkpointsForTest().persisting)), `an export persists progress under one key per game (${key})`);
+	await p.evaluate(() => window.__tp.test.v1.gameState.setGameVar('coins', 5));
 	await p.waitForTimeout(700);
 	await p.evaluate(() => {
 		let cam;
-		window.__stores.globalCamera.subscribe((v) => (cam = v))();
+		window.__tp.test.v1.globalCamera.subscribe((v) => (cam = v))();
 		cam.position.set(10, 1.6, 10);
 		cam.updateMatrixWorld(true);
 	});
-	await h.eventually(() => p.evaluate(() => window.__stores.levelsCheckpoints.checkpointsForTest().point?.name ?? ''), (n) => n === 'Mid', 'stepping on Mid made it this player\'s checkpoint', 10000);
+	await h.eventually(() => p.evaluate(() => window.__tp.test.v1.levelsCheckpoints.checkpointsForTest().point?.name ?? ''), (n) => n === 'Mid', 'stepping on Mid made it this player\'s checkpoint', 10000);
 	const saved = await p.evaluate((k) => JSON.parse(localStorage.getItem(k) || 'null'), key);
 	h.check(saved?.v === 1 && saved?.point?.name === 'Mid' && saved?.kept?.vars?.coins === 5, `the save is on the device: v1, Mid, coins 5 (${JSON.stringify(saved)?.slice(0, 200)})`);
 
@@ -157,18 +157,18 @@ h.run(async () => {
 	const resumed = await p.evaluate(() => {
 		let sp;
 		let g;
-		window.__stores.playSettings.runtimeSpawn.subscribe((v) => (sp = v))();
-		window.__stores.gameState.gameState.subscribe((v) => (g = v))();
-		return { point: window.__stores.levelsCheckpoints.checkpointsForTest().point, spawn: sp?.position ?? null, coins: g?.vars?.coins };
+		window.__tp.test.v1.playSettings.runtimeSpawn.subscribe((v) => (sp = v))();
+		window.__tp.test.v1.gameState.gameState.subscribe((v) => (g = v))();
+		return { point: window.__tp.test.v1.levelsCheckpoints.checkpointsForTest().point, spawn: sp?.position ?? null, coins: g?.vars?.coins };
 	});
 	h.check(resumed.point?.name === 'Mid', `the checkpoint survived the reload (${JSON.stringify(resumed.point)})`);
 	h.check(near(resumed.spawn, [10, 0, 10], 0.5), `this player respawns at Mid (${JSON.stringify(resumed.spawn)})`);
 	h.check(resumed.coins === 5, `the kept variable came back (coins ${resumed.coins})`);
-	await p.evaluate(() => window.__stores.kit.kit.runNodeAction('kit-levels-respawn', {}, { rid: 'node:e2e-respawn:2' }));
+	await p.evaluate(() => window.__tp.test.v1.kit.kit.runNodeAction('kit-levels-respawn', {}, { rid: 'node:e2e-respawn:2' }));
 	await h.eventually(
 		() => p.evaluate(() => {
 			let cam;
-			window.__stores.globalCamera.subscribe((v) => (cam = v))();
+			window.__tp.test.v1.globalCamera.subscribe((v) => (cam = v))();
 			return cam.position.toArray();
 		}),
 		(pos) => near(pos, [10, 0, 10], 3),
@@ -185,8 +185,8 @@ h.run(async () => {
 	await boot('an old save (v0, level "lava" since removed) still boots into play');
 	const after = await p.evaluate(() => {
 		let g;
-		window.__stores.gameState.gameState.subscribe((v) => (g = v))();
-		return { level: window.__stores.kit.kit.impls.levels?.current?.() ?? null, point: window.__stores.levelsCheckpoints.checkpointsForTest().point, vars: { ...(g?.vars ?? {}) } };
+		window.__tp.test.v1.gameState.gameState.subscribe((v) => (g = v))();
+		return { level: window.__tp.test.v1.kit.kit.impls.levels?.current?.() ?? null, point: window.__tp.test.v1.levelsCheckpoints.checkpointsForTest().point, vars: { ...(g?.vars ?? {}) } };
 	});
 	h.check(after.level === 'start', `it starts the FIRST level (${after.level})`);
 	// the player now spawns ON the Start pad, which makes it the checkpoint; what must be gone is the removed level's

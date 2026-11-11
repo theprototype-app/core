@@ -28,7 +28,7 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1280, height: 720 } } });
 	const page = A.page;
-	const base = (await page.evaluate(() => window.__stores.packs.PACKS_BASE)).replace(/\/+$/, '');
+	const base = (await page.evaluate(() => window.__tp.test.v1.packs.PACKS_BASE)).replace(/\/+$/, '');
 	await page.route(base + '/**', (route) => {
 		const rel = decodeURIComponent(route.request().url().slice(base.length + 1).split('?')[0]);
 		const file = path.join(DIR, rel);
@@ -43,7 +43,7 @@ h.run(async () => {
 		x += 6;
 		const res = await page.evaluate(
 			async ({ base, pack, name, x }) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				const read = (st) => {
 					let v;
 					st.subscribe((q) => (v = q))();
@@ -111,7 +111,7 @@ h.run(async () => {
 			for (const [label, dist, overlay] of [['near', 2.5, false], ['far', 12, false], ['far-overlay', 12, true]]) {
 				await page.evaluate(
 					({ uuid, dist, overlay }) => {
-						const s = window.__stores;
+						const s = window.__tp?.test.v1;
 						let g;
 						s.objectsGroup.subscribe((v) => (g = v))();
 						const root = g.getObjectByProperty('uuid', uuid);
@@ -126,7 +126,7 @@ h.run(async () => {
 				await page.waitForTimeout(700);
 				await page.screenshot({ path: path.join(SHOTS, name + '-' + label + '.png') });
 			}
-			await page.evaluate(() => window.__stores.lod.lodShowLevels.set(false));
+			await page.evaluate(() => window.__tp.test.v1.lod.lodShowLevels.set(false));
 		}
 	}
 	h.check(h.pageErrors(A).length === 0, 'no page errors (' + JSON.stringify(h.pageErrors(A)) + ')');

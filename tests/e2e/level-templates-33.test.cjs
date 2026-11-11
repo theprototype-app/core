@@ -83,7 +83,7 @@ const LEVELS = {
 /** the rig's world position (feet = eye - 1.7) */
 const rig = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		/** @type {any} */ let cam;
 		s.playerCam.subscribe((c) => (cam = c))();
 		if (!cam) return null;
@@ -95,7 +95,7 @@ const rig = (page) =>
 const placeRig = (page, x, y, z, yaw) =>
 	page.evaluate(
 		({ x, y, z, yaw }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			/** @type {any} */ let cam;
 			s.playerCam.subscribe((c) => (cam = c))();
 			const v = new s.THREE.Vector3(x, y + 1.7, z);
@@ -113,7 +113,7 @@ const grab = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				/** @type {any} */ let r;
 				s.globalRenderer.subscribe((v) => (r = v))();
 				const inner = r.render;
@@ -155,7 +155,7 @@ const save = (url, file) => fs.writeFileSync(path.join(SHOTS, file), Buffer.from
 /** every functional piece's pose: the summed rotation of its moving nodes + the banner's morph */
 const poses = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		/** @type {any} */ let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		/** @type {Record<string, {name: string, sig: number, on: boolean}>} */
@@ -178,7 +178,7 @@ const poses = (page) =>
 const uuidOf = (page, name) =>
 	page.evaluate((name) => {
 		/** @type {any} */ let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return g.children.find((/** @type {any} */ c) => c.name === name)?.uuid ?? null;
 	}, name);
 
@@ -186,7 +186,7 @@ const uuidOf = (page, name) =>
 const leafAngle = (page, uuid) =>
 	page.evaluate((uuid) => {
 		/** @type {any} */ let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const root = g.getObjectByProperty('uuid', uuid);
 		let best = 0;
 		root?.traverse((/** @type {any} */ n) => {
@@ -212,7 +212,7 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(3000);
 		await warm.ctx.close();
 	}
@@ -244,7 +244,7 @@ h.run(async () => {
 
 		// 1. load it from the Templates modal ------------------------------------------------
 		await page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.isLocked.set(null);
 			s.objectActions.setEditorMode('edit');
 		});
@@ -259,7 +259,7 @@ h.run(async () => {
 		await h.eventually(
 			() =>
 				page.evaluate((marker) => {
-					const s = window.__stores;
+					const s = window.__tp?.test.v1;
 					/** @type {any} */ let g;
 					s.objectsGroup.subscribe((v) => (g = v))();
 					let refs = 0;
@@ -276,7 +276,7 @@ h.run(async () => {
 			`${level.title}: the level loads, every kit piece refills and its ${L.behaviors} functional pieces register`,
 			60000
 		);
-		await page.evaluate(() => window.__stores.selectedObjects.set([]));
+		await page.evaluate(() => window.__tp.test.v1.selectedObjects.set([]));
 		await page.waitForTimeout(1200);
 
 		// 2. nothing moves in Edit ---------------------------------------------------------
@@ -287,17 +287,17 @@ h.run(async () => {
 		h.check(Object.keys(rest0).length === L.behaviors && moved.length === 0, `${level.title}: nothing moves in Edit — ${Object.keys(rest0).length} pieces at rest${moved.length ? ' (moved: ' + moved.map((u) => rest0[u].name).join(', ') + ')' : ''}`);
 
 		// 3. Interact: a real click opens the door, a second shuts it ---------------------
-		await page.evaluate(() => window.__stores.objectActions.setEditorMode('interact'));
+		await page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('interact'));
 		const door = await uuidOf(page, L.click.door);
 		const target = await page.evaluate((uuid) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			/** @type {any} */ let g;
 			s.objectsGroup.subscribe((v) => (g = v))();
 			const root = g.getObjectByProperty('uuid', uuid);
 			const box = new s.THREE.Box3().setFromObject(root);
 			return [...box.getCenter(new s.THREE.Vector3()).toArray(), box.max.y];
 		}, door);
-		await page.evaluate(({ eye, target }) => window.__stores.objectActions.flyTo(eye, target, 0), { eye: L.click.eye, target });
+		await page.evaluate(({ eye, target }) => window.__tp.test.v1.objectActions.flyTo(eye, target, 0), { eye: L.click.eye, target });
 		await page.waitForTimeout(900);
 		const px = await h.projectPoint(page, [target[0], target[1] - 0.2, target[2]]);
 		const onCanvas = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName, px);
@@ -305,7 +305,7 @@ h.run(async () => {
 		const shutAngle = await leafAngle(page, door);
 		await page.mouse.click(px.x, px.y);
 		await page.waitForTimeout(1600);
-		const opened = await page.evaluate((uuid) => window.__stores.packBehavior.behaviorState(uuid), door);
+		const opened = await page.evaluate((uuid) => window.__tp.test.v1.packBehavior.behaviorState(uuid), door);
 		const openAngle = await leafAngle(page, door);
 		h.check(!!opened?.on, `${level.title}: a click in Interact OPENS "${L.click.door}" (state ${JSON.stringify(opened)})`);
 		h.check(Math.abs(openAngle - shutAngle) > 45, `${level.title}: its leaf swings (${shutAngle.toFixed(0)}° -> ${openAngle.toFixed(0)}°)`);
@@ -314,7 +314,7 @@ h.run(async () => {
 		// look at the open leaf from whichever side sees it unobstructed (a ray from the eye must
 		// reach the door first), then click its middle
 		const view = await page.evaluate((uuid) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const T = s.THREE;
 			/** @type {any} */ let g;
 			s.objectsGroup.subscribe((v) => (g = v))();
@@ -343,13 +343,13 @@ h.run(async () => {
 			return { eye: null, c: c.toArray() };
 		}, door);
 		h.check(!!view.eye, `${level.title}: premise — the open leaf can be seen from one side`);
-		if (view.eye) await page.evaluate(({ eye, c }) => window.__stores.objectActions.flyTo(eye, c, 0), view);
+		if (view.eye) await page.evaluate(({ eye, c }) => window.__tp.test.v1.objectActions.flyTo(eye, c, 0), view);
 		await page.waitForTimeout(900);
 		const leafPx = await h.projectPoint(page, view.c);
 		await page.mouse.click(leafPx.x, leafPx.y);
 		await page.waitForTimeout(1600);
-		const shut = await page.evaluate((uuid) => window.__stores.packBehavior.behaviorState(uuid), door);
-		const why = await page.evaluate(() => window.__stores.packBehavior.packBehaviorDebug?.().lastClick ?? null);
+		const shut = await page.evaluate((uuid) => window.__tp.test.v1.packBehavior.behaviorState(uuid), door);
+		const why = await page.evaluate(() => window.__tp.test.v1.packBehavior.packBehaviorDebug?.().lastClick ?? null);
 		const shutNow = await leafAngle(page, door);
 		h.check(!shut?.on && Math.abs(shutNow - shutAngle) < 5, `${level.title}: a second click SHUTS it (state ${JSON.stringify(shut)}, leaf ${shutNow.toFixed(0)}°, last click ${JSON.stringify(why)})`);
 		if (L.ambient) {
@@ -359,21 +359,21 @@ h.run(async () => {
 			const a1 = (await poses(page))[amb]?.sig;
 			h.check(a0 != null && Math.abs(a0 - a1) > 1e-4, `${level.title}: the ambient "${L.ambient}" moves on its own in Interact (and held still in Edit)`);
 		}
-		await page.evaluate(() => window.__stores.objectActions.setEditorMode('edit'));
+		await page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('edit'));
 
 		// 4. Play: spawn, sim, a readable frame, doors stop and pass the walker -------------
-		await page.evaluate(() => window.__stores.isLocked.set(true));
+		await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 		await h.eventually(
-			() => page.evaluate(() => { let v; window.__stores.physics.simulating.subscribe((x) => (v = x))(); return v; }),
+			() => page.evaluate(() => { let v; window.__tp.test.v1.physics.simulating.subscribe((x) => (v = x))(); return v; }),
 			(v) => v === true,
 			`${level.title}: Play starts the simulation (sim-on-play)`,
 			15000
 		);
 		await page.waitForTimeout(1500);
-		const spawn = await page.evaluate(() => { let p; window.__stores.scenePhysics.scenePlay.subscribe((v) => (p = v))(); return p?.spawn?.position ?? null; });
+		const spawn = await page.evaluate(() => { let p; window.__tp.test.v1.scenePhysics.scenePlay.subscribe((v) => (p = v))(); return p?.spawn?.position ?? null; });
 		const at = await rig(page);
 		h.check(!!spawn && at && Math.hypot(at.x - spawn[0], at.z - spawn[2]) < 0.6, `${level.title}: Play starts at the spawn point (${at && [at.x, at.feet, at.z].map((v) => v.toFixed(2))})`);
-		const walker = await page.evaluate(() => { let v; window.__stores.charController.walkerState.subscribe((x) => (v = x))(); return v; });
+		const walker = await page.evaluate(() => { let v; window.__tp.test.v1.charController.walkerState.subscribe((x) => (v = x))(); return v; });
 		h.check(walker?.source === 'rapier' && walker.grounded, `${level.title}: the walker stands on the level (${walker?.source}, grounded ${walker?.grounded})`);
 		await page.waitForTimeout(600);
 		const frame = await grab(page);
@@ -397,11 +397,11 @@ h.run(async () => {
 		const fmt = (p) => p && [p.x, p.feet, p.z].map((v) => v.toFixed(2)).join(',');
 		for (const dw of L.doorWalks) {
 			const uuid = await uuidOf(page, dw.door);
-			await page.evaluate((u) => window.__stores.packBehavior.triggerBehavior(u, false), uuid);
+			await page.evaluate((u) => window.__tp.test.v1.packBehavior.triggerBehavior(u, false), uuid);
 			await page.waitForTimeout(1300);
 			const a = await walk(dw);
 			h.check(!!a.end && dw.shut(a.end), `${level.title}: ${dw.label} STOPS the walker while shut (to ${fmt(a.end)})`);
-			await page.evaluate((u) => window.__stores.packBehavior.triggerBehavior(u, true), uuid);
+			await page.evaluate((u) => window.__tp.test.v1.packBehavior.triggerBehavior(u, true), uuid);
 			await page.waitForTimeout(1500);
 			const b = await walk(dw);
 			h.check(!!b.end && dw.open(b.end), `${level.title}: … and the walker goes THROUGH it once it is open (to ${fmt(b.end)})`);
@@ -413,7 +413,7 @@ h.run(async () => {
 
 		// 5. the Quest budget: calls per frame from every named view (headset analogue) -------
 		await page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.viewportOverrides.setRenderLayer('post', false);
 			s.viewMode.set('shaded');
 			s.lightParams.shadowQuality.set('off');
@@ -427,7 +427,7 @@ h.run(async () => {
 			const calls = await page.evaluate(
 				() =>
 					new Promise((resolve) => {
-						const s = window.__stores;
+						const s = window.__tp?.test.v1;
 						/** @type {any} */ let r;
 						s.globalRenderer.subscribe((v) => (r = v))();
 						const inner = r.render;
@@ -457,7 +457,7 @@ h.run(async () => {
 		}
 		h.check(worst > 0 && worst <= BUDGET, `${level.title}: at most ${BUDGET} draw calls a frame in a headset from every view — worst ${worst} (${lines.join(' · ')})`);
 		await page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.viewportOverrides.setRenderLayer('post', true);
 			s.lightParams.shadowQuality.set('high');
 			s.isLocked.set(false);

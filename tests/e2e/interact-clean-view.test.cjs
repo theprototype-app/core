@@ -10,7 +10,7 @@ const h = require('./helpers.cjs');
 
 const read = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const get = (store) => { let v; store.subscribe((x) => (v = x))(); return v; };
 		const scene = get(s.globalScene);
 		const cam = get(s.editorCam) || get(s.globalCamera);
@@ -45,7 +45,7 @@ h.run(async () => {
 
 	// ---- the fixture: one of each helper --------------------------------------------------
 	const ids = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const get = (store) => { let v; store.subscribe((x) => (v = x))(); return v; };
 		s.commandsHandler.sceneCommand('/light point');
 		s.commandsHandler.sceneCommand('/create box');
@@ -73,7 +73,7 @@ h.run(async () => {
 	h.check(everything(r), `Edit: grid, helper layer, colliders, lock box, tiny dot and both outlines are drawn (${JSON.stringify(r)})`);
 
 	// ---- 2. Interact hides every one ------------------------------------------------------------
-	await A.page.evaluate(() => window.__stores.objectActions.setEditorMode('interact'));
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('interact'));
 	await A.page.waitForTimeout(600);
 	r = await read(A.page);
 	h.check(r.mode === 'interact', 'Interact is on');
@@ -84,13 +84,13 @@ h.run(async () => {
 	h.check(!r.tiny, 'Interact: no tiny-object dot');
 	h.check(r.outlineSelected === 0 && r.outlineLocked === 0, `Interact: no selection or lock outline (${r.outlineSelected}/${r.outlineLocked})`);
 	// 41 G13 (the user, 2026-10-11): Interact DESELECTS and stashes the set; Edit restores it (4 below)
-	const kept = await A.page.evaluate(() => { let v; window.__stores.selectedObjects.subscribe((x) => (v = x))(); return { now: v.length, stashed: window.__stores.objectActions.interactStashed().length }; });
+	const kept = await A.page.evaluate(() => { let v; window.__tp.test.v1.selectedObjects.subscribe((x) => (v = x))(); return { now: v.length, stashed: window.__tp.test.v1.objectActions.interactStashed().length }; });
 	h.check(kept.now === 0 && kept.stashed === 1, `Interact stashes the selection — nothing selected, one kept for later (${JSON.stringify(kept)})`);
 
 	// ---- 3. VR: the selection shell and the hover box stand down in Interact ---------------------
-	await A.page.evaluate(() => window.__stores.isVRMode.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.isVRMode.set(true));
 	const vr = await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const get = (store) => { let v; store.subscribe((x) => (v = x))(); return v; };
 		const box = get(s.objectsGroup).getObjectByProperty('uuid', uuid);
 		s.vrControls.updateHoverBox(box);
@@ -101,9 +101,9 @@ h.run(async () => {
 	r = await read(A.page);
 	h.check(!r.shell, 'VR Interact: no selection shell');
 	h.check(!vr.hover, 'VR Interact: the hover box refuses to show');
-	await A.page.evaluate(() => window.__stores.objectActions.setEditorMode('edit'));
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('edit'));
 	const vrEdit = await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const get = (store) => { let v; store.subscribe((x) => (v = x))(); return v; };
 		const box = get(s.objectsGroup).getObjectByProperty('uuid', uuid);
 		s.vrControls.updateHoverBox(box);
@@ -113,8 +113,8 @@ h.run(async () => {
 	r = await read(A.page);
 	h.check(r.shell && vrEdit, `VR Edit: the selection shell and hover box are back (shell ${r.shell}, hover ${vrEdit})`);
 	await A.page.evaluate(() => {
-		window.__stores.vrControls.updateHoverBox(null);
-		window.__stores.isVRMode.set(false);
+		window.__tp.test.v1.vrControls.updateHoverBox(null);
+		window.__tp.test.v1.isVRMode.set(false);
 	});
 	await A.page.waitForTimeout(600);
 
@@ -123,19 +123,19 @@ h.run(async () => {
 	h.check(everything(r), `back to Edit: all of it returns (${JSON.stringify(r)})`);
 
 	// ---- 5. Play hides them all too (the grid and helper layer already did; now the rest) ---------
-	await A.page.evaluate(() => window.__stores.isLocked.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await A.page.waitForTimeout(600);
 	r = await read(A.page);
 	h.check(nothing(r), `Play: nothing of the editor is drawn (${JSON.stringify(r)})`);
 	// ...unless the debug toggle asks for them
-	await A.page.evaluate(() => window.__stores.helperLayer.helpersInPlay.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.helperLayer.helpersInPlay.set(true));
 	await A.page.waitForTimeout(500);
 	r = await read(A.page);
 	h.check(r.grid && r.colliders && r.helperLayer, `"Show helpers in Play (debug)" still brings the scaffolding back (${JSON.stringify(r)})`);
 	await A.page.evaluate(() => {
-		window.__stores.helperLayer.helpersInPlay.set(false);
-		window.__stores.isLocked.set(false);
-		window.__stores.lockedObjects.set([]);
+		window.__tp.test.v1.helperLayer.helpersInPlay.set(false);
+		window.__tp.test.v1.isLocked.set(false);
+		window.__tp.test.v1.lockedObjects.set([]);
 	});
 
 	await h.finish(browser);

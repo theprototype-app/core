@@ -24,10 +24,10 @@
 const h = require('./helpers.cjs');
 
 const sp = (page, body) =>
-	page.evaluate((b) => new Function('sp', b)(window.__stores.scenePhysics), body);
+	page.evaluate((b) => new Function('sp', b)(window.__tp.test.v1.scenePhysics), body);
 const bodyOf = (page, uuid) =>
 	page.evaluate(
-		(uuid) => window.__stores.physics.physicsDebug().find((b) => b.uuid === uuid) ?? null,
+		(uuid) => window.__tp.test.v1.physics.physicsDebug().find((b) => b.uuid === uuid) ?? null,
 		uuid
 	);
 const speedOf = (b) => (b?.linvel ? Math.hypot(b.linvel.x, b.linvel.y, b.linvel.z) : 0);
@@ -35,7 +35,7 @@ const speedOf = (b) => (b?.linvel ? Math.hypot(b.linvel.x, b.linvel.y, b.linvel.
 const park = (page, uuid) =>
 	page.evaluate(
 		(uuid) =>
-			window.__stores.physics.applyThrow({
+			window.__tp.test.v1.physics.applyThrow({
 				uuid,
 				pos: [0, 1, 0],
 				rot: [0, 0, 0],
@@ -49,7 +49,7 @@ const park = (page, uuid) =>
 const sweep = (page, id, opts) =>
 	page.evaluate(
 		({ id, from, to, speed, dtMs, t0 }) => {
-			const k = window.__stores.knock;
+			const k = window.__tp.test.v1.knock;
 			k.dropProbe(id);
 			const step = (speed * dtMs) / 1000;
 			let hits = 0;
@@ -84,12 +84,12 @@ const edge = (source, target, targetHandle) => ({
 const setGraph = (page, nodes, edges) =>
 	page.evaluate(
 		([nodes, edges]) => {
-			window.__stores.setActiveGraph(window.__stores.SCENE_GRAPH);
-			window.__stores.flowGraphs.update((graphs) => ({ ...graphs, scene: { nodes, edges } }));
-			window.__stores.flowNodes.set(nodes);
-			window.__stores.flowEdges.set(edges);
+			window.__tp.test.v1.setActiveGraph(window.__tp.test.v1.SCENE_GRAPH);
+			window.__tp.test.v1.flowGraphs.update((graphs) => ({ ...graphs, scene: { nodes, edges } }));
+			window.__tp.test.v1.flowNodes.set(nodes);
+			window.__tp.test.v1.flowEdges.set(edges);
 			let peer = null;
-			window.__stores.peers.subscribe((p) => (peer = p))();
+			window.__tp.test.v1.peers.subscribe((p) => (peer = p))();
 			nodes.forEach((node) => peer?.send({ type: 'nodecreate', node }));
 			edges.forEach((edge) => peer?.send({ type: 'edgecreate', edge }));
 		},
@@ -97,7 +97,7 @@ const setGraph = (page, nodes, edges) =>
 	);
 const holdsGraph = (page, ids) =>
 	page.evaluate((ids) => {
-		const have = window.__stores.allNodes().map((n) => n.id);
+		const have = window.__tp.test.v1.allNodes().map((n) => n.id);
 		return ids.every((id) => have.includes(id));
 	}, ids);
 
@@ -105,25 +105,25 @@ const holdsGraph = (page, ids) =>
 const trig = (page, id) =>
 	page.evaluate((id) => {
 		let map = null;
-		window.__stores.flowTriggers.subscribe((v) => (map = v))();
+		window.__tp.test.v1.flowTriggers.subscribe((v) => (map = v))();
 		return map?.[id] ? { ...map[id] } : null;
 	}, id);
 const value = (page, id) =>
 	page.evaluate((id) => {
 		let values = null;
-		window.__stores.flowValues.subscribe((v) => (values = v))();
+		window.__tp.test.v1.flowValues.subscribe((v) => (values = v))();
 		const v = values?.[id];
 		return v === undefined ? null : JSON.parse(JSON.stringify(v));
 	}, id);
 const touches = (page) =>
-	page.evaluate(() => window.__stores.peerVars.peerVarsDebug().mine.touches ?? 0);
+	page.evaluate(() => window.__tp.test.v1.peerVars.peerVarsDebug().mine.touches ?? 0);
 const settle = (page, ms = 900) => page.waitForTimeout(ms);
 
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(4000);
 		await warm.ctx.close();
 	}
@@ -133,7 +133,7 @@ h.run(async () => {
 	// ---------------------------------------------------------------- section 1
 	console.log('\n=== 1. the registries agree ===');
 	const reg = await A.page.evaluate(() => {
-		const { nodeCatalog, flowSockets } = window.__stores;
+		const { nodeCatalog, flowSockets } = window.__tp?.test.v1;
 		const groups = nodeCatalog.nodeCatalog ?? nodeCatalog.catalog ?? null;
 		const spec = nodeCatalog.findNodeSpec('onhit');
 		const group = (groups ?? []).find((g) => g.items.some((i) => i.type === 'onhit'))?.group ?? null;
@@ -155,21 +155,21 @@ h.run(async () => {
 	// ---------------------------------------------------------------- the scene
 	await h.connect(A, B);
 	const ball = await A.page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/create Sphere 0.3');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create Sphere 0.3');
 		let group = null;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		const sphere = group.children[group.children.length - 1];
 		sphere.name = 'Ball';
 		sphere.position.set(0, 1, 0);
 		sphere.userData.physics = { mode: 'dynamic', mass: 1 };
-		window.__stores.objectsGroup.update((v) => v);
-		window.__stores.objectActions.deselectObject();
+		window.__tp.test.v1.objectsGroup.update((v) => v);
+		window.__tp.test.v1.objectActions.deselectObject();
 		return sphere.uuid;
 	});
 	await h.eventually(
 		() => B.page.evaluate((uuid) => {
 			let group = null;
-			window.__stores.objectsGroup.subscribe((v) => (group = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 			return !!group?.getObjectByProperty('uuid', uuid);
 		}, ball),
 		(ok) => ok,
@@ -177,7 +177,7 @@ h.run(async () => {
 	);
 	// zero-g, no damping, the block ON; peer vars from a clean slate
 	await sp(A.page, 'sp.setScenePhysics({ gravity: 0, damping: { linear: 0 }, knock: { enabled: true } })');
-	for (const p of [A, B]) await p.page.evaluate(() => window.__stores.peerVars.clearPeerVars?.());
+	for (const p of [A, B]) await p.page.evaluate(() => window.__tp.test.v1.peerVars.clearPeerVars?.());
 
 	// THE GRAPH: four On Hit flavours on the ball, each counted; `me` also banks a
 	// per-player variable; a Math node reads the unnamed handle (the __default read)
@@ -212,13 +212,13 @@ h.run(async () => {
 	// the stale-stamp guard records first-seen at TICK time — settle before the first knock
 	await settle(A.page, 800);
 
-	for (const p of [A, B]) await p.page.evaluate(() => window.__stores.isLocked.set(true));
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	for (const p of [A, B]) await p.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await h.eventually(() => bodyOf(A.page, ball), (b) => !!b && b.mode === 'dynamic', '(premise) the ball is a dynamic body on A, the initiator');
 	await h.eventually(
 		() => B.page.evaluate(() => {
 			let v = null;
-			window.__stores.physics.remoteSimulating.subscribe((x) => (v = x))();
+			window.__tp.test.v1.physics.remoteSimulating.subscribe((x) => (v = x))();
 			return v;
 		}),
 		(v) => v === A.id,
@@ -272,7 +272,7 @@ h.run(async () => {
 	const installFeed = (peer) =>
 		peer.page.evaluate(async () => {
 			window.__feed = { hits: [], off: null, api: null };
-			await window.__stores.moduleSDK.initModules([
+			await window.__tp.test.v1.moduleSDK.initModules([
 				{
 					id: 'hitfeed',
 					name: 'Hit feed test',
@@ -312,20 +312,20 @@ h.run(async () => {
 	console.log('\n=== 5. a late joiner learns the sim is running from the handshake ===');
 	const C = await h.setupPage(browser, 'C');
 	// the Connect pill lives in the editor chrome, which play mode hides
-	await A.page.evaluate(() => window.__stores.isLocked.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(null));
 	await h.connect(C, A);
 	const cSim = await C.page.evaluate(() => {
 		let v = null;
-		window.__stores.physics.remoteSimulating.subscribe((x) => (v = x))();
+		window.__tp.test.v1.physics.remoteSimulating.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(cSim === A.id, '5.1 (measured) C\'s remoteSimulating names A (' + cSim + ')');
 	h.check(cSim === A.id, '5.2 THE FINDING CLOSED: `simulate` rode the handshake — before A2 a joiner mid-run sat with null until the sim restarted');
-	await C.page.evaluate(() => window.__stores.isLocked.set(true));
+	await C.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await h.eventually(
 		() => C.page.evaluate((uuid) => {
 			let group = null;
-			window.__stores.objectsGroup.subscribe((v) => (group = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 			return !!group?.getObjectByProperty('uuid', uuid);
 		}, ball),
 		(ok) => ok,
@@ -334,12 +334,12 @@ h.run(async () => {
 	await sp(A.page, 'return null');
 	const s5 = await sweep(C.page, 'c', { speed: 2 });
 	h.check(s5.armed, '5.3 ...so C\'s probes ARM straight away (a sim runs somewhere)');
-	await A.page.evaluate(() => window.__stores.isLocked.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 
 	// ---------------------------------------------------------------- section 6
 	console.log('\n=== 6. the Inspector: Knock rows and the Physics:Knock deep link ===');
-	await A.page.evaluate(() => window.__stores.isLocked.set(null));
-	await A.page.evaluate(() => window.__stores.openSceneSection('Physics:Knock'));
+	await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.openSceneSection('Physics:Knock'));
 	await settle(A.page, 1200);
 	const anchor = await A.page.evaluate(() => {
 		const el = document.querySelector('[data-anchor="Knock"]');
@@ -384,9 +384,9 @@ h.run(async () => {
 
 	// ---------------------------------------------------------------- section 7
 	console.log('\n=== 7. the haptic seam: a LOCAL VR hand feels its own hit ===');
-	await A.page.evaluate(() => window.__stores.isLocked.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await A.page.evaluate(() => {
-		const k = window.__stores.knock;
+		const k = window.__tp.test.v1.knock;
 		window.__hap = [];
 		k.stopKnock();
 		k.startKnock({ haptic: (i, ms, hand) => window.__hap.push([i, ms, hand]) });
@@ -406,8 +406,8 @@ h.run(async () => {
 	await h.eventually(() => trig(A.page, 'cntAny'), (t) => (t?.count ?? 0) >= 6, '(premise) B\'s hit landed on A');
 	h.check((await A.page.evaluate(() => window.__hap.length)) === 1, '7.3 a PEER\'s hit never buzzes this hand — the message carries no haptic');
 	await A.page.evaluate(() => {
-		window.__stores.knock.stopKnock();
-		window.__stores.knock.startKnock({});
+		window.__tp.test.v1.knock.stopKnock();
+		window.__tp.test.v1.knock.startKnock({});
 	});
 
 	await h.finish(browser);

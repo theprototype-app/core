@@ -25,7 +25,7 @@ h.run(async () => {
 	const page = peer.page;
 
 	const served = await page.evaluate(async () => {
-		const base = String(window.__stores.packs.PACKS_BASE).replace(/\/+$/, '');
+		const base = String(window.__tp.test.v1.packs.PACKS_BASE).replace(/\/+$/, '');
 		const res = await fetch(base + '/architecture-kit/default.json').catch(() => null);
 		return !!res?.ok;
 	});
@@ -37,7 +37,7 @@ h.run(async () => {
 
 	// ---- the fixture: kit stubs, refilled from the pack ------------------------------------
 	await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const T = s.THREE;
 		s.commandsHandler.sceneCommand('/clear all');
 		/** @type {any} */ let g;
@@ -67,17 +67,17 @@ h.run(async () => {
 	 * bounded at 2 s): wait it out, or a screenshot shows the frame from before the pieces */
 	const settle = async () => {
 		await page.waitForTimeout(300);
-		await page.waitForFunction(() => !window.__stores.sceneLoader.framesHeld(), null, { timeout: 10000 }).catch(() => {});
+		await page.waitForFunction(() => !window.__tp.test.v1.sceneLoader.framesHeld(), null, { timeout: 10000 }).catch(() => {});
 		await page.waitForTimeout(500);
 	};
 	await settle();
-	await page.evaluate(() => window.__stores.kitInstancing.scanForKitInstancing());
+	await page.evaluate(() => window.__tp.test.v1.kitInstancing.scanForKitInstancing());
 	await settle();
 	// the premise: the pieces are ON SCREEN (a frame comparison over an empty view proves nothing)
 	const showAll = (on) =>
 		page.evaluate((on) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			for (const o of g.children) o.visible = on;
 		}, on);
 	await showAll(false);
@@ -94,7 +94,7 @@ h.run(async () => {
 		page.evaluate(
 			() =>
 				new Promise((resolve) => {
-					const s = window.__stores;
+					const s = window.__tp?.test.v1;
 					let r;
 					s.globalRenderer.subscribe((v) => (r = v))();
 					const inner = r.render;
@@ -113,14 +113,14 @@ h.run(async () => {
 				})
 		);
 	const setOn = async (on) => {
-		await page.evaluate((on) => window.__stores.kitInstancing.kitInstancingEnabled.set(on), on);
+		await page.evaluate((on) => window.__tp.test.v1.kitInstancing.kitInstancingEnabled.set(on), on);
 		await settle();
 	};
 
 	// ---- 1. fewer calls, the same picture --------------------------------------------------
 	const meshes = await page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		let n = 0;
 		g.traverse((o) => o.isMesh && n++);
 		return n;
@@ -143,16 +143,16 @@ h.run(async () => {
 
 	// off-screen members stay out of their batch (three culls them as themselves): a view of
 	// the row's west end batches only what it sees
-	await page.evaluate(() => window.__stores.objectActions.flyTo([-5, 1.6, -1], [-5, 1.2, -4], 0));
+	await page.evaluate(() => window.__tp.test.v1.objectActions.flyTo([-5, 1.6, -1], [-5, 1.2, -4], 0));
 	await settle();
 	const narrow = await calls();
 	h.check(narrow.stats.members > 0 && narrow.stats.members < on.stats.members, `an OFF-SCREEN piece is not drawn by its batch (members ${on.stats.members} in the full view -> ${narrow.stats.members} looking at the west end)`);
-	await page.evaluate(() => window.__stores.objectActions.flyTo([0, 2.2, 6], [0, 1, -3], 0));
+	await page.evaluate(() => window.__tp.test.v1.objectActions.flyTo([0, 2.2, 6], [0, 1, -3], 0));
 	await settle();
 
 	// ---- 2. the members are still the scene --------------------------------------------------
 	const tree = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		let instanced = 0;
@@ -166,7 +166,7 @@ h.run(async () => {
 	const wall3 = await h.projectPoint(page, [-1, 1.5, -3.85]);
 	const picked = await page.evaluate(
 		({ x, y }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let cam, g;
 			s.globalCamera.subscribe((v) => (cam = v))();
 			s.objectsGroup.subscribe((v) => (g = v))();
@@ -184,7 +184,7 @@ h.run(async () => {
 	// ---- 3. selected / recoloured / hidden / moved -----------------------------------------
 	const base = await calls();
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		const w = g.children.find((o) => o.name === 'Wall 2');
@@ -193,12 +193,12 @@ h.run(async () => {
 	await page.waitForTimeout(400);
 	const sel = await calls();
 	h.check(sel.stats.members === base.stats.members - 1, `a SELECTED piece leaves its batch (members ${base.stats.members} -> ${sel.stats.members})`);
-	await page.evaluate(() => window.__stores.selectedObjects.set([]));
+	await page.evaluate(() => window.__tp.test.v1.selectedObjects.set([]));
 
 	// recolour Wall 4 red: it must DRAW red (the template's material would draw it grey)
 	const redAt = await h.centeredClip(peer, [1, 1.5, -3.85], 60);
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		const w = g.children.find((o) => o.name === 'Wall 4');
@@ -227,7 +227,7 @@ h.run(async () => {
 		return { r: r / n, g: gg / n, b: b / n };
 	}, red.toString('base64'));
 	h.check(redStats.r > redStats.g * 1.6 && redStats.r > redStats.b * 1.6, `a RECOLOURED piece draws in its own colour, not its batch's (r ${redStats.r.toFixed(0)} g ${redStats.g.toFixed(0)} b ${redStats.b.toFixed(0)})`);
-	const recol = await page.evaluate(() => window.__stores.kitInstancing.kitInstancingStats());
+	const recol = await page.evaluate(() => window.__tp.test.v1.kitInstancing.kitInstancingStats());
 	h.check(recol.candidates === on.stats.candidates - 1, `the recoloured piece is no longer a candidate (${on.stats.candidates} -> ${recol.candidates})`);
 
 	// hidden: Wall 5 hidden in the tree must not draw (its batch would otherwise still show it)
@@ -235,7 +235,7 @@ h.run(async () => {
 	const beforeHide = await h.grabFrame(peer, hideClip);
 	await page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		g.children.find((o) => o.name === 'Wall 5').visible = false;
 	});
 	await page.waitForTimeout(300);
@@ -248,7 +248,7 @@ h.run(async () => {
 	const beforeMove = await h.grabFrame(peer, movedClip);
 	await page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		g.children.find((o) => o.name === 'Wall 6').position.y = 3.2;
 	});
 	await page.waitForTimeout(300);
@@ -258,7 +258,7 @@ h.run(async () => {
 
 	// ---- 4. baked light keeps the batches (98-int T1b) -------------------------------------
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.selectedObjects?.set?.([]);
 		s.kitInstancing.scanForKitInstancing();
 	});
@@ -270,7 +270,7 @@ h.run(async () => {
 	 * comparison is about the bake and nothing else. */
 	const bakedPixels = (phase) =>
 		page.evaluate((phase) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const get = (st) => {
 				let v;
 				st.subscribe((x) => (v = x))();
@@ -321,34 +321,34 @@ h.run(async () => {
 			};
 		}, phase);
 	await bakedPixels('unbaked');
-	const bake = await page.evaluate(async () => (await window.__stores.bakeRunner).runBake({ quality: 'draft', ms: 8000 }).then((o) => ({ ok: o.ok, error: o.error, n: o.record?.objects?.length ?? 0 })));
+	const bake = await page.evaluate(async () => (await window.__tp.test.v1.bakeRunner).runBake({ quality: 'draft', ms: 8000 }).then((o) => ({ ok: o.ok, error: o.error, n: o.record?.objects?.length ?? 0 })));
 	h.check(bake.ok === true && bake.n > 0, `premise: the kit row bakes (${JSON.stringify(bake)})`);
-	await page.waitForFunction(() => window.__stores.bakeApply.bakeApplyDebug().meshes.length > 0, null, { timeout: 60000 }).catch(() => {});
+	await page.waitForFunction(() => window.__tp.test.v1.bakeApply.bakeApplyDebug().meshes.length > 0, null, { timeout: 60000 }).catch(() => {});
 	await page.waitForTimeout(1500); // the 1 s scan
-	await page.evaluate(() => window.__stores.kitInstancing.scanForKitInstancing());
+	await page.evaluate(() => window.__tp.test.v1.kitInstancing.scanForKitInstancing());
 	await settle();
 	const baked = await calls();
-	const kitBaked = await page.evaluate(() => window.__stores.bakeApply.bakeApplyDebug().kitBaked);
+	const kitBaked = await page.evaluate(() => window.__tp.test.v1.bakeApply.bakeApplyDebug().kitBaked);
 	h.check(kitBaked > 0, `the baked kit copies batch through the bake hook (${kitBaked})`);
 	h.check(baked.stats.members >= unbaked.stats.members && baked.worst <= unbaked.worst, `a bake keeps the batches: members ${unbaked.stats.members} -> ${baked.stats.members}, calls ${unbaked.worst} -> ${baked.worst}`);
 	const px = await bakedPixels('baked');
 	h.check(px.members > 0 && px.bakeVisible > 1, `premise: the bake changes the picture (${px.bakeVisible} % of pixels) with pieces batched (${px.members})`);
 	h.check(px.plain > 1, `premise: a batch WITHOUT the bake misses it (${px.plain} % of pixels)`);
 	h.check(px.batched < 0.3, `the batched pieces show exactly the bake the unbatched ones show (${px.batched} % of pixels differ)`);
-	await page.evaluate(async () => (await window.__stores.bakeRunner).clearBake());
+	await page.evaluate(async () => (await window.__tp.test.v1.bakeRunner).clearBake());
 	await page.waitForTimeout(1500);
 	const unbakedAgain = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.kitInstancing.scanForKitInstancing();
 		return s.bakeApply.bakeApplyDebug().kitBaked;
 	});
 	h.check(unbakedAgain === 0, `Remove baked light drops the baked batches (${unbakedAgain} left)`);
 
 	// a cleared scene leaves no holder behind
-	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	await page.waitForTimeout(800);
 	const cleared = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.kitInstancing.scanForKitInstancing();
 		let sc;
 		s.globalScene.subscribe((v) => (sc = v))();

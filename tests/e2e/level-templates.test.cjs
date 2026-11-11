@@ -51,7 +51,7 @@ const WALKS = {
 /** the rig's world position (feet = eye - 1.7) */
 const rig = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		/** @type {any} */ let cam;
 		s.playerCam.subscribe((c) => (cam = c))();
 		if (!cam) return null;
@@ -63,7 +63,7 @@ const rig = (page) =>
 const placeRig = (page, x, y, z, yaw) =>
 	page.evaluate(
 		({ x, y, z, yaw }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			/** @type {any} */ let cam;
 			s.playerCam.subscribe((c) => (cam = c))();
 			const v = new s.THREE.Vector3(x, y + 1.7, z);
@@ -114,7 +114,7 @@ h.run(async () => {
 	// warm the lazy rapier import (the physics-suite ritual): Play must have a world at once
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(3000);
 		await warm.ctx.close();
 	}
@@ -146,7 +146,7 @@ h.run(async () => {
 		h.check(size < 400_000, `${level.title}: the .tpscene is ${Math.round(size / 1024)} KB (kit pieces ride as references)`);
 
 		// 1. load it from the Templates modal ---------------------------------------
-		await page.evaluate(() => window.__stores.isLocked.set(null));
+		await page.evaluate(() => window.__tp.test.v1.isLocked.set(null));
 		await page.locator('#logo-menu').click();
 		await page.waitForTimeout(300);
 		await page.locator('#open-templates').click();
@@ -160,7 +160,7 @@ h.run(async () => {
 		await h.eventually(
 			() =>
 				page.evaluate(async (marker) => {
-					const s = window.__stores;
+					const s = window.__tp?.test.v1;
 					/** @type {any} */ let g;
 					s.objectsGroup.subscribe((v) => (g = v))();
 					let refs = 0;
@@ -180,7 +180,7 @@ h.run(async () => {
 			60000
 		);
 		const facts = await page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			/** @type {any} */ let g;
 			s.objectsGroup.subscribe((v) => (g = v))();
 			let refs = 0;
@@ -206,7 +206,7 @@ h.run(async () => {
 		// (0, 2, 3))
 		if (process.env.CF)
 			await page.evaluate((cf) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				/** @type {any} */ let g;
 				s.objectsGroup.subscribe((v) => (g = v))();
 				if (cf === 'arch') delete g.getObjectByName('Stair archway')?.userData?.physics;
@@ -214,9 +214,9 @@ h.run(async () => {
 			}, process.env.CF);
 
 		// 2. Play: the spawn, the sim --------------------------------------------------
-		await page.evaluate(() => window.__stores.isLocked.set(true));
+		await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 		await h.eventually(
-			() => page.evaluate(() => { let v; window.__stores.physics.simulating.subscribe((x) => (v = x))(); return v; }),
+			() => page.evaluate(() => { let v; window.__tp.test.v1.physics.simulating.subscribe((x) => (v = x))(); return v; }),
 			(v) => v === true,
 			`${level.title}: Play starts the simulation (sim-on-play)`,
 			15000
@@ -227,7 +227,7 @@ h.run(async () => {
 			at && Math.hypot(at.x - facts.spawn.position[0], at.z - facts.spawn.position[2]) < 0.6 && Math.abs(at.feet - facts.spawn.position[1]) < 0.6,
 			`${level.title}: Play starts at the spawn point (${at && [at.x, at.feet, at.z].map((v) => v.toFixed(2))})`
 		);
-		const walker = await page.evaluate(() => { let v; window.__stores.charController.walkerState.subscribe((x) => (v = x))(); return v; });
+		const walker = await page.evaluate(() => { let v; window.__tp.test.v1.charController.walkerState.subscribe((x) => (v = x))(); return v; });
 		h.check(walker.source === 'rapier' && walker.grounded, `${level.title}: the walker stands on the level through the physics world (${walker.source}, grounded ${walker.grounded})`);
 
 		// 3. the frame reads, and no quarter is a void ----------------------------------
@@ -250,7 +250,7 @@ h.run(async () => {
 			const ok = before && end && walk.moved(before, end) && walk.pass(end);
 			h.check(!!ok, `${level.title}: ${walk.label} (from ${before && [before.x, before.feet, before.z].map((v) => v.toFixed(2))} to ${end && [end.x, end.feet, end.z].map((v) => v.toFixed(2))})`);
 		}
-		await page.evaluate(() => window.__stores.isLocked.set(false));
+		await page.evaluate(() => window.__tp.test.v1.isLocked.set(false));
 		await page.waitForTimeout(2500);
 	}
 	await h.finish(browser);

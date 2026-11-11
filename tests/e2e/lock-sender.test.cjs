@@ -10,14 +10,14 @@ const h = require('./helpers.cjs');
 
 const locks = (page) =>
 	page.evaluate(
-		() => new Promise((r) => window.__stores.lockedObjects.subscribe((l) => r(l.map((x) => [...x])))())
+		() => new Promise((r) => window.__tp.test.v1.lockedObjects.subscribe((l) => r(l.map((x) => [...x])))())
 	);
 
 const toasts = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.toastStore.subscribe((t) => r(t.map((x) => (typeof x === 'string' ? x : x.text))))()
+				window.__tp.test.v1.toastStore.subscribe((t) => r(t.map((x) => (typeof x === 'string' ? x : x.text))))()
 			)
 	);
 
@@ -29,7 +29,7 @@ const sendRaw = (from, toId, msg) =>
 	from.page.evaluate(
 		([id, list]) => {
 			/** @type {any} */ let p;
-			window.__stores.peers.subscribe((v) => (p = v))();
+			window.__tp.test.v1.peers.subscribe((v) => (p = v))();
 			const conn = p?.connections?.[id];
 			if (!conn?.open) throw new Error('no open connection to ' + id);
 			for (const m of list) conn.send(m);
@@ -45,7 +45,7 @@ h.run(async () => {
 
 	// H makes four boxes: X (E will hold it), Y, Z, and FENCE
 	const [X, Y, Z, FENCE] = await H.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		for (let i = 0; i < 4; i++) s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 300));
 		s.objectActions.deselectObject();
@@ -54,12 +54,12 @@ h.run(async () => {
 	});
 	const holdsUuid = (page, uuid) =>
 		page.evaluate(
-			(u) => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(!!g?.getObjectByProperty('uuid', u)))()),
+			(u) => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(!!g?.getObjectByProperty('uuid', u)))()),
 			uuid
 		);
 	await h.eventually(() => holdsUuid(E.page, FENCE), (v) => v, 'E has the four boxes');
 
-	await E.page.evaluate((u) => window.__stores.objectActions.selectObject(u), X);
+	await E.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), X);
 	await h.eventually(() => locks(H.page), (l) => has(l, E.id, X), 'H sees E holding X');
 
 	// a late joiner: the host's table still reaches it whole
@@ -71,7 +71,7 @@ h.run(async () => {
 		() =>
 			F.page.evaluate((id) => {
 				/** @type {any} */ let p;
-				window.__stores.peers.subscribe((v) => (p = v))();
+				window.__tp.test.v1.peers.subscribe((v) => (p = v))();
 				return !!p?.connections?.[id]?.open;
 			}, E.id),
 		(v) => v,
@@ -120,12 +120,12 @@ h.run(async () => {
 	// --- 4. a sender that may not lock adds nothing, even for itself ---------------------
 	await H.page.evaluate((fid) => {
 		const allowed = new Set(['sent', 'info', 'ping', 'camera', 'specator']);
-		window.__stores.cloudHooks.setCapabilityProvider((peer, type) => peer !== fid || allowed.has(type));
+		window.__tp.test.v1.cloudHooks.setCapabilityProvider((peer, type) => peer !== fid || allowed.has(type));
 	}, F.id);
 	await sendRaw(F, H.id, { type: 'locked', lockeditems: [[F.id, Z]] });
 	await new Promise((r) => setTimeout(r, 1500)); // no fence: F's lock is gated on H right now
 	h.check(!has(await locks(H.page), F.id, Z), "a viewer's lock table is not applied");
-	await H.page.evaluate(() => window.__stores.cloudHooks.setCapabilityProvider(null));
+	await H.page.evaluate(() => window.__tp.test.v1.cloudHooks.setCapabilityProvider(null));
 	// positive control: the same table from an editor applies
 	await sendRaw(F, H.id, { type: 'locked', lockeditems: [[F.id, Z]] });
 	await h.eventually(() => locks(H.page), (l) => has(l, F.id, Z), "an editor's own table row applies");
@@ -145,7 +145,7 @@ h.run(async () => {
 	}
 
 	// --- 6. only the holder can deny -------------------------------------------------------
-	await H.page.evaluate((u) => window.__stores.lockControl.requestControl(u), X);
+	await H.page.evaluate((u) => window.__tp.test.v1.lockControl.requestControl(u), X);
 	await h.eventually(
 		() => toasts(E.page),
 		(t) => asks(t).length >= before + 2,
@@ -156,9 +156,9 @@ h.run(async () => {
 	h.check(!(await toasts(H.page)).some((x) => x.includes('denied')), 'a deny from a non-holder is ignored');
 
 	// the holder's own answer still goes through (the old payload shape, as any peer sends it)
-	await E.page.evaluate((u) => window.__stores.lockControl.releaseLock(u), X);
+	await E.page.evaluate((u) => window.__tp.test.v1.lockControl.releaseLock(u), X);
 	await h.eventually(
-		() => H.page.evaluate(() => new Promise((r) => window.__stores.selectedObject.subscribe((s) => r(s?.uuid))())),
+		() => H.page.evaluate(() => new Promise((r) => window.__tp.test.v1.selectedObject.subscribe((s) => r(s?.uuid))())),
 		(u) => u === X,
 		"the holder's release hands the object to the requester"
 	);

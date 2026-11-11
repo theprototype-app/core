@@ -9,7 +9,7 @@
 const h = require('./helpers.cjs');
 
 const PROBE = () => {
-	const s = /** @type {any} */ (window).__stores;
+	const s = /** @type {any} */ (window).__tp?.test.v1;
 	s.moduleSDK.initModules([
 		{
 			id: 'kitprobe',
@@ -35,7 +35,7 @@ const EVENTS = ['started', 'go', 'lost', 'results'];
 /** the last stamp of each event node, per page (null = never) */
 const stamps = (/** @type {any} */ p) =>
 	p.page.evaluate((events) => {
-		const S = /** @type {any} */ (window).__stores;
+		const S = /** @type {any} */ (window).__tp?.test.v1;
 		let trig;
 		S.flowTriggers.subscribe((/** @type {any} */ m) => (trig = m))();
 		return Object.fromEntries(events.map((e) => [e, trig?.['ev-' + e]?.lastT ?? null]));
@@ -47,14 +47,14 @@ h.run(async () => {
 	const B = await h.setupPage(browser, 'B');
 	for (const p of [A, B]) h.check(await p.page.evaluate(PROBE), 'premise: api.kit on ' + p.id);
 	await h.connect(B, A);
-	const auth = await A.page.evaluate(() => /** @type {any} */ (window).__stores.kit.kitDebug().authority);
+	const auth = await A.page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.kit.kitDebug().authority);
 	const host = auth === A.id ? A : B;
 	const other = host === A ? B : A;
 	console.log('  authority ' + host.id + ', presses on ' + other.id);
 
 	// buttons (one box per action, an On Click -> the action in its own flow) + the event nodes in the scene graph
 	const buttons = await A.page.evaluate(({ actions, events }) => {
-		const S = /** @type {any} */ (window).__stores;
+		const S = /** @type {any} */ (window).__tp?.test.v1;
 		/** @type {string[]} */
 		const ids = [];
 		actions.forEach(([type, data], i) => {
@@ -79,7 +79,7 @@ h.run(async () => {
 		return ids;
 	}, { actions: ACTIONS, events: EVENTS });
 	await h.eventually(
-		() => Promise.all([A, B].map((p) => p.page.evaluate(() => /** @type {any} */ (window).__stores.nodesHandler.graphHash()))),
+		() => Promise.all([A, B].map((p) => p.page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.nodesHandler.graphHash()))),
 		(hs) => hs[0] === hs[1],
 		'premise: both peers hold the graph',
 		30000
@@ -87,13 +87,13 @@ h.run(async () => {
 	await A.page.waitForTimeout(1500); // past both peers' first sight of the action nodes
 
 	const press = async (/** @type {number} */ i) => {
-		const n = await other.page.evaluate((u) => /** @type {any} */ (window).__stores.flowRuntime.fireObjectClick(u), buttons[i]);
+		const n = await other.page.evaluate((u) => /** @type {any} */ (window).__tp.test.v1.flowRuntime.fireObjectClick(u), buttons[i]);
 		h.check(n >= 1, 'premise: the press of ' + ACTIONS[i][0] + ' reached its On Click (' + n + ')');
 	};
 	const phase = () => host.page.evaluate(() => /** @type {any} */ (window).__kitApi.kit.round.phase());
 
 	await press(0);
-	await h.eventually(() => host.page.evaluate(() => /** @type {any} */ (window).__stores.kit.kitDebug().doc.slices.round.intro), (v) => v === 1, 'premise: configured (intro 1 s)', 8000);
+	await h.eventually(() => host.page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.kit.kitDebug().doc.slices.round.intro), (v) => v === 1, 'premise: configured (intro 1 s)', 8000);
 
 	// ---- 1. start: "started" pulses (then "go"), on BOTH peers ----------------------------------
 	await press(1);
@@ -118,19 +118,19 @@ h.run(async () => {
 	console.log('  win() on the non-authority returned ' + JSON.stringify(viaApi));
 	await press(3);
 	await h.eventually(
-		() => host.page.evaluate(() => /** @type {any} */ (window).__stores.kit.kitDebug().refusals ?? []),
+		() => host.page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.kit.kitDebug().refusals ?? []),
 		(r) => r.some((/** @type {any} */ x) => x.piece === 'round' && x.op === 'win' && /results/.test(x.reason)),
 		'3.1 the authority keeps the refusal with its reason (kitDebug().refusals: round.win, "…results…")',
 		8000
 	);
 	await h.eventually(
-		() => other.page.evaluate(() => /** @type {any} */ (window).__stores.kit.kitDebug().refusals ?? []),
+		() => other.page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.kit.kitDebug().refusals ?? []),
 		(r) => r.some((/** @type {any} */ x) => x.piece === 'round' && x.op === 'win' && /results/.test(x.reason)),
 		'3.2 …and so does the peer that pressed (the reason came back with the document)',
 		8000
 	);
 	const logLine = await other.page.evaluate(() =>
-		/** @type {any} */ (window).__stores.diagnostics?.entries?.().filter((/** @type {any} */ e) => e.scope === 'kit').map((/** @type {any} */ e) => e.message) ?? null
+		/** @type {any} */ (window).__tp.test.v1.diagnostics?.entries?.().filter((/** @type {any} */ e) => e.scope === 'kit').map((/** @type {any} */ e) => e.message) ?? null
 	);
 	h.check(Array.isArray(logLine) && logLine.some((m) => /round\.win refused/.test(m)), '3.3 the diagnostics log (the agent\'s logs, the Debug console) says it: ' + JSON.stringify(logLine));
 	const direct = await host.page.evaluate(() => /** @type {any} */ (window).__kitApi.kit.round.win('direct'));

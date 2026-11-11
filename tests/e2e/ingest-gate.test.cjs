@@ -18,7 +18,7 @@ const h = require('./helpers.cjs');
 const objectCount = (page) =>
 	page.evaluate(() => {
 		let n = 0;
-		const g = window.__stores.objectsGroup;
+		const g = window.__tp.test.v1.objectsGroup;
 		let group;
 		const s = g.subscribe((/** @type {any} */ v) => (group = v));
 		s();
@@ -30,7 +30,7 @@ const objectCount = (page) =>
 const feed = (page, n, prefix) =>
 	page.evaluate(
 		({ n, prefix }) => {
-			const { THREE, commandsHandler } = window.__stores;
+			const { THREE, commandsHandler } = window.__tp?.test.v1;
 			const geo = new THREE.BoxGeometry(1, 1, 1);
 			const mat = new THREE.MeshStandardMaterial();
 			const uuids = [];
@@ -51,7 +51,7 @@ h.run(async () => {
 
 	// ---- 1. the verdict ------------------------------------------------------
 	const verdicts = await A.page.evaluate(() => {
-		const { ingestVerdict } = window.__stores.sceneBudget;
+		const { ingestVerdict } = window.__tp.test.v1.sceneBudget;
 		return {
 			// desktop objects: green <= 1000, amber <= 3000, red above
 			small: ingestVerdict(0, 50, 'desktop'),
@@ -80,7 +80,7 @@ h.run(async () => {
 	// ---- 2. an over-budget arrival PARKS ------------------------------------
 	const before = await objectCount(A.page);
 	const armed = await A.page.evaluate((before) => {
-		const { commandsHandler } = window.__stores;
+		const { commandsHandler } = window.__tp?.test.v1;
 		// announce more than the desktop budget can take
 		commandsHandler.createLoader(4200, ['a', 'b', 'c'], 'peer-sending');
 		return { open: commandsHandler.ingestGateOpen(), before };
@@ -89,8 +89,8 @@ h.run(async () => {
 	await feed(A.page, 30, 'parked-');
 	await A.page.waitForTimeout(700);
 	const parked = await A.page.evaluate(() => ({
-		backlog: window.__stores.commandsHandler.ingestBacklog(),
-		gate: (() => { let v; const s = window.__stores.commandsHandler.ingestGate.subscribe((/** @type {any} */ x) => (v = x)); s(); return v; })()
+		backlog: window.__tp.test.v1.commandsHandler.ingestBacklog(),
+		gate: (() => { let v; const s = window.__tp.test.v1.commandsHandler.ingestGate.subscribe((/** @type {any} */ x) => (v = x)); s(); return v; })()
 	}));
 	h.check(parked.backlog >= 29, `the objects are PARKED, not applied (${parked.backlog} in the queue)`);
 	h.check((await objectCount(A.page)) === before, 'the scene is untouched while the question is open');
@@ -107,9 +107,9 @@ h.run(async () => {
 	await A.page.getByRole('button', { name: 'Cancel', exact: true }).first().click();
 	await A.page.waitForTimeout(500);
 	const cancelled = await A.page.evaluate(() => ({
-		backlog: window.__stores.commandsHandler.ingestBacklog(),
-		open: window.__stores.commandsHandler.ingestGateOpen(),
-		loading: (() => { let v; const s = window.__stores.loading.subscribe((/** @type {any} */ x) => (v = x)); s(); return v.length; })()
+		backlog: window.__tp.test.v1.commandsHandler.ingestBacklog(),
+		open: window.__tp.test.v1.commandsHandler.ingestGateOpen(),
+		loading: (() => { let v; const s = window.__tp.test.v1.loading.subscribe((/** @type {any} */ x) => (v = x)); s(); return v.length; })()
 	}));
 	h.check(cancelled.backlog === 0 && !cancelled.open, 'Cancel drops the parked queue and closes the gate');
 	h.check((await objectCount(A.page)) === before, '…and not one of them reached the scene');
@@ -117,37 +117,37 @@ h.run(async () => {
 
 	// ---- 3b. "Load the first N" --------------------------------------------
 	const capBase = await objectCount(A.page);
-	await A.page.evaluate(() => window.__stores.commandsHandler.createLoader(4200, [], 'peer-sending'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.createLoader(4200, [], 'peer-sending'));
 	await feed(A.page, 40, 'capped-');
 	await A.page.waitForTimeout(400);
 	// force a small allowance so the arithmetic is observable in a headless scene
 	await A.page.evaluate(() => {
-		window.__stores.commandsHandler.ingestGate.update((/** @type {any} */ g) => ({ ...g, allowed: 12 }));
+		window.__tp.test.v1.commandsHandler.ingestGate.update((/** @type {any} */ g) => ({ ...g, allowed: 12 }));
 	});
 	await A.page.waitForTimeout(200);
 	await A.page.getByRole('button', { name: /Load the first 12/ }).first().click();
 	await h.eventually(
-		() => A.page.evaluate(() => window.__stores.commandsHandler.ingestBacklog()),
+		() => A.page.evaluate(() => window.__tp.test.v1.commandsHandler.ingestBacklog()),
 		(n) => n === 0,
 		'the queue drains after the answer'
 	);
 	const capped = (await objectCount(A.page)) - capBase;
 	h.check(capped === 12, `exactly the allowance was applied and the rest dropped (${capped} of 40)`);
 	h.check(
-		(await A.page.evaluate(() => { let v; const s = window.__stores.loading.subscribe((/** @type {any} */ x) => (v = x)); s(); return v.length; })) === 0,
+		(await A.page.evaluate(() => { let v; const s = window.__tp.test.v1.loading.subscribe((/** @type {any} */ x) => (v = x)); s(); return v.length; })) === 0,
 		'the dropped objects count as arrived, so the bar does not wait out the stall'
 	);
 
 	// ---- 3c. Load all -------------------------------------------------------
 	await A.page.evaluate(() => {
-		const { objectsGroup, pokeScene } = window.__stores;
+		const { objectsGroup, pokeScene } = window.__tp?.test.v1;
 		let group; { const s = objectsGroup.subscribe((/** @type {any} */ g) => (group = g)); s(); }
 		group.clear();
 		pokeScene();
 	});
 	await A.page.waitForTimeout(400);
 	const allBase = await objectCount(A.page);
-	await A.page.evaluate(() => window.__stores.commandsHandler.createLoader(4200, [], 'peer-sending'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.createLoader(4200, [], 'peer-sending'));
 	await feed(A.page, 25, 'all-');
 	await A.page.waitForTimeout(300);
 	await A.page.getByRole('button', { name: 'Load all', exact: true }).first().click();
@@ -156,11 +156,11 @@ h.run(async () => {
 		(n) => n - allBase === 25,
 		'Load all applies every parked object'
 	);
-	h.check(!(await A.page.evaluate(() => window.__stores.commandsHandler.ingestGateOpen())), 'and the gate closes behind it');
+	h.check(!(await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.ingestGateOpen())), 'and the gate closes behind it');
 
 	// ---- 4. a scene FILE asks too ------------------------------------------
 	const payload = await A.page.evaluate(() => {
-		const { THREE, sessions } = window.__stores;
+		const { THREE, sessions } = window.__tp?.test.v1;
 		const objects = [];
 		for (let i = 0; i < 3500; i++) {
 			const m = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial());
@@ -179,7 +179,7 @@ h.run(async () => {
 			objects.push({ object: { uuid: 'file-uuid-' + i, name: 'file-' + i, type: 'Mesh', children: [] } });
 		// requestLoadPayload is what a file open and the Sessions manager's Load both
 		// reach; the travel node and a peer proposal deliberately do NOT
-		window.__tpLoad = window.__stores.sessions.requestLoadPayload({ name: 'Huge', objects });
+		window.__tpLoad = window.__tp.test.v1.sessions.requestLoadPayload({ name: 'Huge', objects });
 	});
 	await A.page.waitForSelector('dialog', { timeout: 8000 });
 	const ask = await A.page.evaluate(() => document.querySelector('dialog')?.textContent ?? '');

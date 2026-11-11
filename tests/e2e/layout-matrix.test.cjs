@@ -31,7 +31,7 @@ const S = (page, fn, arg) => page.evaluate(fn, arg);
 /** reset to "nothing open": no columns, no dock, no menus, no floating windows */
 async function reset(page) {
 	await S(page, () => {
-		const st = window.__stores;
+		const st = window.__tp?.test.v1;
 		st.closeMenu.set(true);
 		document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
 		st.inspectorClose.set(true);
@@ -51,26 +51,26 @@ const STATES = [
 	{ id: 'both-columns', columns: true, run: async (page) => {
 		await openScene(page, 'right');
 		await S(page, () => {
-			window.__stores.aiAssistantHidden.set('');
+			window.__tp.test.v1.aiAssistantHidden.set('');
 		});
 		await page.waitForTimeout(400);
-		await S(page, () => window.__stores.docking.dockToSide('chat', 'left'));
+		await S(page, () => window.__tp.test.v1.docking.dockToSide('chat', 'left'));
 		await page.waitForTimeout(900);
 	} },
 	{ id: 'dock-tall', run: async (page) => {
 		await openScene(page, 'right');
 		await S(page, () => {
-			window.__stores.bottomDock.dockMinimized.set(false);
-			window.__stores.bottomDock.setDockEmptyOpen(true);
+			window.__tp.test.v1.bottomDock.dockMinimized.set(false);
+			window.__tp.test.v1.bottomDock.setDockEmptyOpen(true);
 			// the dock's own maximum (bottomDock clampH: 80 % of the screen, 200 px kept for the top row) — a raw .set()
 			// skips that clamp, which only the drag and the load apply
-			window.__stores.bottomDock.dockHeight.set(Math.round(Math.min(innerHeight * 0.8, innerHeight - 200)));
+			window.__tp.test.v1.bottomDock.dockHeight.set(Math.round(Math.min(innerHeight * 0.8, innerHeight - 200)));
 		});
 		await page.waitForTimeout(1000);
 	} },
 	{ id: 'main-menu', run: async (page) => {
 		await openScene(page, 'right');
-		await S(page, () => window.__stores.closeMenu.set(false));
+		await S(page, () => window.__tp.test.v1.closeMenu.set(false));
 		await page.waitForTimeout(700);
 	} },
 	{ id: 'profile-menu', run: async (page) => {
@@ -85,13 +85,13 @@ const STATES = [
 	} },
 	{ id: 'floating-window', run: async (page) => {
 		await openScene(page, 'right');
-		await S(page, () => window.__stores.dockHost?.HOSTED?.stats?.open());
+		await S(page, () => window.__tp.test.v1.dockHost?.HOSTED?.stats?.open());
 		await page.waitForTimeout(900);
 	} },
 	{ id: 'scene-left', columns: true, run: async (page) => openScene(page, 'left') },
 	// UI-5 (device lab, HONOR 718x587): the floating AI window covered the whole toolbar
 	{ id: 'ai-window', run: async (page) => {
-		await S(page, () => window.__stores.aiAssistantHidden.set(''));
+		await S(page, () => window.__tp.test.v1.aiAssistantHidden.set(''));
 		await page.waitForTimeout(1100);
 	} }
 ];
@@ -100,7 +100,7 @@ const MENU_STATES = new Set(['main-menu', 'profile-menu']);
 /** @param {import('playwright').Page} page @param {'left'|'right'} side */
 async function openScene(page, side) {
 	await S(page, (side) => {
-		const st = window.__stores;
+		const st = window.__tp?.test.v1;
 		st.sidebars.inspectorSide.set(side);
 		st.inspectorKind.set('scene');
 		st.inspectorClose.set(false);

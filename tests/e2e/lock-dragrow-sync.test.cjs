@@ -13,7 +13,7 @@ const objVal = (peer, uuid, expr) =>
 	peer.page.evaluate(
 		({ uuid, expr }) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const o = g?.getObjectByProperty('uuid', uuid);
 					r(o ? expr.split('.').reduce((v, k) => v?.[k], o) : null);
 				})()
@@ -32,19 +32,19 @@ h.run(async () => {
 
 	// A builds the scene, B receives it
 	await A.page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		window.__stores.commandsHandler.sceneCommand('/light directional');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/light directional');
 	});
 	await A.page.waitForTimeout(2500);
 	const ids = await A.page.evaluate(async () => {
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const box = g.children.find((c) => c.name === 'Box');
 		const light = g.children.find((c) => c.type === 'DirectionalLight');
 		box.userData.physics = { ...(box.userData.physics ?? {}), mode: 'static' };
 		return { box: box.uuid, light: light.uuid };
 	});
 	await h.eventually(() => objVal(B, ids.box, 'uuid'), (v) => v === ids.box, 'B has the box', 20000);
-	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u, true), ids.box);
+	await A.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u, true), ids.box);
 	await A.page.locator('#inspector-position').waitFor({ state: 'visible', timeout: 10000 });
 	await A.page.waitForTimeout(500);
 
@@ -83,7 +83,7 @@ h.run(async () => {
 	h.check(near(await objVal(B, ids.box, 'position.x'), endA, 0.002), 'the undo of a typed edit replicates');
 
 	// ---- light intensity -----------------------------------------------------------------------
-	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u, true), ids.light);
+	await A.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u, true), ids.light);
 	await A.page.locator('#inspector-intensity').waitFor({ state: 'visible', timeout: 10000 });
 	await L.scrub(A.page, '#inspector-intensity', 0, 50);
 	const iA = await objVal(A, ids.light, 'intensity');
@@ -92,7 +92,7 @@ h.run(async () => {
 
 	// ---- shader vector component -----------------------------------------------------------------
 	await A.page.evaluate((u) => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		S.objectActions.selectObject(u);
 		S.shaderGraph.setShaderGraphFor(u, {
 			nodes: [
@@ -107,7 +107,7 @@ h.run(async () => {
 	await A.page.locator('#shader-editor .shader-vec .dn-wrap').first().waitFor({ state: 'visible', timeout: 15000 });
 	const tilingOn = (/** @type {any} */ peer) =>
 		peer.page.evaluate(
-			(u) => new Promise((r) => window.__stores.shaderGraph.shaderGraphs.subscribe((all) => r(Number((all[u]?.nodes ?? []).find((n) => n.type === 'tilingOffset')?.data?.tiling?.[0] ?? 1)))()),
+			(u) => new Promise((r) => window.__tp.test.v1.shaderGraph.shaderGraphs.subscribe((all) => r(Number((all[u]?.nodes ?? []).find((n) => n.type === 'tilingOffset')?.data?.tiling?.[0] ?? 1)))()),
 			ids.box
 		);
 	await L.scrub(A.page, '#shader-editor .shader-vec', 0, 80);
@@ -118,7 +118,7 @@ h.run(async () => {
 
 	// ---- Animation length ----------------------------------------------------------------------------
 	await A.page.evaluate((u) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		const obj = g.getObjectByProperty('uuid', u);
@@ -132,7 +132,7 @@ h.run(async () => {
 	const lengthOn = (/** @type {any} */ peer) =>
 		peer.page.evaluate((u) => {
 			let set;
-			window.__stores.animationPreview.animations.subscribe((v) => (set = v))();
+			window.__tp.test.v1.animationPreview.animations.subscribe((v) => (set = v))();
 			return Number(set?.[u]?.clips?.[set[u].active]?.duration ?? NaN);
 		}, ids.box);
 	await L.scrub(A.page, 'label:has(#animation-length)', 0, 50);

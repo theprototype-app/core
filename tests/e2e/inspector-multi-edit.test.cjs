@@ -54,7 +54,7 @@ h.run(async () => {
 
 	// three boxes with DIFFERENT roughness, all selected, Material + Physics open
 	await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		localStorage.setItem('inspector:sec:Material', 'open');
 		localStorage.setItem('inspector:sec:Physics', 'open');
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
@@ -80,7 +80,7 @@ h.run(async () => {
 
 	// PREMISE: the set really holds three and the panel is showing the material
 	const premise = await A.page.evaluate(async () => ({
-		set: await new Promise((r) => window.__stores.selectedObjects.subscribe((v) => r([...v]))()),
+		set: await new Promise((r) => window.__tp.test.v1.selectedObjects.subscribe((v) => r([...v]))()),
 		note: document.querySelector('#material-multi-note')?.textContent?.trim() ?? '',
 		physicsNote: document.querySelector('#physics-multi-note')?.textContent?.trim() ?? ''
 	}));
@@ -113,7 +113,7 @@ h.run(async () => {
 	);
 
 	// ---------- ONE undo restores each object's OWN previous value ----------
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(400);
 	trio = await readTrio(A.page);
 	const restored =
@@ -124,7 +124,7 @@ h.run(async () => {
 
 	// ---------- colour fans, and replicates once per object ----------
 	await A.page.evaluate(async () => {
-		const peer = await new Promise((r) => window.__stores.peers.subscribe(r)());
+		const peer = await new Promise((r) => window.__tp.test.v1.peers.subscribe(r)());
 		window.__sentColors = [];
 		const orig = peer.send.bind(peer);
 		peer.send = (m) => {
@@ -145,7 +145,7 @@ h.run(async () => {
 	// the colour gesture seals ~600ms after the last input — then ONE undo must
 	// bring back each object's OWN colour (red/green/blue), not a shared one
 	await A.page.waitForTimeout(900);
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(400);
 	trio = await readTrio(A.page);
 	h.check(
@@ -232,7 +232,7 @@ h.run(async () => {
 	);
 	// the gesture seals after ~500ms into ONE transformSet entry
 	await A.page.waitForTimeout(900);
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(400);
 	const posUndone = await A.page.evaluate(() =>
 		window.__d1.uuids.map((u) => window.__d1.group.getObjectByProperty('uuid', u).position.toArray())
@@ -244,7 +244,7 @@ h.run(async () => {
 
 	// ---------- "Move origin" re-points the gizmo, objects stay put ----------
 	const originMoved = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		document.querySelector('#origin-mode')?.click();
 		await new Promise((r) => setTimeout(r, 250));
 		const on = await new Promise((r) => w.multiTransform.pivotOnly.subscribe(r)());
@@ -259,7 +259,7 @@ h.run(async () => {
 	await axis('X').fill('7');
 	await A.page.waitForTimeout(350);
 	const afterOrigin = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const pose = await new Promise((r) => w.multiTransform.pivotPose.subscribe(r)());
 		return {
 			originX: pose?.pos?.[0] ?? null,
@@ -275,7 +275,7 @@ h.run(async () => {
 	);
 	// leaving origin mode, a rotation now turns the set about that origin
 	const rotated = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		document.querySelector('#origin-mode')?.click(); // Done
 		await new Promise((r) => setTimeout(r, 250));
 		const before = window.__d1.uuids.map((u) =>
@@ -310,7 +310,7 @@ h.run(async () => {
 
 	// ---------- geometry fans across ONE primitive type ----------
 	const geo = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		localStorage.setItem('inspector:sec:Geometry', 'open');
 		// three boxes share a gtype; add a sphere to prove the type gate
 		w.commandsHandler.sceneCommand('/create Sphere 0.5');
@@ -334,7 +334,7 @@ h.run(async () => {
 	await width.fill('2.5');
 	await A.page.waitForTimeout(500);
 	const geoApplied = await A.page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const boxes = window.__d1.uuids.map((u) => {
 			const object = window.__d1.group.getObjectByProperty('uuid', u);
 			return w.geometryEdit.geometryParamsOf(object)?.params?.width ?? null;
@@ -378,7 +378,7 @@ h.run(async () => {
 		`the texture landed on all four materials (${textured.join(', ')})`
 	);
 	// and one undo takes it off every one of them
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(600);
 	const untextured = await A.page.evaluate(() => {
 		const all = [...window.__d1.uuids, window.__d1.sphere];
@@ -406,7 +406,7 @@ h.run(async () => {
 
 	// ---------- a single selection keeps the old, unbatched behaviour ----------
 	await A.page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.objectActions.applySelectionSet([window.__d1.uuids[1]]);
 	});
 	await A.page.waitForTimeout(600);

@@ -34,10 +34,13 @@ const frameStats = (peer, ms) =>
 		(dur) =>
 			new Promise((resolve) => {
 				const d = [];
-				let last = performance.now();
-				const end = last + dur;
+				let last = -1;
+				let end = Infinity;
 				const tick = (t) => {
-					d.push(t - last);
+					// start at the FIRST frame's own stamp: performance.now() taken before it can be later
+					// than that stamp, which made the first delta negative
+					if (last < 0) end = t + dur;
+					else d.push(t - last);
 					last = t;
 					if (t < end) requestAnimationFrame(tick);
 					else {
@@ -112,31 +115,40 @@ h.run(async () => {
 	await h.eventually(() => peaks(A), (p) => p.perPeer?.[B.id]?.capped === 1, 'the oversized object is dropped and counted', 20000);
 	h.check(!(await inPage(A, 'let g; s.objectsGroup.subscribe((v) => (g = v))(); return !!g.getObjectByProperty("uuid", "big-0bj")')), 'it never reached the scene');
 	h.check(await inPage(A, 'return pc.openedPeers.has(arg)', B.id), 'the link stays up');
+	const THROTTLE = /sending faster than this session can take/;
+	const toastsAfterCap = (await notes(A)).filter((t) => THROTTLE.test(t)).length;
+	h.check(toastsAfterCap === 1, `the drop raised ONE toast (${toastsAfterCap})`);
 	await inPage(A, 'Object.assign(s.wireProto.budget.limits, arg)', limits);
 
 	// ---- 3. a flooding peer -------------------------------------------------------------------------
 	console.log('\n=== 3. a flooding peer ===');
+	// B's own rendering is paused for both windows (the overload guard's pause), so A's frame times
+	// compare like with like on a loaded machine
+	await inPage(B, 's.overloadGuard.pauseRendering("e2e: wire-flood measures A")');
 	const idle = await frameStats(A, 4000);
 	console.log('  A idle frames ' + JSON.stringify(idle));
 	await inPage(A, 's.wireProto.budget.limits.msgsPerSec = 300; s.wireProto.budget.limits.bytesPerSec = 4 * 1024 * 1024');
 	const before = (await peaks(A)).perPeer?.[B.id]?.dropped ?? 0;
+	// SYNCHRONOUS bursts: a setTimeout loop is throttled to a few wakes a second in headless and
+	// never crossed the limit (800 messages in 6 s). 3 x 3000 with a short gap is ~10x the 300/s cap.
 	const flooding = inPage(B, `
-		const t0 = performance.now(); let n = 0;
-		while (performance.now() - t0 < 6000) {
-			for (let i = 0; i < 200; i++) { pc.send({ type: 'linkaway', hidden: false }); n++; }
-			await new Promise((r) => setTimeout(r, 10));
+		let n = 0;
+		for (let b = 0; b < 3; b++) {
+			for (let i = 0; i < 3000; i++) { pc.send({ type: 'linkaway', hidden: false }); n++; }
+			await new Promise((r) => setTimeout(r, 300));
 		}
 		return n;`);
-	await A.page.waitForTimeout(1500);
 	const flood = await frameStats(A, 4000);
 	const sent = await flooding;
 	console.log('  A frames during the flood ' + JSON.stringify(flood) + ', B sent ' + sent);
+	await h.eventually(() => peaks(A), (p) => (p.perPeer?.[B.id]?.dropped ?? 0) > before, 'the flood reaches A and is metered', 30000);
 	await A.page.waitForTimeout(2000);
+	await inPage(B, 's.overloadGuard.resumeRendering()');
 	const after = await peaks(A);
 	const dropped = (after.perPeer?.[B.id]?.dropped ?? 0) - before;
-	h.check(dropped > 0, `the flood's excess is dropped and counted (${dropped} of ${sent})`);
-	const toasts = (await notes(A)).filter((t) => /sending faster than this session can take/.test(t));
-	h.check(toasts.length === 1, `ONE throttled toast (${toasts.length})`);
+	h.check(dropped > 0 && dropped < sent, `the flood's excess is dropped and counted (${dropped} of ${sent})`);
+	const toasts = (await notes(A)).filter((t) => THROTTLE.test(t));
+	h.check(toasts.length === 1, `still ONE toast: the throttle holds it to one per peer per minute (${toasts.length})`);
 	h.check(await inPage(A, 'return pc.openedPeers.has(arg)', B.id), 'never a disconnect: the link is still open');
 	const errs = await inPage(A, 'return s.wireErrors.wireErrors().filter((e) => e.peerId === arg && e.type.startsWith("budget:"))', B.id);
 	h.check(errs.some((e) => e.type === 'budget:msgs' && e.count > 0), 'the drops are in the per-peer wire table (Diagnostics)');

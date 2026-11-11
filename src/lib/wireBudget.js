@@ -13,13 +13,20 @@
 //
 // A LEAF (no imports): pure factory + arithmetic, unit-tested without a peer.
 
-/** The limits. Measured peaks and the factor are documented beside each. */
+/**
+ * The limits, set from the peaks measured on the receiving page (101-proto STATUS, per peer per 1 s
+ * window): the heaviest legit load reached 534 msgs/s (500 synchronous creates + a 60 Hz grab) and
+ * ~1 MB/s (a 24 MB asset share, measured in headless at ~1 fps, so low against a fast LAN); the
+ * largest `object` any scenes-repo scene or template produces is ~270 KB as JSON.
+ */
 export const LIMITS = {
-	/** messages per second per peer */
-	msgsPerSec: 20000,
-	/** bytes per second per peer (wire bytes of the reliable channel + the fast channel) */
-	bytesPerSec: 256 * 1024 * 1024,
-	/** approximate serialized size of one `object` message */
+	/** messages per second per peer: ~19x the measured peak (534) */
+	msgsPerSec: 10000,
+	/** bytes per second per peer (reliable + fast channel wire bytes): ~60x the measured peak, above what
+	 * one WebRTC data channel carries on a fast LAN, so a real transfer is never metered */
+	bytesPerSec: 64 * 1024 * 1024,
+	/** approximate serialized size of one `object` message: ~240x the largest scenes-repo/template object,
+	 * and above a textured model at the 25 MB import cap (its images ride inside the object as data URLs) */
 	objectBytes: 64 * 1024 * 1024
 };
 

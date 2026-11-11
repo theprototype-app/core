@@ -13,10 +13,13 @@ const clock = () => {
 };
 
 describe('wireBudget', () => {
-	it('the limits are set (and documented in STATUS / OPEN-CORE.md)', () => {
-		expect(LIMITS.msgsPerSec).toBeGreaterThan(0);
-		expect(LIMITS.bytesPerSec).toBeGreaterThan(0);
-		expect(LIMITS.objectBytes).toBeGreaterThan(0);
+	it('the limits sit at >= 4x the measured peaks (101-proto STATUS)', () => {
+		// heaviest legit load on the receiving page: 534 msgs/s, 1,051,153 bytes/s; largest object JSON 270,665
+		expect(LIMITS.msgsPerSec).toBeGreaterThanOrEqual(4 * 534);
+		expect(LIMITS.bytesPerSec).toBeGreaterThanOrEqual(4 * 1051153);
+		expect(LIMITS.objectBytes).toBeGreaterThanOrEqual(4 * 270665);
+		// a big legit object arrives in one window: the byte budget must never be the thing that drops it
+		expect(LIMITS.bytesPerSec).toBeGreaterThanOrEqual(LIMITS.objectBytes);
 	});
 
 	it('messages over the per-second budget are dropped and counted; the next second starts fresh', () => {

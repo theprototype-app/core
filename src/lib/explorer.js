@@ -394,7 +394,7 @@ function renderObjectThumbnail(object) {
 		return renderOffscreen(128, 128, (renderer) => {
 			renderer.render(scene, camera);
 			return renderer.domElement.toDataURL('image/webp', 0.72);
-		});
+		}, { release: scene });
 	} catch (error) {
 		console.log('explorer thumbnail failed', error);
 		return null;

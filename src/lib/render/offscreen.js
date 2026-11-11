@@ -67,11 +67,38 @@ function letGo() {
 }
 
 /**
+ * Free the GPU copies of a TEMPORARY subtree's geometries, materials and their textures (the JS
+ * objects stay usable: three re-uploads on a later use). A thumbnail renderer of its own used to
+ * free them by losing its whole context after each picture; the shared one keeps living, so a
+ * one-shot job hands its throw-away scene here instead.
+ * @param {any} root
+ */
+export function releaseGpu(root) {
+	const seen = new Set();
+	const free = (/** @type {any} */ x) => {
+		if (!x || seen.has(x)) return;
+		seen.add(x);
+		x.dispose?.();
+	};
+	root?.traverse?.((/** @type {any} */ o) => {
+		free(o.geometry);
+		for (const m of Array.isArray(o.material) ? o.material : o.material ? [o.material] : []) {
+			for (const v of Object.values(m)) if (/** @type {any} */ (v)?.isTexture) free(v);
+			free(m);
+		}
+	});
+	if (root?.background?.isTexture) free(root.background);
+	if (root?.environment?.isTexture) free(root.environment);
+}
+
+/**
  * Borrow the shared renderer for one synchronous job at `width`×`height` (CSS px = device px,
  * pixel ratio 1). Throws what the renderer's construction throws (no context).
- * @template T @param {number} width @param {number} height @param {(renderer: THREE.WebGLRenderer) => T} job @returns {T}
+ * `opts.release`: a throw-away subtree whose GPU copies are freed after the job (releaseGpu).
+ * @template T @param {number} width @param {number} height @param {(renderer: THREE.WebGLRenderer) => T} job
+ * @param {{ release?: any }} [opts] @returns {T}
  */
-export function renderOffscreen(width, height, job) {
+export function renderOffscreen(width, height, job, opts = {}) {
 	const r = get();
 	holders++;
 	try {
@@ -79,6 +106,7 @@ export function renderOffscreen(width, height, job) {
 		r.setSize(width, height);
 		return job(r);
 	} finally {
+		if (opts.release) releaseGpu(opts.release);
 		letGo();
 	}
 }

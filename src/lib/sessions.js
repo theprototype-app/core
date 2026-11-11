@@ -194,7 +194,7 @@ function renderSceneThumbnail(group) {
 		return renderOffscreen(256, 160, (renderer) => {
 			renderer.render(scene, camera);
 			return renderer.domElement.toDataURL('image/webp', 0.7);
-		});
+		}, { release: scene });
 	} catch (error) {
 		console.log('session thumbnail failed', error);
 		return null;

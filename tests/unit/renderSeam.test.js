@@ -84,6 +84,19 @@ describe('the shared off-screen renderer (101 F3)', () => {
 		expect([a.toneMapping, a.toneMappingExposure, a.outputColorSpace, a.autoClear, a.shadowMap.enabled, a.localClippingEnabled]).toEqual([0, 1, 'srgb', true, false, false]);
 		expect([a.domElement.width, a.domElement.height]).toEqual([256, 160]);
 	});
+	test('a one-shot job frees its throw-away scene from the GPU (what losing the context did before)', async () => {
+		const THREE = await import('three');
+		const tex = new THREE.Texture();
+		const mat = new THREE.MeshBasicMaterial({ map: tex });
+		const geo = new THREE.BoxGeometry();
+		const scene = new THREE.Scene();
+		scene.add(new THREE.Mesh(geo, mat), new THREE.Mesh(geo, mat));
+		const freed = [];
+		for (const x of [tex, mat, geo]) x.addEventListener('dispose', () => freed.push(x.type ?? 'texture'));
+		const url = seam.renderOffscreen(16, 16, () => 'data:x', { release: scene });
+		expect(url).toBe('data:x');
+		expect(freed.length).toBe(3); // each once, though two meshes share them
+	});
 	test('disposed after idle with nobody holding it, kept while a preview holds it', () => {
 		const lease = seam.acquireOffscreen();
 		const r = lease.renderer;

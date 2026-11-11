@@ -142,7 +142,7 @@ function renderThumbnail(element) {
 		return renderOffscreen(128, 128, (renderer) => {
 			renderer.render(scene, camera);
 			return renderer.domElement.toDataURL('image/webp', 0.7);
-		});
+		}, { release: scene });
 	} catch (error) {
 		console.log('prefab thumbnail failed', error);
 		return null;

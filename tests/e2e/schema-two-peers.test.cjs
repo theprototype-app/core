@@ -10,30 +10,61 @@
 // Run: APP_URL=https://theprototype.app:7022/ node tests/e2e/schema-two-peers.test.cjs
 const h = require('./helpers.cjs');
 
-/** a comparable summary of a page's scene, keyed by uuid. `types: false` leaves the material TYPE out:
- * the handshake sync sends a mesh as glTF, and glTF carries PBR materials only, so a late joiner has
- * always received a Phong / Lambert / Toon / ... material as MeshStandardMaterial (measured the same on
- * the v1.65.1 base, before this lane) @param {any} page @param {boolean} [types] */
-const sceneOf = (page, types = true) =>
-	page.evaluate(async (types) => {
+/** a comparable summary of a page's scene, keyed by uuid: type | name | material types (+map/+normal) | verts | parent
+ * @param {any} page */
+const sceneOf = (page) =>
+	page.evaluate(async () => {
 		const s = window.__stores;
 		const g = await new Promise((r) => s.objectsGroup.subscribe(r)());
 		/** @type {Record<string, string>} */
 		const out = {};
 		g.traverse((o) => {
 			if (o === g || o.userData?.__helper) return;
-			const mats = [].concat(o.material ?? []).map((m) => (types ? m.type : 'material') + (m.map ? '+map' : '') + (m.normalMap ? '+normal' : ''));
+			const mats = [].concat(o.material ?? []).map((m) => m.type + (m.map ? '+map' : '') + (m.normalMap ? '+normal' : ''));
 			const verts = o.geometry?.attributes?.position?.count ?? 0;
 			out[o.uuid] = [o.type, o.name, mats.join(','), verts, o.parent === g ? 'root' : o.parent?.uuid].join(' | ');
 		});
 		return out;
-	}, types);
+	});
 /** @param {any} page */
 const totalsOf = (page) => page.evaluate(() => window.__stores.loadGuard?.loadGuardTotals?.() ?? null);
 /** @param {Record<string, string>} a @param {Record<string, string>} b */
 const diff = (a, b) => {
 	const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
 	return [...keys].filter((k) => a[k] !== b[k]).map((k) => `${k}: ${a[k] ?? '(missing)'} vs ${b[k] ?? '(missing)'}`);
+};
+
+/**
+ * THE LATE JOINER'S KNOWN GAPS (measured identical on the v1.65.1 base, before this lane): the handshake
+ * sync sends a mesh as glTF, which carries PBR materials only and three's glTF loader sanitises names,
+ * so a late joiner gets every non-PBR material as MeshStandardMaterial, a space in a name as `_`, and
+ * no mesh whose material the glTF exporter cannot write (MeshNormalMaterial / MeshDepthMaterial).
+ * A difference of any OTHER kind is new. @param {Record<string, string>} a @param {Record<string, string>} c
+ */
+const lateJoinerDiffs = (a, c) => {
+	/** @type {Record<string, number>} */
+	const known = { type: 0, name: 0, absent: 0 };
+	/** @type {string[]} */
+	const other = [];
+	const parts = (/** @type {string} */ row) => row.split(' | ');
+	for (const k of new Set([...Object.keys(a), ...Object.keys(c)])) {
+		if (a[k] === c[k]) continue;
+		if (a[k] && !c[k] && /Mesh(Normal|Depth)Material/.test(parts(a[k])[2])) {
+			known.absent++;
+			continue;
+		}
+		if (!a[k] || !c[k]) {
+			other.push(`${k}: ${a[k] ?? '(missing)'} vs ${c[k] ?? '(missing)'}`);
+			continue;
+		}
+		const [pa, pc] = [parts(a[k]), parts(c[k])];
+		const mats = (/** @type {string} */ m) => m.replace(/Mesh\w+Material|ShadowMaterial/g, 'M');
+		const sameBut = (/** @type {number} */ i) => pa.every((v, j) => j === i || v === pc[j]);
+		if (sameBut(2) && mats(pa[2]) === mats(pc[2]) && /MeshStandardMaterial/.test(pc[2])) known.type++;
+		else if (sameBut(1) && pa[1].replace(/\s/g, '_') === pc[1]) known.name++;
+		else other.push(`${k}: ${a[k]} vs ${c[k]}`);
+	}
+	return { known, other };
 };
 
 h.run(async () => {
@@ -114,16 +145,21 @@ h.run(async () => {
 	let c = {};
 	await h.eventually(
 		async () => {
-			a = await sceneOf(A.page, false);
-			c = await sceneOf(C.page, false);
-			return diff(a, c);
+			a = await sceneOf(A.page);
+			c = await sceneOf(C.page);
+			return lateJoinerDiffs(a, c);
 		},
-		(d) => d.length === 0,
-		'C (late joiner) sees the same scene as A',
+		(d) => d.other.length === 0 && Object.keys(c).length > 0,
+		'C (late joiner) sees the same scene as A, but for the glTF handshake\'s known gaps',
 		120000
 	);
-	const dAC = diff(a, c);
-	h.check(dAC.length === 0, `C (late joiner) has the same ${Object.keys(a).length} objects, kinds, slots and maps as A` + (dAC.length ? ': ' + dAC.slice(0, 5).join(' ; ') : ''));
+	const dAC = lateJoinerDiffs(a, c);
+	h.check(
+		dAC.other.length === 0,
+		`C (late joiner) has A's ${Object.keys(a).length} objects, kinds, slots and maps; the known glTF gaps are the base's (${JSON.stringify(dAC.known)})` +
+			(dAC.other.length ? ': ' + dAC.other.slice(0, 5).join(' ; ') : '')
+	);
+	h.check(dAC.known.absent <= 2, `premise: only the Normal / Depth material meshes are absent on C (${dAC.known.absent})`);
 	const ct = await totalsOf(C.page);
 	h.check(!!ct && Object.values(ct).every((v) => v === 0), `the load check changed nothing on C (${JSON.stringify(ct)})`);
 	await h.finish(browser);

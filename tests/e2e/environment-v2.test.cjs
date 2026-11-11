@@ -5,13 +5,13 @@ const h = require('./helpers.cjs');
 
 const envOf = (page) =>
 	page.evaluate(
-		() => new Promise((r) => window.__stores.environment.environment.subscribe(r)())
+		() => new Promise((r) => window.__tp.test.v1.environment.environment.subscribe(r)())
 	);
 const lightCount = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					let n = 0;
 					g?.traverse((o) => {
 						if (o.isLight) n++;
@@ -29,8 +29,8 @@ h.run(async () => {
 
 	// A creates a normal scene light and adopts it into the environment
 	const uuid = await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/light directional');
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/light directional');
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		return g.children.find((c) => c.type === 'DirectionalLight')?.uuid;
 	});
 	await h.eventually(
@@ -38,7 +38,7 @@ h.run(async () => {
 		(n) => n === 1,
 		'scene light replicated to B'
 	);
-	await A.page.evaluate((uuid) => window.__stores.environment.convertToEnvironment(uuid), uuid);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.environment.convertToEnvironment(uuid), uuid);
 	await h.eventually(
 		() => Promise.all([lightCount(A.page), lightCount(B.page)]),
 		([a, b]) => a === 0 && b === 0,
@@ -52,7 +52,7 @@ h.run(async () => {
 	const bHasExtra = await B.page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.globalScene.subscribe((scene) => {
+				window.__tp.test.v1.globalScene.subscribe((scene) => {
 					const root = scene?.getObjectByName('environment-root');
 					r(!!root?.children.some((c) => c.name.startsWith('env-extra-')));
 				})()
@@ -61,7 +61,7 @@ h.run(async () => {
 	h.check(bHasExtra, 'B rebuilt the env light under environment-root');
 
 	// rig edit detaches into a live custom payload and replicates
-	await A.page.evaluate(() => window.__stores.environment.editRigComponent('sun', { intensity: 3.3 }));
+	await A.page.evaluate(() => window.__tp.test.v1.environment.editRigComponent('sun', { intensity: 3.3 }));
 	await h.eventually(
 		() => envOf(B.page),
 		(env) => env.preset === 'custom' && Math.abs(env.customPreset?.sun?.intensity - 3.3) < 0.01,
@@ -70,9 +70,9 @@ h.run(async () => {
 
 	// save + apply a named preset; payload replicates (B needs no file)
 	await A.page.evaluate(async () => {
-		await window.__stores.environment.saveEnvPreset('TestEnv');
-		const list = await new Promise((r) => window.__stores.environment.envPresets.subscribe(r)());
-		window.__stores.environment.applyCustomPreset(list.find((p) => p.name === 'TestEnv').payload);
+		await window.__tp.test.v1.environment.saveEnvPreset('TestEnv');
+		const list = await new Promise((r) => window.__tp.test.v1.environment.envPresets.subscribe(r)());
+		window.__tp.test.v1.environment.applyCustomPreset(list.find((p) => p.name === 'TestEnv').payload);
 	});
 	await h.eventually(
 		() => envOf(B.page),
@@ -82,13 +82,13 @@ h.run(async () => {
 
 	// export round-trip: JSON re-imports as a valid payload
 	const exported = await A.page.evaluate(() =>
-		window.__stores.environment.exportEnvPreset(window.__stores.environment.snapshotPreset('RoundTrip'))
+		window.__tp.test.v1.environment.exportEnvPreset(window.__tp.test.v1.environment.snapshotPreset('RoundTrip'))
 	);
 	h.check(JSON.parse(exported).label === 'RoundTrip' && JSON.parse(exported).background, 'export produces a payload JSON');
 
 	// convert the env light back into a scene object — appears on both peers
 	const envId = envA.lights[0].id;
-	await A.page.evaluate((id) => window.__stores.environment.convertFromEnvironment(id), envId);
+	await A.page.evaluate((id) => window.__tp.test.v1.environment.convertFromEnvironment(id), envId);
 	await h.eventually(
 		() => Promise.all([lightCount(A.page), lightCount(B.page)]),
 		([a, b]) => a === 1 && b === 1,

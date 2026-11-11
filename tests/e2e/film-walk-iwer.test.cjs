@@ -59,35 +59,35 @@ h.run(async () => {
 	await h.connect(A, B);
 
 	const page = B.page;
-	const pose = () => page.evaluate(() => window.__stores.filmMode.filmPose());
+	const pose = () => page.evaluate(() => window.__tp.test.v1.filmMode.filmPose());
 	const markerOn = (peer, uuid) =>
 		peer.page.evaluate((u) => {
 			let g = null;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const o = g?.getObjectByProperty('uuid', u);
 			return o ? o.position.toArray() : null;
 		}, uuid);
 
 	// a camera both peers hold
 	const uuid = await page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create Camera');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create Camera');
 		await new Promise((r) => setTimeout(r, 400));
 		let g = null;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return g.children[g.children.length - 1].uuid;
 	});
 	await h.eventually(() => markerOn(A, uuid), (p) => !!p, 'the camera reached peer A', 15000);
 	const baseOnA = await markerOn(A, uuid);
 
 	// ---- P. presence ----
-	await page.evaluate((u) => window.__stores.filmState.openFilm(u), uuid);
+	await page.evaluate((u) => window.__tp.test.v1.filmState.openFilm(u), uuid);
 	await page.waitForSelector('#film-exit', { timeout: 15000 });
 	await page.locator('#film-help-never').click({ timeout: 5000 }).catch(() => {});
-	await page.evaluate(() => window.__stores.filmMode.placeCamera([3, 2, -4]));
+	await page.evaluate(() => window.__tp.test.v1.filmMode.placeCamera([3, 2, -4]));
 	await h.eventually(() => markerOn(A, uuid), (p) => p && Math.abs(p[0] - 3) < 0.05 && Math.abs(p[1] - 2) < 0.05 && Math.abs(p[2] + 4) < 0.05, "A sees B's filming camera where B films from (the gizmo)", 10000);
 	const filming = await A.page.evaluate(() => {
 		let v = null;
-		window.__stores.filmPresence?.filmingPeers?.subscribe((x) => (v = x))();
+		window.__tp.test.v1.filmPresence?.filmingPeers?.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(!filming || Object.keys(filming).length === 1, `A knows one peer is filming (${JSON.stringify(filming)})`);
@@ -95,7 +95,7 @@ h.run(async () => {
 	h.check((await toast.count()) >= 1, 'A is told the peer is filming, with Watch the shot');
 	const savedOnA = await A.page.evaluate((u) => {
 		// what a save would write: parked at the base, never the presence pose
-		const pp = window.__stores.propPlayback?.propPlaybackDebug?.() ?? [];
+		const pp = window.__tp.test.v1.propPlayback?.propPlaybackDebug?.() ?? [];
 		return pp.filter((e) => e.uuid === u).map((e) => ({ owner: e.owner, base: e.base }));
 	}, uuid);
 	h.check(savedOnA.every((e) => e.owner.startsWith('filmpeer:')), `the pose on A is presence (owner filmpeer:…), base kept (${JSON.stringify(savedOnA).slice(0, 160)})`);
@@ -103,7 +103,7 @@ h.run(async () => {
 	// ---- W. walk ----
 	const entry = await page.evaluate(() => {
 		let v = null;
-		window.__stores.filmWalk.walkEntry.subscribe((x) => (v = x))();
+		window.__tp.test.v1.filmWalk.walkEntry.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(entry === 'ready', `IWER offers immersive-ar, so Track my movement is offered (${entry})`);
@@ -111,7 +111,7 @@ h.run(async () => {
 	const errToasts = await page.evaluate(() => [...document.querySelectorAll('.tp-toast-text')].map((t) => t.textContent.trim()).filter((t) => /Something went wrong/.test(t)));
 	h.check(errToasts.length === 0, `no error toast on the phone (${JSON.stringify(errToasts).slice(0, 160)})`);
 	// a phone page's own toasts (the auto-quality step-down, a joined peer) sit over Film's sheet buttons
-	await page.evaluate(() => window.__stores.toastStore.set([]));
+	await page.evaluate(() => window.__tp.test.v1.toastStore.set([]));
 	// fix-film: Walk lives in the motion picker the pill opens
 	await page.locator('#film-sensor').click();
 	const n0 = await page.evaluate(() => window.__iwer.sessions.length);
@@ -122,7 +122,7 @@ h.run(async () => {
 		return s ? { mode: s.mode, root: s.init?.domOverlay?.root?.id ?? null } : null;
 	}, n0);
 	h.check(req && req.mode === 'immersive-ar' && req.root === 'film-root', `the walk asks for immersive-ar with Film as the overlay (${JSON.stringify(req)})`);
-	await h.eventually(() => page.evaluate(() => window.__stores.filmWalk.filmWalkDebug()), (d) => d.on && d.tracking, 'the phone is tracked', 10000);
+	await h.eventually(() => page.evaluate(() => window.__tp.test.v1.filmWalk.filmWalkDebug()), (d) => d.on && d.tracking, 'the phone is tracked', 10000);
 	await iwer.frames(page, 6);
 	const p0 = await pose();
 	const fwd = flat(forward(p0.qBase));
@@ -132,7 +132,7 @@ h.run(async () => {
 	let d = sub(p1.pos, p0.pos);
 	const along = (d[0] * fwd[0] + d[2] * fwd[2]) / (len(fwd) || 1);
 	h.check(Math.abs(len(d) - 1) < 0.05 && along > 0.95, `1 m walked forward = 1 m along the camera's heading (moved ${len(d).toFixed(3)} m, along ${along.toFixed(3)})`);
-	await page.evaluate(() => window.__stores.filmWalk.setWalkScale(5));
+	await page.evaluate(() => window.__tp.test.v1.filmWalk.setWalkScale(5));
 	await iwer.frames(page, 4);
 	const p2 = await pose();
 	h.check(len(sub(p2.pos, p1.pos)) < 0.05, 'changing the walk scale re-anchors where you stand (no jump)');
@@ -142,7 +142,7 @@ h.run(async () => {
 	h.check(Math.abs(len(sub(p3.pos, p2.pos)) - 5) < 0.15, `walk scale 5: 1 m walked = 5 m in the scene (${len(sub(p3.pos, p2.pos)).toFixed(2)} m)`);
 	const mountScale = await page.evaluate(() => {
 		let m = null;
-		window.__stores.filmState.filmCameraMount.subscribe((v) => (m = v))();
+		window.__tp.test.v1.filmState.filmCameraMount.subscribe((v) => (m = v))();
 		return m ? m.scale.x : null;
 	});
 	h.check(mountScale === 5, `the AR view is drawn at walk scale 5 (the camera mount's scale ${mountScale})`);
@@ -155,7 +155,7 @@ h.run(async () => {
 	// the XR view is drawn from Film's pose: the EYE cameras' midpoint, taken through the inverse rig, is the film pose
 	// (not the combined XR camera — three pulls that back to fit both frustums, and the walk scale multiplies the pull)
 	const drawnAt = await page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let renderer = null;
 		let rig = null;
 		w.globalRenderer.subscribe((v) => (renderer = v))();
@@ -174,23 +174,23 @@ h.run(async () => {
 
 	// ---- R. a take while walking ----
 	const seqId = await page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const id = w.sequences.createSequence('Walk');
 		w.sequences.setSequence(id, { duration: 30, tracks: [] });
 		w.sequences.activeSequence.set(id);
 		return id;
 	});
 	await page.locator('#film-record').click();
-	await h.eventually(() => page.evaluate(() => { let u = null; window.__stores.filmRecorder.take.subscribe((v) => (u = v))(); return u.state; }), (s) => s === 'recording', 'recording while walking', 8000);
+	await h.eventually(() => page.evaluate(() => { let u = null; window.__tp.test.v1.filmRecorder.take.subscribe((v) => (u = v))(); return u.state; }), (s) => s === 'recording', 'recording while walking', 8000);
 	for (let i = 1; i <= 6; i++) {
 		await iwer.pose(page, 'head', [-i * 0.25, 1.6, -2], { yaw: Math.PI / 2 });
 		await iwer.frames(page, 4);
 	}
 	await page.locator('#film-record').click();
-	await h.eventually(() => page.evaluate(() => { let u = null; window.__stores.filmRecorder.take.subscribe((v) => (u = v))(); return u.state === 'paused' && !u.saving; }), (v) => v, 'the walking take committed', 15000);
+	await h.eventually(() => page.evaluate(() => { let u = null; window.__tp.test.v1.filmRecorder.take.subscribe((v) => (u = v))(); return u.state === 'paused' && !u.saving; }), (v) => v, 'the walking take committed', 15000);
 	const span = await page.evaluate(({ id, u }) => {
 		let all = null;
-		window.__stores.sequences.sequences.subscribe((v) => (all = v))();
+		window.__tp.test.v1.sequences.sequences.subscribe((v) => (all = v))();
 		const tr = all[id].tracks.find((t) => t.kind === 'prop' && t.target === u && t.path === 'position');
 		if (!tr) return null;
 		const a = tr.keys[0].v;
@@ -198,14 +198,14 @@ h.run(async () => {
 		return { keys: tr.keys.length, dist: Math.hypot(b[0] - a[0], b[2] - a[2]) };
 	}, { id: seqId, u: uuid });
 	h.check(span && span.dist > 5 && span.dist < 9, `the take's keys cover the walk (1.5 m × 5 = 7.5 m; got ${JSON.stringify(span)})`);
-	await page.evaluate(() => window.__stores.filmRecorder.finishTake());
+	await page.evaluate(() => window.__tp.test.v1.filmRecorder.finishTake());
 
 	// ---- X. stop walking ----
 	await page.locator('#film-walk-stop').click();
 	await h.eventually(() => iwer.state(page), (s) => !s.presenting, 'Stop walking ends the session', 10000);
 	const mount = await page.evaluate(() => {
 		let m = null;
-		window.__stores.filmState.filmCameraMount.subscribe((v) => (m = v))();
+		window.__tp.test.v1.filmState.filmCameraMount.subscribe((v) => (m = v))();
 		return m ? { p: m.position.toArray(), s: m.scale.x, q: m.quaternion.toArray() } : null;
 	});
 	h.check(!!mount && len(mount.p) < 1e-9 && mount.s === 1 && Math.abs(mount.q[3]) === 1, `the preview camera's mount is 1:1 again (${JSON.stringify(mount)})`);

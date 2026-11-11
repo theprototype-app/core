@@ -9,7 +9,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	const r = await A.page.evaluate(() => {
-		const S = window.__stores.flowSockets;
+		const S = window.__tp.test.v1.flowSockets;
 		return {
 			// output / input typing
 			numOut: S.outputType('number'),

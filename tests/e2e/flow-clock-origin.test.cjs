@@ -14,7 +14,7 @@ h.run(async () => {
 	const p = A.page;
 
 	const uuid = await p.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create Box 1 1 1');
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
@@ -46,7 +46,7 @@ h.run(async () => {
 	const FULL = 2 * Math.PI; // 60 rpm in rad/s
 
 	await p.evaluate((u) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowNodes.set([
 			{
 				id: 'rot',
@@ -80,13 +80,13 @@ h.run(async () => {
 	const early = await speed(350);
 	const timerEarly = await p.evaluate(
 		() =>
-			new Promise((r) => window.__stores.hudDocs.hudRuntime.subscribe((v) => r(v.fb1auto?.text))())
+			new Promise((r) => window.__tp.test.v1.hudDocs.hudRuntime.subscribe((v) => r(v.fb1auto?.text))())
 	);
 	await p.waitForTimeout(3200);
 	const late = await speed(400);
 	const timerLate = await p.evaluate(
 		() =>
-			new Promise((r) => window.__stores.hudDocs.hudRuntime.subscribe((v) => r(v.fb1auto?.text))())
+			new Promise((r) => window.__tp.test.v1.hudDocs.hudRuntime.subscribe((v) => r(v.fb1auto?.text))())
 	);
 	console.log('rotor', JSON.stringify({ early, late, full: FULL }), 'timer', timerEarly, timerLate);
 

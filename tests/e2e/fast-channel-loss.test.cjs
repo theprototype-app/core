@@ -142,15 +142,15 @@ h.run(async () => {
 	// the channel opened both ways (the modules `fc` + `fastchan` hello)
 	await h.eventually(
 		async () => ({
-			a: await A.page.evaluate((id) => window.__stores.fastChannel.isOpen(id), B.id),
-			b: await B.page.evaluate((id) => window.__stores.fastChannel.isOpen(id), A.id)
+			a: await A.page.evaluate((id) => window.__tp.test.v1.fastChannel.isOpen(id), B.id),
+			b: await B.page.evaluate((id) => window.__tp.test.v1.fastChannel.isOpen(id), A.id)
 		}),
 		(r) => r.a && r.b,
 		'the fast channel is open on both ends after the handshake'
 	);
 	const hasPc = await A.page.evaluate((id) => {
 		let p;
-		window.__stores.peers.subscribe((x) => (p = x))();
+		window.__tp.test.v1.peers.subscribe((x) => (p = x))();
 		return !!p.connections[id]?.peerConnection;
 	}, B.id);
 	h.check(hasPc, 'the PeerJS connection exposes its RTCPeerConnection');
@@ -161,13 +161,13 @@ h.run(async () => {
 	// for the measurement; the data channels, the stale filter and the keyframe timer do not draw.
 	for (const peer of [A, B])
 		await peer.page.evaluate(() =>
-			window.__stores.overloadGuard.pauseRendering('e2e: timing the wire')
+			window.__tp.test.v1.overloadGuard.pauseRendering('e2e: timing the wire')
 		);
 
 	// B's tap: arrival times of A's applied camera poses, and the chat edits in arrival order
 	await B.page.evaluate((aid) => {
 		window.__poses = [];
-		window.__stores.fastChannel.setPoseTap((peer, d, via) => {
+		window.__tp.test.v1.fastChannel.setPoseTap((peer, d, via) => {
 			if (peer === aid && d.type === 'camera')
 				window.__poses.push({ t: performance.now(), via, x: d.position[0], ps: d.ps });
 		});
@@ -188,7 +188,7 @@ h.run(async () => {
 			({ ms, hz, tag }) =>
 				new Promise((resolve) => {
 					let p;
-					window.__stores.peers.subscribe((x) => (p = x))();
+					window.__tp.test.v1.peers.subscribe((x) => (p = x))();
 					let n = 0;
 					let edits = 0;
 					const t0 = performance.now();
@@ -217,7 +217,7 @@ h.run(async () => {
 			.waitForFunction(
 				({ tag, edits, lastX }) => {
 					let msgs = [];
-					window.__stores.messages?.subscribe?.((m) => (msgs = m))();
+					window.__tp.test.v1.messages?.subscribe?.((m) => (msgs = m))();
 					const n = (msgs || []).filter(
 						(m) => m?.type === 'received' && String(m?.text ?? '').startsWith('edit ' + tag + ' ')
 					).length;
@@ -231,7 +231,7 @@ h.run(async () => {
 		await B.page.waitForTimeout(300);
 		const got = await B.page.evaluate((tag) => {
 			let msgs = [];
-			window.__stores.messages?.subscribe?.((m) => (msgs = m))();
+			window.__tp.test.v1.messages?.subscribe?.((m) => (msgs = m))();
 			const edits = (msgs || [])
 				.filter((m) => m?.type === 'received')
 				.map((m) => String(m?.text ?? ''))

@@ -16,16 +16,16 @@ const EVIDENCE = process.env.FIX_LIVE_EVIDENCE || '';
 
 /** @param {any} page */
 const childCount = (page) =>
-	page.evaluate(() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g?.children.length ?? -1))()));
+	page.evaluate(() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g?.children.length ?? -1))()));
 /** @param {any} page @param {string} id */
 const inRoster = (page, id) =>
-	page.evaluate((pid) => new Promise((r) => window.__stores.userdata.subscribe((u) => r(u.some((e) => e[0] === pid)))()), id);
+	page.evaluate((pid) => new Promise((r) => window.__tp.test.v1.userdata.subscribe((u) => r(u.some((e) => e[0] === pid)))()), id);
 /** @param {any} page @param {string} id */
 const opened = (page, id) =>
-	page.evaluate((pid) => new Promise((r) => window.__stores.peers.subscribe((p) => r(!!p?.openedPeers?.has(pid)))()), id);
+	page.evaluate((pid) => new Promise((r) => window.__tp.test.v1.peers.subscribe((p) => r(!!p?.openedPeers?.has(pid)))()), id);
 /** every notification text on the page @param {any} page @returns {Promise<string[]>} */
 const notes = (page) =>
-	page.evaluate(() => new Promise((r) => window.__stores.notifications.subscribe((n) => r(n.map((x) => x.text)))()));
+	page.evaluate(() => new Promise((r) => window.__tp.test.v1.notifications.subscribe((n) => r(n.map((x) => x.text)))()));
 const NOISE = /Connection error|Peer is unreachable/;
 
 h.run(async () => {
@@ -40,11 +40,11 @@ h.run(async () => {
 	// a cloud build's roles plugin RE-PUBLISHES rolesInfo (B really holds Editor access there), so the
 	// viewer role is asserted again inside every call's own evaluate, not once up front
 	await B.page.evaluate(() => {
-		const p = window.__stores.peers;
+		const p = window.__tp.test.v1.peers;
 		/** @type {any} */ let me = null;
 		p.subscribe((v) => (me = v))();
 		/** @type {any} */ (window).__asViewer = () =>
-			window.__stores.cloudHooks.rolesInfo.set({
+			window.__tp.test.v1.cloudHooks.rolesInfo.set({
 				myId: me?.peer?.id || 'me', myRole: 'viewer', amAdmin: false,
 				order: ['viewer', 'editor', 'admin'], roleOf: () => 'viewer', setRole: () => {}
 			});
@@ -52,31 +52,31 @@ h.run(async () => {
 	const before = await childCount(A.page);
 	const created = await B.page.evaluate(() => {
 		/** @type {any} */ (window).__asViewer();
-		return window.__stores.aiTools.executeAiTool('create_objects', { objects: [{ kind: 'primitive', primitive: 'Box', name: 'viewer-box' }] });
+		return window.__tp.test.v1.aiTools.executeAiTool('create_objects', { objects: [{ kind: 'primitive', primitive: 'Box', name: 'viewer-box' }] });
 	});
 	h.check(!!created?.error && created.viewOnly === true && !('created' in created), 'F-1: a viewer create_objects is refused, not `created` (' + JSON.stringify(created).slice(0, 120) + ')');
 	h.check(/view-only/.test(created?.error ?? ''), 'F-1: the refusal says view-only');
 	const upd = await B.page.evaluate(() => {
 		/** @type {any} */ (window).__asViewer();
-		return window.__stores.aiTools.executeAiTool('update_objects', { updates: [{ uuid: 'x', color: '#f00' }] });
+		return window.__tp.test.v1.aiTools.executeAiTool('update_objects', { updates: [{ uuid: 'x', color: '#f00' }] });
 	});
 	h.check(upd?.viewOnly === true, 'F-1: update_objects refused too');
 	const list = await B.page.evaluate(() => {
 		/** @type {any} */ (window).__asViewer();
-		return window.__stores.aiTools.executeAiTool('list_scene', {});
+		return window.__tp.test.v1.aiTools.executeAiTool('list_scene', {});
 	});
 	h.check(!list?.error, 'F-1: list_scene still works for a viewer');
 	h.check((await childCount(B.page)) === before && (await childCount(A.page)) === before, 'F-1: nothing was made, here or on the host');
-	await B.page.evaluate(() => window.__stores.cloudHooks.rolesInfo.set(null));
+	await B.page.evaluate(() => window.__tp.test.v1.cloudHooks.rolesInfo.set(null));
 	const edited = await B.page.evaluate(() =>
-		window.__stores.aiTools.executeAiTool('create_objects', { objects: [{ kind: 'primitive', primitive: 'Box', name: 'editor-box' }] })
+		window.__tp.test.v1.aiTools.executeAiTool('create_objects', { objects: [{ kind: 'primitive', primitive: 'Box', name: 'editor-box' }] })
 	);
 	h.check(Array.isArray(edited?.created), 'F-1 counterfactual: the same call as an editor creates');
 	await h.eventually(() => childCount(A.page), (n) => n === before + 1, 'F-1 counterfactual: and it reaches the host');
 
 	// ── §1c F-4: AI-made objects stay put unless asked for physics ──────────────────────
 	const made = await A.page.evaluate(() =>
-		window.__stores.aiTools.executeAiTool('create_objects', {
+		window.__tp.test.v1.aiTools.executeAiTool('create_objects', {
 			objects: [
 				{ kind: 'primitive', primitive: 'Box', name: 'ai-wall', position: [3, 2, 0] },
 				{ kind: 'primitive', primitive: 'Box', name: 'ai-ball', position: [-3, 2, 0], physics: 'dynamic', mass: 3 }
@@ -86,7 +86,7 @@ h.run(async () => {
 	const [wallId, ballId] = (made?.created ?? []).map((/** @type {any} */ c) => c.uuid);
 	/** @param {any} page @param {string} uuid */
 	const physOf = (page, uuid) =>
-		page.evaluate((u) => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => {
+		page.evaluate((u) => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => {
 			const o = g?.getObjectByProperty('uuid', u);
 			r(o ? { mode: o.userData.physics?.mode ?? null, mass: o.userData.physics?.mass ?? null, y: o.position.y } : null);
 		})()), uuid);
@@ -94,10 +94,10 @@ h.run(async () => {
 	h.check((await physOf(A.page, ballId))?.mode === 'dynamic' && (await physOf(A.page, ballId))?.mass === 3, 'F-4: asked for physics, it is dynamic with the asked mass');
 	await h.eventually(() => physOf(B.page, wallId), (p) => p?.mode === 'static', 'F-4: the static default replicates to the other peer');
 	await h.eventually(() => physOf(B.page, ballId), (p) => p?.mode === 'dynamic', 'F-4: and the dynamic one too');
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation()); // rapier warms up inside
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation()); // rapier warms up inside
 	await h.eventually(() => physOf(A.page, ballId), (p) => p && p.y < 1.2, 'F-4: in a sim the dynamic one falls', 20000);
 	h.check(Math.abs(((await physOf(A.page, wallId))?.y ?? 0) - 2) < 0.01, 'F-4: …while the static wall stays where it was built');
-	await A.page.evaluate(() => window.__stores.physics.stopSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 	await A.page.waitForTimeout(500);
 
 	// ── §1b floor: a VIEWER's read-only requests reach the host (plans review #5) ─────────
@@ -105,15 +105,15 @@ h.run(async () => {
 	await A.page.evaluate((bid) => {
 		const w = /** @type {any} */ (window);
 		w.__asked = [];
-		w.__stores.cloudHooks.setCapabilityProvider((pid, t) => { if (pid !== bid) return true; w.__asked.push(t); return false; });
-		w.__stores.projectManifest.setProjectName('Floor project');
+		w.__tp.test.v1.cloudHooks.setCapabilityProvider((pid, t) => { if (pid !== bid) return true; w.__asked.push(t); return false; });
+		w.__tp.test.v1.projectManifest.setProjectName('Floor project');
 	}, B.id);
 	await B.page.evaluate((aid) => {
 		const w = /** @type {any} */ (window);
 		w.__got = [];
 		const note = (d) => { if (d?.type === 'batch' && Array.isArray(d.items)) d.items.forEach(note); else if (d?.type) w.__got.push(d.type); };
 		/** @type {any} */ let p = null;
-		w.__stores.peers.subscribe((v) => (p = v))();
+		w.__tp.test.v1.peers.subscribe((v) => (p = v))();
 		for (const list of Object.values(p.peer.connections || {})) for (const c of /** @type {any[]} */ (list)) c.on('data', note);
 		const conn = p.connections[aid];
 		conn.send({ type: 'getproject', sender: p.peer.id });
@@ -125,13 +125,13 @@ h.run(async () => {
 	const asked = await A.page.evaluate(() => (/** @type {any} */ (window)).__asked);
 	h.check(!asked.includes('getproject') && !asked.includes('getasset') && !asked.includes('getmatpreset'), 'floor: getproject / getasset / getmatpreset never reach the viewer gate (' + JSON.stringify(asked) + ')');
 	h.check(asked.includes('color'), 'floor counterfactual: the viewer\'s mutation is still gated');
-	await A.page.evaluate(() => window.__stores.cloudHooks.setCapabilityProvider(null));
+	await A.page.evaluate(() => window.__tp.test.v1.cloudHooks.setCapabilityProvider(null));
 
 	// ── §1d private deletions: a never-shared file's deletion stays on B (plans review #6) ──
 	/** @param {any} page @returns {Promise<any[]>} */
-	const deletedLog = (page) => page.evaluate(() => new Promise((r) => window.__stores.projectManifest.projectManifest.subscribe((m) => r(m.deleted ?? []))()));
+	const deletedLog = (page) => page.evaluate(() => new Promise((r) => window.__tp.test.v1.projectManifest.projectManifest.subscribe((m) => r(m.deleted ?? []))()));
 	const privId = await B.page.evaluate(async () => {
-		const s = /** @type {any} */ (window).__stores;
+		const s = /** @type {any} */ (window).__tp?.test.v1;
 		const item = await s.explorer.addItemFromBytes(new TextEncoder().encode('my secret notes').buffer, 'diary-secret.txt');
 		s.sharedLibrary.deleteItemsToBin([item.id]);
 		return item.id;
@@ -140,8 +140,8 @@ h.run(async () => {
 	await A.page.waitForTimeout(2500);
 	h.check(!(await deletedLog(A.page)).some((r) => r.name === 'diary-secret.txt' || r.id === privId), 'private delete: the host never hears the private file\'s name, folder or thumbnail');
 	// a NEWER document from the host must not strand B's bin
-	await A.page.evaluate(() => window.__stores.projectManifest.setProjectName('Floor project 2'));
-	await h.eventually(() => B.page.evaluate(() => new Promise((r) => window.__stores.projectManifest.projectManifest.subscribe((m) => r(m.name))())), (n) => n === 'Floor project 2', 'private delete: (setup) the host\'s newer manifest reached B');
+	await A.page.evaluate(() => window.__tp.test.v1.projectManifest.setProjectName('Floor project 2'));
+	await h.eventually(() => B.page.evaluate(() => new Promise((r) => window.__tp.test.v1.projectManifest.projectManifest.subscribe((m) => r(m.name))())), (n) => n === 'Floor project 2', 'private delete: (setup) the host\'s newer manifest reached B');
 	h.check((await deletedLog(B.page)).some((r) => r.name === 'diary-secret.txt'), 'private delete: …and B still has its private row (the bin can restore it)');
 	h.check(!(await deletedLog(A.page)).some((r) => r.name === 'diary-secret.txt'), 'private delete: …while the host still does not');
 
@@ -149,14 +149,14 @@ h.run(async () => {
 	await A.page.evaluate((cid) => {
 		const w = /** @type {any} */ (window);
 		w.__turnedOff = 0;
-		w.__stores.cloudHooks.setAuthProvider({
+		w.__tp.test.v1.cloudHooks.setAuthProvider({
 			decide: (/** @type {string} */ pid) => (pid === cid ? 'admit' : undefined),
 			admitNotice: (/** @type {string} */ pid) => ({
 				text: pid.toUpperCase() + ' joined as a guest (view-only) because Allow guests to join automatically is on.',
-				turnOff: () => { w.__turnedOff++; w.__stores.cloudHooks.setConnectBadge(null); }
+				turnOff: () => { w.__turnedOff++; w.__tp.test.v1.cloudHooks.setConnectBadge(null); }
 			})
 		});
-		w.__stores.cloudHooks.setConnectBadge({ text: 'Public · guests join', title: 'Your listed room lets guests in without approval' });
+		w.__tp.test.v1.cloudHooks.setConnectBadge({ text: 'Public · guests join', title: 'Your listed room lets guests in without approval' });
 	}, C.id);
 	h.check(await A.page.locator('#connect-setting-badge').isVisible(), 'F-5: the Connect pill shows the badge');
 	h.check(((await A.page.locator('#connect-setting-badge').textContent()) || '').includes('Public · guests join'), 'F-5: badge text');
@@ -167,9 +167,9 @@ h.run(async () => {
 	const admitText = C.id.toUpperCase() + ' joined as a guest';
 	await h.eventually(() => notes(A.page), (n) => n.some((t) => t.includes(admitText)), 'F-5: a notification-history entry on the host');
 	h.check(await A.page.getByText(admitText).first().isVisible(), 'F-5: and a toast on the host');
-	h.check((await A.page.evaluate(() => new Promise((r) => window.__stores.pendingApprovals.subscribe((v) => r(v.length))()))) === 0, 'F-5: no approval card was needed');
+	h.check((await A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.pendingApprovals.subscribe((v) => r(v.length))()))) === 0, 'F-5: no approval card was needed');
 	// the bell keeps the buttons
-	await A.page.evaluate(() => window.__stores.toastStore.set([]));
+	await A.page.evaluate(() => window.__tp.test.v1.toastStore.set([]));
 	await A.page.locator('#notif-bell').click();
 	const row = A.page.locator('.notif-row', { hasText: admitText });
 	h.check(await row.getByRole('button', { name: 'Turn off' }).isVisible(), 'F-5: the history entry keeps Turn off');
@@ -178,17 +178,17 @@ h.run(async () => {
 	h.check((await A.page.evaluate(() => (/** @type {any} */ (window)).__turnedOff)) === 1, 'F-5: Turn off ran the provider switch');
 	await h.eventually(() => A.page.locator('#connect-setting-badge').count(), (n) => n === 0, 'F-5: the badge goes with the setting');
 	h.check((await row.getByRole('button').count()) === 0, 'F-5: an answered entry loses its buttons');
-	await A.page.evaluate(() => window.__stores.notificationCenterOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.notificationCenterOpen.set(false));
 
 	// ── §2c F-2: an offer seen later keeps a working Accept in Notifications ─────────────
 	await A.page.evaluate(() => {
 		const w = /** @type {any} */ (window);
 		w.__offerAccepted = 0;
-		w.__stores.showToast('You have been offered the ADMIN role by AB12C. Accept?', [
+		w.__tp.test.v1.showToast('You have been offered the ADMIN role by AB12C. Accept?', [
 			{ label: 'Accept', action: () => w.__offerAccepted++ },
 			{ label: 'Decline', action: () => {} }
 		], { keep: true });
-		w.__stores.toastStore.set([]); // the toast expired; only the bell is left
+		w.__tp.test.v1.toastStore.set([]); // the toast expired; only the bell is left
 	});
 	await A.page.locator('#notif-bell').click();
 	const offer = A.page.locator('.notif-row', { hasText: 'offered the ADMIN role' });
@@ -197,7 +197,7 @@ h.run(async () => {
 	await offer.getByRole('button', { name: 'Accept' }).dispatchEvent('click', {}, { timeout: 5000 });
 	h.check((await A.page.evaluate(() => (/** @type {any} */ (window)).__offerAccepted)) === 1, 'F-2: Accept in Notifications runs the offer\'s action');
 	h.check((await offer.getByRole('button').count()) === 0, 'F-2: and the answered offer loses its buttons');
-	await A.page.evaluate(() => window.__stores.notificationCenterOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.notificationCenterOpen.set(false));
 
 	// ── §3 F-3: C leaves gracefully ───────────────────────────────────────────────────────
 	const noiseBefore = (await notes(A.page)).filter((t) => NOISE.test(t)).length;
@@ -206,7 +206,7 @@ h.run(async () => {
 	// callback re-enters that callback forever (a store ping-pong that filled 700 MB of log)
 	await C.page.evaluate(() => {
 		/** @type {any} */ let p = null;
-		window.__stores.peers.subscribe((v) => (p = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (p = v))();
 		p.leaveSession();
 	});
 	await h.eventually(() => inRoster(A.page, C.id), (v) => v === false, 'F-3: a graceful leave leaves Users', 8000);
@@ -245,8 +245,8 @@ h.run(async () => {
 	await A.page.evaluate(() => {
 		const w = /** @type {any} */ (window);
 		w.__reported = null;
-		w.__stores.cloudHooks.setPeerMenuItems([{ id: 'report', label: 'Report…', run: (pid, info) => (w.__reported = { pid, name: info?.name ?? null }) }]);
-		w.__stores.peersPanelOpen.set(true);
+		w.__tp.test.v1.cloudHooks.setPeerMenuItems([{ id: 'report', label: 'Report…', run: (pid, info) => (w.__reported = { pid, name: info?.name ?? null }) }]);
+		w.__tp.test.v1.peersPanelOpen.set(true);
 	});
 	await A.page.locator('.peer-watch').first().dispatchEvent('contextmenu', { clientX: 400, clientY: 120, button: 2 }, { timeout: 10000 });
 	// DOM events, not the mouse: a loaded remote browser stalled Playwright's right-click twice in
@@ -256,7 +256,7 @@ h.run(async () => {
 	await item.dispatchEvent('click');
 	const reported = await A.page.evaluate(() => (/** @type {any} */ (window)).__reported);
 	h.check(reported?.pid === B.id && typeof reported?.name === 'string', 'reports: the peer menu runs the plugin item with the peer id + roster name (' + JSON.stringify(reported) + ')');
-	await A.page.evaluate(() => window.__stores.peersPanelOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.peersPanelOpen.set(false));
 
 	// ── §4 F-3: B's renderer crashes — no goodbye, no channel close ──────────────────────
 	h.check(await inRoster(A.page, B.id), 'F-3: B is still in Users before the crash');

@@ -29,7 +29,7 @@ const h = require('./helpers.cjs');
 /** run a fresh scan in the page and hand back the whole shape */
 const scan = (p) =>
 	p.page.evaluate(async () => {
-		const s = await window.__stores.storageUsage.scanStorage();
+		const s = await window.__tp.test.v1.storageUsage.scanStorage();
 		return {
 			at: s.at,
 			estimate: s.estimate,
@@ -64,19 +64,19 @@ const rowByLabel = (s, label) => rows(s).find((r) => r.label === label);
 /** reclaim ONE row, addressed by its label, and report what the leaf says it freed */
 const reclaimLabel = (p, label) =>
 	p.page.evaluate(async (want) => {
-		const s = await window.__stores.storageUsage.scanStorage();
+		const s = await window.__tp.test.v1.storageUsage.scanStorage();
 		const row = s.categories.flatMap((c) => c.rows).find((r) => r.label === want);
 		if (!row) return { found: false };
-		const freed = await window.__stores.storageUsage.reclaimRow(row);
+		const freed = await window.__tp.test.v1.storageUsage.reclaimRow(row);
 		return { found: true, freed, removable: row.removable };
 	}, label);
 
-const idbKeys = (p) => p.page.evaluate(() => window.__stores.idb.idbKeys().then((k) => k.map(String)));
+const idbKeys = (p) => p.page.evaluate(() => window.__tp.test.v1.idb.idbKeys().then((k) => k.map(String)));
 
 const seedFiles = (p, names, folderId = null) =>
 	p.page.evaluate(
 		async ({ list, dir }) => {
-			const e = window.__stores.explorer;
+			const e = window.__tp.test.v1.explorer;
 			const out = [];
 			for (const n of list) {
 				// a body big enough that its bytes are unambiguous next to the JSON records
@@ -91,8 +91,8 @@ const seedFiles = (p, names, folderId = null) =>
 
 const wipe = (p) =>
 	p.page.evaluate(async () => {
-		await window.__stores.explorer.clearLibrary();
-		const pm = window.__stores.projectManifest;
+		await window.__tp.test.v1.explorer.clearLibrary();
+		const pm = window.__tp.test.v1.projectManifest;
 		pm.projectManifest.update((m) => ({
 			...m,
 			scenes: {},
@@ -100,15 +100,15 @@ const wipe = (p) =>
 			removed: { items: {}, folders: {} }
 		}));
 		// every saved session too, so §2's counts are about what THIS run seeded
-		const list = await window.__stores.idb.idbKeys();
-		for (const k of list) if (String(k).startsWith('session:')) await window.__stores.idb.idbDelete(String(k));
-		await window.__stores.sessions.loadSessions();
+		const list = await window.__tp.test.v1.idb.idbKeys();
+		for (const k of list) if (String(k).startsWith('session:')) await window.__tp.test.v1.idb.idbDelete(String(k));
+		await window.__tp.test.v1.sessions.loadSessions();
 		for (const p of (() => {
 			let v;
-			window.__stores.prefabs.prefabs.subscribe((x) => (v = x))();
+			window.__tp.test.v1.prefabs.prefabs.subscribe((x) => (v = x))();
 			return v;
 		})())
-			await window.__stores.prefabs.removePrefab(p.id);
+			await window.__tp.test.v1.prefabs.removePrefab(p.id);
 	});
 
 h.run(async () => {
@@ -116,13 +116,13 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1440, height: 900 } } });
 	const page = A.page;
 	await page.waitForFunction(
-		() => !!window.__stores?.storageUsage && !!window.__stores?.explorer && !!window.__stores?.sessions,
+		() => !!window.__tp?.test.v1?.storageUsage && !!window.__tp?.test.v1?.explorer && !!window.__tp?.test.v1?.sessions,
 		null,
 		{ timeout: 30000 }
 	);
 	h.check(true, 'premise: the storageUsage leaf is reachable through the debug hook');
-	await page.evaluate(() => window.__stores.explorer.loadExplorer());
-	await page.evaluate(() => window.__stores.sharedLibrary.keepRecycleBin.set(true));
+	await page.evaluate(() => window.__tp.test.v1.explorer.loadExplorer());
+	await page.evaluate(() => window.__tp.test.v1.sharedLibrary.keepRecycleBin.set(true));
 	await page.waitForTimeout(400);
 	await wipe(A);
 	await page.waitForTimeout(300);
@@ -168,7 +168,7 @@ h.run(async () => {
 	// that publishes a single version therefore has nothing hidden at all, measured.
 	// With "versions kept" at 2 the newest two are keepable, so of the two hidden rows one
 	// is refused and one is not: the refusal is about the POINTER, not about the shelf.
-	await page.evaluate(() => window.__stores.projectManifest.keepVersionsSetting.set(2));
+	await page.evaluate(() => window.__tp.test.v1.projectManifest.keepVersionsSetting.set(2));
 	const [stale, version, pointer] = await seedFiles(A, [
 		'Arena-v0.tpscene',
 		'Arena-v1.tpscene',
@@ -176,9 +176,9 @@ h.run(async () => {
 	]);
 	await page.evaluate(
 		({ hashes, ids }) => {
-			const pm = window.__stores.projectManifest;
+			const pm = window.__tp.test.v1.projectManifest;
 			for (const hash of hashes) pm.publishSceneVersion('Arena', hash);
-			for (const id of ids) window.__stores.explorer.setItemHidden(id, true);
+			for (const id of ids) window.__tp.test.v1.explorer.setItemHidden(id, true);
 		},
 		{
 			hashes: [stale.hash, version.hash, pointer.hash],
@@ -186,21 +186,21 @@ h.run(async () => {
 		}
 	);
 	// the RECYCLE BIN: the app's own delete, so the row lands where a user's would
-	await page.evaluate((id) => window.__stores.sharedLibrary.deleteSharedItem(id), files[2].id);
+	await page.evaluate((id) => window.__tp.test.v1.sharedLibrary.deleteSharedItem(id), files[2].id);
 	// a saved scene and a saved project — one record type, told apart by payload.library
 	await page.evaluate(async () => {
-		await window.__stores.sessions.saveSession('A saved scene');
-		await window.__stores.sessions.saveSessionWithLibrary('A saved project');
+		await window.__tp.test.v1.sessions.saveSession('A saved scene');
+		await window.__tp.test.v1.sessions.saveSessionWithLibrary('A saved project');
 	});
 	// a prefab and an environment preset
 	await page.evaluate(async () => {
-		await window.__stores.prefabs.addPrefabRecord({
+		await window.__tp.test.v1.prefabs.addPrefabRecord({
 			id: 'storage-suite-prefab',
 			name: 'Suite prefab',
 			createdAt: Date.now(),
 			element: { type: 'Mesh', name: 'x' }
 		});
-		await window.__stores.environment.saveEnvPreset('Suite preset');
+		await window.__tp.test.v1.environment.saveEnvPreset('Suite preset');
 	});
 	await page.waitForTimeout(800);
 
@@ -321,7 +321,7 @@ h.run(async () => {
 	// `keepableHashes` were not consulted, both readings would be identical — which is
 	// exactly the counterfactual a passing check on its own cannot distinguish.
 	await page.evaluate(() =>
-		window.__stores.projectManifest.projectManifest.update((m) => ({ ...m, scenes: {} }))
+		window.__tp.test.v1.projectManifest.projectManifest.update((m) => ({ ...m, scenes: {} }))
 	);
 	await page.waitForTimeout(200);
 	const noPointer = await scan(A);
@@ -331,7 +331,7 @@ h.run(async () => {
 	);
 	await page.evaluate(
 		({ hashes }) => {
-			const pm = window.__stores.projectManifest;
+			const pm = window.__tp.test.v1.projectManifest;
 			for (const hash of hashes) pm.publishSceneVersion('Arena', hash);
 		},
 		// BOTH, in order: re-publishing only v1 would make IT the pointer, which unhides it
@@ -386,7 +386,7 @@ h.run(async () => {
 	h.check(
 		!(await page.evaluate(() => {
 			let items;
-			window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
+			window.__tp.test.v1.explorer.explorerItems.subscribe((v) => (items = v))();
 			return items.some((i) => i.name === 'spare.txt');
 		})),
 		'...and it went through the OWNING deleter, so the library index agrees it is gone'
@@ -398,7 +398,7 @@ h.run(async () => {
 
 	// ---- 5. multiselect across categories --------------------------------------------
 	const multi = await page.evaluate(async () => {
-		const su = window.__stores.storageUsage;
+		const su = window.__tp.test.v1.storageUsage;
 		const s = await su.scanStorage();
 		const all = s.categories.flatMap((c) => c.rows.map((r) => ({ ...r })));
 		const want = ['keeper.txt', 'A saved scene', 'Suite prefab'];
@@ -447,7 +447,7 @@ h.run(async () => {
 		() =>
 			page.evaluate(() => {
 				let sc;
-				window.__stores.storageUsage.storageScan.subscribe((v) => (sc = v))();
+				window.__tp.test.v1.storageUsage.storageScan.subscribe((v) => (sc = v))();
 				return (sc?.categories ?? []).find((c) => c.key === 'library')?.rows.length ?? -1;
 			}),
 		(n) => n === 3,
@@ -619,15 +619,15 @@ h.run(async () => {
 	// It is keyed on the ROWS now: an id the new scan still lists stays ticked.
 	const atBefore = await page.evaluate(() => {
 		let sc;
-		window.__stores.storageUsage.storageScan.subscribe((v) => (sc = v))();
+		window.__tp.test.v1.storageUsage.storageScan.subscribe((v) => (sc = v))();
 		return sc?.at ?? 0;
 	});
-	await page.evaluate(() => void window.__stores.storageUsage.scanStorage());
+	await page.evaluate(() => void window.__tp.test.v1.storageUsage.scanStorage());
 	await h.eventually(
 		() =>
 			page.evaluate(() => {
 				let sc;
-				window.__stores.storageUsage.storageScan.subscribe((v) => (sc = v))();
+				window.__tp.test.v1.storageUsage.storageScan.subscribe((v) => (sc = v))();
 				return sc?.at ?? 0;
 			}),
 		(at) => at !== atBefore,
@@ -683,7 +683,7 @@ h.run(async () => {
 	await page.waitForTimeout(500);
 	const dlg = await page.evaluate(() => {
 		let d;
-		window.__stores.confirmDialog.confirmDialog.subscribe((x) => (d = x))();
+		window.__tp.test.v1.confirmDialog.confirmDialog.subscribe((x) => (d = x))();
 		return d ? { title: d.title, message: d.message } : null;
 	});
 	h.check(!!dlg, 'Reclaim asks first, through the app-wide confirm');
@@ -696,7 +696,7 @@ h.run(async () => {
 	h.check(
 		(await page.evaluate(() => {
 			let items;
-			window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
+			window.__tp.test.v1.explorer.explorerItems.subscribe((v) => (items = v))();
 			return items.length;
 		})) === 3,
 		'cancelling removes nothing'
@@ -709,7 +709,7 @@ h.run(async () => {
 		() =>
 			page.evaluate(() => {
 				let items;
-				window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
+				window.__tp.test.v1.explorer.explorerItems.subscribe((v) => (items = v))();
 				return items.length;
 			}),
 		(n) => n === 0,
@@ -720,7 +720,7 @@ h.run(async () => {
 		() =>
 			page.evaluate(() => {
 				let sc;
-				window.__stores.storageUsage.storageScan.subscribe((v) => (sc = v))();
+				window.__tp.test.v1.storageUsage.storageScan.subscribe((v) => (sc = v))();
 				return (sc?.categories ?? []).find((c) => c.key === 'library')?.rows.length ?? -1;
 			}),
 		(n) => n === 0,
@@ -774,14 +774,14 @@ h.run(async () => {
 	// REFUSES - seed one back and re-scan, or the premise below is vacuously false and the
 	// check that follows would be reading a button nothing could ever enable.
 	await page.evaluate(async () => {
-		const e = window.__stores.explorer;
+		const e = window.__tp.test.v1.explorer;
 		await e.addItemFromBytes(new TextEncoder().encode('opacity probe').buffer, 'opacity-probe.txt', null);
-		await window.__stores.storageUsage.scanStorage();
+		await window.__tp.test.v1.storageUsage.scanStorage();
 	});
 	await page.waitForTimeout(600);
 	const pickables = await page.evaluate(() => {
 		let sc;
-		window.__stores.storageUsage.storageScan.subscribe((v) => (sc = v))();
+		window.__tp.test.v1.storageUsage.storageScan.subscribe((v) => (sc = v))();
 		return (sc?.categories ?? []).flatMap((c) => c.rows).filter((r) => r.removable).length;
 	});
 	h.check(pickables > 0, 'premise: something in the panel can be ticked again (' + pickables + ')');
@@ -866,7 +866,7 @@ h.run(async () => {
 		() =>
 			page.evaluate(() => {
 				let v;
-				window.__stores.storageUsage.storageScanning.subscribe((x) => (v = x))();
+				window.__tp.test.v1.storageUsage.storageScanning.subscribe((x) => (v = x))();
 				return v;
 			}),
 		(v) => v === false,
@@ -891,7 +891,7 @@ h.run(async () => {
 	);
 
 	// ---- 7. three entry points --------------------------------------------------------
-	await page.evaluate(() => window.__stores.storageUsage.storageModalOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.storageUsage.storageModalOpen.set(false));
 	await page.waitForTimeout(400);
 	// (a) the chip — already proven above. (b) the Explorer background menu.
 	await page.evaluate(() => {
@@ -921,15 +921,15 @@ h.run(async () => {
 		(await page.locator('#storage-modal').count()) === 1,
 		'...and it opens the SAME modal, not a second concept'
 	);
-	await page.evaluate(() => window.__stores.storageUsage.storageModalOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.storageUsage.storageModalOpen.set(false));
 	await page.waitForTimeout(300);
 
 	// (c) Settings ▸ Explorer
 	// through the app's OWN deep link, not a second concept: an AccordionItem renders its
 	// body only while it is open, so a suite that merely opens Settings finds no row at all
 	await page.evaluate(() => {
-		window.__stores.settingsSection.set('explorer');
-		window.__stores.settingsOpen.set(true);
+		window.__tp.test.v1.settingsSection.set('explorer');
+		window.__tp.test.v1.settingsOpen.set(true);
 	});
 	await page.waitForTimeout(900);
 	const settingsBtn = page.locator('#settings-storage');
@@ -950,8 +950,8 @@ h.run(async () => {
 	await page.waitForTimeout(1200);
 	h.check((await page.locator('#storage-modal').count()) === 1, 'the Settings row opens the same modal');
 	await page.evaluate(() => {
-		window.__stores.storageUsage.storageModalOpen.set(false);
-		window.__stores.settingsOpen.set(false);
+		window.__tp.test.v1.storageUsage.storageModalOpen.set(false);
+		window.__tp.test.v1.settingsOpen.set(false);
 	});
 	await page.waitForTimeout(400);
 

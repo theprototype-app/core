@@ -9,7 +9,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowNodes.set([
 			{ id: 'n1', type: 'number', position: { x: 0, y: 0 }, data: { type: 'number', label: 'Number', value: 1 } },
 			{ id: 'c1', type: 'colorpicker', position: { x: 0, y: 120 }, data: { type: 'colorpicker', label: 'Color', color: '#ff4000' } },
@@ -48,12 +48,12 @@ h.run(async () => {
 	h.check(/^polygon/.test(colors.colorOut?.clip || '') && colors.colorOut?.clip !== colors.objectIn?.clip, `a color socket is a hexagon, unlike the effect star (${colors.colorOut?.clip} / ${colors.objectIn?.clip})`);
 	h.check(colors.objectIn?.type === 'effect', `the target names its type (${colors.objectIn?.type})`);
 	// light theme: the token hues change (the old pale yellow sat at 1.5:1 on a white card), shapes stay
-	await A.page.evaluate(() => window.__stores.themes.theme.set('light'));
+	await A.page.evaluate(() => window.__tp.test.v1.themes.theme.set('light'));
 	await A.page.waitForTimeout(200);
 	const light = await read();
 	h.check(hex(light.colorOut?.bg || '') === '#a16207', `light: the color socket takes the light token (${hex(light.colorOut?.bg || '')})`);
 	h.check(light.colorOut?.clip === colors.colorOut?.clip, 'light: the shape is the same in every theme');
-	await A.page.evaluate(() => window.__stores.themes.theme.set('dark'));
+	await A.page.evaluate(() => window.__tp.test.v1.themes.theme.set('dark'));
 	await A.page.waitForTimeout(200);
 
 	// legend renders in the ⚙ panel (Graph view, no node selected)

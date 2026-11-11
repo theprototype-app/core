@@ -12,16 +12,16 @@ const TINY_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8
 const items = (page) =>
 	page.evaluate(() => {
 		let list;
-		window.__stores.explorer.explorerItems.subscribe((x) => (list = x))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((x) => (list = x))();
 		return list.map((i) => ({ id: i.id, name: i.name, hash: i.hash, folderId: i.folderId ?? null, kind: i.kind, share: i.share ?? null }));
 	});
 const folders = (page) =>
 	page.evaluate(() => {
 		let list;
-		window.__stores.explorer.explorerFolders.subscribe((x) => (list = x))();
+		window.__tp.test.v1.explorer.explorerFolders.subscribe((x) => (list = x))();
 		return list.map((f) => ({ id: f.id, name: f.name, parentId: f.parentId ?? null }));
 	});
-const blobSize = (page, id) => page.evaluate(async (id) => (await window.__stores.explorer.itemBlob(id))?.size ?? null, id);
+const blobSize = (page, id) => page.evaluate(async (id) => (await window.__tp.test.v1.explorer.itemBlob(id))?.size ?? null, id);
 const menuLabels = (page) => page.evaluate(() => [...document.querySelectorAll('[role="menuitem"]')].map((r) => ({ label: r.innerText.trim().split('\n')[0], disabled: r.getAttribute('aria-disabled') === 'true' || r.classList.contains('cursor-default') })));
 const key = async (page, code) => {
 	await page.keyboard.press(code);
@@ -36,11 +36,11 @@ h.run(async () => {
 	await page.waitForTimeout(500);
 	await page.evaluate(async (png) => {
 		const bytes = Uint8Array.from(atob(png), (c) => c.charCodeAt(0));
-		await window.__stores.explorer.importFiles(
+		await window.__tp.test.v1.explorer.importFiles(
 			[new File([bytes], 'pixel.png', { type: 'image/png' }), new File([new Blob(['hello'])], 'notes.txt', { type: 'text/plain' })],
 			null
 		);
-		window.__stores.explorer.createFolder('Target', null);
+		window.__tp.test.v1.explorer.createFolder('Target', null);
 	}, png = TINY_PNG);
 	await page.waitForTimeout(900);
 	let all = await items(page);
@@ -49,7 +49,7 @@ h.run(async () => {
 
 	// ---- 1. the copy name rule (pure) ------------------------------------------------
 	const names = await page.evaluate(() => {
-		const f = window.__stores.explorer.nextCopyName;
+		const f = window.__tp.test.v1.explorer.nextCopyName;
 		return [f('Tower.glb', ['Tower.glb']), f('Tower.glb', ['Tower.glb', 'Tower copy.glb']), f('Tower copy.glb', ['Tower.glb', 'Tower copy.glb', 'Tower copy 2.glb']), f('notes', ['notes']), f('.env', ['.env'])];
 	});
 	h.check(names[0] === 'Tower copy.glb' && names[1] === 'Tower copy 2.glb' && names[2] === 'Tower copy 3.glb', `Finder/Blender names: ${names.slice(0, 3).join(' · ')}`);
@@ -68,14 +68,14 @@ h.run(async () => {
 	const copy = copies.find((i) => i.id !== pixel.id);
 	h.check(copy && (await blobSize(page, copy.id)) === (await blobSize(page, pixel.id)) && (await blobSize(page, copy.id)) > 0, 'the copy has its own blob under its own id');
 	h.check(copy && copy.share === null, 'share is not copied (the copy is local until shared)');
-	h.check((await page.evaluate(() => window.__stores.explorer.itemByHash(window.__pixelHash ?? '') === null)) || true, '(itemByHash still answers for the pull path)');
+	h.check((await page.evaluate(() => window.__tp.test.v1.explorer.itemByHash(window.__pixelHash ?? '') === null)) || true, '(itemByHash still answers for the pull path)');
 
 	// ---- 3. Ctrl+C in the root, Ctrl+V in Target: a record in Target ------------------
 	const target = (await folders(page)).find((f) => f.name === 'Target');
 	await page.locator('.explorer-card', { hasText: 'notes.txt' }).first().click();
 	await page.waitForTimeout(200);
 	await key(page, 'Control+KeyC');
-	await page.evaluate((id) => window.__stores.explorer.activeFolder.set(id), target.id);
+	await page.evaluate((id) => window.__tp.test.v1.explorer.activeFolder.set(id), target.id);
 	await page.waitForTimeout(500);
 	await page.locator('#explorer-grid').click({ position: { x: 5, y: 5 } }).catch(() => {});
 	await page.evaluate(() => document.getElementById('explorer-grid')?.focus());
@@ -97,14 +97,14 @@ h.run(async () => {
 	await key(page, 'Control+KeyX');
 	const dimmed = await page.evaluate(() => !!document.querySelector('[data-cut="1"]'));
 	h.check(dimmed, 'a cut row renders dimmed until it is pasted');
-	await page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await page.waitForTimeout(500);
 	await page.evaluate(() => document.getElementById('explorer-grid')?.focus());
 	await key(page, 'Control+KeyV');
 	await h.eventually(() => items(page), (l) => (l.find((i) => i.id === inTarget.id)?.folderId ?? null) === null, 'Ctrl+X / Ctrl+V moves the record (same id) to the root', 8000);
 	all = await items(page);
 	h.check(all.filter((i) => i.name === 'notes.txt').length === 2, 'a move adds no record');
-	h.check(await page.evaluate(() => { let c; window.__stores.explorerClipboard.explorerClipboard.subscribe((x) => (c = x))(); return c === null; }), 'a cut is spent after the paste');
+	h.check(await page.evaluate(() => { let c; window.__tp.test.v1.explorerClipboard.explorerClipboard.subscribe((x) => (c = x))(); return c === null; }), 'a cut is spent after the paste');
 
 	// ---- 5. the grid menu offers Paste, disabled when empty -----------------------------
 	const gridBox = await page.locator('#explorer-grid').boundingBox();
@@ -119,7 +119,7 @@ h.run(async () => {
 	// C1 shipped this entry disabled; C3 flipped it: a scene copy is a new scene, so the
 	// entry opens the inline naming input prefilled with the copy name instead of writing.
 	await page.evaluate(async () => {
-		await window.__stores.explorer.importFiles([new File([new Blob(['{}'])], 'room.tpscene', { type: 'application/zip' })], null);
+		await window.__tp.test.v1.explorer.importFiles([new File([new Blob(['{}'])], 'room.tpscene', { type: 'application/zip' })], null);
 	});
 	await page.waitForTimeout(700);
 	const scene = (await items(page)).find((i) => i.name === 'room.tpscene');
@@ -137,7 +137,7 @@ h.run(async () => {
 
 	// ---- 7. folder Duplicate: records + blobs under a new folder id --------------------
 	const before = (await folders(page)).length;
-	const made = await page.evaluate((id) => window.__stores.explorer.duplicateFolder(id).then((f) => f && { id: f.id, name: f.name }), target.id);
+	const made = await page.evaluate((id) => window.__tp.test.v1.explorer.duplicateFolder(id).then((f) => f && { id: f.id, name: f.name }), target.id);
 	const after = await folders(page);
 	all = await items(page);
 	h.check(!!made && made.id !== target.id && made.name === 'Target copy' && after.length === before + 1, `duplicateFolder makes "Target copy" with a new id (${JSON.stringify(made)})`);
@@ -145,7 +145,7 @@ h.run(async () => {
 
 	// ---- 8. a prefab duplicates with a new id and the copy name -----------------------
 	const prefabIds = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const box = s.addObjects.spawnAtPoint('/create Box 1 1 1', [0, 0.5, 0]);
 		const made = await s.prefabs.savePrefab(box.uuid, 'Crate');
 		const copy = await s.prefabs.duplicatePrefab(made.id);

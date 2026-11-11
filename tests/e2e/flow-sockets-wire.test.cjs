@@ -50,13 +50,13 @@ h.run(async () => {
 		SRC = 'src' + ++round;
 		const nodes = [N(SRC, 'onclick', 0, 0), N('dut', target, 360, 0, data)];
 		if (withValue) nodes.push(N('num', 'number', 0, 160, { value: 7, step: 1 }));
-		await p.evaluate((doc) => window.__stores.restoreGraphs(doc), { scene: { nodes, edges: [] } });
+		await p.evaluate((doc) => window.__tp.test.v1.restoreGraphs(doc), { scene: { nodes, edges: [] } });
 		await p.waitForTimeout(900);
 	};
 	const edgeInto = (h2) =>
 		p.evaluate(
 			(th) =>
-				window.__stores.allEdges().some((e) => e.target === 'dut' && (e.targetHandle ?? '') === th),
+				window.__tp.test.v1.allEdges().some((e) => e.target === 'dut' && (e.targetHandle ?? '') === th),
 			h2
 		);
 	const drawn = (id) =>
@@ -64,7 +64,7 @@ h.run(async () => {
 	const fire = () =>
 		p.evaluate(
 			(id) =>
-				window.__stores.flowRuntime.applyNodeTrigger(id, (Date.now() % 86400000) / 1000, true),
+				window.__tp.test.v1.flowRuntime.applyNodeTrigger(id, (Date.now() % 86400000) / 1000, true),
 			SRC
 		);
 	/** wire `from` into the node's `id` socket by hand and say whether the edge landed there */
@@ -80,7 +80,7 @@ h.run(async () => {
 	};
 
 	// ---- 1. Set Game State: trigger
-	await p.evaluate(() => window.__stores.gameState.setGameState('menu'));
+	await p.evaluate(() => window.__tp.test.v1.gameState.setGameState('menu'));
 	await load('setgamestate', { state: 'over', outcome: '' }, false);
 	const g1 = await byHand(source(SRC), 'trigger');
 	h.check(
@@ -90,10 +90,10 @@ h.run(async () => {
 	await fire();
 	await p.waitForTimeout(600);
 	const st = await p.evaluate(
-		() => new Promise((r) => window.__stores.gameState.gameState.subscribe((v) => r(v.state))())
+		() => new Promise((r) => window.__tp.test.v1.gameState.gameState.subscribe((v) => r(v.state))())
 	);
 	h.check(st === 'over', `…and the pulse sets the game state (${st})`);
-	await p.evaluate(() => window.__stores.gameState.setGameState('menu'));
+	await p.evaluate(() => window.__tp.test.v1.gameState.setGameState('menu'));
 
 	// ---- 2. Set Variable: trigger + value
 	await load('setvariable', { name: 'fb1', op: 'set', value: 0, scope: 'shared' }, true);
@@ -106,7 +106,7 @@ h.run(async () => {
 	await fire();
 	await p.waitForTimeout(600);
 	const fb1 = await p.evaluate(
-		() => new Promise((r) => window.__stores.gameState.gameState.subscribe((v) => r(v.vars?.fb1))())
+		() => new Promise((r) => window.__tp.test.v1.gameState.gameState.subscribe((v) => r(v.vars?.fb1))())
 	);
 	h.check(fb1 === 7, `…and the pulse writes the WIRED value, 7 (${fb1})`);
 
@@ -120,7 +120,7 @@ h.run(async () => {
 	);
 	await fire();
 	await p.waitForTimeout(600);
-	const rows = await p.evaluate(() => window.__stores.flowRuntime.hudRowsOf('fb1list'));
+	const rows = await p.evaluate(() => window.__tp.test.v1.flowRuntime.hudRowsOf('fb1list'));
 	h.check(
 		Array.isArray(rows) && rows.map(String).includes('7'),
 		`…and the pulse appends the wired row (${JSON.stringify(rows)})`
@@ -137,7 +137,7 @@ h.run(async () => {
 	);
 	await fire();
 	await p.waitForTimeout(600);
-	const sv = await p.evaluate(() => window.__stores.hudDocs.hudValueOf('fb1slider'));
+	const sv = await p.evaluate(() => window.__tp.test.v1.hudDocs.hudValueOf('fb1slider'));
 	h.check(Number(sv) === 7, `…and the pulse moves the control to the wired value (${sv})`);
 
 	// ---- 5. HUD Timer: the drawn `start` socket now starts it
@@ -149,13 +149,13 @@ h.run(async () => {
 	const t1 = await byHand(source(SRC), 'start');
 	const before = await p.evaluate(
 		() =>
-			new Promise((r) => window.__stores.hudDocs.hudRuntime.subscribe((v) => r(v.fb1timer?.text))())
+			new Promise((r) => window.__tp.test.v1.hudDocs.hudRuntime.subscribe((v) => r(v.fb1timer?.text))())
 	);
 	await fire();
 	await p.waitForTimeout(2600);
 	const after = await p.evaluate(
 		() =>
-			new Promise((r) => window.__stores.hudDocs.hudRuntime.subscribe((v) => r(v.fb1timer?.text))())
+			new Promise((r) => window.__tp.test.v1.hudDocs.hudRuntime.subscribe((v) => r(v.fb1timer?.text))())
 	);
 	h.check(
 		t1.drawn && t1.edge && before === '60',

@@ -123,32 +123,32 @@ const toastTexts = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.toastStore.subscribe((list) =>
+				window.__tp.test.v1.toastStore.subscribe((list) =>
 					r((list || []).map((t) => (typeof t === 'string' ? t : (t?.text ?? ''))))
 				)()
 			)
 	);
-const clearToasts = (page) => page.evaluate(() => window.__stores.clearToast());
+const clearToasts = (page) => page.evaluate(() => window.__tp.test.v1.clearToast());
 
 const itemNames = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.explorer.explorerItems.subscribe((list) => r(list.map((i) => i.name)))()
+				window.__tp.test.v1.explorer.explorerItems.subscribe((list) => r(list.map((i) => i.name)))()
 			)
 	);
 const folderNames = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.explorer.explorerFolders.subscribe((list) => r(list.map((f) => f.name)))()
+				window.__tp.test.v1.explorer.explorerFolders.subscribe((list) => r(list.map((f) => f.name)))()
 			)
 	);
 const sceneObjects = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) =>
+				window.__tp.test.v1.objectsGroup.subscribe((g) =>
 					r(
 						(g?.children ?? []).map((c) => ({
 							name: c.name,
@@ -162,7 +162,7 @@ const clearScene = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					for (const c of [...(g?.children ?? [])]) g.remove(c);
 					r(true);
 				})()
@@ -176,7 +176,7 @@ h.run(async () => {
 
 	// ---- 0. premise: one folder holding five files and two subfolders ----------------
 	await page.evaluate(async (obj) => {
-		const ex = window.__stores.explorer;
+		const ex = window.__tp.test.v1.explorer;
 		await ex.loadExplorer();
 		const work = ex.createFolder('Work', null);
 		ex.createFolder('Sub one', work.id);
@@ -298,11 +298,11 @@ h.run(async () => {
 
 	// ---- 4. Ctrl+A / Ctrl+I / Escape, and the shortcut that must NOT leak ------------
 	await page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		window.__stores.commandsHandler.sceneCommand('/create sphere');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create sphere');
 	});
 	await page.waitForTimeout(700);
-	await page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await page.waitForTimeout(200);
 	const gb = await gridRect(page);
 	await page.mouse.click(gb.x + gb.width - 18, gb.y + gb.height - 18); // empty space: focus + clear
@@ -314,7 +314,7 @@ h.run(async () => {
 	const all = await selection(page);
 	h.check(all.length === 7, `Ctrl+A takes every card in this folder (${all.length})`);
 	const sceneSel = await page.evaluate(
-		() => new Promise((r) => window.__stores.selectedObjects.subscribe((s) => r([...s].length))())
+		() => new Promise((r) => window.__tp.test.v1.selectedObjects.subscribe((s) => r([...s].length))())
 	);
 	h.check(
 		sceneSel === 0,
@@ -505,9 +505,9 @@ h.run(async () => {
 
 	// ---- 8. N prefabs into ONE model file --------------------------------------------
 	await page.evaluate(async () => {
-		const p = window.__stores.prefabs;
+		const p = window.__tp.test.v1.prefabs;
 		await p.loadPrefabs();
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const kids = group.children.slice(-2);
 		await p.savePrefab(kids[0].uuid, 'FabOne');
 		await p.savePrefab(kids[1].uuid, 'FabTwo');
@@ -546,10 +546,10 @@ h.run(async () => {
 	// ---- 9. batch DELETE: one confirm, and the skipped kinds are REPORTED -------------
 	// The skipped case is reachable in a PACK view, where every card is a view of a
 	// remote entry with no stored bytes. Driven through the real stores.
-	await page.evaluate(() => window.__stores.explorer.activeFolder.set('pack:zz-test'));
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set('pack:zz-test'));
 	await page.waitForTimeout(400);
 	await page.evaluate(() =>
-		window.__stores.packs.openPackItems.set([
+		window.__tp.test.v1.packs.openPackItems.set([
 			{ name: 'RemoteA', packName: 'zz-test', kind: 'object', glbUrl: 'https://example.invalid/a.glb' },
 			{ name: 'RemoteB', packName: 'zz-test', kind: 'object', glbUrl: 'https://example.invalid/b.glb' }
 		])
@@ -569,12 +569,12 @@ h.run(async () => {
 	);
 
 	// now the real thing: a folder + two files, ONE confirm naming both
-	await page.evaluate(() => window.__stores.packs.openPackItems.set([]));
+	await page.evaluate(() => window.__tp.test.v1.packs.openPackItems.set([]));
 	await page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.explorer.explorerFolders.subscribe((list) => {
-					window.__stores.explorer.activeFolder.set(list.find((f) => f.name === 'Work').id);
+				window.__tp.test.v1.explorer.explorerFolders.subscribe((list) => {
+					window.__tp.test.v1.explorer.activeFolder.set(list.find((f) => f.name === 'Work').id);
 					r(true);
 				})()
 			)
@@ -667,7 +667,7 @@ h.run(async () => {
 		'…while the TOP-LEVEL fields stay exactly what a single drag has always sent'
 	);
 	await page.evaluate(
-		(p) => window.__stores.explorerDrop.dropExplorerItem(p, 500, 250),
+		(p) => window.__tp.test.v1.explorerDrop.dropExplorerItem(p, 500, 250),
 		parsed
 	);
 	await page.waitForTimeout(2500);
@@ -689,11 +689,11 @@ h.run(async () => {
 	await clearScene(page);
 	await page.waitForTimeout(300);
 	const stackDefault = await page.evaluate(
-		() => new Promise((r) => window.__stores.stackOnDrop.subscribe(r)())
+		() => new Promise((r) => window.__tp.test.v1.stackOnDrop.subscribe(r)())
 	);
 	h.check(stackDefault === false, 'premise: "stack on drop" is OFF by default');
-	await page.evaluate(() => window.__stores.stackOnDrop.set(true));
-	await page.evaluate((p) => window.__stores.explorerDrop.dropExplorerItem(p, 500, 250), parsed);
+	await page.evaluate(() => window.__tp.test.v1.stackOnDrop.set(true));
+	await page.evaluate((p) => window.__tp.test.v1.explorerDrop.dropExplorerItem(p, 500, 250), parsed);
 	await page.waitForTimeout(2500);
 	const stacked = await sceneObjects(page);
 	h.check(stacked.length === 3, `three objects again (${stacked.length})`);
@@ -702,7 +702,7 @@ h.run(async () => {
 		new Set(stackedXZ).size === 1,
 		`…all on ONE spot with the setting on (${stackedXZ.join(' | ')})`
 	);
-	await page.evaluate(() => window.__stores.stackOnDrop.set(false));
+	await page.evaluate(() => window.__tp.test.v1.stackOnDrop.set(false));
 
 	// a card OUTSIDE the selection drags alone — and does not disturb the selection
 	await clickEmptyGrid(page);
@@ -728,7 +728,7 @@ h.run(async () => {
 	// ---- 12. a view change wipes the set ---------------------------------------------
 	await clickCard(page, 'bravo.obj', ['Control']);
 	h.check((await selection(page)).length === 2, 'premise: two cards picked');
-	await page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await page.waitForTimeout(400);
 	const afterNav = await page.evaluate(
 		() =>

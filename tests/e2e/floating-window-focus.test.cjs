@@ -51,7 +51,7 @@ const shown = (page) =>
 const closedOf = (page, store) =>
 	page.evaluate((s) => {
 		let v;
-		window.__stores[s].subscribe((x) => (v = x))();
+		window.__tp.test.v1[s].subscribe((x) => (v = x))();
 		return v;
 	}, store);
 
@@ -81,7 +81,7 @@ h.run(async () => {
 		);
 	});
 	await page.reload({ waitUntil: 'domcontentloaded' });
-	await page.waitForFunction(() => window.__stores && !!window.__stores.bottomDock, { timeout: 30000 });
+	await page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.bottomDock, { timeout: 30000 });
 	await page.waitForTimeout(1200);
 
 	const bar = await page.evaluate(() =>
@@ -139,7 +139,7 @@ h.run(async () => {
 
 	// ---- 2. CLICK-TO-FRONT with a real mouse ---------------------------------------
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.explorerClose.set(true);
 		s.objectListClose.set(true);
 		s.flowGraphClose.set(false);
@@ -280,7 +280,7 @@ h.run(async () => {
 	const dockMin = () =>
 		page.evaluate(() => {
 			let v;
-			window.__stores.bottomDock.dockMinimized.subscribe((x) => (v = x))();
+			window.__tp.test.v1.bottomDock.dockMinimized.subscribe((x) => (v = x))();
 			return v;
 		});
 
@@ -292,7 +292,7 @@ h.run(async () => {
 	await pressT();
 	const emptyOpen = await page.evaluate(() => {
 		let v;
-		window.__stores.bottomDock.dockEmptyShown.subscribe((x) => (v = x))();
+		window.__tp.test.v1.bottomDock.dockEmptyShown.subscribe((x) => (v = x))();
 		return v;
 	});
 	const afterEmpty = await zMap();
@@ -302,7 +302,7 @@ h.run(async () => {
 	);
 	await pressT(); // closes the empty dock again
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.bottomDock.armDockMode('timeline', true);
 		s.timelineClose.set(false);
 	});

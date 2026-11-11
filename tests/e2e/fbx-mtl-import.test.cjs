@@ -21,7 +21,7 @@ const MTL = 'newmtl red\nKd 1 0 0\nmap_Kd tiny.png\n';
 
 const objectCount = (page) =>
 	page.evaluate(
-		() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g?.children.length ?? 0))())
+		() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g?.children.length ?? 0))())
 	);
 
 h.run(async () => {
@@ -32,8 +32,8 @@ h.run(async () => {
 	const glb = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				const THREE = window.__stores.THREE;
-				const { GLTFExporter } = window.__stores.GLTFExporterModule;
+				const THREE = window.__tp.test.v1.THREE;
+				const { GLTFExporter } = window.__tp.test.v1.GLTFExporterModule;
 				const root = new THREE.Group();
 				const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
 				mesh.name = 'mover';
@@ -52,7 +52,7 @@ h.run(async () => {
 
 	// capture what the import broadcasts instead of standing up a second peer
 	await A.page.evaluate(async () => {
-		const peer = await new Promise((r) => window.__stores.peers.subscribe(r)());
+		const peer = await new Promise((r) => window.__tp.test.v1.peers.subscribe(r)());
 		window.__files = [];
 		const orig = peer.send.bind(peer);
 		peer.send = (m) => {
@@ -62,7 +62,7 @@ h.run(async () => {
 	});
 	await A.page.evaluate((bytes) => {
 		const file = new File([new Uint8Array(bytes)], 'anim.glb');
-		window.__stores.fileHandler.importFile(file, 'GlbAnim');
+		window.__tp.test.v1.fileHandler.importFile(file, 'GlbAnim');
 	}, glb);
 	await A.page.waitForTimeout(1200);
 	const sent = await A.page.evaluate(() => window.__files.slice());
@@ -74,14 +74,14 @@ h.run(async () => {
 	// behaviour, GLTFLoader always) this would succeed and the check goes red.
 	const before = await objectCount(A.page);
 	const asFbx = await A.page.evaluate(async (bytes) => {
-		await window.__stores.animatedImports.applyObjectFile({
+		await window.__tp.test.v1.animatedImports.applyObjectFile({
 			uuid: 'kind-probe-fbx',
 			name: 'WrongParser',
 			kind: 'fbx',
 			buffer: new Uint8Array(bytes).buffer
 		});
 		return new Promise((r) =>
-			window.__stores.objectsGroup.subscribe((g) => r(!!g?.getObjectByProperty('uuid', 'kind-probe-fbx')))()
+			window.__tp.test.v1.objectsGroup.subscribe((g) => r(!!g?.getObjectByProperty('uuid', 'kind-probe-fbx')))()
 		);
 	}, glb);
 	h.check(asFbx === false, 'glb bytes announced as kind:fbx are rejected — the kind picks the parser');
@@ -89,20 +89,20 @@ h.run(async () => {
 
 	// ---------- an ABSENT kind still means gltf (older peers) ----------
 	const noKind = await A.page.evaluate(async (bytes) => {
-		await window.__stores.animatedImports.applyObjectFile({
+		await window.__tp.test.v1.animatedImports.applyObjectFile({
 			uuid: 'kind-probe-legacy',
 			name: 'LegacyPeer',
 			buffer: new Uint8Array(bytes).buffer
 		});
 		return new Promise((r) =>
-			window.__stores.objectsGroup.subscribe((g) => r(!!g?.getObjectByProperty('uuid', 'kind-probe-legacy')))()
+			window.__tp.test.v1.objectsGroup.subscribe((g) => r(!!g?.getObjectByProperty('uuid', 'kind-probe-legacy')))()
 		);
 	}, glb);
 	h.check(noKind === true, 'a message with no kind still parses as gltf (back-compat)');
 
 	// ---------- an FBX-registered import sends kind 'fbx' ----------
 	const fbxSend = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const THREE = w.THREE;
 		const root = new THREE.Group();
 		root.name = 'FbxRig';
@@ -124,7 +124,7 @@ h.run(async () => {
 	// ---------- OBJ + MTL: materials and textures actually arrive ----------
 	const withMtl = await A.page.evaluate(
 		async ([objText, mtlText, png]) => {
-			const w = window.__stores;
+			const w = window.__tp?.test.v1;
 			const bytes = Uint8Array.from(atob(png), (c) => c.charCodeAt(0));
 			const files = [
 				new File([objText], 'tiny.obj', { type: 'text/plain' }),
@@ -158,7 +158,7 @@ h.run(async () => {
 
 	// ---------- the same .obj ALONE still imports, with a hint ----------
 	const alone = await A.page.evaluate(async ([objText]) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.fileHandler.importModelFiles([new File([objText], 'lonely.obj', { type: 'text/plain' })]);
 		await new Promise((r) => setTimeout(r, 1200));
 		const group = await new Promise((r) => w.objectsGroup.subscribe(r)());
@@ -185,7 +185,7 @@ h.run(async () => {
 	// object's replication to peers
 	const missing = await A.page.evaluate(
 		async ([objText, mtlText]) => {
-			const w = window.__stores;
+			const w = window.__tp?.test.v1;
 			const errors = [];
 			const origError = console.log;
 			console.log = (...args) => {

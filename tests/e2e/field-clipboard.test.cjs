@@ -24,7 +24,7 @@ const store = (page, expr) => page.evaluate(expr);
 const poseOf = (page, uuid) =>
 	page.evaluate((id) => {
 		let g = null;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByProperty('uuid', id);
 		const r = (n) => Math.round(n * 1000) / 1000;
 		return { pos: o.position.toArray().map(r), rot: [o.rotation.x, o.rotation.y, o.rotation.z].map(r), scale: o.scale.toArray().map(r) };
@@ -33,7 +33,7 @@ const poseOf = (page, uuid) =>
 /** @param {any} page @param {number[]} pos @returns {Promise<string>} */
 const makeBox = (page, pos) =>
 	page.evaluate(async (p) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		await new Promise((r) => setTimeout(r, 300));
 		let g = null;
@@ -48,13 +48,13 @@ const makeBox = (page, pos) =>
 const select = async (page, uuid) => {
 	await page.evaluate((id) => {
 		localStorage.setItem('inspector:sec:Transform', 'open');
-		window.__stores.objectActions.selectObject(id, true);
+		window.__tp.test.v1.objectActions.selectObject(id, true);
 	}, uuid);
 	await page.waitForTimeout(500);
 };
 
-const undoDepth = (page) => store(page, () => new Promise((r) => window.__stores.history.undoStack.subscribe((s) => r(s.length))()));
-const undo = (page) => store(page, () => window.__stores.history.undo());
+const undoDepth = (page) => store(page, () => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((s) => r(s.length))()));
+const undo = (page) => store(page, () => window.__tp.test.v1.history.undo());
 const clipText = (page) => page.evaluate(() => navigator.clipboard.readText());
 /** @param {any} page @param {string} text */
 const setClip = (page, text) => page.evaluate((t) => navigator.clipboard.writeText(t), text);
@@ -88,7 +88,7 @@ async function pick(page, label) {
 	try {
 		await item.waitFor({ state: 'visible', timeout: 5000 });
 	} catch (err) {
-		const state = await page.evaluate(() => JSON.stringify(window.__stores.fieldMenu.fieldMenu ? (() => { let v; window.__stores.fieldMenu.fieldMenu.subscribe((x) => (v = x))(); return v?.items?.map((i) => i.label ?? i.section); })() : null));
+		const state = await page.evaluate(() => JSON.stringify(window.__tp.test.v1.fieldMenu.fieldMenu ? (() => { let v; window.__tp.test.v1.fieldMenu.fieldMenu.subscribe((x) => (v = x))(); return v?.items?.map((i) => i.label ?? i.section); })() : null));
 		console.log(`[pick "${label}"] aimed at: ${lastAim} · menu items: ${state}`);
 		throw err;
 	}
@@ -98,7 +98,7 @@ async function pick(page, label) {
 /** @param {any} page */
 const menuOpen = (page) => page.locator('[role="menuitem"]').first().isVisible().catch(() => false);
 /** @param {any} page */
-const lastToast = (page) => store(page, () => new Promise((r) => window.__stores.toastStore?.subscribe((t) => r(JSON.stringify(t)))?.() ?? r('')));
+const lastToast = (page) => store(page, () => new Promise((r) => window.__tp.test.v1.toastStore?.subscribe((t) => r(JSON.stringify(t)))?.() ?? r('')));
 
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
@@ -109,7 +109,7 @@ h.run(async () => {
 	const boxB = await makeBox(P, [5, 5, 5]);
 	await P.evaluate((id) => {
 		let g = null;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByProperty('uuid', id);
 		o.rotation.set(0, Math.PI / 2, 0);
 		o.scale.set(2, 3, 4);
@@ -243,7 +243,7 @@ h.run(async () => {
 	// ---------- 6  multiselect: paste to all ----------
 	const boxC = await makeBox(P, [-6, 0, 0]);
 	await setClip(P, sectionText);
-	await P.evaluate((ids) => window.__stores.objectActions.applySelectionSet(ids, true), [boxB, boxC]);
+	await P.evaluate((ids) => window.__tp.test.v1.objectActions.applySelectionSet(ids, true), [boxB, boxC]);
 	await P.waitForTimeout(600);
 	await rclick(P.locator('.sec-panel-head', { hasText: 'Transform' }).first());
 	const allItem = menuItem(P, 'Paste to all selected (2)');
@@ -262,7 +262,7 @@ h.run(async () => {
 	const matB = () =>
 		P.evaluate((id) => {
 			let g = null;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const m = g.getObjectByProperty('uuid', id).material;
 			return { roughness: m.roughness, side: m.side, color: '#' + m.color.getHexString() };
 		}, boxB);
@@ -289,7 +289,7 @@ h.run(async () => {
 	h.check((await clipText(P)) === 'Double', `7.5 a choice copies the label it shows (${await clipText(P)})`);
 	// a toggle (Cast shadow)
 	const castRow = P.locator('.it', { has: P.locator('#inspector-cast-shadow') });
-	const cast = () => P.evaluate((id) => { let g = null; window.__stores.objectsGroup.subscribe((v) => (g = v))(); return !!g.getObjectByProperty('uuid', id).castShadow; }, boxB);
+	const cast = () => P.evaluate((id) => { let g = null; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))(); return !!g.getObjectByProperty('uuid', id).castShadow; }, boxB);
 	const castBefore = await cast();
 	await setClip(P, castBefore ? 'off' : 'on');
 	await rclick(castRow);
@@ -303,9 +303,9 @@ h.run(async () => {
 	await pick(P, 'Paste');
 	h.check((await matB()).color === '#ff0000', `7.8 the material colour takes rgb(255, 0, 0) (${(await matB()).color})`);
 	// Configure Scene: Exposure
-	await P.evaluate(() => window.__stores.openSceneSection('Environment'));
+	await P.evaluate(() => window.__tp.test.v1.openSceneSection('Environment'));
 	await P.waitForTimeout(900);
-	const exposure = () => P.evaluate(() => new Promise((r) => (window.__stores.environment.environment ?? window.__stores.environment).subscribe((e) => r(e.exposure))()));
+	const exposure = () => P.evaluate(() => new Promise((r) => (window.__tp.test.v1.environment.environment ?? window.__tp.test.v1.environment).subscribe((e) => r(e.exposure))()));
 	const expRow = P.locator('.pr', { has: P.locator('.pr-label', { hasText: /^Exposure$/ }) }).first();
 	await setClip(P, '1.5');
 	await rclick(expRow.locator('.pr-label'));
@@ -323,7 +323,7 @@ h.run(async () => {
 	// a raw colour swatch in a sub-panel (the Water panel draws its own <input type="color">,
 	// no clipboard code of its own) answers through the Inspector root's native fallback
 	await P.evaluate((id) => {
-		const st = window.__stores;
+		const st = window.__tp?.test.v1;
 		const key = st.waterPresets.WATER_PRESETS[0].key;
 		st.waterActions.setObjectWater(id, st.waterPresets.waterPreset(key, { shape: 'box' }), { immediate: true });
 		localStorage.setItem('inspector:sec:Water', 'open');
@@ -340,7 +340,7 @@ h.run(async () => {
 		await pick(P, 'Paste');
 		const shallow = await P.evaluate((id) => {
 			let g = null;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			return g.getObjectByProperty('uuid', id).userData.water?.look?.shallowColor;
 		}, boxC);
 		h.check(shallow === '#123456', `7.14 a paste reaches the water's look through the swatch's own handler (${shallow})`);
@@ -397,7 +397,7 @@ h.run(async () => {
 	h.check(!focusedInput, '8.4 phone: the release that ends the long press does NOT focus the field (no keyboard)');
 	// a short tap still types (the long press did not break the field)
 	await Q.keyboard.press('Escape');
-	await Q.evaluate(() => window.__stores.fieldMenu.fieldMenu.set(null));
+	await Q.evaluate(() => window.__tp.test.v1.fieldMenu.fieldMenu.set(null));
 	await Q.waitForTimeout(300);
 	c = await centre(rowOf(Q, 'inspector-position').locator('.dn-wrap').nth(0));
 	await press(c.x, c.y, 60);
@@ -405,7 +405,7 @@ h.run(async () => {
 	h.check(await Q.evaluate(() => document.activeElement?.classList?.contains('dn-input') ?? false), '8.5 phone: a short tap on the box still starts typing');
 	// 8.6/8.7 a slow drag is a drag, not a long press (98-int)
 	await Q.keyboard.press('Escape');
-	await Q.evaluate(() => window.__stores.fieldMenu.fieldMenu.set(null));
+	await Q.evaluate(() => window.__tp.test.v1.fieldMenu.fieldMenu.set(null));
 	await Q.waitForTimeout(300);
 	/** @param {number} x @param {number} y @param {number} dx total px over 900 ms */
 	const slowDrag = async (x, y, dx) => {
@@ -418,7 +418,7 @@ h.run(async () => {
 	};
 	const fieldMenuUp = () => Q.evaluate(() => {
 		/** @type {any} */ let m;
-		window.__stores.fieldMenu.fieldMenu.subscribe((v) => (m = v))();
+		window.__tp.test.v1.fieldMenu.fieldMenu.subscribe((v) => (m = v))();
 		return !!m;
 	});
 	const range = Q.locator('input[type="range"]:visible').first();
@@ -428,7 +428,7 @@ h.run(async () => {
 		await Q.waitForTimeout(300);
 		h.check(!(await fieldMenuUp()), '8.6 phone: a slow 0.9 s drag on a slider does NOT open the field menu');
 	} else h.check(false, '8.6 phone: no slider on screen to drag');
-	await Q.evaluate(() => window.__stores.fieldMenu.fieldMenu.set(null));
+	await Q.evaluate(() => window.__tp.test.v1.fieldMenu.fieldMenu.set(null));
 	// a real scrub (60 px in 0.9 s) on a value box still scrubs and opens nothing (a guard: a finger that stays
 	// inside the 10 px slop for the 500 ms hold IS a long press there, and opening the menu is right)
 	await Q.keyboard.press('Escape');
@@ -439,7 +439,7 @@ h.run(async () => {
 	await Q.waitForTimeout(400);
 	const x1 = (await poseOf(Q, qB)).pos[0];
 	h.check(!(await fieldMenuUp()) && x1 !== x0, `8.7 phone: a 60 px scrub on a value box scrubs (${x0} -> ${x1}) and opens no menu`);
-	await Q.evaluate(() => window.__stores.fieldMenu.fieldMenu.set(null));
+	await Q.evaluate(() => window.__tp.test.v1.fieldMenu.fieldMenu.set(null));
 	h.check(h.pageErrors(F).length === 0, `phone: no page errors (${h.pageErrors(F).join(' | ').slice(0, 200)})`);
 	await F.ctx.close();
 	await h.finish(browser);

@@ -15,16 +15,16 @@ const h = require('./helpers.cjs');
 const WEBGPU_ARGS = [...h.GPU_ARGS, '--enable-unsafe-webgpu'];
 
 /** @param {any} page */
-const fluid = (page) => page.evaluate(() => window.__stores.sim.fluidDebug()[0] ?? null);
+const fluid = (page) => page.evaluate(() => window.__tp.test.v1.sim.fluidDebug()[0] ?? null);
 /** @param {any} page */
-const gpuState = (page) => page.evaluate(() => window.__stores.fluidGpu.gpuFluidDebug());
+const gpuState = (page) => page.evaluate(() => window.__tp.test.v1.fluidGpu.gpuFluidDebug());
 
 /** @param {any} page @param {number} count */
 async function makeTank(page, count) {
 	return page.evaluate((n) => {
-		window.__stores.commandsHandler.sceneCommand('/create FluidTank 1.6 1 1');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create FluidTank 1.6 1 1');
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const tank = g.children[g.children.length - 1];
 		tank.userData.fluid = { ...tank.userData.fluid, count: n };
 		tank.position.set(0, 0.6, 0);
@@ -37,8 +37,8 @@ async function makeTank(page, count) {
 async function look(page) {
 	await page.evaluate(() => {
 		let cam, orbit;
-		window.__stores.editorCam.subscribe((v) => (cam = v))();
-		window.__stores.orbitControls.subscribe((v) => (orbit = v))();
+		window.__tp.test.v1.editorCam.subscribe((v) => (cam = v))();
+		window.__tp.test.v1.orbitControls.subscribe((v) => (orbit = v))();
 		cam.position.set(0, 2.2, 3.4);
 		if (orbit?.target) {
 			orbit.target.set(0, 0.5, 0);
@@ -112,13 +112,13 @@ h.run(async () => {
 	const fg = await fluid(A.page);
 	console.log('gpu tank', JSON.stringify(fg));
 	h.check(fg.solver === 'gpu' && fg.mode === 'ssf', `the tank runs on the GPU and still draws screen-space fluid (${fg.solver}, ${fg.mode})`);
-	const remembered = await A.page.evaluate(() => JSON.parse(window.__stores.safeStorage?.getItem?.('fluid:gpuBench') ?? localStorage.getItem('fluid:gpuBench') ?? 'null'));
+	const remembered = await A.page.evaluate(() => JSON.parse(window.__tp.test.v1.safeStorage?.getItem?.('fluid:gpuBench') ?? localStorage.getItem('fluid:gpuBench') ?? 'null'));
 	h.check(!!remembered && remembered.gpuMs === s1.verdict.gpuMs, 'the verdict is remembered for this device (no second measurement next load)');
 
 	// ---------- 5. the Settings row says so ----------
 	await A.page.evaluate(() => {
-		window.__stores.settingsSection.set('scene');
-		window.__stores.settingsOpen.set(true);
+		window.__tp.test.v1.settingsSection.set('scene');
+		window.__tp.test.v1.settingsOpen.set(true);
 	});
 	await A.page.waitForSelector('#row-gpu-fluid', { timeout: 10000 });
 	const rowText = await A.page.locator('#row-gpu-fluid').innerText();
@@ -126,17 +126,17 @@ h.run(async () => {
 
 	// ---------- 3. Off: back to the CPU worker, same count ----------
 	await A.page.locator('#gpu-fluid').getByText('Off', { exact: true }).click();
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await h.eventually(() => fluid(A.page), (f) => !!f && f.solver === 'cpu' && f.count >= 7000 && f.steps > 5, 'Off puts the tank on the CPU', 30000);
 	const fc = await fluid(A.page);
 	h.check(fc.count === fg.count, `the CPU tank holds the same particle count (${fc.count} / ${fg.count})`);
 	h.check((await gpuState(A.page)).verdict.state === 'off', 'the verdict reads Off');
-	await A.page.evaluate(() => window.__stores.fluidGpu.gpuFluidPref.set('auto'));
+	await A.page.evaluate(() => window.__tp.test.v1.fluidGpu.gpuFluidPref.set('auto'));
 	await h.eventually(() => fluid(A.page), (f) => !!f && f.solver === 'gpu' && f.steps > 5, 'back to Auto: the remembered verdict, straight onto the GPU', 30000);
 	h.check((await gpuState(A.page)).verdict.at === s1.verdict.at, 'Auto again did not measure again (same verdict stamp)');
 
 	// ---------- 4a. a lost device falls back to the CPU and keeps pouring ----------
-	await A.page.evaluate(() => window.__stores.fluidGpu.loseGpuDeviceForTest());
+	await A.page.evaluate(() => window.__tp.test.v1.fluidGpu.loseGpuDeviceForTest());
 	await h.eventually(() => gpuState(A.page), (s) => s.verdict.state === 'failed', 'the lost device is noticed', 15000);
 	const s4 = await gpuState(A.page);
 	h.check(/lost/.test(s4.failed), `the reason is the lost device (${s4.failed})`);

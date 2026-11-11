@@ -10,10 +10,10 @@ const h = require('./helpers.cjs');
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
-	await A.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+	await A.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 
 	const ids = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const cmd = s.commandsHandler.sceneCommand;
 		cmd('/create Box 2 0.2 2'); // plate (static)
 		cmd('/create Box 2 0.2 2'); // platform (kinematic: a Spin node animates it)
@@ -61,11 +61,11 @@ h.run(async () => {
 			source: k === 'Spin' ? 'spin1' : 'imp' + k,
 			target: 's' + k
 		}));
-		window.__stores.flowNodes.set(nodes);
-		window.__stores.flowEdges.set(edges);
+		window.__tp.test.v1.flowNodes.set(nodes);
+		window.__tp.test.v1.flowEdges.set(edges);
 		// count every fire: the trigger log keeps only the latest stamp per node
 		window.__fires = {};
-		window.__stores.flowTriggers.subscribe((log) => {
+		window.__tp.test.v1.flowTriggers.subscribe((log) => {
 			for (const [id, e] of Object.entries(log ?? {})) {
 				if (!id.startsWith('imp')) continue;
 				const seen = (window.__fires[id] ??= []);
@@ -75,7 +75,7 @@ h.run(async () => {
 	}, ids);
 	await A.page.waitForTimeout(600);
 
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await h.eventually(
 		() => A.page.evaluate(() => {
 			const { ballP, ballK, ballC } = window.__p2;
@@ -88,9 +88,9 @@ h.run(async () => {
 	await A.page.waitForTimeout(800);
 
 	const r = await A.page.evaluate(() => {
-		const fr = window.__stores.flowRuntime;
+		const fr = window.__tp.test.v1.flowRuntime;
 		const n = (id) => window.__fires[id]?.length ?? 0;
-		const kinds = Object.fromEntries(window.__stores.physics.physicsDebug().map((e) => [e.uuid, e.mode]));
+		const kinds = Object.fromEntries(window.__tp.test.v1.physics.physicsDebug().map((e) => [e.uuid, e.mode]));
 		return {
 			plate: n('impPlate'), platform: n('impPlatform'), crate: n('impCrate'),
 			ballP: n('impBallP'), ballK: n('impBallK'), ballC: n('impBallC'),
@@ -109,6 +109,6 @@ h.run(async () => {
 	h.check(r.ballC === 1 && r.otherBallC === ids.crate, `the ball landing on the crate fires once, other = Crate (${r.ballC})`);
 	h.check(r.crate === 0, `the DYNAMIC crate that was landed on does not fire — no double event (${r.crate})`);
 
-	await A.page.evaluate(() => window.__stores.physics.stopSimulation({ reset: true }));
+	await A.page.evaluate(() => window.__tp.test.v1.physics.stopSimulation({ reset: true }));
 	await h.finish(browser);
 });

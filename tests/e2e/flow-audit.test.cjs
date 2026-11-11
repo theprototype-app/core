@@ -7,7 +7,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	const r = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		// a number feeding BOTH a and b of one math node — ids must differ now
 		s.flowNodes.set([
 			{ id: 'n1', type: 'number', position: { x: 0, y: 0 }, data: { value: 2, step: 1 } },

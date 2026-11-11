@@ -18,7 +18,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	const uuid = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create box 1 1 1');
 		await new Promise((r) => setTimeout(r, 900));
 		let g;
@@ -29,7 +29,7 @@ h.run(async () => {
 
 	// open a session so the wireframe is really there
 	const live = await A.page.evaluate(async (id) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.faceEdit.enterFaceEdit(id);
 		await new Promise((r) => setTimeout(r, 500));
 		let g;
@@ -52,7 +52,7 @@ h.run(async () => {
 
 	// ---- 1. savePrefab -----------------------------------------------------
 	const prefab = await A.page.evaluate(async (id) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const entry = await w.prefabs.savePrefab(id, 'gap-probe');
 		let g;
 		w.objectsGroup.subscribe((v) => (g = v))();
@@ -71,7 +71,7 @@ h.run(async () => {
 
 	// ---- 2. savePrefabSelection (the clone path) ---------------------------
 	const multi = await A.page.evaluate(async (id) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create sphere');
 		await new Promise((r) => setTimeout(r, 700));
 		let g;
@@ -88,7 +88,7 @@ h.run(async () => {
 
 	// ---- 3. instantiatePrefab heals an OLD prefab --------------------------
 	const healed = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		// craft what an older build would have stored: a box with an overlay child
 		const box = new w.THREE.Mesh(new w.THREE.BoxGeometry(1, 1, 1), new w.THREE.MeshStandardMaterial());
 		// a PLAIN BufferGeometry, not WireframeGeometry: ObjectLoader cannot rebuild
@@ -114,7 +114,7 @@ h.run(async () => {
 
 	// ---- 4. VR sleeve slot capture ----------------------------------------
 	const sleeve = await A.page.evaluate(async (id) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let g;
 		w.objectsGroup.subscribe((v) => (g = v))();
 		const object = g.getObjectByProperty('uuid', id);
@@ -136,7 +136,7 @@ h.run(async () => {
 
 	// ---- 5. the Share broadcast -------------------------------------------
 	const shared = await A.page.evaluate(async (id) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let original = null;
 		w.peers.subscribe((p) => (original = p))();
 		const sent = [];
@@ -167,7 +167,7 @@ h.run(async () => {
 	// (the GLTF/JSON import calls exactly this on result.scene before adding and
 	// broadcasting; building a real .gltf here would test three's loader, not us)
 	const importPath = await A.page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const root = new w.THREE.Group();
 		const mesh = new w.THREE.Mesh(new w.THREE.BoxGeometry(), new w.THREE.MeshStandardMaterial());
 		const wire = new w.THREE.LineSegments(
@@ -189,7 +189,7 @@ h.run(async () => {
 
 	// leaving the session must still leave a clean object
 	const clean = await A.page.evaluate((id) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.faceEdit.exitFaceEdit();
 		let g;
 		w.objectsGroup.subscribe((v) => (g = v))();

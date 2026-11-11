@@ -37,7 +37,7 @@ const store = (page, path) =>
 	S(page, (path) => {
 		const [mod, name] = path.split('.');
 		let v;
-		(name ? window.__stores[mod][name] : window.__stores[mod]).subscribe((x) => (v = x))();
+		(name ? window.__tp.test.v1[mod][name] : window.__tp.test.v1[mod]).subscribe((x) => (v = x))();
 		return v;
 	}, path);
 
@@ -85,7 +85,7 @@ const look = (page) =>
 const camPose = (page) =>
 	S(page, () => {
 		let c;
-		window.__stores.globalCamera.subscribe((v) => (c = v))();
+		window.__tp.test.v1.globalCamera.subscribe((v) => (c = v))();
 		return { p: c.position.toArray().map((n) => +n.toFixed(4)), q: c.quaternion.toArray().map((n) => +n.toFixed(4)) };
 	});
 
@@ -99,7 +99,7 @@ h.run(async () => {
 	const page = P.page;
 	// something to look at in the PiP (and to select / move in it)
 	const boxUuid = await S(page, async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create Box 2 2 2');
 		await new Promise((r) => setTimeout(r, 400));
 		let g;
@@ -144,7 +144,7 @@ h.run(async () => {
 			x.subscribe((y) => (v = y))();
 			return v;
 		};
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		return { closed: g(s.inspectorClose), full: g(s.sidebars.sidebarFull).right, side: g(s.sidebars.inspectorSide) };
 	});
 	h.check(sb.closed === false && sb.full === true && sb.side === 'right', `3.2 ...and nothing about it CHANGED: still open, pinned, right (${JSON.stringify(sb)})`);
@@ -154,9 +154,9 @@ h.run(async () => {
 	const pipMid = st.pip && { x: Math.round((st.pip.l + st.pip.r) / 2), y: Math.round((st.pip.t + st.pip.b) / 2) + 10 };
 	const onTop = pipMid && (await S(page, (p) => !!document.elementFromPoint(p.x, p.y)?.closest('#viewport-pip'), pipMid));
 	h.check(onTop, '4.2 ...on top of the maximized docked window (the PiP owns its centre point)');
-	const d0 = await S(page, () => window.__stores.pipViews.pipViewsDebug());
+	const d0 = await S(page, () => window.__tp.test.v1.pipViews.pipViewsDebug());
 	await page.waitForTimeout(700);
-	const d1 = await S(page, () => window.__stores.pipViews.pipViewsDebug());
+	const d1 = await S(page, () => window.__tp.test.v1.pipViews.pipViewsDebug());
 	h.check(d1.views.viewport && d1.views.viewport.frames > d0.views.viewport.frames, `4.3 ...a LIVE picture: frames keep coming (${d0.views.viewport?.frames} -> ${d1.views.viewport?.frames})`);
 	h.check(d1.mainCovered && d1.mainSkipped > d0.mainSkipped, `4.4 ...and the hidden main frame is not drawn meanwhile (skipped ${d0.mainSkipped} -> ${d1.mainSkipped})`);
 	const scaled = d1.views.viewport;
@@ -174,7 +174,7 @@ h.run(async () => {
 		return { min, max };
 	});
 	h.check(picture.max - picture.min > 30, `4.6 ...a real picture, not a blank box (luma spread ${picture.max - picture.min})`);
-	const pipCam = (await S(page, () => window.__stores.viewportPip.viewportPipDebug())).camera;
+	const pipCam = (await S(page, () => window.__tp.test.v1.viewportPip.viewportPipDebug())).camera;
 	h.check(pipCam && pipCam.position.every((v, i) => Math.abs(v - pose0.p[i]) < 0.01), `4.7 ...through its OWN camera, which starts at the editor camera's pose (${JSON.stringify(pipCam?.position)} vs ${JSON.stringify(pose0.p)})`);
 
 	// ---- 5. resize by the corner --------------------------------------------------------------------
@@ -196,7 +196,7 @@ h.run(async () => {
 	h.check(saved && Math.abs(saved.w - nowW) <= 2, `5.3 ...and the size is remembered (${JSON.stringify(saved)})`);
 
 	// ---- 6. a drag in the PiP orbits ITS camera ------------------------------------------------------
-	const before6 = (await S(page, () => window.__stores.viewportPip.viewportPipDebug())).camera;
+	const before6 = (await S(page, () => window.__tp.test.v1.viewportPip.viewportPipDebug())).camera;
 	const mainBefore6 = await camPose(page);
 	const c6 = { x: Math.round((big.pip.l + big.pip.r) / 2), y: Math.round((big.pip.t + big.pip.b) / 2) + 20 };
 	await page.mouse.move(c6.x, c6.y);
@@ -204,7 +204,7 @@ h.run(async () => {
 	await page.mouse.move(c6.x + 120, c6.y + 30, { steps: 10 });
 	await page.mouse.up();
 	await page.waitForTimeout(600);
-	const after6 = (await S(page, () => window.__stores.viewportPip.viewportPipDebug())).camera;
+	const after6 = (await S(page, () => window.__tp.test.v1.viewportPip.viewportPipDebug())).camera;
 	const moved6 = after6.position.some((v, i) => Math.abs(v - before6.position[i]) > 0.05);
 	h.check(moved6, `6.1 a drag in the PiP orbits its camera (${JSON.stringify(before6.position.map((n) => +n.toFixed(2)))} -> ${JSON.stringify(after6.position.map((n) => +n.toFixed(2)))})`);
 	h.check(after6.target.every((v, i) => Math.abs(v - before6.target[i]) < 0.01), '6.2 ...an ORBIT: about its target, which stays put');
@@ -218,19 +218,19 @@ h.run(async () => {
 	const boxPos = () =>
 		S(page, (u) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			return g.getObjectByProperty('uuid', u).position.toArray().map((n) => +n.toFixed(3));
 		}, boxUuid);
 	/** the box's centre, projected through the PiP camera to page pixels */
 	const boxInPip = () =>
 		S(page, (u) => {
-			const THREE = window.__stores.objectsGroup && null;
+			const THREE = window.__tp.test.v1.objectsGroup && null;
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const obj = g.getObjectByProperty('uuid', u);
 			const view = (() => {
 				let v;
-				window.__stores.viewportPip.viewportPipView.subscribe((x) => (v = x))();
+				window.__tp.test.v1.viewportPip.viewportPipView.subscribe((x) => (v = x))();
 				return v;
 			})();
 			const c = document.querySelector('#viewport-pip canvas').getBoundingClientRect();
@@ -238,16 +238,16 @@ h.run(async () => {
 			return { x: Math.round(c.left + ((p.x + 1) / 2) * c.width), y: Math.round(c.top + ((1 - p.y) / 2) * c.height), _: THREE };
 		}, boxUuid);
 	// F first, with the box selected from the outside, so it fills the PiP for the clicks below
-	await S(page, (u) => window.__stores.objectActions.selectObject(u), boxUuid);
+	await S(page, (u) => window.__tp.test.v1.objectActions.selectObject(u), boxUuid);
 	await page.waitForTimeout(300);
-	const tgtBefore = (await S(page, () => window.__stores.viewportPip.viewportPipDebug())).camera.target;
+	const tgtBefore = (await S(page, () => window.__tp.test.v1.viewportPip.viewportPipDebug())).camera.target;
 	const mainBeforeF = await camPose(page);
 	const pipNow = (await look(page)).pip;
 	await page.mouse.move(pipNow.l + 40, pipNow.b - 30); // the pointer over the PiP gives it the keyboard
 	await page.mouse.click(pipNow.l + 40, pipNow.b - 30, { button: 'middle' });
 	await page.keyboard.press('f');
 	await page.waitForTimeout(500);
-	const tgtF = (await S(page, () => window.__stores.viewportPip.viewportPipDebug())).camera.target;
+	const tgtF = (await S(page, () => window.__tp.test.v1.viewportPip.viewportPipDebug())).camera.target;
 	const centre = await boxPos();
 	h.check(tgtF && tgtF.every((v, i) => Math.abs(v - centre[i]) < 0.05) && JSON.stringify(tgtF) !== JSON.stringify(tgtBefore), `10.1 F over the PiP frames the selection with the PiP camera (target ${JSON.stringify(tgtBefore)} -> ${JSON.stringify(tgtF?.map((n) => +n.toFixed(2)))})`);
 	h.check(JSON.stringify(await camPose(page)) === JSON.stringify(mainBeforeF), '10.2 ...the editor camera did not move (F in the PiP is the PiP\'s)');
@@ -278,8 +278,8 @@ h.run(async () => {
 	// the gizmo: find a point on its X handle through the PiP camera, then drag it
 	const handle = await S(page, () => {
 		let tc, view;
-		window.__stores.TControls.subscribe((v) => (tc = v))();
-		window.__stores.viewportPip.viewportPipView.subscribe((v) => (view = v))();
+		window.__tp.test.v1.TControls.subscribe((v) => (tc = v))();
+		window.__tp.test.v1.viewportPip.viewportPipView.subscribe((v) => (view = v))();
 		const c = document.querySelector('#viewport-pip canvas');
 		const r = c.getBoundingClientRect();
 		const o = tc.object.getWorldPosition(tc.object.position.clone());
@@ -298,7 +298,7 @@ h.run(async () => {
 	});
 	h.check(handle.cameraIsPip && handle.dom, `10.6 the transform gizmo is handed the PiP's camera and canvas while it is up (${JSON.stringify(handle)})`);
 	const pos0 = await boxPos();
-	const pipCam0 = (await S(page, () => window.__stores.viewportPip.viewportPipDebug())).camera.position;
+	const pipCam0 = (await S(page, () => window.__tp.test.v1.viewportPip.viewportPipDebug())).camera.position;
 	if (handle.x) {
 		await page.mouse.move(handle.x, handle.y);
 		await page.waitForTimeout(100);
@@ -309,7 +309,7 @@ h.run(async () => {
 	}
 	const pos1 = await boxPos();
 	h.check(!!handle.x && Math.abs(pos1[0] - pos0[0]) > 0.2 && Math.abs(pos1[1] - pos0[1]) < 0.01 && Math.abs(pos1[2] - pos0[2]) < 0.01, `10.7 W then a drag on the gizmo in the PiP moves the selected object along X (${JSON.stringify(pos0)} -> ${JSON.stringify(pos1)})`);
-	const pipCam1 = (await S(page, () => window.__stores.viewportPip.viewportPipDebug())).camera.position;
+	const pipCam1 = (await S(page, () => window.__tp.test.v1.viewportPip.viewportPipDebug())).camera.position;
 	h.check(pipCam1.every((v, i) => Math.abs(v - pipCam0[i]) < 1e-3), '10.8 ...and the PiP view did NOT orbit with that drag (the gizmo owns the press)');
 	await page.keyboard.press('Control+z');
 	await page.waitForTimeout(500);
@@ -317,7 +317,7 @@ h.run(async () => {
 	h.check(pos2.every((v, i) => Math.abs(v - pos0[i]) < 0.01), `10.9 ...ONE undo step puts it back (${JSON.stringify(pos2)})`);
 	// Delete over the PiP deletes the selection (the viewport's row)
 	const doomed = await S(page, async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create Sphere');
 		await new Promise((r) => setTimeout(r, 400));
 		let g;
@@ -334,7 +334,7 @@ h.run(async () => {
 	await page.waitForTimeout(600);
 	const gone = await S(page, (u) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return !g.getObjectByProperty('uuid', u);
 	}, doomed);
 	h.check(gone, '10.10 Delete over the PiP deletes the selected object');
@@ -344,16 +344,16 @@ h.run(async () => {
 	await page.waitForTimeout(400);
 	st = await look(page);
 	h.check(!st.pip && st.focus === 'dock' && st.dock.t <= 24, `7.1 the PiP's close button closes it; the window stays maximized (${st.focus}, top ${st.dock?.t})`);
-	await S(page, () => window.__stores.bottomDock.dockHeight.set(420));
+	await S(page, () => window.__tp.test.v1.bottomDock.dockHeight.set(420));
 	await page.waitForTimeout(500);
 	st = await look(page);
-	const covered7 = (await S(page, () => window.__stores.pipViews.pipViewsDebug())).mainCovered;
+	const covered7 = (await S(page, () => window.__tp.test.v1.pipViews.pipViewsDebug())).mainCovered;
 	h.check(st.focus === 'dock' && st.probes.mid === 'VIEW' && !covered7, `7.2 resizing the maximized window DOWN shows the real 3D view again (middle = ${st.probes.mid}, covered ${covered7})`);
-	await S(page, () => window.__stores.viewportPipClosed?.set?.(false));
-	await S(page, () => window.__stores.viewportPip.viewportPipClosed.set(false));
+	await S(page, () => window.__tp.test.v1.viewportPipClosed?.set?.(false));
+	await S(page, () => window.__tp.test.v1.viewportPip.viewportPipClosed.set(false));
 	await page.waitForTimeout(300);
 	h.check(!(await look(page)).pip, '7.3 ...and no PiP then (it would be a second copy of what is on screen)');
-	await S(page, () => window.__stores.bottomDock.dockHeight.set(window.__stores.focusMode.fullDockHeight()));
+	await S(page, () => window.__tp.test.v1.bottomDock.dockHeight.set(window.__tp.test.v1.focusMode.fullDockHeight()));
 	await page.waitForTimeout(500);
 	h.check(!!(await look(page)).pip, '7.4 back to full height: the PiP is back');
 
@@ -364,13 +364,13 @@ h.run(async () => {
 	await page.screenshot({ path: `${out}/k5-after-${THEME}.png` });
 	h.check(!st.focus && st.strip && st.inspector, `8.1 Esc: the sidebar comes back (strip ${st.strip}, Configure Scene ${st.inspector})`);
 	h.check(st.dock && Math.abs(st.dock.t - dockBefore.t) <= 2 && Math.abs(st.dock.r - dockBefore.r) <= 2, `8.2 ...the dock is back to its height and beside the pinned column (${JSON.stringify(st.dock)} vs ${JSON.stringify(dockBefore)})`);
-	h.check(!st.pip && (await S(page, () => window.__stores.pipViews.pipViewsDebug())).mainCovered === false, '8.3 ...no PiP, and the main frame draws again');
+	h.check(!st.pip && (await S(page, () => window.__tp.test.v1.pipViews.pipViewsDebug())).mainCovered === false, '8.3 ...no PiP, and the main frame draws again');
 	h.check(JSON.stringify(await camPose(page)) === JSON.stringify(pose0), '8.4 ...and the editor camera is where it was');
 	const back = await S(page, () => {
 		let tc, cam, r;
-		window.__stores.TControls.subscribe((v) => (tc = v))();
-		window.__stores.globalCamera.subscribe((v) => (cam = v))();
-		window.__stores.globalRenderer.subscribe((v) => (r = v))();
+		window.__tp.test.v1.TControls.subscribe((v) => (tc = v))();
+		window.__tp.test.v1.globalCamera.subscribe((v) => (cam = v))();
+		window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
 		// threlte connects the gizmo to the canvas's WRAPPER (its `dom`), so "back" = that element again
 		const d = tc.domElement;
 		return { camera: tc.camera === cam, dom: !!d && d.isConnected && !d.closest('#viewport-pip') && (d === r.domElement || d.contains(r.domElement)) };
@@ -388,7 +388,7 @@ h.run(async () => {
 
 	// ---- 9. the camera preview resizes too --------------------------------------------------------
 	const camUuid = await S(page, async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.inspectorClose.set(true);
 		s.commandsHandler.sceneCommand('/create Camera');
 		await new Promise((r) => setTimeout(r, 400));
@@ -425,9 +425,9 @@ h.run(async () => {
 	const a0 = cf0 ? (cf0.r - cf0.l) / h0 : 0;
 	const a1 = cf1 ? (cf1.r - cf1.l) / h1 : 0;
 	h.check(Math.abs(a0 - a1) < 0.05, `9.3 ...keeping the camera's framing aspect (${a0.toFixed(3)} -> ${a1.toFixed(3)})`);
-	const dbg = await S(page, () => window.__stores.cameraPip.pipDebug());
+	const dbg = await S(page, () => window.__tp.test.v1.cameraPip.pipDebug());
 	h.check(dbg.rect && Math.abs(dbg.rect.h - h1) <= 2 && Number(await S(page, () => localStorage.getItem('cameraPip:height'))) === dbg.height, `9.4 ...the height is remembered (${dbg.height}, rect ${JSON.stringify(dbg.rect)})`);
-	const camViews = (await S(page, () => window.__stores.pipViews.pipViewsDebug())).views;
+	const camViews = (await S(page, () => window.__tp.test.v1.pipViews.pipViewsDebug())).views;
 	h.check(camViews.camera && camViews.camera.frames > 0, `9.5 ...drawn by the same PiP renderer (camera view, ${camViews.camera?.frames} frames)`);
 	await page.screenshot({ path: `${out}/k5-camera-pip-${THEME}.png` });
 
@@ -440,7 +440,7 @@ h.run(async () => {
 	const cdp = await tp.context().newCDPSession(tp);
 	const touch = async (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 1 }] });
 	const tBox = await S(tp, async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create Box 2 2 2');
 		await new Promise((r) => setTimeout(r, 400));
 		let g;
@@ -459,18 +459,18 @@ h.run(async () => {
 	const tl = await look(tp);
 	await tp.screenshot({ path: `${out}/k5-unfolded-${THEME}.png` });
 	h.check(tl.focus === 'dock' && tl.dock && tl.dock.l === 0 && tl.dock.r === tl.W && tl.dock.b === tl.H && !!tl.pip, `11.1 unfolded N6 (touch): Maximize fills the window and the viewport PiP is up (${JSON.stringify({ dock: tl.dock, pip: tl.pip })})`);
-	const t0 = (await S(tp, () => window.__stores.viewportPip.viewportPipDebug())).camera;
+	const t0 = (await S(tp, () => window.__tp.test.v1.viewportPip.viewportPipDebug())).camera;
 	const tc = { x: Math.round((tl.pip.l + tl.pip.r) / 2), y: Math.round((tl.pip.t + tl.pip.b) / 2) + 15 };
 	await touch('touchStart', tc.x, tc.y);
 	for (let i = 1; i <= 10; i++) await touch('touchMove', tc.x + i * 9, tc.y + i * 2);
 	await touch('touchEnd', 0, 0);
 	await tp.waitForTimeout(600);
-	const t1 = (await S(tp, () => window.__stores.viewportPip.viewportPipDebug())).camera;
+	const t1 = (await S(tp, () => window.__tp.test.v1.viewportPip.viewportPipDebug())).camera;
 	h.check(t1.position.some((v, i) => Math.abs(v - t0.position[i]) > 0.05), `11.2 a one-finger drag in the PiP orbits its camera (${JSON.stringify(t0.position.map((n) => +n.toFixed(2)))} -> ${JSON.stringify(t1.position.map((n) => +n.toFixed(2)))})`);
 	const tb = await S(tp, (u) => {
 		let g, view;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
-		window.__stores.viewportPip.viewportPipView.subscribe((v) => (view = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.viewportPip.viewportPipView.subscribe((v) => (view = v))();
 		const o = g.getObjectByProperty('uuid', u);
 		const c = document.querySelector('#viewport-pip canvas').getBoundingClientRect();
 		const p = o.getWorldPosition(o.position.clone()).project(view.camera);

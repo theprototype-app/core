@@ -9,7 +9,7 @@ h.run(async () => {
 
 	// runtime semantics (pure evalNode)
 	const rt = await A.page.evaluate(() => {
-		const f = window.__stores.flowRuntime.evalNode;
+		const f = window.__tp.test.v1.flowRuntime.evalNode;
 		const n = (type, data) => ({ id: 't', type, data });
 		return {
 			clamped: f(n('slider', { value: 100, min: 0, max: 10 }), [], [], 0),
@@ -24,7 +24,7 @@ h.run(async () => {
 
 	// ⓘ tab editors + replication broadcast
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowNodes.set([
 			{ id: 's1', type: 'slider', position: { x: 0, y: 0 }, data: { type: 'slider', label: 'Slider', value: 20, min: 0, max: 40 }, selected: true },
 			{ id: 'w1', type: 'switcher', position: { x: 0, y: 140 }, data: { type: 'switcher', label: 'Switcher', items: ['cube', 'pyramid'], index: 0, shape: 'cube' } }
@@ -47,7 +47,7 @@ h.run(async () => {
 
 	// change max via the ⓘ editor with a capture stub on peers.send
 	const sent = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let original;
 		s.peers.subscribe((p) => (original = p))();
 		const captured = [];
@@ -71,7 +71,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(200);
 	const items = await A.page.evaluate(() => {
 		let nodes;
-		window.__stores.flowNodes.subscribe((x) => (nodes = x))();
+		window.__tp.test.v1.flowNodes.subscribe((x) => (nodes = x))();
 		return nodes.find((n) => n.id === 'w1').data.items;
 	});
 	h.check(items.length === 3, `ⓘ add-item grows the switcher list (${items.length})`);

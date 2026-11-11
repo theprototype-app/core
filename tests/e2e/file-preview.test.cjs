@@ -21,21 +21,21 @@ const W = '#image-preview-window';
 const targetOf = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.fileWindows.imagePreviewTarget.subscribe((x) => (v = x))();
+		window.__tp.test.v1.fileWindows.imagePreviewTarget.subscribe((x) => (v = x))();
 		return v && { title: v.title, kind: v.kind ?? 'image', itemId: v.itemId ?? '', hasUrl: !!v.url };
 	});
 
 const siblings = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.filePreview.previewSiblings.subscribe((x) => (v = x))();
+		window.__tp.test.v1.filePreview.previewSiblings.subscribe((x) => (v = x))();
 		return { folderId: v.folderId, n: v.entries.length };
 	});
 
 const activeFolderOf = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.explorer.activeFolder.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorer.activeFolder.subscribe((x) => (v = x))();
 		return v;
 	});
 
@@ -76,15 +76,15 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1440, height: 900 } } });
 	const page = A.page;
-	await page.waitForFunction(() => !!window.__stores?.filePreview && !!window.__stores?.explorer, null, {
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.filePreview && !!window.__tp?.test.v1?.explorer, null, {
 		timeout: 30000
 	});
-	await page.evaluate(() => window.__stores.explorer.loadExplorer());
+	await page.evaluate(() => window.__tp.test.v1.explorer.loadExplorer());
 	await page.waitForTimeout(400);
 
 	// ---- 1. the pure walk, in-page so it is the SAME module the window imports --------
 	const pure = await page.evaluate(() => {
-		const v = window.__stores.filePreview;
+		const v = window.__tp.test.v1.filePreview;
 		const entries = [
 			{ kind: 'folder', folder: { id: 'f1', name: 'Sub' } },
 			{ kind: 'item', item: { id: 'i1', name: 'a.png', kind: 'image' } },
@@ -130,7 +130,7 @@ h.run(async () => {
 	// ---- seed: one folder, and four kinds beside it ------------------------------------
 	const seeded = await page.evaluate(
 		async ({ png, wav }) => {
-			const e = window.__stores.explorer;
+			const e = window.__tp.test.v1.explorer;
 			await e.clearLibrary();
 			const sub = e.createFolder('Sub', null);
 			const bytes = (a) => new Uint8Array(a).buffer;
@@ -364,7 +364,7 @@ h.run(async () => {
 	h.check(
 		(await page.evaluate(() => {
 			let v;
-			window.__stores.isLocked.subscribe((x) => (v = x))();
+			window.__tp.test.v1.isLocked.subscribe((x) => (v = x))();
 			return v;
 		})) !== true,
 		'…without Space reaching the app and starting play mode'
@@ -473,7 +473,7 @@ h.run(async () => {
 	await page.evaluate(async () => {
 		// a minimal glTF the object parser accepts, so the walk has a third kind in it
 		const gltf = JSON.stringify({ asset: { version: '2.0' }, scenes: [{ nodes: [] }], scene: 0, nodes: [] });
-		await window.__stores.explorer.addItemFromBytes(new TextEncoder().encode(gltf).buffer, 'd-model.gltf', null);
+		await window.__tp.test.v1.explorer.addItemFromBytes(new TextEncoder().encode(gltf).buffer, 'd-model.gltf', null);
 	});
 	await page.waitForTimeout(900);
 	const walkNow = await siblings(A);
@@ -595,14 +595,14 @@ h.run(async () => {
 	const winList = () =>
 		page.evaluate(() => {
 			let v;
-			window.__stores.fileWindows.previewWindows.subscribe((x) => (v = x))();
+			window.__tp.test.v1.fileWindows.previewWindows.subscribe((x) => (v = x))();
 			return v.map((w) => ({ id: w.id, kind: w.kind || 'image', title: w.title }));
 		});
 	h.check(
 		(await page.evaluate(() => localStorage.getItem('preview:multiWindow'))) !== 'true',
 		'premise: the pref is OFF by default - one window that re-points, exactly as before'
 	);
-	await page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await page.waitForTimeout(500);
 	await page.locator('[data-card-id="' + seeded.img + '"]').dblclick();
 	await page.waitForTimeout(800);
@@ -614,7 +614,7 @@ h.run(async () => {
 		'with the pref off a second open RE-POINTS the one window (' + JSON.stringify(singleMode) + ')'
 	);
 
-	await page.evaluate(() => window.__stores.filePreview.previewMultiWindow.set(true));
+	await page.evaluate(() => window.__tp.test.v1.filePreview.previewMultiWindow.set(true));
 	await page.locator('[data-card-id="' + seeded.img + '"]').dblclick();
 	await page.waitForTimeout(900);
 	const multi = await winList();
@@ -653,13 +653,13 @@ h.run(async () => {
 	await page.locator('[data-preview-id] button[title="Close"]').last().click();
 	await page.waitForTimeout(600);
 	h.check((await winList()).length === 1, 'closing one window closes ONLY that one');
-	await page.evaluate(() => window.__stores.filePreview.previewMultiWindow.set(false));
+	await page.evaluate(() => window.__tp.test.v1.filePreview.previewMultiWindow.set(false));
 
 	// ---- 12. A 3D OBJECT OPENS IN THE SAME WINDOW, with its statistics ----------------
 	// "double click on 3d objects should open same preview as when opening image (but also
 	// keep tris/verts/meshes statistics ... add into cog menu option auto-rotate)"
 	const glbId = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const mesh = new s.THREE.Mesh(new s.THREE.BoxGeometry(1, 1, 1), new s.THREE.MeshStandardMaterial());
 		const glb = await new Promise((res, rej) =>
 			new s.GLTFExporterModule.GLTFExporter().parse(mesh, (r) => res(r), (e) => rej(e), { binary: true })
@@ -778,14 +778,14 @@ h.run(async () => {
 		str(36, 'data');
 		view.setUint32(40, n * 2, true);
 		for (let i = 0; i < n; i++) view.setInt16(44 + i * 2, Math.sin(i / 24) * 2000, true);
-		const item = await window.__stores.explorer.addItemFromBytes(buf, 'long-tone.wav', null);
+		const item = await window.__tp.test.v1.explorer.addItemFromBytes(buf, 'long-tone.wav', null);
 		return item.id;
 	});
 	await page.waitForTimeout(800);
 	await page.locator('#image-preview-window button[title="Close"]').first().click();
 	await page.waitForTimeout(500);
 	// back to the root, or the card for a just-added item is not on screen to open
-	await page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await page.waitForTimeout(600);
 	await page.locator('[data-card-id="' + longSnd + '"]').dblclick();
 	// WAIT FOR THE METADATA, not for a clock: an <audio> reports no duration until it has
@@ -927,7 +927,7 @@ h.run(async () => {
 	//    arrow slightly moves (make it more professional, so it does not happen, even if
 	//    there are 999 files)"
 	// =====================================================================================
-	await page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await page.waitForTimeout(600);
 	// a folder with enough files that the counter crosses from one digit to two
 	// IMAGES, not text files: a .txt opens the text editor rather than the preview, which is
@@ -935,7 +935,7 @@ h.run(async () => {
 	// is content-hash addressed, so twelve identical fixtures would be ONE item.
 	const many = await page.evaluate(
 		async ({ png }) => {
-			const e = window.__stores.explorer;
+			const e = window.__tp.test.v1.explorer;
 			const folder = e.createFolder('Counter', null);
 			const ids = [];
 			for (let i = 0; i < 12; i++) {
@@ -968,7 +968,7 @@ h.run(async () => {
 			// diagnostics for a red premise: what the window shows, and how wide its header is
 			why: (() => {
 				let list;
-				window.__stores.fileWindows.previewWindows.subscribe((v) => (list = v))();
+				window.__tp.test.v1.fileWindows.previewWindows.subscribe((v) => (list = v))();
 				return JSON.stringify({ kinds: list.map((w) => (w.kind ?? 'image') + ':' + (w.mode ?? 'view')), headW: win?.querySelector('.ui-panel-header')?.clientWidth });
 			})()
 		};
@@ -995,7 +995,7 @@ h.run(async () => {
 	// ---- THE COUNTER HOLDS ITS WIDTH ACROSS A DIGIT CHANGE -----------------------------
 	await page.locator('#image-preview-window button[title="Close"]').first().click();
 	await page.waitForTimeout(500);
-	await page.evaluate((f) => window.__stores.explorer.activeFolder.set(f), many.folder);
+	await page.evaluate((f) => window.__tp.test.v1.explorer.activeFolder.set(f), many.folder);
 	await page.waitForTimeout(800);
 	await page.locator('[data-card-id="' + many.ids[0] + '"]').dblclick();
 	await page.waitForTimeout(1200);
@@ -1050,7 +1050,7 @@ h.run(async () => {
 	);
 	await page.locator('#image-preview-window button[title="Close"]').first().click();
 	await page.waitForTimeout(400);
-	await page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await page.waitForTimeout(500);
 
 	h.check(

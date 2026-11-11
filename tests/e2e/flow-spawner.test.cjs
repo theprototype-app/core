@@ -140,11 +140,11 @@ const setGraph = (page, nodes, edges) =>
 		([nodes, edges]) => {
 			// BOTH stores: flowGraphs is what the runtime reads, flowNodes is the active
 			// graph's editor view, and the mirror runs both ways
-			window.__stores.flowGraphs.update((graphs) => ({ ...graphs, scene: { nodes, edges } }));
-			window.__stores.flowNodes.set(nodes);
-			window.__stores.flowEdges.set(edges);
+			window.__tp.test.v1.flowGraphs.update((graphs) => ({ ...graphs, scene: { nodes, edges } }));
+			window.__tp.test.v1.flowNodes.set(nodes);
+			window.__tp.test.v1.flowEdges.set(edges);
 			let peer = null;
-			window.__stores.peers.subscribe((p) => (peer = p))();
+			window.__tp.test.v1.peers.subscribe((p) => (peer = p))();
 			nodes.forEach((n) => peer?.send({ type: 'nodecreate', node: n }));
 			edges.forEach((e) => peer?.send({ type: 'edgecreate', edge: e }));
 		},
@@ -168,17 +168,17 @@ async function press(page, code) {
 }
 
 const transientOf = (page) =>
-	page.evaluate(() => window.__stores.transientObjects.transientUuids());
+	page.evaluate(() => window.__tp.test.v1.transientObjects.transientUuids());
 
 const undoDepth = (page) =>
 	page.evaluate(
-		() => new Promise((r) => window.__stores.history.undoStack.subscribe((s) => r(s.length))())
+		() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((s) => r(s.length))())
 	);
 
 const childNames = (page) =>
 	page.evaluate(() => {
 		let group = null;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		return (group?.children ?? []).map((/** @type {any} */ c) => c.name);
 	});
 
@@ -189,7 +189,7 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(4000);
 		await warm.ctx.close();
 	}
@@ -199,11 +199,11 @@ h.run(async () => {
 	{
 		const P = await h.setupPage(browser, 'parity');
 		const page = P.page;
-		await page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await page.waitForTimeout(2500);
 
 		await page.evaluate(() => {
-			const cmd = window.__stores.commandsHandler;
+			const cmd = window.__tp.test.v1.commandsHandler;
 			['box', 'sphere', 'box', 'box', 'box'].forEach((k) => cmd.sceneCommand('/create ' + k));
 		});
 		// `/create` re-seats the object AFTER the call returns and stamps its own
@@ -211,7 +211,7 @@ h.run(async () => {
 		await page.waitForTimeout(1200);
 		const uuids = await page.evaluate(() => {
 			let group = null;
-			window.__stores.objectsGroup.subscribe((v) => (group = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 			const kids = group.children;
 			const spec = [
 				{ name: 'Crate', pos: [0, 2, 0], rot: [0, 0.4, 0], phys: { mode: 'dynamic', mass: 2.5 } },
@@ -239,10 +239,10 @@ h.run(async () => {
 			kids[3].scale.set(10, 0.2, 10);
 			// a non-centred GEOMETRY is what makes entry.offset non-zero
 			kids[0].geometry.translate(0, 0.5, 0);
-			window.__stores.objectsGroup.update((v) => v);
+			window.__tp.test.v1.objectsGroup.update((v) => v);
 			return out;
 		});
-		await page.evaluate(() => window.__stores.objectActions.deselectObject());
+		await page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 
 		// Platform earns its KINEMATIC body by being flow-ANIMATED. Set Color and not Spin
 		// on purpose: a rotating effect makes `initialQuat` depend on WHEN the capture ran.
@@ -255,13 +255,13 @@ h.run(async () => {
 			[edge('fx1', 'sel1')]
 		);
 		await page.evaluate(
-			([a, b]) => window.__stores.joints.createJoint('weld', a, b, 'y', null),
+			([a, b]) => window.__tp.test.v1.joints.createJoint('weld', a, b, 'y', null),
 			[uuids.Crate, uuids.Slab]
 		);
 		await page.waitForTimeout(900);
-		await page.evaluate(() => window.__stores.physics.toggleSimulation());
+		await page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 		await h.eventually(
-			() => page.evaluate(() => window.__stores.physics.physicsDebug().length),
+			() => page.evaluate(() => window.__tp.test.v1.physics.physicsDebug().length),
 			(/** @type {number} */ n) => n > 0,
 			'1.1 (premise) the simulation is running'
 		);
@@ -270,7 +270,7 @@ h.run(async () => {
 			([uuids]) => {
 				const byUuid = Object.fromEntries(Object.entries(uuids).map(([n, u]) => [u, n]));
 				const r = (/** @type {any} */ v) => (typeof v === 'number' ? +v.toFixed(6) : v);
-				const bodies = window.__stores.physics
+				const bodies = window.__tp.test.v1.physics
 					.physicsDebug()
 					.map((/** @type {any} */ b) => ({
 						name: byUuid[b.uuid] ?? b.name,
@@ -287,7 +287,7 @@ h.run(async () => {
 						colliders: b.colliders.length
 					}))
 					.sort((/** @type {any} */ x, /** @type {any} */ y) => String(x.name).localeCompare(String(y.name)));
-				const w = window.__stores.physics.physicsWorldDebug();
+				const w = window.__tp.test.v1.physics.physicsWorldDebug();
 				return {
 					bodies,
 					world: {
@@ -338,7 +338,7 @@ h.run(async () => {
 			!snap.world.fixed.some(() => false) && GOLDEN.world.groundHandle === snap.world.groundHandle,
 			'1.5 the ground keeps handle ' + snap.world.groundHandle + ' (the aliasing invariant)'
 		);
-		await page.evaluate(() => window.__stores.physics.stopSimulation());
+		await page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 		await P.ctx.close();
 	}
 
@@ -346,27 +346,27 @@ h.run(async () => {
 	// Everything below shares one page and one template.
 	const A = await h.setupPage(browser, 'A');
 	const page = A.page;
-	await page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+	await page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 	await page.waitForTimeout(2500);
 
 	const template = await page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		let group = null;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		const b = group.children[group.children.length - 1];
 		b.name = 'Crate';
 		b.position.set(0, 0.5, 0);
 		b.userData.physics = { mode: 'dynamic', mass: 1 };
-		window.__stores.objectsGroup.update((v) => v);
+		window.__tp.test.v1.objectsGroup.update((v) => v);
 		return b.uuid;
 	});
 	await page.waitForTimeout(900); // /create re-seats AFTER the call returns
 	await page.evaluate(
 		(uuid) => {
 			let group = null;
-			window.__stores.objectsGroup.subscribe((v) => (group = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 			group.getObjectByProperty('uuid', uuid).position.set(0, 0.5, 0);
-			window.__stores.objectActions.deselectObject();
+			window.__tp.test.v1.objectActions.deselectObject();
 		},
 		template
 	);
@@ -382,9 +382,9 @@ h.run(async () => {
 		[edge('key1', 'spawn1', 'trigger'), edge('spawn1', 'sel1')]
 	);
 	await page.waitForTimeout(700);
-	await page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await h.eventually(
-		() => page.evaluate(() => window.__stores.physics.physicsDebug().length),
+		() => page.evaluate(() => window.__tp.test.v1.physics.physicsDebug().length),
 		(/** @type {number} */ n) => n > 0,
 		'2.1 (premise) the simulation is running'
 	);
@@ -396,7 +396,7 @@ h.run(async () => {
 
 	const spawnedUuid = firstBatch[0];
 	const spawnBody = await page.evaluate(
-		(uuid) => window.__stores.physics.physicsDebug().find((/** @type {any} */ b) => b.uuid === uuid),
+		(uuid) => window.__tp.test.v1.physics.physicsDebug().find((/** @type {any} */ b) => b.uuid === uuid),
 		spawnedUuid
 	);
 	h.check(
@@ -408,7 +408,7 @@ h.run(async () => {
 	const yAt = (/** @type {string} */ uuid) =>
 		page.evaluate((uuid) => {
 			let group = null;
-			window.__stores.objectsGroup.subscribe((v) => (group = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 			return group.getObjectByProperty('uuid', uuid)?.position.y ?? null;
 		}, uuid);
 	const spawnY0 = await yAt(spawnedUuid);
@@ -423,7 +423,7 @@ h.run(async () => {
 		await page.evaluate(
 			(uuid) => {
 				let group = null;
-				window.__stores.objectsGroup.subscribe((v) => (group = v))();
+				window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 				return !!group.getObjectByProperty('uuid', uuid)?.userData?.transient;
 			},
 			spawnedUuid
@@ -436,7 +436,7 @@ h.run(async () => {
 		(await page.evaluate(
 			(uuid) => {
 				let group = null;
-				window.__stores.objectsGroup.subscribe((v) => (group = v))();
+				window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 				return group.getObjectByProperty('uuid', uuid)?.userData?.transient ?? null;
 			},
 			template
@@ -460,7 +460,7 @@ h.run(async () => {
 		firstFive.length >= 4 && firstFive.every((u) => !alive.includes(u)),
 		'3.2 the OLDEST were recycled — none of the first ' + firstFive.length + ' survives'
 	);
-	const spawnerState = await page.evaluate(() => window.__stores.spawner.spawnerDebug());
+	const spawnerState = await page.evaluate(() => window.__tp.test.v1.spawner.spawnerDebug());
 	h.check(
 		spawnerState.nodes.length === 1 &&
 			spawnerState.nodes[0].alive.length === 16 &&
@@ -469,7 +469,7 @@ h.run(async () => {
 	);
 	const aliveBodies = await page.evaluate(
 		(uuids) => {
-			const debug = window.__stores.physics.physicsDebug();
+			const debug = window.__tp.test.v1.physics.physicsDebug();
 			return uuids.filter(
 				(/** @type {string} */ u) => debug.find((/** @type {any} */ b) => b.uuid === u)?.mode === 'dynamic'
 			).length;
@@ -486,7 +486,7 @@ h.run(async () => {
 	// ================================================================= section 4
 	console.log('\n=== 4. mid-run saves carry none of it ===');
 	const payload = await page.evaluate(() => {
-		const p = window.__stores.sessions.buildSessionPayload('mid-run');
+		const p = window.__tp.test.v1.sessions.buildSessionPayload('mid-run');
 		return { count: p.count, objects: p.objects.length, names: p.objects.map((/** @type {any} */ o) => o.object?.name) };
 	});
 	h.check(
@@ -502,10 +502,10 @@ h.run(async () => {
 		'4.3 ...and the save left the live copies alone'
 	);
 
-	await page.evaluate(() => window.__stores.autosave.saveNow());
+	await page.evaluate(() => window.__tp.test.v1.autosave.saveNow());
 	await page.waitForTimeout(1200);
 	const snapshot = await page.evaluate(async () => {
-		const snap = await window.__stores.idb.idbGet('latest');
+		const snap = await window.__tp.test.v1.idb.idbGet('latest');
 		const nodes = snap?.scene?.nodes ?? [];
 		return {
 			objects: snap?.objects ?? null,
@@ -553,7 +553,7 @@ h.run(async () => {
 		'5.3 B recorded no undo entry for any of them'
 	);
 	const bPayload = await B.page.evaluate(
-		() => window.__stores.sessions.buildSessionPayload('peer').objects.length
+		() => window.__tp.test.v1.sessions.buildSessionPayload('peer').objects.length
 	);
 	h.check(
 		bPayload === 1,
@@ -563,7 +563,7 @@ h.run(async () => {
 	// ================================================================= section 6
 	console.log('\n=== 6. stopping the run takes them all with it ===');
 	const undoPreStop = await undoDepth(page);
-	await page.evaluate(() => window.__stores.physics.stopSimulation());
+	await page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 	await page.waitForTimeout(600);
 	h.check((await transientOf(page)).length === 0, '6.1 no transient object left on A');
 	await h.eventually(
@@ -584,7 +584,7 @@ h.run(async () => {
 	const topEntry = await page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.history.undoStack.subscribe((/** @type {any[]} */ s) => {
+				window.__tp.test.v1.history.undoStack.subscribe((/** @type {any[]} */ s) => {
 					const top = s[s.length - 1];
 					r({ kind: top?.kind ?? null, items: top?.items?.length ?? null });
 				})()
@@ -600,7 +600,7 @@ h.run(async () => {
 			topEntry.items +
 			' object, not 17'
 	);
-	await page.evaluate(() => window.__stores.history.undo());
+	await page.evaluate(() => window.__tp.test.v1.history.undo());
 	await page.waitForTimeout(400);
 	h.check(
 		(await childNames(page)).includes('Crate'),
@@ -614,9 +614,9 @@ h.run(async () => {
 	// here would mean crates raining down the moment a graph is wired or a peer connects
 	await setGraph(page, [node('key2', 'keypress', { code: 'KeyT', pulse: 0.3 })], []);
 	await page.waitForTimeout(500);
-	await page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await h.eventually(
-		() => page.evaluate(() => window.__stores.physics.physicsDebug().length),
+		() => page.evaluate(() => window.__tp.test.v1.physics.physicsDebug().length),
 		(/** @type {number} */ n) => n > 0,
 		'7.1 (premise) the simulation is running again'
 	);
@@ -642,7 +642,7 @@ h.run(async () => {
 
 	// count is an authored param, so it is clamped again where it is used
 	await page.evaluate(() =>
-		window.__stores.nodesHandler.setNodeData('spawn2', { count: 500, maxAlive: 200 })
+		window.__tp.test.v1.nodesHandler.setNodeData('spawn2', { count: 500, maxAlive: 200 })
 	);
 	await page.waitForTimeout(500);
 	const beforeBig = (await transientOf(page)).length;
@@ -658,7 +658,7 @@ h.run(async () => {
 	// node, so without letting the interval elapse the FIRST press is refused too and the
 	// check reads 0 for the right reason and the wrong measurement.
 	const beforeRate = (await transientOf(page)).length;
-	await page.evaluate(() => window.__stores.nodesHandler.setNodeData('spawn2', { count: 1, interval: 2 }));
+	await page.evaluate(() => window.__tp.test.v1.nodesHandler.setNodeData('spawn2', { count: 1, interval: 2 }));
 	await page.waitForTimeout(2400);
 	await press(page, 'KeyT');
 	await press(page, 'KeyT');
@@ -673,9 +673,9 @@ h.run(async () => {
 
 	// a spawn with nothing simulating would make an INERT object — the exact failure B7
 	// removes — so it must refuse and say why rather than quietly littering the scene
-	await page.evaluate(() => window.__stores.physics.stopSimulation());
+	await page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 	await page.waitForTimeout(500);
-	await page.evaluate(() => window.__stores.toastStore.set([]));
+	await page.evaluate(() => window.__tp.test.v1.toastStore.set([]));
 	const preInert = (await childNames(page)).length;
 	await press(page, 'KeyT');
 	await page.waitForTimeout(800);
@@ -685,7 +685,7 @@ h.run(async () => {
 	);
 	const toasts = await page.evaluate(() => {
 		let list = [];
-		window.__stores.toastStore.subscribe((/** @type {any[]} */ v) => (list = v))();
+		window.__tp.test.v1.toastStore.subscribe((/** @type {any[]} */ v) => (list = v))();
 		return list.map((/** @type {any} */ t) => String(t?.message ?? t?.text ?? t));
 	});
 	h.check(
@@ -701,14 +701,14 @@ h.run(async () => {
 	await page.waitForSelector('.svelte-flow', { timeout: 15000 });
 	await page.waitForTimeout(600);
 	const registries = await page.evaluate(() => {
-		const spec = window.__stores.nodeCatalog.findNodeSpec('spawn');
+		const spec = window.__tp.test.v1.nodeCatalog.findNodeSpec('spawn');
 		return {
 			inCatalog: !!spec,
 			note: spec?.note ?? null,
 			inputs: spec?.inputs ?? [],
 			renderable: (window.__flowNodeTypes?.live?.() ?? []).includes('spawn'),
-			outputType: window.__stores.flowSockets.outputType
-				? window.__stores.flowSockets.outputType('spawn')
+			outputType: window.__tp.test.v1.flowSockets.outputType
+				? window.__tp.test.v1.flowSockets.outputType('spawn')
 				: null
 		};
 	});

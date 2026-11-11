@@ -7,7 +7,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 
-	await A.page.evaluate(() => window.__stores.flowNodes.set([]));
+	await A.page.evaluate(() => window.__tp.test.v1.flowNodes.set([]));
 	await A.page.locator('p[title="Node editor (N)"]').click();
 	await A.page.waitForTimeout(1200);
 	// make sure the palette is open
@@ -18,7 +18,7 @@ h.run(async () => {
 	}
 
 	const r = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let before;
 		s.flowNodes.subscribe((x) => (before = x.length))();
 		const item = document.querySelector('aside [role="listitem"]');
@@ -34,7 +34,7 @@ h.run(async () => {
 	// touch DRAG-to-place: a horizontal-dominant touch drag from a palette item onto
 	// the pane drops the node at the finger position (vertical stays palette scroll).
 	const drag = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let before;
 		s.flowNodes.subscribe((x) => (before = x.length))();
 		const item = document.querySelector('aside [role="listitem"]');

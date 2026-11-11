@@ -18,7 +18,7 @@ const VIEW = [[3.4, 4.4, 6.6], [-0.3, 0.8, 0.3]];
 /** @param {any} page */
 async function load(page) {
 	await page.evaluate(async (arr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 		await s.sessions.applySession(payload, { backup: false });
 		s.objectActions.deselectObject?.();
@@ -32,8 +32,8 @@ async function look(page, pos, target) {
 	await page.evaluate(
 		([p, t]) => {
 			let cam, orbit;
-			window.__stores.editorCam.subscribe((v) => (cam = v))();
-			window.__stores.orbitControls.subscribe((v) => (orbit = v))();
+			window.__tp.test.v1.editorCam.subscribe((v) => (cam = v))();
+			window.__tp.test.v1.orbitControls.subscribe((v) => (orbit = v))();
 			cam.position.set(...p);
 			orbit?.target?.set(...t);
 			orbit?.update?.();
@@ -45,8 +45,8 @@ async function look(page, pos, target) {
 /** where the water is, by stage @param {any} page */
 const stages = (page) =>
 	page.evaluate(() => {
-		const d = window.__stores.sim.fluidEmitterDebug()[0];
-		const p = d ? window.__stores.sim.fluidEmitterParticles(d.uuid) : [];
+		const d = window.__tp.test.v1.sim.fluidEmitterDebug()[0];
+		const p = d ? window.__tp.test.v1.sim.fluidEmitterParticles(d.uuid) : [];
 		const r = { pond: 0, trough: 0, basin: 0, chute: 0, air: 0, ground: 0 };
 		for (const [x, y, z] of p) {
 			if (x > -2.95 && x < -0.25 && z > 0.05 && z < 1.75 && y < 0.85) r.pond++;
@@ -62,7 +62,7 @@ const stages = (page) =>
 const perf = (page, ms) =>
 	page.evaluate(async (dur) => {
 		let r;
-		window.__stores.globalRenderer.subscribe((v) => (r = v))();
+		window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
 		// renderer.info resets on EVERY render call, and the desktop pipeline renders several
 		// passes a frame — sum them per frame (autoReset off, reset once per rAF)
 		const autoWas = r.info.autoReset;
@@ -90,7 +90,7 @@ const perf = (page, ms) =>
 		calls.shift(); // the first sample started mid-frame
 		tris.shift();
 		const q = (a, f) => [...a].sort((x, y) => x - y)[Math.min(a.length - 1, Math.floor(a.length * f))];
-		const d = window.__stores.sim.fluidEmitterDebug()[0];
+		const d = window.__tp.test.v1.sim.fluidEmitterDebug()[0];
 		return {
 			p50: +q(frames, 0.5).toFixed(1),
 			p95: +q(frames, 0.95).toFixed(1),
@@ -101,7 +101,7 @@ const perf = (page, ms) =>
 			limit: d?.limit,
 			mode: d?.mode,
 			solverMs: d?.ms,
-			surfaces: window.__stores.sim.flowPathDebug().length
+			surfaces: window.__tp.test.v1.sim.flowPathDebug().length
 		};
 	}, ms);
 
@@ -116,7 +116,7 @@ h.run(async () => {
 	await look(A.page, ...VIEW);
 	const named = await A.page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const names = [];
 		g.traverse((o) => o.name && names.push(o.name));
 		return names;
@@ -138,7 +138,7 @@ h.run(async () => {
 	const pose = () =>
 		A.page.evaluate(() => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const w = g.getObjectByName('Noria wheel');
 			const b = g.getObjectByName('Boat red');
 			return { w: w.quaternion.toArray(), b: b.position.toArray() };
@@ -157,7 +157,7 @@ h.run(async () => {
 	const desk = await perf(A.page, 4000);
 	console.log('PERF desktop ' + JSON.stringify(desk));
 	h.check(desk.mode === 'ssf' && desk.particles > 1500, `desktop tier: the smooth surface over ${desk.particles} particles`);
-	await A.page.evaluate(() => window.__stores.sim.setFluidTierForTest('quest'));
+	await A.page.evaluate(() => window.__tp.test.v1.sim.setFluidTierForTest('quest'));
 	await A.page.waitForTimeout(12000);
 	const quest = await perf(A.page, 4000);
 	console.log('PERF quest-tier ' + JSON.stringify(quest));
@@ -168,7 +168,7 @@ h.run(async () => {
 	// pipeline numbers above render the scene several times a frame and are not comparable.
 	const eye = await A.page.evaluate(() => {
 		let ren, scene, cam;
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.globalRenderer.subscribe((v) => (ren = v))();
 		s.globalScene.subscribe((v) => (scene = v))();
 		s.editorCam.subscribe((v) => (cam = v))();
@@ -190,7 +190,7 @@ h.run(async () => {
 	h.check(quest.headsetTris <= 300000, `Quest tier inside 300k triangles (${quest.headsetTris})`);
 	if (SHOTS) await A.page.screenshot({ path: path.join(SHOTS, '11-water-works-quest-tier.png') });
 	if (SHOTS) fs.writeFileSync(path.join(SHOTS, '../perf-water-works.json'), JSON.stringify({ desktop: desk, quest }, null, 1));
-	await A.page.evaluate(() => window.__stores.sim.setFluidTierForTest(null));
+	await A.page.evaluate(() => window.__tp.test.v1.sim.setFluidTierForTest(null));
 	h.check(h.pageErrors(A).length === 0, `no page errors (${JSON.stringify(h.pageErrors(A).slice(0, 2))})`);
 	await A.ctx.close();
 

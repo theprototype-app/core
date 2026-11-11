@@ -10,10 +10,10 @@ const h = require('./helpers.cjs');
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
-	await A.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+	await A.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 
 	const spec = await A.page.evaluate(async () => {
-		const cat = await window.__stores.nodeCatalog;
+		const cat = await window.__tp.test.v1.nodeCatalog;
 		const s = (cat.findNodeSpec ?? cat.default?.findNodeSpec)?.('onimpact');
 		return {
 			defaults: s?.defaults ?? null,
@@ -30,7 +30,7 @@ h.run(async () => {
 	);
 
 	const ids = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const cmd = s.commandsHandler.sceneCommand;
 		cmd('/create Box 0.4 2 3'); // wall (static)
 		cmd('/create Box 0.4 1 1.2'); // target (kinematic: a slow Spin animates it)
@@ -103,15 +103,15 @@ h.run(async () => {
 		});
 		nodes.push(sel('sSpin', u.target, 1600));
 		edges.push({ id: 'e-spin1-sSpin', source: 'spin1', target: 'sSpin' });
-		window.__stores.flowNodes.set(nodes);
-		window.__stores.flowEdges.set(edges);
+		window.__tp.test.v1.flowNodes.set(nodes);
+		window.__tp.test.v1.flowEdges.set(edges);
 		// count every fire WITH what it hit: the trigger log keeps only the latest stamp per
 		// node, and `other` is set just before the stamp (fireContact). A rolling ball that
 		// hits a wall can climb it on its spin and LAND again — a real landing (other = the
 		// ground), which a 'down' node rightly fires on; the claims below are about the hit
 		window.__fires = {};
-		const fr = window.__stores.flowRuntime;
-		window.__stores.flowTriggers.subscribe((log) => {
+		const fr = window.__tp.test.v1.flowRuntime;
+		window.__tp.test.v1.flowTriggers.subscribe((log) => {
 			for (const [id, e] of Object.entries(log ?? {})) {
 				if (!id.startsWith('imp')) continue;
 				const seen = (window.__fires[id] ??= []);
@@ -122,7 +122,7 @@ h.run(async () => {
 	}, ids);
 	await A.page.waitForTimeout(600);
 
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	// the dropped ball lands; the rolling balls settle on the ground first
 	await h.eventually(
 		() => A.page.evaluate(() => window.__fx.ballD.position.y),
@@ -139,7 +139,7 @@ h.run(async () => {
 	);
 
 	const pushed = await A.page.evaluate(() => {
-		const p = window.__stores.physics;
+		const p = window.__tp.test.v1.physics;
 		return [
 			p.setBodyVelocity(window.__fx.ballW.uuid, [6, 0, 0], null),
 			p.setBodyVelocity(window.__fx.ballT.uuid, [6, 0, 0], null)
@@ -156,7 +156,7 @@ h.run(async () => {
 
 	const r = await A.page.evaluate(() => {
 		const kinds = Object.fromEntries(
-			window.__stores.physics.physicsDebug().map((e) => [e.uuid, e.mode])
+			window.__tp.test.v1.physics.physicsDebug().map((e) => [e.uuid, e.mode])
 		);
 		return {
 			fires: window.__fires,
@@ -209,6 +209,6 @@ h.run(async () => {
 		`an 'any' node fires once on a landing too (${f('impBallDAny').length})`
 	);
 
-	await A.page.evaluate(() => window.__stores.physics.stopSimulation({ reset: true }));
+	await A.page.evaluate(() => window.__tp.test.v1.physics.stopSimulation({ reset: true }));
 	await h.finish(browser);
 });

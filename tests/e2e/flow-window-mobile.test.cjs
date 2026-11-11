@@ -15,8 +15,8 @@ h.run(async () => {
 	});
 	await A.page.setViewportSize({ width: 420, height: 780 });
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.objectActions, { timeout: 30000 });
-	await A.page.evaluate(() => window.__stores.flowGraphClose.set(false));
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.objectActions, { timeout: 30000 });
+	await A.page.evaluate(() => window.__tp.test.v1.flowGraphClose.set(false));
 	await A.page.waitForTimeout(600);
 
 	const r = await A.page.evaluate(() => {

@@ -45,7 +45,7 @@ async function maximize(page) {
 
 async function dockCode(page) {
 	await S(page, async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create Box 2 2 2');
 		await new Promise((r) => setTimeout(r, 400));
 		s.objectActions.deselectObject();
@@ -108,11 +108,11 @@ h.run(async () => {
 	h.check(st.focus === 'dock' && st.pip && st.pressed === 'true', `3.4 …and the next maximize shows it (pip ${st.pip})`);
 
 	// ---- 4. the toggle only while the preview COULD show -------------------------------------------
-	await S(page, () => window.__stores.bottomDock.dockHeight.set(420));
+	await S(page, () => window.__tp.test.v1.bottomDock.dockHeight.set(420));
 	await page.waitForTimeout(500);
 	st = await look(page);
 	h.check(st.focus === 'dock' && !st.pip && !st.toggle, `4.1 resized DOWN (the real viewport on screen): no preview and no toggle (${JSON.stringify(st.toggle)})`);
-	await S(page, () => window.__stores.bottomDock.dockHeight.set(window.__stores.focusMode.fullDockHeight()));
+	await S(page, () => window.__tp.test.v1.bottomDock.dockHeight.set(window.__tp.test.v1.focusMode.fullDockHeight()));
 	await page.waitForTimeout(500);
 	st = await look(page);
 	h.check(st.pip && !!st.toggle, `4.2 back to full: the preview and its toggle are back (${st.pip})`);
@@ -128,7 +128,7 @@ h.run(async () => {
 	});
 	const up = U.page;
 	await dockCode(up);
-	await S(up, () => window.__stores.focusMode.maximizeDockTab('timeline'));
+	await S(up, () => window.__tp.test.v1.focusMode.maximizeDockTab('timeline'));
 	await up.waitForTimeout(1200);
 	st = await look(up);
 	h.check(st.focus === 'dock' && st.pip && !!st.toggle, `5.1 unfolded: Maximize shows the preview and the toggle (${JSON.stringify(st.toggle)})`);

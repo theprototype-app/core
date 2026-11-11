@@ -20,7 +20,7 @@ h.run(async () => {
 		const asked = [];
 		P.page.on('request', (r) => /unicode-font-resolver/.test(r.url()) && asked.push(r.url()));
 		if (blocked) await P.ctx.route(/cdn\.jsdelivr\.net\/gh\/lojjic\/unicode-font-resolver/, (r) => r.abort('failed'));
-		await P.page.evaluate(() => window.__stores.characterModalOpen.set(true));
+		await P.page.evaluate(() => window.__tp.test.v1.characterModalOpen.set(true));
 		await h.eventually(() => Promise.resolve(asked.length), (n) => n > 0, `${blocked ? 'blocked' : 'open'}: the character card asks for glyph data`, 15000);
 		await P.page.waitForTimeout(3000);
 		const origin = new URL(h.URL).origin;

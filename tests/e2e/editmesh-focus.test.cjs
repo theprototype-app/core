@@ -8,7 +8,7 @@ h.run(async () => {
 
 	// getters + tooltip absence
 	const res = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const seen = [];
 		const unsub = s.toastStore.subscribe((list) => (list || []).forEach((t) => seen.push(JSON.stringify(t))));
 
@@ -51,7 +51,7 @@ h.run(async () => {
 
 	// integration: F (focusObject) reframes on the selected face
 	const focusRes = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let grp;
 		s.objectsGroup.subscribe((v) => (grp = v))();
 		const box = grp.children[grp.children.length - 1];

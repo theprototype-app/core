@@ -45,7 +45,7 @@ const h = require('./helpers.cjs');
 const vols = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.mountedVolumes.mountedVolumes.subscribe((x) => (v = x))();
+		window.__tp.test.v1.mountedVolumes.mountedVolumes.subscribe((x) => (v = x))();
 		return (v ?? []).map((r) => ({
 			id: r.id,
 			sessionId: r.sessionId,
@@ -64,7 +64,7 @@ const vols = (p) =>
 /** the LIVE library, as one comparable string — the thing a mount must never move */
 const librarySnapshot = (p) =>
 	p.page.evaluate(() => {
-		const e = window.__stores.explorer;
+		const e = window.__tp.test.v1.explorer;
 		const read = (s) => {
 			let v;
 			s.subscribe((x) => (v = x))();
@@ -81,7 +81,7 @@ const librarySnapshot = (p) =>
 const sharedIndex = (p) =>
 	p.page.evaluate(() => {
 		let m;
-		window.__stores.projectManifest.projectManifest.subscribe((x) => (m = x))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((x) => (m = x))();
 		return JSON.stringify({ folders: m.folders ?? [], items: m.items ?? [] });
 	});
 
@@ -120,14 +120,14 @@ const crumbs = (p) =>
 const activeFolderOf = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.explorer.activeFolder.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorer.activeFolder.subscribe((x) => (v = x))();
 		return v;
 	});
 
 const toasts = (p) =>
 	p.page.evaluate(() => [...document.querySelectorAll('.tp-toast')].map((t) => t.innerText.trim()));
 
-const clearToasts = (p) => p.page.evaluate(() => window.__stores.toastStore.set([]));
+const clearToasts = (p) => p.page.evaluate(() => window.__tp.test.v1.toastStore.set([]));
 
 /** close any open portaled menu with a REAL pointerdown */
 async function closeMenu(page) {
@@ -139,7 +139,7 @@ async function closeMenu(page) {
 
 /** save the CURRENT scene+library as a project, through the real Sessions UI */
 async function saveProject(p, name) {
-	await p.page.evaluate(() => window.__stores.sessionsOpen.set(true));
+	await p.page.evaluate(() => window.__tp.test.v1.sessionsOpen.set(true));
 	await p.page.waitForTimeout(900);
 	await p.page.locator('#session-save-project').click();
 	await p.page.waitForTimeout(400);
@@ -149,14 +149,14 @@ async function saveProject(p, name) {
 		() =>
 			p.page.evaluate(() => {
 				let v;
-				window.__stores.sessions.sessions.subscribe((x) => (v = x))();
+				window.__tp.test.v1.sessions.sessions.subscribe((x) => (v = x))();
 				return (v ?? []).map((m) => m.name);
 			}),
 		(names) => names.includes(name),
 		'the project "' + name + '" is saved',
 		25000
 	);
-	await p.page.evaluate(() => window.__stores.sessionsOpen.set(false));
+	await p.page.evaluate(() => window.__tp.test.v1.sessionsOpen.set(false));
 	await p.page.waitForTimeout(500);
 }
 
@@ -188,7 +188,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1440, height: 900 } } });
 	const page = A.page;
 	await page.waitForFunction(
-		() => !!window.__stores?.mountedVolumes && !!window.__stores?.explorer && !!window.__stores?.sessions,
+		() => !!window.__tp?.test.v1?.mountedVolumes && !!window.__tp?.test.v1?.explorer && !!window.__tp?.test.v1?.sessions,
 		null,
 		{ timeout: 30000 }
 	);
@@ -197,7 +197,7 @@ h.run(async () => {
 	// a clean library, a scene worth saving, and three files with DISTINCT bytes (the
 	// library is content-hash addressed — two identical fixtures are ONE item)
 	await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		await s.explorer.loadExplorer();
 		await s.explorer.clearLibrary();
 		for (const v of await new Promise((r) => {
@@ -208,8 +208,8 @@ h.run(async () => {
 	});
 	await page.waitForTimeout(1400);
 	await page.evaluate(async () => {
-		const e = window.__stores.explorer;
-		window.__stores.objectActions.deselectObject();
+		const e = window.__tp.test.v1.explorer;
+		window.__tp.test.v1.objectActions.deselectObject();
 		const enc = (t) => new TextEncoder().encode(t).buffer;
 		const props = e.createFolder('Props', null);
 		const nested = e.createFolder('Crates', props.id);
@@ -221,7 +221,7 @@ h.run(async () => {
 
 	// ---- 1. the pure namespace parse (no DOM at all) ---------------------------------
 	const pure = await page.evaluate(() => {
-		const m = window.__stores.mountedVolumes;
+		const m = window.__tp.test.v1.mountedVolumes;
 		const root = m.volumeOf('vol:abc');
 		const inner = m.volumeOf('vol:abc:folder-1');
 		return {
@@ -334,10 +334,10 @@ h.run(async () => {
 
 	// a hash the VOLUME holds and the library does not. Clearing the library first is what
 	// makes this a real test rather than a coincidence of the two holding the same files.
-	await page.evaluate(() => window.__stores.explorer.clearLibrary());
+	await page.evaluate(() => window.__tp.test.v1.explorer.clearLibrary());
 	await page.waitForTimeout(500);
 	const hashProbe = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let v;
 		s.mountedVolumes.mountedVolumes.subscribe((x) => (v = x))();
 		const hashes = (v[0].items ?? []).map((i) => i.hash);
@@ -365,16 +365,16 @@ h.run(async () => {
 	// THE PUBLISH RULE. Share a real library file so the index is genuinely in use, then
 	// prove the volume contributes nothing to it.
 	await page.evaluate(async () => {
-		const e = window.__stores.explorer;
+		const e = window.__tp.test.v1.explorer;
 		const enc = (t) => new TextEncoder().encode(t).buffer;
 		const item = await e.addItemFromBytes(enc('shared'.repeat(30)), 'shared.txt', null);
-		window.__stores.sharedLibrary.shareItem(item.id);
-		window.__stores.sharedLibrary.publishMine(true);
+		window.__tp.test.v1.sharedLibrary.shareItem(item.id);
+		window.__tp.test.v1.sharedLibrary.publishMine(true);
 	});
 	await page.waitForTimeout(600);
 	const indexWithMount = await sharedIndex(A);
 	const counterfactual = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let vol;
 		s.mountedVolumes.mountedVolumes.subscribe((x) => (vol = x))();
 		let before;
@@ -432,12 +432,12 @@ h.run(async () => {
 	const volId = list[0].id;
 	const volFolders = await page.evaluate(() => {
 		let v;
-		window.__stores.mountedVolumes.mountedVolumes.subscribe((x) => (v = x))();
+		window.__tp.test.v1.mountedVolumes.mountedVolumes.subscribe((x) => (v = x))();
 		return (v[0].folders ?? []).map((f) => ({ id: f.id, name: f.name, parentId: f.parentId }));
 	});
 	const props = volFolders.find((f) => f.name === 'Props');
 	const crates = volFolders.find((f) => f.name === 'Crates');
-	await page.evaluate((key) => window.__stores.explorer.activeFolder.set(key), 'vol:' + volId);
+	await page.evaluate((key) => window.__tp.test.v1.explorer.activeFolder.set(key), 'vol:' + volId);
 	await page.waitForTimeout(700);
 	let grid = await cards(A);
 	h.check(
@@ -453,7 +453,7 @@ h.run(async () => {
 		'every mounted FILE card carries the mount badge'
 	);
 	await page.evaluate(
-		({ key }) => window.__stores.explorer.activeFolder.set(key),
+		({ key }) => window.__tp.test.v1.explorer.activeFolder.set(key),
 		{ key: 'vol:' + volId + ':' + crates.id }
 	);
 	await page.waitForTimeout(600);
@@ -518,7 +518,7 @@ h.run(async () => {
 
 	// ---- 6. a mount answers no library operation ------------------------------------
 	await page.evaluate(
-		({ key }) => window.__stores.explorer.activeFolder.set(key),
+		({ key }) => window.__tp.test.v1.explorer.activeFolder.set(key),
 		{ key: 'vol:' + volId }
 	);
 	await page.waitForTimeout(500);
@@ -548,7 +548,7 @@ h.run(async () => {
 	// key — that one is an orphan, drawn nowhere and reachable by nothing.
 	const foldersBefore = await page.evaluate(() => {
 		let v;
-		window.__stores.explorer.explorerFolders.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorer.explorerFolders.subscribe((x) => (v = x))();
 		return v.length;
 	});
 	await clearToasts(A);
@@ -561,7 +561,7 @@ h.run(async () => {
 	await page.keyboard.press('Enter');
 	await page.waitForTimeout(700);
 	const afterNewFolder = await page.evaluate(() => {
-		const s2 = window.__stores;
+		const s2 = window.__tp?.test.v1;
 		let lib;
 		s2.explorer.explorerFolders.subscribe((x) => (lib = x))();
 		let mv;
@@ -586,13 +586,13 @@ h.run(async () => {
 	// put it back: later sections compare this volume against its saved record
 	await page.evaluate(async () => {
 		let mv;
-		window.__stores.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
-		await window.__stores.mountedVolumes.refreshVolume(mv[0].id);
+		window.__tp.test.v1.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
+		await window.__tp.test.v1.mountedVolumes.refreshVolume(mv[0].id);
 	});
 	await page.waitForTimeout(600);
 	const afterRefresh = await page.evaluate(() => {
 		let mv;
-		window.__stores.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
+		window.__tp.test.v1.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
 		return { dirty: !!mv[0].dirty, folders: (mv[0].folders ?? []).map((f) => f.name).sort() };
 	});
 	h.check(
@@ -602,7 +602,7 @@ h.run(async () => {
 
 	// ---- 7. several volumes coexist -------------------------------------------------
 	await page.evaluate(async () => {
-		const e = window.__stores.explorer;
+		const e = window.__tp.test.v1.explorer;
 		const enc = (t) => new TextEncoder().encode(t).buffer;
 		await e.addItemFromBytes(enc('second'.repeat(50)), 'second-only.txt', null);
 	});
@@ -627,9 +627,9 @@ h.run(async () => {
 	await clearToasts(A);
 	const twice = await page.evaluate(
 		async (sessionId) => {
-			await window.__stores.mountedVolumes.mountVolume(sessionId);
+			await window.__tp.test.v1.mountedVolumes.mountVolume(sessionId);
 			let v;
-			window.__stores.mountedVolumes.mountedVolumes.subscribe((x) => (v = x))();
+			window.__tp.test.v1.mountedVolumes.mountedVolumes.subscribe((x) => (v = x))();
 			return v.length;
 		},
 		depot.sessionId
@@ -646,7 +646,7 @@ h.run(async () => {
 	await h.eventually(
 		() =>
 			page.evaluate(async () => {
-				const rec = await window.__stores.idb.idbGet('explorer:mounts');
+				const rec = await window.__tp.test.v1.idb.idbGet('explorer:mounts');
 				return (rec ?? []).map((v) => v.name).sort();
 			}),
 		(names) => names.length === 2,
@@ -654,7 +654,7 @@ h.run(async () => {
 		15000
 	);
 	const stored = await page.evaluate(async () => {
-		const rec = await window.__stores.idb.idbGet('explorer:mounts');
+		const rec = await window.__tp.test.v1.idb.idbGet('explorer:mounts');
 		return (rec ?? []).map((v) => v.name).sort();
 	});
 	h.check(
@@ -662,8 +662,8 @@ h.run(async () => {
 		'the idb record holds both (' + stored.join(',') + ')'
 	);
 	await h.freshReload(A);
-	await page.waitForFunction(() => !!window.__stores?.mountedVolumes, null, { timeout: 30000 });
-	await page.evaluate(() => window.__stores.mountedVolumes.loadMountedVolumes());
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.mountedVolumes, null, { timeout: 30000 });
+	await page.evaluate(() => window.__tp.test.v1.mountedVolumes.loadMountedVolumes());
 	await page.waitForTimeout(1200);
 	const afterReload = await vols(A);
 	h.check(
@@ -676,7 +676,7 @@ h.run(async () => {
 		afterReload.every((v) => v.items.length === (v.name === 'Annex' ? 2 : 3)),
 		`…with their file rows intact (${afterReload.map((v) => v.name + ':' + v.items.length).join(', ')})`
 	);
-	await page.evaluate(() => window.__stores.explorer.loadExplorer());
+	await page.evaluate(() => window.__tp.test.v1.explorer.loadExplorer());
 	await page.waitForTimeout(600);
 	h.check(
 		(await librarySnapshot(A)) === libBeforeReload,
@@ -698,9 +698,9 @@ h.run(async () => {
 	// since the last one — an empty store here would say "the project is gone" about a
 	// store nobody has filled
 	const sessionsStillThere = await page.evaluate(async () => {
-		await window.__stores.sessions.loadSessions();
+		await window.__tp.test.v1.sessions.loadSessions();
 		let v;
-		window.__stores.sessions.sessions.subscribe((x) => (v = x))();
+		window.__tp.test.v1.sessions.sessions.subscribe((x) => (v = x))();
 		return (v ?? []).map((m) => m.name);
 	});
 	h.check(
@@ -712,11 +712,11 @@ h.run(async () => {
 	// source has gone is marked UNAVAILABLE rather than dropped.
 	const annexNow = (await vols(A))[0];
 	await page.evaluate(
-		async (id) => window.__stores.sessions.deleteSession(id),
+		async (id) => window.__tp.test.v1.sessions.deleteSession(id),
 		annexNow.sessionId
 	);
 	await page.waitForTimeout(1200);
-	await page.evaluate(() => window.__stores.mountedVolumes.revalidateVolumes());
+	await page.evaluate(() => window.__tp.test.v1.mountedVolumes.revalidateVolumes());
 	await page.waitForTimeout(600);
 	const gone = await vols(A);
 	h.check(
@@ -735,9 +735,9 @@ h.run(async () => {
 	// these two did this cleanup on their way past.
 	await page.evaluate(async () => {
 		let mv;
-		window.__stores.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
-		for (const v of mv) await window.__stores.mountedVolumes.unmountVolume(v.id);
-		window.__stores.explorer.activeFolder.set(null);
+		window.__tp.test.v1.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
+		for (const v of mv) await window.__tp.test.v1.mountedVolumes.unmountVolume(v.id);
+		window.__tp.test.v1.explorer.activeFolder.set(null);
 	});
 	await page.waitForTimeout(500);
 
@@ -753,7 +753,7 @@ h.run(async () => {
 	const savedNamesNow = () =>
 		page.evaluate(() => {
 			let v;
-			window.__stores.sessions.sessions.subscribe((x) => (v = x))();
+			window.__tp.test.v1.sessions.sessions.subscribe((x) => (v = x))();
 			return (v ?? []).map((m) => m.name);
 		});
 
@@ -761,7 +761,7 @@ h.run(async () => {
 	// a SCENE entry as well, so "who is offered a Mount" can be read off the two kinds.
 	// Same shape as saveProject, waiting on the STORE rather than a fixed sleep - a save
 	// that silently did not happen would otherwise show up later as a missing row.
-	await page.evaluate(() => window.__stores.sessionsOpen.set(true));
+	await page.evaluate(() => window.__tp.test.v1.sessionsOpen.set(true));
 	await page.waitForTimeout(900);
 	await page.locator('#session-save').click();
 	await page.waitForTimeout(400);
@@ -777,7 +777,7 @@ h.run(async () => {
 	// the view is a remembered pref and only LIST rows carry .session-row - a grid card
 	// is .session-card alone, so pin the view rather than inherit whichever one a
 	// previous section left behind
-	await page.evaluate(() => window.__stores.sessionsOpen.set(true));
+	await page.evaluate(() => window.__tp.test.v1.sessionsOpen.set(true));
 	await page.waitForTimeout(700);
 	await page.locator('#session-view-list').click();
 	await page.waitForTimeout(500);
@@ -833,7 +833,7 @@ h.run(async () => {
 			(sAfter === sBefore ? 'identical' : 'CHANGED') +
 			')'
 	);
-	await page.evaluate(() => window.__stores.sessionsOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.sessionsOpen.set(false));
 	await page.waitForTimeout(400);
 
 	// and nothing may be mounted when section 17 starts either: it counts the volume ROWS,
@@ -842,8 +842,8 @@ h.run(async () => {
 	// where the undivided suite reached for Yard, which the editing half now owns.
 	await page.evaluate(async () => {
 		let mv;
-		window.__stores.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
-		for (const v of mv) await window.__stores.mountedVolumes.unmountVolume(v.id);
+		window.__tp.test.v1.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
+		for (const v of mv) await window.__tp.test.v1.mountedVolumes.unmountVolume(v.id);
 	});
 	// ---- 17. the "＋ Mount project…" row is pinned to the TOP of the group -----------
 	// User: "'mount project...' button should be always on top of mounted projects in
@@ -852,12 +852,12 @@ h.run(async () => {
 	// ---------------------------------------------------------------------------------
 	for (const name of ['Wharf', 'Depot']) {
 		const meta = await page.evaluate(async (n) => {
-			await window.__stores.sessions.loadSessions();
+			await window.__tp.test.v1.sessions.loadSessions();
 			let v;
-			window.__stores.sessions.sessions.subscribe((x) => (v = x))();
+			window.__tp.test.v1.sessions.sessions.subscribe((x) => (v = x))();
 			return (v ?? []).find((m) => m.name === n && m.hasLibrary)?.id ?? null;
 		}, name);
-		if (meta) await page.evaluate((id) => window.__stores.mountedVolumes.mountVolume(id), meta);
+		if (meta) await page.evaluate((id) => window.__tp.test.v1.mountedVolumes.mountVolume(id), meta);
 	}
 	await h.eventually(() => vols(A), (l) => l.length === 2, 'premise: two projects are mounted', 20000);
 	await page.waitForTimeout(500);
@@ -952,7 +952,7 @@ h.run(async () => {
 		for (let i = 0; i < 16; i++) {
 			const id = 'ceiling-' + i;
 			ids.push(id);
-			await window.__stores.idb.idbPut('session:' + id, {
+			await window.__tp.test.v1.idb.idbPut('session:' + id, {
 				id,
 				name: 'Ceiling ' + i,
 				createdAt: 1000 + i,
@@ -1019,14 +1019,14 @@ h.run(async () => {
 	);
 	await closeMenu(page);
 	await page.evaluate(async (ids) => {
-		for (const id of ids) await window.__stores.idb.idbDelete('session:' + id);
-		await window.__stores.sessions.loadSessions();
+		for (const id of ids) await window.__tp.test.v1.idb.idbDelete('session:' + id);
+		await window.__tp.test.v1.sessions.loadSessions();
 	}, fakeIds);
 	await page.waitForTimeout(600);
 	await page.evaluate(async () => {
 		let mv;
-		window.__stores.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
-		for (const v of mv) await window.__stores.mountedVolumes.unmountVolume(v.id);
+		window.__tp.test.v1.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
+		for (const v of mv) await window.__tp.test.v1.mountedVolumes.unmountVolume(v.id);
 	});
 	await page.waitForTimeout(500);
 
@@ -1051,29 +1051,29 @@ h.run(async () => {
 	const worldNames = (p) =>
 		p.page.evaluate(() => {
 			let g;
-			window.__stores.objectsGroup.subscribe((x) => (g = x))();
+			window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 			return (g?.children ?? []).map((c) => c.name || c.type).sort();
 		});
 	const at = (p) =>
 		p.page.evaluate(() => {
 			let v;
-			window.__stores.levels.currentLevel.subscribe((x) => (v = x))();
+			window.__tp.test.v1.levels.currentLevel.subscribe((x) => (v = x))();
 			return v;
 		});
 	const dialogOf = (p) =>
 		p.page.evaluate(() => {
 			let d;
-			window.__stores.confirmDialog.confirmDialog.subscribe((x) => (d = x))();
+			window.__tp.test.v1.confirmDialog.confirmDialog.subscribe((x) => (d = x))();
 			return d && { title: d.title, choices: (d.choices ?? []).map((c) => c.label) };
 		});
 	const answerDialog = (p, value) =>
-		p.page.evaluate((v) => window.__stores.confirmDialog.resolveConfirm(v), value);
+		p.page.evaluate((v) => window.__tp.test.v1.confirmDialog.resolveConfirm(v), value);
 	const volCard = (p, name) =>
 		p.page.locator('.ex-cards .explorer-card').filter({ hasText: name }).first();
 
 	// a clean slate, then a real scene worth opening and one file of another kind beside it
 	await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		const uuids = (g?.children ?? []).map((c) => c.uuid);
@@ -1084,7 +1084,7 @@ h.run(async () => {
 	});
 	await page.waitForTimeout(700);
 	const vaultNames = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1300));
 		s.commandsHandler.sceneCommand('/create sphere');
@@ -1104,7 +1104,7 @@ h.run(async () => {
 	// it) — so the live copy is cleared here by hand. That is what leaves the mount
 	// holding the only copy of the scene, which the premise below turns on.
 	await saveProject(A, 'Cellar');
-	await page.evaluate(() => window.__stores.explorer.clearLibrary());
+	await page.evaluate(() => window.__tp.test.v1.explorer.clearLibrary());
 	await page.waitForTimeout(700);
 	await mountThroughUi(A, 'Cellar');
 	const cellar = (await vols(A)).find((v) => v.name === 'Cellar');
@@ -1113,12 +1113,12 @@ h.run(async () => {
 		`premise: the mount holds the scene and a file of another kind (${cellar && cellar.items.join(', ')})`
 	);
 	const vaultRow = await page.evaluate((volId) => {
-		const rows = window.__stores.mountedVolumes.volumeItems(volId);
+		const rows = window.__tp.test.v1.mountedVolumes.volumeItems(volId);
 		const row = rows.find((r) => r.name === 'Vault.tpscene');
 		return row && { id: row.id, hash: row.hash, kind: row.kind };
 	}, cellar.id);
 	const audioKind = await page.evaluate((volId) => {
-		const row = window.__stores.mountedVolumes.volumeItems(volId).find((r) => r.name === 'chime.mp3');
+		const row = window.__tp.test.v1.mountedVolumes.volumeItems(volId).find((r) => r.name === 'chime.mp3');
 		return row && row.kind;
 	}, cellar.id);
 	h.check(vaultRow?.kind === 'scene', `premise: the row's kind really is 'scene' (${vaultRow?.kind})`);
@@ -1127,22 +1127,22 @@ h.run(async () => {
 	const inLibrary = (p, hash) =>
 		p.page.evaluate((h2) => {
 			let items;
-			window.__stores.explorer.explorerItems.subscribe((x) => (items = x))();
-			return (items ?? []).some((i) => i.hash === h2) || !!window.__stores.explorer.itemByHash(h2);
+			window.__tp.test.v1.explorer.explorerItems.subscribe((x) => (items = x))();
+			return (items ?? []).some((i) => i.hash === h2) || !!window.__tp.test.v1.explorer.itemByHash(h2);
 		}, hash);
 	h.check(
 		!(await inLibrary(A, vaultRow.hash)),
 		'premise: the scene is in the MOUNT and not in the library — so nothing here can be travel-by-hash in disguise'
 	);
 
-	await page.evaluate((key) => window.__stores.explorer.activeFolder.set(key), 'vol:' + cellar.id);
+	await page.evaluate((key) => window.__tp.test.v1.explorer.activeFolder.set(key), 'vol:' + cellar.id);
 	await page.waitForTimeout(700);
 
 	// --- it opens ---------------------------------------------------------------------
 	// nothing on screen and no identity, so `sceneAtRisk` is false and the guard steps
 	// aside: this measures the OPEN on its own, before the guard gets its own checks.
 	await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		const uuids = (g?.children ?? []).map((c) => c.uuid);
@@ -1200,9 +1200,9 @@ h.run(async () => {
 	);
 
 	// --- the user's second ask: it asks about unsaved work first -----------------------
-	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create cone'));
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create cone'));
 	await page.waitForTimeout(1400);
-	await page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await page.waitForTimeout(300);
 	const beforeGuard = await worldNames(A);
 	const identBefore = JSON.stringify(await at(A));
@@ -1249,13 +1249,13 @@ h.run(async () => {
 	// raced it under batch load (composed-run flake, verdict-probed: the logic was right,
 	// the timer simply had not fired when the edit landed)
 	await h.eventually(
-		() => page.evaluate(() => window.__stores.levels.saveIntoProjectArmed()),
+		() => page.evaluate(() => window.__tp.test.v1.levels.saveIntoProjectArmed()),
 		(v) => v === true,
 		'premise: the save-into-project one-shot is armed',
 		15000
 	);
 	await clearToasts(A);
-	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create cylinder'));
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create cylinder'));
 	await h.eventually(
 		() => toasts(A),
 		(t) => t.some((x) => /not part of your project yet/.test(x)),
@@ -1263,7 +1263,7 @@ h.run(async () => {
 		20000
 	);
 	const saved = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let now;
 		s.levels.currentLevel.subscribe((x) => (now = x))();
 		// exactly what the toast's own button calls
@@ -1296,7 +1296,7 @@ h.run(async () => {
 	// --- and every OTHER kind keeps the toast ------------------------------------------
 	// PAIRED WITH A PRESENCE CHECK: an absence check on its own passes against a row that
 	// never rendered, which is the one way this could read green while the grid is empty.
-	await page.evaluate((key) => window.__stores.explorer.activeFolder.set(key), 'vol:' + cellar.id);
+	await page.evaluate((key) => window.__tp.test.v1.explorer.activeFolder.set(key), 'vol:' + cellar.id);
 	await page.waitForTimeout(700);
 	h.check(
 		(await volCard(A, 'chime.mp3').count()) === 1,
@@ -1345,8 +1345,8 @@ h.run(async () => {
 
 	await page.evaluate(async () => {
 		let mv;
-		window.__stores.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
-		for (const v of mv) await window.__stores.mountedVolumes.unmountVolume(v.id);
+		window.__tp.test.v1.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
+		for (const v of mv) await window.__tp.test.v1.mountedVolumes.unmountVolume(v.id);
 	});
 	await page.waitForTimeout(400);
 

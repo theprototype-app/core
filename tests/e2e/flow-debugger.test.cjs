@@ -20,21 +20,21 @@ const h = require('./helpers.cjs');
 const store = (peer, name) =>
 	peer.page.evaluate((n) => {
 		let v;
-		window.__stores[n].subscribe((x) => (v = x))();
+		window.__tp.test.v1[n].subscribe((x) => (v = x))();
 		return v;
 	}, name);
 const liveCount = async (peer, id) => (await store(peer, 'flowTriggers'))[id]?.count ?? 0;
-const dbgRt = (peer) => peer.page.evaluate(() => window.__stores.flowRuntime.flowDebugRuntime());
-const dbgState = (peer) => peer.page.evaluate(() => window.__stores.flowDebug.flowDebugState());
+const dbgRt = (peer) => peer.page.evaluate(() => window.__tp.test.v1.flowRuntime.flowDebugRuntime());
+const dbgState = (peer) => peer.page.evaluate(() => window.__tp.test.v1.flowDebug.flowDebugState());
 const viewCount = async (peer, id) => (await dbgRt(peer)).viewTriggers?.[id]?.count ?? 0;
-const varOf = (peer, name) => peer.page.evaluate((n) => window.__stores.gameState.gameVar(n, 0), name);
-const setPlay = (peer, state) => peer.page.evaluate((s) => window.__stores.isLocked.set(s), state);
+const varOf = (peer, name) => peer.page.evaluate((n) => window.__tp.test.v1.gameState.gameVar(n, 0), name);
+const setPlay = (peer, state) => peer.page.evaluate((s) => window.__tp.test.v1.isLocked.set(s), state);
 const pulse = (peer, id) =>
-	peer.page.evaluate((nid) => window.__stores.flowRuntime.applyNodeTrigger(nid, (Date.now() % 86400000) / 1000, true), id);
+	peer.page.evaluate((nid) => window.__tp.test.v1.flowRuntime.applyNodeTrigger(nid, (Date.now() % 86400000) / 1000, true), id);
 const spinOf = (peer, uuid) =>
 	peer.page.evaluate((id) => {
 		let group;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		return group?.getObjectByProperty('uuid', id)?.rotation.y ?? null;
 	}, uuid);
 const node = (id, type, data, x = 0, y = 0) => ({ id, type, position: { x, y }, data: { type, ...(data ?? {}) }, class: 'w-[150px]' });
@@ -47,7 +47,7 @@ const edge = (source, target, targetHandle) => ({
 const addNodes = (peer, nodes, edges) =>
 	peer.page.evaluate(
 		([nodes, edges]) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let next = { nodes: [], edges: [] };
 			s.flowGraphs.update((graphs) => {
 				const g = graphs.scene ?? { nodes: [], edges: [] };
@@ -70,20 +70,20 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
 	for (const p of [A, B])
-		await p.page.waitForFunction(() => !!window.__stores?.flowDebug && !!window.__stores?.flowRuntime?.flowDebugRuntime, null, { timeout: 30000 });
+		await p.page.waitForFunction(() => !!window.__tp?.test.v1?.flowDebug && !!window.__tp?.test.v1?.flowRuntime?.flowDebugRuntime, null, { timeout: 30000 });
 	h.check(true, 'premise: both peers expose the debugger hooks');
 	await h.connect(A, B);
 
 	for (const p of [A, B])
 		await p.page.evaluate(() => {
-			window.__stores.clearGraphs();
-			window.__stores.flowTriggers.set({});
-			window.__stores.gameState.clearGameState();
-			window.__stores.isLocked.set(null);
+			window.__tp.test.v1.clearGraphs();
+			window.__tp.test.v1.flowTriggers.set({});
+			window.__tp.test.v1.gameState.clearGameState();
+			window.__tp.test.v1.isLocked.set(null);
 		});
 	await A.page.waitForTimeout(900);
 	const box = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1200));
 		let group;
@@ -105,11 +105,11 @@ h.run(async () => {
 		],
 		[edge('dbg-click', 'dbg-count', 'trigger'), edge('dbg-count', 'dbg-map', 'a'), edge('dbg-click', 'dbg-score', 'trigger'), edge('dbg-spin', 'dbg-sel')]
 	);
-	await A.page.evaluate(() => window.__stores.gameState.setGameVar('score', 0));
+	await A.page.evaluate(() => window.__tp.test.v1.gameState.setGameVar('score', 0));
 	await A.page.waitForTimeout(1500);
 	const idsB = await B.page.evaluate(() => {
 		let g;
-		window.__stores.flowGraphs.subscribe((v) => (g = v))();
+		window.__tp.test.v1.flowGraphs.subscribe((v) => (g = v))();
 		return (g.scene?.nodes ?? []).map((n) => n.id);
 	});
 	h.check(idsB.includes('dbg-count') && idsB.includes('dbg-score'), `premise: B holds the graph (${idsB.length} nodes)`);
@@ -123,7 +123,7 @@ h.run(async () => {
 	h.check(idle.playing === true && idle.armed === false, `idle in Play: the runtime's one test is false (armed=${idle.armed}, playing=${idle.playing})`);
 
 	await A.page.evaluate(() => {
-		const d = window.__stores.flowDebug;
+		const d = window.__tp.test.v1.flowDebug;
 		d.toggleBreakpoint('dbg-count', true);
 		d.addWatch({ kind: 'var', key: 'score' });
 		d.setDebugOpen(true);
@@ -155,7 +155,7 @@ h.run(async () => {
 	h.check(!!(await store(B, 'playPointerFree')) === false, "B's pointer is untouched");
 	await h.eventually(() => text(A, '#debug-at'), (t) => /Counter/.test(t ?? ''), 'the panel says where it stopped');
 	h.check((await A.page.getAttribute('#debug-status', 'data-mode')) === 'paused', 'the status row reads paused');
-	const w1 = await A.page.evaluate(() => window.__stores.flowDebug.flowDebugState().values);
+	const w1 = await A.page.evaluate(() => window.__tp.test.v1.flowDebug.flowDebugState().values);
 	const clickWire = w1.inputs.find((r) => r.nodeId === 'dbg-click');
 	const outWire = w1.outputs.find((r) => r.nodeId === 'dbg-map');
 	h.check(w1.focus?.id === 'dbg-count', `the wires shown are the Counter's (${w1.focus?.id})`);
@@ -171,7 +171,7 @@ h.run(async () => {
 	const rt2 = await dbgRt(A);
 	h.check(rt2.paused === true && rt2.queued.length === 0 && rt2.steps === 1, `still paused, nothing waiting, one step (${rt2.queued.length}, ${rt2.steps})`);
 	h.check((await viewCount(A, 'dbg-count')) === 1, "the Counter reads 1 in A's view");
-	const w2 = await A.page.evaluate(() => window.__stores.flowDebug.flowDebugState().values);
+	const w2 = await A.page.evaluate(() => window.__tp.test.v1.flowDebug.flowDebugState().values);
 	const clickWire2 = w2.inputs.find((r) => r.nodeId === 'dbg-click');
 	const outWire2 = w2.outputs.find((r) => r.nodeId === 'dbg-map');
 	h.check(clickWire2?.high === true, `the click wire pulses (${clickWire2?.text})`);
@@ -185,10 +185,10 @@ h.run(async () => {
 		const dir = '/home/deck/.code/lanes-30/after-48/48-debugger';
 		const panel = A.page.locator('#flow-debugger');
 		await panel.screenshot({ path: dir + '/01-debugger-paused-dark.png' }).catch(() => {});
-		await A.page.evaluate(() => window.__stores.themes.theme.set('light'));
+		await A.page.evaluate(() => window.__tp.test.v1.themes.theme.set('light'));
 		await A.page.waitForTimeout(400);
 		await panel.screenshot({ path: dir + '/01-debugger-paused-light.png' }).catch(() => {});
-		await A.page.evaluate(() => window.__stores.themes.theme.set('dark'));
+		await A.page.evaluate(() => window.__tp.test.v1.themes.theme.set('dark'));
 		await A.page.waitForTimeout(300);
 	}
 	await A.page.waitForTimeout(1200);
@@ -223,7 +223,7 @@ h.run(async () => {
 	h.check(Math.abs((await spinOf(A, box)) - a4) > 0.05, "A's box turns again");
 	h.check((await store(A, 'playPointerFree')) === false, 'the pointer goes back to the game');
 
-	await A.page.evaluate(() => window.__stores.flowDebug.toggleBreakpoint('dbg-count', false));
+	await A.page.evaluate(() => window.__tp.test.v1.flowDebug.toggleBreakpoint('dbg-count', false));
 	await A.page.waitForTimeout(300);
 	await pulse(A, 'dbg-click');
 	await A.page.waitForTimeout(900);
@@ -238,7 +238,7 @@ h.run(async () => {
 	h.check((await dbgRt(A)).paused === false, 'leaving Play rejoins the live game');
 
 	// ---- 5. idle again ----------------------------------------------------------------------
-	await A.page.evaluate(() => window.__stores.flowDebug.setDebugOpen(false));
+	await A.page.evaluate(() => window.__tp.test.v1.flowDebug.setDebugOpen(false));
 	await setPlay(A, true);
 	await A.page.waitForTimeout(600);
 	const idle2 = await dbgState(A);

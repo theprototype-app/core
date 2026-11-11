@@ -21,9 +21,9 @@ const { AxeBuilder } = require('@axe-core/playwright');
 
 const S = (page, fn, arg) => page.evaluate(fn, arg);
 const read = (page, path) =>
-	S(page, (path) => new Promise((r) => path.split('.').reduce((o, k) => o[k], window.__stores).subscribe((v) => r(v))()), path);
+	S(page, (path) => new Promise((r) => path.split('.').reduce((o, k) => o[k], window.__tp?.test.v1).subscribe((v) => r(v))()), path);
 const graph = (page, id = 'scene') =>
-	S(page, (id) => new Promise((r) => window.__stores.flowGraphs.subscribe((g) => r(JSON.parse(JSON.stringify(g[id] ?? { nodes: [], edges: [] }))))()), id);
+	S(page, (id) => new Promise((r) => window.__tp.test.v1.flowGraphs.subscribe((g) => r(JSON.parse(JSON.stringify(g[id] ?? { nodes: [], edges: [] }))))()), id);
 const edgeIds = (g) => g.edges.map((e) => e.id).sort();
 const handle = (node, kind) => `.svelteFlow .svelte-flow__handle.${kind}[data-nodeid="${node}"]`;
 const menuRows = async (page) => (await page.locator('[role="menu"] .ctx-match').allTextContents()).map((t) => t.replace(/\s*▸\s*/g, ' ▸ ').replace(/\s+/g, ' ').trim());
@@ -34,10 +34,10 @@ async function shotPair(page, name) {
 	if (!SHOTS) return;
 	const path = require('path');
 	await page.screenshot({ path: path.join(SHOTS, `${name}-dark.png`) });
-	await page.evaluate(() => window.__stores.themes.theme.set('light'));
+	await page.evaluate(() => window.__tp.test.v1.themes.theme.set('light'));
 	await page.waitForTimeout(400);
 	await page.screenshot({ path: path.join(SHOTS, `${name}-light.png`) });
-	await page.evaluate(() => window.__stores.themes.theme.set('dark'));
+	await page.evaluate(() => window.__tp.test.v1.themes.theme.set('dark'));
 	await page.waitForTimeout(300);
 }
 
@@ -112,7 +112,7 @@ h.run(async () => {
 
 	// two boxes: `box` is what the selector names, `spinner` carries a Spin in its own flow
 	const ids = await S(p, async () => {
-		const st = window.__stores;
+		const st = window.__tp?.test.v1;
 		st.commandsHandler.sceneCommand('/create box');
 		st.commandsHandler.sceneCommand('/create box');
 		const g = await new Promise((r) => st.objectsGroup.subscribe(r)());
@@ -136,17 +136,17 @@ h.run(async () => {
 			]
 		}
 	};
-	await S(p, (doc) => window.__stores.restoreGraphs(JSON.parse(JSON.stringify(doc))), DOC);
-	await S(p, (id) => window.__stores.nodesHandler.sendNodes(id), B.id);
+	await S(p, (doc) => window.__tp.test.v1.restoreGraphs(JSON.parse(JSON.stringify(doc))), DOC);
+	await S(p, (id) => window.__tp.test.v1.nodesHandler.sendNodes(id), B.id);
 	await h.eventually(() => graph(B.page), (g) => g.nodes.length === 3, 'the peer holds the graph');
 	await p.locator('p[title="Node editor (N)"]').click();
 	await p.waitForTimeout(1200);
 
 	// --- §1 F24 ------------------------------------------------------------------------------
 	console.log('\n=== §1 F24 reversed trigger wire ===');
-	const firedBefore = await S(p, (uuid) => window.__stores.flowRuntime.fireObjectClick(uuid), ids.box);
+	const firedBefore = await S(p, (uuid) => window.__tp.test.v1.flowRuntime.fireObjectClick(uuid), ids.box);
 	h.check(firedBefore === 0, `§1 the reversed wire: a click on the box reaches no On Click (${firedBefore})`);
-	const lint = await S(p, () => new Promise((r) => window.__stores.flowGraphs.subscribe((g) => r(window.__stores.flowLint.lintFlowGraph(g.scene.nodes, g.scene.edges)))()));
+	const lint = await S(p, () => new Promise((r) => window.__tp.test.v1.flowGraphs.subscribe((g) => r(window.__tp.test.v1.flowLint.lintFlowGraph(g.scene.nodes, g.scene.edges)))()));
 	h.check(lint.length === 1 && lint[0].edgeId === 'e-sel-click' && lint[0].code === 'reversed-trigger', `§1 the lint (the agents' function) names the wire (${JSON.stringify(lint.map((f) => f.edgeId))})`);
 	const chip = p.locator('.flow-lint-chip[data-edge-id="e-sel-click"]');
 	await chip.waitFor({ timeout: 8000 });
@@ -174,7 +174,7 @@ h.run(async () => {
 	let g = await graph(p);
 	h.check(edgeIds(g).includes('e-click-sel') && !edgeIds(g).includes('e-sel-click'), `§1 Reverse turns the wire round (${edgeIds(g).join(',')})`);
 	h.check((await p.locator('.flow-lint-chip').count()) === 0, '§1 the warning is gone');
-	const firedAfter = await S(p, (uuid) => window.__stores.flowRuntime.fireObjectClick(uuid), ids.box);
+	const firedAfter = await S(p, (uuid) => window.__tp.test.v1.flowRuntime.fireObjectClick(uuid), ids.box);
 	h.check(firedAfter === 1, `§1 after Reverse the click on the box fires the On Click (${firedAfter})`);
 	await h.eventually(() => graph(B.page), (gb) => edgeIds(gb).includes('e-click-sel') && !edgeIds(gb).includes('e-sel-click'), '§1 the reversed wire replicates');
 	const pane0 = await p.locator('.svelteFlow .svelte-flow__pane').boundingBox();
@@ -252,7 +252,7 @@ h.run(async () => {
 
 	// --- §3 F7 live state on the cards --------------------------------------------------------
 	console.log('\n=== §3 F7 live card state ===');
-	await S(p, (uuid) => window.__stores.flowRuntime.fireObjectClick(uuid), ids.box);
+	await S(p, (uuid) => window.__tp.test.v1.flowRuntime.fireObjectClick(uuid), ids.box);
 	const live = (id) => p.locator(`.flow-live-state[data-node-id="${id}"]`).textContent().catch(() => null);
 	await h.eventually(() => live('cnt'), (t) => /^count [1-9]/.test(t ?? ''), '§3 the counter card shows its count');
 	await h.eventually(() => live('click'), (t) => /fired/.test(t ?? ''), '§3 the On Click card shows its last pulse');
@@ -260,13 +260,13 @@ h.run(async () => {
 	// --- §4 F5 the capture stack --------------------------------------------------------------
 	console.log('\n=== §4 F5 capture stack ===');
 	await S(p, (uuid) => {
-		const st = window.__stores;
+		const st = window.__tp?.test.v1;
 		st.flowGraphsCtl.createObjectGraph(uuid);
 		st.nodesHandler.createFlowNode({ id: 'pp1', type: 'pathpatrol', position: { x: 40, y: 40 }, data: { type: 'pathpatrol', points: [], speed: 2, mode: 'loop' } }, uuid);
 		st.objectActions.selectObject(uuid);
 	}, ids.box);
 	await p.waitForTimeout(800);
-	await S(p, () => window.__stores.pathCapture.togglePathCapture('pp1'));
+	await S(p, () => window.__tp.test.v1.pathCapture.togglePathCapture('pp1'));
 	await p.waitForTimeout(300);
 	await h.eventually(() => live('pp1'), (t) => t === 'placing points', '§3/F7 the capturing Path patrol card says so');
 	const banner = p.locator('#capture-banner');
@@ -280,7 +280,7 @@ h.run(async () => {
 	await p.mouse.click(spot1.x, spot1.y);
 	await p.waitForTimeout(300);
 	h.check((await pts()) === 1, '§4 with only waypoints armed, a ground click adds a waypoint');
-	await S(p, () => window.__stores.measure.startMeasure());
+	await S(p, () => window.__tp.test.v1.measure.startMeasure());
 	await p.waitForTimeout(300);
 	h.check((await banner.getAttribute('data-capture')) === 'measure' && (await banner.getAttribute('data-depth')) === '2', '§4 Measure on top: the banner names it and counts 2 armed');
 	h.check(/then placing waypoints/.test((await p.locator('#capture-banner-below').textContent()) ?? ''), '§4 the banner says what is still armed underneath');
@@ -288,7 +288,7 @@ h.run(async () => {
 	const spot2 = await groundSpot(p, 1.5);
 	await p.mouse.click(spot2.x, spot2.y);
 	await p.waitForTimeout(300);
-	const mPoints = await S(p, () => new Promise((r) => window.__stores.measure.measurement.subscribe((m) => r(m?.points?.length ?? 0))()));
+	const mPoints = await S(p, () => new Promise((r) => window.__tp.test.v1.measure.measurement.subscribe((m) => r(m?.points?.length ?? 0))()));
 	h.check((await pts()) === 1 && mPoints === 1, `§4 the TOP capture owns the click: a measure point, no waypoint (waypoints ${await pts()}, measure ${mPoints})`);
 	await p.keyboard.press('Escape');
 	await p.waitForTimeout(300);
@@ -305,13 +305,13 @@ h.run(async () => {
 	await p.locator('p[title="Node editor (N)"]').click();
 	await p.waitForTimeout(1000);
 	await S(p, (uuid) => {
-		const st = window.__stores;
+		const st = window.__tp?.test.v1;
 		st.flowGraphsCtl.createObjectGraph(uuid);
 		st.nodesHandler.createFlowNode({ id: 'sp1', type: 'spin', position: { x: 40, y: 40 }, data: { type: 'spin', speed: 2 } }, uuid);
 		st.objectActions.selectObject(uuid);
 	}, ids.spinner);
 	await p.waitForTimeout(900);
-	const quat = () => S(p, (uuid) => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g.getObjectByProperty('uuid', uuid).quaternion.toArray()))()), ids.spinner);
+	const quat = () => S(p, (uuid) => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g.getObjectByProperty('uuid', uuid).quaternion.toArray()))()), ids.spinner);
 	const moved = (a, b) => a.some((v, i) => Math.abs(v - b[i]) > 1e-4);
 	let q1 = await quat();
 	await p.waitForTimeout(400);
@@ -325,7 +325,7 @@ h.run(async () => {
 	h.check(!moved(q1, q2) && Math.abs(q1[3]) > 0.9999, `§5 off: the object rests at its authored pose (${q1.map((v) => v.toFixed(3)).join(',')})`);
 	h.check((await p.locator('#flow-animate-edit').getAttribute('aria-pressed')) === 'false', '§5 the control says it is off (aria-pressed)');
 	await h.eventually(() => live('sp1'), (t) => t === 'resting until Play', '§5 the Spin card says it rests until Play');
-	h.check((await S(p, () => window.__stores.safeStorage?.getItem?.('flow:animateInEditor') ?? localStorage.getItem('flow:animateInEditor'))) === 'false', '§5 the choice is remembered (local)');
+	h.check((await S(p, () => window.__tp.test.v1.safeStorage?.getItem?.('flow:animateInEditor') ?? localStorage.getItem('flow:animateInEditor'))) === 'false', '§5 the choice is remembered (local)');
 	await p.locator('#flow-animate-edit').click();
 	await p.waitForTimeout(300);
 	q1 = await quat();
@@ -335,12 +335,12 @@ h.run(async () => {
 
 	// --- §6 F1 Tab + touch -------------------------------------------------------------------
 	console.log('\n=== §6 F1 Tab and touch ===');
-	await S(p, () => window.__stores.objectActions.applySelectionSet([]));
+	await S(p, () => window.__tp.test.v1.objectActions.applySelectionSet([]));
 	await p.waitForTimeout(800);
-	await S(p, () => window.__stores.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: n.id === 'click' }))));
+	await S(p, () => window.__tp.test.v1.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: n.id === 'click' }))));
 	const paneT = await p.locator('.svelteFlow .svelte-flow__pane').boundingBox();
 	await p.mouse.move(paneT.x + paneT.width * 0.6, paneT.y + paneT.height * 0.5);
-	await S(p, () => window.__stores.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: n.id === 'click' }))));
+	await S(p, () => window.__tp.test.v1.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: n.id === 'click' }))));
 	await p.evaluate(() => document.activeElement?.blur?.());
 	await p.keyboard.press('Tab');
 	await p.waitForTimeout(400);

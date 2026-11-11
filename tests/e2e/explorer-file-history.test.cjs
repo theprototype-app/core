@@ -23,7 +23,7 @@ const pngIn = (page, colour, name) =>
 			ctx.fillStyle = colour;
 			ctx.fillRect(0, 0, 32, 24);
 			const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
-			const rec = await window.__stores.explorer.addItemFromBytes(await blob.arrayBuffer(), name, null, { imported: true });
+			const rec = await window.__tp.test.v1.explorer.addItemFromBytes(await blob.arrayBuffer(), name, null, { imported: true });
 			return { id: rec.id, hash: rec.hash };
 		},
 		{ colour, name }
@@ -32,7 +32,7 @@ const pngIn = (page, colour, name) =>
 h.run(async () => {
 	const browser = await h.launch();
 	const { page } = await h.setupPage(browser, 'A', { context: { viewport: { width: 1600, height: 950 } } });
-	await S(page, () => window.__stores.explorerClose.set(false));
+	await S(page, () => window.__tp.test.v1.explorerClose.set(false));
 	// docked by default (#explorer-list), floating otherwise (#explorer-window)
 	await page.waitForSelector('#explorer-window, #explorer-list', { timeout: 20000 });
 	await page.waitForTimeout(800);
@@ -56,7 +56,7 @@ h.run(async () => {
 	const after = await S(
 		page,
 		async ({ id }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const c = document.createElement('canvas');
 			c.width = 32;
 			c.height = 24;
@@ -86,13 +86,13 @@ h.run(async () => {
 	);
 	h.check(after.list.length >= 2 && rows.length === after.list.length, `2.1 File history lists the image's versions (${JSON.stringify(rows)})`);
 	h.check(rows[0]?.label?.includes('current') && !rows[0]?.restore && rows.slice(1).every((r) => r.restore), '2.2 newest first, the current one marked, the rest restorable');
-	const hashBefore = await S(page, (id) => window.__stores.explorer.itemById?.(id)?.hash ?? null, red.id);
+	const hashBefore = await S(page, (id) => window.__tp.test.v1.explorer.itemById?.(id)?.hash ?? null, red.id);
 	await page.locator('#explorer-file-history [data-ih-restore]').last().click();
 	// a restore re-reads the version and updates the textures that use it: seconds on a loaded box, so poll
 	let hashAfter = hashBefore;
 	for (let i = 0; i < 40 && hashAfter === hashBefore; i++) {
 		await page.waitForTimeout(250);
-		hashAfter = await S(page, (id) => window.__stores.explorer.itemById?.(id)?.hash ?? null, red.id);
+		hashAfter = await S(page, (id) => window.__tp.test.v1.explorer.itemById?.(id)?.hash ?? null, red.id);
 	}
 	h.check(hashAfter === red.hash && hashAfter !== hashBefore, `2.3 Restore puts the original back (${hashBefore} -> ${hashAfter}, original ${red.hash})`);
 	await pickCard(plain.id);
@@ -104,7 +104,7 @@ h.run(async () => {
 
 	// --- 3: a kind with no history ---
 	const text = await S(page, async () => {
-		const rec = await window.__stores.explorer.addItemFromBytes(new TextEncoder().encode('hello').buffer, 'notes.txt', null, { imported: true });
+		const rec = await window.__tp.test.v1.explorer.addItemFromBytes(new TextEncoder().encode('hello').buffer, 'notes.txt', null, { imported: true });
 		return { id: rec.id };
 	});
 	await pickCard(text.id);
@@ -113,12 +113,12 @@ h.run(async () => {
 
 	// --- 4: a scene's Version history lands on the tab ---
 	await S(page, async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await s.levels.saveSceneAsLevel('History scene');
 	});
 	await page.waitForTimeout(1500);
-	const sceneId = await S(page, () => window.__stores.levels.levelItems().find((i) => i.name.startsWith('History scene'))?.id ?? null);
+	const sceneId = await S(page, () => window.__tp.test.v1.levels.levelItems().find((i) => i.name.startsWith('History scene'))?.id ?? null);
 	h.check(!!sceneId, '4.0 (premise) the scene was saved into the library');
 	if (sceneId) {
 		await h.openWsMode(page, ':is(#explorer-window, #explorer-list)', 'props');

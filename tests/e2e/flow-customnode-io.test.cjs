@@ -9,7 +9,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.customNodes.applyNodeDef({
 			id: 'def1', name: 'MyNode', code: 'return (a??0)',
 			params: [
@@ -36,7 +36,7 @@ h.run(async () => {
 
 	// edit the def: remove 'size' -> its socket disappears + the edge prunes
 	const pruned = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.customNodes.applyNodeDef({
 			id: 'def1', name: 'MyNode', code: 'return (a??0)',
 			params: [{ key: 'speed', kind: 'range', min: 0, max: 10, step: 1 }]
@@ -54,7 +54,7 @@ h.run(async () => {
 
 	// snapshot post-pass: a stale snapshot cannot resurrect the dangling edge
 	const healed = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.nodesHandler.applyNodesSnapshot(
 			[],
 			[{ id: 'e-n1-cn1.size', source: 'n1', target: 'cn1', targetHandle: 'size' }]

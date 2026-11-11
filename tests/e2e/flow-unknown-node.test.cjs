@@ -20,7 +20,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	const peer = await h.setupPage(browser, 'unknown-node');
 	const page = peer.page;
-	await page.waitForFunction(() => !!window.__stores?.sessions, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.sessions, { timeout: 30000 });
 
 	// ---- 0. open the Node editor the way a user does --------------------------
 	await page.locator('p[title="Node editor (N)"]').click();
@@ -38,7 +38,7 @@ h.run(async () => {
 	// Measured once, on `setlook`. Checking the whole catalog costs the same line as
 	// checking one type, and covers every node added from here on.
 	const gap = await page.evaluate(() => {
-		const groups = window.__stores.nodeCatalog.nodeCatalog ?? [];
+		const groups = window.__tp.test.v1.nodeCatalog.nodeCatalog ?? [];
 		const catalog = groups.flatMap((g) => (g.items ?? []).map((n) => n.type)).filter(Boolean);
 		const renderable = new Set(window.__flowNodeTypes.live());
 		return { count: catalog.length, missing: catalog.filter((t) => !renderable.has(t)) };
@@ -54,7 +54,7 @@ h.run(async () => {
 	// module defines - which is what a .tpscene authored against a module produces on
 	// a machine that does not have it.
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.updateGraph(s.SCENE_GRAPH, () => ({
 			nodes: [
 				{ id: 'u1', type: 'dungeonspawner', position: { x: 60, y: 60 }, data: { type: 'dungeonspawner', rooms: 4 } },
@@ -98,10 +98,10 @@ h.run(async () => {
 	await badge.click();
 	await page.waitForTimeout(500);
 	h.check(
-		await page.evaluate(() => new Promise((r) => window.__stores.modulesOpen.subscribe((v) => r(v))())),
+		await page.evaluate(() => new Promise((r) => window.__tp.test.v1.modulesOpen.subscribe((v) => r(v))())),
 		'and clicking it opens the Modules manager'
 	);
-	await page.evaluate(() => window.__stores.modulesOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.modulesOpen.set(false));
 	await page.waitForTimeout(400);
 
 	// ---- 3. THE COUNTERFACTUAL: a module installed AFTER the dock mounted ----
@@ -114,7 +114,7 @@ h.run(async () => {
 	}));
 	h.check(!before.live && !before.atMount, 'premise: nothing knows the module type yet');
 	await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		// through initModules, so makeApi runs and the teardown journal records - the
 		// real path a community module takes, not the registry directly
 		await s.moduleSDK.initModules([
@@ -147,7 +147,7 @@ h.run(async () => {
 
 	// it renders as its module card, not as the warning card
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.updateGraph(s.SCENE_GRAPH, (g) => ({
 			nodes: [
 				...g.nodes,
@@ -169,7 +169,7 @@ h.run(async () => {
 	// Bug (2): module types were spread LAST, so a module claiming 'counter' silently
 	// replaced the core Counter card and left it unreachable with no clue why.
 	const shadow = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const logs = [];
 		const orig = console.log;
 		console.log = (...args) => {
@@ -206,7 +206,7 @@ h.run(async () => {
 	// serializeNode copies `data` wholesale, which is what makes "installing the module
 	// brings it back to life" a promise rather than a hope.
 	const round = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = s.sessions.buildSessionPayload('unknown round trip');
 		const saved = (payload.graphs?.[s.SCENE_GRAPH]?.nodes ?? []).find((/** @type {any} */ n) => n.id === 'u1');
 		return { type: saved?.type ?? null, rooms: saved?.data?.rooms ?? null };

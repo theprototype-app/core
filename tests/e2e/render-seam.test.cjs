@@ -108,14 +108,15 @@ h.run(async () => {
 	await p.waitForTimeout(400);
 	const frame2 = await h.grabFrame(A);
 	const memBefore = await counts();
-	const noise = await h.frameDelta(p, frame1.toString('base64'), frame2.toString('base64'));
+	// threshold 0: ANY channel change counts (the strict reading of "the same frame")
+	const noise = await h.frameDelta(p, frame1, frame2, 0);
 
 	const recycled = await T.run((t) => t.renderSeam.recycleMainRenderer());
 	h.check(recycled?.lost && recycled?.restored, `recycleMainRenderer lost and restored the context (${JSON.stringify(recycled)})`);
 	await p.waitForTimeout(2500);
 	const frame3 = await h.grabFrame(A);
 	const memAfter = await counts();
-	const delta = await h.frameDelta(p, frame2.toString('base64'), frame3.toString('base64'));
+	const delta = await h.frameDelta(p, frame2, frame3, 0);
 	console.log(`frames: noise ${JSON.stringify(noise)} · after recycle ${JSON.stringify(delta)}`);
 	h.check(!delta.error && delta.changed <= Math.max(noise.changed ?? 0, 0), `the frame after dispose + recreate is the same frame (${delta.changed} px changed, noise floor ${noise.changed})`);
 	const within = (/** @type {number} */ a, /** @type {number} */ b) => Math.abs(a - b) <= Math.max(1, 0.05 * Math.max(a, b));

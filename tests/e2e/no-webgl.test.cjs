@@ -67,7 +67,7 @@ h.run(async () => {
 	h.check((await page.locator('#viewport canvas').count()) === 0, '1h no 3D canvas was mounted');
 
 	// ---- 2. one report -------------------------------------------------------------------------
-	await page.waitForFunction(() => !!window.__stores?.errorReports, null, { timeout: 60000 }).catch(() => {});
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.errorReports, null, { timeout: 60000 }).catch(() => {});
 	await page.waitForTimeout(4000);
 	const kinds = requests.map((r) => (r && typeof r === 'object' ? r.kind + ': ' + r.msg : String(r)));
 	h.check(requests.length === 1 && requests[0]?.kind === 'webgl', `2a exactly one report, kind webgl (${JSON.stringify(kinds)})`);
@@ -82,7 +82,7 @@ h.run(async () => {
 	});
 	await page.waitForTimeout(1500);
 	const d = await page.evaluate(() => {
-		const x = window.__stores.errorReports?.errorReportsDebug;
+		const x = window.__tp.test.v1.errorReports?.errorReportsDebug;
 		return x ? { sent: x.sent, skipped: { ...x.skipped } } : null;
 	});
 	h.check(requests.length === 1 && (d?.skipped?.duplicate ?? 0) >= 2, `3a three's own message as an error and a rejection is the same report (${requests.length} sent, skipped ${JSON.stringify(d?.skipped)})`);

@@ -9,10 +9,10 @@ h.run(async () => {
 
 	// three named objects
 	await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		window.__stores.commandsHandler.sceneCommand('/create sphere');
-		window.__stores.commandsHandler.sceneCommand('/create cylinder');
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create sphere');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create cylinder');
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const kids = group.children.slice(-3);
 		kids[0].name = 'Barrel';
 		kids[1].name = 'Ball';
@@ -22,7 +22,7 @@ h.run(async () => {
 	});
 
 	const openMenu = () =>
-		A.page.evaluate(() => window.__stores.viewportMenu.set({ x: 200, y: 160, point: { x: 0, y: 0, z: 0 } }));
+		A.page.evaluate(() => window.__tp.test.v1.viewportMenu.set({ x: 200, y: 160, point: { x: 0, y: 0, z: 0 } }));
 
 	// --- hidden by default ---
 	await openMenu();
@@ -31,10 +31,10 @@ h.run(async () => {
 		[...document.querySelectorAll('[role="menuitem"]')].some((e) => e.textContent.includes('Search objects'))
 	);
 	h.check(!hidden, 'the Search objects entry is hidden by default');
-	await A.page.evaluate(() => window.__stores.viewportMenu.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.viewportMenu.set(null));
 
 	// --- appears after enabling the setting ---
-	await A.page.evaluate(() => window.__stores.objectSearchEnabled.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.objectSearchEnabled.set(true));
 	await openMenu();
 	await A.page.waitForTimeout(300);
 	const shown = await A.page.evaluate(() =>
@@ -43,7 +43,7 @@ h.run(async () => {
 	h.check(shown, 'enabling the setting adds the Search objects entry');
 
 	// --- clicking it opens the search box; typing filters ---
-	await A.page.evaluate(() => window.__stores.objectSearch.set({ x: 200, y: 160 }));
+	await A.page.evaluate(() => window.__tp.test.v1.objectSearch.set({ x: 200, y: 160 }));
 	await A.page.waitForTimeout(300);
 	const boxOpen = await A.page.evaluate(() => !!document.querySelector('#object-search-box'));
 	h.check(boxOpen, 'the object-search box opens');
@@ -67,13 +67,13 @@ h.run(async () => {
 	// --- picking selects the object and flies the camera toward it ---
 	const picked = await A.page.evaluate(() => {
 		let camBefore;
-		window.__stores.globalCamera.subscribe((c) => (camBefore = c?.position.clone()))();
+		window.__tp.test.v1.globalCamera.subscribe((c) => (camBefore = c?.position.clone()))();
 		document.querySelector('#object-search-box button').click();
 		return new Promise((resolve) =>
 			setTimeout(() => {
 				let sel, cam;
-				window.__stores.selectedObject.subscribe((v) => (sel = v?.uuid))();
-				window.__stores.globalCamera.subscribe((c) => (cam = c))();
+				window.__tp.test.v1.selectedObject.subscribe((v) => (sel = v?.uuid))();
+				window.__tp.test.v1.globalCamera.subscribe((c) => (cam = c))();
 				resolve({
 					selected: sel === window.__pillar,
 					boxClosed: !document.querySelector('#object-search-box'),

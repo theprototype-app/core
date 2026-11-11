@@ -14,7 +14,7 @@ const h = require('./helpers.cjs');
 /** read what the app knows about an object's origin */
 const originOf = (page, key) =>
 	page.evaluate((key) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const object = window.__oo.group.getObjectByProperty('uuid', window.__oo[key]);
 		return {
 			local: object?.userData?.origin ?? null,
@@ -26,11 +26,11 @@ const originOf = (page, key) =>
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
-	await A.page.waitForFunction(() => !!window.__stores?.objectOrigin, { timeout: 20000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.objectOrigin, { timeout: 20000 });
 
 	// a 2x1x1 box at a known place, plus a second object to switch to
 	await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		localStorage.setItem('inspector:sec:Transform', 'open');
 		w.commandsHandler.sceneCommand('/create Box 2 1 1');
 		await new Promise((r) => setTimeout(r, 300));
@@ -83,7 +83,7 @@ h.run(async () => {
 	// with the pivot on the bottom face, a 90-degree turn about Z must swing the
 	// box up around that edge instead of spinning in place
 	const swung = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const before = window.__oo.group.getObjectByProperty('uuid', window.__oo.box).position.toArray();
 		const moved = w.multiTransform.applyPivotTransform((pivot) => {
 			pivot.rotation.z = Math.PI / 2;
@@ -102,7 +102,7 @@ h.run(async () => {
 
 	// ---------- each object keeps its OWN origin across a selection switch ----------
 	await A.page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.objectActions.selectObject(window.__oo.sphere, false);
 	});
 	await A.page.waitForTimeout(600);
@@ -116,7 +116,7 @@ h.run(async () => {
 		`World 0 puts the sphere's origin at the scene origin (${sphereWorld.world.join(', ')})`
 	);
 	// back to the box: its bottom origin must still be there
-	await A.page.evaluate(() => window.__stores.objectActions.selectObject(window.__oo.box, false));
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.selectObject(window.__oo.box, false));
 	await A.page.waitForTimeout(600);
 	const boxAgain = await originOf(A.page, 'box');
 	h.check(
@@ -128,7 +128,7 @@ h.run(async () => {
 
 	// ---------- replicated + undoable, like any other userData write ----------
 	const wire = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const peer = await new Promise((r) => w.peers.subscribe(r)());
 		window.__sent = [];
 		const orig = peer.send.bind(peer);
@@ -154,7 +154,7 @@ h.run(async () => {
 	// asserts the runtime's OWN exported math (the computeMoveOffset pattern), so a
 	// regression in flowRuntime shows up here rather than in a hand-rolled formula
 	const hinged = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		// origin on the box's -x face: spinning about Y swings it like a door
 		w.objectOrigin.setOriginFor(window.__oo.box, [-1, 0, 0]);
 		await new Promise((r) => setTimeout(r, 200));
@@ -188,7 +188,7 @@ h.run(async () => {
 	);
 	// and the joint anchor follows the origin (the "hinge it" half)
 	const anchored = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const joint = w.joints.createJoint('revolute', window.__oo.sphere, window.__oo.box, 'y');
 		return joint ? { anchorB: joint.anchorB.map((n) => +n.toFixed(3)) } : null;
 	});
@@ -202,7 +202,7 @@ h.run(async () => {
 	// origin — so no pivot is warranted and the OBJECT has to take the gizmo back.
 	// It used to end up detached, and only a deselect/reselect brought it back.
 	const gizmoKept = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const attached = async () => {
 			const controls = await new Promise((r) => w.TControls.subscribe(r)());
 			return !!controls?.object;
@@ -225,7 +225,7 @@ h.run(async () => {
 	// re-seating used to reset pivotOnly, cancelling the mode the instant it was
 	// pressed, so the gizmo dragged the object instead of its origin
 	const modeHeld = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.objectActions.selectObject(window.__oo.box, true);
 		await new Promise((r) => setTimeout(r, 350));
 		document.querySelector('#origin-mode-single')?.click();
@@ -262,7 +262,7 @@ h.run(async () => {
 
 	// ---------- the HINGE point: origin from picked vertices ----------
 	const hinge = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.objectOrigin.resetOrigin(window.__oo.box);
 		const object = window.__oo.group.getObjectByProperty('uuid', window.__oo.box);
 		object.position.set(0, 0, 0);
@@ -298,7 +298,7 @@ h.run(async () => {
 
 	// now pick ONE corner and snap the origin to it through the button
 	const cornered = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.meshEdit.clearVertexSelection();
 		await new Promise((r) => setTimeout(r, 150));
 		// pressing it with NOTHING picked must not move the origin
@@ -332,12 +332,12 @@ h.run(async () => {
 		cornered.pos.every((n) => Math.abs(n) < 0.01),
 		`and the mesh still has not moved (${cornered.pos.join(', ')})`
 	);
-	await A.page.evaluate(() => window.__stores.meshEdit.exitEditMode());
+	await A.page.evaluate(() => window.__tp.test.v1.meshEdit.exitEditMode());
 	await A.page.waitForTimeout(300);
 
 	// ---------- a GLTF export bakes the origin (glTF has no pivot) ----------
 	const baked = await A.page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const THREE = w.THREE;
 		// a 2-unit-wide box at the world origin with its pivot on the -x face
 		const mesh = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 1), new THREE.MeshStandardMaterial());
@@ -365,7 +365,7 @@ h.run(async () => {
 	h.check(baked.liveUntouched, 'and the LIVE object was not baked (its parametric rows survive)');
 
 	// ---------- Reset goes back to the default ----------
-	await A.page.evaluate(() => window.__stores.objectOrigin.resetOrigin(window.__oo.box));
+	await A.page.evaluate(() => window.__tp.test.v1.objectOrigin.resetOrigin(window.__oo.box));
 	await A.page.waitForTimeout(300);
 	const reset = await originOf(A.page, 'box');
 	h.check(reset.local === null, `Reset clears the origin (${JSON.stringify(reset.local)})`);

@@ -52,7 +52,7 @@ async function shot(page, name) {
 /** a store's current value (the debug hooks expose the stores) */
 const read = (page, expr) =>
 	page.evaluate((expr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		// eslint-disable-next-line no-new-func
 		const store = new Function('s', 'return ' + expr)(s);
 		let v;
@@ -88,7 +88,7 @@ async function firstVisit(browser, storage, context) {
 	});
 	await page.goto(h.URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
 	await page.waitForFunction(
-		() => window.__stores && !!window.__stores.firstWin && !!window.__stores.whatsNew,
+		() => window.__tp?.test.v1 && !!window.__tp.test.v1.firstWin && !!window.__tp.test.v1.whatsNew,
 		null,
 		{ timeout: 90000 }
 	);
@@ -152,10 +152,10 @@ async function partA(browser) {
 		'FW1: Tab walks the answers in order'
 	);
 	await shot(page, '01-welcome-desktop-dark');
-	await page.evaluate(() => window.__stores.themes.theme.set('light'));
+	await page.evaluate(() => window.__tp.test.v1.themes.theme.set('light'));
 	await page.waitForTimeout(300);
 	await shot(page, '02-welcome-desktop-light');
-	await page.evaluate(() => window.__stores.themes.theme.set('dark'));
+	await page.evaluate(() => window.__tp.test.v1.themes.theme.set('dark'));
 
 	// ---- progressive disclosure: a first visit starts simple --------------------------------
 	h.check(
@@ -191,7 +191,7 @@ async function partA(browser) {
 		(await tourStep(page)) === 'change',
 		'FW1: the template load starts the first-win quest on "change" (' + slug + ')'
 	);
-	const debug = await page.evaluate(() => window.__stores.firstWin.firstWinDebug());
+	const debug = await page.evaluate(() => window.__tp.test.v1.firstWin.firstWinDebug());
 	const body = await page.locator('#tour-card .tour-body').innerText();
 	h.check(
 		debug.choice === 'template' && body.startsWith(debug.lastQuest.quest),
@@ -217,7 +217,7 @@ async function partA(browser) {
 	h.check(await page.locator('#open-modules-manager').isVisible(), 'FW1: More shows Modules');
 	await shot(page, '04-logo-menu-more');
 	await page.keyboard.press('Escape');
-	await page.evaluate(() => window.__stores.closeMenu?.set?.(true));
+	await page.evaluate(() => window.__tp.test.v1.closeMenu?.set?.(true));
 	await page.waitForTimeout(300);
 	await shot(page, '05-quest-change-dark');
 	const spotQuiet = await page
@@ -230,7 +230,7 @@ async function partA(browser) {
 	);
 
 	// ---- change: a new undo entry -------------------------------------------------------------
-	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await h.eventually(
 		() => tourStep(page),
 		(s) => s === 'play',
@@ -287,7 +287,7 @@ async function partA(browser) {
 			1,
 		'FW1: …which offers "Tour the interface" (the optional editor tour)'
 	);
-	const done = await page.evaluate(() => window.__stores.firstWin.firstWinDebug());
+	const done = await page.evaluate(() => window.__tp.test.v1.firstWin.firstWinDebug());
 	h.check(
 		JSON.stringify(done.advancedBy.sort()) === JSON.stringify(['change', 'play', 'share']),
 		'FW1: every step was completed by doing it (' + done.advancedBy + ')'
@@ -315,7 +315,7 @@ async function partB(browser) {
 	const B = await firstVisit(browser, { toursUnderTest: 'true' });
 	const page = B.page;
 	await page.evaluate(async () => {
-		const st = window.__stores.sceneTemplates;
+		const st = window.__tp.test.v1.sceneTemplates;
 		await st.loadTemplatesIndex();
 		let tpl;
 		st.templates.subscribe((v) => (tpl = v))();
@@ -340,7 +340,7 @@ async function partB(browser) {
 	await page
 		.locator('#tour-card[data-tour-id="first-win"]')
 		.waitFor({ state: 'visible', timeout: 8000 });
-	const dbg = await page.evaluate(() => window.__stores.firstWin.firstWinDebug());
+	const dbg = await page.evaluate(() => window.__tp.test.v1.firstWin.firstWinDebug());
 	h.check(
 		(await tourStep(page)) === 'change' && dbg.choice === 'play',
 		'FW1 Play: when the game ends the remix quest starts ("make it yours")'
@@ -372,7 +372,7 @@ async function partD(browser) {
 	const A = await h.setupPage(browser, 'A', { storage: { toursUnderTest: 'true' } });
 	const B = await h.setupPage(browser, 'B');
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.firstWin.startFirstWin({ choice: 'empty', force: true });
 		s.tours.tours.signal('scene-edited');
 		s.tours.tours.signal('play-entered');
@@ -389,7 +389,7 @@ async function partD(browser) {
 		'FW1 two-peer: a peer joining completes "share"',
 		20000
 	);
-	const dbg = await A.page.evaluate(() => window.__stores.firstWin.firstWinDebug());
+	const dbg = await A.page.evaluate(() => window.__tp.test.v1.firstWin.firstWinDebug());
 	h.check(
 		dbg.advancedBy.includes('share'),
 		'FW1 two-peer: the share step was completed by the join (' + dbg.advancedBy + ')'
@@ -414,10 +414,10 @@ async function partE(browser) {
 			h.check(await page.locator(id).isVisible(), `FW1 N6 ${label}: ${id} is visible`);
 		}
 		await shot(page, `20-welcome-n6-${label}-dark`);
-		await page.evaluate(() => window.__stores.themes.theme.set('light'));
+		await page.evaluate(() => window.__tp.test.v1.themes.theme.set('light'));
 		await page.waitForTimeout(300);
 		await shot(page, `21-welcome-n6-${label}-light`);
-		await page.evaluate(() => window.__stores.themes.theme.set('dark'));
+		await page.evaluate(() => window.__tp.test.v1.themes.theme.set('dark'));
 		await page.locator('#welcome-start').tap();
 		await page
 			.locator('#tour-card[data-tour-id="first-win"]')
@@ -437,7 +437,7 @@ async function partE(browser) {
 const listenFunnel = (page) =>
 	page.evaluate(() => {
 		window.__ob = [];
-		window.__stores.cloudHooks.onFunnelEvent((e) => window.__ob.push(e));
+		window.__tp.test.v1.cloudHooks.onFunnelEvent((e) => window.__ob.push(e));
 	});
 const funnelNames = (page) => page.evaluate(() => (window.__ob || []).map((e) => e.e));
 const DAY = 86400000;
@@ -457,7 +457,7 @@ async function returning(browser, state) {
 	}, state);
 	const page = await ctx.newPage();
 	await page.goto(h.URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
-	await page.waitForFunction(() => window.__stores && !!window.__stores.funnel, null, {
+	await page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.funnel, null, {
 		timeout: 90000
 	});
 	await page.waitForTimeout(500);
@@ -470,17 +470,17 @@ async function partF(browser) {
 	const G = await firstVisit(browser, { toursUnderTest: 'true' });
 	await G.page.locator('#welcome-start').click();
 	// (no listener yet: one would also flip the Privacy row checked below; the record is the proof)
-	await G.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await G.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await G.page.waitForTimeout(800);
-	const gState = await G.page.evaluate(() => window.__stores.funnel.funnelDebug());
+	const gState = await G.page.evaluate(() => window.__tp.test.v1.funnel.funnelDebug());
 	h.check(
 		(await funnelNames(G.page)).length === 0 && gState.state === null && gState.allowed === false,
 		'FW2 guard: under test without funnelUnderTest nothing is counted or stored'
 	);
 	// Settings ▸ Privacy: with nothing listening (no plugin) the row says nothing is counted
 	await G.page.evaluate(() => {
-		window.__stores.settingsSection.set('privacy');
-		window.__stores.settingsOpen.set(true);
+		window.__tp.test.v1.settingsSection.set('privacy');
+		window.__tp.test.v1.settingsOpen.set(true);
 	});
 	await G.page.locator('#row-usage-counts').waitFor({ state: 'visible', timeout: 8000 });
 	h.check(
@@ -488,7 +488,7 @@ async function partF(browser) {
 			/counts nothing/.test(await G.page.locator('#row-usage-counts').innerText()),
 		'FW2 Settings ▸ Privacy: with no plugin listening the row says this build counts nothing'
 	);
-	await G.page.evaluate(() => window.__stores.cloudHooks.onFunnelEvent(() => {}));
+	await G.page.evaluate(() => window.__tp.test.v1.cloudHooks.onFunnelEvent(() => {}));
 	await G.page.locator('#send-usage-counts').waitFor({ state: 'visible', timeout: 5000 });
 	h.check(
 		(await G.page.locator('#row-usage-counts a[href="/privacy"]').count()) === 1,
@@ -500,7 +500,7 @@ async function partF(browser) {
 		(await G.page.evaluate(() => localStorage.getItem('onboard.funnelConsent'))) === 'off',
 		'FW2 Settings ▸ Privacy: the switch turns the counts off (remembered on this device)'
 	);
-	await G.page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await G.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await G.ctx.close();
 
 	// ---- a whole first win, counted ---------------------------------------------------------------
@@ -515,13 +515,13 @@ async function partF(browser) {
 	await page
 		.locator('#tour-card[data-tour-id="first-win"]')
 		.waitFor({ state: 'visible', timeout: 8000 });
-	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await h.eventually(
 		() => tourStep(page),
 		(st) => st === 'play',
 		'FW2: the quest moves on after the edit'
 	);
-	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create sphere'));
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create sphere'));
 	await page.locator('#play-button').click();
 	await h.eventually(
 		() => read(page, 's.isLocked'),
@@ -600,13 +600,13 @@ async function partF(browser) {
 		);
 		const page = await ctx.newPage();
 		await page.goto(h.URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
-		await page.waitForFunction(() => window.__stores && !!window.__stores.funnel, null, {
+		await page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.funnel, null, {
 			timeout: 90000
 		});
 		await page.locator('#welcome-overlay').waitFor({ state: 'visible', timeout: 15000 });
 		await listenFunnel(page);
 		await page.locator('#welcome-start').click();
-		await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+		await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 		await page.waitForTimeout(800);
 		h.check(
 			(await funnelNames(page)).length === 0 &&
@@ -654,7 +654,7 @@ const countingKeys = (keys) =>
 /** a first visit: answer the Welcome, Play, and come back to the editor */
 async function firstPlayRound(page) {
 	await page.locator('#welcome-start').click();
-	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await page.locator('#play-button').click();
 	await h.eventually(
 		() => read(page, 's.isLocked'),
@@ -737,7 +737,7 @@ async function partG(browser) {
 		'consent: No thanks remembers only the answer'
 	);
 	const counted = (await funnelNames(D.page)).length;
-	await D.page.evaluate(() => window.__stores.funnel.funnelEvent('ob_first_share'));
+	await D.page.evaluate(() => window.__tp.test.v1.funnel.funnelEvent('ob_first_share'));
 	await D.page.locator('#play-button').click();
 	await D.page.waitForTimeout(400);
 	await h.leavePlay(D.page);
@@ -768,7 +768,7 @@ async function partG(browser) {
 	});
 	const gp = await G.newPage();
 	await gp.goto(h.URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
-	await gp.waitForFunction(() => window.__stores && !!window.__stores.funnel, null, { timeout: 90000 });
+	await gp.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.funnel, null, { timeout: 90000 });
 	await gp.locator('#welcome-overlay').waitFor({ state: 'visible', timeout: 15000 });
 	await listenFunnel(gp);
 	await firstPlayRound(gp);
@@ -788,7 +788,7 @@ async function partG(browser) {
 		const P = await firstVisit(browser, OPT_IN, device);
 		await listenFunnel(P.page);
 		await P.page.locator('#welcome-start').click();
-		await P.page.evaluate(() => window.__stores.funnel.offerFunnelNote());
+		await P.page.evaluate(() => window.__tp.test.v1.funnel.offerFunnelNote());
 		await card(P.page).waitFor({ state: 'visible', timeout: 8000 });
 		const fit = await P.page.evaluate(() => {
 			const r = document.querySelector('#funnel-consent').getBoundingClientRect();

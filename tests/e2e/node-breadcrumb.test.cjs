@@ -42,7 +42,7 @@ async function step(label, fn) {
 /** two boxes with flows (one with a LONG name) + a scene graph with two sibling groups */
 async function seed(P) {
 	return P.evaluate(async (long) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const mk = async (name) => {
 			s.commandsHandler.sceneCommand('/create box');
 			await new Promise((r) => setTimeout(r, 300));
@@ -74,8 +74,8 @@ async function seed(P) {
 		return { a, b };
 	}, LONG);
 }
-const active = (P) => P.evaluate(() => new Promise((r) => window.__stores.activeGraphId.subscribe(r)()));
-const select = (P, uuid) => P.evaluate((u) => window.__stores.objectActions.applySelectionSet(u ? [u] : []), uuid);
+const active = (P) => P.evaluate(() => new Promise((r) => window.__tp.test.v1.activeGraphId.subscribe(r)()));
+const select = (P, uuid) => P.evaluate((u) => window.__tp.test.v1.objectActions.applySelectionSet(u ? [u] : []), uuid);
 
 /** geometry of the bar vs the graph pane */
 const layout = (P) =>
@@ -157,7 +157,7 @@ h.run(async () => {
 			await P.waitForTimeout(300);
 			await P.locator('.ctx-scroll[role=menu] [role=menuitem]', { hasText: /the Scene graph/ }).first().click();
 			await P.waitForTimeout(500);
-			const sel = await P.evaluate(() => { let v; window.__stores.selectedObjects.subscribe((x) => (v = x))(); return v.length; });
+			const sel = await P.evaluate(() => { let v; window.__tp.test.v1.selectedObjects.subscribe((x) => (v = x))(); return v.length; });
 			h.check((await active(P)) === 'scene' && sel === 0, `"Main — the Scene graph" returns to the scene flow and deselects (${await active(P)}, ${sel} selected)`);
 		});
 

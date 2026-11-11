@@ -6,11 +6,11 @@
 //   · MeshEditPopup matching hard-coded letters again -> "the rebound key arms Extrude"
 const h = require('./helpers.cjs');
 
-const op = (page) => page.evaluate(() => new Promise((r) => window.__stores.faceEdit.faceEditOp.subscribe(r)()));
+const op = (page) => page.evaluate(() => new Promise((r) => window.__tp.test.v1.faceEdit.faceEditOp.subscribe(r)()));
 async function openShortcuts(page) {
 	await page.evaluate(() => {
-		window.__stores.settingsSection.set('shortcuts');
-		window.__stores.settingsOpen.set(true);
+		window.__tp.test.v1.settingsSection.set('shortcuts');
+		window.__tp.test.v1.settingsOpen.set(true);
 	});
 	await page.waitForTimeout(700);
 }
@@ -40,7 +40,7 @@ h.run(async () => {
 	// (K, not J: 19-A P6 gave J to Connect in the mesh scope — 36-int-124)
 	// --- 2. rebind Extrude from E to K in the UI ----------------------------------------
 	await rebind(p, 'mesh.extrude', 'k');
-	h.check((await p.evaluate(() => window.__stores.shortcutsRegistry.bindingOf('mesh.extrude'))) === 'K', 'clicking the keys and pressing K rebinds Extrude');
+	h.check((await p.evaluate(() => window.__tp.test.v1.shortcutsRegistry.bindingOf('mesh.extrude'))) === 'K', 'clicking the keys and pressing K rebinds Extrude');
 
 	// --- 3. a conflict INSIDE a scope is warned and can be swapped; across scopes is fine --
 	await rebind(p, 'mesh.inset', 'g'); // G is Move in the same (mesh) scope
@@ -52,26 +52,26 @@ h.run(async () => {
 	await p.locator('[data-shortcut="nodes.mute"] .shortcut-swap').click();
 	await p.waitForTimeout(200);
 	const swapped = await p.evaluate(() => ({
-		mute: window.__stores.shortcutsRegistry.bindingOf('nodes.mute'),
-		frame: window.__stores.shortcutsRegistry.bindingOf('nodes.frame-selected')
+		mute: window.__tp.test.v1.shortcutsRegistry.bindingOf('nodes.mute'),
+		frame: window.__tp.test.v1.shortcutsRegistry.bindingOf('nodes.frame-selected')
 	}));
 	h.check(swapped.mute === 'F' && swapped.frame === 'M', `Swap trades the two keys (${JSON.stringify(swapped)})`);
-	const across = await p.evaluate(() => window.__stores.shortcutsRegistry.conflictOf('C', 'nodes.mute').shortcut?.id ?? null);
+	const across = await p.evaluate(() => window.__tp.test.v1.shortcutsRegistry.conflictOf('C', 'nodes.mute').shortcut?.id ?? null);
 	h.check(across === null, 'C in the node editor does not clash with C (chat) in the viewport');
-	const global = await p.evaluate(() => window.__stores.shortcutsRegistry.conflictOf('Ctrl+S', 'nodes.mute').shortcut?.id ?? null);
+	const global = await p.evaluate(() => window.__tp.test.v1.shortcutsRegistry.conflictOf('Ctrl+S', 'nodes.mute').shortcut?.id ?? null);
 	h.check(global === 'scene.save', 'a node key onto a GLOBAL combo (Ctrl+S) is a clash — it would shadow Save there');
-	await p.evaluate(() => window.__stores.settingsOpen.set(false));
+	await p.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await p.waitForTimeout(400);
 
 	// --- 4. the session obeys the rebind: K arms Extrude, E no longer does ---------------
 	await p.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		window.__box = group.children[group.children.length - 1];
-		window.__stores.objectActions.selectObject(window.__box.uuid);
+		window.__tp.test.v1.objectActions.selectObject(window.__box.uuid);
 	});
 	await p.waitForTimeout(400);
-	await p.evaluate(() => window.__stores.faceEdit.enterFaceEdit(window.__box.uuid));
+	await p.evaluate(() => window.__tp.test.v1.faceEdit.enterFaceEdit(window.__box.uuid));
 	await p.waitForTimeout(400);
 	await p.keyboard.press('g');
 	await p.waitForTimeout(150);
@@ -94,9 +94,9 @@ h.run(async () => {
 	const tip = await p.evaluate(() => document.querySelector('#mesh-op-extrude')?.getAttribute('title') ?? '');
 	h.check(tip.startsWith('Extrude (K)'), `the Extrude button's tooltip names the rebound key (${tip.slice(0, 14)})`);
 	// the registry's stand-down follows the rebind: a viewport row on K would be shadowed
-	const stand = await p.evaluate(() => window.__stores.shortcutsRegistry.conflictOf('K', 'scene.physics').meshEdit);
+	const stand = await p.evaluate(() => window.__tp.test.v1.shortcutsRegistry.conflictOf('K', 'scene.physics').meshEdit);
 	h.check(stand === true, 'a viewport key moved onto K is warned that a mesh session owns K');
-	await p.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
+	await p.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
 
 	// --- 5. Reset all ------------------------------------------------------------------
 	await openShortcuts(p);
@@ -105,13 +105,13 @@ h.run(async () => {
 	await p.locator('#confirm-dialog-ok').click();
 	await p.waitForTimeout(300);
 	const reset = await p.evaluate(() => ({
-		extrude: window.__stores.shortcutsRegistry.bindingOf('mesh.extrude'),
-		mute: window.__stores.shortcutsRegistry.bindingOf('nodes.mute'),
+		extrude: window.__tp.test.v1.shortcutsRegistry.bindingOf('mesh.extrude'),
+		mute: window.__tp.test.v1.shortcutsRegistry.bindingOf('nodes.mute'),
 		stored: localStorage.getItem('shortcutOverrides')
 	}));
 	h.check(reset.extrude === 'E' && reset.mute === 'M' && !reset.stored, `Reset all restores every default (${JSON.stringify(reset)})`);
 	await p.screenshot({ path: '/home/deck/.code/lanes-30/after-36/36-node-ux/04-keymap-settings.png' });
-	await p.evaluate(() => window.__stores.settingsOpen.set(false));
+	await p.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 
 	await h.finish(browser);
 });

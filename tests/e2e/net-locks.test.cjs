@@ -24,7 +24,7 @@ h.run(async () => {
 	await h.connect(C, A);
 
 	const store = (p, name) =>
-		p.page.evaluate((n) => new Promise((r) => window.__stores[n].subscribe((v) => r(v))()), name);
+		p.page.evaluate((n) => new Promise((r) => window.__tp.test.v1[n].subscribe((v) => r(v))()), name);
 	const locksOn = (p) => store(p, 'lockedObjects');
 	const rosterOn = (p) => store(p, 'userdata');
 
@@ -33,9 +33,9 @@ h.run(async () => {
 	// the read-only locked-view branch and broadcast nothing.)
 	const uuid = await B.page.evaluate(() => {
 		const w = window;
-		w.__stores.commandsHandler.sceneCommand('/create box');
+		w.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		let g;
-		w.__stores.objectsGroup.subscribe((v) => (g = v))();
+		w.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return g.children[g.children.length - 1].uuid;
 	});
 
@@ -49,7 +49,7 @@ h.run(async () => {
 	// called "not connected anymore".
 	const shape = await A.page.evaluate((bid) => {
 		let pc;
-		window.__stores.peers.subscribe((p) => (pc = p))();
+		window.__tp.test.v1.peers.subscribe((p) => (pc = p))();
 		return { raw: pc.peer.connections[bid]?.length ?? 0, open: !!pc.connections[bid]?.open };
 	}, B.id);
 	console.log('  A -> B: raw conn entries ' + shape.raw + ', outgoing open ' + shape.open);
@@ -62,13 +62,13 @@ h.run(async () => {
 	// reconnect window redials a dead registration and exhausts before teardown.
 	await C.page.evaluate(() => {
 		let pc;
-		window.__stores.peers.subscribe((p) => (pc = p))();
+		window.__tp.test.v1.peers.subscribe((p) => (pc = p))();
 		pc.broadcast = () => {};
 		pc.peer.destroy();
 	});
 	await A.page.evaluate((cid) => {
 		let pc;
-		window.__stores.peers.subscribe((p) => (pc = p))();
+		window.__tp.test.v1.peers.subscribe((p) => (pc = p))();
 		pc?.connections?.[cid]?.close();
 	}, C.id);
 
@@ -93,7 +93,7 @@ h.run(async () => {
 	h.check(roster.some((x) => x[0] === B.id), "B stays in A's roster after C drops");
 	const stillOpen = await A.page.evaluate((bid) => {
 		let pc;
-		window.__stores.peers.subscribe((p) => (pc = p))();
+		window.__tp.test.v1.peers.subscribe((p) => (pc = p))();
 		return !!pc.connections[bid]?.open && pc.openedPeers.has(bid);
 	}, B.id);
 	h.check(stillOpen, 'A -> B connection is untouched by the drop');

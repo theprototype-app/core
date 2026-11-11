@@ -60,7 +60,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 	const ids = await A.page.evaluate(() => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		/** @type {Record<string, any>} */
 		const made = {};
 		const last = () => {
@@ -97,7 +97,7 @@ h.run(async () => {
 	// '/create box' re-seats the object after the call returns (CLAUDE.md): shape and place them after
 	await A.page.waitForTimeout(1500);
 	await A.page.evaluate(({ nodes, edges, made }) => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		let g;
 		S.objectsGroup.subscribe((x) => (g = x))();
 		const put = (name, sx, sy, sz, x, y, z) => {
@@ -125,26 +125,26 @@ h.run(async () => {
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);
 	const peers = [A, B];
-	await h.eventually(() => Promise.all(peers.map((p) => p.page.evaluate(() => window.__stores.nodesHandler.graphHash()))), (hs) => hs[0] === hs[1], 'premise: B holds the graph', 30000);
+	await h.eventually(() => Promise.all(peers.map((p) => p.page.evaluate(() => window.__tp.test.v1.nodesHandler.graphHash()))), (hs) => hs[0] === hs[1], 'premise: B holds the graph', 30000);
 	await h.eventually(
-		() => B.page.evaluate((u) => { let g; window.__stores.objectsGroup.subscribe((x) => (g = x))(); return u.every((id) => !!g.getObjectByProperty('uuid', id)); }, Object.values(ids)),
+		() => B.page.evaluate((u) => { let g; window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))(); return u.every((id) => !!g.getObjectByProperty('uuid', id)); }, Object.values(ids)),
 		(ok) => ok,
 		'premise: B holds every object',
 		30000
 	);
-	const holds = (p) => p.page.evaluate((u) => { let g; window.__stores.objectsGroup.subscribe((x) => (g = x))(); return Object.fromEntries(Object.entries(u).map(([k, id]) => [k, !!g.getObjectByProperty('uuid', id)])); }, ids);
+	const holds = (p) => p.page.evaluate((u) => { let g; window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))(); return Object.fromEntries(Object.entries(u).map(([k, id]) => [k, !!g.getObjectByProperty('uuid', id)])); }, ids);
 	console.log('  objects held (A): ' + JSON.stringify(await holds(A)));
 	console.log('  objects held (B): ' + JSON.stringify(await holds(B)));
 	await A.page.waitForTimeout(800); // the actionSeenAt settle (a stamp minted before B's next tick is refused)
 
 	/** the pose node `nodeId` gives `uuid` at shared time T, on page p */
-	const poseAt = (p, nodeId, uuid, T) => p.page.evaluate(([n, u, t]) => window.__stores.flowRuntime.effectPoseAt(n, u, t), [nodeId, uuid, T]);
-	const clock = (p) => p.page.evaluate(() => window.__stores.flowRuntime.effectClockNow());
-	const stampOf = (p, nodeId) => p.page.evaluate((n) => { let t; window.__stores.flowTriggers.subscribe((v) => (t = v))(); return t?.[n]?.lastT ?? null; }, nodeId);
+	const poseAt = (p, nodeId, uuid, T) => p.page.evaluate(([n, u, t]) => window.__tp.test.v1.flowRuntime.effectPoseAt(n, u, t), [nodeId, uuid, T]);
+	const clock = (p) => p.page.evaluate(() => window.__tp.test.v1.flowRuntime.effectClockNow());
+	const stampOf = (p, nodeId) => p.page.evaluate((n) => { let t; window.__tp.test.v1.flowTriggers.subscribe((v) => (t = v))(); return t?.[n]?.lastT ?? null; }, nodeId);
 	const drawn = (p, uuid) =>
 		p.page.evaluate((u) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((x) => (g = x))();
+			window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 			const o = g.getObjectByProperty('uuid', u);
 			return { pos: o.position.toArray(), rot: [o.rotation.x, o.rotation.y, o.rotation.z], intensity: o.intensity ?? null, color: o.color ? '#' + o.color.getHexString() : null };
 		}, uuid);
@@ -156,7 +156,7 @@ h.run(async () => {
 		h.check(!!a && !!b && same(a, b), `${label}: A and B give the same pose for the same shared moment`);
 		return a;
 	};
-	const click = (p, uuid) => p.page.evaluate((u) => window.__stores.flowRuntime.fireObjectClick(u), uuid);
+	const click = (p, uuid) => p.page.evaluate((u) => window.__tp.test.v1.flowRuntime.fireObjectClick(u), uuid);
 	/** wait until both peers hold node's stamp and they agree */
 	const sharedStamp = async (nodeId, label) => {
 		const st = await h.eventually(() => Promise.all(peers.map((p) => stampOf(p, nodeId))), (s) => s[0] !== null && s[0] === s[1], `${label}: both peers hold the same trigger stamp`, 20000);
@@ -182,7 +182,7 @@ h.run(async () => {
 	// the hinge (the left edge, local x -0.5) stayed put: x 0 - 0.5 = -0.5 before; after the turn it is still at x -0.5, z 0
 	const hingeAfter = await A.page.evaluate((u) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		const o = g.getObjectByProperty('uuid', u);
 		o.updateMatrixWorld(true);
 		const v = o.localToWorld(o.position.clone().set(-0.5, 0, 0));
@@ -203,9 +203,9 @@ h.run(async () => {
 
 	// ---- N2: the lift goes up while a boolean is true (Toggle input -> open), with a back ease
 	const liftBase = await drawn(A, ids.lift);
-	await A.page.evaluate(() => window.__stores.nodesHandler.setNodeData('tgl', { on: true }));
+	await A.page.evaluate(() => window.__tp.test.v1.nodesHandler.setNodeData('tgl', { on: true }));
 	await h.eventually(() => Promise.all(peers.map((p) => drawn(p, ids.lift))), (d) => d.every((x) => Math.abs(x.pos[1] - (liftBase.pos[1] + 2)) < 1e-3), 'N2: the lift rises 2 m on both peers', 15000);
-	await A.page.evaluate(() => window.__stores.nodesHandler.setNodeData('tgl', { on: false }));
+	await A.page.evaluate(() => window.__tp.test.v1.nodesHandler.setNodeData('tgl', { on: false }));
 	await h.eventually(() => Promise.all(peers.map((p) => drawn(p, ids.lift))), (d) => d.every((x) => Math.abs(x.pos[1] - liftBase.pos[1]) < 1e-3), 'N2: and comes back down on both', 15000);
 
 	// ---- N4: the lamp, switched off on A and on again on B
@@ -216,9 +216,9 @@ h.run(async () => {
 	// a save while it is off writes the AUTHORED intensity
 	const parked = await A.page.evaluate((u) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		const o = g.getObjectByProperty('uuid', u);
-		const un = window.__stores.flowRuntime.parkAnimatedAtBase();
+		const un = window.__tp.test.v1.flowRuntime.parkAnimatedAtBase();
 		const during = o.intensity;
 		un?.();
 		return { during, after: o.intensity };
@@ -234,13 +234,13 @@ h.run(async () => {
 	h.check(cols[0].color === cols[1].color && ['#ff3b30', '#ffcc00', '#34c759', '#0a84ff'].includes(cols[0].color), 'N4: the colour cycle shows the same list colour on both peers');
 
 	// ---- N5: the plant and the flag sway, the pool flows — on both peers, look only
-	const sway = (p) => p.page.evaluate(() => window.__stores.swayNodes.swayNodesDebug());
+	const sway = (p) => p.page.evaluate(() => window.__tp.test.v1.swayNodes.swayNodesDebug());
 	await h.eventually(() => Promise.all(peers.map(sway)), (all) => all.every((d) => Object.values(d).filter((x) => x.kind === 'windsway').length === 2 && Object.values(d).some((x) => x.kind === 'waterflow' && x.flowing === 1)), 'N5: both peers sway the plant + flag and flow the pool', 20000);
 	console.log('  sway runtime (A): ' + JSON.stringify(await sway(A)));
 	const look = (p, u) =>
 		p.page.evaluate((id) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((x) => (g = x))();
+			window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 			const o = g.getObjectByProperty('uuid', id);
 			const m = o.material;
 			return { key: m.customProgramCacheKey?.() ?? '', normal: !!m.normalMap, pos: o.position.toArray() };
@@ -254,9 +254,9 @@ h.run(async () => {
 	// a save while it flows writes the AUTHORED material (no borrowed ripple map)
 	const parkedPool = await A.page.evaluate((u) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		const o = g.getObjectByProperty('uuid', u);
-		const un = window.__stores.flowRuntime.parkAnimatedAtBase();
+		const un = window.__tp.test.v1.flowRuntime.parkAnimatedAtBase();
 		const during = !!o.material.normalMap;
 		un?.();
 		return { during, after: !!o.material.normalMap };

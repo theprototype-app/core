@@ -24,7 +24,7 @@ h.run(async () => {
 	// link the user had copied died. Ours = the server this id opened on: the id is kept.
 	const own = await A.page.evaluate(async () => {
 		let pc;
-		window.__stores.peers.subscribe((p) => (pc = p))();
+		window.__tp.test.v1.peers.subscribe((p) => (pc = p))();
 		const first = pc.peer.id;
 		pc.hasOpened = false; // what a runtime switch's rebuild leaves behind
 		pc.peer.emit('error', { type: 'unavailable-id' });
@@ -42,7 +42,7 @@ h.run(async () => {
 	// only taken for an id that is not our own registration there.
 	const after = await A.page.evaluate(async () => {
 		let pc;
-		window.__stores.peers.subscribe((p) => (pc = p))();
+		window.__tp.test.v1.peers.subscribe((p) => (pc = p))();
 		const first = pc.peer.id;
 		pc.registeredOn.clear();
 		pc.peer.emit('error', { type: 'unavailable-id' });
@@ -63,7 +63,7 @@ h.run(async () => {
 	// that keeps saying no
 	const bounded = await A.page.evaluate(async () => {
 		let pc;
-		window.__stores.peers.subscribe((p) => (pc = p))();
+		window.__tp.test.v1.peers.subscribe((p) => (pc = p))();
 		for (let i = 0; i < 6; i++) {
 			pc.registeredOn.clear();
 			pc.peer.emit('error', { type: 'unavailable-id' });
@@ -77,7 +77,7 @@ h.run(async () => {
 	const B = await h.setupPage(browser, 'B');
 	const live = await A.page.evaluate(() => {
 		let pc;
-		window.__stores.peers.subscribe((p) => (pc = p))();
+		window.__tp.test.v1.peers.subscribe((p) => (pc = p))();
 		return pc.peer.id;
 	});
 	await (await h.openDial(B.page)).fill(live);
@@ -87,7 +87,7 @@ h.run(async () => {
 		() =>
 			A.page.evaluate(() => {
 				let pc;
-				window.__stores.peers.subscribe((p) => (pc = p))();
+				window.__tp.test.v1.peers.subscribe((p) => (pc = p))();
 				return pc.openedPeers.size;
 			}),
 		(n) => n >= 1,

@@ -18,15 +18,15 @@ const graph = (page) =>
 	page.evaluate(() => {
 		let ns;
 		let es;
-		window.__stores.flowNodes.subscribe((v) => (ns = v))();
-		window.__stores.flowEdges.subscribe((v) => (es = v))();
+		window.__tp.test.v1.flowNodes.subscribe((v) => (ns = v))();
+		window.__tp.test.v1.flowEdges.subscribe((v) => (es = v))();
 		return {
 			nodes: ns.map((n) => ({ id: n.id, type: n.type, x: n.position.x, y: n.position.y, data: n.data })),
 			edges: es.map((e) => ({ id: e.id, source: e.source, sourceHandle: e.sourceHandle ?? null, target: e.target, targetHandle: e.targetHandle ?? null }))
 		};
 	});
 const select = (page, ids) =>
-	page.evaluate((ids) => window.__stores.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: ids.includes(n.id) }))), ids);
+	page.evaluate((ids) => window.__tp.test.v1.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: ids.includes(n.id) }))), ids);
 const drawn = (page) =>
 	page.evaluate(() => ({
 		nodes: [...document.querySelectorAll('.svelteFlow .svelte-flow__node')].map((n) => n.getAttribute('data-id')),
@@ -81,15 +81,15 @@ h.run(async () => {
 		}
 	};
 	const hash0 = await p.evaluate((doc) => {
-		window.__stores.restoreGraphs(JSON.parse(JSON.stringify(doc)));
-		return window.__stores.nodesHandler.graphHash();
+		window.__tp.test.v1.restoreGraphs(JSON.parse(JSON.stringify(doc)));
+		return window.__tp.test.v1.nodesHandler.graphHash();
 	}, OLD);
 	await p.locator('p[title="Node editor (N)"]').click();
 	await p.waitForTimeout(1200);
 	let d = await drawn(p);
 	h.check(d.nodes.length === 5 && d.edges === 3 && d.proxies === 0, `an old graph draws every node and wire as stored (${d.nodes.length}/${d.edges})`);
-	h.check((await p.evaluate(() => window.__stores.nodesHandler.graphHash())) === hash0, 'opening the editor on an old graph writes nothing (hash unchanged)');
-	await p.evaluate((id) => window.__stores.nodesHandler.sendNodes(id), B.id);
+	h.check((await p.evaluate(() => window.__tp.test.v1.nodesHandler.graphHash())) === hash0, 'opening the editor on an old graph writes nothing (hash unchanged)');
+	await p.evaluate((id) => window.__tp.test.v1.nodesHandler.sendNodes(id), B.id);
 	await h.eventually(() => graph(B.page), (g) => g.nodes.length === 5, 'the peer holds the graph');
 
 	// --- 2. Ctrl+G: the members collapse into one card whose sockets are the crossings ----
@@ -107,7 +107,7 @@ h.run(async () => {
 	h.check(!d.nodes.includes('m1') && !d.nodes.includes('m2') && d.nodes.includes(G.id), 'the members are hidden at the top level; the group card stands for them');
 	h.check(d.proxies === 2, `the two crossing wires are drawn to the group's sockets (${d.proxies})`);
 	const runtime = await p.evaluate(() => {
-		const r = window.__stores.runtimeGraph(window.__stores.allNodes(), window.__stores.allEdges());
+		const r = window.__tp.test.v1.runtimeGraph(window.__tp.test.v1.allNodes(), window.__tp.test.v1.allEdges());
 		return { nodes: r.nodes.map((n) => n.id).sort(), edges: r.edges.length };
 	});
 	h.check(JSON.stringify(runtime.nodes) === JSON.stringify(['free', 'm1', 'm2', 'sink', 'src']) && runtime.edges === 3, 'the runtime evaluates the same nodes and wires as before (the group is not one of them)');
@@ -249,12 +249,12 @@ h.run(async () => {
 	await pb.waitForTimeout(1200);
 	const db = await drawn(pb);
 	h.check(db.nodes.includes(G.id) && !db.nodes.includes('m1') && db.proxies >= 2, 'the peer draws the group collapsed with its sockets');
-	await pb.evaluate((id) => window.__stores.nodesHandler.setNodeData(id, { label: 'From B' }), G.id);
+	await pb.evaluate((id) => window.__tp.test.v1.nodesHandler.setNodeData(id, { label: 'From B' }), G.id);
 	await h.eventually(() => graph(p), (ga) => groupOf(ga) && ga.nodes.find((n) => n.id === G.id).data.label === 'From B', 'a rename on the peer reaches us');
 
 	// --- 10. a save round-trip keeps the groups byte for byte ----------------------------
 	const rt = await p.evaluate(() => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		const before = S.nodesHandler.graphHash();
 		const doc = S.flowGraphsCtl.serializeGraphs(S.nodesHandler.serializeNode, S.nodesHandler.serializeEdge);
 		S.restoreGraphs(JSON.parse(JSON.stringify(doc)));

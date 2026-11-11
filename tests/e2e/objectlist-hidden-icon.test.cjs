@@ -8,8 +8,8 @@ h.run(async () => {
 
 	await A.page.locator('p[title="Object list (O)"]').click();
 	await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		window.__box = g.children[g.children.length - 1].uuid;
 	});
 	await A.page.waitForTimeout(400);
@@ -17,11 +17,11 @@ h.run(async () => {
 	const markers = () => A.page.locator('#object-list .hidden-marker').count();
 	const before = await markers();
 
-	await A.page.evaluate(() => window.__stores.objectActions.toggleObjectVisibility(window.__box));
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.toggleObjectVisibility(window.__box));
 	await A.page.waitForTimeout(300);
 	const afterHide = await markers();
 
-	await A.page.evaluate(() => window.__stores.objectActions.toggleObjectVisibility(window.__box));
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.toggleObjectVisibility(window.__box));
 	await A.page.waitForTimeout(300);
 	const afterShow = await markers();
 

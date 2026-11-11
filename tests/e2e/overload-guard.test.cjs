@@ -20,7 +20,7 @@ h.run(async () => {
 
 	// ---- 1. the streak rule --------------------------------------------------
 	const streak = await A.page.evaluate(() => {
-		const { createStreakWatch } = window.__stores.overloadGuard;
+		const { createStreakWatch } = window.__tp.test.v1.overloadGuard;
 		const w = createStreakWatch({ overMs: 24, count: 5 });
 		const fires = [];
 		// four slow, one fast: the streak BREAKS and nothing fires
@@ -44,12 +44,12 @@ h.run(async () => {
 
 	// ---- 2. physics: a simulation too slow to keep up -------------------------
 	await A.page.evaluate(async () => {
-		const { commandsHandler } = window.__stores;
+		const { commandsHandler } = window.__tp?.test.v1;
 		commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 400));
 	});
 	const started = await A.page.evaluate(async () => {
-		const { physics } = window.__stores;
+		const { physics } = window.__tp?.test.v1;
 		// prewarm rapier (lazy wasm), then run
 		await physics.toggleSimulation();
 		await new Promise((r) => setTimeout(r, 1500));
@@ -57,9 +57,9 @@ h.run(async () => {
 		return sim;
 	});
 	h.check(started === true, 'the simulation is running (premise)');
-	await A.page.evaluate(() => window.__stores.toastStore.set([]));
+	await A.page.evaluate(() => window.__tp.test.v1.toastStore.set([]));
 	const slow = await A.page.evaluate(async () => {
-		const { physics, overloadGuard } = window.__stores;
+		const { physics, overloadGuard } = window.__tp?.test.v1;
 		// one short of the streak must NOT stop it
 		const early = physics.noteSlowStepsForTest(overloadGuard.PHYSICS_SLOW_STEPS - 1, 40);
 		let sim; let s = physics.simulating.subscribe((/** @type {any} */ v) => (sim = v)); s();
@@ -81,11 +81,11 @@ h.run(async () => {
 	h.check((await resume.count()) > 0, '…with a Resume button, so the stop is never a dead end');
 	await resume.first().click();
 	await h.eventually(
-		() => A.page.evaluate(() => { let v; const s = window.__stores.physics.simulating.subscribe((/** @type {any} */ x) => (v = x)); s(); return v; }),
+		() => A.page.evaluate(() => { let v; const s = window.__tp.test.v1.physics.simulating.subscribe((/** @type {any} */ x) => (v = x)); s(); return v; }),
 		(v) => v === true,
 		'Resume starts the simulation again'
 	);
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 
 	// ---- 3. the render freeze -------------------------------------------------
 	h.check((await A.page.locator('#render-paused').count()) === 0, 'the paused overlay starts hidden (premise)');
@@ -96,8 +96,8 @@ h.run(async () => {
 	// ("#render-paused intercepts pointer events", 23 times in one battery). Pausing a
 	// light scene helps nothing: there is nothing heavy to set aside.
 	const light = await A.page.evaluate(() => {
-		const g = window.__stores.overloadGuard;
-		const b = window.__stores.sceneBudget;
+		const g = window.__tp.test.v1.overloadGuard;
+		const b = window.__tp.test.v1.sceneBudget;
 		g.resumeRendering();
 		const realNow = Date.now;
 		Date.now = () => realNow() + 10000;
@@ -112,9 +112,9 @@ h.run(async () => {
 	h.check(!light.paused, 'forty 400ms frames on a LIGHT scene never pause — a slow machine is not an overloaded scene');
 
 	const freeze = await A.page.evaluate(() => {
-		const g = window.__stores.overloadGuard;
+		const g = window.__tp.test.v1.overloadGuard;
 		// a HEAVY reading: past the desktop object budget, so pausing could actually help
-		window.__stores.sceneBudget.sceneMetrics.set({ at: Date.now(), profile: 'desktop', objects: 4200, triangles: 900000, calls: 2600 });
+		window.__tp.test.v1.sceneBudget.sceneMetrics.set({ at: Date.now(), profile: 'desktop', objects: 4200, triangles: 900000, calls: 2600 });
 		g.resumeRendering();
 		// resumeRendering starts a grace window; step past it for the test
 		const realNow = Date.now;
@@ -138,7 +138,7 @@ h.run(async () => {
 
 	// the render loop really stops: renderer.info.render.frame stops advancing
 	const frozenFrames = await A.page.evaluate(async () => {
-		let renderer; const s = window.__stores.globalRenderer.subscribe((/** @type {any} */ r) => (renderer = r)); s();
+		let renderer; const s = window.__tp.test.v1.globalRenderer.subscribe((/** @type {any} */ r) => (renderer = r)); s();
 		const a = renderer.info.render.frame;
 		await new Promise((r) => setTimeout(r, 600));
 		return renderer.info.render.frame - a;
@@ -148,7 +148,7 @@ h.run(async () => {
 	await A.page.locator('#render-paused-resume').click();
 	await A.page.waitForTimeout(700);
 	const liveFrames = await A.page.evaluate(async () => {
-		let renderer; const s = window.__stores.globalRenderer.subscribe((/** @type {any} */ r) => (renderer = r)); s();
+		let renderer; const s = window.__tp.test.v1.globalRenderer.subscribe((/** @type {any} */ r) => (renderer = r)); s();
 		const a = renderer.info.render.frame;
 		await new Promise((r) => setTimeout(r, 600));
 		return renderer.info.render.frame - a;
@@ -158,9 +158,9 @@ h.run(async () => {
 
 	// a BACKGROUNDED tab throttles rAF to ~1Hz on purpose — that must never pause
 	const hidden = await A.page.evaluate(() => {
-		const g = window.__stores.overloadGuard;
+		const g = window.__tp.test.v1.overloadGuard;
 		// HEAVY, or this check passes vacuously — a light scene never pauses anyway
-		window.__stores.sceneBudget.sceneMetrics.set({ at: Date.now(), profile: 'desktop', objects: 4200, triangles: 900000, calls: 2600 });
+		window.__tp.test.v1.sceneBudget.sceneMetrics.set({ at: Date.now(), profile: 'desktop', objects: 4200, triangles: 900000, calls: 2600 });
 		g.resumeRendering();
 		const realNow = Date.now;
 		Date.now = () => realNow() + 10000;
@@ -181,7 +181,7 @@ h.run(async () => {
 
 	// ---- 4. Reduce: newest set aside, LOCALLY, and still in the autosave ------
 	const reduce = await A.page.evaluate(async () => {
-		const { THREE, objectsGroup, pokeScene, overloadGuard, autosave } = window.__stores;
+		const { THREE, objectsGroup, pokeScene, overloadGuard, autosave } = window.__tp?.test.v1;
 		let group; { const s = objectsGroup.subscribe((/** @type {any} */ g) => (group = g)); s(); }
 		group.clear();
 		// 3,200 top-level objects: 200 past the desktop object budget (3,000). EMPTY GROUPS,
@@ -221,7 +221,7 @@ h.run(async () => {
 	// the hazard, proven: a GLTF export (autosave's serializer, no options) still carries
 	// a reduced object, where a `visible = false` hide would have dropped it
 	const exported = await A.page.evaluate(async () => {
-		const { THREE, GLTFExporterModule, objectsGroup, overloadGuard } = window.__stores;
+		const { THREE, GLTFExporterModule, objectsGroup, overloadGuard } = window.__tp?.test.v1;
 		let group; { const s = objectsGroup.subscribe((/** @type {any} */ g) => (group = g)); s(); }
 		const probe = new THREE.Group();
 		const reducedOne = group.children[group.children.length - 1].clone();
@@ -241,7 +241,7 @@ h.run(async () => {
 	h.check(!exported.hidden, '…while a `visible = false` one is dropped: the counterfactual, measured in the same export');
 
 	const restored = await A.page.evaluate(() => {
-		const { objectsGroup, overloadGuard } = window.__stores;
+		const { objectsGroup, overloadGuard } = window.__tp?.test.v1;
 		let group; { const s = objectsGroup.subscribe((/** @type {any} */ g) => (group = g)); s(); }
 		const n = overloadGuard.restoreReduced();
 		const newest = group.children[group.children.length - 1];
@@ -251,9 +251,9 @@ h.run(async () => {
 
 	// the overlay's own Reduce button, end to end
 	await A.page.evaluate(() => {
-		const g = window.__stores.overloadGuard;
+		const g = window.__tp.test.v1.overloadGuard;
 		g.pauseRendering('frozen');
-		window.__stores.toastStore.set([]);
+		window.__tp.test.v1.toastStore.set([]);
 	});
 	await A.page.waitForSelector('#render-paused-reduce', { timeout: 5000 });
 	await A.page.locator('#render-paused-reduce').click();
@@ -270,7 +270,7 @@ h.run(async () => {
 	// leave a LIGHT scene behind: 3,200 objects is heavy by definition, and the real frame
 	// loop would be entitled to pause over it on a saturated box while section 5 runs
 	await A.page.evaluate(() => {
-		const { objectsGroup, pokeScene, overloadGuard } = window.__stores;
+		const { objectsGroup, pokeScene, overloadGuard } = window.__tp?.test.v1;
 		overloadGuard.restoreReduced();
 		let group; { const s = objectsGroup.subscribe((/** @type {any} */ g) => (group = g)); s(); }
 		group.clear();
@@ -280,21 +280,21 @@ h.run(async () => {
 
 	// ---- 5. the restore prompt names the budget ------------------------------
 	await A.page.evaluate(() => {
-		window.__stores.toastStore.set([]);
-		window.__stores.autosave.restoreAvailable.set({ objects: 4200, ts: Date.now() });
+		window.__tp.test.v1.toastStore.set([]);
+		window.__tp.test.v1.autosave.restoreAvailable.set({ objects: 4200, ts: Date.now() });
 	});
 	await h.eventually(
 		() => A.page.locator('#restore-session-modal').textContent().catch(() => ''),
 		(t) => /4200 objects/.test(String(t)) && /above the 3000 recommended/.test(String(t)),
 		'the restore prompt says the snapshot is above this device\'s budget'
 	);
-	await A.page.evaluate(() => window.__stores.autosave.restoreAvailable.set({ objects: 40, ts: Date.now() }));
+	await A.page.evaluate(() => window.__tp.test.v1.autosave.restoreAvailable.set({ objects: 40, ts: Date.now() }));
 	await h.eventually(
 		() => A.page.locator('#restore-session-modal').textContent().catch(() => ''),
 		(t) => /40 objects/.test(String(t)) && !/recommended/.test(String(t)),
 		'…and says nothing about the budget for a small one'
 	);
-	await A.page.evaluate(() => window.__stores.autosave.restoreAvailable.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.autosave.restoreAvailable.set(null));
 
 	h.check(h.pageErrors(A).length === 0, `no page errors (${JSON.stringify(h.pageErrors(A))})`);
 	await h.finish(browser);

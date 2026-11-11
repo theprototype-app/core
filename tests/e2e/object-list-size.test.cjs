@@ -8,7 +8,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 	await A.page.setViewportSize({ width: 1200, height: 800 });
-	await A.page.evaluate(() => window.__stores.objectListClose.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.objectListClose.set(false));
 	await A.page.waitForTimeout(400);
 
 	const resized = await A.page.evaluate(async () => {

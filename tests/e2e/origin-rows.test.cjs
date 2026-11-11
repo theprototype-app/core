@@ -11,11 +11,11 @@ const h = require('./helpers.cjs');
 const worldOf = (page, uuid) =>
 	page.evaluate((u) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		const o = g.getObjectByProperty('uuid', u);
 		if (!o) return null;
 		o.updateMatrixWorld(true);
-		const p = o.getWorldPosition(new window.__stores.THREE.Vector3());
+		const p = o.getWorldPosition(new window.__tp.test.v1.THREE.Vector3());
 		return { pos: p.toArray().map((n) => Math.round(n * 1000) / 1000), rotY: Math.round(o.rotation.y * 1000) / 1000, quat: o.quaternion.toArray() };
 	}, uuid);
 const near = (a, b, eps = 0.02) => a && b && a.every((n, i) => Math.abs(n - b[i]) < eps);
@@ -31,7 +31,7 @@ h.run(async () => {
 
 	// a /group at the world origin, two cubes dragged into it
 	const ids = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const group = s.addObjects.spawnAtPoint('/group', null);
 		const a = s.addObjects.spawnAtPoint('/create Box 1 1 1', [3, 0, 0]);
 		const b = s.addObjects.spawnAtPoint('/create Box 1 1 1', [5, 0, 0]);
@@ -48,21 +48,21 @@ h.run(async () => {
 
 	// ---- 1. Origin ▸ Centre of children, then a TYPED rotation turns about it --------
 	const menu = await A.page.evaluate((u) => {
-		const items = window.__stores.objectMenu.buildObjectMenuItems(u);
-		const origin = window.__stores.objectMenu.findMenuItem(items, 'Origin');
+		const items = window.__tp.test.v1.objectMenu.buildObjectMenuItems(u);
+		const origin = window.__tp.test.v1.objectMenu.findMenuItem(items, 'Origin');
 		return origin ? origin.children.map((c) => c.label) : null;
 	}, ids.group);
 	h.check(!!menu && menu.includes('Centre of children') && menu.includes('World zero'), `the group's context menu has Origin ▸ (${JSON.stringify(menu)})`);
 	await A.page.evaluate((u) => {
-		const items = window.__stores.objectMenu.buildObjectMenuItems(u);
-		window.__stores.objectMenu.findMenuItem(items, 'Origin').children.find((c) => c.label === 'Centre of children').action();
-		window.__stores.objectActions.selectObject(u, true);
+		const items = window.__tp.test.v1.objectMenu.buildObjectMenuItems(u);
+		window.__tp.test.v1.objectMenu.findMenuItem(items, 'Origin').children.find((c) => c.label === 'Centre of children').action();
+		window.__tp.test.v1.objectActions.selectObject(u, true);
 	}, ids.group);
 	await A.page.waitForSelector('#inspector-rotation .dn-input', { timeout: 15000 });
 	await A.page.waitForTimeout(300);
-	const originAt = await A.page.evaluate((u) => { let g; window.__stores.objectsGroup.subscribe((x) => (g = x))(); return window.__stores.objectOrigin.originWorld(g.getObjectByProperty('uuid', u)).toArray(); }, ids.group);
+	const originAt = await A.page.evaluate((u) => { let g; window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))(); return window.__tp.test.v1.objectOrigin.originWorld(g.getObjectByProperty('uuid', u)).toArray(); }, ids.group);
 	h.check(near(originAt, [4, 0, 0]), `the origin is at the centre of the children (${fmt(originAt)})`);
-	const seated = await A.page.evaluate(() => { let c; window.__stores.TControls.subscribe((x) => (c = x))(); return c?.object?.userData?.isMultiPivot ? c.object.position.toArray() : null; });
+	const seated = await A.page.evaluate(() => { let c; window.__tp.test.v1.TControls.subscribe((x) => (c = x))(); return c?.object?.userData?.isMultiPivot ? c.object.position.toArray() : null; });
 	h.check(!!seated && near(seated, [4, 0, 0]), `selecting the group seats the pivot on that origin (${seated ? fmt(seated) : 'none'})`);
 	// type Y = 90 into the Inspector's rotation row (the angle field takes degrees)
 	const yRow = A.page.locator('#inspector-rotation .dn-input').nth(1);
@@ -77,7 +77,7 @@ h.run(async () => {
 	h.check(near(g.pos, [0, 0, 0]) === false, `...so the group's position moved with the orbit (${fmt(g.pos)})`);
 	await h.eventually(() => Promise.all([worldOf(B.page, ids.a), worldOf(B.page, ids.b)]), ([x, y]) => !!x && !!y && near(x.pos, [4, 0, 1]) && near(y.pos, [4, 0, -1]), 'peer B agrees', 15000);
 	// one undo step puts the pose back
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(500);
 	a = await worldOf(A.page, ids.a);
 	g = await worldOf(A.page, ids.group);
@@ -85,25 +85,25 @@ h.run(async () => {
 
 	// ---- 2. two cubes, Pivot = Parent origin: the set turns about the group's origin ---
 	await A.page.evaluate(({ a, b }) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.objectActions.selectObject(a, true);
 		s.objectActions.selectObject(b, false, true);
 		s.multiTransform.pivotMode.set('parent');
 	}, ids);
 	await A.page.waitForTimeout(400);
-	const available = await A.page.evaluate(() => window.__stores.multiTransform.pivotParentAvailable());
+	const available = await A.page.evaluate(() => window.__tp.test.v1.multiTransform.pivotParentAvailable());
 	h.check(available, 'Parent origin is available (the cubes share the group)');
-	const pivotAt = await A.page.evaluate(() => { let c; window.__stores.TControls.subscribe((x) => (c = x))(); return c?.object?.userData?.isMultiPivot ? c.object.position.toArray() : null; });
+	const pivotAt = await A.page.evaluate(() => { let c; window.__tp.test.v1.TControls.subscribe((x) => (c = x))(); return c?.object?.userData?.isMultiPivot ? c.object.position.toArray() : null; });
 	h.check(!!pivotAt && near(pivotAt, [4, 0, 0]), `the pivot sits on the parent's origin (${pivotAt ? fmt(pivotAt) : 'none'})`);
 	h.check(await A.page.evaluate(() => !!document.querySelector('#pivot-mode')), 'the Inspector shows the Pivot dropdown for a set');
 	const pivotMenu = await A.page.evaluate((u) => {
-		const items = window.__stores.objectMenu.buildObjectMenuItems(u);
-		const p = window.__stores.objectMenu.findMenuItem(items, 'Pivot point');
+		const items = window.__tp.test.v1.objectMenu.buildObjectMenuItems(u);
+		const p = window.__tp.test.v1.objectMenu.findMenuItem(items, 'Pivot point');
 		return p ? p.children.map((c) => c.label + (c.checked ? '✓' : '') + (c.disabled ? '✗' : '')) : null;
 	}, ids.a);
 	h.check(!!pivotMenu && pivotMenu.includes('Parent origin✓'), `the selection menu has Pivot point ▸ (${JSON.stringify(pivotMenu)})`);
 	// the gizmo path: a 90° turn of the pivot
-	await A.page.evaluate(() => window.__stores.multiTransform.applyPivotTransform((p) => { p.rotation.y = Math.PI / 2; }));
+	await A.page.evaluate(() => window.__tp.test.v1.multiTransform.applyPivotTransform((p) => { p.rotation.y = Math.PI / 2; }));
 	await A.page.waitForTimeout(400);
 	a = await worldOf(A.page, ids.a);
 	b = await worldOf(A.page, ids.b);
@@ -112,27 +112,27 @@ h.run(async () => {
 	await h.eventually(() => worldOf(B.page, ids.a), (w) => !!w && near(w.pos, [4, 0, 1]), 'peer B sees the orbited cubes', 15000);
 
 	// ---- 3. Pivot = Individual origins: each cube turns in place -----------------------
-	await A.page.evaluate(() => window.__stores.multiTransform.pivotMode.set('individual'));
+	await A.page.evaluate(() => window.__tp.test.v1.multiTransform.pivotMode.set('individual'));
 	await A.page.waitForTimeout(300);
 	const beforeA = await worldOf(A.page, ids.a);
 	const beforeB = await worldOf(A.page, ids.b);
-	await A.page.evaluate(() => window.__stores.multiTransform.applyPivotTransform((p) => { p.rotation.y = Math.PI / 2; }));
+	await A.page.evaluate(() => window.__tp.test.v1.multiTransform.applyPivotTransform((p) => { p.rotation.y = Math.PI / 2; }));
 	await A.page.waitForTimeout(400);
 	a = await worldOf(A.page, ids.a);
 	b = await worldOf(A.page, ids.b);
 	h.check(near(a.pos, beforeA.pos) && near(b.pos, beforeB.pos), `Individual origins: positions unchanged (${fmt(a.pos)} / ${fmt(b.pos)})`);
 	// the ANGLE between the poses (an Euler Y read wraps: a 180° yaw decomposes as X=π, Y=0, Z=π)
 	const turned = await A.page.evaluate(({ qa0, qa1, qb0, qb1 }) => {
-		const T = window.__stores.THREE;
+		const T = window.__tp.test.v1.THREE;
 		const angle = (p, q) => new T.Quaternion().fromArray(p).angleTo(new T.Quaternion().fromArray(q));
 		return [angle(qa0, qa1), angle(qb0, qb1)];
 	}, { qa0: beforeA.quat, qa1: a.quat, qb0: beforeB.quat, qb1: b.quat });
 	h.check(turned.every((t) => Math.abs(t - Math.PI / 2) < 0.02), `...and each cube turned 90° about itself (${turned.map((t) => t.toFixed(3)).join(', ')} rad)`);
 
 	// ---- 4. Median is the default again for a fresh selection elsewhere ----------------
-	await A.page.evaluate(() => window.__stores.multiTransform.pivotMode.set('median'));
+	await A.page.evaluate(() => window.__tp.test.v1.multiTransform.pivotMode.set('median'));
 	await A.page.waitForTimeout(300);
-	const median = await A.page.evaluate(() => { let c; window.__stores.TControls.subscribe((x) => (c = x))(); return c?.object?.position?.toArray() ?? null; });
+	const median = await A.page.evaluate(() => { let c; window.__tp.test.v1.TControls.subscribe((x) => (c = x))(); return c?.object?.position?.toArray() ?? null; });
 	h.check(!!median && near(median, [4, 0, 0], 0.05), `Median re-seats at the centroid (${median ? fmt(median) : 'none'})`);
 
 	await h.finish(browser);

@@ -12,15 +12,15 @@ const graph = (page) =>
 	page.evaluate(() => {
 		let ns;
 		let es;
-		window.__stores.flowNodes.subscribe((v) => (ns = v))();
-		window.__stores.flowEdges.subscribe((v) => (es = v))();
+		window.__tp.test.v1.flowNodes.subscribe((v) => (ns = v))();
+		window.__tp.test.v1.flowEdges.subscribe((v) => (es = v))();
 		return {
 			nodes: ns.map((n) => ({ id: n.id, type: n.type, x: n.position.x, y: n.position.y, sel: !!n.selected, data: n.data })),
 			edges: es.map((e) => ({ id: e.id, source: e.source, target: e.target }))
 		};
 	});
 const select = (page, ids) =>
-	page.evaluate((ids) => window.__stores.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: ids.includes(n.id) }))), ids);
+	page.evaluate((ids) => window.__tp.test.v1.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: ids.includes(n.id) }))), ids);
 async function focusNodes(page) {
 	const pane = await page.locator('.svelteFlow .svelte-flow__pane').boundingBox();
 	await page.mouse.click(pane.x + 30, pane.y + 30);
@@ -42,8 +42,8 @@ h.run(async () => {
 	await p.waitForTimeout(800);
 	await p.evaluate(() => {
 		const mk = (id, x, y, type = 'number') => ({ id, type, position: { x, y }, data: { type, value: 1, label: id, ...(type === 'math' ? { op: 'add' } : {}) }, class: 'w-[150px]' });
-		window.__stores.flowNodes.set([mk('a', 0, 0), mk('b', 220, 0, 'math'), mk('c', 440, 60), { id: 'sc', type: 'script', position: { x: 0, y: 220 }, data: { type: 'script', label: 'sc', code: 'return 1' }, class: 'w-[150px]' }]);
-		window.__stores.flowEdges.set([{ id: 'e-a-b.a', source: 'a', target: 'b', targetHandle: 'a' }]);
+		window.__tp.test.v1.flowNodes.set([mk('a', 0, 0), mk('b', 220, 0, 'math'), mk('c', 440, 60), { id: 'sc', type: 'script', position: { x: 0, y: 220 }, data: { type: 'script', label: 'sc', code: 'return 1' }, class: 'w-[150px]' }]);
+		window.__tp.test.v1.flowEdges.set([{ id: 'e-a-b.a', source: 'a', target: 'b', targetHandle: 'a' }]);
 	});
 	await p.waitForTimeout(600);
 	await focusNodes(p);
@@ -99,7 +99,7 @@ h.run(async () => {
 
 	// --- 4. notes are never evaluated; a note survives a save round-trip ----------------
 	const rt = await p.evaluate((id) => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		const inRuntime = S.runtimeGraph(S.allNodes(), S.allEdges()).nodes.some((n) => n.id === id);
 		const before = S.nodesHandler.graphHash();
 		const doc = S.flowGraphsCtl.serializeGraphs(S.nodesHandler.serializeNode, S.nodesHandler.serializeEdge);
@@ -150,7 +150,7 @@ h.run(async () => {
 	g = await graph(p);
 	h.check(g.nodes.find((n) => n.id === 'a').x === A0.x && g.nodes.find((n) => n.id === frame.id).x === frame.x, 'ONE undo puts the frame and its nodes back');
 	// moving a member refits the frame around it
-	await p.evaluate(() => window.__stores.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: false }))));
+	await p.evaluate(() => window.__tp.test.v1.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: false }))));
 	await p.keyboard.press('a');
 	await p.waitForTimeout(400);
 	const bb = await box(p, 'b');
@@ -222,7 +222,7 @@ h.run(async () => {
 	await p.waitForTimeout(400);
 	// alone, node-ux opens the Script panel; with 36-code merged the code workspace (its registered opener) takes it
 	const opened = await p.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let panel = null;
 		s.scriptEditorOpen.subscribe((v) => (panel = v))();
 		let tabs = [];
@@ -230,7 +230,7 @@ h.run(async () => {
 		return { panel, ws: (tabs ?? []).some((t) => t.nodeId === 'sc') };
 	});
 	h.check(opened.panel === 'sc' || opened.ws, `Open code opens the script node's code (${JSON.stringify(opened)})`);
-	await p.evaluate(() => window.__stores.scriptEditorOpen.set(null));
+	await p.evaluate(() => window.__tp.test.v1.scriptEditorOpen.set(null));
 	if (opened.ws) await p.locator('#code-ws-close:visible, [data-dock-tab-close="code"]:visible').first().click().catch(() => {});
 	await p.waitForTimeout(300);
 

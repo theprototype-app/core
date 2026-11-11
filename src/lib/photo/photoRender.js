@@ -26,6 +26,7 @@ import { isEditorHelper } from '$lib/water/waterRuntime.js';
 import { linearFrameToSrgb } from '$lib/agent/screenshotCore.js';
 import { hideHelpers } from '$lib/agent/screenshot.js';
 import { photoDone, meshKind, materialKind, translateParams, parityNotes, INSTANCE_PROXY_CAP } from './photoCore.js';
+import { createRenderTarget, readPixels, readPixelsSync } from '../render/renderTargets.js'; // 101 F3: the one factory
 
 /** @type {Promise<any> | null} */
 let tracerModule = null;
@@ -139,7 +140,7 @@ export function cubeUvToEquirect(renderer, pmrem) {
 	const texelWidth = 1.0 / (3 * Math.max(Math.pow(2, maxMip), 7 * 16));
 	const width = Math.min(2048, Math.max(256, imageHeight));
 	const height = width / 2;
-	const target = new THREE.WebGLRenderTarget(width, height, { type: THREE.FloatType, format: THREE.RGBAFormat, depthBuffer: false, generateMipmaps: false });
+	const target = createRenderTarget(width, height, { type: THREE.FloatType, format: THREE.RGBAFormat, depthBuffer: false, generateMipmaps: false });
 	const material = new THREE.ShaderMaterial({
 		defines: { ENVMAP_TYPE_CUBE_UV: '', CUBEUV_TEXEL_WIDTH: texelWidth.toFixed(10), CUBEUV_TEXEL_HEIGHT: texelHeight.toFixed(10), CUBEUV_MAX_MIP: maxMip.toFixed(1) },
 		uniforms: { envMap: { value: pmrem } },
@@ -169,7 +170,8 @@ export function cubeUvToEquirect(renderer, pmrem) {
 		renderer.setRenderTarget(target);
 		renderer.render(quad, cam);
 		const data = new Float32Array(width * height * 4);
-		renderer.readRenderTargetPixels(target, 0, 0, width, height, data);
+		// 101 F3: SYNC on purpose — prepareScene swaps the LIVE scene's environment around this read
+		readPixelsSync(renderer, target, 0, 0, width, height, data);
 		const tex = new THREE.DataTexture(data, width, height, THREE.RGBAFormat, THREE.FloatType);
 		tex.mapping = THREE.EquirectangularReflectionMapping;
 		tex.colorSpace = THREE.LinearSRGBColorSpace;
@@ -351,7 +353,7 @@ export async function renderPhoto(plan, opts = {}) {
 	const started = performance.now();
 	// P6: the constructor runs its own setScene (and may compile): a target is bound for it too (see below)
 	const was = renderer.getRenderTarget();
-	const warm = new THREE.WebGLRenderTarget(1, 1);
+	const warm = createRenderTarget(1, 1);
 	renderer.setRenderTarget(warm);
 	/** @type {any} */
 	let tracer;
@@ -437,7 +439,7 @@ async function readFinal(renderer, source, plan, denoise, pkg) {
 	const { FullScreenQuad } = await import('three/examples/jsm/postprocessing/Pass.js');
 	const w = plan.width;
 	const h = plan.height;
-	const out = new THREE.WebGLRenderTarget(w, h, { type: THREE.FloatType, format: THREE.RGBAFormat, colorSpace: THREE.LinearSRGBColorSpace, depthBuffer: false });
+	const out = createRenderTarget(w, h, { type: THREE.FloatType, format: THREE.RGBAFormat, colorSpace: THREE.LinearSRGBColorSpace, depthBuffer: false });
 	const material = denoise && pkg.DenoiseMaterial
 		? new pkg.DenoiseMaterial({ map: source.texture, blending: THREE.NoBlending, premultipliedAlpha: false })
 		: new THREE.MeshBasicMaterial({ map: source.texture, blending: THREE.NoBlending, toneMapped: false });
@@ -456,8 +458,7 @@ async function readFinal(renderer, source, plan, denoise, pkg) {
 		restoreState(renderer, s);
 	}
 	const buf = new Float32Array(w * h * 4);
-	if (renderer.readRenderTargetPixelsAsync) await renderer.readRenderTargetPixelsAsync(out, 0, 0, w, h, buf);
-	else renderer.readRenderTargetPixels(out, 0, 0, w, h, buf);
+	await readPixels(renderer, out, 0, 0, w, h, buf, { async: true });
 	quad.dispose();
 	material.dispose();
 	out.dispose();

@@ -26,6 +26,7 @@ import {
 	MAX_SHADER_WAVES,
 	MAX_SHADER_RIPPLES
 } from './waterShader.js';
+import { createRenderTarget } from '../render/renderTargets.js'; // 101 F3: the one factory
 
 // 36-water — the RENDERER. Every object carrying userData.water (W1, volumes.js) gets
 // LOCAL visuals under the scene-root 'water-root' group (golden rule 5: never inside
@@ -953,7 +954,7 @@ function renderSelectionMask(renderer, scene, camera, w, h) {
 		selMaskTarget?.dispose();
 		// half size + linear filtering = a soft edge, so the un-refracted object blends into the
 		// refracted water around it instead of being cut out with a hard line
-		selMaskTarget = new THREE.WebGLRenderTarget(mw, mh, { depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
+		selMaskTarget = createRenderTarget(mw, mh, { depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
 	}
 	const masks = meshes.map((m) => m.layers.mask);
 	for (const m of meshes) m.layers.enable(SEL_LAYER);
@@ -1005,7 +1006,7 @@ function ensureTarget(w, h) {
 		return prepass.target;
 	prepass.target?.dispose();
 	prepass.target?.depthTexture?.dispose();
-	const t = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, samples: 0 });
+	const t = createRenderTarget(w, h, { type: THREE.HalfFloatType, samples: 0 });
 	t.depthTexture = new THREE.DepthTexture(w, h);
 	t.depthTexture.type = THREE.UnsignedIntType;
 	t.texture.minFilter = THREE.LinearFilter;
@@ -1119,7 +1120,7 @@ function renderReflection(renderer, scene, camera, entry) {
 	const h = Math.max(1, Math.round(_size.y * 0.5));
 	if (!prepass.refl || prepass.refl.width !== w || prepass.refl.height !== h) {
 		prepass.refl?.dispose();
-		prepass.refl = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType });
+		prepass.refl = createRenderTarget(w, h, { type: THREE.HalfFloatType });
 	}
 	const rc = (prepass.reflCamera ??= new THREE.PerspectiveCamera());
 	const v = entry.volume;

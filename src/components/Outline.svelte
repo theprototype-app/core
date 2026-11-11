@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { createRenderTarget } from '$lib/render/renderTargets.js'; // 101 F3: the one factory
 	import { objectsGroup, selectedObjects, lockedObjects, viewMode, isLocked, editorMode } from '../stores/sceneStore.js';
 	import { showToast } from '../stores/appStore.js';
 	import { get } from 'svelte/store';
@@ -42,7 +43,6 @@
 	import { shadowQuality } from '$lib/lightParams';
 	import { useTask, useThrelte } from '@threlte/core';
 	import { framesHeld, registerComposerWarm, schedule } from '$lib/sceneLoader';
-	import { WebGLRenderTarget } from 'three';
 	import { tick } from 'svelte';
 	import {
 		BlendFunction,
@@ -445,7 +445,7 @@
 	let warmComposerTarget: any = null;
 	async function warmComposerPasses() {
 		await tick(); // the post document's effect rebuilds the stack first
-		if (!warmComposerTarget) warmComposerTarget = new WebGLRenderTarget(1, 1);
+		if (!warmComposerTarget) warmComposerTarget = createRenderTarget(1, 1);
 		const found: any[] = [];
 		const seen = new Set<any>();
 		const visit = (pass: any) => {

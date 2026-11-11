@@ -1,5 +1,6 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
+import { renderOffscreen } from './render/offscreen.js';
 import { writable, get } from 'svelte/store';
 // @ts-ignore - see above
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -379,8 +380,6 @@ export function hashBytes(buffer) {
 /** offscreen render shared by every 3D kind (prefabs pattern) @param {any} object */
 function renderObjectThumbnail(object) {
 	try {
-		const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-		renderer.setSize(128, 128);
 		const scene = new THREE.Scene();
 		scene.add(new THREE.HemisphereLight(0xffffff, 0x444466, 2.4));
 		scene.add(object);
@@ -391,11 +390,11 @@ function renderObjectThumbnail(object) {
 		const camera = new THREE.PerspectiveCamera(40, 1, size / 100, size * 10);
 		camera.position.copy(center).add(new THREE.Vector3(size * 0.7, size * 0.55, size * 0.9));
 		camera.lookAt(center);
-		renderer.render(scene, camera);
-		const url = renderer.domElement.toDataURL('image/webp', 0.72);
-		renderer.dispose();
-		renderer.forceContextLoss?.();
-		return url;
+		// 101 F3: the shared off-screen renderer (one WebGL context for every thumbnail)
+		return renderOffscreen(128, 128, (renderer) => {
+			renderer.render(scene, camera);
+			return renderer.domElement.toDataURL('image/webp', 0.72);
+		});
 	} catch (error) {
 		console.log('explorer thumbnail failed', error);
 		return null;

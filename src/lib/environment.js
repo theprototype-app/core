@@ -1,5 +1,7 @@
 import { basedOnOf } from './envPresetCore.js'; // 78-int PL16
 import * as THREE from 'three';
+// 101 F3: tone curve + exposure go through the renderer seam's hooks
+import { setToneMapping, setExposure } from './render/mainRenderer.js';
 import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import { writable, get } from 'svelte/store';
 import { globalScene, globalRenderer, objectsGroup, backgroundColor, TControls, passthroughActive, roomLook, skyOverRoom, pokeScene } from '../stores/sceneStore';
@@ -404,7 +406,7 @@ export function reapplyToneMapping() {
 		: lastHdriTone.ready
 			? toneMappingConstant(lastHdriTone.mode)
 			: THREE.ACESFilmicToneMapping;
-	renderer.toneMapping = toneFilter(wanted, lastHdriTone.ready);
+	setToneMapping(renderer, toneFilter(wanted, lastHdriTone.ready));
 }
 
 /** @param {(() => boolean) | null} fn */
@@ -485,7 +487,7 @@ export function applyEnvironment() {
 		reapplyToneMapping();
 		// exposure is only read by three's tone mapping chunk, so it is inert under
 		// NoToneMapping — left as authored so switching back needs no re-apply
-		renderer.toneMappingExposure = (preset.exposure ?? 1) * (state.exposure ?? 1);
+		setExposure(renderer, (preset.exposure ?? 1) * (state.exposure ?? 1));
 		// honor a persisted 'off' shadow pref here too: the renderer arrives
 		// after lightParams' first subscribe fires (which would no-op on a null
 		// renderer), so re-assert it on every apply

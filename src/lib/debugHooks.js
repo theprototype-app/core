@@ -17,8 +17,6 @@
 // 94 SP1: the runtime registry lives in a leaf (the play entry imports it without this table)
 import { registeredDebugHooks as registered, registerDebugHook } from './debugHookRegistry.js';
 export { registerDebugHook };
-// 101 F5: `window.__tp.test.v1`, the versioned read-only facade the e2e suites use (a leaf)
-import { installTestFacade } from './testFacade.js';
 
 /** @type {[string, () => Promise<any>][]} */
 export const DEBUG_HOOKS = [
@@ -648,14 +646,17 @@ export const DEBUG_HOOKS = [
 	['pathActions', () => import('./path/pathActions.js')],
 	['pathObject', () => import('./path/pathObject.js')],
 	['pathState', () => import('./path/pathState.js')],
-	['pathTools', () => import('./ai/pathTools.js')]
+	['pathTools', () => import('./ai/pathTools.js')],
+	// 101 F3: the renderer seam (disposeRenderer, recycleMainRenderer, seamState, the factories)
+	['renderSeam', () => import('./render/index.js')]
 ];
 
 /** Load every row and publish `window.__stores` + the 101 F5 facade `window.__tp.test.v1` over it
  * (the facade forwards to this same live object, so a later registerDebugHook shows on both).
  * @returns {Promise<Record<string, any>>} */
 export function installDebugHooks() {
-	return Promise.all(DEBUG_HOOKS.map(([, load]) => load())).then((mods) => {
+	// 101 F5: the facade module loads WITH the rows (lazy: the boot graph never carries it)
+	return Promise.all([Promise.all(DEBUG_HOOKS.map(([, load]) => load())), import('./testFacade.js')]).then(([mods, facade]) => {
 		/** @type {Record<string, any>} */
 		const stores = {};
 		DEBUG_HOOKS.forEach(([name], i) => {
@@ -666,7 +667,7 @@ export function installDebugHooks() {
 		});
 		Object.assign(stores, registered);
 		/** @type {any} */ (window).__stores = stores;
-		installTestFacade(stores);
+		facade.installTestFacade(stores);
 		return stores;
 	});
 }

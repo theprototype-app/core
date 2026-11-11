@@ -13,27 +13,8 @@ import { WEBGL_CREATE_MSG } from './errorReportCore.js';
 /** where the "what to try" section lives (docs PR #61, merged with 1.54.3) */
 export const NO_WEBGL_DOCS = 'https://docs.theprototype.app/performance/#3d-view-does-not-start';
 
-/**
- * Can this browser give us a WebGL 2 context (all three r163+ draws with)? The probe context is
- * released at once, so it never counts against the browser's context limit. SSR = yes.
- * @param {Document} [doc] @returns {boolean}
- */
-export function probeWebGL2(doc = typeof document !== 'undefined' ? document : undefined) {
-	if (!doc) return true;
-	try {
-		const canvas = doc.createElement('canvas');
-		const gl = /** @type {WebGL2RenderingContext | null} */ (canvas.getContext('webgl2'));
-		if (!gl) return false;
-		try {
-			gl.getExtension('WEBGL_lose_context')?.loseContext();
-		} catch {
-			/* releasing is a courtesy */
-		}
-		return true;
-	} catch {
-		return false;
-	}
-}
+// 101 F3: the probe lives in the renderer seam now; re-exported so callers stay put
+export { probeWebGL2 } from './render/webgl2Probe.js';
 
 let reported = false;
 

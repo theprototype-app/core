@@ -27,6 +27,7 @@
 		"check:emoji": "node scripts/check-emoji.cjs",
 		"check:storage": "node scripts/check-storage.cjs",
 		"check:tokens": "node scripts/check-tokens.cjs",
+		"check:render-seam": "node scripts/check-render-seam.cjs",
 		"check:zindex": "node scripts/check-zindex.cjs"
 	},
 	"devDependencies": {

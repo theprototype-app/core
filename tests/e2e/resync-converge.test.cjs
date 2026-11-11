@@ -30,7 +30,7 @@ const h = require('./helpers.cjs');
 const topLevel = (peer) =>
 	peer.page.evaluate(() => {
 		let group;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		return (group?.children ?? []).map((c) => ({ uuid: c.uuid, name: c.name, type: c.type }));
 	});
 
@@ -38,7 +38,7 @@ const topLevel = (peer) =>
 const occurrences = (peer, uuid) =>
 	peer.page.evaluate((id) => {
 		let group;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		let n = 0;
 		group?.traverse((o) => {
 			if (o.uuid === id) n++;
@@ -50,7 +50,7 @@ const occurrences = (peer, uuid) =>
 const poseOf = (peer, uuid) =>
 	peer.page.evaluate((id) => {
 		let group;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		const o = group?.getObjectByProperty('uuid', id);
 		if (!o) return null;
 		const r = (n) => Math.round(n * 1000) / 1000;
@@ -60,7 +60,7 @@ const poseOf = (peer, uuid) =>
 const childCount = (peer, uuid) =>
 	peer.page.evaluate((id) => {
 		let group;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		const o = group?.getObjectByProperty('uuid', id);
 		return o ? o.children.length : -1;
 	}, uuid);
@@ -68,14 +68,14 @@ const childCount = (peer, uuid) =>
 const sceneName = (peer) =>
 	peer.page.evaluate(() => {
 		let c;
-		window.__stores.levels.currentLevel.subscribe((v) => (c = v))();
+		window.__tp.test.v1.levels.currentLevel.subscribe((v) => (c = v))();
 		return { name: c?.name ?? '', hash: c?.hash ?? '' };
 	});
 
 /** create one primitive and return its uuid (creation SELECTS — callers deselect) */
 const create = (peer, command) =>
 	peer.page.evaluate(async (cmd) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand(cmd);
 		await new Promise((r) => setTimeout(r, 1100));
 		let group;
@@ -87,7 +87,7 @@ const create = (peer, command) =>
 const moveTo = (peer, uuid, pos) =>
 	peer.page.evaluate(
 		([id, p]) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let group, peers;
 			s.objectsGroup.subscribe((v) => (group = v))();
 			s.peers.subscribe((v) => (peers = v))();
@@ -116,7 +116,7 @@ h.run(async () => {
 	const s2 = await create(A, '/create sphere 1');
 	const groupU = await A.page.evaluate(
 		(ids) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.objectActions.applySelectionSet(ids);
 			const uuid = s.objectActions.groupSelection();
 			s.objectActions.deselectObject();
@@ -132,7 +132,7 @@ h.run(async () => {
 	);
 	h.check((await childCount(A, groupU)) === 2, 'premise: the group holds both spheres');
 
-	const saved = await A.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('ConvergeDepot'));
+	const saved = await A.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('ConvergeDepot'));
 	h.check(!!saved?.hash, `premise: the scene is saved as a file (${saved?.hash?.slice(0, 8)})`);
 	h.check((await sceneName(A)).name === 'ConvergeDepot', 'premise: A is standing in ConvergeDepot');
 
@@ -154,7 +154,7 @@ h.run(async () => {
 	// shape exactly — the traveller reaches the bytes through travel's own pull (the LUT
 	// watch: ask once, then watch until they land), which section 4 exercises.
 	h.check(
-		(await B.page.evaluate((hash) => !!window.__stores.explorer.itemByHash(hash), saved.hash)) === false,
+		(await B.page.evaluate((hash) => !!window.__tp.test.v1.explorer.itemByHash(hash), saved.hash)) === false,
 		"premise: B does not hold the scene file's bytes yet"
 	);
 
@@ -166,7 +166,7 @@ h.run(async () => {
 	h.check(await moveTo(A, boxU, BOX_AT), 'A moves the box to a distinctive pose');
 	h.check(await moveTo(A, groupU, GROUP_AT), 'A moves the group too');
 	const sphereU = await create(A, '/create sphere 1');
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	h.check((await topLevel(A)).length === 3, 'premise: A now holds three top-level objects');
 	// the ordinary wire still works — B has all of this BEFORE it travels, which is what
 	// makes the next section about the FILE overwriting B and nothing else
@@ -184,7 +184,7 @@ h.run(async () => {
 	// race-free look at the stale world rather than a timer betting against it.
 	const landed = await B.page.evaluate(
 		async ([hash, box]) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const ok = await s.levels.travelToLevel(hash, 'ConvergeDepot');
 			let group;
 			s.objectsGroup.subscribe((v) => (group = v))();
@@ -199,7 +199,7 @@ h.run(async () => {
 	);
 	h.check(landed.ok === true, 'B travelled into the file');
 	h.check(
-		(await B.page.evaluate((hash) => !!window.__stores.explorer.itemByHash(hash), saved.hash)) === true,
+		(await B.page.evaluate((hash) => !!window.__tp.test.v1.explorer.itemByHash(hash), saved.hash)) === true,
 		'the bytes were pulled from A on the way in'
 	);
 	h.check(
@@ -252,7 +252,7 @@ h.run(async () => {
 	// A walk-in is not a one-off: a peer can travel back and forth, and `resyncRoomPeers`
 	// is fired every time. A replace that is not stable under repetition would show up as
 	// a scene that grows a copy per hop.
-	const asked = await B.page.evaluate(() => window.__stores.peerScenes.resyncRoomPeers());
+	const asked = await B.page.evaluate(() => window.__tp.test.v1.peerScenes.resyncRoomPeers());
 	h.check(asked >= 1, `premise: B asked its room again (${asked} peer(s))`);
 	await B.page.waitForTimeout(8000);
 	h.check((await occurrences(B, groupU)) === 1, 'a second heal still leaves ONE group');

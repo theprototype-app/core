@@ -44,7 +44,7 @@ const nap = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function loadScene(page, file) {
 	await page.evaluate(async (arr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 		await s.sessions.applySession(payload, { backup: false });
 	}, Array.from(fs.readFileSync(file)));
@@ -54,10 +54,10 @@ async function loadScene(page, file) {
 const carPose = (page, name) =>
 	page.evaluate((name) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByName(name);
 		if (!o) return null;
-		const T = window.__stores.THREE;
+		const T = window.__tp.test.v1.THREE;
 		const p = o.getWorldPosition(new T.Vector3());
 		const f = new T.Vector3(0, 0, -1).applyQuaternion(o.getWorldQuaternion(new T.Quaternion()));
 		return { pos: [p.x, p.y, p.z], yaw: Math.atan2(-f.x, -f.z), uuid: o.uuid };
@@ -67,7 +67,7 @@ const viewOf = (page) => page.evaluate(() => window.__race?.view?.() ?? null);
 const specOf = (page) =>
 	page.evaluate(() => {
 		let v;
-		window.__stores.touchSpec.touchSpec.subscribe((x) => (v = x))();
+		window.__tp.test.v1.touchSpec.touchSpec.subscribe((x) => (v = x))();
 		return { stick: v.stick, look: v.look, preset: v.preset, ids: v.actions.map((a) => a.id) };
 	});
 const rectOf = (page, sel) =>
@@ -103,7 +103,7 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(3000);
 		await warm.ctx.close();
 	}
@@ -115,7 +115,7 @@ h.run(async () => {
 	const cdp = await page.context().newCDPSession(page);
 	await loadScene(page, TPSCENE);
 	await page.locator('#play-button').click();
-	await h.eventually(() => page.evaluate(() => { let v; window.__stores.physics.simulating.subscribe((x) => (v = x))(); return !!v; }), (v) => v, 'Play starts the simulation (simOnPlay)', 15000);
+	await h.eventually(() => page.evaluate(() => { let v; window.__tp.test.v1.physics.simulating.subscribe((x) => (v = x))(); return !!v; }), (v) => v, 'Play starts the simulation (simOnPlay)', 15000);
 	let spec = await specOf(page);
 	h.check(!spec.ids.includes('gas'), `premise: on foot there are no pedals (${JSON.stringify(spec)})`);
 	await startRace(page);
@@ -149,7 +149,7 @@ h.run(async () => {
 		}
 		await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [...pts, { x: gas.x, y: gas.y, id: 2 }] });
 		await nap(200);
-		const held = await page.evaluate(() => ({ held: window.__stores.touchActions.touchActionsDebug().held, move: window.__stores.touchControls.touchControlsDebug().move }));
+		const held = await page.evaluate(() => ({ held: window.__tp.test.v1.touchActions.touchActionsDebug().held, move: window.__tp.test.v1.touchControls.touchControlsDebug().move }));
 		await nap(ms - 200);
 		await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 		await nap(600);
@@ -179,16 +179,16 @@ h.run(async () => {
 	const vp = V.page;
 	await loadScene(vp, TPSCENE);
 	await vp.locator('#play-button').click();
-	await h.eventually(() => vp.evaluate(() => { let v; window.__stores.physics.simulating.subscribe((x) => (v = x))(); return !!v; }), (v) => v, 'Play starts the simulation', 15000);
+	await h.eventually(() => vp.evaluate(() => { let v; window.__tp.test.v1.physics.simulating.subscribe((x) => (v = x))(); return !!v; }), (v) => v, 'Play starts the simulation', 15000);
 	await startRace(vp);
 	await h.eventually(() => viewOf(vp), (v) => v?.view === 'chase', 'desktop: the chase camera', 6000);
 	// the headset arrives mid-race (a real session start: fake XR + the VR mode the session sets)
 	await xr.install(vp);
 	await xr.installSpace(vp, { head: [0, 1.6, 0], yaw: 0 });
-	await vp.evaluate(() => window.__stores.isVRMode.set(true));
-	await vp.evaluate(() => window.__stores.objectActions.setEditorMode('interact'));
+	await vp.evaluate(() => window.__tp.test.v1.isVRMode.set(true));
+	await vp.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('interact'));
 	await h.eventually(() => viewOf(vp), (v) => v?.view === 'seat', 'entering VR mid-race swaps the chase camera for the SEAT', 6000);
-	const seated = await vp.evaluate(() => window.__stores.vrControls.seatDebug());
+	const seated = await vp.evaluate(() => window.__tp.test.v1.vrControls.seatDebug());
 	let car = await carPose(vp, 'Race car 1');
 	h.check(seated?.uuid === car.uuid, 'the seat is MY car');
 	await vp.waitForTimeout(400);
@@ -198,7 +198,7 @@ h.run(async () => {
 	h.check(Math.abs(wrap(head.yaw - car.yaw)) < 0.05, `...facing the car's way (head ${head.yaw.toFixed(2)}, car ${car.yaw.toFixed(2)})`);
 	const claimsOf = await vp.evaluate(() => {
 		let v;
-		window.__stores.inputRuntime.inputClaims.subscribe((x) => (v = x))();
+		window.__tp.test.v1.inputRuntime.inputClaims.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(claimsOf.includes('sticks') && claimsOf.includes('keys'), `seated: the sticks are claimed (no walking or turning) (${claimsOf})`);
@@ -233,15 +233,15 @@ h.run(async () => {
 	await loadScene(wp, TPSCENE);
 	await xr.install(wp);
 	await xr.installSpace(wp, { head: [0, 1.6, 0], yaw: 0 });
-	await wp.evaluate(() => window.__stores.isVRMode.set(true));
-	await wp.evaluate(() => window.__stores.objectActions.setEditorMode('interact'));
-	await wp.evaluate(() => window.__stores.physics.toggleSimulation());
-	await h.eventually(() => wp.evaluate(() => { let v; window.__stores.physics.simulating.subscribe((x) => (v = x))(); return !!v; }), (v) => v, 'the simulation runs', 15000);
-	h.check((await wp.evaluate(() => { let v; window.__stores.isLocked.subscribe((x) => (v = x))(); return v; })) !== true, 'premise: no pointer lock (a headset never takes one)');
+	await wp.evaluate(() => window.__tp.test.v1.isVRMode.set(true));
+	await wp.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('interact'));
+	await wp.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
+	await h.eventually(() => wp.evaluate(() => { let v; window.__tp.test.v1.physics.simulating.subscribe((x) => (v = x))(); return !!v; }), (v) => v, 'the simulation runs', 15000);
+	h.check((await wp.evaluate(() => { let v; window.__tp.test.v1.isLocked.subscribe((x) => (v = x))(); return v; })) !== true, 'premise: no pointer lock (a headset never takes one)');
 	await wp.evaluate(() => window.__race.claim('Race car 1'));
 	// the round starts through the kit api (the DOM HUD's Start is not drawn in a headset)
 	await wp.evaluate(async () => {
-		await window.__stores.moduleSDK.initModules([{ id: 'racekit', name: 'kit handle', version: '1.0.0', description: '', register(api) { window.__raceKit = api.kit; } }]);
+		await window.__tp.test.v1.moduleSDK.initModules([{ id: 'racekit', name: 'kit handle', version: '1.0.0', description: '', register(api) { window.__raceKit = api.kit; } }]);
 		window.__raceKit.round.start();
 	});
 	await h.eventually(() => phaseOf(wp), (p) => p === 'playing', 'the race runs', 15000);
@@ -256,7 +256,7 @@ h.run(async () => {
 
 	console.log('\n=== 6. leaving the race stands you up beside the car ===');
 	const parked = await carPose(wp, 'Race car 1');
-	await wp.evaluate(() => window.__stores.objectActions.setEditorMode('edit'));
+	await wp.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('edit'));
 	await h.eventually(() => viewOf(wp), (v) => v && !v.engaged && v.view === '', 'Edit: out of the car', 6000);
 	await wp.waitForTimeout(300);
 	car = await carPose(wp, 'Race car 1');
@@ -266,11 +266,11 @@ h.run(async () => {
 	h.check(side[0] < -1.5 && Math.abs(side[2]) < 1, `stepped out on the driver's side (car-local ${side.map((n) => n.toFixed(2))})`);
 	const claims6 = await wp.evaluate(() => {
 		let v;
-		window.__stores.inputRuntime.inputClaims.subscribe((x) => (v = x))();
+		window.__tp.test.v1.inputRuntime.inputClaims.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(!claims6.includes('sticks'), `the sticks are free again (${claims6})`);
-	h.check((await wp.evaluate(() => window.__stores.vrControls.seatDebug())) === null, 'no seat left behind');
+	h.check((await wp.evaluate(() => window.__tp.test.v1.vrControls.seatDebug())) === null, 'no seat left behind');
 	await xr.uninstall(wp);
 	await W.ctx.close();
 	await browser.close();

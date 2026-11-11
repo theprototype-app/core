@@ -7,9 +7,9 @@
 const h = require('./helpers.cjs');
 
 const notifCount = (peer) =>
-	peer.page.evaluate(() => new Promise((r) => window.__stores.notifications.subscribe((n) => r(n.length))()));
+	peer.page.evaluate(() => new Promise((r) => window.__tp.test.v1.notifications.subscribe((n) => r(n.length))()));
 const unread = (peer) =>
-	peer.page.evaluate(() => new Promise((r) => window.__stores.notificationsUnread.subscribe((n) => r(n))()));
+	peer.page.evaluate(() => new Promise((r) => window.__tp.test.v1.notificationsUnread.subscribe((n) => r(n))()));
 
 h.run(async () => {
 	const browser = await h.launch();
@@ -17,14 +17,14 @@ h.run(async () => {
 
 	// start from a clean history
 	await A.page.evaluate(() => {
-		window.__stores.notifications.set([]);
-		window.__stores.notificationsUnread.set(0);
+		window.__tp.test.v1.notifications.set([]);
+		window.__tp.test.v1.notificationsUnread.set(0);
 	});
 
 	// --- E1: toasts feed history + unread ------------------------------------
 	await A.page.evaluate(() => {
-		window.__stores.showToast('First message');
-		window.__stores.showToast('Second message');
+		window.__tp.test.v1.showToast('First message');
+		window.__tp.test.v1.showToast('Second message');
 	});
 	await A.page.waitForTimeout(200);
 	h.check((await notifCount(A)) === 2, 'E1: toasts append to the notification history');
@@ -41,7 +41,7 @@ h.run(async () => {
 	await A.page.locator('#notif-panel button', { hasText: 'Clear all' }).click();
 	await A.page.waitForTimeout(200);
 	h.check((await notifCount(A)) === 0, 'E1: Clear all empties the history');
-	await A.page.evaluate(() => window.__stores.notificationCenterOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.notificationCenterOpen.set(false));
 
 	// --- E1: z-tier split — approvals critical, info regular -----------------
 	const containers = await A.page.evaluate(() => ({
@@ -52,7 +52,7 @@ h.run(async () => {
 
 	await A.page.evaluate(() => {
 		const cur = [];
-		window.__stores.pendingApprovals.set([{ peerId: 'peer-xyz', status: 'new' }]);
+		window.__tp.test.v1.pendingApprovals.set([{ peerId: 'peer-xyz', status: 'new' }]);
 		void cur;
 	});
 	await A.page.waitForTimeout(300);
@@ -63,19 +63,19 @@ h.run(async () => {
 		return !!c && /Connection request/.test(c.textContent || '');
 	});
 	h.check(approvalInCritical, 'E1: connection-request toast renders in the critical (above-modals) container');
-	await A.page.evaluate(() => window.__stores.pendingApprovals.set([]));
+	await A.page.evaluate(() => window.__tp.test.v1.pendingApprovals.set([]));
 
 	// --- E2: notes drawer lists annotations ----------------------------------
 	await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const box = g.children[g.children.length - 1];
-		const ah = window.__stores.annotationsHandler;
+		const ah = window.__tp.test.v1.annotationsHandler;
 		ah.addAnnotation(box.uuid);
 		let active; ah.activeAnnotation.subscribe((v) => (active = v))();
 		if (active?.draft) { active.draft.text = 'Fix this face'; ah.setAnnotation(active.draft); }
 		ah.activeAnnotation.set(null);
-		window.__stores.notesDrawerOpen.set(true);
+		window.__tp.test.v1.notesDrawerOpen.set(true);
 	});
 	await A.page.waitForTimeout(400);
 	h.check(await A.page.locator('#notes-drawer').first().isVisible(), 'E2: notes drawer opens');

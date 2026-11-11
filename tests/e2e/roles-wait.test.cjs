@@ -31,24 +31,24 @@ const init = (url, waitMs = 600000) => ({
 const count = (p) =>
 	p.page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return g.children.filter((c) => c.isMesh).length;
 	});
 const names = (p) =>
 	p.page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return g.children.filter((c) => c.isMesh).map((c) => c.name);
 	});
-const pending = (p) => p.page.evaluate(() => window.__stores.cloudHooks.rolesPending?.() ?? null);
+const pending = (p) => p.page.evaluate(() => window.__tp.test.v1.cloudHooks.rolesPending?.() ?? null);
 const roster = (p, id) =>
 	p.page.evaluate((x) => {
 		let p;
-		window.__stores.peers.subscribe((v) => (p = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (p = v))();
 		return !!p?.openedPeers?.has(x);
 	}, id);
-const create = (p) => p.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
-const ready = (p) => p.page.waitForFunction(() => !!window.__stores?.cloudHooks && !!window.__stores?.commandsHandler, null, { timeout: 90000 });
+const create = (p) => p.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
+const ready = (p) => p.page.waitForFunction(() => !!window.__tp?.test.v1?.cloudHooks && !!window.__tp?.test.v1?.commandsHandler, null, { timeout: 90000 });
 const opened = (p, says) =>
 	p.page.evaluate((s) => {
 		globalThis.__pluginSays = s;
@@ -136,7 +136,7 @@ h.run(async () => {
 		await h.eventually(() => count(G), (n) => n === 1, 'premise: G made a box', 15000);
 		await H.page.waitForTimeout(2500);
 		h.check((await count(H)) === 0, "G's edit does not apply on a host whose plugin failed");
-		const role = await H.page.evaluate((id) => window.__stores.cloudHooks.knownRoleOf?.(id) ?? null, G.id);
+		const role = await H.page.evaluate((id) => window.__tp.test.v1.cloudHooks.knownRoleOf?.(id) ?? null, G.id);
 		h.check(role === 'viewer', `…the host reads G as a viewer (${role})`);
 		await H.page.context().close();
 		await G.page.context().close();

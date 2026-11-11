@@ -23,7 +23,7 @@ h.run(async () => {
 	// no body at all in flowbite 1.x). This used to say 'Scene', which is why the suite
 	// was red: the row lives under Interface ▸ Windows & chrome, so the button was never
 	// in the DOM and the click threw on null.
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 	await A.page.waitForTimeout(500);
 	await A.page.locator('#settings-nav .sn-row', { hasText: 'Interface' }).first().click();
 	await A.page.waitForTimeout(300);

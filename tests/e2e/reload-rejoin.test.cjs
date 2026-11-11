@@ -10,25 +10,25 @@ const h = require('./helpers.cjs');
 const objectsOf = (p) =>
 	p.page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		return (g?.children ?? []).map((c) => c.uuid);
 	});
 const linkOf = (p) =>
 	p.page.evaluate(() => {
 		let pr, host;
-		window.__stores.peers.subscribe((v) => (pr = v))();
-		window.__stores.connectionState.sessionHost.subscribe((v) => (host = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (pr = v))();
+		window.__tp.test.v1.connectionState.sessionHost.subscribe((v) => (host = v))();
 		return { id: pr?.peer?.id ?? null, open: [...(pr?.openedPeers ?? [])], host };
 	});
 /** a reload with a patient boot wait (h.freshReload allows 30 s; a loaded slot's second boot can take longer) */
 const reload = async (p) => {
 	await p.page.reload({ waitUntil: 'domcontentloaded' });
-	await p.page.waitForFunction(() => window.__stores && !!window.__stores.moduleSDK, null, { timeout: 90000 });
+	await p.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.moduleSDK, null, { timeout: 90000 });
 };
 const restoreUp = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.autosave?.restoreAvailable?.subscribe((x) => (v = x))();
+		window.__tp.test.v1.autosave?.restoreAvailable?.subscribe((x) => (v = x))();
 		return !!v || !!document.querySelector('#restore-session-modal[open]');
 	});
 
@@ -36,7 +36,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 	await A.page.evaluate(() => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		S.commandsHandler.sceneCommand('/create box');
 		S.commandsHandler.sceneCommand('/create sphere');
 		S.objectActions.deselectObject();
@@ -48,7 +48,7 @@ h.run(async () => {
 	await h.eventually(() => objectsOf(B), (u) => u.length === 2, '1.1 the guest received the host scene', 30000);
 
 	// ---- 1. the guest's autosave holds a copy of the host's scene (what Restore loaded) ----
-	await B.page.evaluate(() => window.__stores.autosave.saveNow());
+	await B.page.evaluate(() => window.__tp.test.v1.autosave.saveNow());
 	const before = await linkOf(B);
 	h.check(before.host === A.id && before.open.includes(A.id), `1.2 premise: B is joined to A (${JSON.stringify(before)})`);
 
@@ -70,7 +70,7 @@ h.run(async () => {
 	h.check((await objectsOf(A)).length === 2, `2.6 nor did anything arrive twice on the host (${(await objectsOf(A)).length})`);
 	const cards = await A.page.evaluate(() => {
 		let v;
-		window.__stores.pendingApprovals?.subscribe((x) => (v = x))();
+		window.__tp.test.v1.pendingApprovals?.subscribe((x) => (v = x))();
 		return (v ?? []).length;
 	});
 	h.check(cards === 0, `2.7 the host was not asked to approve B again (${cards} cards)`);

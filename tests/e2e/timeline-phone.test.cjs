@@ -20,21 +20,21 @@ const overflow = (page) =>
 		if (!root) return { root: false };
 		const r = root.getBoundingClientRect();
 		// uir-polish B1: a CLOSED pane handle shifts flush across the dock frame's padding to the frame's edge
-		// ([data-ph-shift]) — by design past the root, never past the frame. Anything else poking out is overflow.
+		// ([data-ph-shift]) — by design past the root, never past the frame. The root's overflow is measured with that
+		// shift taken out (anything else poking out still counts), the handle against the frame.
 		const frame = root.closest('.tp-dock-panel, .tp-window, [data-pd-host], [data-docked]');
 		const fr = frame ? frame.getBoundingClientRect() : null;
-		let poke = 0;
-		for (const e of root.querySelectorAll('*')) {
-			if (e.closest('[data-ph-shift]')) continue;
-			const b = e.getBoundingClientRect();
-			if (b.width) poke = Math.max(poke, b.right - r.right);
-		}
-		const shifted = [...root.querySelectorAll('[data-ph-shift]')].map((e) => e.getBoundingClientRect().right - (fr ? fr.right : window.innerWidth));
+		const shifted = /** @type {HTMLElement[]} */ ([...root.querySelectorAll('[data-ph-shift]')]);
+		const past = shifted.map((e) => e.getBoundingClientRect().right - (fr ? fr.right : window.innerWidth));
+		const keep = shifted.map((e) => e.style.translate);
+		for (const e of shifted) e.style.translate = 'none';
+		const poke = root.scrollWidth - root.clientWidth;
+		shifted.forEach((e, i) => (e.style.translate = keep[i]));
 		return {
 			root: true,
-			scroll: Math.round(poke),
+			scroll: poke,
 			frameScroll: frame ? frame.scrollWidth - frame.clientWidth : 0,
-			handlePastFrame: shifted.length ? Math.round(Math.max(...shifted)) : null,
+			handlePastFrame: past.length ? Math.round(Math.max(...past)) : null,
 			right: r.right - window.innerWidth,
 			w: r.width
 		};

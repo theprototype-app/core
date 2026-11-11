@@ -26,7 +26,14 @@ async function toDock(page, key) {
 		if (w === 'floating') s.bottomDock.armDockMode(k, true);
 		else s.dockMenu.addWindowItems({ target: 'dock' }).find((/** @type {any} */ r) => r.key === k)?.action?.();
 	}, key);
-	await page.waitForTimeout(900);
+	// a lazy window (Code boots its editor) may not have consumed the arm yet: wait for the dock, re-arm once
+	for (let i = 0; i < 16; i++) {
+		await page.waitForTimeout(500);
+		const w = await page.evaluate((k) => window.__stores.dockMenu.windowWhere(k), key);
+		if (w === 'dock') break;
+		if (i === 6 && w === 'floating') await page.evaluate((k) => window.__stores.bottomDock.armDockMode(k, true), key);
+	}
+	await page.waitForTimeout(400);
 }
 
 h.run(async () => {

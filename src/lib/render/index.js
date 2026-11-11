@@ -59,6 +59,10 @@ export async function recycleMainRenderer(opts = {}) {
 	const lost = once(canvas, 'webglcontextlost', ms);
 	r.forceContextLoss();
 	await lost;
+	// a TASK, not a microtask: the promise resolves inside OUR lost listener, before the other
+	// listeners (three's, Scene.svelte's) have called preventDefault — and a loss nobody
+	// default-prevented cannot be restored (the browser ignores restoreContext)
+	await new Promise((resolve) => setTimeout(resolve, 50));
 	const restored = once(canvas, 'webglcontextrestored', ms);
 	r.forceContextRestore();
 	await restored;

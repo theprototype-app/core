@@ -1711,9 +1711,9 @@ export class PeerConnection {
 					// Latest-wins on the sessionNow stamp; every peer derives the pose itself.
 					applyRemoteBehavior(data);
 				} else if(data.type == 'object') {
-					createObject(data, data.uuids, data.override, data.groupuuid, data.pos, data.rot, data.scale);
+					createObject(data, data.uuids, data.override, data.groupuuid, data.pos, data.rot, data.scale, conn.peer);
 				} else if(data.type == 'objectParameters') {
-					objectParameters(data);
+					objectParameters(data, conn.peer);
 				} else if(data.type == 'duplicate') {
 					// B7: `transient` is additive — absent for every ordinary duplicate.
 					// D2: so is `shareMaterial` — absent means the copy gets its own material,

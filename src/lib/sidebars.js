@@ -89,6 +89,35 @@ function readWidth(side) {
 /** which side the Inspector docks to (LOCAL, persisted) */
 export const inspectorSide = writable(/** @type {Side} */ (ls ? asSide(safeStorage.getItem('sidebar:inspectorSide')) : 'right'));
 inspectorSide.subscribe((v) => ls && safeStorage.setItem('sidebar:inspectorSide', v));
+/**
+ * uir-polish E5 (owner 2026-11-11, "moving Configure scene to the other sidebar drags the Properties tab with it"):
+ * the Configure Scene TAB has a side of its own (LOCAL, persisted). Absent = wherever Properties is (the pre-E5
+ * single-side model, which is also every state where the two sides agree). See `inspectorDual` for what changes when
+ * they differ.
+ */
+export const sceneSide = writable(/** @type {Side} */ (ls && safeStorage.getItem('sidebar:sceneSide') ? asSide(safeStorage.getItem('sidebar:sceneSide')) : get(inspectorSide)));
+// stored only while the two are APART: a stored inspectorSide alone (an older layout, a reload after a direct write)
+// then means "together", never a stale split
+const persistSceneSide = () => {
+	if (!ls) return;
+	const v = get(sceneSide);
+	if (v === get(inspectorSide)) safeStorage.removeItem('sidebar:sceneSide');
+	else safeStorage.setItem('sidebar:sceneSide', v);
+};
+sceneSide.subscribe(persistSceneSide);
+// uir-polish E5: only a TAB move (moveSidebarTab) splits the two. Any other write of inspectorSide — a layout restore, a
+// pop-out coming back, a module or a test that places "the Inspector" — moves Configure Scene along while the two
+// share a side, which is what every writer before E5 meant by it.
+let inspectorMovesAlone = false;
+{
+	let prevInspectorSide = get(inspectorSide);
+	inspectorSide.subscribe((v) => {
+		const was = prevInspectorSide;
+		prevInspectorSide = v;
+		if (v !== was && !inspectorMovesAlone && get(sceneSide) === was) sceneSide.set(v);
+		persistSceneSide();
+	});
+}
 
 /** the Full-height pin, per side (LOCAL, persisted) */
 export const sidebarFull = writable({
@@ -357,9 +386,19 @@ export function setDockMover(fn) {
 /** move a panel to a side (the tab drag's drop) @param {string} key @param {Side} side */
 export function moveSidebarTab(key, side) {
 	if (get(members)[key]?.side !== side) keepSideOpen(key);
-	// showhide-v8: the Inspector's two tabs share one element, so they move together
-	if (isInspectorKey(key)) inspectorSide.set(side);
-	else if (!dockMover?.(key, side)) return false;
+	// uir-polish E5: each Inspector tab moves ALONE (showhide-v8 moved both — one element cannot be in two columns;
+	// `inspectorDual` now draws Configure Scene with a second instance while the two sides differ)
+	if (key === 'scene') sceneSide.set(side);
+	else if (key === 'inspector') {
+		// Properties alone carries the element's side; with Configure Scene CLOSED its side follows (it opens beside)
+		if (!get(inspectorTabs).scene) sceneSide.set(side);
+		inspectorMovesAlone = true;
+		try {
+			inspectorSide.set(side);
+		} finally {
+			inspectorMovesAlone = false;
+		}
+	} else if (!dockMover?.(key, side)) return false;
 	activateSidebarTab(key);
 	return true;
 }
@@ -464,6 +503,14 @@ function onInspector(closed, kind) {
 		const key = tabOfKind(kind);
 		if (key === 'inspector') propsKind = kind === 'file' ? 'file' : 'selection';
 		const tabs = get(inspectorTabs);
+		// uir-polish E5: Properties open in another column than Configure Scene's — asking for the scene opens / brings
+		// forward ITS tab (the second instance draws it) and the element stays on Properties
+		if (key === 'scene' && tabs.inspector && get(sceneSide) !== get(inspectorSide)) {
+			if (!tabs.scene) inspectorTabs.set({ ...tabs, scene: true });
+			else activateSidebarTab('scene');
+			insQuietly(() => inspectorKind.set(/** @type {any} */ (propsKind)));
+			return;
+		}
 		if (!tabs[key]) inspectorTabs.set({ ...tabs, [key]: true });
 		else activateSidebarTab(key); // an open of a covered tab brings it forward (the old one-member arrival)
 		return;
@@ -505,14 +552,25 @@ export function startSidebars() {
 		else if (!closed && !tabs[key]) inspectorTabs.set({ ...tabs, [key]: true });
 	});
 	// 70 W2: an Inspector in a pop-out window is no column member (it keeps its side for coming back)
-	derived([inspectorTabs, inspectorSide, panelAway], (x) => x).subscribe(([tabs, side, away]) => {
+	derived([inspectorTabs, inspectorSide, sceneSide, panelAway], (x) => x).subscribe(([tabs, side, sSide, away]) => {
 		reportMember('inspector', side, tabs.inspector && !away.inspector);
-		reportMember('scene', side, tabs.scene && !away.inspector);
+		reportMember('scene', sSide, tabs.scene && !away.inspector); // uir-polish E5: its own side
+	});
+	// uir-polish E5: entering the dual state (a tab moved apart) while the element showed the scene: it goes back to
+	// Properties — Configure Scene now has its own instance in its own column
+	inspectorDual.subscribe((dual) => {
+		if (dual && get(inspectorKind) === 'scene') insQuietly(() => inspectorKind.set(/** @type {any} */ (propsKind)));
 	});
 	// a tab brought to the front shows its kind in the one element
 	sidebarShown.subscribe((shown) => {
-		const key = shown[get(inspectorSide)];
-		if (key && isInspectorKey(key) && get(inspectorTabs)[/** @type {'inspector'|'scene'} */ (key)]) showInspectorKind(/** @type {any} */ (key));
+		// uir-polish E5: in the dual state the element is Properties' alone — Configure Scene's tab coming forward in
+		// its own column is the second instance's business
+		if (get(inspectorDual)) return;
+		const tabs = get(inspectorTabs);
+		// one tab open: it shows on its own side (Configure Scene alone may sit in the other column)
+		const side = !tabs.inspector && tabs.scene ? get(sceneSide) : get(inspectorSide);
+		const key = shown[side];
+		if (key && isInspectorKey(key) && tabs[/** @type {'inspector'|'scene'} */ (key)]) showInspectorKind(/** @type {any} */ (key));
 	});
 	// an explicit open of an Inspector that is already open (Configure Scene, double-click,
 	// a deep link) brings its tab to the front of the column
@@ -548,6 +606,7 @@ onLayoutRestore(() => {
 		right: safeStorage.getItem('sidebar:full:right') === 'true'
 	});
 	inspectorSide.set(asSide(safeStorage.getItem('sidebar:inspectorSide')));
+	sceneSide.set(safeStorage.getItem('sidebar:sceneSide') ? asSide(safeStorage.getItem('sidebar:sceneSide')) : get(inspectorSide));
 	sidebarMode.set({ left: readMode('left'), right: readMode('right') });
 	for (const side of SIDES) order[side] = readOrder(side);
 	mru.update((v) => {
@@ -572,6 +631,20 @@ export const sidebarsWide = readable(true, (set) => {
 	mq.addEventListener('change', on);
 	return () => mq.removeEventListener('change', on);
 });
+
+/**
+ * uir-polish E5 — BOTH Inspector tabs open, in DIFFERENT columns (wide posture, the Inspector not in a pop-out window).
+ * Then the one Inspector element keeps Properties (on `inspectorSide`) and Configure Scene is drawn by a second
+ * instance (`<Inspector pane="scene">`, Menu.svelte) on `sceneSide`; `inspectorKind` never reads 'scene' in this state
+ * (a request for it activates the Configure Scene tab instead — `onInspector`). Every other state is the single
+ * element of showhide-v8: one tab open shows on ITS side, both on one side share the element.
+ */
+export const inspectorDual = derived([inspectorTabs, inspectorSide, sceneSide, sidebarsWide, panelAway], ([tabs, iSide, sSide, wide, away]) => !!(wide && tabs.inspector && tabs.scene && iSide !== sSide && !away.inspector));
+/** the column the one Inspector element draws in: Configure Scene's own side while it shows alone, else Properties' */
+export const inspectorElementSide = derived([inspectorKind, inspectorTabs, inspectorSide, sceneSide, inspectorDual], ([kind, tabs, iSide, sSide, dual]) =>
+	dual || tabs.inspector ? iSide : tabs.scene || kind === 'scene' ? sSide : iSide
+);
+
 
 const resizeTick = writable(0);
 

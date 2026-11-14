@@ -1343,7 +1343,8 @@ export function clearDeletedRecords() {
  * bytes are reclaimed is impossible, which is exactly why it has to be recorded at
  * delete time. @param {any} row @returns {string|null} */
 export function deletedThumb(row) {
-	return row?.thumb ?? null;
+	const thumb = row?.thumb;
+	return typeof thumb === 'string' && thumb.startsWith('data:image/') ? thumb : null;
 }
 
 /** The deleted log, newest first — what the Explorer's Deleted view lists.

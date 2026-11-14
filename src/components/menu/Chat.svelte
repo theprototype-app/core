@@ -11,6 +11,8 @@
 	import WindowChrome from '../ui/WindowChrome.svelte';
 	import Button from '../ui/Button.svelte';
 	import Icon from '../ui/Icon.svelte';
+	import HeadDockPop from '../ui/HeadDockPop.svelte'; // uir-polish G2
+	import { dockTab } from '$lib/dockMenu';
 	import ChatSession from './ChatSession.svelte';
 	import ChatAssistant from './ChatAssistant.svelte';
 	import ChatHistory from './ChatHistory.svelte';
@@ -232,6 +234,7 @@
 							onclick={startNewChat}><Icon name="plus" size={16} /></button
 						>
 					{/if}
+					<HeadDockPop key="chat" title="Chat" ondock={() => dockTab('chat')} />
 				{/snippet}
 			</WindowChrome>
 			<!-- the tabs: a row under the title, so the header stays the window's grip (a press on a tab is

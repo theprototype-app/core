@@ -1,3 +1,4 @@
+import { embeddedOnlyManager, checkGltf } from './loadGuard.js';
 import { get } from 'svelte/store';
 import { CompressedTexture, LinearFilter, RGBAFormat } from 'three';
 import { globalRenderer } from '../stores/sceneStore';
@@ -469,9 +470,10 @@ export async function parseGltfSceneSafe(bytes, resourcePath = '') {
 	const required = (c?.json?.extensionsRequired ?? []).includes('KHR_texture_basisu');
 	const allFallback = !required && ktx.size > 0 && [...ktx.values()].every((e) => e.fallback);
 	if (allFallback) {
+		if (!resourcePath && !checkGltf(bytes, 'file', 'model', { uris: false })) throw new Error('model refused by the load check');
 		/** @type {any} */
 		const gltf = await new Promise((resolve, reject) =>
-			createGltfLoader().parse(bytes, resourcePath, resolve, reject)
+			createGltfLoader(resourcePath ? undefined : embeddedOnlyManager('file', 'model')).parse(bytes, resourcePath, resolve, reject)
 		);
 		await attachTwinsFromGltf(gltf, bytes);
 		return gltf;

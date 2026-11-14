@@ -1022,37 +1022,6 @@
 					]
 				},
 				{
-					"name": "Sticky panel headers",
-					"controls": [
-						{
-							"kind": "toggle",
-							"id": "sticky-panel-heads",
-							"label": "Sticky panel headers",
-							"where": "control",
-							"default": true,
-							"disabled": false,
-							"state": false,
-							"effects": {
-								"storage": {
-									"panels:stickyHeads": "{\"scene\":false,\"properties\":false}"
-								},
-								"stores": {
-									"panelHeaderPrefs.stickyPanelHeads": "<object>"
-								},
-								"html": [],
-								"body": [],
-								"dialogs": [],
-								"broadcasts": [],
-								"events": []
-							},
-							"scope": "device",
-							"restored": true,
-							"storageAfterRestore": {},
-							"exercise": "done"
-						}
-					]
-				},
-				{
 					"name": "Touch tools",
 					"controls": [
 						{
@@ -11344,16 +11313,6 @@
 						"kind": "segment",
 						"id": "undock-button-mode-group",
 						"default": false
-					}
-				]
-			},
-			{
-				"name": "Sticky panel headers",
-				"controls": [
-					{
-						"kind": "toggle",
-						"id": "sticky-panel-heads",
-						"default": true
 					}
 				]
 			},

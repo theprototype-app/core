@@ -8,6 +8,9 @@
 //   4. a drag while the dock is open saves the new spot, inside the band
 //   5. the dock closes: each handle is back on its saved spot
 //   6. a reload keeps the saved spots
+//   7. uir-polish A1: a dock tall enough to leave no room above it: the handle goes BEHIND the dock (never on top),
+//      and comes back to its saved spot when the dock closes
+//   8. uir-polish A2: the window gets shorter / taller: the handle keeps its place in proportion to the free height
 //
 // Run: APP_URL=https://theprototype.app:5809/ npm run e2e -- sidebar-handles-dock
 const h = require('./helpers.cjs');
@@ -112,5 +115,51 @@ h.run(async () => {
 	await settle(page, 2000);
 	st = await state(page);
 	h.check(near(st.left, keep.left) && near(st.right, keep.right), `6 a reload keeps both saved spots (${st.left?.top}/${keep.left?.top}, ${st.right?.top}/${keep.right?.top})`);
+
+	// ---- 7. A1: no room above the dock -> behind it ----
+	const onTop = (side) =>
+		page.evaluate((id) => {
+			const el = document.getElementById(id);
+			const b = el?.getBoundingClientRect();
+			if (!b || !b.height) return null;
+			const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+			return { mine: !!hit && el.contains(hit), under: el.hasAttribute('data-under') };
+		}, 'sidebar-handle-' + side);
+	await nodeEditor(page);
+	await settle(page, 1000);
+	await page.evaluate(() => window.__stores.bottomDock.dockHeight.set(Math.round(innerHeight - 120)));
+	await settle(page, 1000);
+	st = await state(page);
+	h.check(st.dockTop !== null && st.dockTop < 200, `premise: the dock covers nearly the whole viewport (top ${st.dockTop})`);
+	for (const side of SIDES) {
+		const t = await onTop(side);
+		h.check(t && t.under && !t.mine, `7 no room above the dock: the ${side} handle waits BEHIND it, not painted on it (${JSON.stringify(t)})`);
+	}
+	await page.evaluate(() => window.__stores.bottomDock.dockHeight.set(320));
+	await nodeEditor(page);
+	await settle(page, 1000);
+	st = await state(page);
+	h.check(st.inset === 0 && near(st.left, keep.left) && near(st.right, keep.right), `7 ...the dock closed: both back on their saved spots (${st.left?.top}/${keep.left?.top})`);
+	for (const side of SIDES) {
+		const t = await onTop(side);
+		h.check(t && !t.under && t.mine, `7 ...and on top again (${side}: ${JSON.stringify(t)})`);
+	}
+
+	// ---- 8. A2: proportional to the window height ----
+	const tops = await state(page);
+	await page.setViewportSize({ width: 1920, height: 760 });
+	await settle(page, 1500);
+	const short = await state(page);
+	for (const side of SIDES) {
+		// the resting place (the floor) does not move with the height; the free height below it does
+		const rest = tops[side].top - tops.saved[side];
+		const want = Math.round(rest + (tops.saved[side] / (1080 - 44 - 96 - rest)) * (760 - 44 - 96 - rest));
+		h.check(short[side] && short[side].top < tops[side].top - 60 && Math.abs(short[side].top - want) <= 3, `8 a shorter window moves the ${side} handle up in proportion (${tops[side]?.top} -> ${short[side]?.top}, want ${want})`);
+	}
+	await page.setViewportSize({ width: 1920, height: 1080 });
+	await settle(page, 1500);
+	const back = await state(page);
+	for (const side of SIDES)
+		h.check(back[side] && Math.abs(back[side].top - tops[side].top) <= 2, `8 ...back to the full height: the same spot as before (${tops[side]?.top} -> ${back[side]?.top})`);
 	await h.finish(browser);
 });

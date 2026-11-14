@@ -8,6 +8,8 @@
 	// every download lands through $lib/cc0/cc0Import — the Explorer's own import entry for files,
 	// the environment picker's write for a sky, the material preset library for a material.
 	import Icon from '../ui/Icon.svelte';
+	import HeadDockPop from '../ui/HeadDockPop.svelte'; // uir-polish G2
+	import { dockTab } from '$lib/dockMenu';
 	import Button from '../ui/Button.svelte';
 	import Segmented from '../ui/Segmented.svelte';
 	import Tabs from '../ui/Tabs.svelte';
@@ -390,8 +392,10 @@
 				aria-label="Refresh"
 				onclick={refresh}><Icon name="refresh-cw" size={16} aria-hidden="true" /></button
 			>
+			<HeadDockPop key="assets" title="Free assets" ondock={() => dockTab('assets')} btnClass="rounded-sm p-1 hover:brightness-150" />
 			<button
 				id="asset-browser-close"
+				data-wc-x
 				class="rounded-sm p-1 hover:brightness-150"
 				title="Close"
 				aria-label="Close the asset browser"

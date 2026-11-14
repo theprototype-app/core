@@ -18,6 +18,7 @@
 	import { untrack } from 'svelte';
 	import { get } from 'svelte/store';
 	import Icon from '../ui/Icon.svelte';
+	import HeadDockPop from '../ui/HeadDockPop.svelte'; // uir-polish G2/G3
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import {
 		SvelteFlow,
@@ -1128,7 +1129,7 @@
 				<span class="flex-1"></span>
 			{/snippet}
 			{#snippet actions()}
-				<button data-wc-chrome class="wc-act-text" id="shader-dock" title="Dock to the bottom" aria-label="Dock the shader editor" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={16} />Dock</button>
+				<HeadDockPop key="shader" title="Shader editor" ondock={() => setDocked(true)} dockId="shader-dock" />
 				{@render editorActions()}
 			{/snippet}
 		</WindowChrome>

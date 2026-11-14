@@ -59,6 +59,13 @@ async function dropPanel(source, target, key, selector) {
 	);
 }
 
+
+/** uir-polish G1: DOCKED, Code has no pop-out button (no header row at all) — float it first; its window header has one */
+async function floatCode(page) {
+	await page.evaluate(() => window.__stores.bottomDock.armDockMode('code', false));
+	await page.locator('#code-ws-popout').first().waitFor({ state: 'visible', timeout: 15000 });
+}
+
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A', { storage: { 'shared:shareNewFiles': 'never' } });
@@ -141,7 +148,8 @@ h.run(async () => {
 	await S(page, () => window.__stores.flowNodes.update((n) => [...n, { id: 'pw1', type: 'script', position: { x: 0, y: 0 }, data: { type: 'script', code: '// pw' }, class: 'w-[150px]' }]));
 	await page.waitForTimeout(500);
 	await S(page, () => window.__stores.codeWorkspace.openCode({ source: 'script', ref: { nodeId: 'pw1', graphId: 'scene' } }));
-	await page.waitForSelector('#code-ws-popout', { timeout: 45000 });
+	await page.waitForSelector('[data-pane] .cm-content, #code-ws-window, #code-ws-dock', { timeout: 45000 });
+	await floatCode(page);
 	const pop3 = await popupFrom(page, () => page.locator('#code-ws-popout').first().click());
 	h.check((await pop3.title()).startsWith('Code'), 'Code pops out in a window of its own ("Code — ThePrototype")');
 	await S(page, (id) => window.__stores.panelHost.windowApi.moveTo('code', id), dockWin.id);

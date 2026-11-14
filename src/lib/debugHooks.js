@@ -534,7 +534,6 @@ export const DEBUG_HOOKS = [
 	['projectActions', () => import('./projectActions.js')],
 	['saveOptions', () => import('./saveOptions.js')],
 	// 42 I1: sticky panel headers
-	['panelHeaderPrefs', () => import('./panelHeaderPrefs.js')],
 	['rowFit', () => import('./ui/rowFit.js')],
 	['exportBoot', () => import('./export/exportBoot.js')],
 	['exportRuntime', () => import('./export/exportRuntime.js')],
@@ -552,6 +551,8 @@ export const DEBUG_HOOKS = [
 	['diagnostics', () => import('./diagnostics')],
 	['wireValidate', () => import('./wireValidate')],
 	['wireErrors', () => import('./wireErrors')],
+	// the load check in front of three's generic loaders (totals + reset for the suites)
+	['loadGuard', () => import('./loadGuard.js')],
 	['safeStorage', () => import('./safeStorage')],
 	['sceneBudget', () => import('./sceneBudget')],
 	// 46 B1/B2: the budget chip + Statistics ▸ Budget (budgetTarget, sceneCost, sampleBudget, openBudget, TARGETS)

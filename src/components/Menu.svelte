@@ -12,6 +12,7 @@
 	import BudgetChip from './menu/BudgetChip.svelte'; // 46 B1
 	import Inspector from './menu/Inspector.svelte';
 	import SidebarStrips from './menu/SidebarStrips.svelte'; // 42 I2/I3
+	import { inspectorDual } from '$lib/sidebars'; // uir-polish E5
 	import SidebarHandles from './menu/SidebarHandles.svelte'; // showhide-v8: the viewport sidebar handles
 	import MenuSidebar from './menu/Sidebar.svelte';
 	import TouchTools from './menu/TouchTools.svelte';
@@ -86,7 +87,7 @@
 <!-- 46 B1: the budget chip, placed beside the toolbar pill (hidden in Play with the rest of the chrome) -->
 <BudgetChip />
 <!-- 70 W2: in a pop-out window the Inspector is unmounted here (one panel, one place) -->
-{#if !$panelAway.inspector}<Inspector />{/if}
+{#if !$panelAway.inspector}<Inspector />{#if $inspectorDual}<Inspector pane="scene" />{/if}{/if}<!-- uir-polish E5: Configure Scene in its own column -->
 <SidebarStrips />
 <SidebarHandles />
 <MenuSettings />

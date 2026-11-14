@@ -67,9 +67,17 @@ const writeTab = (page, id, code) =>
 	);
 
 async function popOut(page) {
+	await floatCode(page);
 	const [pop] = await Promise.all([page.context().waitForEvent('page', { timeout: 20000 }), page.locator('#code-ws-popout').first().click()]);
 	await pop.waitForSelector('#code-ws-popped .cm-content', { timeout: 30000 });
 	return pop;
+}
+
+
+/** uir-polish G1: DOCKED, Code has no pop-out button (no header row at all) — float it first; its window header has one */
+async function floatCode(page) {
+	await page.evaluate(() => window.__stores.bottomDock.armDockMode('code', false));
+	await page.locator('#code-ws-popout').first().waitFor({ state: 'visible', timeout: 15000 });
 }
 
 h.run(async () => {
@@ -97,7 +105,9 @@ h.run(async () => {
 	await S(page, () => window.__stores.codeWorkspace.openCode({ source: 'script', ref: { nodeId: 'pop1', graphId: 'scene' } }));
 	await page.waitForSelector('[data-pane] .cm-content', { timeout: 45000 });
 	h.check((await mainWorkspaceShown(page)) === 1, 'premise: the workspace is open in the main window');
-	h.check(await page.locator('#code-ws-popout').first().isVisible(), 'a Pop out button sits in the workspace header (desktop)');
+	h.check((await page.locator('#code-ws-popout').count()) === 0, 'G1: docked, the workspace has no Pop out button (no header row)');
+	await floatCode(page);
+	h.check(await page.locator('#code-ws-popout').first().isVisible(), 'floating, a Pop out button sits in the window header (desktop)');
 
 	// ---------------------------------------------------------------- 1 pop out
 	const pop = await popOut(page);
@@ -208,6 +218,7 @@ h.run(async () => {
 		window.__realOpen = window.open;
 		window.open = () => null;
 	});
+	await floatCode(page);
 	await page.locator('#code-ws-popout').first().click();
 	await page.waitForTimeout(500);
 	const tryAgain = page.locator('button', { hasText: 'Try again' }).first();

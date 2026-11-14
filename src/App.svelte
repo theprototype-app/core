@@ -55,7 +55,6 @@
   // 26-A: the desktop Statistics window + the sampler that feeds it and the status-line
   // budget meter. `renderer.info` had exactly one reader before this (the VR plate).
   import StatsOverlay from './components/menu/StatsOverlay.svelte'
-  import MomentReport from './components/menu/MomentReport.svelte'
   import ProblemReport from './components/menu/ProblemReport.svelte' // 37 R20
   import { startSceneMetrics, budgetSummary } from './lib/sceneBudget'
   import { startPerfRecorder } from './lib/perf/recorder'
@@ -553,7 +552,6 @@ import { startMusicToolbox } from './lib/musicToolbox'
 {/if}
 <DungeonMinimap />
 <StatsOverlay />
-<MomentReport />
 <ProblemReport />
 <!-- 47-cc0: the Asset Browser — loaded the first time it opens, so the boot carries none of it -->
 {#if $assetBrowserOpen}

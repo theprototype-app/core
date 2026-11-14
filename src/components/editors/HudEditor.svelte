@@ -24,6 +24,7 @@
 	// and it belongs on this side of the seam.
 	import { untrack } from 'svelte';
 	import Icon from '../ui/Icon.svelte';
+	import HeadDockPop from '../ui/HeadDockPop.svelte'; // uir-polish G2/G3
 	import { hudEditorClose, showToast } from '../../stores/appStore.js';
 	import {
 		hudDocs, hudRuntime, hudSelection, hudScreenOverride, HUD_ANCHORS, HUD_SCENE_KEY,
@@ -1495,7 +1496,7 @@
 					<span class="flex-1"></span>
 				{/snippet}
 				{#snippet actions()}
-					<button data-wc-chrome class="wc-act-text" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={16} />Dock</button>
+					<HeadDockPop key="hud" title="HUD editor" ondock={() => setDocked(true)} />
 				{/snippet}
 			</WindowChrome>
 			<div class="flex min-h-0 flex-1 flex-col">

@@ -14,6 +14,7 @@
 // step for the whole save. A texture that was painted over or picked from disk carries no
 // source and is left alone: it is no longer that image.
 
+import { mapPreviewUrl } from '../loadGuard.js';
 import { get } from 'svelte/store';
 import {
 	itemById,
@@ -64,7 +65,7 @@ export function openImageEditor(itemId) {
 export async function editMaterialTexture(uuid, slot = 0) {
 	const object = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
 	const material = materialAt(object, slot);
-	const url = material?.userData?.mapDataUrl;
+	const url = mapPreviewUrl(material);
 	if (!material || !url) {
 		showToast('That material has no texture to edit');
 		return false;

@@ -613,7 +613,7 @@ h.run(async () => {
 	await page.locator('#dock-undock:visible').click();
 	await page.waitForSelector('#profiler-window', { timeout: 5000 });
 	await shot('7-floating');
-	await page.click('#profiler-window button:text("Dock")');
+	await page.click('#profiler-window [data-head-dock="profiler"]'); // uir-polish G3: the Dock button is icon-only
 	await page.waitForSelector('#profiler-dock', { timeout: 5000 });
 	h.check(true, 'undock → floating window → dock again');
 

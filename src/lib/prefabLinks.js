@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import { parseCheckedObject } from './loadGuard.js';
 import { get, derived } from 'svelte/store';
 import { objectsGroup, TControls, selectedObjects, pokeScene } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
@@ -25,7 +25,6 @@ import { linkOf, mergeInstance, overridesOf, unlinkPatch, instanceKey, elementKe
 // flownodes kind already sends (nodedelete/edgedelete, then graphcreate + a `nodes`
 // snapshot), because a `nodes` snapshot alone MERGES and could never remove a node.
 
-const loader = new THREE.ObjectLoader();
 
 /** Every instance root of `id` in the scene (nested ones included). @param {string} id
  * @returns {any[]} */
@@ -155,7 +154,7 @@ function replaceInPlace(element, parentUuid) {
 	const existing = group.getObjectByProperty('uuid', uuid);
 	let object;
 	try {
-		object = loader.parse(element);
+		object = parseCheckedObject(element, 'library', 'prefab');
 		stripEditOverlays(object);
 	} catch (error) {
 		console.log('prefab instance parse failed', error);

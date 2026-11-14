@@ -12,6 +12,8 @@
 	//   { section: 'Edit' }                     a quiet uppercase section label
 	//   icon: 'copy'                            lucide kebab name (ui/Icon.svelte)
 	//   hint: 'Ctrl+D'                          dimmed right-aligned shortcut hint
+	//   hoverHint: 'Move here'                  (uir-polish F3) replaces `hint` while the row is hovered or
+	//                                           keyboard-highlighted — what a press will DO, where `hint` says where it is
 	// 16-P3 adds `checked: true` — the ACTIVE choice of a group (bold + accent),
 	// which replaced the old '● ' label prefix.
 	//
@@ -285,7 +287,11 @@
 					<span class="ctx-ico">{#if rowIcon(item)}<Icon name={rowIcon(item) ?? ""} size={16} />{/if}</span>
 				{/if}
 				<span class="flex-1">{item.label}</span>
-				{#if item.hint}
+				{#if item.hint && item.hoverHint}
+					<!-- uir-polish F3: a row that MOVES its window says so while it is hovered / highlighted -->
+					<span class="ctx-hint ctx-hint-rest">{item.hint}</span>
+					<span class="ctx-hint ctx-hint-hover" data-ctx-hover-hint>{item.hoverHint}</span>
+				{:else if item.hint}
 					<span class="ctx-hint">{item.hint}</span>
 				{/if}
 				{#if item.rowActions}
@@ -436,5 +442,17 @@
 		font-family: var(--font-ui-mono);
 		font-size: var(--fs-badge);
 		color: var(--text-faint);
+	}
+	.ctx-hint-hover {
+		display: none;
+		color: var(--accent-text);
+	}
+	.ctx-row:hover .ctx-hint-rest,
+	.ctx-row.ctx-active .ctx-hint-rest {
+		display: none;
+	}
+	.ctx-row:hover .ctx-hint-hover,
+	.ctx-row.ctx-active .ctx-hint-hover {
+		display: inline;
 	}
 </style>

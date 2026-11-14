@@ -37,6 +37,7 @@
 	import { openApplyClip } from '$lib/characterUi.js';
 	import ClipToolsPanel from './ClipToolsPanel.svelte'; // 57 M3/M8
 	import Icon from '../ui/Icon.svelte';
+	import HeadDockPop from '../ui/HeadDockPop.svelte'; // uir-polish G2/G3
 	import PaneHandle from '../ui/PaneHandle.svelte'; // showhide-v8: the one pane-handle pattern
 	import { readPanelOpen, writePanelOpen } from '$lib/ui/handheldPanels.js';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
@@ -2848,7 +2849,7 @@
 					<span class="flex-1"></span>
 				{/snippet}
 				{#snippet actions()}
-					<button data-wc-chrome class="wc-act-text" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={16} />Dock</button>
+					<HeadDockPop key="animation" title="Animation" ondock={() => setDocked(true)} />
 				{/snippet}
 			</WindowChrome>
 			{#if compact && target}<div class="flex w-full shrink-0 items-center gap-2 px-2 py-1">{@render paneSwitch()}</div>{/if}

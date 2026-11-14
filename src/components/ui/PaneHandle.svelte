@@ -11,6 +11,7 @@
 	import Icon from './Icon.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import { paneLocks, togglePaneLock } from '$lib/ui/paneLocks.js';
+	import { registerPaneHandle } from '$lib/ui/paneKeys.js';
 
 	let {
 		edge,
@@ -53,6 +54,38 @@
 		if (locked) return;
 		onclick();
 	}
+	// uir-polish B1 (owner 2026-11-11): a COLLAPSED handle sits flush against its window's edge. Docked windows wrap their
+	// content in the frame's padding, so a handle placed at the content's edge floated a few px in with a strip beside
+	// it: the gap to the frame edge is measured and the closed handle shifted across it — unless an ancestor clips
+	// first (WindowShell does its own placement across the gap and clips with a margin)
+	const FRAME = '.tp-dock-panel, .tp-window, [data-pd-host], [data-docked]';
+	let btn = $state<HTMLButtonElement | null>(null);
+	let shift = $state(0);
+	function measureShift() {
+		const el = btn;
+		if (!el || open) return void (shift = 0);
+		const frame = el.closest(FRAME) as HTMLElement | null;
+		if (!frame) return void (shift = 0);
+		for (let p = el.parentElement; p && p !== frame; p = p.parentElement) if (getComputedStyle(p).overflowX !== 'visible') return void (shift = 0);
+		const r = el.getBoundingClientRect();
+		const f = frame.getBoundingClientRect();
+		const now = edge === 'left' ? r.left - shift - (f.left + frame.clientLeft) : f.left + frame.clientLeft + frame.clientWidth - (r.right - shift);
+		const next = now > 0 && now <= 12 ? Math.round(edge === 'left' ? -now : now) : 0;
+		if (next !== shift) shift = next;
+	}
+	$effect(() => {
+		void open;
+		void edge;
+		void style;
+		const raf = requestAnimationFrame(measureShift);
+		window.addEventListener('resize', measureShift);
+		return () => {
+			cancelAnimationFrame(raf);
+			window.removeEventListener('resize', measureShift);
+		};
+	});
+	// B5: Ctrl+B / Ctrl+Alt+B reach this pane when its docked window has the focus or the mouse ($lib/ui/paneKeys)
+	$effect(() => registerPaneHandle({ el: () => btn, edge, press }));
 	const items = $derived([
 		{
 			label: open ? `Hide ${label}` : `Show ${label}`,
@@ -84,7 +117,9 @@
 	aria-expanded={open}
 	aria-label={locked ? `${label} — the sidebars are locked` : open ? `Hide ${label}` : `Show ${label}`}
 	title={locked ? `The sidebars are locked — right-click to unlock` : `${open ? 'Hide' : 'Show'} ${label} — right-click for more`}
-	{style}
+	style={shift && !open ? `${style}; translate: ${shift}px 0` : style}
+	data-ph-shift={shift && !open ? shift : undefined}
+	bind:this={btn}
 	onclick={press}
 	oncontextmenu={onMenu}
 	{...rest}

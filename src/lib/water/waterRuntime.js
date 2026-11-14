@@ -9,6 +9,7 @@ import { noteSimplified } from './simplifiedNotice.js';
 import { sessionNow } from '../sessionClock';
 import { waterVolumes, invertAffine, localBounds } from './volumes.js';
 import { waveComponents } from './waves.js';
+import { compileAsync } from '../render/compile.js';
 import { resolveLook, resolveBubbles, MAX_BUBBLES } from './presets.js';
 import { waterDetailTexture } from './waterTextures.js';
 import { waterQuality } from './waterPrefs.js';
@@ -575,8 +576,8 @@ function compileEntry(entry) {
 	for (const mesh of [entry.surface, entry.body, entry.bubbles]) if (mesh) group.add(mesh.clone(false));
 	const timer = setTimeout(done, COMPILE_WAIT_MS);
 	try {
-		renderer
-			.compileAsync(group, lastCamera, sceneRef)
+		// 101 L1a: through the seam, which closes a scene render bracket the compile leaves open
+		compileAsync(renderer, group, lastCamera, sceneRef)
 			.catch(() => {})
 			.then(() => {
 				clearTimeout(timer);

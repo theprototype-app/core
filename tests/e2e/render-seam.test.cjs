@@ -10,6 +10,9 @@
 //      frame is the SAME frame (pixel diff against the frame before; the before/before pair is the
 //      noise floor), GPU memory counts not above +5 % (a leak bound), no "3D view has
 //      stopped" overlay, and the JS heap not above +5 %.
+//   3b. L1a GUARD: the real main renderer's compileAsync shimmed to three r186 WebGPU's shape (opens
+//      scene.onBeforeRender, never closes it). Raw, lod.js's bracket depth is stuck at 1 between
+//      frames (the counterfactual: frozen LOD); through `renderSeam.compileAsync` it is back to 0.
 const h = require('./helpers.cjs');
 
 h.run(async () => {
@@ -73,6 +76,40 @@ h.run(async () => {
 		return { made: S.offscreenState().made - made0, alive: S.offscreenState().alive, sizes };
 	});
 	h.check(shared.made <= 1 && shared.alive && shared.sizes.join() === '64x48,65x48,66x48', `three thumbnails, one renderer (${JSON.stringify(shared)})`);
+
+	// ---- 3b. L1a: an unclosed compile bracket is closed by the seam ----------------------------
+	const l1a = await T.run(async (t) => {
+		const rd = (/** @type {any} */ s) => { let v; s.subscribe((/** @type {any} */ x) => (v = x))(); return v; };
+		const scene = rd(t.globalScene);
+		const camera = rd(t.globalCamera);
+		const r = t.renderSeam.mainRenderer();
+		const depth = () => t.lod.lodForTest.depth();
+		const between = () => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(() => res(depth()), 0))));
+		const orig = r.compileAsync;
+		const hook = scene.onBeforeRender;
+		// three r186 WebGPURenderer.compileAsync: targetScene.onBeforeRender, no onAfterRender
+		r.compileAsync = function (/** @type {any} */ o, /** @type {any} */ c, /** @type {any} */ ts) {
+			(ts ?? o).onBeforeRender(this, o, c, null);
+			return orig.call(this, o, c, ts);
+		};
+		try {
+			const idle = await between();
+			await r.compileAsync(scene, camera, scene); // raw: the counterfactual
+			const raw = await between();
+			for (let i = 0; i < raw; i++) scene.onAfterRender(r, scene, camera, null); // close it by hand
+			const repaired = await between();
+			const res = await t.renderSeam.compileAsync(r, scene, camera, scene);
+			const seam = await between();
+			return { idle, raw, repaired, closed: res.closed, seam, hookBack: scene.onBeforeRender === hook };
+		} finally {
+			r.compileAsync = orig;
+		}
+	});
+	h.check(l1a.idle === 0, `lod.js bracket depth is 0 between frames (${l1a.idle})`);
+	h.check(l1a.raw >= 1, `COUNTERFACTUAL: a raw WebGPU-shaped compileAsync leaves the bracket open between frames (depth ${l1a.raw})`);
+	h.check(l1a.repaired === 0, `closing it by hand brings the depth back to 0 (${l1a.repaired})`);
+	h.check(l1a.closed === 1 && l1a.seam === 0, `through renderSeam.compileAsync the bracket is closed: closed ${l1a.closed}, depth ${l1a.seam} between frames`);
+	h.check(l1a.hookBack === true, 'the scene keeps the very render hook it had (the guard unwraps itself)');
 
 	// ---- 4. dispose and recreate: the same frame ----------------------------------------------
 	await p.evaluate(async () => {

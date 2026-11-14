@@ -2,13 +2,15 @@
 // 101 F3: every renderer and render target the app makes comes from the renderer seam
 // (src/lib/render/). A `new WebGLRenderer` / `new WebGLRenderTarget(` anywhere else in src/ fails.
 // Use createMainRenderer / createRenderTarget / renderOffscreen / acquireOffscreen instead.
+// 101 L1a: so does a `.compileAsync(` call — use the seam's compileAsync(renderer, object, camera, scene),
+// which closes the scene render bracket three's WebGPU compile leaves open.
 'use strict';
 const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..', 'src');
 const SEAM = path.join(ROOT, 'lib', 'render') + path.sep;
-const PATTERN = /new (THREE\.)?WebGLRenderer\b|new (THREE\.)?WebGLRenderTarget\(/;
+const PATTERN = /new (THREE\.)?WebGLRenderer\b|new (THREE\.)?WebGLRenderTarget\(|\.compileAsync\(/;
 
 /** @param {string} dir @returns {string[]} */
 function walk(dir) {
@@ -40,8 +42,8 @@ function scan() {
 if (require.main === module) {
 	const bad = scan();
 	if (bad.length) {
-		console.error(`renderer seam: ${bad.length} renderer / render target(s) made outside src/lib/render/:\n  ${bad.join('\n  ')}`);
-		console.error('Use createMainRenderer / createRenderTarget / renderOffscreen / acquireOffscreen (src/lib/render/).');
+		console.error(`renderer seam: ${bad.length} renderer / render target(s) made, or compileAsync call(s), outside src/lib/render/:\n  ${bad.join('\n  ')}`);
+		console.error('Use createMainRenderer / createRenderTarget / renderOffscreen / acquireOffscreen / compileAsync (src/lib/render/).');
 		process.exit(1);
 	}
 	console.log('renderer seam: every renderer and render target comes from src/lib/render/');

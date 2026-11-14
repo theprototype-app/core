@@ -743,6 +743,8 @@ export const lodForTest = {
 	register: (mesh, opts = {}) => registerMesh(mesh, opts, false, null),
 	unregister: unregisterMesh,
 	defaults: DEFAULT_LOD,
+	/** 101 L1a: the scene render bracket depth (0 between frames; stuck above 0 = an unclosed pass) */
+	depth: () => renderDepth,
 	reset() {
 		for (const mesh of [...entries.keys()]) unregisterMesh(mesh);
 		restoreSwapped();

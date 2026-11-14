@@ -8,6 +8,7 @@ import { disposeOffscreen, offscreenState } from './offscreen.js';
 export * from './mainRenderer.js';
 export * from './renderTargets.js';
 export * from './offscreen.js';
+export * from './compile.js';
 
 /**
  * Release everything the seam created: every factory render target still alive, the shared

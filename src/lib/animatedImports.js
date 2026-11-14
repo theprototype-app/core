@@ -1,3 +1,4 @@
+import { embeddedOnlyManager, checkFbx, refusal } from './loadGuard.js';
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { createGltfLoader } from './gltfLoader';
@@ -457,7 +458,8 @@ async function parseAnimatedBytes(bytes, kind) {
 	if (kind === 'fbx') {
 		// 94 SP1: a lazy chunk, loaded only for a scene that carries an FBX (the VRM rule above)
 		const { FBXLoader } = await import('three/addons/loaders/FBXLoader.js');
-		const root = new FBXLoader().parse(bytes, '');
+		if (!checkFbx(bytes, 'peer', 'objectfile')) throw refusal('model');
+		const root = new FBXLoader(embeddedOnlyManager('peer', 'objectfile')).parse(bytes, '');
 		return { root, animations: root.animations ?? [] };
 	}
 	// 46: KTX2-aware, scene-safe (a KTX2 texture becomes an ordinary one + its twin)

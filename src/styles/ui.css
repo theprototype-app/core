@@ -146,7 +146,7 @@ input.tp-check:disabled {
    its default top-16 / lower z, so it stays BELOW the profile icon. (Narrow = sheet.) */
 @media (min-width: 641px) {
 	/* 42 I3: the column's top under a docked bar is the sidebar bus's (--sb-<side>-top) */
-	:root.connect-docked #inspector {
+	:root.connect-docked :is(#inspector, #inspector-scene) {
 		z-index: calc(var(--z-chrome-top) + 1) !important;
 	}
 }

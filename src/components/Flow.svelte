@@ -15,6 +15,7 @@
 	import DockTabs from './DockTabs.svelte';
 	import WindowChrome from './ui/WindowChrome.svelte';
 	import Icon from './ui/Icon.svelte';
+	import HeadDockPop from './ui/HeadDockPop.svelte'; // uir-polish G2/G3
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
@@ -254,7 +255,7 @@
 			>
 				{#snippet actions()}
 					<button id="flow-add-view" data-wc-chrome class="wc-act" title="Add a view (Flow Code, Animation, UV editor, Shader editor)" aria-label="Add a view" onclick={openAddMenu}><Icon name="plus" size={16} /></button>
-					<button id="flow-dock" data-wc-chrome class="wc-act-text" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={16} />Dock</button>
+					<HeadDockPop key="flow" title="Node editor" ondock={() => setDocked(true)} dockId="flow-dock" />
 				{/snippet}
 			</WindowChrome>
 			<div class="relative min-h-0 flex-1">

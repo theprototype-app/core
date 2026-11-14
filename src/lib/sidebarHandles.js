@@ -25,6 +25,8 @@ const MODE_KEY = 'sidebarHandles';
 const DIM_KEY = 'sidebarHandles:dim';
 /** @param {Side} side */
 const yKey = (side) => 'sidebar:handleY:' + side;
+/** @param {Side} side */
+const fracKey = (side) => 'sidebar:handleFrac:' + side;
 
 const ls = typeof localStorage !== 'undefined';
 /** @param {any} v @returns {HandlesMode} */
@@ -43,22 +45,50 @@ function readY(side) {
 	const v = ls ? parseInt(safeStorage.getItem(yKey(side)) ?? '') : NaN;
 	return Number.isFinite(v) ? Math.max(0, v) : 0;
 }
+/** @param {Side} side @returns {number|null} */
+function readFrac(side) {
+	const v = ls ? parseFloat(safeStorage.getItem(fracKey(side)) ?? '') : NaN;
+	return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : null;
+}
 /** how far below its resting place (under the top chrome) each handle was dragged, px (layout-saved) */
 export const sidebarHandleY = writable(/** @type {Record<Side, number>} */ ({ left: readY('left'), right: readY('right') }));
-/** @param {Side} side @param {number} y @param {boolean=} persist */
-export function setSidebarHandleY(side, y, persist = true) {
+/**
+ * uir-polish A2 (owner 2026-11-11): the same spot as a FRACTION of the free height it can travel (below the top
+ * chrome, above the bottom margin; the dock is NOT part of it, the dock only clamps where it is drawn). A window made
+ * taller or shorter moves the handle proportionally. null = no fraction recorded (a spot set in px, e.g. by an older
+ * release or a test): the px offset is drawn as is.
+ */
+export const sidebarHandleFrac = writable(/** @type {Record<Side, number|null>} */ ({ left: readFrac('left'), right: readFrac('right') }));
+/**
+ * @param {Side} side @param {number} y the offset below the resting place, px
+ * @param {boolean=} persist
+ * @param {number=} range the free height the handle travels (px): given = also record the spot as a fraction of it
+ */
+export function setSidebarHandleY(side, y, persist = true, range) {
 	const next = Math.max(0, Math.round(Number.isFinite(y) ? y : 0));
 	sidebarHandleY.update((v) => ({ ...v, [side]: next }));
+	const frac = range && range > 0 && next ? Math.min(1, next / range) : null;
+	sidebarHandleFrac.update((v) => ({ ...v, [side]: frac }));
 	if (persist && ls) {
 		if (next) safeStorage.setItem(yKey(side), String(next));
 		else safeStorage.removeItem(yKey(side));
+		if (frac != null) safeStorage.setItem(fracKey(side), frac.toFixed(5));
+		else safeStorage.removeItem(fracKey(side));
 	}
 }
 /** "Reset position": back under the top chrome @param {Side} side */
 export function resetSidebarHandleY(side) {
 	setSidebarHandleY(side, 0);
 }
-onLayoutRestore(() => sidebarHandleY.set({ left: readY('left'), right: readY('right') }));
+/** the offset to draw for a free height of `range` px: the fraction when one is recorded, else the px offset
+ *  @param {number} px @param {number|null} frac @param {number} range */
+export function handleOffset(px, frac, range) {
+	return frac != null && range > 0 ? Math.round(frac * range) : px;
+}
+onLayoutRestore(() => {
+	sidebarHandleY.set({ left: readY('left'), right: readY('right') });
+	sidebarHandleFrac.set({ left: readFrac('left'), right: readFrac('right') });
+});
 
 /**
  * 1.64 (owner): THE HANDLES REST BELOW THE PROFILE MENU, open or not. Clicking the profile used to move them: the open

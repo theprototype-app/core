@@ -13,6 +13,7 @@
 	import PaneHandle from '../ui/PaneHandle.svelte';
 	import { paneLocks } from '$lib/ui/paneLocks.js';
 	import Icon from '../ui/Icon.svelte';
+	import HeadDockPop from '../ui/HeadDockPop.svelte'; // uir-polish G2/G3
 	import CodeEditor from './CodeEditor.svelte';
 	import CodeSidebarLeft from './CodeSidebarLeft.svelte';
 	import CodeSidebarRight from './CodeSidebarRight.svelte';
@@ -734,11 +735,6 @@
 	</div>
 {/snippet}
 
-{#snippet popOutButton()}
-	{#if $popOutSupported}
-		<button id="code-ws-popout" class="ui-button-quiet" title="Open the code editor in its own browser window (drag it to another monitor)" aria-label="Pop out" onclick={popOut}><Icon name="external-link" size={16} aria-hidden="true" /></button>
-	{/if}
-{/snippet}
 
 {#snippet main()}
 	<div class="code-main" class:code-narrow={narrow} bind:clientWidth={mainW}>
@@ -749,7 +745,8 @@
 				<div class="code-side-grip code-side-grip-l" title="Drag to resize" onpointerdown={(e) => startSide(e, 'left')} onpointermove={moveSide} onpointerup={endSide}></div>
 			</div>
 		{/if}
-		<div class="code-center">
+		<!-- uir-polish B4: the right handle owns the window's edge — the editor (and its scrollbar) ends where the handle's tab starts -->
+		<div class="code-center" style:padding-right={narrow ? null : rightShown ? '16px' : '8px'}>
 			{@render strip()}
 			{@render body()}
 		</div>
@@ -848,11 +845,8 @@
 			onpointerup={endResize}
 		></div>
 		<DockTabs />
-		<div class="flex shrink-0 items-center gap-1 pb-1">
-			<span class="tp-dock-title">Code</span>
-			<span class="flex-1"></span>
-			{@render popOutButton()}
-		</div>
+		<!-- uir-polish G1 (owner 2026-11-11): docked, Code has no header row of its own — the dock tab names it; it
+		     pops out from the tab's menu or by tearing the tab off -->
 		{@render main()}
 	</div>
 {:else}
@@ -873,12 +867,11 @@
 		<WindowChrome
 			size="tool"
 			bare
-			dockedHead="tools"
+			dockedHead="hide"
 			body={false}
 			title="Code"
 			headerClass="ui-panel-header move-handle cursor-move select-none"
 			onclose={requestCloseWorkspace}
-			onpopout={$popOutSupported ? popOut : null}
 			closeLabel="Close the code workspace"
 			closeAttrs={{ id: 'code-ws-close', title: 'Close the code workspace' }}
 		>
@@ -887,7 +880,7 @@
 				<span class="flex-1"></span>
 			{/snippet}
 			{#snippet actions()}
-				<button data-wc-chrome class="wc-act-text" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={16} />Dock</button>
+				<HeadDockPop key="code" title="Code" ondock={() => setDocked(true)} onpopout={popOut} popId="code-ws-popout" />
 			{/snippet}
 		</WindowChrome>
 		<div class="flex min-h-0 flex-1 flex-col p-1">{@render main()}</div>

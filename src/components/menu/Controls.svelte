@@ -45,6 +45,8 @@
 	import SearchField from '../ui/SearchField.svelte';
 	import Badge from '../ui/Badge.svelte';
 	import Icon from '../ui/Icon.svelte';
+	import HeadDockPop from '../ui/HeadDockPop.svelte'; // uir-polish G2
+	import { dockTab } from '$lib/dockMenu';
 	import { createAttachmentKey, fromAction } from 'svelte/attachments';
 	// 41 G1: MobileAddButton / AiHudButton (and VoiceChat's mic button) became roster entries
 	import { aiAssistantHidden, chatTab, viewportMenuOpener } from '../../stores/appStore.js';
@@ -4165,6 +4167,9 @@
 				</span>
 			{/if}
 			<span class="flex-1"></span>
+		{/snippet}
+		{#snippet actions()}
+			<HeadDockPop key="objects" title="Objects" ondock={() => dockTab('objects')} />
 		{/snippet}
 	</WindowChrome>
 	<div class="obj-filters flex flex-col gap-1">

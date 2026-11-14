@@ -725,7 +725,8 @@ h.run(async () => {
 	// Statistics opened a second copy"); the row names where it is and leaves it there
 	const dockRow = rows.find((r) => /Animation/.test(r.label));
 	h.check(
-		!!dockRow && /Animation\s*Floating$/.test(dockRow.label) && !/＋/.test(dockRow.label),
+		// uir-polish F3: the row also carries its hover hint "Move here" (shown on hover instead of "Floating")
+		!!dockRow && /Animation\s*Floating(\s*Move here)?$/.test(dockRow.label) && !/＋/.test(dockRow.label),
 		`11.2 the ＋ menu's Animation row says Floating (44 M5 hint), not Open — the row never opens a second copy (${rows
 			.map((r) => r.label)
 			.join(' | ')})`

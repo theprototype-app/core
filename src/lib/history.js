@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import { parseCheckedObject } from './loadGuard.js';
 import { writable, derived, get } from 'svelte/store';
 import { objectsGroup, TControls, selectedObject, pokeScene } from '../stores/sceneStore';
 import { peers, showToast, closeSelectionInspector } from '../stores/appStore';
@@ -423,7 +423,6 @@ export function recordObjectPresence(kind, object) {
 	});
 }
 
-const snapshotLoader = new THREE.ObjectLoader();
 
 /** @param {any} entry @param {any} state */
 function applyPresence(entry, state) {
@@ -437,7 +436,7 @@ function applyPresence(entry, state) {
 		if (existing) return true; // a peer already restored it
 		let object;
 		try {
-			object = snapshotLoader.parse(entry.snapshot.element);
+			object = parseCheckedObject(entry.snapshot.element, 'device', 'history');
 			stripEditOverlays(object); // an entry an older build recorded mid-session
 		} catch (error) {
 			console.log('history restore failed', error);

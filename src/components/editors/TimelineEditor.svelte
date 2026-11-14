@@ -28,6 +28,7 @@
 	import { untrack } from 'svelte';
 	import { get } from 'svelte/store';
 	import Icon from '../ui/Icon.svelte';
+	import HeadDockPop from '../ui/HeadDockPop.svelte'; // uir-polish G2/G3
 	import Button from '../ui/Button.svelte';
 	import Toggle from '../ui/Toggle.svelte';
 	import EmptyState from '../ui/EmptyState.svelte';
@@ -1411,12 +1412,7 @@
 					<span class="flex-1"></span>
 				{/snippet}
 				{#snippet actions()}
-					<button
-						data-wc-chrome
-						class="wc-act-text"
-						title="Dock to the bottom"
-						onclick={() => setDocked(true)}><Icon name="panel-bottom" size={16} />Dock</button
-					>
+					<HeadDockPop key="timeline" title="Timeline" ondock={() => setDocked(true)} />
 				{/snippet}
 			</WindowChrome>
 			<div class="flex min-h-0 flex-1 flex-col">

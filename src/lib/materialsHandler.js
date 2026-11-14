@@ -1,3 +1,4 @@
+import { checkMaterialSet, embeddedOnlyManager, isLocalImageUrl, mapPreviewUrl } from './loadGuard.js';
 import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { objectsGroup, pokeScene } from '../stores/sceneStore';
@@ -157,10 +158,13 @@ function serializeMaterials(materials) {
  * come back too, then re-applies the groups — WITHOUT them an array material is
  * invisible.
  * @param {any} object @param {any} payload @param {boolean} [replicate]
+ * @param {string} [from] where the payload came from: a peer id, or 'device' for this device's own
  */
-export function applyMaterials(object, payload, replicate = false) {
+export function applyMaterials(object, payload, replicate = false, from = 'device') {
 	if (!object || !payload?.materials?.length) return;
-	const loader = new THREE.ObjectLoader();
+	// checked in place before three's loaders see it (loadGuardCore.js)
+	if (!checkMaterialSet(payload, from, 'materials')) return;
+	const loader = new THREE.ObjectLoader(embeddedOnlyManager(from, 'materials'));
 	const images = loader.parseImages(payload.images ?? [], () => {});
 	const textures = loader.parseTextures(payload.textures ?? [], images);
 	const materials = loader.parseMaterials(payload.materials, textures);
@@ -376,6 +380,9 @@ export { copyTextureParams };
 export function applyMap(object, dataURL, slot = 0, source = null) {
 	const material = materialAt(object, slot);
 	if (!material || !('map' in material)) return;
+	// only an embedded image: this address is handed to an image loader, an <img> and a canvas, here
+	// and (re-broadcast) on every peer, so anything else would make each of them request it
+	if (dataURL != null && !isLocalImageUrl(dataURL)) return;
 	if (source && dataURL != null) material.userData.mapSource = String(source);
 	else delete material.userData.mapSource;
 	if (dataURL == null) {
@@ -533,7 +540,7 @@ export function texturesFromSource(hash) {
 export function linkTextureSource(uuid, slot, hash) {
 	const object = objectOf(uuid);
 	const material = materialAt(object, slot);
-	const url = material?.userData?.mapDataUrl;
+	const url = mapPreviewUrl(material);
 	if (!material || !url || !hash) return false;
 	material.userData.mapSource = String(hash);
 	broadcast({

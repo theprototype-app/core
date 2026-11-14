@@ -282,6 +282,9 @@ function normalizeDeleted(rows) {
 		const id = String(row?.id ?? '').trim();
 		if (id) clean.id = id;
 		else delete clean.id;
+		// the thumbnail goes straight into an <img src>: an inline image or nothing (applyAssetThumb's rule)
+		if (clean.thumb !== undefined && !(typeof clean.thumb === 'string' && clean.thumb.startsWith('data:image/') && clean.thumb.length <= 200000))
+			delete clean.thumb;
 		// 24-C2: last entry for a KEY wins — the record id when the row has one, the hash
 		// otherwise (an old row, a folder row, a prefab row). Deleting, restoring and deleting
 		// again is one story; two COPIES deleted are two stories.

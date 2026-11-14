@@ -1,3 +1,4 @@
+import { embeddedOnlyManager, checkGltf, checkFbx, refusal, checkStl } from './loadGuard.js';
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
 import { renderOffscreen } from './render/offscreen.js';
@@ -14,6 +15,7 @@ import { idbGet, idbPut, idbDelete } from './idb';
 import { showToast } from '../stores/appStore';
 import { heicToJpegFile } from './heic.js';
 import { measureDims } from './placementDims';
+import { localThumb } from './loadGuardCore.js';
 
 // Explorer (phase 95): a LOCAL asset library (like prefabs — nothing here
 // replicates until an asset is USED). Folder tree + items live as one small
@@ -427,13 +429,18 @@ function imageThumbnail(blob) {
 export async function parseObjectFile(buffer, ext) {
 	if (ext === 'obj') return new OBJLoader().parse(new TextDecoder().decode(buffer));
 	if (ext === 'stl') {
+		if (!checkStl(buffer, 'library', 'model')) throw refusal('model');
 		const geometry = new STLLoader().parse(buffer);
 		return new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0x8899aa }));
 	}
-	if (ext === 'fbx') return new FBXLoader().parse(buffer, '');
+	if (ext === 'fbx') {
+		if (!checkFbx(buffer, 'library', 'model')) throw refusal('model');
+		return new FBXLoader(embeddedOnlyManager('library', 'model')).parse(buffer, '');
+	}
 	// glb/gltf
+	if (!checkGltf(buffer, 'library', 'model', { uris: false })) throw new Error('model refused by the load check');
 	const gltf = await new Promise((resolve, reject) =>
-		new GLTFLoader().parse(buffer, '', resolve, reject)
+		new GLTFLoader(embeddedOnlyManager('library', 'model')).parse(buffer, '', resolve, reject)
 	);
 	// R22 ROUND 15: CARRY THE CLIPS. GLTFLoader hands back `{scene, animations}` as two
 	// separate fields, so returning the scene alone silently dropped every animation in
@@ -642,8 +649,9 @@ async function writeItemNow(buffer, name, folderId, meta) {
 	// assets on the receiving peer, R-3); the card falls back to an icon
 	/** @type {{thumbnail: string | null, dims: any}} */
 	const facts =
+		// a carried thumbnail goes straight into an <img>: an embedded image or nothing
 		meta.thumbnail !== undefined
-			? { thumbnail: meta.thumbnail, dims: null }
+			? { thumbnail: localThumb(meta.thumbnail), dims: null }
 			: /** @type {any} */ (
 					await Promise.race([
 						itemFacts(blob, name, kind),

@@ -42,8 +42,6 @@ const REGISTRY = [
 	// buttons + a switch in the top-right group) — the id names the JOB, not the widget
 	{ id: 'sidebar.toggle', kind: 'sidebar', label: 'Show / hide sidebar', icon: 'panel-right-close' },
 	{ id: 'sidebar.full', kind: 'sidebar', label: 'Full height', icon: 'unfold-vertical' },
-	{ id: 'sidebar.lock', kind: 'sidebar', label: 'Header lock', icon: 'lock' },
-	{ id: 'sidebar.pin', kind: 'sidebar', label: 'Follow the selection', icon: 'pin' }, // 78-int PL14
 	{ id: 'dock.split', kind: 'dock', label: 'Split', icon: 'columns-2' },
 	{ id: 'dock.undock', kind: 'dock', label: 'Undock', icon: 'app-window' },
 	{ id: 'dock.minimize', kind: 'dock', label: 'Minimize the dock', icon: 'panel-bottom' },

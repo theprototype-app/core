@@ -1,5 +1,6 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
+import { mapPreviewUrl } from './loadGuard.js';
 import { writable, get } from 'svelte/store';
 import { objectsGroup, pokeScene } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
@@ -995,7 +996,7 @@ async function paintSurface(uuid, slot) {
 	const object = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
 	const material = materialAt(object, slot);
 	if (!material) return null;
-	const url = material.userData?.mapDataUrl ?? null;
+	const url = mapPreviewUrl(material);
 	// An IMPORTED texture (GLB/OBJ) never went through applyMap, so there is no
 	// dataURL to seed from — seed from the live texture's own image instead, or
 	// the first stroke commits a blank white sheet OVER the model's texture.

@@ -31,9 +31,9 @@ h.run(async () => {
 		}
 		return {
 			versions: w.__tp.test.versions,
-			same: t.isLocked === w.__stores.isLocked && t.history === w.__stores.history && t.renderSeam === w.__stores.renderSeam,
+			same: t.isLocked === w.__tp.test.v1.isLocked && t.history === w.__tp.test.v1.history && t.renderSeam === w.__tp.test.v1.renderSeam,
 			keys: Object.keys(t).length,
-			storeKeys: Object.keys(w.__stores).length,
+			storeKeys: Object.keys(w.__tp?.test.v1).length,
 			frozenRoot: Object.isFrozen(w.__tp) && Object.isFrozen(w.__tp.test),
 			threw
 		};
@@ -42,7 +42,7 @@ h.run(async () => {
 	h.check(facade.same, 'the facade hands out the very objects __stores does (an alias, not a copy)');
 	h.check(facade.keys >= facade.storeKeys && facade.storeKeys > 400, `the facade lists every hook (${facade.keys} >= ${facade.storeKeys})`);
 	h.check(facade.frozenRoot && /read-only/.test(facade.threw), `read-only: a write throws (${facade.threw})`);
-	h.check((await T.get('isLocked')) === (await p.evaluate(() => { let v; /** @type {any} */ (window).__stores.isLocked.subscribe((/** @type {any} */ x) => (v = x))(); return v; })), 'h.t(page).get reads a store through the facade');
+	h.check((await T.get('isLocked')) === (await p.evaluate(() => { let v; /** @type {any} */ (window).__tp.test.v1.isLocked.subscribe((/** @type {any} */ x) => (v = x))(); return v; })), 'h.t(page).get reads a store through the facade');
 	h.check((await T.run((t) => typeof t.renderSeam.disposeRenderer)) === 'function', 'h.t(page).run hands the facade to page code');
 
 	// ---- 2. the seam made the main renderer ------------------------------------------------

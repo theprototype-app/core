@@ -19,7 +19,30 @@ const overflow = (page) =>
 		const root = document.querySelector('.tl-root');
 		if (!root) return { root: false };
 		const r = root.getBoundingClientRect();
-		return { root: true, scroll: root.scrollWidth - root.clientWidth, right: r.right - window.innerWidth, w: r.width };
+		// uir-polish B1: a CLOSED pane handle shifts flush across the dock frame's padding to the frame's edge
+		// ([data-ph-shift]) — by design past the root, never past the frame. The root's overflow is measured with that
+		// shift taken out (anything else poking out still counts), the handle against the frame.
+		const frame = root.closest('.tp-dock-panel, .tp-window, [data-pd-host], [data-docked]');
+		const fr = frame ? frame.getBoundingClientRect() : null;
+		// WindowShell draws its closed handles across the same gap and clips with a margin that wide (overflow-clip-margin)
+		const shifted = /** @type {HTMLElement[]} */ ([...root.querySelectorAll('[data-ph-shift]')]);
+		const shells = /** @type {HTMLElement[]} */ ([...root.querySelectorAll('.ws-root')].filter((e) => /** @type {HTMLElement} */ (e).style.overflowClipMargin));
+		const past = [...root.querySelectorAll('.tp-pane-handle')].filter((e) => e.getClientRects().length).map((e) => e.getBoundingClientRect().right - (fr ? fr.right : window.innerWidth));
+		const keep = shifted.map((e) => e.style.translate);
+		const keepM = shells.map((e) => e.style.overflowClipMargin);
+		for (const e of shifted) e.style.translate = 'none';
+		for (const e of shells) e.style.overflowClipMargin = '0px';
+		const poke = root.scrollWidth - root.clientWidth;
+		shifted.forEach((e, i) => (e.style.translate = keep[i]));
+		shells.forEach((e, i) => (e.style.overflowClipMargin = keepM[i]));
+		return {
+			root: true,
+			scroll: poke,
+			frameScroll: frame ? frame.scrollWidth - frame.clientWidth : 0,
+			handlePastFrame: past.length ? Math.round(Math.max(...past)) : null,
+			right: r.right - window.innerWidth,
+			w: r.width
+		};
 	});
 
 h.run(async () => {
@@ -39,7 +62,7 @@ h.run(async () => {
 		await C.page.waitForTimeout(500);
 		const phone = await C.page.evaluate(() => document.documentElement.classList.contains('phone-shell'));
 		const o = await overflow(C.page);
-		h.check(o.root && o.scroll <= 1 && o.right <= 1, `${label}: no sideways overflow (${JSON.stringify(o)})`);
+		h.check(o.root && o.scroll <= 1 && o.frameScroll <= 1 && (o.handlePastFrame ?? 0) <= 1 && o.right <= 1, `${label}: no sideways overflow (${JSON.stringify(o)})`);
 		// both postures are a touch handheld: the side panes start put away (handheldPanels), so the bar keeps a picker
 		h.check(await C.page.locator('#timeline-seq-select').isVisible(), `${label}: the bar keeps a sequence picker (the side panes start hidden${phone ? ', phone shell' : ''})`);
 		await C.page.locator('.tl-root [data-ws-primary-toggle]').first().click();

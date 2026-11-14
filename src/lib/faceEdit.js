@@ -1455,6 +1455,8 @@ function toFloats(data) {
 				/** @type {any} */ (data).byteOffset + /** @type {any} */ (data).byteLength
 			)
 		);
+	// a list of numbers, never a bare number: `new Float32Array(n)` would allocate n floats
+	if (!Array.isArray(data)) return new Float32Array(0);
 	return new Float32Array(data);
 }
 

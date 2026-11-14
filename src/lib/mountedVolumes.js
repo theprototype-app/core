@@ -51,6 +51,7 @@
 import { writable, get } from 'svelte/store';
 import { idbGet, idbPut } from './idb';
 import { showToast } from '../stores/appStore';
+import { localThumb } from './loadGuardCore.js';
 
 const STORE_KEY = 'explorer:mounts';
 
@@ -256,7 +257,7 @@ function rowsFromPayload(payload) {
 		// column of the PROJECT's save date would be a plausible wrong answer, so the
 		// Added cell reads as unknown instead.
 		size: Number(row?.blob?.size) || 0,
-		thumbnail: row?.thumbnail ?? null,
+		thumbnail: localThumb(row?.thumbnail),
 		createdAt: 0
 	}));
 	return { folders, items };
@@ -515,7 +516,7 @@ export function volumeAddBytes(id, file) {
 		folderId: file.folderId ?? null,
 		hash: String(file.hash ?? ''),
 		size: file.buffer?.byteLength ?? 0,
-		thumbnail: file.thumbnail ?? null,
+		thumbnail: localThumb(file.thumbnail),
 		createdAt: Date.now(),
 		blob: new Blob([file.buffer])
 	};

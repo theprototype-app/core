@@ -156,9 +156,9 @@ h.run(async () => {
 	// --- the logo menu always has a way back ----------------------------------
 	await B.page.locator('#logo-menu').click();
 	await B.page.waitForTimeout(250);
-	await B.page.locator('#open-whats-new').click();
+	await B.page.locator('#open-version').click();
 	await B.page.waitForTimeout(350);
-	h.check(await B.page.locator('#whats-new-window').isVisible(), 'RW: the logo menu reopens the changelog');
+	h.check(await B.page.locator('#whats-new-window').isVisible(), 'RW: the logo menu reopens the changelog (the version beside Settings, uir-polish C2)');
 
 	// --- the "announce new versions" setting silences the cue -----------------
 	const C = await firstVisitPage(browser, {

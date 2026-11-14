@@ -37,11 +37,6 @@ export function packPathsOf(payload) {
 	return [...out];
 }
 
-/** @param {string} path @param {string} base */
-function packUrl(path, base) {
-	if (/^https?:\/\//.test(path)) return path;
-	return String(base).replace(/\/+$/, '') + '/' + path.replace(/^\/+/, '');
-}
 
 /**
  * Start (or join) the preload of a project scene. Resolves when it is ready (or failed: never throws).
@@ -67,12 +62,15 @@ export async function preloadScene(name) {
 		entry.total += blob.size;
 		const { readSessionZip } = await import('../sessions');
 		const payload = await readSessionZip(await blob.arrayBuffer());
-		const { PACKS_BASE } = await import('../packs');
+		// the paths come from the scene file: the pack references' own address rule decides
+		const { packAddress } = await import('../packRefs');
 		const paths = packPathsOf(payload).slice(0, MAX_PACK_FILES);
 		await Promise.all(
 			paths.map(async (p) => {
 				try {
-					const res = await fetch(packUrl(p, PACKS_BASE), { priority: 'low' });
+					const url = packAddress(p);
+					if (url === 'data:,') return;
+					const res = await fetch(url, { priority: 'low' });
 					const len = Number(res.headers.get('content-length')) || 0;
 					entry.total += len;
 					const buf = await res.arrayBuffer();

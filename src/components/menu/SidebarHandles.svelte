@@ -9,7 +9,9 @@
 	//     unfolded N6 drops that chrome under the Connect bar, so a fixed top would land on it) AND below the profile
 	//     menu's bottom edge, open or not (1.64, owner: the profile click used to move them), plus the offset the
 	//     person dragged it to along the edge (saved per side)
-	//   - never on the bottom dock: drawn clamped above the dock's top, the saved offset untouched (1.64)
+	//   - never on the bottom dock: drawn clamped above the dock's top, the saved offset untouched (1.64); when the
+	//     band above the dock is too short to hold it, it goes BEHIND the dock, never on top (uir-polish A1)
+	//   - the saved spot is a fraction of the free height too, so a taller / shorter window moves it in proportion (A2)
 	//   - a press toggles the column; a press that TRAVELS up / down moves the handle; right-click / long-press = its
 	//     menu (Hide handles · Move up / down · Reset position · Dim at rest)
 	//   - on a touch screen it stays while the column is open, on the column's inner edge (it is how the column
@@ -20,6 +22,8 @@
 	import {
 		sidebarHandleShown,
 		sidebarHandleY,
+		sidebarHandleFrac,
+		handleOffset,
 		sidebarHandlesDim,
 		sidebarHandlesMode,
 		setSidebarHandleY,
@@ -101,14 +105,25 @@
 	}
 	// drawn only once mounted: the page is prerendered, and where a handle goes is a question for this screen
 	let mounted = $state(false);
+	/** the window's height, as state: a resize re-places the handles (A2) */
+	let vh = $state(typeof window !== 'undefined' ? window.innerHeight : 800);
 	onMount(() => {
 		mounted = true;
 		remeasure();
 		const t = setInterval(remeasure, 1000);
-		window.addEventListener('resize', remeasure);
+		const onResize = () => {
+			// a spot saved in px only (an older release, a layout): record it as a fraction of the height it was
+			// placed in, before that height changes, so it moves in proportion from now on
+			if (window.innerHeight !== vh)
+				for (const side of SIDES)
+					if ($sidebarHandleFrac[side] == null && $sidebarHandleY[side] > 0) setSidebarHandleY(side, $sidebarHandleY[side], true, rangeOf(side));
+			vh = window.innerHeight;
+			remeasure();
+		};
+		window.addEventListener('resize', onResize);
 		return () => {
 			clearInterval(t);
-			window.removeEventListener('resize', remeasure);
+			window.removeEventListener('resize', onResize);
 		};
 	});
 	$effect(() => {
@@ -125,14 +140,27 @@
 	 * stays the person's intent, so the handle slides up with the dock when the spot is under it and goes back when
 	 * the dock closes. A band too short to hold it puts it at the band's top.
 	 */
+	/** the lowest top the handle may have with no dock (the bottom margin keeps it off the bottom chrome) */
+	const lowest = (side: Side) => Math.max(floorOf(side) + GAP, vh - TAB_H - 96);
+	/** the free height the saved spot is a fraction of: the floor down to the lowest top (A2) */
+	const rangeOf = (side: Side) => Math.max(1, lowest(side) - (floorOf(side) + GAP));
+	/** A1: the dock covers the whole band the handle could move into: it is drawn BEHIND the dock */
+	function under(side: Side) {
+		return $bottomInset > 0 && vh - $bottomInset - GAP - boxH() < floorOf(side) + GAP;
+	}
 	function clampTop(side: Side, want: number) {
 		const base = floorOf(side) + GAP;
-		let max = Math.max(base, window.innerHeight - TAB_H - 96);
-		if ($bottomInset > 0) max = Math.max(base, Math.min(max, window.innerHeight - $bottomInset - GAP - boxH()));
+		let max = lowest(side);
+		// no room above the dock: keep the saved spot (behind the dock, see under()), never pushed onto it
+		if ($bottomInset > 0 && !under(side)) max = Math.max(base, Math.min(max, vh - $bottomInset - GAP - boxH()));
 		return Math.max(base, Math.min(max, want));
 	}
 	function topOf(side: Side) {
-		return clampTop(side, floorOf(side) + GAP + $sidebarHandleY[side]);
+		return clampTop(side, floorOf(side) + GAP + handleOffset($sidebarHandleY[side], $sidebarHandleFrac[side], rangeOf(side)));
+	}
+	/** save a drawn top as the person's spot (px and the fraction of the free height) */
+	function saveTop(side: Side, top: number) {
+		setSidebarHandleY(side, top - (floorOf(side) + GAP), true, rangeOf(side));
 	}
 	/** a drag moves the handle from where it is DRAWN (the dock may be holding it above its saved spot) */
 	function dragTop(side: Side, dy: number) {
@@ -160,8 +188,7 @@
 		const p = press;
 		press = null;
 		if (moving) {
-			const top = dragTop(p.side, moving.dy);
-			setSidebarHandleY(p.side, top - (floorOf(p.side) + GAP));
+			saveTop(p.side, dragTop(p.side, moving.dy));
 			moving = null;
 			suppress = true;
 		}
@@ -187,8 +214,7 @@
 			e.preventDefault();
 			const step = e.shiftKey ? 48 : 8;
 			// from where it is DRAWN (the dock may be holding it up), and saved within the band, like a drag
-			const base = floorOf(side) + GAP;
-			setSidebarHandleY(side, clampTop(side, topOf(side) + (e.key === 'ArrowUp' ? -step : step)) - base);
+			saveTop(side, clampTop(side, topOf(side) + (e.key === 'ArrowUp' ? -step : step)));
 		} else if (e.key === 'Enter' || e.key === 'Escape' || e.key === ' ') {
 			e.preventDefault();
 			e.stopPropagation();
@@ -264,6 +290,8 @@
 			class:sbh-touch={$coarsePointer}
 			class:sbh-moving={moving?.side === side || moveMode === side}
 			class:sbh-open={open}
+			class:sbh-under={under(side)}
+			data-under={under(side) ? '' : undefined}
 			data-side={side}
 			aria-pressed={open}
 			aria-label="{open ? 'Hide' : 'Show'} the {side} sidebar"
@@ -314,6 +342,10 @@
 	}
 	.sbh-moving {
 		transition: none;
+	}
+	/* A1: the dock covers every place the handle could go: it waits BEHIND the dock (never painted on it) */
+	.sbh-under {
+		z-index: calc(var(--z-dock) - 1);
 	}
 	@media (prefers-reduced-motion: reduce) {
 		.sbh {

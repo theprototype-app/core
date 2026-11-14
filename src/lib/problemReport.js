@@ -92,13 +92,19 @@ export async function captureProblem() {
 	return { shot, shotUrl: shot ? URL.createObjectURL(shot) : null, perf, at: Date.now() };
 }
 
-/** Desktop: capture now, then the dialog. */
+/** Desktop / phone: capture now, then the dialog. */
 export async function openProblemReport() {
 	const draft = await captureProblem();
 	problemDebug.opened++;
 	problemDraft.set(draft);
 	return draft;
 }
+/** uir-polish D1 (owner 2026-11-11): "Report a bug" is THE one report view (it was two: "Report a problem…" and
+ *  "Report this moment"); the menu row's name for the same opener */
+export const openBugReport = openProblemReport;
+
+/** the boxes as words, for a channel that carries no boxes (a local recording, the anonymous report) @param {{x: number, y: number, w: number, h: number}[]} marks */
+const boxesText = (marks) => (marks.length ? '\n[marked: ' + marks.map((m) => `${Math.round(m.x * 100)},${Math.round(m.y * 100)} ${Math.round(m.w * 100)}x${Math.round(m.h * 100)}%`).join('; ') + ']' : '');
 
 /** who a report would go out as, or null when it cannot be sent from here */
 export function reporterAccount() {
@@ -112,9 +118,14 @@ export function reporterAccount() {
 }
 
 /**
- * Step 2: send it (consent + a reporter) or keep it on this device.
+ * Step 2: send it or keep it on this device. Send ALWAYS goes to the developers (D1, owner: the "Send it to
+ * developers" box went; "Save on this device" is the no-send path), by one of two channels:
+ *   asUser  the cloud plugin's reporter, as the signed-in account ("staff may reply"): picture, note, boxes, meta,
+ *           and the frame data when included
+ *   else    the anonymous performance report (the build's perf endpoint, no account): the frame data + the picture
+ *           + the note with the boxes as words — it needs the frame data, which is what that report is
  * @param {{shot: Blob | null, shotUrl?: string | null, perf: any}} draft
- * @param {{note?: string, marks?: any[], perf?: boolean, send?: boolean}} answer
+ * @param {{note?: string, marks?: any[], perf?: boolean, send?: boolean, asUser?: boolean}} answer
  * @returns {Promise<{sent: boolean, saved: boolean, error?: string, reason?: string}>}
  */
 export async function finishProblem(draft, answer) {
@@ -122,6 +133,16 @@ export async function finishProblem(draft, answer) {
 	const marks = /** @type {{x: number, y: number, w: number, h: number}[]} */ ((answer.marks ?? []).map(normalizeMark).filter(Boolean).slice(0, MAX_MARKS));
 	const perf = answer.perf !== false ? draft.perf : null;
 	const reporter = get(problemReporter);
+	if (answer.send && answer.asUser === false) {
+		if (!perf) return { sent: false, saved: false, error: 'Sending without an account needs the frame data: tick "Include the last 30 s"' };
+		problemDebug.lastReport = { note, marks, meta: null, perf: true, shot: !!draft.shot, anonymous: true };
+		const r = await finishMoment({ doc: perf, shot: draft.shot, shotUrl: draft.shotUrl }, { note: note + boxesText(marks), send: true });
+		if (r.sent) {
+			problemDebug.sent++;
+			return { sent: true, saved: true };
+		}
+		return { sent: false, saved: true, error: 'Could not send the report (it is kept on this device: Profiler ▸ recordings)' };
+	}
 	if (answer.send && reporter) {
 		const report = { note, marks, meta: await reportMeta(), perf, shot: draft.shot };
 		problemDebug.lastReport = { note, marks, meta: report.meta, perf: !!perf, shot: !!draft.shot };
@@ -139,15 +160,14 @@ export async function finishProblem(draft, answer) {
 		return { sent: false, saved: false, error: result?.error ?? 'Could not send the report', reason: result?.reason };
 	}
 	// kept on this device: a Profiler recording carrying the picture and the note (+ the boxes)
-	const boxes = marks.length ? '\n[marked: ' + marks.map((m) => `${Math.round(m.x * 100)},${Math.round(m.y * 100)} ${Math.round(m.w * 100)}x${Math.round(m.h * 100)}%`).join('; ') + ']' : '';
 	if (draft.perf) {
-		await finishMoment({ doc: draft.perf, shot: draft.shot, shotUrl: draft.shotUrl }, { note: 'Problem: ' + note + boxes, send: false });
+		await finishMoment({ doc: draft.perf, shot: draft.shot, shotUrl: draft.shotUrl }, { note: 'Problem: ' + note + boxesText(marks), send: false });
 	} else if (draft.shotUrl) URL.revokeObjectURL(draft.shotUrl);
 	problemDebug.saved++;
 	return { sent: false, saved: !!draft.perf };
 }
 
-/** The dialog's answer. null = cancel. @param {{note?: string, marks?: any[], perf?: boolean, send?: boolean} | null} answer */
+/** The dialog's answer. null = cancel. @param {{note?: string, marks?: any[], perf?: boolean, send?: boolean, asUser?: boolean} | null} answer */
 export async function closeProblemReport(answer) {
 	const draft = get(problemDraft);
 	if (!draft) return null;
@@ -157,8 +177,14 @@ export async function closeProblemReport(answer) {
 		return null;
 	}
 	const result = await finishProblem(draft, answer);
-	if (answer.send && !result.sent) {
+	if (answer.send && !result.sent && !result.saved) {
 		// the dialog stays open: the person can sign in and press Send again, or save instead
+		showToast(result.error ?? 'Could not send the report');
+		return result;
+	}
+	if (answer.send && !result.sent) {
+		// the anonymous channel failed AFTER keeping the recording: the report is safe here, the card closes
+		problemDraft.set(null);
 		showToast(result.error ?? 'Could not send the report');
 		return result;
 	}

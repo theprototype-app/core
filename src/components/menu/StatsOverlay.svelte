@@ -12,6 +12,8 @@
 	// Presentation only. Every reading comes from `sceneBudget`'s sampler, which is where
 	// the arithmetic lives and where it is tested.
 	import Icon from '../ui/Icon.svelte';
+	import HeadDockPop from '../ui/HeadDockPop.svelte'; // uir-polish G2
+	import { dockTab } from '$lib/dockMenu';
 	import { dragWindow } from '$lib/dragWindow';
 	import { bottomDockable } from '$lib/bottomDockDrop';
 	import { focusStack } from '$lib/windowFocus';
@@ -124,9 +126,11 @@
 				title="Re-read now"
 				aria-label="Re-read now"
 				onclick={() => { sampleSceneMetrics(); resetWireStats(); }}><Icon name="refresh-cw" size={16} aria-hidden="true" /></button>
+			<HeadDockPop key="stats" title="Statistics" ondock={() => dockTab('stats')} btnClass="rounded-sm p-1 hover:brightness-150" />
 			<button
 				id="stats-close"
 				data-wc-chrome
+				data-wc-x
 				class="rounded-sm p-1 hover:brightness-150"
 				title="Close"
 				aria-label="Close statistics"

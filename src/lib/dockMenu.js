@@ -10,8 +10,7 @@ import {
 	profilerClose,
 	codeWorkspaceClose,
 	inspectorClose,
-	inspectorKind,
-	inspectorPinned
+	inspectorKind
 } from '../stores/appStore';
 import { imageEditorClose } from './image/imageEditorState';
 import { get, writable } from 'svelte/store';
@@ -19,7 +18,7 @@ import { activateDock, bottomInset, armDockMode, armDockModes, dockOccupants, do
 import { phoneShell } from './ui/phoneShell.js';
 import { queueMerge, groupOfKey, activateTab, nodeOf } from './windowTabs';
 import { maximizeDockTab } from './focusMode';
-import { sidebarTabs, sidebarVisible, activateSidebarTab, inspectorSide, inspectorTabs, moveSidebarTab, keepSideOpen } from './sidebars';
+import { sidebarTabs, sidebarVisible, activateSidebarTab, inspectorSide, inspectorTabs, moveSidebarTab, keepSideOpen, sceneSide } from './sidebars';
 import { raiseWindow, raiseWindowNode } from './windowFocus';
 import { revealWindow } from './dragWindow';
 import { isAway, releasePanel, focusPanelWindow, popOutItems, popOutDockPanels, canPopOut } from './windows/panelPlaces.js';
@@ -333,8 +332,8 @@ export function registerFloatOpener(key, fn) {
  * 44 M7 — the Configure Scene row a sidebar "+" offers: the Inspector lives only in the sidebars.
  * showhide-v8 (owner 2026-11-09): Configure Scene is its OWN tab beside Properties (R2), and "+" MOVES an
  * already-open tab to where "+" was pressed: open on this side it is brought to the front; open on the OTHER side
- * it comes here (Properties with it: the two tabs share one Inspector); closed it opens here as a new tab — an open
- * Properties tab stays a tab beside it, never replaced.
+ * it comes here (uir-polish E5: ALONE — Properties stays in its column); closed it opens here as a new tab — an open
+ * Properties tab stays where it is, never replaced.
  * @param {'left'|'right'} side
  */
 function sceneRow(side) {
@@ -350,6 +349,7 @@ function sceneRow(side) {
 			label: title,
 			icon,
 			hint: whereHint(at),
+			hoverHint: 'Move here', // uir-polish F3
 			checked: true,
 			multiPick: true,
 			tooltip: `${title} is open in the ${at} sidebar — click to move it here`,
@@ -364,11 +364,9 @@ function sceneRow(side) {
 		multiPick: true,
 		tooltip: 'Sky, light, physics, grid and the rest of the scene’s settings',
 		action: () => {
-			// the Inspector's two tabs share one column: a closed Inspector opens on THIS side, an open one brings
-			// its Properties tab along
-			const props = get(inspectorTabs).inspector;
-			if (props && get(inspectorSide) !== side) moveSidebarTab('inspector', side);
-			else if (!props) inspectorSide.set(side);
+			// uir-polish E5: Configure Scene opens on THIS side, alone — Properties stays where it is
+			sceneSide.set(side);
+			if (!get(inspectorTabs).inspector) inspectorSide.set(side);
 			inspectorKind.set('scene');
 			inspectorClose.set(false);
 			queueMicrotask(() => activateSidebarTab('scene'));
@@ -448,6 +446,8 @@ export function addWindowItems({ target = 'dock', exclude = [] } = {}) {
 				label: title,
 				icon,
 				hint: whereHint(where),
+				// uir-polish F3 (owner 2026-11-11): on hover / when highlighted the row says what a press does
+				hoverHint: !here && canMove ? 'Move here' : undefined,
 				checked: true,
 				multiPick: true,
 				tooltip: here || !canMove ? `${title} is open in ${place} — click to show it there` : `${title} is open in ${place} — click to move it here`,
@@ -577,19 +577,7 @@ export function dockTabItems(key) {
 	const title = DOCK_TITLES[key] ?? 'this view';
 	/** @type {{label: string, icon?: string, tooltip: string, action?: () => void, danger?: boolean, disabled?: boolean, children?: any[], checked?: boolean, testid?: string}[]} */
 	const items = [];
-	// 78-int PL14: the phone's Properties / Configure Scene tab has no inner header any more, so its pin
-	// ("Follow the selection", the wider screen's strip button) is the FIRST item of the tab's menu
-	if (get(phoneShell) && (key === 'properties' || key === 'scene')) {
-		const pinned = get(inspectorPinned);
-		items.push({
-			label: 'Follow the selection',
-			icon: pinned ? 'pin' : 'pin-off',
-			checked: pinned,
-			testid: 'inspector-pin',
-			tooltip: pinned ? 'On: this panel stays open and shows what you select. Tap to stop' : 'Keep this panel open and show what you select',
-			action: () => inspectorPinned.update((v) => !v)
-		});
-	}
+	// uir-polish E1: the phone tab menu's "Follow the selection" (78-int PL14) went with the pin
 	// 44 M9 — the split rows (decision: Split right / Unsplit / Swap sides); wider screens only
 	if (!get(phoneShell)) {
 		const pair = splitOf(key);

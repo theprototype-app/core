@@ -257,7 +257,7 @@ export const VALIDATORS = {
 		(d.other === undefined || d.other === null || d.other === '' || isUuid(d.other)),
 	nodedefs: (d) => isArray(d.defs),
 	verts: (d) => isUuid(d.uuid) && isArray(d.indices),
-	meshgeo: (d) => isUuid(d.uuid) && d.positions !== undefined,
+	meshgeo: (d) => isUuid(d.uuid) && (Array.isArray(d.positions) || d.positions instanceof ArrayBuffer || ArrayBuffer.isView(d.positions)),
 	assetstart: (d) => typeof d.hash === 'string' && Number.isInteger(d.chunks) && d.chunks > 0 && d.chunks <= 4096 && typeof d.size === 'number',
 	assetchunk: (d) => typeof d.hash === 'string' && Number.isInteger(d.seq),
 	assetfile: (d) => typeof d.hash === 'string',
@@ -492,6 +492,9 @@ export const VALIDATORS = {
 		if (d.parameter === 'materialParam') return isUuid(d.uuid) && checkMaterialParam(null, d.key, d.value).ok;
 		// 72 LK1: a texture map slot takes an inline image or null, never a URL a peer could make us fetch
 		if (d.parameter === 'mapSlot') return isUuid(d.uuid) && isMapSlotKey(d.key) && isMapSlotImage(d.map);
+		// the base-colour map: an embedded image or null, never an address a peer could make us fetch
+		if (d.parameter === 'map')
+			return isUuid(d.uuid) && (d.map === null || (typeof d.map === 'string' && /^data:image\//i.test(d.map)));
 		if (d.parameter === 'texTransform') return isUuid(d.uuid) && normalizeTexTransform(d.transform) !== null;
 		if (d.parameter === 'normalStrength') return isUuid(d.uuid) && Number.isFinite(d.value);
 		// 64 D2: a text-on-a-path record (normalizeTextPath clamps the rest) or null; a text

@@ -11,6 +11,7 @@ import {
 	activeGraphId
 } from '../stores/flowStore';
 import { peers } from '../stores/appStore';
+import { cleanFlowNode, cleanFlowEdge } from './flowClean.js';
 
 // Strip runtime-only fields (computed, selected, dragging, __graph) so the node
 // is serializable for peerjs
@@ -27,7 +28,7 @@ export function serializeNode(node) {
 
 /** @param {any} edge */
 export function serializeEdge(edge) {
-	return {
+	const out = {
 		id: edge.id,
 		source: edge.source,
 		target: edge.target,
@@ -37,6 +38,7 @@ export function serializeEdge(edge) {
 		...(edge.type ? { type: edge.type } : {}),
 		...(edge.markerEnd ? { markerEnd: edge.markerEnd } : {})
 	};
+	return cleanFlowEdge(out);
 }
 
 // --- Remote appliers (no re-broadcast). H1: every applier takes the graph the
@@ -45,6 +47,7 @@ export function serializeEdge(edge) {
 
 /** @param {any} node @param {string} [graphId] */
 export function createFlowNode(node, graphId = SCENE_GRAPH) {
+	node = cleanFlowNode(node);
 	updateGraph(graphId, (g) => ({
 		nodes: g.nodes.some((n) => n.id === node.id) ? g.nodes : [...g.nodes, node],
 		edges: g.edges
@@ -77,6 +80,7 @@ export function deleteFlowNodes(ids, graphId = SCENE_GRAPH) {
 
 /** @param {any} edge @param {string} [graphId] */
 export function createFlowEdge(edge, graphId = SCENE_GRAPH) {
+	edge = cleanFlowEdge(edge);
 	updateGraph(graphId, (g) => ({
 		nodes: g.nodes,
 		edges: g.edges.some((e) => e.id === edge.id) ? g.edges : [...g.edges, edge]
@@ -124,6 +128,8 @@ export function dropPeerCursor(peerId) {
 /** Merge one graph's snapshot: known nodes update in place, unknown append. */
 /** @param {string} graphId @param {any[]} nodes @param {any[]} edges */
 function mergeGraphSnapshot(graphId, nodes, edges) {
+	if (Array.isArray(nodes)) nodes = nodes.map(cleanFlowNode);
+	if (Array.isArray(edges)) edges = edges.map(cleanFlowEdge);
 	updateGraph(graphId, (g) => {
 		let nextNodes = g.nodes;
 		if (Array.isArray(nodes)) {

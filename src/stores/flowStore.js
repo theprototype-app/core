@@ -2,6 +2,7 @@ import { writable, get } from 'svelte/store';
 import { safeStorage } from '../lib/safeStorage';
 import { loadFlowViews } from '../lib/flowView';
 import { objectsGroup } from './sceneStore';
+import { cleanFlowNode, cleanFlowEdge } from '../lib/flowClean.js';
 
 // Shared node graph state, replicated between peers.
 //
@@ -233,7 +234,8 @@ export function restoreGraphs(graphs, opts = {}) {
 	/** @type {Record<string, {nodes: any[], edges: any[]}>} */
 	const next = { [SCENE_GRAPH]: { nodes: [], edges: [] } };
 	for (const [graphId, graph] of Object.entries(graphs ?? {})) {
-		next[graphId] = { nodes: (graph.nodes ?? []).map(withDataType), edges: graph.edges ?? [] };
+		// a file's graphs: only what the app itself writes reaches the editor (flowClean.js)
+		next[graphId] = { nodes: (graph.nodes ?? []).map((n) => withDataType(cleanFlowNode(n))), edges: (graph.edges ?? []).map(cleanFlowEdge) };
 	}
 	flowGraphs.set(next);
 	activeGraphId.set(SCENE_GRAPH);

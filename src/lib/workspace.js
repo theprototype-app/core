@@ -2,7 +2,6 @@ import { get } from 'svelte/store';
 import {
 	inspectorClose,
 	inspectorKind,
-	inspectorPinned,
 	flowGraphClose,
 	flowCodeClose,
 	animationClose,
@@ -116,7 +115,7 @@ export function snapshotWorkspace({ always = false } = {}) {
 	return {
 		open,
 		dockTab: get(bottomDockActive),
-		inspector: { kind: get(inspectorKind), pinned: get(inspectorPinned) }
+		inspector: { kind: get(inspectorKind) } // uir-polish E1: no pin any more (an old record's `pinned` is ignored)
 	};
 }
 
@@ -140,7 +139,6 @@ export function applyWorkspace(record) {
 	if (typeof record.dockTab === 'string') bottomDockActive.set(record.dockTab);
 	if (record.inspector && typeof record.inspector === 'object') {
 		if (typeof record.inspector.kind === 'string') inspectorKind.set(record.inspector.kind);
-		if (typeof record.inspector.pinned === 'boolean') inspectorPinned.set(record.inspector.pinned);
 	}
 	return true;
 }

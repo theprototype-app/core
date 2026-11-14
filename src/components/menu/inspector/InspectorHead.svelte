@@ -6,29 +6,22 @@
 	// (icon · title · kind badge · pin · close) is gone — the tab that hosts the panel owns the title
 	// and its ✕ (the sidebar strip on a wider screen, the dock tab row on a phone). What it carried
 	// moved:
-	//   · pin ("Follow the selection", id `#inspector-pin`) = a sidebar STRIP button (SidebarStrips);
-	//     on the phone the first item of the tab's long-press menu ($lib/dockMenu dockTabItems);
-	//   · the 42 I1 header lock = the strip (43 J6, unchanged) / the phone's sheet-grip row
-	//     (InspectorLock in SheetGrip's `end`);
+	//   · the pin and the 42 I1 header lock are GONE (uir-polish E1/E2, owner 2026-11-11): this row is
+	//     always sticky, and Properties keeps showing the last object after a deselect;
 	//   · the object's name = the first Properties row (its Name field), the kind = a small badge at
 	//     the end of the filter row (a selection only: "Mesh", "3 objects");
-	//   · a pop-out window (70 W2) has no strip: its pin sits at the end of the filter row.
-	// The filter placeholder says what it filters.
+	// The filter placeholder says what it filters (Properties: the object's name alone, E2).
 	import SearchField from '../../ui/SearchField.svelte';
 	import Badge from '../../ui/Badge.svelte';
-	import InspectorPin from './InspectorPin.svelte';
 	import { inspectorFilter } from '../../../stores/appStore';
-	import { stickyPanelHeads } from '$lib/panelHeaderPrefs';
 
 	/** @type {{badge?: string, filter?: boolean, placeholder?: string, panel?: 'scene'|'properties'|'', popped?: boolean}} */
 	let { badge = '', filter = false, placeholder = 'Filter properties', panel = '', popped = false } = $props();
 
-	/** 42 I1: does this panel's header stick (the default) or scroll away with the content */
-	const sticky = $derived(!panel || $stickyPanelHeads[panel] !== false);
 </script>
 
 {#if filter || badge}
-	<div id="drawer-label" class="tp-ui ins-head" class:ins-head-flow={!sticky} data-sticky={sticky ? 'true' : 'false'}>
+	<div id="drawer-label" class="tp-ui ins-head" data-sticky="true" data-panel={panel || null}>
 		<div class="ins-filter">
 			{#if filter}
 				<!-- PFX-C follow-up: property search — Sections filter by rendered text -->
@@ -44,7 +37,6 @@
 				</div>
 			{/if}
 			{#if badge}<Badge tone="neutral" text={badge} data-inspector-badge />{/if}
-			{#if popped && panel}<InspectorPin />{/if}
 		</div>
 	</div>
 {/if}
@@ -58,10 +50,6 @@
 		margin: 0 -14px;
 		background: var(--surface-2);
 		border-bottom: 1px solid var(--border);
-	}
-	/* 42 I1: unstuck — the header is the first thing in the scroller and scrolls away with it */
-	.ins-head-flow {
-		position: relative;
 	}
 	.ins-filter {
 		display: flex;

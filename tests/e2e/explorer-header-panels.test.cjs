@@ -503,7 +503,10 @@ h.run(async () => {
 	// =====================================================================
 	// 7. THE OTHER SIDE — WHERE A COPIED DRAG SIGN GOES WRONG
 	// =====================================================================
-	await A.page.locator('[data-ws-switch-side]').click();
+	// uir-polish B6: "Switch sidebar side" is in the pane's context menu now (its header's button is gone)
+	h.check((await A.page.locator('#explorer-list [data-ws-switch-side], #explorer-window [data-ws-switch-side]').count()) === 0, 'B6 the pane header has no "Switch sidebar side" button');
+	await A.page.locator('[data-ws-panel-head]').first().click({ button: 'right' });
+	await A.page.getByRole('menuitem', { name: 'Switch sidebar side', exact: true }).click();
 	await A.page.waitForTimeout(600);
 	let left = await shellGeom(A);
 	h.check(

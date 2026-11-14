@@ -42,8 +42,9 @@ const shortId = (peerId) => String(peerId || '?').slice(0, 6).toUpperCase();
  * @param {string} type the message type, or a pseudo-type: 'shape' (not an object),
  *   'invalid' (failed its validator), 'unknown:<t>' (no branch), 'threw' (applier threw)
  * @param {unknown} [error]
+ * @param {{quiet?: boolean}} [opts] quiet = count it, but the caller tells the user itself
  */
-export function noteWireError(peerId, type, error) {
+export function noteWireError(peerId, type, error, opts) {
 	const key = peerId + '|' + type;
 	const now = Date.now();
 	const entry = failures.get(key) ?? { count: 0, first: now, last: now, sample: '' };
@@ -57,7 +58,7 @@ export function noteWireError(peerId, type, error) {
 	if (entry.count <= 3)
 		log('warn', 'wire', 'message from ' + shortId(peerId) + ' failed (' + type + ')', entry.sample || undefined);
 
-	if (entry.count === TOAST_AFTER) {
+	if (entry.count === TOAST_AFTER && !opts?.quiet) {
 		const since = lastToastAt.get(peerId) ?? 0;
 		if (now - since > TOAST_COOLDOWN_MS) {
 			lastToastAt.set(peerId, now);

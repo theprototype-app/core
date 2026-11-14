@@ -6,8 +6,7 @@
 	import { readSheetH, saveSheetH } from '$lib/ui/sheetDrag.js';
 	import { phoneShellActive, phoneSheetMaxH } from '$lib/ui/phoneShell.js';
 	import { openPublishExport } from '$lib/export/exportStores.js';
-	import { openMomentReport } from '$lib/perf/moment';
-	import { openProblemReport } from '$lib/problemReport';
+	import { openBugReport } from '$lib/problemReport';
 	import '../../app.css';
 	import { moduleToolboxes, openToolboxes, buildToolboxItems } from '$lib/moduleToolboxes';
 	import { simpleUntilPlay } from '$lib/onboarding/onboardState.js'; // 76 FW1
@@ -427,10 +426,6 @@
 					{#if box.shortcut}<span class="side-hint">{box.shortcut}</span>{/if}
 				</button>
 			{/each}
-			<!-- 37 R14: named workspace layouts (windows, docks, sizes) -->
-			<button id="open-layouts" class="side-row" onclick={() => { layoutsMenuOpen.set(true); closeMenu.set(true); }}>
-				<span class="side-ico"><Icon name="panels-top-left" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Layouts</span>
-			</button>
 		{:else}
 			<button id="sidebar-more" class="side-row" aria-expanded="false" onclick={() => (sceneMore = true)}>
 				<span class="side-ico"><Icon name="ellipsis" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">More</span>
@@ -457,6 +452,11 @@
 
 		<div class="side-div"></div>
 		<div class="side-label">Window</div>
+		<!-- 37 R14: named workspace layouts (windows, docks, sizes). uir-polish C1 (owner 2026-11-11): in the Window
+		     section above Windows, for everyone (it used to wait under the Scene section's "More" until the first Play) -->
+		<button id="open-layouts" class="side-row" onclick={() => { layoutsMenuOpen.set(true); closeMenu.set(true); }}>
+			<span class="side-ico"><Icon name="panels-top-left" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Layouts</span>
+		</button>
 		<!-- showhide-v8 §6: Windows ▸ (every window, its shortcut, open mark; focus / full screen / reset / close floating) -->
 		<button id="open-windows-menu" class="side-row" aria-haspopup="menu" aria-expanded={!!windowsMenu} onclick={openWindowsMenu}>
 			<span class="side-ico"><Icon name="app-window" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Windows</span>
@@ -470,42 +470,43 @@
 
 		<div class="side-div"></div>
 		<div class="side-label">Help</div>
-		<button class="side-row" onclick={() => window.open('https://docs.theprototype.app', '_blank')}>
-			<span class="side-ico"><Icon name="book-open" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Docs</span>
-		</button>
-		<!-- showhide-v8 §6: the "?" cheat sheet had no menu row -->
-		<button id="open-shortcuts" class="side-row" onclick={() => { closeMenu.set(true); cheatSheetOpen.set(true); }}>
-			<span class="side-ico"><Icon name="keyboard" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Keyboard shortcuts</span>
-			<span class="side-hint">{bindingOf('help.cheatsheet') ?? '?'}</span>
-		</button>
-		<!-- 36 I5: the editor tour (Settings ▸ Tours has the VR welcome + reset). 76 FW1: it no longer starts by
-		     itself after the Welcome — the first-win quest does — so this row is where it lives -->
-		<button id="open-tour" class="side-row" onclick={() => { closeMenu.set(true); startEditorTour(); }}>
-			<span class="side-ico"><Icon name="compass" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Tour the interface</span>
-		</button>
-		<!-- the unseen cue is a CLASS toggle, not an {#if}: clicking this row closes the
-		     menu, and destroying a nested branch inside the subtree being destroyed in
-		     the same flush crashes Svelte's sibling walk (destroy_effect). -->
-		<button id="open-whats-new" class="side-row" onclick={() => { openWhatsNew(); closeMenu.set(true); }}>
-			<span class="side-ico"><Icon name="sparkles" size={16} aria-hidden="true" /></span>
-			<span class="flex-1 whitespace-nowrap">What's new</span>
-			<span class="row-dot" class:row-dot-on={$whatsNewUnseen}></span>
-		</button>
-		<!-- 37 R20: a picture + boxes round what is wrong + a note, sent to the team with consent -->
-		<button id="report-problem" class="side-row" onclick={() => { closeMenu.set(true); void openProblemReport(); }}>
-			<span class="side-ico"><Icon name="message-square-warning" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Report a problem…</span>
-		</button>
-		<!-- 34 R1: the last 30 s of frame data + what the viewport shows + a note, kept as a
-			recording (and sent when performance reports are on) -->
-		<button id="report-moment" class="side-row" onclick={() => { closeMenu.set(true); void openMomentReport(); }}>
-			<span class="side-ico"><Icon name="flag" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Report this moment</span>
-		</button>
+		<!-- uir-polish C4 (owner 2026-11-11): two per row on the desktop and the unfolded phone (Docs | Shortcuts,
+		     Tour | Report a bug); the folded phone keeps its one-column list. C2: "What's new" left the menu — the
+		     version beside Settings opens the release notes. D1: one "Report a bug" (the two report rows were one view) -->
+		<div id="help-actions" class:help-grid={!$phoneShellActive} data-layout={$phoneShellActive ? 'list' : 'grid'}>
+			<button id="open-docs" class="side-row help-btn" title="Open the documentation in a new tab" onclick={() => window.open('https://docs.theprototype.app', '_blank')}>
+				<span class="side-ico"><Icon name="book-open" size={16} aria-hidden="true" /></span><span class="help-label">Docs</span>
+			</button>
+			<!-- showhide-v8 §6: the "?" cheat sheet had no menu row -->
+			<button id="open-shortcuts" class="side-row help-btn" title="Keyboard shortcuts ({bindingOf('help.cheatsheet') ?? '?'})" onclick={() => { closeMenu.set(true); cheatSheetOpen.set(true); }}>
+				<span class="side-ico"><Icon name="keyboard" size={16} aria-hidden="true" /></span><span class="help-label">{$phoneShellActive ? 'Keyboard shortcuts' : 'Shortcuts'}</span>
+				{#if $phoneShellActive}<span class="side-hint">{bindingOf('help.cheatsheet') ?? '?'}</span>{/if}
+			</button>
+			<!-- 36 I5: the editor tour (Settings ▸ Tours has the VR welcome + reset). 76 FW1: it no longer starts by
+			     itself after the Welcome — the first-win quest does — so this row is where it lives -->
+			<button id="open-tour" class="side-row help-btn" title="Tour the interface" onclick={() => { closeMenu.set(true); startEditorTour(); }}>
+				<span class="side-ico"><Icon name="compass" size={16} aria-hidden="true" /></span><span class="help-label">{$phoneShellActive ? 'Tour the interface' : 'Tour'}</span>
+			</button>
+			<!-- 37 R20 + 34 R1, one view (uir-polish D1): the picture with boxes, the last 30 s of frames, a note -->
+			<button id="report-bug" class="side-row help-btn" title="Report a bug: a picture of this moment, the last 30 s of frame data and a note" onclick={() => { closeMenu.set(true); void openBugReport(); }}>
+				<span class="side-ico"><Icon name="bug" size={16} aria-hidden="true" /></span><span class="help-label">Report a bug</span>
+			</button>
+		</div>
 		<!-- showhide-v8 §6: Settings + the version, a footer that stays in view while the rows scroll; the version opens What's new -->
 		<div class="side-foot">
 			<button id="open-settings" class="side-row" onclick={() => { settingsOpen.set(!$settingsOpen); closeMenu.set(true); }}>
 				<span class="side-ico"><Icon name="settings" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Settings</span>
 			</button>
-			<button id="open-version" class="side-version" title="What's new in this version" onclick={() => { openWhatsNew(); closeMenu.set(true); }}>{APP_VERSION}</button>
+			<!-- uir-polish C2: the version is the way to the release notes; its dot shows until this version's notes are
+			     opened (a CLASS toggle, not an {#if}: the press closes the menu in the same flush) -->
+			<button
+				id="open-version"
+				class="side-version"
+				class:side-version-new={$whatsNewUnseen}
+				title={$whatsNewUnseen ? `New in ${APP_VERSION}: open the release notes` : `What's new in ${APP_VERSION}`}
+				aria-label={$whatsNewUnseen ? `Version ${APP_VERSION}, new: open the release notes` : `Version ${APP_VERSION}: open the release notes`}
+				onclick={() => { openWhatsNew(); closeMenu.set(true); }}
+			>{APP_VERSION}<span class="row-dot version-dot" class:row-dot-on={$whatsNewUnseen} aria-hidden="true"></span></button>
 		</div>
 	</nav>
 {/if}
@@ -661,9 +662,14 @@
 		color: var(--text-faint);
 	}
 	/* showhide-v8 §6: the footer (Settings + version) stays at the bottom of the scrolling menu */
+	/* uir-polish C3 (owner 2026-11-11, folded N6): a sticky footer pins at the scroller's padding edge, so the menu's
+	   bottom padding (12 px on the phone sheet, 5 px on desktop) was a see-through strip under Settings while the rows
+	   scrolled behind it. The footer now reaches the menu's bottom edge across that padding (--side-foot-pad) */
 	.side-foot {
 		position: sticky;
-		bottom: 0;
+		bottom: calc(-1 * var(--side-foot-pad, 5px));
+		margin-bottom: calc(-1 * var(--side-foot-pad, 5px));
+		padding-bottom: var(--side-foot-pad, 5px);
 		display: flex;
 		align-items: center;
 		gap: 4px;
@@ -683,6 +689,35 @@
 		color: var(--text-faint);
 		font-family: var(--font-ui-mono);
 		font-size: var(--fs-badge);
+	}
+	.side-version {
+		position: relative;
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+	}
+	.side-version-new {
+		color: var(--accent-text);
+	}
+	/* C2: the dot takes no room while hidden (the version stays put) */
+	.version-dot:not(.row-dot-on) {
+		display: none;
+	}
+	/* C4: Help as a strict two-column grid (the File block's compact rule), icon beside a short label */
+	.help-grid {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+		gap: 2px 4px;
+	}
+	.help-btn {
+		min-width: 0;
+	}
+	.help-label {
+		flex: 1 1 auto;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 	.side-version:hover {
 		background-color: var(--surface-hover);

@@ -14,8 +14,8 @@
 	// $lib/sidebarMenu), and a drag that lands where it is dropped — the other side's column, the
 	// bottom dock, or the viewport as a floating window — with ONE highlight for each
 	// ($lib/sidebarDrop). The tabs scroll sideways like the dock strip's when they outgrow the column.
-	// J6 — the Inspector's sticky-header lock (42 I1) sits here, beside Full height, on a wider screen.
-	// 78-int PL14 — and its pin ("Follow the selection", #inspector-pin), since the Inspector lost its inner header.
+	// uir-polish E1 (owner 2026-11-11): the Inspector's lock (43 J6) and pin (78-int PL14) left the strip — the
+	// filter row is always sticky and Properties keeps the last object, so neither had a job left.
 	import { onMount, tick } from 'svelte';
 	import Icon from '../ui/Icon.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
@@ -28,7 +28,6 @@
 	import { floatSizeOf } from '$lib/docking';
 	import { sidebarTabItems, closeSidebarTab, floatSidebarTab, sidebarTabToDock } from '$lib/sidebarMenu';
 	import { tearOffAt } from '$lib/windows/panelPlaces.js';
-	import { stickyPanelHeads, toggleStickyHead } from '$lib/panelHeaderPrefs';
 	import {
 		SIDES,
 		startSidebars,
@@ -51,7 +50,7 @@
 		MIN_W
 	} from '$lib/sidebars';
 	import { scaledPx } from '$lib/uiScale';
-	import { inspectorKind, inspectorPinned } from '../../stores/appStore.js';
+	import { inspectorKind } from '../../stores/appStore.js';
 	import { DOCK_TITLES, DOCK_ICONS } from '$lib/bottomDock';
 
 	onMount(() => startSidebars());
@@ -175,6 +174,46 @@
 	function keyOfSide(side: Side) {
 		return bindingOf(side === 'left' ? 'panels.sidebar-left' : 'panels.sidebar-right') ?? '';
 	}
+	// ---- uir-polish F1: "..." lists every tab of the column when they outgrow it ----
+	/** which strips overflow (their tabs scroll sideways) */
+	let overflowing = $state<Record<Side, boolean>>({ left: false, right: false });
+	/** keeps `overflowing[side]` in step with the strip's own scroll width @param {HTMLElement} node @param {Side} side */
+	function watchOverflow(node: HTMLElement, side: Side) {
+		const check = () => {
+			const over = node.scrollWidth > node.clientWidth + 1;
+			if (overflowing[side] !== over) overflowing = { ...overflowing, [side]: over };
+		};
+		const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(check) : null;
+		ro?.observe(node);
+		const mo = new MutationObserver(check);
+		mo.observe(node, { childList: true, subtree: true, characterData: true });
+		check();
+		return {
+			destroy() {
+				ro?.disconnect();
+				mo.disconnect();
+			}
+		};
+	}
+	function openOverflow(e: MouseEvent, side: Side) {
+		const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		const box = document.querySelector(`#sidebar-strip-${side} .sb-tabs`) as HTMLElement | null;
+		const items = $sidebarTabs[side].map((key) => {
+			const tab = box?.querySelector(`[data-sidebar-tab-group="${key}"]`) as HTMLElement | null;
+			const hidden = !!box && !!tab && (tab.offsetLeft < box.scrollLeft - 1 || tab.offsetLeft + tab.offsetWidth > box.scrollLeft + box.clientWidth + 1);
+			const title = titleOf(key, $inspectorTabTitle);
+			return {
+				label: title,
+				icon: iconOf(key, $inspectorKind),
+				checked: $sidebarShown[side] === key,
+				testid: `sidebar-more-item-${key}`,
+				tooltip: hidden ? `${title} — scrolled out of the strip; pick it to bring it forward` : `Bring ${title} forward`,
+				action: () => activateSidebarTab(key)
+			};
+		});
+		menu = { x: side === 'left' ? r.left : Math.max(8, r.right - 240), y: r.bottom + 4, items };
+	}
+
 	function openTabMenu(x: number, y: number, key: string, side: Side) {
 		// item 5: the strip buttons this person hid come back from here ("Show buttons ▸")
 		menu = { x, y, items: [...sidebarTabItems(key, side, titleOf(key, $inspectorTabTitle)), ...showButtonsItems('sidebar', $hiddenChromeIds)] };
@@ -203,13 +242,6 @@
 		});
 	});
 
-	// ---- J6: the Inspector's header lock, beside Full height ----
-	/** which panel the lock acts on when a side shows the Inspector ('' = none: a file, another tab) */
-	function lockPanelOf(shown: string | null, kind: string): '' | 'scene' | 'properties' {
-		if (shown === 'scene') return 'scene';
-		if (shown !== 'inspector') return '';
-		return kind === 'file' || kind === 'scene' ? '' : 'properties';
-	}
 	function onTabClick(key: string) {
 		if (suppressClick) {
 			suppressClick = false;
@@ -274,7 +306,6 @@
 {#if $sidebarsWide}
 	{#each SIDES as side (side)}
 		{#if $sidebarVisible[side]}
-			{@const lockPanel = lockPanelOf($sidebarShown[side], $inspectorKind)}
 			<div
 				id="sidebar-strip-{side}"
 				class="sb-strip tp-ui"
@@ -282,7 +313,7 @@
 				data-side={side}
 				style="top: var(--sb-{side}-top); width: var(--sb-{side}-w); {side === 'left' ? 'left: var(--sb-left-x, 0px)' : 'right: 0px'}"
 			>
-				<div class="sb-tabs tp-noscrollbar" role="tablist" aria-label="{side === 'left' ? 'Left' : 'Right'} sidebar" use:stripScroll>
+				<div class="sb-tabs tp-noscrollbar" role="tablist" aria-label="{side === 'left' ? 'Left' : 'Right'} sidebar" use:stripScroll use:watchOverflow={side}>
 					{#each $sidebarTabs[side] as key (key)}
 						{@const title = titleOf(key, $inspectorTabTitle)}
 						<span class="sb-tab-group" class:on={$sidebarShown[side] === key} class:dragging={drag?.key === key} data-sidebar-tab-group={key}>
@@ -317,6 +348,20 @@
 						</span>
 					{/each}
 				</div>
+				{#if overflowing[side]}
+					<!-- uir-polish F1: the tabs outgrew the column — every tab, one press away (the wheel scrolls the strip too) -->
+					<button
+						type="button"
+						id="sidebar-more-{side}"
+						class="sb-pin sb-more"
+						aria-label="All tabs in the {side} sidebar"
+						aria-haspopup="menu"
+						title="All tabs in this sidebar — pick one to bring it forward (or scroll the tabs with the mouse wheel)"
+						onclick={(e) => openOverflow(e, side)}
+					>
+						<Icon name="ellipsis" size={16} aria-hidden="true" />
+					</button>
+				{/if}
 				<button
 					type="button"
 					id="sidebar-add-{side}"
@@ -327,40 +372,6 @@
 				>
 					<Icon name="plus" size={16} aria-hidden="true" />
 				</button>
-				{#if lockPanel}
-					<!-- 78-int PL14: the Inspector's pin ("Follow the selection") moved here from its inner header -->
-					<button
-						type="button"
-						id="inspector-pin"
-						class="sb-pin sb-follow"
-						use:chromeButton={'sidebar.pin'}
-						class:on={$inspectorPinned}
-						aria-pressed={$inspectorPinned}
-						aria-label={$inspectorPinned ? 'Stop following the selection' : 'Follow the selection'}
-						title={$inspectorPinned
-							? 'Following the selection: this panel stays open and shows what you select. Click to stop'
-							: 'Follow the selection: keep this panel open and show what you select'}
-						onclick={() => inspectorPinned.update((v) => !v)}
-					>
-						<Icon name={$inspectorPinned ? 'pin' : 'pin-off'} size={16} aria-hidden="true" />
-					</button>
-					{@const sticky = $stickyPanelHeads[lockPanel] !== false}
-					{@const panelName = lockPanel === 'scene' ? 'Configure Scene' : 'Properties'}
-					<button
-						type="button"
-						id="inspector-sticky-head"
-						class="sb-pin sb-lock ins-sticky-btn"
-						use:chromeButton={'sidebar.lock'}
-						aria-pressed={sticky}
-						aria-label={sticky ? `Let the ${panelName} header scroll away` : `Keep the ${panelName} header on top`}
-						title={sticky
-							? 'Header stays on top — click to let it scroll away with the properties'
-							: 'Header scrolls away — click to keep it on top while you scroll'}
-						onclick={() => toggleStickyHead(lockPanel)}
-					>
-						<Icon name={sticky ? 'lock' : 'lock-open'} size={16} aria-hidden="true" />
-					</button>
-				{/if}
 				<button
 					id="sidebar-full-{side}"
 					class="sb-pin"
@@ -482,16 +493,14 @@
 		overflow-x: auto;
 		overflow-y: hidden;
 	}
-	/* dock-fixes: with the hide button on every column (owner) a 320 px column holds two tabs + four pinned buttons
-	   only if the tabs give a little: each SHRINKS to 72 px (label ellipsis, the full name in its tooltip) before the
-	   row scrolls — two tabs always fit whole, a third scrolls (J4). Without it the front tab scrolled the other
-	   one out past the strip's edge, where a press missed it (sidebar-tabs §3). */
+	/* uir-polish F2 (owner 2026-11-11, "use the dock panel's tab size"): a tab keeps its whole name like a dock tab —
+	   no shrinking to 72 px (dock-fixes) any more. A row that outgrows the column scrolls (wheel, swipe) and the "..."
+	   button (F1) lists every tab, so a tab scrolled past the edge is still one press away. */
 	.sb-tab-group {
 		display: inline-flex;
 		align-items: stretch;
-		flex: 0 1 auto;
-		min-width: 72px;
-		max-width: 200px;
+		flex: 0 0 auto;
+		max-width: 220px;
 		margin-top: 3px;
 		border-radius: var(--radius-input) var(--radius-input) 0 0;
 		color: var(--text-muted);

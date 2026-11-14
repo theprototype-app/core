@@ -44,6 +44,7 @@ import {
 import { showToast } from '../stores/appStore.js';
 import { deviceRefusal, reachRefusal, customShadersOnQuest, shaderCodeHeld, holdShaderCode, releaseHeldShaderCode } from './shaderCodeReach.js'; // 73 AI9
 import { exportMode } from './export/exportBoot.js';
+import { cleanFlowNode, cleanFlowEdge } from './flowClean.js';
 
 /** The reserved key for the scene default material (layer 2). */
 export const SCENE_GRAPH_KEY = 'scene';
@@ -89,14 +90,14 @@ export function normalizeShaderGraph(doc) {
 		// deterministic grid, never randomly, so two peers normalizing the same document
 		// still agree byte for byte.
 		nodes: (Array.isArray(doc?.nodes) ? doc.nodes : []).map((/** @type {any} */ node, /** @type {number} */ i) => ({
-			...node,
+			...cleanFlowNode(node),
 			position:
 				node?.position && Number.isFinite(node.position.x) && Number.isFinite(node.position.y)
 					? node.position
 					: { x: 60 + (i % 4) * 170, y: 40 + Math.floor(i / 4) * 130 },
 			data: node?.data ?? {}
 		})),
-		edges: Array.isArray(doc?.edges) ? doc.edges : [],
+		edges: Array.isArray(doc?.edges) ? doc.edges.map(cleanFlowEdge) : [],
 		domain: doc?.domain === 'post' ? 'post' : 'surface',
 		backend: typeof doc?.backend === 'string' ? doc.backend : INJECT_SHADER_BACKEND,
 		changedAt: Number(doc?.changedAt) || 0,

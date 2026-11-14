@@ -114,6 +114,7 @@
 	// 55 A9: the peer menu (Profile · Find · Character · Talk · For you only · Moderation)
 	import { buildPeerMenuItems } from '$lib/peerMenu';
 	import { removePeer, allowBack, blockedPeers, inviteStoreModule } from '$lib/peerModeration';
+	import { olderPeers } from '$lib/wireProto'; // 101 F1: peers on an older protocol, refused here
 	import { copyLookOf } from '$lib/peerActions';
 	import { canModerateWith } from '$lib/peerModerationCore';
 	import { hiddenPeers, setPeerHidden } from '$lib/peerHide';
@@ -1286,7 +1287,7 @@
 	 21-G5: OR on cross-scene presence — being alone in YOUR scene is exactly when
 	 "where is everyone" matters, and a popover that only exists once somebody is
 	 already in your mesh could never show you the people who are not. -->
-{#if trShown('peers') && (($userdata && $userdata.length > 1 && $peers && $peers.openedPeers?.size > 0) || crossRooms.length > 0 || inviteRows.length > 0 || $blockedPeers.length > 0)}
+{#if trShown('peers') && (($userdata && $userdata.length > 1 && $peers && $peers.openedPeers?.size > 0) || crossRooms.length > 0 || inviteRows.length > 0 || $blockedPeers.length > 0 || $olderPeers.length > 0)}
 	<div class="relative" style:order={trOrder('peers')}>
 		<!-- compact trigger: a few stacked avatars + the peer count -->
 		<button
@@ -1454,6 +1455,20 @@
 											>
 										</div>
 									{/if}
+								</div>
+							{/each}
+						</div>
+					{/if}
+					<!-- 101 F1: a peer on an OLDER session protocol was refused before any scene data moved;
+					     this is the one place it shows on this side (it sees "Reload to update"). -->
+					{#if $olderPeers.length}
+						<div id="peers-older" class="mt-1 border-t border-border pt-1">
+							{#each $olderPeers as o (o.peerId)}
+								<div class="peers-row peers-older-row rounded" data-peer-id={o.peerId}>
+									<Icon name="refresh-cw" size={16} aria-hidden="true" />
+									<div class="peer-info">
+										<div class="peer-meta"><span class="truncate" title={o.peerId}>{(o.name || shortId(o.peerId)) + ' needs to reload (older version)'}</span></div>
+									</div>
 								</div>
 							{/each}
 						</div>

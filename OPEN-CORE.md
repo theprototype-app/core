@@ -356,6 +356,30 @@ when `N` is **newer** than the engine, and a new engine always accepts an older 
 drawer mounts, roles bridge) · **3 (roadmap #28-A: the publish · play · remix seams above)**.
 A coupled change therefore deploys the engine first and the plugin after.
 
+### The session protocol (`proto` + `caps`, roadmap 101 F1)
+
+Separate from the plugin contract: two PEERS agree on a session protocol before any scene data
+flows. Every dial carries `{jr: 1, proto: <int>, caps: {…}}` in its PeerJS metadata (plus `cloud`,
+`invite`, `kind` when they apply), and the `modules` handshake message carries the same `proto` and
+`caps` beside `wb` / `fc` / `dev`. `WIRE_PROTO` lives in [src/lib/wireProto.js](src/lib/wireProto.js)
+and is **1**; a peer that sends no `proto` speaks 1 (every build up to 1.65).
+
+- **Same number:** everything as before. **Different (or unreadable):** the link is refused before
+  any whitelist, approval card or data: a refusal dial (`joinresult: 'denied'` + `refuse: {reason:
+  'proto', need}`) when the dialer can hear one, else a `{type: 'refuse', reason: 'proto', need}`
+  message on an open link. `need` is the refuser's own protocol. The lower side shows "This session
+  uses a newer version. Reload to update."; the higher side lists the other in People as needing
+  to reload. No reconnect window, no mesh-fill redial; a later dial on the right protocol gets in.
+- **Bump `proto` only** when a message changes meaning in a way an older build would apply wrongly.
+  Additive fields and new message types do not bump it (an older build counts and drops a type it
+  does not know); they become a **`caps` flag** instead — today `wb` (batch envelopes), `fc` (fast
+  movement channel), `dev` (a device row in `modules`). Extensions (80a's held-set handshake) add a
+  flag here and read it from `peerCaps`; absent = the peer does not have it.
+- **Inbound limits (F4):** each peer has a per-second budget of messages and bytes and an `object`
+  size cap ([src/lib/wireBudget.js](src/lib/wireBudget.js) `LIMITS`, set at >= 4x the measured
+  peaks); a message over budget is dropped and counted (`budget:*` in Diagnostics), the person is
+  told once a minute, and the link stays up.
+
 ## Rules for plugin authors
 
 - **Never trust the sender.** The capability gate is receive-side truth; send-side UI

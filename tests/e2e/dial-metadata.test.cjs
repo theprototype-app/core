@@ -90,7 +90,9 @@ h.run(async () => {
 	h.check((await inPage(J, 'return s.cloudPlugin.makeCloudApi().dialMeta')) === true, 'cloudApi.dialMeta === true is the probe for this engine');
 	await dialVia(J, 'aaaa1');
 	const plain = await lastDial(J, 'aaaa1');
-	h.check(JSON.stringify(plain?.opts) === '{"metadata":{"jr":1}}', `a pill dial carries exactly {jr:1} and nothing else (${JSON.stringify(plain?.opts)})`);
+	// 101 F1: every dial also says its session protocol and capabilities (proto + caps), and nothing else
+	const m = plain?.opts?.metadata ?? {};
+	h.check(Object.keys(plain?.opts ?? {}).join() === 'metadata' && Object.keys(m).sort().join() === 'caps,jr,proto' && m.jr === 1 && m.proto === 1 && m.caps?.wb === 1, `a pill dial carries exactly {jr:1, proto:1, caps} and nothing else (${JSON.stringify(plain?.opts)})`);
 
 	console.log('\n=== 2. metadata rides the dial ===');
 	const META = { v: 1, room: 'amber-mesa', name: 'Ada', proof: 'abc123' };

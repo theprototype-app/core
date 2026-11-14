@@ -17,7 +17,7 @@ const BUILD = path.resolve(process.argv[2] || path.join(ROOT, 'build'));
 
 (async () => {
 	const { loadEnv } = await import('vite');
-	const { frameAncestors, cspText, cspDirectives, playOrigin } = await import(path.join(ROOT, 'csp.config.js'));
+	const { frameAncestors, cspText, cspDirectives, playOrigin, FRAMED_PATHS } = await import(path.join(ROOT, 'csp.config.js'));
 	const env = { ...loadEnv(process.env.MODE || 'production', ROOT, 'VITE_'), ...process.env };
 	const lines = ['/*', '  X-Content-Type-Options: nosniff', '  Referrer-Policy: strict-origin-when-cross-origin'];
 	if (cspDirectives(env)) {
@@ -27,6 +27,9 @@ const BUILD = path.resolve(process.argv[2] || path.join(ROOT, 'build'));
 		const play = playOrigin(env);
 		if (play && !env.VITE_CSP_FRAME_ANCESTORS)
 			lines.push(play + '/*', '  ! Content-Security-Policy', '  Content-Security-Policy: ' + cspText({ 'frame-ancestors': ['*'] }));
+		// 101 F4: no play origin — the app origin is 'self', and only the play entry paths stay frameable
+		if (!play && !env.VITE_CSP_FRAME_ANCESTORS)
+			for (const p of FRAMED_PATHS) lines.push(p, '  ! Content-Security-Policy', '  Content-Security-Policy: ' + cspText({ 'frame-ancestors': ['*'] }));
 	}
 	fs.writeFileSync(path.join(BUILD, '_headers'), lines.join('\n') + '\n');
 	console.log('csp-headers: wrote ' + path.relative(ROOT, path.join(BUILD, '_headers')));

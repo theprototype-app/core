@@ -39,7 +39,21 @@ const BUILD = [
 const HOLD = /^(playwright|playwright-core|@playwright\/.*|@axe-core\/playwright)$/;
 
 /**
- * @typedef {{ dependencyName: string, dependencyType?: string, updateType?: string, directory?: string, packageEcosystem?: string }} Dep
+ * The manifest directory of one update. fetch-metadata reads it back out of the branch name, and with a
+ * `target-branch` Dependabot's branch is dependabot/<eco>/<dir>/<target-branch>/<name>, so the
+ * target branch comes back glued on: "/deps" for the root, "/tools/agent/deps" for the agent
+ * (seen on every PR into deps from 2026-10-25). Strip it, or no root bump ever counts as the app.
+ * @param {{ directory?: string, targetBranch?: string }} d
+ */
+function manifestDir(d) {
+	let dir = (d.directory || '/').replace(/\/+$/, '') || '/';
+	const tb = (d.targetBranch || '').replace(/^\/+|\/+$/g, '');
+	if (tb && (dir === '/' + tb || dir.endsWith('/' + tb))) dir = dir.slice(0, -(tb.length + 1)) || '/';
+	return dir;
+}
+
+/**
+ * @typedef {{ dependencyName: string, dependencyType?: string, updateType?: string, directory?: string, packageEcosystem?: string, targetBranch?: string }} Dep
  * @param {Dep[]} deps
  * @returns {{ cls: 'auto'|'ready'|'major', needsPc: boolean, battery: boolean, reason: string }}
  */
@@ -54,7 +68,7 @@ function classify(deps) {
 	for (const d of deps) {
 		const name = d.dependencyName;
 		const eco = d.packageEcosystem || 'npm_and_yarn';
-		const dir = (d.directory || '/').replace(/\/+$/, '') || '/';
+		const dir = manifestDir(d);
 		const up = (d.updateType || '').replace('version-update:semver-', '');
 		const actions = eco === 'github_actions' || eco === 'github-actions';
 		// app = the root package (the shipped site); the agent under tools/ is a separate CLI
@@ -85,4 +99,4 @@ if (require.main === module) {
 	process.stdout.write(line);
 }
 
-module.exports = { classify, BUILD, HOLD };
+module.exports = { classify, manifestDir, BUILD, HOLD };

@@ -2450,7 +2450,7 @@ export class PeerConnection {
 	mayRefusalDial(peerId) {
 		if (this.refusalDials.has(peerId) || this.refusalDials.size >= PROTO_DIALS_IN_FLIGHT) return false;
 		const now = Date.now();
-		this.protoDialTimes = (this.protoDialTimes ?? []).filter((t) => now - t < 1000);
+		this.protoDialTimes = (/** @type {number[]} */ (this.protoDialTimes ?? [])).filter((/** @type {number} */ t) => now - t < 1000);
 		if (this.protoDialTimes.length >= PROTO_DIALS_PER_SEC) return false;
 		this.protoDialTimes.push(now);
 		return true;

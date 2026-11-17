@@ -135,7 +135,7 @@ export function createInboundBudget(opts = {}) {
 			let reason = w.msgs > limits.msgsPerSec ? 'msgs' : w.bytes > limits.bytesPerSec ? 'bytes' : null;
 			// the object cap holds for an `object` message and for every `object` item inside a batch
 			if (!reason) {
-				const objects = type === 'object' ? [data] : items ? items.filter((i) => i && typeof i === 'object' && i.type === 'object') : [];
+				const objects = type === 'object' ? [data] : items ? items.filter((/** @type {any} */ i) => i && typeof i === 'object' && i.type === 'object') : [];
 				for (const o of objects) {
 					const size = approxSize(o, limits.objectBytes);
 					if (size > t.maxObject && size <= limits.objectBytes) t.maxObject = size;

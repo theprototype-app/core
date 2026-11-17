@@ -1,4 +1,4 @@
-import { embeddedOnlyManager, checkFbx, refusal, checkStl } from './loadGuard.js';
+import { embeddedOnlyManager, checkFbx, refusal, checkStl, checkGltf } from './loadGuard.js';
 import { addProvenance } from '$lib/provenance';
 import { APP_VERSION } from '$lib/version';
 import { glbIsVrm } from '$lib/vrm/vrmDetect';
@@ -539,6 +539,11 @@ export function addImported(imported, name, position) {
 export function importGeneratedGlb(buffer, opts = {}) {
 	return new Promise((resolve, reject) => {
 		try {
+			// bytes from a generator service: the size half of the glTF check, as for any model file
+			if (!checkGltf(buffer, 'file', 'model', { uris: false })) {
+				reject(refusal('model'));
+				return;
+			}
 			createGltfLoader(embeddedOnlyManager('file', 'model')).parse(
 				buffer,
 				'',
@@ -1394,6 +1399,7 @@ try {
 		reader.onerror = () => reject(reader.error);
 	});
 	const json = JSON.parse(reader.result);
+	if (!checkGltf(json, 'file', 'model', { uris: false })) throw refusal('model');
 	const loader = new GLTFLoader(embeddedOnlyManager('file', 'model'));
 	const result = await new Promise((resolve, reject) => {
 		loader.parse(

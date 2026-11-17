@@ -14,6 +14,11 @@
 - **For module authors**: the module api reports `api.version` 2. Renderers and render targets now come from one place inside the app, which prepares it for a future renderer switch; nothing changes on screen. <!-- 101-seam F3 F5 F6 -->
 - **For self-hosting**: a build without a separate play origin lets only its own site frame the editor; the play page can still be embedded anywhere. <!-- 101-proto F4 frame-ancestors -->
 
+## 1.66.1 — Safer loading, continued
+
+- **Every part of an object counts towards the load limits**, and messages from other people that are not plain data are set aside. Anything that does not pass loads like a missing file, and the rest of the scene is unchanged.
+- **.gltf files opened from the sidebar, and models from a model generator, get the same size check** as every other model file.
+
 ## 1.66.0 — Menus and panels, polished
 
 ### Sidebars and the dock

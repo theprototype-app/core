@@ -769,6 +769,23 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   populated at DIAL time — trap). `peerApproval.js` = `requestConnect` (shared dial),
   `cancelOutboundRequest`, `approvePeer`/`denyPeer` (store-only so VR + cloudApi reach
   them without a peerHandler cycle).
+- `src/lib/wireProto.js` + `src/lib/wireBudget.js` (101 F1/F4, both LEAVES) — A SESSION THAT CAN
+  SAY NO. `WIRE_PROTO` (1; absent on the wire = 1, unreadable = refused) + `myCaps()` ride EVERY dial's
+  metadata (`dialOptions`) and the `modules` message. `handleConnection` checks the dial's `proto`
+  BEFORE any whitelist/card/wiring; a mismatch answers with a refusal DIAL (`joinresult: 'denied'` +
+  `refuse {reason, need}` — an older build reads 'denied') and never opens a data channel. The
+  receive head (`receive` → `inboundBudget.admit` → shape → `protoGate` → `proceed`) LATCHES each
+  link's agreement once (`conn.__protoOk`); a link with no dial metadata (an adopted outgoing conn)
+  passes on a proto-1 build and is HELD (in order, bounded) on a newer one until its `modules`.
+  Refused peers (`protoRefused`) get no reconnect window and no mesh-fill redial; a typed Connect
+  clears the mark. Lower proto = the "This session uses a newer version" lasting toast (once per
+  page, `updateCheck.reloadToUpdate`); higher = `olderPeers` → People's `#peers-older` line. Bump
+  `proto` only for a meaning change; additive things are a `caps` flag (OPEN-CORE.md). F4: per-peer
+  messages/s + bytes/s (the reliable dataChannel's own `message` events + the fast channel's text
+  length) and an `object` size cap (`approxSize`, early exit), drops counted as `budget:*` in
+  wireErrors with ONE toast per peer per minute, never a disconnect. Test hooks:
+  `localStorage.debugWireProto` (beside debugStores) and `__stores.wireProto` (setProto for links
+  made from then on, applied(peer), budget.peaks()/limits). Suites `wire-proto`, `wire-flood`.
 - `src/components/menu/Connect.svelte` — a 3-state pill (`data-state`
   idle/pending/connected): idle dial + blue Connect; pending amber Cancel; connected
   green `Connected · <host>` + red Disconnect. A chevron toggles `ConnectInfoDrawer`

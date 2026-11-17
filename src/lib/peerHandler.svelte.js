@@ -24,7 +24,11 @@ import { resolvePeerOptions, describePeerServer, peerServerStatus, parseInviteHa
 import { log } from '$lib/diagnostics';
 // 25-F: the join result (peerApproval is store-only, so a static edge closes no cycle)
 import { isRefusal, noteSnapshotAsked } from '$lib/connectionState';
-import { applyJoinRefusal } from '$lib/peerApproval';
+import { applyJoinRefusal, cancelOutboundRequest } from '$lib/peerApproval';
+// 101 F1/F4: the session protocol number + capabilities, and the per-peer inbound budget (both leaves)
+import { WIRE_PROTO, PROTO_ABSENT, protoOf, protoVerdict, myCaps, capsOf, refuseMessage, isRefuseMessage, noteOlderPeer, clearOlderPeer, staleNotice, olderPeers, resetWireProto, setWireProtoForTest } from '$lib/wireProto';
+import { createInboundBudget, approxSize } from '$lib/wireBudget';
+import { reloadToUpdate } from '$lib/updateCheck';
 // 55 A4: invite links — the host's check and the joiner's proof (store-only, no cycle)
 // 55 A7/A8: the agent action log + where an agent looked (store-only)
 import { applyAgentLog, applyAgentUndo, applyAgentView, dropAgentView, sendAgentLogTo } from '$lib/agentLog';
@@ -38,13 +42,13 @@ import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo, rolesPendin
 // dispatcher can reject a malformed message before any applier sees it.
 import { validateWireMessage } from '$lib/wireValidate';
 import { acceptedRosterRows, acceptedMeshIds, acceptsGoneReport, asSendersOwn, acceptedChatLines } from '$lib/rosterTrust';
-import { holdForWireBatch } from '$lib/wireBatch';
+import { holdForWireBatch, withWireBatch } from '$lib/wireBatch';
 // 60 Q2: the fast movement channel (an unordered, unreliable second channel for pose streams)
 import { tapAgentEdit } from '$lib/agentPresence';
 import { createFastLinks, createStaleFilter, createKeyframer, stampPose, poseKey, fastChannelEnabled, setPoseTap, tapPose } from '$lib/fastChannel';
 import { registerDebugHook } from '$lib/debugHookRegistry.js';
 import { routePerfLive, perfLivePeerGone } from '$lib/perf/liveWire.js'; // 34 PF: the live perf stream (an import-free leaf)
-import { noteWireError } from '$lib/wireErrors';
+import { noteWireError, noteWireDrop } from '$lib/wireErrors';
 import { composeAdmitNotice, shortPeer } from '$lib/admitNotice';
 import { ICE_DROP_GRACE_MS, LINK_POLL_MS, strikesNeeded, quietPeerError, unavailablePeerId, consentCounters, linkSilence, keepPeerId, silenceCloseAllowed, meshHosts } from '$lib/peerDrop';
 import { takeRejoin, rememberRejoin, settleRejoin, REJOIN_WINDOW_MS, REJOIN_DIAL_MS } from '$lib/rejoin'; // fix-agenttest 6
@@ -282,6 +286,12 @@ const STREAM_TYPES = new Set(['camera', 'vrhands']);
 function dialOptions(result, cloud, extra) {
 	/** @type {Record<string, any>} */
 	const metadata = result ? { jr: 1, joinresult: result } : { jr: 1 };
+	// 101 F1: every dial says which session protocol it speaks and what it can do — read by the far
+	// side BEFORE any data flows (an absent `proto` is protocol 1: every build up to 1.65)
+	metadata.proto = WIRE_PROTO;
+	metadata.caps = myCaps({ fc: fastChannelEnabled() });
+	// 101 F1: a refusal dial for a protocol mismatch carries the refuser's own protocol
+	if (extra?.refuse && result) metadata.refuse = extra.refuse;
 	// 29 (rooms access): a cloud plugin's own dial data — a knock's name, a room-code
 	// proof — rides the join dial so the host's auth hook reads it BEFORE any data flows
 	// (an unapproved conn is closed at once). Absent = the dial is byte-identical.
@@ -439,6 +449,33 @@ export class PeerConnection {
 		this.invitedRoles = new Map();
 		/** 25-F: peers a refusal dial is out to — their `peer-unavailable` is not news @type {Set<string>} */
 		this.refusalDials = new Set();
+		// 101 F1: what each peer said about its protocol (dial metadata, else its `modules`), the peers a
+		// mismatch refused (-> their protocol; never redialled by mesh fill or the reconnect window, and
+		// cleared by a later dial on our protocol or by a Connect you press), and per-peer counts of the
+		// messages actually dispatched (what the e2e reads as "0 applied on the refused side")
+		/** @type {Map<string, number>} */
+		this.peerProto = new Map();
+		/** @type {Map<string, Record<string, any>>} */
+		this.peerCaps = new Map();
+		/** @type {Map<string, number>} */
+		this.protoRefused = new Map();
+		/** @type {Map<string, number>} */
+		this.appliedFrom = new Map();
+		// 101 F4: the per-peer inbound budget (messages/s, bytes/s, the `object` size cap)
+		this.inboundBudget = createInboundBudget({ onDrop: (peerId, reason) => noteWireDrop(peerId, reason) });
+		registerDebugHook('wireProto', {
+			proto: () => WIRE_PROTO,
+			setProto: setWireProtoForTest,
+			refused: () => Object.fromEntries(this.protoRefused),
+			peerProto: () => Object.fromEntries(this.peerProto),
+			peerCaps: () => Object.fromEntries(this.peerCaps),
+			applied: (/** @type {string} */ peerId) => this.appliedFrom.get(peerId) ?? 0,
+			olderPeers,
+			staleNotice,
+			budget: this.inboundBudget,
+			approxSize,
+			withWireBatch // the flood suite's 500-object batch goes through the real envelope
+		});
 		// 60 Q2: the fast movement channel (fastChannel.js). `fastLinks` = one unreliable channel per
 		// peer that advertised `fc: 1`; `staleFilter` drops a pose older than the newest applied from
 		// its sender; `keyframer` re-sends a stream's last pose reliably once the stream goes quiet.
@@ -858,6 +895,18 @@ export class PeerConnection {
 		/** @this {any} @param {any} conn */
 		function handleConnection(conn) {
 
+			// 101 F1: A PROTOCOL REFUSAL DIAL — the far side speaks another session protocol and said so
+			// in the metadata of a short dial (no data channel ever opens on a refused link). Read FIRST:
+			// it also carries `joinresult: 'denied'`, which is what a build before this one understands.
+			const refuseMeta = conn?.metadata?.refuse;
+			if (refuseMeta && typeof refuseMeta === 'object') {
+				const said = { type: 'refuse', reason: refuseMeta.reason, need: refuseMeta.need };
+				if (isRefuseMessage(said) && said.need !== WIRE_PROTO) this.refuseProto(conn.peer, said.need, null, { told: true });
+				else noteWireDrop(conn.peer, 'proto', 'refuse-dial');
+				try { conn.close(); } catch {}
+				return;
+			}
+
 			// 25-F: A REFUSAL DIAL. Its metadata IS the answer, so it is read here, before
 			// anything below can treat an incoming conn from the host as the approval it
 			// used to mean. Never whitelisted, never adopted, never wired — closed at once.
@@ -867,6 +916,25 @@ export class PeerConnection {
 				try { conn.close(); } catch {}
 				return;
 			}
+
+			// 101 F1: THE PROTOCOL CHECK, before anything below can whitelist, card or wire this conn.
+			// Same protocol = everything below exactly as before. Different (or unreadable) = refused
+			// here: the dialer hears it through a refusal dial (`jr` dials) and no data channel opens.
+			// The host decides for a joiner; a mesh-fill dial meets the same rule at every peer.
+			const theirProto = protoOf(conn?.metadata?.proto);
+			if (protoVerdict(theirProto) !== 'ok') {
+				log('info', 'net', 'protocol mismatch — refused', { peer: conn.peer, theirs: theirProto, mine: WIRE_PROTO });
+				const hears = !!conn?.metadata?.jr;
+				try { conn.close(); } catch {}
+				this.refuseProto(conn.peer, theirProto, null, { dial: hears });
+				return;
+			}
+			/** @type {any} */ (conn).__proto = theirProto;
+			/** @type {any} */ (conn).__protoOk = true;
+			this.peerProto.set(conn.peer, theirProto);
+			this.peerCaps.set(conn.peer, capsOf(conn?.metadata?.caps));
+			// a peer we refused is back on our protocol (it reloaded): the refusal is history
+			if (this.protoRefused.delete(conn.peer)) clearOlderPeer(conn.peer);
 
 			// 55 A9: a peer REMOVED AND BLOCKED from this session. Refused before anything
 			// below can whitelist it (an auth provider's auto-admit included), and told so when
@@ -1146,6 +1214,19 @@ export class PeerConnection {
 			};
 			if (conn.open) watchSilence();
 			conn.on('open', watchSilence);
+			// 101 F4: the wire bytes of the reliable channel, every chunk, for the per-peer bytes budget.
+			// A listener BESIDE peerjs's own (it decodes; this only counts).
+			const meterBytes = () => {
+				const dc = conn.dataChannel;
+				if (!dc || conn.__tpMetered || typeof dc.addEventListener !== 'function') return;
+				conn.__tpMetered = true;
+				dc.addEventListener('message', (/** @type {MessageEvent} */ e) => {
+					const d = /** @type {any} */ (e.data);
+					this.inboundBudget.noteBytes(conn.peer, typeof d === 'string' ? d.length : (d?.byteLength ?? d?.size ?? 0));
+				});
+			};
+			if (conn.open) meterBytes();
+			conn.on('open', meterBytes);
 			conn.on('close', () => {
 				if (iceDropTimer) clearTimeout(iceDropTimer);
 				if (silenceTimer) clearInterval(silenceTimer);
@@ -1915,23 +1996,9 @@ export class PeerConnection {
 				}
 			};
 
-			// 60 Q2: ONE receive path for both channels — the reliable conn and the fast channel
-			// opened on its RTCPeerConnection (`openFastChannel` reads it off the conn)
-			const receive = (/** @type {any} */ data, /** @type {'fast' | 'reliable'} */ via = 'reliable') => {
-				// 27-A (audit H1): SHAPE FIRST, before any gate reads `data.type`. A null, a
-				// string or a number used to fall through the whole chain to
-				// `data.startsWith(...)` and throw out of the handler, where peerjs swallowed
-				// it and nothing counted it. canApply stays the first POLICY gate; this is
-				// only "is this a message at all".
-				if (!data || typeof data !== 'object') {
-					noteWireError(conn.peer, 'shape', typeof data);
-					return;
-				}
-				// every gate below compares `type` as a string, and a Set lookup and `==` disagree on anything else
-				if (typeof data.type !== 'string') {
-					noteWireError(conn.peer, 'shape', 'type');
-					return;
-				}
+			// 101: everything past the head — the shape table, the stale-pose filter, the dispatch. A
+			// message held by the protocol gate (`protoGate`) re-enters HERE once its link is agreed.
+			const proceed = (/** @type {any} */ data, /** @type {'fast' | 'reliable'} */ via) => {
 				// 26-A (roadmap 26 section 3, audit H7): WHICH STREAM IS CHATTY. Counted per
 				// type here and in `broadcast`; local only, never replicated, and the byte
 				// figure is a 1-in-16 sample so the measurement cannot become the cost.
@@ -1948,12 +2015,40 @@ export class PeerConnection {
 				// to the committed (reliable, newer) move that ended the drag
 				if (!this.staleFilter.accept(conn.peer, data)) return;
 				tapPose(conn.peer, data, via);
+				this.appliedFrom.set(conn.peer, (this.appliedFrom.get(conn.peer) ?? 0) + 1); // 101: what reached dispatch
 				try {
 					dispatch(data);
 				} catch (error) {
 					// One bad message must not take this connection's handler down with it.
 					noteWireError(conn.peer, data.type, error);
 				}
+			};
+
+			// 60 Q2: ONE receive path for both channels — the reliable conn and the fast channel
+			// opened on its RTCPeerConnection (`openFastChannel` reads it off the conn)
+			const receive = (/** @type {any} */ data, /** @type {'fast' | 'reliable'} */ via = 'reliable', /** @type {number} */ bytes = 0) => {
+				// 101 F4: THE BUDGET FIRST — every message counts against its sender's per-second
+				// budget, junk included; over it, the message is dropped and counted (and the person
+				// told once), and the link stays up. `bytes` = the fast channel's own text length.
+				if (bytes) this.inboundBudget.noteBytes(conn.peer, bytes);
+				if (!this.inboundBudget.admit(conn.peer, data)) return;
+				// 27-A (audit H1): SHAPE FIRST, before any gate reads `data.type`. A null, a
+				// string or a number used to fall through the whole chain to
+				// `data.startsWith(...)` and throw out of the handler, where peerjs swallowed
+				// it and nothing counted it. canApply stays the first POLICY gate; this is
+				// only "is this a message at all".
+				if (!data || typeof data !== 'object') {
+					noteWireError(conn.peer, 'shape', typeof data);
+					return;
+				}
+				// every gate below compares `type` as a string, and a Set lookup and `==` disagree on anything else
+				if (typeof data.type !== 'string') {
+					noteWireError(conn.peer, 'shape', 'type');
+					return;
+				}
+				// 101 F1: the protocol gate — nothing from a link on another protocol reaches anything below
+				if (!this.protoGate(conn, data, via, proceed)) return;
+				proceed(data, via);
 			};
 			conn.__tpReceive = receive;
 			conn.on('data', (/** @type {any} */ data) => receive(data));
@@ -2098,7 +2193,8 @@ export class PeerConnection {
 		for (const k of blockReplay()) conn.send(k);
 		// V3: app version rides the modules handshake — old peers ignore the extras,
 		// old senders omit them (checkPeerAppVersion is silent on absence)
-		conn.send({type: 'modules', versions: moduleVersions(), appVersion: APP_VERSION, sha: COMMIT_SHA, wb: 1, dev: myDevice(get(isVRMode)), ...(fastChannelEnabled() ? { fc: 1 } : {})}) // 55 A9: `dev` is additive
+		// 101 F1: `proto` + `caps` are additive too (the same two the dial metadata carries)
+		conn.send({type: 'modules', versions: moduleVersions(), appVersion: APP_VERSION, sha: COMMIT_SHA, wb: 1, dev: myDevice(get(isVRMode)), ...(fastChannelEnabled() ? { fc: 1 } : {}), proto: WIRE_PROTO, caps: myCaps({ fc: fastChannelEnabled() })}) // 55 A9: `dev` is additive
 		// 37 R15: the chat so far. Chat is MESH-WIDE (not a room's content), so this goes out
 		// whatever the connect decision / privacy hold below decides about the scene.
 		conn.send({type: 'getchat', sender: this.peer.id})
@@ -2220,17 +2316,128 @@ export class PeerConnection {
 	}
 
 	/**
+	 * 101 F1: THE PROTOCOL GATE at the receive pipeline head. Returns true when the message may go on.
+	 * A link is AGREED once (its dial metadata, else this peer's dial on another conn, else the first
+	 * `modules` on it) and latched; a `modules` that contradicts the agreement refuses the link.
+	 * While a link is unknown a protocol-1 build lets messages through — absent IS protocol 1, so that
+	 * is today's behaviour byte for byte — and a newer build HOLDS them, in order, until `modules`
+	 * says: then they all go on, or none do. A `refuse` message is read here and never dispatched.
+	 * @param {any} conn @param {any} data @param {'fast' | 'reliable'} via
+	 * @param {(data: any, via: 'fast' | 'reliable') => void} proceed @returns {boolean}
+	 */
+	protoGate(conn, data, via, proceed) {
+		if (data.type === 'refuse') {
+			// a link already agreed on our protocol cannot be refused for it — that would contradict its own dial
+			if (isRefuseMessage(data) && data.need !== WIRE_PROTO && !conn.__protoOk) this.refuseProto(conn.peer, data.need, conn, { told: true });
+			else noteWireDrop(conn.peer, 'proto', 'refuse');
+			return false;
+		}
+		if (conn.__protoOk) {
+			if (data.type !== 'modules') return true;
+			const said = protoOf(data.proto);
+			if (said !== conn.__proto) {
+				this.refuseProto(conn.peer, said, conn);
+				return false;
+			}
+			this.peerCaps.set(conn.peer, capsOf(data.caps));
+			return true;
+		}
+		if (conn.__protoRefused) {
+			noteWireDrop(conn.peer, 'proto', data.type);
+			return false;
+		}
+		let theirs = data.type === 'modules' ? protoOf(data.proto) : this.peerProto.get(conn.peer);
+		if (theirs === undefined) {
+			if (WIRE_PROTO === PROTO_ABSENT) return true;
+			const held = (conn.__protoHeld ??= []);
+			if (held.length < 4096) held.push([data, via]);
+			else noteWireDrop(conn.peer, 'proto', 'hold-overflow');
+			return false;
+		}
+		if (protoVerdict(theirs) !== 'ok') {
+			this.refuseProto(conn.peer, theirs, conn);
+			return false;
+		}
+		conn.__proto = theirs;
+		conn.__protoOk = true;
+		this.peerProto.set(conn.peer, theirs);
+		if (data.type === 'modules') this.peerCaps.set(conn.peer, capsOf(data.caps));
+		const held = conn.__protoHeld;
+		conn.__protoHeld = null;
+		if (held) for (const [d, v] of held) proceed(d, v);
+		return true;
+	}
+
+	/**
+	 * 101 F1: refuse every link to `peerId` because it speaks protocol `theirs`. Tells them (a refusal
+	 * dial when they dialled us and can hear one, a `refuse` message on any open link) unless THEY told
+	 * US, closes the links without a reconnect window, and shows this side's half of the verdict.
+	 * @param {string} peerId @param {number} theirs @param {any} conn the link it was found on, if any
+	 * @param {{told?: boolean, dial?: boolean}} [opts]
+	 */
+	refuseProto(peerId, theirs, conn, opts = {}) {
+		const first = this.protoRefused.get(peerId) !== theirs;
+		this.protoRefused.set(peerId, theirs);
+		if (conn) {
+			conn.__protoRefused = true;
+			conn.__protoOk = false;
+			const held = conn.__protoHeld;
+			conn.__protoHeld = null;
+			if (held) for (const [d] of held) noteWireDrop(peerId, 'proto', d?.type);
+		}
+		const links = [...new Set([conn, this.connections[peerId], this.inboundDials.get(peerId)])].filter(Boolean);
+		if (!opts.told) {
+			if (opts.dial) this.sendJoinResult(peerId, 'denied', { refuse: { reason: 'proto', need: WIRE_PROTO } });
+			for (const c of links) {
+				if (!c.open) continue;
+				try { c.send(refuseMessage()); } catch { /* already going */ }
+			}
+		}
+		// a moment for the refusal to leave before the link it rides on closes
+		const closeAll = () => { for (const c of links) { try { c.close(); } catch { /* gone */ } } };
+		if (opts.told) closeAll();
+		else setTimeout(closeAll, 500);
+		if (first) this.applyProtoVerdict(peerId, protoVerdict(theirs), theirs);
+	}
+
+	/**
+	 * 101 F1: what this side shows. The LOWER protocol is told to reload (once per page, with the update
+	 * toast's own Reload); the HIGHER lists the other in People as needing to reload. A request we were
+	 * waiting on ends either way — and a joiner whose HOST is the older one has no People row for it,
+	 * so it gets the same line as a toast.
+	 * @param {string} peerId @param {'ok' | 'stale' | 'older'} verdict @param {number} theirs
+	 */
+	applyProtoVerdict(peerId, verdict, theirs) {
+		if (verdict === 'ok') return;
+		log('info', 'net', 'protocol refusal', { peer: peerId, verdict, theirs, mine: WIRE_PROTO });
+		const waiting = /** @type {any[]} */ (get(waitingForApproval)).some((w) => w[0] === peerId && w[1] === 'pending');
+		const row = (/** @type {any[]} */ (get(userdata)) ?? []).find((u) => Array.isArray(u) && u[0] === peerId);
+		const name = String(row?.[1] ?? '').trim() || shortPeer(peerId);
+		if (waiting) cancelOutboundRequest(peerId);
+		if (verdict === 'stale') {
+			if (get(staleNotice)) return;
+			staleNotice.set({ peerId, theirs, at: Date.now() });
+			showLastingToast('This session uses a newer version. Reload to update.', [{ label: 'Reload', action: reloadToUpdate }]);
+		} else {
+			noteOlderPeer(peerId, name, theirs);
+			if (waiting) showToast(name + ' needs to reload (older version).');
+		}
+	}
+
+	/**
 	 * 25-F: tell a would-be joiner "no" (or "full"). A short dial whose METADATA is the
 	 * answer — delivered through signaling with the offer, so it arrives even where a data
 	 * channel could never open — never added to `connections`, never wired, closed by the
 	 * joiner at once and by us after REFUSAL_DIAL_MS whatever happens. Callers only send
 	 * this to a dial that advertised `jr` (see denyPeer). 55 A9: 'removed' answers a blocked
 	 * peer's re-dial. @param {string} peerId
-	 * @param {'denied' | 'full' | 'removed'} result @returns {boolean} whether a dial went out
+	 * @param {'denied' | 'full' | 'removed'} result @param {{refuse?: {reason: string, need: number}}} [extra] 101 F1:
+	 * a protocol refusal rides the same dial (`joinresult: 'denied'` is what an older build reads)
+	 * @returns {boolean} whether a dial went out
 	 */
-	sendJoinResult(peerId, result) {
+	sendJoinResult(peerId, result, extra) {
 		if (!isRefusal(result) || !this.peer?.open) return false;
-		const conn = this.peer.connect(peerId, dialOptions(result));
+		const conn = this.peer.connect(peerId, dialOptions(result, undefined, extra));
 		if (!conn) return false;
 		this.refusalDials.add(peerId);
 		let done = false;
@@ -2250,6 +2457,13 @@ export class PeerConnection {
 	}
 
 	connectToPeer(peerId, getobjects = true, id = this.peer.id) {
+		// 101 F1: a peer refused for its protocol is never redialled by mesh fill; a join you ask for
+		// (or an approval dial-back) tries again, and its far side checks again
+		if (this.protoRefused.has(peerId)) {
+			if (!getobjects) return;
+			this.protoRefused.delete(peerId);
+			clearOlderPeer(peerId);
+		}
 		// remember the intent: if this dial dies and an adopted inbound conn takes
 		// its place, the adoption still owes them the full-state requests (B5)
 		if (getobjects) this.wantsStateFrom.add(peerId);
@@ -2382,6 +2596,12 @@ export class PeerConnection {
 		console.log('connection to ' + peerId + ' closed');
 		delete this.connections[peerId];
 		peers.update((value) => value);
+		// 101 F1: a link closed by a protocol refusal is over — no reconnect window, no redial
+		if (this.protoRefused.has(peerId)) {
+			if (this.openedPeers.has(peerId)) this.finalizeDisconnect(peerId, false);
+			else checkLocks();
+			return;
+		}
 		// a conn that never opened was a failed connect, not a live peer dropping
 		// (peer.on('error') already told the user) — just re-check locks and bail
 		if (!this.openedPeers.has(peerId)) {
@@ -2409,6 +2629,12 @@ export class PeerConnection {
 	// resync every adoption already does).
 	/** @param {string} peerId @param {number} attempt */
 	scheduleReconnect(peerId, attempt) {
+		// 101 F1: refused while the window ran — it ends here, without a redial
+		if (this.protoRefused.has(peerId)) {
+			this.reconnecting.delete(peerId);
+			if (this.openedPeers.has(peerId)) this.finalizeDisconnect(peerId, false);
+			return;
+		}
 		const delay = backoffDelay(attempt, { base: 500, max: 5 });
 		if (delay === null) {
 			// test-health-1: the verdict waits out a dial that is still negotiating, either way
@@ -2596,6 +2822,9 @@ export class PeerConnection {
 		forgetNodeSyncPeer(peerId);
 		this.lastLeaveAt = Date.now();
 		this.inboundDials.delete(peerId);
+		this.peerProto.delete(peerId); // 101 F1: a later link says its protocol again
+		this.peerCaps.delete(peerId);
+		this.inboundBudget.forget(peerId); // 101 F4
 		const conn = this.connections[peerId];
 		if (conn) {
 			delete this.connections[peerId];
@@ -2647,6 +2876,11 @@ export class PeerConnection {
 		this.inboundDials.clear();
 		this.gracefulLeft.clear();
 		this.wantsStateFrom.clear();
+		// 101 F1: protocol marks belong to the session they were made in
+		this.peerProto.clear();
+		this.peerCaps.clear();
+		this.protoRefused.clear();
+		resetWireProto();
 		// 60 Q2: every fast channel, sequence and owed keyframe goes with the session
 		this.fastLinks.closeAll();
 		this.staleFilter.clear();

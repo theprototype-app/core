@@ -216,7 +216,7 @@ export function createFastLinks() {
 		stats,
 		/**
 		 * @param {string} peerId @param {any} conn a PeerJS DataConnection
-		 * @param {(data: any, via: 'fast') => void} onMessage @returns {boolean} true when a channel exists now
+		 * @param {(data: any, via: 'fast', bytes?: number) => void} onMessage @returns {boolean} true when a channel exists now
 		 */
 		open(peerId, conn, onMessage) {
 			const pc = conn?.peerConnection;
@@ -253,7 +253,7 @@ export function createFastLinks() {
 					return;
 				}
 				stats.received++;
-				onMessage(data, 'fast');
+				onMessage(data, 'fast', e.data.length); // 101 F4: the text length feeds the bytes budget
 			};
 			return true;
 		},

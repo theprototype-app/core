@@ -25,6 +25,8 @@
 // the AI tools, so the three cannot disagree about what a material key takes).
 import { checkMaterialParam, isMapSlotKey, isMapSlotImage, normalizeTexTransform } from './materialParamRules.js';
 import { isPingMessage } from './pingCore.js';
+// 101 F2: the object schema's receive verdicts (a pure leaf; the cleaning runs in the appliers)
+import { objectJsonVerdict, materialSetVerdict } from './sceneSchema.js';
 import { validPhotoRequest, validPhotoResult } from './photo/photoCore.js';
 
 /** @param {unknown} v */
@@ -236,7 +238,10 @@ export const VALIDATORS = {
 		(d.velocities === undefined ||
 			(!!d.velocities && typeof d.velocities === 'object' && Object.values(d.velocities).every((v) => isFiniteArray(v, 6)))),
 	loading: (d) => isArray(d.uuids),
-	object: (d) => d.element !== undefined,
+	// 101 F2: the ObjectLoader form (no `uuids` list) passes the schema's size and shape verdict here;
+	// the applier cleans it field by field (loadGuard.parseCheckedObject). The other form is checked
+	// by its own rule in the applier.
+	object: (d) => d.element !== undefined && (d.uuids != null || objectJsonVerdict(d.element)),
 	group: (d) => d.uuid !== undefined,
 	duplicate: (d) => isUuid(d.sourceUuid) && isArray(d.uuids),
 	nodes: (d) => isArray(d.nodes) && isArray(d.edges),
@@ -489,6 +494,8 @@ export const VALIDATORS = {
 			);
 		// a material parameter: a key the app knows, a value of that key's kind (a texture slot only ever
 		// null on the wire — images travel as `map`)
+		// 101 F2: a slot list + groups — the schema's verdict here, the field-by-field cleaning in applyMaterials
+		if (d.parameter === 'materials') return isUuid(d.uuid) && materialSetVerdict(d.payload);
 		if (d.parameter === 'materialParam') return isUuid(d.uuid) && checkMaterialParam(null, d.key, d.value).ok;
 		// 72 LK1: a texture map slot takes an inline image or null, never a URL a peer could make us fetch
 		if (d.parameter === 'mapSlot') return isUuid(d.uuid) && isMapSlotKey(d.key) && isMapSlotImage(d.map);

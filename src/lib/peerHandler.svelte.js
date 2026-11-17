@@ -325,9 +325,12 @@ function inviteRefusalLabel(reason, kind) {
  * metadata, which the joiner has at its `connection` event — the conn never needs to
  * open, and a joiner that closes it at once is the normal case. */
 const REFUSAL_DIAL_MS = 15000;
-/** 101: refusal dials (every result), bounded (see mayRefusalDial) */
-const PROTO_DIALS_PER_SEC = 5;
-const PROTO_DIALS_IN_FLIGHT = 20;
+/** 101: AUTOMATIC refusal dials are bounded per pool (see mayRefusalDial); a person's own Reject/Full never is.
+ * `auto` = answers the app gives by itself (blocked, removed, a plugin's deny, a full room, a protocol refusal to a
+ * peer we asked or know); `stranger` = a protocol refusal to a dial nobody asked for. */
+const REFUSAL_POOLS = { auto: { perSec: 5, inFlight: 20 }, stranger: { perSec: 2, inFlight: 5 } };
+/** 101: the least time between two automatic refusal dials to one peer */
+const REFUSAL_PEER_GAP_MS = 1000;
 /** 101 F1: proto/caps entries kept for peers with no open link */
 const PEER_PROTO_KEEP = 256;
 /** 101 F1: bytes held on a link whose protocol is not known yet (a newer build only) */
@@ -456,6 +459,12 @@ export class PeerConnection {
 		this.invitedRoles = new Map();
 		/** 25-F: peers a refusal dial is out to — their `peer-unavailable` is not news @type {Set<string>} */
 		this.refusalDials = new Set();
+		/** 101: refusal dials still open, per peer @type {Map<string, {conn: any, pool: string, finish: () => void}>} */
+		this.refusalInFlight = new Map();
+		/** 101: when each peer last got an automatic refusal dial @type {Map<string, number>} */
+		this.refusalLastAt = new Map();
+		/** 101: automatic refusal dial times per pool, last second @type {Record<string, number[]>} */
+		this.refusalTimes = {};
 		// 101 F1: what each peer said about its protocol (dial metadata, else its `modules`), the peers a
 		// mismatch refused (-> their protocol; never redialled by mesh fill or the reconnect window, and
 		// cleared by a later dial on our protocol or by a Connect you press), and per-peer counts of the
@@ -936,7 +945,7 @@ export class PeerConnection {
 				try { conn.close(); } catch {}
 				// a blocked peer is refused as blocked (below), and a protocol that is not a number is closed quietly
 				if (isBlocked(conn.peer)) {
-					if (hears) this.sendJoinResult(conn.peer, 'removed');
+					if (hears) this.sendJoinResult(conn.peer, 'removed', undefined, 'auto');
 					return;
 				}
 				if (!Number.isInteger(theirProto)) {
@@ -959,7 +968,7 @@ export class PeerConnection {
 			// its dial can hear a join result — "You were removed from this session".
 			if (isBlocked(conn.peer)) {
 				log('info', 'net', 'blocked peer refused', { peer: conn.peer });
-				if (conn?.metadata?.jr) this.sendJoinResult(conn.peer, 'removed');
+				if (conn?.metadata?.jr) this.sendJoinResult(conn.peer, 'removed', undefined, 'auto');
 				try { conn.close(); } catch {}
 				return;
 			}
@@ -1042,7 +1051,7 @@ export class PeerConnection {
 					// F-5: someone the host removed stays out (the setting would just let them back,
 					// and so would an invite: a removal outranks the link they arrived with)
 					if (this.removedPeers.has(conn.peer)) {
-						if (conn?.metadata?.jr) this.sendJoinResult(conn.peer, 'denied');
+						if (conn?.metadata?.jr) this.sendJoinResult(conn.peer, 'denied', undefined, 'auto');
 						conn.close();
 						return;
 					}
@@ -1070,7 +1079,7 @@ export class PeerConnection {
 							? invite.ok ? 'admit' : { label: knockLabel }
 							: auth && typeof auth.decide === 'function' ? auth.decide(conn.peer, cloudMeta, { kind: dialKind }) : undefined;
 					if (verdict === 'deny') {
-						if (conn?.metadata?.jr) this.sendJoinResult(conn.peer, 'denied');
+						if (conn?.metadata?.jr) this.sendJoinResult(conn.peer, 'denied', undefined, 'auto');
 						conn.close();
 						return;
 					}
@@ -1095,7 +1104,7 @@ export class PeerConnection {
 					if (authorized && roomIsFull(this) && conn?.metadata?.jr) {
 						// 25-F: a plugin would let them in, but the mesh cannot take one more —
 						// say so rather than auto-approving past the hard cap
-						this.sendJoinResult(conn.peer, 'full');
+						this.sendJoinResult(conn.peer, 'full', undefined, 'auto');
 						conn.close();
 						return;
 					} else if (authorized) {
@@ -2425,7 +2434,7 @@ export class PeerConnection {
 		}
 		const links = [...new Set([conn, this.connections[peerId], this.inboundDials.get(peerId)])].filter(Boolean);
 		if (!opts.told) {
-			if (opts.dial) this.sendJoinResult(peerId, 'denied', { refuse: { reason: 'proto', need: WIRE_PROTO } });
+			if (opts.dial) this.sendJoinResult(peerId, 'denied', { refuse: { reason: 'proto', need: WIRE_PROTO } }, opts.unasked ? 'stranger' : 'auto');
 			for (const c of links) {
 				if (!c.open) continue;
 				try { c.send(refuseMessage()); } catch { /* already going */ }
@@ -2449,16 +2458,25 @@ export class PeerConnection {
 	}
 
 	/**
-	 * 101: a refusal dial (any result) costs a peer connection for up to REFUSAL_DIAL_MS, so they are bounded:
-	 * one at a time per peer, at most PROTO_DIALS_PER_SEC a second and PROTO_DIALS_IN_FLIGHT at once.
-	 * @param {string} peerId @returns {boolean}
+	 * 101: an automatic refusal dial costs a peer connection for up to REFUSAL_DIAL_MS, so each pool is bounded
+	 * (a rate and a number in flight) and one peer gets at most one automatic dial per REFUSAL_PEER_GAP_MS.
+	 * A person's own answer (`user`) is never refused here.
+	 * @param {string} peerId @param {'user' | 'auto' | 'stranger'} pool @returns {boolean}
 	 */
-	mayRefusalDial(peerId) {
-		if (this.refusalDials.has(peerId) || this.refusalDials.size >= PROTO_DIALS_IN_FLIGHT) return false;
+	mayRefusalDial(peerId, pool) {
+		if (pool === 'user') return true;
 		const now = Date.now();
-		this.protoDialTimes = (/** @type {number[]} */ (this.protoDialTimes ?? [])).filter((/** @type {number} */ t) => now - t < 1000);
-		if (this.protoDialTimes.length >= PROTO_DIALS_PER_SEC) return false;
-		this.protoDialTimes.push(now);
+		const lastAt = this.refusalLastAt;
+		if (now - (lastAt.get(peerId) ?? 0) < REFUSAL_PEER_GAP_MS) return false;
+		const limit = REFUSAL_POOLS[pool];
+		const times = this.refusalTimes;
+		times[pool] = (times[pool] ?? []).filter((t) => now - t < 1000);
+		let inFlight = 0;
+		for (const f of this.refusalInFlight.values()) if (f.pool === pool) inFlight++;
+		if (times[pool].length >= limit.perSec || inFlight >= limit.inFlight) return false;
+		times[pool].push(now);
+		lastAt.set(peerId, now);
+		if (lastAt.size > PEER_PROTO_KEEP) for (const [id, t] of lastAt) if (now - t > REFUSAL_PEER_GAP_MS) lastAt.delete(id);
 		return true;
 	}
 
@@ -2519,10 +2537,14 @@ export class PeerConnection {
 	 * peer's re-dial. @param {string} peerId
 	 * @param {'denied' | 'full' | 'removed'} result @param {{refuse?: {reason: string, need: number}}} [extra] 101 F1:
 	 * a protocol refusal rides the same dial (`joinresult: 'denied'` is what an older build reads)
+	 * @param {'user' | 'auto' | 'stranger'} [pool] 101: who is answering — a person's own click (`user`, the default:
+	 * never limited), the app by itself (`auto`), or a protocol refusal to a stranger's dial (`stranger`); see mayRefusalDial
 	 * @returns {boolean} whether a dial went out
 	 */
-	sendJoinResult(peerId, result, extra) {
-		if (!isRefusal(result) || !this.peer?.open || !this.mayRefusalDial(peerId)) return false;
+	sendJoinResult(peerId, result, extra, pool = 'user') {
+		if (!isRefusal(result) || !this.peer?.open || !this.mayRefusalDial(peerId, pool)) return false;
+		// the newest answer to a peer replaces one still in flight (a quick re-dial hears the new verdict)
+		this.refusalInFlight.get(peerId)?.finish();
 		const conn = this.peer.connect(peerId, dialOptions(result, undefined, extra));
 		if (!conn) return false;
 		this.refusalDials.add(peerId);
@@ -2530,10 +2552,12 @@ export class PeerConnection {
 		const finish = () => {
 			if (done) return;
 			done = true;
+			if (this.refusalInFlight.get(peerId)?.conn === conn) this.refusalInFlight.delete(peerId);
 			try { conn.close(); } catch {}
 			// keep the quiet-unavailable mark a little longer: the error can trail the close
-			setTimeout(() => this.refusalDials.delete(peerId), 5000);
+			setTimeout(() => { if (!this.refusalInFlight.has(peerId)) this.refusalDials.delete(peerId); }, 5000);
 		};
+		this.refusalInFlight.set(peerId, { conn, pool, finish });
 		conn.on?.('close', finish);
 		conn.on?.('error', finish);
 		conn.on?.('open', () => setTimeout(finish, 1000));

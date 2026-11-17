@@ -34,8 +34,8 @@ export const LIMITS = {
  * EXEMPT_PER_WINDOW of them per peer per second pass whatever the budget says; past that they count like any other. */
 const EXEMPT = new Set(['disconnected', 'refuse']);
 const EXEMPT_PER_WINDOW = 4;
-/** a batch envelope is charged one message per this many items (plus one for the envelope) */
-const BATCH_ITEMS_PER_MSG = 10;
+/** a batch envelope is charged one message per this many items, rounded up (plus one for the envelope) */
+const BATCH_ITEMS_PER_MSG = 4;
 
 /** One-second windows. */
 const WINDOW_MS = 1000;
@@ -129,10 +129,10 @@ export function createInboundBudget(opts = {}) {
 			const w = windowOf(peerId);
 			const t = totalsOf(peerId);
 			// a batch envelope carries many messages: it costs 1 + one per BATCH_ITEMS_PER_MSG items (a 500-item
-			// envelope = 51), so a flood of envelopes is bounded while a big multi-object drag (two 500-item
-			// envelopes ten times a second) stays far under the rate
+			// envelope = 126), so a flood of envelopes stays near 40,000 items a second while a big multi-object
+			// drag (two 500-item envelopes ten times a second = 2,520) stays far under the rate
 			const items = type === 'batch' && Array.isArray(data.items) ? data.items : null;
-			w.msgs += items ? 1 + Math.floor(items.length / BATCH_ITEMS_PER_MSG) : 1;
+			w.msgs += items ? 1 + Math.ceil(items.length / BATCH_ITEMS_PER_MSG) : 1;
 			if (w.msgs > t.maxMsgs) t.maxMsgs = w.msgs;
 			if (typeof type === 'string' && EXEMPT.has(type) && ++w.exempt <= EXEMPT_PER_WINDOW) return true;
 			/** @type {'msgs' | 'bytes' | 'object' | null} */

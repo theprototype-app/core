@@ -128,18 +128,18 @@ describe('build/_headers frame-ancestors (101 F4)', () => {
 });
 
 describe('wireBudget: envelopes and exempt types (101-int review)', () => {
-	it('a batch envelope is charged by its items (one message per ten, plus the envelope)', () => {
+	it('a batch envelope is charged by its items (one message per four, plus the envelope)', () => {
 		const c = clock();
-		const b = createInboundBudget({ now: c.now, limits: { msgsPerSec: 100 } });
+		const b = createInboundBudget({ now: c.now, limits: { msgsPerSec: 200 } });
 		expect(b.admit('a', { type: 'batch', items: new Array(500).fill({ type: 'move' }) })).toBe(true);
-		expect(b.peaks().maxMsgs).toBe(51);
+		expect(b.peaks().maxMsgs).toBe(126);
 		expect(b.admit('a', { type: 'batch', items: new Array(500).fill({ type: 'move' }) })).toBe(false);
 		// a 1000-object drag (two full envelopes, ten times a second) stays far under the real limit
 		const real = createInboundBudget({ now: c.now });
 		let ok = true;
 		for (let i = 0; i < 20; i++) ok = real.admit('d', { type: 'batch', items: new Array(500).fill({ type: 'move' }) }) && ok;
 		expect(ok).toBe(true);
-		expect(real.peaks().maxMsgs).toBe(1020);
+		expect(real.peaks().maxMsgs).toBe(2520);
 	});
 
 	it('every `object` item inside a batch meets the object cap on its own', () => {

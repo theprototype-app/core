@@ -783,11 +783,11 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   `proto` only for a meaning change; additive things are a `caps` flag (OPEN-CORE.md). F4: per-peer
   messages/s + bytes/s (the reliable dataChannel's own `message` events + the fast channel's text
   length) and an `object` size cap (`approxSize`, early exit), drops counted as `budget:*` in
-  wireErrors with ONE toast per peer per minute, never a disconnect. 101-int review: a `batch` costs 1 + items/10
+  wireErrors with ONE toast per peer per minute, never a disconnect. 101-int review: a `batch` costs 1 + ceil(items/4)
   (each `object` item capped alone), every in-band data channel is metered (peerjs wires late ones into the same conn),
   `disconnected`/`refuse` are exempt only 4x/s; `protoAsked(peer)` (waiting join or a link of ours) is the ONLY source
   that may latch `staleNotice` — a stranger's dial gets a plain toast <= 1/min; blocked/NaN proto dials close silently;
-  `mayRefusalDial` (inside sendJoinResult) bounds EVERY refusal dial; caps keep small primitives; `prunePeerProto` keeps peerProto/peerCaps/protoRefused to 256 each, oldest first, never a live or in-flight link. Test hooks:
+  `sendJoinResult(…, pool)` = 'user' (card clicks, never limited) | 'auto' (5/s, 20 in flight) | 'stranger' (2/s, 5); 1/s per peer, a newer answer replaces the one in flight; caps keep small primitives; `prunePeerProto` keeps peerProto/peerCaps/protoRefused to 256 each, oldest first, never a live or in-flight link. Test hooks:
   `localStorage.debugWireProto` (beside debugStores) and `__stores.wireProto` (setProto for links
   made from then on, applied(peer), budget.peaks()/limits). Suites `wire-proto`, `wire-flood`.
 - `src/components/menu/Connect.svelte` — a 3-state pill (`data-state`

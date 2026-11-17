@@ -2068,11 +2068,9 @@ export class PeerConnection {
 			// 60 Q2: ONE receive path for both channels — the reliable conn and the fast channel
 			// opened on its RTCPeerConnection (`openFastChannel` reads it off the conn)
 			const receive = (/** @type {any} */ data, /** @type {'fast' | 'reliable'} */ via = 'reliable', /** @type {number} */ bytes = 0) => {
-				// 101 F4: THE BUDGET FIRST — every message counts against its sender's per-second
-				// budget, junk included; over it, the message is dropped and counted (and the person
-				// told once), and the link stays up. `bytes` = the fast channel's own text length.
+				// 101 F4: the bytes count first (the fast channel's own text length; the reliable channel
+				// is metered off its data channel), whatever the message turns out to be.
 				if (bytes) this.inboundBudget.noteBytes(conn.peer, bytes);
-				if (!this.inboundBudget.admit(conn.peer, data)) return;
 				// 27-A (audit H1): SHAPE FIRST, before any gate reads `data.type`. A null, a
 				// string or a number used to fall through the whole chain to
 				// `data.startsWith(...)` and throw out of the handler, where peerjs swallowed
@@ -2082,11 +2080,15 @@ export class PeerConnection {
 					noteWireError(conn.peer, 'shape', typeof data);
 					return;
 				}
-				// plain data all the way down (wireShape.js), before any check past the budget reads it
+				// plain data all the way down (wireShape.js), before anything reads a field of it
 				if (!isPlainMessage(data)) {
 					noteWireError(conn.peer, 'shape', 'plain');
 					return;
 				}
+				// 101 F4: the per-person budget — every message from here on counts against its sender's
+				// per-second budget; over it, the message is dropped and counted (and the person told
+				// once), and the link stays up
+				if (!this.inboundBudget.admit(conn.peer, data)) return;
 				// every gate below compares `type` as a string, and a Set lookup and `==` disagree on anything else
 				if (typeof data.type !== 'string') {
 					noteWireError(conn.peer, 'shape', 'type');

@@ -6,6 +6,14 @@
      rendering, so maintainer notes stay out of the user-facing window. No emoji from
      1.64 on (owner rule: no emoji in the UI); the app strips them from older entries. -->
 
+## 1.67.0 — Foundations
+
+- **Sessions check versions**: when people join, their apps first agree that they speak the same session version. If one app is older, it is asked to reload (**This session uses a newer version. Reload to update.**) and People shows who still needs to; nothing from the scene is exchanged until they match. <!-- 101-proto F1 -->
+- **Objects and materials are validated**: objects and materials from other people, from saved scenes and from glTF files are checked against the known object, material and texture types when they arrive; unknown types load as standard ones and unknown fields are left out. <!-- 101-schema F2 -->
+- **Sending limits per person**: each person in a session has a generous limit on how many messages and how much data they can send per second, and on the size of one object. Anything far beyond a normal session is skipped with one notice, and the connection stays up. <!-- 101-proto F4 -->
+- **For module authors**: the module api reports `api.version` 2. Renderers and render targets now come from one place inside the app, which prepares it for a future renderer switch; nothing changes on screen. <!-- 101-seam F3 F5 F6 -->
+- **For self-hosting**: a build without a separate play origin lets only its own site frame the editor; the play page can still be embedded anywhere. <!-- 101-proto F4 frame-ancestors -->
+
 ## 1.66.0 — Menus and panels, polished
 
 ### Sidebars and the dock

@@ -325,6 +325,13 @@ function inviteRefusalLabel(reason, kind) {
  * metadata, which the joiner has at its `connection` event — the conn never needs to
  * open, and a joiner that closes it at once is the normal case. */
 const REFUSAL_DIAL_MS = 15000;
+/** 101 F1: protocol refusal dials, bounded (see mayRefusalDial) */
+const PROTO_DIALS_PER_SEC = 5;
+const PROTO_DIALS_IN_FLIGHT = 20;
+/** 101 F1: proto/caps entries kept for peers with no open link */
+const PEER_PROTO_KEEP = 256;
+/** 101 F1: bytes held on a link whose protocol is not known yet (a newer build only) */
+const HELD_BYTES = 16 * 1024 * 1024;
 
 /**
  * 27-E: keep the pending queue bounded, dropping the EXPIRED first and only then the
@@ -901,7 +908,8 @@ export class PeerConnection {
 			const refuseMeta = conn?.metadata?.refuse;
 			if (refuseMeta && typeof refuseMeta === 'object') {
 				const said = { type: 'refuse', reason: refuseMeta.reason, need: refuseMeta.need };
-				if (isRefuseMessage(said) && said.need !== WIRE_PROTO) this.refuseProto(conn.peer, said.need, null, { told: true });
+				// only an answer to a link WE asked for counts (a join request or a dial of ours); anything else is noise
+				if (isRefuseMessage(said) && said.need !== WIRE_PROTO && this.protoAsked(conn.peer)) this.refuseProto(conn.peer, said.need, null, { told: true });
 				else noteWireDrop(conn.peer, 'proto', 'refuse-dial');
 				try { conn.close(); } catch {}
 				return;
@@ -926,13 +934,19 @@ export class PeerConnection {
 				log('info', 'net', 'protocol mismatch — refused', { peer: conn.peer, theirs: theirProto, mine: WIRE_PROTO });
 				const hears = !!conn?.metadata?.jr;
 				try { conn.close(); } catch {}
-				this.refuseProto(conn.peer, theirProto, null, { dial: hears });
+				// a blocked peer is refused as blocked (below), and a protocol that is not a number is closed quietly
+				if (isBlocked(conn.peer) || !Number.isInteger(theirProto)) {
+					noteWireDrop(conn.peer, 'proto', 'dial');
+					return;
+				}
+				this.refuseProto(conn.peer, theirProto, null, { dial: hears, unasked: !this.protoAsked(conn.peer) });
 				return;
 			}
 			/** @type {any} */ (conn).__proto = theirProto;
 			/** @type {any} */ (conn).__protoOk = true;
 			this.peerProto.set(conn.peer, theirProto);
 			this.peerCaps.set(conn.peer, capsOf(conn?.metadata?.caps));
+			this.prunePeerProto();
 			// a peer we refused is back on our protocol (it reloaded): the refusal is history
 			if (this.protoRefused.delete(conn.peer)) clearOlderPeer(conn.peer);
 
@@ -1215,15 +1229,27 @@ export class PeerConnection {
 			if (conn.open) watchSilence();
 			conn.on('open', watchSilence);
 			// 101 F4: the wire bytes of the reliable channel, every chunk, for the per-peer bytes budget.
-			// A listener BESIDE peerjs's own (it decodes; this only counts).
-			const meterBytes = () => {
-				const dc = conn.dataChannel;
-				if (!dc || conn.__tpMetered || typeof dc.addEventListener !== 'function') return;
-				conn.__tpMetered = true;
+			// A listener BESIDE peerjs's own (it decodes; this only counts). peerjs also wires any LATER
+			// in-band channel the far side opens on the same connection into this conn's `data`, so every
+			// channel announced on the RTCPeerConnection is metered too (the fast channel is negotiated:
+			// it never fires `datachannel` and is metered by its own receive).
+			/** @type {WeakSet<any>} */
+			const metered = new WeakSet();
+			const meterChannel = (/** @type {any} */ dc) => {
+				if (!dc || metered.has(dc) || typeof dc.addEventListener !== 'function') return;
+				metered.add(dc);
 				dc.addEventListener('message', (/** @type {MessageEvent} */ e) => {
 					const d = /** @type {any} */ (e.data);
 					this.inboundBudget.noteBytes(conn.peer, typeof d === 'string' ? d.length : (d?.byteLength ?? d?.size ?? 0));
 				});
+			};
+			const meterBytes = () => {
+				meterChannel(conn.dataChannel);
+				const pc = conn.peerConnection;
+				if (pc && !conn.__tpMetered && typeof pc.addEventListener === 'function') {
+					conn.__tpMetered = true;
+					pc.addEventListener('datachannel', (/** @type {RTCDataChannelEvent} */ e) => meterChannel(e.channel));
+				}
 			};
 			if (conn.open) meterBytes();
 			conn.on('open', meterBytes);
@@ -2350,8 +2376,12 @@ export class PeerConnection {
 		if (theirs === undefined) {
 			if (WIRE_PROTO === PROTO_ABSENT) return true;
 			const held = (conn.__protoHeld ??= []);
-			if (held.length < 4096) held.push([data, via]);
-			else noteWireDrop(conn.peer, 'proto', 'hold-overflow');
+			const room = HELD_BYTES - (conn.__protoHeldBytes ?? 0);
+			const size = room > 0 ? approxSize(data, room) : Infinity;
+			if (held.length < 4096 && size <= room) {
+				held.push([data, via]);
+				conn.__protoHeldBytes = (conn.__protoHeldBytes ?? 0) + size;
+			} else noteWireDrop(conn.peer, 'proto', 'hold-overflow');
 			return false;
 		}
 		if (protoVerdict(theirs) !== 'ok') {
@@ -2364,6 +2394,7 @@ export class PeerConnection {
 		if (data.type === 'modules') this.peerCaps.set(conn.peer, capsOf(data.caps));
 		const held = conn.__protoHeld;
 		conn.__protoHeld = null;
+		conn.__protoHeldBytes = 0;
 		if (held) for (const [d, v] of held) proceed(d, v);
 		return true;
 	}
@@ -2373,7 +2404,8 @@ export class PeerConnection {
 	 * dial when they dialled us and can hear one, a `refuse` message on any open link) unless THEY told
 	 * US, closes the links without a reconnect window, and shows this side's half of the verdict.
 	 * @param {string} peerId @param {number} theirs @param {any} conn the link it was found on, if any
-	 * @param {{told?: boolean, dial?: boolean}} [opts]
+	 * @param {{told?: boolean, dial?: boolean, unasked?: boolean}} [opts] `unasked` = a dial from a peer we neither asked to
+	 * join nor are linked to: its claim is shown, never latched (anyone who knows an id can dial it)
 	 */
 	refuseProto(peerId, theirs, conn, opts = {}) {
 		const first = this.protoRefused.get(peerId) !== theirs;
@@ -2387,7 +2419,7 @@ export class PeerConnection {
 		}
 		const links = [...new Set([conn, this.connections[peerId], this.inboundDials.get(peerId)])].filter(Boolean);
 		if (!opts.told) {
-			if (opts.dial) this.sendJoinResult(peerId, 'denied', { refuse: { reason: 'proto', need: WIRE_PROTO } });
+			if (opts.dial && this.mayRefusalDial(peerId)) this.sendJoinResult(peerId, 'denied', { refuse: { reason: 'proto', need: WIRE_PROTO } });
 			for (const c of links) {
 				if (!c.open) continue;
 				try { c.send(refuseMessage()); } catch { /* already going */ }
@@ -2397,7 +2429,38 @@ export class PeerConnection {
 		const closeAll = () => { for (const c of links) { try { c.close(); } catch { /* gone */ } } };
 		if (opts.told) closeAll();
 		else setTimeout(closeAll, 500);
-		if (first) this.applyProtoVerdict(peerId, protoVerdict(theirs), theirs);
+		if (first) this.applyProtoVerdict(peerId, protoVerdict(theirs), theirs, !!opts.unasked);
+	}
+
+	/**
+	 * 101 F1: whether a protocol claim from `peerId` answers something WE did — a join request still
+	 * waiting, or a link of ours to them (dialled or open). A dial from anyone else is a stranger's.
+	 * @param {string} peerId @returns {boolean}
+	 */
+	protoAsked(peerId) {
+		if (this.openedPeers.has(peerId) || this.connections[peerId]) return true;
+		return /** @type {any[]} */ (get(waitingForApproval)).some((w) => w[0] === peerId && w[1] === 'pending');
+	}
+
+	/**
+	 * 101 F1: a refusal dial costs a peer connection for up to REFUSAL_DIAL_MS, so they are bounded:
+	 * one at a time per peer, at most PROTO_DIALS_PER_SEC a second and PROTO_DIALS_IN_FLIGHT at once.
+	 * @param {string} peerId @returns {boolean}
+	 */
+	mayRefusalDial(peerId) {
+		if (this.refusalDials.has(peerId) || this.refusalDials.size >= PROTO_DIALS_IN_FLIGHT) return false;
+		const now = Date.now();
+		this.protoDialTimes = (this.protoDialTimes ?? []).filter((t) => now - t < 1000);
+		if (this.protoDialTimes.length >= PROTO_DIALS_PER_SEC) return false;
+		this.protoDialTimes.push(now);
+		return true;
+	}
+
+	/** 101 F1: proto/caps of peers that never got a link are not kept past PEER_PROTO_KEEP entries. */
+	prunePeerProto() {
+		if (this.peerProto.size <= PEER_PROTO_KEEP && this.peerCaps.size <= PEER_PROTO_KEEP) return;
+		for (const map of [this.peerProto, this.peerCaps])
+			for (const id of [...map.keys()]) if (!this.openedPeers.has(id) && !this.connections[id]?.open) map.delete(id);
 	}
 
 	/**
@@ -2405,9 +2468,11 @@ export class PeerConnection {
 	 * toast's own Reload); the HIGHER lists the other in People as needing to reload. A request we were
 	 * waiting on ends either way — and a joiner whose HOST is the older one has no People row for it,
 	 * so it gets the same line as a toast.
-	 * @param {string} peerId @param {'ok' | 'stale' | 'older'} verdict @param {number} theirs
+	 * A stranger's dial (`unasked`) cannot latch the notice: it gets the same line as a plain toast,
+	 * at most once a minute, so a real notice later still shows.
+	 * @param {string} peerId @param {'ok' | 'stale' | 'older'} verdict @param {number} theirs @param {boolean} [unasked]
 	 */
-	applyProtoVerdict(peerId, verdict, theirs) {
+	applyProtoVerdict(peerId, verdict, theirs, unasked = false) {
 		if (verdict === 'ok') return;
 		log('info', 'net', 'protocol refusal', { peer: peerId, verdict, theirs, mine: WIRE_PROTO });
 		const waiting = /** @type {any[]} */ (get(waitingForApproval)).some((w) => w[0] === peerId && w[1] === 'pending');
@@ -2416,6 +2481,13 @@ export class PeerConnection {
 		if (waiting) cancelOutboundRequest(peerId);
 		if (verdict === 'stale') {
 			if (get(staleNotice)) return;
+			if (unasked) {
+				const now = Date.now();
+				if (now - (this.unaskedStaleAt ?? 0) < 60000) return;
+				this.unaskedStaleAt = now;
+				showToast('This session uses a newer version. Reload to update.', [{ label: 'Reload', action: reloadToUpdate }]);
+				return;
+			}
 			staleNotice.set({ peerId, theirs, at: Date.now() });
 			showLastingToast('This session uses a newer version. Reload to update.', [{ label: 'Reload', action: reloadToUpdate }]);
 		} else {

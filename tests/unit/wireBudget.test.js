@@ -126,3 +126,35 @@ describe('build/_headers frame-ancestors (101 F4)', () => {
 		expect(t).not.toContain('frame-ancestors *');
 	});
 });
+
+describe('wireBudget: envelopes and exempt types (101-int review)', () => {
+	it('a batch envelope is charged per item against the message rate', () => {
+		const c = clock();
+		const b = createInboundBudget({ now: c.now, limits: { msgsPerSec: 10 } });
+		expect(b.admit('a', { type: 'batch', items: new Array(8).fill({ type: 'move' }) })).toBe(true);
+		expect(b.admit('a', { type: 'batch', items: new Array(8).fill({ type: 'move' }) })).toBe(false);
+		expect(b.peaks().maxMsgs).toBe(16);
+	});
+
+	it('every `object` item inside a batch meets the object cap on its own', () => {
+		const c = clock();
+		const b = createInboundBudget({ now: c.now, limits: { objectBytes: 1000 } });
+		const small = { type: 'object', element: { x: 'a'.repeat(400) } };
+		const big = { type: 'object', element: { x: 'a'.repeat(5000) } };
+		// two items under the cap each pass, even when the envelope as a whole is bigger than one cap
+		expect(b.admit('a', { type: 'batch', items: [small, small, small] })).toBe(true);
+		expect(b.admit('a', { type: 'batch', items: [small, big] })).toBe(false);
+		expect(b.peaks().perPeer.a.capped).toBe(1);
+	});
+
+	it('goodbye and refusal messages pass the budget only a few times a second', () => {
+		const c = clock();
+		const b = createInboundBudget({ now: c.now, limits: { msgsPerSec: 2 } });
+		for (let i = 0; i < 3; i++) b.admit('a', { type: 'move' });
+		let passed = 0;
+		for (let i = 0; i < 20; i++) if (b.admit('a', { type: 'refuse' })) passed++;
+		expect(passed).toBe(4);
+		c.tick(1000);
+		expect(b.admit('a', { type: 'disconnected' })).toBe(true);
+	});
+});

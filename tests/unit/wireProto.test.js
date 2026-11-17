@@ -63,6 +63,8 @@ describe('wireProto', () => {
 		expect(capsOf({ wb: 1, future: 'x' })).toEqual({ wb: 1, future: 'x' });
 		const many = Object.fromEntries(Array.from({ length: 100 }, (_, i) => ['k' + i, 1]));
 		expect(Object.keys(capsOf(many)).length).toBe(64);
+		// flags are small primitives: anything bigger never makes it into the per-peer record
+		expect(capsOf({ wb: 1, on: true, blob: { a: 1 }, list: [1, 2], long: 'x'.repeat(33), short: 'v2' })).toEqual({ wb: 1, on: true, short: 'v2' });
 	});
 
 	it('a refuse message has to be well formed to count', () => {

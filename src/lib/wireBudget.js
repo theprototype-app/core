@@ -30,8 +30,10 @@ export const LIMITS = {
 	objectBytes: 64 * 1024 * 1024
 };
 
-/** Messages that are never dropped for rate: a goodbye and a refusal are how a link ends cleanly. */
+/** Messages that are not dropped for rate: a goodbye and a refusal are how a link ends cleanly. The first
+ * EXEMPT_PER_WINDOW of them per peer per second pass whatever the budget says; past that they count like any other. */
 const EXEMPT = new Set(['disconnected', 'refuse']);
+const EXEMPT_PER_WINDOW = 4;
 
 /** One-second windows. */
 const WINDOW_MS = 1000;
@@ -71,7 +73,7 @@ export function approxSize(value, limit = Infinity) {
 }
 
 /**
- * @typedef {{start: number, msgs: number, bytes: number, dropped: number}} PeerWindow
+ * @typedef {{start: number, msgs: number, bytes: number, dropped: number, exempt: number}} PeerWindow
  * @typedef {{maxMsgs: number, maxBytes: number, maxObject: number, dropped: number, droppedBytes: number, capped: number}} PeerTotals
  */
 
@@ -100,7 +102,7 @@ export function createInboundBudget(opts = {}) {
 		const t = now();
 		let w = windows.get(peerId);
 		if (!w || t - w.start >= WINDOW_MS) {
-			w = { start: t, msgs: 0, bytes: 0, dropped: 0 };
+			w = { start: t, msgs: 0, bytes: 0, dropped: 0, exempt: 0 };
 			windows.set(peerId, w);
 		}
 		return w;
@@ -124,17 +126,24 @@ export function createInboundBudget(opts = {}) {
 			const type = data && typeof data === 'object' ? data.type : undefined;
 			const w = windowOf(peerId);
 			const t = totalsOf(peerId);
-			w.msgs++;
+			// a batch envelope carries many messages: each item counts against the rate
+			const items = type === 'batch' && Array.isArray(data.items) ? data.items : null;
+			w.msgs += items ? Math.max(1, items.length) : 1;
 			if (w.msgs > t.maxMsgs) t.maxMsgs = w.msgs;
-			if (typeof type === 'string' && EXEMPT.has(type)) return true;
+			if (typeof type === 'string' && EXEMPT.has(type) && ++w.exempt <= EXEMPT_PER_WINDOW) return true;
 			/** @type {'msgs' | 'bytes' | 'object' | null} */
 			let reason = w.msgs > limits.msgsPerSec ? 'msgs' : w.bytes > limits.bytesPerSec ? 'bytes' : null;
-			if (!reason && type === 'object') {
-				const size = approxSize(data, limits.objectBytes);
-				if (size > t.maxObject && size <= limits.objectBytes) t.maxObject = size;
-				if (size > limits.objectBytes) {
-					reason = 'object';
-					t.capped++;
+			// the object cap holds for an `object` message and for every `object` item inside a batch
+			if (!reason) {
+				const objects = type === 'object' ? [data] : items ? items.filter((i) => i && typeof i === 'object' && i.type === 'object') : [];
+				for (const o of objects) {
+					const size = approxSize(o, limits.objectBytes);
+					if (size > t.maxObject && size <= limits.objectBytes) t.maxObject = size;
+					if (size > limits.objectBytes) {
+						reason = 'object';
+						t.capped++;
+						break;
+					}
 				}
 			}
 			if (!reason) return true;

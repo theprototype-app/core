@@ -80,7 +80,7 @@ const lastDropToastAt = new Map();
  * @param {string} peerId @param {string} reason @param {string} [type]
  */
 export function noteWireDrop(peerId, reason, type) {
-	const key = peerId + '|' + (reason === 'proto' ? 'proto:' + (type ?? '?') : 'budget:' + reason);
+	const key = peerId + '|' + (reason === 'proto' ? 'proto:' + String(type ?? '?').slice(0, 40) : 'budget:' + reason);
 	const now = Date.now();
 	const entry = failures.get(key) ?? { count: 0, first: now, last: now, sample: '' };
 	entry.count++;

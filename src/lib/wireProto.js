@@ -78,7 +78,9 @@ export function capsOf(v) {
 	if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
 	/** @type {Record<string, any>} */
 	const out = {};
-	for (const [k, val] of Object.entries(v).slice(0, 64)) if (typeof k === 'string' && k.length <= 32) out[k] = val;
+	// flags only: small primitives, so a peer's dial cannot park arbitrary data here
+	for (const [k, val] of Object.entries(v).slice(0, 64))
+		if (k.length <= 32 && (typeof val === 'number' || typeof val === 'boolean' || (typeof val === 'string' && val.length <= 32))) out[k] = val;
 	return out;
 }
 

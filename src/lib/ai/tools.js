@@ -36,6 +36,9 @@ import { graphOf, SCENE_GRAPH } from '../../stores/flowStore';
 import { sceneJoints } from '$lib/joints';
 import { graphToText } from '$lib/graphText';
 import { findNodeSpec } from '$lib/nodeCatalog';
+// 2.0 N2: the graph as read-only code, behind the codeView flag (contract 1.10.0)
+import { codeViewOn } from '$lib/nodes/codeViewFlag.js';
+import { codeForGraph } from '$lib/nodes/flowCodeView.js';
 import { aiReferences, behaviourHost } from './aiExtensions.js';
 import { behaviourToolSchemas, behaviourTool, summarizeBehaviours } from './behaviourTools.js';
 import {
@@ -217,6 +220,8 @@ function compactNodeData(node) {
 
 /** 34 D5: one graph's summary may spend this many characters (~2k tokens) */
 const GRAPH_SUMMARY_CHARS = 6000;
+/** 2.0 N2: the most of a graph's code one list_scene {flow} answer carries */
+const GRAPH_CODE_CHARS = 24000;
 
 /** the catalog's defaults / label, for the AI view's "say only what differs" @param {string} type */
 const specDefaults = (type) => findNodeSpec(type)?.defaults;
@@ -273,7 +278,7 @@ function pageBlocks(blocks, cap) {
 /**
  * 55 (41's research): one PAGE of a graph's summary (list_scene `{flow, page}`), so an agent can read
  * a whole big graph — the scene summary shows page 1. @param {string} graphId @param {number} page 1-based
- * @returns {{flow: string, page: number, pages: number, text: string} | {error: string}}
+ * @returns {{flow: string, page: number, pages: number, text: string, code?: string} | {error: string}}
  */
 export function graphPage(graphId, page) {
 	const graph = graphOf(graphId);
@@ -293,7 +298,15 @@ export function graphPage(graphId, page) {
 	if (orphans.length) blocks.push(graphToText({ nodes: [], edges: orphans }, opts));
 	const pages = pageBlocks(blocks, GRAPH_SUMMARY_CHARS);
 	const at = Math.min(Math.max(1, Math.floor(Number(page) || 1)), pages.length);
-	return { flow: graphId, page: at, pages: pages.length, text: pages[at - 1] };
+	/** @type {{flow: string, page: number, pages: number, text: string, code?: string}} */
+	const answer = { flow: graphId, page: at, pages: pages.length, text: pages[at - 1] };
+	// 2.0 N2 (flag codeView): the same graph as the Nodes editor's Code tab prints it — one statement per
+	// node, sources first, `// #<id>` = the ids update_flow_nodes takes. Whole on page 1 (capped), never paged.
+	if (codeViewOn() && at === 1) {
+		const code = codeForGraph(graph, graphId).code;
+		answer.code = code.length > GRAPH_CODE_CHARS ? code.slice(0, code.lastIndexOf('\n', GRAPH_CODE_CHARS) + 1) + '// … cut at ' + GRAPH_CODE_CHARS + ' characters: the text pages carry the rest\n' : code;
+	}
+	return answer;
 }
 
 /**

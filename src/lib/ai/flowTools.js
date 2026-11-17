@@ -36,6 +36,7 @@ import { matchNodeType } from './nodeTypeMatch.js';
 import { describeNodeTypes, paramsOf } from './nodeTypesCore.js';
 import { nodeDoc } from '$lib/nodeDocs';
 import { inputType, outputType, outputHandleType } from '$lib/flowSockets';
+import { codeViewOn } from '$lib/nodes/codeViewFlag.js'; // 2.0 N2
 
 // AI flow + physics executors (assistant v3). The behavior counterpart to
 // tools.js: create/update flow nodes (the @xyflow editor graphs driving
@@ -378,7 +379,8 @@ export function describeNodeTypesTool(args, opts) {
 			const spec = /** @type {any} */ (findNodeSpec(t));
 			return (knownMapOutputs({ type: t, data: { ...(spec?.defaults ?? {}) } }) ?? []).map((name) => ({ name, type: outputHandleType(t, name) }));
 		},
-		match: (raw) => normalizeNodeType(raw)
+		match: (raw) => normalizeNodeType(raw),
+		codeView: codeViewOn()
 	});
 }
 

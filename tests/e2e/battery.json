@@ -518,6 +518,7 @@
 		"fix-live": 600,
 		"floating-window-focus": 77,
 		"flow-clock-origin": 120,
+		"flow-code-view": 240,
 		"flow-wiring-78": 360,
 		"code-flow-text": 240,
 		"sidebar-handles-devices": 420,

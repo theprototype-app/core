@@ -17,7 +17,8 @@ export const MAX_TYPES = 12;
  *   inputs: (type: string) => {name: string, type: string}[],
  *   output: (type: string) => string,
  *   namedOutputs: (type: string) => {name: string, type: string}[],
- *   match: (raw: any) => string | null
+ *   match: (raw: any) => string | null,
+ *   codeView?: boolean
  * }} NodeTypeSource
  */
 
@@ -76,7 +77,20 @@ export function describeType(type, group, src) {
 	const params = paramsOf(spec);
 	if (params.length) card.params = params;
 	if (typeof spec.note === 'string') card.note = spec.note;
+	// 2.0 N2 (flag codeView): how this type reads in the graph's code (list_scene {flow} → code)
+	if (src.codeView) card.code = codeShape(type, params, inputs, card.output);
 	return card;
+}
+
+/**
+ * 2.0 N2: one type's statement shape in the code view — `type({ params? }, { input: type }) -> output`.
+ * @param {string} type @param {any[]} params @param {{name: string, type: string}[]} inputs @param {string} output
+ */
+export function codeShape(type, params, inputs, output) {
+	const callee = /^[A-Za-z_$][\w$]*$/.test(type) ? type : "use('" + type + "')";
+	const p = params.length ? '{ ' + params.map((x) => x.key + '?').join(', ') + ' }' : '{}';
+	const w = inputs.length ? ', { ' + inputs.map((i) => i.name + ': ' + i.type).join(', ') + ' }' : '';
+	return callee + '(' + p + w + ') -> ' + output;
 }
 
 /**
@@ -110,6 +124,7 @@ export function describeNodeTypes(args, src) {
 		if (Object.keys(resolved).length) out.resolved = resolved;
 		if (unknown.length) out.unknown = unknown;
 		if (raw.length > MAX_TYPES) out.note = `only the first ${MAX_TYPES} types are described per call; ask again for the rest`;
+		if (src.codeView) out.code = 'code: how each type reads in list_scene {flow} → code — `const x = type({ params that differ from the defaults }, { input: source, input2: other.namedOutput })`; an unnamed input reads `in`; `// #id` = the node id.';
 		out.wiring = 'edges: toHandle = an input name (or a param key, which a wire then drives); fromHandle only for namedOutputs (omit it for the plain output). Types must match, or number→boolean/vector3, boolean→number, event→number/boolean, vector3↔object.';
 		return out;
 	}

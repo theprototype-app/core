@@ -87,6 +87,9 @@
 	// 2.0 N1: the core card map is generated from the node definitions
 	import { coreCardKeys } from '$lib/nodes/index.js';
 	import { CARD_KEYS } from '$lib/nodes/registry.js';
+	// 2.0 N2: the read-only Code tab, behind the codeView flag
+	import { codeViewFlag } from '$lib/nodes/codeViewFlag.js';
+	import FlowCodePane from './FlowCodePane.svelte';
 	type CardKey = (typeof CARD_KEYS)[number];
 	import { flowNodes as flowNodesStore, flowEdges as flowEdgesStore, customNodeDefs, nodeDesignerOpen, flowGraphs, activeGraphId, SCENE_GRAPH, setActiveGraph, updateGraph } from '../../stores/flowStore';
 	import { createObjectGraph, requestDeleteObjectGraph, recordFlowNodesEntry } from '$lib/flowGraphs';
@@ -551,6 +554,8 @@
 	let propsOpen = $state(readPanelOpen('flowPropsOpen', false));
 	// 4.3: right-panel tab — 'info' (selected node's params) | 'settings' (graph + name/note)
 	let propsTab = $state(LS?.getItem('flowPropsTab') || 'settings');
+	// 2.0 N2: 'code' only while the codeView flag is on (a remembered 'code' with the flag off reads as settings)
+	const shownTab = $derived(propsTab === 'code' && !$codeViewFlag ? 'settings' : propsTab);
 	// 179: the properties panel auto-reflows to the side OPPOSITE the palette so
 	// their divider tabs never overlap (the palette-side toggle used to hide it)
 	const propsSide = $derived(paletteSide === 'right' ? 'left' : 'right');
@@ -2321,16 +2326,23 @@
 		/>
 	</div>
 	{#if propsOpen}
-		<div id="flow-props" class="relative flex h-full w-52 shrink-0 flex-col gap-2 overflow-y-auto bg-surface-1 p-2 text-xs text-text-2" use:minimalScroll style="order: {propsSide === 'left' ? -1 : 5}">
+		<div id="flow-props" class="relative flex h-full {shownTab === 'code' ? 'w-[min(26rem,88vw)]' : 'w-52'} shrink-0 flex-col gap-2 overflow-y-auto bg-surface-1 p-2 text-xs text-text-2" use:minimalScroll style="order: {propsSide === 'left' ? -1 : 5}">
 			<!-- 4.3: Explorer-style tabs — ⓘ = the selected node's PARAMETERS,
 			     the cog = graph settings + node name/note (as before) -->
 			<div class="flex gap-1">
-				<button id="flow-tab-info" class="flex-1 rounded-sm px-2 py-1 {propsTab === 'info' ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 hover:bg-surface-active'}"
+				<button id="flow-tab-info" class="flex-1 rounded-sm px-2 py-1 {shownTab === 'info' ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 hover:bg-surface-active'}"
 					onclick={() => { propsTab = 'info'; LS?.setItem('flowPropsTab', 'info'); }}>ⓘ Params</button>
-				<button id="flow-tab-settings" class="flex-1 rounded-sm px-2 py-1 {propsTab === 'settings' ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 hover:bg-surface-active'}"
+				<button id="flow-tab-settings" class="flex-1 rounded-sm px-2 py-1 {shownTab === 'settings' ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 hover:bg-surface-active'}"
 					onclick={() => { propsTab = 'settings'; LS?.setItem('flowPropsTab', 'settings'); }}><Icon name="settings" size={16} class="inline-block shrink-0 align-[-2px]" /> Settings</button>
+				{#if $codeViewFlag}
+					<button id="flow-tab-code" class="rounded-sm px-2 py-1 {shownTab === 'code' ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 hover:bg-surface-active'}"
+						title="The graph as code (read-only)" aria-label="Code" aria-pressed={shownTab === 'code'}
+						onclick={() => { propsTab = 'code'; LS?.setItem('flowPropsTab', 'code'); }}><Icon name="code" size={16} class="inline-block shrink-0 align-[-2px]" />{#if shownTab === 'code'} Code{/if}</button>
+				{/if}
 			</div>
-			{#if propsTab === 'info'}
+			{#if shownTab === 'code'}
+				<FlowCodePane graph={$flowGraphs[activeId]} graphId={activeId} selectedId={selectedNode?.id ?? null} />
+			{:else if shownTab === 'info'}
 				{#if selectedNode}
 					<p class="ui-section-label">{selectedNode.data?.label ?? selectedNode.type}</p>
 					{#if nodeDoc(selectedNode.type)}

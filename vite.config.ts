@@ -1,6 +1,6 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
-import { defineConfig, type Plugin } from 'vite';
+import { defineConfig, runnerImport, type Plugin } from 'vite';
 import pkg from './package.json';
 // @ts-ignore -- no @types/node in this project (adding them shifts the svelte-check baseline)
 import { execSync } from 'node:child_process';
@@ -222,6 +222,30 @@ function thirdPartyNotices(): Plugin {
 	};
 }
 
+/**
+ * 2.0 N1 — A NODE TYPE MISSING A HALF FAILS THE BUILD. The core node definitions
+ * (src/lib/nodes/families) each carry their palette spec, sockets, card key and value; this loads
+ * the registry in node (vite's module runner, so extensionless imports resolve as in the app) and
+ * stops the build on the first `coreRegistryErrors()` line. Once per build (SvelteKit builds twice).
+ */
+function nodeRegistryCheck(): Plugin {
+	let checked = false;
+	return {
+		name: 'node-registry-check',
+		apply: 'build',
+		async buildStart() {
+			if (checked) return;
+			checked = true;
+			const { module } = await runnerImport<{ coreRegistryErrors: () => string[] }>('./src/lib/nodes/index.js', {
+				configFile: false,
+				logLevel: 'silent'
+			});
+			const errors = module.coreRegistryErrors();
+			if (errors.length) this.error('node registry: a definition is incomplete\n  ' + errors.join('\n  '));
+		}
+	};
+}
+
 export default defineConfig({
 	define: {
 		__APP_VERSION__: JSON.stringify(pkg.version),
@@ -239,6 +263,7 @@ export default defineConfig({
 			devAssetProxy(),
 			emitVersionJson(),
 			thirdPartyNotices(),
+			nodeRegistryCheck(), // 2.0 N1: a node type missing a half fails the build
 			sveltekit()
 		],
 		// the transform above only reaches @shaderfrog/core if it is served as SOURCE:

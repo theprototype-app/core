@@ -14,7 +14,7 @@ const h = require('./helpers.cjs');
  * @param {any} page */
 const sceneOf = (page) =>
 	page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const g = await new Promise((r) => s.objectsGroup.subscribe(r)());
 		/** @type {Record<string, string>} */
 		const out = {};
@@ -27,7 +27,7 @@ const sceneOf = (page) =>
 		return out;
 	});
 /** @param {any} page */
-const totalsOf = (page) => page.evaluate(() => window.__stores.loadGuard?.loadGuardTotals?.() ?? null);
+const totalsOf = (page) => page.evaluate(() => window.__tp.test.v1.loadGuard?.loadGuardTotals?.() ?? null);
 /** @param {Record<string, string>} a @param {Record<string, string>} b */
 const diff = (a, b) => {
 	const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
@@ -72,11 +72,11 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);
-	for (const p of [A, B]) await p.page.evaluate(() => window.__stores.loadGuard?.resetLoadGuard?.());
+	for (const p of [A, B]) await p.page.evaluate(() => window.__tp.test.v1.loadGuard?.resetLoadGuard?.());
 
 	// ---- A builds every kind, B watching -----------------------------------------------------------
 	const built = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 		const { primitivesCatalog } = await import('/src/lib/primitivesCatalog.js');
 		const cmds = primitivesCatalog.flatMap((g) => g.items.map((i) => i.command));
@@ -140,7 +140,7 @@ h.run(async () => {
 
 	// ---- C joins late: the whole scene arrives through the handshake sync ---------------------------
 	const C = await h.setupPageQuiet(browser, 'C', [A, B]);
-	await C.page.evaluate(() => window.__stores.loadGuard?.resetLoadGuard?.());
+	await C.page.evaluate(() => window.__tp.test.v1.loadGuard?.resetLoadGuard?.());
 	await h.connect(C, A);
 	let c = {};
 	await h.eventually(

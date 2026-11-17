@@ -19,8 +19,8 @@ const inPage = (peer, body, arg) =>
 	peer.page.evaluate(
 		([src, a]) => {
 			let pc = null;
-			window.__stores.peers.subscribe((v) => (pc = v))();
-			return Object.getPrototypeOf(async function () {}).constructor('s', 'pc', 'arg', src)(window.__stores, pc, a);
+			window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
+			return Object.getPrototypeOf(async function () {}).constructor('s', 'pc', 'arg', src)(window.__tp?.test.v1, pc, a);
 		},
 		[body, arg ?? null]
 	);

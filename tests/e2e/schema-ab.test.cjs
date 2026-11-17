@@ -49,7 +49,7 @@ h.run(async () => {
 		Date.now = () => t;
 	}, T0);
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.moduleSDK && !!window.__stores.sessions, null, { timeout: 60000 });
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.moduleSDK && !!window.__tp.test.v1.sessions, null, { timeout: 60000 });
 	/** @type {string[]} */
 	const rows = [];
 	let worst = 0;
@@ -57,7 +57,7 @@ h.run(async () => {
 		const slug = slugOf(file);
 		const bytes = Array.from(fs.readFileSync(file));
 		const totals = await A.page.evaluate(async (arr) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.loadGuard?.resetLoadGuard?.();
 			if (await new Promise((r) => s.physics.simulating.subscribe(r)())) s.physics.stopSimulation();
 			const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);

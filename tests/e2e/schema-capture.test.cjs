@@ -25,13 +25,13 @@ h.run(async () => {
 	const browser = await h.launch();
 	const peer = await h.setupPage(browser, 'capture');
 	const page = peer.page;
-	await page.waitForFunction(() => !!window.__stores?.commandsHandler && !!window.__stores?.sessions && !!window.__stores?.objectsGroup, null, {
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.commandsHandler && !!window.__tp?.test.v1?.sessions && !!window.__tp?.test.v1?.objectsGroup, null, {
 		timeout: 60000
 	});
 
 	// ---- the wire tap: every outgoing message, JSON-cloned at the moment it is sent ----------------
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let pc = null;
 		s.peers.subscribe((v) => (pc = v))();
 		window.__capture = [];
@@ -60,7 +60,7 @@ h.run(async () => {
 
 	// ---- every Add-menu item -------------------------------------------------------------------------
 	const created = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const { primitivesCatalog } = await import('/src/lib/primitivesCatalog.js').catch(() => ({ primitivesCatalog: null }));
 		const catalog = primitivesCatalog ?? s.primitivesCatalog?.primitivesCatalog;
 		const cmds = catalog ? catalog.flatMap((g) => g.items.map((i) => i.command)) : [];
@@ -77,7 +77,7 @@ h.run(async () => {
 
 	// ---- materials: every switchable type, a textured map, a map slot, a tiling, params, slots ----
 	const matInfo = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let group = null;
 		s.objectsGroup.subscribe((g) => (group = g))();
 		const meshes = group.children.filter((o) => o.isMesh && !Array.isArray(o.material));
@@ -129,7 +129,7 @@ h.run(async () => {
 
 	// ---- a group, a prefab of it, and the full handshake sync ---------------------------------------
 	const syncInfo = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let group = null;
 		s.objectsGroup.subscribe((g) => (group = g))();
 		const two = group.children.filter((o) => o.isMesh && o.geometry?.type === 'SphereGeometry').concat(group.children.filter((o) => o.isMesh && o.geometry?.type === 'ConeGeometry')).slice(0, 2);
@@ -162,7 +162,7 @@ h.run(async () => {
 
 	// ---- the save ------------------------------------------------------------------------------------
 	const zipB64 = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = await s.sessions.buildSessionPayload('schema-capture');
 		const bytes = await s.sessions.exportSessionZip(payload, { assets: true, packs: false, flow: true });
 		const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(await new Response(bytes).arrayBuffer());

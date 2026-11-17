@@ -13,20 +13,20 @@ h.run(async () => {
 	// 'model' capsule segments: same 24 bones, per-bone radii (palm > tip)
 	const segs = await A.page.evaluate(() => {
 		const flat = new Array(75).fill(0).map((_, i) => (i % 3 === 0 ? i / 75 : 0));
-		return window.__stores.vrControls.handModelSegments(flat).map((s) => s.r);
+		return window.__tp.test.v1.vrControls.handModelSegments(flat).map((s) => s.r);
 	});
 	h.check(segs.length === 24, `model style yields 24 bone segments (${segs.length})`);
 	h.check(segs[0] === 0.011 && segs.includes(0.006), 'per-bone radii: thick metacarpals + thin tips');
 
 	// peerHandStyle accepts 'model'
-	await A.page.evaluate(() => window.__stores.peerHandStyle.set('model'));
-	const style = await A.page.evaluate(() => new Promise((r) => window.__stores.peerHandStyle.subscribe(r)()));
+	await A.page.evaluate(() => window.__tp.test.v1.peerHandStyle.set('model'));
+	const style = await A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.peerHandStyle.subscribe(r)()));
 	h.check(style === 'model', 'peerHandStyle supports the model option');
 
 	// --- custom hand identity: hash broadcasts, bytes arrive, pipeline parses --
 	// capture arriving assetfile bytes on B's own listener FIRST (transport proof)
 	await B.page.evaluate(async () => {
-		const p = await new Promise((r) => window.__stores.peers.subscribe(r)());
+		const p = await new Promise((r) => window.__tp.test.v1.peers.subscribe(r)());
 		window.__handBytes = null;
 		Object.values(p.connections).forEach((conn) =>
 			conn.on('data', (d) => {
@@ -37,22 +37,22 @@ h.run(async () => {
 
 	const hash = await A.page.evaluate(async () => {
 		// in-page GLB fixture: export a tiny box with the real GLTFExporter
-		const THREE = window.__stores.THREE;
-		const { GLTFExporter } = window.__stores.GLTFExporterModule;
+		const THREE = window.__tp.test.v1.THREE;
+		const { GLTFExporter } = window.__tp.test.v1.GLTFExporterModule;
 		const scene = new THREE.Scene();
 		scene.add(new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.02, 0.15), new THREE.MeshStandardMaterial()));
 		const glb = await new Promise((resolve, reject) =>
 			new GLTFExporter().parse(scene, resolve, reject, { binary: true })
 		);
-		const item = await window.__stores.explorer.addItemFromBytes(glb, 'myhand.glb', null);
-		window.__stores.handModels.setMyHandModel(item.hash);
+		const item = await window.__tp.test.v1.explorer.addItemFromBytes(glb, 'myhand.glb', null);
+		window.__tp.test.v1.handModels.setMyHandModel(item.hash);
 		return item.hash;
 	});
 	h.check(!!hash, 'A stored a hand GLB and chose it');
 
 	// the CHOICE replicates to B (tiny message — identity like the avatar photo)
 	await h.eventually(
-		() => B.page.evaluate((a) => new Promise((r) => window.__stores.handModels.peerHandModels.subscribe((m) => r(m[a] ?? null))()), A.id),
+		() => B.page.evaluate((a) => new Promise((r) => window.__tp.test.v1.handModels.peerHandModels.subscribe((m) => r(m[a] ?? null))()), A.id),
 		(v) => v === hash,
 		"B learns A's hand-model hash"
 	);
@@ -70,16 +70,16 @@ h.run(async () => {
 	// avoids waiting on this machine's heavily throttled background timers)
 	const cached = await B.page.evaluate(async () => {
 		const { hash, name, bytes } = window.__handBytes;
-		await window.__stores.assetShare.applyAssetFile({ hash, name, buffer: new Uint8Array(bytes).buffer });
-		await window.__stores.handModels.ensureHandModel(hash);
-		return new Promise((r) => window.__stores.handModels.handModelCache.subscribe((c) => r(!!c[hash]))());
+		await window.__tp.test.v1.assetShare.applyAssetFile({ hash, name, buffer: new Uint8Array(bytes).buffer });
+		await window.__tp.test.v1.handModels.ensureHandModel(hash);
+		return new Promise((r) => window.__tp.test.v1.handModels.handModelCache.subscribe((c) => r(!!c[hash]))());
 	});
 	h.check(cached === true, 'the pulled GLB parses into the hand-model render cache');
 
 	// clearing broadcasts too
-	await A.page.evaluate(() => window.__stores.handModels.setMyHandModel(''));
+	await A.page.evaluate(() => window.__tp.test.v1.handModels.setMyHandModel(''));
 	await h.eventually(
-		() => B.page.evaluate((a) => new Promise((r) => window.__stores.handModels.peerHandModels.subscribe((m) => r(m[a] ?? null))()), A.id),
+		() => B.page.evaluate((a) => new Promise((r) => window.__tp.test.v1.handModels.peerHandModels.subscribe((m) => r(m[a] ?? null))()), A.id),
 		(v) => v === null,
 		'clearing the choice removes it on B (fallback to style rendering)'
 	);

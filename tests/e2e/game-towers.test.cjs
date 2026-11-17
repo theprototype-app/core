@@ -30,7 +30,7 @@ h.run(async () => {
 	const page = A.page;
 	const bytes = Array.from(fs.readFileSync(TPSCENE));
 	await page.evaluate(async (arr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 		await s.sessions.applySession(payload, { backup: false });
 	}, bytes);
@@ -38,7 +38,7 @@ h.run(async () => {
 
 	const snap = () =>
 		page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const g = (st) => { let v; st.subscribe((x) => (v = x))(); return v; };
 			const group = g(s.objectsGroup);
 			return {
@@ -68,7 +68,7 @@ h.run(async () => {
 	h.check(st.state === 'menu' && st.screen === 'menu', `starts on the level select (${st.state}/${st.screen})`);
 	const shapes = await page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const arch = g.getObjectByName('Piece arch');
 		const l = g.getObjectByName('Piece L');
 		const wedge = g.getObjectByName('Piece wedge');
@@ -83,7 +83,7 @@ h.run(async () => {
 
 	// 1b — the look, measured
 	const look = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const g = (st) => { let v; st.subscribe((x) => (v = x))(); return v; };
 		const floor = g(s.objectsGroup).getObjectByName('Arena floor');
 		const env = g(s.environment.environment);
@@ -100,15 +100,15 @@ h.run(async () => {
 	h.check(!loadToasts.some((t) => /cap|error|went wrong|install|module/i.test(t)), `no warning toast on load — no module to download (${JSON.stringify(loadToasts).slice(0, 120)})`);
 
 	// 2 — Play: the sim, the body, the menu, the music, the spawn
-	await page.evaluate(() => window.__stores.isLocked.set(true));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await h.eventually(() => snap().then((v) => v.sim), (v) => v === true, 'entering play starts the sim', 10000);
-	const body = await page.evaluate(() => window.__stores.charController.charControllerDebug().control);
+	const body = await page.evaluate(() => window.__tp.test.v1.charController.charControllerDebug().control);
 	h.check(body?.mode === 'walk' && body.jumpHeight === 1 && body.gravity, `the player WALKS and JUMPS 1 m (a Character Controller: ${JSON.stringify(body)})`);
 	await h.eventually(hud, (t) => /TOWERS/.test(t) && /1 · Stack/.test(t) && /12 · Summit/.test(t), 'the level select renders in play: twelve levels', 6000);
 	h.check(/build steps and jump/.test(await hud()) && /Space jumps/.test(await hud()) && /A jumps/.test(await hud()), 'the menu says how to play — reach, steps, jump — on a desktop and in VR');
-	await h.eventually(() => page.evaluate(() => { let m; window.__stores.gameKit.gameMusic.gameMusicState.subscribe((v) => (m = v))(); return m?.preset ?? null; }), (m) => m === 'arcade', 'the arcade music plays in Play', 6000);
+	await h.eventually(() => page.evaluate(() => { let m; window.__tp.test.v1.gameKit.gameMusic.gameMusicState.subscribe((v) => (m = v))(); return m?.preset ?? null; }), (m) => m === 'arcade', 'the arcade music plays in Play', 6000);
 	const eye = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let cam; s.playerCam.subscribe((v) => (cam = v))();
 		const p = cam.getWorldPosition(new s.THREE.Vector3());
 		return [p.x, p.y, p.z].map((n) => +n.toFixed(2));
@@ -146,14 +146,14 @@ h.run(async () => {
 	h.check(lum >= 0.25, `the play frame reads: centre luminance ${lum.toFixed(3)} >= 0.25`);
 	// no editor helper in Play: the markers are scene objects, the templates are out of sight
 	const helpers = await page.evaluate(() => {
-		let sc; window.__stores.globalScene.subscribe((v) => (sc = v))();
+		let sc; window.__tp.test.v1.globalScene.subscribe((v) => (sc = v))();
 		const seen = [];
 		sc.traverse((o) => { if (o.visible && /helper|grid/i.test(o.name ?? '') && o.parent === sc) seen.push(o.name); });
 		return seen;
 	});
 	h.check(!helpers.includes('editor-grid'), `no editor grid in Play (${helpers.join(', ') || 'none'})`);
 
-	await page.evaluate(() => window.__stores.isLocked.set(false));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(false));
 	await page.waitForTimeout(400);
 	await h.finish(browser);
 });

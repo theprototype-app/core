@@ -21,8 +21,8 @@ const FILL_RGB = [0, 255, 0];
 /** a flat-fill test effect through the real registry seam */
 async function registerFill(page) {
 	return page.evaluate(() => {
-		const { Effect, BlendFunction } = window.__stores.postprocessing;
-		window.__stores.scenePost.registerPostEffect('test-play-fill', {
+		const { Effect, BlendFunction } = window.__tp.test.v1.postprocessing;
+		window.__tp.test.v1.scenePost.registerPostEffect('test-play-fill', {
 			label: 'Play fill',
 			group: 'test',
 			make: () =>
@@ -32,7 +32,7 @@ async function registerFill(page) {
 					{ blendFunction: BlendFunction.SET }
 				)
 		});
-		return window.__stores.scenePost
+		return window.__tp.test.v1.scenePost
 			.postEffectKinds()
 			.map((def) => def.kind)
 			.includes('test-play-fill');
@@ -48,16 +48,16 @@ h.run(async () => {
 
 	// one neutral-grey box, so no measurement depends on the palette's uuid colour
 	await page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		let group = null;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		const box = group.children[group.children.length - 1];
 		box.position.set(0, 1, 0);
 		box.scale.set(3, 3, 3);
 		box.material.color.setHex(0x808080);
-		window.__stores.objectsGroup.update((v) => v);
+		window.__tp.test.v1.objectsGroup.update((v) => v);
 	});
-	await page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await page.waitForTimeout(1200);
 
 	const registered = await registerFill(page);
@@ -69,7 +69,7 @@ h.run(async () => {
 	const editorDebug = await postDebug(page);
 	h.check(!!editorDebug, '1.2 (premise) the composer is live in the editor');
 
-	await page.evaluate(() => window.__stores.isLocked.set(true));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await page.waitForTimeout(1200);
 	const playDebug = await postDebug(page);
 	h.check(
@@ -88,9 +88,9 @@ h.run(async () => {
 	// enable the stack FIRST, then add: both writes go through the same latest-wins
 	// singleton, and issuing them back to back in one tick lets the enable land on a
 	// copy taken before the add (measured: 0 compiled passes, effects list empty)
-	await page.evaluate(() => window.__stores.scenePost.setScenePostEnabled(true));
+	await page.evaluate(() => window.__tp.test.v1.scenePost.setScenePostEnabled(true));
 	await page.waitForTimeout(300);
-	await page.evaluate(() => window.__stores.scenePost.addPostEffect('test-play-fill'));
+	await page.evaluate(() => window.__tp.test.v1.scenePost.addPostEffect('test-play-fill'));
 	await page.waitForTimeout(1500);
 	const after = await h.grabFrame(A);
 	const delta = await h.frameDelta(page, before, after);
@@ -124,11 +124,11 @@ h.run(async () => {
 	console.log('\n=== 3. the editor outlines stand down while playing ===');
 
 	// select the box: in the EDITOR that outlines it, in play mode it must not
-	await page.evaluate(() => window.__stores.isLocked.set(false));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(false));
 	await page.evaluate(() => {
 		let group = null;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
-		window.__stores.objectActions.selectObject(group.children[group.children.length - 1].uuid);
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectActions.selectObject(group.children[group.children.length - 1].uuid);
 	});
 	await page.waitForTimeout(900);
 	const selectedInEditor = await postDebug(page);
@@ -137,7 +137,7 @@ h.run(async () => {
 		'3.1 (premise) the editor outlines the selection (' + selectedInEditor?.outlinedSelected + ' meshes)'
 	);
 
-	await page.evaluate(() => window.__stores.isLocked.set(true));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await page.waitForTimeout(900);
 	const selectedInPlay = await postDebug(page);
 	h.check(
@@ -156,11 +156,11 @@ h.run(async () => {
 	console.log('\n=== 4. nothing to compose = no composer ===');
 
 	await page.evaluate(() => {
-		const state = window.__stores.scenePost.scenePostDebug();
-		for (const entry of state.effects) window.__stores.scenePost.removePostEffect(entry.id);
+		const state = window.__tp.test.v1.scenePost.scenePostDebug();
+		for (const entry of state.effects) window.__tp.test.v1.scenePost.removePostEffect(entry.id);
 	});
 	// plain 'shaded' so the personal AO pass is not in the chain either
-	await page.evaluate(() => window.__stores.viewMode.set('shaded'));
+	await page.evaluate(() => window.__tp.test.v1.viewMode.set('shaded'));
 	await page.waitForTimeout(1200);
 	const empty = await postDebug(page);
 	h.check(
@@ -180,7 +180,7 @@ h.run(async () => {
 	);
 
 	// and putting the look back brings the composer back
-	await page.evaluate(() => window.__stores.scenePost.addPostEffect('test-play-fill'));
+	await page.evaluate(() => window.__tp.test.v1.scenePost.addPostEffect('test-play-fill'));
 	await page.waitForTimeout(1200);
 	const restored = await h.grabFrame(A, fillClip);
 	const restoredOff = await h.framePixelsOffColor(page, restored, FILL_RGB);
@@ -196,7 +196,7 @@ h.run(async () => {
 
 	const vrFlag = await page.evaluate(() => {
 		let value = null;
-		window.__stores.viewportOverrides.vrPostEnabled.subscribe((v) => (value = v))();
+		window.__tp.test.v1.viewportOverrides.vrPostEnabled.subscribe((v) => (value = v))();
 		return value;
 	});
 	h.check(
@@ -205,12 +205,12 @@ h.run(async () => {
 			'not the XR framebuffer, and a headset gets a dark viewport'
 	);
 	const persisted = await page.evaluate(() => {
-		window.__stores.viewportOverrides.vrPostEnabled.set(true);
+		window.__tp.test.v1.viewportOverrides.vrPostEnabled.set(true);
 		return localStorage.getItem('vrPostEnabled');
 	});
 	h.check(persisted === 'true', '5.2 ...and it is a LOCAL pref, like every other override');
-	await page.evaluate(() => window.__stores.viewportOverrides.vrPostEnabled.set(false));
+	await page.evaluate(() => window.__tp.test.v1.viewportOverrides.vrPostEnabled.set(false));
 
-	await page.evaluate(() => window.__stores.isLocked.set(false));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(false));
 	await h.finish(browser);
 });

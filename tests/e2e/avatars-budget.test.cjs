@@ -11,13 +11,13 @@ const CHARS = ['knight', 'mage', 'rogue', 'rogue-hooded', 'barbarian', 'skeleton
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1280, height: 720 } } });
-	await A.page.evaluate(() => window.__stores.objectActions.flyTo([0, 2.2, 7], [0, 1, -2], 0));
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.flyTo([0, 2.2, 7], [0, 1, -2], 0));
 	await A.page.waitForTimeout(800);
 	/** draw calls + triangles of ONE render of the scene from the editor camera (no post); `shadows`
 	 * false = the main pass only (a headset's entry quality level turns shadows off) */
 	const measure = (shadows = true) =>
 		A.page.evaluate((shadows) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let r, scene, cam;
 			s.globalRenderer.subscribe((x) => (r = x))();
 			s.globalScene.subscribe((x) => (scene = x))();
@@ -38,7 +38,7 @@ h.run(async () => {
 
 	// 8 peers, one per character, with a hat and a stylised head on half of them (the 2-call case)
 	await A.page.evaluate((chars) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ud = [];
 		s.userdata.subscribe((v) => ud.push(...(v ?? [])))();
 		s.userdata.set([
@@ -47,14 +47,14 @@ h.run(async () => {
 		]);
 	}, CHARS);
 	await h.eventually(
-		() => A.page.evaluate(() => Object.values(window.__stores.avatars.avatarsDebug()).filter((a) => a.ready).length),
+		() => A.page.evaluate(() => Object.values(window.__tp.test.v1.avatars.avatarsDebug()).filter((a) => a.ready).length),
 		(n) => n === 8,
 		'0.1 (premise) eight rigged peers are loaded',
 		20000
 	);
 	// walk them in a ring for a second so the mixers and skinning are live
 	const fps = await A.page.evaluate(async (n) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let scene;
 		s.globalScene.subscribe((x) => (scene = x))();
 		const t0 = performance.now();
@@ -82,14 +82,14 @@ h.run(async () => {
 	h.check(dCalls <= 8 * 2, `1.1 eight avatars add ${dCalls} main-pass draw calls (<= 16: one body + at most one head/hat each; +${dShadow} shadow draws while shadows are on)`);
 	h.check(dTris <= 8 * 10000, `1.2 ...and ${dTris} triangles (<= 80k, the per-avatar 10k cap)`);
 	h.check(withPeers.calls <= 150 && withPeers.tris <= 300000, `1.3 the whole frame with 8 peers stays inside the Quest budget (${withPeers.calls} calls, ${withPeers.tris} tris)`);
-	const state = await A.page.evaluate(() => Object.values(window.__stores.avatars.avatarsDebug()).map((a) => a.top));
+	const state = await A.page.evaluate(() => Object.values(window.__tp.test.v1.avatars.avatarsDebug()).map((a) => a.top));
 	h.check(state.filter((t) => t !== 'idle').length >= 6, `1.4 (premise) the ring is walking (${state.join(',')})`);
 
 	// B11: the avatars' texture memory, sized from the REAL textures: each character's atlas (mipmapped
 	// RGBA8) + each skeleton's bone texture (float RGBA, no mips) + any head/photo maps
 	const tex = await A.page.evaluate(() => {
 		let scene;
-		window.__stores.globalScene.subscribe((x) => (scene = x))();
+		window.__tp.test.v1.globalScene.subscribe((x) => (scene = x))();
 		const seen = new Set();
 		let bytes = 0;
 		const add = (t, perTexel, mips) => {

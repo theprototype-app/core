@@ -59,14 +59,14 @@ async function setup(slugs, moduleIds) {
 	});
 	const p = probes(page);
 	if (moduleIds.length) {
-		await page.evaluate(() => window.__stores.modulesOpen.set(true));
+		await page.evaluate(() => window.__tp.test.v1.modulesOpen.set(true));
 		await page.waitForTimeout(400);
 		await page.getByRole('tab', { name: /^User/ }).click();
 		for (const id of moduleIds) {
 			await page.locator('#install-module-zip').setInputFiles({ name: id + '.zip', mimeType: 'application/zip', buffer: zips[id] });
 			await ev(p.loaded, (ids) => ids.includes(id), 'install: ' + id + ' from its zip', 30000);
 		}
-		await page.evaluate(() => window.__stores.modulesOpen.set(false));
+		await page.evaluate(() => window.__tp.test.v1.modulesOpen.set(false));
 		await page.waitForTimeout(400);
 	}
 	return { browser, page, scenes, zips, ...p };
@@ -77,7 +77,7 @@ function probes(page) {
 	const names = () =>
 		page.evaluate(() => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const out = [];
 			g?.traverse((o) => {
 				if (o !== g && o.name) out.push(o.name);
@@ -88,32 +88,32 @@ function probes(page) {
 		/** open a game the way the Games tab does (does not wait — a modal may be in the way) */
 		openGame: (slug) =>
 			page.evaluate((slug) => {
-				window.__lastOpen = window.__stores.sceneTemplates.loadRemoteScene({ slug, title: slug, sceneUrl: 'https://scene-switch.test/' + slug + '.tpscene' });
+				window.__lastOpen = window.__tp.test.v1.sceneTemplates.loadRemoteScene({ slug, title: slug, sceneUrl: 'https://scene-switch.test/' + slug + '.tpscene' });
 				return true;
 			}, slug),
 		/** the open's own promise (true = applied) */
 		opened: () => page.evaluate(() => window.__lastOpen),
 		/** is a load still in flight (the Games-tab busy slug) */
-		busy: () => page.evaluate(() => { let v; window.__stores.sceneTemplates.loadingSlug.subscribe((x) => (v = x))(); return v; }),
-		loaded: () => page.evaluate(() => window.__stores.moduleSDK.loadedModules.map((m) => m.id)),
-		disabled: () => page.evaluate(() => { let v; window.__stores.moduleSDK.disabledModules.subscribe((x) => (v = x))(); return v; }),
-		dbg: () => page.evaluate(() => window.__stores.sceneSwitch.sceneSwitchDebug()),
+		busy: () => page.evaluate(() => { let v; window.__tp.test.v1.sceneTemplates.loadingSlug.subscribe((x) => (v = x))(); return v; }),
+		loaded: () => page.evaluate(() => window.__tp.test.v1.moduleSDK.loadedModules.map((m) => m.id)),
+		disabled: () => page.evaluate(() => { let v; window.__tp.test.v1.moduleSDK.disabledModules.subscribe((x) => (v = x))(); return v; }),
+		dbg: () => page.evaluate(() => window.__tp.test.v1.sceneSwitch.sceneSwitchDebug()),
 		names,
 		hasObject: async (name) => (await names()).includes(name),
 		rootGroups: () =>
 			page.evaluate(() => {
 				let s;
-				window.__stores.globalScene.subscribe((v) => (s = v))();
+				window.__tp.test.v1.globalScene.subscribe((v) => (s = v))();
 				const out = [];
 				s?.traverse((o) => {
 					if (/-module$/.test(o.name)) out.push(o.name);
 				});
 				return out;
 			}),
-		music: () => page.evaluate(() => { let v; window.__stores.gameKit.gameMusic.gameMusicState.subscribe((x) => (v = x))(); return v; }),
+		music: () => page.evaluate(() => { let v; window.__tp.test.v1.gameKit.gameMusic.gameMusicState.subscribe((x) => (v = x))(); return v; }),
 		shell: () =>
 			page.evaluate(() => {
-				const k = window.__stores.gameKit;
+				const k = window.__tp.test.v1.gameKit;
 				let levels, help, rows;
 				k.gameShell.gameLevels.subscribe((v) => (levels = v))();
 				k.gameShell.gameHelp.subscribe((v) => (help = v))();
@@ -126,9 +126,9 @@ function probes(page) {
 					isGame: k.gameShell.gameShellDebug().isGame
 				};
 			}),
-		notes: () => page.evaluate(() => { let v; window.__stores.notifications.subscribe((x) => (v = x))(); return v.map((n) => String(n.text)); }),
-		interact: (on) => page.evaluate((on) => window.__stores.objectActions.setEditorMode(on ? 'interact' : 'edit'), on),
-		frameTasks: () => page.evaluate(() => window.__stores.moduleSDK.moduleFrameTasks.length)
+		notes: () => page.evaluate(() => { let v; window.__tp.test.v1.notifications.subscribe((x) => (v = x))(); return v.map((n) => String(n.text)); }),
+		interact: (on) => page.evaluate((on) => window.__tp.test.v1.objectActions.setEditorMode(on ? 'interact' : 'edit'), on),
+		frameTasks: () => page.evaluate(() => window.__tp.test.v1.moduleSDK.moduleFrameTasks.length)
 	};
 }
 

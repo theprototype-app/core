@@ -10,7 +10,7 @@ const h = require('./helpers.cjs');
 const storeValue = (page, path) =>
 	page.evaluate((path) => {
 		let v;
-		const store = path.split('.').reduce((o, k) => o?.[k], window.__stores);
+		const store = path.split('.').reduce((o, k) => o?.[k], window.__tp?.test.v1);
 		store.subscribe((x) => (v = x))();
 		return v;
 	}, path);
@@ -19,17 +19,17 @@ const storeValue = (page, path) =>
 const animOf = (page) =>
 	page.evaluate(() => {
 		let map;
-		window.__stores.animatedImports.animatedObjects.subscribe((m) => (map = m))();
+		window.__tp.test.v1.animatedImports.animatedObjects.subscribe((m) => (map = m))();
 		const [uuid, state] = Object.entries(map ?? {})[0] ?? [];
 		if (!uuid) return null;
-		return { uuid, ...state, info: window.__stores.animatedImports.clipInfo(uuid) };
+		return { uuid, ...state, info: window.__tp.test.v1.animatedImports.clipInfo(uuid) };
 	});
 
 /** pose a bone of the model at a FIXED clip time (same time on every page) and read its world quaternion */
 const poseAtFixedTime = (page, uuid, t) =>
 	page.evaluate(
 		({ uuid, t }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const rec = s.animatedImports.animatedRecordOf(uuid);
 			if (!rec) return null;
 			rec.mixer.setTime(t);
@@ -48,14 +48,14 @@ const poseAtFixedTime = (page, uuid, t) =>
 
 const modelHash = (page, uuid) =>
 	page.evaluate(async (uuid) => {
-		const bytes = window.__stores.animatedImports.animatedImportPayload(uuid);
-		return bytes ? window.__stores.explorer.hashBytes(bytes) : null;
+		const bytes = window.__tp.test.v1.animatedImports.animatedImportPayload(uuid);
+		return bytes ? window.__tp.test.v1.explorer.hashBytes(bytes) : null;
 	}, uuid);
 
 const clipItems = (page) =>
 	page.evaluate(() => {
 		let items;
-		window.__stores.explorer.explorerItems.subscribe((x) => (items = x))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((x) => (items = x))();
 		return items.filter((i) => i.kind === 'anim').map((i) => ({ id: i.id, name: i.name, hash: i.hash }));
 	});
 
@@ -71,7 +71,7 @@ h.run(async () => {
 	const uuid = await A.page.evaluate(async () => {
 		const r = await fetch('/avatars/knight.glb');
 		const f = new File([await r.arrayBuffer()], 'knight.glb');
-		return window.__stores.fileHandler.importFile(f, 'Knight');
+		return window.__tp.test.v1.fileHandler.importFile(f, 'Knight');
 	});
 	await h.eventually(() => animOf(A.page), (s) => s?.uuid === uuid, 'M1: a rig with no clips registers as an animated import');
 	h.check((await animOf(A.page)).clips.length === 0, 'M1: ...with no clips of its own');
@@ -80,7 +80,7 @@ h.run(async () => {
 	// the animation-only GLB becomes one .tpanim per clip in the Explorer
 	await A.page.evaluate(async () => {
 		const r = await fetch('/avatars/clips.glb');
-		await window.__stores.explorer.importFiles([new File([await r.arrayBuffer()], 'clips.glb')], null);
+		await window.__tp.test.v1.explorer.importFiles([new File([await r.arrayBuffer()], 'clips.glb')], null);
 	});
 	await h.eventually(() => clipItems(A.page), (l) => l.length >= 10, 'M1: clips.glb imported as clip assets', 30000);
 	const items = await clipItems(A.page);
@@ -90,7 +90,7 @@ h.run(async () => {
 
 	// the stored file is a real .tpanim: our extras, a skeleton clip, the knight's signature
 	const facts = await A.page.evaluate(async (id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const blob = await s.explorer.itemBlob(id);
 		const tp = s.tpanim.decodeTpanim(await blob.arrayBuffer());
 		let g;
@@ -102,7 +102,7 @@ h.run(async () => {
 	h.check(facts.fit === 'exact', `M1: the clip fits the knight's skeleton (${facts.fit})`);
 
 	// assign + play: ONE ref, the clip plays on A
-	await A.page.evaluate(({ uuid, walk }) => window.__stores.clipAssets.assignClipAsset(uuid, walk, { play: true }), { uuid, walk });
+	await A.page.evaluate(({ uuid, walk }) => window.__tp.test.v1.clipAssets.assignClipAsset(uuid, walk, { play: true }), { uuid, walk });
 	await h.eventually(() => animOf(A.page), (s) => s?.info?.some((c) => c.asset === walk.hash) && s.playing, 'M1: the clip is bound and playing on A');
 	const onA = await animOf(A.page);
 	const clipName = onA.info.find((c) => c.asset === walk.hash).name;
@@ -129,34 +129,34 @@ h.run(async () => {
 	h.check(pc && dot(pa, pc) > 0.99999, 'M1: the late joiner poses the same');
 	const ins = await C.page.evaluate((hash) => {
 		let rows;
-		window.__stores.transferLedger.transfers.subscribe((x) => (rows = x))();
+		window.__tp.test.v1.transferLedger.transfers.subscribe((x) => (rows = x))();
 		return (Array.isArray(rows) ? rows : Object.values(rows ?? {})).filter((r) => r?.hash === hash && r?.dir === 'in').length;
 	}, walk.hash);
 	h.check(ins <= 1, `M1: the clip travelled to the late joiner at most once (${ins} transfer)`);
 	await h.closePeer(C);
 
 	// undo/redo of the assignment replicate (one step each)
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => animOf(B.page), (s) => s && !s.info.some((c) => c.asset === walk.hash), 'M1: undo removes the clip on B');
-	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 	await h.eventually(() => animOf(B.page), (s) => s?.info?.some((c) => c.asset === walk.hash), 'M1: redo brings it back on B', 15000);
 
 	// saves: the entry names the clip by hash (and still carries the model's own bytes); the scene
 	// asset manifest lists it, so a .tpscene bundles it
 	const saved = await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		return s.animatedImports.animatedImportsSnapshot(g).find((e) => e.uuid === uuid);
 	}, uuid);
 	h.check(saved?.clipRefs?.length === 1 && saved.clipRefs[0].hash === walk.hash && !!saved.bytes, 'M1: the save entry carries clipRefs beside the model bytes');
 	await A.page.waitForTimeout(700); // the manifest recomputes on a 400 ms debounce
-	const manifest = await A.page.evaluate(() => window.__stores.sceneAssets.sceneAssetList());
+	const manifest = await A.page.evaluate(() => window.__tp.test.v1.sceneAssets.sceneAssetList());
 	h.check(manifest.some((a) => a.hash === walk.hash && a.kind === 'anim'), 'M1: the scene asset manifest lists the clip (bundled in a .tpscene)');
 
 	// restore from that entry on B (a reload stand-in): the clip is bound again from its hash
 	await B.page.evaluate(async (entry) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		await s.animatedImports.animatedImportsRestore([entry], false);
 	}, saved);
 	await h.eventually(() => animOf(B.page), (s) => s?.info?.some((c) => c.asset === walk.hash), 'M1: a restored save binds the clip again', 15000);

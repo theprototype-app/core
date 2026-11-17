@@ -14,11 +14,11 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 	const page = A.page;
-	await page.waitForFunction(() => !!window.__stores?.hudDocs, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.hudDocs, { timeout: 30000 });
 
 	// ---- 1. a fresh document normalizes to one screen ------------------------
 	const fresh = await page.evaluate(() => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		const doc = H.setHudDocFor('scene', {});
 		return {
 			screens: doc.screens.length,
@@ -33,7 +33,7 @@ h.run(async () => {
 
 	// ---- 2. element CRUD through the single write path -----------------------
 	const crud = await page.evaluate(() => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		const screen = H.hudDocOf('scene').screens[0].id;
 		const a = H.addHudElement('scene', screen, { kind: 'text', label: 'Gems: 0', anchor: 'top-right', x: 24, y: 24 });
 		const b = H.addHudElement('scene', screen, { kind: 'button', label: 'Start', anchor: 'center' });
@@ -65,7 +65,7 @@ h.run(async () => {
 	// The scenePost / normalizeAnnotation rule. A newer peer's element must ride through
 	// our editor untouched, because deleting it is silent data loss.
 	const unknown = await page.evaluate(() => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		const screen = H.hudDocOf('scene').screens[0].id;
 		const doc = H.hudDocOf('scene');
 		// craft a document the way a NEWER peer would send one
@@ -93,7 +93,7 @@ h.run(async () => {
 			screenExtra: back.screens[0].futureField,
 			// a bad anchor is CLAMPED (a rendering decision), unlike a kind
 			clampedAnchor: H.normalizeHudElement({ anchor: 'nowhere' }).anchor,
-			renderable: window.__stores.hudDocs.HUD_KINDS.includes('holotable')
+			renderable: window.__tp.test.v1.hudDocs.HUD_KINDS.includes('holotable')
 		};
 	});
 	h.check(unknown.kept, 'an element of an UNKNOWN kind is preserved verbatim, never deleted');
@@ -108,7 +108,7 @@ h.run(async () => {
 	// Date.now(), and the receiver's latest-wins guard then drops every one after the
 	// first — so a drag AND the undo after it silently fail to replicate.
 	const stamps = await page.evaluate(() => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		const screen = H.hudDocOf('scene').screens[0].id;
 		const el = H.hudDocOf('scene').screens[0].elements[0].id;
 		const out = [];
@@ -160,11 +160,11 @@ h.run(async () => {
 	// and the 21-A rule itself, which must NOT have moved: in play it is --z-hud, above
 	// the camera PiP and below modal/toast/menu
 	const playZ = await page.evaluate(async () => {
-		window.__stores.isLocked.set(true);
+		window.__tp.test.v1.isLocked.set(true);
 		await new Promise((r) => setTimeout(r, 800));
 		const el = document.querySelector('#hud-layer');
 		const z = el ? getComputedStyle(el).zIndex : null;
-		window.__stores.isLocked.set(null);
+		window.__tp.test.v1.isLocked.set(null);
 		await new Promise((r) => setTimeout(r, 600));
 		return z;
 	});
@@ -176,7 +176,7 @@ h.run(async () => {
 
 	// a BUTTON opts back into pointer events, and nothing else does
 	const clickThrough = await page.evaluate(() => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		const screen = H.hudDocOf('scene').screens[0].id;
 		const btn = H.addHudElement('scene', screen, {
 			kind: 'button',
@@ -208,7 +208,7 @@ h.run(async () => {
 
 	// ---- 6. screens: per-peer visibility is LOCAL, `active` is authored ------
 	const screensCheck = await page.evaluate(async () => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		const menu = H.addHudScreen('scene', 'Menu');
 		const first = H.hudDocOf('scene').screens[0].id;
 		H.addHudElement('scene', menu, { kind: 'text', label: 'MAIN MENU', anchor: 'center' });
@@ -257,7 +257,7 @@ h.run(async () => {
 
 	// ---- 7. the 9-grid places by anchor + PIXEL offset -----------------------
 	const grid = await page.evaluate(async () => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		H.setHudDocFor('scene', { screens: [{ id: 'g', name: 'g', elements: [] }], active: 'g' });
 		H.showHudScreen('scene', 'g');
 		const spec = [
@@ -318,7 +318,7 @@ h.run(async () => {
 
 	// ---- 8. the HUD survives PLAY MODE (outside {#if !$isLocked}) -----------
 	const play = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const before = !!document.querySelector('#hud-layer');
 		s.isLocked.set(true);
 		await new Promise((r) => setTimeout(r, 600));
@@ -333,7 +333,7 @@ h.run(async () => {
 
 	// and NOT in VR: DOM is invisible in a headset
 	const vr = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.isVRMode.set(true);
 		await new Promise((r) => setTimeout(r, 500));
 		const inVr = !!document.querySelector('#hud-layer');
@@ -346,7 +346,7 @@ h.run(async () => {
 
 	// ---- 9. delete + the history kind ---------------------------------------
 	const undoable = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const H = s.hudDocs;
 		const screen = H.hudDocOf('scene').screens[0].id;
 		const el = H.addHudElement('scene', screen, { kind: 'text', label: 'undo me' });
@@ -367,7 +367,7 @@ h.run(async () => {
 	h.check(undoable.redone === undoable.added, `and redo puts it back (${undoable.redone})`);
 
 	const deleted = await page.evaluate(async () => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		H.setHudDocFor('scene', null);
 		await new Promise((r) => setTimeout(r, 400));
 		return { doc: H.hudDocOf('scene'), layer: !!document.querySelector('#hud-layer') };
@@ -377,7 +377,7 @@ h.run(async () => {
 
 	// ---- 10. the gesture collapses a drag to ONE entry and ONE message ------
 	const gesture = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const H = s.hudDocs;
 		const sent = [];
 		const peer = await new Promise((r) => s.peers.subscribe((p) => r(p))());
@@ -428,7 +428,7 @@ h.run(async () => {
 	// redo restored `before` and silently did nothing. Measured on release/next: a shader
 	// graph went 2 nodes -> undo 1 -> redo 1. Both kinds are checked so neither regresses.
 	const shaderRedo = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const SG = s.shaderGraph;
 		SG.setShaderGraphFor('scene', { nodes: [{ id: 'n1', type: 'surface', data: {} }], edges: [] });
 		await new Promise((r) => setTimeout(r, 300));

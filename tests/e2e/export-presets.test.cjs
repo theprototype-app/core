@@ -30,7 +30,7 @@ h.run(async () => {
 		const waiting = page.waitForEvent('download', { timeout: 180000 }).catch(async (error) => {
 			const why = await page.evaluate(() => {
 				let t;
-				window.__stores.toastStore.subscribe((x) => (t = x))();
+				window.__tp.test.v1.toastStore.subscribe((x) => (t = x))();
 				return t.map((x) => (typeof x === 'string' ? x : x.text));
 			});
 			console.log('download never came; toasts: ' + JSON.stringify(why));
@@ -42,56 +42,56 @@ h.run(async () => {
 	}
 
 	// ---- 1 the choice --------------------------------------------------------------------------
-	await page.evaluate(() => window.__stores.saveOptions.saveOptionsOpen.set(true));
+	await page.evaluate(() => window.__tp.test.v1.saveOptions.saveOptionsOpen.set(true));
 	await h.eventually(() => page.locator('#save-options-modal #export-preset-quest').count(), (n) => n > 0, '1.1 Save options shows "Optimize for"', 15000);
 	await page.locator('#export-preset-quest').click();
 	await page.locator('#save-options-cancel').click();
 	const cancelled = await page.evaluate(() => localStorage.getItem('exportPreset'));
 	h.check(cancelled !== 'quest', '1.2 Cancel forgets the draft (stored: ' + cancelled + ')');
 	// the modal's Save would also save a file: remember the choice through the store's own writer
-	await page.evaluate(() => window.__stores.saveOptions.setSaveOptions({ exportPreset: 'quest', showGltf: true }));
+	await page.evaluate(() => window.__tp.test.v1.saveOptions.setSaveOptions({ exportPreset: 'quest', showGltf: true }));
 	h.check((await page.evaluate(() => localStorage.getItem('exportPreset'))) === 'quest', '1.3 the choice is stored on this device (exportPreset = quest)');
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.settingsSection.set('export');
 		s.settingsOpen.set(true);
 	});
 	await h.eventually(() => page.locator('#export-optimize-quest').count(), (n) => n > 0, '1.4 Settings ▸ Export has the same "Optimize for" row', 15000);
 	h.check((await page.locator('#export-optimize-quest').getAttribute('aria-checked')) === 'true', '1.5 …showing the same choice (For Quest / web)');
 	h.check((await page.locator('#export-compress-textures').count()) === 0, '1.6 the deferred "Compress textures (not available yet)" row is gone');
-	await page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 
 	// ---- the scene: a heavy model kept heavy (auto-optimize off for this run) -------------------
-	await page.evaluate(() => window.__stores.importOptimize.setImportSettings({ auto: false }));
+	await page.evaluate(() => window.__tp.test.v1.importOptimize.setImportSettings({ auto: false }));
 	const uuid = await page.evaluate(async (b64) => {
 		const raw = atob(b64);
 		const bytes = new Uint8Array(raw.length);
 		for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
-		return window.__stores.fileHandler.importFile(new File([bytes], 'Heavy.glb'), 'Heavy', 'glb', [0, 1, 0]);
+		return window.__tp.test.v1.fileHandler.importFile(new File([bytes], 'Heavy.glb'), 'Heavy', 'glb', [0, 1, 0]);
 	}, heavy);
 	const premise = await page.evaluate((u) => {
 		let v;
-		window.__stores.objectsGroup.subscribe((x) => (v = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (v = x))();
 		const root = v.getObjectByProperty('uuid', u);
 		let w = 0;
 		root.traverse((o) => o.isMesh && (w = o.material.map?.image?.width ?? 0));
 		return { w, lod: !!root.userData.lod };
 	}, uuid);
 	h.check(premise.w === 4096 && !premise.lod, '0.1 (premise) the scene holds the heavy model as it came (4096 px, no LOD group)');
-	await page.evaluate((u) => window.__stores.objectActions.selectObject(u), uuid);
+	await page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), uuid);
 
 	// ---- 2 GLTF ----------------------------------------------------------------------------------
-	await page.evaluate(() => window.__stores.saveOptions.setSaveOptions({ exportPreset: 'full' }));
-	const full = await download(() => window.__stores.fileHandler.save('gltf'));
+	await page.evaluate(() => window.__tp.test.v1.saveOptions.setSaveOptions({ exportPreset: 'full' }));
+	const full = await download(() => window.__tp.test.v1.fileHandler.save('gltf'));
 	h.check(/\.gltf$/.test(full.name), '2.1 Full quality writes today\'s .gltf (' + full.name + ', ' + full.bytes.length + ' B)');
-	await page.evaluate(() => window.__stores.saveOptions.setSaveOptions({ exportPreset: 'quest' }));
-	const quest = await download(() => window.__stores.fileHandler.save('gltf'));
+	await page.evaluate(() => window.__tp.test.v1.saveOptions.setSaveOptions({ exportPreset: 'quest' }));
+	const quest = await download(() => window.__tp.test.v1.fileHandler.save('gltf'));
 	h.check(/-quest\.glb$/.test(quest.name), '2.2 For Quest / web writes a .glb (' + quest.name + ')');
 	// the report is set right after the download starts: wait for it
 	const readReport = (kind) =>
 		page.evaluate((k) => {
 			let v;
-			window.__stores.fileHandler.lastExportReport.subscribe((x) => (v = x))();
+			window.__tp.test.v1.fileHandler.lastExportReport.subscribe((x) => (v = x))();
 			return v?.kind === k ? v : null;
 		}, kind);
 	await h.eventually(() => readReport('gltf'), (v) => !!v, '2.2b the GLTF export reported its numbers', 30000);
@@ -102,7 +102,7 @@ h.run(async () => {
 	h.check(q.json.images.every((i) => i.mimeType === 'image/ktx2'), '2.5 every image is KTX2');
 	fs.writeFileSync(evidence + '/export-gltf-report.json', JSON.stringify({ full: full.bytes.length, quest: quest.bytes.length, report: rep.report }, null, 2));
 	const back = await page.evaluate(async (arr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const u = await s.fileHandler.importFile(new File([new Uint8Array(arr)], 'Back.glb'), 'Back', 'glb', [4, 1, 0]);
 		let v;
 		s.objectsGroup.subscribe((x) => (v = x))();
@@ -125,13 +125,13 @@ h.run(async () => {
 		return { tris, maps: maps.map((m) => ({ w: m.image.width, ...s.ktx2Twins.twinState(m) })), uuid: u };
 	}, Array.from(quest.bytes));
 	h.check(back.tris === 65024 && back.maps.length === 1 && back.maps[0].w === 2048 && back.maps[0].ready && back.maps[0].uploadedCompressed, '2.6 the Quest/web .glb LOADS BACK: meshopt decoded (65024 tris), the KTX2 texture transcoded and on the GPU compressed: ' + JSON.stringify(back.maps));
-	await page.evaluate((u) => window.__stores.objectActions.deleteObjectsByUuid([u]), back.uuid);
+	await page.evaluate((u) => window.__tp.test.v1.objectActions.deleteObjectsByUuid([u]), back.uuid);
 
 	// ---- 3 .tpscene --------------------------------------------------------------------------------
-	await page.evaluate(() => window.__stores.saveOptions.setSaveOptions({ exportPreset: 'full' }));
-	const sceneFull = await download(() => window.__stores.fileHandler.save('tpscene'));
-	await page.evaluate(() => window.__stores.saveOptions.setSaveOptions({ exportPreset: 'quest' }));
-	const sceneQuest = await download(() => window.__stores.fileHandler.save('tpscene'));
+	await page.evaluate(() => window.__tp.test.v1.saveOptions.setSaveOptions({ exportPreset: 'full' }));
+	const sceneFull = await download(() => window.__tp.test.v1.fileHandler.save('tpscene'));
+	await page.evaluate(() => window.__tp.test.v1.saveOptions.setSaveOptions({ exportPreset: 'quest' }));
+	const sceneQuest = await download(() => window.__tp.test.v1.fileHandler.save('tpscene'));
 	h.check(/-quest\.tpscene$/.test(sceneQuest.name) && sceneQuest.bytes.length < sceneFull.bytes.length, '3.1 the Quest/web .tpscene is smaller: ' + sceneFull.bytes.length + ' -> ' + sceneQuest.bytes.length + ' B (' + sceneQuest.name + ')');
 	const zip = unzipSync(new Uint8Array(sceneQuest.bytes));
 	const session = JSON.parse(strFromU8(zip['session.json']));
@@ -154,7 +154,7 @@ h.run(async () => {
 	fs.writeFileSync(evidence + '/export-tpscene-report.json', JSON.stringify({ full: sceneFull.bytes.length, quest: sceneQuest.bytes.length, report: sRep.report }, null, 2));
 	// load it back
 	const loaded = await page.evaluate(async (arr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 		await s.sessions.applySession(payload, { backup: false, replicate: false });
 		let v;

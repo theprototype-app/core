@@ -20,7 +20,7 @@ h.run(async () => {
 	const g = (expr) => page.evaluate(expr);
 	const read = () =>
 		page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const g1 = (st) => {
 				let v;
 				st?.subscribe?.((x) => (v = x))();
@@ -48,7 +48,7 @@ h.run(async () => {
 	};
 
 	console.log('\n=== R8 hold-to-menu: release over a ring sector ===');
-	await g(() => window.__stores.vrMenuHold.set(true));
+	await g(() => window.__tp.test.v1.vrMenuHold.set(true));
 	await xr.button(page, hand, 5, true);
 	await settle();
 	await stickTo(hand, 1); // Add ▸
@@ -61,7 +61,7 @@ h.run(async () => {
 	st = await read();
 	h.check(st.open && st.ring === 'add', `release over Add ▸ opens the Add ring and keeps it up (open ${st.open}, ring ${st.ring})`);
 	// a leaf under the released stick acts and closes: Chat (sector 6 of the root)
-	await g(() => window.__stores.vrRadialMenu.resetRings());
+	await g(() => window.__tp.test.v1.vrRadialMenu.resetRings());
 	await xr.button(page, hand, 5, true);
 	await settle();
 	await stickTo(hand, 6);
@@ -72,14 +72,14 @@ h.run(async () => {
 	st = await read();
 	h.check(!st.open && st.chat && st.ring === 'root', `release over a leaf acts and closes (chat ${st.chat}, open ${st.open}, ring ${st.ring})`);
 	await g(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.vrChatPanelOpen.set(false);
 		s.vrMenuHold.set(false);
 	});
 
 	console.log('\n=== R9 Settings ▸ All settings: the panel takes the pointer ===');
 	await g(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.vrMenuOpen.set(true);
 		s.vrControls.executeVRMenuAction('nav:settings');
 		s.vrControls.executeVRMenuAction('settings');
@@ -89,7 +89,7 @@ h.run(async () => {
 	h.check(st.settings && !st.open, `All settings opens the panel and closes the ring (panel ${st.settings}, ring open ${st.open})`);
 	// aim the pointer hand straight at the Teleport row (the panel sits where it mounted: no real session)
 	const row = await g(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let grp;
 		s.vrControls.vrSettingsGroup.subscribe((v) => (grp = v))();
 		const mesh = grp?.getObjectByName('vrsettings-vrset:teleport');
@@ -105,12 +105,12 @@ h.run(async () => {
 		await settle(300);
 		st = await read();
 		h.check(st.hov === 'vrset:teleport', `the pointer hovers the panel row (${st.hov})`);
-		const before = await g(() => window.__stores.vrSettingsSchema.vrSettingRow('teleport').get());
+		const before = await g(() => window.__tp.test.v1.vrSettingsSchema.vrSettingRow('teleport').get());
 		await xr.button(page, other, 3, true); // a stick press presses what the ray holds
 		await settle();
 		await xr.button(page, other, 3, false);
 		await settle();
-		const after = await g(() => window.__stores.vrSettingsSchema.vrSettingRow('teleport').get());
+		const after = await g(() => window.__tp.test.v1.vrSettingsSchema.vrSettingRow('teleport').get());
 		h.check(before !== after, `pressing it flips Teleport (${before} → ${after})`);
 		await xr.pose(page, other, [0.3, 1.1, 0.6], { pitch: -1.3 });
 		await settle();
@@ -118,7 +118,7 @@ h.run(async () => {
 
 	console.log('\n=== S23 the panel stick cursor ===');
 	await g(() => {
-		const s = window.__stores.vrSettingsSchema;
+		const s = window.__tp.test.v1.vrSettingsSchema;
 		s.vrSettingsPage.set('comfort');
 		s.vrSettingsCursor.set(0);
 	});
@@ -132,7 +132,7 @@ h.run(async () => {
 	// 260 ms hold could legitimately step twice when the first step landed early: release on the first step
 	const cursorNow = () => g(() => {
 		let v;
-		window.__stores.vrSettingsSchema.vrSettingsCursor.subscribe((x) => (v = x))();
+		window.__tp.test.v1.vrSettingsSchema.vrSettingsCursor.subscribe((x) => (v = x))();
 		return v;
 	});
 	const c0 = await cursorNow();
@@ -148,25 +148,25 @@ h.run(async () => {
 	// on Stance so the next check tests left/right on a choice, whatever the frame timing was
 	h.check(st.cursor >= c0 + 1, `down moves the cursor down (${c0} → ${st.cursor})`);
 	await g(() => {
-		const s = window.__stores.vrSettingsSchema;
+		const s = window.__tp.test.v1.vrSettingsSchema;
 		s.vrSettingsCursor.set(s.settingsPanelRows('body').findIndex((r) => r.rowId === 'stance'));
 	});
 	await settle(100);
-	const stance0 = await g(() => window.__stores.vrSettingsSchema.vrSettingRow('stance').get());
+	const stance0 = await g(() => window.__tp.test.v1.vrSettingsSchema.vrSettingRow('stance').get());
 	await xr.stick(page, hand, 1, 0); // right on a choice: next value
 	await settle(260);
 	await xr.stick(page, hand, 0, 0);
 	await settle(260);
-	const stance1 = await g(() => window.__stores.vrSettingsSchema.vrSettingRow('stance').get());
+	const stance1 = await g(() => window.__tp.test.v1.vrSettingsSchema.vrSettingRow('stance').get());
 	h.check(stance0 === 'standing' && stance1 === 'seated', `right on Stance cycles it (${stance0} → ${stance1})`);
-	await g(() => window.__stores.vrPrefs.vrStance.set('standing'));
-	await g(() => window.__stores.vrSettingsPanelOpen.set(false));
+	await g(() => window.__tp.test.v1.vrPrefs.vrStance.set('standing'));
+	await g(() => window.__tp.test.v1.vrSettingsPanelOpen.set(false));
 	await settle();
 
 	console.log('\n=== S3 smooth turning, S5 the vignette — outside any game ===');
 	await xr.installSpace(page, { head: [0, 1.6, 0] });
 	await g(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.vrSettingsSchema.vrSettingRow('turning').set('smooth');
 		s.vrPrefs.vrComfortVignette.set(true);
 	});
@@ -183,7 +183,7 @@ h.run(async () => {
 	await xr.stick(page, 'left', 0, -1); // the MOVE stick pushed: the vignette closes in
 	await settle(200);
 	const vig = await g(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const k = s.gameKit.comfortVignette;
 		const T = s.THREE;
 		const head = { position: new T.Vector3(0, 1.6, 0), quaternion: new T.Quaternion() };
@@ -197,23 +197,23 @@ h.run(async () => {
 	await xr.stick(page, 'left', 0, 0);
 	h.check(vig.on.visible && vig.on.strength > 0.5, `the device vignette rings while the move stick moves you, in Edit (${vig.on.strength.toFixed(2)})`);
 	h.check(!vig.off.visible && vig.off.strength === 0, 'switched off: no ring');
-	await g(() => window.__stores.vrSettingsSchema.vrSettingRow('turning').set('snap'));
+	await g(() => window.__tp.test.v1.vrSettingsSchema.vrSettingRow('turning').set('snap'));
 
 	console.log('\n=== Body: seated + height ===');
 	await xr.installSpace(page, { head: [0, 1.15, 0] }); // a seated player's head
 	await settle(200);
 	const seated0 = await xr.head(page);
-	await g(() => window.__stores.vrPrefs.vrStance.set('seated'));
+	await g(() => window.__tp.test.v1.vrPrefs.vrStance.set('seated'));
 	await settle(300);
 	const seated1 = await xr.head(page);
 	h.check(Math.abs(seated0.y - 1.15) < 0.01 && Math.abs(seated1.y - 1.6) < 0.02, `seated lifts the eye to a standing height (${seated0.y.toFixed(2)} → ${seated1.y.toFixed(2)} m)`);
-	await g(() => window.__stores.vrSettingsSchema.activateVRSetting('height', 1));
-	await g(() => window.__stores.vrSettingsSchema.activateVRSetting('height', 1));
+	await g(() => window.__tp.test.v1.vrSettingsSchema.activateVRSetting('height', 1));
+	await g(() => window.__tp.test.v1.vrSettingsSchema.activateVRSetting('height', 1));
 	await settle(300);
 	const seated2 = await xr.head(page);
 	h.check(Math.abs(seated2.y - 1.7) < 0.02, `Height +10 cm on top (${seated2.y.toFixed(2)} m)`);
 	// Interact: the walker keeps the FEET on the floor (the lift counts as height, gravity does not undo it)
-	await g(() => window.__stores.objectActions.setEditorMode('interact'));
+	await g(() => window.__tp.test.v1.objectActions.setEditorMode('interact'));
 	await xr.stick(page, 'left', 0, -1);
 	await settle(500);
 	await xr.stick(page, 'left', 0, 0);
@@ -221,7 +221,7 @@ h.run(async () => {
 	const walked = await xr.head(page);
 	h.check(Math.abs(walked.y - 1.7) < 0.03 && walked.z < -0.2, `walking in Interact keeps the lifted eye (y ${walked.y.toFixed(2)}, moved z ${walked.z.toFixed(2)})`);
 	await g(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.objectActions.setEditorMode('edit');
 		s.vrPrefs.vrStance.set('standing');
 		s.vrPrefs.vrHeightOffset.set(0);
@@ -231,12 +231,12 @@ h.run(async () => {
 	h.check(Math.abs(standing.y - 1.15) < 0.03, `Standing + 0 cm puts the eye back on the real head (${standing.y.toFixed(2)} m)`);
 
 	console.log('\n=== R1 + T1: icons, tour ids ===');
-	await g(() => window.__stores.vrSettingsPanelOpen.set(false));
-	await g(() => window.__stores.vrTourTargets.openRadialAt('settings:comfort'));
+	await g(() => window.__tp.test.v1.vrSettingsPanelOpen.set(false));
+	await g(() => window.__tp.test.v1.vrTourTargets.openRadialAt('settings:comfort'));
 	await settle(500);
 	const tour = await g(() => {
-		const t = window.__stores.vrTourTargets;
-		const s = window.__stores;
+		const t = window.__tp.test.v1.vrTourTargets;
+		const s = window.__tp?.test.v1;
 		let menu;
 		s.globalScene.subscribe((v) => (menu = v?.getObjectByName('vr-quick-menu')))();
 		let icons = 0;
@@ -257,14 +257,14 @@ h.run(async () => {
 	});
 	h.check(tour.ring === 'settings:comfort' && tour.turning && tour.hub, `openRadialAt lands on Comfort and its sectors resolve by tour id (${tour.ids.length} ids)`);
 	h.check(tour.icons >= 7, `every Comfort sector draws its icon (${tour.icons} textured icons)`);
-	await g(() => window.__stores.vrMenuOpen.set(false));
+	await g(() => window.__tp.test.v1.vrMenuOpen.set(false));
 	await settle(300);
-	const gone = await g(() => window.__stores.vrTourTargets.vrTourTarget('radial:set:turning'));
+	const gone = await g(() => window.__tp.test.v1.vrTourTargets.vrTourTarget('radial:set:turning'));
 	h.check(gone === null, 'a closed ring has no tour targets');
 
 	console.log('\n=== plan 55: remap in desktop Settings ▸ VR ▸ Controls, reload, the headset follows ===');
 	await xr.uninstall(page);
-	await g(() => window.__stores.settingsOpen.set(true));
+	await g(() => window.__tp.test.v1.settingsOpen.set(true));
 	await settle(500);
 	await page.locator('#settings-nav .sn-row', { hasText: 'VR' }).first().click();
 	await settle(500);
@@ -278,22 +278,22 @@ h.run(async () => {
 	await page.locator('#vr-bind-move-hand-right').click();
 	await settle(300);
 	h.check((await page.locator('#vr-bind-conflict').count()) === 1, 'moving Move onto the right stick warns: Turn + Teleport are there');
-	const refused = await g(() => window.__stores.vrBindings.bindingOf('move').hand);
+	const refused = await g(() => window.__tp.test.v1.vrBindings.bindingOf('move').hand);
 	h.check(refused === 'left', `nothing changes until you choose (move still ${refused})`);
 	await page.locator('#vr-bind-swap').click();
 	await settle(300);
-	const swapped = await g(() => ({ move: window.__stores.vrBindings.handOf('move'), turn: window.__stores.vrBindings.handOf('turn'), teleport: window.__stores.vrBindings.handOf('teleport') }));
+	const swapped = await g(() => ({ move: window.__tp.test.v1.vrBindings.handOf('move'), turn: window.__tp.test.v1.vrBindings.handOf('turn'), teleport: window.__tp.test.v1.vrBindings.handOf('teleport') }));
 	h.check(swapped.move === 'right' && swapped.turn === 'left' && swapped.teleport === 'left', `Swap: move → right, turn + teleport → left (${JSON.stringify(swapped)})`);
 	await h.freshReload(A);
 	await settle(1500);
-	const afterReload = await g(() => ({ move: window.__stores.vrBindings.handOf('move'), turn: window.__stores.vrBindings.handOf('turn') }));
+	const afterReload = await g(() => ({ move: window.__tp.test.v1.vrBindings.handOf('move'), turn: window.__tp.test.v1.vrBindings.handOf('turn') }));
 	h.check(afterReload.move === 'right' && afterReload.turn === 'left', `the remap survives a reload (${JSON.stringify(afterReload)})`);
 	// …and the headset follows it: the RIGHT stick walks, the LEFT stick turns
 	await xr.install(page);
 	await xr.pose(page, 'left', [-0.3, 1.1, 0.6], { pitch: -1.3 });
 	await xr.pose(page, 'right', [0.3, 1.1, 0.6], { pitch: -1.3 });
 	await xr.installSpace(page, { head: [0, 1.6, 0] });
-	await g(() => window.__stores.objectActions.setEditorMode('interact'));
+	await g(() => window.__tp.test.v1.objectActions.setEditorMode('interact'));
 	await xr.stick(page, 'right', 0, -1);
 	await settle(500);
 	await xr.stick(page, 'right', 0, 0);
@@ -307,7 +307,7 @@ h.run(async () => {
 	const yawB = (await xr.head(page)).yaw;
 	h.check(Math.abs(yawB - yawA) > 0.5, `…and the LEFT stick turns (yaw ${yawA.toFixed(2)} → ${yawB.toFixed(2)})`);
 	// menu → A (swap with talk): the right A opens the radial
-	await g(() => window.__stores.vrBindings.setBinding('menu', { control: 'primary' }, { swap: true }));
+	await g(() => window.__tp.test.v1.vrBindings.setBinding('menu', { control: 'primary' }, { swap: true }));
 	await xr.button(page, 'right', 4, true);
 	await settle();
 	await xr.button(page, 'right', 4, false);
@@ -315,7 +315,7 @@ h.run(async () => {
 	st = await read();
 	h.check(st.open, `menu on A: the right A opens the radial (${st.open})`);
 	await g(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.vrMenuOpen.set(false);
 		s.vrBindings.resetBindings();
 		s.objectActions.setEditorMode('edit');

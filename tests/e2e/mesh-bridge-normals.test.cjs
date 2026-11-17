@@ -12,7 +12,7 @@ const h = require('./helpers.cjs');
 /** every triangle as {centroid, normal}, in object space */
 const trisOf = (page) =>
 	page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		return fe.readTriangles(window.__box.geometry).map((t) => {
 			const c = t[0].clone().add(t[1]).add(t[2]).multiplyScalar(1 / 3);
 			const n = t[1].clone().sub(t[0]).cross(t[2].clone().sub(t[0])).normalize();
@@ -23,7 +23,7 @@ const trisOf = (page) =>
 /** odd (non-manifold) edge count — a bridge must stay watertight either way */
 const oddEdges = (page) =>
 	page.evaluate(() => {
-		const tris = window.__stores.faceEdit.readTriangles(window.__box.geometry);
+		const tris = window.__tp.test.v1.faceEdit.readTriangles(window.__box.geometry);
 		const keyOf = (v) => [v.x, v.y, v.z].map((n) => Math.round(n * 1e4)).join(',');
 		const counts = new Map();
 		for (const t of tris) {
@@ -46,7 +46,7 @@ h.run(async () => {
 	// (the walls land exactly on the cube's own sides), and it is not what a user does —
 	// the report came from a SUBDIVIDED cube, i.e. two parallel quads smaller than the face.
 	const hole = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		s.commandsHandler.sceneCommand('/create Box 1 1 1');
 		let g;
@@ -108,7 +108,7 @@ h.run(async () => {
 	);
 	// ===================== 2. TWO shells: the facing caps = an exterior TUBE
 	const tube = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		fe.exitFaceEdit();
 		s.commandsHandler.sceneCommand('/create Box 1 1 1');
@@ -164,7 +164,7 @@ h.run(async () => {
 	// straight — and the tunnel must still close watertight.
 	const straightRails = (page) =>
 		page.evaluate(() => {
-			const tris = window.__stores.faceEdit.readTriangles(window.__box.geometry);
+			const tris = window.__tp.test.v1.faceEdit.readTriangles(window.__box.geometry);
 			let straight = 0;
 			const seen = new Set();
 			for (const t of tris)
@@ -192,7 +192,7 @@ h.run(async () => {
 	const straight0 = await straightRails(A.page);
 	h.check(straight0 === 4, `twist 0 pairs the aligned corners — 4 straight rails (${straight0})`);
 	const twisted = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		fe.exitFaceEdit();
 		s.commandsHandler.sceneCommand('/create Box 1 1 1');
@@ -246,7 +246,7 @@ h.run(async () => {
 	// opposite normal, and "did every wall flip" is a per-wall question.
 	const bridgeRun = (page, options) =>
 		page.evaluate((options) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const fe = s.faceEdit;
 			fe.exitFaceEdit?.();
 			s.commandsHandler.sceneCommand('/create Box 1 1 1');
@@ -342,7 +342,7 @@ h.run(async () => {
 	// a winding flip reorders a triangle's vertices without moving one of them,
 	// so a plain position sum cannot see it.
 	const live = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		fe.exitFaceEdit?.();
 		s.commandsHandler.sceneCommand('/create Box 1 1 1');
@@ -415,6 +415,6 @@ h.run(async () => {
 	);
 	h.check(live.paramInvert === false, 'opAdjustState mirrors the coerced invert flag');
 
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit?.());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit?.());
 	await h.finish(browser);
 });

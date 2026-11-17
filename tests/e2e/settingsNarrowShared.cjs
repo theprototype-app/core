@@ -26,7 +26,7 @@ const THEME = process.env.THEME || '';
 /** @param {any} page @param {string} key */
 async function open(page, key) {
 	await page.evaluate((k) => {
-		const s = /** @type {any} */ (window).__stores;
+		const s = /** @type {any} */ (window).__tp?.test.v1;
 		s.settingsOpen.set(false);
 		s.settingsSection.set(k);
 		s.settingsOpen.set(true);
@@ -73,7 +73,7 @@ h.run(async () => {
 		const P = await h.setupPage(browser, size, { context });
 		const page = P.page;
 		await page.addStyleTag({ content: '*{transition:none!important;animation:none!important}' });
-		if (THEME) await page.evaluate((th) => /** @type {any} */ (window).__stores.themes.theme.set(th), THEME);
+		if (THEME) await page.evaluate((th) => /** @type {any} */ (window).__tp.test.v1.themes.theme.set(th), THEME);
 		let rows = 0;
 		const bad = [];
 		for (const key of PAGES) {

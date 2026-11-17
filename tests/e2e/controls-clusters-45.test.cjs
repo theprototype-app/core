@@ -50,7 +50,7 @@ const atEngineBox = async (page, sel, id, drop, near = 40) => {
 	const b = await page.evaluate((i) => window.__clusters?.boxes?.[i] ?? null, id);
 	return { ok: !!r && !!b && Math.abs(r.left - b.left) <= 1 && Math.abs(r.top - b.top) <= 1 && Math.abs(r.cx - drop.cx) <= near && Math.abs(r.cy - drop.cy) <= near, r, b };
 };
-const store = (page, name) => page.evaluate((n) => { let v; window.__stores[n].subscribe((x) => (v = x))(); return v; }, name);
+const store = (page, name) => page.evaluate((n) => { let v; window.__tp.test.v1[n].subscribe((x) => (v = x))(); return v; }, name);
 async function touchKit(P) {
 	const cdp = await P.context().newCDPSession(P);
 	const touch = (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 1 }] });
@@ -108,7 +108,7 @@ const gripMenu = async (P, id, kit) => {
 };
 async function sidebar(page, { side = 'right', open = true, full = false, w = 320 } = {}) {
 	await page.evaluate(({ side, open, full, w }) => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		S.sidebars.inspectorSide.set(side);
 		S.inspectorKind.set('scene');
 		S.inspectorClose.set(!open);
@@ -330,7 +330,7 @@ h.run(async () => {
 		// (3) the rects one frame later and (4) settled (700 ms). Under a transition (2) is the OLD place.
 		const STEP = async (P, step) =>
 			P.evaluate(async (step) => {
-				const S = window.__stores;
+				const S = window.__tp?.test.v1;
 				const SELS = ['#logo-menu', '#touch-tools', '#hud-tr', '#avatar-trigger', '.connect-pill'];
 				const read = () => Object.fromEntries(SELS.map((s) => {
 					const r = document.querySelector(s)?.getBoundingClientRect();
@@ -379,7 +379,7 @@ h.run(async () => {
 			const A = await open('n3-' + label, opts);
 			const P = A.page;
 			const T = `[${label}] `;
-			await P.evaluate(() => window.__stores.touchTools.set(true));
+			await P.evaluate(() => window.__tp.test.v1.touchTools.set(true));
 			await P.waitForTimeout(500);
 			let before = (await STEP(P, 'none')).settled;
 			for (const [step, movers] of [['pin-left', ['#logo-menu', '#touch-tools']], ['pin-right', ['#logo-menu', '#hud-tr', '#avatar-trigger']], ['close', ['#hud-tr', '#avatar-trigger']]]) {
@@ -429,7 +429,7 @@ h.run(async () => {
 			h.check(!!d && Math.abs(d.right - t.right) <= 1 && d.top <= t.bottom + 4 && d.bottom > t.bottom, T + `N4: pinned right sidebar — the menu opens next to the moved circle (menu right ${d ? Math.round(d.right) : '?'}, circle right ${Math.round(t.right)})`);
 			await shot(P, `n4-${label}-pinned`);
 			// the sidebar unpinned while the menu is open: the menu follows the circle back
-			await P.evaluate(() => window.__stores.sidebars.toggleSidebarFull('right', false));
+			await P.evaluate(() => window.__tp.test.v1.sidebars.toggleSidebarFull('right', false));
 			await P.waitForTimeout(600);
 			t = await rect(P, '#avatar-trigger');
 			d = await rect(P, '#avatar-dropdown');

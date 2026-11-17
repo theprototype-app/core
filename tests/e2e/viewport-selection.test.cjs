@@ -18,7 +18,7 @@ h.run(async () => {
 
 	// ---------- K3: creation populates the selection set ----------
 	const created = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		window.__k = { box1: g.children[g.children.length - 1] };
@@ -35,17 +35,17 @@ h.run(async () => {
 	await h.eventually(outline, (o) => o.selected === 1, 'a fresh creation is outlined');
 
 	// ---------- K1: deselect clears the outline ----------
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await h.eventually(outline, (o) => o.selected === 0, 'deselect clears the outline');
 	// the sticky primary is STILL the box (by design) — but no outline
 	const sticky = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.selectedObject.subscribe((v) => r(v?.uuid))())
+		() => new Promise((r) => window.__tp.test.v1.selectedObject.subscribe((v) => r(v?.uuid))())
 	);
 	h.check(sticky === created.uuid, 'selectedObject still keeps the last object (inspector contract)');
 
 	// ---------- K2: a multi-selection outlines every member ----------
 	const multi = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Sphere 0.5');
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
@@ -60,7 +60,7 @@ h.run(async () => {
 
 	// ---------- K2: a GROUP outlines all child meshes ----------
 	const grouped = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.objectActions.groupSelection();
 		await new Promise((r) => setTimeout(r, 250));
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
@@ -77,7 +77,7 @@ h.run(async () => {
 
 	// ---------- K2: peer-locked GROUPS get the same traversal ----------
 	const locked = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.objectActions.deselectObject();
 		w.lockedObjects.set([['fake-peer', window.__k.group.uuid]]);
 		await new Promise((r) => setTimeout(r, 150));
@@ -85,11 +85,11 @@ h.run(async () => {
 	});
 	h.check(locked, 'group peer-locked');
 	await h.eventually(outline, (o) => o.locked === 3 && o.selected === 0, 'a locked group outlines its meshes too');
-	await A.page.evaluate(() => window.__stores.lockedObjects.set([]));
+	await A.page.evaluate(() => window.__tp.test.v1.lockedObjects.set([]));
 
 	// ---------- K4 + K3: Ctrl+D right after create still duplicates ----------
 	const dupAfterCreate = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const before = g.children.length;
 		w.commandsHandler.sceneCommand('/create Cone 0.5 1');
@@ -105,7 +105,7 @@ h.run(async () => {
 
 	// ---------- K4: Ctrl+D with nothing selected toasts, creates nothing ----------
 	const dupEmpty = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.objectActions.deselectObject();
 		await new Promise((r) => setTimeout(r, 150));
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
@@ -125,7 +125,7 @@ h.run(async () => {
 	// viewing a peer-locked object may still duplicate (an editable copy) —
 	// the deliberate empty-set-with-primary state
 	const dupLockedView = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const target = g.children[0];
 		w.lockedObjects.set([['fake-peer', target.uuid]]);
@@ -144,18 +144,18 @@ h.run(async () => {
 
 	// ---------- 16-P6: the viewport menu's "Selected" follows the SET ----------
 	const menuLabels = async () => {
-		await A.page.evaluate(() => window.__stores.viewportMenu.set({ x: 220, y: 140, point: [0, 0, 0] }));
+		await A.page.evaluate(() => window.__tp.test.v1.viewportMenu.set({ x: 220, y: 140, point: [0, 0, 0] }));
 		await A.page.waitForTimeout(350);
 		const labels = await A.page.evaluate(() =>
 			[...document.querySelectorAll('[role="menu"] [role="menuitem"]')].map((r) => r.textContent?.trim() ?? '')
 		);
-		await A.page.evaluate(() => window.__stores.viewportMenu.set(null));
+		await A.page.evaluate(() => window.__tp.test.v1.viewportMenu.set(null));
 		await A.page.waitForTimeout(150);
 		return labels;
 	};
 
 	await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		w.objectActions.selectObject(g.children[0].uuid);
 	});
@@ -166,7 +166,7 @@ h.run(async () => {
 		'right-clicking empty space WITH a selection still offers "Selected"'
 	);
 
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await A.page.waitForTimeout(200);
 	const afterDeselect = await menuLabels();
 	h.check(
@@ -184,10 +184,10 @@ h.run(async () => {
 	// drive REAL clicks: a store-level selectObject call never touches that path.
 	const setOf = () =>
 		A.page.evaluate(
-			() => new Promise((r) => window.__stores.selectedObjects.subscribe((s) => r([...(s ?? [])]))())
+			() => new Promise((r) => window.__tp.test.v1.selectedObjects.subscribe((s) => r([...(s ?? [])]))())
 		);
 	const trio = await A.page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const out = [];
 		let g;
 		for (const x of [-2.5, 0, 2.5]) {
@@ -201,7 +201,7 @@ h.run(async () => {
 		w.objectActions.deselectObject();
 		return out;
 	});
-	await A.page.evaluate(() => window.__stores.objectActions.flyTo([0, 4, 9], [0, 0.5, 0], 1));
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.flyTo([0, 4, 9], [0, 0.5, 0], 1));
 	await A.page.waitForTimeout(900);
 	let pageErrors = 0;
 	A.page.on('pageerror', () => pageErrors++);
@@ -209,7 +209,7 @@ h.run(async () => {
 	const clickBox = async (uuid, shift) => {
 		const at = await A.page.evaluate((u) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const o = g.getObjectByProperty('uuid', u);
 			return [o.position.x, o.position.y, o.position.z];
 		}, uuid);
@@ -240,11 +240,11 @@ h.run(async () => {
 	h.check((await setOf()).length === 1, 'a plain click collapses the set again');
 	h.check(pageErrors === 0, `no page errors during the shift gestures (${pageErrors})`);
 	// member tints are a live highlight, never baked material state
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await A.page.waitForTimeout(300);
 	const emissives = await A.page.evaluate((list) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return list.map((u) => {
 			const o = g.getObjectByProperty('uuid', u);
 			return '#' + (o?.material?.emissive?.getHexString() ?? '??');

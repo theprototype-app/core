@@ -22,8 +22,8 @@ const h = require('./helpers.cjs');
 /** the ICE servers the app would use for a given stored config */
 const iceFor = (page, cfg) =>
 	page.evaluate((c) => {
-		window.__stores.peerServer.peerServerConfig.set(c);
-		const { options } = window.__stores.peerServer.resolvePeerOptions({ isLocalDev: false });
+		window.__tp.test.v1.peerServer.peerServerConfig.set(c);
+		const { options } = window.__tp.test.v1.peerServer.resolvePeerOptions({ isLocalDev: false });
 		const servers = options?.config?.iceServers ?? [];
 		let constructed = 'ok';
 		try {
@@ -56,7 +56,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 	const page = A.page;
-	await page.waitForFunction(() => !!window.__stores?.peerServer, null, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.peerServer, null, { timeout: 30000 });
 
 	// ---- 1. a username with NO credential: the shape that throws ---------------------
 	const halfA = await iceFor(page, custom({ turnUsername: 'prototype', turnCredential: '' }));

@@ -769,6 +769,27 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   populated at DIAL time — trap). `peerApproval.js` = `requestConnect` (shared dial),
   `cancelOutboundRequest`, `approvePeer`/`denyPeer` (store-only so VR + cloudApi reach
   them without a peerHandler cycle).
+- `src/lib/wireProto.js` + `src/lib/wireBudget.js` (101 F1/F4, both LEAVES) — A SESSION THAT CAN
+  SAY NO. `WIRE_PROTO` (1; absent on the wire = 1, unreadable = refused) + `myCaps()` ride EVERY dial's
+  metadata (`dialOptions`) and the `modules` message. `handleConnection` checks the dial's `proto`
+  BEFORE any whitelist/card/wiring; a mismatch answers with a refusal DIAL (`joinresult: 'denied'` +
+  `refuse {reason, need}` — an older build reads 'denied') and never opens a data channel. The
+  receive head (`receive` → `inboundBudget.admit` → shape → `protoGate` → `proceed`) LATCHES each
+  link's agreement once (`conn.__protoOk`); a link with no dial metadata (an adopted outgoing conn)
+  passes on a proto-1 build and is HELD (in order, bounded) on a newer one until its `modules`.
+  Refused peers (`protoRefused`) get no reconnect window and no mesh-fill redial; a typed Connect
+  clears the mark. Lower proto = the "This session uses a newer version" lasting toast (once per
+  page, `updateCheck.reloadToUpdate`); higher = `olderPeers` → People's `#peers-older` line. Bump
+  `proto` only for a meaning change; additive things are a `caps` flag (OPEN-CORE.md). F4: per-peer
+  messages/s + bytes/s (the reliable dataChannel's own `message` events + the fast channel's text
+  length) and an `object` size cap (`approxSize`, early exit), drops counted as `budget:*` in
+  wireErrors with ONE toast per peer per minute, never a disconnect. 101-int review: a `batch` costs 1 + ceil(items/4)
+  (each `object` item capped alone), every in-band data channel is metered (peerjs wires late ones into the same conn),
+  `disconnected`/`refuse` are exempt only 4x/s; `protoAsked(peer)` (waiting join or a link of ours) is the ONLY source
+  that may latch `staleNotice` — a stranger's dial gets a plain toast <= 1/min; blocked/NaN proto dials close silently;
+  `sendJoinResult(…, pool)` = 'user' (card clicks, never limited) | 'auto' (5/s, 20 in flight) | 'stranger' (2/s, 5); 1/s per peer, a newer answer replaces the one in flight; caps keep small primitives; `prunePeerProto` keeps peerProto/peerCaps/protoRefused to 256 each, oldest first, never a live or in-flight link. Test hooks:
+  `localStorage.debugWireProto` (beside debugStores) and `__stores.wireProto` (setProto for links
+  made from then on, applied(peer), budget.peaks()/limits). Suites `wire-proto`, `wire-flood`.
 - `src/components/menu/Connect.svelte` — a 3-state pill (`data-state`
   idle/pending/connected): idle dial + blue Connect; pending amber Cancel; connected
   green `Connected · <host>` + red Disconnect. A chevron toggles `ConnectInfoDrawer`
@@ -2631,7 +2652,7 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   it hears one, is alone, or `GRACE_MS` (2 s) after its last connection change — under the smallest-id rule a
   joiner IS the authority on connect, and its initial state would overwrite the game. LOADING: `analyze` (acorn;
   the LINT bans Math.random/Date/performance.now/storage/DOM/globalThis/network/eval/bare timers/import — an error
-  stops the load on EVERY peer), then the MODULE LOADER (`userModules.importModuleText`, a fresh blob import) with
+  stops the load on EVERY peer), then `behaviours/source.js compileBehaviour(source, importer)` (the caller's importer; `dataUrlImporter` in node/tests) with
   `source.js`'s one-line prologue ON line 1 (`behaviour, kit, dist, clamp, lerp`; `kit` is a proxy bound to the
   behaviour's traced kit face when it starts) and the 27-D loop guard (counter reset per dispatch by an appended
   epilogue line). T2: one lifecycle module per behaviour, `behaviour:<nodeId>`, with ONE kit face for its whole
@@ -3643,6 +3664,26 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   must be unique (vitest `debugHooks` checks uniqueness, the one-line shape, that every loader
   file exists, and that no tail crept back into App.svelte). Code holding an object can call
   `registerDebugHook(name, obj)` instead. A merge of two lanes' rows is a plain union.
+- **SUITES TALK TO `window.__tp.test.v1`, NOT `__stores` (101 F5).** `installDebugHooks` publishes the
+  read-only, LIVE facade (`src/lib/testFacade.js`) over the same hook table; `__stores` stays as an
+  alias for one release. RENAMING an export a suite reads, or moving a hook: add ONE row to
+  `TEST_V1_RENAMED_EXPORTS` / `TEST_V1_MOVED` and touch no suite (the proof: `backStack.backStackState`
+  is now `backStackSnapshot`). The facade is read-only (a write throws): stub through the module. From
+  Node, `h.t(page)` = `{ready, run(fn, arg), get(path), call(path, ...args)}`. A suite written against
+  `__stores` moves with `node scripts/e2e-facade-codemod.cjs --write <file>` (keeps pre-install
+  semantics: `X.__stores.y` throws before the install, `X.__stores &&` is undefined, exactly as before).
+  battery.json `gpu: {suite: false}` = renderer-neutral suites (`scripts/ci/gpu-neutral-suites.cjs`).
+- **EVERY RENDERER AND RENDER TARGET COMES FROM `src/lib/render/` (101 F3, CI `check-render-seam`).**
+  `createMainRenderer` (threlte `<Canvas createRenderer>`, threlte 8.6.1's defaults verbatim) +
+  `MAIN_SHADOW_MAP` on both Canvas lines; `setToneMapping` / `setExposure` / `mainPixelRatio` /
+  `watchContextLoss` are the hooks; `createRenderTarget` replaces `new WebGLRenderTarget`;
+  `readPixels` returns a PROMISE (the read happens AT THE CALL, the await only hands it back;
+  `readPixelsSync` only where a caller cannot wait — photoRender's cubeUvToEquirect). Thumbnails and
+  live previews borrow ONE shared off-screen renderer (`renderOffscreen` one-shot, `acquireOffscreen`
+  + `blitOffscreen` for a live preview, which copies into its own 2D canvas — a preview canvas has NO
+  WebGL context). Borrowers get a FRESH renderer's state; never call `dispose()` on a borrowed one.
+  `disposeRenderer()` releases what the seam made; `recycleMainRenderer()` loses + restores the main
+  context on purpose (the path roadmap 100's switch runs).
 - **A derived cutoff consulted on both the READ and the MUTATE side needs TWO rules.**
   21-F2's round cutoff returns Infinity in menu/over so latches READ as un-collected
   there (the locked fork) — but `applyNodeTrigger`'s re-arm honoured it too, so in menu

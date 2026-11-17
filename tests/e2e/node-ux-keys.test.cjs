@@ -16,8 +16,8 @@ const graph = (page) =>
 	page.evaluate(() => {
 		let ns;
 		let es;
-		window.__stores.flowNodes.subscribe((v) => (ns = v))();
-		window.__stores.flowEdges.subscribe((v) => (es = v))();
+		window.__tp.test.v1.flowNodes.subscribe((v) => (ns = v))();
+		window.__tp.test.v1.flowEdges.subscribe((v) => (es = v))();
 		return {
 			nodes: ns.map((n) => ({ id: n.id, type: n.type, x: n.position.x, y: n.position.y, sel: !!n.selected, data: n.data })),
 			edges: es.map((e) => ({ id: e.id, source: e.source, target: e.target, targetHandle: e.targetHandle ?? null }))
@@ -26,9 +26,9 @@ const graph = (page) =>
 /** @param {any} page @param {string[]} ids */
 const select = (page, ids) =>
 	page.evaluate((ids) => {
-		window.__stores.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: ids.includes(n.id) })));
+		window.__tp.test.v1.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: ids.includes(n.id) })));
 	}, ids);
-const read = (page, store) => page.evaluate((s) => new Promise((r) => window.__stores[s].subscribe((v) => r(v))()), store);
+const read = (page, store) => page.evaluate((s) => new Promise((r) => window.__tp.test.v1[s].subscribe((v) => r(v))()), store);
 /** a real press on an EMPTY spot of the node pane (gives the node editor the keyboard) */
 async function focusNodes(page) {
 	const pane = await page.locator('.svelteFlow .svelte-flow__pane').boundingBox();
@@ -45,7 +45,7 @@ const viewportOf = (page) => page.evaluate(() => document.querySelector('.svelte
 const camPos = (page) =>
 	page.evaluate(() => {
 		let c;
-		window.__stores.globalCamera.subscribe((v) => (c = v))();
+		window.__tp.test.v1.globalCamera.subscribe((v) => (c = v))();
 		const p = c?.current?.position ?? c?.position;
 		return p ? [p.x, p.y, p.z].map((v) => +v.toFixed(3)) : null;
 	});
@@ -71,21 +71,21 @@ h.run(async () => {
 			const mk = (id, x, y) => ({ id, type: 'number', position: { x, y }, data: { type: 'number', value: 1, label: id }, class: 'w-[150px]' });
 			// n2 is a Math node: it HAS an `a` input, so the n1 -> n2.a wire really draws
 			const math = { id: 'n2', type: 'math', position: { x: 260, y: 40 }, data: { type: 'math', op: 'add', label: 'n2' }, class: 'w-[150px]' };
-			window.__stores.flowNodes.set([mk('n1', 0, 0), math, mk('n3', 520, 120), mk('n4', 260, 260)]);
-			window.__stores.flowEdges.set([{ id: 'e-n1-n2.a', source: 'n1', target: 'n2', targetHandle: 'a' }]);
+			window.__tp.test.v1.flowNodes.set([mk('n1', 0, 0), math, mk('n3', 520, 120), mk('n4', 260, 260)]);
+			window.__tp.test.v1.flowEdges.set([{ id: 'e-n1-n2.a', source: 'n1', target: 'n2', targetHandle: 'a' }]);
 		});
 	await seed();
 	await p.waitForTimeout(600);
 
 	// --- 1. scope: the press decides who owns the keyboard --------------------------
 	await focusNodes(p);
-	h.check((await p.evaluate(() => window.__stores.keyScope.lastScope())) === 'nodes', 'a press on the node pane gives it the keyboard');
+	h.check((await p.evaluate(() => window.__tp.test.v1.keyScope.lastScope())) === 'nodes', 'a press on the node pane gives it the keyboard');
 	const chat0 = await read(p, 'chatHidden');
 	await p.keyboard.press('c');
 	await p.waitForTimeout(200);
 	h.check((await read(p, 'chatHidden')) === chat0, 'C in the node editor does NOT toggle chat');
 	await focusViewport(p);
-	h.check((await p.evaluate(() => window.__stores.keyScope.lastScope())) === 'viewport', 'a press on the 3D viewport gives it the keyboard');
+	h.check((await p.evaluate(() => window.__tp.test.v1.keyScope.lastScope())) === 'viewport', 'a press on the 3D viewport gives it the keyboard');
 	await p.keyboard.press('c');
 	await p.waitForTimeout(200);
 	h.check((await read(p, 'chatHidden')) !== chat0, 'C in the viewport toggles chat');
@@ -101,7 +101,7 @@ h.run(async () => {
 	// the viewport's F (focus object) and A (fly left) stand down in the node editor
 	await focusNodes(p);
 	await p.evaluate(() => {
-		const row = window.__stores.shortcutsRegistry.shortcuts.find((s) => s.id === 'camera.focus');
+		const row = window.__tp.test.v1.shortcutsRegistry.shortcuts.find((s) => s.id === 'camera.focus');
 		window.__focusCalls = 0;
 		row.__orig = row.action;
 		row.action = () => window.__focusCalls++;
@@ -120,7 +120,7 @@ h.run(async () => {
 	await p.waitForTimeout(200);
 	h.check((await p.evaluate(() => window.__focusCalls)) === 1, 'F in the viewport still focuses the object');
 	await p.evaluate(() => {
-		const row = window.__stores.shortcutsRegistry.shortcuts.find((s) => s.id === 'camera.focus');
+		const row = window.__tp.test.v1.shortcutsRegistry.shortcuts.find((s) => s.id === 'camera.focus');
 		row.action = row.__orig;
 	});
 
@@ -192,7 +192,7 @@ h.run(async () => {
 
 	// --- 4. delete: Delete / X / Backspace, never the 3D objects -------------------------
 	for (const key of ['Delete', 'x', 'Backspace']) {
-		await p.evaluate(() => window.__stores.flowNodes.update((ns) => [...ns, { id: 'tmp', type: 'number', position: { x: 0, y: 400 }, data: { type: 'number', value: 2 }, class: 'w-[150px]' }]));
+		await p.evaluate(() => window.__tp.test.v1.flowNodes.update((ns) => [...ns, { id: 'tmp', type: 'number', position: { x: 0, y: 400 }, data: { type: 'number', value: 2 }, class: 'w-[150px]' }]));
 		await p.waitForTimeout(200);
 		await select(p, ['tmp']);
 		await p.keyboard.press(key);
@@ -241,7 +241,7 @@ h.run(async () => {
 	await p.waitForTimeout(300);
 	h.check((await graph(p)).nodes.find((n) => n.id === 'n1').data.muted === true, 'M mutes the selected node');
 	const live = await p.evaluate(() => {
-		const { runtimeGraph, allNodes, allEdges } = window.__stores;
+		const { runtimeGraph, allNodes, allEdges } = window.__tp?.test.v1;
 		const r = runtimeGraph(allNodes(), allEdges());
 		return { node: r.nodes.some((n) => n.id === 'n1'), edge: r.edges.some((e) => e.source === 'n1') };
 	});
@@ -308,7 +308,7 @@ h.run(async () => {
 	await p.waitForTimeout(300);
 	const sheet = await p.evaluate(() => {
 		const titles = [...document.querySelectorAll('#shortcut-sheet section')].map((s) => s.getAttribute('data-scope'));
-		const reg = window.__stores.shortcutsRegistry.shortcuts;
+		const reg = window.__tp.test.v1.shortcutsRegistry.shortcuts;
 		const rows = [...document.querySelectorAll('#shortcut-sheet [data-shortcut-id]')].map((r) => r.getAttribute('data-shortcut-id'));
 		return { titles, missing: reg.filter((s) => !rows.includes(s.id)).map((s) => s.id), total: rows.length };
 	});
@@ -316,7 +316,7 @@ h.run(async () => {
 	h.check(sheet.missing.length === 0 && sheet.total > 60, `the sheet lists every registry row (${sheet.total}; missing ${sheet.missing.join(',') || 'none'})`);
 	// generated, not written: a row rebound right now shows its new key on the next open
 	await p.keyboard.press('Escape');
-	await p.evaluate(() => window.__stores.shortcutsRegistry.setOverride('nodes.mute', 'Alt+M'));
+	await p.evaluate(() => window.__tp.test.v1.shortcutsRegistry.setOverride('nodes.mute', 'Alt+M'));
 	await p.keyboard.press('?');
 	await p.waitForTimeout(300);
 	const muteKeys = await p.evaluate(() => document.querySelector('#shortcut-sheet [data-shortcut-id="nodes.mute"] .sheet-keys')?.textContent);
@@ -328,7 +328,7 @@ h.run(async () => {
 	await p.keyboard.press('Escape');
 	await p.waitForTimeout(200);
 	h.check(!(await p.locator('#shortcut-sheet').count()), 'Esc closes the sheet');
-	await p.evaluate(() => window.__stores.shortcutsRegistry.resetShortcut('nodes.mute'));
+	await p.evaluate(() => window.__tp.test.v1.shortcutsRegistry.resetShortcut('nodes.mute'));
 	await focusViewport(p);
 	await p.keyboard.press('?');
 	await p.waitForTimeout(300);

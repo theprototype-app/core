@@ -15,14 +15,14 @@ h.run(async () => {
 	const fog = () =>
 		page.evaluate(() => {
 			let scene;
-			window.__stores.globalScene.subscribe((x) => (scene = x))();
+			window.__tp.test.v1.globalScene.subscribe((x) => (scene = x))();
 			const f = scene?.fog;
 			return f ? { near: f.near, far: f.far, color: '#' + f.color.getHexString() } : null;
 		});
 
 	// a scene with reach: one box 40 m out, so a growing fog would reach >= 100 m
 	await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		let o;
 		s.selectedObject.subscribe((x) => (o = x))();
@@ -31,17 +31,17 @@ h.run(async () => {
 		s.selectedObjects?.set?.([]);
 		s.sceneBounds.refreshSceneBounds();
 	});
-	const radius = await page.evaluate(() => window.__stores.sceneBounds.sceneRadius());
+	const radius = await page.evaluate(() => window.__tp.test.v1.sceneBounds.sceneRadius());
 	h.check(radius > 40, `premise: the scene reaches past 40 m (radius ${radius.toFixed(1)})`);
 
 	// ---- 1. an authored fog keeps its reach through applyEnvironment
-	await page.evaluate(() => window.__stores.environment.editEnvSky({ fog: { color: '#888888', near: 2, far: 20 } }));
-	await page.evaluate(() => window.__stores.environment.applyEnvironment());
+	await page.evaluate(() => window.__tp.test.v1.environment.editEnvSky({ fog: { color: '#888888', near: 2, far: 20 } }));
+	await page.evaluate(() => window.__tp.test.v1.environment.applyEnvironment());
 	let f = await fog();
 	h.check(f?.far === 20 && f?.near === 2, `1. a hand-set fog survives applyEnvironment (near ${f?.near}, far ${f?.far})`);
 
 	// ---- 2. the Inspector reads the fog and edits ONE field
-	await page.evaluate(() => window.__stores.showSidebar('scene'));
+	await page.evaluate(() => window.__tp.test.v1.showSidebar('scene'));
 	await page.waitForSelector('#fog-far', { timeout: 10000 }).catch(() => {});
 	const shown = await page.evaluate(() => ({
 		near: /** @type {HTMLInputElement|null} */ (document.getElementById('fog-near'))?.value,
@@ -59,18 +59,18 @@ h.run(async () => {
 	await page.fill('#fog-far', '30');
 	await page.press('#fog-far', 'Enter');
 	await page.waitForTimeout(300);
-	await page.evaluate(() => window.__stores.environment.applyEnvironment());
+	await page.evaluate(() => window.__tp.test.v1.environment.applyEnvironment());
 	f = await fog();
 	h.check(f?.far === 30 && f?.near === 5, `2. editing Far sticks through the next apply (far ${f?.far})`);
 
 	// ---- 3. a preset's fog still grows with the scene (the rule is for presets only)
-	await page.evaluate(() => window.__stores.environment.setEnvironment('daylight'));
+	await page.evaluate(() => window.__tp.test.v1.environment.setEnvironment('daylight'));
 	f = await fog();
 	h.check(!!f && f.far >= radius * 2.5 - 0.01, `3. a preset's fog still reaches the scene (far ${f?.far?.toFixed(1)} >= ${(radius * 2.5).toFixed(1)})`);
 
 	// ---- 4. the legacy receive path lands in the environment and is NOT sent on
 	const sent = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let peer;
 		s.peers.subscribe((x) => (peer = x))();
 		/** @type {any[]} */

@@ -13,7 +13,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	const box = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 600));
 		let g;
@@ -32,7 +32,7 @@ h.run(async () => {
 	// the POINTER is the hand that does not hold the menu; it aims straight at the box
 	const menuHand = await A.page.evaluate(() => {
 		let v;
-		window.__stores.vrMenuHand.subscribe((x) => (v = x))();
+		window.__tp.test.v1.vrMenuHand.subscribe((x) => (v = x))();
 		return v;
 	});
 	const pointer = menuHand === 'right' ? 'left' : 'right';
@@ -42,7 +42,7 @@ h.run(async () => {
 
 	const state = () =>
 		A.page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const get = (store) => {
 				let v;
 				store.subscribe((x) => (v = x))();
@@ -69,8 +69,8 @@ h.run(async () => {
 
 	// --- 1) the radial entry opens the session + the side-menu with the collider rows
 	await A.page.evaluate(() => {
-		window.__stores.vrMenuOpen.set(true);
-		window.__stores.vrControls.executeVRMenuAction('obj:editcollider');
+		window.__tp.test.v1.vrMenuOpen.set(true);
+		window.__tp.test.v1.vrControls.executeVRMenuAction('obj:editcollider');
 	});
 	await A.page.waitForTimeout(500);
 	let st = await state();
@@ -83,24 +83,24 @@ h.run(async () => {
 	h.check(!st.rows.includes('edit:mode:stretch'), 'no Stretch tab while editing a collider');
 
 	// --- 2) the mode tabs drive the proxy, never the real object
-	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('edit:mode:vertices'));
+	await A.page.evaluate(() => window.__tp.test.v1.vrControls.executeVRMenuAction('edit:mode:vertices'));
 	st = await state();
 	h.check(st.vertex === st.proxy && st.vertex !== box, `the Vertices tab edits the proxy (${st.vertex === st.proxy})`);
-	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('edit:mode:faces'));
+	await A.page.evaluate(() => window.__tp.test.v1.vrControls.executeVRMenuAction('edit:mode:faces'));
 	st = await state();
 	h.check(st.face === st.proxy && !st.vertex, 'the Faces tab goes back to the proxy');
 
 	// --- 3) a GRIP on the proxy's face reshapes the proxy; the real box stays put
 	const proxySum = () =>
 		A.page.evaluate(() => {
-			const p = window.__stores.faceEdit.lookupEditable(window.__stores.colliderEdit.colliderProxyUuid());
+			const p = window.__tp.test.v1.faceEdit.lookupEditable(window.__tp.test.v1.colliderEdit.colliderProxyUuid());
 			return Array.from(p.geometry.attributes.position.array).reduce((a, b) => a + b, 0);
 		});
 	const sum0 = await proxySum();
 	await h.eventually(
 		() => A.page.evaluate(() => {
 			let v;
-			window.__stores.faceEdit.faceEditHoverTri.subscribe((x) => (v = x))();
+			window.__tp.test.v1.faceEdit.faceEditHoverTri.subscribe((x) => (v = x))();
 			return v;
 		}),
 		(tri) => typeof tri === 'number' && tri >= 0,
@@ -123,10 +123,10 @@ h.run(async () => {
 	await xr.pose(A.page, pointer, [0, 1.4, 0]);
 
 	// --- 4) + Box piece, then Done saves a custom collider and closes everything
-	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('collider:add:box'));
+	await A.page.evaluate(() => window.__tp.test.v1.vrControls.executeVRMenuAction('collider:add:box'));
 	st = await state();
 	h.check(st.shells === 2, `+ Box piece adds a second shell (${st.shells})`);
-	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('collider:done'));
+	await A.page.evaluate(() => window.__tp.test.v1.vrControls.executeVRMenuAction('collider:done'));
 	await A.page.waitForTimeout(300);
 	st = await state();
 	h.check(st.physics.collider === 'custom' && st.physics.colliderPieces?.length === 2, `Done saves a 2-piece custom collider (${st.physics.collider}, ${st.physics.colliderPieces?.length})`);
@@ -134,14 +134,14 @@ h.run(async () => {
 
 	// --- 5) ✕ during a session cancels: nothing is written
 	const openSession = async () => {
-		await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('obj:editcollider'));
+		await A.page.evaluate(() => window.__tp.test.v1.vrControls.executeVRMenuAction('obj:editcollider'));
 		await h.eventually(() => state(), (s) => !!s.session && s.menuOpen, 'the session re-opens (the entry loads colliderEdit lazily)');
 	};
 	await openSession();
-	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('collider:add:sphere'));
+	await A.page.evaluate(() => window.__tp.test.v1.vrControls.executeVRMenuAction('collider:add:sphere'));
 	await A.page.waitForTimeout(300);
 	const mid = await state();
-	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('edit:close'));
+	await A.page.evaluate(() => window.__tp.test.v1.vrControls.executeVRMenuAction('edit:close'));
 	await A.page.waitForTimeout(300);
 	st = await state();
 	h.check(mid.shells === 3 && !st.session && !st.menuOpen, `✕ cancels the session (had ${mid.shells} shells)`);
@@ -150,7 +150,7 @@ h.run(async () => {
 
 	// --- 6) Decompose from the headset (X3) leaves the session and writes the result
 	await openSession();
-	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('collider:decompose'));
+	await A.page.evaluate(() => window.__tp.test.v1.vrControls.executeVRMenuAction('collider:decompose'));
 	await h.eventually(
 		() => state(),
 		(s) => !s.session && s.physics.collider === 'custom' && s.physics.colliderPieces?.length >= 1 && s.physics.colliderPieces?.length !== 2,

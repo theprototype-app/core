@@ -29,14 +29,14 @@ h.run(async () => {
 	const B = await h.setupPage(browser, 'B', ctx);
 	await h.connect(B, A);
 	await A.page.evaluate(async (arr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 		await s.sessions.applySession(payload, { backup: false });
 	}, Array.from(fs.readFileSync(TPSCENE)));
 
 	const status = (peer) =>
 		peer.page.evaluate(() => {
-			const d = window.__stores.behaviours?.behavioursDebug?.();
+			const d = window.__tp.test.v1.behaviours?.behavioursDebug?.();
 			const id = window.__minigolf?.rulesNode?.();
 			return d && id ? { status: d.status[id]?.status ?? null, authority: d.authority, me: d.me } : null;
 		});
@@ -50,20 +50,20 @@ h.run(async () => {
 	const rules = (peer) =>
 		peer.page.evaluate(() => {
 			const id = window.__minigolf?.rulesNode?.();
-			const st = id ? window.__stores.behaviours.behaviourState(id) : null;
+			const st = id ? window.__tp.test.v1.behaviours.behaviourState(id) : null;
 			return st ? JSON.parse(JSON.stringify(st)) : null;
 		});
 	const hud = (peer) => peer.page.locator('#hud-layer').textContent().then((t) => t ?? '');
 
 	// both enter Play; the NON-authority presses Tee off in its own HUD
-	for (const p of [A, B]) await p.page.evaluate(() => window.__stores.isLocked.set(true));
+	for (const p of [A, B]) await p.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await h.eventually(() => hud(other), (t) => /Tee off/.test(t), 'the non-authority sees the start menu', 10000);
 	await other.page.locator('#hud-layer button', { hasText: 'Tee off' }).click();
 	await h.eventually(() => rules(auth), (r) => r?.hole === 1 && r.phase === 'ready', "the other peer's press ran the rules on the authority (hole 1)", 10000);
 	if (process.env.DEBUG_PEERS) {
 		for (const [nm, p] of [['auth', auth], ['other', other]]) {
 			const dbg = await p.page.evaluate(() => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				const d = s.behaviours.behavioursDebug();
 				const id = window.__minigolf.rulesNode();
 				let tr; s.flowTriggers.subscribe((v) => (tr = v))();
@@ -82,7 +82,7 @@ h.run(async () => {
 
 	// the non-authority putts with a real mouse: press on the ball, drag back, let go
 	const ballScreen = await other.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let cam; s.globalCamera.subscribe((v) => (cam = v))();
 		let r; s.globalRenderer.subscribe((v) => (r = v))();
 		const b = window.__minigolf.ball().pos;
@@ -103,7 +103,7 @@ h.run(async () => {
 
 	// a knob turned on the non-authority reloads the rules everywhere
 	await other.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g; s.flowGraphs.subscribe((v) => (g = v))();
 		const id = window.__minigolf.rulesNode();
 		const node = g.scene.nodes.find((n) => n.id === id);
@@ -111,7 +111,7 @@ h.run(async () => {
 		s.nodesHandler.setNodeData(id, { code }, 'scene');
 	});
 	await h.eventually(
-		() => auth.page.evaluate(() => window.__stores.behaviours.behavioursDebug().live(window.__minigolf.rulesNode())?.params?.shotPower),
+		() => auth.page.evaluate(() => window.__tp.test.v1.behaviours.behavioursDebug().live(window.__minigolf.rulesNode())?.params?.shotPower),
 		(v) => v === 4.5,
 		'a rules edit on the other peer reloads the rules on the authority (shot power 4.5)',
 		10000
@@ -123,16 +123,16 @@ h.run(async () => {
 		.filter(Boolean)
 		.find((p) => fs.existsSync(p));
 	if (ESC) {
-		for (const p of [A, B]) await p.page.evaluate(() => window.__stores.isLocked.set(null));
+		for (const p of [A, B]) await p.page.evaluate(() => window.__tp.test.v1.isLocked.set(null));
 		await A.page.waitForTimeout(600);
 		await A.page.evaluate(async (arr) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 			await s.sessions.applySession(payload, { backup: false });
 		}, Array.from(fs.readFileSync(ESC)));
 		const escStatus = (peer) =>
 			peer.page.evaluate(() => {
-				const d = window.__stores.behaviours?.behavioursDebug?.();
+				const d = window.__tp.test.v1.behaviours?.behavioursDebug?.();
 				const id = window.__escape?.rulesNode?.();
 				return d && id ? { status: d.status[id]?.status ?? null, authority: d.authority, me: d.me } : null;
 			});
@@ -144,14 +144,14 @@ h.run(async () => {
 		const flags = (peer) => peer.page.evaluate(() => window.__escape.flags());
 		const use = (peer, name) =>
 			peer.page.evaluate((name) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				let g; s.objectsGroup.subscribe((v) => (g = v))();
 				let mesh = g.getObjectByName(name);
 				mesh?.traverse((c) => { if (c.isMesh && !mesh.isMesh) mesh = c; });
 				return mesh ? s.moduleSDK.runClickHandlers(mesh, 'play', { source: 'click' }) : false;
 			}, name);
-		const banner = (peer) => peer.page.evaluate(() => { let v; window.__stores.gameKit.gameAnnounce.gameAnnouncement.subscribe((x) => (v = x))(); return v?.text ?? ''; });
-		for (const p of [A, B]) await p.page.evaluate(() => window.__stores.isLocked.set(true));
+		const banner = (peer) => peer.page.evaluate(() => { let v; window.__tp.test.v1.gameKit.gameAnnounce.gameAnnouncement.subscribe((x) => (v = x))(); return v?.text ?? ''; });
+		for (const p of [A, B]) await p.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 		await h.eventually(() => hud(eOther), (t) => /Start/.test(t), 'Escape: the non-authority sees the start menu', 10000);
 		await eOther.page.locator('#hud-layer button', { hasText: 'Start' }).first().click();
 		await h.eventually(() => flags(eAuth), (f) => f === 0, 'Escape: the round starts with every lock shut', 8000);

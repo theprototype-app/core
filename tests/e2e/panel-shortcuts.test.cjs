@@ -39,13 +39,13 @@ async function press(page, key) {
 const storeVal = (page, name) =>
 	page.evaluate((n) => {
 		let v;
-		window.__stores[n].subscribe((x) => (v = x))();
+		window.__tp.test.v1[n].subscribe((x) => (v = x))();
 		return v;
 	}, name);
 
 const dockState = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let visible, occ, min, active;
 		s.bottomDock.visibleDockKey.subscribe((v) => (visible = v))();
 		s.bottomDock.dockOccupants.subscribe((v) => (occ = v))();
@@ -63,14 +63,14 @@ const dockState = (page) =>
 
 const regOf = (page, id) =>
 	page.evaluate((sid) => {
-		const s = window.__stores.shortcutsRegistry.shortcuts.find((x) => x.id === sid);
+		const s = window.__tp.test.v1.shortcutsRegistry.shortcuts.find((x) => x.id === sid);
 		return s
 			? {
 					keys: s.keys,
 					defaultKeys: s.defaultKeys,
 					group: s.group,
 					label: s.label,
-					rebindable: window.__stores.shortcutsRegistry.isRebindable(s)
+					rebindable: window.__tp.test.v1.shortcutsRegistry.isRebindable(s)
 				}
 			: null;
 	}, id);
@@ -78,7 +78,7 @@ const regOf = (page, id) =>
 /** close every dock view and un-minimize, so each section starts from one known state */
 async function clearDock(page) {
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		for (const k of ['flowGraphClose', 'codeWorkspaceClose', 'animationClose', 'uvEditorClose', 'shaderEditorClose', 'hudEditorClose', 'explorerClose'])
 			s[k].set(true);
 		s.bottomDock.dockMinimized.set(false);
@@ -96,7 +96,7 @@ h.run(async () => {
 		localStorage.removeItem('shortcutOverrides');
 	});
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.bottomDock, { timeout: 30000 });
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.bottomDock, { timeout: 30000 });
 	await A.page.waitForTimeout(600);
 
 	// ------------------------------------------------------ 1. the rows exist
@@ -120,7 +120,7 @@ h.run(async () => {
 	// bare MESH_EDIT_KEYS, so a bare letter here would silently do nothing for as long
 	// as a mesh session is open. `Alt+E` is a DIFFERENT combo string, so it is clear.
 	const conflicts = await A.page.evaluate((rows) => {
-		const R = window.__stores.shortcutsRegistry;
+		const R = window.__tp.test.v1.shortcutsRegistry;
 		const out = {};
 		for (const row of rows) {
 			const c = R.conflictOf(row.keys, row.id, null);
@@ -141,7 +141,7 @@ h.run(async () => {
 	// six take Alt" rather than "the ones that need it do" — a scheme a user has to
 	// remember the exceptions to is a worse scheme.
 	const bare = await A.page.evaluate(() => {
-		const R = window.__stores.shortcutsRegistry;
+		const R = window.__tp.test.v1.shortcutsRegistry;
 		/** @type {Record<string, boolean>} */
 		const out = {};
 		for (const k of ['E', 'F', 'A', 'U', 'S', 'H']) out[k] = R.conflictOf(k, undefined, null).meshEdit;
@@ -158,7 +158,7 @@ h.run(async () => {
 	// and prove the stand-down is real, not just a warning flag: a live mesh session
 	// swallows bare S, and never Alt+S
 	const swallowed = await A.page.evaluate(() => {
-		const R = window.__stores.shortcutsRegistry;
+		const R = window.__tp.test.v1.shortcutsRegistry;
 		return { bareS: R.conflictOf('S', undefined, null).meshEdit, altS: R.conflictOf('Alt+S', undefined, null).meshEdit };
 	});
 	h.check(
@@ -242,7 +242,7 @@ h.run(async () => {
 
 	// STATE C: NOTHING DOCKED -> 44 M5: open the dock EMPTY (only its "+"), not the last-active view
 	// (the user: '"T" only should show empty docked window view with "+" in tab'); T again closes it.
-	await A.page.evaluate(() => window.__stores.bottomDock.activateDock('uv'));
+	await A.page.evaluate(() => window.__tp.test.v1.bottomDock.activateDock('uv'));
 	await A.page.waitForTimeout(200);
 	await clearDock(A.page);
 	st = await dockState(A.page);
@@ -253,7 +253,7 @@ h.run(async () => {
 	const uvClosed = await storeVal(A.page, 'uvEditorClose');
 	const emptyShown = await A.page.evaluate(() => {
 		let v;
-		window.__stores.bottomDock.dockEmptyShown.subscribe((x) => (v = x))();
+		window.__tp.test.v1.bottomDock.dockEmptyShown.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(uvClosed === true && st.visible === null, `4.9 T on an empty dock opens NO view (uvEditorClose=${uvClosed}, visible=${st.visible})`);
@@ -261,13 +261,13 @@ h.run(async () => {
 	await press(A.page, 't');
 	const emptyAfter = await A.page.evaluate(() => {
 		let v;
-		window.__stores.bottomDock.dockEmptyShown.subscribe((x) => (v = x))();
+		window.__tp.test.v1.bottomDock.dockEmptyShown.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(emptyAfter === false, `4.11 T again closes the empty dock (emptyShown=${emptyAfter})`);
 	// a populated dock for the minimize round trip below
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.bottomDock.armDockMode('flow', true);
 		s.flowGraphClose.set(false);
 		s.bottomDock.activateDock('flow');
@@ -277,12 +277,12 @@ h.run(async () => {
 	// minimize -> reload -> T. `dockMinimized` is deliberately NOT persisted (a
 	// minimized dock leaves NO trace on screen, so a reload must never hand somebody a
 	// lost panel), and T has to work from whatever state the reload lands in.
-	await A.page.evaluate(() => window.__stores.bottomDock.bottomDockActive.set('flow'));
+	await A.page.evaluate(() => window.__tp.test.v1.bottomDock.bottomDockActive.set('flow'));
 	await press(A.page, 't');
 	st = await dockState(A.page);
 	h.check(st.minimized === true, `4.12 premise: minimized before the reload (${st.minimized})`);
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.bottomDock, { timeout: 30000 });
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.bottomDock, { timeout: 30000 });
 	await A.page.waitForTimeout(700);
 	st = await dockState(A.page);
 	h.check(st.minimized === false, `4.13 a reload restores the dock rather than a lost panel (minimized=${st.minimized})`);
@@ -361,7 +361,7 @@ h.run(async () => {
 	// ---------------------------------------- 7. a rebind moves one, and comes back
 	// The rows are ordinary registry entries, so the whole Phase-5 machine applies.
 	await clearDock(A.page);
-	const moved = await A.page.evaluate(() => window.__stores.shortcutsRegistry.rebindShortcut('panels.hud-editor', 'Alt+J'));
+	const moved = await A.page.evaluate(() => window.__tp.test.v1.shortcutsRegistry.rebindShortcut('panels.hud-editor', 'Alt+J'));
 	h.check(moved && moved.ok === true, `7.1 Alt+H can be rebound to Alt+J (${JSON.stringify(moved)})`);
 	await press(A.page, 'Alt+j');
 	let hudClosed = await storeVal(A.page, 'hudEditorClose');
@@ -370,7 +370,7 @@ h.run(async () => {
 	await press(A.page, 'Alt+h');
 	hudClosed = await storeVal(A.page, 'hudEditorClose');
 	h.check(hudClosed === true, `7.3 ...and the old one no longer does (hudEditorClose=${hudClosed})`);
-	await A.page.evaluate(() => window.__stores.shortcutsRegistry.resetShortcut('panels.hud-editor'));
+	await A.page.evaluate(() => window.__tp.test.v1.shortcutsRegistry.resetShortcut('panels.hud-editor'));
 	await clearDock(A.page);
 	await press(A.page, 'Alt+h');
 	hudClosed = await storeVal(A.page, 'hudEditorClose');
@@ -379,8 +379,8 @@ h.run(async () => {
 
 	// ---------------------------------------- 8. the rows render in Settings
 	await A.page.evaluate(() => {
-		window.__stores.settingsSection.set('shortcuts');
-		window.__stores.settingsOpen.set(true);
+		window.__tp.test.v1.settingsSection.set('shortcuts');
+		window.__tp.test.v1.settingsOpen.set(true);
 	});
 	await A.page.waitForSelector('#shortcut-grid', { timeout: 15000 });
 	await A.page.waitForTimeout(300);
@@ -402,7 +402,7 @@ h.run(async () => {
 		/Node editor|Explorer/i.test(dockRow),
 		`8.dock2 ...and says what it contains ("${dockRow.slice(0, 90)}")`
 	);
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 
 	// showhide-v8 §4: Flow code is a Code tab now (its own suite: code-flow-text)
 

@@ -12,7 +12,7 @@ h.run(async () => {
 
 	// --- 1. pure: punctuation, shift, clear ---
 	const pure = await A.page.evaluate(() => {
-		const k = window.__stores.vrKeyboard;
+		const k = window.__tp.test.v1.vrKeyboard;
 		let s = { buffer: '', shift: false };
 		const feed = (...keys) => keys.forEach((key) => (s = k.keyPress(key, s)));
 		feed('i', "'", 'm', 'space', 'o', 'k', ',', 'space', 'r', 'e', 'd', '-', 'b', 'o', 'x', '?');
@@ -29,16 +29,16 @@ h.run(async () => {
 	// --- 2. live input + the rendered grid fits its plate ---
 	await A.page.evaluate(() => {
 		window.__seen = [];
-		window.__stores.vrKeyboard.openVRKeyboard({ title: 'Test', onCommit: () => {}, onInput: (t) => window.__seen.push(t) });
-		['a', 'b', 'backspace', 'enter'].forEach((key) => window.__stores.vrKeyboard.pressVRKey(key));
+		window.__tp.test.v1.vrKeyboard.openVRKeyboard({ title: 'Test', onCommit: () => {}, onInput: (t) => window.__seen.push(t) });
+		['a', 'b', 'backspace', 'enter'].forEach((key) => window.__tp.test.v1.vrKeyboard.pressVRKey(key));
 	});
 	h.check(JSON.stringify(await A.page.evaluate(() => window.__seen)) === '["a","ab","a"]', 'onInput hears every edit (and not Enter)');
-	await A.page.evaluate(() => window.__stores.vrKeyboard.openVRKeyboard({ title: 'Look', onCommit: () => {} }));
+	await A.page.evaluate(() => window.__tp.test.v1.vrKeyboard.openVRKeyboard({ title: 'Look', onCommit: () => {} }));
 	await A.page.waitForTimeout(400);
 	const grid = await A.page.evaluate(() => {
-		const THREE = window.__stores.THREE;
+		const THREE = window.__tp.test.v1.THREE;
 		let scene;
-		window.__stores.globalScene.subscribe((v) => (scene = v))();
+		window.__tp.test.v1.globalScene.subscribe((v) => (scene = v))();
 		const plate = scene.getObjectByName('vr-keyboard');
 		plate.updateMatrixWorld(true);
 		const keys = [];
@@ -54,11 +54,11 @@ h.run(async () => {
 	});
 	h.check(["?", ',', '.', "'", '-', ';', 'clear'].every((k) => grid.keys.includes(k)), `the grid renders the new keys (${grid.keys.length} keys)`);
 	h.check(grid.inside, 'every key sits on the plate (the widest row sets its width)');
-	await A.page.evaluate(() => window.__stores.vrKeyboard.closeVRKeyboard());
+	await A.page.evaluate(() => window.__tp.test.v1.vrKeyboard.closeVRKeyboard());
 
 	// --- 3. Settings ▸ Search in the headset panel ---
 	const search = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const schema = s.vrSettingsSchema;
 		const get = (st) => {
 			let v;
@@ -83,7 +83,7 @@ h.run(async () => {
 	h.check(search.committed === 'turn', 'Enter keeps the query');
 
 	const press = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const schema = s.vrSettingsSchema;
 		const get = (st) => {
 			let v;
@@ -113,18 +113,18 @@ h.run(async () => {
 	await A.page.waitForTimeout(400);
 	const meshes = await A.page.evaluate(() => {
 		let scene;
-		window.__stores.globalScene.subscribe((v) => (scene = v))();
+		window.__tp.test.v1.globalScene.subscribe((v) => (scene = v))();
 		const names = [];
 		scene.getObjectByName('vr-settings-panel')?.traverse((o) => o.name?.startsWith('vrsettings-') && names.push(o.name));
 		return names;
 	});
 	h.check(meshes.includes('vrsettings-vrset:page:search') && meshes.includes('vrsettings-vrset:search') && meshes.includes('vrsettings-vrset:teleport'),
 		`the panel draws the Search tab, the query row and the result (${meshes.length} controls)`);
-	await A.page.evaluate(() => window.__stores.vrSettingsPanelOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.vrSettingsPanelOpen.set(false));
 
 	// --- 4. a rename with punctuation goes through the keyboard ---
 	const renamed = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 300));
 		let group;

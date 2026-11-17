@@ -20,7 +20,7 @@ h.run(async () => {
 	await xr.pose(page, 'left', [-20, 30, 20], { pitch: 1.4 });
 	await xr.pose(page, 'right', [20, 30, 20], { pitch: 1.4 });
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.viewMode.set('shaded');
 		s.showGrid.set(false);
 	});
@@ -31,7 +31,7 @@ h.run(async () => {
 	const place = (name, scale = 1, dist = 0.32) =>
 		page.evaluate(
 			({ name, scale, dist }) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				let scene;
 				s.globalScene.subscribe((v) => (scene = v))();
 				const g = scene.getObjectByName(name);
@@ -56,7 +56,7 @@ h.run(async () => {
 	};
 
 	const rings = await page.evaluate(() => {
-		const m = window.__stores.vrRadialMenu;
+		const m = window.__tp.test.v1.vrRadialMenu;
 		// every ring reachable from root by nav entries (BFS), plus the selection ring
 		const seen = ['root'];
 		for (let i = 0; i < seen.length; i++)
@@ -69,7 +69,7 @@ h.run(async () => {
 	let n = 1;
 	for (const ring of rings) {
 		await page.evaluate((ring) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const m = s.vrRadialMenu;
 			if (ring === 'object') {
 				s.commandsHandler.sceneCommand('/create box');
@@ -86,7 +86,7 @@ h.run(async () => {
 		await shot(`${String(n++).padStart(2, '0')}-${PREFIX}-${ring.replace(/[^a-z0-9]+/gi, '-')}.png`, 'vr-quick-menu', 1);
 	}
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.vrMenuOpen.set(false);
 		s.objectActions.deleteSelection?.();
 	});
@@ -96,11 +96,11 @@ h.run(async () => {
 		['vrSettingsPanelOpen', 'vr-settings-panel', 'settings-panel'],
 		['vrControlsPanelOpen', 'vr-controls-panel', 'controls-panel']
 	]) {
-		const has = await page.evaluate((store) => !!window.__stores[store], store);
+		const has = await page.evaluate((store) => !!window.__tp.test.v1[store], store);
 		if (!has) continue;
-		await page.evaluate((store) => window.__stores[store].set(true), store);
+		await page.evaluate((store) => window.__tp.test.v1[store].set(true), store);
 		await shot(`${String(n++).padStart(2, '0')}-${PREFIX}-${file}.png`, name, 1, 0.62);
-		await page.evaluate((store) => window.__stores[store].set(false), store);
+		await page.evaluate((store) => window.__tp.test.v1[store].set(false), store);
 	}
 	await h.finish(browser);
 });

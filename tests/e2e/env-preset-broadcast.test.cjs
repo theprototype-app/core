@@ -4,11 +4,11 @@ const h = require('./helpers.cjs');
 
 const libsOn = (page) =>
 	page.evaluate(
-		() => new Promise((r) => window.__stores.environment.peerEnvPresets.subscribe(r)())
+		() => new Promise((r) => window.__tp.test.v1.environment.peerEnvPresets.subscribe(r)())
 	);
 const envOf = (page) =>
 	page.evaluate(
-		() => new Promise((r) => window.__stores.environment.environment.subscribe(r)())
+		() => new Promise((r) => window.__tp.test.v1.environment.environment.subscribe(r)())
 	);
 
 h.run(async () => {
@@ -17,8 +17,8 @@ h.run(async () => {
 
 	// A saves a preset BEFORE connecting — the handshake should carry it
 	await A.page.evaluate(async () => {
-		window.__stores.environment.setEnvironment('sunset');
-		await window.__stores.environment.saveEnvPreset('HandshakeGlow');
+		window.__tp.test.v1.environment.setEnvironment('sunset');
+		await window.__tp.test.v1.environment.saveEnvPreset('HandshakeGlow');
 	});
 
 	const B = await h.setupPage(browser, 'B');
@@ -31,8 +31,8 @@ h.run(async () => {
 
 	// live update: A saves another preset while connected
 	await A.page.evaluate(async () => {
-		window.__stores.environment.setEnvironment('night');
-		await window.__stores.environment.saveEnvPreset('LiveNight');
+		window.__tp.test.v1.environment.setEnvironment('night');
+		await window.__tp.test.v1.environment.saveEnvPreset('LiveNight');
 	});
 	await h.eventually(
 		() => libsOn(B.page),
@@ -42,10 +42,10 @@ h.run(async () => {
 
 	// B applies A's preset by name — replicates the full payload everywhere
 	await B.page.evaluate(async () => {
-		const map = await new Promise((r) => window.__stores.environment.peerEnvPresets.subscribe(r)());
+		const map = await new Promise((r) => window.__tp.test.v1.environment.peerEnvPresets.subscribe(r)());
 		const list = Object.values(map)[0];
 		const preset = list.find((p) => p.name === 'HandshakeGlow');
-		window.__stores.environment.applyCustomPreset(preset.payload);
+		window.__tp.test.v1.environment.applyCustomPreset(preset.payload);
 	});
 	await h.eventually(
 		() => Promise.all([envOf(A.page), envOf(B.page)]),
@@ -58,7 +58,7 @@ h.run(async () => {
 	);
 
 	// deleting broadcasts the shrunken library
-	await A.page.evaluate(() => window.__stores.environment.deleteEnvPreset('LiveNight'));
+	await A.page.evaluate(() => window.__tp.test.v1.environment.deleteEnvPreset('LiveNight'));
 	await h.eventually(
 		() => libsOn(B.page),
 		(map) => Object.values(map).every((list) => !list.some((p) => p.name === 'LiveNight')),

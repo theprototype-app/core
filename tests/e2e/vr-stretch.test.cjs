@@ -9,7 +9,7 @@ h.run(async () => {
 
 	// --- pure: scale one axis about its centroid, leave the others ---
 	const pure = await A.page.evaluate(() => {
-		const f = window.__stores.faceEdit.stretchPositions;
+		const f = window.__tp.test.v1.faceEdit.stretchPositions;
 		const out = f([-1, 0, 0, 1, 2, 3], 0, 2); // centroid x=0 -> -2 / 2
 		return { x0: out[0], x1: out[3], y: out[4], z: out[5] };
 	});
@@ -18,7 +18,7 @@ h.run(async () => {
 
 	// --- session: begin -> set -> commit bakes ONE meshgeo; undo restores ---
 	const session = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const extentX = (b) => {
 			const p = b.geometry.attributes.position;
 			let mn = 1e9, mx = -1e9;
@@ -53,7 +53,7 @@ h.run(async () => {
 
 	// --- Edit menu flow: obj:editmesh -> Stretch enters; Done commits + exits ---
 	const menu = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.objectActions.selectObject(window.__box.uuid);
 		s.vrMenuOpen.set(true);
 		s.vrControls.executeVRMenuAction('obj:editmesh');

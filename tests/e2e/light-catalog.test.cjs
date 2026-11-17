@@ -7,7 +7,7 @@ const lightOf = (page, name) =>
 	page.evaluate(
 		(name) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const l = g?.children.find((c) => c.name === name);
 					r(
 						l
@@ -27,13 +27,13 @@ const lightOf = (page, name) =>
 									// migrated into a rotation; report the forward and the position instead
 									target: l.userData?.spotTarget ?? null,
 									forward: (() => {
-										const T = window.__stores.THREE;
+										const T = window.__tp.test.v1.THREE;
 										l.updateMatrixWorld(true);
 										const q = new T.Quaternion();
 										l.getWorldQuaternion(q);
 										return new T.Vector3(0, 0, -1).applyQuaternion(q).toArray();
 									})(),
-									pos: l.getWorldPosition(new window.__stores.THREE.Vector3()).toArray()
+									pos: l.getWorldPosition(new window.__tp.test.v1.THREE.Vector3()).toArray()
 								}
 							: null
 					);
@@ -50,8 +50,8 @@ h.run(async () => {
 
 	// spot + rect area exist and replicate
 	await A.page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/light spot');
-		window.__stores.commandsHandler.sceneCommand('/light rectarea');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/light spot');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/light rectarea');
 	});
 	await h.eventually(
 		() => Promise.all([lightOf(B.page, 'Spot'), lightOf(B.page, 'RectArea')]),
@@ -61,7 +61,7 @@ h.run(async () => {
 
 	// edit spot params + aim + shadow settings on A
 	await A.page.evaluate(async () => {
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const spot = g.children.find((c) => c.name === 'Spot');
 		spot.angle = 0.4;
 		spot.penumbra = 0.5;
@@ -70,9 +70,9 @@ h.run(async () => {
 		spot.shadow.bias = -0.002;
 		// 24-E1: "Aim at" is a one-shot lookAt that writes the ROTATION; the old
 		// `lighttarget` message still lands on a peer as the same lookAt
-		window.__stores.lightParams.aimLight(spot, [3, 0, -2]);
-		window.__stores.lightParams.setShadowMapSize(spot, 2048);
-		const peer = await new Promise((r) => window.__stores.peers.subscribe(r)());
+		window.__tp.test.v1.lightParams.aimLight(spot, [3, 0, -2]);
+		window.__tp.test.v1.lightParams.setShadowMapSize(spot, 2048);
+		const peer = await new Promise((r) => window.__tp.test.v1.peers.subscribe(r)());
 		peer.send({ type: 'lighttarget', uuid: spot.uuid, pos: [3, 0, -2] });
 		peer.send({ type: 'object', element: spot.toJSON(), override: true });
 	});
@@ -101,11 +101,11 @@ h.run(async () => {
 
 	// rect area width/height replicate
 	await A.page.evaluate(async () => {
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const rect = g.children.find((c) => c.name === 'RectArea');
 		rect.width = 7;
 		rect.height = 3;
-		const peer = await new Promise((r) => window.__stores.peers.subscribe(r)());
+		const peer = await new Promise((r) => window.__tp.test.v1.peers.subscribe(r)());
 		peer.send({ type: 'object', element: rect.toJSON(), override: true });
 	});
 	await h.eventually(
@@ -115,11 +115,11 @@ h.run(async () => {
 	);
 
 	// local shadow quality cap: low caps the applied map size, wish stays
-	await A.page.evaluate(() => window.__stores.lightParams.shadowQuality.set('low'));
+	await A.page.evaluate(() => window.__tp.test.v1.lightParams.shadowQuality.set('low'));
 	await A.page.waitForTimeout(200);
 	const capped = await lightOf(A.page, 'Spot');
 	h.check(capped.mapWish === 2048 && capped.mapReal === 512, `low quality caps 2048 → 512 locally (${capped.mapReal})`);
-	await A.page.evaluate(() => window.__stores.lightParams.shadowQuality.set('high'));
+	await A.page.evaluate(() => window.__tp.test.v1.lightParams.shadowQuality.set('high'));
 	await A.page.waitForTimeout(200);
 	const uncapped = await lightOf(A.page, 'Spot');
 	h.check(uncapped.mapReal === 2048, 'high quality restores the wished size');
@@ -129,10 +129,10 @@ h.run(async () => {
 	const aimed = await A.page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const spot = g?.children.find((c) => c.name === 'Spot');
 					if (!spot) return r(null);
-					const T = window.__stores.THREE;
+					const T = window.__tp.test.v1.THREE;
 					spot.updateMatrixWorld(true);
 					const q = new T.Quaternion();
 					spot.getWorldQuaternion(q);

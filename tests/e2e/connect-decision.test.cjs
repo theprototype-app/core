@@ -30,7 +30,7 @@ const objectNames = (p) =>
 	p.page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => r((g?.children ?? []).map((c) => c.name)))()
+				window.__tp.test.v1.objectsGroup.subscribe((g) => r((g?.children ?? []).map((c) => c.name)))()
 			)
 	);
 
@@ -40,7 +40,7 @@ const objectCount = async (p) => (await objectNames(p)).length;
 const askOn = (p) =>
 	p.page.evaluate(() => {
 		let list;
-		window.__stores.toastStore.subscribe((v) => (list = v))();
+		window.__tp.test.v1.toastStore.subscribe((v) => (list = v))();
 		const entry = list.find((e) => e && e.id === 'share-or-stash');
 		if (!entry) return null;
 		return { text: entry.text, labels: (entry.actions ?? []).map((a) => a.label) };
@@ -79,31 +79,31 @@ const modalOn = (p) =>
 const envOf = (p) =>
 	p.page.evaluate(() => {
 		let e;
-		window.__stores.environment.environment.subscribe((v) => (e = v))();
+		window.__tp.test.v1.environment.environment.subscribe((v) => (e = v))();
 		return Number(e?.exposure ?? 1);
 	});
 
 const setExposure = (p, value) =>
-	p.page.evaluate((v) => window.__stores.environment.setEnvironment('studio', v), value);
+	p.page.evaluate((v) => window.__tp.test.v1.environment.setEnvironment('studio', v), value);
 
 const sceneNameOf = (p) =>
 	p.page.evaluate(() => {
 		let at;
-		window.__stores.levels.currentLevel.subscribe((v) => (at = v))();
+		window.__tp.test.v1.levels.currentLevel.subscribe((v) => (at = v))();
 		return at === null ? null : String(at?.name ?? '');
 	});
 
 const manifestScenes = (p) =>
 	p.page.evaluate(() => {
 		let m;
-		window.__stores.projectManifest.projectManifest.subscribe((v) => (m = v))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((v) => (m = v))();
 		return Object.keys(m?.scenes ?? {});
 	});
 
 const sceneItems = (p) =>
 	p.page.evaluate(() => {
 		let items;
-		window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((v) => (items = v))();
 		return (items ?? []).filter((i) => i.kind === 'scene').map((i) => i.name);
 	});
 
@@ -112,9 +112,9 @@ const shareFile = (peer, text, name) =>
 	peer.page.evaluate(
 		async ([text, name]) => {
 			const buf = new TextEncoder().encode(text).buffer;
-			const item = await window.__stores.explorer.addItemFromBytes(buf, name, null);
-			window.__stores.sharedLibrary.shareItem(item.id);
-			window.__stores.sharedLibrary.publishMine(true);
+			const item = await window.__tp.test.v1.explorer.addItemFromBytes(buf, name, null);
+			window.__tp.test.v1.sharedLibrary.shareItem(item.id);
+			window.__tp.test.v1.sharedLibrary.publishMine(true);
 			return { id: item.id, hash: item.hash };
 		},
 		[text, name]
@@ -124,7 +124,7 @@ const shareFile = (peer, text, name) =>
 const offeredHashes = (p) =>
 	p.page.evaluate(() => {
 		let m;
-		window.__stores.projectManifest.projectManifest.subscribe((v) => (m = v))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((v) => (m = v))();
 		return (m?.items ?? []).map((r) => r.hash);
 	});
 
@@ -132,23 +132,23 @@ const offeredHashes = (p) =>
 const holdsHash = (p, hash) =>
 	p.page.evaluate((wanted) => {
 		let items;
-		window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((v) => (items = v))();
 		return (items ?? []).some((i) => i.hash === wanted);
 	}, hash);
 
 const openPeers = (p) =>
 	p.page.evaluate(() => {
 		let peer;
-		window.__stores.peers.subscribe((v) => (peer = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (peer = v))();
 		return peer?.openedPeers?.size ?? 0;
 	});
 
 const addObject = async (p, command) => {
-	await p.page.evaluate((c) => window.__stores.commandsHandler.sceneCommand(c), command);
+	await p.page.evaluate((c) => window.__tp.test.v1.commandsHandler.sceneCommand(c), command);
 	await p.page.waitForTimeout(1100);
 	// creation SELECTS, and a selection rides the handshake as a lock — deselect so every
 	// check below is reasoning about objects and not about locks
-	await p.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await p.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 };
 
 /** The dial, by hand: this suite is about what the dial does NOT do, so it must not go
@@ -178,7 +178,7 @@ const retire = async (...pages) => {
 const waiting = (p) =>
 	p.page.evaluate(() => {
 		let list;
-		window.__stores.waitingForApproval.subscribe((v) => (list = v))();
+		window.__tp.test.v1.waitingForApproval.subscribe((v) => (list = v))();
 		return (list ?? []).length;
 	});
 
@@ -284,7 +284,7 @@ h.run(async () => {
 	h.check(
 		await B.page.evaluate(() => {
 			let on;
-			window.__stores.sharedLibrary.autoDownload.subscribe((v) => (on = v))();
+			window.__tp.test.v1.sharedLibrary.autoDownload.subscribe((v) => (on = v))();
 			return on === true;
 		}),
 		'premise: automatic download is on, as it ships'
@@ -314,8 +314,8 @@ h.run(async () => {
 		20000
 	);
 	const stash = await B.page.evaluate(async () => {
-		await window.__stores.sessions.loadSessions();
-		const list = await new Promise((r) => window.__stores.sessions.sessions.subscribe(r)());
+		await window.__tp.test.v1.sessions.loadSessions();
+		const list = await new Promise((r) => window.__tp.test.v1.sessions.sessions.subscribe(r)());
 		return list.find((s) => String(s.name).startsWith('Dismissed before joining')) ?? null;
 	});
 	h.check(
@@ -430,7 +430,7 @@ h.run(async () => {
 	h.check(
 		await I.page.evaluate(() => {
 			let v;
-			window.__stores.connectionState.mergeOnConnect.subscribe((x) => (v = x))();
+			window.__tp.test.v1.connectionState.mergeOnConnect.subscribe((x) => (v = x))();
 			return v === true;
 		}),
 		'premise: the joiner has opted back into the classic merge'

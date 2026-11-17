@@ -9,17 +9,17 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		window.__box = g.children[g.children.length - 1];
-		window.__stores.objectActions.selectObject(window.__box.uuid);
+		window.__tp.test.v1.objectActions.selectObject(window.__box.uuid);
 	});
 	await A.page.waitForTimeout(300);
 
 	const read = () =>
 		A.page.evaluate(() => {
-			let tm; window.__stores.transformMode.subscribe((v) => (tm = v))();
-			let tc; window.__stores.TControls.subscribe((v) => (tc = v))();
+			let tm; window.__tp.test.v1.transformMode.subscribe((v) => (tm = v))();
+			let tc; window.__tp.test.v1.TControls.subscribe((v) => (tc = v))();
 			const cls = (t) => {
 				// lucide <svg> icons: className is an SVGAnimatedString — read the attribute
 				const el = document.querySelector(`p[title="${t}"] svg`);
@@ -56,8 +56,8 @@ h.run(async () => {
 
 	// toolbar setter + shortcut share the mode
 	await A.page.evaluate(() => {
-		window.__stores.objectActions.selectObject(window.__box.uuid);
-		window.__stores.objectActions.setTransformMode('scale');
+		window.__tp.test.v1.objectActions.selectObject(window.__box.uuid);
+		window.__tp.test.v1.objectActions.setTransformMode('scale');
 	});
 	await A.page.waitForTimeout(150);
 	s = await read();

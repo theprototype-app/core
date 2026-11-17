@@ -14,15 +14,15 @@ async function shot(page, name, opts) {
 }
 
 /** @param {any} page */
-const em = (page) => page.evaluate(() => window.__stores.sim.fluidEmitterDebug()[0] ?? null);
+const em = (page) => page.evaluate(() => window.__tp.test.v1.sim.fluidEmitterDebug()[0] ?? null);
 
 /** @param {any} page @param {number[]} pos @param {number[]} target */
 async function look(page, pos, target) {
 	await page.evaluate(
 		([p, t]) => {
 			let cam, orbit;
-			window.__stores.editorCam.subscribe((v) => (cam = v))();
-			window.__stores.orbitControls.subscribe((v) => (orbit = v))();
+			window.__tp.test.v1.editorCam.subscribe((v) => (cam = v))();
+			window.__tp.test.v1.orbitControls.subscribe((v) => (orbit = v))();
 			cam.position.set(p[0], p[1], p[2]);
 			if (orbit?.target) {
 				orbit.target.set(t[0], t[1], t[2]);
@@ -36,7 +36,7 @@ async function look(page, pos, target) {
 }
 
 /** @param {any} page @param {any} patch */
-const setEm = (page, patch) => page.evaluate((p) => window.__stores.sim.setFluidEmitterFor(window.__em.uuid, p), patch);
+const setEm = (page, patch) => page.evaluate((p) => window.__tp.test.v1.sim.setFluidEmitterFor(window.__em.uuid, p), patch);
 
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
@@ -46,12 +46,12 @@ h.run(async () => {
 
 	// ---------- Add ▸ Water ▸ Fluid (the real menu builder) ----------
 	const made = await A.page.evaluate(() => {
-		const water = window.__stores.addObjects.buildAddChildren(() => [2, 0, 0]).find((g) => g.label === 'Water');
+		const water = window.__tp.test.v1.addObjects.buildAddChildren(() => [2, 0, 0]).find((g) => g.label === 'Water');
 		const item = water?.children?.find((c) => c.label === 'Fluid');
 		if (!item) return { labels: water?.children?.map((c) => c.label) };
 		item.action();
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.children.find((c) => c.userData?.fluidEmitter);
 		window.__em = o;
 		return { labels: water.children.map((c) => c.label), uuid: o?.uuid, y: o?.position.y, name: o?.name, physics: !!o?.userData.physics, shadow: o?.castShadow };
@@ -69,7 +69,7 @@ h.run(async () => {
 	// the water falls and lands: most particles are low (the area floor) after a few seconds
 	await A.page.waitForTimeout(2500);
 	const fallen = await A.page.evaluate(() => {
-		const p = window.__stores.sim.fluidEmitterParticles(window.__em.uuid);
+		const p = window.__tp.test.v1.sim.fluidEmitterParticles(window.__em.uuid);
 		return { n: p.length, low: p.filter((q) => q[1] < 0.6).length };
 	});
 	h.check(fallen.n > 200 && fallen.low / fallen.n > 0.5, `the poured water lands on the area floor (${fallen.low}/${fallen.n} below 0.6 m)`);
@@ -77,7 +77,7 @@ h.run(async () => {
 	const setVis = (on) =>
 		A.page.evaluate((v) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((x) => (g = x))();
+			window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 			g.parent.children.filter((c) => c.userData?.__fluidVisual).forEach((c) => (c.visible = v));
 		}, on);
 	const withFluid = await h.grabFrame(A);
@@ -115,7 +115,7 @@ h.run(async () => {
 	await setEm(A.page, { lifetime: 600, floor: false, generation: 3 });
 	await A.page.waitForTimeout(3000);
 	const open = await A.page.evaluate(() => {
-		const p = window.__stores.sim.fluidEmitterParticles(window.__em.uuid);
+		const p = window.__tp.test.v1.sim.fluidEmitterParticles(window.__em.uuid);
 		const s = window.__em.userData.fluidEmitter;
 		const bottom = window.__em.position.y + s.area.offset[1] - s.area.size[1] / 2;
 		return { n: p.length, below: p.filter((q) => q[1] < bottom - 0.25).length, bottom };
@@ -125,9 +125,9 @@ h.run(async () => {
 
 	// ---------- collision: a box under the stream; Fluid interaction None lets it through ----------
 	const box = await A.page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/create Box 0.8 0.4 0.8');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create Box 0.8 0.4 0.8');
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const b = g.children[g.children.length - 1];
 		delete b.userData.physics; // scenery
 		b.position.set(2, 0.5, 0);
@@ -137,7 +137,7 @@ h.run(async () => {
 	});
 	const onTop = () =>
 		A.page.evaluate(() => {
-			const p = window.__stores.sim.fluidEmitterParticles(window.__em.uuid);
+			const p = window.__tp.test.v1.sim.fluidEmitterParticles(window.__em.uuid);
 			return p.filter((q) => Math.abs(q[0] - 2) < 0.4 && Math.abs(q[2]) < 0.4 && q[1] > 0.7 && q[1] < 0.95).length;
 		});
 	await setEm(A.page, { generation: 5 });
@@ -145,7 +145,7 @@ h.run(async () => {
 	const resting = await onTop();
 	h.check(resting > 25, `the stream lands ON the box: water rests on its top face (${resting} particles)`);
 	await shot(A.page, '03-fluid-emitter-on-box.png');
-	await A.page.evaluate((uuid) => window.__stores.sim.setFluidInteractionFor([uuid], 'none'), box);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.sim.setFluidInteractionFor([uuid], 'none'), box);
 	await setEm(A.page, { generation: 6 });
 	await A.page.waitForTimeout(3500);
 	const through = await onTop();
@@ -155,17 +155,17 @@ h.run(async () => {
 	const peerInter = (uuid) =>
 		B.page.evaluate((u) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			return g.getObjectByProperty('uuid', u)?.userData.fluidInteraction ?? null;
 		}, uuid);
 	await h.eventually(() => peerInter(box), (v) => v === 'none', 'the interaction replicates to peer B', 8000);
 	// undo: change it once more, one Ctrl+Z puts it back (and the peer follows)
-	await A.page.evaluate((uuid) => window.__stores.sim.setFluidInteractionFor([uuid], 'float'), box);
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate((uuid) => window.__tp.test.v1.sim.setFluidInteractionFor([uuid], 'float'), box);
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	const undone = await A.page.evaluate(() => window.__box.userData.fluidInteraction ?? null);
 	h.check(undone === 'none', `one undo puts the interaction back (props undo kind) (${undone})`);
 	await h.eventually(() => peerInter(box), (v) => v === 'none', 'the undo replicates to peer B', 8000);
-	await A.page.evaluate((uuid) => window.__stores.sim.setFluidInteractionFor([uuid], 'auto'), box);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.sim.setFluidInteractionFor([uuid], 'auto'), box);
 	const cleared = await A.page.evaluate(() => 'fluidInteraction' in window.__box.userData);
 	h.check(!cleared, 'Auto writes no key (a scene that never touched it stays byte-identical)');
 
@@ -173,7 +173,7 @@ h.run(async () => {
 	await A.page.evaluate(() => {
 		window.__box.position.set(9, 0.5, 9); // out of the way
 		window.__box.updateMatrixWorld(true);
-		window.__stores.waterActions.makeWater(window.__stores.addObjects.spawnAtPoint('/create Box 1.6 0.6 1.6', [2, 0.3, 0]), 'tank');
+		window.__tp.test.v1.waterActions.makeWater(window.__tp.test.v1.addObjects.spawnAtPoint('/create Box 1.6 0.6 1.6', [2, 0.3, 0]), 'tank');
 	});
 	await setEm(A.page, { generation: 7, rate: 400 });
 	await h.eventually(() => em(A.page), (e) => e.sunk > 100, 'water poured into a pool joins it (sunk)', 12000);
@@ -196,7 +196,7 @@ h.run(async () => {
 	const peerSpec = () =>
 		B.page.evaluate((uuid) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			return g.getObjectByProperty('uuid', uuid)?.userData.fluidEmitter ?? null;
 		}, made.uuid);
 	await h.eventually(peerSpec, (s) => !!s && s.generation === 7 && s.rate === 400 && s.maxParticles === 1800, 'the emitter settings (caps included) replicate to peer B', 10000);
@@ -205,10 +205,10 @@ h.run(async () => {
 
 	// ---------- undo of a setting; the Inspector in dark + light ----------
 	await setEm(A.page, { color: '#d0402a' });
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	const col = await A.page.evaluate(() => window.__em.userData.fluidEmitter.color);
 	h.check(col === '#3a92d8', `one undo restores the colour (${col})`);
-	await A.page.evaluate(() => window.__stores.objectActions.applySelectionSet([window.__em.uuid], true));
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.applySelectionSet([window.__em.uuid], true));
 	await A.page.waitForTimeout(500);
 	const maxRow = A.page.locator('#fluid-emitter-max').first();
 	await maxRow.scrollIntoViewIfNeeded().catch(() => {});
@@ -216,11 +216,11 @@ h.run(async () => {
 	h.check(sectionShown, 'the Inspector shows the Fluid emitter section for the selected emitter');
 	if (sectionShown) {
 		for (const theme of ['dark', 'light']) {
-			await A.page.evaluate((t) => window.__stores.themes.theme.set(t), theme);
+			await A.page.evaluate((t) => window.__tp.test.v1.themes.theme.set(t), theme);
 			await A.page.waitForTimeout(400);
 			await shot(A.page, `05-inspector-fluid-emitter-${theme}.png`);
 		}
-		await A.page.evaluate(() => window.__stores.themes.theme.set('dark'));
+		await A.page.evaluate(() => window.__tp.test.v1.themes.theme.set('dark'));
 	}
 	h.check(h.pageErrors(A).length === 0, `no page errors (${JSON.stringify(h.pageErrors(A).slice(0, 2))})`);
 	await h.finish(browser);

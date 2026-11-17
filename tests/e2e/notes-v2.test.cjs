@@ -14,19 +14,19 @@ const h = require('./helpers.cjs');
 
 const store = (page) =>
 	page.evaluate(
-		() => new Promise((r) => window.__stores.annotationsHandler.annotations.subscribe(r)())
+		() => new Promise((r) => window.__tp.test.v1.annotationsHandler.annotations.subscribe(r)())
 	);
 
 const active = (page) =>
 	page.evaluate(
-		() => new Promise((r) => window.__stores.annotationsHandler.activeAnnotation.subscribe(r)())
+		() => new Promise((r) => window.__tp.test.v1.annotationsHandler.activeAnnotation.subscribe(r)())
 	);
 
 // commit a note on `uuid` with v2 fields; returns its id
 const addNote = (page, uuid, offset, fields) =>
 	page.evaluate(
 		({ uuid, offset, fields }) => {
-			const ah = window.__stores.annotationsHandler;
+			const ah = window.__tp.test.v1.annotationsHandler;
 			ah.addAnnotation(uuid, offset);
 			let cur = null;
 			ah.activeAnnotation.subscribe((a) => (cur = a))();
@@ -43,9 +43,9 @@ const pinPixel = (page, idOrDraft) =>
 	page.evaluate(
 		(anchor) =>
 			new Promise((resolve) => {
-				const ah = window.__stores.annotationsHandler;
-				window.__stores.globalCamera.subscribe((camera) => {
-					window.__stores.globalRenderer.subscribe((renderer) => {
+				const ah = window.__tp.test.v1.annotationsHandler;
+				window.__tp.test.v1.globalCamera.subscribe((camera) => {
+					window.__tp.test.v1.globalRenderer.subscribe((renderer) => {
 						const world = ah.annotationWorldPosition(anchor);
 						if (!world || !camera || !renderer?.domElement) return resolve(null);
 						const v = world.clone().project(camera);
@@ -113,7 +113,7 @@ h.run(async () => {
 
 	// --- H1: legacy payloads normalize at the store boundary -----------------
 	const legacy = await A.page.evaluate(() => {
-		const ah = window.__stores.annotationsHandler;
+		const ah = window.__tp.test.v1.annotationsHandler;
 		ah.applyAnnotationsSnapshot([
 			{
 				id: 'legacy-note',
@@ -144,13 +144,13 @@ h.run(async () => {
 		'H1: an old-shape note loads with name/label defaults + the amber default color'
 	);
 	// the orphan prune drops it (no such object) — clear explicitly so numbering is clean
-	await A.page.evaluate(() => window.__stores.annotationsHandler.annotations.set([]));
+	await A.page.evaluate(() => window.__tp.test.v1.annotationsHandler.annotations.set([]));
 
 	// --- scene: one box, three notes -----------------------------------------
 	// a KNOWN nickname first: authorship must not depend on the live peer id (the
 	// signaling box can hand out a new one on a reconnect mid-suite)
 	const boxUuid = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.username.set('Old Nick');
 		s.commandsHandler.sceneCommand('/create box');
 		let g;
@@ -178,7 +178,7 @@ h.run(async () => {
 	// --- V3 markers: screen-space badge + leader line -------------------------
 	// close in first: from the default distance these three notes overlap on screen
 	// and CLUSTER (that is the feature — checked further down)
-	await A.page.evaluate(() => window.__stores.objectActions.flyTo([1.6, 1.8, 2.6], [0, 1, 0], 1));
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.flyTo([1.6, 1.8, 2.6], [0, 1, 0], 1));
 	await A.page.waitForTimeout(900);
 	const m1 = await markerInfo(A.page, 1);
 	h.check(
@@ -236,7 +236,7 @@ h.run(async () => {
 	const drift = await A.page.evaluate(
 		(leader) =>
 			new Promise((resolve) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				const ah = s.annotationsHandler;
 				let controls;
 				let camera;
@@ -301,7 +301,7 @@ h.run(async () => {
 	const meshCount = await A.page.evaluate(
 		() =>
 			new Promise((r) => {
-				window.__stores.annotationsHandler.pinsGroup.subscribe((group) => {
+				window.__tp.test.v1.annotationsHandler.pinsGroup.subscribe((group) => {
 					let meshes = 0;
 					let pins = 0;
 					group?.traverse((node) => {
@@ -322,7 +322,7 @@ h.run(async () => {
 		name: 'Back face',
 		text: 'behind the box from here'
 	});
-	await A.page.evaluate(() => window.__stores.objectActions.flyTo([0, 1.2, 4], [0, 0.5, 0], 1));
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.flyTo([0, 1.2, 4], [0, 0.5, 0], 1));
 	await A.page.waitForTimeout(900);
 	const behind = await markerInfo(A.page, 4);
 	h.check(
@@ -341,7 +341,7 @@ h.run(async () => {
 		`V3: a marker resting on its surface stays solid — the few-cm slack (${onSurface?.background})`
 	);
 	await A.page.evaluate((id) => {
-		window.__stores.annotationsHandler.deleteAnnotation(id);
+		window.__tp.test.v1.annotationsHandler.deleteAnnotation(id);
 	}, behindId);
 
 	// --- V3: clustering ------------------------------------------------------
@@ -382,12 +382,12 @@ h.run(async () => {
 		'V3: clicking the cluster fans its members out, each with its own leader'
 	);
 	for (const id of crowd)
-		await A.page.evaluate((id) => window.__stores.annotationsHandler.deleteAnnotation(id), id);
-	await A.page.evaluate(() => window.__stores.annotationsHandler.activeAnnotation.set(null));
+		await A.page.evaluate((id) => window.__tp.test.v1.annotationsHandler.deleteAnnotation(id), id);
+	await A.page.evaluate(() => window.__tp.test.v1.annotationsHandler.activeAnnotation.set(null));
 
 	// --- H9 colour maths (shared by the badge and the VR pin) -----------------
 	const border = await A.page.evaluate(() => {
-		const ah = window.__stores.annotationsHandler;
+		const ah = window.__tp.test.v1.annotationsHandler;
 		return {
 			dark: ah.shadeHex('#22c55e'),
 			inkOnGreen: ah.contrastOn('#22c55e'),
@@ -431,7 +431,7 @@ h.run(async () => {
 	});
 
 	// --- H2/H5: the popover opens ANCHORED near its pin, in VIEW mode ---------
-	await A.page.evaluate((id) => window.__stores.annotationsHandler.openAnnotation(id), id1);
+	await A.page.evaluate((id) => window.__tp.test.v1.annotationsHandler.openAnnotation(id), id1);
 	await A.page.waitForTimeout(900); // let the 400ms fly settle
 	const viewCard = A.page.locator('[role="dialog"][aria-label="Note"]');
 	h.check(await viewCard.first().isVisible(), 'H2: pin open lands on the VIEW face');
@@ -459,7 +459,7 @@ h.run(async () => {
 	// pose from its own spherical state every frame and would revert a direct write)
 	await A.page.evaluate((uuid) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		const box = g.getObjectByProperty('uuid', uuid);
 		box.position.x += 2.5;
 		box.updateMatrixWorld(true);
@@ -493,13 +493,13 @@ h.run(async () => {
 	// --- H5: edit face saves name/color/label and replicates -------------------
 	await A.page.evaluate(() => {
 		let original;
-		window.__stores.peers.subscribe((p) => (original = p))();
+		window.__tp.test.v1.peers.subscribe((p) => (original = p))();
 		window.__peerOriginal = original;
 		window.__sent = [];
-		window.__stores.peers.set({ ...original, send: (m) => window.__sent.push(m) });
+		window.__tp.test.v1.peers.set({ ...original, send: (m) => window.__sent.push(m) });
 	});
 	await A.page.evaluate(
-		(id) => window.__stores.annotationsHandler.openAnnotation(id, 'edit'),
+		(id) => window.__tp.test.v1.annotationsHandler.openAnnotation(id, 'edit'),
 		id2
 	);
 	await A.page.waitForTimeout(700);
@@ -519,7 +519,7 @@ h.run(async () => {
 	h.check(saved?.shape === 'square', `H9: the shape selector saves the pin shape (${saved?.shape})`);
 	const sent = await A.page.evaluate(() => {
 		const list = window.__sent.filter((m) => m.type === 'annotation');
-		window.__stores.peers.set(window.__peerOriginal);
+		window.__tp.test.v1.peers.set(window.__peerOriginal);
 		return list;
 	});
 	const sentNote = sent.find((m) => m.annotation?.id === id2)?.annotation;
@@ -548,7 +548,7 @@ h.run(async () => {
 	// receive path: a peer's v2 payload lands normalized
 	const remote = await A.page.evaluate(
 		({ uuid }) => {
-			const ah = window.__stores.annotationsHandler;
+			const ah = window.__tp.test.v1.annotationsHandler;
 			ah.applyAnnotation({
 				op: 'set',
 				annotation: {
@@ -582,18 +582,18 @@ h.run(async () => {
 			.textContent()
 			.then((t) => (t || '').replace(/\s+/g, ' ').trim())
 			.catch(() => '');
-	await A.page.evaluate(() => window.__stores.annotationsHandler.openAnnotation('remote-note'));
+	await A.page.evaluate(() => window.__tp.test.v1.annotationsHandler.openAnnotation('remote-note'));
 	await h.eventually(
 		cardText,
 		(t) => t.includes('Peer note') && t.includes('B') && !t.includes('Me'),
 		"H10: someone else's note shows THEIR author, not 'Me'"
 	);
 	await A.page.evaluate(() => {
-		const ah = window.__stores.annotationsHandler;
+		const ah = window.__tp.test.v1.annotationsHandler;
 		ah.applyAnnotation({ op: 'delete', annotation: { id: 'remote-note' } });
 		ah.activeAnnotation.set(null);
 	});
-	await A.page.evaluate((id) => window.__stores.annotationsHandler.openAnnotation(id), id1);
+	await A.page.evaluate((id) => window.__tp.test.v1.annotationsHandler.openAnnotation(id), id1);
 	await h.eventually(
 		cardText,
 		(t) => t.includes('Hinge') && t.includes('Me'),
@@ -603,7 +603,7 @@ h.run(async () => {
 	// (peer ids are re-issued; nicknames change) — legacy keyless notes still match
 	// by name
 	const ownership = await A.page.evaluate(() => {
-		const ah = window.__stores.annotationsHandler;
+		const ah = window.__tp.test.v1.annotationsHandler;
 		return {
 			byKey: ah.isMyNote({ author: 'whoever', authorKey: ah.myAuthorKey() }),
 			foreignKey: ah.isMyNote({ author: 'Old Nick', authorKey: 'someone-elses-key' }),
@@ -621,8 +621,8 @@ h.run(async () => {
 	// renaming yourself upgrades your OWN notes' stored author on the next save
 	await A.page.evaluate(
 		(id) => {
-			window.__stores.username.set('New Nick');
-			window.__stores.annotationsHandler.openAnnotation(id, 'edit');
+			window.__tp.test.v1.username.set('New Nick');
+			window.__tp.test.v1.annotationsHandler.openAnnotation(id, 'edit');
 		},
 		id3
 	);
@@ -635,7 +635,7 @@ h.run(async () => {
 		`H10: our own note re-stamps the author when we rename ourselves (${upgraded?.author})`
 	);
 	const displayed = await A.page.evaluate((id) => {
-		const ah = window.__stores.annotationsHandler;
+		const ah = window.__tp.test.v1.annotationsHandler;
 		let list = [];
 		ah.annotations.subscribe((l) => (list = l))();
 		const mine = list.find((a) => a.id === id);
@@ -655,11 +655,11 @@ h.run(async () => {
 		displayed.saved === 'New Nick',
 		`H10: the same note reads as its owner's NICKNAME for anyone else (${displayed.saved})`
 	);
-	await A.page.evaluate(() => window.__stores.annotationsHandler.activeAnnotation.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.annotationsHandler.activeAnnotation.set(null));
 
 	// --- H5: a draft opens at the CLICKED point ------------------------------
 	await A.page.evaluate((uuid) => {
-		window.__stores.annotationsHandler.addAnnotation(uuid, [1.4, 2.2, 0.4]);
+		window.__tp.test.v1.annotationsHandler.addAnnotation(uuid, [1.4, 2.2, 0.4]);
 	}, boxUuid);
 	await A.page.waitForTimeout(500);
 	h.check(await editCard.first().isVisible(), 'H5: a draft opens straight on the edit face');
@@ -672,12 +672,12 @@ h.run(async () => {
 			draftBox && Math.round(draftBox.x + draftBox.width)
 		} vs point ${draftPix && Math.round(draftPix.x)},${draftPix && Math.round(draftPix.y)})`
 	);
-	await A.page.evaluate(() => window.__stores.annotationsHandler.activeAnnotation.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.annotationsHandler.activeAnnotation.set(null));
 
 	// --- H6: drawer groups, numbering, traversal, pins toggle ----------------
 	// a fourth, UNLABELED note so the 'General' group exists
 	const id4 = await addNote(A.page, boxUuid, [-0.4, 1.8, -0.4], { text: 'general remark' });
-	await A.page.evaluate(() => window.__stores.notesDrawerOpen.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.notesDrawerOpen.set(true));
 	await A.page.waitForTimeout(400);
 	const drawer = A.page.locator('#notes-drawer');
 	h.check(await drawer.isVisible(), 'H6: the notes drawer opens');
@@ -722,7 +722,7 @@ h.run(async () => {
 		(await active(A.page))?.mode === 'edit',
 		'H6: the per-row Edit button opens the edit face'
 	);
-	await A.page.evaluate(() => window.__stores.annotationsHandler.activeAnnotation.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.annotationsHandler.activeAnnotation.set(null));
 
 	// group arrows walk that group's notes in pin order, wrapping
 	const seq = [];
@@ -755,7 +755,7 @@ h.run(async () => {
 	const hidden = await A.page.evaluate(
 		() =>
 			new Promise((r) => {
-				const ah = window.__stores.annotationsHandler;
+				const ah = window.__tp.test.v1.annotationsHandler;
 				let visible = null;
 				ah.pinsGroup.subscribe((g) => (visible = g?.visible))();
 				ah.showNotePins.subscribe((v) => r({ visible, pref: v }))();
@@ -775,7 +775,7 @@ h.run(async () => {
 		() =>
 			new Promise((r) => {
 				let visible = null;
-				window.__stores.annotationsHandler.pinsGroup.subscribe((g) => (visible = g?.visible))();
+				window.__tp.test.v1.annotationsHandler.pinsGroup.subscribe((g) => (visible = g?.visible))();
 				r(visible);
 			})
 	);
@@ -788,7 +788,7 @@ h.run(async () => {
 		page.evaluate(
 			() =>
 				new Promise((r) => {
-					const s = window.__stores;
+					const s = window.__tp?.test.v1;
 					let camera;
 					let controls;
 					s.globalCamera.subscribe((v) => (camera = v))();
@@ -808,7 +808,7 @@ h.run(async () => {
 		page.evaluate(
 			() =>
 				new Promise((r) =>
-					window.__stores.toastStore.subscribe((list) =>
+					window.__tp.test.v1.toastStore.subscribe((list) =>
 						r(list.map((e) => (typeof e === 'string' ? e : e.id || e.text)))
 					)()
 				)
@@ -819,7 +819,7 @@ h.run(async () => {
 	// position from its own spherical state, so the pose we save is wherever the
 	// controls actually left us. Read it and compare against THAT.
 	await A.page.evaluate((id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let camera;
 		let controls;
 		s.globalCamera.subscribe((v) => (camera = v))();
@@ -846,9 +846,9 @@ h.run(async () => {
 		)})`
 	);
 	// fly away, then open the note: it must land back on the SAVED pose
-	await A.page.evaluate(() => window.__stores.objectActions.flyTo([-8, 6, -8], [0, 0, 0], 1));
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.flyTo([-8, 6, -8], [0, 0, 0], 1));
 	await A.page.waitForTimeout(400);
-	await A.page.evaluate((id) => window.__stores.annotationsHandler.openAnnotation(id), id1);
+	await A.page.evaluate((id) => window.__tp.test.v1.annotationsHandler.openAnnotation(id), id1);
 	await h.eventually(
 		() => camState(A.page),
 		(c) => near3(c.position, parked.position, 0.3) && near3(c.target, parked.target, 0.3),
@@ -857,7 +857,7 @@ h.run(async () => {
 
 	// follow: the camera rides the pin, and the offset the viewer chose survives
 	const before = await camState(A.page);
-	await A.page.evaluate((id) => window.__stores.annotationsHandler.startNoteFollow(id), id1);
+	await A.page.evaluate((id) => window.__tp.test.v1.annotationsHandler.startNoteFollow(id), id1);
 	await A.page.waitForTimeout(200);
 	h.check((await camState(A.page)).following === id1, 'H11: a follow session starts');
 	h.check(
@@ -866,7 +866,7 @@ h.run(async () => {
 	);
 	await A.page.evaluate((uuid) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		const box = g.getObjectByProperty('uuid', uuid);
 		box.position.x += 3;
 		box.position.y += 1;
@@ -893,7 +893,7 @@ h.run(async () => {
 	// target exactly like our follow step does, so handover has to be an explicit
 	// signal (cameraClaim) rather than a deviation guess
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let camera;
 		let controls;
 		s.globalCamera.subscribe((v) => (camera = v))();
@@ -909,14 +909,14 @@ h.run(async () => {
 	);
 
 	// the session OUTLIVES the popover (that was the whole point)
-	await A.page.evaluate(() => window.__stores.annotationsHandler.activeAnnotation.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.annotationsHandler.activeAnnotation.set(null));
 	await A.page.waitForTimeout(250);
 	h.check(
 		(await camState(A.page)).following === id1,
 		'H11: closing the note card does NOT stop following'
 	);
 	// any other camera owner takes over cleanly (bookmark/focus/another note)
-	await A.page.evaluate(() => window.__stores.objectActions.flyTo([9, 7, 9], [1, 1, 1], 1));
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.flyTo([9, 7, 9], [1, 1, 1], 1));
 	await h.eventually(
 		() => camState(A.page),
 		(c) => c.following === null,
@@ -927,7 +927,7 @@ h.run(async () => {
 		'H11: the indicator toast goes with it'
 	);
 	// Esc stops a session too
-	await A.page.evaluate((id) => window.__stores.annotationsHandler.startNoteFollow(id), id1);
+	await A.page.evaluate((id) => window.__tp.test.v1.annotationsHandler.startNoteFollow(id), id1);
 	await A.page.waitForTimeout(200);
 	await A.page.keyboard.press('Escape');
 	await A.page.waitForTimeout(250);
@@ -935,13 +935,13 @@ h.run(async () => {
 	// the author hint auto-starts a session on open, and replicates
 	await A.page.evaluate(() => {
 		let original;
-		window.__stores.peers.subscribe((p) => (original = p))();
+		window.__tp.test.v1.peers.subscribe((p) => (original = p))();
 		window.__peerOriginal = original;
 		window.__sent = [];
-		window.__stores.peers.set({ ...original, send: (m) => window.__sent.push(m) });
+		window.__tp.test.v1.peers.set({ ...original, send: (m) => window.__sent.push(m) });
 	});
 	await A.page.evaluate((id) => {
-		const ah = window.__stores.annotationsHandler;
+		const ah = window.__tp.test.v1.annotationsHandler;
 		let list = [];
 		ah.annotations.subscribe((l) => (list = l))();
 		const note = list.find((a) => a.id === id);
@@ -950,14 +950,14 @@ h.run(async () => {
 	}, id1);
 	const followSent = await A.page.evaluate(() => {
 		const list = window.__sent.filter((m) => m.type === 'annotation');
-		window.__stores.peers.set(window.__peerOriginal);
+		window.__tp.test.v1.peers.set(window.__peerOriginal);
 		return list[list.length - 1]?.annotation;
 	});
 	h.check(
 		followSent?.follow === true && !!followSent?.camera,
 		'H11: the follow flag and the saved view replicate on the same annotation message'
 	);
-	await A.page.evaluate((id) => window.__stores.annotationsHandler.openAnnotation(id), id1);
+	await A.page.evaluate((id) => window.__tp.test.v1.annotationsHandler.openAnnotation(id), id1);
 	await h.eventually(
 		() => camState(A.page),
 		(c) => c.following === id1,
@@ -965,18 +965,18 @@ h.run(async () => {
 	);
 	// deleting the followed note releases the camera
 	await A.page.evaluate((id) => {
-		const ah = window.__stores.annotationsHandler;
+		const ah = window.__tp.test.v1.annotationsHandler;
 		let list = [];
 		ah.annotations.subscribe((l) => (list = l))();
 		const note = list.find((a) => a.id === id);
 		ah.setAnnotation({ ...note, follow: false }); // keep the rest of the suite calm
 		ah.applyAnnotation({ op: 'delete', annotation: { id: 'no-such-note' } });
 	}, id1);
-	await A.page.evaluate(() => window.__stores.annotationsHandler.stopNoteFollow());
-	await A.page.evaluate(() => window.__stores.annotationsHandler.activeAnnotation.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.annotationsHandler.stopNoteFollow());
+	await A.page.evaluate(() => window.__tp.test.v1.annotationsHandler.activeAnnotation.set(null));
 
 	// --- H11-B: the follow-on-open control is a SWITCH, driven through the UI ---
-	await A.page.evaluate((id) => window.__stores.annotationsHandler.openAnnotation(id, 'edit'), id2);
+	await A.page.evaluate((id) => window.__tp.test.v1.annotationsHandler.openAnnotation(id, 'edit'), id2);
 	await A.page.waitForTimeout(600);
 	const switchInfo = await A.page.evaluate(() => {
 		const input = document.querySelector('.note-switch');
@@ -1008,7 +1008,7 @@ h.run(async () => {
 	// ON must READ as on. flowbite's plugin forces `background-color: currentColor
 	// !important` on every checked checkbox, so the switch has to drive its fill
 	// through `color`; miss that and the ON state silently reverts to flowbite blue
-	await A.page.evaluate((id) => window.__stores.annotationsHandler.openAnnotation(id, 'edit'), id2);
+	await A.page.evaluate((id) => window.__tp.test.v1.annotationsHandler.openAnnotation(id, 'edit'), id2);
 	await A.page.waitForTimeout(700);
 	const switchOn = await A.page.evaluate(() => {
 		const input = document.querySelector('.note-switch');
@@ -1034,7 +1034,7 @@ h.run(async () => {
 		`H11-B: ON reads as the app accent and the knob slides (${switchOn.background}, knob ${switchOn.knob})`
 	);
 	await A.page.evaluate((id) => {
-		const ah = window.__stores.annotationsHandler;
+		const ah = window.__tp.test.v1.annotationsHandler;
 		let list = [];
 		ah.annotations.subscribe((l) => (list = l))();
 		ah.setAnnotation({ ...list.find((a) => a.id === id), follow: false });
@@ -1044,11 +1044,11 @@ h.run(async () => {
 
 	// --- H11-C: Esc gives the camera back first, closes the card second --------
 	await A.page.evaluate((id) => {
-		const ah = window.__stores.annotationsHandler;
+		const ah = window.__tp.test.v1.annotationsHandler;
 		ah.openAnnotation(id, 'view');
 	}, id1);
 	await A.page.waitForTimeout(700);
-	await A.page.evaluate((id) => window.__stores.annotationsHandler.startNoteFollow(id), id1);
+	await A.page.evaluate((id) => window.__tp.test.v1.annotationsHandler.startNoteFollow(id), id1);
 	await A.page.waitForTimeout(250);
 	await A.page.keyboard.press('Escape');
 	await A.page.waitForTimeout(250);
@@ -1061,7 +1061,7 @@ h.run(async () => {
 	h.check((await active(A.page)) === null, 'H11-C: the SECOND Esc closes the card');
 	// and with no session running, one Esc is enough — from anywhere, not just
 	// when focus happens to sit inside the card
-	await A.page.evaluate((id) => window.__stores.annotationsHandler.openAnnotation(id), id1);
+	await A.page.evaluate((id) => window.__tp.test.v1.annotationsHandler.openAnnotation(id), id1);
 	await A.page.waitForTimeout(600);
 	await A.page.keyboard.press('Escape');
 	await A.page.waitForTimeout(250);
@@ -1086,7 +1086,7 @@ h.run(async () => {
 	// and from a distance the notes cluster into one badge — no #1 to click)
 	const frameNote = (page, id) =>
 		page.evaluate((id) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const w = s.annotationsHandler.annotationWorldPosition(id);
 			if (!w) return false;
 			s.objectActions.flyTo([w.x + 1.1, w.y + 0.9, w.z + 2.1], [w.x, w.y, w.z], 1);
@@ -1111,14 +1111,14 @@ h.run(async () => {
 		(await active(A.page))?.id === id1,
 		'H11-D: with the setting off, a single click still opens the note'
 	);
-	await A.page.evaluate(() => window.__stores.annotationsHandler.activeAnnotation.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.annotationsHandler.activeAnnotation.set(null));
 	// ON: a click only travels there
-	await A.page.evaluate(() => window.__stores.noteDoubleClickToOpen.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.noteDoubleClickToOpen.set(true));
 	await frameNote(A.page, id1);
 	await A.page.waitForTimeout(700);
 	// step the camera away so the click has somewhere to fly FROM
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let camera;
 		let controls;
 		s.globalCamera.subscribe((v) => (camera = v))();
@@ -1152,13 +1152,13 @@ h.run(async () => {
 	h.check(await clickBadge(A.page, 1, 'dblclick'), 'H11-D: found the marker to double-click');
 	await A.page.waitForTimeout(500);
 	h.check((await active(A.page))?.id === id1, 'H11-D: a double click opens the card');
-	await A.page.evaluate(() => window.__stores.annotationsHandler.activeAnnotation.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.annotationsHandler.activeAnnotation.set(null));
 	// the drawer's group arrows travel without opening anything, and still ADVANCE
 	// one note per press (no open card to remember where we were)
 	await A.page.evaluate(() => {
-		window.__stores.notesDrawerOpen.set(true);
+		window.__tp.test.v1.notesDrawerOpen.set(true);
 		// a clean starting point: the earlier click left us parked on note #1
-		window.__stores.annotationsHandler.visitedNote.set('');
+		window.__tp.test.v1.annotationsHandler.visitedNote.set('');
 	});
 	await A.page.waitForTimeout(400);
 	// the H6 section collapsed 'mechanics' — expand it so its rows render again
@@ -1167,7 +1167,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(300);
 	const visited = (page) =>
 		page.evaluate(
-			() => new Promise((r) => window.__stores.annotationsHandler.visitedNote.subscribe(r)())
+			() => new Promise((r) => window.__tp.test.v1.annotationsHandler.visitedNote.subscribe(r)())
 		);
 	const walk = [];
 	for (let i = 0; i < 3; i++) {
@@ -1192,9 +1192,9 @@ h.run(async () => {
 		'H11-D: the drawer highlights where you are even with no card open'
 	);
 	await A.page.evaluate(() => {
-		window.__stores.noteDoubleClickToOpen.set(false);
-		window.__stores.notesDrawerOpen.set(false);
-		window.__stores.annotationsHandler.activeAnnotation.set(null);
+		window.__tp.test.v1.noteDoubleClickToOpen.set(false);
+		window.__tp.test.v1.notesDrawerOpen.set(false);
+		window.__tp.test.v1.annotationsHandler.activeAnnotation.set(null);
 	});
 
 	// --- H12: notes actually persist ------------------------------------------
@@ -1202,7 +1202,7 @@ h.run(async () => {
 	// only objectsGroup/flowGraphs marked dirty, so a note added after the last
 	// object change was never written ("some notes disappear on reload")
 	const dirtyFlow = await A.page.evaluate(async (uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		await s.autosave.saveNow(); // clears the dirty flag
 		const before = s.autosave.isDirty();
 		const ah = s.annotationsHandler;
@@ -1218,7 +1218,7 @@ h.run(async () => {
 		`H12: an annotation change on its own marks the autosave dirty (${dirtyFlow.before} -> ${dirtyFlow.after})`
 	);
 	const snapshotHasNote = await A.page.evaluate(async (id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		await s.autosave.saveNow();
 		const list = s.autosave.annotationsSnapshot();
 		return Array.isArray(list) && list.some((a) => a.id === id);
@@ -1228,7 +1228,7 @@ h.run(async () => {
 	// (2) a SCENE-ROOT anchor is rebuilt with a new uuid every boot — the note
 	// remembers the object NAME and re-keys instead of being pruned
 	const heal = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		let scene;
 		s.globalScene.subscribe((x) => (scene = x))();
@@ -1252,7 +1252,7 @@ h.run(async () => {
 		heal.objectName === 'sys-anchor-heal',
 		`H12: a note on a scene-root object remembers its anchor NAME (${heal.objectName})`
 	);
-	await A.page.evaluate(() => window.__stores.annotationsHandler.sweepAnnotations());
+	await A.page.evaluate(() => window.__tp.test.v1.annotationsHandler.sweepAnnotations());
 	const healed = (await store(A.page)).find((a) => a.id === heal.id);
 	h.check(
 		!!healed && healed.objectUuid === heal.newUuid && healed.objectUuid !== heal.oldUuid,
@@ -1261,7 +1261,7 @@ h.run(async () => {
 
 	// (3) an orphaned note gets a grace window before the sweep deletes it
 	const doomedBox = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
@@ -1269,7 +1269,7 @@ h.run(async () => {
 	});
 	const doomed = await addNote(A.page, doomedBox, [3, 1, 3], { text: 'doomed' });
 	await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		const object = g.getObjectByProperty('uuid', uuid);
@@ -1300,7 +1300,7 @@ h.run(async () => {
 		const starOnB = onB.find((a) => a.id === id3);
 		h.check(!!starOnB && starOnB.shape === 'star', 'H9 two-peer: the pin shape replicates');
 		h.check(
-			!!mirrored && (await B.page.evaluate((a) => window.__stores.annotationsHandler.displayAuthor(a), mirrored)) !== 'Me',
+			!!mirrored && (await B.page.evaluate((a) => window.__tp.test.v1.annotationsHandler.displayAuthor(a), mirrored)) !== 'Me',
 			"H10 two-peer: A's note does NOT read 'Me' on B"
 		);
 	} else {

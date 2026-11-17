@@ -63,12 +63,12 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1440, height: 900 } } });
 	const page = A.page;
-	await page.waitForFunction(() => !!window.__stores?.explorer && !!window.__stores?.filePreview, null, {
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.explorer && !!window.__tp?.test.v1?.filePreview, null, {
 		timeout: 30000
 	});
 	await page.evaluate(async () => {
-		await window.__stores.explorer.loadExplorer();
-		await window.__stores.explorer.clearLibrary();
+		await window.__tp.test.v1.explorer.loadExplorer();
+		await window.__tp.test.v1.explorer.clearLibrary();
 	});
 
 	// =====================================================================================
@@ -81,7 +81,7 @@ h.run(async () => {
 			129, 129, 129, 137, 129, 129, 1, 0, 39, 226, 4, 253, 55, 194, 200, 216, 0, 0, 0, 0, 73, 69, 78,
 			68, 174, 66, 96, 130
 		];
-		return (await window.__stores.explorer.addItemFromBytes(new Uint8Array(png).buffer, 'wide.png', null))
+		return (await window.__tp.test.v1.explorer.addItemFromBytes(new Uint8Array(png).buffer, 'wide.png', null))
 			.id;
 	});
 	await page.waitForTimeout(800);
@@ -230,7 +230,7 @@ h.run(async () => {
 	// =====================================================================================
 	// 2. THE EXPLORER, UNDOCKED — the dock and the exit are the two that must never go
 	// =====================================================================================
-	await page.evaluate(() => window.__stores.explorerClose.set(false));
+	await page.evaluate(() => window.__tp.test.v1.explorerClose.set(false));
 	await page.waitForTimeout(400);
 	if (!(await page.locator('#explorer-window').count())) {
 		await page.locator('#dock-undock:visible').click();
@@ -290,7 +290,7 @@ h.run(async () => {
 	// =====================================================================================
 	// 3. THE OBJECT LIST — the same, down to an icon
 	// =====================================================================================
-	await page.evaluate(() => window.__stores.objectListClose.set(false));
+	await page.evaluate(() => window.__tp.test.v1.objectListClose.set(false));
 	await page.waitForTimeout(600);
 	const OB = '#object-list';
 	const OBH = OB + ' .ui-panel-header';

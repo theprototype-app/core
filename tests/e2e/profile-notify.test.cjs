@@ -32,7 +32,7 @@ h.run(async () => {
 		P.evaluate(() => {
 			/** @type {string[]} */
 			let out = [];
-			/** @type {any} */ (window).__stores.notifications.subscribe((/** @type {any[]} */ v) => (out = v.map((n) => String(n.text))))();
+			/** @type {any} */ (window).__tp.test.v1.notifications.subscribe((/** @type {any[]} */ v) => (out = v.map((n) => String(n.text))))();
 			return out;
 		});
 
@@ -74,23 +74,23 @@ h.run(async () => {
 	await P.locator('#avatar-dropdown').getByText('Edit profile…').click();
 	await P.waitForSelector('#peer-id-copy', { timeout: 5000 });
 	h.check((await P.locator('#peer-id-copy').count()) === 1, 'Edit profile: the Peer ID has a Copy button');
-	await P.evaluate(() => /** @type {any} */ (window).__stores.profileSettingsOpen.set(false));
+	await P.evaluate(() => /** @type {any} */ (window).__tp.test.v1.profileSettingsOpen.set(false));
 
 	// ---- 2. Settings ▸ Account: only while a plugin mounts it ------------------------------------------------
 	const openSettings = (/** @type {string | null} */ section) =>
 		P.evaluate((s) => {
-			const S = /** @type {any} */ (window).__stores;
+			const S = /** @type {any} */ (window).__tp?.test.v1;
 			S.settingsSection.set(s);
 			S.settingsOpen.set(true);
 		}, section);
 	const search = (/** @type {string} */ q) => P.locator('input#settings-search').first().fill(q);
-	const closeSettings = () => P.evaluate(() => /** @type {any} */ (window).__stores.settingsOpen.set(false));
+	const closeSettings = () => P.evaluate(() => /** @type {any} */ (window).__tp.test.v1.settingsOpen.set(false));
 	await openSettings(null);
 	await P.waitForSelector('#settings-main', { timeout: 10000 });
 	h.check((await P.locator('#settings-account').count()) === 0, 'no plugin: Settings has no Account page');
 	await closeSettings();
 	const seam = await P.evaluate(async () => {
-		const S = /** @type {any} */ (window).__stores;
+		const S = /** @type {any} */ (window).__tp?.test.v1;
 		const api = S.cloudPlugin.makeCloudApi();
 		const bad = api.mountSettingsSection('nope', () => {});
 		const ok = api.mountSettingsSection('account', (/** @type {HTMLElement} */ el) => {
@@ -112,7 +112,7 @@ h.run(async () => {
 	);
 	await search('');
 	await closeSettings();
-	await P.evaluate(() => /** @type {any} */ (window).__stores.cloudPlugin.makeCloudApi().mountSettingsSection('account', null));
+	await P.evaluate(() => /** @type {any} */ (window).__tp.test.v1.cloudPlugin.makeCloudApi().mountSettingsSection('account', null));
 
 	// ---- 3. the Notifications rows ------------------------------------------------------------------------------
 	await openSettings('interface');
@@ -141,7 +141,7 @@ h.run(async () => {
 	await closeSettings();
 	const leave = async (/** @type {string} */ id) =>
 		P.evaluate(async (pid) => {
-			const S = /** @type {any} */ (window).__stores;
+			const S = /** @type {any} */ (window).__tp?.test.v1;
 			S.userdata.update((/** @type {any[]} */ u) => [...u, [pid, 'Ann', '']]);
 			await new Promise((r) => setTimeout(r, 50));
 			S.commandsHandler.handleDisconnected(pid);
@@ -160,7 +160,7 @@ h.run(async () => {
 	// ---- 4b. Chat badge ---------------------------------------------------------------------------------------
 	const chat = (/** @type {string} */ id) =>
 		P.evaluate((mid) => {
-			const S = /** @type {any} */ (window).__stores;
+			const S = /** @type {any} */ (window).__tp?.test.v1;
 			S.chatHidden.set('hidden');
 			S.chatUnread.set(0);
 			S.addMessage({ id: mid, message: 'hello', sender: 'Ann', type: 'received' });
@@ -178,12 +178,12 @@ h.run(async () => {
 		P.evaluate(
 			async ([pid, who]) => {
 				const w = /** @type {any} */ (window);
-				w.__stores.audioEngine.ensureAudioContext();
+				w.__tp.test.v1.audioEngine.ensureAudioContext();
 				const before = w.__osc;
-				w.__stores.ping.applyPing({ id: pid, peerId: who, name: 'Ann', pos: [0, 1, 0], sound: 'ding' }, who);
+				w.__tp.test.v1.ping.applyPing({ id: pid, peerId: who, name: 'Ann', pos: [0, 1, 0], sound: 'ding' }, who);
 				await new Promise((r) => setTimeout(r, 100));
 				let shown = false;
-				w.__stores.ping.pings.subscribe((/** @type {any[]} */ l) => (shown = l.some((p) => p.id === pid)))();
+				w.__tp.test.v1.ping.pings.subscribe((/** @type {any[]} */ l) => (shown = l.some((p) => p.id === pid)))();
 				return { oscs: w.__osc - before, shown };
 			},
 			[id, peer]
@@ -198,7 +198,7 @@ h.run(async () => {
 	// ---- 4d. AI assistant ---------------------------------------------------------------------------------------
 	const agent = (/** @type {string} */ peer) =>
 		P.evaluate(async (who) => {
-			const S = /** @type {any} */ (window).__stores;
+			const S = /** @type {any} */ (window).__tp?.test.v1;
 			S.aiAssistantHidden.set('hidden');
 			S.agentLog.applyAgentLog(who, { entry: { peer: who, name: 'Bot ' + who, id: 'e-' + who, at: Date.now(), text: 'made a box', kind: 'step' } });
 			await new Promise((r) => setTimeout(r, 100));
@@ -215,7 +215,7 @@ h.run(async () => {
 	const drop = () =>
 		P.evaluate(async () => {
 			const w = /** @type {any} */ (window);
-			const Q = w.__stores.qualityGovernor;
+			const Q = w.__tp.test.v1.qualityGovernor;
 			const g = Q.governorForTest;
 			try {
 				sessionStorage.removeItem('quality:announced');
@@ -223,7 +223,7 @@ h.run(async () => {
 			w.__pnT = (w.__pnT || 1e9) + 1e6;
 			g.setLevel(0, w.__pnT);
 			await new Promise((r) => setTimeout(r, 700)); // the reset's own publish settles (BATCH_MS 400)
-			w.__stores.toastStore.set([]);
+			w.__tp.test.v1.toastStore.set([]);
 			// an empty scene is never governed (the light-scene exemption): read as a heavy one for the drive, which is
 			// synchronous, so the real sampler cannot write between these frames
 			const SB = await import('/src/lib/sceneBudget.js');
@@ -243,7 +243,7 @@ h.run(async () => {
 			}
 			await new Promise((r) => setTimeout(r, 1200)); // BATCH_MS + the flush
 			let card = false;
-			w.__stores.toastStore.subscribe((/** @type {any[]} */ l) => (card = l.some((e) => e && typeof e === 'object' && e.id === 'auto-quality')))();
+			w.__tp.test.v1.toastStore.subscribe((/** @type {any[]} */ l) => (card = l.some((e) => e && typeof e === 'object' && e.id === 'auto-quality')))();
 			let reason = '';
 			Q.qualityState.subscribe((/** @type {any} */ v) => (reason = v.reason))();
 			return { moved, card, reason, level: g.level?.() };
@@ -257,7 +257,7 @@ h.run(async () => {
 	h.check(qOn.moved > 0 && qOn.card, `Auto quality ON (counterfactual): the "Lowered …" card shows (${JSON.stringify(qOn)})`);
 	await P.evaluate(() => {
 		const w = /** @type {any} */ (window);
-		w.__stores.qualityGovernor.governorForTest.setLevel(0, (w.__pnT || 1e9) + 1e6);
+		w.__tp.test.v1.qualityGovernor.governorForTest.setLevel(0, (w.__pnT || 1e9) + 1e6);
 	});
 
 	// ---- reset: "Reset Interface" turns every switch back on ------------------------------------------------------

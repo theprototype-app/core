@@ -24,7 +24,7 @@ h.run(async () => {
 		if (/unicode-font-resolver|\/font-files\/|\/font-meta\/|\/codepoint-index\//.test(url)) fontRequests.push(url);
 	});
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.username?.set?.('Zoë ✓');
 		s.ping.sendPing([0, 1.2, 0]);
 	});

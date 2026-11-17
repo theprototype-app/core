@@ -16,7 +16,7 @@ const OUT = process.env.OUT || null;
 /** what is open, by store AND on screen */
 const panels = (P) =>
 	P.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const g = (st) => { let v; st.subscribe((x) => (v = x))(); return v; };
 		const vis = (sel) => { const el = document.querySelector(sel); if (!el) return false; const r = el.getBoundingClientRect(); const cs = getComputedStyle(el); return r.width > 0 && r.height > 0 && cs.display !== 'none' && cs.visibility !== 'hidden'; };
 		return {
@@ -32,7 +32,7 @@ const panels = (P) =>
 
 async function seed(P) {
 	await P.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.sidebars.inspectorSide.set('right');
 		s.inspectorKind.set('scene');
 		s.inspectorClose.set(false);
@@ -83,10 +83,10 @@ async function run(browser, name, context, how) {
 
 	// a panel CLOSED while Settings is open stays closed afterwards (nothing is "restored" over the user's choice)
 	await openFromBurger(P, how);
-	await P.evaluate(() => window.__stores.inspectorClose.set(true));
+	await P.evaluate(() => window.__tp.test.v1.inspectorClose.set(true));
 	await P.waitForTimeout(300);
 	await P.keyboard.press('Escape');
-	await P.evaluate(() => window.__stores.settingsOpen.set(false));
+	await P.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await P.waitForTimeout(600);
 	const shut = await panels(P);
 	h.check(!shut.settings && !shut.inspector && shut.flow, `${T}a sidebar the user closed WHILE Settings was open stays closed after it (${JSON.stringify(shut)})`);
@@ -104,14 +104,14 @@ h.run(async () => {
 		const T = `[folded ${THEME}] `;
 		const A = await h.setupPage(browser, 'folded', { context: { viewport: { width: 390, height: 896 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2.9 }, storage: { theme: THEME, toursSeen: '{"editor-touch":true,"editor":true}' } });
 		const P = A.page;
-		await P.evaluate(() => window.__stores.objectListClose.set(false));
+		await P.evaluate(() => window.__tp.test.v1.objectListClose.set(false));
 		await P.waitForTimeout(900);
-		const st = (P2) => P2.evaluate(() => { let v; window.__stores.objectListClose.subscribe((x) => (v = x))(); return v; });
+		const st = (P2) => P2.evaluate(() => { let v; window.__tp.test.v1.objectListClose.subscribe((x) => (v = x))(); return v; });
 		h.check((await st(P)) === false, `${T}premise: Objects is open in the phone dock`);
-		await P.evaluate(() => window.__stores.settingsOpen.set(true));
+		await P.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 		await P.waitForTimeout(700);
 		h.check((await st(P)) === true, `${T}Settings (a full-screen sheet) steps the dock aside on the folded phone, as before`);
-		await P.evaluate(() => window.__stores.settingsOpen.set(false));
+		await P.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 		await P.waitForTimeout(700);
 		h.check((await st(P)) === false, `${T}…and gives it back when Settings closes`);
 		await A.ctx.close();

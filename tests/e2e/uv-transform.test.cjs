@@ -12,7 +12,7 @@ const h = require('./helpers.cjs');
 /** a box with a 64x64 canvas texture (so one texture pixel is exactly 1/64), selected */
 const texturedBox = (page) =>
 	page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.children[g.children.length - 1];
@@ -31,7 +31,7 @@ const texturedBox = (page) =>
 
 const openUv = async (page) => {
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.uvEditorClose.set(false);
 		s.bottomDock.activateDock('uv');
 	});
@@ -40,12 +40,12 @@ const openUv = async (page) => {
 
 const dbg = (page) => page.evaluate(() => window.__uvDebug());
 const undoDepth = (page) =>
-	page.evaluate(() => new Promise((r) => window.__stores.history.undoStack.subscribe((v) => r(v.length))()));
+	page.evaluate(() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((v) => r(v.length))()));
 
 /** the selected points' uv coordinates, read off the LIVE attribute */
 const selectionUvs = (page, uuid) =>
 	page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const uv = g.getObjectByProperty('uuid', uuid).geometry.attributes.uv;
 		return window.__uvDebug().selectedIndices.map((i) => [uv.getX(i), uv.getY(i)]);
@@ -194,13 +194,13 @@ h.run(async () => {
 	// over — by the gizmo transform modes (shortcuts.js) and, whenever an Edit Mesh
 	// session is open, by MeshEditPopup's element modes — so this asserts BOTH that
 	// the UV editor gets them and that nothing else does.
-	await A.page.evaluate((uuid) => window.__stores.meshEdit.enterEditMode(uuid), uuid);
-	await A.page.evaluate((uuid) => window.__stores.faceEdit.enterFaceEdit(uuid), uuid);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.meshEdit.enterEditMode(uuid), uuid);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.faceEdit.enterFaceEdit(uuid), uuid);
 	await A.page.waitForTimeout(400);
 	const modes = () =>
 		A.page.evaluate(async () => ({
-			submode: await new Promise((r) => window.__stores.faceEdit.faceEditSubmode.subscribe((v) => r(v))()),
-			gizmo: await new Promise((r) => window.__stores.transformMode.subscribe((v) => r(v))())
+			submode: await new Promise((r) => window.__tp.test.v1.faceEdit.faceEditSubmode.subscribe((v) => r(v))()),
+			gizmo: await new Promise((r) => window.__tp.test.v1.transformMode.subscribe((v) => r(v))())
 		}));
 	const { submode: preSubmode, gizmo: preGizmo } = await modes();
 	await focusUv(A.page);
@@ -218,8 +218,8 @@ h.run(async () => {
 	h.check((await dbg(A.page)).xform === 'move', 'pressing 1 arms Move again');
 	// leave the mesh session: the rest of the suite is about the UV editor alone
 	await A.page.evaluate(() => {
-		window.__stores.faceEdit.exitFaceEdit();
-		window.__stores.meshEdit.exitEditMode();
+		window.__tp.test.v1.faceEdit.exitFaceEdit();
+		window.__tp.test.v1.meshEdit.exitEditMode();
 	});
 	await A.page.waitForTimeout(300);
 
@@ -245,7 +245,7 @@ h.run(async () => {
 		`the pixel step comes from the 64x64 texture (${view.pixelStep.u})`
 	);
 	const seed = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.getObjectByProperty('uuid', uuid);
 		const tris = w.uvEditor.uvTriangles(box, window.__uvDebug().slot);
@@ -297,7 +297,7 @@ h.run(async () => {
 	const countAt = (u, v) =>
 		A.page.evaluate(
 			async ([uuid, u, v]) => {
-				const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+				const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 				const uv = g.getObjectByProperty('uuid', uuid).geometry.attributes.uv;
 				let n = 0;
 				for (let i = 0; i < uv.count; i++)
@@ -341,7 +341,7 @@ h.run(async () => {
 	await A.page.keyboard.press('Delete');
 	await A.page.waitForTimeout(400);
 	const stillThere = await A.page.evaluate(async (uuid) => {
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		return !!g.getObjectByProperty('uuid', uuid);
 	}, uuid);
 	h.check(stillThere, 'Delete in the UV editor does NOT delete the object');
@@ -470,7 +470,7 @@ h.run(async () => {
 	// the arrows walk it
 	const cursorUv = (page) =>
 		page.evaluate(async (uuid) => {
-			const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+			const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 			const uv = g.getObjectByProperty('uuid', uuid).geometry.attributes.uv;
 			const i = window.__uvDebug().navCursor;
 			return i >= 0 ? [uv.getX(i), uv.getY(i)] : null;
@@ -487,7 +487,7 @@ h.run(async () => {
 	// the transform, and a stray commit here would be silent
 	const uvChecksum = () =>
 		A.page.evaluate(async (uuid) => {
-			const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+			const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 			const uv = g.getObjectByProperty('uuid', uuid).geometry.attributes.uv;
 			let sum = 0;
 			for (let i = 0; i < uv.count; i++) sum += uv.getX(i) + uv.getY(i);
@@ -587,7 +587,7 @@ h.run(async () => {
 	// the counterfactual: the SAME 20 steps applied compounding-style
 	const compounded = await A.page.evaluate(
 		async ([uuid, steps]) => {
-			const w = window.__stores;
+			const w = window.__tp?.test.v1;
 			const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 			const box = g.getObjectByProperty('uuid', uuid);
 			const indices = window.__uvDebug().selectedIndices;
@@ -906,7 +906,7 @@ h.run(async () => {
 		'and it is one undo entry'
 	);
 	// one undo restores the mapping the snap changed
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(400);
 	h.check(
 		(await undoDepth(A.page)) === depthBeforeSnap,
@@ -919,7 +919,7 @@ h.run(async () => {
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(A, B);
 	const shared = await A.page.evaluate(async () => {
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		return g.children[g.children.length - 1].uuid;
 	});
 	// `eventually` reports its own check, so don't double-report it — read the state
@@ -927,7 +927,7 @@ h.run(async () => {
 	await h.eventually(
 		() =>
 			B.page.evaluate(async (uuid) => {
-				const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+				const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 				return !!g.getObjectByProperty('uuid', uuid);
 			}, shared),
 		(v) => v,
@@ -935,13 +935,13 @@ h.run(async () => {
 		20000
 	);
 	const arrived = await B.page.evaluate(async (uuid) => {
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		return !!g.getObjectByProperty('uuid', uuid);
 	}, shared);
 	if (arrived) {
 		const wire = [];
 		await A.page.evaluate(async () => {
-			const peer = await new Promise((r) => window.__stores.peers.subscribe(r)());
+			const peer = await new Promise((r) => window.__tp.test.v1.peers.subscribe(r)());
 			const original = peer.send.bind(peer);
 			window.__uvWire = [];
 			peer.send = (m) => {
@@ -970,7 +970,7 @@ h.run(async () => {
 		const mineA = await selectionUvs(A.page, uuid);
 		const uvSum = (page) =>
 			page.evaluate(async (uuid) => {
-				const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+				const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 				const uv = g.getObjectByProperty('uuid', uuid)?.geometry?.attributes?.uv;
 				if (!uv) return null;
 				let sum = 0;

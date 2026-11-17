@@ -9,11 +9,11 @@
 const h = require('./helpers.cjs');
 
 const grid = (page) =>
-	page.evaluate(() => new Promise((r) => window.__stores.gridSettings.gridSettings.subscribe((v) => r({ ...v }))()));
+	page.evaluate(() => new Promise((r) => window.__tp.test.v1.gridSettings.gridSettings.subscribe((v) => r({ ...v }))()));
 
 /** open the viewport menu and read its Snapping submenu */
 async function snapSubmenu(page) {
-	await page.evaluate(() => window.__stores.viewportMenu.set({ x: 240, y: 150, point: [0, 0, 0] }));
+	await page.evaluate(() => window.__tp.test.v1.viewportMenu.set({ x: 240, y: 150, point: [0, 0, 0] }));
 	await page.waitForTimeout(350);
 	await page.locator('[role="menuitem"]').filter({ hasText: 'Snapping' }).first().hover();
 	await page.waitForTimeout(300);
@@ -44,8 +44,8 @@ h.run(async () => {
 
 	// ---------- the menu submenu: sections + checked, no bullets ----------
 	await A.page.evaluate(() => {
-		window.__stores.snapping.snapEnabled.set(true);
-		window.__stores.snapping.snapSettings.set({ translate: 0.5, rotateDeg: 15, scale: 0.1 });
+		window.__tp.test.v1.snapping.snapEnabled.set(true);
+		window.__tp.test.v1.snapping.snapSettings.set({ translate: 0.5, rotateDeg: 15, scale: 0.1 });
 	});
 	let sub = await snapSubmenu(A.page);
 	h.check(sub.found, 'the Snapping submenu opens');
@@ -76,16 +76,16 @@ h.run(async () => {
 	});
 	await A.page.waitForTimeout(200);
 	const rot = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.snapping.snapSettings.subscribe((v) => r(v.rotateDeg))())
+		() => new Promise((r) => window.__tp.test.v1.snapping.snapSettings.subscribe((v) => r(v.rotateDeg))())
 	);
 	h.check(rot === 45, `clicking a step applies it (${rot}°)`);
-	await A.page.evaluate(() => window.__stores.viewportMenu.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.viewportMenu.set(null));
 	sub = await snapSubmenu(A.page);
 	h.check(sub.checked.includes('45°'), 'the mark moved to the new step');
-	await A.page.evaluate(() => window.__stores.viewportMenu.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.viewportMenu.set(null));
 
 	// ---------- Configure Scene: Grid + Snapping sections ----------
-	await A.page.evaluate(() => { window.__stores.openSceneSection('Grid'); setTimeout(() => window.__stores.openSceneSection('Snapping'), 400); }); // 78-int PL17: Configure Scene opens with only Environment + Scene look expanded — deep-link the section
+	await A.page.evaluate(() => { window.__tp.test.v1.openSceneSection('Grid'); setTimeout(() => window.__tp.test.v1.openSceneSection('Snapping'), 400); }); // 78-int PL17: Configure Scene opens with only Environment + Scene look expanded — deep-link the section
 	await A.page.waitForTimeout(1000);
 	const sections = await A.page.evaluate(() =>
 		[...document.querySelectorAll('#drawer-label, .ui-section-label, button, span, h3, h4, p')]
@@ -110,8 +110,8 @@ h.run(async () => {
 			new Promise((r) => {
 				let scene = null;
 				let objects = null;
-				window.__stores.globalScene.subscribe((s) => (scene = s))();
-				window.__stores.objectsGroup.subscribe((g) => (objects = g))();
+				window.__tp.test.v1.globalScene.subscribe((s) => (scene = s))();
+				window.__tp.test.v1.objectsGroup.subscribe((g) => (objects = g))();
 				let inScene = false;
 				let inObjects = false;
 				scene?.traverse((n) => {
@@ -131,11 +131,11 @@ h.run(async () => {
 	// "match snapping step" makes the drawn cell follow the snap step
 	await A.page.evaluate(() => {
 		document.querySelector('#grid-match-snap').click();
-		window.__stores.snapping.snapSettings.update((s) => ({ ...s, translate: 0.25 }));
+		window.__tp.test.v1.snapping.snapSettings.update((s) => ({ ...s, translate: 0.25 }));
 	});
 	await A.page.waitForTimeout(250);
 	const cell = await A.page.evaluate(() =>
-		window.__stores.gridSettings.effectiveCell(
+		window.__tp.test.v1.gridSettings.effectiveCell(
 			JSON.parse(localStorage.getItem('gridSettings')),
 			0.25
 		)
@@ -150,13 +150,13 @@ h.run(async () => {
 	h.check(g.showAxes === true && g.infinite === false && g.matchSnapStep === true, 'grid prefs persist across a reload');
 
 	// snapping numbers accept a free value
-	await A.page.evaluate(() => { window.__stores.openSceneSection('Grid'); setTimeout(() => window.__stores.openSceneSection('Snapping'), 400); }); // 78-int PL17: Configure Scene opens with only Environment + Scene look expanded — deep-link the section
+	await A.page.evaluate(() => { window.__tp.test.v1.openSceneSection('Grid'); setTimeout(() => window.__tp.test.v1.openSceneSection('Snapping'), 400); }); // 78-int PL17: Configure Scene opens with only Environment + Scene look expanded — deep-link the section
 	await A.page.waitForTimeout(1000);
 	await A.page.locator('#snap-rotate').fill('7.5');
 	await A.page.locator('#snap-rotate').dispatchEvent('change');
 	await A.page.waitForTimeout(250);
 	const custom = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.snapping.snapSettings.subscribe((v) => r(v.rotateDeg))())
+		() => new Promise((r) => window.__tp.test.v1.snapping.snapSettings.subscribe((v) => r(v.rotateDeg))())
 	);
 	h.check(custom === 7.5, `a custom rotation step is accepted (${custom}°)`);
 
@@ -165,7 +165,7 @@ h.run(async () => {
 	// THICK line one cell per step (the "grid snaps while panning" report). The fade
 	// circle must stay on the UNSNAPPED camera point (threlte's default) so it glides.
 	await A.page.evaluate(() => {
-		window.__stores.gridSettings.setGrid({
+		window.__tp.test.v1.gridSettings.setGrid({
 			follow: 'lookat',
 			cellSize: 1,
 			sectionEvery: 10,
@@ -174,7 +174,7 @@ h.run(async () => {
 			fadeMode: 'auto'
 		});
 		let oc;
-		window.__stores.orbitControls.subscribe((x) => (oc = x))();
+		window.__tp.test.v1.orbitControls.subscribe((x) => (oc = x))();
 		oc.target.set(3.7, 0, -12.4); // deliberately off both the cell and section lattice
 		oc.update();
 	});
@@ -182,14 +182,14 @@ h.run(async () => {
 	const gridMesh = await A.page.evaluate(
 		() =>
 			new Promise((r) => {
-				window.__stores.globalScene.subscribe((scene) => {
+				window.__tp.test.v1.globalScene.subscribe((scene) => {
 					let found = null;
 					scene.traverse((node) => {
 						if (!found && node.isMesh && node.material?.uniforms?.fadeOrigin) found = node;
 					});
 					if (!found) return r(null);
 					let camera;
-					window.__stores.globalCamera.subscribe((c) => (camera = c))();
+					window.__tp.test.v1.globalCamera.subscribe((c) => (camera = c))();
 					const origin = found.material.uniforms.fadeOrigin.value;
 					r({
 						x: found.position.x,

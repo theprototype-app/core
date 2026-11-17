@@ -28,13 +28,13 @@ const CALL = (name, args) =>
 const messages = (peer) =>
 	peer.page.evaluate(() => {
 		let v;
-		window.__stores.aiAssistant.aiMessages.subscribe((x) => (v = x))();
+		window.__tp.test.v1.aiAssistant.aiMessages.subscribe((x) => (v = x))();
 		return v;
 	});
 const objectCount = (peer) =>
 	peer.page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return g.children.length;
 	});
 
@@ -48,11 +48,11 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 	const page = A.page;
 	await page.evaluate(() => {
-		const p = window.__stores.aiProviders;
+		const p = window.__tp.test.v1.aiProviders;
 		const id = p.addAiProvider({ preset: 'custom', label: 'MockVision', baseUrl: location.origin + '/mock-ai/v1', model: 'vision-1', apiKey: 'k' });
 		p.setAiActiveProvider(id);
 		p.setAiEnabled(true);
-		const mp = window.__stores.meshProviders;
+		const mp = window.__tp.test.v1.meshProviders;
 		mp.addMeshProvider({ kind: 'meshy', label: 'MockMeshy', baseUrl: location.origin + '/mock-meshy', apiKey: 'k', mode: 'preview' });
 		mp.setMeshGenEnabled(true);
 	});
@@ -71,7 +71,7 @@ h.run(async () => {
 		route.fulfill({ status: 200, contentType: 'text/event-stream', body: a.sse });
 	});
 
-	await page.evaluate(() => window.__stores.aiAssistantHidden.set(''));
+	await page.evaluate(() => window.__tp.test.v1.aiAssistantHidden.set(''));
 	await page.waitForSelector('#ai-send');
 	const send = async (text, label) => {
 		const before = requests.length;
@@ -80,7 +80,7 @@ h.run(async () => {
 		await h.eventually(() => requests.length, (n) => n > before, label, 15000);
 		await h.eventually(() => page.evaluate(() => {
 			let v;
-			window.__stores.aiAssistant.aiBusy.subscribe((x) => (v = x))();
+			window.__tp.test.v1.aiAssistant.aiBusy.subscribe((x) => (v = x))();
 			return v;
 		}), (busy) => busy === false, label + ': the run ended', 15000);
 		return requests.at(-1);
@@ -89,7 +89,7 @@ h.run(async () => {
 		await page.setInputFiles('#chat-attach-file', PHOTO);
 		await page.waitForFunction(() => {
 			let v;
-			window.__stores.chatAttach.composerPending.subscribe((x) => (v = x))();
+			window.__tp.test.v1.chatAttach.composerPending.subscribe((x) => (v = x))();
 			return v.length > 0;
 		}, null, { timeout: 30000 });
 	};
@@ -112,7 +112,7 @@ h.run(async () => {
 	h.check(!meta.gps && !meta.exif && !meta.xmp && !meta.text, 'the bytes carry no metadata');
 	const prep = await page.evaluate(() => {
 		let v;
-		window.__stores.chatAttach.lastPrepare.subscribe((x) => (v = x))();
+		window.__tp.test.v1.chatAttach.lastPrepare.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(Math.max(prep.w, prep.h) <= 1568 && prep.outBytes <= 1024 * 1024, `chat size: ≤ 1568 px, ≤ 1 MB (${prep.w}×${prep.h}, ${prep.outBytes} B)`);
@@ -121,7 +121,7 @@ h.run(async () => {
 	h.check(shown === 1, 'the bubble shows the picture');
 	h.check(await page.evaluate(() => {
 		let v;
-		window.__stores.chatAttach.composerPending.subscribe((x) => (v = x))();
+		window.__tp.test.v1.chatAttach.composerPending.subscribe((x) => (v = x))();
 		return v.length === 0;
 	}), 'the tray emptied on send');
 
@@ -156,8 +156,8 @@ h.run(async () => {
 	// ---- 6. from_picture ---------------------------------------------------------------------------------
 	const glb = Buffer.from(
 		await page.evaluate(async () => {
-			const THREE = window.__stores.THREE;
-			const { GLTFExporter } = window.__stores.GLTFExporterModule;
+			const THREE = window.__tp.test.v1.THREE;
+			const { GLTFExporter } = window.__tp.test.v1.GLTFExporterModule;
 			const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0x3388ff }));
 			const out = await new Promise((res, rej) => new GLTFExporter().parse(mesh, res, rej, { binary: true }));
 			return Array.from(new Uint8Array(out));
@@ -199,7 +199,7 @@ h.run(async () => {
 	const useModel = (preset, model) =>
 		page.evaluate(
 			([pr, mo]) => {
-				const p = window.__stores.aiProviders;
+				const p = window.__tp.test.v1.aiProviders;
 				const id = p.addAiProvider({ preset: pr, label: 'Grok', baseUrl: location.origin + '/mock-ai/v1', model: mo, apiKey: 'k' });
 				p.setAiActiveProvider(id);
 			},
@@ -216,7 +216,7 @@ h.run(async () => {
 	await page.waitForTimeout(1500);
 	const trayNow = await page.evaluate(() => {
 		let v;
-		window.__stores.chatAttach.composerPending.subscribe((x) => (v = x))();
+		window.__tp.test.v1.chatAttach.composerPending.subscribe((x) => (v = x))();
 		return v.length;
 	});
 	h.check(trayNow === 0, 'AI11: nothing attaches for a model that cannot see it');
@@ -231,8 +231,8 @@ h.run(async () => {
 	// ---- 7. local, and viewers ---------------------------------------------------------------------------
 	h.check((await messages(B)).length === 0, 'the provider chat is not replicated');
 	await B.page.evaluate(() => {
-		window.__stores.cloudHooks.rolesInfo.set({ myId: 'b', myRole: 'viewer', amAdmin: false, order: [], roleOf: () => 'viewer', setRole() {} });
-		window.__stores.aiAssistantHidden.set('');
+		window.__tp.test.v1.cloudHooks.rolesInfo.set({ myId: 'b', myRole: 'viewer', amAdmin: false, order: [], roleOf: () => 'viewer', setRole() {} });
+		window.__tp.test.v1.aiAssistantHidden.set('');
 	});
 	await B.page.waitForSelector('#ai-assistant-window');
 	h.check((await B.page.locator('#chat-attach').count()) === 0, 'a viewer has no + button');
@@ -243,11 +243,11 @@ h.run(async () => {
 	const P = await h.setupPage(browser, 'n6', { context: { viewport: { width: 390, height: 896 }, deviceScaleFactor: 2.9, hasTouch: true, isMobile: true } });
 	await h.answerRestore(P).catch(() => {});
 	await P.page.evaluate(() => {
-		window.__stores.aiAssistantHidden.set('');
+		window.__tp.test.v1.aiAssistantHidden.set('');
 		const c = document.createElement('canvas');
 		c.width = 800;
 		c.height = 300;
-		window.__stores.aiAssistant.aiMessages.set([{ role: 'user', content: 'wide', images: [{ url: c.toDataURL(), name: 'wide' }] }]);
+		window.__tp.test.v1.aiAssistant.aiMessages.set([{ role: 'user', content: 'wide', images: [{ url: c.toDataURL(), name: 'wide' }] }]);
 	});
 	await P.page.waitForSelector('#ai-assistant-window .ai-pic');
 	const fit = await P.page.evaluate(() => {

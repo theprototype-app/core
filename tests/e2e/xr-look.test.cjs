@@ -18,27 +18,27 @@ const GET = `(s) => { let v; s.subscribe((x) => (v = x))(); return v; }`;
 const look = (page) =>
 	page.evaluate(`(() => {
 		const get = ${GET};
-		const r = get(window.__stores.globalRenderer);
-		const d = window.__stores.xrLook.xrLookDebug;
+		const r = get(window.__tp.test.v1.globalRenderer);
+		const d = window.__tp.test.v1.xrLook.xrLookDebug;
 		const p = d.plan();
 		return { tone: r.toneMapping, presenting: r.xr.isPresenting, plan: p ? { glsl: p.glsl, curve: p.curve, baked: p.baked, skipped: p.skipped, v: !!p.vignette } : null, token: d.token(), vignette: d.vignette(), textures: r.info.memory.textures, calls: r.info.render.calls };
 	})()`);
 const addFx = (page, kind, params) =>
 	page.evaluate(([k, p]) => {
-		const sp = window.__stores.scenePost;
+		const sp = window.__tp.test.v1.scenePost;
 		const id = sp.addPostEffect(k, undefined);
 		const state = sp.scenePostState();
 		const entry = state.effects[state.effects.length - 1];
 		sp.setPostEffectParams(id ?? entry.id, p);
 		return id ?? entry.id;
 	}, [kind, params]);
-const setFx = (page, id, params) => page.evaluate(([i, p]) => window.__stores.scenePost.setPostEffectParams(i, p), [id, params]);
+const setFx = (page, id, params) => page.evaluate(([i, p]) => window.__tp.test.v1.scenePost.setPostEffectParams(i, p), [id, params]);
 
 /** a saturated red box filling the middle of the view */
 async function stage(page) {
 	await page.evaluate(`(() => {
 		const get = ${GET};
-		const st = window.__stores;
+		const st = window.__tp?.test.v1;
 		st.commandsHandler.sceneCommand('/create box');
 		const g = get(st.objectsGroup);
 		const box = g.children[g.children.length - 1];
@@ -72,10 +72,10 @@ async function eye(page, label) {
 	await iwer.pose(page, 'left', [-0.3, 1, 0], { pitch: -1.4 });
 	await iwer.pose(page, 'right', [0.3, 1, 0], { pitch: -1.4 });
 	await iwer.frames(page, 10);
-	const tint = await page.evaluate(`(() => { let g; window.__stores.objectsGroup.subscribe((x) => (g = x))(); return g.children[g.children.length - 1].material.emissive.getHex(); })()`);
+	const tint = await page.evaluate(`(() => { let g; window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))(); return g.children[g.children.length - 1].material.emissive.getHex(); })()`);
 	h.check(tint === 0, `no hover tint on the box while sampling (${tint.toString(16)})`);
 	const standDown = (on) =>
-		page.evaluate(`(() => { let r; window.__stores.globalRenderer.subscribe((x) => (r = x))(); r.xr.enabled = ${!on}; })()`);
+		page.evaluate(`(() => { let r; window.__tp.test.v1.globalRenderer.subscribe((x) => (r = x))(); r.xr.enabled = ${!on}; })()`);
 	await standDown(true);
 	let shot;
 	try {
@@ -101,7 +101,7 @@ h.run(async () => {
 	h.check(spread(colourDesk) > 40, `the box is red on the desktop (${colourDesk})`);
 	await iwer.enter(A.page);
 	await iwer.frames(A.page, 10);
-	await A.page.waitForFunction(() => window.__stores.xrLook.xrLookDebug.plan, null, { timeout: 15000 });
+	await A.page.waitForFunction(() => window.__tp.test.v1.xrLook.xrLookDebug.plan, null, { timeout: 15000 });
 	const plain = await look(A.page);
 	h.check(plain.presenting && plain.plan === null && plain.token === 0 && !plain.vignette, `no look: no plan, no hook (${JSON.stringify(plain.plan)})`);
 	h.check(plain.tone === 4, `the environment's plain curve (${plain.tone})`);
@@ -125,7 +125,7 @@ h.run(async () => {
 	// ---- 3. no extra pass: the same session with the look off is the baseline ----------------------
 	await iwer.frames(A.page, 20);
 	const on = await look(A.page);
-	await A.page.evaluate((i) => window.__stores.scenePost.setPostEffectEnabled(i, false), sat);
+	await A.page.evaluate((i) => window.__tp.test.v1.scenePost.setPostEffectEnabled(i, false), sat);
 	await h.eventually(() => look(A.page), (v) => v.plan === null, 'the look off in the session: no plan', 8000);
 	await iwer.frames(A.page, 20);
 	const off = await look(A.page);
@@ -133,7 +133,7 @@ h.run(async () => {
 	h.check(spread(redEye) > 40, `counterfactual: with the look off the same sample is red (${redEye})`);
 	h.check(on.textures <= off.textures, `no render target for the look (${off.textures} off, ${on.textures} on)`);
 	h.check(on.calls <= off.calls, `no fullscreen pass (${off.calls} draw calls off, ${on.calls} on)`);
-	await A.page.evaluate((i) => window.__stores.scenePost.setPostEffectEnabled(i, true), sat);
+	await A.page.evaluate((i) => window.__tp.test.v1.scenePost.setPostEffectEnabled(i, true), sat);
 	await h.eventually(() => look(A.page), (v) => v.plan?.glsl?.length > 0, 'the look back on', 8000);
 	await iwer.frames(A.page, 10);
 	const after = await look(A.page);

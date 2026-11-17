@@ -43,7 +43,7 @@ async function closeMenus(page) {
 }
 async function sidebar(page, { side = 'right', open = true, full = false, w = 320 } = {}) {
 	await page.evaluate(({ side, open, full, w }) => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		S.sidebars.inspectorSide.set(side);
 		S.inspectorKind.set('scene');
 		S.inspectorClose.set(!open);
@@ -58,7 +58,7 @@ async function setBar(page, json) {
 	await page.evaluate((v) => {
 		if (v == null) localStorage.removeItem('controlsLayout');
 		else localStorage.setItem('controlsLayout', v);
-		window.__stores.uiLayoutsCore?.runLayoutReloaders();
+		window.__tp.test.v1.uiLayoutsCore?.runLayoutReloaders();
 	}, json);
 	await page.waitForTimeout(600);
 }
@@ -145,7 +145,7 @@ module.exports = (/** @type {string[]} */ parts) => {
 			h.check(typeof posX === 'number' && posX < 0.4, T + `M4: …and the place is stored (posX ${posX})`);
 			await shot(P, 'm4-placed-unfolded');
 			// the drag does not ALSO press the cell it lifted on (no panel opened)
-			const opened = await P.evaluate(() => { let v; window.__stores.explorerClose.subscribe((x) => (v = x))(); return v === false; });
+			const opened = await P.evaluate(() => { let v; window.__tp.test.v1.explorerClose.subscribe((x) => (v = x))(); return v === false; });
 			h.check(!opened, T + 'M4: the lift did not press the button under the finger');
 			// Cancel puts the bar back where it was
 			await openMenu();
@@ -154,7 +154,7 @@ module.exports = (/** @type {string[]} */ parts) => {
 			await kit.tap(await centre(P.locator('#toolbar-move-cancel')));
 			const after = await rect(P, '#controls-pill');
 			h.check(!(await P.locator('#toolbar-move-hint').count()) && Math.abs(after.cx - before.cx) < 2, T + `M4: Cancel ends the armed move, the bar stays (${Math.round(before.cx)} / ${Math.round(after.cx)})`);
-			await P.evaluate(() => window.__stores.explorerClose.set(true));
+			await P.evaluate(() => window.__tp.test.v1.explorerClose.set(true));
 			h.check(h.pageErrors(A).length === 0, T + `no page errors (${h.pageErrors(A).join(' / ')})`);
 			await setBar(P, null);
 			await A.ctx.close();
@@ -214,7 +214,7 @@ module.exports = (/** @type {string[]} */ parts) => {
 				// M13: crowd the top row → the floating pill goes COMPACT, never its own row. uir-people (1.65): the Invite-first
 				// pill is ~388 px, which FITS the 416 px a 900 px top row leaves, so the crowd is made at 760 px (still desktop)
 				await P.setViewportSize({ width: 760, height: 900 });
-				await P.evaluate(() => window.__stores.touchTools.set(true));
+				await P.evaluate(() => window.__tp.test.v1.touchTools.set(true));
 				await setBar(P, CROWDED);
 				await P.waitForTimeout(500);
 				d = await dock(P);
@@ -243,7 +243,7 @@ module.exports = (/** @type {string[]} */ parts) => {
 				d = await dock(P);
 				h.check(!d.squeezed && !d.docked && (await P.locator('.connect-pill #connect-join, .connect-pill input.cx-input').first().isVisible()), T + `M13: room returns → the full pill, centred (${JSON.stringify({ n: d.naturalWidth, a: d.available })})`);
 				await setBar(P, null);
-				await P.evaluate(() => window.__stores.touchTools.set(false));
+				await P.evaluate(() => window.__tp.test.v1.touchTools.set(false));
 				await P.setViewportSize({ width: 1440, height: 900 });
 				await P.waitForTimeout(500);
 				// the drawer's toggle: Float → Pinned
@@ -259,16 +259,16 @@ module.exports = (/** @type {string[]} */ parts) => {
 				h.check((await P.evaluate(() => localStorage.getItem('connect:pin:desktop'))) === 'pinned' && (await P.evaluate(() => localStorage.getItem('connect:pin:touch'))) == null, T + 'M14: remembered for THIS shell only (desktop key, the touch key untouched)');
 				await shot(P, `m14-pinned-${theme}`);
 				// a layout carries it
-				const saved = await P.evaluate(() => window.__stores.uiLayouts.saveLayout('M14'));
+				const saved = await P.evaluate(() => window.__tp.test.v1.uiLayouts.saveLayout('M14'));
 				const rec = await P.evaluate(() => JSON.parse(localStorage.getItem('uiLayouts')).find((l) => l.name === 'M14'));
 				h.check(saved.ok && rec?.chrome?.desktop?.['connect:pin:desktop'] === 'pinned', T + 'M14: a saved layout carries the pin');
 				await P.locator('#connect-pin-toggle').click();
 				await P.waitForTimeout(600);
 				h.check(!(await dock(P)).docked, T + 'M14: Float → back to the centred pill');
-				await P.evaluate((id) => window.__stores.uiLayouts.applyLayout(id), rec.id);
+				await P.evaluate((id) => window.__tp.test.v1.uiLayouts.applyLayout(id), rec.id);
 				await P.waitForTimeout(800);
 				h.check((await dock(P)).docked && (await dock(P)).pinned, T + 'M14: applying the layout pins it again');
-				await P.evaluate((id) => window.__stores.uiLayouts.deleteLayout?.(id), rec.id).catch(() => {});
+				await P.evaluate((id) => window.__tp.test.v1.uiLayouts.deleteLayout?.(id), rec.id).catch(() => {});
 				await P.evaluate(() => localStorage.removeItem('connect:pin:desktop'));
 				h.check(h.pageErrors(A).length === 0, T + `no page errors (${h.pageErrors(A).join(' / ')})`);
 				await A.ctx.close();
@@ -380,7 +380,7 @@ module.exports = (/** @type {string[]} */ parts) => {
 			h.check(!!gap && gap.dl <= 1 && gap.dr <= 1 && gap.dt <= 1, T + `M12: in Edit positions the Connect outline (and its "−") sits ON the pill (off by ${JSON.stringify(gap)})`);
 			await P.screenshot({ path: SHOTS ? `${SHOTS}/m12-connect-outline.png` : '/dev/null', clip: { x: 360, y: 0, width: 1080, height: 80 } }).catch(() => {});
 			// the row beside the logo, in Edit positions, beside the PINNED left column
-			let g = await P.evaluate(() => { let v; window.__stores.sidebars.geometry.subscribe((x) => (v = x))(); return v; });
+			let g = await P.evaluate(() => { let v; window.__tp.test.v1.sidebars.geometry.subscribe((x) => (v = x))(); return v; });
 			let tt = await rect(P, '#touch-tools');
 			const logo = await rect(P, '#logo-menu');
 			// beside the logo (78 + w) or, with no room there, stacked under it (14 + w) — either way beside the column
@@ -391,7 +391,7 @@ module.exports = (/** @type {string[]} */ parts) => {
 			await P.keyboard.press('Escape');
 			await P.waitForTimeout(300);
 			// outside Edit positions (Touch tools on): pinned → the row follows the logo
-			await P.evaluate(() => window.__stores.touchTools.set(true));
+			await P.evaluate(() => window.__tp.test.v1.touchTools.set(true));
 			await P.waitForTimeout(500);
 			tt = await rect(P, '#touch-tools');
 			h.check(Math.abs(tt.left - (78 + g.left.w)) <= 2 || Math.abs(tt.left - (14 + g.left.w)) <= 2, T + `M13: pinned left sidebar → the row beside the logo slides with the logo (beside or stacked under it: ${Math.round(tt.left)})`);
@@ -403,7 +403,7 @@ module.exports = (/** @type {string[]} */ parts) => {
 			h.check(!pillHits, T + 'M13: …and the Connect pill keeps clear of it');
 			// an OPEN (unpinned) left column starts below the logo's row: the row stays…
 			await sidebar(P, { side: 'left', full: false, w: 360 });
-			g = await P.evaluate(() => { let v; window.__stores.sidebars.geometry.subscribe((x) => (v = x))(); return v; });
+			g = await P.evaluate(() => { let v; window.__tp.test.v1.sidebars.geometry.subscribe((x) => (v = x))(); return v; });
 			tt = await rect(P, '#touch-tools');
 			h.check(Math.abs(tt.left - 78) <= 2, T + `M13: an unpinned left column below the row leaves the row in place (${Math.round(tt.left)})`);
 			// …but in Edit positions every cluster sits beside it
@@ -425,7 +425,7 @@ module.exports = (/** @type {string[]} */ parts) => {
 			// still open "its corner" is the free rect's corner — 16 px beside the 320 px column
 			h.check(Math.abs(1440 - st.right - (320 + 16)) <= 1, T + `M13: leaving Edit positions puts the stack back in its corner of the free viewport, beside the open column (${Math.round(1440 - st.right)})`);
 			await sidebar(P, { open: false });
-			await P.evaluate(() => window.__stores.touchTools.set(false));
+			await P.evaluate(() => window.__tp.test.v1.touchTools.set(false));
 			h.check(h.pageErrors(A).length === 0, T + `no page errors (${h.pageErrors(A).join(' / ')})`);
 			await A.ctx.close();
 			// the N6 unfolded: a pinned left sidebar moves the row (touch tools are on by default on touch)
@@ -561,12 +561,12 @@ module.exports = (/** @type {string[]} */ parts) => {
 			tr = await rect(P, '#hud-tr');
 			h.check(Math.abs(tr.right - (1440 - 16)) <= 1, T + 'M12b: unpinned → back on the window edge');
 			// the DOCK: a cluster at the bottom stays above the visible dock
-			await P.evaluate(() => window.__stores.explorerClose.set(false));
+			await P.evaluate(() => window.__tp.test.v1.explorerClose.set(false));
 			await P.waitForTimeout(1000);
 			const inset = await P.evaluate(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bottom-inset')) || 0);
 			const st = await rect(P, '#hud-stack-left');
 			h.check(inset > 100 ? st.bottom <= 900 - inset : true, T + `M12b: with the dock open (${inset}px) the placed stack stays above it (bottom ${Math.round(st.bottom)})`);
-			await P.evaluate(() => window.__stores.explorerClose.set(true));
+			await P.evaluate(() => window.__tp.test.v1.explorerClose.set(true));
 			await P.waitForTimeout(600);
 			// ROTATE: the bar to vertical (a screen edge), the left stack to a row
 			await enterEdit(P);
@@ -587,7 +587,7 @@ module.exports = (/** @type {string[]} */ parts) => {
 			// Play still works from the vertical bar
 			h.check(await P.locator('#play-button').isVisible(), T + 'M12b: Play is on the vertical bar');
 			// LAYOUTS carry place + orientation
-			const saved = await P.evaluate(() => window.__stores.uiLayouts.saveLayout('M12b'));
+			const saved = await P.evaluate(() => window.__tp.test.v1.uiLayouts.saveLayout('M12b'));
 			const lay = await P.evaluate(() => JSON.parse(localStorage.getItem('uiLayouts')).find((l) => l.name === 'M12b'));
 			h.check(saved.ok && JSON.parse(lay.chrome.desktop.controlsLayout).clusters?.bar?.rotated === true, T + 'M12b: a saved layout carries the clusters (place + rotation)');
 			// HIDE / SHOW ALL
@@ -612,13 +612,13 @@ module.exports = (/** @type {string[]} */ parts) => {
 			const sr = await rect(P, '#hud-stack-right');
 			h.check(typeof c.right?.x !== 'number' && Math.abs(1440 - sr.right - 16) <= 1, T + `M12b: Reset all positions puts the stacks home (right stack ${Math.round(1440 - sr.right)} from the edge)`);
 			h.check(c.bar?.rotated === true, T + 'M12b: …rotations stay');
-			await P.evaluate((id) => window.__stores.uiLayouts.applyLayout(id), lay.id);
+			await P.evaluate((id) => window.__tp.test.v1.uiLayouts.applyLayout(id), lay.id);
 			await P.waitForTimeout(900);
 			c = await rec(P);
 			h.check(typeof c.right?.x === 'number' && c.left?.rotated === true, T + 'M12b: applying the layout brings the places and rotations back');
 			// back to the default
 			await setBar(P, null);
-			await P.evaluate((id) => window.__stores.uiLayouts.deleteLayout?.(id), lay.id).catch(() => {});
+			await P.evaluate((id) => window.__tp.test.v1.uiLayouts.deleteLayout?.(id), lay.id).catch(() => {});
 			await P.waitForTimeout(500);
 			const bb = await rect(P, '#controls-pill');
 			h.check(Math.abs(bb.cx - 720) <= 2 && bb.bottom >= 900 - 20, T + 'premise: a cleared record = everything home');

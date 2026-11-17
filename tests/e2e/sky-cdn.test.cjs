@@ -18,12 +18,12 @@ const h = require('./helpers.cjs');
 
 const GET = `(s) => { let v; s.subscribe((x) => (v = x))(); return v; }`;
 /** @param {any} page */
-const status = (page) => page.evaluate(`(${GET})(window.__stores.hdriStores.hdriStatus)`);
+const status = (page) => page.evaluate(`(${GET})(window.__tp.test.v1.hdriStores.hdriStatus)`);
 /** @param {any} page */
 const sceneSky = (page) =>
 	page.evaluate(`(() => {
 		const get = ${GET};
-		const st = window.__stores;
+		const st = window.__tp?.test.v1;
 		const scene = get(st.globalScene);
 		return {
 			environment: scene.environment?.name ?? null,
@@ -33,7 +33,7 @@ const sceneSky = (page) =>
 	})()`);
 /** @param {any} page @param {string} key */
 const pick = (page, key) =>
-	page.evaluate((k) => window.__stores.environment.setEnvironment(k), key);
+	page.evaluate((k) => window.__tp.test.v1.environment.setEnvironment(k), key);
 /** wait until the layer has settled ON `key` (a preset switch passes through 'off' first, and the
  * environment applies on its own schedule — a bare settle() can answer for the PREVIOUS sky)
  * @param {any} page @param {string} key @returns {Promise<string>} */
@@ -54,8 +54,8 @@ h.run(async () => {
 	console.log(
 		`skies from ${process.env.E2E_SKIES_CDN ? 'the real CDN' : (skies.dir ?? 'the real CDN (no local packs checkout)')}`
 	);
-	await A.page.evaluate(() => window.__stores.hdriPrefs.hdriQuality.set('standard'));
-	const base = await A.page.evaluate(() => window.__stores.hdriSky.SKY_BASE);
+	await A.page.evaluate(() => window.__tp.test.v1.hdriPrefs.hdriQuality.set('standard'));
+	const base = await A.page.evaluate(() => window.__tp.test.v1.hdriSky.SKY_BASE);
 	const appOrigin = new URL(h.URL).origin;
 
 	// ---- 1. first pick downloads --------------------------------------------------------------
@@ -85,11 +85,11 @@ h.run(async () => {
 	);
 
 	// ---- 2. the asset cache keeps it across a reload -------------------------------------------
-	const cached = await A.page.evaluate(() => window.__stores.hdriSky.cachedSkies());
+	const cached = await A.page.evaluate(() => window.__tp.test.v1.hdriSky.cachedSkies());
 	h.check(cached.includes(url), `the asset cache holds the sky (${cached.join(', ')})`);
 	await h.freshReload(A);
 	await h.answerRestore(A);
-	await A.page.evaluate(() => window.__stores.environment.setEnvironment('studio'));
+	await A.page.evaluate(() => window.__tp.test.v1.environment.setEnvironment('studio'));
 	await pick(A.page, 'meadow');
 	h.check((await settle(A.page, 'meadow')) === 'ready', 'after a reload Meadow is ready again');
 	h.check(skies.count() === 1, `…and was NOT fetched again (${skies.count()} sky requests in all)`);
@@ -104,10 +104,10 @@ h.run(async () => {
 	await pick(A.page, 'meadow');
 	await settle(A.page, 'meadow');
 	// the exporter refuses an empty scene
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await A.page.waitForTimeout(300);
 	const exp = await A.page.evaluate(async () => {
-		const b = window.__stores.exportBuilder;
+		const b = window.__tp.test.v1.exportBuilder;
 		try {
 			await b.loadExportManifest();
 		} catch (e) {
@@ -130,7 +130,7 @@ h.run(async () => {
 			useCdnForPacks: false
 		});
 		const cdn = new Uint8Array(
-			await (await fetch(window.__stores.hdriSky.skyUrl('hdri/meadow_2_1k.jpg'))).arrayBuffer()
+			await (await fetch(window.__tp.test.v1.hdriSky.skyUrl('hdri/meadow_2_1k.jpg'))).arrayBuffer()
 		);
 		return { skip: '', zip: b64(new Uint8Array(await out.blob.arrayBuffer())), cdn: b64(cdn) };
 	});
@@ -156,7 +156,7 @@ h.run(async () => {
 
 	// ---- 3. CDN blocked: the flat preset, no error -------------------------------------------
 	const B = await h.setupPage(browser, 'B', opts);
-	await B.page.evaluate(() => window.__stores.hdriPrefs.hdriQuality.set('standard'));
+	await B.page.evaluate(() => window.__tp.test.v1.hdriPrefs.hdriQuality.set('standard'));
 	const blocked = await h.routeSkies(B.page, { block: true });
 	await pick(B.page, 'starlight');
 	h.check(

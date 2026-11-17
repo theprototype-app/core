@@ -12,7 +12,7 @@ const blockOf = (page, uuid) =>
 	page.evaluate(
 		(u) =>
 			new Promise((resolve) => {
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const o = g?.getObjectByProperty('uuid', u);
 					resolve(o ? (o.userData.terrainScatter ?? null) : 'missing');
 				})();
@@ -23,7 +23,7 @@ const blockOf = (page, uuid) =>
 const posOf = (page, uuid) =>
 	page.evaluate((u) => {
 		let g = null;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return g?.getObjectByProperty('uuid', u)?.position.toArray() ?? null;
 	}, uuid);
 
@@ -32,13 +32,13 @@ async function parkBall(page, ball, at) {
 	await page.evaluate(
 		([u, p]) => {
 			let g = null;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const o = g.getObjectByProperty('uuid', u);
 			o.position.set(p[0], p[1], p[2]);
 			o.rotation.set(0, 0, 0);
 			o.userData.physics = { mode: 'dynamic', mass: 1 };
-			window.__stores.objectsGroup.update((v) => v);
-			window.__stores.objectActions.deselectObject();
+			window.__tp.test.v1.objectsGroup.update((v) => v);
+			window.__tp.test.v1.objectActions.deselectObject();
 		},
 		[ball, at]
 	);
@@ -60,7 +60,7 @@ const framesPass = (page, n) =>
 	);
 
 async function drop(peer, other, ball) {
-	await peer.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await peer.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await peer.page.waitForTimeout(800);
 	let last = null;
 	let still = 0;
@@ -76,8 +76,8 @@ async function drop(peer, other, ball) {
 		still = last !== null && y !== null && Math.abs(y - last) < 0.004 ? still + 1 : 0;
 		last = y;
 	}
-	const dbg = await peer.page.evaluate(() => window.__stores.physics.physicsWorldDebug().scatter);
-	await peer.page.evaluate(() => window.__stores.physics.stopSimulation());
+	const dbg = await peer.page.evaluate(() => window.__tp.test.v1.physics.physicsWorldDebug().scatter);
+	await peer.page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 	await peer.page.waitForTimeout(300);
 	const here = (await posOf(peer.page, ball))?.[1] ?? null;
 	// the watching peer has the stream (~10 Hz + smoothing) and the settling move sent at stop
@@ -94,7 +94,7 @@ async function drop(peer, other, ball) {
 
 /** pick a collider in Properties ▸ Scatter through the real select @param {any} peer */
 async function pickCollider(peer, terrain, setId, name) {
-	await peer.page.evaluate((u) => window.__stores.objectActions.selectObject(u, true), terrain);
+	await peer.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u, true), terrain);
 	const sel = peer.page.locator(`[id="terrain-scatter-collider-${setId}"]`);
 	if (!(await sel.isVisible().catch(() => false))) {
 		// the Scatter section may start collapsed
@@ -113,7 +113,7 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(3000);
 		await warm.ctx.close();
 	}
@@ -123,7 +123,7 @@ h.run(async () => {
 
 	// ---- a flat terrain (exact mesh collider) + one scattered rock -------------------------
 	const terrain = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create Terrain 24 24');
 		const group = await new Promise((r) => s.objectsGroup.subscribe(r)());
 		const t = group.children[group.children.length - 1];
@@ -135,7 +135,7 @@ h.run(async () => {
 	await h.eventuallyAfter(A, B, () => blockOf(B.page, terrain), (v) => v !== 'missing', 'B has the terrain', 20000);
 
 	const scattered = await A.page.evaluate((u) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.terrainSculpt.enterSculpt(u);
 		s.terrainSculpt.sculptOp.set('scatter');
 		s.terrainPaint.scatterSource.set({ kind: 'primitive', type: 'Dodecahedron' });
@@ -158,7 +158,7 @@ h.run(async () => {
 	h.check(!!setId && !('collider' in block.sets[0]), `a new set brushed with "None" carries no collider key (${JSON.stringify(Object.keys(block?.sets?.[0] ?? {}))})`);
 	const rock = await A.page.evaluate(
 		([u, b]) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let g = null;
 			s.objectsGroup.subscribe((v) => (g = v))();
 			const t = g.getObjectByProperty('uuid', u);
@@ -171,7 +171,7 @@ h.run(async () => {
 	h.check(Math.hypot(rock[0] - 3, rock[1] + 2) <= 0.31 && Math.abs(rock[2] - 2) < 0.01, `the rock sits inside the brush, scale 2 (${rock.map((n) => n.toFixed(2))})`);
 
 	const ball = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create Sphere');
 		const group = await new Promise((r) => s.objectsGroup.subscribe(r)());
 		const o = group.children[group.children.length - 1];
@@ -183,7 +183,7 @@ h.run(async () => {
 	// the Terrain is procedural (hills): measure the ground under the rock and drop from above it
 	const ground = await A.page.evaluate(
 		([u, x, z]) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let g = null;
 			s.objectsGroup.subscribe((v) => (g = v))();
 			const t = g.getObjectByProperty('uuid', u);
@@ -197,7 +197,7 @@ h.run(async () => {
 	// measured, not assumed: the rock part's height (base at 0) at its scale, and the ball's radius
 	const dims = await A.page.evaluate(
 		([u, scale]) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const rockGeo = new s.THREE.DodecahedronGeometry(0.5);
 			rockGeo.computeBoundingBox();
 			let g = null;
@@ -240,19 +240,19 @@ h.run(async () => {
 	h.check(onRock(onA.there), `…and on B, which only watched (y ${onA.there?.toFixed(2)})`);
 
 	// ---- B steps the world from its own replicated field (Sphere, set on B) ----------------
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await A.page.waitForTimeout(500);
 	await pickCollider(B, terrain, setId, 'Sphere');
 	await h.eventuallyAfter(B, A, () => blockOf(A.page, terrain), (v) => v?.sets?.[0]?.collider === 'sphere', 'B\'s pick replicated back to A', 15000);
-	await B.page.evaluate(() => window.__stores.history.undo());
+	await B.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventuallyAfter(B, A, () => blockOf(A.page, terrain), (v) => v?.sets?.[0]?.collider === 'box', 'ONE undo on B puts Box back, on A too', 10000);
-	await B.page.evaluate(() => window.__stores.history.redo());
+	await B.page.evaluate(() => window.__tp.test.v1.history.redo());
 	await h.eventually(() => blockOf(A.page, terrain), (v) => v?.sets?.[0]?.collider === 'sphere', 'redo brings Sphere back on A', 10000);
-	await B.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await B.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await parkBall(B.page, ball, over);
 	await B.page.evaluate(([u, p]) => {
 		// B owns the reset pose too: send it so A agrees before B steps
-		window.__stores.peers.subscribe((peer) => peer?.send({ type: 'move', uuid: u, pos: p, rot: [0, 0, 0], scale: [0.4, 0.4, 0.4] }))();
+		window.__tp.test.v1.peers.subscribe((peer) => peer?.send({ type: 'move', uuid: u, pos: p, rot: [0, 0, 0], scale: [0.4, 0.4, 0.4] }))();
 	}, [ball, over]);
 	await B.page.waitForTimeout(800);
 	const onB = await drop(B, A, ball);
@@ -262,14 +262,14 @@ h.run(async () => {
 
 	// ---- save / load keeps the field -------------------------------------------------------
 	const zip = await A.page.evaluate(async () => {
-		const s = window.__stores.sessions;
+		const s = window.__tp.test.v1.sessions;
 		const out = await s.exportSessionZip(s.buildSessionPayload('Rock garden'));
 		return Array.from(new Uint8Array(out instanceof Blob ? await out.arrayBuffer() : out));
 	});
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	await A.page.waitForTimeout(800);
 	await A.page.evaluate(async (arr) => {
-		const s = window.__stores.sessions;
+		const s = window.__tp.test.v1.sessions;
 		await s.applySession(await s.readSessionZip(new Uint8Array(arr).buffer), { backup: false });
 	}, zip);
 	let reloaded = null;

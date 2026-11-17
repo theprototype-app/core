@@ -16,7 +16,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	const setup = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const ap = w.animationPreview;
 		w.commandsHandler.sceneCommand('/create box 1 1 1');
 		await new Promise((r) => setTimeout(r, 800));
@@ -44,7 +44,7 @@ h.run(async () => {
 
 	// ---- 1. move the object, then play -------------------------------------
 	const moved = await A.page.evaluate(async (s) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const ap = w.animationPreview;
 		let g;
 		w.objectsGroup.subscribe((v) => (g = v))();
@@ -80,7 +80,7 @@ h.run(async () => {
 
 	// ---- 2. rotation stays ABSOLUTE ----------------------------------------
 	const rotation = await A.page.evaluate(async (s) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const ap = w.animationPreview;
 		let g;
 		w.objectsGroup.subscribe((v) => (g = v))();
@@ -106,7 +106,7 @@ h.run(async () => {
 	// The inverse mapping's whole job. Record a key while the object is posed at
 	// base+offset, then play again: the movement must be the same size, not twice.
 	const autoKey = await A.page.evaluate(async (s) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const ap = w.animationPreview;
 		let g;
 		w.objectsGroup.subscribe((v) => (g = v))();
@@ -147,7 +147,7 @@ h.run(async () => {
 
 	// ---- 4. the glTF bake uses the same mapping ----------------------------
 	const baked = await A.page.evaluate((s) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const ap = w.animationPreview;
 		let g;
 		w.objectsGroup.subscribe((v) => (g = v))();

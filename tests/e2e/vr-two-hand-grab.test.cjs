@@ -10,16 +10,16 @@
 const h = require('./helpers.cjs');
 const xr = require('./fakeXR.cjs');
 
-const grips = (page) => page.evaluate(() => window.__stores.vrControls.vrGripDebug());
+const grips = (page) => page.evaluate(() => window.__tp.test.v1.vrControls.vrGripDebug());
 const posOf = (page, uuid) =>
 	page.evaluate((uuid) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		return g.getObjectByProperty('uuid', uuid).position.toArray();
 	}, uuid);
 const bodyOf = (page, uuid) =>
 	page.evaluate((uuid) => {
-		const b = window.__stores.physics.physicsDebug().find((e) => e.uuid === uuid);
+		const b = window.__tp.test.v1.physics.physicsDebug().find((e) => e.uuid === uuid);
 		return b ? { hold: b.hold, bodyType: b.bodyType } : null;
 	}, uuid);
 const grip = async (page, hand, down) => {
@@ -31,12 +31,12 @@ h.run(async () => {
 	// GPU: software GL runs a few fps and the fixed-step accumulator then lags real time
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
-	await A.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+	await A.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 	await A.page.waitForTimeout(2000);
 
 	// ---- the fixture: a floor and two dynamic crates side by side ---------------------------
 	const ids = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const get = (store) => { let v; store.subscribe((x) => (v = x))(); return v; };
 		for (let i = 0; i < 3; i++) s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1200));
@@ -107,7 +107,7 @@ h.run(async () => {
 		// put the crates back on the floor for the simulation
 		await A.page.evaluate((ids) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((x) => (g = x))();
+			window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 			for (const [u, x] of [[ids.a, 0.7], [ids.b, -0.7]]) {
 				const o = g.getObjectByProperty('uuid', u);
 				o.position.set(x, 0.2, -1.5);
@@ -115,17 +115,17 @@ h.run(async () => {
 				o.scale.setScalar(0.4);
 				o.updateMatrixWorld(true);
 			}
-			window.__stores.objectActions.deselectObject();
+			window.__tp.test.v1.objectActions.deselectObject();
 		}, ids);
 		await park();
 	}
 
 	// ================================================================ 2. INTERACT + physics
 	console.log('\n=== 2. Interact + a running simulation: two crates, two hands ===');
-	await A.page.evaluate(() => window.__stores.objectActions.setEditorMode('interact'));
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('interact'));
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await A.page.waitForTimeout(1500);
-	const running = await A.page.evaluate(() => window.__stores.physics.physicsDebug().length);
+	const running = await A.page.evaluate(() => window.__tp.test.v1.physics.physicsDebug().length);
 	h.check(running >= 2, `2.0 (premise) the simulation is running (${running} dynamic bodies)`);
 	const a0 = await posOf(A.page, ids.a);
 	const b0 = await posOf(A.page, ids.b);
@@ -186,14 +186,14 @@ h.run(async () => {
 	// the knock probe skips EVERYTHING the hands hold (both of them)
 	await xr.pose(A.page, 'left', [b5[0], b5[1], 0]);
 	await grip(A.page, 'left', true);
-	const held = await A.page.evaluate(() => window.__stores.vrControls.vrGrabbedUuids());
+	const held = await A.page.evaluate(() => window.__tp.test.v1.vrControls.vrGrabbedUuids());
 	h.check(held.includes(ids.a) && held.includes(ids.b), `2.12 vrGrabbedUuids names both held crates (${held.length})`);
 	await grip(A.page, 'left', false);
 	await grip(A.page, 'right', false);
 
-	await A.page.evaluate(() => window.__stores.physics.stopSimulation());
-	await A.page.evaluate(() => window.__stores.objectActions.setEditorMode('edit'));
+	await A.page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('edit'));
 	await xr.uninstall(A.page);
-	await A.page.evaluate(() => window.__stores.isVRMode.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.isVRMode.set(false));
 	await h.finish(browser);
 });

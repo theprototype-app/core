@@ -23,15 +23,15 @@ void main() { gl_FragColor = vec4(${r}, vUv.x, 0.0, 1.0); }
 const code = (r, extra = {}) => ({ use: true, vertex: VERT, fragment: FRAG(r), uniforms: {}, ...extra });
 
 const firstMesh = (page) =>
-	page.evaluate(() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => {
+	page.evaluate(() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => {
 		let m = null;
 		g.traverse((n) => { if (n.isMesh && !m) m = n; });
 		r(m?.uuid ?? null);
 	})()));
 const wornHash = (page, uuid) =>
-	page.evaluate((u) => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g.getObjectByProperty('uuid', u)?.material?.userData?.shaderCodeHash ?? null))()), uuid);
-const setCode = (page, key, c) => page.evaluate(([k, v]) => window.__stores.shaderGraph.setShaderGraphFor(k, { nodes: [], edges: [], code: v }), [key, c]);
-const errorsOf = (page, key) => page.evaluate((k) => new Promise((r) => window.__stores.shaderGraph.shaderErrors.subscribe((all) => r(all[k] ?? []))()), key);
+	page.evaluate((u) => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g.getObjectByProperty('uuid', u)?.material?.userData?.shaderCodeHash ?? null))()), uuid);
+const setCode = (page, key, c) => page.evaluate(([k, v]) => window.__tp.test.v1.shaderGraph.setShaderGraphFor(k, { nodes: [], edges: [], code: v }), [key, c]);
+const errorsOf = (page, key) => page.evaluate((k) => new Promise((r) => window.__tp.test.v1.shaderGraph.shaderErrors.subscribe((all) => r(all[k] ?? []))()), key);
 const statusOf = (page) => page.evaluate(() => document.querySelector('#shader-own-status')?.getAttribute('data-state') ?? null);
 
 /** poll until truthy */
@@ -49,21 +49,21 @@ async function until(page, fn, what, ms = 25000) {
 
 /** the probe worker as the browser without WebGL2-in-workers sees it */
 const workerUnavailable = (page) =>
-	page.evaluate(() => window.__stores.shaderCodeGuard.shaderCodeGuardForTest.setMakeProbeWorker(() => {
+	page.evaluate(() => window.__tp.test.v1.shaderCodeGuard.shaderCodeGuardForTest.setMakeProbeWorker(() => {
 		throw new Error('no worker here');
 	}));
 const workerReal = (page) => page.evaluate(() => {
-	const g = window.__stores.shaderCodeGuard.shaderCodeGuardForTest;
+	const g = window.__tp.test.v1.shaderCodeGuard.shaderCodeGuardForTest;
 	g.resetMakeProbeWorker();
 	g.forgetVerdicts();
 });
 
 async function openOwnPane(page, uuid) {
 	await page.evaluate((k) => {
-		window.__stores.shaderEditorClose.set(false);
-		window.__stores.objectActions.selectObject(k, true);
+		window.__tp.test.v1.shaderEditorClose.set(false);
+		window.__tp.test.v1.objectActions.selectObject(k, true);
 	}, uuid);
-	await page.evaluate(() => window.__stores.shaderGraph.openShaderEditor());
+	await page.evaluate(() => window.__tp.test.v1.shaderGraph.openShaderEditor());
 	await page.waitForSelector('#shader-code-btn', { timeout: 15000 });
 	await page.evaluate(() => {
 		const b = document.getElementById('shader-code-btn');
@@ -85,8 +85,8 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1280, height: 800 } } });
 	const page = A.page;
-	await page.evaluate(() => window.__stores.shaderCodeReach.shaderCodeReachForTest.forgetMine());
-	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await page.evaluate(() => window.__tp.test.v1.shaderCodeReach.shaderCodeReachForTest.forgetMine());
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	const uuid = await until(page, () => firstMesh(page), 'premise — a cube');
 
 	// ---- 1. AI4: the error by the text ----------------------------------------------------------------
@@ -151,10 +151,10 @@ h.run(async () => {
 	const Q = await h.setupPage(browser, 'quest', { init: iwer.initScript(), context: { viewport: { width: 1280, height: 720 }, userAgent: QUEST_UA } });
 	const q = Q.page;
 	h.check(await q.evaluate(() => /OculusBrowser/.test(navigator.userAgent)), 'premise — the Quest browser user agent');
-	await q.evaluate(() => window.__stores.shaderCodeReach.setCustomShadersOnQuest(false));
-	const probes = () => q.evaluate(() => window.__stores.shaderCodeGuard.shaderCodeGuardForTest.probeRuns());
+	await q.evaluate(() => window.__tp.test.v1.shaderCodeReach.setCustomShadersOnQuest(false));
+	const probes = () => q.evaluate(() => window.__tp.test.v1.shaderCodeGuard.shaderCodeGuardForTest.probeRuns());
 	const probesBefore = await probes();
-	await q.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await q.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	const qu = await until(q, () => firstMesh(q), 'premise — a cube on the Quest page');
 	await setCode(q, qu, code('0.8'));
 	await until(q, async () => /off on Quest/.test((await errorsOf(q, qu)).join()), 'AI9 Quest: custom GLSL is off by default');
@@ -163,13 +163,13 @@ h.run(async () => {
 	await openOwnPane(q, qu);
 	h.check((await statusOf(q)) === 'held-quest' && (await q.locator('#shader-own-quest-on').count()) === 1, 'AI9 Quest: the pane offers Turn on custom shaders');
 	await q.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.settingsOpen.set(false);
 		s.settingsSection.set('vr');
 		s.settingsOpen.set(true);
 	});
 	await until(q, () => q.evaluate(() => !!document.querySelector('#row-vr-customShaders') || [...document.querySelectorAll('#settings-sections *')].some((e) => e.textContent?.trim() === 'Turn on custom shaders')), 'AI9 Quest: Settings ▸ VR has the switch', 10000);
-	await q.evaluate(() => window.__stores.settingsOpen.set(false));
+	await q.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await iwer.enter(q);
 	await iwer.frames(q, 4);
 	h.check((await wornHash(q, qu)) === null, 'AI9 Quest: still off inside the XR session');

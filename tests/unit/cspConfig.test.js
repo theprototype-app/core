@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cspDirectives, frameAncestors, cspText, playOrigin } from '../../csp.config.js';
+import { cspDirectives, frameAncestors, cspText, playOrigin, FRAMED_PATHS } from '../../csp.config.js';
 import { originOf } from '../../src/lib/playOrigin.js';
 
 // 69 T3/T4: the policy a build ships, and the knobs a deployment turns.
@@ -33,8 +33,9 @@ describe('csp.config', () => {
 		expect(cspDirectives({ VITE_CSP: 'off' })).toBeNull();
 	});
 
-	it('frame-ancestors: open while play is on this origin, self once a play origin exists', () => {
-		expect(frameAncestors({})).toEqual(['*']);
+	it('frame-ancestors: self on the app origin, with or without a play origin (101 F4)', () => {
+		expect(frameAncestors({})).toEqual(['self']);
+		expect(FRAMED_PATHS).toEqual(['/play', '/play/*', '/discord', '/discord/*']);
 		expect(frameAncestors({ VITE_PLAY_ORIGIN: 'https://play.example/x' })).toEqual(['self']);
 		expect(playOrigin({ VITE_PLAY_ORIGIN: 'https://play.example/x' })).toBe('https://play.example');
 		expect(frameAncestors({ VITE_PLAY_ORIGIN: 'https://play.example', VITE_CSP_FRAME_ANCESTORS: 'https://a.example' })).toEqual(['https://a.example']);

@@ -36,25 +36,25 @@ const { unzipSync, strFromU8 } = require('fflate');
 const folderNames = (peer) =>
 	peer.page.evaluate(() => {
 		let f;
-		window.__stores.explorer.explorerFolders.subscribe((v) => (f = v))();
+		window.__tp.test.v1.explorer.explorerFolders.subscribe((v) => (f = v))();
 		return f.map((x) => x.name);
 	});
 
 const folderIdNamed = (peer, name) =>
 	peer.page.evaluate((n) => {
 		let f;
-		window.__stores.explorer.explorerFolders.subscribe((v) => (f = v))();
+		window.__tp.test.v1.explorer.explorerFolders.subscribe((v) => (f = v))();
 		return f.find((x) => x.name === n)?.id ?? null;
 	}, name);
 
 /** exactly what the Travel node's card lists */
 const travelChoices = (peer) =>
-	peer.page.evaluate(() => window.__stores.levels.levelItems().map((i) => i.name));
+	peer.page.evaluate(() => window.__tp.test.v1.levels.levelItems().map((i) => i.name));
 
 const packTitles = (peer) =>
 	peer.page.evaluate(() => {
 		let p;
-		window.__stores.packs.packs.subscribe((v) => (p = v))();
+		window.__tp.test.v1.packs.packs.subscribe((v) => (p = v))();
 		return p.map((x) => ({ name: x.name, title: x.title, source: x.source }));
 	});
 
@@ -72,7 +72,7 @@ const closeMenu = async (peer) => {
 
 const makeBoxes = (peer, count) =>
 	peer.page.evaluate(async (n) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const uuids = [];
 		for (let i = 0; i < n; i++) {
 			s.commandsHandler.sceneCommand('/create box');
@@ -89,14 +89,14 @@ const makeBoxes = (peer, count) =>
 const worldUuids = (peer) =>
 	peer.page.evaluate(() => {
 		let group;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		return (group?.children ?? []).map((c) => c.uuid);
 	});
 
 const currentLevelOf = (peer) =>
 	peer.page.evaluate(() => {
 		let at;
-		window.__stores.levels.currentLevel.subscribe((v) => (at = v))();
+		window.__tp.test.v1.levels.currentLevel.subscribe((v) => (at = v))();
 		return at;
 	});
 
@@ -104,7 +104,7 @@ const currentLevelOf = (peer) =>
 const dirtyOf = (peer) =>
 	peer.page.evaluate(() => {
 		let d;
-		window.__stores.sceneIdentity.sceneDirty.subscribe((v) => (d = v))();
+		window.__tp.test.v1.sceneIdentity.sceneDirty.subscribe((v) => (d = v))();
 		return d;
 	});
 
@@ -112,7 +112,7 @@ const dirtyOf = (peer) =>
 const dialogOf = (peer) =>
 	peer.page.evaluate(() => {
 		let d;
-		window.__stores.confirmDialog.confirmDialog.subscribe((v) => (d = v))();
+		window.__tp.test.v1.confirmDialog.confirmDialog.subscribe((v) => (d = v))();
 		return d
 			? {
 					title: d.title,
@@ -149,28 +149,28 @@ const gridBackgroundMenu = async (peer) => {
 
 /** answer it: a choice VALUE, or false for cancel */
 const answerDialog = (peer, answer) =>
-	peer.page.evaluate((a) => window.__stores.confirmDialog.resolveConfirm(a), answer);
+	peer.page.evaluate((a) => window.__tp.test.v1.confirmDialog.resolveConfirm(a), answer);
 
 const toastsOf = (peer) =>
 	peer.page.evaluate(() => {
 		let toasts;
-		window.__stores.toastStore.subscribe((t) => (toasts = t))();
+		window.__tp.test.v1.toastStore.subscribe((t) => (toasts = t))();
 		return (toasts ?? []).map((t) => (typeof t === 'string' ? t : (t.text ?? '')));
 	});
 
-const clearToasts = (peer) => peer.page.evaluate(() => window.__stores.toastStore.set([]));
+const clearToasts = (peer) => peer.page.evaluate(() => window.__tp.test.v1.toastStore.set([]));
 
 const manifestOf = (peer) =>
 	peer.page.evaluate(() => {
 		let m;
-		window.__stores.projectManifest.projectManifest.subscribe((v) => (m = v))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((v) => (m = v))();
 		return m;
 	});
 
 /** a scene asset with ONE recognisable object in it; leaves the world holding it */
 const seedScene = async (peer, name) => {
 	const [uuid] = await makeBoxes(peer, 1);
-	const item = await peer.page.evaluate((n) => window.__stores.levels.saveSceneAsLevel(n), name);
+	const item = await peer.page.evaluate((n) => window.__tp.test.v1.levels.saveSceneAsLevel(n), name);
 	return { uuid, item };
 };
 
@@ -186,7 +186,7 @@ const waitForDialog = (peer, expect) =>
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
-	await A.page.waitForFunction(() => !!window.__stores?.levels, { timeout: 30000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.levels, { timeout: 30000 });
 
 	// =====================================================================
 	// 1. THE GRID MENU SAYS "SCENE", AND A SAVE LANDS WHERE YOU ARE LOOKING
@@ -230,7 +230,7 @@ h.run(async () => {
 	h.check(
 		await A.page.evaluate(() => {
 			let items;
-			window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
+			window.__tp.test.v1.explorer.explorerItems.subscribe((v) => (items = v))();
 			return (items.find((i) => i.name === 'Alpha.tpscene')?.folderId ?? null) === null;
 		}),
 		'it landed at the library ROOT, which is where the user was looking'
@@ -238,9 +238,9 @@ h.run(async () => {
 
 	// the other half of the same rule: browsing a folder lands the save THERE
 	const looking = await A.page.evaluate(
-		() => window.__stores.explorer.createFolder('Where I am looking', null)?.id ?? null
+		() => window.__tp.test.v1.explorer.createFolder('Where I am looking', null)?.id ?? null
 	);
-	await A.page.evaluate((id) => window.__stores.explorer.activeFolder.set(id), looking);
+	await A.page.evaluate((id) => window.__tp.test.v1.explorer.activeFolder.set(id), looking);
 	await A.page.waitForTimeout(500);
 	await A.page.locator('#explorer-list [role="region"]').first()
 		.click({ button: 'right', position: { x: 200, y: 140 } });
@@ -254,13 +254,13 @@ h.run(async () => {
 		() =>
 			A.page.evaluate(() => {
 				let items;
-				window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
+				window.__tp.test.v1.explorer.explorerItems.subscribe((v) => (items = v))();
 				return items.find((i) => i.name === 'Delta.tpscene')?.folderId ?? null;
 			}),
 		(folderId) => folderId === looking,
 		'a save made while browsing a folder lands in THAT folder'
 	);
-	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await A.page.waitForTimeout(400);
 
 	// =====================================================================
@@ -269,21 +269,21 @@ h.run(async () => {
 	// a scenes folder now exists only because someone MADE one — which is the state the
 	// rest of this suite is about, and it is a user's folder like any other
 	const scenesId = await A.page.evaluate(
-		() => window.__stores.explorer.createFolder('Scenes', null)?.id ?? null
+		() => window.__tp.test.v1.explorer.createFolder('Scenes', null)?.id ?? null
 	);
 	h.check(!!scenesId, 'premise: a user-made `Scenes` folder');
 	await A.page.evaluate(
-		(folderId) => window.__stores.levels.saveSceneAsLevel('Beta', folderId),
+		(folderId) => window.__tp.test.v1.levels.saveSceneAsLevel('Beta', folderId),
 		scenesId
 	);
 	// and Alpha (saved at the root) DRAGGED somewhere else entirely
 	const elsewhere = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const folder = s.explorer.createFolder('Prototypes', null);
 		return folder?.id ?? null;
 	});
 	await A.page.evaluate((folderId) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let items;
 		s.explorer.explorerItems.subscribe((v) => (items = v))();
 		const alpha = items.find((i) => i.name === 'Alpha.tpscene');
@@ -300,7 +300,7 @@ h.run(async () => {
 	// a travel destination. Kind-based discovery cannot make that mistake.
 	await A.page.evaluate(async (folderId) => {
 		const bytes = new TextEncoder().encode('not a scene');
-		await window.__stores.explorer.addItemFromBytes(bytes.buffer, 'readme.txt', folderId);
+		await window.__tp.test.v1.explorer.addItemFromBytes(bytes.buffer, 'readme.txt', folderId);
 	}, scenesId);
 	await A.page.waitForTimeout(400);
 	const withText = await travelChoices(A);
@@ -313,7 +313,7 @@ h.run(async () => {
 	// 3. THE FOLDER IS FREELY RENAMABLE AND DELETABLE
 	// =====================================================================
 	await A.page.evaluate(
-		({ id }) => window.__stores.explorer.renameFolder(id, 'Old scenes'),
+		({ id }) => window.__tp.test.v1.explorer.renameFolder(id, 'Old scenes'),
 		{ id: scenesId }
 	);
 	await A.page.waitForTimeout(300);
@@ -325,7 +325,7 @@ h.run(async () => {
 
 	// delete it: the cascade takes its contents with it (ordinary folder semantics —
 	// Beta lived there), and the scene stored elsewhere is untouched
-	await A.page.evaluate(({ id }) => window.__stores.explorer.deleteFolder(id), { id: scenesId });
+	await A.page.evaluate(({ id }) => window.__tp.test.v1.explorer.deleteFolder(id), { id: scenesId });
 	await A.page.waitForTimeout(500);
 	const afterDelete = await travelChoices(A);
 	h.check(!afterDelete.includes('Beta.tpscene'), 'deleting the folder deletes the scenes inside it');
@@ -334,7 +334,7 @@ h.run(async () => {
 		`a scene living elsewhere survives the folder's deletion (${JSON.stringify(afterDelete)})`
 	);
 	const foldersBeforeGamma = (await folderNames(A)).length;
-	const remade = await A.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Gamma'));
+	const remade = await A.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('Gamma'));
 	h.check(!!remade?.hash, 'a save after the delete still works');
 	// 21-H1: and it does NOT put the folder back — that was the pre-H1 behaviour, and
 	// re-creating a folder the user has just deleted is the shape of the whole complaint
@@ -348,7 +348,7 @@ h.run(async () => {
 	// 4. DOWNLOAD: the bytes that come out are the bytes that went in
 	// =====================================================================
 	// Gamma went to the ROOT (nothing was being browsed), so that is where to find it
-	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await A.page.waitForTimeout(500);
 	const card = A.page.locator('.explorer-card[title="Gamma.tpscene"]');
 	h.check((await card.count()) === 1, 'premise: the scene has a card in the grid');
@@ -383,7 +383,7 @@ h.run(async () => {
 	// offered for every library kind, not only scenes
 	await A.page.evaluate(async () => {
 		const bytes = new TextEncoder().encode('hello from the library');
-		await window.__stores.explorer.addItemFromBytes(bytes.buffer, 'note.txt', null);
+		await window.__tp.test.v1.explorer.addItemFromBytes(bytes.buffer, 'note.txt', null);
 	});
 	await A.page.waitForTimeout(500);
 	await A.page.locator('.explorer-card[title="note.txt"]').click({ button: 'right' });
@@ -401,7 +401,7 @@ h.run(async () => {
 	// the post-install state: importPackZip makes a real library folder AND registers a
 	// pack whose row sits under Packs with the same name
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.explorer.createFolder('Audio Essentials', null);
 		s.packs.registerImportedPack({ name: 'audio-essentials', title: 'Audio Essentials', items: [] });
 	});
@@ -418,7 +418,7 @@ h.run(async () => {
 		"the pack's LIBRARY FOLDER offers Rename (it always did — the report was about the other row)"
 	);
 	await closeMenu(A);
-	await A.page.evaluate(({ id }) => window.__stores.explorer.renameFolder(id, 'My Sounds'), { id: audioFolder });
+	await A.page.evaluate(({ id }) => window.__tp.test.v1.explorer.renameFolder(id, 'My Sounds'), { id: audioFolder });
 	await A.page.waitForTimeout(300);
 	h.check((await folderNames(A)).includes('My Sounds'), 'and renaming it works');
 
@@ -450,7 +450,7 @@ h.run(async () => {
 	// list the rename would silently revert on reload
 	const builtin = (await packTitles(A)).find((p) => p.source === 'default');
 	if (builtin) {
-		await A.page.evaluate((name) => window.__stores.packs.renamePack(name, 'Starter Kit'), builtin.name);
+		await A.page.evaluate((name) => window.__tp.test.v1.packs.renamePack(name, 'Starter Kit'), builtin.name);
 		await A.page.waitForTimeout(300);
 		h.check(
 			(await packTitles(A)).find((p) => p.name === builtin.name)?.title === 'Starter Kit',
@@ -484,10 +484,10 @@ h.run(async () => {
 	// "Did it open" is asserted on OBJECT UUIDS, never on a count: two scenes with one
 	// box each are indistinguishable by count, and a count is exactly what a travel that
 	// silently did nothing would also satisfy.
-	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await A.page.waitForTimeout(400);
 	const sceneA = await seedScene(A, 'Opened A');
-	await A.page.evaluate((u) => window.__stores.objectActions.deleteObjectsByUuid([u]), sceneA.uuid);
+	await A.page.evaluate((u) => window.__tp.test.v1.objectActions.deleteObjectsByUuid([u]), sceneA.uuid);
 	await A.page.waitForTimeout(400);
 	const sceneB = await seedScene(A, 'Opened B');
 	await A.page.waitForTimeout(600);
@@ -611,7 +611,7 @@ h.run(async () => {
 	);
 	// and that version is the edited one — the point of saving at all
 	const savedBack = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let m;
 		s.projectManifest.projectManifest.subscribe((v) => (m = v))();
 		const entry = m.scenes['Opened B'];
@@ -652,7 +652,7 @@ h.run(async () => {
 	// 21-I4 locked answer 3. A background menu means WHERE YOU ARE: the project at the
 	// library root, that folder inside one. Offering "Export project" from inside a
 	// folder hands the user a file of everything they are NOT looking at.
-	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await A.page.waitForTimeout(500);
 	h.check(await gridBackgroundMenu(A), 'premise: the ROOT grid background opens its menu');
 	const rootRows = await menuRows(A);
@@ -671,7 +671,7 @@ h.run(async () => {
 	await closeMenu(A);
 
 	const protoId = await folderIdNamed(A, 'Prototypes');
-	await A.page.evaluate((id) => window.__stores.explorer.activeFolder.set(id), protoId);
+	await A.page.evaluate((id) => window.__tp.test.v1.explorer.activeFolder.set(id), protoId);
 	await A.page.waitForTimeout(500);
 	h.check(await gridBackgroundMenu(A), 'premise: the background menu opens inside a folder too');
 	const insideRows = await menuRows(A);
@@ -684,7 +684,7 @@ h.run(async () => {
 		'and the project export is gone from it'
 	);
 	await closeMenu(A);
-	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await A.page.waitForTimeout(400);
 
 	// the folder's OWN menu — the primary surface, and the one locked answer 3 names
@@ -717,19 +717,19 @@ h.run(async () => {
 	// projectFile.js's own header states, and the one thing about this feature that
 	// cannot be seen by looking at the Explorer afterwards.
 	const act = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const folder = s.explorer.createFolder('Act 1', null);
 		const props = s.explorer.createFolder('Props', folder.id);
 		return { folder: folder.id, props: props.id };
 	});
 	// a scene INSIDE it, and a plain file inside its SUBFOLDER (the subtree, not one level)
 	const inside = await A.page.evaluate(
-		(id) => window.__stores.levels.saveSceneAsLevel('Act One', id),
+		(id) => window.__tp.test.v1.levels.saveSceneAsLevel('Act One', id),
 		act.folder
 	);
 	const propHash = await A.page.evaluate(async (id) => {
 		const bytes = new TextEncoder().encode('a prop that lives two levels down');
-		const item = await window.__stores.explorer.addItemFromBytes(bytes.buffer, 'prop.txt', id);
+		const item = await window.__tp.test.v1.explorer.addItemFromBytes(bytes.buffer, 'prop.txt', id);
 		return item?.hash ?? null;
 	}, act.props);
 	await A.page.waitForTimeout(600);
@@ -738,7 +738,7 @@ h.run(async () => {
 	// the COUNTERFACTUAL, computed in-test: the same export unscoped. Without it, every
 	// number below is consistent with the folder id having been ignored entirely.
 	const both = await A.page.evaluate(async (folderId) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const whole = await s.projectFile.exportProject();
 		const part = await s.projectFile.exportProject({ folderId });
 		return {
@@ -849,10 +849,10 @@ h.run(async () => {
 	// an EMPTY folder refuses rather than writing a zip of nothing
 	await clearToasts(A);
 	const emptyId = await A.page.evaluate(
-		() => window.__stores.explorer.createFolder('Nothing here', null)?.id ?? null
+		() => window.__tp.test.v1.explorer.createFolder('Nothing here', null)?.id ?? null
 	);
 	const refused = await A.page.evaluate(
-		(id) => window.__stores.projectFile.downloadProject({ folderId: id }),
+		(id) => window.__tp.test.v1.projectFile.downloadProject({ folderId: id }),
 		emptyId
 	);
 	h.check(refused === null, 'exporting an empty folder refuses');
@@ -867,7 +867,7 @@ h.run(async () => {
 	// =====================================================================
 	const [box] = await makeBoxes(A, 1);
 	const objectMenu = await A.page.evaluate((id) => {
-		const items = window.__stores.objectMenu.buildObjectMenuItems(id);
+		const items = window.__tp.test.v1.objectMenu.buildObjectMenuItems(id);
 		const labels = [];
 		const walk = (list, path) => {
 			for (const item of list ?? []) {
@@ -902,18 +902,18 @@ h.run(async () => {
 	// place 21-G1 put it — carries no collectible entry either. The module's own suite owns
 	// the entry, the dialog and the chain it builds.
 	h.check(
-		await A.page.evaluate(() => !window.__stores.gameRecipes),
+		await A.page.evaluate(() => !window.__tp.test.v1.gameRecipes),
 		'core exposes no recipe at all — the entry lives in the collectible module\'s manager toolbox now'
 	);
 
-	await A.page.evaluate((id) => window.__stores.objectActions.applySelectionSet([id]), box);
+	await A.page.evaluate((id) => window.__tp.test.v1.objectActions.applySelectionSet([id]), box);
 	await A.page.waitForTimeout(300);
 
 	// the pane menu is still reached the way a user reaches it. The Explorer is the
 	// dock's EXCLUSIVE panel — opening the flow editor without closing it leaves the pane
 	// mounted but hidden, which reads as "the pane is not visible" rather than as a bug.
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.explorerClose.set(true);
 		s.flowGraphClose.set(false);
 		s.bottomDock.activateDock('flow');

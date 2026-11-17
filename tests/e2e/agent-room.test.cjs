@@ -50,7 +50,7 @@ setTimeout(() => {
 const onHost = (page, uuid) =>
 	page.evaluate((u) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		const o = g?.getObjectByProperty('uuid', u);
 		if (!o) return null;
 		let intensity = null;
@@ -64,7 +64,7 @@ const onHost = (page, uuid) =>
 const graphTypes = (page, uuid) =>
 	page.evaluate((u) => {
 		let g;
-		window.__stores.flowGraphs?.subscribe?.((v) => (g = v))();
+		window.__tp.test.v1.flowGraphs?.subscribe?.((v) => (g = v))();
 		return (g?.[u]?.nodes ?? []).map((n) => n.type);
 	}, uuid);
 
@@ -156,29 +156,29 @@ h.run(async () => {
 		console.log('  validate_scene: ' + String(v).slice(0, 300));
 		const door0 = await onHost(A.page, id.Door);
 		const lamp0 = await onHost(A.page, id.Lamp);
-		await A.page.evaluate((u) => window.__stores.flowRuntime.fireObjectClick(u), id.Door);
+		await A.page.evaluate((u) => window.__tp.test.v1.flowRuntime.fireObjectClick(u), id.Door);
 		await h.eventually(() => onHost(A.page, id.Door), (o) => Math.abs(o.rot[1] - Math.PI / 2) < 1e-3, '3. a click swings the door open 90 degrees', 15000);
 		const door1 = await onHost(A.page, id.Door);
 		h.check(Math.hypot(door1.pos[0] - door0.pos[0], door1.pos[2] - door0.pos[2]) > 0.3, `3. ...on its hinge edge, not its centre (moved ${door1.pos.map((x) => x.toFixed(2))})`);
 		h.check(lamp0.intensity > 0, `premise: the lamp is on (${lamp0.intensity})`);
-		await A.page.evaluate((u) => window.__stores.flowRuntime.fireObjectClick(u), id.Lamp);
+		await A.page.evaluate((u) => window.__tp.test.v1.flowRuntime.fireObjectClick(u), id.Lamp);
 		await h.eventually(() => onHost(A.page, id.Lamp), (o) => o.intensity === 0, '3. a click switches the lamp off', 15000);
 		const bell0 = await onHost(A.page, id.Doorbell);
-		await A.page.evaluate((u) => window.__stores.flowRuntime.fireObjectClick(u), id.Doorbell);
+		await A.page.evaluate((u) => window.__tp.test.v1.flowRuntime.fireObjectClick(u), id.Doorbell);
 		// the press is held ~0.6 s, which a ~4 fps headless page can sample past: ask for the pose at the
 		// click's own shared moment + 0.3 s instead (the IWER suite's check), then watch it come back
 		const pressPose = () =>
 			A.page.evaluate((u) => {
 				let g;
-				window.__stores.flowGraphs.subscribe((v) => (g = v))();
+				window.__tp.test.v1.flowGraphs.subscribe((v) => (g = v))();
 				const ns = g?.[u]?.nodes ?? [];
 				const click = ns.find((n) => n.type === 'onclick');
 				const btn = ns.find((n) => n.type === 'pressbutton');
 				let t;
-				window.__stores.flowTriggers.subscribe((v) => (t = v))();
+				window.__tp.test.v1.flowTriggers.subscribe((v) => (t = v))();
 				const at = click ? t?.[click.id]?.lastT : null;
 				if (!btn || typeof at !== 'number') return null;
-				return window.__stores.flowRuntime.effectPoseAt(btn.id, u, at + 0.3);
+				return window.__tp.test.v1.flowRuntime.effectPoseAt(btn.id, u, at + 0.3);
 			}, id.Doorbell);
 		await h.eventually(pressPose, (p) => !!p, 'premise: the doorbell click is stamped', 5000);
 		const press = await pressPose(); // h.eventually returns nothing
@@ -190,7 +190,7 @@ h.run(async () => {
 		h.check(Math.hypot(cat1.pos[0] - cat0.pos[0], cat1.pos[2] - cat0.pos[2]) > 0.01, '3. the cat wanders');
 		h.check((await onHost(A.page, id.Plant)).key.includes('windsway') && (await onHost(A.page, id.Flag)).key.includes('windsway'), '3. the plant and the flag sway (shader deformer on)');
 		h.check((await onHost(A.page, id.Pond)).key.includes('waterflow'), '3. the pond flows');
-		const decl = await A.page.evaluate((ids) => ({ mug: window.__stores.flowRuntime.kinematicGrab(ids.Mug), seat: window.__stores.flowRuntime.sitSpotFor(ids.Cushion) }), id);
+		const decl = await A.page.evaluate((ids) => ({ mug: window.__tp.test.v1.flowRuntime.kinematicGrab(ids.Mug), seat: window.__tp.test.v1.flowRuntime.sitSpotFor(ids.Cushion) }), id);
 		h.check(decl.mug?.release === 'return' && decl.seat?.facing === '+z', '3. the mug is a Grabbable (return) and the cushion a Sit Spot: ' + short(decl));
 
 		console.log('\n=== 4. undo_last ===');

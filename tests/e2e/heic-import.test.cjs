@@ -22,7 +22,7 @@ const itemsOf = (p) =>
 	p.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.explorer.explorerItems.subscribe((items) =>
+				window.__tp.test.v1.explorer.explorerItems.subscribe((items) =>
 					resolve(items.map((i) => ({ id: i.id, name: i.name, kind: i.kind, hash: i.hash, thumb: !!i.thumbnail, size: i.size })))
 				)();
 			})
@@ -30,7 +30,7 @@ const itemsOf = (p) =>
 
 /** sample the four quadrant centres of an image source in the page (a blob of the item, or a data URL) */
 const QUAD_SAMPLER = async (src) => {
-	const blob = src.dataUrl ? await (await fetch(src.dataUrl)).blob() : await window.__stores.explorer.itemBlob(src.id);
+	const blob = src.dataUrl ? await (await fetch(src.dataUrl)).blob() : await window.__tp.test.v1.explorer.itemBlob(src.id);
 	const bmp = await createImageBitmap(blob);
 	const c = document.createElement('canvas');
 	c.width = bmp.width;
@@ -79,7 +79,7 @@ h.run(async () => {
 	}, TINY_PNG);
 	await until(() => itemsOf(A), (l) => l.some((i) => i.name === 'tiny.png'), 'a PNG imports');
 	await A.page.waitForTimeout(800);
-	const idle = await A.page.evaluate(() => (window.__stores.heic?.heicDebug?.() ?? { workerStarted: false, decodes: 0, lastMs: 0 }));
+	const idle = await A.page.evaluate(() => (window.__tp.test.v1.heic?.heicDebug?.() ?? { workerStarted: false, decodes: 0, lastMs: 0 }));
 	h.check(!idle.workerStarted && asked.A.length === 0, `a PNG import loads NO decoder (worker ${idle.workerStarted}, requests ${asked.A.length})`);
 
 	// 2. the HEIC, dropped the way a browser hands one over: no MIME type at all
@@ -92,7 +92,7 @@ h.run(async () => {
 	const photo = items?.find((i) => i.name === 'quadrants.jpg');
 	h.check(!!photo && photo.kind === 'image' && photo.hash?.length === 64, `it is an image item with a content hash (${photo?.kind}, ${photo?.hash?.length})`);
 	h.check(!items?.some((i) => /\.heic$/i.test(i.name)), 'no .heic item is kept (the Library holds the decoded photo)');
-	const after = await A.page.evaluate(() => (window.__stores.heic?.heicDebug?.() ?? { workerStarted: false, decodes: 0, lastMs: 0 }));
+	const after = await A.page.evaluate(() => (window.__tp.test.v1.heic?.heicDebug?.() ?? { workerStarted: false, decodes: 0, lastMs: 0 }));
 	h.check(after.workerStarted && after.decodes === 1, `the decoder ran once (decodes ${after.decodes}, ${after.lastMs} ms)`);
 	h.check(asked.A.some((u) => /libheif.*\.wasm/i.test(u)), `the libheif wasm was fetched only now (${asked.A.length} decoder requests)`);
 	const q = await A.page.evaluate(QUAD_SAMPLER, { id: photo.id });
@@ -105,7 +105,7 @@ h.run(async () => {
 		() =>
 			A.page.evaluate(() => {
 				let t;
-				window.__stores.fileWindows.imagePreviewTarget.subscribe((v) => (t = v))();
+				window.__tp.test.v1.fileWindows.imagePreviewTarget.subscribe((v) => (t = v))();
 				const img = document.querySelector('#image-preview-window img');
 				return { title: t?.title ?? '', w: img?.naturalWidth ?? 0 };
 			}),
@@ -117,11 +117,11 @@ h.run(async () => {
 
 	// 4. it textures a box, on both peers
 	const box = await A.page.evaluate(async (id) => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 600));
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const mesh = group.children[group.children.length - 1];
-		const ok = await window.__stores.explorerDrop.applyExplorerImage(mesh.uuid, { id });
+		const ok = await window.__tp.test.v1.explorerDrop.applyExplorerImage(mesh.uuid, { id });
 		return { uuid: mesh.uuid, ok, dataUrl: mesh.material.userData.mapDataUrl ?? '' };
 	}, photo.id);
 	h.check(box.ok && box.dataUrl.startsWith('data:image/'), 'the photo textures the box on A');
@@ -129,7 +129,7 @@ h.run(async () => {
 		p.page.evaluate(
 			(uuid) =>
 				new Promise((resolve) =>
-					window.__stores.objectsGroup.subscribe((g) => resolve(g.getObjectByProperty('uuid', uuid)?.material?.userData?.mapDataUrl ?? ''))()
+					window.__tp.test.v1.objectsGroup.subscribe((g) => resolve(g.getObjectByProperty('uuid', uuid)?.material?.userData?.mapDataUrl ?? ''))()
 				),
 			uuid
 		);
@@ -138,11 +138,11 @@ h.run(async () => {
 	h.check(!!qb && quadrantsMatch(qb), `B's texture is the photo's pixels (tl ${qb?.tl} br ${qb?.br})`);
 
 	// 5. shared, the peer receives the DECODED bytes by content hash — and never the decoder
-	await A.page.evaluate((id) => window.__stores.sharedLibrary.shareItem(id), photo.id);
+	await A.page.evaluate((id) => window.__tp.test.v1.sharedLibrary.shareItem(id), photo.id);
 	const bItems = await until(
 		async () => {
 			const l = await itemsOf(B);
-			if (!l.some((i) => i.hash === photo.hash)) await B.page.evaluate((hash) => window.__stores.assetShare.requestAsset(hash), photo.hash);
+			if (!l.some((i) => i.hash === photo.hash)) await B.page.evaluate((hash) => window.__tp.test.v1.assetShare.requestAsset(hash), photo.hash);
 			return l;
 		},
 		(l) => l.some((i) => i.hash === photo.hash),
@@ -157,7 +157,7 @@ h.run(async () => {
 		? await until(
 				() =>
 					B.page.evaluate(async (id) => {
-						const blob = await window.__stores.explorer.itemBlob(id);
+						const blob = await window.__tp.test.v1.explorer.itemBlob(id);
 						if (!blob) return '';
 						const d = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
 						return Array.from(new Uint8Array(d), (b) => b.toString(16).padStart(2, '0')).join('');
@@ -169,16 +169,16 @@ h.run(async () => {
 		: '';
 	const qb2 = bHash === photo.hash ? await B.page.evaluate(QUAD_SAMPLER, { id: bPhoto.id }) : null;
 	h.check(!!qb2 && qb2.w === 96 && qb2.h === 64 && quadrantsMatch(qb2), `B's copy decodes to the photo (${qb2?.w}x${qb2?.h}, tl ${qb2?.tl})`);
-	const bHeic = await B.page.evaluate(() => (window.__stores.heic?.heicDebug?.() ?? { workerStarted: false, decodes: 0, lastMs: 0 }));
+	const bHeic = await B.page.evaluate(() => (window.__tp.test.v1.heic?.heicDebug?.() ?? { workerStarted: false, decodes: 0, lastMs: 0 }));
 	h.check(!bHeic.workerStarted && asked.B.length === 0, `B never loaded the decoder (worker ${bHeic.workerStarted}, requests ${asked.B.length})`);
 
 	// 6. a HEIC picked straight into a texture slot (the Inspector / UV editor door)
 	const slot = await A.page.evaluate(async (bytes) => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 600));
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const mesh = group.children[group.children.length - 1];
-		const n = await window.__stores.materialsHandler.setObjectsTexture([mesh.uuid], new File([new Uint8Array(bytes)], 'IMG_0001.HEIC', { type: 'image/heic' }));
+		const n = await window.__tp.test.v1.materialsHandler.setObjectsTexture([mesh.uuid], new File([new Uint8Array(bytes)], 'IMG_0001.HEIC', { type: 'image/heic' }));
 		return { uuid: mesh.uuid, n, dataUrl: mesh.material.userData.mapDataUrl ?? '' };
 	}, Array.from(HEIC));
 	h.check(slot.n === 1 && slot.dataUrl.startsWith('data:image/'), 'a HEIC picked into a texture slot textures the box');
@@ -189,9 +189,9 @@ h.run(async () => {
 	// 7. a broken HEIC is refused with a reason, and nothing lands
 	const before = (await itemsOf(A)).length;
 	const toasts = await A.page.evaluate(async (bytes) => {
-		await window.__stores.explorer.importFiles([new File([new Uint8Array(bytes)], 'broken.heic', { type: 'image/heic' })], null);
+		await window.__tp.test.v1.explorer.importFiles([new File([new Uint8Array(bytes)], 'broken.heic', { type: 'image/heic' })], null);
 		let list = [];
-		window.__stores.notifications.subscribe((v) => (list = v))();
+		window.__tp.test.v1.notifications.subscribe((v) => (list = v))();
 		return list.map((n) => String(n.text ?? ''));
 	}, Array.from(HEIC.subarray(0, 300)));
 	await A.page.waitForTimeout(500);

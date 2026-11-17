@@ -13,7 +13,7 @@ const h = require('./helpers.cjs');
 
 const dockState = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let visible, occupants, fc;
 		s.bottomDock.visibleDockKey.subscribe((v) => (visible = v))();
 		s.bottomDock.dockOccupants.subscribe((v) => (occupants = v))();
@@ -23,7 +23,7 @@ const dockState = (page) =>
 
 /** open the viewport menu and hover its Tools row */
 async function toolsSubmenu(page) {
-	await page.evaluate(() => window.__stores.viewportMenu.set({ x: 260, y: 160, point: [0, 0, 0] }));
+	await page.evaluate(() => window.__tp.test.v1.viewportMenu.set({ x: 260, y: 160, point: [0, 0, 0] }));
 	await page.waitForTimeout(350);
 	await page.locator('[role="menuitem"]').filter({ hasText: 'Tools' }).first().hover();
 	await page.waitForTimeout(350);

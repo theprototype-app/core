@@ -11,11 +11,11 @@ const SHOTS = process.env.AVATAR_SHOTS || '';
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1280, height: 720 } } });
-	await A.page.evaluate(() => window.__stores.objectActions.flyTo([0, 2.4, 6.5], [0, 1.3, -2], 0));
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.flyTo([0, 2.4, 6.5], [0, 1.3, -2], 0));
 	await A.page.waitForTimeout(800);
 	const measure = (shadows = true) =>
 		A.page.evaluate((shadows) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let r, scene, cam;
 			s.globalRenderer.subscribe((x) => (r = x))();
 			s.globalScene.subscribe((x) => (scene = x))();
@@ -41,7 +41,7 @@ h.run(async () => {
 				await tick();
 				frames++;
 			}
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let scene;
 			s.globalScene.subscribe((x) => (scene = x))();
 			const list = [...s.avatars.avatarInstances.entries()];
@@ -52,7 +52,7 @@ h.run(async () => {
 
 	// eight peers in a row, one per character, two of them on stylised heads (+ hats)
 	await A.page.evaluate((chars) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ud = [];
 		s.userdata.subscribe((v) => ud.push(...(v ?? [])))();
 		s.userdata.set([
@@ -61,14 +61,14 @@ h.run(async () => {
 		]);
 	}, CHARS);
 	await h.eventually(
-		() => A.page.evaluate(() => Object.values(window.__stores.avatars.avatarsDebug()).filter((a) => a.ready).length),
+		() => A.page.evaluate(() => Object.values(window.__tp.test.v1.avatars.avatarsDebug()).filter((a) => a.ready).length),
 		(n) => n === 8,
 		'0.1 (premise) eight rigged peers are loaded',
 		20000
 	);
 	await A.page.evaluate((n) => {
 		let scene;
-		window.__stores.globalScene.subscribe((x) => (scene = x))();
+		window.__tp.test.v1.globalScene.subscribe((x) => (scene = x))();
 		for (let i = 0; i < n; i++) {
 			const g = scene.getObjectByName('kp' + i);
 			g.position.set((i - (n - 1) / 2) * 1.3, 1.6, -2);
@@ -83,11 +83,11 @@ h.run(async () => {
 	// all eight knocked off at once (the camera-stream flag, set where moveCamera would set it)
 	await A.page.evaluate((n) => {
 		let scene;
-		window.__stores.globalScene.subscribe((x) => (scene = x))();
+		window.__tp.test.v1.globalScene.subscribe((x) => (scene = x))();
 		for (let i = 0; i < n; i++) scene.getObjectByName('kp' + i).userData.knocked = true;
 	}, 8);
 	await h.eventually(
-		() => A.page.evaluate(() => Object.values(window.__stores.avatars.avatarsDebug()).map((a) => a.dizzy)),
+		() => A.page.evaluate(() => Object.values(window.__tp.test.v1.avatars.avatarsDebug()).map((a) => a.dizzy)),
 		(d) => d.length === 8 && d.every((x) => x > 0.95),
 		'0.2 (premise) all eight are knocked off',
 		8000
@@ -98,10 +98,10 @@ h.run(async () => {
 	if (SHOTS) {
 		await A.page.screenshot({ path: SHOTS + '/06-eight-knocked-off.png' });
 		// a close-up of two faces: the star eyes on the character's own head and on a stylised head
-		await A.page.evaluate(() => window.__stores.objectActions.flyTo([-3.6, 1.55, 0.4], [-3.6, 1.45, -2], 0));
+		await A.page.evaluate(() => window.__tp.test.v1.objectActions.flyTo([-3.6, 1.55, 0.4], [-3.6, 1.45, -2], 0));
 		await A.page.waitForTimeout(700);
 		await A.page.screenshot({ path: SHOTS + '/07-knocked-off-faces.png' });
-		await A.page.evaluate(() => window.__stores.objectActions.flyTo([0, 2.4, 6.5], [0, 1.3, -2], 0));
+		await A.page.evaluate(() => window.__tp.test.v1.objectActions.flyTo([0, 2.4, 6.5], [0, 1.3, -2], 0));
 		await A.page.waitForTimeout(400);
 	}
 	const dCalls = knockedMain.calls - awakeMain.calls;
@@ -120,11 +120,11 @@ h.run(async () => {
 	// awake again: back to zero cost
 	await A.page.evaluate((n) => {
 		let scene;
-		window.__stores.globalScene.subscribe((x) => (scene = x))();
+		window.__tp.test.v1.globalScene.subscribe((x) => (scene = x))();
 		for (let i = 0; i < n; i++) scene.getObjectByName('kp' + i).userData.knocked = false;
 	}, 8);
 	await h.eventually(
-		() => A.page.evaluate(() => Object.values(window.__stores.avatars.avatarsDebug()).every((a) => a.dizzy === 0)),
+		() => A.page.evaluate(() => Object.values(window.__tp.test.v1.avatars.avatarsDebug()).every((a) => a.dizzy === 0)),
 		(ok) => ok,
 		'2.1 everyone wakes: the effect blends out',
 		8000

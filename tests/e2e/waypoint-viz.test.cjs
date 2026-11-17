@@ -5,7 +5,7 @@ const nodePoints = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.flowNodes.subscribe((nodes) => {
+				window.__tp.test.v1.flowNodes.subscribe((nodes) => {
 					resolve(nodes.find((n) => n.id === 'pp1')?.data.points ?? null);
 				})();
 			})
@@ -15,7 +15,7 @@ const markerInfo = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.globalScene.subscribe((scene) => {
+				window.__tp.test.v1.globalScene.subscribe((scene) => {
 					const group = scene?.getObjectByName('path-waypoints');
 					if (!group) return resolve(null);
 					let markers = 0;
@@ -42,15 +42,15 @@ h.run(async () => {
 			data: { type: 'pathpatrol', points: [], speed: 1, mode: 'loop' },
 			class: 'w-[150px]'
 		};
-		window.__stores.flowNodes.set([node]);
+		window.__tp.test.v1.flowNodes.set([node]);
 		return new Promise((resolve) => {
-			window.__stores.peers.subscribe((peer) => {
+			window.__tp.test.v1.peers.subscribe((peer) => {
 				peer.send({ type: 'nodecreate', node });
 				resolve();
 			})();
 		});
 	});
-	await A.page.evaluate(() => window.__stores.pathCapture.togglePathCapture('pp1'));
+	await A.page.evaluate(() => window.__tp.test.v1.pathCapture.togglePathCapture('pp1'));
 	for (const [x, y] of [[420, 500], [700, 480]]) {
 		await A.page.mouse.click(x, y);
 		await A.page.waitForTimeout(250);
@@ -96,7 +96,7 @@ h.run(async () => {
 	await h.eventually(() => nodePoints(B.page), (p) => p?.length === 1, 'removal replicated to B');
 
 	// capture off (and node not selected) -> markers gone
-	await A.page.evaluate(() => window.__stores.pathCapture.togglePathCapture('pp1'));
+	await A.page.evaluate(() => window.__tp.test.v1.pathCapture.togglePathCapture('pp1'));
 	await A.page.waitForTimeout(300);
 	h.check((await markerInfo(A.page)) === null, 'markers hidden when not capturing/selected');
 

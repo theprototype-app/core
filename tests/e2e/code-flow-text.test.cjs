@@ -16,14 +16,14 @@ const S = (page, fn, arg) => page.evaluate(fn, arg);
 const read = (page, path) =>
 	page.evaluate((p) => {
 		const [mod, name] = p.split('.');
-		const st = name ? window.__stores[mod][name] : window.__stores[mod];
+		const st = name ? window.__tp.test.v1[mod][name] : window.__tp.test.v1[mod];
 		let v;
 		st.subscribe((x) => (v = x))();
 		return v;
 	}, path);
 const activeTab = (page) =>
 	page.evaluate(() => {
-		const m = window.__stores.codeWorkspace;
+		const m = window.__tp.test.v1.codeWorkspace;
 		let tabs, id;
 		m.codeTabs.subscribe((v) => (tabs = v))();
 		m.activeCodeTab.subscribe((v) => (id = v))();
@@ -33,7 +33,7 @@ const activeTab = (page) =>
 const graphNodes = (page) =>
 	page.evaluate(() => {
 		let v;
-		window.__stores.flowNodes.subscribe((x) => (v = x))();
+		window.__tp.test.v1.flowNodes.subscribe((x) => (v = x))();
 		return v.map((n) => ({ id: n.id, value: n.data?.value }));
 	});
 /** replace the active tab's text the way a person pasting would */
@@ -54,12 +54,12 @@ h.run(async () => {
 			{ id: 'n1', type: 'number', position: { x: 10, y: 20 }, data: { label: 'Number', type: 'number', value: 3 }, class: 'w-[150px]' },
 			{ id: 'vis', type: 'visibility', position: { x: 240, y: 20 }, data: { label: 'Visibility', type: 'visibility', on: true }, class: 'w-[150px]' }
 		];
-		window.__stores.flowNodes.set(nodes);
-		window.__stores.flowEdges.set([{ id: 'e-n1-vis.on', source: 'n1', target: 'vis', targetHandle: 'on' }]);
+		window.__tp.test.v1.flowNodes.set(nodes);
+		window.__tp.test.v1.flowEdges.set([{ id: 'e-n1-vis.on', source: 'n1', target: 'vis', targetHandle: 'on' }]);
 	});
 
 	// --- 2: the old open store redirects ---
-	await S(page, () => window.__stores.flowCodeClose.set(false));
+	await S(page, () => window.__tp.test.v1.flowCodeClose.set(false));
 	await page.waitForFunction(() => document.querySelector('.code-ws .cm-content'), null, { timeout: 20000 });
 	await page.waitForTimeout(500);
 	let tab = await activeTab(page);
@@ -110,7 +110,7 @@ h.run(async () => {
 	h.check(still.length === 2 && still.find((n) => n.id === 'n1')?.value === 7, '4.2 ...and the graph is left alone');
 
 	// --- 2b: Alt+F also lands on the flow code tab (the shortcut, after the JSON tab was made active) ---
-	await S(page, () => window.__stores.codeWorkspace.openCode({ source: 'graph', ref: { graphId: 'scene' } }));
+	await S(page, () => window.__tp.test.v1.codeWorkspace.openCode({ source: 'graph', ref: { graphId: 'scene' } }));
 	await page.waitForTimeout(400);
 	h.check((await activeTab(page))?.format === 'json', '2.5 (setup) graph.json is the active tab');
 	// leave the Code pane's key scope (a press there keeps global shortcuts away, keyScope) with a press on the open
@@ -143,14 +143,14 @@ h.run(async () => {
 	await handle.click();
 	await page.waitForTimeout(300);
 	h.check((await leftOpen()) === !before, `5.2 unlocked, a press toggles the sidebar (counterfactual for 5.4) (${before} -> ${!before})`);
-	await S(page, () => window.__stores.paneLocks.togglePaneLock('code', true));
+	await S(page, () => window.__tp.test.v1.paneLocks.togglePaneLock('code', true));
 	await page.waitForTimeout(200);
 	const lockedState = await leftOpen();
 	await handle.click();
 	await page.waitForTimeout(300);
 	h.check((await leftOpen()) === lockedState, '5.3 locked, a press changes nothing');
 	h.check((await handle.getAttribute('aria-label'))?.includes('locked'), '5.4 ...and the handle says the sidebars are locked');
-	await S(page, () => window.__stores.paneLocks.togglePaneLock('code', false));
+	await S(page, () => window.__tp.test.v1.paneLocks.togglePaneLock('code', false));
 
 	await h.finish(browser);
 });

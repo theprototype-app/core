@@ -17,12 +17,12 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 	const page = A.page;
-	await page.waitForFunction(() => !!window.__stores?.moduleToolboxes, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.moduleToolboxes, { timeout: 30000 });
 
 	const install = () =>
 		page.evaluate(async () => {
 			window.__tbx = { mounts: 0, cleanups: 0, opens: 0, closes: 0, clicks: 0 };
-			await window.__stores.moduleSDK.initModules([
+			await window.__tp.test.v1.moduleSDK.initModules([
 				{
 					id: 'testtbx',
 					name: 'Test toolbox',
@@ -67,7 +67,7 @@ h.run(async () => {
 		`registerToolbox returns the namespaced id, so two modules may both ship a 'panel' (${id})`
 	);
 	const initial = await page.evaluate(() => {
-		const t = window.__stores.moduleToolboxes;
+		const t = window.__tp.test.v1.moduleToolboxes;
 		let list, open;
 		t.moduleToolboxes.subscribe((v) => (list = v))();
 		t.openToolboxes.subscribe((v) => (open = v))();
@@ -137,7 +137,7 @@ h.run(async () => {
 	// ---- 3. the VIEWPORT MENU offers the same rows, from one builder ---------
 	await page.evaluate(() => {
 		// open the viewport menu directly through its store (Scene routes right-taps here)
-		window.__stores.viewportMenu.set({ x: 300, y: 300, point: { x: 0, y: 0, z: 0 } });
+		window.__tp.test.v1.viewportMenu.set({ x: 300, y: 300, point: { x: 0, y: 0, z: 0 } });
 	});
 	await page.waitForTimeout(700);
 	const menuRows = await page.evaluate(() => {
@@ -149,7 +149,7 @@ h.run(async () => {
 	h.check(menuRows.hasEntry, 'the viewport menu carries a "Module tools" entry');
 	// the builder is shared, so the same rows come out of it either way
 	const builderParity = await page.evaluate(() => {
-		const t = window.__stores.moduleToolboxes;
+		const t = window.__tp.test.v1.moduleToolboxes;
 		let list, open;
 		t.moduleToolboxes.subscribe((v) => (list = v))();
 		t.openToolboxes.subscribe((v) => (open = v))();
@@ -167,11 +167,11 @@ h.run(async () => {
 	);
 	h.check(builderParity.checked === true, 'and it reports the open state, so both hosts can tick the row');
 	h.check(builderParity.shortcut === 'Ctrl+Shift+F9', 'and carries the module-declared shortcut');
-	await page.evaluate(() => window.__stores.viewportMenu.set(null));
+	await page.evaluate(() => window.__tp.test.v1.viewportMenu.set(null));
 
 	// the declared shortcut is in the Settings list too
 	const inShortcuts = await page.evaluate(() =>
-		window.__stores.shortcutsRegistry.shortcuts.some(
+		window.__tp.test.v1.shortcutsRegistry.shortcuts.some(
 			(s) => s.keys === 'Ctrl+Shift+F9' && s.group === 'Modules'
 		)
 	);
@@ -193,9 +193,9 @@ h.run(async () => {
 
 	await page.reload({ waitUntil: 'domcontentloaded' });
 	await page.waitForTimeout(4000);
-	await page.waitForFunction(() => !!window.__stores?.moduleToolboxes, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.moduleToolboxes, { timeout: 30000 });
 	await install();
-	await page.evaluate(() => window.__stores.moduleToolboxes.openModuleToolbox('mod-testtbx-panel'));
+	await page.evaluate(() => window.__tp.test.v1.moduleToolboxes.openModuleToolbox('mod-testtbx-panel'));
 	await page.waitForTimeout(900);
 	const afterReload = await page.evaluate(() => {
 		const el = document.querySelector('#mod-testtbx-panel');
@@ -234,7 +234,7 @@ h.run(async () => {
 	// ---- 6. a DEV RELOAD re-mounts in place ---------------------------------
 	// deactivate + register again is exactly what 17-A2's dev live reload does.
 	const reloaded = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const before = { mounts: window.__tbx.mounts, cleanups: window.__tbx.cleanups };
 		await s.moduleSDK.deactivateModule('testtbx');
 		await new Promise((r) => setTimeout(r, 500));
@@ -267,7 +267,7 @@ h.run(async () => {
 
 	await install();
 	const reOpened = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.moduleToolboxes.openModuleToolbox('mod-testtbx-panel');
 		await new Promise((r) => setTimeout(r, 700));
 		return {
@@ -289,7 +289,7 @@ h.run(async () => {
 	h.check(closed.closes >= 1, `and onClose fired (${closed.closes})`);
 
 	const playMode = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.moduleToolboxes.openModuleToolbox('mod-testtbx-panel');
 		await new Promise((r) => setTimeout(r, 500));
 		const editor = !!document.querySelector('#mod-testtbx-panel');
@@ -313,7 +313,7 @@ h.run(async () => {
 	h.check(playMode.back, 'and comes back on leaving Play mode');
 
 	const optedIn = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		await s.moduleSDK.initModules([
 			{
 				id: 'testplay',
@@ -351,7 +351,7 @@ h.run(async () => {
 	// with this") and nothing delivered (the `api.hud.rows` family: a surface whose own
 	// docs claim an API that does not exist).
 	const quiet = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		window.__quiet = {};
 		await s.moduleSDK.initModules([
 			{
@@ -418,10 +418,10 @@ h.run(async () => {
 	// button calls. (A real DOM click on the card lives in the collectible module's own
 	// suite: the manager renders cards for core modules and installed USER records, and
 	// an inline `initModules` module is neither, so it has no card here to click.)
-	await page.evaluate(() => window.__stores.modulesOpen.set(true));
+	await page.evaluate(() => window.__tp.test.v1.modulesOpen.set(true));
 	await page.waitForTimeout(700);
 	const afterCard = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let items, open;
 		s.moduleSDK.moduleMenuItems.subscribe((v) => (items = v))();
 		items.find((m) => m.moduleId === 'testquiet')?.action();
@@ -435,7 +435,7 @@ h.run(async () => {
 		'and dismisses the Modules manager, which is the one chrome that could cover it'
 	);
 	const closeApi = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let api = null;
 		await s.moduleSDK.initModules([
 			{
@@ -477,7 +477,7 @@ h.run(async () => {
 	// CloudSlot.svelte was the only consumer; the action moved into $lib/cloudMount and
 	// CloudSlot imports it, so an OSS build with no plugin still renders nothing.
 	const shared = await page.evaluate(() => ({
-		exported: typeof window.__stores.moduleToolboxes === 'object',
+		exported: typeof window.__tp.test.v1.moduleToolboxes === 'object',
 		noCloudSlot: document.querySelectorAll('.cloud-slot').length
 	}));
 	h.check(shared.noCloudSlot === 0, 'OSS build: no cloud slot renders (the plugin stores are null)');

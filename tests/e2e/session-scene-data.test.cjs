@@ -28,7 +28,7 @@ h.run(async () => {
 	// than merely nearly true - assert the KEYS, since a null value would pass a
 	// truthiness check while changing every file this build writes.
 	const bare = await A.page.evaluate(() => {
-		const payload = window.__stores.sessions.buildSessionPayload('bare');
+		const payload = window.__tp.test.v1.sessions.buildSessionPayload('bare');
 		return { keys: Object.keys(payload), json: JSON.stringify(payload) };
 	});
 	h.check(!bare.keys.includes('environment'), 'a default scene writes NO environment key');
@@ -41,7 +41,7 @@ h.run(async () => {
 	// Author a look and a rule, then read the payload back. Gravity is the one that
 	// makes a game unplayable, so it is the one asserted by value.
 	const authored = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const mesh = new s.THREE.Mesh(new s.THREE.BoxGeometry(1, 1, 1), new s.THREE.MeshStandardMaterial());
 		mesh.name = 'sceneDataBox';
 		mesh.updateMatrix();
@@ -90,7 +90,7 @@ h.run(async () => {
 	// NOTE: the unzip happens in NODE. A bare `import('fflate')` inside page.evaluate
 	// does not resolve — vite rewrites that specifier at build time for app code only.
 	const zipBytes = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = s.sessions.buildSessionPayload('zip me');
 		const bytes = await s.sessions.exportSessionZip(payload, { assets: true, packs: false, flow: true });
 		return Array.from(bytes);
@@ -111,20 +111,20 @@ h.run(async () => {
 	// BOTH peers converge. A solo check would pass with the `replicate` argument
 	// removed, which is the whole reason it is passed.
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		window.__sceneDataPayload = s.sessions.buildSessionPayload('restore me');
 		s.environment.setEnvironment('studio', 1);
 		s.scenePhysics.setSceneGravity(-9.81);
 	});
 	await A.page.waitForTimeout(400);
 	await A.page.evaluate(async () => {
-		await window.__stores.sessions.applySession(window.__sceneDataPayload);
+		await window.__tp.test.v1.sessions.applySession(window.__sceneDataPayload);
 	});
 	await h.eventually(
 		() =>
 			A.page.evaluate(() => ({
-				preset: window.__stores.environment.environmentState().preset,
-				gravity: window.__stores.scenePhysics.scenePhysicsDebug().gravity
+				preset: window.__tp.test.v1.environment.environmentState().preset,
+				gravity: window.__tp.test.v1.scenePhysics.scenePhysicsDebug().gravity
 			})),
 		(v) => v.preset === 'night' && Math.abs(v.gravity + 3.25) < 1e-6,
 		'loading the scene restores its sky and gravity locally',
@@ -133,8 +133,8 @@ h.run(async () => {
 	await h.eventually(
 		() =>
 			B.page.evaluate(() => ({
-				preset: window.__stores.environment.environmentState().preset,
-				gravity: window.__stores.scenePhysics.scenePhysicsDebug().gravity
+				preset: window.__tp.test.v1.environment.environmentState().preset,
+				gravity: window.__tp.test.v1.scenePhysics.scenePhysicsDebug().gravity
 			})),
 		(v) => v.preset === 'night' && Math.abs(v.gravity + 3.25) < 1e-6,
 		'and the PEER gets them too (the restore replicates)',
@@ -145,12 +145,12 @@ h.run(async () => {
 	// The fork that actually makes a game deterministic: a scene load is a whole-world
 	// replace, so a file that says nothing about gravity must RESET it. Leaving the
 	// room's value is exactly "Towers is unplayable at a peer's edited gravity".
-	await A.page.evaluate(() => window.__stores.scenePhysics.setSceneGravity(-1.5));
+	await A.page.evaluate(() => window.__tp.test.v1.scenePhysics.setSceneGravity(-1.5));
 	await A.page.waitForTimeout(300);
-	const beforeReset = await A.page.evaluate(() => window.__stores.scenePhysics.scenePhysicsDebug().gravity);
+	const beforeReset = await A.page.evaluate(() => window.__tp.test.v1.scenePhysics.scenePhysicsDebug().gravity);
 	h.check(Math.abs(beforeReset + 1.5) < 1e-6, 'premise: the room sits at an edited gravity (' + beforeReset + ')');
 	await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		// a pre-A6 payload: no environment, no physics, no music at all
 		const legacy = { ...window.__sceneDataPayload, name: 'legacy' };
 		delete legacy.environment;
@@ -161,9 +161,9 @@ h.run(async () => {
 	await h.eventually(
 		() =>
 			A.page.evaluate(() => ({
-				gravity: window.__stores.scenePhysics.scenePhysicsDebug().gravity,
-				preset: window.__stores.environment.environmentState().preset,
-				music: window.__stores.sceneMusic.musicDebug().hash
+				gravity: window.__tp.test.v1.scenePhysics.scenePhysicsDebug().gravity,
+				preset: window.__tp.test.v1.environment.environmentState().preset,
+				music: window.__tp.test.v1.sceneMusic.musicDebug().hash
 			})),
 		(v) => Math.abs(v.gravity + 9.81) < 1e-6 && v.preset === 'studio' && !v.music,
 		'a scene with no look/rules resets sky, gravity and music to the defaults',
@@ -175,7 +175,7 @@ h.run(async () => {
 	// document anyway - including per-object ones the legacy nodes/edges never carried.
 	// Asserted as an A/B so a broken export path cannot read as a pass.
 	const flowZips = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		/** @type {any} */ let group;
 		s.objectsGroup.subscribe((g) => (group = g))();
 		const target = group.children[0];
@@ -217,7 +217,7 @@ h.run(async () => {
 	// uuid - so they used to be dropped in silence. Assert against the NEW uuid, which
 	// is the only assertion the bug can fail.
 	const merged = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/clear all');
 		await new Promise((r) => setTimeout(r, 400));
 		/** @type {any} */ let group;

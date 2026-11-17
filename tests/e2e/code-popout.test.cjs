@@ -17,7 +17,7 @@ const read = (page, path) =>
 	page.evaluate(
 		(path) =>
 			new Promise((r) => {
-				let obj = window.__stores;
+				let obj = window.__tp?.test.v1;
 				for (const p of path.split('.')) obj = obj[p];
 				obj.subscribe((v) => r(JSON.parse(JSON.stringify(v ?? null))))();
 			}),
@@ -28,7 +28,7 @@ const nodeCode = (page, id) =>
 	page.evaluate(
 		(id) =>
 			new Promise((r) =>
-				window.__stores.flowGraphs.subscribe((all) => {
+				window.__tp.test.v1.flowGraphs.subscribe((all) => {
 					for (const g of Object.values(all)) {
 						const n = g.nodes.find((x) => x.id === id);
 						if (n) return r(n.data.code);
@@ -41,7 +41,7 @@ const nodeCode = (page, id) =>
 
 const objX = (page, uuid) =>
 	page.evaluate(
-		(uuid) => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g?.getObjectByProperty('uuid', uuid)?.position.x ?? null))()),
+		(uuid) => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g?.getObjectByProperty('uuid', uuid)?.position.x ?? null))()),
 		uuid
 	);
 
@@ -54,8 +54,8 @@ const writeTab = (page, id, code) =>
 	page.evaluate(
 		({ id, code }) =>
 			new Promise((r) =>
-				window.__stores.codeWorkspace.codeTabs.subscribe((tabs) => {
-					const s = window.__stores;
+				window.__tp.test.v1.codeWorkspace.codeTabs.subscribe((tabs) => {
+					const s = window.__tp?.test.v1;
 					const t = tabs.find((x) => x.id === id);
 					const key = t && (t.kind === 'node' || t.kind === 'behaviour') && t.nodeId ? 'n:' + (t.graphId || 'scene') + ':' + t.nodeId : null;
 					if (key && s.sharedText?.holds(key)) s.sharedText.replaceText(key, code);
@@ -76,7 +76,7 @@ async function popOut(page) {
 
 /** uir-polish G1: DOCKED, Code has no pop-out button (no header row at all) — float it first; its window header has one */
 async function floatCode(page) {
-	await page.evaluate(() => window.__stores.bottomDock.armDockMode('code', false));
+	await page.evaluate(() => window.__tp.test.v1.bottomDock.armDockMode('code', false));
 	await page.locator('#code-ws-popout').first().waitFor({ state: 'visible', timeout: 15000 });
 }
 
@@ -87,22 +87,22 @@ h.run(async () => {
 
 	// a box driven by a Script node — "run" is visible as the box's x
 	const uuid = await S(page, () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		return new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g.children[g.children.length - 1].uuid))());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		return new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g.children[g.children.length - 1].uuid))());
 	});
 	await page.waitForTimeout(800);
 	await S(page, async (uuid) => {
-		window.__stores.objectActions.deselectObject();
+		window.__tp.test.v1.objectActions.deselectObject();
 		const nodes = [
 			{ id: 'pop1', type: 'script', position: { x: 0, y: 0 }, data: { type: 'script', code: 'object.position.x = 1;' }, class: 'w-[150px]' },
 			{ id: 'popsel', type: 'objectselector', position: { x: 300, y: 0 }, data: { type: 'objectselector', selected: uuid }, class: 'w-[150px]' }
 		];
-		window.__stores.flowNodes.update((n) => [...n, ...nodes]);
-		window.__stores.flowEdges.update((e) => [...e, { id: 'e-pop1-popsel', source: 'pop1', target: 'popsel' }]);
+		window.__tp.test.v1.flowNodes.update((n) => [...n, ...nodes]);
+		window.__tp.test.v1.flowEdges.update((e) => [...e, { id: 'e-pop1-popsel', source: 'pop1', target: 'popsel' }]);
 	}, uuid);
 	// the first Script node boots the QuickJS guest (1.7-2.7 s on deployed builds): poll, never a fixed wait
 	await h.eventually(() => objX(page, uuid), (x) => Math.abs(x - 1) < 0.01, 'premise: the inline script runs (x = 1)', 15000);
-	await S(page, () => window.__stores.codeWorkspace.openCode({ source: 'script', ref: { nodeId: 'pop1', graphId: 'scene' } }));
+	await S(page, () => window.__tp.test.v1.codeWorkspace.openCode({ source: 'script', ref: { nodeId: 'pop1', graphId: 'scene' } }));
 	await page.waitForSelector('[data-pane] .cm-content', { timeout: 45000 });
 	h.check((await mainWorkspaceShown(page)) === 1, 'premise: the workspace is open in the main window');
 	h.check((await page.locator('#code-ws-popout').count()) === 0, 'G1: docked, the workspace has no Pop out button (no header row)');
@@ -197,7 +197,7 @@ h.run(async () => {
 	await pop.keyboard.press('Control+b');
 
 	// ---------------------------------------------------------------- 6 openCode while popped, dock back
-	await S(page, () => window.__stores.codeWorkspace.openCode({ source: 'script', ref: { nodeId: 'pop1', graphId: 'scene' } }));
+	await S(page, () => window.__tp.test.v1.codeWorkspace.openCode({ source: 'script', ref: { nodeId: 'pop1', graphId: 'scene' } }));
 	await page.waitForTimeout(1500);
 	h.check((await mainWorkspaceShown(page)) === 0 && !pop.isClosed(), 'opening code while popped goes to the popup; the main window stays clear');
 	await pop.locator('#code-ws-dock-back').click();
@@ -232,10 +232,10 @@ h.run(async () => {
 	// ---------------------------------------------------------------- 8 phone + main tab closing
 	await pop3.locator('#code-ws-dock-back').click();
 	await h.eventually(() => mainWorkspaceShown(page), (n) => n === 1, 'premise: docked back', 15000);
-	await S(page, () => window.__stores.phoneShell.phoneShellActive.set(true));
+	await S(page, () => window.__tp.test.v1.phoneShell.phoneShellActive.set(true));
 	await page.waitForTimeout(300);
 	h.check((await page.locator('#code-ws-popout').count()) === 0, 'on a phone shell there is no Pop out button');
-	await S(page, () => window.__stores.phoneShell.phoneShellActive.set(false));
+	await S(page, () => window.__tp.test.v1.phoneShell.phoneShellActive.set(false));
 	await page.waitForTimeout(300);
 	const pop4 = await popOut(page);
 	h.check(h.pageErrors(A).length === 0, 'no page errors through all of it (' + h.pageErrors(A).slice(0, 2).join(' | ') + ')');

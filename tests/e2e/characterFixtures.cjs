@@ -7,8 +7,8 @@ function mixamoGlb(page, { hair = false, clip = false } = {}) {
 	return page.evaluate(
 		({ hair, clip }) =>
 			new Promise((resolve) => {
-				const THREE = window.__stores.THREE;
-				const { GLTFExporter } = window.__stores.GLTFExporterModule;
+				const THREE = window.__tp.test.v1.THREE;
+				const { GLTFExporter } = window.__tp.test.v1.GLTFExporterModule;
 				const bones = {};
 				const mk = (name, parent, x, y, z) => {
 					const b = new THREE.Bone();

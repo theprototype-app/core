@@ -9,7 +9,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		let grp;
 		s.objectsGroup.subscribe((v) => (grp = v))();
@@ -29,14 +29,14 @@ h.run(async () => {
 	const autoState = () =>
 		A.page.evaluate(() => {
 			let v;
-			window.__stores.faceEdit.faceAutoApply.subscribe((x) => (v = x))();
+			window.__tp.test.v1.faceEdit.faceAutoApply.subscribe((x) => (v = x))();
 			return v;
 		});
 
 	// MOVE is the default op now (a plain click must not extrude the face), so
 	// extrude has to be ARMED before its params row exists
 	h.check(!(await paramsVisible()), 'the default Move op shows no amount row');
-	await A.page.evaluate(() => window.__stores.faceEdit.setFaceOp('extrude'));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.setFaceOp('extrude'));
 	h.check(await paramsVisible(), 'arming Extrude shows the nested params row');
 	h.check(await amountInParams(), 'the amount input lives in the nested params row, not row 1');
 
@@ -61,7 +61,7 @@ h.run(async () => {
 
 	// auto-apply ON: a face click (autoApplyFaceOp, called by Scene) commits
 	const applied = await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		fe.setFaceOp('extrude');
 		fe.highlightFaceByTriangle(0);
 		const before = fe.readTriangles(window.__box.geometry).length;
@@ -73,7 +73,7 @@ h.run(async () => {
 
 	// auto-apply OFF: a face click does NOT commit
 	const notApplied = await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		fe.faceAutoApply.set(false);
 		fe.setFaceOp('extrude');
 		fe.highlightFaceByTriangle(0);

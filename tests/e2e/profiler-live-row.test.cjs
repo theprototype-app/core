@@ -14,8 +14,8 @@ const S = (page, fn, arg) => page.evaluate(fn, arg);
 const state = (page) =>
 	S(page, () => {
 		let live, closed;
-		window.__stores.perfLiveSink.profilerLiveOpen.subscribe((v) => (live = v))();
-		window.__stores.profilerClose.subscribe((v) => (closed = v))();
+		window.__tp.test.v1.perfLiveSink.profilerLiveOpen.subscribe((v) => (live = v))();
+		window.__tp.test.v1.profilerClose.subscribe((v) => (closed = v))();
 		const view = document.getElementById('profiler-live');
 		return {
 			live,
@@ -39,7 +39,7 @@ h.run(async () => {
 	// --- 1: the old store opens the Profiler on Live ---
 	let st = await state(page);
 	h.check(!st.profilerOpen && !st.view, `1.0 (premise) the Profiler is closed and no live view is drawn (${JSON.stringify({ open: st.profilerOpen, view: st.view })})`);
-	await S(page, () => window.__stores.perfLiveSink.profilerLiveOpen.set(true));
+	await S(page, () => window.__tp.test.v1.perfLiveSink.profilerLiveOpen.set(true));
 	await page.waitForSelector('#profiler-live', { timeout: 15000 });
 	await page.waitForTimeout(500);
 	st = await state(page);
@@ -69,14 +69,14 @@ h.run(async () => {
 	await page.waitForTimeout(500);
 	st = await state(page);
 	h.check(st.view && st.live === true, '3.2 picking Live brings the live view back');
-	await S(page, () => window.__stores.profilerClose.set(true));
+	await S(page, () => window.__tp.test.v1.profilerClose.set(true));
 	await page.waitForTimeout(500);
 	st = await state(page);
 	h.check(st.live === false && !st.view, '3.3 closing the Profiler clears the live flag (the next open starts on the recordings)');
 
 	// --- 4: no Live profiler window to open ---
 	const offered = await S(page, () => {
-		const m = window.__stores.dockMenu;
+		const m = window.__tp.test.v1.dockMenu;
 		const keys = [...(m.HOSTED_DOCK_WINDOWS ?? []).map((w) => w.key), ...(m.DOCK_VIEWS ?? []).map((w) => w.key)];
 		return keys;
 	});

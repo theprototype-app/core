@@ -30,21 +30,21 @@ const widthOfCol = async (p, key) => (await headBoxes(p)).find((c) => c.key === 
 const storedWidths = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.explorerView.explorerColumnWidths.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorerView.explorerColumnWidths.subscribe((x) => (v = x))();
 		return v;
 	});
 
 const storedOrder = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.explorerView.explorerColumnOrder.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorerView.explorerColumnOrder.subscribe((x) => (v = x))();
 		return v;
 	});
 
 const sortState = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.explorerView.explorerSort.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorerView.explorerSort.subscribe((x) => (v = x))();
 		return v;
 	});
 
@@ -81,15 +81,15 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1280, height: 860 } } });
 	const page = A.page;
-	await page.waitForFunction(() => !!window.__stores?.explorerView && !!window.__stores?.explorer, null, {
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.explorerView && !!window.__tp?.test.v1?.explorer, null, {
 		timeout: 30000
 	});
-	await page.evaluate(() => window.__stores.explorer.loadExplorer());
+	await page.evaluate(() => window.__tp.test.v1.explorer.loadExplorer());
 	await page.waitForTimeout(400);
 
 	// ---- 0. the pure half, in-page so it is the SAME module the component imports -----
 	const pure = await page.evaluate(() => {
-		const v = window.__stores.explorerView;
+		const v = window.__tp.test.v1.explorerView;
 		const cols = v.columnsFor('library');
 		const keys = (list) => list.map((c) => c.key).join(',');
 		return {
@@ -129,15 +129,15 @@ h.run(async () => {
 
 	// ---- seed and open the list view ---------------------------------------------------
 	await page.evaluate(async () => {
-		const e = window.__stores.explorer;
+		const e = window.__tp.test.v1.explorer;
 		await e.clearLibrary();
 		const enc = (s) => new TextEncoder().encode(s).buffer;
 		for (const n of ['one.txt', 'two.txt', 'three.txt'])
 			await e.addItemFromBytes(enc('x'.repeat(50) + n), n, null);
-		window.__stores.explorerView.explorerViewMode.set('list');
+		window.__tp.test.v1.explorerView.explorerViewMode.set('list');
 		// start from the defaults, whatever a previous run left behind
-		window.__stores.explorerView.explorerColumnWidths.set({ library: {}, deleted: {} });
-		window.__stores.explorerView.explorerColumnOrder.set({ library: [], deleted: [] });
+		window.__tp.test.v1.explorerView.explorerColumnWidths.set({ library: {}, deleted: {} });
+		window.__tp.test.v1.explorerView.explorerColumnOrder.set({ library: [], deleted: [] });
 	});
 	await page.waitForTimeout(600);
 	await page.locator('#explorer-slot').click();
@@ -226,7 +226,7 @@ h.run(async () => {
 	const paneW = await page.evaluate(() => Math.round(document.querySelector('.ex-list').clientWidth));
 	// make the columns wider than the pane, the way a user would
 	await page.evaluate((w) => {
-		const v = window.__stores.explorerView;
+		const v = window.__tp.test.v1.explorerView;
 		v.explorerColumnWidths.set({
 			library: { name: 400, kind: 300, size: 300, added: 300, owner: 300 },
 			deleted: {}
@@ -269,19 +269,19 @@ h.run(async () => {
 	// can restore; a bare log entry with no file behind it is a record and belongs to the
 	// Deleted LOG, so the old fixture would leave this view empty and the header unreadable.
 	await page.evaluate(async () => {
-		const e = window.__stores.explorer;
+		const e = window.__tp.test.v1.explorer;
 		const it = await e.addItemFromBytes(
 			new TextEncoder().encode('binned').buffer,
 			'binned.txt',
 			null
 		);
-		window.__stores.sharedLibrary.logLocalDeletion({
+		window.__tp.test.v1.sharedLibrary.logLocalDeletion({
 			hash: it.hash,
 			name: 'binned.txt',
 			kind: 'text'
 		});
 		e.setItemHidden(it.id, true);
-		window.__stores.explorer.activeFolder.set('deleted');
+		window.__tp.test.v1.explorer.activeFolder.set('deleted');
 	});
 	await page.waitForTimeout(700);
 	const binCols = await headBoxes(A);
@@ -301,7 +301,7 @@ h.run(async () => {
 	);
 
 	// ---- 6. the way back --------------------------------------------------------------
-	await page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await page.waitForTimeout(500);
 	await page.locator('#explorer-list-head').click({ button: 'right' });
 	await page.waitForTimeout(400);
@@ -329,7 +329,7 @@ h.run(async () => {
 		order: (await storedOrder(A)).library
 	};
 	await h.freshReload(A);
-	await page.waitForFunction(() => !!window.__stores?.explorerView, null, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.explorerView, null, { timeout: 30000 });
 	await page.waitForTimeout(1200);
 	const afterReload = {
 		widths: (await storedWidths(A)).library,

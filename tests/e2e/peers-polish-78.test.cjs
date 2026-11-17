@@ -20,8 +20,8 @@ const inPage = (peer, body, arg) =>
 	peer.page.evaluate(
 		([src, a]) => {
 			let pc = null;
-			window.__stores.peers.subscribe((v) => (pc = v))();
-			return Object.getPrototypeOf(async function () {}).constructor('s', 'pc', 'arg', src)(window.__stores, pc, a);
+			window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
+			return Object.getPrototypeOf(async function () {}).constructor('s', 'pc', 'arg', src)(window.__tp?.test.v1, pc, a);
 		},
 		[body, arg ?? null]
 	);
@@ -30,11 +30,11 @@ const read = (peer, store) => inPage(peer, `let v; s.${store}.subscribe((x) => (
 /** a dark and a light page shot of what is on screen now */
 async function shots(peer, name) {
 	for (const theme of ['dark', 'light']) {
-		await peer.page.evaluate((t) => window.__stores.themes.theme.set(t), theme);
+		await peer.page.evaluate((t) => window.__tp.test.v1.themes.theme.set(t), theme);
 		await peer.page.waitForTimeout(350);
 		await peer.page.screenshot({ path: path.join(SHOTS, `${name}-${theme}.png`) }).catch((e) => console.log('  shot failed: ' + e.message));
 	}
-	await peer.page.evaluate(() => window.__stores.themes.theme.set('dark'));
+	await peer.page.evaluate(() => window.__tp.test.v1.themes.theme.set('dark'));
 	await peer.page.waitForTimeout(200);
 }
 
@@ -69,11 +69,11 @@ const drawerState = (peer) =>
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
-	await A.page.waitForFunction(() => { let p; window.__stores.peers.subscribe((v) => (p = v))(); return !!p?.peer?.open; }, null, { timeout: 30000 }).catch(() => {});
+	await A.page.waitForFunction(() => { let p; window.__tp.test.v1.peers.subscribe((v) => (p = v))(); return !!p?.peer?.open; }, null, { timeout: 30000 }).catch(() => {});
 
 	// ==================================================================== PL35 the drawer, alone
 	console.log('\n=== PL35 the Connect drawer ===');
-	await A.page.evaluate(() => window.__stores.connectDrawerOpen.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.connectDrawerOpen.set(true));
 	await A.page.waitForTimeout(600);
 	let d = await drawerState(A);
 	h.check(d.open, 'the drawer opens');
@@ -89,7 +89,7 @@ h.run(async () => {
 	h.check(d.networkHidden === false, 'a press unfolds Network');
 	await shots(A, 'pl35-drawer-network-open');
 	await A.page.locator('#drawer-network-toggle').click();
-	await A.page.evaluate(() => window.__stores.connectDrawerOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.connectDrawerOpen.set(false));
 	await A.page.waitForTimeout(400);
 
 	// ==================================================================== PL36 + PL37 Invite
@@ -130,7 +130,7 @@ h.run(async () => {
 	await B.page.evaluate(() => {
 		window.__askLog = [];
 		const t0 = Date.now();
-		window.__stores.guestName.joinNameAsk.subscribe((v) => window.__askLog.push([Date.now() - t0, v]));
+		window.__tp.test.v1.guestName.joinNameAsk.subscribe((v) => window.__askLog.push([Date.now() - t0, v]));
 	});
 	await h.connect(B, A);
 	const askOn = await B.page.locator('#join-name-ask').isVisible().catch(() => false);
@@ -157,16 +157,16 @@ h.run(async () => {
 	}
 
 	// ==================================================================== PL35 joined
-	await A.page.evaluate(() => window.__stores.connectDrawerOpen.set(true));
-	await B.page.evaluate(() => window.__stores.connectDrawerOpen.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.connectDrawerOpen.set(true));
+	await B.page.evaluate(() => window.__tp.test.v1.connectDrawerOpen.set(true));
 	await A.page.waitForTimeout(600);
 	const dA = await drawerState(A);
 	const dB = await drawerState(B);
 	h.check(/^Hosting · 2 people/.test(dA.label), `the host's drawer: ${dA.label}`);
 	h.check(/^In a session · 2 people/.test(dB.label), `the joiner's drawer: ${dB.label}`);
 	await shots(A, 'pl35-drawer-hosting');
-	await A.page.evaluate(() => window.__stores.connectDrawerOpen.set(false));
-	await B.page.evaluate(() => window.__stores.connectDrawerOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.connectDrawerOpen.set(false));
+	await B.page.evaluate(() => window.__tp.test.v1.connectDrawerOpen.set(false));
 	await A.page.waitForTimeout(300);
 
 	// ==================================================================== PL33 + PL31 avatars and roster

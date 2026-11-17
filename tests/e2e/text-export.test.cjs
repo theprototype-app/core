@@ -66,7 +66,7 @@ function serve(routes, port, log) {
 const texts = (target) =>
 	target.evaluate(() =>
 		Object.fromEntries(
-			/** @type {any} */ (window).__stores.textPath.textPathDebug().map((/** @type {any} */ d) => [
+			/** @type {any} */ (window).__tp.test.v1.textPath.textPathDebug().map((/** @type {any} */ d) => [
 				d.text,
 				{ mode: d.mode, synced: d.synced, glyphs: d.glyphs, font: d.font, fontUrl: d.fontUrl, solid: d.solid, xs: d.baseline.map((/** @type {number[]} */ p) => p[0]) }
 			])
@@ -88,7 +88,7 @@ h.run(async () => {
 
 	// ---- §1 three texts in the editor ------------------------------------------------------------
 	const made = await pa.evaluate(async (upload) => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		const bytes = new Uint8Array(await (await fetch(upload)).arrayBuffer());
 		const up = await S.textFonts.addFontBytes(bytes, 'My Mono.woff');
 		/** @param {number[]} at @param {any} patch */
@@ -114,7 +114,7 @@ h.run(async () => {
 	const serifRel = new URL(ed.OPEN.fontUrl).pathname.replace(/^\//, '');
 	const nunitoRel = new URL(ed['Welcome in'].fontUrl).pathname.replace(/^\//, '');
 	await h.eventually(
-		() => pa.evaluate(() => window.__stores.sceneAssets.sceneAssetList().map((/** @type {any} */ a) => a.hash)),
+		() => pa.evaluate(() => window.__tp.test.v1.sceneAssets.sceneAssetList().map((/** @type {any} */ a) => a.hash)),
 		(list) => list.includes(fontHash),
 		'§1 the scene asset list (what a save / export carries) names the uploaded font',
 		15000
@@ -122,7 +122,7 @@ h.run(async () => {
 
 	// ---- §2 export (static preset) ----------------------------------------------------------------
 	const ex = await pa.evaluate(async () => {
-		const res = await window.__stores.exportBuilder.buildExport({ preset: 'static', title: 'Text Export', thumbnail: false, startFullscreen: false, showFps: false, quality: 'auto', vrButton: false, useCdnForPacks: false });
+		const res = await window.__tp.test.v1.exportBuilder.buildExport({ preset: 'static', title: 'Text Export', thumbnail: false, startFullscreen: false, showFps: false, quality: 'auto', vrButton: false, useCdnForPacks: false });
 		const buf = new Uint8Array(await res.blob.arrayBuffer());
 		let s = '';
 		for (let i = 0; i < buf.length; i += 0x8000) s += String.fromCharCode(...buf.subarray(i, i + 0x8000));
@@ -188,7 +188,7 @@ h.run(async () => {
 		w.__textExportSeen = { sansBuild: false, notice: null };
 		const tick = () => {
 			try {
-				const S = w.__stores;
+				const S = w.__tp?.test.v1;
 				const d = S?.textPath?.textPathDebug?.().find((/** @type {any} */ x) => x.text === 'MONO');
 				if (d?.solid?.triangles > 0 && !String(d.fontUrl).startsWith('blob:')) w.__textExportSeen.sansBuild = { triangles: d.solid.triangles, fontUrl: d.fontUrl };
 				if (!w.__textExportSeen.notice && S?.notifications) {
@@ -229,9 +229,9 @@ h.run(async () => {
 		}
 		throw new Error('no game frame');
 	})();
-	await frame.waitForFunction(() => /** @type {any} */ (window).__stores?.exportRuntime?.exportRuntimeState, null, { timeout: 90000 });
-	await h.eventually(() => frame.evaluate(() => /** @type {any} */ (window).__stores.exportRuntime.exportRuntimeState.phase), (v) => v === 'playing' || v === 'failed', '§3 the exported game boots', 90000);
-	const phase = await frame.evaluate(() => /** @type {any} */ (window).__stores.exportRuntime.exportRuntimeState);
+	await frame.waitForFunction(() => /** @type {any} */ (window).__tp?.test.v1?.exportRuntime?.exportRuntimeState, null, { timeout: 90000 });
+	await h.eventually(() => frame.evaluate(() => /** @type {any} */ (window).__tp.test.v1.exportRuntime.exportRuntimeState.phase), (v) => v === 'playing' || v === 'failed', '§3 the exported game boots', 90000);
+	const phase = await frame.evaluate(() => /** @type {any} */ (window).__tp.test.v1.exportRuntime.exportRuntimeState);
 	h.check(phase.phase === 'playing', `§3 the exported game is playing (${phase.phase}${phase.error ? ' — ' + phase.error : ''})`);
 	await h.eventually(() => texts(frame), ready, '§3 all three texts are built in the exported game', 60000);
 	await p.waitForTimeout(1500); // a late fallback or rebuild would show up here
@@ -245,7 +245,7 @@ h.run(async () => {
 	h.check(gx.MONO.font === 'asset:' + fontHash && String(gx.MONO.fontUrl).startsWith('blob:'), `§3 MONO resolves the uploaded font from the scene's own assets (${gx.MONO.font}, ${String(gx.MONO.fontUrl).slice(0, 40)})`);
 	h.check(gx.MONO.solid.triangles === ed.MONO.solid.triangles && gx.MONO.solid.missing === 0, `§3 MONO is the same mesh as in the editor (${gx.MONO.solid.triangles} / ${ed.MONO.solid.triangles} triangles)`);
 	const notes = await frame.evaluate(() => {
-		const S = /** @type {any} */ (window).__stores;
+		const S = /** @type {any} */ (window).__tp?.test.v1;
 		let n = [];
 		let t = [];
 		S.notifications.subscribe((/** @type {any} */ v) => (n = v))();

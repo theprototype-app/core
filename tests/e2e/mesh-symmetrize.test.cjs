@@ -12,7 +12,7 @@ const h = require('./helpers.cjs');
 
 const oddEdges = (page) =>
 	page.evaluate(() => {
-		const tris = window.__stores.faceEdit.readTriangles(window.__box.geometry);
+		const tris = window.__tp.test.v1.faceEdit.readTriangles(window.__box.geometry);
 		const keyOf = (v) => [v.x, v.y, v.z].map((n) => Math.round(n * 1e4)).join(',');
 		const counts = new Map();
 		for (const t of tris) {
@@ -28,7 +28,7 @@ const oddEdges = (page) =>
 /** an asymmetric mesh: a box with its +X face pulled out, so mirroring is visible */
 const lopsidedBox = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		s.commandsHandler.sceneCommand('/create Box 2 2 2');
 		let g;
@@ -66,7 +66,7 @@ h.run(async () => {
 
 	// --- mirror the + half onto the - half ----------------------------------
 	const mirrored = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		const ok = fe.symmetrizeMesh('x', 1);
 		const tris = fe.readTriangles(window.__box.geometry);
@@ -114,7 +114,7 @@ h.run(async () => {
 
 	// --- ONE undo ------------------------------------------------------------
 	const undo = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const count = () => s.faceEdit.readTriangles(window.__box.geometry).length;
 		const after = count();
 		s.history.undo();
@@ -127,7 +127,7 @@ h.run(async () => {
 
 	// --- the other direction, and the other axes ----------------------------
 	const directions = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		const run = (axis, keep) => {
 			s.commandsHandler.sceneCommand('/create Box 2 2 2');
@@ -168,7 +168,7 @@ h.run(async () => {
 
 	// --- the refusal ---------------------------------------------------------
 	const refusal = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		// move the whole mesh onto the negative side, then ask to keep the positive one
 		const tris = fe.readTriangles(window.__box.geometry);
@@ -190,7 +190,7 @@ h.run(async () => {
 	const extentOn = (page, uuid) =>
 		page.evaluate((uuid) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const object = g.getObjectByProperty('uuid', uuid);
 			const p = object?.geometry?.attributes?.position;
 			if (!p) return null;
@@ -204,7 +204,7 @@ h.run(async () => {
 		'B received the lopsided box (premise)',
 		20000
 	);
-	await A.page.evaluate(() => window.__stores.faceEdit.symmetrizeMesh('x', 1));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.symmetrizeMesh('x', 1));
 	await h.eventually(
 		() => extentOn(B.page, net.uuid),
 		(v) => v !== null && v < -1.7,
@@ -212,6 +212,6 @@ h.run(async () => {
 		20000
 	);
 
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit?.());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit?.());
 	await h.finish(browser);
 });

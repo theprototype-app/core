@@ -9,7 +9,7 @@ h.run(async () => {
 
 	// --- default path: every seam inert ------------------------------------
 	const def = await A.page.evaluate(() => {
-		const c = window.__stores.cloudHooks;
+		const c = window.__tp.test.v1.cloudHooks;
 		return {
 			create: c.canApply('peer1', 'create'),
 			move: c.canApply('peer1', 'move'),
@@ -31,7 +31,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(500); // let the dynamic import + register() run
 
 	const withPlugin = await A.page.evaluate(() => {
-		const c = window.__stores.cloudHooks;
+		const c = window.__tp.test.v1.cloudHooks;
 		const auth = c.getAuthProvider();
 		return {
 			hasProvider: c.hasCapabilityProvider(),
@@ -59,8 +59,8 @@ h.run(async () => {
 	const v2 = await A.page.evaluate(() => {
 		const read = (s) => { let v; s.subscribe((x) => (v = x))(); return v; };
 		return {
-			profile: typeof read(window.__stores.cloudHooks.profileSlot) === 'function',
-			drawer: typeof read(window.__stores.cloudHooks.drawerSlot) === 'function'
+			profile: typeof read(window.__tp.test.v1.cloudHooks.profileSlot) === 'function',
+			drawer: typeof read(window.__tp.test.v1.cloudHooks.drawerSlot) === 'function'
 		};
 	});
 	h.check(v2.profile, 'PM: plugin installs a profile mount (mountProfile / profileSlot)');
@@ -81,7 +81,7 @@ h.run(async () => {
 	// plugin's onCloudMessage handler (roles/room replication rides this).
 	const gotMsg = await A.page.evaluate(() => {
 		window.__cloudLastMessage = null;
-		window.__stores.cloudHooks.dispatchCloudMessage('peerZ', { role: 'viewer', n: 7 });
+		window.__tp.test.v1.cloudHooks.dispatchCloudMessage('peerZ', { role: 'viewer', n: 7 });
 		const m = window.__cloudLastMessage;
 		return m && m.peerId === 'peerZ' && m.payload && m.payload.n === 7;
 	});
@@ -89,7 +89,7 @@ h.run(async () => {
 
 	// the plugin rebranded the first-run notice
 	const notice = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.appNotice.subscribe((v) => r(v))())
+		() => new Promise((r) => window.__tp.test.v1.appNotice.subscribe((v) => r(v))())
 	);
 	h.check(!!notice && /example plugin/.test(notice.text), 'M1d: plugin can rebrand the appNotice banner');
 
@@ -98,8 +98,8 @@ h.run(async () => {
 	await h.freshReload(A);
 	await A.page.waitForTimeout(300);
 	const back = await A.page.evaluate(() => ({
-		hasProvider: window.__stores.cloudHooks.hasCapabilityProvider(),
-		create: window.__stores.cloudHooks.canApply('viewer1', 'create'),
+		hasProvider: window.__tp.test.v1.cloudHooks.hasCapabilityProvider(),
+		create: window.__tp.test.v1.cloudHooks.canApply('viewer1', 'create'),
 		slots: document.querySelectorAll('.cloud-slot').length
 	}));
 	h.check(back.hasProvider === false && back.create === true && back.slots === 0, 'unloading the plugin restores inert defaults');

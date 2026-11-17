@@ -44,35 +44,35 @@ const titleOf = (peer) => peer.page.evaluate(() => document.title);
 const manifestOf = (peer) =>
 	peer.page.evaluate(() => {
 		let m;
-		window.__stores.projectManifest.projectManifest.subscribe((v) => (m = v))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((v) => (m = v))();
 		return m;
 	});
 
 const levelOf = (peer) =>
 	peer.page.evaluate(() => {
 		let v;
-		window.__stores.levels.currentLevel.subscribe((x) => (v = x))();
+		window.__tp.test.v1.levels.currentLevel.subscribe((x) => (v = x))();
 		return v;
 	});
 
 const itemsOf = (peer) =>
 	peer.page.evaluate(() => {
 		let items;
-		window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((v) => (items = v))();
 		return items.map((i) => ({ id: i.id, name: i.name, hash: i.hash, folderId: i.folderId ?? null }));
 	});
 
 const childCount = (peer) =>
 	peer.page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return g?.children.length ?? 0;
 	});
 
 const folderIdNamed = (peer, name) =>
 	peer.page.evaluate((n) => {
 		let f;
-		window.__stores.explorer.explorerFolders.subscribe((v) => (f = v))();
+		window.__tp.test.v1.explorer.explorerFolders.subscribe((v) => (f = v))();
 		return f.find((x) => x.name === n)?.id ?? null;
 	}, name);
 
@@ -85,7 +85,7 @@ const folderIdNamed = (peer, name) =>
  */
 const nudgeScene = (peer) =>
 	peer.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		const child = g.children[0];
@@ -98,7 +98,7 @@ const nudgeScene = (peer) =>
 
 const makeBox = (peer) =>
 	peer.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1100));
 	});
 
@@ -135,7 +135,7 @@ async function saveViaMenu(peer, trigger, name) {
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
-	await A.page.waitForFunction(() => !!window.__stores?.levels && !!window.__stores?.projectManifest, {
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.levels && !!window.__tp?.test.v1?.projectManifest, {
 		timeout: 30000
 	});
 
@@ -148,7 +148,7 @@ h.run(async () => {
 	);
 
 	const named = await A.page.evaluate(() => {
-		const m = window.__stores.projectManifest;
+		const m = window.__tp.test.v1.projectManifest;
 		const before = { name: m.projectName(), inUse: m.manifestInUse() };
 		return {
 			before,
@@ -180,7 +180,7 @@ h.run(async () => {
 
 	// the file dialog's default name — the one place the name meets a filesystem
 	const bases = await A.page.evaluate(() => {
-		const f = window.__stores.projectFile.projectFileBase;
+		const f = window.__tp.test.v1.projectFile.projectFileBase;
 		return [f('Dungeon Crawl'), f('a/b:c*?"<>|d'), f('  ...  '), f(''), f(null)];
 	});
 	h.check(
@@ -197,7 +197,7 @@ h.run(async () => {
 	// =====================================================================
 	await makeBox(A);
 	h.check((await childCount(A)) === 1, 'premise: something to save');
-	const arena = await A.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Arena'));
+	const arena = await A.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('Arena'));
 	h.check(!!arena?.hash, `Arena saved (${arena?.name})`);
 	await h.eventually(
 		() => titleOf(A),
@@ -222,7 +222,7 @@ h.run(async () => {
 	);
 
 	// saving again makes them equal again — and the flag has ONE legitimate way back
-	const arena2 = await A.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Arena'));
+	const arena2 = await A.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('Arena'));
 	h.check(
 		arena2.hash !== arena.hash,
 		'the edited scene saves as a NEW version (immutable files, a moving pointer)'
@@ -240,7 +240,7 @@ h.run(async () => {
 	// the name's other job: what the exported file is CALLED
 	const [download] = await Promise.all([
 		A.page.waitForEvent('download', { timeout: 20000 }),
-		A.page.evaluate(() => window.__stores.projectFile.downloadProject())
+		A.page.evaluate(() => window.__tp.test.v1.projectFile.downloadProject())
 	]);
 	h.check(
 		download.suggestedFilename() === 'Dungeon Crawl.tp',
@@ -260,9 +260,9 @@ h.run(async () => {
 	// =====================================================================
 	// 3. PLAYING IS NOT EDITING
 	// =====================================================================
-	await A.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Arena'));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('Arena'));
 	await h.eventually(() => titleOf(A), (t) => !t.includes('*'), 'premise: clean before play');
-	await A.page.evaluate(() => window.__stores.isLocked.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await A.page.waitForTimeout(300);
 	await nudgeScene(A);
 	await A.page.waitForTimeout(3000);
@@ -271,7 +271,7 @@ h.run(async () => {
 		!playing.includes('*'),
 		`a game moves objects constantly and none of it is an edit — no asterisk while playing ("${playing}")`
 	);
-	await A.page.evaluate(() => window.__stores.isLocked.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(null));
 	await A.page.waitForTimeout(600);
 	await nudgeScene(A);
 	await h.eventually(
@@ -328,7 +328,7 @@ h.run(async () => {
 	);
 
 	// the unnamed fallbacks, both of them
-	await A.page.evaluate(() => window.__stores.projectManifest.setProjectName(''));
+	await A.page.evaluate(() => window.__tp.test.v1.projectManifest.setProjectName(''));
 	await A.page.waitForTimeout(300);
 	h.check(
 		(await chip()).project === 'Untitled project',
@@ -341,13 +341,13 @@ h.run(async () => {
 	);
 	const [unnamedDl] = await Promise.all([
 		A.page.waitForEvent('download', { timeout: 20000 }),
-		A.page.evaluate(() => window.__stores.projectFile.downloadProject())
+		A.page.evaluate(() => window.__tp.test.v1.projectFile.downloadProject())
 	]);
 	h.check(
 		unnamedDl.suggestedFilename().startsWith('ThePrototype-'),
 		`…and its export falls back to the timestamp name, as it always did (${unnamedDl.suggestedFilename()})`
 	);
-	await A.page.evaluate(() => window.__stores.projectManifest.setProjectName('Tower Defence'));
+	await A.page.evaluate(() => window.__tp.test.v1.projectManifest.setProjectName('Tower Defence'));
 	await A.page.waitForTimeout(300);
 
 	// =====================================================================
@@ -359,8 +359,8 @@ h.run(async () => {
 		(await folderIdNamed(A, 'Scenes')) === null,
 		'premise: no `Scenes` folder was invented — the saves went to the root'
 	);
-	await A.page.evaluate(() => window.__stores.levels.newLevel('Bystander'));
-	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.newLevel('Bystander'));
+	await A.page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await A.page.waitForTimeout(600);
 	const highlighted = await A.page.evaluate(() =>
 		[...document.querySelectorAll('.explorer-open-scene')].map((el) => el.getAttribute('title'))
@@ -382,11 +382,11 @@ h.run(async () => {
 	// 6. "SAVE SCENE…" LANDS WHERE THE USER IS LOOKING
 	// =====================================================================
 	const proto = await A.page.evaluate(
-		() => window.__stores.explorer.createFolder('Prototypes', null)?.id ?? null
+		() => window.__tp.test.v1.explorer.createFolder('Prototypes', null)?.id ?? null
 	);
 	h.check(!!proto, 'premise: a second real folder');
 	const bunker = await A.page.evaluate(
-		(id) => window.__stores.levels.saveSceneAsLevel('Bunker', id),
+		(id) => window.__tp.test.v1.levels.saveSceneAsLevel('Bunker', id),
 		proto
 	);
 	h.check(
@@ -394,7 +394,7 @@ h.run(async () => {
 		'a save with a real folder lands in it, not at the root'
 	);
 	const fresh = await A.page.evaluate(
-		(id) => window.__stores.levels.newLevel('Blank', id),
+		(id) => window.__tp.test.v1.levels.newLevel('Blank', id),
 		proto
 	);
 	h.check(
@@ -404,7 +404,7 @@ h.run(async () => {
 	// pseudo locations and dead ids both fall back — 21-H1 (locked answer 6) changed WHAT
 	// to: the library ROOT, never a folder the app invents on the user's behalf
 	const fallbacks = await A.page.evaluate(async () => {
-		const l = window.__stores.levels;
+		const l = window.__tp.test.v1.levels;
 		const a = await l.saveSceneAsLevel('Pseudo', 'prefabs');
 		const b = await l.saveSceneAsLevel('Ghost', 'no-such-folder-id');
 		return [a.id, b.id];
@@ -420,7 +420,7 @@ h.run(async () => {
 	);
 
 	// and through the REAL menu, where activeLibraryFolder() decides
-	await A.page.evaluate((id) => window.__stores.explorer.activeFolder.set(id), proto);
+	await A.page.evaluate((id) => window.__tp.test.v1.explorer.activeFolder.set(id), proto);
 	await A.page.waitForTimeout(500);
 	await A.page
 		.locator('#explorer-list [role="region"]')
@@ -444,7 +444,7 @@ h.run(async () => {
 	const arenaItem = (await itemsOf(A)).find((i) => i.hash === arenaPointer);
 	h.check(!!arenaItem, `premise: the pointer version of Arena is a file here (${arenaItem?.name})`);
 	await A.page.evaluate(
-		({ id }) => window.__stores.explorer.renameItem(id, 'zzz-old-arena.tpscene'),
+		({ id }) => window.__tp.test.v1.explorer.renameItem(id, 'zzz-old-arena.tpscene'),
 		{ id: arenaItem.id }
 	);
 	await A.page.waitForTimeout(400);
@@ -453,9 +453,9 @@ h.run(async () => {
 		'premise: the FILE is renamed under the scene'
 	);
 	// travel BY NAME still resolves it: the manifest points at a hash, never a filename
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create sphere'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create sphere'));
 	await A.page.waitForTimeout(1200);
-	const travelled = await A.page.evaluate(() => window.__stores.levels.travelToScene('Arena'));
+	const travelled = await A.page.evaluate(() => window.__tp.test.v1.levels.travelToScene('Arena'));
 	h.check(travelled === true, 'travel-by-name resolves through the manifest, not the file list');
 	await h.eventually(
 		() => levelOf(A),
@@ -471,7 +471,7 @@ h.run(async () => {
 		(await chip()).scene === 'Arena',
 		'and so does the header chip — both read the manifest name'
 	);
-	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await A.page.waitForTimeout(600);
 	const nowHighlighted = await A.page.evaluate(() =>
 		[...document.querySelectorAll('.explorer-open-scene')].map((el) => el.getAttribute('title'))
@@ -485,7 +485,7 @@ h.run(async () => {
 	// 8. FORK 3: EDITORS NAME THE PROJECT, VIEWERS NEVER
 	// =====================================================================
 	const gated = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.cloudHooks.rolesInfo.set({ myId: 'me', myRole: 'viewer', amAdmin: false, roleOf: () => 'viewer' });
 		const refused = s.projectManifest.setProjectName('Viewer Rename');
 		s.cloudHooks.rolesInfo.set(null);
@@ -502,9 +502,9 @@ h.run(async () => {
 	// =====================================================================
 	await A.page.waitForTimeout(500); // the fire-and-forget idb write
 	await h.freshReload(A);
-	await A.page.waitForFunction(() => !!window.__stores?.projectManifest, { timeout: 30000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.projectManifest, { timeout: 30000 });
 	await h.eventually(
-		() => A.page.evaluate(() => window.__stores.projectManifest.projectName()),
+		() => A.page.evaluate(() => window.__tp.test.v1.projectManifest.projectName()),
 		(v) => v === 'Keep Renamed',
 		'the project name survives a reload (it rides the manifest into idb)'
 	);
@@ -525,31 +525,31 @@ h.run(async () => {
 	const dirtyOf = (p) =>
 		p.page.evaluate(() => {
 			let v;
-			window.__stores.sceneIdentity.sceneDirty.subscribe((x) => (v = x))();
+			window.__tp.test.v1.sceneIdentity.sceneDirty.subscribe((x) => (v = x))();
 			return !!v;
 		});
 	const sessionCount = (p) =>
 		p.page.evaluate(() => {
 			let v;
-			window.__stores.sessions.sessions.subscribe((x) => (v = x))();
+			window.__tp.test.v1.sessions.sessions.subscribe((x) => (v = x))();
 			return (v ?? []).length;
 		});
 	const versionsOf = (p, name) =>
 		p.page.evaluate((n) => {
 			let m;
-			window.__stores.projectManifest.projectManifest.subscribe((x) => (m = x))();
+			window.__tp.test.v1.projectManifest.projectManifest.subscribe((x) => (m = x))();
 			return (m?.scenes?.[n]?.history ?? []).length;
 		}, name);
 
-	await A.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Keep'));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('Keep'));
 	await h.eventually(() => levelOf(A), (l) => l?.name === 'Keep', 'premise: a named scene is open');
 	await h.eventually(() => dirtyOf(A), (d) => d === false, 'premise: it is CLEAN right after a save', 12000);
 	// the chip only exists while the Explorer is mounted, and section 4 opened it with a
 	// CLICK - a toggle, so it cannot be re-used here without knowing the current state.
 	// Drive the same store seam the app uses (startSceneSaveBootstrap) instead.
 	await A.page.evaluate(() => {
-		window.__stores.explorerClose.set(false);
-		window.__stores.bottomDock.bottomDockActive.set('explorer');
+		window.__tp.test.v1.explorerClose.set(false);
+		window.__tp.test.v1.bottomDock.bottomDockActive.set('explorer');
 	});
 	await A.page.waitForTimeout(700);
 	h.check((await A.page.locator('#explorer-scene').count()) === 1, 'premise: the identity chip is on screen');
@@ -574,7 +574,7 @@ h.run(async () => {
 		'…with no dot, because the dot means unsaved and there is nothing unsaved'
 	);
 
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create cone'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create cone'));
 	await h.eventually(() => dirtyOf(A), (d) => d === true, 'an edit makes the scene dirty', 15000);
 	const dirtyLook = await A.page.evaluate(() => {
 		const b = document.querySelector('#explorer-save-scene');
@@ -596,7 +596,7 @@ h.run(async () => {
 	);
 
 	// Ctrl+S: the same act, and NOT a new session entry - which is the reported bug
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create torus'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create torus'));
 	await h.eventually(() => dirtyOf(A), (d) => d === true, 'premise: dirty again for the key', 15000);
 	const sessionsBefore = await sessionCount(A);
 	const versionsBefore = await versionsOf(A, 'Keep');

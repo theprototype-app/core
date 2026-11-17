@@ -11,7 +11,7 @@ h.run(async () => {
 
 	// --- pure evaluation of each node type ---
 	const pure = await A.page.evaluate(() => {
-		const R = window.__stores.flowRuntime;
+		const R = window.__tp.test.v1.flowRuntime;
 		const ev = (node, nodes, edges, time) => R.evalNode(node, nodes || [], edges || [], time || 0);
 		return {
 			number: ev({ id: 'n', type: 'number', data: { value: 5 } }),
@@ -48,7 +48,7 @@ h.run(async () => {
 
 	// --- input-socket resolution: Number x Number -> Math -> Spin.speed ---
 	const chain = await A.page.evaluate(() => {
-		const R = window.__stores.flowRuntime;
+		const R = window.__tp.test.v1.flowRuntime;
 		const nodes = [
 			{ id: 'num', type: 'number', data: { value: 10 } },
 			{ id: 'num2', type: 'number', data: { value: 3 } },
@@ -84,10 +84,10 @@ h.run(async () => {
 			{ id: 'pe1', source: 'p-num', target: 'p-mth', targetHandle: 'a' },
 			{ id: 'pe2', source: 'p-num2', target: 'p-mth', targetHandle: 'b' }
 		];
-		window.__stores.flowNodes.set(nodes);
-		window.__stores.flowEdges.set(edges);
+		window.__tp.test.v1.flowNodes.set(nodes);
+		window.__tp.test.v1.flowEdges.set(edges);
 		let peer;
-		window.__stores.peers.subscribe((p) => (peer = p))();
+		window.__tp.test.v1.peers.subscribe((p) => (peer = p))();
 		// replicate through the normal node/edge create broadcasts
 		nodes.forEach((node) => peer.send({ type: 'nodecreate', node }));
 		edges.forEach((edge) => peer.send({ type: 'edgecreate', edge }));
@@ -96,10 +96,10 @@ h.run(async () => {
 	await B.page.waitForTimeout(2500);
 
 	const parity = await B.page.evaluate(() => {
-		const R = window.__stores.flowRuntime;
+		const R = window.__tp.test.v1.flowRuntime;
 		let nodes, edges;
-		window.__stores.flowNodes.subscribe((v) => (nodes = v))();
-		window.__stores.flowEdges.subscribe((v) => (edges = v))();
+		window.__tp.test.v1.flowNodes.subscribe((v) => (nodes = v))();
+		window.__tp.test.v1.flowEdges.subscribe((v) => (edges = v))();
 		const math = nodes.find((n) => n.id === 'p-mth');
 		return {
 			gotGraph: nodes.length,
@@ -107,10 +107,10 @@ h.run(async () => {
 		};
 	});
 	const aValue = await A.page.evaluate(() => {
-		const R = window.__stores.flowRuntime;
+		const R = window.__tp.test.v1.flowRuntime;
 		let nodes, edges;
-		window.__stores.flowNodes.subscribe((v) => (nodes = v))();
-		window.__stores.flowEdges.subscribe((v) => (edges = v))();
+		window.__tp.test.v1.flowNodes.subscribe((v) => (nodes = v))();
+		window.__tp.test.v1.flowEdges.subscribe((v) => (edges = v))();
 		return R.evalNode(nodes.find((n) => n.id === 'p-mth'), nodes, edges, 100);
 	});
 	h.check(parity.gotGraph >= 3, `peer B received the replicated graph (${parity.gotGraph} nodes)`);

@@ -28,24 +28,24 @@ const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJA
 /** a store's current value by dotted path ('chatTab', 'aiAssistant.aiMessages') */
 const read = (peer, name) =>
 	peer.page.evaluate((n) => {
-		const s = n.split('.').reduce((o, k) => o?.[k], window.__stores);
+		const s = n.split('.').reduce((o, k) => o?.[k], window.__tp?.test.v1);
 		if (!s?.subscribe) return undefined;
 		let v;
 		s.subscribe((x) => (v = x))();
 		return v;
 	}, name);
 const state = async (peer) => ({ open: (await read(peer, 'chatHidden')) === '', tab: await read(peer, 'chatTab') });
-const idb = (peer, key) => peer.page.evaluate((k) => window.__stores.idb.idbGet(k), key);
+const idb = (peer, key) => peer.page.evaluate((k) => window.__tp.test.v1.idb.idbGet(k), key);
 /** press a toolbar button when the layout shows it, else run the same toggle the button runs */
 async function press(peer, sel, tab) {
 	const btn = peer.page.locator(sel).first();
 	if (await btn.isVisible().catch(() => false)) await btn.click();
-	else await peer.page.evaluate((t) => window.__stores.chatWindow.toggleChatTab(t), tab);
+	else await peer.page.evaluate((t) => window.__tp.test.v1.chatWindow.toggleChatTab(t), tab);
 	await peer.page.waitForTimeout(400);
 }
 /** open the window on `tab` whatever it shows now (a button press toggles: on its own tab it closes the window) */
 async function openOn(peer, tab) {
-	await peer.page.evaluate((t) => window.__stores.chatWindow.openChatTab(t), tab);
+	await peer.page.evaluate((t) => window.__tp.test.v1.chatWindow.openChatTab(t), tab);
 	await peer.page.waitForTimeout(400);
 }
 async function axe(page, label) {
@@ -60,7 +60,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 	await A.page.evaluate(() => {
-		const p = window.__stores.aiProviders;
+		const p = window.__tp.test.v1.aiProviders;
 		const id = p.addAiProvider({ preset: 'custom', label: 'MockChat', baseUrl: location.origin + '/mock-ai/v1', model: 'chat-1', apiKey: 'k' });
 		p.setAiActiveProvider(id);
 		p.setAiEnabled(true);
@@ -101,7 +101,7 @@ h.run(async () => {
 
 	// ---- 2. Session between two peers ------------------------------------------------------------------
 	console.log('\n=== 2. Session ===');
-	await B.page.evaluate(() => window.__stores.chatWindow.openChatTab('assistant'));
+	await B.page.evaluate(() => window.__tp.test.v1.chatWindow.openChatTab('assistant'));
 	await B.page.waitForTimeout(300);
 	for (const text of ['hello from A', 'the fence goes here']) {
 		await A.page.locator('#message').fill(text);
@@ -131,7 +131,7 @@ h.run(async () => {
 	h.check(((await read(B, 'aiAssistant.aiMessages')) ?? []).length === 0, '3.4 the provider chat stays on A (B has no turn)');
 	await A.page.screenshot({ path: path.join(OUT, 'uir-chat-02-assistant-tab.png') }).catch(() => {});
 	const savesOf = (peer) => peer.page.evaluate(() => {
-		const t = window.__stores.chatSaves.chatSavesForTest();
+		const t = window.__tp.test.v1.chatSaves.chatSavesForTest();
 		return { ai: t.ai, active: t.active, room: t.room };
 	});
 	await h.eventually(() => savesOf(A), (t) => t.ai.length === 1 && !!t.active, '3.5 the provider chat is saved on this device (one row, the active one)');
@@ -142,7 +142,7 @@ h.run(async () => {
 	// a reply still settling skips the save until it settles: add the picture turn to a settled conversation
 	await h.eventually(() => read(A, 'aiAssistant.aiBusy'), (b) => b === false, '5.0a premise: the reply has settled', 20000);
 	await A.page.evaluate((png) => {
-		const m = window.__stores.aiAssistant.aiMessages;
+		const m = window.__tp.test.v1.aiAssistant.aiMessages;
 		m.update((list) => [...list, { role: 'user', content: 'like this one', images: [{ url: png, name: 'swatch.png' }] }]);
 	}, PNG);
 	h.check(JSON.stringify(await read(A, 'aiAssistant.aiMessages')).includes('base64'), '5.0 premise (counterfactual): the live message carries the picture as a data: URL');
@@ -156,7 +156,7 @@ h.run(async () => {
 
 	// ---- 4. reload: both histories come back -----------------------------------------------------------------
 	console.log('\n=== 4. reload ===');
-	await A.page.evaluate(() => window.__stores.chatSaves.flush());
+	await A.page.evaluate(() => window.__tp.test.v1.chatSaves.flush());
 	const logBefore = await idb(A, 'chatlog:untitled');
 	h.check(logBefore?.lines?.length === 3, `4.0 premise: the session log holds the three lines (${logBefore?.lines?.length})`);
 	await h.freshReload(A);
@@ -168,7 +168,7 @@ h.run(async () => {
 	h.check((await A.page.locator('#messages li.chat-past').count()) >= 3, '4.2 the lines from the save are marked as saved');
 	const mine = await A.page.evaluate(() => {
 		let v;
-		window.__stores.messages.subscribe((x) => (v = x))();
+		window.__tp.test.v1.messages.subscribe((x) => (v = x))();
 		return v.filter((m) => m.saved).map((m) => [m.text, m.type]);
 	});
 	h.check(mine.some(([t, ty]) => t === 'hello from A' && ty === 'sent') && mine.some(([t, ty]) => t === 'sounds good' && ty === 'received'), `4.3 mine stays mine, B's stays B's (${JSON.stringify(mine)})`);
@@ -195,19 +195,19 @@ h.run(async () => {
 	await h.freshReload(A);
 	await h.answerRestore(A).catch(() => {});
 	await A.page.waitForTimeout(2500);
-	await A.page.evaluate(() => window.__stores.chatSaves.flush());
+	await A.page.evaluate(() => window.__tp.test.v1.chatSaves.flush());
 	const logAfter = await idb(A, 'chatlog:untitled');
 	h.check(logAfter?.lines?.length === 3, `4.10 a second reload re-files nothing (log ${logBefore?.lines?.length} -> ${logAfter?.lines?.length})`);
 	const count = await A.page.evaluate(() => {
 		let v;
-		window.__stores.messages.subscribe((x) => (v = x))();
+		window.__tp.test.v1.messages.subscribe((x) => (v = x))();
 		return v.filter((m) => m.text === 'hello from A').length;
 	});
 	h.check(count === 1, `4.11 …and shows each line once (${count})`);
 	// the list's own guard: a line pushed again with an id already on screen (a caller that does not merge)
 	await openOn(A, 'session');
 	const dup = await A.page.evaluate(() => {
-		const st = window.__stores.messages;
+		const st = window.__tp.test.v1.messages;
 		let v;
 		st.subscribe((x) => (v = x))();
 		const m = v.find((x) => x.text === 'hello from A');
@@ -222,10 +222,10 @@ h.run(async () => {
 	// ---- 6. another scene's log, read only ------------------------------------------------------------------
 	console.log('\n=== 6. another scene ===');
 	await A.page.evaluate(async () => {
-		const { idbPut } = window.__stores.idb;
+		const { idbPut } = window.__tp.test.v1.idb;
 		const lines = [{ id: 'old-1', text: 'we met in the castle', sender: 'p-old', at: Date.now() - 86400000, name: 'Sam' }];
 		await idbPut('chatlog:scene:Castle', { key: 'scene:Castle', title: 'Castle', lines });
-		window.__stores.chatSaves.sessionLogs.update((l) => [...l, { key: 'scene:Castle', title: 'Castle', updatedAt: Date.now() - 86400000, count: 1, people: ['Sam'] }]);
+		window.__tp.test.v1.chatSaves.sessionLogs.update((l) => [...l, { key: 'scene:Castle', title: 'Castle', updatedAt: Date.now() - 86400000, count: 1, people: ['Sam'] }]);
 	});
 	await openOn(A, 'session');
 	await A.page.locator('#ai-history-btn').click();
@@ -252,7 +252,7 @@ h.run(async () => {
 	]) {
 		const P = await h.setupPage(browser, 'old-' + want, { storage });
 		const st = await P.page.evaluate(() => ({ docked: localStorage.getItem('chatDocked'), old: localStorage.getItem('aiAssistantDocked'), tab: localStorage.getItem('chat:tab') }));
-		await P.page.evaluate(() => window.__stores.chatHidden.set(''));
+		await P.page.evaluate(() => window.__tp.test.v1.chatHidden.set(''));
 		await P.page.waitForTimeout(600);
 		h.check((await read(P, 'chatTab')) === want && (await P.page.locator('#chat-window').getAttribute('data-tab')) === want, `7 ${label}: the window opens on ${want} (${JSON.stringify(st)})`);
 		if (want === 'assistant') h.check(st.docked === 'true' && st.old === null, '7 …the old docked flag became the one window\'s');
@@ -262,7 +262,7 @@ h.run(async () => {
 	// ---- 8. the phone: one sheet ----------------------------------------------------------------------------
 	console.log('\n=== 8. phone ===');
 	const N = await h.setupPage(browser, 'folded', { context: { viewport: { width: 390, height: 896 }, deviceScaleFactor: 2.9, isMobile: true, hasTouch: true } });
-	await N.page.evaluate(() => window.__stores.chatWindow.toggleChatTab('assistant'));
+	await N.page.evaluate(() => window.__tp.test.v1.chatWindow.toggleChatTab('assistant'));
 	await N.page.waitForTimeout(900);
 	h.check((await N.page.locator('#chat-window').isVisible()) && (await read(N, 'chatTab')) === 'assistant' && (await N.page.locator('#ai-assistant-window').isVisible()), '8.1 folded: the AI button opens the one sheet on Assistant');
 	await N.page.screenshot({ path: path.join(OUT, 'uir-chat-05-folded-assistant.png') }).catch(() => {});

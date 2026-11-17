@@ -81,13 +81,13 @@ h.run(async () => {
 	if (OUT) fs.mkdirSync(path.join(OUT, 'pairs'), { recursive: true });
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1280, height: 720 } }, storage: { 'water:quality': 'high' } });
-	const presets = await A.page.evaluate(() => window.__stores.waterPresets.WATER_PRESETS.map((p) => p.key));
+	const presets = await A.page.evaluate(() => window.__tp.test.v1.waterPresets.WATER_PRESETS.map((p) => p.key));
 
 	/** build one shape's bench; returns the water uuid @param {string} shape */
 	const bench = (shape) =>
 		A.page.evaluate(
 			async ({ shape, s }) => {
-				const st = window.__stores;
+				const st = window.__tp?.test.v1;
 				st.waterRuntime.freezeWaterClock(100.25);
 				const cmd = st.commandsHandler.sceneCommand;
 				let g;
@@ -122,13 +122,13 @@ h.run(async () => {
 		A.page.evaluate(
 			([p, t]) => {
 				let cam, orbit;
-				window.__stores.editorCam.subscribe((v) => (cam = v))();
-				window.__stores.orbitControls.subscribe((v) => (orbit = v))();
+				window.__tp.test.v1.editorCam.subscribe((v) => (cam = v))();
+				window.__tp.test.v1.orbitControls.subscribe((v) => (orbit = v))();
 				cam.position.set(p[0], p[1], p[2]);
 				orbit?.target?.set(t[0], t[1], t[2]);
 				orbit?.update?.();
 				cam.lookAt(t[0], t[1], t[2]);
-				window.__stores.objectActions.deselectObject?.();
+				window.__tp.test.v1.objectActions.deselectObject?.();
 			},
 			[pos, target]
 		);
@@ -136,7 +136,7 @@ h.run(async () => {
 	const apply = (uuid, preset, c, v, shapeKind) =>
 		A.page.evaluate(
 			({ uuid, preset, c, v, shapeKind }) => {
-				const st = window.__stores;
+				const st = window.__tp?.test.v1;
 				const blob = st.waterPresets.waterPreset(preset, { shape: shapeKind });
 				const [key, , , , base, group] = c;
 				blob.look = { ...blob.look, ...(base.look ?? {}) };
@@ -160,7 +160,7 @@ h.run(async () => {
 		const hi = await A.page.screenshot({ clip });
 		const d = await h.frameDelta(A.page, lo, hi, 18);
 		const live = d.fraction >= LIVE;
-		const pl = await A.page.evaluate((k) => window.__stores.waterPresets.resolveLook(window.__stores.waterPresets.waterPreset(k, {})), preset);
+		const pl = await A.page.evaluate((k) => window.__tp.test.v1.waterPresets.resolveLook(window.__tp.test.v1.waterPresets.waterPreset(k, {})), preset);
 		const under = shape.endsWith('-under');
 		const na = (pl.frozen && FROZEN_LOCKED.includes(c[0])) || (!under && SEE_THROUGH.includes(c[0]) && pl.opacity >= 0.9 && !(pl.refraction > 0));
 		rows.push({ key: c[0], label: c[1], lo: c[2], hi: c[3], preset, shape, tier, fraction: d.fraction, changed: d.changed, live, expected: c[6].includes(tier) && !na, na });
@@ -173,7 +173,7 @@ h.run(async () => {
 
 	const tiers = MODE === 'full' ? ['high', 'quest'] : ['high'];
 	for (const tier of tiers) {
-		await A.page.evaluate((t) => window.__stores.waterPrefs.waterQuality.set(t === 'quest' ? 'low' : 'high'), tier);
+		await A.page.evaluate((t) => window.__tp.test.v1.waterPrefs.waterQuality.set(t === 'quest' ? 'low' : 'high'), tier);
 		for (const shape of Object.keys(SHAPES)) {
 			if (tier === 'quest' && shape !== 'tank') continue;
 			const uuid = await bench(shape);
@@ -183,7 +183,7 @@ h.run(async () => {
 			const clip = await h.centeredClip(A, s.look, 420);
 			const presetList = MODE === 'full' && shape === 'tank' && tier === 'high' ? presets : [await A.page.evaluate((u) => {
 				let g;
-				window.__stores.objectsGroup.subscribe((v) => (g = v))();
+				window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 				return g.getObjectByProperty('uuid', u).userData.water.preset;
 			}, uuid)];
 			for (const preset of presetList) {
@@ -205,7 +205,7 @@ h.run(async () => {
 			}
 		}
 	}
-	await A.page.evaluate(() => window.__stores.waterRuntime.freezeWaterClock(null));
+	await A.page.evaluate(() => window.__tp.test.v1.waterRuntime.freezeWaterClock(null));
 
 	// the verdicts: every control that is meant to act on a tier must change pixels there
 	const dead = rows.filter((r) => r.expected && !r.live);

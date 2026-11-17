@@ -73,7 +73,7 @@ function storeValue(page, name) {
 	return page.evaluate(
 		(n) =>
 			new Promise((r) => {
-				const s = n.split('.').reduce((o, k) => o?.[k], /** @type {any} */ (window).__stores);
+				const s = n.split('.').reduce((o, k) => o?.[k], /** @type {any} */ (window).__tp?.test.v1);
 				if (!s?.subscribe) return r(undefined);
 				let v;
 				s.subscribe((x) => (v = x))();
@@ -93,7 +93,7 @@ async function installProbes(page) {
 	await page.evaluate(async () => {
 		const w = /** @type {any} */ (window);
 		w.__lockSent = [];
-		const inst = await new Promise((r) => w.__stores.peers.subscribe(r)());
+		const inst = await new Promise((r) => w.__tp.test.v1.peers.subscribe(r)());
 		if (inst && !inst.__lockWrapped) {
 			inst.__lockWrapped = true;
 			const orig = inst.broadcast.bind(inst);
@@ -136,7 +136,7 @@ async function installProbes(page) {
 			}
 			/** @type {Record<string, string>} */
 			const stores = {};
-			for (const [name, v] of Object.entries(w.__stores)) {
+			for (const [name, v] of Object.entries(w.__tp?.test.v1)) {
 				if (SKIP.has(name) || !v) continue;
 				if (typeof v.subscribe === 'function') {
 					const j = read(v);
@@ -174,7 +174,7 @@ async function installUndoCounter(page) {
 		if (w.__lockUndoSeen) return;
 		w.__lockUndoSeen = new WeakSet();
 		w.__lockUndoNew = 0;
-		w.__stores.history.undoStack.subscribe((/** @type {any[]} */ stack) => {
+		w.__tp.test.v1.history.undoStack.subscribe((/** @type {any[]} */ stack) => {
 			for (const e of stack) {
 				if (e && typeof e === 'object' && !w.__lockUndoSeen.has(e)) {
 					w.__lockUndoSeen.add(e);

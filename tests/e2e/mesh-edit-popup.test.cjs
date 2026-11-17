@@ -10,16 +10,16 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const box = group.children[group.children.length - 1];
 		window.__box = box;
-		window.__stores.objectActions.selectObject(box.uuid);
+		window.__tp.test.v1.objectActions.selectObject(box.uuid);
 	});
 	await A.page.waitForTimeout(300);
 
 	// --- entering vertex edit shows the popup with both modes ---
-	await A.page.evaluate(() => window.__stores.meshEdit.enterEditMode(window.__box.uuid));
+	await A.page.evaluate(() => window.__tp.test.v1.meshEdit.enterEditMode(window.__box.uuid));
 	await A.page.waitForTimeout(300);
 	const popup = await A.page.evaluate(() => {
 		const el = document.querySelector('#mesh-edit-popup');
@@ -42,8 +42,8 @@ h.run(async () => {
 	await A.page.waitForTimeout(300);
 	const faces = await A.page.evaluate(() => {
 		let fe, ve;
-		window.__stores.faceEdit.faceEditObject.subscribe((v) => (fe = v))();
-		window.__stores.meshEdit.editingObject.subscribe((v) => (ve = v))();
+		window.__tp.test.v1.faceEdit.faceEditObject.subscribe((v) => (fe = v))();
+		window.__tp.test.v1.meshEdit.editingObject.subscribe((v) => (ve = v))();
 		return {
 			faceEditing: fe === window.__box.uuid,
 			vertexExited: ve === null,
@@ -55,7 +55,7 @@ h.run(async () => {
 
 	// --- pick a face, activate Extrude (reveals the 176 params row), Apply ---
 	const extrude = await A.page.evaluate(async () => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		fe.highlightFaceByTriangle(0); // stands in for the viewport click
 		const before = fe.readTriangles(window.__box.geometry).length;
 		document.querySelector('#mesh-op-extrude').click(); // activate the tool
@@ -74,9 +74,9 @@ h.run(async () => {
 
 	// --- the edit is undoable through the shared meshgeo history ---
 	const undone = await A.page.evaluate(() => {
-		const before = window.__stores.faceEdit.readTriangles(window.__box.geometry).length;
-		window.__stores.history.undo();
-		const after = window.__stores.faceEdit.readTriangles(window.__box.geometry).length;
+		const before = window.__tp.test.v1.faceEdit.readTriangles(window.__box.geometry).length;
+		window.__tp.test.v1.history.undo();
+		const after = window.__tp.test.v1.faceEdit.readTriangles(window.__box.geometry).length;
 		return { before, after };
 	});
 	h.check(undone.before === 20 && undone.after === 12, 'the desktop face op is undoable');
@@ -86,8 +86,8 @@ h.run(async () => {
 	await A.page.waitForTimeout(300);
 	const escaped = await A.page.evaluate(() => {
 		let fe, ve;
-		window.__stores.faceEdit.faceEditObject.subscribe((v) => (fe = v))();
-		window.__stores.meshEdit.editingObject.subscribe((v) => (ve = v))();
+		window.__tp.test.v1.faceEdit.faceEditObject.subscribe((v) => (fe = v))();
+		window.__tp.test.v1.meshEdit.editingObject.subscribe((v) => (ve = v))();
 		return { gone: !document.querySelector('#mesh-edit-popup'), fe, ve };
 	});
 	h.check(escaped.gone && escaped.fe === null && escaped.ve === null, 'Esc closes the toolbar and exits both modes');
@@ -111,7 +111,7 @@ h.run(async () => {
 			return null;
 		});
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.meshEdit.enterEditMode(window.__box.uuid);
 		s.meshEdit.selectHandle(0); // D5: a plain pick IS the selection
 	});
@@ -127,11 +127,11 @@ h.run(async () => {
 		() => document.querySelector('#mesh-sel-count')?.textContent
 	);
 	h.check(selCount === '1 sel', `the counter includes the gizmo pick — no more "0 sel" ("${selCount}")`);
-	await A.page.evaluate(() => window.__stores.meshEdit.toggleVertexSelection(1));
+	await A.page.evaluate(() => window.__tp.test.v1.meshEdit.toggleVertexSelection(1));
 	await A.page.mouse.click(miss.x, miss.y);
 	await A.page.waitForTimeout(200);
 	const vtxMiss = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let size, editing;
 		s.meshEdit.vertexSelectionSize.subscribe((v) => (size = v))();
 		s.meshEdit.editingObject.subscribe((v) => (editing = v))();
@@ -141,7 +141,7 @@ h.run(async () => {
 	h.check(vtxMiss.stillEditing, 'the vertex session survives the outside click');
 
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.meshEdit.exitEditMode();
 		s.faceEdit.enterFaceEdit(window.__box.uuid);
 		s.faceEdit.toggleFaceMulti(); // ON
@@ -152,7 +152,7 @@ h.run(async () => {
 	await A.page.mouse.click(faceMissPoint.x, faceMissPoint.y);
 	await A.page.waitForTimeout(200);
 	const faceMiss = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let sel, fe, multi;
 		s.faceEdit.faceEditSelectedTris.subscribe((v) => (sel = v))();
 		s.faceEdit.faceEditObject.subscribe((v) => (fe = v))();
@@ -163,12 +163,12 @@ h.run(async () => {
 	h.check(faceMiss.stillEditing && faceMiss.multi, 'the face session (and Multi mode) survive the outside click');
 
 	// ---- D3 (15): hotkeys toggle + fly guard + "?" bindings popover ----
-	await A.page.evaluate(() => window.__stores.faceEdit.toggleFaceMulti()); // OFF again
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.toggleFaceMulti()); // OFF again
 	const camPos = () =>
 		A.page.evaluate(
 			() =>
 				new Promise((r) =>
-					window.__stores.globalCamera.subscribe((c) =>
+					window.__tp.test.v1.globalCamera.subscribe((c) =>
 						r([c.position.x, c.position.y, c.position.z])
 					)()
 				)
@@ -179,7 +179,7 @@ h.run(async () => {
 	await A.page.keyboard.press('i');
 	await A.page.waitForTimeout(100);
 	const armedOn = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.faceEdit.faceEditOp.subscribe(r)())
+		() => new Promise((r) => window.__tp.test.v1.faceEdit.faceEditOp.subscribe(r)())
 	);
 	h.check(armedOn === 'inset', `hotkeys ON: I arms inset (${armedOn})`);
 
@@ -209,7 +209,7 @@ h.run(async () => {
 	await A.page.keyboard.press('g');
 	await A.page.waitForTimeout(100);
 	const armedOff = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.faceEdit.faceEditOp.subscribe(r)())
+		() => new Promise((r) => window.__tp.test.v1.faceEdit.faceEditOp.subscribe(r)())
 	);
 	h.check(armedOff === 'inset', `hotkeys OFF: G leaves the armed op alone (${armedOff})`);
 	const flyBefore2 = await camPos();
@@ -224,7 +224,7 @@ h.run(async () => {
 
 	// ---- D4 (15): contrast-aware edit wireframe ----
 	const contrast = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.faceEdit.exitFaceEdit();
 		s.commandsHandler.sceneCommand('/create Box 1 1 1');
 		let g;
@@ -249,7 +249,7 @@ h.run(async () => {
 	// ---- D3: the hotkeys pref persists across a reload (it is OFF right now) ----
 	await h.freshReload(A);
 	const persisted = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.faceEdit.meshEditHotkeys.subscribe(r)())
+		() => new Promise((r) => window.__tp.test.v1.faceEdit.meshEditHotkeys.subscribe(r)())
 	);
 	h.check(persisted === false, 'the hotkeys pref persists across a reload');
 

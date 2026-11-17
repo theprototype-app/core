@@ -10,7 +10,7 @@ h.run(async () => {
 
 	// --- export content: the active theme's token set (green has the full set) ---
 	const exported = await A.page.evaluate(() => {
-		const T = window.__stores.themes;
+		const T = window.__tp.test.v1.themes;
 		T.theme.set('green');
 		const tokens = T.activeThemeTokens();
 		T.theme.set('dark');
@@ -23,7 +23,7 @@ h.run(async () => {
 
 	// --- import a fixture: registers, activates, tokens land on :root ---
 	const imported = await A.page.evaluate(() => {
-		const T = window.__stores.themes;
+		const T = window.__tp.test.v1.themes;
 		const fixture = {
 			name: 'Neon Test',
 			tokens: {
@@ -57,11 +57,11 @@ h.run(async () => {
 
 	// --- survives reload ---
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => !!window.__stores && !!window.__stores.themes, { timeout: 30000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1 && !!window.__tp.test.v1.themes, { timeout: 30000 });
 	await A.page.waitForTimeout(600);
 	const afterReload = await A.page.evaluate(() => {
 		let active;
-		window.__stores.themes.theme.subscribe((v) => (active = v))();
+		window.__tp.test.v1.themes.theme.subscribe((v) => (active = v))();
 		return { active, surface: getComputedStyle(document.documentElement).getPropertyValue('--surface').trim() };
 	});
 	h.check(
@@ -71,7 +71,7 @@ h.run(async () => {
 
 	// --- junk files are rejected (drives the Settings toast) ---
 	const rejected = await A.page.evaluate(async () => {
-		const T = window.__stores.themes;
+		const T = window.__tp.test.v1.themes;
 		const bad = await T.importThemeFile(new File(['not json {'], 'bad.theme.json', { type: 'application/json' }));
 		const noTokens = T.registerCustomTheme({ name: 'x', tokens: { '--bogus': '#fff' } });
 		const noName = T.registerCustomTheme({ tokens: { '--surface': '#fff' } });
@@ -84,7 +84,7 @@ h.run(async () => {
 
 	// --- remove: a removed custom theme falls back to Dark ---
 	const removed = await A.page.evaluate(() => {
-		const T = window.__stores.themes;
+		const T = window.__tp.test.v1.themes;
 		let list;
 		T.customThemes.subscribe((v) => (list = v))();
 		list.forEach((t) => T.removeCustomTheme(t.id));

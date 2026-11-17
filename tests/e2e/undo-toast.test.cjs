@@ -12,15 +12,15 @@ h.run(async () => {
 		if (!dir) return;
 		const before = await page.evaluate(() => {
 			let v;
-			window.__stores.themes.theme.subscribe((x) => (v = x))();
+			window.__tp.test.v1.themes.theme.subscribe((x) => (v = x))();
 			return v;
 		});
 		for (const t of ['dark', 'light']) {
-			await page.evaluate((x) => window.__stores.themes.theme.set(x), t);
+			await page.evaluate((x) => window.__tp.test.v1.themes.theme.set(x), t);
 			await page.waitForTimeout(300);
 			await page.locator(sel).first().screenshot({ path: require('path').join(dir, `${name}-${t}.png`) }).catch((e) => console.log('screenshot failed: ' + e.message));
 		}
-		await page.evaluate((x) => window.__stores.themes.theme.set(x), before);
+		await page.evaluate((x) => window.__tp.test.v1.themes.theme.set(x), before);
 	}
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
@@ -31,19 +31,19 @@ h.run(async () => {
 	const uuids = (/** @type {any} */ page) =>
 		page.evaluate(() => {
 			let g;
-			window.__stores.objectsGroup.subscribe((x) => (g = x))();
+			window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 			return (g?.children ?? []).map((c) => c.uuid).sort();
 		});
 	const notes = (/** @type {any} */ page) =>
 		page.evaluate(() => {
 			let v;
-			window.__stores.annotationsHandler.annotations.subscribe((x) => (v = x))();
+			window.__tp.test.v1.annotationsHandler.annotations.subscribe((x) => (v = x))();
 			return v.map((a) => a.text).sort();
 		});
 	const preset = (/** @type {any} */ page) =>
 		page.evaluate(() => {
 			let v;
-			window.__stores.environment.environment.subscribe((x) => (v = x))();
+			window.__tp.test.v1.environment.environment.subscribe((x) => (v = x))();
 			return v?.preset;
 		});
 	// a used card fading out is not an offer (Svelte 5 marks an outroing element inert)
@@ -66,7 +66,7 @@ h.run(async () => {
 			return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === b;
 		});
 	async function openClear() {
-		await pa.evaluate(() => window.__stores.closeMenu.set(false));
+		await pa.evaluate(() => window.__tp.test.v1.closeMenu.set(false));
 		await pa.waitForTimeout(300);
 		await pa.locator('#clear-scene').click();
 		await h.eventually(() => pa.locator('#confirm-clear-scene').isVisible(), (v) => v, 'the Clear scene dialog opens', 20000);
@@ -74,30 +74,30 @@ h.run(async () => {
 
 	// the 8 s offer is a person's window; at a load average of 30 one page call can take
 	// seconds, so the suite widens it (and narrows it in section 6 to watch an expiry)
-	await pa.evaluate(() => (window.__stores.undoToast.undoTiming.ms = 60000));
+	await pa.evaluate(() => (window.__tp.test.v1.undoToast.undoTiming.ms = 60000));
 
 	// ---- 0. a scene worth keeping: three objects, a note, a sky -----------------------
 	for (const cmd of ['/create box', '/create sphere 1', '/create cone 1'])
-		await pa.evaluate((c) => window.__stores.commandsHandler.sceneCommand(c), cmd);
+		await pa.evaluate((c) => window.__tp.test.v1.commandsHandler.sceneCommand(c), cmd);
 	await h.eventually(() => uuids(B.page), (u) => u.length === 3, 'premise: B holds the three objects', 20000);
 	const original = await uuids(pa);
 	await pa.evaluate((uuid) => {
-		const ah = window.__stores.annotationsHandler;
+		const ah = window.__tp.test.v1.annotationsHandler;
 		ah.addAnnotation(uuid, null);
 		let cur;
 		ah.activeAnnotation.subscribe((a) => (cur = a))();
 		ah.setAnnotation({ ...cur.draft, text: 'keep me' });
 		ah.activeAnnotation.set(null);
-		window.__stores.environment.setEnvironment('sunset');
+		window.__tp.test.v1.environment.setEnvironment('sunset');
 	}, original[0]);
 	await h.eventually(() => notes(B.page), (n) => n.includes('keep me'), 'premise: B holds the note');
 	await h.eventually(() => preset(B.page), (p) => p === 'sunset', 'premise: B has the sunset sky');
 
 	// evidence: a long-lived offer (a screenshot on a loaded box can outlast the real 8 s)
 	if (process.env.EVIDENCE_DIR) {
-		await pa.evaluate(() => window.__stores.undoToast.offerUndo({ id: 'shot', text: '3 objects cleared. Still here: sky & look.', undo: () => {}, ms: 120000, actions: [{ label: 'Clear those too', action: () => {} }] }));
+		await pa.evaluate(() => window.__tp.test.v1.undoToast.offerUndo({ id: 'shot', text: '3 objects cleared. Still here: sky & look.', undo: () => {}, ms: 120000, actions: [{ label: 'Clear those too', action: () => {} }] }));
 		await shots(pa, '40-undo-toast', '.tp-toast--undo');
-		await pa.evaluate(() => window.__stores.undoToast.withdrawUndo('shot'));
+		await pa.evaluate(() => window.__tp.test.v1.undoToast.withdrawUndo('shot'));
 	}
 
 	// ---- 1. Clear objects, then Undo ------------------------------------------------
@@ -137,7 +137,7 @@ h.run(async () => {
 	await h.eventually(() => notes(B.page), (n) => n.includes('keep me'), '1.8 the note is back on B');
 	h.check((await notes(pa)).includes('keep me'), '1.9 and on A');
 	h.check((await undoCard().count()) === 0, '1.10 the offer is gone once used');
-	const dbg = await pa.evaluate(() => window.__stores.undoToast.undoToastDebug());
+	const dbg = await pa.evaluate(() => window.__tp.test.v1.undoToast.undoToastDebug());
 	h.check(dbg.undone === 1 && dbg.live.length === 0, `1.11 one undo, nothing left on offer (${JSON.stringify(dbg)})`);
 
 	// ---- 2. Clear everything (sky reset for everyone), then Undo -------------------------
@@ -155,20 +155,20 @@ h.run(async () => {
 	// ---- 3. delete the selection, then Undo (the same uuids back on both peers) ----------
 	const doomed = original.slice(0, 2);
 	await pa.evaluate((ids) => {
-		window.__stores.objectActions.applySelectionSet(ids);
+		window.__tp.test.v1.objectActions.applySelectionSet(ids);
 	}, doomed);
-	const removed = await pa.evaluate(() => window.__stores.objectActions.deleteSelection());
+	const removed = await pa.evaluate(() => window.__tp.test.v1.objectActions.deleteSelection());
 	h.check(removed === 2, `3.1 premise: the selection delete removed two (${removed})`);
 	await h.eventually(() => uuids(B.page), (u) => u.length === 1, '3.2 the delete reached B', 20000);
 	await h.eventually(() => undoCard().textContent(), (t) => /Deleted 2 objects/.test(t ?? ''), '3.3 a toast offers Undo for the delete');
 	const top = await pa.evaluate(() => {
 		let st;
-		window.__stores.history.undoStack.subscribe((x) => (st = x))();
+		window.__tp.test.v1.history.undoStack.subscribe((x) => (st = x))();
 		return st[st.length - 1]?.label;
 	});
 	h.check(top === 'Delete', `3.4 the delete is ONE history entry (${top})`);
 	// something else happens before the Undo: the toast must still undo the DELETE, not that
-	await pa.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await pa.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await h.eventually(() => uuids(pa), (u) => u.length === 2, '3.5 premise: another object was added after the delete');
 	await pressUndo();
 	await h.eventually(() => uuids(pa), (u) => doomed.every((id) => u.includes(id)) && u.length === 4, '3.6 Undo brings the two deleted objects back (the newer box stays)', 20000);
@@ -179,15 +179,15 @@ h.run(async () => {
 		'manifest.json': strToU8(JSON.stringify({ id: 'r25-probe', name: 'R25 Probe', version: '1.0.0', entry: 'module.js' })),
 		'module.js': strToU8('export default { id: "r25-probe", name: "R25 Probe", version: "1.0.0", register(api) {} };\n')
 	});
-	await pa.evaluate(async (bytes) => window.__stores.userModules.installZip(new File([new Uint8Array(bytes)], 'r25-probe.zip')), Array.from(mod));
+	await pa.evaluate(async (bytes) => window.__tp.test.v1.userModules.installZip(new File([new Uint8Array(bytes)], 'r25-probe.zip')), Array.from(mod));
 	const modState = () =>
 		pa.evaluate(() => {
 			let list = [];
-			window.__stores.userModules.userModules.subscribe((x) => (list = x))();
-			return { stored: list.some((m) => m.id === 'r25-probe'), loaded: window.__stores.moduleSDK.isModuleLoaded('r25-probe') };
+			window.__tp.test.v1.userModules.userModules.subscribe((x) => (list = x))();
+			return { stored: list.some((m) => m.id === 'r25-probe'), loaded: window.__tp.test.v1.moduleSDK.isModuleLoaded('r25-probe') };
 		});
 	await h.eventually(modState, (m) => m.stored && m.loaded, '4.1 premise: the module is installed and running');
-	await pa.evaluate(() => window.__stores.userModules.removeUserModule('r25-probe'));
+	await pa.evaluate(() => window.__tp.test.v1.userModules.removeUserModule('r25-probe'));
 	h.check(JSON.stringify(await modState()) === JSON.stringify({ stored: false, loaded: false }), '4.2 Remove takes it out at once');
 	await h.eventually(() => undoCard().textContent(), (t) => /R25 Probe" removed/.test(t ?? ''), '4.3 a toast offers Undo');
 	await pressUndo();
@@ -197,16 +197,16 @@ h.run(async () => {
 		return ((await idbGet('user-modules-v1')) ?? []).some((m) => m.id === 'r25-probe');
 	});
 	h.check(persisted, '4.5 and stored, so it survives a reload');
-	await pa.evaluate(() => window.__stores.userModules.removeUserModule('r25-probe'));
-	await pa.evaluate(() => window.__stores.undoToast.withdrawUndo('remove-module'));
+	await pa.evaluate(() => window.__tp.test.v1.userModules.removeUserModule('r25-probe'));
+	await pa.evaluate(() => window.__tp.test.v1.undoToast.withdrawUndo('remove-module'));
 
 	// ---- 5. Reset settings, then Undo (every stored key back) ----------------------------
 	await pa.evaluate(() => localStorage.setItem('r25:probe', 'kept'));
 	const keysBefore = await pa.evaluate(() => Object.keys(localStorage).length);
 	// 1.26 union with 37-settings (R21): the reset lives in About › Danger zone and asks first
 	await pa.evaluate(() => {
-		window.__stores.settingsSection.set('about');
-		window.__stores.settingsOpen.set(true);
+		window.__tp.test.v1.settingsSection.set('about');
+		window.__tp.test.v1.settingsOpen.set(true);
 	});
 	await pa.locator('#settings-reset-all').click();
 	await pa.locator('#confirm-dialog-ok').click();
@@ -219,28 +219,28 @@ h.run(async () => {
 	h.check((await pa.evaluate(() => localStorage.getItem('r25:probe'))) === 'kept', '5.3 Undo writes them back');
 	const keysAfter = await pa.evaluate(() => Object.keys(localStorage).length);
 	h.check(keysAfter >= keysBefore, `5.4 every key (${keysBefore} -> ${keysAfter})`);
-	await pa.evaluate(() => window.__stores.settingsOpen.set(false));
+	await pa.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await pa.waitForTimeout(300);
 
 	// ---- 6. the offer EXPIRES: after ~8 s there is nothing to undo ---------------------
-	await pa.evaluate(() => (window.__stores.undoToast.undoTiming.ms = 3000));
-	const offeredBefore = await pa.evaluate(() => window.__stores.undoToast.undoToastDebug().offered);
+	await pa.evaluate(() => (window.__tp.test.v1.undoToast.undoTiming.ms = 3000));
+	const offeredBefore = await pa.evaluate(() => window.__tp.test.v1.undoToast.undoToastDebug().offered);
 	await openClear();
 	await pa.locator('#confirm-dialog-clear').click();
 	// the debug count, not the card: a 3 s card can come and go between two polls on a loaded box
-	await h.eventually(() => pa.evaluate(() => window.__stores.undoToast.undoToastDebug().offered), (n) => n > offeredBefore, '6.1 Undo offered', 20000);
+	await h.eventually(() => pa.evaluate(() => window.__tp.test.v1.undoToast.undoToastDebug().offered), (n) => n > offeredBefore, '6.1 Undo offered', 20000);
 	// the drawer hides viewport toasts while open: the offer must still run out (its timer
 	// is the module's, not the rendered card's)
-	await pa.evaluate(() => window.__stores.toastsInDrawerOnly?.set?.(true));
+	await pa.evaluate(() => window.__tp.test.v1.toastsInDrawerOnly?.set?.(true));
 	await pa.waitForTimeout(3600);
-	await pa.evaluate(() => window.__stores.toastsInDrawerOnly?.set?.(false));
-	const after = await pa.evaluate(() => window.__stores.undoToast.undoToastDebug());
+	await pa.evaluate(() => window.__tp.test.v1.toastsInDrawerOnly?.set?.(false));
+	const after = await pa.evaluate(() => window.__tp.test.v1.undoToast.undoToastDebug());
 	h.check(after.live.length === 0 && after.toasts === 0 && after.expired >= 1, `6.2 after its time the offer is gone (${JSON.stringify(after)})`);
 	h.check((await undoCard().count()) === 0, '6.3 no Undo card on screen');
 	h.check((await uuids(pa)).length === 0 && (await uuids(B.page)).length === 0, '6.4 and the clear stands');
 	const hist = await pa.evaluate(() => {
 		let v;
-		window.__stores.notifications.subscribe((x) => (v = x))();
+		window.__tp.test.v1.notifications.subscribe((x) => (v = x))();
 		return v.filter((n) => /objects cleared/.test(n.text)).map((n) => n.kind);
 	});
 	h.check(hist.length >= 1 && !hist.includes('action'), `6.5 the notification history keeps the text, not a stale Undo (${hist.join(',')})`);

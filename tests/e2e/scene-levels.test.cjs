@@ -21,35 +21,35 @@ const h = require('./helpers.cjs');
 const childUuids = (peer) =>
 	peer.page.evaluate(() => {
 		let group;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		return (group?.children ?? []).map((c) => c.uuid).sort();
 	});
 
 const gstate = (peer) =>
 	peer.page.evaluate(() => {
 		let g;
-		window.__stores.gameState.gameState.subscribe((v) => (g = v))();
+		window.__tp.test.v1.gameState.gameState.subscribe((v) => (g = v))();
 		return g;
 	});
 
 const levelItemsOf = (peer) =>
 	peer.page.evaluate(() => {
 		let items;
-		window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((v) => (items = v))();
 		return items.filter((i) => i.kind === 'scene').map((i) => ({ name: i.name, hash: i.hash }));
 	});
 
 const sessionCount = (peer) =>
 	peer.page.evaluate(async () => {
-		await window.__stores.sessions.loadSessions();
+		await window.__tp.test.v1.sessions.loadSessions();
 		let list;
-		window.__stores.sessions.sessions.subscribe((v) => (list = v))();
+		window.__tp.test.v1.sessions.sessions.subscribe((v) => (list = v))();
 		return list.length;
 	});
 
 const makeBoxes = (peer, count) =>
 	peer.page.evaluate(async (n) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const uuids = [];
 		for (let i = 0; i < n; i++) {
 			s.commandsHandler.sceneCommand('/create box');
@@ -100,11 +100,11 @@ h.run(async () => {
 	// 2. SAVE AS LEVEL + NEW SCENE, store-driven
 	// =====================================================================
 	const one = await makeBoxes(A, 2);
-	const savedOne = await A.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Level One'));
+	const savedOne = await A.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('Level One'));
 	h.check(!!savedOne?.hash, `Level One saved with a content hash (${savedOne?.hash?.slice(0, 8)})`);
 	const foldersA = await A.page.evaluate(() => {
 		let f;
-		window.__stores.explorer.explorerFolders.subscribe((v) => (f = v))();
+		window.__tp.test.v1.explorer.explorerFolders.subscribe((v) => (f = v))();
 		return f.map((x) => x.name);
 	});
 	// 21-H1 (locked answer 6): a save invents NO folder — it lands where the user is
@@ -122,13 +122,13 @@ h.run(async () => {
 	h.check(
 		(await A.page.evaluate(() => {
 			let c;
-			window.__stores.levels.currentLevel.subscribe((v) => (c = v))();
+			window.__tp.test.v1.levels.currentLevel.subscribe((v) => (c = v))();
 			return c?.name;
 		})) === 'Level One',
 		'currentLevel names the save'
 	);
 
-	const blank = await A.page.evaluate(() => window.__stores.levels.newLevel('Blank'));
+	const blank = await A.page.evaluate(() => window.__tp.test.v1.levels.newLevel('Blank'));
 	h.check(!!blank?.hash && blank.hash !== savedOne.hash, 'New scene… makes a distinct empty asset');
 
 	// =====================================================================
@@ -136,24 +136,24 @@ h.run(async () => {
 	// =====================================================================
 	// Level Three carries a BAKED game state, to prove the file's game is EXCLUDED
 	await A.page.evaluate(() => {
-		window.__stores.gameState.setGameState('playing');
-		window.__stores.gameState.setGameState('over');
+		window.__tp.test.v1.gameState.setGameState('playing');
+		window.__tp.test.v1.gameState.setGameState('over');
 	});
-	await A.page.evaluate(() => window.__stores.commandsHandler.clearSceneLocal());
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.clearSceneLocal());
 	const three = await makeBoxes(A, 3);
-	const savedThree = await A.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Level Three'));
+	const savedThree = await A.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('Level Three'));
 	h.check(!!savedThree?.hash, 'Level Three saved (its file bakes state=over)');
 
 	// now a LIVE campaign state that must survive the hop
 	await A.page.evaluate(() => {
-		window.__stores.gameState.setGameState('playing');
-		window.__stores.gameState.setGameVar('gems', 7);
+		window.__tp.test.v1.gameState.setGameState('playing');
+		window.__tp.test.v1.gameState.setGameVar('gems', 7);
 	});
 	const liveBefore = await gstate(A);
 	h.check(liveBefore.state === 'playing' && liveBefore.vars.gems === 7, 'premise: a live round with a score');
 
 	const sessionsBefore = await sessionCount(A);
-	const traveled = await A.page.evaluate((hash) => window.__stores.levels.travelToLevel(hash, 'Level One'), savedOne.hash);
+	const traveled = await A.page.evaluate((hash) => window.__tp.test.v1.levels.travelToLevel(hash, 'Level One'), savedOne.hash);
 	h.check(traveled === true, 'travelToLevel reports a load');
 	h.check(
 		JSON.stringify(await childUuids(A)) === JSON.stringify([...one].sort()),
@@ -167,7 +167,7 @@ h.run(async () => {
 	h.check((await sessionCount(A)) === sessionsBefore, 'no backup session was stashed by the hop');
 
 	// travel to the EMPTY level: a blank slate, state still carried
-	await A.page.evaluate((hash) => window.__stores.levels.travelToLevel(hash, 'Blank'), blank.hash);
+	await A.page.evaluate((hash) => window.__tp.test.v1.levels.travelToLevel(hash, 'Blank'), blank.hash);
 	h.check((await childUuids(A)).length === 0, 'the empty level really is empty');
 	h.check((await gstate(A)).vars.gems === 7, 'and the score still carried');
 
@@ -175,7 +175,7 @@ h.run(async () => {
 	// 4. TWO PEERS: the pull-then-load watch, and travel stays LOCAL
 	// =====================================================================
 	// back onto Level Three content so the peers have a scene to share
-	await A.page.evaluate((hash) => window.__stores.levels.travelToLevel(hash, 'Level Three'), savedThree.hash);
+	await A.page.evaluate((hash) => window.__tp.test.v1.levels.travelToLevel(hash, 'Level Three'), savedThree.hash);
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(A, B);
 	await h.eventually(
@@ -184,7 +184,7 @@ h.run(async () => {
 		'premise: B received the current scene through the ordinary handshake'
 	);
 	const missing = await B.page.evaluate(
-		(hash) => !window.__stores.explorer.itemByHash(hash),
+		(hash) => !window.__tp.test.v1.explorer.itemByHash(hash),
 		savedOne.hash
 	);
 	h.check(missing, "premise: B does NOT hold Level One's bytes");
@@ -193,7 +193,7 @@ h.run(async () => {
 	const bSessionsBefore = await sessionCount(B);
 	// fire and WATCH — the pull resolves when the bytes land (the LUT precedent)
 	await B.page.evaluate((hash) => {
-		void window.__stores.levels.travelToLevel(hash, 'Level One');
+		void window.__tp.test.v1.levels.travelToLevel(hash, 'Level One');
 	}, savedOne.hash);
 	await h.eventually(
 		() => childUuids(B),
@@ -202,7 +202,7 @@ h.run(async () => {
 		30000
 	);
 	h.check(
-		(await B.page.evaluate((hash) => !!window.__stores.explorer.itemByHash(hash), savedOne.hash)),
+		(await B.page.evaluate((hash) => !!window.__tp.test.v1.explorer.itemByHash(hash), savedOne.hash)),
 		"the pulled bytes are in B's library now (content-hash dedupe)"
 	);
 	h.check(
@@ -226,7 +226,7 @@ h.run(async () => {
 	// on anyway), so the pulse still has somewhere to move both peers to.
 	const built = await A.page.evaluate(
 		({ hash, name }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let p;
 			s.peers.subscribe((v) => (p = v))();
 			const mk = (type, data, x) => ({
@@ -254,14 +254,14 @@ h.run(async () => {
 	// asserted after a settle, not eventually.
 	await B.page.waitForTimeout(2500);
 	h.check(
-		(await B.page.evaluate((id) => window.__stores.allNodes().some((n) => n.id === id), built.travel)) === false,
+		(await B.page.evaluate((id) => window.__tp.test.v1.allNodes().some((n) => n.id === id), built.travel)) === false,
 		'a flow node authored in one scene does NOT reach a peer standing in another'
 	);
 
 	// …and now B walks back into A's room. The arrival re-sync asks for full state, which
 	// is how the graph it could not be given finally arrives.
 	await B.page.evaluate((hash) => {
-		void window.__stores.levels.travelToLevel(hash, 'Level Three');
+		void window.__tp.test.v1.levels.travelToLevel(hash, 'Level Three');
 	}, savedThree.hash);
 	await h.eventually(
 		() => childUuids(B),
@@ -272,7 +272,7 @@ h.run(async () => {
 	// the peer must HOLD the graph before the pulse (flowNodes.set does not broadcast —
 	// the documented slow-raily nodesync trap — so wait on the sends we just made)
 	await h.eventually(
-		() => B.page.evaluate((id) => window.__stores.allNodes().some((n) => n.id === id), built.travel),
+		() => B.page.evaluate((id) => window.__tp.test.v1.allNodes().some((n) => n.id === id), built.travel),
 		(v) => v === true,
 		'THE ARRIVAL RE-SYNC: sharing a room again delivers the graph that was withheld',
 		30000
@@ -282,7 +282,7 @@ h.run(async () => {
 	// correctly refused (measured: stamp 21618.485 vs seenAt 21618.489). A human press
 	// comes seconds after wiring; the guard is doing its 21-E job, so the suite waits.
 	await A.page.waitForTimeout(600);
-	await A.page.evaluate((id) => window.__stores.flowRuntime.applyNodeTrigger(id, (Date.now() % 86400000) / 1000, true), built.click);
+	await A.page.evaluate((id) => window.__tp.test.v1.flowRuntime.applyNodeTrigger(id, (Date.now() % 86400000) / 1000, true), built.click);
 	await h.eventually(
 		() => childUuids(B),
 		(ids) => JSON.stringify(ids) === JSON.stringify([...one].sort()),
@@ -299,7 +299,7 @@ h.run(async () => {
 	// to Level One, and travel replaced the graph that did it (self-limiting by design).
 	for (const peer of [A, B])
 		await peer.page.evaluate((hash) => {
-			void window.__stores.levels.travelToLevel(hash, 'Level Three');
+			void window.__tp.test.v1.levels.travelToLevel(hash, 'Level Three');
 		}, savedThree.hash);
 	await h.eventually(
 		() => Promise.all([childUuids(A), childUuids(B)]),
@@ -337,7 +337,7 @@ h.run(async () => {
 	// player). Each player's answer is a LOCAL latch (replicate:false pulses), which is
 	// exactly the per-peer shape the condition input means.
 	const gate = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let p;
 		s.peers.subscribe((v) => (p = v))();
 		const mk = (type, data, x, y) => ({
@@ -369,23 +369,23 @@ h.run(async () => {
 		return { yes: yes.id, no: no.id, all: all.id };
 	});
 	await h.eventually(
-		() => B.page.evaluate((id) => window.__stores.allNodes().some((n) => n.id === id), gate.all),
+		() => B.page.evaluate((id) => window.__tp.test.v1.allNodes().some((n) => n.id === id), gate.all),
 		(v) => v === true,
 		'premise: the peer holds the gate'
 	);
 	const firedAt = (peer) =>
 		peer.page.evaluate((id) => {
 			let t;
-			window.__stores.flowTriggers.subscribe((v) => (t = v))();
+			window.__tp.test.v1.flowTriggers.subscribe((v) => (t = v))();
 			return t[id]?.lastT ?? null;
 		}, gate.all);
 	// LOCAL pulses (replicate false) — this player's own answer, nobody else's
 	const setReady = (peer, on) =>
 		peer.page.evaluate(
-			({ id }) => window.__stores.flowRuntime.applyNodeTrigger(id, (Date.now() % 86400000) / 1000, false),
+			({ id }) => window.__tp.test.v1.flowRuntime.applyNodeTrigger(id, (Date.now() % 86400000) / 1000, false),
 			{ id: on ? gate.yes : gate.no }
 		);
-	for (const p of [A, B]) await p.page.evaluate(() => window.__stores.isLocked.set(true));
+	for (const p of [A, B]) await p.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await A.page.waitForTimeout(900);
 	await setReady(A, true);
 	await A.page.waitForTimeout(900);
@@ -400,7 +400,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(900);
 	await setReady(A, true);
 	await h.eventually(() => firedAt(A), (t) => typeof t === 'number' && t !== t1, 're-satisfying the gate fires a fresh edge', 15000);
-	for (const p of [A, B]) await p.page.evaluate(() => window.__stores.isLocked.set(null));
+	for (const p of [A, B]) await p.page.evaluate(() => window.__tp.test.v1.isLocked.set(null));
 
 	// =====================================================================
 	// 8. THE DEBUG ELEMENT renders the truth
@@ -408,10 +408,10 @@ h.run(async () => {
 	// settle the shared state FIRST: everybody just left play, so F3's abandon watch is
 	// ~10s from writing menu itself — a race that would land mid-assertion. resetGame
 	// keeps vars (gems stays 7), which is also what the expanded pill asserts.
-	await A.page.evaluate(() => window.__stores.gameState.resetGame());
+	await A.page.evaluate(() => window.__tp.test.v1.gameState.resetGame());
 	await A.page.waitForTimeout(400);
 	await A.page.evaluate(() => {
-		window.__stores.hudDocs.setHudDocFor('scene', {
+		window.__tp.test.v1.hudDocs.setHudDocFor('scene', {
 			screens: [
 				{
 					id: 'main',

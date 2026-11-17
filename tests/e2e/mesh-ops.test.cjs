@@ -8,9 +8,9 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	const uuid = await A.page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/create Box 1 1 1');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create Box 1 1 1');
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const box = g.children[g.children.length - 1];
 		window.__box = box;
 		return box.uuid;
@@ -18,7 +18,7 @@ h.run(async () => {
 
 	// --- B1: arming inset detaches the gizmo; two auto-applies both commit ---
 	const inset = await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		fe.enterFaceEdit(uuid);
 		const triCount = () => window.__box.geometry.attributes.position.count / 3;
@@ -63,7 +63,7 @@ h.run(async () => {
 
 	// --- B2: face-mode wireframe overlay + display toggle ---
 	const wire = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const find = () => window.__box.children.find((c) => c.name === 'edit-overlay');
 		const present = !!find();
 		s.faceEdit.meshEditWireframe.set(false);
@@ -78,7 +78,7 @@ h.run(async () => {
 	// --- B3: granularity picks — face (2 tris) vs triangle (1) vs shell ---
 	// (a FRESH box: the inset test above mutated __box's coplanar groups)
 	const gran = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		fe.exitFaceEdit();
 		s.commandsHandler.sceneCommand('/create Box 1 1 1');
@@ -111,7 +111,7 @@ h.run(async () => {
 
 	// --- B4: subdivide grows the target face 4x ---
 	const subdiv = await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		fe.setFaceGranularity('face');
 		// triangleCount handles the fresh box's INDEXED geometry (24 entries)
 		const triCount = () => fe.triangleCount(window.__granBox);
@@ -130,7 +130,7 @@ h.run(async () => {
 
 	// --- B4: flip reverses a face normal ---
 	const flip = await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		const faces = fe.currentFaces();
 		const zi = faces.findIndex((f) => f.normal.z > 0.9);
 		fe.highlightFaceByTriangle(faces[zi].triIndices[0]);
@@ -146,7 +146,7 @@ h.run(async () => {
 	// connector (bridging a single solid's own opposite faces overlaps its
 	// side walls — a degenerate scenario, not a correctness check) ---
 	const bridge = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		fe.exitFaceEdit();
 		s.commandsHandler.sceneCommand('/create Box 1 1 1');
@@ -194,7 +194,7 @@ h.run(async () => {
 
 	// --- B3: shell granularity picks a whole disconnected piece ---
 	const shell = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		// two separated tetra-ish pieces as one soup: piece A at 0, piece B at +5
 		const tri = (ox, i) => {
@@ -228,7 +228,7 @@ h.run(async () => {
 	// the far vertices stuck". beginFaceGrab now takes the same synthesized target
 	// every other op uses, so a shell/object grab moves rigidly.
 	const grab = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		const THREE = s.THREE;
 		// two SEPARATE islands in one mesh: object takes both, shell only the one
@@ -299,7 +299,7 @@ h.run(async () => {
 	// the target is stashed at seat time, because when the user grabs a handle the
 	// pointer is over the gizmo and the live hover no longer describes the pick
 	const gizmoGrab = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		const THREE = s.THREE;
 		fe.enterFaceEdit(window.__box2.uuid);
@@ -334,7 +334,7 @@ h.run(async () => {
 
 	// --- B4: weld merges the vertex multi-selection ---
 	const weld = await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const me = s.meshEdit;
 		s.faceEdit.exitFaceEdit();
 		me.enterEditMode(uuid);
@@ -368,7 +368,7 @@ h.run(async () => {
 	// de-indexed by the earlier inset commits.) Also covers the vertex-session
 	// refresh hook: undo while STILL editing rebuilds the handles.
 	const weldIndexed = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const me = s.meshEdit;
 		const fe = s.faceEdit;
 		s.commandsHandler.sceneCommand('/create Box 1 1 1');
@@ -438,7 +438,7 @@ h.run(async () => {
 	// undo), emptying the selection parks the gizmo, and the reported weld flow
 	// (plain click + one ctrl-click) reaches the >=2 gate.
 	const multiSel = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const me = s.meshEdit;
 		s.commandsHandler.sceneCommand('/create Box 1 1 1');
 		let g;

@@ -18,7 +18,7 @@ const h = require('./helpers.cjs');
 /** @param {any} page @param {boolean} controller */
 const buildLevel = (page, controller) =>
 	page.evaluate((withNode) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const T = s.THREE;
 		s.commandsHandler.sceneCommand('/clear all');
 		/** @type {any} */ let g;
@@ -42,17 +42,17 @@ const buildLevel = (page, controller) =>
 const walker = (page) =>
 	page.evaluate(() => {
 		let st;
-		window.__stores.charController.walkerState.subscribe((v) => (st = v))();
+		window.__tp.test.v1.charController.walkerState.subscribe((v) => (st = v))();
 		return st;
 	});
 /** @param {any} page */
-const simulating = (page) => page.evaluate(() => { let v; window.__stores.physics.simulating.subscribe((x) => (v = x))(); return v; });
+const simulating = (page) => page.evaluate(() => { let v; window.__tp.test.v1.physics.simulating.subscribe((x) => (v = x))(); return v; });
 
 h.run(async () => {
 	const browser = await h.launch();
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(3000);
 		await warm.ctx.close();
 	}
@@ -62,7 +62,7 @@ h.run(async () => {
 	// ---- 1. on the platform ------------------------------------------------------------------
 	await buildLevel(page, true);
 	await page.waitForTimeout(1200);
-	await page.evaluate(() => window.__stores.isLocked.set(true));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await h.eventually(() => simulating(page), (v) => v === true, 'premise: Play starts the physics world', 12000);
 	await h.eventually(
 		() => walker(page),
@@ -80,7 +80,7 @@ h.run(async () => {
 		const tick = () => {
 			if (!w.__feetOn) return;
 			let st;
-			w.__stores.charController.walkerState.subscribe((v) => (st = v))();
+			w.__tp.test.v1.charController.walkerState.subscribe((v) => (st = v))();
 			w.__feet.push({ y: st.ground, g: st.grounded, src: st.source });
 			requestAnimationFrame(tick);
 		};
@@ -111,19 +111,19 @@ h.run(async () => {
 	const hi = Math.max(...after);
 	h.check(lo >= -0.01 && hi <= 0.05, `2.2 after the landing the feet stay on the plane, within the controller's skin (${(lo * 100).toFixed(1)} .. ${(hi * 100).toFixed(1)} cm, -1 .. +5)`);
 	await h.leavePlay(A);
-	await page.evaluate(() => window.__stores.physics.stopSimulation?.());
+	await page.evaluate(() => window.__tp.test.v1.physics.stopSimulation?.());
 	await page.waitForTimeout(800);
 
 	// ---- 3. the default walker on the plane ---------------------------------------------------
-	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.scenePhysics.setScenePhysics({ ground: { enabled: true, height: 0 }, play: { simOnPlay: true, grounded: true, spawn: { position: [0, 0.05, 1], yaw: 0 } } });
 		s.flowNodes.set([]);
 		s.flowEdges.set([]);
 	});
 	await page.waitForTimeout(800);
-	await page.evaluate(() => window.__stores.isLocked.set(true));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await page.waitForTimeout(1500);
 	await page.keyboard.down('KeyW');
 	const samples = [];
@@ -131,7 +131,7 @@ h.run(async () => {
 		await page.waitForTimeout(250);
 		samples.push(
 			await page.evaluate(() => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				let cam, ctrl;
 				s.playerCam.subscribe((c) => (cam = c))();
 				s.charController.charControl.subscribe((v) => (ctrl = v))();
@@ -145,24 +145,24 @@ h.run(async () => {
 		`3.1 1.64: no default walker, the pin keeps the eye 1.7 m over the plane while walking (eye m: ${samples.map((s) => s.eye.toFixed(3)).join(' ')}; walker ${samples[0]?.mode})`
 	);
 	await h.leavePlay(A);
-	await page.evaluate(() => window.__stores.physics.stopSimulation?.());
+	await page.evaluate(() => window.__tp.test.v1.physics.stopSimulation?.());
 	await page.waitForTimeout(800);
 
 	// ---- 4. the floor is raised BEFORE a controller appears, then a full walk -----------------
 	// (a8ab5616: a walker that STARTS under the plane's top starts on it — on its first frame only; the per-frame
 	// clamp 5198fea5 tried plunged the capsule. Over the whole walk: on the raised floor, grounded, no plunge)
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/clear all');
 		s.scenePhysics.setScenePhysics({ ground: { enabled: true, height: 0 }, play: { simOnPlay: true, grounded: true, spawn: { position: [0, 0.05, 1], yaw: 0 } } });
 		s.flowNodes.set([]);
 		s.flowEdges.set([]);
 	});
 	await page.waitForTimeout(800);
-	await page.evaluate(() => window.__stores.isLocked.set(true));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await page.waitForTimeout(1200);
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.scenePhysics.setScenePhysics({ ground: { enabled: true, height: 0.3 }, play: { grounded: false } });
 		s.setActiveGraph(s.SCENE_GRAPH);
 		s.flowNodes.set([{ id: 'cc', type: 'charcontroller', position: { x: 0, y: 0 }, data: { type: 'charcontroller', mode: 'walk', speed: 0.05, jumpHeight: 1, eyeHeight: 1.7, gravity: true } }]);
@@ -176,7 +176,7 @@ h.run(async () => {
 		const tick = () => {
 			if (!w.__feetOn) return;
 			let st;
-			w.__stores.charController.walkerState.subscribe((v) => (st = v))();
+			w.__tp.test.v1.charController.walkerState.subscribe((v) => (st = v))();
 			w.__feet.push({ y: st.ground, g: st.grounded });
 			requestAnimationFrame(tick);
 		};
@@ -212,7 +212,7 @@ h.run(async () => {
 	// gravity dropped the walker 10 cm INTO the platform, and the character controller never resolves what it starts
 	// inside: it fell on to -14 cm in the ground slab. Now it holds still until the world has stepped.)
 	const S5 = await h.setupPage(browser, 'slow');
-	await S5.page.evaluate(() => window.__stores.physics.warmup?.().catch(() => {}));
+	await S5.page.evaluate(() => window.__tp.test.v1.physics.warmup?.().catch(() => {}));
 	await S5.page.waitForTimeout(1500);
 	await buildLevel(S5.page, true);
 	await S5.page.waitForTimeout(1200);
@@ -223,7 +223,7 @@ h.run(async () => {
 			setTimeout(() => raf(cb), 125);
 			return 0;
 		};
-		w.__stores.isLocked.set(true);
+		w.__tp.test.v1.isLocked.set(true);
 	});
 	await S5.page.waitForTimeout(3000);
 	const slow = await walker(S5.page);
@@ -239,7 +239,7 @@ h.run(async () => {
 		const tick = () => {
 			if (!w.__feet5On) return;
 			let st;
-			w.__stores.charController.walkerState.subscribe((v) => (st = v))();
+			w.__tp.test.v1.charController.walkerState.subscribe((v) => (st = v))();
 			w.__feet5.push(st.ground);
 			requestAnimationFrame(tick);
 		};

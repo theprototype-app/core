@@ -48,9 +48,9 @@ async function preparePeer(browser, name, index, slug, opts = {}) {
 	const peer = await h.setupPage(browser, name, { context: { viewport: { width: 1280, height: 800 }, ...(opts.context ?? {}) }, storage: opts.storage });
 	await routeCdn(peer.page, index);
 	const entry = entryOf(index, slug);
-	const sceneUrl = await peer.page.evaluate((p) => window.__stores.sceneTemplates.resolveUrl(p, window.__stores.sceneTemplates.SCENES_BASE), entry.scene);
+	const sceneUrl = await peer.page.evaluate((p) => window.__tp.test.v1.sceneTemplates.resolveUrl(p, window.__tp.test.v1.sceneTemplates.SCENES_BASE), entry.scene);
 	const saved = await peer.page.evaluate(async (url) => {
-		const payload = await window.__stores.sessions.readSessionZip(await (await fetch(url)).arrayBuffer());
+		const payload = await window.__tp.test.v1.sessions.readSessionZip(await (await fetch(url)).arrayBuffer());
 		return payload?.camera ?? null;
 	}, sceneUrl);
 	return { ...peer, sceneUrl, saved };
@@ -59,7 +59,7 @@ async function preparePeer(browser, name, index, slug, opts = {}) {
 /** in-page: sample the editor camera every frame from now, stamp the load's phases + pointer edges */
 const ARM = () => {
 	const w = /** @type {any} */ (window);
-	const s = w.__stores;
+	const s = w.__tp?.test.v1;
 	const rec = { t0: performance.now(), samples: /** @type {any[]} */ ([]), phases: /** @type {any[]} */ ([]), on: true, down: 0, up: 0, un: /** @type {any} */ (null) };
 	w.__svp = rec;
 	window.addEventListener('pointerdown', () => (rec.down ||= Math.round(performance.now() - rec.t0)), true);
@@ -94,18 +94,18 @@ const disarm = (page) =>
 const camPose = (page) =>
 	page.evaluate(() => {
 		let cam, ctl;
-		window.__stores.globalCamera.subscribe((v) => (cam = v))();
-		window.__stores.orbitControls.subscribe((v) => (ctl = v))();
+		window.__tp.test.v1.globalCamera.subscribe((v) => (cam = v))();
+		window.__tp.test.v1.orbitControls.subscribe((v) => (ctl = v))();
 		return { position: cam.position.toArray(), target: ctl?.target?.toArray() ?? null };
 	});
 
-const startView = (page) => page.evaluate(() => window.__stores.startView.startViewDebug());
+const startView = (page) => page.evaluate(() => window.__tp.test.v1.startView.startViewDebug());
 
 /** a real left-drag across the middle of the viewport (OrbitControls rotates) */
 async function orbitDrag(page, steps = 5) {
 	const box = await page.evaluate(() => {
 		let r;
-		window.__stores.globalRenderer.subscribe((v) => (r = v))();
+		window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
 		const b = r.domElement.getBoundingClientRect();
 		return { x: b.x, y: b.y, width: b.width, height: b.height };
 	});
@@ -120,7 +120,7 @@ async function orbitDrag(page, steps = 5) {
 /** wait until no load runs (and one ran) */
 async function loadEnded(page, label, timeout = 120000) {
 	return h.eventually(
-		() => page.evaluate(() => (window.__svp?.phases ?? []).some((p) => p.phase === 'none' && p.t > 0) && !window.__stores.sceneLoader.currentJob()),
+		() => page.evaluate(() => (window.__svp?.phases ?? []).some((p) => p.phase === 'none' && p.t > 0) && !window.__tp.test.v1.sceneLoader.currentJob()),
 		(v) => v,
 		label,
 		timeout

@@ -37,7 +37,7 @@ function keep(name, bytes) {
 const resultOf = (page) =>
 	page.evaluate(async () => {
 		let s = /** @type {any} */ (null);
-		window.__stores.recordingStores.recordingState.subscribe((/** @type {any} */ v) => (s = v))();
+		window.__tp.test.v1.recordingStores.recordingState.subscribe((/** @type {any} */ v) => (s = v))();
 		const r = s.result;
 		if (!r) return { status: s.status, error: s.error };
 		const buf = new Uint8Array(await r.blob.arrayBuffer());
@@ -51,14 +51,14 @@ const camState = (page) =>
 	page.evaluate(() => {
 		let cam = /** @type {any} */ (null);
 		let ctl = /** @type {any} */ (null);
-		window.__stores.globalCamera.subscribe((/** @type {any} */ c) => (cam = c))();
-		window.__stores.orbitControls.subscribe((/** @type {any} */ c) => (ctl = c))();
+		window.__tp.test.v1.globalCamera.subscribe((/** @type {any} */ c) => (cam = c))();
+		window.__tp.test.v1.orbitControls.subscribe((/** @type {any} */ c) => (ctl = c))();
 		return { pos: cam.position.toArray(), target: ctl.target.toArray() };
 	});
 
 /** the dialog, opened from the viewport menu like a person would @param {any} page */
 async function openDialog(page) {
-	await page.evaluate(() => window.__stores.viewportMenu.set({ x: 200, y: 160, point: { x: 0, y: 0, z: 0 } }));
+	await page.evaluate(() => window.__tp.test.v1.viewportMenu.set({ x: 200, y: 160, point: { x: 0, y: 0, z: 0 } }));
 	await page.locator('[role="menuitem"]', { hasText: /^\s*Tools/ }).first().hover();
 	await page.locator('[role="menuitem"]', { hasText: /^\s*Recording…\s*$/ }).first().click();
 	await page.waitForSelector('#recording-dialog', { timeout: 10000 });
@@ -114,7 +114,7 @@ h.run(async () => {
 
 	// ---------- the scene: a box, a sphere, two cameras, a timeline gliding A → B ----------
 	const made = await page.evaluate(async () => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		let g = /** @type {any} */ (null);
 		S.objectsGroup.subscribe((/** @type {any} */ v) => (g = v))();
 		S.commandsHandler.sceneCommand('/create box');
@@ -135,7 +135,7 @@ h.run(async () => {
 			cam.position.set(p[0], p[1], p[2]);
 			// a marker is not a THREE.Camera: Object3D.lookAt would aim its +Z (away from the
 			// scene); the camera convention is -Z at the target (camera-preview-control's way)
-			const THREE = /** @type {any} */ (window).__stores.THREE;
+			const THREE = /** @type {any} */ (window).__tp.test.v1.THREE;
 			const m = new THREE.Matrix4().lookAt(cam.position, new THREE.Vector3(0, 0.5, 0), new THREE.Vector3(0, 1, 0));
 			cam.quaternion.setFromRotationMatrix(m);
 			cam.updateMatrix();
@@ -195,8 +195,8 @@ h.run(async () => {
 	h.check(moved < 1e-3, `the editor camera is back where it was (${moved.toExponential(1)})`);
 	const restored = await page.evaluate(() => {
 		let pv = /** @type {any} */ (null);
-		window.__stores.cameraPreview.cameraPreview.subscribe((/** @type {any} */ v) => (pv = v))();
-		return { preview: pv?.uuid ?? null, debug: window.__stores.videoExport.exportDebug() };
+		window.__tp.test.v1.cameraPreview.cameraPreview.subscribe((/** @type {any} */ v) => (pv = v))();
+		return { preview: pv?.uuid ?? null, debug: window.__tp.test.v1.videoExport.exportDebug() };
 	});
 	h.check(!restored.preview && restored.debug === null, `the shot's camera view is released and the export is gone (${restored.preview})`);
 
@@ -323,7 +323,7 @@ h.run(async () => {
 	h.check(alpha.opaqueShare > 0.01 && alpha.opaqueShare < 0.9, `and the objects are opaque (${(alpha.opaqueShare * 100).toFixed(1)}% opaque pixels)`);
 	const skyBack = await page.evaluate(() => {
 		let sc = /** @type {any} */ (null);
-		window.__stores.globalScene.subscribe((/** @type {any} */ s) => (sc = s))();
+		window.__tp.test.v1.globalScene.subscribe((/** @type {any} */ s) => (sc = s))();
 		return !!sc.background;
 	});
 	h.check(skyBack, 'the sky is back after the transparent export');
@@ -332,7 +332,7 @@ h.run(async () => {
 	if (!(await page.$('#recording-again'))) {
 		// diagnose a result card that went away while the plain page had the focus
 		const why = await page.evaluate(() => {
-			const S = window.__stores;
+			const S = window.__tp?.test.v1;
 			let st = /** @type {any} */ (null);
 			let open = null;
 			S.recordingStores.recordingState.subscribe((/** @type {any} */ v) => (st = v))();
@@ -379,8 +379,8 @@ h.run(async () => {
 	await page.waitForTimeout(500);
 	const cancelled = await page.evaluate(() => {
 		let s = /** @type {any} */ (null);
-		window.__stores.recordingStores.recordingState.subscribe((/** @type {any} */ v) => (s = v))();
-		return { status: s.status, result: !!s.result, bar: !!document.querySelector('#recording-bar'), debug: window.__stores.videoExport.exportDebug(), canvas: !!document.querySelector('#recording-canvas') };
+		window.__tp.test.v1.recordingStores.recordingState.subscribe((/** @type {any} */ v) => (s = v))();
+		return { status: s.status, result: !!s.result, bar: !!document.querySelector('#recording-bar'), debug: window.__tp.test.v1.videoExport.exportDebug(), canvas: !!document.querySelector('#recording-canvas') };
 	});
 	const camC2 = await camState(page);
 	const movedC = Math.hypot(...camC2.pos.map((v, i) => v - camC.pos[i]));

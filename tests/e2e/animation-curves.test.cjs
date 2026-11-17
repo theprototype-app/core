@@ -41,12 +41,12 @@ h.run(async () => {
 				requestAnimationFrame(tick);
 			});
 	});
-	await A.page.waitForFunction(() => !!window.__stores?.animationPreview, { timeout: 20000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.animationPreview, { timeout: 20000 });
 
 	/** make a box and return its uuid */
 	const makeBox = (page, label) =>
 		page.evaluate((name) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.commandsHandler.sceneCommand('/create box');
 			let g;
 			s.objectsGroup.subscribe((x) => (g = x))();
@@ -60,7 +60,7 @@ h.run(async () => {
 
 	// ---------- 1. a v1 animation migrates to keys and poses identically ----------
 	const legacy = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		s.commandsHandler.sceneCommand('/create box');
 		await /** @type {any} */ (window).__settle(200);
@@ -137,7 +137,7 @@ h.run(async () => {
 
 	// ---------- 2. easing is PER SEGMENT ----------
 	const perSegment = await A.page.evaluate((state) => {
-		const ap = window.__stores.animationPreview;
+		const ap = window.__tp.test.v1.animationPreview;
 		const { uuid, trackId } = state;
 		// three keys: 0 -> 1 -> 5 with a hard ease-in on the FIRST segment only
 		ap.updateKey(uuid, trackId, 0, { t: 0, v: 0, ease: [0.9, 0, 1, 1] });
@@ -171,7 +171,7 @@ h.run(async () => {
 	// keys, retime scales the movement itself, and speed is playback rate that
 	// changes no data at all. Typing in the length field used to secretly retime.
 	const edits = await A.page.evaluate((state) => {
-		const ap = window.__stores.animationPreview;
+		const ap = window.__tp.test.v1.animationPreview;
 		const { uuid, trackId } = state;
 		ap.removeKey(uuid, trackId, 1);
 		let map;
@@ -234,7 +234,7 @@ h.run(async () => {
 
 	// ---------- 4. a stepped channel HOLDS ----------
 	const stepped = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		s.commandsHandler.sceneCommand('/create box');
 		await /** @type {any} */ (window).__settle(200);
@@ -263,7 +263,7 @@ h.run(async () => {
 
 	// ---------- 5. the DOOR: rotation turns about the object's origin ----------
 	const door = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		s.commandsHandler.sceneCommand('/create box');
 		await /** @type {any} */ (window).__settle(200);
@@ -320,7 +320,7 @@ h.run(async () => {
 	const first = await makeBox(A.page, 'Multi A');
 	const second = await makeBox(A.page, 'Multi B');
 	const multi = await A.page.evaluate(async (ids) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
@@ -364,7 +364,7 @@ h.run(async () => {
 
 	// ---------- 7. named CLIPS per object ----------
 	const clipsState = await A.page.evaluate((id) => {
-		const ap = window.__stores.animationPreview;
+		const ap = window.__tp.test.v1.animationPreview;
 		const open = ap.createClip(id, 'Open');
 		ap.addTrack(id, 'rot.y', null, open);
 		const copy = ap.duplicateClip(id, open);
@@ -399,7 +399,7 @@ h.run(async () => {
 
 	// ---------- 8. the timeline, through the real DOM ----------
 	const ui = await A.page.evaluate(async (id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.objectActions.selectObject(id, false);
 		s.animationClose.set(false);
 		s.bottomDock.activateDock('animation');
@@ -419,7 +419,7 @@ h.run(async () => {
 
 	// double-click the sheet to INSERT a key, then drag it with a real mouse
 	const before = await A.page.evaluate((id) => {
-		const ap = window.__stores.animationPreview;
+		const ap = window.__tp.test.v1.animationPreview;
 		let map;
 		ap.animations.subscribe((v) => (map = v))();
 		const set = map[id];
@@ -431,7 +431,7 @@ h.run(async () => {
 	await A.page.mouse.dblclick(box.x + box.width * 0.5, rowY);
 	await A.page.waitForTimeout(250);
 	const afterInsert = await A.page.evaluate((id) => {
-		const ap = window.__stores.animationPreview;
+		const ap = window.__tp.test.v1.animationPreview;
 		let map;
 		ap.animations.subscribe((v) => (map = v))();
 		const set = map[id];
@@ -452,7 +452,7 @@ h.run(async () => {
 	// drag that key left with a real pointer gesture: ONE undo entry, one broadcast
 	const depthBefore = await A.page.evaluate(() => {
 		let stack = [];
-		window.__stores.history.undoStack.subscribe((/** @type {any[]} */ v) => (stack = v))();
+		window.__tp.test.v1.history.undoStack.subscribe((/** @type {any[]} */ v) => (stack = v))();
 		return stack.length;
 	});
 	const keyX = box.x + 10 + (afterInsert[inserted][0] / 2) * (box.width - 4 - 20);
@@ -462,12 +462,12 @@ h.run(async () => {
 	await A.page.mouse.up();
 	await A.page.waitForTimeout(250);
 	const dragged = await A.page.evaluate((id) => {
-		const ap = window.__stores.animationPreview;
+		const ap = window.__tp.test.v1.animationPreview;
 		let map;
 		ap.animations.subscribe((v) => (map = v))();
 		const set = map[id];
 		let stack = [];
-		window.__stores.history.undoStack.subscribe((/** @type {any[]} */ v) => (stack = v))();
+		window.__tp.test.v1.history.undoStack.subscribe((/** @type {any[]} */ v) => (stack = v))();
 		return {
 			times: set.clips[set.active].tracks[0].keys.map((/** @type {any} */ k) => Math.round(k.t * 1000) / 1000),
 			depth: stack.length,
@@ -485,7 +485,7 @@ h.run(async () => {
 
 	// ---------- 9. the "+" menu ----------
 	const clipsBefore = await A.page.evaluate(
-		(id) => window.__stores.animationPreview.clipList(id).length,
+		(id) => window.__tp.test.v1.animationPreview.clipList(id).length,
 		first
 	);
 	await A.page.locator('#animation-add').click();
@@ -503,7 +503,7 @@ h.run(async () => {
 	await A.page.getByText('New clip', { exact: true }).click();
 	await A.page.waitForTimeout(300);
 	const clipsAfter = await A.page.evaluate(
-		(id) => window.__stores.animationPreview.clipList(id).length,
+		(id) => window.__tp.test.v1.animationPreview.clipList(id).length,
 		first
 	);
 	h.check(clipsAfter === clipsBefore + 1, `and its actions run (${clipsBefore} -> ${clipsAfter} clips)`);
@@ -517,7 +517,7 @@ h.run(async () => {
 	// drags only on X axis". The y axis is derived from the keys, so it used to
 	// breathe under the cursor while dragging and the value chased its own mapping.
 	const graph = await A.page.evaluate((id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.objectActions.selectObject(id, false);
 		const ap = s.animationPreview;
 		// the + menu just added an empty clip, so pick one that actually has keys
@@ -545,7 +545,7 @@ h.run(async () => {
 	await A.page.mouse.up();
 	await A.page.waitForTimeout(300);
 	const afterGraph = await A.page.evaluate((id) => {
-		const clip = window.__stores.animationPreview.activeClip(id);
+		const clip = window.__tp.test.v1.animationPreview.activeClip(id);
 		return clip.tracks[0].keys.map((/** @type {any} */ k) => [k.t, k.v]);
 	}, first);
 	const movedKey = afterGraph[afterGraph.length - 1];
@@ -574,7 +574,7 @@ h.run(async () => {
 	for (const frac of [0.3, 0.5, 0.7]) {
 		await A.page.mouse.move(ruler.x + ruler.w * frac, ruler.y + ruler.h / 2, { steps: 3 });
 		heads.push(
-			await A.page.evaluate((id) => window.__stores.animationPreview.playheadOf(id), first)
+			await A.page.evaluate((id) => window.__tp.test.v1.animationPreview.playheadOf(id), first)
 		);
 	}
 	await A.page.mouse.up();
@@ -587,7 +587,7 @@ h.run(async () => {
 	// (all with real mouse gestures — this is interaction code, so nothing here is
 	//  worth asserting through the store alone)
 	const multiSetup = await A.page.evaluate((id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		s.objectActions.selectObject(id, false);
 		// one clip, one channel, three keys at 0 / 0.5 / 1
@@ -615,7 +615,7 @@ h.run(async () => {
 		);
 	const keyTimes = () =>
 		A.page.evaluate(
-			(id) => window.__stores.animationPreview.activeClip(id).tracks[0].keys.map((/** @type {any} */ k) => k.t),
+			(id) => window.__tp.test.v1.animationPreview.activeClip(id).tracks[0].keys.map((/** @type {any} */ k) => k.t),
 			first
 		);
 
@@ -713,7 +713,7 @@ h.run(async () => {
 	// on, two keys of one track dragged together land on the same time constantly —
 	// both matched the same key, so one of the pair was dropped or duplicated.
 	const identity = await A.page.evaluate((id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
@@ -824,7 +824,7 @@ h.run(async () => {
 	await A.page.keyboard.press('Escape');
 	await A.page.waitForTimeout(200);
 	const easedAway = await A.page.evaluate(async (id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		const clip = ap.activeClip(id);
 		const track = clip.tracks[0];
@@ -841,7 +841,7 @@ h.run(async () => {
 
 	// ---------- 9c5. the keyboard: frames, key navigation, nudging, modes ----------
 	const kbSetup = await A.page.evaluate((id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
@@ -861,8 +861,8 @@ h.run(async () => {
 	const plotArea = await A.page.locator('#animation-timeline').boundingBox();
 	await clickPlotEdge(A.page, plotArea);
 	await A.page.waitForTimeout(150);
-	const head = () => A.page.evaluate((id) => window.__stores.animationPreview.playheadOf(id), first);
-	await A.page.evaluate((id) => window.__stores.animationPreview.scrub(id, 0), first);
+	const head = () => A.page.evaluate((id) => window.__tp.test.v1.animationPreview.playheadOf(id), first);
+	await A.page.evaluate((id) => window.__tp.test.v1.animationPreview.scrub(id, 0), first);
 	await A.page.keyboard.press('ArrowRight');
 	await A.page.waitForTimeout(120);
 	const oneFrame = await head();
@@ -893,7 +893,7 @@ h.run(async () => {
 	h.check(picked, 'Ctrl+Space selects the key at the playhead');
 	const keyTimesNow = () =>
 		A.page.evaluate(
-			(id) => window.__stores.animationPreview.activeClip(id).tracks[0].keys.map((/** @type {any} */ k) => k.t),
+			(id) => window.__tp.test.v1.animationPreview.activeClip(id).tracks[0].keys.map((/** @type {any} */ k) => k.t),
 			first
 		);
 	const beforeNudge = await keyTimesNow();
@@ -905,9 +905,9 @@ h.run(async () => {
 		`Shift+Right nudges the selected key one frame (${beforeNudge[1]} -> ${afterNudge[1]})`
 	);
 	const undoOne = await A.page.evaluate(async (id) => {
-		window.__stores.history.undo();
+		window.__tp.test.v1.history.undo();
 		await /** @type {any} */ (window).__settle(200);
-		return window.__stores.animationPreview.activeClip(id).tracks[0].keys.map((/** @type {any} */ k) => k.t);
+		return window.__tp.test.v1.animationPreview.activeClip(id).tracks[0].keys.map((/** @type {any} */ k) => k.t);
 	}, first);
 	h.check(
 		Math.abs(undoOne[1] - beforeNudge[1]) < 1e-6,
@@ -928,7 +928,7 @@ h.run(async () => {
 	);
 	h.check(scaleArmed === 'true', 'the 2 key arms Scale');
 	const scaled = await A.page.evaluate(async (id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		ap.scrub(id, 0); // pivot at 0
 		return ap.activeClip(id).tracks[0].keys.map((/** @type {any} */ k) => k.t);
@@ -1103,7 +1103,7 @@ h.run(async () => {
 
 	// horizontal scaling of a multi-selection: it used to be swallowed by snapping
 	const hScale = await A.page.evaluate(async (id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		const clipId = ap.createClip(id, 'Hscale');
 		let g;
@@ -1137,7 +1137,7 @@ h.run(async () => {
 	await A.page.mouse.up();
 	await A.page.waitForTimeout(250);
 	const afterHScale = await A.page.evaluate(
-		(id) => window.__stores.animationPreview.activeClip(id).tracks[0].keys.map((/** @type {any} */ k) => k.t),
+		(id) => window.__tp.test.v1.animationPreview.activeClip(id).tracks[0].keys.map((/** @type {any} */ k) => k.t),
 		first
 	);
 	h.check(
@@ -1151,7 +1151,7 @@ h.run(async () => {
 	// object can hold a 24fps swing beside a 60fps flourish); `step` is the separate
 	// "on twos" control — sample the movement on a coarser grid than its keys.
 	const rates = await A.page.evaluate(async (id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
@@ -1206,7 +1206,7 @@ h.run(async () => {
 
 	// the editor's frame grid follows the clip: at 24fps an arrow step is 1/24
 	const gridFollows = await A.page.evaluate(async (id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.animationPreview.scrub(id, 0);
 		const shown = document.getElementById('animation-fps')?.value;
 		document.getElementById('animation-play')?.focus();
@@ -1224,7 +1224,7 @@ h.run(async () => {
 	// hand the editor back the clip the later blocks expect
 	await A.page.evaluate(
 		(args) => {
-			const ap = window.__stores.animationPreview;
+			const ap = window.__tp.test.v1.animationPreview;
 			ap.setActiveClip(args.id, args.clip);
 			ap.resetPreview(args.id);
 		},
@@ -1234,7 +1234,7 @@ h.run(async () => {
 
 	// ---------- 9d. the transport deck, in real icons and real buttons ----------
 	const deck = await A.page.evaluate((id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.objectActions.selectObject(id, false);
 		const ids = [
 			'animation-rewind', 'animation-prev-key', 'animation-play-back',
@@ -1253,7 +1253,7 @@ h.run(async () => {
 
 	// prev/next key STEP between key times
 	const stepping = await A.page.evaluate(async (id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		const times = ap.keyTimes(id);
 		ap.scrub(id, 0);
@@ -1282,7 +1282,7 @@ h.run(async () => {
 	// reported: "stop and return to the pose you started from put you at the
 	// beginning of animation, not where you started it from initially"
 	const stopping = await A.page.evaluate(async (id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		ap.scrub(id, 1); // park at 1s
 		const from = ap.playheadOf(id);
@@ -1305,7 +1305,7 @@ h.run(async () => {
 
 	// ---------- 9f. the A/B window loops only the seconds you are tuning ----------
 	const ab = await A.page.evaluate(async (id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		const clip = ap.activeClip(id);
 		ap.setRange(id, 1, clip.duration); // A at 1s
@@ -1338,7 +1338,7 @@ h.run(async () => {
 
 	// ---------- 9g. zoom narrows the view without touching the data ----------
 	const zoom = await A.page.evaluate(async (id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const before = document.querySelector('#animation-timeline')?.textContent ?? '';
 		const keysBefore = JSON.stringify(s.animationPreview.activeClip(id).tracks[0].keys);
 		document.getElementById('animation-fit')?.click();
@@ -1372,7 +1372,7 @@ h.run(async () => {
 
 	// ---------- 10. LOOK channels: opacity, colour, and what applies to what ----------
 	const look = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		s.commandsHandler.sceneCommand('/create box');
 		await /** @type {any} */ (window).__settle(250);
@@ -1436,7 +1436,7 @@ h.run(async () => {
 	// ---------- 11. picking a clip actually switches what plays ----------
 	// reported: selecting another clip in the list left the PREVIOUS one running
 	const switching = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		s.commandsHandler.sceneCommand('/create box');
 		await /** @type {any} */ (window).__settle(250);
@@ -1489,7 +1489,7 @@ h.run(async () => {
 	// reported: "after creating a new clip it still plays the old animation, so I
 	// have to select some clip and then back to a newly created one"
 	const created = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		s.commandsHandler.sceneCommand('/create box');
 		await /** @type {any} */ (window).__settle(250);
@@ -1543,7 +1543,7 @@ h.run(async () => {
 
 	// ---------- 11c. an Inspector edit with REC armed keys the change ----------
 	const inspector = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		s.commandsHandler.sceneCommand('/create box');
 		await /** @type {any} */ (window).__settle(300);
@@ -1562,10 +1562,10 @@ h.run(async () => {
 		return obj.uuid;
 	});
 	// drive the REAL Inspector rows: type a position, then change the colour
-	await A.page.evaluate(() => window.__stores.inspectorPinned?.set?.(true));
+	await A.page.evaluate(() => window.__tp.test.v1.inspectorPinned?.set?.(true));
 	await A.page.waitForTimeout(300);
 	const rowEdit = await A.page.evaluate(async (id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
@@ -1594,7 +1594,7 @@ h.run(async () => {
 
 	// ---------- 12. the playhead survives switching objects ----------
 	const keep = await A.page.evaluate(async (other) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
@@ -1627,7 +1627,7 @@ h.run(async () => {
 
 	// ---------- 13. a save carries the BASE pose, not the scrubbed frame ----------
 	const saved = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
@@ -1661,7 +1661,7 @@ h.run(async () => {
 	// a clip authored HERE, so the graph is guaranteed to draw handles whatever the
 	// sections above left active
 	const g2 = await A.page.evaluate((id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		let g;
 		s.objectsGroup.subscribe((/** @type {any} */ x) => (g = x))();
@@ -1767,7 +1767,7 @@ h.run(async () => {
 	// pixel a quarter of the way from one key to the other IS parameter 0.25, with no
 	// arithmetic guess at the plot's inner width (the lesson from 9b).
 	const tanSetup = await A.page.evaluate((id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		let g;
 		s.objectsGroup.subscribe((/** @type {any} */ x) => (g = x))();
@@ -1813,7 +1813,7 @@ h.run(async () => {
 	const easeOf = () =>
 		A.page.evaluate(
 			(args) => {
-				const ap = window.__stores.animationPreview;
+				const ap = window.__tp.test.v1.animationPreview;
 				const clip = ap.activeClip(args.id);
 				return clip?.tracks?.find((/** @type {any} */ t) => t.id === args.track)?.keys?.[0]?.ease ?? null;
 			},
@@ -1856,10 +1856,10 @@ h.run(async () => {
 	// leave the depth unchanged (it read +0 here while undo worked perfectly).
 	const topKind = await A.page.evaluate(() => {
 		let stack = [];
-		window.__stores.history.undoStack.subscribe((/** @type {any[]} */ v) => (stack = v))();
+		window.__tp.test.v1.history.undoStack.subscribe((/** @type {any[]} */ v) => (stack = v))();
 		return stack[stack.length - 1]?.kind;
 	});
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(250);
 	const afterOneUndo = await easeOf();
 	h.check(
@@ -1869,7 +1869,7 @@ h.run(async () => {
 			Math.abs(afterOneUndo[1] - 0.25) < 1e-6,
 		`ONE undo reverts the whole drag (kind ${topKind}, back to ${afterOneUndo?.slice(0, 2).join(', ')})`
 	);
-	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 	await A.page.waitForTimeout(250);
 	const afterRedo = await easeOf();
 	h.check(
@@ -1929,7 +1929,7 @@ h.run(async () => {
 
 	// a STEPPED channel has no curve, so it has no tangents either
 	await A.page.evaluate((args) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		let g;
 		s.objectsGroup.subscribe((/** @type {any} */ x) => (g = x))();
@@ -1965,7 +1965,7 @@ h.run(async () => {
 	// still drag in x, and must leave y alone rather than writing a divide-by-zero.
 	await A.page.evaluate(
 		(args) => {
-			const ap = window.__stores.animationPreview;
+			const ap = window.__tp.test.v1.animationPreview;
 			ap.updateKey(args.id, args.track, 0, { t: 0, v: 2, ease: [0.3, 0.8, 0.7, 0.2] }, args.clipId);
 			ap.updateKey(args.id, args.track, 1, { t: 1, v: 2 }, args.clipId);
 		},

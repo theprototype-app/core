@@ -32,7 +32,7 @@ h.run(async () => {
 	const onHost = (uuid) =>
 		A.page.evaluate((u) => {
 			/** @type {any} */ let g;
-			window.__stores.objectsGroup.subscribe((x) => (g = x))();
+			window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 			const o = g?.getObjectByProperty('uuid', u);
 			if (!o) return null;
 			o.updateWorldMatrix(true, false);
@@ -121,12 +121,12 @@ h.run(async () => {
 	h.check(slabRow?.geometry?.type === 'Box' && slabRow.geometry.width === 2 && slabRow.geometry.depth === 0.25, 'list_scene carries the primitive\'s sizes: ' + short(slabRow?.geometry));
 
 	// ---- 1.48.1 (b): a locked object's skip names the object and who holds it
-	await A.page.evaluate((u) => window.__stores.objectActions.applySelectionSet([u]), slab);
-	await poll(() => B.page.evaluate(() => new Promise((r) => window.__stores.lockedObjects.subscribe((l) => r(l))())), (l) => (l || []).some((/** @type {any} */ x) => x[1] === slab), 10000);
+	await A.page.evaluate((u) => window.__tp.test.v1.objectActions.applySelectionSet([u]), slab);
+	await poll(() => B.page.evaluate(() => new Promise((r) => window.__tp.test.v1.lockedObjects.subscribe((l) => r(l))())), (l) => (l || []).some((/** @type {any} */ x) => x[1] === slab), 10000);
 	const skipped = await exec('update_objects', { updates: [{ uuid: slab, position: [0, 0.5, 5] }] });
 	const why = String(skipped?.updated?.[0]?.skipped ?? '');
 	h.check(why.includes('"Slab"') && why.includes(A.id), 'a lock skip names the object and the peer holding it: ' + why);
-	await A.page.evaluate(() => window.__stores.objectActions.applySelectionSet([]));
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.applySelectionSet([]));
 
 	// ---- 1.48.0: behaviours explain themselves; a wire must name a real socket
 	const bhv = await exec('create_behaviour', {

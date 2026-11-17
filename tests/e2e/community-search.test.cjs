@@ -32,7 +32,7 @@ h.run(async () => {
 	await A.page.route('**/raw.githubusercontent.com/theprototype-app/community-gallery/**', (route) => route.fulfill({ json: { entries: GALLERY } }));
 
 	// ---------------------------------------------------------------- 1. the OSS gallery
-	await A.page.evaluate(() => window.__stores.templatesModalOpen.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.templatesModalOpen.set(true));
 	await A.page.locator('#templates-tab-community').click();
 	await h.eventually(() => slugs(A.page), (s) => s.length === 3, 'premise: the GitHub gallery shows its 3 rows');
 	check((await A.page.locator('#templates-search').count()) === 1, 'the search field renders');
@@ -77,7 +77,7 @@ h.run(async () => {
 	// ---------------------------------------------------------- 2. a 36-era provider
 	await A.page.evaluate((rows) => {
 		window.__asks = [];
-		window.__stores.cloudHooks.setCommunityProvider({
+		window.__tp.test.v1.cloudHooks.setCommunityProvider({
 			list: async (ask) => {
 				window.__asks.push(ask);
 				return rows.map((r) => ({ ...r, slug: 'p-' + r.slug.slice(2) }));
@@ -103,7 +103,7 @@ h.run(async () => {
 	await A.page.evaluate(() => {
 		window.__asks = [];
 		/** rows the "server" knows: one per query word, so the answer shows WHICH query it answered */
-		window.__stores.cloudHooks.setCommunityProvider({
+		window.__tp.test.v1.cloudHooks.setCommunityProvider({
 			search: true,
 			sorts: [
 				{ id: 'featured', label: 'Featured' },
@@ -161,7 +161,7 @@ h.run(async () => {
 	await h.eventually(() => A.page.locator('#community-empty').isVisible(), (v) => v === true, 'a server answer of [] shows the empty card');
 	check(/No scenes match “nothing”/.test((await A.page.locator('#community-empty').textContent()) || ''), '...worded for the search, not "be the first"');
 
-	await A.page.evaluate(() => window.__stores.cloudHooks.setCommunityProvider(null));
+	await A.page.evaluate(() => window.__tp.test.v1.cloudHooks.setCommunityProvider(null));
 	await A.ctx.close();
 
 	// ------------------------------------------ 4. phones: Find N6 folded + unfolded
@@ -173,7 +173,7 @@ h.run(async () => {
 		const P = await h.setupPage(browser, name, { context, storage: { toursSeen: '{"editor":true,"editor-touch":true}' } });
 		await P.page.route('**/raw.githubusercontent.com/theprototype-app/community-gallery/**', (route) => route.fulfill({ json: { entries: GALLERY } }));
 		await P.page.evaluate((rows) => {
-			window.__stores.cloudHooks.setCommunityProvider({
+			window.__tp.test.v1.cloudHooks.setCommunityProvider({
 				search: true,
 				sorts: [
 					{ id: 'featured', label: 'Featured' },
@@ -183,7 +183,7 @@ h.run(async () => {
 				list: async () => rows,
 				load: async () => true
 			});
-			window.__stores.templatesModalOpen.set(true);
+			window.__tp.test.v1.templatesModalOpen.set(true);
 		}, GALLERY);
 		await P.page.locator('#templates-tab-community').click();
 		await h.eventually(() => slugs(P.page), (s) => s.length === 3, `${name}: premise — the provider rows show`);

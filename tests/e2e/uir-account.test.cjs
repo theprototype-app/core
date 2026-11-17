@@ -65,11 +65,11 @@ h.run(async () => {
 	const P = A.page;
 	const openSettings = (/** @type {string | null} */ section) =>
 		P.evaluate((s) => {
-			const S = /** @type {any} */ (window).__stores;
+			const S = /** @type {any} */ (window).__tp?.test.v1;
 			S.settingsSection.set(s);
 			S.settingsOpen.set(true);
 		}, section);
-	const closeSettings = () => P.evaluate(() => /** @type {any} */ (window).__stores.settingsOpen.set(false));
+	const closeSettings = () => P.evaluate(() => /** @type {any} */ (window).__tp.test.v1.settingsOpen.set(false));
 	const search = (/** @type {string} */ q) => P.locator('input#settings-search').first().fill(q);
 	const navLabels = () => P.evaluate(() => [...document.querySelectorAll('#settings-nav .sn-row')].map((n) => (n.textContent || '').trim()).filter(Boolean));
 	/** where an element sits in the content column: on screen (top inside the column) or not */
@@ -103,7 +103,7 @@ h.run(async () => {
 
 	// ---- 3. the plugin's groups first, then Connected apps; search ---------------------------------------------------
 	const mounted = await P.evaluate((src) => {
-		const api = /** @type {any} */ (window).__stores.cloudPlugin.makeCloudApi();
+		const api = /** @type {any} */ (window).__tp.test.v1.cloudPlugin.makeCloudApi();
 		// eslint-disable-next-line no-new-func
 		return api.mountSettingsSection('account', new Function('return ' + src)());
 	}, FAKE_MOUNT);
@@ -136,12 +136,12 @@ h.run(async () => {
 
 	// ---- 4. cloudApi.openSettings: a late element, and junk refused ----------------------------------------------------
 	const junk = await P.evaluate(() => {
-		const api = /** @type {any} */ (window).__stores.cloudPlugin.makeCloudApi();
+		const api = /** @type {any} */ (window).__tp.test.v1.cloudPlugin.makeCloudApi();
 		return [api.openSettings('', 'x'), api.openSettings('account', 'bad id"]'), api.openSettings('account', '<img>')];
 	});
 	h.check(junk.every((r) => r === false), `openSettings refuses an empty page or a malformed id (${JSON.stringify(junk)})`);
-	h.check(!(await P.evaluate(() => { let o; /** @type {any} */ (window).__stores.settingsOpen.subscribe((v) => (o = v))(); return o; })), '…and opens nothing for it');
-	await P.evaluate(() => /** @type {any} */ (window).__stores.cloudPlugin.makeCloudApi().openSettings('account', 'row-fake-late'));
+	h.check(!(await P.evaluate(() => { let o; /** @type {any} */ (window).__tp.test.v1.settingsOpen.subscribe((v) => (o = v))(); return o; })), '…and opens nothing for it');
+	await P.evaluate(() => /** @type {any} */ (window).__tp.test.v1.cloudPlugin.makeCloudApi().openSettings('account', 'row-fake-late'));
 	await P.waitForSelector('#row-fake-late', { timeout: 6000 });
 	await P.waitForTimeout(300);
 	const late = await P.evaluate(() => document.getElementById('row-fake-late')?.classList.contains('sr-flash'));
@@ -149,7 +149,7 @@ h.run(async () => {
 	await closeSettings();
 
 	// ---- 5. Connect Claude's link + Revoke ---------------------------------------------------------------------------
-	await P.evaluate(() => /** @type {any} */ (window).__stores.aiAssistantHidden.set(''));
+	await P.evaluate(() => /** @type {any} */ (window).__tp.test.v1.aiAssistantHidden.set(''));
 	await fakeRelay(P);
 	await P.waitForSelector('#connect-claude-button', { state: 'visible', timeout: 20000 });
 	await P.locator('#connect-claude-button').click();
@@ -163,13 +163,13 @@ h.run(async () => {
 	await h.eventually(() => P.evaluate(() => /** @type {any} */ (window).__connectorFake.revoked), (r) => r.includes('g_1'), 'revoked', 6000);
 	h.check((await P.evaluate(() => /** @type {any} */ (window).__connectorFake.revoked)).includes('g_1'), 'Revoke in Settings ▸ Account ▸ Connected apps reaches the provider');
 	await closeSettings();
-	await P.evaluate(() => /** @type {any} */ (window).__stores.aiAssistantHidden.set('1'));
+	await P.evaluate(() => /** @type {any} */ (window).__tp.test.v1.aiAssistantHidden.set('1'));
 
 	// ---- 6. requests: one list per open, nothing on search -------------------------------------------------------------
 	await P.evaluate(() => {
 		const w = /** @type {any} */ (window);
 		w.__lists = 0;
-		const p = w.__stores.cloudHooks;
+		const p = w.__tp.test.v1.cloudHooks;
 		let cur;
 		p.connectorProvider.subscribe((/** @type {any} */ v) => (cur = v))();
 		const orig = cur.connections;
@@ -211,9 +211,9 @@ h.run(async () => {
 	]) {
 		const Q = await h.setupPage(browser, 'N6-' + name, { context: { viewport, deviceScaleFactor: dpr, isMobile: true, hasTouch: true } });
 		await installProvider(Q.page);
-		await Q.page.evaluate((src) => /** @type {any} */ (window).__stores.cloudPlugin.makeCloudApi().mountSettingsSection('account', new Function('return ' + src)()), FAKE_MOUNT);
+		await Q.page.evaluate((src) => /** @type {any} */ (window).__tp.test.v1.cloudPlugin.makeCloudApi().mountSettingsSection('account', new Function('return ' + src)()), FAKE_MOUNT);
 		await Q.page.evaluate(() => {
-			const S = /** @type {any} */ (window).__stores;
+			const S = /** @type {any} */ (window).__tp?.test.v1;
 			S.settingsSection.set('account');
 			S.settingsOpen.set(true);
 		});

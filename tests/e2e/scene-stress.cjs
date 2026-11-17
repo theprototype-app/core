@@ -87,7 +87,7 @@ async function measureSync(browser, size) {
 		while (Date.now() < deadline) {
 			got = await joiner.page.evaluate(() => ({
 				count: window.__stress.count(),
-				sync: window.__stores.commandsHandler.lastSyncStats(),
+				sync: window.__tp.test.v1.commandsHandler.lastSyncStats(),
 				tasks: window.__stress.tasksSince(window.__stress.joinStarted)
 			}));
 			if (got.sync && got.count >= size) break;

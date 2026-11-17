@@ -7,7 +7,7 @@
 const h = require('./helpers.cjs');
 const { zipSync, strToU8 } = require('fflate');
 const inPage = (page, body, arg) =>
-	page.evaluate(([src, a]) => Object.getPrototypeOf(async function () {}).constructor('s', 'ad', 'mr', 'arg', src)(window.__stores, window.__stores.audioDevices, window.__stores.moduleRequirements, a), [body, arg ?? null]);
+	page.evaluate(([src, a]) => Object.getPrototypeOf(async function () {}).constructor('s', 'ad', 'mr', 'arg', src)(window.__tp?.test.v1, window.__tp.test.v1.audioDevices, window.__tp.test.v1.moduleRequirements, a), [body, arg ?? null]);
 
 h.run(async () => {
 	const browser = await h.launch({ args: h.AUDIO_ARGS });
@@ -38,9 +38,9 @@ h.run(async () => {
 
 	console.log('\n=== 3. the prompt: a room with only DEVICES asks for its module ===');
 	const tpscene = Buffer.from(zipSync({ 'session.json': strToU8(JSON.stringify({ format: 1, name: 'Jam', count: 1, objects: [], graphs: {}, nodes: [], edges: [], annotations: [], joints: [], camera: null, modules: [{ id: 'ghostmusic', version: '1.0.0' }] })) }));
-	await page.evaluate((bytes) => { window.__importResult = 'pending'; window.__stores.sessions.importSessionZip(new Uint8Array(bytes).buffer).then((p) => (window.__importResult = p ? 'applied' : 'cancelled')); }, Array.from(tpscene));
+	await page.evaluate((bytes) => { window.__importResult = 'pending'; window.__tp.test.v1.sessions.importSessionZip(new Uint8Array(bytes).buffer).then((p) => (window.__importResult = p ? 'applied' : 'cancelled')); }, Array.from(tpscene));
 	await h.eventually(() => page.locator('#confirm-dialog-install').count(), (n) => n === 1, '3.1 a saved room whose derived list names an absent module prompts before anything is touched');
-	const text = await page.evaluate(() => new Promise((r) => window.__stores.confirmDialog.confirmDialog.subscribe((d) => r(d?.message ?? ''))()));
+	const text = await page.evaluate(() => new Promise((r) => window.__tp.test.v1.confirmDialog.confirmDialog.subscribe((d) => r(d?.message ?? ''))()));
 	h.check(/ghostmusic/.test(text), '3.2 and names it (' + JSON.stringify(text.slice(0, 80)) + ')');
 	await page.locator('#confirm-dialog-cancel').click();
 	await h.eventually(() => page.evaluate(() => window.__importResult), (v) => v === 'cancelled', '3.3 Cancel is a silent no-op');

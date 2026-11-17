@@ -24,7 +24,7 @@ const h = require('./helpers.cjs');
 /** cast a fan of rays at the target and report what each one hit */
 const castFan = (page, uuid) =>
 	page.evaluate((uuid) => {
-		const THREE = window.__stores.THREE;
+		const THREE = window.__tp.test.v1.THREE;
 		const group = window.__bvh.group;
 		const object = group.getObjectByProperty('uuid', uuid);
 		const raycaster = new THREE.Raycaster();
@@ -60,11 +60,11 @@ const castFan = (page, uuid) =>
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
-	await A.page.waitForFunction(() => !!window.__stores?.bvhPicking, { timeout: 20000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.bvhPicking, { timeout: 20000 });
 
 	// a HIGH-poly mesh (past the build threshold) and a low-poly one
 	const built = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const THREE = w.THREE;
 		const group = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		window.__bvh = { group };
@@ -96,7 +96,7 @@ h.run(async () => {
 
 	// ---------- build trees ----------
 	const trees = await A.page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.bvhPicking.ensureBoundsTrees(window.__bvh.group, []);
 		const dense = window.__bvh.group.getObjectByProperty('uuid', window.__bvh.dense);
 		const simple = window.__bvh.group.getObjectByProperty('uuid', window.__bvh.simple);
@@ -139,7 +139,7 @@ h.run(async () => {
 	// the degenerate case the header documents: a ray straight down an axis into
 	// the sphere's seam vertex. faceIndex may differ; the POINT must not.
 	const seam = await A.page.evaluate(() => {
-		const THREE = window.__stores.THREE;
+		const THREE = window.__tp.test.v1.THREE;
 		const dense = window.__bvh.group.getObjectByProperty('uuid', window.__bvh.dense);
 		const raycaster = new THREE.Raycaster();
 		const read = () => {
@@ -150,7 +150,7 @@ h.run(async () => {
 		const withTree = read();
 		dense.geometry.disposeBoundsTree();
 		const stock = read();
-		window.__stores.bvhPicking.ensureBoundsTrees(window.__bvh.group, []); // put it back
+		window.__tp.test.v1.bvhPicking.ensureBoundsTrees(window.__bvh.group, []); // put it back
 		return { withTree, stock };
 	});
 	h.check(
@@ -162,7 +162,7 @@ h.run(async () => {
 
 	// ---------- an in-place edit invalidates the tree ----------
 	const stale = await A.page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const dense = window.__bvh.group.getObjectByProperty('uuid', window.__bvh.dense);
 		const position = dense.geometry.attributes.position;
 		// what a sculpt stroke / vertex drag does: move verts, flag the attribute
@@ -198,7 +198,7 @@ h.run(async () => {
 
 	// ---------- a live edit session carries no tree ----------
 	const session = await A.page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.bvhPicking.ensureBoundsTrees(window.__bvh.group, []);
 		const dense = window.__bvh.group.getObjectByProperty('uuid', window.__bvh.dense);
 		const hadTree = !!dense.geometry.boundsTree;
@@ -211,7 +211,7 @@ h.run(async () => {
 
 	// ---------- the real click path still selects the mesh ----------
 	await A.page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const dense = window.__bvh.group.getObjectByProperty('uuid', window.__bvh.dense);
 		dense.position.set(0, 0, 0);
 		w.objectActions.deselectObject();
@@ -224,7 +224,7 @@ h.run(async () => {
 	await A.page.mouse.click(screen.x, screen.y);
 	await A.page.waitForTimeout(500);
 	const picked = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.selectedObject.subscribe((v) => r(v?.uuid))())
+		() => new Promise((r) => window.__tp.test.v1.selectedObject.subscribe((v) => r(v?.uuid))())
 	);
 	const denseUuid = await A.page.evaluate(() => window.__bvh.dense);
 	h.check(picked === denseUuid, 'a real viewport click selects the BVH-accelerated mesh');

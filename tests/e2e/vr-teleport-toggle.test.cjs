@@ -13,7 +13,7 @@ h.run(async () => {
 
 	// --- pure arm decision ---
 	const arms = await A.page.evaluate(() => {
-		const f = window.__stores.vrControls.teleportArms;
+		const f = window.__tp.test.v1.vrControls.teleportArms;
 		return { up: f(0, -0.9), sideways: f(0.9, -0.5), down: f(0, 0.5) };
 	});
 	h.check(arms.up === true, 'an up-flick arms the arc');
@@ -21,7 +21,7 @@ h.run(async () => {
 
 	// --- enabled (default): engaging the stick arms + shows the arc ---
 	const on = await A.page.evaluate((up) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.vrTeleportEnabled.set(true);
 		s.vrControls.updateTeleport(up);
 		let scene; s.globalScene.subscribe((v) => (scene = v))();
@@ -32,7 +32,7 @@ h.run(async () => {
 
 	// --- disabled: engaging the stick does NOT arm; arc hidden ---
 	const off = await A.page.evaluate((up) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.vrTeleportEnabled.set(false);
 		s.vrControls.updateTeleport(up);
 		let scene; s.globalScene.subscribe((v) => (scene = v))();
@@ -44,10 +44,10 @@ h.run(async () => {
 	// --- persists across reload ---
 	await A.page.evaluate(() => localStorage.setItem('vrTeleportEnabled', 'false'));
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => !!window.__stores && !!window.__stores.vrControls, { timeout: 30000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1 && !!window.__tp.test.v1.vrControls, { timeout: 30000 });
 	await A.page.waitForTimeout(400);
 	const persisted = await A.page.evaluate(() => {
-		let v; window.__stores.vrTeleportEnabled.subscribe((x) => (v = x))();
+		let v; window.__tp.test.v1.vrTeleportEnabled.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(persisted === false, 'the teleport setting persists across reload');

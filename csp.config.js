@@ -22,8 +22,9 @@
 //   VITE_CSP_CONNECT_SRC     REPLACES the default connect-src
 //   VITE_CSP_EXTRA_CONNECT   added to connect-src (keeps the default)
 //   VITE_CSP_IMG_SRC         REPLACES the default img-src / media-src
-//   VITE_CSP_FRAME_ANCESTORS the header's frame-ancestors (default: * while play/embeds are served
-//                            from this origin, 'self' once VITE_PLAY_ORIGIN names another one)
+//   VITE_CSP_FRAME_ANCESTORS the header's frame-ancestors (default 'self'; 101 F4: the play entry paths
+//                            in FRAMED_PATHS keep * while play is served from this origin, and the
+//                            whole play origin keeps * once VITE_PLAY_ORIGIN names another one)
 //   VITE_CSP=off             no policy at all (a deployment that sets its own at the edge)
 
 const KEYWORDS = new Set(['self', 'none', 'unsafe-inline', 'unsafe-eval', 'wasm-unsafe-eval', 'strict-dynamic', 'unsafe-hashes']);
@@ -87,11 +88,18 @@ export function playOrigin(env) {
 	return originOf(env.VITE_PLAY_ORIGIN);
 }
 
-/** frame-ancestors for the app origin's header @param {Record<string, string | undefined>} env @returns {string[]} */
+/** frame-ancestors for the app origin's header. 101 F4: 'self' by default — the editor is never framed by
+ * another site; what embeds frame is the play entry (FRAMED_PATHS, or the play origin).
+ * @param {Record<string, string | undefined>} env @returns {string[]} */
 export function frameAncestors(env) {
 	if (env.VITE_CSP_FRAME_ANCESTORS) return list(env.VITE_CSP_FRAME_ANCESTORS);
-	return playOrigin(env) ? ['self'] : ['*'];
+	return ['self'];
 }
+
+/** 101 F4: the paths other sites frame when play is served from the app origin (no VITE_PLAY_ORIGIN):
+ * the play-only entry (`/play?s=<id>`, what /p/ and /e/ frame since 1.57) and the Discord Activity
+ * prototype's page. Each keeps `frame-ancestors *` through its own _headers block. */
+export const FRAMED_PATHS = ['/play', '/play/*', '/discord', '/discord/*'];
 
 /** one directive set as header text (keywords quoted) @param {Record<string, string[]>} directives */
 export function cspText(directives) {

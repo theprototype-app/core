@@ -11,7 +11,7 @@ h.run(async () => {
 
 	// --- pure snap-turn helper ---
 	const pure = await A.page.evaluate(() => {
-		const f = window.__stores.vrControls.snapTurnRadians;
+		const f = window.__tp.test.v1.vrControls.snapTurnRadians;
 		return {
 			normalRight: f(45, 1, false),
 			mirroredRight: f(45, 1, true),
@@ -32,12 +32,12 @@ h.run(async () => {
 		localStorage.setItem('vrMirrorSnapTurn', 'true');
 	});
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => !!window.__stores && !!window.__stores.vrControls, { timeout: 30000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1 && !!window.__tp.test.v1.vrControls, { timeout: 30000 });
 	await A.page.waitForTimeout(400);
 	const persisted = await A.page.evaluate(() => {
 		let a, m;
-		window.__stores.vrSnapAngle.subscribe((v) => (a = v))();
-		window.__stores.vrMirrorSnapTurn.subscribe((v) => (m = v))();
+		window.__tp.test.v1.vrSnapAngle.subscribe((v) => (a = v))();
+		window.__tp.test.v1.vrMirrorSnapTurn.subscribe((v) => (m = v))();
 		return { a, m };
 	});
 	h.check(persisted.a === 0, 'snap-turn Off (angle 0) persists across reload');

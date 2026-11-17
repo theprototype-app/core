@@ -31,13 +31,13 @@ h.run(async () => {
 	const body = () => page.locator('#preview-body');
 	const frame = async () => (await body().screenshot()).toString('base64');
 
-	await page.waitForFunction(() => !!window.__stores?.filePreview && !!window.__stores?.explorer, null, {
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.filePreview && !!window.__tp?.test.v1?.explorer, null, {
 		timeout: 30000
 	});
 	await page.evaluate(async () => {
-		await window.__stores.explorer.loadExplorer();
-		await window.__stores.explorer.clearLibrary();
-		const f = window.__stores.filePreview;
+		await window.__tp.test.v1.explorer.loadExplorer();
+		await window.__tp.test.v1.explorer.clearLibrary();
+		const f = window.__tp.test.v1.filePreview;
 		f.previewAutoRotate.set(true);
 		// R22 ROUND 19 (user): "by default disable statistics". Left at the real default so
 		// the sections below measure what a user actually opens.
@@ -50,7 +50,7 @@ h.run(async () => {
 	// a TORUS KNOT rather than a box: it fills the frame from every angle, so "did the
 	// picture change" cannot be answered by a silhouette that happens to look the same
 	const glbId = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const mesh = new s.THREE.Mesh(
 			new s.THREE.TorusKnotGeometry(1, 0.35, 64, 12),
 			new s.THREE.MeshStandardMaterial({ color: 0xff8844 })

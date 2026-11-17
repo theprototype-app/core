@@ -12,9 +12,9 @@ h.run(async () => {
 	await A.page.waitForTimeout(2000);
 
 	const open = {
-		a: await A.page.evaluate((id) => window.__stores.fastChannel.isOpen(id), B.id),
-		b: await B.page.evaluate((id) => window.__stores.fastChannel.isOpen(id), A.id),
-		aPeers: await A.page.evaluate(() => window.__stores.fastChannel.links.peers())
+		a: await A.page.evaluate((id) => window.__tp.test.v1.fastChannel.isOpen(id), B.id),
+		b: await B.page.evaluate((id) => window.__tp.test.v1.fastChannel.isOpen(id), A.id),
+		aPeers: await A.page.evaluate(() => window.__tp.test.v1.fastChannel.links.peers())
 	};
 	h.check(
 		!open.a && !open.b && open.aPeers.length === 0,
@@ -25,7 +25,7 @@ h.run(async () => {
 	async function stream(from, to, n) {
 		await to.page.evaluate((fid) => {
 			window.__poses = [];
-			window.__stores.fastChannel.setPoseTap((peer, d, via) => {
+			window.__tp.test.v1.fastChannel.setPoseTap((peer, d, via) => {
 				// only the suite's own poses (z -1, yaw 0.5): the app's camera loop sends real ones too
 				if (peer === fid && d.type === 'camera' && d.position?.[2] === -1 && d.rotation?.[1] === 0.5) window.__poses.push({ via, x: d.position[0] });
 			});
@@ -34,7 +34,7 @@ h.run(async () => {
 			(n) =>
 				new Promise((resolve) => {
 					let p;
-					window.__stores.peers.subscribe((x) => (p = x))();
+					window.__tp.test.v1.peers.subscribe((x) => (p = x))();
 					let i = 0;
 					const t = setInterval(() => {
 						p.send(
@@ -63,7 +63,7 @@ h.run(async () => {
 	);
 	const avatar = await B.page.evaluate((aid) => {
 		let scene;
-		window.__stores.globalScene.subscribe((s) => (scene = s))();
+		window.__tp.test.v1.globalScene.subscribe((s) => (scene = s))();
 		const m = scene?.getObjectByName(aid);
 		return m ? m.position.x : null;
 	}, A.id);

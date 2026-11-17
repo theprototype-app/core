@@ -53,11 +53,11 @@ h.run(async () => {
 	]) {
 		const C = await h.setupPage(browser, 'C-' + label, { context: { viewport: vp, isMobile: true, hasTouch: true, deviceScaleFactor: 2.6 } });
 		await C.page.evaluate(() => {
-			const q = window.__stores.sequences;
+			const q = window.__tp.test.v1.sequences;
 			const s = q.createSequence('Phone cut');
 			q.addItem(s, q.addTrack(s, 'event'), { t: 0.5, name: 'beat' });
 		});
-		await C.page.evaluate(() => window.__stores.timelineClose.set(false));
+		await C.page.evaluate(() => window.__tp.test.v1.timelineClose.set(false));
 		await C.page.waitForSelector('.tl-root', { timeout: 15000 }); // a phone starts with the side panes put away
 		await C.page.waitForTimeout(500);
 		const phone = await C.page.evaluate(() => document.documentElement.classList.contains('phone-shell'));

@@ -15,7 +15,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(4000);
 		await warm.ctx.close();
 	}
@@ -24,7 +24,7 @@ h.run(async () => {
 	await h.connect(B, A);
 
 	const ids = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const cmd = s.commandsHandler.sceneCommand;
 		cmd('/create Box 2 0.5 2');
 		cmd('/create Sphere 0.2');
@@ -85,15 +85,15 @@ h.run(async () => {
 				{ id: 'e-imp2.other-dist1.a', source: 'imp2', sourceHandle: 'other', target: 'dist1', targetHandle: 'a' },
 				{ id: 'e-selB2-dist1.b', source: 'selB2', target: 'dist1', targetHandle: 'b' }
 			];
-			window.__stores.flowNodes.set(nodes);
-			window.__stores.flowEdges.set(edges);
+			window.__tp.test.v1.flowNodes.set(nodes);
+			window.__tp.test.v1.flowEdges.set(edges);
 		}, ids);
 	await buildGraph(A.page);
 	await buildGraph(B.page);
 	await A.page.waitForTimeout(400);
 
 	const typed = await A.page.evaluate(() => {
-		const fs = window.__stores.flowSockets;
+		const fs = window.__tp.test.v1.flowSockets;
 		return {
 			filter: fs.inputType('onimpact', 'filter'),
 			other: fs.outputHandleType('onimpact', 'other'),
@@ -103,7 +103,7 @@ h.run(async () => {
 	h.check(typed.filter === 'object' && typed.sensorFilter === 'object', `filter is an OBJECT input (${JSON.stringify(typed)})`);
 	h.check(typed.other === 'object', `other is an OBJECT output (${typed.other})`);
 
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await h.eventually(
 		() => A.page.evaluate(() => {
 			const { ballA, ballB, ballC, ballD } = window.__x6;
@@ -118,8 +118,8 @@ h.run(async () => {
 	const read = (page) =>
 		page.evaluate(() => {
 			let t;
-			window.__stores.flowTriggers.subscribe((v) => (t = v))();
-			const fr = window.__stores.flowRuntime;
+			window.__tp.test.v1.flowTriggers.subscribe((v) => (t = v))();
+			const fr = window.__tp.test.v1.flowRuntime;
 			const stamp = (id) => t[id]?.lastT ?? null;
 			return {
 				imp1: stamp('imp1'),
@@ -141,7 +141,7 @@ h.run(async () => {
 
 	const dist = await A.page.evaluate(() => {
 		let v;
-		window.__stores.flowValues.subscribe((x) => (v = x))();
+		window.__tp.test.v1.flowValues.subscribe((x) => (v = x))();
 		return v.dist1;
 	});
 	h.check(typeof dist === 'number' && dist > 0.2 && dist < 1, `the other output wired into Distance measures ballB to the Target (${dist})`);
@@ -156,8 +156,8 @@ h.run(async () => {
 	try {
 		fs.mkdirSync(EVIDENCE, { recursive: true });
 		await A.page.evaluate(() => {
-			window.__stores.objectActions.deselectObject(); // the editor follows the selection
-			window.__stores.flowGraphClose?.set?.(false);
+			window.__tp.test.v1.objectActions.deselectObject(); // the editor follows the selection
+			window.__tp.test.v1.flowGraphClose?.set?.(false);
 		});
 		await A.page.waitForTimeout(1500);
 		await A.page.screenshot({ path: path.join(EVIDENCE, '04-contact-filter-nodes.png') });
@@ -165,6 +165,6 @@ h.run(async () => {
 		console.log('screenshot skipped: ' + e.message);
 	}
 
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await h.finish(browser);
 });

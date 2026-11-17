@@ -23,7 +23,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1440, height: 900 } } });
 	const page = A.page;
-	await page.waitForFunction(() => !!window.__stores?.windowTabs, null, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.windowTabs, null, { timeout: 30000 });
 
 	// ---- the user's steps, in the user's order ------------------------------------------
 	// FLOW READS `flowDocked` AT INIT, so setting it on a running page does nothing — the
@@ -33,16 +33,16 @@ h.run(async () => {
 	// run and fails on a clean one.)
 	await page.evaluate(() => localStorage.setItem('flowDocked', 'false'));
 	await page.reload();
-	await page.waitForFunction(() => !!window.__stores?.windowTabs, null, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.windowTabs, null, { timeout: 30000 });
 	await page.waitForTimeout(800);
 
-	await page.evaluate(() => window.__stores.explorerClose.set(false));
+	await page.evaluate(() => window.__tp.test.v1.explorerClose.set(false));
 	await page.waitForTimeout(1200);
 	if (!(await page.locator('#explorer-window').count())) {
 		await page.locator('#dock-undock:visible').click({ timeout: 20000 });
 		await page.waitForTimeout(900);
 	}
-	await page.evaluate(() => window.__stores.flowGraphClose?.set?.(false));
+	await page.evaluate(() => window.__tp.test.v1.flowGraphClose?.set?.(false));
 	await page.waitForTimeout(1400);
 	h.check(
 		(await page.locator('#explorer-window').count()) === 1 &&
@@ -51,7 +51,7 @@ h.run(async () => {
 	);
 
 	const group = await page.evaluate(() => {
-		const t = window.__stores.windowTabs;
+		const t = window.__tp.test.v1.windowTabs;
 		t.mergeWindows('explorer', 'flow');
 		t.resizeGroup('explorer', 10, 10); // "scale down window to minimum"
 		let g;
@@ -75,9 +75,9 @@ h.run(async () => {
 	// A member declares what it needs through `tabbable`; the group takes the maximum.
 	const floor = await page.evaluate(() => {
 		let g;
-		window.__stores.windowTabs.tabGroups.subscribe((v) => (g = v))();
+		window.__tp.test.v1.windowTabs.tabGroups.subscribe((v) => (g = v))();
 		const mine = g.find((x) => x.members.includes('flow'));
-		return { w: Math.round(mine.rect.width), h: Math.round(mine.rect.height), floor: window.__stores.windowTabs.groupFloor(mine) };
+		return { w: Math.round(mine.rect.width), h: Math.round(mine.rect.height), floor: window.__tp.test.v1.windowTabs.groupFloor(mine) };
 	});
 	h.check(
 		floor.w >= 460 && floor.h >= 320,
@@ -126,7 +126,7 @@ h.run(async () => {
 
 	const go = async (key) => {
 		await page.evaluate(
-			({ id, k }) => window.__stores.windowTabs.activateTab(id, k),
+			({ id, k }) => window.__tp.test.v1.windowTabs.activateTab(id, k),
 			{ id: group.id, k: key }
 		);
 		await page.waitForTimeout(700);
@@ -163,7 +163,7 @@ h.run(async () => {
 		owned.grouped && owned.explorer,
 		'both members are marked as placed-by-the-group (' + JSON.stringify(owned) + ')'
 	);
-	await page.evaluate(() => window.__stores.windowTabs.removeFromGroup('flow'));
+	await page.evaluate(() => window.__tp.test.v1.windowTabs.removeFromGroup('flow'));
 	await page.waitForTimeout(700);
 	h.check(
 		(await page.evaluate(() => !!document.querySelector('#flow-window')?.dataset.tabMember)) === false,

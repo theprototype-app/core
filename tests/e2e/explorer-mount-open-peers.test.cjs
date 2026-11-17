@@ -33,28 +33,28 @@ const h = require('./helpers.cjs');
 const room = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.peers.subscribe((x) => (v = x))();
+		window.__tp.test.v1.peers.subscribe((x) => (v = x))();
 		return v?.openedPeers ? [...v.openedPeers] : null;
 	});
 
 const worldNames = (p) =>
 	p.page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		return (g?.children ?? []).map((c) => c.name || c.type).sort();
 	});
 
 const level = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.levels.currentLevel.subscribe((x) => (v = x))();
+		window.__tp.test.v1.levels.currentLevel.subscribe((x) => (v = x))();
 		return v ?? null;
 	});
 
 const libraryNames = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.explorer.explorerItems.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((x) => (v = x))();
 		return (v ?? []).map((i) => i.name).sort();
 	});
 
@@ -67,12 +67,12 @@ h.run(async () => {
 	const B = await h.setupPage(browser, 'B');
 	for (const peer of [A, B]) {
 		await peer.page.waitForFunction(
-			() => !!window.__stores?.mountedVolumes && !!window.__stores?.explorer && !!window.__stores?.sessions,
+			() => !!window.__tp?.test.v1?.mountedVolumes && !!window.__tp?.test.v1?.explorer && !!window.__tp?.test.v1?.sessions,
 			null,
 			{ timeout: 30000 }
 		);
 		await peer.page.evaluate(async () => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			await s.explorer.loadExplorer();
 			await s.explorer.clearLibrary();
 			await s.mountedVolumes.loadMountedVolumes();
@@ -88,7 +88,7 @@ h.run(async () => {
 	// removed from the live library — so the only copy left on this machine is the one
 	// inside the mount, and no copy at all exists on B.
 	const vaultNames = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1300));
 		s.commandsHandler.sceneCommand('/create sphere');
@@ -100,10 +100,10 @@ h.run(async () => {
 		return (g?.children ?? []).map((c) => c.name || c.type).sort();
 	});
 	h.check(vaultNames.length === 2, `premise: "Vault" is a real scene of two objects (${vaultNames.join(', ')})`);
-	await A.page.evaluate(() => window.__stores.sessions.saveSessionWithLibrary('Cellar'));
+	await A.page.evaluate(() => window.__tp.test.v1.sessions.saveSessionWithLibrary('Cellar'));
 	await A.page.waitForTimeout(2000);
 	const mounted = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		await s.explorer.clearLibrary();
 		let list;
 		s.sessions.sessions.subscribe((x) => (list = x))();
@@ -125,7 +125,7 @@ h.run(async () => {
 	// the proposal, not about the connect-time decision an unnamed world full of objects
 	// would raise
 	await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		const uuids = (g?.children ?? []).map((c) => c.uuid);
@@ -143,7 +143,7 @@ h.run(async () => {
 	// ---- 1. the press becomes a PROPOSAL, not a unilateral wipe -----------------------
 	await A.page.locator('#explorer-slot').click();
 	await A.page.waitForTimeout(900);
-	await A.page.evaluate((key) => window.__stores.explorer.activeFolder.set(key), 'vol:' + mounted.id);
+	await A.page.evaluate((key) => window.__tp.test.v1.explorer.activeFolder.set(key), 'vol:' + mounted.id);
 	await A.page.waitForTimeout(700);
 	const card = A.page.locator('.ex-cards .explorer-card').filter({ hasText: 'Vault.tpscene' }).first();
 	h.check((await card.count()) === 1, 'premise: the scene card is on screen inside the mount');
@@ -195,7 +195,7 @@ h.run(async () => {
 	);
 	const volsB = await B.page.evaluate(() => {
 		let v;
-		window.__stores.mountedVolumes.mountedVolumes.subscribe((x) => (v = x))();
+		window.__tp.test.v1.mountedVolumes.mountedVolumes.subscribe((x) => (v = x))();
 		return (v ?? []).length;
 	});
 	h.check(volsB === 0, `…and no mount appeared on it either (${volsB})`);

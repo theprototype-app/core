@@ -9,7 +9,7 @@ const h = require('./helpers.cjs');
 
 const state = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const HL = s.helperLayer.HELPER_LAYER;
 		const get = (store) => { let v; store.subscribe((x) => (v = x))(); return v; };
 		const cam = get(s.editorCam) || get(s.globalCamera);
@@ -39,10 +39,10 @@ h.run(async () => {
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);
 
-	HL = await A.page.evaluate(() => window.__stores.helperLayer.HELPER_LAYER);
+	HL = await A.page.evaluate(() => window.__tp.test.v1.helperLayer.HELPER_LAYER);
 	h.check(HL !== 1 && HL !== 2, `the helper layer is not one of three's XR EYE layers 1/2 (${HL})`);
 	const ids = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/light point');
 		const marker = s.addObjects.spawnAtPoint('/create Camera', [0, 1, 0]);
 		s.objectActions.deselectObject();
@@ -50,7 +50,7 @@ h.run(async () => {
 	});
 	await A.page.keyboard.press('Escape');
 	await A.page.waitForTimeout(800);
-	await h.eventually(() => B.page.evaluate((u) => { let g; window.__stores.objectsGroup.subscribe((x) => (g = x))(); return !!g.getObjectByProperty('uuid', u); }, ids.marker), (ok) => ok, 'B received the marker', 15000);
+	await h.eventually(() => B.page.evaluate((u) => { let g; window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))(); return !!g.getObjectByProperty('uuid', u); }, ids.marker), (ok) => ok, 'B received the marker', 15000);
 
 	// ---- 1. outside Play: helpers on layer 1 only, the editor camera renders it -------
 	let s = await state(A.page);
@@ -65,10 +65,10 @@ h.run(async () => {
 	await A.page.waitForTimeout(400);
 	s = await state(A.page);
 	h.check(s.selected.includes(ids.marker), `a viewport click selects the marker (${s.selected.length})`);
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 
 	// ---- 3. Play hides everything: camera layer off, markers hop to layer 1 ----------
-	await A.page.evaluate(() => window.__stores.isLocked.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await A.page.waitForTimeout(400);
 	s = await state(A.page);
 	h.check(s.locked === true && s.camHelper === false, `in Play the camera no longer renders the helper layer (mask ${s.camMask})`);
@@ -76,30 +76,30 @@ h.run(async () => {
 	h.check(!s.chip, 'no DEBUG chip while helpers are hidden');
 
 	// ---- 4. the debug toggle brings them back, with the chip -----------------------------
-	await A.page.evaluate(() => window.__stores.helperLayer.helpersInPlay.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.helperLayer.helpersInPlay.set(true));
 	await A.page.waitForTimeout(400);
 	s = await state(A.page);
 	h.check(s.camHelper === true && bit(s.markers[0].mask, 0), `"Show helpers in Play" re-enables the layer and the marker (mask ${s.markers[0].mask})`);
 	h.check(s.chip, 'the DEBUG chip is in the play HUD');
-	await A.page.evaluate(() => window.__stores.helperLayer.helpersInPlay.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.helperLayer.helpersInPlay.set(false));
 	await A.page.waitForTimeout(300);
 	s = await state(A.page);
 	h.check(s.camHelper === false && !bit(s.markers[0].mask, 0) && !s.chip, 'toggling it off hides them again');
 
 	// ---- 5. leaving Play restores the editor view -----------------------------------------
-	await A.page.evaluate(() => window.__stores.isLocked.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(false));
 	await A.page.waitForTimeout(400);
 	s = await state(A.page);
 	h.check(s.camHelper === true && bit(s.markers[0].mask, 0) && !bit(s.markers[0].mask, HL), `leaving Play: layer back on, marker back on layer 0 (mask ${s.markers[0].mask})`);
 
 	// ---- 6. a camera preview hides markers; stopping it restores them ------------------
-	await A.page.evaluate((u) => window.__stores.cameraPreview.startCameraPreview(u), ids.marker);
+	await A.page.evaluate((u) => window.__tp.test.v1.cameraPreview.startCameraPreview(u), ids.marker);
 	await A.page.waitForTimeout(500);
 	s = await state(A.page);
 	h.check(!bit(s.markers[0].mask, 0), `a camera preview hides the markers (mask ${s.markers[0].mask})`);
-	const previewCam = await A.page.evaluate((HL) => { let c; window.__stores.globalCamera.subscribe((x) => (c = x))(); return c?.layers?.isEnabled?.(HL) ?? null; }, HL);
+	const previewCam = await A.page.evaluate((HL) => { let c; window.__tp.test.v1.globalCamera.subscribe((x) => (c = x))(); return c?.layers?.isEnabled?.(HL) ?? null; }, HL);
 	h.check(previewCam === false, `the preview camera never renders the helper layer (${previewCam})`);
-	await A.page.evaluate(() => window.__stores.cameraPreview.stopCameraPreview());
+	await A.page.evaluate(() => window.__tp.test.v1.cameraPreview.stopCameraPreview());
 	await A.page.waitForTimeout(500);
 	s = await state(A.page);
 	h.check(bit(s.markers[0].mask, 0), `stopping the preview restores the marker (mask ${s.markers[0].mask})`);
@@ -107,14 +107,14 @@ h.run(async () => {
 	// ---- 7. a capture hides markers for its one render, then puts them back --------------
 	const capture = await A.page.evaluate(({ u, HL }) => {
 		let r;
-		window.__stores.globalRenderer.subscribe((x) => (r = x))();
+		window.__tp.test.v1.globalRenderer.subscribe((x) => (r = x))();
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		const marker = g.getObjectByProperty('uuid', u);
 		const seen = [];
 		const original = r.render.bind(r);
 		r.render = (scene, camera) => { seen.push({ mask: marker.layers.mask, camHelper: camera.layers.isEnabled(HL) }); return original(scene, camera); };
-		try { window.__stores.cameraObjects.captureThroughCamera(u, 120); } catch (e) { seen.push({ error: e.message }); }
+		try { window.__tp.test.v1.cameraObjects.captureThroughCamera(u, 120); } catch (e) { seen.push({ error: e.message }); }
 		r.render = original;
 		return { seen, after: marker.layers.mask };
 	}, { u: ids.marker, HL });
@@ -125,14 +125,14 @@ h.run(async () => {
 	// ---- 8. peer B: ordinary mask outside Play; its own Play hides its own copy -------
 	let b = await state(B.page);
 	h.check(b.markers.length === 1 && bit(b.markers[0].mask, 0) && !bit(b.markers[0].mask, HL), `peer B's copy of the marker is on layer 0 (mask ${b.markers[0]?.mask})`);
-	await B.page.evaluate(() => window.__stores.isLocked.set(true));
+	await B.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await B.page.waitForTimeout(400);
 	b = await state(B.page);
 	h.check(b.camHelper === false && bit(b.markers[0].mask, HL) && !bit(b.markers[0].mask, 0), `B entering Play hides its own marker copy (mask ${b.markers[0].mask})`);
 	// a snapshot taken by A mid-Play on B carries no hop for B's editor: A's copy is normal
 	s = await state(A.page);
 	h.check(bit(s.markers[0].mask, 0), "A's marker is unaffected by B's Play");
-	await B.page.evaluate(() => window.__stores.isLocked.set(false));
+	await B.page.evaluate(() => window.__tp.test.v1.isLocked.set(false));
 
 	await h.finish(browser);
 });

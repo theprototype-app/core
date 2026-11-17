@@ -101,7 +101,7 @@ h.run(async () => {
 		const d2 = moved(before, after);
 		h.check(d2.length === 0, `${tag('1')} ...and closing it leaves every handle where it was (${d2.join('; ') || n + ' within 1 px'})`);
 		for (const theme of ['dark', 'light']) {
-			await page.evaluate((t) => window.__stores.themes.theme.set(t), theme);
+			await page.evaluate((t) => window.__tp.test.v1.themes.theme.set(t), theme);
 			await page.waitForTimeout(500);
 			await page.screenshot({ path: path.join(OUT, `${dev.name}-handles-closed-${theme}.png`) });
 		}

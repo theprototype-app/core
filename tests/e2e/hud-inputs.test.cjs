@@ -22,11 +22,11 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
 	const page = A.page;
-	await page.waitForFunction(() => !!window.__stores?.hudDocs, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.hudDocs, { timeout: 30000 });
 
 	// ---- 1. the registry -----------------------------------------------------
 	const registry = await page.evaluate(() => {
-		const k = window.__stores.hudKinds;
+		const k = window.__tp.test.v1.hudKinds;
 		return ['slider', 'toggle', 'dropdown', 'textfield'].map((key) => {
 			const def = k.kindDef(key);
 			return {
@@ -54,12 +54,12 @@ h.run(async () => {
 
 	// ---- 2. they render real controls ----------------------------------------
 	await page.evaluate(() => {
-		window.__stores.hudEditorClose.set(false);
-		window.__stores.bottomDock.activateDock('hud');
+		window.__tp.test.v1.hudEditorClose.set(false);
+		window.__tp.test.v1.bottomDock.activateDock('hud');
 	});
 	await page.waitForTimeout(1700);
 	const built = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const doc = s.hudDocs.hudDocOf('scene');
 		const sid = doc.screens[0].id;
 		const mk = (kind, patch) => s.hudDocs.addHudElement('scene', sid, { kind, ...patch }).id;
@@ -80,7 +80,7 @@ h.run(async () => {
 	// runtime layer renders nothing with the editor open. Turn the preview on rather than
 	// closing the editor - it is the same code path a user reaches with the eye toggle, and
 	// section 8 needs the artboard back.
-	await page.evaluate(() => window.__stores.hudDocs.hudPreviewInViewport.set(true));
+	await page.evaluate(() => window.__tp.test.v1.hudDocs.hudPreviewInViewport.set(true));
 	await page.waitForTimeout(700);
 
 	const rendered = await page.evaluate((ids) => {
@@ -109,24 +109,24 @@ h.run(async () => {
 		el.value = '80';
 		el.dispatchEvent(new Event('input', { bubbles: true }));
 		await new Promise((r) => setTimeout(r, 400));
-		return window.__stores.hudDocs.hudValueOf(id);
+		return window.__tp.test.v1.hudDocs.hudValueOf(id);
 	}, built.ids.slider);
 	h.check(dragged === 80, `moving it writes the value (${dragged})`);
 
 	// ---- 3./4. LOCAL by default, SHARED by flag -------------------------------
 	const B = await h.setupPage(browser, 'B');
-	await B.page.waitForFunction(() => !!window.__stores?.hudDocs, { timeout: 30000 });
+	await B.page.waitForFunction(() => !!window.__tp?.test.v1?.hudDocs, { timeout: 30000 });
 	await h.connect(B, A);
 	await B.page.waitForTimeout(3000);
 
 	const peerHasDoc = await B.page.evaluate(
-		(sid) => !!window.__stores.hudDocs.hudDocOf('scene')?.screens?.some((s) => s.id === sid),
+		(sid) => !!window.__tp.test.v1.hudDocs.hudDocOf('scene')?.screens?.some((s) => s.id === sid),
 		built.sid
 	);
 	h.check(peerHasDoc, 'premise: the peer holds the HUD document');
 
 	await page.evaluate(async (ids) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.hudDocs.setHudValue(ids.slider, 33, { shared: false });
 		s.hudDocs.setHudValue(ids.shared, 9, { shared: true });
 		await new Promise((r) => setTimeout(r, 900));
@@ -134,8 +134,8 @@ h.run(async () => {
 	await B.page.waitForTimeout(1200);
 	const onPeer = await B.page.evaluate(
 		(ids) => ({
-			local: window.__stores.hudDocs.hudValueOf(ids.slider),
-			shared: window.__stores.hudDocs.hudValueOf(ids.shared)
+			local: window.__tp.test.v1.hudDocs.hudValueOf(ids.slider),
+			shared: window.__tp.test.v1.hudDocs.hudValueOf(ids.shared)
 		}),
 		built.ids
 	);
@@ -145,25 +145,25 @@ h.run(async () => {
 	// monotonic stamps: a burst inside one millisecond must not lose everything after the
 	// first write, which is what a `>=` guard on Date.now() does
 	const burst = await page.evaluate(async (id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		for (let i = 1; i <= 6; i++) s.hudDocs.setHudValue(id, i, { shared: true });
 		await new Promise((r) => setTimeout(r, 1000));
 		return s.hudDocs.hudValueOf(id);
 	}, built.ids.shared);
 	await B.page.waitForTimeout(1400);
-	const burstPeer = await B.page.evaluate((id) => window.__stores.hudDocs.hudValueOf(id), built.ids.shared);
+	const burstPeer = await B.page.evaluate((id) => window.__tp.test.v1.hudDocs.hudValueOf(id), built.ids.shared);
 	h.check(burst === 6, `six writes inside one millisecond all land locally (${burst})`);
 	h.check(burstPeer === 6, `and the peer ends on the LAST one, not the first (${burstPeer})`);
 
 	// ---- 5. a late joiner gets the shared values, and only those --------------
 	const C = await h.setupPage(browser, 'C');
-	await C.page.waitForFunction(() => !!window.__stores?.hudDocs, { timeout: 30000 });
+	await C.page.waitForFunction(() => !!window.__tp?.test.v1?.hudDocs, { timeout: 30000 });
 	await h.connect(C, A);
 	let late = null;
 	for (let i = 0; i < 24 && late === undefined ? true : late === null; i++) {
 		late = await C.page.evaluate((ids) => {
-			const v = window.__stores.hudDocs.hudValueOf(ids.shared);
-			return v === undefined ? null : { shared: v, local: window.__stores.hudDocs.hudValueOf(ids.slider) };
+			const v = window.__tp.test.v1.hudDocs.hudValueOf(ids.shared);
+			return v === undefined ? null : { shared: v, local: window.__tp.test.v1.hudDocs.hudValueOf(ids.slider) };
 		}, built.ids);
 		if (!late) await C.page.waitForTimeout(300);
 	}
@@ -172,13 +172,13 @@ h.run(async () => {
 
 	// ---- 6. the hudinput node READS a value ----------------------------------
 	await page.evaluate(() => {
-		window.__stores.objectActions.deselectObject();
-		window.__stores.flowGraphClose.set(false);
-		window.__stores.bottomDock.activateDock('flow');
+		window.__tp.test.v1.objectActions.deselectObject();
+		window.__tp.test.v1.flowGraphClose.set(false);
+		window.__tp.test.v1.bottomDock.activateDock('flow');
 	});
 	await page.waitForTimeout(1400);
 	const read = await page.evaluate(async (ids) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const mk = (id, type, data) =>
 			s.nodesHandler.createFlowNode({ id, type, position: { x: 40, y: 40 }, data: { type, ...data } });
 		mk('in-num', 'hudinput', { element: ids.slider, read: 'value', fallback: 0 });
@@ -206,15 +206,15 @@ h.run(async () => {
 	// `createFlowNode` is the APPLIER and does not broadcast (the flowNodes.set trap), so
 	// push the graph rather than waiting on nodesync's periodic hash compare - which would
 	// make this pass slowly and racily instead of cleanly.
-	await page.evaluate((peerId) => window.__stores.nodesHandler.sendNodes(peerId), B.id);
+	await page.evaluate((peerId) => window.__tp.test.v1.nodesHandler.sendNodes(peerId), B.id);
 	let readB = undefined;
 	for (let i = 0; i < 24 && readB === undefined; i++) {
 		readB = await B.page.evaluate(() => {
 			let g;
-			window.__stores.flowGraphs.subscribe((x) => (g = x))();
+			window.__tp.test.v1.flowGraphs.subscribe((x) => (g = x))();
 			if (!(g.scene?.nodes ?? []).some((n) => n.id === 'in-num')) return undefined;
 			let v;
-			window.__stores.flowValues.subscribe((x) => (v = x))();
+			window.__tp.test.v1.flowValues.subscribe((x) => (v = x))();
 			return v['in-num'];
 		});
 		if (readB === undefined) await B.page.waitForTimeout(300);
@@ -226,7 +226,7 @@ h.run(async () => {
 
 	// ---- 7. hudset writes one, on the trigger EDGE ---------------------------
 	const written = await page.evaluate(async (ids) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.nodesHandler.createFlowNode({
 			id: 'set-vol',
 			type: 'hudset',
@@ -258,19 +258,19 @@ h.run(async () => {
 
 	// ---- 8. the artboard is inert -------------------------------------------
 	await page.evaluate(() => {
-		window.__stores.hudEditorClose.set(false);
-		window.__stores.bottomDock.activateDock('hud');
+		window.__tp.test.v1.hudEditorClose.set(false);
+		window.__tp.test.v1.bottomDock.activateDock('hud');
 	});
 	await page.waitForTimeout(1500);
 	const inert = await page.evaluate(async (ids) => {
-		const before = window.__stores.hudDocs.hudValueOf(ids.slider);
+		const before = window.__tp.test.v1.hudDocs.hudValueOf(ids.slider);
 		const el = document.querySelector(`#hud-board [data-hud-item="${ids.slider}"] input[type="range"]`);
 		if (!el) return { error: 'no slider on the artboard' };
 		const disabled = el.disabled;
 		el.value = '3';
 		el.dispatchEvent(new Event('input', { bubbles: true }));
 		await new Promise((r) => setTimeout(r, 500));
-		return { before, disabled, after: window.__stores.hudDocs.hudValueOf(ids.slider) };
+		return { before, disabled, after: window.__tp.test.v1.hudDocs.hudValueOf(ids.slider) };
 	}, built.ids);
 	h.check(!inert.error, `premise: the artboard draws the slider (${inert.error ?? 'it does'})`);
 	h.check(inert.disabled === true, 'the artboard control is disabled');
@@ -284,7 +284,7 @@ h.run(async () => {
 	// is not 'the same list as a button': a slider emits no press, so offering it 'Start
 	// the game' would build a binding that can never fire.
 	const offers = await page.evaluate(() => {
-		const a = window.__stores.hudActions;
+		const a = window.__tp.test.v1.hudActions;
 		const keys = (kind) => a.actionsForKind(kind).map((x) => x.key);
 		return { button: keys('button'), slider: keys('slider'), toggle: keys('toggle'), text: keys('text') };
 	});
@@ -303,7 +303,7 @@ h.run(async () => {
 	h.check(offers.text.includes('showvar'), 'and a display kind still gets its drives actions');
 
 	const bound = await page.evaluate(async (ids) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		// ids.slider already has a reader from section 6, so use the one with none
 		const first = s.hudActions.addBinding(ids.shared, 'readvalue');
 		await new Promise((r) => setTimeout(r, 700));
@@ -320,7 +320,7 @@ h.run(async () => {
 
 	// a toggle really does pulse, or 'toggle a screen' from a toggle would be dead
 	const pulsed = await page.evaluate(async (ids) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.hudActions.addBinding(ids.toggle, 'count');
 		await new Promise((r) => setTimeout(r, 800));
 		let g;

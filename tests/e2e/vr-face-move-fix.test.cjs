@@ -9,14 +9,14 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	const res = await A.page.evaluate(() => {
-		const f = window.__stores.faceEdit;
-		const THREE = window.__stores.THREE;
+		const f = window.__tp.test.v1.faceEdit;
+		const THREE = window.__tp.test.v1.THREE;
 		const K = (x, y, z) => `${Math.round(x * 1e3)},${Math.round(y * 1e3)},${Math.round(z * 1e3)}`;
 
-		window.__stores.commandsHandler.sceneCommand('/create box'); // unit box
-		let grp; window.__stores.objectsGroup.subscribe((v) => (grp = v))();
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box'); // unit box
+		let grp; window.__tp.test.v1.objectsGroup.subscribe((v) => (grp = v))();
 		const box = grp.children[grp.children.length - 1];
-		window.__stores.objectActions.selectObject(box.uuid);
+		window.__tp.test.v1.objectActions.selectObject(box.uuid);
 		f.enterFaceEdit(box.uuid);
 
 		const faces = f.currentFaces();
@@ -56,6 +56,6 @@ h.run(async () => {
 	h.check(res.trisAfter === res.trisBefore, `triangle count is unchanged (${res.trisBefore} -> ${res.trisAfter})`);
 	h.check(res.movedOffPlane, 'the grabbed face actually moved (verts left the +X plane)');
 
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
 	await h.finish(browser);
 });

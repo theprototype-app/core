@@ -17,12 +17,12 @@ h.run(async () => {
 	await h.connect(B, A);
 
 	// A creates a cube; both peers must see it before we attach a graph to it
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await A.page.waitForTimeout(2500);
 	const uuid = await A.page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					let mesh = null;
 					g.traverse((n) => {
 						if (n.isMesh && !mesh) mesh = n;
@@ -33,14 +33,14 @@ h.run(async () => {
 	);
 	h.check(!!uuid, 'premise — A has a cube: ' + uuid);
 	await h.eventually(
-		() => B.page.evaluate((u) => !!window.__stores.objectsGroup && new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(!!g?.getObjectByProperty('uuid', u)))()), uuid),
+		() => B.page.evaluate((u) => !!window.__tp.test.v1.objectsGroup && new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(!!g?.getObjectByProperty('uuid', u)))()), uuid),
 		(ok) => ok === true,
 		'premise — B received the cube'
 	);
 
 	// ---- 1. an edit on A reaches B ---------------------------------------------
 	await A.page.evaluate(
-		([u, g]) => window.__stores.shaderGraph.setShaderGraphFor(u, g),
+		([u, g]) => window.__tp.test.v1.shaderGraph.setShaderGraphFor(u, g),
 		[uuid, GRAPH('#e62610')]
 	);
 	await h.eventually(
@@ -48,7 +48,7 @@ h.run(async () => {
 			B.page.evaluate(
 				(u) =>
 					new Promise((r) =>
-						window.__stores.shaderGraph.shaderGraphs.subscribe((all) => r(all[u]?.nodes?.length ?? 0))()
+						window.__tp.test.v1.shaderGraph.shaderGraphs.subscribe((all) => r(all[u]?.nodes?.length ?? 0))()
 					),
 				uuid
 			),
@@ -56,17 +56,17 @@ h.run(async () => {
 		'A -> B: the graph document replicated'
 	);
 	await h.eventually(
-		() => B.page.evaluate((u) => window.__stores.shaderGraph.isShaderDriven(u), uuid),
+		() => B.page.evaluate((u) => window.__tp.test.v1.shaderGraph.isShaderDriven(u), uuid),
 		(driven) => driven === true,
 		'and B COMPILED it locally — the object is shader-driven on B too (the compile is debounced, so poll)'
 	);
-	const bDriven = await B.page.evaluate((u) => window.__stores.shaderGraph.isShaderDriven(u), uuid);
+	const bDriven = await B.page.evaluate((u) => window.__tp.test.v1.shaderGraph.isShaderDriven(u), uuid);
 
 	// B must NOT have re-broadcast (golden rule 1). A's changedAt is unchanged by the
 	// round trip, which is the observable consequence.
 	const stamps = await Promise.all([
-		A.page.evaluate((u) => new Promise((r) => window.__stores.shaderGraph.shaderGraphs.subscribe((a) => r(a[u]?.changedAt))()), uuid),
-		B.page.evaluate((u) => new Promise((r) => window.__stores.shaderGraph.shaderGraphs.subscribe((a) => r(a[u]?.changedAt))()), uuid)
+		A.page.evaluate((u) => new Promise((r) => window.__tp.test.v1.shaderGraph.shaderGraphs.subscribe((a) => r(a[u]?.changedAt))()), uuid),
+		B.page.evaluate((u) => new Promise((r) => window.__tp.test.v1.shaderGraph.shaderGraphs.subscribe((a) => r(a[u]?.changedAt))()), uuid)
 	]);
 	h.check(stamps[0] === stamps[1], 'both peers hold the SAME changedAt (no re-broadcast loop): ' + JSON.stringify(stamps));
 
@@ -75,8 +75,8 @@ h.run(async () => {
 	// later edit from A correctly OLDER, and sections 4-7 would fail for that reason
 	const race = await B.page.evaluate(
 		([u]) => {
-			const S = window.__stores.shaderGraph;
-			const sync = window.__stores.shaderSync;
+			const S = window.__tp.test.v1.shaderGraph;
+			const sync = window.__tp.test.v1.shaderSync;
 			S.setShaderGraphFor(u, { nodes: [{ id: 'c1', type: 'color', data: { value: '#e62610' } }, { id: 's1', type: 'surface', data: {} }], edges: [{ id: 'e1', source: 'c1', sourceHandle: 'out', target: 's1', targetHandle: 'albedo' }] }, { silent: true });
 			// an OLDER document must be refused
 			const before = JSON.parse(JSON.stringify(S.shaderGraphOf(u)));
@@ -110,8 +110,8 @@ h.run(async () => {
 	// ---- 3. an unknown field from a "newer peer" survives our edit ------------
 	const survive = await B.page.evaluate(
 		([u]) => {
-			const S = window.__stores.shaderGraph;
-			window.__stores.shaderSync.applyRemoteShaderGraph({
+			const S = window.__tp.test.v1.shaderGraph;
+			window.__tp.test.v1.shaderSync.applyRemoteShaderGraph({
 				key: u,
 				doc: { ...S.shaderGraphOf(u), futureField: 'keep-me', changedAt: Date.now() + 120000 }
 			});
@@ -130,9 +130,9 @@ h.run(async () => {
 	// ---- 4. history: one entry per gesture, and undo replicates --------------
 	const undo = await A.page.evaluate(
 		([u]) => {
-			const S = window.__stores.shaderGraph;
-			const sync = window.__stores.shaderSync;
-			const H = window.__stores.history;
+			const S = window.__tp.test.v1.shaderGraph;
+			const sync = window.__tp.test.v1.shaderSync;
+			const H = window.__tp.test.v1.history;
 			const depth = () => new Promise((r) => H.undoStack.subscribe((s) => r(s.length))());
 			return (async () => {
 				const start = await depth();
@@ -160,7 +160,7 @@ h.run(async () => {
 	await h.eventually(
 		() =>
 			B.page.evaluate(
-				(u) => new Promise((r) => window.__stores.shaderGraph.shaderGraphs.subscribe((a) => r(a[u]?.nodes?.[0]?.data?.value))()),
+				(u) => new Promise((r) => window.__tp.test.v1.shaderGraph.shaderGraphs.subscribe((a) => r(a[u]?.nodes?.[0]?.data?.value))()),
 				uuid
 			),
 		(v) => v === undo.colourUndone,
@@ -169,8 +169,8 @@ h.run(async () => {
 
 	// ---- 5. the shared clock agrees across peers ----------------------------
 	const clocks = await Promise.all([
-		A.page.evaluate(() => window.__stores.shaderGraph.shaderClockNow()),
-		B.page.evaluate(() => window.__stores.shaderGraph.shaderClockNow())
+		A.page.evaluate(() => window.__tp.test.v1.shaderGraph.shaderClockNow()),
+		B.page.evaluate(() => window.__tp.test.v1.shaderGraph.shaderClockNow())
 	]);
 	h.check(
 		Math.abs(clocks[0] - clocks[1]) < 2,
@@ -183,7 +183,7 @@ h.run(async () => {
 	await h.eventually(
 		() =>
 			C.page.evaluate(
-				(u) => new Promise((r) => window.__stores.shaderGraph.shaderGraphs.subscribe((a) => r(a[u]?.nodes?.length ?? 0))()),
+				(u) => new Promise((r) => window.__tp.test.v1.shaderGraph.shaderGraphs.subscribe((a) => r(a[u]?.nodes?.length ?? 0))()),
 				uuid
 			),
 		(n) => n === 2,
@@ -192,14 +192,14 @@ h.run(async () => {
 	// the compile needs the OBJECT as well as the document (shaderGraph's reconcile retries when it lands):
 	// a red below says which of the two never arrived on the third page
 	await h.eventually(
-		() => C.page.evaluate((u) => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(!!g?.getObjectByProperty('uuid', u)))()), uuid),
+		() => C.page.evaluate((u) => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(!!g?.getObjectByProperty('uuid', u)))()), uuid),
 		(has) => has === true,
 		'(premise) the late joiner has the cube the graph drives',
 		20000
 	);
 	let cDriven = false;
 	await h.eventually(
-		() => C.page.evaluate((u) => window.__stores.shaderGraph.isShaderDriven(u), uuid),
+		() => C.page.evaluate((u) => window.__tp.test.v1.shaderGraph.isShaderDriven(u), uuid),
 		(driven) => (cDriven = driven === true),
 		'and compiles it locally too'
 	);
@@ -210,7 +210,7 @@ h.run(async () => {
 			'  C compile: ' +
 				JSON.stringify(
 					await C.page.evaluate(async (u) => {
-						const sg = window.__stores.shaderGraph;
+						const sg = window.__tp.test.v1.shaderGraph;
 						let errs = null;
 						sg.shaderErrors?.subscribe?.((e) => (errs = e?.[u] ?? null))?.();
 						sg.reconcileShaderGraphs();
@@ -221,18 +221,18 @@ h.run(async () => {
 		);
 
 	// ---- 7. delete replicates ----------------------------------------------
-	await A.page.evaluate((u) => window.__stores.shaderGraph.setShaderGraphFor(u, null), uuid);
+	await A.page.evaluate((u) => window.__tp.test.v1.shaderGraph.setShaderGraphFor(u, null), uuid);
 	await h.eventually(
 		() =>
 			B.page.evaluate(
-				(u) => new Promise((r) => window.__stores.shaderGraph.shaderGraphs.subscribe((a) => r(!!a[u]))()),
+				(u) => new Promise((r) => window.__tp.test.v1.shaderGraph.shaderGraphs.subscribe((a) => r(!!a[u]))()),
 				uuid
 			),
 		(present) => present === false,
 		'deleting the graph replicates'
 	);
 	await h.eventually(
-		() => B.page.evaluate((u) => window.__stores.shaderGraph.isShaderDriven(u), uuid),
+		() => B.page.evaluate((u) => window.__tp.test.v1.shaderGraph.isShaderDriven(u), uuid),
 		(driven) => driven === false,
 		'and B puts the object back on its own material'
 	);

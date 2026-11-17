@@ -18,7 +18,7 @@ const h = require('./helpers.cjs');
 const SIDES = ['left', 'right'];
 const state = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const g = (st) => {
 			let v;
 			st.subscribe((x) => (v = x))();
@@ -40,12 +40,17 @@ const state = (page) =>
 	});
 const settle = (page, ms = 700) => page.waitForTimeout(ms);
 const near = (a, b) => a && b && Math.abs(a.top - b.top) <= 1;
+// the handles slide on `top` (0.2 s); a transition advances only on painted frames, and a headless cloud build under
+// load paints few, so a read 700 ms after a change can land mid-slide (production 1.66.0: 249 still drawn 1.5 s later).
+// This suite measures WHERE a handle is drawn, so the slide is switched off.
+const noSlide = (page) => page.addStyleTag({ content: '#sidebar-handle-left, #sidebar-handle-right { transition: none !important; }' });
 const nodeEditor = (page) => page.locator('p[title="Node editor (N)"]').click();
 
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1920, height: 1080 } } });
 	const page = A.page;
+	await noSlide(page);
 	await settle(page, 1500);
 
 	// ---- 1. a saved spot low on the screen ----
@@ -54,8 +59,8 @@ h.run(async () => {
 	const base = { left: st.left.top - st.saved.left, right: st.right.top - st.saved.right };
 	await page.evaluate(
 		([l, r]) => {
-			window.__stores.sidebarHandles.setSidebarHandleY('left', l);
-			window.__stores.sidebarHandles.setSidebarHandleY('right', r);
+			window.__tp.test.v1.sidebarHandles.setSidebarHandleY('left', l);
+			window.__tp.test.v1.sidebarHandles.setSidebarHandleY('right', r);
 		},
 		[820 - base.left, 860 - base.right]
 	);
@@ -74,7 +79,7 @@ h.run(async () => {
 
 	// ---- 3. the dock grows: the handle follows ----
 	const was = st;
-	await page.evaluate((hh) => window.__stores.bottomDock.dockHeight.set(hh), Math.round(was.inset + 120));
+	await page.evaluate((hh) => window.__tp.test.v1.bottomDock.dockHeight.set(hh), Math.round(was.inset + 120));
 	await settle(page, 900);
 	st = await state(page);
 	h.check(st.dockTop !== null && st.dockTop < was.dockTop - 60, `premise: the dock grew (top ${was.dockTop} -> ${st.dockTop})`);
@@ -96,8 +101,8 @@ h.run(async () => {
 	h.check(st.saved.left === home.saved.left, '4 ...the other side keeps its own');
 	await page.evaluate(() => {
 		let v;
-		window.__stores.sidebars.sidebarVisible.subscribe((x) => (v = x))();
-		if (v.right) window.__stores.sidebars.toggleSidebar('right', false);
+		window.__tp.test.v1.sidebars.sidebarVisible.subscribe((x) => (v = x))();
+		if (v.right) window.__tp.test.v1.sidebars.toggleSidebar('right', false);
 	});
 
 	// ---- 5. the dock closes ----
@@ -112,6 +117,7 @@ h.run(async () => {
 	const keep = st;
 	await h.freshReload(A);
 	await h.answerRestore?.(A);
+	await noSlide(page);
 	await settle(page, 2000);
 	st = await state(page);
 	h.check(near(st.left, keep.left) && near(st.right, keep.right), `6 a reload keeps both saved spots (${st.left?.top}/${keep.left?.top}, ${st.right?.top}/${keep.right?.top})`);
@@ -127,7 +133,7 @@ h.run(async () => {
 		}, 'sidebar-handle-' + side);
 	await nodeEditor(page);
 	await settle(page, 1000);
-	await page.evaluate(() => window.__stores.bottomDock.dockHeight.set(Math.round(innerHeight - 120)));
+	await page.evaluate(() => window.__tp.test.v1.bottomDock.dockHeight.set(Math.round(innerHeight - 120)));
 	await settle(page, 1000);
 	st = await state(page);
 	h.check(st.dockTop !== null && st.dockTop < 200, `premise: the dock covers nearly the whole viewport (top ${st.dockTop})`);
@@ -135,7 +141,7 @@ h.run(async () => {
 		const t = await onTop(side);
 		h.check(t && t.under && !t.mine, `7 no room above the dock: the ${side} handle waits BEHIND it, not painted on it (${JSON.stringify(t)})`);
 	}
-	await page.evaluate(() => window.__stores.bottomDock.dockHeight.set(320));
+	await page.evaluate(() => window.__tp.test.v1.bottomDock.dockHeight.set(320));
 	await nodeEditor(page);
 	await settle(page, 1000);
 	st = await state(page);

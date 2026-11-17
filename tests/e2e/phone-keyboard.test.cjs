@@ -54,12 +54,12 @@ h.run(async () => {
 		const phone = size.viewport.width <= 640;
 
 		const cases = [
-			{ label: 'command palette', sel: '#command-palette', open: () => page.evaluate(() => window.__stores.commandPaletteOpen.set(true)), close: () => page.evaluate(() => window.__stores.commandPaletteOpen.set(false)) },
-			{ label: 'Report a problem', sel: '#problem-report', open: () => page.evaluate(() => window.__stores.problemReport.openProblemReport()), close: () => page.evaluate(() => window.__stores.problemReport.closeProblemReport(null)) }
+			{ label: 'command palette', sel: '#command-palette', open: () => page.evaluate(() => window.__tp.test.v1.commandPaletteOpen.set(true)), close: () => page.evaluate(() => window.__tp.test.v1.commandPaletteOpen.set(false)) },
+			{ label: 'Report a problem', sel: '#problem-report', open: () => page.evaluate(() => window.__tp.test.v1.problemReport.openProblemReport()), close: () => page.evaluate(() => window.__tp.test.v1.problemReport.closeProblemReport(null)) }
 		];
 		// on a phone the Layouts list is a dock tab, not a dialog
 		if (!phone)
-			cases.push({ label: 'Layouts', sel: '#layouts-menu', open: () => page.evaluate(() => window.__stores.uiLayouts.layoutsMenuOpen.set(true)), close: () => page.evaluate(() => window.__stores.uiLayouts.layoutsMenuOpen.set(false)) });
+			cases.push({ label: 'Layouts', sel: '#layouts-menu', open: () => page.evaluate(() => window.__tp.test.v1.uiLayouts.layoutsMenuOpen.set(true)), close: () => page.evaluate(() => window.__tp.test.v1.uiLayouts.layoutsMenuOpen.set(false)) });
 
 		for (const c of cases) {
 			await c.open();

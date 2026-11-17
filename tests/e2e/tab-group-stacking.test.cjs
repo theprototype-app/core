@@ -23,7 +23,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1440, height: 900 } } });
 	const page = A.page;
-	await page.waitForFunction(() => !!window.__stores?.windowTabs && !!window.__stores?.objectListClose, null, {
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.windowTabs && !!window.__tp?.test.v1?.objectListClose, null, {
 		timeout: 30000
 	});
 
@@ -32,15 +32,15 @@ h.run(async () => {
 	// opens - chat mounts over that corner, and a click landing on the wrong element is how
 	// this suite spent two runs reporting a missing Explorer.
 	await page.evaluate(() => {
-		window.__stores.objectListClose.set(false);
-		window.__stores.explorerClose.set(false);
+		window.__tp.test.v1.objectListClose.set(false);
+		window.__tp.test.v1.explorerClose.set(false);
 	});
 	await page.waitForTimeout(1200);
 	if (!(await page.locator('#explorer-window').count())) {
 		await page.locator('#dock-undock:visible').click({ timeout: 20000 });
 		await page.waitForTimeout(900);
 	}
-	await page.evaluate(() => window.__stores.chatHidden?.set?.(''));
+	await page.evaluate(() => window.__tp.test.v1.chatHidden?.set?.(''));
 	await page.waitForTimeout(1000);
 	const present = await page.evaluate(() => ({
 		objects: !!document.querySelector('#object-list'),
@@ -54,7 +54,7 @@ h.run(async () => {
 
 	// group the Explorer with whatever second member is available
 	const grouped = await page.evaluate(() => {
-		const t = window.__stores.windowTabs;
+		const t = window.__tp.test.v1.windowTabs;
 		// CHAT, not the object list: the third window has to stay OUT of the group, or the
 		// comparison below is between a strip and one of its own members - which is not the
 		// bug, and passed for the wrong reason on the first run.
@@ -144,7 +144,7 @@ h.run(async () => {
 	// a time, so a size that suits the member on screen can break the one behind it, and you
 	// only find out by switching tabs.
 	const floor = await page.evaluate(() => {
-		const t = window.__stores.windowTabs;
+		const t = window.__tp.test.v1.windowTabs;
 		t.resizeGroup('explorer', 40, 40);
 		let groups;
 		t.tabGroups.subscribe((v) => (groups = v))();
@@ -175,7 +175,7 @@ h.run(async () => {
 	// which the strip wins because it is rendered from Menu.svelte after the windows. That is
 	// the shape of the reported bug: a strip drawing through a window in front of it.
 	const many = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.chatHidden?.set?.('');
 		s.aiAssistantClose?.set?.(false);
 		s.scriptEditorClose?.set?.(false);
@@ -226,10 +226,10 @@ h.run(async () => {
 		});
 
 	// make the group wide enough that NOTHING should be hidden
-	await page.evaluate(() => window.__stores.windowTabs.resizeGroup('explorer', 900, 420));
+	await page.evaluate(() => window.__tp.test.v1.windowTabs.resizeGroup('explorer', 900, 420));
 	await page.waitForTimeout(600);
-	await page.evaluate(() => window.__stores.windowTabs.activateTab(
-		(() => { let g; window.__stores.windowTabs.tabGroups.subscribe((v) => (g = v))(); return g[0].id; })(),
+	await page.evaluate(() => window.__tp.test.v1.windowTabs.activateTab(
+		(() => { let g; window.__tp.test.v1.windowTabs.tabGroups.subscribe((v) => (g = v))(); return g[0].id; })(),
 		'explorer'
 	));
 	await page.waitForTimeout(700);
@@ -240,13 +240,13 @@ h.run(async () => {
 	);
 
 	// away to the other tab, then back — the round trip is the whole test
-	await page.evaluate(() => window.__stores.windowTabs.activateTab(
-		(() => { let g; window.__stores.windowTabs.tabGroups.subscribe((v) => (g = v))(); return g[0].id; })(),
+	await page.evaluate(() => window.__tp.test.v1.windowTabs.activateTab(
+		(() => { let g; window.__tp.test.v1.windowTabs.tabGroups.subscribe((v) => (g = v))(); return g[0].id; })(),
 		'chat'
 	));
 	await page.waitForTimeout(700);
-	await page.evaluate(() => window.__stores.windowTabs.activateTab(
-		(() => { let g; window.__stores.windowTabs.tabGroups.subscribe((v) => (g = v))(); return g[0].id; })(),
+	await page.evaluate(() => window.__tp.test.v1.windowTabs.activateTab(
+		(() => { let g; window.__tp.test.v1.windowTabs.tabGroups.subscribe((v) => (g = v))(); return g[0].id; })(),
 		'explorer'
 	));
 	// SAMPLED IMMEDIATELY, and that matters: a ResizeObserver re-fires with the real width a

@@ -19,7 +19,7 @@ h.run(async () => {
 	await h.connect(B, A);
 
 	const ids = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const cmd = s.commandsHandler.sceneCommand;
 		for (let i = 0; i < 4; i++) cmd('/create Box 0.4 0.4 0.4');
 		/** @type {any} */ let g;
@@ -45,7 +45,7 @@ h.run(async () => {
 	// each gem's OWN graph holds one Collect pickup node, nothing wired (the node-only scene):
 	// created through the replicated object-flow path so B holds the same graphs
 	await A.page.evaluate((uuids) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		uuids.slice(0, 3).forEach((uuid, i) => {
 			s.flowGraphs.update((m) => ({
 				...m,
@@ -59,7 +59,7 @@ h.run(async () => {
 		});
 	}, ids);
 	await B.page.evaluate((uuids) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		uuids.slice(0, 3).forEach((uuid, i) => {
 			s.flowGraphs.update((m) => ({
 				...m,
@@ -74,25 +74,25 @@ h.run(async () => {
 	}, ids);
 	// gem 4: the code path (a behaviour's on.load does exactly this)
 	for (const peer of [A, B])
-		await peer.page.evaluate((uuid) => window.__stores.kit.kit.impls.pickups.extra.register({ id: uuid, score: 1 }), ids[3]);
+		await peer.page.evaluate((uuid) => window.__tp.test.v1.kit.kit.impls.pickups.extra.register({ id: uuid, score: 1 }), ids[3]);
 	// A walks with a controller; B flies (no controller on B's page)
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowNodes.set([{ id: 'walk', type: 'charcontroller', position: { x: 0, y: 0 }, data: { label: 'Character Controller', mode: 'walk', speed: 0.08, jumpHeight: 1.1, eyeHeight: 1.7, gravity: true } }]);
 	});
 	await A.page.waitForTimeout(1500);
 
 	const doc = (page) =>
 		page.evaluate(() => {
-			const d = window.__stores.kit.kitDebug().doc;
+			const d = window.__tp.test.v1.kit.kitDebug().doc;
 			const taken = d?.slices?.pickups?.taken ?? {};
 			const score = d?.slices?.score ?? {};
-			return { taken: Object.fromEntries(Object.entries(taken).map(([k, v]) => [k, v.by])), total: score.total ?? null, me: window.__stores.kit.kitDebug().me };
+			return { taken: Object.fromEntries(Object.entries(taken).map(([k, v]) => [k, v.by])), total: score.total ?? null, me: window.__tp.test.v1.kit.kitDebug().me };
 		});
 	const stand = (page, x, z) =>
 		page.evaluate(
 			([px, pz]) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				let cam;
 				s.playerCam.subscribe((c) => (cam = c))();
 				cam.position.x = px;
@@ -103,7 +103,7 @@ h.run(async () => {
 		);
 
 	// 1. A walks over gem 1
-	await A.page.evaluate(() => window.__stores.isLocked.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await A.page.waitForTimeout(1500);
 	await A.page.keyboard.down('KeyW');
 	await h.eventually(() => doc(A.page), (d) => !!d.taken[ids[0]], 'A: walking over gem 1 takes it', 15000).catch(() => {});
@@ -116,12 +116,12 @@ h.run(async () => {
 	await h.leavePlay(A);
 
 	// 2. B (fly) stands on gem 2
-	await B.page.evaluate(() => window.__stores.isLocked.set(true));
+	await B.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await B.page.waitForTimeout(1200);
 	await stand(B.page, 4, 0);
 	await B.page.waitForTimeout(400);
 	console.log('B after the teleport: ' + JSON.stringify(await B.page.evaluate(() => (() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let cam, gc, ctl;
 			s.playerCam.subscribe((c) => (cam = c))();
 			s.globalCamera?.subscribe?.((c) => (gc = c))();
@@ -134,7 +134,7 @@ h.run(async () => {
 		})())));
 	await h.eventually(() => doc(B.page), (d) => !!d.taken[ids[1]], 'B: standing on gem 2 takes it', 10000).catch(() => {});
 	console.log('  B after the wait: ' + JSON.stringify(await B.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const p = s.kit.kit.impls.pickups?.extra;
 		let gc;
 		s.globalCamera.subscribe((c) => (gc = c))();

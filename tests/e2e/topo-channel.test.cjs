@@ -11,7 +11,7 @@ h.run(async () => {
 
 	// ---- validation + wire packing (pure) ----------------------------------
 	const pure = await A.page.evaluate(() => {
-		const t = window.__stores.meshTopology;
+		const t = window.__tp.test.v1.meshTopology;
 		const ok = t.facesValidFor(
 			[
 				[0, 1],
@@ -58,16 +58,16 @@ h.run(async () => {
 
 	// ---- a face op STORES its partition; the wire carries it ---------------
 	const uuid = await A.page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/create Box 1 1 1');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create Box 1 1 1');
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const box = g.children[g.children.length - 1];
 		window.__box = box;
 		return box.uuid;
 	});
 
 	const stored = await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const t = s.meshTopology;
 		const fe = s.faceEdit;
 		const fresh = t.readStoredFaces(window.__box.geometry); // nothing yet: derived world
@@ -106,10 +106,10 @@ h.run(async () => {
 	// degrees apart, which no coplanarity threshold separates from a genuine crease.
 	// The derived counterfactual is computed here so the check cannot pass vacuously.
 	const twist = await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const t = s.meshTopology;
 		const fe = s.faceEdit;
-		const THREE = s.THREE ?? window.__stores.three;
+		const THREE = s.THREE ?? window.__tp.test.v1.three;
 		const geom = window.__box.geometry;
 		const position = geom.attributes.position;
 		const before = [];
@@ -161,7 +161,7 @@ h.run(async () => {
 
 	// ---- A7: a triangle-count change DROPS topology, never corrupts --------
 	const mismatch = await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const t = s.meshTopology;
 		const geom = window.__box.geometry;
 		const position = geom.attributes.position;
@@ -187,7 +187,7 @@ h.run(async () => {
 
 	// ---- undo/redo carries topology inside the state object (A5) ----------
 	const undo = await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const t = s.meshTopology;
 		const fe = s.faceEdit;
 		fe.exitFaceEdit?.();
@@ -233,7 +233,7 @@ h.run(async () => {
 
 	// ---- storage location survives a toJSON session save ------------------
 	const save = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const t = s.meshTopology;
 		const THREE = s.THREE;
 		const mine = t.readStoredFaces(window.__box.geometry);
@@ -247,7 +247,7 @@ h.run(async () => {
 
 	// ---- P10: composition, and the operators that AUTHOR their faces ---------
 	const compose = await A.page.evaluate(() => {
-		const t = window.__stores.meshTopology;
+		const t = window.__tp.test.v1.meshTopology;
 		// authored faces WIN over the carry-over: subdivide's eight children all
 		// descend from one old quad, and calling them one face is the pinwheel bug
 		const composed = t.composeFaces(
@@ -284,7 +284,7 @@ h.run(async () => {
 	// behave randomly. The authored partition says four sub-quads, and then survives a
 	// twist that derivation could not have survived either way.
 	const subdiv = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const t = s.meshTopology;
 		const fe = s.faceEdit;
 		s.commandsHandler.sceneCommand('/create Box 1 1 1');
@@ -333,7 +333,7 @@ h.run(async () => {
 	// pair the four sub-quads — each one is twisted, so pairQuads rejects it and the
 	// grid becomes eight loose triangles. Only the operator knows what it built.
 	const twistedSub = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const t = s.meshTopology;
 		const fe = s.faceEdit;
 		s.commandsHandler.sceneCommand('/create Box 1 1 1');
@@ -423,7 +423,7 @@ h.run(async () => {
 	// can no longer recognise, so if the op did not carry the partition forward the cap
 	// would stop being a quad the moment it was extruded.
 	const twistedExtrude = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const t = s.meshTopology;
 		const fe = s.faceEdit;
 		s.commandsHandler.sceneCommand('/create Box 1 1 1');
@@ -498,7 +498,7 @@ h.run(async () => {
 	// loop cut authors its band the same way, and the band keeps its quads after a
 	// twist — the operation users reach for immediately after cutting
 	const loop = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const t = s.meshTopology;
 		const fe = s.faceEdit;
 		s.commandsHandler.sceneCommand('/create Box 1 1 1');
@@ -553,7 +553,7 @@ h.run(async () => {
 	// there; the stored partition holds it as one face, and the structure wireframe
 	// hides its internal spokes for the same reason it hides a quad's diagonal.
 	const ngon = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const t = s.meshTopology;
 		const fe = s.faceEdit;
 		s.commandsHandler.sceneCommand('/create Box 1 1 1');
@@ -626,7 +626,7 @@ h.run(async () => {
 	// re-keyed rather than carried. The check that matters is that nothing is lost or
 	// duplicated: an invalid partition would be dropped and silently fall back.
 	const rekey = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const t = s.meshTopology;
 		const fe = s.faceEdit;
 		const out = {};
@@ -671,22 +671,22 @@ h.run(async () => {
 	h.check(rekey.welded && rekey.weldDropped, 'merge-by-distance collapsed a thin extrusion (premise)');
 	h.check(rekey.weldValid, 'weld re-keyed its partition after dropping degenerate triangles');
 
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit?.());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit?.());
 
 	// ---- a peer STORES what arrived, and an old-style message still lands ----
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);
 	const netUuid = await A.page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/create Box 1 1 1');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create Box 1 1 1');
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const box = g.children[g.children.length - 1];
 		window.__net = box;
 		return box.uuid;
 	});
 	const topoOf = (page, uuid) =>
 		page.evaluate((uuid) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let g;
 			s.objectsGroup.subscribe((v) => (g = v))();
 			const object = g.getObjectByProperty('uuid', uuid);
@@ -707,7 +707,7 @@ h.run(async () => {
 		20000
 	);
 	await A.page.evaluate((uuid) => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		fe.enterFaceEdit(uuid);
 		const faces = fe.currentFaces();
 		const xi = faces.findIndex((f) => f.normal.x > 0.9);
@@ -732,7 +732,7 @@ h.run(async () => {
 	// rather than keeping a partition that describes a mesh it no longer has.
 	const legacy = await A.page.evaluate((uuid) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const object = g.getObjectByProperty('uuid', uuid);
 		const position = object.geometry.attributes.position;
 		const positions = [];
@@ -741,7 +741,7 @@ h.run(async () => {
 		// drop the last triangle, exactly as a pre-P9 peer's message would arrive
 		const shorter = positions.slice(0, positions.length - 9);
 		let peer;
-		window.__stores.peers.subscribe((p) => (peer = p))();
+		window.__tp.test.v1.peers.subscribe((p) => (peer = p))();
 		peer.send({ type: 'meshgeo', uuid, positions: new Float32Array(shorter).buffer });
 		return shorter.length / 9;
 	}, netUuid);

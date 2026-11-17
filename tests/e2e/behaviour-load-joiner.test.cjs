@@ -20,7 +20,7 @@ const SRC = (pattern, tag) => `export default behaviour({
   }
 });`;
 
-const ids = (p) => p.page.evaluate(() => window.__stores.kit.kit.impls.pickups.extra.ids().slice().sort());
+const ids = (p) => p.page.evaluate(() => window.__tp.test.v1.kit.kit.impls.pickups.extra.ids().slice().sort());
 
 h.run(async () => {
 	const browser = await h.launch();
@@ -28,7 +28,7 @@ h.run(async () => {
 
 	// ---- the host builds: two gems + a behaviour that registers them in on.load ----------------
 	const built = await A.page.evaluate((code) => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		const g = (() => { let v; S.objectsGroup.subscribe((x) => (v = x))(); return v; })();
 		const gems = [];
 		for (const [i, x] of [[1, 3], [2, -3]]) {
@@ -72,7 +72,7 @@ h.run(async () => {
 	const gemsOn = (p) =>
 		p.page.evaluate(() => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const found = [];
 			g.traverse((o) => /^Gem_/.test(o.name) && found.push(o.name + '@' + (o.parent === g ? 'top' : o.parent?.name || o.parent?.type)));
 			return found.sort();
@@ -84,7 +84,7 @@ h.run(async () => {
 
 	// the guest walks over Gem_1: play-ish (Interact) with its eye right above it
 	await B.page.evaluate((uuid) => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		let g; S.objectsGroup.subscribe((v) => (g = v))();
 		let cam; S.globalCamera.subscribe((v) => (cam = v))();
 		const gem = g.getObjectByProperty('uuid', uuid);
@@ -95,20 +95,20 @@ h.run(async () => {
 		window.__walkHold = setInterval(() => { cam.position.set(p.x, p.y + 1.2, p.z); cam.updateMatrixWorld(true); }, 50);
 	}, built[0]);
 	await h.eventually(
-		() => A.page.evaluate((u) => !window.__stores.kit.kit.impls.pickups.available(u), built[0]),
+		() => A.page.evaluate((u) => !window.__tp.test.v1.kit.kit.impls.pickups.available(u), built[0]),
 		(taken) => taken === true,
 		'1.3 the guest walking over a gem COLLECTS it (seen on the host)',
 		20000
 	);
-	await B.page.evaluate(() => { clearInterval(window.__walkHold); window.__stores.editorMode.set('edit'); });
+	await B.page.evaluate(() => { clearInterval(window.__walkHold); window.__tp.test.v1.editorMode.set('edit'); });
 
 	// ---- 8: edit the behaviour so it registers only Gem_1 — the stale Gem_2 entry must go ----------
-	const journal = (p) => p.page.evaluate(() => window.__stores.behaviours.behavioursDebug().registrations('bhv-gems').kit ?? 0);
+	const journal = (p) => p.page.evaluate(() => window.__tp.test.v1.behaviours.behavioursDebug().registrations('bhv-gems').kit ?? 0);
 	const before = { [A.id]: await journal(A), [B.id]: await journal(B) };
 	for (const tag of ['v2', 'v3', 'v4']) {
-		await A.page.evaluate((code) => window.__stores.nodesHandler.setNodeData('bhv-gems', { code }, 'scene'), SRC('Gem_1', tag));
+		await A.page.evaluate((code) => window.__tp.test.v1.nodesHandler.setNodeData('bhv-gems', { code }, 'scene'), SRC('Gem_1', tag));
 		await h.eventually(
-			() => Promise.all([A, B].map((p) => p.page.evaluate(() => window.__stores.findNodeAnyGraph((n) => n.id === 'bhv-gems')?.node?.data?.code ?? ''))),
+			() => Promise.all([A, B].map((p) => p.page.evaluate(() => window.__tp.test.v1.findNodeAnyGraph((n) => n.id === 'bhv-gems')?.node?.data?.code ?? ''))),
 			(codes) => codes.every((c) => c.includes(tag)),
 			`2.0 edit ${tag} reached both peers`,
 			20000

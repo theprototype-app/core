@@ -5,7 +5,7 @@ const h = require('./helpers.cjs');
 /** triangle count, index-aware */
 const triCount = (page, uuid) =>
 	page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const geo = g.getObjectByProperty('uuid', uuid).geometry;
 		return (geo.index ? geo.index.count : geo.attributes.position.count) / 3;
@@ -16,7 +16,7 @@ const triCount = (page, uuid) =>
 const planes = (page, uuid, axisName) =>
 	page.evaluate(
 		({ uuid, axisName }) => {
-			const w = window.__stores;
+			const w = window.__tp?.test.v1;
 			let group;
 			w.objectsGroup.subscribe((v) => (group = v))();
 			const geo = group.getObjectByProperty('uuid', uuid).geometry;
@@ -34,7 +34,7 @@ const planes = (page, uuid, axisName) =>
 /** a box in face-edit mode with the top face picked */
 const setup = (page) =>
 	page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.children[g.children.length - 1];
@@ -53,7 +53,7 @@ h.run(async () => {
 	const before = await triCount(A.page, uuid);
 	h.check(before === 12, 'a box is 12 triangles (premise)');
 
-	const ok = await A.page.evaluate(() => window.__stores.faceEdit.commitFaceOp('loopcut', 1));
+	const ok = await A.page.evaluate(() => window.__tp.test.v1.faceEdit.commitFaceOp('loopcut', 1));
 	const after = await triCount(A.page, uuid);
 	h.check(ok === true, 'loop cut commits');
 	// the ring is 4 quads; each becomes 2 quads = 4 tris, so 8 tris replace 8
@@ -68,10 +68,10 @@ h.run(async () => {
 	);
 
 	// ------------------------------------------------------ 2. N cuts
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	const uuid3 = await setup(A.page);
-	const ok3 = await A.page.evaluate(() => window.__stores.faceEdit.commitFaceOp('loopcut', 3));
+	const ok3 = await A.page.evaluate(() => window.__tp.test.v1.faceEdit.commitFaceOp('loopcut', 3));
 	const after3 = await triCount(A.page, uuid3);
 	const p3 = await planes(A.page, uuid3, 'y');
 	h.check(ok3 === true, '3 cuts commit');
@@ -81,15 +81,15 @@ h.run(async () => {
 	h.check(new Set(gaps).size === 1, '...evenly spaced (' + JSON.stringify(gaps) + ')');
 
 	// ------------------------------------------------- 3. undo is ONE step
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	const undone = await triCount(A.page, uuid3);
 	h.check(undone === 12, 'ONE undo removes all 3 loops (' + undone + ')');
-	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 	h.check((await triCount(A.page, uuid3)) === 36, 'redo re-cuts in one step');
 
 	// ------------------------------- 4. the cut is watertight (no stray verts)
 	const solid = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const geo = g.getObjectByProperty('uuid', uuid).geometry;
 		const tris = w.faceEdit.readTriangles(geo);
@@ -111,10 +111,10 @@ h.run(async () => {
 	// ring, so the two SIDE quads of a box enter from opposite edges and their
 	// cuts land at y = +0.25 and y = -0.25 (position 0.5 degenerates to the one
 	// symmetric y=0 plane the sections above pin). Vertex POSITIONS, not counts.
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	const uuidQ = await setup(A.page);
-	const okQ = await A.page.evaluate(() => window.__stores.faceEdit.commitLoopCut(1, 0.25));
+	const okQ = await A.page.evaluate(() => window.__tp.test.v1.faceEdit.commitLoopCut(1, 0.25));
 	h.check(okQ === true, 'a single cut at position 0.25 commits');
 	h.check((await triCount(A.page, uuidQ)) === 20, 'it is still one loop: 12 -> 20 triangles');
 	const pQ = await planes(A.page, uuidQ, 'y');
@@ -127,10 +127,10 @@ h.run(async () => {
 
 	// with cuts > 1 the position is IGNORED — the schedule stays even (the
 	// Blender rule; the pane's position row disables to say so)
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	const uuidE = await setup(A.page);
-	await A.page.evaluate(() => window.__stores.faceEdit.commitLoopCut(2, 0.2));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.commitLoopCut(2, 0.2));
 	const pE = await planes(A.page, uuidE, 'y');
 	// even 2-cut schedule: t = 1/3 and 2/3 across each side quad = y ±1/6
 	h.check(
@@ -141,7 +141,7 @@ h.run(async () => {
 	);
 	// ...and the pane's position row is DISABLED at cuts > 1, saying why
 	const rowDisabled = await A.page.evaluate(async () => {
-		const mt = window.__stores.meshToolParams;
+		const mt = window.__tp.test.v1.meshToolParams;
 		mt.focusTool('loopcut');
 		mt.loopCuts.set(2);
 		await new Promise((r) => setTimeout(r, 250));
@@ -157,7 +157,7 @@ h.run(async () => {
 
 	// ---------------------------------------- 5. UVs + material slots survive
 	const merged = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.faceEdit.exitFaceEdit();
 		w.commandsHandler.sceneCommand('/clear all');
 		const mk = async (x) => {
@@ -200,7 +200,7 @@ h.run(async () => {
 
 	// ------------------------------------------------------ 6. guards
 	const guards = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.faceEdit.exitFaceEdit();
 		w.commandsHandler.sceneCommand('/clear all');
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
@@ -224,15 +224,15 @@ h.run(async () => {
 	// across the perpendicular ring — measured by WHICH vertex plane appears:
 	// the top-face pick cuts around Y (a new y = 0 plane); the perpendicular
 	// ring adds a mid plane on x or z instead, and the y one goes away.
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	const uuidA = await setup(A.page);
 	const midOf = async (axisName) => {
 		const list = await planes(A.page, uuidA, axisName);
 		return list.some((v) => Math.abs(v) < 0.001);
 	};
 	const axisBegin = await A.page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.meshToolParams.focusTool('loopcut'); // the pane shows the live adjust
 		const ok = w.faceEdit.beginOpAdjust('loopcut', { cuts: 1, position: 0.5 });
 		let st;
@@ -251,7 +251,7 @@ h.run(async () => {
 	const x0 = await midOf('x');
 	const z0 = await midOf('z');
 	h.check(x0 !== z0, `axis 0: EXACTLY one horizontal mid plane exists (x: ${x0}, z: ${z0})`);
-	const flipped = await A.page.evaluate(() => window.__stores.faceEdit.reapplyOpAdjust({ axis: 1 }));
+	const flipped = await A.page.evaluate(() => window.__tp.test.v1.faceEdit.reapplyOpAdjust({ axis: 1 }));
 	h.check(flipped === true, 'reapply with axis 1 re-runs the cut');
 	const x1 = await midOf('x');
 	const z1 = await midOf('z');
@@ -260,7 +260,7 @@ h.run(async () => {
 		`axis 1: the cut SWAPPED onto the perpendicular belt (x: ${x0}->${x1}, z: ${z0}->${z1})`
 	);
 	// flip back — the toggle is reversible because both rings were captured at begin
-	await A.page.evaluate(() => window.__stores.faceEdit.reapplyOpAdjust({ axis: 0 }));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.reapplyOpAdjust({ axis: 0 }));
 	h.check(
 		(await midOf('x')) === x0 && (await midOf('z')) === z0,
 		'axis 0 again restores the original ring (both rings live on the adjust)'
@@ -280,7 +280,7 @@ h.run(async () => {
 		across.click();
 		await new Promise((r) => setTimeout(r, 400)); // the typed-change debounce settles
 		let st;
-		window.__stores.faceEdit.opAdjustState.subscribe((v) => (st = v))();
+		window.__tp.test.v1.faceEdit.opAdjustState.subscribe((v) => (st = v))();
 		return { seg: true, across: true, disabled, axisAfter: st?.params?.axis };
 	});
 	h.check(dom.seg && dom.across, 'the axis seg control renders while the adjust is live (#loopcut-axis)');
@@ -291,12 +291,12 @@ h.run(async () => {
 		'...and the geometry followed the button (the horizontal mid plane swapped axes)'
 	);
 	// settle happened via the debounce; ONE undo returns the uncut box
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	h.check((await triCount(A.page, uuidA)) === 12, 'ONE undo removes the axis-flipped cut entirely');
 	// ...and once the adjust ENDS the toggle leaves the pane (undo drops the
 	// adjust lazily via the identity guard, so end it the way a pick would)
 	const segGone = await A.page.evaluate(async () => {
-		window.__stores.faceEdit.endOpAdjust();
+		window.__tp.test.v1.faceEdit.endOpAdjust();
 		await new Promise((r) => setTimeout(r, 120));
 		return !document.querySelector('#loopcut-axis');
 	});

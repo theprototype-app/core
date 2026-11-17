@@ -16,8 +16,8 @@ const panel = (page) =>
 			new Promise((r) => {
 				let closed = true;
 				let kind = null;
-				window.__stores.inspectorClose.subscribe((v) => (closed = v))();
-				window.__stores.inspectorKind.subscribe((v) => (kind = v))();
+				window.__tp.test.v1.inspectorClose.subscribe((v) => (closed = v))();
+				window.__tp.test.v1.inspectorKind.subscribe((v) => (kind = v))();
 				r({ open: !closed, kind });
 			})
 	);
@@ -27,7 +27,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	const openMenu = async () => {
-		await A.page.evaluate(() => window.__stores.viewportMenu.set({ x: 240, y: 150, point: [0, 0, 0] }));
+		await A.page.evaluate(() => window.__tp.test.v1.viewportMenu.set({ x: 240, y: 150, point: [0, 0, 0] }));
 		await A.page.waitForTimeout(350);
 	};
 	/** hover a parent row then click a child by text */
@@ -41,7 +41,7 @@ h.run(async () => {
 
 	// ---------- deep link from a CLOSED panel ----------
 	await A.page.evaluate(() => {
-		window.__stores.inspectorClose.set(true);
+		window.__tp.test.v1.inspectorClose.set(true);
 		// collapse the target section first, so expanding is observable
 		localStorage.setItem('inspector:sec:Snapping', 'closed');
 	});
@@ -66,7 +66,7 @@ h.run(async () => {
 
 	// ---------- grid follow: look-at ----------
 	const follow = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.gridSettings.setGrid({ follow: 'lookat', cellSize: 1, matchSnapStep: false });
 		let controls = null;
 		w.orbitControls.subscribe((v) => (controls = v))();
@@ -94,11 +94,11 @@ h.run(async () => {
 	h.check(follow && Math.abs(follow.z - 0.03) < 0.001, `z follows too (${follow?.z})`);
 
 	// 'off' returns it to the origin
-	await A.page.evaluate(() => window.__stores.gridSettings.setGrid({ follow: 'off' }));
+	await A.page.evaluate(() => window.__tp.test.v1.gridSettings.setGrid({ follow: 'off' }));
 	await A.page.waitForTimeout(400);
 	const offCentre = await A.page.evaluate(() => {
 		let scene = null;
-		window.__stores.globalScene.subscribe((v) => (scene = v))();
+		window.__tp.test.v1.globalScene.subscribe((v) => (scene = v))();
 		let grid = null;
 		scene.traverse((n) => {
 			if (n.type === 'Mesh' && n.material?.type === 'ShaderMaterial' && n.geometry?.type === 'PlaneGeometry')
@@ -109,9 +109,9 @@ h.run(async () => {
 	h.check(offCentre && Math.abs(offCentre[0]) < 0.001, `Off puts it back at the origin (${offCentre})`);
 
 	// ---------- snapping submenu: 0.25 for Scale + a custom value ----------
-	await A.page.evaluate(() => window.__stores.viewportMenu.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.viewportMenu.set(null));
 	await A.page.evaluate(() =>
-		window.__stores.snapping.snapSettings.set({ translate: 0.5, rotateDeg: 15, scale: 0.075 })
+		window.__tp.test.v1.snapping.snapSettings.set({ translate: 0.5, rotateDeg: 15, scale: 0.075 })
 	);
 	await openMenu();
 	await A.page.locator('[role="menuitem"]').filter({ hasText: 'Snapping' }).first().hover();
@@ -131,11 +131,11 @@ h.run(async () => {
 	h.check(rows.labels.includes('0.25'), `Scale offers 0.25 (${rows.labels.join(' ')})`);
 	h.check(rows.labels.includes('0.075'), 'a custom step from the panel appears in the menu');
 	h.check(rows.checked.includes('0.075'), 'and it is marked as the active one');
-	await A.page.evaluate(() => window.__stores.viewportMenu.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.viewportMenu.set(null));
 
 	// ---------- physics checkboxes are themed ----------
 	const physics = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		await new Promise((r) => setTimeout(r, 250));
 		let g = null;
@@ -160,12 +160,12 @@ h.run(async () => {
 
 	// ---------- Add opens the new object's properties ----------
 	await A.page.evaluate(() => {
-		window.__stores.showSidebar('scene'); // start on a DIFFERENT panel
+		window.__tp.test.v1.showSidebar('scene'); // start on a DIFFERENT panel
 	});
 	// 41 G2: only an Inspector that IS open follows a new object, and showSidebar opens on a timer
 	// (measured 0.5-1.5 s on a loaded box) — wait until it really shows the scene before adding
 	await h.eventually(() => panel(A.page), (p) => p.open && p.kind === 'scene', '(premise) Configure Scene is open');
-	await A.page.evaluate(() => window.__stores.addObjects?.spawnAtPoint?.('/create Sphere 0.5', [1, 0, 1]));
+	await A.page.evaluate(() => window.__tp.test.v1.addObjects?.spawnAtPoint?.('/create Sphere 0.5', [1, 0, 1]));
 	let afterAdd = await panel(A.page);
 	for (let i = 0; i < 40 && !(afterAdd.open && afterAdd.kind === 'selection'); i++) {
 		await A.page.waitForTimeout(100);
@@ -179,7 +179,7 @@ h.run(async () => {
 
 	// ---------- 16-Q5: the section HEADER must clear the sticky filter header -----
 	const headerVisible = async (label, parent, child) => {
-		await A.page.evaluate(() => window.__stores.inspectorClose.set(true));
+		await A.page.evaluate(() => window.__tp.test.v1.inspectorClose.set(true));
 		await A.page.waitForTimeout(250);
 		await pick(parent, child);
 		await A.page.waitForTimeout(900); // smooth scroll settles
@@ -211,7 +211,7 @@ h.run(async () => {
 
 	// ---------- 16-Q5: snap steps read as clean numbers everywhere ---------------
 	const clean = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.snapping.snapEnabled.set(true);
 		w.snapping.snapSettings.set({ translate: 0.7999999999999999, rotateDeg: 15, scale: 0.1 });
 		w.viewportMenu.set({ x: 240, y: 150, point: [0, 0, 0] });
@@ -234,7 +234,7 @@ h.run(async () => {
 			// every section expanded => a long panel that really has to scroll
 			for (const k of ['Environment', 'Music', 'View', 'Camera', 'Grid', 'Snapping', 'Physics', 'Background', 'Fog'])
 				localStorage.setItem('inspector:sec:' + k, 'open');
-			window.__stores.showSidebar('scene');
+			window.__tp.test.v1.showSidebar('scene');
 		});
 		await A.page.waitForTimeout(700);
 		// scroll to the very bottom first

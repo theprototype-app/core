@@ -9,12 +9,12 @@
 const h = require('./helpers.cjs');
 
 const graphsOf = (peer) =>
-	peer.page.evaluate(() => new Promise((r) => window.__stores.flowGraphs.subscribe((g) => r(Object.keys(g)))()));
+	peer.page.evaluate(() => new Promise((r) => window.__tp.test.v1.flowGraphs.subscribe((g) => r(Object.keys(g)))()));
 const activeOf = (peer) =>
-	peer.page.evaluate(() => new Promise((r) => window.__stores.activeGraphId.subscribe((v) => r(v))()));
+	peer.page.evaluate(() => new Promise((r) => window.__tp.test.v1.activeGraphId.subscribe((v) => r(v))()));
 const nodesIn = (peer, graphId) =>
 	peer.page.evaluate(
-		(id) => new Promise((r) => window.__stores.flowGraphs.subscribe((g) => r(g[id]?.nodes?.length ?? -1))()),
+		(id) => new Promise((r) => window.__tp.test.v1.flowGraphs.subscribe((g) => r(g[id]?.nodes?.length ?? -1))()),
 		graphId
 	);
 
@@ -28,16 +28,16 @@ h.run(async () => {
 
 	// --- create a box + open the flow editor ----------------------------------
 	const uuid = await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const box = g.children[g.children.length - 1];
-		window.__stores.flowGraphClose.set(false); // open the docked flow editor
+		window.__tp.test.v1.flowGraphClose.set(false); // open the docked flow editor
 		return box.uuid;
 	});
 	await A.page.waitForTimeout(600);
 
 	// --- selecting the object switches scope + shows the empty state ----------
-	await A.page.evaluate((id) => window.__stores.objectActions.selectObject(id), uuid);
+	await A.page.evaluate((id) => window.__tp.test.v1.objectActions.selectObject(id), uuid);
 	await A.page.waitForTimeout(400);
 	h.check((await activeOf(A)) === uuid, 'selecting the object switches the editor scope to it');
 	h.check(await A.page.locator('#flow-empty-state').first().isVisible(), 'no-flow object shows the empty state');
@@ -53,13 +53,13 @@ h.run(async () => {
 
 	// --- an effect node in the object graph drives the OWNER implicitly -------
 	await A.page.evaluate((id) => {
-		window.__stores.nodesHandler.createFlowNode(
+		window.__tp.test.v1.nodesHandler.createFlowNode(
 			{ id: 'spin-h1', type: 'spin', position: { x: 0, y: 0 }, data: { type: 'spin', axis: 'y', speed: 3 } },
 			id
 		);
 	}, uuid);
 	await h.eventually(
-		() => A.page.evaluate((id) => window.__stores.flowRuntime.isAnimatedTarget(id), uuid),
+		() => A.page.evaluate((id) => window.__tp.test.v1.flowRuntime.isAnimatedTarget(id), uuid),
 		(v) => v === true,
 		'implicit-owner: a spin node in the object graph animates the object (no selector wired)'
 	);
@@ -67,12 +67,12 @@ h.run(async () => {
 	// --- deselect returns to the scene graph ----------------------------------
 	// the REAL empty-click path: deselectObject clears the selectedObjects SET but
 	// keeps selectedObject (inspector/outline gotcha) — scope must still return
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await A.page.waitForTimeout(400);
 	h.check((await activeOf(A)) === 'scene', 'empty-click deselect returns the editor to the scene graph');
 
 	// --- explicit "Scene" chip button switches scope AND deselects -------------
-	await A.page.evaluate((id) => window.__stores.objectActions.selectObject(id), uuid);
+	await A.page.evaluate((id) => window.__tp.test.v1.objectActions.selectObject(id), uuid);
 	await A.page.waitForTimeout(400);
 	h.check((await activeOf(A)) === uuid, 'reselecting scopes back to the object');
 	await A.page.locator('#flow-scope-chip [data-crumb="scene"]').click();
@@ -81,7 +81,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(400);
 	h.check((await activeOf(A)) === 'scene', 'the Scene chip button returns to the scene flow');
 	const setAfter = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.selectedObjects.subscribe((s) => r(s.length))())
+		() => new Promise((r) => window.__tp.test.v1.selectedObjects.subscribe((s) => r(s.length))())
 	);
 	h.check(setAfter === 0, 'the Scene chip button also deselects the object');
 
@@ -97,8 +97,8 @@ h.run(async () => {
 	// a graph-tagged live edit reaches the peer
 	await A.page.evaluate((id) => {
 		const node = { id: 'spin-h1-b', type: 'spin', position: { x: 40, y: 40 }, data: { type: 'spin', axis: 'y', speed: 1 } };
-		window.__stores.nodesHandler.createFlowNode(node, id);
-		let peer; window.__stores.peers.subscribe((p) => (peer = p))();
+		window.__tp.test.v1.nodesHandler.createFlowNode(node, id);
+		let peer; window.__tp.test.v1.peers.subscribe((p) => (peer = p))();
 		peer.send({ type: 'nodecreate', node, graphId: id });
 	}, uuid);
 	await h.eventually(
@@ -108,7 +108,7 @@ h.run(async () => {
 	);
 
 	// --- delete flow with confirmation + undo restores ------------------------
-	await A.page.evaluate((id) => window.__stores.objectActions.selectObject(id), uuid);
+	await A.page.evaluate((id) => window.__tp.test.v1.objectActions.selectObject(id), uuid);
 	await A.page.waitForTimeout(300);
 	await A.page.locator('#flow-scope-delete').click();
 	await A.page.waitForTimeout(300);
@@ -122,7 +122,7 @@ h.run(async () => {
 		'graph deletion replicates to the peer'
 	);
 
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(400);
 	h.check((await graphsOf(A)).includes(uuid), 'undo restores the deleted flow');
 	h.check((await nodesIn(A, uuid)) === 2, 'undo restores the flow CONTENT');

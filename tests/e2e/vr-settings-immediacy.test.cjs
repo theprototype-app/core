@@ -10,7 +10,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	const res = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const m = s.vrRadialMenu;
 		const S = s.vrSettingsSchema;
 		const g1 = (st) => {

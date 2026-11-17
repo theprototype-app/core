@@ -15,8 +15,8 @@ h.run(async () => {
 	const page = A.page;
 	await page.locator('#restore-session-dismiss').click({ timeout: 3000 }).catch(() => {});
 	await page.evaluate(() => {
-		window.__stores.settingsSection.set('about');
-		window.__stores.settingsOpen.set(true);
+		window.__tp.test.v1.settingsSection.set('about');
+		window.__tp.test.v1.settingsOpen.set(true);
 	});
 	const link = page.locator('#about-link-licences');
 	await link.waitFor({ timeout: 15000 }).catch(() => {});

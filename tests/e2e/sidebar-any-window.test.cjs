@@ -83,7 +83,7 @@ h.run(async () => {
 	const page = A.page;
 
 	// ---------- 1. a floating window docks to a side by its header ----------
-	await page.evaluate(() => window.__stores.sceneBudget.statsOpen.set(true));
+	await page.evaluate(() => window.__tp.test.v1.sceneBudget.statsOpen.set(true));
 	await page.waitForTimeout(500);
 	let st = await probe(page, '#stats-window');
 	h.check(st?.shown && !st.docked, `premise: Statistics floats (${JSON.stringify(st)})`);
@@ -145,7 +145,7 @@ h.run(async () => {
 	const ex = await probe(page, '#explorer-window');
 	h.check(ex?.docked === 'right' && ex.shown, `the Explorer is docked right (${JSON.stringify(ex)})`);
 	// (its header sheds the search below a measured width — R22's ranking — so give the column room)
-	await page.evaluate(() => window.__stores.sidebars.setSidebarWidth('right', 600));
+	await page.evaluate(() => window.__tp.test.v1.sidebars.setSidebarWidth('right', 600));
 	await page.waitForTimeout(500);
 	const exHead = await page.evaluate(() => {
 		const el = document.querySelector('#explorer-window .wc-head');
@@ -207,7 +207,7 @@ h.run(async () => {
 	h.check(!(await page.evaluate(() => !!document.querySelector('#dock-tab-side-zone'))), 'the highlight ends with the drop');
 
 	// ---------- 6. the Animation editor joins a side by its floating header too ----------
-	await page.evaluate(() => window.__stores.animationClose.set(false));
+	await page.evaluate(() => window.__tp.test.v1.animationClose.set(false));
 	await page.waitForTimeout(800);
 	const undock = page.locator('#dock-undock:visible');
 	if (await visible(page, '[data-dock-tab="animation"]')) {

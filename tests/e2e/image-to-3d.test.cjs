@@ -19,12 +19,12 @@ const PHOTO = path.join(__dirname, '..', 'fixtures', 'exif', 'gps-photo-large.jp
 process.env.E2E_SHOTS ||= 'test-results';
 const MESHY = '/mock-meshy';
 const COMFY = '/mock-comfy';
-const OPEN = () => window.__stores.meshGenModalOpen.set({ position: [1, 0, 1] });
+const OPEN = () => window.__tp.test.v1.meshGenModalOpen.set({ position: [1, 0, 1] });
 
 const objects = (peer) =>
 	peer.page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return g.children.map((c) => ({ uuid: c.uuid, name: c.name, aiGen: c.userData?.aiGen ?? null }));
 	});
 
@@ -34,7 +34,7 @@ async function waitCount(peer, n, label) {
 
 async function setProvider(page, kind) {
 	await page.evaluate((k) => {
-		const mp = window.__stores.meshProviders;
+		const mp = window.__tp.test.v1.meshProviders;
 		let list;
 		mp.meshProviders.subscribe((v) => (list = v))();
 		mp.setMeshActiveProvider(list.find((p) => p.kind === k).id);
@@ -70,7 +70,7 @@ async function generate(page, consent = false) {
 const jobCount = (page) =>
 	page.evaluate(() => {
 		let v = [];
-		window.__stores.meshJobs.meshJobs.subscribe((x) => (v = x))();
+		window.__tp.test.v1.meshJobs.meshJobs.subscribe((x) => (v = x))();
 		return v.length;
 	});
 
@@ -80,7 +80,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 	const page = A.page;
 	await page.evaluate((cfg) => {
-		const mp = window.__stores.meshProviders;
+		const mp = window.__tp.test.v1.meshProviders;
 		mp.addMeshProvider({ kind: 'meshy', label: 'MockMeshy', baseUrl: location.origin + cfg.MESHY, apiKey: 'k', mode: 'preview', assetProxy: '' });
 		mp.setMeshGenEnabled(true);
 	}, { MESHY });
@@ -89,8 +89,8 @@ h.run(async () => {
 
 	const glb = Buffer.from(
 		await page.evaluate(async () => {
-			const THREE = window.__stores.THREE;
-			const { GLTFExporter } = window.__stores.GLTFExporterModule;
+			const THREE = window.__tp.test.v1.THREE;
+			const { GLTFExporter } = window.__tp.test.v1.GLTFExporterModule;
 			const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0x3388ff }));
 			const out = await new Promise((res, rej) => new GLTFExporter().parse(mesh, res, rej, { binary: true }));
 			return Array.from(new Uint8Array(out));
@@ -120,7 +120,7 @@ h.run(async () => {
 	const base = (await objects(A)).length;
 
 	// ---- 1. the photo: the GPS never reaches the provider ------------------------------------------------
-	await page.evaluate(() => window.__stores.tips?.resetTips?.());
+	await page.evaluate(() => window.__tp.test.v1.tips?.resetTips?.());
 	await page.evaluate(OPEN);
 	await page.waitForSelector('#mesh-gen-picture');
 	h.check(/2048 px/.test((await page.locator('#mesh-gen-limits').innerText().catch(() => '')) ?? ''), 'AI8: the picture limits are stated before a pick');
@@ -131,7 +131,7 @@ h.run(async () => {
 	h.check(!(await page.locator('#mesh-gen-submit').isDisabled()), 'a picture alone is enough to generate');
 	const prep = await page.evaluate(() => {
 		let v;
-		window.__stores.chatAttach.lastPrepare.subscribe((x) => (v = x))();
+		window.__tp.test.v1.chatAttach.lastPrepare.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(prep.inMeta.gps === true, 'counterfactual: the input photo carried GPS');
@@ -195,12 +195,12 @@ h.run(async () => {
 		c.width = c.height = 64;
 		c.getContext('2d').fillRect(0, 0, 32, 32);
 		const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
-		const explorer = window.__stores.explorer;
+		const explorer = window.__tp.test.v1.explorer;
 		const items = await explorer.importFiles([new File([blob], 'ref-73.png', { type: 'image/png' })], null);
 		return (items?.[0] ?? null)?.id ?? null;
 	});
 	h.check(!!itemId, 'an Explorer image exists');
-	await page.evaluate((id) => window.__stores.meshGenModalOpen.set({ imageItemId: id }), itemId);
+	await page.evaluate((id) => window.__tp.test.v1.meshGenModalOpen.set({ imageItemId: id }), itemId);
 	await waitPicture(page);
 	h.check((await page.locator('#mesh-gen-picture').innerText()).includes('ref-73'), "the Explorer's entry opens with that picture chosen");
 	await page.click('#mesh-gen-image-clear');
@@ -235,15 +235,15 @@ h.run(async () => {
 	);
 	await page.route('**/mock-comfy/view**', (route) => route.fulfill({ status: 200, contentType: 'model/gltf-binary', body: glb }));
 	await page.evaluate((cfg) => {
-		window.__stores.meshProviders.addMeshProvider({ kind: 'comfyui', label: 'TextComfy', baseUrl: location.origin + cfg.COMFY, workflowJson: '{"1":{"inputs":{"text":"{{PROMPT}}"}}}' });
+		window.__tp.test.v1.meshProviders.addMeshProvider({ kind: 'comfyui', label: 'TextComfy', baseUrl: location.origin + cfg.COMFY, workflowJson: '{"1":{"inputs":{"text":"{{PROMPT}}"}}}' });
 	}, { COMFY });
 	await setProvider(page, 'comfyui');
 	await page.evaluate(OPEN);
 	await page.waitForSelector('#mesh-gen-window');
 	h.check((await page.locator('#mesh-gen-picture').count()) === 0, 'a workflow without {{IMAGE}} offers no picture');
-	await page.evaluate(() => window.__stores.meshGenModalOpen.set(null));
+	await page.evaluate(() => window.__tp.test.v1.meshGenModalOpen.set(null));
 	await page.evaluate((cfg) => {
-		const mp = window.__stores.meshProviders;
+		const mp = window.__tp.test.v1.meshProviders;
 		let list;
 		mp.meshProviders.subscribe((v) => (list = v))();
 		mp.updateMeshProvider(list.find((p) => p.kind === 'comfyui').id, { workflowJson: '{"1":{"inputs":{"image":"{{IMAGE}}","text":"{{PROMPT}}"}}}' });
@@ -280,7 +280,7 @@ h.run(async () => {
 	}
 	// no provider at all: the dialog says so and opens Tools & connections
 	await page.evaluate(() => {
-		const mp = window.__stores.meshProviders;
+		const mp = window.__tp.test.v1.meshProviders;
 		let list;
 		mp.meshProviders.subscribe((v) => (list = v))();
 		for (const p of list) mp.removeMeshProvider(p.id);
@@ -297,10 +297,10 @@ h.run(async () => {
 	const P = await h.setupPage(browser, 'n6', { context: { viewport: { width: 390, height: 896 }, deviceScaleFactor: 2.9, hasTouch: true, isMobile: true } });
 	await h.answerRestore(P).catch(() => {});
 	await P.page.evaluate(() => {
-		const mp = window.__stores.meshProviders;
+		const mp = window.__tp.test.v1.meshProviders;
 		mp.addMeshProvider({ kind: 'meshy', label: 'M', baseUrl: 'https://m.invalid', apiKey: 'k' });
 		mp.setMeshGenEnabled(true);
-		window.__stores.meshGenModalOpen.set({});
+		window.__tp.test.v1.meshGenModalOpen.set({});
 	});
 	await P.page.waitForSelector('#mesh-gen-picture');
 	for (const [label, viewport] of [['folded', { width: 390, height: 896 }], ['unfolded', { width: 1080, height: 1200 }], ['folded landscape', { width: 896, height: 390 }]]) {

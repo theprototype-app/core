@@ -9,13 +9,13 @@
 //     with its grab bar, a scrim, and a swipe down on the grab bar closes it (real touch events).
 const h = require('./helpers.cjs');
 
-const store = (name) => `(() => { let v; window.__stores.${name}.subscribe((x) => (v = x))(); return v; })()`;
+const store = (name) => `(() => { let v; window.__tp.test.v1.${name}.subscribe((x) => (v = x))(); return v; })()`;
 const LONG = ['Alexandra Konstantinopoulou', 'Maximilian von Hohenzollern-Sigmaringen', 'Bo', 'Guinevere Featherstonehaugh', 'Dmitri Ivanovich Rachmaninoff'];
 
 /** @param {import('playwright').Page} page */
 async function seed(page) {
 	await page.evaluate((names) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let p;
 		s.peers.subscribe((x) => (p = x))();
 		const self = p?.peer?.id || 'self';
@@ -100,13 +100,13 @@ h.run(async () => {
 		// the notification centre's header, for comparison
 		await page.keyboard.press('Escape').catch(() => {});
 		await page.evaluate(() => {
-			window.__stores.peersPanelOpen.set(false);
-			window.__stores.notificationCenterOpen.set(true);
+			window.__tp.test.v1.peersPanelOpen.set(false);
+			window.__tp.test.v1.notificationCenterOpen.set(true);
 		});
 		await page.waitForTimeout(500);
 		const notifHead = await page.evaluate(() => Math.round(document.querySelector('#notif-panel .wc-head')?.getBoundingClientRect().height ?? 0));
 		h.check(notifHead > 0 && notifHead === m.headH, `${label}: its header is the notification centre's (${m.headH} px vs ${notifHead} px)`);
-		await page.evaluate(() => window.__stores.notificationCenterOpen.set(false));
+		await page.evaluate(() => window.__tp.test.v1.notificationCenterOpen.set(false));
 		await page.context().close();
 	}
 

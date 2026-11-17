@@ -9,7 +9,7 @@ const h = require('./helpers.cjs');
 /** open an Edit Mesh session on a fresh box */
 async function openSession(page) {
 	await page.evaluate(async () => {
-		const { commandsHandler, objectsGroup, objectActions, faceEdit } = window.__stores;
+		const { commandsHandler, objectsGroup, objectActions, faceEdit } = window.__tp?.test.v1;
 		commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 700));
 		let g = null;
@@ -24,10 +24,10 @@ async function openSession(page) {
 const submode = (page) =>
 	page.evaluate(() => {
 		let v = null;
-		window.__stores.faceEdit.faceEditSubmode.subscribe((x) => (v = x))();
+		window.__tp.test.v1.faceEdit.faceEditSubmode.subscribe((x) => (v = x))();
 		const inVertexMode = (() => {
 			let o = null;
-			window.__stores.meshEdit.editingObject.subscribe((x) => (o = x))();
+			window.__tp.test.v1.meshEdit.editingObject.subscribe((x) => (o = x))();
 			return !!o;
 		})();
 		return { submode: v, inVertexMode };
@@ -149,7 +149,7 @@ h.run(async () => {
 		const btn = document.querySelector('#mesh-op-bevel');
 		const style = getComputedStyle(btn);
 		let armed = null;
-		window.__stores.faceEdit.faceEditOp.subscribe((v) => (armed = v))();
+		window.__tp.test.v1.faceEdit.faceEditOp.subscribe((v) => (armed = v))();
 		return {
 			ring: style.boxShadow !== 'none',
 			filled: style.backgroundColor !== 'rgba(0, 0, 0, 0)' && style.backgroundColor !== 'transparent',
@@ -171,9 +171,9 @@ h.run(async () => {
 	const triCount = () =>
 		A.page.evaluate(() => {
 			let g = null;
-			window.__stores.objectsGroup.subscribe((x) => (g = x))();
+			window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 			let uuid = null;
-			window.__stores.faceEdit.faceEditObject.subscribe((v) => (uuid = v))();
+			window.__tp.test.v1.faceEdit.faceEditObject.subscribe((v) => (uuid = v))();
 			const obj = g.getObjectByProperty('uuid', uuid);
 			const geo = obj?.geometry;
 			return geo ? (geo.index ? geo.index.count : geo.attributes.position.count) / 3 : -1;
@@ -183,9 +183,9 @@ h.run(async () => {
 	const geoSum = () =>
 		A.page.evaluate(() => {
 			let g = null;
-			window.__stores.objectsGroup.subscribe((x) => (g = x))();
+			window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 			let uuid = null;
-			window.__stores.faceEdit.faceEditObject.subscribe((v) => (uuid = v))();
+			window.__tp.test.v1.faceEdit.faceEditObject.subscribe((v) => (uuid = v))();
 			const pos = g.getObjectByProperty('uuid', uuid)?.geometry?.attributes?.position;
 			if (!pos) return null;
 			let sum = 0;
@@ -207,7 +207,7 @@ h.run(async () => {
 
 	// select a face, then the grid click APPLIES IMMEDIATELY
 	await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		fe.highlightFaceByTriangle(0);
 		fe.pickFaceUnit?.(0);
 	});
@@ -218,7 +218,7 @@ h.run(async () => {
 	h.check(afterApply > beforeBevel, `click-with-selection applies immediately (${beforeBevel} -> ${afterApply} tris)`);
 	const adjustPane = await A.page.evaluate(() => {
 		let st = null;
-		window.__stores.faceEdit.opAdjustState.subscribe((v) => (st = v))();
+		window.__tp.test.v1.faceEdit.opAdjustState.subscribe((v) => (st = v))();
 		const labels = [...document.querySelectorAll('#mesh-edit-popup .tbx-label')].map((l) =>
 			l.textContent.trim()
 		);
@@ -348,7 +348,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(350);
 	const bridgePane = await A.page.evaluate(() => {
 		let st = null;
-		window.__stores.faceEdit.opAdjustState.subscribe((v) => (st = v))();
+		window.__tp.test.v1.faceEdit.opAdjustState.subscribe((v) => (st = v))();
 		return {
 			params: !!document.querySelector('#bridge-params'),
 			cuts: !!document.querySelector('#mesh-bridge-cuts'),
@@ -366,7 +366,7 @@ h.run(async () => {
 	// and compare, on the inset-caps scenario (bridging a unit cube's FULL top and
 	// bottom is the degenerate case: the walls land on the cube's own sides)
 	const bridged = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		const oddEdges = (tris) => {
 			const seen = new Map();
@@ -470,7 +470,7 @@ h.run(async () => {
 	// askCancel only asks when the session HAS something to throw away — give it
 	// one edit, or it just toasts "nothing to revert" and the row never appears
 	await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		fe.pickFaceUnit(0);
 		fe.commitFaceOp('extrude', 0.3);
 	});
@@ -486,7 +486,7 @@ h.run(async () => {
 		const st = await submode(A.page);
 		return st.inVertexMode ? 'vertices' : st.submode;
 	};
-	await A.page.evaluate(() => window.__stores.faceEdit.setFaceSubmode('faces'));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.setFaceSubmode('faces'));
 	await A.page.waitForTimeout(250);
 	h.check((await modeNow()) === 'faces', 'starting the key checks in faces');
 	await A.page.keyboard.press('Tab');
@@ -512,7 +512,7 @@ h.run(async () => {
 	const tmode = () =>
 		A.page.evaluate(() => {
 			let v = null;
-			window.__stores.transformMode.subscribe((x) => (v = x))();
+			window.__tp.test.v1.transformMode.subscribe((x) => (v = x))();
 			return v;
 		});
 	await A.page.keyboard.press('Digit2');
@@ -634,9 +634,9 @@ h.run(async () => {
 	const movePane = await A.page.evaluate(() => {
 		const body = document.querySelector('#mesh-edit-popup .toolbox-body');
 		let focus = null;
-		window.__stores.meshToolParams.optionsFocus.subscribe((v) => (focus = v))();
+		window.__tp.test.v1.meshToolParams.optionsFocus.subscribe((v) => (focus = v))();
 		let armed = null;
-		window.__stores.faceEdit.faceEditOp.subscribe((v) => (armed = v))();
+		window.__tp.test.v1.faceEdit.faceEditOp.subscribe((v) => (armed = v))();
 		return {
 			armed,
 			focus,
@@ -746,7 +746,7 @@ h.run(async () => {
 	// element gizmo attaches its proxy to, so those drags already obeyed it (the
 	// real-mouse proof lives in mesh-pivot-gizmo section 3b).
 	const snapWas = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let on;
 		let cfg;
 		s.snapping.snapEnabled.subscribe((v) => (on = v))();
@@ -755,7 +755,7 @@ h.run(async () => {
 	});
 	const readSnap = () =>
 		A.page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let on;
 			let cfg;
 			let controls;
@@ -765,7 +765,7 @@ h.run(async () => {
 			return { on, cfg, translationSnap: controls?.translationSnap ?? null };
 		});
 	// start from a known state so the click below has somewhere to go
-	await A.page.evaluate(() => window.__stores.snapping.snapEnabled.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.snapping.snapEnabled.set(false));
 	await A.page.waitForTimeout(250);
 	await A.page.locator('#mesh-snap-enabled').click();
 	await A.page.waitForTimeout(350);
@@ -798,14 +798,14 @@ h.run(async () => {
 	h.check(/app-wide/i.test(note), `the row says it is the app-wide setting ("${note}")`);
 	const shared = await A.page.evaluate(() => {
 		// drive it from the OTHER end (the scene panel's store) and watch the row
-		window.__stores.snapping.snapSettings.update((s) => ({ ...s, translate: 1 }));
+		window.__tp.test.v1.snapping.snapSettings.update((s) => ({ ...s, translate: 1 }));
 		return new Promise((r) =>
 			setTimeout(() => r(document.querySelector('#mesh-snap-translate')?.value ?? null), 250)
 		);
 	});
 	h.check(parseFloat(shared) === 1, `and a write from anywhere else shows up in the row (${shared}) — one source of truth`);
 	await A.page.evaluate((was) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.snapping.snapSettings.set(was.cfg);
 		s.snapping.snapEnabled.set(was.on);
 	}, snapWas);

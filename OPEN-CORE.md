@@ -346,6 +346,29 @@ everyone leaving). Each is inert without a plugin: nothing subscribes until `onS
 A plugin restoring a SCENE uses `loadRemoteScene({sceneUrl, keepGameId: true})` — the owner reopening their own
 scene keeps its game id instead of forking it as a remix.
 
+### 6. Object schema (roadmap 101 F2) — a contract, not a hook
+
+Objects and materials are validated on receive and on load. Every three.js object JSON core takes from a
+peer, a file or its own stores passes [src/lib/sceneSchema.js](src/lib/sceneSchema.js) (through
+`src/lib/loadGuard.js`) before three parses it, and so does every multi-slot `materials` payload. A CI step
+(`npm run check:loaders`) fails on a generic three loader called anywhere else in `src/`.
+
+What a module or plugin can rely on, and what it must keep to:
+
+| | the rule |
+|---|---|
+| object types | three's own (`Object3D`, `Group`, `Mesh`, `SkinnedMesh`, `InstancedMesh`, `Line*`, `Points`, `Sprite`, `LOD`, `Bone`, the two cameras, the lights). Anything else arrives as an `Object3D` with its children |
+| material types | the standard ones (`Mesh*Material`, `Line*Material`, `PointsMaterial`, `SpriteMaterial`, `ShadowMaterial`). Any other material arrives as the standard fallback material; custom looks are made with the shader graph |
+| fields | the fields three's `toJSON()` writes for that type, each with a value rule. An unknown field is stripped; a bad value is stripped and three uses its default |
+| images | embedded data URLs only, each under a size cap |
+| `userData` | any plain JSON under a size cap (no `__proto__` / `constructor` / `prototype` keys, bounded depth). The keys core and the shipped modules write keep a per-key kind |
+
+Every change is counted (the wire diagnostics and one toast per session), never silent. The inventory
+(`scripts/schema-inventory.cjs`, kept as `tests/fixtures/schema-1.65/inventory.json`) found that the shipped
+modules build only the types above and write only plain-JSON `userData`, so modules get no registration
+call. A later release that saves a new field adds it to the type's table in `sceneSchema.js` with a value
+rule and a fixture in `tests/unit/sceneSchema.test.js`; a new `userData` key needs nothing.
+
 ## Versioning
 
 `CLOUD_HOOKS_VERSION` ([src/lib/cloudHooks.js](src/lib/cloudHooks.js)) is the contract
@@ -355,6 +378,44 @@ when `N` is **newer** than the engine, and a new engine always accepts an older 
 (every hook is inert without a consumer). History: 1 (M1) · 2 (roadmap #14: profile and
 drawer mounts, roles bridge) · **3 (roadmap #28-A: the publish · play · remix seams above)**.
 A coupled change therefore deploys the engine first and the plugin after.
+
+**The module api has its own number** (101 F6): `api.version` on the module api (`src/lib/sdk/core.js`
+`SDK_API_VERSION`, now **2**) is NOT the plugin `api.version` above. Version 2 also notes that the raw
+renderer handle a module (or a plugin's `captureThumbnail` path) can reach today stays for now and will
+leave the contract once roadmap 100 swaps renderers: modules use the look / post SDK calls. Every
+renderer the app makes is created in `src/lib/render/` (a CI check keeps it that way).
+
+### The session protocol (`proto` + `caps`, roadmap 101 F1)
+
+Separate from the plugin contract: two PEERS agree on a session protocol before any scene data
+flows. Every dial carries `{jr: 1, proto: <int>, caps: {…}}` in its PeerJS metadata (plus `cloud`,
+`invite`, `kind` when they apply), and the `modules` handshake message carries the same `proto` and
+`caps` beside `wb` / `fc` / `dev`. `WIRE_PROTO` lives in [src/lib/wireProto.js](src/lib/wireProto.js)
+and is **1**; a peer that sends no `proto` speaks 1 (every build up to 1.65).
+
+- **Same number:** everything as before. **Different (or unreadable):** the link is refused before
+  any whitelist, approval card or data: a refusal dial (`joinresult: 'denied'` + `refuse: {reason:
+  'proto', need}`) when the dialer can hear one, else a `{type: 'refuse', reason: 'proto', need}`
+  message on an open link. `need` is the refuser's own protocol. The lower side shows "This session
+  uses a newer version. Reload to update."; the higher side lists the other in People as needing
+  to reload. No reconnect window, no mesh-fill redial; a later dial on the right protocol gets in.
+  Only an answer to something this side asked for (a join request still waiting, or a link of ours to
+  that peer) can latch the reload notice; the same claim in a stranger's dial shows a plain toast at
+  most once a minute, a blocked peer or an unreadable number is closed without a word, and refusal
+  dials the app sends by itself are bounded (5 a second and 20 in flight; 2 and 5 for dials nobody
+  asked for; one per peer a second, the newest answer replacing one in flight); a person's own Reject or
+  Full always goes out.
+- **Bump `proto` only** when a message changes meaning in a way an older build would apply wrongly.
+  Additive fields and new message types do not bump it (an older build counts and drops a type it
+  does not know); they become a **`caps` flag** instead — today `wb` (batch envelopes), `fc` (fast
+  movement channel), `dev` (a device row in `modules`). Extensions (80a's held-set handshake) add a
+  flag here and read it from `peerCaps`; absent = the peer does not have it.
+- **Inbound limits (F4):** each peer has a per-second budget of messages and bytes and an `object`
+  size cap ([src/lib/wireBudget.js](src/lib/wireBudget.js) `LIMITS`, set at >= 4x the measured
+  peaks); a message over budget is dropped and counted (`budget:*` in Diagnostics), the person is
+  told once a minute, and the link stays up. A `batch` envelope costs one message plus one per four items, and each `object`
+  item in it meets the size cap on its own; every data channel on the link is metered, and a goodbye
+  or refusal passes the budget only a few times a second.
 
 ## Rules for plugin authors
 

@@ -17,7 +17,7 @@
 //   - the bar survives a reload and a fold → unfold → fold.
 const h = require('./helpers.cjs');
 
-const store = (name) => `(() => { let v; window.__stores.${name}.subscribe((x) => (v = x))(); return v; })()`;
+const store = (name) => `(() => { let v; window.__tp.test.v1.${name}.subscribe((x) => (v = x))(); return v; })()`;
 const FOLDED = { width: 390, height: 896 };
 const PHONE = (storage = {}) => ({
 	context: { viewport: FOLDED, hasTouch: true, isMobile: true, deviceScaleFactor: 2.9 },
@@ -78,19 +78,19 @@ h.run(async () => {
 	};
 	const bar = () => read(() => [...document.querySelectorAll('#ps-bar [data-bar-item]')].map((b) => b.dataset.barItem));
 	const sheet = () => read(store('phoneShell.phoneSheet'));
-	const quiet = () => read(() => window.__stores.toastStore.set([]));
+	const quiet = () => read(() => window.__tp.test.v1.toastStore.set([]));
 	// More at HALF height: its tiles sit below the top band where the auto-quality toasts stack on a
 	// loaded box (a press there lands on a toast — the documented trap)
 	const openMore = async (detent = 'half') => {
 		if ((await sheet()) !== 'more') await tap('#ps-more', 600);
-		await read(`window.__stores.phoneShell.setPhoneDetent('more', '${detent}')`);
+		await read(`window.__tp.test.v1.phoneShell.setPhoneDetent('more', '${detent}')`);
 		await P.waitForTimeout(400);
 	};
 	const closeSheets = async () => {
-		await read(() => window.__stores.phoneShell.phoneSheet.set(null));
+		await read(() => window.__tp.test.v1.phoneShell.phoneSheet.set(null));
 		await P.waitForTimeout(400);
 	};
-	const setBar = (list) => read(`window.__stores.phoneBar.setBar(${JSON.stringify(list)})`);
+	const setBar = (list) => read(`window.__tp.test.v1.phoneBar.setBar(${JSON.stringify(list)})`);
 	const DEFAULT = ['add', 'objects', 'play', 'explorer', 'more'];
 	h.check(await read(() => document.documentElement.classList.contains('phone-shell')), 'premise: the phone shell is mounted on the folded N6 (390x896)');
 
@@ -127,7 +127,7 @@ h.run(async () => {
 	h.check(/hold and drag/i.test(foot.hint) && foot.hintLast, `the helper line is at More's bottom ("${foot.hint}")`);
 	h.check(foot.switches && foot.showLast === 'Show', `the three switches (Selection toolbar, Dock tab row, Grab handle) are at More's bottom, all on (${JSON.stringify(foot)})`);
 	// the hint stays on screen at More's half height too (it rides the sheet's bottom edge)
-	await read(() => window.__stores.phoneShell.setPhoneDetent('more', 'half'));
+	await read(() => window.__tp.test.v1.phoneShell.setPhoneDetent('more', 'half'));
 	await P.waitForTimeout(500);
 	const hintBox = await read(() => {
 		const r = document.getElementById('ps-more-hint').getBoundingClientRect();
@@ -135,13 +135,13 @@ h.run(async () => {
 		return { bottom: Math.round(r.bottom), barTop: Math.round(b.top), h: Math.round(r.height) };
 	});
 	h.check(hintBox.h > 0 && hintBox.bottom <= hintBox.barTop + 1 && hintBox.barTop - hintBox.bottom < 4, `at half height the helper line is still visible, right above the bar (${JSON.stringify(hintBox)})`);
-	await read(() => window.__stores.phoneShell.setPhoneDetent('more', 'full'));
+	await read(() => window.__tp.test.v1.phoneShell.setPhoneDetent('more', 'full'));
 	await P.waitForTimeout(400);
 
 	// ---- a tap still runs an item -------------------------------------------------------------
 	await tap('#ps-tile-stats', 600);
 	h.check((await read(store('sceneBudget.statsOpen'))) === true && (await sheet()) === null, 'a tap on Statistics in More opens the statistics (and closes More)');
-	await read(() => window.__stores.sceneBudget.statsOpen.set(false));
+	await read(() => window.__tp.test.v1.sceneBudget.statsOpen.set(false));
 
 	// ---- drag a tool from More onto the bar ------------------------------------------------------
 	await openMore();
@@ -212,7 +212,7 @@ h.run(async () => {
 		const add = await at('#ps-add');
 		await holdDrag(sc, add);
 		const b2 = await bar();
-		const toasts = await read(() => JSON.stringify(window.__stores.toastStore ? (() => { let v; window.__stores.toastStore.subscribe((x) => (v = x))(); return v; })() : []));
+		const toasts = await read(() => JSON.stringify(window.__tp.test.v1.toastStore ? (() => { let v; window.__tp.test.v1.toastStore.subscribe((x) => (v = x))(); return v; })() : []));
 		h.check(JSON.stringify(b2) === JSON.stringify(b), `an eighth is refused — the bar is unchanged (${JSON.stringify(b2)})`);
 		h.check(/holds 7/.test(toasts), `…and says why ("The bar holds 7 — drag one off first") (${toasts.slice(0, 160)})`);
 		// six: still icons-only on the narrow phone; five: labelled again
@@ -305,7 +305,7 @@ h.run(async () => {
 
 	// ---- a placed tool works from the bar --------------------------------------------------------
 	await read(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		for (let t = 0; t < 60; t++) {
 			let g;
@@ -326,7 +326,7 @@ h.run(async () => {
 		h.check((await read(store('transformMode'))) === 'rotate' && (await read(() => document.getElementById('ps-bar-rotate')?.getAttribute('aria-pressed'))) === 'true', 'Rotate on the bar arms the rotate gizmo, and shows pressed');
 		await tap('#ps-bar-inspect', 900);
 		h.check((await read(store('phoneDock.phoneDockShown'))) === 'properties', 'Inspect on the bar opens the Properties tab');
-		await read(() => window.__stores.phoneDock.closePhoneTab('properties'));
+		await read(() => window.__tp.test.v1.phoneDock.closePhoneTab('properties'));
 		await P.waitForTimeout(500);
 	}
 
@@ -346,8 +346,8 @@ h.run(async () => {
 	// ---- switch: Dock tab row --------------------------------------------------------------------
 	{
 		await read(() => {
-			window.__stores.objectActions.applySelectionSet([]);
-			window.__stores.bottomDock.dockHeight.set(360);
+			window.__tp.test.v1.objectActions.applySelectionSet([]);
+			window.__tp.test.v1.bottomDock.dockHeight.set(360);
 		});
 		await setBar(DEFAULT);
 		await P.waitForTimeout(300);
@@ -376,7 +376,7 @@ h.run(async () => {
 
 	// ---- switch: Grab handle ---------------------------------------------------------------------
 	{
-		await read(() => window.__stores.bottomDock.dockHeight.set(360));
+		await read(() => window.__tp.test.v1.bottomDock.dockHeight.set(360));
 		await P.waitForTimeout(400);
 		const grip = () =>
 			read(() => {
@@ -384,7 +384,7 @@ h.run(async () => {
 				const r = g?.getBoundingClientRect();
 				const panel = document.querySelector('.tp-dock-panel:not(.hidden)')?.getBoundingClientRect();
 				let hh;
-				window.__stores.bottomDock.dockHeight.subscribe((v) => (hh = v))();
+				window.__tp.test.v1.bottomDock.dockHeight.subscribe((v) => (hh = v))();
 				return { bare: g?.hasAttribute('data-bare'), pill: !!g?.querySelector('.sg-grabber'), top: r ? r.top : 0, h: r ? r.height : 0, panelTop: panel ? panel.top : 0, dockH: hh };
 			});
 		const on = await grip();
@@ -393,7 +393,7 @@ h.run(async () => {
 		await tapAt({ x: 195, y: on.top + on.h / 2 }, 700);
 		const tapped = await grip();
 		h.check(tapped.dockH !== on.dockH, `with the handle, a tap on it changes the dock's size (${on.dockH} → ${tapped.dockH})`);
-		await read(() => window.__stores.bottomDock.dockHeight.set(360));
+		await read(() => window.__tp.test.v1.bottomDock.dockHeight.set(360));
 		await openMore();
 		await tap('#ps-switch-grab');
 		h.check((await read(() => document.querySelector('#ps-sheet-handle .ps-grabber'))) === null, "Grab handle off: the open sheet's handle has no pill either");
@@ -418,7 +418,7 @@ h.run(async () => {
 		await tap('#ps-switch-grab');
 		await closeSheets();
 		h.check((await grip()).pill, 'Grab handle on: the pill is back');
-		await read(() => window.__stores.explorerClose.set(true));
+		await read(() => window.__tp.test.v1.explorerClose.set(true));
 	}
 
 	// ---- the bar survives a reload and a fold → unfold → fold --------------------------------------

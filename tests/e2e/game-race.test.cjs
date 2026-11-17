@@ -21,7 +21,7 @@ const SHOTS = process.env.RACE_SHOTS || '';
 
 const snap = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const g = (st) => { let v; st.subscribe((x) => (v = x))(); return v; };
 		const group = g(s.objectsGroup);
 		const r = window.__race;
@@ -37,7 +37,7 @@ const snap = (page) =>
 const phaseOf = (page) => page.evaluate(() => window.__race.phase());
 const simOf = (page) =>
 	page.evaluate(() => {
-		const p = window.__stores.physics;
+		const p = window.__tp.test.v1.physics;
 		let own, remote;
 		p.simulating.subscribe((v) => (own = v))();
 		p.remoteSimulating.subscribe((v) => (remote = v))();
@@ -46,7 +46,7 @@ const simOf = (page) =>
 /** a car's world pose on a page */
 const carPose = (page, name) =>
 	page.evaluate((name) => {
-		let g; window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByName(name);
 		if (!o) return null;
 		const e = o.rotation;
@@ -55,11 +55,11 @@ const carPose = (page, name) =>
 const setRules = (page, patch) =>
 	page.evaluate((patch) => {
 		let graphs;
-		window.__stores.flowGraphs.subscribe((g) => (graphs = g))();
+		window.__tp.test.v1.flowGraphs.subscribe((g) => (graphs = g))();
 		for (const [graphId, graph] of Object.entries(graphs ?? {}))
 			for (const n of graph.nodes ?? [])
 				if (n.type === 'racerules') {
-					window.__stores.nodesHandler.setNodeData(n.id, patch, graphId);
+					window.__tp.test.v1.nodesHandler.setNodeData(n.id, patch, graphId);
 					return true;
 				}
 		return false;
@@ -79,14 +79,14 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(3000);
 		await warm.ctx.close();
 	}
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1280, height: 720 } } });
 	const B = await h.setupPage(browser, 'B', { context: { viewport: { width: 1280, height: 720 } } });
 	await A.page.evaluate(async (arr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 		await s.sessions.applySession(payload, { backup: false });
 	}, Array.from(fs.readFileSync(TPSCENE)));
@@ -98,7 +98,7 @@ h.run(async () => {
 	const need = ['Race road', 'Race car 1', 'Race car 2', 'Race car 3', 'Race car 4', 'Finish line', 'Mountains', 'Track ground'];
 	h.check(need.every((n) => st.names.includes(n)), `road, four cars, finish line, mountains, ground (${need.filter((n) => !st.names.includes(n)).join(', ') || 'all present'})`);
 	const road = await A.page.evaluate(() => {
-		let g; window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const r = g.getObjectByName('Race road');
 		const t = g.getObjectByName('Mountains');
 		return { closed: !!r?.userData?.spline?.closed, points: r?.userData?.spline?.points?.length ?? 0, terrain: t?.userData?.geometryParams?.gtype ?? null, falloff: t?.userData?.geometryParams?.params?.falloff ?? null };
@@ -106,14 +106,14 @@ h.run(async () => {
 	h.check(road.closed && road.points >= 10, `the road is a closed spline (${road.points} points)`);
 	h.check(road.terrain === 'Terrain' && road.falloff === 'bowl', `the mountains are a PARAMETRIC terrain, falloff bowl (${road.terrain}/${road.falloff})`);
 	const graph = await A.page.evaluate(() => {
-		const types = window.__stores.allNodes().map((n) => n.type);
+		const types = window.__tp.test.v1.allNodes().map((n) => n.type);
 		return { rules: types.filter((t) => t === 'racerules').length, info: types.filter((t) => t === 'raceinfo').length, board: types.includes('leaderboard'), restart: types.includes('kit-round-restart'), enter: types.includes('onenter') };
 	});
 	h.check(graph.rules === 1 && graph.info >= 8 && graph.board && graph.restart && graph.enter, `Main: Race rules, Race info x${graph.info}, Leaderboard, Kit: Restart round, On Enter (${JSON.stringify(graph)})`);
 	const rules0 = await A.page.evaluate(() => window.__race.rules());
 	h.check(rules0.laps === 3 && rules0.maxSpeed === 18, `the module reads its numbers off the Race rules node (${JSON.stringify(rules0)})`);
 	const meshes = await A.page.evaluate(() => {
-		let g; window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		let n = 0;
 		g.traverse((o) => { if (o.isMesh) n++; });
 		return n;
@@ -125,7 +125,7 @@ h.run(async () => {
 	await h.connect(A, B);
 	const carUuid = (await carPose(A.page, 'Race car 1'))?.uuid;
 	await h.eventually(() => carPose(B.page, 'Race car 1').then((p) => p?.uuid), (u) => u === carUuid, 'B received the circuit with the same car uuid', 30000);
-	await h.eventually(() => B.page.evaluate(() => window.__stores.allNodes().filter((n) => n.type === 'racerules').length), (n) => n === 1, 'B holds the Main graph (its Race rules node)', 20000);
+	await h.eventually(() => B.page.evaluate(() => window.__tp.test.v1.allNodes().filter((n) => n.type === 'racerules').length), (n) => n === 1, 'B holds the Main graph (its Race rules node)', 20000);
 
 	console.log('\n=== 3. Play, seats ===');
 	await A.page.locator('#play-button').click();
@@ -145,11 +145,11 @@ h.run(async () => {
 	console.log('\n=== 4. Start: the 3-2-1, the grid derived from the road ===');
 	// move car 3 off the grid first: Start must put it back
 	await A.page.evaluate(() => {
-		let g; window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByName('Race car 3');
-		window.__stores.physics.physicsRemoveBody?.(o.uuid);
+		window.__tp.test.v1.physics.physicsRemoveBody?.(o.uuid);
 		o.position.set(-20, 0.6, -5);
-		window.__stores.physics.physicsAddBody?.(o.uuid);
+		window.__tp.test.v1.physics.physicsAddBody?.(o.uuid);
 	});
 	await A.page.getByRole('button', { name: 'Start', exact: true }).click();
 	await h.eventually(() => phaseOf(A.page), (p) => p === 'intro', 'Start runs the intro (the countdown)', 6000);
@@ -158,7 +158,7 @@ h.run(async () => {
 	const grid = await A.page.evaluate(() => {
 		const r = window.__race;
 		return [1, 2, 3, 4].map((n) => {
-			let g; window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const o = g.getObjectByName('Race car ' + n);
 			const p = r.progressOf(o.position.toArray());
 			return { u: +p.u.toFixed(3), d: +p.distance.toFixed(2) };
@@ -216,8 +216,8 @@ h.run(async () => {
 	// B never finishes: the kit authority ends the race 30 s after the first finisher — shorten the
 	// wait by finishing B's race by its own rows (a driver writes only ITS row)
 	await B.page.evaluate(() => {
-		window.__stores.peerVars?.setPeerVar?.('rcLaps', 2);
-		window.__stores.peerVars?.setPeerVar?.('rcFinish', 999);
+		window.__tp.test.v1.peerVars?.setPeerVar?.('rcLaps', 2);
+		window.__tp.test.v1.peerVars?.setPeerVar?.('rcFinish', 999);
 	});
 	await h.eventually(() => snap(A.page).then((s) => s.state + '/' + s.screen), (v) => v === 'over/over', 'every driver finished: the round is won, the results screen shows', 15000);
 	await h.eventually(() => hudText(A.page), (t) => /You win in \d:\d\d\.\d/.test(t) && /Race again/.test(t), 'A (the winner) reads "You win in m:ss.t" and is offered Race again', 6000);
@@ -231,7 +231,7 @@ h.run(async () => {
 	await h.leavePlay(A);
 	const before = await A.page.evaluate(() => window.__race.progressOf([-56, 0.6, 4]));
 	await A.page.evaluate(() => {
-		let g; window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const r = g.getObjectByName('Race road');
 		const sp = JSON.parse(JSON.stringify(r.userData.spline));
 		// pull the far-left corner 20 m outward (record frame = mesh frame)

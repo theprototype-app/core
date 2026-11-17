@@ -9,7 +9,7 @@
 const h = require('./helpers.cjs');
 
 const HUD = () => {
-	window.__stores.hudDocs.setHudDocFor('scene', {
+	window.__tp.test.v1.hudDocs.setHudDocFor('scene', {
 		screens: [
 			{
 				id: 'main',
@@ -33,12 +33,12 @@ const HUD = () => {
 // periodic hash compare, which is slow and racy: the first version of this suite pulsed
 // a Counter before B had the graph and read 2 where A read 3.
 const pushGraph = async (from, to, expectIds) => {
-	await from.page.evaluate((peerId) => window.__stores.nodesHandler.sendNodes(peerId), to.id);
+	await from.page.evaluate((peerId) => window.__tp.test.v1.nodesHandler.sendNodes(peerId), to.id);
 	for (let i = 0; i < 40; i++) {
 		const have = await to.page.evaluate(() => {
 			let nodes, edges;
-			window.__stores.flowNodes.subscribe((v) => (nodes = v))();
-			window.__stores.flowEdges.subscribe((v) => (edges = v))();
+			window.__tp.test.v1.flowNodes.subscribe((v) => (nodes = v))();
+			window.__tp.test.v1.flowEdges.subscribe((v) => (edges = v))();
 			return { ids: nodes.map((n) => n.id), edges: edges.length };
 		});
 		if (expectIds.every((id) => have.ids.includes(id))) return have;
@@ -61,7 +61,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
 	for (const p of [A, B])
-		await p.page.waitForFunction(() => !!window.__stores?.hudDocs, { timeout: 30000 });
+		await p.page.waitForFunction(() => !!window.__tp?.test.v1?.hudDocs, { timeout: 30000 });
 	await h.connect(A, B);
 	await A.page.evaluate(HUD);
 	await A.page.waitForTimeout(1400);
@@ -71,7 +71,7 @@ h.run(async () => {
 	// `value` through resolveInputs (shipped); hudtext's `format` renders it. The only new
 	// thing in that chain is the hudtext node itself.
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowNodes.set([
 			{ id: 'click', type: 'onclick', position: { x: 0, y: 0 }, data: { type: 'onclick', pulse: 0.3 } },
 			{ id: 'gems', type: 'counter', position: { x: 220, y: 0 }, data: { type: 'counter', step: 1, op: 'up' } },
@@ -91,7 +91,7 @@ h.run(async () => {
 	// pulse the counter three times, the way a game does
 	await A.page.evaluate(async () => {
 		for (let i = 0; i < 3; i++) {
-			window.__stores.flowRuntime.applyNodeTrigger('click', (Date.now() % 86400000) / 1000, true);
+			window.__tp.test.v1.flowRuntime.applyNodeTrigger('click', (Date.now() % 86400000) / 1000, true);
 			await new Promise((r) => setTimeout(r, 200));
 		}
 	});
@@ -101,7 +101,7 @@ h.run(async () => {
 
 	// decimals + a format with no {v} placeholder still behave
 	const formats = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.nodesHandler.setNodeData('txt', { format: '{v} gems', decimals: 2 });
 		await new Promise((r) => setTimeout(r, 700));
 		const withDecimals = document.querySelector('[data-hud-id="score"] .hud-el')?.textContent?.trim();
@@ -128,7 +128,7 @@ h.run(async () => {
 
 	// ---- 2. a BAR reads min/max/value ---------------------------------------
 	const bar = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let nodes, edges;
 		s.flowNodes.subscribe((v) => (nodes = v))();
 		s.flowEdges.subscribe((v) => (edges = v))();
@@ -149,7 +149,7 @@ h.run(async () => {
 
 	// ---- 3. a BUTTON pulses a Counter on BOTH peers from ONE stamp ----------
 	await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let nodes, edges;
 		s.flowNodes.subscribe((v) => (nodes = v))();
 		s.flowEdges.subscribe((v) => (edges = v))();
@@ -167,7 +167,7 @@ h.run(async () => {
 	const presses = (peer) =>
 		peer.page.evaluate(() => {
 			let t;
-			window.__stores.flowTriggers.subscribe((v) => (t = v))();
+			window.__tp.test.v1.flowTriggers.subscribe((v) => (t = v))();
 			return { count: t?.presses?.count ?? 0, stamp: t?.btn?.lastT ?? null };
 		});
 	const before = await Promise.all([presses(A), presses(B)]);
@@ -200,7 +200,7 @@ h.run(async () => {
 
 	// ---- 4. a TIMER reads the same remaining value on both peers ------------
 	await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let nodes, edges;
 		s.flowNodes.subscribe((v) => (nodes = v))();
 		s.flowEdges.subscribe((v) => (edges = v))();
@@ -222,7 +222,7 @@ h.run(async () => {
 	// start it from ONE peer with a real SYNCED stamp, the way the runtime does — the
 	// timer then derives its remaining seconds from that shared number on every peer
 	await A.page.evaluate(() =>
-		window.__stores.flowRuntime.applyNodeTrigger('tstart', (Date.now() % 86400000) / 1000, true)
+		window.__tp.test.v1.flowRuntime.applyNodeTrigger('tstart', (Date.now() % 86400000) / 1000, true)
 	);
 	await A.page.waitForTimeout(1600);
 	const timers = await Promise.all([elText(A, 'clock'), elText(B, 'clock')]);
@@ -242,7 +242,7 @@ h.run(async () => {
 
 	// ---- 5. a LIST is written into by id, never flowed ----------------------
 	const list = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let nodes;
 		s.flowNodes.subscribe((v) => (nodes = v))();
 		s.flowNodes.set([
@@ -267,7 +267,7 @@ h.run(async () => {
 
 	// ---- 6. a SCREEN node shows/hides/toggles, LOCALLY per peer -------------
 	const screen = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let nodes, edges;
 		s.flowNodes.subscribe((v) => (nodes = v))();
 		s.flowEdges.subscribe((v) => (edges = v))();
@@ -311,7 +311,7 @@ h.run(async () => {
 	// behind it (mirror -> flowGraphs -> autosave) is heavy enough that only ~5 of 50 calls
 	// landed in 2s, so the reading was setNodeData's cost, not this throttle.
 	const writes = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let nodes, edges;
 		s.flowNodes.subscribe((v) => (nodes = v))();
 		s.flowEdges.subscribe((v) => (edges = v))();

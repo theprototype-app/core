@@ -20,13 +20,13 @@ h.run(async () => {
 	});
 	const peer = await h.setupPage(browser, 'shader-editor');
 	const page = peer.page;
-	await page.waitForFunction(() => !!window.__stores?.shaderGraph, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.shaderGraph, { timeout: 30000 });
 
 	// a cube, selected, with a neutral base so a colour change is unambiguous
-	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await page.waitForTimeout(1400);
 	const uuid = await page.evaluate(async () => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		const read = (s) => new Promise((r) => s.subscribe((v) => r(v))());
 		const group = await read(S.objectsGroup);
 		const camera = await read(S.globalCamera);
@@ -83,7 +83,7 @@ h.run(async () => {
 	h.check(/own material/i.test(scopeText), 'scope follows the SELECTION: "' + scopeText + '"');
 	h.check(await page.locator('#shader-empty-state').count() === 1, 'with no graph it shows ONE centred call to action');
 	const occupant = await page.evaluate(
-		() => new Promise((r) => window.__stores.bottomDock.dockOccupants.subscribe((o) => r(!!o.shader?.present))())
+		() => new Promise((r) => window.__tp.test.v1.bottomDock.dockOccupants.subscribe((o) => r(!!o.shader?.present))())
 	);
 	h.check(occupant, 'and it registers as a dock occupant, so it appears in the tab strip');
 
@@ -96,7 +96,7 @@ h.run(async () => {
 	h.check(nodeCount === 2, 'the starter graph RENDERS its two nodes: ' + nodeCount);
 	const edgeCount = await page.locator('#shader-editor .svelte-flow__edge').count();
 	h.check(edgeCount === 1, 'and the edge between them: ' + edgeCount);
-	const driven = await page.evaluate((u) => window.__stores.shaderGraph.isShaderDriven(u), uuid);
+	const driven = await page.evaluate((u) => window.__tp.test.v1.shaderGraph.isShaderDriven(u), uuid);
 	h.check(driven, 'the object became shader-driven from the UI alone');
 
 	// ---- 3. a param edit in the node card reaches the PICTURE ----------------
@@ -154,7 +154,7 @@ h.run(async () => {
 
 	// ---- 5. a compile error is SHOWN, and the object keeps its material -----
 	const kept = await page.evaluate((u) => {
-		const S = window.__stores.shaderGraph;
+		const S = window.__tp.test.v1.shaderGraph;
 		const good = window.__e.sample().px;
 		S.setShaderGraphFor(u, {
 			nodes: [{ id: 'm1', type: 'mix', data: {} }, { id: 's1', type: 'surface', data: {} }],
@@ -178,11 +178,11 @@ h.run(async () => {
 	await page.locator('#shader-remove').click();
 	await page.waitForTimeout(900);
 	h.check(await page.locator('#shader-empty-state').count() === 1, 'Detach returns the tab to its empty state');
-	const afterDetach = await page.evaluate((u) => window.__stores.shaderGraph.isShaderDriven(u), uuid);
+	const afterDetach = await page.evaluate((u) => window.__tp.test.v1.shaderGraph.isShaderDriven(u), uuid);
 	h.check(!afterDetach, 'and the object is no longer shader-driven');
 
 	// ---- 7. scope follows the SELECTION, with no scope control -------------
-	await page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await page.waitForTimeout(800);
 	const sceneScope = await page.locator('#shader-scope').innerText();
 	h.check(/scene default/i.test(sceneScope), 'deselecting switches to the scene shader: "' + sceneScope + '"');
@@ -191,7 +191,7 @@ h.run(async () => {
 			(await page.locator('#shader-scope-object').count()) === 0,
 		'and there is NO scope control to get wrong — the selection is the control'
 	);
-	await page.evaluate((u) => window.__stores.objectActions.selectObject(u), uuid);
+	await page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), uuid);
 	await page.waitForTimeout(800);
 	const backToObject = await page.locator('#shader-scope').innerText();
 	h.check(/own material/i.test(backToObject), 'reselecting the object switches back: "' + backToObject + '"');
@@ -214,11 +214,11 @@ h.run(async () => {
 	// the entry point (the SH3 lesson: the Shader tab shipped with 20 green checks and no
 	// way for a user to open it). A Texture node with no picker is exactly that shape of
 	// bug — the hash could only be set by a test.
-	await page.evaluate((u) => window.__stores.objectActions.selectObject(u), uuid);
+	await page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), uuid);
 	await page.waitForTimeout(600);
 	// a fresh graph on this object, so the section does not inherit earlier wiring
 	await page.evaluate((u) => {
-		const S = window.__stores.shaderGraph;
+		const S = window.__tp.test.v1.shaderGraph;
 		S.setShaderGraphFor(u, {
 			nodes: [
 				{ id: 'tx', type: 'texture', position: { x: 80, y: 60 }, data: {} },
@@ -261,7 +261,7 @@ h.run(async () => {
 	await page.waitForTimeout(2200);
 
 	const picked = await page.evaluate((u) => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		const read = (st) => new Promise((r) => st.subscribe((v) => r(v))());
 		return read(S.shaderGraph.shaderGraphs).then(async (all) => {
 			const doc = all[u];
@@ -286,7 +286,7 @@ h.run(async () => {
 
 	// DROPPING an Explorer card is the other way textures are assigned everywhere else
 	const dropped = await page.evaluate(async (uuid) => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		const read = (st) => new Promise((r) => st.subscribe((v) => r(v))());
 		const c = document.createElement('canvas');
 		c.width = 8;
@@ -330,7 +330,7 @@ h.run(async () => {
 	// straight back - and uniformValue treats a string as a COLOUR, so a vec2 became
 	// [1,1,1], which is not something three can upload to a vec2.
 	await page.evaluate((u) => {
-		window.__stores.shaderGraph.setShaderGraphFor(u, {
+		window.__tp.test.v1.shaderGraph.setShaderGraphFor(u, {
 			nodes: [
 				{ id: 'tl', type: 'tilingOffset', position: { x: 70, y: 60 }, data: {} },
 				{ id: 'sf', type: 'surface', position: { x: 380, y: 90 }, data: {} }
@@ -375,7 +375,7 @@ h.run(async () => {
 	await page.waitForTimeout(800);
 	const written = await page.evaluate((u) => {
 		const read = (st) => new Promise((r) => st.subscribe((v) => r(v))());
-		return read(window.__stores.shaderGraph.shaderGraphs).then((all) => {
+		return read(window.__tp.test.v1.shaderGraph.shaderGraphs).then((all) => {
 			const node = (all[u]?.nodes ?? []).find((n) => n.type === 'tilingOffset');
 			return { tiling: node?.data?.tiling ?? null };
 		});
@@ -391,9 +391,9 @@ h.run(async () => {
 
 	// and it must reach three as a 2-wide uniform, which is the part the old bug broke
 	const uniformValue = await page.evaluate((u) => {
-		const mat = window.__stores.shaderGraph;
+		const mat = window.__tp.test.v1.shaderGraph;
 		const read = (st) => new Promise((r) => st.subscribe((v) => r(v))());
-		return read(window.__stores.objectsGroup).then(async (group) => {
+		return read(window.__tp.test.v1.objectsGroup).then(async (group) => {
 			const obj = group.getObjectByProperty('uuid', u);
 			await mat.compileAndApply(u);
 			const uniforms = obj?.material?.userData?.shaderUniforms ?? {};
@@ -413,7 +413,7 @@ h.run(async () => {
 	// the name is CLAMPED on the card and the full one lives in the hover preview. Both
 	// halves of that trade are asserted here.
 	await page.evaluate((u) => {
-		window.__stores.shaderGraph.setShaderGraphFor(u, {
+		window.__tp.test.v1.shaderGraph.setShaderGraphFor(u, {
 			nodes: [
 				{ id: 'tx', type: 'texture', position: { x: 80, y: 60 }, data: {} },
 				{ id: 'sf', type: 'surface', position: { x: 420, y: 90 }, data: {} }

@@ -21,7 +21,7 @@
 // a press inside the menu keeps it open.
 const h = require('./helpers.cjs');
 
-const store = (name) => `(() => { let v; window.__stores.${name}.subscribe((x) => (v = x))(); return v; })()`;
+const store = (name) => `(() => { let v; window.__tp.test.v1.${name}.subscribe((x) => (v = x))(); return v; })()`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const SHOTS = process.env.SHOT_DIR || '';
 
@@ -82,7 +82,7 @@ h.run(async () => {
 
 	// a scene with floating chrome: a dynamic box (the simulation's transport shows), a note marker
 	await P.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		s.commandsHandler.sceneCommand('/create sphere');
 		await new Promise((r) => setTimeout(r, 1200));
@@ -95,18 +95,18 @@ h.run(async () => {
 		s.annotationsHandler.activeAnnotation.set(null);
 	});
 	await P.waitForTimeout(800);
-	await P.evaluate(() => window.__stores.physics.toggleSimulation());
+	await P.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await P.waitForTimeout(1500);
 	const chrome = await P.evaluate(() => ({
 		sim: !!document.querySelector('#sim-controls'),
 		fps: !!document.querySelector('#fps-counter, .fps-counter, [data-perf-stats]'),
-		simulating: (() => { let v; window.__stores.simulating?.subscribe?.((x) => (v = x))(); return v; })()
+		simulating: (() => { let v; window.__tp.test.v1.simulating?.subscribe?.((x) => (v = x))(); return v; })()
 	}));
 	h.check(true, `premise — floating chrome on: ${JSON.stringify(chrome)}`);
 
 	const select = async () => {
 		await P.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let g;
 			s.objectsGroup.subscribe((v) => (g = v))();
 			s.objectActions.applySelectionSet([g.children[0].uuid]);
@@ -115,7 +115,7 @@ h.run(async () => {
 	};
 	const rest = async () => {
 		await P.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.phoneShell.phoneSheet.set(null);
 			s.viewportMenu.set(null);
 			s.objectListClose.set(true);
@@ -151,11 +151,11 @@ h.run(async () => {
 	const MENUS = [
 		['main menu', async () => touch.tap(34, 34), ['#sidebar70'], `!!document.querySelector('#sidebar70')`],
 		['profile menu', async () => P.locator('#avatar-trigger').dispatchEvent('mousedown'), ['#avatar-dropdown'], `!!document.querySelector('#avatar-dropdown')`],
-		['notification centre', async () => P.evaluate(() => window.__stores.notificationCenterOpen.set(true)), ['.ps-sheet', '[data-ps-host="top"]'], store('notificationCenterOpen')],
+		['notification centre', async () => P.evaluate(() => window.__tp.test.v1.notificationCenterOpen.set(true)), ['.ps-sheet', '[data-ps-host="top"]'], store('notificationCenterOpen')],
 		['Connection', async () => tapSel('#ps-connect-chip'), ['.ps-sheet', '[data-ps-host="top"]'], `${store('phoneShell.phoneSheet')} === 'conn'`],
 		['More', async () => tapSel('#ps-more'), ['.ps-sheet'], `${store('phoneShell.phoneSheet')} === 'more'`],
-		['an action sheet (viewport menu)', async () => P.evaluate(() => { let o; window.__stores.viewportMenuOpener.subscribe((v) => (o = v))(); o?.(195, 300, false); }), ['.ctx-scroll[role=menu]'], `!!document.querySelector('.ctx-scroll[role=menu]')`],
-		['Settings', async () => P.evaluate(() => window.__stores.settingsOpen.set(true)), ['dialog[open]'], `!!document.querySelector('dialog[open]')`]
+		['an action sheet (viewport menu)', async () => P.evaluate(() => { let o; window.__tp.test.v1.viewportMenuOpener.subscribe((v) => (o = v))(); o?.(195, 300, false); }), ['.ctx-scroll[role=menu]'], `!!document.querySelector('.ctx-scroll[role=menu]')`],
+		['Settings', async () => P.evaluate(() => window.__tp.test.v1.settingsOpen.set(true)), ['dialog[open]'], `!!document.querySelector('dialog[open]')`]
 	];
 	for (const [name, open, sels, isOpen] of MENUS) {
 		await rest();
@@ -179,7 +179,7 @@ h.run(async () => {
 	if (SHOTS) {
 		await rest();
 		await select();
-		await P.evaluate(() => window.__stores.themes.theme.set('light'));
+		await P.evaluate(() => window.__tp.test.v1.themes.theme.set('light'));
 		await P.locator('#avatar-trigger').dispatchEvent('mousedown');
 		await P.waitForTimeout(800);
 		await shot('g20-folded-profile-menu-light');
@@ -187,18 +187,18 @@ h.run(async () => {
 		await touch.tap(34, 34);
 		await P.waitForTimeout(800);
 		await shot('g20-folded-main-menu-light');
-		await P.evaluate(() => window.__stores.themes.theme.set('dark'));
+		await P.evaluate(() => window.__tp.test.v1.themes.theme.set('dark'));
 	}
 
 	// ---- TOOL sheets: the strip rides ABOVE them ------------------------------------------
 	const TOOLS = [
 		// 41b H1: Objects is a dock tab on the phone — the dock frame, the list placed into it, the dock's grab bar
-		['Objects', async () => P.evaluate(() => window.__stores.objectListClose.set(false)), ['#phone-dock', '#object-list', '#ps-dock-grip']],
+		['Objects', async () => P.evaluate(() => window.__tp.test.v1.objectListClose.set(false)), ['#phone-dock', '#object-list', '#ps-dock-grip']],
 		// 78 PL23: Chat is a phone dock tab too (was a framed sheet)
-		['Chat', async () => P.evaluate(() => window.__stores.chatHidden.set('')), ['#phone-dock', '#chat-window', '#ps-dock-grip']],
+		['Chat', async () => P.evaluate(() => window.__tp.test.v1.chatHidden.set('')), ['#phone-dock', '#chat-window', '#ps-dock-grip']],
 		['Inspector', async () => tapSel('#ps-inspect'), ['#inspector']],
-		['Configure Scene', async () => P.evaluate(() => window.__stores.showSidebar('scene')), ['#inspector']],
-		['scene notes', async () => P.evaluate(() => window.__stores.notesDrawerOpen.set(true)), ['#notes-drawer']],
+		['Configure Scene', async () => P.evaluate(() => window.__tp.test.v1.showSidebar('scene')), ['#inspector']],
+		['scene notes', async () => P.evaluate(() => window.__tp.test.v1.notesDrawerOpen.set(true)), ['#notes-drawer']],
 		['Add', async () => tapSel('#ps-add'), ['.ctx-scroll[role=menu]']],
 		['Explorer (dock)', async () => tapSel('#ps-explorer'), ['#explorer-list', '#ps-dock-grip']]
 	];
@@ -241,7 +241,7 @@ h.run(async () => {
 	await P.waitForTimeout(800);
 	h.check(!(await read(`!!document.querySelector('#sidebar70')`)) && (await read(`!${store('objectListClose')}`)), 'G3a phone: a tap on the Objects tab closes the menu and opens Objects in one tap');
 
-	await P.evaluate(() => window.__stores.physics.toggleSimulation());
+	await P.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 
 	// ---- DESKTOP (mouse) + UNFOLDED (touch): G3a and the audits ---------------------------------
 	for (const [label, ctx] of [
@@ -254,19 +254,19 @@ h.run(async () => {
 		const press = async (x, y) => (tq ? tq.tap(x, y) : Q.mouse.click(x, y));
 		const menuOpen = () => Q.evaluate(() => !!document.querySelector('#sidebar70'));
 		await Q.evaluate(async () => {
-			window.__stores.commandsHandler.sceneCommand('/create box');
+			window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 			await new Promise((r) => setTimeout(r, 1000));
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
-			window.__stores.objectActions.applySelectionSet([g.children[0].uuid]);
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectActions.applySelectionSet([g.children[0].uuid]);
 		});
 		await Q.waitForTimeout(600);
 		const logo = await Q.evaluate(() => { const r = document.getElementById('logo-menu').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
 		// a transient toast (the phone quality notice) is not chrome under test
-		await Q.evaluate(() => window.__stores.toastStore.set([]));
+		await Q.evaluate(() => window.__tp.test.v1.toastStore.set([]));
 		await press(logo.x, logo.y);
 		await Q.waitForTimeout(600);
-		await Q.evaluate(() => window.__stores.toastStore.set([]));
+		await Q.evaluate(() => window.__tp.test.v1.toastStore.set([]));
 		await Q.waitForTimeout(200);
 		h.check(await menuOpen(), `G3a ${label}: the logo opens the burger menu`);
 		if (SHOTS) await Q.screenshot({ path: `${SHOTS}/g3a-${label}-menu-open.png` });
@@ -291,7 +291,7 @@ h.run(async () => {
 			await press(bell.x, bell.y);
 			await Q.waitForTimeout(600);
 			h.check(!(await menuOpen()) && (await Q.evaluate(store('notificationCenterOpen'))), `G3a ${label}: a press on the bell closes the menu and opens the notification centre in one press`);
-			await Q.evaluate(() => window.__stores.notificationCenterOpen.set(false));
+			await Q.evaluate(() => window.__tp.test.v1.notificationCenterOpen.set(false));
 		}
 		// the logo still toggles (a press on it is not "outside")
 		await press(logo.x, logo.y);
@@ -300,7 +300,7 @@ h.run(async () => {
 		await Q.waitForTimeout(500);
 		h.check(!(await menuOpen()), `G3a ${label}: the logo still toggles the menu shut`);
 		// Settings over the selection: nothing floats over it
-		await Q.evaluate(() => window.__stores.settingsOpen.set(true));
+		await Q.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 		await Q.waitForTimeout(900);
 		const sa = await Q.evaluate(AUDIT, ['dialog[open]']);
 		// the logo over a modal is G3b (41-modals' row: "Settings and every other modal cover the burger/logo
@@ -308,7 +308,7 @@ h.run(async () => {
 		const logoOver = Object.keys(sa.foreign).filter((k) => k.startsWith('#logo-menu'));
 		for (const k of logoOver) delete sa.foreign[k];
 		h.check(!sa.error && Object.keys(sa.foreign).length === 0, `G20 ${label}: nothing floats over Settings (foreign ${JSON.stringify(sa.foreign)}${logoOver.length ? '; the logo over it is G3b, 41-modals' : ''})`);
-		await Q.evaluate(() => window.__stores.settingsOpen.set(false));
+		await Q.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	}
 
 	await h.finish(browser);

@@ -60,18 +60,18 @@ async function zipBytes() {
 	return cdn ? { bytes: cdn, from: MODULES_BASE } : null;
 }
 async function installZip(peer, bytes, label) {
-	await peer.page.evaluate(() => window.__stores.modulesOpen.set(true));
+	await peer.page.evaluate(() => window.__tp.test.v1.modulesOpen.set(true));
 	await peer.page.waitForTimeout(400);
 	await peer.page.getByRole('tab', { name: /^User/ }).click();
 	await peer.page.waitForTimeout(200);
 	await peer.page.locator('#install-module-zip').setInputFiles({ name: 'untangle.zip', mimeType: 'application/zip', buffer: bytes });
 	await h.eventually(
-		() => peer.page.evaluate(() => window.__stores.moduleSDK.loadedModules.map((m) => m.id)),
+		() => peer.page.evaluate(() => window.__tp.test.v1.moduleSDK.loadedModules.map((m) => m.id)),
 		(ids) => ids.includes('untangle'),
 		label + ': the untangle module installed from the real zip',
 		20000
 	);
-	await peer.page.evaluate(() => window.__stores.modulesOpen.set(false));
+	await peer.page.evaluate(() => window.__tp.test.v1.modulesOpen.set(false));
 	await peer.page.waitForTimeout(300);
 }
 
@@ -80,12 +80,12 @@ const GROUP = 'untangle-module';
 const objectCount = (page) =>
 	page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		let n = 0;
 		g.traverse(() => n++);
 		return n;
 	});
-const debug = (page) => page.evaluate(() => window.__stores.moduleSDK.moduleContentDebug());
+const debug = (page) => page.evaluate(() => window.__tp.test.v1.moduleSDK.moduleContentDebug());
 
 h.run(async () => {
 	const scene = await sceneBytes();
@@ -106,13 +106,13 @@ h.run(async () => {
 	await installZip(A, zip.bytes, 'A');
 	await installZip(B, zip.bytes, 'B');
 	await page.evaluate(async (arr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		await s.sessions.applySession(await s.sessions.readSessionZip(new Uint8Array(arr).buffer), { backup: false });
 	}, Array.from(scene.bytes));
 	await h.eventually(
 		() => page.evaluate((g) => {
 			let sc;
-			window.__stores.globalScene.subscribe((v) => (sc = v))();
+			window.__tp.test.v1.globalScene.subscribe((v) => (sc = v))();
 			return sc?.getObjectByName(g)?.children.filter((c) => c.name.startsWith('untangle-dot-')).length ?? 0;
 		}, GROUP),
 		(n) => n > 0,
@@ -123,7 +123,7 @@ h.run(async () => {
 
 	// ---------------------------------------------------------------- 1
 	console.log('\n=== 1. the section lists the board, read-only ===');
-	await page.evaluate(() => window.__stores.objectListClose.set(false));
+	await page.evaluate(() => window.__tp.test.v1.objectListClose.set(false));
 	await page.waitForTimeout(1500);
 	const row = page.locator(`#module-content .module-content-row[data-group="${GROUP}"]`);
 	h.check((await row.count()) === 1, '1.1 the object list has a Module content row for the untangle board');
@@ -151,7 +151,7 @@ h.run(async () => {
 	const countsB = await objectCount(B.page);
 	const camBefore = await page.evaluate(() => {
 		let c;
-		window.__stores.globalCamera.subscribe((v) => (c = v))();
+		window.__tp.test.v1.globalCamera.subscribe((v) => (c = v))();
 		return c.position.toArray();
 	});
 	await row.locator('.module-content-name').click();
@@ -160,7 +160,7 @@ h.run(async () => {
 	h.check(d.selection?.name === GROUP, `2.1 the proxy selection names the board (${d.selection?.name})`);
 	h.check(d.proxyInScene, '2.2 the proxy box is in the scene');
 	const inside = await page.evaluate((g) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let sc;
 		s.globalScene.subscribe((v) => (sc = v))();
 		const box = new s.THREE.Box3().setFromObject(sc.getObjectByName(g));
@@ -170,7 +170,7 @@ h.run(async () => {
 	h.check(inside, '2.3 ...at the SCENE ROOT, sized to the board\'s bounds');
 	const camAfter = await page.evaluate(() => {
 		let c;
-		window.__stores.globalCamera.subscribe((v) => (c = v))();
+		window.__tp.test.v1.globalCamera.subscribe((v) => (c = v))();
 		return c.position.toArray();
 	});
 	h.check(Math.hypot(...camAfter.map((v, i) => v - camBefore[i])) > 0.2, '2.4 the camera framed it');
@@ -178,7 +178,7 @@ h.run(async () => {
 	h.check(/untangle/i.test(card) && /module/i.test(card), `2.5 the Inspector shows whose it is (${card.slice(0, 80)})`);
 	const sel = await page.evaluate(() => {
 		let v;
-		window.__stores.selectedObjects.subscribe((x) => (v = x))();
+		window.__tp.test.v1.selectedObjects.subscribe((x) => (v = x))();
 		return v.length;
 	});
 	h.check(sel === 0, '2.6 the object SELECTION stays empty (the proxy never joins the set)');
@@ -188,31 +188,31 @@ h.run(async () => {
 	h.check((await objectCount(page)) === countsA, `3.1 objectsGroup unchanged on A (${countsA})`);
 	await page.waitForTimeout(1200);
 	h.check((await objectCount(B.page)) === countsB, `3.2 ...and on the peer (${countsB})`);
-	const saved = await page.evaluate(() => JSON.stringify(window.__stores.sessions.buildSessionPayload('probe')));
+	const saved = await page.evaluate(() => JSON.stringify(window.__tp.test.v1.sessions.buildSessionPayload('probe')));
 	h.check(!saved.includes('module-content-proxy'), '3.3 a saved payload does not contain the proxy');
 	const onB = await B.page.evaluate(() => {
 		let sc;
-		window.__stores.globalScene.subscribe((v) => (sc = v))();
+		window.__tp.test.v1.globalScene.subscribe((v) => (sc = v))();
 		return !!sc.getObjectByName('module-content-proxy');
 	});
 	h.check(!onB, '3.4 the peer has no proxy');
 
 	// ---------------------------------------------------------------- 4
 	console.log('\n=== 4. a deselect puts it away ===');
-	await page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await page.waitForTimeout(300);
 	const gone = await debug(page);
 	h.check(!gone.proxyInScene && !gone.selection, '4.1 deselect clears the proxy and the selection');
 
 	// ---------------------------------------------------------------- 5
 	console.log('\n=== 5. in the VIEWPORT: an Edit click on the board selects its proxy; Interact plays ===');
-	await page.evaluate(() => window.__stores.inspectorClose.set(true));
+	await page.evaluate(() => window.__tp.test.v1.inspectorClose.set(true));
 	// 30 integrate: flyTo(..., 0) is a jump — even on a frame whose rAF timestamp precedes the
 	// call (the race that parked the camera at -Infinity/NaN for a frame, mod-audit's finding)
 	const jump = await page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				let cam;
 				s.globalCamera.subscribe((v) => (cam = v))();
 				const raf = window.requestAnimationFrame;
@@ -228,7 +228,7 @@ h.run(async () => {
 	);
 	h.check(jump.every(Number.isFinite) && Math.hypot(jump[0] - 1, jump[1] - 2.5, jump[2] - 6) < 0.05, `5.0 flyTo(…, 0) lands in one frame, finite (${jump.map((v) => +v.toFixed(3))})`);
 	await page.evaluate((g) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let sc;
 		s.globalScene.subscribe((v) => (sc = v))();
 		const box = new s.THREE.Box3().setFromObject(sc.getObjectByName(g));
@@ -237,7 +237,7 @@ h.run(async () => {
 	}, GROUP);
 	await page.waitForTimeout(900);
 	const dot = await page.evaluate((g) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let sc, camera, renderer;
 		s.globalScene.subscribe((v) => (sc = v))();
 		s.globalCamera.subscribe((v) => (camera = v))();
@@ -258,8 +258,8 @@ h.run(async () => {
 	}, GROUP);
 	h.check(dot.hitsBoard && dot.onCanvas, `5.1 (premise) the pixel lands on the board (${dot.name})`);
 	await page.evaluate(() => {
-		window.__stores.objectActions.deselectObject();
-		window.__stores.objectActions.setEditorMode('edit');
+		window.__tp.test.v1.objectActions.deselectObject();
+		window.__tp.test.v1.objectActions.setEditorMode('edit');
 	});
 	await page.waitForTimeout(1700);
 	await page.mouse.click(dot.x, dot.y);
@@ -267,8 +267,8 @@ h.run(async () => {
 	const edit = await debug(page);
 	h.check(edit.selection?.name === GROUP, `5.2 an EDIT click on the board selects its proxy (${edit.selection?.name ?? 'nothing'})`);
 	await page.evaluate(() => {
-		window.__stores.objectActions.deselectObject();
-		window.__stores.objectActions.setEditorMode('interact');
+		window.__tp.test.v1.objectActions.deselectObject();
+		window.__tp.test.v1.objectActions.setEditorMode('interact');
 	});
 	await page.waitForTimeout(1700);
 	await page.mouse.click(dot.x, dot.y);
@@ -276,7 +276,7 @@ h.run(async () => {
 	const inter = await debug(page);
 	h.check(!inter.selection, '5.3 in INTERACT the same click selects nothing (it belongs to the module)');
 	await page.mouse.click(dot.x + 200, dot.y + 150); // drop whatever the module picked up
-	await page.evaluate(() => window.__stores.objectActions.setEditorMode('edit'));
+	await page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('edit'));
 
 	h.check(h.pageErrors(A).length === 0, `the page threw nothing (${h.pageErrors(A).join(' / ')})`);
 	await h.finish(browser);

@@ -11,14 +11,14 @@ const h = require('./helpers.cjs');
 const walker = (page) =>
 	page.evaluate(() => {
 		let st;
-		window.__stores.charController.walkerState.subscribe((v) => (st = v))();
+		window.__tp.test.v1.charController.walkerState.subscribe((v) => (st = v))();
 		return st;
 	});
-const level = (page) => page.evaluate(() => window.__stores.kit.kit.impls.levels?.current?.() ?? null);
+const level = (page) => page.evaluate(() => window.__tp.test.v1.kit.kit.impls.levels?.current?.() ?? null);
 const eye = (page) =>
 	page.evaluate(() => {
 		let cam;
-		window.__stores.globalCamera.subscribe((c) => (cam = c))();
+		window.__tp.test.v1.globalCamera.subscribe((c) => (cam = c))();
 		// the camera sits in a group at y = 0.9: read the WORLD eye, not the local position
 		return cam.getWorldPosition(cam.position.clone()).toArray();
 	});
@@ -26,7 +26,7 @@ const eye = (page) =>
 const stand = (page, p) =>
 	page.evaluate((e) => {
 		let cam;
-		window.__stores.globalCamera.subscribe((v) => (cam = v))();
+		window.__tp.test.v1.globalCamera.subscribe((v) => (cam = v))();
 		cam.position.set(e[0], e[1], e[2]);
 		cam.updateMatrixWorld(true);
 	}, p);
@@ -38,20 +38,20 @@ h.run(async () => {
 
 	console.log('\n=== 1. the template ===');
 	const loaded = await page.evaluate(() =>
-		window.__stores.sceneTemplates.loadRemoteScene({ sceneUrl: '/templates/two-levels/scene.tpscene', title: 'Two levels and a portal', slug: 'two-levels' })
+		window.__tp.test.v1.sceneTemplates.loadRemoteScene({ sceneUrl: '/templates/two-levels/scene.tpscene', title: 'Two levels and a portal', slug: 'two-levels' })
 	);
 	h.check(loaded === true, 'premise: the bundled template loads');
 	await h.eventually(
-		() => page.evaluate(() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r((g?.children ?? []).map((c) => c.name)))())),
+		() => page.evaluate(() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r((g?.children ?? []).map((c) => c.name)))())),
 		(n) => n.includes('Tower top') && n.includes('To the tower'),
 		'premise: the courtyard, the tower top and the portal are in the scene',
 		20000
 	);
-	const cc = await page.evaluate(() => (window.__stores.allNodes?.() ?? []).filter((n) => n.type === 'charcontroller').map((n) => n.data?.mode));
+	const cc = await page.evaluate(() => (window.__tp.test.v1.allNodes?.() ?? []).filter((n) => n.type === 'charcontroller').map((n) => n.data?.mode));
 	h.check(cc.length === 1 && cc[0] === 'walk', `1.1 the template carries ONE Character Controller in walk mode (${JSON.stringify(cc)})`);
 
 	console.log('\n=== 2. Play in the courtyard ===');
-	await page.evaluate(() => window.__stores.isLocked.set(true));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await h.eventually(
 		() => walker(page),
 		(s) => s && s.source === 'rapier' && s.grounded && Math.abs(s.ground) < 0.06,

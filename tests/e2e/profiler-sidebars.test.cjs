@@ -43,7 +43,7 @@ const TOURS = '{"editor-touch":true,"editor":true}';
 /** a real box in the scene + a DETAILED recording whose capture names it, opened in the Profiler */
 async function seed(P) {
 	return P.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 300));
 		const g = await new Promise((r) => s.objectsGroup.subscribe(r)());
@@ -88,7 +88,7 @@ const reload = async (D) => {
 };
 const el = (P, sel) => P.evaluate((sel) => { const e = document.querySelector(sel); if (!e || !e.getClientRects().length) return null; const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; }, sel);
 const detail = (P, key) => P.evaluate((k) => document.querySelector(`#profiler-details [data-detail="${k}"]`)?.textContent?.replace(/\s+/g, ' ').trim() ?? null, key);
-const selected = (P) => P.evaluate(() => { let v; window.__stores.selectedObjects.subscribe((x) => (v = x))(); return v; });
+const selected = (P) => P.evaluate(() => { let v; window.__tp.test.v1.selectedObjects.subscribe((x) => (v = x))(); return v; });
 /** open a right-sidebar tab (a click on the OPEN tab closes the panel, so only click when needed) */
 const mode = async (P, m) => {
 	if (await el(P, m === 'settings' ? '#profiler-settings' : '#profiler-details')) return;
@@ -148,7 +148,7 @@ h.run(async () => {
 			const tl0 = await el(P, '#profiler-timeline');
 			h.check(gone, 'the recordings sidebar hides with the edge button');
 			await reload(D);
-			await P.evaluate(() => window.__stores.profilerClose.set(false));
+			await P.evaluate(() => window.__tp.test.v1.profilerClose.set(false));
 			await P.waitForTimeout(1200);
 			h.check(!(await el(P, '#profiler-side')), '...and stays hidden after a reload');
 			await P.locator('#profiler-dock [data-ws-primary-toggle]').click();
@@ -174,7 +174,7 @@ h.run(async () => {
 			h.check(lanes === 'tris', `the last graph cannot be switched off (${lanes})`);
 			await P.click('#profiler-lane-fps');
 			await P.click('#profiler-select-in-scene');
-			await P.evaluate(() => window.__stores.objectActions.applySelectionSet([]));
+			await P.evaluate(() => window.__tp.test.v1.objectActions.applySelectionSet([]));
 			await mode(P, 'details');
 			await P.locator('#profiler-tree tbody tr[data-kind="object"] .pf-name').nth(1).click();
 			await P.waitForTimeout(500);
@@ -185,7 +185,7 @@ h.run(async () => {
 			h.check((await P.evaluate(() => localStorage.getItem('perfStats:show'))) === 'true', 'the FPS and draw-call overlay toggle is the app\'s own pref');
 			await P.click('#profiler-perf-overlay');
 			await reload(D);
-			await P.evaluate(() => window.__stores.profilerClose.set(false));
+			await P.evaluate(() => window.__tp.test.v1.profilerClose.set(false));
 			await P.waitForTimeout(1200);
 			await P.locator('#profiler-recordings li[data-id]').first().click();
 			await P.waitForTimeout(700);
@@ -213,7 +213,7 @@ h.run(async () => {
 			const tl1 = await el(P, '.pf-tl');
 			h.check(tl1.h - tl0.h > 30, `dragging the splitter down grows the graph (${Math.round(tl0.h)} -> ${Math.round(tl1.h)} px)`);
 			await reload(D);
-			await P.evaluate(() => window.__stores.profilerClose.set(false));
+			await P.evaluate(() => window.__tp.test.v1.profilerClose.set(false));
 			await P.waitForTimeout(1200);
 			await P.locator('#profiler-recordings li[data-id]').first().click();
 			await P.waitForTimeout(700);

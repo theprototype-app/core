@@ -6,7 +6,7 @@
 // send spy + the shared appliers.
 const h = require('./helpers.cjs');
 
-const entriesOn = (page) => page.evaluate(() => window.__stores.particleRuntime.particleEntries());
+const entriesOn = (page) => page.evaluate(() => window.__tp.test.v1.particleRuntime.particleEntries());
 
 h.run(async () => {
 	const browser = await h.launch();
@@ -14,7 +14,7 @@ h.run(async () => {
 	// throwaway page warms the vite dep-optimizer for the lazy rapier import
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(4000);
 		await warm.ctx.close();
 	}
@@ -24,17 +24,17 @@ h.run(async () => {
 	// a dynamic box at y=5 with an "On impact" dust emitter + an On Impact node
 	// (implicit owner, wired nowhere) in its own graph
 	const uuid = await A.page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const box = g.children[g.children.length - 1];
 		window.__box = box;
 		box.position.set(0, 5, 0);
 		box.updateMatrixWorld(true);
 		box.userData.physics = { mode: 'dynamic', mass: 2 };
-		window.__stores.particleActions.addParticlesPreset(box.uuid, 'dust');
-		window.__stores.particleActions.updateObjectParticles(box.uuid, { mode: 'impact' });
-		window.__stores.flowGraphs.update((graphs) => ({
+		window.__tp.test.v1.particleActions.addParticlesPreset(box.uuid, 'dust');
+		window.__tp.test.v1.particleActions.updateObjectParticles(box.uuid, { mode: 'impact' });
+		window.__tp.test.v1.flowGraphs.update((graphs) => ({
 			...graphs,
 			[box.uuid]: {
 				nodes: [{ id: 'imp1', type: 'onimpact', position: { x: 20, y: 20 }, data: { type: 'onimpact', label: 'On Impact', pulse: 0.3, minStrength: 1 } }],
@@ -51,7 +51,7 @@ h.run(async () => {
 		// spy every outgoing message; sim messages flow through the same send
 		window.__sent = [];
 		let peer;
-		window.__stores.peers.subscribe((p) => (peer = p))();
+		window.__tp.test.v1.peers.subscribe((p) => (peer = p))();
 		window.__peer = peer;
 		peer.send = (m) => window.__sent.push(m.type);
 	});
@@ -60,9 +60,9 @@ h.run(async () => {
 	h.check(preSim?.space === 'world', `impact emitter live before the sim (${JSON.stringify(preSim?.space)})`);
 
 	// start the sim and let the box fall ~1s (real-time accumulator)
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await h.eventually(
-		() => A.page.evaluate(() => new Promise((r) => window.__stores.physics.simulating.subscribe(r)())),
+		() => A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.physics.simulating.subscribe(r)())),
 		(v) => v === true,
 		'simulation started'
 	);
@@ -86,7 +86,7 @@ h.run(async () => {
 		'particleburst replicated to peers'
 	);
 	await h.eventually(
-		() => A.page.evaluate(() => new Promise((r) => window.__stores.flowTriggers.subscribe((t) => r(t.imp1 ?? null))())),
+		() => A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.flowTriggers.subscribe((t) => r(t.imp1 ?? null))())),
 		(t) => !!t && t.lastT > 0,
 		'On Impact node pulsed (replicated nodetrigger stamp)'
 	);
@@ -97,11 +97,11 @@ h.run(async () => {
 
 	// stop + restore the spy
 	await A.page.evaluate(() => {
-		window.__stores.physics.toggleSimulation();
+		window.__tp.test.v1.physics.toggleSimulation();
 		delete window.__peer.send;
 	});
 	await A.page.waitForTimeout(500);
-	const simOff = await A.page.evaluate(() => new Promise((r) => window.__stores.physics.simulating.subscribe(r)()));
+	const simOff = await A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.physics.simulating.subscribe(r)()));
 	h.check(simOff === false, 'simulation stopped cleanly (EventQueue freed)');
 
 	await h.finish(browser);

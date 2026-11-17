@@ -8,12 +8,12 @@ const h = require('./helpers.cjs');
 
 const targets = (page) =>
 	page.evaluate(
-		() => new Promise((r) => window.__stores.snapping.snapTargets.subscribe((v) => r({ ...v }))())
+		() => new Promise((r) => window.__tp.test.v1.snapping.snapTargets.subscribe((v) => r({ ...v }))())
 	);
 
 /** open the viewport menu and read its Snapping submenu (grid-snapping recipe) */
 async function snapSubmenu(page) {
-	await page.evaluate(() => window.__stores.viewportMenu.set({ x: 240, y: 150, point: [0, 0, 0] }));
+	await page.evaluate(() => window.__tp.test.v1.viewportMenu.set({ x: 240, y: 150, point: [0, 0, 0] }));
 	await page.waitForTimeout(350);
 	await page.locator('[role="menuitem"]').filter({ hasText: 'Snapping' }).first().hover();
 	await page.waitForTimeout(300);
@@ -47,8 +47,8 @@ async function findXArrowGrip(page) {
 	const candidates = await page.evaluate(() => {
 		let controls = null;
 		let cam = null;
-		window.__stores.TControls.subscribe((v) => (controls = v))();
-		window.__stores.globalCamera.subscribe((v) => (cam = v))();
+		window.__tp.test.v1.TControls.subscribe((v) => (controls = v))();
+		window.__tp.test.v1.globalCamera.subscribe((v) => (cam = v))();
 		const helper = controls?.getHelper?.() ?? controls;
 		if (!helper || !cam) return null;
 		let pick = null;
@@ -56,7 +56,7 @@ async function findXArrowGrip(page) {
 			if (!pick && n.isMesh && n.name === 'X') pick = n;
 		});
 		if (!pick) return null;
-		const THREE = window.__stores.THREE;
+		const THREE = window.__tp.test.v1.THREE;
 		const box = new THREE.Box3().setFromObject(pick);
 		const c = box.getCenter(new THREE.Vector3());
 		return [0.75, 0.6, 0.85, 0.5, 0.95].map((t) => {
@@ -69,7 +69,7 @@ async function findXArrowGrip(page) {
 		await page.mouse.move(px[0], px[1]);
 		await page.waitForTimeout(80);
 		const axis = await page.evaluate(
-			() => new Promise((r) => window.__stores.TControls.subscribe((c) => r(c?.axis))())
+			() => new Promise((r) => window.__tp.test.v1.TControls.subscribe((c) => r(c?.axis))())
 		);
 		if (axis === 'X') return px;
 	}
@@ -91,7 +91,7 @@ h.run(async () => {
 		`defaults: radius 25px, anchor mode auto (${t.radiusPx}, ${t.anchorMode})`
 	);
 	await A.page.evaluate(() =>
-		window.__stores.snapping.snapTargets.update((v) => ({ ...v, vertex: true, radiusPx: 30 }))
+		window.__tp.test.v1.snapping.snapTargets.update((v) => ({ ...v, vertex: true, radiusPx: 30 }))
 	);
 	await h.freshReload(A);
 	await A.page.waitForTimeout(800);
@@ -103,7 +103,7 @@ h.run(async () => {
 
 	// ---------- 2. scoreCandidates is PURE ----------
 	const scores = await A.page.evaluate(() => {
-		const s = window.__stores.snapEngine.scoreCandidates;
+		const s = window.__tp.test.v1.snapEngine.scoreCandidates;
 		return {
 			vertexBeatsSurface: s(
 				[
@@ -139,9 +139,9 @@ h.run(async () => {
 	// ---------- 3. Inspector chips ----------
 	// 78-int PL17: Configure Scene opens with only Environment + Scene look expanded — deep-link the section (twice: the first
 	// ask can land before a closed panel has mounted its sections)
-	await A.page.evaluate(() => window.__stores.openSceneSection('Snapping'));
+	await A.page.evaluate(() => window.__tp.test.v1.openSceneSection('Snapping'));
 	await A.page.waitForTimeout(500);
-	await A.page.evaluate(() => window.__stores.openSceneSection('Snapping'));
+	await A.page.evaluate(() => window.__tp.test.v1.openSceneSection('Snapping'));
 	await A.page.waitForTimeout(600);
 	const chips = await A.page.evaluate(() => ({
 		vertex: !!document.querySelector('#snap-target-vertex'),
@@ -159,7 +159,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(200);
 	t = await targets(A.page);
 	h.check(t.face === true, 'clicking the Face chip flips the store');
-	await A.page.evaluate(() => window.__stores.showSidebar('scene'));
+	await A.page.evaluate(() => window.__tp.test.v1.showSidebar('scene'));
 	await A.page.waitForTimeout(300);
 
 	// ---------- 4. viewport menu: Elements section + hint tag ----------
@@ -188,7 +188,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(200);
 	t = await targets(A.page);
 	h.check(t.object === true, 'the menu Object row flips the store');
-	await A.page.evaluate(() => window.__stores.viewportMenu.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.viewportMenu.set(null));
 	await A.page.waitForTimeout(200);
 
 	// ---------- 5. the engine, synthetically (deterministic) ----------
@@ -197,7 +197,7 @@ h.run(async () => {
 	// front face at its corner (3, 2, 1). The vertex candidate must win and the
 	// clamped 'auto' anchor of A must land ON the corner.
 	const ids = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 2 2 2');
 		w.commandsHandler.sceneCommand('/create Box 2 2 2');
 		await new Promise((r) => setTimeout(r, 500));
@@ -215,7 +215,7 @@ h.run(async () => {
 	});
 	h.check(!!ids.a && !!ids.b, `two boxes created (${ids.count})`);
 	await A.page.evaluate(() =>
-		window.__stores.snapping.snapTargets.update((v) => ({
+		window.__tp.test.v1.snapping.snapTargets.update((v) => ({
 			...v,
 			enabled: true,
 			vertex: true,
@@ -225,10 +225,10 @@ h.run(async () => {
 			radiusPx: 40
 		}))
 	);
-	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u), ids.a);
+	await A.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), ids.a);
 	await A.page.waitForTimeout(600);
 	const synth = await A.page.evaluate(({ a }) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let controls = null;
 		let camera = null;
 		let g = null;
@@ -299,7 +299,7 @@ h.run(async () => {
 	// off the 0.5 lattice in Y, which the X-drag never touches. Grid snap is ON.
 	await A.page.evaluate(
 		({ a, b }) => {
-			const w = window.__stores;
+			const w = window.__tp?.test.v1;
 			let g = null;
 			w.objectsGroup.subscribe((v) => (g = v))();
 			const boxA = g.getObjectByProperty('uuid', a);
@@ -322,7 +322,7 @@ h.run(async () => {
 		},
 		ids
 	);
-	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u), ids.a);
+	await A.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), ids.a);
 	await A.page.waitForTimeout(600);
 	const arrow = await findXArrowGrip(A.page);
 	h.check(!!arrow, 'found a grip that hovers the gizmo +X arrow');
@@ -330,8 +330,8 @@ h.run(async () => {
 		// aim just inside B's front face at its top-front corner (3.13, 3.63, 1)
 		const aimPx = await A.page.evaluate(() => {
 			let camera = null;
-			window.__stores.globalCamera.subscribe((v) => (camera = v))();
-			const v = new window.__stores.THREE.Vector3(3.23, 3.45, 1).project(camera);
+			window.__tp.test.v1.globalCamera.subscribe((v) => (camera = v))();
+			const v = new window.__tp.test.v1.THREE.Vector3(3.23, 3.45, 1).project(camera);
 			return [((v.x + 1) / 2) * window.innerWidth, ((1 - v.y) / 2) * window.innerHeight];
 		});
 		await A.page.mouse.move(arrow[0], arrow[1]);
@@ -339,7 +339,7 @@ h.run(async () => {
 		// premise check (the lore: a synthesized grip must start the gesture it
 		// means to) — the press must have armed the X axis, not the XYZ center
 		const axis = await A.page.evaluate(
-			() => new Promise((r) => window.__stores.TControls.subscribe((c) => r(c?.axis))())
+			() => new Promise((r) => window.__tp.test.v1.TControls.subscribe((c) => r(c?.axis))())
 		);
 		h.check(axis === 'X', `the press grabbed the X arrow (axis=${axis})`);
 		await A.page.mouse.move(aimPx[0], aimPx[1], { steps: 14 });
@@ -349,7 +349,7 @@ h.run(async () => {
 		await A.page.waitForTimeout(400);
 		const final = await A.page.evaluate(
 			({ a }) => {
-				const w = window.__stores;
+				const w = window.__tp?.test.v1;
 				let g = null;
 				w.objectsGroup.subscribe((v) => (g = v))();
 				const boxA = g.getObjectByProperty('uuid', a);
@@ -382,7 +382,7 @@ h.run(async () => {
 
 	// ---------- 7. defaults are inert ----------
 	const inert = await A.page.evaluate(({ a }) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.snapping.snapTargets.update((v) => ({
 			...v,
 			vertex: false,
@@ -404,7 +404,7 @@ h.run(async () => {
 	// 'move' broadcasts (the locked "local-only, never replicated" fork).
 	await A.page.evaluate(
 		({ a, b }) => {
-			const w = window.__stores;
+			const w = window.__tp?.test.v1;
 			let g = null;
 			w.objectsGroup.subscribe((v) => (g = v))();
 			const boxA = g.getObjectByProperty('uuid', a);
@@ -429,23 +429,23 @@ h.run(async () => {
 		ids
 	);
 	// a CHANGED primary is what resets the anchor lifecycle — cycle B → A
-	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u), ids.b);
+	await A.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), ids.b);
 	await A.page.waitForTimeout(200);
-	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u), ids.a);
+	await A.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), ids.a);
 	await A.page.waitForTimeout(500);
-	const armed = await A.page.evaluate(() => window.__stores.snapEngine.startSnapAnchorPick());
+	const armed = await A.page.evaluate(() => window.__tp.test.v1.snapEngine.startSnapAnchorPick());
 	h.check(armed === true, 'pick mode arms with one selected object');
 	// REAL click just inside A's front face at its corner (1, 2, 1)
 	const pickPx = await A.page.evaluate(() => {
 		let camera = null;
-		window.__stores.globalCamera.subscribe((v) => (camera = v))();
-		const v = new window.__stores.THREE.Vector3(0.94, 1.94, 1).project(camera);
+		window.__tp.test.v1.globalCamera.subscribe((v) => (camera = v))();
+		const v = new window.__tp.test.v1.THREE.Vector3(0.94, 1.94, 1).project(camera);
 		return [((v.x + 1) / 2) * window.innerWidth, ((1 - v.y) / 2) * window.innerHeight];
 	});
 	await A.page.mouse.click(pickPx[0], pickPx[1]);
 	await A.page.waitForTimeout(400);
 	const picked = await A.page.evaluate(({ a }) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let anchor = null;
 		let picking = null;
 		let controls = null;
@@ -488,7 +488,7 @@ h.run(async () => {
 	h.check(picked.markerVisible === true, 'the anchor marker renders at the picked point');
 	// drag the pivot through the REAL multiTransform handlers
 	const anchorDrag = await A.page.evaluate(({ a }) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let controls = null;
 		let camera = null;
 		let g = null;
@@ -536,7 +536,7 @@ h.run(async () => {
 	// one undo entry reverts the whole snap drag (the property, not the count)
 	const undone = await A.page.evaluate(
 		({ a, preDrag }) => {
-			const w = window.__stores;
+			const w = window.__tp?.test.v1;
 			w.history.undo();
 			let g = null;
 			w.objectsGroup.subscribe((v) => (g = v))();
@@ -549,7 +549,7 @@ h.run(async () => {
 	h.check(undone < 1e-6, `ONE undo reverts the whole anchor drag (delta ${undone})`);
 	// clear: the gizmo must come BACK to the object (reseat invariant 2)
 	const cleared = await A.page.evaluate(({ a }) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.snapEngine.clearSnapAnchor();
 		let controls = null;
 		let anchor = null;
@@ -572,7 +572,7 @@ h.run(async () => {
 	const markerGone = await A.page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.globalScene.subscribe((s) =>
+				window.__tp.test.v1.globalScene.subscribe((s) =>
 					r(!!s.getObjectByName('snap-anchor-marker')?.visible)
 				)()
 			)
@@ -582,7 +582,7 @@ h.run(async () => {
 	// the drag, so put it back FIRST — pickPx aims at its original corner
 	// (re-identifying a moved target by its old pixel was the first bug here)
 	await A.page.evaluate(({ a }) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let g = null;
 		w.objectsGroup.subscribe((v) => (g = v))();
 		const boxA = g.getObjectByProperty('uuid', a);
@@ -591,11 +591,11 @@ h.run(async () => {
 		w.objectsGroup.update((v) => v);
 	}, ids);
 	await A.page.waitForTimeout(300);
-	await A.page.evaluate(() => window.__stores.snapEngine.startSnapAnchorPick());
+	await A.page.evaluate(() => window.__tp.test.v1.snapEngine.startSnapAnchorPick());
 	await A.page.mouse.click(pickPx[0], pickPx[1]);
 	await A.page.waitForTimeout(300);
 	const lifecycle = await A.page.evaluate(({ b }) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let anchor = null;
 		w.snapEngine.snapAnchor.subscribe((v) => (anchor = v))();
 		const rePicked = anchor?.mode === 'picked';
@@ -611,18 +611,18 @@ h.run(async () => {
 		'a fresh primary selection drops the anchor AND the transient pivot (gizmo on the new object)'
 	);
 	// Esc leaves pick mode
-	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u), ids.a);
+	await A.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), ids.a);
 	await A.page.waitForTimeout(200);
-	await A.page.evaluate(() => window.__stores.snapEngine.startSnapAnchorPick());
+	await A.page.evaluate(() => window.__tp.test.v1.snapEngine.startSnapAnchorPick());
 	await A.page.keyboard.press('Escape');
 	await A.page.waitForTimeout(200);
 	const escd = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.snapEngine.snapAnchorPicking.subscribe((v) => r(v))())
+		() => new Promise((r) => window.__tp.test.v1.snapEngine.snapAnchorPicking.subscribe((v) => r(v))())
 	);
 	h.check(escd === false, 'Escape cancels pick mode');
 	// a miss exits pick mode without picking (synthetic sky ray)
 	const missed = await A.page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.snapEngine.snapAnchorPicking.set(true);
 		let camera = null;
 		w.globalCamera.subscribe((v) => (camera = v))();
@@ -642,9 +642,9 @@ h.run(async () => {
 	// the Inspector anchor row
 	// 78-int PL17: Configure Scene opens with only Environment + Scene look expanded — deep-link the section (twice: the first
 	// ask can land before a closed panel has mounted its sections)
-	await A.page.evaluate(() => window.__stores.openSceneSection('Snapping'));
+	await A.page.evaluate(() => window.__tp.test.v1.openSceneSection('Snapping'));
 	await A.page.waitForTimeout(500);
-	await A.page.evaluate(() => window.__stores.openSceneSection('Snapping'));
+	await A.page.evaluate(() => window.__tp.test.v1.openSceneSection('Snapping'));
 	await A.page.waitForTimeout(500);
 	const anchorUi = await A.page.evaluate(() => ({
 		auto: !!document.querySelector('#snap-anchor-auto'),
@@ -660,7 +660,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(200);
 	// close the sidebar again — sections 9-11 want the bare viewport (and section
 	// 11 presses a bare key, which a focused panel widget could swallow)
-	await A.page.evaluate(() => window.__stores.showSidebar('scene'));
+	await A.page.evaluate(() => window.__tp.test.v1.showSidebar('scene'));
 	await A.page.waitForTimeout(300);
 
 	// ---------- 9. P4: align to normal ----------
@@ -670,7 +670,7 @@ h.run(async () => {
 	// camera sits at (-10, 10, 10), so that top face is the one it looks at, and
 	// the ramp is parked at x = -4 where the aim ray passes nothing else.
 	const ramp = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 2 2 2');
 		await new Promise((r) => setTimeout(r, 500));
 		let g = null;
@@ -689,7 +689,7 @@ h.run(async () => {
 	h.check(!!ramp.uuid, 'a 30°-tilted ramp exists to align against');
 	await A.page.evaluate(
 		({ a }) => {
-			const w = window.__stores;
+			const w = window.__tp?.test.v1;
 			let g = null;
 			w.objectsGroup.subscribe((v) => (g = v))();
 			const boxA = g.getObjectByProperty('uuid', a);
@@ -713,11 +713,11 @@ h.run(async () => {
 		},
 		ids
 	);
-	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u), ids.a);
+	await A.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), ids.a);
 	await A.page.waitForTimeout(600);
 	const aligned = await A.page.evaluate(
 		({ a, top }) => {
-			const w = window.__stores;
+			const w = window.__tp?.test.v1;
 			let controls = null;
 			let camera = null;
 			let g = null;
@@ -788,7 +788,7 @@ h.run(async () => {
 	// fallback, which would otherwise find the ramp again through A's own point).
 	await A.page.evaluate(
 		({ a }) => {
-			const w = window.__stores;
+			const w = window.__tp?.test.v1;
 			let g = null;
 			w.objectsGroup.subscribe((v) => (g = v))();
 			const boxA = g.getObjectByProperty('uuid', a);
@@ -801,7 +801,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(120); // past the 33ms search throttle
 	const restored = await A.page.evaluate(
 		({ a, preDrag }) => {
-			const w = window.__stores;
+			const w = window.__tp?.test.v1;
 			let controls = null;
 			let g = null;
 			w.TControls.subscribe((v) => (controls = v))();
@@ -829,7 +829,7 @@ h.run(async () => {
 	// ---------- 10. P4: the face tint ----------
 	await A.page.evaluate(
 		({ a, b }) => {
-			const w = window.__stores;
+			const w = window.__tp?.test.v1;
 			let g = null;
 			w.objectsGroup.subscribe((v) => (g = v))();
 			const boxA = g.getObjectByProperty('uuid', a);
@@ -853,11 +853,11 @@ h.run(async () => {
 		},
 		ids
 	);
-	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u), ids.a);
+	await A.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), ids.a);
 	await A.page.waitForTimeout(600);
 	const tint = await A.page.evaluate(
 		({ a }) => {
-			const w = window.__stores;
+			const w = window.__tp?.test.v1;
 			let controls = null;
 			let camera = null;
 			let g = null;
@@ -922,7 +922,7 @@ h.run(async () => {
 	h.check(afterFirst === !before, `M toggles element snapping (${before} → ${afterFirst})`);
 	h.check(afterSecond === before, `M toggles it back (${afterFirst} → ${afterSecond})`);
 	const listed = await A.page.evaluate(() =>
-		window.__stores.shortcutsRegistry.shortcuts.some(
+		window.__tp.test.v1.shortcutsRegistry.shortcuts.some(
 			(s) => s.keys === 'M' && /element snapping/i.test(s.label)
 		)
 	);
@@ -936,7 +936,7 @@ h.run(async () => {
 	// away — the counterfactual is computable, not assumed).
 	await A.page.evaluate(
 		({ a, b }) => {
-			const w = window.__stores;
+			const w = window.__tp?.test.v1;
 			let g = null;
 			w.objectsGroup.subscribe((v) => (g = v))();
 			const boxA = g.getObjectByProperty('uuid', a);
@@ -962,10 +962,10 @@ h.run(async () => {
 		},
 		ids
 	);
-	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u), ids.a);
+	await A.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), ids.a);
 	await A.page.waitForTimeout(600);
 	const edges = await A.page.evaluate(({ a }) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let controls = null;
 		let camera = null;
 		let g = null;
@@ -1040,16 +1040,16 @@ h.run(async () => {
 	// the Edge chip is in both UIs now
 	// 78-int PL17: Configure Scene opens with only Environment + Scene look expanded — deep-link the section (twice: the first
 	// ask can land before a closed panel has mounted its sections)
-	await A.page.evaluate(() => window.__stores.openSceneSection('Snapping'));
+	await A.page.evaluate(() => window.__tp.test.v1.openSceneSection('Snapping'));
 	await A.page.waitForTimeout(500);
-	await A.page.evaluate(() => window.__stores.openSceneSection('Snapping'));
+	await A.page.evaluate(() => window.__tp.test.v1.openSceneSection('Snapping'));
 	await A.page.waitForTimeout(500);
 	const edgeChip = await A.page.evaluate(() => !!document.querySelector('#snap-target-edge'));
 	h.check(edgeChip, 'the Edge chip renders in Configure Scene ▸ Snapping');
 
 	// ---------- 13. anchor UX: armed state, sticky instruction, save-as-origin ----------
 	// (the Configure Scene panel is OPEN from the check above — these read its DOM)
-	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u), ids.a);
+	await A.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), ids.a);
 	await A.page.waitForTimeout(400);
 	// ARMED: the pick button changes colour and the status line says "Selecting…"
 	await A.page.evaluate(() => document.querySelector('#snap-anchor-pick').click());
@@ -1092,7 +1092,7 @@ h.run(async () => {
 	const toastUp = await A.page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.toastStore.subscribe((list) =>
+				window.__tp.test.v1.toastStore.subscribe((list) =>
 					r((list ?? []).some((e) => e && e.id === 'snap-anchor-pick' && e.sticky))
 				)()
 			)
@@ -1105,8 +1105,8 @@ h.run(async () => {
 		() =>
 			new Promise((r) => {
 				let picking = null;
-				window.__stores.snapEngine.snapAnchorPicking.subscribe((v) => (picking = v))();
-				window.__stores.toastStore.subscribe((list) =>
+				window.__tp.test.v1.snapEngine.snapAnchorPicking.subscribe((v) => (picking = v))();
+				window.__tp.test.v1.toastStore.subscribe((list) =>
 					r({
 						picking,
 						toast: (list ?? []).some((e) => e && e.id === 'snap-anchor-pick'),
@@ -1124,7 +1124,7 @@ h.run(async () => {
 	// SAVE AS OBJECT ORIGIN — the point survives selecting something else
 	await A.page.evaluate(
 		({ a }) => {
-			const w = window.__stores;
+			const w = window.__tp?.test.v1;
 			let g = null;
 			w.objectsGroup.subscribe((v) => (g = v))();
 			const boxA = g.getObjectByProperty('uuid', a);
@@ -1145,7 +1145,7 @@ h.run(async () => {
 		},
 		ids
 	);
-	await A.page.evaluate(() => window.__stores.snapEngine.startSnapAnchorPick());
+	await A.page.evaluate(() => window.__tp.test.v1.snapEngine.startSnapAnchorPick());
 	await A.page.mouse.click(pickPx[0], pickPx[1]);
 	await A.page.waitForTimeout(400);
 	const beforeSave = await A.page.evaluate(
@@ -1155,7 +1155,7 @@ h.run(async () => {
 	await A.page.evaluate(() => document.querySelector('#snap-anchor-save-origin').click());
 	await A.page.waitForTimeout(400);
 	const saved = await A.page.evaluate(({ a }) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let g = null;
 		let anchor = null;
 		let t = null;
@@ -1184,12 +1184,12 @@ h.run(async () => {
 		'the anchor hands over to the real origin (mode → pivot), so snapping keeps using that point'
 	);
 	// the whole point: select away and come back — the point is still there
-	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u), ids.b);
+	await A.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), ids.b);
 	await A.page.waitForTimeout(300);
-	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u), ids.a);
+	await A.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), ids.a);
 	await A.page.waitForTimeout(400);
 	const survived = await A.page.evaluate(({ a }) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let g = null;
 		let controls = null;
 		w.objectsGroup.subscribe((v) => (g = v))();
@@ -1210,14 +1210,14 @@ h.run(async () => {
 	);
 	// one undo takes the promotion back (it is a props entry, not a silent write)
 	const undoneOrigin = await A.page.evaluate(({ a }) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.history.undo();
 		let g = null;
 		w.objectsGroup.subscribe((v) => (g = v))();
 		return g.getObjectByProperty('uuid', a).userData?.origin ?? null;
 	}, ids);
 	h.check(undoneOrigin === null, 'and ONE undo takes the promotion back');
-	await A.page.evaluate(() => window.__stores.showSidebar('scene'));
+	await A.page.evaluate(() => window.__tp.test.v1.showSidebar('scene'));
 
 	await h.finish(browser);
 });

@@ -10,10 +10,10 @@ const h = require('./helpers.cjs');
 /** Register two test effect kinds through the public registry seam. */
 async function registerTestEffects(page) {
 	return page.evaluate(() => {
-		const { Effect, BlendFunction } = window.__stores.postprocessing;
+		const { Effect, BlendFunction } = window.__tp.test.v1.postprocessing;
 		const shader = (body) =>
 			'void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor) { ' + body + ' }';
-		window.__stores.scenePost.registerPostEffect('test-tint', {
+		window.__tp.test.v1.scenePost.registerPostEffect('test-tint', {
 			label: 'Test tint',
 			group: 'grading',
 			params: [
@@ -26,12 +26,12 @@ async function registerTestEffects(page) {
 			],
 			make: () => new Effect('TestTint', shader('outputColor = inputColor;'), { blendFunction: BlendFunction.SET })
 		});
-		window.__stores.scenePost.registerPostEffect('test-plain', {
+		window.__tp.test.v1.scenePost.registerPostEffect('test-plain', {
 			label: 'Test plain',
 			group: 'camera',
 			make: () => new Effect('TestPlain', shader('outputColor = inputColor;'), { blendFunction: BlendFunction.SET })
 		});
-		return window.__stores.scenePost.postEffectKinds().length;
+		return window.__tp.test.v1.scenePost.postEffectKinds().length;
 	});
 }
 
@@ -68,7 +68,7 @@ async function pickSelect(page, triggerId, textFragment) {
 const readStack = (page) =>
 	page.evaluate(() => {
 		let state = null;
-		window.__stores.scenePost.scenePost.subscribe((s) => (state = s))();
+		window.__tp.test.v1.scenePost.scenePost.subscribe((s) => (state = s))();
 		return state.effects.map((e) => ({ id: e.id, kind: e.kind, enabled: e.enabled, params: e.params }));
 	});
 
@@ -88,8 +88,8 @@ h.run(async () => {
 	// true whenever no scrolling happened at all, so without this the assertion
 	// green-lights a link that never scrolled.
 	await page.evaluate(() => {
-		window.__stores.inspectorKind.set('scene');
-		window.__stores.inspectorClose.set(false);
+		window.__tp.test.v1.inspectorKind.set('scene');
+		window.__tp.test.v1.inspectorClose.set(false);
 		for (const label of ['File', 'Actions', 'Environment', 'Music', 'View', 'Camera', 'Grid', 'Snapping', 'Physics', 'Background', 'Fog', 'Scene look'])
 			localStorage.setItem('inspector:sec:' + label, 'open');
 	});
@@ -97,8 +97,8 @@ h.run(async () => {
 	await page.waitForTimeout(2500);
 	await registerTestEffects(page);
 	await page.evaluate(() => {
-		window.__stores.inspectorKind.set('scene');
-		window.__stores.inspectorClose.set(false);
+		window.__tp.test.v1.inspectorKind.set('scene');
+		window.__tp.test.v1.inspectorClose.set(false);
 	});
 	await page.waitForTimeout(900);
 
@@ -125,7 +125,7 @@ h.run(async () => {
 	// P6 renamed the section and kept its deep-link NAME working (Section `aliases`), so
 	// this drives the OLD name on purpose — every menu, component and suite that wrote it
 	// down must keep landing
-	await page.evaluate(() => window.__stores.openSceneSection('Post-processing'));
+	await page.evaluate(() => window.__tp.test.v1.openSceneSection('Post-processing'));
 	await page.waitForTimeout(1200);
 	const landed = await page.evaluate(() => {
 		const anchor = [...document.querySelectorAll('.ui-section-label')].find((el) =>
@@ -153,7 +153,7 @@ h.run(async () => {
 	// ---------------------------------------------------------------- section 2
 	console.log('\n=== 2. add / enable / remove through the UI ===');
 
-	await page.evaluate(() => window.__stores.scenePost.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 1 } }));
+	await page.evaluate(() => window.__tp.test.v1.scenePost.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 1 } }));
 	await page.waitForTimeout(400);
 	h.check(
 		await page.evaluate(() => !document.querySelector('#post-stack') && !!document.querySelector('#post-add')),
@@ -244,7 +244,7 @@ h.run(async () => {
 	console.log('\n=== 3. reorder ===');
 
 	await page.evaluate(() => {
-		const post = window.__stores.scenePost;
+		const post = window.__tp.test.v1.scenePost;
 		post.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 1 } });
 		post.addPostEffect('test-tint');
 		post.addPostEffect('ao');
@@ -322,7 +322,7 @@ h.run(async () => {
 	console.log('\n=== 4. parameters ===');
 
 	await page.evaluate(() => {
-		const post = window.__stores.scenePost;
+		const post = window.__tp.test.v1.scenePost;
 		post.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 1 } });
 		post.addPostEffect('test-tint');
 	});
@@ -371,7 +371,7 @@ h.run(async () => {
 		el.scrollIntoView({ block: 'center' });
 		const box = el.getBoundingClientRect();
 		// stub the wire so the message count is observable without a second peer
-		const peers = window.__stores.peers;
+		const peers = window.__tp.test.v1.peers;
 		let original = null;
 		peers.subscribe((p) => (original = p))();
 		window.__postSent = [];
@@ -389,7 +389,7 @@ h.run(async () => {
 		const sent = window.__postSent.filter((m) => m.type === 'scenepost').length;
 		window.__postRestore();
 		let state = null;
-		window.__stores.scenePost.scenePost.subscribe((s) => (state = s))();
+		window.__tp.test.v1.scenePost.scenePost.subscribe((s) => (state = s))();
 		return { sent, amount: state.effects[0].params.amount };
 	});
 	h.check(
@@ -401,9 +401,9 @@ h.run(async () => {
 		'4.9 a UI scrub puts exactly ONE message on the wire (the gesture seam is wired): ' + scrubResult.sent
 	);
 	const undone = await page.evaluate(() => {
-		window.__stores.history.undo();
+		window.__tp.test.v1.history.undo();
 		let state = null;
-		window.__stores.scenePost.scenePost.subscribe((s) => (state = s))();
+		window.__tp.test.v1.scenePost.scenePost.subscribe((s) => (state = s))();
 		return state.effects[0]?.params?.amount;
 	});
 	h.check(
@@ -415,7 +415,7 @@ h.run(async () => {
 	console.log('\n=== 5. the cost line ===');
 
 	const counts = await page.evaluate(async () => {
-		const post = window.__stores.scenePost;
+		const post = window.__tp.test.v1.scenePost;
 		const read = () => document.querySelector('#post-counts')?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 		post.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 1 } });
 		await new Promise((r) => setTimeout(r, 300));
@@ -455,7 +455,7 @@ h.run(async () => {
 	console.log('\n=== 6. an effect this build cannot render ===');
 
 	const unknown = await page.evaluate(async () => {
-		const post = window.__stores.scenePost;
+		const post = window.__tp.test.v1.scenePost;
 		post.postStacks.set({
 			scene: {
 				enabled: true,
@@ -535,7 +535,7 @@ h.run(async () => {
 	// learns what a look costs in exactly one place, and the materials half now speaks in
 	// the same voice as "Effects: N, passes: M".
 	console.log('\n=== 8. one Scene look story (P6) ===');
-	await page.evaluate(() => window.__stores.openSceneSection('Scene look'));
+	await page.evaluate(() => window.__tp.test.v1.openSceneSection('Scene look'));
 	await page.waitForTimeout(700);
 	const story = await page.evaluate(() => ({
 		summary: document.querySelector('#scene-look-shaders')?.textContent?.trim() ?? '',
@@ -551,11 +551,11 @@ h.run(async () => {
 
 	// a scene default, and the cost line reads it
 	await page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 	});
 	await page.waitForTimeout(900);
 	await page.evaluate(() =>
-		window.__stores.shaderGraph.setShaderGraphFor('scene', {
+		window.__tp.test.v1.shaderGraph.setShaderGraphFor('scene', {
 			nodes: [
 				{ id: 'surface', type: 'surface', position: { x: 360, y: 120 }, data: {} },
 				{ id: 'col', type: 'color', position: { x: 90, y: 130 }, data: { value: '#44ff88' } }
@@ -579,7 +579,7 @@ h.run(async () => {
 	// when one is. Both halves are asserted, because the first draft of this check
 	// pressed the button straight after `/create box` (which SELECTS) and read the
 	// object scope as a failure when it was the rule working.
-	await page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await page.waitForTimeout(500);
 	await page.evaluate(() => document.querySelector('#scene-look-open-shader').click());
 	// wait for the THING: on a cold dev server the editor's modules load on first open (1.5-4.5 s)
@@ -596,14 +596,14 @@ h.run(async () => {
 	);
 	const boxUuid = await page.evaluate(() => {
 		let group = null;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		let found = '';
 		group.traverse((n) => {
 			if (n.isMesh && !found) found = n.uuid;
 		});
 		return found;
 	});
-	await page.evaluate((u) => window.__stores.objectActions.selectObject(u), boxUuid);
+	await page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), boxUuid);
 	await page.waitForTimeout(900);
 	const objectScope = await page.evaluate(
 		() => document.querySelector('#shader-scope')?.textContent?.trim() ?? ''

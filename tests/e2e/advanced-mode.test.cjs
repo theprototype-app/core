@@ -15,7 +15,7 @@ h.run(async () => {
 	);
 
 	// enable advanced mode -> chip appears
-	await A.page.evaluate(() => window.__stores.advancedMode.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.advancedMode.set(true));
 	await A.page.waitForTimeout(300);
 	h.check(
 		await A.page.getByRole('button', { name: 'System', exact: true }).isVisible(),
@@ -26,7 +26,7 @@ h.run(async () => {
 	await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.moduleSDK.moduleMenuItems.subscribe((items) => {
+				window.__tp.test.v1.moduleSDK.moduleMenuItems.subscribe((items) => {
 					items.find((i) => i.label === 'Pong: spawn / remove')?.action();
 					resolve();
 				})();
@@ -55,7 +55,7 @@ h.run(async () => {
 
 	// focus flies the camera toward the pong table
 	const before = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.globalCamera.subscribe((c) => r(c.position.toArray()))())
+		() => new Promise((r) => window.__tp.test.v1.globalCamera.subscribe((c) => r(c.position.toArray()))())
 	);
 	await A.page
 		.getByText('pong-module', { exact: true })
@@ -64,7 +64,7 @@ h.run(async () => {
 		.click();
 	await A.page.waitForTimeout(800);
 	const after = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.globalCamera.subscribe((c) => r(c.position.toArray()))())
+		() => new Promise((r) => window.__tp.test.v1.globalCamera.subscribe((c) => r(c.position.toArray()))())
 	);
 	h.check(
 		Math.hypot(after[0] - before[0], after[1] - before[1], after[2] - before[2]) > 0.5,
@@ -73,7 +73,7 @@ h.run(async () => {
 
 	// normal filters still work
 	await A.page.getByRole('button', { name: 'All', exact: true }).click();
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await A.page.waitForTimeout(300);
 	h.check(
 		await A.page.locator('#object-list').getByText('Box', { exact: true }).isVisible(),

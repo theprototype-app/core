@@ -37,18 +37,18 @@ const PNG = Buffer.from(
 const objectNames = (page) =>
 	page.evaluate(() => {
 		let names = [];
-		window.__stores.objectsGroup.subscribe(
+		window.__tp.test.v1.objectsGroup.subscribe(
 			(g) => (names = g ? g.children.map((c) => c.name) : [])
 		)();
 		return names;
 	});
 /** @param {any} page */
 const lastLaunch = (page) =>
-	page.evaluate(async () => (await window.__stores.launchInbox)?.lastLaunch?.value ?? null);
+	page.evaluate(async () => (await window.__tp.test.v1.launchInbox)?.lastLaunch?.value ?? null);
 /** @param {any} page */
 const libraryNames = (page) =>
 	page.evaluate(async () => {
-		const m = await window.__stores.explorer;
+		const m = await window.__tp.test.v1.explorer;
 		let names = [];
 		m.explorerItems.subscribe((v) => (names = v.map((i) => i.name)))();
 		return names;
@@ -95,7 +95,7 @@ async function share(page, files) {
 			/** @type {HTMLFormElement} */ (document.getElementById('tp-share-form')).submit()
 		)
 	]);
-	await page.waitForFunction(() => window.__stores && !!window.__stores.moduleSDK, null, {
+	await page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.moduleSDK, null, {
 		timeout: 90000
 	});
 }
@@ -163,7 +163,7 @@ h.run(async () => {
 		'a shared image was received once: ' +
 			JSON.stringify(img) +
 			' stage ' +
-			(await page.evaluate(async () => (await window.__stores.launchInbox)?.lastLaunch?.stage))
+			(await page.evaluate(async () => (await window.__tp.test.v1.launchInbox)?.lastLaunch?.stage))
 	);
 	const lib = await libraryNames(page);
 	h.check(
@@ -187,14 +187,14 @@ h.run(async () => {
 	// a DOM click: an overlay toast (auto quality) can sit on the button and eat a real one
 	if (refShown) await refBtn.dispatchEvent('click').catch((e) => console.log('  (click: ' + e.message + ')'));
 	const refs = async () =>
-		page.evaluate(async () => (await window.__stores.underlays).underlaysDebug().mine.map((u) => u.name));
+		page.evaluate(async () => (await window.__tp.test.v1.underlays).underlaysDebug().mine.map((u) => u.name));
 	await until(async () => (await refs()).length > 0, 15000);
 	h.check(
 		(await refs()).length === 1,
 		'Use as reference makes it one reference image: ' +
 			JSON.stringify(await refs()) +
 			' (' +
-			(await page.evaluate(async () => (await window.__stores.launchInbox)?.lastLaunch?.reference)) +
+			(await page.evaluate(async () => (await window.__tp.test.v1.launchInbox)?.lastLaunch?.reference)) +
 			') toasts ' +
 			JSON.stringify(await page.locator('.tp-toast').allInnerTexts().catch(() => []))
 	);
@@ -211,14 +211,14 @@ h.run(async () => {
 	);
 
 	// ---- 3. the restore rule ------------------------------------------------------------------
-	await page.evaluate(async () => (await window.__stores.autosave).saveNow());
+	await page.evaluate(async () => (await window.__tp.test.v1.autosave).saveNow());
 	await share(page, [
 		{ name: 'second-door.glb', mimeType: 'model/gltf-binary', buffer: fs.readFileSync(DOOR) }
 	]);
 	const offered = await page
 		.waitForFunction(
 			async () => {
-				const m = await window.__stores.autosave;
+				const m = await window.__tp.test.v1.autosave;
 				let v = null;
 				m.restoreAvailable.subscribe((x) => (v = x))();
 				return !!v;
@@ -302,13 +302,13 @@ h.run(async () => {
 		() =>
 			lq.page.evaluate(async () => {
 				let v = null;
-				(await window.__stores.levels).currentLevel.subscribe((x) => (v = x))();
+				(await window.__tp.test.v1.levels).currentLevel.subscribe((x) => (v = x))();
 				return v?.name;
 			}),
 		60000
 	);
 	const level = await lq.page.evaluate(async () => {
-		const m = await window.__stores.levels;
+		const m = await window.__tp.test.v1.levels;
 		let v = null;
 		m.currentLevel.subscribe((x) => (v = x))();
 		return v;
@@ -326,7 +326,7 @@ h.run(async () => {
 		'a second launch into the same window imports the .glb INTO that scene'
 	);
 	const levelAfter = await lq.page.evaluate(async () => {
-		const m = await window.__stores.levels;
+		const m = await window.__tp.test.v1.levels;
 		let v = null;
 		m.currentLevel.subscribe((x) => (v = x))();
 		return v?.name;

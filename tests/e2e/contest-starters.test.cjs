@@ -39,7 +39,7 @@ h.run(async () => {
 	const load = async (file) => {
 		const bytes = Array.from(fs.readFileSync(file));
 		await page.evaluate(async (arr) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 			await s.sessions.applySession(payload, { backup: false });
 		}, bytes);
@@ -49,7 +49,7 @@ h.run(async () => {
 	// ---- 1. Make a mirror -----------------------------------------------------------
 	await load(path.join(SCENES_DIR, 'contests/make-a-mirror/scene.tpscene'));
 	const mirror = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		/** @type {any} */ let group;
 		s.objectsGroup.subscribe((/** @type {any} */ v) => (group = v))();
 		const sculpt = group.getObjectByName('Sculpture');
@@ -100,7 +100,7 @@ h.run(async () => {
 	h.check(!!mirror.plane && Math.abs(mirror.plane.x) < 1e-9 && mirror.plane.glow > 0 && mirror.plane.opacity < 1, 'the mirror plane is an emissive, translucent box at x = 0');
 	// hide-able: the object list's toggle on the GROUP hides every ghost piece, and back
 	const hide = await page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		/** @type {any} */ let group;
 		s.objectsGroup.subscribe((/** @type {any} */ v) => (group = v))();
 		const g = group.getObjectByProperty('uuid', uuid);
@@ -118,7 +118,7 @@ h.run(async () => {
 	// ---- 2. Follow the beat -----------------------------------------------------------
 	await load(path.join(SCENES_DIR, 'contests/follow-the-beat/scene.tpscene'));
 	const beat = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		/** @type {any} */ let group;
 		s.objectsGroup.subscribe((/** @type {any} */ v) => (group = v))();
 		/** @type {any} */ let music;
@@ -158,19 +158,19 @@ h.run(async () => {
 	h.check(beat.markerNodes.join(',') === 'bar,beat,cue' && beat.setcameras === 3, `the graph listens for bar/beat/cue and holds three Set Active Camera nodes`);
 
 	// play mode, the REAL Start button, the real clock
-	await page.evaluate(() => window.__stores.isLocked.set(true));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await page.waitForTimeout(800);
 	await page.locator('#hud-layer button', { hasText: 'Start' }).click();
 	const gameState = () =>
 		page.evaluate(() => {
 			/** @type {any} */ let g;
-			window.__stores.gameState.gameState.subscribe((/** @type {any} */ v) => (g = v))();
+			window.__tp.test.v1.gameState.gameState.subscribe((/** @type {any} */ v) => (g = v))();
 			return g.state;
 		});
 	await h.eventually(gameState, (v) => v === 'playing', 'Start flips the game to playing', 8000);
 	const activeCamera = () =>
 		page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			/** @type {any} */ let preview;
 			s.cameraPreview.cameraPreview.subscribe((/** @type {any} */ v) => (preview = v))();
 			/** @type {any} */ let group;
@@ -201,7 +201,7 @@ h.run(async () => {
 	h.check(!!dolly && !!detail && Math.abs(detail.at - dolly.at - 2) < 0.7, `Dolly and Detail are one bar apart (${dolly?.at}s -> ${detail?.at}s)`);
 	// the beat: the light's Flash transport is re-stamped on every beat (2.2 s = 4 beats)
 	const restarts = await page.evaluate(async (uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const seen = new Set();
 		const end = Date.now() + 2200;
 		while (Date.now() < end) {
@@ -214,10 +214,10 @@ h.run(async () => {
 	}, beat.lightUuid);
 	h.check(restarts >= 3, `the Beat light's Flash restarts on the beat (${restarts} distinct starts in 2.2 s)`);
 	const fired = await page.evaluate(() =>
-		window.__stores.soundRuntime.soundEntries().reduce((/** @type {number} */ a, /** @type {any} */ e) => a + (e.fired ?? 0), 0)
+		window.__tp.test.v1.soundRuntime.soundEntries().reduce((/** @type {number} */ a, /** @type {any} */ e) => a + (e.fired ?? 0), 0)
 	);
 	h.check(fired >= 1, `the track's one-shot fired on Start (${fired})`);
-	await page.evaluate(() => window.__stores.isLocked.set(false));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(false));
 
 	await h.finish(browser);
 });

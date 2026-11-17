@@ -12,15 +12,15 @@ const h = require('./helpers.cjs');
 /** open Settings on the Shortcuts section, the way Ctrl+/ does */
 async function openSettings(page) {
 	await page.evaluate(() => {
-		window.__stores.settingsSection.set('shortcuts');
-		window.__stores.settingsOpen.set(true);
+		window.__tp.test.v1.settingsSection.set('shortcuts');
+		window.__tp.test.v1.settingsOpen.set(true);
 	});
 	await page.waitForSelector('#shortcut-grid', { timeout: 15000 });
 	await page.waitForTimeout(250);
 }
 
 async function closeSettings(page) {
-	await page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await page.waitForTimeout(400);
 }
 
@@ -36,7 +36,7 @@ const keysOf = (page, id) =>
 /** what the REGISTRY holds for `id` (keys + defaultKeys), independent of the DOM */
 const regOf = (page, id) =>
 	page.evaluate((sid) => {
-		const s = window.__stores.shortcutsRegistry.shortcuts.find((x) => x.id === sid);
+		const s = window.__tp.test.v1.shortcutsRegistry.shortcuts.find((x) => x.id === sid);
 		return s ? { keys: s.keys, defaultKeys: s.defaultKeys, group: s.group } : null;
 	}, id);
 
@@ -52,14 +52,14 @@ async function press(page, key) {
 
 /** park the object list CLOSED so every toggle assertion reads the same direction */
 async function parkClosed(page) {
-	await page.evaluate(() => window.__stores.objectListClose.set(true));
+	await page.evaluate(() => window.__tp.test.v1.objectListClose.set(true));
 	await page.waitForTimeout(250);
 }
 
 const listClosed = (page) =>
 	page.evaluate(() => {
 		let v;
-		window.__stores.objectListClose.subscribe((x) => (v = x))();
+		window.__tp.test.v1.objectListClose.subscribe((x) => (v = x))();
 		return v;
 	});
 
@@ -79,7 +79,7 @@ h.run(async () => {
 
 	// ---------------------------------------------------------------- 1. premise
 	const seed = await A.page.evaluate(() => {
-		const r = window.__stores.shortcutsRegistry;
+		const r = window.__tp.test.v1.shortcutsRegistry;
 		const list = r.shortcuts;
 		return {
 			total: list.length,
@@ -105,7 +105,7 @@ h.run(async () => {
 
 	// Ctrl+Enter had to be FREE — that is the whole reason it was chosen.
 	const enterOwners = await A.page.evaluate(() =>
-		window.__stores.shortcutsRegistry.shortcuts.filter((s) => s.keys === 'Ctrl+Enter').map((s) => s.id)
+		window.__tp.test.v1.shortcutsRegistry.shortcuts.filter((s) => s.keys === 'Ctrl+Enter').map((s) => s.id)
 	);
 	h.check(enterOwners.length === 1 && enterOwners[0] === 'scene.play', `1.7 nothing else answers to Ctrl+Enter (${enterOwners.join(',')})`);
 
@@ -118,7 +118,7 @@ h.run(async () => {
 	// BEFORE Alt was expressible has silently acquired it, so every pre-existing combo
 	// is still byte-identical. (`panel-shortcuts` owns the new rows.)
 	const alt = await A.page.evaluate(() => {
-		const r = window.__stores.shortcutsRegistry;
+		const r = window.__tp.test.v1.shortcutsRegistry;
 		const mk = (o) => r.comboOf(Object.assign({ key: 'k', code: 'KeyK', ctrlKey: false, altKey: false, shiftKey: false, metaKey: false }, o));
 		return {
 			plain: mk({}),
@@ -172,7 +172,7 @@ h.run(async () => {
 
 	// ------------------------------------------------------ 4. it survives reload
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.shortcutsRegistry, { timeout: 30000 });
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.shortcutsRegistry, { timeout: 30000 });
 	await A.page.waitForTimeout(1200);
 	reg = await regOf(A.page, 'panels.object-list');
 	h.check(reg && reg.keys === 'Alt+O', `4.1 the override is applied at boot (${reg && reg.keys})`);
@@ -198,7 +198,7 @@ h.run(async () => {
 	await A.page.click('[data-shortcut="panels.node-editor"] .shortcut-swap');
 	await A.page.waitForTimeout(400);
 	const swapped = await A.page.evaluate(() => {
-		const r = window.__stores.shortcutsRegistry.shortcuts;
+		const r = window.__tp.test.v1.shortcutsRegistry.shortcuts;
 		const f = (id) => r.find((s) => s.id === id).keys;
 		return { node: f('panels.node-editor'), objects: f('panels.object-list'), ls: localStorage.getItem('shortcutOverrides') };
 	});
@@ -219,7 +219,7 @@ h.run(async () => {
 
 	// --------------------------------------------------- 6. refusals and resets
 	const refused = await A.page.evaluate(() => {
-		const r = window.__stores.shortcutsRegistry;
+		const r = window.__tp.test.v1.shortcutsRegistry;
 		return {
 			esc: r.rebindShortcut('camera.focus', 'Escape'),
 			fixed: r.rebindShortcut('voice.push-to-talk', 'Alt+J'),
@@ -238,7 +238,7 @@ h.run(async () => {
 	await A.page.click('[data-shortcut="panels.node-editor"] .shortcut-reset');
 	await A.page.waitForTimeout(400);
 	const oneReset = await A.page.evaluate(() => {
-		const r = window.__stores.shortcutsRegistry.shortcuts;
+		const r = window.__tp.test.v1.shortcutsRegistry.shortcuts;
 		return { node: r.find((s) => s.id === 'panels.node-editor').keys, ls: localStorage.getItem('shortcutOverrides') };
 	});
 	h.check(oneReset.node === 'N', `6.6 the per-row reset restores one default (${oneReset.node})`);
@@ -249,7 +249,7 @@ h.run(async () => {
 	await A.page.locator('#confirm-dialog-ok').click();
 	await A.page.waitForTimeout(400);
 	const allReset = await A.page.evaluate(() => {
-		const r = window.__stores.shortcutsRegistry.shortcuts;
+		const r = window.__tp.test.v1.shortcutsRegistry.shortcuts;
 		return {
 			moved: r.filter((s) => !s.fixed && s.keys !== s.defaultKeys).map((s) => s.id),
 			ls: localStorage.getItem('shortcutOverrides')
@@ -268,13 +268,13 @@ h.run(async () => {
 	// The registry must not ACT on the press Settings is recording. Proven here at
 	// the registry level, so it holds for any capture surface, not just the modal
 	// (where `anyModalOpen` already mutes almost everything).
-	await A.page.evaluate(() => window.__stores.shortcutsRegistry.setShortcutCapture(true));
+	await A.page.evaluate(() => window.__tp.test.v1.shortcutsRegistry.setShortcutCapture(true));
 	await parkClosed(A.page);
 	await press(A.page, 'o');
 	closed = await listClosed(A.page);
 	h.check(closed === true, `7.1 while capturing, O is RECORDED and not executed (objectListClose=${closed})`);
 
-	await A.page.evaluate(() => window.__stores.shortcutsRegistry.setShortcutCapture(false));
+	await A.page.evaluate(() => window.__tp.test.v1.shortcutsRegistry.setShortcutCapture(false));
 	await press(A.page, 'o');
 	closed = await listClosed(A.page);
 	h.check(closed === false, `7.2 and the registry resumes the moment capture ends (objectListClose=${closed})`);
@@ -294,7 +294,7 @@ h.run(async () => {
 	await closeSettings(A.page);
 	const before = await A.page.evaluate(() => {
 		let v;
-		window.__stores.isLocked.subscribe((x) => (v = x))();
+		window.__tp.test.v1.isLocked.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(before !== true, `8.3 premise: not playing yet (isLocked=${before})`);
@@ -302,7 +302,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(600);
 	const after = await A.page.evaluate(() => {
 		let v;
-		window.__stores.isLocked.subscribe((x) => (v = x))();
+		window.__tp.test.v1.isLocked.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(after === true, `8.4 Ctrl+Enter presses the play button (isLocked=${after})`);

@@ -52,17 +52,17 @@ const noiseJpeg = (page, seed) =>
 const save = (page, payload) =>
 	page.evaluate(async (p) => {
 		const t0 = performance.now();
-		const name = await window.__stores.materialPresets.saveMaterialPreset(p.label, p);
+		const name = await window.__tp.test.v1.materialPresets.saveMaterialPreset(p.label, p);
 		return [name, performance.now() - t0];
 	}, payload);
 const mine = (page) =>
 	page.evaluate(async () => {
-		const list = await new Promise((r) => window.__stores.materialPresets.materialPresets.subscribe(r)());
+		const list = await new Promise((r) => window.__tp.test.v1.materialPresets.materialPresets.subscribe(r)());
 		return list.map((p) => ({ label: p.name, map: p.payload.map?.length ?? 0, normal: p.payload.normalMap?.length ?? 0 }));
 	});
 const theirs = (page) =>
 	page.evaluate(async () => {
-		const map = await new Promise((r) => window.__stores.materialPresets.peerMaterialPresets.subscribe(r)());
+		const map = await new Promise((r) => window.__tp.test.v1.materialPresets.peerMaterialPresets.subscribe(r)());
 		return Object.values(map)
 			.flat()
 			.map((p) => ({ label: p.label, map: p.map?.length ?? 0, normal: p.normalMap?.length ?? 0 }));
@@ -97,7 +97,7 @@ h.run(async () => {
 	const exact = await (async () => {
 		const pick = (page, src) =>
 			page.evaluate(async (s) => {
-				const st = window.__stores.materialPresets;
+				const st = window.__tp.test.v1.materialPresets;
 				const list = s === 'mine' ? (await new Promise((r) => st.materialPresets.subscribe(r)())).map((p) => p.payload) : Object.values(await new Promise((r) => st.peerMaterialPresets.subscribe(r)())).flat();
 				const p = list.find((x) => x.label === 'Big rock');
 				return p ? p.map.slice(-64) + p.normalMap.slice(1000, 1064) : null;
@@ -114,7 +114,7 @@ h.run(async () => {
 
 	// ---------- 4. a later small save re-sends nothing big ----------
 	await P.evaluate(async () => {
-		const peer = await new Promise((r) => window.__stores.peers.subscribe(r)());
+		const peer = await new Promise((r) => window.__tp.test.v1.peers.subscribe(r)());
 		window.__parts = 0;
 		for (const conn of Object.values(peer.connections)) {
 			if (conn.__f2) continue;
@@ -137,7 +137,7 @@ h.run(async () => {
 
 	// ---------- 5. B's Inspector row: A's swatches in A's order ----------
 	const uuid = await P.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g0 = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const before = new Set(g0.children.map((c) => c.uuid));
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
@@ -145,8 +145,8 @@ h.run(async () => {
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		return g.children.find((c) => !before.has(c.uuid))?.uuid;
 	});
-	await waitVal(() => B.page.evaluate(async (u) => !!(await new Promise((r) => window.__stores.objectsGroup.subscribe(r)())).getObjectByProperty('uuid', u), uuid), (v) => v, 20000);
-	await B.page.evaluate(async (u) => window.__stores.objectActions.selectObject(u, true), uuid);
+	await waitVal(() => B.page.evaluate(async (u) => !!(await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)())).getObjectByProperty('uuid', u), uuid), (v) => v, 20000);
+	await B.page.evaluate(async (u) => window.__tp.test.v1.objectActions.selectObject(u, true), uuid);
 	await B.page.locator('#material-presets').waitFor({ timeout: 15000 }).catch(() => {});
 	await B.page.waitForTimeout(800);
 	const row = await B.page.evaluate(() => [...document.querySelectorAll('#material-presets .mp-swatch[data-preset-kind="peer"]')].map((b) => b.getAttribute('data-preset-name')));
@@ -160,7 +160,7 @@ h.run(async () => {
 	const rounds = [];
 	for (let i = 0; i < 3; i++) {
 		const put = await P.evaluate(async (k) => {
-			const idb = window.__stores.idb;
+			const idb = window.__tp.test.v1.idb;
 			const t = performance.now();
 			await idb.idbPut('f2-probe:' + k, { k });
 			const ms = performance.now() - t;

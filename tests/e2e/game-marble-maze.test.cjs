@@ -62,7 +62,7 @@ const CANDIDATES = [
 	const page = A.page;
 	const bytes = Array.from(fs.readFileSync(TPSCENE));
 	await page.evaluate(async (arr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 		await s.sessions.applySession(payload, { backup: false });
 	}, bytes);
@@ -71,7 +71,7 @@ const CANDIDATES = [
 
 	const snap = () =>
 		page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const g = (st) => { let v; st.subscribe((x) => (v = x))(); return v; };
 			const group = g(s.objectsGroup);
 			const m = group.getObjectByName('Marble');
@@ -98,7 +98,7 @@ const CANDIDATES = [
 	await h.eventually(snap, (v) => v.visibleMazes.length === 1 && v.visibleMazes[0] === 'Maze 1', 'only maze 1 is drawn in the menu', 6000);
 
 	// 2 — Play: the menu, How to play, Start
-	await page.evaluate(() => window.__stores.isLocked.set(true));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await h.eventually(() => snap().then((v) => v.sim), (v) => v === true, 'entering play starts the sim', 10000);
 	await h.eventually(hud, (t) => /MARBLE MAZE/.test(t) && /1 · First roll/.test(t) && /5 · The gauntlet/.test(t), 'the menu lists five mazes', 6000);
 	h.check(/WASD/.test(await hud()) && /grip both handles/.test(await hud()), 'the menu says how to play on a desktop and in VR');
@@ -119,7 +119,7 @@ const CANDIDATES = [
 	// (renderer.info resets per composer pass, so it reads the last pass only)
 	const calls = await page.evaluate(() => {
 		let scene;
-		window.__stores.globalScene.subscribe((v) => (scene = v))();
+		window.__tp.test.v1.globalScene.subscribe((v) => (scene = v))();
 		let n = 0;
 		const walk = (o) => {
 			if (!o.visible) return;
@@ -156,14 +156,14 @@ const CANDIDATES = [
 	await h.eventually(snap, (v) => v.visibleMazes.length === 1 && v.visibleMazes[0] === 'Maze 2', 'maze 2 is the one on the board', 4000);
 
 	// 5 — VR: a fake session, both grips on the handles; lowering the right hand rolls the board
-	await page.evaluate(() => window.__stores.isVRMode.set(true));
+	await page.evaluate(() => window.__tp.test.v1.isVRMode.set(true));
 	await xr.install(page);
 	// headless XR never PRESENTS, so the SDK's vrHand answers null: read the same controller
 	// matrices + the fake gamepads the way handSnapshot does
 	await page.evaluate(() =>
 		window.__marble.setHandSource((hand) => {
 			const { renderer, sources } = window.__fakeXR;
-			const THREE = window.__stores.THREE;
+			const THREE = window.__tp.test.v1.THREE;
 			const c = renderer.xr.getController(hand === 'left' ? 0 : 1);
 			const p = c.getWorldPosition(new THREE.Vector3());
 			const q = c.getWorldQuaternion(new THREE.Quaternion());
@@ -186,7 +186,7 @@ const CANDIDATES = [
 	await h.eventually(() => page.evaluate(() => window.__marble.tilt().z), (z) => Math.abs(z) < 0.03, 'VR: letting go levels the board', 4000);
 	await page.evaluate(() => window.__marble.setHandSource(null));
 	await xr.uninstall(page);
-	await page.evaluate(() => window.__stores.isVRMode.set(false));
+	await page.evaluate(() => window.__tp.test.v1.isVRMode.set(false));
 
 	// 6 — a hole: the marble over it drops through and comes back on the start, a fall counted
 	h.check((await page.evaluate(() => window.__marble.holes().length)) === 2, 'maze 2 has two holes the module judges');
@@ -198,7 +198,7 @@ const CANDIDATES = [
 	// Play, kept by a save and a reload
 	const rid = await page.evaluate(() => window.__marble.rulesNode());
 	h.check(!!rid, `premise: the Main graph carries the Marble Maze rules node (${rid})`);
-	await h.eventually(() => page.evaluate((id) => window.__stores.behaviours.behavioursDebug().status[id]?.status, rid), (st) => st === 'running', 'the Marble Maze rules behaviour is running', 10000);
+	await h.eventually(() => page.evaluate((id) => window.__tp.test.v1.behaviours.behavioursDebug().status[id]?.status, rid), (st) => st === 'running', 'the Marble Maze rules behaviour is running', 10000);
 	const fullTilt = async () => {
 		await page.evaluate(() => window.__marble.setTilt(0.5, 0.5));
 		await page.waitForTimeout(1200);
@@ -208,41 +208,41 @@ const CANDIDATES = [
 	};
 	const stock = await fullTilt();
 	h.check(stock > 0.24 && stock < 0.28, `premise: a full tilt reaches the stock 15° (${stock.toFixed(3)} rad)`);
-	const codeNow = () => page.evaluate((id) => { let g; window.__stores.flowGraphs.subscribe((v) => (g = v))(); return g.scene.nodes.find((n) => n.id === id)?.data?.code ?? ''; }, rid);
-	await page.evaluate(() => window.__stores.isLocked.set(null));
+	const codeNow = () => page.evaluate((id) => { let g; window.__tp.test.v1.flowGraphs.subscribe((v) => (g = v))(); return g.scene.nodes.find((n) => n.id === id)?.data?.code ?? ''; }, rid);
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(null));
 	await page.waitForTimeout(600);
 	if (!(await page.evaluate(() => !!document.querySelector('.svelte-flow__pane')))) await page.locator('p[title="Node editor (N)"]').click();
 	await page.waitForTimeout(1000);
-	await page.evaluate(() => window.__stores.bottomDock?.dockHeight?.set(600));
+	await page.evaluate(() => window.__tp.test.v1.bottomDock?.dockHeight?.set(600));
 	if (!(await page.locator('#flow-props').count())) await page.locator('#flow-props-toggle').click();
 	await page.locator('#flow-tab-info').click();
-	await page.evaluate((id) => window.__stores.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: n.id === id }))), rid);
+	await page.evaluate((id) => window.__tp.test.v1.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: n.id === id }))), rid);
 	await h.eventually(() => page.locator('#flow-prop-maxTilt').count(), (n) => n === 1, 'the rules node shows the Board tilt limit in its properties panel', 6000);
 	await page.locator('#flow-prop-maxTilt').fill('5');
 	await page.locator('#flow-prop-maxTilt').press('Enter');
 	await h.eventually(codeNow, (c) => /maxTilt:\s*\{\s*value:\s*5\b/.test(c), 'the knob rewrote the literal in the rules source (maxTilt: 5)', 4000);
 	await page.evaluate((id) => {
 		let ns;
-		window.__stores.flowNodes.subscribe((v) => (ns = v))();
+		window.__tp.test.v1.flowNodes.subscribe((v) => (ns = v))();
 		const n = ns.find((x) => x.id === id);
 		window.__flowViewport?.setViewport({ x: -n.position.x + 300, y: -n.position.y + 60, zoom: 1 });
 	}, rid);
 	await page.waitForTimeout(600);
 	const nbox = await page.locator(`.svelte-flow__node[data-id="${rid}"]`).boundingBox().catch(() => null);
 	if (nbox) await page.mouse.dblclick(nbox.x + nbox.width / 2, nbox.y + 8);
-	else await page.evaluate((id) => window.__stores.codeWorkspace.openCode({ source: 'behaviour', ref: { nodeId: id } }), rid);
+	else await page.evaluate((id) => window.__tp.test.v1.codeWorkspace.openCode({ source: 'behaviour', ref: { nodeId: id } }), rid);
 	await h.eventually(() => page.locator('[data-pane] .cm-content').count(), (n) => n >= 1, 'double-click opens the rules in the code workspace', 15000);
 	const edited = (await codeNow()).replace("{ id: 1, name: 'First roll', par: 25 }", "{ id: 1, name: 'Gentle roll', par: 25 }");
-	const paneId = await page.evaluate(() => { let v; window.__stores.codeWorkspace.activeCodeTab.subscribe((x) => (v = x))(); return v; });
+	const paneId = await page.evaluate(() => { let v; window.__tp.test.v1.codeWorkspace.activeCodeTab.subscribe((x) => (v = x))(); return v; });
 	await page.locator(`[data-pane="${paneId}"] .cm-content`).click();
 	await page.keyboard.press('Control+A');
 	await page.keyboard.insertText(edited);
 	await page.keyboard.press('Control+S');
 	await h.eventually(codeNow, (c) => /name: 'Gentle roll'/.test(c), "Ctrl+S saved the code onto the node (maze 1 is 'Gentle roll')", 6000);
 	await page.locator('#code-ws-close:visible, [data-dock-tab-close="code"]:visible').first().click().catch(() => {});
-	await h.eventually(() => page.evaluate((id) => window.__stores.behaviours.behavioursDebug().status[id]?.status, rid), (st) => st === 'running', 'the edited rules reloaded and run', 8000);
+	await h.eventually(() => page.evaluate((id) => window.__tp.test.v1.behaviours.behavioursDebug().status[id]?.status, rid), (st) => st === 'running', 'the edited rules reloaded and run', 8000);
 	const feel = async (when) => {
-		await page.evaluate(() => window.__stores.isLocked.set(true));
+		await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 		await h.eventually(() => snap().then((v) => v.sim), (v) => v === true, `${when}: the simulation runs`, 10000);
 		await page.evaluate(() => window.__marble.startLevel(1));
 		await h.eventually(snap, (v) => v.state === 'playing' && v.vars.mmLevel === 1 && v.vars.mmStatus === 1, `${when}: maze 1 runs`, 8000);
@@ -253,15 +253,15 @@ const CANDIDATES = [
 	};
 	await feel('Play');
 	const saved = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = s.sessions.buildSessionPayload('Marble probe');
 		const zip = await s.sessions.exportSessionZip(payload, { assets: true, packs: false, flow: true });
 		return Array.from(zip);
 	});
-	await page.evaluate(() => window.__stores.isLocked.set(null));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(null));
 	await page.waitForTimeout(600);
 	await page.evaluate(async (arr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphs.set({ scene: { nodes: [], edges: [] } });
 		const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 		await s.sessions.applySession(payload, { backup: false });
@@ -269,9 +269,9 @@ const CANDIDATES = [
 	await page.waitForTimeout(2500);
 	const reloaded = await codeNow();
 	h.check(/maxTilt:\s*\{\s*value:\s*5\b/.test(reloaded) && /name: 'Gentle roll'/.test(reloaded), "after a save and a reload the rules keep the 5° limit and 'Gentle roll'");
-	await h.eventually(() => page.evaluate(() => window.__stores.behaviours.behavioursDebug().status[window.__marble.rulesNode()]?.status), (st) => st === 'running', 'the reloaded rules run', 10000);
+	await h.eventually(() => page.evaluate(() => window.__tp.test.v1.behaviours.behavioursDebug().status[window.__marble.rulesNode()]?.status), (st) => st === 'running', 'the reloaded rules run', 10000);
 	await feel('Play after the reload');
-	await page.evaluate(() => window.__stores.isLocked.set(false));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(false));
 	await page.waitForTimeout(400);
 
 	h.check(h.pageErrors(A).length === 0, `no page errors (${h.pageErrors(A).slice(0, 2).join(' | ')})`);

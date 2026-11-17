@@ -10,26 +10,26 @@
 const h = require('./helpers.cjs');
 
 const sp = (page, body) =>
-	page.evaluate((b) => new Function('sp', b)(window.__stores.scenePhysics), body);
+	page.evaluate((b) => new Function('sp', b)(window.__tp.test.v1.scenePhysics), body);
 const phys = (page, body) =>
-	page.evaluate((b) => new Function('p', b)(window.__stores.physics), body);
+	page.evaluate((b) => new Function('p', b)(window.__tp.test.v1.physics), body);
 
 /** drop N boxes at the given poses and return their uuids */
 async function makeBoxes(page, specs) {
 	return page.evaluate(async (specs) => {
-		const cmd = window.__stores.commandsHandler.sceneCommand;
+		const cmd = window.__tp.test.v1.commandsHandler.sceneCommand;
 		let group = null;
 		const made = [];
 		for (const spec of specs) {
 			cmd('/create box');
-			window.__stores.objectsGroup.subscribe((v) => (group = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 			const box = group.children[group.children.length - 1];
 			box.name = spec.name;
 			box.position.set(spec.pos[0], spec.pos[1], spec.pos[2]);
 			box.userData.physics = { mode: 'dynamic', mass: 1, ...(spec.physics ?? {}) };
 			made.push(box.uuid);
 		}
-		window.__stores.objectsGroup.update((v) => v);
+		window.__tp.test.v1.objectsGroup.update((v) => v);
 		return made;
 	}, specs);
 }
@@ -37,7 +37,7 @@ async function makeBoxes(page, specs) {
 const yOf = (page, uuid) =>
 	page.evaluate((uuid) => {
 		let group = null;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		const o = group.getObjectByProperty('uuid', uuid);
 		return o ? o.position.y : null;
 	}, uuid);
@@ -45,25 +45,25 @@ const yOf = (page, uuid) =>
 const posOf = (page, uuid) =>
 	page.evaluate((uuid) => {
 		let group = null;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		const o = group.getObjectByProperty('uuid', uuid);
 		return o ? o.position.toArray() : null;
 	}, uuid);
 
 async function run(page, ms) {
-	await page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await page.waitForTimeout(ms);
 }
 async function stop(page) {
-	await page.evaluate(() => window.__stores.physics.stopSimulation());
+	await page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 	await page.waitForTimeout(200);
 }
 async function clearScene(page) {
 	await page.evaluate(() => {
 		let group = null;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		const uuids = group.children.map((/** @type {any} */ c) => c.uuid);
-		window.__stores.objectActions.deleteObjectsByUuid(uuids);
+		window.__tp.test.v1.objectActions.deleteObjectsByUuid(uuids);
 	});
 	await page.waitForTimeout(300);
 }
@@ -72,13 +72,13 @@ h.run(async () => {
 	const browser = await h.launch();
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(4000);
 		await warm.ctx.close();
 	}
 	const A = await h.setupPage(browser, 'A');
 	const page = A.page;
-	await page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 
 	// ---------------------------------------------------------------- section 1
 	console.log('\n=== 1. the ground top face lands on `height` ===');
@@ -102,12 +102,12 @@ h.run(async () => {
 	await page.evaluate(
 		(uuid) => {
 			let group = null;
-			window.__stores.objectsGroup.subscribe((v) => (group = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 			group.getObjectByProperty('uuid', uuid).position.set(0, 6, 0);
 		},
 		box
 	);
-	await page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await h.eventually(
 		() => yOf(page, box),
 		(y) => y < 0,
@@ -188,7 +188,7 @@ h.run(async () => {
 		page,
 		'sp.setScenePhysics({ ground: { enabled: false }, bounds: { limit: -6, action: "respawn" } })'
 	);
-	await page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	// A respawn is instantaneous — the frame the body crosses the limit is the
 	// frame it is teleported — so "sample it while it is below" is a race by
 	// construction. Nothing else moves a FALLING body upward, so detect the JUMP.
@@ -221,7 +221,7 @@ h.run(async () => {
 	await page.evaluate(
 		([uuid, spawn]) => {
 			let group = null;
-			window.__stores.objectsGroup.subscribe((v) => (group = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 			group.getObjectByProperty('uuid', uuid).position.set(spawn[0], spawn[1], spawn[2]);
 		},
 		[faller, spawn]
@@ -244,15 +244,15 @@ h.run(async () => {
 	await run(page, 4500);
 	const gone = await page.evaluate((uuid) => {
 		let group = null;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		return !group.getObjectByProperty('uuid', uuid);
 	}, doomed);
 	h.check(gone, '5.6 delete removes the object from the scene (replicated + undoable)');
 	const undone = await page.evaluate(async (uuid) => {
-		window.__stores.history.undo();
+		window.__tp.test.v1.history.undo();
 		await new Promise((r) => setTimeout(r, 400));
 		let group = null;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		return !!group.getObjectByProperty('uuid', uuid);
 	}, doomed);
 	h.check(undone, '5.7 ...and Ctrl+Z brings it back, so it went through the real delete path');
@@ -266,12 +266,12 @@ h.run(async () => {
 		{ name: 'F3', pos: [1, 2, 0] }
 	]);
 	await sp(page, 'sp.setScenePhysics({ bounds: { limit: -6, action: "respawn" } })');
-	await page.evaluate(() => window.__stores.clearToast());
-	await page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await page.evaluate(() => window.__tp.test.v1.clearToast());
+	await page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	const readToasts = () =>
 		page.evaluate(() => {
 			let list = [];
-			window.__stores.toastStore.subscribe((v) => (list = v))();
+			window.__tp.test.v1.toastStore.subscribe((v) => (list = v))();
 			return list.map((t) => (typeof t === 'string' ? t : t.text));
 		});
 	// respawn RE-ARMS the bodies, so they fall again and a long window would
@@ -324,7 +324,7 @@ h.run(async () => {
 	await page.evaluate(
 		([a, b]) => {
 			let group = null;
-			window.__stores.objectsGroup.subscribe((v) => (group = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 			group.getObjectByProperty('uuid', a).position.set(0, 0.5, 0);
 			group.getObjectByProperty('uuid', b).position.set(0, 5, 0);
 		},
@@ -336,8 +336,8 @@ h.run(async () => {
 			{ id: 'selI', type: 'objectselector', position: { x: 300, y: 0 }, data: { type: 'objectselector', selected: uuid }, class: 'w-[150px]' },
 			{ id: 'cnt1', type: 'counter', position: { x: 0, y: 200 }, data: { type: 'counter', op: 'up', step: 1 }, class: 'w-[150px]' }
 		];
-		window.__stores.flowNodes.set(nodes);
-		window.__stores.flowEdges.set([
+		window.__tp.test.v1.flowNodes.set(nodes);
+		window.__tp.test.v1.flowEdges.set([
 			{ id: 'e-imp1-selI', source: 'imp1', target: 'selI' },
 			{ id: 'e-imp1-cnt1', source: 'imp1', target: 'cnt1' }
 		]);
@@ -367,7 +367,7 @@ h.run(async () => {
 	);
 	const triggers = await page.evaluate(() => {
 		let map = {};
-		window.__stores.flowTriggers.subscribe((v) => (map = v))();
+		window.__tp.test.v1.flowTriggers.subscribe((v) => (map = v))();
 		return map;
 	});
 	h.check(
@@ -378,8 +378,8 @@ h.run(async () => {
 	);
 	await stop(page);
 	await page.evaluate(() => {
-		window.__stores.flowNodes.set([]);
-		window.__stores.flowEdges.set([]);
+		window.__tp.test.v1.flowNodes.set([]);
+		window.__tp.test.v1.flowEdges.set([]);
 	});
 
 	// ---------------------------------------------------------------- section 7
@@ -468,13 +468,13 @@ h.run(async () => {
 	console.log('\n=== 8. the ground affordance follows showColliders ===');
 
 	await sp(page, 'sp.setScenePhysics({ ground: { enabled: true, height: 1.25 } })');
-	await page.evaluate(() => window.__stores.colliderHelpers.showColliders.set(true));
+	await page.evaluate(() => window.__tp.test.v1.colliderHelpers.showColliders.set(true));
 	await page.waitForTimeout(400);
-	const shown = await page.evaluate(() => window.__stores.colliderHelpers.groundHelperDebug());
+	const shown = await page.evaluate(() => window.__tp.test.v1.colliderHelpers.groundHelperDebug());
 	h.check(shown && Math.abs(shown.y - 1.25) < 1e-6, '8.1 the proxy sits at the ground height');
-	await page.evaluate(() => window.__stores.colliderHelpers.showColliders.set(false));
+	await page.evaluate(() => window.__tp.test.v1.colliderHelpers.showColliders.set(false));
 	await page.waitForTimeout(400);
-	const hidden = await page.evaluate(() => window.__stores.colliderHelpers.groundHelperDebug());
+	const hidden = await page.evaluate(() => window.__tp.test.v1.colliderHelpers.groundHelperDebug());
 	h.check(hidden === null, '8.2 ...and disappears with the collider toggle (a LOCAL pref)');
 
 	await h.finish(browser);

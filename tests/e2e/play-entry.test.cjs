@@ -115,7 +115,7 @@ h.run(async () => {
 	check(api.sceneId === 'abc123' && api.open.endsWith('/?s=abc123') && api.remix.endsWith('/?s=abc123&remix=1'), `tpPlay: open ${api.open}, remix ${api.remix}`);
 
 	// --------------------------------------------------------------- 2. no editor code
-	await P.page.waitForFunction(() => window.__stores && !!window.__stores.moduleSDK, null, { timeout: 60000 });
+	await P.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.moduleSDK, null, { timeout: 60000 });
 	const editorByPath = P.requests.filter((p) => EDITOR_SOURCES.test(p));
 	const built = editorFilesOfBuild();
 	const isBuilt = P.requests.some((p) => p.startsWith('/_app/immutable/'));
@@ -160,7 +160,7 @@ h.run(async () => {
 	const facts = (page) =>
 		page.evaluate((r) => {
 			const rd = eval(r);
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const group = rd(s.objectsGroup);
 			let objects = 0;
 			group?.traverse((o) => {
@@ -174,7 +174,7 @@ h.run(async () => {
 	const inPlay = await facts(P.page);
 	const E = await h.setupPage(browser, 'E');
 	await E.ctx.route('**/e2e-scenes/*.tpscene', (route) => route.fulfill({ status: 200, contentType: 'application/octet-stream', body: fs.readFileSync(file) }));
-	const editorOk = await E.page.evaluate((url) => window.__stores.sceneTemplates.loadRemoteScene({ sceneUrl: url, title: 'x', slug: 'x' }, { origin: 'play' }), sceneUrl);
+	const editorOk = await E.page.evaluate((url) => window.__tp.test.v1.sceneTemplates.loadRemoteScene({ sceneUrl: url, title: 'x', slug: 'x' }, { origin: 'play' }), sceneUrl);
 	await E.page.waitForTimeout(3000);
 	const inEditor = await facts(E.page);
 	console.log('play', JSON.stringify(inPlay), 'editor', JSON.stringify(inEditor), 'editor load', editorOk);
@@ -185,7 +185,7 @@ h.run(async () => {
 
 	await P.page.click('#embed-play');
 	await h.eventually(
-		() => P.page.evaluate((r) => eval(r)(window.__stores.isLocked), read),
+		() => P.page.evaluate((r) => eval(r)(window.__tp.test.v1.isLocked), read),
 		(v) => v === true,
 		'▶ Play in /play enters play mode (isLocked true)',
 		20000

@@ -25,6 +25,7 @@ import {
 import { drawPlaceholders as drawPlaceholderBoxes, placeholderBoxOf, setRetryAllHook } from './placeholders';
 import { cachedPackBuffer, putPackBuffer, fetchPackBuffer } from './packCache';
 import { measureDims, rememberDims } from './placementDims';
+import { createRenderTarget } from './render/renderTargets.js'; // 101 F3: the one factory
 
 // 30c — KIT REFERENCES: a pack piece in a scene is a REFERENCE, not a copy.
 //
@@ -538,7 +539,7 @@ export async function warmPrograms(root) {
 	}
 	if (twins.length) batches.push(twins);
 	try {
-		if (!warmTarget) warmTarget = new THREE.WebGLRenderTarget(1, 1);
+		if (!warmTarget) warmTarget = createRenderTarget(1, 1);
 		for (const batch of batches)
 			await schedule(() => {
 				/** @type {any} */

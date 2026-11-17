@@ -9,7 +9,7 @@ const h = require('./helpers.cjs');
 
 const nodeTypes = (page) =>
 	page.evaluate(
-		() => new Promise((r) => window.__stores.flowNodes.subscribe((n) => r(n.map((x) => x.type)))())
+		() => new Promise((r) => window.__tp.test.v1.flowNodes.subscribe((n) => r(n.map((x) => x.type)))())
 	);
 
 h.run(async () => {
@@ -218,8 +218,8 @@ h.run(async () => {
 	await A.page.evaluate(() => {
 		// read first, then write — never from inside the subscriber
 		let list = [];
-		window.__stores.flowNodes.subscribe((n) => (list = n))();
-		window.__stores.flowNodes.set([
+		window.__tp.test.v1.flowNodes.subscribe((n) => (list = n))();
+		window.__tp.test.v1.flowNodes.set([
 			...list,
 			{
 				id: 'sel-91',

@@ -43,7 +43,7 @@ h.run(async () => {
 			const A = await S.preparePeer(browser, slug + '-still', index, slug);
 			h.check(!!A.saved?.position, `${slug}: the file carries a saved view`);
 			await A.page.evaluate(S.ARM);
-			await A.page.evaluate((url) => void window.__stores.sceneTemplates.loadRemoteScene({ slug: 'x', title: 'x', sceneUrl: url }), A.sceneUrl);
+			await A.page.evaluate((url) => void window.__tp.test.v1.sceneTemplates.loadRemoteScene({ slug: 'x', title: 'x', sceneUrl: url }), A.sceneUrl);
 			await S.loadEnded(A.page, `${slug}: the load ends`);
 			await A.page.waitForTimeout(1200);
 			const rec = await S.disarm(A.page);
@@ -67,7 +67,7 @@ h.run(async () => {
 			const videoDir = path.join(S.SHOTS, 'video-tmp');
 			const A = await S.preparePeer(browser, slug + '-moved', index, slug, video ? { context: { recordVideo: { dir: videoDir, size: { width: 1280, height: 800 } } } } : {});
 			await A.page.evaluate(S.ARM);
-			await A.page.evaluate((url) => void window.__stores.sceneTemplates.loadRemoteScene({ slug: 'x', title: 'x', sceneUrl: url }), A.sceneUrl);
+			await A.page.evaluate((url) => void window.__tp.test.v1.sceneTemplates.loadRemoteScene({ slug: 'x', title: 'x', sceneUrl: url }), A.sceneUrl);
 			await A.page.waitForTimeout(450);
 			await S.orbitDrag(A.page);
 			await S.loadEnded(A.page, `${slug}: the load ends`);
@@ -119,20 +119,20 @@ h.run(async () => {
 		console.log('-- restore');
 		const A = await S.preparePeer(browser, 'restore', index, 'tavern-interior');
 		await A.page.evaluate(S.ARM);
-		await A.page.evaluate((url) => window.__stores.sceneTemplates.loadRemoteScene({ slug: 'x', title: 'x', sceneUrl: url }), A.sceneUrl);
+		await A.page.evaluate((url) => window.__tp.test.v1.sceneTemplates.loadRemoteScene({ slug: 'x', title: 'x', sceneUrl: url }), A.sceneUrl);
 		await S.loadEnded(A.page, 'restore: the scene loads first');
 		await A.page.waitForTimeout(1500);
-		await A.page.evaluate(() => window.__stores.autosave.saveNow());
+		await A.page.evaluate(() => window.__tp.test.v1.autosave.saveNow());
 		await A.page.reload({ waitUntil: 'domcontentloaded' });
-		await A.page.waitForFunction(() => window.__stores && !!window.__stores.moduleSDK, { timeout: 60000 });
+		await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.moduleSDK, { timeout: 60000 });
 		await h.eventually(
-			() => A.page.evaluate(() => { let v; window.__stores.autosave.restoreAvailable.subscribe((x) => (v = x))(); return !!v; }),
+			() => A.page.evaluate(() => { let v; window.__tp.test.v1.autosave.restoreAvailable.subscribe((x) => (v = x))(); return !!v; }),
 			(v) => v,
 			'restore: the Restore offer is up after the reload',
 			30000
 		);
 		await A.page.evaluate(S.ARM);
-		await A.page.evaluate(() => void window.__stores.autosave.restoreSnapshot());
+		await A.page.evaluate(() => void window.__tp.test.v1.autosave.restoreSnapshot());
 		await A.page.waitForTimeout(450);
 		await S.orbitDrag(A.page);
 		await S.loadEnded(A.page, 'restore: the restore ends');

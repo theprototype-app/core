@@ -14,7 +14,7 @@
 // Then a DESKTOP page (1440x900, mouse) proves no phone grab bar leaks there.
 const h = require('./helpers.cjs');
 
-const store = (name) => `(() => { let v; window.__stores.${name}.subscribe((x) => (v = x))(); return v; })()`;
+const store = (name) => `(() => { let v; window.__tp.test.v1.${name}.subscribe((x) => (v = x))(); return v; })()`;
 
 /** @param {import('playwright').Page} page */
 async function touchApi(page) {
@@ -47,7 +47,7 @@ h.run(async () => {
 	const rect = (sel) => P.evaluate((s) => { const e = document.querySelector(s); if (!e) return null; const r = e.getBoundingClientRect(); return r.width || r.height ? { x: r.x, y: r.y, w: r.width, h: r.height, top: r.top, bottom: r.bottom } : null; }, sel);
 	const rest = async () => {
 		await P.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.phoneShell.phoneSheet.set(null);
 			s.viewportMenu.set(null);
 			s.objectListClose.set(true);
@@ -65,11 +65,11 @@ h.run(async () => {
 		});
 		await P.waitForTimeout(500);
 	};
-	await P.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await P.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await P.waitForTimeout(800);
 	const select = async () => {
 		await P.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let g; s.objectsGroup.subscribe((v) => (g = v))();
 			s.objectActions.applySelectionSet([g.children[0].uuid]);
 		});
@@ -108,17 +108,17 @@ h.run(async () => {
 	const tabShown = (/** @type {string} */ key) => `!(${store('bottomDock.dockMinimized')}) && ${store('bottomDock.visibleDockKey')} === '${key}'`;
 	const SHEETS = [
 		['main menu', async () => touch.tap(34, 34), '#sidebar70', '#sidebar70 [data-sheet-grip]', `!!document.querySelector('#sidebar70')`],
-		['notifications', async () => P.evaluate(() => window.__stores.notificationCenterOpen.set(true)), '.ps-sheet', '#ps-sheet-handle', store('notificationCenterOpen')],
-		['Configure Scene', async () => P.evaluate(() => window.__stores.showSidebar('scene')), '#phone-dock', '#ps-dock-grip [data-sheet-grip]', tabShown('scene')],
+		['notifications', async () => P.evaluate(() => window.__tp.test.v1.notificationCenterOpen.set(true)), '.ps-sheet', '#ps-sheet-handle', store('notificationCenterOpen')],
+		['Configure Scene', async () => P.evaluate(() => window.__tp.test.v1.showSidebar('scene')), '#phone-dock', '#ps-dock-grip [data-sheet-grip]', tabShown('scene')],
 		['Add', async () => { const b = await rect('#ps-add'); await touch.tap(b.x + b.w / 2, b.y + b.h / 2); }, '.ctx-scroll[role=menu]', '.ctx-scroll[role=menu] [data-sheet-grip]', `!!document.querySelector('.ctx-scroll[role=menu]')`],
 		['Add with an object selected', async () => { await select(); const b = await rect('#ps-add'); await touch.tap(b.x + b.w / 2, b.y + b.h / 2); }, '.ctx-scroll[role=menu]', '.ctx-scroll[role=menu] [data-sheet-grip]', `!!document.querySelector('.ctx-scroll[role=menu]')`, true],
 		['Inspector', async () => { await select(); const b = await rect('#ps-inspect'); await touch.tap(b.x + b.w / 2, b.y + b.h / 2); }, '#phone-dock', '#ps-dock-grip [data-sheet-grip]', tabShown('properties'), true],
-		['Objects', async () => { await select(); await P.evaluate(() => window.__stores.objectListClose.set(false)); }, '#phone-dock', '#ps-dock-grip [data-sheet-grip]', tabShown('objects'), true],
+		['Objects', async () => { await select(); await P.evaluate(() => window.__tp.test.v1.objectListClose.set(false)); }, '#phone-dock', '#ps-dock-grip [data-sheet-grip]', tabShown('objects'), true],
 		['Explorer (the dock)', async () => { const b = await rect('#ps-explorer'); await touch.tap(b.x + b.w / 2, b.y + b.h / 2); }, '#explorer-list', '#ps-dock-grip [data-sheet-grip]', `!(${store('bottomDock.dockMinimized')}) && !(${store('explorerClose')})`],
 		['More', async () => { const b = await rect('#ps-more'); await touch.tap(b.x + b.w / 2, b.y + b.h / 2); }, '.ps-sheet', '#ps-sheet-handle', `${store('phoneShell.phoneSheet')} === 'more'`],
 		['profile menu', async () => P.locator('#avatar-trigger').dispatchEvent('mousedown'), '#avatar-dropdown', '#avatar-dropdown [data-sheet-grip]', `!!document.querySelector('#avatar-dropdown')`],
-		['scene notes', async () => P.evaluate(() => window.__stores.notesDrawerOpen.set(true)), '#phone-dock', '#ps-dock-grip [data-sheet-grip]', tabShown('notes')],
-		['Customize character', async () => P.evaluate(() => window.__stores.characterModalOpen.set(true)), '.cp', '#character-resize', store('characterModalOpen')]
+		['scene notes', async () => P.evaluate(() => window.__tp.test.v1.notesDrawerOpen.set(true)), '#phone-dock', '#ps-dock-grip [data-sheet-grip]', tabShown('notes')],
+		['Customize character', async () => P.evaluate(() => window.__tp.test.v1.characterModalOpen.set(true)), '.cp', '#character-resize', store('characterModalOpen')]
 	];
 
 	for (const [name, open, sheetSel, gripSel, isOpen, withSel] of SHEETS) {
@@ -155,7 +155,7 @@ h.run(async () => {
 	// ---- the grab bar is STICKY: scrolling Configure Scene never takes it away ----------------
 	// 41b H1: Configure Scene is a dock tab — the bar is the DOCK's, over the frame's top edge
 	await rest();
-	await P.evaluate(() => window.__stores.showSidebar('scene'));
+	await P.evaluate(() => window.__tp.test.v1.showSidebar('scene'));
 	await P.waitForTimeout(900);
 	const sticky = await P.evaluate(async () => {
 		const ins = document.getElementById('inspector');
@@ -178,7 +178,7 @@ h.run(async () => {
 	await P.waitForTimeout(500);
 	const hBefore = (await rect('#phone-dock')).h;
 	await rest();
-	await P.evaluate(() => window.__stores.showSidebar('scene'));
+	await P.evaluate(() => window.__tp.test.v1.showSidebar('scene'));
 	await P.waitForTimeout(900);
 	const hAfter = (await rect('#phone-dock')).h;
 	h.check(Math.abs(hAfter - hBefore) < 3, `Configure Scene reopens at the height it was left at (${Math.round(hBefore)} -> ${Math.round(hAfter)})`);
@@ -229,7 +229,7 @@ h.run(async () => {
 
 	// ---- desktop: no phone grab bar leaks -------------------------------------------------
 	const D = await h.setupPage(browser, 'desktop', { context: { viewport: { width: 1440, height: 900 } } });
-	await D.page.evaluate(() => window.__stores.showSidebar('scene'));
+	await D.page.evaluate(() => window.__tp.test.v1.showSidebar('scene'));
 	await D.page.waitForTimeout(900);
 	const desk = await D.page.evaluate(() => ({
 		insGrip: (() => { const g = document.querySelector('#inspector .ins-resize'); return g ? getComputedStyle(g).display : 'none'; })(),

@@ -22,41 +22,41 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A', { init: iwer.initScript(), context: { viewport: { width: 1280, height: 720 } } });
 	const page = A.page;
-	const sc = () => g(page, () => window.__stores.vrSculpt.vrSculptDebug());
-	const menu = (id) => g(page, (id) => window.__stores.vrControls.executeVRMenuAction(id), id);
-	const ring = (r) => g(page, (r) => window.__stores.vrRadialMenu.ringEntries(r).map((e) => e.id), r);
+	const sc = () => g(page, () => window.__tp.test.v1.vrSculpt.vrSculptDebug());
+	const menu = (id) => g(page, (id) => window.__tp.test.v1.vrControls.executeVRMenuAction(id), id);
+	const ring = (r) => g(page, (r) => window.__tp.test.v1.vrRadialMenu.ringEntries(r).map((e) => e.id), r);
 	const undoLen = () =>
 		g(page, () => {
 			let v;
-			window.__stores.history.undoStack.subscribe((x) => (v = x))();
+			window.__tp.test.v1.history.undoStack.subscribe((x) => (v = x))();
 			return v.length;
 		});
 	const terrain = () =>
 		g(page, () => {
 			let sel;
-			window.__stores.selectedObject.subscribe((x) => (sel = x))();
+			window.__tp.test.v1.selectedObject.subscribe((x) => (sel = x))();
 			return sel?.uuid ?? null;
 		});
-	const digest = (uuid) => g(page, (uuid) => window.__stores.terrainPaint.splatDigest(uuid), uuid);
+	const digest = (uuid) => g(page, (uuid) => window.__tp.test.v1.terrainPaint.splatDigest(uuid), uuid);
 	const instances = (uuid) =>
 		g(page, (uuid) => {
 			let grp;
-			window.__stores.objectsGroup.subscribe((x) => (grp = x))();
+			window.__tp.test.v1.objectsGroup.subscribe((x) => (grp = x))();
 			const o = grp.getObjectByProperty('uuid', uuid);
-			const counts = window.__stores.terrainSurface.scatterCounts(o);
+			const counts = window.__tp.test.v1.terrainSurface.scatterCounts(o);
 			return Object.values(counts).reduce((a, b) => a + b, 0);
 		}, uuid);
 	const scatterYaws = (uuid) =>
 		g(page, (uuid) => {
-			const block = window.__stores.terrainPaint.scatterBlockNow(uuid);
+			const block = window.__tp.test.v1.terrainPaint.scatterBlockNow(uuid);
 			const out = [];
-			for (const set of block?.sets ?? []) for (const i of window.__stores.terrainPaint.scatterInstancesOf(uuid, set.id)) out.push(+(+i.yaw).toFixed(4));
+			for (const set of block?.sets ?? []) for (const i of window.__tp.test.v1.terrainPaint.scatterInstancesOf(uuid, set.id)) out.push(+(+i.yaw).toFixed(4));
 			return out;
 		}, uuid);
 
 	// ---- a 12 m terrain 5 m ahead, and the session on it ------------------------------------------------
 	const uuid = await g(page, async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create Terrain 12 48');
 		await new Promise((r) => setTimeout(r, 300));
 		let sel;
@@ -69,12 +69,12 @@ h.run(async () => {
 	await iwer.enter(page);
 	const menuHand = await g(page, () => {
 		let v;
-		window.__stores.vrMenuHand.subscribe((x) => (v = x))();
+		window.__tp.test.v1.vrMenuHand.subscribe((x) => (v = x))();
 		return v;
 	});
 	const pointer = menuHand === 'right' ? 'left' : 'right';
 	console.log(`menu hand ${menuHand}, pointer ${pointer}`);
-	h.check(await g(page, (u) => window.__stores.vrSculpt.startVRSculpt(u), uuid), 'premise: a VR sculpt session on it');
+	h.check(await g(page, (u) => window.__tp.test.v1.vrSculpt.startVRSculpt(u), uuid), 'premise: a VR sculpt session on it');
 	// the pointer hand aims down at the terrain ~2.5 m ahead (local (0, -2.5) on the terrain)
 	const aim = (z = -2.5, x = 0) => iwer.pose(page, pointer, [x, 1.3, z + 0.75], { pitch: -1.05 });
 	await aim();
@@ -105,7 +105,7 @@ h.run(async () => {
 	await iwer.frames(page, 3);
 	let s = await sc();
 	h.check(s.op === 'paint' && s.layer === 2, `2.1 Layer 3 from the wheel arms Paint on layer 3 (op ${s.op}, layer ${s.layer})`);
-	const cur = await g(page, () => window.__stores.terrainSculpt.cursorDebug());
+	const cur = await g(page, () => window.__tp.test.v1.terrainSculpt.cursorDebug());
 	h.check(cur?.visible && Math.abs(cur.radius - s.radius) < 1e-6 && Math.abs(cur.pos[2] - -2.5) < 0.3, `2.2 the ring sits on the terrain under the ray at the brush radius (r ${cur?.radius}, z ${cur?.pos?.[2]?.toFixed(2)})`);
 	h.check(/^Paint 3 · \d/.test(s.label) && s.labelHand === pointer, `2.3 the hand label reads "${s.label}"`);
 	let d0 = await digest(uuid);
@@ -134,7 +134,7 @@ h.run(async () => {
 	console.log('\n=== 4. Scatter ===');
 	await menu('sculpt:tool:paint');
 	await iwer.frames(page, 3);
-	const sources = await g(page, () => window.__stores.vrSculpt.vrSourceSlots().map((x) => x.label));
+	const sources = await g(page, () => window.__tp.test.v1.vrSculpt.vrSourceSlots().map((x) => x.label));
 	h.check(['Sphere', 'Cone', 'Box'].every((p) => sources.includes(p)), `4.1 Source ▸ lists the primitives (${sources.join(', ')})`);
 	await menu('sculpt:src:' + sources.indexOf('Sphere'));
 	await iwer.frames(page, 4);
@@ -172,7 +172,7 @@ h.run(async () => {
 	// the rig at 1:10 with the terrain's centre on a table 1 m ahead, 0.9 m up: local (0,0,-5) -> world (0, 0.9, -1)
 	await g(page, () => {
 		let rig;
-		window.__stores.worldRig.subscribe((x) => (rig = x))();
+		window.__tp.test.v1.worldRig.subscribe((x) => (rig = x))();
 		rig.scale.setScalar(0.1);
 		rig.position.set(0, 0.9, -0.5);
 		rig.updateMatrixWorld(true);
@@ -182,11 +182,11 @@ h.run(async () => {
 	await iwer.pose(page, pointer, [0.1, 1.25, -0.95], { pitch: -1.2 });
 	await iwer.frames(page, 4);
 	s = await sc();
-	const mini = await g(page, () => window.__stores.terrainSculpt.cursorDebug());
+	const mini = await g(page, () => window.__tp.test.v1.terrainSculpt.cursorDebug());
 	h.check(mini?.visible && Math.abs(mini.radius - s.radius * 0.1) < 1e-4, `5.1 the ring is drawn at a tenth (world r ${mini?.radius?.toFixed(3)} for a ${s.radius} m brush)`);
 	// where the pointer's ray meets the terrain (world), and the ring's place in the terrain's own frame
 	const probe = await g(page, (u) => {
-		const st = window.__stores;
+		const st = window.__tp?.test.v1;
 		const T = st.THREE;
 		let grp, sc, r;
 		st.objectsGroup.subscribe((x) => (grp = x))();
@@ -223,8 +223,8 @@ h.run(async () => {
 	n1 = await instances(uuid);
 	const near = await g(page, (u) => {
 		const out = [];
-		const block = window.__stores.terrainPaint.scatterBlockNow(u);
-		for (const set of block?.sets ?? []) for (const i of window.__stores.terrainPaint.scatterInstancesOf(u, set.id)) out.push([i.x, i.z]);
+		const block = window.__tp.test.v1.terrainPaint.scatterBlockNow(u);
+		for (const set of block?.sets ?? []) for (const i of window.__tp.test.v1.terrainPaint.scatterInstancesOf(u, set.id)) out.push([i.x, i.z]);
 		return out;
 	}, uuid);
 	const fresh = near.filter(([x, z]) => Math.hypot(x - local[0], z - local[2]) <= s.radius + 0.5).length;
@@ -233,7 +233,7 @@ h.run(async () => {
 	await iwer.frames(page, 3);
 	// placement: Add ▸ Cube 2 m ahead in REAL space
 	const placed = await g(page, async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.vrControls.executeVRMenuAction('box');
 		await new Promise((r) => setTimeout(r, 300));
 		let sel, cam;

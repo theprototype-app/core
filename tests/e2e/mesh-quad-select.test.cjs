@@ -10,7 +10,7 @@ const sel = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.faceEdit.faceEditSelectedTris.subscribe((v) => r([...v].sort((a, b) => a - b)))()
+				window.__tp.test.v1.faceEdit.faceEditSelectedTris.subscribe((v) => r([...v].sort((a, b) => a - b)))()
 			)
 	);
 
@@ -20,7 +20,7 @@ const sel = (page) =>
 const triInfo = (page, uuid, indices) =>
 	page.evaluate(
 		async ({ uuid, indices }) => {
-			const w = window.__stores;
+			const w = window.__tp?.test.v1;
 			const T = w.THREE;
 			const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 			const geo = g.getObjectByProperty('uuid', uuid).geometry;
@@ -47,7 +47,7 @@ const triInfo = (page, uuid, indices) =>
 /** a plain box in face-edit mode */
 const editBox = (page) =>
 	page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.children[g.children.length - 1];
@@ -61,14 +61,14 @@ h.run(async () => {
 
 	// ------------------------------------------------------- 1. the default
 	const startMode = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.faceEdit.faceEditGranularity.subscribe(r)())
+		() => new Promise((r) => window.__tp.test.v1.faceEdit.faceEditGranularity.subscribe(r)())
 	);
 	h.check(startMode === 'quad', 'Edit Mesh opens in Quad granularity (' + startMode + ')');
 
 	// ------------------------------------------- 2. a box: 12 tris -> 6 quads
 	const uuid = await editBox(A.page);
 	const pairing = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const geo = g.getObjectByProperty('uuid', uuid).geometry;
 		const tris = w.faceEdit.readTriangles(geo);
@@ -87,7 +87,7 @@ h.run(async () => {
 	h.check(pairing.mutual, 'the pairing is mutual and never self-paired');
 
 	// a quad pick returns exactly 2 coplanar, co-facing triangles
-	const unit = await A.page.evaluate(() => window.__stores.faceEdit.quadOfTriangle(0));
+	const unit = await A.page.evaluate(() => window.__tp.test.v1.faceEdit.quadOfTriangle(0));
 	h.check(unit.length === 2, 'picking a triangle selects its quad (2 tris)');
 	const info = await triInfo(A.page, uuid, unit);
 	h.check(
@@ -96,25 +96,25 @@ h.run(async () => {
 	);
 
 	// clicking through the real pick path selects the quad, not the triangle
-	await A.page.evaluate(() => window.__stores.faceEdit.pickFaceUnit(0));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.pickFaceUnit(0));
 	h.check((await sel(A.page)).length === 2, 'a click in Quad mode selects 2 triangles');
 	await A.page.evaluate(() => {
-		window.__stores.faceEdit.setFaceGranularity('triangle');
-		window.__stores.faceEdit.pickFaceUnit(0);
+		window.__tp.test.v1.faceEdit.setFaceGranularity('triangle');
+		window.__tp.test.v1.faceEdit.pickFaceUnit(0);
 	});
 	h.check((await sel(A.page)).length === 1, '...where Triangle mode selects 1');
 	await A.page.evaluate(() => {
-		window.__stores.faceEdit.setFaceGranularity('face');
-		window.__stores.faceEdit.pickFaceUnit(0);
+		window.__tp.test.v1.faceEdit.setFaceGranularity('face');
+		window.__tp.test.v1.faceEdit.pickFaceUnit(0);
 	});
 	h.check((await sel(A.page)).length === 2, '...and on a plain box Face mode matches Quad (2)');
 
 	// ------------------- 3. THE POINT: an extrusion wall is its own quad
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	const ex = await editBox(A.page);
 	await A.page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const top = w.faceEdit.currentFaces().find((f) => f.normal.y > 0.99);
 		w.faceEdit.setFaceGranularity('face');
 		w.faceEdit.pickFaceUnit(top.triIndices[0]);
@@ -123,7 +123,7 @@ h.run(async () => {
 
 	// find a triangle in the +X WALL band (y above the original top)
 	const wallTri = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const T = w.THREE;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const pos = g.getObjectByProperty('uuid', uuid).geometry.attributes.position;
@@ -138,8 +138,8 @@ h.run(async () => {
 	h.check(wallTri >= 0, 'found a triangle in the extruded wall band (premise)');
 
 	await A.page.evaluate((ti) => {
-		window.__stores.faceEdit.setFaceGranularity('quad');
-		window.__stores.faceEdit.pickFaceUnit(ti);
+		window.__tp.test.v1.faceEdit.setFaceGranularity('quad');
+		window.__tp.test.v1.faceEdit.pickFaceUnit(ti);
 	}, wallTri);
 	const quadSel = await sel(A.page);
 	const quadInfo = await triInfo(A.page, ex, quadSel);
@@ -150,8 +150,8 @@ h.run(async () => {
 	);
 
 	await A.page.evaluate((ti) => {
-		window.__stores.faceEdit.setFaceGranularity('face');
-		window.__stores.faceEdit.pickFaceUnit(ti);
+		window.__tp.test.v1.faceEdit.setFaceGranularity('face');
+		window.__tp.test.v1.faceEdit.pickFaceUnit(ti);
 	}, wallTri);
 	const faceSel = await sel(A.page);
 	h.check(
@@ -161,7 +161,7 @@ h.run(async () => {
 
 	// ------------------------------- 4. an unpaired triangle picks alone
 	const lone = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.faceEdit.exitFaceEdit();
 		w.commandsHandler.sceneCommand('/clear all');
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
@@ -177,7 +177,7 @@ h.run(async () => {
 
 	// a coplanar FAN (odd triangle count) still pairs what it can
 	const fan = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		// three coplanar tris in a strip: 2 pair into a quad, 1 is left over
 		const strip = [
 			0, 0, 0, 1, 0, 0, 0, 1, 0,
@@ -202,11 +202,11 @@ h.run(async () => {
 	);
 
 	// -------------------------------------------- 5. quads drive the OPS too
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	const opUuid = await editBox(A.page);
 	const opResult = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const mesh = g.getObjectByProperty('uuid', uuid);
 		// an indexed source counts triangles from the INDEX, not the positions
@@ -228,7 +228,7 @@ h.run(async () => {
 
 	// ----------------------------------- 6. the granularity cycle + legacy alias
 	const cycle = await A.page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const seen = [];
 		const read = () => {
 			let v;
@@ -252,12 +252,12 @@ h.run(async () => {
 	h.check(cycle.legacy === 'triangle', 'the retired "polygon" alias still means triangle, not quad');
 
 	// ---------------- 7. hovering across a quad's diagonal is not a new unit
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	const hoverUuid = await editBox(A.page);
 	void hoverUuid;
 	const hover = await A.page.evaluate(() => {
-		const f = window.__stores.faceEdit;
+		const f = window.__tp.test.v1.faceEdit;
 		f.setFaceGranularity('quad');
 		const mate = f.quadOfTriangle(0).find((t) => t !== 0);
 		const other = [0, 1, 2, 3, 4, 5].find((t) => !f.quadOfTriangle(0).includes(t));

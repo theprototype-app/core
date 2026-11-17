@@ -10,7 +10,7 @@ h.run(async () => {
 
 	// scene: one box + a flow node + an imported pack (box glb)
 	const glbArr = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		s.flowNodes.set([{ id: 'n1', type: 'slider', position: { x: 0, y: 0 }, data: { value: 5 } }]);
 		const mesh = new s.THREE.Mesh(new s.THREE.BoxGeometry(1, 1, 1), new s.THREE.MeshStandardMaterial());
@@ -28,12 +28,12 @@ h.run(async () => {
 		{ level: 6 }
 	);
 	await A.page.evaluate(async (zipArr) => {
-		await window.__stores.packs.importPackZip(new File([new Uint8Array(zipArr)], 'tp-pack.zip'));
+		await window.__tp.test.v1.packs.importPackZip(new File([new Uint8Array(zipArr)], 'tp-pack.zip'));
 	}, Array.from(packZip));
 
 	// export with everything ON, and once with flow OFF
 	const zips = await A.page.evaluate(async () => {
-		const s = window.__stores.sessions;
+		const s = window.__tp.test.v1.sessions;
 		const payload = s.buildSessionPayload('t');
 		const all = await s.exportSessionZip(payload, { assets: true, packs: true, flow: true });
 		const noFlow = await s.exportSessionZip(payload, { assets: true, packs: true, flow: false });
@@ -50,7 +50,7 @@ h.run(async () => {
 
 	// wipe local state, re-import the bundle -> objects + flow + pack restored
 	const restored = await A.page.evaluate(async (zipArr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.packs.removeImportedPack('tp-pack');
 		s.commandsHandler.sceneCommand('/clear all');
 		s.flowNodes.set([]);
@@ -69,7 +69,7 @@ h.run(async () => {
 	h.check(restored.packBack && restored.blobBack, 'imported pack re-registers with a resolvable item blob');
 
 	// Sidebar UI: Scene is primary, JSON hidden until enabled via the cog
-	await A.page.evaluate(() => window.__stores.closeMenu.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.closeMenu.set(false));
 	await A.page.waitForTimeout(400);
 	h.check((await A.page.locator('#format-tpscene').count()) === 1, 'Scene format segment present');
 	h.check((await A.page.getByText('JSON', { exact: true }).count()) === 0, 'JSON hidden by default');

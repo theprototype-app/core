@@ -7,7 +7,7 @@ const h = require('./helpers.cjs');
 /** a box with a real uv attribute + a canvas texture, selected */
 const texturedBox = (page) =>
 	page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.children[g.children.length - 1];
@@ -32,7 +32,7 @@ const texturedBox = (page) =>
  */
 const uvExpanded = (page, uuid) =>
 	page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const geo = g.getObjectByProperty('uuid', uuid).geometry;
 		const uv = geo.attributes.uv;
@@ -48,7 +48,7 @@ const uvExpanded = (page, uuid) =>
 	}, uuid);
 
 const undoDepth = (page) =>
-	page.evaluate(() => new Promise((r) => window.__stores.history.undoStack.subscribe((v) => r(v.length))()));
+	page.evaluate(() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((v) => r(v.length))()));
 
 h.run(async () => {
 	const browser = await h.launch();
@@ -57,7 +57,7 @@ h.run(async () => {
 	// ---------- the dock tab ----------
 	const uuid = await texturedBox(A.page);
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphClose.set(false); // Node editor too, so the tab strip has siblings
 		s.uvEditorClose.set(false);
 		s.bottomDock.activateDock('uv');
@@ -65,11 +65,11 @@ h.run(async () => {
 	await A.page.waitForTimeout(600);
 
 	const tabs = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.bottomDock.flowTabs.subscribe((v) => r(v.map((x) => x.key)))())
+		() => new Promise((r) => window.__tp.test.v1.bottomDock.flowTabs.subscribe((v) => r(v.map((x) => x.key)))())
 	);
 	h.check(tabs.includes('uv'), `the UV editor is a Flow-family dock tab (${tabs.join(',')})`);
 	const occupant = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.bottomDock.dockOccupants.subscribe((v) => r(!!v.uv?.present))())
+		() => new Promise((r) => window.__tp.test.v1.bottomDock.dockOccupants.subscribe((v) => r(!!v.uv?.present))())
 	);
 	h.check(occupant, 'the UV editor reports itself as a dock occupant');
 	const strip = await A.page.evaluate(() =>
@@ -92,7 +92,7 @@ h.run(async () => {
 	// both fixed it went red for a THIRD, real reason: the menu deliberately drops what
 	// is already docked, and the setup above docks the UV editor. So ask from a state
 	// where the entry can legitimately appear — closed — then put it back.
-	await A.page.evaluate(() => window.__stores.uvEditorClose.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.uvEditorClose.set(true));
 	await A.page.waitForTimeout(450);
 	const plusItems = await A.page.evaluate(async () => {
 		const plus = [...document.querySelectorAll('#dock-add-view')].find(
@@ -108,8 +108,8 @@ h.run(async () => {
 	await A.page.keyboard.press('Escape');
 	await A.page.waitForTimeout(200);
 	await A.page.evaluate(() => {
-		window.__stores.uvEditorClose.set(false);
-		window.__stores.bottomDock.activateDock('uv');
+		window.__tp.test.v1.uvEditorClose.set(false);
+		window.__tp.test.v1.bottomDock.activateDock('uv');
 	});
 	await A.page.waitForTimeout(500);
 
@@ -121,14 +121,14 @@ h.run(async () => {
 	// outright ("docking the Node editor does NOT close the Explorer any more"), so this
 	// line had been asserting the opposite of the branch's own covered behaviour.
 	await A.page.evaluate(() => {
-		window.__stores.explorerClose.set(false);
-		window.__stores.bottomDock.activateDock('explorer');
+		window.__tp.test.v1.explorerClose.set(false);
+		window.__tp.test.v1.bottomDock.activateDock('explorer');
 	});
 	await A.page.waitForTimeout(400);
-	await A.page.evaluate(() => window.__stores.bottomDock.activateDock('uv'));
+	await A.page.evaluate(() => window.__tp.test.v1.bottomDock.activateDock('uv'));
 	await A.page.waitForTimeout(400);
 	const coexist = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const read = (st) => new Promise((r) => st.subscribe((v) => r(v))());
 		return {
 			explorerClosed: await read(s.explorerClose),
@@ -160,7 +160,7 @@ h.run(async () => {
 
 	// gating: a mesh with no uv attribute reports why, and never offers the canvas
 	const gate = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.getObjectByProperty('uuid', uuid);
 		const ok = w.uvEditor.uvEditable(box).ok;
@@ -175,7 +175,7 @@ h.run(async () => {
 
 	// ---------- welded cluster ----------
 	const cluster = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.getObjectByProperty('uuid', uuid);
 		const tris = w.uvEditor.uvTriangles(box, 0);
@@ -195,7 +195,7 @@ h.run(async () => {
 	const before = await uvExpanded(A.page, uuid);
 	const depthBefore = await undoDepth(A.page);
 	const drag = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.getObjectByProperty('uuid', uuid);
 		const seed = w.uvEditor.uvTriangles(box, 0)[0].indices[0];
@@ -218,13 +218,13 @@ h.run(async () => {
 		`a whole drag gesture records exactly ONE undo entry (${depthBefore}->${depthAfter})`
 	);
 	const topKind = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.history.undoStack.subscribe((v) => r(v[v.length - 1]?.kind))())
+		() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((v) => r(v[v.length - 1]?.kind))())
 	);
 	h.check(topKind === 'meshgeo', `the entry rides the existing meshgeo kind (${topKind})`);
 
 	// the commit normalizes the geometry the way peers and the undo replay hold it
 	const shape = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const geo = g.getObjectByProperty('uuid', uuid).geometry;
 		return {
@@ -238,7 +238,7 @@ h.run(async () => {
 	h.check(shape.tris === 12, `the box is still 12 triangles after a UV-only edit (${shape.tris})`);
 
 	// ---------- undo restores the mapping ----------
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(400);
 	const undone = await uvExpanded(A.page, uuid);
 	const restored = undone.length === before.length && before.every((v, i) => Math.abs(v - undone[i]) < 1e-4);
@@ -252,7 +252,7 @@ h.run(async () => {
 	// working feature broken.
 	h.check(await A.page.evaluate(() => typeof window.__uvDebug === 'function'), 'the __uvDebug hook is exposed');
 	const pointerDrag = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const el = document.getElementById('uv-canvas');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.getObjectByProperty('uuid', uuid);
@@ -297,7 +297,7 @@ h.run(async () => {
 	// SHIFT is the primary extend key (the viewport's shift-click convention and
 	// every DCC UV editor); CTRL is accepted too because the mesh tools use it.
 	const multi = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const el = document.getElementById('uv-canvas');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.getObjectByProperty('uuid', uuid);
@@ -347,7 +347,7 @@ h.run(async () => {
 
 	// dragging one member of a multi-selection moves the WHOLE selection
 	const groupDrag = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const el = document.getElementById('uv-canvas');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.getObjectByProperty('uuid', uuid);
@@ -390,12 +390,12 @@ h.run(async () => {
 		groupDrag.minDelta > 0.02 && Math.abs(groupDrag.maxDelta - groupDrag.minDelta) < 1e-3,
 		`dragging one member moves the WHOLE selection by the same delta (${groupDrag.minDelta}..${groupDrag.maxDelta})`
 	);
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(300);
 
 	// ---------- lasso ----------
 	const lassoed = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const el = document.getElementById('uv-canvas');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.getObjectByProperty('uuid', uuid);
@@ -454,7 +454,7 @@ h.run(async () => {
 		document.getElementById('uv-tool-select')?.click();
 		await new Promise((r) => setTimeout(r, 120));
 		let active;
-		window.__stores.uvEditor.uvTool.subscribe((v) => (active = v))();
+		window.__tp.test.v1.uvEditor.uvTool.subscribe((v) => (active = v))();
 		return { present, pressed, active };
 	});
 	h.check(toolBtns.present.length === 3, `the topbar offers all three tools (${toolBtns.present.join(',')})`);

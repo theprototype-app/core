@@ -11,8 +11,8 @@ h.run(async () => {
 
 	// --- pure math: Loop / Timer / Distance / Proximity / OnClick / Counter ---
 	const pure = await A.page.evaluate(() => {
-		const R = window.__stores.flowRuntime;
-		const THREE = window.__stores.THREE;
+		const R = window.__tp.test.v1.flowRuntime;
+		const THREE = window.__tp.test.v1.THREE;
 		const ev = (node, nodes, edges, time, ctx) => R.evalNode(node, nodes || [], edges || [], time || 0, new Set(), ctx);
 		// Loop
 		const loop = (mode, time) => ev({ id: 'l', type: 'loop', data: { from: 0, to: 10, rate: 1, mode } }, [], [], time);
@@ -68,7 +68,7 @@ h.run(async () => {
 
 	// --- object actions apply through the live tick (Set Color / Visibility / LookAt) ---
 	await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		s.commandsHandler.sceneCommand('/create box');
 		s.commandsHandler.sceneCommand('/create box');
@@ -103,7 +103,7 @@ h.run(async () => {
 	});
 	await A.page.waitForTimeout(400);
 	const effects = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		let group;
 		s.objectsGroup.subscribe((g) => (group = g))();
@@ -124,8 +124,8 @@ h.run(async () => {
 
 	// clear the graph before the two-peer block
 	await A.page.evaluate(() => {
-		window.__stores.flowNodes.set([]);
-		window.__stores.flowEdges.set([]);
+		window.__tp.test.v1.flowNodes.set([]);
+		window.__tp.test.v1.flowEdges.set([]);
 	});
 
 	// --- two-peer: an OnClick pulse replicates + both Counters agree ---
@@ -133,7 +133,7 @@ h.run(async () => {
 	await h.connect(A, B);
 
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const nodes = [
 			{ id: 'oc', type: 'onclick', position: { x: 0, y: 0 }, data: { type: 'onclick', pulse: 0.3 } },
 			{ id: 'sel', type: 'objectselector', position: { x: 200, y: 0 }, data: { type: 'objectselector', selected: 'target-uuid' } },
@@ -153,14 +153,14 @@ h.run(async () => {
 	await B.page.waitForTimeout(2000);
 
 	// simulate the object click on A (what raycastSelect calls)
-	await A.page.evaluate(() => window.__stores.flowRuntime.fireObjectClick('target-uuid'));
+	await A.page.evaluate(() => window.__tp.test.v1.flowRuntime.fireObjectClick('target-uuid'));
 	await A.page.waitForTimeout(800);
 
 	const counts = await Promise.all(
 		[A, B].map((peer) =>
 			peer.page.evaluate(() => {
 				let trig;
-				window.__stores.flowTriggers.subscribe((v) => (trig = v))();
+				window.__tp.test.v1.flowTriggers.subscribe((v) => (trig = v))();
 				return { cnt: trig.cnt?.count ?? 0, ocFired: (trig.oc?.lastT ?? -1) > 0 };
 			})
 		)

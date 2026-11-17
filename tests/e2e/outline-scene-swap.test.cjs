@@ -33,12 +33,12 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 	const p = A.page;
 
-	const quiet = () => p.evaluate(() => window.__stores.toasts?.set([]));
+	const quiet = () => p.evaluate(() => window.__tp.test.v1.toasts?.set([]));
 
 	/** every object in the scene that wears an outline pass's render layer */
 	const tainted = () =>
 		p.evaluate(() => {
-			const S = window.__stores;
+			const S = window.__tp?.test.v1;
 			const rd = (s) => { let v; s.subscribe((x) => (v = x))(); return v; };
 			const layers = S.editOverlays.outlineLayerList();
 			const out = [];
@@ -52,7 +52,7 @@ h.run(async () => {
 
 	const state = () =>
 		p.evaluate(() => {
-			const S = window.__stores;
+			const S = window.__tp?.test.v1;
 			const rd = (s) => { let v; s.subscribe((x) => (v = x))(); return v; };
 			return {
 				outline: window.__outlineDebug?.() ?? null,
@@ -63,7 +63,7 @@ h.run(async () => {
 
 	const makeScene = (kind, at, name) =>
 		p.evaluate(async ([kind, at, name]) => {
-			const S = window.__stores;
+			const S = window.__tp?.test.v1;
 			S.commandsHandler.sceneCommand('/clear all');
 			await new Promise((r) => setTimeout(r, 350));
 			S.commandsHandler.sceneCommand('/create ' + kind);
@@ -89,13 +89,13 @@ h.run(async () => {
 
 	const travel = (hash) =>
 		p.evaluate(async ([hash]) => {
-			await window.__stores.levels.travelToLevel(hash, '');
+			await window.__tp.test.v1.levels.travelToLevel(hash, '');
 			await new Promise((r) => setTimeout(r, 1200));
 		}, [hash]);
 
 	const selectFirst = () =>
 		p.evaluate(async () => {
-			const S = window.__stores;
+			const S = window.__tp?.test.v1;
 			let g; S.objectsGroup.subscribe((v) => (g = v))();
 			S.objectActions.selectObject(g.children[0].uuid);
 			await new Promise((r) => setTimeout(r, 700));
@@ -121,7 +121,7 @@ h.run(async () => {
 		'premise: a genuinely selected object DOES wear the outline layer while selected'
 	);
 	const written = await p.evaluate(async () => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		const payload = S.sessions.buildSessionPayload('parked');
 		return (payload.objects ?? []).map((o) => ({ name: o.object?.name, layers: o.object?.layers }));
 	});
@@ -147,7 +147,7 @@ h.run(async () => {
 	// outline adopted it as a real selection member, and the following deselect took the
 	// layer off through the legitimate path. It passed with the strip removed.
 	const healed = await p.evaluate(async ([layers]) => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		S.objectActions.deselectObject();
 		await new Promise((r) => setTimeout(r, 700));
 		const payload = JSON.parse(JSON.stringify(S.sessions.buildSessionPayload('tainted')));
@@ -205,7 +205,7 @@ h.run(async () => {
 	// not move; a ghosted one loses the ghost. Measured on the reporter's own project:
 	// 65585 px before the fix, 0 after.
 	await p.evaluate(() => {
-		const P = window.__stores.postprocessing;
+		const P = window.__tp.test.v1.postprocessing;
 		const original = P.OutlineEffect.prototype.update;
 		P.OutlineEffect.prototype.update = function (renderer, input, delta) {
 			if (window.__forceOutline) this.forceUpdate = true;
@@ -240,7 +240,7 @@ h.run(async () => {
 	h.check(on[1].outline.selected > 0, 'the selection outline still renders after the fix');
 	h.check(on[0].out.length === 1, 'the selected object wears the outline layer');
 	await p.evaluate(async () => {
-		window.__stores.objectActions.deselectObject();
+		window.__tp.test.v1.objectActions.deselectObject();
 		await new Promise((r) => setTimeout(r, 700));
 	});
 	const off = await Promise.all([tainted(), state()]);
@@ -251,7 +251,7 @@ h.run(async () => {
 	// `clone()` copies the layer mask, so duplicating a SELECTED object handed the copy a
 	// layer nothing would ever clear — the same ghost by another route.
 	const dup = await p.evaluate(async () => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		let g; S.objectsGroup.subscribe((v) => (g = v))();
 		const source = g.children[0];
 		S.objectActions.selectObject(source.uuid);

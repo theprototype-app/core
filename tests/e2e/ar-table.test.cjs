@@ -77,7 +77,7 @@ h.run(async () => {
 		console.log('\n=== U. no immersive-ar: the note, never a button ===');
 		const U = await h.setupPage(browser, 'U', { context: { ...N6, deviceScaleFactor: 2 } });
 		const p = U.page;
-		await h.eventually(() => p.evaluate(() => { let v; window.__stores.arTable.arTableEntry.subscribe((x) => (v = x))(); return v; }), (v) => v === 'unsupported', 'the entry reads unsupported (no immersive-ar here)', 10000);
+		await h.eventually(() => p.evaluate(() => { let v; window.__tp.test.v1.arTable.arTableEntry.subscribe((x) => (v = x))(); return v; }), (v) => v === 'unsupported', 'the entry reads unsupported (no immersive-ar here)', 10000);
 		await p.tap('#ps-more');
 		await p.waitForSelector('#ps-tile-ar', { timeout: 10000 });
 		const tile = await p.evaluate(() => {
@@ -88,7 +88,7 @@ h.run(async () => {
 		h.check(tile.note === 'AR needs Android Chrome', `the tile says why: "${tile.note}"`);
 		await p.tap('#ps-tile-ar', { force: true }); // aria-disabled: a person can still press it
 		await p.waitForTimeout(400);
-		const phase = await p.evaluate(() => window.__stores.arTable.arTableDebug().phase);
+		const phase = await p.evaluate(() => window.__tp.test.v1.arTable.arTableDebug().phase);
 		h.check(phase === 'off', `pressing it asks for nothing (phase ${phase})`);
 		await U.ctx.close();
 	}
@@ -99,8 +99,8 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A', { init: initScript(), context: { ...N6, deviceScaleFactor: 2 } });
 	const page = A.page;
 	const g = (fn, arg) => page.evaluate(fn, arg);
-	const read = (name) => g((n) => { let v; window.__stores[n].subscribe((x) => (v = x))(); return v; }, name);
-	const dbg = () => g(() => window.__stores.arTable.arTableDebug());
+	const read = (name) => g((n) => { let v; window.__tp.test.v1[n].subscribe((x) => (v = x))(); return v; }, name);
+	const dbg = () => g(() => window.__tp.test.v1.arTable.arTableDebug());
 	const settle = (n = 6) => iwer.frames(page, n);
 	const cdp = await A.ctx.newCDPSession(page);
 	/** real touches: CDP Input.dispatchTouchEvent */
@@ -115,13 +115,13 @@ h.run(async () => {
 
 	// a scene with a known footprint: two boxes 8 m apart (x), the floor at y = 0
 	await g(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box 1 1 1');
 		s.commandsHandler.sceneCommand('/create box 1 1 1');
 	});
 	await page.waitForTimeout(1500);
 	await g(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let grp;
 		s.objectsGroup.subscribe((v) => (grp = v))();
 		const boxes = grp.children.slice(-2);
@@ -142,7 +142,7 @@ h.run(async () => {
 	if (want('E') || want('F') || want('P') || want('G') || want('T') || want('M') || want('R') || want('X') || want('B')) {
 		// ---- E. entry ------------------------------------------------------------------------------------
 		console.log('\n=== E. More ▸ AR table starts an immersive-ar session with hit-test ===');
-		await h.eventually(() => g(() => { let v; window.__stores.arTable.arTableEntry.subscribe((x) => (v = x))(); return v; }), (v) => v === 'ready', 'the entry is ready (IWER answers immersive-ar)', 10000);
+		await h.eventually(() => g(() => { let v; window.__tp.test.v1.arTable.arTableEntry.subscribe((x) => (v = x))(); return v; }), (v) => v === 'ready', 'the entry is ready (IWER answers immersive-ar)', 10000);
 		const modeBefore = await read('editorMode');
 		await page.tap('#ps-more');
 		await page.waitForSelector('#ps-tile-ar', { timeout: 10000 });
@@ -194,13 +194,13 @@ h.run(async () => {
 		d = await dbg();
 		// the expected footprint: every object in the content frame (the two boxes plus whatever the scene had)
 		const exp = await g(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let grp, rig;
 			s.objectsGroup.subscribe((v) => (grp = v))();
 			s.worldRig.subscribe((v) => (rig = v))();
 			rig.updateWorldMatrix(true, true);
 			// the anchor in WORLD space through the rig = where it stands
-			const a = window.__stores.arTable.arTableDebug().anchor;
+			const a = window.__tp.test.v1.arTable.arTableDebug().anchor;
 			const e = rig.matrixWorld.elements;
 			const x = e[0] * a[0] + e[4] * a[1] + e[8] * a[2] + e[12];
 			const y = e[1] * a[0] + e[5] * a[1] + e[9] * a[2] + e[13];
@@ -247,7 +247,7 @@ h.run(async () => {
 		console.log('\n=== T. Play: taps click ===');
 		/** where a box's centre is on screen through the camera the tap uses */
 		const boxScreen = (i) => g((i) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let grp, r;
 			s.objectsGroup.subscribe((v) => (grp = v))();
 			s.globalRenderer.subscribe((v) => (r = v))();
@@ -257,7 +257,7 @@ h.run(async () => {
 			return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight, inFront: v.z < 1 };
 		}, i);
 		// look at the right box from 35 cm, as a person leaning in to press it would
-		const boxAt = await g(() => { let grp; window.__stores.objectsGroup.subscribe((v) => (grp = v))(); const o = grp.children.find((c) => c.uuid === window.__arBoxes[1]); o.updateWorldMatrix(true, false); return o.matrixWorld.elements.slice(12, 15); });
+		const boxAt = await g(() => { let grp; window.__tp.test.v1.objectsGroup.subscribe((v) => (grp = v))(); const o = grp.children.find((c) => c.uuid === window.__arBoxes[1]); o.updateWorldMatrix(true, false); return o.matrixWorld.elements.slice(12, 15); });
 		await iwer.pose(page, 'head', [boxAt[0], boxAt[1] + 0.25, boxAt[2] + 0.25], { pitch: -Math.PI / 4 });
 		await settle(6);
 		let sc = await boxScreen(1);
@@ -280,7 +280,7 @@ h.run(async () => {
 		await page.waitForTimeout(300);
 		const hudIn = await g(() => { const el = document.querySelector('[data-hud-id="ar-score"]'); return { there: !!el, inSlot: !!el?.closest('#ar-hud-slot') }; });
 		h.check(hudIn.there && hudIn.inSlot, `the scene's HUD is drawn in the AR overlay while playing (${JSON.stringify(hudIn)})`);
-		const boardHidden = await g(() => { let sc; window.__stores.globalScene.subscribe((v) => (sc = v))(); const b = sc.getObjectByName('vr-game-panel'); return !b || !b.visible; });
+		const boardHidden = await g(() => { let sc; window.__tp.test.v1.globalScene.subscribe((v) => (sc = v))(); const b = sc.getObjectByName('vr-game-panel'); return !b || !b.visible; });
 		h.check(boardHidden, 'the headset VR board stays down on an AR table');
 		// 50-int (the 53 rules for new UI): the overlay a phone shows while playing passes the serious-only axe gate
 		const { AxeBuilder } = require('@axe-core/playwright');
@@ -304,13 +304,13 @@ h.run(async () => {
 		// ---- R. the room -----------------------------------------------------------------------------------------
 		if (B) {
 			console.log('\n=== R. a desktop peer plays the same room ===');
-			const before = await g(() => { let grp; window.__stores.objectsGroup.subscribe((v) => (grp = v))(); return grp.children.length; });
-			await B.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create sphere'));
-			await h.eventually(() => g(() => { let grp; window.__stores.objectsGroup.subscribe((v) => (grp = v))(); return grp.children.length; }), (n) => n === before + 1, "the peer's new sphere arrives on the phone", 15000);
+			const before = await g(() => { let grp; window.__tp.test.v1.objectsGroup.subscribe((v) => (grp = v))(); return grp.children.length; });
+			await B.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create sphere'));
+			await h.eventually(() => g(() => { let grp; window.__tp.test.v1.objectsGroup.subscribe((v) => (grp = v))(); return grp.children.length; }), (n) => n === before + 1, "the peer's new sphere arrives on the phone", 15000);
 			const onTable = await g(() => {
 				let grp, rig;
-				window.__stores.objectsGroup.subscribe((v) => (grp = v))();
-				window.__stores.worldRig.subscribe((v) => (rig = v))();
+				window.__tp.test.v1.objectsGroup.subscribe((v) => (grp = v))();
+				window.__tp.test.v1.worldRig.subscribe((v) => (rig = v))();
 				const o = grp.children.at(-1);
 				o.updateWorldMatrix(true, false);
 				return { inRig: o.parent?.parent === rig, y: o.matrixWorld.elements[13], scale: o.getWorldScale(o.scale.clone()).x / o.scale.x };
@@ -341,7 +341,7 @@ h.run(async () => {
 		h.check(d.rig.visible && d.rig.scale === 1 && d.rig.position.every((v) => v === 0) && Math.abs(d.rig.quaternion[3]) === 1, `the rig is 1:1 again (${JSON.stringify(d.rig)})`);
 		h.check((await read('editorMode')) === modeBefore, `the editor mode is back (${modeBefore})`);
 		h.check((await read('isVRMode')) === false, 'VR mode off');
-		const left = await g(() => { let sc; window.__stores.globalScene.subscribe((v) => (sc = v))(); return { reticle: !!sc.getObjectByName('ar-reticle'), overlay: document.getElementById('ar-overlay')?.hasAttribute('data-active') }; });
+		const left = await g(() => { let sc; window.__tp.test.v1.globalScene.subscribe((v) => (sc = v))(); return { reticle: !!sc.getObjectByName('ar-reticle'), overlay: document.getElementById('ar-overlay')?.hasAttribute('data-active') }; });
 		h.check(!left.reticle && !left.overlay, `no reticle left in the scene, overlay hidden (${JSON.stringify(left)})`);
 		const hudHome = await g(() => { const el = document.querySelector('[data-hud-id="ar-score"]'); return { there: !!el, inSlot: !!el?.closest('#ar-hud-slot') }; });
 		h.check(hudHome.there && !hudHome.inSlot, `the HUD is back over the editor viewport (${JSON.stringify(hudHome)})`);
@@ -351,7 +351,7 @@ h.run(async () => {
 	if (want('Q')) {
 		console.log('\n=== Q. Play with passthrough is the old session request ===');
 		const n0 = await g(() => window.__iwer.sessions.length);
-		await g(() => window.__stores.playMode.choosePlayAs('ar'));
+		await g(() => window.__tp.test.v1.playMode.choosePlayAs('ar'));
 		let maxPhase = 'off';
 		await page.tap('#ps-play'); // the phone bar's Play (requestPlay, the same press as the desktop FAB)
 		const until = Date.now() + 15000;
@@ -366,7 +366,7 @@ h.run(async () => {
 		h.check(q && q.mode === 'immersive-ar' && !q.required.includes('hit-test') && !q.overlay, `Play asks immersive-ar with the passthrough init (no required hit-test, no overlay): ${JSON.stringify(q)}`);
 		h.check(maxPhase === 'off' && (await dbg()).phase === 'off', 'no AR table is involved');
 		await iwer.exit(page);
-		await g(() => window.__stores.playMode.choosePlayAs('screen'));
+		await g(() => window.__tp.test.v1.playMode.choosePlayAs('screen'));
 	}
 
 	h.check(h.pageErrors(A).length === 0, `no page errors on the phone (${h.pageErrors(A).join(' | ').slice(0, 300)})`);

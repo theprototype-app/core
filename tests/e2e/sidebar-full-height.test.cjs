@@ -44,8 +44,8 @@ h.run(async () => {
 
 	// open Configure Scene (right sidebar) + the docked Node editor (bottom dock)
 	await page.evaluate(() => {
-		window.__stores.showSidebar('scene');
-		window.__stores.flowGraphClose.set(false);
+		window.__tp.test.v1.showSidebar('scene');
+		window.__tp.test.v1.flowGraphClose.set(false);
 	});
 	await page.waitForTimeout(900);
 	const pin = page.locator('#sidebar-full-right');
@@ -79,7 +79,7 @@ h.run(async () => {
 	await page.evaluate(() => window.dispatchEvent(new Event('resize')));
 	await page.waitForTimeout(600);
 	const pillW = await rect(page, '.connect-pill');
-	const dockedW = await page.evaluate(() => new Promise((r) => window.__stores.connectDocked.subscribe(r)()));
+	const dockedW = await page.evaluate(() => new Promise((r) => window.__tp.test.v1.connectDocked.subscribe(r)()));
 	const freeMid = (logo1.right + cluster.x) / 2;
 	h.check(dockedW === false && pillW.w >= 478 && Math.abs(pillW.x + pillW.w / 2 - freeMid) < 4 && pillW.right < cluster.x, `a 480 px Connect pill stays a pill, centred between the logo and the slid corner buttons (docked ${dockedW}, pill ${pillW.x}..${pillW.right}, gap centre ${freeMid}, corner buttons from ${cluster.x})`);
 	await wide.evaluate((el) => el.remove());
@@ -115,7 +115,7 @@ h.run(async () => {
 		await page.waitForTimeout(600);
 		const p2 = await rect(page, '.connect-pill');
 		const c2 = await rect(page, '#notes-toggle');
-		const d2 = await page.evaluate(() => new Promise((r) => window.__stores.connectDocked.subscribe(r)()));
+		const d2 = await page.evaluate(() => new Promise((r) => window.__tp.test.v1.connectDocked.subscribe(r)()));
 		const sL = await rect(page, '#sidebar-strip-left');
 		const sR = await rect(page, '#sidebar-strip-right');
 		h.check(d2 === false && p2.x > logo.right && p2.right < c2.x && sL.y === 0 && sR.y === 0, `both pinned: a 480 px pill fits between the logo and the corner buttons and both columns start at the top (docked ${d2}, pill ${p2.x}..${p2.right}, logo ..${logo.right}, buttons ${c2.x}, strips ${sL.y}/${sR.y})`);
@@ -143,9 +143,9 @@ h.run(async () => {
 	await page.locator('#restore-session-dismiss').click({ timeout: 6000 }).catch(() => {});
 	await page.waitForTimeout(800);
 	await page.evaluate(() => {
-		window.__stores.showSidebar('scene');
-		window.__stores.objectListClose.set(false);
-		window.__stores.flowGraphClose.set(false);
+		window.__tp.test.v1.showSidebar('scene');
+		window.__tp.test.v1.objectListClose.set(false);
+		window.__tp.test.v1.flowGraphClose.set(false);
 	});
 	await page.waitForTimeout(1000);
 	const sR = await rect(page, '#sidebar-strip-right');
@@ -156,8 +156,8 @@ h.run(async () => {
 	// ---------- 4. the narrow 1024 window ----------
 	await page.setViewportSize({ width: 1024, height: 768 });
 	await page.waitForTimeout(1200);
-	const docked = await page.evaluate(() => new Promise((r) => window.__stores.connectDocked.subscribe(r)()));
-	const barH = await page.evaluate(() => new Promise((r) => window.__stores.connectBarHeight.subscribe(r)()));
+	const docked = await page.evaluate(() => new Promise((r) => window.__tp.test.v1.connectDocked.subscribe(r)()));
+	const barH = await page.evaluate(() => new Promise((r) => window.__tp.test.v1.connectBarHeight.subscribe(r)()));
 	const sR2 = await rect(page, '#sidebar-strip-right');
 	const notes2 = await rect(page, '#notes-toggle');
 	const pill = await rect(page, '.connect-wrap');

@@ -21,12 +21,12 @@ const h = require('./helpers.cjs');
 const metas = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.sessions.sessions.subscribe((x) => (v = x))();
+		window.__tp.test.v1.sessions.sessions.subscribe((x) => (v = x))();
 		return (v ?? []).map((m) => ({ id: m.id, name: m.name, lib: m.hasLibrary, files: m.libraryCount }));
 	});
 
 const openSessions = async (p) => {
-	await p.page.evaluate(() => window.__stores.sessionsOpen.set(true));
+	await p.page.evaluate(() => window.__tp.test.v1.sessionsOpen.set(true));
 	await p.page.waitForTimeout(900);
 };
 
@@ -34,7 +34,7 @@ const openSessions = async (p) => {
 const dialog = (p) =>
 	p.page.evaluate(() => {
 		let d;
-		window.__stores.confirmDialog.confirmDialog.subscribe((v) => (d = v))();
+		window.__tp.test.v1.confirmDialog.confirmDialog.subscribe((v) => (d = v))();
 		return d
 			? {
 					title: d.title,
@@ -46,20 +46,20 @@ const dialog = (p) =>
 	});
 /** answer it: false = cancel (a choices dialog resolves null), a string = that choice */
 const answer = (p, value) =>
-	p.page.evaluate((v) => window.__stores.confirmDialog.resolveConfirm(v), value);
+	p.page.evaluate((v) => window.__tp.test.v1.confirmDialog.resolveConfirm(v), value);
 
 /** where the app thinks it is — the identity chip and the window title both read this */
 const level = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.levels.currentLevel.subscribe((x) => (v = x))();
+		window.__tp.test.v1.levels.currentLevel.subscribe((x) => (v = x))();
 		return v ?? null;
 	});
 
 const libraryOf = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.explorer.explorerItems.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((x) => (v = x))();
 		return (v ?? []).map((i) => i.name);
 	});
 
@@ -67,14 +67,14 @@ const libraryOf = (p) =>
 const volsOf = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.mountedVolumes.mountedVolumes.subscribe((x) => (v = x))();
+		window.__tp.test.v1.mountedVolumes.mountedVolumes.subscribe((x) => (v = x))();
 		return (v ?? []).map((r) => ({ id: r.id, sessionId: r.sessionId, name: r.name, items: (r.items ?? []).length }));
 	});
 
 const foldersOf = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.explorer.explorerFolders.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorer.explorerFolders.subscribe((x) => (v = x))();
 		return (v ?? []).map((f) => f.name);
 	});
 
@@ -111,18 +111,18 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1440, height: 900 } } });
 	const page = A.page;
-	await page.waitForFunction(() => !!window.__stores?.sessions && !!window.__stores?.explorer, null, {
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.sessions && !!window.__tp?.test.v1?.explorer, null, {
 		timeout: 30000
 	});
 	await page.evaluate(async () => {
-		await window.__stores.explorer.loadExplorer();
-		await window.__stores.explorer.clearLibrary();
+		await window.__tp.test.v1.explorer.loadExplorer();
+		await window.__tp.test.v1.explorer.clearLibrary();
 	});
 	await page.waitForTimeout(500);
 
 	// one scene worth saving, and one file so the project entry is a real project
 	await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1200));
 		s.objectActions.deselectObject();
@@ -130,7 +130,7 @@ h.run(async () => {
 	});
 	await page.waitForTimeout(900);
 	await page.evaluate(async () => {
-		const s = window.__stores.sessions;
+		const s = window.__tp.test.v1.sessions;
 		s.saveSession('Wharf');
 		await new Promise((r) => setTimeout(r, 400));
 		await s.saveSessionWithLibrary('Depot');
@@ -251,7 +251,7 @@ h.run(async () => {
 	await page.waitForTimeout(900);
 	const cancelled = await page.evaluate(() => {
 		let open;
-		window.__stores.sessionsOpen.subscribe((v) => (open = v))();
+		window.__tp.test.v1.sessionsOpen.subscribe((v) => (open = v))();
 		return open;
 	});
 	h.check(cancelled === true, 'cancelling leaves the manager open, exactly where it was');
@@ -316,7 +316,7 @@ h.run(async () => {
 	// for was in BOTH answers.
 	await page.evaluate(async () => {
 		const bytes = new TextEncoder().encode('left behind before the open');
-		await window.__stores.explorer.addItemFromBytes(bytes.buffer, 'stray-before-open.txt', null);
+		await window.__tp.test.v1.explorer.addItemFromBytes(bytes.buffer, 'stray-before-open.txt', null);
 	});
 	await page.waitForTimeout(400);
 	h.check((await libraryOf(A)).includes('stray-before-open.txt'), 'premise: a stray file is in the library before the open');
@@ -340,7 +340,7 @@ h.run(async () => {
 	);
 	const manifestName = await page.evaluate(() => {
 		let m;
-		window.__stores.projectManifest.projectManifest.subscribe((x) => (m = x))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((x) => (m = x))();
 		return m?.name ?? '';
 	});
 	h.check(
@@ -356,8 +356,8 @@ h.run(async () => {
 	const depotId = (await metas(A)).find((m) => m.name === 'Depot')?.id;
 	h.check(!!depotId, 'premise: the Depot entry is still there to export');
 	const b64 = await page.evaluate(async (id) => {
-		const payload = await window.__stores.sessions.getSession(id);
-		const out = await window.__stores.projectFile.exportProjectFromSession(payload);
+		const payload = await window.__tp.test.v1.sessions.getSession(id);
+		const out = await window.__tp.test.v1.projectFile.exportProjectFromSession(payload);
 		if (!out) return null;
 		// CHUNKED on the page side: String.fromCharCode(...bytes) over a whole zip
 		// overflows the argument stack, which reads as a mysteriously empty export
@@ -405,7 +405,7 @@ h.run(async () => {
 	await answer(A, false);
 	await page.waitForTimeout(600);
 
-	await page.evaluate(() => window.__stores.sessionsOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.sessionsOpen.set(false));
 	await page.waitForTimeout(900);
 
 	// ---- 6. THE MOUNT PICKER'S IMPORT ROW MOUNTS WHAT IT IMPORTS ---------------------
@@ -465,7 +465,7 @@ h.run(async () => {
 		() =>
 			page.evaluate(() => {
 				let v;
-				window.__stores.explorer.activeFolder.subscribe((x) => (v = x))();
+				window.__tp.test.v1.explorer.activeFolder.subscribe((x) => (v = x))();
 				return v ?? null;
 			}),
 		(v) => typeof v === 'string' && v.startsWith('vol:'),

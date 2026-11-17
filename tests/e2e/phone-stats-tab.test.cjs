@@ -43,7 +43,7 @@ h.run(async () => {
 	};
 	const state = () =>
 		read(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const g = (x) => {
 				let v;
 				x.subscribe((y) => (v = y))();
@@ -68,7 +68,7 @@ h.run(async () => {
 				stripTab: !!r('[data-dock-tab="stats"]')
 			};
 		});
-	await read(() => window.__stores.toastStore.set([]));
+	await read(() => window.__tp.test.v1.toastStore.set([]));
 
 	// ---------- 0. EVERY way in opens it docked, never one floating frame first ----------
 	// (the burger menu's "Statistics" and the toolbar's budget badge both just set statsOpen — the
@@ -102,10 +102,10 @@ h.run(async () => {
 			return { seen: window.__seenFrames, floating: window.__floatFrames };
 		});
 	};
-	let smp = await sampleOpen(() => read(() => window.__stores.sceneBudget.statsOpen.set(true)));
+	let smp = await sampleOpen(() => read(() => window.__tp.test.v1.sceneBudget.statsOpen.set(true)));
 	let d0 = await state();
 	h.check(smp.seen > 0 && smp.floating === 0 && d0.host === 'shown' && d0.vis === 'stats', `opened the way the menu / badge do, it is docked from its first frame (${JSON.stringify(smp)}, front ${d0.vis})`);
-	await read(() => window.__stores.sceneBudget.statsOpen.set(false));
+	await read(() => window.__tp.test.v1.sceneBudget.statsOpen.set(false));
 	await P.waitForTimeout(500);
 	// the burger menu's own row, where the phone shows it
 	const burger = await P.evaluate(() => !!document.querySelector('#logo-menu'));
@@ -115,9 +115,9 @@ h.run(async () => {
 			smp = await sampleOpen(() => tapOn('#open-stats', 100));
 			d0 = await state();
 			h.check(smp.seen > 0 && smp.floating === 0 && d0.host === 'shown', `burger menu ▸ Statistics opens it docked too (${JSON.stringify(smp)})`);
-			await read(() => window.__stores.sceneBudget.statsOpen.set(false));
+			await read(() => window.__tp.test.v1.sceneBudget.statsOpen.set(false));
 			await P.waitForTimeout(500);
-		} else await read(() => window.__stores.closeMenu.set(true));
+		} else await read(() => window.__tp.test.v1.closeMenu.set(true));
 	}
 	h.check((await read(() => localStorage.getItem('mobileUndockAllowed'))) !== 'true', 'premise: "Allow undocking on touch screens" is off by default');
 
@@ -169,7 +169,7 @@ h.run(async () => {
 	h.check(!d.open && !d.tabs.includes('stats') && !d.stats, `the tab's ✕ closes Statistics (${JSON.stringify({ open: d.open, tabs: d.tabs })})`);
 
 	// ---------- 5. unfold: a floating window again; fold: a tab again ----------
-	await read(() => window.__stores.sceneBudget.statsOpen.set(true));
+	await read(() => window.__tp.test.v1.sceneBudget.statsOpen.set(true));
 	await P.waitForTimeout(600);
 	await P.setViewportSize({ width: 770, height: 850 });
 	await P.waitForTimeout(1200);
@@ -181,11 +181,11 @@ h.run(async () => {
 	h.check(d.open && d.tabs.includes('stats') && d.host !== null, `folded again, it is a dock tab again (${JSON.stringify({ host: d.host, tabs: d.tabs })})`);
 
 	// ---------- 6. "Allow undocking on touch screens": the phone keeps the floating window ----------
-	await read(() => window.__stores.mobileUndockAllowed.set(true));
+	await read(() => window.__tp.test.v1.mobileUndockAllowed.set(true));
 	await P.waitForTimeout(800);
 	d = await state();
 	h.check(d.open && d.host === null && !d.tabs.includes('stats'), `with undocking allowed it floats on the phone too (${JSON.stringify({ host: d.host, tabs: d.tabs })})`);
-	await read(() => window.__stores.mobileUndockAllowed.set(false));
+	await read(() => window.__tp.test.v1.mobileUndockAllowed.set(false));
 	await P.waitForTimeout(500);
 
 	await h.finish(browser);

@@ -10,7 +10,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	// open the logo/burger menu -> sidebar with the file rows
-	await A.page.evaluate(() => window.__stores.closeMenu.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.closeMenu.set(false));
 	await A.page.waitForSelector('#sidebar70');
 
 	const accepts = await A.page.evaluate(() => ({
@@ -25,7 +25,7 @@ h.run(async () => {
 
 	// a tiny real GLB, exported in-page
 	const glbArr = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const mesh = new s.THREE.Mesh(new s.THREE.BoxGeometry(1, 1, 1), new s.THREE.MeshStandardMaterial());
 		const glb = await new Promise((res, rej) =>
 			new s.GLTFExporterModule.GLTFExporter().parse(mesh, (r) => res(r), (e) => rej(e), { binary: true })
@@ -36,7 +36,7 @@ h.run(async () => {
 
 	const countObjects = () =>
 		A.page.evaluate(
-			() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g?.children?.length ?? 0))())
+			() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g?.children?.length ?? 0))())
 		);
 	const before = await countObjects();
 

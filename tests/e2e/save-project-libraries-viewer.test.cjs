@@ -8,20 +8,20 @@
 // Run: APP_URL='https://localhost:5482/' npm run e2e -- save-project-libraries-viewer
 const h = require('./helpers.cjs');
 
-const debug = (p) => p.page.evaluate(() => window.__stores.sessionVolumes.volumeDebug());
+const debug = (p) => p.page.evaluate(() => window.__tp.test.v1.sessionVolumes.volumeDebug());
 const hostSaves = async (H) => (await debug(H)).log.filter((l) => /^volsave from .+: saved /.test(l)).length;
 const dialogOpen = (p) => p.page.locator('#save-many-dialog').isVisible().catch(() => false);
 const toasts = (p) => p.page.evaluate(() => [...document.querySelectorAll('.tp-toast')].map((t) => t.innerText.trim()));
 const setting = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.saveOptions.saveOptions.subscribe((x) => (v = x))();
+		window.__tp.test.v1.saveOptions.saveOptions.subscribe((x) => (v = x))();
 		return v.saveMany;
 	});
 const ownScenes = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.explorer.explorerItems.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((x) => (v = x))();
 		return (v ?? []).filter((i) => i.kind === 'scene').map((i) => i.hash);
 	});
 const ctrlS = async (p) => {
@@ -34,18 +34,18 @@ h.run(async () => {
 	const H = await h.setupPage(browser, 'H');
 	const G = await h.setupPage(browser, 'G');
 	for (const peer of [H, G]) {
-		await peer.page.waitForFunction(() => !!window.__stores?.sessionVolumes && !!window.__stores?.saveOptions && !!window.__stores?.levels, null, {
+		await peer.page.waitForFunction(() => !!window.__tp?.test.v1?.sessionVolumes && !!window.__tp?.test.v1?.saveOptions && !!window.__tp?.test.v1?.levels, null, {
 			timeout: 60000
 		});
 		await peer.page.evaluate(async () => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			await s.explorer.loadExplorer();
 			await s.explorer.clearLibrary();
 			s.levels.currentLevel.set(null);
 		});
 	}
 	await H.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1300));
 		s.objectActions.deselectObject();
@@ -53,20 +53,20 @@ h.run(async () => {
 	});
 	await h.connect(G, H);
 	await h.eventually(
-		() => G.page.evaluate(() => { let v; window.__stores.sessionVolumes.sessionVolumes.subscribe((x) => (v = x))(); return v.length; }),
+		() => G.page.evaluate(() => { let v; window.__tp.test.v1.sessionVolumes.sessionVolumes.subscribe((x) => (v = x))(); return v.length; }),
 		(n) => n === 1,
 		"premise: G has joined H's session (two libraries open)",
 		60000
 	);
-	const volId = await G.page.evaluate(() => { let v; window.__stores.sessionVolumes.sessionVolumes.subscribe((x) => (v = x))(); return v[0].id; });
+	const volId = await G.page.evaluate(() => { let v; window.__tp.test.v1.sessionVolumes.sessionVolumes.subscribe((x) => (v = x))(); return v[0].id; });
 	h.check((await setting(G)) === 'ask', 'premise: the setting is Ask');
 
 	// ---- 5. a viewer: the session row is disabled with the reason -------------------------------
 	await H.page.evaluate((gid) => {
-		window.__stores.cloudHooks.rolesInfo.set({ myId: 'host', myRole: 'admin', amAdmin: true, order: [], roleOf: (id) => (id === gid ? 'viewer' : 'editor'), setRole() {} });
+		window.__tp.test.v1.cloudHooks.rolesInfo.set({ myId: 'host', myRole: 'admin', amAdmin: true, order: [], roleOf: (id) => (id === gid ? 'viewer' : 'editor'), setRole() {} });
 	}, G.id);
 	await h.eventually(
-		() => G.page.evaluate(() => { let v; window.__stores.sessionVolumes.sessionVolumes.subscribe((x) => (v = x))(); return v[0]?.role; }),
+		() => G.page.evaluate(() => { let v; window.__tp.test.v1.sessionVolumes.sessionVolumes.subscribe((x) => (v = x))(); return v[0]?.role; }),
 		(r) => r === 'viewer',
 		'premise: H made G a viewer',
 		15000
@@ -87,7 +87,7 @@ h.run(async () => {
 	h.check((await G.page.locator('#save-many-setting-seg-ask').getAttribute('aria-checked')) === 'true', '…showing Ask');
 	await G.page.locator('#save-many-setting-seg-all').click();
 	h.check((await setting(G)) === 'all', 'the row writes the setting ("Save all I can")');
-	await H.page.evaluate(() => window.__stores.cloudHooks.rolesInfo.set(null));
+	await H.page.evaluate(() => window.__tp.test.v1.cloudHooks.rolesInfo.set(null));
 
 	await h.finish(browser);
 });

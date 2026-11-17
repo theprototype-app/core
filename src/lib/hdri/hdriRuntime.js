@@ -34,6 +34,7 @@ import { qualityOverrides } from '../qualityGovernor';
 import { isVRMode } from '../../stores/sceneStore';
 import { hdriQuality } from './hdriPrefs.js';
 import { environment, presetPayload } from '../environment';
+import { createRenderTarget } from '../render/renderTargets.js'; // 101 F3: the one factory
 
 const HALF_MAX = 65000; // a sun pixel past half-float range becomes Inf and NaNs the PMREM blur
 
@@ -165,7 +166,7 @@ async function recoverUltraHdr(renderer, buffer, maxWidth) {
 	const sdr = texture(sdrImage, THREE.SRGBColorSpace);
 	const gain = texture(gainImage, THREE.NoColorSpace);
 	const width = Math.min(sdrImage.width, maxWidth);
-	const target = new THREE.WebGLRenderTarget(width, Math.round((width * sdrImage.height) / sdrImage.width), {
+	const target = createRenderTarget(width, Math.round((width * sdrImage.height) / sdrImage.width), {
 		type: THREE.HalfFloatType,
 		format: THREE.RGBAFormat,
 		minFilter: THREE.LinearFilter,

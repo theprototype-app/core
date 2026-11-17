@@ -32,8 +32,8 @@ h.run(async () => {
 		Date.now = () => t;
 	}, T0);
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.moduleSDK, { timeout: 30000 });
-	await A.page.evaluate(() => window.__stores.waterPrefs?.waterQuality?.set?.('high'));
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.moduleSDK, { timeout: 30000 });
+	await A.page.evaluate(() => window.__tp.test.v1.waterPrefs?.waterQuality?.set?.('high'));
 	/** @type {string[]} */
 	const rows = [];
 	if (WRITE) fs.mkdirSync(GOLD, { recursive: true });
@@ -41,7 +41,7 @@ h.run(async () => {
 	for (const slug of [...GATED, ...REPORT]) {
 		const bytes = Array.from(fs.readFileSync(path.join(FIX, slug + '.tpscene')));
 		await A.page.evaluate(async (arr) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			if (await new Promise((r) => s.physics.simulating.subscribe(r)())) s.physics.stopSimulation();
 			const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 			// the 1.22 behaviour for the golden run: nothing starts by itself on any build

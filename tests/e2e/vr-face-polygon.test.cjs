@@ -8,7 +8,7 @@ const h = require('./helpers.cjs');
 const rd = (A, path) =>
 	A.page.evaluate((p) => {
 		let v;
-		p.split('.').reduce((o, k) => o[k], window.__stores).subscribe((x) => (v = x))();
+		p.split('.').reduce((o, k) => o[k], window.__tp?.test.v1).subscribe((x) => (v = x))();
 		return v;
 	}, path);
 
@@ -18,7 +18,7 @@ h.run(async () => {
 
 	// --- granularity changes what a single pick selects ---
 	const gran = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		s.commandsHandler.sceneCommand('/create box');
@@ -37,7 +37,7 @@ h.run(async () => {
 
 	// --- Multi accumulates picks; a repeat trigger removes one ---
 	const multi = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const read = () => {
 			let v;
 			s.faceEdit.faceEditSelectedTris.subscribe((x) => (v = x))();
@@ -61,7 +61,7 @@ h.run(async () => {
 	// --- the inset-cap problem: after a FACE inset the top is ONE coplanar group;
 	//     POLYGON isolates a single tri where FACE can only grab all of it ---
 	const iso = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const box = window.__pbox;
 		const topGroup = () => {
 			const tris = s.faceEdit.readTriangles(box.geometry);
@@ -93,7 +93,7 @@ h.run(async () => {
 
 	// --- a polygon op commits + is undoable ---
 	const op = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const box = window.__pbox;
 		const tris = () => s.faceEdit.readTriangles(box.geometry).length;
 		s.faceEdit.faceEditMulti.set(false);

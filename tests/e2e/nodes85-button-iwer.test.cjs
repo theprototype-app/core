@@ -15,7 +15,7 @@ h.run(async () => {
 
 	// the button: a flat box with Highlight (unwired) + On Click -> Press Button
 	const uuid = await page.evaluate(() => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		S.commandsHandler.sceneCommand('/create box');
 		let g;
 		S.objectsGroup.subscribe((x) => (g = x))();
@@ -27,7 +27,7 @@ h.run(async () => {
 	await page.waitForTimeout(1500); // '/create box' re-seats after the call
 	await iwer.enter(page);
 	// VR's game mode: Interact (the Play FAB enters VR in Edit; the laser's game feel — and its hover — is Interact's)
-	await page.evaluate(() => window.__stores.objectActions.setEditorMode('interact'));
+	await page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('interact'));
 	await iwer.frames(page, 6);
 	await iwer.pose(page, 'head', [0, 1.6, 0]);
 	await iwer.pose(page, 'right', [0.2, 1.3, -0.3], { yaw: 0, pitch: 0 });
@@ -35,11 +35,11 @@ h.run(async () => {
 	await iwer.frames(page, 6);
 	/** put the button 1.5 m down the right controller's ray, facing it, in the objects group's frame */
 	const placed = await page.evaluate((u) => {
-		const THREE = window.__stores.THREE;
+		const THREE = window.__tp.test.v1.THREE;
 		let r;
 		let g;
-		window.__stores.globalRenderer.subscribe((v) => (r = v))();
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		let c = null;
 		for (const i of [0, 1]) if (r.xr.getController(i).userData.handedness === 'right') c = r.xr.getController(i);
 		c.updateMatrixWorld(true);
@@ -51,18 +51,18 @@ h.run(async () => {
 		o.scale.set(0.3, 0.3, 0.06);
 		o.quaternion.identity();
 		o.updateMatrixWorld(true);
-		window.__stores.objectActions?.broadcastTransform?.(o);
+		window.__tp.test.v1.objectActions?.broadcastTransform?.(o);
 		return { world: world.toArray(), local: o.position.toArray() };
 	}, uuid);
 	console.log('  button placed at ' + JSON.stringify(placed));
 	// tell B where it is (a plain move, the way a drag lands)
 	await page.evaluate(([u, p]) => {
 		let peer;
-		window.__stores.peers.subscribe((v) => (peer = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (peer = v))();
 		peer?.send({ type: 'move', uuid: u, pos: p, rot: [0, 0, 0], scale: [0.3, 0.3, 0.06] });
 	}, [uuid, placed.local]);
 	await h.eventually(
-		() => B.page.evaluate((u) => { let g; window.__stores.objectsGroup.subscribe((x) => (g = x))(); return g.getObjectByProperty('uuid', u)?.position.toArray(); }, uuid),
+		() => B.page.evaluate((u) => { let g; window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))(); return g.getObjectByProperty('uuid', u)?.position.toArray(); }, uuid),
 		(p) => !!p && p.every((v, i) => Math.abs(v - placed.local[i]) < 1e-4),
 		'premise: B has the button where A put it',
 		15000
@@ -71,7 +71,7 @@ h.run(async () => {
 	const glow = (p) =>
 		p.page.evaluate((u) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((x) => (g = x))();
+			window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 			const m = g.getObjectByProperty('uuid', u).material;
 			return { hex: m.emissive.getHex(), intensity: m.emissiveIntensity };
 		}, uuid);
@@ -79,7 +79,7 @@ h.run(async () => {
 	const unlit = await glow(A);
 	// the graph goes in AFTER the placement: a driven object's pose is restored to its base every frame
 	await page.evaluate((u) => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		const nodes = [
 			{ id: 'hl', type: 'highlight', data: { color: '#ffd54a', strength: 0.8, fade: 0.1 } },
 			{ id: 'click', type: 'onclick', data: {} },
@@ -90,15 +90,15 @@ h.run(async () => {
 		for (const [source, target, targetHandle] of [['hl', 'sel', null], ['click', 'press', 'trigger'], ['press', 'sel', null]])
 			S.nodesHandler.createFlowEdge({ id: 'e-' + source + '-' + target + (targetHandle ? '.' + targetHandle : ''), source, target, ...(targetHandle ? { targetHandle } : {}) });
 	}, uuid);
-	await h.eventually(() => Promise.all(peers.map((p) => p.page.evaluate(() => window.__stores.nodesHandler.graphHash()))), (hs) => hs[0] === hs[1], 'premise: B holds the graph', 30000);
+	await h.eventually(() => Promise.all(peers.map((p) => p.page.evaluate(() => window.__tp.test.v1.nodesHandler.graphHash()))), (hs) => hs[0] === hs[1], 'premise: B holds the graph', 30000);
 
 	// ---- the laser lights it — for A only
 	await iwer.frames(page, 12);
-	const hov = await page.evaluate(() => window.__stores.hoverState.hoverDebug());
+	const hov = await page.evaluate(() => window.__tp.test.v1.hoverState.hoverDebug());
 	console.log('  hover (A): ' + JSON.stringify(hov));
-	console.log('  vrGameInput (A): ' + JSON.stringify(await page.evaluate(() => window.__stores.vrGameInput.vrGameInputDebug())));
+	console.log('  vrGameInput (A): ' + JSON.stringify(await page.evaluate(() => window.__tp.test.v1.vrGameInput.vrGameInputDebug())));
 	console.log('  gameFeel / clickable / along: ' + JSON.stringify(await page.evaluate((u) => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		let mode;
 		S.editorMode?.subscribe((v) => (mode = v))();
 		let r;
@@ -119,18 +119,18 @@ h.run(async () => {
 	// ---- the trigger presses it: same press at the same shared moment on both peers
 	await iwer.tap(page, 'right', 'trigger');
 	const stamp = await h.eventually(
-		() => Promise.all(peers.map((p) => p.page.evaluate(() => { let t; window.__stores.flowTriggers.subscribe((v) => (t = v))(); return t?.click?.lastT ?? null; }))),
+		() => Promise.all(peers.map((p) => p.page.evaluate(() => { let t; window.__tp.test.v1.flowTriggers.subscribe((v) => (t = v))(); return t?.click?.lastT ?? null; }))),
 		(s) => s[0] !== null && s[0] === s[1],
 		'I2: the trigger fired On Click and both peers hold the stamp',
 		15000
 	);
-	const T = (await A.page.evaluate(() => { let t; window.__stores.flowTriggers.subscribe((v) => (t = v))(); return t.click.lastT; })) + 0.3;
-	const poses = await Promise.all(peers.map((p) => p.page.evaluate(([u, t]) => window.__stores.flowRuntime.effectPoseAt('press', u, t), [uuid, T])));
+	const T = (await A.page.evaluate(() => { let t; window.__tp.test.v1.flowTriggers.subscribe((v) => (t = v))(); return t.click.lastT; })) + 0.3;
+	const poses = await Promise.all(peers.map((p) => p.page.evaluate(([u, t]) => window.__tp.test.v1.flowRuntime.effectPoseAt('press', u, t), [uuid, T])));
 	console.log('  press @stamp+0.3 (A, B): ' + JSON.stringify(poses.map((x) => x?.pos.map((v) => +v.toFixed(4)))));
 	h.check(!!poses[0] && !!poses[1] && poses[0].pos.every((v, i) => Math.abs(v - poses[1].pos[i]) < 1e-9), 'I2: A and B give the same pressed pose for the same shared moment');
 	h.check(!!poses[0] && Math.abs(poses[0].pos[2] - placed.local[2] - 0.08) < 1e-6, 'I2: held in, it sits 8 cm along its own +z');
 	await h.eventually(
-		() => Promise.all(peers.map((p) => p.page.evaluate((u) => { let g; window.__stores.objectsGroup.subscribe((x) => (g = x))(); return g.getObjectByProperty('uuid', u).position.toArray(); }, uuid))),
+		() => Promise.all(peers.map((p) => p.page.evaluate((u) => { let g; window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))(); return g.getObjectByProperty('uuid', u).position.toArray(); }, uuid))),
 		(ps) => ps.every((p) => p.every((v, i) => Math.abs(v - placed.local[i]) < 1e-6)),
 		'I2: it springs back to rest on both peers',
 		10000

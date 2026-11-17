@@ -11,7 +11,7 @@ const h = require('./helpers.cjs');
 /** the authored state of one object as a peer sees it */
 const readAnim = (page, uuid) =>
 	page.evaluate((id) => {
-		const ap = window.__stores.animationPreview;
+		const ap = window.__tp.test.v1.animationPreview;
 		let map;
 		ap.animations.subscribe((v) => (map = v))();
 		let pb;
@@ -19,7 +19,7 @@ const readAnim = (page, uuid) =>
 		const set = map[id] ?? null;
 		const clip = set ? (set.clips[set.active] ?? null) : null;
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		const obj = g.getObjectByProperty('uuid', id);
 		return {
 			has: !!set,
@@ -40,7 +40,7 @@ h.run(async () => {
 
 	// ---------- A authors a movement ----------
 	const uuid = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 400));
 		let g;
@@ -65,7 +65,7 @@ h.run(async () => {
 	h.check(bData.duration === 2, `with the clip length (${bData.duration}s)`);
 
 	// ---------- playing on A plays on B, IN PHASE ----------
-	await A.page.evaluate((id) => window.__stores.animationPreview.play(id), uuid);
+	await A.page.evaluate((id) => window.__tp.test.v1.animationPreview.play(id), uuid);
 	await A.page.waitForTimeout(900);
 	const [onA, onB] = await Promise.all([readAnim(A.page, uuid), readAnim(B.page, uuid)]);
 	h.check(onA.playing && onB.playing, `both peers report it playing (A ${onA.playing}, B ${onB.playing})`);
@@ -80,7 +80,7 @@ h.run(async () => {
 		[A, B].map((peer) =>
 			peer.page.evaluate((id) => {
 				let pb;
-				window.__stores.animationPreview.playback.subscribe((v) => (pb = v))();
+				window.__tp.test.v1.animationPreview.playback.subscribe((v) => (pb = v))();
 				const p = pb[id];
 				return p ? { at: p.at, pausedAt: p.pausedAt, speed: p.speed, clipId: p.clipId } : null;
 			}, uuid)
@@ -97,7 +97,7 @@ h.run(async () => {
 
 	// nothing streams the pose — only the transport was sent
 	const traffic = await A.page.evaluate(async (id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const peer = await new Promise((r) => s.peers.subscribe(r)());
 		const seen = [];
 		const orig = peer.send.bind(peer);
@@ -123,7 +123,7 @@ h.run(async () => {
 	// the assertion is the one this suite is actually about: both peers hold the
 	// SAME frame, and it is the frame the transport says.
 	await B.page.evaluate((id) => {
-		const ap = window.__stores.animationPreview;
+		const ap = window.__tp.test.v1.animationPreview;
 		ap.play(id, undefined, { from: 0.9 }); // mid-clip on a 2s clip
 		ap.pause(id);
 	}, uuid);
@@ -141,7 +141,7 @@ h.run(async () => {
 
 	// ---------- an edit on B reaches A (both directions) ----------
 	await B.page.evaluate((id) => {
-		const ap = window.__stores.animationPreview;
+		const ap = window.__tp.test.v1.animationPreview;
 		let map;
 		ap.animations.subscribe((v) => (map = v))();
 		const set = map[id];
@@ -155,13 +155,13 @@ h.run(async () => {
 	);
 
 	// ---------- undo on B is an edit like any other ----------
-	await B.page.evaluate(() => window.__stores.history.undo());
+	await B.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(
 		() => readAnim(A.page, uuid),
 		(r) => Math.abs(r.keys[1][1] - 4) < 1e-6,
 		'undo on B reverts the key on A too'
 	);
-	await B.page.evaluate(() => window.__stores.history.redo());
+	await B.page.evaluate(() => window.__tp.test.v1.history.redo());
 	await h.eventually(
 		() => readAnim(A.page, uuid),
 		(r) => Math.abs(r.keys[1][1] - 9) < 1e-6,
@@ -170,7 +170,7 @@ h.run(async () => {
 
 	// ---------- one undo entry per GESTURE ----------
 	const gesture = await B.page.evaluate((id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		let map;
 		const read = () => {
@@ -218,7 +218,7 @@ h.run(async () => {
 
 	// and a door built on A opens on C, hinged on its origin
 	const doorUuid = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 400));
 		let g;
@@ -250,9 +250,9 @@ h.run(async () => {
 	await h.eventually(
 		() => C.page.evaluate((id) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((x) => (g = x))();
+			window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 			const obj = g?.getObjectByProperty('uuid', id);
-			return obj ? obj.getWorldPosition(new window.__stores.THREE.Vector3()).x : null;
+			return obj ? obj.getWorldPosition(new window.__tp.test.v1.THREE.Vector3()).x : null;
 		}, doorUuid),
 		(x) => x !== null && Math.abs(x - 3) < 0.01,
 		'(premise) the door arrives on the joiner',
@@ -261,7 +261,7 @@ h.run(async () => {
 
 	// where C thinks the hinge is BEFORE the door opens — the invariant to hold
 	const hingeClosed = await C.page.evaluate((id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		const obj = g.getObjectByProperty('uuid', id);
@@ -276,7 +276,7 @@ h.run(async () => {
 		!!hingeClosed && Math.abs(hingeClosed.centre[0] - 3) < 0.01,
 		`the door reached the joiner at its real place (x=${hingeClosed?.centre?.[0]?.toFixed(2)})`
 	);
-	await A.page.evaluate((id) => window.__stores.animationPreview.play(id), doorUuid);
+	await A.page.evaluate((id) => window.__tp.test.v1.animationPreview.play(id), doorUuid);
 	await A.page.waitForTimeout(1600); // a 'once' clip: both peers end at 90deg
 	// test-health-1: only a FRAME poses the door and ends the clip (tickAnimationPreview runs from
 	// Scene's useTask), and C is a third software-GL page — 1600 ms was not always one of C's
@@ -302,7 +302,7 @@ h.run(async () => {
 	h.check(!doorA.playing && !doorC.playing, 'a once-clip ends itself on every peer');
 
 	const hinge = await C.page.evaluate((id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		const obj = g.getObjectByProperty('uuid', id);

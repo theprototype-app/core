@@ -17,11 +17,11 @@ const vp = (page, body, arg) =>
 	page.evaluate(
 		([src, a]) =>
 			Object.getPrototypeOf(async function () {}).constructor('vp', 'ad', 'ap', 's', 'THREE', 'arg', src)(
-				window.__stores.vrPatch,
-				window.__stores.audioDevices,
-				window.__stores.audioPatch,
-				window.__stores,
-				window.__stores.THREE,
+				window.__tp.test.v1.vrPatch,
+				window.__tp.test.v1.audioDevices,
+				window.__tp.test.v1.audioPatch,
+				window.__tp?.test.v1,
+				window.__tp.test.v1.THREE,
 				a
 			),
 		[body, arg ?? null]
@@ -41,7 +41,7 @@ const KINDS =
 	'  build(ctx, node, p) { const osc = ctx.createOscillator(); osc.frequency.value = p.freq; const amp = ctx.createGain(); amp.gain.value = p.gain; osc.connect(amp); osc.start(); return { output: amp, osc, amp, dispose() { osc.stop(); osc.disconnect(); amp.disconnect(); } }; },' +
 	"  onParam(hd, k, v) { window.__vpParams = (window.__vpParams || []); window.__vpParams.push([k, v]); if (k === 'freq') hd.osc.frequency.value = v; if (k === 'gain') hd.amp.gain.value = v; } });" +
 	"ad.registerAudioDevice({ kind: 'vp-spk', label: 'VP speaker', ports: { in: [{ id: 'in', kind: 'audio' }], out: [] }, params: []," +
-	"  build(ctx) { const gn = ctx.createGain(); gn.connect(window.__stores.audioEngine.bus('instruments')); return { input: gn, dispose() { gn.disconnect(); } }; } });" +
+	"  build(ctx) { const gn = ctx.createGain(); gn.connect(window.__tp.test.v1.audioEngine.bus('instruments')); return { input: gn, dispose() { gn.disconnect(); } }; } });" +
 	"ad.registerAudioDevice({ kind: 'vp-cvin', label: 'VP cv in', ports: { in: [{ id: 'in', kind: 'cv' }], out: [] }, params: [], build() { return { input: null, dispose() {} }; } });" +
 	'return ad.devicesDebug().kinds';
 
@@ -149,9 +149,9 @@ h.run(async () => {
 	// ---------------------------------------------------------------- section 6
 	console.log('\n=== 6. registerVRWindow (finding 13) ===');
 	const win = await page.evaluate(() => {
-		const vc = window.__stores.vrControls;
+		const vc = window.__tp.test.v1.vrControls;
 		const { writable } = { writable: (v) => { let value = v; const subs = new Set(); return { subscribe(fn) { subs.add(fn); fn(value); return () => subs.delete(fn); }, set(x) { value = x; subs.forEach((f) => f(x)); } }; } };
-		const group = new window.__stores.THREE.Group();
+		const group = new window.__tp.test.v1.THREE.Group();
 		group.name = 'mod-test-window';
 		const store = writable(group);
 		const off = vc.registerVRWindow('mod-test-window', store);
@@ -185,7 +185,7 @@ h.run(async () => {
 	await vp(page, HELPERS + "for (const u of [arg.osc, arg.spk]) obj(u).traverse((n) => { if (n.name.startsWith('vrpatch-')) n.scale.multiplyScalar(3); });", ids);
 	await page.locator('#play-button').click();
 	await page.waitForTimeout(600);
-	h.check((await page.evaluate(() => new Promise((r) => window.__stores.isLocked.subscribe((v) => r(v))()))) === true, '8.1 (premise) Play mode is on');
+	h.check((await page.evaluate(() => new Promise((r) => window.__tp.test.v1.isLocked.subscribe((v) => r(v))()))) === true, '8.1 (premise) Play mode is on');
 	const tap = (uuid, name) => vp(page, HELPERS + 'const n = obj(arg.u).getObjectByName(arg.n); const consumed = s.moduleSDK.moduleClickHandlers[0](n); const st = vp.vrPatchState(); return { consumed, armed: st.desktopArmed, side: st.holding?.from.side ?? null, picked: st.holding?.picked ?? null, preview: st.holding?.previewVisible ?? false, n: ap.patchDebug().cables.length }', { u: uuid, n: name });
 	const cablesBefore = await vp(page, 'return ap.patchDebug().cables.length');
 	const first = await tap(ids.osc, 'vrpatch-out:out');
@@ -206,14 +206,14 @@ h.run(async () => {
 	h.check(picked.armed && picked.picked === wiredLast.id, '8.7 a tap on a plugged input picks that cable up');
 	const unplugged = await tap(ids.spk, 'vrpatch-in:in');
 	h.check(!unplugged.armed && unplugged.n === second.n - 1, '8.8 a second tap on the same input unplugs it');
-	await page.evaluate(() => window.__stores.history.undo());
+	await page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => vp(page, 'return ap.patchDebug().cables.length'), (n) => n === second.n, '8.9 undo plugs it back');
-	await page.evaluate(() => window.__stores.playMode.exitPlay());
+	await page.evaluate(() => window.__tp.test.v1.playMode.exitPlay());
 	await page.waitForTimeout(900);
 	// the editor: a REAL mouse click on the plug's pixel, and no selection change
 	await vp(page, HELPERS + 'const n = obj(arg.u).getObjectByName(arg.n); n.updateWorldMatrix(true, false); const p = n.getWorldPosition(new THREE.Vector3()); await s.objectActions.flyTo([p.x - 0.6, p.y + 0.35, p.z + 1.2], p.toArray(), 250);', { u: ids.spk, n: 'vrpatch-in:in' }); // an IN plug sits on the -X face: look from that side
 	await page.waitForTimeout(600);
-	const selBefore = await page.evaluate(() => new Promise((r) => window.__stores.selectedObject.subscribe((v) => r(v?.uuid ?? null))()));
+	const selBefore = await page.evaluate(() => new Promise((r) => window.__tp.test.v1.selectedObject.subscribe((v) => r(v?.uuid ?? null))()));
 	const px = await h.projectPoint(page, await vp(page, HELPERS + 'const n = obj(arg.u).getObjectByName(arg.n); n.updateWorldMatrix(true, false); return n.getWorldPosition(new THREE.Vector3()).toArray()', { u: ids.spk, n: 'vrpatch-in:in' }));
 	await page.mouse.click(px.x, px.y);
 	await page.waitForTimeout(300);
@@ -252,14 +252,14 @@ h.run(async () => {
 	const sky = { x: 90, y: 300 };
 	const skyOk = await page.evaluate((p) => {
 		const el = document.elementFromPoint(p.x, p.y);
-		const THREE = window.__stores.THREE;
+		const THREE = window.__tp.test.v1.THREE;
 		let camera, renderer;
-		window.__stores.globalCamera.subscribe((v) => (camera = v))();
-		window.__stores.globalRenderer.subscribe((v) => (renderer = v))();
+		window.__tp.test.v1.globalCamera.subscribe((v) => (camera = v))();
+		window.__tp.test.v1.globalRenderer.subscribe((v) => (renderer = v))();
 		const rect = renderer.domElement.getBoundingClientRect();
 		const ray = new THREE.Raycaster();
 		ray.setFromCamera(new THREE.Vector2(((p.x - rect.left) / rect.width) * 2 - 1, -((p.y - rect.top) / rect.height) * 2 + 1), camera);
-		return { tag: el?.tagName ?? null, hits: window.__stores.scenePick.sceneHits(ray, { tinyProxies: true }).length };
+		return { tag: el?.tagName ?? null, hits: window.__tp.test.v1.scenePick.sceneHits(ray, { tinyProxies: true }).length };
 	}, sky);
 	h.check(skyOk.tag === 'CANVAS' && skyOk.hits === 0, '9.6 (premise) the pixel about to be clicked is the canvas and resolves to NOTHING (' + skyOk.tag + ', ' + skyOk.hits + ' hits)');
 	await page.mouse.click(sky.x, sky.y);
@@ -274,7 +274,7 @@ h.run(async () => {
 	await page.waitForTimeout(350);
 	const gone = await vp(page, 'const st = vp.vrPatchState(); const d = ap.patchDebug(); return { armed: st.desktopArmed, n: d.cables.length, meshes: d.meshes }');
 	h.check(!gone.armed && gone.n === 0 && gone.meshes === 0, '9.8 two real clicks on the same plugged input UNPLUG it - document and mesh both gone');
-	await page.evaluate(() => window.__stores.history.undo());
+	await page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => vp(page, 'const d = ap.patchDebug(); return d.cables.length === 1 && d.cables[0].drawn === true'), (v) => v === true, '9.9 undo plugs it back in, drawn again');
 
 	await h.finish(browser);

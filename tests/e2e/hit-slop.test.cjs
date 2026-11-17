@@ -41,14 +41,14 @@ function tapAccuracy() {
 }
 const rects = (page) =>
 	page.evaluate(() => [...document.querySelectorAll('button, [role=button], [role=menuitem], [role=tab], a[href]')].map((e) => { const r = e.getBoundingClientRect(); return [r.left, r.top, r.width, r.height].map(Math.round).join(','); }).join('|'));
-const slopOn = (page, on) => page.evaluate((on) => window.__stores.hitSlop.setHitSlopEnabled(on), on);
+const slopOn = (page, on) => page.evaluate((on) => window.__tp.test.v1.hitSlop.setHitSlopEnabled(on), on);
 
 h.run(async () => {
 	const browser = await h.launch();
 
 	// 1. desktop
 	const D = await h.setupPage(browser, 'desk');
-	const d = await D.page.evaluate(() => ({ hs: document.querySelectorAll('[data-hs]').length, scans: window.__stores.hitSlop.hitSlopStats.scans }));
+	const d = await D.page.evaluate(() => ({ hs: document.querySelectorAll('[data-hs]').length, scans: window.__tp.test.v1.hitSlop.hitSlopStats.scans }));
 	h.check(d.hs === 0 && d.scans === 0, `desktop: not installed (${JSON.stringify(d)})`);
 	await h.closePeer(D);
 
@@ -57,12 +57,12 @@ h.run(async () => {
 		const P = await h.setupPage(browser, vp.name, { context: { hasTouch: true, isMobile: true, deviceScaleFactor: 2.6, viewport: { width: vp.width, height: vp.height } } });
 		const page = P.page;
 		// a busy screen: the Objects window (small ✕ / pin / filter buttons) over the editor chrome
-		await page.evaluate(() => window.__stores.objectListClose.set(false));
+		await page.evaluate(() => window.__tp.test.v1.objectListClose.set(false));
 		await nap(1500);
 		// ON by default on touch again (hitslop-fix; 1.63 shipped it off)
-		const shipped = await page.evaluate(() => ({ on: window.__stores.hitSlop.hitSlopEnabled(), hs: document.querySelectorAll('[data-hs]').length }));
+		const shipped = await page.evaluate(() => ({ on: window.__tp.test.v1.hitSlop.hitSlopEnabled(), hs: document.querySelectorAll('[data-hs]').length }));
 		h.check(shipped.on && shipped.hs > 0, tag(`ships on: tap areas drawn (${JSON.stringify(shipped)})`));
-		const st = await page.evaluate(() => ({ ...window.__stores.hitSlop.hitSlopStats }));
+		const st = await page.evaluate(() => ({ ...window.__tp.test.v1.hitSlop.hitSlopStats }));
 		h.check(st.scans > 0 && st.slopped > 0, tag(`installed on touch: ${JSON.stringify(st)}`));
 
 		// 2. layout unchanged
@@ -97,7 +97,7 @@ h.run(async () => {
 		if (x?.hs && x.y > 0) {
 			await page.touchscreen.tap(x.x, x.y);
 			await nap(800);
-			const closed = await page.evaluate(() => { let v; window.__stores.objectListClose.subscribe((y) => (v = y))(); return v; });
+			const closed = await page.evaluate(() => { let v; window.__tp.test.v1.objectListClose.subscribe((y) => (v = y))(); return v; });
 			h.check(closed === true, tag('a tap just below the ✕ (outside its drawn box) closes the window'));
 		}
 		await h.closePeer(P);

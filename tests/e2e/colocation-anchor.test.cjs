@@ -28,12 +28,12 @@ const co = (page, fn, arg) =>
 				'arg',
 				'return (async () => {' + body + '})()'
 			)(
-				window.__stores.colocationAnchors,
-				window.__stores.xrAnchors,
-				window.__stores.colocationCalibrate,
-				window.__stores.colocation,
+				window.__tp.test.v1.colocationAnchors,
+				window.__tp.test.v1.xrAnchors,
+				window.__tp.test.v1.colocationCalibrate,
+				window.__tp.test.v1.colocation,
 				/** @type {any} */ (window).__fakeXr,
-				window.__stores,
+				window.__tp?.test.v1,
 				a
 			),
 		[fn, arg ?? null]
@@ -84,13 +84,13 @@ h.run(async () => {
 	// ---------------------------------------------------------------- section 0
 	console.log('\n=== 0. hook slots + the three-tail count (the positional trap) ===');
 	const hook = await page.evaluate(() => ({
-		shim: typeof window.__stores.xrAnchors?.setXrAnchorApi,
-		policy: typeof window.__stores.colocationAnchors?.startColocationAnchors,
-		forget: typeof window.__stores.colocationAnchors?.forgetRoom,
+		shim: typeof window.__tp.test.v1.xrAnchors?.setXrAnchorApi,
+		policy: typeof window.__tp.test.v1.colocationAnchors?.startColocationAnchors,
+		forget: typeof window.__tp.test.v1.colocationAnchors?.forgetRoom,
 		// neighbours must still be themselves — a positional mis-fold shifts silently
-		presence: typeof window.__stores.colocationPresence?.publishColocation,
-		calibrate: typeof window.__stores.colocationCalibrate?.startCalibration,
-		registered: window.__stores.colocationAnchors?.colocationAnchorsDebug?.().registered
+		presence: typeof window.__tp.test.v1.colocationPresence?.publishColocation,
+		calibrate: typeof window.__tp.test.v1.colocationCalibrate?.startCalibration,
+		registered: window.__tp.test.v1.colocationAnchors?.colocationAnchorsDebug?.().registered
 	}));
 	h.check(hook.shim === 'function', '0.1 xrAnchors sits at its hook slot (setXrAnchorApi)');
 	h.check(hook.policy === 'function' && hook.forget === 'function', '0.2 colocationAnchors at its slot');

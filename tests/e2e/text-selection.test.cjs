@@ -32,12 +32,12 @@ h.run(async () => {
 			},
 			[sel, re, dx]
 		);
-	const setAllow = (on) => page.evaluate((on) => window.__stores.textSelection.allowTextSelection.set(on), on);
+	const setAllow = (on) => page.evaluate((on) => window.__tp.test.v1.textSelection.allowTextSelection.set(on), on);
 
 	// ---- the Settings modal: drag across two rows' NAMES (plain text, not buttons)
 	await page.evaluate(() => {
-		window.__stores.settingsSection.set('interface'); // opens with Interface expanded
-		window.__stores.settingsOpen.set(true);
+		window.__tp.test.v1.settingsSection.set('interface'); // opens with Interface expanded
+		window.__tp.test.v1.settingsOpen.set(true);
 	});
 	await page.waitForSelector('#settings-search', { timeout: 10000 });
 	await page.waitForTimeout(700);
@@ -56,18 +56,18 @@ h.run(async () => {
 		'the setting is the html class the CSS reads'
 	);
 	await setAllow(false);
-	await page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await page.waitForTimeout(400);
 
 	// ---- the burger menu: a drag from one row to another
-	await page.evaluate(() => window.__stores.closeMenu.set(false));
+	await page.evaluate(() => window.__tp.test.v1.closeMenu.set(false));
 	await page.waitForSelector('#sidebar70', { timeout: 5000 });
 	await page.waitForTimeout(300);
 	const m1 = await at('#sidebar70 .side-row', 'emplate', 40); // List "Templates" | Compact "New from template…" (41b H14)
 	const m2 = await at('#sidebar70 .side-row', 'Settings', 60);
 	got = await drag(/** @type {any} */ (m1), /** @type {any} */ (m2));
 	h.check(got === '', `a drag across the burger menu selects nothing (${JSON.stringify(got.slice(0, 40))})`);
-	await page.evaluate(() => window.__stores.closeMenu.set(true));
+	await page.evaluate(() => window.__tp.test.v1.closeMenu.set(true));
 	await page.waitForTimeout(300);
 
 	// ---- the viewport: a press on the canvas dragged over the bottom toolbar, EVEN with the
@@ -96,7 +96,7 @@ h.run(async () => {
 	await setAllow(false);
 
 	// ---- content stays selectable by default: a text field and help text
-	await page.evaluate(() => window.__stores.settingsOpen.set(true));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 	await page.waitForSelector('#settings-search');
 	await page.fill('#settings-search', 'theme colour');
 	await page.focus('#settings-search');

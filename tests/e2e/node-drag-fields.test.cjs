@@ -20,7 +20,7 @@ const h = require('./helpers.cjs');
 /** Read a node's data + its card position. */
 const READ = (id) => {
 	let nodes;
-	window.__stores.flowNodes.subscribe((v) => (nodes = v))();
+	window.__tp.test.v1.flowNodes.subscribe((v) => (nodes = v))();
 	const n = nodes.find((x) => x.id === id);
 	return n ? { data: { ...n.data }, pos: { x: n.position.x, y: n.position.y } } : null;
 };
@@ -54,7 +54,7 @@ h.run(async () => {
 	await h.freshReload(A);
 
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowNodes.set([
 			{
 				id: 'num1',
@@ -141,9 +141,9 @@ h.run(async () => {
 	// A field that updates its own display and nothing else would pass section 2.
 	const evaluated = await A.page.evaluate(() => {
 		let nodes;
-		window.__stores.flowNodes.subscribe((v) => (nodes = v))();
+		window.__tp.test.v1.flowNodes.subscribe((v) => (nodes = v))();
 		const node = nodes.find((n) => n.id === 'num1');
-		return window.__stores.flowRuntime.evalNode(node, [], [], 0);
+		return window.__tp.test.v1.flowRuntime.evalNode(node, [], [], 0);
 	});
 	h.check(
 		Math.abs(evaluated - dragged.data.value) < 1e-6,
@@ -156,7 +156,7 @@ h.run(async () => {
 		const input = document.querySelector('[data-id="num1"] .dn-input');
 		const read = () => {
 			let nodes;
-			window.__stores.flowNodes.subscribe((v) => (nodes = v))();
+			window.__tp.test.v1.flowNodes.subscribe((v) => (nodes = v))();
 			return nodes.find((n) => n.id === 'num1').data.value;
 		};
 		const press = async (key, mods) => {
@@ -184,7 +184,7 @@ h.run(async () => {
 		input.dispatchEvent(new Event('input', { bubbles: true }));
 		await new Promise((r) => setTimeout(r, 200));
 		let nodes;
-		window.__stores.flowNodes.subscribe((v) => (nodes = v))();
+		window.__tp.test.v1.flowNodes.subscribe((v) => (nodes = v))();
 		return nodes.find((n) => n.id === 'num1').data.value;
 	});
 	h.check(Math.abs(typed - 7.25) < 1e-6, `typing applies without Enter (got ${typed})`);

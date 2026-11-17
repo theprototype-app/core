@@ -11,7 +11,7 @@ const h = require('./helpers.cjs');
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
-	await A.page.waitForFunction(() => !!window.__stores?.moduleNodeIO, { timeout: 30000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.moduleNodeIO, { timeout: 30000 });
 
 	// ---- the test module: a value node, an event node, and two effect nodes ----
 	// `score` is deliberately kept in the node's own DATA (data.base), not in a module
@@ -20,7 +20,7 @@ h.run(async () => {
 	const installModule = async (page) =>
 		page.evaluate(async () => {
 			window.__io = { effect4: 0, effect5: null, valueCalls: 0 };
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			await s.moduleSDK.initModules([
 				{
 					id: 'testio',
@@ -86,7 +86,7 @@ h.run(async () => {
 
 	// ---- 1. the registry took the declarations -------------------------------
 	const reg = await A.page.evaluate(() => {
-		const io = window.__stores.moduleNodeIO;
+		const io = window.__tp.test.v1.moduleNodeIO;
 		return {
 			isValue: io.isModuleValueNode('testscore'),
 			vtype: io.moduleValueTypes.testscore,
@@ -114,7 +114,7 @@ h.run(async () => {
 	// An 'effect' output may only reach an 'effect' input, so before the registry read
 	// a module value could not be wired to ANYTHING. Measured both ways here.
 	const sockets = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fs = s.flowSockets;
 		const io = s.moduleNodeIO;
 		const nodes = [
@@ -177,7 +177,7 @@ h.run(async () => {
 
 	// ---- 3. the value reaches a core consumer through resolveInputs ----------
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowNodes.set([
 			{ id: 'ms', type: 'testscore', position: { x: 0, y: 0 }, data: { type: 'testscore', base: 7, mult: 1, note: '' } },
 			{ id: 'num', type: 'number', position: { x: 0, y: 160 }, data: { type: 'number', value: 3 } },
@@ -194,7 +194,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(900);
 
 	const consumed = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let nodes, edges;
 		s.flowNodes.subscribe((v) => (nodes = v))();
 		s.flowEdges.subscribe((v) => (edges = v))();
@@ -226,7 +226,7 @@ h.run(async () => {
 	for (let i = 0; i < 20 && readout !== 21; i++) {
 		readout = await A.page.evaluate(() => {
 			let v;
-			window.__stores.flowValues.subscribe((x) => (v = x))();
+			window.__tp.test.v1.flowValues.subscribe((x) => (v = x))();
 			return v?.ms;
 		});
 		if (readout !== 21) await A.page.waitForTimeout(300);
@@ -234,10 +234,10 @@ h.run(async () => {
 	h.check(readout === 21, `a module value node gets the on-card live readout for free (${readout})`);
 
 	// ---- 4. the effect nodes: arity 4 unchanged, arity 5 gets its ctx --------
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await A.page.waitForTimeout(1500);
 	const effects = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const read = (st) => new Promise((r) => st.subscribe((v) => r(v))());
 		const group = await read(s.objectsGroup);
 		let mesh = null;
@@ -272,12 +272,12 @@ h.run(async () => {
 	// The node editor's scope FOLLOWS THE SELECTION, and the box created above is
 	// still selected — opening the dock now would show the BOX's object graph, which
 	// has no document at all, so every DOM check below would read an empty pane.
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await A.page.locator('p[title="Node editor (N)"]').click();
 	await A.page.waitForTimeout(1600);
 	const scope = await A.page.evaluate(() => {
 		let id;
-		window.__stores.activeGraphId.subscribe((v) => (id = v))();
+		window.__tp.test.v1.activeGraphId.subscribe((v) => (id = v))();
 		return id;
 	});
 	h.check(scope === 'scene', `premise: the dock is on the SCENE graph (${scope})`);
@@ -297,7 +297,7 @@ h.run(async () => {
 
 	const typing = await A.page.evaluate(async () => {
 		const sent = [];
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const peer = await new Promise((r) => s.peers.subscribe((p) => r(p))());
 		const real = peer.send.bind(peer);
 		peer.send = (msg) => {
@@ -337,14 +337,14 @@ h.run(async () => {
 	// Both peers need the module installed — a peer without it has no such node type
 	// and could not have received the node in the first place.
 	const B = await h.setupPage(browser, 'B');
-	await B.page.waitForFunction(() => !!window.__stores?.moduleNodeIO, { timeout: 30000 });
+	await B.page.waitForFunction(() => !!window.__tp?.test.v1?.moduleNodeIO, { timeout: 30000 });
 	await installModule(B.page);
 	await h.connect(A, B);
 
 	const synced = await B.page.evaluate(() => {
 		let nodes, edges;
-		window.__stores.flowNodes.subscribe((v) => (nodes = v))();
-		window.__stores.flowEdges.subscribe((v) => (edges = v))();
+		window.__tp.test.v1.flowNodes.subscribe((v) => (nodes = v))();
+		window.__tp.test.v1.flowEdges.subscribe((v) => (edges = v))();
 		return {
 			types: nodes.map((n) => n.type).sort(),
 			note: nodes.find((n) => n.id === 'ms')?.data?.note,
@@ -363,7 +363,7 @@ h.run(async () => {
 	// the peer computes the same value with no message of its own: a value node is
 	// pure, so nothing about it is ever sent
 	const peerValue = await B.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let nodes, edges;
 		s.flowNodes.subscribe((v) => (nodes = v))();
 		s.flowEdges.subscribe((v) => (edges = v))();
@@ -374,11 +374,11 @@ h.run(async () => {
 	// fire on A only, three times
 	const before = await B.page.evaluate(() => {
 		let t;
-		window.__stores.flowTriggers.subscribe((v) => (t = v))();
+		window.__tp.test.v1.flowTriggers.subscribe((v) => (t = v))();
 		return t?.cn?.count ?? 0;
 	});
 	const firedOnA = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let n = 0;
 		for (let i = 0; i < 3; i++) {
 			n = s.flowRuntime.fireModuleTrigger('testevent');
@@ -392,7 +392,7 @@ h.run(async () => {
 		[A, B].map((peer) =>
 			peer.page.evaluate(() => {
 				let t;
-				window.__stores.flowTriggers.subscribe((v) => (t = v))();
+				window.__tp.test.v1.flowTriggers.subscribe((v) => (t = v))();
 				return { count: t?.cn?.count ?? 0, stamp: t?.ev?.lastT ?? null };
 			})
 		)
@@ -408,7 +408,7 @@ h.run(async () => {
 
 	// a match predicate picks instances — the "several of one node type" case
 	const matched = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let nodes;
 		s.flowNodes.subscribe((v) => (nodes = v))();
 		s.flowNodes.set([
@@ -426,7 +426,7 @@ h.run(async () => {
 
 	// ---- 7. teardown: the journal really unregisters -------------------------
 	const gone = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		await s.moduleSDK.deactivateModule('testio');
 		await new Promise((r) => setTimeout(r, 400));
 		const io = s.moduleNodeIO;

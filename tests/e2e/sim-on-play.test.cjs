@@ -13,12 +13,12 @@ h.run(async () => {
 	const page = a.page;
 
 	// a sim needs at least one dynamic body; /create Box stamps {mode:'dynamic'}
-	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create Box'));
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create Box'));
 	await page.waitForTimeout(800);
 
 	const simState = () =>
 		page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			/** @param {any} st */
 			const g = (st) => {
 				let v;
@@ -30,12 +30,12 @@ h.run(async () => {
 	const toastTexts = () =>
 		page.evaluate(() => {
 			let v;
-			window.__stores.toastStore.subscribe((/** @type {any} */ x) => (v = x))();
+			window.__tp.test.v1.toastStore.subscribe((/** @type {any} */ x) => (v = x))();
 			return (v ?? []).map((/** @type {any} */ t) => String(t?.message ?? t?.text ?? t));
 		});
-	const enterPlay = () => page.evaluate(() => window.__stores.isLocked.set(true));
+	const enterPlay = () => page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	const exitPlay = async () => {
-		await page.evaluate(() => window.__stores.isLocked.set(false));
+		await page.evaluate(() => window.__tp.test.v1.isLocked.set(false));
 		await page.waitForTimeout(300); // the transient false settles to null on a macrotask
 	};
 
@@ -48,7 +48,7 @@ h.run(async () => {
 
 	// 2 — the flag on: play entry starts the sim
 	await page.evaluate(() =>
-		window.__stores.scenePhysics.setScenePhysics({ play: { simOnPlay: true } })
+		window.__tp.test.v1.scenePhysics.setScenePhysics({ play: { simOnPlay: true } })
 	);
 	await enterPlay();
 	await h.eventually(
@@ -73,11 +73,11 @@ h.run(async () => {
 		're-entry over a live sim is a quiet skip, not the busy toast'
 	);
 	await exitPlay();
-	await page.evaluate(() => window.__stores.physics.stopSimulation());
+	await page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 	await page.waitForTimeout(400);
 
 	// 5 — a REMOTE sim is respected: nothing starts and no busy toast fires
-	await page.evaluate(() => window.__stores.physics.remoteSimulating.set('peer-fake'));
+	await page.evaluate(() => window.__tp.test.v1.physics.remoteSimulating.set('peer-fake'));
 	await enterPlay();
 	await page.waitForTimeout(1000);
 	st = await simState();
@@ -88,7 +88,7 @@ h.run(async () => {
 		'the remote-busy skip is silent (no toast)'
 	);
 	await exitPlay();
-	await page.evaluate(() => window.__stores.physics.remoteSimulating.set(null));
+	await page.evaluate(() => window.__tp.test.v1.physics.remoteSimulating.set(null));
 
 	await h.finish(browser);
 });

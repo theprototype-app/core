@@ -23,14 +23,14 @@ h.run(async () => {
 
 	// ---- 1. a transaction always settles -----------------------------------------------
 	const seams = await A.page.evaluate(
-		() => typeof window.__stores.idb?.debugForceNextTx === 'function' && typeof window.__stores.idb?.debugTimeoutMs === 'function'
+		() => typeof window.__tp.test.v1.idb?.debugForceNextTx === 'function' && typeof window.__tp.test.v1.idb?.debugTimeoutMs === 'function'
 	);
 	h.check(seams, 'premise: the idb test seams are reachable');
 
 	const wrote = await A.page.evaluate(async () => {
 		try {
-			await window.__stores.idb.idbPut('27h-probe', { hello: 'world' });
-			const back = await window.__stores.idb.idbGet('27h-probe');
+			await window.__tp.test.v1.idb.idbPut('27h-probe', { hello: 'world' });
+			const back = await window.__tp.test.v1.idb.idbGet('27h-probe');
 			return back?.hello ?? null;
 		} catch (e) {
 			return 'threw: ' + e;
@@ -47,8 +47,8 @@ h.run(async () => {
 	// "still waiting" is exactly the bug's name.
 	const aborted = await A.page.evaluate(async () => {
 		const t0 = performance.now();
-		window.__stores.idb.debugForceNextTx('abort');
-		const put = window.__stores.idb
+		window.__tp.test.v1.idb.debugForceNextTx('abort');
+		const put = window.__tp.test.v1.idb
 			.idbPut('27h-abort', { n: 1 })
 			.then(() => ({ outcome: 'resolved', message: '' }))
 			.catch((error) => ({ outcome: 'rejected', message: String(error && error.message) }));
@@ -75,10 +75,10 @@ h.run(async () => {
 	// every handler the transaction could settle through, which IS the original bug — the
 	// timeout is what turns it into a failure a caller can report.
 	const stalled = await A.page.evaluate(async () => {
-		window.__stores.idb.debugTimeoutMs(400);
+		window.__tp.test.v1.idb.debugTimeoutMs(400);
 		const t0 = performance.now();
-		window.__stores.idb.debugForceNextTx('stall');
-		const put = window.__stores.idb
+		window.__tp.test.v1.idb.debugForceNextTx('stall');
+		const put = window.__tp.test.v1.idb
 			.idbPut('27h-stall', { n: 2 })
 			.then(() => ({ outcome: 'resolved', timedOut: false, message: '' }))
 			.catch((error) => ({
@@ -92,7 +92,7 @@ h.run(async () => {
 				setTimeout(() => resolve({ outcome: 'still waiting', timedOut: false, message: '' }), 5000)
 			)
 		]);
-		window.__stores.idb.debugTimeoutMs(null);
+		window.__tp.test.v1.idb.debugTimeoutMs(null);
 		return { ...result, ms: performance.now() - t0 };
 	});
 	h.check(
@@ -109,8 +109,8 @@ h.run(async () => {
 	// the cache is not poisoned by them.
 	const recovered = await A.page.evaluate(async () => {
 		try {
-			await window.__stores.idb.idbPut('27h-after', { n: 3 });
-			const back = await window.__stores.idb.idbGet('27h-after');
+			await window.__tp.test.v1.idb.idbPut('27h-after', { n: 3 });
+			const back = await window.__tp.test.v1.idb.idbGet('27h-after');
 			return back?.n ?? null;
 		} catch (e) {
 			return 'threw: ' + e;
@@ -129,9 +129,9 @@ h.run(async () => {
 			return real(...args);
 		};
 		try {
-			await window.__stores.idb.idbGet('27h-probe'); // warm, in case nothing had opened yet
+			await window.__tp.test.v1.idb.idbGet('27h-probe'); // warm, in case nothing had opened yet
 			const warm = count;
-			for (let i = 0; i < 20; i++) await window.__stores.idb.idbGet('27h-probe');
+			for (let i = 0; i < 20; i++) await window.__tp.test.v1.idb.idbGet('27h-probe');
 			return { warm, after: count };
 		} finally {
 			// @ts-ignore
@@ -152,10 +152,10 @@ h.run(async () => {
 		const bytes = new Uint8Array(25 * 1024 * 1024);
 		for (let i = 0; i < bytes.length; i += 4096) bytes[i] = i & 255; // not all-zero
 		const t0 = performance.now();
-		await window.__stores.idb.idbPut('27h-big', bytes);
+		await window.__tp.test.v1.idb.idbPut('27h-big', bytes);
 		const ms = performance.now() - t0;
-		await window.__stores.idb.idbDelete('27h-big');
-		return { ms, bound: window.__stores.idb.OP_TIMEOUT_MS };
+		await window.__tp.test.v1.idb.idbDelete('27h-big');
+		return { ms, bound: window.__tp.test.v1.idb.OP_TIMEOUT_MS };
 	});
 	h.check(
 		big.ms * 5 < big.bound,
@@ -167,12 +167,12 @@ h.run(async () => {
 	// snapshot with emptiness, so an empty scene never writes at all.
 	await A.page.evaluate(() => {
 		for (let i = 0; i < 6; i++)
-			window.__stores.addObjects.spawnAtPoint('/create Box 1 1 1', [i * 2 - 5, 0.5, -4]);
+			window.__tp.test.v1.addObjects.spawnAtPoint('/create Box 1 1 1', [i * 2 - 5, 0.5, -4]);
 	});
 	await A.page.waitForTimeout(1200);
 
 	const cadence = await A.page.evaluate(() => {
-		const f = window.__stores.autosave.cadenceFor;
+		const f = window.__tp.test.v1.autosave.cadenceFor;
 		return { at0: f(0), at150: f(150), at151: f(151), at300: f(300), at700: f(700), huge: f(1e9) };
 	});
 	h.check(
@@ -198,7 +198,7 @@ h.run(async () => {
 		};
 		const t0 = performance.now();
 		let bytes = 0;
-		for (let i = 0; i < 20; i++) bytes = window.__stores.autosave.estimateSnapshotBytes(snapshot);
+		for (let i = 0; i < 20; i++) bytes = window.__tp.test.v1.autosave.estimateSnapshotBytes(snapshot);
 		const estimateMs = (performance.now() - t0) / 20;
 		const t1 = performance.now();
 		const probe = JSON.stringify(snapshot).length;
@@ -217,7 +217,7 @@ h.run(async () => {
 	// ONE EXPORT AT A TIME. `debugRequestSave` is what the debounce timer calls — including
 	// the re-entrancy refusal, which `saveNow` deliberately skips (it waits its turn).
 	const reentry = await A.page.evaluate(async () => {
-		const a = window.__stores.autosave;
+		const a = window.__tp.test.v1.autosave;
 		let before = null;
 		a.autosaveStatus.subscribe((v) => (before = v))();
 		const all = [a.debugRequestSave(), a.debugRequestSave(), a.debugRequestSave()];
@@ -247,7 +247,7 @@ h.run(async () => {
 	// host's speed — which is the only honest way to assert it on a machine whose export
 	// cost is not ours to fix.
 	const derived = await A.page.evaluate(() => {
-		const a = window.__stores.autosave;
+		const a = window.__tp.test.v1.autosave;
 		let state = null;
 		a.autosaveStatus.subscribe((v) => (state = v))();
 		return { ms: state.lastExportMs, debounce: state.debounceMs, expected: a.cadenceFor(state.lastExportMs) };
@@ -262,7 +262,7 @@ h.run(async () => {
 	// real and it is the GLTF export, which is the slow part — which is also why the
 	// pulse has to be read before the export rather than beside the write.
 	const duringSave = await A.page.evaluate(async () => {
-		const a = window.__stores.autosave;
+		const a = window.__tp.test.v1.autosave;
 		const settle = a.saveNow();
 		// synchronously after the save has begun: `markAtStart` is already taken
 		a.markAnnotationsDirty();
@@ -275,8 +275,8 @@ h.run(async () => {
 	);
 	// and the ordinary case still clears, or the flag would be stuck on forever
 	const afterSave = await A.page.evaluate(async () => {
-		await window.__stores.autosave.saveNow();
-		return window.__stores.autosave.isDirty();
+		await window.__tp.test.v1.autosave.saveNow();
+		return window.__tp.test.v1.autosave.isDirty();
 	});
 	h.check(afterSave === false, `...while a quiet save does clear it (${afterSave})`);
 
@@ -285,13 +285,13 @@ h.run(async () => {
 	// is raised through the idb seam because a headless origin is granted tens of gigabytes
 	// and cannot honestly be filled.
 	const quota = await A.page.evaluate(async () => {
-		window.__stores.toastStore.set([]);
-		window.__stores.idb.debugForceNextTx('quota');
-		await window.__stores.autosave.saveNow();
+		window.__tp.test.v1.toastStore.set([]);
+		window.__tp.test.v1.idb.debugForceNextTx('quota');
+		await window.__tp.test.v1.autosave.saveNow();
 		let toasts = [];
-		window.__stores.toastStore.subscribe((v) => (toasts = v))();
+		window.__tp.test.v1.toastStore.subscribe((v) => (toasts = v))();
 		let state = null;
-		window.__stores.autosave.autosaveStatus.subscribe((v) => (state = v))();
+		window.__tp.test.v1.autosave.autosaveStatus.subscribe((v) => (state = v))();
 		const card = toasts.find((t) => t && t.id === 'autosave-failed');
 		return {
 			found: !!card,
@@ -318,11 +318,11 @@ h.run(async () => {
 
 	// and it clears itself once a save works again, or it is a permanent scar
 	const cleared = await A.page.evaluate(async () => {
-		await window.__stores.autosave.saveNow();
+		await window.__tp.test.v1.autosave.saveNow();
 		let toasts = [];
-		window.__stores.toastStore.subscribe((v) => (toasts = v))();
+		window.__tp.test.v1.toastStore.subscribe((v) => (toasts = v))();
 		let state = null;
-		window.__stores.autosave.autosaveStatus.subscribe((v) => (state = v))();
+		window.__tp.test.v1.autosave.autosaveStatus.subscribe((v) => (state = v))();
 		return { still: toasts.some((t) => t && t.id === 'autosave-failed'), lastError: state.lastError };
 	});
 	h.check(
@@ -336,7 +336,7 @@ h.run(async () => {
 	// own copy that binds a SECOND instance, whose stores nothing is rendering — the
 	// documented HMR module-identity trap, which cost two runs here before it was spotted.
 	const panel = await A.page.evaluate(() => {
-		window.__stores.storageUsage.openStorageModal();
+		window.__tp.test.v1.storageUsage.openStorageModal();
 		return true;
 	});
 	h.check(panel, 'premise: the Storage panel opens');
@@ -354,7 +354,7 @@ h.run(async () => {
 		`the panel names the current cadence in words ("${line.cadence}")`
 	);
 	h.check(/ms$/.test(line.cost), `...and what the last snapshot cost to prepare ("${line.cost}")`);
-	await A.page.evaluate(() => window.__stores.storageUsage.storageModalOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.storageUsage.storageModalOpen.set(false));
 
 	// ---- 3. safeStorage: a broken localStorage no longer kills its caller ---------------
 	// SAFARI PRIVATE MODE, simulated where the browser really fails: `Storage.prototype
@@ -362,7 +362,7 @@ h.run(async () => {
 	// everything downstream, including the ~500 codemodded call sites, meets the real
 	// failure. Restored immediately afterwards, or every later section runs degraded.
 	const priv = await A.page.evaluate(() => {
-		const store = window.__stores.safeStorage;
+		const store = window.__tp.test.v1.safeStorage;
 		store.debugResetStorage();
 		const real = Storage.prototype.setItem;
 		let threw = 0;
@@ -412,7 +412,7 @@ h.run(async () => {
 		};
 		let raised = null;
 		try {
-			const { autosaveEnabled } = window.__stores.autosave;
+			const { autosaveEnabled } = window.__tp.test.v1.autosave;
 			autosaveEnabled.set(false);
 			autosaveEnabled.set(true);
 		} catch (error) {
@@ -420,7 +420,7 @@ h.run(async () => {
 		}
 		Storage.prototype.setItem = real;
 		let value = null;
-		window.__stores.autosave.autosaveEnabled.subscribe((v) => (value = v))();
+		window.__tp.test.v1.autosave.autosaveEnabled.subscribe((v) => (value = v))();
 		return { raised, value };
 	});
 	h.check(
@@ -431,39 +431,39 @@ h.run(async () => {
 	// The whole codemod, asserted as a property rather than a diff: nothing in src/ calls
 	// localStorage directly any more, and CI fails on the next one that does.
 	const guard = await A.page.evaluate(() => ({
-		exposed: typeof window.__stores.safeStorage?.setItem === 'function',
-		diagnostics: window.__stores.diagnostics.bundle().sections?.storage ?? null
+		exposed: typeof window.__tp.test.v1.safeStorage?.setItem === 'function',
+		diagnostics: window.__tp.test.v1.diagnostics.bundle().sections?.storage ?? null
 	}));
 	h.check(guard.exposed, 'premise: safeStorage is the module the app is using');
 	h.check(
 		guard.diagnostics && typeof guard.diagnostics.degraded === 'boolean',
 		`the diagnostics bundle carries whether persistence is working (${JSON.stringify(guard.diagnostics)})`
 	);
-	await A.page.evaluate(() => window.__stores.safeStorage.debugResetStorage());
+	await A.page.evaluate(() => window.__tp.test.v1.safeStorage.debugResetStorage());
 
 	// ---- 4. the microphone is given back -----------------------------------------------
 	// A fake device, so a real MediaStream with real tracks exists to be stopped — the
 	// whole check is about `track.readyState`, and a stub would be asserting a mock.
-	const seam = await A.page.evaluate(() => typeof window.__stores.voiceChat?.voiceDebug === 'function');
+	const seam = await A.page.evaluate(() => typeof window.__tp.test.v1.voiceChat?.voiceDebug === 'function');
 	h.check(seam, 'premise: the voice seam is reachable');
 
-	const idle = await A.page.evaluate(() => window.__stores.voiceChat.voiceDebug());
+	const idle = await A.page.evaluate(() => window.__tp.test.v1.voiceChat.voiceDebug());
 	h.check(
 		idle.stream === false && idle.polling === false,
 		`with no mic and no peers nothing is claimed and nothing is polling (${JSON.stringify(idle)})`
 	);
 
 	const on = await A.page.evaluate(async () => {
-		await window.__stores.voiceChat.toggleMic();
-		return window.__stores.voiceChat.voiceDebug();
+		await window.__tp.test.v1.voiceChat.toggleMic();
+		return window.__tp.test.v1.voiceChat.voiceDebug();
 	});
 	h.check(on.stream === true && on.live === 1, `premise: the mic really opened (${on.live} live track)`);
 	h.check(on.polling === true, 'the speaking poll runs while there is audio to measure');
 
 	const off = await A.page.evaluate(async () => {
-		const before = window.__stores.voiceChat.voiceDebug();
-		await window.__stores.voiceChat.toggleMic();
-		const after = window.__stores.voiceChat.voiceDebug();
+		const before = window.__tp.test.v1.voiceChat.voiceDebug();
+		await window.__tp.test.v1.voiceChat.toggleMic();
+		const after = window.__tp.test.v1.voiceChat.voiceDebug();
 		return { before, after };
 	});
 	h.check(
@@ -485,13 +485,13 @@ h.run(async () => {
 	// would make the next sentence arrive late. A few seconds is active use; forever is
 	// the bug this section is about.
 	const ptt = await A.page.evaluate(async () => {
-		await window.__stores.voiceChat.setPttHeld(true);
-		const held = window.__stores.voiceChat.voiceDebug();
-		await window.__stores.voiceChat.setPttHeld(false);
+		await window.__tp.test.v1.voiceChat.setPttHeld(true);
+		const held = window.__tp.test.v1.voiceChat.voiceDebug();
+		await window.__tp.test.v1.voiceChat.setPttHeld(false);
 		await new Promise((r) => setTimeout(r, 400));
-		const justAfter = window.__stores.voiceChat.voiceDebug();
+		const justAfter = window.__tp.test.v1.voiceChat.voiceDebug();
 		await new Promise((r) => setTimeout(r, 4200));
-		const settled = window.__stores.voiceChat.voiceDebug();
+		const settled = window.__tp.test.v1.voiceChat.voiceDebug();
 		return { held, justAfter, settled };
 	});
 	h.check(ptt.held.stream === true && ptt.held.live === 1, 'push-to-talk re-acquires the device');
@@ -504,12 +504,12 @@ h.run(async () => {
 	// leaving a session is the other half of the report: nothing in the peer layer used to
 	// touch voice at all
 	const left = await A.page.evaluate(async () => {
-		await window.__stores.voiceChat.toggleMic();
-		const before = window.__stores.voiceChat.voiceDebug();
+		await window.__tp.test.v1.voiceChat.toggleMic();
+		const before = window.__tp.test.v1.voiceChat.voiceDebug();
 		let peer = null;
-		window.__stores.peers.subscribe((/** @type {any} */ v) => (peer = v))();
+		window.__tp.test.v1.peers.subscribe((/** @type {any} */ v) => (peer = v))();
 		peer.leaveSession();
-		return { before, after: window.__stores.voiceChat.voiceDebug() };
+		return { before, after: window.__tp.test.v1.voiceChat.voiceDebug() };
 	});
 	h.check(left.before.stream === true, 'premise: the mic was open when the session ended');
 	h.check(
@@ -526,19 +526,19 @@ h.run(async () => {
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);
 
-	const voiceOf = (peer) => peer.page.evaluate(() => window.__stores.voiceChat.voiceDebug());
+	const voiceOf = (peer) => peer.page.evaluate(() => window.__tp.test.v1.voiceChat.voiceDebug());
 
-	await A.page.evaluate(() => window.__stores.voiceChat.toggleMic());
+	await A.page.evaluate(() => window.__tp.test.v1.voiceChat.toggleMic());
 	await h.eventually(() => voiceOf(B), (v) => v.incoming > 0, "premise: A's first mic-on reaches B", 20000);
 
-	await A.page.evaluate(() => window.__stores.voiceChat.toggleMic());
+	await A.page.evaluate(() => window.__tp.test.v1.voiceChat.toggleMic());
 	const released = await voiceOf(A);
 	h.check(
 		released.stream === false && released.outgoing === 0,
 		`mic-off releases the device AND the channel that carried it (${JSON.stringify(released)})`
 	);
 
-	await A.page.evaluate(() => window.__stores.voiceChat.toggleMic());
+	await A.page.evaluate(() => window.__tp.test.v1.voiceChat.toggleMic());
 	await h.eventually(
 		() => voiceOf(A),
 		(v) => v.stream === true && v.outgoing > 0,
@@ -556,10 +556,10 @@ h.run(async () => {
 		restored.stream === true && restored.live === 1 && restored.outgoing > 0,
 		`...with a live device behind it (${JSON.stringify(restored)})`
 	);
-	await A.page.evaluate(() => window.__stores.voiceChat.releaseMic());
+	await A.page.evaluate(() => window.__tp.test.v1.voiceChat.releaseMic());
 
 	await A.page.evaluate(async () => {
-		for (const k of ['27h-probe', '27h-abort', '27h-stall', '27h-after']) await window.__stores.idb.idbDelete(k);
+		for (const k of ['27h-probe', '27h-abort', '27h-stall', '27h-after']) await window.__tp.test.v1.idb.idbDelete(k);
 	});
 
 	await h.finish(browser);

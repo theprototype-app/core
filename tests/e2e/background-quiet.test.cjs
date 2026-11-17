@@ -42,7 +42,7 @@ const dot = (page) =>
 		// the phone shell's chip or the desktop pill — whichever this layout drew
 		const el = document.querySelector('.cx-status-dot[data-tone]');
 		let pc = null;
-		window.__stores.peers.subscribe((v) => (pc = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
 		return { tone: el?.getAttribute('data-tone') ?? null, open: !!pc?.peer?.open, id: pc?.peer?.id ?? '' };
 	});
 
@@ -53,13 +53,13 @@ const record = (page) =>
 		w.__bq = { toasts: [], shown: false };
 		w.__bqUnsub?.forEach((/** @type {() => void} */ u) => u());
 		w.__bqUnsub = [
-			w.__stores.toastStore.subscribe((/** @type {any[]} */ list) => {
+			w.__tp.test.v1.toastStore.subscribe((/** @type {any[]} */ list) => {
 				for (const t of list) {
 					const text = typeof t === 'string' ? t : (t && (t.text || t.message)) || '';
 					if (text && !w.__bq.toasts.includes(text)) w.__bq.toasts.push(text);
 				}
 			}),
-			w.__stores.contextLossShown.subscribe((/** @type {boolean} */ v) => {
+			w.__tp.test.v1.contextLossShown.subscribe((/** @type {boolean} */ v) => {
 				if (v) w.__bq.shown = true;
 			})
 		];
@@ -85,17 +85,17 @@ h.run(async () => {
 		}
 		await route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*' }, body: '' });
 	});
-	await page.waitForFunction(() => !!window.__stores?.contextLossShown && !!window.__stores?.diagnostics, null, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.contextLossShown && !!window.__tp?.test.v1?.diagnostics, null, { timeout: 30000 });
 
 	// ---- 0. premises ----------------------------------------------------------------------
 	const canLose = await page.evaluate(() => {
 		let r = null;
-		window.__stores.globalRenderer.subscribe((v) => (r = v))();
+		window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
 		window.__loseCtx = r?.getContext?.()?.getExtension?.('WEBGL_lose_context') ?? null;
 		return !!window.__loseCtx;
 	});
 	h.check(canLose, 'premise: WEBGL_lose_context is available, so a REAL context loss can be driven');
-	h.check((await page.evaluate(() => window.__stores.errorReports.errorReportsUrl())) === MOCK, 'premise: error reports go to the mock endpoint');
+	h.check((await page.evaluate(() => window.__tp.test.v1.errorReports.errorReportsUrl())) === MOCK, 'premise: error reports go to the mock endpoint');
 	await h.eventually(() => dot(page), (d) => d.open && !!d.id, 'premise: the signaling link is open', 30000);
 	const before = await dot(page);
 	h.check(!!before.tone, `premise: the Connect dot is drawn (${before.tone})`);
@@ -108,7 +108,7 @@ h.run(async () => {
 		await setHidden(page, true);
 		await page.evaluate(() => {
 			let pc = null;
-			window.__stores.peers.subscribe((v) => (pc = v))();
+			window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
 			pc.peer.disconnect(); // a phone tab switch drops the signaling socket for real
 			window.__loseCtx.loseContext();
 		});
@@ -119,7 +119,7 @@ h.run(async () => {
 		await page.evaluate(() => window.__loseCtx.restoreContext());
 		await h.eventually(() => page.evaluate(() => {
 			let v = true;
-			window.__stores.contextLost.subscribe((x) => (v = x))();
+			window.__tp.test.v1.contextLost.subscribe((x) => (v = x))();
 			return v;
 		}), (v) => v === false, '1b the context comes back', 10000);
 		await page.waitForTimeout(3500); // past where a visible-clock overlay would have risen
@@ -176,7 +176,7 @@ h.run(async () => {
 				})
 		);
 		h.check(looped, 'positive control: the browser reports the ResizeObserver loop here');
-		const inRing = await page.evaluate(() => window.__stores.diagnostics.lines().some((/** @type {any} */ l) => /ResizeObserver loop/.test(JSON.stringify(l))));
+		const inRing = await page.evaluate(() => window.__tp.test.v1.diagnostics.lines().some((/** @type {any} */ l) => /ResizeObserver loop/.test(JSON.stringify(l))));
 		h.check(inRing, '3a the loop line is in the diagnostics ring (Copy diagnostics keeps it)');
 		await page.waitForTimeout(500);
 		const r3 = await recorded(page);

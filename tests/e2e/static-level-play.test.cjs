@@ -18,7 +18,7 @@ const h = require('./helpers.cjs');
 /** @param {any} page @param {{controller: boolean, simOnPlay: boolean}} opt */
 const buildLevel = (page, opt) =>
 	page.evaluate((o) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const T = s.THREE;
 		s.commandsHandler.sceneCommand('/clear all');
 		/** @type {any} */ let g;
@@ -41,11 +41,11 @@ const buildLevel = (page, opt) =>
 	}, opt);
 
 /** @param {any} page */
-const simulating = (page) => page.evaluate(() => { let v; window.__stores.physics.simulating.subscribe((x) => (v = x))(); return v; });
+const simulating = (page) => page.evaluate(() => { let v; window.__tp.test.v1.physics.simulating.subscribe((x) => (v = x))(); return v; });
 /** @param {any} page */
 const rig = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let cam;
 		s.playerCam.subscribe((c) => (cam = c))();
 		const w = cam.getWorldPosition(new s.THREE.Vector3());
@@ -59,7 +59,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(3000);
 		await warm.ctx.close();
 	}
@@ -86,20 +86,20 @@ h.run(async () => {
 	// 1. a walk controller node + Run physics on Play, every body static
 	await buildLevel(page, { controller: true, simOnPlay: true });
 	await page.waitForTimeout(1200);
-	await page.evaluate(() => window.__stores.isLocked.set(true));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await h.eventually(() => simulating(page), (v) => v === true, 'Play starts the physics world in an all-static level (Run physics on Play, a walk controller)', 12000);
 	await page.waitForTimeout(1000);
 	const r1 = await walkInto('controller');
 	h.check(r1.source === 'rapier', `the walker sweeps through the physics world (${r1.source})`);
 	h.check(r1.z > -3.75, `the wall at z -4 STOPS the walker (z ${r1.z.toFixed(2)})`);
 	await h.leavePlay(A);
-	await page.evaluate(() => window.__stores.physics.stopSimulation?.());
+	await page.evaluate(() => window.__tp.test.v1.physics.stopSimulation?.());
 	await page.waitForTimeout(800);
 
 	// 2. play set to walk, NO controller node, Run physics on Play off
 	await buildLevel(page, { controller: false, simOnPlay: false });
 	await page.waitForTimeout(1200);
-	await page.evaluate(() => window.__stores.isLocked.set(true));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await h.eventually(() => simulating(page), (v) => v === true, 'a walk-mode all-static level starts its static world on Play by itself', 12000);
 	await page.waitForTimeout(1200);
 	const r2a = await rig(page);
@@ -112,18 +112,18 @@ h.run(async () => {
 	await h.leavePlay(A);
 	const after = await rig(page);
 	h.check(after.mode === null, `out of Play there is no walker (${after.mode})`);
-	await page.evaluate(() => window.__stores.physics.stopSimulation?.());
+	await page.evaluate(() => window.__tp.test.v1.physics.stopSimulation?.());
 	await page.waitForTimeout(800);
 
 	// 3. the editor's Simulate in a scene with nothing to simulate still refuses
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowNodes.set([]);
 		s.selectedObject.set(null);
 		s.selectedObjects?.set?.([]);
 	});
 	await page.waitForTimeout(500);
-	await page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await page.waitForTimeout(1500);
 	h.check((await simulating(page)) !== true, 'COUNTERFACTUAL: Simulate in the editor with no dynamic body and no controller still starts nothing');
 	await h.finish(browser);

@@ -31,7 +31,7 @@ const importOnPage = (peer, b64) =>
 		const bin = atob(b64);
 		const bytes = new Uint8Array(bin.length);
 		for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-		return await window.__stores.projectFile.openProject(bytes.buffer);
+		return await window.__tp.test.v1.projectFile.openProject(bytes.buffer);
 	}, b64);
 
 // the open warning BLOCKS openProject — watch for it and accept
@@ -40,47 +40,47 @@ const answerOpenConfirm = async (peer) => {
 		() =>
 			peer.page.evaluate(() => {
 				let d;
-				window.__stores.confirmDialog.confirmDialog.subscribe((v) => (d = v))();
+				window.__tp.test.v1.confirmDialog.confirmDialog.subscribe((v) => (d = v))();
 				return d?.title ?? null;
 			}),
 		(t) => typeof t === 'string' && t.startsWith('Open project'),
 		'the OPEN warning dialog appeared (fork 12: open replaces, warned)'
 	);
-	await peer.page.evaluate(() => window.__stores.confirmDialog.resolveConfirm(true));
+	await peer.page.evaluate(() => window.__tp.test.v1.confirmDialog.resolveConfirm(true));
 };
 
 // ---- reading the world -------------------------------------------------------------
 const manifestOf = (peer) =>
 	peer.page.evaluate(() => {
 		let m;
-		window.__stores.projectManifest.projectManifest.subscribe((v) => (m = v))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((v) => (m = v))();
 		return m;
 	});
 
 const libraryOf = (peer) =>
 	peer.page.evaluate(() => {
 		let items;
-		window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((v) => (items = v))();
 		return items.map((i) => ({ name: i.name, hash: i.hash, kind: i.kind, folderId: i.folderId }));
 	});
 
 const childUuids = (peer) =>
 	peer.page.evaluate(() => {
 		let group;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		return (group?.children ?? []).map((c) => c.uuid).sort();
 	});
 
 const currentLevelOf = (peer) =>
 	peer.page.evaluate(() => {
 		let at;
-		window.__stores.levels.currentLevel.subscribe((v) => (at = v))();
+		window.__tp.test.v1.levels.currentLevel.subscribe((v) => (at = v))();
 		return at;
 	});
 
 const makeBox = (peer) =>
 	peer.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1100));
 		s.objectActions.deselectObject();
@@ -89,7 +89,7 @@ const makeBox = (peer) =>
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
-	await A.page.waitForFunction(() => !!window.__stores?.projectFile, { timeout: 30000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.projectFile, { timeout: 30000 });
 
 	// =====================================================================
 	// 1. BUILD A PROJECT ON A — two scenes, an edit, a travel
@@ -100,18 +100,18 @@ h.run(async () => {
 	// these scenes live in is a folder the USER made. That also makes the v2 folder-tree
 	// round trip below a real test rather than a test of our own former default.
 	const sceneFolder = await A.page.evaluate(
-		() => window.__stores.explorer.createFolder('Scenes', null)?.id ?? null
+		() => window.__tp.test.v1.explorer.createFolder('Scenes', null)?.id ?? null
 	);
 	h.check(!!sceneFolder, 'premise: a user-made folder to save the scenes into');
 	const arenaHash = await A.page.evaluate(async (folderId) => {
-		const item = await window.__stores.levels.saveSceneAsLevel('Arena', folderId);
+		const item = await window.__tp.test.v1.levels.saveSceneAsLevel('Arena', folderId);
 		return item?.hash ?? null;
 	}, sceneFolder);
 	h.check(!!arenaHash, `Arena saved as a scene asset (${String(arenaHash).slice(0, 8)})`);
 
 	await makeBox(A); // the scene is now different from what Arena holds
 	const pitV1 = await A.page.evaluate(async (folderId) => {
-		const item = await window.__stores.levels.saveSceneAsLevel('Pit', folderId);
+		const item = await window.__tp.test.v1.levels.saveSceneAsLevel('Pit', folderId);
 		return item?.hash ?? null;
 	}, sceneFolder);
 	h.check(!!pitV1 && pitV1 !== arenaHash, 'Pit saved as a second scene, its own content hash');
@@ -119,7 +119,7 @@ h.run(async () => {
 	// the EDIT, then a travel away — G2b's auto-save publishes the departing scene, so
 	// Pit ends with a real two-entry history rather than a fabricated one
 	await makeBox(A);
-	await A.page.evaluate(() => window.__stores.levels.travelToScene('Arena'));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.travelToScene('Arena'));
 	await h.eventually(
 		() => manifestOf(A),
 		(m) => m.scenes?.Pit?.history?.length === 2,
@@ -139,8 +139,8 @@ h.run(async () => {
 	// an ASSET the project tracks (fork 8: the manifest carries the discovery list)
 	const assetHash = await A.page.evaluate(async () => {
 		const bytes = new TextEncoder().encode('21-G3 project asset payload').buffer;
-		const item = await window.__stores.explorer.addItemFromBytes(bytes, 'project-note.txt', null);
-		window.__stores.projectManifest.recordProjectAssets([item.hash]);
+		const item = await window.__tp.test.v1.explorer.addItemFromBytes(bytes, 'project-note.txt', null);
+		window.__tp.test.v1.projectManifest.recordProjectAssets([item.hash]);
 		return item.hash;
 	});
 	h.check(
@@ -154,11 +154,11 @@ h.run(async () => {
 	// fork 4: pruning drops local BYTES, never history. Deleting the item is exactly
 	// what pruneSceneVersions does, so this is the real state, not a simulation of it.
 	await A.page.evaluate(async (hash) => {
-		const item = window.__stores.explorer.itemByHash(hash);
-		if (item) await window.__stores.explorer.deleteItem(item.id);
+		const item = window.__tp.test.v1.explorer.itemByHash(hash);
+		if (item) await window.__tp.test.v1.explorer.deleteItem(item.id);
 	}, pitV1);
 	h.check(
-		(await A.page.evaluate((hash) => !window.__stores.explorer.itemByHash(hash), pitV1)) === true,
+		(await A.page.evaluate((hash) => !window.__tp.test.v1.explorer.itemByHash(hash), pitV1)) === true,
 		'Pit v1 bytes are gone from the local library (a real prune)'
 	);
 	h.check(
@@ -169,7 +169,7 @@ h.run(async () => {
 	// an unknown top-level field: the normalizeAnnotation preserve rule has to survive
 	// a whole file round trip, not just a wire hop
 	await A.page.evaluate(() => {
-		const m = window.__stores.projectManifest;
+		const m = window.__tp.test.v1.projectManifest;
 		let doc;
 		m.projectManifest.subscribe((v) => (doc = v))();
 		m.manifestRestore({ ...doc, futureField: 'from a newer build' });
@@ -179,7 +179,7 @@ h.run(async () => {
 	// 3. EXPORT — the counts, and the archive itself
 	// =====================================================================
 	const exported = await A.page.evaluate(async () => {
-		const r = await window.__stores.projectFile.exportProject();
+		const r = await window.__tp.test.v1.projectFile.exportProject();
 		let s = '';
 		for (let i = 0; i < r.bytes.length; i += 8192)
 			s += String.fromCharCode.apply(null, r.bytes.subarray(i, i + 8192));
@@ -256,7 +256,7 @@ h.run(async () => {
 	// 4. IMPORT ON A FRESH PAGE — its own IndexedDB, nothing but the file
 	// =====================================================================
 	const B = await h.setupPage(browser, 'B');
-	await B.page.waitForFunction(() => !!window.__stores?.projectFile, { timeout: 30000 });
+	await B.page.waitForFunction(() => !!window.__tp?.test.v1?.projectFile, { timeout: 30000 });
 	const beforeM = await manifestOf(B);
 	h.check(
 		Object.keys(beforeM.scenes).length === 0 && (await libraryOf(B)).length === 0,
@@ -297,7 +297,7 @@ h.run(async () => {
 	);
 	const scenesFolder = await B.page.evaluate(() => {
 		let folders;
-		window.__stores.explorer.explorerFolders.subscribe((v) => (folders = v))();
+		window.__tp.test.v1.explorer.explorerFolders.subscribe((v) => (folders = v))();
 		return folders.find((f) => f.name === 'Scenes' && !f.parentId)?.id ?? null;
 	});
 	// 21-H1: the folder is one A's user MADE, so this is the folder tree round-tripping
@@ -314,7 +314,7 @@ h.run(async () => {
 	// =====================================================================
 	// 5. THE REPRODUCTION: travel on B lands on A's content
 	// =====================================================================
-	const travelled = await B.page.evaluate(() => window.__stores.levels.travelToScene('Arena'));
+	const travelled = await B.page.evaluate(() => window.__tp.test.v1.levels.travelToScene('Arena'));
 	h.check(travelled === true, 'travelToScene resolves the imported name through the imported manifest');
 	h.check(
 		JSON.stringify(await childUuids(B)) === JSON.stringify(arenaWorld),
@@ -323,7 +323,7 @@ h.run(async () => {
 	h.check((await currentLevelOf(B))?.name === 'Arena', 'B knows where it is');
 
 	// Pit's POINTER (v2) is the edited scene — the version the auto-save minted
-	await B.page.evaluate(() => window.__stores.levels.travelToScene('Pit'));
+	await B.page.evaluate(() => window.__tp.test.v1.levels.travelToScene('Pit'));
 	await h.eventually(
 		() => childUuids(B),
 		(u) => u.length === 3,
@@ -354,13 +354,13 @@ h.run(async () => {
 		() =>
 			B.page.evaluate(() => {
 				let d;
-				window.__stores.confirmDialog.confirmDialog.subscribe((v) => (d = v))();
+				window.__tp.test.v1.confirmDialog.confirmDialog.subscribe((v) => (d = v))();
 				return d?.title ?? null;
 			}),
 		(t) => t === 'Newer project format',
 		'a NEWER format asks first (an import is one person at a file dialog — unlike travel, it can be asked)'
 	);
-	await B.page.evaluate(() => window.__stores.confirmDialog.resolveConfirm(false));
+	await B.page.evaluate(() => window.__tp.test.v1.confirmDialog.resolveConfirm(false));
 	h.check((await pending) === null, 'declining resolves null — a silent no-op for the caller');
 	h.check(
 		JSON.stringify((await manifestOf(B)).scenes) === beforeGate &&
@@ -404,7 +404,7 @@ h.run(async () => {
 	// =====================================================================
 	// the export entry exists only once there IS a project; C has none
 	const C = await h.setupPage(browser, 'C');
-	await C.page.waitForFunction(() => !!window.__stores?.projectFile, { timeout: 30000 });
+	await C.page.waitForFunction(() => !!window.__tp?.test.v1?.projectFile, { timeout: 30000 });
 	// the grid menu, opened the way a user opens it. The right-click goes near the
 	// BOTTOM of the grid: B's library is populated, and a press landing on a card
 	// opens the ITEM menu instead — which is why every read below asserts the
@@ -449,13 +449,13 @@ h.run(async () => {
 	);
 
 	// the Open affordance accepts .tp, and fileHandler's switch routes it
-	await C.page.evaluate(() => window.__stores.closeMenu.set(false));
+	await C.page.evaluate(() => window.__tp.test.v1.closeMenu.set(false));
 	await C.page.waitForTimeout(300);
 	h.check(
 		((await C.page.getAttribute('#load-file', 'accept')) ?? '').includes('.tp'),
 		'the Open file input accepts .tp'
 	);
-	await C.page.evaluate(() => window.__stores.closeMenu.set(true));
+	await C.page.evaluate(() => window.__tp.test.v1.closeMenu.set(true));
 	await C.page.waitForTimeout(200);
 	// load() blocks on the open warning — answer it from node while the page awaits
 	const viaLoadPending = C.page.evaluate(
@@ -464,9 +464,9 @@ h.run(async () => {
 			const bytes = new Uint8Array(bin.length);
 			for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
 			const file = new File([bytes], 'MyGame.tp', { type: 'application/zip' });
-			await window.__stores.fileHandler.load(file);
+			await window.__tp.test.v1.fileHandler.load(file);
 			let m;
-			window.__stores.projectManifest.projectManifest.subscribe((v) => (m = v))();
+			window.__tp.test.v1.projectManifest.projectManifest.subscribe((v) => (m = v))();
 			return Object.keys(m.scenes).sort();
 		},
 		{ b64: exported.b64 }

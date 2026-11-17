@@ -13,7 +13,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(4000);
 		await warm.ctx.close();
 	}
@@ -22,11 +22,11 @@ h.run(async () => {
 	await h.connect(B, A);
 
 	await A.page.evaluate(() => {
-		const cmd = window.__stores.commandsHandler.sceneCommand;
+		const cmd = window.__tp.test.v1.commandsHandler.sceneCommand;
 		cmd('/create Arch');
 		cmd('/create Sphere 0.15');
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		window.__arch = g.children.find((c) => c.name === 'Arch');
 		window.__ball = g.children.find((c) => c.name === 'Sphere');
 		window.__park = () => {
@@ -39,12 +39,12 @@ h.run(async () => {
 		};
 		window.__park();
 		// a heavy DYNAMIC arch: X2's exact mesh is static-only, so its default is the hull
-		window.__stores.physics.setPhysicsFor(window.__arch.uuid, { mode: 'dynamic', mass: 500 });
-		window.__stores.physics.setPhysicsFor(window.__ball.uuid, { mode: 'dynamic', mass: 0.2, collider: 'sphere' });
+		window.__tp.test.v1.physics.setPhysicsFor(window.__arch.uuid, { mode: 'dynamic', mass: 500 });
+		window.__tp.test.v1.physics.setPhysicsFor(window.__ball.uuid, { mode: 'dynamic', mass: 0.2, collider: 'sphere' });
 	});
 
 	// --- 1) the Inspector button runs it (in a worker) and writes a custom collider
-	await A.page.evaluate(() => window.__stores.objectActions.selectObject(window.__arch.uuid, true));
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.selectObject(window.__arch.uuid, true));
 	await h.eventually(
 		() => A.page.evaluate(() => !!document.querySelector('#physics-decompose')),
 		(v) => v,
@@ -62,7 +62,7 @@ h.run(async () => {
 	const result = await A.page.evaluate(() => {
 		const p = window.__arch.userData.physics;
 		let toasts;
-		window.__stores.toastStore.subscribe((v) => (toasts = v))();
+		window.__tp.test.v1.toastStore.subscribe((v) => (toasts = v))();
 		return {
 			pieces: p.colliderPieces.length,
 			floats: p.colliderVerts.length,
@@ -71,7 +71,7 @@ h.run(async () => {
 	});
 	h.check(result.pieces >= 3 && result.floats <= 1200, `the arch became ${result.pieces} convex pieces in ${result.floats} floats (<= 1200)`);
 	h.check(/convex piece/.test(result.toast ?? ''), `a toast says so (${result.toast})`);
-	const direct = await A.page.evaluate(() => window.__stores.colliderDecompose.decomposeCollider(window.__arch.uuid, 6));
+	const direct = await A.page.evaluate(() => window.__tp.test.v1.colliderDecompose.decomposeCollider(window.__arch.uuid, 6));
 	h.check(direct?.where === 'worker', `the decomposition ran in a Worker (${JSON.stringify(direct)})`);
 
 	// --- 2) a peer receives the result (it never runs V-HACD itself)
@@ -81,7 +81,7 @@ h.run(async () => {
 		() =>
 			B.page.evaluate((u) => {
 				let g;
-				window.__stores.objectsGroup.subscribe((v) => (g = v))();
+				window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 				const p = g?.getObjectByProperty('uuid', u)?.userData.physics;
 				return p ? { c: p.collider, n: p.colliderPieces?.length ?? 0 } : null;
 			}, uuid),
@@ -91,21 +91,21 @@ h.run(async () => {
 
 	// --- 3) one undo puts the previous collider back (props history)
 	await A.page.evaluate(() => {
-		window.__stores.history.undo(); // the direct 6-piece run
-		window.__stores.history.undo(); // the button's run
+		window.__tp.test.v1.history.undo(); // the direct 6-piece run
+		window.__tp.test.v1.history.undo(); // the button's run
 	});
 	const undone = await A.page.evaluate(() => window.__arch.userData.physics.collider ?? null);
 	h.check(undone === before, `undo restores the collider it had (${undone} vs ${before})`);
 	await A.page.evaluate(() => {
-		window.__stores.history.redo();
-		window.__stores.objectActions.deselectObject();
-		window.__stores.closeSelectionInspector?.();
+		window.__tp.test.v1.history.redo();
+		window.__tp.test.v1.objectActions.deselectObject();
+		window.__tp.test.v1.closeSelectionInspector?.();
 	});
 
 	// --- 4) physics: the decomposed DYNAMIC arch keeps its opening; the hull seals it
 	const roll = () =>
 		A.page.evaluate(async () => {
-			const p = window.__stores.physics;
+			const p = window.__tp.test.v1.physics;
 			p.toggleSimulation();
 			// the start is async (rapier warm-up + body build): push only once it runs
 			const t00 = Date.now();
@@ -144,7 +144,7 @@ h.run(async () => {
 		`the dynamic arch is a compound of convex pieces in rapier (${JSON.stringify(through.shapes)})`
 	);
 	h.check(through.z > 2, `the ball rolls through the decomposed DYNAMIC arch (z ${through.z.toFixed(2)})`);
-	await A.page.evaluate(() => window.__stores.physics.setPhysicsFor(window.__arch.uuid, { collider: 'hull' }));
+	await A.page.evaluate(() => window.__tp.test.v1.physics.setPhysicsFor(window.__arch.uuid, { collider: 'hull' }));
 	const sealed = await roll();
 	h.check(sealed.rest && sealed.z < 0, `COUNTERFACTUAL: the hull stops the ball (${JSON.stringify({ z: sealed.z, rest: sealed.rest })})`);
 
@@ -152,13 +152,13 @@ h.run(async () => {
 	try {
 		fs.mkdirSync(EVIDENCE, { recursive: true });
 		// re-decompose (an undo here would undo the run's layout entry, not the collider)
-		await A.page.evaluate(() => window.__stores.colliderDecompose.decomposeCollider(window.__arch.uuid, 8));
+		await A.page.evaluate(() => window.__tp.test.v1.colliderDecompose.decomposeCollider(window.__arch.uuid, 8));
 		await A.page.evaluate(() => {
-			window.__stores.toastStore.set([]);
-			window.__stores.colliderHelpers.showColliders.set(true);
+			window.__tp.test.v1.toastStore.set([]);
+			window.__tp.test.v1.colliderHelpers.showColliders.set(true);
 			window.__arch.visible = false;
 			window.__ball.visible = false;
-			window.__stores.objectActions.flyTo([1.6, 1.6, -4.2], [0, 0.9, 0], 0);
+			window.__tp.test.v1.objectActions.flyTo([1.6, 1.6, -4.2], [0, 0.9, 0], 0);
 		});
 		await A.page.waitForTimeout(1200);
 		await A.page.screenshot({ path: path.join(EVIDENCE, '05-decomposed-arch-viz.png') });

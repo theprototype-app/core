@@ -13,11 +13,11 @@ const inPage = (page, body, arg) =>
 	page.evaluate(
 		([src, a]) =>
 			Object.getPrototypeOf(async function () {}).constructor('s', 'ad', 'ap', 'eng', 'mc', 'arg', src)(
-				window.__stores,
-				window.__stores.audioDevices,
-				window.__stores.audioPatch,
-				window.__stores.audioEngine,
-				window.__stores.musicClock,
+				window.__tp?.test.v1,
+				window.__tp.test.v1.audioDevices,
+				window.__tp.test.v1.audioPatch,
+				window.__tp.test.v1.audioEngine,
+				window.__tp.test.v1.musicClock,
 				a
 			),
 		[body, arg ?? null]
@@ -194,7 +194,7 @@ h.run(async () => {
 	const declined = await inPage(page, 'return { drops: window.__drops.length, toast: (() => { let t; s.toastStore.subscribe((v) => (t = v))(); return t.slice(arg).map((x) => String(x?.message ?? x)).join(" | "); })() }', toastsBefore);
 	h.check(declined.drops === 2 && /where they plug in/.test(declined.toast), '8.4 a drop the handler declines falls through to the old toast (' + JSON.stringify(declined.toast) + ')');
 	console.log('\n=== 9. api.audio.previewParams: a live gesture, replicated, no history (23-C4) ===');
-	const undoLen = (/** @type {any} */ p) => p.evaluate(() => { let n = 0; window.__stores.history.undoStack.subscribe((v) => (n = v.length))(); return n; });
+	const undoLen = (/** @type {any} */ p) => p.evaluate(() => { let n = 0; window.__tp.test.v1.history.undoStack.subscribe((v) => (n = v.length))(); return n; });
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);
 	await h.eventually(() => inPage(B.page, 'return !!ad.findDeviceObject(arg)', dropDev.uuid), (v) => v === true, '9.0 (premise) B holds the device object from the handshake');
@@ -217,7 +217,7 @@ h.run(async () => {
 	await page.waitForTimeout(150);
 	const withBefore = await undoLen(page);
 	h.check(withBefore === committed + 1, '9.4 a commit equal to its last preview still records ONE entry when it carries the gesture\'s start document (' + committed + ' -> ' + withBefore + ')');
-	await page.evaluate(() => window.__stores.history.undo());
+	await page.evaluate(() => window.__tp.test.v1.history.undo());
 	await page.waitForTimeout(150);
 	const restored = await inPage(page, 'return ad.deviceOf(ad.findDeviceObject(arg))?.params.freq', dropDev.uuid);
 	h.check(restored === 780, '9.5 and undo restores the value from BEFORE the gesture, not the last preview (' + restored + ')');

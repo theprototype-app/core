@@ -398,7 +398,7 @@ h.run(async () => {
 	// ...and the LIST itself is untouched: the dock tab strip's own ＋ still offers it.
 	// Removing a CONSUMER must not remove the feature, so both halves are asserted here.
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphClose.set(false);
 		s.bottomDock.activateDock('flow');
 	});
@@ -441,7 +441,7 @@ h.run(async () => {
 	// the play FAB (z 40+ over the pill's 30 — the behaviour the user asked for), so
 	// the next section's right-click on the FAB would be intercepted, exactly as a real
 	// pointer would be. The window was only ever this section's evidence.
-	await A.page.evaluate(() => window.__stores.explorerClose.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.explorerClose.set(true));
 	await A.page.waitForTimeout(300);
 
 	// ---- W1: the safety hatch — Settings' Reset window positions ---------------------
@@ -451,7 +451,7 @@ h.run(async () => {
 	await fabMenu(A.page);
 	await pick(A.page, 'Collapse toolbar');
 	h.check((await barTitles(A.page)).join(' | ') === '—', 'premise: the bar is collapsed to the well');
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 	await A.page.waitForTimeout(500);
 	// the button lives under INTERFACE ▸ Windows & chrome, and a collapsed
 	// AccordionItem renders no body at all in flowbite 1.x — so the section has to be
@@ -465,7 +465,7 @@ h.run(async () => {
 	// a DOM click, like reset-windows.test.cjs: the modal's own chrome is in the way
 	await A.page.evaluate(() => document.querySelector('#reset-windows')?.click());
 	await A.page.waitForTimeout(400);
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await A.page.waitForTimeout(300);
 	titles = await barTitles(A.page);
 	h.check(
@@ -540,7 +540,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(700);
 	const afterReload = await A.page.evaluate(() => {
 		let v;
-		window.__stores.toolbarAlwaysOnTop.subscribe((x) => (v = x))();
+		window.__tp.test.v1.toolbarAlwaysOnTop.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(
@@ -571,7 +571,7 @@ h.run(async () => {
 	const dockKey = () =>
 		A.page.evaluate(() => {
 			let k = null;
-			window.__stores.bottomDock.visibleDockKey.subscribe((v) => (k = v))();
+			window.__tp.test.v1.bottomDock.visibleDockKey.subscribe((v) => (k = v))();
 			return k;
 		});
 	const openCustomize = async (from = 'Move (1)') => {
@@ -838,7 +838,7 @@ h.run(async () => {
 	h.check(
 		await A.page.evaluate(() => {
 			let occ = {};
-			window.__stores.bottomDock.dockOccupants.subscribe((v) => (occ = v))();
+			window.__tp.test.v1.bottomDock.dockOccupants.subscribe((v) => (occ = v))();
 			return !!occ.shader?.present;
 		}),
 		'...as a dock OCCUPANT, so the tree took its docked branch'
@@ -848,7 +848,7 @@ h.run(async () => {
 		() =>
 			A.page.evaluate(() => {
 				let v = true;
-				window.__stores.shaderEditorClose.subscribe((x) => (v = x))();
+				window.__tp.test.v1.shaderEditorClose.subscribe((x) => (v = x))();
 				return v;
 			}),
 		(v) => v === true,

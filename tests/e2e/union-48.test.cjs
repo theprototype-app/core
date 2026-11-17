@@ -26,37 +26,37 @@ const edge = (source, target, targetHandle) => ({
 const setGraph = (page, nodes, edges) =>
 	page.evaluate(
 		([nodes, edges]) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.flowGraphs.update((graphs) => ({ ...graphs, scene: { nodes, edges } }));
 			s.flowNodes.set(nodes);
 			s.flowEdges.set(edges);
 		},
 		[nodes, edges]
 	);
-const dbgRt = (page) => page.evaluate(() => window.__stores.flowRuntime.flowDebugRuntime());
+const dbgRt = (page) => page.evaluate(() => window.__tp.test.v1.flowRuntime.flowDebugRuntime());
 const liveCount = (page, id) =>
 	page.evaluate((nid) => {
 		let v;
-		window.__stores.flowTriggers.subscribe((x) => (v = x))();
+		window.__tp.test.v1.flowTriggers.subscribe((x) => (v = x))();
 		return v?.[nid]?.count ?? 0;
 	}, id);
 const viewCount = async (page, id) => (await dbgRt(page)).viewTriggers?.[id]?.count ?? 0;
 const pulse = (page, id) =>
-	page.evaluate((nid) => window.__stores.flowRuntime.applyNodeTrigger(nid, (Date.now() % 86400000) / 1000, true), id);
-const runs = (page) => page.evaluate(() => window.__stores.sequencePlayer.sequencePlayerDebug().runs);
-const debug = (page, what) => page.evaluate((w) => window.__stores.flowDebug.requestDebug(w), what);
-const bp = (page, id, on) => page.evaluate(([i, o]) => window.__stores.flowDebug.toggleBreakpoint(i, o), [id, on]);
+	page.evaluate((nid) => window.__tp.test.v1.flowRuntime.applyNodeTrigger(nid, (Date.now() % 86400000) / 1000, true), id);
+const runs = (page) => page.evaluate(() => window.__tp.test.v1.sequencePlayer.sequencePlayerDebug().runs);
+const debug = (page, what) => page.evaluate((w) => window.__tp.test.v1.flowDebug.requestDebug(w), what);
+const bp = (page, id, on) => page.evaluate(([i, o]) => window.__tp.test.v1.flowDebug.toggleBreakpoint(i, o), [id, on]);
 
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1440, height: 900 } }, storage: { theme: 'dark', toastsInDrawerOnly: 'true', toursSeen: '{"editor":true,"editor-touch":true}' } });
 	const P = A.page;
 	await P.locator('#restore-session-dismiss').click({ timeout: 3000 }).catch(() => {});
-	await P.waitForFunction(() => !!window.__stores?.flowDebug && !!window.__stores?.sequencePlayer && !!window.__stores?.sequences, null, { timeout: 30000 });
+	await P.waitForFunction(() => !!window.__tp?.test.v1?.flowDebug && !!window.__tp?.test.v1?.sequencePlayer && !!window.__tp?.test.v1?.sequences, null, { timeout: 30000 });
 
 	// ---------- the scene: a 3 s sequence with an event "hit" at 0.4 s ----------
 	const seq = await P.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.clearGraphs();
 		s.flowTriggers.set({});
 		s.isLocked.set(null);
@@ -76,7 +76,7 @@ h.run(async () => {
 		],
 		[edge('u-click', 'u-play', 'trigger'), edge('u-ev', 'u-count', 'trigger')]
 	);
-	await P.evaluate(() => window.__stores.isLocked.set(true));
+	await P.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await P.waitForTimeout(1200);
 
 	// ---------- U1: a breakpoint behind On Sequence Event ----------
@@ -122,7 +122,7 @@ h.run(async () => {
 	await h.eventually(() => runs(P), (r) => r.length === 0, 'U2.5a (the run ends)', 8000);
 	h.check((await liveCount(P, 'u-count')) === 3, `U2.5b …and only once (${await liveCount(P, 'u-count')})`);
 	await bp(P, 'u-play', false);
-	await P.evaluate(() => window.__stores.isLocked.set(null));
+	await P.evaluate(() => window.__tp.test.v1.isLocked.set(null));
 	await P.waitForTimeout(2600); // isLocked false -> null cooldown
 
 	// ---------- U3: the budget chip's drag + a quick ✓ ----------

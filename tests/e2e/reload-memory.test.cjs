@@ -56,7 +56,7 @@ h.run(async () => {
 		const dom = await cdp.send('Memory.getDOMCounters');
 		const gl = await A.page.evaluate(() => {
 			/** @type {any} */ let r;
-			window.__stores.globalRenderer.subscribe((/** @type {any} */ v) => (r = v))();
+			window.__tp.test.v1.globalRenderer.subscribe((/** @type {any} */ v) => (r = v))();
 			return r?.info?.memory ?? null;
 		}).catch(() => null);
 		// the premise: every sample is a FRESH document (an unchanged timeOrigin = no reload happened)

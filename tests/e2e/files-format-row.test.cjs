@@ -30,11 +30,11 @@ const TINY_PNG =
 	'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAKklEQVR4nGP8z8Dwn4EIwESMolGF+BUyMjAwMDIQBMQrJKgUvzt/EnIhAJTfBhFVsHRAAAAAAElFTkSuQmCC';
 
 const openMenu = async (peer) => {
-	await peer.page.evaluate(() => window.__stores.closeMenu.set(false));
+	await peer.page.evaluate(() => window.__tp.test.v1.closeMenu.set(false));
 	await peer.page.waitForTimeout(400);
 };
 const closeMenu = async (peer) => {
-	await peer.page.evaluate(() => window.__stores.closeMenu.set(true));
+	await peer.page.evaluate(() => window.__tp.test.v1.closeMenu.set(true));
 	await peer.page.waitForTimeout(250);
 };
 
@@ -79,29 +79,29 @@ const pressed = (peer, id) => peer.page.evaluate((i) => document.getElementById(
 const toastsOf = (peer) =>
 	peer.page.evaluate(() => {
 		let toasts;
-		window.__stores.toastStore.subscribe((t) => (toasts = t))();
+		window.__tp.test.v1.toastStore.subscribe((t) => (toasts = t))();
 		return (toasts ?? []).map((t) => (typeof t === 'string' ? t : (t.text ?? '')));
 	});
-const clearToasts = (peer) => peer.page.evaluate(() => window.__stores.toastStore.set([]));
+const clearToasts = (peer) => peer.page.evaluate(() => window.__tp.test.v1.toastStore.set([]));
 
 const libraryOf = (peer) =>
 	peer.page.evaluate(() => {
 		let items, folders;
-		window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
-		window.__stores.explorer.explorerFolders.subscribe((v) => (folders = v))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((v) => (items = v))();
+		window.__tp.test.v1.explorer.explorerFolders.subscribe((v) => (folders = v))();
 		return {
 			items: items.map((i) => ({ name: i.name, folderId: i.folderId ?? null })),
 			folders: folders.map((f) => ({ id: f.id, name: f.name, parentId: f.parentId ?? null }))
 		};
 	});
 const manifestUsed = (peer) =>
-	peer.page.evaluate(() => window.__stores.projectManifest.manifestInUse());
+	peer.page.evaluate(() => window.__tp.test.v1.projectManifest.manifestInUse());
 
 h.run(async () => {
 	const browser = await h.launch();
 	// 41b H14: the LIST layout draws the format row (Compact's default on a desktop has none)
 	const A = await h.setupPage(browser, 'A', { storage: { 'ui:projectActions': 'list' } });
-	await A.page.waitForFunction(() => !!window.__stores?.projectFile, { timeout: 30000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.projectFile, { timeout: 30000 });
 
 	// =====================================================================
 	// 1. THE PRIMARY ROW IS `Project | Scene` + THE COG, AND NOTHING ELSE
@@ -272,7 +272,7 @@ h.run(async () => {
 		emptyLib.items.length === 0 && emptyLib.folders.length === 0 && !(await manifestUsed(A)),
 		`premise: a fresh profile really is empty (${emptyLib.items.length} items, ${emptyLib.folders.length} folders)`
 	);
-	const refused = await A.page.evaluate(() => window.__stores.projectFile.downloadProject());
+	const refused = await A.page.evaluate(() => window.__tp.test.v1.projectFile.downloadProject());
 	h.check(refused === null, 'exporting a completely empty library refuses instead of writing an empty zip');
 	await h.eventually(
 		() => toastsOf(A),
@@ -294,9 +294,9 @@ h.run(async () => {
 	await A.page.waitForTimeout(1200);
 	const landed = await A.page.evaluate(() => {
 		let close, active, folders;
-		window.__stores.explorerClose.subscribe((v) => (close = v))();
-		window.__stores.explorer.activeFolder.subscribe((v) => (active = v))();
-		window.__stores.explorer.explorerFolders.subscribe((v) => (folders = v))();
+		window.__tp.test.v1.explorerClose.subscribe((v) => (close = v))();
+		window.__tp.test.v1.explorer.activeFolder.subscribe((v) => (active = v))();
+		window.__tp.test.v1.explorer.explorerFolders.subscribe((v) => (folders = v))();
 		const scenes = folders.find((f) => f.name === 'Scenes' && !f.parentId) ?? null;
 		const input = document.querySelector('#explorer-new-card input');
 		return {
@@ -308,7 +308,7 @@ h.run(async () => {
 			inputValue: input?.value ?? null,
 			armCleared: (() => {
 				let arm;
-				window.__stores.explorerSceneSaveArm.subscribe((v) => (arm = v))();
+				window.__tp.test.v1.explorerSceneSaveArm.subscribe((v) => (arm = v))();
 				return arm === null;
 			})()
 		};
@@ -344,8 +344,8 @@ h.run(async () => {
 	// is a legitimate export. Wipe back to nothing, then furnish it with an IMAGE only —
 	// no scene, no manifest — and assert the export runs.
 	await A.page.evaluate(async () => {
-		await window.__stores.explorer.clearLibrary();
-		window.__stores.projectManifest.manifestRestore(null, false);
+		await window.__tp.test.v1.explorer.clearLibrary();
+		window.__tp.test.v1.projectManifest.manifestRestore(null, false);
 	});
 	await A.page.waitForTimeout(600);
 	h.check(
@@ -354,7 +354,7 @@ h.run(async () => {
 	);
 	await A.page.evaluate(async (png) => {
 		const bytes = Uint8Array.from(atob(png), (c) => c.charCodeAt(0));
-		await window.__stores.explorer.addItemFromBytes(bytes.buffer, 'model-stand-in.png', null);
+		await window.__tp.test.v1.explorer.addItemFromBytes(bytes.buffer, 'model-stand-in.png', null);
 	}, TINY_PNG);
 	await h.eventually(
 		() => libraryOf(A),
@@ -368,7 +368,7 @@ h.run(async () => {
 	await clearToasts(A);
 	const [dl] = await Promise.all([
 		A.page.waitForEvent('download', { timeout: 20000 }),
-		A.page.evaluate(() => window.__stores.projectFile.downloadProject())
+		A.page.evaluate(() => window.__tp.test.v1.projectFile.downloadProject())
 	]);
 	h.check(
 		dl.suggestedFilename().endsWith('.tp'),
@@ -379,7 +379,7 @@ h.run(async () => {
 		'and nothing refuses it any more'
 	);
 	const carried = await A.page.evaluate(async () => {
-		const r = await window.__stores.projectFile.exportProject();
+		const r = await window.__tp.test.v1.projectFile.exportProject();
 		return { items: r.items, scenes: r.scenes };
 	});
 	h.check(

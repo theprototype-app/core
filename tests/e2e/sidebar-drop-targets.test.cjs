@@ -88,7 +88,7 @@ function zOf(page, sel) {
 	}, sel);
 }
 const store = (page, name, key) =>
-	page.evaluate(([n, k]) => new Promise((r) => (k ? window.__stores[n][k] : window.__stores[n]).subscribe(r)()), [name, key]);
+	page.evaluate(([n, k]) => new Promise((r) => (k ? window.__tp.test.v1[n][k] : window.__tp.test.v1[n]).subscribe(r)()), [name, key]);
 
 async function tabCentre(page, side, key) {
 	return page.evaluate(
@@ -116,7 +116,7 @@ async function dockList(page, edgeX) {
 	// already a tab of that side (a reopened list keeps its side): nothing to drag
 	if (open?.shown && open.docked === (edgeX < VW / 2 ? 'left' : 'right')) return open;
 	if (open?.shown && open.docked) {
-		await page.evaluate(() => window.__stores.docking.undock('objects', 400, 300));
+		await page.evaluate(() => window.__tp.test.v1.docking.undock('objects', 400, 300));
 		await page.waitForTimeout(300);
 	}
 	if (!(await probe(page, '#object-list'))?.shown) {
@@ -169,12 +169,12 @@ h.run(async () => {
 	h.check(hosted?.objects === true && list?.host === 'shown' && !list.docked, `dropped there the list is a bottom-dock tab (${JSON.stringify({ hosted, list })})`);
 	h.check(!(await page.evaluate(() => !!document.querySelector('#sidebar-strip-right [data-sidebar-tab="objects"]'))), 'and it left the right sidebar');
 	// back out of the dock, closed — the next sections start clean
-	await page.evaluate(() => window.__stores.dockHost.setHostedDocked('objects', false));
+	await page.evaluate(() => window.__tp.test.v1.dockHost.setHostedDocked('objects', false));
 	await page.waitForTimeout(300);
 
 	// ---------- 3. onto the OTHER side's open column: "Add as tab", painted above that column ----------
 	// Configure Scene on the right, the list on the left
-	await page.evaluate(() => window.__stores.showSidebar?.('scene'));
+	await page.evaluate(() => window.__tp.test.v1.showSidebar?.('scene'));
 	await page.waitForTimeout(600);
 	let right = await strip(page, 'right');
 	if (!right?.tabs.includes('scene')) {
@@ -248,10 +248,10 @@ h.run(async () => {
 	h.check(!right?.tabs.includes('objects') && right?.tabs.includes('scene') && !list?.shown, `the list's × closes the list, the other tab stays (${JSON.stringify({ right, list })})`);
 
 	// ---------- 7. a strip with more tabs than room SCROLLS, like the dock's ----------
-	await page.evaluate(() => window.__stores.sidebars.setSidebarWidth('right', 250));
+	await page.evaluate(() => window.__tp.test.v1.sidebars.setSidebarWidth('right', 250));
 	await page.locator('p[title="Object list (O)"]').click();
 	await page.waitForTimeout(400);
-	await page.evaluate(() => window.__stores.statsOpen?.set?.(true) ?? window.__stores.sceneBudget.statsOpen.set(true));
+	await page.evaluate(() => window.__tp.test.v1.statsOpen?.set?.(true) ?? window.__tp.test.v1.sceneBudget.statsOpen.set(true));
 	await page.waitForTimeout(400);
 	// both land on the right through the menu / the edge
 	list = await dockList(page, VW - 15);

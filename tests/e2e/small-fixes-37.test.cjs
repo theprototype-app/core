@@ -12,13 +12,13 @@ h.run(async () => {
 	const readStore = (/** @type {string} */ name) =>
 		page.evaluate((n) => {
 			let v;
-			window.__stores[n].subscribe((x) => (v = x))();
+			window.__tp.test.v1[n].subscribe((x) => (v = x))();
 			return v;
 		}, name);
 
 	// ---- 1. the view-mode key ---------------------------------------------------------
 	const row = await page.evaluate(() => {
-		const r = window.__stores.shortcutsRegistry.shortcuts.find((s) => s.id === 'view.cycle');
+		const r = window.__tp.test.v1.shortcutsRegistry.shortcuts.find((s) => s.id === 'view.cycle');
 		return r ? { keys: r.keys, scope: r.scope, label: r.label } : null;
 	});
 	h.check(row?.keys === 'Z' && row?.scope === 'viewport', `the registry has view.cycle on Z (${JSON.stringify(row)})`);
@@ -37,19 +37,19 @@ h.run(async () => {
 	}
 	h.check(seen.join(',') === 'shaded,shaded-ao,wireframe,shaded', `Z cycles the modes in chip order (${seen.join(' -> ')})`);
 	const wireOn = await page.evaluate(async () => {
-		window.__stores.viewMode.set('wireframe');
+		window.__tp.test.v1.viewMode.set('wireframe');
 		await new Promise((r) => setTimeout(r, 200));
 		let sc;
-		window.__stores.globalScene.subscribe((s) => (sc = s))();
+		window.__tp.test.v1.globalScene.subscribe((s) => (sc = s))();
 		const on = !!sc.overrideMaterial?.wireframe;
-		window.__stores.viewMode.set('shaded');
+		window.__tp.test.v1.viewMode.set('shaded');
 		return on;
 	});
 	h.check(wireOn, 'landing on Wireframe really applies the override material');
-	const skip = await page.evaluate(() => window.__stores.viewModeCtl.nextViewMode('shaded', true));
+	const skip = await page.evaluate(() => window.__tp.test.v1.viewModeCtl.nextViewMode('shaded', true));
 	h.check(skip === 'wireframe', 'with the scene providing AO, the cycle skips Shaded + AO (the disabled chip)');
 	const rebound = await page.evaluate(() => {
-		const reg = window.__stores.shortcutsRegistry;
+		const reg = window.__tp.test.v1.shortcutsRegistry;
 		const ok = reg.rebindShortcut('view.cycle', 'Shift+Z');
 		const keys = reg.shortcuts.find((s) => s.id === 'view.cycle').keys;
 		reg.rebindShortcut('view.cycle', 'Z');
@@ -59,7 +59,7 @@ h.run(async () => {
 
 	// ---- 2. live wireframe re-tint ------------------------------------------------------
 	const tint = await page.evaluate(async () => {
-		const { commandsHandler, objectsGroup, objectActions, faceEdit, meshEdit, materialsHandler } = window.__stores;
+		const { commandsHandler, objectsGroup, objectActions, faceEdit, meshEdit, materialsHandler } = window.__tp?.test.v1;
 		const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 		commandsHandler.sceneCommand('/create box');
 		await wait(700);
@@ -100,7 +100,7 @@ h.run(async () => {
 
 	// ---- 3. pins under a moved world rig ------------------------------------------------
 	const pins = await page.evaluate(async (uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 		const ah = s.annotationsHandler;
@@ -144,13 +144,13 @@ h.run(async () => {
 	h.check(pins.back < 0.01, 'and back after the rig resets');
 
 	// ---- 4. ThemedSelect inside a true modal dialog ------------------------------------
-	await page.evaluate(() => window.__stores.settingsOpen.set(true));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 	await page.waitForTimeout(500);
 	await page.getByText('Interface', { exact: true }).first().click();
 	await page.waitForTimeout(300);
 	const themeBefore = await page.evaluate(() => {
 		let v;
-		window.__stores.themes.theme.subscribe((x) => (v = x))();
+		window.__tp.test.v1.themes.theme.subscribe((x) => (v = x))();
 		return v;
 	});
 	// move the theme picker into a fresh showModal() dialog: the case a dialog that reverts
@@ -183,12 +183,12 @@ h.run(async () => {
 	await page.waitForTimeout(250);
 	const themeAfter = await page.evaluate(() => {
 		let v;
-		window.__stores.themes.theme.subscribe((x) => (v = x))();
+		window.__tp.test.v1.themes.theme.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(themeAfter !== themeBefore, `clicking the option picks it inside the modal (${themeBefore} -> ${themeAfter})`);
 	await page.evaluate((t) => {
-		window.__stores.themes.theme.set(t);
+		window.__tp.test.v1.themes.theme.set(t);
 		const dlg = document.querySelector('#r18-modal');
 		const wrap = dlg.querySelector('.ts-wrap');
 		window.__tsHome.parent.insertBefore(wrap, window.__tsHome.next);

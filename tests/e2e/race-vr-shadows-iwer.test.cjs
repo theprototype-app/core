@@ -32,7 +32,7 @@ function raceScene() {
 /** the shadow state as the renderer sees it (race-vr-shadows' reading) */
 const shadowState = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let scene;
 		s.globalScene.subscribe((v) => (scene = v))();
 		const casters = [];
@@ -52,7 +52,7 @@ const shadowState = (page) =>
 /** record what the governor decided the moment a session started (before any frame can step it) */
 const armEntryProbe = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let r;
 		s.globalRenderer.subscribe((v) => (r = v))();
 		const w = /** @type {any} */ (window);
@@ -78,13 +78,13 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A', { init: iwer.initScript(), context: { viewport: { width: 1280, height: 720 } } });
 	const page = A.page;
 	await page.evaluate(async (arr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = await s.sessions.importSessionZip(new Uint8Array(arr).buffer);
 		if (payload) await s.sessions.requestLoadSession(payload.id);
 	}, Array.from(bytes));
 	await settleScene(page);
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.viewMode.set('shaded');
 		s.lightParams.shadowQuality.set('high');
 		s.qualityGovernor.governorForTest.reset();
@@ -103,14 +103,14 @@ h.run(async () => {
 	const entry = await page.evaluate(() => /** @type {any} */ (window).__xrEntry);
 	h.check(!!entry && entry.level === 0 && entry.floor === 0 && entry.shadowsOff === false, `the governor's sessionstart enters Race at FULL quality, shadows on (${JSON.stringify(entry)})`);
 	// hold the level for the measurement (a busy runner must not step it down mid-check)
-	await page.evaluate(() => window.__stores.qualityGovernor.setAutoQuality(false));
+	await page.evaluate(() => window.__tp.test.v1.qualityGovernor.setAutoQuality(false));
 	const xr = await h.eventually(() => shadowState(page), (v) => v.budget.active && v.casters.length === 1, 'in the session ONE directional light casts (the rig sun stands down)', 10000).then(() => shadowState(page));
 	h.check(xr.casters[0] === 'Sun' && xr.rigCasts === false, `…the scene's own Sun keeps its shadow (${xr.casters}, rig ${xr.rigCasts})`);
 	h.check(xr.liveSpan === 90, `…its live frustum is the fitted 90 m square around the headset (${xr.liveSpan})`);
 
 	// 3. the shadow pass runs in XR frames
 	const pass = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let scene;
 		s.globalScene.subscribe((v) => (scene = v))();
 		let r;
@@ -145,7 +145,7 @@ h.run(async () => {
 
 	// 5. counterfactual: no Race marker -> no claim -> the next session enters at the headset floor
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		const marker = g.getObjectByName('Race game');

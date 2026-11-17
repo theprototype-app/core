@@ -20,7 +20,7 @@ const { buildHeavyImport, buildOptimizeFixtures } = require('./gltfOptimizeFixtu
 /** page helpers shared by both peers */
 function install(page) {
 	return page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const read = (store) => {
 			let v;
 			store.subscribe((x) => (v = x))();
@@ -91,7 +91,7 @@ h.run(async () => {
 
 	// ---- 1 Settings ▸ Import ------------------------------------------------------------------
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.settingsSection.set('import');
 		s.settingsOpen.set(true);
 	});
@@ -99,12 +99,12 @@ h.run(async () => {
 	const rows = await page.evaluate(() => [...document.querySelectorAll('#import-settings-section .setting-row .sr-name')].map((e) => e.textContent.trim()));
 	h.check(rows.includes('Triangle threshold') && rows.includes('Max texture size') && rows.includes('LOD levels') && rows.includes('Compress textures (KTX2)'), '1.2 the rows: ' + rows.join(' | '));
 	await page.locator('#import-lod-levels-2').click();
-	const after = await page.evaluate(() => ({ store: window.__io.read(window.__stores.importOptimize.importSettings), stored: JSON.parse(localStorage.getItem('import:settings') || 'null') }));
+	const after = await page.evaluate(() => ({ store: window.__io.read(window.__tp.test.v1.importOptimize.importSettings), stored: JSON.parse(localStorage.getItem('import:settings') || 'null') }));
 	h.check(after.store.lodLevels === 2 && after.store.lodRatios.length === 2 && after.stored?.lodLevels === 2, '1.3 a row writes the LOCAL store and localStorage: ' + JSON.stringify(after.store.lodRatios));
 	await page.locator('#import-reset').click();
-	const reset = await page.evaluate(() => window.__io.read(window.__stores.importOptimize.importSettings));
+	const reset = await page.evaluate(() => window.__io.read(window.__tp.test.v1.importOptimize.importSettings));
 	h.check(reset.lodLevels === 3 && reset.triangleThreshold === 50000 && reset.textureThreshold === 2048 && reset.maxTextureSize === 2048 && reset.compress, '1.4 Reset puts the defaults back (50k / 2048 / 2048 / 3 levels / KTX2)');
-	await page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 
 	// ---- 2 the heavy import ---------------------------------------------------------------------
 	const t0 = Date.now();
@@ -121,7 +121,7 @@ h.run(async () => {
 	h.check(!!original && !!copy && copy.name === 'Heavy (optimized).glb', '2.5 the Library holds the ORIGINAL and the optimized copy: ' + lib.map((i) => i.name).join(', '));
 	h.check(original?.optimizedHash === copy?.hash && copy?.optimizedFrom === original?.hash, '2.6 …linked both ways (original.optimizedHash, copy.optimizedFrom)');
 	h.check(f.optimized?.source === original?.hash && f.optimized?.item === copy?.hash, '2.7 the placed root names its original and its optimized copy');
-	const report = await page.evaluate(() => window.__io.read(window.__stores.importOptimize.lastOptimizedImport));
+	const report = await page.evaluate(() => window.__io.read(window.__tp.test.v1.importOptimize.lastOptimizedImport));
 	h.check(report?.report?.bytesAfter < report?.report?.bytesBefore && report.summary.gpuAfter < report.summary.gpuBefore / 10, '2.8 the report: file ' + report?.report?.bytesBefore + ' -> ' + report?.report?.bytesAfter + ' B, texture memory ' + report?.summary?.gpuBefore + ' -> ' + report?.summary?.gpuAfter + ' B, ' + report?.report?.ms + ' ms in the worker');
 	const toasts = await page.evaluate(() => window.__io.toasts());
 	const toast = toasts.find((t) => t.text.startsWith('Optimized "Heavy"'));
@@ -129,23 +129,23 @@ h.run(async () => {
 	require('fs').writeFileSync(require('path').join(process.env.EVIDENCE_DIR || '/tmp', 'import-optimize-report.json'), JSON.stringify(report, null, 2));
 
 	// ---- 3 Keep original only -------------------------------------------------------------------
-	await page.evaluate((u) => window.__stores.importOptimize.keepOriginalOnly(u, window.__io.items().find((i) => i.optimizedFrom)?.id), uuid);
+	await page.evaluate((u) => window.__tp.test.v1.importOptimize.keepOriginalOnly(u, window.__io.items().find((i) => i.optimizedFrom)?.id), uuid);
 	const kept = await page.evaluate((u) => window.__io.facts(u), uuid);
 	h.check(kept && kept.maps[0]?.w === 4096 && !kept.maps[0].twin && kept.lod === null && kept.optimized === null, '3.1 Keep original only: the SAME uuid now holds the original (4096 px, no twin, no LOD group, no stamp): ' + JSON.stringify(kept));
 	const lib3 = await page.evaluate(() => window.__io.items());
 	h.check(lib3.some((i) => i.name === 'Heavy.glb') && !lib3.some((i) => i.optimizedFrom), '3.2 the optimized copy left the Library; the original stays');
-	await page.evaluate(() => window.__stores.history.undo());
+	await page.evaluate(() => window.__tp.test.v1.history.undo());
 	const undone = await page.evaluate((u) => window.__io.facts(u), uuid);
 	h.check(undone?.maps[0]?.w === 2048 && JSON.stringify(undone.lod) === JSON.stringify([1, 0.5, 0.25, 0.1]), '3.3 one undo brings the optimized object back (2048 px + its LOD group)');
-	await page.evaluate((u) => window.__stores.objectActions.deleteObjectsByUuid([u]), uuid);
+	await page.evaluate((u) => window.__tp.test.v1.objectActions.deleteObjectsByUuid([u]), uuid);
 
 	// ---- 4 per-asset override + Reimport ----------------------------------------------------------
 	const uuid2 = await page.evaluate((b64) => window.__io.place(b64, 'Heavy', [0, 1, 0]), heavy);
 	const orig = await page.evaluate(() => window.__io.items().find((i) => i.name === 'Heavy.glb'));
 	// the panel, the user's way: open the Explorer, right-click the original's card ▸ Properties
-	await page.evaluate(() => window.__stores.closeMenu?.set?.(true));
+	await page.evaluate(() => window.__tp.test.v1.closeMenu?.set?.(true));
 	if ((await page.locator('.explorer-card').count()) === 0) await page.locator('#explorer-slot').click();
-	await page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await page.locator('.explorer-card[title="Heavy.glb"]').first().click({ button: 'right' });
 	await page.waitForTimeout(350);
 	await page.locator('[role="menu"]').getByText('Properties', { exact: true }).first().click();
@@ -168,16 +168,16 @@ h.run(async () => {
 	h.check(copies.length === 1 && copies[0].hash !== oldCopy && lib4.find((i) => i.name === 'Heavy.glb')?.optimizedHash === copies[0].hash, '4.4 the optimized item was REPLACED (one copy, a new hash, the original points at it)');
 	// Never: the file comes in as it is
 	await page.locator('#isp-mode-never').click();
-	const before4 = await page.evaluate(() => window.__io.read(window.__stores.importOptimize.lastOptimizedImport)?.uuid);
+	const before4 = await page.evaluate(() => window.__io.read(window.__tp.test.v1.importOptimize.lastOptimizedImport)?.uuid);
 	const uuid3 = await page.evaluate((b64) => window.__io.place(b64, 'Heavy', [4, 1, 0]), heavy);
 	const never = await page.evaluate((u) => window.__io.facts(u), uuid3);
 	h.check(never.maps[0].w === 4096 && never.lod === null && never.optimized === null, '4.5 override Never: a re-import comes in untouched (4096 px, no LOD group)');
-	h.check((await page.evaluate(() => window.__io.read(window.__stores.importOptimize.lastOptimizedImport)?.uuid)) === before4, '4.6 …and no optimize ran');
+	h.check((await page.evaluate(() => window.__io.read(window.__tp.test.v1.importOptimize.lastOptimizedImport)?.uuid)) === before4, '4.6 …and no optimize ran');
 	const lightUuid = await page.evaluate((b64) => window.__io.place(b64, 'Light', [-4, 1, 0]), lightB64);
 	const lightF = await page.evaluate((u) => window.__io.facts(u), lightUuid);
 	h.check(lightF.lod === null && lightF.optimized === null && lightF.maps[0].w === 256, '4.7 under the thresholds (2k tris, 256 px) nothing is optimized');
-	await page.evaluate((ids) => window.__stores.objectActions.deleteObjectsByUuid(ids), [uuid2, uuid3, lightUuid]);
-	await page.evaluate((id) => window.__stores.importOptimize.setAssetOverride(id, null), orig.id);
+	await page.evaluate((ids) => window.__tp.test.v1.objectActions.deleteObjectsByUuid(ids), [uuid2, uuid3, lightUuid]);
+	await page.evaluate((id) => window.__tp.test.v1.importOptimize.setAssetOverride(id, null), orig.id);
 
 	// ---- 5 two peers: LOD by distance + the scene's LOD distance ----------------------------------
 	const B = await h.setupPage(browser, 'B', { context: { viewport: { width: 1280, height: 720 } } });
@@ -191,7 +191,7 @@ h.run(async () => {
 		60000
 	);
 	const levels = await B.page.evaluate(async (u) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.lodGroup.scanLodGroups();
 		s.lodGroup.buildAllLevels(u);
 		const end = performance.now() + 30000;
@@ -209,8 +209,8 @@ h.run(async () => {
 		return { out, tris: window.__io.level(u)?.levels.map((l) => l.tris) };
 	}, shared);
 	h.check(levels.out[3] === 0 && levels.out[20] >= 1 && levels.out[60] > levels.out[20] && levels.out[400] === 3, '5.2 on the RECEIVER the level follows distance: ' + JSON.stringify(levels.out) + ' (level tris ' + JSON.stringify(levels.tris) + ')');
-	await page.evaluate(() => window.__stores.environment.setSceneLodBias(3));
-	await h.eventually(() => B.page.evaluate(() => window.__stores.environment.lodBiasOf(window.__io.read(window.__stores.environment.environment))), (v) => v === 3, '5.3 the scene\'s LOD distance replicated (3)', 20000);
+	await page.evaluate(() => window.__tp.test.v1.environment.setSceneLodBias(3));
+	await h.eventually(() => B.page.evaluate(() => window.__tp.test.v1.environment.lodBiasOf(window.__io.read(window.__tp.test.v1.environment.environment))), (v) => v === 3, '5.3 the scene\'s LOD distance replicated (3)', 20000);
 	const biased = await B.page.evaluate((u) => {
 		window.__io.renderFrom(400, [0, 1, 0]);
 		window.__io.renderFrom(60, [0, 1, 0]);
@@ -218,9 +218,9 @@ h.run(async () => {
 		return window.__io.level(u)?.current;
 	}, shared);
 	h.check(biased < levels.out[60], '5.4 …and moved the switch: at 60 m the peer now draws level ' + biased + ' (was ' + levels.out[60] + ')');
-	const saved = await page.evaluate(() => window.__stores.environment.environmentSnapshot());
+	const saved = await page.evaluate(() => window.__tp.test.v1.environment.environmentSnapshot());
 	h.check(saved?.lodBias === 3, '5.5 the scene save carries it (environmentSnapshot.lodBias = ' + saved?.lodBias + ')');
-	await page.evaluate(() => window.__stores.environment.setSceneLodBias(1));
-	h.check((await page.evaluate(() => window.__stores.environment.environmentSnapshot())) === null, '5.6 back at 1 a stock scene saves no environment block at all');
+	await page.evaluate(() => window.__tp.test.v1.environment.setSceneLodBias(1));
+	h.check((await page.evaluate(() => window.__tp.test.v1.environment.environmentSnapshot())) === null, '5.6 back at 1 a stock scene saves no environment block at all');
 	await h.finish(browser);
 });

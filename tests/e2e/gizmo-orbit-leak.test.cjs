@@ -13,7 +13,7 @@ const h = require('./helpers.cjs');
 
 const camQuat = (page) =>
 	page.evaluate(
-		() => new Promise((r) => window.__stores.globalCamera.subscribe((c) => r(c.quaternion.toArray()))())
+		() => new Promise((r) => window.__tp.test.v1.globalCamera.subscribe((c) => r(c.quaternion.toArray()))())
 	);
 
 const objectX = (page, uuid) =>
@@ -21,7 +21,7 @@ const objectX = (page, uuid) =>
 		(u) =>
 			new Promise((r) => {
 				let g = null;
-				window.__stores.objectsGroup.subscribe((v) => (g = v))();
+				window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 				r(g.getObjectByProperty('uuid', u)?.position.x ?? null);
 			}),
 		uuid
@@ -32,8 +32,8 @@ const arrowPoint = (page) =>
 	page.evaluate(() => {
 		let controls = null;
 		let cam = null;
-		window.__stores.TControls.subscribe((v) => (controls = v))();
-		window.__stores.globalCamera.subscribe((v) => (cam = v))();
+		window.__tp.test.v1.TControls.subscribe((v) => (controls = v))();
+		window.__tp.test.v1.globalCamera.subscribe((v) => (cam = v))();
 		const helper = controls?.getHelper?.() ?? controls;
 		if (!helper || !cam) return null;
 		let pick = null;
@@ -41,7 +41,7 @@ const arrowPoint = (page) =>
 			if (!pick && n.isMesh && n.name === 'X') pick = n;
 		});
 		if (!pick) return null;
-		const v = new window.__stores.THREE.Vector3();
+		const v = new window.__tp.test.v1.THREE.Vector3();
 		pick.getWorldPosition(v);
 		v.project(cam);
 		return [((v.x + 1) / 2) * window.innerWidth, ((1 - v.y) / 2) * window.innerHeight];
@@ -52,7 +52,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	const ids = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 2 2 2');
 		w.commandsHandler.sceneCommand('/create Camera');
 		await new Promise((r) => setTimeout(r, 400));
@@ -69,7 +69,7 @@ h.run(async () => {
 
 	/** select the box, drag its gizmo arrow, report what actually moved */
 	async function dragGizmo(label) {
-		await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u), ids.box);
+		await A.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), ids.box);
 		await A.page.waitForTimeout(600);
 		const point = await arrowPoint(A.page);
 		if (!point) return { label, found: false };
@@ -97,11 +97,11 @@ h.run(async () => {
 	h.check(baseline.rotated < 0.002, `and does not rotate the view (${baseline.rotated?.toFixed(5)})`);
 
 	// ---------- preview → Control → Exit ----------
-	await A.page.evaluate((u) => window.__stores.cameraPreview.startCameraPreview(u), ids.cam);
+	await A.page.evaluate((u) => window.__tp.test.v1.cameraPreview.startCameraPreview(u), ids.cam);
 	await A.page.waitForTimeout(800);
-	await A.page.evaluate(() => window.__stores.cameraPreview.toggleCameraControl());
+	await A.page.evaluate(() => window.__tp.test.v1.cameraPreview.toggleCameraControl());
 	await A.page.waitForTimeout(800);
-	await A.page.evaluate(() => window.__stores.cameraPreview.stopCameraPreview());
+	await A.page.evaluate(() => window.__tp.test.v1.cameraPreview.stopCameraPreview());
 	await A.page.waitForTimeout(1000);
 
 	const state = await A.page.evaluate(
@@ -109,8 +109,8 @@ h.run(async () => {
 			new Promise((r) => {
 				let editor = null;
 				let preview = null;
-				window.__stores.orbitControls.subscribe((v) => (editor = v))();
-				window.__stores.cameraPreview.previewOrbit.subscribe((v) => (preview = v))();
+				window.__tp.test.v1.orbitControls.subscribe((v) => (editor = v))();
+				window.__tp.test.v1.cameraPreview.previewOrbit.subscribe((v) => (preview = v))();
 				r({ hasEditor: !!editor, editorEnabled: editor?.enabled ?? null, previewLive: !!preview });
 			})
 	);
@@ -129,7 +129,7 @@ h.run(async () => {
 	// ---------- navigation still works (right-drag PANS in OrbitControls) --------
 	const camPos = () =>
 		A.page.evaluate(
-			() => new Promise((r) => window.__stores.globalCamera.subscribe((c) => r(c.position.toArray()))())
+			() => new Promise((r) => window.__tp.test.v1.globalCamera.subscribe((c) => r(c.position.toArray()))())
 		);
 	const beforeNav = await camPos();
 	await A.page.mouse.move(250, 520);

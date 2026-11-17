@@ -24,8 +24,8 @@ const inPage = (peer, body, arg) =>
 	peer.page.evaluate(
 		([src, a]) => {
 			let pc = null;
-			window.__stores.peers.subscribe((v) => (pc = v))();
-			return Object.getPrototypeOf(async function () {}).constructor('s', 'pc', 'arg', src)(window.__stores, pc, a);
+			window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
+			return Object.getPrototypeOf(async function () {}).constructor('s', 'pc', 'arg', src)(window.__tp?.test.v1, pc, a);
 		},
 		[body, arg ?? null]
 	);
@@ -78,7 +78,7 @@ h.run(async () => {
 	const tool = (await B.page.evaluate(() => window.tpAgent.tools())).find((t) => t.function?.name === 'import_file');
 	const props = tool?.function?.parameters?.properties ?? {};
 	h.check(!!tool && ['data', 'chunk', 'spec', 'folder', 'frame', 'filter', 'facing', 'path'].every((k) => k in props), 'tools() offers import_file with its full schema');
-	const depth0 = await B.page.evaluate(() => new Promise((r) => window.__stores.history.undoStack.subscribe((v) => r(v.length))()));
+	const depth0 = await B.page.evaluate(() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((v) => r(v.length))()));
 	const res = await B.page.evaluate(
 		(a) => window.tpAgent.exec('import_file', a),
 		{ data: SHEET, name: 'knight_walk', spec: SPEC, frame: { w: 64, h: 48, col: 0, row: 0 }, facing: 'camera-y', source: 'pixling 0.3.1 build specs/knight.json --clips walk --dirs S,E,N,W', licence: 'own work' }
@@ -89,7 +89,7 @@ h.run(async () => {
 	h.check(res?.pixels?.w === 1024 && res.pixels.h === 192, `the sheet is 1024×192 (${JSON.stringify(res?.pixels)})`);
 	h.check(res?.filter === 'nearest' && !!res.uuid, `placed as a card with nearest filtering by default (a spec = pixel art) (${res?.filter})`);
 	h.check(Math.abs(res?.size?.width / res?.size?.height - 64 / 48) < 0.01, `the card has the FRAME's aspect, not the sheet's (${JSON.stringify(res?.size)})`);
-	const depth1 = await B.page.evaluate(() => new Promise((r) => window.__stores.history.undoStack.subscribe((v) => r(v.length))()));
+	const depth1 = await B.page.evaluate(() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((v) => r(v.length))()));
 	h.check(depth1 === depth0 + 1, `ONE undo entry for the whole import (${depth0} -> ${depth1})`);
 
 	// ---- 2. what the host sees ------------------------------------------------------------------
@@ -142,10 +142,10 @@ h.run(async () => {
 	// ---- 4. a viewer's agent is refused -----------------------------------------------------------
 	const objsBefore = await inPage(A, `let g; s.objectsGroup.subscribe((v) => (g = v))(); return g.children.length;`);
 	const libBefore = (await library(B)).length;
-	await B.page.evaluate(() => window.__stores.cloudHooks.rolesInfo.set({ myId: 'x', myRole: 'viewer', amAdmin: false, order: [], roleOf: () => 'viewer', setRole() {} }));
+	await B.page.evaluate(() => window.__tp.test.v1.cloudHooks.rolesInfo.set({ myId: 'x', myRole: 'viewer', amAdmin: false, order: [], roleOf: () => 'viewer', setRole() {} }));
 	const refused = await B.page.evaluate((a) => window.tpAgent.exec('import_file', a), { data: SHEET, name: 'viewer_try', spec: SPEC });
 	h.check(refused?.refused === true && /view/i.test(refused.error ?? ''), `a viewer's import_file is REFUSED with a reason (${(refused?.error ?? '').slice(0, 80)})`);
-	await B.page.evaluate(() => window.__stores.cloudHooks.rolesInfo.set(null));
+	await B.page.evaluate(() => window.__tp.test.v1.cloudHooks.rolesInfo.set(null));
 	await B.page.waitForTimeout(1500);
 	h.check((await library(B)).length === libBefore && !(await library(A)).some((i) => i.name.startsWith('viewer_try')), 'nothing was filed on either page');
 	h.check((await inPage(A, `let g; s.objectsGroup.subscribe((v) => (g = v))(); return g.children.length;`)) === objsBefore, 'and nothing was placed');

@@ -15,7 +15,7 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(3000);
 		await warm.ctx.close();
 	}
@@ -23,9 +23,9 @@ h.run(async () => {
 
 	// a pool (surface y=0), a wooden crate, a stone, and a river with a ball
 	const ids = await A.page.evaluate(() => {
-		const cmd = window.__stores.commandsHandler.sceneCommand;
+		const cmd = window.__tp.test.v1.commandsHandler.sceneCommand;
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const last = () => g.children[g.children.length - 1];
 		cmd('/create Box 8 2 8');
 		const pool = last();
@@ -53,15 +53,15 @@ h.run(async () => {
 		ball.position.set(-3, 0.5, 8);
 		ball.userData.physics = { mode: 'dynamic', mass: 1, collider: 'sphere' };
 		// a floor under everything (the scene ground is at 0 and would hold the pool's bottom)
-		window.__stores.scenePhysics.setScenePhysics?.({ ground: { enabled: true, height: -2.1 } });
+		window.__tp.test.v1.scenePhysics.setScenePhysics?.({ ground: { enabled: true, height: -2.1 } });
 		for (const o of [pool, crate, stone, river, ball]) o.updateMatrixWorld(true);
 		window.__sim = { pool, crate, stone, river, ball };
 		return { pool: pool.uuid, crate: crate.uuid };
 	});
 	await A.page.waitForTimeout(500);
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await h.eventually(
-		() => A.page.evaluate(() => new Promise((r) => window.__stores.physics.simulating.subscribe(r)())),
+		() => A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.physics.simulating.subscribe(r)())),
 		(v) => v === true,
 		'simulation started'
 	);
@@ -74,7 +74,7 @@ h.run(async () => {
 		8000
 	);
 	// 2) splash: the crate's entry rippled the pool (W2, local)
-	const ripples = await A.page.evaluate(() => window.__stores.sim.waterVolumes.ripplesOf(window.__sim.pool.uuid).length);
+	const ripples = await A.page.evaluate(() => window.__tp.test.v1.sim.waterVolumes.ripplesOf(window.__sim.pool.uuid).length);
 	h.check(ripples > 0, `entering the water made a ripple on the pool (${ripples})`);
 
 	await A.page.waitForTimeout(9000);
@@ -94,8 +94,8 @@ h.run(async () => {
 	// 3) Floats override lives on the Inspector (dynamic bodies)
 	await A.page.evaluate(() => {
 		localStorage.setItem('inspector:sec:Physics', 'open');
-		window.__stores.objectActions.selectObject(window.__sim.crate.uuid, true);
-		window.__stores.showSidebar('selection');
+		window.__tp.test.v1.objectActions.selectObject(window.__sim.crate.uuid, true);
+		window.__tp.test.v1.showSidebar('selection');
 	});
 	const floatsUi = await A.page.waitForSelector('#physics-floats', { timeout: 8000 }).then(() => true).catch(() => false);
 	h.check(floatsUi, 'Inspector > Physics shows the Floats override for a dynamic body');
@@ -107,7 +107,7 @@ h.run(async () => {
 		await shot(A.page, '02-floats-inspector.png');
 	}
 	// Floats: Off -> the crate sinks (the live path: setPhysicsFor reaches the running sim)
-	await A.page.evaluate(() => window.__stores.physics.setPhysicsFor(window.__sim.crate.uuid, { floats: { off: true } }));
+	await A.page.evaluate(() => window.__tp.test.v1.physics.setPhysicsFor(window.__sim.crate.uuid, { floats: { off: true } }));
 	await h.eventually(
 		() => A.page.evaluate(() => window.__sim.crate.position.y),
 		(y) => y < -1.2,
@@ -115,7 +115,7 @@ h.run(async () => {
 		10000
 	);
 
-	await A.page.evaluate(() => window.__stores.physics.stopSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 	h.check(
 		(await h.pageErrors(A)).length === 0,
 		`no page errors (${JSON.stringify(h.pageErrors(A).slice(0, 2))})`

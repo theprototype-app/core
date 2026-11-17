@@ -20,7 +20,8 @@
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
   import { Canvas } from '@threlte/core';
-  import { PCFShadowMap } from 'three';
+  // 101 F3: the main renderer comes from the renderer seam (see App.svelte)
+  import { createMainRenderer, MAIN_SHADOW_MAP } from '$lib/render/mainRenderer.js';
   import Scene from './components/Scene.svelte';
   import ConfirmModal from './components/menu/ConfirmModal.svelte';
   import ContextLostOverlay from './components/ContextLostOverlay.svelte';
@@ -183,7 +184,7 @@
 
 <div id="viewport" role="region" aria-label="3D viewport" class="viewport">
   {#if webglOk}
-  <Canvas shadows={PCFShadowMap}>
+  <Canvas shadows={MAIN_SHADOW_MAP} createRenderer={createMainRenderer}>
     <Scene />
   </Canvas>
   {/if}

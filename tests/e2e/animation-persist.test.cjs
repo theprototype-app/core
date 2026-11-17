@@ -18,8 +18,8 @@ const buildGlb = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				const THREE = window.__stores.THREE;
-				const { GLTFExporter } = window.__stores.GLTFExporterModule;
+				const THREE = window.__tp.test.v1.THREE;
+				const { GLTFExporter } = window.__tp.test.v1.GLTFExporterModule;
 				const root = new THREE.Group();
 				const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
 				mesh.name = 'mover';
@@ -38,7 +38,7 @@ const buildGlb = (page) =>
 /** what the scene currently knows about animations */
 const animState = (page) =>
 	page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const imported = await new Promise((r) => w.animatedImports.animatedObjects.subscribe(r)());
 		const authored = await new Promise((r) => w.animationPreview.animations.subscribe(r)());
 		const group = await new Promise((r) => w.objectsGroup.subscribe(r)());
@@ -67,14 +67,14 @@ const animState = (page) =>
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
-	await A.page.waitForFunction(() => !!window.__stores?.animationPreview, { timeout: 20000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.animationPreview, { timeout: 20000 });
 
 	const glb = await buildGlb(A.page);
 	h.check(Array.isArray(glb) && glb.length > 500, `built an animated glb (${glb?.length} bytes)`);
 
 	// import it, and author a movement track on a second object
 	await A.page.evaluate(async (bytes) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const rig = await w.fileHandler.importFile(new File([new Uint8Array(bytes)], 'rig.glb'), 'Rig');
 		// 33 P2: placement no longer autoplays — press play, as a user would, so the save
 		// below carries a PLAYING transport (what this suite round-trips)
@@ -103,7 +103,7 @@ h.run(async () => {
 
 	// ---------- save, wipe, load ----------
 	const saved = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const payload = await w.sessions.saveSession('anim-roundtrip');
 		return {
 			id: payload?.id ?? null,
@@ -122,14 +122,14 @@ h.run(async () => {
 	h.check(saved.objects === 1, `the rig is not ALSO saved as a static twin (objects: ${saved.objects})`);
 
 	// wipe: nothing animated must be left, so a stale mixer cannot fake a pass
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	await A.page.waitForTimeout(600);
 	const wiped = await animState(A.page);
 	h.check(wiped.children === 0, `the scene is empty before loading (${wiped.children} children)`);
 	h.check(wiped.importedCount === 0, 'and no imported clips linger');
 
 	await A.page.evaluate(async (id) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const payload = await w.sessions.getSession(id);
 		await w.sessions.applySession(payload);
 	}, saved.id);
@@ -154,7 +154,7 @@ h.run(async () => {
 	// it read only the authored-track store before, so a rigged model showed
 	// "no movements yet" and its real clips were reachable only in the Inspector
 	await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const imported = await new Promise((r) => w.animatedImports.animatedObjects.subscribe(r)());
 		w.objectActions.selectObject(Object.keys(imported)[0], false);
 		w.animationClose.set(false);
@@ -177,7 +177,7 @@ h.run(async () => {
 
 	// clicking a clip row drives the REAL replicated state, not local UI
 	const picked = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const peer = await new Promise((r) => w.peers.subscribe(r)());
 		window.__sent = [];
 		const orig = peer.send.bind(peer);

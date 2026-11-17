@@ -23,9 +23,9 @@ const h = require('./helpers.cjs');
 
 const SKEW = 90000;
 
-/** run a snippet with `s = window.__stores` in scope */
+/** run a snippet with `s = window.__tp?.test.v1` in scope */
 const inPage = (peer, body, arg) =>
-	peer.page.evaluate(([src, a]) => Object.getPrototypeOf(async function () {}).constructor('s', 'arg', src)(window.__stores, a), [body, arg ?? null]);
+	peer.page.evaluate(([src, a]) => Object.getPrototypeOf(async function () {}).constructor('s', 'arg', src)(window.__tp?.test.v1, a), [body, arg ?? null]);
 
 /** the session clock minus the REAL clock, in ms — 0 on a machine keeping true time */
 const sessionError = (peer) => inPage(peer, 'return s.connectionState.sessionNow() - new Date().getTime()');
@@ -42,7 +42,7 @@ h.run(async () => {
 		Date.now = () => real() + skew;
 	}, SKEW);
 	await h.freshReload(C);
-	C.id = await C.page.evaluate(() => new Promise((r) => window.__stores.peers.subscribe((p) => r(p?.peer?.id))()));
+	C.id = await C.page.evaluate(() => new Promise((r) => window.__tp.test.v1.peers.subscribe((p) => r(p?.peer?.id))()));
 	console.log('A id: ' + A.id + '   C id (skewed +90s): ' + C.id);
 
 	// ---- 1. premise ------------------------------------------------------------------------

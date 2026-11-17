@@ -34,7 +34,7 @@ const installProbe = (peer) =>
 	peer.page.evaluate((myId) => {
 		const w = window;
 		let pc;
-		w.__stores.peers.subscribe((p) => (pc = p))();
+		w.__tp.test.v1.peers.subscribe((p) => (pc = p))();
 		const ns = (w.__probe = w.__probe || { myId, hooked: new WeakSet(), rx: {}, cam: {}, sendMs: [], tasks: [] });
 		ns.pc = pc;
 		if (!ns.observer) {
@@ -79,7 +79,7 @@ const installProbe = (peer) =>
 		ns.hook();
 		// 60 Q2: camera poses ride the FAST channel when both ends have it — the conn 'data' above
 		// only sees the reliable fallback, so count the fast arrivals through the pose tap too
-		w.__stores.fastChannel?.setPoseTap?.((peer, d, via) => {
+		w.__tp.test.v1.fastChannel?.setPoseTap?.((peer, d, via) => {
 			if (via === 'fast' && d.type === 'camera' && d.peerId) ns.cam[d.peerId] = (ns.cam[d.peerId] || 0) + 1;
 		});
 		if (!ns.auto) ns.auto = setInterval(() => ns.hook(), 250);
@@ -116,7 +116,7 @@ const installProbe = (peer) =>
 		// presence stream's send rate is stated against THIS number
 		ns.orbit = async (ms) => {
 			let controls;
-			w.__stores.orbitControls.subscribe((c) => (controls = c))();
+			w.__tp.test.v1.orbitControls.subscribe((c) => (controls = c))();
 			const started = performance.now();
 			let frames = 0;
 			const taskFrom = ns.tasks.length;
@@ -146,7 +146,7 @@ const received = (peer, fromId) =>
 const openPeers = (peer) =>
 	peer.page.evaluate(() => {
 		let pc;
-		window.__stores.peers.subscribe((p) => (pc = p))();
+		window.__tp.test.v1.peers.subscribe((p) => (pc = p))();
 		return [...(pc?.openedPeers ?? [])];
 	});
 
@@ -164,7 +164,7 @@ h.run(async () => {
 		const [A, B, C, D] = peers;
 		const server = await A.page.evaluate(() => {
 			let s;
-			window.__stores.peerServer.peerServerStatus.subscribe((v) => (s = v))();
+			window.__tp.test.v1.peerServer.peerServerStatus.subscribe((v) => (s = v))();
 			return s;
 		});
 		h.check(server?.kind === 'local', `premise: the peers signal through the LOCAL server (${JSON.stringify(server)})`);
@@ -195,9 +195,9 @@ h.run(async () => {
 
 		// a REAL object, so the probe's `move` survives the 27-A wire validator
 		const uuid = await A.page.evaluate(() => {
-			window.__stores.addObjects.spawnAtPoint('/create Box 1 1 1', [3, 0.5, -2]);
+			window.__tp.test.v1.addObjects.spawnAtPoint('/create Box 1 1 1', [3, 0.5, -2]);
 			return new Promise((resolve) =>
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const o = g.children[g.children.length - 1];
 					resolve(o ? o.uuid : null);
 				})()
@@ -205,7 +205,7 @@ h.run(async () => {
 		});
 		h.check(!!uuid, `premise: a real object to address, so the probe is not rejected as malformed (${uuid})`);
 		await h.eventually(
-			() => D.page.evaluate((u) => !!window.__stores.objectsGroup && (() => { let g; window.__stores.objectsGroup.subscribe((v) => (g = v))(); return !!g.getObjectByProperty('uuid', u); })(), uuid),
+			() => D.page.evaluate((u) => !!window.__tp.test.v1.objectsGroup && (() => { let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))(); return !!g.getObjectByProperty('uuid', u); })(), uuid),
 			(ok) => ok,
 			'premise: the object reached the last joiner',
 			15000

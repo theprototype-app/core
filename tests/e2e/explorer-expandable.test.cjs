@@ -10,7 +10,7 @@ h.run(async () => {
 
 	await A.page.locator('#explorer-slot').click();
 	await A.page.waitForTimeout(600);
-	await A.page.evaluate(() => window.__stores.explorer.createFolder('MyFolder', null));
+	await A.page.evaluate(() => window.__tp.test.v1.explorer.createFolder('MyFolder', null));
 	await A.page.waitForTimeout(300);
 
 	const folderRow = () => A.page.locator('#explorer-tree button', { hasText: 'MyFolder' });

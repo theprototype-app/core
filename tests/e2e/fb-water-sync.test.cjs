@@ -11,7 +11,7 @@ h.run(async () => {
 	const B = await h.setupPage(browser, 'B', { context: { viewport: { width: 900, height: 600 } } });
 	// the objects exist before B joins (a late joiner gets them through the handshake)
 	const ids = await A.page.evaluate(() => {
-		const st = window.__stores;
+		const st = window.__tp?.test.v1;
 		const cmd = st.commandsHandler.sceneCommand;
 		let g;
 		st.objectsGroup.subscribe((v) => (g = v))();
@@ -27,7 +27,7 @@ h.run(async () => {
 		fluid.position.set(3, 0.5, 0);
 		return { tank: tank.uuid, box: box.uuid, fluid: fluid.uuid };
 	});
-	await A.page.evaluate(() => window.__stores.simOnLoad); // prime the undoable setting's module
+	await A.page.evaluate(() => window.__tp.test.v1.simOnLoad); // prime the undoable setting's module
 	await h.connect(B, A);
 	/** read a path of an object's userData (or the scene physics) on a peer */
 	const read = (peer, uuid, key) =>
@@ -35,14 +35,14 @@ h.run(async () => {
 			([u, k]) => {
 				if (u === 'scene') {
 					let s;
-					window.__stores.scenePhysics.scenePhysicsState_.subscribe((v) => (s = v))();
+					window.__tp.test.v1.scenePhysics.scenePhysicsState_.subscribe((v) => (s = v))();
 					return JSON.stringify(s[k] ?? null);
 				}
 				let o;
-				window.__stores.objectsGroup.subscribe((g) => (o = g?.getObjectByProperty('uuid', u)))();
+				window.__tp.test.v1.objectsGroup.subscribe((g) => (o = g?.getObjectByProperty('uuid', u)))();
 				// a fluid block is read NORMALIZED: a tank made before `spill` existed has no key, which
 				// means "on" on every peer (the applier normalizes, the author's own copy does not)
-				const ud = o?.userData?.fluid ? { ...o.userData, fluid: window.__stores.sim.normalizeFluid(o.userData.fluid) } : o?.userData;
+				const ud = o?.userData?.fluid ? { ...o.userData, fluid: window.__tp.test.v1.sim.normalizeFluid(o.userData.fluid) } : o?.userData;
 				const v = k.split('.').reduce((a, p) => (a == null ? a : a[p]), ud);
 				return JSON.stringify(v ?? null);
 			},
@@ -56,24 +56,24 @@ h.run(async () => {
 		const wantJ = JSON.stringify(want);
 		h.check((await read(A, uuid, key)) === wantJ, `${label}: A shows it`);
 		await h.eventually(() => read(B, uuid, key), (v) => v === wantJ, `${label}: replicates to B`, 15000);
-		await A.page.evaluate(() => window.__stores.history.undo());
+		await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 		h.check((await read(A, uuid, key)) === old, `${label}: ONE undo reverts it on A (${old})`);
 		await h.eventually(() => read(B, uuid, key), (v) => v === old, `${label}: ...and on B`, 15000);
-		await A.page.evaluate(() => window.__stores.history.redo());
+		await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 		h.check((await read(A, uuid, key)) === wantJ, `${label}: redo puts it back on A`);
 		await h.eventually(() => read(B, uuid, key), (v) => v === wantJ, `${label}: ...and on B`, 15000);
 	}
-	await prove('Water ▸ Bob damping', ids.tank, 'water.heaveDrag', (i) => window.__stores.waterActions.updateObjectWater(i.tank, { heaveDrag: 1.5 }, { immediate: true }), 1.5);
-	await prove('Water ▸ Flow up', ids.tank, 'water.flow', (i) => window.__stores.waterActions.updateObjectWater(i.tank, { flow: [0, 0.8, 0] }, { immediate: true }), [0, 0.8, 0]);
-	await prove('Water ▸ Opacity (the remapped look)', ids.tank, 'water.look.opacity', (i) => window.__stores.waterActions.updateObjectWater(i.tank, { look: { opacity: 0.97 } }, { immediate: true }), 0.97);
-	await prove('Pour emitter on a Water tank', ids.tank, 'pour.enabled', (i) => window.__stores.waterActions.setObjectPour(i.tank, {}), true);
-	await prove('Pour ▸ Rate', ids.tank, 'pour.rate', (i) => window.__stores.waterActions.updateObjectPour(i.tank, { rate: 140 }, { immediate: true }), 140);
-	await prove('Pour ▸ Max drops', ids.tank, 'pour.maxParticles', (i) => window.__stores.waterActions.updateObjectPour(i.tank, { maxParticles: 120 }, { immediate: true }), 120);
-	await prove('Bubble emitter on a box', ids.box, 'bubbles.enabled', (i) => window.__stores.waterActions.setObjectBubbles(i.box, { spread: 0.3 }), true);
-	await prove('Fluid tank ▸ Spill when tipped', ids.fluid, 'fluid.spill.on', (i) => window.__stores.sim.setFluidFor(i.fluid, { spill: { on: false } }), false);
-	await prove('Fluid tank ▸ Max spilled drops', ids.fluid, 'fluid.spill.maxDrops', (i) => window.__stores.sim.setFluidFor(i.fluid, { spill: { maxDrops: 150 } }), 150);
-	await prove('Start simulation on load', 'scene', 'simOnLoad', () => window.__stores.simOnLoad.setSimOnLoad(true), true);
+	await prove('Water ▸ Bob damping', ids.tank, 'water.heaveDrag', (i) => window.__tp.test.v1.waterActions.updateObjectWater(i.tank, { heaveDrag: 1.5 }, { immediate: true }), 1.5);
+	await prove('Water ▸ Flow up', ids.tank, 'water.flow', (i) => window.__tp.test.v1.waterActions.updateObjectWater(i.tank, { flow: [0, 0.8, 0] }, { immediate: true }), [0, 0.8, 0]);
+	await prove('Water ▸ Opacity (the remapped look)', ids.tank, 'water.look.opacity', (i) => window.__tp.test.v1.waterActions.updateObjectWater(i.tank, { look: { opacity: 0.97 } }, { immediate: true }), 0.97);
+	await prove('Pour emitter on a Water tank', ids.tank, 'pour.enabled', (i) => window.__tp.test.v1.waterActions.setObjectPour(i.tank, {}), true);
+	await prove('Pour ▸ Rate', ids.tank, 'pour.rate', (i) => window.__tp.test.v1.waterActions.updateObjectPour(i.tank, { rate: 140 }, { immediate: true }), 140);
+	await prove('Pour ▸ Max drops', ids.tank, 'pour.maxParticles', (i) => window.__tp.test.v1.waterActions.updateObjectPour(i.tank, { maxParticles: 120 }, { immediate: true }), 120);
+	await prove('Bubble emitter on a box', ids.box, 'bubbles.enabled', (i) => window.__tp.test.v1.waterActions.setObjectBubbles(i.box, { spread: 0.3 }), true);
+	await prove('Fluid tank ▸ Spill when tipped', ids.fluid, 'fluid.spill.on', (i) => window.__tp.test.v1.sim.setFluidFor(i.fluid, { spill: { on: false } }), false);
+	await prove('Fluid tank ▸ Max spilled drops', ids.fluid, 'fluid.spill.maxDrops', (i) => window.__tp.test.v1.sim.setFluidFor(i.fluid, { spill: { maxDrops: 150 } }), 150);
+	await prove('Start simulation on load', 'scene', 'simOnLoad', () => window.__tp.test.v1.simOnLoad.setSimOnLoad(true), true);
 	// removing a pour emitter is one undo step too
-	await prove('Remove the pour emitter', ids.tank, 'pour', (i) => window.__stores.waterActions.setObjectPour(i.tank, null), null);
+	await prove('Remove the pour emitter', ids.tank, 'pour', (i) => window.__tp.test.v1.waterActions.setObjectPour(i.tank, null), null);
 	await h.finish(browser);
 });

@@ -26,14 +26,14 @@ const h = require('./helpers.cjs');
 const waiting = (page) =>
 	page.evaluate(() => {
 		let v = [];
-		window.__stores.waitingForApproval.subscribe((x) => (v = x))();
+		window.__tp.test.v1.waitingForApproval.subscribe((x) => (v = x))();
 		return v;
 	});
 
 const approvals = (page) =>
 	page.evaluate(() => {
 		let v = [];
-		window.__stores.pendingApprovals.subscribe((x) => (v = x))();
+		window.__tp.test.v1.pendingApprovals.subscribe((x) => (v = x))();
 		return v;
 	});
 
@@ -41,18 +41,18 @@ h.run(async () => {
 	const browser = await h.launch();
 	const peer = await h.setupPage(browser, 'approval');
 	const page = peer.page;
-	await page.waitForFunction(() => !!window.__stores?.connectionState?.APPROVAL_WINDOW_MS, {
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.connectionState?.APPROVAL_WINDOW_MS, {
 		timeout: 30000
 	});
 
-	const WINDOW = await page.evaluate(() => window.__stores.connectionState.APPROVAL_WINDOW_MS);
+	const WINDOW = await page.evaluate(() => window.__tp.test.v1.connectionState.APPROVAL_WINDOW_MS);
 	h.check(WINDOW === 90000, `premise: one approval window constant, 90s (${WINDOW})`);
 
 	// ---- 1. the pill counts down -------------------------------------------------------
 	// Stub the dial so no signaling is needed: the state machine is what is under test.
 	await page.evaluate(() => {
 		let pc = null;
-		window.__stores.peers.subscribe((v) => (pc = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
 		Object.defineProperty(pc.peer, 'open', { value: true, configurable: true });
 		pc.peer.connect = (id) => ({ peer: id, open: false, on() {}, close() {}, send() {} });
 	});
@@ -68,7 +68,7 @@ h.run(async () => {
 	// dial took its stamping branch and the write went somewhere else, which is a module
 	// identity problem rather than a logic one.
 	const started = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const read = (store) => {
 			let v;
 			store.subscribe((x) => (v = x))();
@@ -89,19 +89,19 @@ h.run(async () => {
 	// ---- 2. it expires: cancelled, un-whitelisted, Retry offered -------------------------
 	// Wind the clock back past the window rather than waiting 90s.
 	await page.evaluate((w) => {
-		window.__stores.connectionState.approvalStartedAt.update((m) => ({ ...m, aaaa1: Date.now() - w - 1000 }));
+		window.__tp.test.v1.connectionState.approvalStartedAt.update((m) => ({ ...m, aaaa1: Date.now() - w - 1000 }));
 	}, WINDOW);
 	await page.waitForTimeout(400);
 	const expiredPill = await page.locator('.cx-input').first().inputValue().catch(() => '');
 	h.check(!/·\s*\d/.test(expiredPill) || /0:0\d/.test(expiredPill), `the countdown reaches zero (${expiredPill})`);
 
 	// the timer itself is armed for the real window, so fire the expiry path directly
-	await page.evaluate(() => window.__stores.peerApproval.cancelOutboundRequest('aaaa1'));
+	await page.evaluate(() => window.__tp.test.v1.peerApproval.cancelOutboundRequest('aaaa1'));
 	await page.waitForTimeout(300);
 	const afterCancel = await waiting(page);
 	const roster = await page.evaluate(() => {
 		let v = [];
-		window.__stores.userdata.subscribe((x) => (v = x))();
+		window.__tp.test.v1.userdata.subscribe((x) => (v = x))();
 		return v.map((u) => u[0]);
 	});
 	h.check(!afterCancel.some((w) => w[0] === 'aaaa1'), 'the pending row is gone');
@@ -112,7 +112,7 @@ h.run(async () => {
 	await page.getByRole('button', { name: 'Connect', exact: true }).click();
 	await page.waitForTimeout(400);
 	h.check((await waiting(page)).some((w) => w[0] === 'bbbb2'), 'premise: a second request is pending');
-	await page.evaluate(() => window.__stores.peerApproval.abandonOutboundRequest('bbbb2'));
+	await page.evaluate(() => window.__tp.test.v1.peerApproval.abandonOutboundRequest('bbbb2'));
 	await page.waitForTimeout(300);
 	h.check(
 		!(await waiting(page)).some((w) => w[0] === 'bbbb2'),
@@ -121,7 +121,7 @@ h.run(async () => {
 
 	// ---- 4+5+6. the host side: age, expiry, bounds, and the row --------------------------
 	const bounded = await page.evaluate(async (w) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const cs = s.connectionState;
 		s.pendingApprovals.set([]);
 		// 20 requests, the first ten already expired
@@ -139,7 +139,7 @@ h.run(async () => {
 	// the bound is applied where requests ARRIVE, so drive one more through the real path
 	await page.evaluate(() => {
 		let pc = null;
-		window.__stores.peers.subscribe((v) => (pc = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
 		const handlers = {};
 		const conn = { peer: 'newcomer', open: true, on: (e, f) => (handlers[e] = f), close() {}, send() {} };
 		pc.peer.emit('connection', conn);
@@ -160,7 +160,7 @@ h.run(async () => {
 	// ---- 7. the camera stream is rate-gated ----------------------------------------------
 	const rate = await page.evaluate(async () => {
 		let pc = null;
-		window.__stores.peers.subscribe((v) => (pc = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
 		let sent = 0;
 		const realSend = pc.send.bind(pc);
 		pc.send = (d) => {
@@ -168,7 +168,7 @@ h.run(async () => {
 			return realSend(d);
 		};
 		let cam = null;
-		window.__stores.globalCamera.subscribe((c) => (cam = c))();
+		window.__tp.test.v1.globalCamera.subscribe((c) => (cam = c))();
 		const t0 = performance.now();
 		// move the camera every frame for a second; the gate decides how many go out
 		await new Promise((done) => {
@@ -193,7 +193,7 @@ h.run(async () => {
 	// a suite that filled it would pass against a cap counting the wrong thing — which is
 	// the defect this section exists to catch.
 	const capped = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const HARD = s.connectionState.HARD_PEER_CAP;
 		let pc = null;
 		s.peers.subscribe((v) => (pc = v))();

@@ -27,33 +27,33 @@ const h = require('./helpers.cjs');
 const visibleOf = (peer, uuids) =>
 	peer.page.evaluate((ids) => {
 		let group;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		return ids.map((id) => group?.getObjectByProperty('uuid', id)?.visible ?? null);
 	}, uuids);
 
-const varOf = (peer, name) => peer.page.evaluate((n) => window.__stores.gameState.gameVar(n, 0), name);
+const varOf = (peer, name) => peer.page.evaluate((n) => window.__tp.test.v1.gameState.gameVar(n, 0), name);
 
 const valueOf = (peer, id) =>
 	peer.page.evaluate((nid) => {
 		let v;
-		window.__stores.flowValues.subscribe((x) => (v = x))();
+		window.__tp.test.v1.flowValues.subscribe((x) => (v = x))();
 		return v[nid];
 	}, id);
 
 const gstate = (peer) =>
 	peer.page.evaluate(() => {
 		let g;
-		window.__stores.gameState.gameState.subscribe((v) => (g = v))();
+		window.__tp.test.v1.gameState.gameState.subscribe((v) => (g = v))();
 		return { state: g.state, round: g.round, startedAt: g.startedAt };
 	});
 
 /** The THREE-state play store, written exactly as Controls writes it. */
-const setPlay = (peer, state) => peer.page.evaluate((s) => window.__stores.isLocked.set(s), state);
+const setPlay = (peer, state) => peer.page.evaluate((s) => window.__tp.test.v1.isLocked.set(s), state);
 
 const nodeCount = (peer, type) =>
 	peer.page.evaluate((t) => {
 		let g;
-		window.__stores.flowGraphs.subscribe((v) => (g = v))();
+		window.__tp.test.v1.flowGraphs.subscribe((v) => (g = v))();
 		return (g.scene?.nodes ?? []).filter((n) => n.type === t).length;
 	}, type);
 
@@ -62,16 +62,16 @@ const nodeCount = (peer, type) =>
 const wipe = async (peers) => {
 	for (const p of peers)
 		await p.page.evaluate(() => {
-			window.__stores.clearGraphs();
-			window.__stores.gameState.clearGameState();
-			window.__stores.isLocked.set(null);
+			window.__tp.test.v1.clearGraphs();
+			window.__tp.test.v1.gameState.clearGameState();
+			window.__tp.test.v1.isLocked.set(null);
 		});
 	await peers[0].page.waitForTimeout(900);
 };
 
 const makeBoxes = (peer, count) =>
 	peer.page.evaluate(async (n) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		/** @type {string[]} */
 		const uuids = [];
 		for (let i = 0; i < n; i++) {
@@ -100,7 +100,7 @@ const recipe = (peer, uuids, opts = {}) => h.makeCollectibleChains(peer, uuids, 
 const chainOf = (peer, uuid) =>
 	peer.page.evaluate((id) => {
 		let g;
-		window.__stores.flowGraphs.subscribe((v) => (g = v))();
+		window.__tp.test.v1.flowGraphs.subscribe((v) => (g = v))();
 		const nodes = g.scene?.nodes ?? [];
 		const edges = g.scene?.edges ?? [];
 		const back = (targetId, handle) => {
@@ -146,7 +146,7 @@ const chainOf = (peer, uuid) =>
 	}, uuid);
 
 const collect = async (peer, uuid, settle = 700) => {
-	await peer.page.evaluate((id) => window.__stores.flowRuntime.fireObjectClick(id), uuid);
+	await peer.page.evaluate((id) => window.__tp.test.v1.flowRuntime.fireObjectClick(id), uuid);
 	await peer.page.waitForTimeout(settle);
 };
 
@@ -155,7 +155,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
 	for (const p of [A, B])
-		await p.page.waitForFunction(() => !!window.__stores?.flowGraphsCtl && !!window.__stores?.nodesHandler, { timeout: 30000 });
+		await p.page.waitForFunction(() => !!window.__tp?.test.v1?.flowGraphsCtl && !!window.__tp?.test.v1?.nodesHandler, { timeout: 30000 });
 	// connect FIRST: a peer cannot approve a connection request while in play mode
 	await h.connect(A, B);
 
@@ -198,10 +198,10 @@ h.run(async () => {
 	);
 
 	// ---- the object list, on the object the runtime just handed back -------------
-	await A.page.evaluate((id) => window.__stores.objectActions.toggleObjectVisibility(id), gem);
+	await A.page.evaluate((id) => window.__tp.test.v1.objectActions.toggleObjectVisibility(id), gem);
 	await A.page.waitForTimeout(800); // several ticks: a re-applying effect would win here
 	h.check((await visibleOf(A, [gem]))[0] === false, 'the object list can HIDE it outside play');
-	await A.page.evaluate((id) => window.__stores.objectActions.toggleObjectVisibility(id), gem);
+	await A.page.evaluate((id) => window.__tp.test.v1.objectActions.toggleObjectVisibility(id), gem);
 	await A.page.waitForTimeout(800);
 	h.check((await visibleOf(A, [gem]))[0] === true, 'and SHOW it again — manual visibility wins outside play');
 
@@ -216,7 +216,7 @@ h.run(async () => {
 	// the same graph WITHOUT the flag must behave exactly as it did before this phase:
 	// it hides the object whether or not anyone is playing.
 	const hand = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1200));
 		let group;
@@ -253,7 +253,7 @@ h.run(async () => {
 	await recipe(A, [g2]);
 	const c2 = await chainOf(A, g2);
 	await setPlay(A, true);
-	await A.page.evaluate(() => window.__stores.gameState.setGameState('playing'));
+	await A.page.evaluate(() => window.__tp.test.v1.gameState.setGameState('playing'));
 	await A.page.waitForTimeout(700);
 	const round1 = await gstate(A);
 	h.check(round1.round === 1 && round1.startedAt > 0, `premise: round 1 is underway (${JSON.stringify(round1)})`);
@@ -263,7 +263,7 @@ h.run(async () => {
 	h.check((await varOf(A, 'gems')) === 1, `counted once (${await varOf(A, 'gems')})`);
 
 	// everyone to the menu
-	await A.page.evaluate(() => window.__stores.gameState.setGameState('menu'));
+	await A.page.evaluate(() => window.__tp.test.v1.gameState.setGameState('menu'));
 	await A.page.waitForTimeout(800);
 	h.check(
 		(await valueOf(A, c2.latch)) === false,
@@ -272,7 +272,7 @@ h.run(async () => {
 	h.check((await visibleOf(A, [g2]))[0] === true, 'so the gem is back on the table');
 
 	// a NEW round: it must be collectible AND countable again
-	await A.page.evaluate(() => window.__stores.gameState.setGameState('playing'));
+	await A.page.evaluate(() => window.__tp.test.v1.gameState.setGameState('playing'));
 	await A.page.waitForTimeout(800);
 	const round2 = await gstate(A);
 	h.check(round2.round === 2 && round2.startedAt > round1.startedAt, `premise: a new round bumped the stamp (${JSON.stringify(round2)})`);
@@ -289,7 +289,7 @@ h.run(async () => {
 	await B.page.waitForTimeout(600);
 	const peerRound2 = await visibleOf(B, [g2]);
 	h.check(peerRound2[0] === false, `the peer derives the same collected state in round 2 (${peerRound2[0]})`);
-	await A.page.evaluate(() => window.__stores.gameState.setGameState('menu'));
+	await A.page.evaluate(() => window.__tp.test.v1.gameState.setGameState('menu'));
 	await A.page.waitForTimeout(900);
 	h.check(
 		(await valueOf(B, c2.latch)) === false,
@@ -299,7 +299,7 @@ h.run(async () => {
 
 	// ---- 2e. THE COUNTERFACTUAL: a latch WITHOUT `perRound` ignores the round ----
 	const plain = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const mk = (type, data) => ({
 			id: crypto.randomUUID(),
 			type,
@@ -321,13 +321,13 @@ h.run(async () => {
 		return latch.id;
 	});
 	h.check((await valueOf(A, plain)) === true, 'premise: a plain Latch is set by its click');
-	await A.page.evaluate(() => window.__stores.gameState.setGameState('playing'));
+	await A.page.evaluate(() => window.__tp.test.v1.gameState.setGameState('playing'));
 	await A.page.waitForTimeout(900);
 	h.check(
 		(await valueOf(A, plain)) === true,
 		'a Latch WITHOUT `perRound` keeps its state across a round bump — nobody pressing Start can surprise it'
 	);
-	await A.page.evaluate(() => window.__stores.gameState.setGameState('menu'));
+	await A.page.evaluate(() => window.__tp.test.v1.gameState.setGameState('menu'));
 	await setPlay(A, null);
 
 	// =====================================================================
@@ -337,13 +337,13 @@ h.run(async () => {
 	const [g3] = await makeBoxes(A, 1);
 	await recipe(A, [g3]);
 	const c3 = await chainOf(A, g3);
-	await A.page.evaluate((id) => window.__stores.nodesHandler.sendNodes(id), B.id);
+	await A.page.evaluate((id) => window.__tp.test.v1.nodesHandler.sendNodes(id), B.id);
 	const peerReady = await h.eventually(
 		() =>
 			B.page.evaluate((ids) => {
 				let g, group;
-				window.__stores.flowGraphs.subscribe((v) => (g = v))();
-				window.__stores.objectsGroup.subscribe((v) => (group = v))();
+				window.__tp.test.v1.flowGraphs.subscribe((v) => (g = v))();
+				window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 				return {
 					latches: (g.scene?.nodes ?? []).filter((n) => n.type === 'latch').length,
 					object: !!group?.getObjectByProperty('uuid', ids)
@@ -355,7 +355,7 @@ h.run(async () => {
 	void peerReady;
 
 	for (const p of [A, B]) await setPlay(p, true);
-	await A.page.evaluate(() => window.__stores.gameState.setGameState('playing'));
+	await A.page.evaluate(() => window.__tp.test.v1.gameState.setGameState('playing'));
 	await A.page.waitForTimeout(900);
 	h.check(
 		(await visibleOf(A, [g3]))[0] === true && (await visibleOf(B, [g3]))[0] === true,
@@ -379,7 +379,7 @@ h.run(async () => {
 	h.check((await visibleOf(B, [g3]))[0] === false, 'B re-enters and the gem is STILL COLLECTED — a rejoin keeps mid-round state');
 	h.check((await varOf(B, 'gems')) === 1, `and the score is not double counted (${await varOf(B, 'gems')})`);
 	for (const p of [A, B]) await setPlay(p, null);
-	await A.page.evaluate(() => window.__stores.gameState.setGameState('menu'));
+	await A.page.evaluate(() => window.__tp.test.v1.gameState.setGameState('menu'));
 
 	// =====================================================================
 	// 4. GROUPS: every child mesh, one variable, ONE undo entry
@@ -387,7 +387,7 @@ h.run(async () => {
 	await wipe([A, B]);
 	const members = await makeBoxes(A, 3);
 	const groupUuid = await A.page.evaluate(async (ids) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.objectActions.applySelectionSet(ids);
 		await new Promise((r) => setTimeout(r, 500));
 		s.objectActions.groupSelection();
@@ -408,7 +408,7 @@ h.run(async () => {
 	h.check(groupBuild.variable === 'crystals', `all sharing the group's variable "${groupBuild.variable}"`);
 
 	const undo = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.history.undo();
 		await new Promise((r) => setTimeout(r, 900));
 		let g;
@@ -424,7 +424,7 @@ h.run(async () => {
 
 	// a fourth member arrives and the recipe is run again
 	await A.page.evaluate(async (gid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1200));
 		let group;
@@ -520,8 +520,8 @@ h.run(async () => {
 	// and what this suite pins is that core carries none of it any more. Everything above
 	// still holds: the chain primitives are core and are what the module assembles.
 	const leftCore = await A.page.evaluate(() => ({
-		recipes: !!window.__stores.gameRecipes,
-		dialog: !!window.__stores.recipeDialog
+		recipes: !!window.__tp.test.v1.gameRecipes,
+		dialog: !!window.__tp.test.v1.recipeDialog
 	}));
 	h.check(
 		!leftCore.recipes && !leftCore.dialog,
@@ -550,11 +550,11 @@ h.run(async () => {
 	await setPlay(A, true);
 	// an authoritative LOCAL commit — monotonic changedAt beats any in-flight stale
 	// singleton, so this section cannot inherit section 6's race
-	await A.page.evaluate(() => window.__stores.gameState.setGameState('playing'));
+	await A.page.evaluate(() => window.__tp.test.v1.gameState.setGameState('playing'));
 	await A.page.waitForTimeout(600);
 	await collect(A, m2);
 	h.check((await varOf(A, 'menugems')) === 1, `premise: m2 collected during the round (${await varOf(A, 'menugems')})`);
-	await A.page.evaluate(() => window.__stores.gameState.setGameState('menu'));
+	await A.page.evaluate(() => window.__tp.test.v1.gameState.setGameState('menu'));
 	await A.page.waitForTimeout(700);
 	const menuG = await gstate(A);
 	h.check(
@@ -584,7 +584,7 @@ h.run(async () => {
 	// made by hand, the SAME click banks again — proving the preserved entry is the only
 	// thing standing between a menu click and another bank.
 	await A.page.evaluate((onceId) => {
-		window.__stores.flowTriggers.update((m) => {
+		window.__tp.test.v1.flowTriggers.update((m) => {
 			const next = { ...m };
 			delete next[onceId];
 			return next;

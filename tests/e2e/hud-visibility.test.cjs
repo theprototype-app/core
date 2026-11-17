@@ -23,11 +23,11 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
 	const page = A.page;
-	await page.waitForFunction(() => !!window.__stores?.viewportOverrides, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.viewportOverrides, { timeout: 30000 });
 
 	// ---- 1. the `hud` override key exists, and defaults to ON ---------------
 	const key = await page.evaluate(() => {
-		const V = window.__stores.viewportOverrides;
+		const V = window.__tp.test.v1.viewportOverrides;
 		return {
 			declared: V.OVERRIDES.map((o) => o.key),
 			hudEntry: V.OVERRIDES.find((o) => o.key === 'hud') ?? null,
@@ -42,8 +42,8 @@ h.run(async () => {
 
 	// ---- 2. with the editor CLOSED the HUD renders -------------------------
 	await page.evaluate(() => {
-		const H = window.__stores.hudDocs;
-		window.__stores.hudEditorClose.set(true);
+		const H = window.__tp.test.v1.hudDocs;
+		window.__tp.test.v1.hudEditorClose.set(true);
 		H.clearHudDocs();
 		H.setHudDocFor('scene', {
 			screens: [{ id: 'main', name: 'Main', elements: [{ id: 'score', kind: 'text', label: 'SCENE HUD', anchor: 'top-left', x: 20, y: 20 }] }],
@@ -56,7 +56,7 @@ h.run(async () => {
 
 	// ---- 3. THE ANSWER: opening the editor clears the viewport --------------
 	const authoring = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.hudPreviewInViewport ?? null;
 		s.hudDocs.hudPreviewInViewport.set(false);
 		s.hudEditorClose.set(false);
@@ -95,7 +95,7 @@ h.run(async () => {
 	// ---- 4. renderLayer('hud') is the persistent kill switch ---------------
 	// Proven with the editor CLOSED, so the authoring rule cannot be what hides it.
 	const killed = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.hudEditorClose.set(true);
 		await new Promise((r) => setTimeout(r, 800));
 		const before = !!document.querySelector('#hud-layer');
@@ -114,7 +114,7 @@ h.run(async () => {
 	// The document keyed by a camera's uuid renders ONLY while that camera is looked
 	// through. No new field: hudDocs was already keyed 'scene' | objectUuid.
 	const cam = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create Camera');
 		await new Promise((r) => setTimeout(r, 1800));
 		const list = s.cameraObjects.listCameraObjects();
@@ -137,7 +137,7 @@ h.run(async () => {
 	);
 
 	const looking = await page.evaluate(async (uuid) => {
-		window.__stores.cameraPreview.startCameraPreview(uuid);
+		window.__tp.test.v1.cameraPreview.startCameraPreview(uuid);
 		await new Promise((r) => setTimeout(r, 1400));
 		return [...document.querySelectorAll('#hud-layer .hud-el')].map((e) => e.textContent?.trim());
 	}, cam.uuid);
@@ -151,7 +151,7 @@ h.run(async () => {
 	);
 
 	const stopped = await page.evaluate(async () => {
-		window.__stores.cameraPreview.stopCameraPreview();
+		window.__tp.test.v1.cameraPreview.stopCameraPreview();
 		await new Promise((r) => setTimeout(r, 1200));
 		return [...document.querySelectorAll('#hud-layer .hud-el')].map((e) => e.textContent?.trim());
 	});
@@ -162,7 +162,7 @@ h.run(async () => {
 
 	// a camera with NO document of its own must change nothing
 	const noDoc = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.hudDocs.setHudDocFor(s.cameraObjects.listCameraObjects()[0].uuid, null);
 		await new Promise((r) => setTimeout(r, 500));
 		s.cameraPreview.startCameraPreview(s.cameraObjects.listCameraObjects()[0].uuid);
@@ -178,7 +178,7 @@ h.run(async () => {
 
 	// ---- 6. the editor can AUTHOR a camera document -----------------------
 	const authored = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.hudEditorClose.set(false);
 		s.bottomDock.activateDock('hud');
 		await new Promise((r) => setTimeout(r, 1200));

@@ -12,7 +12,7 @@
 const h = require('./helpers.cjs');
 
 const S = (page, fn, arg) => page.evaluate(fn, arg);
-const why = (page, id) => S(page, (id) => window.__stores.flowRuntime.triggerWhyOf(id), id);
+const why = (page, id) => S(page, (id) => window.__tp.test.v1.flowRuntime.triggerWhyOf(id), id);
 
 h.run(async () => {
 	const browser = await h.launch();
@@ -22,7 +22,7 @@ h.run(async () => {
 	const p = A.page;
 
 	const ids = await S(p, async () => {
-		const st = window.__stores;
+		const st = window.__tp?.test.v1;
 		/** @type {any} */ let g;
 		st.objectsGroup.subscribe((v) => (g = v))();
 		// one box per command, read straight after it (the gem-arena way), named on every peer
@@ -72,12 +72,12 @@ h.run(async () => {
 		// the gem's own graph: a Collect pickup with touch off and nothing wired
 		[ids.gem]: { nodes: [N('collect', 'kit-pickups-collect', { score: 1, respawn: 0, touch: false }, 0, 0)], edges: [] }
 	};
-	await S(p, (doc) => window.__stores.restoreGraphs(JSON.parse(JSON.stringify(doc))), DOC);
-	await S(p, (id) => window.__stores.nodesHandler.sendNodes(id), B.id);
+	await S(p, (doc) => window.__tp.test.v1.restoreGraphs(JSON.parse(JSON.stringify(doc))), DOC);
+	await S(p, (id) => window.__tp.test.v1.nodesHandler.sendNodes(id), B.id);
 	await p.waitForTimeout(800);
 	const named = await S(p, (ids) => {
 		/** @type {any} */ let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return { bell: g.getObjectByProperty('uuid', ids.bell)?.name, crate: g.getObjectByProperty('uuid', ids.crate)?.name, gem: g.getObjectByProperty('uuid', ids.gem)?.name, all: g.children.map((c) => c.name + ':' + c.uuid.slice(0, 8)) };
 	}, ids);
 	h.check(named.bell === 'Bell' && named.crate === 'Crate' && named.gem === 'Gem', `setup: the three boxes resolve by uuid on A (${JSON.stringify(named)})`);
@@ -98,36 +98,36 @@ h.run(async () => {
 
 	// --- §2 checks in Interact -----------------------------------------------------------------
 	console.log('\n=== §2 checks (Interact) ===');
-	await S(p, () => window.__stores.editorMode.set('interact'));
+	await S(p, () => window.__tp.test.v1.editorMode.set('interact'));
 	await h.eventually(() => why(p, 'click'), (w) => w?.standing === null, '§2 Interact clears On Click\'s standing reason');
-	const fired = await S(p, (u) => window.__stores.flowRuntime.fireObjectClick(u), ids.bell);
+	const fired = await S(p, (u) => window.__tp.test.v1.flowRuntime.fireObjectClick(u), ids.bell);
 	h.check(fired >= 1, `§2 a click on the bell fires (${fired})`);
 	let w = await why(p, 'click');
 	h.check(w.check?.fired === true && w.check.who === 'Bell' && /^fired /.test(w.card), `§2 On Click: fired, by the bell ("${w.card}", ${JSON.stringify(w.check)})`);
 
 	await st('hoverOff', 'disabled', 'On Hover with "enabled" off');
-	await S(p, (u) => window.__stores.flowRuntime.fireObjectHover(u, 'enter'), ids.bell);
+	await S(p, (u) => window.__tp.test.v1.flowRuntime.fireObjectHover(u, 'enter'), ids.bell);
 	w = await why(p, 'hoverOff');
 	h.check(w.check?.reason === 'disabled' && w.card === 'blocked: "enabled" is off', `§2 a hover on a disabled node is blocked ("${w.card}")`);
 	w = await why(p, 'hoverCool');
 	h.check(w.check?.fired === true, '§2 the first hover fires');
-	await S(p, (u) => window.__stores.flowRuntime.fireObjectHover(u, 'leave'), ids.bell);
-	await S(p, (u) => window.__stores.flowRuntime.fireObjectHover(u, 'enter'), ids.bell);
+	await S(p, (u) => window.__tp.test.v1.flowRuntime.fireObjectHover(u, 'leave'), ids.bell);
+	await S(p, (u) => window.__tp.test.v1.flowRuntime.fireObjectHover(u, 'enter'), ids.bell);
 	w = await why(p, 'hoverCool');
 	h.check(w.check?.reason === 'cooldown' && w.card === 'blocked: still in its cooldown', `§2 the second hover inside the cooldown is blocked ("${w.card}")`);
 
 	await st('enterPlayer', 'no-sensor', 'On Enter (player) on a box that is not a sensor');
-	await S(p, ([u, c]) => window.__stores.flowRuntime.fireObjectEnter(u, c), [ids.bell, ids.crate]);
+	await S(p, ([u, c]) => window.__tp.test.v1.flowRuntime.fireObjectEnter(u, c), [ids.bell, ids.crate]);
 	w = await why(p, 'enterPlayer');
 	h.check(w.check?.reason === 'not-player' && w.check.who === 'Crate', `§2 a crate is not the player ("${w.card}", ${w.check?.who})`);
 	w = await why(p, 'enterAny');
 	h.check(w.check?.fired === true, '§2 the same crate fires On Enter (anything)');
-	await S(p, (u) => window.__stores.flowRuntime.fireObjectEnter(u, 'player'), ids.bell);
+	await S(p, (u) => window.__tp.test.v1.flowRuntime.fireObjectEnter(u, 'player'), ids.bell);
 	w = await why(p, 'enterObjects');
 	h.check(w.check?.reason === 'not-objects' && w.check.who === 'the player', `§2 the player is refused by On Enter (objects) ("${w.card}")`);
 	w = await why(p, 'enterFilter');
 	h.check(w.check?.reason === 'filter', `§2 the filter refuses the player ("${w.card}")`);
-	await S(p, ([u, g]) => window.__stores.flowRuntime.fireObjectEnter(u, g), [ids.bell, ids.gem]);
+	await S(p, ([u, g]) => window.__tp.test.v1.flowRuntime.fireObjectEnter(u, g), [ids.bell, ids.gem]);
 	w = await why(p, 'enterFilter');
 	h.check(w.check?.fired === true && w.check.who === 'Gem', `§2 the filter's own object fires it ("${w.card}", ${JSON.stringify(w.check)})`);
 
@@ -138,38 +138,38 @@ h.run(async () => {
 	await p.locator('p[title="Node editor (N)"]').click();
 	await p.waitForTimeout(1200);
 	const live = (id) => p.locator(`.flow-live-state[data-node-id="${id}"]`).textContent().catch(() => null);
-	await S(p, (u) => window.__stores.flowRuntime.fireObjectEnter(u, 'player'), ids.bell);
+	await S(p, (u) => window.__tp.test.v1.flowRuntime.fireObjectEnter(u, 'player'), ids.bell);
 	await h.eventually(() => live('enterObjects'), (t) => t === 'blocked: the player (wants objects)', '§3 the On Enter card says what blocked it');
 	await h.eventually(() => live('lonely'), (t) => t === "won't fire: no object to watch", '§3 the lonely On Click card says why it cannot fire');
 	// the debugger is live in Play (isLocked true; the flow-debugger suite's way in)
-	await S(p, () => window.__stores.isLocked.set(true));
+	await S(p, () => window.__tp.test.v1.isLocked.set(true));
 	await p.waitForTimeout(500);
 	await S(p, () => {
-		window.__stores.flowDebug.setDebugOpen(true);
-		window.__stores.flowDebug.debugFocus.set('enterObjects');
+		window.__tp.test.v1.flowDebug.setDebugOpen(true);
+		window.__tp.test.v1.flowDebug.debugFocus.set('enterObjects');
 	});
 	const row = p.locator('#debug-why');
 	await row.waitFor({ timeout: 8000 }).catch(() => {});
 	const text = (await row.textContent().catch(() => '')) ?? '';
 	h.check(/Last check .* ago · the player: blocked, the player \(wants objects\)\./.test(text), `§3 the debugger names time, who and the block ("${text.trim().slice(0, 120)}")`);
-	await S(p, () => window.__stores.flowDebug.debugFocus.set('lonely'));
+	await S(p, () => window.__tp.test.v1.flowDebug.debugFocus.set('lonely'));
 	await h.eventually(
 		() => row.textContent().catch(() => ''),
 		(t) => /Right now it cannot fire: no object to watch\./.test(t ?? '') && /No check yet/.test(t ?? ''),
 		'§3 a node never reached says so, and its standing reason'
 	);
-	await S(p, () => window.__stores.flowDebug.setDebugOpen(false));
-	await S(p, () => window.__stores.isLocked.set(null));
-	await S(p, () => window.__stores.editorMode.set('edit'));
+	await S(p, () => window.__tp.test.v1.flowDebug.setDebugOpen(false));
+	await S(p, () => window.__tp.test.v1.isLocked.set(null));
+	await S(p, () => window.__tp.test.v1.editorMode.set('edit'));
 
 	// --- §4 two peers: the physics peer checks object edges -------------------------------------
 	console.log('\n=== §4 two peers ===');
-	await S(p, (u) => window.__stores.physics.setPhysicsFor(u, { mode: 'dynamic', mass: 1 }), ids.crate);
-	await S(p, () => window.__stores.physics.toggleSimulation());
-	await h.eventually(() => S(p, () => window.__stores.physics.isInitiator()), (v) => v === true, '§4 A runs the simulation');
+	await S(p, (u) => window.__tp.test.v1.physics.setPhysicsFor(u, { mode: 'dynamic', mass: 1 }), ids.crate);
+	await S(p, () => window.__tp.test.v1.physics.toggleSimulation());
+	await h.eventually(() => S(p, () => window.__tp.test.v1.physics.isInitiator()), (v) => v === true, '§4 A runs the simulation');
 	await h.eventually(() => why(B.page, 'enterObjects'), (w) => w?.standing === 'authority', '§4 on B, On Enter (objects) is checked on the physics peer');
 	await h.eventually(() => why(p, 'enterObjects'), (w) => w?.standing === null, '§4 on A (the physics peer) nothing stands in the way');
-	await S(p, () => window.__stores.physics.toggleSimulation());
+	await S(p, () => window.__tp.test.v1.physics.toggleSimulation());
 
 	await browser.close();
 });

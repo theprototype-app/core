@@ -10,6 +10,7 @@ import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { globalRenderer, globalScene } from '../../stores/sceneStore';
 import { withMarkersHidden } from '../helperLayer';
+import { createRenderTarget, readPixels } from '../render/renderTargets.js'; // 101 F3: the one factory
 
 /** the long edge of a thumbnail, px */
 export const THUMB_W = 192;
@@ -32,7 +33,7 @@ export async function captureThumb(camera, aspect = 16 / 9) {
 	if (!renderer || !scene || !camera || typeof document === 'undefined') return null;
 	const w = THUMB_W;
 	const h = Math.max(2, Math.round(w / (aspect > 0 ? aspect : 16 / 9)));
-	const target = new THREE.WebGLRenderTarget(w, h, { colorSpace: THREE.SRGBColorSpace });
+	const target = createRenderTarget(w, h, { colorSpace: THREE.SRGBColorSpace });
 	const previous = renderer.getRenderTarget();
 	const xrWas = renderer.xr.enabled;
 	const autoClearWas = renderer.autoClear;
@@ -42,7 +43,7 @@ export async function captureThumb(camera, aspect = 16 / 9) {
 		renderer.autoClear = true;
 		renderer.setRenderTarget(target);
 		withMarkersHidden(() => renderer.render(scene, camera));
-		renderer.readRenderTargetPixels(target, 0, 0, w, h, pixels);
+		await readPixels(renderer, target, 0, 0, w, h, pixels);
 	} catch (error) {
 		console.warn('film thumbnail:', error);
 		return null;

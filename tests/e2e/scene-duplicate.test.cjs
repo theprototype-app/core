@@ -27,24 +27,24 @@ const TINY_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAf
 const itemsOf = (peer) =>
 	peer.page.evaluate(() => {
 		let v;
-		window.__stores.explorer.explorerItems.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((x) => (v = x))();
 		return v.map((i) => ({ id: i.id, name: i.name, kind: i.kind, hash: i.hash, folderId: i.folderId ?? null }));
 	});
 const manifestOf = (peer) =>
 	peer.page.evaluate(() => {
 		let m;
-		window.__stores.projectManifest.projectManifest.subscribe((v) => (m = v))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((v) => (m = v))();
 		return m;
 	});
 const foldersOf = (peer) =>
 	peer.page.evaluate(() => {
 		let list;
-		window.__stores.explorer.explorerFolders.subscribe((x) => (list = x))();
+		window.__tp.test.v1.explorer.explorerFolders.subscribe((x) => (list = x))();
 		return list.map((f) => ({ id: f.id, name: f.name }));
 	});
 const blobB64 = (peer, id) =>
 	peer.page.evaluate(async (id) => {
-		const blob = await window.__stores.explorer.itemBlob(id);
+		const blob = await window.__tp.test.v1.explorer.itemBlob(id);
 		if (!blob) return null;
 		const bytes = new Uint8Array(await blob.arrayBuffer());
 		let s = '';
@@ -70,18 +70,18 @@ const key = async (page, code) => {
 const toastTexts = (page) =>
 	page.evaluate(() => {
 		let v;
-		window.__stores.notifications.subscribe((x) => (v = x))();
+		window.__tp.test.v1.notifications.subscribe((x) => (v = x))();
 		return v.map((n) => String(n.text ?? ''));
 	});
 const addBox = (p) =>
 	p.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1100));
-		window.__stores.objectActions.deselectObject();
+		window.__tp.test.v1.objectActions.deselectObject();
 	});
 const wipe = async (p) => {
 	await p.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		const uuids = (g?.children ?? []).map((c) => c.uuid);
@@ -93,13 +93,13 @@ const wipe = async (p) => {
 	await p.page.waitForTimeout(700);
 };
 const openExplorer = async (p) => {
-	await p.page.waitForFunction(() => !!window.__stores?.peerScenes, { timeout: 30000 });
+	await p.page.waitForFunction(() => !!window.__tp?.test.v1?.peerScenes, { timeout: 30000 });
 	await p.page.locator('#explorer-slot').click();
 	await p.page.waitForTimeout(700);
-	await p.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await p.page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 };
 const pasteInto = async (page, folderId) => {
-	await page.evaluate((id) => window.__stores.explorer.activeFolder.set(id), folderId);
+	await page.evaluate((id) => window.__tp.test.v1.explorer.activeFolder.set(id), folderId);
 	await page.waitForTimeout(500);
 	await page.locator('#explorer-grid').click({ position: { x: 5, y: 5 } }).catch(() => {});
 	await page.evaluate(() => document.getElementById('explorer-grid')?.focus());
@@ -113,12 +113,12 @@ h.run(async () => {
 	await openExplorer(A);
 	await wipe(A);
 	await addBox(A);
-	await page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Arena'));
+	await page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('Arena'));
 	await h.eventually(() => itemsOf(A), (l) => l.some((i) => i.name === 'Arena.tpscene'), 'premise: Arena.tpscene is in the library');
 	const source = (await itemsOf(A)).find((i) => i.name === 'Arena.tpscene');
 	// a texture and a target folder
 	await page.evaluate(async (png) => {
-		const s = window.__stores.explorer;
+		const s = window.__tp.test.v1.explorer;
 		const bytes = Uint8Array.from(atob(png.split(',')[1]), (c) => c.charCodeAt(0));
 		await s.addItemFromBytes(bytes.buffer, 'pixel.png', null);
 		s.createFolder('Target', null);
@@ -146,7 +146,7 @@ h.run(async () => {
 	// =====================================================================
 	// 2. Ctrl+C / Ctrl+V OF A SCENE IS A SCENE COPY
 	// =====================================================================
-	await page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await page.waitForTimeout(300);
 	await page.locator('.explorer-card', { hasText: 'Arena.tpscene' }).first().click();
 	await page.waitForTimeout(200);
@@ -177,7 +177,7 @@ h.run(async () => {
 	// =====================================================================
 	// 3. Ctrl+C / Ctrl+V OF A TEXTURE IS A SECOND RECORD, SAME HASH
 	// =====================================================================
-	await page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await page.waitForTimeout(300);
 	await page.locator('.explorer-card', { hasText: 'pixel.png' }).first().click();
 	await page.waitForTimeout(200);
@@ -193,7 +193,7 @@ h.run(async () => {
 	// =====================================================================
 	// 4. DUPLICATE ON THE CARD, THROUGH THE REAL MENU
 	// =====================================================================
-	await page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await page.waitForTimeout(300);
 	await page.locator('.explorer-card', { hasText: 'Arena.tpscene' }).first().click({ button: 'right' });
 	await page.waitForTimeout(300);

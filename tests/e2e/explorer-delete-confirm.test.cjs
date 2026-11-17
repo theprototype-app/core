@@ -20,7 +20,7 @@ const h = require('./helpers.cjs');
 const modalOf = (p) =>
 	p.page.evaluate(() => {
 		let d;
-		window.__stores.confirmDialog.confirmDialog.subscribe((x) => (d = x))();
+		window.__tp.test.v1.confirmDialog.confirmDialog.subscribe((x) => (d = x))();
 		return d ? d.title : null;
 	});
 
@@ -40,15 +40,15 @@ const stripOf = (p) =>
 const visibleNames = (p) =>
 	p.page.evaluate(() => {
 		let items;
-		window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((v) => (items = v))();
 		return items.map((i) => i.name).sort();
 	});
 
 const binNames = (p) =>
 	p.page.evaluate(() => {
 		let m;
-		window.__stores.projectManifest.projectManifest.subscribe((v) => (m = v))();
-		return window.__stores.sharedLibrary
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((v) => (m = v))();
+		return window.__tp.test.v1.sharedLibrary
 			.deletedLog(m)
 			.map((r) => r.name)
 			.sort();
@@ -57,11 +57,11 @@ const binNames = (p) =>
 const toastTexts = (p) =>
 	p.page.evaluate(() => {
 		let t;
-		window.__stores.toastStore.subscribe((v) => (t = v))();
+		window.__tp.test.v1.toastStore.subscribe((v) => (t = v))();
 		return (t ?? []).map((x) => String(typeof x === 'string' ? x : (x.text ?? x.message ?? '')));
 	});
 
-const clearToasts = (p) => p.page.evaluate(() => window.__stores.toastStore.set([]));
+const clearToasts = (p) => p.page.evaluate(() => window.__tp.test.v1.toastStore.set([]));
 
 /** right-click a card by id and read the menu row labels */
 async function cardMenu(p, id) {
@@ -108,7 +108,7 @@ const dragOnto = (p, fromCardId, toSelector) =>
 const seedFiles = (p, names, folderId = null) =>
 	p.page.evaluate(
 		async ({ list, dir }) => {
-			const e = window.__stores.explorer;
+			const e = window.__tp.test.v1.explorer;
 			const enc = (s) => new TextEncoder().encode(s).buffer;
 			const out = [];
 			for (const n of list) out.push((await e.addItemFromBytes(enc('body-of-' + n), n, dir)).id);
@@ -121,18 +121,18 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1440, height: 900 } } });
 	const page = A.page;
-	await page.waitForFunction(() => !!window.__stores?.explorer && !!window.__stores?.sharedLibrary, null, {
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.explorer && !!window.__tp?.test.v1?.sharedLibrary, null, {
 		timeout: 30000
 	});
-	await page.evaluate(() => window.__stores.explorer.loadExplorer());
+	await page.evaluate(() => window.__tp.test.v1.explorer.loadExplorer());
 	await page.waitForTimeout(400);
 	// the bin must survive this run rather than being emptied under it
-	await page.evaluate(() => window.__stores.sharedLibrary.keepRecycleBin.set(true));
+	await page.evaluate(() => window.__tp.test.v1.sharedLibrary.keepRecycleBin.set(true));
 
 	const wipe = () =>
 		page.evaluate(async () => {
-			await window.__stores.explorer.clearLibrary();
-			const pm = window.__stores.projectManifest;
+			await window.__tp.test.v1.explorer.clearLibrary();
+			const pm = window.__tp.test.v1.projectManifest;
 			pm.projectManifest.update((m) => ({ ...m, deleted: [], removed: { items: {}, folders: {} } }));
 		});
 
@@ -216,7 +216,7 @@ h.run(async () => {
 	h.check((await binNames(A)).includes('alpha.txt'), 'and it is in Deleted, where it can be restored');
 
 	// ---- 4. `deleteWithoutConfirm` still skips the asking -----------------------------
-	await page.evaluate(() => window.__stores.sharedLibrary.deleteWithoutConfirm.set(true));
+	await page.evaluate(() => window.__tp.test.v1.sharedLibrary.deleteWithoutConfirm.set(true));
 	await cardMenu(A, ids[1]);
 	await page.getByRole('menuitem', { name: /^Delete$/ }).click();
 	await page.waitForTimeout(600);
@@ -228,7 +228,7 @@ h.run(async () => {
 
 	// ...but Empty Deleted asks ANYWAY: the bin is what makes a delete reversible, and
 	// emptying it is the one act in the Explorer that takes bytes for good.
-	await page.evaluate(() => window.__stores.explorer.activeFolder.set('deleted'));
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set('deleted'));
 	await page.waitForTimeout(500);
 	await page.locator('#deleted-folder').click({ button: 'right' });
 	await page.waitForTimeout(400);
@@ -251,14 +251,14 @@ h.run(async () => {
 	h.check((await modalOf(A)) === null, 'and not through the app-wide modal');
 	await page.locator('#explorer-confirm-no').click();
 	await page.waitForTimeout(300);
-	await page.evaluate(() => window.__stores.sharedLibrary.deleteWithoutConfirm.set(false));
-	await page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await page.evaluate(() => window.__tp.test.v1.sharedLibrary.deleteWithoutConfirm.set(false));
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await page.waitForTimeout(400);
 
 	// ---- 5. the two TOAST confirms became the same strip ------------------------------
 	await wipe();
 	const folderIds = await page.evaluate(() => {
-		const e = window.__stores.explorer;
+		const e = window.__tp.test.v1.explorer;
 		return { doomed: e.createFolder('Doomed', null).id, keep: e.createFolder('Keep', null).id };
 	});
 	await seedFiles(A, ['inside-a.txt', 'inside-b.txt'], folderIds.doomed);
@@ -329,9 +329,9 @@ h.run(async () => {
 	);
 
 	// ---- 6. THE DELETED ROW IS A DROP TARGET, and it appears for a drag ---------------
-	await page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await page.evaluate(() => {
-		const pm = window.__stores.projectManifest;
+		const pm = window.__tp.test.v1.projectManifest;
 		pm.projectManifest.update((m) => ({ ...m, deleted: [] }));
 	});
 	await page.waitForTimeout(500);
@@ -400,10 +400,10 @@ h.run(async () => {
 		'both are in Deleted, restorable (' + JSON.stringify(binned) + ')'
 	);
 	const restorable = await page.evaluate(() =>
-		window.__stores.sharedLibrary.canRestoreDeleted(
+		window.__tp.test.v1.sharedLibrary.canRestoreDeleted(
 			(() => {
 				let items;
-				window.__stores.explorer.hiddenItems.subscribe((v) => (items = v))();
+				window.__tp.test.v1.explorer.hiddenItems.subscribe((v) => (items = v))();
 				return items.find((i) => i.name === 'loose-1.txt')?.hash;
 			})()
 		)
@@ -411,7 +411,7 @@ h.run(async () => {
 	h.check(restorable, 'a dropped file keeps its bytes — Restore can work');
 
 	// ---- 8. a FOLDER drop bins its files rather than destroying them ------------------
-	await page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await page.waitForTimeout(400);
 	const folderDrop = await page.evaluate((fid) => {
 		const card = document.querySelector('[data-card-id="' + fid + '"]');
@@ -427,7 +427,7 @@ h.run(async () => {
 	h.check(folderDrop.dropped, 'premise: the folder was dropped on the bin row');
 	const foldersLeft = await page.evaluate(() => {
 		let f;
-		window.__stores.explorer.explorerFolders.subscribe((v) => (f = v))();
+		window.__tp.test.v1.explorer.explorerFolders.subscribe((v) => (f = v))();
 		return f.map((x) => x.name).sort();
 	});
 	h.check(
@@ -443,9 +443,9 @@ h.run(async () => {
 	// unconfirmed gesture may not do anything irreversible
 	const bytesKept = await page.evaluate(() => {
 		let items;
-		window.__stores.explorer.hiddenItems.subscribe((v) => (items = v))();
+		window.__tp.test.v1.explorer.hiddenItems.subscribe((v) => (items = v))();
 		const row = items.find((i) => i.name === 'inside-a.txt');
-		return row ? { canRestore: window.__stores.sharedLibrary.canRestoreDeleted(row.hash), folderId: row.folderId } : null;
+		return row ? { canRestore: window.__tp.test.v1.sharedLibrary.canRestoreDeleted(row.hash), folderId: row.folderId } : null;
 	});
 	h.check(
 		!!bytesKept && bytesKept.canRestore,
@@ -463,8 +463,8 @@ h.run(async () => {
 	);
 	const folderRow = await page.evaluate((id) => {
 		let m;
-		window.__stores.projectManifest.projectManifest.subscribe((x) => (m = x))();
-		const rows = window.__stores.sharedLibrary.deletedLog(m);
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((x) => (m = x))();
+		const rows = window.__tp.test.v1.sharedLibrary.deletedLog(m);
 		const row = rows.find((r) => r.hash === 'folder:' + id);
 		return row ? { name: row.name, kind: row.kind, folderId: row.folderId ?? null } : null;
 	}, folderIds.doomed);
@@ -476,9 +476,9 @@ h.run(async () => {
 	// ---- 9. restore really works from a dropped file ---------------------------------
 	const restored = await page.evaluate(() => {
 		let items;
-		window.__stores.explorer.hiddenItems.subscribe((v) => (items = v))();
+		window.__tp.test.v1.explorer.hiddenItems.subscribe((v) => (items = v))();
 		const row = items.find((i) => i.name === 'inside-a.txt');
-		return window.__stores.sharedLibrary.restoreDeletedItem(row.hash);
+		return window.__tp.test.v1.sharedLibrary.restoreDeletedItem(row.hash);
 	});
 	await page.waitForTimeout(700);
 	h.check(restored, 'Restore returns true for a file binned by drag');
@@ -492,7 +492,7 @@ h.run(async () => {
 	// app settings modal with Files accordion expanded". The strip's detail talks about the
 	// bin and about being asked at all, and BOTH of those are switches in Settings - so it
 	// offers the way there instead of describing it.
-	await page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await page.waitForTimeout(500);
 	const freshIds = await seedFiles(A, ['settings-probe.txt']);
 	await page.waitForTimeout(600);
@@ -508,8 +508,8 @@ h.run(async () => {
 	await page.waitForTimeout(900);
 	const opened = await page.evaluate(() => {
 		let open, section;
-		window.__stores.settingsOpen.subscribe((v) => (open = v))();
-		window.__stores.settingsSection.subscribe((v) => (section = v))();
+		window.__tp.test.v1.settingsOpen.subscribe((v) => (open = v))();
+		window.__tp.test.v1.settingsSection.subscribe((v) => (section = v))();
 		// which accordion is actually EXPANDED, read from the DOM rather than from the store
 		// that asked for it - the store being right while the panel stays shut is the bug
 		// this deep link existed-but-did-nothing form of, until round 12 wired the last line
@@ -546,7 +546,7 @@ h.run(async () => {
 		'...and it really is the section holding the switches the strip talks about'
 	);
 	h.check((await stripOf(A)) === null, 'the question is dismissed on the way - it is answered in Settings now');
-	await page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await page.waitForTimeout(600);
 
 	h.check(

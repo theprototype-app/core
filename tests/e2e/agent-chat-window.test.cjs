@@ -32,8 +32,8 @@ const inPage = (peer, body, arg) =>
 	peer.page.evaluate(
 		([src, a]) => {
 			let pc = null;
-			window.__stores.peers.subscribe((v) => (pc = v))();
-			return Object.getPrototypeOf(async function () {}).constructor('s', 'pc', 'arg', src)(window.__stores, pc, a);
+			window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
+			return Object.getPrototypeOf(async function () {}).constructor('s', 'pc', 'arg', src)(window.__tp?.test.v1, pc, a);
 		},
 		[body, arg ?? null]
 	);
@@ -138,7 +138,7 @@ h.run(async () => {
 	await B.page.evaluate(() => {
 		window.__cancelSeen = [];
 		let pc;
-		window.__stores.peers.subscribe((v) => (pc = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
 		for (const conn of Object.values(pc.connections)) conn.on('data', (d) => d?.type === 'agentchat' && (d.cancel || d.mute !== undefined) && window.__cancelSeen.push(d));
 	});
 	await A.page.locator('#ai-agent-stop').click();

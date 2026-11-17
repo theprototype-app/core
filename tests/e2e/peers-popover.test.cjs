@@ -14,12 +14,12 @@ h.run(async () => {
 
 	// inject self + four fake peers into userdata
 	await A.page.evaluate(() => {
-		const selfId = window.__stores.peers && (() => { let p; window.__stores.peers.subscribe((x) => (p = x))(); return p?.peer?.id; })();
+		const selfId = window.__tp.test.v1.peers && (() => { let p; window.__tp.test.v1.peers.subscribe((x) => (p = x))(); return p?.peer?.id; })();
 		window.__self = selfId || 'self';
 		// 78 PL34: a nameless person takes "Guest N" once a session is live — the injected self row is
 		// "Me" because THIS page is called Me (the roster's own row follows the username store)
-		window.__stores.username.set('Me');
-		window.__stores.userdata.set([
+		window.__tp.test.v1.username.set('Me');
+		window.__tp.test.v1.userdata.set([
 			[window.__self, 'Me', null, null, null, {}],
 			['p1', 'Ann', null, null, null, {}],
 			['p2', 'Bo', null, null, null, {}],
@@ -31,7 +31,7 @@ h.run(async () => {
 		// peer while a request was still pending. A roster injected on its own therefore
 		// renders nothing at all, which is why this suite went red. The reaper only runs on
 		// a conn CLOSE, so the fake rows survive for the length of the suite.
-		window.__stores.peers.update((p) => {
+		window.__tp.test.v1.peers.update((p) => {
 			p.openedPeers.add('p1');
 			return p;
 		});
@@ -155,7 +155,7 @@ h.run(async () => {
 	// A peer with a ROW and no name is in the session's unnamed world; a peer with NO row
 	// still renders no chip, which is why one has to be injected here.
 	await A.page.evaluate(() => {
-		window.__stores.peerScenes.peerScenes.set({ p1: { scene: '', hash: '', at: Date.now() } });
+		window.__tp.test.v1.peerScenes.peerScenes.set({ p1: { scene: '', hash: '', at: Date.now() } });
 	});
 	await A.page.waitForTimeout(300);
 	const chip = await A.page.evaluate(() => {
@@ -176,13 +176,13 @@ h.run(async () => {
 		const btn = document.querySelector('#peers-popover .peer-watch');
 		btn.click();
 		let spec;
-		window.__stores.specatorMode.subscribe((v) => (spec = v))();
+		window.__tp.test.v1.specatorMode.subscribe((v) => (spec = v))();
 		return spec;
 	});
 	h.check(watched === 'p1', `Watch spectates the peer (${watched})`);
 
 	// reset spectator so teardown is clean
-	await A.page.evaluate(() => window.__stores.specatorMode.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.specatorMode.set(false));
 
 	await h.finish(browser);
 });

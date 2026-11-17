@@ -9,7 +9,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		let grp;
 		s.objectsGroup.subscribe((v) => (grp = v))();
@@ -24,7 +24,7 @@ h.run(async () => {
 	// three W/H/D slider handles render in the stretch tab
 	const handles = await A.page.evaluate(() => {
 		let g;
-		window.__stores.vrControls.vrEditGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.vrControls.vrEditGroup.subscribe((v) => (g = v))();
 		if (!g) return [];
 		const names = [];
 		g.traverse((o) => {
@@ -39,7 +39,7 @@ h.run(async () => {
 
 	// per-axis model: each slider (setStretch) scales ONLY its axis
 	const res = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const vc = s.vrControls;
 		const box = window.__box;
 		const st = vc.stretchState();

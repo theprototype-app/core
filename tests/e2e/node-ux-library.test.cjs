@@ -10,12 +10,12 @@ const graph = (page) =>
 	page.evaluate(() => {
 		let ns;
 		let es;
-		window.__stores.flowNodes.subscribe((v) => (ns = v))();
-		window.__stores.flowEdges.subscribe((v) => (es = v))();
+		window.__tp.test.v1.flowNodes.subscribe((v) => (ns = v))();
+		window.__tp.test.v1.flowEdges.subscribe((v) => (es = v))();
 		return { nodes: ns.map((n) => ({ id: n.id, type: n.type, data: n.data })), edges: es.map((e) => ({ source: e.source, target: e.target })) };
 	});
 const select = (page, ids) =>
-	page.evaluate((ids) => window.__stores.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: ids.includes(n.id) }))), ids);
+	page.evaluate((ids) => window.__tp.test.v1.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: ids.includes(n.id) }))), ids);
 const paletteHas = (page, label) =>
 	page.evaluate((label) => [...document.querySelectorAll('aside [role="listitem"]')].some((el) => el.textContent.trim() === label), label);
 
@@ -27,16 +27,16 @@ h.run(async () => {
 	await p.waitForTimeout(800);
 	await p.evaluate(() => {
 		const mk = (id, x, type = 'number') => ({ id, type, position: { x, y: 0 }, data: { type, value: 2, label: id, ...(type === 'math' ? { op: 'add' } : {}) }, class: 'w-[150px]' });
-		window.__stores.flowNodes.set([mk('a', 0), mk('b', 240, 'math'), mk('c', 480, 'math')]);
-		window.__stores.flowEdges.set([{ id: 'e-a-b.a', source: 'a', target: 'b', targetHandle: 'a' }, { id: 'e-b-c.a', source: 'b', target: 'c', targetHandle: 'a' }]);
+		window.__tp.test.v1.flowNodes.set([mk('a', 0), mk('b', 240, 'math'), mk('c', 480, 'math')]);
+		window.__tp.test.v1.flowEdges.set([{ id: 'e-a-b.a', source: 'a', target: 'b', targetHandle: 'a' }, { id: 'e-b-c.a', source: 'b', target: 'c', targetHandle: 'a' }]);
 	});
 	await p.waitForTimeout(600);
 
 	// --- 1. the node manager -----------------------------------------------------------
 	h.check(await paletteHas(p, 'Number'), 'the palette lists Number to begin with');
 	await p.evaluate(() => {
-		window.__stores.settingsSection.set('nodetypes');
-		window.__stores.settingsOpen.set(true);
+		window.__tp.test.v1.settingsSection.set('nodetypes');
+		window.__tp.test.v1.settingsOpen.set(true);
 	});
 	await p.waitForTimeout(800);
 	h.check(await p.locator('#node-types-section').isVisible(), 'Settings ▸ Node types lists the node types');
@@ -47,7 +47,7 @@ h.run(async () => {
 	await p.locator('[data-node-type="number"] [data-nt="type-toggle"]').first().click();
 	await p.waitForTimeout(300);
 	h.check((await p.evaluate(() => localStorage.getItem('disabledNodeTypes'))) === '["number"]', 'switching a type off is remembered on this device');
-	await p.evaluate(() => window.__stores.settingsOpen.set(false));
+	await p.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await p.waitForTimeout(500);
 	h.check(!(await paletteHas(p, 'Number')), 'a switched-off type leaves the palette');
 	const pane = await p.locator('.svelteFlow .svelte-flow__pane').boundingBox();
@@ -61,18 +61,18 @@ h.run(async () => {
 	h.check(found.length === 0, `…and the node search (${JSON.stringify(found)})`);
 	await p.keyboard.press('Escape');
 	await p.keyboard.press('Escape');
-	const live = await p.evaluate(() => window.__stores.runtimeGraph(window.__stores.allNodes(), window.__stores.allEdges()).nodes.some((n) => n.id === 'a'));
+	const live = await p.evaluate(() => window.__tp.test.v1.runtimeGraph(window.__tp.test.v1.allNodes(), window.__tp.test.v1.allEdges()).nodes.some((n) => n.id === 'a'));
 	h.check(live && (await p.locator('.svelte-flow__node[data-id="a"]').count()) === 1, 'a Number node already in the graph keeps working');
 	await p.evaluate(() => {
-		window.__stores.settingsSection.set('nodetypes');
-		window.__stores.settingsOpen.set(true);
+		window.__tp.test.v1.settingsSection.set('nodetypes');
+		window.__tp.test.v1.settingsOpen.set(true);
 	});
 	await p.waitForTimeout(600);
 	// "Turn all on" is the footer's "Reset Node types to defaults" now (it asks first)
 	await p.locator('#settings-reset-category').click();
 	await p.locator('#confirm-dialog-ok').click();
 	await p.waitForTimeout(200);
-	await p.evaluate(() => window.__stores.settingsOpen.set(false));
+	await p.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await p.waitForTimeout(400);
 	h.check((await paletteHas(p, 'Number')) && !(await p.evaluate(() => localStorage.getItem('disabledNodeTypes'))), 'Turn all on brings it back');
 
@@ -82,7 +82,7 @@ h.run(async () => {
 	await p.keyboard.press('Control+g');
 	await p.waitForTimeout(500);
 	const G = (await graph(p)).nodes.find((n) => n.type === 'group');
-	await p.evaluate((id) => window.__stores.nodesHandler.setNodeData(id, { label: 'Doubler' }), G.id);
+	await p.evaluate((id) => window.__tp.test.v1.nodesHandler.setNodeData(id, { label: 'Doubler' }), G.id);
 	await p.waitForTimeout(300);
 	await p.keyboard.press('a'); // frame all: the new card can sit under the scope chip at the pane top
 	await p.waitForTimeout(500);

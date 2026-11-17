@@ -6,7 +6,7 @@
 const h = require('./helpers.cjs');
 
 const entriesOn = (page) =>
-	page.evaluate(() => window.__stores.particleRuntime.particleEntries());
+	page.evaluate(() => window.__tp.test.v1.particleRuntime.particleEntries());
 
 h.run(async () => {
 	const browser = await h.launch();
@@ -21,13 +21,13 @@ h.run(async () => {
 	// 1) attach a preset to a box (read the group ref FIRST, mutate after —
 	// never write a store from inside its own subscriber)
 	const uuid = await A.page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		let group;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		window.__box = group.children[group.children.length - 1];
 		return window.__box.uuid;
 	});
-	await A.page.evaluate((u) => window.__stores.particleActions.addParticlesPreset(u, 'sparkles'), uuid);
+	await A.page.evaluate((u) => window.__tp.test.v1.particleActions.addParticlesPreset(u, 'sparkles'), uuid);
 	const cfg = await A.page.evaluate(() => window.__box.userData.particles);
 	h.check(cfg?.preset === 'sparkles' && cfg.count > 0, `preset config lands on userData.particles (${cfg?.preset})`);
 
@@ -58,10 +58,10 @@ h.run(async () => {
 	const sent = await A.page.evaluate(() => {
 		const captured = [];
 		let peer;
-		window.__stores.peers.subscribe((p) => (peer = p))();
+		window.__tp.test.v1.peers.subscribe((p) => (peer = p))();
 		peer.send = (m) => captured.push(m); // instance prop shadows the prototype method
-		window.__stores.particleActions.updateObjectParticles(window.__box.uuid, { mode: 'burst', speed: 3 });
-		window.__stores.particleActions.burstObjectParticles(window.__box.uuid);
+		window.__tp.test.v1.particleActions.updateObjectParticles(window.__box.uuid, { mode: 'burst', speed: 3 });
+		window.__tp.test.v1.particleActions.burstObjectParticles(window.__box.uuid);
 		delete peer.send; // restore the prototype method
 		return captured.map((m) => m.type + ':' + (m.parameter ?? ''));
 	});
@@ -77,13 +77,13 @@ h.run(async () => {
 
 	// 5) receive path: a remote peer's objectParameters lands on userData
 	await A.page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/create sphere');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create sphere');
 	});
 	const remoteOk = await A.page.evaluate(async () => {
 		const g = window.__box.parent;
 		const sphere = g.children[g.children.length - 1];
 		window.__sphere = sphere;
-		await window.__stores.commandsHandler.objectParameters({
+		await window.__tp.test.v1.commandsHandler.objectParameters({
 			parameter: 'particles',
 			uuid: sphere.uuid,
 			particles: { preset: 'fire', count: 40, lifetime: 1 }
@@ -99,7 +99,7 @@ h.run(async () => {
 
 	// 6) remote null removes it
 	await A.page.evaluate(() =>
-		window.__stores.commandsHandler.objectParameters({
+		window.__tp.test.v1.commandsHandler.objectParameters({
 			parameter: 'particles',
 			uuid: window.__sphere.uuid,
 			particles: null
@@ -114,9 +114,9 @@ h.run(async () => {
 	// 7) undo removes the attach, redo restores it (props kind)
 	// history so far: [create box, attach (props), patch (props), create sphere]
 	await A.page.evaluate(() => {
-		window.__stores.history.undo(); // create sphere
-		window.__stores.history.undo(); // the mode/speed patch
-		window.__stores.history.undo(); // the attach
+		window.__tp.test.v1.history.undo(); // create sphere
+		window.__tp.test.v1.history.undo(); // the mode/speed patch
+		window.__tp.test.v1.history.undo(); // the attach
 	});
 	await h.eventually(
 		() => A.page.evaluate(() => !window.__box.userData.particles),
@@ -128,7 +128,7 @@ h.run(async () => {
 		(e) => e.length === 0,
 		'undo disposes the Points entry'
 	);
-	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 	await h.eventually(
 		() => entriesOn(A.page),
 		(e) => e.length === 1,
@@ -137,8 +137,8 @@ h.run(async () => {
 
 	// 8) the object-menu + Add-menu surfaces exist
 	const menu = await A.page.evaluate(() => {
-		const items = window.__stores.objectMenu.buildObjectMenuItems(window.__box.uuid);
-		const effects = window.__stores.objectMenu.findMenuItem(items, 'Effects');
+		const items = window.__tp.test.v1.objectMenu.buildObjectMenuItems(window.__box.uuid);
+		const effects = window.__tp.test.v1.objectMenu.findMenuItem(items, 'Effects');
 		return { hasEffects: !!effects, children: effects?.children?.map((c) => c.label) ?? [] };
 	});
 	h.check(
@@ -150,12 +150,12 @@ h.run(async () => {
 	// emitters would otherwise sit invisible until an explicit trigger). Runs
 	// before the cap test so its entry isn't culled by the emitter cap.
 	const burstUuid = await A.page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return g.children[g.children.length - 1].uuid;
 	});
-	await A.page.evaluate((u) => window.__stores.particleActions.addParticlesPreset(u, 'confetti'), burstUuid);
+	await A.page.evaluate((u) => window.__tp.test.v1.particleActions.addParticlesPreset(u, 'confetti'), burstUuid);
 	await h.eventually(
 		() => entriesOn(A.page),
 		(e) => {
@@ -169,7 +169,7 @@ h.run(async () => {
 	// origin is visible immediately (and the offset uniform tracks it)
 	const beforeOff = (await entriesOn(A.page)).find((x) => x.key === 'ud:' + burstUuid)?.burstT;
 	await A.page.waitForTimeout(50);
-	await A.page.evaluate((u) => window.__stores.particleActions.updateObjectParticles(u, { offset: [0, 1.5, 0] }), burstUuid);
+	await A.page.evaluate((u) => window.__tp.test.v1.particleActions.updateObjectParticles(u, { offset: [0, 1.5, 0] }), burstUuid);
 	await h.eventually(
 		() => entriesOn(A.page),
 		(e) => {
@@ -182,10 +182,10 @@ h.run(async () => {
 	// 9) emitter cap: 10 emitters -> at most MAX_EMITTERS render
 	await A.page.evaluate(() => {
 		for (let i = 0; i < 9; i++) {
-			window.__stores.commandsHandler.sceneCommand('/create box');
+			window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		}
 		const g = window.__box.parent;
-		g.children.slice(-9).forEach((o) => window.__stores.particleActions.addParticlesPreset(o.uuid, 'fire'));
+		g.children.slice(-9).forEach((o) => window.__tp.test.v1.particleActions.addParticlesPreset(o.uuid, 'fire'));
 	});
 	await h.eventually(
 		() => entriesOn(A.page),

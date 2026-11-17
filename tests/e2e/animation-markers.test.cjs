@@ -19,11 +19,11 @@ const h = require('./helpers.cjs');
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
-	await A.page.waitForFunction(() => !!window.__stores?.animationPreview, { timeout: 20000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.animationPreview, { timeout: 20000 });
 
 	// ---------- a walking box with a 2s loop and two markers ----------
 	const uuid = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 400));
 		let g;
@@ -41,12 +41,12 @@ h.run(async () => {
 		return obj.uuid;
 	});
 
-	const markers = () => A.page.evaluate((id) => window.__stores.animationPreview.markersOf(id), uuid);
+	const markers = () => A.page.evaluate((id) => window.__tp.test.v1.animationPreview.markersOf(id), uuid);
 
 	// ---------- 1. the data model ----------
 	h.check((await markers()).length === 0, 'a clip starts with no markers');
 	const added = await A.page.evaluate((id) => {
-		const ap = window.__stores.animationPreview;
+		const ap = window.__tp.test.v1.animationPreview;
 		ap.addMarker(id, 1.5, 'RightFoot');
 		ap.addMarker(id, 0.5, 'LeftFoot'); // out of order on purpose
 		return ap.markersOf(id);
@@ -59,7 +59,7 @@ h.run(async () => {
 
 	// they ride the CLIP, so a save and a normalize round-trip keeps them
 	const roundTrip = await A.page.evaluate((id) => {
-		const ap = window.__stores.animationPreview;
+		const ap = window.__tp.test.v1.animationPreview;
 		let map;
 		ap.animations.subscribe((/** @type {any} */ v) => (map = v))();
 		// exactly what a save writes and a load reads back
@@ -73,7 +73,7 @@ h.run(async () => {
 	);
 	// and a clip with NO markers field stays clean — every existing save is one
 	const legacy = await A.page.evaluate(() => {
-		const ap = window.__stores.animationPreview;
+		const ap = window.__tp.test.v1.animationPreview;
 		return ap.normalizeAnimSet({
 			tracks: [{ id: 't', channel: 'pos.y', from: 0, to: 1 }],
 			duration: 1,
@@ -87,7 +87,7 @@ h.run(async () => {
 
 	// ---------- 2. the node fires as the playhead CROSSES one ----------
 	await A.page.evaluate((id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphsCtl.createObjectGraph(id);
 		const nh = s.nodesHandler;
 		const mk = (/** @type {string} */ nid, /** @type {string} */ name, /** @type {number} */ y) =>
@@ -124,13 +124,13 @@ h.run(async () => {
 	const counts = () =>
 		A.page.evaluate(() => {
 			let v = {};
-			window.__stores.flowValues.subscribe((/** @type {any} */ x) => (v = x))();
+			window.__tp.test.v1.flowValues.subscribe((/** @type {any} */ x) => (v = x))();
 			return { left: v['c-left'] ?? 0, right: v['c-right'] ?? 0, any: v['c-any'] ?? 0 };
 		});
 
 	// park BEFORE the first marker, then scrub across it in one step
 	await A.page.evaluate((id) => {
-		const ap = window.__stores.animationPreview;
+		const ap = window.__tp.test.v1.animationPreview;
 		ap.stop(id);
 		ap.scrub(id, 0.1);
 	}, uuid);
@@ -152,12 +152,12 @@ h.run(async () => {
 	// without loosening it: 1.7 is 0.2s past the last marker and 0.3s short of the
 	// wrap, and the premise check below fails loudly if either bound is missed.
 	await A.page.evaluate((id) => {
-		const ap = window.__stores.animationPreview;
+		const ap = window.__tp.test.v1.animationPreview;
 		ap.resetPreview(id);
 		ap.play(id, undefined, { from: 0, reverse: false });
 	}, uuid);
 	const lapHead = await A.page.evaluate(async (id) => {
-		const ap = window.__stores.animationPreview;
+		const ap = window.__tp.test.v1.animationPreview;
 		const started = performance.now();
 		let head = 0;
 		while (performance.now() - started < 6000) {
@@ -168,7 +168,7 @@ h.run(async () => {
 		return head;
 	}, uuid);
 	const oneLap = await counts();
-	await A.page.evaluate((id) => window.__stores.animationPreview.stop(id), uuid);
+	await A.page.evaluate((id) => window.__tp.test.v1.animationPreview.stop(id), uuid);
 	h.check(
 		lapHead >= 1.7 && lapHead < 2,
 		`premise: the playhead is past both markers and has not wrapped (${lapHead.toFixed(3)})`
@@ -186,7 +186,7 @@ h.run(async () => {
 	// The crossing test is an interval with an inclusive destination, so a playhead
 	// parked exactly on a marker would otherwise pulse on every frame forever.
 	await A.page.evaluate((id) => {
-		const ap = window.__stores.animationPreview;
+		const ap = window.__tp.test.v1.animationPreview;
 		ap.stop(id);
 		ap.resetPreview(id);
 		// a paused transport still ticks; land the playhead exactly on LeftFoot
@@ -210,7 +210,7 @@ h.run(async () => {
 	// everything between). The reading that separates them is a marker in the MIDDLE,
 	// which a wrap skips over and must NOT fire.
 	await A.page.evaluate((id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		ap.stop(id);
 		ap.resetPreview(id);
@@ -251,13 +251,13 @@ h.run(async () => {
 	const wrapCounts = () =>
 		A.page.evaluate(() => {
 			let v = {};
-			window.__stores.flowValues.subscribe((/** @type {any} */ x) => (v = x))();
+			window.__tp.test.v1.flowValues.subscribe((/** @type {any} */ x) => (v = x))();
 			return { late: v['cw-late'] ?? 0, mid: v['cw-mid'] ?? 0, early: v['cw-early'] ?? 0 };
 		});
 	await A.page.evaluate((id) => {
 		// 1.6s into a 2s lap, so the wrap comes almost at once. The run is kept SHORT
 		// so the playhead cannot legitimately reach Middle on the new lap.
-		window.__stores.animationPreview.play(id, undefined, { from: 1.6, reverse: false });
+		window.__tp.test.v1.animationPreview.play(id, undefined, { from: 1.6, reverse: false });
 	}, uuid);
 	// Wait on the PLAYHEAD, not the wall clock — same reason as the one-lap section
 	// above: a pulse reaches its Counter on the next flow tick, and this read used to
@@ -265,7 +265,7 @@ h.run(async () => {
 	// first moment it is in [0.4, 1.0) is AFTER the wrap: 0.3s clear of Early, and
 	// still a full 1.0s short of Middle, which must not fire at all.
 	const wrapHead = await A.page.evaluate(async (id) => {
-		const ap = window.__stores.animationPreview;
+		const ap = window.__tp.test.v1.animationPreview;
 		const started = performance.now();
 		let head = 0;
 		while (performance.now() - started < 6000) {
@@ -276,7 +276,7 @@ h.run(async () => {
 		return head;
 	}, uuid);
 	const wrapped = await wrapCounts();
-	await A.page.evaluate((id) => window.__stores.animationPreview.stop(id), uuid);
+	await A.page.evaluate((id) => window.__tp.test.v1.animationPreview.stop(id), uuid);
 	h.check(
 		wrapHead >= 0.4 && wrapHead < 1,
 		`premise: the playhead wrapped and stopped short of Middle (${wrapHead.toFixed(3)})`
@@ -292,7 +292,7 @@ h.run(async () => {
 
 	// ---------- 5. REVERSE playback crosses them the other way ----------
 	await A.page.evaluate((id) => {
-		const ap = window.__stores.animationPreview;
+		const ap = window.__tp.test.v1.animationPreview;
 		ap.stop(id);
 		ap.resetPreview(id);
 		for (let i = ap.markersOf(id).length - 1; i >= 0; i--) ap.removeMarker(id, i);
@@ -305,7 +305,7 @@ h.run(async () => {
 		// `from` is an ELAPSED offset into the run, not a clip time: a reverse run
 		// starts at the window's far end and counts down, so 0 is the clip's END here
 		// (from: 2 would mean "already 2s into a 2s run", i.e. finished).
-		window.__stores.animationPreview.play(id, undefined, { from: 0, reverse: true });
+		window.__tp.test.v1.animationPreview.play(id, undefined, { from: 0, reverse: true });
 	}, uuid);
 	await A.page.waitForTimeout(1600);
 	const reversed = await counts();
@@ -314,18 +314,18 @@ h.run(async () => {
 		`playing BACKWARDS crosses a marker too, once (+${reversed.any - revBefore.any})`
 	);
 	await A.page.evaluate((id) => {
-		const ap = window.__stores.animationPreview;
+		const ap = window.__tp.test.v1.animationPreview;
 		ap.stop(id);
 		ap.updateAnim(id, { loop: 'loop' });
 	}, uuid);
 
 	// ---------- 6. undo, and the catalog/socket contract ----------
 	const undoRound = await A.page.evaluate((id) => {
-		const ap = window.__stores.animationPreview;
+		const ap = window.__tp.test.v1.animationPreview;
 		const before = ap.markersOf(id).length;
 		ap.addMarker(id, 0.75, 'Undoable');
 		const after = ap.markersOf(id).length;
-		window.__stores.history.undo();
+		window.__tp.test.v1.history.undo();
 		return { before, after, undone: ap.markersOf(id).length };
 	}, uuid);
 	h.check(
@@ -334,7 +334,7 @@ h.run(async () => {
 	);
 
 	const contract = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const groups = s.nodeCatalog?.nodeCatalog ?? [];
 		const anim = groups.find((/** @type {any} */ g) => g.group === 'Animation');
 		const fs = s.flowSockets;
@@ -361,7 +361,7 @@ h.run(async () => {
 
 	// ---------- 7. the timeline UI: band, list, and the layout it must not move ----
 	const layout = await A.page.evaluate(async (id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		// measure the plot with NO markers first: adding them must be the only thing
 		// that moves the rows, and removing them must put the plot back
@@ -412,8 +412,8 @@ h.run(async () => {
 		`dragging the flag moves the marker in time (${tBefore?.toFixed(2)} -> ${tAfter?.toFixed(2)}s)`
 	);
 	const dragUndo = await A.page.evaluate((id) => {
-		window.__stores.history.undo();
-		return window.__stores.animationPreview.markersOf(id)[0]?.t;
+		window.__tp.test.v1.history.undo();
+		return window.__tp.test.v1.animationPreview.markersOf(id)[0]?.t;
 	}, uuid);
 	h.check(
 		Math.abs(dragUndo - tBefore) < 1e-6,
@@ -422,7 +422,7 @@ h.run(async () => {
 
 	// the marker survives removing it and adding it back through the plot menu
 	const viaMenu = await A.page.evaluate(async (id) => {
-		const ap = window.__stores.animationPreview;
+		const ap = window.__tp.test.v1.animationPreview;
 		for (let i = ap.markersOf(id).length - 1; i >= 0; i--) ap.removeMarker(id, i);
 		await new Promise((r) => setTimeout(r, 300));
 		return ap.markersOf(id).length;

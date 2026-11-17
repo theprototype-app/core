@@ -21,18 +21,18 @@ const h = require('./helpers.cjs');
 const paused = (page) =>
 	page.evaluate(() => {
 		let v = null;
-		window.__stores.flowPaused.subscribe((x) => (v = x))();
+		window.__tp.test.v1.flowPaused.subscribe((x) => (v = x))();
 		return v;
 	});
 
 const ringLines = (page) =>
-	page.evaluate(() => window.__stores.diagnostics.lines());
+	page.evaluate(() => window.__tp.test.v1.diagnostics.lines());
 
 h.run(async () => {
 	const browser = await h.launch();
 	const peer = await h.setupPage(browser, 'resilience');
 	const page = peer.page;
-	await page.waitForFunction(() => !!window.__stores?.flowRuntime && !!window.__stores?.flowPaused, {
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.flowRuntime && !!window.__tp?.test.v1?.flowPaused, {
 		timeout: 30000
 	});
 	h.check(true, 'premise: the flow runtime and its paused store are live');
@@ -41,17 +41,17 @@ h.run(async () => {
 	// A spin node is the visible half: it is a pure function of (base pose, time), so if
 	// frames keep coming its rotation keeps changing.
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 	});
 	await page.waitForTimeout(600);
 	const uuid = await page.evaluate(() => {
 		let group = null;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		return group.children[group.children.length - 1].uuid;
 	});
 	await page.evaluate((id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.updateGraph(s.SCENE_GRAPH, () => ({
 			nodes: [
 				{ id: 'spin1', type: 'spin', position: { x: 40, y: 40 }, data: { type: 'spin', axis: 'y', speed: 2 } },
@@ -65,7 +65,7 @@ h.run(async () => {
 	const readRot = () =>
 		page.evaluate((id) => {
 			let group = null;
-			window.__stores.objectsGroup.subscribe((g) => (group = g))();
+			window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 			return group.getObjectByProperty('uuid', id)?.rotation.y ?? null;
 		}, uuid);
 
@@ -81,7 +81,7 @@ h.run(async () => {
 		window.__rt = { taskCalls: 0 };
 		// `moduleFrameTasks` is the exported array `api.registerFrameTask` pushes onto —
 		// the same list a real module's task lands in, so this is the real path.
-		window.__stores.moduleSDK.moduleFrameTasks.push(() => {
+		window.__tp.test.v1.moduleSDK.moduleFrameTasks.push(() => {
 			window.__rt.taskCalls++;
 			throw new Error('frame-task-boom');
 		});
@@ -115,7 +115,7 @@ h.run(async () => {
 	// ~25s of wall clock, and pumping also proves the XR path shares the guard — Scene.svelte
 	// calls pumpFlowTick while presenting, where window.rAF is suspended.
 	await page.evaluate(() => {
-		const rt = window.__stores.flowRuntime;
+		const rt = window.__tp.test.v1.flowRuntime;
 		rt.failTicksForTest(130);
 		for (let i = 0; i < 130; i++) rt.pumpFlowTick(performance.now());
 	});
@@ -134,8 +134,8 @@ h.run(async () => {
 	await page.evaluate(() => {
 		// Clear the forced failures FIRST. Resume restores ticking, and a tick that still
 		// throws re-pauses at once — which is exactly what made this section red before.
-		window.__stores.flowRuntime.failTicksForTest(0);
-		window.__stores.flowRuntime.resumeFlowRuntime();
+		window.__tp.test.v1.flowRuntime.failTicksForTest(0);
+		window.__tp.test.v1.flowRuntime.resumeFlowRuntime();
 	});
 	await page.waitForTimeout(900);
 	const resumed = await paused(page);
@@ -146,7 +146,7 @@ h.run(async () => {
 
 	// ---- 5. physics: a throwing step stops the run ONCE -------------------------------
 	const physics = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		// there is no startSimulation export — `toggleSimulation` is the entry point, and
 		// it is async because it warms rapier's wasm on the first run.
 		await s.physics.toggleSimulation();
@@ -157,11 +157,11 @@ h.run(async () => {
 	});
 	h.check(physics.running === true, 'premise: a simulation is running');
 
-	await page.evaluate(() => window.__stores.physics.throwOnNextStepForTest());
+	await page.evaluate(() => window.__tp.test.v1.physics.throwOnNextStepForTest());
 	await page.waitForTimeout(2000);
 	const afterThrow = await page.evaluate(() => {
 		let running = true;
-		window.__stores.physics.simulating.subscribe((v) => (running = v))();
+		window.__tp.test.v1.physics.simulating.subscribe((v) => (running = v))();
 		return { running, said: document.body.innerText.includes('Physics stopped after an error') };
 	});
 	h.check(afterThrow.running === false, 'a throwing physics step stops the simulation');

@@ -6,7 +6,7 @@ const objState = (page, uuid) =>
 	page.evaluate(
 		(uuid) =>
 			new Promise((resolve) => {
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const o = g?.getObjectByProperty('uuid', uuid);
 					resolve(o ? { y: o.position.y, x: o.position.x, z: o.position.z } : null);
 				})();
@@ -20,7 +20,7 @@ h.run(async () => {
 	// throwaway page warms the vite dep-optimizer for the lazy rapier import
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(4000);
 		await warm.ctx.close();
 	}
@@ -31,14 +31,14 @@ h.run(async () => {
 
 	// falling cube at y=6 wired to a Mass node; static cube stays at the origin area
 	const { cubeUuid, sceneryUuid } = await A.page.evaluate(async () => {
-		const cmd = window.__stores.commandsHandler.sceneCommand;
+		const cmd = window.__tp.test.v1.commandsHandler.sceneCommand;
 		cmd('/create box');
 		cmd('/create box');
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const [cube, scenery] = group.children;
 		cube.position.set(0, 6, 0);
 		scenery.position.set(3, 0.5, 0);
-		const peer = await new Promise((r) => window.__stores.peers.subscribe(r)());
+		const peer = await new Promise((r) => window.__tp.test.v1.peers.subscribe(r)());
 		peer.send({ type: 'move', uuid: cube.uuid, pos: [0, 6, 0], rot: [0, 0, 0], scale: [1, 1, 1] });
 		peer.send({ type: 'move', uuid: scenery.uuid, pos: [3, 0.5, 0], rot: [0, 0, 0], scale: [1, 1, 1] });
 		const nodes = [
@@ -52,8 +52,8 @@ h.run(async () => {
 			}
 		];
 		const edge = { id: 'e1', source: 'm1', target: 'sel1' };
-		window.__stores.flowNodes.set(nodes);
-		window.__stores.flowEdges.set([edge]);
+		window.__tp.test.v1.flowNodes.set(nodes);
+		window.__tp.test.v1.flowEdges.set([edge]);
 		nodes.forEach((node) => peer.send({ type: 'nodecreate', node }));
 		peer.send({ type: 'edgecreate', edge });
 		return { cubeUuid: cube.uuid, sceneryUuid: scenery.uuid };
@@ -61,22 +61,22 @@ h.run(async () => {
 	await A.page.waitForTimeout(2500);
 
 	// simulate on A
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await h.eventually(
-		() => A.page.evaluate(() => new Promise((r) => window.__stores.physics.simulating.subscribe(r)())),
+		() => A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.physics.simulating.subscribe(r)())),
 		(v) => v === true,
 		'simulation started on A'
 	);
 
 	// busy-guard on B
 	await h.eventually(
-		() => B.page.evaluate(() => new Promise((r) => window.__stores.physics.remoteSimulating.subscribe(r)())),
+		() => B.page.evaluate(() => new Promise((r) => window.__tp.test.v1.physics.remoteSimulating.subscribe(r)())),
 		(v) => v === A.id,
 		'B knows A is simulating'
 	);
-	await B.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await B.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	const bSimulating = await B.page.evaluate(
-		() => new Promise((r) => window.__stores.physics.simulating.subscribe(r)())
+		() => new Promise((r) => window.__tp.test.v1.physics.simulating.subscribe(r)())
 	);
 	h.check(bSimulating === false, 'second simulation refused while A runs');
 
@@ -85,12 +85,12 @@ h.run(async () => {
 	await h.eventually(() => objState(B.page, cubeUuid), (s) => s && s.y < 1.2, 'fall replicated to B', 15000);
 
 	// stop -> final state + one-step undo restores y=6 everywhere
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await A.page.waitForTimeout(800);
 	const scenery = await objState(A.page, sceneryUuid);
 	h.check(Math.abs(scenery.x - 3) < 0.01 && Math.abs(scenery.y - 0.5) < 0.01, 'unwired scenery never moved');
 
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => objState(A.page, cubeUuid), (s) => s && Math.abs(s.y - 6) < 0.01, 'undo restores the layout on A');
 	await h.eventually(() => objState(B.page, cubeUuid), (s) => s && Math.abs(s.y - 6) < 0.01, 'restore replicated to B');
 

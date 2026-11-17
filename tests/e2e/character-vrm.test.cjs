@@ -9,7 +9,7 @@ const states = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.animatedImports.animatedObjects.subscribe((m) =>
+				window.__tp.test.v1.animatedImports.animatedObjects.subscribe((m) =>
 					r(JSON.parse(JSON.stringify(m)))
 				)()
 			)
@@ -18,7 +18,7 @@ const uuidOf = (page, name) =>
 	page.evaluate(
 		(name) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) =>
+				window.__tp.test.v1.objectsGroup.subscribe((g) =>
 					r(g?.children.find((c) => c.name === name)?.uuid ?? null)
 				)()
 			),
@@ -32,7 +32,7 @@ const boneQ = (page, uuid, bone) =>
 	page.evaluate(
 		({ uuid, bone }) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) =>
+				window.__tp.test.v1.objectsGroup.subscribe((g) =>
 					r(
 						g?.getObjectByProperty('uuid', uuid)?.getObjectByName(bone)?.quaternion.toArray() ??
 							null
@@ -65,7 +65,7 @@ h.run(async () => {
 
 	// 1. VRM 1.0 import
 	await A.page.evaluate(async (bytes) => {
-		await window.__stores.fileHandler.importFile(
+		await window.__tp.test.v1.fileHandler.importFile(
 			new File([new Uint8Array(bytes)], 'test.vrm'),
 			'Avatar1',
 			undefined,
@@ -80,19 +80,19 @@ h.run(async () => {
 	const v1 = await uuidOf(A.page, 'Avatar1');
 	h.check(await vrmLoaded(A.page), 'A: three-vrm loaded once a VRM arrived');
 	h.check(
-		(await A.page.evaluate((u) => window.__stores.animatedImports.animatedImportKind(u), v1)) ===
+		(await A.page.evaluate((u) => window.__tp.test.v1.animatedImports.animatedImportKind(u), v1)) ===
 			'vrm',
 		'it rides the bytes path as kind vrm'
 	);
 	await h.eventually(
-		() => A.page.evaluate((u) => window.__stores.animatedImports.vrmDebug(u), v1),
+		() => A.page.evaluate((u) => window.__tp.test.v1.animatedImports.vrmDebug(u), v1),
 		(d) =>
 			// three-vrm makes ONE joint per bone that has a next bone in its chain: Hair1 -> Hair2 is 1
 			d?.vrm && d.joints === 1 && d.expressions.includes('happy') && d.expressions.includes('wink'),
 		'A: the VRM runtime adopted it (the spring joint, expressions incl. a custom one)'
 	);
 	const hm = await A.page.evaluate((u) => {
-		const x = window.__stores.humanoidRig.humanoidOf(u);
+		const x = window.__tp.test.v1.humanoidRig.humanoidOf(u);
 		return (
 			x && { via: x.via, rig: x.rig, ok: x.ok, hips: x.map.hips, upperChest: x.map.upperChest }
 		);
@@ -106,10 +106,10 @@ h.run(async () => {
 		`the humanoid map comes from the file (${JSON.stringify(hm)})`
 	);
 	const lic = await A.page.evaluate((u) => {
-		const root = window.__stores.objectsGroup && null;
+		const root = window.__tp.test.v1.objectsGroup && null;
 		return new Promise((r) =>
-			window.__stores.objectsGroup.subscribe((g) =>
-				r(window.__stores.provenance.licenceOf(g.getObjectByProperty('uuid', u).userData))
+			window.__tp.test.v1.objectsGroup.subscribe((g) =>
+				r(window.__tp.test.v1.provenance.licenceOf(g.getObjectByProperty('uuid', u).userData))
 			)()
 		);
 	}, v1);
@@ -129,18 +129,18 @@ h.run(async () => {
 		'B: the VRM arrived'
 	);
 	await h.eventually(
-		() => B.page.evaluate((u) => window.__stores.animatedImports.vrmDebug(u), v1),
+		() => B.page.evaluate((u) => window.__tp.test.v1.animatedImports.vrmDebug(u), v1),
 		(d) => d?.vrm && d.joints === 1,
 		'B: adopted as a VRM with its spring bones'
 	);
 	h.check(
-		(await B.page.evaluate((u) => window.__stores.animatedImports.animatedImportKind(u), v1)) ===
+		(await B.page.evaluate((u) => window.__tp.test.v1.animatedImports.animatedImportKind(u), v1)) ===
 			'vrm',
 		'B: kind vrm'
 	);
 
 	// 3. Inspector ▸ Character shows the VRM meta and the licence
-	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u, true), v1);
+	await A.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u, true), v1);
 	await A.page.waitForSelector('#character-vrm', { timeout: 15000 });
 	const vrmText = await A.page.evaluate(
 		() => document.querySelector('#character-vrm')?.textContent ?? ''
@@ -167,7 +167,7 @@ h.run(async () => {
 	const swing = await A.page.evaluate(
 		(u) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const root = g.getObjectByProperty('uuid', u);
 					const hair = root.getObjectByName('mixamorigHair1');
 					const q0 = hair.quaternion.clone();
@@ -199,19 +199,19 @@ h.run(async () => {
 		range.dispatchEvent(new Event('input', { bubbles: true }));
 	});
 	await h.eventually(
-		() => A.page.evaluate((u) => window.__stores.animatedImports.vrmDebug(u)?.value('happy'), v1),
+		() => A.page.evaluate((u) => window.__tp.test.v1.animatedImports.vrmDebug(u)?.value('happy'), v1),
 		(v) => Math.abs(v - 0.75) < 1e-6,
 		'A: happy = 0.75'
 	);
 	await h.eventually(
-		() => B.page.evaluate((u) => window.__stores.animatedImports.vrmDebug(u)?.value('happy'), v1),
+		() => B.page.evaluate((u) => window.__tp.test.v1.animatedImports.vrmDebug(u)?.value('happy'), v1),
 		(v) => Math.abs(v - 0.75) < 1e-6,
 		'B: happy = 0.75 (replicated)'
 	);
 
 	// 6. Apply clip… works on a VRM (its own map)
 	const r = await A.page.evaluate(
-		(u) => window.__stores.humanoidRig.applyClipTo([u], { lib: 'avatars', clip: 'Walking_A' }),
+		(u) => window.__tp.test.v1.humanoidRig.applyClipTo([u], { lib: 'avatars', clip: 'Walking_A' }),
 		v1
 	);
 	h.check(r.applied.length === 1, 'Apply clip onto the VRM');
@@ -226,7 +226,7 @@ h.run(async () => {
 
 	// 7. a VRM 0.x: Redistribution_Prohibited, turned to face +Z, mapped by its file
 	await A.page.evaluate(async (bytes) => {
-		await window.__stores.fileHandler.importFile(
+		await window.__tp.test.v1.fileHandler.importFile(
 			new File([new Uint8Array(bytes)], 'old.glb'),
 			'Avatar0',
 			undefined,
@@ -240,22 +240,22 @@ h.run(async () => {
 	);
 	const v0 = await uuidOf(A.page, 'Avatar0');
 	h.check(
-		(await A.page.evaluate((u) => window.__stores.animatedImports.animatedImportKind(u), v0)) ===
+		(await A.page.evaluate((u) => window.__tp.test.v1.animatedImports.animatedImportKind(u), v0)) ===
 			'vrm',
 		'a .glb carrying the VRM extension is read as a VRM'
 	);
 	await h.eventually(
-		() => A.page.evaluate((u) => window.__stores.humanoidRig.humanoidOf(u)?.via, v0),
+		() => A.page.evaluate((u) => window.__tp.test.v1.humanoidRig.humanoidOf(u)?.via, v0),
 		(v) => v === 'file',
 		'VRM 0.x: the map comes from the file'
 	);
 	const lic0 = await A.page.evaluate(
 		(u) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) =>
+				window.__tp.test.v1.objectsGroup.subscribe((g) =>
 					r(
-						window.__stores.provenance.licenceFlags(
-							window.__stores.provenance.licenceOf(g.getObjectByProperty('uuid', u).userData)
+						window.__tp.test.v1.provenance.licenceFlags(
+							window.__tp.test.v1.provenance.licenceOf(g.getObjectByProperty('uuid', u).userData)
 						)
 					)
 				)()
@@ -269,7 +269,7 @@ h.run(async () => {
 	const rotY = await A.page.evaluate(
 		(u) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) =>
+				window.__tp.test.v1.objectsGroup.subscribe((g) =>
 					r(g.getObjectByProperty('uuid', u).rotation.y)
 				)()
 			),
@@ -280,7 +280,7 @@ h.run(async () => {
 		`VRM 0.x is turned to face +Z (root y ${rotY.toFixed(3)})`
 	);
 	const j0 = await A.page.evaluate(
-		(u) => window.__stores.humanoidRig.applyClipTo([u], { lib: 'avatars', clip: 'Walking_A' }),
+		(u) => window.__tp.test.v1.humanoidRig.applyClipTo([u], { lib: 'avatars', clip: 'Walking_A' }),
 		v0
 	);
 	h.check(j0.applied.length === 1, 'Apply clip onto the VRM 0.x');

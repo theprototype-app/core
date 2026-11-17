@@ -20,7 +20,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(4000);
 		await warm.ctx.close();
 	}
@@ -29,7 +29,7 @@ h.run(async () => {
 
 	// a template (under the floor, like the Stars Room's) and a ball to point at
 	const ids = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let group;
 		s.objectsGroup.subscribe((v) => (group = v))();
 		const make = async (cmd, name, pos) => {
@@ -51,7 +51,7 @@ h.run(async () => {
 	h.check(!!ids.tpl && !!ids.ball, 'a template and a target ball (' + JSON.stringify(ids) + ')');
 
 	await page.evaluate(async ({ tpl }) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const N = (id, type, data) => ({ id, type, position: { x: 0, y: 0 }, data: { label: id, ...data }, class: 'w-[150px]' });
 		const E = (a, b, th, sh) => ({
 			id: 'e-' + a + (sh ? '.' + sh : '') + '-' + b + (th ? '.' + th : ''),
@@ -103,7 +103,7 @@ h.run(async () => {
 
 	console.log('\n=== 1. Game Setting nodes are rows in the game\'s settings ===');
 	const rows = await page.evaluate(async () => {
-		const m = window.__stores.gameKit.gameSettings;
+		const m = window.__tp.test.v1.gameKit.gameSettings;
 		let rows;
 		m.gameSettingRows.subscribe((v) => (rows = v))();
 		return rows.map((r) => ({ id: r.id, label: r.label, type: r.type, def: r.default, owner: r.owner }));
@@ -115,13 +115,13 @@ h.run(async () => {
 
 	// the game: a running sim, knocks on, Interact (the game-feel gate a headset puts you in)
 	await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.scenePhysics.setScenePhysics({ gravity: 0, damping: { linear: 0 }, knock: { enabled: true } });
 		await s.physics.toggleSimulation();
 		s.objectActions.setEditorMode('interact');
 	});
 	await h.eventually(
-		() => page.evaluate((u) => window.__stores.physics.physicsDebug().find((b) => b.uuid === u)?.mode ?? null, ids.ball),
+		() => page.evaluate((u) => window.__tp.test.v1.physics.physicsDebug().find((b) => b.uuid === u)?.mode ?? null, ids.ball),
 		(m) => m === 'dynamic',
 		'(premise) the sim runs and the ball is a dynamic body'
 	);
@@ -130,7 +130,7 @@ h.run(async () => {
 	const P = [0.4, 1.3, -1];
 	const clap = (t0, ms, gap = 0.06, at = P) =>
 		page.evaluate(({ t0, ms, gap, at }) => {
-			const k = window.__stores.gameKit.clap;
+			const k = window.__tp.test.v1.gameKit.clap;
 			const L = [at[0] - gap / 2, at[1], at[2]];
 			const R = [at[0] + gap / 2, at[1], at[2]];
 			const out = [];
@@ -141,15 +141,15 @@ h.run(async () => {
 			return out;
 		}, { t0, ms, gap, at });
 	const part = (t) =>
-		page.evaluate((t) => window.__stores.gameKit.clap.feedClap([-0.4, 1.3, -1], [0.4, 1.3, -1], t), t);
-	const alive = () => page.evaluate(() => window.__stores.spawner.spawnedBy('cSpawn'));
+		page.evaluate((t) => window.__tp.test.v1.gameKit.clap.feedClap([-0.4, 1.3, -1], [0.4, 1.3, -1], t), t);
+	const alive = () => page.evaluate(() => window.__tp.test.v1.spawner.spawnedBy('cSpawn'));
 
 	console.log('\n=== 2. a clap makes one thing at the meeting point, with a burst, a sound and a buzz ===');
 	await page.evaluate(() => (window.__sent = []));
 	const c1 = await clap(10000, 400);
 	await page.waitForTimeout(400);
 	const after1 = await page.evaluate(({ tpl }) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let group;
 		s.objectsGroup.subscribe((v) => (group = v))();
 		const copies = s.spawner.spawnedBy('cSpawn').map((u) => group.getObjectByProperty('uuid', u)).filter(Boolean);
@@ -189,12 +189,12 @@ h.run(async () => {
 	await part(15300);
 
 	console.log('\n=== 4. the clap setting OFF: a clap does nothing ===');
-	await page.evaluate(async () => (window.__stores.gameKit.gameSettings).setGameSetting('t31-clap', false));
+	await page.evaluate(async () => (window.__tp.test.v1.gameKit.gameSettings).setGameSetting('t31-clap', false));
 	await page.waitForTimeout(200);
 	const offClap = await clap(20000, 500);
 	await page.waitForTimeout(300);
 	h.check(offClap.length === 0 && (await alive()).length === 1, '4.1 with "Make stars with a clap" off, the hands meet and nothing appears (' + offClap.length + ' claps, ' + (await alive()).length + ' alive)');
-	await page.evaluate(async () => (window.__stores.gameKit.gameSettings).setGameSetting('t31-clap', true));
+	await page.evaluate(async () => (window.__tp.test.v1.gameKit.gameSettings).setGameSetting('t31-clap', true));
 	await part(20600);
 	const onClap = await clap(22000, 400);
 	await page.waitForTimeout(300);
@@ -213,7 +213,7 @@ h.run(async () => {
 
 	console.log('\n=== 6. the new star is a real one: a hand knocks it, it flies, the template\'s On Hit counts it ===');
 	const knocked = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.isLocked.set(true); // a desktop hand knocks in Play (the knock's own play gate)
 		let group;
 		s.objectsGroup.subscribe((v) => (group = v))();
@@ -240,7 +240,7 @@ h.run(async () => {
 	h.check(knocked.hits === 1 && !!knocked.v && knocked.v[2] < -1.5, '6.1 a 2 m/s hand sweep knocks the clapped star and it leaves at hand speed (' + JSON.stringify(knocked) + ')');
 	await page.waitForTimeout(600);
 	const flew = await page.evaluate((u) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let group;
 		s.objectsGroup.subscribe((v) => (group = v))();
 		let tr;
@@ -248,12 +248,12 @@ h.run(async () => {
 		return { z: group.getObjectByProperty('uuid', u)?.position.z ?? null, count: tr.cCount?.count ?? 0 };
 	}, knocked.uuid);
 	h.check(flew.z !== null && flew.z < P[2] - 0.5, '6.2 ...and it FLIES: 0.6 s later it has moved on (z ' + flew.z + ')');
-	await page.evaluate(() => window.__stores.isLocked.set(null));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(null));
 	h.check(flew.count === knocked.before + 1, '6.3 the TEMPLATE\'s On Hit heard the copy\'s hit — a clapped star counts in the game (count ' + knocked.before + ' -> ' + flew.count + ')');
 
 	console.log('\n=== 7. a received clap carries its point ===');
 	const recv = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const t = (Date.now() % 86400000) / 1000;
 		s.flowRuntime.applyNodeTrigger('cClap', t, false, null, [1, 2, 3]);
 		return s.flowRuntime.triggerPointOf('cClap');
@@ -263,7 +263,7 @@ h.run(async () => {
 	console.log('\n=== 8. POINT GRAB off: the ray and the cursor refuse, touch still holds ===');
 	const grip = (inside) =>
 		page.evaluate(({ ball, inside }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const THREE = s.THREE;
 			let group;
 			s.objectsGroup.subscribe((v) => (group = v))();
@@ -278,7 +278,7 @@ h.run(async () => {
 		}, { ball: ids.ball, inside });
 	const cursor = () =>
 		page.evaluate((ball) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const THREE = s.THREE;
 			let group;
 			s.objectsGroup.subscribe((v) => (group = v))();
@@ -296,9 +296,9 @@ h.run(async () => {
 	const onRay = await grip(false);
 	h.check(onRay.interact === ids.ball, '8.1 (premise) with pointing ON, the Interact grip ray takes the ball (' + onRay.interact + ')');
 	h.check((await cursor()) === true, '8.2 (premise) ...and the desktop cursor carries it');
-	await page.evaluate(async () => (window.__stores.gameKit.gameSettings).setGameSetting('t31-point', false));
+	await page.evaluate(async () => (window.__tp.test.v1.gameKit.gameSettings).setGameSetting('t31-point', false));
 	await h.eventually(
-		() => page.evaluate(() => window.__stores.gameKit.pointGrab.pointGrabAllowed()),
+		() => page.evaluate(() => window.__tp.test.v1.gameKit.pointGrab.pointGrabAllowed()),
 		(v) => v === false,
 		'8.3 the setting OFF reaches the pointing switch (the Point Grab node reads it)'
 	);
@@ -308,14 +308,14 @@ h.run(async () => {
 	h.check((await cursor()) === false, '8.6 ...and the desktop cursor carry refuses');
 	const inHand = await grip(true);
 	h.check(inHand.interact === ids.ball, '8.7 a hand INSIDE the ball still holds it — touching is not pointing (' + inHand.interact + ')');
-	await page.evaluate(async () => (window.__stores.gameKit.gameSettings).setGameSetting('t31-point', true));
+	await page.evaluate(async () => (window.__tp.test.v1.gameKit.gameSettings).setGameSetting('t31-point', true));
 	await h.eventually(
-		() => page.evaluate(() => window.__stores.gameKit.pointGrab.pointGrabAllowed()),
+		() => page.evaluate(() => window.__tp.test.v1.gameKit.pointGrab.pointGrabAllowed()),
 		(v) => v === true,
 		'8.8 back ON'
 	);
 	h.check((await grip(false)).interact === ids.ball, '8.9 ...and the ray takes the ball again');
 
-	await page.evaluate(() => window.__stores.physics.stopSimulation());
+	await page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 	await h.finish(browser);
 });

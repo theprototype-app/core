@@ -20,7 +20,7 @@ const S = (page, fn, arg) => page.evaluate(fn, arg);
 
 async function openDock(page) {
 	await S(page, async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphClose.set(false);
 		s.explorerClose.set(false);
 		await new Promise((r) => setTimeout(r, 700));
@@ -65,8 +65,8 @@ async function clickRow(page, title) {
 const dockState = (page) =>
 	S(page, () => {
 		let o, v;
-		window.__stores.bottomDock.dockOccupants.subscribe((x) => (o = x))();
-		window.__stores.bottomDock.visibleDockKey.subscribe((x) => (v = x))();
+		window.__tp.test.v1.bottomDock.dockOccupants.subscribe((x) => (o = x))();
+		window.__tp.test.v1.bottomDock.visibleDockKey.subscribe((x) => (v = x))();
 		return { docked: Object.keys(o).filter((k) => o[k]?.present), visible: v };
 	});
 
@@ -116,7 +116,7 @@ h.run(async () => {
 	h.check(!!fcRow && !fcRow.checked && fcRow.hint === 'Open', `3.2 a closed one says Open (${JSON.stringify(fcRow)})`);
 
 	// the Explorer in front, then the Node editor's row brings ITS tab forward (nothing closes)
-	await S(page, () => window.__stores.bottomDock.activateDock('explorer'));
+	await S(page, () => window.__tp.test.v1.bottomDock.activateDock('explorer'));
 	await page.waitForTimeout(400);
 	await page.keyboard.press('Escape');
 	await page.waitForTimeout(200);
@@ -131,7 +131,7 @@ h.run(async () => {
 	h.check(d.docked.includes('timeline') && d.visible === 'timeline', `3.4 a closed window's row opens it docked, in front (${JSON.stringify(d)})`);
 
 	// a floating window: its row moves it into the dock (showhide-v8)
-	await S(page, () => window.__stores.bottomDock.armDockMode('timeline', false));
+	await S(page, () => window.__tp.test.v1.bottomDock.armDockMode('timeline', false));
 	await page.waitForTimeout(900);
 	rows = await plusRows(page);
 	h.check((rows ?? []).find((r) => r.title === 'Timeline')?.hint === 'Floating', `3.6 a floating window's row says Floating (${JSON.stringify((rows ?? []).find((r) => r.title === 'Timeline'))})`);

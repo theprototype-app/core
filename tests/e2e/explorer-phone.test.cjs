@@ -7,7 +7,7 @@
 //   - the docked toolbar scrolls sideways (ui/ScrollStrip) so the project name is reachable.
 const h = require('./helpers.cjs');
 
-const store = (name) => `(() => { let v; window.__stores.${name}.subscribe((x) => (v = x))(); return v; })()`;
+const store = (name) => `(() => { let v; window.__tp.test.v1.${name}.subscribe((x) => (v = x))(); return v; })()`;
 
 function lum(hex) {
 	const c = hex.match(/\d+(\.\d+)?/g).slice(0, 3).map((v) => Number(v) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
@@ -34,7 +34,7 @@ h.run(async () => {
 			await P.waitForTimeout(400);
 		};
 		await P.evaluate(async () => {
-			const ex = window.__stores.explorer;
+			const ex = window.__tp.test.v1.explorer;
 			ex.createFolder('Props');
 			await ex.addItemFromBytes(new TextEncoder().encode('hello ' + Math.random()).buffer, 'notes.txt', null);
 			window.__nativeDrags = 0;

@@ -70,7 +70,7 @@ function installed(page) {
 /** the renderer + session state the rows read @param {any} page */
 function state(page) {
 	return page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let r;
 		s.globalRenderer.subscribe((v) => (r = v))();
 		let vr;
@@ -195,7 +195,7 @@ async function tap(page, hand, id, holdFrames = 4) {
 function controllerWorld(page) {
 	return page.evaluate(() => {
 		let r;
-		window.__stores.globalRenderer.subscribe((v) => (r = v))();
+		window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
 		const out = {};
 		for (const i of [0, 1]) {
 			const c = r.xr.getController(i);

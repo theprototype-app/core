@@ -173,25 +173,25 @@ h.run(async () => {
 	await h.connect(B, A);
 
 	const store = (/** @type {any} */ p, /** @type {string} */ name) =>
-		p.page.evaluate((/** @type {string} */ n) => new Promise((r) => window.__stores[n].subscribe((/** @type {any} */ v) => r(v))()), name);
+		p.page.evaluate((/** @type {string} */ n) => new Promise((r) => window.__tp.test.v1[n].subscribe((/** @type {any} */ v) => r(v))()), name);
 	const inRoster = async (/** @type {any} */ p, /** @type {string} */ id) => (await store(p, 'userdata')).some((/** @type {any} */ u) => u[0] === id);
 	const openTo = (/** @type {any} */ p, /** @type {string} */ id) =>
 		p.page.evaluate((/** @type {string} */ pid) => {
 			/** @type {any} */ let pc;
-			window.__stores.peers.subscribe((/** @type {any} */ v) => (pc = v))();
+			window.__tp.test.v1.peers.subscribe((/** @type {any} */ v) => (pc = v))();
 			return !!pc.connections[pid]?.open && pc.openedPeers.has(pid);
 		}, id);
 	const create = (/** @type {any} */ p, /** @type {string} */ shape) =>
 		p.page.evaluate((/** @type {string} */ s) => {
-			window.__stores.commandsHandler.sceneCommand('/create ' + s);
+			window.__tp.test.v1.commandsHandler.sceneCommand('/create ' + s);
 			/** @type {any} */ let g;
-			window.__stores.objectsGroup.subscribe((/** @type {any} */ v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((/** @type {any} */ v) => (g = v))();
 			return g.children[g.children.length - 1].uuid;
 		}, shape);
 	const has = (/** @type {any} */ p, /** @type {string} */ uuid) =>
 		p.page.evaluate((/** @type {string} */ u) => {
 			/** @type {any} */ let g;
-			window.__stores.objectsGroup.subscribe((/** @type {any} */ v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((/** @type {any} */ v) => (g = v))();
 			return !!g?.getObjectByProperty('uuid', u);
 		}, uuid);
 	const disconnectToasts = async (/** @type {any} */ p, /** @type {number} */ from) =>
@@ -199,7 +199,7 @@ h.run(async () => {
 	const signalingUp = (/** @type {any} */ p) =>
 		p.page.evaluate(() => {
 			/** @type {any} */ let pc;
-			window.__stores.peers.subscribe((/** @type {any} */ v) => (pc = v))();
+			window.__tp.test.v1.peers.subscribe((/** @type {any} */ v) => (pc = v))();
 			return !!pc.peer && !pc.peer.disconnected && pc.peer.open !== false;
 		});
 
@@ -223,7 +223,7 @@ h.run(async () => {
 					// @ts-ignore
 					const D = window.__drop;
 					/** @type {any} */ let pc;
-					window.__stores.peers.subscribe((/** @type {any} */ v) => (pc = v))();
+					window.__tp.test.v1.peers.subscribe((/** @type {any} */ v) => (pc = v))();
 					const c = pc.connections[pid];
 					const pairs = [];
 					for (const [n, rpc] of D.pcs.entries()) {
@@ -260,7 +260,7 @@ h.run(async () => {
 			// @ts-ignore
 			const D = window.__drop;
 			/** @type {any} */ let pc;
-			window.__stores.peers.subscribe((/** @type {any} */ v) => (pc = v))();
+			window.__tp.test.v1.peers.subscribe((/** @type {any} */ v) => (pc = v))();
 			const any = Object.values(pc.connections)[0];
 			let proto = Object.getPrototypeOf(any);
 			while (proto && !Object.prototype.hasOwnProperty.call(proto, 'send')) proto = Object.getPrototypeOf(proto);
@@ -296,7 +296,7 @@ h.run(async () => {
 	async function gates(/** @type {any} */ p, /** @type {string} */ other) {
 		return p.page
 			.evaluate(async (/** @type {string} */ pid) => {
-				const S = window.__stores;
+				const S = window.__tp?.test.v1;
 				/** @type {any} */ let pc;
 				S.peers.subscribe((/** @type {any} */ v) => (pc = v))();
 				const get = (/** @type {any} */ st) => {
@@ -338,7 +338,7 @@ h.run(async () => {
 		const one = (/** @type {any} */ p, /** @type {string} */ other) =>
 			p.page.evaluate((/** @type {string} */ pid) => {
 				/** @type {any} */ let r;
-				window.__stores.cloudHooks?.rolesInfo?.subscribe((/** @type {any} */ v) => (r = v))();
+				window.__tp.test.v1.cloudHooks?.rolesInfo?.subscribe((/** @type {any} */ v) => (r = v))();
 				return r ? `${r.myRole}/${r.roleOf?.(pid)}` : null;
 			}, other);
 		return { a: await one(A, B.id), b: await one(B, A.id) };
@@ -353,7 +353,7 @@ h.run(async () => {
 		for (const [p, other] of [[A, B.id], [B, A.id]]) {
 			await p.page.evaluate((/** @type {string} */ id) => {
 				/** @type {any} */ let pc;
-				window.__stores.peers.subscribe((/** @type {any} */ v) => (pc = v))();
+				window.__tp.test.v1.peers.subscribe((/** @type {any} */ v) => (pc = v))();
 				pc.connections[id].__th1 = 'before';
 			}, other);
 		}
@@ -363,7 +363,7 @@ h.run(async () => {
 		for (const p of [A, B]) {
 			await p.page.evaluate(() => {
 				/** @type {any} */ let pc;
-				window.__stores.peers.subscribe((/** @type {any} */ v) => (pc = v))();
+				window.__tp.test.v1.peers.subscribe((/** @type {any} */ v) => (pc = v))();
 				// @ts-ignore
 				window.__drop.holding = true;
 				// @ts-ignore
@@ -390,7 +390,7 @@ h.run(async () => {
 					`  ${tag} signaling at the cut, ${p === A ? 'A' : 'B'}: ` +
 						(await p.page.evaluate(() => {
 							/** @type {any} */ let pc;
-							window.__stores.peers.subscribe((/** @type {any} */ v) => (pc = v))();
+							window.__tp.test.v1.peers.subscribe((/** @type {any} */ v) => (pc = v))();
 							const q = pc.peer;
 							return `open=${q?.open} disconnected=${q?.disconnected} destroyed=${q?.destroyed} ws=${q?._socket?._socket?.readyState ?? '-'} id=${q?.id}`;
 						}))
@@ -398,7 +398,7 @@ h.run(async () => {
 		if (shape === 'hard') {
 			await A.page.evaluate((/** @type {string} */ id) => {
 				/** @type {any} */ let pc;
-				window.__stores.peers.subscribe((/** @type {any} */ v) => (pc = v))();
+				window.__tp.test.v1.peers.subscribe((/** @type {any} */ v) => (pc = v))();
 				// (a conn F-3 or the socket's end already closed is already being redialled)
 				pc.connections[id]?.peerConnection?.close();
 			}, B.id);
@@ -412,7 +412,7 @@ h.run(async () => {
 			p.page
 				.evaluate((/** @type {string} */ pid) => {
 					/** @type {any} */ let pc;
-					window.__stores.peers.subscribe((/** @type {any} */ v) => (pc = v))();
+					window.__tp.test.v1.peers.subscribe((/** @type {any} */ v) => (pc = v))();
 					const c = pc.connections[pid];
 					const age = (/** @type {any} */ x) => (x?.__dialedAt ? Math.round((Date.now() - x.__dialedAt) / 100) / 10 + 's' : '-');
 					return `sig=${pc.peer?.open ? 1 : 0} rec=${pc.reconnecting.get(pid) ?? '-'} conn=${c ? (c.open ? 'open' : 'neg ' + age(c)) + ' ' + c.connectionId : 'none'} in=${pc.inboundDials?.has(pid) ? 'neg ' + age(pc.inboundDials.get(pid)) : '-'} opened=${pc.openedPeers.has(pid) ? 1 : 0}`;
@@ -430,7 +430,7 @@ h.run(async () => {
 				const id = await p.page
 					.evaluate(() => {
 						/** @type {any} */ let pc;
-						window.__stores.peers.subscribe((/** @type {any} */ v) => (pc = v))();
+						window.__tp.test.v1.peers.subscribe((/** @type {any} */ v) => (pc = v))();
 						return pc.peer?.id ?? null;
 					})
 					.catch(() => 'err');
@@ -499,7 +499,7 @@ h.run(async () => {
 		await h.eventually(async () => (await signalingUp(A)) && (await signalingUp(B)), (v) => v, `${tag} both pages are back on the signaling server`, 20000);
 		const same = await A.page.evaluate((/** @type {string} */ id) => {
 			/** @type {any} */ let pc;
-			window.__stores.peers.subscribe((/** @type {any} */ v) => (pc = v))();
+			window.__tp.test.v1.peers.subscribe((/** @type {any} */ v) => (pc = v))();
 			return pc.connections[id]?.__th1 === 'before';
 		}, B.id);
 		// fix-live F-3 closes a link whose ICE sits `disconnected` past ICE_DROP_GRACE_MS (4 s,

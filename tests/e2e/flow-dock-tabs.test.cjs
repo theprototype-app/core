@@ -10,7 +10,7 @@ h.run(async () => {
 
 	// open the three Flow-family views (they start docked); select an object for Animation
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
@@ -25,7 +25,7 @@ h.run(async () => {
 	// all three are dock tabs
 	const tabs = await A.page.evaluate(() => {
 		let t;
-		window.__stores.bottomDock.flowTabs.subscribe((v) => (t = v))();
+		window.__tp.test.v1.bottomDock.flowTabs.subscribe((v) => (t = v))();
 		return t.map((x) => x.key);
 	});
 	// flowTabs lists in FLOW_FAMILY order (flow, animation, ..., timeline), not open order
@@ -34,7 +34,7 @@ h.run(async () => {
 	h.check(tabBtns.includes('Timeline') && tabBtns.includes('Animation'), `the tab strip renders the view tabs (${tabBtns.join('|')})`);
 
 	// switch to Timeline -> it is the visible dock tab, showing its own content
-	await A.page.evaluate(() => window.__stores.bottomDock.activateDock('timeline'));
+	await A.page.evaluate(() => window.__tp.test.v1.bottomDock.activateDock('timeline'));
 	await A.page.waitForTimeout(300);
 	const fc = await A.page.evaluate(() => {
 		const dock = document.getElementById('timeline-dock');

@@ -16,7 +16,7 @@ h.run(async () => {
 	const page = A.page;
 
 	await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		await s.moduleSDK.initModules([
 			{ id: 'audio30b', name: 'Audio test', version: '1.0.0', description: 'the 30b sound seams', register(api) { window.__api = api; } }
 		]);
@@ -24,7 +24,7 @@ h.run(async () => {
 
 	console.log('\n=== 1. every game sound renders a real sound ===');
 	const renders = await page.evaluate(async () => {
-		const k = window.__stores.gameKit.gameSfx;
+		const k = window.__tp.test.v1.gameKit.gameSfx;
 		const out = [];
 		for (const name of k.GAME_SOUNDS) out.push(await k.renderGameSound(name));
 		return out;
@@ -34,12 +34,12 @@ h.run(async () => {
 	h.check(quiet.length === 0, '1.2 every name renders energy (quiet: ' + JSON.stringify(quiet.map((r) => r && r.name)) + ')');
 	const distinct = new Set(renders.map((r) => r && Math.round(r.rms * 1e5)));
 	h.check(distinct.size >= 22, '1.3 the sounds are distinct from each other (' + distinct.size + ' distinct levels)');
-	const unknownRender = await page.evaluate(() => window.__stores.gameKit.gameSfx.renderGameSound('nope'));
+	const unknownRender = await page.evaluate(() => window.__tp.test.v1.gameKit.gameSfx.renderGameSound('nope'));
 	h.check(unknownRender && unknownRender.seconds === -1 && unknownRender.rms === 0, '1.4 an unknown name builds nothing');
 
 	console.log('\n=== 2. the SDK routes playSound ===');
 	const routed = await page.evaluate(async () => {
-		const k = window.__stores.gameKit.gameSfx;
+		const k = window.__tp.test.v1.gameKit.gameSfx;
 		const before = k.gameSfxDebug();
 		const coin = window.__api.playSound('coin', [0, 1, -2]);
 		const mid = k.gameSfxDebug();
@@ -62,7 +62,7 @@ h.run(async () => {
 
 	console.log('\n=== 4. every music preset renders a real bar ===');
 	const bars = await page.evaluate(async () => {
-		const m = window.__stores.gameKit.gameMusic;
+		const m = window.__tp.test.v1.gameKit.gameMusic;
 		const out = [];
 		for (const id of m.MUSIC_PRESET_IDS) out.push(await m.renderGameMusic(id, 1));
 		return out;
@@ -74,7 +74,7 @@ h.run(async () => {
 	await page.waitForTimeout(1500); // the explosion's tail
 	console.log('\n=== 5. music is refused in Edit ===');
 	const refused = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.objectActions.setEditorMode('edit');
 		return { ok: window.__api.music.play('arcade'), current: window.__api.music.current() };
 	});
@@ -84,7 +84,7 @@ h.run(async () => {
 
 	console.log('\n=== 6. music plays in Interact, on the session step grid ===');
 	const started = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.objectActions.setEditorMode('interact');
 		return { ok: window.__api.music.play('arcade', { volume: 0.8 }), current: window.__api.music.current(), unknown: window.__api.music.play('polka') };
 	});
@@ -92,17 +92,17 @@ h.run(async () => {
 	h.check(started.unknown === false && (await page.evaluate(() => window.__api.music.current())) === 'arcade', '6.2 an unknown preset is refused and the current one keeps playing');
 	await page.waitForTimeout(900);
 	const grid = await page.evaluate(() => {
-		const k = window.__stores.gameKit;
+		const k = window.__tp.test.v1.gameKit;
 		const d = k.gameMusic.gameMusicDebug();
 		const stepMs = k.gameMusicPresets.stepSeconds(k.gameMusicPresets.musicPreset('arcade')) * 1000;
-		const now = window.__stores.connectionState?.sessionNow?.() ?? null;
+		const now = window.__tp.test.v1.connectionState?.sessionNow?.() ?? null;
 		return { d, stepMs, now };
 	});
 	h.check(grid.d.steps >= 5 && grid.d.notes > 0, '6.3 the scheduler scheduled steps and notes (' + JSON.stringify(grid.d) + ')');
 	const audible = await h.audioMetrics(A, 700);
 	h.check(!audible.silent && audible.peak > 0.005, '6.4 the music is audible (peak ' + audible.peak.toFixed(4) + ')');
 	const synced = await page.evaluate(async () => {
-		const k = window.__stores.gameKit;
+		const k = window.__tp.test.v1.gameKit;
 		const { sessionNow } = await import('/src/lib/sessionClock.js');
 		const d = k.gameMusic.gameMusicDebug();
 		const stepMs = k.gameMusicPresets.stepSeconds(k.gameMusicPresets.musicPreset('arcade')) * 1000;
@@ -114,8 +114,8 @@ h.run(async () => {
 
 	console.log('\n=== 7. leaving Interact stops the music ===');
 	const stopped = await page.evaluate(() => {
-		window.__stores.objectActions.setEditorMode('edit');
-		return { current: window.__api.music.current(), gain: window.__stores.gameKit.gameMusic.gameMusicGainValue() };
+		window.__tp.test.v1.objectActions.setEditorMode('edit');
+		return { current: window.__api.music.current(), gain: window.__tp.test.v1.gameKit.gameMusic.gameMusicGainValue() };
 	});
 	h.check(stopped.current === null && stopped.gain === null, '7.1 back to Edit: nothing is playing');
 	await page.waitForTimeout(700);
@@ -124,7 +124,7 @@ h.run(async () => {
 
 	console.log('\n=== 8. the same in desktop Play ===');
 	const playPath = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.isLocked.set(true);
 		const ok = window.__api.music.play('dungeon');
 		const during = window.__api.music.current();
@@ -138,7 +138,7 @@ h.run(async () => {
 
 	console.log('\n=== 9. the volumes are local, persisted, and reach the gains ===');
 	const vols = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const k = s.gameKit;
 		k.gameSfx.gameSoundVolume.set(0.25);
 		window.__api.playSound('click');
@@ -160,14 +160,14 @@ h.run(async () => {
 	h.check(Math.abs(vols.musicGain - 0.55 * 0.4 * 0.5) < 1e-6 && vols.musicKey === '0.4', '9.2 the Music volume (x the call volume, under the effects) sets the gain and persists');
 
 	console.log('\n=== 10. the Settings rows drive the stores ===');
-	await page.evaluate(() => window.__stores.settingsOpen.set(true));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 	await page.waitForTimeout(600);
 	// the Interface section holds the rows; open it if it is collapsed
 	const hasRow = await page.evaluate(() => !!document.querySelector('#setting-game-sound-volume'));
 	if (!hasRow) await page.locator('#settings-nav .sn-row', { hasText: 'Interface' }).first().click().catch(() => {});
 	await page.waitForSelector('#setting-game-sound-volume', { timeout: 5000 }).catch(() => {});
 	const rows = await page.evaluate(() => {
-		const s = window.__stores.gameKit;
+		const s = window.__tp.test.v1.gameKit;
 		const set = (id, v) => {
 			const el = document.querySelector(id);
 			if (!el) return false;

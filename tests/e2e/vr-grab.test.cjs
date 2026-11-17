@@ -8,8 +8,8 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	const math = await A.page.evaluate(() => {
-		const v = window.__stores.vrControls;
-		const THREE = window.__stores.THREE;
+		const v = window.__tp.test.v1.vrControls;
+		const THREE = window.__tp.test.v1.THREE;
 
 		// rigid pose: rel offset rides the controller pose 1:1
 		const pPos = new THREE.Vector3(1, 1, 0);
@@ -53,14 +53,14 @@ h.run(async () => {
 
 	// containment pick: a point inside a box finds it, outside finds nothing
 	const contained = await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const box = group.children[group.children.length - 1];
 		box.position.set(3, 1, -2);
 		box.updateMatrixWorld(true);
-		const THREE = window.__stores.THREE;
-		const inside = window.__stores.vrControls.containedTopLevel(new THREE.Vector3(3, 1.2, -2), group);
-		const outside = window.__stores.vrControls.containedTopLevel(new THREE.Vector3(9, 9, 9), group);
+		const THREE = window.__tp.test.v1.THREE;
+		const inside = window.__tp.test.v1.vrControls.containedTopLevel(new THREE.Vector3(3, 1.2, -2), group);
+		const outside = window.__tp.test.v1.vrControls.containedTopLevel(new THREE.Vector3(9, 9, 9), group);
 		return { inside: inside?.uuid === box.uuid, outside: outside === null };
 	});
 	h.check(contained.inside && contained.outside, 'containment pick finds the surrounding object only');
@@ -69,10 +69,10 @@ h.run(async () => {
 	const gate = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.vrGrabbedHand.set('right');
+				window.__tp.test.v1.vrGrabbedHand.set('right');
 				let hand;
-				window.__stores.vrGrabbedHand.subscribe((v) => (hand = v))();
-				window.__stores.vrGrabbedHand.set(null);
+				window.__tp.test.v1.vrGrabbedHand.subscribe((v) => (hand = v))();
+				window.__tp.test.v1.vrGrabbedHand.set(null);
 				resolve(hand);
 			})
 	);
@@ -82,7 +82,7 @@ h.run(async () => {
 	const styles = await A.page.evaluate(async () => {
 		const seen = [];
 		for (let i = 0; i < 3; i++) {
-			window.__stores.vrControls.executeVRMenuAction('grabmode');
+			window.__tp.test.v1.vrControls.executeVRMenuAction('grabmode');
 			seen.push(localStorage.getItem('vrGrabStyle'));
 		}
 		return seen;

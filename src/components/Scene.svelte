@@ -1,5 +1,6 @@
 <script lang="ts">
 	import * as THREE from 'three';
+	import { mainPixelRatio, watchContextLoss } from '$lib/render/mainRenderer.js';
 	import { onMount, onDestroy } from 'svelte';
 	import { qualityOverrides } from '$lib/qualityGovernor';
 	import { T, useTask, useThrelte } from '@threlte/core';
@@ -187,7 +188,7 @@
 		presenceSlow = o.presenceSlow;
 		if (o.dprScale === appliedDprScale) return;
 		appliedDprScale = o.dprScale;
-		dpr.set((typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1) * o.dprScale);
+		dpr.set(mainPixelRatio(o.dprScale)); // 101 F3: the seam's pixel-ratio hook
 	});
 	onDestroy(stopQualityWatch);
 	onDestroy(watchJoinSideStep((eye, target) => flyTo(eye, target, 600)));
@@ -833,8 +834,8 @@
 		// a phone backgrounding the tab loses and restores the context routinely: the overlay
 		// (and the error report) wait for a loss that outlasts the grace rule in contextLoss.js
 		startContextLossGate(contextLost, contextLossShown);
-		element.addEventListener('webglcontextlost', onContextLost);
-		element.addEventListener('webglcontextrestored', onContextRestored);
+		// 101 F3: the listeners attach through the renderer seam (one place for the 100 switch)
+		const offContextLoss = watchContextLoss(element, onContextLost, onContextRestored);
 		let downPosition = null;
 		let downTime = 0;
 		let strokeActive = false;
@@ -1734,8 +1735,7 @@
 			stopVrGameInput(); // 30b
 			element.removeEventListener('pointerdown', onPointerDown);
 			dom.removeEventListener('contextmenu', onContextMenu);
-			element.removeEventListener('webglcontextlost', onContextLost);
-			element.removeEventListener('webglcontextrestored', onContextRestored);
+			offContextLoss();
 			window.removeEventListener('pointerup', onPointerUp);
 			window.removeEventListener('pointercancel', onPointerCancel);
 			window.removeEventListener('keydown', onAltKey);

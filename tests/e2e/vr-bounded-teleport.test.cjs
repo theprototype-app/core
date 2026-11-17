@@ -21,7 +21,7 @@ h.run(async () => {
 	const page = A.page;
 
 	await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const get = (store) => { let v; store.subscribe((x) => (v = x))(); return v; };
 		for (let i = 0; i < 2; i++) s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 600));
@@ -45,7 +45,7 @@ h.run(async () => {
 
 	// ---- 1 the verdict ---------------------------------------------------------------------------
 	const v = await page.evaluate(() => {
-		const t = window.__stores.vrControls.teleportVerdict;
+		const t = window.__tp.test.v1.vrControls.teleportVerdict;
 		return {
 			inside: t([0, 0, 0], [1, 0, 0]),
 			behind: t([0, 0, 0], [5, 0, 0]),
@@ -61,7 +61,7 @@ h.run(async () => {
 	// ---- 1a a DYNAMIC body in the line is not a wall (the Stars Room's floating stars, at the
 	// probe's height); the same box made static blocks
 	const dyn = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 500));
 		let g;
@@ -84,7 +84,7 @@ h.run(async () => {
 
 	// ---- 1b no play.bounds: the scene's content box pulled in 0.3 m (the floor spans x -5..9) --
 	const fb = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.scenePhysics.setScenePhysics({ play: { locomotion: { teleport: true }, bounds: null } });
 		const t = s.vrControls.teleportVerdict;
 		const r = { inside: t(null, [8.5, 0, 0]), edge: t(null, [8.85, 0, 0]), beyond: t(null, [12, 0, 0]) };
@@ -98,7 +98,7 @@ h.run(async () => {
 		await xr.pose(page, 'right', [0, 1.2, 0], { yaw: -Math.PI / 2, pitch });
 		await xr.stick(page, 'right', 0, -1);
 		await page.waitForTimeout(250);
-		return page.evaluate(() => window.__stores.vrControls.teleportPreview());
+		return page.evaluate(() => window.__tp.test.v1.vrControls.teleportPreview());
 	};
 	const release = async () => {
 		await xr.stick(page, 'right', 0, 0);
@@ -117,7 +117,7 @@ h.run(async () => {
 
 	// ---- 2b onto a 0.5 m platform: the FEET land on its top (Edit keeps the head height) ------
 	await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 500));
 		let g;
@@ -131,17 +131,17 @@ h.run(async () => {
 	});
 	// a simulation runs: without one the 30b walker has only the plane tier, nothing to stand
 	// a platform on, and gravity takes you back down to y 0 (its limit, not the teleport's)
-	await page.evaluate(() => window.__stores.physics.toggleSimulation());
-	await h.eventually(() => page.evaluate(() => window.__stores.physics.physicsWorldDebug().running), (ok) => ok, 'premise: a simulation runs', 15000);
+	await page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
+	await h.eventually(() => page.evaluate(() => window.__tp.test.v1.physics.physicsWorldDebug().running), (ok) => ok, 'premise: a simulation runs', 15000);
 	await xr.installSpace(page, { head: [0, 1.6, -3], yaw: 0 });
 	await xr.pose(page, 'right', [0, 1.2, -3], { yaw: -Math.PI / 2, pitch: -0.5 });
 	await xr.stick(page, 'right', 0, -1);
 	await page.waitForTimeout(250);
-	p = await page.evaluate(() => window.__stores.vrControls.teleportPreview());
+	p = await page.evaluate(() => window.__tp.test.v1.vrControls.teleportPreview());
 	h.check(p.valid && Math.abs(p.target[1] - 0.5) < 0.01, `aimed at the platform: a green landing on its top (${JSON.stringify(p.target)})`);
 	head = await release();
 	h.check(Math.abs(head.y - 2.1) < 0.05, `the release stands you ON it: head 0.5 m higher (${head.y.toFixed(2)})`);
-	await page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await page.waitForTimeout(300);
 	await xr.installSpace(page, { head: [0, 1.6, 0], yaw: 0 });
 
@@ -158,7 +158,7 @@ h.run(async () => {
 
 	// ---- 5 a dungeon raster -----------------------------------------------------------------------
 	const raster = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let scene;
 		s.globalScene.subscribe((v) => (scene = v))();
 		const THREE = s.THREE;
@@ -179,13 +179,13 @@ h.run(async () => {
 	h.check(!raster.across.ok && raster.across.reason === 'wall-cell', `raster: a wall cell on the way -> refused (${JSON.stringify(raster.across)})`);
 
 	// ---- 6 no teleport flag: no arc in Interact ----------------------------------------------------
-	await page.evaluate(() => window.__stores.scenePhysics.setScenePhysics({ play: { locomotion: {} } }));
+	await page.evaluate(() => window.__tp.test.v1.scenePhysics.setScenePhysics({ play: { locomotion: {} } }));
 	p = await aimAndArm(-0.5);
 	h.check(!p.engaged, 'Interact without play.locomotion.teleport: no arc at all');
 	await release();
 
 	// ---- 7 Edit is unchanged: over the wall is green and taken -----------------------------------
-	await page.evaluate(() => window.__stores.objectActions.setEditorMode('edit'));
+	await page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('edit'));
 	await xr.installSpace(page, { head: [0, 1.6, 0], yaw: 0 });
 	p = await aimAndArm(0.35);
 	h.check(p.engaged && !p.bounded && p.valid && p.target[0] > 2.2, `Edit: the same landing behind the wall is green (${JSON.stringify(p)})`);

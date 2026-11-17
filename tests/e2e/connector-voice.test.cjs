@@ -24,7 +24,7 @@ h.run(async () => {
 	const turn = async (step, tool, args, via = 'agent') => {
 		const text = await A.page.evaluate(
 			async ({ tool, args, via }) => {
-				const r = via === 'agent' ? await window.tpAgent.exec(tool, args) : await window.__stores.aiTools.executeAiTool(tool, args);
+				const r = via === 'agent' ? await window.tpAgent.exec(tool, args) : await window.__tp.test.v1.aiTools.executeAiTool(tool, args);
 				return JSON.stringify(r);
 			},
 			{ tool, args, via }

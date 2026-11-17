@@ -20,7 +20,7 @@ const visible = (page, sel) =>
 /** bring an OPEN window into the bottom dock wherever it is now (a window reopens where it was last) */
 async function toDock(page, key) {
 	await page.evaluate((k) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const w = s.dockMenu.windowWhere(k);
 		if (w === 'dock') return;
 		if (w === 'floating') s.bottomDock.armDockMode(k, true);
@@ -29,9 +29,9 @@ async function toDock(page, key) {
 	// a lazy window (Code boots its editor) may not have consumed the arm yet: wait for the dock, re-arm once
 	for (let i = 0; i < 16; i++) {
 		await page.waitForTimeout(500);
-		const w = await page.evaluate((k) => window.__stores.dockMenu.windowWhere(k), key);
+		const w = await page.evaluate((k) => window.__tp.test.v1.dockMenu.windowWhere(k), key);
 		if (w === 'dock') break;
-		if (i === 6 && w === 'floating') await page.evaluate((k) => window.__stores.bottomDock.armDockMode(k, true), key);
+		if (i === 6 && w === 'floating') await page.evaluate((k) => window.__tp.test.v1.bottomDock.armDockMode(k, true), key);
 	}
 	await page.waitForTimeout(400);
 }
@@ -44,17 +44,17 @@ h.run(async () => {
 
 	// ── F1/F2: many tabs in the right column ─────────────────────────────────────────────────────────────
 	console.log('\n=== F1/F2 ===');
-	await page.evaluate(() => window.__stores.showSidebar('scene'));
+	await page.evaluate(() => window.__tp.test.v1.showSidebar('scene'));
 	await page.waitForTimeout(700);
 	for (const key of ['explorer', 'timeline', 'profiler', 'objects']) {
 		await page.evaluate((k) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.dockMenu.moveToSidebar(k, 'right');
 			if (k === 'objects') s.objectListClose.set(false);
 			else s.panelToggles.togglePanel(k);
 		}, key);
 		await page.waitForTimeout(900);
-		await page.evaluate((k) => window.__stores.dockMenu.moveToSidebar(k, 'right'), key);
+		await page.evaluate((k) => window.__tp.test.v1.dockMenu.moveToSidebar(k, 'right'), key);
 		await page.waitForTimeout(500);
 	}
 	const strip = await page.evaluate(() => {
@@ -97,7 +97,7 @@ h.run(async () => {
 		await page.waitForTimeout(500);
 		const after = await page.evaluate((k) => {
 			let v;
-			window.__stores.sidebars.sidebarShown.subscribe((x) => (v = x))();
+			window.__tp.test.v1.sidebars.sidebarShown.subscribe((x) => (v = x))();
 			const b = document.querySelector('#sidebar-strip-right .sb-tabs').getBoundingClientRect();
 			const r = document.querySelector(`#sidebar-strip-right [data-sidebar-tab-group="${k}"]`).getBoundingClientRect();
 			return { front: v.right, inView: r.left >= b.left - 1 && r.right <= b.right + 1 };
@@ -107,9 +107,9 @@ h.run(async () => {
 
 	// ── F3: "+" on the right sidebar, with the Node editor in the bottom dock ──────────────────────────────
 	console.log('\n=== F3 ===');
-	await page.evaluate(() => window.__stores.panelToggles.togglePanel('flow'));
+	await page.evaluate(() => window.__tp.test.v1.panelToggles.togglePanel('flow'));
 	await page.waitForTimeout(1200);
-	const flowWhere = await page.evaluate(() => window.__stores.dockMenu.windowWhere('flow'));
+	const flowWhere = await page.evaluate(() => window.__tp.test.v1.dockMenu.windowWhere('flow'));
 	h.check(flowWhere === 'dock', `F3: (premise) the Node editor is in the dock (${flowWhere})`);
 	await page.click('#sidebar-add-right');
 	await page.waitForTimeout(400);
@@ -128,44 +128,44 @@ h.run(async () => {
 
 	// ── G1: Code ─────────────────────────────────────────────────────────────────────────────────────
 	console.log('\n=== G1 ===');
-	await page.evaluate(() => window.__stores.panelToggles.togglePanel('code'));
+	await page.evaluate(() => window.__tp.test.v1.panelToggles.togglePanel('code'));
 	await page.waitForTimeout(1500);
 	await toDock(page, 'code');
 	const codeDocked = await page.evaluate(() => ({
-		where: window.__stores.dockMenu.windowWhere('code'),
+		where: window.__tp.test.v1.dockMenu.windowWhere('code'),
 		title: [...document.querySelectorAll('#code-ws-dock .tp-dock-title, .tp-dock-title')].some((e) => e.textContent.trim() === 'Code' && e.getClientRects().length > 0),
 		pop: document.querySelectorAll('#code-ws-popout').length
 	}));
 	h.check(codeDocked.where === 'dock' && !codeDocked.title && codeDocked.pop === 0, `G1: docked Code has no header row and no pop-out (${JSON.stringify(codeDocked)})`);
-	await page.evaluate(() => window.__stores.bottomDock.armDockMode('code', false));
+	await page.evaluate(() => window.__tp.test.v1.bottomDock.armDockMode('code', false));
 	await page.waitForSelector('#code-ws-window', { timeout: 15000 });
 	await page.waitForTimeout(500);
 	h.check(await visible(page, '#code-ws-window [data-head-dock="code"]'), 'G2: floating Code has a Dock button');
 	h.check(await visible(page, '#code-ws-window #code-ws-popout'), 'G2: floating Code has its pop-out');
-	await page.evaluate(() => window.__stores.dockMenu.moveToSidebar('code', 'left'));
+	await page.evaluate(() => window.__tp.test.v1.dockMenu.moveToSidebar('code', 'left'));
 	await page.waitForTimeout(900);
 	const codeSide = await page.evaluate(() => {
 		const head = document.querySelector('#code-ws-window .wc-head');
-		return { where: window.__stores.dockMenu.windowWhere('code'), head: !!head && head.getClientRects().length > 0, pop: [...document.querySelectorAll('#code-ws-popout')].some((e) => e.getClientRects().length > 0) };
+		return { where: window.__tp.test.v1.dockMenu.windowWhere('code'), head: !!head && head.getClientRects().length > 0, pop: [...document.querySelectorAll('#code-ws-popout')].some((e) => e.getClientRects().length > 0) };
 	});
 	h.check(codeSide.where === 'left' && !codeSide.head && !codeSide.pop, `G1: in a sidebar Code has no header at all (${JSON.stringify(codeSide)})`);
-	await page.evaluate(() => window.__stores.codeWorkspaceClose.set(true));
+	await page.evaluate(() => window.__tp.test.v1.codeWorkspaceClose.set(true));
 	await page.waitForTimeout(500);
 
 	// ── G2/G3: the editors floating ─────────────────────────────────────────────────────────────────────
 	console.log('\n=== G2/G3 editors ===');
 	for (const key of ['flow', 'timeline', 'explorer', 'profiler']) {
 		await page.evaluate((k) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			if (!s.dockMenu.windowWhere(k)) s.panelToggles.togglePanel(k); // open it only when closed (a toggle closes an open one)
 		}, key);
 		await page.waitForTimeout(900);
 		await toDock(page, key); // F1 left some of these in the right sidebar
-		h.check((await page.evaluate((k) => window.__stores.dockMenu.windowWhere(k), key)) === 'dock', `G2 ${key}: (premise) docked before floating`);
+		h.check((await page.evaluate((k) => window.__tp.test.v1.dockMenu.windowWhere(k), key)) === 'dock', `G2 ${key}: (premise) docked before floating`);
 		// out through the dock's own undock button (armDockMode(k, false) restores a LAST SIDEBAR place, and F1 gave
 		// some of these one — order-dependent): the shown tab leaves the dock floating
 		await page.evaluate((k) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.bottomDock.activateDock(k);
 			s.dockMenu.undockFromDock('active');
 		}, key);
@@ -173,43 +173,43 @@ h.run(async () => {
 		// a window that lived in a sidebar column before it was docked may go back THERE (docking.js remembers its
 		// side): float it out of the column the way its tab menu's "Undock into a floating window" does
 		await page.evaluate((k) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			if (['left', 'right'].includes(s.dockMenu.windowWhere(k))) s.docking.undock(k);
 		}, key);
 		await page.waitForTimeout(600);
-		const whereF = await page.evaluate((k) => window.__stores.dockMenu.windowWhere(k), key);
+		const whereF = await page.evaluate((k) => window.__tp.test.v1.dockMenu.windowWhere(k), key);
 		h.check(whereF === 'floating', `G2 ${key}: (premise) floating (${whereF})`);
 		const g = await page.evaluate((k) => {
 			const d = [...document.querySelectorAll(`[data-head-dock="${k}"]`)].find((e) => e.getClientRects().length > 0);
 			const p = [...document.querySelectorAll(`[data-head-popout="${k}"]`)].find((e) => e.getClientRects().length > 0);
-			return { where: window.__stores.dockMenu.windowWhere(k), dock: !!d, dockText: d ? d.textContent.trim() : null, pop: !!p };
+			return { where: window.__tp.test.v1.dockMenu.windowWhere(k), dock: !!d, dockText: d ? d.textContent.trim() : null, pop: !!p };
 		}, key);
 		h.check(g.dock && g.dockText === '', `G2/G3 ${key}: floating, an icon-only Dock button (${JSON.stringify(g)})`);
 		h.check(g.pop, `G2 ${key}: floating, a pop-out button (${JSON.stringify(g)})`);
 		// the Dock button docks it
 		await page.click(`[data-head-dock="${key}"]`);
 		await page.waitForTimeout(900);
-		h.check((await page.evaluate((k) => window.__stores.dockMenu.windowWhere(k), key)) === 'dock', `G2 ${key}: the Dock button docks it`);
+		h.check((await page.evaluate((k) => window.__tp.test.v1.dockMenu.windowWhere(k), key)) === 'dock', `G2 ${key}: the Dock button docks it`);
 	}
 
 	// ── G2/G4: the hosted windows ───────────────────────────────────────────────────────────────────────
 	console.log('\n=== G2/G4 hosted ===');
 	const HOSTED = [
-		{ key: 'objects', open: () => window.__stores.objectListClose.set(false), x: '#object-list .wc-close, [data-wc-x]', pop: false },
-		{ key: 'stats', open: () => window.__stores.sceneBudget.statsOpen.set(true), x: '#stats-close', pop: false },
-		{ key: 'chat', open: () => window.__stores.chatHidden.set(''), x: '.wc-close', pop: true },
-		{ key: 'assets', open: () => window.__stores.cc0State.assetBrowserOpen.set(true), x: '#asset-browser-close', pop: false }
+		{ key: 'objects', open: () => window.__tp.test.v1.objectListClose.set(false), x: '#object-list .wc-close, [data-wc-x]', pop: false },
+		{ key: 'stats', open: () => window.__tp.test.v1.sceneBudget.statsOpen.set(true), x: '#stats-close', pop: false },
+		{ key: 'chat', open: () => window.__tp.test.v1.chatHidden.set(''), x: '.wc-close', pop: true },
+		{ key: 'assets', open: () => window.__tp.test.v1.cc0State.assetBrowserOpen.set(true), x: '#asset-browser-close', pop: false }
 	];
 	for (const w of HOSTED) {
 		// a hosted window opens where it was last: make sure it floats first
 		await page.evaluate(w.open);
 		await page.waitForTimeout(900);
-		if ((await page.evaluate((k) => window.__stores.dockMenu.windowWhere(k), w.key)) !== 'floating') {
+		if ((await page.evaluate((k) => window.__tp.test.v1.dockMenu.windowWhere(k), w.key)) !== 'floating') {
 			await toDock(page, w.key); // F1 left Objects in the right sidebar: via the dock, then out
-			await page.evaluate((k) => window.__stores.dockMenu.undockFromDock?.(k), w.key);
+			await page.evaluate((k) => window.__tp.test.v1.dockMenu.undockFromDock?.(k), w.key);
 			await page.waitForTimeout(900);
 		}
-		const where0 = await page.evaluate((k) => window.__stores.dockMenu.windowWhere(k), w.key);
+		const where0 = await page.evaluate((k) => window.__tp.test.v1.dockMenu.windowWhere(k), w.key);
 		h.check(where0 === 'floating', `G2 ${w.key}: (premise) it floats (${where0})`);
 		// Free assets builds its header after its catalogue loads
 		await page.locator(`[data-head-dock="${w.key}"]`).first().waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
@@ -227,7 +227,7 @@ h.run(async () => {
 				const host = document.querySelector(`[data-pd-host]:not([data-pd-host="hidden"])`);
 				const xs = host ? [...host.querySelectorAll(x)].filter((e) => e.getClientRects().length > 0).length : -1;
 				const chrome = host ? [...host.querySelectorAll('[data-head-dock], [data-head-popout]')].filter((e) => e.getClientRects().length > 0).length : -1;
-				return { where: window.__stores.dockMenu.windowWhere(k), xs, chrome };
+				return { where: window.__tp.test.v1.dockMenu.windowWhere(k), xs, chrome };
 			},
 			{ k: w.key, x: w.x }
 		);

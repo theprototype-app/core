@@ -14,7 +14,7 @@ const h = require('./helpers.cjs');
 /** install per-page helpers: exact triangle count the renderer draws for one object */
 async function installProbe(page) {
 	await page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const renderer = await new Promise((r) => w.globalRenderer.subscribe(r)());
 		const scene = await new Promise((r) => w.globalScene.subscribe(r)());
 		const camera = await new Promise((r) => w.globalCamera.subscribe(r)());
@@ -72,7 +72,7 @@ async function installProbe(page) {
 /** two coloured boxes side by side, merged into one multi-material mesh */
 const mergedPair = (page) =>
 	page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
@@ -87,7 +87,7 @@ const mergedPair = (page) =>
 /** enter face edit and select the two INNER facing faces (+X of the left box, -X of the right) */
 const selectFacingFaces = (page, uuid) =>
 	page.evaluate((uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.faceEdit.enterFaceEdit(uuid);
 		const faces = w.faceEdit.currentFaces();
 		const byNormal = (sign) =>
@@ -124,7 +124,7 @@ h.run(async () => {
 	const picked = await selectFacingFaces(A.page, uuid);
 	h.check(!!picked && picked.faces === 12, 'face edit sees 12 faces on the merged pair (premise)');
 
-	const bridged = await A.page.evaluate(() => window.__stores.faceEdit.bridgeFaces());
+	const bridged = await A.page.evaluate(() => window.__tp.test.v1.faceEdit.bridgeFaces());
 	h.check(bridged === true, 'bridgeFaces reports success');
 
 	const afterBridge = await A.page.evaluate((u) => window.__geoInfo(u), uuid);
@@ -144,7 +144,7 @@ h.run(async () => {
 
 	// the tunnel really spans the gap between the two boxes
 	const span = await A.page.evaluate(async (u) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = new w.THREE.Box3().setFromObject(g.getObjectByProperty('uuid', u));
 		return { min: box.min.toArray(), max: box.max.toArray() };
@@ -155,14 +155,14 @@ h.run(async () => {
 	);
 
 	// ------------------------------------------------------- 2. undo / redo
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	const undone = await A.page.evaluate((u) => window.__geoInfo(u), uuid);
 	const drawnUndo = await A.page.evaluate((u) => window.__drawnFor(u), uuid);
 	h.check(undone.tris === 24, 'undo restores the 24-triangle pair');
 	h.check(drawnUndo === undone.tris * passes, '...and it is still drawn after the undo swap');
 	h.check(undone.fullyCovered && undone.slots.length === 2, '...with both slots intact');
 
-	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 	const redone = await A.page.evaluate((u) => window.__geoInfo(u), uuid);
 	const drawnRedo = await A.page.evaluate((u) => window.__drawnFor(u), uuid);
 	h.check(redone.tris === 28 && drawnRedo === redone.tris * passes, 'redo re-bridges and still draws');
@@ -171,7 +171,7 @@ h.run(async () => {
 	for (const op of ['extrude', 'inset', 'subdivide']) {
 		const ok = await A.page.evaluate(
 			({ uuid, op }) => {
-				const w = window.__stores;
+				const w = window.__tp?.test.v1;
 				w.faceEdit.enterFaceEdit(uuid);
 				const faces = w.faceEdit.currentFaces();
 				// a face on the SECOND material slot, so a lost slot shows up
@@ -191,11 +191,11 @@ h.run(async () => {
 		h.check(info.fullyCovered, op + ' leaves the groups covering the whole geometry');
 		h.check(info.slots.length === 2, op + ' keeps both material slots');
 	}
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
 
 	// ---------------------- 4. a SINGLE-material mesh is untouched by all this
 	const plain = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.children[g.children.length - 1];
@@ -214,7 +214,7 @@ h.run(async () => {
 	h.check(plainDrawn === plainInfo.tris * passes, '...and renders as before');
 
 	// ------------------------------------------------------------ 5. two peers
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	const B = await h.setupPage(browser, 'B');
 	await installProbe(B.page);
 	await h.connect(B, A);
@@ -227,7 +227,7 @@ h.run(async () => {
 		20000
 	);
 	await selectFacingFaces(A.page, netUuid);
-	await A.page.evaluate(() => window.__stores.faceEdit.bridgeFaces());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.bridgeFaces());
 
 	await h.eventually(
 		() => B.page.evaluate((u) => window.__geoInfo(u), netUuid),

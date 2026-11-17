@@ -10,7 +10,7 @@ h.run(async () => {
 	// throwaway page warms the vite dep-optimizer for the lazy rapier import
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(4000);
 		await warm.ctx.close();
 	}
@@ -19,11 +19,11 @@ h.run(async () => {
 
 	// scene: a gentle static ramp + a sphere-collider ball that rolls down it
 	await A.page.evaluate(() => {
-		const cmd = window.__stores.commandsHandler.sceneCommand;
+		const cmd = window.__tp.test.v1.commandsHandler.sceneCommand;
 		cmd('/create Box 8 0.4 4');
 		cmd('/create Sphere 0.5');
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const ramp = g.children[g.children.length - 2];
 		const ball = g.children[g.children.length - 1];
 		ramp.position.set(0, 2, 0);
@@ -37,9 +37,9 @@ h.run(async () => {
 		window.__ball = ball;
 	});
 	await A.page.waitForTimeout(300);
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await h.eventually(
-		() => A.page.evaluate(() => new Promise((r) => window.__stores.physics.simulating.subscribe(r)())),
+		() => A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.physics.simulating.subscribe(r)())),
 		(v) => v === true,
 		'simulation started'
 	);
@@ -53,7 +53,7 @@ h.run(async () => {
 	// 1) LIVE rebuild: swap sphere -> box mid-sim; friction now holds it still
 	await A.page.evaluate(() => {
 		window.__ball.userData.physics = { ...window.__ball.userData.physics, collider: 'box' };
-		window.__stores.physics.physicsShapeChanged(window.__ball.uuid);
+		window.__tp.test.v1.physics.physicsShapeChanged(window.__ball.uuid);
 	});
 	// let the box scrub off the roll speed — by its SPEED, not a fixed 2500 ms (test-health-1): physics
 	// steps at most 8 x 1/60 s per frame, so on a software-GL page (~2-5 fps) 2.5 s of wall clock is
@@ -61,14 +61,14 @@ h.run(async () => {
 	// keeps rolling down the ramp, so it never gets here.
 	const speed = () =>
 		A.page.evaluate(() => {
-			const v = window.__stores.physics.physicsDebug().find((b) => b.uuid === window.__ball.uuid)?.linvel;
+			const v = window.__tp.test.v1.physics.physicsDebug().find((b) => b.uuid === window.__ball.uuid)?.linvel;
 			return v ? Math.hypot(v.x, v.y, v.z) : null;
 		});
 	await h.eventually(speed, (v) => v !== null && v < 0.05, 'the box collider scrubs the roll to rest', 30000);
 	const still = await A.page.evaluate(async () => {
 		const x0 = window.__ball.position.x;
 		await new Promise((r) => setTimeout(r, 1200));
-		const debug = window.__stores.physics.physicsDebug().find((b) => b.uuid === window.__ball.uuid);
+		const debug = window.__tp.test.v1.physics.physicsDebug().find((b) => b.uuid === window.__ball.uuid);
 		return { dx: window.__ball.position.x - x0, linvel: debug?.linvel ?? null, sim: !!debug };
 	});
 	h.check(still.sim, 'body still simulated after the live rebuild (no restart)');
@@ -79,11 +79,11 @@ h.run(async () => {
 
 	// 2) LIVE gravity: flip it upward mid-sim -> the ball climbs
 	const climb = await A.page.evaluate(async () => {
-		window.__stores.scenePhysics.setSceneGravity(4);
+		window.__tp.test.v1.scenePhysics.setSceneGravity(4);
 		const y0 = window.__ball.position.y;
 		await new Promise((r) => setTimeout(r, 1500));
 		const dy = window.__ball.position.y - y0;
-		window.__stores.scenePhysics.resetSceneGravity();
+		window.__tp.test.v1.scenePhysics.resetSceneGravity();
 		return dy;
 	});
 	h.check(climb > 0.5, `upward gravity lifts the ball live (dy ${climb.toFixed(2)})`);
@@ -92,15 +92,15 @@ h.run(async () => {
 	const sent = await A.page.evaluate(() => {
 		window.__sent = [];
 		let peer;
-		window.__stores.peers.subscribe((p) => (peer = p))();
+		window.__tp.test.v1.peers.subscribe((p) => (peer = p))();
 		const original = peer.send;
 		peer.send = (m) => window.__sent.push(m.type);
-		window.__stores.scenePhysics.setSceneGravity(-9.81);
+		window.__tp.test.v1.scenePhysics.setSceneGravity(-9.81);
 		peer.send = original;
 		return window.__sent;
 	});
 	h.check(sent.includes('scenephysics'), `setSceneGravity broadcasts (${JSON.stringify(sent)})`);
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await A.page.waitForTimeout(400);
 
 	// 4) freeze axes: a frozen-rotation box dropped askew lands WITHOUT tumbling
@@ -108,10 +108,10 @@ h.run(async () => {
 		window.__ball.position.set(30, 4, 30); // park
 		window.__ball.updateMatrixWorld(true);
 		window.__ball.userData.physics = { mode: 'static' };
-		const cmd = window.__stores.commandsHandler.sceneCommand;
+		const cmd = window.__tp.test.v1.commandsHandler.sceneCommand;
 		cmd('/create Box 1 1 1');
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const box = g.children[g.children.length - 1];
 		box.position.set(0, 4, -6);
 		box.rotation.y = 0.4;
@@ -125,7 +125,7 @@ h.run(async () => {
 		window.__rotY0 = box.rotation.y;
 	});
 	await A.page.waitForTimeout(300);
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await h.eventually(
 		() => A.page.evaluate(() => window.__frozen.position.y),
 		(y) => y < 1.2,
@@ -142,18 +142,18 @@ h.run(async () => {
 		Math.abs(frozen.rotY - frozen.rotY0) < 0.02 && Math.abs(frozen.rotX) < 0.02 && Math.abs(frozen.rotZ) < 0.02,
 		`frozen rotations survive the landing (${JSON.stringify(frozen)})`
 	);
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await A.page.waitForTimeout(400);
 
 	// 5) sensor: a dynamic ball falls THROUGH a static sensor box and pulses
 	// injected onenter/onexit trigger nodes (replicated stamps)
 	await A.page.evaluate(() => {
 		window.__frozen.userData.physics = { mode: 'static' }; // park as scenery
-		const cmd = window.__stores.commandsHandler.sceneCommand;
+		const cmd = window.__tp.test.v1.commandsHandler.sceneCommand;
 		cmd('/create Box 2 0.6 2');
 		cmd('/create Sphere 0.4');
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const zone = g.children[g.children.length - 2];
 		const drop = g.children[g.children.length - 1];
 		zone.position.set(12, 2, 12);
@@ -174,11 +174,11 @@ h.run(async () => {
 			{ id: 'e1', source: 'oe1', target: 'sel1' },
 			{ id: 'e2', source: 'ox1', target: 'sel1' }
 		];
-		window.__stores.flowNodes.set(nodes);
-		window.__stores.flowEdges.set(edges);
+		window.__tp.test.v1.flowNodes.set(nodes);
+		window.__tp.test.v1.flowEdges.set(edges);
 	});
 	await A.page.waitForTimeout(300);
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await h.eventually(
 		() => A.page.evaluate(() => window.__drop.position.y),
 		(y) => y < 1.0,
@@ -186,11 +186,11 @@ h.run(async () => {
 		10000
 	);
 	const stamps = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.flowTriggers.subscribe(r)())
+		() => new Promise((r) => window.__tp.test.v1.flowTriggers.subscribe(r)())
 	);
 	h.check(!!stamps.oe1?.lastT, `onenter pulsed (${JSON.stringify(stamps.oe1 ?? null)})`);
 	h.check(!!stamps.ox1?.lastT, `onexit pulsed (${JSON.stringify(stamps.ox1 ?? null)})`);
 
-	await A.page.evaluate(() => window.__stores.physics.stopSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 	await h.finish(browser);
 });

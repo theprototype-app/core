@@ -32,7 +32,7 @@ h.run(async () => {
 	const inventory = require('./fixtures/lock/settings-inventory.json');
 
 	// ---- Settings search -------------------------------------------------------------------
-	await page.evaluate(() => window.__stores.settingsOpen.set(true));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 	await page.locator('#settings-search').waitFor({ state: 'visible', timeout: 15000 });
 	const queries = [...new Set([...Object.values(inventory).flat().map((r) => r.name), ...WORDS])];
 	/** @type {Record<string, {rows: string[], sections: string[]}>} */
@@ -61,7 +61,7 @@ h.run(async () => {
 	h.check(Object.values(settings).some((r) => r.rows.length > 0), 'premise — the search finds rows');
 	h.check(settings['zz-no-match'].rows.length === 0, 'a nonsense query finds nothing');
 	await page.fill('#settings-search', '');
-	await page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await page.waitForTimeout(400);
 
 	// ---- Inspector filter ----------------------------------------------------------------------
@@ -69,9 +69,9 @@ h.run(async () => {
 	/** @type {Record<string, Record<string, string[]>>} */
 	const inspector = {};
 	const targets = /** @type {[string, () => Promise<any>][]} */ ([
-		['object', () => page.evaluate((u) => window.__stores.objectActions.selectObject(u, true), ctx.box)],
-		['light', () => page.evaluate((u) => window.__stores.objectActions.selectObject(u, true), ctx.light)],
-		['scene', () => page.evaluate(() => window.__stores.showSidebar('scene'))]
+		['object', () => page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u, true), ctx.box)],
+		['light', () => page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u, true), ctx.light)],
+		['scene', () => page.evaluate(() => window.__tp.test.v1.showSidebar('scene'))]
 	]);
 	const sectionsShown = () =>
 		page.evaluate(() =>
@@ -84,7 +84,7 @@ h.run(async () => {
 		await S.closeAll(page);
 		await open();
 		await page.locator('#inspector-search').waitFor({ state: 'visible', timeout: 10000 });
-		await page.evaluate(() => window.__stores.inspectorFilter.set(''));
+		await page.evaluate(() => window.__tp.test.v1.inspectorFilter.set(''));
 		await page.waitForTimeout(400);
 		const all = await sectionsShown();
 		const qs = [...new Set([...all.map((s) => s.toLowerCase()), 'position', 'rotation', 'scale', 'color', 'colour', 'shadow', 'physics', 'material', 'intensity', 'fog', 'grid', 'camera', 'water', 'lod', 'render', 'light', 'sky', 'environment', 'origin', 'snap',

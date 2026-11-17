@@ -13,11 +13,11 @@ const h = require('./helpers.cjs');
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
-	await A.page.waitForFunction(() => !!window.__stores?.onionSkin, { timeout: 20000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.onionSkin, { timeout: 20000 });
 
 	// a box that travels 0 -> 4 on x across three keys
 	const uuid = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 400));
 		let g;
@@ -39,14 +39,14 @@ h.run(async () => {
 		return obj.uuid;
 	});
 
-	const ghosts = () => A.page.evaluate(() => window.__stores.onionSkin.onionSkinDebug());
+	const ghosts = () => A.page.evaluate(() => window.__tp.test.v1.onionSkin.onionSkinDebug());
 	/** the ghost meshes as the SCENE sees them: name, parent, and world x */
 	const sceneGhosts = () =>
 		A.page.evaluate(() => {
 			let scene;
-			window.__stores.globalScene.subscribe((/** @type {any} */ s) => (scene = s))();
+			window.__tp.test.v1.globalScene.subscribe((/** @type {any} */ s) => (scene = s))();
 			let group;
-			window.__stores.objectsGroup.subscribe((/** @type {any} */ g) => (group = g))();
+			window.__tp.test.v1.objectsGroup.subscribe((/** @type {any} */ g) => (group = g))();
 			/** @type {any[]} */
 			const found = [];
 			scene.traverse((/** @type {any} */ n) => {
@@ -94,7 +94,7 @@ h.run(async () => {
 	h.check(toggle.pressed === 'false', `which reads as off (${toggle.pressed})`);
 
 	// ---------- 2. turning it on draws the two NEIGHBOURING keys ----------
-	await A.page.evaluate((id) => window.__stores.animationPreview.scrub(id, 0.5), uuid);
+	await A.page.evaluate((id) => window.__tp.test.v1.animationPreview.scrub(id, 0.5), uuid);
 	await A.page.waitForTimeout(200);
 	await A.page.locator('#animation-onion').click();
 	await A.page.waitForTimeout(600); // a frame or two of the scene loop
@@ -130,7 +130,7 @@ h.run(async () => {
 	// the real object sits at x=1 (half way to key 1); the ghosts belong at 0 and 2
 	const posed = await A.page.evaluate((id) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((/** @type {any} */ x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((/** @type {any} */ x) => (g = x))();
 		return g.getObjectByProperty('uuid', id).position.x;
 	}, uuid);
 	const xs = inScene.map((/** @type {any} */ g) => g.x).sort((a, b) => a - b);
@@ -144,7 +144,7 @@ h.run(async () => {
 	);
 
 	// ---------- 5. they FOLLOW the playhead ----------
-	await A.page.evaluate((id) => window.__stores.animationPreview.scrub(id, 1.5), uuid);
+	await A.page.evaluate((id) => window.__tp.test.v1.animationPreview.scrub(id, 1.5), uuid);
 	await A.page.waitForTimeout(600);
 	const moved = await ghosts();
 	h.check(
@@ -155,7 +155,7 @@ h.run(async () => {
 
 	// ---------- 6. nothing about them reaches a SAVE ----------
 	const saved = await A.page.evaluate(async () => {
-		const payload = await window.__stores.sessions.saveSession('onion-check');
+		const payload = await window.__tp.test.v1.sessions.saveSession('onion-check');
 		const names = payload.objects
 			.map((/** @type {any} */ o) => o.object ?? o)
 			.map((/** @type {any} */ o) => o.name ?? '');
@@ -174,13 +174,13 @@ h.run(async () => {
 		/** @type {string[]} */
 		const types = [];
 		let peer;
-		window.__stores.peers.subscribe((/** @type {any} */ p) => (peer = p))();
+		window.__tp.test.v1.peers.subscribe((/** @type {any} */ p) => (peer = p))();
 		const original = peer.send.bind(peer);
 		peer.send = (/** @type {any} */ msg) => {
 			types.push(msg?.type ?? '?');
 			return original(msg);
 		};
-		const onion = window.__stores.onionSkin;
+		const onion = window.__tp.test.v1.onionSkin;
 		// off, then on again: both edges, plus many frames of the per-frame update
 		onion.setOnionSkin(false);
 		await new Promise((r) => setTimeout(r, 500));
@@ -205,7 +205,7 @@ h.run(async () => {
 	// the object itself must be untouched by any of it
 	const finalX = await A.page.evaluate((id) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((/** @type {any} */ x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((/** @type {any} */ x) => (g = x))();
 		const obj = g.getObjectByProperty('uuid', id);
 		return { x: obj.position.x, opacity: obj.material?.opacity ?? 1 };
 	}, uuid);
@@ -220,7 +220,7 @@ h.run(async () => {
 	// - and two copies at 28% over the real thing read as one slightly odd SOLID
 	// object. Onion skin is a motion aid: a ghost that would coincide stays hidden.
 	const noMotion = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const ap = w.animationPreview;
 		w.commandsHandler.sceneCommand('/create sphere');
 		await new Promise((r) => setTimeout(r, 700));
@@ -254,7 +254,7 @@ h.run(async () => {
 	// Structural check: this asserts the STATE that prevents the fight, not the
 	// pixels (a shimmer is a per-frame race no headless read can see).
 	const depth = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const ap = w.animationPreview;
 		w.commandsHandler.sceneCommand('/create box 1 1 1');
 		await new Promise((r) => setTimeout(r, 700));

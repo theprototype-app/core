@@ -19,7 +19,7 @@ const h = require('./helpers.cjs');
 const vols = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.sessionVolumes.sessionVolumes.subscribe((x) => (v = x))();
+		window.__tp.test.v1.sessionVolumes.sessionVolumes.subscribe((x) => (v = x))();
 		return (v ?? []).map((x) => ({
 			id: x.id,
 			host: x.host,
@@ -29,12 +29,12 @@ const vols = (p) =>
 		}));
 	});
 
-const debug = (p) => p.page.evaluate(() => window.__stores.sessionVolumes.volumeDebug());
+const debug = (p) => p.page.evaluate(() => window.__tp.test.v1.sessionVolumes.volumeDebug());
 
 const library = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.explorer.explorerItems.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((x) => (v = x))();
 		return (v ?? []).map((i) => ({ name: i.name, hash: i.hash, folderId: i.folderId ?? null, kind: i.kind })).sort((a, b) => (a.name + a.hash).localeCompare(b.name + b.hash));
 	});
 
@@ -45,11 +45,11 @@ h.run(async () => {
 	const H = await h.setupPage(browser, 'H');
 	const G = await h.setupPage(browser, 'G');
 	for (const peer of [H, G]) {
-		await peer.page.waitForFunction(() => !!window.__stores?.sessionVolumes && !!window.__stores?.explorer && !!window.__stores?.levels, null, {
+		await peer.page.waitForFunction(() => !!window.__tp?.test.v1?.sessionVolumes && !!window.__tp?.test.v1?.explorer && !!window.__tp?.test.v1?.levels, null, {
 			timeout: 60000
 		});
 		await peer.page.evaluate(async () => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			await s.explorer.loadExplorer();
 			await s.explorer.clearLibrary();
 			s.levels.currentLevel.set(null);
@@ -58,7 +58,7 @@ h.run(async () => {
 
 	// ---- the fixture: H has a saved scene and two files the scene does not use ------------------
 	const fixture = await H.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const enc = new TextEncoder();
 		const notes = await s.explorer.addItemFromBytes(enc.encode('hello from the host\n').buffer, 'notes.txt', null);
 		const c = document.createElement('canvas');
@@ -77,14 +77,14 @@ h.run(async () => {
 	h.check(!!fixture.notes && !!fixture.photo && !!fixture.scene, `premise: H holds notes.txt, photo.png and the saved scene "Castle" (${JSON.stringify(fixture)})`);
 	const scope0 = await H.page.evaluate(() => {
 		let v;
-		window.__stores.sessionVolumes.shareScope.subscribe((x) => (v = x))();
+		window.__tp.test.v1.sessionVolumes.shareScope.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(scope0 === 'scene', `premise: H's share scope is the default, Current scene's files (${scope0})`);
 
 	// G: one file of its own, an empty unnamed world (so the connect decision does not ask)
 	await G.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		await s.explorer.addItemFromBytes(new TextEncoder().encode('mine').buffer, 'mine.txt', null);
 	});
 	const gBefore = await library(G);
@@ -103,7 +103,7 @@ h.run(async () => {
 		// say WHERE it stopped: never sent (H log), sent but not applied (G log), or no conn at all
 		console.log('  H log:', JSON.stringify((await debug(H)).log.slice(-10)));
 		console.log('  G log:', JSON.stringify((await debug(G)).log.slice(-10)));
-		console.log('  G room:', JSON.stringify(await G.page.evaluate(() => { let p; window.__stores.peers.subscribe((x) => (p = x))(); return p?.openedPeers ? [...p.openedPeers] : null; })));
+		console.log('  G room:', JSON.stringify(await G.page.evaluate(() => { let p; window.__tp.test.v1.peers.subscribe((x) => (p = x))(); return p?.openedPeers ? [...p.openedPeers] : null; })));
 	}
 	let v = (await vols(G))[0];
 	h.check(v.scope === 'scene' && v.role === 'editor', `…its scope is Current scene's files and G is an editor (${v.scope}/${v.role})`);
@@ -116,17 +116,17 @@ h.run(async () => {
 	const seen = (await vols(G))[0]?.items?.length ?? 0;
 	h.check(seen > 0, `premise: the current scene's files are listed (${seen})`);
 	const setGuestRow = (scene) =>
-		H.page.evaluate(([gid, scene]) => window.__stores.peerScenes.peerScenes.update((m) => ({ ...m, [gid]: { ...m[gid], scene, hash: '' } })), [G.id, scene]);
+		H.page.evaluate(([gid, scene]) => window.__tp.test.v1.peerScenes.peerScenes.update((m) => ({ ...m, [gid]: { ...m[gid], scene, hash: '' } })), [G.id, scene]);
 	const guestRow = await H.page.evaluate((gid) => {
 		let m;
-		window.__stores.peerScenes.peerScenes.subscribe((v) => (m = v))();
+		window.__tp.test.v1.peerScenes.peerScenes.subscribe((v) => (m = v))();
 		return m[gid]?.scene ?? '';
 	}, G.id);
 	await setGuestRow('Somewhere else');
 	await h.eventually(() => vols(G), (vs) => (vs[0]?.items?.length ?? 0) === 0, "a guest in another room is sent none of the current scene's files", 10000);
 	await G.page.evaluate((host) => {
 		let p;
-		window.__stores.peers.subscribe((x) => (p = x))();
+		window.__tp.test.v1.peers.subscribe((x) => (p = x))();
 		p.connections[host].send({ type: 'volsave', id: 'other-room' });
 	}, H.id);
 	await h.eventually(() => debug(H), (d) => d.log.some((l) => /^volsave from .+: you are in another scene/.test(l)), '…and its raw Save on host is refused', 10000);
@@ -151,7 +151,7 @@ h.run(async () => {
 	await G.page.evaluate(
 		({ host, hash }) => {
 			let p;
-			window.__stores.peers.subscribe((x) => (p = x))();
+			window.__tp.test.v1.peers.subscribe((x) => (p = x))();
 			p.connections[host].send({ type: 'volget', hash });
 		},
 		{ host: H.id, hash: fixture.notes.hash }
@@ -165,7 +165,7 @@ h.run(async () => {
 	h.check((await library(G)).length === 1, '…and nothing reached G');
 
 	// ---- 3. H widens the scope; Open pulls once, read-only, and imports nothing -----------------
-	await H.page.evaluate(() => window.__stores.sessionVolumes.setShareScope('library'));
+	await H.page.evaluate(() => window.__tp.test.v1.sessionVolumes.setShareScope('library'));
 	await h.eventually(
 		() => vols(G),
 		(vs) => vs[0]?.scope === 'library' && ['notes.txt', 'photo.png'].every((n) => vs[0].items.some((i) => i.name === n)),
@@ -189,7 +189,7 @@ h.run(async () => {
 	// the editor's document (CodeEditor draws it lazily, so read what it was handed)
 	const shown = await G.page.evaluate(() => {
 		let t;
-		window.__stores.fileWindows.textEditorTarget.subscribe((x) => (t = x))();
+		window.__tp.test.v1.fileWindows.textEditorTarget.subscribe((x) => (t = x))();
 		return { code: t?.code ?? '', readOnly: !!t?.readOnly };
 	});
 	h.check(/hello from the host/.test(shown.code) && shown.readOnly, `the editor holds the host's bytes, read-only (${JSON.stringify(shown)})`);
@@ -216,12 +216,12 @@ h.run(async () => {
 
 	// ---- 5. Save on host ------------------------------------------------------------------------
 	await G.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create sphere');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create sphere');
 		await new Promise((r) => setTimeout(r, 1300));
-		window.__stores.objectActions.deselectObject();
+		window.__tp.test.v1.objectActions.deselectObject();
 	});
 	await h.eventually(
-		() => H.page.evaluate(() => { let g; window.__stores.objectsGroup.subscribe((x) => (g = x))(); return g.children.length; }),
+		() => H.page.evaluate(() => { let g; window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))(); return g.children.length; }),
 		(n) => n === 2,
 		"premise: G's edit reached H's world",
 		15000
@@ -235,7 +235,7 @@ h.run(async () => {
 	await h.eventually(() => toasts(G), (t) => t.some((x) => /Saving on |Saved "Castle" on .+'s device/.test(x)), 'G is told about it', 10000);
 	const hostScenes = await H.page.evaluate(() => {
 		let v;
-		window.__stores.explorer.explorerItems.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((x) => (v = x))();
 		return (v ?? []).filter((i) => i.kind === 'scene').map((i) => i.hash);
 	});
 	h.check(hostScenes.some((x) => x !== fixture.scene), `H's library holds the new version of Castle (${hostScenes.length} scene record(s))`);
@@ -244,7 +244,7 @@ h.run(async () => {
 
 	// ---- 6. a viewer has no Save on host --------------------------------------------------------
 	await H.page.evaluate((gid) => {
-		window.__stores.cloudHooks.rolesInfo.set({
+		window.__tp.test.v1.cloudHooks.rolesInfo.set({
 			myId: 'host',
 			myRole: 'admin',
 			amAdmin: true,
@@ -259,7 +259,7 @@ h.run(async () => {
 	h.check(/view-only/.test(await banner.innerText()), '…and the banner says view-only');
 	await G.page.evaluate((host) => {
 		let p;
-		window.__stores.peers.subscribe((x) => (p = x))();
+		window.__tp.test.v1.peers.subscribe((x) => (p = x))();
 		p.connections[host].send({ type: 'volsave', id: 'raw' });
 	}, H.id);
 	await h.eventually(
@@ -268,17 +268,17 @@ h.run(async () => {
 		'a raw Save on host from the viewer is REFUSED by H itself',
 		10000
 	);
-	await H.page.evaluate(() => window.__stores.cloudHooks.rolesInfo.set(null));
+	await H.page.evaluate(() => window.__tp.test.v1.cloudHooks.rolesInfo.set(null));
 
 	// ---- 7. scope None ------------------------------------------------------------------------
-	await H.page.evaluate(() => window.__stores.sessionVolumes.setShareScope('none'));
+	await H.page.evaluate(() => window.__tp.test.v1.sessionVolumes.setShareScope('none'));
 	await h.eventually(() => vols(G), (vs) => vs[0]?.scope === 'none' && vs[0].items.length === 0, "H's scope None empties G's volume", 15000);
 	await h.eventually(() => G.page.locator('.ex-cards .explorer-card').count(), (n) => n === 0, '…and the cards leave the grid', 5000);
 
 	// ---- 8. leave -------------------------------------------------------------------------------
 	await G.page.evaluate(() => {
 		let p;
-		window.__stores.peers.subscribe((x) => (p = x))();
+		window.__tp.test.v1.peers.subscribe((x) => (p = x))();
 		p.leaveSession();
 	});
 	await h.eventually(() => vols(G), (vs) => vs.length === 0, 'leaving the session unmounts the volume', 15000);

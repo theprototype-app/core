@@ -38,16 +38,16 @@ h.run(async () => {
 
 	// ---- the device: Waves 2.1.0 installed (the 1.17 preview's copy) ----------------------------
 	await h.installModule(A, 'health');
-	await page.evaluate(() => window.__stores.modulesOpen.set(true));
+	await page.evaluate(() => window.__tp.test.v1.modulesOpen.set(true));
 	await page.waitForTimeout(400);
 	await page.getByRole('tab', { name: /^User/ }).click();
 	await page.locator('#install-module-zip').setInputFiles({ name: 'waves.zip', mimeType: 'application/zip', buffer: fs.readFileSync(OLD_ZIP) });
-	const version = () => page.evaluate(() => window.__stores.moduleSDK.loadedModules.find((m) => m.id === 'waves')?.version ?? null);
+	const version = () => page.evaluate(() => window.__tp.test.v1.moduleSDK.loadedModules.find((m) => m.id === 'waves')?.version ?? null);
 	await h.eventually(version, (v) => v === '2.1.0', '(premise) Waves 2.1.0 is installed on this device');
-	await page.evaluate(() => window.__stores.modulesOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.modulesOpen.set(false));
 	await page.waitForTimeout(300);
 	const asks = await page.evaluate(async (arr) => {
-		const payload = await window.__stores.sessions.readSessionZip(new Uint8Array(arr).buffer);
+		const payload = await window.__tp.test.v1.sessions.readSessionZip(new Uint8Array(arr).buffer);
 		return (payload.modules ?? []).find((m) => m.id === 'waves')?.version ?? null;
 	}, Array.from(fs.readFileSync(SCENE)));
 	h.check(asks === wantVersion, `(premise) the scene asks for Waves ${asks} — the gallery's (${wantVersion})`);
@@ -55,7 +55,7 @@ h.run(async () => {
 	// ---- the load prompt ---------------------------------------------------------------------
 	await page.evaluate((arr) => {
 		window.__importDone = false;
-		window.__stores.sessions.importSessionZip(new Uint8Array(arr).buffer).then(() => (window.__importDone = true));
+		window.__tp.test.v1.sessions.importSessionZip(new Uint8Array(arr).buffer).then(() => (window.__importDone = true));
 	}, Array.from(fs.readFileSync(SCENE)));
 	const button = page.locator('#confirm-dialog-install');
 	const offered = await button.waitFor({ state: 'visible', timeout: 8000 }).then(() => true, () => false);

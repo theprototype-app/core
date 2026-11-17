@@ -49,7 +49,7 @@ async function until(fn, predicate, label, timeout = 15000) {
 /** the shadow state as the renderer sees it: casters, the Sun's authored and live frusta */
 const shadowState = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let scene;
 		s.globalScene.subscribe((v) => (scene = v))();
 		const casters = [];
@@ -83,7 +83,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1280, height: 720 } } });
 	const page = A.page;
 	await page.evaluate(async (arr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = await s.sessions.importSessionZip(new Uint8Array(arr).buffer);
 		if (payload) await s.sessions.requestLoadSession(payload.id);
 	}, Array.from(bytes));
@@ -95,8 +95,8 @@ h.run(async () => {
 
 	// 2. the headset's entry floor follows the claim
 	const gov = await page.evaluate(() => {
-		const q = window.__stores.qualityGovernor;
-		const c = window.__stores.shadowClaims;
+		const q = window.__tp.test.v1.qualityGovernor;
+		const c = window.__tp.test.v1.shadowClaims;
 		const read = (st) => {
 			let v;
 			st.subscribe((x) => (v = x))();
@@ -124,14 +124,14 @@ h.run(async () => {
 	await fx.install(page);
 	await fx.installSpace(page, { head: [0, 1.6, 0] });
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.viewMode.set('shaded');
 		s.viewportOverrides.setRenderLayer('post', false);
 		s.lightParams.shadowQuality.set('high');
 	});
 	const edit = await shadowState(page);
 	h.check(edit.budget.active === false && edit.casters.length === 2, `in Edit nothing is fitted yet: two suns cast (${edit.casters.join(', ')})`);
-	await page.locator('#play-button').click({ timeout: 10000 }).catch(() => page.evaluate(() => window.__stores.isLocked.set(true)));
+	await page.locator('#play-button').click({ timeout: 10000 }).catch(() => page.evaluate(() => window.__tp.test.v1.isLocked.set(true)));
 	const play = await until(() => shadowState(page), (v) => v.budget.active && v.casters.length === 1, 'in Play ONE directional light casts (the rig sun stands down)');
 	h.check(play.casters[0] === 'Sun' && play.rigCasts === false, `…the scene's own Sun keeps its shadow (${play.casters}, rig ${play.rigCasts})`);
 	h.check(JSON.stringify(play.authored) === JSON.stringify(edit.authored), `the authored frustum (scene data) is untouched (${play.authored})`);
@@ -139,7 +139,7 @@ h.run(async () => {
 	// the shadow pass, attributed per light over 20 frames
 	const pass = await page.evaluate(async () => {
 		let scene;
-		window.__stores.globalScene.subscribe((v) => (scene = v))();
+		window.__tp.test.v1.globalScene.subscribe((v) => (scene = v))();
 		const per = new Map();
 		const frames = new Set();
 		const hooks = [];
@@ -173,10 +173,10 @@ h.run(async () => {
 	// the game leaves the scene: the claim goes with it
 	await page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const marker = g.getObjectByName('Race game');
 		marker?.parent?.remove(marker);
-		window.__stores.pokeScene();
+		window.__tp.test.v1.pokeScene();
 	});
 	await until(() => shadowState(page), (v) => !v.kept, 'without the Race marker the claim is released (a headset is back to shadows off)');
 	h.check(h.pageErrors(A).length === 0, `no page errors (${h.pageErrors(A).join(' | ').slice(0, 200)})`);

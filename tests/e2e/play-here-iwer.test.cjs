@@ -11,7 +11,7 @@ const h = require('./helpers.cjs');
 const iwer = require('./iwer.cjs');
 
 const near = (a, b, eps = 0.06) => Math.abs(a - b) < eps;
-const mode = (page) => page.evaluate(() => { let v; window.__stores.editorMode.subscribe((x) => (v = x))(); return v; });
+const mode = (page) => page.evaluate(() => { let v; window.__tp.test.v1.editorMode.subscribe((x) => (v = x))(); return v; });
 const SPY = () => {
 	if (window.__rigSpy) return;
 	const Orig = window.XRRigidTransform;
@@ -43,13 +43,13 @@ const applied = (page) =>
 const space = (page, name, op) =>
 	page.evaluate(({ name, op }) => {
 		let r;
-		window.__stores.globalRenderer.subscribe((v) => (r = v))();
+		window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
 		const now = r.xr.getReferenceSpace();
 		if (op === 'keep') return !!(window['__space_' + name] = now);
 		return now === window['__space_' + name];
 	}, { name, op });
 const rigPose = (page) =>
-	page.evaluate(() => { let r; window.__stores.worldRig.subscribe((x) => (r = x))(); return { p: r.position.toArray(), s: r.scale.x }; });
+	page.evaluate(() => { let r; window.__tp.test.v1.worldRig.subscribe((x) => (r = x))(); return { p: r.position.toArray(), s: r.scale.x }; });
 
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
@@ -58,10 +58,10 @@ h.run(async () => {
 	h.check(await iwer.installed(P), 'premise: IWER owns navigator.xr');
 
 	// a box at (8, _, −6) whose top is 1 m up (below the 1.6 m head)
-	await P.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await P.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await P.waitForTimeout(500);
 	const top = await P.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		const b = g.children.at(-1);
@@ -74,7 +74,7 @@ h.run(async () => {
 	await iwer.enter(P);
 	await iwer.frames(P, 4);
 	h.check((await mode(P)) === 'edit', 'premise: the headset is in Edit');
-	await P.evaluate(() => window.__stores.scenePhysics.setScenePhysics({ play: { spawn: { position: [-10, 0, 10], yaw: 0 } } }));
+	await P.evaluate(() => window.__tp.test.v1.scenePhysics.setScenePhysics({ play: { spawn: { position: [-10, 0, 10], yaw: 0 } } }));
 	await P.evaluate(SPY);
 
 	// ---- 1. stand over the box looking half-left, Tools ▸ Play here ---------------------------------
@@ -82,12 +82,12 @@ h.run(async () => {
 	await iwer.frames(P, 4);
 	await space(P, 'edit', 'keep');
 	await applied(P);
-	const entry = await P.evaluate(() => window.__stores.vrRadialMenu.ringEntries('tools').map((e) => e.id));
+	const entry = await P.evaluate(() => window.__tp.test.v1.vrRadialMenu.ringEntries('tools').map((e) => e.id));
 	h.check(entry.includes('playhere'), `the radial's Tools ring offers Play here (${JSON.stringify(entry)})`);
-	await P.evaluate(() => window.__stores.vrControls.executeVRMenuAction('playhere'));
+	await P.evaluate(() => window.__tp.test.v1.vrControls.executeVRMenuAction('playhere'));
 	await iwer.frames(P, 8);
 	h.check((await mode(P)) === 'interact', 'Play here switches to Interact');
-	const dbg = await P.evaluate(() => window.__stores.playHere.playHereDebug());
+	const dbg = await P.evaluate(() => window.__tp.test.v1.playHere.playHereDebug());
 	h.check(
 		dbg.playing === true && dbg.override && near(dbg.override.position[0], 8) && near(dbg.override.position[2], -6) && near(dbg.override.position[1], top) && near(dbg.override.yaw, 0.5, 0.02),
 		`the round's spawn: under the head, on the box top, facing the head (${JSON.stringify(dbg.override)})`
@@ -99,30 +99,30 @@ h.run(async () => {
 	h.check(!(await space(P, 'edit', 'same')), 'Interact plays in a moved reference space');
 
 	// ---- 2. Back to edit: the very reference space Edit had --------------------------------------
-	h.check(!!(await P.evaluate(() => window.__stores.vrRadialMenu.ringEntries('tools').find((e) => e.id === 'playhere'))), 'the entry stays while the round runs');
-	await P.evaluate(() => window.__stores.vrControls.executeVRMenuAction('playhere'));
+	h.check(!!(await P.evaluate(() => window.__tp.test.v1.vrRadialMenu.ringEntries('tools').find((e) => e.id === 'playhere'))), 'the entry stays while the round runs');
+	await P.evaluate(() => window.__tp.test.v1.vrControls.executeVRMenuAction('playhere'));
 	await iwer.frames(P, 6);
 	h.check((await mode(P)) === 'edit', 'Back to edit: Edit');
 	h.check(await space(P, 'edit', 'same'), '...in the reference space Edit had (the view is where it was)');
-	const after = await P.evaluate(() => window.__stores.playHere.playHereDebug());
+	const after = await P.evaluate(() => window.__tp.test.v1.playHere.playHereDebug());
 	h.check(after.override === null && after.playing === false, 'the override is gone');
 
 	// ---- 3. a world grab (miniature) is put back too; Interact played it at 1:1 -------------------
 	await P.evaluate(() => {
 		let r;
-		window.__stores.worldRig.subscribe((x) => (r = x))();
+		window.__tp.test.v1.worldRig.subscribe((x) => (r = x))();
 		r.scale.setScalar(0.5);
 		r.position.set(4, 0, -3);
 		r.updateMatrixWorld(true);
 	});
 	await iwer.frames(P, 3);
 	await applied(P);
-	await P.evaluate(() => window.__stores.vrControls.executeVRMenuAction('playhere'));
+	await P.evaluate(() => window.__tp.test.v1.vrControls.executeVRMenuAction('playhere'));
 	await iwer.frames(P, 8);
 	let rig = await rigPose(P);
 	h.check((await mode(P)) === 'interact' && rig.s === 1 && rig.p.every((x) => x === 0), `Play here plays at 1:1 (${JSON.stringify(rig)})`);
 	// the content point under the head: (8 − 4) / 0.5 = 8, (−6 + 3) / 0.5 = −6 → over the box again
-	const o3 = (await P.evaluate(() => window.__stores.playHere.playHereDebug())).override;
+	const o3 = (await P.evaluate(() => window.__tp.test.v1.playHere.playHereDebug())).override;
 	h.check(o3 && near(o3.position[0], 8, 0.1) && near(o3.position[2], -6, 0.1) && near(o3.position[1], top), `...from the content point under the head (${JSON.stringify(o3)})`);
 	// the mode button (left Y) is the other way back
 	await iwer.tap(P, 'left', 5);

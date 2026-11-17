@@ -33,13 +33,13 @@ const S = (page, fn, arg) => page.evaluate(fn, arg);
 const read = (page, path) =>
 	S(page, (path) => {
 		const [mod, name] = path.split('.');
-		const st = name ? window.__stores[mod]?.[name] : window.__stores[mod];
+		const st = name ? window.__tp.test.v1[mod]?.[name] : window.__tp.test.v1[mod];
 		if (!st?.subscribe) return null;
 		let v;
 		st.subscribe((x) => (v = x))();
 		return v;
 	}, path);
-const call = (page, name, ...args) => S(page, ([name, args]) => window.__stores.bottomDock[name]?.(...args), [name, args]);
+const call = (page, name, ...args) => S(page, ([name, args]) => window.__tp.test.v1.bottomDock[name]?.(...args), [name, args]);
 
 /** what is on screen in the dock */
 const view = (page) =>
@@ -113,7 +113,7 @@ async function answerRestore(page) {
 }
 async function openDocked(page, keys) {
 	await S(page, async (keys) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const close = { flow: s.flowGraphClose, explorer: s.explorerClose, animation: s.animationClose, timeline: s.timelineClose };
 		for (const k of keys) {
 			if (k === 'stats') s.sceneBudget.statsOpen.set(true);

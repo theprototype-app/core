@@ -8,7 +8,7 @@ const heightsOf = (page, uuid) =>
 	page.evaluate(
 		(uuid) =>
 			new Promise((resolve) => {
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const o = g?.getObjectByProperty('uuid', uuid);
 					if (!o) return resolve(null);
 					const p = o.geometry.attributes.position;
@@ -31,26 +31,26 @@ h.run(async () => {
 	await h.connect(B, A);
 
 	const uuid = await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create Terrain 24 48');
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create Terrain 24 48');
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		return group.children[group.children.length - 1].uuid;
 	});
 	await B.page.waitForTimeout(1500);
 
 	// enter sculpt: selects (= locks); peers see the lock and are refused
-	const entered = await A.page.evaluate((uuid) => window.__stores.terrainSculpt.enterSculpt(uuid), uuid);
+	const entered = await A.page.evaluate((uuid) => window.__tp.test.v1.terrainSculpt.enterSculpt(uuid), uuid);
 	h.check(entered === true, 'A enters sculpt mode');
 	await h.eventually(
-		() => B.page.evaluate((uuid) => new Promise((r) => window.__stores.lockedObjects.subscribe((l) => r(l.some((e) => e[1] === uuid)))()), uuid),
+		() => B.page.evaluate((uuid) => new Promise((r) => window.__tp.test.v1.lockedObjects.subscribe((l) => r(l.some((e) => e[1] === uuid)))()), uuid),
 		(v) => v === true,
 		'B sees the terrain locked while A sculpts'
 	);
-	const bEnter = await B.page.evaluate((uuid) => window.__stores.terrainSculpt.enterSculpt(uuid), uuid);
+	const bEnter = await B.page.evaluate((uuid) => window.__tp.test.v1.terrainSculpt.enterSculpt(uuid), uuid);
 	h.check(bEnter === false, "B's sculpt attempt is refused (locked)");
 
 	// one stroke: raise at the center, several brush applications, then commit
 	await A.page.evaluate((uuid) => {
-		const ts = window.__stores.terrainSculpt;
+		const ts = window.__tp.test.v1.terrainSculpt;
 		ts.beginStroke(uuid);
 		for (let i = 0; i < 30; i++) ts.applyBrushAt(uuid, 0, 0, 'raise', 4, 1, 0.033);
 		ts.endStroke();
@@ -63,7 +63,7 @@ h.run(async () => {
 	const torn = await A.page.evaluate(
 		(uuid) =>
 			new Promise((resolve) => {
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const p = g.getObjectByProperty('uuid', uuid).geometry.attributes.position;
 					const cols = new Map();
 					for (let i = 0; i < p.count; i++) {
@@ -91,7 +91,7 @@ h.run(async () => {
 	const smooth = await B.page.evaluate(
 		(uuid) =>
 			new Promise((resolve) => {
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const geo = g.getObjectByProperty('uuid', uuid).geometry;
 					const p = geo.attributes.position;
 					const n = geo.attributes.normal;
@@ -112,13 +112,13 @@ h.run(async () => {
 	h.check(smooth === true, 'terrain normals are welded-smooth on the receiver');
 
 	// ONE undo flattens everything again, on both peers
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => heightsOf(A.page, uuid), (s) => s && s.maxY < 1e-4, 'one undo flattens the terrain on A');
 	await h.eventually(() => heightsOf(B.page, uuid), (s) => s && s.maxY < 1e-4, 'undo replicated to B', 10000);
 
 	// exit releases the sculpt session
-	await A.page.evaluate(() => window.__stores.terrainSculpt.exitSculpt());
-	const active = await A.page.evaluate(() => new Promise((r) => window.__stores.terrainSculpt.sculptObject.subscribe(r)()));
+	await A.page.evaluate(() => window.__tp.test.v1.terrainSculpt.exitSculpt());
+	const active = await A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.terrainSculpt.sculptObject.subscribe(r)()));
 	h.check(active === null, 'exit clears the sculpt session');
 
 	await h.finish(browser);

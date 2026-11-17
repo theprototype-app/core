@@ -15,8 +15,8 @@ const arrowPoint = (page, axis) =>
 	page.evaluate((name) => {
 		let controls = null;
 		let cam = null;
-		window.__stores.TControls.subscribe((/** @type {any} */ v) => (controls = v))();
-		window.__stores.globalCamera.subscribe((/** @type {any} */ v) => (cam = v))();
+		window.__tp.test.v1.TControls.subscribe((/** @type {any} */ v) => (controls = v))();
+		window.__tp.test.v1.globalCamera.subscribe((/** @type {any} */ v) => (cam = v))();
 		const helper = controls?.getHelper?.() ?? controls;
 		if (!helper || !cam) return null;
 		let pick = null;
@@ -24,7 +24,7 @@ const arrowPoint = (page, axis) =>
 			if (!pick && n.isMesh && n.name === name) pick = n;
 		});
 		if (!pick) return null;
-		const v = new window.__stores.THREE.Vector3();
+		const v = new window.__tp.test.v1.THREE.Vector3();
 		pick.getWorldPosition(v);
 		v.project(cam);
 		return [((v.x + 1) / 2) * window.innerWidth, ((1 - v.y) / 2) * window.innerHeight];
@@ -32,7 +32,7 @@ const arrowPoint = (page, axis) =>
 
 const keysOf = (page, uuid) =>
 	page.evaluate((id) => {
-		const ap = window.__stores.animationPreview;
+		const ap = window.__tp.test.v1.animationPreview;
 		const clip = ap.activeClip(id);
 		return (clip?.tracks ?? []).map((/** @type {any} */ t) => ({
 			channel: t.channel,
@@ -43,11 +43,11 @@ const keysOf = (page, uuid) =>
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
-	await A.page.waitForFunction(() => !!window.__stores?.animationPreview, { timeout: 20000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.animationPreview, { timeout: 20000 });
 
 	// ---------- a movement to record into, with the object selected ----------
 	const uuid = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create Box 1 1 1');
 		await new Promise((r) => setTimeout(r, 400));
 		let g;
@@ -73,14 +73,14 @@ h.run(async () => {
 	const armed = await A.page.evaluate(
 		(id) =>
 			new Promise((r) =>
-				window.__stores.animationPreview.autoKeyFor.subscribe((/** @type {any} */ v) => r(v === id))()
+				window.__tp.test.v1.animationPreview.autoKeyFor.subscribe((/** @type {any} */ v) => r(v === id))()
 			),
 		uuid
 	);
 	h.check(armed, 'clicking REC arms auto-key for the selected object');
 
 	// ---------- park the playhead, then drag the object with the REAL gizmo ----------
-	await A.page.evaluate((id) => window.__stores.animationPreview.scrub(id, 1), uuid);
+	await A.page.evaluate((id) => window.__tp.test.v1.animationPreview.scrub(id, 1), uuid);
 	await A.page.waitForTimeout(300);
 	const before = await keysOf(A.page, uuid);
 	const point = await arrowPoint(A.page, 'Y');
@@ -123,7 +123,7 @@ h.run(async () => {
 
 	// re-posing the SAME time replaces that key instead of stacking duplicates
 	const replaced = await A.page.evaluate((id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		ap.setAutoKey(id);
 		let g;
@@ -155,7 +155,7 @@ h.run(async () => {
 	// Auto-key used to update EXISTING tracks only, so recording a rotation onto a
 	// clip that had only a position track silently did nothing.
 	const created = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		s.commandsHandler.sceneCommand('/create Box 1 1 1');
 		await new Promise((r) => setTimeout(r, 350));
@@ -214,14 +214,14 @@ h.run(async () => {
 
 	// ---------- the presets ----------
 	const presets = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		return Object.entries(ap.PRESETS).map(([kind, p]) => [kind, p.name, p.loop, p.tracks.length]);
 	});
 	h.check(presets.length >= 5, `a preset library ships (${presets.map((/** @type {any[]} */ p) => p[1]).join(', ')})`);
 
 	const door = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		s.commandsHandler.sceneCommand('/create Box 1 2 0.1');
 		await new Promise((r) => setTimeout(r, 400));
@@ -256,7 +256,7 @@ h.run(async () => {
 
 	// a preset starts from where the object STANDS, not from the world origin
 	const offset = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		s.commandsHandler.sceneCommand('/create Box 1 1 1');
 		await new Promise((r) => setTimeout(r, 400));
@@ -283,7 +283,7 @@ h.run(async () => {
 
 	// ---------- the door preset + the node = a working door ----------
 	const swing = await A.page.evaluate(async (id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphsCtl.createObjectGraph(id);
 		const nh = s.nodesHandler;
 		nh.createFlowNode(

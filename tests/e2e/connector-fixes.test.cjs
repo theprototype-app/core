@@ -15,7 +15,7 @@ const { installProvider, fakeRelay, connectorPhase } = require('./connectorFake.
 const worldOf = (peer, id) =>
 	peer.page.evaluate((id) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		const o = g?.getObjectByProperty('uuid', id);
 		if (!o) return null;
 		o.updateWorldMatrix(true, false);
@@ -26,7 +26,7 @@ const gap = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
-	await A.page.evaluate(() => window.__stores.aiAssistantHidden.set(''));
+	await A.page.evaluate(() => window.__tp.test.v1.aiAssistantHidden.set(''));
 	const relay = await fakeRelay(A.page);
 	await installProvider(A.page);
 	await A.page.locator('#connect-claude-button').click();
@@ -70,7 +70,7 @@ h.run(async () => {
 	await card.waitFor({ state: 'visible', timeout: 10000 });
 	await wait(1500);
 	h.check(!relay.frames.some((x) => x.f.id === 'jz' && x.f.type !== 'call'), 'nothing answers before the person presses Join');
-	h.check((await A.page.evaluate(() => { let w; window.__stores.waitingForApproval.subscribe((v) => (w = v))(); return w.length; })) === 0, 'and nothing was dialled');
+	h.check((await A.page.evaluate(() => { let w; window.__tp.test.v1.waitingForApproval.subscribe((v) => (w = v))(); return w.length; })) === 0, 'and nothing was dialled');
 	await A.page.locator('#confirm-dialog-join').click();
 	const midway = [];
 	for (let i = 0; i < 6; i++) {
@@ -88,9 +88,9 @@ h.run(async () => {
 	// ---- s: save_scene ----------------------------------------------------------------------------------------
 	const toSave = await mk('SaveMe', 'Box', [0, 1, 6]);
 	h.check(!!toSave, 'something to save');
-	await A.page.evaluate(() => window.__stores.cloudHooks.rolesInfo.set({ myId: 'x', myRole: 'viewer', amAdmin: false, order: [], roleOf: () => 'viewer', setRole() {}, synced: () => true }));
+	await A.page.evaluate(() => window.__tp.test.v1.cloudHooks.rolesInfo.set({ myId: 'x', myRole: 'viewer', amAdmin: false, order: [], roleOf: () => 'viewer', setRole() {}, synced: () => true }));
 	const asViewer = await call('save_scene', { name: 'connector-fixes-viewer' });
-	await A.page.evaluate(() => window.__stores.cloudHooks.rolesInfo.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.cloudHooks.rolesInfo.set(null));
 	h.check(asViewer?.type === 'error' && asViewer.error?.code === 'refused' && /View-only/i.test(asViewer.error.message ?? ''), `a viewer's save is refused with the reason (${JSON.stringify(asViewer).slice(0, 160)})`);
 	const saved = await call('save_scene', { name: 'connector-fixes-save' });
 	h.check(saved?.type === 'result' && saved.result?.saved === true && saved.result?.name === 'connector-fixes-save', `save_scene saves (${JSON.stringify(saved).slice(0, 200)})`);
@@ -127,7 +127,7 @@ h.run(async () => {
 		h.check(go?.result?.simulating === true, `${label}: sim started`);
 		await wait(4000);
 		const after = await worldOf(A, ball);
-		const liveIds = await A.page.evaluate(() => window.__stores.physics.liveJointIds?.() ?? null);
+		const liveIds = await A.page.evaluate(() => window.__tp.test.v1.physics.liveJointIds?.() ?? null);
 		await sim('stop');
 		await wait(500);
 		const dist0 = gap(before, boxAt);
@@ -160,7 +160,7 @@ h.run(async () => {
 	const resumed = await sim('resume');
 	h.check(resumed?.result?.paused === false, 'resume while paused');
 	await sim('stop');
-	await h.eventually(() => A.page.evaluate(() => new Promise((r) => window.__stores.physics.simulating.subscribe((v) => r(v))())), (x) => x === false, 'stopped', 10000);
+	await h.eventually(() => A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.physics.simulating.subscribe((v) => r(v))())), (x) => x === false, 'stopped', 10000);
 	for (const action of ['pause', 'resume']) {
 		const r = await sim(action);
 		h.check(r?.type === 'error' && /not running/.test(r.error?.message ?? ''), `${action} while stopped is an error (${JSON.stringify(r).slice(0, 180)})`);
@@ -173,7 +173,7 @@ h.run(async () => {
 	const fx = await call('create_flow_nodes', { graph: emitter, nodes: [{ type: 'particle', data: { space: 'world', mode: 'continuous', gravity: -2, speed: 2, spread: 5 } }] });
 	const nodeId = fx?.result?.created?.[0]?.id;
 	h.check(fx?.type === 'result' && !!nodeId, `particle node on a turned Circle (${JSON.stringify(fx).slice(0, 180)})`);
-	const entries = () => A.page.evaluate(() => window.__stores.particleRuntime.particleEntries());
+	const entries = () => A.page.evaluate(() => window.__tp.test.v1.particleRuntime.particleEntries());
 	await h.eventually(entries, (e) => e.some((x) => x.uuid === emitter), 'the emitter is live', 15000);
 	const e0 = (await entries()).find((e) => e.uuid === emitter) ?? null;
 	h.check(e0?.space === 'world' && e0?.aimWorld === 1, `world space through the tool aims with world axes (${JSON.stringify(e0).slice(0, 200)})`);
@@ -218,13 +218,13 @@ h.run(async () => {
 	h.check(sc?.type === 'result' && !!sc.result?.created?.[0]?.id, `script node made (${JSON.stringify(sc).slice(0, 240)})`);
 	const look = () => A.page.evaluate((id) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		const o = g.getObjectByProperty('uuid', id);
 		return { ry: o.rotation.y, color: o.material?.color?.getHexString?.(), rough: o.material?.roughness };
 	}, scripted);
 	for (let i = 0; i < 30 && Math.abs((await look()).ry - 1.25) > 0.01; i++) await wait(1000);
 	const seen = await look();
-	console.log('MEASURE ' + JSON.stringify({ script: seen, errors: await A.page.evaluate(() => new Promise((r) => window.__stores.scriptErrors.subscribe((v) => r(v))())) }));
+	console.log('MEASURE ' + JSON.stringify({ script: seen, errors: await A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.scriptErrors.subscribe((v) => r(v))())) }));
 	h.check(Math.abs(seen.ry - 1.25) < 0.01, `a script sets object.rotation (${seen.ry})`);
 	h.check(seen.color === 'ff0000' && Math.abs(seen.rough - 0.11) < 0.01, `a script sets object.material (${seen.color}, ${seen.rough})`);
 
@@ -239,7 +239,7 @@ h.run(async () => {
 	// ---- 9: a script's pose restarts from the base every frame -------------------------------------------------
 	const poseOf = (id) => A.page.evaluate((uuid) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		const o = g.getObjectByProperty('uuid', uuid);
 		return { y: o.position.y, ry: o.rotation.y };
 	}, id);
@@ -272,7 +272,7 @@ h.run(async () => {
 	h.check(turned.now.ry !== turned.first.ry, `the documented form keeps turning (${turned.first.ry} -> ${turned.now.ry})`);
 	const docs = await call('describe_node_types', { types: ['script'] }, 'read');
 	h.check(/base\.rot\[1\] \+ elapsed \* speed/.test(JSON.stringify(docs?.result ?? '')), 'describe_node_types gives the form');
-	const scriptErrs = await A.page.evaluate(() => new Promise((r) => window.__stores.scriptErrors.subscribe((v) => r(v))()));
+	const scriptErrs = await A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.scriptErrors.subscribe((v) => r(v))()));
 	h.check(!scriptErrs[turning?.result?.created?.[0]?.id], `the documented form runs without an error (${JSON.stringify(scriptErrs).slice(0, 160)})`);
 
 	// ---- 10: a Spin stays inside a turn; list_scene and update_objects work on the authored pose ----------------
@@ -312,14 +312,14 @@ h.run(async () => {
 
 	h.check(h.pageErrors(A).length === 0, `no page errors (${h.pageErrors(A).slice(0, 3)})`);
 	// ---- 17: a framed shot is 4:3, from any angle, and says which camera it used -------------------------------------
-	const eyeBefore = await A.page.evaluate(() => { let c; window.__stores.globalCamera.subscribe((x) => (c = x))(); return c.position.toArray().concat(c.quaternion.toArray()); });
+	const eyeBefore = await A.page.evaluate(() => { let c; window.__tp.test.v1.globalCamera.subscribe((x) => (c = x))(); return c.position.toArray().concat(c.quaternion.toArray()); });
 	const shotOf = async (args) => (await call('screenshot', { size: 512, ...args }, 'read'))?.result;
 	const shotA = await mk('ShotA', 'Box', [40, 1, 0]);
 	const shotB = await mk('ShotB', 'Box', [46, 1, 0]);
 	const isoShot = await shotOf({ view: 'iso' });
 	h.check(isoShot?.width === 512 && isoShot?.height === 384, `iso is 4:3 whatever the canvas (${isoShot?.width}x${isoShot?.height})`);
 	h.check(isoShot?.camera?.subject?.kind === 'scene' && isoShot?.camera?.position?.length === 3 && isoShot?.camera?.fov > 0, `and says its camera (${JSON.stringify(isoShot?.camera)?.slice(0, 160)})`);
-	const canvasAspect = await A.page.evaluate(() => { let r; window.__stores.globalRenderer.subscribe((x) => (r = x))(); return r.domElement.width / r.domElement.height; });
+	const canvasAspect = await A.page.evaluate(() => { let r; window.__tp.test.v1.globalRenderer.subscribe((x) => (r = x))(); return r.domElement.width / r.domElement.height; });
 	const nowShot = await shotOf({ view: 'current' });
 	h.check(Math.abs(nowShot?.width / nowShot?.height - canvasAspect) < 0.02, `current keeps the canvas shape (${nowShot?.width}x${nowShot?.height}, canvas ${canvasAspect.toFixed(2)})`);
 	const square = await shotOf({ view: 'top', aspect: '1:1' });
@@ -335,7 +335,7 @@ h.run(async () => {
 	h.check(free?.camera?.position?.join() === '40,5,12' && free?.camera?.target?.join() === '40,1,0', `a free camera is used as given (${JSON.stringify(free?.camera)?.slice(0, 100)})`);
 	const noSuch = await call('screenshot', { uuids: ['not-there'] }, 'read');
 	h.check(/not in the scene: not-there/.test(noSuch?.error?.message ?? ''), `a missing uuid is named (${noSuch?.error?.message})`);
-	const eyeAfter = await A.page.evaluate(() => { let c; window.__stores.globalCamera.subscribe((x) => (c = x))(); return c.position.toArray().concat(c.quaternion.toArray()); });
+	const eyeAfter = await A.page.evaluate(() => { let c; window.__tp.test.v1.globalCamera.subscribe((x) => (c = x))(); return c.position.toArray().concat(c.quaternion.toArray()); });
 	h.check(JSON.stringify(eyeBefore) === JSON.stringify(eyeAfter), "nobody's view moved");
 
 	// ---- 15+16: a script's elapsed, next to time ---------------------------------------------------------------------
@@ -344,13 +344,13 @@ h.run(async () => {
 	h.check(clockNode?.type === 'result' && !JSON.stringify(clockNode.result).includes('error'), `a script reading elapsed and time is accepted (${JSON.stringify(clockNode?.result)?.slice(0, 120)})`);
 	const clocks = () => poseOf(clockBox).then((p) => ({ elapsed: p.y, time: p.ry }));
 	await h.eventually(clocks, (c) => c.time > 0 && c.elapsed > 0, 'in the editor both clocks run', 30000);
-	await A.page.evaluate(() => window.__stores.isLocked.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	const atPlay = await clocks();
 	await h.eventually(clocks, (c) => c.elapsed >= 0 && c.elapsed < 20 && c.elapsed !== atPlay.elapsed, 'after Play, elapsed starts near 0', 15000);
 	const inPlay = await clocks();
 	h.check(inPlay.elapsed < 20, `elapsed is small (${inPlay.elapsed}), time is not asked to be (${inPlay.time})`);
 	await h.eventually(clocks, (c) => c.elapsed > inPlay.elapsed, 'and it counts up', 15000);
-	await A.page.evaluate(() => window.__stores.isLocked.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(null));
 	const oldStyle = await mk('OldStyleBox', 'Box', [4, 6, 30]);
 	await call('create_flow_nodes', { graph: oldStyle, nodes: [{ type: 'script', data: { code: 'const elapsed = 2; object.position.y = elapsed;' } }] });
 	await h.eventually(() => poseOf(oldStyle), (p) => p.y === 2, "an older script's own const elapsed still works", 15000);
@@ -395,7 +395,7 @@ h.run(async () => {
 	// ---- 13: a dial nothing answers -----------------------------------------------------------------------------
 	await A.page.evaluate(() => {
 		let link;
-		window.__stores.peers.subscribe((v) => (link = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (link = v))();
 		const socket = link.peer.socket;
 		const send = socket.send;
 		window.__restoreOffers = () => (socket.send = send);
@@ -422,7 +422,7 @@ h.run(async () => {
 	const lean = (await call('status', {}, 'read'))?.result;
 	h.check(!(lean?.missingTools ?? []).some((m) => m.name === 'animate_parts'), 'with its code loading, animate_parts is not reported');
 	const C = await h.setupPageQuiet(browser, 'C', [A]);
-	await C.page.evaluate(() => window.__stores.aiAssistantHidden.set(''));
+	await C.page.evaluate(() => window.__tp.test.v1.aiAssistantHidden.set(''));
 	const relayC = await fakeRelay(C.page);
 	await installProvider(C.page);
 	await C.page.locator('#connect-claude-button').click();

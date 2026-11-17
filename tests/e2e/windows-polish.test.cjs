@@ -26,7 +26,7 @@ const read = (page, path) =>
 	S(page, (path) => {
 		const [mod, name] = path.split('.');
 		let v;
-		(name ? window.__stores[mod][name] : window.__stores[mod]).subscribe((x) => (v = x))();
+		(name ? window.__tp.test.v1[mod][name] : window.__tp.test.v1[mod]).subscribe((x) => (v = x))();
 		return v;
 	}, path);
 const FLOATING = { explorerDocked: 'false', statsDocked: 'false', chatDocked: 'false', assetBrowserDocked: 'false', 'sidebar:inspectorSide': 'right' };
@@ -46,10 +46,10 @@ const freeArea = (page) =>
 /** dark + light shot of the page as it is now */
 async function shots(page, name) {
 	await page.screenshot({ path: `${OUT}/windows-polish-${name}-dark.png` });
-	await S(page, () => window.__stores.themes.theme.set('light'));
+	await S(page, () => window.__tp.test.v1.themes.theme.set('light'));
 	await page.waitForTimeout(500);
 	await page.screenshot({ path: `${OUT}/windows-polish-${name}-light.png` });
-	await S(page, () => window.__stores.themes.theme.set('dark'));
+	await S(page, () => window.__tp.test.v1.themes.theme.set('dark'));
 	await page.waitForTimeout(300);
 }
 const headerPoint = (page, sel) =>
@@ -67,7 +67,7 @@ h.run(async () => {
 		const P = await h.setupPage(browser, 'desk', { context: { viewport: { width: 1920, height: 1080 } }, storage: FLOATING });
 		const page = P.page;
 		await S(page, () => {
-			const st = window.__stores;
+			const st = window.__tp?.test.v1;
 			st.inspectorKind.set('scene');
 			st.inspectorClose.set(false);
 			st.sidebars.toggleSidebar('right', true);
@@ -79,11 +79,11 @@ h.run(async () => {
 
 		// ---- PL4: every window opens in the free area, on-screen
 		const WINS = [
-			['Statistics', '#stats-window', () => window.__stores.dockHost.HOSTED.stats.open()],
-			['Chat', '#chat-window', () => window.__stores.chatHidden.set('')],
-			['Explorer', '#explorer-window', () => window.__stores.explorerClose.set(false)],
-			['Free assets', '#asset-browser-window', () => window.__stores.dockHost.HOSTED.assets.open()],
-			['Objects', '#object-list', () => window.__stores.objectListClose.set(false)]
+			['Statistics', '#stats-window', () => window.__tp.test.v1.dockHost.HOSTED.stats.open()],
+			['Chat', '#chat-window', () => window.__tp.test.v1.chatHidden.set('')],
+			['Explorer', '#explorer-window', () => window.__tp.test.v1.explorerClose.set(false)],
+			['Free assets', '#asset-browser-window', () => window.__tp.test.v1.dockHost.HOSTED.assets.open()],
+			['Objects', '#object-list', () => window.__tp.test.v1.objectListClose.set(false)]
 		];
 		for (const [name, sel, open] of WINS) {
 			await page.evaluate(open);
@@ -107,17 +107,17 @@ h.run(async () => {
 			await page.keyboard.up('Control');
 			await page.waitForTimeout(700);
 			const placed = await rectOf(page, '#chat-window');
-			await S(page, () => window.__stores.chatHidden.set('hidden'));
+			await S(page, () => window.__tp.test.v1.chatHidden.set('hidden'));
 			await page.waitForTimeout(500);
-			await S(page, () => window.__stores.chatHidden.set(''));
+			await S(page, () => window.__tp.test.v1.chatHidden.set(''));
 			await page.waitForTimeout(1100);
 			const again = await rectOf(page, '#chat-window');
 			const docked = await S(page, () => document.getElementById('chat-window')?.dataset.docked ?? null);
 			h.check(!docked && !!placed && placed.l < free.l && !!again && Math.abs(again.l - placed.l) <= 2, `PL4 a window Ctrl-dropped over the left column reopens there (${JSON.stringify({ placed, again, docked })})`);
 			await S(page, () => localStorage.removeItem('win:chat'));
-			await S(page, () => window.__stores.chatHidden.set('hidden'));
+			await S(page, () => window.__tp.test.v1.chatHidden.set('hidden'));
 			await page.waitForTimeout(400);
-			await S(page, () => window.__stores.chatHidden.set(''));
+			await S(page, () => window.__tp.test.v1.chatHidden.set(''));
 			await page.waitForTimeout(900);
 		}
 
@@ -135,21 +135,21 @@ h.run(async () => {
 		});
 		h.check(!!chips && chips.sw <= chips.cw + 1 && chips.cut.length === 0 && chips.n >= 5, `PL20 every Objects filter chip shows whole: the row wraps (${JSON.stringify(chips)})`);
 		await page.locator('#object-list').screenshot({ path: `${OUT}/windows-polish-objects-chips-dark.png` });
-		await S(page, () => window.__stores.themes.theme.set('light'));
+		await S(page, () => window.__tp.test.v1.themes.theme.set('light'));
 		await page.waitForTimeout(400);
 		await page.locator('#object-list').screenshot({ path: `${OUT}/windows-polish-objects-chips-light.png` });
-		await S(page, () => window.__stores.themes.theme.set('dark'));
+		await S(page, () => window.__tp.test.v1.themes.theme.set('dark'));
 		await S(page, () => {
-			window.__stores.objectListClose.set(true);
-			window.__stores.dockHost.HOSTED.assets.close();
-			window.__stores.explorerClose.set(true);
-			window.__stores.dockHost.HOSTED.stats.close();
+			window.__tp.test.v1.objectListClose.set(true);
+			window.__tp.test.v1.dockHost.HOSTED.assets.close();
+			window.__tp.test.v1.explorerClose.set(true);
+			window.__tp.test.v1.dockHost.HOSTED.stats.close();
 		});
 		await page.waitForTimeout(500);
 
 		// ---- PL21: Far clip / Look for in the label column, the Far clip box in the value column
 		// 78-int: Configure Scene opens with only Environment + Scene look expanded (PL17) - deep-link Camera open first
-		await S(page, () => window.__stores.openSceneSection('Camera'));
+		await S(page, () => window.__tp.test.v1.openSceneSection('Camera'));
 		await page.waitForFunction(() => !!document.getElementById('camera-far'), null, { timeout: 8000 }).catch(() => {});
 		await page.waitForTimeout(400);
 		const cols = await S(page, () => {
@@ -172,15 +172,15 @@ h.run(async () => {
 		await S(page, () => document.getElementById('camera-far')?.scrollIntoView({ block: 'center' }));
 		await page.waitForTimeout(400);
 		await page.locator('#inspector').screenshot({ path: `${OUT}/windows-polish-far-clip-dark.png` });
-		await S(page, () => window.__stores.themes.theme.set('light'));
+		await S(page, () => window.__tp.test.v1.themes.theme.set('light'));
 		await page.waitForTimeout(400);
 		await page.locator('#inspector').screenshot({ path: `${OUT}/windows-polish-far-clip-light.png` });
-		await S(page, () => window.__stores.themes.theme.set('dark'));
+		await S(page, () => window.__tp.test.v1.themes.theme.set('dark'));
 
 		// ---- PL38: Chat and AI have the corner grip, and it resizes
 		await S(page, () => {
-			window.__stores.chatHidden.set('');
-			for (const s of ['left', 'right']) window.__stores.sidebars.toggleSidebar(s, false);
+			window.__tp.test.v1.chatHidden.set('');
+			for (const s of ['left', 'right']) window.__tp.test.v1.sidebars.toggleSidebar(s, false);
 		});
 		await page.waitForTimeout(900);
 		for (const [name, sel, key] of [['Chat', '#chat-window', 'chat']]) {
@@ -205,7 +205,7 @@ h.run(async () => {
 
 		// ---- PL39: a double click on the header cycles Half -> Full -> Small, inside the free area
 		await S(page, () => {
-			window.__stores.sidebars.toggleSidebar('right', true);
+			window.__tp.test.v1.sidebars.toggleSidebar('right', true);
 		});
 		await page.waitForTimeout(1000);
 		const free2 = await freeArea(page);
@@ -256,20 +256,20 @@ h.run(async () => {
 
 		// ---- PL3: the workspace record covers the windows a Restore missed
 		await S(page, () => {
-			const st = window.__stores;
+			const st = window.__tp?.test.v1;
 			st.aiAssistantHidden.set('');
 			st.dockHost.HOSTED.stats.open();
 			st.dockHost.HOSTED.assets.open();
 			st.hudEditorClose.set(false);
 		});
 		await page.waitForTimeout(800);
-		const snap = await S(page, () => window.__stores.workspace.snapshotWorkspace());
+		const snap = await S(page, () => window.__tp.test.v1.workspace.snapshotWorkspace());
 		const want = ['chat', 'aiAssistant', 'stats', 'assets', 'hud'];
 		h.check(!!snap && want.every((k) => snap.open[k] === true) && ['timeline', 'profiler'].every((k) => snap.open[k] === false), `PL3 the workspace record names Chat, AI, Statistics, Free assets, HUD, Timeline, Profiler (${JSON.stringify(snap?.open)})`);
-		await S(page, () => window.__stores.workspace.closeWorkspace());
+		await S(page, () => window.__tp.test.v1.workspace.closeWorkspace());
 		await page.waitForTimeout(500);
 		const closed = { chat: await read(page, 'chatHidden'), ai: await read(page, 'aiAssistantHidden') };
-		await S(page, (snap) => window.__stores.workspace.applyWorkspace(snap), snap);
+		await S(page, (snap) => window.__tp.test.v1.workspace.applyWorkspace(snap), snap);
 		await page.waitForTimeout(1000);
 		await page.waitForFunction(() => (document.querySelector('#asset-browser-window')?.getBoundingClientRect().width ?? 0) > 0, null, { timeout: 15000 }).catch(() => {});
 		const back = await S(page, () => ['#chat-window', '#stats-window', '#asset-browser-window'].map((sel) => {
@@ -282,13 +282,13 @@ h.run(async () => {
 		await h.freshReload(P);
 		await h.answerRestore(P);
 		await page.waitForTimeout(1500);
-		await S(page, () => window.__stores.chatHidden.set(''));
+		await S(page, () => window.__tp.test.v1.chatHidden.set(''));
 		await page.waitForTimeout(1200);
 		const ai = await rectOf(page, '#chat-window');
 		h.check(!!sized && !!ai && Math.abs(ai.w - sized.w) <= 1 && Math.abs(ai.h - sized.h) <= 1, `PL3/PL38 the Chat window's size survives a reload (${JSON.stringify({ sized, ai })})`);
 
 		// ---- PL2: the viewport menu's rows carry icons (a row's own, else its verb's); no glyph-prefixed labels
-		await S(page, () => window.__stores.chatHidden.set('hidden'));
+		await S(page, () => window.__tp.test.v1.chatHidden.set('hidden'));
 		await page.waitForTimeout(400);
 		const bareRows = async () =>
 			S(page, () => {
@@ -315,7 +315,7 @@ h.run(async () => {
 		const P = await h.setupPage(browser, 'honor', { context: { viewport: { width: 718, height: 587 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 }, storage: FLOATING });
 		const page = P.page;
 		// ---- PL6: a TALL Chat window (the assistant's long welcome the device lab saw; the dev build's is short) ends above the toolbar
-		await S(page, () => window.__stores.aiAssistantHidden.set('')); // Chat on its Assistant tab
+		await S(page, () => window.__tp.test.v1.aiAssistantHidden.set('')); // Chat on its Assistant tab
 		await page.waitForTimeout(900);
 		await S(page, () => {
 			const win = document.getElementById('chat-window');
@@ -323,10 +323,10 @@ h.run(async () => {
 			pad.id = 'e2e-tall-welcome';
 			pad.style.cssText = 'height: 900px; flex-shrink: 0';
 			win.appendChild(pad);
-			window.__stores.chatHidden.set('hidden');
+			window.__tp.test.v1.chatHidden.set('hidden');
 		});
 		await page.waitForTimeout(600);
-		await S(page, () => window.__stores.chatHidden.set(''));
+		await S(page, () => window.__tp.test.v1.chatHidden.set(''));
 		await page.waitForTimeout(1200);
 		const ai = await rectOf(page, '#chat-window');
 		const pill = await rectOf(page, '#controls-pill');
@@ -339,11 +339,11 @@ h.run(async () => {
 		await shots(page, 'honor-ai-tall');
 		await S(page, () => {
 			document.getElementById('e2e-tall-welcome')?.remove();
-			window.__stores.chatHidden.set('hidden');
+			window.__tp.test.v1.chatHidden.set('hidden');
 		});
 
 		// ---- PL7: the main menu ends above the toolbar and the + stack, inside the screen, and scrolls with a fade
-		await S(page, () => window.__stores.closeMenu.set(false));
+		await S(page, () => window.__tp.test.v1.closeMenu.set(false));
 		await page.waitForTimeout(1000);
 		const menu = await S(page, () => {
 			const el = document.getElementById('sidebar70');
@@ -355,11 +355,11 @@ h.run(async () => {
 		h.check(menu.b <= menu.vh && (menu.stackT === null || menu.b <= menu.stackT) && (menu.pillT === null || menu.b <= menu.pillT), `PL7 HONOR: the main menu ends inside the screen, above the toolbar and the + corner stack (${JSON.stringify(menu)})`);
 		h.check(!menu.scrolls || menu.fade === 'end', `PL7 ...and what does not fit scrolls, its bottom edge fading (${menu.fade})`);
 		await shots(page, 'honor-menu');
-		await S(page, () => window.__stores.closeMenu.set(true));
+		await S(page, () => window.__tp.test.v1.closeMenu.set(true));
 		await page.waitForTimeout(500);
 
 		// ---- PL39 on a touch screen: the 28 px grip and the double TAP
-		await S(page, () => window.__stores.chatHidden.set(''));
+		await S(page, () => window.__tp.test.v1.chatHidden.set(''));
 		await page.waitForTimeout(900);
 		const grip = await S(page, () => {
 			const win = document.getElementById('chat-window');
@@ -387,21 +387,21 @@ h.run(async () => {
 		const page = P.page;
 		// ---- PL23 bottom dock: Free assets and Chat (the AI assistant's window too) docked, Chat in front
 		await S(page, () => {
-			const d = window.__stores.dockHost;
+			const d = window.__tp.test.v1.dockHost;
 			for (const k of ['assets', 'chat']) d.setHostedDocked(k, true);
-			window.__stores.bottomDock.activateDock('chat');
+			window.__tp.test.v1.bottomDock.activateDock('chat');
 		});
 		await page.waitForTimeout(1500);
 		const wide = await S(page, () => {
 			let v;
-			window.__stores.dockHost.hostedTabsOpen.subscribe((x) => (v = x))();
+			window.__tp.test.v1.dockHost.hostedTabsOpen.subscribe((x) => (v = x))();
 			return v;
 		});
 		h.check(wide.chat && wide.assets && !('aiAssistant' in wide && wide.aiAssistant), `PL23 premise: unfolded, Chat and Free assets are bottom-dock tabs (${JSON.stringify(wide)})`);
 		await page.setViewportSize(FOLDED);
 		await page.waitForTimeout(2500);
 		const folded = await S(page, () => {
-			const st = window.__stores;
+			const st = window.__tp?.test.v1;
 			let phoneTabs, key;
 			st.phoneDock.phoneTabsOpen.subscribe((x) => (phoneTabs = x))();
 			st.bottomDock.visibleDockKey.subscribe((x) => (key = x))();
@@ -419,7 +419,7 @@ h.run(async () => {
 		h.check(['chat', 'assets'].every((k) => folded.strip.includes(k)) && !folded.strip.includes('aiAssistant'), `PL23 folded: the strip shows their two tabs (${JSON.stringify(folded.strip)})`);
 		await shots(page, 'folded-chat-tab');
 		// ---- PL8: Free assets in front, its kind tabs wrap (none cut)
-		await S(page, () => window.__stores.bottomDock.activateDock('assets'));
+		await S(page, () => window.__tp.test.v1.bottomDock.activateDock('assets'));
 		await page.waitForTimeout(1200);
 		const tabs = await S(page, () => {
 			const win = document.getElementById('asset-browser-window');
@@ -435,19 +435,19 @@ h.run(async () => {
 		h.check(!!tabs && tabs.pd === 'shown' && tabs.sw <= tabs.cw + 1 && tabs.cut.length === 0 && tabs.n >= 5, `PL8 folded: Free assets (a dock tab) shows every kind tab whole: they wrap (${JSON.stringify(tabs)})`);
 		await shots(page, 'folded-free-assets');
 		// the bar's Chat item: shows the chat tab, a second tap minimizes the dock
-		await S(page, () => window.__stores.phoneDock.phoneBarTap('chat'));
+		await S(page, () => window.__tp.test.v1.phoneDock.phoneBarTap('chat'));
 		await page.waitForTimeout(600);
 		const k1 = await read(page, 'bottomDock.visibleDockKey');
-		await S(page, () => window.__stores.phoneDock.phoneBarTap('chat'));
+		await S(page, () => window.__tp.test.v1.phoneDock.phoneBarTap('chat'));
 		await page.waitForTimeout(600);
 		const min = await read(page, 'bottomDock.dockMinimized');
 		h.check(k1 === 'chat' && min === true && (await read(page, 'chatHidden')) === '', `PL23 folded: the bar's Chat brings its tab forward, a second tap minimizes the dock (chat stays open) (${JSON.stringify({ k1, min })})`);
-		await S(page, () => window.__stores.bottomDock.dockMinimized.set(false));
+		await S(page, () => window.__tp.test.v1.bottomDock.dockMinimized.set(false));
 		// ---- unfold: back in the bottom dock
 		await page.setViewportSize(UNFOLDED);
 		await page.waitForTimeout(2500);
 		const back = await S(page, () => {
-			const st = window.__stores;
+			const st = window.__tp?.test.v1;
 			let hosted, docked;
 			st.dockHost.hostedTabsOpen.subscribe((x) => (hosted = x))();
 			st.dockHost.hostedDocked.subscribe((x) => (docked = x))();
@@ -457,12 +457,12 @@ h.run(async () => {
 		await shots(page, 'unfolded-again-dock');
 		// ---- PL23 side column: Chat in the right column, fold, unfold
 		await S(page, () => {
-			const d = window.__stores.dockHost;
+			const d = window.__tp.test.v1.dockHost;
 			for (const k of ['assets', 'chat']) d.setHostedDocked(k, false);
-			window.__stores.dockHost.HOSTED.assets.close();
+			window.__tp.test.v1.dockHost.HOSTED.assets.close();
 		});
 		await page.waitForTimeout(800);
-		await S(page, () => window.__stores.docking.dockToSide('chat', 'right'));
+		await S(page, () => window.__tp.test.v1.docking.dockToSide('chat', 'right'));
 		await page.waitForTimeout(1200);
 		const side0 = await S(page, () => document.getElementById('chat-window')?.dataset.docked ?? null);
 		h.check(side0 === 'right', `PL23 premise: Chat is a tab of the right column (${side0})`);

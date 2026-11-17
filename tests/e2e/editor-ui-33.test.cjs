@@ -22,7 +22,7 @@ const barTitles = (page) =>
 	);
 const read = (page, path) =>
 	page.evaluate((path) => {
-		let o = window.__stores;
+		let o = window.__tp?.test.v1;
 		for (const k of path.split('.')) o = o[k];
 		let v;
 		o.subscribe((x) => (v = x))();
@@ -217,8 +217,8 @@ h.run(async () => {
 	// ================================================================ Q1 FPS + draw calls
 	h.check(!(await page.locator('#game-fps-counter').isVisible()), 'Q1.1 off by default');
 	await page.evaluate(() => {
-		window.__stores.settingsSection.set('interface');
-		window.__stores.settingsOpen.set(true);
+		window.__tp.test.v1.settingsSection.set('interface');
+		window.__tp.test.v1.settingsOpen.set(true);
 	});
 	const toggle = page.locator('#show-perf-stats');
 	await toggle.waitFor({ state: 'attached', timeout: 5000 });
@@ -227,7 +227,7 @@ h.run(async () => {
 	await toggle.evaluate((el) => el.click());
 	await page.waitForTimeout(400);
 	h.check((await read(page, 'gameKit.fpsMeter.perfStatsShown')) === true, 'Q1.2 the Settings toggle turns it on');
-	await page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await page.waitForTimeout(1300);
 	h.check((await read(page, 'editorMode')) === 'edit' && (await read(page, 'isLocked')) !== true, 'premise: in the EDITOR, not playing');
 	h.check(await page.locator('#game-fps-counter').isVisible(), 'Q1.3 the counter shows in the editor (app-wide, not only in a game)');
@@ -239,7 +239,7 @@ h.run(async () => {
 	// (calls ~14 here), and a gap between a synthetic set and the read loses that race
 	const tierAt = (calls) =>
 		page.evaluate(async (calls) => {
-			window.__stores.gameKit.fpsMeter.fpsReading.set({ fps: 72, ms: 13.9, calls, tris: 120000, source: 'desktop' });
+			window.__tp.test.v1.gameKit.fpsMeter.fpsReading.set({ fps: 72, ms: 13.9, calls, tris: 120000, source: 'desktop' });
 			// MICROTASKS only: svelte flushes the DOM in a microtask queued by the set, while the
 			// live meter republishes from a rAF / timer callback, which cannot run in between
 			for (let i = 0; i < 4; i++) await Promise.resolve();
@@ -261,7 +261,7 @@ h.run(async () => {
 
 	// ---- the headset: the strip, every mode, through the same reading
 	const strip = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		const k = s.gameKit;
 		k.fpsMeter.fpsReading.set({ fps: 72, ms: 13.9, calls: 163, tris: 248000, source: 'xr' });
@@ -294,7 +294,7 @@ h.run(async () => {
 
 	// ---- the XR frame source feeds the draw-call sampler (the window rAF stops in a headset)
 	const xr = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let m0;
 		s.sceneBudget.sceneMetrics.subscribe((v) => (m0 = v))();
 		const before = m0.at;
@@ -306,7 +306,7 @@ h.run(async () => {
 		return { sampled: m1.at > before, calls: m1.calls };
 	});
 	h.check(xr.sampled, 'Q1.17 XR frames alone drive a fresh draw-call sample (calls ' + xr.calls + ')');
-	await page.evaluate(() => window.__stores.gameKit.fpsMeter.perfStatsShown.set(false));
+	await page.evaluate(() => window.__tp.test.v1.gameKit.fpsMeter.perfStatsShown.set(false));
 
 	await h.finish(browser);
 });

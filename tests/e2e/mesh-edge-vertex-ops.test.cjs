@@ -22,7 +22,7 @@ const h = require('./helpers.cjs');
 /** the mesh as a canonical string — the comparison for "undo restored the soup" */
 const soup = (page, uuid) =>
 	page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		const object = g.getObjectByProperty('uuid', uuid);
@@ -35,7 +35,7 @@ const soup = (page, uuid) =>
 
 const triCount = (page, uuid) =>
 	page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		const object = g.getObjectByProperty('uuid', uuid);
@@ -45,7 +45,7 @@ const triCount = (page, uuid) =>
 /** the stored partition with a per-face size histogram, or null */
 const stored = (page, uuid) =>
 	page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		const object = g.getObjectByProperty('uuid', uuid);
@@ -62,7 +62,7 @@ const stored = (page, uuid) =>
 const wireOf = (page, uuid) =>
 	page.evaluate((uuid) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		let n = 0;
 		g.getObjectByProperty('uuid', uuid)?.traverse((o) => {
 			if (o.name === 'edit-overlay') n = o.geometry.attributes.position.count / 2;
@@ -72,7 +72,7 @@ const wireOf = (page, uuid) =>
 
 const freshBox = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.faceEdit.exitFaceEdit?.();
 		s.meshEdit.exitEditMode?.();
 		s.commandsHandler.sceneCommand('/clear all');
@@ -89,11 +89,11 @@ h.run(async () => {
 	// ====================================================== 1. DELETE EDGES
 	let uuid = await freshBox(A.page);
 	const picked = await A.page.evaluate((uuid) => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		fe.enterFaceEdit(uuid);
 		fe.faceEditSubmode.set('edges');
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const geo = g.getObjectByProperty('uuid', uuid).geometry;
 		const tris = fe.readTriangles(geo);
 		// pickEdgeAt SKIPS the quad diagonal, so probing toward triangle 0's first
@@ -122,11 +122,11 @@ h.run(async () => {
 
 	const beforeSoup = await soup(A.page, uuid);
 	const beforeTris = await triCount(A.page, uuid);
-	const deleted = await A.page.evaluate(() => window.__stores.faceEdit.deleteSelectedEdges());
+	const deleted = await A.page.evaluate(() => window.__tp.test.v1.faceEdit.deleteSelectedEdges());
 	const afterTris = await triCount(A.page, uuid);
 	const selAfter = await A.page.evaluate(
 		() =>
-			new Promise((r) => window.__stores.faceEdit.edgeEditSelected.subscribe((v) => r(v.length))())
+			new Promise((r) => window.__tp.test.v1.faceEdit.edgeEditSelected.subscribe((v) => r(v.length))())
 	);
 	h.check(deleted === true, 'Delete edges commits');
 	h.check(
@@ -139,13 +139,13 @@ h.run(async () => {
 		'...leaving a partition that still covers the mesh'
 	);
 
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	h.check((await triCount(A.page, uuid)) === beforeTris, 'ONE undo brings the faces back');
 	h.check((await soup(A.page, uuid)) === beforeSoup, '...restoring the exact triangle soup');
 
 	// refusals: nothing picked, and a pick that would take the whole mesh
 	const refusals = await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		fe.clearEdgeSelection();
 		const empty = fe.deleteSelectedEdges();
 		fe.selectAllEdges();
@@ -163,7 +163,7 @@ h.run(async () => {
 	// =================================================== 2. DELETE VERTICES
 	uuid = await freshBox(A.page);
 	const corner = await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.meshEdit.enterEditMode(uuid);
 		s.meshEdit.selectHandle(0);
 		let g;
@@ -189,10 +189,10 @@ h.run(async () => {
 	);
 
 	const vBeforeSoup = await soup(A.page, uuid);
-	const vDeleted = await A.page.evaluate(() => window.__stores.meshEdit.deleteSelectedVerts());
+	const vDeleted = await A.page.evaluate(() => window.__tp.test.v1.meshEdit.deleteSelectedVerts());
 	const vAfter = await triCount(A.page, uuid);
 	const vSel = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.meshEdit.vertexSelectionSize.subscribe((v) => r(v))())
+		() => new Promise((r) => window.__tp.test.v1.meshEdit.vertexSelectionSize.subscribe((v) => r(v))())
 	);
 	h.check(vDeleted === true, 'Delete vertices commits');
 	h.check(
@@ -201,12 +201,12 @@ h.run(async () => {
 	);
 	h.check(vSel === 0, '...and the stale vertex selection is dropped');
 
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	h.check((await triCount(A.page, uuid)) === corner.tris, 'ONE undo brings them back');
 	h.check((await soup(A.page, uuid)) === vBeforeSoup, '...restoring the exact triangle soup');
 
 	const vRefusals = await A.page.evaluate(() => {
-		const me = window.__stores.meshEdit;
+		const me = window.__tp.test.v1.meshEdit;
 		me.clearVertexSelection();
 		const empty = me.deleteSelectedVerts();
 		me.selectAllVerts();
@@ -223,12 +223,12 @@ h.run(async () => {
 		(await triCount(A.page, uuid)) === corner.tris,
 		'...and the mesh is untouched by either refusal'
 	);
-	await A.page.evaluate(() => window.__stores.meshEdit.exitEditMode());
+	await A.page.evaluate(() => window.__tp.test.v1.meshEdit.exitEditMode());
 
 	// ====================================================== 3. TRIANGULATE
 	uuid = await freshBox(A.page);
 	await A.page.evaluate((uuid) => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		fe.meshEditTriWire.set(false); // the QUAD view — the default
 		fe.enterFaceEdit(uuid);
 	}, uuid);
@@ -236,7 +236,7 @@ h.run(async () => {
 	h.check(quadWire === 12, `premise: the quad wire draws the box's 12 real edges (${quadWire})`);
 
 	const triSoup = await soup(A.page, uuid);
-	const triangulated = await A.page.evaluate(() => window.__stores.faceEdit.triangulateMesh());
+	const triangulated = await A.page.evaluate(() => window.__tp.test.v1.faceEdit.triangulateMesh());
 	const triStored = await stored(A.page, uuid);
 	const triWire = await wireOf(A.page, uuid);
 	h.check(triangulated === true, 'Triangulate commits');
@@ -254,14 +254,14 @@ h.run(async () => {
 		`the structure wire now shows all 18 edges — no face hides a diagonal (${triWire})`
 	);
 	h.check(
-		(await A.page.evaluate(() => window.__stores.faceEdit.triangulateMesh())) === false,
+		(await A.page.evaluate(() => window.__tp.test.v1.faceEdit.triangulateMesh())) === false,
 		'running it again reports "already one face per triangle" instead of re-committing'
 	);
 
 	// THE both-sides-explicit check. The positions never changed, so a carry-over
 	// would succeed and hand back the SINGLETONS: this can only pass if the entry's
 	// BEFORE side wrote the quad partition explicitly.
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	const undone = await stored(A.page, uuid);
 	const undoneWire = await wireOf(A.page, uuid);
 	h.check(
@@ -269,13 +269,13 @@ h.run(async () => {
 		`UNDO RESTORES THE QUAD PARTITION: 6 quads (got ${undone && undone.count} faces, ${undone && undone.pairs} pairs)`
 	);
 	h.check(undoneWire === 12, '...and the structure wire is back to 12 edges');
-	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 	h.check((await stored(A.page, uuid)).singles === 12, 'redo re-applies the singleton partition');
 
 	// ==================================================== 4. TRIS TO QUADS
 	// the mesh is triangulated right now — pair it back up
 	const quadSoup = await soup(A.page, uuid);
-	const quadified = await A.page.evaluate(() => window.__stores.faceEdit.trisToQuadsMesh());
+	const quadified = await A.page.evaluate(() => window.__tp.test.v1.faceEdit.trisToQuadsMesh());
 	const quadStored = await stored(A.page, uuid);
 	h.check(quadified === true, 'Tris to quads commits');
 	h.check((await soup(A.page, uuid)) === quadSoup, 'positions are IDENTICAL here too');
@@ -285,22 +285,22 @@ h.run(async () => {
 	);
 	h.check(quadStored.valid === true, '...and that partition validates too');
 	h.check(
-		(await A.page.evaluate(() => window.__stores.faceEdit.trisToQuadsMesh())) === false,
+		(await A.page.evaluate(() => window.__tp.test.v1.faceEdit.trisToQuadsMesh())) === false,
 		'running it again reports "already paired" instead of re-committing'
 	);
 
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	const backToSingles = await stored(A.page, uuid);
 	h.check(
 		!!backToSingles && backToSingles.singles === 12,
 		`undo restores the SINGLETON partition (got ${backToSingles && backToSingles.singles} singletons)`
 	);
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
 
 	// ===================================================== 5. the toolbox UI
 	uuid = await freshBox(A.page);
 	await A.page.evaluate((uuid) => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		fe.enterFaceEdit(uuid);
 		fe.faceEditSubmode.set('edges');
 	}, uuid);
@@ -339,8 +339,8 @@ h.run(async () => {
 	h.check(cleanup.siblings, '...beside the existing Recalculate normals / Merge by distance');
 
 	await A.page.evaluate((uuid) => {
-		window.__stores.faceEdit.exitFaceEdit();
-		window.__stores.meshEdit.enterEditMode(uuid);
+		window.__tp.test.v1.faceEdit.exitFaceEdit();
+		window.__tp.test.v1.meshEdit.enterEditMode(uuid);
 	}, uuid);
 	await A.page.waitForTimeout(400);
 	const vertBtn = A.page.locator('#mesh-delete-verts');
@@ -351,13 +351,13 @@ h.run(async () => {
 	const vertClass = (await vertBtn.getAttribute('class')) || '';
 	h.check(vertClass.includes('tbx-danger'), '...styled as a danger action');
 	h.check(vertClass.includes('tbx-disabled'), '...and reads disabled with nothing selected');
-	await A.page.evaluate(() => window.__stores.meshEdit.selectHandle(0));
+	await A.page.evaluate(() => window.__tp.test.v1.meshEdit.selectHandle(0));
 	await A.page.waitForTimeout(200);
 	h.check(
 		!((await vertBtn.getAttribute('class')) || '').includes('tbx-disabled'),
 		'...and enabled once a vertex is picked'
 	);
-	await A.page.evaluate(() => window.__stores.meshEdit.exitEditMode());
+	await A.page.evaluate(() => window.__tp.test.v1.meshEdit.exitEditMode());
 
 	// ================================================= 6. a peer sees the hole
 	const B = await h.setupPage(browser, 'B');
@@ -370,11 +370,11 @@ h.run(async () => {
 		20000
 	);
 	await A.page.evaluate((uuid) => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		fe.enterFaceEdit(uuid);
 		fe.faceEditSubmode.set('edges');
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const tris = fe.readTriangles(g.getObjectByProperty('uuid', uuid).geometry);
 		const t = tris[0];
 		const centroid = t[0].clone().add(t[1]).add(t[2]).multiplyScalar(1 / 3);
@@ -394,7 +394,7 @@ h.run(async () => {
 		(await soup(B.page, netUuid)) === (await soup(A.page, netUuid)),
 		'...and byte-for-byte the same mesh'
 	);
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
 
 	await h.finish(browser);
 });

@@ -14,10 +14,10 @@ h.run(async () => {
 		localStorage.setItem('timelineDocked', 'false');
 	});
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.bottomDock, { timeout: 30000 });
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.bottomDock, { timeout: 30000 });
 	await A.page.evaluate(() => {
-		window.__stores.objectListClose.set(false);
-		window.__stores.timelineClose.set(false);
+		window.__tp.test.v1.objectListClose.set(false);
+		window.__tp.test.v1.timelineClose.set(false);
 	});
 	await A.page.waitForTimeout(700);
 

@@ -1,5 +1,6 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
+import { createRenderTarget } from '../render/renderTargets.js'; // 101 F3: the one factory
 
 // 36-sim U2b: how a fluid tank DRAWS. Two tiers, picked per frame (fluidRuntime):
 //
@@ -239,9 +240,9 @@ export class FluidVisual {
 
 	buildSSF() {
 		const rtOpts = { type: THREE.HalfFloatType, format: THREE.RGBAFormat, depthBuffer: true, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter };
-		this.rtDepth = new THREE.WebGLRenderTarget(4, 4, rtOpts);
-		this.rtBlur = new THREE.WebGLRenderTarget(4, 4, { ...rtOpts, depthBuffer: false });
-		this.rtThick = new THREE.WebGLRenderTarget(4, 4, { ...rtOpts, depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
+		this.rtDepth = createRenderTarget(4, 4, rtOpts);
+		this.rtBlur = createRenderTarget(4, 4, { ...rtOpts, depthBuffer: false });
+		this.rtThick = createRenderTarget(4, 4, { ...rtOpts, depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
 		const sizeU = { value: this.radius * 2 };
 		const scaleU = { value: 800 };
 		this.depthMaterial = new THREE.ShaderMaterial({

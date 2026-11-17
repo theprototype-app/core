@@ -10,7 +10,7 @@ const h = require('./helpers.cjs');
 const manifestOf = (peer) =>
 	peer.page.evaluate(() => {
 		let m;
-		window.__stores.projectManifest.projectManifest.subscribe((v) => (m = v))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((v) => (m = v))();
 		return m;
 	});
 
@@ -18,7 +18,7 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
-	for (const p of [A, B]) await p.page.waitForFunction(() => !!window.__stores?.projectManifest, { timeout: 30000 });
+	for (const p of [A, B]) await p.page.waitForFunction(() => !!window.__tp?.test.v1?.projectManifest, { timeout: 30000 });
 	// R22 round 30 C4: B DIALS A, so A is the session writer. That matters now — a joiner
 	// publishes only what the session already knows plus what it opened here, so the peer
 	// whose raw publishes drive sections 1-4 has to be the host. B is the joiner, and its
@@ -27,7 +27,7 @@ h.run(async () => {
 
 	// ---- 1. the write path: publish, pointer, history ------------------------------
 	const w1 = await A.page.evaluate(() => {
-		const m = window.__stores.projectManifest;
+		const m = window.__tp.test.v1.projectManifest;
 		return [
 			m.publishSceneVersion('Arena', 'hash-a1'),
 			m.publishSceneVersion('Arena', 'hash-a2'),
@@ -42,13 +42,13 @@ h.run(async () => {
 		`history is append-only, pointer last (${JSON.stringify(mA.scenes.Arena.history)})`
 	);
 	h.check(
-		(await A.page.evaluate(() => window.__stores.projectManifest.latestSceneHash('Arena'))) === 'hash-a2',
+		(await A.page.evaluate(() => window.__tp.test.v1.projectManifest.latestSceneHash('Arena'))) === 'hash-a2',
 		'latestSceneHash reads the pointer'
 	);
 	// restore-previous is a RE-APPEND, never a dedupe — the pointer must move back
-	await A.page.evaluate(() => window.__stores.projectManifest.publishSceneVersion('Arena', 'hash-a1'));
+	await A.page.evaluate(() => window.__tp.test.v1.projectManifest.publishSceneVersion('Arena', 'hash-a1'));
 	h.check(
-		(await A.page.evaluate(() => window.__stores.projectManifest.latestSceneHash('Arena'))) === 'hash-a1',
+		(await A.page.evaluate(() => window.__tp.test.v1.projectManifest.latestSceneHash('Arena'))) === 'hash-a1',
 		'restoring an old version re-appends it — nothing is destroyed and the pointer moves'
 	);
 
@@ -58,22 +58,22 @@ h.run(async () => {
 		(m) => m.scenes?.Arena?.history?.length === 3 && m.scenes?.Pit?.history?.length === 1,
 		'the peer converges on the same document'
 	);
-	await B.page.evaluate(() => window.__stores.projectManifest.publishSceneVersion('Pit', 'hash-p2'));
+	await B.page.evaluate(() => window.__tp.test.v1.projectManifest.publishSceneVersion('Pit', 'hash-p2'));
 	await h.eventually(
-		() => A.page.evaluate(() => window.__stores.projectManifest.latestSceneHash('Pit')),
+		() => A.page.evaluate(() => window.__tp.test.v1.projectManifest.latestSceneHash('Pit')),
 		(v) => v === 'hash-p2',
 		"and A converges on B's write — symmetric, latest-wins"
 	);
 
 	// ---- 3. the badge read + the prune set ------------------------------------------
-	const stale = await A.page.evaluate(() => window.__stores.projectManifest.staleSceneHash('hash-a2'));
+	const stale = await A.page.evaluate(() => window.__tp.test.v1.projectManifest.staleSceneHash('hash-a2'));
 	h.check(stale === 'Arena', `a hash behind the pointer names its scene (${stale})`);
 	h.check(
-		(await A.page.evaluate(() => window.__stores.projectManifest.staleSceneHash('hash-a1'))) === null,
+		(await A.page.evaluate(() => window.__tp.test.v1.projectManifest.staleSceneHash('hash-a1'))) === null,
 		'the pointer itself is never stale'
 	);
 	const keep = await A.page.evaluate(() => {
-		const m = window.__stores.projectManifest;
+		const m = window.__tp.test.v1.projectManifest;
 		for (let i = 0; i < 14; i++) m.publishSceneVersion('Tower', 'hash-t' + i);
 		m.pinSceneVersion('Tower', 'hash-t1', true);
 		return [...m.keepableHashes('Tower')].sort();
@@ -90,16 +90,16 @@ h.run(async () => {
 	// ---- 4. persistence: a reload comes back with the project ------------------------
 	await A.page.waitForTimeout(400); // let the fire-and-forget idb write land
 	await h.freshReload(A);
-	await A.page.waitForFunction(() => !!window.__stores?.projectManifest, { timeout: 30000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.projectManifest, { timeout: 30000 });
 	await h.eventually(
-		() => A.page.evaluate(() => window.__stores.projectManifest.latestSceneHash('Arena')),
+		() => A.page.evaluate(() => window.__tp.test.v1.projectManifest.latestSceneHash('Arena')),
 		(v) => v === 'hash-a1',
 		'a reload restores the local project from idb'
 	);
 
 	// ---- 5. the viewer gate (fork 3): inert without a plugin, enforced with one ------
 	const gated = await B.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.cloudHooks.rolesInfo.set({ myRole: 'viewer', amAdmin: false, roleOf: () => 'viewer' });
 		const refused = s.projectManifest.publishSceneVersion('Arena', 'hash-viewer');
 		s.cloudHooks.rolesInfo.set(null);
@@ -115,11 +115,11 @@ h.run(async () => {
 	// mesh). A was freshReload-ed in section 4, which minted it a NEW peer id, so the id
 	// captured at setup no longer answers: re-read it.
 	A.id = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.peers.subscribe((p) => r(p?.peer?.id))())
+		() => new Promise((r) => window.__tp.test.v1.peers.subscribe((p) => r(p?.peer?.id))())
 	);
 	await h.connect(C, A);
 	await h.eventually(
-		() => C.page.evaluate(() => window.__stores?.projectManifest ? window.__stores.projectManifest.latestSceneHash('Tower') : null),
+		() => C.page.evaluate(() => window.__tp?.test.v1?.projectManifest ? window.__tp.test.v1.projectManifest.latestSceneHash('Tower') : null),
 		(v) => v === 'hash-t13',
 		'the late joiner converges via getproject with nothing else sent',
 		30000
@@ -132,56 +132,56 @@ h.run(async () => {
 	const historyOf = (peer, name) =>
 		peer.page.evaluate((n) => {
 			let m;
-			window.__stores.projectManifest.projectManifest.subscribe((v) => (m = v))();
+			window.__tp.test.v1.projectManifest.projectManifest.subscribe((v) => (m = v))();
 			return m.scenes[n]?.history ?? [];
 		}, name);
 	const childCount = (peer) =>
 		peer.page.evaluate(() => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			return g?.children.length ?? 0;
 		});
 	// C is still connected to A — A is C's host, so C is NOT the writer. Disconnect
 	// first: the auto-save is writer-only and this section needs C writing.
 	await C.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let p; s.peers.subscribe((v) => (p = v))();
 		p?.leaveSession?.();
 		s.commandsHandler.clearSceneLocal();
 	});
 	await C.page.waitForTimeout(600);
 	const writerC = await C.page.evaluate(() => {
-		let host; window.__stores.connectionState.sessionHost.subscribe((v) => (host = v))();
+		let host; window.__tp.test.v1.connectionState.sessionHost.subscribe((v) => (host = v))();
 		return host === null;
 	});
 	h.check(writerC, 'premise: C left the session and is its own writer');
 
 	// scene Alpha: one box, saved (publishes v1)
 	await C.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1100));
 	});
-	const alpha1 = await C.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Alpha'));
+	const alpha1 = await C.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('Alpha'));
 	h.check(!!alpha1?.hash, 'Alpha v1 saved and published');
-	const beta1 = await C.page.evaluate(() => window.__stores.levels.newLevel('Beta'));
+	const beta1 = await C.page.evaluate(() => window.__tp.test.v1.levels.newLevel('Beta'));
 	// newLevel makes the ASSET only — publish it so name-travel can find it
-	await C.page.evaluate(({ hash }) => window.__stores.projectManifest.publishSceneVersion('Beta', hash), { hash: beta1.hash });
+	await C.page.evaluate(({ hash }) => window.__tp.test.v1.projectManifest.publishSceneVersion('Beta', hash), { hash: beta1.hash });
 
 	// go to Beta, BUILD there (the reported case), hop to Alpha, come back BY NAME
-	await C.page.evaluate(() => window.__stores.levels.travelToScene('Beta'));
+	await C.page.evaluate(() => window.__tp.test.v1.levels.travelToScene('Beta'));
 	await h.eventually(() => childCount(C), (n) => n === 0, 'premise: Beta is empty');
 	await C.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1100));
 	});
 	const betaHistBefore = (await historyOf(C, 'Beta')).length;
-	await C.page.evaluate(() => window.__stores.levels.travelToScene('Alpha'));
+	await C.page.evaluate(() => window.__tp.test.v1.levels.travelToScene('Alpha'));
 	await h.eventually(() => childCount(C), (n) => n === 1, 'arrived on Alpha (its one box)');
 	h.check(
 		(await historyOf(C, 'Beta')).length === betaHistBefore + 1,
 		'leaving Beta AUTO-PUBLISHED the edit as a new version'
 	);
-	await C.page.evaluate(() => window.__stores.levels.travelToScene('Beta'));
+	await C.page.evaluate(() => window.__tp.test.v1.levels.travelToScene('Beta'));
 	await h.eventually(
 		() => childCount(C),
 		(n) => n === 1,
@@ -194,9 +194,9 @@ h.run(async () => {
 	// =====================================================================
 	const alphaHist = (await historyOf(C, 'Alpha')).length;
 	const betaHist = (await historyOf(C, 'Beta')).length;
-	await C.page.evaluate(() => window.__stores.levels.travelToScene('Alpha'));
+	await C.page.evaluate(() => window.__tp.test.v1.levels.travelToScene('Alpha'));
 	await h.eventually(() => childCount(C), (n) => n === 1, 'on Alpha');
-	await C.page.evaluate(() => window.__stores.levels.travelToScene('Beta'));
+	await C.page.evaluate(() => window.__tp.test.v1.levels.travelToScene('Beta'));
 	await h.eventually(() => childCount(C), (n) => n === 1, 'back on Beta');
 	h.check(
 		(await historyOf(C, 'Alpha')).length === alphaHist && (await historyOf(C, 'Beta')).length === betaHist,
@@ -206,7 +206,7 @@ h.run(async () => {
 	// =====================================================================
 	// 9. the "update available" dot: the OLD Beta version is stale
 	// =====================================================================
-	const staleBeta = await C.page.evaluate(({ hash }) => window.__stores.projectManifest.staleSceneHash(hash), { hash: beta1.hash });
+	const staleBeta = await C.page.evaluate(({ hash }) => window.__tp.test.v1.projectManifest.staleSceneHash(hash), { hash: beta1.hash });
 	h.check(staleBeta === 'Beta', `the first Beta file reads as an older version of "${staleBeta}"`);
 
 	// =====================================================================
@@ -227,7 +227,7 @@ h.run(async () => {
 	});
 	const merge = (local, remote) =>
 		A.page.evaluate(([l, r]) => {
-			const out = window.__stores.projectManifest.mergeManifests(l, r);
+			const out = window.__tp.test.v1.projectManifest.mergeManifests(l, r);
 			return {
 				lines: Object.fromEntries(
 					Object.entries(out.doc.scenes).map(([name, e]) => [name, e.history])
@@ -409,45 +409,45 @@ h.run(async () => {
 	const D = await h.setupPage(browser, 'D');
 	const E = await h.setupPage(browser, 'E');
 	for (const p of [D, E])
-		await p.page.waitForFunction(() => !!window.__stores?.projectManifest, { timeout: 30000 });
+		await p.page.waitForFunction(() => !!window.__tp?.test.v1?.projectManifest, { timeout: 30000 });
 	const histOf = (peer, name) =>
 		peer.page.evaluate((n) => {
 			let m;
-			window.__stores.projectManifest.projectManifest.subscribe((v) => (m = v))();
+			window.__tp.test.v1.projectManifest.projectManifest.subscribe((v) => (m = v))();
 			return m.scenes[n]?.history ?? [];
 		}, name);
 	const dialogOf = (peer) =>
 		peer.page.evaluate(() => {
 			let d;
-			window.__stores.confirmDialog.confirmDialog.subscribe((v) => (d = v))();
+			window.__tp.test.v1.confirmDialog.confirmDialog.subscribe((v) => (d = v))();
 			return d ? { title: d.title, message: d.message, choices: (d.choices ?? []).map((c) => c.value) } : null;
 		});
-	const clearDialog = (peer) => peer.page.evaluate(() => window.__stores.confirmDialog.resolveConfirm(false));
+	const clearDialog = (peer) => peer.page.evaluate(() => window.__tp.test.v1.confirmDialog.resolveConfirm(false));
 	// the NOTIFICATION history, not the toast stack: a toast is gone in 3s and this is
 	// the same string (showToast pushes both)
 	const notesOf = (peer) =>
 		peer.page.evaluate(() => {
 			let n;
-			window.__stores.notifications.subscribe((v) => (n = v))();
+			window.__tp.test.v1.notifications.subscribe((v) => (n = v))();
 			return n.map((e) => e.text);
 		});
 	const leave = async (peer) => {
 		await peer.page.evaluate(() => {
 			let p;
-			window.__stores.peers.subscribe((v) => (p = v))();
+			window.__tp.test.v1.peers.subscribe((v) => (p = v))();
 			p?.leaveSession?.();
 		});
 		await peer.page.waitForTimeout(1200);
 	};
 
 	await D.page.evaluate(() => {
-		const m = window.__stores.projectManifest;
+		const m = window.__tp.test.v1.projectManifest;
 		m.publishSceneVersion('Arena', 'd-a1');
 		m.publishSceneVersion('Arena', 'd-a2');
 		m.publishSceneVersion('Pit', 'd-p1');
 	});
 	await D.page.waitForTimeout(200); // E's document must be the strictly NEWER one
-	await E.page.evaluate(() => window.__stores.projectManifest.publishSceneVersion('Home', 'e-h1'));
+	await E.page.evaluate(() => window.__tp.test.v1.projectManifest.publishSceneVersion('Home', 'e-h1'));
 	const dBefore = await manifestOf(D);
 	const eBefore = await manifestOf(E);
 	h.check(
@@ -467,7 +467,7 @@ h.run(async () => {
 	// documents: with the outbound scope removed — `outboundManifest` returning its
 	// argument — D merges E's WHOLE private document, which is the reported bug.
 	const unscopedDE = await D.page.evaluate(
-		([l, r]) => Object.keys(window.__stores.projectManifest.mergeManifests(l, r).doc.scenes).sort(),
+		([l, r]) => Object.keys(window.__tp.test.v1.projectManifest.mergeManifests(l, r).doc.scenes).sort(),
 		[dBefore, eBefore]
 	);
 	h.check(
@@ -508,9 +508,9 @@ h.run(async () => {
 		JSON.stringify(await histOf(E, 'Arena')) === '["d-a1","d-a2"]',
 		'DISCONNECTING DESTROYS NOTHING: E still holds the whole shared project offline'
 	);
-	await D.page.evaluate(() => window.__stores.projectManifest.publishSceneVersion('Arena', 'd-a3'));
+	await D.page.evaluate(() => window.__tp.test.v1.projectManifest.publishSceneVersion('Arena', 'd-a3'));
 	await D.page.waitForTimeout(200);
-	await E.page.evaluate(() => window.__stores.projectManifest.publishSceneVersion('Arena', 'e-a3'));
+	await E.page.evaluate(() => window.__tp.test.v1.projectManifest.publishSceneVersion('Arena', 'e-a3'));
 	await h.connect(E, D);
 	await h.eventually(
 		() => histOf(D, 'Arena'),
@@ -569,13 +569,13 @@ h.run(async () => {
 	// 13. RECONNECT RE-MERGE: edits made apart meet again, by hash
 	// =====================================================================
 	await leave(E);
-	await D.page.evaluate(() => window.__stores.projectManifest.publishSceneVersion('Pit', 'd-p2'));
+	await D.page.evaluate(() => window.__tp.test.v1.projectManifest.publishSceneVersion('Pit', 'd-p2'));
 	// C4: a scene made offline is PRIVATE until this peer says otherwise, so the thing a
 	// user would actually have done — saving it — is spelled out here. `saveSceneAsLevel`
 	// is the real path and covers it in section 16; this section is about merge mechanics,
 	// so it takes the consent seam directly and section 18 asserts the un-consented case.
 	await E.page.evaluate(() => {
-		const m = window.__stores.projectManifest;
+		const m = window.__tp.test.v1.projectManifest;
 		m.publishSceneVersion('Depot', 'e-dep1');
 		m.noteSceneOpened('Depot');
 	});
@@ -633,11 +633,11 @@ h.run(async () => {
 	const F = await h.setupPage(browser, 'F');
 	const G = await h.setupPage(browser, 'G');
 	for (const p of [F, G])
-		await p.page.waitForFunction(() => !!window.__stores?.projectManifest, { timeout: 30000 });
+		await p.page.waitForFunction(() => !!window.__tp?.test.v1?.projectManifest, { timeout: 30000 });
 	const keysOf = async (peer) => Object.keys((await manifestOf(peer)).scenes).sort();
 
 	await F.page.evaluate(() => {
-		const m = window.__stores.projectManifest;
+		const m = window.__tp.test.v1.projectManifest;
 		m.setProjectName('Studio');
 		m.publishSceneVersion('Foundry', 'f-1');
 	});
@@ -645,7 +645,7 @@ h.run(async () => {
 	// G's PRIVATE project: two scenes it has not opened here, under a name of its own —
 	// the exact shape that used to walk into the room behind the user's back
 	await G.page.evaluate(() => {
-		const m = window.__stores.projectManifest;
+		const m = window.__tp.test.v1.projectManifest;
 		m.setProjectName('G private');
 		m.publishSceneVersion('Vault', 'g-v1');
 		m.publishSceneVersion('Cellar', 'g-c1');
@@ -657,7 +657,7 @@ h.run(async () => {
 		`premise: G's private document is the newer one (${gBefore.changedAt - fBefore.changedAt}ms) and holds two scenes F never heard of`
 	);
 	const unscopedFG = await F.page.evaluate(
-		([l, r]) => Object.keys(window.__stores.projectManifest.mergeManifests(l, r).doc.scenes).sort(),
+		([l, r]) => Object.keys(window.__tp.test.v1.projectManifest.mergeManifests(l, r).doc.scenes).sort(),
 		[fBefore, gBefore]
 	);
 	h.check(
@@ -685,7 +685,7 @@ h.run(async () => {
 	);
 	await G.page.waitForTimeout(400); // the idb write is fire-and-forget
 	const gIdb = await G.page.evaluate(async () => {
-		const rec = await window.__stores.idb.idbGet('project:manifest');
+		const rec = await window.__tp.test.v1.idb.idbGet('project:manifest');
 		return Object.keys(rec?.scenes ?? {}).sort();
 	});
 	h.check(
@@ -696,7 +696,7 @@ h.run(async () => {
 	// =====================================================================
 	// 15. THE HOST IS UNSCOPED: inside a session the host's project IS the project
 	// =====================================================================
-	await F.page.evaluate(() => window.__stores.projectManifest.publishSceneVersion('Forge', 'f-forge1'));
+	await F.page.evaluate(() => window.__tp.test.v1.projectManifest.publishSceneVersion('Forge', 'f-forge1'));
 	await h.eventually(
 		() => manifestOf(G),
 		(m) => m.scenes.Forge?.history?.[0] === 'f-forge1',
@@ -706,7 +706,7 @@ h.run(async () => {
 	// =====================================================================
 	// 16. CONSENT: saving a scene is what publishes it — and only that one
 	// =====================================================================
-	const savedVault = await G.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Vault'));
+	const savedVault = await G.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('Vault'));
 	h.check(!!savedVault?.hash, `premise: the joiner SAVED Vault (${savedVault?.hash?.slice(0, 8) ?? 'null'})`);
 	await h.eventually(
 		() => manifestOf(F),
@@ -726,7 +726,7 @@ h.run(async () => {
 	// =====================================================================
 	// 17. THE NAME: a joiner who RENAMES mid-session is talking about the room
 	// =====================================================================
-	await G.page.evaluate(() => window.__stores.projectManifest.setProjectName('Studio North'));
+	await G.page.evaluate(() => window.__tp.test.v1.projectManifest.setProjectName('Studio North'));
 	await h.eventually(
 		() => manifestOf(F),
 		(m) => m.name === 'Studio North',
@@ -737,7 +737,7 @@ h.run(async () => {
 	// 18. THE RESET: disconnect, work offline, come back — still private
 	// =====================================================================
 	await leave(G);
-	await G.page.evaluate(() => window.__stores.projectManifest.publishSceneVersion('Crypt', 'g-crypt1'));
+	await G.page.evaluate(() => window.__tp.test.v1.projectManifest.publishSceneVersion('Crypt', 'g-crypt1'));
 	await h.connect(G, F);
 	await h.eventually(
 		() => manifestOf(G),
@@ -765,7 +765,7 @@ h.run(async () => {
 	// calls — the whole path minus the file dialog and the destructive-open warning. An OPEN
 	// REPLACES the local project, so G's own scenes go with it here, exactly as they would.
 	await G.page.evaluate(() => {
-		window.__stores.projectManifest.manifestRestore(
+		window.__tp.test.v1.projectManifest.manifestRestore(
 			{
 				name: 'Imported project',
 				scenes: { Imported: { history: ['tp-i1'], pinned: [] } },
@@ -803,13 +803,13 @@ h.run(async () => {
 	// peers above should have to step around.
 	// =====================================================================
 	const H = await h.setupPage(browser, 'H');
-	await H.page.waitForFunction(() => !!window.__stores?.projectManifest, { timeout: 30000 });
+	await H.page.waitForFunction(() => !!window.__tp?.test.v1?.projectManifest, { timeout: 30000 });
 	// ONE REAL save, so the library holds bytes a version panel can show, plus one hash
 	// published on top of it — that pair is what makes the incoming document DIVERGED
 	// rather than a catch-up.
 	const savedArena = await H.page.evaluate(async () => {
-		const rec = await window.__stores.levels.saveSceneAsLevel('Arena');
-		window.__stores.projectManifest.publishSceneVersion('Arena', 'h-local2');
+		const rec = await window.__tp.test.v1.levels.saveSceneAsLevel('Arena');
+		window.__tp.test.v1.projectManifest.publishSceneVersion('Arena', 'h-local2');
 		return rec?.hash ?? null;
 	});
 	h.check(
@@ -822,7 +822,7 @@ h.run(async () => {
 	// THEIRS takes the pointer and ours is folded in behind it
 	await H.page.evaluate(
 		({ first }) =>
-			window.__stores.projectManifest.applyRemoteManifest({
+			window.__tp.test.v1.projectManifest.applyRemoteManifest({
 				manifest: {
 					name: '',
 					scenes: { Arena: { history: [first, 'peer-a2'], pinned: [] } },
@@ -863,8 +863,8 @@ h.run(async () => {
 	await H.page.waitForTimeout(900);
 	const explorerShown = await H.page.evaluate(() => {
 		let closed, panel;
-		window.__stores.explorerClose.subscribe((v) => (closed = v))();
-		window.__stores.bottomDock.bottomDockActive.subscribe((v) => (panel = v))();
+		window.__tp.test.v1.explorerClose.subscribe((v) => (closed = v))();
+		window.__tp.test.v1.bottomDock.bottomDockActive.subscribe((v) => (panel = v))();
 		return { closed, panel };
 	});
 	h.check(

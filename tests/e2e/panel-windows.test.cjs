@@ -23,7 +23,7 @@ const read = (page, path) =>
 	page.evaluate(
 		(path) =>
 			new Promise((r) => {
-				let obj = window.__stores;
+				let obj = window.__tp?.test.v1;
 				for (const p of path.split('.')) obj = obj[p];
 				obj.subscribe((v) => r(JSON.parse(JSON.stringify(v ?? null))))();
 			}),
@@ -41,7 +41,7 @@ async function popupFrom(page, act) {
 
 /** a synthetic panel drop: drag state as a real dragstart sets it, then dragover + drop on `selector` in `target` */
 async function dropPanel(source, target, key, selector) {
-	await S(source, (key) => window.__stores.panelPlaces.panelDrag.set({ key, from: null }), key);
+	await S(source, (key) => window.__tp.test.v1.panelPlaces.panelDrag.set({ key, from: null }), key);
 	await target.waitForTimeout(150);
 	return target.evaluate(
 		({ selector, type }) => {
@@ -62,7 +62,7 @@ async function dropPanel(source, target, key, selector) {
 
 /** uir-polish G1: DOCKED, Code has no pop-out button (no header row at all) — float it first; its window header has one */
 async function floatCode(page) {
-	await page.evaluate(() => window.__stores.bottomDock.armDockMode('code', false));
+	await page.evaluate(() => window.__tp.test.v1.bottomDock.armDockMode('code', false));
 	await page.locator('#code-ws-popout').first().waitFor({ state: 'visible', timeout: 15000 });
 }
 
@@ -74,13 +74,13 @@ h.run(async () => {
 	// ---------------------------------------------------------------- 1 pop out the Explorer
 	h.check((await read(page, 'codePopout.popOutSupported')) === true, 'premise: pop-outs are supported here (desktop)');
 	await S(page, () => {
-		window.__stores.explorerClose.set(false);
-		window.__stores.inspectorClose.set(true);
+		window.__tp.test.v1.explorerClose.set(false);
+		window.__tp.test.v1.inspectorClose.set(true);
 	});
 	await page.waitForSelector('#explorer-list, #explorer-window', { timeout: 30000 });
-	const tabRows = await S(page, () => window.__stores.dockMenu.dockTabItems('explorer').map((r) => r.label));
+	const tabRows = await S(page, () => window.__tp.test.v1.dockMenu.dockTabItems('explorer').map((r) => r.label));
 	h.check(tabRows.includes('Pop out into a new window'), 'the Explorer dock tab menu offers "Pop out into a new window"');
-	const pop1 = await popupFrom(page, () => S(page, () => window.__stores.panelPlaces.popOutPanel('explorer')));
+	const pop1 = await popupFrom(page, () => S(page, () => window.__tp.test.v1.panelPlaces.popOutPanel('explorer')));
 	h.check((await pop1.title()).startsWith('Explorer'), 'the window is titled after its panel (' + (await pop1.title()) + ')');
 	await pop1.waitForSelector('#explorer-window', { timeout: 30000 });
 	h.check((await pop1.locator('#explorer-window').count()) === 1, 'the popup holds the Explorer');
@@ -99,14 +99,14 @@ h.run(async () => {
 	await shot(pop1, 'w1-explorer.png');
 
 	// ---------------------------------------------------------------- 2 drop the Inspector on it
-	await S(page, () => window.__stores.inspectorClose.set(false));
+	await S(page, () => window.__tp.test.v1.inspectorClose.set(false));
 	await page.waitForSelector('#inspector', { timeout: 20000 });
 	h.check((await dropPanel(page, pop1, 'inspector', '.pw-head')) === 'ok', 'premise: the drop reached the header');
 	await h.eventually(() => pop1.locator('[data-pop-window]').getAttribute('data-tabs'), (v) => v === 'strip', 'a second tab makes the strip appear', 10000);
 	const tabs2 = await pop1.locator('.pw-tab').allInnerTexts();
 	h.check(tabs2.length === 2 && tabs2[0].includes('Explorer'), 'the title became the first tab (' + tabs2.join(' | ') + ')');
 	await pop1.waitForSelector('#inspector[data-docked="pop"]', { state: 'attached', timeout: 20000 });
-	await S(page, () => window.__stores.inspectorKind.set('scene'));
+	await S(page, () => window.__tp.test.v1.inspectorKind.set('scene'));
 	const insSeen = () =>
 		pop1.evaluate(() => {
 			const el = document.querySelector('#inspector');
@@ -118,7 +118,7 @@ h.run(async () => {
 	for (let i = 0; i < 40 && !(ins.w > 100 && ins.op === '1' && ins.env); i++) await pop1.waitForTimeout(250).then(async () => (ins = await insSeen()));
 	h.check(ins.w > 100 && ins.op === '1' && ins.env, 'the popped Inspector follows the main window (Configure Scene shows its Environment section) ' + JSON.stringify(ins));
 	await h.eventually(() => pop1.locator('.pw-tab').allInnerTexts(), (t) => t.some((x) => x.includes('Configure Scene')), 'and its tab is renamed with it (Properties → Configure Scene)', 10000);
-	await S(page, () => window.__stores.inspectorKind.set('selection'));
+	await S(page, () => window.__tp.test.v1.inspectorKind.set('selection'));
 	await h.eventually(() => page.locator('#inspector').count(), (n) => n === 0, 'the Inspector left the main window', 10000);
 	h.check((await read(page, 'sidebars.sidebarTabs')).right.includes('inspector') === false, 'and its sidebar column');
 	await shot(pop1, 'w2-two-tabs.png');
@@ -132,12 +132,12 @@ h.run(async () => {
 
 	// ---------------------------------------------------------------- 4 the whole bottom dock
 	await S(page, () => {
-		window.__stores.timelineClose.set(false);
-		window.__stores.flowGraphClose.set(false);
-		window.__stores.bottomDock.armDockModes(['flow', 'timeline'], true);
+		window.__tp.test.v1.timelineClose.set(false);
+		window.__tp.test.v1.flowGraphClose.set(false);
+		window.__tp.test.v1.bottomDock.armDockModes(['flow', 'timeline'], true);
 	});
-	await h.eventually(() => S(page, () => window.__stores.dockMenu.dockTabItems('flow').some((r) => r.label === 'Pop out the whole dock')), (v) => v === true, 'a dock tab offers "Pop out the whole dock"', 15000);
-	const pop2 = await popupFrom(page, () => S(page, () => window.__stores.dockMenu.dockTabItems('flow').find((r) => r.label === 'Pop out the whole dock').action()));
+	await h.eventually(() => S(page, () => window.__tp.test.v1.dockMenu.dockTabItems('flow').some((r) => r.label === 'Pop out the whole dock')), (v) => v === true, 'a dock tab offers "Pop out the whole dock"', 15000);
+	const pop2 = await popupFrom(page, () => S(page, () => window.__tp.test.v1.dockMenu.dockTabItems('flow').find((r) => r.label === 'Pop out the whole dock').action()));
 	const dockWin = await winOf(page, 'flow');
 	h.check(dockWin?.kind === 'dock' && dockWin.panels.includes('timeline'), 'the dock became ONE window with its tabs (' + (dockWin?.panels.join(',') ?? 'none') + ')');
 	h.check((await pop2.locator('[data-pop-window]').getAttribute('data-tabs')) === 'strip', 'a popped-out dock always shows its tabs');
@@ -145,14 +145,14 @@ h.run(async () => {
 	await shot(pop2, 'w4-dock.png');
 
 	// ---------------------------------------------------------------- 5 Code moves into it
-	await S(page, () => window.__stores.flowNodes.update((n) => [...n, { id: 'pw1', type: 'script', position: { x: 0, y: 0 }, data: { type: 'script', code: '// pw' }, class: 'w-[150px]' }]));
+	await S(page, () => window.__tp.test.v1.flowNodes.update((n) => [...n, { id: 'pw1', type: 'script', position: { x: 0, y: 0 }, data: { type: 'script', code: '// pw' }, class: 'w-[150px]' }]));
 	await page.waitForTimeout(500);
-	await S(page, () => window.__stores.codeWorkspace.openCode({ source: 'script', ref: { nodeId: 'pw1', graphId: 'scene' } }));
+	await S(page, () => window.__tp.test.v1.codeWorkspace.openCode({ source: 'script', ref: { nodeId: 'pw1', graphId: 'scene' } }));
 	await page.waitForSelector('[data-pane] .cm-content, #code-ws-window, #code-ws-dock', { timeout: 45000 });
 	await floatCode(page);
 	const pop3 = await popupFrom(page, () => page.locator('#code-ws-popout').first().click());
 	h.check((await pop3.title()).startsWith('Code'), 'Code pops out in a window of its own ("Code — ThePrototype")');
-	await S(page, (id) => window.__stores.panelHost.windowApi.moveTo('code', id), dockWin.id);
+	await S(page, (id) => window.__tp.test.v1.panelHost.windowApi.moveTo('code', id), dockWin.id);
 	await h.eventually(() => Promise.resolve(pop3.isClosed()), (v) => v === true, 'adding Code to the dock window MOVES it: its own window closes', 10000);
 	await pop2.waitForSelector('#code-ws-popped', { state: 'attached', timeout: 30000 });
 	h.check((await pop2.locator('.pw-tab').count()) === dockWin.panels.length + 1, 'and Code is a tab of the dock window');
@@ -171,8 +171,8 @@ h.run(async () => {
 	h.check(pages.length >= before.length, `the windows reopened by themselves (pop-ups allowed: ${pages.length})`);
 
 	// blocked pop-ups: one window per click
-	const saved = await S(page, () => window.__stores.panelHost.savedLayout());
-	await S(page, () => window.__stores.panelPlaces.bringAllWindowsBack());
+	const saved = await S(page, () => window.__tp.test.v1.panelHost.savedLayout());
+	await S(page, () => window.__tp.test.v1.panelPlaces.bringAllWindowsBack());
 	await h.eventually(() => layout(page), (l) => l.windows.length === 0, 'Bring all windows back empties the layout', 10000);
 	await S(page, (saved) => {
 		// a pop-up blocker: one window per click (the activation is spent by the first open)
@@ -180,7 +180,7 @@ h.run(async () => {
 		let spent = true;
 		window.addEventListener('pointerdown', () => (spent = false), true);
 		window.open = (...a) => (spent ? null : ((spent = true), window.__realOpen(...a)));
-		window.__stores.panelHost.restoreQueue.set({ windows: saved.windows, total: saved.windows.length });
+		window.__tp.test.v1.panelHost.restoreQueue.set({ windows: saved.windows, total: saved.windows.length });
 	}, saved);
 	const bar = page.locator('#restore-windows-open');
 	await bar.waitFor({ timeout: 10000 });
@@ -203,22 +203,22 @@ h.run(async () => {
 	for (const v of res.violations) console.log(`  [popped Explorer] ${v.impact} ${v.id} (${v.nodes.length}) — ${v.help}${v.impact === 'serious' || v.impact === 'critical' ? ' :: ' + v.nodes.slice(0, 3).map((n) => n.target.join(' ')).join(' ; ') : ''}`);
 	h.check(gated.length === 0, `a popped window passes axe (serious/critical: ${gated.map((v) => v.id + '×' + v.nodes.length).join(', ') || 'none'})`);
 
-	await S(page, () => window.__stores.explorerClose.set(true));
+	await S(page, () => window.__tp.test.v1.explorerClose.set(true));
 	await h.eventually(() => winOf(page, 'explorer'), (w) => w === null, "a popped panel's own close takes it out of its window", 10000);
 	await h.eventually(() => Promise.resolve(expPop.isClosed()), (v) => v === true, 'and the window it emptied closes', 10000);
-	await S(page, () => window.__stores.panelPlaces.bringAllWindowsBack());
+	await S(page, () => window.__tp.test.v1.panelPlaces.bringAllWindowsBack());
 	await h.eventually(() => layout(page), (l) => l.windows.length === 0, 'Bring all windows back', 10000);
 	await h.eventually(() => page.locator('#flow-list, #flow-window').count(), (n) => n >= 1, 'the Node editor is back in the main window', 20000);
 	h.check((await read(page, 'codePopout.codePoppedOut')) === false, 'and Code too');
 
 	// ---------------------------------------------------------------- 8 phone + main tab closing
-	await S(page, () => window.__stores.phoneShell.phoneShellActive.set(true));
+	await S(page, () => window.__tp.test.v1.phoneShell.phoneShellActive.set(true));
 	await page.waitForTimeout(300);
-	h.check((await S(page, () => window.__stores.panelPlaces.popOutItems('flow').length)) === 0, 'phone profile: no pop-out rows');
-	h.check(!(await S(page, () => window.__stores.dockMenu.dockTabItems('flow').some((r) => /Pop out/.test(r.label)))), 'and none in the dock tab menu');
-	await S(page, () => window.__stores.phoneShell.phoneShellActive.set(false));
+	h.check((await S(page, () => window.__tp.test.v1.panelPlaces.popOutItems('flow').length)) === 0, 'phone profile: no pop-out rows');
+	h.check(!(await S(page, () => window.__tp.test.v1.dockMenu.dockTabItems('flow').some((r) => /Pop out/.test(r.label)))), 'and none in the dock tab menu');
+	await S(page, () => window.__tp.test.v1.phoneShell.phoneShellActive.set(false));
 	await page.waitForTimeout(300);
-	const last = await popupFrom(page, () => S(page, () => window.__stores.panelPlaces.popOutPanel('flow')));
+	const last = await popupFrom(page, () => S(page, () => window.__tp.test.v1.panelPlaces.popOutPanel('flow')));
 	h.check(h.pageErrors(A).length === 0, 'no page errors through all of it (' + h.pageErrors(A).slice(0, 2).join(' | ') + ')');
 	await page.close({ runBeforeUnload: true });
 	await h.eventually(() => Promise.resolve(last.isClosed()), (v) => v === true, 'closing the main tab closes its windows', 10000);

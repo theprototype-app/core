@@ -19,7 +19,7 @@
 const h = require('./helpers.cjs');
 
 const SEED = () => {
-	const s = window.__stores;
+	const s = window.__tp?.test.v1;
 	s.flowNodes.set([
 		{ id: 'mb1', type: 'number', position: { x: 60, y: 20 }, data: { type: 'number', label: 'Number', value: 4, step: 1 }, class: 'w-[150px]' },
 		{ id: 'mb2', type: 'number', position: { x: 260, y: 20 }, data: { type: 'number', label: 'Number', value: 7, step: 1 }, class: 'w-[150px]' }
@@ -28,7 +28,7 @@ const SEED = () => {
 };
 const POSITIONS = () => {
 	let nodes;
-	window.__stores.flowNodes.subscribe((v) => (nodes = v))();
+	window.__tp.test.v1.flowNodes.subscribe((v) => (nodes = v))();
 	const out = {};
 	for (const n of nodes) out[n.id] = { x: n.position.x, y: n.position.y, selected: !!n.selected };
 	return out;
@@ -187,8 +187,8 @@ h.run(async () => {
 	const kept = await B.page.evaluate(() => localStorage.getItem('flow:mouseBindings'));
 	h.check(kept === 'select', `the binding persists across a reload (${kept})`);
 	await B.page.evaluate(() => {
-		window.__stores.settingsSection.set('input');
-		window.__stores.settingsOpen.set(true);
+		window.__tp.test.v1.settingsSection.set('input');
+		window.__tp.test.v1.settingsOpen.set(true);
 	});
 	await B.page.waitForTimeout(900);
 	h.check((await B.page.locator('#flow-mouse-bindings').count()) > 0, 'Settings ▸ Input carries the Mouse bindings row');

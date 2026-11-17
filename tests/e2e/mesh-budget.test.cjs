@@ -21,7 +21,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	// ---- 1. the ceilings themselves ---------------------------------------
-	const budget = await A.page.evaluate(() => window.__stores.meshBudget);
+	const budget = await A.page.evaluate(() => window.__tp.test.v1.meshBudget);
 	h.check(!!budget, 'meshBudget is on the debug hook (premise)');
 	h.check(budget.MAX_SNAPSHOT === 1500000, `commit ceiling is 1.5M floats (${budget.MAX_SNAPSHOT})`);
 	h.check(
@@ -38,7 +38,7 @@ h.run(async () => {
 	// what actually decides whether an imported model can be face-edited. R3
 	// measured the per-frame grab (5.4 us/triangle) and set the default from it.
 	const faceCap = await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		let live;
 		fe.vrFaceCap.subscribe((v) => (live = v))();
 		return { def: fe.VR_FACE_CAP, live };
@@ -52,7 +52,7 @@ h.run(async () => {
 	// ---- 2. a mesh in the newly-allowed band edits for real ----------------
 	// A sphere dense enough to be over the OLD cap and under the new one.
 	const built = await A.page.evaluate(async () => {
-		const { THREE, commandsHandler, objectsGroup } = window.__stores;
+		const { THREE, commandsHandler, objectsGroup } = window.__tp?.test.v1;
 		commandsHandler.sceneCommand('/create sphere');
 		await new Promise((r) => setTimeout(r, 1200));
 		let object = null;
@@ -74,7 +74,7 @@ h.run(async () => {
 
 	// commitMeshGeoSnapshot is the shared commit path every op ends in
 	const commit = await A.page.evaluate((uuid) => {
-		const { faceEdit, objectsGroup, history } = window.__stores;
+		const { faceEdit, objectsGroup, history } = window.__tp?.test.v1;
 		let object = null;
 		objectsGroup.subscribe((g) => (object = g?.children?.find((c) => c.uuid === uuid)))();
 		const before = Array.from(object.geometry.attributes.position.array);
@@ -104,7 +104,7 @@ h.run(async () => {
 	// refused, so the check above cannot pass vacuously.
 	const counterfactual = await A.page.evaluate(
 		({ floats }) => {
-			const { meshBudget } = window.__stores;
+			const { meshBudget } = window.__tp?.test.v1;
 			return {
 				underOld: floats <= 45000,
 				underNew: !meshBudget.overSnapshotBudget(floats),
@@ -120,7 +120,7 @@ h.run(async () => {
 
 	// ---- 3. the preview trade ---------------------------------------------
 	const preview = await A.page.evaluate(() => {
-		const { meshBudget } = window.__stores;
+		const { meshBudget } = window.__tp?.test.v1;
 		return {
 			small: meshBudget.previewReplicable(30000),
 			atCap: meshBudget.previewReplicable(45000),
@@ -136,7 +136,7 @@ h.run(async () => {
 
 	// the refusal message names the real numbers instead of "too large"
 	const message = await A.page.evaluate(() =>
-		window.__stores.meshBudget.tooLargeMessage(1800000, 'bevel')
+		window.__tp.test.v1.meshBudget.tooLargeMessage(1800000, 'bevel')
 	);
 	h.check(/bevel/.test(message), 'the refusal keeps the noun of the operation');
 	h.check(
@@ -151,7 +151,7 @@ h.run(async () => {
 	// must send exactly one meshgeo. (A capture stub, not a second peer — the
 	// question is "did it broadcast", which needs no receiver.)
 	const streamed = await A.page.evaluate(async (uuid) => {
-		const { peers, faceEdit, objectsGroup } = window.__stores;
+		const { peers, faceEdit, objectsGroup } = window.__tp?.test.v1;
 		let original = null;
 		peers.subscribe((p) => (original = p))();
 		const sent = [];
@@ -167,7 +167,7 @@ h.run(async () => {
 			// a SYNTHESIZED target, the shape the gizmo passes (mesh-proportional's
 			// recipe) — a bare face index depends on how derivation grouped the
 			// sphere, which is not what this section is about
-			const THREE = window.__stores.THREE;
+			const THREE = window.__tp.test.v1.THREE;
 			const tris = faceEdit.readTriangles(
 				(() => {
 					let o = null;
@@ -222,7 +222,7 @@ h.run(async () => {
 
 	// ---- 4. the history byte budget ---------------------------------------
 	const budgeted = await A.page.evaluate(() => {
-		const { meshBudget } = window.__stores;
+		const { meshBudget } = window.__tp?.test.v1;
 		// entryBytes counts both sides of a geometry entry, and nothing for a
 		// transform — that is what makes the eviction target the expensive ones
 		const geo = { kind: 'meshgeo', before: new Array(1000).fill(0), after: new Array(1000).fill(0) };
@@ -250,7 +250,7 @@ h.run(async () => {
 	// and the eviction really runs: push entries past the budget and watch the
 	// OLDEST go while the newest survives
 	const evicted = await A.page.evaluate(() => {
-		const { history } = window.__stores;
+		const { history } = window.__tp?.test.v1;
 		const bytesPerEntry = 8 * 1024 * 1024; // 2M floats over both sides
 		const big = () => ({
 			kind: 'meshgeo',

@@ -8,7 +8,7 @@ const TAG = process.env.TAG || 'shot';
 /** fake a session: four long-named peers, three of them standing in long-named scenes, roles on */
 async function seed(page) {
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let p;
 		s.peers.subscribe((x) => (p = x))();
 		const self = p?.peer?.id || 'self';
@@ -56,7 +56,7 @@ h.run(async () => {
 			const page = X.page;
 			await seed(page);
 			await page.evaluate(() => {
-				window.__stores.toastStore.set([]);
+				window.__tp.test.v1.toastStore.set([]);
 				document.querySelector('#peers-trigger')?.click();
 			});
 			await page.waitForTimeout(900);

@@ -11,7 +11,7 @@ h.run(async () => {
 
 	// --- pure reticle pose math ---
 	const pose = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		const identity = new THREE.Quaternion();
 		// no normal -> beam-aligned ring at the tip
@@ -58,7 +58,7 @@ h.run(async () => {
 
 	// --- beams terminate on open panels, nearest wins ---
 	const beam = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		s.commandsHandler.sceneCommand('/create box');
 		const group = await new Promise((r) => s.objectsGroup.subscribe(r)());

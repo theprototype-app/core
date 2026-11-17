@@ -6,7 +6,7 @@ const h = require('./helpers.cjs');
 const opStore = () =>
 	(() => {
 		let v;
-		window.__stores.faceEdit.faceEditOp.subscribe((x) => (v = x))();
+		window.__tp.test.v1.faceEdit.faceEditOp.subscribe((x) => (v = x))();
 		return v;
 	})();
 
@@ -15,7 +15,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		let grp;
 		s.objectsGroup.subscribe((v) => (grp = v))();
@@ -50,7 +50,7 @@ h.run(async () => {
 		'the Multi button is retired (ctrl-click always adds)'
 	);
 	await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		fe.setFaceGranularity('face');
 		const faces = fe.currentFaces();
 		const xi = faces.findIndex((f) => f.normal.x > 0.9);
@@ -64,7 +64,7 @@ h.run(async () => {
 
 	// two whole faces -> boundary-edge counts appear, equal = no red tint
 	const counts2 = await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		const faces = fe.currentFaces();
 		const xn = faces.findIndex((f) => f.normal.x < -0.9);
 		fe.toggleFaceSelection(faces[xn].triIndices[0]);
@@ -86,7 +86,7 @@ h.run(async () => {
 
 	// subdivide one face (8-edge boundary) -> mismatched counts tint red
 	const mismatch = await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		let faces = fe.currentFaces();
 		const xn = faces.findIndex((f) => f.normal.x < -0.9);
 		fe.pickFaceUnit(faces[xn].triIndices[0]);

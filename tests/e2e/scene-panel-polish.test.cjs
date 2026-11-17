@@ -22,15 +22,15 @@ const OUT = process.env.OUT || '';
 async function shots(page, name) {
 	if (!OUT) return;
 	for (const t of ['dark', 'light']) {
-		await page.evaluate((th) => window.__stores.themes.theme.set(th), t);
+		await page.evaluate((th) => window.__tp.test.v1.themes.theme.set(th), t);
 		await page.waitForTimeout(350);
 		await page.screenshot({ path: path.join(OUT, `scene-panel-${name}-${t}.png`) });
 	}
-	await page.evaluate(() => window.__stores.themes.theme.set('dark'));
+	await page.evaluate(() => window.__tp.test.v1.themes.theme.set('dark'));
 }
 
 /** @param {any} page */
-const env = (page) => page.evaluate(() => new Promise((r) => window.__stores.environment.environment.subscribe(r)()));
+const env = (page) => page.evaluate(() => new Promise((r) => window.__tp.test.v1.environment.environment.subscribe(r)()));
 /** @param {any} page */
 const text = (page, sel) => page.evaluate((s) => document.querySelector(s)?.textContent?.replace(/\s+/g, ' ').trim() ?? null, sel);
 /** the pressed environment pill's label @param {any} page */
@@ -46,7 +46,7 @@ const noteOf = (page, label) =>
 /** @param {any} page */
 async function openScene(page) {
 	// openSceneSection always OPENS (showSidebar toggles: on an open panel it closes it)
-	await page.evaluate(() => window.__stores.openSceneSection('Environment'));
+	await page.evaluate(() => window.__tp.test.v1.openSceneSection('Environment'));
 	await page.locator('#environment-presets').waitFor({ state: 'visible', timeout: 15000 });
 	await page.waitForTimeout(400);
 }
@@ -95,9 +95,9 @@ h.run(async () => {
 	// uir-polish E1 (owner 2026-11-11): the strip's pin and lock are gone
 	h.check(!head.pinShown && (await page.locator('#inspector-sticky-head').count()) === 0, `PL14.3 no pin and no lock (E1) (pin ${head.pinShown})`);
 
-	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await page.waitForTimeout(800);
-	await page.evaluate(() => window.__stores.showSidebar('properties'));
+	await page.evaluate(() => window.__tp.test.v1.showSidebar('properties'));
 	await page.locator('#name').waitFor({ state: 'visible', timeout: 10000 });
 	await page.waitForTimeout(400);
 	const props = await page.evaluate(() => {
@@ -113,7 +113,7 @@ h.run(async () => {
 
 	// ── PL18 the Quality toggle is gone ────────────────────────────────────────────────────────────
 	console.log('\n=== PL18 quality ===');
-	await page.evaluate(() => window.__stores.openSceneSection('Quality'));
+	await page.evaluate(() => window.__tp.test.v1.openSceneSection('Quality'));
 	await page.locator('#scene-quality-preset').waitFor({ state: 'visible', timeout: 10000 });
 	await page.waitForTimeout(400);
 	h.check((await page.locator('#scene-auto-quality').count()) === 0, 'PL18.1 no "Reduce quality when heavy" toggle in Configure Scene');
@@ -124,8 +124,8 @@ h.run(async () => {
 
 	// ── PL15 six pills + More ──────────────────────────────────────────────────────────────────────
 	console.log('\n=== PL15 pills ===');
-	await page.evaluate(() => window.__stores.environment.setEnvironment('studio'));
-	await page.evaluate(() => window.__stores.openSceneSection('Environment'));
+	await page.evaluate(() => window.__tp.test.v1.environment.setEnvironment('studio'));
+	await page.evaluate(() => window.__tp.test.v1.openSceneSection('Environment'));
 	await page.waitForTimeout(500);
 	const pills = await page.evaluate(() => [...document.querySelectorAll('#environment-presets button')].map((b) => b.textContent?.replace(/\s+/g, ' ').trim()));
 	h.check(pills.join() === 'Studio,Daylight,Sunset,Night,Clear sky,Cinematic', `PL15.1 six pills (${pills.join(', ')})`);
@@ -142,7 +142,7 @@ h.run(async () => {
 
 	// ── PL16 + PL12 ────────────────────────────────────────────────────────────────────────────────
 	console.log('\n=== PL16 + PL12 ===');
-	await page.evaluate(() => window.__stores.environment.setEnvironment('studio', 1));
+	await page.evaluate(() => window.__tp.test.v1.environment.setEnvironment('studio', 1));
 	await page.waitForTimeout(400);
 	const why = await text(page, '#env-preset-why');
 	const sets = await text(page, '#env-preset-sets');
@@ -151,7 +151,7 @@ h.run(async () => {
 	h.check((await page.locator('#env-preset-modified').count()) === 0, 'PL16.3 nothing modified on a fresh preset');
 	h.check((await page.locator('#inspector [data-row-changed]').count()) === 0, 'PL12.1 no row marks on a fresh preset');
 
-	await page.evaluate(() => window.__stores.environment.editRigComponent('sun', { intensity: 3.3 }));
+	await page.evaluate(() => window.__tp.test.v1.environment.editRigComponent('sun', { intensity: 3.3 }));
 	await page.waitForTimeout(400);
 	const e1 = /** @type {any} */ (await env(page));
 	h.check(e1.preset === 'custom' && e1.customPreset?.basedOn === 'studio', `PL16.4 an edit remembers its preset (basedOn ${e1.customPreset?.basedOn})`);
@@ -172,7 +172,7 @@ h.run(async () => {
 	const e2 = /** @type {any} */ (await env(page));
 	console.log('sun after the mark: ' + e2?.customPreset?.sun?.intensity);
 	h.check((await page.locator('#inspector .pr-mark[aria-label^="Sun:"]').count()) === 0, 'PL12.4 …and the mark goes');
-	await page.evaluate(() => window.__stores.history.undo());
+	await page.evaluate(() => window.__tp.test.v1.history.undo());
 	await page.waitForTimeout(500);
 	const e3 = /** @type {any} */ (await env(page));
 	h.check(Math.abs(e3.customPreset?.sun?.intensity - 3.3) < 0.01, `PL12.5 one Undo brings the edit back (${e3.customPreset?.sun?.intensity})`);
@@ -182,12 +182,12 @@ h.run(async () => {
 	await h.eventually(() => env(page), (e) => /** @type {any} */ (e).preset === 'studio', 'PL16.7 premise: the Reset lands', 10000);
 	const e4 = /** @type {any} */ (await env(page));
 	h.check(e4.preset === 'studio' && (await page.locator('#env-preset-modified').count()) === 0, `PL16.7 Reset re-applies Studio (${e4.preset})`);
-	await page.evaluate(() => window.__stores.history.undo());
+	await page.evaluate(() => window.__tp.test.v1.history.undo());
 	await page.waitForTimeout(500);
 	const e5 = /** @type {any} */ (await env(page));
 	h.check(e5.preset === 'custom' && Math.abs(e5.customPreset?.sun?.intensity - 3.3) < 0.01, `PL16.8 one Undo takes the Reset back (${e5.preset})`);
 	// an exposure change on a named preset marks the row too
-	await page.evaluate(() => window.__stores.environment.setEnvironment('daylight', 1.4));
+	await page.evaluate(() => window.__tp.test.v1.environment.setEnvironment('daylight', 1.4));
 	await page.waitForTimeout(400);
 	h.check(/Daylight · Modified: exposure/.test((await text(page, '#env-preset-modified')) ?? ''), 'PL16.9 an exposure change reads "Daylight · Modified: exposure"');
 	h.check((await page.locator('#inspector .pr-mark[aria-label^="Exposure:"]').count()) === 1, 'PL12.6 …and the Exposure row is marked');
@@ -197,14 +197,14 @@ h.run(async () => {
 
 	// ── PL1 the Baked light line ───────────────────────────────────────────────────────────────────
 	console.log('\n=== PL1 baked light ===');
-	await page.evaluate(() => window.__stores.sceneBudget.statsOpen.set(true));
+	await page.evaluate(() => window.__tp.test.v1.sceneBudget.statsOpen.set(true));
 	await page.locator('#stats-baked-light').waitFor({ state: 'visible', timeout: 10000 });
 	const none = await text(page, '#stats-baked-light');
 	h.check(none === 'none', `PL1.1 an unbaked scene says "none" ("${none}")`);
 	await shots(page, 'stats-none');
 	// static meshes (a /create box moves with physics, and the bake leaves those out)
 	await page.evaluate(() =>
-		window.__stores.aiTools.executeAiTool('create_objects', {
+		window.__tp.test.v1.aiTools.executeAiTool('create_objects', {
 			objects: [
 				{ kind: 'primitive', primitive: 'Box', name: 'Floor', params: [6, 0.2, 6], position: [0, -0.1, 0] },
 				{ kind: 'primitive', primitive: 'Box', name: 'Wall', params: [6, 2, 0.2], position: [0, 1, -3] },
@@ -214,7 +214,7 @@ h.run(async () => {
 	);
 	await page.waitForTimeout(1200);
 	const bake = await page.evaluate(async () => {
-		const runner = window.__stores.bakeRunner;
+		const runner = window.__tp.test.v1.bakeRunner;
 		runner.setBakeTestLimits({ atlas: 256, rays: 8, ms: 45000 });
 		const r = await Promise.race([runner.runBake({ quality: 'normal' }), new Promise((res) => setTimeout(() => res({ hung: true }), 120000))]);
 		return JSON.parse(JSON.stringify(r ?? null));
@@ -231,7 +231,7 @@ h.run(async () => {
 	const nums = /^(\d+) px/.exec(line ?? '');
 	h.check(!!nums && Number(nums[1]) > 0, `PL1.3 the atlas size is non-zero (${line})`);
 	await shots(page, 'stats-baked');
-	await page.evaluate(() => window.__stores.sceneBudget.statsOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.sceneBudget.statsOpen.set(false));
 
 	// ── PL13 two peers + an AI ─────────────────────────────────────────────────────────────────────
 	console.log('\n=== PL13 changed by ===');
@@ -241,22 +241,22 @@ h.run(async () => {
 	await openScene(B.page);
 	await openScene(page);
 	// B's live edit names B on A
-	await B.page.evaluate(() => window.__stores.environment.setEnvironment('night'));
+	await B.page.evaluate(() => window.__tp.test.v1.environment.setEnvironment('night'));
 	await h.eventually(() => noteOf(page, 'Environment'), (t) => /^changed by .+ · just now$/.test(t) && !/you|\(AI\)/.test(t), 'PL13.2 A reads "changed by <B> · just now" under Environment', 15000);
 	console.log('A note: ' + (await noteOf(page, 'Environment')));
 	// a physics edit names its own section
-	await B.page.evaluate(() => window.__stores.scenePhysics.setScenePhysics({ gravity: -4 }));
+	await B.page.evaluate(() => window.__tp.test.v1.scenePhysics.setScenePhysics({ gravity: -4 }));
 	await h.eventually(() => noteOf(page, 'Physics'), (t) => /^changed by .+ · just now$/.test(t), 'PL13.3 …and under Physics for a gravity edit', 15000);
 	// the AI connector on A: B reads "Claude (AI)"
-	await page.evaluate(() => window.__stores.aiTools.executeAiTool('set_sky', { preset: 'sunset' }, { by: 'Claude' }));
+	await page.evaluate(() => window.__tp.test.v1.aiTools.executeAiTool('set_sky', { preset: 'sunset' }, { by: 'Claude' }));
 	await h.eventually(() => noteOf(B.page, 'Environment'), (t) => /^changed by Claude \(AI\) · just now$/.test(t), 'PL13.4 an AI edit on A says "changed by Claude (AI)" on B', 15000);
 	// with someone else here, your own edit says you
-	await page.evaluate(() => window.__stores.environment.setEnvironment('daylight'));
+	await page.evaluate(() => window.__tp.test.v1.environment.setEnvironment('daylight'));
 	await h.eventually(() => noteOf(page, 'Environment'), (t) => /^changed by you · just now$/.test(t), 'PL13.5 with a peer here, your own edit reads "changed by you"', 10000);
 	await shots(page, 'changed-by');
 
 	// the Reset reaches the peer
-	await B.page.evaluate(() => window.__stores.environment.editRigComponent('sun', { intensity: 3.1 }));
+	await B.page.evaluate(() => window.__tp.test.v1.environment.editRigComponent('sun', { intensity: 3.1 }));
 	await h.eventually(() => env(page), (e) => /** @type {any} */ (e).preset === 'custom' && /** @type {any} */ (e).customPreset?.basedOn === 'daylight', 'PL16.10 premise: A has B\'s edit, based on Daylight', 15000);
 	await page.waitForTimeout(400);
 	await page.locator('#env-reset').click();
@@ -273,7 +273,7 @@ h.run(async () => {
 		const P = await h.setupPage(browser, dev.id, { context: dev.ctx });
 		await openScene(P.page);
 		// the sheet pulled up to its tallest (the default ~300 px sheet shows the pills only: see the lane report)
-		await P.page.evaluate(() => window.__stores.bottomDock.dockHeight.set(4000));
+		await P.page.evaluate(() => window.__tp.test.v1.bottomDock.dockHeight.set(4000));
 		await P.page.waitForTimeout(800);
 		const fit = await P.page.evaluate(() => {
 			const ins = /** @type {HTMLElement | null} */ (document.querySelector('#inspector'));

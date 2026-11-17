@@ -70,14 +70,14 @@ const lastContext = (page) =>
 		const e = window.__ctxLog[window.__ctxLog.length - 1];
 		return e ? { prevented: e.defaultPrevented, target: e.target?.id || e.target?.className?.baseVal || e.target?.className || e.target?.tagName } : null;
 	});
-const flag = (page, name) => page.evaluate((n) => { let v; window.__stores[n].subscribe((x) => (v = x))(); return v; }, name);
+const flag = (page, name) => page.evaluate((n) => { let v; window.__tp.test.v1[n].subscribe((x) => (v = x))(); return v; }, name);
 
 /** 42 sidebars' geometry (the store the columns draw from) */
-const sbGeom = (page) => page.evaluate(() => { let v; window.__stores.sidebars.geometry.subscribe((x) => (v = x))(); return { left: v.left, right: v.right, leftX: v.leftX, wide: v.wide }; });
+const sbGeom = (page) => page.evaluate(() => { let v; window.__tp.test.v1.sidebars.geometry.subscribe((x) => (v = x))(); return { left: v.left, right: v.right, leftX: v.leftX, wide: v.wide }; });
 /** open the Inspector as the right (or left) column, optionally pinned at a width */
 async function sidebar(page, { side = 'right', open = true, full = false, w = 320 } = {}) {
 	await page.evaluate(({ side, open, full, w }) => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		S.sidebars.inspectorSide.set(side);
 		S.inspectorKind.set('scene');
 		S.inspectorClose.set(!open);
@@ -103,7 +103,7 @@ async function setBar(page, json, peer) {
 	const live = await page.evaluate((v) => {
 		if (v == null) localStorage.removeItem('controlsLayout');
 		else localStorage.setItem('controlsLayout', v);
-		const core = window.__stores.uiLayoutsCore;
+		const core = window.__tp.test.v1.uiLayoutsCore;
 		if (core) core.runLayoutReloaders();
 		return !!core;
 	}, json);
@@ -246,7 +246,7 @@ h.run(async () => {
 			await clickAt(P, P.locator('#hud-stack-right #touch-multiselect'));
 			await shot(P, `j12-applied-${theme}`);
 			// a workspace layout carries it
-			const saved = await P.evaluate(() => window.__stores.uiLayouts.saveLayout('J12'));
+			const saved = await P.evaluate(() => window.__tp.test.v1.uiLayouts.saveLayout('J12'));
 			const rec = await P.evaluate(() => JSON.parse(localStorage.getItem('uiLayouts')).find((l) => l.name === 'J12'));
 			h.check(saved.ok && rec?.chrome?.desktop?.touchTools === 'true' && String(rec?.chrome?.desktop?.controlsLayout).includes('undo'), T + 'J12: a saved layout carries the row and the placed buttons');
 			// the row emptied → no box (the J11 rule), and the setting stays as it was
@@ -255,12 +255,12 @@ h.run(async () => {
 			await clickAt(P, P.locator('#toolbar-edit-apply'));
 			h.check(!(await shown('#touch-tools')), T + 'J12: emptied, the row beside the logo draws nothing');
 			// apply the layout back
-			await P.evaluate(() => { window.__stores.touchTools.set(false); localStorage.removeItem('controlsLayout'); });
-			await P.evaluate((id) => window.__stores.uiLayouts.applyLayout(id), rec.id);
+			await P.evaluate(() => { window.__tp.test.v1.touchTools.set(false); localStorage.removeItem('controlsLayout'); });
+			await P.evaluate((id) => window.__tp.test.v1.uiLayouts.applyLayout(id), rec.id);
 			await P.waitForTimeout(700);
 			h.check((await shown('#controls-pill #touch-undo')) && (await shown('#touch-tools #touch-redo')) && (await flag(P, 'touchTools')) === true, T + 'J12: applying the layout brings back Undo on the bar and Redo beside the logo');
-			await P.evaluate((id) => window.__stores.uiLayouts.deleteLayout?.(id), rec.id).catch(() => {});
-			await P.evaluate(() => window.__stores.touchTools.set(false));
+			await P.evaluate((id) => window.__tp.test.v1.uiLayouts.deleteLayout?.(id), rec.id).catch(() => {});
+			await P.evaluate(() => window.__tp.test.v1.touchTools.set(false));
 			await setBar(P, null, A);
 		}
 
@@ -328,7 +328,7 @@ h.run(async () => {
 			let flipped = 0;
 			for (const width of [1440, 1100, 900, 760]) {
 				await P.setViewportSize({ width, height: 900 });
-				await P.evaluate(() => window.__stores.touchTools.set(true));
+				await P.evaluate(() => window.__tp.test.v1.touchTools.set(true));
 				const seq = [];
 				for (const [name, bar] of [['default', null], ['crowded', CROWDED], ['sparse', SPARSE], ['crowded again', CROWDED]]) {
 					await setBar(P, bar, A);
@@ -351,7 +351,7 @@ h.run(async () => {
 			}
 			h.check(flipped >= 1, T + `K4 (44 M14): at some width the pill goes compact when the top row fills, comes back full when room returns, and goes compact again (${flipped} width(s))`);
 			await P.setViewportSize({ width: 1440, height: 900 });
-			await P.evaluate(() => window.__stores.touchTools.set(false));
+			await P.evaluate(() => window.__tp.test.v1.touchTools.set(false));
 			await setBar(P, null, A);
 		}
 
@@ -437,8 +437,8 @@ h.run(async () => {
 
 		if (want('j5')) {
 			// ---- J5: lifted corner buttons keep clear of a PINNED sidebar; a hidden dock drops them --------
-			await P.evaluate(() => window.__stores.hudStackLift.set(true));
-			await P.evaluate(() => window.__stores.explorerClose.set(false));
+			await P.evaluate(() => window.__tp.test.v1.hudStackLift.set(true));
+			await P.evaluate(() => window.__tp.test.v1.explorerClose.set(false));
 			await P.waitForTimeout(900);
 			const inset = await P.evaluate(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bottom-inset')) || 0);
 			h.check(inset > 100, T + `premise: a docked Explorer opens a bottom dock (${inset}px)`);
@@ -454,7 +454,7 @@ h.run(async () => {
 			h.check(Math.abs(l.left - 16) <= 1, T + `J5: the left stack (no sidebar on its side) stays in its corner (${Math.round(l.left)})`);
 			await shot(P, `j5-pinned-docked-${theme}`);
 			// the dock hidden: back on the floor, still beside the sidebar
-			await P.evaluate(() => window.__stores.explorerClose.set(true));
+			await P.evaluate(() => window.__tp.test.v1.explorerClose.set(true));
 			await P.waitForTimeout(700);
 			r = await rect(P, '#hud-stack-right');
 			h.check(Math.abs(900 - r.bottom - 16) <= 2 && Math.abs(1440 - r.right - 436) <= 2, T + `J5: dock hidden → the stack drops back down, beside the sidebar (bottom ${Math.round(900 - r.bottom)}, right ${Math.round(1440 - r.right)})`);
@@ -471,7 +471,7 @@ h.run(async () => {
 			h.check(Math.abs(l.left - (360 + 16)) <= 1, T + `J5: an UNPINNED sidebar puts the stack in the free viewport's corner, beside it (${Math.round(l.left)})`);
 			// the option off: the corner, as before
 			await sidebar(P, { side: 'right', full: true, w: 420 });
-			await P.evaluate(() => window.__stores.hudStackLift.set(false));
+			await P.evaluate(() => window.__tp.test.v1.hudStackLift.set(false));
 			await P.waitForTimeout(400);
 			r = await rect(P, '#hud-stack-right');
 			// the lift is about the BOTTOM dock; beside an open column the free-viewport rule still applies (item 4)
@@ -482,7 +482,7 @@ h.run(async () => {
 		// the light pass is the LOOK (the shots); the clamp arithmetic is theme-free and ran in dark
 		if (want('j8clamp') && theme === 'dark') {
 			// ---- J8: the bar never crosses a pinned sidebar — a drag, Move toolbar's arrows ----------------
-			await P.evaluate(() => window.__stores.hudStackLift.set(true));
+			await P.evaluate(() => window.__tp.test.v1.hudStackLift.set(true));
 			for (const side of ['right', 'left']) {
 				await sidebar(P, { side, full: true, w: 480 });
 				const g = await sbGeom(P);
@@ -596,7 +596,7 @@ h.run(async () => {
 					await P.locator('[role="menu"] [role="menuitem"]').nth(f.length - 1).click();
 					await P.waitForTimeout(700);
 					h.check(!!closeStore && (await flag(P, closeStore)) === false, T + `J10: the "${pick}" row opens its panel (${closeStore})`);
-					if (closeStore) await P.evaluate((n) => window.__stores[n].set(true), closeStore);
+					if (closeStore) await P.evaluate((n) => window.__tp.test.v1[n].set(true), closeStore);
 					await P.waitForTimeout(400);
 					// right-click on "»" is the bar's menu, never the browser's
 					await clickAt(P, P.locator('#toolbar-overflow'), { button: 'right' });
@@ -662,13 +662,13 @@ h.run(async () => {
 		};
 		h.check(await P.locator('#controls-pill').isVisible(), T + 'premise: unfolded, the desktop bar is drawn');
 		if (want('j5')) {
-			await P.evaluate(() => { window.__stores.hudStackLift.set(true); window.__stores.explorerClose.set(false); });
+			await P.evaluate(() => { window.__tp.test.v1.hudStackLift.set(true); window.__tp.test.v1.explorerClose.set(false); });
 			await P.waitForTimeout(900);
 			await sidebar(P, { side: 'right', full: true, w: 300 });
 			const g = await sbGeom(P);
 			const r = await rect(P, '#hud-stack-right');
 			h.check(g.right.full && Math.abs(770 - r.right - (g.right.w + 16)) <= 2, T + `J5: lifted, the right stack sits beside the pinned sidebar on touch (gap ${Math.round(770 - r.right)}, sidebar ${g.right.w})`);
-			await P.evaluate(() => window.__stores.explorerClose.set(true));
+			await P.evaluate(() => window.__tp.test.v1.explorerClose.set(true));
 			await sidebar(P, { open: false });
 		}
 		if (want('j10')) {
@@ -732,13 +732,13 @@ h.run(async () => {
 			h.check((await P.locator('#ps-more-hint button').count()) === 0, T + 'J9: the tip has no × (it retires by itself)');
 			await shot(P, `j9-tip-${theme}`);
 			// a bar change that is not the person's (a workspace layout writing the bar) leaves it
-			await P.evaluate(() => window.__stores.phoneBar.setBar(['add', 'objects', 'play', 'explorer', 'more']));
+			await P.evaluate(() => window.__tp.test.v1.phoneBar.setBar(['add', 'objects', 'play', 'explorer', 'more']));
 			await P.waitForTimeout(300);
 			h.check(await P.locator('#ps-more-hint').isVisible(), T + 'J9: a bar written by the app (not an edit) keeps the tip');
 			// the person drags a More tile onto the bar (REAL touch): the tip has done its job
 			const cdp = await P.context().newCDPSession(P);
 			const touch = (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 1 }] });
-			await P.evaluate(() => { window.__stores.toastStore.set([]); window.__stores.phoneShell.setPhoneDetent('more', 'half'); });
+			await P.evaluate(() => { window.__tp.test.v1.toastStore.set([]); window.__tp.test.v1.phoneShell.setPhoneDetent('more', 'half'); });
 			await P.waitForTimeout(400);
 			const pts = await P.evaluate(() => {
 				const tile = document.querySelector('#ps-more-sheet [data-more-item="stats"]') ?? document.querySelector('#ps-more-sheet [data-more-item]');
@@ -759,14 +759,14 @@ h.run(async () => {
 			await P.waitForTimeout(600);
 			const after = await P.evaluate(() => [...document.querySelectorAll('#ps-bar [data-bar-item]')].map((b) => b.dataset.barItem));
 			h.check(after.includes(pts.key) && !before.includes(pts.key), T + `premise: a finger dragged "${pts.key}" from More onto the bar (${before.join()} → ${after.join()})`);
-			if ((await P.evaluate(() => window.__stores.phoneShell && (() => { let v; window.__stores.phoneShell.phoneSheet.subscribe((x) => (v = x))(); return v; })())) !== 'more') {
+			if ((await P.evaluate(() => window.__tp.test.v1.phoneShell && (() => { let v; window.__tp.test.v1.phoneShell.phoneSheet.subscribe((x) => (v = x))(); return v; })())) !== 'more') {
 				await P.locator('#ps-more').tap();
 				await P.waitForTimeout(600);
 			}
 			h.check((await P.locator('#ps-more-hint').count()) === 0, T + 'J9: after the first bar edit the tip is gone');
 			h.check((await P.evaluate(() => localStorage.getItem('tipsDismissed') ?? '')).includes('phone-more-drag'), T + 'J9: …and remembered');
 			await shot(P, `j9-tip-retired-${theme}`);
-			await P.evaluate(() => window.__stores.phoneShell.phoneSheet.set(null));
+			await P.evaluate(() => window.__tp.test.v1.phoneShell.phoneSheet.set(null));
 			await P.waitForTimeout(300);
 			await h.freshReload(A);
 			await P.locator('#restore-session-dismiss').tap({ timeout: 4000 }).catch(() => {});
@@ -774,9 +774,9 @@ h.run(async () => {
 			await P.waitForTimeout(600);
 			h.check((await P.locator('.ps-sheet, #ps-more-sheet').count()) > 0 && (await P.locator('#ps-more-hint').count()) === 0, T + 'J9: after a reload the More sheet opens without the tip');
 			// Settings ▸ Interface ▸ Reset tips
-			await P.evaluate(() => window.__stores.phoneShell.phoneSheet.set(null));
+			await P.evaluate(() => window.__tp.test.v1.phoneShell.phoneSheet.set(null));
 			await P.waitForTimeout(300);
-			await P.evaluate(() => window.__stores.settingsOpen.set(true));
+			await P.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 			await P.waitForTimeout(800);
 			const nav = P.locator('.sn-label', { hasText: /^Interface$/ });
 			if (await nav.count()) await nav.first().tap().catch(() => {});
@@ -787,7 +787,7 @@ h.run(async () => {
 			await reset.tap();
 			await P.waitForTimeout(300);
 			h.check((await P.evaluate(() => localStorage.getItem('tipsDismissed'))) === null && (await reset.isDisabled()), T + 'J9: Reset tips forgets the retired tips (and greys out)');
-			await P.evaluate(() => window.__stores.settingsOpen.set(false));
+			await P.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 			await P.waitForTimeout(500);
 			await P.locator('#ps-more').tap();
 			await P.waitForTimeout(600);

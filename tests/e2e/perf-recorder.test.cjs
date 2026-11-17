@@ -23,9 +23,9 @@ h.run(async () => {
 	const page = A.page;
 
 	// ---- 1. the light ring
-	await page.waitForFunction(() => window.__stores.perf?.recorderDebug().ringFrames > 30, null, { timeout: 15000 });
+	await page.waitForFunction(() => window.__tp.test.v1.perf?.recorderDebug().ringFrames > 30, null, { timeout: 15000 });
 	const ring = await page.evaluate(() => {
-		const w = window.__stores.perf.lightWindow(2000);
+		const w = window.__tp.test.v1.perf.lightWindow(2000);
 		return { n: w.frames.length, frame: w.frames[w.frames.length - 1], meta: w.meta, calls: w.frames.filter((f) => f.calls > 0).length };
 	});
 	h.check(ring.n > 10, `the light ring holds the last 2 s of frames (${ring.n})`);
@@ -35,11 +35,11 @@ h.run(async () => {
 	h.check(ring.meta.mode === 'light' && /^[0-9a-f]{7,}|unknown/.test(ring.meta.build) && typeof ring.meta.version === 'string', `meta: mode light, build ${ring.meta.build}, version ${ring.meta.version}`);
 	h.check(ring.meta.modules && Object.keys(ring.meta.modules).length > 0, `meta.modules lists the loaded modules (${Object.keys(ring.meta.modules).join(', ')})`);
 	h.check(/Chrome|Headless/.test(ring.meta.device), 'meta.device is the user agent');
-	h.check(tp.validateTpprof(await page.evaluate(() => window.__stores.perf.lightWindow(2000))).ok, 'a light window is valid T1');
+	h.check(tp.validateTpprof(await page.evaluate(() => window.__tp.test.v1.perf.lightWindow(2000))).ok, 'a light window is valid T1');
 
 	// ---- 2. markers
 	await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const job = s.sceneLoader.beginLoad('Perf Fixture', 3);
 		await new Promise((r) => setTimeout(r, 120));
 		s.sceneLoader.endLoad(job);
@@ -61,7 +61,7 @@ h.run(async () => {
 		);
 		await new Promise((r) => setTimeout(r, 300));
 	});
-	const ev = await page.evaluate(() => window.__stores.perf.lightWindow(5000).events);
+	const ev = await page.evaluate(() => window.__tp.test.v1.perf.lightWindow(5000).events);
 	const kinds = ev.map((e) => e.kind);
 	const loads = ev.filter((e) => e.kind === 'scene-load');
 	h.check(loads.length === 2 && loads[0].detail.phase === 'start' && loads[1].detail.phase === 'end' && loads[1].detail.scene === 'Perf Fixture' && loads[1].detail.ms >= 100, `scene-load start + end with the scene and its ms (${JSON.stringify(loads.map((e) => e.detail))})`);
@@ -74,7 +74,7 @@ h.run(async () => {
 
 	// ---- 3. a light recording
 	const recId = await page.evaluate(async () => {
-		const p = window.__stores.perf;
+		const p = window.__tp.test.v1.perf;
 		const id = p.startRecording({ mode: 'light', name: 'Suite light' });
 		await new Promise((r) => setTimeout(r, 1500));
 		p.mark('halfway');
@@ -84,7 +84,7 @@ h.run(async () => {
 	h.check(recId.again === recId.id, 'a second record() while one runs returns the running id');
 	h.check(recId.info.frames > 10 && recId.info.mode === 'light', `the running recording counts frames (${recId.info.frames})`);
 	h.check(recId.stopped === recId.id, 'stop() resolves the saved id');
-	const doc = await page.evaluate((id) => window.__stores.perf.getRecording(id), recId.id);
+	const doc = await page.evaluate((id) => window.__tp.test.v1.perf.getRecording(id), recId.id);
 	const v = tp.validateTpprof(doc);
 	h.check(v.ok, 'the saved recording is valid T1 ' + v.errors.slice(0, 3).join('; '));
 	h.check(doc.meta.name === 'Suite light' && doc.meta.mode === 'light' && doc.meta.durationMs >= 1900, `meta name/mode/duration (${doc.meta.durationMs} ms)`);
@@ -92,19 +92,19 @@ h.run(async () => {
 	const half = doc.events.find((e) => e.kind === 'mark' && e.detail.text === 'halfway');
 	h.check(half && half.t > 1300 && half.t < 1900, `the mark sits at its time in the recording (${half?.t})`);
 	h.check(!doc.captures && !doc.notes, 'a light recording has no captures or notes');
-	const rows = await page.evaluate(() => window.__stores.perf.listRecordings());
+	const rows = await page.evaluate(() => window.__tp.test.v1.perf.listRecordings());
 	h.check(rows[0].id === recId.id && rows[0].frames === doc.frames.length && rows[0].summary.fpsP50 > 0, `list() has it first with its summary (fps p50 ${rows[0].summary.fpsP50})`);
 
 	// ---- 4. rename / pin / delete
 	await page.evaluate(async (id) => {
-		const p = window.__stores.perf;
+		const p = window.__tp.test.v1.perf;
 		await p.renameRecording(id, 'Renamed');
 		await p.pinRecording(id, true);
 	}, recId.id);
-	const row = (await page.evaluate(() => window.__stores.perf.listRecordings()))[0];
+	const row = (await page.evaluate(() => window.__tp.test.v1.perf.listRecordings()))[0];
 	h.check(row.name === 'Renamed' && row.pinned === true, 'rename + pin reach the row');
 	const capped = await page.evaluate(async (pinned) => {
-		const p = window.__stores.perf;
+		const p = window.__tp.test.v1.perf;
 		const ids = [];
 		for (let i = 0; i < p.MAX_SAVED + 2; i++) ids.push(await p.saveDocument(p.lightWindow(200, { name: 'filler ' + i })));
 		const list = await p.listRecordings();
@@ -112,7 +112,7 @@ h.run(async () => {
 	}, recId.id);
 	h.check(capped.n === capped.max + 1 && capped.hasPinned && capped.firstFillerGone && capped.lastFiller, `past ${capped.max} unpinned the oldest goes, the pinned one stays (${capped.n} kept)`);
 	const del = await page.evaluate(async (ids) => {
-		const p = window.__stores.perf;
+		const p = window.__tp.test.v1.perf;
 		for (const id of ids) await p.deleteRecording(id);
 		return { list: (await p.listRecordings()).length, gone: await p.getRecording(ids[ids.length - 1]) };
 	}, capped.ids);
@@ -120,7 +120,7 @@ h.run(async () => {
 
 	// ---- 5. export -> node decode -> import
 	const exported = await page.evaluate(async (id) => {
-		const blob = await window.__stores.perf.exportRecording(id);
+		const blob = await window.__tp.test.v1.perf.exportRecording(id);
 		return { type: blob.type, bytes: Array.from(new Uint8Array(await blob.arrayBuffer())) };
 	}, recId.id);
 	const bytes = Uint8Array.from(exported.bytes);
@@ -128,7 +128,7 @@ h.run(async () => {
 	const decoded = tp.decodeTpprof(bytes);
 	h.check(decoded.frames.length === doc.frames.length && decoded.summary.frames === doc.frames.length && decoded.meta.name === 'Renamed', 'the file decodes outside the app with the same frames + a summary');
 	const imp = await page.evaluate(async (arr) => {
-		const p = window.__stores.perf;
+		const p = window.__tp.test.v1.perf;
 		const id = await p.importRecording(new Blob([new Uint8Array(arr)]));
 		let refused = '';
 		try {
@@ -142,20 +142,20 @@ h.run(async () => {
 	h.check(/Not a valid performance recording/.test(imp.refused), `a bad file is refused with a reason (${imp.refused})`);
 	// a beacon export is plain JSON
 	const jsonId = await page.evaluate(async () => {
-		const p = window.__stores.perf;
+		const p = window.__tp.test.v1.perf;
 		return p.importRecording(new Blob([JSON.stringify(p.lightWindow(500, { kind: 'sample', session: 'suite1234' }))]));
 	});
 	h.check(typeof jsonId === 'string', 'a plain-JSON beacon window imports too');
 
 	// ---- 6. survives a reload
 	await h.freshReload(A);
-	await page.waitForFunction(() => window.__stores?.perf, null, { timeout: 30000 });
-	const after = await page.evaluate(async (id) => ({ list: await window.__stores.perf.listRecordings(), doc: await window.__stores.perf.getRecording(id) }), recId.id);
+	await page.waitForFunction(() => window.__tp?.test.v1?.perf, null, { timeout: 30000 });
+	const after = await page.evaluate(async (id) => ({ list: await window.__tp.test.v1.perf.listRecordings(), doc: await window.__tp.test.v1.perf.getRecording(id) }), recId.id);
 	h.check(after.list.length === 3 && after.doc?.frames?.length === doc.frames.length, `recordings survive a reload (${after.list.length})`);
 
 	// ---- 7. a failed write falls back to memory
 	const fb = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.idb.debugForceNextTx('quota');
 		const id = await s.perf.saveDocument(s.perf.lightWindow(300, { name: 'quota victim' }));
 		const dbg = s.perf.recorderDebug();
@@ -165,7 +165,7 @@ h.run(async () => {
 
 	// ---- 8. overhead (desktop; the Quest number is owed on device / via the beacon)
 	const oh = await page.evaluate(async () => {
-		const p = window.__stores.perf;
+		const p = window.__tp.test.v1.perf;
 		p.measureOverhead(true);
 		p.startRecording({ mode: 'light', name: 'overhead' });
 		await new Promise((r) => setTimeout(r, 3000));

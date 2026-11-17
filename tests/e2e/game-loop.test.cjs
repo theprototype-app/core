@@ -14,13 +14,13 @@ const h = require('./helpers.cjs');
 const gstate = (peer) =>
 	peer.page.evaluate(() => {
 		let g;
-		window.__stores.gameState.gameState.subscribe((v) => (g = v))();
+		window.__tp.test.v1.gameState.gameState.subscribe((v) => (g = v))();
 		return g;
 	});
 const looking = (peer) =>
 	peer.page.evaluate(() => {
 		let p;
-		window.__stores.cameraPreview.cameraPreview.subscribe((v) => (p = v))();
+		window.__tp.test.v1.cameraPreview.cameraPreview.subscribe((v) => (p = v))();
 		return p?.uuid ?? null;
 	});
 const onScreen = (peer) =>
@@ -30,13 +30,13 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
-	for (const p of [A, B]) await p.page.waitForFunction(() => !!window.__stores?.hudActions, { timeout: 30000 });
+	for (const p of [A, B]) await p.page.waitForFunction(() => !!window.__tp?.test.v1?.hudActions, { timeout: 30000 });
 	await h.connect(A, B);
 	const page = A.page;
 
 	// ---- 0. a play camera to start the game from ----------------------------
 	const camUuid = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.gameState.clearGameState();
 		s.flowNodes.set([]);
 		s.flowEdges.set([]);
@@ -50,8 +50,8 @@ h.run(async () => {
 
 	// ---- 1. open the HUD editor and BUILD a menu screen through the UI ------
 	await page.evaluate(() => {
-		window.__stores.hudEditorClose.set(false);
-		window.__stores.bottomDock.activateDock('hud');
+		window.__tp.test.v1.hudEditorClose.set(false);
+		window.__tp.test.v1.bottomDock.activateDock('hud');
 	});
 	await page.waitForTimeout(1700);
 
@@ -59,7 +59,7 @@ h.run(async () => {
 		// the palette adds the button — the real authoring path
 		document.querySelector('#hud-palette [data-hud-kind="button"]')?.click();
 		await new Promise((r) => setTimeout(r, 800));
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const doc = s.hudDocs.hudDocOf('scene');
 		const sid = doc.screens[0].id;
 		const btn = doc.screens[0].elements[doc.screens[0].elements.length - 1];
@@ -106,7 +106,7 @@ h.run(async () => {
 	// ---- 2. ASSIGN the actions from the HUD editor --------------------------
 	// This is the loop that did not exist: no node editor, no typing an element id.
 	const bound = await page.evaluate(async (ctx) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const start = s.hudActions.addBinding(ctx.buttonId, 'start');
 		const cam = s.hudActions.addBinding(ctx.buttonId, 'camera');
 		await new Promise((r) => setTimeout(r, 800));
@@ -138,7 +138,7 @@ h.run(async () => {
 	// ---- 3. the SCENE node that names the starting camera -------------------
 	// "in scene place a node which would direct which camera to start from"
 	const startNode = await page.evaluate(async (cam) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let nodes;
 		s.flowNodes.subscribe((v) => (nodes = v))();
 		s.flowNodes.set([
@@ -152,12 +152,12 @@ h.run(async () => {
 
 	// push the whole graph to the peer and WAIT for it, or the peer reacts to a state
 	// change it has no nodes for yet
-	await page.evaluate((id) => window.__stores.nodesHandler.sendNodes(id), B.id);
+	await page.evaluate((id) => window.__tp.test.v1.nodesHandler.sendNodes(id), B.id);
 	let peerHasGraph = false;
 	for (let i = 0; i < 40 && !peerHasGraph; i++) {
 		peerHasGraph = await B.page.evaluate(() => {
 			let g;
-			window.__stores.flowGraphs.subscribe((v) => (g = v))();
+			window.__tp.test.v1.flowGraphs.subscribe((v) => (g = v))();
 			const types = (g.scene?.nodes ?? []).map((n) => n.type);
 			return types.includes('gamestart') && types.includes('hudbutton');
 		});
@@ -169,12 +169,12 @@ h.run(async () => {
 	// ---- 4. BEFORE the press: both peers sit on the menu --------------------
 	await page.evaluate(() => {
 		// close the editor so the HUD renders in the viewport (D5's authoring rule)
-		window.__stores.hudEditorClose.set(true);
+		window.__tp.test.v1.hudEditorClose.set(true);
 	});
 	// 30 P1: a GAME's screens are drawn in PLAY, never over the editor (game-editor-flow),
 	// so both players press play first — which is also the only honest version of "the
 	// user's scenario": Start is a button inside the game, not a switch in the editor.
-	for (const p of [A, B]) await p.page.evaluate(() => window.__stores.playMode.requestPlay());
+	for (const p of [A, B]) await p.page.evaluate(() => window.__tp.test.v1.playMode.requestPlay());
 	await page.waitForTimeout(1200);
 	const beforeA = await onScreen(A);
 	const beforeB = await onScreen(B);
@@ -222,7 +222,7 @@ h.run(async () => {
 	// `counter -> hudtext` was already true in 21-A; here it is a VARIABLE instead, which is
 	// the same story through the game shell.
 	const scored = await page.evaluate(async (scoreId) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.hudActions.addBinding(scoreId, 'showvar');
 		await new Promise((r) => setTimeout(r, 800));
 		let g;
@@ -247,14 +247,14 @@ h.run(async () => {
 	// ---- 8. a LATE JOINER walks into a running game ------------------------
 	// A approves from the EDITOR (a peer cannot approve while in play); B stays in play,
 	// so the round keeps a player and the abandon watch leaves it running
-	await page.evaluate(() => window.__stores.playMode.exitPlay());
+	await page.evaluate(() => window.__tp.test.v1.playMode.exitPlay());
 	await page.waitForTimeout(600);
 	const C = await h.setupPage(browser, 'C');
-	await C.page.waitForFunction(() => !!window.__stores?.gameState, { timeout: 30000 });
+	await C.page.waitForFunction(() => !!window.__tp?.test.v1?.gameState, { timeout: 30000 });
 	await h.connect(C, A);
 	await C.page.waitForTimeout(3200);
 	// the joiner looks at the game the way a player does: from inside Play
-	await C.page.evaluate(() => window.__stores.playMode.requestPlay());
+	await C.page.evaluate(() => window.__tp.test.v1.playMode.requestPlay());
 	await C.page.waitForTimeout(1200);
 	const lateState = await gstate(C);
 	h.check(lateState.state === 'playing', `a late joiner arrives mid-game (${lateState.state})`);
@@ -270,7 +270,7 @@ h.run(async () => {
 	for (let i = 0; i < 40 && !lateHasGraph; i++) {
 		lateHasGraph = await C.page.evaluate(() => {
 			let g;
-			window.__stores.flowGraphs.subscribe((v) => (g = v))();
+			window.__tp.test.v1.flowGraphs.subscribe((v) => (g = v))();
 			return (g.scene?.nodes ?? []).some((n) => n.type === 'gamestart');
 		});
 		if (!lateHasGraph) await C.page.waitForTimeout(250);
@@ -280,16 +280,16 @@ h.run(async () => {
 	// object has to have arrived through the handshake before this can do anything.
 	let lateHasCam = false;
 	for (let i = 0; i < 40 && !lateHasCam; i++) {
-		lateHasCam = await C.page.evaluate(() => window.__stores.cameraObjects.listCameraObjects().length > 0);
+		lateHasCam = await C.page.evaluate(() => window.__tp.test.v1.cameraObjects.listCameraObjects().length > 0);
 		if (!lateHasCam) await C.page.waitForTimeout(250);
 	}
 	h.check(lateHasCam, 'premise: the late joiner received the camera object');
 	let lateCam = null;
-	await C.page.evaluate(() => window.__stores.flowRuntime.syncGameCameraNow());
+	await C.page.evaluate(() => window.__tp.test.v1.flowRuntime.syncGameCameraNow());
 	for (let i = 0; i < 20 && !lateCam; i++) {
 		lateCam = await C.page.evaluate(() => {
 			let p;
-			window.__stores.cameraPreview.cameraPreview.subscribe((v) => (p = v))();
+			window.__tp.test.v1.cameraPreview.cameraPreview.subscribe((v) => (p = v))();
 			return p?.uuid ?? null;
 		});
 		if (!lateCam) await C.page.waitForTimeout(250);
@@ -300,10 +300,10 @@ h.run(async () => {
 	);
 
 	// ---- 9. the game ENDS, and everyone follows ----------------------------
-	await page.evaluate(() => window.__stores.playMode.requestPlay());
+	await page.evaluate(() => window.__tp.test.v1.playMode.requestPlay());
 	await page.waitForTimeout(600);
 	const ended = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.gameState.setGameState('over', { outcome: 'won' });
 		await new Promise((r) => setTimeout(r, 1400));
 		let g;
@@ -319,7 +319,7 @@ h.run(async () => {
 	// The screens are bound to the state, so returning to `menu` brings the menu back on
 	// every peer by itself. This is the half that makes a Restart button one action.
 	const backToMenu = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		// clear the local override the press left, so the binding is what decides
 		s.hudDocs.showHudScreen('scene', null);
 		s.gameState.setGameState('menu');

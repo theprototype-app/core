@@ -108,7 +108,7 @@ h.run(async () => {
 	if (PAGES.includes('editor') && !process.env.SKIP_STATUS) {
 		const context = { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 };
 		const { page, ctx } = await h.setupPage(browser, 'status', { context });
-		await page.evaluate(() => window.__stores.templatesModalOpen?.set(false));
+		await page.evaluate(() => window.__tp.test.v1.templatesModalOpen?.set(false));
 		await page.waitForTimeout(800);
 		const roomy = await page.evaluate(statusRow);
 		console.log('status row:', JSON.stringify(roomy));
@@ -125,7 +125,7 @@ h.run(async () => {
 		await page.evaluate(() => document.documentElement.style.removeProperty('--ps-right'));
 		// the Connected panel on a fresh page: other public rooms under their own heading
 		await page.evaluate(() =>
-			window.__stores.cloudHooks.scenePresence.set({
+			window.__tp.test.v1.cloudHooks.scenePresence.set({
 				myRoomId: 'room-me',
 				rooms: [{ id: 'room-2', name: 'Azure Atrium', scene: 'Atrium', hostPeerId: 'h2', members: [{ peerId: 'p1', name: 'Someone Else', mode: 'playing' }] }]
 			})
@@ -170,7 +170,7 @@ h.run(async () => {
 					({ page, ctx } = await h.setupPage(browser, slug.slice(0, 3) + size.name[0], { context }));
 					const bytes = Array.from(fs.readFileSync(file));
 					await page.evaluate(async (arr) => {
-						const s = window.__stores;
+						const s = window.__tp?.test.v1;
 						s.templatesModalOpen?.set(false);
 						const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 						await s.sessions.applySession(payload, { backup: false });
@@ -190,12 +190,12 @@ h.run(async () => {
 						await ctx.close();
 						continue;
 					}
-					await page.waitForFunction(() => window.tpPlay && window.__stores?.playMode, null, { timeout: 90000 });
+					await page.waitForFunction(() => window.tpPlay && window.__tp?.test.v1?.playMode, null, { timeout: 90000 });
 					await page.evaluate(() => window.tpPlay.loaded);
 				}
 				await page.waitForTimeout(2500);
-				await page.evaluate(() => window.__stores.playMode.requestPlay({ flat: true }));
-				await h.eventually(() => page.evaluate((r) => eval(r)(window.__stores.isLocked), read), (v) => v === true, `${tag}: premise: in Play`, 15000);
+				await page.evaluate(() => window.__tp.test.v1.playMode.requestPlay({ flat: true }));
+				await h.eventually(() => page.evaluate((r) => eval(r)(window.__tp.test.v1.isLocked), read), (v) => v === true, `${tag}: premise: in Play`, 15000);
 				await page.waitForTimeout(1500);
 				const menu = await page.evaluate(boxes);
 				await page.screenshot({ path: path.join(EVIDENCE, `${slug}-${size.name}-${kind}-menu.png`) });

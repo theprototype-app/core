@@ -14,8 +14,8 @@ h.run(async () => {
 	await A.page.locator('#explorer-slot').click();
 	await A.page.waitForTimeout(600);
 	await A.page.evaluate((png) => {
-		window.__stores.explorer.activeFolder.set(null);
-		window.__stores.explorer.createFolder('Models', null);
+		window.__tp.test.v1.explorer.activeFolder.set(null);
+		window.__tp.test.v1.explorer.createFolder('Models', null);
 		const bytes = Uint8Array.from(atob(png), (c) => c.charCodeAt(0));
 		const dt = new DataTransfer();
 		dt.items.add(new File([bytes], 'tiny.png', { type: 'image/png' }));
@@ -41,7 +41,7 @@ h.run(async () => {
 	const folderRenamed = await A.page.evaluate(
 		() =>
 			new Promise((res) =>
-				window.__stores.explorer.explorerFolders.subscribe((f) => res(f.some((x) => x.name === 'Meshes')))()
+				window.__tp.test.v1.explorer.explorerFolders.subscribe((f) => res(f.some((x) => x.name === 'Meshes')))()
 			)
 	);
 	h.check(folderRenamed, 'folder renamed inline on Enter');
@@ -59,7 +59,7 @@ h.run(async () => {
 	const itemRenamed = await A.page.evaluate(
 		() =>
 			new Promise((res) =>
-				window.__stores.explorer.explorerItems.subscribe((i) => res(i.some((x) => x.name === 'renamed.png')))()
+				window.__tp.test.v1.explorer.explorerItems.subscribe((i) => res(i.some((x) => x.name === 'renamed.png')))()
 			)
 	);
 	h.check(itemRenamed, 'item renamed inline on Enter');

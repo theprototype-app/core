@@ -46,7 +46,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1280, height: 720 } } });
 	const page = A.page;
 	await page.evaluate(async (doc) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		await s.moduleSDK.initModules([{ id: 'sharpall', name: 'Sharpness fixture', version: '1.0.0', description: '33-games', register() {} }]);
 		s.gameKit.gameSettings.forceGameId('sharp-all');
 		s.hudDocs.setHudDocFor('scene', doc);
@@ -60,7 +60,7 @@ h.run(async () => {
 	/** one frame from a standing head, the left wrist turned up to read, every surface measured */
 	const measure = (what) =>
 		page.evaluate(async (what) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const T = s.THREE;
 			const k = s.gameKit.vrGamePanel;
 			const head = { position: new T.Vector3(0, 1.6, 0), quaternion: new T.Quaternion() };
@@ -90,13 +90,13 @@ h.run(async () => {
 	if (menu['vr-game-wrist']) h.check(menu['vr-game-wrist'].dist < 0.6 && menu['vr-game-wrist'].ratio >= 1, `the wrist card is crisp where it is read: ${fmt(menu['vr-game-wrist'])}`);
 
 	// ---- the pause menu's pages on the board
-	await page.evaluate(() => window.__stores.gameKit.gameShell.openShellMenu('settings'));
+	await page.evaluate(() => window.__tp.test.v1.gameKit.gameShell.openShellMenu('settings'));
 	const shell = await measure('shell');
 	h.check(!!shell['vr-game-panel'] && shell['vr-game-panel'].ratio >= 1, `the pause menu on the board is crisp: ${shell['vr-game-panel'] ? fmt(shell['vr-game-panel']) : 'not drawn'}`);
-	await page.evaluate(() => window.__stores.gameKit.gameShell.closeShellMenu());
+	await page.evaluate(() => window.__tp.test.v1.gameKit.gameShell.closeShellMenu());
 
 	// ---- in a round: the top strip, and the announce banner
-	await page.evaluate(() => window.__stores.gameState.setGameState('playing'));
+	await page.evaluate(() => window.__tp.test.v1.gameState.setGameState('playing'));
 	await page.waitForTimeout(300);
 	const round = await measure('banner');
 	h.check(!!round['vr-game-strip'] && round['vr-game-strip'].ratio >= 1, `the top strip is crisp: ${round['vr-game-strip'] ? fmt(round['vr-game-strip']) : 'not drawn'}`);
@@ -104,7 +104,7 @@ h.run(async () => {
 
 	// ---- every canvas-textured surface the VR game UI draws was measured above
 	const canvases = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let scene;
 		s.globalScene.subscribe((v) => (scene = v))();
 		const names = [];
@@ -118,9 +118,9 @@ h.run(async () => {
 	h.check(unmeasured.length === 0, `every visible VR canvas panel is in the probe (${canvases.join(', ')}${unmeasured.length ? ' — NOT measured: ' + unmeasured.join(', ') : ''})`);
 
 	// ---- the rendered check: the wrist card's text edges, from the eye, at its real distance
-	await page.evaluate(() => window.__stores.gameState.setGameState('menu'));
+	await page.evaluate(() => window.__tp.test.v1.gameState.setGameState('menu'));
 	const render = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const T = s.THREE;
 		const k = s.gameKit.vrGamePanel;
 		let renderer, scene;
@@ -191,6 +191,6 @@ h.run(async () => {
 	h.check(render.n > 2000 && render.full > 20, `(premise) the wrist card covers ${render.n} eye pixels with text edges to measure (energy ${render.full.toFixed(1)})`);
 	h.check(render.full > render.soft * 1.15, `the wrist card's texels show at the eye: full ${render.full.toFixed(1)} vs half the texels ${render.soft.toFixed(1)} (x${(render.full / Math.max(1e-6, render.soft)).toFixed(2)})`);
 
-	await page.evaluate(() => window.__stores.isVRMode.set(false));
+	await page.evaluate(() => window.__tp.test.v1.isVRMode.set(false));
 	await h.finish(browser);
 });

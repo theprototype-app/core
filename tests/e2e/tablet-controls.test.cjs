@@ -26,7 +26,7 @@ h.run(async () => {
 		const P = await h.setupPage(browser, `tablet-${vp.width}`, { context: { hasTouch: true, isMobile: true, deviceScaleFactor: 2, viewport: vp } });
 		const page = P.page;
 		// a box selected → the Properties column on the right
-		await page.evaluate(() => window.__stores.inspectorClose.set(false));
+		await page.evaluate(() => window.__tp.test.v1.inspectorClose.set(false));
 		await h.eventually(() => look(page), (s) => !!s.col && !!s.pill, tag('premise: the right column and the Controls bar are up'));
 		await nap(800);
 
@@ -35,7 +35,7 @@ h.run(async () => {
 		h.check(!!s.col && !!s.pill && s.col.b <= s.pill.t + 1, tag(`not pinned: the column ends above the Controls bar (${JSON.stringify(s)})`));
 
 		// 2. pinned full height: the bar leaves the column's width and centres in what is left
-		await page.evaluate(() => window.__stores.sidebars.toggleSidebarFull('right', true));
+		await page.evaluate(() => window.__tp.test.v1.sidebars.toggleSidebarFull('right', true));
 		await nap(1200);
 		s = await look(page);
 		h.check(!!s.col && !!s.pill && s.pill.r <= s.col.l + 1, tag(`pinned: the bar ends left of the column (${JSON.stringify(s)})`));
@@ -47,7 +47,7 @@ h.run(async () => {
 
 		// 3. unpinned again, column still open: dock-fixes (owner 2026-11-08) — EVERY open column bounds the bar, pinned or
 		// not, so it stays centred in the free width (or at the track's min), exactly as pinned
-		await page.evaluate(() => window.__stores.sidebars.toggleSidebarFull('right', false));
+		await page.evaluate(() => window.__tp.test.v1.sidebars.toggleSidebarFull('right', false));
 		await nap(1200);
 		s = await look(page);
 		const mid2 = s.pill ? (s.pill.l + s.pill.r) / 2 : 0;
@@ -55,7 +55,7 @@ h.run(async () => {
 		const tr2 = await page.evaluate(() => window.__toolbarTrack ?? null);
 		h.check(!!s.pill && !!s.col && s.pill.r <= s.col.l + 1 && (Math.abs(mid2 - free2) <= 12 || (tr2 && Math.abs(mid2 - tr2.min) <= 2)), tag(`unpinned: the bar stays in the free width beside the open column (centre ${mid2}, free middle ${free2}, track ${JSON.stringify(tr2 && { min: Math.round(tr2.min), max: Math.round(tr2.max) })})`));
 		// 4. column closed: back to the screen's middle
-		await page.evaluate(() => window.__stores.inspectorClose.set(true));
+		await page.evaluate(() => window.__tp.test.v1.inspectorClose.set(true));
 		await nap(1200);
 		s = await look(page);
 		const mid3 = s.pill ? (s.pill.l + s.pill.r) / 2 : 0;

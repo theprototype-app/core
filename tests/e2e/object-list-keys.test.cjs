@@ -10,7 +10,7 @@ const h = require('./helpers.cjs');
 
 const state = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const get = (store) => {
 			let v;
 			store.subscribe((x) => (v = x))();
@@ -27,7 +27,7 @@ const state = (page) =>
 			renameFocused: document.activeElement?.classList?.contains('row-rename') ?? false
 		};
 	});
-const camPos = (page) => page.evaluate(() => new Promise((r) => window.__stores.globalCamera.subscribe((c) => r(c?.position?.toArray()))()));
+const camPos = (page) => page.evaluate(() => new Promise((r) => window.__tp.test.v1.globalCamera.subscribe((c) => r(c?.position?.toArray()))()));
 const moved = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
 const press = async (page, key) => {
 	await page.keyboard.press(key);
@@ -41,7 +41,7 @@ h.run(async () => {
 
 	// cube + sphere grouped, then a cone: rows = [Group{Box, Sphere}, Cone]
 	const ids = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const box = s.addObjects.spawnAtPoint('/create Box 1 1 1', [2, 0.5, 0]);
 		const sphere = s.addObjects.spawnAtPoint('/create Sphere 0.5', [-2, 0.5, 0]);
 		s.objectActions.selectObject(box.uuid);
@@ -60,12 +60,12 @@ h.run(async () => {
 	// grouping asks the new group's row to expand (toggleExpand) once it mounts — start
 	// this walk from a COLLAPSED group
 	await page.evaluate(() => {
-		window.__stores.toggleExpand.set(null);
-		window.__stores.expandedObjects.set(new Set());
+		window.__tp.test.v1.toggleExpand.set(null);
+		window.__tp.test.v1.expandedObjects.set(new Set());
 	});
 	await page.waitForTimeout(200);
 	const rows = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g, x;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		s.expandedObjects.subscribe((v) => (x = v))();
@@ -110,7 +110,7 @@ h.run(async () => {
 	h.check(s.selected[0] === ids.cone, 'End selects the last row');
 
 	// ---- Enter = Properties ------------------------------------------------------------
-	await page.evaluate(() => window.__stores.closeSelectionInspector());
+	await page.evaluate(() => window.__tp.test.v1.closeSelectionInspector());
 	await page.waitForTimeout(100);
 	await press(page, 'Enter');
 	s = await state(page);
@@ -169,7 +169,7 @@ h.run(async () => {
 	h.check(moved(c2, c3) > 0.1, `W flies the camera once the list is blurred (moved ${moved(c2, c3).toFixed(2)})`);
 
 	// ---- the search box hands ↓ to the tree ---------------------------------------------
-	await page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await page.locator('#object-search').fill('');
 	await page.locator('#object-search').focus();
 	await press(page, 'ArrowDown');
@@ -180,7 +180,7 @@ h.run(async () => {
 	h.check(s.selected[0] !== ids.group, 'and the arrows keep walking from there');
 
 	// ---- expansion survives the filter (ancestors auto-expand into the store) -----------
-	await page.evaluate(() => window.__stores.expandedObjects.set(new Set()));
+	await page.evaluate(() => window.__tp.test.v1.expandedObjects.set(new Set()));
 	await page.locator('#object-search').fill('sphere');
 	await page.waitForTimeout(400);
 	s = await state(page);

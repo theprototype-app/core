@@ -8,7 +8,7 @@ const h = require('./helpers.cjs');
 
 /** a probe module: an api handle on window, and an EVENT node type a test can pulse */
 const PROBE = () => {
-	const s = /** @type {any} */ (window).__stores;
+	const s = /** @type {any} */ (window).__tp?.test.v1;
 	s.moduleSDK.initModules([
 		{
 			id: 'kitprobe',
@@ -32,11 +32,11 @@ h.run(async () => {
 	for (const p of [A, B]) h.check(await p.page.evaluate(PROBE), p.id + ': api.kit is on a module (score, round, levels, rules, pickups)');
 	const keys = await A.page.evaluate(() => Object.keys(/** @type {any} */ (window).__kitApi.kit));
 	h.check(['rules', 'round', 'levels', 'score', 'pickups'].every((k) => keys.includes(k)), 'api.kit pieces: ' + keys.join(', '));
-	const groups = await A.page.evaluate(() => /** @type {any} */ (window).__stores.nodeCatalog.nodeCatalog.filter((/** @type {any} */ g) => g.group.startsWith('Kit:')).map((/** @type {any} */ g) => g.group));
+	const groups = await A.page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.nodeCatalog.nodeCatalog.filter((/** @type {any} */ g) => g.group.startsWith('Kit:')).map((/** @type {any} */ g) => g.group));
 	h.check(['Kit: Rules', 'Kit: Round', 'Kit: Levels', 'Kit: Score', 'Kit: Pickups'].every((g) => groups.includes(g)), 'the node palette carries the generated kit groups: ' + groups.join(', '));
 
 	await h.connect(B, A);
-	const dbg = (/** @type {any} */ p) => p.page.evaluate(() => /** @type {any} */ (window).__stores.kit.kitDebug());
+	const dbg = (/** @type {any} */ p) => p.page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.kit.kitDebug());
 	const [da, db] = [await dbg(A), await dbg(B)];
 	h.check(da.authority && da.authority === db.authority, `both peers name ONE authority (${da.authority} / ${db.authority})`);
 	const authorityPeer = da.authority === A.id ? A : B;
@@ -57,14 +57,14 @@ h.run(async () => {
 		})
 	);
 	h.check(ids.length === 2, 'premise: the probe pulse and a "Kit: Score ▸ Add score" node, wired, created through api.flow');
-	await h.eventually(() => B.page.evaluate((id) => /** @type {any} */ (window).__stores.flowStore?.findNodeAnyGraph?.((/** @type {any} */ n) => n.id === id) ? true : !!(/** @type {any} */ (window).__kitApi.flow.nodes('kit-score-add').length), ids[1]), (v) => v, 'premise: the peer holds the kit node', 10000);
+	await h.eventually(() => B.page.evaluate((id) => /** @type {any} */ (window).__tp.test.v1.flowStore?.findNodeAnyGraph?.((/** @type {any} */ n) => n.id === id) ? true : !!(/** @type {any} */ (window).__kitApi.flow.nodes('kit-score-add').length), ids[1]), (v) => v, 'premise: the peer holds the kit node', 10000);
 	await A.page.waitForTimeout(1200); // past both peers' first sight of the new nodes (actionSeenAt)
 	await B.page.evaluate(() => /** @type {any} */ (window).__kitApi.fireNodeTrigger('kitprobe'));
 	await h.eventually(() => Promise.all([A, B].map((p) => p.page.evaluate(() => /** @type {any} */ (window).__kitApi.kit.score.total()))), (v) => v[0] === 7 && v[1] === 7, 'one replicated pulse into a kit node: +5 ONCE on both peers (7), never once per peer', 8000);
 	await A.page.waitForTimeout(1500);
 	const after = await Promise.all([A, B].map((p) => p.page.evaluate(() => /** @type {any} */ (window).__kitApi.kit.score.total())));
 	h.check(after[0] === 7 && after[1] === 7, `…and it stays 7 (no late double: ${after})`);
-	const dup = await Promise.all([A, B].map((p) => p.page.evaluate(() => /** @type {any} */ (window).__stores.kit.kitDebug().stats.duplicate)));
+	const dup = await Promise.all([A, B].map((p) => p.page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.kit.kitDebug().stats.duplicate)));
 	h.check(dup[0] + dup[1] >= 1, `the second peer's ask for the same press was recognised as a duplicate (${dup})`);
 
 	// ---- 3. kit.round drives core's game singleton on every peer -------------------------------
@@ -75,7 +75,7 @@ h.run(async () => {
 	});
 	const gstate = (/** @type {any} */ p) => p.page.evaluate(() => {
 		let g;
-		/** @type {any} */ (window).__stores.gameState.gameState.subscribe((/** @type {any} */ v) => (g = v))();
+		/** @type {any} */ (window).__tp.test.v1.gameState.gameState.subscribe((/** @type {any} */ v) => (g = v))();
 		return { state: g.state, round: g.round, phase: /** @type {any} */ (window).__kitApi.kit.round.phase() };
 	});
 	await h.eventually(() => Promise.all([A, B].map(gstate)), (v) => v.every((g) => g.state === 'playing' && g.phase === 'playing') && v[0].round === v[1].round && v[0].round > 0, 'kit.round.start from either peer: core\'s game is playing, one round, on both', 8000);
@@ -86,7 +86,7 @@ h.run(async () => {
 	await other.page.evaluate(() => /** @type {any} */ (window).__kitApi.kit.round.win('probe'));
 	await h.eventually(() => Promise.all([A, B].map((p) => p.page.evaluate(() => {
 		let g;
-		/** @type {any} */ (window).__stores.gameState.gameState.subscribe((/** @type {any} */ v) => (g = v))();
+		/** @type {any} */ (window).__tp.test.v1.gameState.gameState.subscribe((/** @type {any} */ v) => (g = v))();
 		return g.state + '/' + g.outcome;
 	}))), (v) => v.every((x) => x === 'over/probe'), 'win(reason): core\'s game is over with the reason as its outcome, on both', 8000);
 
@@ -96,7 +96,7 @@ h.run(async () => {
 	await C.page.evaluate(PROBE);
 	await h.connect(C, A);
 	await h.eventually(() => C.page.evaluate(() => [/** @type {any} */ (window).__kitApi.kit.score.total(), /** @type {any} */ (window).__kitApi.kit.round.phase()]), (v) => v[0] === 4 && (v[1] === 'won' || v[1] === 'results'), 'a LATE joiner holds the kit document (score 4, the ended round) from the handshake', 12000);
-	const wire = await A.page.evaluate(() => /** @type {any} */ (window).__stores.kit.kitDebug().stats);
+	const wire = await A.page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.kit.kitDebug().stats);
 	h.check(wire.received > 0 || wire.applied > 0, 'the kit went over the real wire (' + JSON.stringify(wire) + ')');
 
 	await h.finish(browser);

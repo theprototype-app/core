@@ -16,7 +16,7 @@ const EVIDENCE = process.env.EVIDENCE_DIR || '/home/deck/.code/lanes-30/after-34
 
 /** a probe module: an api handle on window, and an EVENT node type a test can pulse */
 const PROBE = () => {
-	const s = /** @type {any} */ (window).__stores;
+	const s = /** @type {any} */ (window).__tp?.test.v1;
 	s.moduleSDK.initModules([
 		{
 			id: 'bhvprobe',
@@ -33,16 +33,16 @@ const PROBE = () => {
 };
 const B_ = (/** @type {any} */ p, /** @type {Function} */ fn, /** @type {any} */ arg) => p.page.evaluate(fn, arg);
 const dbg = (/** @type {any} */ p) => B_(p, () => {
-	const d = /** @type {any} */ (window).__stores.behaviours.behavioursDebug();
+	const d = /** @type {any} */ (window).__tp.test.v1.behaviours.behavioursDebug();
 	return { status: d.status, authority: d.authority, me: d.me, stats: d.stats };
 });
-const liveOf = (/** @type {any} */ p, /** @type {string} */ id) => B_(p, (i) => /** @type {any} */ (window).__stores.behaviours.behavioursDebug().live(i), id);
-const robots = (/** @type {any} */ p) => B_(p, () => /** @type {any} */ (window).__stores.kit.kit.impls.spawner.count('robot'));
+const liveOf = (/** @type {any} */ p, /** @type {string} */ id) => B_(p, (i) => /** @type {any} */ (window).__tp.test.v1.behaviours.behavioursDebug().live(i), id);
+const robots = (/** @type {any} */ p) => B_(p, () => /** @type {any} */ (window).__tp.test.v1.kit.kit.impls.spawner.count('robot'));
 const codeOf = (/** @type {any} */ p, /** @type {string} */ id) =>
-	B_(p, (i) => /** @type {any} */ (window).__stores.findNodeAnyGraph((/** @type {any} */ n) => n.id === i)?.node?.data?.code ?? null, id);
+	B_(p, (i) => /** @type {any} */ (window).__tp.test.v1.findNodeAnyGraph((/** @type {any} */ n) => n.id === i)?.node?.data?.code ?? null, id);
 const killAll = (/** @type {any} */ p) =>
 	B_(p, () => {
-		const k = /** @type {any} */ (window).__stores.kit.kit.impls;
+		const k = /** @type {any} */ (window).__tp.test.v1.kit.kit.impls;
 		for (const e of k.spawner.extra.list({ kind: 'robot', alive: true })) k.health.damage(e.id, 999);
 	});
 
@@ -52,7 +52,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
 	for (const p of [A, B]) h.check(await B_(p, PROBE), p.id + ': probe module up');
-	const palette = await B_(A, () => /** @type {any} */ (window).__stores.nodeCatalog.nodeCatalog.flatMap((/** @type {any} */ g) => g.items).some((/** @type {any} */ i) => i.type === 'behaviour'));
+	const palette = await B_(A, () => /** @type {any} */ (window).__tp.test.v1.nodeCatalog.nodeCatalog.flatMap((/** @type {any} */ g) => g.items).some((/** @type {any} */ i) => i.type === 'behaviour'));
 	h.check(palette, 'the node palette has a Behaviour node');
 	await h.connect(B, A);
 	const [da, db] = [await dbg(A), await dbg(B)];
@@ -66,7 +66,7 @@ h.run(async () => {
 	// and for the late joiner below — the later waits run with the engine already loaded
 	const [wid] = await B_(A, (code) => /** @type {any} */ (window).__bApi.flow.addNodes({ nodes: [{ type: 'behaviour', x: 40, y: 40, data: { name: 'Waves spawner', code } }] }), WAVES);
 	await h.eventually(() => Promise.all([A, B].map((p) => dbg(p))), (v) => v.every((d) => d.status[wid]?.status === 'running'), 'the Waves behaviour node RUNS on both peers (analyzed, loaded through the module loader)', 40000);
-	const reg = await B_(A, (i) => /** @type {any} */ (window).__stores.behaviours.behavioursDebug().registrations(i), wid);
+	const reg = await B_(A, (i) => /** @type {any} */ (window).__tp.test.v1.behaviours.behavioursDebug().registrations(i), wid);
 	h.check((reg.kit ?? 0) >= 2, 'T2: its kit listeners are tracked in its lifecycle module (' + JSON.stringify(reg) + ')');
 
 	// the LINT gate: a file that would make peers disagree does not load anywhere
@@ -74,9 +74,9 @@ h.run(async () => {
 		/** @type {any} */ (window).__bApi.flow.addNodes({ nodes: [{ type: 'behaviour', x: 40, y: 900, data: { name: 'Dice', code: 'export default behaviour({ state: {n: 0}, on: { go() { this.state.n = Math.random(); } } });' } }] })
 	);
 	await h.eventually(() => Promise.all([A, B].map((p) => dbg(p))), (v) => v.every((d) => d.status[bad]?.status === 'error' && /Math\.random/.test(d.status[bad].errors?.[0]?.message ?? '')), 'a behaviour using Math.random is REFUSED on both peers, with the lint\'s reason (line ' + 1 + ')', 10000);
-	await h.eventually(() => B_(A, (i) => /** @type {any} */ (window).__stores.behaviours.behavioursDebug().live(i), bad), (v) => v === null, '…and nothing of it runs', 3000);
+	await h.eventually(() => B_(A, (i) => /** @type {any} */ (window).__tp.test.v1.behaviours.behavioursDebug().live(i), bad), (v) => v === null, '…and nothing of it runs', 3000);
 	await B_(A, (i) => {
-		const s = /** @type {any} */ (window).__stores;
+		const s = /** @type {any} */ (window).__tp?.test.v1;
 		s.nodesHandler.deleteFlowNodes([i], 'scene');
 		let peer;
 		s.peers.subscribe((/** @type {any} */ x) => (peer = x))();
@@ -102,7 +102,7 @@ h.run(async () => {
 	await A.page.bringToFront();
 	await A.page.setViewportSize({ width: 1500, height: 900 });
 	await B_(A, (i) => {
-		const s = /** @type {any} */ (window).__stores;
+		const s = /** @type {any} */ (window).__tp?.test.v1;
 		s.bottomDock?.dockHeight?.set?.(560);
 		s.flowGraphClose.set(false);
 		s.behaviourViewOpen.set({ id: i, graphId: 'scene' });
@@ -119,7 +119,7 @@ h.run(async () => {
 	// the same view open on the OTHER peer too: whichever is not the authority sees the glow only
 	// through the replicated document
 	await B_(B, (i) => {
-		const s = /** @type {any} */ (window).__stores;
+		const s = /** @type {any} */ (window).__tp?.test.v1;
 		s.flowGraphClose.set(false);
 		s.behaviourViewOpen.set({ id: i, graphId: 'scene' });
 	}, wid);
@@ -177,18 +177,18 @@ h.run(async () => {
 	h.check(diffLines === 1, 'exactly ONE line of the file changed (' + diffLines + ')');
 	await h.eventually(() => Promise.all([A, B].map((p) => liveOf(p, wid))), (v) => v.every((l) => l?.params.interval === 4.5 && l.state.wave === 2), 'every peer reloaded with interval 4.5 — and the game kept its state (wave 2)', 8000);
 	await h.eventually(() => Promise.all([robots(A), robots(B)]), (v) => v[0] === 3 && v[1] === 3, 'the reload did NOT remove the robots in play (a source edit is not an unload)', 4000);
-	await B_(A, () => /** @type {any} */ (window).__stores.history.undo());
+	await B_(A, () => /** @type {any} */ (window).__tp.test.v1.history.undo());
 	await h.eventually(() => Promise.all([A, B].map((p) => codeOf(p, wid))), (v) => v.every((c) => c === WAVES), 'ONE undo puts the file back exactly, on both peers', 6000);
 
 	// ---- 6. Towers reach: the behaviour (a local veto) next to the kit node (Set grab reach) -----
 	const req = (/** @type {number} */ d) => ({ point: [0, 1.6, -d], eye: [0, 1.6, 0], feetY: 0, uuid: 'x', name: 'Piece', hand: 'desktop' });
-	const verdict = (/** @type {any} */ p, /** @type {number} */ d) => B_(p, (r) => /** @type {any} */ (window).__stores.kit.kitCheckGrab(r), req(d));
+	const verdict = (/** @type {any} */ p, /** @type {number} */ d) => B_(p, (r) => /** @type {any} */ (window).__tp.test.v1.kit.kitCheckGrab(r), req(d));
 	const [rid] = await B_(A, (code) => /** @type {any} */ (window).__bApi.flow.addNodes({ nodes: [{ type: 'behaviour', x: 40, y: 640, data: { name: 'Towers reach', code } }] }), REACH);
 	await h.eventually(() => Promise.all([A, B].map((p) => dbg(p))), (v) => v.every((d) => d.status[rid]?.status === 'running'), 'the reach behaviour runs on both peers', 12000);
 	const near = await verdict(other, 1.0);
 	const far = await verdict(other, 2.0);
 	h.check(near.ok === true && far.ok === false && far.reason === 'Too far - climb closer', 'behaviour version: 1.0 m allowed, 2.0 m refused on the NON-authority (a local veto): ' + JSON.stringify(far));
-	await B_(A, (i) => /** @type {any} */ (window).__stores.nodesHandler.setNodeData(i, { enabled: false }, 'scene'), rid);
+	await B_(A, (i) => /** @type {any} */ (window).__tp.test.v1.nodesHandler.setNodeData(i, { enabled: false }, 'scene'), rid);
 	await h.eventually(() => verdict(other, 2.0), (v) => v.ok === true, 'Stop: the veto is gone (its listener left with the module)', 8000);
 	const sid = await B_(A, () =>
 		/** @type {any} */ (window).__bApi.flow.addNodes({
@@ -212,14 +212,14 @@ h.run(async () => {
 
 	// ---- 8. delete the node: the behaviour's whole module goes (T2) -------------------------------
 	await B_(A, (i) => {
-		const s = /** @type {any} */ (window).__stores;
+		const s = /** @type {any} */ (window).__tp?.test.v1;
 		s.behaviourViewOpen.set(null);
 		s.nodesHandler?.deleteFlowNodes?.([i], 'scene');
 		const peer = (() => { let v; s.peers.subscribe((/** @type {any} */ x) => (v = x))(); return /** @type {any} */ (v); })();
 		peer?.send({ type: 'nodedelete', ids: [i], graphId: 'scene' });
 	}, wid);
 	await h.eventually(() => Promise.all([A, B, C].map((p) => dbg(p))), (v) => v.every((d) => !d.status[wid]), 'the deleted behaviour is gone on every peer', 10000);
-	const left = await Promise.all([A, B].map((p) => B_(p, (i) => /** @type {any} */ (window).__stores.behaviours.behavioursDebug().registrations(i), wid)));
+	const left = await Promise.all([A, B].map((p) => B_(p, (i) => /** @type {any} */ (window).__tp.test.v1.behaviours.behavioursDebug().registrations(i), wid)));
 	h.check(left.every((r) => Object.keys(r).length === 0), 'T2: nothing of it is left in the lifecycle registry (' + JSON.stringify(left) + ')');
 	await h.eventually(() => Promise.all([robots(A), robots(B)]), (v) => v[0] === 0 && v[1] === 0, 'its owned robot entities left with it', 8000);
 
@@ -247,32 +247,32 @@ h.run(async () => {
 	);
 	h.check(nodeIds.length === 6, 'the node version: 6 nodes + 6 edges (and still no win rule, no hp/speed knobs, no state you can read)');
 	await A.page.waitForTimeout(1500);
-	const bots = (/** @type {any} */ p) => B_(p, () => /** @type {any} */ (window).__stores.kit.kit.impls.spawner.count('bot'));
+	const bots = (/** @type {any} */ p) => B_(p, () => /** @type {any} */ (window).__tp.test.v1.kit.kit.impls.spawner.count('bot'));
 	await B_(B, () => /** @type {any} */ (window).__bApi.fireNodeTrigger('bhvprobe'));
 	await h.eventually(() => Promise.all([bots(A), bots(B)]), (v) => v[0] === 2 && v[1] === 2, 'node version: the pulse spawns wave 1 (2) once', 8000);
 	await B_(B, () => {
-		const k = /** @type {any} */ (window).__stores.kit.kit.impls;
+		const k = /** @type {any} */ (window).__tp.test.v1.kit.kit.impls;
 		for (const e of k.spawner.extra.list({ kind: 'bot', alive: true })) k.health.damage(e.id, 999);
 	});
 	await h.eventually(() => Promise.all([bots(A), bots(B)]), (v) => v[0] === 3 && v[1] === 3, 'node version: emptied -> 3 s -> wave 2 (counter 1 + 2 = 3) — the same rule the behaviour states in one file', 12000);
 
 	// ---- 10. the assistant's seam (34-graph-ai D5): the REAL host is registered; create/edit reach every peer
 	const hostInfo = await B_(A, () => {
-		const host = /** @type {any} */ (window).__stores.aiExtensions.behaviourHost();
+		const host = /** @type {any} */ (window).__tp.test.v1.aiExtensions.behaviourHost();
 		return host ? { format: host.format, ref: host.reference().length } : null;
 	});
 	h.check(hostInfo?.format === 'behaviour/1' && hostInfo.ref > 200, 'the behaviour host is registered for create_behaviour/edit_behaviour (' + JSON.stringify(hostInfo) + ')');
 	const SCORE = "export default behaviour({ name: 'Scorer', state: { kills: 0 }, on: { died() { this.state.kills += 1; } } });";
-	const made = await B_(A, (src) => /** @type {any} */ (window).__stores.aiExtensions.behaviourHost().create('Scorer', src, { target: 'scene' }), SCORE);
+	const made = await B_(A, (src) => /** @type {any} */ (window).__tp.test.v1.aiExtensions.behaviourHost().create('Scorer', src, { target: 'scene' }), SCORE);
 	h.check(made?.ok === true, 'host.create made a behaviour node (' + JSON.stringify(made) + ')');
 	// the id create returned — B may not hold the node yet when this line runs (a one-shot read there stayed null)
 	const scorerId = made?.id ?? null;
 	await h.eventually(() => Promise.all([A, B].map((p) => dbg(p))), (v) => !!scorerId && v.every((d) => d.status[scorerId]?.status === 'running'), 'the created behaviour runs on both peers', 12000);
-	const edited = await B_(A, (src) => /** @type {any} */ (window).__stores.aiExtensions.behaviourHost().edit('Scorer', src.replace('kills += 1', 'kills += 2')), SCORE);
+	const edited = await B_(A, (src) => /** @type {any} */ (window).__tp.test.v1.aiExtensions.behaviourHost().edit('Scorer', src.replace('kills += 1', 'kills += 2')), SCORE);
 	h.check(edited?.ok === true, 'host.edit replaced its source');
 	await h.eventually(() => codeOf(B, scorerId), (c) => typeof c === 'string' && c.includes('kills += 2'), 'the edit reached the other peer', 8000);
 	await h.eventually(
-		() => B_(B, () => /** @type {any} */ (window).__stores.aiExtensions.behaviourHost().list()),
+		() => B_(B, () => /** @type {any} */ (window).__tp.test.v1.aiExtensions.behaviourHost().list()),
 		(listed) => listed.some((/** @type {any} */ b) => b.name === 'Scorer' && /running/.test(b.summary) && /on died/.test(b.summary)),
 		'host.list() names it with its status and handlers for the scene summary',
 		8000

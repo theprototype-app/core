@@ -19,7 +19,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 	const page = A.page;
 	await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.viewModeCtl?.viewMode?.set?.('shaded');
 		await s.moduleSDK.initModules([
 			{ id: 'ontop31', name: 'On top', version: '1.0.0', description: '31 K2', register(api) { window.__api = api; } }
@@ -36,7 +36,7 @@ h.run(async () => {
 	const blocker = (at, from, size) =>
 		page.evaluate(
 			async ({ at, from, size }) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				const THREE = s.THREE;
 				// in objectsGroup: real scene content, so the BEAM meets it too (a scene-root helper
 				// is no beam target, and the panel-priority guard would go unexercised)
@@ -67,11 +67,11 @@ h.run(async () => {
 
 	console.log('\n=== 1 the radial ring over a box ===');
 	// the ring sits at the origin facing +z when no real session poses it
-	await page.evaluate(() => window.__stores.vrMenuOpen.set(true));
+	await page.evaluate(() => window.__tp.test.v1.vrMenuOpen.set(true));
 	await settle();
 	// counter-premise: the same box hides a plain mesh at the same place
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		let scene;
 		s.globalScene.subscribe((v) => (scene = v))();
@@ -85,14 +85,14 @@ h.run(async () => {
 	h.check(plainOff < 0.2, `premise: the box hides an ordinary mesh behind it (${plainOff.toFixed(2)} not red)`);
 	await blocker([0, 0, 0], [0, 0, 0.8], 0.05);
 	const ringOff = await notRed([0, 0, 0]);
-	const hov = await page.evaluate(() => { let v; window.__stores.vrControls.vrHovered.subscribe((x) => (v = x))(); return v; });
+	const hov = await page.evaluate(() => { let v; window.__tp.test.v1.vrControls.vrHovered.subscribe((x) => (v = x))(); return v; });
 	h.check(hov === null, `premise: nothing on the ring is hovered (${hov})`);
 	h.check(ringOff > 0.8, `the radial ring draws OVER the box in front of it (${ringOff.toFixed(2)} not red)`);
-	await page.evaluate(() => window.__stores.vrMenuOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.vrMenuOpen.set(false));
 
 	console.log('\n=== 2 the VR game board over a box, and the laser presses through it ===');
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.hudDocs.setHudDocFor('scene', {
 			active: '',
 			screens: [
@@ -107,7 +107,7 @@ h.run(async () => {
 		s.objectActions.setEditorMode('interact');
 	});
 	const board = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		const k = s.gameKit.vrGamePanel;
 		k.vrGamePanelFrame({ head: { position: new THREE.Vector3(0, 1.6, 0), quaternion: new THREE.Quaternion() }, hands: [null, null] });
@@ -122,7 +122,7 @@ h.run(async () => {
 	h.check(boardOff > 0.8, `the game board's Start draws OVER the box (${boardOff.toFixed(2)} not red, order ${board.order})`);
 	// the laser from behind the box: the beam ends on the board, and the trigger presses Start
 	const press = await page.evaluate(async (at) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		const r = window.__fakeXR.renderer;
 		const c = r.xr.getController(1);
@@ -147,7 +147,7 @@ h.run(async () => {
 	h.check(press.order > board.order, `on a panel the beam draws after it (order ${press.order})`);
 	h.check(press.state === 'playing', `the trigger presses Start through the box (${press.state})`);
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.gameKit.vrGamePanel.hideVrGamePanel();
 		s.objectActions.setEditorMode('edit');
 		s.gameState.setGameState('menu');
@@ -155,7 +155,7 @@ h.run(async () => {
 
 	console.log('\n=== 3 a module panel made with api.vrPanel ===');
 	const mod = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const api = window.__api;
 		const THREE = api.THREE;
 		const g = new THREE.Group();
@@ -172,7 +172,7 @@ h.run(async () => {
 	const modOff = await notRed([-3, 1, 0]);
 	h.check(modOff > 0.8, `the module's panel draws OVER the box (${modOff.toFixed(2)} not red, order ${mod.order})`);
 	const modBeam = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		const c = window.__fakeXR.renderer.xr.getController(1);
 		const from = new THREE.Vector3(-3, 1, 0.9);
@@ -187,16 +187,16 @@ h.run(async () => {
 	h.check(Math.abs(modBeam - 0.9) < 0.03, `the beam passes the box and ends on the module panel (${modBeam.toFixed(3)} m)`);
 
 	console.log('\n=== 4 the sentinel ===');
-	const sent = await page.evaluate(() => window.__stores.vrControls.panelOverlayDebug());
+	const sent = await page.evaluate(() => window.__tp.test.v1.vrControls.panelOverlayDebug());
 	h.check(sent.clears > 0 && sent.visible, `the depth clear ran while panels were open (${sent.clears} clears)`);
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let scene;
 		s.globalScene.subscribe((v) => (scene = v))();
 		scene.remove(scene.getObjectByName('k2-module-bar'));
 	});
 	await settle();
-	const after = await page.evaluate(() => window.__stores.vrControls.panelOverlayDebug());
+	const after = await page.evaluate(() => window.__tp.test.v1.vrControls.panelOverlayDebug());
 	h.check(!after.visible, 'no panel open: the sentinel stands down (the frame is the old frame)');
 
 	await xr.uninstall(page);

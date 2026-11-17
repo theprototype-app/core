@@ -11,7 +11,7 @@ const h = require('./helpers.cjs');
 
 /** a probe module: the SDK api on window (flow.addNodes, kit) */
 const PROBE = () => {
-	const s = /** @type {any} */ (window).__stores;
+	const s = /** @type {any} */ (window).__tp?.test.v1;
 	s.moduleSDK.initModules([
 		{
 			id: 'pauseprobe',
@@ -27,7 +27,7 @@ const PROBE = () => {
 const E = (/** @type {any} */ p, /** @type {Function} */ fn, /** @type {any} */ arg) => p.page.evaluate(fn, arg);
 const round = (/** @type {any} */ p) =>
 	E(p, () => {
-		const r = /** @type {any} */ (window).__stores.kit.kit.impls.round;
+		const r = /** @type {any} */ (window).__tp.test.v1.kit.kit.impls.round;
 		return { phase: r.phase(), elapsed: r.elapsed(), remaining: r.remaining(), outcome: r.outcome(), pausedMs: r.extra.state().pausedMs };
 	});
 const sleep = (/** @type {number} */ ms) => new Promise((r) => setTimeout(r, ms));
@@ -43,7 +43,7 @@ h.run(async () => {
 	// the behaviour node with the starter file (the first behaviour also loads the sandbox engine: up to 40 s headless)
 	const [bid] = await E(A, (code) => /** @type {any} */ (window).__pApi.flow.addNodes({ nodes: [{ type: 'behaviour', x: 40, y: 40, data: { name: 'Countdown', code } }] }), starter);
 	await h.eventually(
-		() => E(A, (i) => /** @type {any} */ (window).__stores.behaviours.behavioursDebug().status[i]?.status ?? null, bid),
+		() => E(A, (i) => /** @type {any} */ (window).__tp.test.v1.behaviours.behavioursDebug().status[i]?.status ?? null, bid),
 		(v) => v === 'running',
 		'the Countdown behaviour node runs',
 		40000
@@ -59,7 +59,7 @@ h.run(async () => {
 	});
 	await h.eventually(() => round(A), (r) => r.phase === 'playing', 'the round plays after its 1 s intro', 15000);
 	await h.eventually(
-		() => E(A, (i) => /** @type {any} */ (window).__stores.behaviours.behavioursDebug().live(i)?.state?.left ?? 0, bid),
+		() => E(A, (i) => /** @type {any} */ (window).__tp.test.v1.behaviours.behavioursDebug().live(i)?.state?.left ?? 0, bid),
 		(left) => left > 0,
 		'the Countdown started on go',
 		10000
@@ -67,9 +67,9 @@ h.run(async () => {
 	await sleep(2000);
 	await E(A, () => /** @type {any} */ (window).__pApi.kit.round.pause());
 	await h.eventually(() => round(A), (r) => r.phase === 'paused', 'paused', 5000);
-	const leftAtPause = await E(A, (i) => /** @type {any} */ (window).__stores.behaviours.behavioursDebug().live(i)?.state?.left, bid);
+	const leftAtPause = await E(A, (i) => /** @type {any} */ (window).__tp.test.v1.behaviours.behavioursDebug().live(i)?.state?.left, bid);
 	await sleep(6000);
-	const leftAfterPause = await E(A, (i) => /** @type {any} */ (window).__stores.behaviours.behavioursDebug().live(i)?.state?.left, bid);
+	const leftAfterPause = await E(A, (i) => /** @type {any} */ (window).__tp.test.v1.behaviours.behavioursDebug().live(i)?.state?.left, bid);
 	h.check(leftAfterPause === leftAtPause, `the Countdown held through the pause (${leftAtPause} -> ${leftAfterPause})`);
 	await E(A, () => /** @type {any} */ (window).__pApi.kit.round.resume());
 	await h.eventually(() => round(A), (r) => r.phase === 'playing', 'resumed', 5000);

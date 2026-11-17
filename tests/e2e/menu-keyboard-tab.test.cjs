@@ -31,7 +31,7 @@ h.run(async () => {
 
 	// ---- 2. counterfactual: on the canvas Tab is still the Edit Mesh shortcut
 	await page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 600));
 		/** @type {HTMLElement} */ (document.activeElement)?.blur?.();
 	});
@@ -39,9 +39,9 @@ h.run(async () => {
 	await page.waitForTimeout(600);
 	const editing = await page.evaluate(() => {
 		let v;
-		window.__stores.meshEdit.editingObject.subscribe((x) => (v = x))();
+		window.__tp.test.v1.meshEdit.editingObject.subscribe((x) => (v = x))();
 		let f;
-		window.__stores.faceEdit.faceEditObject?.subscribe?.((x) => (f = x))();
+		window.__tp.test.v1.faceEdit.faceEditObject?.subscribe?.((x) => (f = x))();
 		return !!(v || f);
 	});
 	h.check(editing, 'outside a menu Tab still enters Edit Mesh on the selection');

@@ -11,7 +11,7 @@ const states = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.animatedImports.animatedObjects.subscribe((m) =>
+				window.__tp.test.v1.animatedImports.animatedObjects.subscribe((m) =>
 					r(JSON.parse(JSON.stringify(m)))
 				)()
 			)
@@ -20,7 +20,7 @@ const uuidOf = (page, name) =>
 	page.evaluate(
 		(name) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) =>
+				window.__tp.test.v1.objectsGroup.subscribe((g) =>
 					r(g?.children.find((c) => c.name === name)?.uuid ?? null)
 				)()
 			),
@@ -42,9 +42,9 @@ async function download(page, selector) {
 }
 
 async function openDownload(page, uuid) {
-	await page.evaluate((u) => window.__stores.characterUi.downloadRequest.set(null), uuid);
+	await page.evaluate((u) => window.__tp.test.v1.characterUi.downloadRequest.set(null), uuid);
 	await page.waitForTimeout(150);
-	await page.evaluate((u) => window.__stores.characterUi.openDownload([u]), uuid);
+	await page.evaluate((u) => window.__tp.test.v1.characterUi.openDownload([u]), uuid);
 	await page.waitForSelector('#download-dialog #download-go', { timeout: 20000 });
 }
 
@@ -60,7 +60,7 @@ h.run(async () => {
 	// a Mixamo-named rig with its OWN clip (Kick) + an APPLIED one (Walking_A)
 	const rig = await mixamoGlb(page, { clip: true });
 	await page.evaluate(async (bytes) => {
-		await window.__stores.fileHandler.importFile(
+		await window.__tp.test.v1.fileHandler.importFile(
 			new File([new Uint8Array(bytes)], 'hero.glb'),
 			'Hero',
 			undefined,
@@ -74,7 +74,7 @@ h.run(async () => {
 	);
 	const hero = await uuidOf(page, 'Hero');
 	await page.evaluate(
-		(u) => window.__stores.humanoidRig.applyClipTo([u], { lib: 'avatars', clip: 'Walking_A' }),
+		(u) => window.__tp.test.v1.humanoidRig.applyClipTo([u], { lib: 'avatars', clip: 'Walking_A' }),
 		hero
 	);
 	await h.eventually(
@@ -84,7 +84,7 @@ h.run(async () => {
 	);
 
 	// 1. through the Inspector: Character ▸ Download…, layout (a)
-	await page.evaluate((u) => window.__stores.objectActions.selectObject(u, true), hero);
+	await page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u, true), hero);
 	await page.waitForSelector('#character-download', { timeout: 15000 });
 	await page.click('#character-download');
 	await page.waitForSelector('#download-dialog #download-clips [data-clip="Walking_A"]', {
@@ -118,7 +118,7 @@ h.run(async () => {
 	);
 	// ...and it re-imports with every clip
 	await page.evaluate(async (bytes) => {
-		await window.__stores.fileHandler.importFile(
+		await window.__tp.test.v1.fileHandler.importFile(
 			new File([new Uint8Array(bytes)], 'Hero.glb'),
 			'HeroAgain',
 			undefined,
@@ -190,8 +190,8 @@ h.run(async () => {
 	);
 	h.check(await loaded(page, 'bvhWriter'), 'the BVH writer loaded only for the BVH download');
 	const want = await page.evaluate((u) => {
-		const THREE = window.__stores.THREE;
-		const ai = window.__stores.animatedImports;
+		const THREE = window.__tp.test.v1.THREE;
+		const ai = window.__tp.test.v1.animatedImports;
 		const rows = ai.restRowsOf(u);
 		const clip = ai.clipOf(u, 'Walking_A');
 		const L = rows.map((r) => ({ t: r.t.slice(), q: r.q.slice(), s: r.s.slice() }));
@@ -256,7 +256,7 @@ h.run(async () => {
 	// 5. licence warnings: a VRM that says "no redistribution"
 	const vrm = toVrm(await mixamoGlb(page, { hair: true }), { version: '1' });
 	await page.evaluate(async (bytes) => {
-		await window.__stores.fileHandler.importFile(
+		await window.__tp.test.v1.fileHandler.importFile(
 			new File([new Uint8Array(bytes)], 'locked.vrm'),
 			'Locked',
 			undefined,
@@ -270,7 +270,7 @@ h.run(async () => {
 	);
 	const locked = await uuidOf(page, 'Locked');
 	await h.eventually(
-		() => page.evaluate((u) => window.__stores.animatedImports.vrmDebug(u)?.vrm, locked),
+		() => page.evaluate((u) => window.__tp.test.v1.animatedImports.vrmDebug(u)?.vrm, locked),
 		(v) => v === true,
 		'premise: it is a VRM'
 	);
@@ -290,10 +290,10 @@ h.run(async () => {
 		!(await page.locator('#download-go').isDisabled()),
 		'...and still lets you download (warn, never block)'
 	);
-	await page.evaluate(() => window.__stores.characterUi.downloadRequest.set(null));
+	await page.evaluate(() => window.__tp.test.v1.characterUi.downloadRequest.set(null));
 	// Export + Publish tabs
 	const opened = await page.evaluate(() => {
-		const s = window.__stores.exportStores;
+		const s = window.__tp.test.v1.exportStores;
 		if (!s?.publishExportOpen) return false;
 		s.publishExportTab.set('export');
 		s.publishExportOpen.set(true);
@@ -308,7 +308,7 @@ h.run(async () => {
 			/Locked/.test(ex) && /redistribut/.test(ex),
 			`Export warns (${ex.replace(/\s+/g, ' ').slice(0, 100)})`
 		);
-		await page.evaluate(() => window.__stores.exportStores.publishExportTab.set('publish'));
+		await page.evaluate(() => window.__tp.test.v1.exportStores.publishExportTab.set('publish'));
 		await page.waitForSelector('#licence-warnings-publish', { timeout: 20000 }).catch(() => null);
 		h.check(
 			/Locked/.test(

@@ -10,7 +10,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	const r = await A.page.evaluate(() => {
-		const nq = window.__stores.networkQuality;
+		const nq = window.__tp.test.v1.networkQuality;
 		const read = (id) => {
 			let v;
 			nq.peerQuality.subscribe((x) => (v = x))();
@@ -40,7 +40,7 @@ h.run(async () => {
 
 	// getStats reader: selected candidate-pair RTT (s->ms) + relay detection
 	const stats = await A.page.evaluate(async () => {
-		const nq = window.__stores.networkQuality;
+		const nq = window.__tp.test.v1.networkQuality;
 		const reports = new Map();
 		reports.set('cp1', {
 			type: 'candidate-pair', state: 'succeeded', nominated: true,

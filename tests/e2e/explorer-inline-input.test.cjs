@@ -59,14 +59,14 @@ const promptCalls = (peer) => peer.page.evaluate(() => window.__promptCalls ?? -
 const itemNames = (peer) =>
 	peer.page.evaluate(() => {
 		let items;
-		window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((v) => (items = v))();
 		return items.map((i) => i.name);
 	});
 
 const folderNames = (peer) =>
 	peer.page.evaluate(() => {
 		let f;
-		window.__stores.explorer.explorerFolders.subscribe((v) => (f = v))();
+		window.__tp.test.v1.explorer.explorerFolders.subscribe((v) => (f = v))();
 		return f.map((x) => x.name);
 	});
 
@@ -129,7 +129,7 @@ h.run(async () => {
 		nativeDialogs++;
 		await d.dismiss();
 	});
-	await A.page.waitForFunction(() => !!window.__stores?.levels, { timeout: 30000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.levels, { timeout: 30000 });
 
 	await A.page.locator('#explorer-slot').click();
 	await A.page.waitForTimeout(700);
@@ -203,9 +203,9 @@ h.run(async () => {
 	// 4. "SAVE SCENE…" TAKES THE SAME PATH, WITH REAL CONTENT BEHIND IT
 	// =====================================================================
 	await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1200));
-		window.__stores.objectActions.deselectObject();
+		window.__tp.test.v1.objectActions.deselectObject();
 	});
 	await openGridMenu(A);
 	await clickMenuRow(A, 'Save scene…');
@@ -216,7 +216,7 @@ h.run(async () => {
 	await A.page.keyboard.type('Saved By Hand');
 	await A.page.keyboard.press('Enter');
 	await h.eventually(
-		() => A.page.evaluate(() => window.__stores.levels.levelItems().map((i) => i.name)),
+		() => A.page.evaluate(() => window.__tp.test.v1.levels.levelItems().map((i) => i.name)),
 		(names) => names.some((n) => n.includes('Saved By Hand')),
 		'Enter saved the OPEN scene under the typed name (the Travel node can see it)'
 	);
@@ -224,7 +224,7 @@ h.run(async () => {
 		() =>
 			A.page.evaluate(() => {
 				let c;
-				window.__stores.levels.currentLevel.subscribe((v) => (c = v))();
+				window.__tp.test.v1.levels.currentLevel.subscribe((v) => (c = v))();
 				return c?.name ?? null;
 			}),
 		(name) => name === 'Saved By Hand',
@@ -267,7 +267,7 @@ h.run(async () => {
 	// 6. ITEM RENAME IS STILL INLINE (the commit path was rewritten around it)
 	// =====================================================================
 	await A.page.evaluate((png) => {
-		window.__stores.explorer.activeFolder.set(null);
+		window.__tp.test.v1.explorer.activeFolder.set(null);
 		const bytes = Uint8Array.from(atob(png), (c) => c.charCodeAt(0));
 		const dt = new DataTransfer();
 		dt.items.add(new File([bytes], 'tiny.png', { type: 'image/png' }));
@@ -374,7 +374,7 @@ h.run(async () => {
 		() =>
 			A.page.evaluate(() => {
 				let m;
-				window.__stores.projectManifest.projectManifest.subscribe((v) => (m = v))();
+				window.__tp.test.v1.projectManifest.projectManifest.subscribe((v) => (m = v))();
 				return m.name ?? '';
 			}),
 		(name) => name === 'Named By Blur',

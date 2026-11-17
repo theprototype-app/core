@@ -40,7 +40,7 @@ h.run(async () => {
 	const page = A.page;
 
 	await page.evaluate(async (doc) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		await s.moduleSDK.initModules([{ id: 'sharpfix', name: 'Sharpness fixture', version: '1.0.0', description: '31-integrate', register() {} }]);
 		s.gameKit.gameSettings.forceGameId('sharp-fixture');
 		s.hudDocs.setHudDocFor('scene', doc);
@@ -51,7 +51,7 @@ h.run(async () => {
 
 	// ---- 1. a headset session that needed the resolution steps ----------------------------------
 	const session = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const q = s.qualityGovernor;
 		let renderer;
 		s.globalRenderer.subscribe((v) => (renderer = v))();
@@ -86,7 +86,7 @@ h.run(async () => {
 
 	// ---- 2. the VR pause board, rendered from the head at that scale ----------------------------
 	const probe = await page.evaluate(async (scale) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		s.isVRMode.set(true);
 		s.objectActions.setEditorMode('interact');

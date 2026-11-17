@@ -26,7 +26,7 @@ const read = (page, path) =>
 	S(page, (path) => {
 		const [mod, name] = path.split('.');
 		let v;
-		window.__stores[mod][name].subscribe((x) => (v = x))();
+		window.__tp.test.v1[mod][name].subscribe((x) => (v = x))();
 		return v;
 	}, path);
 const order = async (page) => (await read(page, 'bottomDock.dockTabs')).map((t) => t.key);
@@ -67,7 +67,7 @@ const headerPoint = (page, sel) =>
 
 async function openDock(page) {
 	await S(page, async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphClose.set(false);
 		s.explorerClose.set(false);
 		await new Promise((r) => setTimeout(r, 600));
@@ -87,7 +87,7 @@ h.run(async () => {
 	h.check(JSON.stringify(await order(page)) === '["flow","explorer"]', `premise: the dock holds Node editor | Explorer (${JSON.stringify(await order(page))})`);
 
 	// ---- 1. a lone window onto the strip, between the two tabs -----------------------------
-	await S(page, () => window.__stores.timelineClose.set(false));
+	await S(page, () => window.__tp.test.v1.timelineClose.set(false));
 	await page.waitForTimeout(800);
 	let from = await headerPoint(page, '#timeline-window');
 	let gap = await gapPoint(page, 1);
@@ -110,7 +110,7 @@ h.run(async () => {
 	h.check(!fb.caret && !fb.target && !(await S(page, () => !!document.querySelector('.dock-drag-ghost'))), '1.6 no feedback is left behind after the drop');
 
 	// ---- 2. over the dock body and the drawer: floats, follows the cursor ------------------
-	await S(page, () => window.__stores.animationClose.set(false));
+	await S(page, () => window.__tp.test.v1.animationClose.set(false));
 	await page.waitForTimeout(800);
 	from = await headerPoint(page, '#animation-window');
 	const start = await S(page, () => {
@@ -153,7 +153,7 @@ h.run(async () => {
 		const w = document.getElementById('animation-window');
 		const b = w.getBoundingClientRect();
 		let p;
-		window.__stores.bottomDock.dockOccupants.subscribe((v) => (p = v))();
+		window.__tp.test.v1.bottomDock.dockOccupants.subscribe((v) => (p = v))();
 		return { top: b.top, floating: !w.dataset.docked && !p.animation?.present, dockTop: window.innerHeight - parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bottom-inset')) };
 	});
 	h.check(rest.floating && rest.top > rest.dockTop, `2.4 released over the dock it stays FLOATING, parked over the dock (top ${Math.round(rest.top)} > dock ${Math.round(rest.dockTop)})`);
@@ -187,10 +187,10 @@ h.run(async () => {
 	h.check(ord[ord.length - 1] === 'animation', `3.2 dropped on the edge band it docks at the end (${JSON.stringify(ord)})`);
 
 	// ---- 4. a tab torn out of a group, onto the strip ---------------------------------------
-	await S(page, () => window.__stores.bottomDock.armDockMode('animation', false));
+	await S(page, () => window.__tp.test.v1.bottomDock.armDockMode('animation', false));
 	await page.waitForTimeout(900);
 	await S(page, async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.objectListClose.set(false);
 		await new Promise((r) => setTimeout(r, 700));
 		s.windowTabs.mergeWindows('objects', 'animation');
@@ -221,7 +221,7 @@ h.run(async () => {
 
 	// ---- 5. a whole group by its strip ---------------------------------------------------------
 	await S(page, async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.bottomDock.armDockMode('timeline', false);
 		await new Promise((r) => setTimeout(r, 400));
 		s.uvEditorClose.set(false);
@@ -271,7 +271,7 @@ h.run(async () => {
 		S(page, () => {
 			const w = document.getElementById('image-preview-window');
 			let v;
-			window.__stores.bottomDock.visibleDockKey.subscribe((x) => (v = x))();
+			window.__tp.test.v1.bottomDock.visibleDockKey.subscribe((x) => (v = x))();
 			return {
 				hosted: w?.getAttribute('data-pd-host') ?? null,
 				win: !!w,
@@ -296,11 +296,11 @@ h.run(async () => {
 		ctx.fillStyle = '#3030c0';
 		ctx.fillRect(32, 0, 32, 48);
 		const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
-		await window.__stores.explorer.loadExplorer?.();
-		const rec = await window.__stores.explorer.addItemFromBytes(await blob.arrayBuffer(), 'g24.png', null, { imported: true });
-		window.__stores.bottomDock.activateDock('flow');
+		await window.__tp.test.v1.explorer.loadExplorer?.();
+		const rec = await window.__tp.test.v1.explorer.addItemFromBytes(await blob.arrayBuffer(), 'g24.png', null, { imported: true });
+		window.__tp.test.v1.bottomDock.activateDock('flow');
 		await new Promise((r) => setTimeout(r, 300));
-		window.__stores.imageEditor.openImageEditor(rec.id);
+		window.__tp.test.v1.imageEditor.openImageEditor(rec.id);
 		return rec.id;
 	});
 	await page.waitForTimeout(1500);
@@ -319,11 +319,11 @@ h.run(async () => {
 	ie = await pv();
 	h.check(ie.hosted === 'shown' && ie.pinned, `6.5 its header's Pin to dock docks it again (${JSON.stringify(ie)})`);
 	await page.reload({ waitUntil: 'domcontentloaded' });
-	await page.waitForFunction(() => window.__stores && !!window.__stores.moduleSDK, { timeout: 30000 });
+	await page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.moduleSDK, { timeout: 30000 });
 	await page.waitForTimeout(2500);
 	await S(page, async (id) => {
-		await window.__stores.explorer.loadExplorer?.();
-		window.__stores.imageEditor.openImageEditor(id);
+		await window.__tp.test.v1.explorer.loadExplorer?.();
+		window.__tp.test.v1.imageEditor.openImageEditor(id);
 	}, img);
 	await page.waitForTimeout(1500);
 	ie = await pv();

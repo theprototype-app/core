@@ -40,12 +40,17 @@ const state = (page) =>
 	});
 const settle = (page, ms = 700) => page.waitForTimeout(ms);
 const near = (a, b) => a && b && Math.abs(a.top - b.top) <= 1;
+// the handles slide on `top` (0.2 s); a transition advances only on painted frames, and a headless cloud build under
+// load paints few, so a read 700 ms after a change can land mid-slide (production 1.66.0: 249 still drawn 1.5 s later).
+// This suite measures WHERE a handle is drawn, so the slide is switched off.
+const noSlide = (page) => page.addStyleTag({ content: '#sidebar-handle-left, #sidebar-handle-right { transition: none !important; }' });
 const nodeEditor = (page) => page.locator('p[title="Node editor (N)"]').click();
 
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1920, height: 1080 } } });
 	const page = A.page;
+	await noSlide(page);
 	await settle(page, 1500);
 
 	// ---- 1. a saved spot low on the screen ----
@@ -112,6 +117,7 @@ h.run(async () => {
 	const keep = st;
 	await h.freshReload(A);
 	await h.answerRestore?.(A);
+	await noSlide(page);
 	await settle(page, 2000);
 	st = await state(page);
 	h.check(near(st.left, keep.left) && near(st.right, keep.right), `6 a reload keeps both saved spots (${st.left?.top}/${keep.left?.top}, ${st.right?.top}/${keep.right?.top})`);

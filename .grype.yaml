@@ -14,4 +14,7 @@
 #
 # A rule pinned to a version stops matching once the package moves, so a stale rule
 # cannot hide a new finding. Medium and lower print but never fail.
-ignore: []
+ignore:
+  - vulnerability: GHSA-3r8g-jcqq-3p5j
+    package: { name: "@sveltejs/kit", version: 2.70.3, type: npm }
+    reason: "remote-functions form parsing only; core is adapter-static with no remote functions; fixed only in 3.1.1 (the SvelteKit 3 migration) (recheck 2026-11-24)"

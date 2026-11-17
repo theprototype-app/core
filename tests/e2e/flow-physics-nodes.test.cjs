@@ -9,7 +9,7 @@ const rotOf = (page, uuid) =>
 	page.evaluate(
 		(uuid) =>
 			new Promise((resolve) => {
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const o = g?.getObjectByProperty('uuid', uuid);
 					resolve(o ? { y: o.rotation.y, qy: o.quaternion.y, qw: o.quaternion.w } : null);
 				})();
@@ -21,7 +21,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(4000);
 		await warm.ctx.close();
 	}
@@ -32,11 +32,11 @@ h.run(async () => {
 	// scene: Spinner (only an Angular Velocity node), Base + Rotor hinged about y
 	// (Rotor dynamic, floats above the base so nothing brakes the motor)
 	const ids = await A.page.evaluate(async () => {
-		const cmd = window.__stores.commandsHandler.sceneCommand;
+		const cmd = window.__tp.test.v1.commandsHandler.sceneCommand;
 		cmd('/create box');
 		cmd('/create box');
 		cmd('/create box');
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const [spinner, base, rotor] = group.children;
 		spinner.name = 'Spinner';
 		base.name = 'Base';
@@ -49,14 +49,14 @@ h.run(async () => {
 		// the Base this scene means as an anchor had a body and the "refused on a non-dynamic body"
 		// check below found one; say it is the static anchor the comment above describes
 		base.userData.physics = { mode: 'static' };
-		const peer = await new Promise((r) => window.__stores.peers.subscribe(r)());
+		const peer = await new Promise((r) => window.__tp.test.v1.peers.subscribe(r)());
 		[spinner, base, rotor].forEach((o) => {
 			peer.send({ type: 'move', uuid: o.uuid, pos: o.position.toArray(), rot: [0, 0, 0], scale: [1, 1, 1] });
 			if (o.userData.physics)
 				peer.send({ type: 'objectParameters', parameter: 'physics', uuid: o.uuid, physics: o.userData.physics });
 		});
 		// hinge Rotor to Base about y (replicated jointcreate inside createJoint)
-		const joint = window.__stores.joints.createJoint('revolute', base.uuid, rotor.uuid, 'y');
+		const joint = window.__tp.test.v1.joints.createJoint('revolute', base.uuid, rotor.uuid, 'y');
 		// graph: angularvelocity -> Spinner, motor -> Rotor
 		const nodes = [
 			{ id: 'av1', type: 'angularvelocity', position: { x: 0, y: 0 }, data: { type: 'angularvelocity', axis: 'y', speed: 3 }, class: 'w-[150px]' },
@@ -68,8 +68,8 @@ h.run(async () => {
 			{ id: 'e-av1-selS', source: 'av1', target: 'selS' },
 			{ id: 'e-mo1-selR', source: 'mo1', target: 'selR' }
 		];
-		window.__stores.flowNodes.set(nodes);
-		window.__stores.flowEdges.set(edges);
+		window.__tp.test.v1.flowNodes.set(nodes);
+		window.__tp.test.v1.flowEdges.set(edges);
 		nodes.forEach((node) => peer.send({ type: 'nodecreate', node }));
 		edges.forEach((edge) => peer.send({ type: 'edgecreate', edge }));
 		return { spinner: spinner.uuid, base: base.uuid, rotor: rotor.uuid, joint: joint?.id ?? null };
@@ -78,10 +78,10 @@ h.run(async () => {
 	await A.page.waitForTimeout(2500);
 
 	// simulate on A
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await h.eventually(
-		() => A.page.evaluate(() => new Promise((r) => window.__stores.physics.simulating.subscribe(r)())),
+		() => A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.physics.simulating.subscribe(r)())),
 		(v) => v === true,
 		'simulation started on A'
 	);
@@ -89,7 +89,7 @@ h.run(async () => {
 	// the Angular Velocity node made Spinner a dynamic body (implied mass 1) that
 	// picked up spin — ground friction decays the angvel itself within ~a frame,
 	// so assert the body's accumulated rotation, not the live velocity
-	const debugOf = () => A.page.evaluate(() => window.__stores.physics.physicsDebug());
+	const debugOf = () => A.page.evaluate(() => window.__tp.test.v1.physics.physicsDebug());
 	await h.eventually(
 		debugOf,
 		(d) => {
@@ -127,7 +127,7 @@ h.run(async () => {
 	);
 
 	// LIVE re-apply: flip the Angular Velocity sign mid-sim via setNodeData
-	await A.page.evaluate(() => window.__stores.nodesHandler.setNodeData('av1', { speed: -5 }));
+	await A.page.evaluate(() => window.__tp.test.v1.nodesHandler.setNodeData('av1', { speed: -5 }));
 	await h.eventually(
 		debugOf,
 		(d) => {
@@ -140,16 +140,16 @@ h.run(async () => {
 
 	// SDK torque impulse on a dynamic body (initiator-only)
 	const torqued = await A.page.evaluate(
-		(uuid) => window.__stores.physics.applyTorqueImpulse(uuid, [0, 4, 0]),
+		(uuid) => window.__tp.test.v1.physics.applyTorqueImpulse(uuid, [0, 4, 0]),
 		ids.rotor
 	);
 	h.check(torqued === true, 'applyTorqueImpulse accepted on a dynamic body');
 	const refused = await A.page.evaluate(
-		(uuid) => window.__stores.physics.applyTorqueImpulse(uuid, [0, 4, 0]),
+		(uuid) => window.__tp.test.v1.physics.applyTorqueImpulse(uuid, [0, 4, 0]),
 		ids.base
 	);
 	h.check(refused === false, 'applyTorqueImpulse refused on a non-dynamic body');
 
-	await A.page.evaluate(() => window.__stores.physics.stopSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 	await h.finish(browser);
 });

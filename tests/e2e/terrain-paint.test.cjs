@@ -9,13 +9,13 @@ const h = require('./helpers.cjs');
 const SHOTS = process.env.SHOTS_DIR || '';
 
 /** @param {any} page @param {string} uuid */
-const digest = (page, uuid) => page.evaluate((u) => window.__stores.terrainPaint.splatDigest(u), uuid);
+const digest = (page, uuid) => page.evaluate((u) => window.__tp.test.v1.terrainPaint.splatDigest(u), uuid);
 /** @param {any} page @param {string} uuid */
 const scatterOf = (page, uuid) =>
 	page.evaluate(
 		(u) =>
 			new Promise((resolve) => {
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const o = g?.getObjectByProperty('uuid', u);
 					resolve(o ? JSON.stringify(o.userData.terrainScatter ?? null) : 'missing');
 				})();
@@ -23,15 +23,15 @@ const scatterOf = (page, uuid) =>
 		uuid
 	);
 /** @param {any} page */
-const stats = (page) => page.evaluate(() => window.__stores.terrainSurface.terrainSurfaceStats());
+const stats = (page) => page.evaluate(() => window.__tp.test.v1.terrainSurface.terrainSurfaceStats());
 
 /** @param {any} page @param {number[]} pos @param {number[]} target */
 async function look(page, pos, target) {
 	await page.evaluate(
 		([p, t]) => {
 			let cam, orbit;
-			window.__stores.editorCam.subscribe((v) => (cam = v))();
-			window.__stores.orbitControls.subscribe((v) => (orbit = v))();
+			window.__tp.test.v1.editorCam.subscribe((v) => (cam = v))();
+			window.__tp.test.v1.orbitControls.subscribe((v) => (orbit = v))();
 			cam.position.set(p[0], p[1], p[2]);
 			orbit?.target?.set(t[0], t[1], t[2]);
 			orbit?.update?.();
@@ -75,15 +75,15 @@ h.run(async () => {
 	await h.connect(B, A);
 
 	const uuid = await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create Terrain 24 48');
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create Terrain 24 48');
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		return group.children[group.children.length - 1].uuid;
 	});
 	await h.eventually(() => scatterOf(B.page, uuid), (v) => v !== 'missing', 'B has the terrain', 20000);
 	if ((await scatterOf(B.page, uuid)) === 'missing')
 		console.log(
 			'  B scene:',
-			await B.page.evaluate(() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g?.children.map((c) => c.name + ':' + c.uuid.slice(0, 6))))()))
+			await B.page.evaluate(() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g?.children.map((c) => c.name + ':' + c.uuid.slice(0, 6))))()))
 		);
 	// opposite sides: each peer's AVATAR stands at its camera, so two cameras on one spot put
 	// A's view inside B's avatar
@@ -96,7 +96,7 @@ h.run(async () => {
 	h.check(before < 0.05, `no magenta before painting (${before.toFixed(3)})`);
 
 	const entered = await A.page.evaluate((u) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ok = s.terrainSculpt.enterSculpt(u);
 		s.terrainSculpt.sculptOp.set('paint');
 		s.terrainSculpt.sculptRadius.set(4);
@@ -109,13 +109,13 @@ h.run(async () => {
 		return ok;
 	}, uuid);
 	h.check(entered === true, 'A enters the sculpt session (paint brush armed)');
-	const bRefused = await B.page.evaluate((u) => window.__stores.terrainSculpt.enterSculpt(u), uuid);
+	const bRefused = await B.page.evaluate((u) => window.__tp.test.v1.terrainSculpt.enterSculpt(u), uuid);
 	h.check(bRefused === false, 'B cannot paint the terrain A holds (selection = lock)');
 
-	const undoBefore = await A.page.evaluate(() => new Promise((r) => window.__stores.history.undoStack.subscribe((s) => r(s.length))()));
+	const undoBefore = await A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((s) => r(s.length))()));
 	// ONE stroke: begin, many moves (throttled previews stream), end
 	await A.page.evaluate(async (u) => {
-		const ts = window.__stores.terrainSculpt;
+		const ts = window.__tp.test.v1.terrainSculpt;
 		ts.beginStroke(u);
 		for (let i = 0; i < 25; i++) {
 			ts.strokeMove(u, 0, 0, 0.05);
@@ -123,11 +123,11 @@ h.run(async () => {
 		}
 		ts.endStroke();
 	}, uuid);
-	const undoAfter = await A.page.evaluate(() => new Promise((r) => window.__stores.history.undoStack.subscribe((s) => r(s.length))()));
+	const undoAfter = await A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((s) => r(s.length))()));
 	h.check(undoAfter === undoBefore + 1, `one stroke = ONE undo entry (${undoBefore} -> ${undoAfter})`);
 
 	const cover = await A.page.evaluate((u) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const b64 = s.terrainPaint.splatDigest(u);
 		const bytes = s.terrainPaintCore.base64ToBytes(b64);
 		return s.terrainPaintCore.layerCoverage(bytes, 2);
@@ -136,7 +136,7 @@ h.run(async () => {
 
 	const aDigest = await digest(A.page, uuid);
 	await h.eventually(() => digest(B.page, uuid), (d) => d === aDigest, 'the splat bytes are EQUAL on B', 15000);
-	const layersB = await B.page.evaluate((u) => window.__stores.terrainPaint.layersOf(u)[2].color, uuid);
+	const layersB = await B.page.evaluate((u) => window.__tp.test.v1.terrainPaint.layersOf(u)[2].color, uuid);
 	h.check(layersB === '#ff00ff', 'the layer colour replicated to B');
 
 	const aMag = await magentaShare(A);
@@ -146,17 +146,17 @@ h.run(async () => {
 	if (SHOTS) await A.page.screenshot({ path: SHOTS + '/01-paint-layer3.png' });
 
 	// ---- undo / redo --------------------------------------------------------------------------
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => digest(A.page, uuid), (d) => d === null, 'one undo removes the stroke on A (back to unpainted)');
 	await h.eventually(() => digest(B.page, uuid), (d) => d === null, '...and on B', 10000);
 	const undoneMag = await magentaShare(B);
 	h.check(undoneMag < 0.05, `B's canvas is back to the material (${undoneMag.toFixed(3)})`);
-	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 	await h.eventually(() => digest(B.page, uuid), (d) => d === aDigest, 'redo brings the same bytes back on B', 10000);
 
 	// ---- T2 SCATTER ----------------------------------------------------------------------------
 	const sc = await A.page.evaluate(async (u) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.terrainSculpt.sculptOp.set('scatter');
 		s.terrainSculpt.sculptRadius.set(3);
 		s.terrainPaint.scatterSource.set({ kind: 'primitive', type: 'Cone' });
@@ -180,8 +180,8 @@ h.run(async () => {
 	// the instances sit ON the terrain (scene root, not children of the document)
 	const placed = await A.page.evaluate((u) => {
 		let scene, group;
-		window.__stores.globalScene.subscribe((v) => (scene = v))();
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.globalScene.subscribe((v) => (scene = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		const terrain = group.getObjectByProperty('uuid', u);
 		const inTree = terrain.children.some((c) => c.isInstancedMesh);
 		const holder = scene.children.find((c) => c.name === 'terrain-scatter');
@@ -191,26 +191,26 @@ h.run(async () => {
 
 	if (SHOTS)
 		for (const t of ['dark', 'light']) {
-			await A.page.evaluate((th) => window.__stores.themes.theme.set(th), t);
+			await A.page.evaluate((th) => window.__tp.test.v1.themes.theme.set(th), t);
 			await A.page.waitForTimeout(500);
 			await A.page.screenshot({ path: `${SHOTS}/02-scatter-toolbox-${t}.png` });
 		}
-	await A.page.evaluate(() => window.__stores.themes.theme.set('dark'));
+	await A.page.evaluate(() => window.__tp.test.v1.themes.theme.set('dark'));
 
 	// painting the same patch again never exceeds the density
 	const again = await A.page.evaluate(async (u) => {
-		const ts = window.__stores.terrainSculpt;
+		const ts = window.__tp.test.v1.terrainSculpt;
 		ts.beginStroke(u);
 		for (let i = 0; i < 10; i++) ts.strokeMove(u, 4, 4, 0.05);
 		ts.endStroke();
 		await new Promise((r) => setTimeout(r, 100));
-		return window.__stores.terrainSurface.terrainSurfaceStats().instances;
+		return window.__tp.test.v1.terrainSurface.terrainSurfaceStats().instances;
 	}, uuid);
 	h.check(again <= target, `a second pass over the same patch respects the density (${again} ≤ ${target})`);
 
 	// erase: removes inside the brush only
 	const erased = await A.page.evaluate(async (u) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.terrainPaint.scatterErase.set(true);
 		s.terrainSculpt.sculptRadius.set(1.5);
 		const ts = s.terrainSculpt;
@@ -222,15 +222,15 @@ h.run(async () => {
 	}, uuid);
 	h.check(erased < again && erased > 0, `erase removes the instances under the brush only (${again} -> ${erased})`);
 	await h.eventually(() => stats(B.page), (s) => s.instances === erased, 'the erase replicated to B', 10000);
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => stats(B.page), (s) => s.instances === again, 'one undo restores the erased instances on B', 10000);
 
 	// ---- save / load round-trip ----------------------------------------------------------------
-	await A.page.evaluate(() => window.__stores.terrainSculpt.exitSculpt());
+	await A.page.evaluate(() => window.__tp.test.v1.terrainSculpt.exitSculpt());
 	const savedDigest = await digest(A.page, uuid);
 	const savedScatter = await scatterOf(A.page, uuid);
 	const zip = await A.page.evaluate(async () => {
-		const s = window.__stores.sessions;
+		const s = window.__tp.test.v1.sessions;
 		const payload = s.buildSessionPayload('Painted terrain');
 		window.__savedMinor = payload.formatMinor;
 		const out = await s.exportSessionZip(payload);
@@ -238,10 +238,10 @@ h.run(async () => {
 	});
 	// (48 S2 bumped the minor to 2 for sequences: a terrain save says AT LEAST 1, the revision that carries splats)
 	h.check((await A.page.evaluate(() => window.__savedMinor)) >= 1, 'the saved scene says formatMinor >= 1');
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	await A.page.waitForTimeout(800);
 	await A.page.evaluate(async (arr) => {
-		const s = window.__stores.sessions;
+		const s = window.__tp.test.v1.sessions;
 		const payload = await s.readSessionZip(new Uint8Array(arr).buffer);
 		await s.applySession(payload, { backup: false });
 	}, zip);
@@ -254,7 +254,7 @@ h.run(async () => {
 
 	// ---- an OLD scene (a terrain with no splat / scatter, no formatMinor) loads unchanged -----
 	const old = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/clear all');
 		await new Promise((r) => setTimeout(r, 500));
 		s.commandsHandler.sceneCommand('/create Terrain 24 48');

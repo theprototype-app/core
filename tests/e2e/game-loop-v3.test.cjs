@@ -10,19 +10,19 @@ const h = require('./helpers.cjs');
 const childUuids = (peer) =>
 	peer.page.evaluate(() => {
 		let group;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		return (group?.children ?? []).map((c) => c.uuid).sort();
 	});
 const visibleOf = (peer, uuids) =>
 	peer.page.evaluate((ids) => {
 		let group;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		return ids.map((id) => group?.getObjectByProperty('uuid', id)?.visible ?? null);
 	}, uuids);
 const gstate = (peer) =>
 	peer.page.evaluate(() => {
 		let g;
-		window.__stores.gameState.gameState.subscribe((v) => (g = v))();
+		window.__tp.test.v1.gameState.gameState.subscribe((v) => (g = v))();
 		return g;
 	});
 // 21-G R3a: the recipe AND its `collectcount` node left core for the collectible module,
@@ -45,27 +45,27 @@ const counts = (peer, variable) =>
 			// suite TRAVELS, and a latch whose chain left with the old scene must not
 			// inflate the total
 			let g;
-			window.__stores.flowGraphs.subscribe((x) => (g = x))();
+			window.__tp.test.v1.flowGraphs.subscribe((x) => (g = x))();
 			const live = new Set((g.scene?.nodes ?? []).map((n) => n.id));
 			const latches = ids.filter((id) => live.has(id));
 			let v;
-			window.__stores.flowValues.subscribe((x) => (v = x))();
+			window.__tp.test.v1.flowValues.subscribe((x) => (v = x))();
 			const collected = latches.filter((id) => !!v[id]).length;
 			return { total: latches.length, collected, left: latches.length - collected };
 		},
 		(chainsByVar[variable] ?? []).map((c) => c.ids.latch)
 	);
 const collect = async (peer, uuid, settle = 900) => {
-	await peer.page.evaluate((id) => window.__stores.flowRuntime.fireObjectClick(id), uuid);
+	await peer.page.evaluate((id) => window.__tp.test.v1.flowRuntime.fireObjectClick(id), uuid);
 	await peer.page.waitForTimeout(settle);
 };
 const setPlay = async (peer, v) => {
-	await peer.page.evaluate((x) => window.__stores.isLocked.set(x), v);
+	await peer.page.evaluate((x) => window.__tp.test.v1.isLocked.set(x), v);
 	await peer.page.waitForTimeout(700);
 };
 const makeBoxes = (peer, count) =>
 	peer.page.evaluate(async (n) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const uuids = [];
 		for (let i = 0; i < n; i++) {
 			s.commandsHandler.sceneCommand('/create box');
@@ -84,7 +84,7 @@ h.run(async () => {
 	const B = await h.setupPage(browser, 'B');
 	for (const p of [A, B])
 		await p.page.waitForFunction(
-			() => !!window.__stores?.levels && !!window.__stores?.flowGraphsCtl && !!window.__stores?.nodesHandler,
+			() => !!window.__tp?.test.v1?.levels && !!window.__tp?.test.v1?.flowGraphsCtl && !!window.__tp?.test.v1?.nodesHandler,
 			{ timeout: 30000 }
 		);
 	await h.connect(A, B); // A dials, B approves -> B is the session host / admin
@@ -94,17 +94,17 @@ h.run(async () => {
 	// =====================================================================
 	const [l2gem] = await makeBoxes(A, 1);
 	await recipe(A, [l2gem]);
-	const levelTwo = await A.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Level Two'));
+	const levelTwo = await A.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('Level Two'));
 	h.check(!!levelTwo?.hash, 'Level Two saved — its collectible chain rides the level graph');
 
 	// =====================================================================
 	// 2. AUTHOR LEVEL ONE live: a GROUP of two crystals + the travel binding
 	// =====================================================================
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	await A.page.waitForTimeout(900);
 	const crystals = await makeBoxes(A, 2);
 	const groupUuid = await A.page.evaluate((ids) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.objectActions.applySelectionSet(ids);
 		const uuid = s.objectActions.groupSelection();
 		s.objectActions.deselectObject();
@@ -118,7 +118,7 @@ h.run(async () => {
 	);
 	// the travel binding: a click that moves everyone to Level Two
 	const travel = await A.page.evaluate(({ hash }) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let p;
 		s.peers.subscribe((v) => (p = v))();
 		const mk = (type, data, x) => ({ id: crypto.randomUUID(), type, position: { x, y: 600 }, data: { label: type, type, ...data }, class: 'w-[150px]' });
@@ -134,7 +134,7 @@ h.run(async () => {
 		return { click: click.id };
 	}, { hash: levelTwo.hash });
 	await h.eventually(
-		() => B.page.evaluate(() => window.__stores.allNodes().length),
+		() => B.page.evaluate(() => window.__tp.test.v1.allNodes().length),
 		(n) => n >= 16,
 		'premise: the peer holds level one\'s whole graph (two chains + the travel binding)'
 	);
@@ -142,7 +142,7 @@ h.run(async () => {
 	// =====================================================================
 	// 3. ROUND ONE: both play, collect a crystal, the counts and the debug agree
 	// =====================================================================
-	await A.page.evaluate(() => window.__stores.gameState.setGameState('playing'));
+	await A.page.evaluate(() => window.__tp.test.v1.gameState.setGameState('playing'));
 	for (const p of [A, B]) await setPlay(p, true);
 	await A.page.waitForTimeout(700);
 	const before = await counts(A, 'crystals');
@@ -160,7 +160,7 @@ h.run(async () => {
 
 	// the debug element reads the same truth
 	await A.page.evaluate(() => {
-		window.__stores.hudDocs.setHudDocFor('scene', {
+		window.__tp.test.v1.hudDocs.setHudDocFor('scene', {
 			screens: [{ id: 'main', name: 'Main', elements: [
 				{ id: 'dbg', kind: 'debug', anchor: 'top-left', x: 12, y: 12, w: 280, h: 26, compact: false, variable: 'crystals' },
 				{ id: 'map', kind: 'minimap', anchor: 'bottom-right', x: 12, y: 12, w: 160, h: 160, showFacing: true }
@@ -194,16 +194,16 @@ h.run(async () => {
 	// 4. MINIMAP SYMMETRY: A's colour for B is B's own peerColor, on BOTH screens
 	// =====================================================================
 	await h.eventually(
-		() => A.page.evaluate(() => window.__stores.hudMinimap.lastMinimapFrame().peers.length),
+		() => A.page.evaluate(() => window.__tp.test.v1.hudMinimap.lastMinimapFrame().peers.length),
 		(n) => n >= 1,
 		'premise: the minimap plots the peer'
 	);
 	const symmetric = await A.page.evaluate((bid) => {
-		const frame = window.__stores.hudMinimap.lastMinimapFrame();
+		const frame = window.__tp.test.v1.hudMinimap.lastMinimapFrame();
 		const dot = frame.peers.find((p) => p.id === bid);
-		return { dot: dot?.color ?? null, rule: window.__stores.lockControl.peerColor(bid) };
+		return { dot: dot?.color ?? null, rule: window.__tp.test.v1.lockControl.peerColor(bid) };
 	}, B.id);
-	const bOwn = await B.page.evaluate((bid) => window.__stores.lockControl.peerColor(bid), B.id);
+	const bOwn = await B.page.evaluate((bid) => window.__tp.test.v1.lockControl.peerColor(bid), B.id);
 	h.check(
 		!!symmetric.dot && symmetric.dot === symmetric.rule && symmetric.rule === bOwn,
 		`ONE colour rule on every screen: A draws B as ${symmetric.dot}, B computes ${bOwn}`
@@ -214,7 +214,7 @@ h.run(async () => {
 	// =====================================================================
 	const roundBefore = (await gstate(A)).round;
 	await A.page.waitForTimeout(700); // past the stale-stamp cutoff for the fresh binding
-	await A.page.evaluate((id) => window.__stores.flowRuntime.applyNodeTrigger(id, (Date.now() % 86400000) / 1000, true), travel.click);
+	await A.page.evaluate((id) => window.__tp.test.v1.flowRuntime.applyNodeTrigger(id, (Date.now() % 86400000) / 1000, true), travel.click);
 	for (const p of [A, B])
 		await h.eventually(
 			() => childUuids(p),
@@ -246,9 +246,9 @@ h.run(async () => {
 	// =====================================================================
 	// 7. ADMIN RESET: gated to the host, and the world comes back
 	// =====================================================================
-	const refused = await A.page.evaluate(() => window.__stores.gamePresence.requestResetGame());
+	const refused = await A.page.evaluate(() => window.__tp.test.v1.gamePresence.requestResetGame());
 	h.check(refused.ok === false && !!refused.reason, `the non-host is refused with the reason (${refused.reason})`);
-	const granted = await B.page.evaluate(() => window.__stores.gamePresence.requestResetGame());
+	const granted = await B.page.evaluate(() => window.__tp.test.v1.gamePresence.requestResetGame());
 	h.check(granted.ok === true, 'the session host resets');
 	await h.eventually(() => gstate(A), (g) => g.state === 'menu', 'the reset replicated');
 	for (const p of [A, B]) await setPlay(p, null);

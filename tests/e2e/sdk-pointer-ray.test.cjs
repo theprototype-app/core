@@ -11,7 +11,7 @@ h.run(async () => {
 	await A.page.mouse.move(640, 400);
 	await A.page.waitForTimeout(200);
 	const centre = await A.page.evaluate(() => {
-		const ray = window.__stores.moduleSDK.pointerRayNow();
+		const ray = window.__tp.test.v1.moduleSDK.pointerRayNow();
 		if (!ray) return null;
 		return { origin: ray.ray.origin.toArray(), direction: ray.ray.direction.toArray() };
 	});
@@ -21,17 +21,17 @@ h.run(async () => {
 	// the ray tracks the pointer: two screen points give diverging directions
 	await A.page.mouse.move(200, 300);
 	await A.page.waitForTimeout(100);
-	const left = await A.page.evaluate(() => window.__stores.moduleSDK.pointerRayNow()?.ray.direction.toArray());
+	const left = await A.page.evaluate(() => window.__tp.test.v1.moduleSDK.pointerRayNow()?.ray.direction.toArray());
 	await A.page.mouse.move(1080, 500);
 	await A.page.waitForTimeout(100);
-	const right = await A.page.evaluate(() => window.__stores.moduleSDK.pointerRayNow()?.ray.direction.toArray());
+	const right = await A.page.evaluate(() => window.__tp.test.v1.moduleSDK.pointerRayNow()?.ray.direction.toArray());
 	const dot = left && right ? left[0] * right[0] + left[1] * right[1] + left[2] * right[2] : 1;
 	h.check(dot < 0.9999, 'the ray follows the pointer (directions differ across the screen)');
 
 	// a fresh instance every call (safe for modules to keep)
 	const distinct = await A.page.evaluate(() => {
-		const a = window.__stores.moduleSDK.pointerRayNow();
-		const b = window.__stores.moduleSDK.pointerRayNow();
+		const a = window.__tp.test.v1.moduleSDK.pointerRayNow();
+		const b = window.__tp.test.v1.moduleSDK.pointerRayNow();
 		return a !== b;
 	});
 	h.check(distinct, 'each call returns a fresh Raycaster (no shared-temp corruption)');

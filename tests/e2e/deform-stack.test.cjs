@@ -32,7 +32,7 @@ h.run(async () => {
 		const before = shaderErrors.length;
 		const setup = await page.evaluate(
 			({ nodes, childNodes }) => {
-				const S = window.__stores;
+				const S = window.__tp?.test.v1;
 				S.commandsHandler.sceneCommand('/clear all');
 				S.commandsHandler.sceneCommand('/create Box 1 1.6 1');
 				let g;
@@ -113,7 +113,7 @@ h.run(async () => {
 
 		// remove the graphs: the original material comes back
 		const back = await page.evaluate(async () => {
-			const S = window.__stores;
+			const S = window.__tp?.test.v1;
 			const t = window.__deformTarget;
 			const keys = [t.uuid, t.parent?.uuid].filter(Boolean);
 			S.flowGraphs.update((all) => {

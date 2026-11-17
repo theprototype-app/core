@@ -43,7 +43,7 @@ async function installProbe(page) {
 	return page.evaluate(() => {
 		/** @type {any} */
 		const w = window;
-		const s = w.__stores;
+		const s = w.__tp?.test.v1;
 		/** @param {any} store */
 		const read = (store) => {
 			let v;

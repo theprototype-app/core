@@ -36,7 +36,7 @@ const read = (page, path) =>
 	S(page, (path) => {
 		const [mod, name] = path.split('.');
 		// tolerant: a store a build does not have reads null (the counterfactual runs on past it)
-		const st = name ? window.__stores[mod]?.[name] : window.__stores[mod];
+		const st = name ? window.__tp.test.v1[mod]?.[name] : window.__tp.test.v1[mod];
 		if (!st?.subscribe) return null;
 		let v;
 		st.subscribe((x) => (v = x))();
@@ -130,9 +130,9 @@ h.run(async () => {
 
 	// ---- 1. T after the last docked view was dragged out ---------------------------------------
 	await S(page, async () => {
-		window.__stores.flowGraphClose.set(false);
+		window.__tp.test.v1.flowGraphClose.set(false);
 		await new Promise((r) => setTimeout(r, 600));
-		window.__stores.bottomDock.activateDock('flow');
+		window.__tp.test.v1.bottomDock.activateDock('flow');
 	});
 	await page.waitForTimeout(900);
 	let v = await dockView(page);
@@ -176,7 +176,7 @@ h.run(async () => {
 	h.check(v.empty, `1.7 ...and T opens it again (${JSON.stringify(v)})`);
 
 	// ---- 2. a floating window dropped on the empty dock's body docks there -----------------------
-	await S(page, () => window.__stores.explorerClose.set(false));
+	await S(page, () => window.__tp.test.v1.explorerClose.set(false));
 	await page.waitForTimeout(1200);
 	const head = await S(page, () => {
 		const el = document.querySelector('#explorer-window .move-handle');
@@ -200,7 +200,7 @@ h.run(async () => {
 	v = await dockView(page);
 	h.check(docked.map((t) => t.key).join() === 'explorer' && !v.empty, `2.1 the Explorer dropped on the empty dock's body docks (${docked.map((t) => t.key)})`);
 	// back to empty for the next part: float it out through its tab menu's Undock
-	await S(page, () => window.__stores.bottomDock.armDockMode('explorer', false));
+	await S(page, () => window.__tp.test.v1.bottomDock.armDockMode('explorer', false));
 	await page.waitForTimeout(1000);
 	await pressT(page);
 	v = await dockView(page);
@@ -208,7 +208,7 @@ h.run(async () => {
 
 	// ---- 3. "+" on the empty dock: an open window is focused where it is, a closed one opens ----
 	// a second floating window on top of the Node editor, so "raised" is observable
-	await S(page, () => window.__stores.explorerClose.set(false));
+	await S(page, () => window.__tp.test.v1.explorerClose.set(false));
 	await page.waitForTimeout(1200);
 	h.check((await topWindow(page)) === 'explorer-window', `3.0 premise: the floating Explorer is on top (${await topWindow(page)})`);
 	let rows = await plusRows(page);
@@ -231,7 +231,7 @@ h.run(async () => {
 
 	// ---- 4. a window in a SIDEBAR: "+" moves it into the dock (showhide-v8) ---------------------------
 	await S(page, async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.sceneBudget.statsOpen.set(true);
 		await new Promise((r) => setTimeout(r, 700));
 		s.dockMenu.moveToSidebar('stats', 'right');
@@ -260,7 +260,7 @@ h.run(async () => {
 
 	// the same rule for an editor: the Explorer in the LEFT sidebar, Configure Scene… stays right
 	await S(page, async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.explorerClose.set(false);
 		await new Promise((r) => setTimeout(r, 900));
 		s.dockMenu.moveToSidebar('explorer', 'left');
@@ -283,9 +283,9 @@ h.run(async () => {
 	h.check(docked.includes('explorer') && !tabs.left.includes('explorer') && shown.left === 'objects', `4.6 "+" ▸ Explorer moves it from the left sidebar into the dock, Objects stays (${shown.left}; dock ${docked}; left ${tabs.left})`);
 
 	// ---- 5. a floating window: moved into the dock (showhide-v8) ----------------------------------------
-	await S(page, () => window.__stores.chatHidden.set(''));
+	await S(page, () => window.__tp.test.v1.chatHidden.set(''));
 	await page.waitForTimeout(900);
-	await S(page, () => window.__stores.aiAssistantHidden.set(''));
+	await S(page, () => window.__tp.test.v1.aiAssistantHidden.set(''));
 	await page.waitForTimeout(900);
 	const topBefore = await topWindow(page);
 	rows = await plusRows(page);
@@ -295,13 +295,13 @@ h.run(async () => {
 	const hosted2 = await read(page, 'dockHost.hostedDocked');
 	h.check(!!hosted2.chat, `5.1 "+" ▸ Chat moves the floating Chat into the dock (docked ${hosted2.chat})`);
 	await S(page, () => {
-		window.__stores.chatHidden.set('hidden');
-		window.__stores.aiAssistantHidden.set('hidden');
+		window.__tp.test.v1.chatHidden.set('hidden');
+		window.__tp.test.v1.aiAssistantHidden.set('hidden');
 	});
 
 	// ---- 6. M6: a hosted window beside a FULL-HEIGHT sidebar ----------------------------------------
 	await S(page, async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		// Statistics out of the right sidebar into the bottom dock (the sidebar tab menu's own path)
 		s.docking.undock('stats');
 		await new Promise((r) => setTimeout(r, 300));
@@ -326,7 +326,7 @@ h.run(async () => {
 		// one at a time: the dock-mode arm is a write-once slot, so the next view must not arm before this one
 		// has consumed it (a slow-mounting editor otherwise opens in its remembered floating mode)
 		await S(page, async (key) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.bottomDock.armDockMode(key, true);
 			s.dockMenu.closeStoreFor(key)?.set(false);
 			for (let t = 0; t < 40; t++) {
@@ -349,7 +349,7 @@ h.run(async () => {
 	}
 	const off = Object.entries(rights).filter(([, r]) => Math.abs(r - (m6.w - m6.col)) > 1);
 	h.check(!off.length, `6.2 every editor's docked pane stops at the column too (${JSON.stringify(rights)} vs ${m6.w - m6.col})`);
-	await S(page, () => window.__stores.sidebars.toggleSidebarFull('right', false));
+	await S(page, () => window.__tp.test.v1.sidebars.toggleSidebarFull('right', false));
 
 	// ---- 7. the unfolded phone: T opens the empty dock, "+" opens its menu ---------------------------
 	const U = await h.setupPage(browser, 'unfold', { context: UNFOLD, storage: { flowDocked: 'true' } });

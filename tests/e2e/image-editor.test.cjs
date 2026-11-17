@@ -87,7 +87,7 @@ const texOf = (p, uuid) =>
 	S(
 		p,
 		async (id) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const g = await new Promise((r) => s.objectsGroup.subscribe(r)());
 			const m = g.getObjectByProperty('uuid', id)?.material;
 			return { url: m?.userData?.mapDataUrl ?? null, source: m?.userData?.mapSource ?? null, hasMap: !!m?.map };
@@ -96,7 +96,7 @@ const texOf = (p, uuid) =>
 	);
 
 const itemOf = (p, id) => S(p, (i) => {
-	const it = window.__stores.explorer.itemById(i);
+	const it = window.__tp.test.v1.explorer.itemById(i);
 	return it && { id: it.id, name: it.name, hash: it.hash, folderId: it.folderId ?? null };
 }, id);
 
@@ -107,7 +107,7 @@ const firstPixel = (p, id) =>
 	S(
 		p,
 		async (i) => {
-			const blob = await window.__stores.explorer.itemBlob(i);
+			const blob = await window.__tp.test.v1.explorer.itemBlob(i);
 			const bmp = await createImageBitmap(blob);
 			const c = document.createElement('canvas');
 			c.width = bmp.width;
@@ -133,31 +133,31 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1440, height: 900 } } });
 	const B = await h.setupPage(browser, 'B', { context: { viewport: { width: 1280, height: 800 } } });
-	await S(A, () => window.__stores.explorer.loadExplorer());
+	await S(A, () => window.__tp.test.v1.explorer.loadExplorer());
 	await h.connect(B, A);
 	await A.page.waitForTimeout(1500);
 
 	// two boxes, created on A and replicated to B
 	await S(A, () => {
-		window.__stores.commandsHandler.sceneCommand('/create Box 1 1 1');
-		window.__stores.commandsHandler.sceneCommand('/create Box 1 1 1');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create Box 1 1 1');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create Box 1 1 1');
 	});
 	await A.page.waitForTimeout(900);
 	const [box1, box2] = await S(A, async () => {
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const boxes = g.children.slice(-2);
 		boxes[1].position.set(2, 0, 0);
 		return boxes.map((b) => b.uuid);
 	});
 	await until(async () => !!(await texOf(B, box2)).hasMap || (await S(B, async (id) => {
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		return !!g.getObjectByProperty('uuid', id);
 	}, box2)), 8000);
 
 	// ---- §1 the big photo -------------------------------------------------------------
 	const big = noisePng(2400, 2000);
 	h.check(big.length > 8 * 1024 * 1024, `PREMISE: the photo is over the old 8 MB cap (${(big.length / 1048576).toFixed(1)} MB)`);
-	await S(A, (id) => window.__stores.objectActions.selectObject(id, true), box1);
+	await S(A, (id) => window.__tp.test.v1.objectActions.selectObject(id, true), box1);
 	await A.page.waitForTimeout(700);
 	await A.page.locator('#texture-file').setInputFiles({ name: 'photo.png', mimeType: 'image/png', buffer: big });
 	await until(async () => !!(await texOf(A, box1)).url, 20000);
@@ -182,10 +182,10 @@ h.run(async () => {
 		ctx.fillStyle = '#3030c0'; ctx.fillRect(0, 24, 32, 24);
 		ctx.fillStyle = '#c0c030'; ctx.fillRect(32, 24, 32, 24);
 		const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
-		const rec = await window.__stores.explorer.addItemFromBytes(await blob.arrayBuffer(), 'quad.png', null, { imported: true });
+		const rec = await window.__tp.test.v1.explorer.addItemFromBytes(await blob.arrayBuffer(), 'quad.png', null, { imported: true });
 		return { id: rec.id, hash: rec.hash };
 	});
-	await S(A, ({ uuid, id }) => window.__stores.explorerDrop.applyExplorerImage(uuid, { id }), { uuid: box2, id: quad.id });
+	await S(A, ({ uuid, id }) => window.__tp.test.v1.explorerDrop.applyExplorerImage(uuid, { id }), { uuid: box2, id: quad.id });
 	await until(async () => (await texOf(A, box2)).source === quad.hash, 8000);
 	h.check((await texOf(A, box2)).source === quad.hash, 'the textured box remembers which library image it shows');
 	await until(async () => (await texOf(B, box2)).source === quad.hash, 10000);
@@ -194,12 +194,12 @@ h.run(async () => {
 
 	// ---- §3 the preview window's Edit button opens the editor ------------------------
 	await S(A, () => {
-		window.__stores.inspectorClose.set(true);
-		window.__stores.objectActions.deselectObject?.();
+		window.__tp.test.v1.inspectorClose.set(true);
+		window.__tp.test.v1.objectActions.deselectObject?.();
 	});
 	await A.page.waitForTimeout(400);
 	await S(A, async (id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const blob = await s.explorer.itemBlob(id);
 		s.fileWindows.openFilePreview({ title: 'quad.png', kind: 'image', itemId: id, name: 'quad.png', url: URL.createObjectURL(blob) });
 	}, quad.id);
@@ -208,7 +208,7 @@ h.run(async () => {
 	await A.page.locator('#image-editor-window').waitFor({ timeout: 15000 }).catch(async () => {
 		console.log('  errors: ' + JSON.stringify(h.pageErrors(A).slice(-4)));
 		console.log('  console: ' + JSON.stringify(A.page.__console.filter((m) => m.type === 'error' || m.type === 'warning').slice(-8)));
-		console.log('  target: ' + JSON.stringify(await S(A, () => new Promise((r) => window.__stores.imageEditor.imageEditorTarget.subscribe(r)()))));
+		console.log('  target: ' + JSON.stringify(await S(A, () => new Promise((r) => window.__tp.test.v1.imageEditor.imageEditorTarget.subscribe(r)()))));
 		throw new Error('the editor window did not appear');
 	});
 	await until(async () => /64 × 48/.test((await sizeText(A)) ?? ''), 8000);
@@ -227,7 +227,7 @@ h.run(async () => {
 	h.check(drawn > 0, 'the canvas shows the image');
 
 	// ---- §4 rotate + the editor's own undo ---------------------------------------------
-	const sceneUndo = () => S(A, () => new Promise((r) => window.__stores.history.undoStack.subscribe((v) => r(v.length))()));
+	const sceneUndo = () => S(A, () => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((v) => r(v.length))()));
 	const undoBefore = await sceneUndo();
 	await A.page.locator('#image-editor-rotate-cw').click();
 	h.check(/48 × 64/.test((await sizeText(A)) ?? ''), 'rotate turns 64×48 into 48×64');
@@ -272,7 +272,7 @@ h.run(async () => {
 	const px = await firstPixel(A, quad.id);
 	h.check(Math.abs(px.w - 32) <= 1 && Math.abs(px.h - 24) <= 1, `the saved file is the cropped size (${px.w}×${px.h})`);
 	h.check(px.px[0] > 0xc0 + 40 && px.px[1] > 0x30 + 40, `the saved pixel is the red quadrant brightened (${px.px.slice(0, 3)})`);
-	const versions = await S(A, (id) => window.__stores.imageVersions.listImageVersions(id), quad.id);
+	const versions = await S(A, (id) => window.__tp.test.v1.imageVersions.listImageVersions(id), quad.id);
 	h.check(versions.length === 2 && versions[0].label === 'Original' && versions[0].hash === quad.hash, `two versions, the first is the Original (${versions.map((v) => v.label)})`);
 	await until(async () => (await texOf(A, box2)).source === saved.hash, 8000);
 	const a2 = await texOf(A, box2);
@@ -292,7 +292,7 @@ h.run(async () => {
 	h.check(/64 × 48/.test((await sizeText(A)) ?? ''), 'the editor reloaded the original');
 	await until(async () => (await texOf(B, box2)).source === quad.hash, 10000);
 	h.check((await texOf(B, box2)).source === quad.hash, 'and the peer\'s texture went back with it');
-	const v2 = await S(A, (id) => window.__stores.imageVersions.listImageVersions(id), quad.id);
+	const v2 = await S(A, (id) => window.__tp.test.v1.imageVersions.listImageVersions(id), quad.id);
 	h.check(v2.length === 2, `restoring adds no duplicate version (${v2.length})`);
 	const current = await A.page.locator('.ie-version-current .ie-version-label').textContent();
 	h.check(/Original/.test(current ?? ''), `the Original row is marked current ("${current}")`);
@@ -301,9 +301,9 @@ h.run(async () => {
 	// ---- §8 Save as copy ---------------------------------------------------------------
 	await A.page.locator('#image-editor-flip-h').click();
 	await A.page.locator('#image-editor-save-copy').click();
-	await until(async () => !!(await S(A, () => window.__stores.explorer.allItems().find((i) => i.name === 'quad copy.png'))), 8000);
+	await until(async () => !!(await S(A, () => window.__tp.test.v1.explorer.allItems().find((i) => i.name === 'quad copy.png'))), 8000);
 	const copy = await S(A, () => {
-		const it = window.__stores.explorer.allItems().find((i) => i.name === 'quad copy.png');
+		const it = window.__tp.test.v1.explorer.allItems().find((i) => i.name === 'quad copy.png');
 		return it && { id: it.id, hash: it.hash };
 	});
 	h.check(!!copy && copy.id !== quad.id, 'Save as copy made "quad copy.png" beside it');
@@ -313,8 +313,8 @@ h.run(async () => {
 	h.check(/quad copy\.png/.test(title ?? ''), `the editor carries on with the copy ("${title?.trim()}")`);
 
 	// ---- §9 the Inspector's Edit on an unlinked texture --------------------------------
-	await S(A, () => window.__stores.imageEditor.closeImageEditor());
-	await S(A, (id) => window.__stores.objectActions.selectObject(id, true), box1);
+	await S(A, () => window.__tp.test.v1.imageEditor.closeImageEditor());
+	await S(A, (id) => window.__tp.test.v1.objectActions.selectObject(id, true), box1);
 	await A.page.waitForTimeout(600);
 	await A.page.locator('#texture-edit').click();
 	await A.page.locator('#image-editor-window').waitFor({ timeout: 8000 }).catch(async () => {
@@ -323,7 +323,7 @@ h.run(async () => {
 	});
 	const linked = await texOf(A, box1);
 	const made = await S(A, (hash) => {
-		const it = window.__stores.explorer.itemByHash(hash);
+		const it = window.__tp.test.v1.explorer.itemByHash(hash);
 		return it && { name: it.name, kind: it.kind };
 	}, linked.source);
 	h.check(!!linked.source && made?.kind === 'image', `the texture went into the library and is linked (${made?.name})`);
@@ -345,7 +345,7 @@ h.run(async () => {
 
 	// ---- §12 the storage breakdown names the version history and can reclaim it -------
 	const scan = await S(A, async (id) => {
-		const su = window.__stores.storageUsage;
+		const su = window.__tp.test.v1.storageUsage;
 		const r = await su.scanStorage();
 		const cat = r.categories.find((c) => c.key === 'imageversions');
 		const row = cat?.rows.find((x) => x.ref === id);
@@ -353,9 +353,9 @@ h.run(async () => {
 		let after = -1;
 		if (row) {
 			await su.reclaimRow(row);
-			after = (await window.__stores.imageVersions.listImageVersions(id)).length;
+			after = (await window.__tp.test.v1.imageVersions.listImageVersions(id)).length;
 		}
-		return { label: row?.label, bytes: row?.bytes ?? 0, other: !!other, after, image: !!window.__stores.explorer.itemById(id) };
+		return { label: row?.label, bytes: row?.bytes ?? 0, other: !!other, after, image: !!window.__tp.test.v1.explorer.itemById(id) };
 	}, quad.id);
 	h.check(scan.label === 'quad.png' && scan.bytes > 0, `Storage lists quad.png's versions as "Image versions" (${scan.label}, ${scan.bytes} B)`);
 	h.check(!scan.other, 'and none of their keys fall into "Other"');
@@ -371,8 +371,8 @@ h.run(async () => {
 		ctx.fillStyle = '#3070d0';
 		ctx.fillRect(0, 0, 80, 60);
 		const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
-		const rec = await window.__stores.explorer.addItemFromBytes(await blob.arrayBuffer(), 'phone.png', null, {});
-		window.__stores.imageEditor.openImageEditor(rec.id);
+		const rec = await window.__tp.test.v1.explorer.addItemFromBytes(await blob.arrayBuffer(), 'phone.png', null, {});
+		window.__tp.test.v1.imageEditor.openImageEditor(rec.id);
 		return rec.id;
 	});
 	await P.page.locator('#image-editor-window').waitFor({ timeout: 8000 });

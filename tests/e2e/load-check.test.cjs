@@ -26,13 +26,13 @@ h.run(async () => {
 	page.on('request', (r) => {
 		if (r.url().includes(MARK)) requested.push(r.url());
 	});
-	await page.waitForFunction(() => !!window.__stores?.loadGuard && !!window.__stores?.THREE && !!window.__stores?.peers, null, {
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.loadGuard && !!window.__tp?.test.v1?.THREE && !!window.__tp?.test.v1?.peers, null, {
 		timeout: 60000
 	});
 
 	await page.evaluate(
 		async ({ png }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const T = s.THREE.default ?? s.THREE;
 			const { GLTFExporter } = s.GLTFExporterModule;
 			s.loadGuard.resetLoadGuard();
@@ -112,7 +112,7 @@ h.run(async () => {
 	h.check(!one.compiledProgram, 'no foreign program was compiled');
 
 	// ---- 2. a program material in a materials message --------------------------------------
-	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await settle(800);
 	const two = await page.evaluate(() => {
 		const { T, program, deliver, group } = window.__lc;
@@ -171,7 +171,7 @@ h.run(async () => {
 
 	// ---- 4. a scene file -------------------------------------------------------------------
 	await page.evaluate(async (mark) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const { T, program } = window.__lc;
 		const mesh = new T.Mesh(new T.BoxGeometry(), program('file'));
 		mesh.name = 'lc-file';
@@ -188,9 +188,9 @@ h.run(async () => {
 	h.check(four.found && four.types?.[0] === 'MeshStandardMaterial' && !four.compiledProgram, `a scene file cannot install a program (${JSON.stringify(four)})`);
 
 	h.check(requested.length === 0, `nothing requested an outside address (${JSON.stringify(requested)})`);
-	const totals = await page.evaluate(() => window.__stores.loadGuard.loadGuardTotals());
+	const totals = await page.evaluate(() => window.__tp.test.v1.loadGuard.loadGuardTotals());
 	h.check(totals.materials >= 3 && totals.refused >= 3, `the checks counted what they changed (${JSON.stringify(totals)})`);
-	const counted = await page.evaluate(() => window.__stores.wireErrors.wireErrors().filter((e) => e.type.startsWith('checked:')).map((e) => e.peerId + ' ' + e.type));
+	const counted = await page.evaluate(() => window.__tp.test.v1.wireErrors.wireErrors().filter((e) => e.type.startsWith('checked:')).map((e) => e.peerId + ' ' + e.type));
 	h.check(counted.some((c) => c.startsWith('loadchk1 checked:object')), `…per sender, in the wire counters (${counted})`);
 
 	// ---- 5. the ordinary forms still arrive whole -------------------------------------------
@@ -221,7 +221,7 @@ h.run(async () => {
 	const ok = await page.evaluate(() => window.__lc.probe('lc-gltf-ok'));
 	h.check(ok.found && ok.maps === 1, `an exported glTF arrives with its texture (${JSON.stringify(ok)})`);
 	// its own box: section 3 opened a scene file, which replaced everything made before it
-	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await settle(800);
 	const embedded = await page.evaluate(
 		async ({ png }) => {

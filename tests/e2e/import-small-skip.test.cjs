@@ -80,7 +80,7 @@ h.run(async () => {
 	await page.locator('#controls-pill').waitFor({ timeout: 90000 });
 	await page.waitForTimeout(5000);
 	await page.locator('#restore-session-dismiss').click({ timeout: 3000 }).catch(() => {});
-	h.check(!(await page.evaluate(() => !!window.__stores)), 'premise: this is a plain session (no debug hook)');
+	h.check(!(await page.evaluate(() => !!window.__tp?.test.v1)), 'premise: this is a plain session (no debug hook)');
 	const boot = requests.filter(isOptimizer);
 	h.check(boot.length === 0, `premise: the boot fetched no optimizer module (${boot.join(', ') || 'none'})`);
 

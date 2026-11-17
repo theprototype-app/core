@@ -28,7 +28,7 @@ const g = (page, fn, arg) => page.evaluate(fn, arg);
 
 const state = (page) =>
 	g(page, () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const get = (store) => {
 			let v;
 			store.subscribe((x) => (v = x))();
@@ -48,7 +48,7 @@ const state = (page) =>
 const poses = (page, ids) =>
 	g(page, (ids) => {
 		let grp;
-		window.__stores.objectsGroup.subscribe((x) => (grp = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (grp = x))();
 		const out = {};
 		for (const id of ids) {
 			const o = grp.getObjectByProperty('uuid', id);
@@ -67,8 +67,8 @@ const release = async (page) => {
 const reset = async (page) => {
 	await release(page);
 	await g(page, () => {
-		window.__stores.vrControls.resetWorldRig();
-		window.__stores.objectActions.deselectObject();
+		window.__tp.test.v1.vrControls.resetWorldRig();
+		window.__tp.test.v1.objectActions.deselectObject();
 	});
 	await iwer.frames(page, 3);
 };
@@ -83,7 +83,7 @@ h.run(async () => {
 	// the head, so no panel is "scenery" by itself), a 30 m ground under it, a cube, a 10 m wall and a 3 m crate
 	// out to the right, a 3 m terrain behind
 	const ids = await g(page, async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const get = (store) => {
 			let v;
 			store.subscribe((x) => (v = x))();
@@ -222,7 +222,7 @@ h.run(async () => {
 
 	console.log('\n=== 4. touching big things never grabs them ===');
 	// the right hand INSIDE the 10 m wall (selected with the trigger earlier), its ray up at the sky
-	await g(page, (id) => window.__stores.objectActions.selectObject(id), objects.bigWall);
+	await g(page, (id) => window.__tp.test.v1.objectActions.selectObject(id), objects.bigWall);
 	await iwer.pose(page, 'right', [0, 1.6, -12], { pitch: 1.4 });
 	await iwer.frames(page, 3);
 	const wall0 = (await poses(page, [objects.bigWall]))[objects.bigWall];
@@ -245,7 +245,7 @@ h.run(async () => {
 	await grip(page, 'right', false);
 	await iwer.frames(page, 3);
 	// deliberately: the selected wall, the RAY on it, then grip — it moves
-	await g(page, (id) => window.__stores.objectActions.selectObject(id), objects.bigWall);
+	await g(page, (id) => window.__tp.test.v1.objectActions.selectObject(id), objects.bigWall);
 	await iwer.pose(page, 'right', [0, 1.6, -9]); // 2.75 m in front of the wall, aiming -Z at it
 	await iwer.frames(page, 3);
 	await grip(page, 'right', true);
@@ -255,7 +255,7 @@ h.run(async () => {
 	await release(page);
 	await g(page, ({ id, pose }) => {
 		let grp;
-		window.__stores.objectsGroup.subscribe((x) => (grp = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (grp = x))();
 		const o = grp.getObjectByProperty('uuid', id);
 		o.position.set(pose[0], pose[1], pose[2]);
 		o.updateMatrixWorld(true);
@@ -268,18 +268,18 @@ h.run(async () => {
 	await iwer.frames(page, 3);
 	const ray = await g(page, () => {
 		let r, grp;
-		window.__stores.globalRenderer.subscribe((v) => (r = v))();
-		window.__stores.objectsGroup.subscribe((v) => (grp = v))();
+		window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (grp = v))();
 		const c = r.xr.getController(r.xr.getController(0).userData.handedness === 'right' ? 0 : 1);
-		const T = window.__stores.THREE;
+		const T = window.__tp.test.v1.THREE;
 		const o = c.getWorldPosition(new T.Vector3());
 		const d = new T.Vector3(0, 0, -1).applyQuaternion(c.getWorldQuaternion(new T.Quaternion()));
 		const hit = new T.Raycaster(o, d).intersectObjects(grp.children, true)[0];
-		return hit ? window.__stores.objectActions.topLevelObjectOf(hit.object)?.uuid : null;
+		return hit ? window.__tp.test.v1.objectActions.topLevelObjectOf(hit.object)?.uuid : null;
 	});
 	h.check(ray === objects.terrain, `premise: the right ray points at the terrain (${ray})`);
 	for (const selected of [false, true]) {
-		if (selected) await g(page, (id) => window.__stores.objectActions.selectObject(id), objects.terrain);
+		if (selected) await g(page, (id) => window.__tp.test.v1.objectActions.selectObject(id), objects.terrain);
 		await grip(page, 'right', true);
 		await iwer.frames(page, 3);
 		s = await state(page);
@@ -291,11 +291,11 @@ h.run(async () => {
 
 	console.log('\n=== 6. Settings ▸ VR: "Only in empty air" = the pre-52 rule ===');
 	const row = await g(page, () => {
-		const r = window.__stores.vrSettingsSchema.vrSettingRow('bothGripsWorld');
+		const r = window.__tp.test.v1.vrSettingsSchema.vrSettingRow('bothGripsWorld');
 		return { kind: r.kind, label: r.label, options: r.options.map((o) => o.label), value: r.get() };
 	});
 	h.check(row.kind === 'choice' && row.label === 'Both grips scale the world' && row.options.join('|') === 'Always|Only in empty air' && row.value === 'always', `6.1 the row: ${row.label}: ${row.options.join(' / ')} (default ${row.value})`);
-	await g(page, () => window.__stores.vrSettingsSchema.vrSettingRow('bothGripsWorld').set('emptyAir'));
+	await g(page, () => window.__tp.test.v1.vrSettingsSchema.vrSettingRow('bothGripsWorld').set('emptyAir'));
 	await aimFloor();
 	await grip(page, 'left', true);
 	await iwer.frames(page, 2);
@@ -304,10 +304,10 @@ h.run(async () => {
 	s = await state(page);
 	h.check(!s.worldGrab && (s.grab === objects.floor || s.scaleGrab === objects.floor), `6.2 both rays on the floor take the floor again (world ${s.worldGrab}, holding ${s.grab ?? s.scaleGrab})`);
 	await release(page);
-	await g(page, () => window.__stores.vrSettingsSchema.vrSettingRow('bothGripsWorld').set('always'));
+	await g(page, () => window.__tp.test.v1.vrSettingsSchema.vrSettingRow('bothGripsWorld').set('always'));
 
 	console.log('\n=== 7. the miniature: detents 1:10 / 1:50, the readout, the vignette, Back to 1:1 ===');
-	const snap = () => g(page, () => window.__stores.vrWorldSnap.worldSnapDebug());
+	const snap = () => g(page, () => window.__tp.test.v1.vrWorldSnap.worldSnapDebug());
 	// hands 1 m apart, both grips (on the floor: the universal rule), then together to 10 cm = 1:10
 	await aimFloor(0.5);
 	await grip(page, 'left', true);
@@ -328,16 +328,16 @@ h.run(async () => {
 	h.check(d.detent === 0.02 && Math.abs(s.rigScale - 0.02) < 1e-6 && /^1:50 · /.test(d.readout), `7.4 1:50, the table-top miniature (scale ${s.rigScale}, ${d.readout})`);
 	await release(page);
 	// Back to 1:1 sits on the ROOT ring only while the world is off life size
-	const root = () => g(page, () => window.__stores.vrRadialMenu.ringEntries('root').map((e) => e.id));
+	const root = () => g(page, () => window.__tp.test.v1.vrRadialMenu.ringEntries('root').map((e) => e.id));
 	h.check((await root()).includes('world:back'), '7.5 the radial root offers Back to 1:1 while the world is a miniature');
-	await g(page, () => window.__stores.vrControls.executeVRMenuAction('world:back'));
+	await g(page, () => window.__tp.test.v1.vrControls.executeVRMenuAction('world:back'));
 	await iwer.frames(page, 3);
 	s = await state(page);
 	h.check(Math.abs(s.rigScale - 1) < 1e-9 && s.rigPos.every((v) => v === 0) && !(await root()).includes('world:back'), `7.6 Back to 1:1 restores life size and leaves the root ring (x${s.rigScale})`);
 	// the comfort vignette (53, High) closes in while the world scales, and opens again when it stops
 	await g(page, () => {
-		window.__stores.vrPrefs.vrComfortVignette.set('high');
-		window.__stores.vrPrefs.vrWorldSnap.set(false); // a steady, unsnapped pull
+		window.__tp.test.v1.vrPrefs.vrComfortVignette.set('high');
+		window.__tp.test.v1.vrPrefs.vrWorldSnap.set(false); // a steady, unsnapped pull
 	});
 	await aimFloor(0.5);
 	await grip(page, 'left', true);
@@ -347,16 +347,16 @@ h.run(async () => {
 	for (let i = 1; i <= 30; i++) {
 		await aimFloor(0.5 - i * 0.014);
 		await iwer.frames(page, 1);
-		peak = Math.max(peak, (await g(page, () => window.__stores.gameKit.comfortVignette.vignetteDebug())).strength);
+		peak = Math.max(peak, (await g(page, () => window.__tp.test.v1.gameKit.comfortVignette.vignetteDebug())).strength);
 	}
 	h.check(peak > 0.4, `7.7 the vignette closes in while the world scales (peak ${peak.toFixed(2)})`);
 	await iwer.frames(page, 90); // hands still
-	const still = await g(page, () => window.__stores.gameKit.comfortVignette.vignetteDebug());
+	const still = await g(page, () => window.__tp.test.v1.gameKit.comfortVignette.vignetteDebug());
 	h.check(still.strength < 0.1, `7.8 hands still: it opens again (${still.strength.toFixed(3)})`);
 	await reset(page);
 	await g(page, () => {
-		window.__stores.vrPrefs.vrComfortVignette.set('off');
-		window.__stores.vrPrefs.vrWorldSnap.set(true);
+		window.__tp.test.v1.vrPrefs.vrComfortVignette.set('off');
+		window.__tp.test.v1.vrPrefs.vrWorldSnap.set(true);
 	});
 
 	await iwer.exit(page);

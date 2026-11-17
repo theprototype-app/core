@@ -21,13 +21,13 @@ const h = require('./helpers.cjs');
 const gstate = (peer) =>
 	peer.page.evaluate(() => {
 		let g;
-		window.__stores.gameState.gameState.subscribe((v) => (g = v))();
+		window.__tp.test.v1.gameState.gameState.subscribe((v) => (g = v))();
 		return g;
 	});
 const looking = (peer) =>
 	peer.page.evaluate(() => {
 		let p;
-		window.__stores.cameraPreview.cameraPreview.subscribe((v) => (p = v))();
+		window.__tp.test.v1.cameraPreview.cameraPreview.subscribe((v) => (p = v))();
 		return p?.uuid ?? null;
 	});
 const onScreen = (peer) =>
@@ -35,18 +35,18 @@ const onScreen = (peer) =>
 const visibleOf = (peer, uuids) =>
 	peer.page.evaluate((ids) => {
 		let group;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		return ids.map((id) => group?.getObjectByProperty('uuid', id)?.visible ?? null);
 	}, uuids);
-const gemsOf = (peer) => peer.page.evaluate(() => window.__stores.gameState.gameVar('gems', 0));
+const gemsOf = (peer) => peer.page.evaluate(() => window.__tp.test.v1.gameState.gameVar('gems', 0));
 /** the world position of the play camera rig (char-controller's reader) */
 const camWorld = (peer) =>
 	peer.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.playerCam.subscribe((cam) => {
+				window.__tp.test.v1.playerCam.subscribe((cam) => {
 					if (!cam) return resolve(null);
-					const w = cam.getWorldPosition(new window.__stores.THREE.Vector3());
+					const w = cam.getWorldPosition(new window.__tp.test.v1.THREE.Vector3());
 					resolve({ x: w.x, y: w.y, z: w.z });
 				})();
 			})
@@ -54,7 +54,7 @@ const camWorld = (peer) =>
 /** 21-E8: a clean slate has to be cleaned on EVERY peer — `flowNodes.set([])` does not
  * broadcast, and nodesync's hash compare then has the emptier peer PULL the graph back. */
 const wipeGraphs = async (peers) => {
-	for (const p of peers) await p.page.evaluate(() => window.__stores.clearGraphs());
+	for (const p of peers) await p.page.evaluate(() => window.__tp.test.v1.clearGraphs());
 	await peers[0].page.waitForTimeout(900);
 };
 
@@ -63,7 +63,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
 	for (const p of [A, B])
-		await p.page.waitForFunction(() => !!window.__stores?.flowGraphsCtl && !!window.__stores?.nodesHandler, { timeout: 30000 });
+		await p.page.waitForFunction(() => !!window.__tp?.test.v1?.flowGraphsCtl && !!window.__tp?.test.v1?.nodesHandler, { timeout: 30000 });
 	await h.connect(A, B);
 	const page = A.page;
 
@@ -73,7 +73,7 @@ h.run(async () => {
 	// =======================================================================
 	await wipeGraphs([A, B]);
 	const camUuid = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.gameState.clearGameState();
 		s.hudDocs.clearHudDocs();
 		s.commandsHandler.sceneCommand('/create Camera');
@@ -87,13 +87,13 @@ h.run(async () => {
 	h.check(!!camUuid, 'a play camera exists in the scene');
 
 	await page.evaluate(() => {
-		window.__stores.hudEditorClose.set(false);
-		window.__stores.bottomDock.activateDock('hud');
+		window.__tp.test.v1.hudEditorClose.set(false);
+		window.__tp.test.v1.bottomDock.activateDock('hud');
 	});
 	await page.waitForTimeout(1700);
 
 	const built = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		// the palette places the button — the real authoring path
 		document.querySelector('#hud-palette [data-hud-kind="button"]')?.click();
 		await new Promise((r) => setTimeout(r, 800));
@@ -136,7 +136,7 @@ h.run(async () => {
 	// the actions — 'start' and 'camera' from 21-D, and 'resetcounter' from E8, which is
 	// what makes round 2 begin clean
 	const bound = await page.evaluate(async (ctx) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const start = s.hudActions.addBinding(ctx.startId, 'start');
 		const cam = s.hudActions.addBinding(ctx.startId, 'camera');
 		await new Promise((r) => setTimeout(r, 800));
@@ -184,7 +184,7 @@ h.run(async () => {
 	// a Game Start node names the camera every peer plays from — including a late joiner,
 	// which never witnesses the transition
 	await page.evaluate(async (cam) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.nodesHandler.createFlowNode(
 			{
 				id: 'gs-1',
@@ -200,12 +200,12 @@ h.run(async () => {
 
 	// push the whole graph and WAIT — a peer must not react to a state change it has no
 	// nodes for yet
-	await page.evaluate((id) => window.__stores.nodesHandler.sendNodes(id), B.id);
+	await page.evaluate((id) => window.__tp.test.v1.nodesHandler.sendNodes(id), B.id);
 	let peerReady = false;
 	for (let i = 0; i < 40 && !peerReady; i++) {
 		peerReady = await B.page.evaluate(() => {
 			let g;
-			window.__stores.flowGraphs.subscribe((v) => (g = v))();
+			window.__tp.test.v1.flowGraphs.subscribe((v) => (g = v))();
 			const types = (g.scene?.nodes ?? []).map((n) => n.type);
 			return types.includes('gamestart') && types.includes('hudbutton');
 		});
@@ -213,7 +213,7 @@ h.run(async () => {
 	}
 	h.check(peerReady, 'premise: the peer holds the whole graph before anything is pressed');
 
-	await page.evaluate(() => window.__stores.hudEditorClose.set(true));
+	await page.evaluate(() => window.__tp.test.v1.hudEditorClose.set(true));
 	await page.waitForTimeout(1300);
 	h.check((await onScreen(A)).includes('Start'), 'A sees the menu');
 	h.check((await onScreen(B)).includes('Start'), 'and so does B');
@@ -246,7 +246,7 @@ h.run(async () => {
 	// 2. THE CHARACTER: a Character Controller on `walk`, and W moves you
 	// =======================================================================
 	const declared = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.nodesHandler.createFlowNode(
 			{
 				id: 'cc-1',
@@ -268,7 +268,7 @@ h.run(async () => {
 	// enter play, level the rig (a rig aimed steeply upward makes "forward" vertical, and
 	// yaw extraction is degenerate at straight up — the char-controller note)
 	const walked = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.isLocked.set(true);
 		await new Promise((r) => setTimeout(r, 700));
 		let cam = null;
@@ -292,7 +292,7 @@ h.run(async () => {
 	// 3. THE COLLECTIBLES: the object-menu recipe, on three boxes
 	// =======================================================================
 	const gemUuids = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		/** @type {string[]} */
 		const uuids = [];
 		for (let i = 0; i < 3; i++) {
@@ -315,7 +315,7 @@ h.run(async () => {
 	await page.waitForTimeout(1000);
 	const gems = await page.evaluate(
 		({ uuids, result }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let g;
 			s.flowGraphs.subscribe((v) => (g = v))();
 			const types = g.scene.nodes.map((n) => n.type);
@@ -345,7 +345,7 @@ h.run(async () => {
 	// game-state singleton, which records a `game` entry of its own, so a moment later the
 	// top of the stack is a variable change rather than the recipe.
 	const undone = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.history.undo();
 		await new Promise((r) => setTimeout(r, 900));
 		let g;
@@ -360,15 +360,15 @@ h.run(async () => {
 	h.check(undone.afterRedo === 3, `and redo restores it (${undone.afterRedo})`);
 
 	// the peer needs the nodes AND the boxes before anything is clicked
-	await page.evaluate((id) => window.__stores.nodesHandler.sendNodes(id), B.id);
+	await page.evaluate((id) => window.__tp.test.v1.nodesHandler.sendNodes(id), B.id);
 	let peerHasGems = false;
 	for (let i = 0; i < 40 && !peerHasGems; i++) {
 		peerHasGems = await B.page.evaluate((ids) => {
 			let g;
-			window.__stores.flowGraphs.subscribe((v) => (g = v))();
+			window.__tp.test.v1.flowGraphs.subscribe((v) => (g = v))();
 			const latches = (g.scene?.nodes ?? []).filter((n) => n.type === 'latch').length;
 			let group;
-			window.__stores.objectsGroup.subscribe((v) => (group = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 			const objects = ids.filter((id) => !!group?.getObjectByProperty('uuid', id)).length;
 			return latches === 3 && objects === 3;
 		}, gems.uuids);
@@ -380,7 +380,7 @@ h.run(async () => {
 	// press Esc and get their own scene back — so a peer parked in the EDITOR deliberately
 	// keeps seeing the gems, and "it vanished for everyone" is a claim about the people in
 	// the game. Two players is what this section always meant anyway.
-	await B.page.evaluate(() => window.__stores.isLocked.set(true));
+	await B.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await B.page.waitForTimeout(700);
 	h.check(
 		(await visibleOf(B, gems.uuids)).every((v) => v === true),
@@ -389,7 +389,7 @@ h.run(async () => {
 
 	// collect them, one at a time
 	for (const uuid of gems.uuids) {
-		await page.evaluate((id) => window.__stores.flowRuntime.fireObjectClick(id), uuid);
+		await page.evaluate((id) => window.__tp.test.v1.flowRuntime.fireObjectClick(id), uuid);
 		await page.waitForTimeout(1100);
 	}
 	await page.waitForTimeout(1200);
@@ -412,7 +412,7 @@ h.run(async () => {
 
 	// clicking a COLLECTED one again must not bank it twice. The Latch holds it hidden, so
 	// this looks like a no-op either way — the count is the only thing that tells.
-	await page.evaluate((id) => window.__stores.flowRuntime.fireObjectClick(id), gems.uuids[0]);
+	await page.evaluate((id) => window.__tp.test.v1.flowRuntime.fireObjectClick(id), gems.uuids[0]);
 	await page.waitForTimeout(1500);
 	const gemsAgain = await gemsOf(A);
 	h.check(gemsAgain === 3, `clicking a collected gem again does NOT count it (${gemsAgain})`);
@@ -427,7 +427,7 @@ h.run(async () => {
 	// E3 added the falling edge for exactly this. Both nodes are LOCAL reads of this peer's
 	// own keyboard, and `hudscreen` writes a per-peer override — so a map is mine.
 	await page.evaluate(async (ctx) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const mk = (id, type, data, y) =>
 			s.nodesHandler.createFlowNode(
 				{ id, type, position: { x: 60, y }, data: { type, ...data }, class: 'w-[150px]' },
@@ -450,7 +450,7 @@ h.run(async () => {
 	const overrideOf = () =>
 		page.evaluate(() => {
 			let o;
-			window.__stores.hudDocs.hudScreenOverride.subscribe((v) => (o = v))();
+			window.__tp.test.v1.hudDocs.hudScreenOverride.subscribe((v) => (o = v))();
 			return o.scene ?? null;
 		});
 	h.check((await overrideOf()) === null, 'premise: no screen override before the key is touched');
@@ -477,7 +477,7 @@ h.run(async () => {
 	//         pauses the clock, and Resume puts everything back
 	// =======================================================================
 	const resumeWiring = await page.evaluate(async (ctx) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const mk = (id, type, data, y) =>
 			s.nodesHandler.createFlowNode(
 				{ id, type, position: { x: 60, y }, data: { type, ...data }, class: 'w-[150px]' },
@@ -507,11 +507,11 @@ h.run(async () => {
 		`premise: Resume carries both halves of un-pausing (${JSON.stringify(resumeWiring.bindings)})`
 	);
 
-	const elapsedOf = () => page.evaluate(() => window.__stores.gameState.gameElapsed());
+	const elapsedOf = () => page.evaluate(() => window.__tp.test.v1.gameState.gameElapsed());
 	const freeOf = () =>
 		page.evaluate(() => {
 			let f;
-			window.__stores.playPointerFree.subscribe((v) => (f = v))();
+			window.__tp.test.v1.playPointerFree.subscribe((v) => (f = v))();
 			return f;
 		});
 	h.check((await freeOf()) === false, 'premise: the pointer is captured while playing');
@@ -548,7 +548,7 @@ h.run(async () => {
 	h.check((await gstate(B)).state === 'paused', 'and the peer is paused too — one shared state');
 
 	// RESUME, through the button's own path
-	await page.evaluate((id) => window.__stores.flowRuntime.fireHudButton(id), built.resume);
+	await page.evaluate((id) => window.__tp.test.v1.flowRuntime.fireHudButton(id), built.resume);
 	await page.waitForTimeout(1600);
 	h.check((await gstate(A)).state === 'playing', 'Resume puts the game back');
 	h.check((await freeOf()) === false, 'the pointer is captured again');
@@ -573,7 +573,7 @@ h.run(async () => {
 	// 7. THE END, and back to the menu with no wiring
 	// =======================================================================
 	await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.gameState.setGameState('over', { outcome: 'won' });
 		await new Promise((r) => setTimeout(r, 1200));
 	});
@@ -587,10 +587,10 @@ h.run(async () => {
 	// out of play mode first: the approval prompt is editor chrome, and a real user is not
 	// asked to click it from inside a pointer-locked game either
 	// 21-F2: BOTH players leave — the round is over, and B has been playing since section 3
-	for (const p of [A, B]) await p.page.evaluate(() => window.__stores.isLocked.set(null));
+	for (const p of [A, B]) await p.page.evaluate(() => window.__tp.test.v1.isLocked.set(null));
 	await page.waitForTimeout(900);
 	const C = await h.setupPage(browser, 'C');
-	await C.page.waitForFunction(() => !!window.__stores?.gameState, { timeout: 30000 });
+	await C.page.waitForFunction(() => !!window.__tp?.test.v1?.gameState, { timeout: 30000 });
 	await h.connect(C, A);
 	await C.page.waitForTimeout(3400);
 	const lateState = await gstate(C);
@@ -606,7 +606,7 @@ h.run(async () => {
 
 	// back to the menu: the screens are bound to the STATE, so this needs no wiring at all
 	const backToMenu = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.hudDocs.showHudScreen('scene', null);
 		s.gameState.setGameState('menu');
 		await new Promise((r) => setTimeout(r, 1500));

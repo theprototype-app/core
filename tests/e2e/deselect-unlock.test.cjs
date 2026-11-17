@@ -10,7 +10,7 @@ const locksOn = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.lockedObjects.subscribe((v) => r(v.map((lock) => lock[1])))()
+				window.__tp.test.v1.lockedObjects.subscribe((v) => r(v.map((lock) => lock[1])))()
 			)
 	);
 
@@ -22,7 +22,7 @@ h.run(async () => {
 
 	// A creates two boxes (creation selects the new object, 15-K3)
 	const ids = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		w.commandsHandler.sceneCommand('/create Sphere 0.5');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
@@ -32,11 +32,11 @@ h.run(async () => {
 	await B.page.waitForTimeout(1500);
 
 	// --- selecting locks it for B -------------------------------------------
-	await A.page.evaluate((uuid) => window.__stores.objectActions.selectObject(uuid), ids[0]);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.objectActions.selectObject(uuid), ids[0]);
 	await h.eventually(() => locksOn(B.page), (l) => l.includes(ids[0]), 'B sees A\'s selection as locked');
 
 	// --- selecting something else REPLACES the lock (regression) ------------
-	await A.page.evaluate((uuid) => window.__stores.objectActions.selectObject(uuid), ids[1]);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.objectActions.selectObject(uuid), ids[1]);
 	await h.eventually(
 		() => locksOn(B.page),
 		(l) => l.includes(ids[1]) && !l.includes(ids[0]),
@@ -44,20 +44,20 @@ h.run(async () => {
 	);
 
 	// --- deselecting RELEASES it (the fix) ----------------------------------
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await h.eventually(() => locksOn(B.page), (l) => l.length === 0, 'deselect releases the lock for peers');
 
 	// A keeps its sticky primary (inspector contract) even though the lock is gone
 	const sticky = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.selectedObject.subscribe((v) => r(v?.uuid))())
+		() => new Promise((r) => window.__tp.test.v1.selectedObject.subscribe((v) => r(v?.uuid))())
 	);
 	h.check(sticky === ids[1], 'the deselecting peer still keeps its sticky primary');
 
 	// --- a SET releases every member ---------------------------------------
-	await A.page.evaluate((ids) => window.__stores.objectActions.applySelectionSet(ids), ids);
+	await A.page.evaluate((ids) => window.__tp.test.v1.objectActions.applySelectionSet(ids), ids);
 	await h.eventually(() => locksOn(B.page), (l) => l.length === 2, 'a multi-selection locks both objects');
 	// clearing through applySelectionSet([]) must release too (not just deselectObject)
-	await A.page.evaluate(() => window.__stores.objectActions.applySelectionSet([]));
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.applySelectionSet([]));
 	await h.eventually(
 		() => locksOn(B.page),
 		(l) => l.length === 0,
@@ -65,10 +65,10 @@ h.run(async () => {
 	);
 
 	// --- viewing a peer-locked object releases what WE held -----------------
-	await A.page.evaluate((uuid) => window.__stores.objectActions.selectObject(uuid), ids[0]);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.objectActions.selectObject(uuid), ids[0]);
 	await h.eventually(() => locksOn(B.page), (l) => l.includes(ids[0]), 'A holds a lock again');
 	const viewLocked = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		// pretend a third peer locked the other object, then VIEW it (locked-view:
 		// the set empties, no gizmo, no lock of our own)
 		w.lockedObjects.update((locks) => [...locks, ['ghost-peer', uuid]]);

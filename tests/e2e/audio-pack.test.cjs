@@ -32,9 +32,9 @@ h.run(async () => {
 
 	const result = await A.page.evaluate(async (bytes) => {
 		const file = new File([new Uint8Array(bytes)], 'test-audio-pack.zip');
-		const pack = await window.__stores.packs.importPackZip(file);
+		const pack = await window.__tp.test.v1.packs.importPackZip(file);
 		let audioItems = [];
-		window.__stores.explorer.explorerItems.subscribe((list) => {
+		window.__tp.test.v1.explorer.explorerItems.subscribe((list) => {
 			audioItems = list.filter((i) => i.kind === 'audio').map((i) => i.name);
 		})();
 		return { packName: pack.name, packSource: pack.source, itemKind: pack.items[0]?.kind, audioItems };
@@ -45,12 +45,12 @@ h.run(async () => {
 	h.check(result.audioItems.includes('beep.wav'), `audio asset landed in the Explorer library (${result.audioItems.join(',')})`);
 
 	// the default-list zip install helper exists (used by the Explorer Install action)
-	const helper = await A.page.evaluate(() => typeof window.__stores.packs.installDefaultPackZip);
+	const helper = await A.page.evaluate(() => typeof window.__tp.test.v1.packs.installDefaultPackZip);
 	h.check(helper === 'function', 'installDefaultPackZip helper is available');
 
 	// Sound node gains a rolloff param, default 1 (used when the palette adds one)
 	const rolloff = await A.page.evaluate(
-		() => window.__stores.nodeCatalog.findNodeSpec('sound')?.defaults?.rolloff
+		() => window.__tp.test.v1.nodeCatalog.findNodeSpec('sound')?.defaults?.rolloff
 	);
 	h.check(rolloff === 1, `Sound node default rolloff is 1 (${rolloff})`);
 

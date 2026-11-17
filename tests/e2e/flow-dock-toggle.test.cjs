@@ -14,7 +14,7 @@ const h = require('./helpers.cjs');
 
 const dock = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let tabs, visible, fc, cc, ac, ec;
 		s.bottomDock.dockTabs.subscribe((v) => (tabs = v))();
 		s.bottomDock.visibleDockKey.subscribe((v) => (visible = v))();
@@ -51,7 +51,7 @@ h.run(async () => {
 	// Animation needs a selected object to render anything, and the premise is about
 	// what is DOCKED, so give it one.
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
@@ -62,7 +62,7 @@ h.run(async () => {
 		localStorage.setItem('explorerDocked', 'true');
 	});
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphClose.set(false);
 		s.timelineClose.set(false);
 		s.animationClose.set(false);
@@ -125,7 +125,7 @@ h.run(async () => {
 	// --- 4. the tree reads the same for a NON-flow panel -----------------------------
 	// The fix removed the only per-panel branch left in panelToggles, so the Explorer's
 	// own button must behave identically: close its tab, touch nothing else.
-	await A.page.evaluate(() => window.__stores.bottomDock.activateDock('explorer'));
+	await A.page.evaluate(() => window.__tp.test.v1.bottomDock.activateDock('explorer'));
 	await A.page.waitForTimeout(400);
 	d = await dock(A.page);
 	h.check(d.visible === 'explorer', `4.0 premise: the Explorer is the visible tab (${d.visible})`);
@@ -140,7 +140,7 @@ h.run(async () => {
 	// --- 5. a COVERED tab is called back, never dismissed ----------------------------
 	// (step 4's other half, unchanged by this fix but the reason a press cannot simply
 	// close whatever it names)
-	await A.page.evaluate(() => window.__stores.bottomDock.activateDock('animation'));
+	await A.page.evaluate(() => window.__tp.test.v1.bottomDock.activateDock('animation'));
 	await A.page.waitForTimeout(400);
 	d = await dock(A.page);
 	h.check(

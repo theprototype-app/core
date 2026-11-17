@@ -44,7 +44,7 @@ function pressFor(combo) {
 /** in-page: swap every registry action for a recorder (or put them back) @param {boolean} on */
 function wrapActions(on) {
 	const w = /** @type {any} */ (window);
-	const reg = w.__stores.shortcutsRegistry.shortcuts;
+	const reg = w.__tp.test.v1.shortcutsRegistry.shortcuts;
 	w.__fired = w.__fired || [];
 	for (const row of reg) {
 		if (on && typeof row.action === 'function' && !row.__lockOrig) {
@@ -66,22 +66,22 @@ h.run(async () => {
 
 	// a scene to act on: two boxes, one selected
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		s.commandsHandler.sceneCommand('/create sphere');
 	});
 	await page.waitForTimeout(1500);
 	let boxId = await page.evaluate(async () => {
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const b = g.children.find((c) => c.name === 'Box') ?? g.children[0];
-		window.__stores.objectActions.selectObject(b.uuid);
+		window.__tp.test.v1.objectActions.selectObject(b.uuid);
 		return b.uuid;
 	});
 	await page.waitForTimeout(400);
 
 	// ---- 1. the registry --------------------------------------------------------------------
 	const registry = await page.evaluate(() =>
-		window.__stores.shortcutsRegistry.shortcuts.map((/** @type {any} */ r) => ({
+		window.__tp.test.v1.shortcutsRegistry.shortcuts.map((/** @type {any} */ r) => ({
 			id: r.id,
 			keys: r.keys,
 			defaultKeys: r.defaultKeys,
@@ -102,7 +102,7 @@ h.run(async () => {
 		await page.waitForTimeout(120);
 	};
 	await focusViewport();
-	await page.evaluate((u) => window.__stores.objectActions.selectObject(u), boxId);
+	await page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), boxId);
 	await page.keyboard.press('Shift+Slash');
 	await page.locator('#shortcut-sheet').waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
 	h.check(await page.locator('#shortcut-sheet').isVisible(), '? opens the keyboard cheat sheet');
@@ -136,7 +136,7 @@ h.run(async () => {
 	h.check(await page.locator('#shortcut-sheet').isVisible(), '? still answers over an open modal (Settings)');
 	await page.keyboard.press('Escape');
 	await page.waitForTimeout(150);
-	await page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await page.waitForTimeout(300);
 
 	// ---- 3. the routing table (actions swapped for recorders) ----------------------------------
@@ -149,7 +149,7 @@ h.run(async () => {
 	const openPane = async (key, closeStore, scope) => {
 		await page.evaluate(
 			({ key, closeStore }) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				s[closeStore]?.set?.(false);
 				s.bottomDock.activateDock(key);
 			},
@@ -180,20 +180,20 @@ h.run(async () => {
 	/** @type {Record<string, () => Promise<boolean>>} */
 	const scopes = {
 		viewport: async () => {
-			await page.evaluate(() => window.__stores.bottomDock?.dockMinimized?.set?.(true));
+			await page.evaluate(() => window.__tp.test.v1.bottomDock?.dockMinimized?.set?.(true));
 			await page.waitForTimeout(150);
 			await focusViewport();
-			return (await page.evaluate(() => window.__stores.keyScope.lastScope())) === 'viewport';
+			return (await page.evaluate(() => window.__tp.test.v1.keyScope.lastScope())) === 'viewport';
 		},
-		nodes: async () => (await giveFocus(await openPane('flow', 'flowGraphClose', 'nodes')), (await page.evaluate(() => window.__stores.keyScope.lastScope())) === 'nodes'),
-		uv: async () => (await giveFocus(await openPane('uv', 'uvEditorClose', 'uv')), (await page.evaluate(() => window.__stores.keyScope.lastScope())) === 'uv'),
-		animation: async () => (await giveFocus(await openPane('animation', 'animationClose', 'animation')), (await page.evaluate(() => window.__stores.keyScope.lastScope())) === 'animation'),
-		shader: async () => (await giveFocus(await openPane('shader', 'shaderEditorClose', 'shader')), (await page.evaluate(() => window.__stores.keyScope.lastScope())) === 'shader'),
-		hud: async () => (await giveFocus(await openPane('hud', 'hudEditorClose', 'hud')), (await page.evaluate(() => window.__stores.keyScope.lastScope())) === 'hud'),
+		nodes: async () => (await giveFocus(await openPane('flow', 'flowGraphClose', 'nodes')), (await page.evaluate(() => window.__tp.test.v1.keyScope.lastScope())) === 'nodes'),
+		uv: async () => (await giveFocus(await openPane('uv', 'uvEditorClose', 'uv')), (await page.evaluate(() => window.__tp.test.v1.keyScope.lastScope())) === 'uv'),
+		animation: async () => (await giveFocus(await openPane('animation', 'animationClose', 'animation')), (await page.evaluate(() => window.__tp.test.v1.keyScope.lastScope())) === 'animation'),
+		shader: async () => (await giveFocus(await openPane('shader', 'shaderEditorClose', 'shader')), (await page.evaluate(() => window.__tp.test.v1.keyScope.lastScope())) === 'shader'),
+		hud: async () => (await giveFocus(await openPane('hud', 'hudEditorClose', 'hud')), (await page.evaluate(() => window.__tp.test.v1.keyScope.lastScope())) === 'hud'),
 		// a plain text field with no Enter action of its own: the Properties filter (the Connect
 		// field would DIAL on Ctrl+Enter and take itself off the screen)
 		text: async () => {
-			await page.evaluate((u) => window.__stores.objectActions.selectObject(u, true), boxId);
+			await page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u, true), boxId);
 			const input = page.locator('#inspector-search:visible').first();
 			await input.waitFor({ state: 'visible', timeout: 8000 });
 			await input.click();
@@ -203,8 +203,8 @@ h.run(async () => {
 		modal: async () => {
 			await scopes.viewport();
 			await page.evaluate(() => {
-				window.__stores.settingsSection.set('about');
-				window.__stores.settingsOpen.set(true);
+				window.__tp.test.v1.settingsSection.set('about');
+				window.__tp.test.v1.settingsOpen.set(true);
 			});
 			await page.waitForTimeout(300);
 			// the keyboard stays where it was (the viewport), the modal is what mutes the keys
@@ -223,7 +223,7 @@ h.run(async () => {
 		const table = {};
 		const still = () =>
 			page.evaluate((scope) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				const a = document.activeElement;
 				if (scope === 'text') return a?.tagName === 'INPUT';
 				// a key can close the modal (Escape): from then on it is not the modal scope
@@ -248,8 +248,8 @@ h.run(async () => {
 			if (!(await still())) {
 				await page.keyboard.press('Escape').catch(() => {});
 				await page.evaluate(() => {
-					window.__stores.addMenu.set(null);
-					window.__stores.viewportMenu.set(null);
+					window.__tp.test.v1.addMenu.set(null);
+					window.__tp.test.v1.viewportMenu.set(null);
 				});
 				await enter();
 			}
@@ -260,14 +260,14 @@ h.run(async () => {
 			table[combo] = fired.length ? fired.join('|') : null;
 		}
 		routing[scope] = table;
-		if (scope === 'modal') await page.evaluate(() => window.__stores.settingsOpen.set(false));
+		if (scope === 'modal') await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 		console.log(`routing ${scope}: ${Object.values(table).filter(Boolean).length}/${combos.length} keys fire a command`);
 	}
 	await page.evaluate(wrapActions, false);
 
 	// ---- 4. editor-owned keys -------------------------------------------------------------------
 	const meshMap = await page.evaluate(() => {
-		const S = window.__stores.shortcutsRegistry;
+		const S = window.__tp.test.v1.shortcutsRegistry;
 		return S.shortcuts.filter((/** @type {any} */ r) => r.scope === 'mesh').map((/** @type {any} */ r) => [r.id, S.meshCommandFor(r.keys)]);
 	});
 	const meshBad = meshMap.filter(([id, got]) => id !== got);
@@ -279,12 +279,12 @@ h.run(async () => {
 	const xform = await page.evaluate(() => /** @type {any} */ (window).__animationDebug?.xform?.());
 	h.check(xform === 'move', `G in the timeline arms Move there (${xform})`);
 	await page.keyboard.press('Escape');
-	await page.evaluate(() => window.__stores.bottomDock?.dockMinimized?.set?.(true));
+	await page.evaluate(() => window.__tp.test.v1.bottomDock?.dockMinimized?.set?.(true));
 	await page.waitForTimeout(200);
 
 	// hold-to-fly: W moves the camera from the viewport, not from a text field
 	const camPos = () =>
-		page.evaluate(() => new Promise((r) => window.__stores.globalCamera.subscribe((c) => r(c.position.toArray()))()));
+		page.evaluate(() => new Promise((r) => window.__tp.test.v1.globalCamera.subscribe((c) => r(c.position.toArray()))()));
 	await focusViewport();
 	let c0 = await camPos();
 	await page.keyboard.down('KeyW');
@@ -301,19 +301,19 @@ h.run(async () => {
 	await page.keyboard.up('KeyW');
 	c1 = await camPos();
 	h.check(Math.hypot(c1[0] - c0[0], c1[1] - c0[1], c1[2] - c0[2]) < 0.01, 'holding W while typing in a text field does not fly');
-	await page.evaluate(() => window.__stores.inspectorFilter.set(''));
+	await page.evaluate(() => window.__tp.test.v1.inspectorFilter.set(''));
 
 	// ---- 5. real effects (actions restored) --------------------------------------------------------
 	// the editors' own Ctrl+Z/Ctrl+Y (UV, HUD…) ran real undo/redo during the sweep, which
 	// re-creates objects under new uuids: find the box again by name
 	boxId = await page.evaluate(async () => {
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		return (g.children.find((c) => c.name === 'Box') ?? g.children[0]).uuid;
 	});
 	await focusViewport();
 	// a viewport click resolves its pick after the double-click window: let it, THEN select
 	await page.waitForTimeout(700);
-	await page.evaluate((u) => window.__stores.objectActions.selectObject(u), boxId);
+	await page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), boxId);
 	await page.waitForTimeout(200);
 	const selNow = await L.storeValue(page, 'selectedObjects');
 	h.check(Array.isArray(selNow) && selNow.length === 1 && selNow[0] === boxId, `premise — the box is the selection (${JSON.stringify(selNow)})`);
@@ -332,7 +332,7 @@ h.run(async () => {
 	await page.waitForTimeout(200);
 	h.check(JSON.stringify(await L.storeValue(page, 'selectedObjects')) === JSON.stringify([boxId]), 'and G again brings the same selection back');
 	h.check((await L.storeValue(page, 'transformMode')) === 'translate', 'G is Move (same as 1)');
-	const objectCount = () => page.evaluate(() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g.children.length))()));
+	const objectCount = () => page.evaluate(() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g.children.length))()));
 	const n0 = await objectCount();
 	const selD = await L.storeValue(page, 'selectedObjects');
 	if (!selD?.length) console.log('  selection lost before Ctrl+D: ' + JSON.stringify(selD));
@@ -342,7 +342,7 @@ h.run(async () => {
 	h.check((await objectCount()) === n0 + 1, `Ctrl+D duplicates the selection (${n0} -> ${await objectCount()})`);
 	if ((await objectCount()) !== n0 + 1)
 		console.log('  state: ' + JSON.stringify(await page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const r = (/** @type {any} */ st) => { let v; st?.subscribe?.((x) => (v = x))(); return v; };
 			return { sel: r(s.selectedObjects), scope: s.keyScope.lastScope(), act: document.activeElement?.id || document.activeElement?.tagName, modal: r(s.anyModalOpen), locked: r(s.isLocked), mode: r(s.editorMode), notes: localStorage.getItem('notifications')?.slice(-300) };
 		})));
@@ -358,7 +358,7 @@ h.run(async () => {
 	await page.keyboard.press('Control+KeyZ');
 	await page.waitForTimeout(500);
 	h.check((await objectCount()) === n0, 'Ctrl+Shift+Z is redo too (nothing left to redo, then undo goes back)');
-	await page.evaluate((u) => window.__stores.objectActions.selectObject(u), boxId);
+	await page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), boxId);
 	await page.keyboard.press('Delete');
 	await page.waitForTimeout(600);
 	h.check((await objectCount()) === n0 - 1, `Delete removes the selection (${await objectCount()})`);
@@ -378,10 +378,10 @@ h.run(async () => {
 	await page.waitForTimeout(200);
 	h.check((await L.storeValue(page, 'chatHidden')) !== chat0, `C toggles chat (${chat0} -> ${await L.storeValue(page, 'chatHidden')})`);
 	await page.keyboard.press('KeyC');
-	const snap0 = await page.evaluate(() => new Promise((r) => window.__stores.snapping.snapTargets.subscribe((t) => r(!!t.enabled))()));
+	const snap0 = await page.evaluate(() => new Promise((r) => window.__tp.test.v1.snapping.snapTargets.subscribe((t) => r(!!t.enabled))()));
 	await page.keyboard.press('KeyM');
 	await page.waitForTimeout(150);
-	const snap1 = await page.evaluate(() => new Promise((r) => window.__stores.snapping.snapTargets.subscribe((t) => r(!!t.enabled))()));
+	const snap1 = await page.evaluate(() => new Promise((r) => window.__tp.test.v1.snapping.snapTargets.subscribe((t) => r(!!t.enabled))()));
 	h.check(snap1 !== snap0, 'M toggles element snapping');
 	await page.keyboard.press('KeyM');
 	await page.keyboard.press('Alt+KeyE');

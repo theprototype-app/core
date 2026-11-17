@@ -42,7 +42,7 @@ h.run(async () => {
 	const page = A.page;
 	const bytes = Array.from(fs.readFileSync(TPSCENE));
 	await page.evaluate(async (arr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 		await s.sessions.applySession(payload, { backup: false });
 	}, bytes);
@@ -50,7 +50,7 @@ h.run(async () => {
 
 	const snap = () =>
 		page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const g = (st) => { let v; st.subscribe((x) => (v = x))(); return v; };
 			const group = g(s.objectsGroup);
 			return {
@@ -70,8 +70,8 @@ h.run(async () => {
 			};
 		});
 	const rulesId = () => page.evaluate(() => window.__minigolf?.rulesNode?.() ?? null);
-	const callRules = (method, ...args) => page.evaluate(([m, a]) => window.__stores.behaviours.behavioursDebug().call(window.__minigolf.rulesNode(), m, ...a), [method, args]);
-	const pressInput = (name) => page.evaluate((n) => window.__stores.behaviours.behaviourInput(window.__minigolf.rulesNode(), n), name);
+	const callRules = (method, ...args) => page.evaluate(([m, a]) => window.__tp.test.v1.behaviours.behavioursDebug().call(window.__minigolf.rulesNode(), m, ...a), [method, args]);
+	const pressInput = (name) => page.evaluate((n) => window.__tp.test.v1.behaviours.behaviourInput(window.__minigolf.rulesNode(), n), name);
 	/** a putt toward a point, as the drag the rules turn into speed (drag = speed * fullDrag / shotPower) */
 	const puttAt = (at, speed) => page.evaluate(([at, sp]) => window.__minigolf.puttAt(at, Math.min(2.5, (sp * 2.5) / 7)), [at, speed]);
 	/** the fastest the ball goes in the first second after a putt */
@@ -98,7 +98,7 @@ h.run(async () => {
 	h.check(!!(await page.evaluate(() => window.__minigolf)), 'the core minigolf module (the engine) is awake');
 	// 36 U10: the Main graph carries the rules, the engine lends them its helpers
 	const main = await page.evaluate(() => {
-		let g; window.__stores.flowGraphs.subscribe((v) => (g = v))();
+		let g; window.__tp.test.v1.flowGraphs.subscribe((v) => (g = v))();
 		const nodes = g.scene.nodes;
 		const rules = nodes.find((n) => n.type === 'behaviour');
 		return {
@@ -110,12 +110,12 @@ h.run(async () => {
 	});
 	h.check(main.rules?.name === 'Mini Golf rules' && main.rules.main === 1 && main.rules.lines > 100, `Main holds the rules behaviour (${JSON.stringify(main.rules)})`);
 	h.check(main.groups.length >= 3 && main.notes >= 4 && main.engineLink, `Main has groups (${main.groups.join(', ')}), ${main.notes} notes and a link to the engine's code`);
-	await h.eventually(() => page.evaluate(() => window.__stores.behaviours.behavioursDebug().status[window.__minigolf.rulesNode()]?.status), (st) => st === 'running', 'the rules behaviour is running', 10000);
-	const engine = await page.evaluate(() => window.__stores.engines.enginesDebug().find((p) => p.piece === 'golf'));
+	await h.eventually(() => page.evaluate(() => window.__tp.test.v1.behaviours.behavioursDebug().status[window.__minigolf.rulesNode()]?.status), (st) => st === 'running', 'the rules behaviour is running', 10000);
+	const engine = await page.evaluate(() => window.__tp.test.v1.engines.enginesDebug().find((p) => p.piece === 'golf'));
 	h.check(engine && engine.calls.includes('action:hit') && engine.listeners.rolling >= 1 && engine.listeners.stopped >= 1, `the golf engine piece is lent to the rules, which listen to it (${JSON.stringify(engine?.listeners)})`);
 
 	// 2 — Play: the sim, the menu, Tee off
-	await page.evaluate(() => window.__stores.isLocked.set(true));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await h.eventually(() => snap().then((v) => v.sim), (v) => v === true, 'entering Play starts the simulation', 10000);
 	await h.eventually(hud, (t) => /MINI GOLF/.test(t) && /Tee off/.test(t), 'the start menu renders in Play', 6000);
 	h.check(/drag BACK/.test(await hud()) && /putter/.test(await hud()), 'the menu says how to putt on a desktop and in VR');
@@ -125,7 +125,7 @@ h.run(async () => {
 	await h.eventually(hud, (t) => /Hole 1 of 6/.test(t) && /Par 2/.test(t) && /Strokes 0/.test(t), 'the HUD: hole, par, strokes', 6000);
 	await h.eventually(() => snap().then((v) => v.ball), (b) => b && Math.abs(b[0] + 12.5) < 0.05 && Math.abs(b[2] - 4.4) < 0.1, 'the ball sits on hole 1 tee', 4000);
 	const eye = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let cam; s.playerCam.subscribe((v) => (cam = v))();
 		const p = cam.getWorldPosition(new s.THREE.Vector3());
 		return [p.x, p.y, p.z].map((n) => +n.toFixed(2));
@@ -135,7 +135,7 @@ h.run(async () => {
 
 	// 3 — a REAL MOUSE putt: press on the ball, drag back toward the camera, let go
 	const ballScreen = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let cam; s.globalCamera.subscribe((v) => (cam = v))();
 		let r; s.globalRenderer.subscribe((v) => (r = v))();
 		const b = window.__minigolf.ball().pos;
@@ -150,7 +150,7 @@ h.run(async () => {
 	await page.mouse.move(ballScreen.x, ballScreen.y + 40, { steps: 4 });
 	await page.mouse.move(ballScreen.x, ballScreen.y + 90, { steps: 4 });
 	const arrow = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let sc; s.globalScene.subscribe((v) => (sc = v))();
 		const a = sc.getObjectByName('golf-aim');
 		return a ? { visible: a.visible, len: a.children[0].scale.z } : null;
@@ -178,7 +178,7 @@ h.run(async () => {
 	await h.eventually(() => snap().then((v) => v.ball), (b) => b && Math.abs(b[0] + 7.5) < 0.05 && b[2] > 3.5, 'the ball is on hole 2 tee', 4000);
 	await h.eventually(hud, (t) => /Hole 2 of 6/.test(t) && new RegExp('Total ' + s1).test(t), 'the HUD moved on and carries the total', 4000);
 	const eye2 = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let cam; s.playerCam.subscribe((v) => (cam = v))();
 		return cam.getWorldPosition(new s.THREE.Vector3()).x;
 	});
@@ -194,7 +194,7 @@ h.run(async () => {
 
 	// 6 — the draw-call budget in Play (<= 150)
 	const calls = await page.evaluate(async () => {
-		let r; window.__stores.globalRenderer.subscribe((v) => (r = v))();
+		let r; window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
 		// every render() pass of a display frame summed (shadow + composer), the perf-games rule
 		const frame = () => new Promise((res) => requestAnimationFrame(res));
 		let max = 0;
@@ -210,7 +210,7 @@ h.run(async () => {
 	});
 	h.check(calls > 0 && calls <= 150, `draw calls in Play <= 150 (${calls})`);
 	const helpers = await page.evaluate(() => {
-		let sc; window.__stores.globalScene.subscribe((v) => (sc = v))();
+		let sc; window.__tp.test.v1.globalScene.subscribe((v) => (sc = v))();
 		const grid = sc.getObjectByName('editor-grid');
 		return grid ? grid.visible : false;
 	});
@@ -236,20 +236,20 @@ h.run(async () => {
 	await h.eventually(hud, (t) => /Course complete/.test(t) && /1\. Straight/.test(t) && /6\. The hump/.test(t) && /Play again/.test(t), 'the scorecard lists all six holes', 6000);
 	if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'scorecard.png') });
 	await h.eventually(hud, (t) => /Best on this device: \d+/.test(t), "the round is saved as this device's best (Store Value min → the script's words)", 4000);
-	const score = await page.evaluate(() => window.__stores.kit?.kit?.impls?.score?.total?.() ?? null);
+	const score = await page.evaluate(() => window.__tp.test.v1.kit?.kit?.impls?.score?.total?.() ?? null);
 	h.check(score === (await snap()).vars.total, `the total became the kit score through the graph's Kit node (${score})`);
 	await page.locator('#hud-layer button', { hasText: 'Menu' }).click();
 	await h.eventually(() => snap().then((v) => v.state), (s) => s === 'menu', 'Menu goes back to the start menu', 6000);
 
 	// 7b — the shell's Levels page lists every hole and starts a round on the one picked
-	const lv = await page.evaluate(() => window.__stores.gameKit.gameShell.gameShellDebug().levels);
+	const lv = await page.evaluate(() => window.__tp.test.v1.gameKit.gameShell.gameShellDebug().levels);
 	h.check(lv?.list?.length === 6 && /Windmill/.test(lv.list[2].label), `the Levels page lists the six holes (${lv?.list?.map((l) => l.label).join(' | ')})`);
-	await page.evaluate(() => window.__stores.gameKit.gameShell.pickGameLevel('4'));
+	await page.evaluate(() => window.__tp.test.v1.gameKit.gameShell.pickGameLevel('4'));
 	await h.eventually(() => snap(), (v) => v.state === 'playing' && v.vars?.hole === 4, 'picking hole 4 starts a round there', 6000);
 	await h.eventually(() => snap().then((v) => v.ball), (b) => b && Math.abs(b[0] - 2.5) < 0.05 && b[2] > 3.5, 'the ball waits on hole 4 tee', 4000);
 
 	// 7c — the pause menu's Restart: a fresh card from hole 1
-	await page.evaluate(() => window.__stores.gameKit.gameShell.restartGame());
+	await page.evaluate(() => window.__tp.test.v1.gameKit.gameShell.restartGame());
 	await h.eventually(() => snap(), (v) => v.state === 'playing' && v.vars?.hole === 1 && v.vars?.strokes === 0 && v.vars?.scores?.[0] === 0, 'the shell Restart starts a fresh round on hole 1', 6000);
 
 	// 9 — THE U10 PROBE: one number from the graph, one from the code; both felt in Play, both kept
@@ -260,43 +260,43 @@ h.run(async () => {
 	const before = await peakSpeed();
 	h.check(before > 6 && before < 7.6, `premise: a full-drag putt at the stock shot power runs ~7 m/s (${before.toFixed(2)})`);
 	// (a) the GRAPH: select the rules node, the ⓘ tab, Shot power 7 → 3
-	await page.evaluate(() => window.__stores.isLocked.set(null));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(null));
 	await page.waitForTimeout(600);
 	if (!(await page.evaluate(() => !!document.querySelector('.svelte-flow__pane')))) await page.locator('p[title="Node editor (N)"]').click();
 	await page.waitForTimeout(1000);
-	await page.evaluate(() => window.__stores.bottomDock?.dockHeight?.set(600));
+	await page.evaluate(() => window.__tp.test.v1.bottomDock?.dockHeight?.set(600));
 	if (!(await page.locator('#flow-props').count())) await page.locator('#flow-props-toggle').click();
 	await page.locator('#flow-tab-info').click();
 	const rid = await rulesId();
-	await page.evaluate((id) => window.__stores.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: n.id === id }))), rid);
+	await page.evaluate((id) => window.__tp.test.v1.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: n.id === id }))), rid);
 	await h.eventually(() => page.locator('#flow-prop-shotPower').count(), (n) => n === 1, 'the rules node shows Shot power in its properties panel', 6000);
 	await page.locator('#flow-prop-shotPower').fill('3');
 	await page.locator('#flow-prop-shotPower').press('Enter');
-	const codeNow = () => page.evaluate((id) => { let g; window.__stores.flowGraphs.subscribe((v) => (g = v))(); return g.scene.nodes.find((n) => n.id === id).data.code; }, rid);
+	const codeNow = () => page.evaluate((id) => { let g; window.__tp.test.v1.flowGraphs.subscribe((v) => (g = v))(); return g.scene.nodes.find((n) => n.id === id).data.code; }, rid);
 	await h.eventually(codeNow, (c) => /shotPower:\s*\{\s*value:\s*3\b/.test(c), 'the knob rewrote the literal in the rules source (shotPower: 3)', 4000);
 	// (b) the CODE: open the rules in the code workspace and make hole 1 a par 4
 	await page.evaluate((id) => {
 		let ns;
-		window.__stores.flowNodes.subscribe((v) => (ns = v))();
+		window.__tp.test.v1.flowNodes.subscribe((v) => (ns = v))();
 		const n = ns.find((x) => x.id === id);
 		window.__flowViewport?.setViewport({ x: -n.position.x + 300, y: -n.position.y + 60, zoom: 1 });
 	}, rid);
 	await page.waitForTimeout(600);
 	const box = await page.locator(`.svelte-flow__node[data-id="${rid}"]`).boundingBox().catch(() => null);
 	if (box) await page.mouse.dblclick(box.x + box.width / 2, box.y + 8);
-	else await page.evaluate((id) => window.__stores.codeWorkspace.openCode({ source: 'behaviour', ref: { nodeId: id } }), rid);
+	else await page.evaluate((id) => window.__tp.test.v1.codeWorkspace.openCode({ source: 'behaviour', ref: { nodeId: id } }), rid);
 	await h.eventually(() => page.locator('[data-pane] .cm-content').count(), (n) => n >= 1, 'double-click opens the rules in the code workspace', 15000);
 	const edited = (await codeNow()).replace("{ name: 'Straight', par: 2,", "{ name: 'Straight', par: 4,");
-	const paneId = await page.evaluate(() => { let v; window.__stores.codeWorkspace.activeCodeTab.subscribe((x) => (v = x))(); return v; });
+	const paneId = await page.evaluate(() => { let v; window.__tp.test.v1.codeWorkspace.activeCodeTab.subscribe((x) => (v = x))(); return v; });
 	await page.locator(`[data-pane="${paneId}"] .cm-content`).click();
 	await page.keyboard.press('Control+A');
 	await page.keyboard.insertText(edited);
 	await page.keyboard.press('Control+S');
 	await h.eventually(codeNow, (c) => /name: 'Straight', par: 4,/.test(c), 'Ctrl+S saved the code onto the node (hole 1 is par 4)', 6000);
 	await page.locator('#code-ws-close:visible, [data-dock-tab-close="code"]:visible').first().click().catch(() => {});
-	await h.eventually(() => page.evaluate(() => window.__stores.behaviours.behavioursDebug().status[window.__minigolf.rulesNode()]?.status), (st) => st === 'running', 'the edited rules reloaded and run', 8000);
+	await h.eventually(() => page.evaluate(() => window.__tp.test.v1.behaviours.behavioursDebug().status[window.__minigolf.rulesNode()]?.status), (st) => st === 'running', 'the edited rules reloaded and run', 8000);
 	// both felt in Play
-	await page.evaluate(() => window.__stores.isLocked.set(true));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await page.waitForTimeout(600);
 	await pressInput('teeOff');
 	await h.eventually(hud, (t) => /Par 4/.test(t) && /Hole 1 of 6/.test(t), 'Play: hole 1 now says Par 4 (the code change)', 8000);
@@ -306,13 +306,13 @@ h.run(async () => {
 	h.check(after > 1.5 && after < 3.4, `Play: the same full-drag putt now runs ~3 m/s (the graph change; ${after.toFixed(2)} vs ${before.toFixed(2)})`);
 	// (c) both survive a save and a reload
 	const saved = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = s.sessions.buildSessionPayload('Mini Golf probe');
 		const zip = await s.sessions.exportSessionZip(payload, { assets: true, packs: false, flow: true });
 		return Array.from(zip);
 	});
 	await page.evaluate(async (arr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphs.set({ scene: { nodes: [], edges: [] } });
 		const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 		await s.sessions.applySession(payload, { backup: false });
@@ -320,8 +320,8 @@ h.run(async () => {
 	await page.waitForTimeout(2500);
 	const reloaded = await codeNow();
 	h.check(/shotPower:\s*\{\s*value:\s*3\b/.test(reloaded) && /name: 'Straight', par: 4,/.test(reloaded), 'after a save and a reload the rules keep shot power 3 and par 4');
-	await h.eventually(() => page.evaluate(() => window.__stores.behaviours.behavioursDebug().status[window.__minigolf.rulesNode()]?.status), (st) => st === 'running', 'the reloaded rules run', 10000);
-	await page.evaluate(() => window.__stores.isLocked.set(true));
+	await h.eventually(() => page.evaluate(() => window.__tp.test.v1.behaviours.behavioursDebug().status[window.__minigolf.rulesNode()]?.status), (st) => st === 'running', 'the reloaded rules run', 10000);
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await h.eventually(() => snap().then((v) => v.sim), (v) => v === true, 'Play again after the reload', 10000);
 	await pressInput('teeOff');
 	await h.eventually(hud, (t) => /Par 4/.test(t), 'Play after the reload: hole 1 is still par 4', 8000);
@@ -331,14 +331,14 @@ h.run(async () => {
 	h.check(again > 1.5 && again < 3.4, `Play after the reload: the putt still runs ~3 m/s (${again.toFixed(2)})`);
 
 	// 8 — VR: a fake session lands the game in Interact; start; a hand knock is a stroke
-	await page.evaluate(() => window.__stores.isLocked.set(null));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(null));
 	await page.waitForTimeout(600);
-	await page.evaluate(() => window.__stores.isVRMode.set(true));
+	await page.evaluate(() => window.__tp.test.v1.isVRMode.set(true));
 	await xr.install(page);
 	await xr.installSpace(page, { head: [0, 1.6, 0], yaw: 0 });
-	await page.evaluate(() => window.__stores.vrControls.onVRSessionStart());
+	await page.evaluate(() => window.__tp.test.v1.vrControls.onVRSessionStart());
 	await page.waitForTimeout(400);
-	const mode = await page.evaluate(() => { let m; window.__stores.editorMode.subscribe((v) => (m = v))(); return m; });
+	const mode = await page.evaluate(() => { let m; window.__tp.test.v1.editorMode.subscribe((v) => (m = v))(); return m; });
 	h.check(mode === 'interact', `a VR session on Mini Golf lands in Interact (${mode})`);
 	await pressInput('teeOff');
 	await h.eventually(() => snap(), (v) => v.state === 'playing' && v.vars?.hole === 1 && v.sim, 'VR: the round starts on hole 1 with the simulation running', 10000);
@@ -347,7 +347,7 @@ h.run(async () => {
 	// grip the putter lying beside the tee (aim the right controller straight down at it)
 	const worldPose = (pos, pitch) =>
 		page.evaluate(({ pos, pitch }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const c = window.__fakeXR.renderer.xr.getController(1);
 			const q = new s.THREE.Quaternion().setFromEuler(new s.THREE.Euler(pitch, 0, 0, 'YXZ'));
 			const world = new s.THREE.Matrix4().compose(new s.THREE.Vector3(...pos), q, new s.THREE.Vector3(1, 1, 1));
@@ -356,19 +356,19 @@ h.run(async () => {
 			c.updateMatrixWorld(true);
 		}, { pos, pitch });
 	const putter = await page.evaluate(() => {
-		let g; window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const p = g.getObjectByName('Putter 1');
-		return { uuid: p.uuid, pos: p.getWorldPosition(new window.__stores.THREE.Vector3()).toArray() };
+		return { uuid: p.uuid, pos: p.getWorldPosition(new window.__tp.test.v1.THREE.Vector3()).toArray() };
 	});
 	await worldPose([putter.pos[0], 0.9, putter.pos[2]], -Math.PI / 2);
 	await page.waitForTimeout(200);
 	await xr.button(page, 'right', 1, true);
 	await page.waitForTimeout(300);
-	const held = await page.evaluate(() => window.__stores.vrControls.vrGripDebug());
+	const held = await page.evaluate(() => window.__tp.test.v1.vrControls.vrGripDebug());
 	h.check(held.grab === putter.uuid, `VR: the grip holds the putter (${held.grab})`);
 	// swing: move the hand so the club head passes through the ball toward the cup (-z)
 	const offset = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g; s.objectsGroup.subscribe((v) => (g = v))();
 		const p = g.getObjectByName('Putter 1');
 		const head = p.localToWorld(new s.THREE.Vector3(0, -0.42, 0));
@@ -387,7 +387,7 @@ h.run(async () => {
 	const vrAfter = (await snap()).ball;
 	h.check(vrAfter[2] < vrBall[2] - 0.2, `VR: the ball went up the lane (z ${vrBall[2].toFixed(2)} -> ${vrAfter[2].toFixed(2)})`);
 	await xr.setOn(page, false);
-	await page.evaluate(() => window.__stores.isVRMode.set(false));
+	await page.evaluate(() => window.__tp.test.v1.isVRMode.set(false));
 
 	await h.finish(browser);
 });

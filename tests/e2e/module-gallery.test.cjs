@@ -89,7 +89,7 @@ export default {
 	});
 
 	// open the manager, Browse tab
-	await A.page.evaluate(() => window.__stores.modulesOpen.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.modulesOpen.set(true));
 	await A.page.waitForTimeout(400);
 	await A.page.getByRole('tab', { name: 'Browse', exact: true }).click();
 	await h.eventually(
@@ -114,7 +114,7 @@ export default {
 		'Install runs the module live'
 	);
 	await h.eventually(
-		() => A.page.evaluate(() => window.__stores.moduleSDK.loadedModules.map((m) => m.id)),
+		() => A.page.evaluate(() => window.__tp.test.v1.moduleSDK.loadedModules.map((m) => m.id)),
 		(ids) => ids.includes('gallerymod'),
 		'module registered with the SDK'
 	);
@@ -132,7 +132,7 @@ export default {
 	const record = await A.page.evaluate(
 		() =>
 			new Promise((resolve) =>
-				window.__stores.userModules.userModules.subscribe((list) =>
+				window.__tp.test.v1.userModules.userModules.subscribe((list) =>
 					resolve(list.find((m) => m.id === 'gallerymod'))
 				)()
 			)
@@ -144,7 +144,7 @@ export default {
 
 	// a newer index version grows an Update button; clicking it updates live
 	indexVersion = '1.1.0';
-	await A.page.evaluate(() => window.__stores.moduleGallery.loadModuleGallery(true));
+	await A.page.evaluate(() => window.__tp.test.v1.moduleGallery.loadModuleGallery(true));
 	await h.eventually(
 		() => A.page.locator('#gallery-card-gallerymod').textContent(),
 		(text) => text.includes('Update to v1.1.0'),
@@ -164,14 +164,14 @@ export default {
 
 	// dead CDN = quiet empty state, never a blocking error
 	indexDown = true;
-	await A.page.evaluate(() => window.__stores.moduleGallery.loadModuleGallery(true));
+	await A.page.evaluate(() => window.__tp.test.v1.moduleGallery.loadModuleGallery(true));
 	await h.eventually(
 		() => A.page.locator('#module-gallery-tab').textContent(),
 		(text) => text.includes('unavailable'),
 		'offline CDN renders the quiet empty state'
 	);
 	h.check(
-		await A.page.evaluate(() => !!window.__stores),
+		await A.page.evaluate(() => !!window.__tp?.test.v1),
 		'app still alive after the CDN failure'
 	);
 
@@ -179,7 +179,7 @@ export default {
 	// They were dropped, so Browse had nothing to filter on and a game could not point
 	// at the scene that goes with it.
 	indexDown = false;
-	await A.page.evaluate(() => window.__stores.moduleGallery.loadModuleGallery(true));
+	await A.page.evaluate(() => window.__tp.test.v1.moduleGallery.loadModuleGallery(true));
 	await h.eventually(
 		() => A.page.locator('#gallery-card-gamemod').count(),
 		(n) => n === 1,
@@ -188,7 +188,7 @@ export default {
 	const normalized = await A.page.evaluate(
 		() =>
 			new Promise((resolve) =>
-				window.__stores.moduleGallery.galleryModules.subscribe((list) => {
+				window.__tp.test.v1.moduleGallery.galleryModules.subscribe((list) => {
 					const by = {};
 					for (const e of list) by[e.id] = e;
 					resolve(by);
@@ -253,7 +253,7 @@ export default {
 	// simulation, so that is a desync nobody could diagnose from the symptom — it is
 	// surfaced rather than prevented.
 	const skew = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const installed = s.moduleSDK.loadedModules.find((m) => m.id === 'gallerymod');
 		return {
 			have: installed?.version ?? null,

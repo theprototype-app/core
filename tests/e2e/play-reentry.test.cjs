@@ -21,10 +21,10 @@
 const h = require('./helpers.cjs');
 
 const lockedState = (page) =>
-	page.evaluate(() => new Promise((r) => window.__stores.isLocked.subscribe((v) => r(v))()));
+	page.evaluate(() => new Promise((r) => window.__tp.test.v1.isLocked.subscribe((v) => r(v))()));
 
 const vrState = (page) =>
-	page.evaluate(() => new Promise((r) => window.__stores.isVRMode.subscribe((v) => r(v))()));
+	page.evaluate(() => new Promise((r) => window.__tp.test.v1.isVRMode.subscribe((v) => r(v))()));
 
 /**
  * A page whose `navigator.xr` says immersive-vr is SUPPORTED and whose
@@ -72,7 +72,7 @@ async function xrDeniedPage(browser) {
 	});
 	await page.goto(h.URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
 	await page.waitForTimeout(4000);
-	await page.waitForFunction(() => window.__stores && !!window.__stores.moduleSDK, {
+	await page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.moduleSDK, {
 		timeout: 30000
 	});
 	return page;
@@ -112,7 +112,7 @@ h.run(async () => {
 	const reentry = A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				const store = window.__stores.isLocked;
+				const store = window.__tp.test.v1.isLocked;
 				let sawExit = false;
 				let pressed = 0;
 				let done = false;
@@ -160,7 +160,7 @@ h.run(async () => {
 	 * falls in that sliver is remembered and replayed there (21-F3), never eaten.
 	 */
 	const queued = await A.page.evaluate(async () => {
-		const store = window.__stores.isLocked;
+		const store = window.__tp.test.v1.isLocked;
 		const read = () => new Promise((r) => store.subscribe((v) => r(v))());
 		// leave play and press the button in the SAME synchronous block, so the press
 		// cannot help but land before the settle timer runs. `.click()` bubbles, which
@@ -195,10 +195,10 @@ h.run(async () => {
 			calls++;
 			return Promise.reject(new Error('The user has exited the lock before this request was completed'));
 		};
-		window.__stores.isLocked.set(true);
+		window.__tp.test.v1.isLocked.set(true);
 		await new Promise((r) => setTimeout(r, 1000));
 		proto.requestPointerLock = original;
-		const locked = await new Promise((r) => window.__stores.isLocked.subscribe((v) => r(v))());
+		const locked = await new Promise((r) => window.__tp.test.v1.isLocked.subscribe((v) => r(v))());
 		return { calls, locked };
 	});
 	h.check(rejectRun.calls >= 1, `premise: the stub saw the entry request (${rejectRun.calls} calls)`);
@@ -211,7 +211,7 @@ h.run(async () => {
 	h.check(rejectRun.locked === true, 'play mode is NOT abandoned while the retry runs');
 
 	// leave cleanly
-	await A.page.evaluate(() => window.__stores.isLocked.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(false));
 	await A.page.waitForTimeout(300);
 
 	// -- 4b: the pointerlockerror signal (old signature, no promise) ----------------
@@ -225,7 +225,7 @@ h.run(async () => {
 			setTimeout(() => document.dispatchEvent(new Event('pointerlockerror')), 0);
 			return undefined;
 		};
-		window.__stores.isLocked.set(true);
+		window.__tp.test.v1.isLocked.set(true);
 		await new Promise((r) => setTimeout(r, 1000));
 		proto.requestPointerLock = original;
 		return { calls };
@@ -244,11 +244,11 @@ h.run(async () => {
 			calls++;
 			return Promise.reject(new Error('refused'));
 		};
-		window.__stores.isLocked.set(true);
+		window.__tp.test.v1.isLocked.set(true);
 		// until the retry has really run once (bounded) — a fixed 400 ms saw 0 attempts under load
 		for (const t0 = Date.now(); calls < 1 && Date.now() - t0 < 3000; ) await new Promise((r) => setTimeout(r, 50));
 		const during = calls;
-		window.__stores.isLocked.set(false);
+		window.__tp.test.v1.isLocked.set(false);
 		await new Promise((r) => setTimeout(r, 900));
 		proto.requestPointerLock = original;
 		return { during, after: calls };
@@ -306,7 +306,7 @@ h.run(async () => {
 	const box = await X.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.globalRenderer.subscribe((renderer) => {
+				window.__tp.test.v1.globalRenderer.subscribe((renderer) => {
 					const element = renderer?.domElement;
 					if (!element) return resolve(null);
 					const r = element.getBoundingClientRect();
@@ -345,7 +345,7 @@ h.run(async () => {
 			'  right-click reached: ' +
 				JSON.stringify(
 					await X.evaluate(() => {
-						const s = window.__stores;
+						const s = window.__tp?.test.v1;
 						const g = (/** @type {string} */ k) => {
 							let v;
 							s[k]?.subscribe?.((/** @type {any} */ x) => (v = x))?.();
@@ -375,7 +375,7 @@ h.run(async () => {
 	 * the whole reason the recovery has to exist, and proof the check above is not
 	 * passing for some unrelated reason.
 	 */
-	await X.evaluate(() => window.__stores.isVRMode.set(true));
+	await X.evaluate(() => window.__tp.test.v1.isVRMode.set(true));
 	await X.waitForTimeout(200);
 	await X.mouse.click(at.x, at.y, { button: 'right' });
 	await X.waitForTimeout(500);
@@ -383,7 +383,7 @@ h.run(async () => {
 		() => document.querySelectorAll('[role="menuitem"]').length
 	);
 	h.check(deadMenu === 0, `counterfactual: stuck VR mode really does kill the menu (${deadMenu} rows)`);
-	await X.evaluate(() => window.__stores.isVRMode.set(false));
+	await X.evaluate(() => window.__tp.test.v1.isVRMode.set(false));
 	await X.waitForTimeout(200);
 	await X.mouse.click(at.x, at.y, { button: 'right' });
 	await h.eventually(

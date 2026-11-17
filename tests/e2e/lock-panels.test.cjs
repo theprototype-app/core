@@ -34,7 +34,7 @@ h.run(async () => {
 	for (const s of S.SURFACES) {
 		if (s.name === 'main' || s.name === 'toasts') continue;
 		await S.closeAll(page);
-		await page.evaluate((u) => window.__stores.objectActions.selectObject(u), ctx.box);
+		await page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), ctx.box);
 		await s.open(page, ctx);
 		await page.waitForTimeout(500);
 		const shown = await visible(s.shown);
@@ -65,14 +65,14 @@ h.run(async () => {
 	await S.closeAll(page);
 
 	// ---- 2. Properties after a deselect (uir-polish E1/E3: no pin; the wide panel keeps the last object) ----
-	await page.evaluate((u) => window.__stores.objectActions.selectObject(u, true), ctx.box);
+	await page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u, true), ctx.box);
 	await page.waitForTimeout(400);
 	h.check((await page.locator('#inspector-pin').count()) === 0, 'Properties has no pin (E1)');
-	await page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await page.waitForTimeout(400);
 	const kept = await page.evaluate(() => {
 		let o;
-		window.__stores.selectedObject.subscribe((v) => (o = v))();
+		window.__tp.test.v1.selectedObject.subscribe((v) => (o = v))();
 		return o?.uuid ?? null;
 	});
 	h.check((await L.storeValue(page, 'inspectorClose')) === false && (await L.storeValue(page, 'inspectorKind')) === 'selection' && kept === ctx.box, `a deselect keeps Properties on the last object (E3) (${kept})`);
@@ -98,7 +98,7 @@ h.run(async () => {
 	// two passes, intersected: an effect that shows up once is noise, not the button
 	for (let pass = 0; pass < 2; pass++)
 	for (const cell of cells) {
-		await page.evaluate((u) => window.__stores.objectActions.selectObject(u), ctx.box);
+		await page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), ctx.box);
 		await page.waitForTimeout(200);
 		await L.learnNoise(page, noisy, 250);
 		const before = await L.snap(page);
@@ -128,7 +128,7 @@ h.run(async () => {
 	const DOCK_VIEWS = [['flow', 'flowGraphClose'], ['animation', 'animationClose'], ['uv', 'uvEditorClose'], ['shader', 'shaderEditorClose'], ['hud', 'hudEditorClose'], ['explorer', 'explorerClose']];
 	for (const [key, closeStore] of DOCK_VIEWS) {
 		await page.evaluate(({ key, closeStore }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s[closeStore].set(false);
 			s.bottomDock.dockMinimized?.set?.(false);
 			s.bottomDock.activateDock(key);

@@ -21,38 +21,38 @@ const h = require('./helpers.cjs');
 const room = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.peers.subscribe((x) => (v = x))();
+		window.__tp.test.v1.peers.subscribe((x) => (v = x))();
 		return v?.openedPeers ? [...v.openedPeers] : null;
 	});
 
 const level = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.levels.currentLevel.subscribe((x) => (v = x))();
+		window.__tp.test.v1.levels.currentLevel.subscribe((x) => (v = x))();
 		return v ?? null;
 	});
 
 const dialog = (p) =>
 	p.page.evaluate(() => {
 		let d;
-		window.__stores.confirmDialog.confirmDialog.subscribe((v) => (d = v))();
+		window.__tp.test.v1.confirmDialog.confirmDialog.subscribe((v) => (d = v))();
 		return d
 			? { title: d.title, message: d.message, confirm: d.confirmLabel, choices: (d.choices ?? []).map((/** @type {any} */ c) => c.value) }
 			: null;
 	});
-const answer = (p, value) => p.page.evaluate((v) => window.__stores.confirmDialog.resolveConfirm(v), value);
+const answer = (p, value) => p.page.evaluate((v) => window.__tp.test.v1.confirmDialog.resolveConfirm(v), value);
 
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
 	for (const peer of [A, B]) {
-		await peer.page.waitForFunction(() => !!window.__stores?.sessions && !!window.__stores?.explorer, null, {
+		await peer.page.waitForFunction(() => !!window.__tp?.test.v1?.sessions && !!window.__tp?.test.v1?.explorer, null, {
 			timeout: 30000
 		});
 		await peer.page.evaluate(async () => {
-			await window.__stores.explorer.loadExplorer();
-			await window.__stores.explorer.clearLibrary();
+			await window.__tp.test.v1.explorer.loadExplorer();
+			await window.__tp.test.v1.explorer.clearLibrary();
 		});
 	}
 
@@ -64,34 +64,34 @@ h.run(async () => {
 	h.check(before?.length === 1, `premise: A is connected to one peer (${JSON.stringify(before)})`);
 
 	await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1200));
 		s.objectActions.deselectObject();
 		await s.explorer.addItemFromBytes(new TextEncoder().encode('notes').buffer, 'readme.txt', null);
 	});
 	await A.page.waitForTimeout(1200);
-	await A.page.evaluate(() => window.__stores.sessions.saveSessionWithLibrary('Depot'));
+	await A.page.evaluate(() => window.__tp.test.v1.sessions.saveSessionWithLibrary('Depot'));
 	await A.page.waitForTimeout(1500);
 	// EMPTY THE LIBRARY AFTERWARDS, so "its files came back" is evidence of the restore
 	// and not of a file that was never gone (an absence check needs its presence half)
-	await A.page.evaluate(() => window.__stores.explorer.clearLibrary());
+	await A.page.evaluate(() => window.__tp.test.v1.explorer.clearLibrary());
 	await A.page.waitForTimeout(700);
 	const saved = await A.page.evaluate(() => {
 		let v;
-		window.__stores.sessions.sessions.subscribe((x) => (v = x))();
+		window.__tp.test.v1.sessions.sessions.subscribe((x) => (v = x))();
 		return (v ?? []).filter((m) => m.hasLibrary).map((m) => m.name);
 	});
 	h.check(saved.includes('Depot'), `premise: a PROJECT entry is saved on A (${JSON.stringify(saved)})`);
 	const emptied = await A.page.evaluate(() => {
 		let v;
-		window.__stores.explorer.explorerItems.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((x) => (v = x))();
 		return (v ?? []).length;
 	});
 	h.check(emptied === 0, `premise: and A's library is empty again before the open (${emptied})`);
 
 	// ---- 1. THE WARNING NAMES THE ROOM IT IS ABOUT TO LEAVE --------------------------
-	await A.page.evaluate(() => window.__stores.sessionsOpen.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.sessionsOpen.set(true));
 	await A.page.waitForTimeout(900);
 	await A.page.locator('#session-view-list').click();
 	await A.page.waitForTimeout(400);
@@ -143,7 +143,7 @@ h.run(async () => {
 	h.check(
 		(await A.page.evaluate(() => {
 			let v;
-			window.__stores.explorer.explorerItems.subscribe((x) => (v = x))();
+			window.__tp.test.v1.explorer.explorerItems.subscribe((x) => (v = x))();
 			return (v ?? []).map((i) => i.name);
 		})).includes('readme.txt'),
 		'…with its library back in the Explorer'

@@ -116,7 +116,7 @@ const TABLE = {
 const ask = (p, map, mine, peerId, host, legacy) =>
 	p.page.evaluate(
 		([map, mine, peerId, host, legacy]) => {
-			const s = window.__stores.peerScenes;
+			const s = window.__tp.test.v1.peerScenes;
 			return legacy ? s.elsewhereThan(map, mine, peerId) : s.elsewhereThan(map, mine, peerId, host);
 		},
 		[map, mine, peerId, host, !!legacy]
@@ -125,18 +125,18 @@ const ask = (p, map, mine, peerId, host, legacy) =>
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
-	await A.page.waitForFunction(() => !!window.__stores?.peerScenes, { timeout: 30000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.peerScenes, { timeout: 30000 });
 
 	// =====================================================================
 	// 1. THE SENTINELS, AND THE ONE COPIED CONSTANT
 	// =====================================================================
 	const consts = await A.page.evaluate(() => {
-		const s = window.__stores.peerScenes;
+		const s = window.__tp.test.v1.peerScenes;
 		return {
 			private: s.PRIVATE_SCENE,
 			unnamed: s.UNNAMED_ROOM,
 			token: s.UNNAMED_ROOM_TOKEN,
-			sessionsToken: window.__stores.sessions.UNNAMED_ROOM_TOKEN
+			sessionsToken: window.__tp.test.v1.sessions.UNNAMED_ROOM_TOKEN
 		};
 	});
 	h.check(
@@ -157,7 +157,7 @@ h.run(async () => {
 	// =====================================================================
 	const rooms = await A.page.evaluate(
 		([HOST]) => {
-			const s = window.__stores.peerScenes;
+			const s = window.__tp.test.v1.peerScenes;
 			const ctxOf = (hostRow, host, mine) =>
 				s.roomCtx(hostRow ? { [host]: hostRow } : {}, host, mine);
 			return {
@@ -252,7 +252,7 @@ h.run(async () => {
 	// row that is missing.
 	await A.page.evaluate(
 		([them]) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.peerScenes.peerScenes.set({ [them]: { scene: '', hash: '', at: 3 } });
 			s.connectionState.sessionHost.set(null);
 			s.levels.currentLevel.set({ name: 'Vault', hash: 'v', private: true });
@@ -262,7 +262,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(300);
 	const privateUs = await A.page.evaluate(
 		([them]) => {
-			const s = window.__stores.peerScenes;
+			const s = window.__tp.test.v1.peerScenes;
 			let map;
 			s.peerScenes.subscribe((x) => (map = x))();
 			return {
@@ -290,7 +290,7 @@ h.run(async () => {
 	const AWAY = 'awaypeer';
 	await A.page.evaluate(
 		([them, away]) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.levels.currentLevel.set({ name: 'Arena', hash: 'a' });
 			s.connectionState.sessionHost.set(null);
 			s.peerScenes.peerScenes.set({
@@ -303,7 +303,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(300);
 	const readers = await A.page.evaluate(
 		([them, away]) => {
-			const s = window.__stores.peerScenes;
+			const s = window.__tp.test.v1.peerScenes;
 			let map;
 			s.peerScenes.subscribe((x) => (map = x))();
 			return {
@@ -345,7 +345,7 @@ h.run(async () => {
 		`…and only a peer we have never heard from is '' — the one answer that still means "no evidence" (${JSON.stringify(readers.strangerLabel)})`
 	);
 	const unnamedLabels = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.levels.currentLevel.set(null);
 		s.peerScenes.peerScenes.set({ q: { scene: '', hash: '', at: 5 } });
 		return { mine: s.peerScenes.myRoomLabel(), theirs: s.peerScenes.roomLabelOf('q'), token: s.peerScenes.UNNAMED_ROOM_TOKEN };

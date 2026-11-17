@@ -8,7 +8,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	const run = (input) =>
-		A.page.evaluate((input) => window.__stores.vrControls.computeMoveOffset(input), input);
+		A.page.evaluate((input) => window.__tp.test.v1.vrControls.computeMoveOffset(input), input);
 
 	const base = {
 		grip: false,
@@ -43,14 +43,14 @@ h.run(async () => {
 
 	// flying toggle persists via settings store
 	await A.page.evaluate(() => {
-		window.__stores.vrFlying.set(true);
+		window.__tp.test.v1.vrFlying.set(true);
 		localStorage.setItem('vrFlying', 'true');
 	});
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
 	await A.page.waitForTimeout(4000);
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.vrFlying, { timeout: 30000 });
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.vrFlying, { timeout: 30000 });
 	const flying = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.vrFlying.subscribe(r)())
+		() => new Promise((r) => window.__tp.test.v1.vrFlying.subscribe(r)())
 	);
 	h.check(flying === true, 'VR flying setting persists');
 

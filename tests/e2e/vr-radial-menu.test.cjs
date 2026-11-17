@@ -11,8 +11,8 @@ h.run(async () => {
 
 	// --- pure math (99 geometry: ring 0.028-0.105, hub 0.024) ---
 	const math = await A.page.evaluate(() => {
-		const m = window.__stores.vrRadialMenu;
-		const THREE = window.__stores.THREE;
+		const m = window.__tp.test.v1.vrRadialMenu;
+		const THREE = window.__tp.test.v1.THREE;
 		// anchored pose: offset rides the controller rotation, tilt composes
 		const pos = new THREE.Vector3(1, 1.5, -2);
 		const quat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
@@ -58,17 +58,17 @@ h.run(async () => {
 	// --- registry: confirmed base ring + sub-rings + context hub ---
 	// 94 SP1: the wrist Asset Browser (Add ▸ Assets) and the logic panel (Tools ▸ Logic) mount with the XR
 	// session now, not at boot — flag VR mode and wait for their lazy entries before reading the rings
-	await A.page.evaluate(() => window.__stores.isVRMode.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.isVRMode.set(true));
 	await A.page.waitForFunction(
 		() => {
-			const m = window.__stores.vrRadialMenu;
+			const m = window.__tp.test.v1.vrRadialMenu;
 			return m.ringEntries('tools').some((e) => e.id === 'logic') && m.ringEntries('add').length >= 10;
 		},
 		null,
 		{ timeout: 30000 }
 	);
 	const registry = await A.page.evaluate(() => {
-		const m = window.__stores.vrRadialMenu;
+		const m = window.__tp.test.v1.vrRadialMenu;
 		return {
 			root: m.ringEntries('root').map((e) => e.id),
 			system: m.ringEntries('system').map((e) => e.id),
@@ -158,7 +158,7 @@ h.run(async () => {
 	);
 	h.check(registry.allIconed, `every built-in sector has a desktop icon (${registry.missingIcons.join(',') || 'none missing'})`);
 	h.check(registry.maxDepth <= 2, `no entry is deeper than two rings (deepest ${registry.maxDepth})`);
-	const hubLabel = await A.page.evaluate(() => window.__stores.vrRadialMenu.hubEntry('root', true).label);
+	const hubLabel = await A.page.evaluate(() => window.__tp.test.v1.vrRadialMenu.hubEntry('root', true).label);
 	h.check(hubLabel === 'Selected', `selection hub reads Selected, the desktop menu's word (${hubLabel})`);
 
 	// 109: nav STACK — System ▸ Mic ▸ Back pops to System, then to root; the
@@ -166,13 +166,13 @@ h.run(async () => {
 	const stack = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				const v = window.__stores.vrControls;
+				const v = window.__tp.test.v1.vrControls;
 				const ring = () => {
 					let r;
-					window.__stores.vrRadialMenu.activeRing.subscribe((x) => (r = x))();
+					window.__tp.test.v1.vrRadialMenu.activeRing.subscribe((x) => (r = x))();
 					return r;
 				};
-				window.__stores.vrMenuOpen.set(true);
+				window.__tp.test.v1.vrMenuOpen.set(true);
 				v.executeVRMenuAction('nav:settings');
 				v.executeVRMenuAction('nav:settings:comfort');
 				const inMic = ring();
@@ -182,9 +182,9 @@ h.run(async () => {
 				const atRoot = ring();
 				v.executeVRMenuAction('chat');
 				let chatOpen, menuOpen;
-				window.__stores.vrChatPanelOpen.subscribe((x) => (chatOpen = x))();
-				window.__stores.vrMenuOpen.subscribe((x) => (menuOpen = x))();
-				window.__stores.vrChatPanelOpen.set(false);
+				window.__tp.test.v1.vrChatPanelOpen.subscribe((x) => (chatOpen = x))();
+				window.__tp.test.v1.vrMenuOpen.subscribe((x) => (menuOpen = x))();
+				window.__tp.test.v1.vrChatPanelOpen.set(false);
 				resolve({ inMic, afterBack, atRoot, chatOpen, menuOpen });
 			})
 	);
@@ -199,7 +199,7 @@ h.run(async () => {
 		A.page.evaluate(
 			() =>
 				new Promise((resolve) => {
-					window.__stores.globalScene.subscribe((scene) => {
+					window.__tp.test.v1.globalScene.subscribe((scene) => {
 						const menu = scene?.getObjectByName('vr-quick-menu');
 						const names = [];
 						menu?.traverse((o) => {
@@ -209,14 +209,14 @@ h.run(async () => {
 					})();
 				})
 		);
-	await A.page.evaluate(() => window.__stores.vrMenuOpen.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.vrMenuOpen.set(true));
 	await A.page.waitForTimeout(400);
 	let names = await meshNames();
 	h.check(
 		names.length === 9 && names.includes('objects') && names.includes('close'),
 		`base ring renders 8 sectors + close hub (${names.length})`
 	);
-	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('nav:add'));
+	await A.page.evaluate(() => window.__tp.test.v1.vrControls.executeVRMenuAction('nav:add'));
 	await A.page.waitForTimeout(300);
 	names = await meshNames();
 	h.check(
@@ -224,44 +224,44 @@ h.run(async () => {
 		'nav:add opens the Add ring with a back hub'
 	);
 	// 37 R3 (1.28 union): Add ▸ Architecture ▸ lists the 12 pieces; one spawns the desktop's parametric Wall
-	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('nav:architecture'));
+	await A.page.evaluate(() => window.__tp.test.v1.vrControls.executeVRMenuAction('nav:architecture'));
 	await A.page.waitForTimeout(300);
 	names = await meshNames();
 	h.check(names.includes('arch:0') && names.includes('arch:11') && names.includes('back'), `Architecture ▸ renders its 12 pieces + back (${names.length})`);
 	const archSpawn = await A.page.evaluate(async () => {
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const before = group.children.length;
-		window.__stores.vrControls.executeVRMenuAction('arch:2');
+		window.__tp.test.v1.vrControls.executeVRMenuAction('arch:2');
 		const added = group.children[group.children.length - 1];
 		return { grew: group.children.length - before, type: added?.userData?.geometryParams?.gtype ?? null };
 	});
 	h.check(archSpawn.grew === 1 && archSpawn.type === 'Wall', `Architecture ▸ Wall with windows spawns a parametric Wall (${JSON.stringify(archSpawn)})`);
-	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('back'));
+	await A.page.evaluate(() => window.__tp.test.v1.vrControls.executeVRMenuAction('back'));
 	await A.page.waitForTimeout(300);
-	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('back'));
+	await A.page.evaluate(() => window.__tp.test.v1.vrControls.executeVRMenuAction('back'));
 	await A.page.waitForTimeout(300);
 	names = await meshNames();
 	h.check(names.includes('objects'), 'back returns to the base ring');
 
 	// closing the menu resets navigation to root
 	await A.page.evaluate(() => {
-		window.__stores.vrControls.executeVRMenuAction('nav:settings');
-		window.__stores.vrMenuOpen.set(false);
+		window.__tp.test.v1.vrControls.executeVRMenuAction('nav:settings');
+		window.__tp.test.v1.vrMenuOpen.set(false);
 	});
 	const ringAfterClose = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.vrRadialMenu.activeRing.subscribe((r) => resolve(r))();
+				window.__tp.test.v1.vrRadialMenu.activeRing.subscribe((r) => resolve(r))();
 			})
 	);
 	h.check(ringAfterClose === 'root', 'closing the menu resets to the base ring');
 
 	// --- object ring actions run through the dispatcher ---
 	await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const box = group.children[group.children.length - 1];
-		window.__stores.objectActions.selectObject(box);
+		window.__tp.test.v1.objectActions.selectObject(box);
 		window.__box = box;
 	});
 	await A.page.waitForTimeout(400);
@@ -271,19 +271,19 @@ h.run(async () => {
 			store.subscribe((x) => (v = x))();
 			return v;
 		};
-		window.__stores.vrMenuOpen.set(true);
+		window.__tp.test.v1.vrMenuOpen.set(true);
 		// Color opens the continuous palette (110) instead of painting directly
-		window.__stores.vrControls.executeVRMenuAction('obj:color');
-		const paletteOpen = read(window.__stores.vrPaletteOpen);
-		const menuAfterColor = read(window.__stores.vrMenuOpen);
-		window.__stores.vrPaletteOpen.set(false);
+		window.__tp.test.v1.vrControls.executeVRMenuAction('obj:color');
+		const paletteOpen = read(window.__tp.test.v1.vrPaletteOpen);
+		const menuAfterColor = read(window.__tp.test.v1.vrMenuOpen);
+		window.__tp.test.v1.vrPaletteOpen.set(false);
 		// 137: Edit Mesh toggles mesh-edit mode + the side-menu
-		window.__stores.vrMenuOpen.set(true);
-		window.__stores.vrControls.executeVRMenuAction('obj:editmesh');
-		const editOpen = read(window.__stores.vrEditMenuOpen);
-		window.__stores.vrControls.executeVRMenuAction('obj:editmesh');
-		const editClosed = read(window.__stores.vrEditMenuOpen) === false;
-		window.__stores.vrMenuOpen.set(false);
+		window.__tp.test.v1.vrMenuOpen.set(true);
+		window.__tp.test.v1.vrControls.executeVRMenuAction('obj:editmesh');
+		const editOpen = read(window.__tp.test.v1.vrEditMenuOpen);
+		window.__tp.test.v1.vrControls.executeVRMenuAction('obj:editmesh');
+		const editClosed = read(window.__tp.test.v1.vrEditMenuOpen) === false;
+		window.__tp.test.v1.vrMenuOpen.set(false);
 		return { paletteOpen, menuAfterColor, editOpen, editClosed };
 	});
 	h.check(
@@ -293,41 +293,41 @@ h.run(async () => {
 	h.check(objectRing.editOpen && objectRing.editClosed, 'Edit Mesh toggles the side-menu on/off (137)');
 
 	// --- environment sector replicates through the normal env path ---
-	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('env:night'));
+	await A.page.evaluate(() => window.__tp.test.v1.vrControls.executeVRMenuAction('env:night'));
 	await A.page.waitForTimeout(300);
 	const preset = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.environment.environment.subscribe((e) => resolve(e.preset))();
+				window.__tp.test.v1.environment.environment.subscribe((e) => resolve(e.preset))();
 			})
 	);
 	h.check(preset === 'night', `Scene ring switches the environment preset (${preset})`);
 
 	// 99: Objects sector opens the (101) panel store and closes the ring
 	await A.page.evaluate(() => {
-		window.__stores.vrMenuOpen.set(true);
-		window.__stores.vrControls.executeVRMenuAction('objects');
+		window.__tp.test.v1.vrMenuOpen.set(true);
+		window.__tp.test.v1.vrControls.executeVRMenuAction('objects');
 	});
 	const objPanel = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
 				let open, menu;
-				window.__stores.vrObjectsPanelOpen.subscribe((v) => (open = v))();
-				window.__stores.vrMenuOpen.subscribe((v) => (menu = v))();
+				window.__tp.test.v1.vrObjectsPanelOpen.subscribe((v) => (open = v))();
+				window.__tp.test.v1.vrMenuOpen.subscribe((v) => (menu = v))();
 				resolve({ open, menu });
 			})
 	);
 	h.check(objPanel.open === true && objPanel.menu === false, 'Objects sector opens the panel and closes the ring');
-	await A.page.evaluate(() => window.__stores.vrObjectsPanelOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.vrObjectsPanelOpen.set(false));
 	// 99: Statistics toggle persists (the 102 card re-attaches next session)
-	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('stats'));
+	await A.page.evaluate(() => window.__tp.test.v1.vrControls.executeVRMenuAction('stats'));
 	const statsPref = await A.page.evaluate(() => localStorage.getItem('vrStats'));
 	h.check(statsPref === 'true', 'Statistics toggle persists its preference');
-	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('stats'));
+	await A.page.evaluate(() => window.__tp.test.v1.vrControls.executeVRMenuAction('stats'));
 
 	// --- registry is open: a 9th root entry re-fits the ring ---
 	const extended = await A.page.evaluate(() => {
-		const m = window.__stores.vrRadialMenu;
+		const m = window.__tp.test.v1.vrRadialMenu;
 		m.registerVRMenuEntry({ id: 'test:extra', group: 'root', label: 'Extra', order: 99 });
 		return { count: m.ringEntries('root').length, layout: m.sectorLayout(0, 9).thetaLength };
 	});

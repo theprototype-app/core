@@ -17,25 +17,25 @@
 // Run: $env:APP_URL='https://localhost:5183/'; PEER_CONFIG=...; npm run e2e -- sdk-game-seams
 const h = require('./helpers.cjs');
 
-const setPlay = (peer, state) => peer.page.evaluate((s) => window.__stores.isLocked.set(s), state);
-const varOf = (peer, name) => peer.page.evaluate((n) => window.__stores.gameState.gameVar(n, 0), name);
+const setPlay = (peer, state) => peer.page.evaluate((s) => window.__tp.test.v1.isLocked.set(s), state);
+const varOf = (peer, name) => peer.page.evaluate((n) => window.__tp.test.v1.gameState.gameVar(n, 0), name);
 const gstate = (peer, state) =>
-	peer.page.evaluate((s) => window.__stores.gameState.setGameState(s), state);
+	peer.page.evaluate((s) => window.__tp.test.v1.gameState.setGameState(s), state);
 
 const wipe = async (peers) => {
 	for (const p of peers)
 		await p.page.evaluate(() => {
-			window.__stores.clearGraphs();
-			window.__stores.gameState.clearGameState();
-			window.__stores.peerVars.clearPeerVars(false);
-			window.__stores.isLocked.set(null);
+			window.__tp.test.v1.clearGraphs();
+			window.__tp.test.v1.gameState.clearGameState();
+			window.__tp.test.v1.peerVars.clearPeerVars(false);
+			window.__tp.test.v1.isLocked.set(null);
 		});
 	await peers[0].page.waitForTimeout(900);
 };
 
 const makeBox = (peer) =>
 	peer.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1100));
 		let group;
@@ -52,7 +52,7 @@ const makeBox = (peer) =>
 const installSeamsModule = (peer) =>
 	peer.page.evaluate(async () => {
 		window.__seams = { effectCtx: null, valueCtx: null, apis: null };
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		await s.moduleSDK.initModules([
 			{
 				id: 'seams',
@@ -103,7 +103,7 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
-	for (const p of [A, B]) await p.page.waitForFunction(() => !!window.__stores?.moduleSDK, { timeout: 30000 });
+	for (const p of [A, B]) await p.page.waitForFunction(() => !!window.__tp?.test.v1?.moduleSDK, { timeout: 30000 });
 	await h.connect(A, B);
 	await wipe([A, B]);
 	await installSeamsModule(A);
@@ -113,7 +113,7 @@ h.run(async () => {
 	// 0. THE MIGRATION IS REAL: the recipe, the dialog and collectcount are gone
 	// =====================================================================
 	const gone = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let cat;
 		const groups = s.nodeCatalog.nodeCatalog ?? [];
 		cat = groups.some((g) => (g.items ?? []).some((i) => i.type === 'collectcount'));
@@ -258,7 +258,7 @@ h.run(async () => {
 	const depthOf = (peer) =>
 		peer.page.evaluate(() => {
 			let v;
-			window.__stores.history.undoStack.subscribe((x) => (v = x))();
+			window.__tp.test.v1.history.undoStack.subscribe((x) => (v = x))();
 			return v.length;
 		});
 	const depth0 = await depthOf(A);
@@ -266,7 +266,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(600);
 	const top = await A.page.evaluate(() => {
 		let v;
-		window.__stores.history.undoStack.subscribe((x) => (v = x))();
+		window.__tp.test.v1.history.undoStack.subscribe((x) => (v = x))();
 		const e = v[v.length - 1];
 		return { depth: v.length, kind: e?.kind, op: e?.op, moduleId: e?.moduleId, items: e?.items?.length };
 	});
@@ -274,11 +274,11 @@ h.run(async () => {
 	h.check(top.moduleId === 'seams', `the entry is attributed to the module (${top.moduleId})`);
 	const edited = [await dataOf(A, evId), await dataOf(B, evId)];
 	h.check(edited.every((d) => d && d.perRound === false && d.tag === 's3'), `premise: the write landed on both peers (${JSON.stringify(edited)})`);
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(800);
 	const undone = [await dataOf(A, evId), await dataOf(B, evId)];
 	h.check(undone.every((d) => d && d.perRound === true && !d.tag), `one undo restores the node's previous data, on BOTH peers (${JSON.stringify(undone)})`);
-	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 	await A.page.waitForTimeout(800);
 	const redone = [await dataOf(A, evId), await dataOf(B, evId)];
 	h.check(redone.every((d) => d && d.perRound === false && d.tag === 's3'), `and one redo re-applies it everywhere (${JSON.stringify(redone)})`);
@@ -321,7 +321,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(900);
 	const gTop = await A.page.evaluate(() => {
 		let v;
-		window.__stores.history.undoStack.subscribe((x) => (v = x))();
+		window.__tp.test.v1.history.undoStack.subscribe((x) => (v = x))();
 		const e = v[v.length - 1];
 		return { depth: v.length, items: e?.items?.length, graphs: [...new Set((e?.items ?? []).map((i) => i.graphId))].length, moduleId: e?.moduleId };
 	});
@@ -331,11 +331,11 @@ h.run(async () => {
 	const gAfter = [await tagsOf(A), await tagsOf(B)];
 	const wantAfter = JSON.stringify(['twice', ...grp.slice(1).map(() => 'grp')]);
 	h.check(gAfter.every((t) => JSON.stringify(t) === wantAfter), `the batch replicated over the ordinary nodedata path (${JSON.stringify(gAfter[1])})`);
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(900);
 	const gUndo = [await tagsOf(A), await tagsOf(B)];
 	h.check(gUndo.every((t) => t.every((x) => x === null)), `ONE undo restores all twelve, on both peers, incl. the node written twice (${JSON.stringify(gUndo[1])})`);
-	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 	await A.page.waitForTimeout(900);
 	const gRedo = [await tagsOf(A), await tagsOf(B)];
 	h.check(gRedo.every((t) => JSON.stringify(t) === wantAfter), `and one redo re-applies the batch in order (${JSON.stringify(gRedo[0])})`);
@@ -372,14 +372,14 @@ h.run(async () => {
 	);
 	h.check(typeof selectorDefaultKept === 'string' && selectorDefaultKept.length > 0, `core spec label/defaults seeded the data (${selectorDefaultKept})`);
 	// ONE undo entry: a single undo removes both nodes (assert the PROPERTY, not depth)
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(900);
 	const afterUndo = await A.page.evaluate(
 		(ids) => window.__seams.api.flow.nodes().filter((n) => ids.includes(n.id)).length,
 		chain
 	);
 	h.check(afterUndo === 0, 'ONE undo removes the whole batch (one flownodes entry)');
-	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 	await A.page.waitForTimeout(900);
 	const afterRedo = await A.page.evaluate(
 		(ids) => window.__seams.api.flow.nodes().filter((n) => ids.includes(n.id)).length,
@@ -398,7 +398,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(900);
 	const hiddenInPlay = await A.page.evaluate((uuid) => {
 		let group;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		return group?.getObjectByProperty('uuid', uuid)?.visible;
 	}, box);
 	h.check(hiddenInPlay === false, 'the module effect hides its target while playing in a round');
@@ -411,7 +411,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(1200);
 	const back = await A.page.evaluate((uuid) => {
 		let group;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		const o = group?.getObjectByProperty('uuid', uuid);
 		// manual hide must WIN now (the restore loop forgot the object)
 		if (o) o.visible = false;
@@ -420,7 +420,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(900);
 	const manualWins = await A.page.evaluate((uuid) => {
 		let group;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		return group?.getObjectByProperty('uuid', uuid)?.visible;
 	}, box);
 	h.check(back === false && manualWins === false, 'outside play the effect stands down and manual visibility wins (the F2 rule, module edition)');
@@ -438,7 +438,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(500);
 	const sel = await A.page.evaluate(() => window.__seams.api.selectedUuids());
 	h.check(sel.includes(box), `selectObject landed in the selection SET (${JSON.stringify(sel)})`);
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await A.page.waitForTimeout(300);
 	h.check(
 		(await A.page.evaluate(() => window.__seams.api.selectedUuids())).length === 0,
@@ -558,7 +558,7 @@ h.run(async () => {
 	const e0 = [await counts(A), await counts(B)];
 	// ONE burst: thirty node edits in one synchronous gesture (a toolbox bulk edit)
 	const ticks = await A.page.evaluate((ids) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let n = 0;
 		const off = s.flowGraphs.subscribe(() => n++);
 		n = 0;
@@ -633,7 +633,7 @@ h.run(async () => {
 	h.check(sixty.length === 60, `premise: sixty nodes across three graphs (${sixty.length})`);
 	const sixtyOf = (peer) =>
 		peer.page.evaluate((ids) => {
-			const nodes = window.__stores.allNodes();
+			const nodes = window.__tp.test.v1.allNodes();
 			const got = ids.map((i) => nodes.find((n) => n.id === i));
 			return { present: got.filter(Boolean).length, tags: [...new Set(got.map((n) => n?.data?.tag ?? null))] };
 		}, sixty);
@@ -660,11 +660,11 @@ h.run(async () => {
 		z1.every((r) => r.present === 60 && r.tags.length === 1 && r.tags[0] === 'orig'),
 		`ONE Ctrl+Z restores all sixty on both peers — and the nodes are still there, the creation was NOT undone (${JSON.stringify(z1)})`
 	);
-	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 	await A.page.waitForTimeout(900);
 	// a LATE JOINER takes the edited values from the ordinary full-state reply
 	const C = await h.setupPage(browser, 'C');
-	await C.page.waitForFunction(() => !!window.__stores?.allNodes, { timeout: 30000 });
+	await C.page.waitForFunction(() => !!window.__tp?.test.v1?.allNodes, { timeout: 30000 });
 	await h.connect(C, A);
 	await h.eventually(
 		() => sixtyOf(C),
@@ -686,7 +686,7 @@ h.run(async () => {
 	// 8. the debug line + the action catalog seams, and their teardown
 	// =====================================================================
 	const hudSeams = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		return {
 			lines: s.moduleHudKinds.moduleDebugLineTexts(),
 			offered: s.hudActions.actionsForKind('text').map((a) => a.key)
@@ -695,13 +695,13 @@ h.run(async () => {
 	h.check(hudSeams.lines.includes('seams: line-alive'), `registerDebugLine feeds the debug pill (${JSON.stringify(hudSeams.lines)})`);
 	h.check(hudSeams.offered.includes('mod-seams-showseam'), `registerAction lands in the catalog, namespaced (${JSON.stringify(hudSeams.offered.filter((k) => k.startsWith('mod-')))})`);
 	// bind it for real — addBinding must resolve a module key and build the via node
-	const bound = await A.page.evaluate(() => window.__stores.hudActions.addBinding('seam-el', 'mod-seams-showseam'));
+	const bound = await A.page.evaluate(() => window.__tp.test.v1.hudActions.addBinding('seam-el', 'mod-seams-showseam'));
 	h.check(bound.ok && bound.nodes.some((n) => n.type === 'seamvalue'), `addBinding builds a module via-node (${JSON.stringify(bound.nodes.map((n) => n.type))})`);
 	// teardown: deactivate removes BOTH registries through the journal
-	await A.page.evaluate(() => window.__stores.moduleSDK.deactivateModule('seams'));
+	await A.page.evaluate(() => window.__tp.test.v1.moduleSDK.deactivateModule('seams'));
 	await A.page.waitForTimeout(400);
 	const afterOff = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		return {
 			lines: s.moduleHudKinds.moduleDebugLineTexts(),
 			offered: s.hudActions.actionsForKind('text').map((a) => a.key)
@@ -712,7 +712,7 @@ h.run(async () => {
 	// R29 S2: the three onChange subscriptions went with the journal
 	const off0 = await counts(A);
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.gameState.setGameVar('after', 1);
 		s.peerVars.setPeerVar('after', 1);
 		s.flowGraphs.update((g) => ({ ...g }));

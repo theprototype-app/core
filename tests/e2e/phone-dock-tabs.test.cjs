@@ -18,7 +18,7 @@
 // second tap CLOSES the Explorer, the burger stays open, the note card covers Play).
 const h = require('./helpers.cjs');
 
-const store = (name) => `(() => { let v; window.__stores.${name}.subscribe((x) => (v = x))(); return v; })()`;
+const store = (name) => `(() => { let v; window.__tp.test.v1.${name}.subscribe((x) => (v = x))(); return v; })()`;
 
 /** @param {import('playwright').Page} page */
 async function touchApi(page) {
@@ -59,7 +59,7 @@ h.run(async () => {
 	};
 	const dock = () =>
 		read(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const g = (/** @type {any} */ x) => {
 				let v;
 				x.subscribe((/** @type {any} */ y) => (v = y))();
@@ -87,12 +87,12 @@ h.run(async () => {
 				bar: r('#ps-bar')
 			};
 		});
-	const quiet = () => read(() => window.__stores.toastStore.set([]));
+	const quiet = () => read(() => window.__tp.test.v1.toastStore.set([]));
 
 	const shell = await read(() => document.documentElement.classList.contains('phone-shell'));
 	h.check(shell, 'folded N6 (390x844): the phone shell is mounted');
 	await read(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		for (let t = 0; t < 60; t++) {
 			let g;
@@ -175,7 +175,7 @@ h.run(async () => {
 	await tapOn('[data-dock-tab-close="scene"]', 900);
 	d = await dock();
 	h.check(!d.tabs.includes('scene') && d.tabs.includes('properties') && !d.insClosed, `the Configure Scene ✕ closes that tab only — Properties stays (tabs ${d.tabs.join(',')})`);
-	const menuRows = await read(() => window.__stores.dockMenu.dockTabItems('properties').map((/** @type {any} */ i) => i.label));
+	const menuRows = await read(() => window.__tp.test.v1.dockMenu.dockTabItems('properties').map((/** @type {any} */ i) => i.label));
 	h.check(!menuRows.some((/** @type {string} */ l) => /undock/i.test(l)), `a content tab's menu offers no Undock (${menuRows.join(' · ')})`);
 
 	// ---- 4. nothing covers the raised Play circle ------------------------------------------------
@@ -190,7 +190,7 @@ h.run(async () => {
 		});
 	h.check((await playHit()) === 'play', `the Notes tab leaves the raised Play circle on top (${await playHit()})`);
 	const noteId = await read(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((/** @type {any} */ v) => (g = v))();
 		const ah = s.annotationsHandler;
@@ -204,7 +204,7 @@ h.run(async () => {
 		return list[list.length - 1].id;
 	});
 	await P.waitForTimeout(400);
-	await P.evaluate((id) => window.__stores.annotationsHandler.openAnnotation(id, 'view'), noteId);
+	await P.evaluate((id) => window.__tp.test.v1.annotationsHandler.openAnnotation(id, 'view'), noteId);
 	await P.waitForTimeout(800);
 	const card = await read(() => {
 		const c = document.querySelector('.note-card');
@@ -216,7 +216,7 @@ h.run(async () => {
 	});
 	h.check(!!card && card.top >= card.frameTop - 1, `a note opened from the Notes tab is a page of it (card top ${card?.top}, frame top ${card?.frameTop})`);
 	h.check((await playHit()) === 'play', `…and the note card does not cover the Play circle either (${await playHit()})`);
-	await read(() => window.__stores.annotationsHandler.activeAnnotation.set(null));
+	await read(() => window.__tp.test.v1.annotationsHandler.activeAnnotation.set(null));
 	await P.waitForTimeout(500);
 	d = await dock();
 	h.check(d.vis === 'notes' && d.tabs.includes('properties'), 'closing the note returns to the Notes tab, Properties still there');
@@ -241,18 +241,18 @@ h.run(async () => {
 	h.check(d.min && !explorerClosed, `a second Explorer tap minimizes the dock instead of closing the Explorer (min ${d.min}, closed ${explorerClosed})`);
 	await tapOn('#ps-explorer', 700);
 	// undocking on + the Explorer floating: the tap toggles that window
-	await read(() => window.__stores.mobileUndockAllowed.set(true));
-	await read(() => window.__stores.bottomDock.armDockMode('explorer', false));
+	await read(() => window.__tp.test.v1.mobileUndockAllowed.set(true));
+	await read(() => window.__tp.test.v1.bottomDock.armDockMode('explorer', false));
 	await P.waitForTimeout(900);
-	const floatingUp = () => read(() => !!document.querySelector('#explorer-window') && (() => { let v; window.__stores.explorerClose.subscribe((x) => (v = x))(); return !v; })());
+	const floatingUp = () => read(() => !!document.querySelector('#explorer-window') && (() => { let v; window.__tp.test.v1.explorerClose.subscribe((x) => (v = x))(); return !v; })());
 	h.check(await floatingUp(), 'undocking on: the Explorer floats');
 	await tapOn('#ps-explorer', 700);
 	h.check(!(await floatingUp()), 'the bar tap closes the floating Explorer');
 	await tapOn('#ps-explorer', 900);
 	h.check(await floatingUp(), 'and the next tap opens it again (floating)');
 	await read(() => {
-		window.__stores.bottomDock.armDockMode('explorer', true);
-		window.__stores.mobileUndockAllowed.set(false);
+		window.__tp.test.v1.bottomDock.armDockMode('explorer', true);
+		window.__tp.test.v1.mobileUndockAllowed.set(false);
 	});
 	await P.waitForTimeout(700);
 
@@ -296,7 +296,7 @@ h.run(async () => {
 	d = await dock();
 	h.check(!d.insClosed && d.kind === 'selection' && !!d.inspector && d.inspector.right >= 1439, `desktop (1440x900): Properties (in front) is the right Inspector drawer (${JSON.stringify({ closed: d.insClosed, kind: d.kind, ins: d.inspector, notes: d.notes })})`);
 	h.check(!d.notes, 'the notes drawer waits (the right column holds one drawer)');
-	await read(() => window.__stores.objectListClose.set(true));
+	await read(() => window.__tp.test.v1.objectListClose.set(true));
 	await P.waitForTimeout(400);
 	await P.setViewportSize({ width: 390, height: 844 });
 	await P.waitForTimeout(1500);
@@ -307,7 +307,7 @@ h.run(async () => {
 	// ---- 8. a desktop page: none of it leaks; the burger stays open on Configure Scene (H2) ----------
 	const D = await h.setupPage(browser, 'desktop', { context: { viewport: { width: 1440, height: 900 } }, storage: { toursSeen: '{"editor":true}' } });
 	const DP = D.page;
-	await DP.evaluate(() => window.__stores.toastStore.set([]));
+	await DP.evaluate(() => window.__tp.test.v1.toastStore.set([]));
 	await DP.click('#logo-menu');
 	await DP.waitForTimeout(600);
 	await DP.evaluate(() => {
@@ -317,7 +317,7 @@ h.run(async () => {
 	await DP.click('[data-test="cfg-scene"]');
 	await DP.waitForTimeout(800);
 	const dk = await DP.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const g = (/** @type {any} */ x) => {
 			let v;
 			x.subscribe((/** @type {any} */ y) => (v = y))();

@@ -33,10 +33,10 @@ const edge = (source, target, targetHandle) => ({ id: 'e-' + source + '-' + targ
 const addGraph = (peer, nodes, edges = []) =>
 	peer.page.evaluate(
 		([nodes, edges]) => {
-			window.__stores.flowNodes.update((n) => [...n, ...nodes]);
-			window.__stores.flowEdges.update((e) => [...e, ...edges]);
+			window.__tp.test.v1.flowNodes.update((n) => [...n, ...nodes]);
+			window.__tp.test.v1.flowEdges.update((e) => [...e, ...edges]);
 			let p;
-			window.__stores.peers.subscribe((v) => (p = v))();
+			window.__tp.test.v1.peers.subscribe((v) => (p = v))();
 			nodes.forEach((node) => p.send({ type: 'nodecreate', node }));
 			edges.forEach((edge) => p.send({ type: 'edgecreate', edge }));
 		},
@@ -45,7 +45,7 @@ const addGraph = (peer, nodes, edges = []) =>
 const dataOf = (peer, id) =>
 	peer.page.evaluate((id) => {
 		let g;
-		window.__stores.flowGraphs.subscribe((v) => (g = v))();
+		window.__tp.test.v1.flowGraphs.subscribe((v) => (g = v))();
 		for (const doc of Object.values(g)) {
 			const n = doc.nodes.find((x) => x.id === id);
 			if (n) return JSON.parse(JSON.stringify(n.data));
@@ -53,9 +53,9 @@ const dataOf = (peer, id) =>
 		return null;
 	}, id);
 const select = (peer, id) =>
-	peer.page.evaluate((id) => window.__stores.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: n.id === id }))), id);
-const storeVal = (peer, name) => peer.page.evaluate((name) => { let v; window.__stores[name].subscribe((x) => (v = x))(); return v; }, name);
-const tabsOf = (peer) => peer.page.evaluate(() => { let v = []; window.__stores.codeWorkspace?.codeTabs.subscribe((x) => (v = x))(); return JSON.parse(JSON.stringify(v)); }); // 36-code: the workspace's open tabs
+	peer.page.evaluate((id) => window.__tp.test.v1.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: n.id === id }))), id);
+const storeVal = (peer, name) => peer.page.evaluate((name) => { let v; window.__tp.test.v1[name].subscribe((x) => (v = x))(); return v; }, name);
+const tabsOf = (peer) => peer.page.evaluate(() => { let v = []; window.__tp.test.v1.codeWorkspace?.codeTabs.subscribe((x) => (v = x))(); return JSON.parse(JSON.stringify(v)); }); // 36-code: the workspace's open tabs
 const dblclickNode = async (peer, id) => {
 	const box = await peer.page.locator(`.svelte-flow__node[data-id="${id}"]`).boundingBox();
 	if (!box) return false;
@@ -66,7 +66,7 @@ const dblclickNode = async (peer, id) => {
 const centerOn = (peer, id) =>
 	peer.page.evaluate((id) => {
 		let ns;
-		window.__stores.flowNodes.subscribe((v) => (ns = v))();
+		window.__tp.test.v1.flowNodes.subscribe((v) => (ns = v))();
 		const n = ns.find((x) => x.id === id);
 		window.__flowViewport?.setViewport({ x: -n.position.x + 200, y: -n.position.y + 120, zoom: 1 });
 	}, id);
@@ -87,7 +87,7 @@ h.run(async () => {
 	// open the Node editor tall, with the properties panel on its ⓘ tab
 	await A.page.locator('p[title="Node editor (N)"]').click();
 	await A.page.waitForTimeout(1200);
-	await A.page.evaluate(() => window.__stores.bottomDock?.dockHeight?.set(620));
+	await A.page.evaluate(() => window.__tp.test.v1.bottomDock?.dockHeight?.set(620));
 	if (!(await A.page.locator('#flow-props').count())) await A.page.locator('#flow-props-toggle').click();
 	await A.page.locator('#flow-tab-info').click();
 
@@ -107,7 +107,7 @@ h.run(async () => {
 	await A.page.locator('#flow-prop-speed').fill('4.5');
 	await A.page.locator('#flow-prop-speed').press('Enter');
 	await h.eventually(() => dataOf(B, 'cn-bounce'), (d) => d?.speed === 4.5, 'a property edit replicates (B: speed 4.5)', 4000);
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => dataOf(B, 'cn-bounce'), (d) => d?.speed === 2, 'one undo restores it on both peers (speed 2)', 4000);
 	if (SHOTS) await A.page.screenshot({ path: path.join(SHOTS, '20-properties-dark.png') });
 
@@ -128,10 +128,10 @@ h.run(async () => {
 	await A.page.locator('#flow-prop-power').press('Enter');
 	await h.eventually(() => dataOf(B, 'cn-bhv'), (d) => /power:\s*\{\s*value:\s*10\.5\b/.test(d?.code ?? ''), 'B: the literal in the behaviour SOURCE is now 10.5 (one AST edit)', 4000);
 	if (SHOTS) {
-		await A.page.evaluate(() => window.__stores.themes.theme.set('light'));
+		await A.page.evaluate(() => window.__tp.test.v1.themes.theme.set('light'));
 		await A.page.waitForTimeout(400);
 		await A.page.screenshot({ path: path.join(SHOTS, '21-properties-light.png') });
-		await A.page.evaluate(() => window.__stores.themes.theme.set('dark'));
+		await A.page.evaluate(() => window.__tp.test.v1.themes.theme.set('dark'));
 	}
 	await select(A, '__none__');
 
@@ -168,7 +168,7 @@ h.run(async () => {
 	// a module's own node (registered by a core module — hello, the SDK example) opens the same way
 	const golfType = await A.page.evaluate(() => {
 		let groups;
-		window.__stores.moduleSDK.moduleNodeGroups.subscribe((v) => (groups = v))();
+		window.__tp.test.v1.moduleSDK.moduleNodeGroups.subscribe((v) => (groups = v))();
 		for (const g of groups) for (const i of g.items) if (i.moduleId === 'hello') return i.type;
 		return null;
 	});
@@ -178,28 +178,28 @@ h.run(async () => {
 		await centerOn(A, 'cn-golf');
 		await A.page.waitForTimeout(400);
 		await dblclickNode(A, 'cn-golf');
-		await h.eventually(() => A.page.evaluate(() => window.__stores.codeOpen?.lastOpenCode?.()), (r) => r?.source === 'module' && r?.ref === 'hello', `double-click a module node (${golfType}) → its module's source`, 4000);
+		await h.eventually(() => A.page.evaluate(() => window.__tp.test.v1.codeOpen?.lastOpenCode?.()), (r) => r?.source === 'module' && r?.ref === 'hello', `double-click a module node (${golfType}) → its module's source`, 4000);
 		await A.page.locator('#code-ws-close:visible, [data-dock-tab-close="code"]:visible').first().click().catch(() => {});
 	} else h.check(false, 'premise: the core hello module registered a node type');
 
 	// --- 3: the seam ------------------------------------------------------------------------
 	const routed = await A.page.evaluate(async () => {
-		const c = window.__stores.codeOpen;
+		const c = window.__tp.test.v1.codeOpen;
 		const seen = [];
 		const off = c.registerCodeOpener((req) => (seen.push(req), true));
 		await c.openCode({ source: 'script', ref: 'cn-script' });
 		off();
 		let open;
-		window.__stores.scriptEditorOpen.subscribe((v) => (open = v))();
+		window.__tp.test.v1.scriptEditorOpen.subscribe((v) => (open = v))();
 		return { seen, open };
 	});
 	h.check(routed.seen.length === 1 && routed.seen[0].ref === 'cn-script' && !routed.open, "a registered opener (36-code's seam) gets the request; the fallback panel stays shut");
 
 	// --- 4: sockets follow the code --------------------------------------------------------
-	await A.page.evaluate(() => window.__stores.scriptEditorOpen.set('cn-script'));
+	await A.page.evaluate(() => window.__tp.test.v1.scriptEditorOpen.set('cn-script'));
 	await h.eventually(() => tabsOf(A), (t) => t.some((x) => x.nodeId === 'cn-script'), 'premise: the script tab is open', 15000);
 	await A.page.waitForTimeout(800);
-	const paneId = await A.page.evaluate(() => new Promise((r) => window.__stores.codeWorkspace.activeCodeTab.subscribe(r)()));
+	const paneId = await A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.codeWorkspace.activeCodeTab.subscribe(r)()));
 	await A.page.locator(`[data-pane="${paneId}"] .cm-content`).click();
 	await A.page.keyboard.press('Control+End');
 	// one line, no Enter: an open autocomplete popup would take an Enter as "accept"
@@ -219,14 +219,14 @@ h.run(async () => {
 	// --- 5: module-bound code is read-only until forked ------------------------------------
 	await addGraph(A, [node('cn-mod', 'script', { label: 'Script', inputs: [], code: 'object.rotation.y = time;', src: { kind: 'module', module: 'minigolf', file: 'spin.js' } }, 0, 400)]);
 	await A.page.waitForTimeout(600);
-	await A.page.evaluate(() => window.__stores.scriptEditorOpen.set('cn-mod'));
+	await A.page.evaluate(() => window.__tp.test.v1.scriptEditorOpen.set('cn-mod'));
 	await h.eventually(() => A.page.locator('#script-readonly').count(), (n) => n === 1, 'a module-bound script says read-only and offers Make editable copy', 15000);
 	h.check((await A.page.locator('[data-readonly="true"]').count()) >= 1, 'its editor is read-only');
 	await A.page.locator('#script-make-editable').click();
 	await h.eventually(() => dataOf(B, 'cn-mod'), (d) => d?.src?.kind === 'asset' && /spin \(copy\)\.js/.test(d.src.name) && d.src.hash?.length > 10, 'the fork re-points data.src at a new Explorer asset (B sees it)', 6000);
 	h.check((await dataOf(B, 'cn-mod'))?.code === 'object.rotation.y = time;', 'the running text is unchanged by the fork');
 	h.check(
-		await A.page.evaluate(() => { let items; window.__stores.explorer?.explorerItems?.subscribe((v) => (items = v))(); return (items ?? []).some((i) => /spin \(copy\)\.js/.test(i.name)); }),
+		await A.page.evaluate(() => { let items; window.__tp.test.v1.explorer?.explorerItems?.subscribe((v) => (items = v))(); return (items ?? []).some((i) => /spin \(copy\)\.js/.test(i.name)); }),
 		'the copy is in the Explorer library'
 	);
 	await h.eventually(() => A.page.locator('#script-readonly').count(), (n) => n === 0, 'the editor becomes editable after the fork', 6000);
@@ -237,18 +237,18 @@ h.run(async () => {
 		const bytes = Array.from(fs.readFileSync(GOLF));
 		const load = () =>
 			A.page.evaluate(async (arr) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 				await s.sessions.applySession(payload, { backup: false });
 			}, bytes);
 		const authored = await A.page.evaluate(async (arr) => {
-			const payload = await window.__stores.sessions.readSessionZip(new Uint8Array(arr).buffer);
+			const payload = await window.__tp.test.v1.sessions.readSessionZip(new Uint8Array(arr).buffer);
 			const graphs = payload?.flow?.graphs ?? payload?.graphs ?? {};
 			const scene = graphs.scene ?? payload?.flow ?? {};
 			return (scene.nodes ?? payload?.nodes ?? []).some((n) => n?.data?.main);
 		}, bytes);
 		await load();
-		const mainIds = (peer) => peer.page.evaluate(() => { let g; window.__stores.flowGraphs.subscribe((v) => (g = v))(); return g.scene.nodes.filter((n) => n.data?.main).map((n) => n.id); });
+		const mainIds = (peer) => peer.page.evaluate(() => { let g; window.__tp.test.v1.flowGraphs.subscribe((v) => (g = v))(); return g.scene.nodes.filter((n) => n.data?.main).map((n) => n.id); });
 		if (authored) {
 			// a scene authored WITH its Main graph (36-games-graphs): the migration adds nothing
 			await A.page.waitForTimeout(1500);

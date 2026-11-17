@@ -27,7 +27,7 @@ const h = require('./helpers.cjs');
 
 const inPage = (peer, body, arg) =>
 	peer.page.evaluate(
-		([src, a]) => Object.getPrototypeOf(async function () {}).constructor('s', 'api', 'arg', src)(window.__stores, window.__api, a),
+		([src, a]) => Object.getPrototypeOf(async function () {}).constructor('s', 'api', 'arg', src)(window.__tp?.test.v1, window.__api, a),
 		[body, arg ?? null]
 	);
 const read = (peer, store) => inPage(peer, `let v; s.${store}.subscribe((x) => (v = x))(); return v;`);
@@ -52,7 +52,7 @@ const mine = (st, dom) => st[dom].find((p) => p.managedBy === TAG) ?? null;
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
-	await A.page.waitForFunction(() => !!window.__stores?.cloudPlugin?.makeCloudApi, { timeout: 30000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.cloudPlugin?.makeCloudApi, { timeout: 30000 });
 	await inPage(A, 'window.__api = s.cloudPlugin.makeCloudApi();' + RESET);
 
 	console.log('\n=== 1. the probe ===');
@@ -150,7 +150,7 @@ h.run(async () => {
 		return { ai: r(s.aiProviders.aiProviders).find((p) => p.id === id)?.managedBy, mesh: r(s.meshProviders.meshProviders).find((p) => p.id === mid)?.managedBy };`, TAG);
 	h.check(direct.ai === TAG && direct.mesh === TAG, 'addAiProvider / addMeshProvider keep managedBy (the field whitelist used to drop it)');
 	await h.freshReload(A);
-	await A.page.waitForFunction(() => !!window.__stores?.cloudPlugin?.makeCloudApi, { timeout: 30000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.cloudPlugin?.makeCloudApi, { timeout: 30000 });
 	await inPage(A, 'window.__api = s.cloudPlugin.makeCloudApi();');
 	st = await inPage(A, STATE);
 	h.check(mine(st, 'ai') && mine(st, 'mesh'), 'the tag is persisted with the entry and survives a reload');

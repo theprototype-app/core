@@ -20,31 +20,31 @@ const crypto = require('crypto');
 const manifestOf = (peer) =>
 	peer.page.evaluate(() => {
 		let m;
-		window.__stores.projectManifest.projectManifest.subscribe((v) => (m = v))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((v) => (m = v))();
 		return m;
 	});
 const libraryOf = (peer) =>
 	peer.page.evaluate(() => {
 		let items;
-		window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((v) => (items = v))();
 		return items.map((i) => ({ name: i.name, hash: i.hash, kind: i.kind, folderId: i.folderId }));
 	});
 const foldersOf = (peer) =>
 	peer.page.evaluate(() => {
 		let folders;
-		window.__stores.explorer.explorerFolders.subscribe((v) => (folders = v))();
+		window.__tp.test.v1.explorer.explorerFolders.subscribe((v) => (folders = v))();
 		return folders.map((f) => ({ id: f.id, name: f.name, parentId: f.parentId ?? null }));
 	});
 const currentLevelOf = (peer) =>
 	peer.page.evaluate(() => {
 		let at;
-		window.__stores.levels.currentLevel.subscribe((v) => (at = v))();
+		window.__tp.test.v1.levels.currentLevel.subscribe((v) => (at = v))();
 		return at;
 	});
 const toastsOf = (peer) =>
 	peer.page.evaluate(() => {
 		let toasts;
-		window.__stores.toastStore.subscribe((t) => (toasts = t))();
+		window.__tp.test.v1.toastStore.subscribe((t) => (toasts = t))();
 		// a plain toast is a bare STRING in the store; action/info toasts are objects
 		return (toasts ?? []).map((t) =>
 			typeof t === 'string' ? { id: null, text: t } : { id: t.id ?? null, text: t.text ?? '' }
@@ -53,14 +53,14 @@ const toastsOf = (peer) =>
 const confirmTitleOf = (peer) =>
 	peer.page.evaluate(() => {
 		let d;
-		window.__stores.confirmDialog.confirmDialog.subscribe((v) => (d = v))();
+		window.__tp.test.v1.confirmDialog.confirmDialog.subscribe((v) => (d = v))();
 		return d?.title ?? null;
 	});
 const answerConfirm = (peer, yes) =>
-	peer.page.evaluate((y) => window.__stores.confirmDialog.resolveConfirm(y), yes);
+	peer.page.evaluate((y) => window.__tp.test.v1.confirmDialog.resolveConfirm(y), yes);
 const makeBox = (peer) =>
 	peer.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1100));
 		s.objectActions.deselectObject();
@@ -71,7 +71,7 @@ const openOnPage = (peer, b64) =>
 		const bin = atob(b64);
 		const bytes = new Uint8Array(bin.length);
 		for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-		return await window.__stores.projectFile.openProject(bytes.buffer);
+		return await window.__tp.test.v1.projectFile.openProject(bytes.buffer);
 	}, b64);
 // 21-I: the import takes the FILE's name and the folder the command was started from,
 // so the page-side call carries both the way the Explorer does.
@@ -81,7 +81,7 @@ const importFolderOnPage = (peer, b64, opts = {}) =>
 			const bin = atob(b64);
 			const bytes = new Uint8Array(bin.length);
 			for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-			return await window.__stores.projectFile.importProjectAsFolder(bytes.buffer, opts);
+			return await window.__tp.test.v1.projectFile.importProjectAsFolder(bytes.buffer, opts);
 		},
 		{ b64, opts }
 	);
@@ -90,7 +90,7 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	// 41b H14: the LIST layout (Settings ▸ Interface ▸ Project actions) draws the format row
 	const A = await h.setupPage(browser, 'A', { storage: { 'ui:projectActions': 'list' } });
-	await A.page.waitForFunction(() => !!window.__stores?.projectFile, { timeout: 30000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.projectFile, { timeout: 30000 });
 
 	// =====================================================================
 	// 1. THE SIDEBAR PICKER — [ Project | Scene | cog ], Project default
@@ -100,7 +100,7 @@ h.run(async () => {
 	// FORMAT and not the word — and GLTF moved behind the cog beside JSON, appearing on
 	// a SECOND row when enabled. `files-format-row` owns that contract in full; what
 	// this suite needs from it is that the picker is there and Project is the default.
-	await A.page.evaluate(() => window.__stores.closeMenu.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.closeMenu.set(false));
 	await A.page.waitForTimeout(400);
 	h.check(
 		(await A.page.locator('#format-tp').count()) === 1,
@@ -150,37 +150,37 @@ h.run(async () => {
 	await A.page.locator('#show-gltf-format').click();
 	await A.page.locator('#save-options-save').click();
 	await A.page.waitForTimeout(400);
-	await A.page.evaluate(() => window.__stores.toastStore.set([]));
+	await A.page.evaluate(() => window.__tp.test.v1.toastStore.set([]));
 	// Save with Project and NOTHING AT ALL: the honest refusal, not an empty zip.
 	// 21-H1 widened that gate — a library holding anything is a real project now — so
 	// this refuses only because the profile is genuinely brand new.
-	await A.page.evaluate(() => window.__stores.fileHandler.save('tp'));
+	await A.page.evaluate(() => window.__tp.test.v1.fileHandler.save('tp'));
 	await h.eventually(
 		() => toastsOf(A),
 		(t) => t.some((x) => /nothing here yet/i.test(x.text)),
 		'Save (Project) with nothing at all refuses honestly instead of downloading an empty zip'
 	);
-	await A.page.evaluate(() => window.__stores.closeMenu.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.closeMenu.set(true));
 
 	// =====================================================================
 	// 2. BUILD A REAL PROJECT ON A, EXPORT IT
 	// =====================================================================
 	await makeBox(A);
-	await A.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Arena'));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('Arena'));
 	await A.page.evaluate(async () => {
 		const bytes = new TextEncoder().encode('open-import suite asset').buffer;
-		const item = await window.__stores.explorer.addItemFromBytes(bytes, 'note.txt', null);
-		window.__stores.projectManifest.recordProjectAssets([item.hash]);
+		const item = await window.__tp.test.v1.explorer.addItemFromBytes(bytes, 'note.txt', null);
+		window.__tp.test.v1.projectManifest.recordProjectAssets([item.hash]);
 	});
 	// a NESTED folder with an item — the v2 tree restore has to rebuild both levels
 	await A.page.evaluate(async () => {
-		const ex = window.__stores.explorer;
+		const ex = window.__tp.test.v1.explorer;
 		const parent = ex.createFolder('Props', null);
 		const child = ex.createFolder('Rocks', parent.id);
 		await ex.addItemFromBytes(new TextEncoder().encode('rock data').buffer, 'rock.txt', child.id);
 	});
 	const exported = await A.page.evaluate(async () => {
-		const r = await window.__stores.projectFile.exportProject();
+		const r = await window.__tp.test.v1.projectFile.exportProject();
 		let s = '';
 		for (let i = 0; i < r.bytes.length; i += 8192)
 			s += String.fromCharCode.apply(null, r.bytes.subarray(i, i + 8192));
@@ -195,10 +195,10 @@ h.run(async () => {
 	// 3. OPEN, DECLINED — the warning is real and a decline mutates nothing
 	// =====================================================================
 	const B = await h.setupPage(browser, 'B');
-	await B.page.waitForFunction(() => !!window.__stores?.projectFile, { timeout: 30000 });
+	await B.page.waitForFunction(() => !!window.__tp?.test.v1?.projectFile, { timeout: 30000 });
 	// a pre-existing library B must not lose to a DECLINED open
 	await B.page.evaluate(async () => {
-		await window.__stores.explorer.addItemFromBytes(
+		await window.__tp.test.v1.explorer.addItemFromBytes(
 			new TextEncoder().encode('B keeps this').buffer,
 			'keep-me.txt',
 			null
@@ -224,7 +224,7 @@ h.run(async () => {
 	// =====================================================================
 	// give B a currentLevel the open must FORGET (the NAMED-ONLY travel-away gate)
 	await makeBox(B);
-	await B.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('OldWorld'));
+	await B.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('OldWorld'));
 	h.check((await currentLevelOf(B))?.name === 'OldWorld', 'PREMISE: B stands in a named scene');
 	const accepted = openOnPage(B, exported.b64);
 	await h.eventually(
@@ -264,9 +264,9 @@ h.run(async () => {
 	// 5. IMPORT AS FOLDER — furnishes, never installs
 	// =====================================================================
 	const C = await h.setupPage(browser, 'C');
-	await C.page.waitForFunction(() => !!window.__stores?.projectFile, { timeout: 30000 });
+	await C.page.waitForFunction(() => !!window.__tp?.test.v1?.projectFile, { timeout: 30000 });
 	await makeBox(C);
-	await C.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('MyOwn'));
+	await C.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('MyOwn'));
 	const mBefore = await manifestOf(C);
 	// 21-I (user): the folder is named after the FILE, minus its extension — you picked
 	// `Dungeon v3.tp` off a disk, so `Dungeon v3` is what you look for afterwards, and two
@@ -322,14 +322,14 @@ h.run(async () => {
 	// the remaining imports in this section are about WHERE a folder lands, not about
 	// duplicates — put the rule on Skip so each one is only testing its own claim
 	await C.page.evaluate(() =>
-		window.__stores.importDuplicates.setDuplicateImportMode('skip')
+		window.__tp.test.v1.importDuplicates.setDuplicateImportMode('skip')
 	);
 
 	// 21-I (user): IT LANDS WHERE THE COMMAND WAS STARTED — inside the folder you are
 	// browsing, not always at the root. A pseudo location (`prefabs`, `packs`, `scene…`)
 	// or a stale id is not a place a file can go, so those still mean the root.
 	const inbox = await C.page.evaluate(
-		() => window.__stores.explorer.createFolder('Inbox', null)?.id ?? null
+		() => window.__tp.test.v1.explorer.createFolder('Inbox', null)?.id ?? null
 	);
 	h.check(!!inbox, 'premise: a real folder to start the command from');
 	await importFolderOnPage(C, exported.b64, { fileName: 'Nested.tp', parentId: inbox });
@@ -367,7 +367,7 @@ h.run(async () => {
 		})
 	).toString('base64');
 	const D = await h.setupPage(browser, 'D');
-	await D.page.waitForFunction(() => !!window.__stores?.projectFile, { timeout: 30000 });
+	await D.page.waitForFunction(() => !!window.__tp?.test.v1?.projectFile, { timeout: 30000 });
 	const v1Pending = openOnPage(D, v1);
 	await h.eventually(
 		() => confirmTitleOf(D),
@@ -399,17 +399,17 @@ h.run(async () => {
 	// 7. OPEN .tpscene — the current scene, UNSAVED
 	// =====================================================================
 	const E = await h.setupPage(browser, 'E');
-	await E.page.waitForFunction(() => !!window.__stores?.projectFile, { timeout: 30000 });
+	await E.page.waitForFunction(() => !!window.__tp?.test.v1?.projectFile, { timeout: 30000 });
 	// a HOME scene to travel back to, so the no-auto-publish half is provable
 	await makeBox(E);
 	const homeHash = await E.page.evaluate(async () => {
-		const item = await window.__stores.levels.saveSceneAsLevel('Home');
+		const item = await window.__tp.test.v1.levels.saveSceneAsLevel('Home');
 		return item?.hash ?? null;
 	});
 	h.check(!!homeHash, 'PREMISE: E has a saved Home scene');
 	// a loose .tpscene, exported by the app itself (2 boxes, its own name)
 	const looseB64 = await E.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1100));
 		const payload = s.sessions.buildSessionPayload('LooseScene');
@@ -425,7 +425,7 @@ h.run(async () => {
 		const bytes = new Uint8Array(bin.length);
 		for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
 		const file = new File([bytes], 'LooseScene.tpscene', { type: 'application/zip' });
-		await window.__stores.fileHandler.load(file);
+		await window.__tp.test.v1.fileHandler.load(file);
 	}, looseB64);
 	await h.eventually(
 		() => currentLevelOf(E),
@@ -452,7 +452,7 @@ h.run(async () => {
 	);
 
 	// travel away WITHOUT saving: the unsaved scene must NOT auto-publish
-	await E.page.evaluate((hash) => window.__stores.levels.travelToLevel(hash, 'Home'), homeHash);
+	await E.page.evaluate((hash) => window.__tp.test.v1.levels.travelToLevel(hash, 'Home'), homeHash);
 	await h.eventually(
 		() => currentLevelOf(E),
 		(at) => at?.name === 'Home',
@@ -469,7 +469,7 @@ h.run(async () => {
 		const bytes = new Uint8Array(bin.length);
 		for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
 		const file = new File([bytes], 'LooseScene.tpscene', { type: 'application/zip' });
-		await window.__stores.fileHandler.load(file);
+		await window.__tp.test.v1.fileHandler.load(file);
 	}, looseB64);
 	await h.eventually(
 		() => currentLevelOf(E),
@@ -523,7 +523,7 @@ h.run(async () => {
 		const bytes = new Uint8Array(bin.length);
 		for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
 		const file = new File([bytes], 'LooseScene.tpscene', { type: 'application/zip' });
-		await window.__stores.fileHandler.load(file);
+		await window.__tp.test.v1.fileHandler.load(file);
 	}, looseB64);
 	await h.eventually(
 		() => currentLevelOf(E),
@@ -537,7 +537,7 @@ h.run(async () => {
 		(t) => t.some((x) => x.id === 'save-into-project'),
 		'premise: the prompt is up'
 	);
-	await E.page.evaluate((hash) => window.__stores.levels.travelToLevel(hash, 'Home'), homeHash);
+	await E.page.evaluate((hash) => window.__tp.test.v1.levels.travelToLevel(hash, 'Home'), homeHash);
 	await h.eventually(
 		() => currentLevelOf(E),
 		(at) => at?.name === 'Home',

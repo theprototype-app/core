@@ -46,13 +46,13 @@ h.run(async () => {
 			/** @type {any} */ (window).__noteOpen(String(u));
 			return null;
 		};
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		window.__stores.commandsHandler.sceneCommand('/create sphere');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create sphere');
 	});
 	await page.waitForTimeout(1200);
 
 	// ---------- 1. the tab ----------
-	await page.evaluate(() => window.__stores.exportStores.openPublishExport('export'));
+	await page.evaluate(() => window.__tp.test.v1.exportStores.openPublishExport('export'));
 	await page.waitForSelector('#publish-export-tab-gallery', { timeout: 15000 });
 	await page.click('#publish-export-tab-gallery');
 	await page.waitForSelector('#gallery-panel', { timeout: 10000 });

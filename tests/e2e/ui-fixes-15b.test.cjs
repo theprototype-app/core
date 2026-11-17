@@ -15,7 +15,7 @@ h.run(async () => {
 
 	// ---------- B2: duplicate keeps the sources' real colors ----------
 	const dup = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const uuids = [];
 		for (let i = 0; i < 3; i++) {
 			w.commandsHandler.sceneCommand('/create Box 1 1 1');
@@ -46,7 +46,7 @@ h.run(async () => {
 
 	// ---------- B8: single-object modes hide for a set ----------
 	const menus = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const boxes = g.children.filter((c) => c.name?.startsWith('Box')).slice(0, 2);
 		const labels = (items) => items.map((i) => i.label);
@@ -72,7 +72,7 @@ h.run(async () => {
 
 	// ---------- B6: a modal mutes shortcuts + the camera ----------
 	const gated = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const before = await new Promise((r) => w.objectListClose.subscribe(r)());
 		w.sessionsOpen.set(true);
 		await new Promise((r) => setTimeout(r, 100));
@@ -107,7 +107,7 @@ h.run(async () => {
 		promptCalls++;
 		await d.dismiss();
 	});
-	await A.page.evaluate(() => window.__stores.sessionsOpen.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.sessionsOpen.set(true));
 	await A.page.waitForTimeout(500);
 	await A.page.evaluate(() => document.querySelector('#session-save')?.click());
 	await A.page.waitForTimeout(300);
@@ -123,17 +123,17 @@ h.run(async () => {
 	await h.eventually(
 		() =>
 			A.page.evaluate(
-				() => new Promise((r) => window.__stores.sessions.sessions.subscribe((s) => r(s.map((m) => m.name)))())
+				() => new Promise((r) => window.__tp.test.v1.sessions.sessions.subscribe((s) => r(s.map((m) => m.name)))())
 			),
 		(names) => names.includes('B5 inline session'),
 		'the named session is saved'
 	);
 	h.check(promptCalls === 0, `no window.prompt was used (${promptCalls})`);
-	await A.page.evaluate(() => window.__stores.sessionsOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.sessionsOpen.set(false));
 
 	// ---------- B4: chevron badge counts drawer-only toasts ----------
 	const badge = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.toastsInDrawerOnly.set(true);
 		w.connectDrawerOpen.set(false);
 		w.toastStore.set(['one', 'two']);
@@ -155,7 +155,7 @@ h.run(async () => {
 
 	// ---------- B7: dragWindow resize persists ----------
 	const resized = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.whatsNew.openWhatsNew();
 		await new Promise((r) => setTimeout(r, 400));
 		const win = document.querySelector('#whats-new-window');
@@ -187,11 +187,11 @@ h.run(async () => {
 
 	// reopening restores the persisted size (the reveal clamp keeps it on-screen)
 	const restored = await A.page.evaluate(async () => {
-		window.__stores.whatsNew.openWhatsNew();
+		window.__tp.test.v1.whatsNew.openWhatsNew();
 		await new Promise((r) => setTimeout(r, 400));
 		const win = document.querySelector('#whats-new-window');
 		const size = { w: win.offsetWidth, h: win.offsetHeight };
-		window.__stores.whatsNew.closeWhatsNew();
+		window.__tp.test.v1.whatsNew.closeWhatsNew();
 		return size;
 	});
 	h.check(

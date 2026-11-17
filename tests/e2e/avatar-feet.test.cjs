@@ -19,11 +19,11 @@ h.run(async () => {
 	const B = await h.setupPage(browser, 'B', { context: { viewport: { width: 1280, height: 720 } } });
 	await h.connect(B, A);
 
-	const stateOn = (page, id) => page.evaluate((id) => window.__stores.avatars.avatarsDebug()[id] ?? null, id);
+	const stateOn = (page, id) => page.evaluate((id) => window.__tp.test.v1.avatars.avatarsDebug()[id] ?? null, id);
 	const rootY = (page, id) =>
 		page.evaluate((id) => {
 			let scene;
-			window.__stores.globalScene.subscribe((x) => (scene = x))();
+			window.__tp.test.v1.globalScene.subscribe((x) => (scene = x))();
 			return scene.getObjectByName(id)?.position.y ?? null;
 		}, id);
 	/** h.eventually, handing back the value that satisfied it */
@@ -36,18 +36,18 @@ h.run(async () => {
 	const soleWorld = (s) => s.feet[1] + s.soleY;
 
 	// ---- B picks the Knight (userdata slot 5, the real panel) --------------------------------
-	await B.page.evaluate(() => window.__stores.characterModalOpen.set(true));
+	await B.page.evaluate(() => window.__tp.test.v1.characterModalOpen.set(true));
 	await B.page.waitForSelector('#character-panel');
 	await B.page.click('[data-character="knight"]');
 	await B.page.click('#character-apply');
 	await B.page.waitForSelector('#character-panel', { state: 'detached' });
-	await B.page.evaluate(() => window.__stores.objectActions.flyTo([0, 1.6, 0], [0, 1.6, -5], 0));
+	await B.page.evaluate(() => window.__tp.test.v1.objectActions.flyTo([0, 1.6, 0], [0, 1.6, -5], 0));
 	await h.eventually(() => stateOn(A.page, B.id), (s) => s && s.ready && s.character === 'knight', '0.1 (premise) A draws B as the Knight', 20000);
 
 	// ---- 1. B in Play on the grounded pin -----------------------------------------------------
 	await B.page.evaluate(() => {
-		window.__stores.scenePhysics.setScenePhysics({ play: { grounded: true } });
-		window.__stores.isLocked.set(true);
+		window.__tp.test.v1.scenePhysics.setScenePhysics({ play: { grounded: true } });
+		window.__tp.test.v1.isLocked.set(true);
 	});
 	const s1 = await until(
 		() => stateOn(A.page, B.id),
@@ -72,7 +72,7 @@ h.run(async () => {
 		// from the side, at the floor, once B has stopped (a walking B leaves the frame)
 		await A.page.waitForTimeout(1200);
 		const s = await stateOn(A.page, B.id);
-		await A.page.evaluate((f) => window.__stores.objectActions.flyTo([f[0] + 2.6, 0.7, f[2]], [f[0], 0.6, f[2]], 0), s.feet);
+		await A.page.evaluate((f) => window.__tp.test.v1.objectActions.flyTo([f[0] + 2.6, 0.7, f[2]], [f[0], 0.6, f[2]], 0), s.feet);
 		await A.page.waitForTimeout(500);
 		await A.page.screenshot({ path: SHOTS + '/01-feet-on-floor-side.png' });
 	}
@@ -95,12 +95,12 @@ h.run(async () => {
 	// a REAL Character Controller node (the flow runtime re-declares charControl from the graph
 	// every tick, so a direct setCharControl would be wiped)
 	await B.page.evaluate(() => {
-		window.__stores.scenePhysics.setScenePhysics({ ground: { enabled: true, height: 0.3 }, play: { grounded: false } });
-		window.__stores.setActiveGraph(window.__stores.SCENE_GRAPH);
-		window.__stores.flowNodes.set([
+		window.__tp.test.v1.scenePhysics.setScenePhysics({ ground: { enabled: true, height: 0.3 }, play: { grounded: false } });
+		window.__tp.test.v1.setActiveGraph(window.__tp.test.v1.SCENE_GRAPH);
+		window.__tp.test.v1.flowNodes.set([
 			{ id: 'cc', type: 'charcontroller', position: { x: 0, y: 0 }, data: { type: 'charcontroller', mode: 'walk', speed: 0.05, jumpHeight: 1, eyeHeight: 1.7, gravity: true }, class: 'w-[150px]' }
 		]);
-		window.__stores.flowEdges.set([]);
+		window.__tp.test.v1.flowEdges.set([]);
 	});
 	const s2 = await until(
 		() => stateOn(A.page, B.id),
@@ -110,18 +110,18 @@ h.run(async () => {
 	);
 	h.check(s2 && Math.abs(soleWorld(s2) - 0.3) <= FLOOR_TOL, `2.2 the sole is on the raised floor (${s2 && ((soleWorld(s2) - 0.3) * 100).toFixed(1)} cm off)`);
 	if (SHOTS) {
-		await A.page.evaluate((f) => window.__stores.objectActions.flyTo([f[0] + 3.2, 0.9, f[2]], [f[0], 0.9, f[2]], 0), s2.feet);
+		await A.page.evaluate((f) => window.__tp.test.v1.objectActions.flyTo([f[0] + 3.2, 0.9, f[2]], [f[0], 0.9, f[2]], 0), s2.feet);
 		await A.page.waitForTimeout(400);
 		await A.page.screenshot({ path: SHOTS + '/02-feet-raised-floor-side.png' });
 	}
 
 	// ---- 3. no walker: the head-height guess ---------------------------------------------------
 	await B.page.evaluate(() => {
-		window.__stores.flowNodes.set([]);
-		window.__stores.scenePhysics.setScenePhysics({ ground: { enabled: false, height: 0 } });
+		window.__tp.test.v1.flowNodes.set([]);
+		window.__tp.test.v1.scenePhysics.setScenePhysics({ ground: { enabled: false, height: 0 } });
 	});
 	await h.leavePlay(B);
-	await B.page.evaluate(() => window.__stores.objectActions.flyTo([0, 1.6, -2], [0, 1.6, -7], 0));
+	await B.page.evaluate(() => window.__tp.test.v1.objectActions.flyTo([0, 1.6, -2], [0, 1.6, -7], 0));
 	await h.eventually(
 		() => stateOn(A.page, B.id),
 		(s) => s && s.anchor === 'head',

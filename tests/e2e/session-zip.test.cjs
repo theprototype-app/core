@@ -10,9 +10,9 @@ h.run(async () => {
 
 	// --- export a saved session to a zip, re-import it round-trips ---
 	const roundtrip = await A.page.evaluate(async () => {
-		const S = window.__stores.sessions;
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		window.__stores.commandsHandler.sceneCommand('/create sphere');
+		const S = window.__tp.test.v1.sessions;
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create sphere');
 		await new Promise((r) => setTimeout(r, 150));
 		const payload = await S.saveSession('Zippy');
 		const zipBytes = await S.exportSessionZip(payload);
@@ -34,7 +34,7 @@ h.run(async () => {
 
 	// --- output is a real zip (PK magic); a zip missing session.json is rejected ---
 	const structure = await A.page.evaluate(async () => {
-		const S = window.__stores.sessions;
+		const S = window.__tp.test.v1.sessions;
 		const payload = await S.saveSession('Structured');
 		const zipBytes = await S.exportSessionZip(payload);
 		let rejected = false;
@@ -51,7 +51,7 @@ h.run(async () => {
 
 	// --- import still accepts a plain .json string (unchanged path) ---
 	const jsonImport = await A.page.evaluate(async () => {
-		const S = window.__stores.sessions;
+		const S = window.__tp.test.v1.sessions;
 		const payload = await S.saveSession('PlainJson');
 		const json = S.exportSession(payload);
 		const imported = await S.importSession(json);

@@ -18,7 +18,7 @@ const h = require('./helpers.cjs');
 /** what the mic is actually doing, from the stores the UI renders */
 const mic = (page) =>
 	page.evaluate(() => {
-		const v = window.__stores.voiceChat;
+		const v = window.__tp.test.v1.voiceChat;
 		let ptt, active, mode;
 		v.pttActive.subscribe((/** @type {boolean} */ x) => (ptt = x))();
 		v.micActive.subscribe((/** @type {boolean} */ x) => (active = x))();
@@ -33,7 +33,7 @@ h.run(async () => {
 		args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream']
 	});
 	const A = await h.setupPage(browser, 'A');
-	await A.page.waitForFunction(() => !!window.__stores?.voiceChat, { timeout: 20000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.voiceChat, { timeout: 20000 });
 
 	// ---------- 1. the mode PTT lives in ----------
 	const start = await mic(A.page);
@@ -49,7 +49,7 @@ h.run(async () => {
 	// resets the flag on the way out.
 	await A.page.evaluate(() => {
 		/** @type {any} */ (window).__pttSeen = false;
-		window.__stores.voiceChat.pttActive.subscribe((/** @type {boolean} */ on) => {
+		window.__tp.test.v1.voiceChat.pttActive.subscribe((/** @type {boolean} */ on) => {
 			if (on) /** @type {any} */ (window).__pttSeen = true;
 		});
 	});
@@ -124,7 +124,7 @@ h.run(async () => {
 
 	// ---------- 5. the pane: Ctrl+V pastes keys and the mic stays shut ----------
 	const uuid = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 400));
 		let g;
@@ -155,17 +155,17 @@ h.run(async () => {
 	// select a key, copy it, move the playhead, paste — the pane's own Ctrl+C/V
 	const keyCount = () =>
 		A.page.evaluate((id) => {
-			const ap = window.__stores.animationPreview;
+			const ap = window.__tp.test.v1.animationPreview;
 			const clip = ap.activeClip(id);
 			return clip?.tracks?.[0]?.keys?.length ?? 0;
 		}, uuid);
-	await A.page.evaluate((id) => window.__stores.animationPreview.scrub(id, 0), uuid);
+	await A.page.evaluate((id) => window.__tp.test.v1.animationPreview.scrub(id, 0), uuid);
 	await A.page.keyboard.press('Control+Space'); // add the key at the playhead
 	await A.page.waitForTimeout(150);
 	await A.page.keyboard.press('Control+c');
 	await A.page.waitForTimeout(150);
 	const before = await keyCount();
-	await A.page.evaluate((id) => window.__stores.animationPreview.scrub(id, 1.5), uuid);
+	await A.page.evaluate((id) => window.__tp.test.v1.animationPreview.scrub(id, 1.5), uuid);
 	await resetSeen();
 	await A.page.keyboard.down('Control');
 	await A.page.keyboard.down('v');
@@ -187,10 +187,10 @@ h.run(async () => {
 	const gizmoMode = () =>
 		A.page.evaluate(() => {
 			let m;
-			window.__stores.transformMode.subscribe((/** @type {string} */ v) => (m = v))();
+			window.__tp.test.v1.transformMode.subscribe((/** @type {string} */ v) => (m = v))();
 			return m;
 		});
-	await A.page.evaluate(() => window.__stores.transformMode.set('translate'));
+	await A.page.evaluate(() => window.__tp.test.v1.transformMode.set('translate'));
 	await A.page.keyboard.press('2'); // pane: arm Scale. global: rotate.
 	await A.page.waitForTimeout(200);
 	const modeAfter2 = await gizmoMode();
@@ -208,7 +208,7 @@ h.run(async () => {
 		`while the pane really did arm Scale (${armed.join(', ') || 'nothing pressed'})`
 	);
 	// start from a mode 1 WOULD change, or the check passes without doing anything
-	await A.page.evaluate(() => window.__stores.transformMode.set('rotate'));
+	await A.page.evaluate(() => window.__tp.test.v1.transformMode.set('rotate'));
 	await A.page.keyboard.press('1');
 	await A.page.waitForTimeout(200);
 	const modeAfter1 = await gizmoMode();
@@ -219,7 +219,7 @@ h.run(async () => {
 	await A.page.evaluate(() => /** @type {any} */ (document.activeElement)?.blur());
 	await A.page.mouse.click(400, 300); // the viewport, well clear of the dock
 	await A.page.waitForTimeout(200);
-	await A.page.evaluate(() => window.__stores.transformMode.set('translate'));
+	await A.page.evaluate(() => window.__tp.test.v1.transformMode.set('translate'));
 	await A.page.keyboard.press('3');
 	await A.page.waitForTimeout(200);
 	const outside = await gizmoMode();

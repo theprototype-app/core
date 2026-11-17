@@ -8,7 +8,7 @@ const cards = (A) =>
 const crumbs = (A) => A.page.evaluate(() => [...document.querySelectorAll('#explorer-crumbs button')].map((b) => b.textContent.trim()).filter(Boolean));
 const records = (A) =>
 	A.page.evaluate(
-		() => new Promise((r) => window.__stores.prefabs.prefabs.subscribe((l) => r(l.map((p) => ({ name: p.name, folder: p.folder ?? '', tags: p.tags ?? [] }))))())
+		() => new Promise((r) => window.__tp.test.v1.prefabs.prefabs.subscribe((l) => r(l.map((p) => ({ name: p.name, folder: p.folder ?? '', tags: p.tags ?? [] }))))())
 	);
 
 async function closeMenus(A) {
@@ -33,7 +33,7 @@ h.run(async () => {
 
 	// ---- 0. three prefabs, the Explorer on the Prefabs view ------------------------------
 	await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		await s.prefabs.loadPrefabs();
 		for (const name of ['Oak chair', 'Steel chair', 'Lamp']) {
 			s.commandsHandler.sceneCommand('/create box');
@@ -101,7 +101,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(400);
 	h.check((await A.page.locator('#prefab-details .prefab-tag').count()) === 2, 'two tag chips on the prefab');
 	await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const steel = await new Promise((r) => s.prefabs.prefabs.subscribe((l) => r(l.find((p) => p.name === 'Steel chair')))());
 		await s.prefabLibrary.setPrefabTags(steel.id, 'metal, seat');
 		const lamp = await new Promise((r) => s.prefabs.prefabs.subscribe((l) => r(l.find((p) => p.name === 'Lamp')))());
@@ -160,18 +160,18 @@ h.run(async () => {
 
 	// ---- 8. it survives a reload (idb) --------------------------------------------------------
 	await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const path = await s.prefabLibrary.createPrefabFolder('', 'Kept');
 		const lamp = await new Promise((r) => s.prefabs.prefabs.subscribe((l) => r(l.find((p) => p.name === 'Lamp')))());
 		await s.prefabLibrary.movePrefabsTo([lamp.id], path);
 	});
 	await A.page.waitForTimeout(500);
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.prefabs, { timeout: 60000 });
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.prefabs, { timeout: 60000 });
 	const reloaded = await A.page.evaluate(async () => {
-		await window.__stores.prefabs.loadPrefabs();
-		await window.__stores.prefabLibrary.loadPrefabFolders();
-		return new Promise((r) => window.__stores.prefabs.prefabs.subscribe((l) => r(l.map((p) => [p.name, p.folder ?? '', (p.tags ?? []).join(',')])))());
+		await window.__tp.test.v1.prefabs.loadPrefabs();
+		await window.__tp.test.v1.prefabLibrary.loadPrefabFolders();
+		return new Promise((r) => window.__tp.test.v1.prefabs.prefabs.subscribe((l) => r(l.map((p) => [p.name, p.folder ?? '', (p.tags ?? []).join(',')])))());
 	});
 	const lamp = reloaded.find((r) => r[0] === 'Lamp');
 	h.check(lamp?.[1] === 'Kept' && lamp?.[2] === 'light', `folder and tags survive a reload (${JSON.stringify(lamp)})`);

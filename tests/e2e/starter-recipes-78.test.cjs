@@ -14,11 +14,11 @@ const h = require('./helpers.cjs');
 
 const S = (page, fn, arg) => page.evaluate(fn, arg);
 const graphOf = (page, id) =>
-	S(page, (id) => new Promise((r) => window.__stores.flowGraphs.subscribe((g) => r(JSON.parse(JSON.stringify(g[id] ?? { nodes: [], edges: [] }))))()), id);
+	S(page, (id) => new Promise((r) => window.__tp.test.v1.flowGraphs.subscribe((g) => r(JSON.parse(JSON.stringify(g[id] ?? { nodes: [], edges: [] }))))()), id);
 const pose = (page, uuid) =>
 	S(page, (uuid) => {
 		/** @type {any} */ let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByProperty('uuid', uuid);
 		return o ? { p: o.position.toArray(), r: [o.rotation.x, o.rotation.y, o.rotation.z] } : null;
 	}, uuid);
@@ -34,7 +34,7 @@ h.run(async () => {
 	/** a box named `name` at `pos`, replicated @param {string} name @param {number[]} pos */
 	const box = (name, pos) =>
 		S(p, async ([name, pos]) => {
-			const st = window.__stores;
+			const st = window.__tp?.test.v1;
 			st.commandsHandler.sceneCommand('/create box');
 			const g = await new Promise((r) => st.objectsGroup.subscribe(r)());
 			const o = g.children[g.children.length - 1];
@@ -50,7 +50,7 @@ h.run(async () => {
 	// --- §1 the menu ---------------------------------------------------------------------------
 	console.log('\n=== §1 the Recipes menu ===');
 	const bell = await box('Bell', [0, 1, -4]);
-	await S(p, () => window.__stores.objectActions.applySelectionSet([]));
+	await S(p, () => window.__tp.test.v1.objectActions.applySelectionSet([]));
 	await p.locator('p[title="Node editor (N)"]').click();
 	await p.waitForTimeout(1200);
 	const pane = await p.locator('.svelteFlow .svelte-flow__pane').boundingBox();
@@ -64,7 +64,7 @@ h.run(async () => {
 	await p.keyboard.press('Escape');
 	await p.keyboard.press('Escape');
 	await p.keyboard.press('Escape');
-	await S(p, (u) => window.__stores.objectActions.applySelectionSet([u]), bell);
+	await S(p, (u) => window.__tp.test.v1.objectActions.applySelectionSet([u]), bell);
 	await p.waitForTimeout(800);
 	await p.mouse.click(pane.x + pane.width * 0.6, pane.y + pane.height * 0.5, { button: 'right' });
 	await p.keyboard.type('recipes bell');
@@ -72,16 +72,16 @@ h.run(async () => {
 	await p.locator('[role="menu"] .ctx-match', { hasText: 'Bell' }).first().click();
 	await h.eventually(() => graphOf(p, bell), (g) => g.nodes.some((n) => n.type === 'hoveranimate') && g.edges.length === 3, '§1 Bell inserts its nodes into the bell\'s own flow');
 	await h.eventually(() => graphOf(B.page, bell), (g) => g.nodes.some((n) => n.type === 'hoveranimate'), '§1 the peer gets the recipe');
-	await S(p, () => window.__stores.history.undo());
+	await S(p, () => window.__tp.test.v1.history.undo());
 	await h.eventually(() => graphOf(p, bell), (g) => g.nodes.length === 0, '§1 one undo takes the whole recipe back');
-	await S(p, () => window.__stores.history.redo());
+	await S(p, () => window.__tp.test.v1.history.redo());
 	await h.eventually(() => graphOf(p, bell), (g) => g.nodes.length === 4, '§1 redo puts it back');
 
 	// --- the other recipes through the same function ------------------------------------------
 	const door = await box('Door', [4, 1, -4]);
 	const gate = await box('Gate', [8, 1, -4]);
 	const guard = await box('Guard', [-8, 0.5, 0]);
-	const ins = (id, uuid) => S(p, ([id, uuid]) => window.__stores.starterRecipes.insertStarterRecipe(id, uuid), [id, uuid]);
+	const ins = (id, uuid) => S(p, ([id, uuid]) => window.__tp.test.v1.starterRecipes.insertStarterRecipe(id, uuid), [id, uuid]);
 	const rDoor = await ins('door', door);
 	const rGate = await ins('door-walk', gate);
 	const rGuard = await ins('guard', guard);
@@ -91,34 +91,34 @@ h.run(async () => {
 	await h.eventually(() => graphOf(B.page, guard), (g) => g.nodes.some((n) => n.type === 'pathpatrol'), 'the peer holds the guard recipe');
 	const zoneSensor = await S(p, (u) => {
 		/** @type {any} */ let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return g.getObjectByProperty('uuid', u)?.userData?.physics?.sensor === true;
 	}, zone);
 	h.check(zoneSensor, '§3 the zone is a sensor');
 
 	// Play on both
-	for (const x of [A, B]) await S(x.page, () => window.__stores.isLocked.set(true));
+	for (const x of [A, B]) await S(x.page, () => window.__tp.test.v1.isLocked.set(true));
 	await p.waitForTimeout(800);
 
 	// --- §2 door (click) -----------------------------------------------------------------------
 	console.log('\n=== §2 Door (click) ===');
 	const d0 = (await pose(p, door)).r[1];
-	await S(p, (u) => window.__stores.flowRuntime.fireObjectClick(u), door);
+	await S(p, (u) => window.__tp.test.v1.flowRuntime.fireObjectClick(u), door);
 	for (const x of [A, B]) await h.eventually(() => pose(x.page, door), (q) => q && near(q.r[1], d0 + Math.PI / 2, 0.05), `§2 the door opens a quarter turn on ${x === A ? 'A' : 'B'}`);
-	await S(p, (u) => window.__stores.flowRuntime.fireObjectClick(u), door);
+	await S(p, (u) => window.__tp.test.v1.flowRuntime.fireObjectClick(u), door);
 	for (const x of [A, B]) await h.eventually(() => pose(x.page, door), (q) => q && near(q.r[1], d0, 0.05), `§2 a second click closes it on ${x === A ? 'A' : 'B'}`);
 
 	// --- §3 door (walk up) ---------------------------------------------------------------------
 	console.log('\n=== §3 Door (walk up) ===');
 	const g0 = (await pose(p, gate)).r[1];
-	await S(p, (z) => window.__stores.flowRuntime.fireObjectEnter(z, 'player'), zone);
+	await S(p, (z) => window.__tp.test.v1.flowRuntime.fireObjectEnter(z, 'player'), zone);
 	for (const x of [A, B]) await h.eventually(() => pose(x.page, gate), (q) => q && near(q.r[1], g0 + Math.PI / 2, 0.05), `§3 walking into the zone opens the gate on ${x === A ? 'A' : 'B'}`);
-	await S(p, (z) => window.__stores.flowRuntime.fireObjectExit(z, 'player'), zone);
+	await S(p, (z) => window.__tp.test.v1.flowRuntime.fireObjectExit(z, 'player'), zone);
 	for (const x of [A, B]) await h.eventually(() => pose(x.page, gate), (q) => q && near(q.r[1], g0, 0.05), `§3 walking out closes it on ${x === A ? 'A' : 'B'}`);
 
 	// --- §4 bell -------------------------------------------------------------------------------
 	console.log('\n=== §4 Bell ===');
-	await S(p, (u) => window.__stores.flowRuntime.fireObjectClick(u), bell);
+	await S(p, (u) => window.__tp.test.v1.flowRuntime.fireObjectClick(u), bell);
 	// sample both peers AT ONCE: one after the other, B's window opened after the swing had settled
 	const peaks = await Promise.all([A, B].map(async (x) => {
 		let peak = 0;
@@ -144,9 +144,9 @@ h.run(async () => {
 	// the band is the whole curve, not the corners (3 +- 0.4 passed only when the sample landed near a corner)
 	h.check(onRoute > 2.6 && onRoute < 3.9, `§5 it stays on its route around where it stood (${onRoute.toFixed(2)} m out, 2.6-3.9)`);
 	const both = await Promise.all([A, B].map((x) => S(x.page, (u) => {
-		const f = window.__stores.flowRuntime;
+		const f = window.__tp.test.v1.flowRuntime;
 		/** @type {any} */ let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByProperty('uuid', u);
 		return { p: o.position.toArray(), t: f.effectClockNow() };
 	}, guard)));
@@ -159,40 +159,40 @@ h.run(async () => {
 	for (const x of [A, B]) {
 		const gs = await S(x.page, ([u, v]) => {
 			/** @type {any} */ let g;
-			window.__stores.objectsGroup.subscribe((w) => (g = w))();
+			window.__tp.test.v1.objectsGroup.subscribe((w) => (g = w))();
 			const a = g.getObjectByProperty('uuid', u), b = g.getObjectByProperty('uuid', v);
 			return a && b ? Math.hypot(a.position.x - b.position.x, a.position.z - b.position.z) : -1;
 		}, [guard, sight]);
 		h.check(gs >= 0 && gs < 0.3, `§5 the sight walks with the guard on ${x === A ? 'A' : 'B'} (${gs.toFixed(2)} m apart)`);
 	}
 	// a player walks up: the camera (Play's eye) next to the guard
-	await S(p, () => window.__stores.gameAnnounce.clearAnnounceLog());
+	await S(p, () => window.__tp.test.v1.gameAnnounce.clearAnnounceLog());
 	await S(p, (u) => {
 		/** @type {any} */ let g, cam;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
-		window.__stores.globalCamera.subscribe((v) => (cam = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.globalCamera.subscribe((v) => (cam = v))();
 		const o = g.getObjectByProperty('uuid', u);
 		cam.position.set(o.position.x + 1.5, 1.7, o.position.z + 1.5);
 		cam.updateMatrixWorld(true);
 	}, guard);
 	await h.eventually(
-		() => S(p, () => new Promise((r) => window.__stores.gameAnnounce.announceLog.subscribe((rows) => r(rows.map((x) => x.text)))())),
+		() => S(p, () => new Promise((r) => window.__tp.test.v1.gameAnnounce.announceLog.subscribe((rows) => r(rows.map((x) => x.text)))())),
 		(rows) => rows.some((t) => /Spotted!/.test(t)),
 		'§5 a player stepping into the guard\'s sight is spotted'
 	);
 	await h.eventually(
-		() => S(B.page, () => new Promise((r) => window.__stores.gameAnnounce.announceLog.subscribe((rows) => r(rows.map((x) => x.text)))())),
+		() => S(B.page, () => new Promise((r) => window.__tp.test.v1.gameAnnounce.announceLog.subscribe((rows) => r(rows.map((x) => x.text)))())),
 		(rows) => rows.some((t) => /Spotted!/.test(t)),
 		'§5 the peer sees "Spotted!" too (sensor edges replicate)'
 	);
 
-	for (const x of [A, B]) await S(x.page, () => window.__stores.isLocked.set(null));
+	for (const x of [A, B]) await S(x.page, () => window.__tp.test.v1.isLocked.set(null));
 
 	// --- §6 85 Q2/Q7 rewire: the mouse in Interact lights an unwired Highlight ------------------
 	console.log('\n=== §6 Highlight under the mouse ===');
 	const lamp = await box('Lamp', [0, 1, 2]);
 	await S(p, ([u]) => {
-		const st = window.__stores;
+		const st = window.__tp?.test.v1;
 		st.restoreGraphs({ [u]: { nodes: [{ id: 'hl', type: 'highlight', position: { x: 0, y: 0 }, data: { type: 'highlight', label: 'Highlight', color: '#ffd54a', strength: 0.6, fade: 0.15 } }], edges: [] } });
 		st.objectActions.applySelectionSet([]);
 		st.editorMode.set('interact');
@@ -200,17 +200,17 @@ h.run(async () => {
 	await p.waitForTimeout(600);
 	const at = await h.projectPoint(p, [0, 1, 2]);
 	await p.mouse.move(at.x, at.y, { steps: 4 });
-	await h.eventually(() => S(p, () => window.__stores.hoverState.hoverDebug().pointer ?? null), (v) => v === lamp, '§6 the mouse over the lamp is this person\'s pointer hover');
+	await h.eventually(() => S(p, () => window.__tp.test.v1.hoverState.hoverDebug().pointer ?? null), (v) => v === lamp, '§6 the mouse over the lamp is this person\'s pointer hover');
 	await h.eventually(
 		() => S(p, (u) => {
 			/** @type {any} */ let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const m = g.getObjectByProperty('uuid', u)?.material;
 			return m?.emissive ? m.emissive.r + m.emissive.g + m.emissive.b : 0;
 		}, lamp),
 		(v) => v > 0.05,
 		'§6 the unwired Highlight glows under the mouse'
 	);
-	await S(p, () => window.__stores.editorMode.set('edit'));
+	await S(p, () => window.__tp.test.v1.editorMode.set('edit'));
 	await browser.close();
 });

@@ -5,7 +5,7 @@
 const h = require('./helpers.cjs');
 
 const entriesOn = (page) =>
-	page.evaluate(() => window.__stores.soundRuntime.soundEntries());
+	page.evaluate(() => window.__tp.test.v1.soundRuntime.soundEntries());
 
 h.run(async () => {
 	const browser = await h.launch();
@@ -32,15 +32,15 @@ h.run(async () => {
 		str(36, 'data');
 		v.setUint32(40, n * 2, true);
 		for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, Math.sin(i / 10) * 12000, true);
-		const created = await window.__stores.explorer.importFiles(
+		const created = await window.__tp.test.v1.explorer.importFiles(
 			[new File([buf], 'blip.wav', { type: 'audio/wav' })],
 			null
 		);
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const box = group.children[group.children.length - 1];
 		window.__box = box;
-		window.__stores.flowNodes.set([
+		window.__tp.test.v1.flowNodes.set([
 			{
 				id: 'snd1',
 				type: 'sound',
@@ -56,7 +56,7 @@ h.run(async () => {
 				class: 'w-[150px]'
 			}
 		]);
-		window.__stores.flowEdges.set([{ id: 'e1', source: 'snd1', target: 'sel1' }]);
+		window.__tp.test.v1.flowEdges.set([{ id: 'e1', source: 'snd1', target: 'sel1' }]);
 		return created[0].hash;
 	});
 	await A.page.waitForTimeout(1500);
@@ -72,7 +72,7 @@ h.run(async () => {
 	await h.eventually(
 		() =>
 			B.page.evaluate(
-				(hash) => !!window.__stores.explorer.itemByHash(hash),
+				(hash) => !!window.__tp.test.v1.explorer.itemByHash(hash),
 				hash
 			),
 		(v) => v === true,
@@ -81,8 +81,8 @@ h.run(async () => {
 	const bShared = await B.page.evaluate(
 		(hash) =>
 			new Promise((resolve) => {
-				const item = window.__stores.explorer.itemByHash(hash);
-				window.__stores.explorer.explorerFolders.subscribe((folders) =>
+				const item = window.__tp.test.v1.explorer.itemByHash(hash);
+				window.__tp.test.v1.explorer.explorerFolders.subscribe((folders) =>
 					resolve(folders.find((f) => f.id === item.folderId)?.name ?? null)
 				)();
 			}),
@@ -100,7 +100,7 @@ h.run(async () => {
 	// Play toggles through the REAL node button and replicates as node data
 	// the editor shows the SELECTED object's graph since flow v2 H1 (b2350b75), and /create selected
 	// the box — deselect so it opens on the scene graph that holds the sound node
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await A.page.locator('p[title="Node editor (N)"]').click();
 	await A.page.locator('.node-card button', { hasText: '▶ Play' }).click(); // the locator waits for it
 	await A.page.waitForTimeout(900);

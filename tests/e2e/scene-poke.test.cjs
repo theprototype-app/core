@@ -27,7 +27,7 @@ h.run(async () => {
 
 	// ---- 1. the coalescer ---------------------------------------------------
 	const seam = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		return {
 			poke: typeof s.pokeScene === 'function',
 			begin: typeof s.beginSceneBatch === 'function',
@@ -38,7 +38,7 @@ h.run(async () => {
 	h.check(seam.poke && seam.begin && seam.end && seam.rev, 'the pokeScene seam is on the debug hook (premise)');
 
 	const coalesced = await A.page.evaluate(async () => {
-		const { objectsGroup, pokeScene } = window.__stores;
+		const { objectsGroup, pokeScene } = window.__tp?.test.v1;
 		let hits = 0;
 		const stop = objectsGroup.subscribe(() => hits++);
 		hits = 0; // the subscribe itself fires once
@@ -55,7 +55,7 @@ h.run(async () => {
 	// THE COUNTERFACTUAL, measured in the same page: the raw identity update this
 	// replaced notifies once per call. 500 vs 1 is the whole of Stage 0.
 	const raw = await A.page.evaluate(async () => {
-		const { objectsGroup } = window.__stores;
+		const { objectsGroup } = window.__tp?.test.v1;
 		let hits = 0;
 		const stop = objectsGroup.subscribe(() => hits++);
 		hits = 0;
@@ -67,7 +67,7 @@ h.run(async () => {
 
 	// ---- 2. batch mode: one poke per frame, not per microtask ----------------
 	const batched = await A.page.evaluate(async () => {
-		const { objectsGroup, pokeScene, beginSceneBatch, endSceneBatch, sceneBatchOpen } = window.__stores;
+		const { objectsGroup, pokeScene, beginSceneBatch, endSceneBatch, sceneBatchOpen } = window.__tp?.test.v1;
 		let hits = 0;
 		const stop = objectsGroup.subscribe(() => hits++);
 		hits = 0;
@@ -99,7 +99,7 @@ h.run(async () => {
 
 	// ---- 3. time-sliced ingest ----------------------------------------------
 	const ingest = await A.page.evaluate(() => {
-		const c = window.__stores.commandsHandler;
+		const c = window.__tp.test.v1.commandsHandler;
 		return { backlog: typeof c.ingestBacklog === 'function', drop: typeof c.dropIngestQueue === 'function' };
 	});
 	h.check(ingest.backlog && ingest.drop, 'the ingest queue is on the debug hook (premise)');
@@ -113,7 +113,7 @@ h.run(async () => {
 	// measures the coalescer and the queue alone and not the windowed list.
 	const N = 400;
 	const sliced = await A.page.evaluate(async (N) => {
-		const { THREE, objectsGroup, pokeScene, commandsHandler } = window.__stores;
+		const { THREE, objectsGroup, pokeScene, commandsHandler } = window.__tp?.test.v1;
 		let group; { const s = objectsGroup.subscribe((/** @type {any} */ g) => (group = g)); s(); }
 		const payloads = [];
 		const names = [];
@@ -199,7 +199,7 @@ h.run(async () => {
 
 	// dropping the queue: a clear must not let a half-sent scene trickle in after it
 	const dropped = await A.page.evaluate(async () => {
-		const { THREE, commandsHandler } = window.__stores;
+		const { THREE, commandsHandler } = window.__tp?.test.v1;
 		const payloads = [];
 		for (let i = 0; i < 40; i++) {
 			const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
@@ -210,7 +210,7 @@ h.run(async () => {
 		const n = commandsHandler.dropIngestQueue();
 		await Promise.all(all);
 		await new Promise((r) => setTimeout(r, 200));
-		const group = window.__stores.objectsGroup;
+		const group = window.__tp.test.v1.objectsGroup;
 		let live = 0;
 		const stop = group.subscribe((/** @type {any} */ g) => {
 			live = g.children.filter((/** @type {any} */ o) => String(o.name).startsWith('dropme-')).length;
@@ -227,7 +227,7 @@ h.run(async () => {
 		// read `conn.send` inside a timer, where an uncaught TypeError kills the reply
 		// with no trace at all
 		try {
-			window.__stores.commandsHandler.sendObjects('nobody-is-here');
+			window.__tp.test.v1.commandsHandler.sendObjects('nobody-is-here');
 			return { threw: false };
 		} catch (e) {
 			return { threw: true, message: String(e) };
@@ -242,7 +242,7 @@ h.run(async () => {
 
 	// ---- 5. audit M2: the progress bar can be cleared -------------------------
 	const m2 = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const read = () => { let v; const stop = s.loading.subscribe((/** @type {any} */ x) => (v = x)); stop(); return v; };
 		s.commandsHandler.createLoader(3, ['ghost-a', 'ghost-b', 'ghost-c'], 'peer-who-left');
 		const armed = read().length;
@@ -266,7 +266,7 @@ h.run(async () => {
 	// ---- 6. list virtualisation ---------------------------------------------
 	// Below the threshold the recursive tree renders as it always did.
 	const small = await A.page.evaluate(async () => {
-		const { THREE, objectsGroup, pokeScene, objectListNav, expandedObjects } = window.__stores;
+		const { THREE, objectsGroup, pokeScene, objectListNav, expandedObjects } = window.__tp?.test.v1;
 		let group; const stop = objectsGroup.subscribe((/** @type {any} */ g) => (group = g)); stop();
 		group.clear();
 		for (let i = 0; i < 20; i++) {
@@ -286,7 +286,7 @@ h.run(async () => {
 	h.check(smallRows === 20, `…and all 20 rows are in the DOM below the threshold (${smallRows})`);
 
 	const big = await A.page.evaluate(async () => {
-		const { THREE, objectsGroup, pokeScene } = window.__stores;
+		const { THREE, objectsGroup, pokeScene } = window.__tp?.test.v1;
 		let group; const stop = objectsGroup.subscribe((/** @type {any} */ g) => (group = g)); stop();
 		const geo = new THREE.BoxGeometry(1, 1, 1);
 		const mat = new THREE.MeshStandardMaterial();

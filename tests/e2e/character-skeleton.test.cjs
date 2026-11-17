@@ -9,7 +9,7 @@ const uuidOf = (page, name) =>
 	page.evaluate(
 		(name) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) =>
+				window.__tp.test.v1.objectsGroup.subscribe((g) =>
 					r(g?.children.find((c) => c.name === name)?.uuid ?? null)
 				)()
 			),
@@ -22,7 +22,7 @@ const loaded = (page, re) =>
 	);
 const digest = (page, uuid) =>
 	page.evaluate((uuid) => {
-		const b = window.__stores.animatedImports.animatedImportPayload(uuid);
+		const b = window.__tp.test.v1.animatedImports.animatedImportPayload(uuid);
 		if (!b) return null;
 		const u = new Uint8Array(b);
 		let x = 0;
@@ -32,7 +32,7 @@ const digest = (page, uuid) =>
 const boneNames = (page, uuid) =>
 	page.evaluate(
 		(u) =>
-			window.__stores.animatedImports
+			window.__tp.test.v1.animatedImports
 				.restRowsOf(u)
 				.filter((r) => r.bone)
 				.map((r) => r.name),
@@ -42,11 +42,11 @@ const boneWorld = (page, uuid, bone) =>
 	page.evaluate(
 		({ uuid, bone }) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const b = g?.getObjectByProperty('uuid', uuid)?.getObjectByName(bone);
 					if (!b) return r(null);
 					b.updateWorldMatrix(true, false);
-					r(new window.__stores.THREE.Vector3().setFromMatrixPosition(b.matrixWorld).toArray());
+					r(new window.__tp.test.v1.THREE.Vector3().setFromMatrixPosition(b.matrixWorld).toArray());
 				})()
 			),
 		{ uuid, bone }
@@ -56,7 +56,7 @@ const offHips = (page, uuid) =>
 	page.evaluate(
 		(uuid) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					let mesh = null;
 					g?.getObjectByProperty('uuid', uuid)?.traverse((o) => o.isSkinnedMesh && (mesh = o));
 					if (!mesh) return r(-1);
@@ -79,7 +79,7 @@ h.run(async () => {
 
 	const rig = await mixamoGlb(page);
 	await page.evaluate(async (bytes) => {
-		await window.__stores.fileHandler.importFile(
+		await window.__tp.test.v1.fileHandler.importFile(
 			new File([new Uint8Array(bytes)], 'rig.glb'),
 			'Rigged',
 			undefined,
@@ -100,7 +100,7 @@ h.run(async () => {
 	h.check(!(await loaded(page, 'rigFixes|rigOps|weightsCore')), 'boot: no rig fix-up code loaded');
 
 	// 1. open the view from the Inspector
-	await page.evaluate((u) => window.__stores.objectActions.selectObject(u, true), u);
+	await page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u, true), u);
 	await page.waitForSelector('#character-skeleton', { timeout: 15000 });
 	await page.click('#character-skeleton');
 	await page
@@ -137,12 +137,12 @@ h.run(async () => {
 	const bytes0 = await digest(page, u);
 	await page.selectOption('#skeleton-map [data-vrm-bone="leftHand"] select', '__none');
 	await h.eventually(
-		() => page.evaluate((u) => window.__stores.humanoidRig.humanoidOf(u)?.missing, u),
+		() => page.evaluate((u) => window.__tp.test.v1.humanoidRig.humanoidOf(u)?.missing, u),
 		(m) => Array.isArray(m) && m.includes('leftHand'),
 		'map fix: leftHand unmapped -> missing on A'
 	);
 	await h.eventually(
-		() => B.page.evaluate((u) => window.__stores.humanoidRig?.humanoidOf(u)?.missing ?? null, u),
+		() => B.page.evaluate((u) => window.__tp.test.v1.humanoidRig?.humanoidOf(u)?.missing ?? null, u),
 		(m) => Array.isArray(m) && m.includes('leftHand'),
 		'map fix replicated to B'
 	);
@@ -151,13 +151,13 @@ h.run(async () => {
 		'mixamorigLeftForeArm'
 	);
 	await h.eventually(
-		() => page.evaluate((u) => window.__stores.humanoidRig.humanoidOf(u)?.map.leftHand, u),
+		() => page.evaluate((u) => window.__tp.test.v1.humanoidRig.humanoidOf(u)?.map.leftHand, u),
 		(v) => v === 'mixamorigLeftForeArm',
 		'map fix: a bone can be pointed anywhere'
 	);
 	await page.click('#skeleton-map-reset');
 	await h.eventually(
-		() => B.page.evaluate((u) => window.__stores.humanoidRig.humanoidOf(u)?.map.leftHand, u),
+		() => B.page.evaluate((u) => window.__tp.test.v1.humanoidRig.humanoidOf(u)?.map.leftHand, u),
 		(v) => v === 'mixamorigLeftHand',
 		'Reset fixes: back to the detected bone on B'
 	);
@@ -180,11 +180,11 @@ h.run(async () => {
 	);
 	h.check((await digest(B.page, u)) === (await digest(page, u)), 'both peers hold the same bytes');
 	h.check(
-		(await page.evaluate((u) => window.__stores.humanoidRig.humanoidOf(u)?.map.head, u)) ===
+		(await page.evaluate((u) => window.__tp.test.v1.humanoidRig.humanoidOf(u)?.map.head, u)) ===
 			'HeadBone',
 		'the humanoid map follows the rename'
 	);
-	await page.evaluate(() => window.__stores.history.undo());
+	await page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(
 		() => boneNames(B.page, u),
 		(n) => n.includes('mixamorigHead'),
@@ -248,9 +248,9 @@ h.run(async () => {
 	const target = await page.evaluate(
 		(u) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const root = g.getObjectByProperty('uuid', u);
-					const v = new window.__stores.THREE.Vector3(0.15, 1.2, 0.15);
+					const v = new window.__tp.test.v1.THREE.Vector3(0.15, 1.2, 0.15);
 					root.localToWorld(v);
 					r(v.toArray());
 				})()
@@ -258,7 +258,7 @@ h.run(async () => {
 		u
 	);
 	await page.evaluate(() =>
-		window.__stores.objectActions.flyTo?.([-0.6, 1.2, 2.2], [0.4, 1.2, 0], 200)
+		window.__tp.test.v1.objectActions.flyTo?.([-0.6, 1.2, 2.2], [0.4, 1.2, 0], 200)
 	);
 	await page.waitForTimeout(700);
 	const px = await h.projectPoint(page, target);

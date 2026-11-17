@@ -13,28 +13,28 @@
 // Run: APP_URL='https://localhost:5990/' npm run e2e -- asset-ask-scope
 const h = require('./helpers.cjs');
 
-const debug = (p) => p.page.evaluate(() => window.__stores.sessionVolumes.volumeDebug());
-const holds = (p, hash) => p.page.evaluate((x) => !!window.__stores.explorer.itemByHash(x), hash);
+const debug = (p) => p.page.evaluate(() => window.__tp.test.v1.sessionVolumes.volumeDebug());
+const holds = (p, hash) => p.page.evaluate((x) => !!window.__tp.test.v1.explorer.itemByHash(x), hash);
 const ask = (p, host, hash, extra = {}) =>
 	p.page.evaluate(
 		([id, x, more]) => {
 			let peers;
-			window.__stores.peers.subscribe((v) => (peers = v))();
+			window.__tp.test.v1.peers.subscribe((v) => (peers = v))();
 			peers.connections[id].send({ type: 'getasset', hash: x, ...more });
 		},
 		[host.id, hash, extra]
 	);
 const refusals = async (p, hash) => (await debug(p)).log.filter((l) => l.startsWith('refused getasset ' + hash.slice(0, 12))).length;
-const setScope = (p, scope) => p.page.evaluate((s) => window.__stores.sessionVolumes.setShareScope(s), scope);
+const setScope = (p, scope) => p.page.evaluate((s) => window.__tp.test.v1.sessionVolumes.setShareScope(s), scope);
 
 h.run(async () => {
 	const browser = await h.launch();
 	const H = await h.setupPage(browser, 'H');
 	const G = await h.setupPage(browser, 'G');
 	for (const peer of [H, G]) {
-		await peer.page.waitForFunction(() => !!window.__stores?.sessionVolumes && !!window.__stores?.explorer && !!window.__stores?.levels, null, { timeout: 60000 });
+		await peer.page.waitForFunction(() => !!window.__tp?.test.v1?.sessionVolumes && !!window.__tp?.test.v1?.explorer && !!window.__tp?.test.v1?.levels, null, { timeout: 60000 });
 		await peer.page.evaluate(async () => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			await s.explorer.loadExplorer();
 			await s.explorer.clearLibrary();
 			s.levels.currentLevel.set(null);
@@ -42,7 +42,7 @@ h.run(async () => {
 	}
 
 	const f = await H.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const add = async (name, text) => {
 			const item = await s.explorer.addItemFromBytes(new TextEncoder().encode(text).buffer, name, null);
 			return item.hash;
@@ -102,7 +102,7 @@ h.run(async () => {
 	await h.eventually(() => refusals(H, f.photo), (n) => n >= 1, 'None: a thumbnail is refused the same way', 15000);
 	const thumb = await G.page.evaluate((x) => {
 		let t;
-		window.__stores.assetShare.sharedThumbs.subscribe((v) => (t = v))();
+		window.__tp.test.v1.assetShare.sharedThumbs.subscribe((v) => (t = v))();
 		return !!t[x];
 	}, f.photo);
 	h.check(!thumb, '…and no thumbnail reached G');
@@ -121,7 +121,7 @@ h.run(async () => {
 	await ask(G, H, f.scene);
 	await h.eventually(() => holds(G, f.scene), (x) => x === true, "None: the open scene's own file still travels", 20000);
 	await H.page.evaluate((x) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let group;
 		s.objectsGroup.subscribe((v) => (group = v))();
 		group.children.find((c) => c.isMesh).userData.anAssetReference = x;
@@ -131,25 +131,25 @@ h.run(async () => {
 	await ask(G, H, f.referenced);
 	await h.eventually(() => holds(G, f.referenced), (x) => x === true, 'None: a file the scene references still travels, read from the scene itself', 20000);
 	const byHandId = await H.page.evaluate((x) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const item = s.explorer.itemByHash(x);
 		s.sharedLibrary.shareItem(item.id);
 		return item.id;
 	}, f.byHand);
 	await H.page.waitForTimeout(600);
 	await h.eventually(() => holds(G, f.byHand), (x) => x === true, 'a file shared by hand travels at None', 30000);
-	await H.page.evaluate((id) => window.__stores.sharedLibrary.unshareItem?.(id), byHandId);
+	await H.page.evaluate((id) => window.__tp.test.v1.sharedLibrary.unshareItem?.(id), byHandId);
 	await H.page.waitForTimeout(1000);
 	const n3 = await refusals(H, f.byHand);
 	await ask(G, H, f.byHand);
 	await h.eventually(() => refusals(H, f.byHand), (n) => n === n3 + 1, '…and unsharing it takes it back', 15000);
 
 	// ---- 4. a private scene ---------------------------------------------------------------------------
-	await H.page.evaluate(() => window.__stores.levels.currentLevel.update((l) => ({ ...l, private: true })));
+	await H.page.evaluate(() => window.__tp.test.v1.levels.currentLevel.update((l) => ({ ...l, private: true })));
 	const n4 = await refusals(H, f.scene);
 	await ask(G, H, f.scene);
 	await h.eventually(() => refusals(H, f.scene), (n) => n === n4 + 1, "a private scene's file does not travel", 15000);
-	await H.page.evaluate(() => window.__stores.levels.currentLevel.update((l) => ({ ...l, private: false })));
+	await H.page.evaluate(() => window.__tp.test.v1.levels.currentLevel.update((l) => ({ ...l, private: false })));
 
 	// ---- 5. a running send -------------------------------------------------------------------------------
 	await setScope(H, 'library');
@@ -158,7 +158,7 @@ h.run(async () => {
 	await h.eventually(
 		() => H.page.evaluate(() => {
 			let t;
-			window.__stores.transferLedger.transfers.subscribe((v) => (t = v))();
+			window.__tp.test.v1.transferLedger.transfers.subscribe((v) => (t = v))();
 			return t.some((x) => x.dir === 'out' && x.state === 'active');
 		}),
 		(a) => a === true,
@@ -172,7 +172,7 @@ h.run(async () => {
 	// ---- 6. the project's other scenes -------------------------------------------------------------------
 	const scenes = await H.page.evaluate(() => {
 		let m;
-		window.__stores.projectManifest.projectManifest.subscribe((v) => (m = v))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((v) => (m = v))();
 		return Object.fromEntries(Object.entries(m?.scenes ?? {}).map(([k, e]) => [k, e.history]));
 	});
 	h.check(
@@ -184,12 +184,12 @@ h.run(async () => {
 	await ask(G, H, f.hall);
 	await h.eventually(() => refusals(H, f.hall), (n) => n === n6 + 1, 'None: another project scene is refused', 15000);
 	await setScope(H, 'scene');
-	await H.page.evaluate(() => window.__stores.levels.currentLevel.update((l) => ({ ...l, private: true })));
+	await H.page.evaluate(() => window.__tp.test.v1.levels.currentLevel.update((l) => ({ ...l, private: true })));
 	await H.page.waitForTimeout(800);
 	const n7 = await refusals(H, f.yard);
 	await ask(G, H, f.yard);
 	await h.eventually(() => refusals(H, f.yard), (n) => n === n7 + 1, 'from a private scene: another project scene is refused', 15000);
-	await H.page.evaluate(() => window.__stores.levels.currentLevel.update((l) => ({ ...l, private: false })));
+	await H.page.evaluate(() => window.__tp.test.v1.levels.currentLevel.update((l) => ({ ...l, private: false })));
 	await H.page.waitForTimeout(800);
 	const n8 = await refusals(H, f.hallOld);
 	await ask(G, H, f.hallOld);

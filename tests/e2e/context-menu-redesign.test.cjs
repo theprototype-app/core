@@ -12,7 +12,7 @@ h.run(async () => {
 
 	// a named box, selected, direct object menu opened via the store
 	const uuid = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.children[g.children.length - 1];
@@ -71,7 +71,7 @@ h.run(async () => {
 
 	// the header names a SET when multi
 	const multiHeader = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.objectContextMenu.set(null);
 		w.commandsHandler.sceneCommand('/create Sphere 0.5');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
@@ -87,7 +87,7 @@ h.run(async () => {
 	h.check(multiHeader.includes('2 objects selected'), `multi header names the set ("${multiHeader}")`);
 
 	// ---------- 16-P1: the filter is mounted + focused but HIDDEN until typing ----
-	await A.page.evaluate(() => window.__stores.viewportMenu.set({ x: 220, y: 140, point: [0, 0, 0] }));
+	await A.page.evaluate(() => window.__tp.test.v1.viewportMenu.set({ x: 220, y: 140, point: [0, 0, 0] }));
 	await A.page.waitForTimeout(400);
 	const hidden = await A.page.evaluate(() => {
 		const input = document.querySelector('.ctx-filter-input');
@@ -129,22 +129,22 @@ h.run(async () => {
 
 	// Enter runs the TOP hit — "Snap to surface" toggles the surfaceSnap store
 	const ran = await A.page.evaluate(async () => {
-		const before = await new Promise((r) => window.__stores.snapping.surfaceSnap.subscribe((v) => r(v))());
+		const before = await new Promise((r) => window.__tp.test.v1.snapping.surfaceSnap.subscribe((v) => r(v))());
 		const input = document.querySelector('.ctx-filter-input');
 		input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 		await new Promise((r) => setTimeout(r, 200));
-		const after = await new Promise((r) => window.__stores.snapping.surfaceSnap.subscribe((v) => r(v))());
+		const after = await new Promise((r) => window.__tp.test.v1.snapping.surfaceSnap.subscribe((v) => r(v))());
 		const menuGone = !document.querySelector('[role="menu"]');
 		// restore
-		if (after !== before) window.__stores.snapping.surfaceSnap.set(before);
+		if (after !== before) window.__tp.test.v1.snapping.surfaceSnap.set(before);
 		return { toggled: after !== before, menuGone };
 	});
 	h.check(ran.toggled, 'Enter runs the top filtered action');
 	h.check(ran.menuGone, 'running an action closes the menu');
 
 	// ---------- 16-Q1: search mode is STICKY, and the menu keeps its anchor -------
-	await A.page.evaluate(() => window.__stores.viewportMenu.set(null));
-	await A.page.evaluate(() => window.__stores.viewportMenu.set({ x: 220, y: 140, point: [0, 0, 0] }));
+	await A.page.evaluate(() => window.__tp.test.v1.viewportMenu.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.viewportMenu.set({ x: 220, y: 140, point: [0, 0, 0] }));
 	await A.page.waitForTimeout(400);
 	const sticky = await A.page.evaluate(async () => {
 		const input = document.querySelector('.ctx-filter-input');
@@ -184,10 +184,10 @@ h.run(async () => {
 	);
 	h.check(sticky.scrolls, 'a long list scrolls inside the menu instead of moving it');
 	h.check(sticky.grouped && sticky.rowHidden, 'Esc returns to the grouped menu and hides the box');
-	await A.page.evaluate(() => window.__stores.viewportMenu.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.viewportMenu.set(null));
 
 	// ---------- 16-P1: arrow navigation ----------
-	await A.page.evaluate(() => window.__stores.viewportMenu.set({ x: 220, y: 140, point: [0, 0, 0] }));
+	await A.page.evaluate(() => window.__tp.test.v1.viewportMenu.set({ x: 220, y: 140, point: [0, 0, 0] }));
 	await A.page.waitForTimeout(400);
 	const nav = await A.page.evaluate(async () => {
 		const input = document.querySelector('.ctx-filter-input');
@@ -258,11 +258,11 @@ h.run(async () => {
 		(cursorMemory.backOn ?? '').startsWith('Tools'),
 		`stepping back keeps the cursor on the row we came from (${cursorMemory.backOn})`
 	);
-	await A.page.evaluate(() => window.__stores.viewportMenu.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.viewportMenu.set(null));
 
 	// ---------- Esc semantics: query → search mode → menu (16-Q1: search is sticky,
 	// so leaving it is its own step) ----------
-	await A.page.evaluate(() => window.__stores.viewportMenu.set({ x: 220, y: 140, point: [0, 0, 0] }));
+	await A.page.evaluate(() => window.__tp.test.v1.viewportMenu.set({ x: 220, y: 140, point: [0, 0, 0] }));
 	await A.page.waitForTimeout(400);
 	const esc = await A.page.evaluate(async () => {
 		const input = document.querySelector('.ctx-filter-input');
@@ -290,7 +290,7 @@ h.run(async () => {
 
 	// ---------- 16-Q5: opening rules + the search box keeps the top -------------
 	const placement = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const open = async (y) => {
 			w.viewportMenu.set(null);
 			await new Promise((r) => setTimeout(r, 150));
@@ -346,9 +346,9 @@ h.run(async () => {
 
 	// ---------- 16-Q6: a resized search list is REMEMBERED, per menu kind ---------
 	const resize = async () => {
-		await A.page.evaluate(() => window.__stores.viewportMenu.set(null));
+		await A.page.evaluate(() => window.__tp.test.v1.viewportMenu.set(null));
 		await A.page.waitForTimeout(150);
-		await A.page.evaluate(() => window.__stores.viewportMenu.set({ x: 240, y: 120, point: [0, 0, 0] }));
+		await A.page.evaluate(() => window.__tp.test.v1.viewportMenu.set({ x: 240, y: 120, point: [0, 0, 0] }));
 		await A.page.waitForTimeout(350);
 		await A.page.evaluate(async () => {
 			const input = document.querySelector('.ctx-filter-input');
@@ -367,11 +367,11 @@ h.run(async () => {
 	const shrunk = await resize();
 	const stored = await A.page.evaluate(() => localStorage.getItem('ctx:searchHeight:viewport'));
 	h.check(stored !== null, `the dragged height is persisted (${stored})`);
-	await A.page.evaluate(() => window.__stores.viewportMenu.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.viewportMenu.set(null));
 	await A.page.waitForTimeout(200);
 
 	// reopen + search again: the list comes back at the size we left it
-	await A.page.evaluate(() => window.__stores.viewportMenu.set({ x: 240, y: 120, point: [0, 0, 0] }));
+	await A.page.evaluate(() => window.__tp.test.v1.viewportMenu.set({ x: 240, y: 120, point: [0, 0, 0] }));
 	await A.page.waitForTimeout(350);
 	await A.page.evaluate(async () => {
 		const input = document.querySelector('.ctx-filter-input');
@@ -389,7 +389,7 @@ h.run(async () => {
 	// the node editor keeps its OWN size
 	const perKind = await A.page.evaluate(() => localStorage.getItem('ctx:searchHeight:nodes'));
 	h.check(perKind === null, 'the node editor has its own key, untouched by the viewport menu');
-	await A.page.evaluate(() => window.__stores.viewportMenu.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.viewportMenu.set(null));
 
 	await h.finish(browser);
 });

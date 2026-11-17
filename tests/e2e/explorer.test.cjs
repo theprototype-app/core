@@ -36,7 +36,7 @@ h.run(async () => {
 		A.page.evaluate(
 			() =>
 				new Promise((resolve) => {
-					window.__stores.explorer.explorerItems.subscribe((items) =>
+					window.__tp.test.v1.explorer.explorerItems.subscribe((items) =>
 						resolve(items.map((i) => ({ name: i.name, kind: i.kind, thumb: !!i.thumbnail, hash: i.hash.length })))
 					)();
 				})
@@ -53,11 +53,11 @@ h.run(async () => {
 
 	// folder CRUD + move
 	await A.page.evaluate(async () => {
-		const folder = window.__stores.explorer.createFolder('Textures', null);
+		const folder = window.__tp.test.v1.explorer.createFolder('Textures', null);
 		let items = [];
-		window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
-		window.__stores.explorer.moveItem(items.find((i) => i.name === 'tiny.png').id, folder.id);
-		window.__stores.explorer.activeFolder.set(folder.id);
+		window.__tp.test.v1.explorer.explorerItems.subscribe((v) => (items = v))();
+		window.__tp.test.v1.explorer.moveItem(items.find((i) => i.name === 'tiny.png').id, folder.id);
+		window.__tp.test.v1.explorer.activeFolder.set(folder.id);
 	});
 	await A.page.waitForTimeout(400);
 	h.check(
@@ -99,7 +99,7 @@ h.run(async () => {
 				return !!el && el.getBoundingClientRect().height > 0;
 			};
 			let explorerClose;
-			window.__stores.explorerClose.subscribe((v) => (explorerClose = v))();
+			window.__tp.test.v1.explorerClose.subscribe((v) => (explorerClose = v))();
 			return {
 				flow: vis('#flow-list'),
 				explorer: vis('#explorer-list'),
@@ -127,7 +127,7 @@ h.run(async () => {
 
 	// --- 106: tree v2 ---
 	// inline create: the button spawns an input, Enter creates, Esc cancels
-	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await A.page.locator('#new-folder').click();
 	await A.page.waitForTimeout(200);
 	await A.page.keyboard.type('Sounds');
@@ -136,7 +136,7 @@ h.run(async () => {
 	let folders = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.explorer.explorerFolders.subscribe((f) =>
+				window.__tp.test.v1.explorer.explorerFolders.subscribe((f) =>
 					resolve(f.map((x) => ({ name: x.name, parent: x.parentId ?? null })))
 				)();
 			})
@@ -148,7 +148,7 @@ h.run(async () => {
 	folders = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.explorer.explorerFolders.subscribe((f) => resolve(f.length))();
+				window.__tp.test.v1.explorer.explorerFolders.subscribe((f) => resolve(f.length))();
 			})
 	);
 	h.check(folders === 2, 'Esc cancels the inline create');
@@ -164,7 +164,7 @@ h.run(async () => {
 	const stillEditing = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.explorer.explorerFolders.subscribe((f) =>
+				window.__tp.test.v1.explorer.explorerFolders.subscribe((f) =>
 					resolve(!f.some((x) => /bad/.test(x.name)))
 				)();
 			})
@@ -176,13 +176,13 @@ h.run(async () => {
 	// covered by the shared dropInto handler these calls route through)
 	const parenting = await A.page.evaluate(() => {
 		let list = [];
-		window.__stores.explorer.explorerFolders.subscribe((f) => (list = f))();
+		window.__tp.test.v1.explorer.explorerFolders.subscribe((f) => (list = f))();
 		const textures = list.find((f) => f.name === 'Textures');
 		const sounds = list.find((f) => f.name === 'Sounds');
-		const ok = window.__stores.explorer.moveFolder(sounds.id, textures.id);
-		const cycle = window.__stores.explorer.moveFolder(textures.id, sounds.id);
+		const ok = window.__tp.test.v1.explorer.moveFolder(sounds.id, textures.id);
+		const cycle = window.__tp.test.v1.explorer.moveFolder(textures.id, sounds.id);
 		let after = [];
-		window.__stores.explorer.explorerFolders.subscribe((f) => (after = f))();
+		window.__tp.test.v1.explorer.explorerFolders.subscribe((f) => (after = f))();
 		return { ok, cycle, nested: after.find((f) => f.name === 'Sounds')?.parentId === textures.id };
 	});
 	h.check(parenting.ok && parenting.nested, 'folders re-parent into folders');
@@ -191,12 +191,12 @@ h.run(async () => {
 	// cascade delete with the toast confirm
 	await A.page.evaluate(() => {
 		let list = [];
-		window.__stores.explorer.explorerFolders.subscribe((f) => (list = f))();
+		window.__tp.test.v1.explorer.explorerFolders.subscribe((f) => (list = f))();
 		const textures = list.find((f) => f.name === 'Textures');
 		// put an item inside so the cascade has something to remove
 		let items = [];
-		window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
-		window.__stores.explorer.moveItem(items[0].id, textures.id);
+		window.__tp.test.v1.explorer.explorerItems.subscribe((v) => (items = v))();
+		window.__tp.test.v1.explorer.moveItem(items[0].id, textures.id);
 	});
 	// exact name: the Scene manifest now shows a "textures" sub-entry (178), so a
 	// substring match would be ambiguous with the "Textures" library folder
@@ -226,8 +226,8 @@ h.run(async () => {
 	const afterDelete = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.explorer.explorerFolders.subscribe((f) => {
-					window.__stores.explorer.explorerItems.subscribe((items) =>
+				window.__tp.test.v1.explorer.explorerFolders.subscribe((f) => {
+					window.__tp.test.v1.explorer.explorerItems.subscribe((items) =>
 						resolve({ folders: f.length, items: items.length })
 					)();
 				})();
@@ -260,7 +260,7 @@ h.run(async () => {
 	// `createFolder` updates the store and fires `persistIndex()` WITHOUT awaiting it,
 	// so reloading in the next statement can outrun the IndexedDB write. Watch the
 	// stored record itself rather than sleeping — that is the thing the reload reads.
-	await A.page.evaluate(() => window.__stores.explorer.createFolder('Keep', null));
+	await A.page.evaluate(() => window.__tp.test.v1.explorer.createFolder('Keep', null));
 	await h.eventually(
 		() =>
 			A.page.evaluate(
@@ -279,13 +279,13 @@ h.run(async () => {
 		'the folder reaches IndexedDB before the reload'
 	);
 	// wait for the debug stores, not a fixed 2.5 s: under e2e load the boot outran it and
-	// `window.__stores` was still undefined (a TypeError instead of a verdict)
+	// `window.__tp?.test.v1` was still undefined (a TypeError instead of a verdict)
 	await h.freshReload(A);
 	const persisted = await A.page.evaluate(async () => {
-		await window.__stores.explorer.loadExplorer();
+		await window.__tp.test.v1.explorer.loadExplorer();
 		return new Promise((resolve) => {
-			window.__stores.explorer.explorerItems.subscribe((items) => {
-				window.__stores.explorer.explorerFolders.subscribe((folders) =>
+			window.__tp.test.v1.explorer.explorerItems.subscribe((items) => {
+				window.__tp.test.v1.explorer.explorerFolders.subscribe((folders) =>
 					resolve({ items: items.length, folders: folders.map((f) => f.name) })
 				)();
 			})();

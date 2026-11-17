@@ -38,31 +38,31 @@ const SCENE_B = 'Vault36';
 const at = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.levels.currentLevel.subscribe((x) => (v = x))();
+		window.__tp.test.v1.levels.currentLevel.subscribe((x) => (v = x))();
 		return v;
 	});
 const rowFor = (p, id) =>
 	p.page.evaluate((id) => {
 		let m;
-		window.__stores.peerScenes.peerScenes.subscribe((x) => (m = x))();
+		window.__tp.test.v1.peerScenes.peerScenes.subscribe((x) => (m = x))();
 		return m[id] ?? null;
 	}, id);
 const objectCount = (p) =>
 	p.page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		return (g?.children ?? []).length;
 	});
 const addBox = (p) =>
 	p.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1200));
-		window.__stores.objectActions.deselectObject();
+		window.__tp.test.v1.objectActions.deselectObject();
 	});
 /** Every surface on this page that could be carrying a scene NAME we never shared. */
 const surfaces = (p) =>
 	p.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let rows, doc, notes, items;
 		s.peerScenes.peerScenes.subscribe((x) => (rows = x))();
 		s.projectManifest.projectManifest.subscribe((x) => (doc = x))();
@@ -73,7 +73,7 @@ const surfaces = (p) =>
 const toast = (p, prefix) =>
 	p.page.evaluate((pre) => {
 		let list;
-		window.__stores.toastStore.subscribe((x) => (list = x))();
+		window.__tp.test.v1.toastStore.subscribe((x) => (list = x))();
 		const row = list.find((t) => String(t.id ?? '').startsWith(pre));
 		return row ? { text: row.text, actions: (row.actions ?? []).map((a) => a.label) } : null;
 	}, prefix);
@@ -81,10 +81,10 @@ const toast = (p, prefix) =>
 const dialog = (p) =>
 	p.page.evaluate(() => {
 		let d;
-		window.__stores.confirmDialog.confirmDialog.subscribe((x) => (d = x))();
+		window.__tp.test.v1.confirmDialog.confirmDialog.subscribe((x) => (d = x))();
 		return d ? { title: d.title, choices: (d.choices ?? []).map((c) => c.value) } : null;
 	});
-const answer = (p, value) => p.page.evaluate((v) => window.__stores.confirmDialog.resolveConfirm(v), value);
+const answer = (p, value) => p.page.evaluate((v) => window.__tp.test.v1.confirmDialog.resolveConfirm(v), value);
 const waitDialog = async (p, re, timeout = 12000) => {
 	const start = Date.now();
 	while (Date.now() - start < timeout) {
@@ -132,7 +132,7 @@ const ensureExplorer = async (p) => {
 		await p.page.locator('#explorer-slot').click();
 		await p.page.waitForTimeout(800);
 	}
-	await p.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await p.page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await p.page.waitForTimeout(300);
 };
 const dblclickScene = async (p, name) => {
@@ -153,20 +153,20 @@ h.run(async () => {
 	const H = await h.setupPage(browser, 'H');
 	const P = await h.setupPage(browser, 'P');
 	for (const p of [H, P]) {
-		await p.page.waitForFunction(() => !!window.__stores?.scenePrivacy, { timeout: 30000 });
-		await p.page.evaluate(() => window.__stores.sharedLibrary.shareNewFiles.set('never'));
+		await p.page.waitForFunction(() => !!window.__tp?.test.v1?.scenePrivacy, { timeout: 30000 });
+		await p.page.evaluate(() => window.__tp.test.v1.sharedLibrary.shareNewFiles.set('never'));
 	}
 
 	await ensureExplorer(P);
 	await addBox(P);
-	await P.page.evaluate((n) => window.__stores.levels.saveSceneAsLevel(n), SCENE);
+	await P.page.evaluate((n) => window.__tp.test.v1.levels.saveSceneAsLevel(n), SCENE);
 	await h.eventually(() => at(P), (v) => v?.name === SCENE, `premise: P saved "${SCENE}" alone`);
-	await P.page.evaluate((n) => window.__stores.levels.saveSceneAsLevel(n), SCENE_B);
+	await P.page.evaluate((n) => window.__tp.test.v1.levels.saveSceneAsLevel(n), SCENE_B);
 	await h.eventually(() => at(P), (v) => v?.name === SCENE_B, `premise: …and "${SCENE_B}", for the private-and-kept section`);
 	await h.freshReload(P);
-	await P.page.waitForFunction(() => !!window.__stores?.scenePrivacy, { timeout: 30000 });
-	await P.page.evaluate(() => window.__stores.sharedLibrary.shareNewFiles.set('never'));
-	P.id = await P.page.evaluate(() => new Promise((r) => window.__stores.peers.subscribe((p) => r(p?.peer?.id))()));
+	await P.page.waitForFunction(() => !!window.__tp?.test.v1?.scenePrivacy, { timeout: 30000 });
+	await P.page.evaluate(() => window.__tp.test.v1.sharedLibrary.shareNewFiles.set('never'));
+	P.id = await P.page.evaluate(() => new Promise((r) => window.__tp.test.v1.peers.subscribe((p) => r(p?.peer?.id))()));
 	h.check((await at(P)) === null, `premise: the reload leaves P standing nowhere (${JSON.stringify(await at(P))})`);
 
 	await addBox(H);
@@ -175,7 +175,7 @@ h.run(async () => {
 	h.check(
 		(await P.page.evaluate(() => {
 			let v;
-			window.__stores.connectionState.sessionHost.subscribe((x) => (v = x))();
+			window.__tp.test.v1.connectionState.sessionHost.subscribe((x) => (v = x))();
 			return v;
 		})) === H.id,
 		'premise: H is the SESSION HOST, standing in the session’s unnamed world'
@@ -192,7 +192,7 @@ h.run(async () => {
 	await h.eventually(() => at(P), (v) => v?.name === SCENE && v?.private === true, `premise: P is private in "${SCENE}"`, 20000);
 	await h.eventually(() => rowFor(H, P.id), (r) => r?.private === true, 'premise: the host reads P as private');
 
-	await H.page.evaluate((id) => window.__stores.scenePrivacy.requestSceneAccess(id), P.id);
+	await H.page.evaluate((id) => window.__tp.test.v1.scenePrivacy.requestSceneAccess(id), P.id);
 	await P.page.waitForTimeout(2000);
 	await P.page.locator('.tp-toast-action', { hasText: 'Share scene' }).first().click();
 	await h.eventually(() => at(P), (v) => v?.name === SCENE && !v?.private, 'SHARE SCENE: the scene leaves private mode', 20000);
@@ -225,7 +225,7 @@ h.run(async () => {
 		`THE REPORT, peer side: the shared scene gained ONLY its own box (${pBefore} → ${pAfter})`
 	);
 	const gates = await H.page.evaluate((id) => {
-		const s = window.__stores.peerScenes;
+		const s = window.__tp.test.v1.peerScenes;
 		let map;
 		s.peerScenes.subscribe((x) => (map = x))();
 		return {
@@ -264,7 +264,7 @@ h.run(async () => {
 	await h.eventually(() => at(P), (v) => v?.name === SCENE_B && v?.private === true, `T5: P is private in "${SCENE_B}"`, 20000);
 	await h.eventually(() => rowFor(H, P.id), (r) => r && r.scene === '' && r.private === true, '…and the host’s row says private and nothing else');
 
-	await H.page.evaluate((id) => window.__stores.scenePrivacy.requestSceneAccess(id), P.id);
+	await H.page.evaluate((id) => window.__tp.test.v1.scenePrivacy.requestSceneAccess(id), P.id);
 	await P.page.waitForTimeout(2000);
 	await P.page.locator('.tp-toast-action', { hasText: 'Keep private' }).first().click();
 	await P.page.waitForTimeout(1500);
@@ -315,7 +315,7 @@ h.run(async () => {
 	// The host goes back to the session's own world. Set by hand, exactly as private-scene
 	// resets a peer: the state under test is the PREMISE here, not the thing being measured
 	// (T13 — a host leaving its named scene — has no button of its own).
-	await H.page.evaluate(() => window.__stores.levels.currentLevel.set(null));
+	await H.page.evaluate(() => window.__tp.test.v1.levels.currentLevel.set(null));
 	await H.page.waitForTimeout(1200);
 	await addBox(H); // …and something for the joiner to converge ON
 	await P.page.waitForTimeout(2500);

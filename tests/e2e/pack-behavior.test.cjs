@@ -34,7 +34,7 @@ async function routePack(page) {
 /** the door's live numbers on a page @param {any} page */
 const doorOf = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const dbg = s.packBehavior.packBehaviorDebug();
 		const item = dbg.items[0];
 		if (!item) return null;
@@ -69,7 +69,7 @@ h.run(async () => {
 	await A.page.locator('#explorer-slot').click();
 	await A.page.waitForTimeout(800);
 	await A.page.evaluate((base) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.packs.packs.update((list) => [
 			...list.filter((p) => p.name !== 'anim-test'),
 			{ name: 'anim-test', title: 'Anim test', source: 'default', base, listUrl: base + '/default.json', zip: '', attributionUrl: '', sourceUrl: '', copyright: '', license: 'CC0-1.0' }
@@ -103,7 +103,7 @@ h.run(async () => {
 	h.check(door.spec?.type === 'door' && door.spec?.collider === 'follow', '2.2 the placed root carries the spec from the pack row');
 	const animState = await A.page.evaluate((uuid) => {
 		let st = null;
-		window.__stores.animatedImports.animatedObjects.subscribe((m) => (st = m[uuid]))();
+		window.__tp.test.v1.animatedImports.animatedObjects.subscribe((m) => (st = m[uuid]))();
 		return st;
 	}, door.uuid);
 	h.check(animState && animState.playing === false, '2.3 the transport is NOT playing after placement (' + JSON.stringify(animState) + ')');
@@ -113,7 +113,7 @@ h.run(async () => {
 	h.check(Math.abs(q0) < 1e-4 && Math.abs(door.qy) < 1e-4, '2.4 the leaf is shut and stays shut (qy ' + q0 + ' -> ' + door.qy + ')');
 	h.check(door.state === null, '2.5 no shared state until something triggers it');
 	await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let root = null;
 		s.objectsGroup.subscribe((g) => (root = g?.getObjectByProperty('uuid', uuid)))();
 		root.position.set(0, 0, -3);
@@ -128,7 +128,7 @@ h.run(async () => {
 	const pieces = door.physics?.colliderPieces?.length ?? 0;
 	h.check(door.physics?.collider === 'custom' && pieces >= 3, '3.1 the frame is a custom compound of ' + pieces + ' slabs');
 	const opening = await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let root = null;
 		s.objectsGroup.subscribe((g) => (root = g?.getObjectByProperty('uuid', uuid)))();
 		const v = root.userData.physics.colliderVerts;
@@ -148,7 +148,7 @@ h.run(async () => {
 
 	console.log('\n=== 4. Edit: a click selects, never opens ===');
 	const editClick = await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let root = null;
 		s.objectsGroup.subscribe((g) => (root = g?.getObjectByProperty('uuid', uuid)))();
 		return s.moduleSDK.runClickHandlers(root.getObjectByName('Leaf'), 'edit');
@@ -156,8 +156,8 @@ h.run(async () => {
 	h.check(editClick === false && (await doorOf(A.page)).state === null, '4.1 the click handler stands down in Edit');
 
 	console.log('\n=== 5. Interact: a REAL click opens it, with its sound ===');
-	await A.page.evaluate(() => window.__stores.objectActions.setEditorMode('interact'));
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject?.());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('interact'));
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject?.());
 	await A.page.waitForTimeout(300);
 	const pt = await h.projectPoint(A.page, [0.2, 1.2, -3]);
 	const under = await A.page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName, pt);
@@ -175,21 +175,21 @@ h.run(async () => {
 	await h.eventually(() => doorOf(B.page), (d) => d?.state?.on === true, '6.1 the state reached B');
 	await B.page.waitForTimeout(1300);
 	h.check(Math.abs((await doorOf(B.page)).qy) < 1e-4, '6.2 B in EDIT renders the closed pose (the rule)');
-	await B.page.evaluate(() => window.__stores.objectActions.setEditorMode('interact'));
+	await B.page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('interact'));
 	await h.eventually(() => doorOf(B.page), (d) => Math.abs(d.qy - OPEN_QY) < 0.01, '6.3 B in Interact shows it open');
 
 	console.log('\n=== 7. the leaf collider follows: open passes, shut stops ===');
 	// THE FALLBACK GUARD: with nothing dynamic, a sim start simulates the (sticky) selected
 	// object — which used to be the door just placed, so it fell and every click carried it
 	await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.objectActions.selectObject(uuid);
 		s.objectActions.deselectObject(); // selectedObject stays the door (sticky)
 	}, door.uuid);
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await A.page.waitForTimeout(1500);
 	const fallback = await A.page.evaluate((uuid) => {
-		const p = window.__stores.physics;
+		const p = window.__tp.test.v1.physics;
 		const running = !!p.physicsRuntime();
 		const dynamicDoor = running && p.physicsDebug().some((b) => b.uuid === uuid);
 		if (running) p.stopSimulation();
@@ -198,7 +198,7 @@ h.run(async () => {
 	h.check(!fallback.dynamicDoor, '7.0a a sim start never makes the functional door the fallback dynamic body (' + JSON.stringify(fallback) + ')');
 	// a real dynamic body elsewhere, so a simulation runs
 	const crate = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create Box 1 1 1');
 		await new Promise((r) => setTimeout(r, 800));
 		let g = null;
@@ -210,10 +210,10 @@ h.run(async () => {
 		s.objectActions.deselectObject();
 		return box.uuid;
 	});
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
-	await h.eventually(() => A.page.evaluate(() => !!window.__stores.physics.physicsRuntime()), (v) => v, '7.0 a simulation runs on A', 15000);
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
+	await h.eventually(() => A.page.evaluate(() => !!window.__tp.test.v1.physics.physicsRuntime()), (v) => v, '7.0 a simulation runs on A', 15000);
 	const bodies = await A.page.evaluate(() => {
-		const p = window.__stores.physics;
+		const p = window.__tp.test.v1.physics;
 		return {
 			dynamic: p.physicsDebug().map((b) => b.uuid),
 			fixed: p.physicsWorldDebug().fixed.find((f) => f.name === 'TestDoor') ?? null
@@ -227,7 +227,7 @@ h.run(async () => {
 	/** walk the capsule from in front of the door straight through the doorway */
 	const walk = () =>
 		A.page.evaluate(() => {
-			const cc = window.__stores.charController;
+			const cc = window.__tp.test.v1.charController;
 			cc.resetWalker();
 			let p = { x: 0, y: 0.05, z: -1.4 };
 			let source = '';
@@ -252,19 +252,19 @@ h.run(async () => {
 	w = await walk();
 	h.check(w.z > -2.9, '7.5 SHUT: the leaf stops the capsule (z ' + w.z.toFixed(2) + ')');
 	// counterfactual: the whole-door box (no doorway cut) blocks even an OPEN door
-	const diagBefore = await A.page.evaluate(({ x, y }) => ({ under: document.elementFromPoint(x, y)?.tagName, dbg: window.__stores.packBehavior.packBehaviorDebug().clicks }), framePt);
+	const diagBefore = await A.page.evaluate(({ x, y }) => ({ under: document.elementFromPoint(x, y)?.tagName, dbg: window.__tp.test.v1.packBehavior.packBehaviorDebug().clicks }), framePt);
 	await A.page.mouse.click(framePt.x, framePt.y);
 	await A.page.waitForTimeout(300);
 	const diag = await A.page.evaluate(() => {
-		const d = window.__stores.packBehavior.packBehaviorDebug();
+		const d = window.__tp.test.v1.packBehavior.packBehaviorDebug();
 		let pi = null;
-		window.__stores.playInteract.playInteractState?.subscribe?.((v) => (pi = v))();
+		window.__tp.test.v1.playInteract.playInteractState?.subscribe?.((v) => (pi = v))();
 		return { clicks: d.clicks, lastClick: d.lastClick, state: d.items[0]?.state, pi };
 	});
 	console.log('   7.6 diagnosis: before ' + JSON.stringify(diagBefore) + ' after ' + JSON.stringify(diag));
 	await h.eventually(() => doorOf(A.page), (d) => Math.abs(d.qy - OPEN_QY) < 0.01, '7.6 reopened');
 	await A.page.evaluate(async (uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.physics.stopSimulation();
 		let root = null;
 		s.objectsGroup.subscribe((g) => (root = g?.getObjectByProperty('uuid', uuid)))();
@@ -276,7 +276,7 @@ h.run(async () => {
 	w = await walk();
 	h.check(w.z > -2.9, '7.7 COUNTERFACTUAL: without the cut frame the open doorway is a wall (z ' + w.z.toFixed(2) + ')');
 	await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.physics.stopSimulation();
 		let root = null;
 		s.objectsGroup.subscribe((g) => (root = g?.getObjectByProperty('uuid', uuid)))();
@@ -285,11 +285,11 @@ h.run(async () => {
 	}, door.uuid);
 
 	console.log('\n=== 8. Edit keeps the closed pose; a save carries the spec, never the state ===');
-	await A.page.evaluate(() => window.__stores.objectActions.setEditorMode('edit'));
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('edit'));
 	await h.eventually(() => doorOf(A.page), (d) => Math.abs(d.qy) < 1e-4, '8.1 back in Edit the leaf rests shut while the shared state says open');
 	h.check((await doorOf(A.page)).state?.on === true, '8.2 ...and the shared state is untouched');
 	const saved = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g = null;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		return s.animatedImports.animatedImportsSnapshot(g).map((e) => ({ behavior: e.behavior, state: e.behaviorState ?? null }));
@@ -306,7 +306,7 @@ h.run(async () => {
 
 	console.log('\n=== 10. Animation panel preview: local, unsent, back to rest ===');
 	const sent = await A.page.evaluate(async (uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let peer = null;
 		s.peers.subscribe((p) => (peer = p))();
 		const types = [];
@@ -332,7 +332,7 @@ h.run(async () => {
 
 	console.log('\n=== 11. the wire shape is validated ===');
 	const valid = await A.page.evaluate((uuid) => {
-		const v = window.__stores.wireValidate.validateWireMessage;
+		const v = window.__tp.test.v1.wireValidate.validateWireMessage;
 		return {
 			good: v({ type: 'behavior', uuid, on: true, at: 1, from: 0, n: 1 }),
 			nan: v({ type: 'behavior', uuid, on: true, at: NaN, from: 0, n: 1 }),
@@ -341,14 +341,14 @@ h.run(async () => {
 		};
 	}, door.uuid);
 	h.check(valid.good && !valid.nan && !valid.str && !valid.neg, '11.1 behavior: good passes, NaN/string/negative refused (' + JSON.stringify(valid) + ')');
-	const stale = await B.page.evaluate((uuid) => window.__stores.packBehavior.applyBehaviorState({ uuid, on: false, at: 1, from: 0, n: 1 }), door.uuid);
+	const stale = await B.page.evaluate((uuid) => window.__tp.test.v1.packBehavior.applyBehaviorState({ uuid, on: false, at: 1, from: 0, n: 1 }), door.uuid);
 	h.check(stale === false && (await doorOf(B.page)).state?.on === true, '11.2 an older state is refused (latest wins)');
 
 	console.log('\n=== 12. a GLB with no behavior no longer autoplays ===');
 	const plain = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				const THREE = s.THREE;
 				const root = new THREE.Group();
 				const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
@@ -378,7 +378,7 @@ h.run(async () => {
 
 	console.log('\n=== 13. the module seam: api.behavior ===');
 	const sdk = await A.page.evaluate(async (uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		await s.moduleSDK.initModules([
 			{ id: 'behavior33', name: 'Behavior test', version: '1.0.0', description: '33 P2 seam', register(api) { window.__bapi = api; } }
 		]);
@@ -396,7 +396,7 @@ h.run(async () => {
 
 	console.log('\n=== 14. a knock door: a fast hand opens it, a slow one does not ===');
 	const knock = await A.page.evaluate(async (bytes) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const behavior = { type: 'door', clip: 'open', closeClip: 'close', trigger: 'knock', sound: 'door' };
 		const uuid = await s.fileHandler.importFile(new File([new Uint8Array(bytes)], 'knock.glb'), 'Knock door', 'glb', [3, 0, -3], undefined, { behavior });
 		// a fake hand seam (no headset headless): the frame loop samples it every frame

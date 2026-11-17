@@ -12,18 +12,18 @@ h.run(async () => {
 	const browser = await h.launch();
 	const peer = await h.setupPage(browser, 'shader-inspector');
 	const page = peer.page;
-	await page.waitForFunction(() => !!window.__stores?.shaderGraph, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.shaderGraph, { timeout: 30000 });
 
 	// two boxes, so the multi-selection / partial-selection cases are reachable
 	await page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		window.__stores.commandsHandler.sceneCommand('/create sphere');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create sphere');
 	});
 	await page.waitForTimeout(1800);
 
 	const uuids = await page.evaluate(() => {
 		const read = (s) => new Promise((r) => s.subscribe((v) => r(v))());
-		return read(window.__stores.objectsGroup).then((g) => {
+		return read(window.__tp.test.v1.objectsGroup).then((g) => {
 			const out = [];
 			g.traverse((n) => {
 				if (n.isMesh) out.push(n.uuid);
@@ -42,7 +42,7 @@ h.run(async () => {
 	});
 
 	// ---- 1. the material rows are OFFERED on a plain object -------------------
-	await page.evaluate((u) => window.__stores.objectActions.selectObject(u, true), uuids[0]);
+	await page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u, true), uuids[0]);
 	await page.waitForTimeout(1200);
 	// the Material section renders collapsed unless it has been opened before
 	await page.evaluate(() => {
@@ -63,7 +63,7 @@ h.run(async () => {
 	// ---- 2. attaching a graph replaces them with the notice -------------------
 	await page.evaluate(
 		async (args) => {
-			const S = window.__stores.shaderGraph;
+			const S = window.__tp.test.v1.shaderGraph;
 			S.setShaderGraphFor(args.u, args.g);
 			await S.compileAndApply(args.u);
 		},
@@ -93,7 +93,7 @@ h.run(async () => {
 	h.check(shadowLabel, 'the Shadow flags stay editable — they are object flags, not material ones');
 
 	// ---- 3. Open in Shader editor really opens it ----------------------------
-	await page.evaluate(() => window.__stores.shaderEditorClose.set(true));
+	await page.evaluate(() => window.__tp.test.v1.shaderEditorClose.set(true));
 	await page.waitForTimeout(400);
 	h.check((await page.locator('#shader-editor').count()) === 0, 'premise — the shader tab is closed');
 	await page.locator('#material-open-shader').click();
@@ -104,7 +104,7 @@ h.run(async () => {
 
 	// ---- 4. the fan-out SKIPS shader-driven members, and says how many -------
 	// select BOTH: one driven, one not. A material write must land on the free one only.
-	await page.evaluate((list) => window.__stores.objectActions.applySelectionSet(list, true), uuids.slice(0, 2));
+	await page.evaluate((list) => window.__tp.test.v1.objectActions.applySelectionSet(list, true), uuids.slice(0, 2));
 	await page.waitForTimeout(1000);
 	const partial = await page.locator('#material-shader-note').innerText().catch(() => '');
 	h.check(
@@ -118,7 +118,7 @@ h.run(async () => {
 
 	const fanned = await page.evaluate(
 		async (args) => {
-			const S = window.__stores;
+			const S = window.__tp?.test.v1;
 			const read = (s) => new Promise((r) => s.subscribe((v) => r(v))());
 			const group = await read(S.objectsGroup);
 			const driven = group.getObjectByProperty('uuid', args.driven);
@@ -154,10 +154,10 @@ h.run(async () => {
 	h.check(fanned.stillDriven, 'and it is still shader-driven afterwards');
 
 	// ---- 5. Detach puts it back ---------------------------------------------
-	await page.evaluate((u) => window.__stores.objectActions.selectObject(u, true), uuids[0]);
+	await page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u, true), uuids[0]);
 	await page.waitForTimeout(900);
 	const detached = await page.evaluate(async (u) => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		const read = (s) => new Promise((r) => s.subscribe((v) => r(v))());
 		const group = await read(S.objectsGroup);
 		const obj = group.getObjectByProperty('uuid', u);
@@ -185,7 +185,7 @@ h.run(async () => {
 
 	// ---- 6. the object context menu offers Edit shader ----------------------
 	const menuItems = await page.evaluate((u) => {
-		const items = window.__stores.objectMenu.buildObjectMenuItems(u, { selection: [u] });
+		const items = window.__tp.test.v1.objectMenu.buildObjectMenuItems(u, { selection: [u] });
 		const flat = [];
 		const walk = (list) => {
 			for (const it of list ?? []) {
@@ -204,7 +204,7 @@ h.run(async () => {
 	// `multi` is derived from opts.SELECTION, not an opts.multi flag — passing the flag is
 	// silently ignored, which made the first version of this check pass vacuously
 	const multiItems = await page.evaluate((pair) => {
-		const items = window.__stores.objectMenu.buildObjectMenuItems(pair[0], { selection: pair });
+		const items = window.__tp.test.v1.objectMenu.buildObjectMenuItems(pair[0], { selection: pair });
 		const flat = [];
 		const walk = (list) => {
 			for (const it of list ?? []) {

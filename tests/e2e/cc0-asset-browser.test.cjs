@@ -34,7 +34,7 @@ const shot = async (/** @type {any} */ page, /** @type {string} */ name) => {
 /** read a store off the debug hook @param {any} page @param {string} expr e.g. 'explorer.explorerItems' */
 const store = (page, expr) =>
 	page.evaluate((e) => {
-		const s = e.split('.').reduce((o, k) => o?.[k], window.__stores);
+		const s = e.split('.').reduce((o, k) => o?.[k], window.__tp?.test.v1);
 		let v;
 		s.subscribe((x) => (v = x))();
 		return JSON.parse(JSON.stringify(v ?? null, (k, val) => (k === 'thumbnail' || k === 'map' || k === 'normalMap' ? (val ? '[data]' : val) : val)));
@@ -46,7 +46,7 @@ const cardError = (page, id) => page.$eval(`.ab-card[data-asset-id="${id}"] .ab-
 const objectFacts = (page, uuid) =>
 	page.evaluate((u) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		const o = g?.getObjectByProperty('uuid', u);
 		if (!o) return null;
 		const m = Array.isArray(o.material) ? null : o.material;
@@ -61,7 +61,7 @@ async function waitHeldOrError(page, id, timeout = 60000) {
 	if (!ok) {
 		const why = await page.evaluate((i) => {
 			let jobs;
-			window.__stores.cc0.cc0Jobs.subscribe((x) => (jobs = x))();
+			window.__tp.test.v1.cc0.cc0Jobs.subscribe((x) => (jobs = x))();
 			return { jobs, card: document.querySelector(`.ab-card[data-asset-id="${i}"]`)?.outerHTML?.slice(0, 600) ?? 'NO CARD', kind: document.querySelector('#asset-browser-grid')?.dataset.kind };
 		}, id);
 		console.log('  waitHeldOrError ' + id + ' timed out: ' + JSON.stringify(why) + ' errors: ' + JSON.stringify(page.__errors.slice(-3)));
@@ -85,7 +85,7 @@ h.run(async () => {
 	const page = A.page;
 
 	// ---- 1. open, list, search, category --------------------------------------------------
-	await page.evaluate(() => window.__stores.closeMenu.set(false));
+	await page.evaluate(() => window.__tp.test.v1.closeMenu.set(false));
 	await page.locator('#open-asset-browser').click();
 	await page.waitForSelector('#asset-browser-window', { timeout: 20000 });
 	h.check(true, '1.1 the main menu row opens the Asset Browser');
@@ -131,7 +131,7 @@ h.run(async () => {
 	h.check(item?.source?.site === 'polyhaven' && item?.source?.license === 'CC0' && item?.source?.authors?.length > 0 && /^https:\/\/polyhaven\.com\/a\//.test(item?.source?.url ?? ''), '3.4 it carries the CC0 source (site, authors, licence, url)');
 	h.check(folders3.find((f) => f.id === item?.folderId)?.name === 'Poly Haven', '3.5 it lands in the "Poly Haven" folder');
 	const glb = await page.evaluate(async (id) => {
-		const blob = await window.__stores.explorer.itemBlob(id);
+		const blob = await window.__tp.test.v1.explorer.itemBlob(id);
 		const bytes = new Uint8Array(await blob.arrayBuffer());
 		const dv = new DataView(bytes.buffer);
 		const len = dv.getUint32(12, true);
@@ -150,30 +150,30 @@ h.run(async () => {
 	const props = await page.$eval('#explorer-cc0-source', (e) => ({ text: e.textContent?.replace(/\s+/g, ' ').trim(), href: e.querySelector('a')?.getAttribute('href') })).catch(() => null);
 	h.check(!!props && /CC0/.test(props.text ?? '') && /Poly Haven/.test(props.text ?? '') && props.href === item?.source?.url, `3.8 the Explorer Properties pane names the source (${props?.text})`);
 	await shot(page, '02-explorer-properties.png');
-	await page.evaluate(() => window.__stores.explorerClose.set(true));
+	await page.evaluate(() => window.__tp.test.v1.explorerClose.set(true));
 
 	// ---- 4. Add to scene: on both peers --------------------------------------------------------
-	await page.evaluate(() => window.__stores.cc0State.openAssetBrowser());
+	await page.evaluate(() => window.__tp.test.v1.cc0State.openAssetBrowser());
 	await page.waitForSelector(`.ab-card[data-asset-id="${model}"] [data-act="place"]`, { timeout: 20000 });
 	await page.locator(`.ab-card[data-asset-id="${model}"] [data-act="place"]`).click();
 	// 47-int: since 46 P2 a model import first loads the lazy import optimizer and hashes the file, so the
 	// object lands 2-10 s after the click on a loaded box — poll (the explorer-drop precedent)
 	await page
-		.waitForFunction((id) => { let g; window.__stores.objectsGroup.subscribe((x) => (g = x))(); return g.children.some((c) => c.userData?.source?.id === id); }, model, { timeout: 20000 })
+		.waitForFunction((id) => { let g; window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))(); return g.children.some((c) => c.userData?.source?.id === id); }, model, { timeout: 20000 })
 		.catch(() => {});
 	const placed = await page.evaluate((id) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		return g.children.find((c) => c.userData?.source?.id === id)?.uuid ?? null;
 	}, model);
 	h.check(!!placed, '4.1 Add to scene places the model, carrying userData.source');
 	await h.eventually(() => objectFacts(B.page, placed), (f) => f?.source?.site === 'polyhaven' && f?.source?.id === model, '4.2 the peer receives the object WITH its CC0 source', 20000);
-	await page.evaluate((u) => window.__stores.objectActions.applySelectionSet([u], true), placed);
+	await page.evaluate((u) => window.__tp.test.v1.objectActions.applySelectionSet([u], true), placed);
 	await page.waitForSelector('#inspector-cc0-source', { timeout: 15000 }).catch(() => {});
 	const insp = await page.$eval('#inspector-cc0-source', (e) => e.textContent?.replace(/\s+/g, ' ').trim()).catch(() => '');
 	h.check(/CC0/.test(insp ?? '') && /Poly Haven/.test(insp ?? ''), `4.3 the Inspector names where the object came from (${insp})`);
 	await shot(page, '03-placed-inspector.png');
-	await page.evaluate(() => window.__stores.inspectorClose?.set(true));
+	await page.evaluate(() => window.__tp.test.v1.inspectorClose?.set(true));
 
 	// ---- 5. an HDRI -> the sky, on both peers -------------------------------------------------
 	await openTab(page, 'hdris');
@@ -183,19 +183,19 @@ h.run(async () => {
 	const items5 = await store(page, 'explorer.explorerItems');
 	const sky = items5.find((i) => i.source?.id === hdri);
 	h.check(sky?.kind === 'hdri' && /\.hdr$/.test(sky?.name ?? ''), `5.2 the .hdr is a Library item of kind hdri (${sky?.name}) ${await cardError(page, hdri)}`);
-	const envA = await page.evaluate(() => window.__stores.environment.presetPayload()?.hdri?.src ?? null);
+	const envA = await page.evaluate(() => window.__tp.test.v1.environment.presetPayload()?.hdri?.src ?? null);
 	h.check(!!sky && envA === 'hash:' + sky.hash, `5.3 the environment lights the scene with it (${envA})`);
-	await h.eventually(() => B.page.evaluate(() => window.__stores.environment.presetPayload()?.hdri?.src ?? null), (s) => !!sky && s === 'hash:' + sky.hash, '5.4 the peer gets the same sky', 20000);
+	await h.eventually(() => B.page.evaluate(() => window.__tp.test.v1.environment.presetPayload()?.hdri?.src ?? null), (s) => !!sky && s === 'hash:' + sky.hash, '5.4 the peer gets the same sky', 20000);
 	await shot(page, '04-hdri-sky.png');
 
 	// ---- 6. an ambientCG material through the relay -> applied to a box -----------------------
 	const box = await page.evaluate(async () => {
-		window.__stores.addObjects.spawnAtPoint('/create box', [2, 0.5, 0]);
+		window.__tp.test.v1.addObjects.spawnAtPoint('/create box', [2, 0.5, 0]);
 		await new Promise((r) => setTimeout(r, 1500));
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		const b = [...g.children].reverse().find((c) => c.isMesh && !c.userData?.source);
-		window.__stores.objectActions.applySelectionSet([b.uuid]);
+		window.__tp.test.v1.objectActions.applySelectionSet([b.uuid]);
 		return b.uuid;
 	});
 	await openTab(page, 'materials');
@@ -218,12 +218,12 @@ h.run(async () => {
 	const boxA = await objectFacts(page, box);
 	h.check(!!boxA?.map && !!boxA?.normalMap && boxA?.cc0?.id === material, `6.7 applied to the selected box (${JSON.stringify(boxA)})`);
 	await h.eventually(() => objectFacts(B.page, box), (f) => !!f?.map && f?.cc0?.id === material, '6.8 the peer sees the box wear it', 20000);
-	await page.evaluate((u) => window.__stores.objectActions.applySelectionSet([u], true), box);
+	await page.evaluate((u) => window.__tp.test.v1.objectActions.applySelectionSet([u], true), box);
 	await page.waitForSelector('#inspector-cc0-material', { timeout: 15000 }).catch(() => {});
 	const inspM = await page.$eval('#inspector-cc0-material', (e) => e.textContent?.replace(/\s+/g, ' ').trim()).catch(() => '');
 	h.check(/ambientCG/.test(inspM ?? '') && /CC0/.test(inspM ?? ''), `6.9 the Inspector's material section names the source (${inspM})`);
 	await shot(page, '05-material-applied.png');
-	await page.evaluate(() => window.__stores.inspectorClose?.set(true));
+	await page.evaluate(() => window.__tp.test.v1.inspectorClose?.set(true));
 
 	// ---- 7. a Poly Haven texture set -> a preset ------------------------------------------------
 	await openTab(page, 'textures');
@@ -242,9 +242,9 @@ h.run(async () => {
 	h.check(/saved/.test(stale ?? '') && /503/.test(stale ?? '') && (await grid(page))?.count === 3, `8.1 the site down: the saved list stays, and the banner says so (${stale})`);
 	// a tab never saved: the cache entry is dropped first
 	await page.evaluate(async () => {
-		const { idbKeys, idbDelete } = window.__stores.idb; // the debug hook: a deployed build has no /src paths
+		const { idbKeys, idbDelete } = window.__tp.test.v1.idb; // the debug hook: a deployed build has no /src paths
 		for (const k of await idbKeys()) if (String(k).startsWith('cc0:') && /t=hdris|categories\/hdris/.test(String(k))) await idbDelete(k);
-		window.__stores.cc0Fetch.forgetCc0Memo();
+		window.__tp.test.v1.cc0Fetch.forgetCc0Memo();
 	});
 	await openTab(page, 'hdris');
 	const err8 = await page.$eval('#asset-browser-status[data-state=error]', (e) => e.textContent?.replace(/\s+/g, ' ').trim()).catch(() => '');
@@ -277,21 +277,21 @@ h.run(async () => {
 	net.state.offline = false;
 
 	// ---- 9. docks like the other hosted windows ---------------------------------------------------
-	await page.evaluate(() => window.__stores.dockHost.setHostedDocked('assets', true));
+	await page.evaluate(() => window.__tp.test.v1.dockHost.setHostedDocked('assets', true));
 	await page.waitForTimeout(1200);
 	const docked = await page.evaluate(() => {
 		let v;
-		window.__stores.dockHost.hostedTabsOpen.subscribe((x) => (v = x))();
+		window.__tp.test.v1.dockHost.hostedTabsOpen.subscribe((x) => (v = x))();
 		return { tab: !!v.assets, inDock: !!document.querySelector('#asset-browser-window')?.closest('[data-pd-host], .pd-body, #bottom-dock, [data-dock-body]') || !!document.querySelector('[data-pd-host="assets"]') };
 	});
 	h.check(docked.tab, `9.1 it docks as a hosted tab (${JSON.stringify(docked)})`);
 	await shot(page, '08-docked.png');
-	await page.evaluate(() => window.__stores.dockHost.setHostedDocked('assets', false));
+	await page.evaluate(() => window.__tp.test.v1.dockHost.setHostedDocked('assets', false));
 
 	// ---- 10. a phone ---------------------------------------------------------------------------
 	const C = await h.setupPageQuiet(browser, 'C', [A, B], { context: { viewport: { width: 390, height: 896 }, deviceScaleFactor: 2.9, isMobile: true, hasTouch: true } });
 	await net.routes(C.page);
-	await C.page.evaluate(() => window.__stores.cc0State.openAssetBrowser());
+	await C.page.evaluate(() => window.__tp.test.v1.cc0State.openAssetBrowser());
 	await C.page.waitForFunction(() => Number(document.querySelector('#asset-browser-grid')?.dataset.count) > 0, null, { timeout: 30000 }).catch(() => {});
 	const phone = await C.page.evaluate(() => {
 		const w = document.querySelector('#asset-browser-window');

@@ -20,6 +20,7 @@ import { cameraPreview } from '$lib/cameraPreview';
 import { postStacks, resolvedDoc, POST_SCENE_KEY, postEnabledLocal, effectivePostStack, normalizeScenePost } from '$lib/scenePost';
 import { qualityOverrides, qualityState } from '$lib/qualityGovernor';
 import { postOffReason } from './postShotCore.js';
+import { createRenderTarget, readPixels } from '../render/renderTargets.js'; // 101 F3: the one factory
 
 export { postOffReason, QUALITY_HOW } from './postShotCore.js';
 
@@ -59,7 +60,7 @@ export function postState() {
 export async function renderWithPost(renderer, scene, camera, w, h, entries) {
 	const [{ EffectComposer, RenderPass, CopyPass }, { compilePostStack, disposePostStack }] = await Promise.all([import('postprocessing'), import('$lib/postEffects')]);
 	const float = !!renderer.extensions?.has?.('EXT_color_buffer_float');
-	const target = new THREE.WebGLRenderTarget(w, h, { type: float ? THREE.FloatType : THREE.UnsignedByteType, depthBuffer: false });
+	const target = createRenderTarget(w, h, { type: float ? THREE.FloatType : THREE.UnsignedByteType, depthBuffer: false });
 	// no renderer at construction: setRenderer would resize the canvas to its own size and switch autoClear off
 	const composer = /** @type {any} */ (new EffectComposer(/** @type {any} */ (null), { frameBufferType: THREE.HalfFloatType }));
 	const renderPass = new RenderPass(scene, camera);
@@ -84,7 +85,7 @@ export async function renderWithPost(renderer, scene, camera, w, h, entries) {
 		for (const instance of compiled.instances) instance.def?.resize?.(instance.object, w, h, dpr);
 		composer.render(1 / 60);
 		const pixels = float ? new Float32Array(w * h * 4) : new Uint8Array(w * h * 4);
-		renderer.readRenderTargetPixels(target, 0, 0, w, h, pixels);
+		await readPixels(renderer, target, 0, 0, w, h, pixels);
 		return { pixels, float };
 	} catch (error) {
 		return { error: 'the post stack could not render this shot: ' + String(/** @type {any} */ (error)?.message ?? error) };

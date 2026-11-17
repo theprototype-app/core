@@ -16,7 +16,7 @@ const h = require('./helpers.cjs');
 /** z of the first position entry at grid (x, y) on the object with this uuid */
 const Z_AT = ({ uuid, x, y }) => {
 	let g;
-	window.__stores.objectsGroup.subscribe((v) => (g = v))();
+	window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 	const object = g?.getObjectByProperty('uuid', uuid);
 	const position = object?.geometry?.attributes?.position;
 	if (!position) return null;
@@ -35,7 +35,7 @@ h.run(async () => {
 
 	// A makes the grid (a PlaneGeometry lies in XY, so the drag goes along Z; 4/8 = 0.5 step)
 	const uuid = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create Plane 4 4 8 8');
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
@@ -50,7 +50,7 @@ h.run(async () => {
 
 	// A: edit mode, pick the origin vertex, proportional on, drag it +1 in Z, release
 	const drag = await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const me = s.meshEdit;
 		me.enterEditMode(uuid);
 		let controls;
@@ -124,7 +124,7 @@ h.run(async () => {
 	}
 	const bCount = await B.page.evaluate((uuid) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const object = g?.getObjectByProperty('uuid', uuid);
 		return { count: object?.geometry?.attributes?.position?.count, indexed: !!object?.geometry?.index };
 	}, uuid);
@@ -134,7 +134,7 @@ h.run(async () => {
 	// (the representation agreement above is what makes this true: the sender's verts
 	// indices must mean the same corners on the receiver)
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const me = s.meshEdit;
 		me.proportionalEdit.set(false);
 		let controls;
@@ -155,8 +155,8 @@ h.run(async () => {
 
 	// --- ONE undo flattens the bulge on A and reaches B --------------------------
 	await A.page.evaluate(() => {
-		window.__stores.history.undo(); // the plain drag
-		window.__stores.history.undo(); // the whole bulge
+		window.__tp.test.v1.history.undo(); // the plain drag
+		window.__tp.test.v1.history.undo(); // the whole bulge
 	});
 	const undone = await zAt(A.page, uuid, 0.5, 0);
 	h.check(Math.abs(undone) < 1e-6, `one undo flattens the whole bulge on A (${undone?.toFixed(6)})`);
@@ -167,6 +167,6 @@ h.run(async () => {
 		15000
 	);
 
-	await A.page.evaluate(() => window.__stores.meshEdit.exitEditMode());
+	await A.page.evaluate(() => window.__tp.test.v1.meshEdit.exitEditMode());
 	await h.finish(browser);
 });

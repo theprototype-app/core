@@ -10,26 +10,26 @@ h.run(async () => {
 
 	// helper: enter face edit on a fresh box, highlight the +X face
 	await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const box = group.children[group.children.length - 1];
 		window.__box = box;
-		window.__stores.objectActions.selectObject(box.uuid);
-		window.__stores.faceEdit.enterFaceEdit(box.uuid);
+		window.__tp.test.v1.objectActions.selectObject(box.uuid);
+		window.__tp.test.v1.faceEdit.enterFaceEdit(box.uuid);
 		// find the +X face index
-		const faces = window.__stores.faceEdit.currentFaces();
+		const faces = window.__tp.test.v1.faceEdit.currentFaces();
 		window.__xface = faces.findIndex((f) => f.normal.x > 0.9);
 	});
 	await A.page.waitForTimeout(300);
 
 	// --- rigid grab: move the face's vertices by a local translation ---
 	const grab = await A.page.evaluate(() => {
-		const f = window.__stores.faceEdit;
-		const THREE = window.__stores.THREE;
+		const f = window.__tp.test.v1.faceEdit;
+		const THREE = window.__tp.test.v1.THREE;
 		const captured = [];
 		let original;
-		window.__stores.peers.subscribe((p) => (original = p))();
-		window.__stores.peers.set({ ...(original ?? {}), peer: { id: 'me' }, send: (m) => captured.push(m) });
+		window.__tp.test.v1.peers.subscribe((p) => (original = p))();
+		window.__tp.test.v1.peers.set({ ...(original ?? {}), peer: { id: 'me' }, send: (m) => captured.push(m) });
 
 		f.beginFaceGrab(window.__xface);
 		const before = window.__box.geometry.attributes.position.array.slice();
@@ -42,7 +42,7 @@ h.run(async () => {
 		);
 		const ok = f.commitFaceGrab();
 		const meshgeos = captured.filter((m) => m.type === 'meshgeo').length;
-		window.__stores.peers.set(original);
+		window.__tp.test.v1.peers.set(original);
 		return { beforeMaxX: Math.max(...before.filter((_, i) => i % 3 === 0)), maxXAfterMove, ok, meshgeos };
 	});
 	h.check(Math.abs(grab.beforeMaxX - 0.5) < 1e-6, 'box +X face starts at x=0.5');
@@ -51,7 +51,7 @@ h.run(async () => {
 
 	// --- undo restores the pre-grab geometry ---
 	const undo = await A.page.evaluate(() => {
-		window.__stores.history.undo();
+		window.__tp.test.v1.history.undo();
 		return Math.max(
 			...Array.from({ length: window.__box.geometry.attributes.position.count }, (_, i) =>
 				window.__box.geometry.attributes.position.getX(i)
@@ -62,7 +62,7 @@ h.run(async () => {
 
 	// --- scale around the centroid shrinks the GRABBED face's own verts ---
 	const rotScale = await A.page.evaluate(() => {
-		const f = window.__stores.faceEdit;
+		const f = window.__tp.test.v1.faceEdit;
 		const faces = f.currentFaces();
 		const xi = faces.findIndex((fc) => fc.normal.x > 0.9);
 		const tset = faces[xi].triIndices;
@@ -84,7 +84,7 @@ h.run(async () => {
 
 	// --- live extrude adjust: default op, stick reshapes, second trigger commits ---
 	const adjust = await A.page.evaluate(() => {
-		const f = window.__stores.faceEdit;
+		const f = window.__tp.test.v1.faceEdit;
 		const tri = () => f.readTriangles(window.__box.geometry).length;
 		const faces = f.currentFaces();
 		const xi = faces.findIndex((fc) => fc.normal.x > 0.9);
@@ -113,15 +113,15 @@ h.run(async () => {
 
 	// --- the committed adjust is undoable back to the base geometry ---
 	const adjustUndo = await A.page.evaluate(() => {
-		const f = window.__stores.faceEdit;
-		window.__stores.history.undo();
+		const f = window.__tp.test.v1.faceEdit;
+		window.__tp.test.v1.history.undo();
 		return f.readTriangles(window.__box.geometry).length;
 	});
 	h.check(adjustUndo === 12, `the committed extrude adjust is undoable (${adjustUndo})`);
 
 	// --- cancel an adjust restores the pre-begin geometry (relative) ---
 	const cancelAdjust = await A.page.evaluate(() => {
-		const f = window.__stores.faceEdit;
+		const f = window.__tp.test.v1.faceEdit;
 		const tri = () => f.readTriangles(window.__box.geometry).length;
 		const faces = f.currentFaces();
 		const xi = faces.findIndex((fc) => fc.normal.x > 0.9);
@@ -139,7 +139,7 @@ h.run(async () => {
 
 	// --- exiting mid-adjust reverts the uncommitted preview (relative) ---
 	const exitRevert = await A.page.evaluate(() => {
-		const f = window.__stores.faceEdit;
+		const f = window.__tp.test.v1.faceEdit;
 		const tri = () => f.readTriangles(window.__box.geometry).length;
 		const faces = f.currentFaces();
 		const xi = faces.findIndex((fc) => fc.normal.x > 0.9);

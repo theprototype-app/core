@@ -35,7 +35,7 @@ require('fs').mkdirSync(OUT, { recursive: true });
 
 const state = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const g = (st) => {
 			let v;
 			st.subscribe((x) => (v = x))();
@@ -100,7 +100,7 @@ h.run(async () => {
 			h.check(st.vis.right === true, `${tag('3.1')} the right handle opens the right column`);
 			if (dev.cls === 'desktop') {
 				h.check(!st.hr, `${tag('3.2')} desktop: the handle is gone while its column is open (the border closes it)`);
-				await page.evaluate(() => window.__stores.sidebars.toggleSidebar('right', false));
+				await page.evaluate(() => window.__tp.test.v1.sidebars.toggleSidebar('right', false));
 			} else {
 				h.check(!!st.hr && st.colR && Math.abs(st.hr.r - st.colR.x) <= 2, `${tag('3.2')} touch: the handle rides the column's inner edge (${st.hr?.r} ~ ${st.colR?.x})`);
 				await page.locator('#sidebar-handle-right').click();
@@ -110,7 +110,7 @@ h.run(async () => {
 		}
 
 		// --- 1b: Configure Scene opens on the right ---
-		await page.evaluate(() => window.__stores.showSidebar('scene'));
+		await page.evaluate(() => window.__tp.test.v1.showSidebar('scene'));
 		await settle(page, 1200);
 		st = await state(page);
 		await page.screenshot({ path: `${OUT}/${dev.name}-scene.png` });
@@ -147,7 +147,7 @@ h.run(async () => {
 			h.check(!above.skip && above.canvas && above.canvas.r >= vw - 1, `${tag('7.1')} the 3D view still reaches the right edge above the open column (${JSON.stringify(above.canvas)})`);
 			h.check(!painted.length && (above.points ?? []).every((pt) => pt.stack.some((e) => e.tag === 'CANVAS')), `${tag('7.2')} nothing painted between the column and the profile button: the 3D view shows there (${JSON.stringify((above.points ?? []).map((pt) => pt.top))})`);
 		}
-		await page.evaluate(() => window.__stores.sidebars.toggleSidebar('right', false));
+		await page.evaluate(() => window.__tp.test.v1.sidebars.toggleSidebar('right', false));
 		await settle(page);
 
 		if (dev.cls === 'phone') {
@@ -161,21 +161,21 @@ h.run(async () => {
 			h.check(v1.right && !v1.left, `${tag('5.1')} the first press shows the right side (the left is empty) (${JSON.stringify(v1)})`);
 			h.check(!v2.right && !v2.left, `${tag('5.2')} the next press hides all (${JSON.stringify(v2)})`);
 			// --- 4: handles on by hand hide the button ---
-			await page.evaluate(() => window.__stores.sidebarHandles.sidebarHandlesMode.set('on'));
+			await page.evaluate(() => window.__tp.test.v1.sidebarHandles.sidebarHandlesMode.set('on'));
 			await settle(page);
 			st = await state(page);
 			h.check(!st.panels && !!st.hl, `${tag('4.1')} handles On by hand: handles drawn, the button hides`);
-			await page.evaluate(() => window.__stores.sidebarHandles.sidebarHandlesMode.set('auto'));
+			await page.evaluate(() => window.__tp.test.v1.sidebarHandles.sidebarHandlesMode.set('auto'));
 			await settle(page);
 			st = await state(page);
 			h.check(!!st.panels && !st.hl, `${tag('4.2')} back to Auto: the button returns, no handles (the counterfactual)`);
 		} else {
 			// --- 6: Hide handles, then Auto ---
-			const was = await page.evaluate(() => window.__stores.sidebarHandles.hideSidebarHandles());
+			const was = await page.evaluate(() => window.__tp.test.v1.sidebarHandles.hideSidebarHandles());
 			await settle(page);
 			st = await state(page);
 			h.check(was === 'auto' && !st.hl && !st.hr, `${tag('6.1')} Hide handles turns the setting Off and they go`);
-			await page.evaluate(() => window.__stores.sidebarHandles.sidebarHandlesMode.set('auto'));
+			await page.evaluate(() => window.__tp.test.v1.sidebarHandles.sidebarHandlesMode.set('auto'));
 			await settle(page);
 			st = await state(page);
 			h.check(!!st.hl && !!st.hr, `${tag('6.2')} Auto brings them back`);

@@ -15,7 +15,7 @@ const FOLDED = { viewport: { width: 390, height: 896 }, deviceScaleFactor: 2.9, 
 
 /** open the burger's List ⚙ (or Compact's ▾) and wait for the modal @param {any} page */
 async function openSaveOptions(page) {
-	await page.evaluate(() => window.__stores.closeMenu.set(false));
+	await page.evaluate(() => window.__tp.test.v1.closeMenu.set(false));
 	await page.waitForSelector('#sidebar70', { timeout: 5000 });
 	await page.waitForTimeout(350);
 	// List shows the cog; Compact reaches it through Save as… ▾ (showhide-v8 §6: its last item is Save options…)
@@ -41,11 +41,11 @@ const box = (page) =>
 async function shots(page, name) {
 	if (!OUT) return;
 	for (const t of ['dark', 'light']) {
-		await page.evaluate((th) => window.__stores.themes.theme.set(th), t);
+		await page.evaluate((th) => window.__tp.test.v1.themes.theme.set(th), t);
 		await page.waitForTimeout(350);
 		await page.screenshot({ path: path.join(OUT, `${name}-${t}.png`) });
 	}
-	await page.evaluate(() => window.__stores.themes.theme.set('dark'));
+	await page.evaluate(() => window.__tp.test.v1.themes.theme.set('dark'));
 }
 
 h.run(async () => {

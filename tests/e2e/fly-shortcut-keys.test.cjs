@@ -9,7 +9,7 @@ const camPos = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.globalCamera.subscribe((c) => r(c?.position?.toArray()))()
+				window.__tp.test.v1.globalCamera.subscribe((c) => r(c?.position?.toArray()))()
 			)
 		);
 
@@ -21,7 +21,7 @@ h.run(async () => {
 
 	// --- Shift+A opens the Add menu and must NOT move the camera ---------------
 	// Shift+A quick add is opt-in (Settings, default off)
-	await A.page.evaluate(() => window.__stores.enableShiftAdd.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.enableShiftAdd.set(true));
 	const before = await camPos(A.page);
 	await A.page.keyboard.press('Shift+KeyA');
 	// poll for the box: the shortcut action dynamically imports appStore, so a fixed

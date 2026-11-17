@@ -12,15 +12,15 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		window.__box = group.children[group.children.length - 1];
 	});
 
 	// --- every new type is switchable; color carries where the target has it ---
 	const results = await A.page.evaluate(
 		({ withColor, noColor }) => {
-			const M = window.__stores.materialsHandler;
+			const M = window.__tp.test.v1.materialsHandler;
 			const box = window.__box;
 			const out = [];
 			for (const t of [...withColor, ...noColor]) {
@@ -45,7 +45,7 @@ h.run(async () => {
 
 	// --- shared numeric params survive a switch (roughness Standard -> Physical) ---
 	const carried = await A.page.evaluate(() => {
-		const M = window.__stores.materialsHandler;
+		const M = window.__tp.test.v1.materialsHandler;
 		const box = window.__box;
 		M.switchMaterialType(box.uuid, 'MeshStandardMaterial', false);
 		M.setMaterialParam(box.uuid, 'roughness', 0.2, false);
@@ -57,7 +57,7 @@ h.run(async () => {
 
 	// --- a type switch replicates as an objectParameters/material message ---
 	const sent = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const captured = [];
 		let original;
 		s.peers.subscribe((p) => (original = p))();
@@ -71,7 +71,7 @@ h.run(async () => {
 
 	// --- and it is undoable through the shared material history ---
 	const undo = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const box = window.__box;
 		s.materialsHandler.switchMaterialType(box.uuid, 'MeshBasicMaterial', true);
 		const before = box.material.type;

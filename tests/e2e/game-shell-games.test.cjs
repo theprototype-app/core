@@ -35,11 +35,11 @@ h.run(async () => {
 	const page = A.page;
 	const installed = new Set();
 	for (const id of [...new Set(GAMES.flatMap((g) => g.modules))]) if (await h.installModule(A, id)) installed.add(id);
-	await page.evaluate(() => window.__stores.modulesOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.modulesOpen.set(false));
 	await page.waitForTimeout(300);
 	const g = (p) =>
 		page.evaluate((p) => {
-			let o = window.__stores;
+			let o = window.__tp?.test.v1;
 			for (const k of p.split('.')) o = o[k];
 			let v;
 			o.subscribe((x) => (v = x))();
@@ -56,18 +56,18 @@ h.run(async () => {
 		console.log('\n=== ' + game.slug + ' ===');
 		const bytes = Array.from(fs.readFileSync(file));
 		await page.evaluate(async (arr) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.templatesModalOpen.set(false);
 			const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 			await s.sessions.applySession(payload, { backup: false });
 		}, bytes);
 		await page.waitForTimeout(3000);
-		const id = await page.evaluate(() => window.__stores.gameKit.gameSettings.currentGameId());
+		const id = await page.evaluate(() => window.__tp.test.v1.gameKit.gameSettings.currentGameId());
 		h.check(id === game.slug, game.slug + ': the game id is its slug (' + id + ')');
-		h.check(await page.evaluate(() => window.__stores.gameKit.gameShell.shellSceneIsGame()), game.slug + ': the shell sees a game');
+		h.check(await page.evaluate(() => window.__tp.test.v1.gameKit.gameShell.shellSceneIsGame()), game.slug + ': the shell sees a game');
 
 		// ---- desktop
-		await page.evaluate(() => window.__stores.playMode.requestPlay());
+		await page.evaluate(() => window.__tp.test.v1.playMode.requestPlay());
 		await page.waitForTimeout(800);
 		h.check((await g('isLocked')) === true, game.slug + ': premise: in Play');
 		await page.keyboard.press('Escape');
@@ -82,7 +82,7 @@ h.run(async () => {
 		await page.locator('[data-shell-item="mainmenu"]').click();
 		await page.waitForTimeout(700);
 		const after = await page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const r = {};
 			s.isLocked.subscribe((v) => (r.locked = v))();
 			s.templatesModalOpen.subscribe((v) => (r.open = v))();
@@ -90,13 +90,13 @@ h.run(async () => {
 			return r;
 		});
 		h.check(after.locked !== true && after.open === true && after.music === null, game.slug + ': Main menu leaves Play to the Games tab, music off (' + JSON.stringify(after) + ')');
-		await page.evaluate(() => window.__stores.templatesModalOpen.set(false));
+		await page.evaluate(() => window.__tp.test.v1.templatesModalOpen.set(false));
 		await page.waitForTimeout(500);
 
 		// ---- VR (emulated)
 		await page.evaluate(() => {
-			window.__stores.isVRMode.set(true);
-			window.__stores.objectActions.setEditorMode('interact');
+			window.__tp.test.v1.isVRMode.set(true);
+			window.__tp.test.v1.objectActions.setEditorMode('interact');
 		});
 		await xr.install(page);
 		await xr.setOn(page, true);
@@ -107,7 +107,7 @@ h.run(async () => {
 		await page.waitForTimeout(200);
 		h.check((await g('gameKit.gameShell.shellMenu')).open === true, game.slug + ' VR: the left X opens the pause menu');
 		const vr = await page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const T = s.THREE;
 			const k = s.gameKit.vrGamePanel;
 			const head = { position: new T.Vector3(0, 1.6, 0), quaternion: new T.Quaternion() };
@@ -125,7 +125,7 @@ h.run(async () => {
 		await xr.button(page, 'left', 4, false);
 		await page.waitForTimeout(200);
 		const vr2 = await page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const T = s.THREE;
 			const k = s.gameKit.vrGamePanel;
 			const head = { position: new T.Vector3(0, 1.6, 0), quaternion: new T.Quaternion() };
@@ -140,8 +140,8 @@ h.run(async () => {
 		h.check(vr2.ok && vr2.mode === 'edit' && vr2.open === true, game.slug + ' VR: Main menu leaves the game (' + JSON.stringify(vr2) + ')');
 		await xr.uninstall(page);
 		await page.evaluate(() => {
-			window.__stores.isVRMode.set(false);
-			window.__stores.templatesModalOpen.set(false);
+			window.__tp.test.v1.isVRMode.set(false);
+			window.__tp.test.v1.templatesModalOpen.set(false);
 		});
 		await page.waitForTimeout(400);
 	}

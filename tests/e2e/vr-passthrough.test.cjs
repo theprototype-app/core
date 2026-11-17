@@ -27,7 +27,7 @@ h.run(async () => {
 	h.check((await aim()) === 'vr', 'immersive-vr is aimed by default');
 
 	// the quick-menu tile flips the preference (real VR user path)
-	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('settings:passthrough')); // 187: moved into the VR settings panel
+	await A.page.evaluate(() => window.__tp.test.v1.vrControls.executeVRMenuAction('settings:passthrough')); // 187: moved into the VR settings panel
 	await A.page.waitForTimeout(400);
 	const toastShown = await A.page.getByText(/takes effect on the next VR entry/).first().isVisible().catch(() => false);
 	h.check(toastShown, 'tile toggle explains it applies next session');
@@ -43,14 +43,14 @@ h.run(async () => {
 	const envBefore = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.environment.environment.subscribe((e) => resolve(JSON.stringify(e)))();
+				window.__tp.test.v1.environment.environment.subscribe((e) => resolve(JSON.stringify(e)))();
 			})
 	);
 	const lifted = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.passthroughActive.set(true);
-				window.__stores.globalScene.subscribe((scene) => {
+				window.__tp.test.v1.passthroughActive.set(true);
+				window.__tp.test.v1.globalScene.subscribe((scene) => {
 					resolve({ background: scene.background, fog: scene.fog });
 				})();
 			})
@@ -59,8 +59,8 @@ h.run(async () => {
 	const restored = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.passthroughActive.set(false);
-				window.__stores.globalScene.subscribe((scene) => {
+				window.__tp.test.v1.passthroughActive.set(false);
+				window.__tp.test.v1.globalScene.subscribe((scene) => {
 					resolve(scene.background ? scene.background.getHexString() : null);
 				})();
 			})
@@ -69,7 +69,7 @@ h.run(async () => {
 	const presetSky = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				const env = window.__stores.environment;
+				const env = window.__tp.test.v1.environment;
 				env.environment.subscribe((e) => resolve(String(env.ENVIRONMENT_PRESETS[e?.preset ?? 'studio']?.background ?? '').replace('#', '').toLowerCase()))();
 			})
 	);
@@ -77,13 +77,13 @@ h.run(async () => {
 	const envAfter = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.environment.environment.subscribe((e) => resolve(JSON.stringify(e)))();
+				window.__tp.test.v1.environment.environment.subscribe((e) => resolve(JSON.stringify(e)))();
 			})
 	);
 	h.check(envBefore === envAfter, 'replicated environment state untouched');
 
 	// 98: the Settings row is a RED switch and flipping it toasts the heads-up
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 	await A.page.waitForTimeout(500);
 	// 111: the passthrough switch lives in the VR section (first accordion) now
 	await A.page.locator('#settings-nav .sn-row', { hasText: 'VR' }).first().click();
@@ -105,19 +105,19 @@ h.run(async () => {
 	const nowOff = await A.page.evaluate(() => localStorage.getItem('vrPassthrough'));
 	h.check(nowOff === 'false', 'switch writes the preference');
 	await toggle.click({ force: true }); // back on for the reload check
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await A.page.waitForTimeout(300);
 
 	// survives a reload (localStorage-backed store + button swap)
 	await A.page.reload();
 	// wait for the debug hook, not a timer: it loads after boot and missed a fixed 2.5 s once
-	await A.page.waitForFunction(() => !!(/** @type {any} */ (window).__stores?.vrPassthrough), null, { timeout: 30000 });
+	await A.page.waitForFunction(() => !!(/** @type {any} */ (window).__tp?.test.v1?.vrPassthrough), null, { timeout: 30000 });
 	await A.page.waitForTimeout(500);
 	const aimAfterReload = await aim();
 	const still = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.vrPassthrough.subscribe((v) => resolve(v))();
+				window.__tp.test.v1.vrPassthrough.subscribe((v) => resolve(v))();
 			})
 	);
 	h.check(

@@ -18,7 +18,7 @@ const read = `(s) => { let v; s.subscribe((x) => (v = x))(); return v; }`;
 async function snapshot(peer) {
 	return peer.page.evaluate((readSrc) => {
 		const rd = eval(readSrc);
-		const pm = window.__stores.playMode;
+		const pm = window.__tp.test.v1.playMode;
 		const chrome = document.querySelector('#editor-chrome');
 		const link = document.querySelector('#embed-open-link');
 		return {
@@ -33,8 +33,8 @@ async function snapshot(peer) {
 			canvas: !!document.querySelector('.viewport canvas'),
 			inset: document.querySelector('.viewport')?.classList.contains('viewport-inset') ?? null,
 			// `__stores.viewPrefs` is the MODULE; its store is `.viewPrefs`
-			dockPref: !!rd(window.__stores.viewPrefs.viewPrefs)?.dockPushesViewport,
-			locked: rd(window.__stores.isLocked),
+			dockPref: !!rd(window.__tp.test.v1.viewPrefs.viewPrefs)?.dockPushesViewport,
+			locked: rd(window.__tp.test.v1.isLocked),
 			logoMenu: !!document.querySelector('#logo-menu')
 		};
 	}, read);
@@ -71,7 +71,7 @@ h.run(async () => {
 	// the Controls button makes
 	await E.page.click('#embed-play');
 	await h.eventually(
-		() => E.page.evaluate((r) => eval(r)(window.__stores.isLocked), read),
+		() => E.page.evaluate((r) => eval(r)(window.__tp.test.v1.isLocked), read),
 		(v) => v === true,
 		'embed ▶: enters play mode (isLocked true)',
 		15000
@@ -83,9 +83,9 @@ h.run(async () => {
 
 	// leaving play must NOT bring the editor back (plain play mode would — that is the
 	// difference the flag makes)
-	await E.page.evaluate(() => window.__stores.playMode.exitPlay());
+	await E.page.evaluate(() => window.__tp.test.v1.playMode.exitPlay());
 	await h.eventually(
-		() => E.page.evaluate((r) => eval(r)(window.__stores.isLocked), read),
+		() => E.page.evaluate((r) => eval(r)(window.__tp.test.v1.isLocked), read),
 		(v) => v !== true,
 		'embed exit: exitPlay leaves play mode',
 		10000

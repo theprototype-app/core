@@ -10,7 +10,7 @@ const h = require('./helpers.cjs');
 /** a box with a REAL uv attribute + a canvas texture, in face-edit mode */
 const texturedBox = (page) =>
 	page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.children[g.children.length - 1];
@@ -32,7 +32,7 @@ const texturedBox = (page) =>
 /** uv health: does the attribute exist and cover every vertex? */
 const uvInfo = (page, uuid) =>
 	page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const geo = g.getObjectByProperty('uuid', uuid).geometry;
 		const uv = geo.attributes.uv;
@@ -64,7 +64,7 @@ const uvInfo = (page, uuid) =>
 const runOp = (page, op, amount) =>
 	page.evaluate(
 		({ op, amount }) => {
-			const w = window.__stores;
+			const w = window.__tp?.test.v1;
 			const top = w.faceEdit.currentFaces().find((f) => f.normal.y > 0.99);
 			w.faceEdit.pickFaceUnit(top.triIndices[0]);
 			return w.faceEdit.commitFaceOp(op, amount);
@@ -99,10 +99,10 @@ h.run(async () => {
 
 	// ------------------------------------------- 3. undo/redo round-trips uvs
 	const beforeUndo = await uvInfo(A.page, uuid);
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	const undone = await uvInfo(A.page, uuid);
 	h.check(undone.has && undone.covers, 'undo restores a fully-mapped mesh');
-	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 	const redone = await uvInfo(A.page, uuid);
 	h.check(
 		redone.has && redone.covers && redone.uvCount === beforeUndo.uvCount,
@@ -110,10 +110,10 @@ h.run(async () => {
 	);
 
 	// ------------------------------------------------- 4. bridge + weld paths
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	const merged = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const mk = async (x) => {
 			w.commandsHandler.sceneCommand('/create Box 1 1 1');
 			const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
@@ -143,7 +143,7 @@ h.run(async () => {
 	// weld snapshots INDEX-EXPANDED positions, so the uv carry-over has to read
 	// through the previous index or it zero-pads
 	const welded = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.faceEdit.exitFaceEdit();
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
@@ -165,7 +165,7 @@ h.run(async () => {
 
 	// ----------------------------------- 5. untextured meshes stay untouched
 	const plain = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Sphere 0.5');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const s = g.children[g.children.length - 1];
@@ -190,7 +190,7 @@ h.run(async () => {
 	);
 
 	// ------------------------------------------------------- 6. two peers
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);
 	const netUuid = await texturedBox(A.page);

@@ -21,7 +21,7 @@ h.run(async () => {
 
 	// a bell and a door, made on A (they replicate with their uuids)
 	const ids = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const cmd = s.commandsHandler.sceneCommand;
 		cmd('/create Box 0.6 0.6 0.6');
 		cmd('/create Box 1 2 0.1');
@@ -43,7 +43,7 @@ h.run(async () => {
 
 	const build = (page) =>
 		page.evaluate(({ bell, door, doorRot, doorPos }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const N = (id, type, data, x = 0, y = 0) => ({ id, type, position: { x, y }, data: { label: id, ...data } });
 			const counter = (id, y) => N(id, 'counter', { op: 'up', step: 1 }, 600, y);
 			const quarter = Math.PI / 2;
@@ -91,7 +91,7 @@ h.run(async () => {
 	const counts = (page) =>
 		page.evaluate(() => {
 			let t;
-			window.__stores.flowTriggers.subscribe((v) => (t = v))();
+			window.__tp.test.v1.flowTriggers.subscribe((v) => (t = v))();
 			const c = (id) => t[id]?.count ?? 0;
 			return { enter: c('cEnter'), leave: c('cLeave'), me: c('cMe'), opened: c('cOpened'), closed: c('cClosed') };
 		});
@@ -100,7 +100,7 @@ h.run(async () => {
 
 	console.log('\n=== F2: hover ===');
 	// Interact mode on both (hover is a game input: Play or Interact, never Edit)
-	for (const p of [A, B]) await p.page.evaluate(() => window.__stores.editorMode.set('interact'));
+	for (const p of [A, B]) await p.page.evaluate(() => window.__tp.test.v1.editorMode.set('interact'));
 	await A.page.waitForTimeout(500);
 	const away = { x: 60, y: 660 };
 	await A.page.mouse.move(away.x, away.y);
@@ -115,7 +115,7 @@ h.run(async () => {
 	// B's bell really moves (sampled over the first swing — nothing streamed, B derives it)
 	const rotB = await B.page.evaluate(async (uuid) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		let most = 0;
 		for (let i = 0; i < 12; i++) {
 			most = Math.max(most, Math.abs(g.getObjectByProperty('uuid', uuid)?.rotation.z ?? 0));
@@ -132,7 +132,7 @@ h.run(async () => {
 
 	// Hover Animate: the SAME swing on both peers at a fixed moment (no streaming)
 	// the moment 0.2 s after the hover's stamp, asked of each peer's own stamp history
-	const poseAt = (page) => page.evaluate(() => window.__stores.flowRuntime.hoverAnimateDebug?.('swing', null, 0.2) ?? null);
+	const poseAt = (page) => page.evaluate(() => window.__tp.test.v1.flowRuntime.hoverAnimateDebug?.('swing', null, 0.2) ?? null);
 	const pa = await poseAt(A.page);
 	const pb = await poseAt(B.page);
 	h.check(pa !== null && Math.abs(pa.angle) > 0.01, `the bell swings on A (${JSON.stringify(pa)})`);
@@ -146,21 +146,21 @@ h.run(async () => {
 	const topB = await B.page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName ?? null, atB);
 	await B.page.touchscreen.tap(atB.x, atB.y);
 	await h.eventually(both, (r) => r.a.enter === 2 && r.b.enter === 2, 'phone: a tap on the bell is a hover (enter 2 on both)', 6000);
-	console.log('  B tap at', Math.round(atB.x), Math.round(atB.y), topB, JSON.stringify(await B.page.evaluate(() => window.__stores.hoverInput?.hoverInputDebug?.() ?? null)));
+	console.log('  B tap at', Math.round(atB.x), Math.round(atB.y), topB, JSON.stringify(await B.page.evaluate(() => window.__tp.test.v1.hoverInput?.hoverInputDebug?.() ?? null)));
 
 	// VR: the laser resolves through the same hover resolver
 	const laser = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ray = new s.THREE.Raycaster(new s.THREE.Vector3(0, 0.6, 3), new s.THREE.Vector3(0, 0, -1));
 		return s.flowRuntime.hoverTargetAlong?.(ray) ?? null;
 	});
 	h.check(laser === ids.bell, `VR: a laser along the bell resolves to it (${laser})`);
-	for (const p of [A, B]) await p.page.evaluate(() => window.__stores.editorMode.set('edit'));
+	for (const p of [A, B]) await p.page.evaluate(() => window.__tp.test.v1.editorMode.set('edit'));
 
 	console.log('\n=== F3: Toggle Animation ===');
 	const doorOf = (page) =>
 		page.evaluate((uuid) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let g;
 			s.objectsGroup.subscribe((v) => (g = v))();
 			const d = g.getObjectByProperty('uuid', uuid);
@@ -169,7 +169,7 @@ h.run(async () => {
 		}, ids.door);
 	const d0 = await doorOf(A.page);
 	h.check(Math.abs(d0.ry - ids.doorRot[1]) < 0.01 && d0.isOpen === false, `premise: the door rests closed (${JSON.stringify(d0)})`);
-	await A.page.evaluate(() => window.__stores.flowRuntime.applyNodeTrigger('kToggle', (Date.now() % 86400000) / 1000, true));
+	await A.page.evaluate(() => window.__tp.test.v1.flowRuntime.applyNodeTrigger('kToggle', (Date.now() % 86400000) / 1000, true));
 	await A.page.waitForTimeout(1300);
 	const d1a = await doorOf(A.page);
 	const d1b = await doorOf(B.page);
@@ -182,7 +182,7 @@ h.run(async () => {
 	console.log('\n=== F3: a late joiner ===');
 	const C = await h.setupPage(browser, 'C', { context: { viewport: { width: 1280, height: 720 } } });
 	await h.connect(C, A);
-	await C.page.waitForFunction(() => window.__stores.allNodes().some((n) => n.id === 'door'), null, { timeout: 30000 });
+	await C.page.waitForFunction(() => window.__tp.test.v1.allNodes().some((n) => n.id === 'door'), null, { timeout: 30000 });
 	await h.eventually(() => doorOf(C.page), (d) => d.ry !== null && Math.abs(d.ry - (ids.doorRot[1] + Math.PI / 2)) < 0.02 && d.isOpen === true, 'a late joiner sees the door OPEN with no new pulse', 15000);
 	// C's counters are SHARED state restored from the room (enter/leave/opened read what the room
 	// counted); "no new pulse" = C's opened equals A's, and stays so after the door settled on C
@@ -192,15 +192,15 @@ h.run(async () => {
 	h.check(rc.opened === ra.opened && rc.closed === ra.closed, `... and its "opened" did not fire on arrival (C ${JSON.stringify(rc)} = A ${JSON.stringify(ra)})`);
 
 	console.log('\n=== F8: named poses ===');
-	await A.page.evaluate(() => window.__stores.flowRuntime.applyNodeTrigger('kAjar', (Date.now() % 86400000) / 1000, true));
+	await A.page.evaluate(() => window.__tp.test.v1.flowRuntime.applyNodeTrigger('kAjar', (Date.now() % 86400000) / 1000, true));
 	await A.page.waitForTimeout(1300);
 	const third = Math.PI / 6;
 	for (const [name, page] of [['A', A.page], ['B', B.page], ['C', C.page]]) {
 		// polled: a third headless page ticks slowly under load
 		await h.eventually(() => doorOf(page), (d) => Math.abs(d.ry - (ids.doorRot[1] + third)) < 0.02 && d.pose === 1, `go to "ajar": the door rests on the middle pose on ${name}`, 8000);
 	}
-	console.log('  C after ajar: ' + JSON.stringify(await doorOf(C.page)) + ' ' + JSON.stringify(await C.page.evaluate(() => window.__stores.flowRuntime.toggleAnimDebug?.('door') ?? null)));
-	await A.page.evaluate(() => window.__stores.flowRuntime.applyNodeTrigger('kToggle', (Date.now() % 86400000) / 1000, true));
+	console.log('  C after ajar: ' + JSON.stringify(await doorOf(C.page)) + ' ' + JSON.stringify(await C.page.evaluate(() => window.__tp.test.v1.flowRuntime.toggleAnimDebug?.('door') ?? null)));
+	await A.page.evaluate(() => window.__tp.test.v1.flowRuntime.applyNodeTrigger('kToggle', (Date.now() % 86400000) / 1000, true));
 	await A.page.waitForTimeout(1300);
 	const d4 = await doorOf(B.page);
 	const r4 = await both();

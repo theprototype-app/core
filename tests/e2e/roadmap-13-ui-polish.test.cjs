@@ -35,10 +35,10 @@ h.run(async () => {
 	const simDefault = await A.page.locator('#sim-play').count();
 	h.check(simDefault === 0, 'A3: simulation controls hidden by default');
 
-	await A.page.evaluate(() => window.__stores.showSimControls.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.showSimControls.set(true));
 	await A.page.waitForTimeout(200);
 	h.check(await A.page.locator('#sim-play').first().isVisible(), 'A3: enabling the setting shows the sim play button');
-	await A.page.evaluate(() => window.__stores.showSimControls.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.showSimControls.set(false));
 	await A.page.waitForTimeout(150);
 	h.check((await A.page.locator('#sim-play').count()) === 0, 'A3: disabling the setting hides it again');
 
@@ -46,8 +46,8 @@ h.run(async () => {
 	// other modals should cover burger menu logo"). The logo is not reachable under Settings; once Settings
 	// closes, the logo opens the menu as before. (Old A6: the logo sat above --z-modal and one click closed it.)
 	await A.page.evaluate(() => {
-		window.__stores.closeMenu.set(true); // menu closed
-		window.__stores.settingsOpen.set(true); // a modal is open
+		window.__tp.test.v1.closeMenu.set(true); // menu closed
+		window.__tp.test.v1.settingsOpen.set(true); // a modal is open
 	});
 	await A.page.waitForTimeout(300);
 	const logoCovered = await A.page.evaluate(() => {
@@ -62,16 +62,16 @@ h.run(async () => {
 		return d && cx >= d.left && cx <= d.right && cy >= d.top && cy <= d.bottom ? 'logo on top' : 'covered';
 	});
 	h.check(logoCovered === 'covered', `A6: the open Settings modal covers the logo (${logoCovered})`);
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await A.page.waitForTimeout(250);
 	await A.page.locator('#logo-menu').click();
 	await A.page.waitForTimeout(250);
 	const menuOpen = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.closeMenu.subscribe((v) => r(v === false))())
+		() => new Promise((r) => window.__tp.test.v1.closeMenu.subscribe((v) => r(v === false))())
 	);
 	h.check(menuOpen, 'A6: with Settings closed the logo opens the menu');
 	// tidy up: close the menu again
-	await A.page.evaluate(() => window.__stores.closeMenu.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.closeMenu.set(true));
 
 	// --- I3: AI HUD button ALWAYS renders (even unconfigured) ----------------
 	h.check(await A.page.locator('#ai-hud-button').first().isVisible(), 'I3: AI HUD button visible when AI unconfigured');
@@ -97,14 +97,14 @@ h.run(async () => {
 
 	// --- I3: unconfigured click opens Settings ▸ AI (the toggleAiPrompt branch) --
 	await A.page.evaluate(() => {
-		window.__stores.settingsOpen.set(false);
-		window.__stores.settingsSection.set('');
+		window.__tp.test.v1.settingsOpen.set(false);
+		window.__tp.test.v1.settingsSection.set('');
 	});
 	await A.page.locator('#ai-hud-button').click();
 	await A.page.waitForTimeout(200);
 	const openedSettings = await A.page.evaluate(() => {
 		const read = (s) => new Promise((r) => s.subscribe((v) => r(v))());
-		return Promise.all([read(window.__stores.settingsOpen), read(window.__stores.settingsSection)]).then(
+		return Promise.all([read(window.__tp.test.v1.settingsOpen), read(window.__tp.test.v1.settingsSection)]).then(
 			([open, section]) => ({ open, section })
 		);
 	});
@@ -116,18 +116,18 @@ h.run(async () => {
 	await A.page.waitForTimeout(200);
 	const viaWelcome = await A.page.evaluate(() => {
 		const read = (s) => new Promise((r) => s.subscribe((v) => r(v))());
-		return Promise.all([read(window.__stores.settingsOpen), read(window.__stores.settingsSection)]).then(([open, section]) => ({ open, section }));
+		return Promise.all([read(window.__tp.test.v1.settingsOpen), read(window.__tp.test.v1.settingsSection)]).then(([open, section]) => ({ open, section }));
 	});
 	h.check(viaWelcome.open === true && viaWelcome.section === 'tools', 'I3/N1: Open settings targets Tools & connections');
 	await A.page.evaluate(() => {
-		window.__stores.settingsOpen.set(false);
-		window.__stores.aiAssistantHidden.set('hidden');
+		window.__tp.test.v1.settingsOpen.set(false);
+		window.__tp.test.v1.aiAssistantHidden.set('hidden');
 	});
 
 	// configure a provider + enable AI (persisted), then reload to one module graph
 	await A.page.evaluate((base) => {
-		window.__stores.aiProviders.addAiProvider({ preset: 'custom', label: 'Mock', baseUrl: base, apiKey: 'test', model: 'mock' });
-		window.__stores.aiProviders.setAiEnabled(true);
+		window.__tp.test.v1.aiProviders.addAiProvider({ preset: 'custom', label: 'Mock', baseUrl: base, apiKey: 'test', model: 'mock' });
+		window.__tp.test.v1.aiProviders.setAiEnabled(true);
 	}, BASE);
 	await h.freshReload(A);
 	await A.page.waitForTimeout(300);
@@ -147,7 +147,7 @@ h.run(async () => {
 	h.check(srvLabel.length > 0, 'I5/CN: drawer shows a non-empty server label (' + srvLabel + ')');
 	// drive the fallback state and confirm the label + kind flip + the (i) badge
 	await A.page.evaluate(() => {
-		window.__stores.peerServer.peerServerStatus.set({
+		window.__tp.test.v1.peerServer.peerServerStatus.set({
 			kind: 'public', label: 'public cloud', host: 'PeerJS public cloud', port: 443, path: '/', didFallback: true
 		});
 	});
@@ -175,7 +175,7 @@ h.run(async () => {
 		A.page.evaluate(
 			() =>
 				new Promise((resolve) => {
-					window.__stores.globalScene.subscribe((sc) => {
+					window.__tp.test.v1.globalScene.subscribe((sc) => {
 						let fade = null;
 						sc?.traverse((o) => {
 							const m = o.material;
@@ -187,8 +187,8 @@ h.run(async () => {
 		);
 	await A.page.evaluate(() => {
 		return new Promise((resolve) => {
-			window.__stores.orbitControls.subscribe((oc) => {
-				window.__stores.globalCamera.subscribe((cam) => {
+			window.__tp.test.v1.orbitControls.subscribe((oc) => {
+				window.__tp.test.v1.globalCamera.subscribe((cam) => {
 					if (cam && oc) {
 						oc.target.set(0, 1.5, 0);
 						cam.position.set(1200, 900, 1200);
@@ -212,7 +212,7 @@ h.run(async () => {
 	const catcherDepthWrite = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.globalScene.subscribe((sc) => {
+				window.__tp.test.v1.globalScene.subscribe((sc) => {
 					let dw = 'missing';
 					sc?.traverse((o) => {
 						if (o.name === 'env-shadow-catcher') dw = o.material && o.material.depthWrite;
@@ -230,18 +230,18 @@ h.run(async () => {
 			window.__lastOpen = u;
 			return null;
 		};
-		window.__stores.closeMenu.set(false); // open the logo/burger menu
+		window.__tp.test.v1.closeMenu.set(false); // open the logo/burger menu
 	});
 	await A.page.waitForTimeout(200);
 	await A.page.getByRole('button', { name: 'Docs' }).click();
 	const docUrl = await A.page.evaluate(() => window.__lastOpen);
 	h.check(docUrl === 'https://docs.theprototype.app', 'Docs menu link -> docs.theprototype.app (' + docUrl + ')');
-	await A.page.evaluate(() => window.__stores.closeMenu.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.closeMenu.set(true));
 
 	// --- Settings ▸ About links point at the theprototype-app org ------------
 	await A.page.evaluate(() => {
-		window.__stores.settingsSection.set('about');
-		window.__stores.settingsOpen.set(true);
+		window.__tp.test.v1.settingsSection.set('about');
+		window.__tp.test.v1.settingsOpen.set(true);
 	});
 	await A.page.waitForTimeout(300);
 	await A.page
@@ -255,14 +255,14 @@ h.run(async () => {
 	h.check(aboutLinks.includes('https://github.com/theprototype-app/core'), 'About: Source Code -> core repo');
 	h.check(aboutLinks.includes('https://github.com/theprototype-app/modules'), 'About: Modules -> modules repo');
 	h.check(aboutLinks.includes('https://github.com/theprototype-app/docs'), 'About: Docs -> docs repo');
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 
 	// --- first-run notice is driven by appNotice (cloud plugin can override) --
 	// OSS default is a "local version" notice; the cloud plugin can rebrand it or
 	// remove it entirely via appNotice.set(null).
 	await A.page.evaluate(() => {
 		localStorage.removeItem('hasSeenDisclaimer'); // let the first-run banner show
-		window.__stores.appNotice.set({
+		window.__tp.test.v1.appNotice.set({
 			text: 'You are running the local, open-source version of theprototype.',
 			ctaLabel: 'Source',
 			ctaUrl: 'https://github.com/theprototype-app/core'
@@ -280,7 +280,7 @@ h.run(async () => {
 		'the old "alpha release" toast is gone'
 	);
 	// cloud plugin removes the banner
-	await A.page.evaluate(() => window.__stores.appNotice.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.appNotice.set(null));
 	// the notice is an info TOAST now (Toasts.svelte showInfoToast 'app-notice'), and a dismissed
 	// toast plays its outro before it leaves the DOM — still there at 300 ms, gone by 1.8 s
 	// (logs/p1-probe1.log). So wait for it to go, bounded: a seam that never removes it stays red.
@@ -302,14 +302,14 @@ h.run(async () => {
 
 	// --- A1: the pill has no ✕ close button ----------------------------------
 	// the pill only shows while the full window is hidden — close it first
-	await A.page.evaluate(() => window.__stores.aiAssistantHidden.set('hidden'));
+	await A.page.evaluate(() => window.__tp.test.v1.aiAssistantHidden.set('hidden'));
 	await A.page.waitForTimeout(150);
-	await A.page.evaluate(() => window.__stores.aiPromptBarOpen.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.aiPromptBarOpen.set(true));
 	await A.page.waitForTimeout(300);
 	h.check(await A.page.locator('.ai-pill').first().isVisible(), 'A1: backquote pill shows');
 	const pillText = await A.page.locator('.ai-pill').first().innerText();
 	h.check(!pillText.includes('✕'), 'A1: pill has no ✕ close button');
-	await A.page.evaluate(() => window.__stores.aiPromptBarOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.aiPromptBarOpen.set(false));
 
 	await h.finish(browser);
 });

@@ -48,7 +48,7 @@ const shot = async (/** @type {any} */ page, /** @type {string} */ name) => {
 const S = (/** @type {any} */ page, /** @type {Function} */ fn, /** @type {any} */ arg) => page.evaluate(fn, arg);
 const read = (/** @type {any} */ page, /** @type {string} */ name) =>
 	page.evaluate((n) => {
-		let at = /** @type {any} */ (window).__stores;
+		let at = /** @type {any} */ (window).__tp?.test.v1;
 		for (const k of n.split('.')) at = at?.[k];
 		let v;
 		at.subscribe((/** @type {any} */ x) => (v = x))();
@@ -57,12 +57,12 @@ const read = (/** @type {any} */ page, /** @type {string} */ name) =>
 const camPos = (/** @type {any} */ page) =>
 	page.evaluate(() => {
 		let c;
-		/** @type {any} */ (window).__stores.globalCamera.subscribe((/** @type {any} */ v) => (c = v))();
+		/** @type {any} */ (window).__tp.test.v1.globalCamera.subscribe((/** @type {any} */ v) => (c = v))();
 		const p = c?.current?.position ?? c?.position;
 		return p ? [p.x, p.y, p.z] : [0, 0, 0];
 	});
 const dist = (/** @type {number[]} */ a, /** @type {number[]} */ b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
-const scopeNow = (/** @type {any} */ page) => page.evaluate(() => /** @type {any} */ (window).__stores.keyScope.lastScope());
+const scopeNow = (/** @type {any} */ page) => page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.keyScope.lastScope());
 
 /** A point inside `root` whose hit is a plain (non-control) part of it — the press a user makes
  * on a panel's background, a label, a header title. @returns {Promise<{x:number,y:number,what:string}|null>} */
@@ -94,7 +94,7 @@ const neutralPoint = (/** @type {any} */ page, /** @type {string} */ root, /** @
 const canvasBox = (/** @type {any} */ page) =>
 	page.evaluate(() => {
 		let r;
-		/** @type {any} */ (window).__stores.globalRenderer.subscribe((/** @type {any} */ v) => (r = v))();
+		/** @type {any} */ (window).__tp.test.v1.globalRenderer.subscribe((/** @type {any} */ v) => (r = v))();
 		const b = /** @type {any} */ (r)?.domElement?.getBoundingClientRect();
 		return b ? { x: b.left, y: b.top, width: b.width, height: b.height } : null;
 	});
@@ -115,14 +115,14 @@ async function leak(/** @type {any} */ page) {
 	await page.keyboard.press('c');
 	await page.waitForTimeout(150);
 	const chat1 = await read(page, 'chatHidden');
-	if (chat1 !== chat0) await S(page, (v) => /** @type {any} */ (window).__stores.chatHidden.set(v), chat0);
+	if (chat1 !== chat0) await S(page, (v) => /** @type {any} */ (window).__tp.test.v1.chatHidden.set(v), chat0);
 	return { flew, chat: chat1 !== chat0 };
 }
 
 /** what the 3D view would show if a pointer gesture reached it: the camera pose + the selection */
 const viewOf = (/** @type {any} */ page) =>
 	page.evaluate(() => {
-		const s = /** @type {any} */ (window).__stores;
+		const s = /** @type {any} */ (window).__tp?.test.v1;
 		let c;
 		let sel;
 		s.globalCamera.subscribe((/** @type {any} */ v) => (c = v))();
@@ -213,12 +213,12 @@ async function mouseLeak(page, p0, root) {
 async function undoRedo(page, uuid) {
 	const x = () => S(page, (/** @type {string} */ u) => {
 		let g;
-		/** @type {any} */ (window).__stores.objectsGroup.subscribe((/** @type {any} */ v) => (g = v))();
+		/** @type {any} */ (window).__tp.test.v1.objectsGroup.subscribe((/** @type {any} */ v) => (g = v))();
 		return /** @type {any} */ (g).getObjectByProperty('uuid', u)?.position.x ?? null;
 	}, uuid);
 	const x0 = await x();
 	await S(page, (/** @type {string} */ u) => {
-		const s = /** @type {any} */ (window).__stores;
+		const s = /** @type {any} */ (window).__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((/** @type {any} */ v) => (g = v))();
 		const o = /** @type {any} */ (g).getObjectByProperty('uuid', u);
@@ -302,7 +302,7 @@ const probeBox = {};
 
 /** behaviour probe module: an api with flow.addNodes (as the behaviours suite) */
 const PROBE = () => {
-	const s = /** @type {any} */ (window).__stores;
+	const s = /** @type {any} */ (window).__tp?.test.v1;
 	s.moduleSDK.initModules([
 		{
 			id: 'fbprobe',
@@ -422,13 +422,13 @@ async function spawnProbe(page, name) {
 	page.__name = name;
 	const had = await S(page, () => {
 		let g;
-		/** @type {any} */ (window).__stores.objectsGroup.subscribe((/** @type {any} */ v) => (g = v))();
+		/** @type {any} */ (window).__tp.test.v1.objectsGroup.subscribe((/** @type {any} */ v) => (g = v))();
 		return /** @type {any} */ (g).children.map((/** @type {any} */ c) => c.uuid);
 	});
-	await S(page, () => /** @type {any} */ (window).__stores.addObjects.spawnAtPoint('/create Box 1 1 1', [-3, 0.5, -8]));
+	await S(page, () => /** @type {any} */ (window).__tp.test.v1.addObjects.spawnAtPoint('/create Box 1 1 1', [-3, 0.5, -8]));
 	await page.waitForTimeout(800);
 	probeBox[name] = await S(page, (/** @type {string[]} */ before) => {
-		const s = /** @type {any} */ (window).__stores;
+		const s = /** @type {any} */ (window).__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((/** @type {any} */ v) => (g = v))();
 		const u = /** @type {any} */ (g).children.find((/** @type {any} */ c) => !before.includes(c.uuid) && c.isMesh)?.uuid ?? '';
@@ -451,13 +451,13 @@ h.run(async () => {
 	if (MARBLE) {
 		const bytes = Array.from(fs.readFileSync(MARBLE));
 		await S(p, async (/** @type {number[]} */ arr) => {
-			const s = /** @type {any} */ (window).__stores;
+			const s = /** @type {any} */ (window).__tp?.test.v1;
 			const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 			await s.sessions.applySession(payload, { backup: false });
 		}, bytes);
 		await p.waitForTimeout(2500);
 		const found = await S(p, () => {
-			const s = /** @type {any} */ (window).__stores;
+			const s = /** @type {any} */ (window).__tp?.test.v1;
 			let graphs;
 			s.flowGraphs.subscribe((/** @type {any} */ v) => (graphs = v))();
 			for (const [gid, g] of Object.entries(/** @type {any} */ (graphs) ?? {}))
@@ -467,7 +467,7 @@ h.run(async () => {
 		h.check(!!found, `F1 premise: Marble Maze has a behaviour node with params (${found?.name} in ${found?.graphId})`);
 		if (found) {
 			await S(p, (/** @type {any} */ f) => {
-				const s = /** @type {any} */ (window).__stores;
+				const s = /** @type {any} */ (window).__tp?.test.v1;
 				s.bottomDock?.dockHeight?.set?.(560);
 				s.flowGraphClose.set(false);
 				s.behaviourViewOpen.set({ id: f.id, graphId: f.graphId });
@@ -478,9 +478,9 @@ h.run(async () => {
 				await shot(p, '01-marble-behaviour-view-dark.png');
 				await behaviourViewChecks(p, 'Marble Maze');
 			} else h.check(true, 'F1 Marble Maze: its behaviour has no number knob (checked on the probe below)');
-			await S(p, () => /** @type {any} */ (window).__stores.behaviourViewOpen.set(null));
+			await S(p, () => /** @type {any} */ (window).__tp.test.v1.behaviourViewOpen.set(null));
 		}
-		await S(p, () => /** @type {any} */ (window).__stores.flowGraphClose.set(true));
+		await S(p, () => /** @type {any} */ (window).__tp.test.v1.flowGraphClose.set(true));
 	} else console.log('SKIP Marble Maze (no authored scene.tpscene; set MARBLE_TPSCENE)');
 
 	// S8's probe box — AFTER the Marble Maze load, which replaces the scene
@@ -489,7 +489,7 @@ h.run(async () => {
 	// ---- F1 (b): a probe behaviour with six number knobs ----------------------------------------
 	const [wid] = await S(p, (/** @type {string} */ code) => /** @type {any} */ (window).__fbApi.flow.addNodes({ nodes: [{ type: 'behaviour', x: 40, y: 40, data: { name: 'Waves spawner', code } }] }), WAVES);
 	await S(p, (/** @type {string} */ i) => {
-		const s = /** @type {any} */ (window).__stores;
+		const s = /** @type {any} */ (window).__tp?.test.v1;
 		s.bottomDock?.dockHeight?.set?.(560);
 		s.flowGraphClose.set(false);
 		s.behaviourViewOpen.set({ id: i, graphId: 'scene' });
@@ -500,17 +500,17 @@ h.run(async () => {
 
 	// F2: the Graph view is a panel (the user's first-named leak)
 	await panelRow(p, 'Behaviour Graph view (docked)', '#behaviour-view', { expect: 'panel' });
-	await S(p, () => /** @type {any} */ (window).__stores.behaviourViewOpen.set(null));
+	await S(p, () => /** @type {any} */ (window).__tp.test.v1.behaviourViewOpen.set(null));
 
 	// ---- F1 (c): the main node editor's controls ------------------------------------------------
 	await S(p, () => {
-		const s = /** @type {any} */ (window).__stores;
+		const s = /** @type {any} */ (window).__tp?.test.v1;
 		const mk = (/** @type {string} */ id, /** @type {string} */ type, /** @type {number} */ x, /** @type {number} */ y, /** @type {any} */ d) => ({ id, type, position: { x, y }, data: { type, label: id, ...d } });
 		s.flowNodes.set([mk('fbSlider', 'slider', 40, 40, { value: 20, min: 0, max: 40 }), mk('fbNumber', 'number', 320, 40, { value: 1, step: 1 })]);
 		s.flowEdges.set([]);
 	});
 	await p.waitForTimeout(900);
-	const nodeAt = (/** @type {string} */ id) => S(p, (i) => { let ns; /** @type {any} */ (window).__stores.flowNodes.subscribe((/** @type {any} */ v) => (ns = v))(); const n = /** @type {any} */ (ns).find((/** @type {any} */ x) => x.id === i); return n ? [n.position.x, n.position.y, n.data.value] : null; }, id);
+	const nodeAt = (/** @type {string} */ id) => S(p, (i) => { let ns; /** @type {any} */ (window).__tp.test.v1.flowNodes.subscribe((/** @type {any} */ v) => (ns = v))(); const n = /** @type {any} */ (ns).find((/** @type {any} */ x) => x.id === i); return n ? [n.position.x, n.position.y, n.data.value] : null; }, id);
 	const vpMain = () => S(p, () => document.querySelector('[data-key-scope="nodes"] .svelte-flow__viewport')?.getAttribute('style') ?? '');
 	for (const [id, sel] of [['fbSlider', '.svelte-flow__node[data-id="fbSlider"] input[type="range"]'], ['fbNumber', '.svelte-flow__node[data-id="fbNumber"] .dn-wrap']]) {
 		const box = await p.locator(sel).first().boundingBox();
@@ -550,7 +550,7 @@ h.run(async () => {
 	}
 	await panelRow(p, 'Node editor graph (docked)', '[data-key-scope="nodes"]', { expect: 'nodes' });
 	await panelRow(p, 'Node editor chrome (docked)', '#flow-list', { edge: true, expect: 'panel' });
-	await S(p, () => /** @type {any} */ (window).__stores.flowGraphClose.set(true));
+	await S(p, () => /** @type {any} */ (window).__tp.test.v1.flowGraphClose.set(true));
 	const docked = [
 		['Explorer (docked)', 'explorerClose', 'explorer', '#explorer-list', ''],
 		['Code workspace (docked)', 'codeWorkspaceClose', 'code', '#code-ws-dock', ''],
@@ -563,31 +563,31 @@ h.run(async () => {
 	];
 	for (const [label, store, key, root, exclude] of docked) {
 		await S(p, (/** @type {any} */ a) => {
-			const s = /** @type {any} */ (window).__stores;
+			const s = /** @type {any} */ (window).__tp?.test.v1;
 			s[a.store].set(false);
 			s.bottomDock?.activateDock?.(a.key);
 		}, { store, key });
 		await p.waitForTimeout(900);
 		await panelRow(p, label, root, { exclude, expect: 'panel' });
-		await S(p, (/** @type {string} */ st) => /** @type {any} */ (window).__stores[st].set(true), store);
+		await S(p, (/** @type {string} */ st) => /** @type {any} */ (window).__tp.test.v1[st].set(true), store);
 		await p.waitForTimeout(300);
 	}
 	// the HUD editor's own board keeps its scope (it was the one marked part before)
-	await S(p, () => /** @type {any} */ (window).__stores.hudEditorClose.set(false));
+	await S(p, () => /** @type {any} */ (window).__tp.test.v1.hudEditorClose.set(false));
 	await p.waitForTimeout(900);
 	await panelRow(p, 'HUD editor board (docked)', '#hud-board-wrap', { expect: 'hud' });
-	await S(p, () => /** @type {any} */ (window).__stores.hudEditorClose.set(true));
+	await S(p, () => /** @type {any} */ (window).__tp.test.v1.hudEditorClose.set(true));
 
 	// Inspector + Object list need an object: two boxes (one is deleted by the Object list's Delete)
 	const spawned = async () =>
 		S(p, () => {
 			let g;
-			/** @type {any} */ (window).__stores.objectsGroup.subscribe((/** @type {any} */ v) => (g = v))();
+			/** @type {any} */ (window).__tp.test.v1.objectsGroup.subscribe((/** @type {any} */ v) => (g = v))();
 			return /** @type {any} */ (g).children.filter((/** @type {any} */ c) => c.isMesh && /box/i.test(c.name ?? '')).map((/** @type {any} */ c) => c.uuid);
 		});
 	const had = await spawned();
 	await S(p, () => {
-		const s = /** @type {any} */ (window).__stores;
+		const s = /** @type {any} */ (window).__tp?.test.v1;
 		s.addObjects.spawnAtPoint('/create Box 1 1 1', [0, 0.5, -6]);
 		s.addObjects.spawnAtPoint('/create Box 1 1 1', [2, 0.5, -6]);
 	});
@@ -596,7 +596,7 @@ h.run(async () => {
 	h.check(boxes.length === 2, `premise: two boxes spawned (${boxes.length})`);
 	const [cube, victim] = boxes;
 	await S(p, (/** @type {string} */ u) => {
-		const s = /** @type {any} */ (window).__stores;
+		const s = /** @type {any} */ (window).__tp?.test.v1;
 		s.objectActions.selectObject(u);
 		s.inspectorClose.set(false);
 	}, cube);
@@ -615,12 +615,12 @@ h.run(async () => {
 		table.push(['Inspector, ' + ctlSel + ' focused', '#inspector', await scopeNow(p), '', '', '', '', '', '', '', u.ok ? 'works' : 'BROKEN']);
 		await S(p, () => /** @type {any} */ (document.activeElement)?.blur?.());
 	} else h.check(false, 'S8 premise: the Inspector shows a checkbox, slider or select');
-	await S(p, () => /** @type {any} */ (window).__stores.inspectorClose.set(true));
-	await S(p, () => /** @type {any} */ (window).__stores.objectListClose.set(false));
+	await S(p, () => /** @type {any} */ (window).__tp.test.v1.inspectorClose.set(true));
+	await S(p, () => /** @type {any} */ (window).__tp.test.v1.objectListClose.set(false));
 	await p.waitForTimeout(600);
 	await panelRow(p, 'Object list', '#object-list', { exclude: '#object-tree', expect: 'objects' });
 	// …and it keeps the outliner's selection keys: Delete deletes the selected object
-	await S(p, (/** @type {string} */ u) => /** @type {any} */ (window).__stores.objectActions.selectObject(u), victim);
+	await S(p, (/** @type {string} */ u) => /** @type {any} */ (window).__tp.test.v1.objectActions.selectObject(u), victim);
 	const olp = await neutralPoint(p, '#object-list', '#object-tree');
 	if (olp) {
 		await p.mouse.click(olp.x, olp.y);
@@ -629,13 +629,13 @@ h.run(async () => {
 		await p.waitForTimeout(500);
 		const gone = await S(p, (/** @type {string} */ u) => {
 			let g;
-			/** @type {any} */ (window).__stores.objectsGroup.subscribe((/** @type {any} */ v) => (g = v))();
+			/** @type {any} */ (window).__tp.test.v1.objectsGroup.subscribe((/** @type {any} */ v) => (g = v))();
 			return !(/** @type {any} */ (g).getObjectByProperty('uuid', u));
 		}, victim);
 		h.check(gone, 'F2 Object list: Delete still deletes the selected object (the outliner keeps its selection keys)');
 		table.push(['Object list — Delete', '#object-list', 'objects', gone ? 'deletes the selection (wanted)' : 'did NOT delete', '', '', '', '', '', '', '']);
 	}
-	await S(p, () => /** @type {any} */ (window).__stores.objectListClose.set(true));
+	await S(p, () => /** @type {any} */ (window).__tp.test.v1.objectListClose.set(true));
 
 	// a TOOLBAR press keeps the keys where they were (keyScope `keep`)
 	const pillButton = p.locator('#controls-pill button').first();
@@ -672,23 +672,23 @@ h.run(async () => {
 	/** @type {any[]} */
 	const f3 = [];
 	for (const [label, store, root, exclude] of floating) {
-		await S(q, (/** @type {string} */ st) => /** @type {any} */ (window).__stores[st].set(false), store);
+		await S(q, (/** @type {string} */ st) => /** @type {any} */ (window).__tp.test.v1[st].set(false), store);
 		await q.waitForTimeout(900);
 		await panelRow(q, label, root, { exclude, expect: 'panel' });
 		f3.push([label, await rightClickMidDrag(q, label, root)]);
-		await S(q, (/** @type {string} */ st) => /** @type {any} */ (window).__stores[st].set(true), store);
+		await S(q, (/** @type {string} */ st) => /** @type {any} */ (window).__tp.test.v1[st].set(true), store);
 		await q.waitForTimeout(250);
 	}
 	// chat + the object list float by default
-	await S(q, () => /** @type {any} */ (window).__stores.chatHidden.set(false));
+	await S(q, () => /** @type {any} */ (window).__tp.test.v1.chatHidden.set(false));
 	await q.waitForTimeout(500);
 	await panelRow(q, 'Chat window', '#chat-window', { expect: 'panel' });
 	f3.push(['Chat window', await rightClickMidDrag(q, 'Chat window', '#chat-window')]);
-	await S(q, () => /** @type {any} */ (window).__stores.chatHidden.set(true));
-	await S(q, () => /** @type {any} */ (window).__stores.objectListClose.set(false));
+	await S(q, () => /** @type {any} */ (window).__tp.test.v1.chatHidden.set(true));
+	await S(q, () => /** @type {any} */ (window).__tp.test.v1.objectListClose.set(false));
 	await q.waitForTimeout(500);
 	f3.push(['Object list', await rightClickMidDrag(q, 'Object list', '#object-list')]);
-	await S(q, () => /** @type {any} */ (window).__stores.objectListClose.set(true));
+	await S(q, () => /** @type {any} */ (window).__tp.test.v1.objectListClose.set(true));
 
 	// F3 control: a plain right click on the 3D view is NOT ours to stop (the app's own viewport
 	// menu may take it — but the guard must not have)
@@ -698,13 +698,13 @@ h.run(async () => {
 	await q.waitForTimeout(200);
 	await q.keyboard.press('Escape');
 	const plain = await q.evaluate(() => /** @type {any} */ (window).__cm);
-	const guardOff = await S(q, () => !(/** @type {any} */ (window).__stores.windowGrip?.windowDragActive?.()));
+	const guardOff = await S(q, () => !(/** @type {any} */ (window).__tp.test.v1.windowGrip?.windowDragActive?.()));
 	h.check(plain.length > 0 && guardOff, `F3 control: outside a drag the guard is idle (a right click on the 3D view: ${JSON.stringify(plain)})`);
 
 	// ---- F4: the floating Code workspace's tabs ------------------------------------------------
 	const [cid] = await S(q, (/** @type {string} */ code) => /** @type {any} */ (window).__fbApi.flow.addNodes({ nodes: [{ type: 'behaviour', x: 40, y: 40, data: { name: 'Waves spawner', code } }] }), WAVES);
 	await S(q, async (/** @type {string} */ i) => {
-		const s = /** @type {any} */ (window).__stores;
+		const s = /** @type {any} */ (window).__tp?.test.v1;
 		await s.codeWorkspace.openCode({ source: 'behaviour', ref: { nodeId: i, graphId: 'scene' } });
 		await s.codeWorkspace.openCode({ source: 'graph', ref: { graphId: 'scene' } });
 	}, cid);
@@ -729,10 +729,10 @@ h.run(async () => {
 	// header that LOOKS clickable (pointer cursor, a role, a tabindex) is a control, not a grip
 	const audit = [];
 	for (const [label, store, root] of floating) {
-		await S(q, (/** @type {string} */ st) => /** @type {any} */ (window).__stores[st].set(false), store);
+		await S(q, (/** @type {string} */ st) => /** @type {any} */ (window).__tp.test.v1[st].set(false), store);
 		await q.waitForTimeout(700);
 		const bad = await q.evaluate((sel) => {
-			const g = /** @type {any} */ (window).__stores.windowGrip;
+			const g = /** @type {any} */ (window).__tp.test.v1.windowGrip;
 			const out = [];
 			for (const el of document.querySelectorAll(sel + ' .move-handle *')) {
 				const cs = getComputedStyle(el);
@@ -746,18 +746,18 @@ h.run(async () => {
 		}, root);
 		audit.push([label, bad]);
 		h.check(bad.length === 0, `F4 audit ${label}: no clickable-looking header element is treated as a grip (${bad.join(', ') || 'none'})`);
-		await S(q, (/** @type {string} */ st) => /** @type {any} */ (window).__stores[st].set(true), store);
+		await S(q, (/** @type {string} */ st) => /** @type {any} */ (window).__tp.test.v1[st].set(true), store);
 	}
 
 	// ---- after shots, light theme ---------------------------------------------------------------
 	if (SHOTS) {
-		await S(q, () => /** @type {any} */ (window).__stores.themes.theme.set('light'));
-		await S(q, () => /** @type {any} */ (window).__stores.codeWorkspaceClose.set(false));
+		await S(q, () => /** @type {any} */ (window).__tp.test.v1.themes.theme.set('light'));
+		await S(q, () => /** @type {any} */ (window).__tp.test.v1.codeWorkspaceClose.set(false));
 		await q.waitForTimeout(800);
 		await shot(q, '04-code-floating-tabs-light.png');
-		await S(p, () => /** @type {any} */ (window).__stores.themes.theme.set('light'));
+		await S(p, () => /** @type {any} */ (window).__tp.test.v1.themes.theme.set('light'));
 		await S(p, (/** @type {string} */ i) => {
-			const s = /** @type {any} */ (window).__stores;
+			const s = /** @type {any} */ (window).__tp?.test.v1;
 			s.flowGraphClose.set(false);
 			s.behaviourViewOpen.set({ id: i, graphId: 'scene' });
 		}, wid);

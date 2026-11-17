@@ -20,7 +20,7 @@ h.run(async () => {
 	await A.page.evaluate(() => {
 		window.__types = {};
 		let p;
-		window.__stores.peers.subscribe((x) => (p = x))();
+		window.__tp.test.v1.peers.subscribe((x) => (p = x))();
 		Object.values(p.connections).forEach((conn) =>
 			conn.on('data', (d) => {
 				if (d && d.type) window.__types[d.type] = (window.__types[d.type] ?? 0) + 1;
@@ -28,14 +28,14 @@ h.run(async () => {
 		);
 	});
 
-	const stateOn = (page, id) => page.evaluate((id) => window.__stores.avatars.avatarsDebug()[id] ?? null, id);
-	const setIdle = (page, s) => page.evaluate((s) => window.__stores.avatars.knockedAfterSeconds.set(s), s);
-	const camTo = (page, pos, target) => page.evaluate(({ pos, target }) => window.__stores.objectActions.flyTo(pos, target, 0), { pos, target });
+	const stateOn = (page, id) => page.evaluate((id) => window.__tp.test.v1.avatars.avatarsDebug()[id] ?? null, id);
+	const setIdle = (page, s) => page.evaluate((s) => window.__tp.test.v1.avatars.knockedAfterSeconds.set(s), s);
+	const camTo = (page, pos, target) => page.evaluate(({ pos, target }) => window.__tp.test.v1.objectActions.flyTo(pos, target, 0), { pos, target });
 	/** the classic head's star mesh under a peer's root group on `page` */
 	const classicStars = (page, id) =>
 		page.evaluate((id) => {
 			let scene;
-			window.__stores.globalScene.subscribe((x) => (scene = x))();
+			window.__tp.test.v1.globalScene.subscribe((x) => (scene = x))();
 			const root = scene.getObjectByName(id);
 			const m = root?.children.find((c) => c.name === 'avatar-dizzy-stars');
 			return m ? { visible: m.visible, count: m.count } : null;
@@ -55,7 +55,7 @@ h.run(async () => {
 	await h.eventually(() => stateOn(B.page, A.id), (s) => s && s.dizzy > 0.9, "1.2 ...and B sees A knocked off (each peer animates the other)", 15000);
 	const kOnA = await A.page.evaluate((id) => {
 		let scene;
-		window.__stores.globalScene.subscribe((x) => (scene = x))();
+		window.__tp.test.v1.globalScene.subscribe((x) => (scene = x))();
 		return scene.getObjectByName(id)?.userData.knocked;
 	}, B.id);
 	h.check(kOnA === true, '1.3 it arrived as the camera stream flag');
@@ -73,15 +73,15 @@ h.run(async () => {
 	h.check((await stateOn(B.page, A.id)).dizzy > 0.9, '2.2 ...while B still sees A knocked off (A has not moved)');
 
 	// ---- 3. classic floating heads -------------------------------------------------------------
-	await A.page.evaluate(() => window.__stores.avatars.peersAsClassic.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.avatars.peersAsClassic.set(true));
 	await h.eventually(() => classicStars(A.page, B.id), (m) => m && m.visible && m.count === 7, "3.1 B's classic head gets the stars + star eyes when B idles again", 25000);
 	if (SHOTS) {
 		// frame B's classic head where A actually draws it, from 2.2 m in front of its face
 		const bp = await A.page.evaluate((id) => {
 			let scene;
-			window.__stores.globalScene.subscribe((x) => (scene = x))();
+			window.__tp.test.v1.globalScene.subscribe((x) => (scene = x))();
 			const g = scene.getObjectByName(id);
-			const f = new window.__stores.THREE.Vector3(0, 0, -1).applyQuaternion(g.quaternion);
+			const f = new window.__tp.test.v1.THREE.Vector3(0, 0, -1).applyQuaternion(g.quaternion);
 			f.y = 0;
 			f.normalize();
 			return { p: g.position.toArray(), f: f.toArray() };
@@ -91,7 +91,7 @@ h.run(async () => {
 		await A.page.waitForTimeout(700);
 		await A.page.screenshot({ path: SHOTS + '/04-knocked-off-classic-head.png' });
 	}
-	await A.page.evaluate(() => window.__stores.avatars.peersAsClassic.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.avatars.peersAsClassic.set(false));
 
 	// ---- 4. a late joiner ----------------------------------------------------------------------
 	const C = await h.setupPage(browser, 'C', { context: { viewport: { width: 960, height: 600 } } });

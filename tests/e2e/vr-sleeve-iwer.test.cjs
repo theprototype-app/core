@@ -26,19 +26,19 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A', { init: iwer.initScript(), context: { viewport: { width: 1280, height: 720 } } });
 	const page = A.page;
 	const g = (fn, arg) => page.evaluate(fn, arg);
-	const read = (name) => g((n) => { let v; window.__stores[n].subscribe((x) => (v = x))(); return v; }, name);
+	const read = (name) => g((n) => { let v; window.__tp.test.v1[n].subscribe((x) => (v = x))(); return v; }, name);
 	const settle = (n = 6) => iwer.frames(page, n);
-	const count = () => g(() => new Promise((r) => window.__stores.objectsGroup.subscribe((grp) => r(grp.children.length))()));
-	const state = () => g(() => window.__stores.vrSleeve.sleeveState());
+	const count = () => g(() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((grp) => r(grp.children.length))()));
+	const state = () => g(() => window.__tp.test.v1.vrSleeve.sleeveState());
 
 	// a clean sleeve (idb slots persist across runs) + the toggle ON
 	await g(async () => {
-		const lib = window.__stores.vrSleeve;
+		const lib = window.__tp.test.v1.vrSleeve;
 		await lib.loadSleeveSlots();
 		let slots;
 		lib.sleeveSlots.subscribe((s) => (slots = [...s]))();
 		for (const slot of slots) lib.clearSlot(slot.id);
-		window.__stores.vrSleeveEnabled.set(true);
+		window.__tp.test.v1.vrSleeveEnabled.set(true);
 	});
 
 	console.log('\n=== 0. enter VR on IWER ===');
@@ -61,8 +61,8 @@ h.run(async () => {
 	const appCtrl = (hand) =>
 		g((hand) => {
 			let r;
-			window.__stores.globalRenderer.subscribe((v) => (r = v))();
-			const T = window.__stores.THREE;
+			window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
+			const T = window.__tp.test.v1.THREE;
 			const i = [0, 1].find((k) => r.xr.getController(k).userData.handedness === hand);
 			const c = r.xr.getController(i);
 			c.updateMatrixWorld(true);
@@ -96,8 +96,8 @@ h.run(async () => {
 	const slotWorld = (kind) =>
 		g((kind) => {
 			let scene;
-			window.__stores.globalScene.subscribe((s) => (scene = s))();
-			const T = window.__stores.THREE;
+			window.__tp.test.v1.globalScene.subscribe((s) => (scene = s))();
+			const T = window.__tp.test.v1.THREE;
 			const node = scene.getObjectByName('vrsleeve-' + kind);
 			const strip = scene.getObjectByName('vr-sleeve');
 			return { slot: node.getWorldPosition(new T.Vector3()).toArray(), wrist: strip.parent.getWorldPosition(new T.Vector3()).toArray() };
@@ -106,9 +106,9 @@ h.run(async () => {
 	const preview = () =>
 		g(() => {
 			let scene, r;
-			window.__stores.globalScene.subscribe((s) => (scene = s))();
-			window.__stores.globalRenderer.subscribe((v) => (r = v))();
-			const T = window.__stores.THREE;
+			window.__tp.test.v1.globalScene.subscribe((s) => (scene = s))();
+			window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
+			const T = window.__tp.test.v1.THREE;
 			const mesh = scene.getObjectByName('vrsleeve-preview');
 			if (!mesh) return null;
 			mesh.updateMatrixWorld(true);
@@ -128,8 +128,8 @@ h.run(async () => {
 	const lastObject = () =>
 		g(() => {
 			let grp;
-			window.__stores.objectsGroup.subscribe((x) => (grp = x))();
-			const T = window.__stores.THREE;
+			window.__tp.test.v1.objectsGroup.subscribe((x) => (grp = x))();
+			const T = window.__tp.test.v1.THREE;
 			const o = grp.children[grp.children.length - 1];
 			o.updateMatrixWorld(true);
 			const s = new T.Box3().setFromObject(o).getSize(new T.Vector3());
@@ -158,11 +158,11 @@ h.run(async () => {
 		const sw = await slotWorld('Box');
 		const c = await placeCtrl(taker, [sw.slot[0], sw.slot[1] + 0.01, sw.slot[2]]);
 		h.check(dist(c.o, sw.slot) < 0.04, `the taking hand is at the Box slot (${(dist(c.o, sw.slot) * 100).toFixed(1)} cm)`);
-		const pulses0 = (await g(() => window.__stores.vrControls.hapticDebug())).pulses.length;
+		const pulses0 = (await g(() => window.__tp.test.v1.vrControls.hapticDebug())).pulses.length;
 		await iwer.button(page, taker, 'squeeze', 1);
 		await settle(4);
 		const s0 = await state();
-		const grip = await g(() => window.__stores.vrControls.vrGripDebug());
+		const grip = await g(() => window.__tp.test.v1.vrControls.vrGripDebug());
 		h.check(s0.holding?.kind === 'Box' && s0.holding.contact === true, 'a grip at the slot is a DIRECT take (' + JSON.stringify(s0.holding) + ')');
 		h.check(grip.grabs.every((x) => !x) && !grip.worldGrab && !grip.worldPan && grip.emptyAir.every((x) => !x), 'the contact zone wins: grip.js saw no grab and no world gesture (' + JSON.stringify(grip) + ')');
 		const p0 = await preview();
@@ -173,7 +173,7 @@ h.run(async () => {
 		h.check(samples.slice(0, 3).every((s) => !s.latched && s.t > 0 && s.t < 1), 'not latched short of 40 cm (t ' + samples.slice(0, 3).map((s) => s.t && s.t.toFixed(2)).join(', ') + ')');
 		h.check(samples[3].latched && Math.abs(samples[3].extent - 2) < 0.03, `latched at TRUE size past 40 cm (${samples[3].extent && samples[3].extent.toFixed(3)} m)`);
 		h.check(samples.every((s) => s.deg !== null && s.deg <= VIEW_MAX), 'never more than ~50° of the view (' + samples.map((s) => s.deg && s.deg.toFixed(1)).join('°, ') + '°)');
-		const hap = await g(() => window.__stores.vrControls.hapticDebug());
+		const hap = await g(() => window.__tp.test.v1.vrControls.hapticDebug());
 		const st1 = await state();
 		h.check(st1.latches >= 1 && hap.pulses.slice(pulses0).some((p) => p.intensity === 0.5 && p.ms === 14), 'the latch gives a detent pulse (' + JSON.stringify(hap.pulses.slice(pulses0)) + ')');
 		// P2: Y reels (forward = away), X scales — grip-move's own sticks
@@ -192,16 +192,16 @@ h.run(async () => {
 		const p2 = await preview();
 		h.check(st2.holding.userScale > 1.05, `stick right scales it up (${st2.holding.userScale.toFixed(3)}x)`);
 		h.check(p2.deg <= VIEW_MAX, `still within ~50° after the sticks (${p2.deg.toFixed(1)}°)`);
-		const undo0 = await g(() => new Promise((r) => window.__stores.history.undoStack.subscribe((s) => r(s.length))()));
+		const undo0 = await g(() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((s) => r(s.length))()));
 		await iwer.button(page, taker, 'squeeze', 0);
 		await settle(4);
 		await h.eventually(count, (n) => n === base + 1, 'releasing the grip placed the object');
 		const obj = await lastObject();
 		h.check(Math.abs(obj.scale[0] - st2.holding.userScale) < 0.01, `local scale = the stick scale (${obj.scale[0].toFixed(3)})`);
 		h.check(Math.abs(obj.worldExtent - p2.extent) / p2.extent < 0.03, `it lands at the preview's world size (${obj.worldExtent.toFixed(3)} vs ${p2.extent.toFixed(3)} m)`);
-		const undo1 = await g(() => new Promise((r) => window.__stores.history.undoStack.subscribe((s) => r(s.length))()));
+		const undo1 = await g(() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((s) => r(s.length))()));
 		h.check(undo1 === undo0 + 1, 'one undo entry');
-		h.check(!(await state()).holding && !(await g(() => window.__stores.vrControls.vrGripDebug())).grabs.some(Boolean), 'nothing held afterwards');
+		h.check(!(await state()).holding && !(await g(() => window.__tp.test.v1.vrControls.vrGripDebug())).grabs.some(Boolean), 'nothing held afterwards');
 	}
 
 	// ---- B. trigger distance take + cancel -----------------------------------------------------------
@@ -210,7 +210,7 @@ h.run(async () => {
 		await iwer.pose(page, sleeve, WRIST);
 		await settle(4);
 		const base = await count();
-		const undo0 = await g(() => new Promise((r) => window.__stores.history.undoStack.subscribe((s) => r(s.length))()));
+		const undo0 = await g(() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((s) => r(s.length))()));
 		const sw = await slotWorld('Sphere');
 		// aim along -X/+X at the slot from 25 cm to the taking side
 		const from = [sw.slot[0] - side * 0.25, sw.slot[1], sw.slot[2]];
@@ -237,7 +237,7 @@ h.run(async () => {
 		await iwer.button(page, taker, 'trigger', 0);
 		await settle(4);
 		h.check((await count()) === base, 'nothing was created');
-		const undo1 = await g(() => new Promise((r) => window.__stores.history.undoStack.subscribe((s) => r(s.length))()));
+		const undo1 = await g(() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((s) => r(s.length))()));
 		h.check(undo1 === undo0, 'no undo entry');
 	}
 
@@ -246,7 +246,7 @@ h.run(async () => {
 		console.log('\n=== C. miniature world (1:10): latched preview = true size × 0.1, placed at local scale 1 ===');
 		await g(() => {
 			let rig;
-			window.__stores.worldRig.subscribe((x) => (rig = x))();
+			window.__tp.test.v1.worldRig.subscribe((x) => (rig = x))();
 			rig.scale.setScalar(0.1);
 			rig.updateMatrixWorld(true);
 		});
@@ -268,7 +268,7 @@ h.run(async () => {
 		const obj = await lastObject();
 		h.check(Math.abs(obj.scale[0] - 1) < 0.01, `local scale 1 = TRUE size in the world (${obj.scale[0].toFixed(3)})`);
 		h.check(Math.abs(obj.worldExtent - 0.2) < 0.01, `world size matches the preview (${obj.worldExtent.toFixed(3)} m)`);
-		await g(() => window.__stores.vrControls.resetWorldRig());
+		await g(() => window.__tp.test.v1.vrControls.resetWorldRig());
 	}
 
 	// ---- D. tracked hands: pinch at a slot ---------------------------------------------------------------
@@ -277,7 +277,7 @@ h.run(async () => {
 		await g(() => (window.__iwer.device.primaryInputMode = 'hand'));
 		await settle(10);
 		await h.eventually(
-			() => g(() => window.__stores.vrHands.handInputDebug().sources.join()),
+			() => g(() => window.__tp.test.v1.vrHands.handInputDebug().sources.join()),
 			(v) => /left:hand/.test(v) && /right:hand/.test(v),
 			'IWER switches to tracked hands',
 			8000

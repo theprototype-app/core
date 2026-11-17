@@ -15,7 +15,7 @@ const h = require('./helpers.cjs');
 /** geometry facts of an object, LOCAL space: bounds, odd/same-way edges, lonely vertices */
 const facts = (page, uuid) =>
 	page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		const object = g.getObjectByProperty('uuid', uuid);
@@ -61,7 +61,7 @@ const facts = (page, uuid) =>
 /** a fresh box, symmetrized so its seam sits ON x = 0, in a face session */
 const symmetricBox = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		s.meshToolParams.liveSymmetry.set(false);
 		s.commandsHandler.sceneCommand('/create Box 2 2 2');
@@ -79,7 +79,7 @@ const symmetricBox = (page) =>
 /** select the face whose normal points along `dir` (x sign), by its first triangle */
 const pickFace = (page, nx) =>
 	page.evaluate((nx) => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		const faces = fe.currentFaces();
 		const face = faces.find((f) => f.normal.x * nx > 0.9);
 		if (!face) return false;
@@ -112,10 +112,10 @@ h.run(async () => {
 	const toggleShown = await toggle.isVisible().catch(() => false);
 	h.check(toggleShown, 'the Symmetry section has a "live symmetry" toggle');
 	if (toggleShown) await toggle.click();
-	else await A.page.evaluate(() => window.__stores.meshToolParams.liveSymmetry.set(true));
+	else await A.page.evaluate(() => window.__tp.test.v1.meshToolParams.liveSymmetry.set(true));
 	const on = await A.page.evaluate(() => {
 		let v;
-		window.__stores.meshToolParams.liveSymmetry.subscribe((x) => (v = x))();
+		window.__tp.test.v1.meshToolParams.liveSymmetry.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(on === true, 'live symmetry is ON');
@@ -123,11 +123,11 @@ h.run(async () => {
 	// --- a one-shot op on -X is mirrored to +X ---------------------------------
 	const depth0 = await A.page.evaluate(() => {
 		let st;
-		window.__stores.history.undoStack.subscribe((v) => (st = v))();
+		window.__tp.test.v1.history.undoStack.subscribe((v) => (st = v))();
 		return st.length;
 	});
 	h.check(await pickFace(A.page, -1), 'picked the -X face (premise)');
-	await A.page.evaluate(() => window.__stores.faceEdit.commitFaceOp('extrude', 0.6));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.commitFaceOp('extrude', 0.6));
 	await settle(A.page);
 	const extruded = await facts(A.page, uuid);
 	h.check(
@@ -137,7 +137,7 @@ h.run(async () => {
 	h.check(extruded.lonely === 0, `...every vertex has its mirror twin (${extruded.lonely} lonely)`);
 	h.check(extruded.odd === 0 && extruded.sameWay === 0, `...watertight and consistently wound (${extruded.odd} odd, ${extruded.sameWay} same-way)`);
 	const keptPick = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let sel;
 		s.faceEdit.faceEditSelectedTris.subscribe((v) => (sel = v))();
 		const tris = s.faceEdit.readTriangles(window.__box.geometry);
@@ -150,14 +150,14 @@ h.run(async () => {
 	);
 	const depth1 = await A.page.evaluate(() => {
 		let st;
-		window.__stores.history.undoStack.subscribe((v) => (st = v))();
+		window.__tp.test.v1.history.undoStack.subscribe((v) => (st = v))();
 		return st.length;
 	});
 	h.check(depth1 - depth0 === 1, `the op AND its mirror are ONE history entry (+${depth1 - depth0})`);
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	const undone = await facts(A.page, uuid);
 	h.check(undone.minX === -1 && undone.maxX === 1 && undone.tris === start.tris, `ONE undo takes back the edit and its mirror (${undone.minX} .. ${undone.maxX})`);
-	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 	const redone = await facts(A.page, uuid);
 	h.check(redone.minX === -1.6 && redone.maxX === 1.6, `redo brings both back (${redone.minX} .. ${redone.maxX})`);
 
@@ -172,7 +172,7 @@ h.run(async () => {
 	// --- the adjust engine: apply, scrub, settle — mirrored every run -----------
 	h.check(await pickFace(A.page, -1), 'picked the -X cap again (premise)');
 	const adjusted = await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		const ok = fe.beginOpAdjust('extrude', { distance: 0.3 });
 		fe.reapplyOpAdjust({ distance: 0.5 });
 		const tris = fe.readTriangles(window.__box.geometry);
@@ -187,23 +187,23 @@ h.run(async () => {
 	h.check(adjusted.scrubMin === -2.1 && adjusted.scrubMax === 2.1, `a SCRUB is mirrored live (${adjusted.scrubMin} .. ${adjusted.scrubMax})`);
 	const settled = await facts(A.page, uuid);
 	h.check(settled.minX === -2.1 && settled.maxX === 2.1 && settled.odd === 0 && settled.lonely === 0, `...and the settle commits it symmetric + watertight (${JSON.stringify(settled)})`);
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	const adjustUndone = await facts(A.page, uuid);
 	h.check(adjustUndone.minX === -1.6 && adjustUndone.maxX === 1.6, `ONE undo takes the adjusted extrude back (${adjustUndone.minX} .. ${adjustUndone.maxX})`);
 
 	// --- RESTORE paths never mirror --------------------------------------------
-	await A.page.evaluate(() => window.__stores.meshToolParams.liveSymmetry.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.meshToolParams.liveSymmetry.set(false));
 	h.check(await pickFace(A.page, 1), 'picked the +X cap (premise)');
-	await A.page.evaluate(() => window.__stores.faceEdit.commitFaceOp('extrude', 0.4));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.commitFaceOp('extrude', 0.4));
 	await settle(A.page);
 	const lopsided = await facts(A.page, uuid);
 	h.check(lopsided.maxX === 2 && lopsided.minX === -1.6, `with the toggle OFF an edit stays one-sided (premise: ${lopsided.minX} .. ${lopsided.maxX})`);
-	await A.page.evaluate(() => window.__stores.meshToolParams.liveSymmetry.set(true));
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.meshToolParams.liveSymmetry.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await settle(A.page);
 	const undoReplay = await facts(A.page, uuid);
 	h.check(undoReplay.maxX === 1.6 && undoReplay.minX === -1.6, `with it ON, an UNDO replays exactly (${undoReplay.minX} .. ${undoReplay.maxX})`);
-	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 	await settle(A.page);
 	const redoReplay = await facts(A.page, uuid);
 	h.check(
@@ -218,7 +218,7 @@ h.run(async () => {
 		20000
 	);
 	await B.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		const object = g.getObjectByProperty('uuid', uuid);
@@ -239,9 +239,9 @@ h.run(async () => {
 
 	// --- the knife: a cut on the -X half is mirrored -----------------------------
 	const knifeBox = await symmetricBox(A.page);
-	await A.page.evaluate(() => window.__stores.meshToolParams.liveSymmetry.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.meshToolParams.liveSymmetry.set(true));
 	const cutPoints = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let camera;
 		s.globalCamera.subscribe((c) => (camera = c))();
 		let renderer;
@@ -253,7 +253,7 @@ h.run(async () => {
 		};
 		return [px(-1.6, 0.3, 1), px(-0.5, 0.35, 1), px(-0.45, -0.4, 1)];
 	});
-	await A.page.evaluate((points) => window.__stores.faceEdit.knifePolyline(points), cutPoints);
+	await A.page.evaluate((points) => window.__tp.test.v1.faceEdit.knifePolyline(points), cutPoints);
 	await settle(A.page);
 	const knifed = await facts(A.page, knifeBox);
 	h.check(knifed.tris > start.tris, `the knife cut on the -X half (premise: ${start.tris} -> ${knifed.tris})`);
@@ -262,7 +262,7 @@ h.run(async () => {
 	// --- vertex mode: a dragged vertex's TWIN follows ----------------------------
 	const vbox = await symmetricBox(A.page);
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.faceEdit.exitFaceEdit();
 		s.meshToolParams.liveSymmetry.set(true);
 		s.meshEdit.enterEditMode(window.__box.uuid);
@@ -270,7 +270,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(200);
 	const selectNearLocal = (point) =>
 		A.page.evaluate((point) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const me = s.meshEdit;
 			let controls;
 			s.TControls.subscribe((c) => (controls = c))();
@@ -293,11 +293,11 @@ h.run(async () => {
 	// 'selection' undo entry, so "two undos" would only walk picks back
 	await A.page.evaluate(() => {
 		let st;
-		window.__stores.history.undoStack.subscribe((v) => (st = v))();
+		window.__tp.test.v1.history.undoStack.subscribe((v) => (st = v))();
 		window.__mark = st[st.length - 1];
 	});
 	const dragged = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const me = s.meshEdit;
 		let controls;
 		s.TControls.subscribe((c) => (controls = c))();
@@ -323,7 +323,7 @@ h.run(async () => {
 		() =>
 			B.page.evaluate((uuid) => {
 				let g;
-				window.__stores.objectsGroup.subscribe((v) => (g = v))();
+				window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 				const position = g.getObjectByProperty('uuid', uuid)?.geometry?.attributes.position;
 				if (!position) return false;
 				for (let i = 0; i < position.count; i++)
@@ -337,7 +337,7 @@ h.run(async () => {
 	const onPlane = await selectNearLocal([0, 1, 1]);
 	h.check(onPlane.best >= 0 && onPlane.bestDistance < 1e-3, `picked a seam vertex ON the plane (premise, ${onPlane.bestDistance.toFixed(4)})`);
 	const pinned = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const me = s.meshEdit;
 		let controls;
 		s.TControls.subscribe((c) => (controls = c))();
@@ -359,7 +359,7 @@ h.run(async () => {
 	});
 	h.check(pinned.onPlaneAtNewHeight && !pinned.offPlane, 'a vertex ON the plane slides along it, never off it');
 	const geometryUndos = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const top = () => {
 			let st;
 			s.history.undoStack.subscribe((v) => (st = v))();
@@ -379,8 +379,8 @@ h.run(async () => {
 	);
 
 	await A.page.evaluate(() => {
-		window.__stores.meshEdit.exitEditMode?.();
-		window.__stores.meshToolParams.liveSymmetry.set(false);
+		window.__tp.test.v1.meshEdit.exitEditMode?.();
+		window.__tp.test.v1.meshToolParams.liveSymmetry.set(false);
 	});
 	await h.finish(browser);
 });

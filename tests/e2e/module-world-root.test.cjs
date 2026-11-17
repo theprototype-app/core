@@ -15,7 +15,7 @@ h.run(async () => {
 	// a module that builds a board (registered BEFORE it is added) and a late board
 	// (added first, registered after), plus a stray group it never registers
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		const mod = {
 			id: 'worldroottest',
@@ -48,7 +48,7 @@ h.run(async () => {
 
 	const read = () =>
 		A.page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const get = (store) => { let v; store.subscribe((x) => (v = x))(); return v; };
 			const scene = get(s.globalScene);
 			const THREE = s.THREE;
@@ -76,7 +76,7 @@ h.run(async () => {
 	h.check(!r.inObjects, 'golden rule 5: module content never enters objectsGroup');
 	const rigParent = await A.page.evaluate(() => {
 		let v;
-		window.__stores.globalScene.subscribe((x) => (v = x))();
+		window.__tp.test.v1.globalScene.subscribe((x) => (v = x))();
 		return v.getObjectByName('module-world-root')?.parent?.name ?? null;
 	});
 	h.check(rigParent === 'world-grab-rig', `the module root is a child of the world rig (${rigParent})`);
@@ -85,7 +85,7 @@ h.run(async () => {
 
 	// ---- 2. spin + scale the world: the dot goes with it --------------------------------------------
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let rig;
 		s.worldRig.subscribe((x) => (rig = x))();
 		rig.quaternion.setFromAxisAngle(new s.THREE.Vector3(0, 1, 0), Math.PI / 2);
@@ -98,10 +98,10 @@ h.run(async () => {
 		r.dotWorld && Math.abs(r.dotWorld[0]) < 1e-6 && Math.abs(r.dotWorld[1] - 2) < 1e-6 && Math.abs(r.dotWorld[2] + 2) < 1e-6,
 		`the world spun and scaled: the module's dot followed (${r.dotWorld.map((v) => v.toFixed(3))})`
 	);
-	await A.page.evaluate(() => window.__stores.vrControls.resetWorldRig());
+	await A.page.evaluate(() => window.__tp.test.v1.vrControls.resetWorldRig());
 
 	// ---- 3. the Module content list still lists it ------------------------------------------------------
-	const rows = await A.page.evaluate(() => window.__stores.moduleWorld.moduleWorldDebug().rows);
+	const rows = await A.page.evaluate(() => window.__tp.test.v1.moduleWorld.moduleWorldDebug().rows);
 	h.check(rows.includes('wr-board') && rows.includes('wr-late'), `the object list's Module content rows still find both (${rows})`);
 
 	// ---- 4. the module's own scene.remove(group) still takes it out ---------------------------------
@@ -115,7 +115,7 @@ h.run(async () => {
 
 	// ---- 5. disabling the module takes its content away ---------------------------------------------------
 	await A.page.evaluate(() => {
-		window.__stores.moduleSDK.deactivateModule('worldroottest');
+		window.__tp.test.v1.moduleSDK.deactivateModule('worldroottest');
 		const scene = window.__wrApi.scene();
 		scene.remove(scene.getObjectByName('wr-stray'));
 	});

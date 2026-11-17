@@ -81,7 +81,7 @@ const toScreen = (map, sx, sy) => ({
 /** seed a screen with exactly these elements, wiping whatever was there */
 async function seed(page, elements) {
 	await page.evaluate((list) => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		H.clearHudDocs();
 		H.setHudDocFor('scene', {});
 		const doc = H.hudDocOf('scene');
@@ -95,7 +95,7 @@ async function seed(page, elements) {
 async function undoDepth(page) {
 	return page.evaluate(() => {
 		let n = 0;
-		window.__stores.history.undoStack.subscribe((/** @type {any[]} */ s) => (n = s.length))();
+		window.__tp.test.v1.history.undoStack.subscribe((/** @type {any[]} */ s) => (n = s.length))();
 		return n;
 	});
 }
@@ -103,7 +103,7 @@ async function undoDepth(page) {
 /** the absolute stage rect + the authored offsets of every element, by id */
 async function readAll(page) {
 	return page.evaluate(() => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		const out = {};
 		for (const el of H.hudDocOf('scene').screens[0].elements) {
 			const r = H.rectInFrame(el, 1280, 720);
@@ -125,13 +125,13 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
 	const page = A.page;
-	await page.waitForFunction(() => !!window.__stores?.hudArrange, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.hudArrange, { timeout: 30000 });
 
 	await page.evaluate(() => {
-		window.__stores.hudDocs.clearHudDocs();
-		window.__stores.hudEditorClose.set(false);
-		window.__stores.bottomDock.activateDock('hud');
-		window.__stores.bottomDock.dockHeight.set(420);
+		window.__tp.test.v1.hudDocs.clearHudDocs();
+		window.__tp.test.v1.hudEditorClose.set(false);
+		window.__tp.test.v1.bottomDock.activateDock('hud');
+		window.__tp.test.v1.bottomDock.dockHeight.set(420);
 	});
 	await page.waitForTimeout(1600);
 	h.check(
@@ -145,7 +145,7 @@ h.run(async () => {
 	// `hudArrange` imports nothing on purpose, so the geometry is checkable exactly
 	// rather than to a tolerance.
 	const pure = await page.evaluate(() => {
-		const { arrangeRects, HUD_ARRANGE_OPS } = window.__stores.hudArrange;
+		const { arrangeRects, HUD_ARRANGE_OPS } = window.__tp.test.v1.hudArrange;
 		const three = [
 			{ id: 'a', rect: { left: 100, top: 100, w: 120, h: 40 } },
 			{ id: 'b', rect: { left: 400, top: 150, w: 60, h: 40 } },
@@ -199,7 +199,7 @@ h.run(async () => {
 			arrange: [...dock.querySelectorAll('[data-hud-arrange]')].map((b) => b.getAttribute('data-hud-arrange')),
 			disabled: [...dock.querySelectorAll('[data-hud-arrange]')].every((b) => b.disabled),
 			labelled: [...dock.querySelectorAll('[data-hud-arrange]')].every((b) => !!b.getAttribute('aria-label')),
-			registry: window.__stores.hudArrange.HUD_ARRANGE_OPS.map((op) => op.key)
+			registry: window.__tp.test.v1.hudArrange.HUD_ARRANGE_OPS.map((op) => op.key)
 		};
 	});
 	h.check(bar.oldAdds.length === 0, `the four "Add <kind>" shortcuts are gone from the topbar (${JSON.stringify(bar.oldAdds)})`);
@@ -217,10 +217,10 @@ h.run(async () => {
 
 	// the palette is the add path, and it still works
 	const paletteAdd = await page.evaluate(async () => {
-		const before = window.__stores.hudDocs.hudDocOf('scene')?.screens[0].elements.length ?? 0;
+		const before = window.__tp.test.v1.hudDocs.hudDocOf('scene')?.screens[0].elements.length ?? 0;
 		/** @type {any} */ (document.querySelector('#hud-palette [data-hud-kind="bar"]'))?.click();
 		await new Promise((r) => setTimeout(r, 600));
-		const els = window.__stores.hudDocs.hudDocOf('scene').screens[0].elements;
+		const els = window.__tp.test.v1.hudDocs.hudDocOf('scene').screens[0].elements;
 		return { before, after: els.length, kind: els[els.length - 1]?.kind };
 	});
 	h.check(
@@ -394,9 +394,9 @@ h.run(async () => {
 
 	// ONE undo entry — asserted as the PROPERTY: a single Ctrl+Z puts all three back
 	const undone = await page.evaluate(async () => {
-		window.__stores.history.undo();
+		window.__tp.test.v1.history.undo();
 		await new Promise((r) => setTimeout(r, 500));
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		const out = {};
 		for (const el of H.hudDocOf('scene').screens[0].elements) out[el.id] = el.x;
 		return out;
@@ -407,9 +407,9 @@ h.run(async () => {
 	);
 	// and REDO returns it — the shader-graph redo bug lived in exactly this handler shape
 	const redone = await page.evaluate(async () => {
-		window.__stores.history.redo();
+		window.__tp.test.v1.history.redo();
 		await new Promise((r) => setTimeout(r, 500));
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		const out = {};
 		for (const el of H.hudDocOf('scene').screens[0].elements) out[el.id] = Math.round(H.rectInFrame(el, 1280, 720).left);
 		return out;
@@ -421,7 +421,7 @@ h.run(async () => {
 
 	// another align op, on the same mixed-anchor set
 	await page.evaluate(async () => {
-		window.__stores.history.undo();
+		window.__tp.test.v1.history.undo();
 		await new Promise((r) => setTimeout(r, 400));
 	});
 	// the board has to have the keyboard back — the last click was on a toolbar BUTTON,
@@ -475,9 +475,9 @@ h.run(async () => {
 		`one entry for the whole distribution (${distDepthBefore} -> ${distDepthAfter})`
 	);
 	const distUndone = await page.evaluate(async () => {
-		window.__stores.history.undo();
+		window.__tp.test.v1.history.undo();
 		await new Promise((r) => setTimeout(r, 500));
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		return H.elementById('scene', 'd2').y;
 	});
 	h.check(distUndone === 140, `one undo puts the distribution back (d2.y=${distUndone})`);
@@ -553,9 +553,9 @@ h.run(async () => {
 		`by rewriting its offsets for the new size (x ${eStart.e2.x} -> ${equalized.e2.x}, y ${eStart.e2.y} -> ${equalized.e2.y})`
 	);
 	const eqUndone = await page.evaluate(async () => {
-		window.__stores.history.undo();
+		window.__tp.test.v1.history.undo();
 		await new Promise((r) => setTimeout(r, 500));
-		const el = window.__stores.hudDocs.elementById('scene', 'e2');
+		const el = window.__tp.test.v1.hudDocs.elementById('scene', 'e2');
 		return { w: el.w, h: el.h, x: el.x, y: el.y };
 	});
 	h.check(
@@ -567,7 +567,7 @@ h.run(async () => {
 	// 7. THE CATEGORIZED ADD MENU — compared against the registry, not a copy
 	// ======================================================================
 	const registry = await page.evaluate(() =>
-		window.__stores.hudKinds.paletteGroups().map((entry) => ({
+		window.__tp.test.v1.hudKinds.paletteGroups().map((entry) => ({
 			group: entry.group,
 			items: entry.items.map((def) => def.label)
 		}))
@@ -600,7 +600,7 @@ h.run(async () => {
 	);
 	// clicking one adds it AT the right-click point (the E1.2 contract, still true)
 	const wantKind = registry[0].items[0];
-	const beforeAdd = await page.evaluate(() => window.__stores.hudDocs.hudDocOf('scene').screens[0].elements.length);
+	const beforeAdd = await page.evaluate(() => window.__tp.test.v1.hudDocs.hudDocOf('scene').screens[0].elements.length);
 	await page.evaluate((label) => {
 		const row = [...document.querySelectorAll('[role="menuitem"]')].find(
 			(el) => (el.querySelector(':scope > span > span.flex-1')?.textContent ?? '').trim() === label
@@ -609,7 +609,7 @@ h.run(async () => {
 	}, wantKind);
 	await page.waitForTimeout(700);
 	const afterAdd = await page.evaluate((pt) => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		const els = H.hudDocOf('scene').screens[0].elements;
 		const el = els[els.length - 1];
 		const node = document.querySelector(`#hud-board [data-hud-item="${el.id}"]`);

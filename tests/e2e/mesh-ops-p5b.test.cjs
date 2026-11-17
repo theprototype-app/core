@@ -20,7 +20,7 @@ const h = require('./helpers.cjs');
 /** the mesh as a canonical string — the comparison for "undo restored the soup" */
 const soup = (page, uuid) =>
 	page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		const object = g.getObjectByProperty('uuid', uuid);
@@ -33,7 +33,7 @@ const soup = (page, uuid) =>
 
 const triCount = (page, uuid) =>
 	page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		const object = g.getObjectByProperty('uuid', uuid);
@@ -43,7 +43,7 @@ const triCount = (page, uuid) =>
 /** welded edges used other than exactly twice — 0 = watertight (the crack check) */
 const oddEdges = (page, uuid) =>
 	page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		const tris = s.faceEdit.readTriangles(g.getObjectByProperty('uuid', uuid).geometry);
@@ -64,7 +64,7 @@ const oddEdges = (page, uuid) =>
 
 const freshBox = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.faceEdit.exitFaceEdit?.();
 		s.meshEdit.exitEditMode?.();
 		s.commandsHandler.sceneCommand('/clear all');
@@ -81,11 +81,11 @@ h.run(async () => {
 	// ====================================================== 1. EDGE SUBDIVIDE
 	let uuid = await freshBox(A.page);
 	const pick = await A.page.evaluate((uuid) => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		fe.enterFaceEdit(uuid);
 		fe.faceEditSubmode.set('edges');
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const tris = fe.readTriangles(g.getObjectByProperty('uuid', uuid).geometry);
 		// pickEdgeAt skips the quad diagonal, so this yields a REAL box edge
 		const t = tris[0];
@@ -124,7 +124,7 @@ h.run(async () => {
 	);
 
 	const beforeSoup = await soup(A.page, uuid);
-	const r1 = await A.page.evaluate(() => window.__stores.faceEdit.subdivideSelectedEdges());
+	const r1 = await A.page.evaluate(() => window.__tp.test.v1.faceEdit.subdivideSelectedEdges());
 	h.check(r1 === true, 'Edge subdivide commits');
 	h.check(
 		(await triCount(A.page, uuid)) === pick.before + 2,
@@ -137,7 +137,7 @@ h.run(async () => {
 
 	const midInfo = await A.page.evaluate(
 		({ uuid, expectMid, expectedUvs }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let g;
 			s.objectsGroup.subscribe((v) => (g = v))();
 			const tris = s.faceEdit.readTriangles(g.getObjectByProperty('uuid', uuid).geometry);
@@ -182,25 +182,25 @@ h.run(async () => {
 		`the pieces rejoined their parents' faces: two 3-tri faces + four quads (${midInfo.sizes})`
 	);
 
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	h.check((await triCount(A.page, uuid)) === pick.before, 'ONE undo removes the split');
 	h.check((await soup(A.page, uuid)) === beforeSoup, '...restoring the exact triangle soup');
 
 	const subRefuse = await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		fe.clearEdgeSelection();
 		return fe.subdivideSelectedEdges();
 	});
 	h.check(subRefuse === false, 'subdivide with nothing picked refuses');
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
 
 	// ======================================================= 2. EDGE EXTRUDE
 	uuid = await freshBox(A.page);
 	const opened = await A.page.evaluate((uuid) => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		fe.enterFaceEdit(uuid);
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const tris = fe.readTriangles(g.getObjectByProperty('uuid', uuid).geometry);
 		// the +Y quad: both tris whose normal points up
 		const top = [];
@@ -217,7 +217,7 @@ h.run(async () => {
 	const openSoup = await soup(A.page, uuid);
 
 	const ext = await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		fe.setFaceSubmode('edges');
 		let g;
@@ -289,7 +289,7 @@ h.run(async () => {
 	const stripAt = (distance) =>
 		A.page.evaluate(
 			({ uuid, endpoints, dir, preKeys, distance }) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				let g;
 				s.objectsGroup.subscribe((v) => (g = v))();
 				const tris = s.faceEdit.readTriangles(g.getObjectByProperty('uuid', uuid).geometry);
@@ -341,7 +341,7 @@ h.run(async () => {
 	h.check(strip.adjustOp === 'edge-extrude', 'the adjust engine is live on edge-extrude');
 
 	const scrubbed = await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		const ok = fe.reapplyOpAdjust({ distance: 1.2 });
 		fe.settleOpAdjust();
 		return ok;
@@ -355,13 +355,13 @@ h.run(async () => {
 	);
 	h.check(strip.selected === 2, '...and the selection re-follows the moved outer edges');
 
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	h.check((await triCount(A.page, uuid)) === 10, 'ONE undo removes the whole adjusted strip (one entry, settled in place)');
 	h.check((await soup(A.page, uuid)) === openSoup, '...restoring the exact open-box soup');
 
 	// refusal: an INTERIOR edge (a face on both sides) is refused with the rule named
 	const refuse = await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		fe.clearEdgeSelection();
 		let g;
@@ -395,13 +395,13 @@ h.run(async () => {
 		`...with a toast naming the rule ("${refuse.text}")`
 	);
 	h.check((await triCount(A.page, uuid)) === 10, '...and the mesh is untouched');
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
 
 	// ==================================================== 3. DUPLICATE FACES
 	uuid = await freshBox(A.page);
 	const preDupSoup = await soup(A.page, uuid);
 	const dup = await A.page.evaluate((uuid) => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		fe.enterFaceEdit(uuid);
 		// two disjoint quads
 		const q0 = fe.quadOfTriangle(0);
@@ -429,7 +429,7 @@ h.run(async () => {
 
 	const geoInfo = await A.page.evaluate(
 		({ uuid, src }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let g;
 			s.objectsGroup.subscribe((v) => (g = v))();
 			const object = g.getObjectByProperty('uuid', uuid);
@@ -461,7 +461,7 @@ h.run(async () => {
 	// coincident-patch rule must skip the weld stitch, or the drag would carry the
 	// source (and the box sides welded to it) along.
 	const grab = await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
@@ -490,7 +490,7 @@ h.run(async () => {
 	);
 	const movedInfo = await A.page.evaluate(
 		({ uuid, src }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let g;
 			s.objectsGroup.subscribe((v) => (g = v))();
 			const tris = s.faceEdit.readTriangles(g.getObjectByProperty('uuid', uuid).geometry);
@@ -514,26 +514,26 @@ h.run(async () => {
 	h.check(movedInfo, 'the copies moved by exactly the drag delta (+0.7 y) — a clean peel');
 
 	await A.page.evaluate(() => {
-		window.__stores.history.undo(); // the grab
-		window.__stores.history.undo(); // the duplicate
+		window.__tp.test.v1.history.undo(); // the grab
+		window.__tp.test.v1.history.undo(); // the duplicate
 	});
 	h.check((await triCount(A.page, uuid)) === 12, 'two undos remove the move, then the copies');
 	h.check((await soup(A.page, uuid)) === preDupSoup, '...restoring the exact original soup');
 	const dupRefuse = await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		fe.faceEditSelectedTris.set([]);
 		fe.faceEditHighlight.set(-1);
 		fe.faceEditHoverTri.set(-1);
 		return fe.duplicateSelectedFaces();
 	});
 	h.check(dupRefuse === false, 'duplicate with nothing selected refuses');
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
 
 	// ===================================================== 4. SMOOTH / RELAX
 	// a noisy 4x4 plane grid: subdivide twice, then jitter per WELDED key (a
 	// per-entry jitter would tear the soup and change the welded structure)
 	const gridUuid = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.faceEdit.exitFaceEdit?.();
 		s.meshEdit.exitEditMode?.();
 		s.commandsHandler.sceneCommand('/clear all');
@@ -569,7 +569,7 @@ h.run(async () => {
 	// derive the spec in-test: welded adjacency by TRIANGLE edges (the op's own
 	// definition, diagonals included), interior = no incident border edge
 	const derived = await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.meshEdit.enterEditMode(uuid);
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
@@ -639,7 +639,7 @@ h.run(async () => {
 	const positionsOf = (keys) =>
 		A.page.evaluate(
 			({ uuid, keys, entryOf }) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				let g;
 				s.objectsGroup.subscribe((v) => (g = v))();
 				const attr = g.getObjectByProperty('uuid', uuid).geometry.attributes.position;
@@ -654,7 +654,7 @@ h.run(async () => {
 		);
 
 	// ---- factor 0.5: exactly halfway to the neighbour average
-	const half = await A.page.evaluate(() => window.__stores.meshEdit.smoothSelectedVerts(0.5, 1));
+	const half = await A.page.evaluate(() => window.__tp.test.v1.meshEdit.smoothSelectedVerts(0.5, 1));
 	h.check(half === true, 'Smooth commits (factor 0.5, 1 pass)');
 	let read = await positionsOf(derived.interior);
 	let worst = 0;
@@ -668,12 +668,12 @@ h.run(async () => {
 	h.check(worst < 1e-5, `factor 0.5 lands each vertex exactly HALFWAY to its neighbour average (worst ${worst.toExponential(2)})`);
 	h.check(read.count === derived.count, 'the vertex count is unchanged');
 
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	h.check((await soup(A.page, gridUuid)) === noisySoup, 'ONE undo restores the noisy grid exactly');
 
 	// ---- factor 1: lands exactly ON the average; boundary stays put
 	const again = await A.page.evaluate(() => {
-		const me = window.__stores.meshEdit;
+		const me = window.__tp.test.v1.meshEdit;
 		let size = 0;
 		me.vertexSelectionSize.subscribe((v) => (size = v))();
 		return { size, ok: me.smoothSelectedVerts(1, 1) };
@@ -702,17 +702,17 @@ h.run(async () => {
 	h.check(borderWorst < 1e-6, `unselected boundary vertices stay put (worst ${borderWorst.toExponential(2)})`);
 
 	const smoothRefuse = await A.page.evaluate(() => {
-		const me = window.__stores.meshEdit;
+		const me = window.__tp.test.v1.meshEdit;
 		me.clearVertexSelection();
 		return me.smoothSelectedVerts(1, 1);
 	});
 	h.check(smoothRefuse === false, 'smooth with no vertex picked refuses (toast, no commit)');
-	await A.page.evaluate(() => window.__stores.meshEdit.exitEditMode());
+	await A.page.evaluate(() => window.__tp.test.v1.meshEdit.exitEditMode());
 
 	// ====================================================== 5. the toolbox UI
 	uuid = await freshBox(A.page);
 	await A.page.evaluate((uuid) => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		fe.enterFaceEdit(uuid);
 		fe.setFaceSubmode('edges');
 		fe.clearEdgeSelection();
@@ -728,7 +728,7 @@ h.run(async () => {
 	h.check(/border edge/i.test(edgeHint), `...with the pick-first hint ("${edgeHint.trim()}")`);
 
 	await A.page.evaluate(() => {
-		window.__stores.faceEdit.setFaceSubmode('faces');
+		window.__tp.test.v1.faceEdit.setFaceSubmode('faces');
 	});
 	await A.page.waitForTimeout(300);
 	h.check(
@@ -737,9 +737,9 @@ h.run(async () => {
 	);
 
 	await A.page.evaluate((uuid) => {
-		window.__stores.faceEdit.exitFaceEdit();
-		window.__stores.meshEdit.enterEditMode(uuid);
-		window.__stores.meshEdit.clearVertexSelection();
+		window.__tp.test.v1.faceEdit.exitFaceEdit();
+		window.__tp.test.v1.meshEdit.enterEditMode(uuid);
+		window.__tp.test.v1.meshEdit.clearVertexSelection();
 	}, uuid);
 	await A.page.waitForTimeout(400);
 	h.check((await A.page.locator('#mesh-smooth').count()) === 1, 'the vertices Tools row has #mesh-smooth');
@@ -748,7 +748,7 @@ h.run(async () => {
 	h.check((await A.page.locator('#smooth-params').count()) === 1, 'clicking it opens the smooth options pane (factor + passes)');
 	const smoothHint = await A.page.evaluate(() => document.querySelector('#mesh-op-hint')?.textContent || '');
 	h.check(/vertex first/i.test(smoothHint), `...with the pick-first hint ("${smoothHint.trim()}")`);
-	await A.page.evaluate(() => window.__stores.meshEdit.exitEditMode());
+	await A.page.evaluate(() => window.__tp.test.v1.meshEdit.exitEditMode());
 
 	// ================================================ 6. two-peer smooth parity
 	const B = await h.setupPage(browser, 'B');
@@ -761,7 +761,7 @@ h.run(async () => {
 		20000
 	);
 	await A.page.evaluate((uuid) => {
-		const me = window.__stores.meshEdit;
+		const me = window.__tp.test.v1.meshEdit;
 		me.enterEditMode(uuid);
 		me.selectHandle(0);
 		me.smoothSelectedVerts(0.5, 2);
@@ -774,7 +774,7 @@ h.run(async () => {
 		'B converges to byte-for-byte the same smoothed mesh',
 		20000
 	);
-	await A.page.evaluate(() => window.__stores.meshEdit.exitEditMode());
+	await A.page.evaluate(() => window.__tp.test.v1.meshEdit.exitEditMode());
 
 	await h.finish(browser);
 });

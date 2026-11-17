@@ -11,7 +11,7 @@ const { makeCc0Network } = require('./cc0Fixtures.cjs');
 /** read a store off the debug hook @param {any} page @param {string} expr */
 const store = (page, expr) =>
 	page.evaluate((e) => {
-		const s = e.split('.').reduce((o, k) => o?.[k], window.__stores);
+		const s = e.split('.').reduce((o, k) => o?.[k], window.__tp?.test.v1);
 		let v;
 		s.subscribe((x) => (v = x))();
 		return JSON.parse(JSON.stringify(v ?? null, (k, val) => (k === 'thumbnail' ? undefined : val)));
@@ -22,13 +22,13 @@ async function look(page, pos, target) {
 	await page.evaluate(
 		([p, t]) => {
 			let cam, orbit;
-			window.__stores.editorCam.subscribe((v) => (cam = v))();
-			window.__stores.orbitControls.subscribe((v) => (orbit = v))();
+			window.__tp.test.v1.editorCam.subscribe((v) => (cam = v))();
+			window.__tp.test.v1.orbitControls.subscribe((v) => (orbit = v))();
 			cam.position.set(p[0], p[1], p[2]);
 			orbit?.target?.set(t[0], t[1], t[2]);
 			orbit?.update?.();
 			cam.lookAt(t[0], t[1], t[2]);
-			window.__stores.pokeScene?.();
+			window.__tp.test.v1.pokeScene?.();
 		},
 		[pos, target]
 	);
@@ -38,7 +38,7 @@ async function look(page, pos, target) {
 const scatter = (page, uuid, source, spots) =>
 	page.evaluate(
 		async ([u, src, pts]) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.terrainSculpt.enterSculpt(u);
 			s.terrainSculpt.sculptOp.set('scatter');
 			s.terrainSculpt.sculptRadius.set(3);
@@ -64,7 +64,7 @@ h.run(async () => {
 	const { model } = net.ids;
 
 	// ---- C: a CC0 model through 46's auto-optimize -----------------------------------------------
-	await page.evaluate(() => window.__stores.closeMenu.set(false));
+	await page.evaluate(() => window.__tp.test.v1.closeMenu.set(false));
 	await page.locator('#open-asset-browser').click();
 	await page.waitForSelector('#asset-browser-window', { timeout: 20000 });
 	await page.waitForFunction(() => Number(document.querySelector('#asset-browser-grid')?.dataset.count) > 0, null, { timeout: 30000 }).catch(() => {});
@@ -78,7 +78,7 @@ h.run(async () => {
 	await page.locator('#asset-browser-close').click().catch(() => {});
 	// the per-asset override says Always (46 P2), so placing it runs the optimizer on this small file
 	const placedUuid = await page.evaluate(async (id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.importOptimize.setAssetOverride(id, { mode: 'always' }); // the debug hook (a deployed build has no /src paths)
 		let items;
 		s.explorer.explorerItems.subscribe((x) => (items = x))();
@@ -95,24 +95,24 @@ h.run(async () => {
 	h.check(twin?.source?.id === model && twin?.source?.license === 'CC0' && twin?.source?.url === item?.source?.url, `C.4 the optimized copy names the same CC0 source (${JSON.stringify(twin?.source ?? null).slice(0, 120)})`);
 	const placed = await page.evaluate((u) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		const o = g.getObjectByProperty('uuid', u);
 		return o ? { optimized: !!o.userData?.optimized, source: o.userData?.source ?? null } : null;
 	}, placedUuid);
 	h.check(placed?.optimized === true, 'C.5 the placed object IS the optimized one (userData.optimized)');
 	h.check(placed?.source?.id === model && placed?.source?.license === 'CC0', `C.6 ...and still carries its CC0 source (${placed?.source?.id})`);
-	await page.evaluate((u) => window.__stores.commandsHandler.sceneCommand('/delete ' + u), placedUuid).catch(() => {});
+	await page.evaluate((u) => window.__tp.test.v1.commandsHandler.sceneCommand('/delete ' + u), placedUuid).catch(() => {});
 
 	// ---- T1: the budget meter counts the scatter ---------------------------------------------------
 	const uuid = await page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create Terrain 96 48');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create Terrain 96 48');
 		await new Promise((r) => setTimeout(r, 800));
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		return group.children[group.children.length - 1].uuid;
 	});
 	const reading = () =>
 		page.evaluate((u) => {
-			const r = window.__stores.budgetMeter.sampleBudget();
+			const r = window.__tp.test.v1.budgetMeter.sampleBudget();
 			const row = r.rows.find((x) => x.uuid === u);
 			return { tris: r.totals.triangles, calls: r.totals.calls, rowTris: row?.triangles ?? null, rowCalls: row?.calls ?? null };
 		}, uuid);
@@ -122,7 +122,7 @@ h.run(async () => {
 		[40, 40],
 		[0, 0]
 	]);
-	const cones = await page.evaluate(() => window.__stores.terrainSurface.terrainSurfaceStats());
+	const cones = await page.evaluate(() => window.__tp.test.v1.terrainSurface.terrainSurfaceStats());
 	h.check(cones.instances > 10, `T1.1 three strokes scattered cones (${cones.instances})`);
 	h.check(cones.instancedMeshes === 1, `T1.2 a light model stays ONE InstancedMesh for the set, across the terrain (${cones.instancedMeshes})`);
 	const after = await reading();
@@ -131,7 +131,7 @@ h.run(async () => {
 
 	// ---- T2: a dense Library model takes 46's LOD, per cell ---------------------------------------
 	const ball = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		const { GLTFExporter } = s.GLTFExporterModule;
 		const scene = new THREE.Scene();
@@ -147,23 +147,23 @@ h.run(async () => {
 		[40, 40]
 	]);
 	await h.eventually(
-		() => page.evaluate(() => window.__stores.terrainSurface.terrainSurfaceStats().instancedMeshes),
+		() => page.evaluate(() => window.__tp.test.v1.terrainSurface.terrainSurfaceStats().instancedMeshes),
 		(n) => n >= 3,
 		'T2.1 the dense model is laid out (in cells)',
 		30000
 	);
 	const cells = await page.evaluate((hash) => {
 		let scene;
-		window.__stores.globalScene.subscribe((x) => (scene = x))();
+		window.__tp.test.v1.globalScene.subscribe((x) => (scene = x))();
 		const holder = scene.children.find((c) => c.name === 'terrain-scatter');
 		return holder.children.filter((m) => m.geometry.index && m.geometry.index.count / 3 > 1000).map((m) => ({ uuid: m.uuid, count: m.count }));
 	}, ball.hash);
 	h.check(cells.length === 2, `T2.2 two far-apart strokes = two cells for the dense model (${cells.length}: ${cells.map((c) => c.count)})`);
 	const meter = await reading();
-	const stats2 = await page.evaluate(() => window.__stores.terrainSurface.terrainSurfaceStats());
+	const stats2 = await page.evaluate(() => window.__tp.test.v1.terrainSurface.terrainSurfaceStats());
 	h.check(meter.tris - before.tris === stats2.tris, `T2.3 the meter counts every instance of both sets (${meter.tris - before.tris} = ${stats2.tris})`);
 	await h.eventually(
-		() => page.evaluate((ids) => window.__stores.lod.lodStats().meshes.filter((m) => ids.includes(m.uuid) && m.explicit && m.levels?.length).length, cells.map((c) => c.uuid)),
+		() => page.evaluate((ids) => window.__tp.test.v1.lod.lodStats().meshes.filter((m) => ids.includes(m.uuid) && m.explicit && m.levels?.length).length, cells.map((c) => c.uuid)),
 		(n) => n === 2,
 		'T2.4 both cells registered with 46 LOD and their levels built',
 		30000
@@ -172,9 +172,9 @@ h.run(async () => {
 	await look(page, [-44, 6, -44], [40, 0, 40]);
 	await page.waitForTimeout(800);
 	const levels = await page.evaluate((ids) => {
-		const st = window.__stores.lod.lodStats();
+		const st = window.__tp.test.v1.lod.lodStats();
 		let scene;
-		window.__stores.globalScene.subscribe((x) => (scene = x))();
+		window.__tp.test.v1.globalScene.subscribe((x) => (scene = x))();
 		const holder = scene.children.find((c) => c.name === 'terrain-scatter');
 		return ids.map((id) => {
 			const m = holder.children.find((c) => c.uuid === id);
@@ -189,8 +189,8 @@ h.run(async () => {
 	h.check(near?.current === 0, `T2.5 the cell beside the camera draws full detail (level ${near?.current})`);
 	h.check((far?.current ?? 0) >= 2, `T2.6 the cell across the terrain draws a coarse level (level ${far?.current}, levels ${JSON.stringify(far?.levels)})`);
 	// clearing the scatter lets the LOD entries go (no leak through lod.js)
-	await page.evaluate((u) => window.__stores.terrainSurface.applyTerrainScatter(u, null), uuid);
-	const left = await page.evaluate((ids) => window.__stores.lod.lodStats().meshes.filter((m) => ids.includes(m.uuid)).length, cells.map((c) => c.uuid));
+	await page.evaluate((u) => window.__tp.test.v1.terrainSurface.applyTerrainScatter(u, null), uuid);
+	const left = await page.evaluate((ids) => window.__tp.test.v1.lod.lodStats().meshes.filter((m) => ids.includes(m.uuid)).length, cells.map((c) => c.uuid));
 	h.check(left === 0, `T2.7 removing the scatter releases its LOD entries (${left} left)`);
 	await browser.close();
 });

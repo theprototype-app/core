@@ -14,12 +14,12 @@
 const h = require('./helpers.cjs');
 
 const openMenu = async (page) => {
-	await page.evaluate(() => window.__stores.closeMenu.set(false));
+	await page.evaluate(() => window.__tp.test.v1.closeMenu.set(false));
 	await page.waitForSelector('#sidebar70', { timeout: 5000 });
 	await page.waitForTimeout(350);
 };
 const closeMenu = async (page) => {
-	await page.evaluate(() => window.__stores.closeMenu.set(true));
+	await page.evaluate(() => window.__tp.test.v1.closeMenu.set(true));
 	await page.waitForTimeout(250);
 };
 const layoutOf = (page) =>
@@ -61,7 +61,7 @@ const gridOf = (page) =>
 /** pick the Project actions setting through Settings ▸ Interface */
 async function pickSetting(page, value) {
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.settingsOpen.set(false);
 		s.settingsSection.set('interface');
 		s.settingsOpen.set(true);
@@ -69,7 +69,7 @@ async function pickSetting(page, value) {
 	await page.waitForSelector('#project-actions-' + value, { timeout: 15000 });
 	await page.locator('#project-actions-' + value).click();
 	await page.waitForTimeout(200);
-	await page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await page.waitForTimeout(300);
 }
 
@@ -104,18 +104,18 @@ h.run(async () => {
 	await page.waitForTimeout(400);
 	const pe = await page.evaluate(() => {
 		let v;
-		window.__stores.exportStores.publishExportOpen.subscribe((x) => (v = x))();
+		window.__tp.test.v1.exportStores.publishExportOpen.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(pe === true, 'Export… opens the existing Publish / Export dialog');
-	await page.evaluate(() => window.__stores.exportStores.publishExportOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.exportStores.publishExportOpen.set(false));
 	await page.waitForTimeout(300);
 
 	// ▾ opens Save options; its Save remembers the options and saves with them
 	await page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1100));
-		window.__stores.objectActions.deselectObject();
+		window.__tp.test.v1.objectActions.deselectObject();
 	});
 	await openMenu(page);
 	// showhide-v8 §6: Save as… ▾ is a menu in the owner's order; its last item opens Save options
@@ -153,7 +153,7 @@ h.run(async () => {
 	await openMenu(page);
 	h.check(await page.locator('#project-save').isDisabled(), 'after a Save, Save is greyed (nothing changed since)');
 	await page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1100));
 	});
 	h.check(!(await page.locator('#project-save').isDisabled()), '...and an edit arms it again');
@@ -176,14 +176,14 @@ h.run(async () => {
 	await closeMenu(page);
 
 	// settings search
-	await page.evaluate(() => window.__stores.settingsOpen.set(true));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 	await page.fill('#settings-search', 'burger');
 	await page.waitForTimeout(400);
 	h.check(await page.locator('#row-project-actions').isVisible(), 'the settings search finds Project actions by "burger"');
 	await page.fill('#settings-search', 'compact grid');
 	await page.waitForTimeout(400);
 	h.check(await page.locator('#row-project-actions').isVisible(), '…and by "compact grid"');
-	await page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	h.check(h.pageErrors(D).length === 0, `desktop: no page errors (${JSON.stringify(h.pageErrors(D)).slice(0, 200)})`);
 	await browser.close().catch(() => {});
 

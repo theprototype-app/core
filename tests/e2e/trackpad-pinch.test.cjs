@@ -15,8 +15,8 @@ h.run(async () => {
 
 	const read = () =>
 		page.evaluate(() => {
-			let cam; window.__stores.globalCamera.subscribe((v) => (cam = v))();
-			let ctl; window.__stores.orbitControls.subscribe((v) => (ctl = v))();
+			let cam; window.__tp.test.v1.globalCamera.subscribe((v) => (cam = v))();
+			let ctl; window.__tp.test.v1.orbitControls.subscribe((v) => (ctl = v))();
 			return { target: ctl.target.toArray(), distance: cam.position.distanceTo(ctl.target) };
 		});
 	const moved = (a, b) => Math.hypot(a.target[0] - b.target[0], a.target[1] - b.target[1], a.target[2] - b.target[2]);
@@ -24,7 +24,7 @@ h.run(async () => {
 	/** a stream of wheel events on the canvas, ~8 ms apart (a dense trackpad stream) */
 	const wheels = (list) =>
 		page.evaluate(async (items) => {
-			let r; window.__stores.globalRenderer.subscribe((v) => (r = v))();
+			let r; window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
 			for (const init of items) {
 				const e = new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaMode: 0, ...init });
 				if (init.wheelDeltaY !== undefined) Object.defineProperty(e, 'wheelDeltaY', { value: init.wheelDeltaY });
@@ -35,7 +35,7 @@ h.run(async () => {
 	/** a Safari gesture sequence on a target ('canvas' or a CSS selector) */
 	const gesture = (where, scales) =>
 		page.evaluate(async ([w, ss]) => {
-			let r; window.__stores.globalRenderer.subscribe((v) => (r = v))();
+			let r; window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
 			const target = w === 'canvas' ? r.domElement : document.querySelector(w);
 			const fire = (type, scale) => {
 				const e = new Event(type, { bubbles: true, cancelable: true });
@@ -53,7 +53,7 @@ h.run(async () => {
 		}, [where, scales]);
 	const settle = () => page.waitForTimeout(400);
 
-	await page.evaluate(() => window.__stores.trackpadNav.trackpadMode.set('auto'));
+	await page.evaluate(() => window.__tp.test.v1.trackpadNav.trackpadMode.set('auto'));
 	await settle();
 
 	// 1. two-finger pan
@@ -104,13 +104,13 @@ h.run(async () => {
 	await settle();
 	b = await read();
 	h.check(Math.abs(b.distance - a.distance) < 0.01, 'a Safari pinch over UI (not the canvas) leaves the camera alone');
-	await page.evaluate(() => window.__stores.trackpadNav.pinchZoomEnabled.set(false));
+	await page.evaluate(() => window.__tp.test.v1.trackpadNav.pinchZoomEnabled.set(false));
 	a = await read();
 	await gesture('canvas', [1.5]);
 	await settle();
 	b = await read();
 	h.check(Math.abs(b.distance - a.distance) < 0.01, 'with "Pinch to zoom" off, a Safari pinch does nothing');
-	await page.evaluate(() => window.__stores.trackpadNav.pinchZoomEnabled.set(true));
+	await page.evaluate(() => window.__tp.test.v1.trackpadNav.pinchZoomEnabled.set(true));
 
 	await h.finish(browser);
 });

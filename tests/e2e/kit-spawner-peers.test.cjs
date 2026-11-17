@@ -10,7 +10,7 @@
 const h = require('./helpers.cjs');
 
 const PROBE = () => {
-	const s = /** @type {any} */ (window).__stores;
+	const s = /** @type {any} */ (window).__tp?.test.v1;
 	s.moduleSDK.initModules([
 		{
 			id: 'kitprobe',
@@ -30,7 +30,7 @@ const EVENTS = ['kit-spawner-spawned', 'kit-spawner-despawned', 'kit-spawner-emp
 const seen = (/** @type {any} */ p) => p.page.evaluate(() => /** @type {any} */ (window).__seenEv);
 const arm = (/** @type {any} */ p) =>
 	p.page.evaluate((events) => {
-		const S = /** @type {any} */ (window).__stores;
+		const S = /** @type {any} */ (window).__tp?.test.v1;
 		/** @type {Record<string, {n: number, last: number | null}>} */
 		const out = Object.fromEntries(events.map((e) => [e, { n: 0, last: null }]));
 		/** @type {any} */ (window).__seenEv = out;
@@ -47,8 +47,8 @@ const arm = (/** @type {any} */ p) =>
 	}, EVENTS);
 const ents = (/** @type {any} */ p) =>
 	p.page.evaluate(() => {
-		const d = /** @type {any} */ (window).__stores.kitEntities.kitEntitiesDebug();
-		return { count: d.runtime?.living ?? null, stored: d.runtime?.stored ?? d.runtime?.count ?? null, node: /** @type {any} */ (window).__stores.kit.kit.evalNodeValue('kit-spawner-count', { kind: '' }) };
+		const d = /** @type {any} */ (window).__tp.test.v1.kitEntities.kitEntitiesDebug();
+		return { count: d.runtime?.living ?? null, stored: d.runtime?.stored ?? d.runtime?.count ?? null, node: /** @type {any} */ (window).__tp.test.v1.kit.kit.evalNodeValue('kit-spawner-count', { kind: '' }) };
 	});
 
 h.run(async () => {
@@ -57,13 +57,13 @@ h.run(async () => {
 	const B = await h.setupPage(browser, 'B');
 	for (const p of [A, B]) h.check(await p.page.evaluate(PROBE), 'premise: api.kit on ' + p.id);
 	await h.connect(B, A);
-	const auth = await A.page.evaluate(() => /** @type {any} */ (window).__stores.kit.kitDebug().authority);
+	const auth = await A.page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.kit.kitDebug().authority);
 	const host = auth === A.id ? A : B;
 	const other = host === A ? B : A;
 	console.log('  authority ' + host.id + ', presses on ' + other.id);
 
 	const ids = await A.page.evaluate((events) => {
-		const S = /** @type {any} */ (window).__stores;
+		const S = /** @type {any} */ (window).__tp?.test.v1;
 		let g;
 		S.commandsHandler.sceneCommand('/create box');
 		S.objectsGroup.subscribe((/** @type {any} */ x) => (g = x))();
@@ -85,7 +85,7 @@ h.run(async () => {
 		return { btn: btn.uuid, tpl: tpl.uuid };
 	}, EVENTS);
 	await h.eventually(
-		() => Promise.all([A, B].map((p) => p.page.evaluate(() => /** @type {any} */ (window).__stores.nodesHandler.graphHash()))),
+		() => Promise.all([A, B].map((p) => p.page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.nodesHandler.graphHash()))),
 		(hs) => hs[0] === hs[1],
 		'premise: both peers hold the graph',
 		30000
@@ -94,14 +94,14 @@ h.run(async () => {
 	await A.page.waitForTimeout(1500);
 
 	// ---- 1. spawn from a node pressed on the NON-authority: "spawned" pulses on both ----------
-	await other.page.evaluate((u) => /** @type {any} */ (window).__stores.flowRuntime.fireObjectClick(u), ids.btn);
+	await other.page.evaluate((u) => /** @type {any} */ (window).__tp.test.v1.flowRuntime.fireObjectClick(u), ids.btn);
 	await h.eventually(() => Promise.all([A, B].map(ents)), (v) => v.every((x) => x.count === 2 && x.node === 2), 'premise: 2 entities on both peers (Count node 2)', 10000);
 	await h.eventually(() => Promise.all([A, B].map(seen)), (v) => v.every((s) => s['kit-spawner-spawned'].n >= 1), '1.1 "On spawned" pulsed on BOTH peers', 8000);
 
 	// ---- 2. both die (code, on the non-authority): died + emptied on both, ONE emptied ---------
 	await other.page.evaluate(() => {
 		const k = /** @type {any} */ (window).__kitApi.kit;
-		for (const e of k.spawner.extra?.list?.({ kind: 'labfoe' }) ?? /** @type {any} */ (window).__stores.kitEntities.kitEntitiesDebug().entities) k.health.damage(e.id, 999);
+		for (const e of k.spawner.extra?.list?.({ kind: 'labfoe' }) ?? /** @type {any} */ (window).__tp.test.v1.kitEntities.kitEntitiesDebug().entities) k.health.damage(e.id, 999);
 	});
 	await h.eventually(() => Promise.all([A, B].map(ents)), (v) => v.every((x) => x.count === 0 && x.node === 0), '2.1 the dead stop counting at once on both peers (Count node 0)', 8000);
 	await h.eventually(() => Promise.all([A, B].map(seen)), (v) => v.every((s) => s['kit-health-died'].n >= 1 && s['kit-spawner-emptied'].n >= 1), '2.2 "On died" and "On emptied" pulsed on BOTH peers', 8000);
@@ -119,7 +119,7 @@ h.run(async () => {
 	await h.eventually(() => Promise.all([A, B].map(ents)), (v) => v.every((x) => x.count === 2), 'premise: 2 code-spawned entities on both peers', 10000);
 	await other.page.evaluate(() => {
 		const k = /** @type {any} */ (window).__kitApi.kit;
-		const all = /** @type {any} */ (window).__stores.kitEntities.kitEntitiesDebug().entities ?? [];
+		const all = /** @type {any} */ (window).__tp.test.v1.kitEntities.kitEntitiesDebug().entities ?? [];
 		for (const e of all.filter((/** @type {any} */ x) => x.kind === 'codefoe')) k.health.damage(e.id, 999);
 	});
 	await h.eventually(() => Promise.all([A, B].map(ents)), (v) => v.every((x) => x.count === 0), '4.1 the code-spawned dead stop counting on both peers', 8000);

@@ -243,7 +243,7 @@ async function dismiss(page) {
 }
 
 async function openSettings(page, section) {
-	await page.evaluate(() => window.__stores.settingsOpen.set(true));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 	await page.locator('#settings-nav').waitFor({ state: 'visible', timeout: 10000 });
 	const row = page.locator(`#settings-nav .sn-row[data-section="${section}"]`);
 	await row.click();
@@ -273,7 +273,7 @@ async function sweep(browser, tag) {
 	await L.installProbes(page);
 	/** @type {Set<string>} */
 	const noisy = new Set();
-	await page.evaluate(() => window.__stores.settingsOpen.set(true));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 	await page.locator('#settings-nav').waitFor({ state: 'visible', timeout: 15000 });
 	await page.waitForTimeout(600);
 	await L.learnNoise(page, noisy, 1200);
@@ -286,7 +286,7 @@ async function sweep(browser, tag) {
 	const recover = async (/** @type {string} */ section) => {
 		const ok = await page.evaluate(() => {
 			let open;
-			window.__stores.settingsOpen.subscribe((v) => (open = v))();
+			window.__tp.test.v1.settingsOpen.subscribe((v) => (open = v))();
 			return open;
 		});
 		const extra = await page.evaluate(
@@ -294,7 +294,7 @@ async function sweep(browser, tag) {
 		);
 		if (ok && !extra) return;
 		await dismiss(page);
-		await page.evaluate(() => window.__stores.settingsOpen.set(true));
+		await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 		await page.waitForTimeout(300);
 		await openSettings(page, section);
 	};
@@ -453,15 +453,15 @@ async function sweep(browser, tag) {
 async function presence(browser) {
 	const P = await h.setupPage(browser, 'mobile', { context: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } });
 	const page = P.page;
-	await page.evaluate(() => window.__stores.settingsOpen.set(true));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 	await page.waitForTimeout(800);
 	/** @type {Record<string, any[]>} */
 	const out = {};
 	for (const label of Object.keys(require('./fixtures/lock/settings-inventory.json'))) {
 		const key = label.toLowerCase().replace(/[^a-z0-9]/g, '');
 		await page.evaluate((k) => {
-			window.__stores.settingsSection.set(null);
-			window.__stores.settingsSection.set(k);
+			window.__tp.test.v1.settingsSection.set(null);
+			window.__tp.test.v1.settingsSection.set(k);
 		}, key);
 		await page.waitForTimeout(500);
 		const rows = await page.evaluate(describeRows, { ROW_SEL: L.ROW_SEL, NAME_SEL: L.NAME_SEL, CONTROL_SEL: L.CONTROL_SEL, FIELD_SEL: L.FIELD_SEL });

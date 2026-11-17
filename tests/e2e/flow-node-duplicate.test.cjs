@@ -9,7 +9,7 @@ h.run(async () => {
 	await A.page.locator('p[title="Node editor (N)"]').click();
 	await A.page.waitForTimeout(500);
 	await A.page.evaluate(() => {
-		window.__stores.flowNodes.set([
+		window.__tp.test.v1.flowNodes.set([
 			{ id: 'dup-a', type: 'number', position: { x: 140, y: 120 }, data: { type: 'number', value: 7 }, class: 'w-[150px]' }
 		]);
 	});
@@ -23,7 +23,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(300);
 
 	const res = await A.page.evaluate(() => {
-		let ns; window.__stores.flowNodes.subscribe((v) => (ns = v))();
+		let ns; window.__tp.test.v1.flowNodes.subscribe((v) => (ns = v))();
 		const numbers = ns.filter((n) => n.type === 'number');
 		return {
 			count: numbers.length,

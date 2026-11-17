@@ -36,7 +36,7 @@ h.run(async () => {
 			for (const s of S.SURFACES) {
 				if (only.length && !only.includes(s.name)) continue;
 				await S.closeAll(page);
-				await page.evaluate((u) => window.__stores.objectActions.selectObject(u), ctx.box);
+				await page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), ctx.box);
 				await page.waitForTimeout(150);
 				let ok = true;
 				try {

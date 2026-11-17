@@ -40,7 +40,7 @@ h.run(async () => {
 	// a per-frame recorder: load phase, objects, water entries (visible / ready), fluid ticks
 	await page.evaluate(() => {
 		const w = /** @type {any} */ (window);
-		const s = w.__stores;
+		const s = w.__tp?.test.v1;
 		w.__rec = { on: false, t0: 0, frames: [], longtasks: [] };
 		new PerformanceObserver((l) => {
 			if (w.__rec.on) for (const e of l.getEntries()) w.__rec.longtasks.push(Math.round(e.duration));
@@ -71,7 +71,7 @@ h.run(async () => {
 		await page.evaluate(async (b64) => {
 			const w = /** @type {any} */ (window);
 			const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-			const s = w.__stores;
+			const s = w.__tp?.test.v1;
 			// the person route: the click claims the load, then the bytes arrive (as from the CDN)
 			// (claimLoad is absent on 1.23.0 — the before-run then loads the plain way)
 			const job = s.sceneLoader.claimLoad ? s.sceneLoader.claimLoad('Island ocean') : undefined;

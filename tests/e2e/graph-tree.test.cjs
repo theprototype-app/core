@@ -40,7 +40,7 @@ h.run(async () => {
 
 	// three boxes: one gets a flow graph, one gets a shader graph, one gets neither
 	const setup = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		for (let i = 0; i < 3; i++) {
 			w.commandsHandler.sceneCommand('/create box 1 1 1');
 			await new Promise((r) => setTimeout(r, 500));
@@ -103,7 +103,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(600);
 	const afterClick = await A.page.evaluate((uuid) => {
 		let set;
-		window.__stores.selectedObjects.subscribe((v) => (set = v))();
+		window.__tp.test.v1.selectedObjects.subscribe((v) => (set = v))();
 		const root = document.querySelector('#graph-tree-flow');
 		const rows = [...root.querySelectorAll('.gt-row')];
 		return {
@@ -123,7 +123,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(500);
 	const backToScene = await A.page.evaluate(() => {
 		let set;
-		window.__stores.selectedObjects.subscribe((v) => (set = v))();
+		window.__tp.test.v1.selectedObjects.subscribe((v) => (set = v))();
 		return set.length;
 	});
 	h.check(backToScene === 0, `the Scene row deselects everything (${backToScene} still selected)`);
@@ -132,7 +132,7 @@ h.run(async () => {
 	// The document outlives the object until the next save prunes it, so the tree must
 	// say so rather than offering a row that selects nothing.
 	const orphan = await A.page.evaluate(async (uuid) => {
-		window.__stores.objectActions.deleteObjectsByUuid([uuid]);
+		window.__tp.test.v1.objectActions.deleteObjectsByUuid([uuid]);
 		await new Promise((r) => setTimeout(r, 800));
 		const rows = [...document.querySelectorAll('#graph-tree-flow .gt-row')];
 		const row = rows.find((r) => r.classList.contains('gt-missing'));
@@ -143,7 +143,7 @@ h.run(async () => {
 
 	// ---- 6. the SHADER tree is the same component with its own documents -------
 	const shaderTree = await A.page.evaluate(async () => {
-		await window.__stores.shaderGraph.openShaderEditor();
+		await window.__tp.test.v1.shaderGraph.openShaderEditor();
 		await new Promise((r) => setTimeout(r, 1400));
 		const root = document.querySelector('#graph-tree-shader');
 		if (!root) return { present: false };
@@ -181,7 +181,7 @@ h.run(async () => {
 	// NOT the nav button: it TOGGLES, so clicking it again here closed the node editor
 	// that section 1 opened and the grip was legitimately absent. Drive the stores.
 	await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.flowGraphClose.set(false);
 		w.bottomDock.activateDock('flow');
 		await new Promise((r) => setTimeout(r, 900));
@@ -232,7 +232,7 @@ h.run(async () => {
 	// the CEILING follows the pane: a stored height taller than a short pane must be
 	// clamped, or the grip ends up unreachable
 	const clamped = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.bottomDock.dockHeight.set(200);
 		await new Promise((r) => setTimeout(r, 600));
 		const body = document.querySelector('#graph-tree-flow .gt-body');

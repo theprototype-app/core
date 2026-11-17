@@ -37,16 +37,16 @@ h.run(async () => {
 
 	const install = (id, version) =>
 		page.evaluate(
-			async ({ bytes, name }) => window.__stores.userModules.installZip(new File([new Uint8Array(bytes)], name)),
+			async ({ bytes, name }) => window.__tp.test.v1.userModules.installZip(new File([new Uint8Array(bytes)], name)),
 			{ bytes: Array.from(moduleZip(id, version).zip), name: `${id}-${version}.zip` }
 		);
 	const toast = () =>
 		page.evaluate(() => {
 			let list = [];
-			window.__stores.toastStore.subscribe((x) => (list = x))();
+			window.__tp.test.v1.toastStore.subscribe((x) => (list = x))();
 			return list.find((t) => t && t.id === 'stale-modules') ?? null;
 		});
-	const staleEvents = () => page.evaluate(() => window.__stores.perf.lightWindow(30000).events.filter((e) => e.kind === 'stale-module'));
+	const staleEvents = () => page.evaluate(() => window.__tp.test.v1.perf.lightWindow(30000).events.filter((e) => e.kind === 'stale-module'));
 
 	// 1. current: quiet
 	h.check(await install('waves', want), 'install waves at the expected version');
@@ -67,7 +67,7 @@ h.run(async () => {
 	// 3. Open Modules -> the User tab row
 	await page.evaluate(() => {
 		let list = [];
-		window.__stores.toastStore.subscribe((x) => (list = x))();
+		window.__tp.test.v1.toastStore.subscribe((x) => (list = x))();
 		list.find((t) => t && t.id === 'stale-modules').actions.find((a) => a.label === 'Open Modules').action();
 	});
 	await page.locator('#stale-modules').waitFor({ state: 'visible', timeout: 5000 });
@@ -81,7 +81,7 @@ h.run(async () => {
 	await page.locator('#stale-modules').waitFor({ state: 'detached', timeout: 15000 });
 	const after = await page.evaluate(() => {
 		let recs = [];
-		window.__stores.userModules.userModules.subscribe((x) => (recs = x))();
+		window.__tp.test.v1.userModules.userModules.subscribe((x) => (recs = x))();
 		return recs.find((r) => r.id === 'waves');
 	});
 	h.check(after && after.version === want && /modules\/waves$/.test(after.source), `4.1 Update installed waves ${after?.version} from the gallery (${after?.source})`);

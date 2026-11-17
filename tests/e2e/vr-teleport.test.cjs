@@ -10,9 +10,9 @@ h.run(async () => {
 		A.page.evaluate(
 			({ originArr, dirArr, withBox }) =>
 				new Promise((resolve) => {
-					const THREE = window.__stores.THREE;
-					window.__stores.objectsGroup.subscribe((group) => {
-						const result = window.__stores.vrControls.computeTeleportArc(
+					const THREE = window.__tp.test.v1.THREE;
+					window.__tp.test.v1.objectsGroup.subscribe((group) => {
+						const result = window.__tp.test.v1.vrControls.computeTeleportArc(
 							new THREE.Vector3(...originArr),
 							new THREE.Vector3(...dirArr),
 							withBox ? group : null
@@ -44,8 +44,8 @@ h.run(async () => {
 
 	// a wide platform catches the arc on its top face
 	await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const box = group.children[group.children.length - 1];
 		box.scale.set(6, 1, 6);
 		box.position.set(0, 0.5, -4);

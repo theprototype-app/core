@@ -52,12 +52,12 @@ const measure = (page, to) =>
 /** a scene with enough rows to scroll, the box selected and its Properties open @param {any} page */
 async function openProperties(page) {
 	await page.evaluate(() => {
-		const w = /** @type {any} */ (window).__stores;
+		const w = /** @type {any} */ (window).__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create box');
 	});
 	await page.waitForTimeout(900);
 	const uuid = await page.evaluate(() => {
-		const w = /** @type {any} */ (window).__stores;
+		const w = /** @type {any} */ (window).__tp?.test.v1;
 		let g;
 		w.objectsGroup.subscribe((/** @type {any} */ v) => (g = v))();
 		const o = g.children[g.children.length - 1];
@@ -74,18 +74,18 @@ async function openProperties(page) {
 async function shots(page, name) {
 	if (!OUT) return;
 	for (const t of ['dark', 'light']) {
-		await page.evaluate((th) => window.__stores.themes.theme.set(th), t);
+		await page.evaluate((th) => window.__tp.test.v1.themes.theme.set(th), t);
 		await page.waitForTimeout(350);
 		await page.screenshot({ path: path.join(OUT, `e-${name}-${t}.png`) });
 	}
-	await page.evaluate(() => window.__stores.themes.theme.set('dark'));
+	await page.evaluate(() => window.__tp.test.v1.themes.theme.set('dark'));
 }
 
 /** @param {any} page @param {string} name */
 const store = (page, name) =>
 	page.evaluate((n) => {
 		let v;
-		window.__stores[n].subscribe((/** @type {any} */ x) => (v = x))();
+		window.__tp.test.v1[n].subscribe((/** @type {any} */ x) => (v = x))();
 		return v;
 	}, name);
 
@@ -116,7 +116,7 @@ h.run(async () => {
 		h.check(m?.thumbTop !== null && (m?.thumbTop ?? 0) >= (m?.headBottom ?? 0), `${tag} E6: at the top the thumb starts below the filter row (${m?.thumbTop} >= ${m?.headBottom})`);
 		await shots(page, `${tag}-properties`);
 		// Configure Scene: the same sticky row and its own placeholder
-		await page.evaluate(() => window.__stores.showSidebar('scene'));
+		await page.evaluate(() => window.__tp.test.v1.showSidebar('scene'));
 		await page.waitForTimeout(900);
 		m = await measure(page, 'bottom');
 		const sph = await page.evaluate(() => document.querySelector('#inspector-search')?.getAttribute('placeholder'));
@@ -126,9 +126,9 @@ h.run(async () => {
 
 		if (dev.name === 'desktop') {
 			// E3 — a deselect keeps Properties on the last object
-			await page.evaluate((u) => window.__stores.objectActions.selectObject(u, true), uuid);
+			await page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u, true), uuid);
 			await page.waitForTimeout(600);
-			await page.evaluate(() => window.__stores.objectActions.deselectObject());
+			await page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 			await page.waitForTimeout(600);
 			const kept = await page.evaluate(() => ({
 				search: document.querySelector('#inspector-search')?.getAttribute('placeholder') ?? null,
@@ -141,27 +141,27 @@ h.run(async () => {
 			await page.keyboard.press('Enter').catch(() => {});
 			await page.waitForTimeout(300);
 			// it leaves the scene (a peer's delete arrives as commandsHandler.deleteObject): the panel closes
-			await page.evaluate((u) => window.__stores.commandsHandler.deleteObject(u), uuid);
+			await page.evaluate((u) => window.__tp.test.v1.commandsHandler.deleteObject(u), uuid);
 			await page.waitForTimeout(700);
 			h.check((await store(page, 'inspectorClose')) === true || (await store(page, 'inspectorKind')) !== 'selection', 'E3: when the kept object is deleted, Properties closes');
 
 			// E5 — Configure Scene moves to the other sidebar ALONE
 			const e5 = await openProperties(page);
-			await page.evaluate(() => window.__stores.showSidebar('scene'));
+			await page.evaluate(() => window.__tp.test.v1.showSidebar('scene'));
 			await page.waitForTimeout(700);
 			const sides0 = await page.evaluate(() => {
 				let v;
-				window.__stores.sidebars.sidebarTabs.subscribe((x) => (v = x))();
+				window.__tp.test.v1.sidebars.sidebarTabs.subscribe((x) => (v = x))();
 				return v;
 			});
 			const home = sides0.right.includes('inspector') ? 'right' : 'left';
 			const away = home === 'right' ? 'left' : 'right';
 			h.check(sides0[home].includes('inspector') && sides0[home].includes('scene'), `E5: (premise) Properties and Configure Scene share the ${home} column (${JSON.stringify(sides0)})`);
-			await page.evaluate((s) => window.__stores.sidebars.moveSidebarTab('scene', s), away);
+			await page.evaluate((s) => window.__tp.test.v1.sidebars.moveSidebarTab('scene', s), away);
 			await page.waitForTimeout(900);
 			const dual = await page.evaluate(() => {
 				let t;
-				window.__stores.sidebars.sidebarTabs.subscribe((x) => (t = x))();
+				window.__tp.test.v1.sidebars.sidebarTabs.subscribe((x) => (t = x))();
 				const vis = (/** @type {Element|null} */ e) => !!e && e.getClientRects().length > 0 && !e.hasAttribute('data-sidebar-hidden');
 				const main = document.querySelector('#inspector');
 				const scene = document.querySelector('#inspector-scene');
@@ -178,24 +178,24 @@ h.run(async () => {
 			h.check(dual.scene === away && dual.scenePh === 'Filter scene settings', `E5: Configure Scene shows in the ${away} column at the same time (${dual.scene}, "${dual.scenePh}")`);
 			await shots(page, 'e5-dual');
 			// the burger's Configure Scene keeps working in the dual state (it brings its tab forward, Properties stays)
-			await page.evaluate(() => window.__stores.showSidebar('scene'));
+			await page.evaluate(() => window.__tp.test.v1.showSidebar('scene'));
 			await page.waitForTimeout(500);
 			h.check((await store(page, 'inspectorKind')) !== 'scene' && !!(await page.$('#inspector-scene')), 'E5: asking for Configure Scene in the dual state keeps Properties in its element');
 			// back together: one element again
-			await page.evaluate((s) => window.__stores.sidebars.moveSidebarTab('scene', s), home);
+			await page.evaluate((s) => window.__tp.test.v1.sidebars.moveSidebarTab('scene', s), home);
 			await page.waitForTimeout(900);
 			const one = await page.evaluate(() => ({ second: !!document.querySelector('#inspector-scene') }));
 			h.check(!one.second, 'E5: moved back beside Properties, the second instance is gone');
-			await page.evaluate((u) => window.__stores.objectActions.selectObject(u, true), e5);
+			await page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u, true), e5);
 			await page.waitForTimeout(400);
 
 			// E4 — another tab in front stays in front on later selections
 			const b2 = await openProperties(page);
-			await page.evaluate(() => window.__stores.objectListClose?.set?.(false));
+			await page.evaluate(() => window.__tp.test.v1.objectListClose?.set?.(false));
 			await page.waitForTimeout(300);
 			const tabs = await page.evaluate(() => {
 				let v;
-				window.__stores.sidebars.sidebarTabs.subscribe((x) => (v = x))();
+				window.__tp.test.v1.sidebars.sidebarTabs.subscribe((x) => (v = x))();
 				return v;
 			});
 			const side = tabs.left.includes('inspector') ? 'left' : 'right';
@@ -203,45 +203,45 @@ h.run(async () => {
 			if (!other) {
 				// put the Explorer into the Properties column so a second tab exists
 				// open it first (a closed panel is no tab to move), then move it beside Properties
-				await page.evaluate(() => window.__stores.explorerClose?.set?.(false));
+				await page.evaluate(() => window.__tp.test.v1.explorerClose?.set?.(false));
 				await page.waitForTimeout(600);
-				await page.evaluate((s) => window.__stores.dockMenu.moveToSidebar('explorer', s), side);
+				await page.evaluate((s) => window.__tp.test.v1.dockMenu.moveToSidebar('explorer', s), side);
 				await page.waitForTimeout(600);
 			}
 			const tabs2 = await page.evaluate(() => {
 				let v;
-				window.__stores.sidebars.sidebarTabs.subscribe((x) => (v = x))();
+				window.__tp.test.v1.sidebars.sidebarTabs.subscribe((x) => (v = x))();
 				return v;
 			});
 			const front = tabs2[side].find((/** @type {string} */ k) => k !== 'inspector' && k !== 'scene') ?? null;
 			h.check(!!front, `E4: (premise) a second tab shares the Properties column (${JSON.stringify(tabs2)})`);
 			if (front) {
-				await page.evaluate((k) => window.__stores.sidebars.activateSidebarTab(k), front);
+				await page.evaluate((k) => window.__tp.test.v1.sidebars.activateSidebarTab(k), front);
 				await page.waitForTimeout(400);
-				await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create sphere'));
+				await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create sphere'));
 				await page.waitForTimeout(800);
 				const s2 = await page.evaluate(() => {
-					const w = /** @type {any} */ (window).__stores;
+					const w = /** @type {any} */ (window).__tp?.test.v1;
 					let g;
 					w.objectsGroup.subscribe((/** @type {any} */ v) => (g = v))();
 					return g.children[g.children.length - 1].uuid;
 				});
 				for (const u of [s2, b2]) {
-					await page.evaluate((x) => window.__stores.objectActions.selectObject(x), u);
+					await page.evaluate((x) => window.__tp.test.v1.objectActions.selectObject(x), u);
 					await page.waitForTimeout(400);
 				}
 				let shown = await page.evaluate((s) => {
 					let v;
-					window.__stores.sidebars.sidebarShown.subscribe((x) => (v = x))();
+					window.__tp.test.v1.sidebars.sidebarShown.subscribe((x) => (v = x))();
 					return v[s];
 				}, side);
 				h.check(shown === front, `E4: plain selections leave "${front}" in front (${shown})`);
 				// the context menu's "Properties" (selectObject(.., true)) brings Properties forward
-				await page.evaluate((x) => window.__stores.objectActions.selectObject(x, true), s2);
+				await page.evaluate((x) => window.__tp.test.v1.objectActions.selectObject(x, true), s2);
 				await page.waitForTimeout(500);
 				shown = await page.evaluate((s) => {
 					let v;
-					window.__stores.sidebars.sidebarShown.subscribe((x) => (v = x))();
+					window.__tp.test.v1.sidebars.sidebarShown.subscribe((x) => (v = x))();
 					return v[s];
 				}, side);
 				h.check(shown === 'inspector', `E4: an explicit "Properties" brings the Properties tab forward (${shown})`);

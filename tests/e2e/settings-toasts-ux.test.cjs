@@ -10,14 +10,14 @@ h.run(async () => {
 
 	// --- toast dedupe: identical strings collapse; action toasts don't --------
 	const counts = await A.page.evaluate(() => {
-		const { showToast } = window.__stores;
+		const { showToast } = window.__tp?.test.v1;
 		showToast('same message');
 		showToast('same message');
 		showToast('same message');
 		showToast('action one', [{ label: 'A', action: () => {} }]);
 		showToast('action one', [{ label: 'A', action: () => {} }]);
 		let store = [];
-		window.__stores.toastStore.subscribe((l) => (store = l))();
+		window.__tp.test.v1.toastStore.subscribe((l) => (store = l))();
 		return {
 			dupStrings: store.filter((t) => t === 'same message').length,
 			actionToasts: store.filter((t) => typeof t !== 'string' && t.text === 'action one').length
@@ -27,7 +27,7 @@ h.run(async () => {
 	h.check(counts.actionToasts === 2, `action toasts are not deduped (${counts.actionToasts})`);
 
 	// --- settings search filters rows -----------------------------------------
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 	await A.page.waitForTimeout(500);
 	h.check(await A.page.locator('#settings-search').isVisible(), 'settings search box is present');
 

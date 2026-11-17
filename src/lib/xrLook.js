@@ -16,6 +16,8 @@
 //
 // Reached by dynamic import from xrLookWire.js at the first session: not in the boot graph.
 import * as THREE from 'three';
+// 101 F3: the tone curve goes through the renderer seam's hook
+import { setToneMapping } from './render/mainRenderer.js';
 import { planXrLook, VIGNETTE_FRAGMENT } from './xrLookCore.js';
 import { setToneFilter, reapplyToneMapping } from './environment';
 
@@ -169,9 +171,9 @@ function sync() {
 	reapplyToneMapping();
 	if (plan?.glsl && wasCustom && !sameShader) {
 		// new text under the same curve constant: one frame on another curve makes three look again
-		renderer.toneMapping = THREE.LinearToneMapping;
+		setToneMapping(renderer, THREE.LinearToneMapping);
 		renderer.xr.getSession()?.requestAnimationFrame(() => {
-			if (plan?.glsl) renderer.toneMapping = THREE.CustomToneMapping;
+			if (plan?.glsl) setToneMapping(renderer, THREE.CustomToneMapping);
 		});
 	}
 }

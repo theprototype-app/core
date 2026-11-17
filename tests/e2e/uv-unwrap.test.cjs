@@ -13,7 +13,7 @@ const h = require('./helpers.cjs');
 const openOnObject = async (page, command, name) => {
 	const uuid = await page.evaluate(
 		async ({ command, name }) => {
-			const w = window.__stores;
+			const w = window.__tp?.test.v1;
 			w.commandsHandler.sceneCommand(command);
 			const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 			const object = g.children[g.children.length - 1];
@@ -32,7 +32,7 @@ const openOnObject = async (page, command, name) => {
 /** per-triangle uvs, index-expanded (a commit rebuilds the geometry non-indexed) */
 const uvTris = (page, uuid) =>
 	page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const geo = g.getObjectByProperty('uuid', uuid).geometry;
 		const uv = geo.attributes.uv;
@@ -72,7 +72,7 @@ const overlaps = (tris, groupsOf) => {
 };
 
 const undoDepth = (page) =>
-	page.evaluate(() => new Promise((r) => window.__stores.history.undoStack.subscribe((v) => r(v.length))()));
+	page.evaluate(() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((v) => r(v.length))()));
 
 h.run(async () => {
 	const browser = await h.launch();
@@ -80,14 +80,14 @@ h.run(async () => {
 
 	// ---------- the registry ----------
 	const registry = await A.page.evaluate(() =>
-		window.__stores.uvUnwrap.unwrapBackends().map((b) => b.key)
+		window.__tp.test.v1.uvUnwrap.unwrapBackends().map((b) => b.key)
 	);
 	h.check(
 		['box', 'planar', 'cylindrical', 'spherical'].every((k) => registry.includes(k)),
 		`the four built-in backends are registered (${registry.join(',')})`
 	);
 	const pluggable = await A.page.evaluate(() => {
-		const u = window.__stores.uvUnwrap;
+		const u = window.__tp.test.v1.uvUnwrap;
 		u.registerUnwrapBackend('zzz-test', 'Test backend', (faces) => ({
 			uvs: faces.map(() => [[0.25, 0.25], [0.75, 0.25], [0.25, 0.75]]),
 			islands: [faces.map((_, i) => i)]
@@ -100,7 +100,7 @@ h.run(async () => {
 	const uuid = await openOnObject(A.page, '/create Box 1 1 1', 'unwrapBox');
 	const before = await uvTris(A.page, uuid);
 	const distinctBefore = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const uv = g.getObjectByProperty('uuid', uuid).geometry.attributes.uv;
 		const seen = new Set();
@@ -112,7 +112,7 @@ h.run(async () => {
 
 	const depth0 = await undoDepth(A.page);
 	const ran = await A.page.evaluate(
-		(uuid) => window.__stores.uvEditor.unwrapObject(uuid, 'box', { margin: 0.02 }),
+		(uuid) => window.__tp.test.v1.uvEditor.unwrapObject(uuid, 'box', { margin: 0.02 }),
 		uuid
 	);
 	await A.page.waitForTimeout(600);
@@ -124,7 +124,7 @@ h.run(async () => {
 		`THE FEATURE: every uv lands inside 0..1 (min ${Math.min(...flat).toFixed(3)}, max ${Math.max(...flat).toFixed(3)})`
 	);
 	const distinctAfter = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const uv = g.getObjectByProperty('uuid', uuid).geometry.attributes.uv;
 		const seen = new Set();
@@ -142,7 +142,7 @@ h.run(async () => {
 	const depth1 = await undoDepth(A.page);
 	h.check(depth1 === depth0 + 1, `an unwrap records ONE undo entry (${depth0}->${depth1})`);
 
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(500);
 	const undone = await uvTris(A.page, uuid);
 	const same =
@@ -152,7 +152,7 @@ h.run(async () => {
 
 	// ---------- a SCOPED unwrap leaves everything else alone ----------
 	const scoped = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.faceEdit.enterFaceEdit(uuid);
 		const top = w.faceEdit.currentFaces().find((f) => f.normal.y > 0.99);
 		const only = new Set(top.triIndices);
@@ -170,13 +170,13 @@ h.run(async () => {
 		changed.length > 0 && changed.every((t) => scoped.tris.includes(t)),
 		`THE FEATURE: only the picked faces were unwrapped (${changed.length} changed, all in scope)`
 	);
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(400);
 
 	// ---------- cylindrical on a sphere: no triangle smears across the seam ----------
 	const sphereUuid = await openOnObject(A.page, '/create Sphere 1 24 16', 'unwrapSphere');
 	const cyl = await A.page.evaluate(
-		(uuid) => window.__stores.uvEditor.unwrapObject(uuid, 'cylindrical', { axis: 1 }),
+		(uuid) => window.__tp.test.v1.uvEditor.unwrapObject(uuid, 'cylindrical', { axis: 1 }),
 		sphereUuid
 	);
 	await A.page.waitForTimeout(700);
@@ -195,11 +195,11 @@ h.run(async () => {
 	// Re-unwrap the box first: the checks above deliberately UNDID theirs, and an
 	// un-unwrapped box is one island by definition (all six sides share four corners),
 	// which would make every assertion below vacuous.
-	await A.page.evaluate((uuid) => window.__stores.uvEditor.unwrapObject(uuid, 'box', { margin: 0.02 }), uuid);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.uvEditor.unwrapObject(uuid, 'box', { margin: 0.02 }), uuid);
 	await A.page.waitForTimeout(600);
 
 	const islands = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.getObjectByProperty('uuid', uuid);
 		const tris = w.uvEditor.uvTriangles(box, 0);
@@ -213,7 +213,7 @@ h.run(async () => {
 	h.check(islands.grown > 1, `select-linked grows one corner to its whole island (${islands.grown} indices)`);
 
 	const transformed = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.getObjectByProperty('uuid', uuid);
 		const tris = w.uvEditor.uvTriangles(box, 0);
@@ -239,7 +239,7 @@ h.run(async () => {
 	h.check(transformed.cu && transformed.cv, 'and rotates about its own centre, so it does not drift');
 
 	const fitted = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.getObjectByProperty('uuid', uuid);
 		const tris = w.uvEditor.uvTriangles(box, 0);

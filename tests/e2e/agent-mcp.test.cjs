@@ -24,13 +24,13 @@ const COMPAT = process.env.AGENT_MCP_COMPAT ? process.env.AGENT_MCP_COMPAT === '
 const BASE = h.URL.replace(/\/+$/, '');
 
 const read = (page, expr) =>
-	page.evaluate((e) => new Promise((r) => window.__stores[e].subscribe((v) => r(JSON.parse(JSON.stringify(v ?? null))))()), expr);
-const openedPeers = (page) => page.evaluate(() => new Promise((r) => window.__stores.peers.subscribe((p) => r(p?.openedPeers ? [...p.openedPeers] : []))()));
+	page.evaluate((e) => new Promise((r) => window.__tp.test.v1[e].subscribe((v) => r(JSON.parse(JSON.stringify(v ?? null))))()), expr);
+const openedPeers = (page) => page.evaluate(() => new Promise((r) => window.__tp.test.v1.peers.subscribe((p) => r(p?.openedPeers ? [...p.openedPeers] : []))()));
 const objectByUuid = (page, uuid) =>
 	page.evaluate(
 		(u) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const o = g && g.getObjectByProperty('uuid', u);
 					r(o ? { name: o.name, y: o.position.y } : null);
 				})()
@@ -97,7 +97,7 @@ h.run(async () => {
 
 	// the host's world before the agent comes: one named object the agent must be able to read
 	const pre = await A.page.evaluate(() =>
-		window.__stores.aiTools.executeAiTool('create_objects', { objects: [{ kind: 'primitive', primitive: 'Sphere', name: 'HostBall', position: [2, 0.5, 0] }] })
+		window.__tp.test.v1.aiTools.executeAiTool('create_objects', { objects: [{ kind: 'primitive', primitive: 'Sphere', name: 'HostBall', position: [2, 0.5, 0] }] })
 	);
 	const preUuid = pre?.created?.[0]?.uuid;
 	h.check(!!preUuid, 'premise: the host made an object before the agent came');
@@ -119,7 +119,7 @@ h.run(async () => {
 		const names = tools.map((t) => t.name);
 		h.check(names.includes('create_objects') && names.includes('list_scene') && names.includes('create_flow_nodes'), 'host tools listed: ' + names.length);
 		const hostSchema = await A.page.evaluate(() => {
-			const t = window.__stores.aiTools.getAiTools().find((x) => (x.function || x).name === 'create_objects');
+			const t = window.__tp.test.v1.aiTools.getAiTools().find((x) => (x.function || x).name === 'create_objects');
 			return JSON.stringify((t.function || t).parameters);
 		});
 		h.check(JSON.stringify(tools.find((t) => t.name === 'create_objects').inputSchema) === hostSchema, 'create_objects schema is the host app\'s, verbatim');
@@ -163,7 +163,7 @@ h.run(async () => {
 		const jointed = json(await call(B.client, 'create_joints', { joints: [{ kind: 'revolute', a: preUuid, b: uuid, axis: 'z', anchor: [0, 1.5, 0], contacts: false }] }));
 		h.check(!jointed.error && jointed.joints?.[0]?.contacts === false, 'create_joints takes anchor + contacts:false: ' + JSON.stringify(jointed).slice(0, 120));
 		await h.eventually(
-			() => A.page.evaluate(() => new Promise((r) => window.__stores.joints.sceneJoints.subscribe((j) => r(JSON.parse(JSON.stringify(j))))())),
+			() => A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.joints.sceneJoints.subscribe((j) => r(JSON.parse(JSON.stringify(j))))())),
 			// HostBall (a) stands at [2, 0.5, 0], so the world anchor [0, 1.5, 0] is [-2, 1, 0] in its frame
 			(j) => (j || []).some((d) => d.b === uuid && d.contacts === false && Math.abs(d.anchorA[0] + 2) < 0.01 && Math.abs(d.anchorA[1] - 1) < 0.01),
 			'the host\'s joint sits at the world anchor (a\'s frame: [-2, 1, 0]) with contacts off',
@@ -189,7 +189,7 @@ h.run(async () => {
 		const waiting = call(B.client, 'wait_for_edit', { timeout_ms: 30000 });
 		await new Promise((r) => setTimeout(r, 1500));
 		await A.page.evaluate(() =>
-			window.__stores.aiTools.executeAiTool('create_objects', { objects: [{ kind: 'primitive', primitive: 'Cone', name: 'HostCone', position: [-2, 0.5, 0] }] })
+			window.__tp.test.v1.aiTools.executeAiTool('create_objects', { objects: [{ kind: 'primitive', primitive: 'Cone', name: 'HostCone', position: [-2, 0.5, 0] }] })
 		);
 		const w = json(await waiting);
 		h.check(w && w.changed === true, 'wait_for_edit woke on the host\'s edit');

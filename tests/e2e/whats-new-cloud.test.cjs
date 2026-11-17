@@ -9,7 +9,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 	const page = A.page;
 
-	const open = () => page.evaluate(() => window.__stores.whatsNew.openWhatsNew());
+	const open = () => page.evaluate(() => window.__tp.test.v1.whatsNew.openWhatsNew());
 	const section = () =>
 		page.evaluate(() => {
 			const el = document.querySelector('#whats-new-cloud');
@@ -30,7 +30,7 @@ h.run(async () => {
 	h.check((await section()) === null, 'no plugin: no cloud section (the OSS window is unchanged)');
 
 	const ok = await page.evaluate(() =>
-		window.__stores.cloudPlugin.makeCloudApi().setWhatsNewSection({
+		window.__tp.test.v1.cloudPlugin.makeCloudApi().setWhatsNewSection({
 			title: 'theprototype.app cloud',
 			markdown:
 				'## October\n- **Rooms** remember who was there\n- a [status page](https://theprototype.app/status)\n- <img src=x onerror=alert(1)> stays text\n- [bad](javascript:alert(1)) is not a link'
@@ -47,13 +47,13 @@ h.run(async () => {
 		`only https links become links (${JSON.stringify(s.links)})`
 	);
 
-	const refused = await page.evaluate(() => window.__stores.cloudPlugin.makeCloudApi().setWhatsNewSection({ title: 'x', markdown: 42 }));
+	const refused = await page.evaluate(() => window.__tp.test.v1.cloudPlugin.makeCloudApi().setWhatsNewSection({ title: 'x', markdown: 42 }));
 	h.check(refused === false, 'a section without markdown is refused');
 	await h.eventually(section, (v) => v === null, 'a refused section clears it');
 
-	await page.evaluate(() => window.__stores.cloudHooks.setWhatsNewCloud({ markdown: 'one line' }));
+	await page.evaluate(() => window.__tp.test.v1.cloudHooks.setWhatsNewCloud({ markdown: 'one line' }));
 	await h.eventually(section, (v) => v?.title === 'Cloud', 'an untitled section is titled "Cloud"');
-	await page.evaluate(() => window.__stores.cloudPlugin.makeCloudApi().setWhatsNewSection(null));
+	await page.evaluate(() => window.__tp.test.v1.cloudPlugin.makeCloudApi().setWhatsNewSection(null));
 	await h.eventually(section, (v) => v === null, 'null removes the section');
 
 	await h.finish(browser);

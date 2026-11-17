@@ -19,7 +19,7 @@ const h = require('./helpers.cjs');
 
 const editBox = (page, cmd = '/create Box 1 1 1') =>
 	page.evaluate((c) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand(c);
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
@@ -32,7 +32,7 @@ const editBox = (page, cmd = '/create Box 1 1 1') =>
 // quads whose two triangles are BOTH in the given tri list
 const quadStats = (page) =>
 	page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		const tris = fe.readTriangles(window.__box.geometry);
 		let sel;
 		fe.faceEditSelectedTris.subscribe((v) => (sel = [...v]))();
@@ -58,11 +58,11 @@ h.run(async () => {
 	// is exactly what "the axis comes from the selection" means, and both runs
 	// used to produce the same cut because loopAxis was whatever was left over.
 	const fingerprint = async (which) => {
-		await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
-		await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+		await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
+		await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 		await editBox(A.page);
 		return A.page.evaluate((w) => {
-			const fe = window.__stores.faceEdit;
+			const fe = window.__tp.test.v1.faceEdit;
 			const ring = fe.faceLoopTris(0, w);
 			fe.faceEditSelectedTris.set(ring);
 			const ok = fe.commitFaceOp('loopcut', 1);
@@ -85,12 +85,12 @@ h.run(async () => {
 	// the new band is selected, the hover is cleared, and nothing scattered
 	const cut = await quadStats(A.page);
 	const hover = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.faceEdit.faceEditHoverTri.subscribe(r)())
+		() => new Promise((r) => window.__tp.test.v1.faceEdit.faceEditHoverTri.subscribe(r)())
 	);
 	h.check(cut.sel > 0, `loop cut leaves the NEW band selected (${cut.sel} tris)`);
 	h.check(cut.sel % 2 === 0, '...an even number of triangles, i.e. whole quads');
 	const bandWhole = await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		let sel;
 		fe.faceEditSelectedTris.subscribe((v) => (sel = [...v]))();
 		const set = new Set(sel);
@@ -105,10 +105,10 @@ h.run(async () => {
 	h.check(hover === -1, 'the hover triangle is cleared, so nothing extra stays lit');
 
 	// ============================= 2. quad-aware subdivide
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
 	await editBox(A.page);
 	const sub = await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		fe.setFaceGranularity('quad');
 		fe.pickFaceUnit(0); // one quad = 2 tris
 		const ok = fe.commitFaceOp('subdivide', 0);
@@ -130,7 +130,7 @@ h.run(async () => {
 
 	// and a loop through one of the new sub-quads walks a real ring
 	const subLoop = await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		let sel;
 		fe.faceEditSelectedTris.subscribe((v) => (sel = [...v]))();
 		fe.faceEditSelectedTris.set([sel[0]]);
@@ -144,7 +144,7 @@ h.run(async () => {
 
 	// a lone (unpaired) triangle still takes the 4-way split
 	const loneSplit = await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		const before = fe.readTriangles(window.__box.geometry).length;
 		fe.setFaceGranularity('triangle');
 		fe.pickFaceUnit(0);
@@ -154,10 +154,10 @@ h.run(async () => {
 	h.check(loneSplit.after === loneSplit.before + 3, 'a single triangle still splits 4-way (+3 tris)');
 
 	// ============================= 3. the user's scenario: extrude x2, scale, loop
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
 	await editBox(A.page);
 	const scenario = await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		fe.setFaceGranularity('quad');
 		// pick the TOP quad and extrude it twice: two stacked wall bands
 		const tris = fe.readTriangles(window.__box.geometry);
@@ -169,7 +169,7 @@ h.run(async () => {
 		// to push those quads past the coplanarity gate and out of the topology
 		let sel;
 		fe.faceEditSelectedTris.subscribe((v) => (sel = [...v]))();
-		const THREE = window.__stores.THREE;
+		const THREE = window.__tp.test.v1.THREE;
 		// a SYNTHESIZED target, the way the gizmo seats one (the granularity-aware
 		// path) — a bare face index would grab the coplanar group instead
 		const normal = fe.currentFaces()[fe.faceIndexForTriangle(sel[0])]?.normal.clone();
@@ -204,9 +204,9 @@ h.run(async () => {
 
 	// ============================= 4. one undo per op, geometry restored
 	const undoOne = await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		const before = fe.readTriangles(window.__box.geometry).length;
-		window.__stores.history.undo();
+		window.__tp.test.v1.history.undo();
 		return { before, after: fe.readTriangles(window.__box.geometry).length };
 	});
 	h.check(undoOne.after < undoOne.before, 'ONE undo takes the loop cut back out');
@@ -224,12 +224,12 @@ h.run(async () => {
 	// triangle count carries it instead of re-deriving. The twist measurement stays
 	// exactly as it was, because it is the proof derivation could not have done this;
 	// what flipped is everything after it.
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	await editBox(A.page);
 	const bent = await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
-		const THREE = window.__stores.THREE;
+		const fe = window.__tp.test.v1.faceEdit;
+		const THREE = window.__tp.test.v1.THREE;
 		fe.setFaceGranularity('quad');
 		const tris = fe.readTriangles(window.__box.geometry);
 		const topTri = tris.findIndex((t) => t.every((v) => v.y > 0.49));
@@ -305,6 +305,6 @@ h.run(async () => {
 		`loop select walks the twisted band now (${bent.ring} triangles selected)`
 	);
 
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
 	await h.finish(browser);
 });

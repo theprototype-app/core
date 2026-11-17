@@ -39,14 +39,14 @@ h.run(async () => {
 		if (/peer error|peerjs|Lost connection/i.test(t)) return;
 		if (/Shader Error|ERROR: \d|dimension mismatch|VALIDATE_STATUS/i.test(t)) glsl.push(t.slice(0, 600));
 	});
-	await page.waitForFunction(() => !!window.__stores?.shaderGraph, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.shaderGraph, { timeout: 30000 });
 
-	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await page.waitForTimeout(1400);
 
 	// shared harness: frame the cube and give ourselves an offscreen sampler
 	const uuid = await page.evaluate(async () => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		const read = (s) => new Promise((r) => s.subscribe((v) => r(v))());
 		const group = await read(S.objectsGroup);
 		const camera = await read(S.globalCamera);
@@ -119,7 +119,7 @@ h.run(async () => {
 
 	// ---- 1. attach a graph through the single write path ------------------------
 	const attach = await page.evaluate(async (uuid) => {
-		const S = window.__stores.shaderGraph;
+		const S = window.__tp.test.v1.shaderGraph;
 		const before = window.__g.sample().px;
 		S.startShaderGraphs();
 		S.setShaderGraphFor(uuid, window.__g.makeGraph('#e62610'));
@@ -145,7 +145,7 @@ h.run(async () => {
 	// r:g 1.42 -> 1.52 on a red cube vs 0.86 -> 1.09 on a blue one). Two graph colours
 	// share whatever base there is, so the comparison is base-independent.
 	const swap = await page.evaluate(async (uuid) => {
-		const S = window.__stores.shaderGraph;
+		const S = window.__tp.test.v1.shaderGraph;
 		S.setShaderGraphFor(uuid, window.__g.makeGraph('#20d040'));
 		await S.compileAndApply(uuid);
 		window.__g.sample();
@@ -185,7 +185,7 @@ h.run(async () => {
 	// a dim albedo legitimately shows a smaller absolute drop, so a fixed percentage is
 	// again a bet on the palette colour.
 	const light = await page.evaluate((uuid) => {
-		const S = window.__stores.shaderGraph;
+		const S = window.__tp.test.v1.shaderGraph;
 		const { scene, mesh, THREE } = window.__g;
 		let sun = null;
 		scene.traverse((n) => { if (n.isDirectionalLight && !sun) sun = n; });
@@ -237,7 +237,7 @@ h.run(async () => {
 
 	// ---- 1b. a SECOND tap runs too (emissive adds shadow-independent light) -----
 	const twoTap = await page.evaluate(async (uuid) => {
-		const S = window.__stores.shaderGraph;
+		const S = window.__tp.test.v1.shaderGraph;
 		const one = window.__g.sample().px;
 		S.setShaderGraphFor(uuid, window.__g.makeTwoTapGraph('#e62610'));
 		await S.compileAndApply(uuid);
@@ -255,8 +255,8 @@ h.run(async () => {
 
 	// ---- 2. a param edit is a LIVE uniform write, not a recompile --------------
 	const param = await page.evaluate(async (uuid) => {
-		const S = window.__stores.shaderGraph;
-		const THREE = window.__stores.THREE;
+		const S = window.__tp.test.v1.shaderGraph;
+		const THREE = window.__tp.test.v1.THREE;
 		const before = window.__g.sample().px;
 		// find the colour uniform the compiler generated for node c1
 		const name = 'u_c1_value';
@@ -278,7 +278,7 @@ h.run(async () => {
 
 	// ---- 3. a BROKEN graph keeps the last good material -----------------------
 	const broken = await page.evaluate(async (uuid) => {
-		const S = window.__stores.shaderGraph;
+		const S = window.__tp.test.v1.shaderGraph;
 		const good = window.__g.sample().px;
 		// mix with nothing wired into `a` is an authoring error the compiler refuses
 		S.setShaderGraphFor(uuid, {
@@ -298,7 +298,7 @@ h.run(async () => {
 
 	// ---- 4. detach restores the object's OWN material ------------------------
 	const detach = await page.evaluate(async (uuid) => {
-		const S = window.__stores.shaderGraph;
+		const S = window.__tp.test.v1.shaderGraph;
 		const before = window.__g.sample().px;
 		S.detachFrom(window.__g.mesh);
 		return { before, after: window.__g.sample().px, driven: S.isShaderDriven(uuid), hasBase: !!S.baseMaterialOf(uuid) };
@@ -312,7 +312,7 @@ h.run(async () => {
 
 	// ---- 5. the resolution order: own graph BEFORE the scene default ---------
 	const resolution = await page.evaluate(async (uuid) => {
-		const S = window.__stores.shaderGraph;
+		const S = window.__tp.test.v1.shaderGraph;
 		S.clearShaderGraphs();
 		S.startShaderGraphs();
 		const out = {};
@@ -345,7 +345,7 @@ h.run(async () => {
 
 	// ---- 6. a multi-slot object is REFUSED, not half-supported ---------------
 	const refusal = await page.evaluate(async () => {
-		const S = window.__stores.shaderGraph;
+		const S = window.__tp.test.v1.shaderGraph;
 		const { mesh, THREE } = window.__g;
 		const single = S.shaderTargetSupported(mesh);
 		const was = mesh.material;
@@ -370,7 +370,7 @@ h.run(async () => {
 	// assertion a comparison of two of OUR OWN values on the same object (the palette.js
 	// lesson) rather than a bet on the base colour.
 	const madeTex = await page.evaluate(async () => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		/** paint a solid colour and hand back a real File, via a real png encode */
 		const pngFile = async (name, r, g, b) => {
 			const c = document.createElement('canvas');
@@ -396,8 +396,8 @@ h.run(async () => {
 	h.check(madeTex.kind === 'image', 'they are stored as image items: ' + madeTex.kind);
 
 	const textured = await page.evaluate(async (hashes) => {
-		const S = window.__stores.shaderGraph;
-		const T = window.__stores.shaderTextures;
+		const S = window.__tp.test.v1.shaderGraph;
+		const T = window.__tp.test.v1.shaderTextures;
 		const out = {};
 		const graphFor = (hash) => ({
 			nodes: [
@@ -487,7 +487,7 @@ h.run(async () => {
 	// palette.js derives the base colour from the uuid and anything measured against
 	// "the base" is a bet on which cube the run produced.
 	const taps = await page.evaluate(async () => {
-		const S = window.__stores.shaderGraph;
+		const S = window.__tp.test.v1.shaderGraph;
 		const { mesh, renderer, scene, THREE, rt } = window.__g;
 		const out = {};
 
@@ -679,7 +679,7 @@ h.run(async () => {
 
 	// ---- 9. the new catalog nodes, on the real material ----------------------
 	const newNodes = await page.evaluate(async () => {
-		const S = window.__stores.shaderGraph;
+		const S = window.__tp.test.v1.shaderGraph;
 		const { mesh } = window.__g;
 		const uuid = mesh.uuid;
 		const out = {};
@@ -688,7 +688,7 @@ h.run(async () => {
 			await S.compileAndApply(uuid);
 		};
 		const readErrors = () =>
-			new Promise((r) => window.__stores.shaderGraph.shaderErrors.subscribe((e) => r(e[uuid] ?? []))());
+			new Promise((r) => window.__tp.test.v1.shaderGraph.shaderErrors.subscribe((e) => r(e[uuid] ?? []))());
 
 		// SPLIT: take only the RED channel of a colour and drive roughness with it, while
 		// albedo shows the whole colour. Two different widths off one node.
@@ -764,7 +764,7 @@ h.run(async () => {
 			ctx.fillStyle = 'rgb(20,20,240)';
 			ctx.fillRect(8, 0, 8, 16);
 			const blob = await new Promise((res) => c.toBlob(res, 'image/png'));
-			const made = await window.__stores.explorer.importFiles([
+			const made = await window.__tp.test.v1.explorer.importFiles([
 				new File([blob], 'halves.png', { type: 'image/png' })
 			]);
 			return made[0].hash;
@@ -772,7 +772,7 @@ h.run(async () => {
 		// Resolution is LAZY — it happens when a compile fills the sampler uniform — so
 		// polling shaderTextureFor before anything has asked for this hash waits forever.
 		// Ask for it directly and await the promise the module hands back.
-		out.quadResolved = !!(await window.__stores.shaderTextures.resolveShaderTexture(quadHash));
+		out.quadResolved = !!(await window.__tp.test.v1.shaderTextures.resolveShaderTexture(quadHash));
 		const tiled = (t) => [
 			[
 				{ id: 'tl', type: 'tilingOffset', data: { tiling: [t, t], offset: [0, 0] } },

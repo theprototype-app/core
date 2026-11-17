@@ -32,7 +32,7 @@ h.run(async () => {
 	// Playwright turns file-chooser INTERCEPTION on when the first listener is added, asynchronously: a click
 	// racing that leaves a headless native chooser pending, which blocks every later one. Arm it up front.
 	page.on('filechooser', () => {});
-	const items = () => page.evaluate(() => new Promise((r) => window.__stores.explorer.explorerItems.subscribe((v) => r(v.map((i) => ({ name: i.name, folderId: i.folderId ?? null }))))()));
+	const items = () => page.evaluate(() => new Promise((r) => window.__tp.test.v1.explorer.explorerItems.subscribe((v) => r(v.map((i) => ({ name: i.name, folderId: i.folderId ?? null }))))()));
 	const itemNamed = async (name) => (await items()).find((i) => i.name === name) ?? null;
 	const menuItem = (label) => page.locator('[role="menuitem"]', { hasText: label }).first();
 	// Esc unwinds one level at a time (an open submenu first), so press until the menu is gone
@@ -46,7 +46,7 @@ h.run(async () => {
 	await page.locator('#explorer-slot').click();
 	await page.waitForTimeout(600);
 	const ids = await page.evaluate(() => {
-		const ex = window.__stores.explorer;
+		const ex = window.__tp.test.v1.explorer;
 		const inbox = ex.createFolder('Inbox', null);
 		const other = ex.createFolder('Other', null);
 		ex.activeFolder.set(inbox.id);
@@ -87,10 +87,10 @@ h.run(async () => {
 	const want = ['Script (.js)', 'Note (.md)', 'JSON (.json)', 'Text (.txt)'];
 	h.check(want.every((w) => subs.some((s) => s.includes(w))), 'New file ▸ lists Script / Note / JSON / Text (' + subs.filter((s) => /\(\./.test(s)).join(', ') + ')');
 	await shot(page, 'x1-menu-desktop-dark');
-	await page.evaluate(() => window.__stores.themes.theme.set('light'));
+	await page.evaluate(() => window.__tp.test.v1.themes.theme.set('light'));
 	await page.waitForTimeout(400);
 	await shot(page, 'x1-menu-desktop-light');
-	await page.evaluate(() => window.__stores.themes.theme.set('dark'));
+	await page.evaluate(() => window.__tp.test.v1.themes.theme.set('dark'));
 	await closeMenu();
 	await page.locator('#explorer-grid').click({ button: 'right', position: bg });
 	await menuItem('Add files…').waitFor({ timeout: 4000 });
@@ -99,7 +99,7 @@ h.run(async () => {
 	await h.eventually(() => itemNamed('from-menu.txt'), (i) => !!i, 'background menu ▸ Add files… imports');
 	h.check((await itemNamed('from-menu.txt'))?.folderId === ids.inbox, '…into the folder you are in');
 
-	await page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await page.waitForTimeout(400);
 	await page.locator('#explorer-grid .explorer-folder-card', { hasText: 'Other' }).first().click({ button: 'right' });
 	await menuItem('Add files…').waitFor({ timeout: 4000 });
@@ -109,7 +109,7 @@ h.run(async () => {
 	h.check((await itemNamed('into-other.txt'))?.folderId === ids.other, '…into THAT folder, not the one you are in');
 
 	// ---- 3. New file ▸ Note ------------------------------------------------------------------
-	await page.evaluate((id) => window.__stores.explorer.activeFolder.set(id), ids.inbox);
+	await page.evaluate((id) => window.__tp.test.v1.explorer.activeFolder.set(id), ids.inbox);
 	await page.waitForTimeout(400);
 	await page.locator('#explorer-grid').click({ button: 'right', position: bg });
 	await menuItem('New file').waitFor({ timeout: 4000 });
@@ -120,7 +120,7 @@ h.run(async () => {
 	await h.eventually(() => itemNamed('notes.md'), (i) => !!i, 'New file ▸ Note makes notes.md');
 	h.check((await itemNamed('notes.md'))?.folderId === ids.inbox, '…in the folder the menu was opened in');
 	const body = await page.evaluate(async () => {
-		const ex = window.__stores.explorer;
+		const ex = window.__tp.test.v1.explorer;
 		const item = await new Promise((r) => ex.explorerItems.subscribe((v) => r(v.find((i) => i.name === 'notes.md')))());
 		const blob = await ex.itemBlob(item.id);
 		return blob ? await blob.text() : null;
@@ -137,7 +137,7 @@ h.run(async () => {
 		const p = P.page;
 		p.on('filechooser', () => {});
 		await p.evaluate(() => {
-			const ex = window.__stores.explorer;
+			const ex = window.__tp.test.v1.explorer;
 			const f = ex.createFolder('Phone inbox', null);
 			ex.activeFolder.set(f.id);
 			window.__phoneFolder = f.id;
@@ -149,7 +149,7 @@ h.run(async () => {
 		await shot(p, 'x1-empty-phone-' + theme);
 		const [chooser] = await Promise.all([p.waitForEvent('filechooser', { timeout: 10000 }), btn.tap()]);
 		await chooser.setFiles([txt('from-phone.txt')]);
-		const landedIn = () => p.evaluate(() => new Promise((r) => window.__stores.explorer.explorerItems.subscribe((v) => r(v.find((i) => i.name === 'from-phone.txt')?.folderId ?? null))()));
+		const landedIn = () => p.evaluate(() => new Promise((r) => window.__tp.test.v1.explorer.explorerItems.subscribe((v) => r(v.find((i) => i.name === 'from-phone.txt')?.folderId ?? null))()));
 		await h.eventually(landedIn, (v) => !!v, theme + ' phone: a tap on Add files… opens the chooser and the file is imported');
 		const landed = await landedIn();
 		h.check(landed === (await p.evaluate(() => window.__phoneFolder)), theme + ' phone: …into the open folder');

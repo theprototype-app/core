@@ -7,7 +7,7 @@ const posOf = (page, uuid) =>
 	page.evaluate(
 		(uuid) =>
 			new Promise((resolve) => {
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const o = g?.getObjectByProperty('uuid', uuid);
 					resolve(o ? { x: o.position.x, y: o.position.y, z: o.position.z, ry: o.rotation.y } : null);
 				})();
@@ -28,27 +28,27 @@ h.run(async () => {
 	await A.page.bringToFront();
 
 	const uuid = await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create Box 1 1 1');
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create Box 1 1 1');
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const box = group.children[group.children.length - 1];
-		window.__stores.objectActions.deselectObject();
+		window.__tp.test.v1.objectActions.deselectObject();
 		return box.uuid;
 	});
 	await B.page.waitForTimeout(1200);
 
 	const depthBefore = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.history.undoStack.subscribe((s) => r(s.length))())
+		() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((s) => r(s.length))())
 	);
-	const ok = await A.page.evaluate((uuid) => window.__stores.possess.possess(uuid), uuid);
+	const ok = await A.page.evaluate((uuid) => window.__tp.test.v1.possess.possess(uuid), uuid);
 	h.check(ok === true, 'possess takes the object');
 	const claims = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.inputRuntime.inputClaims.subscribe(r)())
+		() => new Promise((r) => window.__tp.test.v1.inputRuntime.inputClaims.subscribe(r)())
 	);
 	h.check(claims.includes('keys') && claims.includes('locomotion'), `possession claims input scopes (${claims.join(',')})`);
 
 	// peers see the possession as the usual selection lock
 	await h.eventually(
-		() => B.page.evaluate((uuid) => new Promise((r) => window.__stores.lockedObjects.subscribe((l) => r(l.some((e) => e[1] === uuid)))()), uuid),
+		() => B.page.evaluate((uuid) => new Promise((r) => window.__tp.test.v1.lockedObjects.subscribe((l) => r(l.some((e) => e[1] === uuid)))()), uuid),
 		(v) => v === true,
 		'B sees the possessed object locked'
 	);
@@ -77,7 +77,7 @@ h.run(async () => {
 	// busy frame could otherwise start mid-hop)
 	const base = await A.page.evaluate((uuid) => {
 		let group;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		const o = group.getObjectByProperty('uuid', uuid);
 		const w = /** @type {any} */ (window);
 		w.__hop = { base: o.position.y, peak: o.position.y };
@@ -117,15 +117,15 @@ h.run(async () => {
 	await A.page.keyboard.press('Escape');
 	await A.page.waitForTimeout(300);
 	const after = await A.page.evaluate(async () => ({
-		possessed: await new Promise((r) => window.__stores.possess.possessed.subscribe(r)()),
-		claims: await new Promise((r) => window.__stores.inputRuntime.inputClaims.subscribe(r)()),
-		depth: await new Promise((r) => window.__stores.history.undoStack.subscribe((s) => r(s.length))())
+		possessed: await new Promise((r) => window.__tp.test.v1.possess.possessed.subscribe(r)()),
+		claims: await new Promise((r) => window.__tp.test.v1.inputRuntime.inputClaims.subscribe(r)()),
+		depth: await new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((s) => r(s.length))())
 	}));
 	h.check(after.possessed === null, 'Esc releases the possession');
 	h.check(after.claims.length === 0, 'claims cleared on release');
 	h.check(after.depth === depthBefore + 1, `one undo entry for the whole ride (${depthBefore} -> ${after.depth})`);
 
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(
 		() => posOf(A.page, uuid),
 		(p) => p && Math.abs(p.z - start.z) < 0.01 && Math.abs(p.ry - start.ry) < 0.01,

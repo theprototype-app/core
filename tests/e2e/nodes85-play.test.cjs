@@ -29,7 +29,7 @@ const wheel = (page, deltaY, times) =>
 	page.evaluate(
 		([d, n]) => {
 			let r;
-			window.__stores.globalRenderer.subscribe((v) => (r = v))();
+			window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
 			for (let i = 0; i < n; i++) (r?.domElement ?? document.body).dispatchEvent(new WheelEvent('wheel', { deltaY: d, bubbles: true, cancelable: true }));
 		},
 		[deltaY, times]
@@ -38,11 +38,11 @@ const wheel = (page, deltaY, times) =>
 const placeInFront = (page, uuid, distance) =>
 	page.evaluate(
 		([u, d]) => {
-			const THREE = window.__stores.THREE;
+			const THREE = window.__tp.test.v1.THREE;
 			let cam;
 			let g;
-			window.__stores.globalCamera.subscribe((v) => (cam = v))();
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.globalCamera.subscribe((v) => (cam = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const at = cam.getWorldPosition(new THREE.Vector3()).addScaledVector(cam.getWorldDirection(new THREE.Vector3()), d);
 			const o = g.getObjectByProperty('uuid', u);
 			o.position.copy(at);
@@ -54,17 +54,17 @@ const placeInFront = (page, uuid, distance) =>
 const posOf = (p, uuid) =>
 	p.page.evaluate((u) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		return g.getObjectByProperty('uuid', u)?.position.toArray() ?? null;
 	}, uuid);
 const near = (a, b, eps) => !!a && !!b && a.every((v, i) => Math.abs(v - b[i]) < eps);
-const piDebug = (page) => page.evaluate(() => window.__stores.playInteract.playInteractDebug());
+const piDebug = (page) => page.evaluate(() => window.__tp.test.v1.playInteract.playInteractDebug());
 
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 	const ids = await A.page.evaluate(() => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		const made = {};
 		for (const name of ['cat', 'mug', 'tool', 'chair']) {
 			S.commandsHandler.sceneCommand('/create box');
@@ -78,9 +78,9 @@ h.run(async () => {
 		return made;
 	});
 	await A.page.waitForTimeout(1500); // '/create box' re-seats after the call
-	await A.page.evaluate(() => window.__stores.lockedObjects.set([]));
+	await A.page.evaluate(() => window.__tp.test.v1.lockedObjects.set([]));
 	await A.page.evaluate(({ nodes, edges, made }) => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		let g;
 		S.objectsGroup.subscribe((x) => (g = x))();
 		const cat = g.getObjectByProperty('uuid', made.cat);
@@ -106,8 +106,8 @@ h.run(async () => {
 	const dump = (p) =>
 		p.page.evaluate(() => {
 			let g;
-			window.__stores.objectsGroup.subscribe((x) => (g = x))();
-			const S = window.__stores;
+			window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
+			const S = window.__tp?.test.v1;
 			const nodes = S.allNodes?.() ?? null;
 			let modal = !!document.querySelector('#restore-session-modal[open]');
 			return { objects: g.children.map((o) => (o.name || o.type) + ':' + o.uuid.slice(0, 6)), modal, hash: S.nodesHandler.graphHash(), runtime: Array.isArray(nodes) ? nodes.map((n) => n.id).join(',') : nodes, level: (() => { let l; S.levels?.currentLevel?.subscribe?.((v) => (l = v))(); return l ?? null; })() };
@@ -123,12 +123,12 @@ h.run(async () => {
 	const peers = [A, B];
 	await A.page.waitForTimeout(3000);
 	for (const p of peers) console.log(`  after connect ${p.id}: ${JSON.stringify(await dump(p))}`);
-	await h.eventually(() => Promise.all(peers.map((p) => p.page.evaluate(() => window.__stores.nodesHandler.graphHash()))), (hs) => hs[0] === hs[1], 'premise: B holds the graph', 30000);
+	await h.eventually(() => Promise.all(peers.map((p) => p.page.evaluate(() => window.__tp.test.v1.nodesHandler.graphHash()))), (hs) => hs[0] === hs[1], 'premise: B holds the graph', 30000);
 	await h.eventually(() => Promise.all(Object.values(ids).map((u) => posOf(B, u))), (ps) => ps.every(Boolean), 'premise: B holds every object', 30000);
 
 	// ---- N3: the same animal in the same place on both peers, walking and resting
-	const poseAt = (p, T) => p.page.evaluate(([u, t]) => window.__stores.flowRuntime.effectPoseAt('cat', u, t), [ids.cat, T]);
-	const T0 = (await A.page.evaluate(() => window.__stores.flowRuntime.effectClockNow())) + 0.5;
+	const poseAt = (p, T) => p.page.evaluate(([u, t]) => window.__tp.test.v1.flowRuntime.effectPoseAt('cat', u, t), [ids.cat, T]);
+	const T0 = (await A.page.evaluate(() => window.__tp.test.v1.flowRuntime.effectClockNow())) + 0.5;
 	const samples = [];
 	let agree = true;
 	for (let i = 0; i < 17; i++) {
@@ -152,14 +152,14 @@ h.run(async () => {
 	h.check(samples.every((p) => p && Math.abs(p[0] + 8) <= 3 + 1e-6 && Math.abs(p[2] + 8) <= 3 + 1e-6), 'N3: it stays inside its wander box (3 m around home)');
 	const drawnCat = await Promise.all(peers.map((p) => posOf(p, ids.cat)));
 	h.check(drawnCat.every((p) => Math.abs(p[1] - 0.2) < 0.4), `N3: it walks on the ground on both peers (${drawnCat.map((p) => p[1].toFixed(2))})`);
-	const amb = await A.page.evaluate(() => window.__stores.ambientNodes.ambientNodesDebug());
+	const amb = await A.page.evaluate(() => window.__tp.test.v1.ambientNodes.ambientNodesDebug());
 	console.log('  ambient (A): ' + JSON.stringify(amb));
 	h.check(Object.keys(amb).some((k) => k.startsWith('cat|' + ids.cat)), 'N3: the runtime drives the animal');
 
 	// ---- I1: no simulation; play mode; pick the mug up, push it away, put it down: it STAYS
-	await A.page.evaluate(() => window.__stores.physics.stopSimulation?.());
-	await A.page.evaluate(() => window.__stores.scenePhysics.setScenePhysics({ play: { interaction: 'grab' } }));
-	await A.page.evaluate(() => window.__stores.isLocked.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.physics.stopSimulation?.());
+	await A.page.evaluate(() => window.__tp.test.v1.scenePhysics.setScenePhysics({ play: { interaction: 'grab' } }));
+	await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await A.page.waitForTimeout(500);
 	h.check((await piDebug(A.page)).mode === 'grab', 'I1 premise: play mode arms the grab');
 	// in front of the camera play aims with (placed now: play may aim with another camera than the editor's)
@@ -167,7 +167,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(400);
 	const aim = await A.page.evaluate(() => {
 		let s;
-		window.__stores.playInteract.playInteractState.subscribe((v) => (s = v))();
+		window.__tp.test.v1.playInteract.playInteractState.subscribe((v) => (s = v))();
 		return s;
 	});
 	h.check(aim.mode === 'aiming', `I1: the crosshair offers a Grabbable with no simulation running (${aim.mode})`);
@@ -192,7 +192,7 @@ h.run(async () => {
 	await placeInFront(A.page, ids.mug, 9); // the mug out of the line of sight... behind the tool
 	await A.page.evaluate((u) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		g.getObjectByProperty('uuid', u).position.y -= 6; // ...and well below it
 	}, ids.mug);
 	const toolHome = await placeInFront(A.page, ids.tool, 3);
@@ -208,33 +208,33 @@ h.run(async () => {
 	await A.page.waitForTimeout(200);
 	h.check(!near(await posOf(A, ids.tool), toolHome, 0.3), 'I1 return: it waits before it goes home');
 	await h.eventually(() => Promise.all(peers.map((p) => posOf(p, ids.tool))), (ps) => ps.every((p) => near(p, toolHome, 1e-3)), 'I1 return: the tool glides back home on A and B', 10000);
-	h.check((await A.page.evaluate(() => window.__stores.grabReturn?.grabReturnDebug?.() ?? [])).length === 0, 'I1 return: no glide left running');
+	h.check((await A.page.evaluate(() => window.__tp.test.v1.grabReturn?.grabReturnDebug?.() ?? [])).length === 0, 'I1 return: no glide left running');
 
 	// ---- I3: a Sit Spot — a click on the chair in play sits A down on it, facing its front; W stands A up
 	const eyeOf = () =>
 		A.page.evaluate(() => {
 			let cam;
-			window.__stores.playerCam.subscribe((v) => (cam = v))();
+			window.__tp.test.v1.playerCam.subscribe((v) => (cam = v))();
 			return cam?.isObject3D ? cam.getWorldPosition(new cam.position.constructor()).toArray() : null;
 		});
 	const before = await eyeOf();
 	h.check(!!before, 'I3 premise: the play camera exists');
-	await A.page.evaluate((u) => window.__stores.flowRuntime.fireObjectClick(u), ids.chair);
+	await A.page.evaluate((u) => window.__tp.test.v1.flowRuntime.fireObjectClick(u), ids.chair);
 	await A.page.waitForTimeout(600);
-	const sat = await A.page.evaluate(() => window.__stores.sitSpot.sitDebug());
+	const sat = await A.page.evaluate(() => window.__tp.test.v1.sitSpot.sitDebug());
 	console.log('  seated: ' + JSON.stringify(sat));
 	h.check(!!sat && sat.uuid === ids.chair, 'I3: a click on the chair in play sits A down');
 	const eye = await eyeOf();
 	h.check(near(eye, [4, 0.5 + 0.7, -12], 1e-3), `I3: A's eyes are 0.7 m over the seat top, centred (${eye?.map((v) => v.toFixed(3))})`);
 	h.check(!!sat && Math.abs(-Math.cos(sat.yaw) - 1) < 1e-6, 'I3: facing the seat front (+z)');
-	h.check(await A.page.evaluate(() => window.__stores.inputRuntime.isClaimed('locomotion') && window.__stores.inputRuntime.isClaimed('keys')), 'I3: walking is held while seated (the keys + locomotion claims)');
+	h.check(await A.page.evaluate(() => window.__tp.test.v1.inputRuntime.isClaimed('locomotion') && window.__tp.test.v1.inputRuntime.isClaimed('keys')), 'I3: walking is held while seated (the keys + locomotion claims)');
 	await A.page.waitForTimeout(500);
 	h.check(near(await eyeOf(), [4, 1.2, -12], 1e-3), 'I3: and it stays seated over half a second of frames (the grounded pin stands down)');
 	// (a document event bubbles on to window, where inputRuntime listens)
 	// W stands A up; it is let go on the first frame A is standing. The built-in walk moves 0.1 m PER FRAME
 	// (PointerLockControls, unchanged), so a 300 ms hold walked 1.8 m at 60 fps and only passed on a slow runner
 	const stood = await A.page.evaluate(async () => {
-		const sit = window.__stores.sitSpot;
+		const sit = window.__tp.test.v1.sitSpot;
 		document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW', key: 'w', bubbles: true }));
 		const t0 = performance.now();
 		while (sit.sitDebug() !== null && performance.now() - t0 < 3000) await new Promise((r) => requestAnimationFrame(r));
@@ -242,10 +242,10 @@ h.run(async () => {
 		return { ms: Math.round(performance.now() - t0) };
 	});
 	await A.page.waitForTimeout(300);
-	h.check((await A.page.evaluate(() => window.__stores.sitSpot.sitDebug())) === null, `I3: W stands A up (${JSON.stringify(stood)})`);
+	h.check((await A.page.evaluate(() => window.__tp.test.v1.sitSpot.sitDebug())) === null, `I3: W stands A up (${JSON.stringify(stood)})`);
 	const after = await eyeOf();
-	h.check(near(after, before, 0.6), `I3: back where A sat down from (${before?.map((v) => v.toFixed(2))} -> ${after?.map((v) => v.toFixed(2))}; walker ${JSON.stringify(await A.page.evaluate(() => window.__stores.charController?.charControllerDebug?.()?.walker ?? null))})`);
-	await A.page.evaluate(() => window.__stores.isLocked.set(false));
+	h.check(near(after, before, 0.6), `I3: back where A sat down from (${before?.map((v) => v.toFixed(2))} -> ${after?.map((v) => v.toFixed(2))}; walker ${JSON.stringify(await A.page.evaluate(() => window.__tp.test.v1.charController?.charControllerDebug?.()?.walker ?? null))})`);
+	await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(false));
 
 	for (const p of peers) {
 		const errs = h.pageErrors(p);

@@ -12,16 +12,16 @@ h.run(async () => {
 		localStorage.setItem('timelineDocked', 'true'); // Timeline docked
 	});
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.bottomDock, { timeout: 30000 });
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.bottomDock, { timeout: 30000 });
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphClose.set(false);
 		s.timelineClose.set(false);
 		s.bottomDock.activateDock('timeline');
 	});
 	await A.page.waitForTimeout(600);
 	const setup = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let vis, occ;
 		s.bottomDock.visibleDockKey.subscribe((v) => (vis = v))();
 		s.bottomDock.dockOccupants.subscribe((v) => (occ = v))();
@@ -33,7 +33,7 @@ h.run(async () => {
 	await A.page.evaluate(() => document.querySelector('p[title="Node editor (N)"]').click());
 	await A.page.waitForTimeout(300);
 	const after = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let fc, cc, vis;
 		s.flowGraphClose.subscribe((v) => (fc = v))();
 		s.timelineClose.subscribe((v) => (cc = v))();
@@ -47,7 +47,7 @@ h.run(async () => {
 	await A.page.evaluate(() => document.querySelector('p[title="Node editor (N)"]').click());
 	await A.page.waitForTimeout(300);
 	const back = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let cc, vis;
 		s.timelineClose.subscribe((v) => (cc = v))();
 		s.bottomDock.visibleDockKey.subscribe((v) => (vis = v))();

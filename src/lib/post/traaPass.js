@@ -17,11 +17,11 @@ import {
 	UnsignedByteType,
 	Vector2,
 	Vector3,
-	WebGLRenderTarget,
 	Color
 } from 'three';
 import { applyJitter, isCameraCut, jitterAt } from './traaCore.js';
 import { FULLSCREEN_VERT, RESOLVE_FRAG, VELOCITY_FRAG, VELOCITY_VERT } from './traaShaders.js';
+import { createRenderTarget } from '../render/renderTargets.js'; // 101 F3: the one factory
 
 const _clear = new Color();
 const _pos = new Vector3();
@@ -188,9 +188,9 @@ export class TRAAPass extends Pass {
 		if (this.history) return;
 		const floatOk = renderer.capabilities?.isWebGL2 && renderer.extensions?.has?.('EXT_color_buffer_float');
 		const type = floatOk ? HalfFloatType : UnsignedByteType;
-		const make = () => new WebGLRenderTarget(this.width, this.height, { type, depthBuffer: false });
+		const make = () => createRenderTarget(this.width, this.height, { type, depthBuffer: false });
 		this.history = [make(), make()];
-		this.velocity = new WebGLRenderTarget(this.width, this.height, { type: floatOk ? HalfFloatType : UnsignedByteType, depthBuffer: true });
+		this.velocity = createRenderTarget(this.width, this.height, { type: floatOk ? HalfFloatType : UnsignedByteType, depthBuffer: true });
 	}
 
 	/** @param {any} renderer @param {any} inputBuffer @param {any} outputBuffer */

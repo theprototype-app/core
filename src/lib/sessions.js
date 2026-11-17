@@ -1,5 +1,6 @@
 import { parseCheckedObject } from './loadGuard.js';
 import * as THREE from 'three';
+import { renderOffscreen } from './render/offscreen.js';
 import './threeFixes.js'; // 36-fb-water F14: transmissive materials survive a JSON trip (the export runtime loads scenes here too)
 import { writable, get } from 'svelte/store';
 import { objectsGroup, globalCamera, globalScene, globalRenderer, orbitControls, TControls, pokeScene, beginSceneBatch, endSceneBatch } from '../stores/sceneStore';
@@ -173,15 +174,11 @@ export function viewportThumbnail(maxW = 256) {
 
 /** The saved entry's picture. @param {any} group @returns {string|null} */
 function renderSceneThumbnail(group) {
-	/** @type {THREE.WebGLRenderer | null} */
-	let renderer = null;
 	try {
 		if (!group || group.children.length === 0) return null;
 		// the live viewport first — see viewportThumbnail for why
 		const live = viewportThumbnail();
 		if (live) return live;
-		renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-		renderer.setSize(256, 160);
 		const scene = new THREE.Scene();
 		scene.background = new THREE.Color('#232a33');
 		scene.add(new THREE.HemisphereLight(0xffffff, 0x444466, 2.2));
@@ -194,16 +191,15 @@ function renderSceneThumbnail(group) {
 		const camera = new THREE.PerspectiveCamera(40, 256 / 160, size / 100, size * 10);
 		camera.position.copy(center).add(new THREE.Vector3(size * 0.65, size * 0.5, size * 0.85));
 		camera.lookAt(center);
-		renderer.render(scene, camera);
-		return renderer.domElement.toDataURL('image/webp', 0.7);
+		// 101 F3: the shared off-screen renderer — one WebGL context for every thumbnail, made on
+		// first use and released after idle (Chromium caps live contexts at 16)
+		return renderOffscreen(256, 160, (renderer) => {
+			renderer.render(scene, camera);
+			return renderer.domElement.toDataURL('image/webp', 0.7);
+		}, { release: scene });
 	} catch (error) {
 		console.log('session thumbnail failed', error);
 		return null;
-	} finally {
-		// every exit, the empty-box early return and a throw included: a renderer that is not
-		// released holds its WebGL context until GC, and Chromium caps live contexts at 16
-		renderer?.dispose();
-		renderer?.forceContextLoss?.();
 	}
 }
 

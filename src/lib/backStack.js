@@ -91,7 +91,8 @@ export function suspendBack(reason, on) {
 	backStack.suspend(reason, on);
 }
 
-/** test/debug view: {open, marker, spending, suspended} + whether the marker is the top entry */
-export function backStackState() {
+/** test/debug view: {open, marker, spending, suspended} + whether the marker is the top entry
+ * (101 F5 proof: renamed from `backStackState`; the e2e facade keeps the v1 name answering) */
+export function backStackSnapshot() {
 	return { ...backStack.state(), onTop: !!routerState()?.tpBack };
 }

@@ -3,7 +3,7 @@
 // folder, Backspace goes up a level, Esc closes the window.
 const h = require('./helpers.cjs');
 
-const activeFolder = (A) => A.page.evaluate(() => { let v; window.__stores.explorer.activeFolder.subscribe((x) => (v = x))(); return v; });
+const activeFolder = (A) => A.page.evaluate(() => { let v; window.__tp.test.v1.explorer.activeFolder.subscribe((x) => (v = x))(); return v; });
 const selName = (A) =>
 	A.page.evaluate(() => document.querySelector('#explorer-list .border-accent')?.textContent?.trim() ?? null);
 
@@ -11,7 +11,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 	await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.explorer.createFolder('Models', null);
 		s.explorer.createFolder('Textures', null);
 		s.explorer.createFolder('Audio', null);
@@ -19,7 +19,7 @@ h.run(async () => {
 		try { s.bottomDock.bottomDockActive.set('explorer'); } catch {}
 		try { s.explorerClose.set(false); } catch {}
 	});
-	await A.page.evaluate(() => { try { window.__stores.explorerClose.set(true); window.__stores.explorerClose.set(false); } catch {} });
+	await A.page.evaluate(() => { try { window.__tp.test.v1.explorerClose.set(true); window.__tp.test.v1.explorerClose.set(false); } catch {} });
 	await A.page.waitForTimeout(900);
 
 	// click the first folder card -> selected (highlight) + grid focused

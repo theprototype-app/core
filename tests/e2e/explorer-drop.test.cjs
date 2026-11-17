@@ -11,7 +11,7 @@ const objectsOn = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.objectsGroup.subscribe((group) =>
+				window.__tp.test.v1.objectsGroup.subscribe((group) =>
 					resolve(
 						group.children.map((child) => ({
 							name: child.name,
@@ -32,18 +32,18 @@ h.run(async () => {
 	await A.page.evaluate(
 		async ({ png, obj }) => {
 			const bytes = Uint8Array.from(atob(png), (c) => c.charCodeAt(0));
-			await window.__stores.explorer.importFiles(
+			await window.__tp.test.v1.explorer.importFiles(
 				[
 					new File([bytes], 'checker.png', { type: 'image/png' }),
 					new File([new Blob([obj])], 'tri.obj', { type: 'text/plain' })
 				],
 				null
 			);
-			window.__stores.commandsHandler.sceneCommand('/create box');
-			const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+			window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+			const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 			const box = group.children[group.children.length - 1];
 			box.name = 'proto-box';
-			await window.__stores.prefabs.savePrefab(box.uuid, 'MyPrefab');
+			await window.__tp.test.v1.prefabs.savePrefab(box.uuid, 'MyPrefab');
 		},
 		{ png: TINY_PNG, obj: TINY_OBJ }
 	);
@@ -52,8 +52,8 @@ h.run(async () => {
 	// prefab card dropped on empty ground places it at the ray point
 	await A.page.evaluate(async () => {
 		let list = [];
-		window.__stores.prefabs.prefabs.subscribe((v) => (list = v))();
-		await window.__stores.explorerDrop.dropExplorerItem(
+		window.__tp.test.v1.prefabs.prefabs.subscribe((v) => (list = v))();
+		await window.__tp.test.v1.explorerDrop.dropExplorerItem(
 			{ kind: 'prefab', name: 'MyPrefab', prefabId: list[0].id },
 			420,
 			560
@@ -77,9 +77,9 @@ h.run(async () => {
 	// object (OBJ) card imports AT the drop point on both peers
 	await A.page.evaluate(async () => {
 		let items = [];
-		window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((v) => (items = v))();
 		const tri = items.find((i) => i.name === 'tri.obj');
-		await window.__stores.explorerDrop.dropExplorerItem({ id: tri.id, kind: 'object', name: tri.name }, 860, 560);
+		await window.__tp.test.v1.explorerDrop.dropExplorerItem({ id: tri.id, kind: 'object', name: tri.name }, 860, 560);
 	});
 	// 46: an import first loads the (lazy) import optimizer to weigh the model against Settings ▸
 	// Import — on a loaded dev server that alone can take over 2 s, so wait for the object, not a clock
@@ -106,12 +106,12 @@ h.run(async () => {
 	// image card textures the selected mesh through the Inspector drop helper
 	const textured = await A.page.evaluate(async () => {
 		let group;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		const box = group.children.find((c) => c.name === 'proto-box');
 		let items = [];
-		window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((v) => (items = v))();
 		const img = items.find((i) => i.name === 'checker.png');
-		const ok = await window.__stores.explorerDrop.applyExplorerImage(box.uuid, { id: img.id });
+		const ok = await window.__tp.test.v1.explorerDrop.applyExplorerImage(box.uuid, { id: img.id });
 		return { ok, uuid: box.uuid, map: !!box.material.userData.mapDataUrl };
 	});
 	h.check(textured.ok && textured.map, 'Explorer image textures the mesh (local)');
@@ -119,7 +119,7 @@ h.run(async () => {
 	const bMap = await B.page.evaluate(
 		(uuid) =>
 			new Promise((resolve) => {
-				window.__stores.objectsGroup.subscribe((group) => {
+				window.__tp.test.v1.objectsGroup.subscribe((group) => {
 					const mesh = group.getObjectByProperty('uuid', uuid);
 					resolve(!!mesh?.material?.userData?.mapDataUrl);
 				})();
@@ -131,7 +131,7 @@ h.run(async () => {
 	// window-level DOM drop routes Explorer payloads (App.handleDrop)
 	await A.page.evaluate(() => {
 		let items = [];
-		window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((v) => (items = v))();
 		const tri = items.find((i) => i.name === 'tri.obj');
 		const dt = new DataTransfer();
 		dt.setData('application/x-explorer-item', JSON.stringify({ id: tri.id, kind: 'object', name: tri.name }));

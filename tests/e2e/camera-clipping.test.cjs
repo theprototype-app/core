@@ -9,7 +9,7 @@ h.run(async () => {
 
 	// --- pure math ---
 	const math = await A.page.evaluate(() => {
-		const c = window.__stores.cameraClip;
+		const c = window.__tp.test.v1.cameraClip;
 		return {
 			floor: c.effectiveFar(5000, 0), // small scene → the user floor
 			grows: c.effectiveFar(5000, 2000), // radius*6 = 12000 wins
@@ -24,12 +24,12 @@ h.run(async () => {
 
 	// --- setting near/far applies live + persists; far pairs with maxDistance ---
 	const applied = await A.page.evaluate(() => {
-		const c = window.__stores.cameraClip;
+		const c = window.__tp.test.v1.cameraClip;
 		c.setCameraNear(0.02);
 		c.setCameraFar(8000);
 		let cam, orbit;
-		window.__stores.editorCam.subscribe((v) => (cam = v))();
-		window.__stores.orbitControls.subscribe((v) => (orbit = v))();
+		window.__tp.test.v1.editorCam.subscribe((v) => (cam = v))();
+		window.__tp.test.v1.orbitControls.subscribe((v) => (orbit = v))();
 		return {
 			near: cam?.near,
 			far: cam?.far,
@@ -46,20 +46,20 @@ h.run(async () => {
 	// --- the pairing invariant: the camera can't dolly past the far plane ---
 	const invariant = await A.page.evaluate(() => {
 		let orbit, cam;
-		window.__stores.orbitControls.subscribe((v) => (orbit = v))();
-		window.__stores.editorCam.subscribe((v) => (cam = v))();
+		window.__tp.test.v1.orbitControls.subscribe((v) => (orbit = v))();
+		window.__tp.test.v1.editorCam.subscribe((v) => (cam = v))();
 		return { safe: orbit.maxDistance < cam.far };
 	});
 	h.check(invariant.safe, 'max zoom distance stays inside the far plane (no blank-out)');
 
 	// --- persists across reload ---
 	await A.page.reload();
-	await A.page.waitForFunction(() => !!window.__stores?.cameraClip, { timeout: 20000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.cameraClip, { timeout: 20000 });
 	await A.page.waitForTimeout(500);
 	const rehydrated = await A.page.evaluate(() => {
 		let near, far;
-		window.__stores.cameraClip.cameraNear.subscribe((v) => (near = v))();
-		window.__stores.cameraClip.cameraFar.subscribe((v) => (far = v))();
+		window.__tp.test.v1.cameraClip.cameraNear.subscribe((v) => (near = v))();
+		window.__tp.test.v1.cameraClip.cameraFar.subscribe((v) => (far = v))();
 		return { near, far };
 	});
 	h.check(Math.abs(rehydrated.near - 0.02) < 1e-9 && rehydrated.far === 8000, `clip prefs rehydrate on boot (${rehydrated.near}/${rehydrated.far})`);

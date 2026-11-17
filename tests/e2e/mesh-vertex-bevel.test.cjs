@@ -9,7 +9,7 @@ const h = require('./helpers.cjs');
 
 const editBox = (page, size = 2) =>
 	page.evaluate((size) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand(`/create Box ${size} ${size} ${size}`);
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
@@ -21,7 +21,7 @@ const editBox = (page, size = 2) =>
 /** non-manifold edge count: 0 = watertight */
 const oddEdges = (page) =>
 	page.evaluate(() => {
-		const tris = window.__stores.faceEdit.readTriangles(window.__box.geometry);
+		const tris = window.__tp.test.v1.faceEdit.readTriangles(window.__box.geometry);
 		const keyOf = (v) => [v.x, v.y, v.z].map((n) => Math.round(n * 1e4)).join(',');
 		const counts = new Map();
 		for (const t of tris) {
@@ -41,7 +41,7 @@ const oddEdges = (page) =>
  */
 const selectAt = (page, points) =>
 	page.evaluate((points) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const me = s.meshEdit;
 		let controls;
 		s.TControls.subscribe((c) => (controls = c))();
@@ -77,7 +77,7 @@ h.run(async () => {
 	const one = await selectAt(A.page, [[1, 1, 1]]);
 	h.check(one.found === 1 && one.size === 1, 'selected the (1,1,1) corner (premise)');
 	const bevelled = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const me = s.meshEdit;
 		const fe = s.faceEdit;
 		const before = fe.readTriangles(window.__box.geometry).length;
@@ -118,7 +118,7 @@ h.run(async () => {
 
 	// --- undo is one step ---------------------------------------------------
 	const undo = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const count = () => s.faceEdit.readTriangles(window.__box.geometry).length;
 		const after = count();
 		s.history.undo();
@@ -138,7 +138,7 @@ h.run(async () => {
 	]);
 	h.check(multi.found === 3 && multi.size === 3, `selected three corners (${multi.size})`);
 	const many = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		// 0.9 would reach past the middle of the 2-unit edge between the first two corners;
 		// the clamp (0.45 of each edge) must keep the two bevels from crossing
 		const ok = s.meshEdit.bevelSelectedVerts(0.9, 0);
@@ -166,7 +166,7 @@ h.run(async () => {
 	// moves, out for a dome and in for a dish. Measuring the mesh's furthest reach only sees
 	// the dome; the dish needs a look INSIDE the corner region, where a flat cap has nothing.
 	const profiles = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const me = s.meshEdit;
 		const fe = s.faceEdit;
 		const reachOf = (v) => (v.x + v.y + v.z) / Math.sqrt(3);
@@ -211,7 +211,7 @@ h.run(async () => {
 
 	// --- a TEXTURED mesh keeps its mapping (the triple commit) --------------
 	const textured = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const me = s.meshEdit;
 		s.commandsHandler.sceneCommand('/create Box 2 2 2');
 		let g;
@@ -245,7 +245,7 @@ h.run(async () => {
 	await editBox(A.page);
 	await A.page.waitForTimeout(700); // let the toolbox render in vertices mode
 	const emptyClick = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		// clears the SET and the anchored handle, so nothing can bevel
 		s.meshEdit.clearVertexSelection();
@@ -269,7 +269,7 @@ h.run(async () => {
 	const clickPick = await selectAt(A.page, [[1, 1, 1]]);
 	h.check(clickPick.found === 1 && clickPick.size === 1, 'selected a corner for the click-apply (premise)');
 	const clickApplied = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		const before = fe.readTriangles(window.__box.geometry).length;
 		document.querySelector('#mesh-vertex-bevel').click();
@@ -294,9 +294,9 @@ h.run(async () => {
 	const triCountOn = (page, uuid) =>
 		page.evaluate((uuid) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const object = g.getObjectByProperty('uuid', uuid);
-			return object?.geometry ? window.__stores.meshTopology.triangleCountOf(object.geometry) : null;
+			return object?.geometry ? window.__tp.test.v1.meshTopology.triangleCountOf(object.geometry) : null;
 		}, uuid);
 	await h.eventually(
 		() => triCountOn(B.page, netUuid),
@@ -304,7 +304,7 @@ h.run(async () => {
 		'B received the box (premise)',
 		20000
 	);
-	await A.page.evaluate(() => window.__stores.meshEdit.bevelSelectedVerts(0.4, 0));
+	await A.page.evaluate(() => window.__tp.test.v1.meshEdit.bevelSelectedVerts(0.4, 0));
 	await h.eventually(
 		() => triCountOn(B.page, netUuid),
 		(n) => n !== null && n > 12,
@@ -313,12 +313,12 @@ h.run(async () => {
 	);
 	const peerTopo = await B.page.evaluate((uuid) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const object = g.getObjectByProperty('uuid', uuid);
-		return !!window.__stores.meshTopology.readStoredFaces(object.geometry);
+		return !!window.__tp.test.v1.meshTopology.readStoredFaces(object.geometry);
 	}, netUuid);
 	h.check(peerTopo, 'B stored the topology that came with it (the cap stays one face there too)');
 
-	await A.page.evaluate(() => window.__stores.meshEdit.exitEditMode());
+	await A.page.evaluate(() => window.__tp.test.v1.meshEdit.exitEditMode());
 	await h.finish(browser);
 });

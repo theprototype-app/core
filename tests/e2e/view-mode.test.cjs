@@ -8,7 +8,7 @@ const overrideState = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.globalScene.subscribe((scene) => {
+				window.__tp.test.v1.globalScene.subscribe((scene) => {
 					const om = scene?.overrideMaterial;
 					const catcher = scene?.getObjectByName('env-shadow-catcher');
 					resolve({ hasOverride: !!om, wireframe: om?.wireframe === true, catcherVisible: catcher ? catcher.visible : null });
@@ -21,17 +21,17 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	// default is Shaded + AO
-	const def = await A.page.evaluate(() => new Promise((r) => window.__stores.viewMode.subscribe((m) => r(m))()));
+	const def = await A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.viewMode.subscribe((m) => r(m))()));
 	h.check(def === 'shaded-ao', `default view mode is Shaded + AO (${def})`);
 
 	// shaded: no override material
-	await A.page.evaluate(() => window.__stores.viewMode.set('shaded'));
+	await A.page.evaluate(() => window.__tp.test.v1.viewMode.set('shaded'));
 	await A.page.waitForTimeout(200);
 	let s = await overrideState(A.page);
 	h.check(s.hasOverride === false, 'Shaded mode uses no override material');
 
 	// wireframe: scene override is a wireframe material, catcher hidden
-	await A.page.evaluate(() => window.__stores.viewMode.set('wireframe'));
+	await A.page.evaluate(() => window.__tp.test.v1.viewMode.set('wireframe'));
 	await A.page.waitForTimeout(250);
 	s = await overrideState(A.page);
 	h.check(s.hasOverride === true && s.wireframe === true, 'Wireframe sets a wireframe scene override (local-only)');
@@ -44,7 +44,7 @@ h.run(async () => {
 	// 0ms once loaded). A fixed 600ms settle raced that import and made this a
 	// standing red. Poll for the outcome instead: it still FAILS if the catcher
 	// never returns, it just no longer depends on how warm the module graph is.
-	await A.page.evaluate(() => window.__stores.viewMode.set('shaded-ao'));
+	await A.page.evaluate(() => window.__tp.test.v1.viewMode.set('shaded-ao'));
 	await A.page.waitForTimeout(200);
 	s = await overrideState(A.page);
 	h.check(s.hasOverride === false, 'leaving wireframe clears the override');
@@ -63,7 +63,7 @@ h.run(async () => {
 	// lost AO: emulation rewrites navigator.userAgent (its presets carry a canned,
 	// much older Chrome) but the real engine version is in userAgentData.brands.
 	const gate = await A.page.evaluate(() => {
-		const vm = window.__stores.viewModeCtl;
+		const vm = window.__tp.test.v1.viewModeCtl;
 		const brands = navigator.userAgentData?.brands ?? [];
 		const brandVersion = Number(
 			brands.find((b) => /Google Chrome|Chromium/i.test(b.brand))?.version ?? 0
@@ -85,7 +85,7 @@ h.run(async () => {
 			value: original.replace(/Chrom(e|ium)\/\d+/, 'Chrome/126'),
 			configurable: true
 		});
-		const out = window.__stores.viewModeCtl.chromiumMajor();
+		const out = window.__tp.test.v1.viewModeCtl.chromiumMajor();
 		Object.defineProperty(navigator, 'userAgent', { value: original, configurable: true });
 		return out;
 	});

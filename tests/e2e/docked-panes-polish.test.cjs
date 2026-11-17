@@ -15,10 +15,10 @@ const read = (page, expr) => page.evaluate(expr);
 const mainSidebars = (page) =>
 	read(page, () => {
 		let v;
-		window.__stores.sidebars.sidebarVisible.subscribe((x) => (v = x))();
+		window.__tp.test.v1.sidebars.sidebarVisible.subscribe((x) => (v = x))();
 		return { left: !!v.left, right: !!v.right };
 	});
-const toggle = (page, key) => page.evaluate((k) => window.__stores.panelToggles.togglePanel(k), key);
+const toggle = (page, key) => page.evaluate((k) => window.__tp.test.v1.panelToggles.togglePanel(k), key);
 /** every visible pane handle in the docked frame #<frameId>: edge, open, the tab's distance to the frame's edge */
 const handles = (page, frameSel) =>
 	page.evaluate((sel) => {

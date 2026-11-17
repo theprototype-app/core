@@ -17,9 +17,9 @@ const h = require('./helpers.cjs');
 
 const makeBox = (peer, at) =>
 	peer.page.evaluate((pos) => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		return new Promise((resolve) =>
-			window.__stores.objectsGroup.subscribe((g) => {
+			window.__tp.test.v1.objectsGroup.subscribe((g) => {
 				const o = g.children[g.children.length - 1];
 				resolve(o.uuid);
 			})()
@@ -30,10 +30,10 @@ const makeBox = (peer, at) =>
 const addGraph = (peer, nodes, edges) =>
 	peer.page.evaluate(
 		([nodes, edges]) => {
-			window.__stores.flowNodes.update((n) => [...n, ...nodes]);
-			window.__stores.flowEdges.update((e) => [...e, ...edges]);
+			window.__tp.test.v1.flowNodes.update((n) => [...n, ...nodes]);
+			window.__tp.test.v1.flowEdges.update((e) => [...e, ...edges]);
 			return new Promise((resolve) => {
-				window.__stores.peers.subscribe((peer) => {
+				window.__tp.test.v1.peers.subscribe((peer) => {
 					nodes.forEach((node) => peer.send({ type: 'nodecreate', node }));
 					edges.forEach((edge) => peer.send({ type: 'edgecreate', edge }));
 					resolve();
@@ -46,14 +46,14 @@ const addGraph = (peer, nodes, edges) =>
 const node = (id, type, data, x = 0, y = 0) => ({ id, type, position: { x, y }, data: { type, ...data }, class: 'w-[150px]' });
 
 const readValue = (peer, id) =>
-	peer.page.evaluate((id) => new Promise((r) => window.__stores.flowValues.subscribe((v) => r(v[id] ?? null))()), id);
+	peer.page.evaluate((id) => new Promise((r) => window.__tp.test.v1.flowValues.subscribe((v) => r(v[id] ?? null))()), id);
 const readError = (peer, id) =>
-	peer.page.evaluate((id) => new Promise((r) => window.__stores.scriptErrors.subscribe((m) => r(m[id] ?? null))()), id);
+	peer.page.evaluate((id) => new Promise((r) => window.__tp.test.v1.scriptErrors.subscribe((m) => r(m[id] ?? null))()), id);
 const objVisible = (peer, uuid) =>
 	peer.page.evaluate(
 		(uuid) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const o = g?.getObjectByProperty('uuid', uuid);
 					r(o ? o.visible : null);
 				})()
@@ -64,7 +64,7 @@ const objPos = (peer, uuid) =>
 	peer.page.evaluate(
 		(uuid) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const o = g?.getObjectByProperty('uuid', uuid);
 					r(o ? [o.position.x, o.position.y, o.position.z] : null);
 				})()
@@ -72,9 +72,9 @@ const objPos = (peer, uuid) =>
 		uuid
 	);
 const setData = (peer, id, patch) =>
-	peer.page.evaluate(([id, patch]) => window.__stores.nodesHandler.setNodeData(id, patch), [id, patch]);
+	peer.page.evaluate(([id, patch]) => window.__tp.test.v1.nodesHandler.setNodeData(id, patch), [id, patch]);
 const edgeIds = (peer) =>
-	peer.page.evaluate(() => new Promise((r) => window.__stores.flowEdges.subscribe((e) => r(e.map((x) => x.id)))()));
+	peer.page.evaluate(() => new Promise((r) => window.__tp.test.v1.flowEdges.subscribe((e) => r(e.map((x) => x.id)))()));
 
 h.run(async () => {
 	const browser = await h.launch();
@@ -176,7 +176,7 @@ h.run(async () => {
 	// --- 6: removing a socket prunes the wire it stranded, on both peers ---------------
 	h.check((await edgeIds(B)).includes('e-n1-s1.a'), 'premise: B holds the wire into s1.a');
 	const dropped = await A.page.evaluate(() =>
-		window.__stores.scriptSockets.setScriptSockets('s1', { inputs: [{ name: 'other', type: 'number' }] })
+		window.__tp.test.v1.scriptSockets.setScriptSockets('s1', { inputs: [{ name: 'other', type: 'number' }] })
 	);
 	h.check(JSON.stringify(dropped) === JSON.stringify(['e-n1-s1.a']), 'removing input `a` drops exactly its wire (' + JSON.stringify(dropped) + ')');
 	await h.eventually(() => edgeIds(B), (ids) => !ids.includes('e-n1-s1.a') && ids.includes('e-s1.show-vis.on'), 'B dropped the stranded wire and kept the output wire');

@@ -9,15 +9,15 @@ h.run(async () => {
 
 	// toggle on via the radial action (as the sector would)
 	await A.page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		window.__stores.vrControls.executeVRMenuAction('stats');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.vrControls.executeVRMenuAction('stats');
 	});
 	await A.page.waitForTimeout(900);
 
 	const card = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.globalScene.subscribe((scene) => {
+				window.__tp.test.v1.globalScene.subscribe((scene) => {
 					const node = scene?.getObjectByName('vr-stats-card');
 					resolve(!!node);
 				})();
@@ -28,7 +28,7 @@ h.run(async () => {
 	const text = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.globalScene.subscribe((scene) => {
+				window.__tp.test.v1.globalScene.subscribe((scene) => {
 					const node = scene?.getObjectByName('vr-stats-card');
 					let found = '';
 					node?.traverse((o) => {
@@ -45,18 +45,18 @@ h.run(async () => {
 
 	// the card belongs to the hand opposite the menu hand
 	const hands = await A.page.evaluate(() => ({
-		menuRight: window.__stores.vrRadialMenu.statsHand('right'),
-		menuLeft: window.__stores.vrRadialMenu.statsHand('left')
+		menuRight: window.__tp.test.v1.vrRadialMenu.statsHand('right'),
+		menuLeft: window.__tp.test.v1.vrRadialMenu.statsHand('left')
 	}));
 	h.check(hands.menuRight === 'left' && hands.menuLeft === 'right', 'stats hand swaps with the menu hand');
 
 	// toggle off unmounts; preference persisted both ways
-	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('stats'));
+	await A.page.evaluate(() => window.__tp.test.v1.vrControls.executeVRMenuAction('stats'));
 	await A.page.waitForTimeout(400);
 	const gone = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.globalScene.subscribe((scene) =>
+				window.__tp.test.v1.globalScene.subscribe((scene) =>
 					resolve(!scene?.getObjectByName('vr-stats-card'))
 				)();
 			})

@@ -8,12 +8,12 @@ const h = require('./helpers.cjs');
 
 const edgeSel = (page) =>
 	page.evaluate(
-		() => new Promise((r) => window.__stores.faceEdit.edgeEditSelected.subscribe((v) => r([...v]))())
+		() => new Promise((r) => window.__tp.test.v1.faceEdit.edgeEditSelected.subscribe((v) => r([...v]))())
 	);
 
 const editBox = (page) =>
 	page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.children[g.children.length - 1];
@@ -29,7 +29,7 @@ h.run(async () => {
 
 	// --------------------------------------- 1. picking the NEAREST edge
 	const picks = await A.page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const T = w.THREE;
 		const tris = w.faceEdit.currentFaces();
 		void tris;
@@ -68,7 +68,7 @@ h.run(async () => {
 	);
 
 	const shared = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const geo = g.getObjectByProperty('uuid', uuid).geometry;
 		const tris = w.faceEdit.readTriangles(geo);
@@ -95,7 +95,7 @@ h.run(async () => {
 
 	// --------------------------------------------- 2. select / multi / clear
 	const flow = await A.page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const read = () => {
 			let v;
 			w.faceEdit.edgeEditSelected.subscribe((x) => (v = [...x]))();
@@ -133,7 +133,7 @@ h.run(async () => {
 
 	// ------------------------------------------------- 3. the edge overlay
 	const overlay = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const scene = await new Promise((r) => w.globalScene.subscribe(r)());
 		const find = () => {
 			let hit = null;
@@ -171,7 +171,7 @@ h.run(async () => {
 	// gives a band on a cube; the two used to be conflated, which is what made
 	// "loop select" pick the inner edges of a subdivided face.
 	const loop = await A.page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const ok = w.faceEdit.selectEdgeLoop();
 		let v;
 		w.faceEdit.edgeEditSelected.subscribe((x) => (v = [...x]))();
@@ -189,7 +189,7 @@ h.run(async () => {
 
 	// ------------------------------------------------------- 5. dissolve
 	const dissolve = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.faceEdit.exitFaceEdit();
 		w.commandsHandler.sceneCommand('/clear all');
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
@@ -246,7 +246,7 @@ h.run(async () => {
 
 	// ------------------------------------- 6. the session is NOT torn down
 	const session = await A.page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let before;
 		w.faceEdit.faceEditObject.subscribe((v) => (before = v))();
 		w.faceEdit.faceEditSubmode.set('faces');
@@ -267,7 +267,7 @@ h.run(async () => {
 	// survive the switch (user report: "clicking edges after selecting quads
 	// keeps them highlighted") — every switch goes through setFaceSubmode now
 	const carried = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const scene = await new Promise((r) => w.globalScene.subscribe(r)());
 		const overlayTris = () => {
 			let hit = null;
@@ -327,7 +327,7 @@ h.run(async () => {
 
 	// exiting clears the edge pick + overlay
 	const cleaned = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.faceEdit.exitFaceEdit();
 		const scene = await new Promise((r) => w.globalScene.subscribe(r)());
 		let hit = null;
@@ -361,12 +361,12 @@ h.run(async () => {
 		A.page.evaluate(
 			() =>
 				new Promise((r) =>
-					window.__stores.faceEdit.faceEditSelectedTris.subscribe((v) => r([...v].sort((a, b) => a - b)))()
+					window.__tp.test.v1.faceEdit.faceEditSelectedTris.subscribe((v) => r([...v].sort((a, b) => a - b)))()
 				)
 		);
 
 	const memoryUuid = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.faceEdit.exitFaceEdit();
 		w.meshEdit.exitEditMode();
 		w.faceEdit.faceEditSubmode.set('faces');
@@ -380,7 +380,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(400);
 
 	await modeBtn('faces');
-	await A.page.evaluate(() => window.__stores.faceEdit.pickFaceUnit(0));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.pickFaceUnit(0));
 	const picked = await facePick();
 	h.check(picked.length > 0, 'a face pick to remember (' + picked.length + ' tris) (premise)');
 
@@ -408,7 +408,7 @@ h.run(async () => {
 	// the EDGE slot has the same memory, and the two slots do not fight: picking
 	// edges must not cost the remembered faces (that is the whole per-mode point)
 	await modeBtn('edges');
-	await A.page.evaluate(() => window.__stores.faceEdit.selectAllEdges());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.selectAllEdges());
 	const edgesPicked = await edgeSel(A.page);
 	await modeBtn('vertices');
 	await modeBtn('edges');
@@ -423,7 +423,7 @@ h.run(async () => {
 	// invalidation must SURVIVE the fix: a real topology change makes the stored
 	// indices meaningless, so the stash is dropped rather than mis-restored
 	const invalidated = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const before = await new Promise((r) => w.faceEdit.faceEditSelectedTris.subscribe((v) => r([...v]))());
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const o = g.getObjectByProperty('uuid', uuid);
@@ -439,7 +439,7 @@ h.run(async () => {
 		'extrude changed the vertex count (' + invalidated.countBefore + ' -> ' + invalidated.countAfter + ') (premise)'
 	);
 	const stale = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		// a stash recorded under the OLD signature can never come back: force one
 		// by rewinding the geometry under it
 		w.faceEdit.stashSelections('faces');

@@ -19,12 +19,12 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 	const page = A.page;
-	await page.waitForFunction(() => !!window.__stores?.hudDocs, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.hudDocs, { timeout: 30000 });
 
 	// a menu screen with three buttons, each wired to its own Counter through a hudbutton
 	// node — so a press is observable as a replicated pulse, not just a DOM event
 	await page.evaluate(() => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		H.setHudDocFor('scene', {
 			screens: [
 				{
@@ -40,7 +40,7 @@ h.run(async () => {
 			],
 			active: 'menu'
 		});
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowNodes.set([
 			{ id: 'hb-start', type: 'hudbutton', position: { x: 0, y: 0 }, data: { type: 'hudbutton', element: 'b-start' } },
 			{ id: 'hb-quit', type: 'hudbutton', position: { x: 0, y: 120 }, data: { type: 'hudbutton', element: 'b-quit' } },
@@ -58,11 +58,11 @@ h.run(async () => {
 	// now — outside play, Tab/arrows/Space belong to the editor and its panels (the ring
 	// handler is window-CAPTURE and preventDefaults, so it took them from everyone). This
 	// suite always MEANT play mode; section 5 used to be the first place it said so.
-	await page.evaluate(() => window.__stores.isLocked.set(true));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await page.waitForTimeout(800);
 	const inPlay = await page.evaluate(() => {
 		let v;
-		window.__stores.isLocked.subscribe((x) => (v = x))();
+		window.__tp.test.v1.isLocked.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(inPlay === true, `premise: play mode is engaged, so the HUD owns its keys (${inPlay})`);
@@ -70,13 +70,13 @@ h.run(async () => {
 	const counts = () =>
 		page.evaluate(() => {
 			let t;
-			window.__stores.flowTriggers.subscribe((v) => (t = v))();
+			window.__tp.test.v1.flowTriggers.subscribe((v) => (t = v))();
 			return { start: t?.['c-start']?.count ?? 0, quit: t?.['c-quit']?.count ?? 0 };
 		});
 
 	// ---- 1. the claim: taken while a screen with buttons is up ---------------
 	const claimed = await page.evaluate(() => ({
-		claims: window.__stores.inputRuntime.isClaimed('keys'),
+		claims: window.__tp.test.v1.inputRuntime.isClaimed('keys'),
 		focusRing: document.querySelectorAll('#hud-layer .hud-focused').length
 	}));
 	h.check(claimed.claims, 'a HUD screen with buttons CLAIMS the keys, so editor fly and play WASD stand down');
@@ -189,7 +189,7 @@ h.run(async () => {
 
 	// ---- 5. THE CANNOT-SHIP RISK: Escape still leaves play mode -------------
 	const escape = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		// already in play mode from the top of the suite; kept so this section still
 		// stands alone if it is ever run on its own
 		s.isLocked.set(true);
@@ -220,7 +220,7 @@ h.run(async () => {
 	await page.keyboard.press('Escape');
 	await page.waitForTimeout(900);
 	const afterEsc = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let locked;
 		s.isLocked.subscribe((x) => (locked = x))();
 		return { escSeen: window.__escSeen, locked, claims: s.inputRuntime.isClaimed('keys') };
@@ -246,7 +246,7 @@ h.run(async () => {
 	// A claim left standing pauses editor fly for good, which is the same bug from the
 	// other end: not stuck in a screen, but unable to move afterwards.
 	const released = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		// a screen with no buttons at all
 		s.hudDocs.setHudDocFor('scene', {
 			screens: [{ id: 'hudless', name: 'Hudless', elements: [{ id: 'only-text', kind: 'text', label: 'no buttons' }] }],
@@ -268,7 +268,7 @@ h.run(async () => {
 	);
 
 	// editor navigation works again, which is what the release is FOR
-	const navBack = await page.evaluate(() => !window.__stores.inputRuntime.isClaimed('keys'));
+	const navBack = await page.evaluate(() => !window.__tp.test.v1.inputRuntime.isClaimed('keys'));
 	h.check(navBack, 'so editor fly and play WASD are back');
 
 	await h.finish(browser);

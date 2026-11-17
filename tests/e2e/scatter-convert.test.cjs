@@ -11,7 +11,7 @@ const scatterOf = (page, uuid) =>
 	page.evaluate(
 		(u) =>
 			new Promise((resolve) => {
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const o = g?.getObjectByProperty('uuid', u);
 					resolve(o ? JSON.stringify(o.userData.terrainScatter ?? null) : 'missing');
 				})();
@@ -21,7 +21,7 @@ const scatterOf = (page, uuid) =>
 /** The decoded lists, per set id. @param {any} page @param {string} uuid */
 const listsOf = (page, uuid) =>
 	page.evaluate((u) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		const t = g.getObjectByProperty('uuid', u);
@@ -31,18 +31,18 @@ const listsOf = (page, uuid) =>
 		for (const set of block?.sets ?? []) out[set.id] = s.terrainScatterCore.decodeInstances(s.terrainPaintCore.base64ToBytes(set.data), b);
 		return out;
 	}, uuid);
-const undoDepth = (page) => page.evaluate(() => new Promise((r) => window.__stores.history.undoStack.subscribe((s) => r(s.length))()));
-const state = (page) => page.evaluate(() => window.__stores.scatterEdit.scatterEditState());
+const undoDepth = (page) => page.evaluate(() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((s) => r(s.length))()));
+const state = (page) => page.evaluate(() => window.__tp.test.v1.scatterEdit.scatterEditState());
 /** @param {any} page */
-const objectCount = (page) => page.evaluate(() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g.children.length))()));
+const objectCount = (page) => page.evaluate(() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g.children.length))()));
 
 /** @param {any} page @param {number[]} pos @param {number[]} target */
 async function look(page, pos, target) {
 	await page.evaluate(
 		([p, t]) => {
 			let cam, orbit;
-			window.__stores.editorCam.subscribe((v) => (cam = v))();
-			window.__stores.orbitControls.subscribe((v) => (orbit = v))();
+			window.__tp.test.v1.editorCam.subscribe((v) => (cam = v))();
+			window.__tp.test.v1.orbitControls.subscribe((v) => (orbit = v))();
 			cam.position.set(p[0], p[1], p[2]);
 			orbit?.target?.set(t[0], t[1], t[2]);
 			orbit?.update?.();
@@ -56,7 +56,7 @@ async function look(page, pos, target) {
 async function stroke(page, uuid, x, z, steps = 10, dt = 0.05) {
 	await page.evaluate(
 		async ([u, x, z, steps, dt]) => {
-			const ts = window.__stores.terrainSculpt;
+			const ts = window.__tp.test.v1.terrainSculpt;
 			ts.beginStroke(u);
 			for (let i = 0; i < steps; i++) {
 				ts.strokeMove(u, x, z, dt);
@@ -75,14 +75,14 @@ h.run(async () => {
 	await h.connect(B, A);
 
 	const uuid = await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create Terrain 24 48');
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create Terrain 24 48');
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		return group.children[group.children.length - 1].uuid;
 	});
 	await h.eventuallyAfter(A, B, () => scatterOf(B.page, uuid), (v) => v !== 'missing', 'B has the terrain', 20000);
 	await look(A.page, [0.5, 22, 3], [0, 0, 0]);
 	const entered = await A.page.evaluate((u) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ok = s.terrainSculpt.enterSculpt(u);
 		s.terrainSculpt.sculptOp.set('scatter');
 		s.terrainSculpt.sculptRadius.set(3);
@@ -104,7 +104,7 @@ h.run(async () => {
 	const objsA = await objectCount(A.page);
 	d0 = await undoDepth(A.page);
 	const made = await A.page.evaluate(async ([u, ids]) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.scatterEdit.setScatterTool('select');
 		s.scatterEdit.setScatterSelection(u, new Map([['p:Cone', new Set(ids)]]));
 		const uuids = await s.scatterConvert.instancesToObjects({ scope: 'selection' });
@@ -129,13 +129,13 @@ h.run(async () => {
 	h.check((await listsOf(A.page, uuid))['p:Cone'].length === lists['p:Cone'].length - 5, 'and five fewer instances');
 	h.check((await undoDepth(A.page)) === d0 + 1, 'the whole conversion is ONE undo entry');
 	await h.eventuallyAfter(A, B, () => objectCount(B.page), (n) => n === objsA + 5, 'B has the five objects', 15000);
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	h.check((await objectCount(A.page)) === objsA && (await listsOf(A.page, uuid))['p:Cone'].length === lists['p:Cone'].length, 'one undo: objects gone, instances back');
 	await h.eventuallyAfter(A, B, () => objectCount(B.page), (n) => n === objsA, 'on B too', 15000);
 
 	// the confirm above 500
 	const asked = await A.page.evaluate(async (u) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		const t = g.getObjectByProperty('uuid', u);
@@ -157,7 +157,7 @@ h.run(async () => {
 
 	// ---- E5 copies -> a scatter set ---------------------------------------------------------------
 	const copies = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const out = [];
 		for (const [x, z] of [
 			[3, -8],
@@ -179,7 +179,7 @@ h.run(async () => {
 	const cBefore = (await listsOf(A.page, uuid))['p:Cone'].length;
 	const objsB4 = await objectCount(A.page);
 	d0 = await undoDepth(A.page);
-	const n = await A.page.evaluate((ids) => window.__stores.scatterConvert.objectsToScatter(ids), copies);
+	const n = await A.page.evaluate((ids) => window.__tp.test.v1.scatterConvert.objectsToScatter(ids), copies);
 	lists = await listsOf(A.page, uuid);
 	h.check(n === 4 && lists['p:Cone'].length === cBefore + 4, `four Cone copies became four instances (${cBefore} -> ${lists['p:Cone'].length})`);
 	const added = lists['p:Cone'].slice(-4);
@@ -188,21 +188,21 @@ h.run(async () => {
 	h.check((await undoDepth(A.page)) === d0 + 1, 'ONE undo entry');
 	await h.eventuallyAfter(A, B, async () => (await scatterOf(B.page, uuid)) === (await scatterOf(A.page, uuid)), (v) => v, 'B holds the new instances', 10000);
 	await h.eventuallyAfter(A, B, () => objectCount(B.page), (k) => k === objsB4 - 4, 'and lost the objects', 10000);
-	const mixed = await A.page.evaluate(async ([a, b]) => window.__stores.scatterConvert.scatterableSelection([a, b], []), [uuid, uuid]);
+	const mixed = await A.page.evaluate(async ([a, b]) => window.__tp.test.v1.scatterConvert.scatterableSelection([a, b], []), [uuid, uuid]);
 	h.check(mixed.ok === false, 'one object (or none) is refused with a reason');
 
 	// ---- save / reload keeps the edits --------------------------------------------------------------
-	await A.page.evaluate(() => window.__stores.terrainSculpt.exitSculpt());
+	await A.page.evaluate(() => window.__tp.test.v1.terrainSculpt.exitSculpt());
 	const saved = await scatterOf(A.page, uuid);
 	const zip = await A.page.evaluate(async () => {
-		const s = window.__stores.sessions;
+		const s = window.__tp.test.v1.sessions;
 		const out = await s.exportSessionZip(s.buildSessionPayload('Edited scatter'));
 		return Array.from(new Uint8Array(out instanceof Blob ? await out.arrayBuffer() : out));
 	});
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	await A.page.waitForTimeout(800);
 	await A.page.evaluate(async (arr) => {
-		const s = window.__stores.sessions;
+		const s = window.__tp.test.v1.sessions;
 		await s.applySession(await s.readSessionZip(new Uint8Array(arr).buffer), { backup: false });
 	}, zip);
 	await h.eventually(() => scatterOf(A.page, uuid), (v) => v === saved, 'the edited scatter survives a save/load round-trip', 15000);

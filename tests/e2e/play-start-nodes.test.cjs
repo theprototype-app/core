@@ -45,8 +45,8 @@ h.run(async () => {
 				{ id: 'e3', source: 'ms', target: 'cMS' },
 				{ id: 'e4', source: 'me', target: 'cME' }
 			];
-			window.__stores.flowNodes.set(nodes);
-			window.__stores.flowEdges.set(edges);
+			window.__tp.test.v1.flowNodes.set(nodes);
+			window.__tp.test.v1.flowEdges.set(edges);
 		});
 	await build(A.page);
 	await build(B.page);
@@ -55,7 +55,7 @@ h.run(async () => {
 	const counts = (page) =>
 		page.evaluate(() => {
 			let t;
-			window.__stores.flowTriggers.subscribe((v) => (t = v))();
+			window.__tp.test.v1.flowTriggers.subscribe((v) => (t = v))();
 			const c = (id) => t[id]?.count ?? 0;
 			return { start: c('cS'), stop: c('cE'), myStart: c('cMS'), myStop: c('cME') };
 		});
@@ -65,13 +65,13 @@ h.run(async () => {
 	h.check(JSON.stringify((await both()).a) === JSON.stringify({ start: 0, stop: 0, myStart: 0, myStop: 0 }), 'premise: nothing fired in the editor');
 
 	// 1. A presses Play
-	await A.page.evaluate(() => window.__stores.isLocked.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await h.eventually(both, (r) => r.a.start === 1 && r.b.start === 1, 'A presses Play: On Play start (session) pulses once on A AND on B', 10000);
 	const r1 = await both();
 	h.check(r1.a.myStart === 1 && r1.b.myStart === 0, `On Play start (me) pulses on A only (${fmt(r1)})`);
 
 	// 2. B presses Play too
-	await B.page.evaluate(() => window.__stores.isLocked.set(true));
+	await B.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await h.eventually(both, (r) => r.b.myStart === 1, 'B presses Play: On Play start (me) pulses on B', 10000);
 	await B.page.waitForTimeout(1500);
 	const r2 = await both();
@@ -92,7 +92,7 @@ h.run(async () => {
 
 	// 5. the rename
 	const names = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		return {
 			start: s.nodeCatalog.findNodeSpec('gamestart')?.label ?? null,
 			ps: s.nodeCatalog.findNodeSpec('onplaystart')?.label ?? null,

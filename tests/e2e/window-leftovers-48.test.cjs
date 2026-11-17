@@ -18,7 +18,7 @@ const S = (page, fn, arg) => page.evaluate(fn, arg);
 const read = (page, path) =>
 	S(page, (path) => {
 		const [mod, name] = path.split('.');
-		const st = name ? window.__stores[mod]?.[name] : window.__stores[mod];
+		const st = name ? window.__tp.test.v1[mod]?.[name] : window.__tp.test.v1[mod];
 		let v;
 		st.subscribe((x) => (v = x))();
 		return v;
@@ -61,15 +61,15 @@ h.run(async () => {
 
 	// ═══ A. Statistics is tab-able ═══
 	await S(page, () => {
-		window.__stores.sceneBudget.statsOpen.set(true);
-		window.__stores.chatHidden.set('');
+		window.__tp.test.v1.sceneBudget.statsOpen.set(true);
+		window.__tp.test.v1.chatHidden.set('');
 	});
 	await page.waitForTimeout(1200);
 	h.check(await page.locator('#stats-window').isVisible(), 'A premise: Statistics is open as a floating window');
 	let sub = await groupWith(page, '#stats-window');
 	h.check(!!sub && sub.includes('Chat'), `A: Statistics' own menu offers Group with… ▸ Chat (${JSON.stringify(sub)})`);
 	await closeMenus(page);
-	const cands = await S(page, () => window.__stores.windowTabs.groupCandidates('chat').map((c) => c.title));
+	const cands = await S(page, () => window.__tp.test.v1.windowTabs.groupCandidates('chat').map((c) => c.title));
 	h.check(cands.includes('Statistics'), `A: Chat's "Group with…" offers Statistics (${cands.join(', ')})`);
 	sub = await groupWith(page, '#stats-window');
 	await S(page, () => {
@@ -84,14 +84,14 @@ h.run(async () => {
 	await shot(page, 'a-stats-chat-group');
 	// back apart: closing Statistics leaves the group
 	await S(page, () => {
-		window.__stores.sceneBudget.statsOpen.set(false);
-		window.__stores.chatHidden.set('hidden');
+		window.__tp.test.v1.sceneBudget.statsOpen.set(false);
+		window.__tp.test.v1.chatHidden.set('hidden');
 	});
 	await page.waitForTimeout(800);
 
 	// ═══ B. a floating window dropped onto a split pane ═══
 	await S(page, async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphClose.set(false);
 		await new Promise((r) => setTimeout(r, 600));
 		s.explorerClose.set(false);
@@ -105,7 +105,7 @@ h.run(async () => {
 		return r ? { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), w: Math.round(r.width) } : null;
 	}));
 	h.check(!!panes[0] && !!panes[1], `B premise: the dock is split, Node editor | Explorer (${JSON.stringify(panes)})`);
-	await S(page, () => window.__stores.sceneBudget.statsOpen.set(true));
+	await S(page, () => window.__tp.test.v1.sceneBudget.statsOpen.set(true));
 	await page.waitForTimeout(1000);
 	const from = await headerPoint(page, '#stats-window');
 	const to = panes[1];
@@ -130,7 +130,7 @@ h.run(async () => {
 	const shown = await read(page, 'bottomDock.dockShownKeys');
 	h.check(shown.includes('flow') && shown.includes('stats'), `B: the dock shows Node editor | Statistics (${shown.join(' | ')})`);
 	await shot(page, 'b-dropped');
-	await S(page, () => window.__stores.bottomDock.unsplitDock('flow'));
+	await S(page, () => window.__tp.test.v1.bottomDock.unsplitDock('flow'));
 	await page.waitForTimeout(500);
 
 	// ═══ C. M11 under a pinned Connect bar ═══
@@ -141,14 +141,14 @@ h.run(async () => {
 		P.evaluate(() => {
 			const pill = document.querySelector('.connect-pill');
 			const cs = getComputedStyle(pill);
-			const g = window.__stores.sidebars.geometry;
+			const g = window.__tp.test.v1.sidebars.geometry;
 			let geo;
 			g.subscribe((v) => (geo = v))();
 			return { bl: parseFloat(cs.borderBottomLeftRadius), br: parseFloat(cs.borderBottomRightRadius), barBottom: Math.round(pill.getBoundingClientRect().bottom), leftTop: geo.left.top, rightTop: geo.right.top };
 		});
 	const sidebar = async ({ side, open = true, full = false }) => {
 		await P.evaluate(({ side, open, full }) => {
-			const S = window.__stores;
+			const S = window.__tp?.test.v1;
 			S.sidebars.inspectorSide.set(side);
 			S.inspectorKind.set('scene');
 			S.inspectorClose.set(!open);

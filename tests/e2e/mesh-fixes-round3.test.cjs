@@ -3,7 +3,7 @@ const h = require('./helpers.cjs');
 
 const editBox = (page, segs = 0) =>
 	page.evaluate(async (segs) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.children[g.children.length - 1];
@@ -22,11 +22,11 @@ h.run(async () => {
 	// ---- REPORT: clicking a face should not extrude it ---------------------
 	const uuid = await editBox(A.page);
 	const armed = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.faceEdit.faceEditOp.subscribe(r)())
+		() => new Promise((r) => window.__tp.test.v1.faceEdit.faceEditOp.subscribe(r)())
 	);
 	h.check(armed === 'move', 'a session opens with MOVE armed, not extrude (' + armed + ')');
 	const clicked = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const geo = () => g.getObjectByProperty('uuid', uuid).geometry;
 		const count = () => {
@@ -50,7 +50,7 @@ h.run(async () => {
 
 	// ---- REPORT: deselected face keeps its highlight -----------------------
 	const overlays = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const scene = await new Promise((r) => w.globalScene.subscribe(r)());
 		const find = (name) => {
 			let hit = null;
@@ -88,7 +88,7 @@ h.run(async () => {
 
 	// ---- REPORT: Ctrl+A / Ctrl+I dead in edges and vertices ---------------
 	const perMode = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const readE = () => {
 			let v;
 			w.faceEdit.edgeEditSelected.subscribe((x) => (v = [...x]))();
@@ -124,10 +124,10 @@ h.run(async () => {
 	h.check(perMode.vInv === 0, '...and invert clears it');
 
 	// ---- REPORT: edge loop on a SUBDIVIDED face picked the inner edges -----
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	const gridUuid = await editBox(A.page, 3);
 	const loop = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		w.faceEdit.faceEditSubmode.set('edges');
 		const tris = w.faceEdit.readTriangles(g.getObjectByProperty('uuid', uuid).geometry);
@@ -173,11 +173,11 @@ h.run(async () => {
 	);
 
 	// ---- Cancel reverts the whole session ---------------------------------
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	const cancelUuid = await editBox(A.page);
 	const cancel = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const count = () => {
 			const x = g.getObjectByProperty('uuid', uuid).geometry;
@@ -212,8 +212,8 @@ h.run(async () => {
 	h.check(/revert/i.test(ui.label), '...with an aria-label saying what it does');
 
 	// ---- the cheat sheet is sectioned, and marks the ACTIVE mode ----------
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	await editBox(A.page);
 	await A.page.evaluate(() => document.querySelector('#mesh-keys-help').click());
 	await A.page.waitForSelector('#mesh-keys-popover');
@@ -238,10 +238,10 @@ h.run(async () => {
 	const modeKeys = await A.page.evaluate(() => {
 		const read = () => {
 			let f, v;
-			window.__stores.faceEdit.faceEditObject.subscribe((x) => (f = x))();
-			window.__stores.meshEdit.editingObject.subscribe((x) => (v = x))();
+			window.__tp.test.v1.faceEdit.faceEditObject.subscribe((x) => (f = x))();
+			window.__tp.test.v1.meshEdit.editingObject.subscribe((x) => (v = x))();
 			let sub;
-			window.__stores.faceEdit.faceEditSubmode.subscribe((x) => (sub = x))();
+			window.__tp.test.v1.faceEdit.faceEditSubmode.subscribe((x) => (sub = x))();
 			return v ? 'vertices' : f ? sub : 'none';
 		};
 		const press = (k, shift = false) =>

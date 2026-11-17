@@ -5,7 +5,7 @@ const h = require('./helpers.cjs');
 
 const triNormal = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		let grp;
 		s.objectsGroup.subscribe((v) => (grp = v))();
@@ -24,7 +24,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	const uuid = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		let grp;
 		s.objectsGroup.subscribe((v) => (grp = v))();
@@ -40,16 +40,16 @@ h.run(async () => {
 
 	// viewer ABOVE (+Y) -> the created face's normal should point up toward them
 	const okAbove = await A.page.evaluate(({ u, verts }) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		return s.faceEdit.createFaceFromVerts(u, verts, new s.THREE.Vector3(0, 5, 0));
 	}, { u: uuid, verts });
 	const nyAbove = await triNormal(A.page);
 
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 
 	// viewer BELOW (-Y) -> the winding flips so the normal points down toward them
 	await A.page.evaluate(({ u, verts }) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		return s.faceEdit.createFaceFromVerts(u, verts, new s.THREE.Vector3(0, -5, 0));
 	}, { u: uuid, verts });
 	const nyBelow = await triNormal(A.page);

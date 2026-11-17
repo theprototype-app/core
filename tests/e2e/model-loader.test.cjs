@@ -35,7 +35,7 @@ h.run(async () => {
 	const tinyB64 = fs.readFileSync(path.join(__dirname, 'fixtures', 'meshopt-ktx2.glb')).toString('base64');
 
 	const fixture = await page.evaluate(async (tinyB64) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		const { GLTFExporter } = s.GLTFExporterModule;
 		const toBlobUrl = (buf) => URL.createObjectURL(new Blob([buf], { type: 'model/gltf-binary' }));
@@ -134,7 +134,7 @@ h.run(async () => {
 
 	// ---- 1 one THREE ------------------------------------------------------------------------------
 	const one = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const hd = await window.__mlapi.loadModel('assets/ball.glb');
 		window.__h1 = hd;
 		let mesh = null;
@@ -153,7 +153,7 @@ h.run(async () => {
 
 	// ---- 2 one parse per URL ---------------------------------------------------------------------
 	const two = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const before = s.modelLoader.modelStats();
 		const h2 = await window.__mlapi.loadModel('assets/ball.glb', { lod: false });
 		window.__h2 = h2;
@@ -189,7 +189,7 @@ h.run(async () => {
 		window.__h1.scene.position.set(0, 0, 0);
 	});
 	await h.eventually(
-		() => page.evaluate(() => window.__stores.lod.lodStats().meshes.filter((m) => m.explicit && m.name === 'Body' && Array.isArray(m.levels) && m.levels.length >= 2).length),
+		() => page.evaluate(() => window.__tp.test.v1.lod.lodStats().meshes.filter((m) => m.explicit && m.name === 'Body' && Array.isArray(m.levels) && m.levels.length >= 2).length),
 		(n) => n >= 1,
 		'3.1 the instance\'s mesh is registered EXPLICITLY (scene root, not objectsGroup) and its levels were built',
 		20000
@@ -203,13 +203,13 @@ h.run(async () => {
 		window.__h2.scene.traverse((o) => (o.isMesh ? (flag = o.userData.lod) : null));
 		window.__ml.holder.add(window.__h2.scene);
 		window.__h2.scene.position.set(4, 0, 0);
-		return { flag, far: window.__ml.drawn(window.__h2.scene, 80), explicit: window.__stores.lod.lodStats().meshes.filter((m) => m.explicit && m.name === 'Body').length };
+		return { flag, far: window.__ml.drawn(window.__h2.scene, 80), explicit: window.__tp.test.v1.lod.lodStats().meshes.filter((m) => m.explicit && m.name === 'Body').length };
 	});
 	h.check(off4.flag === false && off4.far === fixture.lod0, '4.1 lod:false marks every mesh out of auto LOD and it draws whole from 80 m (' + off4.far + ')');
 
 	// ---- 5 contract P1: level files beside a packaged model ---------------------------------------
 	const p1 = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const hd = await window.__mlapi.loadModel('assets/ball.glb', { lod: [{ file: 'ball.lod2.glb', ratio: 0.03 }, { file: 'ball.lod1.glb', ratio: 0.12 }] });
 		window.__h5 = hd;
 		window.__ml.holder.add(hd.scene);
@@ -268,7 +268,7 @@ h.run(async () => {
 	// ---- 8 Meshopt + KTX2 ----------------------------------------------------------------------------
 	h.check(basisHits.length === 0, '8.0 (premise) six plain GLBs loaded and the Basis transcoder was never fetched (' + basisHits.length + ')');
 	const kt = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		try {
 			const hd = await window.__mlapi.loadModel('assets/tiny.glb', { lod: false });
 			window.__h8 = hd;
@@ -299,7 +299,7 @@ h.run(async () => {
 				out[k] = String(e?.message ?? e);
 			}
 		}
-		out.templates = window.__stores.modelLoader.modelStats().templates.map((t) => t.url);
+		out.templates = window.__tp.test.v1.modelLoader.modelStats().templates.map((t) => t.url);
 		return out;
 	});
 	h.check(/not a file this module packaged/.test(err.missing), '9.1 a packaged path the module does not have rejects with the reason: ' + err.missing);
@@ -307,7 +307,7 @@ h.run(async () => {
 
 	// ---- 11 a copy dropped without release() --------------------------------------------------------
 	const park = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ml = s.modelLoader;
 		const hd = window.__h1;
 		const meshOf = (root) => {
@@ -358,7 +358,7 @@ h.run(async () => {
 
 	// ---- 10 T2: the module's teardown disposes everything it loaded ---------------------------------
 	const t2 = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const og = window.__ml.read(s.objectsGroup);
 		const kept = window.__h1.instance();
 		kept.name = 'mltest-kept';
@@ -395,7 +395,7 @@ h.run(async () => {
 	h.check(/after dispose/.test(t2.after.instanceAfter), '10.5 a disposed handle refuses instance(): ' + t2.after.instanceAfter);
 
 	const inflight = await page.evaluate(async (b64) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const bin = atob(b64);
 		const u8 = new Uint8Array(bin.length);
 		for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
@@ -413,7 +413,7 @@ h.run(async () => {
 	h.check(inflight.stats.templates.length === 0 && JSON.stringify(inflight.stats.owners) === '{}', '10.7 ... and leaves nothing behind (' + JSON.stringify(inflight.stats.templates) + ', owners ' + JSON.stringify(inflight.stats.owners) + ')');
 	// the same, with the unload landing while the file is really being fetched/parsed
 	const midway = await page.evaluate(async (b64) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const bin = atob(b64);
 		const u8 = new Uint8Array(bin.length);
 		for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);

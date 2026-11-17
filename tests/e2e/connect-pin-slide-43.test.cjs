@@ -16,7 +16,7 @@ const SLOW = `.burger, .top-right-chrome { transition: left 1.5s linear, right 1
 /** open the Inspector as the right (or left) column, optionally pinned at a width (toolbar43.shared's helper) */
 async function sidebar(page, { side = 'right', open = true, full = false, w = 440 } = {}) {
 	await page.evaluate(({ side, open, full, w }) => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		S.sidebars.inspectorSide.set(side);
 		S.inspectorKind.set('scene');
 		S.inspectorClose.set(!open);

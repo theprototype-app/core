@@ -22,10 +22,10 @@ const N6_UNFOLDED = { viewport: { width: 770, height: 850 }, deviceScaleFactor: 
 const DESKTOP = { viewport: { width: 1440, height: 900 } };
 const STORAGE = { toursSeen: '{"editor-touch":true,"editor":true}' };
 
-/** read a store by dotted path on window.__stores @param {any} page @param {string} path */
+/** read a store by dotted path on window.__tp?.test.v1 @param {any} page @param {string} path */
 const store = (page, path) =>
 	page.evaluate((p) => {
-		let s = window.__stores;
+		let s = window.__tp?.test.v1;
 		for (const k of p.split('.')) s = s[k];
 		let v;
 		s.subscribe((x) => (v = x))();
@@ -65,8 +65,8 @@ async function look(page, pos, target) {
 	await page.evaluate(
 		([p, t]) => {
 			let cam, orbit;
-			window.__stores.editorCam.subscribe((v) => (cam = v))();
-			window.__stores.orbitControls.subscribe((v) => (orbit = v))();
+			window.__tp.test.v1.editorCam.subscribe((v) => (cam = v))();
+			window.__tp.test.v1.orbitControls.subscribe((v) => (orbit = v))();
 			cam.position.set(p[0], p[1], p[2]);
 			if (orbit?.target) {
 				orbit.target.set(t[0], t[1], t[2]);
@@ -84,7 +84,7 @@ async function look(page, pos, target) {
 const make = (page, at, size = 1) =>
 	page.evaluate(
 		([p, s]) => {
-			const st = window.__stores;
+			const st = window.__tp?.test.v1;
 			st.commandsHandler.sceneCommand(`/create Box ${s} ${s} ${s}`);
 			let g;
 			st.objectsGroup.subscribe((v) => (g = v))();
@@ -100,7 +100,7 @@ const make = (page, at, size = 1) =>
 const screenOf = (page, uuid, dx = 0, dy = 0) =>
 	page.evaluate(
 		([u, ox, oy]) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const THREE = s.THREE;
 			let g, cam, r;
 			s.objectsGroup.subscribe((v) => (g = v))();
@@ -133,7 +133,7 @@ const screenOf = (page, uuid, dx = 0, dy = 0) =>
 const screenOfLocal = (page, uuid, local) =>
 	page.evaluate(
 		([u, l]) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const THREE = s.THREE;
 			let g, cam, r;
 			s.objectsGroup.subscribe((v) => (g = v))();
@@ -165,7 +165,7 @@ const cell = (st, id) => st?.cells.find((c) => c.id === id) ?? null;
 /** close everything a section may have left open */
 async function rest(page) {
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.objectActions.setEditorMode('edit');
 		s.multiSelectMode.set(false);
 		s.objectActions.deselectObject();
@@ -192,13 +192,13 @@ h.run(async () => {
 
 	// ---- G2 ----
 	await rest(P);
-	const g2closed = await P.evaluate(() => window.__stores.addObjects.spawnAtPoint('/create Box 1 1 1', [-1.2, 0.5, 0])?.uuid);
+	const g2closed = await P.evaluate(() => window.__tp.test.v1.addObjects.spawnAtPoint('/create Box 1 1 1', [-1.2, 0.5, 0])?.uuid);
 	await P.waitForTimeout(500);
 	h.check((await store(P, 'inspectorClose')) === true, 'G2 adding a primitive with the Inspector closed does NOT open it');
 	h.check((await sel(P)).includes(g2closed), 'G2 ...the new object is selected');
-	await P.evaluate(() => window.__stores.showSidebar('scene'));
+	await P.evaluate(() => window.__tp.test.v1.showSidebar('scene'));
 	await P.waitForTimeout(400);
-	const g2open = await P.evaluate(() => window.__stores.addObjects.spawnAtPoint('/create Box 1 1 1', [1.2, 0.5, 0])?.uuid);
+	const g2open = await P.evaluate(() => window.__tp.test.v1.addObjects.spawnAtPoint('/create Box 1 1 1', [1.2, 0.5, 0])?.uuid);
 	await P.waitForTimeout(500);
 	h.check(
 		(await store(P, 'inspectorClose')) === false && (await store(P, 'inspectorKind')) === 'selection',
@@ -210,7 +210,7 @@ h.run(async () => {
 	// a folded phone is narrow: bring both boxes into its view
 	await P.evaluate(([a, b]) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		g.getObjectByProperty('uuid', a).position.set(-0.75, 0.5, 0);
 		g.getObjectByProperty('uuid', b).position.set(0.75, 0.5, 0);
 	}, [boxA, boxB]);
@@ -218,7 +218,7 @@ h.run(async () => {
 
 	// ---- G11 ----
 	await rest(P);
-	await P.evaluate((u) => window.__stores.objectActions.selectObject(u), boxA);
+	await P.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), boxA);
 	await P.waitForTimeout(400);
 	let st = await strip(P);
 	const order = (st?.cells ?? []).map((c) => c.id).join(',');
@@ -262,15 +262,15 @@ h.run(async () => {
 	await tapEl(P, touch, '#ps-interact');
 	h.check((await store(P, 'editorMode')) === 'edit', 'G13 the strip turns Interact off');
 	h.check(JSON.stringify(await sel(P)) === JSON.stringify([boxA]), `G13 ...and the selection comes back (${JSON.stringify(await sel(P))})`);
-	await P.evaluate(([a, b]) => window.__stores.objectActions.applySelectionSet([a, b]), [boxA, boxB]);
+	await P.evaluate(([a, b]) => window.__tp.test.v1.objectActions.applySelectionSet([a, b]), [boxA, boxB]);
 	await P.waitForTimeout(300);
 	await tapEl(P, touch, '#ps-interact');
 	const doomed = await make(P, [0, 0.5, -3]);
-	await P.evaluate(() => window.__stores.objectActions.setEditorMode('edit'));
-	await P.evaluate(([a, b]) => window.__stores.objectActions.applySelectionSet([a, b]), [boxA, doomed]);
+	await P.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('edit'));
+	await P.evaluate(([a, b]) => window.__tp.test.v1.objectActions.applySelectionSet([a, b]), [boxA, doomed]);
 	await P.waitForTimeout(300);
 	await tapEl(P, touch, '#ps-interact');
-	await P.evaluate((u) => window.__stores.objectActions.deleteObjectsByUuid([u]), doomed);
+	await P.evaluate((u) => window.__tp.test.v1.objectActions.deleteObjectsByUuid([u]), doomed);
 	await P.waitForTimeout(300);
 	await tapEl(P, touch, '#ps-interact');
 	h.check(JSON.stringify(await sel(P)) === JSON.stringify([boxA]), `G13 an object deleted during Interact is dropped from the restore (${JSON.stringify(await sel(P))})`);
@@ -289,7 +289,7 @@ h.run(async () => {
 	await P.waitForTimeout(700);
 	h.check(JSON.stringify(await sel(P)) === JSON.stringify([boxA]), 'G14 ...and a third tap selects it again');
 	await rest(P);
-	await P.evaluate(() => window.__stores.multiSelectMode.set(true));
+	await P.evaluate(() => window.__tp.test.v1.multiSelectMode.set(true));
 	await P.waitForTimeout(200);
 	const atB = await screenOf(P, boxB);
 	at = await screenOf(P, boxA);
@@ -305,12 +305,12 @@ h.run(async () => {
 
 	// ---- G4 (touch) ----
 	console.log('\n=== G4: Interact + physics, carried by a finger ===');
-	await P.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+	await P.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 	await P.waitForTimeout(2500);
 	// a large crate, near: the finger takes it well off its centre
 	const crate = await make(P, [0, 0.6, 0], 1.2);
 	await P.evaluate((u) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByProperty('uuid', u);
@@ -320,20 +320,20 @@ h.run(async () => {
 		// the other boxes off to the side, out of the way
 		for (const c of g.children) if (c.uuid !== u) c.position.x += c.position.x < 0 ? -4 : 4;
 	}, crate);
-	await P.evaluate(() => window.__stores.physics.toggleSimulation());
-	await h.eventually(() => P.evaluate(() => window.__stores.physics.physicsDebug().length), (n) => n > 0, '(premise) the simulation runs');
+	await P.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
+	await h.eventually(() => P.evaluate(() => window.__tp.test.v1.physics.physicsDebug().length), (n) => n > 0, '(premise) the simulation runs');
 	await P.waitForTimeout(1200);
-	await P.evaluate(() => window.__stores.objectActions.setEditorMode('interact'));
+	await P.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('interact'));
 
 	/** carry with a finger: take it at (dx, dy) px from its centre, move the finger by (mx, my) in `steps`, hold, then let go */
 	async function fingerCarry(uuid, dx, dy, mx, my, { steps = 16, stepMs = 25, holdMs = 600, flick = false } = {}) {
 		const t0 = await screenOf(P, uuid, dx, dy);
-		const cam0 = (await store(P, 'globalCamera')) ? await P.evaluate(() => { let c; window.__stores.globalCamera.subscribe((v) => (c = v))(); return c.position.toArray(); }) : null;
+		const cam0 = (await store(P, 'globalCamera')) ? await P.evaluate(() => { let c; window.__tp.test.v1.globalCamera.subscribe((v) => (c = v))(); return c.position.toArray(); }) : null;
 		await touch.send('touchStart', t0.x, t0.y);
 		// wait for the grab instead of a fixed 250 ms (a frame or two on software GL); the move starts
 		// from a carry that exists, and a carry that never comes still reads as not taken
-		const taken = await P.waitForFunction((u) => window.__stores.playInteract.playInteractDebug().carrying === u, uuid, { timeout: 3000 })
-			.then(() => uuid, () => P.evaluate(() => window.__stores.playInteract.playInteractDebug().carrying));
+		const taken = await P.waitForFunction((u) => window.__tp.test.v1.playInteract.playInteractDebug().carrying === u, uuid, { timeout: 3000 })
+			.then(() => uuid, () => P.evaluate(() => window.__tp.test.v1.playInteract.playInteractDebug().carrying));
 		const t1 = await screenOf(P, uuid);
 		const grip0 = t0.local ? await screenOfLocal(P, uuid, t0.local) : null;
 		for (let i = 1; i <= steps; i++) {
@@ -343,14 +343,14 @@ h.run(async () => {
 		// a flick lets go the moment the finger stops (reading the screen first would let the carry settle)
 		if (flick) await touch.send('touchEnd', 0, 0);
 		else await P.waitForTimeout(holdMs);
-		const vFlick = flick ? await P.evaluate((u) => window.__stores.physics.bodyVelocityOf(u), uuid) : null;
+		const vFlick = flick ? await P.evaluate((u) => window.__tp.test.v1.physics.bodyVelocityOf(u), uuid) : null;
 		const t2 = await screenOf(P, uuid);
 		const grip2 = t0.local ? await screenOfLocal(P, uuid, t0.local) : null;
 		if (!flick) await touch.send('touchEnd', 0, 0);
-		const v = vFlick ?? (await P.evaluate((u) => window.__stores.physics.bodyVelocityOf(u), uuid));
+		const v = vFlick ?? (await P.evaluate((u) => window.__tp.test.v1.physics.bodyVelocityOf(u), uuid));
 		await P.waitForTimeout(80);
-		const v2 = await P.evaluate((u) => window.__stores.physics.bodyVelocityOf(u), uuid);
-		const cam1 = await P.evaluate(() => { let c; window.__stores.globalCamera.subscribe((v) => (c = v))(); return c.position.toArray(); });
+		const v2 = await P.evaluate((u) => window.__tp.test.v1.physics.bodyVelocityOf(u), uuid);
+		const cam1 = await P.evaluate(() => { let c; window.__tp.test.v1.globalCamera.subscribe((v) => (c = v))(); return c.position.toArray(); });
 		const camMoved = cam0 ? Math.hypot(cam1[0] - cam0[0], cam1[1] - cam0[1], cam1[2] - cam0[2]) : 0;
 		const speed = (x) => (x ? Math.hypot(...x.linvel) : null);
 		return {
@@ -382,24 +382,24 @@ h.run(async () => {
 	// FAR: 10 m away — it used to be pulled in to 6 m
 	await P.evaluate((u) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByProperty('uuid', u);
-		window.__stores.physics.setBodyVelocity?.(u, [0, 0, 0], [0, 0, 0]);
+		window.__tp.test.v1.physics.setBodyVelocity?.(u, [0, 0, 0], [0, 0, 0]);
 		return o.position.toArray();
 	}, crate);
 	const crateAt = (await screenOf(P, crate)).pos;
 	await look(P, [crateAt[0], 3, crateAt[2] + 10], [crateAt[0], 0.6, crateAt[2]]);
 	const dist0 = await P.evaluate((u) => {
 		let g, cam;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
-		window.__stores.globalCamera.subscribe((v) => (cam = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.globalCamera.subscribe((v) => (cam = v))();
 		return cam.position.distanceTo(g.getObjectByProperty('uuid', u).position);
 	}, crate);
 	c = await fingerCarry(crate, 6, 4, -60, -50);
 	const dist1 = await P.evaluate((u) => {
 		let g, cam;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
-		window.__stores.globalCamera.subscribe((v) => (cam = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.globalCamera.subscribe((v) => (cam = v))();
 		return cam.position.distanceTo(g.getObjectByProperty('uuid', u).position);
 	}, crate);
 	h.check(c.hit && c.taken, 'G4 (far) the finger takes the crate 10 m away');
@@ -408,7 +408,7 @@ h.run(async () => {
 	// the flick aims at where the crate IS: wait for the far carry's release to come to rest (a fixed
 	// 1.5 s left a light crate still sliding at ~4 fps, so the finger landed beside it)
 	await h.eventually(
-		() => P.evaluate((u) => window.__stores.physics.bodyVelocityOf(u), crate),
+		() => P.evaluate((u) => window.__tp.test.v1.physics.bodyVelocityOf(u), crate),
 		(v) => !!v && Math.hypot(...v.linvel) < 0.05,
 		'(premise) the crate is at rest before the flick',
 		15000
@@ -420,8 +420,8 @@ h.run(async () => {
 	c = await fingerCarry(crate, 10, 10, 60, -380, { steps: 3, stepMs: 16, flick: true });
 	h.check(c.taken, 'G4 (flick) taken');
 	h.check(c.speed > 0.3 && c.speed <= 8.05, `G4 (flick) letting go mid-move THROWS, bounded to 8 m/s (${c.speed.toFixed(2)} m/s at release)`);
-	await P.evaluate(() => window.__stores.physics.stopSimulation());
-	await P.evaluate(() => window.__stores.objectActions.setEditorMode('edit'));
+	await P.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
+	await P.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('edit'));
 	await A.ctx.close();
 
 	// =============================================================== the unfolded N6
@@ -450,7 +450,7 @@ h.run(async () => {
 		w.__gz = [];
 		const note = (/** @type {string} */ t) => {
 			let tc;
-			w.__stores.TControls?.subscribe?.((/** @type {any} */ v) => (tc = v))?.();
+			w.__tp.test.v1.TControls?.subscribe?.((/** @type {any} */ v) => (tc = v))?.();
 			w.__gz.push([t, tc?.axis ?? null, !!tc?.dragging, Date.now(), Math.round(performance.timeOrigin + (w.__gzEv?.timeStamp ?? 0))]);
 		};
 		// 54 X4: the handler clock (Date.now) beside the input's own time (timeStamp) — a tap is a
@@ -475,7 +475,7 @@ h.run(async () => {
 	// 54 X4: a long frame BETWEEN finger down and finger up. Scene timed the tap on Date.now() in
 	// its handlers, so a 600 ms stall made a 60 ms tap a hold and the click was dropped (the red
 	// under load); the input's own timeStamp still says 60 ms. Red on v1.45.1, green after
-	await Q.evaluate(() => window.__stores.objectActions?.deselectObject?.() ?? window.__stores.selectedObjects.set([]));
+	await Q.evaluate(() => window.__tp.test.v1.objectActions?.deselectObject?.() ?? window.__tp.test.v1.selectedObjects.set([]));
 	await pastDoubleTap();
 	await Q.evaluate(() => {
 		const w = /** @type {any} */ (window);
@@ -504,7 +504,7 @@ h.run(async () => {
 	const M = D.page;
 	await look(M, [0, 3, 6], [0, 0.5, 0]);
 	await rest(M);
-	const da = await M.evaluate(() => window.__stores.addObjects.spawnAtPoint('/create Box 1 1 1', [-1.2, 0.5, 0])?.uuid);
+	const da = await M.evaluate(() => window.__tp.test.v1.addObjects.spawnAtPoint('/create Box 1 1 1', [-1.2, 0.5, 0])?.uuid);
 	await M.waitForTimeout(500);
 	h.check((await store(M, 'inspectorClose')) === true && (await sel(M)).includes(da), 'G2 (desktop) adding selects and leaves the Inspector closed');
 	await rest(M);
@@ -522,27 +522,27 @@ h.run(async () => {
 	h.check(JSON.stringify(await sel(M)) === JSON.stringify([da]), 'G13 (desktop) and Edit restores the selection');
 
 	// G4 with the mouse: the same grab-point carry
-	await M.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+	await M.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 	await M.waitForTimeout(2500);
 	const mc = await make(M, [1.2, 0.6, 0], 1.2);
 	await M.evaluate((u) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		g.getObjectByProperty('uuid', u).userData.physics = { mode: 'dynamic', mass: 1 };
 		s.scenePhysics.setScenePhysics({ ground: { enabled: true, height: 0 } });
 		s.objectActions.deselectObject();
 	}, mc);
-	await M.evaluate(() => window.__stores.physics.toggleSimulation());
-	await h.eventually(() => M.evaluate(() => window.__stores.physics.physicsDebug().length), (n) => n > 0, '(premise) the desktop simulation runs');
+	await M.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
+	await h.eventually(() => M.evaluate(() => window.__tp.test.v1.physics.physicsDebug().length), (n) => n > 0, '(premise) the desktop simulation runs');
 	await M.waitForTimeout(1200);
-	await M.evaluate(() => window.__stores.objectActions.setEditorMode('interact'));
+	await M.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('interact'));
 	await look(M, [1.2, 1.6, 2.8], [1.2, 0.6, 0]);
 	const m0 = await screenOf(M, mc, 60, 40);
 	await M.mouse.move(m0.x, m0.y);
 	await M.mouse.down();
 	await M.waitForTimeout(250);
-	const mTaken = await M.evaluate(() => window.__stores.playInteract.playInteractDebug().carrying);
+	const mTaken = await M.evaluate(() => window.__tp.test.v1.playInteract.playInteractDebug().carrying);
 	const m1 = await screenOf(M, mc);
 	const mg0 = await screenOfLocal(M, mc, m0.local);
 	for (let i = 1; i <= 16; i++) {
@@ -557,7 +557,7 @@ h.run(async () => {
 	h.check(Math.hypot(mg0.x - m0.x, mg0.y - m0.y) < 3, '(premise) the tracked grip point is under the cursor');
 	const mTrack = Math.hypot(mg2.x - (m0.x - 120), mg2.y - (m0.y - 90));
 	h.check(mTrack < 14, `G4 (mouse) it follows the cursor from where it was taken (off by ${mTrack.toFixed(1)} px)`);
-	await M.evaluate(() => window.__stores.physics.stopSimulation());
+	await M.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 	await D.ctx.close();
 
 	await h.finish(browser);

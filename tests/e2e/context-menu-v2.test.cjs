@@ -8,7 +8,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	const openViewportMenu = () =>
-		A.page.evaluate(() => window.__stores.viewportMenu.set({ x: 200, y: 160, point: { x: 0, y: 0, z: 0 } }));
+		A.page.evaluate(() => window.__tp.test.v1.viewportMenu.set({ x: 200, y: 160, point: { x: 0, y: 0, z: 0 } }));
 	const menuTexts = () =>
 		A.page.evaluate(() =>
 			[...document.querySelectorAll('[role="menu"] > *, [role="menuitem"]')].map((e) => e.textContent.trim())
@@ -26,16 +26,16 @@ h.run(async () => {
 		};
 	});
 	h.check(noSel.hasAdd, 'Add stays top-level');
-	await A.page.evaluate(() => window.__stores.viewportMenu.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.viewportMenu.set(null));
 	await A.page.waitForTimeout(150);
 
 	// --- with a selection: a '<name> ▸' subgroup holds the selection ops ---
 	await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const box = group.children[group.children.length - 1];
 		box.name = 'Crate';
-		window.__stores.objectActions.selectObject(box.uuid);
+		window.__tp.test.v1.objectActions.selectObject(box.uuid);
 	});
 	await openViewportMenu();
 	await A.page.waitForTimeout(300);
@@ -86,6 +86,6 @@ h.run(async () => {
 	h.check(scroll.subNoXScroll, 'submenus never scroll horizontally');
 	h.check(!scroll.rootHasTransform, 'the root uses no transform (fixed submenus stay viewport-anchored)');
 
-	await A.page.evaluate(() => window.__stores.viewportMenu.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.viewportMenu.set(null));
 	await h.finish(browser);
 });

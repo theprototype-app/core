@@ -1,7 +1,7 @@
 // Phase 41: spatial voice — panner chain per remote stream, tracks the avatar, toggleable.
 const h = require('./helpers.cjs');
 
-const spatial = (page) => page.evaluate(() => window.__stores.voiceChat.spatialDebug());
+const spatial = (page) => page.evaluate(() => window.__tp.test.v1.voiceChat.spatialDebug());
 
 h.run(async () => {
 	const browser = await h.launch({
@@ -12,7 +12,7 @@ h.run(async () => {
 	await h.connect(B, A);
 
 	// B talks (fake mic) -> A receives a stream and builds a spatial chain
-	await B.page.evaluate(() => window.__stores.voiceChat.toggleMic());
+	await B.page.evaluate(() => window.__tp.test.v1.voiceChat.toggleMic());
 	await h.eventually(
 		() => spatial(A.page),
 		(map) => map && Object.keys(map).includes(B.id),
@@ -26,7 +26,7 @@ h.run(async () => {
 	// panner follows the peer avatar
 	await B.page.evaluate((id) =>
 		new Promise((resolve) => {
-			window.__stores.peers.subscribe((peer) => {
+			window.__tp.test.v1.peers.subscribe((peer) => {
 				peer.send({ type: 'camera', peerId: id, position: [30, 2, 5], rotation: [0, 0, 0] });
 				resolve();
 			})();
@@ -40,7 +40,7 @@ h.run(async () => {
 	);
 
 	// toggle off -> chain drops, element audible again; toggle on -> rebuilt
-	await A.page.evaluate(() => window.__stores.voiceChat.spatialVoice.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.voiceChat.spatialVoice.set(false));
 	await h.eventually(
 		() => spatial(A.page),
 		(map) => Object.keys(map ?? {}).length === 0,
@@ -48,7 +48,7 @@ h.run(async () => {
 	);
 	const volumeOff = await A.page.evaluate(() => document.querySelector('audio')?.volume);
 	h.check(volumeOff === 1, `audio element audible again (volume ${volumeOff})`);
-	await A.page.evaluate(() => window.__stores.voiceChat.spatialVoice.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.voiceChat.spatialVoice.set(true));
 	await h.eventually(
 		() => spatial(A.page),
 		(map) => map && Object.keys(map).includes(B.id),

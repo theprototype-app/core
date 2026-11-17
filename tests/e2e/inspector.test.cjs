@@ -6,7 +6,7 @@ const selectedX = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.selectedObject.subscribe((s) => r(s?.position.x))()
+				window.__tp.test.v1.selectedObject.subscribe((s) => r(s?.position.x))()
 			)
 	);
 
@@ -17,7 +17,7 @@ h.run(async () => {
 	// record outgoing peer messages (send works with zero connections)
 	await A.page.evaluate(async () => {
 		window.__sent = [];
-		const inst = await new Promise((r) => window.__stores.peers.subscribe(r)());
+		const inst = await new Promise((r) => window.__tp.test.v1.peers.subscribe(r)());
 		const orig = inst.send.bind(inst);
 		inst.send = (m) => {
 			window.__sent.push(m);
@@ -26,11 +26,11 @@ h.run(async () => {
 	});
 
 	// ---- mesh target ----
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await A.page.evaluate(async () => {
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const box = g.children.find((c) => c.name === 'Box');
-		window.__stores.objectActions.selectObject(box.uuid, true);
+		window.__tp.test.v1.objectActions.selectObject(box.uuid, true);
 	});
 	await A.page.waitForTimeout(600);
 	h.check(
@@ -77,11 +77,11 @@ h.run(async () => {
 	h.check(renamed, 'rename sends the name message');
 
 	// ---- light target: same drawer, light sections ----
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/light directional'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/light directional'));
 	await A.page.evaluate(async () => {
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const light = g.children.find((c) => c.type === 'DirectionalLight');
-		window.__stores.objectActions.selectObject(light.uuid, true);
+		window.__tp.test.v1.objectActions.selectObject(light.uuid, true);
 	});
 	await A.page.waitForTimeout(600);
 	h.check(
@@ -98,7 +98,7 @@ h.run(async () => {
 	);
 
 	// ---- scene target through the same drawer ----
-	await A.page.evaluate(() => window.__stores.showSidebar('scene'));
+	await A.page.evaluate(() => window.__tp.test.v1.showSidebar('scene'));
 	await A.page.waitForTimeout(500);
 	h.check(
 		// wait for the THING: the scene head can take ~2 s to mount on a cold dev server

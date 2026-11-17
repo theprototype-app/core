@@ -60,7 +60,7 @@ h.run(async () => {
 
 	console.log('\n=== 1. the vignette setting ===');
 	const row = await g(page, () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const r = s.vrSettingsSchema.vrSettingRow('vignette');
 		return { kind: r.kind, options: r.options.map((o) => o.value), value: r.get() };
 	});
@@ -69,18 +69,18 @@ h.run(async () => {
 
 	await iwer.enter(page);
 	await g(page, SPY);
-	await g(page, () => window.__stores.vrSettingsSchema.vrSettingRow('turning').set('snap'));
+	await g(page, () => window.__tp.test.v1.vrSettingsSchema.vrSettingRow('turning').set('snap'));
 
 	console.log('\n=== 2. the vignette rings while the stick moves you ===');
 	/** push the move stick for ~60 frames and read the ring's strength */
 	const ring = async (level) => {
-		await g(page, (lv) => window.__stores.vrPrefs.vrComfortVignette.set(lv), level);
+		await g(page, (lv) => window.__tp.test.v1.vrPrefs.vrComfortVignette.set(lv), level);
 		await iwer.stick(page, 'left', 0, -1);
 		await iwer.frames(page, 70);
-		const on = await g(page, () => window.__stores.gameKit.comfortVignette.vignetteDebug());
+		const on = await g(page, () => window.__tp.test.v1.gameKit.comfortVignette.vignetteDebug());
 		await iwer.stick(page, 'left', 0, 0);
 		await iwer.frames(page, 90);
-		const after = await g(page, () => window.__stores.gameKit.comfortVignette.vignetteDebug());
+		const after = await g(page, () => window.__tp.test.v1.gameKit.comfortVignette.vignetteDebug());
 		return { on, after };
 	};
 	const high = await ring('high');
@@ -95,30 +95,30 @@ h.run(async () => {
 	await iwer.pose(page, 'head', [0, 1.6, 0], { yaw: 1.1 });
 	await iwer.frames(page, 4);
 	await applied(page);
-	const r0 = (await g(page, () => window.__stores.vrLocomotion.heightLiftDebug())).recenters.menu;
-	await g(page, () => window.__stores.vrSettingsSchema.activateVRSetting('recenter'));
+	const r0 = (await g(page, () => window.__tp.test.v1.vrLocomotion.heightLiftDebug())).recenters.menu;
+	await g(page, () => window.__tp.test.v1.vrSettingsSchema.activateVRSetting('recenter'));
 	await iwer.frames(page, 4);
 	const rc = await applied(page);
-	const r1 = (await g(page, () => window.__stores.vrLocomotion.heightLiftDebug())).recenters.menu;
+	const r1 = (await g(page, () => window.__tp.test.v1.vrLocomotion.heightLiftDebug())).recenters.menu;
 	h.check(r1 === r0 + 1, '3.1 Recenter pressed outside a frame runs on the next XR frame (' + r0 + ' → ' + r1 + ')');
 	h.check(rc.turns.length === 1 && Math.abs(rc.turns[0] - 1.1) < 0.05, '3.2 …and turns the rig by the head yaw, so you face forward (' + rc.turns + ')');
 	await iwer.pose(page, 'head', [0, 1.15, 0]);
-	await g(page, () => window.__stores.vrSettingsSchema.vrSettingRow('stance').set('seated'));
+	await g(page, () => window.__tp.test.v1.vrSettingsSchema.vrSettingRow('stance').set('seated'));
 	await iwer.frames(page, 6);
-	const seat1 = await g(page, () => window.__stores.vrLocomotion.heightLiftDebug());
+	const seat1 = await g(page, () => window.__tp.test.v1.vrLocomotion.heightLiftDebug());
 	await iwer.pose(page, 'head', [0, 0.95, 0]); // slumped lower in the chair
-	await g(page, () => window.__stores.vrSettingsSchema.activateVRSetting('recenter'));
+	await g(page, () => window.__tp.test.v1.vrSettingsSchema.activateVRSetting('recenter'));
 	await iwer.frames(page, 6);
-	const seat2 = await g(page, () => window.__stores.vrLocomotion.heightLiftDebug());
+	const seat2 = await g(page, () => window.__tp.test.v1.vrLocomotion.heightLiftDebug());
 	h.check(Math.abs(seat1.applied - 0.45) < 0.03, '3.3 seated lifts a 1.15 m head to a standing eye height (lift ' + seat1.applied + ')');
 	h.check(Math.abs(seat2.seatedHead - 0.95) < 0.03 && Math.abs(seat2.applied - 0.65) < 0.03, '3.4 recenter re-measures where you sit now (head ' + seat2.seatedHead + ' m, lift ' + seat2.applied + ')');
-	await g(page, () => window.__stores.vrSettingsSchema.vrSettingRow('stance').set('standing'));
+	await g(page, () => window.__tp.test.v1.vrSettingsSchema.vrSettingRow('stance').set('standing'));
 	await iwer.pose(page, 'head', [0, 1.6, 0]);
 	await iwer.frames(page, 4);
 
 	console.log('\n=== 4. one-handed (Right only): one stick walks and turns ===');
 	const one = await g(page, () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.vrSettingsSchema.vrSettingRow('oneHanded').set('right');
 		let mh;
 		s.vrMenuHand.subscribe((v) => (mh = v))();
@@ -151,10 +151,10 @@ h.run(async () => {
 	await iwer.pose(page, 'right', [0.2, 1.2, -0.3], { pitch: -0.6 });
 	await iwer.button(page, 'right', 'thumbstick', true);
 	await iwer.frames(page, 8);
-	const aiming = await g(page, () => window.__stores.vrControls.teleportState());
+	const aiming = await g(page, () => window.__tp.test.v1.vrControls.teleportState());
 	await iwer.button(page, 'right', 'thumbstick', false);
 	await iwer.frames(page, 6);
-	const released = await g(page, () => window.__stores.vrControls.teleportState());
+	const released = await g(page, () => window.__tp.test.v1.vrControls.teleportState());
 	h.check(aiming.engaged === true, '5.1 holding the right stick press aims a teleport');
 	h.check(released.engaged === false, '5.2 letting go ends the aim (and jumps where it was valid)');
 
@@ -162,7 +162,7 @@ h.run(async () => {
 	await iwer.tap(page, 'right', 'b-button');
 	await iwer.frames(page, 4);
 	const radial = await g(page, () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let open;
 		s.vrMenuOpen.subscribe((v) => (open = v))();
 		const ids = s.vrRadialMenu.ringEntries('root').map((e) => e.id);
@@ -170,29 +170,29 @@ h.run(async () => {
 	});
 	h.check(radial.open === true, '6.1 B on the right hand opens the radial');
 	h.check(radial.ids.includes('onehand:mode'), '6.2 its root offers Edit / Interact (' + radial.ids.join(',') + ')');
-	const modeBefore = await g(page, () => { let m; window.__stores.editorMode.subscribe((v) => (m = v))(); return m; });
+	const modeBefore = await g(page, () => { let m; window.__tp.test.v1.editorMode.subscribe((v) => (m = v))(); return m; });
 	// aim the stick at that sector (sectors run clockwise from 12 o'clock), then press the stick
 	const dir = await g(page, () => {
-		const ids = window.__stores.vrRadialMenu.ringEntries('root').map((e) => e.id);
+		const ids = window.__tp.test.v1.vrRadialMenu.ringEntries('root').map((e) => e.id);
 		const i = ids.indexOf('onehand:mode');
 		const a = (i / ids.length) * Math.PI * 2;
 		return [Math.sin(a), -Math.cos(a)];
 	});
 	await iwer.stick(page, 'right', dir[0], dir[1]);
 	await iwer.frames(page, 6);
-	const hovered = await g(page, () => { let v; window.__stores.vrControls.vrHovered.subscribe((x) => (v = x))(); return v; });
+	const hovered = await g(page, () => { let v; window.__tp.test.v1.vrControls.vrHovered.subscribe((x) => (v = x))(); return v; });
 	await iwer.tap(page, 'right', 'thumbstick');
 	await iwer.stick(page, 'right', 0, 0);
 	await iwer.frames(page, 6);
-	const modeAfter = await g(page, () => { let m; window.__stores.editorMode.subscribe((v) => (m = v))(); return m; });
+	const modeAfter = await g(page, () => { let m; window.__tp.test.v1.editorMode.subscribe((v) => (m = v))(); return m; });
 	h.check(hovered === 'onehand:mode', '6.3 the right stick highlights the sector (' + hovered + ')');
 	h.check(modeBefore !== modeAfter, '6.4 the stick press switches Edit / Interact (' + modeBefore + ' → ' + modeAfter + ')');
-	await g(page, () => window.__stores.editorMode.set('edit'));
+	await g(page, () => window.__tp.test.v1.editorMode.set('edit'));
 	await iwer.frames(page, 4);
 
 	console.log('\n=== 7. Left only mirrors; Off gives the menu hand back ===');
 	const left = await g(page, () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.vrSettingsSchema.vrSettingRow('oneHanded').set('left');
 		const b = s.vrBindings;
 		let mh;
@@ -207,7 +207,7 @@ h.run(async () => {
 
 	console.log('\n=== 8. the game menu Accessibility page in the headset ===');
 	const board = await g(page, () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.gameKit.gameShell.markShellGame(true);
 		s.editorMode.set('interact');
 		s.gameKit.gameShell.openShellMenu('access');

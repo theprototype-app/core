@@ -8,7 +8,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	// 1) Settings -> About shows `x.y.z(-dev) (sha|unknown)`
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 	await A.page.waitForTimeout(600);
 	await A.page.getByRole('button', { name: 'About' }).click();
 	await A.page.waitForTimeout(400);
@@ -17,12 +17,12 @@ h.run(async () => {
 		/\d+\.\d+\.\d+(-dev)? \(([0-9a-f]{7,}|unknown)\)/.test(aboutText),
 		'About shows the baked version string'
 	);
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await A.page.waitForTimeout(300);
 
 	// 2) session payloads carry format + appVersion
 	const payload = await A.page.evaluate(() => {
-		const p = window.__stores.sessions.buildSessionPayload('e2e');
+		const p = window.__tp.test.v1.sessions.buildSessionPayload('e2e');
 		return { format: p.format, appVersion: p.appVersion };
 	});
 	h.check(payload.format === 1, `buildSessionPayload stamps format 1 (${payload.format})`);
@@ -31,7 +31,7 @@ h.run(async () => {
 	// 3) a NEWER format asks; cancel resolves null and stores nothing
 	const doctored = JSON.stringify({ objects: [], format: 99, appVersion: '9.9.9' });
 	const cancelled = A.page.evaluate(
-		(json) => window.__stores.sessions.importSession(json).then((r) => (r === null ? 'null' : 'payload')),
+		(json) => window.__tp.test.v1.sessions.importSession(json).then((r) => (r === null ? 'null' : 'payload')),
 		doctored
 	);
 	await A.page.locator('#confirm-dialog-ok').waitFor({ state: 'visible', timeout: 10000 });
@@ -41,7 +41,7 @@ h.run(async () => {
 
 	// ...and Load anyway imports it
 	const loaded = A.page.evaluate(
-		(json) => window.__stores.sessions.importSession(json).then((r) => (r ? 'payload' : 'null')),
+		(json) => window.__tp.test.v1.sessions.importSession(json).then((r) => (r ? 'payload' : 'null')),
 		doctored
 	);
 	await A.page.locator('#confirm-dialog-ok').waitFor({ state: 'visible', timeout: 10000 });
@@ -50,7 +50,7 @@ h.run(async () => {
 
 	// 4) peer app-version toast fires once per session
 	const toastCounts = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const count = () =>
 			new Promise((r) =>
 				s.toastStore.subscribe((t) =>

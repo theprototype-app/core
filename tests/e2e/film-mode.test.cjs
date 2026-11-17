@@ -122,13 +122,13 @@ function leanAngles(alpha, beta, roll) {
 const near = (/** @type {number} */ a, /** @type {number} */ b, tol = 2) => Math.abs(a - b) <= tol;
 
 /** @param {any} page */
-const pose = (page) => page.evaluate(() => window.__stores.filmMode.filmPose());
+const pose = (page) => page.evaluate(() => window.__tp.test.v1.filmMode.filmPose());
 /** the camera actually rendering (the preview's), not just Film's own state @param {any} page */
 const renderQuat = (page) =>
-	page.evaluate(() => new Promise((r) => window.__stores.globalCamera.subscribe((c) => r(c.quaternion.toArray()))()));
+	page.evaluate(() => new Promise((r) => window.__tp.test.v1.globalCamera.subscribe((c) => r(c.quaternion.toArray()))()));
 /** @param {any} page */
 const renderPos = (page) =>
-	page.evaluate(() => new Promise((r) => window.__stores.globalCamera.subscribe((c) => r(c.getWorldPosition(c.position.clone()).toArray()))()));
+	page.evaluate(() => new Promise((r) => window.__tp.test.v1.globalCamera.subscribe((c) => r(c.getWorldPosition(c.position.clone()).toArray()))()));
 /** @param {any} page */
 const viewportRect = (page) =>
 	page.evaluate(() => {
@@ -139,7 +139,7 @@ const viewportRect = (page) =>
 /** a camera at (0, 1.6, 5) looking down -Z (identity rotation) @param {any} page */
 async function makeCamera(page) {
 	return page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		w.commandsHandler.sceneCommand('/create Camera');
 		await new Promise((r) => setTimeout(r, 300));
@@ -172,7 +172,7 @@ h.run(async () => {
 	// so the init script widens it; the runtime's debug row is the second witness)
 	const loadedAtBoot = await page.evaluate(() => ({
 		files: performance.getEntriesByType('resource').map((e) => e.name).filter((n) => /film\/(filmMode|FilmMode|filmWalk|filmRecorder)/.test(n)),
-		runtime: 'filmMode' in window.__stores,
+		runtime: 'filmMode' in window.__tp?.test.v1,
 		total: performance.getEntriesByType('resource').length,
 		// a built app names its chunks by hash, so there the witness is a new script arriving with Film
 		built: !performance.getEntriesByType('resource').some((e) => /\/src\//.test(e.name)),
@@ -211,7 +211,7 @@ h.run(async () => {
 	h.check(await page.evaluate(() => localStorage.getItem('film:help') === 'seen'), 'and they do not come back next time');
 	const loadedAfter = await page.evaluate(() => ({
 		files: performance.getEntriesByType('resource').map((e) => e.name).filter((n) => /film\/(filmMode|FilmMode)/.test(n)).length,
-		runtime: 'filmMode' in window.__stores,
+		runtime: 'filmMode' in window.__tp?.test.v1,
 		js: performance.getEntriesByType('resource').filter((e) => /\.js(\?|$)/.test(e.name)).length
 	}));
 	h.check(
@@ -271,7 +271,7 @@ h.run(async () => {
 	await page.locator('#film-recentre').click();
 	await page.waitForTimeout(300);
 	h.check(/Phone tilt/.test((await page.locator('#film-sensor').textContent()) || ''), `the pill names the mode (${(await page.locator('#film-sensor').textContent())?.trim()})`);
-	await page.evaluate(() => window.__stores.toastStore.set([]));
+	await page.evaluate(() => window.__tp.test.v1.toastStore.set([]));
 	await page.locator('#film-sensor').click();
 	await page.waitForSelector('#film-motion-sheet', { timeout: 5000 });
 	const choices = await page.locator('.film-motion-opt').evaluateAll((els) => els.map((e) => e.getAttribute('data-motion')));
@@ -285,12 +285,12 @@ h.run(async () => {
 	await page.waitForTimeout(400);
 	const yTurned = yawDeg((await pose(page)).q);
 	h.check(near(yTurned, yTouch, 1), `Touch: turning the phone does not turn the view (${yTouch.toFixed(1)} → ${yTurned.toFixed(1)})`);
-	await page.evaluate(() => window.__stores.filmMode.lookDrag(120, 0, 219));
+	await page.evaluate(() => window.__tp.test.v1.filmMode.lookDrag(120, 0, 219));
 	await page.waitForTimeout(300);
 	const yDragged = yawDeg((await pose(page)).q);
 	h.check(Math.abs(yDragged - yTouch) > 5, `Touch: a drag turns it (${yTouch.toFixed(1)} → ${yDragged.toFixed(1)})`);
 	h.check(await page.evaluate(() => localStorage.getItem('film:motion') === 'touch'), 'the choice is remembered on this device');
-	await page.evaluate(() => window.__stores.toastStore.set([]));
+	await page.evaluate(() => window.__tp.test.v1.toastStore.set([]));
 	await page.locator('#film-sensor').click();
 	await page.locator('.film-motion-opt[data-motion="tilt"]').click();
 	await page.waitForTimeout(400);
@@ -331,7 +331,7 @@ h.run(async () => {
 	// ================= V4: the recorder =================
 	// a sequence where a box slides x 0 → 10 over 10 s (a prop track): the take must PLAY it
 	const seqId = await page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let g = null;
 		w.objectsGroup.subscribe((v) => (g = v))();
 		const box = g.children.find((o) => o.geometry?.type === 'BoxGeometry');
@@ -345,17 +345,17 @@ h.run(async () => {
 	});
 	const boxX = () => page.evaluate(() => {
 		let g = null;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return g.getObjectByProperty('uuid', window.__boxUuid).position.x;
 	});
 	const takeUi = () => page.evaluate(() => {
 		let ui = null;
-		window.__stores.filmRecorder.take.subscribe((v) => (ui = v))();
+		window.__tp.test.v1.filmRecorder.take.subscribe((v) => (ui = v))();
 		return ui;
 	});
 	const shotsOf = () => page.evaluate((id) => {
 		let all = null;
-		window.__stores.sequences.sequences.subscribe((v) => (all = v))();
+		window.__tp.test.v1.sequences.sequences.subscribe((v) => (all = v))();
 		const seq = all[id];
 		const tr = seq.tracks.find((t) => t.kind === 'camera' && t.rec);
 		const pos = seq.tracks.find((t) => t.kind === 'prop' && t.path === 'position' && t.target === tr?.rec);
@@ -387,7 +387,7 @@ h.run(async () => {
 	const shot1End = sh.items[0].t + sh.items[0].dur;
 
 	// shot 2: teleport, resume → the ask (Cut default), Cut
-	await page.evaluate(() => window.__stores.filmMode.placeCamera([30, 2, 0]));
+	await page.evaluate(() => window.__tp.test.v1.filmMode.placeCamera([30, 2, 0]));
 	await page.locator('#film-record').click();
 	await page.waitForSelector('#film-resume', { timeout: 5000 });
 	h.check((await page.locator('#film-resume-cut').getAttribute('class')).includes('primary'), 'resuming asks Cut / Move, Cut first');
@@ -401,7 +401,7 @@ h.run(async () => {
 	h.check(sh.items.length === 2 && Math.abs(sh.items[1].t - shot1End) < 0.05, `Cut makes shot 2 where shot 1 ended (${JSON.stringify(sh.items)})`);
 
 	// Move: teleport again; the camera FLIES from the last frame, the shot is extended
-	await page.evaluate(() => window.__stores.filmMode.placeCamera([60, 2, 0]));
+	await page.evaluate(() => window.__tp.test.v1.filmMode.placeCamera([60, 2, 0]));
 	await page.locator('#film-record').click();
 	await page.locator('#film-resume-move').click();
 	// sample the 1.5 s fly from the click on (a slow slot's resume check alone can take most of it)
@@ -424,7 +424,7 @@ h.run(async () => {
 	h.check(sh.items.length === 2, `Move extends shot 2 instead of adding one (${sh.items.length} shots)`);
 
 	// shot 3: Cut
-	await page.evaluate(() => window.__stores.filmMode.placeCamera([90, 2, 0]));
+	await page.evaluate(() => window.__tp.test.v1.filmMode.placeCamera([90, 2, 0]));
 	await page.locator('#film-record').click();
 	await page.locator('#film-resume-cut').click();
 	await page.waitForTimeout(1200);
@@ -436,15 +436,15 @@ h.run(async () => {
 
 	// playback: the marker follows the recorded keys (scrub into each shot)
 	const markerAt = (t) => page.evaluate(({ id, t }) => {
-		window.__stores.sequencePlayer.scrubSequence(id, t);
+		window.__tp.test.v1.sequencePlayer.scrubSequence(id, t);
 		let g = null;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		let cam = null;
 		g.traverse((o) => { if (o.userData?.camera && o.name === 'Film cam') cam = o; });
 		return cam.position.toArray();
 	}, { id: seqId, t });
 	// (Film skips its own live camera: read through the scrub with Film's skip lifted)
-	await page.evaluate(() => window.__stores.filmRecorder.finishTake());
+	await page.evaluate(() => window.__tp.test.v1.filmRecorder.finishTake());
 	const items = (await shotsOf()).items;
 	await page.locator('#film-exit').click();
 	await page.waitForTimeout(600);
@@ -454,35 +454,35 @@ h.run(async () => {
 	h.check(Math.abs(p3[0] - 90) < 1, `shot 3 plays back where it was filmed (x ${p3[0].toFixed(2)})`);
 	const beforeCut = await markerAt(items[1].t - 0.01);
 	h.check(beforeCut[0] < 25, `the cut holds shot 1's last pose up to the cut — no glide (x ${beforeCut[0].toFixed(2)} just before)`);
-	await page.evaluate(() => window.__stores.sequencePlayer.releaseScrub());
+	await page.evaluate(() => window.__tp.test.v1.sequencePlayer.releaseScrub());
 
 	// one undo step per segment: undo the last shot → two shots
-	await page.evaluate(() => window.__stores.history.undo());
+	await page.evaluate(() => window.__tp.test.v1.history.undo());
 	await page.waitForTimeout(300);
 	sh = await shotsOf();
 	h.check(sh.items.length === 2, `one undo takes back exactly the last shot (${sh.items.length} shots)`);
-	await page.evaluate(() => window.__stores.history.redo());
+	await page.evaluate(() => window.__tp.test.v1.history.redo());
 	await page.waitForTimeout(300);
 
 	// Retake shot 2 (from Film again, the shots list)
-	await page.evaluate(({ id }) => window.__stores.sequences.activeSequence.set(id), { id: seqId });
-	await page.evaluate((u) => window.__stores.filmState.openFilm(u), uuid);
+	await page.evaluate(({ id }) => window.__tp.test.v1.sequences.activeSequence.set(id), { id: seqId });
+	await page.evaluate((u) => window.__tp.test.v1.filmState.openFilm(u), uuid);
 	await page.waitForSelector('#film-exit', { timeout: 10000 });
 	await page.evaluate(() => window.__tilt(0, 90, 0));
 	const shot2Id = (await shotsOf()).items[1].id;
 	// Retake starts a session on the active sequence by itself
-	await page.evaluate((itemId) => window.__stores.filmRecorder.retake(itemId), shot2Id);
+	await page.evaluate((itemId) => window.__tp.test.v1.filmRecorder.retake(itemId), shot2Id);
 	await h.eventually(takeUi, (u) => u.state === 'recording' && u.mode === 'retake', 'Retake records over shot 2');
-	await page.evaluate(() => window.__stores.filmMode.placeCamera([-40, 2, 0]));
+	await page.evaluate(() => window.__tp.test.v1.filmMode.placeCamera([-40, 2, 0]));
 	await page.waitForTimeout(1200);
 	await page.locator('#film-record').click();
 	await waitSaved('the retake committed');
 	sh = await shotsOf();
 	h.check(sh.items.length === 3 && !sh.items.some((i) => i.id === shot2Id), `the retake replaced shot 2, three shots remain (${JSON.stringify(sh.items)})`);
-	await page.evaluate(() => window.__stores.filmRecorder.finishTake());
+	await page.evaluate(() => window.__tp.test.v1.filmRecorder.finishTake());
 	await page.waitForTimeout(300);
 	h.check((await page.locator('#film-shots').count()) === 1, 'the shots pill stays when no take is running');
-	await page.evaluate(() => window.__stores.toastStore.set([]));
+	await page.evaluate(() => window.__tp.test.v1.toastStore.set([]));
 	await page.locator('#film-shots').click();
 	h.check((await page.locator('.film-shot-row').count()) === 3, 'the shots list shows the three shots');
 	h.check(/Shots on this camera/.test((await page.locator('#film-shot-list').textContent()) || ''), 'the sheet is "Shots on this camera"');
@@ -511,13 +511,13 @@ h.run(async () => {
 	await page.waitForTimeout(200);
 	const named = await page.evaluate(({ id, item }) => {
 		let all = null;
-		window.__stores.sequences.sequences.subscribe((v) => (all = v))();
+		window.__tp.test.v1.sequences.sequences.subscribe((v) => (all = v))();
 		return all[id].tracks.find((t) => t.kind === 'camera' && t.rec).items.find((i) => i.id === item)?.name;
 	}, { id: seqId, item: firstId });
 	h.check(named === 'Wide open' && (await page.locator('.film-shot-title').first().textContent()) === 'Wide open', `Rename names the shot in the timeline (${named})`);
 	// delete + undo
 	const lastId = (await shotsOf()).items[2].id;
-	await page.evaluate(() => window.__stores.toastStore.set([]));
+	await page.evaluate(() => window.__tp.test.v1.toastStore.set([]));
 	await page.locator(`.film-shot-row[data-item="${lastId}"] .film-shot-more`).click();
 	await page.locator(`.film-shot-actions[data-item="${lastId}"] .film-act[data-act="delete"]`).click();
 	await page.waitForTimeout(200);
@@ -553,7 +553,7 @@ h.run(async () => {
 	await page.waitForTimeout(300);
 	const trimmed = (await shotsOf()).items.find((i) => i.id === second.id);
 	h.check(Math.abs(trimmed.t - (second.t + 0.3)) < 0.02 && Math.abs(trimmed.dur - (second.dur - 0.3)) < 0.02, `Trim moves the shot's in point (${second.t.toFixed(2)} → ${trimmed.t.toFixed(2)})`);
-	await page.evaluate(() => window.__stores.history.undo());
+	await page.evaluate(() => window.__tp.test.v1.history.undo());
 	await page.waitForTimeout(300);
 	const untrimmed = (await shotsOf()).items.find((i) => i.id === second.id);
 	h.check(Math.abs(untrimmed.t - second.t) < 0.02, `one undo takes the whole trim back (${untrimmed.t.toFixed(2)})`);
@@ -562,7 +562,7 @@ h.run(async () => {
 
 	// 68 V9 Share as video: the take → Export video → the Recording dialog on the take's timeline, as MP4;
 	// on a phone an over-long render is refused with the reason, a short one exports frame by frame
-	await page.evaluate(() => window.__stores.toastStore.set([]));
+	await page.evaluate(() => window.__tp.test.v1.toastStore.set([]));
 	await page.locator('#film-export').click();
 	await page.waitForSelector('#film-export-sheet', { timeout: 5000 });
 	h.check((await page.locator('#film-export-joined').count()) === 1 && (await page.locator('#film-export-each').count()) === 1, 'the export offers one joined video or one file per shot');
@@ -596,7 +596,7 @@ h.run(async () => {
 	await page.waitForSelector('#recording-result, #recording-error', { timeout: 180000 });
 	const vid = await page.evaluate(() => {
 		let s = /** @type {any} */ (null);
-		window.__stores.recordingStores.recordingState.subscribe((/** @type {any} */ v) => (s = v))();
+		window.__tp.test.v1.recordingStores.recordingState.subscribe((/** @type {any} */ v) => (s = v))();
 		return { status: s.status, error: s.error, mime: s.result?.mime, frames: s.result?.frames, exact: s.result?.exact, w: s.result?.width };
 	});
 	h.check(vid.status === 'done' && vid.mime === 'video/mp4' && Math.abs(vid.frames - Math.round(shotSum * 12)) <= 1 && vid.exact, `the take exports to MP4, frame-exact, the shots' length (${shotSum.toFixed(2)} s × 12 fps; ${JSON.stringify(vid)})`);
@@ -609,7 +609,7 @@ h.run(async () => {
 		h.check(/On a phone an export is at most 20 s \(this one is 30 s\)/.test(capMsg) && (await page.locator('#recording-start').isDisabled()), `the phone cap refuses a 30 s render with the reason ("${capMsg.slice(0, 90)}…")`);
 	} else h.check(false, 'the export dialog offers another export after a result');
 	await page.evaluate(() => {
-		window.__stores.recordingStores.recordingOpen.set(false);
+		window.__tp.test.v1.recordingStores.recordingOpen.set(false);
 	});
 	await page.waitForTimeout(400);
 
@@ -620,10 +620,10 @@ h.run(async () => {
 	}
 	const after = await page.evaluate((u) => {
 		let g = null;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const cam = g.getObjectByProperty('uuid', u);
 		let preview = 'x';
-		window.__stores.cameraPreview.cameraPreview.subscribe((v) => (preview = v))();
+		window.__tp.test.v1.cameraPreview.cameraPreview.subscribe((v) => (preview = v))();
 		return { pos: cam.position.toArray(), filmMode: document.documentElement.classList.contains('film-mode'), preview, root: !!document.getElementById('film-root') };
 	}, uuid);
 	h.check(!after.filmMode && !after.root, 'Exit gives the screen back');
@@ -634,7 +634,7 @@ h.run(async () => {
 	// ================= unfolded N6, a Generic Sensor, the screen turned =================
 	const B = await h.setupPage(browser, 'unfolded', { context: UNFOLDED, init: sensorShim });
 	const uuidB = await makeCamera(B.page);
-	await B.page.evaluate((u) => window.__stores.filmState.openFilm(u), uuidB);
+	await B.page.evaluate((u) => window.__tp.test.v1.filmState.openFilm(u), uuidB);
 	await B.page.waitForSelector('#film-exit', { timeout: 15000 });
 	await B.page.locator('#film-help-never').click({ timeout: 3000 }).catch(() => {});
 	rect = await viewportRect(B.page);
@@ -644,7 +644,7 @@ h.run(async () => {
 	const fed = await B.page.evaluate((q) => window.__feed(q), upright);
 	h.check(fed >= 1, `Film started a RelativeOrientationSensor (${fed})`);
 	await h.eventually(() => B.page.locator('#film-sensor').getAttribute('data-sensor'), (s) => s === 'gyro', 'a Generic Sensor reading drives Film');
-	const src = await B.page.evaluate(() => window.__stores.filmMode.filmDebug().source);
+	const src = await B.page.evaluate(() => window.__tp.test.v1.filmMode.filmDebug().source);
 	h.check(src === 'sensor', `the source is the Generic Sensor (${src})`);
 	// turn the phone to landscape (counter-clockwise, top to the left): the device turns +90° about its own z
 	await B.page.setViewportSize({ width: 850, height: 770 });
@@ -673,7 +673,7 @@ h.run(async () => {
 	// ================= desktop, no motion: drag to look =================
 	const C = await h.setupPage(browser, 'desktop', { context: { viewport: { width: 1280, height: 800 } }, init: noMotionShim });
 	const uuidC = await makeCamera(C.page);
-	await C.page.evaluate((u) => window.__stores.filmState.openFilm(u), uuidC);
+	await C.page.evaluate((u) => window.__tp.test.v1.filmState.openFilm(u), uuidC);
 	await C.page.waitForSelector('#film-exit', { timeout: 15000 });
 	await C.page.locator('#film-help-never').click({ timeout: 3000 }).catch(() => {});
 	await h.eventually(() => C.page.locator('#film-sensor').getAttribute('data-sensor'), (s) => s === 'touch', 'no motion sensor → drag to look', 6000);
@@ -689,7 +689,7 @@ h.run(async () => {
 	const fovFor = (mm) => (2 * Math.atan(24 / (2 * mm)) * 180) / Math.PI;
 	const filmUi = () => pg.evaluate(() => {
 		let ui = null;
-		window.__stores.filmMode.film.subscribe((v) => (ui = v))();
+		window.__tp.test.v1.filmMode.film.subscribe((v) => (ui = v))();
 		return ui;
 	});
 	// lens snaps + the zoom rail
@@ -737,7 +737,7 @@ h.run(async () => {
 	const addDof = pg.locator('.tp-toast button, .toast button', { hasText: 'Add depth of field' }).first();
 	h.check((await addDof.count()) === 1, 'Film offers to add depth of field to the camera look');
 	if (await addDof.count()) await addDof.click();
-	const dofIn = await pg.evaluate((u) => window.__stores.filmMode.lookHasDof(u), uuidC);
+	const dofIn = await pg.evaluate((u) => window.__tp.test.v1.filmMode.lookHasDof(u), uuidC);
 	h.check(dofIn, 'the camera look now carries a Depth of field effect');
 	await pg.locator('#film-aperture').fill('0');
 	h.check((await filmUi()).aperture === 1.4, 'the aperture slider steps to f/1.4');
@@ -754,7 +754,7 @@ h.run(async () => {
 
 	// tap the box: focus pulls to its depth (eased)
 	const boxScreen = () => pg.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let g = null;
 		let cam = null;
 		w.objectsGroup.subscribe((v) => (g = v))();
@@ -767,7 +767,7 @@ h.run(async () => {
 	// the box straight ahead at eye height: at (0, 0.5, 0) it drew in the lower fifth of the shot, under the record bar
 	await pg.evaluate(() => {
 		let g = null;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const box = g.children.find((o) => o.geometry?.type === 'BoxGeometry');
 		box.position.set(0, 1.6, 0);
 		box.updateMatrixWorld(true);
@@ -786,7 +786,7 @@ h.run(async () => {
 	await h.eventually(() => pose(pg), (q) => q.focus !== undefined && Math.abs(q.focus - (bs.depth - 0.5)) < 0.6, `tap-to-focus pulls focus to the box (~${bs.depth.toFixed(1)} m; the tap landed on ${under1})`, 6000);
 	const lens = await pg.evaluate((u) => {
 		let g = null;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return g.getObjectByProperty('uuid', u).userData.camera;
 	}, uuidC);
 	h.check(Number.isFinite(lens.focus) && lens.aperture === 1.4, `the marker carries the live lens for the look (focus ${lens.focus}, f/${lens.aperture})`);
@@ -794,9 +794,9 @@ h.run(async () => {
 	// frame must show the live lens again (the tree was already read), not the base for the whole export
 	const parked = await pg.evaluate(async (u) => {
 		let g = null;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const cam = () => g.getObjectByProperty('uuid', u).userData.camera;
-		const restore = window.__stores.flowRuntime.parkAnimatedAtBase();
+		const restore = window.__tp.test.v1.flowRuntime.parkAnimatedAtBase();
 		const atPark = cam().aperture;
 		await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 		const nextFrame = cam().aperture;
@@ -825,7 +825,7 @@ h.run(async () => {
 	await pg.mouse.click(bs.x, bs.y);
 	await h.eventually(filmUi, (u) => u.rig === 'track', `tapping the box follows it (the tap landed on ${under2})`);
 	const aimErr = () => pg.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let g = null;
 		w.objectsGroup.subscribe((v) => (g = v))();
 		const box = g.children.find((o) => o.geometry?.type === 'BoxGeometry');
@@ -849,7 +849,7 @@ h.run(async () => {
 
 	// a take with live controls: countdown, zoom + dutch mid-take, a marker → their own tracks
 	const seqC = await pg.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const id = w.sequences.createSequence('Live');
 		w.sequences.setSequence(id, { duration: 20, tracks: [] });
 		w.sequences.activeSequence.set(id);
@@ -868,7 +868,7 @@ h.run(async () => {
 	await pg.locator('#film-record').click();
 	await h.eventually(() => pg.evaluate(() => {
 		let ui = null;
-		window.__stores.filmRecorder.take.subscribe((v) => (ui = v))();
+		window.__tp.test.v1.filmRecorder.take.subscribe((v) => (ui = v))();
 		return ui.state;
 	}), (s) => s === 'recording', 'recording starts after the countdown', 6000);
 	const counted = await pg.evaluate(() => {
@@ -881,21 +881,21 @@ h.run(async () => {
 	await pg.locator('#film-marker').click();
 	await pg.locator('.film-lens[data-mm="85"]').click();
 	await pg.evaluate(() => {
-		window.__stores.filmLive.setRoll(-6);
+		window.__tp.test.v1.filmLive.setRoll(-6);
 		// a live control is recorded only when it MOVES in the take (filmTake): pull focus + stop down mid-take
-		window.__stores.filmLive.pullFocus(2);
-		window.__stores.filmLive.setAperture(4);
+		window.__tp.test.v1.filmLive.pullFocus(2);
+		window.__tp.test.v1.filmLive.setAperture(4);
 	});
 	await pg.waitForTimeout(900);
 	await pg.locator('#film-record').click();
 	await h.eventually(() => pg.evaluate(() => {
 		let ui = null;
-		window.__stores.filmRecorder.take.subscribe((v) => (ui = v))();
+		window.__tp.test.v1.filmRecorder.take.subscribe((v) => (ui = v))();
 		return ui.state === 'paused' && !ui.saving;
 	}), (v) => v, 'the live take committed', 15000);
 	const tracks = await pg.evaluate(({ id, u }) => {
 		let all = null;
-		window.__stores.sequences.sequences.subscribe((v) => (all = v))();
+		window.__tp.test.v1.sequences.sequences.subscribe((v) => (all = v))();
 		const seq = all[id];
 		const of = (path) => seq.tracks.find((t) => t.kind === 'prop' && t.target === u && t.path === path);
 		const marks = seq.tracks.find((t) => t.kind === 'event' && t.rec === 'markers:' + u);
@@ -904,22 +904,22 @@ h.run(async () => {
 	}, { id: seqC, u: uuidC });
 	h.check(tracks.fov && tracks.roll && tracks.focus && tracks.aperture, `zoom, dutch, focus and aperture each recorded their own track (${JSON.stringify(tracks)})`);
 	h.check(tracks.marks === 1, 'the marker tap is an event on the Film markers track');
-	await pg.evaluate(() => window.__stores.filmRecorder.finishTake());
+	await pg.evaluate(() => window.__tp.test.v1.filmRecorder.finishTake());
 	await pg.locator('#film-exit').click();
 	await pg.waitForTimeout(500);
 	const played = await pg.evaluate(({ id, u, t }) => {
-		window.__stores.sequencePlayer.scrubSequence(id, t);
+		window.__tp.test.v1.sequencePlayer.scrubSequence(id, t);
 		let g = null;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const c = g.getObjectByProperty('uuid', u).userData.camera;
 		const out = { fov: c.fov, roll: c.roll };
-		window.__stores.sequencePlayer.releaseScrub();
+		window.__tp.test.v1.sequencePlayer.releaseScrub();
 		return out;
 	}, { id: seqC, u: uuidC, t: tracks.end - 0.05 });
 	h.check(near(played.fov, fovFor(85), 0.06) && near(played.roll, -6, 0.11), `playback ends on the zoom and dutch the take ended on (fov ${played.fov?.toFixed(2)}, roll ${played.roll?.toFixed(2)})`);
-	await pg.evaluate((u) => window.__stores.filmState.openFilm(u), uuidC);
+	await pg.evaluate((u) => window.__tp.test.v1.filmState.openFilm(u), uuidC);
 	await pg.waitForSelector('#film-exit', { timeout: 10000 });
-	await pg.evaluate(() => window.__stores.filmLive.setSmoothing(0)); // the drag check below reads raw poses
+	await pg.evaluate(() => window.__tp.test.v1.filmLive.setSmoothing(0)); // the drag check below reads raw poses
 
 	const before = await pose(C.page);
 	await C.page.mouse.move(640, 400);
@@ -939,7 +939,7 @@ h.run(async () => {
 	// a Bluetooth shutter sends a volume key: it is ● / ❚❚ (after the countdown, which is still on)
 	const takeState = () => C.page.evaluate(() => {
 		let u = null;
-		window.__stores.filmRecorder.take.subscribe((v) => (u = v))();
+		window.__tp.test.v1.filmRecorder.take.subscribe((v) => (u = v))();
 		return u;
 	});
 	await C.page.locator('#film-look').click({ position: { x: 5, y: 300 } }); // focus off any control
@@ -948,15 +948,15 @@ h.run(async () => {
 	await C.page.waitForTimeout(800);
 	await C.page.keyboard.press('AudioVolumeUp');
 	await h.eventually(takeState, (u) => u.state === 'paused' && !u.saving, 'the shutter key again pauses + commits', 15000);
-	await C.page.evaluate(() => window.__stores.filmRecorder.finishTake());
+	await C.page.evaluate(() => window.__tp.test.v1.filmRecorder.finishTake());
 	// height lock: rising does nothing while it is on
-	await C.page.evaluate(() => window.__stores.filmMode.setHeightLock(true));
+	await C.page.evaluate(() => window.__tp.test.v1.filmMode.setHeightLock(true));
 	const hy = (await pose(C.page)).pos[1];
 	await C.page.keyboard.down('KeyE');
 	await C.page.waitForTimeout(800);
 	await C.page.keyboard.up('KeyE');
 	h.check(Math.abs((await pose(C.page)).pos[1] - hy) < 1e-6, 'height lock keeps the camera at its height');
-	await C.page.evaluate(() => window.__stores.filmMode.setHeightLock(false));
+	await C.page.evaluate(() => window.__tp.test.v1.filmMode.setHeightLock(false));
 	await shot(C.page, 'desktop');
 	await h.closePeer(C);
 

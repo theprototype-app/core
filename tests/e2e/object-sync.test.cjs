@@ -18,7 +18,7 @@ const h = require('./helpers.cjs');
 /** count + name the objects a page holds */
 const sceneOf = (page) =>
 	page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		return { count: g.children.length, names: g.children.map((o) => o.name || o.type) };
 	});
@@ -43,7 +43,7 @@ const instrument = (peer, label) => {
 const spyConns = (peer) =>
 	peer.page.evaluate(async () => {
 		const w = window;
-		const p = await new Promise((r) => w.__stores.peers.subscribe(r)());
+		const p = await new Promise((r) => w.__tp.test.v1.peers.subscribe(r)());
 		const wrap = () => {
 			for (const [, c] of Object.entries(p.connections || {})) {
 				const list = Array.isArray(c) ? c : [c];
@@ -76,7 +76,7 @@ h.run(async () => {
 	// A builds a scene BEFORE anyone joins - several plain meshes, so a partial
 	// delivery shows up as a count rather than all-or-nothing
 	const built = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		for (let i = 0; i < 4; i++) w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		g.children.forEach((o, i) => (o.name = 'box' + i));
@@ -121,7 +121,7 @@ h.run(async () => {
 	// Previously: with one multi-material mesh present, a late joiner got NOTHING -
 	// not even the single-material meshes sent in the same batch.
 	await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const tex = (hex) => {
 			const c = document.createElement('canvas');
@@ -165,7 +165,7 @@ h.run(async () => {
 
 	// and the material ARRAY itself must survive the trip
 	const cShape = await C.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const found = g.children.find((o) => o.name === 'twoSlot');
 		if (!found) return { found: false };

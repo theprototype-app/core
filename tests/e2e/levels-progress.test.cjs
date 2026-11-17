@@ -18,47 +18,47 @@
 const h = require('./helpers.cjs');
 
 const tool = (peer, name, args) =>
-	peer.page.evaluate(([n, a]) => window.__stores.aiTools.executeAiTool(n, a), [name, args]);
+	peer.page.evaluate(([n, a]) => window.__tp.test.v1.aiTools.executeAiTool(n, a), [name, args]);
 
 const read = (peer, fn, arg) => peer.page.evaluate(fn, arg);
 
-const kitLevel = (peer) => read(peer, () => window.__stores.kit.kit.impls.levels?.current?.() ?? null);
+const kitLevel = (peer) => read(peer, () => window.__tp.test.v1.kit.kit.impls.levels?.current?.() ?? null);
 const tableIds = (peer) =>
 	read(peer, () => {
 		let s;
-		window.__stores.scenePhysics.scenePhysicsState_.subscribe((v) => (s = v))();
+		window.__tp.test.v1.scenePhysics.scenePhysicsState_.subscribe((v) => (s = v))();
 		return (s?.levels?.list ?? []).map((r) => r.id);
 	});
 const spawnOf = (peer) =>
 	read(peer, () => {
 		let s;
-		window.__stores.playSettings.runtimeSpawn.subscribe((v) => (s = v))();
+		window.__tp.test.v1.playSettings.runtimeSpawn.subscribe((v) => (s = v))();
 		return s ? { position: s.position, owner: s.owner } : null;
 	});
 const sceneName = (peer) =>
 	read(peer, () => {
 		let c;
-		window.__stores.levels.currentLevel.subscribe((v) => (c = v))();
+		window.__tp.test.v1.levels.currentLevel.subscribe((v) => (c = v))();
 		return c?.name ?? '';
 	});
 const vars = (peer) =>
 	read(peer, () => {
 		let g;
-		window.__stores.gameState.gameState.subscribe((v) => (g = v))();
+		window.__tp.test.v1.gameState.gameState.subscribe((v) => (g = v))();
 		return { ...(g?.vars ?? {}) };
 	});
-const point = (peer) => read(peer, () => window.__stores.levelsCheckpoints.checkpointsForTest().point);
+const point = (peer) => read(peer, () => window.__tp.test.v1.levelsCheckpoints.checkpointsForTest().point);
 const camAt = (peer) =>
 	read(peer, () => {
 		let cam;
-		window.__stores.globalCamera.subscribe((v) => (cam = v))();
+		window.__tp.test.v1.globalCamera.subscribe((v) => (cam = v))();
 		return cam.position.toArray().map((n) => Math.round(n * 100) / 100);
 	});
 /** put this player's eye at a spot (Interact: the editor camera IS the player) */
 const stand = (peer, eye) =>
 	read(peer, (e) => {
 		let cam;
-		window.__stores.globalCamera.subscribe((v) => (cam = v))();
+		window.__tp.test.v1.globalCamera.subscribe((v) => (cam = v))();
 		cam.position.set(e[0], e[1], e[2]);
 		cam.updateMatrixWorld(true);
 	}, eye);
@@ -81,15 +81,15 @@ h.run(async () => {
 	h.check(!set.error && set.levels?.list?.length === 2, 'set_levels wrote a two-level table: ' + (set.error || set.note));
 	await h.eventually(() => tableIds(B), (ids) => ids.join() === 'start,ledge', 'B holds the agent\'s table (the scene-settings singleton replicated)', 10000);
 	await h.eventually(
-		() => read(B, (u) => !!window.__stores.objectsGroup && (() => { let g; window.__stores.objectsGroup.subscribe((v) => (g = v))(); return !!g.getObjectByProperty('uuid', u)?.userData?.checkpoint; })(), pad2.uuid),
+		() => read(B, (u) => !!window.__tp.test.v1.objectsGroup && (() => { let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))(); return !!g.getObjectByProperty('uuid', u)?.userData?.checkpoint; })(), pad2.uuid),
 		(v) => v === true,
 		'B holds the agent\'s checkpoint pad with its record',
 		10000
 	);
-	await A.page.evaluate(() => window.__stores.kit.kit.impls.levels.select('start'));
+	await A.page.evaluate(() => window.__tp.test.v1.kit.kit.impls.levels.select('start'));
 	await h.eventually(() => Promise.all([A, B].map(kitLevel)), (v) => v[0] === 'start' && v[1] === 'start', 'premise: both peers on level 1 (start)', 10000);
 	// the node's own path into the kit (what a pulsed "Kit: Levels ▸ Next level" node runs), on B
-	await B.page.evaluate(() => window.__stores.kit.kit.runNodeAction('kit-levels-next', {}, { rid: 'node:e2e-next:1' }));
+	await B.page.evaluate(() => window.__tp.test.v1.kit.kit.runNodeAction('kit-levels-next', {}, { rid: 'node:e2e-next:1' }));
 	await h.eventually(() => Promise.all([A, B].map(kitLevel)), (v) => v[0] === 'ledge' && v[1] === 'ledge', 'Next level on B: BOTH peers on level 2 (ledge) of the agent\'s table', 10000);
 	await h.eventually(
 		() => Promise.all([A, B].map(spawnOf)),
@@ -113,16 +113,16 @@ h.run(async () => {
 	}
 	const dense = await read(C, () => {
 		let n = 0;
-		window.__stores.objectsGroup.subscribe((g) => g.traverse((o) => (n = Math.max(n, o.geometry?.attributes?.position?.count ?? 0))))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => g.traverse((o) => (n = Math.max(n, o.geometry?.attributes?.position?.count ?? 0))))();
 		return n;
 	});
 	h.check(dense > 5000, `premise: the spheres are dense (${dense} vertices each)`);
 	const entrance = await tool(C, 'set_checkpoint', { position: [0, 0, -2], name: 'Cave entrance' });
 	h.check(!entrance.error, 'premise: the Cave entrance pad');
-	const cave = await C.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Cave'));
+	const cave = await C.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('Cave'));
 	h.check(!!cave?.hash, 'premise: the Cave saved as a project scene');
-	const blank = await C.page.evaluate(() => window.__stores.levels.newLevel('Hub'));
-	await C.page.evaluate((hash) => window.__stores.levels.travelToLevel(hash, 'Hub'), blank.hash);
+	const blank = await C.page.evaluate(() => window.__tp.test.v1.levels.newLevel('Hub'));
+	await C.page.evaluate((hash) => window.__tp.test.v1.levels.travelToLevel(hash, 'Hub'), blank.hash);
 	await h.eventually(() => sceneName(C), (n) => n === 'Hub', 'premise: standing in an empty Hub', 15000);
 	const hubSet = await tool(C, 'set_levels', { levels: [{ name: 'Hub', scene: 'Hub' }, { name: 'Cave', scene: 'Cave', spawn: 'Cave entrance' }], keep: ['score', 'inventory', 'var:coins'] });
 	h.check(!hubSet.error, 'the Hub\'s table: Hub, Cave; keep score, inventory, coins (' + (hubSet.error || hubSet.note) + ')');
@@ -130,18 +130,18 @@ h.run(async () => {
 	h.check(!load.error && load.loading?.preset === 'bar', 'set_loading: the bar with a tip (' + (load.error || load.note) + ')');
 	const portal = await tool(C, 'set_portal', { position: [0, 0, -20], level: 'Cave', transition: 'iris' });
 	h.check(!portal.error && portal.portal?.level === 'cave', 'set_portal: a doorway to the Cave level (' + (portal.error || portal.note) + ')');
-	const hub = await C.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Hub'));
+	const hub = await C.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('Hub'));
 	h.check(!!hub?.hash, 'premise: the Hub saved');
 	await C.page.evaluate(() => {
-		const g = window.__stores.gameState;
+		const g = window.__tp.test.v1.gameState;
 		g.setGameVar('coins', 3);
 		g.setGameVar('inventory', ['lamp']);
 		g.setGameVar('junk', 9);
-		window.__stores.kit.kit.impls.score.set(4);
+		window.__tp.test.v1.kit.kit.impls.score.set(4);
 		// the loading screen's samples, as the overlay sees them
 		window.__lvSamples = [];
-		window.__stores.levelsLoading.levelLoading.subscribe((s) => window.__lvSamples.push({ active: s.active, progress: s.progress, t: Date.now(), tips: s.config?.tips?.length ?? 0 }));
-		window.__stores.objectActions.setEditorMode('interact');
+		window.__tp.test.v1.levelsLoading.levelLoading.subscribe((s) => window.__lvSamples.push({ active: s.active, progress: s.progress, t: Date.now(), tips: s.config?.tips?.length ?? 0 }));
+		window.__tp.test.v1.objectActions.setEditorMode('interact');
 	});
 	await C.page.waitForTimeout(600);
 	// a slower device (6x CPU) for the cold hop: on a fast GPU box the 200-object build finishes inside the
@@ -156,7 +156,7 @@ h.run(async () => {
 	await h.eventually(() => kitLevel(C), (l) => l === 'cave', '…and the kit\'s current level is the Cave row', 10000);
 	const v = await vars(C);
 	h.check(v.coins === 3 && JSON.stringify(v.inventory) === '["lamp"]' && !('junk' in v), `the keep list carried coins and the inventory, and dropped junk (${JSON.stringify(v)})`);
-	const score = () => read(C, () => window.__stores.kit.kit.impls.score.total());
+	const score = () => read(C, () => window.__tp.test.v1.kit.kit.impls.score.total());
 	await h.eventually(score, (t) => t === 4, 'the kept score came through the hop (4)', 8000);
 	await h.eventually(() => point(C), (a) => a?.kind === 'portal' || a?.name === 'Cave entrance', 'the arrival counts as a checkpoint', 8000);
 	await h.eventually(() => spawnOf(C), (s) => near(s?.position, [0, 0, -2], 0.4), 'this player\'s spawn is the Cave entrance pad', 8000);
@@ -174,10 +174,10 @@ h.run(async () => {
 	h.check(off - first >= 380, `shown at least ~0.4 s (${off - first} ms)`);
 
 	// back to the Hub and into the Cave again: the Cave is loaded already, so no screen
-	await C.page.evaluate(() => window.__stores.levelsTravel.goToLevel('hub'));
+	await C.page.evaluate(() => window.__tp.test.v1.levelsTravel.goToLevel('hub'));
 	await h.eventually(() => sceneName(C), (n) => n === 'Hub', 'premise: back in the Hub (Go to level)', 30000);
 	await C.page.evaluate(() => (window.__lvSamples = []));
-	await C.page.evaluate(() => window.__stores.levelsTravel.goToLevel('cave'));
+	await C.page.evaluate(() => window.__tp.test.v1.levelsTravel.goToLevel('cave'));
 	await h.eventually(() => sceneName(C), (n) => n === 'Cave', 'premise: the Cave again', 30000);
 	const again = await C.page.evaluate(() => window.__lvSamples.filter((s) => s.active).length);
 	h.check(again === 0, `a scene already loaded shows no loading screen (${again} samples)`);
@@ -190,33 +190,33 @@ h.run(async () => {
 	await h.eventually(() => point(C), (p) => p?.kind === 'checkpoint' && p.name === 'Mid', 'stepping on it made Mid this player\'s checkpoint', 8000);
 	const flash = await C.page.evaluate(() => {
 		let f;
-		window.__stores.levelsCheckpoints.checkpointFlash.subscribe((v) => (f = v))();
+		window.__tp.test.v1.levelsCheckpoints.checkpointFlash.subscribe((v) => (f = v))();
 		return f?.name ?? '';
 	});
 	h.check(flash === 'Halfway', `the flash says its label (${flash})`);
 	await stand(C, [-12, 1.6, -12]);
 	await C.page.waitForTimeout(400);
-	await C.page.evaluate(() => window.__stores.kit.kit.runNodeAction('kit-levels-respawn', {}, { rid: 'node:e2e-respawn:1' }));
+	await C.page.evaluate(() => window.__tp.test.v1.kit.kit.runNodeAction('kit-levels-respawn', {}, { rid: 'node:e2e-respawn:1' }));
 	await h.eventually(() => camAt(C), (p) => near(p, [8, 0, 8], 3), 'Back to checkpoint flew this player back to Mid', 8000);
 
 	console.log('\n=== 4b. the save cap, told to the author ===');
 	// a kept variable past 256 KB: the editor measures the save at the checkpoint (writes nothing) and the
 	// Levels panel says why an exported game would not keep it
-	await C.page.evaluate(() => window.__stores.gameState.setGameVar('coins', 'x'.repeat(300 * 1024)));
-	await C.page.evaluate(() => window.__stores.levelsCheckpoints.saveProgress());
-	await C.page.evaluate(() => window.__stores.openSceneSection('Levels'));
+	await C.page.evaluate(() => window.__tp.test.v1.gameState.setGameVar('coins', 'x'.repeat(300 * 1024)));
+	await C.page.evaluate(() => window.__tp.test.v1.levelsCheckpoints.saveProgress());
+	await C.page.evaluate(() => window.__tp.test.v1.openSceneSection('Levels'));
 	await h.eventually(
 		() => C.page.evaluate(() => document.getElementById('levels-save-problem')?.textContent ?? ''),
 		(t) => /over the 256 KB/.test(t),
 		'the Levels panel tells the author the save is over 256 KB',
 		10000
 	);
-	await C.page.evaluate(() => window.__stores.gameState.setGameVar('coins', 3));
-	await C.page.evaluate(() => window.__stores.levelsCheckpoints.saveProgress());
+	await C.page.evaluate(() => window.__tp.test.v1.gameState.setGameVar('coins', 3));
+	await C.page.evaluate(() => window.__tp.test.v1.levelsCheckpoints.saveProgress());
 	await h.eventually(() => C.page.evaluate(() => !!document.getElementById('levels-save-problem')), (on) => !on, '…and the warning goes once it fits again', 8000);
 
 	console.log('\n=== 5. New game ===');
-	await C.page.evaluate(() => window.__stores.kit.kit.runNodeAction('kit-levels-newGame', {}, { rid: 'node:e2e-new:1' }));
+	await C.page.evaluate(() => window.__tp.test.v1.kit.kit.runNodeAction('kit-levels-newGame', {}, { rid: 'node:e2e-new:1' }));
 	await h.eventually(() => sceneName(C), (n) => n === 'Hub', 'New game: back at the first level (the Hub)', 30000);
 	const fresh = await vars(C);
 	h.check(!('coins' in fresh) && !('inventory' in fresh), `New game reset the kept variables (${JSON.stringify(fresh)})`);

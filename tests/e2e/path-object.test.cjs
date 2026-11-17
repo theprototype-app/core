@@ -27,7 +27,7 @@ fs.mkdirSync(OUT, { recursive: true });
 const record = (page, uuid) =>
 	page.evaluate((u) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		const o = g?.getObjectByProperty('uuid', u);
 		return o?.userData?.spline ? JSON.parse(JSON.stringify(o.userData.spline)) : null;
 	}, uuid);
@@ -37,8 +37,8 @@ const posesAt = (page, uuid, ts, o = {}) =>
 	page.evaluate(
 		([u, ts, o]) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((x) => (g = x))();
-			const v = window.__stores.pathRuntime.pathOf(g, u);
+			window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
+			const v = window.__tp.test.v1.pathRuntime.pathOf(g, u);
 			if (!v) return null;
 			return {
 				period: v.period,
@@ -52,13 +52,13 @@ const posesAt = (page, uuid, ts, o = {}) =>
 	);
 
 /** @param {any} page @param {string} key */
-const walker = (page, key) => page.evaluate((k) => window.__stores.pathRuntime.patrolStateOf(k), key);
+const walker = (page, key) => page.evaluate((k) => window.__tp.test.v1.pathRuntime.patrolStateOf(k), key);
 
 /** @param {any} page @param {string} uuid */
 const worldPos = (page, uuid) =>
 	page.evaluate((u) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		const o = g?.getObjectByProperty('uuid', u);
 		if (!o) return null;
 		o.updateWorldMatrix(true, false);
@@ -71,9 +71,9 @@ const walkerAt = (page, key, uuid) =>
 	page.evaluate(
 		([k, u]) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((x) => (g = x))();
+			window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 			const o = g?.getObjectByProperty('uuid', u);
-			const w = window.__stores.pathRuntime.patrolStateOf(k);
+			const w = window.__tp.test.v1.pathRuntime.patrolStateOf(k);
 			if (!o || !w) return null;
 			o.updateWorldMatrix(true, false);
 			return { ...w, pos: [o.matrixWorld.elements[12], o.matrixWorld.elements[13], o.matrixWorld.elements[14]] };
@@ -105,7 +105,7 @@ const legacyLoopPose = (pts, speed, time) => {
 const patrolNode = (page, graph) =>
 	page.evaluate((gid) => {
 		let gs;
-		window.__stores.flowGraphs.subscribe((x) => (gs = x))();
+		window.__tp.test.v1.flowGraphs.subscribe((x) => (gs = x))();
 		const n = (gs?.[gid]?.nodes ?? []).find((n) => n.type === 'pathpatrol');
 		return n ? { id: n.id, data: JSON.parse(JSON.stringify(n.data)) } : null;
 	}, graph);
@@ -114,7 +114,7 @@ const patrolNode = (page, graph) =>
 const pathVisible = (page, uuid) =>
 	page.evaluate((u) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		const o = g?.getObjectByProperty('uuid', u);
 		return o ? { material: o.material.visible, object: o.visible } : null;
 	}, uuid);
@@ -124,8 +124,8 @@ const newBox = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.commandsHandler.sceneCommand('/create box');
-				window.__stores.objectsGroup.subscribe((g) => resolve(g.children[g.children.length - 1].uuid))();
+				window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+				window.__tp.test.v1.objectsGroup.subscribe((g) => resolve(g.children[g.children.length - 1].uuid))();
 			})
 	);
 
@@ -143,7 +143,7 @@ h.run(async () => {
 	await h.eventually(() => worldPos(B.page, box), (p) => !!p, '§1 the walker box reached B');
 	const made = await A.page.evaluate(
 		(box) =>
-			window.__stores.aiTools.executeAiTool('create_path', {
+			window.__tp.test.v1.aiTools.executeAiTool('create_path', {
 				points: [[0, 0.5, 0], { pos: [4, 0.5, 0], wait: 2 }, { pos: [4, 0.5, 4], jump: true }, { pos: [8, 0.5, 4], wait: 1, event: 'door' }],
 				walk: 'loop',
 				speed: 2,
@@ -198,7 +198,7 @@ h.run(async () => {
 	// recompute rows above passed; path-node's own drift row is red on v1.63.0 for the same reason)
 
 	// §4 ------------------------------------------------------------------------------------
-	await A.page.evaluate((u) => window.__stores.pathActions.setPathPointFields(u, [1], { wait: 3 }), uuid);
+	await A.page.evaluate((u) => window.__tp.test.v1.pathActions.setPathPointFields(u, [1], { wait: 3 }), uuid);
 	await h.eventually(() => record(B.page, uuid), (r) => r?.points?.[1]?.wait === 3, '§4 the longer wait reached B');
 	const [ea, eb] = await Promise.all([posesAt(A.page, uuid, [4.5]), posesAt(B.page, uuid, [4.5])]);
 	h.check(Math.abs(ea.period - 8) < 1e-9 && JSON.stringify(ea) === JSON.stringify(eb), '§4 both schedules moved together (period 8)');
@@ -206,9 +206,9 @@ h.run(async () => {
 
 	// docs pictures (not a gate): the Inspector's Path section with point 2 picked
 	try {
-		await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u, true), uuid);
+		await A.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u, true), uuid);
 		await A.page.locator('#path-mode').waitFor({ state: 'visible', timeout: 15000 });
-		await A.page.evaluate(() => window.__stores.pathState?.pathSelectedPoints?.set?.([1]));
+		await A.page.evaluate(() => window.__tp.test.v1.pathState?.pathSelectedPoints?.set?.([1]));
 		await A.page.locator('#path-mode').scrollIntoViewIfNeeded();
 		await A.page.waitForTimeout(800);
 		await A.page.screenshot({ path: path.join(OUT, 'path-inspector.png') });
@@ -226,14 +226,14 @@ h.run(async () => {
 		[-2, 0.5, -2]
 	];
 	const legacy = await A.page.evaluate(
-		([old, pts]) => window.__stores.aiTools.executeAiTool('create_flow_nodes', { graph: old, nodes: [{ type: 'pathpatrol', data: { points: pts, speed: 1, mode: 'loop' } }] }),
+		([old, pts]) => window.__tp.test.v1.aiTools.executeAiTool('create_flow_nodes', { graph: old, nodes: [{ type: 'pathpatrol', data: { points: pts, speed: 1, mode: 'loop' } }] }),
 		[old, oldPts]
 	);
 	h.check(!legacy?.error, '§5 an old clicked-waypoint patrol on box 2 ' + JSON.stringify(legacy).slice(0, 120));
 	const ln = await patrolNode(A.page, old);
 	await h.eventually(() => patrolNode(B.page, old), (n) => n?.data?.points?.length === 3, '§5 the old node reached B');
 	// the old walk has been running; Convert swaps it for the Path walk on the same shared clock
-	const conv = await A.page.evaluate((id) => window.__stores.pathActions.convertPatrolNode(id), ln.id);
+	const conv = await A.page.evaluate((id) => window.__tp.test.v1.pathActions.convertPatrolNode(id), ln.id);
 	h.check(conv?.ok === true && typeof conv.path === 'string', '§5 Convert made a Path ' + JSON.stringify(conv));
 	const cn0 = await patrolNode(A.page, old);
 	await h.eventually(() => walkerAt(A.page, cn0.id + '|' + old, old), (w) => !!w?.p, '§5 A walks box 2 on the converted Path');
@@ -245,8 +245,8 @@ h.run(async () => {
 	await h.eventually(() => record(B.page, conv.path), (r) => !!r?.path, '§5 B: the converted Path arrived');
 	const cv = await B.page.evaluate((u) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
-		const v = window.__stores.pathRuntime.pathOf(g, u);
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
+		const v = window.__tp.test.v1.pathRuntime.pathOf(g, u);
 		return { closed: v.closed, mode: v.mode, smooth: v.smooth, speed: v.speed, pts: v.points.map((p) => p.pos.map((n) => +n.toFixed(5))) };
 	}, conv.path);
 	h.check(cv.closed && cv.mode === 'loop' && cv.smooth === false && cv.speed === 1, '§5 B: a closed straight-line loop at the old speed');
@@ -258,13 +258,13 @@ h.run(async () => {
 
 	// §6 ------------------------------------------------------------------------------------
 	h.check((await pathVisible(A.page, uuid))?.material === true, '§6 editor: the Path line is drawn');
-	for (const p of [A, B]) await p.page.evaluate(() => window.__stores.isLocked.set(true));
+	for (const p of [A, B]) await p.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await h.eventually(() => pathVisible(A.page, uuid), (v) => v?.material === false && v.object === true, '§6 Play: the line is hidden (material), the object stays visible (its walkers keep walking)');
 	await h.eventually(() => pathVisible(B.page, uuid), (v) => v?.material === false, '§6 Play: hidden on B too');
-	await A.page.evaluate((u) => window.__stores.pathActions.setPathSettings(u, { showInPlay: true }), uuid);
+	await A.page.evaluate((u) => window.__tp.test.v1.pathActions.setPathSettings(u, { showInPlay: true }), uuid);
 	await h.eventually(() => pathVisible(B.page, uuid), (v) => v?.material === true, '§6 show in Play: drawn while playing, on B');
-	await A.page.evaluate((u) => window.__stores.pathActions.setPathSettings(u, { showInPlay: false }), uuid);
-	for (const p of [A, B]) await p.page.evaluate(() => window.__stores.isLocked.set(false));
+	await A.page.evaluate((u) => window.__tp.test.v1.pathActions.setPathSettings(u, { showInPlay: false }), uuid);
+	for (const p of [A, B]) await p.page.evaluate(() => window.__tp.test.v1.isLocked.set(false));
 	await h.eventually(() => pathVisible(A.page, uuid), (v) => v?.material === true, '§6 back in the editor: drawn again');
 
 	// §7 ------------------------------------------------------------------------------------
@@ -274,14 +274,14 @@ h.run(async () => {
 		([u, box]) => {
 			let g, gs;
 			const has = () => {
-				window.__stores.objectsGroup.subscribe((x) => (g = x))();
-				window.__stores.flowGraphs.subscribe((x) => (gs = x))();
+				window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
+				window.__tp.test.v1.flowGraphs.subscribe((x) => (gs = x))();
 				const o = g.getObjectByProperty('uuid', u);
 				return { path: !!o, wait: o?.userData?.spline?.points?.[1]?.wait ?? null, node: (gs?.[box]?.nodes ?? []).some((n) => n.type === 'pathpatrol') };
 			};
 			const out = [has()];
 			for (let i = 0; i < 12 && out[out.length - 1].path; i++) {
-				window.__stores.history.undo();
+				window.__tp.test.v1.history.undo();
 				out.push(has());
 			}
 			return out;

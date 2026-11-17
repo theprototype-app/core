@@ -20,7 +20,7 @@ const h = require('./helpers.cjs');
 
 const editBox = (page, cmd = '/create Box 1 1 1') =>
 	page.evaluate((c) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand(c);
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
@@ -34,7 +34,7 @@ const editBox = (page, cmd = '/create Box 1 1 1') =>
 /** highlight the +Y face and return its triangle count */
 const pickTop = (page) =>
 	page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		fe.setFaceGranularity('face');
 		const faces = fe.currentFaces();
 		const yi = faces.findIndex((f) => f.normal.y > 0.9);
@@ -46,7 +46,7 @@ const pickTop = (page) =>
 /** every mesh edge shared by exactly two triangles = watertight */
 const oddEdges = (page) =>
 	page.evaluate(() => {
-		const tris = window.__stores.faceEdit.readTriangles(window.__box.geometry);
+		const tris = window.__tp.test.v1.faceEdit.readTriangles(window.__box.geometry);
 		const keyOf = (v) => [v.x, v.y, v.z].map((n) => Math.round(n * 1e4)).join(',');
 		const counts = new Map();
 		for (const t of tris) {
@@ -71,7 +71,7 @@ h.run(async () => {
 	const clean = await oddEdges(A.page);
 	h.check(clean === 0, `the box starts watertight (${clean} odd edges)`);
 	const one = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		const t = s.meshTopology;
 		const before = fe.readTriangles(window.__box.geometry);
@@ -131,7 +131,7 @@ h.run(async () => {
 	await editBox(A.page);
 	await pickTop(A.page);
 	const three = await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		const before = fe.readTriangles(window.__box.geometry).length;
 		const ok = fe.bevelFaces(0.3, 3);
 		const tris = fe.readTriangles(window.__box.geometry);
@@ -163,7 +163,7 @@ h.run(async () => {
 	// --- ONE undo for the whole thing, and the refusals ---------------------
 	// (kept DIRECTLY after the 3-segment bevel: it undoes the LAST history entry)
 	const rest = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		const count = () => fe.readTriangles(window.__box.geometry).length;
 		const bevelled = count();
@@ -188,7 +188,7 @@ h.run(async () => {
 	await editBox(A.page);
 	await pickTop(A.page);
 	const linear = await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		// profile 0 = LINEAR schedule: equal shares per step
 		const ok = fe.bevelFaces(0.3, 3, 0);
 		const tris = fe.readTriangles(window.__box.geometry);
@@ -217,7 +217,7 @@ h.run(async () => {
 	// with the geometry stripped away.
 	const ringProfile = (page) =>
 		page.evaluate(() => {
-			const tris = window.__stores.faceEdit.readTriangles(window.__box.geometry);
+			const tris = window.__tp.test.v1.faceEdit.readTriangles(window.__box.geometry);
 			/** @type {Map<number, {s: number, rise: number}>} */
 			const seen = new Map();
 			for (const v of tris.flat()) {
@@ -247,7 +247,7 @@ h.run(async () => {
 	const bevelAt = async (profile) => {
 		await editBox(A.page);
 		await pickTop(A.page);
-		const ok = await A.page.evaluate((p) => window.__stores.faceEdit.bevelFaces(0.3, 3, p), profile);
+		const ok = await A.page.evaluate((p) => window.__tp.test.v1.faceEdit.bevelFaces(0.3, 3, p), profile);
 		return { ok, rings: await ringProfile(A.page), odd: await oddEdges(A.page) };
 	};
 	const convex = await bevelAt(0.5);
@@ -288,7 +288,7 @@ h.run(async () => {
 		await editBox(A.page);
 		await pickTop(A.page);
 		const r = await A.page.evaluate((prof) => {
-			const fe = window.__stores.faceEdit;
+			const fe = window.__tp.test.v1.faceEdit;
 			const ok = fe.bevelFaces(0.3, 3, prof);
 			const tris = fe.readTriangles(window.__box.geometry);
 			const heights = [...new Set(tris.flat().map((v) => Math.round(v.y * 1e4) / 1e4))]
@@ -327,7 +327,7 @@ h.run(async () => {
 	// direction: 'out' raises the cap along +normal, 'in' recesses it — the cap
 	// centroid's displacement SIGN against the face normal is the whole contract
 	const directions = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		const run = (direction) => {
 			s.commandsHandler.sceneCommand('/create Box 1 1 1');
@@ -371,8 +371,8 @@ h.run(async () => {
 	// vertex bevel introduced — so the check flips to what still matters: each element mode
 	// has its OWN op, and the face one is not quietly delegating to another.
 	const ops = await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
-		const me = window.__stores.meshEdit;
+		const fe = window.__tp.test.v1.faceEdit;
+		const me = window.__tp.test.v1.meshEdit;
 		return {
 			face: typeof fe.bevelFaces === 'function',
 			edge: typeof fe.bevelEdges === 'function',
@@ -389,9 +389,9 @@ h.run(async () => {
 	const triCountOn = (page, uuid) =>
 		page.evaluate((uuid) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const object = g.getObjectByProperty('uuid', uuid);
-			return object?.geometry ? window.__stores.meshTopology.triangleCountOf(object.geometry) : null;
+			return object?.geometry ? window.__tp.test.v1.meshTopology.triangleCountOf(object.geometry) : null;
 		}, uuid);
 	await h.eventually(
 		() => triCountOn(B.page, netUuid),
@@ -399,7 +399,7 @@ h.run(async () => {
 		'B received the box (premise)',
 		20000
 	);
-	await A.page.evaluate(() => window.__stores.faceEdit.bevelFaces(0.2, 2));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.bevelFaces(0.2, 2));
 	await h.eventually(
 		() => triCountOn(B.page, netUuid),
 		(n) => n === 28,
@@ -408,14 +408,14 @@ h.run(async () => {
 	);
 	const peer = await B.page.evaluate((uuid) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const object = g.getObjectByProperty('uuid', uuid);
-		const faces = window.__stores.meshTopology.readStoredFaces(object.geometry);
+		const faces = window.__tp.test.v1.meshTopology.readStoredFaces(object.geometry);
 		return { has: !!faces, quads: faces ? faces.filter((f) => f.length === 2).length : 0 };
 	}, netUuid);
 	h.check(peer.has, 'B stored the topology that came with the bevel');
 	h.check(peer.quads >= 8, `...including both chamfer rings as quads (${peer.quads})`);
 
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit?.());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit?.());
 	await h.finish(browser);
 });

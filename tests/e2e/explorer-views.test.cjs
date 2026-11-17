@@ -72,17 +72,17 @@ h.run(async () => {
 		storage: { 'shared:deleteNoConfirm': 'true', 'shared:keepRecycleBin': 'true' }
 	});
 	const page = A.page;
-	await page.waitForFunction(() => !!window.__stores?.explorerView && !!window.__stores?.explorer, null, {
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.explorerView && !!window.__tp?.test.v1?.explorer, null, {
 		timeout: 30000
 	});
-	await page.evaluate(() => window.__stores.explorer.loadExplorer());
+	await page.evaluate(() => window.__tp.test.v1.explorer.loadExplorer());
 	await page.waitForTimeout(400);
 
 	// ---- 1. the pure comparator ------------------------------------------------------
 	// No browser needed for any of this, which is the point of the leaf: run it in-page
 	// so it is the SAME module the component imports, not a copy.
 	const pure = await page.evaluate(() => {
-		const v = window.__stores.explorerView;
+		const v = window.__tp.test.v1.explorerView;
 		const rows = [
 			{ id: 'i1', name: 'zebra.png', kind: 'texture', size: 100, createdAt: 5 },
 			{ id: 'f1', name: 'mid', folder: true },
@@ -129,7 +129,7 @@ h.run(async () => {
 
 	// ---- 2. the toggle --------------------------------------------------------------
 	const seeded = await page.evaluate(async () => {
-		const e = window.__stores.explorer;
+		const e = window.__tp.test.v1.explorer;
 		await e.clearLibrary();
 		const f = e.createFolder('UI Textures', null);
 		const enc = (s) => new TextEncoder().encode(s).buffer;
@@ -217,7 +217,7 @@ h.run(async () => {
 	await page.waitForTimeout(300);
 	const addedDir = await page.evaluate(() => {
 		let v;
-		window.__stores.explorerView.explorerSort.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorerView.explorerSort.subscribe((x) => (v = x))();
 		return v.library;
 	});
 	h.check(
@@ -284,7 +284,7 @@ h.run(async () => {
 	await page.waitForTimeout(500);
 	const inFolder = await page.evaluate(() => {
 		let v;
-		window.__stores.explorer.activeFolder.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorer.activeFolder.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(inFolder === seeded.folder, 'double-clicking a folder row opens it');
@@ -292,7 +292,7 @@ h.run(async () => {
 		(await listRows(page)).some((r) => r.name.includes('inside.txt')),
 		'and the folder renders its contents in the list'
 	);
-	await page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await page.waitForTimeout(400);
 
 	// ---- 6. the storage estimate ----------------------------------------------------
@@ -305,8 +305,8 @@ h.run(async () => {
 
 	// ---- 7. THE BIN: its own columns, and THE REPORTED PURGE BUG --------------------
 	const binned = await page.evaluate(async () => {
-		const e = window.__stores.explorer;
-		const sl = window.__stores.sharedLibrary;
+		const e = window.__tp.test.v1.explorer;
+		const sl = window.__tp.test.v1.sharedLibrary;
 		await e.clearLibrary();
 		const enc = (s) => new TextEncoder().encode(s).buffer;
 		const out = [];
@@ -327,8 +327,8 @@ h.run(async () => {
 	// section is about. Stamp them with the id this peer actually has.
 	await page.evaluate(() => {
 		let me = '';
-		window.__stores.peers.subscribe((p) => (me = p?.peer?.id ?? ''))();
-		window.__stores.projectManifest.projectManifest.update((doc) => ({
+		window.__tp.test.v1.peers.subscribe((p) => (me = p?.peer?.id ?? ''))();
+		window.__tp.test.v1.projectManifest.projectManifest.update((doc) => ({
 			...doc,
 			deleted: (doc.deleted ?? []).map((r) => ({ ...r, by: { id: me, name: '' } }))
 		}));
@@ -336,14 +336,14 @@ h.run(async () => {
 	await page.waitForTimeout(700);
 	// stamp ONE row as somebody else's, the way an arriving delete-for-everyone would
 	await page.evaluate(() =>
-		window.__stores.projectManifest.projectManifest.update((doc) => ({
+		window.__tp.test.v1.projectManifest.projectManifest.update((doc) => ({
 			...doc,
 			deleted: (doc.deleted ?? []).map((r, i) =>
 				i === 0 ? { ...r, by: { id: 'p-other', name: 'Ada' } } : r
 			)
 		}))
 	);
-	await page.evaluate(() => window.__stores.explorer.activeFolder.set('deleted'));
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set('deleted'));
 	await page.waitForTimeout(600);
 
 	const binHead = await page.locator('#explorer-list-head th[data-col]').allInnerTexts();
@@ -398,7 +398,7 @@ h.run(async () => {
 	// 24-C2: the card suffix is the log row's key — the RECORD id for a deletion logged since
 	// C2 — so the record is looked up by id (the hash reading is kept for an older row)
 	const gone = await page.evaluate(async (t) => {
-		const e = window.__stores.explorer;
+		const e = window.__tp.test.v1.explorer;
 		const it = e.allItems().find((i) => i.id === t) ?? e.itemByHash(t);
 		return { found: !!it, blob: it ? !!(await e.itemBlob(it.id)) : null };
 	}, target.id.replace('deleted:', ''));
@@ -425,11 +425,11 @@ h.run(async () => {
 	// the bin drew before) still returns all three, so the two answers genuinely differ and
 	// the checks above cannot pass with the split removed.
 	const split = await page.evaluate(() => {
-		const sl = window.__stores.sharedLibrary;
+		const sl = window.__tp.test.v1.sharedLibrary;
 		let m, vis, hid;
-		window.__stores.projectManifest.projectManifest.subscribe((x) => (m = x))();
-		window.__stores.explorer.explorerItems.subscribe((x) => (vis = x))();
-		window.__stores.explorer.hiddenItems.subscribe((x) => (hid = x))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((x) => (m = x))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((x) => (vis = x))();
+		window.__tp.test.v1.explorer.hiddenItems.subscribe((x) => (hid = x))();
 		const all = sl.deletedLog(m);
 		const held = new Set([...vis, ...hid].map((i) => i.hash));
 		const { bin, spent } = sl.partitionDeleted(all, held);
@@ -507,8 +507,8 @@ h.run(async () => {
 	await page.waitForTimeout(700);
 	const afterToggle = await page.evaluate(() => {
 		let a, v;
-		window.__stores.explorer.activeFolder.subscribe((x) => (a = x))();
-		window.__stores.explorerView.explorerBinShowSpent.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorer.activeFolder.subscribe((x) => (a = x))();
+		window.__tp.test.v1.explorerView.explorerBinShowSpent.subscribe((x) => (v = x))();
 		return { where: a, spent: v, on: document.querySelector('#deleted-log-toggle')?.getAttribute('aria-pressed') };
 	});
 	h.check(
@@ -528,9 +528,9 @@ h.run(async () => {
 	// `openFolder` is component-private, so what is driven here is the state a caller of it
 	// leaves behind: the view standing on the old id draws THE BIN — one trail, one set of
 	// rows, the same columns — rather than a second view beside it.
-	await page.evaluate(() => window.__stores.explorerView.explorerBinShowSpent.set(false));
+	await page.evaluate(() => window.__tp.test.v1.explorerView.explorerBinShowSpent.set(false));
 	await page.waitForTimeout(400);
-	await page.evaluate(() => window.__stores.explorer.activeFolder.set('deletedlog'));
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set('deletedlog'));
 	await page.waitForTimeout(700);
 	const onAlias = await page.evaluate(() => ({
 		crumbs: [...document.querySelectorAll('#explorer-crumbs button')]
@@ -546,10 +546,10 @@ h.run(async () => {
 	);
 	h.check(onAlias.rows === 2, `...showing the bin's own rows (${onAlias.rows})`);
 	// and a navigation OUT of it is an ordinary crumb press, because it is an ordinary place
-	await page.evaluate(() => window.__stores.explorer.activeFolder.set('deleted'));
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set('deleted'));
 	await page.waitForTimeout(400);
 	// now turn the record back on through the REAL toggle and read the whole record
-	await page.evaluate(() => window.__stores.explorerView.explorerBinShowSpent.set(true));
+	await page.evaluate(() => window.__tp.test.v1.explorerView.explorerBinShowSpent.set(true));
 	await page.waitForTimeout(600);
 	const crumbLabel = await page.evaluate(() =>
 		[...document.querySelectorAll('#explorer-crumbs button')]
@@ -601,10 +601,10 @@ h.run(async () => {
 		// takes directly and the store reading resolves by id first, hash second
 		const hash = t.replace('deleted:', '');
 		// the old expression, verbatim: a helper that reaches the shelves with get()
-		const oldAnswer = window.__stores.sharedLibrary.canRestoreDeleted(hash);
+		const oldAnswer = window.__tp.test.v1.sharedLibrary.canRestoreDeleted(hash);
 		let vis, hid;
-		window.__stores.explorer.explorerItems.subscribe((x) => (vis = x))();
-		window.__stores.explorer.hiddenItems.subscribe((x) => (hid = x))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((x) => (vis = x))();
+		window.__tp.test.v1.explorer.hiddenItems.subscribe((x) => (hid = x))();
 		const newAnswer = new Set([...vis, ...hid].flatMap((i) => [i.id, i.hash])).has(hash);
 		return { oldAnswer, newAnswer };
 	}, target.id);
@@ -664,7 +664,7 @@ h.run(async () => {
 	await page.waitForTimeout(500);
 	const oldestFirst = await page.evaluate(() => {
 		let v;
-		window.__stores.explorerView.explorerSort.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorerView.explorerSort.subscribe((x) => (v = x))();
 		return v.deleted;
 	});
 	h.check(
@@ -673,7 +673,7 @@ h.run(async () => {
 	);
 	const libStillSorted = await page.evaluate(() => {
 		let v;
-		window.__stores.explorerView.explorerSort.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorerView.explorerSort.subscribe((x) => (v = x))();
 		return v.library;
 	});
 	h.check(
@@ -683,10 +683,10 @@ h.run(async () => {
 
 	// ---- 9. the prefs survive a reload ---------------------------------------------
 	await page.reload({ waitUntil: 'domcontentloaded' });
-	await page.waitForFunction(() => !!window.__stores?.explorerView, null, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.explorerView, null, { timeout: 30000 });
 	await page.waitForTimeout(1500);
 	const restored = await page.evaluate(() => {
-		const v = window.__stores.explorerView;
+		const v = window.__tp.test.v1.explorerView;
 		const read = (s) => {
 			let out;
 			s.subscribe((x) => (out = x))();
@@ -715,25 +715,25 @@ h.run(async () => {
 	// a section which saves or adds perturbs its neighbours.
 	const pref = (name, on) =>
 		page.evaluate(
-			([n, v]) => window.__stores.sharedLibrary[n].set(v),
+			([n, v]) => window.__tp.test.v1.sharedLibrary[n].set(v),
 			[name, on]
 		);
 	// the reload above closed the panel and dropped the loaded index — reopen both the way
 	// the earlier sections did, or every DOM read below finds nothing and passes vacuously
-	await page.evaluate(() => window.__stores.explorer.loadExplorer());
+	await page.evaluate(() => window.__tp.test.v1.explorer.loadExplorer());
 	await page.waitForTimeout(400);
 	await page.locator('#explorer-slot').click();
 	await page.waitForTimeout(800);
 	await page.evaluate(async () => {
-		const e = window.__stores.explorer;
+		const e = window.__tp.test.v1.explorer;
 		await e.clearLibrary();
-		window.__stores.projectManifest.projectManifest.update((doc) => ({ ...doc, deleted: [] }));
+		window.__tp.test.v1.projectManifest.projectManifest.update((doc) => ({ ...doc, deleted: [] }));
 	});
 	await page.waitForTimeout(400);
 	// two deletions with the log ON: one that keeps its bytes, one that does not
 	const seededLog = await page.evaluate(async () => {
-		const e = window.__stores.explorer;
-		const sl = window.__stores.sharedLibrary;
+		const e = window.__tp.test.v1.explorer;
+		const sl = window.__tp.test.v1.sharedLibrary;
 		const enc = (t) => new TextEncoder().encode(t).buffer;
 		const keep = await e.addItemFromBytes(enc('keep me'), 'keeper.txt', null);
 		sl.logLocalDeletion({ hash: keep.hash, name: 'keeper.txt', kind: 'text', thumb: null });
@@ -756,7 +756,7 @@ h.run(async () => {
 	// stand IN the view, because that is where the preference is now visible and it is also
 	// the state the rule below has to answer for. The flag is a LOCAL pref that survived the
 	// reload above, so it is put back to its default here rather than assumed.
-	await page.evaluate(() => window.__stores.explorerView.explorerBinShowSpent.set(false));
+	await page.evaluate(() => window.__tp.test.v1.explorerView.explorerBinShowSpent.set(false));
 	await page.locator('#deleted-folder').click();
 	await page.waitForTimeout(600);
 	const toggleOn = await page.evaluate(() => {
@@ -813,9 +813,9 @@ h.run(async () => {
 	await page.waitForTimeout(700);
 	const off = await page.evaluate(() => {
 		let m, a, spent;
-		window.__stores.projectManifest.projectManifest.subscribe((x) => (m = x))();
-		window.__stores.explorer.activeFolder.subscribe((x) => (a = x))();
-		window.__stores.explorerView.explorerBinShowSpent.subscribe((x) => (spent = x))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((x) => (m = x))();
+		window.__tp.test.v1.explorer.activeFolder.subscribe((x) => (a = x))();
+		window.__tp.test.v1.explorerView.explorerBinShowSpent.subscribe((x) => (spent = x))();
 		const b = document.querySelector('#deleted-log-toggle');
 		return {
 			logRoot: !!document.querySelector('#deleted-log-folder'),
@@ -882,7 +882,7 @@ h.run(async () => {
 	await page.waitForTimeout(600);
 	const backOn = await page.evaluate(() => {
 		let a;
-		window.__stores.explorer.activeFolder.subscribe((x) => (a = x))();
+		window.__tp.test.v1.explorer.activeFolder.subscribe((x) => (a = x))();
 		return {
 			where: a,
 			root: document.querySelector('#deleted-folder')?.innerText.replace(/\s+/g, ' ').trim() ?? null,
@@ -908,13 +908,13 @@ h.run(async () => {
 	// on most starts, so a gate on `binCount` would take the whole record off the tree on
 	// the very startup a user is most likely to go looking for it.
 	await page.evaluate(
-		(hash) => window.__stores.sharedLibrary.purgeDeletedItem(hash),
+		(hash) => window.__tp.test.v1.sharedLibrary.purgeDeletedItem(hash),
 		seededLog.keep
 	);
 	await page.waitForTimeout(800);
 	const emptyBin = await page.evaluate(() => {
 		let m;
-		window.__stores.projectManifest.projectManifest.subscribe((x) => (m = x))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((x) => (m = x))();
 		return {
 			root: document.querySelector('#deleted-folder')?.innerText.replace(/\s+/g, ' ').trim() ?? null,
 			title: document.querySelector('#deleted-log-toggle')?.getAttribute('title') ?? '',
@@ -938,12 +938,12 @@ h.run(async () => {
 	// bytes go immediately, so the row would be pure history and none is written. With the
 	// bin ON the row IS the bin entry and must be written whatever this preference says.
 	const recording = await page.evaluate(async () => {
-		const e = window.__stores.explorer;
-		const sl = window.__stores.sharedLibrary;
+		const e = window.__tp.test.v1.explorer;
+		const sl = window.__tp.test.v1.sharedLibrary;
 		const enc = (t) => new TextEncoder().encode(t).buffer;
 		const read = () => {
 			let m;
-			window.__stores.projectManifest.projectManifest.subscribe((x) => (m = x))();
+			window.__tp.test.v1.projectManifest.projectManifest.subscribe((x) => (m = x))();
 			return (m.deleted ?? []).length;
 		};
 		const before = read();

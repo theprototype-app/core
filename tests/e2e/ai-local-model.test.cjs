@@ -53,19 +53,19 @@ const INVENTED_CALL = [
 
 const count = (peer) =>
 	peer.page.evaluate(
-		() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g ? g.children.length : 0))())
+		() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g ? g.children.length : 0))())
 	);
 const named = (peer, name) =>
 	peer.page.evaluate(
 		(n) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => r(!!(g && g.children.some((c) => c.name === n))))()
+				window.__tp.test.v1.objectsGroup.subscribe((g) => r(!!(g && g.children.some((c) => c.name === n))))()
 			),
 		name
 	);
 const msgs = (peer) =>
 	peer.page.evaluate(
-		() => new Promise((r) => window.__stores.aiAssistant.aiMessages.subscribe((m) => r(m))())
+		() => new Promise((r) => window.__tp.test.v1.aiAssistant.aiMessages.subscribe((m) => r(m))())
 	);
 
 h.run(async () => {
@@ -120,13 +120,13 @@ h.run(async () => {
 	});
 
 	await A.page.evaluate((base) => {
-		window.__stores.aiProviders.addAiProvider({ preset: 'custom', label: 'LocalMock', baseUrl: base, apiKey: 'k', model: 'qwen-mock' });
-		window.__stores.aiProviders.setAiEnabled(true);
+		window.__tp.test.v1.aiProviders.addAiProvider({ preset: 'custom', label: 'LocalMock', baseUrl: base, apiKey: 'k', model: 'qwen-mock' });
+		window.__tp.test.v1.aiProviders.setAiEnabled(true);
 	}, BASE);
 
 	// ---- 1+2: a text-mode tool call builds the scene, markup never shows -------------
 	const base0 = await count(A);
-	await A.page.evaluate(() => window.__stores.aiAssistant.runPrompt('a small campfire'));
+	await A.page.evaluate(() => window.__tp.test.v1.aiAssistant.runPrompt('a small campfire'));
 	await h.eventually(() => count(A), (n) => n === base0 + 3, 'text-mode (XML) tool call created 3 objects');
 	h.check(await named(A, 'Flame'), 'named object from the text-mode call exists');
 
@@ -142,11 +142,11 @@ h.run(async () => {
 	h.check(!list.some((m) => m.role === 'error'), 'no errors for the text-mode path');
 
 	// ---- 3: a broken STREAMED turn is retried unstreamed ------------------------------
-	await A.page.evaluate(() => window.__stores.aiAssistant.resetAiConversation());
+	await A.page.evaluate(() => window.__tp.test.v1.aiAssistant.resetAiConversation());
 	mode = 'broken-stream';
 	seen.length = 0;
 	const base1 = await count(A);
-	await A.page.evaluate(() => window.__stores.aiAssistant.runPrompt('another campfire'));
+	await A.page.evaluate(() => window.__tp.test.v1.aiAssistant.runPrompt('another campfire'));
 	await h.eventually(() => count(A), (n) => n === base1 + 3, 'unstreamed retry created the objects');
 	h.check(
 		seen.some((s) => s.stream === true) && seen.some((s) => s.stream === false),
@@ -166,15 +166,15 @@ h.run(async () => {
 	h.check(after.every((s) => s.stream === false), 'stays unstreamed for the rest of the session');
 
 	// ---- 4: an invented tool name with a bare object spec is repaired -----------------
-	await A.page.evaluate(() => window.__stores.aiAssistant.resetAiConversation());
+	await A.page.evaluate(() => window.__tp.test.v1.aiAssistant.resetAiConversation());
 	mode = 'invented';
 	const base2 = await count(A);
-	await A.page.evaluate(() => window.__stores.aiAssistant.runPrompt('create cube'));
+	await A.page.evaluate(() => window.__tp.test.v1.aiAssistant.runPrompt('create cube'));
 	await h.eventually(() => count(A), (n) => n === base2 + 1, 'invented tool name repaired to create_objects');
 	h.check(await named(A, 'RepairedBox'), 'repaired call created the named box');
 
 	// ---- 5: one undo still reverts a whole prompt -------------------------------------
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => count(A), (n) => n === base2, 'one undo reverted the repaired batch');
 
 	await h.finish(browser);

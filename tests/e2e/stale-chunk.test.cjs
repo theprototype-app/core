@@ -71,7 +71,7 @@ h.run(async () => {
 		await page.keyboard.press('Enter');
 	};
 	/** @param {any} page */
-	const dbg = (page) => page.evaluate(() => ({ ...(window.__stores.chunkReload?.chunkReloadDebug ?? {}) }));
+	const dbg = (page) => page.evaluate(() => ({ ...(window.__tp.test.v1.chunkReload?.chunkReloadDebug ?? {}) }));
 	const toastSel = 'text=A new version is ready';
 
 	// ============================================================ A. the chunk is gone
@@ -116,7 +116,7 @@ h.run(async () => {
 			await page.keyboard.press('Enter');
 			await page.locator('.notif-act', { hasText: 'Reload' }).first().click({ timeout: 8000 }).catch(() => {});
 		}
-		await page.waitForFunction(() => window.__stores && !!window.__stores.moduleSDK, null, { timeout: 60000 });
+		await page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.moduleSDK, null, { timeout: 60000 });
 		await h.answerRestore(A).catch(() => {});
 		h.check(navigations >= 1, 'A8 Reload reloads the page');
 		await openProfiler(page);

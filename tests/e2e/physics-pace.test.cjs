@@ -11,7 +11,7 @@
 //      adaptive caps keep its sim time within 5 % of wall time.
 const h = require('./helpers.cjs');
 
-const phys = (page, body, arg) => page.evaluate(([b, a]) => new Function('p', 'arg', b)(window.__stores.physics, a), [body, arg]);
+const phys = (page, body, arg) => page.evaluate(([b, a]) => new Function('p', 'arg', b)(window.__tp.test.v1.physics, a), [body, arg]);
 const pace = (page) => phys(page, 'return p.physicsPace ? p.physicsPace() : null');
 /** sim seconds per wall second over `ms`, measured on the stepping page at its own last step */
 async function ratioOver(page, ms) {
@@ -26,7 +26,7 @@ async function ratioOver(page, ms) {
 const posOf = (page, uuid) =>
 	page.evaluate((u) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByProperty('uuid', u);
 		return o ? o.position.toArray() : null;
 	}, uuid);
@@ -36,12 +36,12 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A, 14000);
-	await A.page.evaluate(() => window.__stores.physics.warmup());
-	await B.page.evaluate(() => window.__stores.physics.warmup());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.warmup());
+	await B.page.evaluate(() => window.__tp.test.v1.physics.warmup());
 
 	// six boxes: five resting in a row, one SLIDER on a frictionless zero-g lane
 	const uuids = await A.page.evaluate(() => {
-		const st = window.__stores;
+		const st = window.__tp?.test.v1;
 		st.scenePhysics.setScenePhysics({ gravity: 0, damping: { linear: 0, angular: 0 } });
 		let g;
 		st.objectsGroup.subscribe((v) => (g = v))();
@@ -60,7 +60,7 @@ h.run(async () => {
 	});
 	const slider = uuids[5];
 	await h.eventually(
-		() => B.page.evaluate((us) => { let g; window.__stores.objectsGroup.subscribe((v) => (g = v))(); return us.filter((u) => g.getObjectByProperty('uuid', u)).length; }, uuids),
+		() => B.page.evaluate((us) => { let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))(); return us.filter((u) => g.getObjectByProperty('uuid', u)).length; }, uuids),
 		(n) => n === 6,
 		'premise: the six boxes reached B',
 		30000
@@ -86,7 +86,7 @@ h.run(async () => {
 	);
 	const took = { a: await pace(A.page), b: await pace(B.page) };
 	if (took.a && took.b) console.log('  A', JSON.stringify({ frameMs: took.a.frameMs, handoffs: took.a.handoffs }), 'B', JSON.stringify({ frameMs: took.b.frameMs, handoffs: took.b.handoffs, votes: took.b.votes.length }));
-	const remoteOnA = await A.page.evaluate(() => { let r; window.__stores.physics.remoteSimulating.subscribe((v) => (r = v))(); return r; });
+	const remoteOnA = await A.page.evaluate(() => { let r; window.__tp.test.v1.physics.remoteSimulating.subscribe((v) => (r = v))(); return r; });
 	h.check(remoteOnA === B.id, `1.2 A now watches B's run (remoteSimulating ${remoteOnA}, B ${B.id})`);
 	const vel = await phys(B.page, 'return p.bodyVelocityOf(arg)', slider);
 	h.check(!!vel && Math.abs(vel.linvel[0] - 1) < 0.05, `1.3 the slider kept its velocity across the handoff (${vel ? vel.linvel.map((n) => n.toFixed(3)).join(',') : null})`);
@@ -95,7 +95,7 @@ h.run(async () => {
 	h.check(r1.ratio != null && r1.ratio > 0.95 && r1.ratio < 1.05, `1.4 B's sim time keeps pace with wall time (ratio ${r1.ratio?.toFixed(3)})`);
 	const slid = await posOf(B.page, slider);
 	h.check(!!slid && slid[0] - startPos[0] > 5, `1.5 the slider travelled on B (x ${startPos[0].toFixed(2)} -> ${slid?.[0].toFixed(2)})`);
-	const undoSize = () => A.page.evaluate(() => { let s; window.__stores.history.undoStack.subscribe((v) => (s = v))(); return s.length; });
+	const undoSize = () => A.page.evaluate(() => { let s; window.__tp.test.v1.history.undoStack.subscribe((v) => (s = v))(); return s.length; });
 	const undoBefore = await undoSize();
 	await phys(B.page, 'return p.resetSimulation()');
 	await h.eventually(() => posOf(A.page, slider), (p) => !!p && Math.abs(p[0] - startPos[0]) < 0.05, '1.6 Reset on B puts the slider back at the RUN\'s start (on A too)', 10000);

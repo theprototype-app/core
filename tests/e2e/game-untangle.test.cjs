@@ -73,18 +73,18 @@ async function zipBytes() {
 	return cdn ? { bytes: cdn, from: MODULES_BASE } : null;
 }
 async function installZip(peer, bytes, label) {
-	await peer.page.evaluate(() => window.__stores.modulesOpen.set(true));
+	await peer.page.evaluate(() => window.__tp.test.v1.modulesOpen.set(true));
 	await peer.page.waitForTimeout(400);
 	await peer.page.getByRole('tab', { name: /^User/ }).click();
 	await peer.page.waitForTimeout(200);
 	await peer.page.locator('#install-module-zip').setInputFiles({ name: 'untangle.zip', mimeType: 'application/zip', buffer: bytes });
 	await h.eventually(
-		() => peer.page.evaluate(() => window.__stores.moduleSDK.loadedModules.map((m) => m.id)),
+		() => peer.page.evaluate(() => window.__tp.test.v1.moduleSDK.loadedModules.map((m) => m.id)),
 		(ids) => ids.includes('untangle'),
 		label + ': the untangle module installed from the real zip',
 		20000
 	);
-	await peer.page.evaluate(() => window.__stores.modulesOpen.set(false));
+	await peer.page.evaluate(() => window.__tp.test.v1.modulesOpen.set(false));
 	await peer.page.waitForTimeout(300);
 }
 
@@ -92,7 +92,7 @@ async function installZip(peer, bytes, label) {
 const snap = (page) =>
 	page.evaluate(() => {
 		let scene;
-		window.__stores.globalScene.subscribe((v) => (scene = v))();
+		window.__tp.test.v1.globalScene.subscribe((v) => (scene = v))();
 		const group = scene?.getObjectByName('untangle-module');
 		const s = window.__untangle?.state() ?? null;
 		return s
@@ -115,28 +115,28 @@ const snap = (page) =>
 const namesOf = (page) =>
 	page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return Object.fromEntries((g?.children ?? []).map((c) => [c.name, c.uuid]));
 	});
 const stampOf = (page, id) =>
 	page.evaluate((id) => {
 		let t;
-		window.__stores.flowTriggers.subscribe((v) => (t = v))();
+		window.__tp.test.v1.flowTriggers.subscribe((v) => (t = v))();
 		const s = t?.[id]?.lastT;
 		return typeof s === 'number' ? s : null;
 	}, id);
 const gameStateOf = (page) =>
 	page.evaluate(() => {
 		let g;
-		window.__stores.gameState.gameState.subscribe((v) => (g = v))();
+		window.__tp.test.v1.gameState.gameState.subscribe((v) => (g = v))();
 		return g?.state ?? null;
 	});
-const screenOf = (page) => page.evaluate(() => window.__stores.hudDocs.visibleScreen('scene')?.id ?? null);
+const screenOf = (page) => page.evaluate(() => window.__tp.test.v1.hudDocs.visibleScreen('scene')?.id ?? null);
 const hudText = async (page) => (await page.locator('#hud-layer').textContent().catch(() => '')) ?? '';
 const hudRuntime = (page) =>
 	page.evaluate(() => {
 		let r;
-		window.__stores.hudDocs.hudRuntime.subscribe((v) => (r = v))();
+		window.__tp.test.v1.hudDocs.hudRuntime.subscribe((v) => (r = v))();
 		return r ?? {};
 	});
 const pressP = (page) =>
@@ -148,12 +148,12 @@ const hudButton = (page, name) => page.getByRole('button', { name, exact: true }
 const nodesOf = (page, type) =>
 	page.evaluate((type) => {
 		let graphs;
-		window.__stores.flowGraphs.subscribe((g) => (graphs = g))();
+		window.__tp.test.v1.flowGraphs.subscribe((g) => (graphs = g))();
 		const out = [];
 		for (const [graphId, graph] of Object.entries(graphs ?? {})) for (const n of graph.nodes ?? []) if (n.type === type) out.push({ id: n.id, graphId, data: n.data });
 		return out;
 	}, type);
-const setNodeData = (page, id, graphId, patch) => page.evaluate(({ id, graphId, patch }) => window.__stores.nodesHandler.setNodeData(id, patch, graphId), { id, graphId, patch });
+const setNodeData = (page, id, graphId, patch) => page.evaluate(({ id, graphId, patch }) => window.__tp.test.v1.nodesHandler.setNodeData(id, patch, graphId), { id, graphId, patch });
 
 h.run(async () => {
 	const scene = await sceneBytes();
@@ -181,7 +181,7 @@ h.run(async () => {
 	await h.eventually(() => snap(A.page), (s) => s.level === 5, '1.0b (premise) A is on level 5 before the file loads');
 	const clearsBefore = (await snap(A.page)).sceneClears;
 	const payload = await A.page.evaluate(async (arr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 		const modules = (payload.modules ?? []).map((m) => m.id);
 		await s.sessions.applySession(payload, { backup: false });
@@ -193,11 +193,11 @@ h.run(async () => {
 	h.check(Object.keys(names).length === 6 && !!names['Pedestal'] && !!names['Board frame'], '1.2 the file restored the 6 room objects (' + Object.keys(names).length + ')');
 	const env = await A.page.evaluate(() => {
 		let e;
-		window.__stores.environment.environment.subscribe((v) => (e = v))();
+		window.__tp.test.v1.environment.environment.subscribe((v) => (e = v))();
 		return e?.preset ?? null;
 	});
 	h.check(env === 'custom', '1.3 the custom dusk sky (' + env + ')');
-	const phys = await A.page.evaluate(() => window.__stores.scenePhysics.scenePhysicsDebug());
+	const phys = await A.page.evaluate(() => window.__tp.test.v1.scenePhysics.scenePhysicsDebug());
 	h.check(phys.play?.interaction === 'click' && phys.play?.simOnPlay === false, '1.4 play block: click, no sim');
 	await h.eventually(() => snap(A.page), (s) => s.sceneClears === clearsBefore + 1, '1.5 applySession ran /clear all FIRST (the module saw one scene clear)');
 	await h.eventually(() => snap(A.page), (s) => s.level === TEMPLATE_LEVEL && s.nodeOwned && s.built, '1.6 ...then the Untangle Board node applied LEVEL ' + TEMPLATE_LEVEL + ' — not 1 (the clear) and not 5 (before the load)', 10000);
@@ -212,7 +212,7 @@ h.run(async () => {
 	await A.page.evaluate(() => window.__untangle.setLevel(4));
 	await h.eventually(() => snap(A.page), (s) => s.level === 4, '1.11 (premise) A plays on to level 4');
 	await A.page.evaluate(async (arr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		await s.sessions.applySession(await s.sessions.readSessionZip(new Uint8Array(arr).buffer), { backup: false });
 	}, Array.from(scene.bytes));
 	await h.eventually(() => snap(A.page), (s) => s.sceneClears === clearsBefore + 2 && s.level === TEMPLATE_LEVEL && s.built && s.nodeOwned, '1.12 the same file loaded again: cleared once more, and the node re-applied LEVEL ' + TEMPLATE_LEVEL + ' (a board exists)', 10000);

@@ -29,7 +29,7 @@ const GLOW = 'glow = float {value: 2}\nout = surface\nglow -> out.emissive';
 
 const read = (page, expr) =>
 	page.evaluate(
-		(e) => new Promise((r) => e.split('.').reduce((o, k) => o[k], window.__stores).subscribe((v) => r(JSON.parse(JSON.stringify(v ?? null))))()),
+		(e) => new Promise((r) => e.split('.').reduce((o, k) => o[k], window.__tp?.test.v1).subscribe((v) => r(JSON.parse(JSON.stringify(v ?? null))))()),
 		expr
 	);
 
@@ -37,7 +37,7 @@ const read = (page, expr) =>
 const onHost = (page, uuid) =>
 	page.evaluate((u) => {
 		/** @type {any} */ let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		const o = g?.getObjectByProperty('uuid', u);
 		if (!o) return null;
 		const m = Array.isArray(o.material) ? o.material[0] : o.material;
@@ -56,12 +56,12 @@ const onHost = (page, uuid) =>
 			corners: uv?.count ?? 0,
 			maxU,
 			uvs: uv ? Array.from(uv.array).slice(0, 12) : null,
-			driven: !!window.__stores.shaderGraph.isShaderDriven(u)
+			driven: !!window.__tp.test.v1.shaderGraph.isShaderDriven(u)
 		};
 	}, uuid);
 const uniformOnHost = (page, uuid, name) =>
-	page.evaluate(([u, n]) => window.__stores.shaderGraph.shaderUniform(u, n)?.value ?? null, [uuid, name]);
-const postOnHost = (page) => page.evaluate(() => JSON.parse(JSON.stringify(window.__stores.scenePost.postStackFor('scene').effects.map((e) => ({ kind: e.kind, params: e.params })))));
+	page.evaluate(([u, n]) => window.__tp.test.v1.shaderGraph.shaderUniform(u, n)?.value ?? null, [uuid, name]);
+const postOnHost = (page) => page.evaluate(() => JSON.parse(JSON.stringify(window.__tp.test.v1.scenePost.postStackFor('scene').effects.map((e) => ({ kind: e.kind, params: e.params })))));
 
 /** the host's real prompt, a real click @param {any} page @param {RegExp} text @param {'Allow'|'Deny'} word */
 async function answer(page, text, word) {
@@ -136,7 +136,7 @@ h.run(async () => {
 		const tools = (await B.client.listTools()).tools;
 		h.check(TOOLS.every((n) => tools.some((t) => t.name === n)), '1. every look tool is listed');
 		const hostSchema = await A.page.evaluate(() => {
-			const t = window.__stores.aiTools.getAiTools().find((x) => (x.function || x).name === 'set_material');
+			const t = window.__tp.test.v1.aiTools.getAiTools().find((x) => (x.function || x).name === 'set_material');
 			return JSON.stringify((t.function || t).parameters);
 		});
 		h.check(JSON.stringify(tools.find((t) => t.name === 'set_material')?.inputSchema) === hostSchema, '1. set_material schema = the host registry, verbatim');
@@ -213,7 +213,7 @@ h.run(async () => {
 		const pane = await make('Glass floor', [11, 0.5, 0]);
 		const glassy = json(await call(B.client, 'set_material', { objects: [pane], type: 'MeshPhysicalMaterial', color: '#dfeaf5', roughness: 0.05, metalness: 0, params: { transmission: 0.9, ior: 1.5, clearcoat: 1 } }));
 		h.check(glassy.updated?.[0]?.uuid === pane, 'glassy floor: answered ok: ' + short(glassy));
-		await h.eventually(() => A.page.evaluate((u) => { let g; window.__stores.objectsGroup.subscribe((x) => (g = x))(); const m = g.getObjectByProperty('uuid', u)?.material; return m?.type + ':' + m?.transmission; }, pane), (v) => v === 'MeshPhysicalMaterial:0.9', 'glassy floor: the host has a physical material with transmission 0.9', 20000);
+		await h.eventually(() => A.page.evaluate((u) => { let g; window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))(); const m = g.getObjectByProperty('uuid', u)?.material; return m?.type + ':' + m?.transmission; }, pane), (v) => v === 'MeshPhysicalMaterial:0.9', 'glassy floor: the host has a physical material with transmission 0.9', 20000);
 
 		const copy = await make('Copy', [5, 0.5, 0]);
 		const assigned = json(await call(B.client, 'assign_shader', { objects: [copy], shader: sign }));
@@ -278,7 +278,7 @@ h.run(async () => {
 			if (!line) throw new Error('no A8 line for ' + tool);
 			return line;
 		};
-		const undo = (tool) => A.page.evaluate((e) => window.__stores.agentLog.requestAgentUndo(e), lineOf(tool));
+		const undo = (tool) => A.page.evaluate((e) => window.__tp.test.v1.agentLog.requestAgentUndo(e), lineOf(tool));
 		await undo('create_post_graph');
 		await h.eventually(() => postOnHost(A.page), (e) => e.length === 1, '6. Undo create_post_graph: the host is back to bloom', 20000);
 		await undo('set_post');
@@ -349,7 +349,7 @@ h.run(async () => {
 	await V.page.waitForFunction(() => !!window.tpAgent, null, { timeout: 30000 });
 	await h.connect(V, A);
 	await V.page.evaluate(() =>
-		window.__stores.cloudHooks.rolesInfo.set({ myId: '', myRole: 'viewer', amAdmin: false, order: [], roleOf: () => 'viewer', setRole: () => {}, synced: () => true })
+		window.__tp.test.v1.cloudHooks.rolesInfo.set({ myId: '', myRole: 'viewer', amAdmin: false, order: [], roleOf: () => 'viewer', setRole: () => {}, synced: () => true })
 	);
 	const stack0 = await postOnHost(A.page);
 	for (const [tool, args] of [

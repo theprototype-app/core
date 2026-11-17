@@ -14,7 +14,7 @@ h.run(async () => {
 
 	// scene: 2 boxes, a light, and a group containing a sphere
 	const groupUuid = await A.page.evaluate(async () => {
-		const cmd = window.__stores.commandsHandler.sceneCommand;
+		const cmd = window.__tp.test.v1.commandsHandler.sceneCommand;
 		cmd('/create box');
 		cmd('/create box');
 		cmd('/light point');
@@ -22,14 +22,14 @@ h.run(async () => {
 		cmd('/group nest');
 		// read refs first, mutate after — never write a store inside its subscriber
 		const { group, sphere } = await new Promise((resolve) => {
-			window.__stores.objectsGroup.subscribe((g) => {
+			window.__tp.test.v1.objectsGroup.subscribe((g) => {
 				resolve({
 					group: g.children.find((c) => c.type === 'Group')?.uuid,
 					sphere: g.children.find((c) => c.name === 'Sphere')?.uuid
 				});
 			})();
 		});
-		window.__stores.objectActions.moveObjectToGroup(sphere, group);
+		window.__tp.test.v1.objectActions.moveObjectToGroup(sphere, group);
 		return group;
 	});
 	await A.page.waitForTimeout(400);

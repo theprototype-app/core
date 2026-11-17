@@ -34,7 +34,7 @@ const active = (page) =>
 			cls: String(e.className || '')
 		};
 	});
-const store = (page, name) => page.evaluate((n) => new Promise((r) => window.__stores[n].subscribe(r)()), name);
+const store = (page, name) => page.evaluate((n) => new Promise((r) => window.__tp.test.v1[n].subscribe(r)()), name);
 const press = async (page, key, times = 1) => {
 	for (let i = 0; i < times; i++) {
 		await page.keyboard.press(key);
@@ -95,7 +95,7 @@ h.run(async () => {
 	await press(page, 'Home');
 	h.check((await active(page)).title === first && last.title !== first, `Home / End reach the ends (${first} … ${last.title})`);
 	h.check((await page.evaluate(() => document.querySelectorAll('#controls-pill [tabindex="0"]').length)) === 1, 'exactly one cell carries tabindex 0');
-	const mode = () => page.evaluate(() => new Promise((r) => window.__stores.TControls.subscribe((c) => r(c?.mode))()));
+	const mode = () => page.evaluate(() => new Promise((r) => window.__tp.test.v1.TControls.subscribe((c) => r(c?.mode))()));
 	await press(page, 'Home');
 	await press(page, 'ArrowRight'); // Rotate (2)
 	await press(page, 'Enter');
@@ -129,10 +129,10 @@ h.run(async () => {
 		pick = await hl();
 	}
 	h.check(/^(Cube|Box)\b/.test(pick), `arrows walk Add > Mesh to a cube (${pick})`);
-	const before = await page.evaluate(() => window.__stores.objectsGroup && new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g?.children?.length ?? 0))()));
+	const before = await page.evaluate(() => window.__tp.test.v1.objectsGroup && new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g?.children?.length ?? 0))()));
 	await press(page, 'Enter');
 	await page.waitForTimeout(1200);
-	const after = await page.evaluate(() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g?.children?.length ?? 0))()));
+	const after = await page.evaluate(() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g?.children?.length ?? 0))()));
 	const selected = /** @type {string[]} */ (await store(page, 'selectedObjects'));
 	h.check(after === before + 1 && selected.length === 1, `Enter creates the cube and selects it (${before} -> ${after}, selected ${selected.length})`);
 	a = await active(page);
@@ -155,14 +155,14 @@ h.run(async () => {
 	await page.keyboard.type('2.5');
 	await press(page, 'Enter');
 	await page.waitForTimeout(300);
-	const x = await page.evaluate(() => new Promise((r) => window.__stores.selectedObject.subscribe((o) => r(o?.position?.x))()));
+	const x = await page.evaluate(() => new Promise((r) => window.__tp.test.v1.selectedObject.subscribe((o) => r(o?.position?.x))()));
 	h.check(Math.abs(Number(x) - 2.5) < 1e-6, `typing 2.5 + Enter moves the cube (x = ${x})`);
 	a = await active(page);
 	h.check(a.tag !== 'input', `Enter leaves the field (the locked DragRow behaviour: ${a.tag})`);
 	await press(page, 'Tab');
 	a = await active(page);
 	h.check(a.inPosition && a.tag === 'input' && a.aria === 'Y', `the next Tab goes on to Position Y, not to Edit Mesh or the top of the page (${a.tag} ${a.aria})`);
-	h.check(!(await page.evaluate(() => new Promise((r) => window.__stores.meshEdit.editingObject.subscribe(r)()))), '…and did not enter Edit Mesh on the selection');
+	h.check(!(await page.evaluate(() => new Promise((r) => window.__tp.test.v1.meshEdit.editingObject.subscribe(r)()))), '…and did not enter Edit Mesh on the selection');
 
 	// ---- 6. save with Ctrl+S, named inline
 	await page.keyboard.press('Escape'); // leave the field
@@ -173,10 +173,10 @@ h.run(async () => {
 	await page.keyboard.press('Control+a');
 	await page.keyboard.type('Keyboard walk');
 	await press(page, 'Enter');
-	const level = () => page.evaluate(() => new Promise((r) => window.__stores.levels.currentLevel.subscribe((v) => r(v?.name ?? null))()));
+	const level = () => page.evaluate(() => new Promise((r) => window.__tp.test.v1.levels.currentLevel.subscribe((v) => r(v?.name ?? null))()));
 	await h.eventually(level, (v) => v === 'Keyboard walk', 'the scene took its name', 10000);
 	h.check((await level()) === 'Keyboard walk', `the open scene is now "Keyboard walk" (${await level()})`);
-	const saved = await page.evaluate(() => new Promise((r) => window.__stores.explorer.explorerItems.subscribe((items) => r((items || []).filter((i) => i.kind === 'scene').map((i) => i.name)))()));
+	const saved = await page.evaluate(() => new Promise((r) => window.__tp.test.v1.explorer.explorerItems.subscribe((items) => r((items || []).filter((i) => i.kind === 'scene').map((i) => i.name)))()));
 	h.check(Array.isArray(saved) && saved.some((n) => /Keyboard walk/.test(n)), `Enter saves the scene into the library (${JSON.stringify(saved)})`);
 
 	// ---- 7. a dialog: trap, Escape, focus return
@@ -222,7 +222,7 @@ h.run(async () => {
 		wrapped = (await active(page)).id === 'skip-to-viewport';
 	}
 	h.check(wrapped, 'with an object selected, Tab past the last control wraps round to the skip link');
-	h.check(!(await page.evaluate(() => new Promise((r) => window.__stores.meshEdit.editingObject.subscribe(r)()))), '…and never entered Edit Mesh on the way (a keyboard trap on <body>)');
+	h.check(!(await page.evaluate(() => new Promise((r) => window.__tp.test.v1.meshEdit.editingObject.subscribe(r)()))), '…and never entered Edit Mesh on the way (a keyboard trap on <body>)');
 	const regions = [];
 	for (let i = 0; i < 4; i++) {
 		await press(page, 'F6');
@@ -233,7 +233,7 @@ h.run(async () => {
 	const cube = selected[0];
 	const pt = await page.evaluate((u) => {
 		let o;
-		window.__stores.objectsGroup.subscribe((g) => (o = g.children.find((c) => c.uuid === u)))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (o = g.children.find((c) => c.uuid === u)))();
 		const p = o.getWorldPosition(new o.position.constructor());
 		return [p.x, p.y, p.z];
 	}, cube);
@@ -242,7 +242,7 @@ h.run(async () => {
 	await page.waitForTimeout(400);
 	await press(page, 'Tab');
 	await page.waitForTimeout(300);
-	const editing = await page.evaluate(() => new Promise((r) => window.__stores.meshEdit.editingObject.subscribe(r)()));
+	const editing = await page.evaluate(() => new Promise((r) => window.__tp.test.v1.meshEdit.editingObject.subscribe(r)()));
 	h.check(editing === cube, `after a press on the canvas, Tab still enters Edit Mesh on the selection (${editing ? 'editing' : 'nothing'})`);
 	await press(page, 'Escape');
 

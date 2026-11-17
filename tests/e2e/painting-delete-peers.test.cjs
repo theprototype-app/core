@@ -18,7 +18,7 @@ const addPicture = (page, hue) =>
 		g.fillStyle = '#fff';
 		g.fillRect(20, 20, 40 + (hu % 50), 60);
 		const png = await new Promise((r) => c.toBlob(r, 'image/png'));
-		const item = await window.__stores.explorer.addItemFromBytes(await /** @type {Blob} */ (png).arrayBuffer(), 'painting-' + hu + '.png', null);
+		const item = await window.__tp.test.v1.explorer.addItemFromBytes(await /** @type {Blob} */ (png).arrayBuffer(), 'painting-' + hu + '.png', null);
 		return item?.hash ?? null;
 	}, hue);
 
@@ -26,7 +26,7 @@ const addPicture = (page, hue) =>
 const paint = (page, name, hash, thenDelete = false) =>
 	page.evaluate(
 		async ({ nm, hs, del }) => {
-			const t = window.__stores.aiTools;
+			const t = window.__tp.test.v1.aiTools;
 			const made = await t.executeAiTool('create_objects', { objects: [{ kind: 'primitive', primitive: 'Plane', name: nm, position: [Math.random() * 4 - 2, 1.5, -2] }] });
 			const uuid = made?.created?.[0]?.uuid ?? null;
 			const up = await t.executeAiTool('update_objects', { updates: [{ uuid, materialParams: { map: hs } }] });
@@ -39,7 +39,7 @@ const paint = (page, name, hash, thenDelete = false) =>
 /** what one page holds of a painting: in objectsGroup, anywhere in the scene, its texture still drawn @param {any} page @param {string} uuid */
 const holds = (page, uuid) =>
 	page.evaluate((u) => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		let group, scene;
 		S.objectsGroup.subscribe((x) => (group = x))();
 		S.globalScene.subscribe((x) => (scene = x))();
@@ -60,7 +60,7 @@ const holds = (page, uuid) =>
 const watchTexture = (page, uuid) =>
 	page.evaluate((u) => {
 		let group;
-		window.__stores.objectsGroup.subscribe((x) => (group = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (group = x))();
 		const map = group?.getObjectByProperty('uuid', u)?.material?.map;
 		if (!map) return false;
 		window.__paintTex = { ...(window.__paintTex || {}), [u]: map };
@@ -97,11 +97,11 @@ h.run(async () => {
 	};
 
 	const handDelete = (P) => (u) => P.page.evaluate((uu) => {
-		window.__stores.objectActions.applySelectionSet([uu]);
-		window.__stores.objectActions.deleteSelection();
+		window.__tp.test.v1.objectActions.applySelectionSet([uu]);
+		window.__tp.test.v1.objectActions.deleteSelection();
 	}, u);
 	const agentDelete = (P) => async (u) => {
-		const r = await P.page.evaluate((uu) => window.__stores.aiTools.executeAiTool('delete_objects', { uuids: [uu] }), u);
+		const r = await P.page.evaluate((uu) => window.__tp.test.v1.aiTools.executeAiTool('delete_objects', { uuids: [uu] }), u);
 		h.check(r?.deleted === 1, `delete_objects on ${P.id} deleted it: ${JSON.stringify(r)}`);
 	};
 

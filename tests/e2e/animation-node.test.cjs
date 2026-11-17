@@ -15,7 +15,7 @@ const h = require('./helpers.cjs');
 /** rot.y + the playing flag as one peer sees it */
 const doorState = (page, uuid) =>
 	page.evaluate((id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		const obj = g.getObjectByProperty('uuid', id);
@@ -34,7 +34,7 @@ h.run(async () => {
 
 	// ---------- build the door ----------
 	const uuid = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box 1 2 0.1');
 		await new Promise((r) => setTimeout(r, 400));
 		let g;
@@ -81,7 +81,7 @@ h.run(async () => {
 	// ---------- a real viewport click opens it ----------
 	// (fireObjectClick is what raycastSelect calls on a hit — the same entry point
 	//  the desktop pointerup and the VR trigger both use)
-	await A.page.evaluate((id) => window.__stores.flowRuntime.fireObjectClick(id), uuid);
+	await A.page.evaluate((id) => window.__tp.test.v1.flowRuntime.fireObjectClick(id), uuid);
 	await A.page.waitForTimeout(300);
 	const opening = await doorState(A.page, uuid);
 	h.check(opening.playing, 'clicking the door starts its clip');
@@ -98,7 +98,7 @@ h.run(async () => {
 	// What is being asserted is that the door LEAVES 90 and travels down, which is a
 	// condition somewhere in the window, not a value at one instant.
 	const closing = await A.page.evaluate(async (id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((/** @type {any} */ x) => (g = x))();
 		const obj = g.getObjectByProperty('uuid', id);
@@ -130,8 +130,8 @@ h.run(async () => {
 	// RETIME (not the length field): stretching the movement itself is what gives
 	// the swing room — a length change deliberately leaves key times alone now
 	await A.page.evaluate((id) => {
-		window.__stores.animationPreview.retimeClip(id, 2);
-		window.__stores.flowRuntime.fireObjectClick(id);
+		window.__tp.test.v1.animationPreview.retimeClip(id, 2);
+		window.__tp.test.v1.flowRuntime.fireObjectClick(id);
 	}, uuid);
 	await A.page.waitForTimeout(800); // past the pulse, mid-swing
 	// Read the angle AND the clip position in ONE evaluate: the door travels ~45
@@ -139,7 +139,7 @@ h.run(async () => {
 	// comparison becomes a race (this bit the phase check in animation-sync too).
 	const snapshot = (page) =>
 		page.evaluate((id) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let g;
 			s.objectsGroup.subscribe((/** @type {any} */ x) => (g = x))();
 			const obj = g.getObjectByProperty('uuid', id);
@@ -147,7 +147,7 @@ h.run(async () => {
 			return { deg: (obj.rotation.y * 180) / Math.PI, position: t.position, reverse: t.reverse, playing: t.playing };
 		}, uuid);
 	const half = await snapshot(A.page);
-	await A.page.evaluate((id) => window.__stores.flowRuntime.fireObjectClick(id), uuid);
+	await A.page.evaluate((id) => window.__tp.test.v1.flowRuntime.fireObjectClick(id), uuid);
 	// `position` is where the clip should be NOW while the pose was written by the
 	// last tick, which lags by a frame (much more under a software renderer). Give
 	// the reversal enough travel that the lag cannot invert the comparison.
@@ -166,8 +166,8 @@ h.run(async () => {
 		`so the door closes rather than restarting (${half.deg.toFixed(1)} -> ${reversed.deg.toFixed(1)}deg)`
 	);
 	await A.page.evaluate((id) => {
-		window.__stores.animationPreview.resetPreview(id);
-		window.__stores.animationPreview.retimeClip(id, 0.6);
+		window.__tp.test.v1.animationPreview.resetPreview(id);
+		window.__tp.test.v1.animationPreview.retimeClip(id, 0.6);
 	}, uuid);
 	await A.page.waitForTimeout(300);
 
@@ -176,7 +176,7 @@ h.run(async () => {
 	// current value immediately, which would score a pass or fail on state that
 	// existed before the click.
 	const repeats = await A.page.evaluate(async (id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		ap.stop(id);
 		await new Promise((r) => setTimeout(r, 200));
@@ -196,7 +196,7 @@ h.run(async () => {
 
 	// ---------- the node does NOT broadcast: the trigger stamp already did ----------
 	const sent = await A.page.evaluate(async (id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const peer = await new Promise((r) => s.peers.subscribe(r)());
 		const seen = [];
 		const orig = peer.send.bind(peer);
@@ -222,7 +222,7 @@ h.run(async () => {
 
 	// ---------- a named clip, and an unknown name is inert ----------
 	const named = await A.page.evaluate(async (id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		ap.stop(id);
 		const shutId = ap.createClip(id, 'Slam');
@@ -254,7 +254,7 @@ h.run(async () => {
 	// starts the next thing. Fired LOCALLY when the once-clip ends, because every
 	// peer's runtime reaches that same elapsed time on its own — no message needed.
 	const handoff = await A.page.evaluate(async (id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const nh = s.nodesHandler;
 		// Animation Finished on the door -> a Counter, so a pulse is observable
 		nh.createFlowNode(
@@ -286,7 +286,7 @@ h.run(async () => {
 
 	// ---------- the node is in the catalog and the editor can render it ----------
 	const catalog = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const groups = s.nodeCatalog?.nodeCatalog ?? [];
 		const anim = groups.find((/** @type {any} */ g) => g.group === 'Animation');
 		return {
@@ -308,7 +308,7 @@ h.run(async () => {
 	// sections above leave a 0.4s named clip on the transport, and reading its
 	// duration as "2" would have been a check about the wrong clip.
 	const clipSeconds = await A.page.evaluate((id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		let g;
 		s.objectsGroup.subscribe((/** @type {any} */ x) => (g = x))();
@@ -324,7 +324,7 @@ h.run(async () => {
 	h.check(clipSeconds === 2, `a 2s clip is on the transport for the readouts (${clipSeconds})`);
 
 	await A.page.evaluate((id) => {
-		const nh = window.__stores.nodesHandler;
+		const nh = window.__tp.test.v1.nodesHandler;
 		// `label` is what the palette puts on a node it adds, and NodeWrapper falls
 		// back to the raw type without it — so a card check would be reading a node
 		// the editor never builds
@@ -352,7 +352,7 @@ h.run(async () => {
 	const vals = () =>
 		A.page.evaluate(() => {
 			let v = {};
-			window.__stores.flowValues.subscribe((/** @type {any} */ x) => (v = x))();
+			window.__tp.test.v1.flowValues.subscribe((/** @type {any} */ x) => (v = x))();
 			return {
 				progress: v['st-progress'],
 				playing: v['st-playing'],
@@ -365,7 +365,7 @@ h.run(async () => {
 
 	// parked at the start of the clip
 	await A.page.evaluate((id) => {
-		const ap = window.__stores.animationPreview;
+		const ap = window.__tp.test.v1.animationPreview;
 		ap.stop(id);
 		ap.scrub(id, 0);
 	}, uuid);
@@ -381,7 +381,7 @@ h.run(async () => {
 	);
 
 	// scrubbed to the middle, still not playing: progress is where the PLAYHEAD is
-	await A.page.evaluate((id) => window.__stores.animationPreview.scrub(id, 1), uuid);
+	await A.page.evaluate((id) => window.__tp.test.v1.animationPreview.scrub(id, 1), uuid);
 	await A.page.waitForTimeout(350);
 	const mid = await vals();
 	h.check(
@@ -396,7 +396,7 @@ h.run(async () => {
 
 	// playing: progress climbs and playing is 1
 	await A.page.evaluate((id) => {
-		const ap = window.__stores.animationPreview;
+		const ap = window.__tp.test.v1.animationPreview;
 		ap.resetPreview(id);
 		ap.play(id, undefined, { from: 0, reverse: false });
 	}, uuid);
@@ -418,7 +418,7 @@ h.run(async () => {
 	// is what the transport actually loops over. 1.5s of a 1-2s window is HALF way,
 	// which is the reading that separates this from position/duration.
 	await A.page.evaluate((id) => {
-		const ap = window.__stores.animationPreview;
+		const ap = window.__tp.test.v1.animationPreview;
 		ap.stop(id);
 		ap.setRange(id, 1, 2);
 		ap.scrub(id, 1.5);
@@ -430,14 +430,14 @@ h.run(async () => {
 		`with an A/B window of 1-2s, 1.5s is HALF WAY (progress ${ranged.progress?.toFixed(3)}, not 0.75)`
 	);
 	await A.page.evaluate((id) => {
-		const ap = window.__stores.animationPreview;
+		const ap = window.__tp.test.v1.animationPreview;
 		ap.setRange(id, null, null);
 		ap.stop(id);
 	}, uuid);
 
 	// catalog + socket contract
 	const stateCatalog = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const groups = s.nodeCatalog?.nodeCatalog ?? [];
 		const anim = groups.find((/** @type {any} */ g) => g.group === 'Animation');
 		const fs = s.flowSockets;
@@ -472,7 +472,7 @@ h.run(async () => {
 	// nodes live on the DOOR's graph, so the editor has to be pointed at it — the
 	// dock opens on the scene graph, where there is nothing of ours to find.
 	const card = await A.page.evaluate(async (id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphClose.set(false); // activateDock alone leaves it hidden
 		s.bottomDock.activateDock('flow');
 		s.setActiveGraph(id);

@@ -11,11 +11,11 @@ h.run(async () => {
 	await A.page.waitForTimeout(500);
 	// two nodes + a bezier edge for the edge-style check
 	await A.page.evaluate(() => {
-		window.__stores.flowNodes.set([
+		window.__tp.test.v1.flowNodes.set([
 			{ id: 'p-a', type: 'number', position: { x: 60, y: 80 }, data: { type: 'number', value: 1 }, class: 'w-[150px]' },
 			{ id: 'p-b', type: 'spin', position: { x: 340, y: 80 }, data: { type: 'spin', label: 'Spin', axis: 'y', speed: 1 }, class: 'w-[150px]' }
 		]);
-		window.__stores.flowEdges.set([{ id: 'p-e', source: 'p-a', target: 'p-b', targetHandle: 'speed', type: 'bezier' }]);
+		window.__tp.test.v1.flowEdges.set([{ id: 'p-e', source: 'p-a', target: 'p-b', targetHandle: 'speed', type: 'bezier' }]);
 	});
 	await A.page.waitForTimeout(500);
 
@@ -49,18 +49,18 @@ h.run(async () => {
 
 	// --- selecting a node swaps the panel to its props; rename replicates ---
 	const renamed = await A.page.evaluate(() => {
-		window.__stores.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: n.id === 'p-b' })));
+		window.__tp.test.v1.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: n.id === 'p-b' })));
 		return new Promise((resolve) =>
 			setTimeout(() => {
 				const input = document.querySelector('#flow-node-name');
 				if (!input) return resolve({ present: false });
 				const captured = []; let original;
-				window.__stores.peers.subscribe((p) => (original = p))();
-				window.__stores.peers.set({ ...(original ?? {}), peer: { id: 'me' }, send: (m) => captured.push(m) });
+				window.__tp.test.v1.peers.subscribe((p) => (original = p))();
+				window.__tp.test.v1.peers.set({ ...(original ?? {}), peer: { id: 'me' }, send: (m) => captured.push(m) });
 				input.value = 'Spinner';
 				input.dispatchEvent(new Event('change', { bubbles: true }));
-				window.__stores.peers.set(original);
-				let ns; window.__stores.flowNodes.subscribe((v) => (ns = v))();
+				window.__tp.test.v1.peers.set(original);
+				let ns; window.__tp.test.v1.flowNodes.subscribe((v) => (ns = v))();
 				const node = ns.find((n) => n.id === 'p-b');
 				resolve({ present: true, label: node.data.label, sent: captured.some((m) => m.type === 'nodedata') });
 			}, 200)

@@ -20,10 +20,10 @@ h.run(async () => {
 	const page = A.page;
 
 	// a box to aim the sound and the burst at, then the graph
-	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await page.waitForTimeout(600);
 	const box = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let group;
 		s.objectsGroup.subscribe((v) => (group = v))();
 		let target = group.children.find((c) => c.isMesh);
@@ -42,7 +42,7 @@ h.run(async () => {
 	const build = (extra = {}) =>
 		page.evaluate(
 			async ({ uuid, extra }) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				const x = extra.suffix ?? '';
 				const N = (id, type, data) => ({ id, type, position: { x: 0, y: 0 }, data: { label: id, ...data }, class: 'w-[150px]' });
 				const nodes = [
@@ -78,7 +78,7 @@ h.run(async () => {
 	await build();
 	await page.evaluate(() => {
 		let peer;
-		window.__stores.peers.subscribe((v) => (peer = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (peer = v))();
 		window.__sent = [];
 		const send = peer.send.bind(peer);
 		peer.send = (msg) => {
@@ -89,13 +89,13 @@ h.run(async () => {
 
 	console.log('\n=== 1. a pulse: banner, sound, burst, buzz ===');
 	const pulse = async (replicate = false) => {
-		await page.evaluate(({ t, replicate }) => window.__stores.flowRuntime.applyNodeTrigger('fKey', t, replicate), { t: NOW(), replicate });
+		await page.evaluate(({ t, replicate }) => window.__tp.test.v1.flowRuntime.applyNodeTrigger('fKey', t, replicate), { t: NOW(), replicate });
 		await page.waitForTimeout(500);
 	};
 	await pulse();
 	await pulse();
 	const one = await page.evaluate(() => {
-		const k = window.__stores.gameKit;
+		const k = window.__tp.test.v1.gameKit;
 		let ann;
 		k.gameAnnounce.gameAnnouncement.subscribe((v) => (ann = v))();
 		const dbg = k.gameFeelActions.gameFeelActionsDebug();
@@ -133,15 +133,15 @@ h.run(async () => {
 	await page.waitForTimeout(600);
 	await build({ suffix: 'New' });
 	await page.waitForTimeout(700);
-	const stale = await page.evaluate(() => window.__stores.gameKit.gameFeelActions.gameFeelActionsDebug().fired);
+	const stale = await page.evaluate(() => window.__tp.test.v1.gameKit.gameFeelActions.gameFeelActionsDebug().fired);
 	h.check(!stale.announce && !stale.gamesound && !stale.effectburst && !stale.hapticpulse, '3.1 fresh nodes adopting a stamp older than them stay quiet (' + JSON.stringify(stale) + ')');
 	await pulse();
-	const fresh = await page.evaluate(() => window.__stores.gameKit.gameFeelActions.gameFeelActionsDebug().fired);
+	const fresh = await page.evaluate(() => window.__tp.test.v1.gameKit.gameFeelActions.gameFeelActionsDebug().fired);
 	h.check(fresh.announce === 1 && fresh.gamesound === 1, '3.2 and act on the next real pulse (' + JSON.stringify(fresh) + ')');
 
 	console.log('\n=== 4. the buzz: silent in Edit, asked in Interact ===');
 	const buzz = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const k = s.gameKit;
 		const t = () => (Date.now() % 86400000) / 1000;
 		s.objectActions.setEditorMode('edit');
@@ -164,7 +164,7 @@ h.run(async () => {
 	console.log('\n=== 5. Game Music is a declaration ===');
 	await build({ music: 'always' });
 	const music = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const k = s.gameKit;
 		const state = () => {
 			let v;
@@ -188,7 +188,7 @@ h.run(async () => {
 	h.check(music.backInEdit === null, '5.3 back in Edit it stops (' + music.backInEdit + ')');
 	await build({ music: 'round' });
 	const round = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const k = s.gameKit;
 		const state = () => {
 			let v;
@@ -221,10 +221,10 @@ h.run(async () => {
 	h.check(round.off === null, '5.5 an `on` wired false switches it off');
 
 	console.log('\n=== 7. On Grab: a player lifting a body pulses it ===');
-	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await page.waitForTimeout(800);
 	const grabbed = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		let group;
 		s.objectsGroup.subscribe((v) => (group = v))();
@@ -271,14 +271,14 @@ h.run(async () => {
 	await build();
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);
-	await B.page.waitForFunction(() => window.__stores.allNodes().some((n) => n.id === 'fAnn'), null, { timeout: 30000 });
+	await B.page.waitForFunction(() => window.__tp.test.v1.allNodes().some((n) => n.id === 'fAnn'), null, { timeout: 30000 });
 	await B.page.waitForTimeout(900); // B's first tick sees the nodes (actionSeenAt)
 	await pulse(true);
 	await B.page.waitForTimeout(800);
 	const onB = await B.page.evaluate(() => {
 		let v;
-		window.__stores.gameKit.gameAnnounce.gameAnnouncement.subscribe((x) => (v = x))();
-		return { ann: v, fired: window.__stores.gameKit.gameFeelActions.gameFeelActionsDebug().fired };
+		window.__tp.test.v1.gameKit.gameAnnounce.gameAnnouncement.subscribe((x) => (v = x))();
+		return { ann: v, fired: window.__tp.test.v1.gameKit.gameFeelActions.gameFeelActionsDebug().fired };
 	});
 	h.check(/^Ring \d+ reached$/.test(onB.ann?.text ?? ''), '6.1 the second peer shows the banner from the same pulse (' + JSON.stringify(onB.ann) + ')');
 	h.check((onB.fired.gamesound ?? 0) >= 1, '6.2 and plays the sound itself (' + JSON.stringify(onB.fired) + ')');

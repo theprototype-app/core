@@ -16,16 +16,16 @@ const SIZES = [
 const ctxFor = (s) => ({ hasTouch: true, isMobile: true, deviceScaleFactor: 2.6, viewport: s.viewport });
 
 const nap = (ms) => new Promise((r) => setTimeout(r, ms));
-const stack = (page) => page.evaluate(() => window.__stores.backStack.backStackState());
-const set = (page, name, v) => page.evaluate(([n, v]) => window.__stores[n].set(v), [name, v]);
+const stack = (page) => page.evaluate(() => window.__tp.test.v1.backStack.backStackState());
+const set = (page, name, v) => page.evaluate(([n, v]) => window.__tp.test.v1[n].set(v), [name, v]);
 const visible = (page, sel) => page.locator(sel).first().isVisible().catch(() => false);
 /** Back, as the hardware button does it: one history step, no navigation expected */
 /** Explorer up, whatever posture: on a phone a Back MINIMIZES the dock (the bar tap's rule), so
  *  re-opening there means un-minimizing too */
 const openExplorer = (page) =>
 	page.evaluate(() => {
-		window.__stores.explorerClose.set(false);
-		window.__stores.bottomDock.dockMinimized.set(false);
+		window.__tp.test.v1.explorerClose.set(false);
+		window.__tp.test.v1.bottomDock.dockMinimized.set(false);
 	});
 const back = async (page) => {
 	await page.evaluate(() => history.back());
@@ -55,7 +55,7 @@ h.run(async () => {
 		h.check(boot.open.length === 0 && !boot.marker, tag(`nothing registered at boot (open=${JSON.stringify(boot.open)})`));
 
 		await surface(page, tag('command palette'), () => set(page, 'commandPaletteOpen', true), '#command-palette');
-		await surface(page, tag("What's new"), () => page.evaluate(() => window.__stores.whatsNew.openWhatsNew()), '#whats-new-window');
+		await surface(page, tag("What's new"), () => page.evaluate(() => window.__tp.test.v1.whatsNew.openWhatsNew()), '#whats-new-window');
 		await surface(page, tag('main menu'), () => set(page, 'closeMenu', false), '#sidebar70');
 		await surface(page, tag('Explorer'), () => openExplorer(page), '#explorer-list');
 		// 78 PL23: on the folded phone Chat is a dock TAB, so the Explorer Back only minimized (still open) would be
@@ -94,10 +94,10 @@ h.run(async () => {
 		if (size.name === 'unfolded') {
 			await openExplorer(page);
 			await h.eventually(() => stack(page), (v) => v.onTop, tag('Explorer up before play'));
-			await page.evaluate(() => window.__stores.playMode.requestPlay());
-			await h.eventually(() => page.evaluate(() => window.__stores.playMode.playBackMarker()), (v) => v, tag('play pushed its own marker'));
+			await page.evaluate(() => window.__tp.test.v1.playMode.requestPlay());
+			await h.eventually(() => page.evaluate(() => window.__tp.test.v1.playMode.playBackMarker()), (v) => v, tag('play pushed its own marker'));
 			await back(page);
-			await h.eventually(() => page.evaluate(() => new Promise((r) => window.__stores.isLocked.subscribe((v) => r(v))())), (v) => v !== true, tag('Back exits play first'));
+			await h.eventually(() => page.evaluate(() => new Promise((r) => window.__tp.test.v1.isLocked.subscribe((v) => r(v))())), (v) => v !== true, tag('Back exits play first'));
 			await nap(600);
 			const mid = await stack(page);
 			h.check(mid.onTop && mid.open.length >= 1, tag(`after play, Explorer's marker is the top entry again (${JSON.stringify(mid)})`));

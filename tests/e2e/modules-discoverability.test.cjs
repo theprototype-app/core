@@ -30,7 +30,7 @@ h.run(async () => {
 			body: fs.readFileSync(avatarDir + file, 'utf8')
 		});
 	});
-	await A.page.evaluate(() => window.__stores.modulesOpen.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.modulesOpen.set(true));
 	await A.page.waitForTimeout(500);
 
 	h.check((await userTabText(A.page)) === 'User', 'User tab has no badge when nothing is installed');
@@ -57,7 +57,7 @@ h.run(async () => {
 	// install from Browse the way the gallery card does (installUrl on the CDN
 	// source folder) — the zip input only exists in the User tab
 	await A.page.evaluate(() =>
-		window.__stores.userModules.installUrl('https://gallery.local/modules/avatar')
+		window.__tp.test.v1.userModules.installUrl('https://gallery.local/modules/avatar')
 	);
 	await h.eventually(() => userTabText(A.page), (t) => t === 'User (5)', 'the badge grows on install from another tab');
 

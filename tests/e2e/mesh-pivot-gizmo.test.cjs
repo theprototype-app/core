@@ -38,7 +38,7 @@ const h = require('./helpers.cjs');
 const gizmo = (page) =>
 	page.evaluate(() => {
 		let controls;
-		window.__stores.TControls.subscribe((c) => (controls = c))();
+		window.__tp.test.v1.TControls.subscribe((c) => (controls = c))();
 		const object = controls?.object;
 		if (!object) return null;
 		return {
@@ -58,7 +58,7 @@ const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
  */
 const probeHandles = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const found = [];
 		for (let i = 0; i < 64; i++) {
 			s.meshEdit.selectHandle(i);
@@ -101,11 +101,11 @@ const topFour = (rows) => [
  */
 async function findGrip(page, axis) {
 	const candidates = await page.evaluate((axis) => {
-		const THREE = window.__stores.THREE;
+		const THREE = window.__tp.test.v1.THREE;
 		let controls = null;
 		let cam = null;
-		window.__stores.TControls.subscribe((v) => (controls = v))();
-		window.__stores.globalCamera.subscribe((v) => (cam = v))();
+		window.__tp.test.v1.TControls.subscribe((v) => (controls = v))();
+		window.__tp.test.v1.globalCamera.subscribe((v) => (cam = v))();
 		const helper = controls?.getHelper?.() ?? controls;
 		if (!helper || !cam) return null;
 		// VISIBLE meshes only: every mode's handles live in the same helper with
@@ -148,7 +148,7 @@ async function findGrip(page, axis) {
 		await page.mouse.move(px[0], px[1]);
 		await page.waitForTimeout(60);
 		const live = await page.evaluate(
-			() => new Promise((r) => window.__stores.TControls.subscribe((c) => r(c?.axis))())
+			() => new Promise((r) => window.__tp.test.v1.TControls.subscribe((c) => r(c?.axis))())
 		);
 		if (live === axis) return px;
 	}
@@ -219,7 +219,7 @@ h.run(async () => {
 	// a 2x2x2 box at the origin, unrotated: LOCAL == WORLD, so every number below
 	// is readable, and its position entries weld into 8 corner handles
 	const uuid = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create Box 2 2 2');
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
@@ -229,7 +229,7 @@ h.run(async () => {
 		window.__box = box;
 		return box.uuid;
 	});
-	await A.page.evaluate((uuid) => window.__stores.meshEdit.enterEditMode(uuid), uuid);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.meshEdit.enterEditMode(uuid), uuid);
 
 	let rows = await probeHandles(A.page);
 	h.check(rows.length === 8, `a 2x2x2 box welds to 8 vertex handles (${rows.length})`);
@@ -239,7 +239,7 @@ h.run(async () => {
 	// ======================================================================
 	// 1. the gizmo sits at the CENTROID of a multi-selection
 	// ======================================================================
-	await A.page.evaluate((i) => window.__stores.meshEdit.selectHandle(i), TOP[0]);
+	await A.page.evaluate((i) => window.__tp.test.v1.meshEdit.selectHandle(i), TOP[0]);
 	let seat = await gizmo(A.page);
 	const p0 = rows.find((entry) => entry[0] === TOP[0]).slice(1);
 	h.check(seat?.kind === 'vertex', 'a single pick seats the vertex gizmo');
@@ -249,7 +249,7 @@ h.run(async () => {
 	);
 
 	await A.page.evaluate(
-		(rest) => rest.forEach((i) => window.__stores.meshEdit.toggleVertexSelection(i)),
+		(rest) => rest.forEach((i) => window.__tp.test.v1.meshEdit.toggleVertexSelection(i)),
 		TOP.slice(1)
 	);
 	seat = await gizmo(A.page);
@@ -265,7 +265,7 @@ h.run(async () => {
 
 	// dropping a member moves it again: removals never went through setAnchor, so
 	// the gizmo used to stay at the stale centroid
-	await A.page.evaluate((i) => window.__stores.meshEdit.toggleVertexSelection(i), TOP[2]);
+	await A.page.evaluate((i) => window.__tp.test.v1.meshEdit.toggleVertexSelection(i), TOP[2]);
 	seat = await gizmo(A.page);
 	h.check(
 		dist(seat.position, [(-1 + 1 - 1) / 3, 1, (-1 - 1 + 1) / 3]) < 1e-6,
@@ -276,7 +276,7 @@ h.run(async () => {
 	// 2. the transform MODE reaches the vertex gizmo (it forced translate)
 	// ======================================================================
 	const modes = await A.page.evaluate((i) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let controls;
 		s.TControls.subscribe((c) => (controls = c))();
 		s.objectActions.setTransformMode('rotate');
@@ -304,7 +304,7 @@ h.run(async () => {
 	h.check(!!grip, `found a confirmed grip on the translate X arrow (${JSON.stringify(grip)})`);
 	if (grip) {
 		const selSize = await A.page.evaluate(
-			() => new Promise((r) => window.__stores.meshEdit.vertexSelectionSize.subscribe((v) => r(v))())
+			() => new Promise((r) => window.__tp.test.v1.meshEdit.vertexSelectionSize.subscribe((v) => r(v))())
 		);
 		h.check(selSize === 4, `four vertices are selected for the real drag (${selSize})`);
 		const before = await readPositions(A.page);
@@ -332,7 +332,7 @@ h.run(async () => {
 				`...all by the SAME delta ${JSON.stringify(d0.map((n) => +n.toFixed(4)))} (spread ${spread.toExponential(1)}) — a rigid translate from a centroid-seated gizmo`
 			);
 		}
-		await A.page.evaluate(() => window.__stores.history.undo());
+		await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 		await A.page.waitForTimeout(400);
 	}
 
@@ -353,7 +353,7 @@ h.run(async () => {
 	// multi-selection moves by the proxy's DELTA instead, which says nothing
 	// about where any one vertex ends up.
 	const snapWas = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let on;
 		let cfg;
 		s.snapping.snapEnabled.subscribe((v) => (on = v))();
@@ -365,7 +365,7 @@ h.run(async () => {
 	async function snapDrag(on) {
 		await A.page.evaluate(
 			({ on, step }) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				s.snapping.snapSettings.update((v) => ({ ...v, translate: step }));
 				s.snapping.snapEnabled.set(on);
 				s.meshEdit.selectHandle(0);
@@ -376,7 +376,7 @@ h.run(async () => {
 		const wired = await A.page.evaluate(
 			() =>
 				new Promise((r) =>
-					window.__stores.TControls.subscribe((c) => r(c?.translationSnap ?? null))()
+					window.__tp.test.v1.TControls.subscribe((c) => r(c?.translationSnap ?? null))()
 				)
 		);
 		const g = await findGrip(A.page, 'X');
@@ -389,7 +389,7 @@ h.run(async () => {
 		await A.page.mouse.up();
 		await A.page.waitForTimeout(320);
 		const pairs = movedPairs(before, await readPositions(A.page));
-		await A.page.evaluate(() => window.__stores.history.undo());
+		await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 		await A.page.waitForTimeout(400);
 		return { wired, grip: true, pairs };
 	}
@@ -429,7 +429,7 @@ h.run(async () => {
 	// restore: snapping is a PERSISTED app-wide pref, and a live rotation snap
 	// would quantize every gizmo drag the sections below measure
 	await A.page.evaluate((was) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.snapping.snapSettings.set(was.cfg);
 		s.snapping.snapEnabled.set(was.on);
 	}, snapWas);
@@ -446,7 +446,7 @@ h.run(async () => {
 	h.check(new Set(TOP).size === 4, `...resolving to four DISTINCT top corners (${JSON.stringify(TOP)})`);
 	const placed = await A.page.evaluate(
 		({ uuid, PIVOT, TOP }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.meshEdit.selectHandle(TOP[0]);
 			TOP.slice(1).forEach((i) => s.meshEdit.toggleVertexSelection(i));
 			const ok = s.meshPivot.setMeshPivotLocal(uuid, new s.THREE.Vector3(...PIVOT));
@@ -469,7 +469,7 @@ h.run(async () => {
 	const gesture = async (page, spec) => {
 		const before = await readPositions(page);
 		const ran = await page.evaluate((spec) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const THREE = s.THREE;
 			const me = s.meshEdit;
 			let controls;
@@ -532,7 +532,7 @@ h.run(async () => {
 	// ONE undo reverts the whole gesture — the PROPERTY, never a stack depth
 	// (recordEntry's LIMIT trim can evict the oldest, so a correct gesture may
 	// leave the depth unchanged)
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(400);
 	const undoneRows = await readPositions(A.page);
 	const undoGap = Math.max(...rot.before.map((b, i) => dist(b, undoneRows[i] ?? [9, 9, 9])));
@@ -540,12 +540,12 @@ h.run(async () => {
 		undoneRows.length === rot.before.length && undoGap < 1e-6,
 		`ONE undo restores the pre-rotate geometry exactly (max gap ${undoGap.toExponential(1)})`
 	);
-	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 	await A.page.waitForTimeout(400);
 	const redoneRows = await readPositions(A.page);
 	const redoGap = Math.max(...rot.after.map((a, i) => dist(a, redoneRows[i] ?? [9, 9, 9])));
 	h.check(redoGap < 1e-6, `...and redo puts the rotation back (max gap ${redoGap.toExponential(1)})`);
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(400);
 
 	// SCALE about the pivot: every selected vertex lands on pivot + 2*(v - pivot)
@@ -554,7 +554,7 @@ h.run(async () => {
 	TOP = topFour(rows);
 	h.check(new Set(TOP).size === 4, `...resolving to four DISTINCT top corners (${JSON.stringify(TOP)})`);
 	await A.page.evaluate((TOP) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.meshEdit.selectHandle(TOP[0]);
 		TOP.slice(1).forEach((i) => s.meshEdit.toggleVertexSelection(i));
 	}, TOP);
@@ -573,7 +573,7 @@ h.run(async () => {
 		scaleErr < 1e-6,
 		`every one landed on pivot + 2*(v - pivot) (max error ${scaleErr.toExponential(1)}) — scaling about the SELECTION centre would put them somewhere else entirely`
 	);
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(400);
 
 	// a REAL mouse rotate on the confirmed Y ring reaches the same code
@@ -581,7 +581,7 @@ h.run(async () => {
 	TOP = topFour(rows);
 	h.check(new Set(TOP).size === 4, `...resolving to four DISTINCT top corners (${JSON.stringify(TOP)})`);
 	await A.page.evaluate((TOP) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.meshEdit.selectHandle(TOP[0]);
 		TOP.slice(1).forEach((i) => s.meshEdit.toggleVertexSelection(i));
 		s.objectActions.setTransformMode('rotate');
@@ -621,8 +621,8 @@ h.run(async () => {
 			);
 		}
 		await A.page.evaluate(() => {
-			window.__stores.history.undo();
-			window.__stores.objectActions.setTransformMode('translate');
+			window.__tp.test.v1.history.undo();
+			window.__tp.test.v1.objectActions.setTransformMode('translate');
 		});
 		await A.page.waitForTimeout(400);
 	}
@@ -631,7 +631,7 @@ h.run(async () => {
 	// 5. the pivot is LOCAL: no wire traffic, nothing in the scene payload
 	// ======================================================================
 	const localOnly = await A.page.evaluate(({ uuid, PIVOT }) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		let original;
 		s.peers.subscribe((v) => (original = v))();
@@ -667,7 +667,7 @@ h.run(async () => {
 	// 6. the MARKER is a scene-root helper, never a child of the mesh
 	// ======================================================================
 	const marker = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let scene;
 		s.globalScene.subscribe((v) => (scene = v))();
 		let node = null;
@@ -705,7 +705,7 @@ h.run(async () => {
 	// 7. PICK MODE — Esc leaves the session alone; a real click places the pivot
 	// ======================================================================
 	const armed = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.meshPivot.clearMeshPivot(window.__box.uuid);
 		s.meshPivot.startMeshPivotPick();
 		let on;
@@ -720,7 +720,7 @@ h.run(async () => {
 	await A.page.keyboard.press('Escape');
 	await A.page.waitForTimeout(250);
 	const afterEsc = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let on;
 		let session;
 		s.meshPivot.meshPivotPicking.subscribe((v) => (on = v))();
@@ -735,11 +735,11 @@ h.run(async () => {
 
 	// aim at a real corner of the box and click it for real
 	const cornerPx = await h.projectPoint(A.page, [-1, -1, 1]);
-	await A.page.evaluate(() => window.__stores.meshPivot.startMeshPivotPick());
+	await A.page.evaluate(() => window.__tp.test.v1.meshPivot.startMeshPivotPick());
 	await A.page.mouse.click(Math.round(cornerPx.x), Math.round(cornerPx.y));
 	await A.page.waitForTimeout(400);
 	const picked = await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let map;
 		s.meshPivot.meshPivots.subscribe((v) => (map = v))();
 		let on;
@@ -760,7 +760,7 @@ h.run(async () => {
 	h.check(new Set(TOP).size === 4, `...resolving to four DISTINCT top corners (${JSON.stringify(TOP)})`);
 	const setHere = await A.page.evaluate(
 		({ uuid, TOP }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.meshPivot.clearMeshPivot(uuid);
 			s.meshEdit.selectHandle(TOP[0]);
 			TOP.slice(1).forEach((i) => s.meshEdit.toggleVertexSelection(i));
@@ -783,7 +783,7 @@ h.run(async () => {
 	// ======================================================================
 	const reenter = await A.page.evaluate(
 		({ uuid, PIVOT }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.meshPivot.setMeshPivotLocal(uuid, new s.THREE.Vector3(...PIVOT));
 			s.meshEdit.exitEditMode();
 			s.meshEdit.enterEditMode(uuid);
@@ -850,7 +850,7 @@ h.run(async () => {
 	// wrong axis — which is exactly what the first run of this suite measured.
 	const faceBefore = await readPositions(A.page);
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		s.faceEdit.setFaceSubmode('faces');
 		s.faceEdit.setFaceGranularity('face');
@@ -887,19 +887,19 @@ h.run(async () => {
 		h.check(fErr < 1e-5, `...every corner landing on pivot + R90(v - pivot) (max error ${fErr.toExponential(1)})`);
 	}
 	await A.page.evaluate(() => {
-		window.__stores.history.undo();
-		window.__stores.faceEdit.exitFaceEdit();
+		window.__tp.test.v1.history.undo();
+		window.__tp.test.v1.faceEdit.exitFaceEdit();
 	});
 	await A.page.waitForTimeout(400);
 
 	// clearing goes back to the selection's own centre
-	await A.page.evaluate((uuid) => window.__stores.meshEdit.enterEditMode(uuid), uuid);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.meshEdit.enterEditMode(uuid), uuid);
 	rows = await probeHandles(A.page);
 	TOP = topFour(rows);
 	h.check(new Set(TOP).size === 4, `...resolving to four DISTINCT top corners (${JSON.stringify(TOP)})`);
 	const cleared = await A.page.evaluate(
 		({ uuid, TOP }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.meshEdit.selectHandle(TOP[0]);
 			TOP.slice(1).forEach((i) => s.meshEdit.toggleVertexSelection(i));
 			const ok = s.meshPivot.clearMeshPivot(uuid);
@@ -940,7 +940,7 @@ h.run(async () => {
 	const historyMark = (page) =>
 		page.evaluate(() => {
 			let stack;
-			window.__stores.history.undoStack.subscribe((v) => (stack = v))();
+			window.__tp.test.v1.history.undoStack.subscribe((v) => (stack = v))();
 			window.__histTop = stack[stack.length - 1] ?? null;
 			window.__histLen = stack.length;
 			return { len: stack.length, kind: window.__histTop?.kind ?? null };
@@ -948,7 +948,7 @@ h.run(async () => {
 	const historySame = (page) =>
 		page.evaluate(() => {
 			let stack;
-			window.__stores.history.undoStack.subscribe((v) => (stack = v))();
+			window.__tp.test.v1.history.undoStack.subscribe((v) => (stack = v))();
 			return {
 				same: (stack[stack.length - 1] ?? null) === window.__histTop,
 				len: stack.length,
@@ -964,7 +964,7 @@ h.run(async () => {
 	const spyOn = (page) =>
 		page.evaluate(() => {
 			let original;
-			window.__stores.peers.subscribe((v) => (original = v))();
+			window.__tp.test.v1.peers.subscribe((v) => (original = v))();
 			window.__peersOriginal = original;
 			window.__sent = [];
 			const through = original.send.bind(original);
@@ -981,7 +981,7 @@ h.run(async () => {
 	/** the whole live position attribute, plus the pivot / gizmo / marker */
 	const pivotState = (page, uuid) =>
 		page.evaluate((uuid) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let map;
 			s.meshPivot.meshPivots.subscribe((v) => (map = v))();
 			let controls;
@@ -1006,7 +1006,7 @@ h.run(async () => {
 	// (a) ARMING. The mode the user was in is remembered and translate is forced:
 	// a pivot is a POINT, so rotate/scale handles on it could not mean anything.
 	const armMove = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.objectActions.setTransformMode('rotate'); // something to restore later
 		const ok = s.meshPivot.startMeshPivotMove();
 		return ok;
@@ -1088,7 +1088,7 @@ h.run(async () => {
 	// (c) a RE-SEAT must not disarm it (the 17-D rule that cost the most to learn:
 	// resetting the armed state on a re-seat made the button cancel itself)
 	const reseat = await A.page.evaluate((i) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.meshEdit.toggleVertexSelection(i); // the selection changes -> setAnchor runs
 		let moving;
 		s.meshPivot.meshPivotMoving.subscribe((v) => (moving = v))();
@@ -1106,7 +1106,7 @@ h.run(async () => {
 	// (d) a pivot placed this way is a pivot like any other: it survives leaving
 	// and re-entering the session (the reload is section 11)
 	const afterReenter = await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.meshEdit.exitEditMode(); // also disarms — an armed tool never outlives the session
 		s.meshEdit.enterEditMode(uuid);
 		s.meshEdit.selectHandle(0);
@@ -1127,7 +1127,7 @@ h.run(async () => {
 
 	// (e) disarming puts the transform mode back where it was
 	const restored = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.objectActions.setTransformMode('rotate');
 		s.meshPivot.startMeshPivotMove();
 		let controls;
@@ -1159,7 +1159,7 @@ h.run(async () => {
 	TOP = topFour(rows);
 	h.check(new Set(TOP).size === 4, `...resolving to four DISTINCT top corners (${JSON.stringify(TOP)})`);
 	await A.page.evaluate((TOP) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.meshEdit.selectHandle(TOP[0]);
 		TOP.slice(1).forEach((i) => s.meshEdit.toggleVertexSelection(i));
 	}, TOP);
@@ -1182,12 +1182,12 @@ h.run(async () => {
 			`...every corner landing on dragPivot + R90(v - dragPivot) (max error ${err.toExponential(1)})`
 		);
 	}
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(400);
 
 	// (g) ESCAPE disarms and KEEPS the session (three window handlers see that
 	// key, so the verdict rides the event — the same contract as the pick)
-	await A.page.evaluate(() => window.__stores.meshPivot.startMeshPivotMove());
+	await A.page.evaluate(() => window.__tp.test.v1.meshPivot.startMeshPivotMove());
 	const armedSeat = await pivotState(A.page, uuid);
 	h.check(
 		!!armedSeat.gizmo && !!dragPivot && dist(armedSeat.gizmo, dragPivot) < 1e-6,
@@ -1205,7 +1205,7 @@ h.run(async () => {
 
 	// (h) the two placement modes are MUTUALLY EXCLUSIVE
 	const exclusive = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const read = () => {
 			let moving;
 			let picking;
@@ -1234,7 +1234,7 @@ h.run(async () => {
 	// (i) CLEARING the pivot while armed leaves the mode usable — it falls back
 	// to the seat it would otherwise use
 	const clearedArmed = await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.meshPivot.startMeshPivotMove();
 		s.meshPivot.clearMeshPivot(uuid);
 		let moving;
@@ -1255,7 +1255,7 @@ h.run(async () => {
 	// with a real mouse. Faces and edges share this proxy, so covering faces
 	// covers the sub-mode too (the seat is asserted for both in section 9).
 	await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.meshEdit.exitEditMode();
 		s.faceEdit.enterFaceEdit(uuid);
 		s.faceEdit.setFaceSubmode('faces');
@@ -1318,7 +1318,7 @@ h.run(async () => {
 	await A.page.keyboard.press('Escape');
 	await A.page.waitForTimeout(250);
 	const faceEsc = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let moving;
 		let session;
 		s.meshPivot.meshPivotMoving.subscribe((v) => (moving = v))();
@@ -1333,17 +1333,17 @@ h.run(async () => {
 	// ======================================================================
 	// carrying the pivot the FACE gizmo drag placed, so the reload proves the
 	// real thing rather than a value the test wrote through the store
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
 	await A.page.waitForTimeout(500);
 	await h.freshReload(A);
 	await A.page.waitForTimeout(1200);
 	// a reload gives the page a NEW peer id — re-read it before any connect below
 	A.id = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.peers.subscribe((p) => r(p?.peer?.id))())
+		() => new Promise((r) => window.__tp.test.v1.peers.subscribe((p) => r(p?.peer?.id))())
 	);
 	const survived = await A.page.evaluate((uuid) => {
 		let map;
-		window.__stores.meshPivot.meshPivots.subscribe((v) => (map = v))();
+		window.__tp.test.v1.meshPivot.meshPivots.subscribe((v) => (map = v))();
 		return map[uuid] ?? null;
 	}, uuid);
 	h.check(
@@ -1357,7 +1357,7 @@ h.run(async () => {
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);
 	const netUuid = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create Box 2 2 2');
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
@@ -1370,18 +1370,18 @@ h.run(async () => {
 	await A.page.waitForTimeout(3000);
 	const onB = await B.page.evaluate((uuid) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return !!g.getObjectByProperty('uuid', uuid);
 	}, netUuid);
 	h.check(onB, 'the box reached peer B (premise)');
 
-	await A.page.evaluate((uuid) => window.__stores.meshEdit.enterEditMode(uuid), netUuid);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.meshEdit.enterEditMode(uuid), netUuid);
 	rows = await probeHandles(A.page);
 	TOP = topFour(rows);
 	h.check(new Set(TOP).size === 4, `...resolving to four DISTINCT top corners (${JSON.stringify(TOP)})`);
 	const netSize = await A.page.evaluate(
 		({ uuid, TOP, PIVOT }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const me = s.meshEdit;
 			me.selectHandle(TOP[0]);
 			TOP.slice(1).forEach((i) => me.toggleVertexSelection(i));
@@ -1409,7 +1409,7 @@ h.run(async () => {
 	const signature = (peer, uuid) =>
 		peer.page.evaluate((uuid) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const object = g.getObjectByProperty('uuid', uuid);
 			const p = object?.geometry?.attributes?.position;
 			if (!p) return null;
@@ -1431,7 +1431,7 @@ h.run(async () => {
 	);
 	const bPivot = await B.page.evaluate((uuid) => {
 		let map;
-		window.__stores.meshPivot.meshPivots.subscribe((v) => (map = v))();
+		window.__tp.test.v1.meshPivot.meshPivots.subscribe((v) => (map = v))();
 		return map[uuid] ?? null;
 	}, netUuid);
 	h.check(
@@ -1439,6 +1439,6 @@ h.run(async () => {
 		`B never received the pivot itself — it is a LOCAL working preference (${JSON.stringify(bPivot)})`
 	);
 
-	await A.page.evaluate(() => window.__stores.meshEdit.exitEditMode());
+	await A.page.evaluate(() => window.__tp.test.v1.meshEdit.exitEditMode());
 	await h.finish(browser);
 });

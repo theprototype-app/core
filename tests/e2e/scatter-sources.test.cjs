@@ -18,13 +18,13 @@ const N6_FOLDED = { viewport: { width: 390, height: 896 }, deviceScaleFactor: 2.
 
 /** every instance a terrain's set draws (ids + rounded poses) @param {any} page */
 const instancesOf = (page, uuid, setId) =>
-	page.evaluate(([u, s]) => window.__stores.terrainPaint.scatterInstancesOf(u, s).map((i) => [i.id, +i.x.toFixed(3), +i.z.toFixed(3), +i.yaw.toFixed(3), +i.scale.toFixed(3), i.src]), [uuid, setId]);
+	page.evaluate(([u, s]) => window.__tp.test.v1.terrainPaint.scatterInstancesOf(u, s).map((i) => [i.id, +i.x.toFixed(3), +i.z.toFixed(3), +i.yaw.toFixed(3), +i.scale.toFixed(3), i.src]), [uuid, setId]);
 
 /** the drawn scatter of a terrain: per set, the instance ids in draw order, per source geometry type */
 const drawnOf = (page, uuid) =>
 	page.evaluate((u) => {
 		let scene = null;
-		window.__stores.globalScene.subscribe((v) => (scene = v))();
+		window.__tp.test.v1.globalScene.subscribe((v) => (scene = v))();
 		/** @type {Record<string, {ids: string[], meshes: number, types: string[], colors: boolean}>} */
 		const out = {};
 		for (const holder of scene?.children ?? []) {
@@ -44,22 +44,22 @@ const drawnOf = (page, uuid) =>
 const blockOf = (page, uuid) =>
 	page.evaluate((u) => {
 		let g = null;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const o = g?.getObjectByProperty('uuid', u);
 		return o ? (o.userData.terrainScatter ?? null) : 'missing';
 	}, uuid);
 
 const stats = (page) =>
 	page.evaluate(async () => {
-		window.__stores.scatterThin.thinNow();
+		window.__tp.test.v1.scatterThin.thinNow();
 		await new Promise((r) => setTimeout(r, 600));
-		return window.__stores.scatterThin.scatterThinStats();
+		return window.__tp.test.v1.scatterThin.scatterThinStats();
 	});
 
 const posOf = (page, uuid) =>
 	page.evaluate((u) => {
 		let g = null;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return g?.getObjectByProperty('uuid', u)?.position.toArray() ?? null;
 	}, uuid);
 
@@ -68,19 +68,19 @@ async function drop(peer, ball, at) {
 	await peer.page.evaluate(
 		([u, p]) => {
 			let g = null;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const o = g.getObjectByProperty('uuid', u);
 			o.position.set(p[0], p[1], p[2]);
 			o.rotation.set(0, 0, 0);
 			o.userData.physics = { mode: 'dynamic', mass: 1 };
-			window.__stores.objectsGroup.update((v) => v);
-			window.__stores.objectActions.deselectObject();
+			window.__tp.test.v1.objectsGroup.update((v) => v);
+			window.__tp.test.v1.objectActions.deselectObject();
 		},
 		[ball, at]
 	);
-	await peer.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+	await peer.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 	const started = await peer.page.evaluate(async () => {
-		const ph = window.__stores.physics;
+		const ph = window.__tp.test.v1.physics;
 		await ph.toggleSimulation();
 		let sim = null;
 		let remote = null;
@@ -91,7 +91,7 @@ async function drop(peer, ball, at) {
 	console.log(`  ${peer.id} toggleSimulation -> ${JSON.stringify(started)}`);
 	// rapier loads lazily on each page: wait for the run to really start (and its scatter colliders)
 	await h.eventually(
-		() => peer.page.evaluate(() => (window.__stores.physics.physicsWorldDebug()?.scatter ?? []).length),
+		() => peer.page.evaluate(() => (window.__tp.test.v1.physics.physicsWorldDebug()?.scatter ?? []).length),
 		(n) => n > 0,
 		peer.id + ' started a simulation with the scatter colliders',
 		30000
@@ -106,8 +106,8 @@ async function drop(peer, ball, at) {
 		still = last !== null && y !== null && Math.abs(y - last) < 0.004 ? still + 1 : 0;
 		last = y;
 	}
-	const dbg = await peer.page.evaluate(() => window.__stores.physics.physicsWorldDebug().scatter);
-	await peer.page.evaluate(() => window.__stores.physics.stopSimulation());
+	const dbg = await peer.page.evaluate(() => window.__tp.test.v1.physics.physicsWorldDebug().scatter);
+	await peer.page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 	await peer.page.waitForTimeout(500);
 	return { y: last, dbg, rested: still >= 3 };
 }
@@ -116,7 +116,7 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(3000);
 		await warm.ctx.close();
 	}
@@ -127,7 +127,7 @@ h.run(async () => {
 
 	// ---- §1 a seeded set: params + seed travel, B rebuilds the same instances ----------------
 	const terrain = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create Terrain 200 48');
 		const group = await new Promise((r) => s.objectsGroup.subscribe(r)());
 		const t = group.children[group.children.length - 1];
@@ -141,7 +141,7 @@ h.run(async () => {
 	const sent = [];
 	await A.page.evaluate(() => {
 		window.__sent51 = [];
-		window.__stores.peers.subscribe((p) => {
+		window.__tp.test.v1.peers.subscribe((p) => {
 			const orig = p.send.bind(p);
 			p.send = (m) => {
 				if (m?.parameter === 'terrainScatter') window.__sent51.push(JSON.stringify(m).length);
@@ -151,7 +151,7 @@ h.run(async () => {
 	});
 	const setId = await A.page.evaluate(
 		(u) =>
-			window.__stores.terrainPaint.addScatterSet(u, {
+			window.__tp.test.v1.terrainPaint.addScatterSet(u, {
 				id: 'rocks',
 				source: { kind: 'primitive', type: 'Sphere' },
 				seed: 777,
@@ -182,11 +182,11 @@ h.run(async () => {
 	const near = await B.page.evaluate(
 		([u, s]) => {
 			let cam = null;
-			window.__stores.globalCamera.subscribe((v) => (cam = v))();
+			window.__tp.test.v1.globalCamera.subscribe((v) => (cam = v))();
 			const e0 = cam.matrixWorld.elements;
 			const p = { x: e0[12], y: e0[13], z: e0[14] };
 			let scene = null;
-			window.__stores.globalScene.subscribe((v) => (scene = v))();
+			window.__tp.test.v1.globalScene.subscribe((v) => (scene = v))();
 			const drawn = new Set();
 			let fading = 0;
 			for (const holder of scene.children)
@@ -197,7 +197,7 @@ h.run(async () => {
 						const e = m.instanceMatrix.array;
 						for (let i = 0; i < m.count; i++) if (Math.hypot(e[i * 16], e[i * 16 + 1], e[i * 16 + 2]) < 0.98) fading++;
 					}
-			const all = window.__stores.terrainPaint.scatterInstancesOf(u, s);
+			const all = window.__tp.test.v1.terrainPaint.scatterInstancesOf(u, s);
 			const nearIds = all.filter((i) => Math.hypot(i.x - p.x, p.y, i.z - p.z) < 30).map((i) => i.id);
 			const far = all.map((i) => [i.id, Math.hypot(i.x - p.x, p.y, i.z - p.z)]).sort((a, b) => b[1] - a[1]);
 			return { near: nearIds.length, missing: nearIds.filter((id) => !drawn.has(id)).length, fading, farthestDrawn: drawn.has(far[0][0]), farId: far[0][0] };
@@ -207,19 +207,19 @@ h.run(async () => {
 	h.check(near.near > 0 && near.missing === 0, `every instance within 30 m of the N6 camera is drawn (${near.near}, missing ${near.missing})`);
 	h.check(!near.farthestDrawn, `the farthest instance (${near.farId}) is not drawn on the N6`);
 	h.check(near.fading > 0, `the edge fades (${near.fading} instances drawn shrunk)`);
-	await B.page.evaluate(() => window.__stores.scatterThin.scatterDetail.set('off'));
+	await B.page.evaluate(() => window.__tp.test.v1.scatterThin.scatterDetail.set('off'));
 	const sOff = await stats(B.page);
 	h.check(sOff.drawn === sOff.instances && sOff.profile === null, `"All" on the N6 draws every instance (${sOff.drawn})`);
-	await B.page.evaluate(() => window.__stores.scatterThin.scatterDetail.set('auto'));
+	await B.page.evaluate(() => window.__tp.test.v1.scatterThin.scatterDetail.set('auto'));
 	const sBack = await stats(B.page);
 	h.check(sBack.drawn === sB.drawn, `back to Auto thins again (${sBack.drawn})`);
-	const meter = await B.page.evaluate(() => window.__stores.budgetMeter.sampleBudget()?.totals?.triangles ?? null);
+	const meter = await B.page.evaluate(() => window.__tp.test.v1.budgetMeter.sampleBudget()?.totals?.triangles ?? null);
 	h.check(meter !== null && meter >= sB.total, `the budget meter still counts every instance (${meter} ≥ ${sB.total})`);
 
 	// ---- §3 colliders identical: a ball on a rock the N6 does not draw -------------------------
-	const far = await B.page.evaluate(([u, id]) => window.__stores.terrainPaint.scatterInstancesOf(u, 'rocks').find((i) => i.id === id), [terrain, near.farId]);
+	const far = await B.page.evaluate(([u, id]) => window.__tp.test.v1.terrainPaint.scatterInstancesOf(u, 'rocks').find((i) => i.id === id), [terrain, near.farId]);
 	const ball = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create sphere');
 		await new Promise((r) => setTimeout(r, 1200));
 		const group = await new Promise((r) => s.objectsGroup.subscribe(r)());
@@ -231,11 +231,11 @@ h.run(async () => {
 	await h.eventuallyAfter(A, B, () => posOf(B.page, ball), (v) => !!v, 'B has the ball', 15000);
 	// A made (and so selected) the ball: a peer's selection is a LOCK, and a locked object is
 	// left out of the simulation — let it go and wait for B to see it unlocked
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await h.eventually(
 		() => B.page.evaluate((u) => {
 			let l = [];
-			window.__stores.lockedObjects.subscribe((v) => (l = v))();
+			window.__tp.test.v1.lockedObjects.subscribe((v) => (l = v))();
 			return !l.some((e) => e[1] === u);
 		}, ball),
 		(v) => v === true,
@@ -252,10 +252,10 @@ h.run(async () => {
 	h.check(onDesk.rested && Math.abs(onDesk.y - onPhone.y) < 0.05, `desktop: the same hit, the same height (${onDesk.y?.toFixed(3)} vs ${onPhone.y?.toFixed(3)})`);
 
 	// ---- §4 hand edits + re-roll keep the edits --------------------------------------------------
-	await A.page.evaluate((u) => window.__stores.terrainPaint.editScatterInstances(u, 'rocks', { g5: { x: 1.5, z: -2.5, yaw: 0.5 }, g6: { del: true } }), terrain);
+	await A.page.evaluate((u) => window.__tp.test.v1.terrainPaint.editScatterInstances(u, 'rocks', { g5: { x: 1.5, z: -2.5, yaw: 0.5 }, g6: { del: true } }), terrain);
 	await h.eventuallyAfter(A, B, () => blockOf(B.page, terrain), (v) => !!v?.sets?.[0]?.ov?.['5'], 'B has the edits', 10000);
 	const before = await instancesOf(B.page, terrain, 'rocks');
-	await A.page.evaluate((u) => window.__stores.terrainPaint.rerollScatterSet(u, 'rocks', 4242), terrain);
+	await A.page.evaluate((u) => window.__tp.test.v1.terrainPaint.rerollScatterSet(u, 'rocks', 4242), terrain);
 	await h.eventuallyAfter(A, B, () => blockOf(B.page, terrain), (v) => v?.sets?.[0]?.seed === 4242, 'B has the re-roll', 10000);
 	const after = await instancesOf(B.page, terrain, 'rocks');
 	const g5 = after.find((i) => i[0] === 'g5');
@@ -264,11 +264,11 @@ h.run(async () => {
 	h.check(after.find((i) => i[0] === 'g7')?.[1] !== before.find((i) => i[0] === 'g7')?.[1], 'the unedited slots re-rolled');
 	h.check(JSON.stringify(after) === JSON.stringify(await instancesOf(A.page, terrain, 'rocks')), 'A and B agree after edits + re-roll');
 	// one undo puts the seed back
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventuallyAfter(A, B, () => blockOf(B.page, terrain), (v) => v?.sets?.[0]?.seed === 777, 'one undo restores the seed on B', 10000);
 
 	// ---- §5 a mixed set through the real select ------------------------------------------------
-	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u, true), terrain);
+	await A.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u, true), terrain);
 	const add = A.page.locator('[id="terrain-scatter-add-rocks"]');
 	if (!(await add.isVisible().catch(() => false))) {
 		const head = A.page.locator('button', { hasText: /^Scatter$/ }).first();
@@ -281,7 +281,7 @@ h.run(async () => {
 	const mixB = await blockOf(B.page, terrain);
 	h.check(mixB.sets[0].sources[1].source.type === 'Cone', `the select added a Cone to the mix (${JSON.stringify(mixB.sets[0].sources.map((e) => e.source.type))})`);
 	h.check(await A.page.locator('[data-scatter-sources="rocks"] [data-scatter-source]').count() === 2, 'Properties lists both models');
-	await A.page.evaluate((u) => window.__stores.terrainPaint.setScatterSourceWeight(u, 'rocks', 1, 3), terrain);
+	await A.page.evaluate((u) => window.__tp.test.v1.terrainPaint.setScatterSourceWeight(u, 'rocks', 1, 3), terrain);
 	await h.eventuallyAfter(A, B, () => blockOf(B.page, terrain), (v) => v?.sets?.[0]?.sources?.[1]?.w === 3, 'the weight replicates', 10000);
 	const mixed = await instancesOf(B.page, terrain, 'rocks');
 	const cones = mixed.filter((i) => i[5] === 1).length;
@@ -290,11 +290,11 @@ h.run(async () => {
 	h.check(dMix.rocks.types.includes('ConeGeometry') && dMix.rocks.types.includes('SphereGeometry'), `both models drawn (${[...new Set(dMix.rocks.types)].join(', ')})`);
 
 	// ---- §6 tint + sink -----------------------------------------------------------------------
-	await A.page.evaluate((u) => window.__stores.terrainPaint.editScatterSet(u, 'rocks', { tint: 0.6, sink: 0.3 }), terrain);
+	await A.page.evaluate((u) => window.__tp.test.v1.terrainPaint.editScatterSet(u, 'rocks', { tint: 0.6, sink: 0.3 }), terrain);
 	await h.eventuallyAfter(A, B, () => blockOf(B.page, terrain), (v) => v?.sets?.[0]?.tint === 0.6 && v?.sets?.[0]?.sink === 0.3, 'tint + sink replicate', 10000);
 	const pose = await A.page.evaluate((u) => {
 		let scene = null;
-		window.__stores.globalScene.subscribe((v) => (scene = v))();
+		window.__tp.test.v1.globalScene.subscribe((v) => (scene = v))();
 		for (const holder of scene.children)
 			if (holder.userData?.terrainScatterOf === u)
 				for (const m of holder.children) {
@@ -307,12 +307,12 @@ h.run(async () => {
 	h.check(pose && Math.abs(pose.y + 0.3) < 0.02, `g0 sits 0.3 m into the flat ground (y ${pose?.y?.toFixed(3)})`);
 	h.check(pose?.colors && pose.c.some((v) => Math.abs(v - 1) > 0.01), `tinted instance colour (${pose?.c?.map((v) => v.toFixed(2))})`);
 	h.check((await drawnOf(B.page, terrain)).rocks?.colors, 'B draws the tint too');
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventuallyAfter(A, B, () => blockOf(B.page, terrain), (v) => !v?.sets?.[0]?.tint && !v?.sets?.[0]?.sink, 'one undo clears tint + sink on B', 10000);
 
 	// ---- §7 a prefab with logic scatters as its look only --------------------------------------
 	const prefab = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1200));
 		const group = await new Promise((r) => s.objectsGroup.subscribe(r)());
@@ -323,22 +323,22 @@ h.run(async () => {
 		return { id: entry.id, source };
 	});
 	h.check(prefab.source?.kind === 'library' && /look only/i.test(prefab.source?.note ?? ''), `the prefab became a Library look with a note (${JSON.stringify(prefab.source)})`);
-	await A.page.evaluate(([u, src]) => window.__stores.terrainPaint.addScatterSet(u, { id: 'crates', source: src, seed: 3, gen: { count: 40, scaleMin: 1, scaleMax: 1 } }), [terrain, prefab.source]);
+	await A.page.evaluate(([u, src]) => window.__tp.test.v1.terrainPaint.addScatterSet(u, { id: 'crates', source: src, seed: 3, gen: { count: 40, scaleMin: 1, scaleMax: 1 } }), [terrain, prefab.source]);
 	await h.eventually(() => drawnOf(A.page, terrain), (v) => v.crates?.ids.length === 40, 'A draws the crates', 90000); // scatter-sync: the look loads + lays out locally; a slow runner needed > 20 s
 	await h.eventuallyAfter(A, B, () => drawnOf(B.page, terrain), (v) => (v.crates?.ids.length ?? 0) > 0, 'B pulled the look and draws the crates', 30000);
 	const glb = await A.page.evaluate((hash) => {
 		let items = [];
-		window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((v) => (items = v))();
 		return items.find((i) => i.hash === hash)?.name ?? null;
 	}, prefab.source.hash);
 	h.check(/scatter look\)\.glb$/.test(glb ?? ''), `the look is a Library GLB (${glb})`);
-	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u, true), terrain);
+	await A.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u, true), terrain);
 	await A.page.waitForTimeout(400);
 	h.check(/look only/i.test((await A.page.locator('[data-scatter-sources="crates"] [data-scatter-note]').first().innerText().catch(() => '')) ?? ''), 'the source row shows the look-only note');
 
 	// ---- §8 "Use selected object" ----------------------------------------------------------------
 	const used = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create cone');
 		await new Promise((r) => setTimeout(r, 1200));
 		const group = await new Promise((r) => s.objectsGroup.subscribe(r)());
@@ -359,7 +359,7 @@ h.run(async () => {
 
 	// ---- §9 a 1.38 block loads byte-identical ----------------------------------------------------
 	const legacy = await A.page.evaluate((u) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const core = s.terrainScatterCore;
 		const B0 = { minX: -100, minZ: -100, sizeX: 200, sizeZ: 200 };
 		const data = s.terrainPaintCore.bytesToBase64(core.encodeInstances([{ x: 1, z: 2, yaw: 0.5, scale: 1.2 }, { x: -3, z: 4, yaw: 1, scale: 0.8 }], B0));
@@ -373,7 +373,7 @@ h.run(async () => {
 
 	// ---- §10 a pack item ---------------------------------------------------------------------------
 	const pack = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		try {
 			await s.packs.loadPacks();
 			const list = await Promise.race([s.scatterSources.packChoices(), new Promise((r) => setTimeout(() => r([]), 20000))]);
@@ -386,7 +386,7 @@ h.run(async () => {
 	if (!pack?.source) console.log(`SKIP §10: no pack items reachable (${JSON.stringify(pack)})`);
 	else {
 		h.check(pack.source.kind === 'pack' && !!pack.source.path, `a pack item resolves to its path (${pack.source.path})`);
-		await A.page.evaluate(([u, src]) => window.__stores.terrainPaint.addScatterSet(u, { id: 'kit', source: src, seed: 9, gen: { count: 30, scaleMin: 1, scaleMax: 1 } }), [terrain, pack.source]);
+		await A.page.evaluate(([u, src]) => window.__tp.test.v1.terrainPaint.addScatterSet(u, { id: 'kit', source: src, seed: 9, gen: { count: 30, scaleMin: 1, scaleMax: 1 } }), [terrain, pack.source]);
 		await h.eventuallyAfter(A, B, () => drawnOf(B.page, terrain), (v) => (v.kit?.ids.length ?? 0) > 0, 'B fetches the pack item and draws it', 40000);
 		const kitBlock = await blockOf(B.page, terrain);
 		const kitSet = kitBlock.sets.find((s) => s.id === 'kit');

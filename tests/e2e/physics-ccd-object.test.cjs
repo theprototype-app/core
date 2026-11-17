@@ -12,7 +12,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(4000);
 		await warm.ctx.close();
 	}
@@ -21,7 +21,7 @@ h.run(async () => {
 	await h.connect(B, A);
 
 	const ids = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const cmd = s.commandsHandler.sceneCommand;
 		cmd('/create Box 3 3 0.04');
 		cmd('/create Sphere 0.05');
@@ -37,7 +37,7 @@ h.run(async () => {
 	await h.eventually(
 		() => B.page.evaluate((u) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			return g.getObjectByProperty('uuid', u.ball)?.userData?.physics?.mode ?? null;
 		}, ids),
 		(m) => m === 'dynamic',
@@ -49,7 +49,7 @@ h.run(async () => {
 	const place = (page) =>
 		page.evaluate((u) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const wall = g.getObjectByProperty('uuid', u.wall);
 			const ball = g.getObjectByProperty('uuid', u.ball);
 			wall.position.set(0, 1.5, 0);
@@ -58,33 +58,33 @@ h.run(async () => {
 			wall.updateMatrixWorld(true);
 			ball.updateMatrixWorld(true);
 		}, ids);
-	const simOn = (page) => page.evaluate(() => new Promise((r) => window.__stores.physics.simulating.subscribe(r)()));
+	const simOn = (page) => page.evaluate(() => new Promise((r) => window.__tp.test.v1.physics.simulating.subscribe(r)()));
 	/** start a run on `page`, fire the ball at 60 m/s, return {z, ccd} after it has flown */
 	const fire = async (page, label, { stop = true, beforeFire = null } = {}) => {
-		if (!(await simOn(page))) await page.evaluate(() => window.__stores.physics.toggleSimulation());
+		if (!(await simOn(page))) await page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 		await h.eventually(
-			() => page.evaluate((u) => window.__stores.physics.physicsDebug().some((e) => e.uuid === u.ball), ids),
+			() => page.evaluate((u) => window.__tp.test.v1.physics.physicsDebug().some((e) => e.uuid === u.ball), ids),
 			(v) => v,
 			`${label}: the ball has a body`,
 			15000
 		);
 		if (beforeFire) await beforeFire();
-		const ok = await page.evaluate((u) => window.__stores.physics.setBodyVelocity(u.ball, [0, 0, 60], [0, 0, 0]), ids);
+		const ok = await page.evaluate((u) => window.__tp.test.v1.physics.setBodyVelocity(u.ball, [0, 0, 60], [0, 0, 0]), ids);
 		await page.waitForTimeout(400);
 		const out = await page.evaluate((u) => {
-			const e = window.__stores.physics.physicsDebug().find((x) => x.uuid === u.ball);
+			const e = window.__tp.test.v1.physics.physicsDebug().find((x) => x.uuid === u.ball);
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			return { z: g.getObjectByProperty('uuid', u.ball).position.z, ccd: e?.ccd ?? null };
 		}, ids);
 		out.fired = ok;
-		if (stop) await page.evaluate(() => window.__stores.physics.stopSimulation({ reset: true }));
+		if (stop) await page.evaluate(() => window.__tp.test.v1.physics.stopSimulation({ reset: true }));
 		return out;
 	};
 	const readCcd = (page) =>
 		page.evaluate((u) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const p = g.getObjectByProperty('uuid', u.ball)?.userData?.physics;
 			return p ? ('ccd' in p ? p.ccd : 'absent') : null;
 		}, ids);
@@ -92,7 +92,7 @@ h.run(async () => {
 	// 1) the counterfactual: scene default (off) — the ball tunnels
 	const sceneCcd = await A.page.evaluate(() => {
 		let d;
-		window.__stores.scenePhysics.scenePhysicsDefaults.subscribe((v) => (d = v))();
+		window.__tp.test.v1.scenePhysics.scenePhysicsDefaults.subscribe((v) => (d = v))();
 		return d.ccd;
 	});
 	h.check(sceneCcd === false, `premise: the scene default is CCD off (${sceneCcd})`);
@@ -102,7 +102,7 @@ h.run(async () => {
 	h.check(tunnel.z > 0.3, `COUNTERFACTUAL: with the scene default the ball passes through the 4 cm wall (z ${tunnel.z.toFixed(2)})`);
 
 	// 2) the real Inspector row
-	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u.ball, true), ids);
+	await A.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u.ball, true), ids);
 	await h.eventually(() => A.page.evaluate(() => !!document.querySelector('#physics-object-ccd')), (v) => v, 'the Continuous collision row renders for a dynamic body', 15000);
 	const opts = await A.page.evaluate(async () => {
 		const sel = document.querySelector('#physics-object-ccd');
@@ -120,7 +120,7 @@ h.run(async () => {
 	h.check(/^On\b/.test(opts.after ?? ''), `picking On shows On (${opts.after})`);
 	h.check((await readCcd(A.page)) === true, 'the pick is saved on the object (userData.physics.ccd = true)');
 	await h.eventually(() => readCcd(B.page), (v) => v === true, 'the pick replicates to the peer', 10000);
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 
 	// 3) On stops the ball at the wall
 	await place(A.page);
@@ -136,34 +136,34 @@ h.run(async () => {
 	await h.eventually(
 		() => A.page.evaluate((u) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			return g.getObjectByProperty('uuid', u.ball).position.z;
 		}, ids),
 		(z) => z < 0 && z > -2.3,
 		'the first peer sees the ball stopped at the wall through the move stream',
 		8000
 	);
-	await B.page.evaluate(() => window.__stores.physics.stopSimulation({ reset: true }));
+	await B.page.evaluate(() => window.__tp.test.v1.physics.stopSimulation({ reset: true }));
 	await A.page.waitForTimeout(1500);
 
 	// 5) back to Scene default mid-run: the live body drops CCD with no restart (and tunnels)
 	await place(A.page);
 	const live = await fire(A.page, 'live pick', {
 		beforeFire: () =>
-			A.page.evaluate((u) => window.__stores.physics.setPhysicsFor(u.ball, { ccd: null }), ids)
+			A.page.evaluate((u) => window.__tp.test.v1.physics.setPhysicsFor(u.ball, { ccd: null }), ids)
 	});
 	h.check(live.ccd === false && live.z > 0.3, `a mid-run pick reaches the live body: Scene default tunnels again (z ${live.z.toFixed(2)}, ccd ${live.ccd})`);
 	h.check((await readCcd(A.page)) === 'absent', 'Scene default writes NO key — an untouched scene saves byte-identical');
 
 	// 6) Off beats a scene that has CCD on
 	await A.page.evaluate((u) => {
-		window.__stores.scenePhysics.setScenePhysics({ ccd: true });
-		window.__stores.physics.setPhysicsFor(u.ball, { ccd: false });
+		window.__tp.test.v1.scenePhysics.setScenePhysics({ ccd: true });
+		window.__tp.test.v1.physics.setPhysicsFor(u.ball, { ccd: false });
 	}, ids);
 	await place(A.page);
 	const off = await fire(A.page, 'ccd off');
 	h.check(off.ccd === false && off.z > 0.3, `Off wins over the scene's CCD on: the ball tunnels (z ${off.z.toFixed(2)}, ccd ${off.ccd})`);
-	await A.page.evaluate((u) => window.__stores.physics.setPhysicsFor(u.ball, { ccd: null }), ids);
+	await A.page.evaluate((u) => window.__tp.test.v1.physics.setPhysicsFor(u.ball, { ccd: null }), ids);
 	await place(A.page);
 	const sceneOn = await fire(A.page, 'scene on');
 	h.check(sceneOn.ccd === true && sceneOn.z < 0, `and Scene default follows the scene's On (z ${sceneOn.z.toFixed(2)})`);

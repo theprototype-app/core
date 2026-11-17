@@ -13,20 +13,20 @@
 // Run: APP_URL='https://localhost:5482/' npm run e2e -- save-project-libraries
 const h = require('./helpers.cjs');
 
-const debug = (p) => p.page.evaluate(() => window.__stores.sessionVolumes.volumeDebug());
+const debug = (p) => p.page.evaluate(() => window.__tp.test.v1.sessionVolumes.volumeDebug());
 const hostSaves = async (H) => (await debug(H)).log.filter((l) => /^volsave from .+: saved /.test(l)).length;
 const dialogOpen = (p) => p.page.locator('#save-many-dialog').isVisible().catch(() => false);
 const toasts = (p) => p.page.evaluate(() => [...document.querySelectorAll('.tp-toast')].map((t) => t.innerText.trim()));
 const setting = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.saveOptions.saveOptions.subscribe((x) => (v = x))();
+		window.__tp.test.v1.saveOptions.saveOptions.subscribe((x) => (v = x))();
 		return v.saveMany;
 	});
 const ownScenes = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.explorer.explorerItems.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((x) => (v = x))();
 		return (v ?? []).filter((i) => i.kind === 'scene').map((i) => i.hash);
 	});
 const ctrlS = async (p) => {
@@ -39,11 +39,11 @@ h.run(async () => {
 	const H = await h.setupPage(browser, 'H');
 	const G = await h.setupPage(browser, 'G');
 	for (const peer of [H, G]) {
-		await peer.page.waitForFunction(() => !!window.__stores?.sessionVolumes && !!window.__stores?.saveOptions && !!window.__stores?.levels, null, {
+		await peer.page.waitForFunction(() => !!window.__tp?.test.v1?.sessionVolumes && !!window.__tp?.test.v1?.saveOptions && !!window.__tp?.test.v1?.levels, null, {
 			timeout: 60000
 		});
 		await peer.page.evaluate(async () => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			await s.explorer.loadExplorer();
 			await s.explorer.clearLibrary();
 			s.levels.currentLevel.set(null);
@@ -53,7 +53,7 @@ h.run(async () => {
 
 	// ---- 1. one library: no dialog ------------------------------------------------------------
 	await G.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1300));
 		s.objectActions.deselectObject();
@@ -61,7 +61,7 @@ h.run(async () => {
 	});
 	const soloBefore = await ownScenes(G);
 	await G.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create sphere');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create sphere');
 		await new Promise((r) => setTimeout(r, 1000));
 	});
 	await ctrlS(G);
@@ -71,7 +71,7 @@ h.run(async () => {
 
 	// back to an empty unnamed world before joining (the connect decision is not this suite's)
 	await G.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		const uuids = (g?.children ?? []).map((c) => c.uuid);
@@ -79,7 +79,7 @@ h.run(async () => {
 		s.levels.currentLevel.set(null);
 	});
 	await H.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1300));
 		s.objectActions.deselectObject();
@@ -88,12 +88,12 @@ h.run(async () => {
 	await G.page.waitForTimeout(800);
 	await h.connect(G, H);
 	await h.eventually(
-		() => G.page.evaluate(() => { let v; window.__stores.sessionVolumes.sessionVolumes.subscribe((x) => (v = x))(); return v.length; }),
+		() => G.page.evaluate(() => { let v; window.__tp.test.v1.sessionVolumes.sessionVolumes.subscribe((x) => (v = x))(); return v.length; }),
 		(n) => n === 1,
 		"premise: G has joined H's session (two libraries open)",
 		30000
 	);
-	const volId = await G.page.evaluate(() => { let v; window.__stores.sessionVolumes.sessionVolumes.subscribe((x) => (v = x))(); return v[0].id; });
+	const volId = await G.page.evaluate(() => { let v; window.__tp.test.v1.sessionVolumes.sessionVolumes.subscribe((x) => (v = x))(); return v[0].id; });
 
 	// ---- 2. several: the dialog, the active one pre-checked -----------------------------------
 	const mineBefore = await ownScenes(G);
@@ -139,10 +139,10 @@ h.run(async () => {
 		console.log('  G focus:', await G.page.evaluate(() => document.activeElement?.tagName + '#' + document.activeElement?.id));
 	}
 	h.check(!(await dialogOpen(G)), '…with no dialog');
-	await G.page.evaluate(() => window.__stores.saveOptions.setSaveOptions({ format: 'tp' }));
+	await G.page.evaluate(() => window.__tp.test.v1.saveOptions.setSaveOptions({ format: 'tp' }));
 	let downloaded = false;
 	G.page.once('download', () => (downloaded = true));
-	await G.page.evaluate(() => window.__stores.closeMenu.set(false));
+	await G.page.evaluate(() => window.__tp.test.v1.closeMenu.set(false));
 	await G.page.waitForSelector('#sidebar70', { timeout: 20000 });
 	await G.page.waitForTimeout(350);
 	const burgerSave = G.page.locator('#sidebar70 #project-save, #sidebar70 #save-project').first();
@@ -152,7 +152,7 @@ h.run(async () => {
 		await G.page.waitForTimeout(1500);
 		h.check(!downloaded && !(await dialogOpen(G)), '…no dialog, and no project file of my own was written');
 	} else h.check(false, 'premise: the burger shows a Save row (#project-save)');
-	await G.page.evaluate(() => window.__stores.closeMenu.set(true));
+	await G.page.evaluate(() => window.__tp.test.v1.closeMenu.set(true));
 	h.check(JSON.stringify(await ownScenes(G)) === JSON.stringify(mineBefore), 'through all of it, my own Library was never saved into');
 
 	await h.finish(browser);

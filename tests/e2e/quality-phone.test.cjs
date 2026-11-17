@@ -21,7 +21,7 @@ h.run(async () => {
 
 	const read = (page) =>
 		page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const get = (store) => { let v; store.subscribe((x) => (v = x))(); return v; };
 			const r = get(s.globalRenderer);
 			return {
@@ -47,7 +47,7 @@ h.run(async () => {
 	// ---- slow frames on a LIGHT scene: the phone steps further, the desktop never does
 	const slowLight = (page) =>
 		page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.sceneBudget.stopSceneMetrics();
 			s.sceneBudget.sceneMetrics.set({ at: Date.now(), profile: 'desktop', objects: 30, meshes: 30, triangles: 6000, calls: 100 });
 			const q = s.qualityGovernor.governorForTest;
@@ -67,18 +67,18 @@ h.run(async () => {
 	const file = SCENES && path.join(SCENES, 'stars-room', 'scene.tpscene');
 	if (file && fs.existsSync(file)) {
 		await P.page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.qualityGovernor.governorForTest.setLevel(4);
 		});
 		await P.page.evaluate(async (arr) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.templatesModalOpen.set(false);
 			const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 			await s.sessions.applySession(payload, { backup: false });
 		}, Array.from(fs.readFileSync(file)));
 		await P.page.waitForTimeout(3000);
 		const stars = await P.page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const get = (store) => { let v; store.subscribe((x) => (v = x))(); return v; };
 			const r = get(s.globalRenderer);
 			const post = window.__postDebug ? window.__postDebug() : null;

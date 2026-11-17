@@ -13,7 +13,7 @@ const h = require('./helpers.cjs');
 
 const editBox = (page, size = 2) =>
 	page.evaluate((size) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand(`/create Box ${size} ${size} ${size}`);
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
@@ -27,7 +27,7 @@ const editBox = (page, size = 2) =>
 /** non-manifold edge count: 0 = watertight */
 const oddEdges = (page) =>
 	page.evaluate(() => {
-		const tris = window.__stores.faceEdit.readTriangles(window.__box.geometry);
+		const tris = window.__tp.test.v1.faceEdit.readTriangles(window.__box.geometry);
 		const keyOf = (v) => [v.x, v.y, v.z].map((n) => Math.round(n * 1e4)).join(',');
 		const counts = new Map();
 		for (const t of tris) {
@@ -43,7 +43,7 @@ const oddEdges = (page) =>
 /** pick ONE real edge of the top face; returns its key */
 const pickTopEdge = (page) =>
 	page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		const tris = fe.readTriangles(window.__box.geometry);
 		for (let ti = 0; ti < tris.length; ti++) {
 			const t = tris[ti];
@@ -71,7 +71,7 @@ h.run(async () => {
 	const clean = await oddEdges(A.page);
 	h.check(clean === 0, `the box starts watertight (${clean} odd edges)`);
 	const one = await A.page.evaluate((key) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		const before = fe.readTriangles(window.__box.geometry).length;
 		const ends = new Set(key.split('|'));
@@ -99,7 +99,7 @@ h.run(async () => {
 
 	// --- undo is one step ----------------------------------------------------
 	const undo = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const count = () => s.faceEdit.readTriangles(window.__box.geometry).length;
 		const after = count();
 		s.history.undo();
@@ -112,7 +112,7 @@ h.run(async () => {
 
 	// --- segments, and profile OUT / IN --------------------------------------
 	const variants = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		const run = (segments, profile) => {
 			s.commandsHandler.sceneCommand('/create Box 2 2 2');
@@ -165,7 +165,7 @@ h.run(async () => {
 
 	// --- the refusals -------------------------------------------------------
 	const refusals = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		const out = {};
 		// nothing picked
@@ -227,7 +227,7 @@ h.run(async () => {
 	await editBox(A.page);
 	await A.page.waitForTimeout(700); // let the toolbox render in edges mode
 	const emptyClick = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		fe.clearEdgeSelection();
 		const before = fe.readTriangles(window.__box.geometry).length;
@@ -250,7 +250,7 @@ h.run(async () => {
 	const clickKey = await pickTopEdge(A.page);
 	h.check(!!clickKey, 'picked an edge for the click-apply (premise)');
 	const clickApplied = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		const before = fe.readTriangles(window.__box.geometry).length;
 		document.querySelector('#edge-bevel').click();
@@ -276,9 +276,9 @@ h.run(async () => {
 	const triCountOn = (page, uuid) =>
 		page.evaluate((uuid) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const object = g.getObjectByProperty('uuid', uuid);
-			return object?.geometry ? window.__stores.meshTopology.triangleCountOf(object.geometry) : null;
+			return object?.geometry ? window.__tp.test.v1.meshTopology.triangleCountOf(object.geometry) : null;
 		}, uuid);
 	await h.eventually(
 		() => triCountOn(B.page, netUuid),
@@ -286,7 +286,7 @@ h.run(async () => {
 		'B received the box (premise)',
 		20000
 	);
-	await A.page.evaluate(() => window.__stores.faceEdit.bevelEdges(0.3, 2, 0.5));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.bevelEdges(0.3, 2, 0.5));
 	await h.eventually(
 		() => triCountOn(B.page, netUuid),
 		(n) => n !== null && n > 12,
@@ -294,6 +294,6 @@ h.run(async () => {
 		20000
 	);
 
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit?.());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit?.());
 	await h.finish(browser);
 });

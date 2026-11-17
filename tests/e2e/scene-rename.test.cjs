@@ -22,18 +22,18 @@ const h = require('./helpers.cjs');
 const at = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.levels.currentLevel.subscribe((x) => (v = x))();
+		window.__tp.test.v1.levels.currentLevel.subscribe((x) => (v = x))();
 		return v;
 	});
 const manifest = (p) =>
 	p.page.evaluate(() => {
 		let m;
-		window.__stores.projectManifest.projectManifest.subscribe((x) => (m = x))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((x) => (m = x))();
 		return { scenes: m.scenes, renames: m.renames ?? null, name: m.name };
 	});
 const itemNames = (p) =>
 	p.page.evaluate(() => {
-		const s = window.__stores.explorer;
+		const s = window.__tp.test.v1.explorer;
 		let v, hid;
 		s.explorerItems.subscribe((x) => (v = x))();
 		s.hiddenItems.subscribe((x) => (hid = x))();
@@ -47,7 +47,7 @@ const chip = (p) =>
 	}));
 const travelNodes = (p) =>
 	p.page.evaluate(() =>
-		window.__stores.allNodes()
+		window.__tp.test.v1.allNodes()
 			.filter((n) => n.data?.type === 'travel')
 			.map((n) => ({ id: n.id, sceneName: n.data.sceneName ?? '', level: n.data.level ?? '', levelName: n.data.levelName ?? '' }))
 			.sort((a, b) => a.id.localeCompare(b.id))
@@ -55,18 +55,18 @@ const travelNodes = (p) =>
 const lastToasts = (p) =>
 	p.page.evaluate(() => {
 		let n;
-		window.__stores.notifications.subscribe((x) => (n = x))();
+		window.__tp.test.v1.notifications.subscribe((x) => (n = x))();
 		return n.slice(-4).map((x) => x.text);
 	});
 const addBox = (p) =>
 	p.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1100));
-		window.__stores.objectActions.deselectObject();
+		window.__tp.test.v1.objectActions.deselectObject();
 	});
 const wipe = async (p) => {
 	await p.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		const uuids = (g?.children ?? []).map((c) => c.uuid);
@@ -78,10 +78,10 @@ const wipe = async (p) => {
 	await p.page.waitForTimeout(700);
 };
 const openExplorer = async (p) => {
-	await p.page.waitForFunction(() => !!window.__stores?.peerScenes, { timeout: 30000 });
+	await p.page.waitForFunction(() => !!window.__tp?.test.v1?.peerScenes, { timeout: 30000 });
 	await p.page.locator('#explorer-slot').click();
 	await p.page.waitForTimeout(700);
-	await p.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await p.page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 };
 /** rename through the CHIP: double-click, type, Enter */
 const renameAtChip = async (p, to) => {
@@ -98,21 +98,21 @@ h.run(async () => {
 	await openExplorer(A);
 	await wipe(A);
 	await addBox(A);
-	await A.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Depot'));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('Depot'));
 	await h.eventually(() => at(A), (v) => v?.name === 'Depot', 'premise: a scene called Depot exists (the taken name)');
-	await A.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Arena'));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('Arena'));
 	await h.eventually(() => at(A), (v) => v?.name === 'Arena', 'premise: A saved Arena and stands in it');
 	const arenaV1 = (await at(A)).hash;
 	// two Travel nodes in the live scene graph: by NAME and by frozen HASH (version 1)
 	await A.page.evaluate((hash) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const make = (id, data) => ({ id, type: 'travel', position: { x: 40, y: 40 }, data: { label: 'Travel to scene', type: 'travel', level: '', levelName: '', ...data }, class: 'w-[150px]' });
 		s.nodesHandler.createFlowNode(make('tr-name', { sceneName: 'Arena' }), 'scene');
 		s.nodesHandler.createFlowNode(make('tr-hash', { level: hash, levelName: 'Arena' }), 'scene');
 	}, arenaV1);
 	h.check((await travelNodes(A)).length === 2, 'premise: two Travel nodes name Arena, one by name and one by hash');
 	// …and SAVED, so the scene is clean before the rename (the dirty check below measures the rename, not these nodes)
-	await A.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Arena'));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('Arena'));
 	await h.eventually(() => manifest(A), (m) => (m.scenes.Arena?.history ?? []).length === 2, 'premise: Arena has two versions, the nodes in the second');
 	const arenaHash = (await at(A)).hash;
 	await A.page.waitForTimeout(2600); // the dirty throttle
@@ -164,7 +164,7 @@ h.run(async () => {
 	h.check(
 		(await A.page.evaluate(() => {
 			let d;
-			window.__stores.sceneIdentity.sceneDirty.subscribe((x) => (d = x))();
+			window.__tp.test.v1.sceneIdentity.sceneDirty.subscribe((x) => (d = x))();
 			return d;
 		})) === false,
 		'§3 renaming is not an edit — the scene is not dirty'
@@ -187,7 +187,7 @@ h.run(async () => {
 	);
 	h.check((await at(B))?.name === 'Vault', '§4 the peer\'s open scene followed the rename (an adopted identity carries the name)');
 	// a Travel by the OLD name — what a graph in a file on disk says
-	const stale = await B.page.evaluate(() => window.__stores.levels.travelToScene('Arena'));
+	const stale = await B.page.evaluate(() => window.__tp.test.v1.levels.travelToScene('Arena'));
 	h.check(stale === true, '§4 travelToScene("Arena") on the peer resolves through the record and LOADS');
 	await h.eventually(
 		() => at(B),
@@ -201,33 +201,33 @@ h.run(async () => {
 	// 5. COUNTERFACTUALS
 	// =====================================================================
 	const noRecord = await B.page.evaluate(() => {
-		const s = window.__stores.projectManifest;
+		const s = window.__tp.test.v1.projectManifest;
 		let m;
 		s.projectManifest.subscribe((x) => (m = x))();
 		const { renames, ...rest } = m;
 		s.manifestRestore({ ...rest, changedAt: (m.changedAt ?? 0) + 1 }, false);
-		return window.__stores.levels.travelToScene('Arena');
+		return window.__tp.test.v1.levels.travelToScene('Arena');
 	});
 	const deadToast = await lastToasts(B);
 	h.check(noRecord === false && deadToast.some((t) => /No scene called "Arena"/.test(t)), `§5 COUNTERFACTUAL: with the record stripped, the old name is DEAD (${JSON.stringify(deadToast.at(-1))})`);
 	await B.page.evaluate((rec) => {
-		const s = window.__stores.projectManifest;
+		const s = window.__tp.test.v1.projectManifest;
 		let m;
 		s.projectManifest.subscribe((x) => (m = x))();
 		s.manifestRestore({ ...m, renames: rec, changedAt: (m.changedAt ?? 0) + 1 }, false);
 	}, mA.renames);
-	h.check((await B.page.evaluate(() => window.__stores.levels.travelToScene('Arena'))) === true, '§5 …and alive again with the record back');
+	h.check((await B.page.evaluate(() => window.__tp.test.v1.levels.travelToScene('Arena'))) === true, '§5 …and alive again with the record back');
 	// undo the LIVE rewrite by hand → the applier redoes it (idempotent, and it is the thing)
-	await A.page.evaluate(() => window.__stores.nodesHandler.updateFlowNodeData('tr-name', { sceneName: 'Arena' }, 'scene'));
+	await A.page.evaluate(() => window.__tp.test.v1.nodesHandler.updateFlowNodeData('tr-name', { sceneName: 'Arena' }, 'scene'));
 	h.check((await travelNodes(A)).find((x) => x.id === 'tr-name')?.sceneName === 'Arena', 'premise: the by-name node is stale again');
-	const redone = await A.page.evaluate(() => window.__stores.levels.applySceneRenames());
+	const redone = await A.page.evaluate(() => window.__tp.test.v1.levels.applySceneRenames());
 	h.check(redone >= 1 && (await travelNodes(A)).find((x) => x.id === 'tr-name')?.sceneName === 'Vault', `§5 COUNTERFACTUAL: the applier rewrites a stale node again (${redone} thing(s) moved) — it is what keeps live graphs right`);
 
 	// =====================================================================
 	// 6. THE MERGE FOLD
 	// =====================================================================
 	const foldedStale = await A.page.evaluate((hash) => {
-		const s = window.__stores.projectManifest;
+		const s = window.__tp.test.v1.projectManifest;
 		let m;
 		s.projectManifest.subscribe((x) => (m = x))();
 		// a peer that never heard: still keys Arena, and saved a novel version under it
@@ -242,7 +242,7 @@ h.run(async () => {
 	h.check(foldedStale.vault.includes('stale-novel-1') && foldedStale.vault.includes(arenaHash), `§6 …keeping the stale peer's novel save in Vault's history (${JSON.stringify(foldedStale.vault)})`);
 	h.check(foldedStale.renames?.Arena?.to === 'Vault', '§6 …and the record survives for the next late peer');
 	const foldedFresh = await A.page.evaluate(() => {
-		const s = window.__stores.projectManifest;
+		const s = window.__tp.test.v1.projectManifest;
 		let m;
 		s.projectManifest.subscribe((x) => (m = x))();
 		// a brand-new scene that reuses the old name: shares no hash with Vault's line
@@ -260,7 +260,7 @@ h.run(async () => {
 	// 7. A LOOSE FILE
 	// =====================================================================
 	const looseBytes = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = s.sessions.buildSessionPayload('cube');
 		delete payload.workspace;
 		const b = await s.sessions.exportSessionZip(payload, { assets: true, packs: false, flow: true });
@@ -275,10 +275,10 @@ h.run(async () => {
 	await h.eventually(() => itemNames(A), (n) => n.visible.includes('cube.tpscene'), 'premise: a loose cube.tpscene is in the library');
 	const cubeHash = await A.page.evaluate(() => {
 		let v;
-		window.__stores.explorer.explorerItems.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((x) => (v = x))();
 		return v.find((i) => i.name === 'cube.tpscene').hash;
 	});
-	await A.page.evaluate((hash) => window.__stores.levels.travelToLevel(hash), cubeHash);
+	await A.page.evaluate((hash) => window.__tp.test.v1.levels.travelToLevel(hash), cubeHash);
 	await h.eventually(() => at(A), (v) => v?.name === 'cube' && v?.unsaved === true, 'premise: it opens LOOSE');
 	const scenesBefore = Object.keys((await manifest(A)).scenes).sort();
 	await renameAtChip(A, 'Crate');

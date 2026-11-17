@@ -25,10 +25,10 @@ const edge = (source, target, targetHandle, sourceHandle) => ({
 const addGraph = (peer, nodes, edges) =>
 	peer.page.evaluate(
 		([nodes, edges]) => {
-			window.__stores.flowNodes.update((n) => [...n, ...nodes]);
-			window.__stores.flowEdges.update((e) => [...e, ...edges]);
+			window.__tp.test.v1.flowNodes.update((n) => [...n, ...nodes]);
+			window.__tp.test.v1.flowEdges.update((e) => [...e, ...edges]);
 			return new Promise((resolve) => {
-				window.__stores.peers.subscribe((peer) => {
+				window.__tp.test.v1.peers.subscribe((peer) => {
 					nodes.forEach((node) => peer.send({ type: 'nodecreate', node }));
 					edges.forEach((edge) => peer.send({ type: 'edgecreate', edge }));
 					resolve();
@@ -40,7 +40,7 @@ const addGraph = (peer, nodes, edges) =>
 const makeBox = (peer, name, pos) =>
 	peer.page.evaluate(
 		([name, pos]) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.commandsHandler.sceneCommand('/create box');
 			let g;
 			s.objectsGroup.subscribe((v) => (g = v))();
@@ -49,7 +49,7 @@ const makeBox = (peer, name, pos) =>
 			o.position.set(pos[0], pos[1], pos[2]);
 			o.updateMatrixWorld(true);
 			// names are local here (no rename message needed: the scripts look objects up by uuid)
-			window.__stores.peers.subscribe((p) => p?.send({ type: 'move', uuid: o.uuid, pos, rot: [0, 0, 0], scale: [1, 1, 1] }))();
+			window.__tp.test.v1.peers.subscribe((p) => p?.send({ type: 'move', uuid: o.uuid, pos, rot: [0, 0, 0], scale: [1, 1, 1] }))();
 			return o.uuid;
 		},
 		[name, pos]
@@ -58,7 +58,7 @@ const makeBox = (peer, name, pos) =>
 const valueAt = (peer, id, t) =>
 	peer.page.evaluate(
 		([id, t]) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const nodes = s.allNodes();
 			const n = nodes.find((x) => x.id === id);
 			return s.flowRuntime.evalNode(n, nodes, s.allEdges(), t, new Set(), null);
@@ -68,7 +68,7 @@ const valueAt = (peer, id, t) =>
 const resolvedAt = (peer, id, t) =>
 	peer.page.evaluate(
 		([id, t]) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const nodes = s.allNodes();
 			const n = nodes.find((x) => x.id === id);
 			return s.flowRuntime.resolveInputs(n, nodes, s.allEdges(), t, null);
@@ -76,20 +76,20 @@ const resolvedAt = (peer, id, t) =>
 		[id, t]
 	);
 const readValue = (peer, id) =>
-	peer.page.evaluate((id) => new Promise((r) => window.__stores.flowValues.subscribe((v) => r(v[id] ?? null))()), id);
+	peer.page.evaluate((id) => new Promise((r) => window.__tp.test.v1.flowValues.subscribe((v) => r(v[id] ?? null))()), id);
 const readError = (peer, id) =>
-	peer.page.evaluate((id) => new Promise((r) => window.__stores.scriptErrors.subscribe((m) => r(m[id] ?? null))()), id);
+	peer.page.evaluate((id) => new Promise((r) => window.__tp.test.v1.scriptErrors.subscribe((m) => r(m[id] ?? null))()), id);
 const objPos = (peer, uuid) =>
 	peer.page.evaluate((uuid) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const o = g?.getObjectByProperty('uuid', uuid);
 		return o ? [o.position.x, o.position.y, o.position.z] : null;
 	}, uuid);
 const objCount = (peer) =>
 	peer.page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return g.children.length;
 	});
 
@@ -145,7 +145,7 @@ h.run(async () => {
 	const top = await readValue(A, 'vg-d12');
 	h.check(top === 4096, `12 diamonds: 1 × 2^12 = ${top}`);
 	h.check((await readValue(B, 'vg-d12')) === 4096, 'B computes the same 4096');
-	const stats = await A.page.evaluate(() => window.__stores.flowRuntime.flowValueStats());
+	const stats = await A.page.evaluate(() => window.__tp.test.v1.flowRuntime.flowValueStats());
 	h.check(stats.evals > 0 && stats.evals <= stats.nodes * 3, `one tick evaluates ~once per node (${stats.evals} evaluations over ${stats.nodes} nodes; 2^12 = 4096 for the chain alone without the memo)`);
 
 	// --- 3: a cycle --------------------------------------------------------------------
@@ -186,7 +186,7 @@ h.run(async () => {
 	);
 	await h.eventually(() => objPos(A, third), (p) => p && Math.abs(p[0] - 7) < 1e-6, 'A: the script put Third at x = 2 + 5', 5000);
 	await h.eventually(() => objPos(B, third), (p) => p && Math.abs(p[0] - 7) < 1e-6, 'B runs the same script and agrees (x = 7)', 5000);
-	await A.page.evaluate(() => window.__stores.nodesHandler.setNodeData('vg-nb', { value: 10 }));
+	await A.page.evaluate(() => window.__tp.test.v1.nodesHandler.setNodeData('vg-nb', { value: 10 }));
 	await h.eventually(() => objPos(B, third), (p) => p && Math.abs(p[0] - 12) < 1e-6, 'a changed input reaches the third object on B (x = 12)', 5000);
 
 	// --- 5: the api ---------------------------------------------------------------------
@@ -246,10 +246,10 @@ h.run(async () => {
 		[edge('vg-go', 'vg-spawn', 'go'), edge('vg-spawn', 'vg-sel4')]
 	);
 	await A.page.waitForTimeout(800);
-	await A.page.evaluate(() => window.__stores.nodesHandler.setNodeData('vg-go', { value: 1 }));
+	await A.page.evaluate(() => window.__tp.test.v1.nodesHandler.setNodeData('vg-go', { value: 1 }));
 	await h.eventually(() => objCount(B), (n) => n > before, 'spawn() on the authority creates an object that reaches B', 6000);
 	await A.page.waitForTimeout(1000);
-	await A.page.evaluate(() => window.__stores.nodesHandler.setNodeData('vg-go', { value: 0 }));
+	await A.page.evaluate(() => window.__tp.test.v1.nodesHandler.setNodeData('vg-go', { value: 0 }));
 	await A.page.waitForTimeout(1500);
 	await h.eventually(
 		async () => [await objCount(A), await objCount(B)],
@@ -261,7 +261,7 @@ h.run(async () => {
 	const afterB = await objCount(B);
 	// "spawn every frame" for >= 1 s: the 250 ms gap allows a handful, never ~60
 	h.check(afterB - before >= 1 && afterB - before <= 12, `the per-node rate limit held while the script asked every frame (${afterB - before} spawned)`);
-	const issued = async (peer) => (await peer.page.evaluate(() => window.__stores.flowRuntime.scriptSpawnStats()))['vg-spawn'] ?? 0;
+	const issued = async (peer) => (await peer.page.evaluate(() => window.__tp.test.v1.flowRuntime.scriptSpawnStats()))['vg-spawn'] ?? 0;
 	const [byA, byB] = [await issued(A), await issued(B)];
 	h.check((byA > 0) !== (byB > 0) && byA + byB >= afterB - before, `exactly ONE peer (the authority) issued the creates (A ${byA}, B ${byB}; ${afterB - before} landed)`);
 
@@ -276,7 +276,7 @@ h.run(async () => {
 	);
 	await A.page.waitForTimeout(800);
 	const press = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowRuntime.fireHudButton('vg-btn');
 		const nodes = s.allNodes();
 		let trig;

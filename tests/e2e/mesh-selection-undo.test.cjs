@@ -8,7 +8,7 @@ const h = require('./helpers.cjs');
 
 const undoLen = (page) =>
 	page.evaluate(
-		() => new Promise((r) => window.__stores.history.undoStack.subscribe((v) => r(v.length))())
+		() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((v) => r(v.length))())
 	);
 
 h.run(async () => {
@@ -17,7 +17,7 @@ h.run(async () => {
 
 	// --------------------------------------------------- 1. faces
 	const faces = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		s.commandsHandler.sceneCommand('/create Box 1 1 1');
 		let g;
@@ -51,7 +51,7 @@ h.run(async () => {
 
 	// a no-op pick must not fill the stack
 	const noop = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const len = () => {
 			let n;
 			s.history.undoStack.subscribe((v) => (n = v.length))();
@@ -71,7 +71,7 @@ h.run(async () => {
 	// as the hover wash — and the gizmo stayed seated on a target the restored
 	// selection no longer contains.
 	const stale = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		const scene = await new Promise((r) => s.globalScene.subscribe(r)());
 		const controls = await new Promise((r) => s.TControls.subscribe(r)());
@@ -116,7 +116,7 @@ h.run(async () => {
 
 	// --------------------------------------------------- 2. edges
 	const edges = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		fe.setFaceSubmode('edges');
 		const sel = () => {
@@ -152,7 +152,7 @@ h.run(async () => {
 
 	// --------------------------------------------------- 3. vertices
 	const verts = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.faceEdit.exitFaceEdit();
 		s.meshEdit.enterEditMode(window.__box.uuid);
 		const size = () => {
@@ -179,7 +179,7 @@ h.run(async () => {
 	// leave a selection entry sitting ON TOP of the op's meshgeo, so the next
 	// Ctrl+Z would undo the housekeeping and the geometry would look stuck.
 	const weld = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const me = s.meshEdit;
 		const keys = () => {
 			const p = window.__box.geometry.attributes.position;
@@ -213,7 +213,7 @@ h.run(async () => {
 	// ------------------------------------- 4. Done drops the selection steps
 	const sealedLen = await undoLen(A.page);
 	const sealed = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.meshEdit.exitEditMode();
 		s.editSession.sealEditHistorySession();
 		let stack;
@@ -233,7 +233,7 @@ h.run(async () => {
 	// (the seal's meshgeo compaction must survive selection entries sitting
 	// between the geometry steps)
 	const withOps = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		const tris = () => fe.readTriangles(window.__box.geometry).length;
 		let stackBefore;

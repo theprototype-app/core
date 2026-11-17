@@ -11,7 +11,7 @@ h.run(async () => {
 
 	const read = (path) =>
 		A.page.evaluate((p) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const store = p.includes('.') ? p.split('.').reduce((o, k) => o[k], s) : s[p];
 			let v;
 			store.subscribe((x) => (v = x))();
@@ -19,17 +19,17 @@ h.run(async () => {
 		}, path);
 
 	await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const box = group.children[group.children.length - 1];
 		window.__box = box;
-		window.__stores.objectActions.selectObject(box.uuid);
+		window.__tp.test.v1.objectActions.selectObject(box.uuid);
 	});
 	await A.page.waitForTimeout(300);
 
 	// --- the Snap ring entry toggles the side-menu open (+ closes siblings) ---
 	const opened = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.vrMenuOpen.set(true);
 		s.vrEditMenuOpen.set(true); // a sibling that should be closed
 		s.vrControls.executeVRMenuAction('snap');
@@ -49,7 +49,7 @@ h.run(async () => {
 		A.page.evaluate(
 			() =>
 				new Promise((r) => {
-					window.__stores.globalScene.subscribe((scene) => {
+					window.__tp.test.v1.globalScene.subscribe((scene) => {
 						const menu = scene?.getObjectByName('vr-snap-menu');
 						const names = [];
 						menu?.traverse((o) => {
@@ -68,7 +68,7 @@ h.run(async () => {
 	);
 
 	// --- picking Grid sets the mode + reveals grid sub-values ---
-	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('snap:mode:grid'));
+	await A.page.evaluate(() => window.__tp.test.v1.vrControls.executeVRMenuAction('snap:mode:grid'));
 	await A.page.waitForTimeout(400);
 	const gridRows = await traverse();
 	h.check((await read('vrSnapMode')) === 'grid', 'Grid selects the grid mode');
@@ -79,15 +79,15 @@ h.run(async () => {
 	);
 
 	// --- a grid sub-value sets the translate step ---
-	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('snap:grid:0.5'));
+	await A.page.evaluate(() => window.__tp.test.v1.vrControls.executeVRMenuAction('snap:grid:0.5'));
 	const step = await A.page.evaluate(() => {
-		let v; window.__stores.snapping.snapSettings.subscribe((x) => (v = x))();
+		let v; window.__tp.test.v1.snapping.snapSettings.subscribe((x) => (v = x))();
 		return v.translate;
 	});
 	h.check(step === 0.5, `grid sub-value sets the translate step (${step})`);
 
 	// --- Rotation reveals the angle sub-values + Reset ---
-	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('snap:mode:rotation'));
+	await A.page.evaluate(() => window.__tp.test.v1.vrControls.executeVRMenuAction('snap:mode:rotation'));
 	await A.page.waitForTimeout(400);
 	const rotRows = await traverse();
 	h.check((await read('vrSnapMode')) === 'rotation', 'Rotation selects the rotation mode');
@@ -95,16 +95,16 @@ h.run(async () => {
 		['snap:rot:15', 'snap:rot:30', 'snap:rot:45', 'snap:rot:reset'].every((n) => rotRows.includes(n)),
 		'Rotation reveals 15 / 30 / 45 + Reset (156 adjustment)'
 	);
-	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('snap:rot:30'));
+	await A.page.evaluate(() => window.__tp.test.v1.vrControls.executeVRMenuAction('snap:rot:30'));
 	const angle = await A.page.evaluate(() => {
-		let v; window.__stores.snapping.snapSettings.subscribe((x) => (v = x))();
+		let v; window.__tp.test.v1.snapping.snapSettings.subscribe((x) => (v = x))();
 		return v.rotateDeg;
 	});
 	h.check(angle === 30, `rotation sub-value sets the rotate-snap angle (${angle})`);
 
 	// --- Reset zeroes the object rotation, broadcasts a move + records undo ---
 	const reset = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const box = window.__box;
 		box.rotation.set(0.3, 0.7, -0.2);
 		const captured = [];
@@ -127,7 +127,7 @@ h.run(async () => {
 
 	// --- Surface mode flips surfaceSnap; dropToSurface rests on the object below ---
 	const surface = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.vrControls.executeVRMenuAction('snap:mode:surface');
 		let mode; s.vrSnapMode.subscribe((x) => (mode = x))();
 		let surf; s.snapping.surfaceSnap.subscribe((x) => (surf = x))();
@@ -155,7 +155,7 @@ h.run(async () => {
 
 	// --- Off clears both; mode persists to localStorage ---
 	const off = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.vrControls.executeVRMenuAction('snap:mode:off');
 		let surf; s.snapping.surfaceSnap.subscribe((x) => (surf = x))();
 		let grid; s.snapping.snapEnabled.subscribe((x) => (grid = x))();
@@ -166,8 +166,8 @@ h.run(async () => {
 
 	// --- Done closes the side-menu ---
 	const done = await A.page.evaluate(() => {
-		window.__stores.vrControls.executeVRMenuAction('snap:close');
-		let v; window.__stores.vrSnapMenuOpen.subscribe((x) => (v = x))();
+		window.__tp.test.v1.vrControls.executeVRMenuAction('snap:close');
+		let v; window.__tp.test.v1.vrSnapMenuOpen.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(done === false, 'Done closes the Snap side-menu');

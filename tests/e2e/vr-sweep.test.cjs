@@ -28,7 +28,7 @@ h.run(async () => {
 	const page = A.page;
 
 	await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		window.__log = [];
 		await s.moduleSDK.initModules([
 			{
@@ -107,7 +107,7 @@ h.run(async () => {
 	console.log('\n=== 1. the tip clicks every key it enters, once ===');
 	const run1 = await page.evaluate(() => {
 		const T = window.__T;
-		const THREE = window.__stores.THREE;
+		const THREE = window.__tp.test.v1.THREE;
 		const above = (i) => T.keyAt(i).add(new THREE.Vector3(0, 0.035, 0)); // just touching the top
 		T.aim(1, above(0).add(new THREE.Vector3(0, 0.05, 0.2)), above(0));
 		const consumed = T.press(1);
@@ -129,7 +129,7 @@ h.run(async () => {
 	console.log('\n=== 2. leaving re-arms ===');
 	const run2 = await page.evaluate(() => {
 		const T = window.__T;
-		const THREE = window.__stores.THREE;
+		const THREE = window.__tp.test.v1.THREE;
 		const above = (i) => T.keyAt(i).add(new THREE.Vector3(0, 0.035, 0));
 		T.tipFrame(1, above(3).add(new THREE.Vector3(0, 0.3, 0))); // lift off
 		T.tipFrame(1, above(3)); // back down on k3
@@ -141,7 +141,7 @@ h.run(async () => {
 
 	console.log('\n=== 3. {sweep: false} hears the press, never a sweep ===');
 	const dotRun = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const T = window.__T;
 		const THREE = s.THREE;
 		const dot = s.gameKit.vrGameInput;
@@ -176,7 +176,7 @@ h.run(async () => {
 	console.log('\n=== 4. the release is swallowed after a sweep, and only then ===');
 	const sw = await page.evaluate(() => {
 		const T = window.__T;
-		const THREE = window.__stores.THREE;
+		const THREE = window.__tp.test.v1.THREE;
 		const above = (i) => T.keyAt(i).add(new THREE.Vector3(0, 0.035, 0));
 		T.press(1);
 		T.tipFrame(1, above(4));
@@ -192,7 +192,7 @@ h.run(async () => {
 
 	console.log('\n=== 5. the laser sweeps what the tip cannot reach ===');
 	const laser = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const T = window.__T;
 		const THREE = s.THREE;
 		const k = s.gameKit.vrGameInput;
@@ -214,7 +214,7 @@ h.run(async () => {
 
 	console.log('\n=== 6. a press another gesture claimed is left alone ===');
 	const claimed = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const T = window.__T;
 		const THREE = s.THREE;
 		const above = (i) => T.keyAt(i).add(new THREE.Vector3(0, 0.035, 0));
@@ -231,7 +231,7 @@ h.run(async () => {
 
 	console.log('\n=== 7. Edit mode: no sweep ===');
 	const edit = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const T = window.__T;
 		const THREE = s.THREE;
 		const above = (i) => T.keyAt(i).add(new THREE.Vector3(0, 0.035, 0));
@@ -246,7 +246,7 @@ h.run(async () => {
 
 	console.log('\n=== 8. the game board\'s buttons sweep too ===');
 	const board = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const T = window.__T;
 		const THREE = s.THREE;
 		s.hudDocs.setHudDocFor('scene', {
@@ -287,7 +287,7 @@ h.run(async () => {
 
 	console.log('\n=== 9. an Interact release on a plain object clicks, never selects ===');
 	const release = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const T = window.__T;
 		const THREE = s.THREE;
 		let r, g;
@@ -316,7 +316,7 @@ h.run(async () => {
 
 	console.log('\n=== 11. a real-width keyboard: the tip plays the key it is NEAREST ===');
 	const narrow = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const T = window.__T;
 		const THREE = s.THREE;
 		let g;
@@ -351,16 +351,16 @@ h.run(async () => {
 	if (!JAM || !fs.existsSync(JAM)) console.log('SKIP 10: no games/jam-room/scene.tpscene');
 	else if (!(await zip('music-lab')) || !(await zip('music-fx'))) console.log('SKIP 10: no music-lab / music-fx zips');
 	else {
-		await page.evaluate(() => window.__stores.modulesOpen.set(false));
+		await page.evaluate(() => window.__tp.test.v1.modulesOpen.set(false));
 		const bytes = Array.from(fs.readFileSync(JAM));
 		await page.evaluate(async (arr) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 			await s.sessions.applySession(payload, { backup: false });
 		}, bytes);
 		await page.waitForTimeout(3000);
 		const jam = await page.evaluate(async () => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const THREE = s.THREE;
 			s.objectActions.setEditorMode('interact');
 			let g;
@@ -452,7 +452,7 @@ h.run(async () => {
 		// the Quest ask: "on the mixer enable/disable" — music-fx 0.2.0's mute BUTTONS and the
 		// pedals' FOOTSWITCHES answer a click, so one held sweep flips each it passes
 		const fx = await page.evaluate(async () => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const THREE = s.THREE;
 			const T = window.__T;
 			let g;

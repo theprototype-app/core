@@ -17,11 +17,11 @@ h.run(async () => {
 
 	// ---- 0. the hook slots (the positional trap) -------------------------------------
 	const hook = await page.evaluate(() => ({
-		nudge: typeof window.__stores?.colocationNudge?.setRoomNudge,
-		math: typeof window.__stores?.colocation?.nudgeAlignment,
-		colo: !!window.__stores?.colocation,
-		anchors: !!window.__stores?.colocationAnchors,
-		calib: !!window.__stores?.colocationCalibrate
+		nudge: typeof window.__tp?.test.v1?.colocationNudge?.setRoomNudge,
+		math: typeof window.__tp?.test.v1?.colocation?.nudgeAlignment,
+		colo: !!window.__tp?.test.v1?.colocation,
+		anchors: !!window.__tp?.test.v1?.colocationAnchors,
+		calib: !!window.__tp?.test.v1?.colocationCalibrate
 	}));
 	h.check(hook.nudge === 'function', '0.1 colocationNudge sits at its hook slot');
 	h.check(hook.math === 'function', '0.2 the nudge maths is on the colocation leaf');
@@ -40,7 +40,7 @@ h.run(async () => {
 	// ---- 1. the pure maths ------------------------------------------------------------
 	const math = await page.evaluate(() => {
 		const { nudgeAlignment, nudgeFromStick, normalizeNudge, nudgeIsZero, NUDGE_MAX_M } =
-			window.__stores.colocation;
+			window.__tp.test.v1.colocation;
 		const base = { px: 1, py: 0.5, pz: -2, yaw: 0 };
 		return {
 			flat: nudgeAlignment(base, { dx: 0.03, dy: -0.01, dz: 0.02, dyaw: 0 }),
@@ -95,9 +95,9 @@ h.run(async () => {
 
 	// ---- 2. no alignment, no fine-tune -------------------------------------------------
 	const refused = await page.evaluate(() => {
-		const n = window.__stores.colocationNudge;
+		const n = window.__tp.test.v1.colocationNudge;
 		n.resetColocationNudge();
-		window.__stores.colocationCalibrate.stopColocation();
+		window.__tp.test.v1.colocationCalibrate.stopColocation();
 		return { wrote: n.setRoomNudge({ dx: 0.05 }), armed: n.setNudgeMode(true), debug: n.nudgeDebug() };
 	});
 	h.check(
@@ -108,9 +108,9 @@ h.run(async () => {
 
 	// ---- 3. calibrate, then nudge ------------------------------------------------------
 	const nudged = await page.evaluate(() => {
-		const { colocateHere } = window.__stores.colocationCalibrate;
-		const n = window.__stores.colocationNudge;
-		const { colocationDebug } = window.__stores.colocation;
+		const { colocateHere } = window.__tp.test.v1.colocationCalibrate;
+		const n = window.__tp.test.v1.colocationNudge;
+		const { colocationDebug } = window.__tp.test.v1.colocation;
 		colocateHere({ x: 2, y: 1.6, z: 3 }, { x: 0, y: 0, z: 0, w: 1 });
 		const before = colocationDebug();
 		const stored = n.setRoomNudge({ dx: 0.04, dy: 0.01, dz: -0.02 });
@@ -150,8 +150,8 @@ h.run(async () => {
 	// — literally what an ease step and a snap do) and asserts the correction survives it.
 	// This is the check that goes red if anyone folds the nudge into the stored base.
 	const survives = await page.evaluate(() => {
-		const { setRoomAlignment, applyRoomAlignment, colocationDebug } = window.__stores.colocation;
-		const n = window.__stores.colocationNudge;
+		const { setRoomAlignment, applyRoomAlignment, colocationDebug } = window.__tp.test.v1.colocation;
+		const n = window.__tp.test.v1.colocationNudge;
 		const cur = colocationDebug().alignment;
 		const nudgeBefore = { ...n.nudgeDebug().nudge };
 		setRoomAlignment(
@@ -183,7 +183,7 @@ h.run(async () => {
 
 	// ---- 5. the stick drive -------------------------------------------------------------
 	const stick = await page.evaluate(() => {
-		const n = window.__stores.colocationNudge;
+		const n = window.__tp.test.v1.colocationNudge;
 		n.resetRoomNudge();
 		const armed = n.setNudgeMode(true);
 		const dead = n.tickNudge({ lx: 0.1, ly: 0, rx: 0, ry: 0 }, 1);
@@ -223,8 +223,8 @@ h.run(async () => {
 	);
 
 	const duringRitual = await page.evaluate(async () => {
-		const { startCalibration, cancelCalibration } = window.__stores.colocationCalibrate;
-		const n = window.__stores.colocationNudge;
+		const { startCalibration, cancelCalibration } = window.__tp.test.v1.colocationCalibrate;
+		const n = window.__tp.test.v1.colocationNudge;
 		n.setNudgeMode(true);
 		const before = { ...n.nudgeDebug().nudge };
 		await startCalibration();
@@ -240,9 +240,9 @@ h.run(async () => {
 
 	// ---- 6. per-room persistence, stop vs forget, reset ---------------------------------
 	const persisted = await page.evaluate(() => {
-		const { colocateHere, stopColocation } = window.__stores.colocationCalibrate;
-		const { setRoomAlignment, applyRoomAlignment, colocationDebug } = window.__stores.colocation;
-		const n = window.__stores.colocationNudge;
+		const { colocateHere, stopColocation } = window.__tp.test.v1.colocationCalibrate;
+		const { setRoomAlignment, applyRoomAlignment, colocationDebug } = window.__tp.test.v1.colocation;
+		const n = window.__tp.test.v1.colocationNudge;
 		stopColocation();
 		colocateHere({ x: 0, y: 1.6, z: 0 }, { x: 0, y: 0, z: 0, w: 1 });
 		const keyA = colocationDebug().alignment.roomKey;
@@ -276,9 +276,9 @@ h.run(async () => {
 	h.check(persisted.backToA && near(persisted.backToA.dx, 0.07), '6.5 and coming back restores it again');
 
 	const forgotten = await page.evaluate(() => {
-		const n = window.__stores.colocationNudge;
-		const { forgetRoom } = window.__stores.colocationAnchors;
-		const key = window.__stores.colocation.colocationDebug().alignment.roomKey;
+		const n = window.__tp.test.v1.colocationNudge;
+		const { forgetRoom } = window.__tp.test.v1.colocationAnchors;
+		const key = window.__tp.test.v1.colocation.colocationDebug().alignment.roomKey;
 		n.setRoomNudge({ dx: 0.07 });
 		const before = n.nudgeFor(key);
 		const forgot = forgetRoom(key);
@@ -292,8 +292,8 @@ h.run(async () => {
 	h.check(forgotten.live === null, '6.8 and clears the live correction');
 
 	const resetBack = await page.evaluate(() => {
-		const n = window.__stores.colocationNudge;
-		const { colocationDebug } = window.__stores.colocation;
+		const n = window.__tp.test.v1.colocationNudge;
+		const { colocationDebug } = window.__tp.test.v1.colocation;
 		const key = colocationDebug().alignment.roomKey;
 		n.setRoomNudge({ dx: 0.09, dy: 0.02 });
 		const posed = colocationDebug();
@@ -313,9 +313,9 @@ h.run(async () => {
 
 	// ---- 7. teardown -------------------------------------------------------------------
 	const gone = await page.evaluate(() => {
-		window.__stores.colocationCalibrate.stopColocation();
-		const { colocationDebug } = window.__stores.colocation;
-		return { d: colocationDebug(), mode: window.__stores.colocationNudge.nudgeDebug().mode };
+		window.__tp.test.v1.colocationCalibrate.stopColocation();
+		const { colocationDebug } = window.__tp.test.v1.colocation;
+		return { d: colocationDebug(), mode: window.__tp.test.v1.colocationNudge.nudgeDebug().mode };
 	});
 	h.check(gone.d.alignment === null, '7.1 stopping leaves no alignment');
 	h.check(

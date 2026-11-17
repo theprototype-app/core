@@ -7,12 +7,12 @@
 const h = require('./helpers.cjs');
 
 /** read a store's current value in the page */
-const store = (page, name) => page.evaluate((n) => { let v; window.__stores[n].subscribe((x) => (v = x))(); return v; }, name);
+const store = (page, name) => page.evaluate((n) => { let v; window.__tp.test.v1[n].subscribe((x) => (v = x))(); return v; }, name);
 const objOf = (page, uuid, read) =>
 	page.evaluate(
 		({ u, src }) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((x) => (g = x))();
+			window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 			const o = g.getObjectByProperty('uuid', u);
 			return o ? new Function('o', 'return (' + src + ')(o)')(o) : null;
 		},
@@ -27,7 +27,7 @@ const fmt = (v) => (v ? '[' + v.map((n) => Number(n).toFixed(2)).join(', ') + ']
 async function spyWire(page) {
 	await page.evaluate(() => {
 		let peer;
-		window.__stores.peers.subscribe((x) => (peer = x))();
+		window.__tp.test.v1.peers.subscribe((x) => (peer = x))();
 		window.__wire = [];
 		for (const conn of Object.values(peer.connections)) {
 			if (conn.__spied) continue;
@@ -58,7 +58,7 @@ const dragRow = (page, from, to) =>
 		fire(src, 'dragend');
 		return accepted ? 'ok' : 'refused';
 	}, { from, to });
-const undoDepth = (page) => page.evaluate(() => { let v; window.__stores.history.undoStack.subscribe((x) => (v = x))(); return v.length; });
+const undoDepth = (page) => page.evaluate(() => { let v; window.__tp.test.v1.history.undoStack.subscribe((x) => (v = x))(); return v.length; });
 
 h.run(async () => {
 	const browser = await h.launch();
@@ -68,7 +68,7 @@ h.run(async () => {
 	await h.connect(B, A);
 	// the `modules` handshake carrying wb:1 may land after connect() returns
 	await h.eventually(
-		() => A.page.evaluate(() => { let p; window.__stores.peers.subscribe((x) => (p = x))(); return [...p.wireBatchPeers]; }),
+		() => A.page.evaluate(() => { let p; window.__tp.test.v1.peers.subscribe((x) => (p = x))(); return [...p.wireBatchPeers]; }),
 		(caps) => caps.includes(B.id),
 		'premise: B advertised the batch envelope (wb:1) in its handshake',
 		30000
@@ -76,7 +76,7 @@ h.run(async () => {
 
 	// three boxes; A makes them DISAGREE locally (shadow, roughness, colour)
 	const ids = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const a = s.addObjects.spawnAtPoint('/create Box 1 1 1', [1, 0, 0]);
 		const b = s.addObjects.spawnAtPoint('/create Box 1 1 1', [3, 0, 0]);
 		const c = s.addObjects.spawnAtPoint('/create Box 1 1 1', [5, 0, 0]);
@@ -84,7 +84,7 @@ h.run(async () => {
 	});
 	await h.eventually(() => objOf(B.page, ids.c, (o) => o.uuid), (u) => !!u, 'B has the three boxes', 30000);
 	await A.page.evaluate(({ a, b, c }) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		const A_ = g.getObjectByProperty('uuid', a);
@@ -130,7 +130,7 @@ h.run(async () => {
 	await h.eventually(() => Promise.all([ids.a, ids.b, ids.c].map((u) => objOf(B.page, u, (o) => o.castShadow))), (v) => v.every(Boolean), '2.3 B applied the whole set', 10000);
 	h.check((await undoDepth(A.page)) === depth0 + 1, '2.4 the set edit is ONE undo entry');
 	await wire(A.page);
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(400);
 	const undoSent = (await wire(A.page)).filter((m) => m.type === 'batch' || m.type === 'objectParameters');
 	h.check(undoSent.length === 1 && undoSent[0].type === 'batch', `2.5 the UNDO also replicates as one batch (${JSON.stringify(undoSent)})`);
@@ -140,7 +140,7 @@ h.run(async () => {
 
 	// a slider edit on the set: roughness 0.6 lands everywhere, one batch, B agrees
 	await wire(A.page);
-	await A.page.evaluate(() => window.__stores.objectActions && null);
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions && null);
 	// 38 R5: the Roughness row is a PropRow — its typeable field is the DragRow labelled
 	// "Roughness" that shows the dash (1.3); the old `.ui-row` wrapper is gone
 	await A.page.evaluate(() => {
@@ -163,16 +163,16 @@ h.run(async () => {
 	// ---- 3. PIVOT MODES (Inspector rows drive the set about the pivot) -----------------
 	// two boxes at x=1 and x=3; a typed Y rotation of 90° turns them about the pivot
 	await A.page.evaluate(({ a, b }) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.objectActions.selectObject(a, true);
 		s.objectActions.selectObject(b, false, true);
 	}, ids);
 	await A.page.waitForSelector('#inspector-rotation .dn-input', { timeout: 15000 });
 	const expected = { median: [[2, 0, 1], [2, 0, -1]], active: [[3, 0, 2], [3, 0, 0]], individual: [[1, 0, 0], [3, 0, 0]] };
 	for (const mode of ['median', 'active', 'individual']) {
-		await A.page.evaluate((m) => window.__stores.multiTransform.pivotMode.set(m), mode);
+		await A.page.evaluate((m) => window.__tp.test.v1.multiTransform.pivotMode.set(m), mode);
 		await A.page.waitForTimeout(300);
-		const seat = await A.page.evaluate(() => window.__stores.multiTransform.multiPivot()?.position.toArray().map((n) => Math.round(n * 1000) / 1000));
+		const seat = await A.page.evaluate(() => window.__tp.test.v1.multiTransform.multiPivot()?.position.toArray().map((n) => Math.round(n * 1000) / 1000));
 		const seatWant = mode === 'active' ? [3, 0, 0] : [2, 0, 0];
 		h.check(near(seat, seatWant), `3.${mode} the gizmo seats at the ${mode} pivot (${fmt(seat)})`);
 		const yRow = A.page.locator('#inspector-rotation .dn-input').nth(1);
@@ -185,12 +185,12 @@ h.run(async () => {
 		h.check(near(pa, expected[mode][0]) && near(pb, expected[mode][1]) && Math.abs(rotB - Math.PI / 2) < 0.01,
 			`3.${mode} a 90° turn about the ${mode} pivot: ${fmt(pa)} / ${fmt(pb)} (rot ${rotB})`);
 		await h.eventually(() => Promise.all([worldPos(B.page, ids.a), worldPos(B.page, ids.b)]), ([x, y]) => near(x, expected[mode][0]) && near(y, expected[mode][1]), `3.${mode} B agrees`, 10000);
-		await A.page.evaluate(() => window.__stores.history.undo());
+		await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 		await A.page.waitForTimeout(500);
 		const back = await Promise.all([worldPos(A.page, ids.a), worldPos(A.page, ids.b)]);
 		h.check(near(back[0], [1, 0, 0]) && near(back[1], [3, 0, 0]), `3.${mode} one undo puts both back (${fmt(back[0])} / ${fmt(back[1])})`);
 		await A.page.evaluate(({ a, b }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.objectActions.selectObject(a, true);
 			s.objectActions.selectObject(b, false, true);
 		}, ids);
@@ -199,7 +199,7 @@ h.run(async () => {
 
 	// a typed value followed by Enter (the habit) must not apply twice: DragRow applies LIVE
 	// per keystroke and Enter only blurs
-	await A.page.evaluate(() => window.__stores.multiTransform.pivotMode.set('median'));
+	await A.page.evaluate(() => window.__tp.test.v1.multiTransform.pivotMode.set('median'));
 	await A.page.waitForTimeout(300);
 	{
 		const yRow = A.page.locator('#inspector-rotation .dn-input').nth(1);
@@ -209,10 +209,10 @@ h.run(async () => {
 		await A.page.waitForTimeout(900);
 		const pa = await worldPos(A.page, ids.a);
 		h.check(near(pa, [2, 0, 1]), `3.enter type 90 + Enter turns the set 90°, not 180° (${fmt(pa)})`);
-		await A.page.evaluate(() => window.__stores.history.undo());
+		await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 		await A.page.waitForTimeout(500);
 		await A.page.evaluate(({ a, b }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.objectActions.selectObject(a, true);
 			s.objectActions.selectObject(b, false, true);
 		}, ids);
@@ -220,7 +220,7 @@ h.run(async () => {
 	}
 
 	// the TOOLBAR cell shows and steps the same mode
-	await A.page.evaluate(() => window.__stores.multiTransform.pivotMode.set('median'));
+	await A.page.evaluate(() => window.__tp.test.v1.multiTransform.pivotMode.set('median'));
 	await A.page.waitForTimeout(200);
 	const cell = A.page.locator('#controls-pill [title^="Pivot:"]');
 	h.check((await cell.count()) === 1, '3.t1 the toolbar has a Pivot cell');
@@ -229,18 +229,18 @@ h.run(async () => {
 	await A.page.waitForTimeout(300);
 	const t1 = await A.page.locator('#controls-pill [title^="Pivot:"]').getAttribute('title');
 	const m1 = await store(A.page, 'pivotMode').catch(() => null);
-	const mode1 = m1 ?? (await A.page.evaluate(() => { let v; window.__stores.multiTransform.pivotMode.subscribe((x) => (v = x))(); return v; }));
+	const mode1 = m1 ?? (await A.page.evaluate(() => { let v; window.__tp.test.v1.multiTransform.pivotMode.subscribe((x) => (v = x))(); return v; }));
 	h.check(t0?.includes('Median') && t1?.includes('Active') && mode1 === 'active', `3.t2 a click steps Median -> Active (${t0} -> ${t1}, store ${mode1})`);
 	const insMode = await A.page.evaluate(() => document.querySelector('#pivot-mode')?.textContent?.trim());
 	h.check(!!insMode && insMode.includes('Active'), `3.t3 the Inspector's Pivot row agrees (${insMode})`);
-	await A.page.evaluate(() => window.__stores.multiTransform.pivotMode.set('median'));
+	await A.page.evaluate(() => window.__tp.test.v1.multiTransform.pivotMode.set('median'));
 
 	// ---- 4. DRAG A SELECTION ONTO A GROUP / A PARENT IN THE OBJECT LIST -------------------
-	const g = await A.page.evaluate(() => window.__stores.addObjects.spawnAtPoint('/group', null).uuid);
-	await A.page.evaluate(() => window.__stores.objectListClose.set(false));
+	const g = await A.page.evaluate(() => window.__tp.test.v1.addObjects.spawnAtPoint('/group', null).uuid);
+	await A.page.evaluate(() => window.__tp.test.v1.objectListClose.set(false));
 	await A.page.waitForTimeout(500);
 	await A.page.evaluate(({ a, b }) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.objectActions.selectObject(a);
 		s.objectActions.selectObject(b, false, true);
 	}, ids);
@@ -258,7 +258,7 @@ h.run(async () => {
 	const dragSent = (await wire(A.page)).filter((m) => m.type === 'batch' || m.type === 'group');
 	h.check(dragSent.length === 1 && dragSent[0].type === 'batch' && dragSent[0].items.length === 2, `4.4 one batch of two group moves (${JSON.stringify(dragSent)})`);
 	await h.eventually(() => Promise.all([ids.a, ids.b].map((u) => objOf(B.page, u, (o) => o.parent?.uuid))), (v) => v.every((p) => p === g), '4.5 B has both in the group', 10000);
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(500);
 	const after = await Promise.all([ids.a, ids.b].map((u) => objOf(A.page, u, (o) => o.parent?.uuid)));
 	h.check(after.every((p) => p !== g), '4.6 one undo takes both back out');
@@ -266,7 +266,7 @@ h.run(async () => {
 
 	// onto a NON-group object: parenting (Blender's drop-onto)
 	await A.page.evaluate(({ a, b }) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.objectActions.selectObject(a);
 		s.objectActions.selectObject(b, false, true);
 	}, ids);
@@ -278,9 +278,9 @@ h.run(async () => {
 	h.check(parented.every((p) => p === ids.c), `4.8 dropping onto a box PARENTS the selection to it (${parented.map((p) => (p === ids.c ? 'C' : p)).join(', ')})`);
 	await h.eventually(() => Promise.all([ids.a, ids.b].map((u) => objOf(B.page, u, (o) => o.parent?.uuid))), (v) => v.every((p) => p === ids.c), '4.9 B agrees', 10000);
 	// a parent dropped onto its own child is refused (no cycle)
-	await A.page.evaluate((c) => window.__stores.objectActions.selectObject(c), ids.c);
+	await A.page.evaluate((c) => window.__tp.test.v1.objectActions.selectObject(c), ids.c);
 	await A.page.waitForTimeout(200);
-	const refused = await A.page.evaluate(({ a, c }) => window.__stores.objectActions.moveObjectsToParent([c], a), ids);
+	const refused = await A.page.evaluate(({ a, c }) => window.__tp.test.v1.objectActions.moveObjectsToParent([c], a), ids);
 	h.check(refused === 0, `4.10 a parent dropped into its own child is refused (${refused} moved)`);
 
 	await h.finish(browser);

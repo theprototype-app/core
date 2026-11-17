@@ -34,7 +34,7 @@ async function until(fn, predicate, label, timeout = 10000) {
 async function place(peer, name = 'Duck') {
 	return peer.page.evaluate(
 		async ({ path, name }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			/** @type {any} */ let g;
 			s.objectsGroup.subscribe((v) => (g = v))();
 			const before = new Set(g.children.map((/** @type {any} */ c) => c.uuid));
@@ -56,7 +56,7 @@ async function place(peer, name = 'Duck') {
 /** Facts about one root in a page. */
 function facts(peer, uuid) {
 	return peer.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		/** @type {any} */ let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByProperty('uuid', uuid);
@@ -93,7 +93,7 @@ h.run(async () => {
 
 	// ---- 2. the save writes a stub, a fraction of the full element ----------------
 	const saved = await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = s.sessions.buildSessionPayload('refs');
 		const el = payload.objects.find((/** @type {any} */ e) => e.object?.uuid === uuid);
 		/** @type {any} */ let g;
@@ -106,7 +106,7 @@ h.run(async () => {
 
 	// ---- 3. an EDITED piece is written in full ------------------------------------
 	const edited = await A.page.evaluate(async (uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		/** @type {any} */ let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByProperty('uuid', uuid);
@@ -151,7 +151,7 @@ h.run(async () => {
 	// ---- 4. a load refills stubs; copies share their textures ---------------------
 	const second = await place(A, 'Duck 2');
 	const loaded = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = s.sessions.buildSessionPayload('two');
 		const stubs = payload.objects.filter((/** @type {any} */ e) => e.object?.userData?.packStub).length;
 		await s.sessions.applySession(payload, { backup: false });
@@ -186,7 +186,7 @@ h.run(async () => {
 
 	// ---- 5. an autosave-style GLTF round trip re-learns pristine ------------------
 	const round = await A.page.evaluate(async (uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		/** @type {any} */ let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByProperty('uuid', uuid);
@@ -205,7 +205,7 @@ h.run(async () => {
 
 	// ---- 6. an unreachable pack keeps the reference -------------------------------
 	const lost = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const T = s.THREE;
 		const hollow = new T.Group();
 		hollow.name = 'Lost piece';
@@ -223,7 +223,7 @@ h.run(async () => {
 	h.check(lost.children === 0 && lost.stillStub, 'an unreachable piece stays a hollow stub');
 	h.check(lost.savedStub && /no\/such\/piece\.glb$/.test(lost.path ?? ''), 'and SAVES back as the same reference — never silently dropped');
 	await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		/** @type {any} */ let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByProperty('uuid', uuid);
@@ -243,7 +243,7 @@ h.run(async () => {
 	h.check(joined[0]?.kids.join() === f1.kids.join(), 'the joiner has the same child uuids');
 	h.check(joined[0]?.tris === f1.tris, `the joiner has the same geometry (${joined[0]?.tris} tris)`);
 	const wire = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		/** @type {any} */ const p = (() => { let v; s.peers.subscribe((x) => (v = x))(); return v; })();
 		/** @type {any[]} */ const sent = [];
 		const orig = p.send.bind(p);
@@ -263,7 +263,7 @@ h.run(async () => {
 
 	// ---- 8. a real kit wall, when this server's PACKS_BASE serves the architecture kit
 	const kit = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const url = String(s.packs.PACKS_BASE).replace(/\/+$/, '') + '/architecture-kit/WallStone/glTF-Binary/wall-stone.glb';
 		const res = await fetch(url).catch(() => null);
 		if (!res?.ok) return null;

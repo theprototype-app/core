@@ -60,7 +60,7 @@ h.run(async () => {
 			// signed out the profile menu is short; signed in (cloud plugin: account, sign-in methods, community, sponsor …)
 			// it is what ran off the HONOR's screen — the same menu with 24 rows added stands in for that
 			{ label: 'profile menu, signed-in length', sel: '#avatar-dropdown', pad: 24, open: () => page.locator('#avatar-trigger').first().tap(), close: () => page.evaluate(() => history.back()) },
-			{ label: 'logo menu', sel: '#sidebar70', open: () => page.evaluate(() => window.__stores.closeMenu.set(false)), close: () => page.evaluate(() => window.__stores.closeMenu.set(true)) },
+			{ label: 'logo menu', sel: '#sidebar70', open: () => page.evaluate(() => window.__tp.test.v1.closeMenu.set(false)), close: () => page.evaluate(() => window.__tp.test.v1.closeMenu.set(true)) },
 			// the corner + is not on the folded phone's bar (phone-back skips it the same way)
 			{ label: 'Add menu', sel: '[role=menu].ctx-scroll', skip: () => page.locator('#mobile-add-button').first().isVisible().then((v) => !v), open: () => page.locator('#mobile-add-button').first().tap(), close: () => page.evaluate(() => history.back()) }
 		];

@@ -17,7 +17,7 @@ h.run(async () => {
 
 	const box = async (page) =>
 		page.evaluate(async () => {
-			const w = window.__stores;
+			const w = window.__tp?.test.v1;
 			w.commandsHandler.sceneCommand('/create box 1 1 1');
 			await new Promise((r) => setTimeout(r, 700));
 			let g;
@@ -27,7 +27,7 @@ h.run(async () => {
 
 	// ---- 1. a fresh track must not be FLAT ---------------------------------
 	const seeds = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const ap = w.animationPreview;
 		const out = {};
 		for (const channel of ['opacity', 'roughness', 'metalness', 'color.r', 'pos.y']) {
@@ -68,7 +68,7 @@ h.run(async () => {
 	// ---- 2. opacity really moves pixels ------------------------------------
 	const uuid = await box(A.page);
 	const opacity = await A.page.evaluate(async (id) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const ap = w.animationPreview;
 		let g;
 		w.objectsGroup.subscribe((v) => (g = v))();
@@ -100,7 +100,7 @@ h.run(async () => {
 	// ---- 3. glow -----------------------------------------------------------
 	const glowUuid = await box(A.page);
 	const glow = await A.page.evaluate(async (id) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const ap = w.animationPreview;
 		let g;
 		w.objectsGroup.subscribe((v) => (g = v))();
@@ -131,7 +131,7 @@ h.run(async () => {
 
 	// a colour the user (or an imported model) already chose is NOT overwritten
 	const tinted = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const ap = w.animationPreview;
 		w.commandsHandler.sceneCommand('/create box 1 1 1');
 		await new Promise((r) => setTimeout(r, 500));

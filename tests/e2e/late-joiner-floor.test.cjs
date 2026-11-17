@@ -22,12 +22,12 @@ h.run(async () => {
 	// a deployed cloud build registers its plugin after boot — give it the time to install its gate
 	if (/pages\.dev/.test(h.URL))
 		await A.page
-			.waitForFunction(() => window.__stores.cloudHooks.hasCapabilityProvider(), null, { timeout: 20000 })
+			.waitForFunction(() => window.__tp.test.v1.cloudHooks.hasCapabilityProvider(), null, { timeout: 20000 })
 			.catch(() => console.log('  (no capability provider registered within 20 s)'));
 
 	// ---------- the host authors every domain before anyone joins ----------
 	const authored = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 500));
 		let g;
@@ -58,11 +58,11 @@ h.run(async () => {
 	console.log(`  (host build: ${authored.cloud ? 'cloud — the plugin gates' : 'plain — the suite gates every peer as a viewer'})`);
 
 	if (!authored.cloud)
-		await A.page.evaluate(() => window.__stores.cloudHooks.setCapabilityProvider(() => false));
+		await A.page.evaluate(() => window.__tp.test.v1.cloudHooks.setCapabilityProvider(() => false));
 	const C = await h.setupPage(browser, 'C');
 	// premise: the host's gate refuses this joiner's CONTENT (it is a viewer to the host)
 	const gate = await A.page.evaluate((cid) => {
-		const k = window.__stores.cloudHooks;
+		const k = window.__tp.test.v1.cloudHooks;
 		return { huds: k.canApply(cid, 'huds'), hud: k.canApply(cid, 'hud') };
 	}, C.id);
 	if (!authored.cloud) h.check(gate.huds === false && gate.hud === false, `premise: the host gates the joiner's content (${JSON.stringify(gate)})`);
@@ -77,7 +77,7 @@ h.run(async () => {
 		await C.page.waitForTimeout(9000);
 		const role = await A.page.evaluate((cid) => {
 			let ri;
-			window.__stores.cloudHooks.rolesInfo.subscribe((v) => (ri = v))();
+			window.__tp.test.v1.cloudHooks.rolesInfo.subscribe((v) => (ri = v))();
 			return ri?.roleOf?.(cid) ?? null;
 		}, C.id);
 		h.check(role === 'viewer', `premise: the host reads the joiner as a viewer (${role})`);
@@ -85,7 +85,7 @@ h.run(async () => {
 
 	const read = (uuid) =>
 		C.page.evaluate((u) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const doc = s.hudDocs.hudDocOf('scene');
 			let anim;
 			s.animationPreview.animations.subscribe((v) => (anim = v))();

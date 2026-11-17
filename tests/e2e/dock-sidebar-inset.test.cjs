@@ -12,17 +12,17 @@ h.run(async () => {
 	// restore the object-list docked to the LEFT (skip the drag gesture)
 	await A.page.evaluate(() => localStorage.setItem('dockedWindows', JSON.stringify({ left: 'objects', right: null })));
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.objectActions, { timeout: 30000 });
-	await A.page.evaluate(() => window.__stores.objectListClose.set(false));
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.objectActions, { timeout: 30000 });
+	await A.page.evaluate(() => window.__tp.test.v1.objectListClose.set(false));
 	await A.page.waitForTimeout(500);
 
 	const r = await A.page.evaluate(async () => {
 		const win = document.querySelector('#object-list');
-		window.__stores.closeMenu.set(true); // menu closed -> no sidebar
+		window.__tp.test.v1.closeMenu.set(true); // menu closed -> no sidebar
 		await new Promise((r) => setTimeout(r, 120));
 		// 42 I3: the column's x is a CSS var now (--sb-left-x), so read the rendered edge
 		const closedLeft = win.getBoundingClientRect().left;
-		window.__stores.closeMenu.set(false); // menu open -> sidebar shown
+		window.__tp.test.v1.closeMenu.set(false); // menu open -> sidebar shown
 		await new Promise((r) => setTimeout(r, 200));
 		const openLeft = win.getBoundingClientRect().left;
 		const sb = document.querySelector('.app-sidebar');

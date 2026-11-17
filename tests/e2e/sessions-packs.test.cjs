@@ -22,7 +22,7 @@ const h = require('./helpers.cjs');
 const metas = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.sessions.sessions.subscribe((x) => (v = x))();
+		window.__tp.test.v1.sessions.sessions.subscribe((x) => (v = x))();
 		return (v ?? []).map((m) => ({
 			id: m.id,
 			name: m.name,
@@ -37,19 +37,19 @@ const metas = (p) =>
 const itemList = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.explorer.explorerItems.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((x) => (v = x))();
 		return (v ?? []).map((i) => ({ id: i.id, name: i.name, kind: i.kind, folderId: i.folderId }));
 	});
 
 const packList = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.packs.packs.subscribe((x) => (v = x))();
+		window.__tp.test.v1.packs.packs.subscribe((x) => (v = x))();
 		return (v ?? []).map((x) => ({ name: x.name, title: x.title, source: x.source, items: (x.items ?? []).length }));
 	});
 
 const openSessions = async (p) => {
-	await p.page.evaluate(() => window.__stores.sessionsOpen.set(true));
+	await p.page.evaluate(() => window.__tp.test.v1.sessionsOpen.set(true));
 	await p.page.waitForTimeout(1000);
 };
 
@@ -64,20 +64,20 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1440, height: 900 } } });
 	const page = A.page;
-	await page.waitForFunction(() => !!window.__stores?.sessions && !!window.__stores?.packs, null, {
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.sessions && !!window.__tp?.test.v1?.packs, null, {
 		timeout: 30000
 	});
 	await page.evaluate(async () => {
-		await window.__stores.explorer.loadExplorer();
-		await window.__stores.explorer.clearLibrary();
-		await window.__stores.packs.loadPacks();
+		await window.__tp.test.v1.explorer.loadExplorer();
+		await window.__tp.test.v1.explorer.clearLibrary();
+		await window.__tp.test.v1.packs.loadPacks();
 	});
 	await page.waitForTimeout(600);
 
 	// a scene worth picturing, and two library files worth saving with it
 	await page.evaluate(
 		async ({ png }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.commandsHandler.sceneCommand('/create box');
 			await new Promise((r) => setTimeout(r, 1200));
 			s.objectActions.deselectObject();
@@ -101,7 +101,7 @@ h.run(async () => {
 
 	// ---- 1. THE THUMBNAIL, and where it comes from -----------------------------------
 	const shot = await page.evaluate(() => {
-		const payload = window.__stores.sessions.buildSessionPayload('probe');
+		const payload = window.__tp.test.v1.sessions.buildSessionPayload('probe');
 		return { has: !!payload.thumbnail, len: payload.thumbnail?.length ?? 0, head: (payload.thumbnail ?? '').slice(0, 22) };
 	});
 	h.check(shot.has && shot.len > 200, `a saved payload carries a picture (${shot.len} bytes)`);
@@ -111,7 +111,7 @@ h.run(async () => {
 	// ObjectLoader round trip, so a geometry the loader cannot rebuild cannot take it out.
 	// A WireframeGeometry is the documented one — the old offscreen ritual THROWS on it.
 	const survives = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
@@ -239,7 +239,7 @@ h.run(async () => {
 	// skips the file level (round 12); there is no row to click first any more
 	const worldBefore = await page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return g.children.length;
 	});
 	await page.locator('#session-picker label input[type="checkbox"]').first().check();
@@ -249,7 +249,7 @@ h.run(async () => {
 		() =>
 			page.evaluate(() => {
 				let g;
-				window.__stores.objectsGroup.subscribe((v) => (g = v))();
+				window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 				return g.children.length;
 			}),
 		(n) => n === worldBefore + 1,
@@ -304,12 +304,12 @@ h.run(async () => {
 		(await page.evaluate(() => localStorage.getItem('sessions:view'))) === 'list',
 		'the view choice is a LOCAL pref'
 	);
-	await page.evaluate(() => window.__stores.sessionsOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.sessionsOpen.set(false));
 	await page.waitForTimeout(500);
 
 	// ---- 5. PACKS: create one, and fill it by drag ------------------------------------
 	const pure = await page.evaluate(() => {
-		const p = window.__stores.packs;
+		const p = window.__tp.test.v1.packs;
 		const made = p.createPack('My Test Pack');
 		const again = p.createPack('My Test Pack');
 		return { first: made.name, second: again.name, title: made.title, source: made.source, items: made.items.length };
@@ -322,15 +322,15 @@ h.run(async () => {
 	h.check(pure.source === 'imported' && pure.items === 0, 'it starts empty, on the same shelf as an imported pack');
 	await page.evaluate(() => {
 		let v;
-		window.__stores.packs.packs.subscribe((x) => (v = x))();
+		window.__tp.test.v1.packs.packs.subscribe((x) => (v = x))();
 		// drop the throwaway second one
-		window.__stores.packs.removeImportedPack('user-my-test-pack-2');
+		window.__tp.test.v1.packs.removeImportedPack('user-my-test-pack-2');
 	});
 
 	// through the real UI: right-click the Packs grid, Create pack…, type a name
 	await page.locator('#explorer-slot').click();
 	await page.waitForTimeout(800);
-	await page.evaluate(() => window.__stores.explorer.activeFolder.set('packs'));
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set('packs'));
 	await page.waitForTimeout(600);
 	const gridBox = await page.locator('#explorer-grid').boundingBox();
 	await page.mouse.click(gridBox.x + gridBox.width - 60, gridBox.y + gridBox.height - 120, { button: 'right' });
@@ -358,21 +358,21 @@ h.run(async () => {
 	h.check(
 		(await page.evaluate(() => {
 			let v;
-			window.__stores.explorer.activeFolder.subscribe((x) => (v = x))();
+			window.__tp.test.v1.explorer.activeFolder.subscribe((x) => (v = x))();
 			return v;
 		})) === 'pack:' + bricks.name,
 		'…and opened, so there is somewhere to drop into'
 	);
 
 	// fill it by dragging a FOLDER — the user's own phrasing for "not one file at a time"
-	await page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await page.waitForTimeout(700);
 	// The pack ROWS only exist while the Packs tree is expanded, and the double-click that
 	// expands it also fires two CLICKS — which navigate into the Packs view, taking the
 	// folder card we are about to drag with them. So: expand, then come back.
 	await page.locator('#packs-folder').dblclick();
 	await page.waitForTimeout(600);
-	await page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await page.waitForTimeout(700);
 	h.check(
 		(await page.locator('[data-pack]').count()) > 0,
@@ -380,7 +380,7 @@ h.run(async () => {
 	);
 	const dropped = await page.evaluate((packName) => {
 		let folders;
-		window.__stores.explorer.explorerFolders.subscribe((v) => (folders = v))();
+		window.__tp.test.v1.explorer.explorerFolders.subscribe((v) => (folders = v))();
 		const folder = folders.find((f) => f.name === 'Pack source');
 		const card = document.querySelector('[data-card-id="' + folder.id + '"]');
 		const row = document.querySelector('[data-pack="' + packName + '"]');
@@ -402,9 +402,9 @@ h.run(async () => {
 	// a second drop of the same files is a no-op rather than two rows for one file
 	await page.evaluate((packName) => {
 		let items;
-		window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((v) => (items = v))();
 		const records = items.filter((i) => /brick|moss/.test(i.name));
-		window.__stores.packs.addToPack(packName, records);
+		window.__tp.test.v1.packs.addToPack(packName, records);
 	}, bricks.name);
 	await page.waitForTimeout(500);
 	h.check(
@@ -415,11 +415,11 @@ h.run(async () => {
 	// a DEFAULT pack refuses — its contents live on a CDN this machine does not own
 	const refused = await page.evaluate(() => {
 		let v;
-		window.__stores.packs.packs.subscribe((x) => (v = x))();
+		window.__tp.test.v1.packs.packs.subscribe((x) => (v = x))();
 		const def = v.find((p) => p.source === 'default');
 		if (!def) return 'no default pack in this build';
 		let items;
-		window.__stores.explorer.explorerItems.subscribe((x) => (items = x))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((x) => (items = x))();
 		const before = (def.items ?? []).length;
 		return { name: def.name, before, refusedByUi: true };
 	});
@@ -428,7 +428,7 @@ h.run(async () => {
 	// =================================================================================
 	// R22 ROUND 12 — the Sessions manager becomes a proper file browser
 	// =================================================================================
-	await page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await openSessions(A);
 
 	// ---- 7. THE PICKER IS ITS OWN MODAL, and per-kind ---------------------------------
@@ -522,7 +522,7 @@ h.run(async () => {
 
 	// the import really lands them, with their folder structure, MERGED by path
 	await page.evaluate(async () => {
-		await window.__stores.explorer.clearLibrary();
+		await window.__tp.test.v1.explorer.clearLibrary();
 	});
 	await page.waitForTimeout(600);
 	await page.locator('#session-import-files').click();
@@ -534,8 +534,8 @@ h.run(async () => {
 	);
 	const landed = await page.evaluate(() => {
 		let items, folders;
-		window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
-		window.__stores.explorer.explorerFolders.subscribe((v) => (folders = v))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((v) => (items = v))();
+		window.__tp.test.v1.explorer.explorerFolders.subscribe((v) => (folders = v))();
 		const byName = (n) => folders.find((f) => f.name === n);
 		const tex = byName('Textures');
 		const bricks = byName('Bricks');
@@ -625,7 +625,7 @@ h.run(async () => {
 	// THE MEASURED BUG: a project bundle used to JSON.stringify a Blob to {} and arrive
 	// with every library file gone, silently. The library travels as real zip entries now.
 	const roundTrip = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let list;
 		s.sessions.sessions.subscribe((v) => (list = v))();
 		const project = list.find((m) => m.hasLibrary);
@@ -680,18 +680,18 @@ h.run(async () => {
 		() =>
 			page.evaluate(() => {
 				let d;
-				window.__stores.confirmDialog.confirmDialog.subscribe((v) => (d = v))();
+				window.__tp.test.v1.confirmDialog.confirmDialog.subscribe((v) => (d = v))();
 				return d && d.title;
 			}),
 		(t) => /Delete 2 saved entries/.test(t || ''),
 		'deleting ASKS first - it never did, not even for one entry'
 	);
-	await page.evaluate(() => window.__stores.confirmDialog.resolveConfirm(false));
+	await page.evaluate(() => window.__tp.test.v1.confirmDialog.resolveConfirm(false));
 	await page.waitForTimeout(600);
 	h.check((await metas(A)).length === before, 'and Cancel keeps them (' + before + ')');
 	await page.locator('#session-delete-picked').click();
 	await page.waitForTimeout(600);
-	await page.evaluate(() => window.__stores.confirmDialog.resolveConfirm(true));
+	await page.evaluate(() => window.__tp.test.v1.confirmDialog.resolveConfirm(true));
 	await h.eventually(
 		() => metas(A),
 		(l) => l.length === before - 2,

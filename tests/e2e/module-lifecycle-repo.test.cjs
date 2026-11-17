@@ -55,7 +55,7 @@ h.run(async () => {
 		return out;
 	};
 	await page.evaluate(async () => {
-		window.__lcEnv = await window.__stores.moduleLifecycle.lifecycleEnv();
+		window.__lcEnv = await window.__tp.test.v1.moduleLifecycle.lifecycleEnv();
 		let edges = 0;
 		const out = new WeakMap();
 		const conn = AudioNode.prototype.connect;
@@ -87,7 +87,7 @@ h.run(async () => {
 			});
 			return {
 				journal: env.lifecycle.registrationCount(id),
-				scope: window.__stores.moduleSDK.moduleScopeDebug()[id] ?? null,
+				scope: window.__tp.test.v1.moduleSDK.moduleScopeDebug()[id] ?? null,
 				audioEdges: edges,
 				meshes,
 				gpuGeometries: renderer?.info.memory.geometries ?? -1,
@@ -117,10 +117,10 @@ h.run(async () => {
 		const installed = await page.evaluate(
 			async ({ id, bytes }) => {
 				const raw = Uint8Array.from(atob(bytes), (c) => c.charCodeAt(0));
-				const ok = await window.__stores.userModules.installZip(
+				const ok = await window.__tp.test.v1.userModules.installZip(
 					new File([raw], id + '.zip', { type: 'application/zip' })
 				);
-				return ok && window.__stores.moduleSDK.isModuleLoaded(id);
+				return ok && window.__tp.test.v1.moduleSDK.isModuleLoaded(id);
 			},
 			{ id, bytes }
 		);
@@ -138,16 +138,16 @@ h.run(async () => {
 			}, id);
 			await page.waitForTimeout(400);
 			const loaded = await metrics(id);
-			await page.evaluate((id) => window.__stores.moduleSDK.unloadModule(id), id);
+			await page.evaluate((id) => window.__tp.test.v1.moduleSDK.unloadModule(id), id);
 			await page.waitForTimeout(400);
 			const unloaded = { ...(await metrics(id)), strays: await blobListeners() };
 			if (cycle > 0) cycles.push({ loaded, unloaded });
 			if (cycle < 3) {
 				await page.evaluate(async (id) => {
 					const record = window.__lcEnv
-						.get(window.__stores.userModules.userModules)
+						.get(window.__tp.test.v1.userModules.userModules)
 						.find((r) => r.id === id);
-					await window.__stores.userModules.activateUserModule(record);
+					await window.__tp.test.v1.userModules.activateUserModule(record);
 				}, id);
 			}
 		}
@@ -195,7 +195,7 @@ h.run(async () => {
 			loadedScope: l.map((x) => x.scope)
 		};
 		console.log('REPORT ' + id + ' ' + JSON.stringify(report[id]));
-		await page.evaluate((id) => window.__stores.userModules.removeUserModule(id), id);
+		await page.evaluate((id) => window.__tp.test.v1.userModules.removeUserModule(id), id);
 	}
 	if (EVIDENCE) {
 		fs.mkdirSync(EVIDENCE, { recursive: true });

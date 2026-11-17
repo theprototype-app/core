@@ -29,11 +29,11 @@ const ev = (page, fn, arg) =>
 	page.evaluate(
 		([body, a]) =>
 			new Function('co', 'cal', 'cp', 'vc', 'S', 'arg', body)(
-				window.__stores.colocation,
-				window.__stores.colocationCalibrate,
-				window.__stores.colocationPresence,
-				window.__stores.voiceChat,
-				window.__stores,
+				window.__tp.test.v1.colocation,
+				window.__tp.test.v1.colocationCalibrate,
+				window.__tp.test.v1.colocationPresence,
+				window.__tp.test.v1.voiceChat,
+				window.__tp?.test.v1,
 				a
 			),
 		[fn, arg ?? null]
@@ -84,14 +84,14 @@ h.run(async () => {
 	// ---------------------------------------------------------------- section 0
 	console.log('\n=== 0. the debug-hook slot (the positional-destructure guard) ===');
 	const hook = await A.page.evaluate(() => ({
-		presence: typeof window.__stores.colocationPresence?.applyRemoteColocation,
-		set: typeof window.__stores.colocationPresence?.colocatedPeers?.subscribe,
+		presence: typeof window.__tp.test.v1.colocationPresence?.applyRemoteColocation,
+		set: typeof window.__tp.test.v1.colocationPresence?.colocatedPeers?.subscribe,
 		// the NEIGHBOUR slots must still be themselves — a positional mis-fold shifts
 		// every later binding onto the wrong module, silently
-		colocation: typeof window.__stores.colocation?.applyRoomAlignment,
-		calibrate: typeof window.__stores.colocationCalibrate?.startCalibration,
-		trigger: typeof window.__stores.triggerSync?.applyRemoteTriggers,
-		voice: typeof window.__stores.voiceChat?.applyColocationGains
+		colocation: typeof window.__tp.test.v1.colocation?.applyRoomAlignment,
+		calibrate: typeof window.__tp.test.v1.colocationCalibrate?.startCalibration,
+		trigger: typeof window.__tp.test.v1.triggerSync?.applyRemoteTriggers,
+		voice: typeof window.__tp.test.v1.voiceChat?.applyColocationGains
 	}));
 	h.check(hook.presence === 'function', '0.1 colocationPresence sits at its hook slot');
 	h.check(hook.set === 'function', '0.2 ...exporting the colocatedPeers derived set');

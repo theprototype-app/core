@@ -10,7 +10,7 @@ const h = require('./helpers.cjs');
 
 /** a probe module: an api handle on window */
 const PROBE = () => {
-	const s = /** @type {any} */ (window).__stores;
+	const s = /** @type {any} */ (window).__tp?.test.v1;
 	s.moduleSDK.initModules([
 		{
 			id: 'kitprobe',
@@ -27,7 +27,7 @@ const PROBE = () => {
 /** per page: is each gem there to take (kit), and is its object visible (the graph)? */
 const view = (/** @type {any} */ p, /** @type {string[]} */ gems) =>
 	p.page.evaluate((ids) => {
-		const S = /** @type {any} */ (window).__stores;
+		const S = /** @type {any} */ (window).__tp?.test.v1;
 		let g;
 		S.objectsGroup.subscribe((/** @type {any} */ x) => (g = x))();
 		const k = /** @type {any} */ (window).__kitApi.kit.pickups;
@@ -46,7 +46,7 @@ h.run(async () => {
 
 	// ---- 1. the host builds three gems, each hidden by "Pickup available?" -> Visibility ----------
 	const gems = await A.page.evaluate(() => {
-		const S = /** @type {any} */ (window).__stores;
+		const S = /** @type {any} */ (window).__tp?.test.v1;
 		/** @type {string[]} */
 		const ids = [];
 		for (let i = 0; i < 3; i++) {
@@ -81,13 +81,13 @@ h.run(async () => {
 	await A.page.waitForTimeout(1500); // the joiner's own reset lands well after the host's last write
 	const B = await h.setupPage(browser, 'B');
 	h.check(await B.page.evaluate(PROBE), 'premise: api.kit.pickups on the joiner');
-	await B.page.evaluate(() => /** @type {any} */ (window).__stores.commandsHandler.sceneCommand('/clear all'));
-	const bDoc = await B.page.evaluate(() => /** @type {any} */ (window).__stores.kit.kitDebug().doc);
+	await B.page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
+	const bDoc = await B.page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.kit.kitDebug().doc);
 	console.log('  joiner kit doc before joining: rev ' + bDoc.rev + ', at ' + bDoc.at);
 	h.check(bDoc.at === 0, '3.0 a clear made ALONE is a local reset: stamp 0 (outranks nobody; ' + bDoc.at + ')');
 	await h.connect(B, A);
 	await h.eventually(
-		() => Promise.all([A, B].map((p) => p.page.evaluate(() => /** @type {any} */ (window).__stores.nodesHandler.graphHash()))),
+		() => Promise.all([A, B].map((p) => p.page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.nodesHandler.graphHash()))),
 		(hs) => hs[0] === hs[1],
 		'premise: the joiner holds the host\'s graph',
 		30000
@@ -98,10 +98,10 @@ h.run(async () => {
 	h.check(hostAfter.taken === 3 && hostAfter.visible.every((x) => x === false), '3.3 the joiner\'s reset did not wipe the host (still 3 taken, hidden)');
 
 	// ---- 4. not collectable on the joiner ------------------------------------------------------
-	const before = await A.page.evaluate(() => /** @type {any} */ (window).__stores.kit.kitDebug().stats.refused);
+	const before = await A.page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.kit.kitDebug().stats.refused);
 	await B.page.evaluate((id) => /** @type {any} */ (window).__kitApi.kit.pickups.collect(id, 1, 0), gems[0]);
-	await h.eventually(() => A.page.evaluate(() => /** @type {any} */ (window).__stores.kit.kitDebug().stats.refused), (n) => n > before, '4.1 the joiner\'s take is REFUSED by the authority (already taken)', 10000);
-	const by = await A.page.evaluate((id) => /** @type {any} */ (window).__stores.kit.kitDebug().doc.slices.pickups.taken[id]?.by, gems[0]);
+	await h.eventually(() => A.page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.kit.kitDebug().stats.refused), (n) => n > before, '4.1 the joiner\'s take is REFUSED by the authority (already taken)', 10000);
+	const by = await A.page.evaluate((id) => /** @type {any} */ (window).__tp.test.v1.kit.kitDebug().doc.slices.pickups.taken[id]?.by, gems[0]);
 	h.check(by === A.id, '4.2 the gem stays the host\'s (' + by + ')');
 
 	await h.finish(browser);

@@ -21,7 +21,7 @@ const TOOLS = ['search_assets', 'place_asset', 'prefab', 'create_particles', 'sc
 
 const read = (page, expr) =>
 	page.evaluate(
-		(e) => new Promise((r) => e.split('.').reduce((o, k) => o[k], window.__stores).subscribe((v) => r(JSON.parse(JSON.stringify(v ?? null))))()),
+		(e) => new Promise((r) => e.split('.').reduce((o, k) => o[k], window.__tp?.test.v1).subscribe((v) => r(JSON.parse(JSON.stringify(v ?? null))))()),
 		expr
 	);
 
@@ -29,7 +29,7 @@ const read = (page, expr) =>
 const onHost = (page, uuid) =>
 	page.evaluate((u) => {
 		/** @type {any} */ let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		const o = g?.getObjectByProperty('uuid', u);
 		if (!o) return null;
 		const geo = o.geometry;
@@ -57,7 +57,7 @@ const onHost = (page, uuid) =>
 
 const inLibrary = (page, hash) =>
 	page.evaluate(
-		(x) => new Promise((r) => window.__stores.explorer.explorerItems.subscribe((items) => r(items.some((i) => i.hash === x)))()),
+		(x) => new Promise((r) => window.__tp.test.v1.explorer.explorerItems.subscribe((items) => r(items.some((i) => i.hash === x)))()),
 		hash
 	);
 
@@ -119,7 +119,7 @@ h.run(async () => {
 		const tools = (await B.client.listTools()).tools;
 		h.check(TOOLS.every((n) => tools.some((t) => t.name === n)), '1. the world tools are listed: ' + TOOLS.filter((n) => !tools.some((t) => t.name === n)).join(', '));
 		const hostSchema = await A.page.evaluate(() => {
-			const t = window.__stores.aiTools.getAiTools().find((x) => (x.function || x).name === 'scatter');
+			const t = window.__tp.test.v1.aiTools.getAiTools().find((x) => (x.function || x).name === 'scatter');
 			return JSON.stringify((t.function || t).parameters);
 		});
 		h.check(JSON.stringify(tools.find((t) => t.name === 'scatter')?.inputSchema) === hostSchema, '1. scatter schema = the host registry, verbatim');
@@ -150,7 +150,7 @@ h.run(async () => {
 		const mat = json(await call(B.client, 'set_material', { objects: [ids.jetty], pattern: 'planks', patternScale: 2 }));
 		h.check(!mat.error && (mat.patterns?.length ?? 0) === 1, 'set_material {pattern: planks}: ' + short(mat));
 		await h.eventually(() => onHost(A.page, ids.jetty), (o) => o?.map === true, '3. the host\'s jetty wears the planks', 40000);
-		await h.eventually(() => A.page.evaluate(() => new Promise((r) => window.__stores.explorer.explorerItems.subscribe((items) => r(items.some((i) => /planks/i.test(i.name))))())), (x) => x === true, '3. the planks texture is in the host\'s library', 40000);
+		await h.eventually(() => A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.explorer.explorerItems.subscribe((items) => r(items.some((i) => /planks/i.test(i.name))))())), (x) => x === true, '3. the planks texture is in the host\'s library', 40000);
 
 		console.log('\n=== 4. campfire with sound ===');
 		const fire = json(await call(B.client, 'create_particles', { preset: 'fire', position: [-6, 0, 0], name: 'Campfire' }));
@@ -162,7 +162,7 @@ h.run(async () => {
 		// the sound URL path runs in the host page's own executor, where the route is the test's
 		await A.page.route('https://sounds.example.test/**', (route) => route.fulfill({ status: 200, headers: { 'access-control-allow-origin': '*', 'content-type': 'audio/wav' }, body: wavBytes() }));
 		await A.page.route('https://fake.example.test/**', (route) => route.fulfill({ status: 200, headers: { 'access-control-allow-origin': '*', 'content-type': 'audio/wav' }, body: '<script>alert(1)</script>'.padEnd(64, ' ') }));
-		const exec = (tool, args) => A.page.evaluate(([x, a]) => window.__stores.aiTools.executeAiTool(x, a), [tool, args]);
+		const exec = (tool, args) => A.page.evaluate(([x, a]) => window.__tp.test.v1.aiTools.executeAiTool(x, a), [tool, args]);
 		// the host makes its own fire: the bridge's emitter replicates, and a sound node goes in the HOST's graph of it
 		const snd = await exec('place_sound', { object: ids.fire, asset: 'https://sounds.example.test/crackle.wav', radius: 8, loop: true });
 		const sndHash = snd.updated?.[0]?.sound;
@@ -170,7 +170,7 @@ h.run(async () => {
 		if (sndHash) await h.eventually(() => inLibrary(A.page, sndHash), (x) => x === true, '4. the sound is in the host\'s library by hash', 30000);
 		const graph = await A.page.evaluate((u) => {
 			/** @type {any} */ let g;
-			window.__stores.flowGraphs.subscribe((x) => (g = x))();
+			window.__tp.test.v1.flowGraphs.subscribe((x) => (g = x))();
 			return (g?.[u]?.nodes ?? []).map((n) => n.type);
 		}, ids.fire);
 		h.check(graph.includes('sound'), '4. a sound node in the fire\'s own graph: ' + graph.join(','));
@@ -213,10 +213,10 @@ h.run(async () => {
 		const log = await read(A.page, 'agentLog.agentLog');
 		for (const e of (log || []).filter((x) => [...TOOLS, 'create_mesh', 'set_material'].includes(x.tool))) console.log('   · ' + e.tool + ': ' + e.text);
 		const scatterLine = log.find((e) => e.tool === 'scatter');
-		await A.page.evaluate((e) => window.__stores.agentLog.requestAgentUndo(e), scatterLine);
+		await A.page.evaluate((e) => window.__tp.test.v1.agentLog.requestAgentUndo(e), scatterLine);
 		await h.eventually(() => onHost(A.page, ids.terrain), (o) => o?.scatterSets === 0, '6. per-line Undo on the scatter line takes the forest off the host\'s terrain', 30000);
 		const lakeLine = log.find((e) => e.tool === 'water');
-		await A.page.evaluate((e) => window.__stores.agentLog.requestAgentUndo(e), lakeLine);
+		await A.page.evaluate((e) => window.__tp.test.v1.agentLog.requestAgentUndo(e), lakeLine);
 		await h.eventually(() => onHost(A.page, ids.lake), (o) => o === null, '6. per-line Undo on the water line removes the lake', 30000);
 	} finally {
 		await bounded(B.client.close().catch(() => {}), 10000);
@@ -230,9 +230,9 @@ h.run(async () => {
 	await V.page.waitForFunction(() => !!window.tpAgent, null, { timeout: 30000 });
 	await h.connect(V, A);
 	await V.page.evaluate(() =>
-		window.__stores.cloudHooks.rolesInfo.set({ myId: '', myRole: 'viewer', amAdmin: false, order: [], roleOf: () => 'viewer', setRole: () => {}, synced: () => true })
+		window.__tp.test.v1.cloudHooks.rolesInfo.set({ myId: '', myRole: 'viewer', amAdmin: false, order: [], roleOf: () => 'viewer', setRole: () => {}, synced: () => true })
 	);
-	const before = await A.page.evaluate(() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g.children.length))()));
+	const before = await A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g.children.length))()));
 	for (const [tool, args] of [
 		['terrain', {}],
 		['water', { kind: 'pool' }],
@@ -243,13 +243,13 @@ h.run(async () => {
 	]) {
 		const r = await V.page.evaluate(([x, a]) => window.tpAgent.exec(x, a), [tool, args]);
 		h.check(r?.refused === true || r?.viewOnly === true, '7. a viewer\'s ' + tool + ' is refused: ' + String(r?.error).slice(0, 70));
-		const direct = await V.page.evaluate(([x, a]) => window.__stores.aiTools.executeAiTool(x, a), [tool, args]);
+		const direct = await V.page.evaluate(([x, a]) => window.__tp.test.v1.aiTools.executeAiTool(x, a), [tool, args]);
 		h.check(direct?.viewOnly === true, '7. and through the assistant\'s executor: ' + tool);
 	}
-	const search = await V.page.evaluate(() => window.__stores.aiTools.executeAiTool('search_assets', { query: 'box', kinds: ['prefab'] }));
+	const search = await V.page.evaluate(() => window.__tp.test.v1.aiTools.executeAiTool('search_assets', { query: 'box', kinds: ['prefab'] }));
 	h.check(!search?.viewOnly && Array.isArray(search?.results), '7. search_assets stays open to a viewer: ' + short(search).slice(0, 100));
 	await new Promise((r) => setTimeout(r, 1500));
-	const after = await A.page.evaluate(() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g.children.length))()));
+	const after = await A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g.children.length))()));
 	h.check(after === before, '7. nothing reached the host from the viewer (' + before + ' → ' + after + ')');
 
 	await bounded(h.finish(browser), 30000);

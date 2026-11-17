@@ -10,10 +10,10 @@ h.run(async () => {
 	// two floating windows: the Object List + an undocked Timeline
 	await A.page.evaluate(() => localStorage.setItem('timelineDocked', 'false'));
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.bottomDock, { timeout: 30000 });
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.bottomDock, { timeout: 30000 });
 	await A.page.evaluate(() => {
-		window.__stores.objectListClose.set(false);
-		window.__stores.timelineClose.set(false);
+		window.__tp.test.v1.objectListClose.set(false);
+		window.__tp.test.v1.timelineClose.set(false);
 	});
 	await A.page.waitForTimeout(600);
 
@@ -36,7 +36,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(200);
 	const after = await A.page.evaluate(() => {
 		let closed;
-		window.__stores.objectListClose.subscribe((v) => (closed = v))();
+		window.__tp.test.v1.objectListClose.subscribe((v) => (closed = v))();
 		return {
 			ol: +getComputedStyle(document.getElementById('object-list')).zIndex,
 			fc: +getComputedStyle(document.getElementById('timeline-window')).zIndex,
@@ -50,7 +50,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(200);
 	const closed = await A.page.evaluate(() => {
 		let v;
-		window.__stores.objectListClose.subscribe((x) => (v = x))();
+		window.__tp.test.v1.objectListClose.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(closed === true, 'clicking Object List again while it is at the front closes it');

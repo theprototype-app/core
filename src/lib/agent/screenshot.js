@@ -25,6 +25,7 @@ import { planShot, viewPose, boundsOf, linearFrameToSrgb } from './screenshotCor
 import { postState, renderWithPost } from './postShot.js';
 // 55 A7 (union): every peer draws the "AI" camera marker where this shot looked (agentLog is store-only)
 import { noteAgentView } from '$lib/agentLog';
+import { createRenderTarget, readPixels } from '../render/renderTargets.js'; // 101 F3: the one factory
 
 /** supersampling factor (the target is not multisampled: an MSAA target reads back as zeros) */
 const SUPERSAMPLE = 2;
@@ -221,7 +222,7 @@ export async function takeScreenshot(opts = {}) {
 	const rw = Math.max(1, Math.round(w * scale));
 	const rh = Math.max(1, Math.round(h * scale));
 	const float = !!renderer.extensions?.has?.('EXT_color_buffer_float');
-	const target = new THREE.WebGLRenderTarget(rw, rh, {
+	const target = createRenderTarget(rw, rh, {
 		type: float ? THREE.FloatType : THREE.UnsignedByteType,
 		depthBuffer: true
 	});
@@ -254,7 +255,7 @@ export async function takeScreenshot(opts = {}) {
 			renderer.setRenderTarget(target);
 			renderer.clear();
 			renderer.render(scene, camera);
-			renderer.readRenderTargetPixels(target, 0, 0, rw, rh, pixels);
+			await readPixels(renderer, target, 0, 0, rw, rh, pixels);
 		}
 	} finally {
 		renderer.setRenderTarget(previous);

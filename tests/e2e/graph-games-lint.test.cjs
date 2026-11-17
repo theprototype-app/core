@@ -41,20 +41,20 @@ h.run(async () => {
 		for (const theme of SHOTS ? ['dark', 'light'] : ['dark']) {
 			const A = await h.setupPage(browser, slug, { context: { viewport: { width: 1920, height: 1080 } }, storage: { flowDockHeight: '864', theme } });
 			const p = A.page;
-			const payload = await p.evaluate(async (arr) => window.__stores.sessions.readSessionZip(new Uint8Array(arr).buffer).then((pl) => ({ modules: pl.modules ?? [] })), Array.from(fs.readFileSync(file)));
+			const payload = await p.evaluate(async (arr) => window.__tp.test.v1.sessions.readSessionZip(new Uint8Array(arr).buffer).then((pl) => ({ modules: pl.modules ?? [] })), Array.from(fs.readFileSync(file)));
 			for (const m of payload.modules) {
 				const zip = MODS && path.join(MODS, m.id + '.zip');
 				if (!zip || !fs.existsSync(zip)) continue;
-				await p.evaluate(() => window.__stores.modulesOpen.set(true));
+				await p.evaluate(() => window.__tp.test.v1.modulesOpen.set(true));
 				await p.waitForTimeout(400);
 				await p.getByRole('tab', { name: /^User/ }).click();
 				await p.locator('#install-module-zip').setInputFiles({ name: m.id + '.zip', mimeType: 'application/zip', buffer: fs.readFileSync(zip) });
-				await h.eventually(() => p.evaluate(() => window.__stores.moduleSDK.loadedModules.map((x) => x.id)), (ids) => ids.includes(m.id), `${slug}: ${m.id} installed`, 20000);
-				await p.evaluate(() => window.__stores.modulesOpen.set(false));
+				await h.eventually(() => p.evaluate(() => window.__tp.test.v1.moduleSDK.loadedModules.map((x) => x.id)), (ids) => ids.includes(m.id), `${slug}: ${m.id} installed`, 20000);
+				await p.evaluate(() => window.__tp.test.v1.modulesOpen.set(false));
 				await p.waitForTimeout(200);
 			}
 			await p.evaluate(async (arr) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				const pl = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 				await s.sessions.applySession(pl, { backup: false });
 			}, Array.from(fs.readFileSync(file)));
@@ -64,8 +64,8 @@ h.run(async () => {
 			}
 			await p.waitForTimeout(2500);
 			// the Main graph, framed (the F10 open)
-			await p.evaluate(() => window.__stores.objectActions.deselectObject());
-			await p.evaluate(() => window.__stores.activeGraphId.set('scene'));
+			await p.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
+			await p.evaluate(() => window.__tp.test.v1.activeGraphId.set('scene'));
 			await p.waitForTimeout(1500);
 			const r = await p.evaluate(() => {
 				const m = window.__flowTidy.model();

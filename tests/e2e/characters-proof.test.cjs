@@ -20,12 +20,12 @@ async function servePacks(page) {
 	});
 }
 
-const clipsOn = (page, uuid) => page.evaluate((u) => window.__stores.animatedImports.clipInfo(u).map((c) => c.name), uuid);
+const clipsOn = (page, uuid) => page.evaluate((u) => window.__tp.test.v1.animatedImports.clipInfo(u).map((c) => c.name), uuid);
 
 const modelHash = (page, uuid) =>
 	page.evaluate(async (u) => {
-		const bytes = window.__stores.animatedImports.animatedImportPayload(u);
-		return bytes ? window.__stores.explorer.hashBytes(bytes) : null;
+		const bytes = window.__tp.test.v1.animatedImports.animatedImportPayload(u);
+		return bytes ? window.__tp.test.v1.explorer.hashBytes(bytes) : null;
 	}, uuid);
 
 /** total bone rotation between two samples 1 s apart: a playing clip moves bones, a bind pose does not */
@@ -33,7 +33,7 @@ const boneMotion = (page, uuid) =>
 	page.evaluate(
 		(u) =>
 			new Promise((resolve) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				let g;
 				s.objectsGroup.subscribe((x) => (g = x))();
 				const root = g.getObjectByProperty('uuid', u);
@@ -53,7 +53,7 @@ const boneMotion = (page, uuid) =>
 
 const reading = (page, uuid) =>
 	page.evaluate((u) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const r = s.animGraphRuntime.animGraphReading(u);
 		return r ? { state: r.state, params: r.params, weights: s.animatedImports.poseDriverOf(u)?.weights ?? null } : null;
 	}, uuid);
@@ -61,7 +61,7 @@ const reading = (page, uuid) =>
 const graphOn = (page, uuid) =>
 	page.evaluate((u) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		return g.getObjectByProperty('uuid', u)?.userData?.animGraph ?? null;
 	}, uuid);
 
@@ -75,7 +75,7 @@ h.run(async () => {
 
 	// 1. motion-kit: the list, and two clips as Explorer files
 	const added = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const { rows } = await s.motionKit.motionRows();
 		const walk = await s.motionKit.addMotionClip('Walk_Loop');
 		const again = await s.motionKit.addMotionClip('Walk_Loop');
@@ -88,7 +88,7 @@ h.run(async () => {
 
 	// 2. the walk renamed .vrma loads in three-vrm (its own loader, in node)
 	const walkBytes = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const res = await fetch(s.motionKit.packBase() + '/motion-kit/ual1/Walk_Loop.tpanim');
 		return Array.from(new Uint8Array(await res.arrayBuffer()));
 	});
@@ -103,7 +103,7 @@ h.run(async () => {
 	// 3. three characters: a characters-kit VRM, a KayKit avatar, a Mixamo-named rig
 	const rig = await mixamoGlb(A.page);
 	const ids = await A.page.evaluate(async (rigBytes) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const vrm = await (await fetch(s.motionKit.packBase() + '/characters-kit/Astronaut/glTF-Binary/astronaut.vrm')).arrayBuffer();
 		const knight = await (await fetch('/avatars/knight.glb')).arrayBuffer();
 		return {
@@ -113,7 +113,7 @@ h.run(async () => {
 		};
 	}, rig);
 	const targets = [ids.vrm, ids.knight, ids.mixamo];
-	const humanoidOk = (page, u) => page.evaluate((u) => !!window.__stores.humanoidRig.humanoidOf(u)?.ok, u);
+	const humanoidOk = (page, u) => page.evaluate((u) => !!window.__tp.test.v1.humanoidRig.humanoidOf(u)?.ok, u);
 	for (const u of targets) {
 		await h.eventually(() => humanoidOk(A.page, u), (ok) => ok, `premise: ${u} is a mapped humanoid on A`, 30000);
 		await h.eventually(() => humanoidOk(B.page, u), (ok) => ok, `premise: ${u} is a mapped humanoid on B`, 60000);
@@ -121,7 +121,7 @@ h.run(async () => {
 	const before = {};
 	for (const u of targets) before[u] = await modelHash(A.page, u);
 
-	const res = await A.page.evaluate((t) => window.__stores.humanoidRig.applyClipTo(t, { motion: 'Walk_Loop' }, { play: true }), targets);
+	const res = await A.page.evaluate((t) => window.__tp.test.v1.humanoidRig.applyClipTo(t, { motion: 'Walk_Loop' }, { play: true }), targets);
 	h.check(res.applied.length === 3, `Apply clip from the Motion pack: 3 characters (refused ${JSON.stringify(res.refused)})`);
 	for (const [label, u] of Object.entries({ VRM: ids.vrm, KayKit: ids.knight, Mixamo: ids.mixamo })) {
 		await h.eventually(() => clipsOn(B.page, u), (c) => c.includes('Walk_Loop'), `${label}: B has the clip`, 45000);
@@ -140,7 +140,7 @@ h.run(async () => {
 	}
 	const copies = await C.page.evaluate((hash) => {
 		let items;
-		window.__stores.explorer.explorerItems.subscribe((x) => (items = x))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((x) => (items = x))();
 		return items.filter((i) => i.hash === hash).length;
 	}, added.walk.hash);
 	h.check(copies <= 1, `late joiner holds the clip once (${copies})`);
@@ -148,14 +148,14 @@ h.run(async () => {
 
 	// 5. the Locomotion preset on a characters-kit VRM with no clips: filled from the Motion pack
 	const fresh = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const vrm = await (await fetch(s.motionKit.packBase() + '/characters-kit/Witch/glTF-Binary/witch.vrm')).arrayBuffer();
 		return s.fileHandler.importFile(new File([vrm], 'witch.vrm'), 'Witch', 'vrm', [0, 0, 4]);
 	});
 	await h.eventually(() => humanoidOk(A.page, fresh), (ok) => ok, 'premise: the Witch VRM is mapped', 30000);
 	await h.eventually(() => humanoidOk(B.page, fresh), (ok) => ok, 'premise: ...on B', 60000);
 	await A.page.evaluate((u) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.objectActions.selectObject(u);
 		s.animationClose.set(false);
 	}, fresh);
@@ -169,13 +169,13 @@ h.run(async () => {
 	await h.eventually(() => clipsOn(B.page, fresh), (c) => ['Idle_Loop', 'Walk_Loop', 'Jog_Fwd_Loop', 'Jump_Start', 'Jump_Loop'].every((n) => c.includes(n)), 'B has all five clips', 60000);
 
 	const drive = async (speed) => {
-		await A.page.evaluate(({ u, speed }) => window.__stores.possess.possess(u, { speed, camera: 'none' }), { u: fresh, speed });
+		await A.page.evaluate(({ u, speed }) => window.__tp.test.v1.possess.possess(u, { speed, camera: 'none' }), { u: fresh, speed });
 		await A.page.keyboard.down('W');
 		await A.page.waitForTimeout(1600);
 		const a = await reading(A.page, fresh);
 		const b = await reading(B.page, fresh);
 		await A.page.keyboard.up('W');
-		await A.page.evaluate(() => window.__stores.possess.release());
+		await A.page.evaluate(() => window.__tp.test.v1.possess.release());
 		return { a, b };
 	};
 	const walk = await drive(1.4);
@@ -189,14 +189,14 @@ h.run(async () => {
 	await A.page.waitForTimeout(800);
 	const watch = (page) => page.evaluate((u) => {
 		window.__seen57 = [];
-		window.__stores.animGraphRuntime.onAnimStateEnter((v, id) => v === u && window.__seen57.push(id));
+		window.__tp.test.v1.animGraphRuntime.onAnimStateEnter((v, id) => v === u && window.__seen57.push(id));
 	}, fresh);
 	await watch(A.page);
 	await watch(B.page);
 	await A.page.evaluate(
 		(u) =>
 			new Promise((resolve) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				let g, peer;
 				s.objectsGroup.subscribe((x) => (g = x))();
 				s.peers.subscribe((p) => (peer = p))();

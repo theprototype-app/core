@@ -62,7 +62,7 @@ h.run(async () => {
 		await page.addStyleTag({ content: '*{transition:none!important;animation:none!important}' });
 		const closeAll = () =>
 			page.evaluate(() => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				s.settingsOpen.set(null);
 				s.modulesOpen.set(false);
 				s.sessionsOpen.set(false);
@@ -92,7 +92,7 @@ h.run(async () => {
 		for (const [label, store, value] of MODALS) {
 			await closeAll();
 			await page.waitForTimeout(300);
-			await page.evaluate(([st, v]) => window.__stores[st].set(v), [store, value]);
+			await page.evaluate(([st, v]) => window.__tp.test.v1[st].set(v), [store, value]);
 			await page.waitForSelector('dialog.tp-modal-frame[open]', { timeout: 10000 }).catch(() => {});
 			await page.waitForTimeout(500);
 			const above = await page.evaluate(winners, 'dialog.tp-modal-frame[open]');
@@ -104,13 +104,13 @@ h.run(async () => {
 		// ---- What's new above the burger and every top/bottom button ----------------------------
 		// Stretched over the whole viewport (a user can drag/resize it anywhere; on a phone it IS full
 		// screen), so every chrome control is under it.
-		await page.evaluate(() => window.__stores.whatsNew.openWhatsNew());
+		await page.evaluate(() => window.__tp.test.v1.whatsNew.openWhatsNew());
 		await page.waitForSelector('#whats-new-window');
 		await page.evaluate(() => {
 			const w = /** @type {HTMLElement} */ (document.querySelector('#whats-new-window'));
 			Object.assign(w.style, { left: '0px', top: '0px', width: innerWidth + 'px', height: innerHeight + 'px' });
 			// a passive toast is chrome too ("Lowered particles…" sat on the phone sheet)
-			window.__stores.toastStore?.update?.((t) => t);
+			window.__tp.test.v1.toastStore?.update?.((t) => t);
 		});
 		await page.waitForTimeout(400);
 		const wnAbove = await page.evaluate(winners, '#whats-new-window');

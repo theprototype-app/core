@@ -13,7 +13,7 @@ const xr = require('./fakeXR.cjs');
 
 const state = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const get = (store) => { let v; store.subscribe((x) => (v = x))(); return v; };
 		const rig = get(s.worldRig);
 		return {
@@ -28,14 +28,14 @@ const state = (page) =>
 const posOf = (page, uuid) =>
 	page.evaluate((uuid) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		return g.getObjectByProperty('uuid', uuid).position.toArray();
 	}, uuid);
 const grip = async (page, hand, down) => {
 	await xr.button(page, hand, 1, down);
 	await page.waitForTimeout(250);
 };
-const resetRig = (page) => page.evaluate(() => window.__stores.vrControls.resetWorldRig());
+const resetRig = (page) => page.evaluate(() => window.__tp.test.v1.vrControls.resetWorldRig());
 
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
@@ -44,7 +44,7 @@ h.run(async () => {
 	// ---- the fixture: a game-shaped room ---------------------------------------------------
 	// a 20 m floor, a 10 m wall 3 m ahead, a dynamic cube and a static podium in front of it
 	const ids = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const get = (store) => { let v; store.subscribe((x) => (v = x))(); return v; };
 		for (let i = 0; i < 4; i++) s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 600));
@@ -89,7 +89,7 @@ h.run(async () => {
 	// 33 E4: and the headset says, once, how the wall WOULD move
 	const hint = await A.page.evaluate(() => {
 		let v;
-		window.__stores.gameKit.gameAnnounce.gameAnnouncement.subscribe((x) => (v = x))();
+		window.__tp.test.v1.gameKit.gameAnnounce.gameAnnouncement.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(hint?.text === 'Grip moves the world' && /select it with the trigger/.test(hint?.sub ?? ''), `E4: a one-time hint names select-then-grip (${hint?.text} / ${hint?.sub})`);
@@ -130,14 +130,14 @@ h.run(async () => {
 	h.check(Math.abs(cubeMoved[0] - 0.5) < 0.05, `Edit: the cube followed the hand (x ${cubeMoved[0].toFixed(2)})`);
 	s = await state(A.page);
 	if (undoBefore !== null) h.check(s.undo === undoBefore + 1, `Edit: the move is one undo entry (${undoBefore} -> ${s.undo})`);
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 
 	// ---- 3b. EDIT: a SELECTED wall is held (33 E4) ------------------------------------------------
 	// "not all objects positions can be moved in edit mode when in game": scenery was held by
 	// nothing, so in a game no wall/floor/arena could be moved with a grip. Select it first (the
 	// trigger) and the grip holds it like any object; unselected it is still the world (1 and 2).
 	await aimWall();
-	await A.page.evaluate((uuid) => window.__stores.objectActions.selectObject(uuid), ids.wall);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.objectActions.selectObject(uuid), ids.wall);
 	await A.page.waitForTimeout(150);
 	const wallSelBefore = await posOf(A.page, ids.wall);
 	await grip(A.page, 'right', true);
@@ -152,7 +152,7 @@ h.run(async () => {
 	h.check(Math.abs(s.rigScale - 1) < 1e-6 && s.rigPos.every((v) => Math.abs(v) < 1e-6), 'E4: ...and the world stayed put');
 	// put the fixture back for the sections below
 	await A.page.evaluate(({ uuid, pos }) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		const wall = g.getObjectByProperty('uuid', uuid);
@@ -163,7 +163,7 @@ h.run(async () => {
 	await aimWall();
 
 	// ---- 4. INTERACT: scenery and air do nothing — the world never moves ------------------------
-	await A.page.evaluate(() => window.__stores.objectActions.setEditorMode('interact'));
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('interact'));
 	await aimWall();
 	await A.page.waitForTimeout(200);
 	await grip(A.page, 'left', true);
@@ -202,7 +202,7 @@ h.run(async () => {
 	if (undoInteract !== null) h.check(s.undo === undoInteract, `Interact: a player's grab is not an undo step (${undoInteract} -> ${s.undo})`);
 
 	// ---- 7. back to EDIT: the world grab works again ---------------------------------------------
-	await A.page.evaluate(() => window.__stores.objectActions.setEditorMode('edit'));
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('edit'));
 	await aimWall();
 	await grip(A.page, 'left', true);
 	await grip(A.page, 'right', true);
@@ -213,6 +213,6 @@ h.run(async () => {
 
 	await resetRig(A.page);
 	await xr.uninstall(A.page);
-	await A.page.evaluate(() => window.__stores.isVRMode.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.isVRMode.set(false));
 	await h.finish(browser);
 });

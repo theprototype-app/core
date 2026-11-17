@@ -30,7 +30,7 @@ const BOX = [-0.6, 0, -0.5, 0.6, 1.2, 0.5];
 function openHeld(peer, urls, hold = true) {
 	return peer.page.evaluate(
 		async ({ sceneUrl, urls, box, hold }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const payload = await s.sessions.readSessionZip(await (await fetch(sceneUrl)).arrayBuffer());
 			if (hold) payload.physics = { ...(payload.physics ?? {}), holdCamera: true };
 			urls.forEach((url, i) => {
@@ -50,14 +50,14 @@ function openHeld(peer, urls, hold = true) {
 /** ms since the hold began, and its state, in one read */
 const holdState = (page) =>
 	page.evaluate(() => {
-		const d = window.__stores.startView.startViewDebug();
-		return { ...d, job: !!window.__stores.sceneLoader.currentJob() };
+		const d = window.__tp.test.v1.startView.startViewDebug();
+		return { ...d, job: !!window.__tp.test.v1.sceneLoader.currentJob() };
 	});
 
 const orbitEnabled = (page) =>
 	page.evaluate(() => {
 		let c;
-		window.__stores.orbitControls.subscribe((v) => (c = v))();
+		window.__tp.test.v1.orbitControls.subscribe((v) => (c = v))();
 		return c?.enabled !== false;
 	});
 
@@ -69,7 +69,7 @@ async function releaseWhenAsked(srv, p) {
 	srv.release(p);
 }
 
-const setStuck = (page, seconds) => page.evaluate((v) => window.__stores.loadStates.placeholderStuckSeconds.set(v), seconds);
+const setStuck = (page, seconds) => page.evaluate((v) => window.__tp.test.v1.loadStates.placeholderStuckSeconds.set(v), seconds);
 
 /** the largest distance from the saved view over the frames in [from, to] */
 function maxOffView(rec, saved, from, to = Infinity) {
@@ -98,7 +98,7 @@ h.run(async () => {
 		h.check(!(await orbitEnabled(A.page)), '1: the orbit controls stand down');
 		h.check(await A.page.locator('#start-view-hint').isVisible(), '1: "Loading… camera is held" is on screen');
 		h.check(!(await A.page.locator('#start-view-take-control').isVisible()), '1: "Take control" waits (< 1.5 s)');
-		h.check(await A.page.evaluate(() => window.__stores.vrControls.vrNavigationSuppressed()), '1: VR locomotion (sticks, teleport) stands down');
+		h.check(await A.page.evaluate(() => window.__tp.test.v1.vrControls.vrNavigationSuppressed()), '1: VR locomotion (sticks, teleport) stands down');
 		await S.orbitDrag(A.page);
 		await A.page.keyboard.down('w');
 		await A.page.waitForTimeout(600);
@@ -111,10 +111,10 @@ h.run(async () => {
 		await S.until(() => holdState(A.page), (s) => s.hint?.takeControl === true, '1: "Take control" appears after 1.5 s');
 		h.check(await A.page.locator('#start-view-take-control').isVisible(), '1: …on screen');
 		await S.shot(A.page, '01-camera-held-dark.png');
-		await A.page.evaluate(() => window.__stores.themes.theme.set('light'));
+		await A.page.evaluate(() => window.__tp.test.v1.themes.theme.set('light'));
 		await A.page.waitForTimeout(300);
 		await S.shot(A.page, '02-camera-held-light.png');
-		await A.page.evaluate(() => window.__stores.themes.theme.set('dark'));
+		await A.page.evaluate(() => window.__tp.test.v1.themes.theme.set('dark'));
 		const before = await holdState(A.page);
 		h.check(before.holding && before.job, '1: still held while a piece is on its way');
 		await A.page.evaluate(S.ARM);
@@ -126,7 +126,7 @@ h.run(async () => {
 		h.check(await orbitEnabled(A.page), '1: the orbit controls are back');
 		h.check(!(await A.page.locator('#start-view-hint').isVisible()), '1: the hint is gone');
 		h.check(after.hint === null, '1: no "Back to start view" — the user could not move');
-		h.check(!(await A.page.evaluate(() => window.__stores.vrControls.vrNavigationSuppressed())), '1: VR locomotion is back');
+		h.check(!(await A.page.evaluate(() => window.__tp.test.v1.vrControls.vrNavigationSuppressed())), '1: VR locomotion is back');
 		await S.orbitDrag(A.page);
 		await A.page.waitForTimeout(800);
 		const free = await S.camPose(A.page);
@@ -164,7 +164,7 @@ h.run(async () => {
 		const done = await S.until(() => holdState(A.page), (s) => !s.holding, '3: the hold ends on its own', 10000);
 		h.check(done.releasedBy === 'cap', `3: the cap ended it (${done.releasedBy}, ${Math.round(done.heldFor)} ms)`);
 		h.check(done.heldFor >= 3800 && done.heldFor <= 5500, `3: …at the threshold's setting, 4 s (${Math.round(done.heldFor)} ms)`);
-		const load = await A.page.evaluate(() => window.__stores.loadStates.allLoads().find((l) => /Trickle/.test(l.url)) ?? null);
+		const load = await A.page.evaluate(() => window.__tp.test.v1.loadStates.allLoads().find((l) => /Trickle/.test(l.url)) ?? null);
 		h.check(!!load && load.phase === 'fetching' && load.loaded > 0, `3: premise — the piece was still arriving, not stuck (${load?.phase}, ${load?.loaded} bytes)`);
 	}
 
@@ -212,7 +212,7 @@ h.run(async () => {
 		const P = await S.preparePeer(browser, 'P', index, SLUG, { storage: { placeholderStuckSeconds: '20' } });
 		const Q = await S.preparePeer(browser, 'Q', index, SLUG);
 		await h.connect(P, Q);
-		await P.page.evaluate(() => window.__stores.openSceneSection('Camera:Start view'));
+		await P.page.evaluate(() => window.__tp.test.v1.openSceneSection('Camera:Start view'));
 		await P.page.locator('#hold-camera-until-loaded').waitFor({ state: 'visible', timeout: 10000 });
 		h.check((await P.page.locator('[data-tour="hold-camera-until-loaded"]').count()) === 1, '7: the setting carries its data-tour id');
 		// 38 R5: the setting is a Toggle; its state is aria-pressed
@@ -220,14 +220,14 @@ h.run(async () => {
 		await P.page.locator('#hold-camera-until-loaded').click();
 		await P.page.waitForTimeout(300);
 		await S.shot(P.page, '05-hold-setting-dark.png');
-		await P.page.evaluate(() => window.__stores.themes.theme.set('light'));
+		await P.page.evaluate(() => window.__tp.test.v1.themes.theme.set('light'));
 		await P.page.waitForTimeout(300);
 		await S.shot(P.page, '06-hold-setting-light.png');
-		await P.page.evaluate(() => window.__stores.themes.theme.set('dark'));
-		h.check(await P.page.evaluate(() => window.__stores.scenePhysics.scenePhysicsDebug().holdCamera === true), '7: ticking it sets the scene setting');
-		h.check(await P.page.evaluate(() => window.__stores.sessions.buildSessionPayload('x').physics?.holdCamera === true), '7: …and it is saved with the scene');
-		await h.eventually(() => Q.page.evaluate(() => window.__stores.scenePhysics.scenePhysicsDebug().holdCamera === true), (v) => v, '7: the other peer has it');
-		await Q.page.evaluate(() => window.__stores.openSceneSection('Camera:Start view'));
+		await P.page.evaluate(() => window.__tp.test.v1.themes.theme.set('dark'));
+		h.check(await P.page.evaluate(() => window.__tp.test.v1.scenePhysics.scenePhysicsDebug().holdCamera === true), '7: ticking it sets the scene setting');
+		h.check(await P.page.evaluate(() => window.__tp.test.v1.sessions.buildSessionPayload('x').physics?.holdCamera === true), '7: …and it is saved with the scene');
+		await h.eventually(() => Q.page.evaluate(() => window.__tp.test.v1.scenePhysics.scenePhysicsDebug().holdCamera === true), (v) => v, '7: the other peer has it');
+		await Q.page.evaluate(() => window.__tp.test.v1.openSceneSection('Camera:Start view'));
 		await Q.page.locator('#hold-camera-until-loaded').waitFor({ state: 'visible', timeout: 10000 });
 		h.check((await Q.page.locator('#hold-camera-until-loaded').getAttribute('aria-pressed')) === 'true', "7: …and its own toggle shows it");
 		// the loader holds; the other peer's camera is the other peer's
@@ -253,11 +253,11 @@ h.run(async () => {
 		await releaseWhenAsked(fsrv, '/hold/HeldP2.glb');
 		await S.loadEnded(P.page, '7: the load ends', 30000);
 		h.check(!(await holdState(P.page)).holding, '7: the loader is free');
-		await h.eventually(() => Q.page.evaluate(() => window.__stores.scenePhysics.scenePhysicsDebug().holdCamera === true), (v) => v, '7: the loaded scene brings its setting to the room');
+		await h.eventually(() => Q.page.evaluate(() => window.__tp.test.v1.scenePhysics.scenePhysicsDebug().holdCamera === true), (v) => v, '7: the loaded scene brings its setting to the room');
 		// and back off, from the other side
 		await Q.page.locator('#hold-camera-until-loaded').click();
-		await h.eventually(() => P.page.evaluate(() => window.__stores.scenePhysics.scenePhysicsDebug().holdCamera !== true), (v) => v, '7: unticking on the other peer turns it off for both');
-		h.check(await P.page.evaluate(() => !('holdCamera' in window.__stores.scenePhysics.scenePhysicsDebug())), '7: off writes no key (a default scene stays byte-identical)');
+		await h.eventually(() => P.page.evaluate(() => window.__tp.test.v1.scenePhysics.scenePhysicsDebug().holdCamera !== true), (v) => v, '7: unticking on the other peer turns it off for both');
+		h.check(await P.page.evaluate(() => !('holdCamera' in window.__tp.test.v1.scenePhysics.scenePhysicsDebug())), '7: off writes no key (a default scene stays byte-identical)');
 	}
 	fsrv.close?.();
 	trickle.close?.();

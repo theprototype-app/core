@@ -18,10 +18,9 @@
   // phone-polish: small controls get an invisible 44 px tap area on touch screens (no new look)
   import { installHitSlop } from '$lib/ui/hitSlop.js'
   import { Canvas } from '@threlte/core'
-  // 30 P0: threlte's Canvas defaults `shadows` to PCFSoftShadowMap, which three 0.185
-  // deprecates and silently downgrades to PCFShadowMap on the first shadow render (with a
-  // console warning). Asking for PCF directly is the identical picture, minus the warning.
-  import { PCFShadowMap } from 'three'
+  // 101 F3: the main renderer is made by the renderer seam (threlte's own defaults, in one
+  // place); MAIN_SHADOW_MAP is the 30 P0 PCF choice (PCFSoft is deprecated in three 0.185)
+  import { createMainRenderer, MAIN_SHADOW_MAP } from '$lib/render/mainRenderer.js'
   import Scene from './components/Scene.svelte'
   import Menu from './components/Menu.svelte'
   // 53 A3: the skip link, Esc out of the viewport, F6 between regions
@@ -608,7 +607,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
      (keyboardNav.focusViewport lends it a tabindex), so a mouse press still focuses <body> -->
 <div id="viewport" role="region" aria-label="3D viewport" class="viewport" class:viewport-inset={$viewPrefs.dockPushesViewport && !$embedMode}>
   {#if webglOk}
-  <Canvas shadows={PCFShadowMap}>
+  <Canvas shadows={MAIN_SHADOW_MAP} createRenderer={createMainRenderer}>
     <Scene />
   </Canvas>
   {/if}

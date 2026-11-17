@@ -20,7 +20,7 @@ const SHOTS = process.env.BAKE_SHOTS || '';
 
 /** @param {any} page @param {string} name @param {any} args */
 function tool(page, name, args) {
-	return page.evaluate(([n, a]) => window.__stores.aiTools.executeAiTool(n, a), [name, args]);
+	return page.evaluate(([n, a]) => window.__tp.test.v1.aiTools.executeAiTool(n, a), [name, args]);
 }
 
 /** h.eventually that hands back the last value it read @param {() => Promise<any>} fn @param {(v: any) => boolean} ok @param {string} label @param {number} [timeout] */
@@ -41,10 +41,10 @@ async function until(fn, ok, label, timeout = 10000) {
 /** the bake debug view of a page */
 function bakeState(page) {
 	return page.evaluate(() => {
-		const d = window.__stores.sceneBake.sceneBakeDebug();
-		const a = window.__stores.bakeApply.bakeApplyDebug();
+		const d = window.__tp.test.v1.sceneBake.sceneBakeDebug();
+		const a = window.__tp.test.v1.bakeApply.bakeApplyDebug();
 		/** @type {any} */ let group;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		const lit = [];
 		group.traverse((o) => {
 			if (!o.isMesh) return;
@@ -71,7 +71,7 @@ h.run(async () => {
 	// ---------------------------------------------------------------- 1. the room
 	console.log('\n=== 1. a room to bake ===');
 	const made = await A.page.evaluate(async () => {
-		const t = window.__stores.aiTools;
+		const t = window.__tp.test.v1.aiTools;
 		const box = (name, params, position) => ({ kind: 'primitive', primitive: 'Box', name, params, position });
 		const r = await t.executeAiTool('create_objects', {
 			objects: [
@@ -91,11 +91,11 @@ h.run(async () => {
 	// one object MOVES: the bake must leave it out (local mark on A, where the bake runs)
 	await A.page.evaluate((uuid) => {
 		/** @type {any} */ let group;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		group.getObjectByProperty('uuid', uuid).userData.physics = { mode: 'dynamic' };
 	}, uuidOf('Ball'));
 	await h.eventually(
-		() => B.page.evaluate((u) => { let g; window.__stores.objectsGroup.subscribe((x) => (g = x))(); return !!g.getObjectByProperty('uuid', u); }, uuidOf('Pillar')),
+		() => B.page.evaluate((u) => { let g; window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))(); return !!g.getObjectByProperty('uuid', u); }, uuidOf('Pillar')),
 		(ok) => ok === true,
 		'1.2 premise: B has the room',
 		20000
@@ -105,11 +105,11 @@ h.run(async () => {
 	console.log('\n=== 2. Cancel mid-bake ===');
 	// bounded for a headless box: a small atlas and a time cap (the device lab measures real bakes)
 	const cancelled = await A.page.evaluate(async () => {
-		const runner = window.__stores.bakeRunner;
+		const runner = window.__tp.test.v1.bakeRunner;
 		runner.setBakeTestLimits({ atlas: 512, ms: 20000 });
-		const depth = () => { let n = 0; window.__stores.history.undoStack.subscribe((s) => (n = s.length))(); return n; };
+		const depth = () => { let n = 0; window.__tp.test.v1.history.undoStack.subscribe((s) => (n = s.length))(); return n; };
 		const undoBefore = depth();
-		const sb = window.__stores.sceneBake;
+		const sb = window.__tp.test.v1.sceneBake;
 		const run = runner.runBake({ quality: 'high' });
 		const t0 = performance.now();
 		// wait until the tracers are running, then cancel
@@ -134,7 +134,7 @@ h.run(async () => {
 
 	// ---------------------------------------------------------------- 3. bake (through the agent tool)
 	console.log('\n=== 3. bake ===');
-	await A.page.evaluate(() => window.__stores.bakeRunner.setBakeTestLimits({ atlas: 256, rays: 8, ms: 45000 }));
+	await A.page.evaluate(() => window.__tp.test.v1.bakeRunner.setBakeTestLimits({ atlas: 256, rays: 8, ms: 45000 }));
 	const status0 = await tool(A.page, 'bake_light', { do: 'status' });
 	h.check(status0.baked === false, '3.1 premise: the agent sees no bake yet');
 	// A is not the host: a scene-wide change asks the host (B) first, and nothing runs until Allow
@@ -159,8 +159,8 @@ h.run(async () => {
 	h.check(a1.shown.map === 'full' && a1.shown.applied === bakedUuids.length, '3.7 A shows the full map (' + JSON.stringify(a1.shown) + ')');
 	const pixels = await A.page.evaluate(async (hash) => {
 		// the atlas is a real image: light half not all black, AO half darker somewhere than white
-		const item = window.__stores.explorer.itemByHash(hash);
-		const blob = item ? await window.__stores.explorer.itemBlob(item.id) : null;
+		const item = window.__tp.test.v1.explorer.itemByHash(hash);
+		const blob = item ? await window.__tp.test.v1.explorer.itemBlob(item.id) : null;
 		if (!blob) return { found: !!item };
 		const bmp = await createImageBitmap(blob);
 		const c = new OffscreenCanvas(bmp.width, bmp.height);
@@ -192,17 +192,17 @@ h.run(async () => {
 
 	// ---------------------------------------------------------------- 5. one undo step
 	console.log('\n=== 5. undo ===');
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	const a2 = await until(() => bakeState(A.page), (s) => s.record === null && s.lit.length === 0, '5.1 ONE undo takes the whole bake off A', 10000);
 	await h.eventually(() => bakeState(B.page), (s) => s.record === null && s.lit.length === 0, '5.2 ...and off B', 15000);
 	h.check(a2 && a2.apply.materials === 0, '5.3 every material is back to its own maps');
-	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 	await h.eventually(() => bakeState(A.page), (s) => s.rec === a1.rec && s.lit.length === bakedUuids.length, '5.4 redo puts it back', 10000);
 	await h.eventually(() => bakeState(B.page), (s) => s.rec === a1.rec && s.lit.length === bakedUuids.length, '5.5 ...for B too', 15000);
 
 	// ---------------------------------------------------------------- 6. stale chip
 	console.log('\n=== 6. out of date ===');
-	await A.page.evaluate(() => window.__stores.openSceneSection('Scene look'));
+	await A.page.evaluate(() => window.__tp.test.v1.openSceneSection('Scene look'));
 	await A.page.locator('#bake-light-button').waitFor({ state: 'visible', timeout: 15000 });
 	h.check((await A.page.locator('#bake-stale-chip').count()) === 0, '6.1 premise: no stale chip right after the bake');
 	const label = await A.page.locator('#bake-light-button').innerText();
@@ -230,7 +230,7 @@ h.run(async () => {
 	console.log('\n=== 7. the bake never leaks into object JSON ===');
 	const guard = await A.page.evaluate((uuid) => {
 		/** @type {any} */ let group;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		const mesh = group.getObjectByProperty('uuid', uuid);
 		const scan = () => {
 			const j = JSON.stringify(mesh.toJSON());
@@ -245,7 +245,7 @@ h.run(async () => {
 		const unguarded = scan();
 		mesh.material.toJSON = own.m;
 		mesh.geometry.toJSON = own.g;
-		const payload = JSON.stringify(window.__stores.sessions.buildSessionPayload('guard').objects ?? '');
+		const payload = JSON.stringify(window.__tp.test.v1.sessions.buildSessionPayload('guard').objects ?? '');
 		return { guarded, unguarded, live, payloadUv: /"uv[23]"/.test(payload), after: scan() };
 	}, uuidOf('Floor'));
 	h.check(guard.live.lightMap && guard.live.attr.some((k) => k === 'uv2' || k === 'uv3'), '7.1 premise: the live floor carries the bake (' + guard.live.attr.join(',') + ')');
@@ -257,9 +257,9 @@ h.run(async () => {
 	// ---------------------------------------------------------------- 8. save → reload identical
 	console.log('\n=== 8. save and reload ===');
 	const saved = await A.page.evaluate(async () => {
-		const payload = window.__stores.sessions.buildSessionPayload('bake test');
-		window.__stores.autosave.autosaveEnabled.set(true);
-		await window.__stores.autosave.saveNow();
+		const payload = window.__tp.test.v1.sessions.buildSessionPayload('bake test');
+		window.__tp.test.v1.autosave.autosaveEnabled.set(true);
+		await window.__tp.test.v1.autosave.saveNow();
 		return { bake: payload.bake ? { ...payload.bake, changedAt: 0 } : null };
 	});
 	h.check(saved.bake && JSON.stringify(saved.bake) === a1.rec, '8.1 the .tpscene payload carries the record verbatim');
@@ -277,12 +277,12 @@ h.run(async () => {
 	h.check(a3?.apply?.textureHash === a1.apply.textureHash, '8.4 from the same atlas bytes');
 	const appliedSession = await A.page.evaluate(async () => {
 		// the .tpscene path: apply a payload WITH a bake over a cleared one
-		const sessions = window.__stores.sessions;
+		const sessions = window.__tp.test.v1.sessions;
 		const payload = sessions.buildSessionPayload('bake reopen');
-		window.__stores.sceneBake.sceneBakeRestore(null);
+		window.__tp.test.v1.sceneBake.sceneBakeRestore(null);
 		await sessions.applySession(payload, { backup: false });
 		await new Promise((r) => setTimeout(r, 1500));
-		const d = window.__stores.sceneBake.sceneBakeDebug();
+		const d = window.__tp.test.v1.sceneBake.sceneBakeDebug();
 		return d.record ? JSON.stringify({ ...d.record, changedAt: 0 }) : null;
 	});
 	h.check(appliedSession === a1.rec, '8.5 opening the .tpscene payload brings the same record back');
@@ -290,12 +290,12 @@ h.run(async () => {
 	// ---------------------------------------------------------------- 9. old scenes
 	console.log('\n=== 9. an old scene ===');
 	const old = await A.page.evaluate(async () => {
-		const sessions = window.__stores.sessions;
+		const sessions = window.__tp.test.v1.sessions;
 		const payload = sessions.buildSessionPayload('old');
 		delete payload.bake; // what 1.62 wrote
 		await sessions.applySession(payload, { backup: false });
 		await new Promise((r) => setTimeout(r, 1500));
-		const d = window.__stores.sceneBake.sceneBakeDebug();
+		const d = window.__tp.test.v1.sceneBake.sceneBakeDebug();
 		const again = sessions.buildSessionPayload('old again');
 		return { record: d.record, hasKey: Object.prototype.hasOwnProperty.call(again, 'bake') };
 	});

@@ -19,7 +19,7 @@ const h = require('./helpers.cjs');
 const read = (page, name) =>
 	page.evaluate((n) => {
 		let v;
-		window.__stores[n].subscribe((x) => (v = x))();
+		window.__tp.test.v1[n].subscribe((x) => (v = x))();
 		return v;
 	}, name);
 const mode = (page) => read(page, 'editorMode');
@@ -29,7 +29,7 @@ const selection = (page) => read(page, 'selectedObjects');
  * the app's OWN pick resolves at that pixel */
 function aimAt(page, target) {
 	return page.evaluate((t) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		let group, camera, renderer;
 		s.objectsGroup.subscribe((v) => (group = v))();
@@ -65,7 +65,7 @@ function aimAt(page, target) {
 async function spySends(page) {
 	await page.evaluate(() => {
 		let p;
-		window.__stores.peers.subscribe((v) => (p = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (p = v))();
 		if (p.__spied) return;
 		const real = p.send.bind(p);
 		window.__sent = [];
@@ -104,7 +104,7 @@ h.run(async () => {
 	await page.waitForTimeout(200);
 	h.check((await mode(page)) === 'edit', '1.7 I switches back to EDIT');
 	const row = await page.evaluate(() =>
-		window.__stores.shortcutsRegistry.shortcuts.find((s) => s.id === 'editor.interact-mode')
+		window.__tp.test.v1.shortcutsRegistry.shortcuts.find((s) => s.id === 'editor.interact-mode')
 	);
 	h.check(row?.keys === 'I', `1.8 the shortcut registry lists it (${row?.keys} · ${row?.label})`);
 	await page.locator('#object-search').evaluate((el) => {
@@ -125,7 +125,7 @@ h.run(async () => {
 
 	// ---------------------------------------------------------------- fixtures
 	const box = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		let group;
 		s.objectsGroup.subscribe((v) => (group = v))();
@@ -141,19 +141,19 @@ h.run(async () => {
 	await page.evaluate((uuid) => {
 		// re-seat after /create's own re-seat (the documented trap)
 		let group;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		const o = group.getObjectByProperty('uuid', uuid);
 		o.position.set(2.5, 0.5, 0);
 		delete o.userData.physics;
 		o.updateMatrixWorld();
-		window.__stores.objectActions.deselectObject();
+		window.__tp.test.v1.objectActions.deselectObject();
 	}, box);
 
 	// ---------------------------------------------------------------- 2
 	console.log('\n=== 2. a module click handler: edit-only vs the default ===');
 	await page.evaluate(async () => {
 		window.__emCalls = { edit: 0, dflt: 0 };
-		await window.__stores.moduleSDK.initModules([
+		await window.__tp.test.v1.moduleSDK.initModules([
 			{
 				id: 'emtest',
 				name: 'Editor modes test',
@@ -180,8 +180,8 @@ h.run(async () => {
 	h.check(calls.edit === 1, `2.2 in EDIT a handler registered {modes:['edit']} runs (${calls.edit})`);
 	h.check(calls.dflt === 0, `2.3 ...and a handler with no {modes} does NOT (${calls.dflt})`);
 	h.check((await selection(page)).includes(box), '2.4 ...and the click selected the Target');
-	await page.evaluate(() => window.__stores.objectActions.setEditorMode('interact'));
-	await page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('interact'));
+	await page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await page.waitForTimeout(1700); // out of the double-click AND the cycle window
 	await page.mouse.click(aim.x, aim.y);
 	await page.waitForTimeout(400);
@@ -193,7 +193,7 @@ h.run(async () => {
 	// ---------------------------------------------------------------- 3
 	console.log('\n=== 3. an On Click node fires only in INTERACT (and replicates) ===');
 	await page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowNodes.set([
 			{ id: 'emclick', type: 'onclick', position: { x: 0, y: 0 }, data: { type: 'onclick', pulse: 0.3 } },
 			{ id: 'emsel', type: 'objectselector', position: { x: 240, y: 0 }, data: { type: 'objectselector', label: 'Object Selector', selected: uuid } }
@@ -201,7 +201,7 @@ h.run(async () => {
 		s.flowEdges.set([{ id: 'e-emclick-emsel', source: 'emclick', target: 'emsel' }]);
 	}, box);
 	await page.waitForTimeout(900);
-	await page.evaluate((peerId) => window.__stores.nodesHandler.sendNodes(peerId), B.id);
+	await page.evaluate((peerId) => window.__tp.test.v1.nodesHandler.sendNodes(peerId), B.id);
 	await h.eventually(
 		() => read(B.page, 'flowNodes'),
 		(nodes) => nodes.some((n) => n.id === 'emclick'),
@@ -210,17 +210,17 @@ h.run(async () => {
 	await page.waitForTimeout(700); // the actionSeenAt settle (a peer's first tick)
 	const stamp = (p) => p.page.evaluate(() => {
 		let t;
-		window.__stores.flowTriggers.subscribe((v) => (t = v))();
+		window.__tp.test.v1.flowTriggers.subscribe((v) => (t = v))();
 		return t?.emclick?.lastT ?? null;
 	});
-	await page.evaluate(() => window.__stores.objectActions.setEditorMode('edit'));
+	await page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('edit'));
 	await page.waitForTimeout(1700);
 	const beforeEdit = await stamp(A);
 	await page.mouse.click(aim.x, aim.y);
 	await page.waitForTimeout(700);
 	h.check((await stamp(A)) === beforeEdit, `3.2 an EDIT click does not fire the On Click node (${await stamp(A)})`);
 	h.check((await selection(page)).includes(box), '3.3 ...it selects instead');
-	await page.evaluate(() => window.__stores.objectActions.setEditorMode('interact'));
+	await page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('interact'));
 	await page.waitForTimeout(1700);
 	await page.mouse.click(aim.x, aim.y);
 	await page.waitForTimeout(500);
@@ -230,28 +230,28 @@ h.run(async () => {
 
 	// ---------------------------------------------------------------- 4
 	console.log('\n=== 4. entering INTERACT puts the gizmo away; EDIT brings it back ===');
-	await page.evaluate(() => window.__stores.objectActions.setEditorMode('edit'));
-	await page.evaluate((uuid) => window.__stores.objectActions.selectObject(uuid), box);
+	await page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('edit'));
+	await page.evaluate((uuid) => window.__tp.test.v1.objectActions.selectObject(uuid), box);
 	await page.waitForTimeout(300);
 	const gizmoOn = await page.evaluate(() => {
 		let c;
-		window.__stores.TControls.subscribe((v) => (c = v))();
+		window.__tp.test.v1.TControls.subscribe((v) => (c = v))();
 		return !!c?.object;
 	});
 	h.check(gizmoOn, '4.1 (premise) a selected object carries the gizmo in EDIT');
-	await page.evaluate(() => window.__stores.objectActions.setEditorMode('interact'));
+	await page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('interact'));
 	await page.waitForTimeout(200);
 	const gizmoOff = await page.evaluate(() => {
 		let c;
-		window.__stores.TControls.subscribe((v) => (c = v))();
+		window.__tp.test.v1.TControls.subscribe((v) => (c = v))();
 		return !!c?.object;
 	});
 	h.check(!gizmoOff, '4.2 INTERACT detaches it');
-	await page.evaluate(() => window.__stores.objectActions.setEditorMode('edit'));
+	await page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('edit'));
 	await page.waitForTimeout(200);
 	const gizmoBack = await page.evaluate(() => {
 		let c;
-		window.__stores.TControls.subscribe((v) => (c = v))();
+		window.__tp.test.v1.TControls.subscribe((v) => (c = v))();
 		return !!c?.object;
 	});
 	h.check(gizmoBack, '4.3 ...and EDIT re-seats it on the selection');
@@ -263,7 +263,7 @@ h.run(async () => {
 		console.log('SKIP music-lab zip not found at ' + h.moduleZipPath('music-lab'));
 	} else {
 		await page.evaluate(() => {
-			const item = window.__stores.moduleSDK.moduleMenuItems;
+			const item = window.__tp.test.v1.moduleSDK.moduleMenuItems;
 			let list;
 			item.subscribe((v) => (list = v))();
 			list.find((m) => m.label === 'Music Lab: piano + speaker').action();
@@ -271,7 +271,7 @@ h.run(async () => {
 		await h.eventually(
 			() => page.evaluate(() => {
 				let group;
-				window.__stores.objectsGroup.subscribe((v) => (group = v))();
+				window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 				return !!group.getObjectByName('key-60');
 			}),
 			(v) => v,
@@ -279,25 +279,25 @@ h.run(async () => {
 		);
 		const piano = await page.evaluate(() => {
 			let group;
-			window.__stores.objectsGroup.subscribe((v) => (group = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 			let node = group.getObjectByName('key-60');
 			while (node.parent && node.parent !== group) node = node.parent;
-			window.__stores.objectActions.focusObject(node.uuid);
+			window.__tp.test.v1.objectActions.focusObject(node.uuid);
 			return node.uuid;
 		});
 		await page.waitForTimeout(900);
-		await page.evaluate(() => window.__stores.objectActions.deselectObject());
+		await page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 		aim = await aimAt(page, { name: 'key-60', top: true });
 		h.check(aim?.first?.startsWith('key-') && aim.onCanvas, `5.2 (premise) the pixel lands on a piano KEY (${aim?.first})`);
-		await page.evaluate(() => window.__stores.objectActions.setEditorMode('edit'));
+		await page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('edit'));
 		await page.evaluate(() => (window.__sent.length = 0));
 		await page.mouse.click(aim.x, aim.y);
 		await page.waitForTimeout(500);
 		let out = await sent(page);
 		h.check((await selection(page)).includes(piano), '5.3 in EDIT a click on a piano key SELECTS the piano');
 		h.check(!out.includes('devicenote'), `5.4 ...and plays nothing (${out.filter((t) => t === 'devicenote').length} notes)`);
-		await page.evaluate(() => window.__stores.objectActions.setEditorMode('interact'));
-		await page.evaluate(() => window.__stores.objectActions.deselectObject());
+		await page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('interact'));
+		await page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 		await page.waitForTimeout(1700);
 		await page.evaluate(() => (window.__sent.length = 0));
 		await page.mouse.click(aim.x, aim.y);
@@ -309,10 +309,10 @@ h.run(async () => {
 
 	// ---------------------------------------------------------------- 6
 	console.log('\n=== 6. INTERACT grabs a dynamic body with the CURSOR while a sim runs ===');
-	await page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+	await page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 	await page.waitForTimeout(2500);
 	const crate = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		let group;
 		s.objectsGroup.subscribe((v) => (group = v))();
@@ -322,7 +322,7 @@ h.run(async () => {
 	});
 	await page.waitForTimeout(800);
 	await page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let group;
 		s.objectsGroup.subscribe((v) => (group = v))();
 		const o = group.getObjectByProperty('uuid', uuid);
@@ -334,27 +334,27 @@ h.run(async () => {
 		s.objectActions.focusObject(uuid);
 	}, crate);
 	await page.waitForTimeout(900);
-	await page.evaluate(() => window.__stores.objectActions.deselectObject());
-	await page.evaluate(() => window.__stores.physics.toggleSimulation());
-	await h.eventually(() => page.evaluate(() => window.__stores.physics.physicsDebug().length), (n) => n > 0, '6.1 (premise) the simulation runs');
+	await page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
+	await page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
+	await h.eventually(() => page.evaluate(() => window.__tp.test.v1.physics.physicsDebug().length), (n) => n > 0, '6.1 (premise) the simulation runs');
 	await page.waitForTimeout(800);
-	await page.evaluate(() => window.__stores.objectActions.setEditorMode('interact'));
+	await page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('interact'));
 	aim = await aimAt(page, { uuid: crate });
 	h.check(aim?.hitsTarget && aim.onCanvas, `6.2 (premise) the pixel lands on the crate (${aim?.first})`);
 	const camBefore = await page.evaluate(() => {
 		let c;
-		window.__stores.globalCamera.subscribe((v) => (c = v))();
+		window.__tp.test.v1.globalCamera.subscribe((v) => (c = v))();
 		return c.position.toArray();
 	});
 	const start = await page.evaluate((uuid) => {
 		let group;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		return group.getObjectByProperty('uuid', uuid).position.toArray();
 	}, crate);
 	await page.mouse.move(aim.x, aim.y);
 	await page.mouse.down();
 	await page.waitForTimeout(250);
-	const dbg = await page.evaluate(() => window.__stores.playInteract.playInteractDebug());
+	const dbg = await page.evaluate(() => window.__tp.test.v1.playInteract.playInteractDebug());
 	h.check(dbg.carrying === crate, `6.3 pressing on the crate GRABS it (${dbg.carrying})`);
 	for (let i = 1; i <= 12; i++) {
 		await page.mouse.move(aim.x + i * 12, aim.y - i * 8);
@@ -363,7 +363,7 @@ h.run(async () => {
 	await page.waitForTimeout(700);
 	const carried = await page.evaluate((uuid) => {
 		let group;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		return group.getObjectByProperty('uuid', uuid).position.toArray();
 	}, crate);
 	await page.mouse.up();
@@ -373,29 +373,29 @@ h.run(async () => {
 	h.check(carried[1] > start[1] + 0.1, `6.5 ...up the screen means up in the world (${start[1].toFixed(2)} -> ${carried[1].toFixed(2)})`);
 	const camAfter = await page.evaluate(() => {
 		let c;
-		window.__stores.globalCamera.subscribe((v) => (c = v))();
+		window.__tp.test.v1.globalCamera.subscribe((v) => (c = v))();
 		return c.position.toArray();
 	});
 	const camMoved = Math.hypot(camAfter[0] - camBefore[0], camAfter[1] - camBefore[1], camAfter[2] - camBefore[2]);
 	h.check(camMoved < 0.05, `6.6 the drag carried the crate and did NOT orbit the camera (${camMoved.toFixed(3)})`);
-	const after = await page.evaluate(() => window.__stores.playInteract.playInteractDebug());
+	const after = await page.evaluate(() => window.__tp.test.v1.playInteract.playInteractDebug());
 	h.check(after.carrying === null, '6.7 releasing lets go');
 	h.check((await selection(page)).length === 0, '6.8 ...and nothing was selected');
 	const orbitOn = await page.evaluate(() => {
 		let oc;
-		window.__stores.orbitControls.subscribe((v) => (oc = v))();
+		window.__tp.test.v1.orbitControls.subscribe((v) => (oc = v))();
 		return oc?.enabled;
 	});
 	h.check(orbitOn === true, '6.9 the camera controls are back after the carry');
-	await page.evaluate(() => window.__stores.physics.stopSimulation());
-	await page.evaluate(() => window.__stores.objectActions.setEditorMode('edit'));
+	await page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
+	await page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('edit'));
 
 	// ---------------------------------------------------------------- 7
 	console.log('\n=== 7. P4: api.pointerRay() under a pointer lock is the CROSSHAIR ray ===');
 	await page.mouse.move(40, 300); // a mouse ray well off-centre
 	await page.waitForTimeout(100);
 	const rays = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		let renderer;
 		s.globalRenderer.subscribe((v) => (renderer = v))();

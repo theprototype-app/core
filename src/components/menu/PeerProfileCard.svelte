@@ -4,6 +4,7 @@
 	// and device, the live connection quality, how they came in) and draws their avatar on a
 	// small turntable. Nothing is asked of the other peer.
 	import * as THREE from 'three';
+	import { acquireOffscreen, blitOffscreen } from '$lib/render/offscreen.js';
 	import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 	import { onDestroy } from 'svelte';
 	import ModalDialog from '../ui/ModalDialog.svelte';
@@ -60,11 +61,12 @@
 		}
 	}
 
-	// --- the turntable: a CLONE of their avatar as it stands in our scene, on its own small
-	// renderer (one context, disposed with the card). No clone (not drawn here: another scene,
-	// hidden, not arrived) = their picture instead.
+	// --- the turntable: a CLONE of their avatar as it stands in our scene, drawn by the SHARED
+	// off-screen renderer (101 F3: no context of its own) and copied into this canvas each frame;
+	// released with the card. No clone (not drawn here: another scene, hidden, not arrived) =
+	// their picture instead.
 	let hasTurntable = $state(false);
-	let renderer: THREE.WebGLRenderer | null = null;
+	let lease: ReturnType<typeof acquireOffscreen> | null = null;
 	let raf = 0;
 	function turntable(canvas: HTMLCanvasElement) {
 		const source = ($globalScene as any)?.getObjectByName?.(peerId);
@@ -97,13 +99,13 @@
 		camera.position.set(0, h * 0.15, h * 2.1);
 		camera.lookAt(0, 0, 0);
 		try {
-			renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+			lease = acquireOffscreen();
 		} catch {
 			return;
 		}
-		renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
-		renderer.setSize(canvas.clientWidth || 200, canvas.clientHeight || 200, false);
-		renderer.outputColorSpace = THREE.SRGBColorSpace;
+		const pixelRatio = Math.min(2, window.devicePixelRatio || 1);
+		const width = canvas.clientWidth || 200;
+		const height = canvas.clientHeight || 200;
 		hasTurntable = true;
 		const pivot = new THREE.Group();
 		scene.remove(model);
@@ -111,16 +113,15 @@
 		scene.add(pivot);
 		const loop = (t: number) => {
 			pivot.rotation.y = (t / 4000) * Math.PI * 2;
-			renderer?.render(scene, camera);
+			if (lease) blitOffscreen(lease, canvas, width, height, pixelRatio, (r) => r.render(scene, camera));
 			raf = requestAnimationFrame(loop);
 		};
 		raf = requestAnimationFrame(loop);
 		return {
 			destroy() {
 				cancelAnimationFrame(raf);
-				renderer?.dispose();
-				renderer?.forceContextLoss();
-				renderer = null;
+				lease?.release();
+				lease = null;
 			}
 		};
 	}

@@ -7,17 +7,17 @@ const positionsOf = (page, uuids) =>
 	page.evaluate(
 		(uuids) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) =>
+				window.__tp.test.v1.objectsGroup.subscribe((g) =>
 					r(uuids.map((u) => g?.getObjectByProperty('uuid', u)?.position.toArray() ?? null))
 				)()
 			),
 		uuids
 	);
 const setOf = (page) =>
-	page.evaluate(() => new Promise((r) => window.__stores.selectedObjects.subscribe(r)()));
+	page.evaluate(() => new Promise((r) => window.__tp.test.v1.selectedObjects.subscribe(r)()));
 const objectCount = (page) =>
 	page.evaluate(
-		() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g?.children.length ?? 0))())
+		() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g?.children.length ?? 0))())
 	);
 
 h.run(async () => {
@@ -28,14 +28,14 @@ h.run(async () => {
 
 	// two boxes, then shift-click both into a set
 	const uuids = await A.page.evaluate(async () => {
-		const cmd = window.__stores.commandsHandler.sceneCommand;
+		const cmd = window.__tp.test.v1.commandsHandler.sceneCommand;
 		cmd('/create box');
 		cmd('/create sphere 1');
 		await new Promise((r) => setTimeout(r, 300));
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const ids = g.children.map((c) => c.uuid);
-		window.__stores.objectActions.selectObject(ids[0]);
-		window.__stores.objectActions.selectObject(ids[1], false, true); // shift
+		window.__tp.test.v1.objectActions.selectObject(ids[0]);
+		window.__tp.test.v1.objectActions.selectObject(ids[1], false, true); // shift
 		return ids;
 	});
 	let set = await setOf(A.page);
@@ -43,7 +43,7 @@ h.run(async () => {
 	const pivotAttached = await A.page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.TControls.subscribe((c) => r(!!c?.object?.userData?.isMultiPivot))()
+				window.__tp.test.v1.TControls.subscribe((c) => r(!!c?.object?.userData?.isMultiPivot))()
 			)
 	);
 	h.check(pivotAttached, 'gizmo attached to the multi pivot');
@@ -52,21 +52,21 @@ h.run(async () => {
 	await h.eventually(
 		() =>
 			B.page.evaluate(
-				() => new Promise((r) => window.__stores.lockedObjects.subscribe((l) => r(l.length))())
+				() => new Promise((r) => window.__tp.test.v1.lockedObjects.subscribe((l) => r(l.length))())
 			),
 		(n) => n === 2,
 		'B sees both members locked'
 	);
 	const bSelected = await B.page.evaluate(async (uuid) => {
-		window.__stores.objectActions.selectObject(uuid, false, true);
-		return new Promise((r) => window.__stores.selectedObjects.subscribe((s) => r(s.length))());
+		window.__tp.test.v1.objectActions.selectObject(uuid, false, true);
+		return new Promise((r) => window.__tp.test.v1.selectedObjects.subscribe((s) => r(s.length))());
 	}, uuids[0]);
 	h.check(bSelected === 0, 'B cannot add locked members to a set');
 
 	// drive a pivot drag exactly like the gizmo does
 	const before = await positionsOf(A.page, uuids);
 	await A.page.evaluate(async () => {
-		const controls = await new Promise((r) => window.__stores.TControls.subscribe(r)());
+		const controls = await new Promise((r) => window.__tp.test.v1.TControls.subscribe(r)());
 		controls.dispatchEvent({ type: 'dragging-changed', value: true });
 		controls.object.position.x += 2;
 		controls.object.updateMatrixWorld(true);
@@ -85,7 +85,7 @@ h.run(async () => {
 	);
 
 	// ONE undo restores both members (transformSet batch), replicated
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(
 		() => Promise.all([positionsOf(A.page, uuids), positionsOf(B.page, uuids)]),
 		([a, b]) =>
@@ -97,7 +97,7 @@ h.run(async () => {
 	);
 
 	// Ctrl+D duplicates the whole set
-	await A.page.evaluate(() => window.__stores.objectActions.duplicateSelection());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.duplicateSelection());
 	await h.eventually(
 		() => Promise.all([objectCount(A.page), objectCount(B.page)]),
 		([a, b]) => a === 4 && b === 4,
@@ -107,7 +107,7 @@ h.run(async () => {
 	h.check(set.length === 2 && !set.includes(uuids[0]), 'clones became the new selection');
 
 	// delete the selection (the two clones)
-	await A.page.evaluate(() => window.__stores.objectActions.deleteSelection());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deleteSelection());
 	await h.eventually(
 		() => Promise.all([objectCount(A.page), objectCount(B.page)]),
 		([a, b]) => a === 2 && b === 2,
@@ -115,7 +115,7 @@ h.run(async () => {
 	);
 
 	// marquee: shift-drag a box over the viewport selects what is inside
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await A.page.keyboard.down('Shift');
 	await A.page.mouse.move(420, 220);
 	await A.page.mouse.down();

@@ -15,7 +15,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	const built = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create box 1 1 1');
 		await new Promise((r) => setTimeout(r, 800));
 		let g;
@@ -37,7 +37,7 @@ h.run(async () => {
 	await A.page.mouse.click(point.x, point.y);
 	await A.page.waitForTimeout(300);
 	const normal = await A.page.evaluate((uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let set = [];
 		w.selectedObjects.subscribe((v) => (set = v))();
 		return { selected: set.length === 1 && set[0] === uuid };
@@ -46,7 +46,7 @@ h.run(async () => {
 
 	// ---- 2. scaled to nothing: the click still finds it ---------------------
 	const shrunk = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.objectActions.deselectObject();
 		let g;
 		w.objectsGroup.subscribe((v) => (g = v))();
@@ -68,7 +68,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(300);
 	const picked = await A.page.evaluate((uuid) => {
 		let set = [];
-		window.__stores.selectedObjects.subscribe((v) => (set = v))();
+		window.__tp.test.v1.selectedObjects.subscribe((v) => (set = v))();
 		return { selected: set.length === 1 && set[0] === uuid, count: set.length };
 	}, built.uuid);
 	h.check(
@@ -78,7 +78,7 @@ h.run(async () => {
 
 	// ---- 3. it is a PROXY hit, and only when asked for ----------------------
 	const shape = await A.page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const raycaster = new w.THREE.Raycaster();
 		let camera;
 		w.globalCamera.subscribe((v) => (camera = v))();
@@ -106,7 +106,7 @@ h.run(async () => {
 
 	// ---- 4. normal picking is UNCHANGED — the regression guard --------------
 	const unchanged = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let g;
 		w.objectsGroup.subscribe((v) => (g = v))();
 		g.getObjectByProperty('uuid', uuid).scale.set(1, 1, 1);

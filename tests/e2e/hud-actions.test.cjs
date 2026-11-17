@@ -16,7 +16,7 @@ const h = require('./helpers.cjs');
 const sceneNodes = (peer) =>
 	peer.page.evaluate(() => {
 		let g;
-		window.__stores.flowGraphs.subscribe((v) => (g = v))();
+		window.__tp.test.v1.flowGraphs.subscribe((v) => (g = v))();
 		const doc = g.scene ?? { nodes: [], edges: [] };
 		return { nodes: doc.nodes.map((n) => n.type), edges: doc.edges.length, ids: doc.nodes.map((n) => n.id) };
 	});
@@ -26,7 +26,7 @@ const sceneNodes = (peer) =>
 // fuller one - so a local wipe comes BACK a few seconds later. That is exactly what the
 // earlier sections got away with by being quick, and what section 12 did not.
 const wipeGraphs = async (peers, settle = 900) => {
-	for (const peer of peers) await peer.page.evaluate(() => window.__stores.clearGraphs());
+	for (const peer of peers) await peer.page.evaluate(() => window.__tp.test.v1.clearGraphs());
 	await peers[0].page.waitForTimeout(settle);
 };
 
@@ -34,13 +34,13 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
-	for (const p of [A, B]) await p.page.waitForFunction(() => !!window.__stores?.hudActions, { timeout: 30000 });
+	for (const p of [A, B]) await p.page.waitForFunction(() => !!window.__tp?.test.v1?.hudActions, { timeout: 30000 });
 	await h.connect(A, B);
 	const page = A.page;
 
 	// a menu with a Start button and a score readout
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.gameState.clearGameState();
 		s.flowNodes.set([]);
 		s.flowEdges.set([]);
@@ -63,7 +63,7 @@ h.run(async () => {
 
 	// ---- 1. the catalog is kind-aware ---------------------------------------
 	const catalog = await page.evaluate(() => {
-		const HA = window.__stores.hudActions;
+		const HA = window.__tp.test.v1.hudActions;
 		return {
 			button: HA.actionsForKind('button').map((a) => a.key),
 			text: HA.actionsForKind('text').map((a) => a.key),
@@ -86,14 +86,14 @@ h.run(async () => {
 
 	// ---- 2. nothing is bound yet -------------------------------------------
 	const empty = await page.evaluate(() => ({
-		start: window.__stores.hudActions.bindingsFor('start').length,
-		wired: [...window.__stores.hudActions.wiredElementIds()]
+		start: window.__tp.test.v1.hudActions.bindingsFor('start').length,
+		wired: [...window.__tp.test.v1.hudActions.wiredElementIds()]
 	}));
 	h.check(empty.start === 0 && empty.wired.length === 0, 'premise: nothing is wired to begin with');
 
 	// ---- 3. ADD an action: nodes + edge, ONE undo entry, replicated ---------
 	const added = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const depthBefore = s.history.undoDepth ? s.history.undoDepth() : null;
 		const result = s.hudActions.addBinding('start', 'start');
 		await new Promise((r) => setTimeout(r, 700));
@@ -134,7 +134,7 @@ h.run(async () => {
 
 	// ONE undo entry for the whole add
 	const undone = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.history.undo();
 		await new Promise((r) => setTimeout(r, 700));
 		let g;
@@ -148,7 +148,7 @@ h.run(async () => {
 	h.check(undone.bindings === 0, 'and the list empties with it');
 
 	const redone = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.history.redo();
 		await new Promise((r) => setTimeout(r, 700));
 		let g;
@@ -163,7 +163,7 @@ h.run(async () => {
 	// ---- 4. a SECOND action reuses the press node ---------------------------
 	// A second `hudbutton` on one element would fire every action twice.
 	const second = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.hudActions.addBinding('start', 'camera');
 		await new Promise((r) => setTimeout(r, 700));
 		let g;
@@ -182,7 +182,7 @@ h.run(async () => {
 	// ---- 5. the list is a VIEW on the graph, not a copy ---------------------
 	// Editing the node by hand must show up here, or the panel is lying.
 	const view = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.flowGraphs.subscribe((v) => (g = v))();
 		const node = g.scene.nodes.find((n) => n.type === 'setgamestate');
@@ -197,7 +197,7 @@ h.run(async () => {
 
 	// ---- 6. the DRIVES direction: a readout gets a source -------------------
 	const drives = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const result = s.hudActions.addBinding('score', 'showvar');
 		await new Promise((r) => setTimeout(r, 700));
 		let g;
@@ -223,7 +223,7 @@ h.run(async () => {
 
 	// and it really shows the value at runtime — the whole point
 	const live = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.gameState.setGameVar('score', 42);
 		s.hudEditorClose.set(true);
 		await new Promise((r) => setTimeout(r, 1400));
@@ -233,7 +233,7 @@ h.run(async () => {
 
 	// ---- 7. the artboard badge marks wired elements ------------------------
 	const badge = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const wired = [...s.hudActions.wiredElementIds()];
 		// add an UNWIRED element, so the badge has something to be absent from
 		const sid = s.hudDocs.hudDocOf('scene').screens[0].id;
@@ -293,7 +293,7 @@ h.run(async () => {
 
 	// ---- 9. UNBIND ---------------------------------------------------------
 	const unbound = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const before = s.hudActions.bindingsFor('start');
 		s.hudActions.removeBinding(before[0]);
 		await new Promise((r) => setTimeout(r, 800));
@@ -311,7 +311,7 @@ h.run(async () => {
 
 	// ---- 10. the deep link -------------------------------------------------
 	const deepLink = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const binding = s.hudActions.bindingsFor('start')[0];
 		// appStore is SPREAD onto the __stores root, so its exports are top-level
 		await s.focusFlowNode(binding.actionNodeId);
@@ -338,7 +338,7 @@ h.run(async () => {
 	// ONE entry, so it is exactly the case that guard must not break: the press comes
 	// AFTER both nodes exist. Asserted here rather than reasoned about.
 	const justBuilt = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		// a clean slate: no graph, and a game parked at menu
 		s.flowNodes.set([]);
 		s.flowEdges.set([]);
@@ -377,7 +377,7 @@ h.run(async () => {
 	// through `reset` is the OPPOSITE of one reached through `pulse` and the row has to say
 	// so, and one verb (hide/show) is genuinely several nodes.
 	const newKeys = await page.evaluate(() => {
-		const HA = window.__stores.hudActions;
+		const HA = window.__tp.test.v1.hudActions;
 		return {
 			button: HA.actionsForKind('button').map((a) => a.key),
 			toggle: HA.actionsForKind('toggle').map((a) => a.key),
@@ -406,7 +406,7 @@ h.run(async () => {
 	const preWipe = await sceneNodes(A);
 	h.check(preWipe.nodes.length === 0, `premise: a clean graph on both peers (${preWipe.nodes.length} nodes)`);
 	const verbs = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const results = ['playanim', 'sound', 'resetcounter', 'count'].map((k) => ({ k, ok: s.hudActions.addBinding('start', k).ok }));
 		await new Promise((r) => setTimeout(r, 900));
 		let g;
@@ -452,7 +452,7 @@ h.run(async () => {
 	// the CHAIN: three nodes and three wires from one menu entry, as ONE undo entry
 	await wipeGraphs([A, B]);
 	const chained = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1400));
 		let group;
@@ -528,7 +528,7 @@ h.run(async () => {
 		`the peer received every node AND every wire (${chainOnPeer.nodes.join(', ')}, ${chainOnPeer.edges} edges)`
 	);
 	const chainUndo = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.history.undo();
 		await new Promise((r) => setTimeout(r, 900));
 		let g;

@@ -22,9 +22,9 @@ const h = require('./helpers.cjs');
 
 const makeBox = (peer) =>
 	peer.page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		return new Promise((resolve) =>
-			window.__stores.objectsGroup.subscribe((g) =>
+			window.__tp.test.v1.objectsGroup.subscribe((g) =>
 				resolve(g.children[g.children.length - 1].uuid)
 			)()
 		);
@@ -51,8 +51,8 @@ const addScript = (peer, id, code, uuid) =>
 				}
 			];
 			const edge = { id: 'e-' + nodeId, source: nodeId, target: nodeId + '-sel' };
-			window.__stores.flowNodes.update((n) => [...n, ...nodes]);
-			window.__stores.flowEdges.update((e) => [...e, edge]);
+			window.__tp.test.v1.flowNodes.update((n) => [...n, ...nodes]);
+			window.__tp.test.v1.flowEdges.update((e) => [...e, edge]);
 		},
 		[id, code, uuid]
 	);
@@ -60,7 +60,7 @@ const addScript = (peer, id, code, uuid) =>
 const badge = (peer, id) =>
 	peer.page.evaluate((nodeId) => {
 		let v = {};
-		window.__stores.scriptErrors.subscribe((m) => (v = m))();
+		window.__tp.test.v1.scriptErrors.subscribe((m) => (v = m))();
 		return v[nodeId] ?? null;
 	}, id);
 
@@ -121,7 +121,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(1200);
 	const moved = await A.page.evaluate((id) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByProperty('uuid', id);
 		return o ? o.position.y : null;
 	}, uuid2);
@@ -135,8 +135,8 @@ h.run(async () => {
 	// The runaway has made its point (sections 1-3); it burns its loop limit on every frame, which
 	// on a ~4 fps runner makes the 30 slow runs below take minutes (54 X10), so it goes first.
 	await A.page.evaluate(() => {
-		window.__stores.flowNodes.update((n) => n.filter((x) => x.id !== 'runaway' && x.id !== 'runaway-sel'));
-		window.__stores.flowEdges.update((e) => e.filter((x) => x.id !== 'e-runaway'));
+		window.__tp.test.v1.flowNodes.update((n) => n.filter((x) => x.id !== 'runaway' && x.id !== 'runaway-sel'));
+		window.__tp.test.v1.flowEdges.update((e) => e.filter((x) => x.id !== 'e-runaway'));
 	});
 	const uuid3 = await makeBox(A);
 	// Slow but TERMINATING, so only the time budget can catch it — the loop counter never
@@ -165,11 +165,11 @@ h.run(async () => {
 		.waitForFunction(
 			(id) => {
 				let v = {};
-				window.__stores.scriptErrors.subscribe((m) => (v = m))();
+				window.__tp.test.v1.scriptErrors.subscribe((m) => (v = m))();
 				if (/too slow/i.test(String(v['slow'] ?? ''))) return v['slow'];
 				// 40 runs and still no badge is a real red (a run under 8 ms resets the streak, so not 31)
 				let g;
-				window.__stores.objectsGroup.subscribe((x) => (g = x))();
+				window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 				const runs = Math.round(g?.getObjectByProperty('uuid', id)?.position.z ?? 0);
 				return runs >= 40 ? 'NO BADGE' : false;
 			},
@@ -191,10 +191,10 @@ h.run(async () => {
 					.evaluate((/** @type {string} */ id) => {
 						/** @type {any} */ let errs = {};
 						/** @type {any} */ let paused = null;
-						window.__stores.scriptErrors.subscribe((/** @type {any} */ m) => (errs = m))();
-						window.__stores.flowPaused.subscribe((/** @type {any} */ p) => (paused = p))();
+						window.__tp.test.v1.scriptErrors.subscribe((/** @type {any} */ m) => (errs = m))();
+						window.__tp.test.v1.flowPaused.subscribe((/** @type {any} */ p) => (paused = p))();
 						/** @type {any} */ let g;
-						window.__stores.objectsGroup.subscribe((/** @type {any} */ x) => (g = x))();
+						window.__tp.test.v1.objectsGroup.subscribe((/** @type {any} */ x) => (g = x))();
 						const runs = Math.round(g?.getObjectByProperty('uuid', id)?.position.z ?? 0);
 						return { runs, errs, paused, visible: document.visibilityState };
 					}, uuid3)
@@ -210,7 +210,7 @@ h.run(async () => {
 	const S = await h.setupPage(browser, 'S', { hash: '#safe' });
 	const paused = await S.page.evaluate(() => {
 		let v = { paused: false, reason: '' };
-		window.__stores.flowPaused.subscribe((p) => (v = p))();
+		window.__tp.test.v1.flowPaused.subscribe((p) => (v = p))();
 		return v;
 	});
 	h.check(paused.paused === true, `#safe boots with the flow runtime paused (${paused.reason})`);

@@ -95,6 +95,10 @@ jobs:
       # `z-ok: <reason>` on its line for a number code reads back.
       - name: z-index scale
         run: node scripts/check-zindex.cjs
+      # 101 F3: every renderer / render target comes from the renderer seam (src/lib/render/), the
+      # one place roadmap 100's view switch swaps
+      - name: renderer seam
+        run: node scripts/check-render-seam.cjs
       # 78-int PL42 (owner rule 2026-11-09): no colour emoji in the UI — Lucide icons, text glyphs
       # or a custom SVG. Non-UI text (a chat shortcode table) carries `emoji-ok` / `emoji-ok-file`.
       - name: no emoji in the UI

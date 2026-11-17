@@ -8,7 +8,7 @@ const playData = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.globalScene.subscribe((scene) => {
+				window.__tp.test.v1.globalScene.subscribe((scene) => {
 					const group = scene?.getObjectByName('dungeon-module');
 					const play = group?.userData?.play;
 					resolve(
@@ -24,7 +24,7 @@ const keyVisible = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.globalScene.subscribe((scene) => {
+				window.__tp.test.v1.globalScene.subscribe((scene) => {
 					resolve(scene?.getObjectByName('dungeon-key')?.visible ?? null);
 				})();
 			})
@@ -34,7 +34,7 @@ const barVisible = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.globalScene.subscribe((scene) => {
+				window.__tp.test.v1.globalScene.subscribe((scene) => {
 					resolve(scene?.getObjectByName('dungeon-door-bar')?.visible ?? null);
 				})();
 			})
@@ -44,10 +44,10 @@ const clickMesh = (page, name) =>
 	page.evaluate(
 		(name) =>
 			new Promise((resolve) => {
-				window.__stores.globalScene.subscribe((scene) => {
+				window.__tp.test.v1.globalScene.subscribe((scene) => {
 					const mesh = scene?.getObjectByName(name);
 					let consumed = false;
-					for (const handler of window.__stores.moduleSDK.moduleClickHandlers) {
+					for (const handler of window.__tp.test.v1.moduleSDK.moduleClickHandlers) {
 						if (handler(mesh)) {
 							consumed = true;
 							break;
@@ -78,7 +78,7 @@ h.run(async () => {
 	await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.moduleSDK.moduleMenuItems.subscribe((items) => {
+				window.__tp.test.v1.moduleSDK.moduleMenuItems.subscribe((items) => {
 					items.find((i) => i.label === 'Dungeon generator').action();
 					resolve();
 				})();
@@ -101,19 +101,19 @@ h.run(async () => {
 	const collide = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.globalScene.subscribe((scene) => {
-					const d = window.__stores.dungeonPlay.dungeonData(scene);
+				window.__tp.test.v1.globalScene.subscribe((scene) => {
+					const d = window.__tp.test.v1.dungeonPlay.dungeonData(scene);
 					const rooms = d.rooms;
-					const c = window.__stores.dungeonPlay.roomCenter(rooms[0]);
+					const c = window.__tp.test.v1.dungeonPlay.roomCenter(rooms[0]);
 					// find the wall west of the room: walk left until blocked
 					let x = c.x;
 					let steps = 0;
-					while (steps < 40 && window.__stores.dungeonPlay.walkable(d, x - 0.2, c.z)) {
+					while (steps < 40 && window.__tp.test.v1.dungeonPlay.walkable(d, x - 0.2, c.z)) {
 						x -= 0.2;
 						steps++;
 					}
-					const blocked = window.__stores.dungeonPlay.slideMove(d, x, c.z, -1, 0);
-					const open = window.__stores.dungeonPlay.slideMove(d, c.x, c.z, 0.3, 0.2);
+					const blocked = window.__tp.test.v1.dungeonPlay.slideMove(d, x, c.z, -1, 0);
+					const open = window.__tp.test.v1.dungeonPlay.slideMove(d, c.x, c.z, 0.3, 0.2);
 					resolve({
 						blockedStays: Math.abs(blocked.x - x) < 0.001,
 						openMoves: Math.abs(open.x - (c.x + 0.3)) < 0.001 && Math.abs(open.z - (c.z + 0.2)) < 0.001
@@ -129,16 +129,16 @@ h.run(async () => {
 		() =>
 			new Promise((resolve) => {
 				let me;
-				window.__stores.peers.subscribe((p) => (me = p?.peer?.id))();
-				window.__stores.userdata.subscribe((users) => resolve({ me, all: users.map((u) => u[0]) }))();
+				window.__tp.test.v1.peers.subscribe((p) => (me = p?.peer?.id))();
+				window.__tp.test.v1.userdata.subscribe((users) => resolve({ me, all: users.map((u) => u[0]) }))();
 			})
 	);
 	const spawns = await A.page.evaluate(
 		({ all }) =>
 			new Promise((resolve) => {
-				window.__stores.globalScene.subscribe((scene) => {
-					const d = window.__stores.dungeonPlay.dungeonData(scene);
-					resolve(all.sort().map((id) => window.__stores.dungeonPlay.spawnPointFor(d, all, id)));
+				window.__tp.test.v1.globalScene.subscribe((scene) => {
+					const d = window.__tp.test.v1.dungeonPlay.dungeonData(scene);
+					resolve(all.sort().map((id) => window.__tp.test.v1.dungeonPlay.spawnPointFor(d, all, id)));
 				})();
 			}),
 		ids
@@ -149,13 +149,13 @@ h.run(async () => {
 	);
 
 	// entering play spawns at MY room + shows the minimap
-	await A.page.evaluate(() => window.__stores.isLocked.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await A.page.waitForTimeout(700);
 	const inPlay = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.playerCam.subscribe((cam) => {
-					const world = cam ? cam.getWorldPosition(new window.__stores.THREE.Vector3()) : null;
+				window.__tp.test.v1.playerCam.subscribe((cam) => {
+					const world = cam ? cam.getWorldPosition(new window.__tp.test.v1.THREE.Vector3()) : null;
 					resolve({
 						pos: world ? [world.x, world.z] : null,
 						minimap: !document.querySelector('#dungeon-minimap')?.classList.contains('hidden')
@@ -166,9 +166,9 @@ h.run(async () => {
 	const mySpawn = await A.page.evaluate(
 		({ me, all }) =>
 			new Promise((resolve) => {
-				window.__stores.globalScene.subscribe((scene) => {
-					const d = window.__stores.dungeonPlay.dungeonData(scene);
-					resolve(window.__stores.dungeonPlay.spawnPointFor(d, all, me));
+				window.__tp.test.v1.globalScene.subscribe((scene) => {
+					const d = window.__tp.test.v1.dungeonPlay.dungeonData(scene);
+					resolve(window.__tp.test.v1.dungeonPlay.spawnPointFor(d, all, me));
 				})();
 			}),
 		ids
@@ -178,7 +178,7 @@ h.run(async () => {
 		`play mode spawns in my room (${inPlay.pos?.map((v) => v.toFixed(1))})`
 	);
 	h.check(inPlay.minimap, 'minimap shows in play mode');
-	await A.page.evaluate(() => window.__stores.isLocked.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(false));
 
 	// key -> door: B cannot open without the key; A picks it up and opens
 	const denied = await clickMesh(B.page, 'dungeon-door-bar');

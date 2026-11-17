@@ -41,7 +41,7 @@ h.run(async () => {
 	/** the REC pill on H for a synthetic head pose, read past its 4 Hz throttle */
 	const pill = () =>
 		hp.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const THREE = s.THREE;
 			const head = { position: new THREE.Vector3(0, 1.6, 0), quaternion: new THREE.Quaternion() };
 			s.vrRecIndicator.vrRecIndicatorFrame(head, performance.now() + 1e6);
@@ -50,16 +50,16 @@ h.run(async () => {
 		});
 	const menu = (/** @type {string} */ id) =>
 		hp.evaluate((id) => {
-			const e = window.__stores.vrRadialMenu.findMenuEntry(id);
+			const e = window.__tp.test.v1.vrRadialMenu.findMenuEntry(id);
 			e.action();
 			return true;
 		}, id);
-	const ring = (/** @type {string} */ g) => hp.evaluate((g) => window.__stores.vrRadialMenu.ringEntries(g).map((e) => e.id), g);
-	const hRec = () => hp.evaluate(() => window.__stores.perf.recordingInfo());
+	const ring = (/** @type {string} */ g) => hp.evaluate((g) => window.__tp.test.v1.vrRadialMenu.ringEntries(g).map((e) => e.id), g);
+	const hRec = () => hp.evaluate(() => window.__tp.test.v1.perf.recordingInfo());
 	const sess = () =>
 		dp.evaluate((id) => {
 			let st;
-			window.__stores.perfLiveSink.perfLive.subscribe((v) => (st = v))();
+			window.__tp.test.v1.perfLiveSink.perfLive.subscribe((v) => (st = v))();
 			return { s: st.sessions[id] ?? null, recording: st.recording[id] ?? null };
 		}, H.id);
 
@@ -84,7 +84,7 @@ h.run(async () => {
 
 	// ---- 3. the Live profiler on the desktop
 	// 36 U5: the Live view opens from the Profiler tab's header (it left the burger menu)
-	await dp.evaluate(() => window.__stores.profilerView.openProfiler());
+	await dp.evaluate(() => window.__tp.test.v1.profilerView.openProfiler());
 	await dp.locator('#profiler-open-live').click({ timeout: 15000 });
 	await dp.locator('#profiler-live').waitFor({ state: 'visible', timeout: 8000 });
 	const row = dp.locator(`#profiler-live-peers [data-peer="${H.id}"]`);
@@ -93,7 +93,7 @@ h.run(async () => {
 	// plant a heavy object on the headset for the capture checks: a box (replicated) whose LOCAL
 	// geometry is swapped for 40 000 triangles (the perf-detailed fixture)
 	await hp.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		let o;
 		s.selectedObject.subscribe((x) => (o = x))();
@@ -113,11 +113,11 @@ h.run(async () => {
 	const b = await sess();
 	h.check(b.s.frames > f1 + 30, `3.5 batches keep arriving (${f1} -> ${b.s.frames} frames in 2.6 s)`);
 	h.check(b.s.latest && b.s.latest.fps > 5 && Number.isFinite(b.s.latest.ms), `3.6 live numbers (${b.s.latest?.fps} fps, ${b.s.latest?.ms} ms, ${b.s.latest?.calls} calls)`);
-	const src = await hp.evaluate(() => window.__stores.perfLiveSource.liveSourceDebug());
+	const src = await hp.evaluate(() => window.__tp.test.v1.perfLiveSource.liveSourceDebug());
 	h.check(src.running && src.watchers.length === 1 && src.watchers[0].id === D.id && src.watchers[0].mode === 'light', `3.7 the headset streams to exactly the desktop (${JSON.stringify(src.watchers)})`);
 	const p3 = await pill();
 	h.check(/◉ LIVE 1/.test(p3.text) && /● REC/.test(p3.text), `3.8 the pill says REC and LIVE 1 ("${p3.text}")`);
-	const doc3 = await dp.evaluate((id) => structuredClone(window.__stores.perfLiveSink.liveDoc(id)), H.id);
+	const doc3 = await dp.evaluate((id) => structuredClone(window.__tp.test.v1.perfLiveSink.liveDoc(id)), H.id);
 	const v3 = tp.validateTpprof(doc3);
 	h.check(v3.ok, '3.9 the live document is a valid T1 recording ' + v3.errors.slice(0, 2).join('; '));
 	const mono = doc3.frames.every((f, i) => i === 0 || f.t > doc3.frames[i - 1].t);
@@ -140,7 +140,7 @@ h.run(async () => {
 	// the window's list ranks by draw calls (the gizmo's axis meshes win that); by TRIANGLES the
 	// planted 40k mesh is the heaviest object of the capture that arrived
 	const cap5 = await dp.evaluate((id) => {
-		const caps = window.__stores.perfLiveSink.liveDoc(id).captures ?? [];
+		const caps = window.__tp.test.v1.perfLiveSink.liveDoc(id).captures ?? [];
 		const objs = caps.at(-1)?.objects ?? [];
 		const top = [...objs].sort((a, b) => b.tris - a.tris)[0];
 		const heavy = objs.find((o) => o.name === 'Heavy' && !o.shadow);
@@ -172,7 +172,7 @@ h.run(async () => {
 	await dp.locator(`#profiler-live .live-session[data-peer="${H.id}"] [data-act="save"]`).click();
 	await dp.waitForTimeout(800);
 	const saved = await dp.evaluate(async () => {
-		const p = window.__stores.perf;
+		const p = window.__tp.test.v1.perf;
 		const row = (await p.listRecordings()).find((r) => r.kind === 'live');
 		return row ? { row, doc: await p.getRecording(row.id) } : null;
 	});
@@ -183,18 +183,18 @@ h.run(async () => {
 	if (EVIDENCE && saved) fs.writeFileSync(path.join(EVIDENCE, 'live-saved.tpprof.json'), JSON.stringify(saved.doc).slice(0, 2_000_000));
 
 	// ---- 8. the validator on the live path; Stop
-	const before = await hp.evaluate(() => window.__stores.wireErrors.wireErrors().filter((e) => e.type === 'invalid:perflive').reduce((a, e) => a + e.count, 0));
+	const before = await hp.evaluate(() => window.__tp.test.v1.wireErrors.wireErrors().filter((e) => e.type === 'invalid:perflive').reduce((a, e) => a + e.count, 0));
 	await dp.evaluate((id) => {
 		let p;
-		window.__stores.peers.subscribe((v) => (p = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (p = v))();
 		p.connections[id].send({ type: 'perflive', op: 'frames', base: 1, t0: 0, f: [1, 2, 3] });
 	}, H.id);
 	await hp.waitForTimeout(600);
-	const after = await hp.evaluate(() => window.__stores.wireErrors.wireErrors().filter((e) => e.type === 'invalid:perflive').reduce((a, e) => a + e.count, 0));
+	const after = await hp.evaluate(() => window.__tp.test.v1.wireErrors.wireErrors().filter((e) => e.type === 'invalid:perflive').reduce((a, e) => a + e.count, 0));
 	h.check(after === before + 1, `8.1 a batch of broken frames is refused on arrival (invalid:perflive ${before} -> ${after})`);
 	await dp.locator(`#profiler-live-peers [data-peer="${H.id}"] [data-act="stop"]`).click();
-	await h.eventually(() => hp.evaluate(() => window.__stores.perfLiveSource.liveSourceDebug()), (x) => !x.running && x.watchers.length === 0, '8.2 Stop: the headset stops streaming');
-	await hp.evaluate(() => window.__stores.perf.stopRecording());
+	await h.eventually(() => hp.evaluate(() => window.__tp.test.v1.perfLiveSource.liveSourceDebug()), (x) => !x.running && x.watchers.length === 0, '8.2 Stop: the headset stops streaming');
+	await hp.evaluate(() => window.__tp.test.v1.perf.stopRecording());
 	await hp.waitForTimeout(300);
 	h.check(!(await pill()).visible, '8.3 ...and the pill goes away once nothing records');
 

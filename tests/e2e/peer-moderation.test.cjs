@@ -22,8 +22,8 @@ const inPage = (peer, body, arg) =>
 	peer.page.evaluate(
 		([src, a]) => {
 			let pc = null;
-			window.__stores.peers.subscribe((v) => (pc = v))();
-			return Object.getPrototypeOf(async function () {}).constructor('s', 'pc', 'arg', src)(window.__stores, pc, a);
+			window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
+			return Object.getPrototypeOf(async function () {}).constructor('s', 'pc', 'arg', src)(window.__tp?.test.v1, pc, a);
 		},
 		[body, arg ?? null]
 	);
@@ -74,7 +74,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A-host');
 	const B = await h.setupPage(browser, 'B-guest');
 	const C = await h.setupPage(browser, 'C-guest');
-	for (const p of [A, B, C]) await p.page.waitForFunction(() => !!window.__stores?.peerModeration?.removePeer, { timeout: 30000 });
+	for (const p of [A, B, C]) await p.page.waitForFunction(() => !!window.__tp?.test.v1?.peerModeration?.removePeer, { timeout: 30000 });
 	await h.connect(B, A);
 	await h.connect(C, A);
 	await waitUntil(async () => (await opened(A)).length === 2 && (await opened(B)).includes(C.id) && (await opened(C)).includes(B.id), 30000);

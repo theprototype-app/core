@@ -84,7 +84,7 @@ const seedVolumes = (p, n, folders) =>
 					items: []
 				});
 			}
-			window.__stores.mountedVolumes.mountedVolumes.set(out);
+			window.__tp.test.v1.mountedVolumes.mountedVolumes.set(out);
 		},
 		{ n, folders }
 	);
@@ -123,7 +123,7 @@ async function dragGrip(p, dy) {
 }
 
 const setDock = async (p, px) => {
-	await p.page.evaluate((v) => window.__stores.bottomDock.dockHeight.set(v), px);
+	await p.page.evaluate((v) => window.__tp.test.v1.bottomDock.dockHeight.set(v), px);
 	await p.page.waitForTimeout(500);
 };
 
@@ -133,15 +133,15 @@ h.run(async () => {
 	const page = A.page;
 	await page.waitForFunction(
 		() =>
-			!!window.__stores?.mountedVolumes &&
-			!!window.__stores?.explorer &&
-			!!window.__stores?.bottomDock,
+			!!window.__tp?.test.v1?.mountedVolumes &&
+			!!window.__tp?.test.v1?.explorer &&
+			!!window.__tp?.test.v1?.bottomDock,
 		null,
 		{ timeout: 30000 }
 	);
 	await page.evaluate(async () => {
-		await window.__stores.explorer.loadExplorer();
-		window.__stores.objectActions.deselectObject();
+		await window.__tp.test.v1.explorer.loadExplorer();
+		window.__tp.test.v1.objectActions.deselectObject();
 	});
 	await page.locator('#explorer-slot').click();
 	await page.waitForTimeout(1200);
@@ -164,12 +164,12 @@ h.run(async () => {
 
 	// ---- 2. the rule holds on the REAL path: one project, saved and mounted ----------
 	await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		await s.explorer.clearLibrary();
 		s.commandsHandler.sceneCommand('/create box');
 	});
 	await page.waitForTimeout(1200);
-	await page.evaluate(() => window.__stores.sessionsOpen.set(true));
+	await page.evaluate(() => window.__tp.test.v1.sessionsOpen.set(true));
 	await page.waitForTimeout(900);
 	await page.locator('#session-save-project').click();
 	await page.waitForTimeout(400);
@@ -179,14 +179,14 @@ h.run(async () => {
 		() =>
 			page.evaluate(() => {
 				let v;
-				window.__stores.sessions.sessions.subscribe((x) => (v = x))();
+				window.__tp.test.v1.sessions.sessions.subscribe((x) => (v = x))();
 				return (v ?? []).map((m) => m.name);
 			}),
 		(names) => names.includes('Floorplan'),
 		'the project "Floorplan" is saved',
 		25000
 	);
-	await page.evaluate(() => window.__stores.sessionsOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.sessionsOpen.set(false));
 	await page.waitForTimeout(600);
 	await page.locator('#explorer-mount-add').click();
 	await page.waitForSelector('[role=menuitem]', { timeout: 20000 });
@@ -196,7 +196,7 @@ h.run(async () => {
 		() =>
 			page.evaluate(() => {
 				let v;
-				window.__stores.mountedVolumes.mountedVolumes.subscribe((x) => (v = x))();
+				window.__tp.test.v1.mountedVolumes.mountedVolumes.subscribe((x) => (v = x))();
 				return (v ?? []).map((r) => r.name);
 			}),
 		(names) => names.includes('Floorplan'),
@@ -268,7 +268,7 @@ h.run(async () => {
 	// The grip's own maximum is what the column has left once the mounts have taken their
 	// share, so mounting more must pull an already-set rootsH down with it. A 420px dock,
 	// because the grip needs real travel for any of this to be observable.
-	await page.evaluate(() => window.__stores.mountedVolumes.mountedVolumes.set([]));
+	await page.evaluate(() => window.__tp.test.v1.mountedVolumes.mountedVolumes.set([]));
 	await page.waitForTimeout(400);
 	await setDock(A, 420);
 	await dragGrip(A, -300); // grip to the top with an empty mounts section
@@ -360,7 +360,7 @@ h.run(async () => {
 	// however the store is set. Put the pane back to the state `tallMiddle` was read in, or
 	// this compares two different columns and reads as a regression that never happened.
 	await page.evaluate(async () => {
-		const mv = window.__stores.mountedVolumes;
+		const mv = window.__tp.test.v1.mountedVolumes;
 		let list;
 		mv.mountedVolumes.subscribe((x) => (list = x ?? []))();
 		for (const v of list) await mv.unmountVolume(v.id);

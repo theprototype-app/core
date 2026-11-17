@@ -10,7 +10,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	const res = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const read = (store) => {
 			let v;
 			store.subscribe((x) => (v = x))();
@@ -130,8 +130,8 @@ h.run(async () => {
 
 	// --- the Settings rows exist and write the stores/localStorage ---
 	await A.page.evaluate(() => {
-		window.__stores.settingsSection.set('vr');
-		window.__stores.settingsOpen.set(true);
+		window.__tp.test.v1.settingsSection.set('vr');
+		window.__tp.test.v1.settingsOpen.set(true);
 	});
 	await A.page.waitForTimeout(600);
 	const faceInput = A.page.locator('#vr-face-cap');
@@ -141,7 +141,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(300);
 	const applied = await A.page.evaluate(() => {
 		let v;
-		window.__stores.faceEdit.vrFaceCap.subscribe((x) => (v = x))();
+		window.__tp.test.v1.faceEdit.vrFaceCap.subscribe((x) => (v = x))();
 		return { store: v, ls: localStorage.getItem('vrFaceCap') };
 	});
 	h.check(

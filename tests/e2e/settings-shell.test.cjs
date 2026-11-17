@@ -38,7 +38,7 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1280, height: 860 } } });
 	const page = A.page;
-	await page.evaluate(() => window.__stores.settingsOpen.set(true));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 	await page.locator('#settings-nav').waitFor({ timeout: 10000 });
 	await page.waitForTimeout(500);
 
@@ -107,31 +107,31 @@ h.run(async () => {
 	s = await state(page);
 	h.check(s.titles[0] === 'Accessibility', '↓ in the menu shows the next page (' + s.titles[0] + ')');
 	await page.locator('#settings-nav .sn-row', { hasText: 'VR' }).first().click();
-	await page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await page.waitForTimeout(400);
-	await page.evaluate(() => window.__stores.settingsOpen.set(true));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 	await page.locator('#settings-nav').waitFor();
 	await page.waitForTimeout(500);
 	s = await state(page);
 	h.check(s.titles.length === 1 && s.titles[0] === 'VR', 'a reopen comes back to the page last used (' + s.titles.join(',') + ')');
-	await page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await page.waitForTimeout(400);
 	await page.evaluate(() => {
-		window.__stores.settingsSection.set('explorer');
-		window.__stores.settingsOpen.set(true);
+		window.__tp.test.v1.settingsSection.set('explorer');
+		window.__tp.test.v1.settingsOpen.set(true);
 	});
 	await page.waitForTimeout(800);
 	s = await state(page);
 	h.check(s.titles.length === 1 && s.titles[0] === 'Explorer', 'a deep link opens its page (' + s.titles.join(',') + ')');
-	await page.evaluate(() => window.__stores.settingsSection.set('touch'));
+	await page.evaluate(() => window.__tp.test.v1.settingsSection.set('touch'));
 	await page.waitForTimeout(500);
 	s = await state(page);
 	h.check(s.titles.length === 1 && s.titles[0] === 'Touch controls', 'a deep link while open switches the page ("touch" names Touch controls)');
-	await page.evaluate(() => window.__stores.settingsSection.set('about'));
+	await page.evaluate(() => window.__tp.test.v1.settingsSection.set('about'));
 	await page.waitForTimeout(500);
 	s = await state(page);
 	h.check(s.titles[0] === 'About & what’s new', 'the old "about" deep link lands on About & what’s new');
-	await page.evaluate(() => window.__stores.settingsSection.set('ai'));
+	await page.evaluate(() => window.__tp.test.v1.settingsSection.set('ai'));
 	await page.waitForTimeout(500);
 	s = await state(page);
 	h.check(s.titles.length === 1 && s.titles[0] === 'Tools & connections', 'the old AI deep link (the HUD AI button) lands on Tools & connections');
@@ -221,7 +221,7 @@ h.run(async () => {
 	const P = await h.setupPage(browser, 'P', {
 		context: { viewport: { width: 393, height: 851 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2.75 }
 	});
-	await P.page.evaluate(() => window.__stores.settingsOpen.set(true));
+	await P.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 	await P.page.locator('#settings-home').waitFor({ timeout: 10000 });
 	await P.page.waitForTimeout(400);
 	const phone = await P.page.evaluate(() => ({

@@ -23,12 +23,12 @@ h.run(async () => {
 	await h.connect(C, A); // hosts flow meshes C with B too
 
 	const store = (p, name) =>
-		p.page.evaluate((n) => new Promise((r) => window.__stores[n].subscribe((v) => r(v))()), name);
+		p.page.evaluate((n) => new Promise((r) => window.__tp.test.v1[n].subscribe((v) => r(v))()), name);
 	const rosterOn = (p) => store(p, 'userdata');
 	const openTo = (p, id) =>
 		p.page.evaluate((pid) => {
 			let pc;
-			window.__stores.peers.subscribe((v) => (pc = v))();
+			window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
 			return !!pc.connections[pid]?.open && pc.openedPeers.has(pid);
 		}, id);
 
@@ -38,7 +38,7 @@ h.run(async () => {
 	// --- a relayed 'disconnected' about a live peer is ignored
 	await C.page.evaluate(([aid, bid]) => {
 		let pc;
-		window.__stores.peers.subscribe((v) => (pc = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
 		pc.connections[aid].send({ type: 'disconnected', peerId: bid });
 	}, [A.id, B.id]);
 	await A.page.waitForTimeout(1500);
@@ -48,9 +48,9 @@ h.run(async () => {
 	// --- transient drop heals: close A's conn to B while B is alive
 	const uuid = await B.page.evaluate(() => {
 		const w = window;
-		w.__stores.commandsHandler.sceneCommand('/create box');
+		w.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		let g;
-		w.__stores.objectsGroup.subscribe((v) => (g = v))();
+		w.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return g.children[g.children.length - 1].uuid;
 	});
 	await h.eventually(
@@ -62,7 +62,7 @@ h.run(async () => {
 
 	await A.page.evaluate((bid) => {
 		let pc;
-		window.__stores.peers.subscribe((v) => (pc = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
 		pc.connections[bid].close();
 	}, B.id);
 	await A.page.waitForTimeout(800); // inside the reconnect window
@@ -83,11 +83,11 @@ h.run(async () => {
 	// messages flow again after the heal — from B, so B's own side must be healed too (A's open conn
 	// is the check above; B adopts the redial, or dials it, on its own schedule)
 	await h.eventually(() => openTo(B, A.id), (v) => v, "(premise) B's side of the conn is open again", 26000);
-	await B.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create sphere'));
+	await B.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create sphere'));
 	const countOn = (p) =>
 		p.page.evaluate(() => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			return g?.children?.length ?? 0;
 		});
 	const bCount = await countOn(B);
@@ -101,7 +101,7 @@ h.run(async () => {
 				`  ${name} after the heal: ` +
 					JSON.stringify(
 						await p.page.evaluate((o) => {
-							const s = window.__stores;
+							const s = window.__tp?.test.v1;
 							let decision = null;
 							let notes = [];
 							s.connectionState?.pendingConnectDecision?.subscribe?.((v) => (decision = v))?.();
@@ -120,7 +120,7 @@ h.run(async () => {
 	const t0 = Date.now();
 	await B.page.evaluate(() => {
 		let pc;
-		window.__stores.peers.subscribe((v) => (pc = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
 		pc.leaveSession();
 	});
 	await h.eventually(

@@ -56,7 +56,7 @@ const strip = (page) =>
 	});
 
 async function setTheme(page, id) {
-	await S(page, (id) => window.__stores.themes.theme.set(id), id);
+	await S(page, (id) => window.__tp.test.v1.themes.theme.set(id), id);
 	await page.waitForTimeout(300);
 }
 async function clipRow(page, name) {
@@ -89,14 +89,14 @@ h.run(async () => {
 
 	// ---- 2. the control: a docked view brings the bar back -----------------------------------------------
 	await S(page, () => {
-		window.__stores.explorerDocked?.set?.(true);
-		window.__stores.explorerClose.set(false);
+		window.__tp.test.v1.explorerDocked?.set?.(true);
+		window.__tp.test.v1.explorerClose.set(false);
 	});
 	await page.waitForTimeout(1200);
 	let s = await strip(page);
 	if (!s || s.tabs === 0) {
 		// the Explorer opened floating on this build: dock it through the W5 seam
-		await S(page, () => window.__stores.bottomDock.dockModeArm.set({ key: 'explorer', docked: true }));
+		await S(page, () => window.__tp.test.v1.bottomDock.dockModeArm.set({ key: 'explorer', docked: true }));
 		await page.waitForTimeout(1200);
 		s = await strip(page);
 	}

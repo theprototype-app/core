@@ -10,19 +10,19 @@
 // CUSTOM server config and one on the public cloud, and moves the first across.
 const h = require('./helpers.cjs');
 
-const openPeers = (peer) => peer.page.evaluate(() => { let p; window.__stores.peers.subscribe((x) => (p = x))(); return [...(p?.openedPeers ?? [])]; });
-const pendingOut = (peer) => peer.page.evaluate(() => { let w; window.__stores.waitingForApproval.subscribe((x) => (w = x))(); return w.filter((e) => e[1] === 'pending').map((e) => e[0]); });
-const lastToasts = (peer) => peer.page.evaluate(() => { let n; window.__stores.notifications.subscribe((x) => (n = x))(); return n.slice(-4).map((x) => x.text); });
+const openPeers = (peer) => peer.page.evaluate(() => { let p; window.__tp.test.v1.peers.subscribe((x) => (p = x))(); return [...(p?.openedPeers ?? [])]; });
+const pendingOut = (peer) => peer.page.evaluate(() => { let w; window.__tp.test.v1.waitingForApproval.subscribe((x) => (w = x))(); return w.filter((e) => e[1] === 'pending').map((e) => e[0]); });
+const lastToasts = (peer) => peer.page.evaluate(() => { let n; window.__tp.test.v1.notifications.subscribe((x) => (n = x))(); return n.slice(-4).map((x) => x.text); });
 // 41 G16: the two QUESTIONS (leave this session? / join on another server?) are confirmDialog
 // modals now, not toasts — so they are read from the dialog record, never from the toast log
-const question = (peer) => peer.page.evaluate(() => { let d; window.__stores.confirmDialog.confirmDialog.subscribe((x) => (d = x))(); return d ? (d.title ?? '') + ' | ' + (d.message ?? '') : ''; });
+const question = (peer) => peer.page.evaluate(() => { let d; window.__tp.test.v1.confirmDialog.confirmDialog.subscribe((x) => (d = x))(); return d ? (d.title ?? '') + ' | ' + (d.message ?? '') : ''; });
 const navCount = (peer) => peer.page.evaluate(() => performance.getEntriesByType('navigation').length);
-const serverKind = (peer) => peer.page.evaluate(() => { let s; window.__stores.peerServer.peerServerStatus.subscribe((x) => (s = x))(); return s?.kind ?? null; });
+const serverKind = (peer) => peer.page.evaluate(() => { let s; window.__tp.test.v1.peerServer.peerServerStatus.subscribe((x) => (s = x))(); return s?.kind ?? null; });
 // the toast STACK hides while the Connect drawer is open (toasts route into its Toasts
 // tab) — a dial opens the drawer, so close it before each paste to press the buttons
 const paste = (peer, hash) =>
 	peer.page.evaluate((hash) => {
-		window.__stores.connectDrawerOpen.set(false);
+		window.__tp.test.v1.connectDrawerOpen.set(false);
 		location.hash = hash;
 	}, hash);
 const approveOn = async (peer) => {
@@ -94,7 +94,7 @@ h.run(async () => {
 
 	// ---- 5. the decision function's edge cases, directly -----------------------------
 	const edge = await B.page.evaluate(async () => {
-		const f = window.__stores.inviteLinks.handleInviteHash;
+		const f = window.__tp.test.v1.inviteLinks.handleInviteHash;
 		return { empty: await f(''), hashOnly: await f('#'), badSrv: await f('#zzzzz~srv=%zz') };
 	});
 	h.check(edge.empty === 'none' && edge.hashOnly === 'none', `an empty hash (our own clears) is ignored (${edge.empty}, ${edge.hashOnly})`);
@@ -119,11 +119,11 @@ h.run(async () => {
 	await approveOn(E);
 	await h.eventually(() => openPeers(D), (p) => p.includes(E.id), 'D is connected to E across the switch', 40000);
 	h.check((await navCount(D)) === 1, 'no navigation on D');
-	const idKept = await D.page.evaluate(() => { let p; window.__stores.peers.subscribe((x) => (p = x))(); return p.peer.id; });
+	const idKept = await D.page.evaluate(() => { let p; window.__tp.test.v1.peers.subscribe((x) => (p = x))(); return p.peer.id; });
 	h.check(idKept === D.id, `D kept its session id across the switch (${idKept} = ${D.id})`);
 
 	// ---- 7. D2: a pinned server that never opens: back where you were, said so -------
-	await D.page.evaluate(() => { let p; window.__stores.peers.subscribe((x) => (p = x))(); p.leaveSession(); });
+	await D.page.evaluate(() => { let p; window.__tp.test.v1.peers.subscribe((x) => (p = x))(); p.leaveSession(); });
 	await D.page.waitForTimeout(1500);
 	await paste(D, '#' + A.id + '~srv=' + encodeURIComponent('nonexistent.invalid:4443'));
 	await D.page.waitForTimeout(400);
@@ -134,7 +134,7 @@ h.run(async () => {
 	// the state is read whole so a red says where it stopped (45 s: well past the 8 s switch
 	// timeout plus one capped backoff)
 	await h.eventually(
-		() => D.page.evaluate(() => { let p; window.__stores.peers.subscribe((x) => (p = x))(); return { open: !!p.peer?.open, id: p.peer?.id ?? null, disconnected: !!p.peer?.disconnected, destroyed: !!p.peer?.destroyed, idRetries: p.idRetries ?? null }; }),
+		() => D.page.evaluate(() => { let p; window.__tp.test.v1.peers.subscribe((x) => (p = x))(); return { open: !!p.peer?.open, id: p.peer?.id ?? null, disconnected: !!p.peer?.disconnected, destroyed: !!p.peer?.destroyed, idRetries: p.idRetries ?? null }; }),
 		(o) => o.open,
 		'the rebuilt link on the previous server opened',
 		45000
@@ -143,32 +143,32 @@ h.run(async () => {
 	// the rebuild collides with this peer's own still-held registration ("ID … is taken"), the
 	// collision retry mints a new id, and the link then never opens and never errors. The net log
 	// printed here is the evidence.
-	if (!(await D.page.evaluate(() => { let p; window.__stores.peers.subscribe((x) => (p = x))(); return !!p.peer?.open; })))
-		console.log('  net log: ' + JSON.stringify(await D.page.evaluate(() => window.__stores.diagnostics.lines().filter((l) => /net|peer|signal/i.test(JSON.stringify(l))).slice(-15))));
+	if (!(await D.page.evaluate(() => { let p; window.__tp.test.v1.peers.subscribe((x) => (p = x))(); return !!p.peer?.open; })))
+		console.log('  net log: ' + JSON.stringify(await D.page.evaluate(() => window.__tp.test.v1.diagnostics.lines().filter((l) => /net|peer|signal/i.test(JSON.stringify(l))).slice(-15))));
 
 	// ---- 8. D2: Settings ▸ Connection "Apply" switches without a reload -------------
 	await D.page.evaluate((cfg) => {
-		window.__stores.peerServer.peerServerConfig.set(cfg);
-		window.__stores.settingsSection.set('connection');
-		window.__stores.settingsOpen.set(true);
+		window.__tp.test.v1.peerServer.peerServerConfig.set(cfg);
+		window.__tp.test.v1.settingsSection.set('connection');
+		window.__tp.test.v1.settingsOpen.set(true);
 	}, custom);
 	await D.page.waitForSelector('#peer-server-apply', { timeout: 15000 });
 	await D.page.locator('#peer-server-apply').click();
 	await h.eventually(() => serverKind(D), (k) => k === 'custom', 'Apply moved D to the configured custom server, no reload', 20000);
 	h.check((await navCount(D)) === 1, 'still one navigation entry on D');
-	await D.page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await D.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 
 	// ---- 9. 69 T8: a link that names a server, opened in a NEW tab, asks too ---------
 	// It used to switch at load with no word: the server in a link sees everyone's address.
 	const srvHost = 'nonexistent.invalid:4443';
 	const F = await h.setupPageQuiet(browser, 'F', [D], { hash: '#' + D.id + '~srv=' + encodeURIComponent(srvHost) });
 	await h.eventually(() => question(F), (q) => /\| Join .* on nonexistent\.invalid:4443\?/.test(q) && /IP address/.test(q), 'a new tab on a link naming a server asks first, naming it', 20000);
-	const fHost = await F.page.evaluate(() => { let s; window.__stores.peerServer.peerServerStatus.subscribe((x) => (s = x))(); return s?.host ?? s?.kind ?? null; });
+	const fHost = await F.page.evaluate(() => { let s; window.__tp.test.v1.peerServer.peerServerStatus.subscribe((x) => (s = x))(); return s?.host ?? s?.kind ?? null; });
 	h.check(fHost !== 'nonexistent.invalid', `nothing switched before the answer (${fHost})`);
 	await clickToast(F, 'Stay on mine');
 	await F.page.waitForTimeout(1500);
 	h.check((await pendingOut(F)).length === 0, 'Stay on mine: nothing was dialled');
-	const fHostAfter = await F.page.evaluate(() => { let s; window.__stores.peerServer.peerServerStatus.subscribe((x) => (s = x))(); return s?.host ?? s?.kind ?? null; });
+	const fHostAfter = await F.page.evaluate(() => { let s; window.__tp.test.v1.peerServer.peerServerStatus.subscribe((x) => (s = x))(); return s?.host ?? s?.kind ?? null; });
 	h.check(fHostAfter !== 'nonexistent.invalid', `and the server stayed ours (${fHostAfter})`);
 
 	await h.finish(browser);

@@ -5,7 +5,7 @@ const liveLineCount = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.globalScene.subscribe((scene) => {
+				window.__tp.test.v1.globalScene.subscribe((scene) => {
 					let lines = 0;
 					scene?.traverse((o) => {
 						if (o.name === 'draw-live') lines++;
@@ -19,7 +19,7 @@ const strokeCount = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					resolve(g?.children.filter((c) => c.name === 'Stroke').length ?? 0);
 				})();
 			})
@@ -42,7 +42,7 @@ h.run(async () => {
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);
 
-	await A.page.evaluate(() => window.__stores.drawMode.toggleDrawMode());
+	await A.page.evaluate(() => window.__tp.test.v1.drawMode.toggleDrawMode());
 	await A.page.waitForTimeout(300);
 
 	// mid-stroke: B already shows a temp line
@@ -57,7 +57,7 @@ h.run(async () => {
 	await h.eventually(() => liveLineCount(B.page), (n) => n === 0, 'temp line removed after the stroke lands');
 
 	// live toggle off -> no temp line mid-drag, mesh still lands
-	await A.page.evaluate(() => window.__stores.drawMode.liveStreaming.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.drawMode.liveStreaming.set(false));
 	let midLineOff = -1;
 	await drag(A.page, async () => {
 		midLineOff = await liveLineCount(B.page);

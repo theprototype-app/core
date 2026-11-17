@@ -34,7 +34,7 @@ const pv = (p) =>
 	S(p, () => {
 		const w = document.getElementById('image-preview-window');
 		let list;
-		window.__stores.fileWindows.previewWindows.subscribe((x) => (list = x))();
+		window.__tp.test.v1.fileWindows.previewWindows.subscribe((x) => (list = x))();
 		const t = list[0];
 		return {
 			open: !!w,
@@ -53,7 +53,7 @@ const pv = (p) =>
 /** seed: three images of different sizes, one text file — in the library root */
 const seed = (p) =>
 	S(p, async () => {
-		const e = window.__stores.explorer;
+		const e = window.__tp.test.v1.explorer;
 		await e.loadExplorer?.();
 		await e.clearLibrary();
 		const png = async (w, hh, color) => {
@@ -102,7 +102,7 @@ h.run(async () => {
 
 	// ---- §1 Pin to dock ---------------------------------------------------------------
 	await S(A, async (id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const blob = await s.explorer.itemBlob(id);
 		s.fileWindows.openFilePreview({ title: 'a-red.png', kind: 'image', itemId: id, name: 'a-red.png', url: URL.createObjectURL(blob) });
 	}, ids.a);
@@ -190,14 +190,14 @@ h.run(async () => {
 	h.check((await dialogs()).length === 0, `§6 "Keep editing" leaves no dialog behind (${JSON.stringify(await dialogs())})`);
 	st = await pv(A);
 	h.check(st.itemId === ids.b && /60 × 80/.test(st.size), `§6 walking away from an unsaved edit asks; "Keep editing" stays (${JSON.stringify(st)})`);
-	const hashBefore = await S(A, (id) => window.__stores.explorer.itemById(id)?.hash, ids.b);
+	const hashBefore = await S(A, (id) => window.__tp.test.v1.explorer.itemById(id)?.hash, ids.b);
 	const saveState = await S(A, () => ({ disabled: document.querySelector('#image-editor-save')?.disabled, dirty: document.querySelector('#image-editor-window')?.dataset.dirty ?? null }));
 	await page.locator('#image-editor-save').click();
 	// a loaded Deck slot takes 16-20 s for this Save on v1.65.0 and on uir-polish alike (A/B 2026-11-11, ~19 s of long
 	// tasks on the unbundled dev app) — the old 8 s wait was the known "Save missed its wait" flake
-	await until(async () => (await S(A, (id) => window.__stores.explorer.itemById(id)?.hash, ids.b)) !== hashBefore, 40000);
+	await until(async () => (await S(A, (id) => window.__tp.test.v1.explorer.itemById(id)?.hash, ids.b)) !== hashBefore, 40000);
 	console.log('  save diag: ' + JSON.stringify({ saveState, dialogs: await dialogs(), toasts: await S(A, () => document.querySelector('.toasts-stack')?.textContent?.slice(0, 200)) }));
-	h.check((await S(A, (id) => window.__stores.explorer.itemById(id)?.hash, ids.b)) !== hashBefore, '§6 Save writes the image');
+	h.check((await S(A, (id) => window.__tp.test.v1.explorer.itemById(id)?.hash, ids.b)) !== hashBefore, '§6 Save writes the image');
 	await page.locator('#preview-view').click();
 	await until(async () => (await pv(A)).mode === 'view');
 	const dims = async () =>
@@ -209,7 +209,7 @@ h.run(async () => {
 	h.check(JSON.stringify(await dims()) === '[60,80]', `§6 back in View, the window shows the SAVED picture (${JSON.stringify(await dims())})`);
 
 	// ---- §7 floating: still pinned, still follows; unpinned it stops ----------------------
-	await S(A, () => window.__stores.bottomDock.activateDock('preview'));
+	await S(A, () => window.__tp.test.v1.bottomDock.activateDock('preview'));
 	await page.waitForTimeout(300);
 	await S(A, () => document.getElementById('dock-undock').click());
 	await until(async () => !(await pv(A)).hosted);
@@ -239,15 +239,15 @@ h.run(async () => {
 	const idsB = await seed(B);
 	await pb.locator('#explorer-slot').click();
 	await pb.waitForTimeout(1200);
-	await S(B, () => window.__stores.bottomDock.activateDock('explorer'));
+	await S(B, () => window.__tp.test.v1.bottomDock.activateDock('explorer'));
 	await pb.locator(`[data-card-id="${idsB.a}"]`).waitFor({ timeout: 10000 });
 	await pb.locator(`[data-card-id="${idsB.a}"]`).click();
-	await S(B, () => window.__stores.fileWindows.openFilePreview({ title: 'Preview', kind: 'empty', url: '' }));
+	await S(B, () => window.__tp.test.v1.fileWindows.openFilePreview({ title: 'Preview', kind: 'empty', url: '' }));
 	await pb.locator('#preview-pin').click();
 	await until(async () => (await pv(B)).hosted === 'shown');
 	const split = await S(B, () => {
 		let v;
-		window.__stores.bottomDock.dockShownKeys.subscribe((x) => (v = x))();
+		window.__tp.test.v1.bottomDock.dockShownKeys.subscribe((x) => (v = x))();
 		return v;
 	});
 	st = await pv(B);
@@ -282,7 +282,7 @@ h.run(async () => {
 	for (const [w, hh, dpr, label] of [[353, 792, 3, 'folded'], [770, 850, 2, 'unfolded']]) {
 		const P = await h.setupPage(browser, 'P-' + label, { context: { viewport: { width: w, height: hh }, hasTouch: true, isMobile: true, deviceScaleFactor: dpr } });
 		const idsP = await seed(P);
-		await S(P, (id) => window.__stores.imageEditor.openImageEditor(id), idsP.b);
+		await S(P, (id) => window.__tp.test.v1.imageEditor.openImageEditor(id), idsP.b);
 		await until(async () => /80 × 60/.test((await pv(P)).size), 10000);
 		await S(P, () => document.querySelectorAll('.toasts-stack .tp-toast-x').forEach((b) => b.click()));
 		await P.page.waitForTimeout(400);

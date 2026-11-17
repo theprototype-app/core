@@ -27,7 +27,7 @@ const pngFile = async (page, name, colours) => {
 const state = (page, uuid) =>
 	page.evaluate((id) => {
 		let group = null;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		const m = group?.getObjectByProperty('uuid', id)?.material;
 		if (!m) return null;
 		const tex = (t) => (t ? { space: t.colorSpace, repeat: [t.repeat.x, t.repeat.y], offset: [t.offset.x, t.offset.y], rotation: t.rotation, wrap: t.wrapS, w: t.image?.width } : null);
@@ -48,20 +48,20 @@ const state = (page, uuid) =>
 		};
 	}, uuid);
 
-const undo = (page) => page.evaluate(() => window.__stores.history.undo());
-const redo = (page) => page.evaluate(() => window.__stores.history.redo());
+const undo = (page) => page.evaluate(() => window.__tp.test.v1.history.undo());
+const redo = (page) => page.evaluate(() => window.__tp.test.v1.history.redo());
 const undoDepth = (page) =>
 	page.evaluate(() => {
 		let depth = 0;
-		window.__stores.history.undoStack.subscribe((s) => (depth = s.length))();
+		window.__tp.test.v1.history.undoStack.subscribe((s) => (depth = s.length))();
 		return depth;
 	});
 
 const createBox = (page) =>
 	page.evaluate(async () => {
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const before = new Set(group.children.map((c) => c.uuid));
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		for (let i = 0; i < 40; i++) {
 			await new Promise((r) => setTimeout(r, 100));
 			const made = group.children.find((c) => !before.has(c.uuid) && c.isMesh);
@@ -72,8 +72,8 @@ const createBox = (page) =>
 
 const select = async (page, uuid) => {
 	await page.evaluate((id) => {
-		window.__stores.inspectorClose.set(false);
-		window.__stores.objectActions.selectObject(id);
+		window.__tp.test.v1.inspectorClose.set(false);
+		window.__tp.test.v1.objectActions.selectObject(id);
 	}, uuid);
 	await page.waitForSelector('#material-maps', { timeout: 30000, state: 'attached' });
 };
@@ -134,7 +134,7 @@ h.run(async () => {
 
 	console.log('\n=== 4. tiling, offset, rotation ===');
 	const depth2 = await undoDepth(page);
-	await page.evaluate((id) => window.__stores.materialMaps.setTexTransform(id, { repeat: [4, 2], offset: [0.25, 0.5], rotation: 0.5 }), box);
+	await page.evaluate((id) => window.__tp.test.v1.materialMaps.setTexTransform(id, { repeat: [4, 2], offset: [0.25, 0.5], rotation: 0.5 }), box);
 	const s4 = await state(page, box);
 	for (const key of ['normal', 'rough', 'metal', 'emissive', 'ao']) {
 		h.check(s4[key].repeat[0] === 4 && s4[key].repeat[1] === 2 && s4[key].offset[1] === 0.5 && s4[key].rotation === 0.5, '4.1 ' + key + ' took the transform');
@@ -150,14 +150,14 @@ h.run(async () => {
 	// a scrub on the real row is one undo step
 	const depth3 = await undoDepth(page);
 	await page.evaluate((id) => {
-		const M = window.__stores.materialMaps;
+		const M = window.__tp.test.v1.materialMaps;
 		const token = {};
-		const G = window.__stores.historyGesture;
+		const G = window.__tp.test.v1.historyGesture;
 		if (G) G.withHistoryGesture(token, () => M.setTexTransform(id, { repeat: [5, 2] }));
 		if (G) G.withHistoryGesture(token, () => M.setTexTransform(id, { repeat: [6, 2] }));
 		if (G) G.withHistoryGesture(token, () => M.setTexTransform(id, { repeat: [7, 2] }));
 	}, box);
-	const scrubbed = await page.evaluate(() => !!window.__stores.historyGesture);
+	const scrubbed = await page.evaluate(() => !!window.__tp.test.v1.historyGesture);
 	if (scrubbed) {
 		h.check((await undoDepth(page)) === depth3 + 1, '4.7 three writes in one gesture = one undo step');
 		await undo(page);
@@ -165,21 +165,21 @@ h.run(async () => {
 	} else console.log('SKIP 4.7: historyGesture is not on the debug hook');
 
 	// the real row, typed
-	await page.evaluate((id) => window.__stores.objectActions.selectObject(id), box);
+	await page.evaluate((id) => window.__tp.test.v1.objectActions.selectObject(id), box);
 	const tile = page.locator('#map-tile-u');
 	h.check((await tile.count()) >= 1, '4.9 the Tile U row is there');
 
 	console.log('\n=== 5. strengths ===');
-	await page.evaluate((id) => window.__stores.materialMaps.setNormalStrength(id, 2.5), box);
+	await page.evaluate((id) => window.__tp.test.v1.materialMaps.setNormalStrength(id, 2.5), box);
 	await h.eventually(() => state(B.page, box), (s) => s?.normalScale?.[0] === 2.5, '5.1 normal strength reaches B', 20000);
-	await page.evaluate((id) => window.__stores.materialsHandler.setMaterialParam(id, 'aoMapIntensity', 0.5), box);
+	await page.evaluate((id) => window.__tp.test.v1.materialsHandler.setMaterialParam(id, 'aoMapIntensity', 0.5), box);
 	await h.eventually(() => state(B.page, box), (s) => s?.aoIntensity === 0.5, '5.2 AO strength reaches B', 20000);
 
 	console.log('\n=== 6. nothing doubles: the URLs stay out of userData ===');
 	const s6 = await state(page, box);
 	h.check(s6.userDataBytes < 4000 + (await page.evaluate((id) => {
 		let group = null;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		return (group.getObjectByProperty('uuid', id).material.userData.mapDataUrl ?? '').length;
 	}, box)), '6.1 five maps add nothing big to material.userData: ' + s6.userDataBytes + ' bytes');
 
@@ -200,7 +200,7 @@ h.run(async () => {
 	console.log('\n=== 8. a saved scene and a GLB export ===');
 	const saved = await page.evaluate(
 		(id) => {
-			const payload = window.__stores.sessions.buildSessionPayload('map-slots');
+			const payload = window.__tp.test.v1.sessions.buildSessionPayload('map-slots');
 			const text = JSON.stringify(payload);
 			return { has: !!payload, bytes: text.length, id: text.includes(id) };
 		},
@@ -209,9 +209,9 @@ h.run(async () => {
 	h.check(saved.has && saved.id, '8.1 the object is in the session payload (' + saved.bytes + ' bytes)');
 	const glb = await page.evaluate(async (id) => {
 		let group = null;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		const object = group.getObjectByProperty('uuid', id);
-		const buffer = await window.__stores.fileHandler.gltfBytesFor([object], { binary: true });
+		const buffer = await window.__tp.test.v1.fileHandler.gltfBytesFor([object], { binary: true });
 		const bytes = buffer instanceof ArrayBuffer ? buffer : await new Response(buffer).arrayBuffer();
 		const view = new DataView(bytes);
 		const length = view.getUint32(12, true);
@@ -228,13 +228,13 @@ h.run(async () => {
 	h.check(mat.normalTexture?.scale === 2.5, '8.8 GLB: the normal strength');
 
 	console.log('\n=== 9. a type switch keeps them ===');
-	await page.evaluate((id) => window.__stores.materialsHandler.switchMaterialType(id, 'MeshPhysicalMaterial'), box);
+	await page.evaluate((id) => window.__tp.test.v1.materialsHandler.switchMaterialType(id, 'MeshPhysicalMaterial'), box);
 	let s9 = await state(page, box);
 	h.check(s9.type === 'MeshPhysicalMaterial' && !!s9.normal && !!s9.rough && !!s9.metal && !!s9.ao, '9.1 Standard to Physical keeps every map');
-	await page.evaluate((id) => window.__stores.materialsHandler.switchMaterialType(id, 'MeshBasicMaterial'), box);
+	await page.evaluate((id) => window.__tp.test.v1.materialsHandler.switchMaterialType(id, 'MeshBasicMaterial'), box);
 	s9 = await state(page, box);
 	h.check(s9.type === 'MeshBasicMaterial' && !!s9.ao, '9.2 Basic has an AO slot and keeps that one');
-	await page.evaluate((id) => window.__stores.materialsHandler.switchMaterialType(id, 'MeshStandardMaterial'), box);
+	await page.evaluate((id) => window.__tp.test.v1.materialsHandler.switchMaterialType(id, 'MeshStandardMaterial'), box);
 	await h.eventually(() => state(page, box), (s) => s?.type === 'MeshStandardMaterial' && !!s.normal && !!s.rough && !!s.metal && !!s.emissive, '9.3 ...and going back to Standard brings the rest back', 15000);
 	await h.eventually(() => state(B.page, box), (s) => s?.type === 'MeshStandardMaterial' && !!s.normal && !!s.emissive, '9.4 ...on B too', 20000);
 
@@ -250,7 +250,7 @@ h.run(async () => {
 		c.width = c.height = 512;
 		c.getContext('2d').fillRect(0, 0, 512, 512);
 		const blob = await new Promise((r) => c.toBlob(r));
-		const M = window.__stores.materialMaps;
+		const M = window.__tp.test.v1.materialMaps;
 		M.removeObjectsMapSlot([id], 'aoMap');
 		await M.setObjectsMapSlot([id], 'aoMap', blob);
 		await M.removeObjectsMapSlot([id], 'aoMap');
@@ -260,7 +260,7 @@ h.run(async () => {
 
 	console.log('\n=== 11. tiling stays on its own material when two materials share a texture ===');
 	const shared = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const group = await new Promise((r) => s.objectsGroup.subscribe(r)());
 		const c = document.createElement('canvas');
 		c.width = c.height = 8;
@@ -300,13 +300,13 @@ h.run(async () => {
 
 	console.log('\n=== 13. a multi-selection, and presets ===');
 	const box3 = await createBox(page);
-	await page.evaluate(({ a, b }) => window.__stores.objectActions.setSelection?.([a, b]) ?? window.__stores.objectActions.selectObjects?.([a, b]), { a: box2, b: box3 });
+	await page.evaluate(({ a, b }) => window.__tp.test.v1.objectActions.setSelection?.([a, b]) ?? window.__tp.test.v1.objectActions.selectObjects?.([a, b]), { a: box2, b: box3 });
 	const applied = await page.evaluate(async ({ a, b }) => {
 		const c = document.createElement('canvas');
 		c.width = c.height = 8;
 		c.getContext('2d').fillRect(0, 0, 8, 8);
 		const blob = await new Promise((r) => c.toBlob(r));
-		return window.__stores.materialMaps.setObjectsMapSlot([a, b], 'roughnessMap', blob);
+		return window.__tp.test.v1.materialMaps.setObjectsMapSlot([a, b], 'roughnessMap', blob);
 	}, { a: box2, b: box3 });
 	h.check(applied === 2, '13.1 one image onto both, decoded once');
 	await h.eventually(() => state(B.page, box3), (s) => !!s?.rough, '13.2 B has it on the second object', 20000);
@@ -319,7 +319,7 @@ h.run(async () => {
 	else console.log('SKIP 13.3: no module import on this build');
 
 	console.log('\n=== 14. N6, folded and unfolded ===');
-	await page.evaluate((id) => window.__stores.objectActions.selectObject(id), box);
+	await page.evaluate((id) => window.__tp.test.v1.objectActions.selectObject(id), box);
 	for (const [name, width, height] of [['folded', 390, 896], ['unfolded', 770, 850]]) {
 		await page.setViewportSize({ width, height });
 		await page.waitForTimeout(800);

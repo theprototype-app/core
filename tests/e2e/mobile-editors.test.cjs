@@ -95,7 +95,7 @@ h.run(async () => {
 
 	// a textured box carrying two animated channels, selected
 	const uuid = await page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		await new Promise((r) => setTimeout(r, 600));
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
@@ -124,7 +124,7 @@ h.run(async () => {
 	const open = (/** @type {string} */ key, /** @type {string} */ store) =>
 		page.evaluate(
 			([key, store]) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				for (const k of ['animationClose', 'uvEditorClose', 'shaderEditorClose', 'profilerClose']) s[k].set(true);
 				s[store].set(false);
 				s.bottomDock.activateDock(key);
@@ -161,7 +161,7 @@ h.run(async () => {
 	await page.waitForTimeout(500);
 	const liveOpen = await page.evaluate(() => !!document.getElementById('profiler-live'));
 	h.check(liveOpen, 'profiler: a tap on the reached Live control opens the live view (showhide-v8: the Profiler\'s Live row)');
-	await page.evaluate(() => window.__stores.perfLiveSink.profilerLiveOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.perfLiveSink.profilerLiveOpen.set(false));
 
 	// ---------------- #37 UV editor ----------------
 	await open('uv', 'uvEditorClose');
@@ -273,7 +273,7 @@ h.run(async () => {
 	h.check(!!keyAt, 'animation: the key at 0.5 s is on screen');
 	const timeOf = () =>
 		page.evaluate((id) => {
-			const clip = window.__stores.animationPreview.activeClip(id);
+			const clip = window.__tp.test.v1.animationPreview.activeClip(id);
 			const tr = clip.tracks.find((/** @type {any} */ t) => t.channel === 'pos.y');
 			return tr.keys.map((/** @type {any} */ k) => +k.t.toFixed(3));
 		}, uuid);
@@ -283,7 +283,7 @@ h.run(async () => {
 	const after = await timeOf();
 	h.check(before.includes(0.5) && !after.includes(0.5) && after.some((t) => t > 0.55 && t < 1), `animation: a finger drags the key later in time (${before.join(',')} -> ${after.join(',')})`);
 	// one undo restores it (the drag was ONE gesture)
-	await page.evaluate(() => window.__stores.history.undo());
+	await page.evaluate(() => window.__tp.test.v1.history.undo());
 	await page.waitForTimeout(300);
 	const undone = await timeOf();
 	h.check(undone.includes(0.5), `animation: one undo puts the touch-dragged key back (${undone.join(',')})`);
@@ -409,7 +409,7 @@ h.run(async () => {
 	const D = await h.setupPage(browser, 'desktop', { context: { viewport: { width: 1440, height: 900 } } });
 	const dp = D.page;
 	await dp.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		await new Promise((r) => setTimeout(r, 600));
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
@@ -420,7 +420,7 @@ h.run(async () => {
 	const dOpen = (/** @type {string} */ key, /** @type {string} */ store) =>
 		dp.evaluate(
 			([key, store]) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				for (const k of ['animationClose', 'uvEditorClose', 'shaderEditorClose', 'profilerClose']) s[k].set(true);
 				s[store].set(false);
 				s.bottomDock.activateDock(key);

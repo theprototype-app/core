@@ -24,7 +24,7 @@ h.run(async () => {
 		await p.page.evaluate(() => {
 			const w = window;
 			let pc;
-			w.__stores.peers.subscribe((v) => (pc = v))();
+			w.__tp.test.v1.peers.subscribe((v) => (pc = v))();
 			const seen = new WeakSet();
 			w.__rx = {};
 			const hook = (c) => {
@@ -47,14 +47,14 @@ h.run(async () => {
 	const countOn = (p) =>
 		p.page.evaluate(() => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			return g?.children?.length ?? 0;
 		});
 
 	// host A owns a scene — polled, not a fixed second (54 X11): the count C must reach is A's
 	const before = await countOn(A);
 	await A.page.evaluate(() => {
-		for (let i = 0; i < 5; i++) window.__stores.commandsHandler.sceneCommand('/create box');
+		for (let i = 0; i < 5; i++) window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 	});
 	await h.eventually(() => countOn(A), (c) => c >= before + 5, 'premise: A holds its five boxes', 20000);
 
@@ -88,7 +88,7 @@ h.run(async () => {
 		() =>
 			C.page.evaluate(() => {
 				let pc;
-				window.__stores.peers.subscribe((v) => (pc = v))();
+				window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
 				return pc.openedPeers.size;
 			}),
 		(n) => n === 2,
@@ -115,7 +115,7 @@ h.run(async () => {
 	// and nobody got the share-or-stash prompt out of the mesh fill
 	const bInfo = await B.page.evaluate(() => {
 		let t;
-		window.__stores.toastStore.subscribe((v) => (t = v))();
+		window.__tp.test.v1.toastStore.subscribe((v) => (t = v))();
 		return (t || []).map((x) => (x && x.id) || '');
 	});
 	h.check(!bInfo.includes('share-or-stash'), 'no bogus share-or-stash prompt on an existing peer');

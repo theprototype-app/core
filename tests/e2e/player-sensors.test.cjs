@@ -18,7 +18,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(3000);
 		await warm.ctx.close();
 	}
@@ -27,7 +27,7 @@ h.run(async () => {
 	await h.connect(B, A);
 
 	const ids = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const cmd = s.commandsHandler.sceneCommand;
 		cmd('/create Box 4 2.4 2');
 		cmd('/create Box 0.5 0.5 0.5');
@@ -80,8 +80,8 @@ h.run(async () => {
 				{ id: 'e-oeP-cP', source: 'oeP', target: 'cP' },
 				{ id: 'e-oeO-cO', source: 'oeO', target: 'cO' }
 			];
-			window.__stores.flowNodes.set(nodes);
-			window.__stores.flowEdges.set(edges);
+			window.__tp.test.v1.flowNodes.set(nodes);
+			window.__tp.test.v1.flowEdges.set(edges);
 		}, ids);
 	await buildGraph(A.page);
 	await buildGraph(B.page);
@@ -90,19 +90,19 @@ h.run(async () => {
 	const counts = (page) =>
 		page.evaluate(() => {
 			let t;
-			window.__stores.flowTriggers.subscribe((v) => (t = v))();
+			window.__tp.test.v1.flowTriggers.subscribe((v) => (t = v))();
 			const c = (id) => t[id]?.count ?? 0;
-			return { enter: c('cE'), exit: c('cX'), player: c('cP'), objects: c('cO'), other: window.__stores.flowRuntime.contactOtherOf('oe') };
+			return { enter: c('cE'), exit: c('cX'), player: c('cP'), objects: c('cO'), other: window.__tp.test.v1.flowRuntime.contactOtherOf('oe') };
 		});
 	const rig = (page) =>
 		page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let cam;
 			s.playerCam.subscribe((c) => (cam = c))();
 			const w = cam.getWorldPosition(new s.THREE.Vector3());
 			return { z: w.z };
 		});
-	const near = (page) => page.evaluate(() => window.__stores.flowRuntime.nodeValueOf?.('near') ?? null);
+	const near = (page) => page.evaluate(() => window.__tp.test.v1.flowRuntime.nodeValueOf?.('near') ?? null);
 	/** walk forward until the rig is past the sensor @param {any} peer */
 	const walkThrough = async (peer) => {
 		await peer.page.keyboard.down('KeyW');
@@ -113,9 +113,9 @@ h.run(async () => {
 	};
 
 	// 1. A — the stepping peer
-	await A.page.evaluate(() => window.__stores.isLocked.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await h.eventually(
-		() => A.page.evaluate(() => { let v; window.__stores.physics.simulating.subscribe((x) => (v = x))(); return v; }),
+		() => A.page.evaluate(() => { let v; window.__tp.test.v1.physics.simulating.subscribe((x) => (v = x))(); return v; }),
 		(v) => v === true,
 		'premise: Play starts the simulation on A',
 		15000
@@ -135,9 +135,9 @@ h.run(async () => {
 	await h.leavePlay(A);
 
 	// 2. B — no world of its own (A steps the simulation)
-	const bWorld = await B.page.evaluate(() => !!window.__stores.physics.physicsRuntime());
+	const bWorld = await B.page.evaluate(() => !!window.__tp.test.v1.physics.physicsRuntime());
 	h.check(!bWorld, 'premise: B holds no physics world (A is the stepping peer)');
-	await B.page.evaluate(() => window.__stores.isLocked.set(true));
+	await B.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await B.page.waitForTimeout(1500);
 	const nearStart = await near(B.page);
 	const endB = await walkThrough(B);
@@ -152,7 +152,7 @@ h.run(async () => {
 	// 4. Proximity to: player — MY player only
 	h.check(nearStart === false, `Proximity (to: player, r 1.5) is false while B stands 4 m away (${nearStart})`);
 	await B.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let cam;
 		s.playerCam.subscribe((c) => (cam = c))();
 		// the play camera IS the rig PointerLockControls moves (Player.svelte: its parent is the
@@ -163,7 +163,7 @@ h.run(async () => {
 	});
 	await B.page.waitForTimeout(600);
 	console.log('B after the teleport: ' + JSON.stringify(await B.page.evaluate(() => (() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let cam, gc, ctl;
 			s.playerCam.subscribe((c) => (cam = c))();
 			s.globalCamera?.subscribe?.((c) => (gc = c))();
@@ -176,7 +176,7 @@ h.run(async () => {
 		})())));
 	await h.eventually(() => near(B.page), (v) => v === true, 'B: Proximity turns true at the sensor', 4000);
 	console.log('  B proximity inputs: ' + JSON.stringify(await B.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fr = s.flowRuntime;
 		const node = s.allNodes().find((n) => n.id === 'near');
 		const sel = fr.nodeValueOf('s5');

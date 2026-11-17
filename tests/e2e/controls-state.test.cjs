@@ -13,24 +13,24 @@ h.run(async () => {
 
 	// --- O/N/Explorer tint when their panel opens ---
 	await A.page.evaluate(() => {
-		window.__stores.objectListClose.set(true);
-		window.__stores.flowGraphClose.set(true);
-		window.__stores.explorerClose.set(true);
+		window.__tp.test.v1.objectListClose.set(true);
+		window.__tp.test.v1.flowGraphClose.set(true);
+		window.__tp.test.v1.explorerClose.set(true);
 	});
 	await A.page.waitForTimeout(200);
 	const off = await iconClass('Object list (O)');
 	h.check(!off.includes('text-accent'), 'object-list icon is idle when closed');
 
-	await A.page.evaluate(() => window.__stores.objectListClose.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.objectListClose.set(false));
 	await A.page.waitForTimeout(200);
 	const on = await iconClass('Object list (O)');
 	h.check(on.includes('text-accent'), 'object-list icon tints when open');
 
-	await A.page.evaluate(() => window.__stores.explorerClose.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.explorerClose.set(false));
 	await A.page.waitForTimeout(200);
 	const explorerOn = await iconClass('Explorer');
 	h.check(explorerOn.includes('text-accent'), 'Explorer icon tints when open');
-	await A.page.evaluate(() => { window.__stores.objectListClose.set(true); window.__stores.explorerClose.set(true); });
+	await A.page.evaluate(() => { window.__tp.test.v1.objectListClose.set(true); window.__tp.test.v1.explorerClose.set(true); });
 
 	// --- Move/Rotate/Scale stay idle with no selection ---
 	const moveIdle = await iconClass('Move (1)');
@@ -41,7 +41,7 @@ h.run(async () => {
 		() =>
 			new Promise((r) => {
 				let tc;
-				window.__stores.TControls.subscribe((v) => (tc = v))();
+				window.__tp.test.v1.TControls.subscribe((v) => (tc = v))();
 				r(tc ? tc.visible === false : true);
 			})
 	);
@@ -49,13 +49,13 @@ h.run(async () => {
 
 	// --- selecting an object shows the gizmo + tints the active mode ---
 	const afterSelect = await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const box = group.children[group.children.length - 1];
-		window.__stores.objectActions.selectObject(box.uuid);
+		window.__tp.test.v1.objectActions.selectObject(box.uuid);
 		await new Promise((r) => setTimeout(r, 200));
 		let tc;
-		window.__stores.TControls.subscribe((v) => (tc = v))();
+		window.__tp.test.v1.TControls.subscribe((v) => (tc = v))();
 		return { visible: tc?.visible, attached: tc?.object?.uuid === box.uuid };
 	});
 	h.check(afterSelect.visible && afterSelect.attached, 'selecting an object shows + attaches the gizmo');
@@ -65,11 +65,11 @@ h.run(async () => {
 
 	// --- deselect hides the gizmo again ---
 	const afterDeselect = await A.page.evaluate(async () => {
-		window.__stores.objectActions.deselectObject?.();
-		window.__stores.selectedObject.set([]);
+		window.__tp.test.v1.objectActions.deselectObject?.();
+		window.__tp.test.v1.selectedObject.set([]);
 		await new Promise((r) => setTimeout(r, 200));
 		let tc;
-		window.__stores.TControls.subscribe((v) => (tc = v))();
+		window.__tp.test.v1.TControls.subscribe((v) => (tc = v))();
 		return tc?.visible === false;
 	});
 	h.check(afterDeselect, 'deselecting hides the gizmo');

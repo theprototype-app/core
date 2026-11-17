@@ -31,28 +31,28 @@
 const h = require('./helpers.cjs');
 
 // ---- reading the world -----------------------------------------------------------
-const presence = (peer) => peer.page.evaluate(() => window.__stores.gamePresence.gamePresenceDebug());
+const presence = (peer) => peer.page.evaluate(() => window.__tp.test.v1.gamePresence.gamePresenceDebug());
 
 const modesOf = (peer) =>
 	peer.page.evaluate(() => {
 		let m;
-		window.__stores.gamePresence.peerPlayModes.subscribe((v) => (m = v))();
+		window.__tp.test.v1.gamePresence.peerPlayModes.subscribe((v) => (m = v))();
 		return m;
 	});
 
 const gstate = (peer) =>
 	peer.page.evaluate(() => {
 		let g;
-		window.__stores.gameState.gameState.subscribe((v) => (g = v))();
+		window.__tp.test.v1.gameState.gameState.subscribe((v) => (g = v))();
 		return { state: g.state, round: g.round, startedAt: g.startedAt, changedAt: g.changedAt };
 	});
 
-const varOf = (peer, name) => peer.page.evaluate((n) => window.__stores.gameState.gameVar(n, 0), name);
+const varOf = (peer, name) => peer.page.evaluate((n) => window.__tp.test.v1.gameState.gameVar(n, 0), name);
 
 const playStore = (peer) =>
 	peer.page.evaluate(() => {
 		let v;
-		window.__stores.isLocked.subscribe((x) => (v = x))();
+		window.__tp.test.v1.isLocked.subscribe((x) => (v = x))();
 		return v;
 	});
 
@@ -60,33 +60,33 @@ const playStore = (peer) =>
  * Pointer Lock is DENIED in headless Chromium, so a real Escape cannot be produced —
  * this is the value the pointerlockchange handler writes, and collectibles-v2 leaves
  * play the same way. The way IN is always the real button (see `pressPlay`). */
-const leavePlay = (peer) => peer.page.evaluate(() => window.__stores.isLocked.set(false));
+const leavePlay = (peer) => peer.page.evaluate(() => window.__tp.test.v1.isLocked.set(false));
 
 /** THE REAL ENTRY PATH: the play FAB, as a user presses it. */
 const pressPlay = (peer) => peer.page.click('#play-button');
 
 const setState = (peer, state) =>
-	peer.page.evaluate((s) => window.__stores.gameState.setGameState(s), state);
+	peer.page.evaluate((s) => window.__tp.test.v1.gameState.setGameState(s), state);
 
 const wipe = async (peers) => {
 	for (const p of peers)
 		await p.page.evaluate(() => {
-			window.__stores.clearGraphs();
-			window.__stores.gameState.clearGameState();
-			window.__stores.isLocked.set(false);
-			window.__stores.gamePresence.resetGamePresence();
+			window.__tp.test.v1.clearGraphs();
+			window.__tp.test.v1.gameState.clearGameState();
+			window.__tp.test.v1.isLocked.set(false);
+			window.__tp.test.v1.gamePresence.resetGamePresence();
 		});
 	// let the exit settle `false` back to null, so a later section's timing
 	// measurement starts from a known state (the 2s cooldown this also waited out is
 	// gone — W3; the generous wait is now just a settle)
 	await peers[0].page.waitForTimeout(2600);
-	for (const p of peers) await p.page.evaluate(() => window.__stores.isLocked.set(null));
+	for (const p of peers) await p.page.evaluate(() => window.__tp.test.v1.isLocked.set(null));
 	await peers[0].page.waitForTimeout(600);
 };
 
 const makeBoxes = (peer, count) =>
 	peer.page.evaluate(async (n) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		/** @type {string[]} */
 		const uuids = [];
 		for (let i = 0; i < n; i++) {
@@ -114,7 +114,7 @@ const recipe = async (peer, uuids, opts = {}) => {
 };
 
 const collect = async (peer, uuid, settle = 800) => {
-	await peer.page.evaluate((id) => window.__stores.flowRuntime.fireObjectClick(id), uuid);
+	await peer.page.evaluate((id) => window.__tp.test.v1.flowRuntime.fireObjectClick(id), uuid);
 	await peer.page.waitForTimeout(settle);
 };
 
@@ -132,7 +132,7 @@ const collect = async (peer, uuid, settle = 800) => {
 const countOf = (peer, variable, read) =>
 	peer.page.evaluate(
 		({ latches, read }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let g;
 			s.flowGraphs.subscribe((x) => (g = x))();
 			const live = new Set((g.scene?.nodes ?? []).map((n) => n.id));
@@ -177,7 +177,7 @@ h.run(async () => {
 	const B = await h.setupPage(browser, 'B');
 	for (const p of [A, B])
 		await p.page.waitForFunction(
-			() => !!window.__stores?.gamePresence && !!window.__stores?.flowGraphsCtl && !!window.__stores?.nodesHandler,
+			() => !!window.__tp?.test.v1?.gamePresence && !!window.__tp?.test.v1?.flowGraphsCtl && !!window.__tp?.test.v1?.nodesHandler,
 			{ timeout: 30000 }
 		);
 	// connect FIRST: a peer cannot approve a connection request while in play mode.
@@ -243,9 +243,9 @@ h.run(async () => {
 	// the abandon watch is genuinely live in this page (that is §3's subject, not a
 	// background process this section wants to race).
 	await setState(A, 'menu');
-	for (const p of [A, B]) await p.page.evaluate(() => window.__stores.gamePresence.resetGamePresence());
+	for (const p of [A, B]) await p.page.evaluate(() => window.__tp.test.v1.gamePresence.resetGamePresence());
 	await A.page.waitForTimeout(2600); // let §1's exit settle fully first
-	await A.page.evaluate(() => window.__stores.isLocked.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(null));
 	const [gem] = await makeBoxes(A, 1);
 	await recipe(A, [gem], { variable: 'gems' });
 	await A.page.waitForTimeout(900);
@@ -261,7 +261,7 @@ h.run(async () => {
 	await collect(A, gem);
 	const hidden = await A.page.evaluate((id) => {
 		let group;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		return group?.getObjectByProperty('uuid', id)?.visible ?? null;
 	}, gem);
 	// the PREMISE is "it is collected", read off the world rather than the score. The
@@ -299,7 +299,7 @@ h.run(async () => {
 		() =>
 			A.page.evaluate((id) => {
 				let group;
-				window.__stores.objectsGroup.subscribe((v) => (group = v))();
+				window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 				return group?.getObjectByProperty('uuid', id)?.visible ?? null;
 			}, gem),
 		(v) => v === false,
@@ -310,7 +310,7 @@ h.run(async () => {
 
 	// ...and the HUD lands on the playing screen with no wiring, through showWhile
 	const screen = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.hudDocs.setHudDocFor('scene', {
 			active: 'menu',
 			screens: [
@@ -368,9 +368,9 @@ h.run(async () => {
 	// ONE forged clock, and the reset tick is FAR + well past the window.
 	const FAR = 60000;
 	const tick = (peer, plusMs = 0) =>
-		peer.page.evaluate((ms) => window.__stores.gamePresence.tickAbandonWatch(Date.now() + ms), plusMs);
+		peer.page.evaluate((ms) => window.__tp.test.v1.gamePresence.tickAbandonWatch(Date.now() + ms), plusMs);
 
-	await A.page.evaluate(() => window.__stores.gamePresence.resetGamePresence());
+	await A.page.evaluate(() => window.__tp.test.v1.gamePresence.resetGamePresence());
 	await setState(A, 'playing');
 	await A.page.waitForTimeout(700);
 	h.check(
@@ -410,18 +410,18 @@ h.run(async () => {
 	h.check(gateA.reset.present && gateA.reset.disabled === false, 'the host is offered "Reset game" and it is enabled');
 	h.check(gateB.reset.present && gateB.reset.disabled === true, 'the joiner is offered it DISABLED (with the reason in its tooltip)');
 
-	const refused = await B.page.evaluate(() => window.__stores.gamePresence.requestResetGame());
+	const refused = await B.page.evaluate(() => window.__tp.test.v1.gamePresence.requestResetGame());
 	h.check(refused.ok === false && /host/i.test(refused.reason ?? ''), `and refused at the seam: "${refused.reason}"`);
 	h.check((await gstate(A)).state === 'playing', 'so the joiner changed nothing');
 
-	const allowed = await A.page.evaluate(() => window.__stores.gamePresence.requestResetGame());
+	const allowed = await A.page.evaluate(() => window.__tp.test.v1.gamePresence.requestResetGame());
 	h.check(allowed.ok === true, 'the host is allowed');
 	await h.eventually(() => gstate(B), (g) => g.state === 'menu', 'and the reset reaches the peer');
 	h.check((await gstate(A)).startedAt === 0, 'a full reset also zeroes the round clock (this is what "menu" alone does not do)');
 
 	// the same reset as a HUD action — one catalog entry, the same resetGame()
 	const action = await A.page.evaluate(() => {
-		const a = window.__stores.hudActions;
+		const a = window.__tp.test.v1.hudActions;
 		const def = a.HUD_ACTIONS.find((x) => x.key === 'resetgame');
 		return {
 			found: !!def,
@@ -439,7 +439,7 @@ h.run(async () => {
 	await setState(A, 'playing');
 	await A.page.waitForTimeout(900);
 	const nodeReset = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const mk = (type, data) => ({
 			id: crypto.randomUUID(),
 			type,
@@ -545,7 +545,7 @@ h.run(async () => {
 	// counterfactual: core offers no such action, and asking for it by key is refused
 	// rather than half-built. (The module's own suite owns the positive case.)
 	const bound = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.hudDocs.setHudDocFor('scene', {
 			active: 'hud',
 			screens: [

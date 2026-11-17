@@ -30,7 +30,7 @@ const XS = [0, 0.5, 1, 1.5, 2, 2.5];
 const arm = (page) =>
 	page.evaluate(
 		({ RADIUS, XS }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const me = s.meshEdit;
 			me.exitEditMode();
 			s.commandsHandler.sceneCommand('/create Plane 6 6 12 12');
@@ -83,7 +83,7 @@ const arm = (page) =>
 /** one exact gizmo gesture through the real drag lifecycle (mesh-pivot-gizmo's recipe) */
 const gesture = (page, spec) =>
 	page.evaluate((spec) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		const me = s.meshEdit;
 		let controls;
@@ -161,7 +161,7 @@ h.run(async () => {
 
 	// ONE undo restores the whole neighbourhood exactly (the meshgeo snapshot covers it)
 	const undo = await A.page.evaluate(() => {
-		window.__stores.history.undo();
+		window.__tp.test.v1.history.undo();
 		const now = window.__mesh.geometry.attributes.position.array;
 		let gap = 0;
 		for (let i = 0; i < Math.min(now.length, window.__beforeExpanded.length); i++)
@@ -187,7 +187,7 @@ h.run(async () => {
 	h.check(Math.hypot(...sc['0']) < 1e-6, 'the anchor at the pivot stays put under scale');
 
 	// ==== OFF: with proportional disarmed a rotate turns the selection only ======
-	await A.page.evaluate(() => window.__stores.meshEdit.proportionalEdit.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.meshEdit.proportionalEdit.set(false));
 	await gesture(A.page, { mode: 'rotate', axis: [0, 0, 1], degrees: 90 });
 	const offRead = await readTracked(A.page);
 	h.check(
@@ -195,6 +195,6 @@ h.run(async () => {
 		`with proportional OFF a neighbour does not turn — the pre-F1 behaviour survives (${JSON.stringify(offRead['1'].map((n) => +n.toFixed(4)))})`
 	);
 
-	await A.page.evaluate(() => window.__stores.meshEdit.exitEditMode());
+	await A.page.evaluate(() => window.__tp.test.v1.meshEdit.exitEditMode());
 	await h.finish(browser);
 });

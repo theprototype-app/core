@@ -27,20 +27,20 @@ const h = require('./helpers.cjs');
 const src = (f) => pathToFileURL(path.join(__dirname, '..', '..', 'src', 'lib', f)).href;
 
 const sp = (page, body) =>
-	page.evaluate((b) => new Function('sp', b)(window.__stores.scenePhysics), body);
+	page.evaluate((b) => new Function('sp', b)(window.__tp.test.v1.scenePhysics), body);
 const phys = (page, body) =>
-	page.evaluate((b) => new Function('p', b)(window.__stores.physics), body);
+	page.evaluate((b) => new Function('p', b)(window.__tp.test.v1.physics), body);
 const knock = (page, body) =>
-	page.evaluate((b) => new Function('k', b)(window.__stores.knock), body);
+	page.evaluate((b) => new Function('k', b)(window.__tp.test.v1.knock), body);
 const bodyOf = (page, uuid) =>
 	page.evaluate(
-		(uuid) => window.__stores.physics.physicsDebug().find((b) => b.uuid === uuid) ?? null,
+		(uuid) => window.__tp.test.v1.physics.physicsDebug().find((b) => b.uuid === uuid) ?? null,
 		uuid
 	);
 const posOf = (page, uuid) =>
 	page.evaluate((uuid) => {
 		let group = null;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		const o = group.getObjectByProperty('uuid', uuid);
 		return o ? o.position.toArray() : null;
 	}, uuid);
@@ -69,8 +69,8 @@ const park = (page, uuid) =>
 const sweep = (page, id, opts) =>
 	page.evaluate(
 		({ id, uuid, from, to, speed, dtMs, t0, y, z, keep }) => {
-			const k = window.__stores.knock;
-			const p = window.__stores.physics;
+			const k = window.__tp.test.v1.knock;
+			const p = window.__tp.test.v1.physics;
 			if (!keep) k.dropProbe(id);
 			const step = (speed * dtMs) / 1000;
 			const dir = Math.sign(to - from) || 1;
@@ -188,22 +188,22 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(4000);
 		await warm.ctx.close();
 	}
 	const A = await h.setupPage(browser, 'A');
 
 	const ball = await A.page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/create Sphere 0.3');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create Sphere 0.3');
 		let group = null;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		const sphere = group.children[group.children.length - 1];
 		sphere.name = 'Ball';
 		sphere.position.set(0, 1, 0);
 		sphere.userData.physics = { mode: 'dynamic', mass: 1 };
-		window.__stores.objectsGroup.update((v) => v);
-		window.__stores.objectActions.deselectObject();
+		window.__tp.test.v1.objectsGroup.update((v) => v);
+		window.__tp.test.v1.objectActions.deselectObject();
 		return sphere.uuid;
 	});
 
@@ -217,8 +217,8 @@ h.run(async () => {
 		A.page,
 		'sp.setScenePhysics({ gravity: 0, damping: { linear: 0 }, knock: { enabled: true } })'
 	);
-	await A.page.evaluate(() => window.__stores.isLocked.set(true));
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await h.eventually(
 		() => bodyOf(A.page, ball),
 		(b) => !!b && b.mode === 'dynamic',
@@ -260,7 +260,7 @@ h.run(async () => {
 	h.check(receding.hits === 0 && speedOf(afterReceding) < 0.01, '1.10 ...and a receding probe does nothing');
 
 	const resting = await A.page.evaluate((uuid) => {
-		const k = window.__stores.knock;
+		const k = window.__tp.test.v1.knock;
 		k.dropProbe('p');
 		let hits = 0;
 		let overlaps = 0;
@@ -283,8 +283,8 @@ h.run(async () => {
 	// the approach is 2, and the knock ADDS it: the ball leaves at 4.
 	await park(A.page, ball);
 	const passes = await A.page.evaluate((uuid) => {
-		const k = window.__stores.knock;
-		const p = window.__stores.physics;
+		const k = window.__tp.test.v1.knock;
+		const p = window.__tp.test.v1.physics;
 		k.dropProbe('q');
 		let t = 1000;
 		let hits = 0;
@@ -331,12 +331,12 @@ h.run(async () => {
 	h.check(speedOf(afterOff) < 0.01 && sentAfter === sentBefore, '1.20 ...the body is untouched and nothing goes on the wire (sent ' + sentBefore + ' -> ' + sentAfter + ')');
 	await sp(A.page, 'sp.setScenePhysics({ knock: { enabled: true } })');
 
-	await A.page.evaluate(() => window.__stores.isLocked.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(null));
 	const editor = await sweep(A.page, 'p', { from: -1.2, to: 0, speed: 6 });
 	h.check(editor.armed === false && editor.hits === 0, '1.21 out of play mode the probes stand down');
-	await A.page.evaluate(() => window.__stores.isLocked.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 
-	await A.page.evaluate(() => window.__stores.physics.stopSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 	const stopped = await sweep(A.page, 'p', { from: -1.2, to: 0, speed: 6 });
 	h.check(stopped.armed === false && stopped.hits === 0, '1.22 with no simulation anywhere the probes stand down');
 
@@ -346,27 +346,27 @@ h.run(async () => {
 	const B = await h.setupPage(browser, 'B');
 	// the Connect pill lives in the editor chrome, which play mode hides — leave play
 	// to dial, and come back once the mesh has settled
-	await A.page.evaluate(() => window.__stores.isLocked.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(null));
 	await h.connect(A, B);
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
-	await A.page.evaluate(() => window.__stores.isLocked.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
+	await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	// damping in THIS section, so a knocked ball comes to rest for the convergence
 	// reads; the applied speed is read through a hit LISTENER on A at the instant the
 	// message lands, before damping has had a step
 	await sp(A.page, 'sp.setScenePhysics({ damping: { linear: 1 } })');
 	await A.page.evaluate((uuid) => {
 		window.__applied = null;
-		window.__stores.knock.registerHitListener((hit, local) => {
+		window.__tp.test.v1.knock.registerHitListener((hit, local) => {
 			if (local || hit.uuid !== uuid) return;
-			const b = window.__stores.physics.physicsDebug().find((entry) => entry.uuid === uuid);
+			const b = window.__tp.test.v1.physics.physicsDebug().find((entry) => entry.uuid === uuid);
 			window.__applied = b?.linvel ? [b.linvel.x, b.linvel.y, b.linvel.z] : null;
 		});
 	}, ball);
 	await B.page.evaluate(() => {
-		window.__stores.isLocked.set(true);
+		window.__tp.test.v1.isLocked.set(true);
 		window.__sent = [];
 		let peer = null;
-		window.__stores.peers.subscribe((p) => (peer = p))();
+		window.__tp.test.v1.peers.subscribe((p) => (peer = p))();
 		const original = peer.send.bind(peer);
 		peer.send = (message) => {
 			window.__sent.push(message);
@@ -377,10 +377,10 @@ h.run(async () => {
 	// start/stop and not in the handshake, so a LATE JOINER is never told a sim is
 	// running and its probes never arm — a pre-existing gap (moveSmoothing's header
 	// records it for the same reason), noted in STATUS-24a as a follow-up
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await h.eventually(() => bodyOf(A.page, ball), (b) => !!b, '2.0 (premise) A is simulating again');
 	await h.eventually(
-		() => B.page.evaluate(() => new Promise((r) => window.__stores.physics.remoteSimulating.subscribe(r)())),
+		() => B.page.evaluate(() => new Promise((r) => window.__tp.test.v1.physics.remoteSimulating.subscribe(r)())),
 		(v) => !!v,
 		'2.1 (premise) B knows A is simulating'
 	);
@@ -393,7 +393,7 @@ h.run(async () => {
 	);
 
 	const remote = await B.page.evaluate(async (uuid) => {
-		const k = window.__stores.knock;
+		const k = window.__tp.test.v1.knock;
 		k.dropProbe('b');
 		let hits = 0;
 		let t = 1000;
@@ -402,7 +402,7 @@ h.run(async () => {
 			t += 16;
 		}
 		let group = null;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		const object = group.getObjectByProperty('uuid', uuid);
 		const x0 = object.position.x;
 		const predicting = k.knockDebug().predictions.includes(uuid);
@@ -468,7 +468,7 @@ h.run(async () => {
 	await A.page.evaluate(() => (window.__applied = null));
 	await B.page.waitForTimeout(600);
 	const noPredict = await B.page.evaluate((uuid) => {
-		const k = window.__stores.knock;
+		const k = window.__tp.test.v1.knock;
 		k.dropProbe('b');
 		let hits = 0;
 		let t = 5000;
@@ -504,9 +504,9 @@ h.run(async () => {
 	await park(A.page, ball);
 	await B.page.waitForTimeout(600);
 	const logBefore = await knock(A.page, 'return k.lastHitOf("' + ball + '")?.at ?? 0');
-	await A.page.evaluate(() => window.__stores.cloudHooks.setCapabilityProvider((peerId, type) => type !== 'hit'));
+	await A.page.evaluate(() => window.__tp.test.v1.cloudHooks.setCapabilityProvider((peerId, type) => type !== 'hit'));
 	const gated = await B.page.evaluate((uuid) => {
-		const k = window.__stores.knock;
+		const k = window.__tp.test.v1.knock;
 		k.dropProbe('b');
 		let hits = 0;
 		let t = 9000;
@@ -515,7 +515,7 @@ h.run(async () => {
 			t += 16;
 		}
 		let group = null;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		return { hits, predicting: k.knockDebug().predictions.includes(uuid), x0: group.getObjectByProperty('uuid', uuid).position.x };
 	}, ball);
 	h.check(gated.hits === 1 && gated.predicting, '2.20 (premise) B knocked and is predicting');
@@ -527,15 +527,15 @@ h.run(async () => {
 	await h.eventually(
 		() => B.page.evaluate((uuid) => {
 			let group = null;
-			window.__stores.objectsGroup.subscribe((v) => (group = v))();
-			const k = window.__stores.knock;
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
+			const k = window.__tp.test.v1.knock;
 			return { x: group.getObjectByProperty('uuid', uuid).position.x, predicting: k.knockDebug().predictions.includes(uuid) };
 		}, ball),
 		(v) => !v.predicting && Math.abs(v.x) < 0.05,
 		'2.23 B\'s unconfirmed prediction is WITHDRAWN: the ball is back where it started (the PREDICT_MAX_MS revert)',
 		4000
 	);
-	await A.page.evaluate(() => window.__stores.cloudHooks.setCapabilityProvider(null));
+	await A.page.evaluate(() => window.__tp.test.v1.cloudHooks.setCapabilityProvider(null));
 
 	// the initiator's own knock reaches the other peer's log
 	await park(A.page, ball);
@@ -555,6 +555,6 @@ h.run(async () => {
 	const sentAfterOff = await B.page.evaluate(() => window.__sent.filter((m) => m.type === 'hit').length);
 	h.check(offOnB.armed === false && offOnB.hits === 0 && sentAfterOff === sentBeforeOff, '2.26 with the block off B knocks nothing and sends nothing (' + sentBeforeOff + ' -> ' + sentAfterOff + ' hit messages)');
 
-	await A.page.evaluate(() => window.__stores.physics.stopSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 	await h.finish(browser);
 });

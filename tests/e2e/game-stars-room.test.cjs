@@ -37,7 +37,7 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(4000);
 		await warm.ctx.close();
 	}
@@ -46,7 +46,7 @@ h.run(async () => {
 
 	const bytes = Array.from(fs.readFileSync(TPSCENE));
 	await page.evaluate(async (arr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 		await s.sessions.applySession(payload, { backup: false });
 	}, bytes);
@@ -54,7 +54,7 @@ h.run(async () => {
 
 	const snap = () =>
 		page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			/** @param {any} st */
 			const g = (st) => { let v; st.subscribe((/** @type {any} */ x) => (v = x))(); return v; };
 			let group;
@@ -87,14 +87,14 @@ h.run(async () => {
 			window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyP', bubbles: true }));
 		});
 	const bodyOf = (uuid) =>
-		page.evaluate((uuid) => window.__stores.physics.physicsDebug().find((b) => b.uuid === uuid) ?? null, uuid);
+		page.evaluate((uuid) => window.__tp.test.v1.physics.physicsDebug().find((b) => b.uuid === uuid) ?? null, uuid);
 	const speedOf = (b) => (b?.linvel ? Math.hypot(b.linvel.x, b.linvel.y, b.linvel.z) : 0);
 	/** sweep a fresh probe along +x through a star's CURRENT centre at `speed` m/s; returns
 	 * hits + the star's velocity read in the same evaluate (before rapier steps) */
 	const knockStar = (name, speed, probe = 'p') =>
 		page.evaluate(
 			({ name, speed, probe }) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				let group; s.objectsGroup.subscribe((/** @type {any} */ v) => (group = v))();
 				const star = group.getObjectByName(name);
 				if (!star) return { hits: 0, atHit: null, missing: true };
@@ -134,7 +134,7 @@ h.run(async () => {
 	h.check(st.play?.simOnPlay === true && st.play?.interaction === 'grab' && st.play?.grounded === false, 'play block: grab, flying, simOnPlay');
 	h.check(st.state === 'menu' && st.screen === 'start', `starts on the start screen (${st.state}/${st.screen})`);
 	const chime = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const snd = s.allNodes().find((n) => n.type === 'sound');
 		const hash = snd?.data?.hash ?? null;
 		return { hash, held: hash ? !!s.explorer.itemByHash(hash) : false, nodes: s.allNodes().length };
@@ -144,7 +144,7 @@ h.run(async () => {
 
 	// 1b — 30: the look and the emitter budget, measured
 	const look = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const g = (st) => { let v; st.subscribe((x) => (v = x))(); return v; };
 		const group = g(s.objectsGroup);
 		const walls = ['Wall north', 'Wall south', 'Wall west', 'Wall east'].map((n) => group.getObjectByName(n));
@@ -171,18 +171,18 @@ h.run(async () => {
 	// 30b: the game-feel stores the suite reads (sound / burst / banner / music)
 	const feel = () =>
 		page.evaluate(() => {
-			const k = window.__stores.gameKit;
+			const k = window.__tp.test.v1.gameKit;
 			let music, ann;
 			k.gameMusic.gameMusicState.subscribe((v) => (music = v))();
 			k.gameAnnounce.gameAnnouncement.subscribe((v) => (ann = v))();
 			const d = k.gameFeelActions.gameFeelActionsDebug();
 			return { music: music?.preset ?? null, ann: ann?.text ?? null, last: d.last, fired: d.fired, sounds: d.sounds };
 		});
-	const resetFeel = () => page.evaluate(() => window.__stores.gameKit.gameFeelActions.resetGameFeelActionsDebug());
+	const resetFeel = () => page.evaluate(() => window.__tp.test.v1.gameKit.gameFeelActions.resetGameFeelActionsDebug());
 	// 30b: what the VR wrist card / top strip would SAY right now (vr-play's overlay split)
 	const vrLines = () =>
 		page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const k = s.gameKit.vrGamePanel;
 			let rt; s.hudDocs.hudRuntime.subscribe((v) => (rt = v))();
 			const { panel, overlay } = k.vrScreens();
@@ -190,7 +190,7 @@ h.run(async () => {
 		});
 
 	// 2 — entering play starts the sim (free play, no round)
-	await page.evaluate(() => window.__stores.isLocked.set(true));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await h.eventually(() => snap().then((v) => v.sim), (v) => v === true, 'entering play starts the sim', 10000);
 	await page.waitForTimeout(600);
 	st = await snap();
@@ -199,7 +199,7 @@ h.run(async () => {
 	h.check(/HOW TO PLAY/.test(await hud()) && /Knock every crystal star once to light it/.test(await hud()), '30b: the start screen says HOW TO PLAY');
 	await h.eventually(() => feel().then((f) => f.music), (m) => m === 'space', '30b: the space music plays in Play', 6000);
 	const eye = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let cam; s.playerCam.subscribe((v) => (cam = v))();
 		const p = cam.getWorldPosition(new s.THREE.Vector3());
 		return [p.x, p.y, p.z].map((n) => +n.toFixed(2));
@@ -243,7 +243,7 @@ h.run(async () => {
 	// 4 — the walls keep a fast star inside
 	const star2 = st.kids.find((k) => k.name === 'Star 2');
 	await page.evaluate((uuid) =>
-		window.__stores.physics.applyThrow({ uuid, pos: [-5, 2, 0], rot: [0, 0, 0], linvel: [-10, 0, 0], angvel: [0, 0, 0] }), star2.uuid);
+		window.__tp.test.v1.physics.applyThrow({ uuid, pos: [-5, 2, 0], rot: [0, 0, 0], linvel: [-10, 0, 0], angvel: [0, 0, 0] }), star2.uuid);
 	await page.waitForTimeout(2000);
 	const s2 = (await snap()).kids.find((k) => k.uuid === star2.uuid);
 	h.check(!!s2 && Math.abs(s2.pos[0]) < 6 && Math.abs(s2.pos[2]) < 6 && s2.pos[1] > -0.5 && s2.pos[1] < 7.5, `a 10 m/s star at the west wall is inside the room 2 s later (${s2?.pos})`);
@@ -285,7 +285,7 @@ h.run(async () => {
 	const again = await feel();
 	h.check(again.last.filter((e) => e.sound === 'coin').length === 1 && again.last.filter((e) => e.type === 'effectburst').length >= 2, `30b: a second knock sparkles again but pays no second coin (coins ${again.last.filter((e) => e.sound === 'coin').length}, sparkles ${again.last.filter((e) => e.type === 'effectburst').length})`);
 	const lit3 = await page.evaluate(() => {
-		let group; window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		let group; window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		return '#' + group.getObjectByName('Star 3').material.color.getHexString();
 	});
 	h.check(lit3.toLowerCase() === '#ffe08a', `...and Star 3 is painted lit (${lit3})`);
@@ -297,7 +297,7 @@ h.run(async () => {
 	// the round's startedAt, so assert THAT for all 24; the `over` check below is what
 	// proves the count chain itself reached 24, and `Lit: 1 / 24` above its readout.
 	const litThisRound = () => page.evaluate(() => {
-		const st = /** @type {any} */ (window).__stores;
+		const st = /** @type {any} */ (window).__tp?.test.v1;
 		let trig, gs; st.flowTriggers.subscribe((v) => (trig = v))(); st.gameState.gameState.subscribe((v) => (gs = v))();
 		// startedAt is epoch ms; trigger stamps are the tick clock's seconds-of-day, so fold
 		// it the way retiredByRound does (toSyncedStamp + the midnight-wrap guard)
@@ -330,7 +330,7 @@ h.run(async () => {
 	h.check(missing.length === 0, `every star took a knock (${24 - missing.length}/24${missing.length ? ', missed ' + missing.join(',') : ''})`);
 	// the count node itself, for the NEW round below (playing, so its cutoff is finite)
 	const litCount = () => page.evaluate(() => {
-		let v; window.__stores.flowValues.subscribe((x) => (v = x))();
+		let v; window.__tp.test.v1.flowValues.subscribe((x) => (v = x))();
 		return v['sum24'] ?? 0;
 	});
 	await h.eventually(litThisRound, (n) => n >= 24, 'all 24 latches were set this round (hit stamps at or after startedAt)', 10000);
@@ -366,7 +366,7 @@ h.run(async () => {
 	await h.eventually(litCount, (n) => n === 0, 'the new round un-lights every star (perRound)', 8000);
 	await page.waitForTimeout(800);
 	const dim3 = await page.evaluate(() => {
-		let group; window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		let group; window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		return '#' + group.getObjectByName('Star 3').material.color.getHexString();
 	});
 	h.check(dim3.toLowerCase() === '#3b3f66', `...and Star 3 is painted unlit again (${dim3})`);
@@ -376,7 +376,7 @@ h.run(async () => {
 	// close to each other, with effect and sound · push it so it flies like the other stars"
 	console.log('\n=== 8. 31: bounded teleport, the two settings, a clapped star that is a real star ===');
 	const p31 = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let play; s.scenePhysics.scenePlay.subscribe((v) => (play = v))();
 		let rows; s.gameKit.gameSettings.gameSettingRows.subscribe((v) => (rows = v))();
 		return { loco: play?.locomotion ?? null, bounds: play?.bounds ?? null, rows: rows.map((r) => [r.id, r.label, r.type, r.default]) };
@@ -388,7 +388,7 @@ h.run(async () => {
 	);
 	// with 31-vr-core merged (K1): the teleport rule itself, asked where it is going
 	const tv = await page.evaluate(() => {
-		const v = window.__stores.vrControls;
+		const v = window.__tp.test.v1.vrControls;
 		if (typeof v.teleportVerdict !== 'function') return null;
 		// from the spawn's FEET (teleportVerdict's `from` is feet, not the head)
 		const at = (to) => v.teleportVerdict([0, 0, 5.2], to)?.reason ?? 'none';
@@ -407,7 +407,7 @@ h.run(async () => {
 	const CP = [0.5, 1.4, 3.2];
 	const clap31 = (t0, on = CP) =>
 		page.evaluate(({ t0, on }) => {
-			const k = window.__stores.gameKit.clap;
+			const k = window.__tp.test.v1.gameKit.clap;
 			k.feedClap([-0.5, on[1], on[2]], [0.5, on[1], on[2]], t0 - 50); // apart first (re-arms)
 			const out = [];
 			for (let t = t0; t <= t0 + 400; t += 16) {
@@ -420,7 +420,7 @@ h.run(async () => {
 	const claps = await clap31(9e6);
 	await page.waitForTimeout(500);
 	const made = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let group; s.objectsGroup.subscribe((v) => (group = v))();
 		const uuids = s.spawner.spawnedBy('clapspawn');
 		const o = uuids.length ? group.getObjectByProperty('uuid', uuids[0]) : null;
@@ -434,10 +434,10 @@ h.run(async () => {
 		f31.last.some((e) => e.type === 'effectburst' && e.kind === 'sparkle' && Math.hypot(e.where[0] - CP[0], e.where[1] - CP[1], e.where[2] - CP[2]) < 0.1) && f31.last.some((e) => e.sound === 'portal' && e.spatial) && (f31.fired.hapticpulse ?? 0) >= 1,
 		`31 S3: ...with a sparkle AT it, a portal sound there and a buzz in both hands (${JSON.stringify(f31.fired)})`
 	);
-	const touches = () => page.evaluate(() => { let v; window.__stores.flowValues.subscribe((x) => (v = x))(); return v['mytouch'] ?? 0; });
+	const touches = () => page.evaluate(() => { let v; window.__tp.test.v1.flowValues.subscribe((x) => (v = x))(); return v['mytouch'] ?? 0; });
 	const t0 = await touches();
 	const push = await page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let group; s.objectsGroup.subscribe((v) => (group = v))();
 		const o = group.getObjectByProperty('uuid', uuid);
 		const [cx, cy, cz] = o.position.toArray();
@@ -454,17 +454,17 @@ h.run(async () => {
 	h.check(push.hits === 1 && !!push.v && push.v[2] < -3, `31 S4: a hand pushes the new star and it flies off at hand speed (${JSON.stringify(push)})`);
 	await h.eventually(touches, (n) => n === t0 + 1, `31 S4: ...and the push counts as one of my touches (${t0} -> ${t0 + 1})`, 4000);
 	// the clap setting off: the hands meet and nothing appears
-	await page.evaluate(() => window.__stores.gameKit.gameSettings.setGameSetting('stars-clap', false));
+	await page.evaluate(() => window.__tp.test.v1.gameKit.gameSettings.setGameSetting('stars-clap', false));
 	await page.waitForTimeout(300);
 	const offClaps = await clap31(9.1e6, [-1, 1.4, 3.2]);
 	await page.waitForTimeout(400);
-	const nOff = await page.evaluate(() => window.__stores.spawner.spawnedBy('clapspawn').length);
+	const nOff = await page.evaluate(() => window.__tp.test.v1.spawner.spawnedBy('clapspawn').length);
 	h.check(offClaps.length === 0 && nOff === 1, `31 S3: "Make stars with a clap" OFF — a clap makes nothing (${offClaps.length} claps, ${nOff} clapped stars)`);
-	await page.evaluate(() => window.__stores.gameKit.gameSettings.setGameSetting('stars-clap', true));
+	await page.evaluate(() => window.__tp.test.v1.gameKit.gameSettings.setGameSetting('stars-clap', true));
 	// pointing off: the VR grip ray at a star takes nothing; touching it still does
 	const aimAt = (name) =>
 		page.evaluate((name) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const THREE = s.THREE;
 			let group; s.objectsGroup.subscribe((v) => (group = v))();
 			const o = group.getObjectByName(name);
@@ -474,14 +474,14 @@ h.run(async () => {
 			return { ray: s.vrControls.gripTargetOf(ray, hand, 'interact')?.name ?? null, touch: s.vrControls.gripTargetOf(new THREE.Raycaster(target, new THREE.Vector3(0, 1, 0)), target, 'interact')?.name ?? null };
 		}, name);
 	const onAim = await aimAt('Star 5');
-	await page.evaluate(() => window.__stores.gameKit.gameSettings.setGameSetting('stars-point-grab', false));
-	await h.eventually(() => page.evaluate(() => window.__stores.gameKit.pointGrab.pointGrabAllowed()), (v) => v === false, '31 S2: "Point to move stars" OFF reaches the pointing switch', 3000);
+	await page.evaluate(() => window.__tp.test.v1.gameKit.gameSettings.setGameSetting('stars-point-grab', false));
+	await h.eventually(() => page.evaluate(() => window.__tp.test.v1.gameKit.pointGrab.pointGrabAllowed()), (v) => v === false, '31 S2: "Point to move stars" OFF reaches the pointing switch', 3000);
 	const offAim = await aimAt('Star 5');
 	h.check(onAim.ray === 'Star 5' && offAim.ray === null, `31 S2: pointing OFF — the grip ray no longer takes a star (on: ${onAim.ray}, off: ${offAim.ray})`);
 	h.check(offAim.touch === 'Star 5', `31 S2: ...a hand touching it still does (${offAim.touch})`);
-	await page.evaluate(() => window.__stores.gameKit.gameSettings.setGameSetting('stars-point-grab', true));
+	await page.evaluate(() => window.__tp.test.v1.gameKit.gameSettings.setGameSetting('stars-point-grab', true));
 
-	await page.evaluate(() => window.__stores.isLocked.set(false));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(false));
 	await page.waitForTimeout(400);
 	await h.finish(browser);
 });

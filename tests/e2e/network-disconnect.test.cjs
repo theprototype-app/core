@@ -18,7 +18,7 @@ h.run(async () => {
 	await h.connect(A, B);
 
 	const userdataOf = (p) =>
-		p.page.evaluate(() => new Promise((r) => window.__stores.userdata.subscribe((v) => r(v))()));
+		p.page.evaluate(() => new Promise((r) => window.__tp.test.v1.userdata.subscribe((v) => r(v))()));
 
 	// B should now be in A's peer list (drives B's avatar)
 	await h.eventually(
@@ -29,16 +29,16 @@ h.run(async () => {
 
 	// seed per-peer state for B on A: VR hands, a flow cursor, and a held lock
 	await A.page.evaluate((bid) => {
-		window.__stores.peerHands.update((m) => ({ ...m, [bid]: { left: null, right: null, active: true, ts: 1 } }));
-		window.__stores.flowCursors.update((m) => ({ ...m, [bid]: { x: 1, y: 2, name: 'B', ts: 1 } }));
-		window.__stores.lockedObjects.update((l) => [...l.filter((x) => x[0] !== bid), [bid, 'lock-uuid-1']]);
+		window.__tp.test.v1.peerHands.update((m) => ({ ...m, [bid]: { left: null, right: null, active: true, ts: 1 } }));
+		window.__tp.test.v1.flowCursors.update((m) => ({ ...m, [bid]: { x: 1, y: 2, name: 'B', ts: 1 } }));
+		window.__tp.test.v1.lockedObjects.update((l) => [...l.filter((x) => x[0] !== bid), [bid, 'lock-uuid-1']]);
 	}, B.id);
 
 	const seeded = await A.page.evaluate((bid) => {
 		let hands, cursors, locks;
-		window.__stores.peerHands.subscribe((v) => (hands = v))();
-		window.__stores.flowCursors.subscribe((v) => (cursors = v))();
-		window.__stores.lockedObjects.subscribe((v) => (locks = v))();
+		window.__tp.test.v1.peerHands.subscribe((v) => (hands = v))();
+		window.__tp.test.v1.flowCursors.subscribe((v) => (cursors = v))();
+		window.__tp.test.v1.lockedObjects.subscribe((v) => (locks = v))();
 		return { hand: !!hands[bid], cursor: !!cursors[bid], lock: locks.some((l) => l[0] === bid) };
 	}, B.id);
 	h.check(seeded.hand && seeded.cursor && seeded.lock, 'seeded B hands/cursor/lock on A');
@@ -53,13 +53,13 @@ h.run(async () => {
 	// only read as "gone" while stale signaling timers usually killed B's rebuild (the L2 bug).
 	await B.page.evaluate(() => {
 		let pc;
-		window.__stores.peers.subscribe((p) => (pc = p))();
+		window.__tp.test.v1.peers.subscribe((p) => (pc = p))();
 		pc.broadcast = () => {};
 	});
 	await B.ctx.close();
 	await A.page.evaluate((bid) => {
 		let pc;
-		window.__stores.peers.subscribe((p) => (pc = p))();
+		window.__tp.test.v1.peers.subscribe((p) => (pc = p))();
 		pc?.connections?.[bid]?.close();
 	}, B.id);
 
@@ -81,9 +81,9 @@ h.run(async () => {
 	// and the full per-peer teardown ran locally — no leaked hands/cursor/lock
 	const leaks = await A.page.evaluate((bid) => {
 		let hands, cursors, locks;
-		window.__stores.peerHands.subscribe((v) => (hands = v))();
-		window.__stores.flowCursors.subscribe((v) => (cursors = v))();
-		window.__stores.lockedObjects.subscribe((v) => (locks = v))();
+		window.__tp.test.v1.peerHands.subscribe((v) => (hands = v))();
+		window.__tp.test.v1.flowCursors.subscribe((v) => (cursors = v))();
+		window.__tp.test.v1.lockedObjects.subscribe((v) => (locks = v))();
 		return { hand: !!hands[bid], cursor: !!cursors[bid], lock: locks.some((l) => l[0] === bid) };
 	}, B.id);
 	h.check(!leaks.hand, 'VR hands entry cleared on disconnect');

@@ -12,7 +12,7 @@ const h = require('./helpers.cjs');
 
 const snap = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let occ, visible, closed, min;
 		s.bottomDock.dockOccupants.subscribe((v) => (occ = v))();
 		s.bottomDock.visibleDockKey.subscribe((v) => (visible = v))();
@@ -47,7 +47,7 @@ async function press(page, key) {
 async function openDocked(page) {
 	await page.evaluate(() => {
 		localStorage.setItem('shaderDocked', 'true');
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.bottomDock.armDockMode('shader', true);
 		s.shaderEditorClose.set(false);
 		s.bottomDock.activateDock('shader');
@@ -99,7 +99,7 @@ h.run(async () => {
 		localStorage.removeItem('shortcutOverrides');
 	});
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.bottomDock, { timeout: 30000 });
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.bottomDock, { timeout: 30000 });
 	await A.page.waitForTimeout(700);
 
 	// ------------------------------------------------------- 1. docked, as before
@@ -183,8 +183,8 @@ h.run(async () => {
 	// bury it under another floating window, then Alt+S must RAISE rather than close
 	await A.page.evaluate(() => {
 		localStorage.setItem('explorerDocked', 'false');
-		window.__stores.bottomDock.armDockMode('explorer', false);
-		window.__stores.explorerClose.set(false);
+		window.__tp.test.v1.bottomDock.armDockMode('explorer', false);
+		window.__tp.test.v1.explorerClose.set(false);
 	});
 	await A.page.waitForTimeout(800);
 	const buried = await A.page.evaluate(() => {
@@ -199,7 +199,7 @@ h.run(async () => {
 		const w = document.getElementById('shader-window');
 		const e = document.getElementById('explorer-window');
 		let c;
-		window.__stores.shaderEditorClose.subscribe((v) => (c = v))();
+		window.__tp.test.v1.shaderEditorClose.subscribe((v) => (c = v))();
 		return {
 			closed: c,
 			shader: w ? parseInt(getComputedStyle(w).zIndex) : null,
@@ -208,7 +208,7 @@ h.run(async () => {
 	});
 	h.check(raised.closed === false, `5.5 Alt+S on a BURIED window does not close it (closed=${raised.closed})`);
 	h.check(raised.shader >= raised.expl, `5.6 ...it raises it instead (shader z=${raised.shader}, explorer z=${raised.expl})`);
-	await A.page.evaluate(() => window.__stores.explorerClose.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.explorerClose.set(true));
 	await A.page.waitForTimeout(400);
 
 	// ----------------------------------- 6. re-dock with the header button
@@ -228,8 +228,8 @@ h.run(async () => {
 	h.check(s.closed === false && s.visible === 'shader', `7.2 ...and brings it back (closed=${s.closed}, visible=${s.visible})`);
 	// covered by a SIBLING tab: the press must re-activate, never close
 	await A.page.evaluate(() => {
-		window.__stores.flowGraphClose.set(false);
-		window.__stores.bottomDock.activateDock('flow');
+		window.__tp.test.v1.flowGraphClose.set(false);
+		window.__tp.test.v1.bottomDock.activateDock('flow');
 	});
 	await A.page.waitForTimeout(500);
 	await press(A.page, 'Alt+s');
@@ -241,7 +241,7 @@ h.run(async () => {
 	// they should work by construction — verified, not assumed.
 	await A.page.evaluate(() => {
 		window.__arms = [];
-		window.__stores.bottomDock.dockModeArm.subscribe((/** @type {any} */ v) => {
+		window.__tp.test.v1.bottomDock.dockModeArm.subscribe((/** @type {any} */ v) => {
 			if (v) window.__arms.push(v);
 		});
 	});
@@ -269,12 +269,12 @@ h.run(async () => {
 
 	// --------------------------------------------- 9. the mode survives a reload
 	await A.page.evaluate(() => {
-		window.__stores.bottomDock.armDockMode('shader', false);
+		window.__tp.test.v1.bottomDock.armDockMode('shader', false);
 	});
 	await A.page.waitForTimeout(700);
 	h.check((await snap(A.page)).hasWin, `9.1 premise: floating before the reload`);
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.bottomDock, { timeout: 30000 });
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.bottomDock, { timeout: 30000 });
 	await A.page.waitForTimeout(800);
 	await press(A.page, 'Alt+s');
 	s = await snap(A.page);
@@ -298,8 +298,8 @@ h.run(async () => {
 	await A.page.waitForTimeout(700);
 	const made = await A.page.evaluate(() => {
 		let g;
-		window.__stores.shaderGraph.shaderGraphs.subscribe((v) => (g = v))();
-		const doc = g[window.__stores.shaderGraph.SCENE_GRAPH_KEY];
+		window.__tp.test.v1.shaderGraph.shaderGraphs.subscribe((v) => (g = v))();
+		const doc = g[window.__tp.test.v1.shaderGraph.SCENE_GRAPH_KEY];
 		return { nodes: doc ? doc.nodes.length : 0, edges: doc ? doc.edges.length : 0 };
 	});
 	h.check(made.nodes === 2 && made.edges === 1, `10.3 Create builds the starter graph from the window (${JSON.stringify(made)})`);

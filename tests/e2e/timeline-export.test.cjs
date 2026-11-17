@@ -64,7 +64,7 @@ h.run(async () => {
 
 	// ---------- 1. the scene ----------
 	const made = await pa.evaluate(async () => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		let g;
 		S.objectsGroup.subscribe((v) => (g = v))();
 		const before = new Set(g.children.map((o) => o.uuid));
@@ -95,7 +95,7 @@ h.run(async () => {
 
 	// ---------- 2. the export carries it ----------
 	const out = await pa.evaluate(async () => {
-		const b = window.__stores.exportBuilder;
+		const b = window.__tp.test.v1.exportBuilder;
 		const res = await b.buildExport({
 			preset: 'static',
 			title: 'Timeline Export',
@@ -118,7 +118,7 @@ h.run(async () => {
 		`the export zip has index.html + scene.tpscene (${out.name})`
 	);
 	const inScene = await pa.evaluate(async (arr) => {
-		const payload = await window.__stores.sessions.readSessionZip(new Uint8Array(arr).buffer);
+		const payload = await window.__tp.test.v1.sessions.readSessionZip(new Uint8Array(arr).buffer);
 		const seqs = payload?.sequences ?? {};
 		const one = Object.values(seqs)[0];
 		return {
@@ -160,20 +160,20 @@ h.run(async () => {
 		waitUntil: 'domcontentloaded'
 	});
 	await g.waitForFunction(
-		() => /** @type {any} */ (window).__stores?.exportRuntime?.exportRuntimeState,
+		() => /** @type {any} */ (window).__tp?.test.v1?.exportRuntime?.exportRuntimeState,
 		null,
 		{ timeout: 90000 }
 	);
 	await h.eventually(
 		() =>
-			g.evaluate(() => /** @type {any} */ (window).__stores.exportRuntime.exportRuntimeState.phase),
+			g.evaluate(() => /** @type {any} */ (window).__tp.test.v1.exportRuntime.exportRuntimeState.phase),
 		(v) => v === 'playing' || v === 'failed',
 		'the exported game boots into Play',
 		90000
 	);
 	// watch from INSIDE the page: the 4 s sequence must not be missed between two CDP polls
 	const seen = await g.evaluate(async (cam) => {
-		const S = /** @type {any} */ (window).__stores;
+		const S = /** @type {any} */ (window).__tp?.test.v1;
 		const out = { shot: false, run: false, go: false, fired: /** @type {any[]} */ ([]) };
 		const t0 = performance.now();
 		while (performance.now() - t0 < 6000) {

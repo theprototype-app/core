@@ -32,7 +32,7 @@ const DONE_SSE =
 
 const count = (peer) =>
 	peer.page.evaluate(
-		() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g ? g.children.length : 0))())
+		() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g ? g.children.length : 0))())
 	);
 
 // Capture every message the app tries to broadcast (proves replication without
@@ -54,20 +54,20 @@ h.run(async () => {
 
 	// Configure the provider.
 	await A.page.evaluate((base) => {
-		window.__stores.aiProviders.addAiProvider({ preset: 'custom', label: 'Mock', baseUrl: base, apiKey: 'test', model: 'mock' });
-		window.__stores.aiProviders.setAiEnabled(true);
+		window.__tp.test.v1.aiProviders.addAiProvider({ preset: 'custom', label: 'Mock', baseUrl: base, apiKey: 'test', model: 'mock' });
+		window.__tp.test.v1.aiProviders.setAiEnabled(true);
 	}, BASE);
-	h.check(await A.page.evaluate(() => window.__stores.aiProviders.aiReady()), 'provider configured -> aiReady() true');
+	h.check(await A.page.evaluate(() => window.__tp.test.v1.aiProviders.aiReady()), 'provider configured -> aiReady() true');
 
 	// Settings AI section + backquote pill.
 	await A.page.evaluate(() => {
-		window.__stores.settingsSection.set('ai');
-		window.__stores.settingsOpen.set(true);
+		window.__tp.test.v1.settingsSection.set('ai');
+		window.__tp.test.v1.settingsOpen.set(true);
 	});
 	await A.page.waitForTimeout(400);
 	// 59 T4: the 'ai' deep link lands on Tools & connections, the provider is a Chat providers row
 	h.check(await A.page.locator('#settings-main [data-tool-section="chat"]').first().isVisible(), 'Settings -> Tools & connections renders the Chat providers section');
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await A.page.waitForTimeout(200);
 	// The pill is rendered by AiAssistant.svelte from its OWN static import of the
 	// providers/appStore modules; on an HMR-churned dev server the __stores hook can
@@ -75,16 +75,16 @@ h.run(async () => {
 	// instance (see helpers.freshReload). aiProviders + aiEnabled persist; the pill
 	// toggle is session-only so it's set AFTER the reload.
 	await h.freshReload(A);
-	await A.page.evaluate(() => window.__stores.aiPromptBarOpen.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.aiPromptBarOpen.set(true));
 	await A.page.waitForTimeout(300);
 	h.check(await A.page.locator('.ai-pill').first().isVisible(), 'backquote prompt pill shows');
-	await A.page.evaluate(() => window.__stores.aiPromptBarOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.aiPromptBarOpen.set(false));
 
 	// Install a broadcast-capture stub on the live peer instance.
 	await A.page.evaluate(() => {
 		window.__captured = [];
 		let inst;
-		window.__stores.peers.subscribe((p) => (inst = p))();
+		window.__tp.test.v1.peers.subscribe((p) => (inst = p))();
 		if (inst && !inst.__wrapped) {
 			const orig = inst.send.bind(inst);
 			inst.send = (m) => {
@@ -101,7 +101,7 @@ h.run(async () => {
 
 	// Run the prompt (awaits the whole tool loop).
 	await A.page.evaluate(async () => {
-		await window.__stores.aiAssistant.runPrompt('make three red boxes in a row');
+		await window.__tp.test.v1.aiAssistant.runPrompt('make three red boxes in a row');
 	});
 
 	await h.eventually(() => count(A), (n) => n === base0 + 3, 'prompt created 3 boxes locally');
@@ -110,7 +110,7 @@ h.run(async () => {
 	const red = await A.page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const box = g.children.find((c) => c.material && c.material.color);
 					r(box ? box.material.color.getHexString() : null);
 				})()
@@ -127,14 +127,14 @@ h.run(async () => {
 
 	// One undo reverts the WHOLE batch (aibatch) and broadcasts the deletes.
 	const beforeUndo = (await captured(A)).length;
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => count(A), (n) => n === base0, 'one undo removed all 3 (single aibatch step)');
 	const undoMsgs = (await captured(A)).slice(beforeUndo);
 	h.check(undoMsgs.filter((m) => m && m.type === 'delete').length === 3, 'undo broadcast 3 deletes');
 
 	// Redo restores them and re-broadcasts the objects.
 	const beforeRedo = (await captured(A)).length;
-	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 	await h.eventually(() => count(A), (n) => n === base0 + 3, 'redo restored 3 boxes');
 	const redoMsgs = (await captured(A)).slice(beforeRedo);
 	h.check(redoMsgs.filter((m) => m && (m.type === 'object' || m.type === 'create')).length >= 3, 'redo re-broadcast the objects');

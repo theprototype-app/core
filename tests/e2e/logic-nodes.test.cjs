@@ -19,13 +19,13 @@ const h = require('./helpers.cjs');
 const values = (peer) =>
 	peer.page.evaluate(() => {
 		let v;
-		window.__stores.flowValues.subscribe((x) => (v = x))();
+		window.__tp.test.v1.flowValues.subscribe((x) => (v = x))();
 		return v;
 	});
 const triggers = (peer) =>
 	peer.page.evaluate(() => {
 		let v;
-		window.__stores.flowTriggers.subscribe((x) => (v = x))();
+		window.__tp.test.v1.flowTriggers.subscribe((x) => (v = x))();
 		return v;
 	});
 const valueOf = async (peer, id) => (await values(peer))[id];
@@ -35,7 +35,7 @@ const countOf = async (peer, id) => (await triggers(peer))[id]?.count ?? 0;
 const pulse = (peer, id, replicate = true) =>
 	peer.page.evaluate(
 		({ id, replicate }) =>
-			window.__stores.flowRuntime.applyNodeTrigger(id, (Date.now() % 86400000) / 1000, replicate),
+			window.__tp.test.v1.flowRuntime.applyNodeTrigger(id, (Date.now() % 86400000) / 1000, replicate),
 		{ id, replicate }
 	);
 
@@ -51,8 +51,8 @@ const pulse = (peer, id, replicate = true) =>
 const setGraph = (peer, nodes, edges) =>
 	peer.page.evaluate(
 		({ nodes, edges }) => {
-			window.__stores.setActiveGraph(window.__stores.SCENE_GRAPH);
-			window.__stores.flowNodes.set(
+			window.__tp.test.v1.setActiveGraph(window.__tp.test.v1.SCENE_GRAPH);
+			window.__tp.test.v1.flowNodes.set(
 				nodes.map((n) => ({
 					id: n.id,
 					type: n.type,
@@ -61,7 +61,7 @@ const setGraph = (peer, nodes, edges) =>
 					class: 'w-[150px]'
 				}))
 			);
-			window.__stores.flowEdges.set(edges);
+			window.__tp.test.v1.flowEdges.set(edges);
 		},
 		{ nodes, edges }
 	);
@@ -76,12 +76,12 @@ const wire = (source, target, targetHandle, sourceHandle) => ({
 });
 
 const pushGraph = async (from, to, expectIds) => {
-	await from.page.evaluate((peerId) => window.__stores.nodesHandler.sendNodes(peerId), to.id);
+	await from.page.evaluate((peerId) => window.__tp.test.v1.nodesHandler.sendNodes(peerId), to.id);
 	for (let i = 0; i < 40; i++) {
 		const have = await to.page.evaluate(() => {
 			let nodes, edges;
-			window.__stores.flowNodes.subscribe((v) => (nodes = v))();
-			window.__stores.flowEdges.subscribe((v) => (edges = v))();
+			window.__tp.test.v1.flowNodes.subscribe((v) => (nodes = v))();
+			window.__tp.test.v1.flowEdges.subscribe((v) => (edges = v))();
 			return { ids: nodes.map((n) => n.id), edges: edges.length };
 		});
 		if (expectIds.every((id) => have.ids.includes(id))) return have;
@@ -96,7 +96,7 @@ h.run(async () => {
 
 	// ---- 1. premise: the catalog and the socket table agree ------------------
 	const wiring = await A.page.evaluate(() => {
-		const { nodeCatalog, flowSockets } = window.__stores;
+		const { nodeCatalog, flowSockets } = window.__tp?.test.v1;
 		const spec = (t) => nodeCatalog.findNodeSpec(t);
 		const groupOf = (t) => nodeCatalog.groupOf(t);
 		return {
@@ -232,7 +232,7 @@ h.run(async () => {
 
 	// ---- 3. the recipe the plan names: latch -> visibility = hide-on-collect --
 	const hidden = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 900));
 		let group;
@@ -283,7 +283,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(1000);
 
 	const measured = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const read = (id) => {
 			let v;
 			s.flowValues.subscribe((x) => (v = x))();
@@ -336,7 +336,7 @@ h.run(async () => {
 	);
 
 	const cancelled = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const read = () => {
 			let v;
 			s.flowValues.subscribe((x) => (v = x))();
@@ -370,7 +370,7 @@ h.run(async () => {
 
 	// a trigger AFTER a cancel still fires — the cancel is history, not a mode
 	const reArmed = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const count = () => {
 			let t;
 			s.flowTriggers.subscribe((x) => (t = x))();
@@ -412,7 +412,7 @@ h.run(async () => {
 	);
 	await A.page.waitForTimeout(1000);
 	const staged = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const counts = () => {
 			let t;
 			s.flowTriggers.subscribe((x) => (t = x))();
@@ -542,7 +542,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(1000);
 	const picked = [];
 	for (const i of [0, 1, 2, 3]) {
-		await A.page.evaluate((v) => window.__stores.nodesHandler.setNodeData('idx', { value: v }), i);
+		await A.page.evaluate((v) => window.__tp.test.v1.nodesHandler.setNodeData('idx', { value: v }), i);
 		await A.page.waitForTimeout(500);
 		picked.push(await valueOf(A, 'pick'));
 	}
@@ -568,7 +568,7 @@ h.run(async () => {
 	);
 	await A.page.waitForTimeout(900);
 	h.check((await valueOf(A, 'inv')) === false, 'Gate `not` inverts a wired true');
-	await A.page.evaluate(() => window.__stores.nodesHandler.setNodeData('flag', { on: false }));
+	await A.page.evaluate(() => window.__tp.test.v1.nodesHandler.setNodeData('flag', { on: false }));
 	await h.eventually(() => valueOf(A, 'inv'), (v) => v === true, 'and inverts a wired false — no compare trick needed');
 
 	// ---- 10. SOUND gains a trigger -----------------------------------------
@@ -594,14 +594,14 @@ h.run(async () => {
 		str(36, 'data');
 		v.setUint32(40, n * 2, true);
 		for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, Math.sin(i / 10) * 12000, true);
-		const created = await window.__stores.explorer.importFiles(
+		const created = await window.__tp.test.v1.explorer.importFiles(
 			[new File([buf], 'blip.wav', { type: 'audio/wav' })],
 			null
 		);
 		return created[0].hash;
 	});
 	const box2 = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create sphere');
 		await new Promise((r) => setTimeout(r, 900));
 		let group;
@@ -625,7 +625,7 @@ h.run(async () => {
 		],
 		[wire('bang', 'snd', 'trigger'), wire('snd', 'selSnd')]
 	);
-	const entries = () => A.page.evaluate(() => window.__stores.soundRuntime.soundEntries());
+	const entries = () => A.page.evaluate(() => window.__tp.test.v1.soundRuntime.soundEntries());
 	await h.eventually(
 		entries,
 		(e) => e.length === 1 && e[0].buffered,
@@ -709,9 +709,9 @@ h.run(async () => {
 	// needed writing was the aliases and the prompt guidance — and what needs
 	// asserting is the enum the model actually SEES plus the executor accepting it.
 	const aiView = await A.page.evaluate(() => {
-		const tools = window.__stores.aiTools.getAiTools();
+		const tools = window.__tp.test.v1.aiTools.getAiTools();
 		const flow = tools.find((t) => t.function?.name === 'create_flow_nodes');
-		const prompt = window.__stores.aiTools.buildSystemPrompt();
+		const prompt = window.__tp.test.v1.aiTools.buildSystemPrompt();
 		// 34 D5: the vocabulary moved from a schema enum into the prompt, grouped by palette
 		// group — the Logic line is what the model is handed now
 		const logicLine = (prompt.match(/^ {2}Logic: (.*)$/m)?.[1] ?? '').split(', ');
@@ -738,7 +738,7 @@ h.run(async () => {
 
 	// the executor, through the real dispatcher: a latch wired from an On Click
 	const built = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.setActiveGraph(s.SCENE_GRAPH);
 		s.flowNodes.set([]);
 		s.flowEdges.set([]);
@@ -772,7 +772,7 @@ h.run(async () => {
 
 	// the aliases: a small model reaches for these by function, not by name
 	const aliased = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.setActiveGraph(s.SCENE_GRAPH);
 		s.flowNodes.set([]);
 		s.flowEdges.set([]);
@@ -925,7 +925,7 @@ h.run(async () => {
 		`so toggles agree again from there on (${JSON.stringify(afterJoinTog)})`
 	);
 	const delayC = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowRuntime.applyNodeTrigger('pTrig', (Date.now() % 86400000) / 1000, true);
 		return true;
 	});

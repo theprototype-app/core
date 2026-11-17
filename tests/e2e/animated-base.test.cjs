@@ -10,17 +10,17 @@ h.run(async () => {
 
 	// box + wave graph
 	const uuid = await A.page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		return new Promise((resolve) =>
-			window.__stores.objectsGroup.subscribe((g) => resolve(g.children[g.children.length - 1].uuid))()
+			window.__tp.test.v1.objectsGroup.subscribe((g) => resolve(g.children[g.children.length - 1].uuid))()
 		);
 	});
 	await A.page.evaluate((uuid) => {
-		window.__stores.flowNodes.set([
+		window.__tp.test.v1.flowNodes.set([
 			{ id: 'w1', type: 'wave', position: { x: 0, y: 0 }, data: { amplitude: 1, speed: 3 } },
 			{ id: 's1', type: 'objectselector', position: { x: 250, y: 0 }, data: { selected: uuid } }
 		]);
-		window.__stores.flowEdges.set([{ id: 'e1', source: 'w1', target: 's1' }]);
+		window.__tp.test.v1.flowEdges.set([{ id: 'e1', source: 'w1', target: 's1' }]);
 	}, uuid);
 	await A.page.waitForTimeout(500);
 
@@ -28,7 +28,7 @@ h.run(async () => {
 		A.page.evaluate(
 			(uuid) =>
 				new Promise((resolve) => {
-					window.__stores.objectsGroup.subscribe((g) =>
+					window.__tp.test.v1.objectsGroup.subscribe((g) =>
 						resolve(g?.getObjectByProperty('uuid', uuid)?.rotation.z ?? null)
 					)();
 				}),
@@ -44,8 +44,8 @@ h.run(async () => {
 	const parked = await A.page.evaluate(
 		(uuid) =>
 			new Promise((resolve) => {
-				const restore = window.__stores.flowRuntime.parkAnimatedAtBase();
-				window.__stores.objectsGroup.subscribe((g) => {
+				const restore = window.__tp.test.v1.flowRuntime.parkAnimatedAtBase();
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const at = g?.getObjectByProperty('uuid', uuid)?.rotation.z;
 					restore();
 					resolve(at);
@@ -64,7 +64,7 @@ h.run(async () => {
 	const saved = await A.page.evaluate(async (uuid) => {
 		const read = () =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) =>
+				window.__tp.test.v1.objectsGroup.subscribe((g) =>
 					r(g?.getObjectByProperty('uuid', uuid)?.rotation.z ?? 0)
 				)()
 			);
@@ -75,11 +75,11 @@ h.run(async () => {
 			if (Math.abs(live) > 0.3) break;
 			await new Promise((r) => setTimeout(r, 120));
 		}
-		const payload = await window.__stores.sessions.saveSession('animated-base-test');
+		const payload = await window.__tp.test.v1.sessions.saveSession('animated-base-test');
 		// ObjectLoader json stores the composed matrix; a pure z-rotation puts
 		// sin(z) at matrix[1]
 		const sinZ = payload.objects[0].object.matrix[1];
-		await window.__stores.sessions.deleteSession(payload.id);
+		await window.__tp.test.v1.sessions.deleteSession(payload.id);
 		return { live, sinZ };
 	}, uuid);
 	h.check(Math.abs(saved.live) > 0.3, `scene was mid-swing at save time (rot ${saved.live.toFixed(2)})`);

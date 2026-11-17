@@ -17,13 +17,13 @@ const inPage = (peer, body, arg) =>
 	peer.page.evaluate(
 		([src, a]) => {
 			let pc = null;
-			window.__stores.peers.subscribe((v) => (pc = v))();
+			window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
 			const read = (store) => {
 				let v;
-				window.__stores[store].subscribe((x) => (v = x))();
+				window.__tp.test.v1[store].subscribe((x) => (v = x))();
 				return v;
 			};
-			return Object.getPrototypeOf(async function () {}).constructor('s', 'pc', 'read', 'arg', src)(window.__stores, pc, read, a);
+			return Object.getPrototypeOf(async function () {}).constructor('s', 'pc', 'read', 'arg', src)(window.__tp?.test.v1, pc, read, a);
 		},
 		[body, arg ?? null]
 	);

@@ -9,7 +9,7 @@ h.run(async () => {
 	// throwaway page warms the vite dep-optimizer for the lazy rapier import
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(4000);
 		await warm.ctx.close();
 	}
@@ -19,7 +19,7 @@ h.run(async () => {
 	// scene: a gentle ramp + a ball whose INSPECTOR collider is sphere, with a
 	// collider NODE forcing box — the node must win (the ball holds still)
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const cmd = s.commandsHandler.sceneCommand;
 		cmd('/create Box 8 0.4 4');
 		cmd('/create Sphere 0.5');
@@ -44,9 +44,9 @@ h.run(async () => {
 		s.flowEdges.set(edges);
 	});
 	await A.page.waitForTimeout(300);
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await h.eventually(
-		() => A.page.evaluate(() => new Promise((r) => window.__stores.physics.simulating.subscribe(r)())),
+		() => A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.physics.simulating.subscribe(r)())),
 		(v) => v === true,
 		'simulation started'
 	);
@@ -59,7 +59,7 @@ h.run(async () => {
 	h.check(Math.abs(held) < 0.1, `collider NODE (box) overrides the Inspector sphere — ball holds (dx ${held.toFixed(3)})`);
 
 	// live: flip the node shape to sphere mid-sim -> the ball starts rolling
-	await A.page.evaluate(() => window.__stores.nodesHandler.setNodeData('col1', { shape: 'sphere' }));
+	await A.page.evaluate(() => window.__tp.test.v1.nodesHandler.setNodeData('col1', { shape: 'sphere' }));
 	await h.eventually(
 		() => A.page.evaluate(() => window.__ball.position.x),
 		(x) => x > 0.5,
@@ -68,16 +68,16 @@ h.run(async () => {
 	);
 
 	// velocity feed: rolling ball reports a speed on the initiator
-	const speed = await A.page.evaluate(() => window.__stores.flowRuntime.speedOf(window.__ball.uuid));
+	const speed = await A.page.evaluate(() => window.__tp.test.v1.flowRuntime.speedOf(window.__ball.uuid));
 	h.check(speed > 0.2, `velocity feed reads the rolling ball (${speed.toFixed(2)} m/s)`);
-	await A.page.evaluate(() => window.__stores.physics.stopSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 	await A.page.waitForTimeout(700);
-	const atRest = await A.page.evaluate(() => window.__stores.flowRuntime.speedOf(window.__ball.uuid));
+	const atRest = await A.page.evaluate(() => window.__tp.test.v1.flowRuntime.speedOf(window.__ball.uuid));
 	h.check(atRest === 0, `velocity reads 0 once the feed goes quiet (${atRest})`);
 
 	// 'object' source: a box body borrows ANOTHER object's hull
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const cmd = s.commandsHandler.sceneCommand;
 		window.__ball.userData.physics = { mode: 'static' }; // park
 		window.__ball.position.set(40, 1, 40);
@@ -108,21 +108,21 @@ h.run(async () => {
 		s.flowEdges.set(edges);
 	});
 	await A.page.waitForTimeout(300);
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await h.eventually(
 		() => A.page.evaluate(() => {
-			const d = window.__stores.physics.physicsDebug().find((b) => b.uuid === window.__body.uuid);
+			const d = window.__tp.test.v1.physics.physicsDebug().find((b) => b.uuid === window.__body.uuid);
 			return d ? d.hull : null;
 		}),
 		(hull) => hull === true,
 		"shape 'object' hulls the wired source geometry (hull flag)"
 	);
-	await A.page.evaluate(() => window.__stores.physics.stopSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 	await A.page.waitForTimeout(400);
 
 	// sensor via the NODE + onenter/onexit pulses on pass-through
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const cmd = s.commandsHandler.sceneCommand;
 		window.__body.userData.physics = { mode: 'static' }; // park as scenery
 		cmd('/create Box 2 0.6 2');
@@ -153,7 +153,7 @@ h.run(async () => {
 		s.flowEdges.set(edges);
 	});
 	await A.page.waitForTimeout(300);
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await h.eventually(
 		() => A.page.evaluate(() => window.__drop.position.y),
 		(y) => y < 1.0,
@@ -161,11 +161,11 @@ h.run(async () => {
 		10000
 	);
 	const stamps = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.flowTriggers.subscribe(r)())
+		() => new Promise((r) => window.__tp.test.v1.flowTriggers.subscribe(r)())
 	);
 	h.check(!!stamps.oe1?.lastT, `onenter pulsed via the sensor node (${JSON.stringify(stamps.oe1 ?? null)})`);
 	h.check(!!stamps.ox1?.lastT, `onexit pulsed (${JSON.stringify(stamps.ox1 ?? null)})`);
 
-	await A.page.evaluate(() => window.__stores.physics.stopSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 	await h.finish(browser);
 });

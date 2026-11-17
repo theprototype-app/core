@@ -51,7 +51,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1440, height: 900 } } });
 
 	await A.page.evaluate(async () => {
-		const w = /** @type {any} */ (window).__stores;
+		const w = /** @type {any} */ (window).__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		await new Promise((r) => setTimeout(r, 400));
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
@@ -62,7 +62,7 @@ h.run(async () => {
 	});
 	await A.page.waitForTimeout(900);
 	const premise = await A.page.evaluate(() => {
-		const w = /** @type {any} */ (window).__stores;
+		const w = /** @type {any} */ (window).__tp?.test.v1;
 		const get = (s) => new Promise((r) => s.subscribe(r)());
 		return Promise.all([get(w.inspectorClose), get(w.inspectorKind)]).then(([c, k]) => ({ open: !c, kind: k }));
 	});
@@ -70,10 +70,10 @@ h.run(async () => {
 
 	// ---------- 1. select (Scene -> Properties): the reported direction ----------
 	await startSampler(A.page);
-	await A.page.evaluate(() => /** @type {any} */ (window).__stores.objectActions.selectObject(/** @type {any} */ (window).__box.uuid));
+	await A.page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.objectActions.selectObject(/** @type {any} */ (window).__box.uuid));
 	await A.page.waitForTimeout(700);
 	const sel = await stopSampler(A.page);
-	const kindAfterSelect = await A.page.evaluate(() => new Promise((r) => /** @type {any} */ (window).__stores.inspectorKind.subscribe(r)()));
+	const kindAfterSelect = await A.page.evaluate(() => new Promise((r) => /** @type {any} */ (window).__tp.test.v1.inspectorKind.subscribe(r)()));
 	// showhide-v8 (owner R2, 2026-11-09): selecting no longer swaps Configure Scene for Properties — the two are tabs of
 	// their own, and the open Configure Scene stays in front; the no-motion checks below still hold
 	h.check(kindAfterSelect === 'scene', `premise: selecting leaves Configure Scene in front (v8: no swap) (${kindAfterSelect})`);
@@ -83,7 +83,7 @@ h.run(async () => {
 
 	// ---------- 2. deselect (Properties -> Scene): the direction that was already right ----------
 	await startSampler(A.page);
-	await A.page.evaluate(() => /** @type {any} */ (window).__stores.objectActions.deselectObject());
+	await A.page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.objectActions.deselectObject());
 	await A.page.waitForTimeout(700);
 	const desel = await stopSampler(A.page);
 	h.check(desel.missing === 0 && desel.replaced === 0 && desel.spread < 1, `deselect: still no motion (spread ${desel.spread}, replaced ${desel.replaced})`);
@@ -92,21 +92,21 @@ h.run(async () => {
 	// showhide-v8: Properties and Configure Scene are two tabs over one Inspector, and closing the front one shows the
 	// other; close BOTH so the column really is closed before it opens again
 	await A.page.evaluate(() => {
-		const sb = /** @type {any} */ (window).__stores.sidebars;
+		const sb = /** @type {any} */ (window).__tp.test.v1.sidebars;
 		sb.closeInspectorTab('scene');
 		sb.closeInspectorTab('inspector');
 	});
 	await A.page.waitForTimeout(500);
-	h.check((await A.page.locator('#inspector').count()) === 0 || (await A.page.evaluate(() => new Promise((r) => /** @type {any} */ (window).__stores.inspectorClose.subscribe(r)()))) === true, 'premise: the Inspector column is closed (both tabs)');
+	h.check((await A.page.locator('#inspector').count()) === 0 || (await A.page.evaluate(() => new Promise((r) => /** @type {any} */ (window).__tp.test.v1.inspectorClose.subscribe(r)()))) === true, 'premise: the Inspector column is closed (both tabs)');
 	await startSampler(A.page);
-	await A.page.evaluate(() => /** @type {any} */ (window).__stores.showSidebar('scene'));
+	await A.page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.showSidebar('scene'));
 	await A.page.waitForTimeout(800);
 	const opened = await stopSampler(A.page);
 	h.check(opened.spread > 60, `opening from closed keeps its slide (moved ${opened.spread}px over ${opened.frames} frames)`);
 
 	// ---------- 4. the explicit open on a pinned, open panel (double-click path) is a swap too ----------
 	await startSampler(A.page);
-	await A.page.evaluate(() => /** @type {any} */ (window).__stores.objectActions.selectObject(/** @type {any} */ (window).__box.uuid, true));
+	await A.page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.objectActions.selectObject(/** @type {any} */ (window).__box.uuid, true));
 	await A.page.waitForTimeout(700);
 	const dbl = await stopSampler(A.page);
 	h.check(dbl.replaced === 0 && dbl.spread < 1, `explicit Properties on an open Scene panel swaps in place (spread ${dbl.spread}, replaced ${dbl.replaced})`);

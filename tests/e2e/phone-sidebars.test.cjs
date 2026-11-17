@@ -44,7 +44,7 @@ const CLOSERS = ['explorerClose', 'flowGraphClose', 'uvEditorClose', 'hudEditorC
 async function showOnly(P, which) {
 	await P.evaluate(
 		({ which, closers }) => {
-			for (const c of closers) window.__stores[c].set(c !== which);
+			for (const c of closers) window.__tp.test.v1[c].set(c !== which);
 		},
 		{ which, closers: CLOSERS }
 	);
@@ -73,7 +73,7 @@ async function seedImage(P) {
 		ctx.fillStyle = 'teal'; // tokens-ok: test fixture pixels
 		ctx.fillRect(0, 0, 80, 60);
 		const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
-		const rec = await window.__stores.explorer.addItemFromBytes(await blob.arrayBuffer(), 'pic-' + Math.random() + '.png', null, {});
+		const rec = await window.__tp.test.v1.explorer.addItemFromBytes(await blob.arrayBuffer(), 'pic-' + Math.random() + '.png', null, {});
 		return rec.id;
 	});
 }
@@ -88,14 +88,14 @@ h.run(async () => {
 		const cdp = await P.context().newCDPSession(P);
 		const touch = (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 1 }] });
 		await P.evaluate(async () => {
-			await window.__stores.explorer.addItemFromBytes(new TextEncoder().encode('hello ' + Math.random()).buffer, 'notes.txt', null);
-			window.__stores.explorer.createFolder('Props');
+			await window.__tp.test.v1.explorer.addItemFromBytes(new TextEncoder().encode('hello ' + Math.random()).buffer, 'notes.txt', null);
+			window.__tp.test.v1.explorer.createFolder('Props');
 		});
 		await P.locator('#ps-explorer').tap();
 		await P.waitForTimeout(1500);
 		// a TALL dock, so the pressed card sits ABOVE where the action sheet opens: the common case on a
 		// phone, and the one the bug needs (Android's contextmenu lands on the BACKDROP, not the sheet)
-		await P.evaluate(() => window.__stores.bottomDock.dockHeight.set(Math.round(window.innerHeight * 0.8)));
+		await P.evaluate(() => window.__tp.test.v1.bottomDock.dockHeight.set(Math.round(window.innerHeight * 0.8)));
 		await P.waitForTimeout(600);
 		for (const [kind, sel] of [['file', '#explorer-list .explorer-card'], ['folder', '#explorer-list .explorer-folder-card']]) {
 			await step(`${theme}: long press a ${kind}`, async () => {
@@ -135,8 +135,8 @@ h.run(async () => {
 		const D = await h.setupPage(browser, 'desk-menu', { context: { viewport: { width: 1440, height: 900 } }, storage: { toursSeen: TOURS } });
 		const P = D.page;
 		await P.evaluate(async () => {
-			await window.__stores.explorer.addItemFromBytes(new TextEncoder().encode('hey ' + Math.random()).buffer, 'desk.txt', null);
-			window.__stores.explorerClose.set(false);
+			await window.__tp.test.v1.explorer.addItemFromBytes(new TextEncoder().encode('hey ' + Math.random()).buffer, 'desk.txt', null);
+			window.__tp.test.v1.explorerClose.set(false);
 		});
 		await P.waitForTimeout(1500);
 		await step('desktop: right-click outside closes the menu', async () => {
@@ -174,14 +174,14 @@ h.run(async () => {
 		await step(`${label}: Image editor`, async () => {
 			await showOnly(P, 'none');
 			const id = await seedImage(P);
-			await P.evaluate((id) => window.__stores.imageEditor.openImageEditor(id), id);
+			await P.evaluate((id) => window.__tp.test.v1.imageEditor.openImageEditor(id), id);
 			await P.locator('#image-editor-window').waitFor({ timeout: 8000 });
 			await P.waitForTimeout(800);
 			const open = await P.evaluate(() => document.querySelectorAll('#image-editor-window .ws-panel-secondary').length);
 			if (label === 'folded') await shot(P, `phone-${label}-image-editor`);
 			h.check(open === 0, `${label}: the Image editor starts with its panel hidden (${open})`);
 			// uir-preview: the editor is the preview window's Edit face — close the window itself
-			await P.evaluate(() => window.__stores.fileWindows.previewWindows.set([]));
+			await P.evaluate(() => window.__tp.test.v1.fileWindows.previewWindows.set([]));
 			await P.waitForTimeout(400);
 		});
 		await A.ctx.close();

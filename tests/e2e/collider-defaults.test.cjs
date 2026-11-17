@@ -11,11 +11,11 @@ h.run(async () => {
 
 	const specOf = (name) =>
 		A.page.evaluate((name) => {
-			window.__stores.commandsHandler.sceneCommand('/create ' + name);
+			window.__tp.test.v1.commandsHandler.sceneCommand('/create ' + name);
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const o = g.children[g.children.length - 1];
-			const s = window.__stores.colliderSpec.colliderSpecOf(o);
+			const s = window.__tp.test.v1.colliderSpec.colliderSpecOf(o);
 			return { kind: s.kind, pieces: s.pieces?.length ?? 0, fallback: !!s.fallback };
 		}, name);
 
@@ -43,10 +43,10 @@ h.run(async () => {
 	// an explicit Inspector pick always wins over inference
 	const explicit = await A.page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const sphere = g.children.find((c) => c.name === 'Sphere');
 		sphere.userData.physics = { ...(sphere.userData.physics ?? {}), collider: 'box' };
-		return window.__stores.colliderSpec.colliderSpecOf(sphere).kind;
+		return window.__tp.test.v1.colliderSpec.colliderSpecOf(sphere).kind;
 	});
 	h.check(explicit === 'box', `explicit collider beats inference (${explicit})`);
 
@@ -54,11 +54,11 @@ h.run(async () => {
 	// cannot flip their inferred hull back to a box
 	const renamed = await A.page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const wedge = g.children.find((c) => c.name === 'Wedge');
 		const hint = wedge.userData.colliderHint ?? null;
 		wedge.name = 'MyRamp';
-		return { hint, kind: window.__stores.colliderSpec.colliderSpecOf(wedge).kind };
+		return { hint, kind: window.__tp.test.v1.colliderSpec.colliderSpecOf(wedge).kind };
 	});
 	h.check(renamed.hint === 'hull', `blocks stamp colliderHint (${renamed.hint})`);
 	h.check(renamed.kind === 'hull', `renamed block keeps its hull (${renamed.kind})`);
@@ -67,11 +67,11 @@ h.run(async () => {
 	// replicated NAME still infers the hull
 	const legacy = await A.page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const stairs = g.children.find((c) => c.name === 'Stairs');
 		delete stairs.userData.colliderHint;
 		delete stairs.userData.geometryParams;
-		return window.__stores.colliderSpec.colliderSpecOf(stairs).kind;
+		return window.__tp.test.v1.colliderSpec.colliderSpecOf(stairs).kind;
 	});
 	h.check(legacy === 'hull', `legacy block name infers hull (${legacy})`);
 
@@ -79,11 +79,11 @@ h.run(async () => {
 	// wireframe both consume this same spec)
 	const cone = await A.page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const c = g.children.find((o) => o.name === 'Cone');
 		c.scale.set(2, 3, 2);
 		c.updateMatrixWorld(true);
-		const s = window.__stores.colliderSpec.colliderSpecOf(c);
+		const s = window.__tp.test.v1.colliderSpec.colliderSpecOf(c);
 		return { kind: s.kind, hx: s.halfExtents.x, hy: s.halfExtents.y, hz: s.halfExtents.z };
 	});
 	h.check(
@@ -94,11 +94,11 @@ h.run(async () => {
 	// imports/unstamped meshes keep the universal box fallback byte-identical
 	const unstamped = await A.page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const box = g.children.find((c) => c.name === 'Box');
 		delete box.userData.geometryParams;
 		box.name = 'imported-thing';
-		return window.__stores.colliderSpec.colliderSpecOf(box).kind;
+		return window.__tp.test.v1.colliderSpec.colliderSpecOf(box).kind;
 	});
 	h.check(unstamped === 'box', `unstamped mesh stays box (${unstamped})`);
 

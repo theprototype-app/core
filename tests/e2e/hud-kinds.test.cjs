@@ -13,12 +13,12 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
 	const page = A.page;
-	await page.waitForFunction(() => !!window.__stores?.hudKinds, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.hudKinds, { timeout: 30000 });
 
 	// ---- 1. the registry is the single source of truth ----------------------
 	const reg = await page.evaluate(() => {
-		const K = window.__stores.hudKinds;
-		const H = window.__stores.hudDocs;
+		const K = window.__tp.test.v1.hudKinds;
+		const H = window.__tp.test.v1.hudDocs;
 		return {
 			kinds: K.HUD_KINDS,
 			docKinds: H.HUD_KINDS,
@@ -43,8 +43,8 @@ h.run(async () => {
 
 	// ---- 2. per-kind DEFAULTS reach the document ---------------------------
 	const defaults = await page.evaluate(() => {
-		const H = window.__stores.hudDocs;
-		const K = window.__stores.hudKinds;
+		const H = window.__tp.test.v1.hudDocs;
+		const K = window.__tp.test.v1.hudKinds;
 		H.clearHudDocs();
 		H.setHudDocFor('scene', {});
 		const sid = H.hudDocOf('scene').screens[0].id;
@@ -86,7 +86,7 @@ h.run(async () => {
 
 	// an AUTHORED value must survive normalize — defaults merge UNDER, never over
 	const authored = await page.evaluate(() => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		const sid = H.hudDocOf('scene').screens[0].id;
 		const el = H.addHudElement('scene', sid, { kind: 'bar', min: 5, max: 50, orientation: 'vertical', w: 12, h: 200 });
 		const back = H.elementById('scene', el.id);
@@ -99,7 +99,7 @@ h.run(async () => {
 
 	// ---- 3. the RENDER honours the per-kind params -------------------------
 	const rendered = await page.evaluate(async () => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		H.clearHudDocs();
 		H.setHudDocFor('scene', {
 			screens: [
@@ -151,14 +151,14 @@ h.run(async () => {
 	// The counterfactual that matters: two kinds must show DIFFERENT fields. A pane that
 	// hardcoded its rows would show the same ones for both.
 	await page.evaluate(() => {
-		window.__stores.hudEditorClose.set(false);
-		window.__stores.bottomDock.activateDock('hud');
+		window.__tp.test.v1.hudEditorClose.set(false);
+		window.__tp.test.v1.bottomDock.activateDock('hud');
 	});
 	await page.waitForTimeout(1800);
 	const paneFor = async (kind) =>
 		page.evaluate(async (k) => {
-			const H = window.__stores.hudDocs;
-			const K = window.__stores.hudKinds;
+			const H = window.__tp.test.v1.hudDocs;
+			const K = window.__tp.test.v1.hudKinds;
 			const sid = H.hudDocOf('scene').screens[0].id;
 			const el = H.addHudElement('scene', sid, K.newElementOfKind(k));
 			H.hudSelection.set({ scene: [el.id] });
@@ -234,11 +234,11 @@ h.run(async () => {
 	h.check(palette.groups.length >= 2, `grouped (${JSON.stringify(palette.groups)})`);
 
 	const added = await page.evaluate(async () => {
-		const before = window.__stores.hudDocs.hudDocOf('scene').screens[0].elements.length;
+		const before = window.__tp.test.v1.hudDocs.hudDocOf('scene').screens[0].elements.length;
 		const btn = document.querySelector('#hud-palette [data-hud-kind="list"]');
 		btn?.click();
 		await new Promise((r) => setTimeout(r, 600));
-		const doc = window.__stores.hudDocs.hudDocOf('scene');
+		const doc = window.__tp.test.v1.hudDocs.hudDocOf('scene');
 		const last = doc.screens[0].elements[doc.screens[0].elements.length - 1];
 		return { before, after: doc.screens[0].elements.length, kind: last.kind, rows: last.rows, w: last.w };
 	});
@@ -271,7 +271,7 @@ h.run(async () => {
 	// ---- 6. the grip resizes, persists, and re-clamps on a SHRINKING pane --
 	// A 320px dock leaves the screens list already AT its ceiling (paneH - reserve), so a
 	// downward drag is a no-op and the check reads as a broken grip. Give it room first.
-	await page.evaluate(() => window.__stores.bottomDock.dockHeight.set(560));
+	await page.evaluate(() => window.__tp.test.v1.bottomDock.dockHeight.set(560));
 	await page.waitForTimeout(700);
 	const grip = await page.evaluate(() => {
 		const g = document.querySelector('#hud-screens-resize').getBoundingClientRect();
@@ -295,14 +295,14 @@ h.run(async () => {
 
 	// a SHRINKING pane must re-clamp, or the grip strands off the bottom with no way back
 	const shrunk = await page.evaluate(async () => {
-		window.__stores.hudDocs.hudSelection.set({});
-		window.__stores.bottomDock.dockHeight.set(200);
+		window.__tp.test.v1.hudDocs.hudSelection.set({});
+		window.__tp.test.v1.bottomDock.dockHeight.set(200);
 		await new Promise((r) => setTimeout(r, 800));
 		const s = document.querySelector('#hud-dock .hud-screens');
 		const g = document.querySelector('#hud-screens-resize');
 		const dock = document.querySelector('#hud-dock').getBoundingClientRect();
 		const gr = g.getBoundingClientRect();
-		window.__stores.bottomDock.dockHeight.set(560);
+		window.__tp.test.v1.bottomDock.dockHeight.set(560);
 		return {
 			maxH: parseInt(s.style.maxHeight),
 			gripInsideDock: gr.bottom <= dock.bottom + 1,
@@ -314,7 +314,7 @@ h.run(async () => {
 
 	// ---- 7. an UNKNOWN kind still round-trips ------------------------------
 	const unknown = await page.evaluate(async () => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		const doc = H.hudDocOf('scene');
 		H.setHudDocFor('scene', {
 			...doc,

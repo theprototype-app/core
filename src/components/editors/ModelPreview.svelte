@@ -1,6 +1,7 @@
 <script lang="ts">
 	// @ts-ignore - no bundled three type declarations (project-wide)
 	import * as THREE from 'three'
+	import { acquireOffscreen, blitOffscreen } from '$lib/render/offscreen.js'
 	import { untrack } from 'svelte'
 	import { itemBlob, parseObjectFile } from '$lib/explorer'
 	import { prefabObject } from '$lib/prefabs'
@@ -189,16 +190,20 @@
 		// run afterwards and blank the box. One writer, no ordering to get right.
 		report?.(null)
 
-		// A canvas cannot hand out a second context, and a browser will refuse one when
-		// too many are already live. Failing here must not throw into the flush.
-		let renderer: any
+		// 101 F3: drawn by the SHARED off-screen renderer and copied into this (2D) canvas each
+		// frame, so an open preview costs no WebGL context of its own (and a re-run of this
+		// effect simply asks the same canvas for its 2D context again). A browser that refuses
+		// a context must not throw into the flush.
+		let lease: ReturnType<typeof acquireOffscreen>
 		try {
-			renderer = new THREE.WebGLRenderer({ canvas: el, antialias: true, alpha: true })
+			lease = acquireOffscreen()
 		} catch (error) {
 			console.log('model preview: no WebGL context', error)
 			return
 		}
-		renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1))
+		const pixelRatio = Math.min(2, window.devicePixelRatio || 1)
+		let viewW = 1
+		let viewH = 1
 		const scene = new THREE.Scene()
 		scene.add(new THREE.HemisphereLight(0xffffff, 0x445, 2.2))
 		const dir = new THREE.DirectionalLight(0xffffff, 1.1)
@@ -225,7 +230,8 @@
 		const resize = () => {
 			const w = el.clientWidth || 1
 			const h = el.clientHeight || 1
-			renderer.setSize(w, h, false)
+			viewW = w
+			viewH = h
 			camera.aspect = w / h
 			camera.updateProjectionMatrix()
 		}
@@ -390,7 +396,7 @@
 					}
 				}
 			}
-			renderer.render(scene, camera)
+			blitOffscreen(lease, el, viewW, viewH, pixelRatio, (r) => r.render(scene, camera))
 		}
 		resize()
 		loop()
@@ -418,8 +424,7 @@
 				o.geometry?.dispose?.()
 				if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m: any) => m.dispose?.())
 			})
-			renderer.dispose()
-			renderer.forceContextLoss?.()
+			lease.release()
 		}
 	})
 </script>

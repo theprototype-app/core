@@ -53,9 +53,9 @@ h.run(async () => {
 	});
 	const page = P.page;
 	await S(page, async () => {
-		window.__stores.flowGraphClose.set(false);
+		window.__tp.test.v1.flowGraphClose.set(false);
 		await new Promise((r) => setTimeout(r, 600));
-		window.__stores.bottomDock.activateDock('flow');
+		window.__tp.test.v1.bottomDock.activateDock('flow');
 	});
 	await page.waitForTimeout(900);
 	const dTop = await dockTop(page);
@@ -63,7 +63,7 @@ h.run(async () => {
 	h.check(dTop !== null && dTop < 600 && pushes > 0, `premise: the dock is open and pushes the viewport (dock top ${dTop}, --viewport-inset ${pushes})`);
 
 	// ---- 1. the Objects window -------------------------------------------------------------
-	await S(page, () => window.__stores.objectListClose.set(false));
+	await S(page, () => window.__tp.test.v1.objectListClose.set(false));
 	await page.waitForTimeout(900);
 	let before = await rectOf(page, '#object-list');
 	h.check(before.bottom < dTop, `1.0 premise: the Objects window starts above the dock (bottom ${Math.round(before.bottom)} < ${dTop})`);
@@ -82,7 +82,7 @@ h.run(async () => {
 	// ---- 2. a dragWindow window (Statistics: the shared corner grip) ---------------------------
 	await S(page, () => {
 		localStorage.setItem('win:statsWindow', JSON.stringify({ left: 760, top: 140, w: 380, h: 300 }));
-		window.__stores.sceneBudget.statsOpen.set(true);
+		window.__tp.test.v1.sceneBudget.statsOpen.set(true);
 	});
 	await page.waitForTimeout(800);
 	before = await rectOf(page, '#stats-window');
@@ -100,13 +100,13 @@ h.run(async () => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.reload({ waitUntil: 'domcontentloaded' });
 	await page.waitForTimeout(4000);
-	await page.waitForFunction(() => window.__stores && !!window.__stores.moduleSDK, { timeout: 30000 });
+	await page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.moduleSDK, { timeout: 30000 });
 	await S(page, async () => {
-		window.__stores.flowGraphClose.set(false);
+		window.__tp.test.v1.flowGraphClose.set(false);
 		await new Promise((r) => setTimeout(r, 600));
-		window.__stores.bottomDock.activateDock('flow');
-		window.__stores.sceneBudget.statsOpen.set(true);
-		window.__stores.objectListClose.set(false);
+		window.__tp.test.v1.bottomDock.activateDock('flow');
+		window.__tp.test.v1.sceneBudget.statsOpen.set(true);
+		window.__tp.test.v1.objectListClose.set(false);
 	});
 	await page.waitForTimeout(1200);
 	const reStats = await rectOf(page, '#stats-window');

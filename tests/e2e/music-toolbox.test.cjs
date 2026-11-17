@@ -14,10 +14,10 @@ const inPage = (page, body, arg) =>
 	page.evaluate(
 		([src, a]) =>
 			Object.getPrototypeOf(async function () {}).constructor('s', 'ad', 'ap', 'mt', 'arg', src)(
-				window.__stores,
-				window.__stores.audioDevices,
-				window.__stores.audioPatch,
-				window.__stores.moduleToolboxes,
+				window.__tp?.test.v1,
+				window.__tp.test.v1.audioDevices,
+				window.__tp.test.v1.audioPatch,
+				window.__tp.test.v1.moduleToolboxes,
 				a
 			),
 		[body, arg ?? null]
@@ -29,12 +29,12 @@ const KINDS =
 	"  build(ctx, node, p) { const osc = ctx.createOscillator(); osc.type = p.wave; osc.frequency.value = p.freq; const amp = ctx.createGain(); amp.gain.value = p.on ? p.level : 0; osc.connect(amp); osc.start(); return { output: amp, osc, amp, p: { ...p }, dispose() { osc.stop(); osc.disconnect(); amp.disconnect(); } }; }," +
 	"  onParam(hd, k, v) { hd.p[k] = v; if (k === 'freq') hd.osc.frequency.value = v; if (k === 'wave') hd.osc.type = v; hd.amp.gain.value = hd.p.on ? hd.p.level : 0; } });" +
 	"ad.registerAudioDevice({ kind: 'tb-spk', label: 'TB speaker', ports: { in: [{ id: 'in', kind: 'audio' }], out: [] }, params: [{ key: 'level', label: 'Level', kind: 'range', min: 0, max: 1, step: 0.01, default: 1 }]," +
-	"  build(ctx, node, p) { const g = ctx.createGain(); g.gain.value = p.level; g.connect(window.__stores.audioEngine.bus('instruments')); return { input: g, g, dispose() { g.disconnect(); } }; }," +
+	"  build(ctx, node, p) { const g = ctx.createGain(); g.gain.value = p.level; g.connect(window.__tp.test.v1.audioEngine.bus('instruments')); return { input: g, g, dispose() { g.disconnect(); } }; }," +
 	"  onParam(hd, k, v) { if (k === 'level') hd.g.gain.value = v; } });" +
 	'return ad.devicesDebug().kinds';
 
 const docOf = (page, uuid) => inPage(page, 'return ad.deviceOf(ad.findDeviceObject(arg))', uuid);
-const undoLen = (page) => page.evaluate(() => { let n = 0; window.__stores.history.undoStack.subscribe((v) => (n = v.length))(); return n; });
+const undoLen = (page) => page.evaluate(() => { let n = 0; window.__tp.test.v1.history.undoStack.subscribe((v) => (n = v.length))(); return n; });
 
 h.run(async () => {
 	const browser = await h.launch({ args: h.AUDIO_ARGS });
@@ -50,10 +50,10 @@ h.run(async () => {
 	const listed = await inPage(page, "let list, open; mt.moduleToolboxes.subscribe((v) => (list = v))(); mt.openToolboxes.subscribe((v) => (open = v))(); const items = mt.buildToolboxItems(list, open); const sidebar = mt.buildToolboxItems(list, open, 'sidebar'); return { menu: items.find((i) => i.id === 'mod-core-music')?.label ?? null, sidebar: sidebar.some((i) => i.id === 'mod-core-music') }");
 	h.check(listed.menu === 'Music' && listed.sidebar, "1.1 the one builder lists 'Music' for the viewport menu AND the sidebar (no plumbing of its own)");
 	const lazy = await h.setupPage(browser, 'NoKinds');
-	const noKinds = await lazy.page.evaluate(() => { let list; window.__stores.moduleToolboxes.moduleToolboxes.subscribe((v) => (list = v))(); return { registered: window.__stores.musicToolbox.musicToolboxRegistered(), listed: list.some((b) => b.id === 'mod-core-music') }; });
+	const noKinds = await lazy.page.evaluate(() => { let list; window.__tp.test.v1.moduleToolboxes.moduleToolboxes.subscribe((v) => (list = v))(); return { registered: window.__tp.test.v1.musicToolbox.musicToolboxRegistered(), listed: list.some((b) => b.id === 'mod-core-music') }; });
 	h.check(!noKinds.registered && !noKinds.listed, '1.1b with no device kind registered there is NO Music row — the toolbox appears with the first music module');
 	await lazy.ctx.close();
-	await page.evaluate(() => window.__stores.closeMenu.set(false));
+	await page.evaluate(() => window.__tp.test.v1.closeMenu.set(false));
 	await page.waitForTimeout(300);
 	await page.locator('#open-toolbox-mod-core-music').click();
 	await page.waitForTimeout(400);
@@ -91,7 +91,7 @@ h.run(async () => {
 	await h.eventually(() => docOf(B.page, ids.osc), (d) => d?.params?.freq === 310, '3.3 and it replicates to B');
 	// leave the field by BLUR, never Escape: Esc is DragRow's revert and would write a second entry
 	await input.evaluate((el) => el.blur());
-	await page.evaluate(() => window.__stores.history.undo());
+	await page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => docOf(page, ids.osc), (d) => d?.params?.freq === 300, '3.4 undo takes it back');
 	await h.eventually(() => docOf(B.page, ids.osc), (d) => d?.params?.freq === 300, '3.5 on B too');
 	await page.evaluate(() => { const sel = document.querySelector('#music-tbx .music-param[data-key="wave"] select'); sel.value = 'square'; sel.dispatchEvent(new Event('change', { bubbles: true })); });
@@ -105,7 +105,7 @@ h.run(async () => {
 
 	// ---------------------------------------------------------------- section 4
 	console.log('\n=== 4. a scrub: throttled previews, ONE commit, undo to the start ===');
-	await page.evaluate(() => { window.__sent = 0; let peerRef; window.__stores.peers.subscribe((p) => (peerRef = p))(); const orig = peerRef.send.bind(peerRef); window.__origSend = orig; peerRef.send = (d) => { if (d?.type === 'objectParameters' && d.parameter === 'device') window.__sent++; return orig(d); }; });
+	await page.evaluate(() => { window.__sent = 0; let peerRef; window.__tp.test.v1.peers.subscribe((p) => (peerRef = p))(); const orig = peerRef.send.bind(peerRef); window.__origSend = orig; peerRef.send = (d) => { if (d?.type === 'objectParameters' && d.parameter === 'device') window.__sent++; return orig(d); }; });
 	const startDoc = await docOf(page, ids.osc);
 	const before4 = await undoLen(page);
 	const wrap = page.locator('#music-tbx .music-param[data-key="freq"] .dn-wrap');
@@ -125,10 +125,10 @@ h.run(async () => {
 	h.check(afterScrub.params.freq !== startDoc.params.freq, '4.1 the scrub moved the value (' + startDoc.params.freq + ' -> ' + afterScrub.params.freq + ')');
 	h.check(scrubbed.sent >= 1 && scrubbed.sent <= 8, '4.2 replicated previews were THROTTLED (' + scrubbed.sent + ' sends for 12 moves) plus the commit');
 	h.check(entries4 === 1, '4.3 the whole scrub is ONE undo entry (' + entries4 + ')');
-	await page.evaluate(() => window.__stores.history.undo());
+	await page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => docOf(page, ids.osc), (d) => d?.params?.freq === startDoc.params.freq, '4.4 undo goes back to where the scrub STARTED (' + startDoc.params.freq + ')');
 	await h.eventually(() => docOf(B.page, ids.osc), (d) => d?.params?.freq === startDoc.params.freq, '4.5 B follows');
-	await page.evaluate(() => { let peerRef; window.__stores.peers.subscribe((p) => (peerRef = p))(); peerRef.send = window.__origSend; });
+	await page.evaluate(() => { let peerRef; window.__tp.test.v1.peers.subscribe((p) => (peerRef = p))(); peerRef.send = window.__origSend; });
 
 	// ---------------------------------------------------------------- section 5
 	console.log('\n=== 5. presets ===');
@@ -176,7 +176,7 @@ h.run(async () => {
 	// never sees a Music row), so every fresh page registers the kinds first
 	await inPage(N.page, KINDS);
 	await N.page.waitForTimeout(200);
-	await N.page.evaluate(() => window.__stores.moduleToolboxes.openModuleToolbox('mod-core-music'));
+	await N.page.evaluate(() => window.__tp.test.v1.moduleToolboxes.openModuleToolbox('mod-core-music'));
 	await N.page.waitForTimeout(500);
 	const sheet = await N.page.evaluate(() => { const el = document.querySelector('#mod-core-music'); return { inDom: !!el, isSheet: !!el?.classList.contains('tbx-sheet'), hasGrabber: !!el?.querySelector('.tbx-sheet-grab') }; });
 	h.check(sheet.inDom && sheet.isSheet && sheet.hasGrabber, '7.1 on a 600px viewport the toolbox is the bottom sheet, grabber and all');
@@ -195,7 +195,7 @@ h.run(async () => {
 	await h.freshReload(A);
 	await inPage(page, KINDS);
 	await page.waitForTimeout(200);
-	await page.evaluate(() => window.__stores.moduleToolboxes.openModuleToolbox('mod-core-music'));
+	await page.evaluate(() => window.__tp.test.v1.moduleToolboxes.openModuleToolbox('mod-core-music'));
 	await page.waitForTimeout(500);
 	const after = await page.evaluate(() => Math.round(document.querySelector('#mod-core-music')?.getBoundingClientRect().left ?? -1));
 	h.check(Math.abs(after - moved.left) <= 2, '8.2 the dragged position survives a reload (' + moved.left + ' -> ' + after + ')');
@@ -203,7 +203,7 @@ h.run(async () => {
 	// ---------------------------------------------------------------- section 9
 	console.log('\n=== 9. the Inspector Device section (B4): fanned, mixed, and the seam ===');
 	// the reload gave A a NEW peer id, so B must be connected again before anything replicates
-	A.id = await page.evaluate(() => new Promise((r) => window.__stores.peers.subscribe((p) => r(p?.peer?.id))()));
+	A.id = await page.evaluate(() => new Promise((r) => window.__tp.test.v1.peers.subscribe((p) => r(p?.peer?.id))()));
 	await h.connect(B, A);
 	// after the reload the scene is empty: two fresh oscillators with DIFFERENT freqs, then a
 	// selection SET with the first as primary (the multi-edit suite's shape)
@@ -225,16 +225,16 @@ h.run(async () => {
 	h.check(written[0].params.freq === 440 && written[1].params.freq === 440, '9.4 one edit writes BOTH members (' + written[0].params.freq + '/' + written[1].params.freq + ')');
 	h.check(written[2] === undoBefore + 1, '9.5 as ONE undo entry (' + undoBefore + ' -> ' + written[2] + ')');
 	await h.eventually(() => docOf(B.page, pair.b).then((d) => d?.params.freq), (v) => v === 440, '9.6 and it replicated to B');
-	await page.evaluate(() => window.__stores.history.undo());
+	await page.evaluate(() => window.__tp.test.v1.history.undo());
 	await page.waitForTimeout(400);
 	const undone = await Promise.all([docOf(page, pair.a), docOf(page, pair.b)]);
 	h.check(undone[0].params.freq === 300 && undone[1].params.freq === 500, '9.7 a single undo restores EACH member\'s own value (' + undone[0].params.freq + '/' + undone[1].params.freq + ')');
 	// the seam must RE-SCOPE an open toolbox: its face shows an explicit pick over the selection,
 	// so pick the OTHER member first, then the link has to bring the primary back
-	const primary = await page.evaluate(() => { let sel; window.__stores.selectedObject.subscribe((x) => (sel = x))(); return sel?.uuid ?? null; });
+	const primary = await page.evaluate(() => { let sel; window.__tp.test.v1.selectedObject.subscribe((x) => (sel = x))(); return sel?.uuid ?? null; });
 	const other = primary === pair.a ? pair.b : pair.a;
 	h.check(!!primary && [pair.a, pair.b].includes(primary), '9.8a (premise) the primary of the set is one of the two (applySelectionSet makes it the LAST member)');
-	await page.evaluate(() => window.__stores.moduleToolboxes.openModuleToolbox('mod-core-music'));
+	await page.evaluate(() => window.__tp.test.v1.moduleToolboxes.openModuleToolbox('mod-core-music'));
 	await page.waitForTimeout(300);
 	await page.selectOption('#music-device-pick', other);
 	await page.waitForTimeout(200);

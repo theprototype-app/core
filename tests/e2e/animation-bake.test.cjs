@@ -13,11 +13,11 @@ const h = require('./helpers.cjs');
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
-	await A.page.waitForFunction(() => !!window.__stores?.animationPreview, { timeout: 20000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.animationPreview, { timeout: 20000 });
 
 	// ---------- what a bake produces ----------
 	const baked = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		s.commandsHandler.sceneCommand('/create Box 1 1 1');
 		await new Promise((r) => setTimeout(r, 400));
@@ -52,7 +52,7 @@ h.run(async () => {
 
 	// only the channels the clip drives become tracks
 	const channels = await A.page.evaluate(async (id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		let g;
 		s.objectsGroup.subscribe((/** @type {any} */ x) => (g = x))();
@@ -86,7 +86,7 @@ h.run(async () => {
 
 	// ---------- the ROUND TRIP through the real exporter and loader ----------
 	const trip = await A.page.evaluate(async (id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		const THREE = s.THREE;
 		const { GLTFExporter } = s.GLTFExporterModule;
@@ -146,7 +146,7 @@ h.run(async () => {
 
 	// ---------- the DOOR case: the pivot has to be baked in too ----------
 	const door = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ap = s.animationPreview;
 		const THREE = s.THREE;
 		s.commandsHandler.sceneCommand('/create Box 1 2 0.1');

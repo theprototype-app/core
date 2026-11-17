@@ -50,7 +50,7 @@ h.run(async () => {
 
 	// a ~200k-triangle model, built in the page and served as a pack item at a CDN url
 	const glb = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const geo = new s.THREE.SphereGeometry(1, 318, 316);
 		const mesh = new s.THREE.Mesh(geo, new s.THREE.MeshStandardMaterial());
 		mesh.position.y = 1;
@@ -68,18 +68,18 @@ h.run(async () => {
 		return route.fulfill({ status: 404, body: '' });
 	});
 	await A.page.evaluate(async () => {
-		await window.__stores.packs.loadPacks();
-		window.__stores.placementPrefs.placementPreview.set('budget');
-		window.__stores.placementPrefs.placementTriBudget.set(50000);
-		window.__stores.explorerClose.set(false);
+		await window.__tp.test.v1.packs.loadPacks();
+		window.__tp.test.v1.placementPrefs.placementPreview.set('budget');
+		window.__tp.test.v1.placementPrefs.placementTriBudget.set(50000);
+		window.__tp.test.v1.explorerClose.set(false);
 	});
 	await A.page.waitForTimeout(500);
-	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set('pack:perf'));
+	await A.page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set('pack:perf'));
 	const card = A.page.locator('.explorer-card', { hasText: /Heavy/ }).first();
 	await card.waitFor({ timeout: 15000 });
 	const spot = await A.page.evaluate(() => {
 		let renderer;
-		window.__stores.globalRenderer.subscribe((v) => (renderer = v))();
+		window.__tp.test.v1.globalRenderer.subscribe((v) => (renderer = v))();
 		const r = renderer.domElement.getBoundingClientRect();
 		for (const [fx, fy] of [[0.5, 0.62], [0.42, 0.55], [0.6, 0.5], [0.35, 0.7]]) {
 			const x = Math.round(r.left + r.width * fx);
@@ -99,12 +99,12 @@ h.run(async () => {
 	// warm: one drag downloads + parses the file (the "cached" state the proof is about)
 	await pick();
 	await h.eventually(
-		() => A.page.evaluate(() => [...(() => { let i; window.__stores.packCache.packCacheIndex.subscribe((v) => (i = v))(); return i; })().keys()].some((u) => /heavy\.glb$/.test(u))),
+		() => A.page.evaluate(() => [...(() => { let i; window.__tp.test.v1.packCache.packCacheIndex.subscribe((v) => (i = v))(); return i; })().keys()].some((u) => /heavy\.glb$/.test(u))),
 		(x) => x,
 		'premise: the heavy item is downloaded into the pack cache',
 		30000
 	);
-	await h.eventually(() => A.page.evaluate(() => window.__stores.packRefs.peekPackTemplate([...(() => { let i; window.__stores.packCache.packCacheIndex.subscribe((v) => (i = v))(); return i; })().keys()].find((u) => /heavy\.glb$/.test(u))) !== null), (x) => x, 'premise: and decoded in memory', 30000);
+	await h.eventually(() => A.page.evaluate(() => window.__tp.test.v1.packRefs.peekPackTemplate([...(() => { let i; window.__tp.test.v1.packCache.packCacheIndex.subscribe((v) => (i = v))(); return i; })().keys()].find((u) => /heavy\.glb$/.test(u))) !== null), (x) => x, 'premise: and decoded in memory', 30000);
 	await A.page.keyboard.press('Escape');
 	await A.page.mouse.up();
 	await A.page.waitForTimeout(1500);
@@ -117,7 +117,7 @@ h.run(async () => {
 	// dragging: the ghost follows the pointer every frame
 	await pick();
 	await A.page.waitForTimeout(500);
-	const tier = await A.page.evaluate(() => window.__stores.placeDrag.ghostInfo().items[0]?.tier);
+	const tier = await A.page.evaluate(() => window.__tp.test.v1.placeDrag.ghostInfo().items[0]?.tier);
 	h.check(tier === 'box', 'over the 50k budget the ghost is the BOX (got ' + tier + ')');
 	let moving = true;
 	const mover = (async () => {
@@ -131,7 +131,7 @@ h.run(async () => {
 	const drag = await sampleFrames(A.page, SAMPLE_MS);
 	moving = false;
 	await mover;
-	const placements = await A.page.evaluate(() => window.__stores.placeDrag.state()?.placements?.length ?? 0);
+	const placements = await A.page.evaluate(() => window.__tp.test.v1.placeDrag.state()?.placements?.length ?? 0);
 	h.check(placements === 1, 'premise: the drag was live over the viewport the whole time');
 	await A.page.keyboard.press('Escape');
 	await A.page.mouse.up();

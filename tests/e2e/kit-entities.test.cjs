@@ -21,21 +21,21 @@ async function waitFor(fn, ms) {
 	}
 	return false;
 }
-const dbg = (peer) => ev(peer, () => window.__stores.kitEntities.kitEntitiesDebug());
+const dbg = (peer) => ev(peer, () => window.__tp.test.v1.kitEntities.kitEntitiesDebug());
 
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
 	for (const p of [A, B])
-		await p.page.waitForFunction(() => !!window.__stores?.kitEntities && !!window.__stores?.kit, {
+		await p.page.waitForFunction(() => !!window.__tp?.test.v1?.kitEntities && !!window.__tp?.test.v1?.kit, {
 			timeout: 30000
 		});
 	await h.connect(A, B);
 
 	// ---- who writes: both peers agree on ONE authority ---------------------------------------
 	const auth = await Promise.all(
-		[A, B].map((p) => ev(p, () => window.__stores.kit.kitAuthorityId()))
+		[A, B].map((p) => ev(p, () => window.__tp.test.v1.kit.kitAuthorityId()))
 	);
 	h.check(
 		!!auth[0] && auth[0] === auth[1],
@@ -47,7 +47,7 @@ h.run(async () => {
 
 	// ---- the scene: a template robot and a wall between the portal and the player -----------
 	const made = await ev(A, () => {
-		const cmd = window.__stores.commandsHandler;
+		const cmd = window.__tp.test.v1.commandsHandler;
 		cmd.sceneCommand('/create box');
 		cmd.sceneCommand('/create box');
 		return true;
@@ -55,15 +55,15 @@ h.run(async () => {
 	await A.page.waitForTimeout(1500); // /create re-seats after the call returns
 	const ids = await ev(A, () => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const kids = g.children.slice(-2);
 		const [tpl, wall] = kids;
 		tpl.name = 'Robot template';
 		wall.name = 'Wall';
-		const peer = window.__stores.peers
+		const peer = window.__tp.test.v1.peers
 			? (() => {
 					let p;
-					window.__stores.peers.subscribe((v) => (p = v))();
+					window.__tp.test.v1.peers.subscribe((v) => (p = v))();
 					return p;
 				})()
 			: null;
@@ -85,10 +85,10 @@ h.run(async () => {
 			p,
 			(u) => {
 				let g;
-				window.__stores.objectsGroup.subscribe((v) => (g = v))();
+				window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 				const w = g.getObjectByProperty('uuid', u);
 				if (w) w.userData.physics = { mode: 'static' };
-				window.__stores.objectsGroup.update((v) => v);
+				window.__tp.test.v1.objectsGroup.update((v) => v);
 			},
 			ids.wall
 		);
@@ -96,7 +96,7 @@ h.run(async () => {
 		B,
 		(u) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const w = g.getObjectByProperty('uuid', u);
 			return w ? w.scale.x : null;
 		},
@@ -108,7 +108,7 @@ h.run(async () => {
 	await ev(
 		R,
 		(tpl) =>
-			window.__stores.kitEntities
+			window.__tp.test.v1.kitEntities
 				.kitEntitiesApi()
 				.spawner.spawn({
 					kind: 'robot',
@@ -140,10 +140,10 @@ h.run(async () => {
 	);
 	const sceneCheck = await ev(R, () => {
 		let s;
-		window.__stores.globalScene.subscribe((v) => (s = v))();
+		window.__tp.test.v1.globalScene.subscribe((v) => (s = v))();
 		const root = s.getObjectByName('kit-entities');
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		let inGroup = 0;
 		g.traverse((o) => {
 			if (o.userData?.kitEntity) inGroup++;
@@ -168,10 +168,10 @@ h.run(async () => {
 	// the player: park the WRITER's camera beyond the wall (the nearest player for everyone)
 	await ev(W, () => {
 		let c;
-		window.__stores.globalCamera.subscribe((v) => (c = v))();
+		window.__tp.test.v1.globalCamera.subscribe((v) => (c = v))();
 		c.position.set(-4, 1.6, 8);
 	});
-	await ev(W, () => window.__stores.kitEntities.kitEntitiesApi().mover.chase('robot', 'player'));
+	await ev(W, () => window.__tp.test.v1.kitEntities.kitEntitiesApi().mover.chase('robot', 'player'));
 	const t0 = Date.now();
 	let past = 0;
 	await waitFor(async () => {
@@ -184,13 +184,13 @@ h.run(async () => {
 		`all 20 got round the wall to the player's side, seen on the reader (${past}/20 in ${((Date.now() - t0) / 1000).toFixed(1)} s)`
 	);
 	const stuck = await ev(W, () => {
-		const rt = window.__stores.kitEntities.kitEntitiesDebug();
+		const rt = window.__tp.test.v1.kitEntities.kitEntitiesDebug();
 		return rt.runtime;
 	});
 	console.log('runtime after chase', JSON.stringify(stuck));
 
 	// ---- 3. agreement: after a flush the reader's records equal the writer's -----------------
-	await ev(W, () => window.__stores.kitEntities.kitEntitiesApi().mover.halt('robot'));
+	await ev(W, () => window.__tp.test.v1.kitEntities.kitEntitiesApi().mover.halt('robot'));
 	const key = (d) =>
 		JSON.stringify(
 			d.entities.map((e) => [e.id, e.hp, e.dead, e.pos.map((v) => v.toFixed(3))]).sort()
@@ -213,21 +213,21 @@ h.run(async () => {
 
 	// ---- 4. damage from the reader reaches the authority; both see the hp -----------------------
 	const victim = ea.entities[0].id;
-	await ev(R, (id) => window.__stores.kitEntities.kitEntitiesApi().health.damage(id, 12), victim);
+	await ev(R, (id) => window.__tp.test.v1.kitEntities.kitEntitiesApi().health.damage(id, 12), victim);
 	await waitFor(
 		async () =>
-			(await ev(R, (id) => window.__stores.kitEntities.kitEntitiesApi().health.hp(id), victim)) ===
+			(await ev(R, (id) => window.__tp.test.v1.kitEntities.kitEntitiesApi().health.hp(id), victim)) ===
 			18,
 		5000
 	);
 	const hpW = await ev(
 		W,
-		(id) => window.__stores.kitEntities.kitEntitiesApi().health.hp(id),
+		(id) => window.__tp.test.v1.kitEntities.kitEntitiesApi().health.hp(id),
 		victim
 	);
 	const hpR = await ev(
 		R,
-		(id) => window.__stores.kitEntities.kitEntitiesApi().health.hp(id),
+		(id) => window.__tp.test.v1.kitEntities.kitEntitiesApi().health.hp(id),
 		victim
 	);
 	h.check(
@@ -239,7 +239,7 @@ h.run(async () => {
 	for (const p of [A, B])
 		await ev(p, () => {
 			window.__kitHeard = { died: 0, emptied: 0, auth: 0 };
-			const api = window.__stores.kitEntities.kitEntitiesApi();
+			const api = window.__tp.test.v1.kitEntities.kitEntitiesApi();
 			api.health.onDied((e) => {
 				window.__kitHeard.died++;
 				if (e.authority) window.__kitHeard.auth++;
@@ -247,7 +247,7 @@ h.run(async () => {
 			api.spawner.onEmptied(() => window.__kitHeard.emptied++);
 		});
 	await ev(R, () =>
-		window.__stores.kitEntities.kitEntitiesApi().health.damageArea([-4, 0, 6], 30, 100, 'robot')
+		window.__tp.test.v1.kitEntities.kitEntitiesApi().health.damageArea([-4, 0, 6], 30, 100, 'robot')
 	);
 	await waitFor(
 		async () => (await dbg(R)).runtime.count === 0 && (await dbg(W)).runtime.count === 0,
@@ -274,7 +274,7 @@ h.run(async () => {
 
 	// ---- 6. the node face: the generated groups are in the palette, with cards -----------------
 	const nodes = await ev(A, () => {
-		const cat = window.__stores.nodeCatalog?.nodeCatalog ?? null;
+		const cat = window.__tp.test.v1.nodeCatalog?.nodeCatalog ?? null;
 		return cat
 			? cat
 					.filter((g) => /^Kit: (Spawner|Health|Mover)$/.test(g.group))

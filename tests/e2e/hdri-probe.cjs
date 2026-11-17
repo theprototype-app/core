@@ -8,13 +8,13 @@ h.run(async () => {
 	const page = A.page;
 	// a few lit objects to read the IBL on
 	await page.evaluate(() => {
-		const c = window.__stores.commandsHandler;
+		const c = window.__tp.test.v1.commandsHandler;
 		c.sceneCommand('/create box');
 		c.sceneCommand('/create sphere');
 	});
 	await page.waitForTimeout(1500);
 	const made = await page.evaluate(() => {
-		const g = window.__stores.objectsGroup;
+		const g = window.__tp.test.v1.objectsGroup;
 		let group;
 		g.subscribe((v) => (group = v))();
 		const kids = group.children.filter((o) => o.isMesh);
@@ -26,15 +26,15 @@ h.run(async () => {
 				m.material.color?.set(i === 1 ? '#ffffff' : '#c8c8c8');
 			}
 		});
-		window.__stores.selectedObjects.set([]);
+		window.__tp.test.v1.selectedObjects.set([]);
 		let tc;
-		window.__stores.TControls.subscribe((v) => (tc = v))();
+		window.__tp.test.v1.TControls.subscribe((v) => (tc = v))();
 		tc?.detach?.();
 		// a low 3/4 view with the horizon in frame: the sky, the IBL on both objects, the sun's shadow
 		let camera;
 		let orbit;
-		window.__stores.globalCamera.subscribe((v) => (camera = v))();
-		window.__stores.orbitControls.subscribe((v) => (orbit = v))();
+		window.__tp.test.v1.globalCamera.subscribe((v) => (camera = v))();
+		window.__tp.test.v1.orbitControls.subscribe((v) => (orbit = v))();
 		camera.position.set(3.2, 1.6, 4.2);
 		orbit?.target?.set(0, 0.8, 0);
 		camera.lookAt(0, 0.8, 0);
@@ -45,14 +45,14 @@ h.run(async () => {
 	console.log('objects', made);
 	const presets = process.argv.slice(2).length ? process.argv.slice(2) : ['studio', 'meadow', 'clearsky', 'sunrise', 'starlight', 'photostudio'];
 	for (const [i, key] of presets.entries()) {
-		await page.evaluate((k) => window.__stores.environment.setEnvironment(k), key);
-		const state = await page.evaluate(() => window.__stores.hdri.hdriDebug.settle());
+		await page.evaluate((k) => window.__tp.test.v1.environment.setEnvironment(k), key);
+		const state = await page.evaluate(() => window.__tp.test.v1.hdri.hdriDebug.settle());
 		await page.waitForTimeout(800);
 		const info = await page.evaluate(() => {
 			let scene;
-			window.__stores.globalScene.subscribe((s) => (scene = s))();
+			window.__tp.test.v1.globalScene.subscribe((s) => (scene = s))();
 			let st;
-			window.__stores.hdriStores.hdriStatus.subscribe((s) => (st = s))();
+			window.__tp.test.v1.hdriStores.hdriStatus.subscribe((s) => (st = s))();
 			return { status: st, env: scene.environment?.name ?? null, bg: scene.background?.name ?? scene.background?.constructor?.name, post: window.__postDebug?.() && { chain: window.__postDebug().chain, type: window.__postDebug().composerBufferType } };
 		});
 		console.log(key, state, JSON.stringify(info));
@@ -61,29 +61,29 @@ h.run(async () => {
 	// HDRI_UI=1: the Inspector section in the dark and light themes (Meadow, rotated, blurred a little)
 	if (process.env.HDRI_UI === '1') {
 		await page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.environment.setEnvironment('meadow');
 			s.environment.editEnvSky({ hdri: { rotation: 40, blur: 0.1 } });
 			s.openSceneSection('Environment');
 		});
-		await page.evaluate(() => window.__stores.hdri.hdriDebug.settle());
+		await page.evaluate(() => window.__tp.test.v1.hdri.hdriDebug.settle());
 		await page.waitForTimeout(1200);
 		await page.evaluate(() => document.getElementById('env-hdri')?.scrollIntoView({ block: 'center' }));
 		for (const [n, theme] of [['10', 'dark'], ['11', 'light']]) {
-			await page.evaluate((t) => window.__stores.themes.theme.set(t), theme);
+			await page.evaluate((t) => window.__tp.test.v1.themes.theme.set(t), theme);
 			await page.waitForTimeout(800);
 			await page.screenshot({ path: `${OUT}/${n}-inspector-hdri-${theme}.png` });
 		}
 		// the quality row in Settings (it sits right after the water rows)
 		await page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.settingsSection.set('scene');
 			s.settingsOpen.set(true);
 		});
 		await page.waitForTimeout(1200);
 		await page.evaluate(() => (document.getElementById('hdri-quality')?.closest('.setting-row') ?? document.getElementById('hdri-quality'))?.scrollIntoView({ block: 'center' }));
 		for (const [n, theme] of [['12', 'dark'], ['13', 'light']]) {
-			await page.evaluate((t) => window.__stores.themes.theme.set(t), theme);
+			await page.evaluate((t) => window.__tp.test.v1.themes.theme.set(t), theme);
 			await page.waitForTimeout(800);
 			await page.screenshot({ path: `${OUT}/${n}-settings-hdri-${theme}.png` });
 		}

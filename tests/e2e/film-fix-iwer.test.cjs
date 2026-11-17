@@ -70,7 +70,7 @@ function initScript() {
 const magenta = (page) =>
 	page.evaluate(() => {
 		let r = null;
-		window.__stores.globalRenderer.subscribe((v) => (r = v))();
+		window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
 		const gl = r.domElement;
 		const c = document.createElement('canvas');
 		c.width = 96;
@@ -86,7 +86,7 @@ const magenta = (page) =>
 /** visible in-headset UI objects in the scene (names the VR components give them) + the tour @param {any} page */
 const vrUi = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let sc = null;
 		s.globalScene.subscribe((v) => (sc = v))();
 		const names = new Set();
@@ -99,11 +99,11 @@ const vrUi = (page) =>
 		return { names: [...names].slice(0, 12), count: names.size, tour: a ? a.id ?? a.tourId ?? 'active' : null };
 	});
 
-const takeUi = (page) => page.evaluate(() => { let u = null; window.__stores.filmRecorder.take.subscribe((v) => (u = v))(); return u; });
-const walkUi = (page) => page.evaluate(() => { let u = null; window.__stores.filmWalk.walk.subscribe((v) => (u = v))(); return u; });
+const takeUi = (page) => page.evaluate(() => { let u = null; window.__tp.test.v1.filmRecorder.take.subscribe((v) => (u = v))(); return u; });
+const walkUi = (page) => page.evaluate(() => { let u = null; window.__tp.test.v1.filmWalk.walk.subscribe((v) => (u = v))(); return u; });
 const look = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let pt, sky, rl, sc;
 		s.passthroughActive.subscribe((v) => (pt = v))();
 		s.skyOverRoom.subscribe((v) => (sky = v))();
@@ -130,7 +130,7 @@ h.run(async () => {
 		if (size.key === 'folded') {
 			await page.evaluate(async () => {
 				let r = null;
-				window.__stores.globalRenderer.subscribe((v) => (r = v))();
+				window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
 				const s = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor'] });
 				await r.xr.setSession(s);
 			});
@@ -140,27 +140,27 @@ h.run(async () => {
 			const ctl = await vrUi(page);
 			h.check(!!ctl.tour, tag(`control: a plain VR session starts the VR welcome (${ctl.tour})`));
 			h.check(ctl.count > 0, tag(`control: and mounts in-headset UI (${ctl.names.join(',')})`));
-			await page.evaluate(() => window.__stores.tours.tours.skip?.());
+			await page.evaluate(() => window.__tp.test.v1.tours.tours.skip?.());
 			await iwer.exit(page);
 			await page.evaluate(() => {
 				// the control's tour must not be what keeps the next rows quiet: let it auto-start again
-				window.__stores.tours.tours.reset?.();
+				window.__tp.test.v1.tours.tours.reset?.();
 			});
 		}
 
 		// a camera + a magenta box
 		const uuid = await page.evaluate(async () => {
-			window.__stores.commandsHandler.sceneCommand('/create Camera');
+			window.__tp.test.v1.commandsHandler.sceneCommand('/create Camera');
 			await new Promise((r) => setTimeout(r, 400));
 			let g = null;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			return g.children[g.children.length - 1].uuid;
 		});
 		const boxId = await page.evaluate(async () => {
-			window.__stores.commandsHandler.sceneCommand('/create Box');
+			window.__tp.test.v1.commandsHandler.sceneCommand('/create Box');
 			await new Promise((r) => setTimeout(r, 400));
 			let g = null;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const box = g.children[g.children.length - 1];
 			box.traverse((o) => {
 				if (o.material) {
@@ -172,11 +172,11 @@ h.run(async () => {
 			});
 			return box.uuid;
 		});
-		await page.evaluate((u) => window.__stores.filmState.openFilm(u), uuid);
+		await page.evaluate((u) => window.__tp.test.v1.filmState.openFilm(u), uuid);
 		await page.waitForSelector('#film-exit', { timeout: 15000 });
 		await page.locator('#film-help-never').click({ timeout: 5000 }).catch(() => {});
-		await page.evaluate(() => window.__stores.filmMode.placeCamera([0, 2, 0]));
-		await page.evaluate(() => window.__stores.toastStore.set([]));
+		await page.evaluate(() => window.__tp.test.v1.filmMode.placeCamera([0, 2, 0]));
+		await page.evaluate(() => window.__tp.test.v1.toastStore.set([]));
 
 		// ---- D. (unfolded) AR refused: the fallback, Film keeps going on the stick ----
 		if (size.key === 'unfolded') {
@@ -188,7 +188,7 @@ h.run(async () => {
 			h.check(!w.on && !w.starting, tag('and the walk is not running'));
 			h.check(!/Walk/.test((await page.locator('#film-sensor').textContent()) || ''), tag(`the pill is back on a handheld mode (${(await page.locator('#film-sensor').textContent())?.trim()})`));
 			h.check((await page.locator('#film-stick').isVisible()), tag('the thumbstick is there'));
-			await page.evaluate(() => { window.__denyAr = false; window.__stores.toastStore.set([]); });
+			await page.evaluate(() => { window.__denyAr = false; window.__tp.test.v1.toastStore.set([]); });
 		}
 
 		// ---- T. Walk from the picker: no tour, no VR UI ----
@@ -197,7 +197,7 @@ h.run(async () => {
 		await page.screenshot({ path: path.join(OUT, `${size.key}-picker.png`) });
 		await page.locator('#film-walk').click();
 		await h.eventually(() => iwer.state(page), (s) => s.presenting && s.mode === 'immersive-ar', tag('the AR walk session presents'), 15000);
-		await h.eventually(() => page.evaluate(() => window.__stores.filmWalk.filmWalkDebug()), (d) => d.on && d.tracking, tag('the phone is tracked'), 10000);
+		await h.eventually(() => page.evaluate(() => window.__tp.test.v1.filmWalk.filmWalkDebug()), (d) => d.on && d.tracking, tag('the phone is tracked'), 10000);
 		h.check(/Walk/.test((await page.locator('#film-sensor').textContent()) || ''), tag(`the pill names Walk (${(await page.locator('#film-sensor').textContent())?.trim()})`));
 		await page.waitForTimeout(2500); // past the welcome's start delay (1.2 s)
 		await iwer.frames(page, 6);
@@ -206,7 +206,7 @@ h.run(async () => {
 		h.check(ui.count === 0, tag(`no in-headset UI object is drawn (${ui.names.join(',') || 'none'})`));
 		const st = await page.evaluate(() => {
 			let r = null;
-			window.__stores.globalRenderer.subscribe((v) => (r = v))();
+			window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
 			return { autoClear: r.autoClear, blend: r.xr.getSession()?.environmentBlendMode };
 		});
 		h.check(st.autoClear === true, tag(`the renderer clears every XR frame (autoClear ${st.autoClear}, blend ${st.blend})`));
@@ -217,7 +217,7 @@ h.run(async () => {
 		h.check(pillThere && /Walk/.test((await page.locator('#film-sensor').textContent().catch(() => '')) || ''), tag('the motion pill still names Walk a few seconds into the walk'));
 		if (!pillThere) {
 			const dump = await page.evaluate(() => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				let f = null, w = null;
 				s.filmMode?.film?.subscribe?.((v) => (f = v))();
 				s.filmWalk?.walk?.subscribe?.((v) => (w = v))();
@@ -251,15 +251,15 @@ h.run(async () => {
 		await page.waitForTimeout(200);
 		h.check((await walkUi(page)).scale === 2 && /×2/.test((await page.locator('#film-walk-chip').textContent()) || ''), tag('tapping the walk chip picks ×2'));
 		h.check(await page.evaluate(() => localStorage.getItem('film:walkScale') === '2' || /2/.test(localStorage.getItem('film:walkScale') || '')), tag('and the scale is remembered on this device'));
-		await page.evaluate(() => window.__stores.filmWalk.setWalkScale(1));
+		await page.evaluate(() => window.__tp.test.v1.filmWalk.setWalkScale(1));
 
 		// ---- S. the smear: box in view with the room behind, turn away, no trail ----
-		await page.evaluate(() => window.__stores.toastStore.set([]));
-		const p0 = await page.evaluate(() => window.__stores.filmMode.filmPose());
+		await page.evaluate(() => window.__tp.test.v1.toastStore.set([]));
+		const p0 = await page.evaluate(() => window.__tp.test.v1.filmMode.filmPose());
 		const f = forward(p0.q);
 		await page.evaluate(({ id, at }) => {
 			let g = null;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const box = g.getObjectByProperty('uuid', id);
 			box.position.set(at[0], at[1], at[2]);
 			box.scale.set(2, 1.5, 0.5);
@@ -270,7 +270,7 @@ h.run(async () => {
 		if (counter)
 			await page.evaluate(() => {
 				let r = null;
-				window.__stores.globalRenderer.subscribe((v) => (r = v))();
+				window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
 				Object.defineProperty(r, 'autoClear', { get: () => false, set() {}, configurable: true });
 			});
 		await iwer.frames(page, 4);
@@ -279,7 +279,7 @@ h.run(async () => {
 		// FRAMEBUFFER per XR frame (a shadow map's clear is on its own target and does not count).
 		await page.evaluate(() => {
 			let r = null;
-			window.__stores.globalRenderer.subscribe((v) => (r = v))();
+			window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
 			// three's renderer.clear, not gl.clear: IWER clears its framebuffer through the same GL context (once
 			// a frame, the counterfactual measured it), and that clear is the emulator's, not the app's
 			const gl = r.getContext();
@@ -301,7 +301,7 @@ h.run(async () => {
 		await iwer.frames(page, 10);
 		const clears = await page.evaluate(() => {
 			let r = null;
-			window.__stores.globalRenderer.subscribe((v) => (r = v))();
+			window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
 			const spy = window.__clearSpy;
 			r.clear = spy.orig;
 			window.__clearSpy = null;
@@ -325,7 +325,7 @@ h.run(async () => {
 
 		// ---- L. tracking lost mid-take ----
 		await page.evaluate(() => {
-			const w = window.__stores;
+			const w = window.__tp?.test.v1;
 			const id = w.sequences.createSequence('Walk ' + Math.random().toString(36).slice(2, 6));
 			w.sequences.setSequence(id, { duration: 30, tracks: [] });
 			w.sequences.activeSequence.set(id);

@@ -194,32 +194,32 @@ h.run(async () => {
 	const browser = await h.launch();
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(4000);
 		await warm.ctx.close();
 	}
 	const A = await h.setupPage(browser, 'A');
 
 	const uuid = await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const box = group.children[group.children.length - 1];
 		box.position.set(0, 3, 0);
 		// start it just under +PI about Y, so the drag below crosses the wrap
 		box.rotation.set(0, Math.PI - 0.25, 0);
 		box.userData.physics = { mode: 'dynamic', mass: 1 };
-		window.__stores.objectsGroup.update((v) => v);
+		window.__tp.test.v1.objectsGroup.update((v) => v);
 		return box.uuid;
 	});
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await h.eventually(
-		() => A.page.evaluate(() => new Promise((r) => window.__stores.physics.simulating.subscribe(r)())),
+		() => A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.physics.simulating.subscribe(r)())),
 		(v) => v === true,
 		'5.1 (premise) the simulation is running'
 	);
 
-	const held = await A.page.evaluate((uuid) => window.__stores.physics.holdBody(uuid), uuid);
+	const held = await A.page.evaluate((uuid) => window.__tp.test.v1.physics.holdBody(uuid), uuid);
 	check(held === true, '5.2 (premise) the box is held as a kinematic body');
 
 	// Spin +0.075 rad per write, 8 writes 10 ms apart, starting at PI-0.3 — so the
@@ -236,7 +236,7 @@ h.run(async () => {
 		await A.page.evaluate(
 			([uuid, angle]) => {
 				let group = null;
-				window.__stores.objectsGroup.subscribe((v) => (group = v))();
+				window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 				group.getObjectByProperty('uuid', uuid).rotation.set(0, angle, 0);
 			},
 			[uuid, Math.PI - 0.3 + i * 0.0375]
@@ -245,8 +245,8 @@ h.run(async () => {
 	}
 
 	const after = await A.page.evaluate((uuid) => {
-		window.__stores.physics.releaseBody(uuid);
-		return window.__stores.physics.physicsDebug().find((b) => b.uuid === uuid);
+		window.__tp.test.v1.physics.releaseBody(uuid);
+		return window.__tp.test.v1.physics.physicsDebug().find((b) => b.uuid === uuid);
 	}, uuid);
 
 	check(after?.hold === null, '5.3 the release put the body back to dynamic');
@@ -255,6 +255,6 @@ h.run(async () => {
 	check(wy > 0.05, '5.4 the spin comes back POSITIVE about +Y across the wrap (' + wy.toFixed(2) + ' rad/s)');
 	check(mag < 20 - 1e-6, '5.5 ...and well under the ceiling, not a clamped spike (|w| = ' + mag.toFixed(2) + ')');
 
-	await A.page.evaluate(() => window.__stores.physics.stopSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 	await h.finish(browser);
 });

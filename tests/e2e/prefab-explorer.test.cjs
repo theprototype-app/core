@@ -16,37 +16,37 @@ const prefabList = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.prefabs.prefabs.subscribe((list) =>
+				window.__tp.test.v1.prefabs.prefabs.subscribe((list) =>
 					r(list.map((p) => ({ id: p.id, name: p.name, updatedAt: p.updatedAt ?? null })))
 				)()
 			)
 	);
 
 const facts = (page, id) =>
-	page.evaluate((id) => window.__stores.prefabs.prefabFacts(id), id);
+	page.evaluate((id) => window.__tp.test.v1.prefabs.prefabFacts(id), id);
 
 const childNames = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => r(g?.children.map((c) => c.name) ?? []))()
+				window.__tp.test.v1.objectsGroup.subscribe((g) => r(g?.children.map((c) => c.name) ?? []))()
 			)
 	);
 
-const clearToasts = (page) => page.evaluate(() => window.__stores.clearToast());
+const clearToasts = (page) => page.evaluate(() => window.__tp.test.v1.clearToast());
 
 /** 21-I3: the SCENE undo stack's depth — locked answer 6 turns on this number. */
 const undoDepth = (page) =>
 	page.evaluate(
-		() => new Promise((r) => window.__stores.history.undoStack.subscribe((s) => r(s.length))())
+		() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((s) => r(s.length))())
 	);
 
 /** Create a primitive and return its uuid (the newest child). */
 const createObject = (page, command) =>
 	page.evaluate((command) => {
-		window.__stores.commandsHandler.sceneCommand(command);
+		window.__tp.test.v1.commandsHandler.sceneCommand(command);
 		return new Promise((resolve) =>
-			window.__stores.objectsGroup.subscribe((g) => resolve(g.children[g.children.length - 1].uuid))()
+			window.__tp.test.v1.objectsGroup.subscribe((g) => resolve(g.children[g.children.length - 1].uuid))()
 		);
 	}, command);
 
@@ -116,8 +116,8 @@ h.run(async () => {
 	// ---- 0. premise: one prefab, and the Explorer showing it -------------------------
 	const boxUuid = await createObject(A.page, '/create box');
 	await A.page.evaluate(async (uuid) => {
-		await window.__stores.prefabs.loadPrefabs();
-		await window.__stores.prefabs.savePrefab(uuid, 'Fab');
+		await window.__tp.test.v1.prefabs.loadPrefabs();
+		await window.__tp.test.v1.prefabs.savePrefab(uuid, 'Fab');
 	}, boxUuid);
 	await A.page.locator('#explorer-slot').click();
 	await A.page.waitForTimeout(600);
@@ -271,7 +271,7 @@ h.run(async () => {
 	// undo-stack depth is measured across the whole gesture.
 	const boxFacts = await facts(A.page, prefabId);
 	const sphereUuid = await createObject(A.page, '/create sphere');
-	await A.page.evaluate((uuid) => window.__stores.objectActions.selectObject(uuid, true), sphereUuid);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.objectActions.selectObject(uuid, true), sphereUuid);
 	await A.page.waitForTimeout(300);
 	await clearToasts(A.page);
 	// baseline taken IMMEDIATELY before the gesture — creating the sphere records an entry
@@ -335,14 +335,14 @@ h.run(async () => {
 	// exactly the dialog H2 always showed.
 	h.check(
 		(await A.page.evaluate(
-			() => new Promise((r) => window.__stores.confirmPrefabUpdate.subscribe((v) => r(v))())
+			() => new Promise((r) => window.__tp.test.v1.confirmPrefabUpdate.subscribe((v) => r(v))())
 		)) === false,
 		'confirmPrefabUpdate defaults to OFF'
 	);
-	await A.page.evaluate(() => window.__stores.confirmPrefabUpdate.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.confirmPrefabUpdate.set(true));
 	// a FRESH sphere: the Ctrl+Z above removed the first one from the scene
 	const sphere2 = await createObject(A.page, '/create sphere');
-	await A.page.evaluate((uuid) => window.__stores.objectActions.selectObject(uuid, true), sphere2);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.objectActions.selectObject(uuid, true), sphere2);
 	await A.page.waitForTimeout(300);
 	await clearToasts(A.page);
 	const beforePrompt = await facts(A.page, prefabId);
@@ -365,7 +365,7 @@ h.run(async () => {
 		(await A.page.getByRole('button', { name: 'Undo', exact: true }).count()) > 0,
 		'the confirmed route reports with an Undo too'
 	);
-	await A.page.evaluate(() => window.__stores.confirmPrefabUpdate.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.confirmPrefabUpdate.set(false));
 	await clearToasts(A.page);
 
 	// ---- 6. inline rename (never window.prompt — that is what the Library used) -------
@@ -410,7 +410,7 @@ h.run(async () => {
 	// Two WebGL contexts on the same tree. The inline one stands down while a pop-out is
 	// open — and this must write NO preference, so spy on the store's own set().
 	await A.page.evaluate(() => {
-		const store = window.__stores.enable3dPreview;
+		const store = window.__tp.test.v1.enable3dPreview;
 		const orig = store.set.bind(store);
 		window.__prefWrites = [];
 		store.set = (v) => {
@@ -488,7 +488,7 @@ h.run(async () => {
 	});
 	// a competitor window, so "raise" is a claim about ORDER and not about a lone window
 	await A.page.evaluate(() =>
-		window.__stores.fileWindows.openImagePreview({
+		window.__tp.test.v1.fileWindows.openImagePreview({
 			title: 'probe',
 			url:
 				'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
@@ -561,7 +561,7 @@ h.run(async () => {
 	);
 	h.check(
 		await A.page.evaluate(
-			() => new Promise((r) => window.__stores.fileWindows.previewSuspended.subscribe((v) => r(v))())
+			() => new Promise((r) => window.__tp.test.v1.fileWindows.previewSuspended.subscribe((v) => r(v))())
 		),
 		'previewSuspended is raised'
 	);
@@ -597,7 +597,7 @@ h.run(async () => {
 	h.check(writes.length === 0, `enable3dPreview was never written (${JSON.stringify(writes)})`);
 	h.check(
 		await A.page.evaluate(
-			() => new Promise((r) => window.__stores.enable3dPreview.subscribe((v) => r(v))())
+			() => new Promise((r) => window.__tp.test.v1.enable3dPreview.subscribe((v) => r(v))())
 		),
 		'the stored 3D-preview preference is still ON'
 	);
@@ -606,22 +606,22 @@ h.run(async () => {
 	// Build a real .glb in the page (the app's own exporter) and import it, so the item
 	// is an ordinary kind-'object' library file.
 	await A.page.evaluate(async () => {
-		const THREE = window.__stores.THREE;
+		const THREE = window.__tp.test.v1.THREE;
 		const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
-		const { GLTFExporter } = window.__stores.GLTFExporterModule;
+		const { GLTFExporter } = window.__tp.test.v1.GLTFExporterModule;
 		const buffer = await new Promise((resolve, reject) =>
 			new GLTFExporter().parse(mesh, resolve, reject, { binary: true })
 		);
 		const file = new File([buffer], 'probe.glb', { type: 'model/gltf-binary' });
-		await window.__stores.explorer.importFiles([file], null);
+		await window.__tp.test.v1.explorer.importFiles([file], null);
 	});
-	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await h.eventually(
 		() =>
 			A.page.evaluate(
 				() =>
 					new Promise((r) =>
-						window.__stores.explorer.explorerItems.subscribe((items) =>
+						window.__tp.test.v1.explorer.explorerItems.subscribe((items) =>
 							r(items.filter((i) => i.name === 'probe.glb').length)
 						)()
 					)
@@ -693,14 +693,14 @@ h.run(async () => {
 	// the REFUSAL first: nothing selected must say so, never silently save the last thing
 	// that was clicked. This is only expressible because the entry reads the selection SET
 	// — `$selectedObject` is sticky and never goes back to empty (21-I3 note in Explorer).
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await A.page.waitForTimeout(300);
 	await clearToasts(A.page);
 	await openGridMenu(A);
 	await menuItem(A, 'Create from selection').click();
 	await A.page.waitForTimeout(700);
 	const refusal = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.toastStore.subscribe((t) => r(JSON.stringify(t)))())
+		() => new Promise((r) => window.__tp.test.v1.toastStore.subscribe((t) => r(JSON.stringify(t)))())
 	);
 	h.check(
 		/save as a prefab first/i.test(refusal),
@@ -710,7 +710,7 @@ h.run(async () => {
 
 	// now with a real selection
 	const freshUuid = await createObject(A.page, '/create cone');
-	await A.page.evaluate((uuid) => window.__stores.objectActions.selectObject(uuid, true), freshUuid);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.objectActions.selectObject(uuid, true), freshUuid);
 	await A.page.waitForTimeout(300);
 	await clearToasts(A.page);
 	await openGridMenu(A);
@@ -811,7 +811,7 @@ h.run(async () => {
 	// `libraryClose` survives in appStore (hidePanels/restorePanels still snapshot it),
 	// so the honest assertion is that no `libraryClose === false` path can render
 	// anything: force it false and nothing appears.
-	await A.page.evaluate(() => window.__stores.libraryClose.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.libraryClose.set(false));
 	await A.page.waitForTimeout(500);
 	h.check(
 		(await A.page.locator('#library-drawer').count()) === 0,
@@ -821,7 +821,7 @@ h.run(async () => {
 		(await A.page.locator('#library-search').count()) === 0,
 		'the Library search box is gone with it'
 	);
-	await A.page.evaluate(() => window.__stores.showSidebar('library'));
+	await A.page.evaluate(() => window.__tp.test.v1.showSidebar('library'));
 	await A.page.waitForTimeout(500);
 	h.check(
 		(await A.page.locator('#library-drawer').count()) === 0,
@@ -831,7 +831,7 @@ h.run(async () => {
 	// ---- 12. a workspace record naming `library` must be IGNORED, never crash ---------
 	const errorsBefore = h.pageErrors(A).length;
 	const applied = await A.page.evaluate(() =>
-		window.__stores.workspace.applyWorkspace({
+		window.__tp.test.v1.workspace.applyWorkspace({
 			open: { library: true, explorer: true, notes: false },
 			dockTab: 'explorer'
 		})
@@ -840,7 +840,7 @@ h.run(async () => {
 	h.check(applied === true, 'a restore payload naming `library` still applies');
 	h.check(
 		await A.page.evaluate(
-			() => new Promise((r) => window.__stores.explorerClose.subscribe((v) => r(v))())
+			() => new Promise((r) => window.__tp.test.v1.explorerClose.subscribe((v) => r(v))())
 		) === false,
 		'the panels it still knows about are restored (restore less, never more)'
 	);

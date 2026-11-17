@@ -25,24 +25,24 @@ const MESHY = '/mock-meshy';
 const jobs = (page) =>
 	page.evaluate(() => {
 		let v = [];
-		window.__stores.meshJobs.meshJobs.subscribe((x) => (v = x))();
+		window.__tp.test.v1.meshJobs.meshJobs.subscribe((x) => (v = x))();
 		return v.map((j) => ({ id: j.id, prompt: j.prompt, status: j.status, error: j.error ?? '', uuid: j.uuid ?? null, hash: j.hash ?? null }));
 	});
 const history = (page) =>
 	page.evaluate(() => {
 		let v = [];
-		window.__stores.meshJobs.meshPromptHistory.subscribe((x) => (v = x))();
+		window.__tp.test.v1.meshJobs.meshPromptHistory.subscribe((x) => (v = x))();
 		return v.map((e) => e.prompt);
 	});
 const objects = (page) =>
 	page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return g.children.filter((c) => c.userData?.aiGen).map((c) => ({ uuid: c.uuid, name: c.name, prompt: c.userData.aiGen.prompt }));
 	});
 
 async function openWindow(page) {
-	await page.evaluate(() => window.__stores.meshGenModalOpen.set({}));
+	await page.evaluate(() => window.__tp.test.v1.meshGenModalOpen.set({}));
 	await page.waitForSelector('#mesh-gen-window', { timeout: 10000 });
 }
 
@@ -56,7 +56,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1920, height: 1080 } } });
 	const page = A.page;
 	await page.evaluate((cfg) => {
-		const mp = window.__stores.meshProviders;
+		const mp = window.__tp.test.v1.meshProviders;
 		mp.addMeshProvider({ kind: 'meshy', label: 'MockMeshy', baseUrl: location.origin + cfg.MESHY, apiKey: 'k', mode: 'preview', assetProxy: '' });
 		mp.setMeshGenEnabled(true);
 	}, { MESHY });
@@ -64,8 +64,8 @@ h.run(async () => {
 
 	const glb = Buffer.from(
 		await page.evaluate(async () => {
-			const THREE = window.__stores.THREE;
-			const { GLTFExporter } = window.__stores.GLTFExporterModule;
+			const THREE = window.__tp.test.v1.THREE;
+			const { GLTFExporter } = window.__tp.test.v1.GLTFExporterModule;
 			const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0xcc3322 }));
 			const out = await new Promise((res, rej) => new GLTFExporter().parse(mesh, res, rej, { binary: true }));
 			return Array.from(new Uint8Array(out));
@@ -97,12 +97,12 @@ h.run(async () => {
 	// ---------- 1. a window, not a modal ----------
 	console.log('\n=== 1. a window, not a modal ===');
 	await openWindow(page);
-	h.check(!(await page.evaluate(() => { let v; window.__stores.anyModalOpen.subscribe((x) => (v = x))(); return v; })), 'anyModalOpen stays false with the Generate window open');
+	h.check(!(await page.evaluate(() => { let v; window.__tp.test.v1.anyModalOpen.subscribe((x) => (v = x))(); return v; })), 'anyModalOpen stays false with the Generate window open');
 	h.check((await page.locator('.mesh-gen-backdrop').count()) === 0, 'no backdrop covers the scene');
 
 	// ---------- 2. it docks ----------
 	console.log('\n=== 2. it docks ===');
-	await page.evaluate(() => window.__stores.dockHost.setHostedDocked('meshGen', true));
+	await page.evaluate(() => window.__tp.test.v1.dockHost.setHostedDocked('meshGen', true));
 	await h.eventually(
 		() => page.evaluate(() => ({ hosted: document.querySelector('#mesh-gen-window')?.hasAttribute('data-pd-host') ?? false, tab: !!document.querySelector('[data-dock-tab="meshGen"], [data-tab-key="meshGen"]') })),
 		(s) => s.hosted,
@@ -143,7 +143,7 @@ h.run(async () => {
 	console.log('\n=== 5. Reopen ===');
 	const done = (await jobs(page))[0];
 	h.check(!!done.hash, 'the done job remembers the cached file');
-	await page.evaluate((uuid) => window.__stores.objectActions.deleteObjectsByUuid([uuid]), done.uuid);
+	await page.evaluate((uuid) => window.__tp.test.v1.objectActions.deleteObjectsByUuid([uuid]), done.uuid);
 	await h.eventually(() => objects(page), (o) => o.length === 0, 'premise: the model is deleted');
 	await page.click(`[data-job-reopen="${done.id}"]`);
 	await h.eventually(() => objects(page), (o) => o.length === 1 && o[0].prompt === 'a red crate', 'Reopen places it again from Explorer ▸ Generated, provenance kept', 20000);
@@ -168,7 +168,7 @@ h.run(async () => {
 
 	// ---------- 7. a second reload keeps it all ----------
 	console.log('\n=== 7. a second reload ===');
-	await page.evaluate(() => window.__stores.dockHost.setHostedDocked('meshGen', false));
+	await page.evaluate(() => window.__tp.test.v1.dockHost.setHostedDocked('meshGen', false));
 	await reload(A);
 	const after = await jobs(page);
 	h.check(after.some((j) => j.status === 'done') && after.filter((j) => j.status === 'error').length === 2, `done + failed jobs survive (${after.map((j) => j.status).join(',')})`);
@@ -179,11 +179,11 @@ h.run(async () => {
 	await page.click('[data-history-use="a red crate"]');
 	h.check((await page.inputValue('#mesh-gen-prompt')) === 'a red crate' && (await page.inputValue('#mesh-gen-name')) === 'Crate', 'a History row puts the prompt and name back in the form');
 	await shot(page, '14-generate-floating-history.png');
-	await page.evaluate(() => window.__stores.themes.theme.set('light'));
+	await page.evaluate(() => window.__tp.test.v1.themes.theme.set('light'));
 	await page.click('#mesh-gen-tab-jobs');
 	await page.waitForTimeout(300);
 	await shot(page, '15-generate-floating-jobs-light.png');
-	await page.evaluate(() => window.__stores.themes.theme.set('dark'));
+	await page.evaluate(() => window.__tp.test.v1.themes.theme.set('dark'));
 
 	// ---------- 8. a phone ----------
 	console.log('\n=== 8. phone ===');

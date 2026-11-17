@@ -32,23 +32,23 @@ const OUT = process.env.E2E_OUT ?? 'test-results/64-text-object';
 fs.mkdirSync(OUT, { recursive: true });
 
 /** @param {any} page */
-const dbg = (page) => page.evaluate(() => window.__stores.textPath.textPathDebug());
+const dbg = (page) => page.evaluate(() => window.__tp.test.v1.textPath.textPathDebug());
 /** @param {any} page @param {string} uuid */
 const one = async (page, uuid) => (await dbg(page)).find((/** @type {any} */ d) => d.uuid === uuid);
 /** @param {any} page @param {string} uuid @param {any} patch */
-const set = (page, uuid, patch) => page.evaluate(([u, p]) => !!window.__stores.textPathEdit.setTextPathFor(u, p), [uuid, patch]);
+const set = (page, uuid, patch) => page.evaluate(([u, p]) => !!window.__tp.test.v1.textPathEdit.setTextPathFor(u, p), [uuid, patch]);
 /** @param {any} page @param {string} uuid */
 const record = (page, uuid) =>
 	page.evaluate((u) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return JSON.parse(JSON.stringify(g.getObjectByProperty('uuid', u)?.userData?.textPath ?? null));
 	}, uuid);
 /** the carrier's own geometry/material facts @param {any} page @param {string} uuid */
 const carrier = (page, uuid) =>
 	page.evaluate((u) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByProperty('uuid', u);
 		if (!o) return null;
 		return {
@@ -65,8 +65,8 @@ async function until(page, uuid, pred, label, timeout = 30000) {
 	return one(page, uuid);
 }
 const solidBuilt = (/** @type {any} */ d) => d.mode === 'extruded' && !!d.solid && !d.solid.building && d.solid.triangles > 0;
-const undo = (/** @type {any} */ page) => page.evaluate(() => window.__stores.history.undo());
-const redo = (/** @type {any} */ page) => page.evaluate(() => window.__stores.history.redo());
+const undo = (/** @type {any} */ page) => page.evaluate(() => window.__tp.test.v1.history.undo());
+const redo = (/** @type {any} */ page) => page.evaluate(() => window.__tp.test.v1.history.redo());
 /** the y of every glyph baseline, rounded @param {any} d */
 const lineYs = (d) => [...new Set(d.baseline.map((/** @type {number[]} */ p) => +p[1].toFixed(2)))];
 
@@ -77,7 +77,7 @@ h.run(async () => {
 	await h.connect(B, A);
 
 	// ---- §1 flat block --------------------------------------------------------------------
-	const uuid = await A.page.evaluate(() => window.__stores.addObjects.spawnAtPoint('/create Text', [0, 1, 0]).uuid);
+	const uuid = await A.page.evaluate(() => window.__tp.test.v1.addObjects.spawnAtPoint('/create Text', [0, 1, 0]).uuid);
 	const a1 = await until(A.page, uuid, (d) => d.synced && d.glyphs === 4, '§1 A lays "Text" out as a flat block');
 	await until(B.page, uuid, (d) => d.synced && d.glyphs === 4, '§1 B lays the same 4 glyphs out');
 	h.check(a1.block && a1.mode === 'flat', `§1 a new text is a flat block (block=${a1.block}, mode=${a1.mode})`);
@@ -103,7 +103,7 @@ h.run(async () => {
 	h.check(s1.solid.triangles === s1b.solid.triangles && s1.solid.drawn === 5 && s1.solid.missing === 0, `§2 same mesh on both peers: ${s1.solid.triangles} / ${s1b.solid.triangles} triangles, 5 letters, 0 missing`);
 	const c1 = await carrier(A.page, uuid);
 	h.check(c1.groups >= 2 && c1.matIndexes.every((/** @type {number} */ i) => i === 0 || i === 1) && c1.mats.length === 2 && c1.mats[0].startsWith('MeshStandardMaterial'), `§2 the carrier IS the mesh: face (0) + side (1) groups, two materials (${JSON.stringify(c1.mats)})`);
-	const fonts = await A.page.evaluate(() => window.__stores.textFonts.bundledFonts().map((f) => f.id));
+	const fonts = await A.page.evaluate(() => window.__tp.test.v1.textFonts.bundledFonts().map((f) => f.id));
 	h.check(fonts.length >= 5, `§2 at least five bundled fonts (${fonts.join(', ')})`);
 	for (const f of fonts) {
 		await set(A.page, uuid, { font: f });
@@ -134,9 +134,9 @@ h.run(async () => {
 	// ---- §3 the mesh is never saved ---------------------------------------------------------
 	const saved = await A.page.evaluate(async (u) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByProperty('uuid', u);
-		const unpark = window.__stores.flowRuntime.parkAnimatedAtBase();
+		const unpark = window.__tp.test.v1.flowRuntime.parkAnimatedAtBase();
 		const json = o.toJSON();
 		unpark();
 		const geo = json.geometries?.[0];
@@ -148,26 +148,26 @@ h.run(async () => {
 	// ---- §5 Bake -> mesh -----------------------------------------------------------------
 	const premise5 = await until(A.page, uuid, solidBuilt, '§5 premise: the solid text is built on A');
 	const tri = premise5.solid.triangles;
-	const baked = await A.page.evaluate((u) => window.__stores.textPathEdit.bakeTextToMesh(u), uuid);
+	const baked = await A.page.evaluate((u) => window.__tp.test.v1.textPathEdit.bakeTextToMesh(u), uuid);
 	h.check(baked.ok, '§5 Bake to mesh succeeds');
 	const ca = await carrier(A.page, uuid);
 	await h.eventually(() => carrier(B.page, uuid), (c) => !!c && !c.text && c.verts === tri * 3, '§5 B holds the baked mesh (no record, same vertices)', 20000);
 	h.check(!ca.text && ca.verts === tri * 3, `§5 a normal mesh on A (${ca.verts} verts) and B`);
 	const edited = await A.page.evaluate((u) => {
-		window.__stores.meshEdit.enterEditMode(u);
+		window.__tp.test.v1.meshEdit.enterEditMode(u);
 		let e;
-		window.__stores.meshEdit.editingObject.subscribe((v) => (e = v))(); // the uuid being edited
+		window.__tp.test.v1.meshEdit.editingObject.subscribe((v) => (e = v))(); // the uuid being edited
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
-		const n = e === u ? window.__stores.meshEdit.vertexCount(g.getObjectByProperty('uuid', u)) : 0;
-		window.__stores.meshEdit.exitEditMode();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
+		const n = e === u ? window.__tp.test.v1.meshEdit.vertexCount(g.getObjectByProperty('uuid', u)) : 0;
+		window.__tp.test.v1.meshEdit.exitEditMode();
 		return n;
 	}, uuid);
 	h.check(edited > 0, `§5 its vertices are editable (${edited} in the vertex editor)`);
 	await undo(A.page);
 	await until(A.page, uuid, solidBuilt, '§5 ONE undo brings the text back on A');
 	await until(B.page, uuid, solidBuilt, '§5 ...and on B');
-	const nameOf = (/** @type {any} */ page) => page.evaluate((u) => { let g; window.__stores.objectsGroup.subscribe((v) => (g = v))(); return g.getObjectByProperty('uuid', u)?.name; }, uuid);
+	const nameOf = (/** @type {any} */ page) => page.evaluate((u) => { let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))(); return g.getObjectByProperty('uuid', u)?.name; }, uuid);
 	const undoneName = await nameOf(A.page);
 	h.check(undoneName === 'Text', `§5 the undo gives the name back ("${undoneName}", Bake had made it "Text mesh")`);
 	await redo(A.page);
@@ -189,15 +189,15 @@ h.run(async () => {
 			async ([u, ms]) => {
 				// solidBuilt reads the runtime record; an autosave export parks the solid geometry across its
 				// async encode, and Bake then refuses ("still being built — try again"). Try again, as a user would.
-				let out = await window.__stores.textPathEdit.bakeTextToMesh(u);
+				let out = await window.__tp.test.v1.textPathEdit.bakeTextToMesh(u);
 				for (let t = 0; !out.ok && /still being built/.test(out.error) && t < 40; t++) {
 					await new Promise((r) => setTimeout(r, 250));
-					out = await window.__stores.textPathEdit.bakeTextToMesh(u);
+					out = await window.__tp.test.v1.textPathEdit.bakeTextToMesh(u);
 				}
 				if (!out.ok) return out;
-				window.__stores.history.undo();
+				window.__tp.test.v1.history.undo();
 				if (ms) await new Promise((r) => setTimeout(r, ms));
-				window.__stores.history.redo();
+				window.__tp.test.v1.history.redo();
 				return out;
 			},
 			[uuid, gap]
@@ -223,10 +223,10 @@ h.run(async () => {
 	// ---- §6 the cap ---------------------------------------------------------------------------
 	const refused = await A.page.evaluate((u) => {
 		window.__tpTextProfile = 'low';
-		const ok = window.__stores.textPathEdit.setTextPathFor(u, { text: 'x'.repeat(120) });
-		const why = window.__stores.textPathEdit.lastTextRefusal();
+		const ok = window.__tp.test.v1.textPathEdit.setTextPathFor(u, { text: 'x'.repeat(120) });
+		const why = window.__tp.test.v1.textPathEdit.lastTextRefusal();
 		window.__tpTextProfile = undefined;
-		const okDesktop = !!window.__stores.textPathEdit.setTextPathFor(u, { text: 'x'.repeat(120) });
+		const okDesktop = !!window.__tp.test.v1.textPathEdit.setTextPathFor(u, { text: 'x'.repeat(120) });
 		return { ok: !!ok, why, okDesktop };
 	}, uuid);
 	h.check(!refused.ok && /too long.*80 characters on this device/.test(refused.why ?? ''), `§6 a phone / headset writer is refused past 80 solid characters: "${refused.why}"`);
@@ -236,7 +236,7 @@ h.run(async () => {
 	// ---- §7 fonts --------------------------------------------------------------------------
 	// an upload (a WOFF; TTF/OTF take the same path) and a WOFF2 decoded at import
 	const up = await A.page.evaluate(async () => {
-		const tf = window.__stores.textFonts;
+		const tf = window.__tp.test.v1.textFonts;
 		const get = async (/** @type {string} */ p) => new Uint8Array(await (await fetch(p)).arrayBuffer());
 		const woff = await tf.addFontBytes(await get('fonts/text/nunito-latin-400-normal.woff'), 'Nunito.woff');
 		const woff2 = await tf.addFontBytes(await get('fonts/ibm-plex-sans-latin.woff2'), 'IBM Plex Sans.woff2');
@@ -260,7 +260,7 @@ h.run(async () => {
 			return route.fulfill({ status: 200, contentType: 'font/woff2', body: lobster });
 		});
 	}
-	const g = await A.page.evaluate(() => window.__stores.textFonts.addGoogleFont('Lobster'));
+	const g = await A.page.evaluate(() => window.__tp.test.v1.textFonts.addGoogleFont('Lobster'));
 	h.check(g.ok && g.font.family === 'Lobster' && googleCalls === 2, `§7 Google font "Lobster" fetched ONCE (2 requests: CSS + file) and kept (${g.error ?? g.font?.hash})`);
 	for (const P of [A, B]) {
 		await P.page.context().unroute(/fonts\.(googleapis|gstatic)\.com/);
@@ -274,20 +274,20 @@ h.run(async () => {
 	await until(B.page, uuid, (d) => solidBuilt(d) && d.font === 'asset:' + g.font.hash && String(d.fontUrl).startsWith('blob:'), '§7 B draws Lobster (bytes from A, never Google)', 40000);
 	h.check(googleCalls === callsBefore, `§7 no peer called Google at run time (${googleCalls - callsBefore} calls)`);
 	const assets = await A.page.evaluate(async () => {
-		const sa = window.__stores.sceneAssets;
+		const sa = window.__tp.test.v1.sceneAssets;
 		sa.refreshSceneAssets?.();
 		await new Promise((r) => setTimeout(r, 600));
 		return sa.sceneAssetList().map((/** @type {any} */ a) => a.hash);
 	});
 	h.check(assets.includes(g.font.hash), `§7 the scene's asset list (what .tpscene / export carry) names the font (${assets.length} assets)`);
-	const warn = await A.page.evaluate(() => window.__stores.sceneLicences.licenceWarningsFor(null, 'export').map((/** @type {any} */ w) => w.text));
+	const warn = await A.page.evaluate(() => window.__tp.test.v1.sceneLicences.licenceWarningsFor(null, 'export').map((/** @type {any} */ w) => w.text));
 	h.check(warn.some((t) => /redistribut/.test(t)), `§7 a no-embedding font raises the export licence warning (${JSON.stringify(warn)})`);
 	// B reloads with Google blocked: the font comes from its own Library copy or from A
 	await h.freshReload(B);
 	// a joiner's reload REJOINS the session by itself (run6's shot: connected, 2 users, no restore question,
 	// so no dial input either). Wait for that; only a page that does not rejoin answers the restore and dials
 	const rejoined = await B.page
-		.waitForFunction(() => { let p; window.__stores.peers.subscribe((v) => (p = v))(); return (p?.openedPeers?.length ?? p?.openedPeers?.size ?? 0) > 0; }, null, { timeout: 30000, polling: 250 })
+		.waitForFunction(() => { let p; window.__tp.test.v1.peers.subscribe((v) => (p = v))(); return (p?.openedPeers?.length ?? p?.openedPeers?.size ?? 0) > 0; }, null, { timeout: 30000, polling: 250 })
 		.then(() => true)
 		.catch(() => false);
 	console.log('[text-object] B rejoined after its reload by itself:', rejoined);
@@ -299,7 +299,7 @@ h.run(async () => {
 	h.check(googleCalls === callsBefore, '§7 ...still without a single Google call');
 
 	// ---- §8 the Inspector ---------------------------------------------------------------------
-	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u, true), uuid);
+	await A.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u, true), uuid);
 	await A.page.waitForSelector('#text-mode-solid', { timeout: 20000 });
 	const ui = await A.page.evaluate(() => ({
 		solidPressed: document.querySelector('#text-mode-solid')?.getAttribute('aria-pressed'),
@@ -316,7 +316,7 @@ h.run(async () => {
 	await A.page.screenshot({ path: path.join(OUT, 'text-object-flat.png') });
 
 	// ---- §9 the agent: "HELLO", solid, with a bevel -------------------------------------------
-	const exec = (/** @type {any} */ page, /** @type {string} */ t, /** @type {any} */ a) => page.evaluate(([tn, ta]) => window.__stores.aiTools.executeAiTool(tn, ta), [t, a]);
+	const exec = (/** @type {any} */ page, /** @type {string} */ t, /** @type {any} */ a) => page.evaluate(([tn, ta]) => window.__tp.test.v1.aiTools.executeAiTool(tn, ta), [t, a]);
 	const agent = await exec(A.page, 'create_text', { text: 'HELLO', solid: true, depth: 0.15, bevel: 0.01, font: 'serif', position: [0, 2, -2] });
 	const au = agent?.created?.uuid;
 	h.check(!!au && agent.created.mode === 'solid', `§9 create_text makes a solid "HELLO" (${JSON.stringify(agent).slice(0, 200)})`);
@@ -337,15 +337,15 @@ h.run(async () => {
 
 	// ---- §10 a record from a newer build -------------------------------------------------------
 	const newer = await A.page.evaluate((u) => {
-		window.__stores.toastStore.set([]);
+		window.__tp.test.v1.toastStore.set([]);
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByProperty('uuid', u);
 		o.userData.textPath = { ...o.userData.textPath, v: 99, gradient: { from: '#000000', to: '#ffffff' } };
 		return true;
 	}, uuid);
 	await h.eventually(
-		() => A.page.evaluate(() => { let t; window.__stores.toastStore.subscribe((v) => (t = v))(); return t.map((x) => (typeof x === 'string' ? x : x.text)).join(' | '); }),
+		() => A.page.evaluate(() => { let t; window.__tp.test.v1.toastStore.subscribe((v) => (t = v))(); return t.map((x) => (typeof x === 'string' ? x : x.text)).join(' | '); }),
 		(t) => /made with a newer version/.test(t),
 		'§10 a newer record says so once',
 		10000
@@ -358,7 +358,7 @@ h.run(async () => {
 	await set(A.page, uuid, { text: 'HELLO', mode: 'extruded' });
 	await until(A.page, uuid, (d) => solidBuilt(d) && d.text === 'HELLO', '§4 premise: a solid HELLO before the save');
 	const before = await record(A.page, uuid);
-	await A.page.evaluate(() => window.__stores.autosave.saveNow());
+	await A.page.evaluate(() => window.__tp.test.v1.autosave.saveNow());
 	await A.page.waitForTimeout(1500);
 	await h.freshReload(A);
 	await h.answerRestore(A, 'restore');

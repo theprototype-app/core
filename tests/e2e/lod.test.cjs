@@ -24,7 +24,7 @@ h.run(async () => {
 
 	// in-page helpers: a dense sphere, a manual render from an explicit camera distance
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const read = (store) => {
 			let v;
 			store.subscribe((x) => (v = x))();
@@ -65,18 +65,18 @@ h.run(async () => {
 			}
 		};
 	});
-	const stats = () => page.evaluate(() => window.__stores.lod.lodStats());
+	const stats = () => page.evaluate(() => window.__tp.test.v1.lod.lodStats());
 	const lodOf = async (name) => (await stats()).meshes.find((m) => m.name === name) ?? null;
 
 	// ---- 1 the auto scan picks the dense mesh up and builds its levels ------------------------
 	const dense = await page.evaluate(() => window.__lodt.addDense('LOD dense', 48));
 	h.check(dense.tris > 3000, '1.0 (premise) the mesh is dense enough for auto LOD (' + dense.tris + ' tris)');
-	await page.evaluate(() => window.__stores.lod.scanForLod());
+	await page.evaluate(() => window.__tp.test.v1.lod.scanForLod());
 	await h.eventually(() => lodOf('LOD dense'), (m) => !!m && Array.isArray(m.levels) && m.levels.length >= 2, '1.1 the auto scan registered it and the worker built its levels', 20000);
 	const entry = await lodOf('LOD dense');
 	h.check(entry.levels[0] < entry.triangles * 0.6 && entry.levels[entry.levels.length - 1] < entry.triangles * 0.2, '1.2 each level is really coarser: ' + entry.triangles + ' -> ' + entry.levels.join(' -> '));
 	const small = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		const m = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
 		m.name = 'LOD small box';
@@ -99,7 +99,7 @@ h.run(async () => {
 		const m = window.__lodt.mesh('LOD dense');
 		window.__lodt.renderFrom(400);
 		const json = m.toJSON();
-		const levels = window.__stores.lod.lodStats().meshes.find((e) => e.name === 'LOD dense');
+		const levels = window.__tp.test.v1.lod.lodStats().meshes.find((e) => e.name === 'LOD dense');
 		return {
 			tris: m.geometry.index.count / 3,
 			levelTag: m.geometry.userData?.lodLevel ?? null,
@@ -114,7 +114,7 @@ h.run(async () => {
 
 	// ---- 4 counterfactual: LOD off -> the far render draws every triangle ------------------------
 	const off = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.lod.lodEnabled.set(false);
 		const t = window.__lodt.renderFrom(400);
 		s.lod.lodEnabled.set(true);
@@ -125,7 +125,7 @@ h.run(async () => {
 
 	// ---- 5 a geometry swap stands the entry down at once ----------------------------------------
 	const swap = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		const m = window.__lodt.mesh('LOD dense');
 		m.geometry = new THREE.SphereGeometry(1, 64, 32);
@@ -146,7 +146,7 @@ h.run(async () => {
 
 	// ---- 6 one asset, one set of levels ----------------------------------------------------------
 	const shared = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const before = s.lod.lodStats().cached;
 		const a = window.__lodt.addDense('LOD twin A', 40, [5, 1, 0]);
 		const b = window.__lodt.addDense('LOD twin B', 40, [-5, 1, 0]);
@@ -160,7 +160,7 @@ h.run(async () => {
 
 	// ---- 7 the quality bias pulls the switch distance in -----------------------------------------
 	const bias = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const edge0 = s.lod.lodStats().meshes.find((m) => m.name === 'LOD twin A').edges[0];
 		const at = (edge0 - 1) * 1; // just inside level 0's edge at bias 1 (radius 1)
 		const full = window.__lodt.renderFrom(at, [5, 1, 0]);
@@ -173,7 +173,7 @@ h.run(async () => {
 
 	// ---- 8 api.lod on module content + teardown; api.quality's shape -----------------------------
 	const mod = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const out = {};
 		await s.moduleSDK.initModules([
 			{

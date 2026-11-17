@@ -11,7 +11,7 @@ const h = require('./helpers.cjs');
 // z-index + a hit test at a point inside BOTH windows: which one would take a click
 const stack = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let fc, ec;
 		s.flowGraphClose.subscribe((v) => (fc = v))();
 		s.explorerClose.subscribe((v) => (ec = v))();
@@ -44,10 +44,10 @@ h.run(async () => {
 		localStorage.setItem('explorerDocked', 'false');
 	});
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.bottomDock, { timeout: 30000 });
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.bottomDock, { timeout: 30000 });
 	await A.page.evaluate(() => {
-		window.__stores.flowGraphClose.set(false);
-		window.__stores.explorerClose.set(false);
+		window.__tp.test.v1.flowGraphClose.set(false);
+		window.__tp.test.v1.explorerClose.set(false);
 	});
 	await A.page.waitForTimeout(700);
 	const setup = await A.page.evaluate(() => ({
@@ -79,7 +79,7 @@ h.run(async () => {
 	await clickFlowButton(A.page);
 	await A.page.waitForTimeout(300);
 	const afterHide = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let fc, ec;
 		s.flowGraphClose.subscribe((v) => (fc = v))();
 		s.explorerClose.subscribe((v) => (ec = v))();

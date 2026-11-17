@@ -18,7 +18,7 @@ const h = require('./helpers.cjs');
 const prefabList = (p) =>
 	p.page.evaluate(() => {
 		let list;
-		window.__stores.prefabs.prefabs.subscribe((v) => (list = v))();
+		window.__tp.test.v1.prefabs.prefabs.subscribe((v) => (list = v))();
 		return (list ?? []).map((x) => ({
 			id: x.id,
 			name: x.name,
@@ -32,14 +32,14 @@ const prefabList = (p) =>
 const itemList = (p) =>
 	p.page.evaluate(() => {
 		let list;
-		window.__stores.explorer.explorerItems.subscribe((v) => (list = v))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((v) => (list = v))();
 		return (list ?? []).map((i) => ({ id: i.id, name: i.name, kind: i.kind, thumb: !!i.thumbnail }));
 	});
 
 const worldNames = (p) =>
 	p.page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return (g?.children ?? []).map((c) => c.name || c.type);
 	});
 
@@ -51,7 +51,7 @@ const menuRows = (p) =>
 /** two boxes in the scene, selected, with a clip and a flow graph on the first */
 async function seedScene(p) {
 	return p.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1100));
 		s.commandsHandler.sceneCommand('/create sphere');
@@ -88,20 +88,20 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1440, height: 900 } } });
 	const page = A.page;
-	await page.waitForFunction(() => !!window.__stores?.saveAs && !!window.__stores?.prefabs, null, {
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.saveAs && !!window.__tp?.test.v1?.prefabs, null, {
 		timeout: 30000
 	});
 	await page.evaluate(async () => {
-		await window.__stores.explorer.loadExplorer();
-		await window.__stores.prefabs.loadPrefabs();
-		await window.__stores.explorer.clearLibrary();
-		window.__stores.prefabs.prefabs.set([]);
+		await window.__tp.test.v1.explorer.loadExplorer();
+		await window.__tp.test.v1.prefabs.loadPrefabs();
+		await window.__tp.test.v1.explorer.clearLibrary();
+		window.__tp.test.v1.prefabs.prefabs.set([]);
 	});
 	await page.waitForTimeout(500);
 
 	// ---- 1. the catalog, and the menu rendered FROM it -------------------------------
 	const catalog = await page.evaluate(() =>
-		window.__stores.saveAs.SAVE_AS_FORMATS.map((f) => ({
+		window.__tp.test.v1.saveAs.SAVE_AS_FORMATS.map((f) => ({
 			id: f.id,
 			label: f.label,
 			kind: f.kind,
@@ -130,10 +130,10 @@ h.run(async () => {
 	const ids = await seedScene(A);
 	await page.waitForTimeout(600);
 	const built = await page.evaluate(() => {
-		const rows = window.__stores.objectMenu.buildObjectMenuItems(
+		const rows = window.__tp.test.v1.objectMenu.buildObjectMenuItems(
 			(() => {
 				let g;
-				window.__stores.objectsGroup.subscribe((v) => (g = v))();
+				window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 				return g.children.at(-2).uuid;
 			})(),
 			{}
@@ -156,7 +156,7 @@ h.run(async () => {
 	h.check(!built.oldRow, 'the single "Save as prefab" row is gone — it is the submenu\'s first entry now');
 
 	// ---- 2. a SNAPSHOT prefab is byte-identical to what it always was -----------------
-	await page.evaluate((sel) => window.__stores.saveAs.saveSelectionAs('snapshot', sel), [ids.box, ids.ball]);
+	await page.evaluate((sel) => window.__tp.test.v1.saveAs.saveSelectionAs('snapshot', sel), [ids.box, ids.ball]);
 	await h.eventually(() => prefabList(A), (l) => l.length === 1, 'the snapshot format still saves a prefab');
 	let prefabs = await prefabList(A);
 	h.check(
@@ -165,7 +165,7 @@ h.run(async () => {
 	);
 
 	// ---- 3. .glb: a prefab that IS a file --------------------------------------------
-	await page.evaluate((sel) => window.__stores.saveAs.saveSelectionAs('glb', sel, 'GlbPrefab'), [
+	await page.evaluate((sel) => window.__tp.test.v1.saveAs.saveSelectionAs('glb', sel, 'GlbPrefab'), [
 		ids.box,
 		ids.ball
 	]);
@@ -179,14 +179,14 @@ h.run(async () => {
 	);
 	const isGlb = await page.evaluate((id) => {
 		let list;
-		window.__stores.prefabs.prefabs.subscribe((v) => (list = v))();
+		window.__tp.test.v1.prefabs.prefabs.subscribe((v) => (list = v))();
 		const bytes = new Uint8Array(list.find((p) => p.id === id).bytes.slice(0, 4));
 		return String.fromCharCode(...bytes);
 	}, glb.id);
 	h.check(isGlb === 'glTF', `and the bytes really are a binary glTF (magic "${isGlb}")`);
 
 	// ---- 4. .tpscene: the format that carries what the others cannot ------------------
-	await page.evaluate((sel) => window.__stores.saveAs.saveSelectionAs('tpscene', sel, 'ScenePrefab'), [
+	await page.evaluate((sel) => window.__tp.test.v1.saveAs.saveSelectionAs('tpscene', sel, 'ScenePrefab'), [
 		ids.box,
 		ids.ball
 	]);
@@ -196,8 +196,8 @@ h.run(async () => {
 	h.check(!!tp && tp.bytes > 200, `it carries the zip (${tp?.bytes} bytes)`);
 	const inside = await page.evaluate(async (id) => {
 		let list;
-		window.__stores.prefabs.prefabs.subscribe((v) => (list = v))();
-		const payload = await window.__stores.sessions.readSessionZip(list.find((p) => p.id === id).bytes);
+		window.__tp.test.v1.prefabs.prefabs.subscribe((v) => (list = v))();
+		const payload = await window.__tp.test.v1.sessions.readSessionZip(list.find((p) => p.id === id).bytes);
 		return {
 			objects: (payload.objects ?? []).length,
 			graphKeys: Object.keys(payload.graphs ?? {}),
@@ -234,7 +234,7 @@ h.run(async () => {
 		`…and its authored clip (${JSON.stringify(inside.animKeys)})`
 	);
 	const worldIsSet = await page.evaluate(() => {
-		const payload = window.__stores.sessions.buildSessionPayload('probe');
+		const payload = window.__tp.test.v1.sessions.buildSessionPayload('probe');
 		return { environment: !!payload.environment, physics: !!payload.physics };
 	});
 	h.check(
@@ -247,12 +247,12 @@ h.run(async () => {
 	);
 
 	// THE POINT: instantiating it hands the objects their documents back
-	await page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	const before = (await worldNames(A)).length;
 	await page.evaluate((id) => {
 		let list;
-		window.__stores.prefabs.prefabs.subscribe((v) => (list = v))();
-		window.__stores.prefabs.instantiatePrefab(list.find((p) => p.id === id));
+		window.__tp.test.v1.prefabs.prefabs.subscribe((v) => (list = v))();
+		window.__tp.test.v1.prefabs.instantiatePrefab(list.find((p) => p.id === id));
 	}, tp.id);
 	await h.eventually(
 		() => worldNames(A),
@@ -262,8 +262,8 @@ h.run(async () => {
 	const graphsOnNew = () =>
 			page.evaluate(() => {
 				let g, graphs;
-				window.__stores.objectsGroup.subscribe((v) => (g = v))();
-				window.__stores.flowGraphs.subscribe((v) => (graphs = v))();
+				window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
+				window.__tp.test.v1.flowGraphs.subscribe((v) => (graphs = v))();
 				const holder = g.children.at(-1);
 				const uuids = [];
 				holder.traverse((n) => uuids.push(n.uuid));
@@ -280,8 +280,8 @@ h.run(async () => {
 
 	// ---- 5. the new formats do not go blank anywhere ---------------------------------
 	const facts = await page.evaluate((id) => {
-		const f = window.__stores.prefabs.prefabFacts(id);
-		const object = window.__stores.prefabs.prefabObject(id);
+		const f = window.__tp.test.v1.prefabs.prefabFacts(id);
+		const object = window.__tp.test.v1.prefabs.prefabObject(id);
 		return { objects: f?.objects ?? 0, tris: f?.tris ?? 0, parsed: !!object };
 	}, tp.id);
 	h.check(
@@ -290,10 +290,10 @@ h.run(async () => {
 	);
 
 	// ---- 6. the two DOWNLOAD rows ----------------------------------------------------
-	await page.evaluate((sel) => window.__stores.objectActions.applySelectionSet(sel), [ids.box]);
+	await page.evaluate((sel) => window.__tp.test.v1.objectActions.applySelectionSet(sel), [ids.box]);
 	const [dl] = await Promise.all([
 		page.waitForEvent('download', { timeout: 25000 }),
-		page.evaluate((sel) => window.__stores.saveAs.saveSelectionAs('download-glb', sel, 'JustABox'), [ids.box])
+		page.evaluate((sel) => window.__tp.test.v1.saveAs.saveSelectionAs('download-glb', sel, 'JustABox'), [ids.box])
 	]);
 	h.check(/\.glb$/.test(dl.suggestedFilename()), `"just downloads" really downloads (${dl.suggestedFilename()})`);
 	h.check(
@@ -304,7 +304,7 @@ h.run(async () => {
 	// ---- 7. DRAGGING TO THE LIBRARY AND BACK, with no conversion ---------------------
 	await page.locator('#explorer-slot').click();
 	await page.waitForTimeout(900);
-	await page.evaluate(() => window.__stores.explorer.activeFolder.set('prefabs'));
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set('prefabs'));
 	await page.waitForTimeout(700);
 	const dragged = await page.evaluate((prefabId) => {
 		const card = document.querySelector('[data-card-id="prefab:' + prefabId + '"]');
@@ -320,7 +320,7 @@ h.run(async () => {
 	// drop it on the library ROOT through the same applier the tree row uses
 	await page.evaluate(async (prefabId) => {
 		let list;
-		window.__stores.prefabs.prefabs.subscribe((v) => (list = v))();
+		window.__tp.test.v1.prefabs.prefabs.subscribe((v) => (list = v))();
 		const prefab = list.find((p) => p.id === prefabId);
 		// the Explorer's own handler, reached the way the tree row reaches it
 		window.__saveAsTest = { prefab };
@@ -357,15 +357,15 @@ h.run(async () => {
 	// ...and BACK: the library file becomes a prefab, still a .tpscene
 	const back = await page.evaluate(async (itemId) => {
 		let list;
-		window.__stores.explorer.explorerItems.subscribe((v) => (list = v))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((v) => (list = v))();
 		const record = list.find((i) => i.id === itemId);
-		const blob = await window.__stores.explorer.itemBlob(record.id);
+		const blob = await window.__tp.test.v1.explorer.itemBlob(record.id);
 		const bytes = await blob.arrayBuffer();
-		const payload = await window.__stores.sessions.readSessionZip(bytes);
-		const THREE = window.__stores.THREE;
+		const payload = await window.__tp.test.v1.sessions.readSessionZip(bytes);
+		const THREE = window.__tp.test.v1.THREE;
 		const holder = new THREE.Group();
 		for (const el of payload?.objects ?? []) holder.add(new THREE.ObjectLoader().parse(el));
-		const entry = await window.__stores.prefabs.addPrefabRecord({
+		const entry = await window.__tp.test.v1.prefabs.addPrefabRecord({
 			name: record.name.replace(/\.[^.]+$/, ''),
 			element: holder.toJSON(),
 			thumbnail: record.thumbnail,
@@ -383,9 +383,9 @@ h.run(async () => {
 	const snapId = (await prefabList(A)).find((p) => p.format === 'snapshot').id;
 	const declined = await page.evaluate((id) => {
 		let list;
-		window.__stores.prefabs.prefabs.subscribe((v) => (list = v))();
+		window.__tp.test.v1.prefabs.prefabs.subscribe((v) => (list = v))();
 		const prefab = list.find((p) => p.id === id);
-		return { format: window.__stores.saveAs.prefabFormatOf(prefab), bytes: !!prefab.bytes };
+		return { format: window.__tp.test.v1.saveAs.prefabFormatOf(prefab), bytes: !!prefab.bytes };
 	}, snapId);
 	h.check(
 		declined.format === 'snapshot' && !declined.bytes,
@@ -398,8 +398,8 @@ h.run(async () => {
 	// the same word can be a three.js snapshot and a .glb, which behave differently when
 	// dragged to the Library or downloaded.
 	await page.evaluate(() => {
-		window.__stores.explorerView.explorerViewMode.set('list');
-		window.__stores.explorer.activeFolder.set('prefabs');
+		window.__tp.test.v1.explorerView.explorerViewMode.set('list');
+		window.__tp.test.v1.explorer.activeFolder.set('prefabs');
 	});
 	await page.waitForTimeout(900);
 	const kinds = await page.evaluate(() =>

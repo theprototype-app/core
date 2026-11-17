@@ -8,7 +8,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 	const page = A.page;
-	const st = (name) => page.evaluate((n) => new Promise((r) => window.__stores[n].subscribe(r)()), name);
+	const st = (name) => page.evaluate((n) => new Promise((r) => window.__tp.test.v1[n].subscribe(r)()), name);
 	const isOpen = () => page.evaluate(() => !!document.querySelector('#command-palette'));
 
 	// focus the viewport, not a text field — Ctrl+K is a global shortcut
@@ -84,7 +84,7 @@ h.run(async () => {
 	await page.keyboard.press('Enter');
 	await h.eventually(isOpen, (v) => v === false, 'Enter closes the palette');
 	await h.eventually(() => st('transformMode'), (v) => v === 'scale', 'Enter ran the Scale command (transformMode = scale)');
-	await page.evaluate(() => window.__stores.transformMode.set('translate'));
+	await page.evaluate(() => window.__tp.test.v1.transformMode.set('translate'));
 
 	// --- arrows move the highlight ---
 	await page.keyboard.press('Control+K');
@@ -117,7 +117,7 @@ h.run(async () => {
 	await page.keyboard.press('Enter');
 	await h.eventually(() => st('explorerClose'), (v) => v === !exBefore, 'Enter toggled the Explorer');
 	// put it back
-	await page.evaluate((v) => window.__stores.explorerClose.set(v), exBefore);
+	await page.evaluate((v) => window.__tp.test.v1.explorerClose.set(v), exBefore);
 
 	// --- a setting: "Theme" opens Settings with the row's name in Settings' own search ---
 	await page.keyboard.press('Control+K');
@@ -151,7 +151,7 @@ h.run(async () => {
 	h.check(typeof afterSecond === 'boolean', 'a second Ctrl+K from inside the palette is handled without error', afterSecond);
 	if (afterSecond) await page.keyboard.press('Escape');
 	await h.eventually(isOpen, (v) => v === false, 'the palette closes');
-	await page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 
 	// --- a click on the scrim closes it ---
 	if (canvas) await page.mouse.click(canvas.x, canvas.y);

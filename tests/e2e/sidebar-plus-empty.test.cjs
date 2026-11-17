@@ -37,7 +37,7 @@ const read = (page, path) =>
 	S(page, (path) => {
 		const [mod, name] = path.split('.');
 		// tolerant: a store a build does not have reads null (the counterfactual runs on past it)
-		const st = name ? window.__stores[mod]?.[name] : window.__stores[mod];
+		const st = name ? window.__tp.test.v1[mod]?.[name] : window.__tp.test.v1[mod];
 		if (!st?.subscribe) return null;
 		let v;
 		st.subscribe((x) => (v = x))();
@@ -106,7 +106,7 @@ h.run(async () => {
 
 	// ---- 1. the last tab closed by its ×: the column stays open, empty -----------------------------
 	await S(page, () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.inspectorKind.set('scene');
 		s.inspectorClose.set(false);
 	});
@@ -119,7 +119,7 @@ h.run(async () => {
 	h.check((await read(page, 'inspectorClose')) === true, '1.1 premise: its × closed Configure Scene');
 	h.check(r.strip && r.tabs.length === 0 && r.plus, `1.2 the emptied right sidebar STAYS open with its "+" (${JSON.stringify(r)})`);
 	h.check(r.empty === 'Press + or drag a tab here' && r.emptyW >= 240, `1.3 ...and the helper line fills the column ("${r.empty}", ${r.emptyW}px)`);
-	await S(page, () => window.__stores.sidebars.toggleSidebarFull('right', true));
+	await S(page, () => window.__tp.test.v1.sidebars.toggleSidebarFull('right', true));
 	await page.waitForTimeout(500);
 	const dockRight = await S(page, () => getComputedStyle(document.documentElement).getPropertyValue('--sb-dock-right').trim());
 	h.check(dockRight !== '0px' && dockRight !== '', `1.4 a Full-height EMPTY column still takes its room (--sb-dock-right ${dockRight})`);
@@ -133,7 +133,7 @@ h.run(async () => {
 	await S(page, () => {
 		document.documentElement.dataset.theme = 'dark';
 		document.documentElement.classList.add('dark');
-		window.__stores.sidebars.toggleSidebarFull('right', false);
+		window.__tp.test.v1.sidebars.toggleSidebarFull('right', false);
 	});
 
 	// ---- 2. "+" on the empty sidebar opens a closed window IN THIS COLUMN ---------------------------
@@ -165,7 +165,7 @@ h.run(async () => {
 
 	// ---- 4. the shortcuts -----------------------------------------------------------------------------
 	const reg = await S(page, () => {
-		const s = window.__stores.shortcutsRegistry;
+		const s = window.__tp.test.v1.shortcutsRegistry;
 		const row = (id) => s.shortcuts.find((x) => x.id === id);
 		return {
 			left: row('panels.sidebar-left')?.keys,
@@ -177,7 +177,7 @@ h.run(async () => {
 	h.check(reg.left === 'Ctrl+B' && reg.right === 'Ctrl+Alt+B' && !reg.cl && !reg.cr, `4.0 registry rows Ctrl+B / Ctrl+Alt+B, no conflict for either (${JSON.stringify(reg)})`);
 	await press(page, 'Control+Alt+KeyB');
 	r = await side(page, 'right');
-	const hiddenState = await S(page, () => ({ stats: document.querySelector('#stats-window')?.hasAttribute('data-sidebar-hidden'), open: (() => { let v; window.__stores.sceneBudget.statsOpen.subscribe((x) => (v = x))(); return v; })() }));
+	const hiddenState = await S(page, () => ({ stats: document.querySelector('#stats-window')?.hasAttribute('data-sidebar-hidden'), open: (() => { let v; window.__tp.test.v1.sceneBudget.statsOpen.subscribe((x) => (v = x))(); return v; })() }));
 	h.check(!r.strip && hiddenState.stats && hiddenState.open, `4.1 Ctrl+Alt+B hides the right sidebar — no strip, its windows hidden but still open (${JSON.stringify({ strip: r.strip, ...hiddenState })})`);
 	await press(page, 'Control+Alt+KeyB');
 	r = await side(page, 'right');
@@ -193,8 +193,8 @@ h.run(async () => {
 	h.check(!l.strip, `4.5 Ctrl+B again hides it (${JSON.stringify(l)})`);
 	// Settings ▸ Shortcuts: both rows; rebind left to Ctrl+[ through the real capture
 	await S(page, () => {
-		window.__stores.settingsSection.set('shortcuts');
-		window.__stores.settingsOpen.set(true);
+		window.__tp.test.v1.settingsSection.set('shortcuts');
+		window.__tp.test.v1.settingsOpen.set(true);
 	});
 	await page.waitForSelector('#shortcut-grid', { timeout: 15000 });
 	await page.waitForTimeout(300);
@@ -206,8 +206,8 @@ h.run(async () => {
 		await page.keyboard.press('Control+BracketLeft');
 		await page.waitForTimeout(400);
 	}
-	const rebound = await S(page, () => window.__stores.shortcutsRegistry.shortcuts.find((x) => x.id === 'panels.sidebar-left')?.keys);
-	await S(page, () => window.__stores.settingsOpen.set(false));
+	const rebound = await S(page, () => window.__tp.test.v1.shortcutsRegistry.shortcuts.find((x) => x.id === 'panels.sidebar-left')?.keys);
+	await S(page, () => window.__tp.test.v1.settingsOpen.set(false));
 	await page.waitForTimeout(500);
 	h.check(rebound === 'Ctrl+[', `4.7 rebound to Ctrl+[ through the Settings capture (${rebound})`);
 	await press(page, 'Control+BracketLeft');
@@ -217,11 +217,11 @@ h.run(async () => {
 	await press(page, 'Control+KeyB');
 	l = await side(page, 'left');
 	h.check(viaOld && !l.strip, `4.8 ...Ctrl+[ now toggles the left sidebar and Ctrl+B no longer does (${viaOld} / ${l.strip})`);
-	await S(page, () => window.__stores.shortcutsRegistry.resetShortcut('panels.sidebar-left'));
+	await S(page, () => window.__tp.test.v1.shortcutsRegistry.resetShortcut('panels.sidebar-left'));
 
 	// ---- 5. a floating window dragged over the EMPTY left column joins it ----------------------------
 	await press(page, 'Control+KeyB');
-	await S(page, () => window.__stores.flowGraphClose.set(false));
+	await S(page, () => window.__tp.test.v1.flowGraphClose.set(false));
 	await page.waitForTimeout(1300);
 	const head = await S(page, () => {
 		const el = document.querySelector('#flow-window .move-handle');
@@ -248,7 +248,7 @@ h.run(async () => {
 
 	// ---- 6. M8 on the dock "+" ------------------------------------------------------------------------
 	await S(page, () => {
-		window.__stores.chatHidden.set('hidden');
+		window.__tp.test.v1.chatHidden.set('hidden');
 	});
 	await press(page, 't');
 	const empty = await read(page, 'bottomDock.dockEmptyShown');
@@ -284,7 +284,7 @@ h.run(async () => {
 	// ---- 7. unfolded phone ------------------------------------------------------------------------------
 	const U = await h.setupPage(browser, 'unfold', { context: UNFOLD, storage: { 'sidebar:inspectorSide': 'right' } });
 	await S(U.page, () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.inspectorKind.set('scene');
 		s.inspectorClose.set(false);
 	});

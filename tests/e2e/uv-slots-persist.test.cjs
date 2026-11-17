@@ -15,7 +15,7 @@ const h = require('./helpers.cjs');
 /** build a cube with `count` slots, each face-group textured a different colour */
 const buildSlotCube = (page, count) =>
 	page.evaluate(async (count) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.children[g.children.length - 1];
@@ -53,7 +53,7 @@ const buildSlotCube = (page, count) =>
 /** the shape the UV editor actually sees */
 const slotShape = (page, uuid) =>
 	page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const byUuid = g.getObjectByProperty('uuid', uuid);
 		const named = g.children.find((o) => o.name === 'slotCube') ?? byUuid;
@@ -91,14 +91,14 @@ h.run(async () => {
 
 	// force the autosave now, then reload the page and let the restore run
 	await A.page.evaluate(async () => {
-		await window.__stores.autosave.saveNow();
+		await window.__tp.test.v1.autosave.saveNow();
 	});
 	await A.page.waitForTimeout(600);
 	await h.freshReload(A);
 	await A.page.waitForTimeout(3000);
 	// the restore is offered as a sticky prompt, not applied automatically
 	await A.page.evaluate(async () => {
-		await window.__stores.autosave.restoreSnapshot();
+		await window.__tp.test.v1.autosave.restoreSnapshot();
 	});
 	await A.page.waitForTimeout(3000);
 

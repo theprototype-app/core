@@ -27,7 +27,7 @@ const WRITERS = ['terrain', 'scatter', 'water', 'set_sky', 'set_light', 'set_mat
 
 const read = (page, expr) =>
 	page.evaluate(
-		(e) => new Promise((r) => e.split('.').reduce((o, k) => o[k], window.__stores).subscribe((v) => r(JSON.parse(JSON.stringify(v ?? null))))()),
+		(e) => new Promise((r) => e.split('.').reduce((o, k) => o[k], window.__tp?.test.v1).subscribe((v) => r(JSON.parse(JSON.stringify(v ?? null))))()),
 		expr
 	);
 
@@ -35,7 +35,7 @@ const read = (page, expr) =>
 const onHost = (page, uuid) =>
 	page.evaluate((u) => {
 		/** @type {any} */ let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		const o = g?.getObjectByProperty('uuid', u);
 		if (!o) return null;
 		const m = Array.isArray(o.material) ? o.material[0] : o.material;
@@ -47,7 +47,7 @@ const onHost = (page, uuid) =>
 			water: o.userData.water?.preset ?? null,
 			particles: o.userData.particles?.preset ?? null,
 			map: !!m?.map,
-			driven: !!window.__stores.shaderGraph.isShaderDriven(u)
+			driven: !!window.__tp.test.v1.shaderGraph.isShaderDriven(u)
 		};
 	}, uuid);
 
@@ -250,7 +250,7 @@ h.run(async () => {
 	await V.page.waitForFunction(() => !!window.tpAgent, null, { timeout: 30000 });
 	await h.connect(V, A);
 	await V.page.evaluate(() =>
-		window.__stores.cloudHooks.rolesInfo.set({ myId: '', myRole: 'viewer', amAdmin: false, order: [], roleOf: () => 'viewer', setRole: () => {}, synced: () => true })
+		window.__tp.test.v1.cloudHooks.rolesInfo.set({ myId: '', myRole: 'viewer', amAdmin: false, order: [], roleOf: () => 'viewer', setRole: () => {}, synced: () => true })
 	);
 	const exec = (page, t, a) => page.evaluate(([x, y]) => window.tpAgent.exec(x, y), [t, a]);
 	for (const [tool, args] of [

@@ -10,7 +10,7 @@ h.run(async () => {
 
 	// --- the drag core the trigger drives: begin -> drag -> end moves a vertex ---
 	const core = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		s.commandsHandler.sceneCommand('/create box');
 		const g = s.objectsGroup; let grp; g.subscribe((v) => (grp = v))();
@@ -30,7 +30,7 @@ h.run(async () => {
 
 	// --- trigger click-to-grab / click-to-drop, with a handle on the ray axis ---
 	const grab = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const box = window.__box;
 		// put a corner handle on the controller's -Z ray (origin, dir 0,0,-1):
 		// box centre (0.5,0.5,-2) -> local corner (-0.5,-0.5,-0.5) at world (0,0,-2.5)
@@ -54,8 +54,8 @@ h.run(async () => {
 
 	// --- guard: the trigger is a no-op when not in vertex edit ---
 	const guard = await A.page.evaluate(() => {
-		window.__stores.vrControls.vrVertexTrigger(0);
-		return window.__stores.vrControls.vertexTriggerActive();
+		window.__tp.test.v1.vrControls.vrVertexTrigger(0);
+		return window.__tp.test.v1.vrControls.vertexTriggerActive();
 	});
 	h.check(guard === false, 'the trigger does nothing outside vertex edit');
 

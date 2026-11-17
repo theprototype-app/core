@@ -18,16 +18,16 @@ const SAMPLES = 8;
 /** the photo hook's state @param {any} page */
 const state = (page) =>
 	page.evaluate(async () => {
-		const m = await window.__stores.photo.mode();
+		const m = await window.__tp.test.v1.photo.mode();
 		/** @type {any} */ let s;
 		m.photoState.subscribe((v) => (s = v))();
 		/** @type {any} */ let open;
-		window.__stores.photo.photoOpen.subscribe((v) => (open = v))();
+		window.__tp.test.v1.photo.photoOpen.subscribe((v) => (open = v))();
 		return { open, status: s.status, place: s.place, why: s.why, samples: s.samples, reason: s.reason, error: s.error, width: s.width, height: s.height, notes: s.notes, saved: s.saved, type: s.blob?.type ?? null, size: s.blob?.size ?? 0 };
 	});
 
 /** the tracer module was fetched? (dev: a pre-bundled dep; build: a chunk naming WebGLPathTracer) @param {any} page */
-const tracerLoaded = (page) => page.evaluate(async () => (await window.__stores.photo.render()).tracerLoaded());
+const tracerLoaded = (page) => page.evaluate(async () => (await window.__tp.test.v1.photo.render()).tracerLoaded());
 
 /** how many distinct grey levels the still has (a blank frame has one or two) @param {any} page */
 const stillVariety = (page) =>
@@ -47,13 +47,13 @@ const stillVariety = (page) =>
 	});
 
 /** set the photo settings @param {any} page @param {any} p */
-const prefs = (page, p) => page.evaluate((x) => window.__stores.photo.photoPrefs.update((v) => ({ ...v, ...x })), p);
+const prefs = (page, p) => page.evaluate((x) => window.__tp.test.v1.photo.photoPrefs.update((v) => ({ ...v, ...x })), p);
 
 /** the editor camera's pose @param {any} page */
 const camPose = (page) =>
 	page.evaluate(() => {
 		/** @type {any} */ let c;
-		window.__stores.globalCamera.subscribe((v) => (c = v))();
+		window.__tp.test.v1.globalCamera.subscribe((v) => (c = v))();
 		return c ? [...c.position.toArray(), ...c.quaternion.toArray()].map((n) => Math.round(n * 1e4) / 1e4) : null;
 	});
 
@@ -72,7 +72,7 @@ h.run(async () => {
 	// not Windows-only; only the 19 s is).
 	{
 		const r = await A.page.evaluate(async () => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			/** @type {any} */ let rr;
 			s.globalRenderer.subscribe((v) => (rr = v))();
 			const gl = rr.getContext();
@@ -120,7 +120,7 @@ h.run(async () => {
 
 	// ---- 2. a small product scene
 	await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = await s.photo.three();
 		const box = s.addObjects.spawnAtPoint('/create box', [-1.2, 0.5, 0]);
 		const ball = s.addObjects.spawnAtPoint('/create sphere', [0, 0.5, 0]);
@@ -141,7 +141,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(800);
 	const poseBefore = await camPose(A.page);
 	await prefs(A.page, { samples: SAMPLES, seconds: 120, denoise: true, scale: 0.5 });
-	await A.page.evaluate(() => window.__stores.photo.open());
+	await A.page.evaluate(() => window.__tp.test.v1.photo.open());
 	await A.page.locator('#photo-dialog').waitFor({ state: 'visible', timeout: 30000 });
 	await A.page.waitForFunction(() => document.querySelector('#photo-where')?.getAttribute('data-place') === 'here', null, { timeout: 30000 });
 	h.check(true, '2 the Photo window opens and says it renders here (desktop)');
@@ -150,7 +150,7 @@ h.run(async () => {
 	const s2 = await state(A.page);
 	const canvas = await A.page.evaluate(() => {
 		/** @type {any} */ let r;
-		window.__stores.globalRenderer.subscribe((v) => (r = v))();
+		window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
 		return { w: r.domElement.width, h: r.domElement.height };
 	});
 	h.check(s2.status === 'done' && s2.type === 'image/png' && s2.size > 1000, `2 a PNG came back (${s2.status}, ${s2.type}, ${s2.size} bytes${s2.error ? ', ' + s2.error : ''})`);
@@ -166,7 +166,7 @@ h.run(async () => {
 	// ---- 2b. HDRI pro looks (98-int counterfactual: red on cadada36 with the circular-JSON error)
 	for (const look of ['product', 'cinematic']) {
 		const r = await A.page.evaluate(async (name) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			await s.proPresets.applyProPreset(name);
 			const { hdriStatus } = s.hdriStores;
 			/** @type {any} */ let st;
@@ -205,7 +205,7 @@ h.run(async () => {
 	await A.page.click('#photo-start');
 	// waitForFunction needs a SYNCHRONOUS predicate (a Promise is truthy): read a cached module
 	await A.page.evaluate(async () => {
-		/** @type {any} */ (window).__photoMode = await window.__stores.photo.mode();
+		/** @type {any} */ (window).__photoMode = await window.__tp.test.v1.photo.mode();
 	});
 	await A.page.waitForFunction(
 		() => {
@@ -229,7 +229,7 @@ h.run(async () => {
 			{ timeout: 30000, polling: 250 }
 		)
 		.then(() => true, () => false);
-	if (!stopped) console.log('INFO stop state', JSON.stringify(await state(A.page)), JSON.stringify(await A.page.evaluate(async () => (await window.__stores.photo.mode()).photoDebug())));
+	if (!stopped) console.log('INFO stop state', JSON.stringify(await state(A.page)), JSON.stringify(await A.page.evaluate(async () => (await window.__tp.test.v1.photo.mode()).photoDebug())));
 	const s3 = await state(A.page);
 	h.check(s3.reason === 'stopped' && s3.samples >= 1 && s3.samples < 2048 && s3.type === 'image/png', `3 Stop keeps the still so far (${s3.status}, ${s3.reason}, ${s3.samples} samples, ${Date.now() - t0} ms, open ${s3.open}${s3.error ? ', ' + s3.error : ''})`);
 
@@ -241,8 +241,8 @@ h.run(async () => {
 	const lib = await A.page.evaluate(() => {
 		/** @type {any[]} */ let items = [];
 		/** @type {any[]} */ let folders = [];
-		window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
-		window.__stores.explorer.explorerFolders.subscribe((v) => (folders = v))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((v) => (items = v))();
+		window.__tp.test.v1.explorer.explorerFolders.subscribe((v) => (folders = v))();
 		const shots = folders.find((f) => f.name === 'Scene shots');
 		const under = folders.filter((f) => f.parentId === shots?.id).map((f) => f.id);
 		return items.filter((i) => under.includes(i.folderId) && /\.png$/.test(i.name)).map((i) => i.name);
@@ -252,7 +252,7 @@ h.run(async () => {
 	// ---- 5. phone profile, alone
 	const PHONE = { viewport: { width: 412, height: 915 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 };
 	const B = await h.setupPage(browser, 'phone', { context: PHONE });
-	await B.page.evaluate(() => window.__stores.photo.open());
+	await B.page.evaluate(() => window.__tp.test.v1.photo.open());
 	await B.page.waitForFunction(() => document.querySelector('#photo-where')?.getAttribute('data-place') === 'raster', null, { timeout: 30000 });
 	const why = await B.page.locator('#photo-where').innerText();
 	h.check(/Not on this device/.test(why), `5 phone alone: "${why.trim().slice(0, 90)}…"`);
@@ -264,22 +264,22 @@ h.run(async () => {
 
 	// ---- 6. phone + PC in one session: the PC renders it
 	// the (non-modal) Photo windows sit over the header: close both before pressing Connect
-	for (const P of [A, B]) await P.page.evaluate(() => window.__stores.photo.photoOpen.set(false));
+	for (const P of [A, B]) await P.page.evaluate(() => window.__tp.test.v1.photo.photoOpen.set(false));
 	await A.page.waitForTimeout(300);
 	await h.connect(A, B);
 	await B.page.waitForFunction(
 		() => {
 			/** @type {any} */ let f;
-			window.__stores.peerFacts?.peerFacts?.subscribe?.((v) => (f = v))();
+			window.__tp.test.v1.peerFacts?.peerFacts?.subscribe?.((v) => (f = v))();
 			return !f || Object.values(f).some((x) => /** @type {any} */ (x)?.device === 'desktop');
 		},
 		null,
 		{ timeout: 30000 }
 	);
-	await B.page.evaluate(() => window.__stores.photo.photoPrefs.update((v) => ({ ...v, samples: 4, seconds: 60, scale: 0.5 })));
+	await B.page.evaluate(() => window.__tp.test.v1.photo.photoPrefs.update((v) => ({ ...v, samples: 4, seconds: 60, scale: 0.5 })));
 	// re-open so the window re-checks where
-	await B.page.evaluate(async () => (await window.__stores.photo.mode()).closePhoto());
-	await B.page.evaluate(() => window.__stores.photo.open());
+	await B.page.evaluate(async () => (await window.__tp.test.v1.photo.mode()).closePhoto());
+	await B.page.evaluate(() => window.__tp.test.v1.photo.open());
 	await B.page.waitForFunction(() => document.querySelector('#photo-where')?.getAttribute('data-place') === 'peer', null, { timeout: 30000 });
 	h.check(true, '6 phone + PC: the window says a computer in this session renders it');
 	await B.page.click('#photo-start');
@@ -287,7 +287,7 @@ h.run(async () => {
 	const s6 = await state(B.page);
 	h.check(s6.status === 'done' && s6.reason === 'peer' && s6.samples >= 4 && s6.type === 'image/png', `6 the PC's PNG came back (${s6.status}, ${s6.reason}, ${s6.samples} samples${s6.error ? ', ' + s6.error : ''})`);
 	h.check((await stillVariety(B.page)) > 12, '6 and it is not blank');
-	const dbg = await A.page.evaluate(async () => (await window.__stores.photo.mode()).photoDebug());
+	const dbg = await A.page.evaluate(async () => (await window.__tp.test.v1.photo.mode()).photoDebug());
 	h.check(!dbg.answering, '6 the PC is free again');
 
 	await h.finish(browser);

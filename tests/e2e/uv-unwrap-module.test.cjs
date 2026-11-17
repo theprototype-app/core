@@ -22,10 +22,10 @@ h.run(async () => {
 
 	// --- the seam exists on the module api ----------------------------------
 	const seam = await A.page.evaluate(() => {
-		const sdk = window.__stores.moduleSDK;
+		const sdk = window.__tp.test.v1.moduleSDK;
 		return {
-			hasRegistry: typeof window.__stores.uvUnwrap?.registerUnwrapBackend === 'function',
-			builtIns: window.__stores.uvUnwrap?.unwrapBackends?.().map((b) => b.key) ?? []
+			hasRegistry: typeof window.__tp.test.v1.uvUnwrap?.registerUnwrapBackend === 'function',
+			builtIns: window.__tp.test.v1.uvUnwrap?.unwrapBackends?.().map((b) => b.key) ?? []
 		};
 	});
 	h.check(seam.hasRegistry, 'the unwrap registry is reachable (premise)');
@@ -38,7 +38,7 @@ h.run(async () => {
 	// The module is registered through the SDK exactly as a packaged one would be, so this
 	// exercises the api surface rather than the registry directly.
 	const registered = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const calls = [];
 		await s.moduleSDK.initModules([
 			{
@@ -87,7 +87,7 @@ h.run(async () => {
 
 	// --- the editor drives it, awaits it, and commits the result -------------
 	const ran = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create Box 1 1 1');
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
@@ -144,7 +144,7 @@ h.run(async () => {
 
 	// --- and the built-ins still work, unchanged ----------------------------
 	const builtIn = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create Box 1 1 1');
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();

@@ -23,13 +23,13 @@ async function axe(page, include, label) {
 	h.check(gated.length === 0, `${label}: no serious/critical axe violations (${gated.map((v) => v.id).join(', ') || 'none'})`);
 }
 
-const read = (page, name) => page.evaluate((n) => new Promise((r) => window.__stores[n].subscribe((v) => r(v))()), name);
+const read = (page, name) => page.evaluate((n) => new Promise((r) => window.__tp.test.v1[n].subscribe((v) => r(v))()), name);
 
 /** signed out on a cloud build, faked: the plugin's flag + its account section in the profile pop-up */
 async function installSignIn(page) {
 	await page.evaluate(() => {
-		window.__stores.cloudHooks.connectorSignInSlot.set(() => () => {});
-		window.__stores.cloudHooks.profileSlot.set((el) => {
+		window.__tp.test.v1.cloudHooks.connectorSignInSlot.set(() => () => {});
+		window.__tp.test.v1.cloudHooks.profileSlot.set((el) => {
 			const b = document.createElement('button');
 			b.id = 'fake-cloud-signin';
 			b.textContent = 'Sign in to cloud';
@@ -55,10 +55,10 @@ async function pressOpensProfile(page, sel, label) {
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
-	await A.page.evaluate(() => window.__stores.toastsInDrawerOnly.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.toastsInDrawerOnly.set(true));
 
 	// ---- OSS: the button opens the window on the welcome -------------------------------------------
-	h.check(!(await A.page.evaluate(() => window.__stores.aiProviders.aiReady())), 'no AI provider is set up');
+	h.check(!(await A.page.evaluate(() => window.__tp.test.v1.aiProviders.aiReady())), 'no AI provider is set up');
 	await A.page.locator('#ai-hud-button').first().click();
 	await A.page.locator('#ai-assistant-window').waitFor({ state: 'visible', timeout: 10000 });
 	h.check((await read(A.page, 'settingsOpen')) !== true, 'the AI button opened the window, not Settings');
@@ -67,21 +67,21 @@ h.run(async () => {
 	h.check(await A.page.locator('#ai-welcome-own').isVisible(), 'the "Use your own AI provider" choice is there');
 	await A.page.locator('#ai-welcome-settings').click();
 	h.check((await read(A.page, 'settingsOpen')) === true && (await read(A.page, 'settingsSection')) === 'tools', 'Open settings goes to Tools & connections');
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 
 	// the prompt bar keeps the provider toast (it is a prompt, not the window)
 	// a viewport shortcut: the window closed and nothing focused (a press inside a window is not the viewport's)
 	await A.page.evaluate(() => {
-		window.__stores.settingsSection.set('');
-		window.__stores.aiAssistantHidden.set('hidden');
+		window.__tp.test.v1.settingsSection.set('');
+		window.__tp.test.v1.aiAssistantHidden.set('hidden');
 		/** @type {any} */ (document.activeElement)?.blur?.();
 	});
 	await A.page.keyboard.press('Backquote');
 	await A.page.waitForTimeout(300);
 	h.check((await read(A.page, 'aiPromptBarOpen')) !== true && (await read(A.page, 'settingsSection')) === 'tools', 'the ` prompt bar still points at Tools & connections with no provider');
 	await A.page.evaluate(() => {
-		window.__stores.settingsOpen.set(false);
-		window.__stores.aiAssistantHidden.set('');
+		window.__tp.test.v1.settingsOpen.set(false);
+		window.__tp.test.v1.aiAssistantHidden.set('');
 	});
 
 	// ---- cloud, signed out: Sign in to connect --------------------------------------------------------
@@ -102,7 +102,7 @@ h.run(async () => {
 
 	// "signing in": the plugin removes the mount and installs the provider — the window stays, the button appears
 	const relay = await fakeRelay(A.page);
-	await A.page.evaluate(() => window.__stores.cloudHooks.connectorSignInSlot.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.cloudHooks.connectorSignInSlot.set(null));
 	await installProvider(A.page);
 	const button = A.page.locator('#ai-welcome #connect-claude-button');
 	await button.waitFor({ state: 'visible', timeout: 10000 });
@@ -148,8 +148,8 @@ h.run(async () => {
 
 	// ---- a provider set up: the welcome stands down, the old row returns ------------------------------
 	await A.page.evaluate(() => {
-		window.__stores.aiProviders.addAiProvider({ preset: 'custom', label: 'Mock', baseUrl: 'https://127.0.0.1:9/v1', apiKey: 'x', model: 'mock' });
-		window.__stores.aiProviders.setAiEnabled(true);
+		window.__tp.test.v1.aiProviders.addAiProvider({ preset: 'custom', label: 'Mock', baseUrl: 'https://127.0.0.1:9/v1', apiKey: 'x', model: 'mock' });
+		window.__tp.test.v1.aiProviders.setAiEnabled(true);
 	});
 	await A.page.locator('#ai-welcome').waitFor({ state: 'detached', timeout: 10000 }).catch(() => {});
 	h.check((await A.page.locator('#ai-welcome').count()) === 0 && (await A.page.locator('#ai-assistant-window #connect-claude-button').isVisible()), 'with a provider: no welcome, Connect Claude in its top row');
@@ -157,8 +157,8 @@ h.run(async () => {
 
 	// ---- FW-AI: a local model, signed out: the assistant works, "Sign in to connect" sits in the header ---
 	await A.page.evaluate(() => {
-		window.__stores.cloudHooks.setConnectorProvider(null);
-		window.__stores.cloudHooks.connectorSignInSlot.set(() => () => {});
+		window.__tp.test.v1.cloudHooks.setConnectorProvider(null);
+		window.__tp.test.v1.cloudHooks.connectorSignInSlot.set(() => () => {});
 	});
 	const headerBtn = A.page.locator('#chat-window #ai-header-signin');
 	await headerBtn.waitFor({ state: 'visible', timeout: 10000 });
@@ -171,7 +171,7 @@ h.run(async () => {
 	await axe(A.page, '#ai-assistant-window', 'AI window (local model, signed out)');
 	await A.page.screenshot({ path: path.join(OUT, 'fw-ai-header.png') }).catch(() => {});
 	// signing in: the plugin clears the flag and installs the provider
-	await A.page.evaluate(() => window.__stores.cloudHooks.connectorSignInSlot.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.cloudHooks.connectorSignInSlot.set(null));
 	await installProvider(A.page);
 	await headerBtn.waitFor({ state: 'detached', timeout: 10000 });
 	h.check((await A.page.locator('#ai-assistant-window #connect-claude-button').isVisible()), 'signed in: no sign-in button, Connect Claude in its top row');
@@ -187,8 +187,8 @@ h.run(async () => {
 		const P = await h.setupPage(browser, name, { context: { viewport, deviceScaleFactor: 2.9, isMobile: true, hasTouch: true }, storage: { theme } });
 		await installProvider(P.page);
 		await P.page.evaluate(() => {
-			window.__stores.toastsInDrawerOnly.set(true);
-			window.__stores.aiAssistantHidden.set('');
+			window.__tp.test.v1.toastsInDrawerOnly.set(true);
+			window.__tp.test.v1.aiAssistantHidden.set('');
 		});
 		const b = P.page.locator('#ai-welcome #connect-claude-button');
 		await b.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
@@ -215,7 +215,7 @@ h.run(async () => {
 		h.check((fit.docked || fit.sh <= fit.ch + 1) && fit.ownB <= fit.winB + 1 && fit.winB <= fit.vh, `N6 ${name}: the welcome fits without an inner scroll (a phone dock tab: scrolls inside the dock), own provider card in view (${JSON.stringify(fit)})`);
 		// 54i f: no window header under the top chrome (the bell cluster, the profile circle, the Connect bar);
 		// the Debugger stands for every toolbox that opens at the top right
-		await P.page.evaluate(() => window.__stores.flowDebug.setDebugOpen(true));
+		await P.page.evaluate(() => window.__tp.test.v1.flowDebug.setDebugOpen(true));
 		await P.page.locator('#flow-debugger').waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
 		await P.page.waitForTimeout(300);
 		const under = await P.page.evaluate(() => {
@@ -231,7 +231,7 @@ h.run(async () => {
 			return out;
 		});
 		h.check(under.length === 0, `N6 ${name}: no window header under the top chrome (${under.join('; ') || 'none'})`);
-		await P.page.evaluate(() => window.__stores.flowDebug.setDebugOpen(false));
+		await P.page.evaluate(() => window.__tp.test.v1.flowDebug.setDebugOpen(false));
 		const c = await fits('#connect-claude-button');
 		const o = await fits('#ai-welcome-settings');
 		h.check(c.ok && o.ok, `N6 ${name}: both choices are on screen and pressable (${JSON.stringify(c.box)} ${JSON.stringify(o.box)}, hit ${c.hit}/${o.hit})`);
@@ -244,9 +244,9 @@ h.run(async () => {
 		h.check(copyFit.ok && addFit.ok && card.sw <= card.cw && copyFit.box.width >= 44 && copyFit.box.height >= 44, `N6 ${name}: step 1 fits, copy is 44 px (${JSON.stringify(copyFit.box)}, card ${card.sw}/${card.cw})`);
 		// FW-AI: signed out with a provider, the header button fits; on the phone the AI sheet steps aside for the profile sheet
 		await P.page.evaluate(() => {
-			window.__stores.aiProviders.addAiProvider({ preset: 'custom', label: 'Mock', baseUrl: 'https://127.0.0.1:9/v1', apiKey: 'x', model: 'mock' });
-			window.__stores.aiProviders.setAiEnabled(true);
-			window.__stores.cloudHooks.setConnectorProvider(null);
+			window.__tp.test.v1.aiProviders.addAiProvider({ preset: 'custom', label: 'Mock', baseUrl: 'https://127.0.0.1:9/v1', apiKey: 'x', model: 'mock' });
+			window.__tp.test.v1.aiProviders.setAiEnabled(true);
+			window.__tp.test.v1.cloudHooks.setConnectorProvider(null);
 		});
 		await installSignIn(P.page);
 		await P.page.locator('#ai-header-signin').waitFor({ state: 'visible', timeout: 10000 });

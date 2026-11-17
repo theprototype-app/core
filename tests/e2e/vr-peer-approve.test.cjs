@@ -9,7 +9,7 @@ const h = require('./helpers.cjs');
 const read = (A, path) =>
 	A.page.evaluate((p) => {
 		let v;
-		const store = p.split('.').reduce((o, k) => o[k], window.__stores);
+		const store = p.split('.').reduce((o, k) => o[k], window.__tp?.test.v1);
 		store.subscribe((x) => (v = x))();
 		return v;
 	}, path);
@@ -18,7 +18,7 @@ const panelMeshes = (A) =>
 	A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.globalScene.subscribe((scene) => {
+				window.__tp.test.v1.globalScene.subscribe((scene) => {
 					const panel = scene?.getObjectByName('vr-approve-panel');
 					const names = [];
 					panel?.traverse((o) => {
@@ -34,13 +34,13 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	// raycast is gated: nothing to hit before a request arrives
-	const gatedClosed = await A.page.evaluate(() => window.__stores.vrControls.raycastApprove(0));
+	const gatedClosed = await A.page.evaluate(() => window.__tp.test.v1.vrControls.raycastApprove(0));
 	h.check(gatedClosed === null, 'raycastApprove is null with no pending request');
 
 	// enter VR + fake a pending connection request
 	await A.page.evaluate(() => {
-		window.__stores.isVRMode.set(true);
-		window.__stores.pendingApprovals.set([{ peerId: 'peer-alpha-0001' }]);
+		window.__tp.test.v1.isVRMode.set(true);
+		window.__tp.test.v1.pendingApprovals.set([{ peerId: 'peer-alpha-0001' }]);
 	});
 	await A.page.waitForTimeout(350);
 
@@ -53,13 +53,13 @@ h.run(async () => {
 
 	// two queued: Deny drops the FIRST, the next request stays
 	await A.page.evaluate(() =>
-		window.__stores.pendingApprovals.set([{ peerId: 'peer-alpha-0001' }, { peerId: 'peer-beta-0002' }])
+		window.__tp.test.v1.pendingApprovals.set([{ peerId: 'peer-alpha-0001' }, { peerId: 'peer-beta-0002' }])
 	);
 	await A.page.waitForTimeout(150);
 	const afterDeny = await A.page.evaluate(() => {
-		window.__stores.vrControls.executeVRMenuAction('approve:no'); // denies the first
+		window.__tp.test.v1.vrControls.executeVRMenuAction('approve:no'); // denies the first
 		let v;
-		window.__stores.pendingApprovals.subscribe((x) => (v = x))();
+		window.__tp.test.v1.pendingApprovals.subscribe((x) => (v = x))();
 		return v.map((p) => p.peerId);
 	});
 	h.check(
@@ -69,11 +69,11 @@ h.run(async () => {
 
 	// Approve whitelists the remaining peer and clears the queue
 	const afterApprove = await A.page.evaluate(() => {
-		window.__stores.vrControls.executeVRMenuAction('approve:yes');
+		window.__tp.test.v1.vrControls.executeVRMenuAction('approve:yes');
 		let pend;
-		window.__stores.pendingApprovals.subscribe((x) => (pend = x))();
+		window.__tp.test.v1.pendingApprovals.subscribe((x) => (pend = x))();
 		let users;
-		window.__stores.userdata.subscribe((x) => (users = x))();
+		window.__tp.test.v1.userdata.subscribe((x) => (users = x))();
 		return { pending: pend.map((p) => p.peerId), whitelisted: users.some((u) => u[0] === 'peer-beta-0002') };
 	});
 	h.check(
@@ -88,12 +88,12 @@ h.run(async () => {
 
 	// desktop keeps the VR card closed even with a pending request
 	await A.page.evaluate(() => {
-		window.__stores.isVRMode.set(false);
-		window.__stores.pendingApprovals.set([{ peerId: 'peer-gamma-0003' }]);
+		window.__tp.test.v1.isVRMode.set(false);
+		window.__tp.test.v1.pendingApprovals.set([{ peerId: 'peer-gamma-0003' }]);
 	});
 	await A.page.waitForTimeout(250);
 	h.check((await read(A, 'vrApprovePanelOpen')) === false, 'desktop keeps the VR card closed (Toasts handles it there)');
 
-	await A.page.evaluate(() => window.__stores.pendingApprovals.set([]));
+	await A.page.evaluate(() => window.__tp.test.v1.pendingApprovals.set([]));
 	await h.finish(browser);
 });

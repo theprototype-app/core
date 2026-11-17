@@ -15,7 +15,7 @@ const THEMES = ['dark', 'light', 'green', 'bit8', 'contrast'];
 /** @param {any} page @param {string} key */
 async function open(page, key) {
 	await page.evaluate((k) => {
-		const s = /** @type {any} */ (window).__stores;
+		const s = /** @type {any} */ (window).__tp?.test.v1;
 		s.settingsOpen.set(false);
 		s.settingsSection.set(k);
 		s.settingsOpen.set(true);
@@ -122,7 +122,7 @@ h.run(async () => {
 
 	// ---- 3. description contrast in every built-in theme --------------------------------------
 	for (const theme of THEMES) {
-		await page.evaluate((t) => /** @type {any} */ (window).__stores.themes.theme.set(t), theme);
+		await page.evaluate((t) => /** @type {any} */ (window).__tp.test.v1.themes.theme.set(t), theme);
 		await page.waitForTimeout(250);
 		let worst = { ratio: 99, text: '' };
 		for (const key of ['interface', 'scene', 'vr', 'about']) {
@@ -150,7 +150,7 @@ h.run(async () => {
 			h.check(off.fraction < 0.02, `${theme}: the content column paints the window surface (${(off.fraction * 100).toFixed(1)}% off rgb(${strip.bg}))`);
 		} else h.check(false, `${theme}: the content column paints the window surface (no column)`);
 	}
-	await page.evaluate(() => /** @type {any} */ (window).__stores.themes.theme.set('dark'));
+	await page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.themes.theme.set('dark'));
 
 	// ---- 4. keyboard only ----------------------------------------------------------------------
 	await open(page, 'interface');
@@ -210,7 +210,7 @@ h.run(async () => {
 	await page.locator('dialog.settings-dialog').waitFor({ state: 'hidden', timeout: 3000 }).catch(() => {});
 	const escMs = Date.now() - escAt;
 	const escAfter = await page.evaluate(() => ({ log: /** @type {any} */ (window).__escLog }));
-	const storeOpen = await page.evaluate(() => new Promise((r) => /** @type {any} */ (window).__stores.settingsOpen.subscribe((v) => r(v))()));
+	const storeOpen = await page.evaluate(() => new Promise((r) => /** @type {any} */ (window).__tp.test.v1.settingsOpen.subscribe((v) => r(v))()));
 	const stillVisible = await page.locator('dialog.settings-dialog').isVisible().catch(() => false);
 	h.check(!stillVisible, `Esc closes Settings (from ${escFrom}; store ${storeOpen}; ${escMs} ms; ${JSON.stringify(escAfter.log)})`);
 

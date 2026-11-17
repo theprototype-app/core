@@ -15,7 +15,7 @@ const camQuat = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.globalCamera.subscribe((c) => r(c.quaternion.toArray()))()
+				window.__tp.test.v1.globalCamera.subscribe((c) => r(c.quaternion.toArray()))()
 			)
 	);
 
@@ -26,9 +26,9 @@ const orbitState = (page) =>
 				let editor = null;
 				let preview = null;
 				let active = null;
-				window.__stores.orbitControls.subscribe((v) => (editor = v))();
-				window.__stores.cameraPreview.previewOrbit.subscribe((v) => (preview = v))();
-				window.__stores.cameraPreview.activeOrbit.subscribe((v) => (active = v))();
+				window.__tp.test.v1.orbitControls.subscribe((v) => (editor = v))();
+				window.__tp.test.v1.cameraPreview.previewOrbit.subscribe((v) => (preview = v))();
+				window.__tp.test.v1.cameraPreview.activeOrbit.subscribe((v) => (active = v))();
 				r({
 					hasEditor: !!editor,
 					editorEnabled: editor?.enabled ?? null,
@@ -45,7 +45,7 @@ h.run(async () => {
 
 	// a camera aimed at the origin from an angle (aimed the CAMERA way: -Z forward)
 	const uuid = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 2 2 2');
 		w.commandsHandler.sceneCommand('/create Camera');
 		await new Promise((r) => setTimeout(r, 300));
@@ -66,10 +66,10 @@ h.run(async () => {
 	await A.page.waitForTimeout(300);
 
 	// ---------- 1. Control must not move the view ----------
-	await A.page.evaluate((u) => window.__stores.cameraPreview.startCameraPreview(u), uuid);
+	await A.page.evaluate((u) => window.__tp.test.v1.cameraPreview.startCameraPreview(u), uuid);
 	await A.page.waitForTimeout(800);
 	const beforeControl = await camQuat(A.page);
-	await A.page.evaluate(() => window.__stores.cameraPreview.toggleCameraControl());
+	await A.page.evaluate(() => window.__tp.test.v1.cameraPreview.toggleCameraControl());
 	await A.page.waitForTimeout(700);
 	const afterControl = await camQuat(A.page);
 	const drift = Math.max(...afterControl.map((v, i) => Math.abs(v - beforeControl[i])));
@@ -83,11 +83,11 @@ h.run(async () => {
 	const targetInFront = await A.page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.cameraPreview.previewOrbit.subscribe((c) => {
+				window.__tp.test.v1.cameraPreview.previewOrbit.subscribe((c) => {
 					if (!c) return r(null);
 					let cam = null;
-					window.__stores.globalCamera.subscribe((v) => (cam = v))();
-					const forward = new window.__stores.THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
+					window.__tp.test.v1.globalCamera.subscribe((v) => (cam = v))();
+					const forward = new window.__tp.test.v1.THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
 					const toTarget = c.target.clone().sub(cam.position).normalize();
 					r(forward.dot(toTarget));
 				})()
@@ -96,7 +96,7 @@ h.run(async () => {
 	h.check(targetInFront !== null && targetInFront > 0.95, `the orbit target is seated straight ahead (dot ${targetInFront})`);
 
 	// ---------- 2. exiting restores a LIVE editor controls object ----------
-	await A.page.evaluate(() => window.__stores.cameraPreview.stopCameraPreview());
+	await A.page.evaluate(() => window.__tp.test.v1.cameraPreview.stopCameraPreview());
 	await A.page.waitForTimeout(900);
 	state = await orbitState(A.page);
 	h.check(state.hasEditor, 'the editor controls are back');
@@ -110,8 +110,8 @@ h.run(async () => {
 			new Promise((r) => {
 				let controls = null;
 				let cam = null;
-				window.__stores.orbitControls.subscribe((v) => (controls = v))();
-				window.__stores.globalCamera.subscribe((v) => (cam = v))();
+				window.__tp.test.v1.orbitControls.subscribe((v) => (controls = v))();
+				window.__tp.test.v1.globalCamera.subscribe((v) => (cam = v))();
 				r({
 					attachedToActiveCamera: !!controls && controls.object === cam,
 					listening: !!controls?.domElement,
@@ -128,7 +128,7 @@ h.run(async () => {
 	// store write that used to hit nothing)
 	const suppressed = await A.page.evaluate(async () => {
 		let active = null;
-		window.__stores.cameraPreview.activeOrbit.subscribe((v) => (active = v))();
+		window.__tp.test.v1.cameraPreview.activeOrbit.subscribe((v) => (active = v))();
 		if (!active) return null;
 		active.enabled = false;
 		const off = active.enabled === false;
@@ -138,11 +138,11 @@ h.run(async () => {
 	h.check(suppressed === true, 'the gizmo-drag suppression reaches live controls');
 
 	// a second preview cycle stays healthy (no accumulated stale refs)
-	await A.page.evaluate((u) => window.__stores.cameraPreview.startCameraPreview(u), uuid);
+	await A.page.evaluate((u) => window.__tp.test.v1.cameraPreview.startCameraPreview(u), uuid);
 	await A.page.waitForTimeout(700);
-	await A.page.evaluate(() => window.__stores.cameraPreview.toggleCameraControl());
+	await A.page.evaluate(() => window.__tp.test.v1.cameraPreview.toggleCameraControl());
 	await A.page.waitForTimeout(500);
-	await A.page.evaluate(() => window.__stores.cameraPreview.stopCameraPreview());
+	await A.page.evaluate(() => window.__tp.test.v1.cameraPreview.stopCameraPreview());
 	await A.page.waitForTimeout(900);
 	state = await orbitState(A.page);
 	h.check(
@@ -156,7 +156,7 @@ h.run(async () => {
 		A.page.evaluate(
 			() =>
 				new Promise((r) =>
-					window.__stores.orbitControls.subscribe((c) =>
+					window.__tp.test.v1.orbitControls.subscribe((c) =>
 						r(c?.target ? c.target.toArray().map((n) => Math.round(n * 100) / 100) : null)
 					)()
 				)
@@ -164,17 +164,17 @@ h.run(async () => {
 	// put the look-at somewhere distinctive
 	await A.page.evaluate(() => {
 		let c = null;
-		window.__stores.orbitControls.subscribe((v) => (c = v))();
+		window.__tp.test.v1.orbitControls.subscribe((v) => (c = v))();
 		c.target.set(6, 2, -3);
 		c.update();
 	});
 	await A.page.waitForTimeout(300);
 	const before = await target();
-	await A.page.evaluate((u) => window.__stores.cameraPreview.startCameraPreview(u), uuid);
+	await A.page.evaluate((u) => window.__tp.test.v1.cameraPreview.startCameraPreview(u), uuid);
 	await A.page.waitForTimeout(700);
-	await A.page.evaluate(() => window.__stores.cameraPreview.toggleCameraControl());
+	await A.page.evaluate(() => window.__tp.test.v1.cameraPreview.toggleCameraControl());
 	await A.page.waitForTimeout(700);
-	await A.page.evaluate(() => window.__stores.cameraPreview.stopCameraPreview());
+	await A.page.evaluate(() => window.__tp.test.v1.cameraPreview.stopCameraPreview());
 	await A.page.waitForTimeout(1200);
 	const restored = await target();
 	h.check(

@@ -15,16 +15,16 @@ const h = require('./helpers.cjs');
 const iwer = require('./iwer.cjs');
 
 const GET = `(s) => { let v; s.subscribe((x) => (v = x))(); return v; }`;
-const status = (page) => page.evaluate(`(${GET})(window.__stores.hdriStores.hdriStatus)`);
+const status = (page) => page.evaluate(`(${GET})(window.__tp.test.v1.hdriStores.hdriStatus)`);
 const debug = (page) =>
 	page.evaluate(() => {
-		const d = window.__stores.hdri.hdriDebug;
+		const d = window.__tp.test.v1.hdri.hdriDebug;
 		let scene;
-		window.__stores.globalScene.subscribe((v) => (scene = v))();
+		window.__tp.test.v1.globalScene.subscribe((v) => (scene = v))();
 		return { cubes: d.skyCubes(), screen: d.skyOnScreen(), bg: scene.background?.name ?? null, env: scene.environment?.name ?? null, envUuid: scene.environment?.uuid ?? null };
 	});
-const pick = (page, key) => page.evaluate((k) => window.__stores.environment.setEnvironment(k), key);
-const edit = (page, patch) => page.evaluate((p) => window.__stores.environment.editEnvSky({ hdri: p }), patch);
+const pick = (page, key) => page.evaluate((k) => window.__tp.test.v1.environment.setEnvironment(k), key);
+const edit = (page, patch) => page.evaluate((p) => window.__tp.test.v1.environment.editEnvSky({ hdri: p }), patch);
 const skyIs = (page, sky, width, label, ms = 30000) =>
 	h.eventually(() => status(page), (s) => s.state === 'ready' && s.sky === sky && s.skyWidth === width, label, ms);
 const lightUp = (page, src) => h.eventually(() => status(page), (s) => s.state === 'ready' && s.src === src, src + ' is lit', 30000);
@@ -34,7 +34,7 @@ const aim = (page, from, to) =>
 	page.evaluate(
 		`((from, to) => {
 			const get = ${GET};
-			const st = window.__stores;
+			const st = window.__tp?.test.v1;
 			const camera = get(st.globalCamera);
 			const orbit = get(st.orbitControls);
 			camera.position.set(...from);
@@ -52,14 +52,14 @@ async function pixels(page) {
 }
 /** toward the low sun, where the picture has the most in it */
 async function skyPixels(page) {
-	const sun = await page.evaluate(`(${GET})(window.__stores.globalScene).getObjectByName('env-rig-sun').position.clone().normalize().toArray()`);
+	const sun = await page.evaluate(`(${GET})(window.__tp.test.v1.globalScene).getObjectByName('env-rig-sun').position.clone().normalize().toArray()`);
 	await aim(page, [0, 1.6, 0], [sun[0] * 10, 1.6 + sun[1] * 10, sun[2] * 10]);
 	return pixels(page);
 }
 /** a white box, so only the light differs between two pages */
 async function litBox(page) {
 	await page.evaluate(`(() => {
-		const g = (${GET})(window.__stores.objectsGroup);
+		const g = (${GET})(window.__tp.test.v1.objectsGroup);
 		for (const o of g.children) o.material?.color?.set?.('#ffffff');
 	})()`);
 	await aim(page, [2.2, 1.6, 2.2], [0, 0.3, 0]);
@@ -76,7 +76,7 @@ h.run(async () => {
 	const opts = { context: { viewport: { width: 1280, height: 720 } } };
 	const A = await h.setupPage(browser, 'A', opts);
 	const skies = await h.routeSkies(A.page);
-	const box = (page) => page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	const box = (page) => page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await box(A.page);
 
 	// ---- 1. small first, then swap ------------------------------------------------------------
@@ -124,20 +124,20 @@ h.run(async () => {
 	// ---- 4. the player -----------------------------------------------------------------------
 	await edit(A.page, { quality: 'auto' });
 	await skyIs(A.page, '2k', 2048, 'back on Auto: 2K');
-	await A.page.evaluate(() => window.__stores.gameSettings.setGameSetting('skyQuality', 'max'));
+	await A.page.evaluate(() => window.__tp.test.v1.gameSettings.setGameSetting('skyQuality', 'max'));
 	await skyIs(A.page, '4k', 4096, "the game's options: Max overrides Auto");
 	await edit(A.page, { quality: 'high' });
 	await skyIs(A.page, '2k', 2048, 'a scene that names its quality outranks the player');
-	await A.page.evaluate(() => window.__stores.hdriPrefs.hdriQuality.set('low'));
+	await A.page.evaluate(() => window.__tp.test.v1.hdriPrefs.hdriQuality.set('low'));
 	await h.eventually(() => status(A.page), (s) => s.state === 'ready' && s.tier === 'low' && s.sky === '' && s.skyWidth === 0, 'a device pinned Low outranks the scene');
 	await A.page.evaluate(() => {
-		window.__stores.hdriPrefs.hdriQuality.set('auto');
-		window.__stores.gameSettings.setGameSetting('skyQuality', 'auto');
+		window.__tp.test.v1.hdriPrefs.hdriQuality.set('auto');
+		window.__tp.test.v1.gameSettings.setGameSetting('skyQuality', 'auto');
 	});
 	// the row is drawn, in the real menu
 	await A.page.evaluate(() => {
-		const shell = window.__stores.gameKit.gameShell;
-		window.__stores.editorMode.set('interact'); // the menu is offered while playing
+		const shell = window.__tp.test.v1.gameKit.gameShell;
+		window.__tp.test.v1.editorMode.set('interact'); // the menu is offered while playing
 		shell.markShellGame(true);
 		shell.openShellMenu('settings');
 	});
@@ -149,11 +149,11 @@ h.run(async () => {
 	await edit(A.page, { quality: 'auto' });
 	await skyIs(A.page, '4k', 4096, 'on Auto, the Max pressed in the menu applies');
 	await A.page.evaluate(() => {
-		const shell = window.__stores.gameKit.gameShell;
-		window.__stores.gameSettings.setGameSetting('skyQuality', 'auto');
+		const shell = window.__tp.test.v1.gameKit.gameShell;
+		window.__tp.test.v1.gameSettings.setGameSetting('skyQuality', 'auto');
 		shell.closeShellMenu();
 		shell.markShellGame(false);
-		window.__stores.editorMode.set('edit');
+		window.__tp.test.v1.editorMode.set('edit');
 	});
 
 	// ---- 5. two peers ------------------------------------------------------------------------
@@ -168,13 +168,13 @@ h.run(async () => {
 
 	// ---- 6. a scene's minimum, phone in both postures -----------------------------------------
 	await edit(A.page, { minQuality: 'high' });
-	await h.eventually(() => P.page.evaluate(() => window.__stores.environment.presetPayload().hdri?.minQuality), (m) => m === 'high', 'the minimum replicates');
+	await h.eventually(() => P.page.evaluate(() => window.__tp.test.v1.environment.presetPayload().hdri?.minQuality), (m) => m === 'high', 'the minimum replicates');
 	await skyIs(P.page, '2k', 2048, "N6 folded: the scene's minimum raises it");
 	await P.page.setViewportSize({ width: 1080, height: 1200 });
 	await P.page.waitForTimeout(500);
 	const unfolded = await status(P.page);
 	h.check(unfolded.sky === '2k' && unfolded.skyWidth === 2048, 'N6 unfolded: the same sky, nothing reloads');
-	const shot = await P.page.evaluate(`(${GET})(window.__stores.globalRenderer).domElement.getBoundingClientRect().width`);
+	const shot = await P.page.evaluate(`(${GET})(window.__tp.test.v1.globalRenderer).domElement.getBoundingClientRect().width`);
 	h.check(shot > 900, `N6 unfolded: the view fills the screen (${Math.round(shot)})`);
 	await edit(A.page, { minQuality: 'standard', quality: 'auto' });
 	await P.page.close();
@@ -197,7 +197,7 @@ h.run(async () => {
 	h.check(hits.length >= 2 && oldCdn.hits.some((u) => /_1k\.hdr$/.test(u)), `it tried the new files, then the .hdr (${hits.length} misses)`);
 	h.check(od.bg === od.env && errors.length === 0, `the light's map draws the sky and nothing errors (${od.bg}, ${errors.length})`);
 	await box(O.page);
-	await O.page.evaluate(() => window.__stores.hdriPrefs.hdriQuality.set('standard'));
+	await O.page.evaluate(() => window.__tp.test.v1.hdriPrefs.hdriQuality.set('standard'));
 	await O.page.waitForTimeout(500);
 	const hdrLit = await litBox(O.page);
 	const lightDiff = meanDiff(jpgLit, hdrLit);
@@ -218,11 +218,11 @@ h.run(async () => {
 	await edit(Q.page, { quality: 'max' });
 	await skyIs(Q.page, '2k', 2048, "a scene's Max is capped at 2K in a headset");
 	await iwer.frames(Q.page, 5);
-	const presenting = await Q.page.evaluate(`(${GET})(window.__stores.globalRenderer).xr.isPresenting`);
+	const presenting = await Q.page.evaluate(`(${GET})(window.__tp.test.v1.globalRenderer).xr.isPresenting`);
 	h.check(presenting === true, 'still presenting after the sky swapped inside the session');
 	await iwer.exit(Q.page);
 	// IWER is a Quest browser (its user agent): outside a session it is still a headset, so the cap holds
 	const outside = await status(Q.page);
-	h.check(outside.sky === '2k' && !(await Q.page.evaluate(`(${GET})(window.__stores.globalRenderer).xr.isPresenting`)), `out of the session, a Quest browser stays at 2K (${outside.sky})`);
+	h.check(outside.sky === '2k' && !(await Q.page.evaluate(`(${GET})(window.__tp.test.v1.globalRenderer).xr.isPresenting`)), `out of the session, a Quest browser stays at 2K (${outside.sky})`);
 	await h.finish(browser);
 });

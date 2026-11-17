@@ -33,10 +33,10 @@ const h = require('./helpers.cjs');
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
-	await A.page.waitForFunction(() => !!window.__stores?.nodeCatalog, { timeout: 30000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.nodeCatalog, { timeout: 30000 });
 
 	const palette = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const groups = s.nodeCatalog.nodeCatalog ?? [];
 		const out = {};
 		for (const g of groups)

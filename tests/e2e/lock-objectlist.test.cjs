@@ -18,7 +18,7 @@ h.run(async () => {
 
 	// [Group{Box, Sphere}, Cone] — the object-list-keys fixture
 	const ids = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const box = s.addObjects.spawnAtPoint('/create Box 1 1 1', [2, 0.5, 0]);
 		const sphere = s.addObjects.spawnAtPoint('/create Sphere 0.5', [-2, 0.5, 0]);
 		s.objectActions.selectObject(box.uuid);
@@ -35,8 +35,8 @@ h.run(async () => {
 	await page.waitForTimeout(600);
 	// grouping opens the new group once; start from a COLLAPSED tree
 	await page.evaluate(() => {
-		window.__stores.toggleExpand.set(null);
-		window.__stores.expandedObjects.set(new Set());
+		window.__tp.test.v1.toggleExpand.set(null);
+		window.__tp.test.v1.expandedObjects.set(new Set());
 	});
 	await page.waitForTimeout(250);
 
@@ -68,7 +68,7 @@ h.run(async () => {
 	// ---- the keyboard ------------------------------------------------------------------------
 	const tree = page.locator('#object-tree');
 	await tree.focus();
-	await page.evaluate((u) => window.__stores.objectActions.selectObject(u), ids.group);
+	await page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), ids.group);
 	await page.waitForTimeout(150);
 	await tree.focus();
 	await page.keyboard.press('ArrowRight');
@@ -88,28 +88,28 @@ h.run(async () => {
 	h.check(await expanded(), 'and → opens it again');
 
 	// ---- state kept ----------------------------------------------------------------------------
-	await page.evaluate((u) => window.__stores.objectActions.selectObject(u), ids.cone);
+	await page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), ids.cone);
 	await page.waitForTimeout(200);
-	await page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await page.waitForTimeout(200);
 	h.check(await expanded(), 'an open group stays open while the selection moves elsewhere and away');
-	await page.evaluate(() => window.__stores.objectListClose.set(true));
+	await page.evaluate(() => window.__tp.test.v1.objectListClose.set(true));
 	await page.waitForTimeout(300);
-	await page.evaluate(() => window.__stores.objectListClose.set(false));
+	await page.evaluate(() => window.__tp.test.v1.objectListClose.set(false));
 	await page.waitForTimeout(500);
 	h.check(await expanded(), 'closing and reopening the list keeps the group open');
 	h.check(await childVisible(ids.box), 'with its children showing');
 	await caret.click();
 	await page.waitForTimeout(250);
-	await page.evaluate(() => window.__stores.objectListClose.set(true));
+	await page.evaluate(() => window.__tp.test.v1.objectListClose.set(true));
 	await page.waitForTimeout(300);
-	await page.evaluate(() => window.__stores.objectListClose.set(false));
+	await page.evaluate(() => window.__tp.test.v1.objectListClose.set(false));
 	await page.waitForTimeout(500);
 	h.check(!(await expanded()), 'and a collapsed group stays collapsed across a reopen');
 
 	// selecting a child from elsewhere (the viewport) while its group is collapsed: the row is
 	// revealed or not — asserted as today
-	await page.evaluate((u) => window.__stores.objectActions.selectObject(u), ids.sphere);
+	await page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), ids.sphere);
 	await page.waitForTimeout(400);
 	const revealOnSelect = await expanded();
 	console.log(`  (today: selecting a child of a collapsed group from outside the list ${revealOnSelect ? 'expands' : 'does not expand'} the group)`);

@@ -23,6 +23,7 @@ import { lightWindow, saveDocument } from './recorder.js';
 import { perfMark } from './perfMarks.js';
 import { perfReportsOn, reportsUrl, sendReport, SESSION } from './beacon.js';
 import { MOMENT_MS, REPORT_LIMITS } from './tpprof.js';
+import { createRenderTarget, readPixels } from '../render/renderTargets.js'; // 101 F3: the one factory
 
 /** the screenshot's longest side */
 export const SHOT_MAX = 960;
@@ -67,7 +68,7 @@ async function eyeShot(r, scene) {
 	cam.projectionMatrix.copy(eye.projectionMatrix);
 	cam.projectionMatrixInverse.copy(eye.projectionMatrix).invert();
 	cam.layers.mask = eye.layers.mask; // the left eye's layer (1) included
-	const target = new THREE.WebGLRenderTarget(w, h);
+	const target = createRenderTarget(w, h);
 	target.texture.colorSpace = THREE.SRGBColorSpace;
 	const prev = r.getRenderTarget();
 	const pixels = new Uint8Array(w * h * 4);
@@ -77,7 +78,7 @@ async function eyeShot(r, scene) {
 		r.setRenderTarget(target);
 		r.clear();
 		r.render(scene, cam);
-		r.readRenderTargetPixels(target, 0, 0, w, h, pixels);
+		await readPixels(r, target, 0, 0, w, h, pixels);
 	} finally {
 		r.xr.enabled = xrWas;
 		r.setRenderTarget(prev);

@@ -5,7 +5,7 @@ const doorY = (page, uuid) =>
 	page.evaluate(
 		(uuid) =>
 			new Promise((resolve) => {
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					resolve(g?.getObjectByProperty('uuid', uuid)?.position.y ?? null);
 				})();
 			}),
@@ -26,10 +26,10 @@ h.run(async () => {
 		);
 
 	const { buttonUuid, doorUuid } = await A.page.evaluate(async () => {
-		const cmd = window.__stores.commandsHandler.sceneCommand;
+		const cmd = window.__tp.test.v1.commandsHandler.sceneCommand;
 		cmd('/create Button');
 		cmd('/create box');
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		return {
 			buttonUuid: group.children.find((c) => c.name === 'Button')?.uuid,
 			doorUuid: group.children.find((c) => c.name === 'Box')?.uuid
@@ -38,9 +38,9 @@ h.run(async () => {
 	h.check(!!buttonUuid, 'Button primitive created via /create Button');
 
 	await A.page.evaluate(async (doorUuid) => {
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		group.getObjectByProperty('uuid', doorUuid).position.set(3, 0, 0);
-		const peer = await new Promise((r) => window.__stores.peers.subscribe(r)());
+		const peer = await new Promise((r) => window.__tp.test.v1.peers.subscribe(r)());
 		peer.send({ type: 'move', uuid: doorUuid, pos: [3, 0, 0], rot: [0, 0, 0], scale: [1, 1, 1] });
 	}, doorUuid);
 
@@ -55,10 +55,10 @@ h.run(async () => {
 			{ id: 's1', type: 'objectselector', position: { x: 300, y: 0 }, data: { selected: doorUuid } }
 		];
 		const edge = { id: 'e1', source: 't1', target: 's1' };
-		window.__stores.flowNodes.set(nodes);
-		window.__stores.flowEdges.set([edge]);
+		window.__tp.test.v1.flowNodes.set(nodes);
+		window.__tp.test.v1.flowEdges.set([edge]);
 		return new Promise((resolve) => {
-			window.__stores.peers.subscribe((peer) => {
+			window.__tp.test.v1.peers.subscribe((peer) => {
 				nodes.forEach((node) => peer.send({ type: 'nodecreate', node }));
 				peer.send({ type: 'edgecreate', edge });
 				resolve();
@@ -70,7 +70,7 @@ h.run(async () => {
 	const pixel = await h.projectPoint(A.page, await A.page.evaluate(
 		(buttonUuid) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) =>
+				window.__tp.test.v1.objectsGroup.subscribe((g) =>
 					r(g.getObjectByProperty('uuid', buttonUuid).position.toArray())
 				)()
 			),
@@ -80,7 +80,7 @@ h.run(async () => {
 	await untilY(doorUuid, 2, 'door slides up on both peers after clicking the button');
 
 	const selected = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.selectedObject.subscribe((s) => r(s?.uuid))())
+		() => new Promise((r) => window.__tp.test.v1.selectedObject.subscribe((s) => r(s?.uuid))())
 	);
 	h.check(selected !== buttonUuid, 'button click was consumed (no selection)');
 

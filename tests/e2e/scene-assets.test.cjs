@@ -10,7 +10,7 @@ const assetsOn = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.sceneAssets.sceneAssets.subscribe((list) =>
+				window.__tp.test.v1.sceneAssets.sceneAssets.subscribe((list) =>
 					resolve(list.map((a) => ({ group: a.group, name: a.name })))
 				)();
 			})
@@ -42,21 +42,21 @@ h.run(async () => {
 		v.setUint16(34, 16, true);
 		str(36, 'data');
 		v.setUint32(40, n * 2, true);
-		const created = await window.__stores.explorer.importFiles(
+		const created = await window.__tp.test.v1.explorer.importFiles(
 			[new File([buf], 'beep.wav', { type: 'audio/wav' })],
 			null
 		);
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const box = group.children[group.children.length - 1];
 		window.__box = box;
 		// texture through the replicated path
 		const bytes = Uint8Array.from(atob(png), (c) => c.charCodeAt(0));
-		await window.__stores.materialsHandler.setObjectTexture(
+		await window.__tp.test.v1.materialsHandler.setObjectTexture(
 			box.uuid,
 			new File([bytes], 'checker.png', { type: 'image/png' })
 		);
-		window.__stores.flowNodes.set([
+		window.__tp.test.v1.flowNodes.set([
 			{
 				id: 'snd1',
 				type: 'sound',
@@ -79,7 +79,7 @@ h.run(async () => {
 				class: 'w-[150px]'
 			}
 		]);
-		window.__stores.flowEdges.set([{ id: 'e1', source: 'snd1', target: 'sel1' }]);
+		window.__tp.test.v1.flowEdges.set([{ id: 'e1', source: 'snd1', target: 'sel1' }]);
 	}, TINY_PNG);
 	await A.page.waitForTimeout(1500);
 
@@ -122,10 +122,10 @@ h.run(async () => {
 
 	// self-clean: remove the texture and the sound node -> entries vanish
 	await A.page.evaluate(() => {
-		window.__stores.materialsHandler.removeObjectTexture(window.__box.uuid);
+		window.__tp.test.v1.materialsHandler.removeObjectTexture(window.__box.uuid);
 		let nodes = [];
-		window.__stores.flowNodes.subscribe((v) => (nodes = v))();
-		window.__stores.flowNodes.set(nodes.filter((n) => n.id !== 'snd1'));
+		window.__tp.test.v1.flowNodes.subscribe((v) => (nodes = v))();
+		window.__tp.test.v1.flowNodes.set(nodes.filter((n) => n.id !== 'snd1'));
 	});
 	await A.page.waitForTimeout(1200);
 	const cleaned = await assetsOn(A.page);

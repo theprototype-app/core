@@ -9,9 +9,9 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	const uuid = await A.page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/create Sphere 1');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create Sphere 1');
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const ball = g.children[g.children.length - 1];
 		window.__ball = ball;
 		return ball.uuid;
@@ -19,7 +19,7 @@ h.run(async () => {
 
 	// 1) entering sculpt on a NON-terrain mesh works and flips to mesh mode
 	const entered = await A.page.evaluate((uuid) => {
-		const ts = window.__stores.terrainSculpt;
+		const ts = window.__tp.test.v1.terrainSculpt;
 		const ok = ts.enterSculpt(uuid);
 		let mode, obj;
 		ts.sculptMode.subscribe((v) => (mode = v))();
@@ -45,7 +45,7 @@ h.run(async () => {
 
 	// 3) raise displaces along the normal (a top-pole brush lifts the pole)
 	const raise = await A.page.evaluate((uuid) => {
-		const ts = window.__stores.terrainSculpt;
+		const ts = window.__tp.test.v1.terrainSculpt;
 		const maxY = () => {
 			const p = window.__ball.geometry.attributes.position;
 			let m = -1e9;
@@ -68,7 +68,7 @@ h.run(async () => {
 
 	// 4) the stroke committed ONE undoable meshgeo
 	const undo = await A.page.evaluate(() => {
-		window.__stores.history.undo();
+		window.__tp.test.v1.history.undo();
 		const p = window.__ball.geometry.attributes.position;
 		let m = -1e9;
 		for (let i = 0; i < p.count; i++) m = Math.max(m, p.getY(i));
@@ -78,7 +78,7 @@ h.run(async () => {
 
 	// 5) smooth relaxes a spike; welded copies stay together (no tears)
 	const smooth = await A.page.evaluate((uuid) => {
-		const ts = window.__stores.terrainSculpt;
+		const ts = window.__tp.test.v1.terrainSculpt;
 		ts.beginStroke(uuid);
 		for (let i = 0; i < 10; i++) ts.applyMeshBrushAt(uuid, 0, 1, 0, 'raise', 0.6, 1, 0.05);
 		const p = window.__ball.geometry.attributes.position;
@@ -106,10 +106,10 @@ h.run(async () => {
 
 	// 6) strokes replicate as meshgeo (send spy on the final commit)
 	const sent = await A.page.evaluate((uuid) => {
-		const ts = window.__stores.terrainSculpt;
+		const ts = window.__tp.test.v1.terrainSculpt;
 		window.__sent = [];
 		let peer;
-		window.__stores.peers.subscribe((p) => (peer = p))();
+		window.__tp.test.v1.peers.subscribe((p) => (peer = p))();
 		const original = peer.send;
 		peer.send = (m) => window.__sent.push(m.type);
 		ts.beginStroke(uuid);
@@ -122,7 +122,7 @@ h.run(async () => {
 
 	// 7) exit restores the gizmo pref + clears the session
 	const exited = await A.page.evaluate(() => {
-		const ts = window.__stores.terrainSculpt;
+		const ts = window.__tp.test.v1.terrainSculpt;
 		ts.exitSculpt();
 		let obj, mode;
 		ts.sculptObject.subscribe((v) => (obj = v))();
@@ -133,7 +133,7 @@ h.run(async () => {
 
 	// 8) terrain path still routes to the column brush
 	const terrain = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create Terrain 12 12');
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();

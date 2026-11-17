@@ -20,13 +20,13 @@ h.run(async () => {
 	// The context is created lazily by ensureAudioContext, and the tap only appears
 	// once something connects to the destination. Make both happen.
 	await A.page.evaluate(async () => {
-		const ctx = window.__stores.voiceChat.ensureAudioContext();
+		const ctx = window.__tp.test.v1.voiceChat.ensureAudioContext();
 		if (ctx.state === 'suspended') await ctx.resume().catch(() => {});
 	});
 
 	// ---- 1. premise: the tap is installed and intercepting -----------------------
 	const tapped = await A.page.evaluate(async () => {
-		const ctx = window.__stores.voiceChat.ensureAudioContext();
+		const ctx = window.__tp.test.v1.voiceChat.ensureAudioContext();
 		const g = ctx.createGain();
 		g.connect(ctx.destination); // must be DIVERTED into the tap
 		const state = { installed: !!window.__audioTap, contexts: window.__audioTap?.contexts() ?? 0 };
@@ -74,7 +74,7 @@ h.run(async () => {
 	// the only thing that can move the number is frequency.
 	const tone = async (hz) => {
 		const started = A.page.evaluate(async (freq) => {
-			const ctx = window.__stores.voiceChat.ensureAudioContext();
+			const ctx = window.__tp.test.v1.voiceChat.ensureAudioContext();
 			const osc = ctx.createOscillator();
 			const gain = ctx.createGain();
 			osc.frequency.value = freq;
@@ -166,7 +166,7 @@ h.run(async () => {
 	// The patch inserts a gain node in front of the destination; a sound node must
 	// still build its panner chain and still play.
 	const chain = await A.page.evaluate(async () => {
-		const entries = window.__stores.soundRuntime.soundEntries();
+		const entries = window.__tp.test.v1.soundRuntime.soundEntries();
 		return { count: entries.length, ok: Array.isArray(entries) };
 	});
 	h.check(chain.ok, 'soundRuntime still reports its chains with the tap installed');

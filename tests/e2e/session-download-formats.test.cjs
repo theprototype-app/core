@@ -33,23 +33,23 @@ const sha256 = (bytes) => crypto.createHash('sha256').update(Buffer.from(bytes))
 // is one more thing that can fail for reasons that have nothing to do with the feature.
 
 const openSessions = async (p) => {
-	await p.page.evaluate(() => window.__stores.sessionsOpen.set(true));
+	await p.page.evaluate(() => window.__tp.test.v1.sessionsOpen.set(true));
 	await p.page.waitForTimeout(900);
 };
 
 const metas = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.sessions.sessions.subscribe((x) => (v = x))();
+		window.__tp.test.v1.sessions.sessions.subscribe((x) => (v = x))();
 		return (v ?? []).map((m) => ({ id: m.id, name: m.name, lib: m.hasLibrary, files: m.libraryCount }));
 	});
 
 const libraryOf = (p) =>
 	p.page.evaluate(() => {
 		let items;
-		window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((v) => (items = v))();
 		let folders;
-		window.__stores.explorer.explorerFolders.subscribe((v) => (folders = v))();
+		window.__tp.test.v1.explorer.explorerFolders.subscribe((v) => (folders = v))();
 		const nameOf = (id) => folders.find((f) => f.id === id)?.name ?? null;
 		return {
 			items: items.map((i) => ({ name: i.name, hash: i.hash, kind: i.kind, folder: nameOf(i.folderId) })),
@@ -60,7 +60,7 @@ const libraryOf = (p) =>
 const manifestOf = (p) =>
 	p.page.evaluate(() => {
 		let m;
-		window.__stores.projectManifest.projectManifest.subscribe((v) => (m = v))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((v) => (m = v))();
 		return m;
 	});
 
@@ -70,13 +70,13 @@ const answerOpenConfirm = async (peer) => {
 		() =>
 			peer.page.evaluate(() => {
 				let d;
-				window.__stores.confirmDialog.confirmDialog.subscribe((v) => (d = v))();
+				window.__tp.test.v1.confirmDialog.confirmDialog.subscribe((v) => (d = v))();
 				return d?.title ?? null;
 			}),
 		(t) => typeof t === 'string' && t.startsWith('Open project'),
 		'the OPEN warning dialog appeared (fork 12: open replaces, warned)'
 	);
-	await peer.page.evaluate(() => window.__stores.confirmDialog.resolveConfirm(true));
+	await peer.page.evaluate(() => window.__tp.test.v1.confirmDialog.resolveConfirm(true));
 };
 
 /** the three library files, in a real tree: one at the root, two inside Props/Metal */
@@ -91,14 +91,14 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1440, height: 900 } } });
 	const page = A.page;
 	await page.waitForFunction(
-		() => !!window.__stores?.sessions && !!window.__stores?.projectFile && !!window.__stores?.explorer,
+		() => !!window.__tp?.test.v1?.sessions && !!window.__tp?.test.v1?.projectFile && !!window.__tp?.test.v1?.explorer,
 		null,
 		{ timeout: 30000 }
 	);
 	await page.evaluate(async () => {
-		await window.__stores.explorer.loadExplorer();
-		await window.__stores.explorer.clearLibrary();
-		await window.__stores.sessions.loadSessions();
+		await window.__tp.test.v1.explorer.loadExplorer();
+		await window.__tp.test.v1.explorer.clearLibrary();
+		await window.__tp.test.v1.sessions.loadSessions();
 	});
 	await page.waitForTimeout(500);
 
@@ -106,12 +106,12 @@ h.run(async () => {
 	// 1. SEED — a scene worth saving and a library worth carrying
 	// =====================================================================
 	await page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1200));
-		window.__stores.objectActions.deselectObject();
+		window.__tp.test.v1.objectActions.deselectObject();
 	});
 	const seeded = await page.evaluate(async (files) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const props = s.explorer.createFolder('Props', null);
 		const metal = s.explorer.createFolder('Metal', props?.id ?? null);
 		const out = [];
@@ -132,7 +132,7 @@ h.run(async () => {
 	);
 	const worldSize = await page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return (g?.children ?? []).length;
 	});
 	h.check(worldSize > 0, `premise: the scene has content to carry (${worldSize} objects)`);
@@ -238,14 +238,14 @@ h.run(async () => {
 		/\.tp$/.test(dl.suggestedFilename()) && !/\.tpscene$/.test(dl.suggestedFilename()),
 		`the real button downloads a .tp (${dl.suggestedFilename()})`
 	);
-	await page.evaluate(() => window.__stores.sessionsOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.sessionsOpen.set(false));
 	await page.waitForTimeout(300);
 
 	// =====================================================================
 	// 4. THE ARCHIVE, FILE BY FILE
 	// =====================================================================
 	const exported = await page.evaluate(async (id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = await s.sessions.getSession(id);
 		const out = await s.projectFile.exportProjectFromSession(payload);
 		let b64 = '';
@@ -374,8 +374,8 @@ h.run(async () => {
 	// 5. ROUND TRIP ONE — openProject on a machine that has never met A
 	// =====================================================================
 	const B = await h.setupPage(browser, 'B');
-	await B.page.waitForFunction(() => !!window.__stores?.projectFile, { timeout: 30000 });
-	await B.page.evaluate(() => window.__stores.explorer.loadExplorer());
+	await B.page.waitForFunction(() => !!window.__tp?.test.v1?.projectFile, { timeout: 30000 });
+	await B.page.evaluate(() => window.__tp.test.v1.explorer.loadExplorer());
 	const beforeB = await libraryOf(B);
 	h.check(
 		beforeB.items.length === 0 && beforeB.folders.length === 0,
@@ -385,7 +385,7 @@ h.run(async () => {
 		const bin = atob(b64);
 		const bytes = new Uint8Array(bin.length);
 		for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-		return await window.__stores.projectFile.openProject(bytes.buffer);
+		return await window.__tp.test.v1.projectFile.openProject(bytes.buffer);
 	}, exported.b64);
 	await answerOpenConfirm(B);
 	const openedB = await pendingOpen;
@@ -427,7 +427,7 @@ h.run(async () => {
 	);
 	// the scene resolves, which is the whole point of a project file
 	h.check(
-		(await B.page.evaluate((hash) => !!window.__stores.explorer.itemByHash(hash), sceneRow.hash)) === true,
+		(await B.page.evaluate((hash) => !!window.__tp.test.v1.explorer.itemByHash(hash), sceneRow.hash)) === true,
 		'the manifest pointer RESOLVES in B\'s library — no dead pointer, the rule projectFile\'s header states'
 	);
 
@@ -435,15 +435,15 @@ h.run(async () => {
 	// 6. ROUND TRIP TWO — importProjectAsFolder FURNISHES, and installs nothing
 	// =====================================================================
 	const C = await h.setupPage(browser, 'C');
-	await C.page.waitForFunction(() => !!window.__stores?.projectFile, { timeout: 30000 });
-	await C.page.evaluate(() => window.__stores.explorer.loadExplorer());
+	await C.page.waitForFunction(() => !!window.__tp?.test.v1?.projectFile, { timeout: 30000 });
+	await C.page.evaluate(() => window.__tp.test.v1.explorer.loadExplorer());
 	const beforeC = await libraryOf(C);
 	h.check(beforeC.items.length === 0, 'PREMISE: C is fresh too');
 	const importedC = await C.page.evaluate(async (b64) => {
 		const bin = atob(b64);
 		const bytes = new Uint8Array(bin.length);
 		for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-		return await window.__stores.projectFile.importProjectAsFolder(bytes.buffer, {
+		return await window.__tp.test.v1.projectFile.importProjectAsFolder(bytes.buffer, {
 			fileName: 'Depot Project.tp'
 		});
 	}, exported.b64);
@@ -483,7 +483,7 @@ h.run(async () => {
 	// that exports while the two happen to agree.
 	const afterEdit = await page.evaluate(
 		async (id) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.commandsHandler.sceneCommand('/create sphere');
 			await new Promise((r) => setTimeout(r, 1200));
 			const bytes = new TextEncoder().encode('a file saved AFTER the project was').buffer;

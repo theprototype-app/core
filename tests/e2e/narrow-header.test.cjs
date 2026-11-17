@@ -32,7 +32,7 @@ const S = (page, fn, arg) => page.evaluate(fn, arg);
 
 async function showOnly(P, which) {
 	await S(P, ({ which, closers }) => {
-		for (const c of closers) window.__stores[c].set(c !== which);
+		for (const c of closers) window.__tp.test.v1[c].set(c !== which);
 	}, { which, closers: CLOSERS });
 	await P.waitForTimeout(1200);
 }
@@ -115,7 +115,7 @@ h.run(async () => {
 		let s = await shell(P, '#explorer-list');
 		h.check(!!s && !s.narrow && s.header.length === 0 && s.handles >= 1, `2.1 unfolded, not split: the Explorer keeps its column panes and edge handles (${JSON.stringify(s)})`);
 		await S(P, async () => {
-			const st = window.__stores;
+			const st = window.__tp?.test.v1;
 			st.flowGraphClose.set(false);
 			await new Promise((r) => setTimeout(r, 600));
 			st.bottomDock.activateDock('explorer');

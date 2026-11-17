@@ -25,16 +25,16 @@ const iwer = require('./iwer.cjs');
 const OUT = process.env.E2E_OUT ?? 'test-results/64-text';
 
 /** @param {any} page */
-const dbg = (page) => page.evaluate(() => window.__stores.textPath.textPathDebug());
+const dbg = (page) => page.evaluate(() => window.__tp.test.v1.textPath.textPathDebug());
 /** @param {any} page @param {string} uuid */
 const one = async (page, uuid) => (await dbg(page)).find((d) => d.uuid === uuid);
 /** @param {any} page @param {string} uuid @param {any} patch */
-const set = (page, uuid, patch) => page.evaluate(([u, p]) => !!window.__stores.textPathEdit.setTextPathFor(u, p), [uuid, patch]);
+const set = (page, uuid, patch) => page.evaluate(([u, p]) => !!window.__tp.test.v1.textPathEdit.setTextPathFor(u, p), [uuid, patch]);
 /** @param {any} page @param {string} uuid */
 const record = (page, uuid) =>
 	page.evaluate((u) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return JSON.parse(JSON.stringify(g.getObjectByProperty('uuid', u)?.userData?.textPath ?? null));
 	}, uuid);
 /** wait until a text has laid out with `pred` true @param {any} page @param {string} uuid @param {(d: any) => boolean} pred @param {string} label */
@@ -54,7 +54,7 @@ h.run(async () => {
 	await h.connect(B, A);
 
 	// ---- §1 ------------------------------------------------------------------------------
-	const uuid = await A.page.evaluate(() => window.__stores.addObjects.spawnAtPoint('/create Text path', [0, 0, 0]).uuid);
+	const uuid = await A.page.evaluate(() => window.__tp.test.v1.addObjects.spawnAtPoint('/create Text path', [0, 0, 0]).uuid);
 	const a1 = await until(A.page, uuid, (d) => d.glyphs > 0, '§1 premise: A laid the default text out');
 	const b1 = await until(B.page, uuid, (d) => d.glyphs > 0, '§1 premise: B received the /create and laid it out too');
 	const rec = await record(A.page, uuid);
@@ -107,7 +107,7 @@ h.run(async () => {
 	// ---- §3 ------------------------------------------------------------------------------
 	const before3 = await one(A.page, uuid);
 	await A.page.evaluate((u) => {
-		const e = window.__stores.textPathEdit;
+		const e = window.__tp.test.v1.textPathEdit;
 		e.setLetterStyle(u, [0], { color: '#ff0000', size: 2 });
 		e.setLetterStyle(u, [1], { rot: 90 });
 	}, uuid);
@@ -122,11 +122,11 @@ h.run(async () => {
 	h.check(b3.baseline.every((p, i) => dist(p, a3.baseline[i]) < 1e-3), '§3 B lays the styled letters out exactly like A');
 
 	// ---- §4 ------------------------------------------------------------------------------
-	await A.page.evaluate(() => window.__stores.history.undo()); // the rotation
-	await A.page.evaluate(() => window.__stores.history.undo()); // the colour + size
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo()); // the rotation
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo()); // the colour + size
 	await until(A.page, uuid, (d) => d.colors[0] === 255 && d.colors[1] === 255 && Math.abs(d.scales[0] - 1) < 1e-3, '§4 two undos: letter 1 white and normal size on A');
 	await until(B.page, uuid, (d) => d.colors[1] === 255 && Math.abs(d.scales[0] - 1) < 1e-3, '§4 ...and on B');
-	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 	await until(B.page, uuid, (d) => d.colors[1] === 0 && Math.abs(d.scales[0] - 2) < 1e-3, '§4 redo brings the red letter back on B');
 	await set(A.page, uuid, { text: 'My Text on a path' });
 	const r4 = await record(A.page, uuid);
@@ -135,19 +135,19 @@ h.run(async () => {
 
 	// ---- §5 ------------------------------------------------------------------------------
 	const spline = await A.page.evaluate(() => {
-		const s = window.__stores.splineTool;
+		const s = window.__tp.test.v1.splineTool;
 		for (const p of [[-3, 0.3, 4], [-1, 0.3, 5], [1, 0.3, 4], [3, 0.3, 5]]) s.addSplinePoint({ x: p[0], y: p[1], z: p[2] }, 0.1);
 		return s.finishSpline()?.uuid;
 	});
 	h.check(!!spline, '§5 premise: a spline exists');
-	const linked = await A.page.evaluate((u) => window.__stores.textPathEdit.putTextOnPath(u, 'Along the road')?.uuid, spline);
+	const linked = await A.page.evaluate((u) => window.__tp.test.v1.textPathEdit.putTextOnPath(u, 'Along the road')?.uuid, spline);
 	const a5 = await until(A.page, linked, (d) => d.linked && d.glyphs === 12, '§5 the text is linked to the spline and laid out');
 	const samples = await A.page.evaluate((u) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByProperty('uuid', u);
 		o.updateWorldMatrix(true, false);
-		const curve = window.__stores.splineTube.splineCurve(o.userData.spline);
+		const curve = window.__tp.test.v1.splineTube.splineCurve(o.userData.spline);
 		const out = [];
 		for (let i = 0; i <= 400; i++) out.push(curve.getPoint(i / 400).applyMatrix4(o.matrixWorld).toArray());
 		return out;
@@ -162,7 +162,7 @@ h.run(async () => {
 	const poses = (/** @type {any} */ page) =>
 		page.evaluate(([s, t]) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			return [s, t].map((u) => g.getObjectByProperty('uuid', u)?.position.toArray().map((v) => +v.toFixed(3)));
 		}, [spline, linked]);
 	console.log(`  spline / text positions: A ${JSON.stringify(await poses(A.page))}, B ${JSON.stringify(await poses(B.page))}`);
@@ -170,28 +170,28 @@ h.run(async () => {
 	// move the spline on A (a real replicated move): the text follows on both
 	await A.page.evaluate((u) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByProperty('uuid', u);
 		o.position.x += 2;
 		let peer;
-		window.__stores.peers.subscribe((v) => (peer = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (peer = v))();
 		peer.send({ type: 'move', uuid: u, pos: o.position.toArray(), rot: o.rotation.toArray(), scale: o.scale.toArray() });
 	}, spline);
 	await until(A.page, linked, (d) => Math.abs(d.baseline[0][0] - a5.baseline[0][0] - 2) < 1e-3, '§5 moving the spline 2 m carries the text 2 m on A');
 	await until(B.page, linked, (d) => Math.abs(d.baseline[0][0] - a5.baseline[0][0] - 2) < 1e-3, '§5 ...and on B (no pose of its own was sent)');
-	await A.page.evaluate(() => window.__stores.history.undo()); // the move is not in history (raw send) — this undoes the put
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo()); // the move is not in history (raw send) — this undoes the put
 	await h.eventually(async () => (await dbg(A.page)).some((d) => d.uuid === linked), (v) => v === false, '§5 ONE undo removes the linked text on A');
 	await h.eventually(async () => (await dbg(B.page)).some((d) => d.uuid === linked), (v) => v === false, '§5 ...and on B');
 
 	// ---- §6 ------------------------------------------------------------------------------
 	await A.page.evaluate((u) => {
-		window.__stores.objectActions.selectObject(u, true);
+		window.__tp.test.v1.objectActions.selectObject(u, true);
 	}, uuid);
 	const field = A.page.locator('#text-path-text');
 	await field.waitFor({ timeout: 15000 });
 	const undoDepth = () => A.page.evaluate(() => {
 		let s;
-		window.__stores.history.undoStack.subscribe((v) => (s = v))();
+		window.__tp.test.v1.history.undoStack.subscribe((v) => (s = v))();
 		return s.length;
 	});
 	const depth0 = await undoDepth();
@@ -207,16 +207,16 @@ h.run(async () => {
 	const a6 = await until(A.page, uuid, (d) => d.colors[3 * 3] === 0 && d.colors[3 * 3 + 1] === 255, '§6 the letter cell "e" styled green from the Inspector');
 	h.check(a6.colors[2 * 3] === 255 && a6.colors[2 * 3 + 1] === 0, '§6 ...the red T beside it untouched');
 	await A.page.screenshot({ path: `${OUT}/text-path-inspector.png` });
-	await A.page.evaluate(() => window.__stores.history.undo());
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await until(B.page, uuid, (d) => d.text === 'My Text on a path' && d.colors[3 * 3] === 255, '§6 two undos take back the colour and the whole typed word (on B)');
 
 	// ---- §7 ------------------------------------------------------------------------------
 	const round = await A.page.evaluate(async (u) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByProperty('uuid', u);
-		const THREE = window.__stores.THREE;
+		const THREE = window.__tp.test.v1.THREE;
 		const copy = new THREE.ObjectLoader().parse(JSON.parse(JSON.stringify(o.toJSON())));
 		return { before: JSON.stringify(o.userData.textPath), after: JSON.stringify(copy.userData.textPath) };
 	}, uuid);
@@ -234,14 +234,14 @@ h.run(async () => {
 	await h.eventually(
 		() => C.page.evaluate(() => {
 			let v;
-			window.__stores.playMode.vrSupported.subscribe((x) => (v = x))();
+			window.__tp.test.v1.playMode.vrSupported.subscribe((x) => (v = x))();
 			return v;
 		}),
 		(v) => v === true,
 		'§8 premise: the app sees an immersive-vr headset',
 		10000
 	);
-	const vr = await C.page.evaluate(() => window.__stores.addObjects.spawnAtPoint('/create Text path', [0, 0, -3]).uuid);
+	const vr = await C.page.evaluate(() => window.__tp.test.v1.addObjects.spawnAtPoint('/create Text path', [0, 0, -3]).uuid);
 	await until(C.page, vr, (d) => d.glyphs > 0, '§8 premise: a text in front of the headset');
 	await iwer.enter(C.page);
 	// aim BOTH controllers at the middle of glyph 6's hit quad (the carrier's own proxy triangles): the beam
@@ -249,11 +249,11 @@ h.run(async () => {
 	const hand = [0.2, 1.2, 0];
 	const aimAt = await C.page.evaluate((u) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByProperty('uuid', u);
 		o.updateWorldMatrix(true, false);
 		const pos = o.geometry.attributes.position;
-		const THREE = window.__stores.THREE;
+		const THREE = window.__tp.test.v1.THREE;
 		const c = new THREE.Vector3();
 		for (let k = 0; k < 4; k++) c.add(new THREE.Vector3().fromBufferAttribute(pos, 6 * 4 + k));
 		return c.multiplyScalar(0.25).applyMatrix4(o.matrixWorld).toArray();
@@ -269,11 +269,11 @@ h.run(async () => {
 	}
 	await iwer.frames(C.page, 10);
 	const probe = await C.page.evaluate((u) => {
-		const v = window.__stores.vrControls;
+		const v = window.__tp.test.v1.vrControls;
 		const ray = v.pointerHandRay();
 		if (!ray) return { beam: 'no pointer ray' };
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		const carrier = g.getObjectByProperty('uuid', u);
 		const t = v.beamTarget(ray);
 		const f = (/** @type {number[]} */ a) => a.map((x) => +x.toFixed(3));

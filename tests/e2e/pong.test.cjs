@@ -7,7 +7,7 @@ const clickMenu = (page, label) =>
 	page.evaluate(
 		(label) =>
 			new Promise((resolve) => {
-				window.__stores.moduleSDK.moduleMenuItems.subscribe((items) => {
+				window.__tp.test.v1.moduleSDK.moduleMenuItems.subscribe((items) => {
 					items.find((i) => i.label === label)?.action();
 					resolve();
 				})();
@@ -19,7 +19,7 @@ const groupData = (page, name) =>
 	page.evaluate(
 		(name) =>
 			new Promise((resolve) => {
-				window.__stores.globalScene.subscribe((scene) => {
+				window.__tp.test.v1.globalScene.subscribe((scene) => {
 					const group = scene?.getObjectByName(name);
 					resolve(group ? JSON.parse(JSON.stringify(group.userData ?? {})) : null);
 				})();
@@ -31,7 +31,7 @@ const objectPos = (page, name) =>
 	page.evaluate(
 		(name) =>
 			new Promise((resolve) => {
-				window.__stores.globalScene.subscribe((scene) => {
+				window.__tp.test.v1.globalScene.subscribe((scene) => {
 					const object = scene?.getObjectByName(name);
 					resolve(object ? object.position.toArray() : null);
 				})();

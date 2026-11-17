@@ -14,7 +14,7 @@ const h = require('./helpers.cjs');
 /** close, let svelte remove the dialog (microtasks), open again — all before the next task */
 const flip = (page, store) =>
 	page.evaluate(async (name) => {
-		const s = window.__stores[name];
+		const s = window.__tp.test.v1[name];
 		s.set(true);
 		await new Promise((r) => setTimeout(r, 600));
 		const shown = !!document.querySelector('dialog[open]');
@@ -35,17 +35,17 @@ h.run(async () => {
 		const r = await flip(A.page, store);
 		h.check(r.shown && r.removed, `premise: ${store} opened, then its dialog left the page (${JSON.stringify(r)})`);
 		h.check(r.store === true && r.dialog, `${store}: opened again right after a close, it stays open (${JSON.stringify(r)})`);
-		await A.page.evaluate((name) => window.__stores[name].set(false), store);
+		await A.page.evaluate((name) => window.__tp.test.v1[name].set(false), store);
 		await A.page.waitForTimeout(400);
 	}
 	// the ordinary close still closes (the toggle sync must not keep a dialog open)
-	await A.page.evaluate(() => window.__stores.modulesOpen.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.modulesOpen.set(true));
 	await A.page.waitForTimeout(600);
 	await A.page.keyboard.press('Escape');
 	await A.page.waitForTimeout(600);
 	const after = await A.page.evaluate(() => {
 		let v;
-		window.__stores.modulesOpen.subscribe((x) => (v = x))();
+		window.__tp.test.v1.modulesOpen.subscribe((x) => (v = x))();
 		return { store: v, dialog: !!document.querySelector('dialog[open]') };
 	});
 	h.check(after.store === false && !after.dialog, `Escape still closes the manager (${JSON.stringify(after)})`);

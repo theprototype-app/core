@@ -41,19 +41,19 @@ async function ensurePeerId(peer) {
 	await peer.page.waitForFunction(
 		() => {
 			let id = null;
-			window.__stores.peers.subscribe((p) => (id = p && p.peer ? p.peer.id : null))();
+			window.__tp.test.v1.peers.subscribe((p) => (id = p && p.peer ? p.peer.id : null))();
 			return !!id;
 		},
 		{ timeout: 30000 }
 	);
 	return peer.page.evaluate(
-		() => new Promise((r) => window.__stores.peers.subscribe((p) => r(p && p.peer ? p.peer.id : null))())
+		() => new Promise((r) => window.__tp.test.v1.peers.subscribe((p) => r(p && p.peer ? p.peer.id : null))())
 	);
 }
 
 const objCount = (peer) =>
 	peer.page.evaluate(
-		() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g ? g.children.length : 0))())
+		() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g ? g.children.length : 0))())
 	);
 
 h.run(async () => {
@@ -87,7 +87,7 @@ h.run(async () => {
 			A.page.evaluate(
 				(id) =>
 					new Promise((r) =>
-						window.__stores.userdata.subscribe((rows) => {
+						window.__tp.test.v1.userdata.subscribe((rows) => {
 							const row = (rows || []).find((u) => u[0] === id);
 							r(row ? row[1] : null);
 						})()
@@ -111,7 +111,7 @@ h.run(async () => {
 	const color = await A.page.evaluate(
 		(uuid) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const o = g.getObjectByProperty('uuid', uuid);
 					r(o && o.material && o.material.color ? o.material.color.getHexString() : null);
 				})()

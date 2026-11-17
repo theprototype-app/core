@@ -13,7 +13,7 @@ const h = require('./helpers.cjs');
 
 const SHOTS = process.env.FX_SHOTS || '';
 
-const entriesOn = (page) => page.evaluate(() => window.__stores.particleRuntime.particleEntries());
+const entriesOn = (page) => page.evaluate(() => window.__tp.test.v1.particleRuntime.particleEntries());
 
 h.run(async () => {
 	const browser = await h.launch();
@@ -27,7 +27,7 @@ h.run(async () => {
 	// a box 4 m in front of the camera, at the camera's height
 	const place = async () =>
 		page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let cam;
 			s.globalCamera.subscribe((c) => (cam = c))();
 			s.commandsHandler.sceneCommand('/create box');
@@ -58,7 +58,7 @@ h.run(async () => {
 				cancelAnimationFrame(window.__fxRaf);
 				if (!on) {
 					let group;
-					window.__stores.objectsGroup.subscribe((g) => (group = g))();
+					window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 					(group?.getObjectByProperty('uuid', window.__fxUuid) ?? window.__fx).position.copy(window.__fxHome);
 					return;
 				}
@@ -66,7 +66,7 @@ h.run(async () => {
 				// by uuid every frame: the live object, whatever replaced the cached reference
 				const live = () => {
 					let group;
-					window.__stores.objectsGroup.subscribe((g) => (group = g))();
+					window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 					return group?.getObjectByProperty('uuid', window.__fxUuid) ?? window.__fx;
 				};
 				const loop = () => {
@@ -85,7 +85,7 @@ h.run(async () => {
 	// cyan-to-blue. (A brightness threshold missed a blue band and counted the selection outline.)
 	const litPixels = () =>
 		page.evaluate(async () => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let renderer;
 			s.globalRenderer.subscribe((r) => (renderer = r))();
 			await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
@@ -104,12 +104,12 @@ h.run(async () => {
 			return lit;
 		});
 	// no gizmo, no outline: both are coloured and would read as particles
-	const deselect = () => page.evaluate(() => window.__stores.objectActions.deselectObject());
+	const deselect = () => page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 
 	const uuid = await place();
 	const set = (cfg) =>
-		page.evaluate(([u, c]) => window.__stores.particleActions.updateObjectParticles(u, c), [uuid, cfg]);
-	const preset = (key) => page.evaluate(([u, k]) => window.__stores.particleActions.addParticlesPreset(u, k), [uuid, key]);
+		page.evaluate(([u, c]) => window.__tp.test.v1.particleActions.updateObjectParticles(u, c), [uuid, cfg]);
+	const preset = (key) => page.evaluate(([u, k]) => window.__tp.test.v1.particleActions.addParticlesPreset(u, k), [uuid, key]);
 
 	// 1) Sparks is stretched along its motion now
 	await preset('sparks');
@@ -119,7 +119,7 @@ h.run(async () => {
 	const st = (await entriesOn(page))[0];
 	h.check(st.verts === st.count * 4, `stretch = one quad per slot (${st.verts} verts / ${st.count})`);
 	for (let i = 0; i < 6; i++) {
-		await page.evaluate((u) => window.__stores.particleActions.burstObjectParticles(u), uuid);
+		await page.evaluate((u) => window.__tp.test.v1.particleActions.burstObjectParticles(u), uuid);
 		await page.waitForTimeout(250);
 		if (i === 1) await shot('01-sparks-stretched.png');
 	}
@@ -159,7 +159,7 @@ h.run(async () => {
 	await shot('02-ribbon-trail.png');
 	const same = await page.evaluate(() => {
 		let group;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		return group?.getObjectByProperty('uuid', window.__fxUuid) === window.__fx;
 	});
 	console.log(`(premise) the cached box is still the scene's object: ${same}`);
@@ -170,7 +170,7 @@ h.run(async () => {
 	// clock — only uInherit differs, so the particles' screen spread is the measurement.
 	const spread = () =>
 		page.evaluate(async () => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let renderer;
 			s.globalRenderer.subscribe((r) => (renderer = r))();
 			await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
@@ -228,21 +228,21 @@ h.run(async () => {
 
 	// 7) the VR cap trims the strip modes by whole particles
 	await set({ render: 'trails', mode: 'continuous', count: 400, trailSegments: 8 });
-	await page.evaluate(() => window.__stores.isVRMode.set(true));
+	await page.evaluate(() => window.__tp.test.v1.isVRMode.set(true));
 	await h.eventually(
 		() => entriesOn(page),
 		(e) => e[0]?.drawRange === 200 * 8 * 6,
 		'VR caps a trail emitter at 200 particles (drawRange in indices)'
 	);
-	await page.evaluate(() => window.__stores.isVRMode.set(false));
+	await page.evaluate(() => window.__tp.test.v1.isVRMode.set(false));
 
 	// 8) inherit/stretch/trail ride the replicated config like every other field
 	const sent = await page.evaluate((u) => {
 		const captured = [];
 		let peer;
-		window.__stores.peers.subscribe((p) => (peer = p))();
+		window.__tp.test.v1.peers.subscribe((p) => (peer = p))();
 		peer.send = (m) => captured.push(m);
-		window.__stores.particleActions.updateObjectParticles(u, { inherit: 0.7, render: 'stretch', stretch: 0.08 });
+		window.__tp.test.v1.particleActions.updateObjectParticles(u, { inherit: 0.7, render: 'stretch', stretch: 0.08 });
 		delete peer.send;
 		return captured.find((m) => m.parameter === 'particles')?.particles ?? null;
 	}, uuid);
@@ -250,7 +250,7 @@ h.run(async () => {
 
 	// 9) the Inspector rows (38 kit: PropRow + Segmented) drive the same config, real clicks
 	await set({ render: 'points', space: 'world', mode: 'continuous' });
-	await page.evaluate((u) => window.__stores.objectActions.applySelectionSet([u], true), uuid);
+	await page.evaluate((u) => window.__tp.test.v1.objectActions.applySelectionSet([u], true), uuid);
 	const seg = page.locator('#particles-render');
 	await seg.waitFor({ state: 'visible', timeout: 10000 });
 	await seg.scrollIntoViewIfNeeded();
@@ -268,11 +268,11 @@ h.run(async () => {
 	h.check(await page.locator('text=Trail length').first().isVisible(), 'Trails shows its Trail length row');
 	h.check(await page.locator('text=Inherit velocity').first().isVisible(), 'World space shows the Inherit velocity row');
 	for (const theme of ['dark', 'light']) {
-		await page.evaluate((t) => window.__stores.themes.theme.set(t), theme);
+		await page.evaluate((t) => window.__tp.test.v1.themes.theme.set(t), theme);
 		await page.waitForTimeout(400);
 		if (SHOTS) await seg.locator('xpath=ancestor::*[contains(concat(" ",@class," ")," pm ")][1]').screenshot({ path: path.join(SHOTS, `05-inspector-${theme}.png`) });
 	}
-	await page.evaluate(() => window.__stores.themes.theme.set('dark'));
+	await page.evaluate(() => window.__tp.test.v1.themes.theme.set('dark'));
 
 	h.check(glErrors.length === 0, `no shader compile errors (${glErrors.slice(0, 2).join(' | ')})`);
 	await h.finish(browser, [A]);

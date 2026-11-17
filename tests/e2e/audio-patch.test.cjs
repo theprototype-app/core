@@ -14,10 +14,10 @@ const ap = (page, body, arg) =>
 	page.evaluate(
 		([src, a]) =>
 			Object.getPrototypeOf(async function () {}).constructor('ap', 'ad', 'eng', 's', 'arg', src)(
-				window.__stores.audioPatch,
-				window.__stores.audioDevices,
-				window.__stores.audioEngine,
-				window.__stores,
+				window.__tp.test.v1.audioPatch,
+				window.__tp.test.v1.audioDevices,
+				window.__tp.test.v1.audioEngine,
+				window.__tp?.test.v1,
 				a
 			),
 		[body, arg ?? null]
@@ -35,7 +35,7 @@ const KINDS =
 	'return ad.devicesDebug().kinds';
 
 const dbg = (page) => ap(page, 'return ap.patchDebug()');
-const groupOf = async (page) => page.evaluate(() => new Promise((r) => window.__stores.objectsGroup.subscribe(r)()));
+const groupOf = async (page) => page.evaluate(() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)()));
 
 h.run(async () => {
 	const browser = await h.launch({ args: h.AUDIO_ARGS });
@@ -108,11 +108,11 @@ h.run(async () => {
 	console.log('\n=== 3. undo / redo ===');
 	const cable2 = await ap(page, "return ap.addCable({ from: { uuid: arg.drone, port: 'out' }, to: { uuid: arg.speaker, port: 'in' } })", ids);
 	await h.eventually(() => dbg(page), (d) => d.cables.length === 1 && d.cables[0].live, '3.1 (premise) cabled again');
-	await page.evaluate(() => window.__stores.history.undo());
+	await page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => dbg(page), (d) => d.cables.length === 0 && d.meshes === 0, '3.2 undo unplugs it — document, routing and mesh');
 	await page.waitForTimeout(200);
 	h.check((await h.audioMetrics(A, 400)).silent, '3.3 silent after the undo');
-	await page.evaluate(() => window.__stores.history.redo());
+	await page.evaluate(() => window.__tp.test.v1.history.redo());
 	await h.eventually(() => dbg(page), (d) => d.cables.length === 1 && d.cables[0].id === cable2 && d.cables[0].live, '3.4 redo plugs the same cable back in');
 	await page.waitForTimeout(200);
 	h.check(!(await h.audioMetrics(A, 400)).silent, '3.5 and it sounds again');
@@ -124,7 +124,7 @@ h.run(async () => {
 	await page.waitForTimeout(200);
 	h.check((await h.audioMetrics(A, 400)).silent, '4.2 silent without its speaker');
 	h.check((await ap(page, 'return ap.patchSnapshot()')) === null, '4.3 a SAVE prunes the orphan (the snapshot is null)');
-	await page.evaluate(() => window.__stores.history.undo());
+	await page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => dbg(page), (d) => d.cables.length === 1 && d.cables[0].live === true && d.cables[0].drawn === true, '4.4 undoing the delete finds the cable waiting and routes it again');
 	await page.waitForTimeout(200);
 	h.check(!(await h.audioMetrics(A, 400)).silent, '4.5 and the sound is back');
@@ -139,13 +139,13 @@ h.run(async () => {
 	h.check(dup.cloneUuid && dup.cables === 2 && dup.live === 2, '5.3 duplicating the group copies its internal cable, remapped and routed (' + dup.cables + ' cables, ' + dup.live + ' live)');
 	const remapped = await ap(page, 'const g = await new Promise((r) => s.objectsGroup.subscribe(r)()); const clone = g.getObjectByProperty("uuid", arg.clone); const inside = new Set(); clone.traverse((n) => inside.add(n.uuid)); const c = ap.patchDebug().cables.find((x) => x.id === arg.id); return c && inside.has(c.from.uuid) && inside.has(c.to.uuid) && c.from.uuid !== c.to.uuid', { clone: dup.cloneUuid, id: dup.newIds[0] });
 	h.check(remapped === true, '5.4 the copied cable joins the COPY\'s children, not the originals');
-	await page.evaluate(() => window.__stores.history.undo());
+	await page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => dbg(page), (d) => d.cables.filter((c) => c.live).length === 1 && d.cables.filter((c) => c.drawn).length === 1, '5.5 ONE undo removes the whole copy — its cable is an orphan (unrouted, undrawn), the original still routes');
 	const snapAfter = await ap(page, 'return ap.patchSnapshot().cables.length');
 	h.check(snapAfter === 1, '5.6 and a save would carry only the original\'s cable (' + snapAfter + ')');
-	await page.evaluate(() => window.__stores.history.redo());
+	await page.evaluate(() => window.__tp.test.v1.history.redo());
 	await h.eventually(() => dbg(page), (d) => d.cables.filter((c) => c.live).length === 2, '5.7 redo brings the copy back with its cable routed again');
-	await page.evaluate(() => window.__stores.history.undo());
+	await page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => dbg(page), (d) => d.cables.filter((c) => c.live).length === 1, '5.8 (cleanup) the copy is undone');
 
 	// ---------------------------------------------------------------- section 6
@@ -168,7 +168,7 @@ h.run(async () => {
 	const bSpeaker = await ap(B.page, "const sp = ad.addDevice('test-speaker', { position: [4, 0, 0] }); const id = ap.addCable({ from: { uuid: arg, port: 'out' }, to: { uuid: sp.uuid, port: 'in' } }); return { sp: sp.uuid, id }", ids.drone);
 	await h.eventually(() => dbg(page), (d) => d.cables.filter((c) => c.live).length === 2, '7.3 a cable plugged on B appears on A and routes there (the object came first, the cable after)', 15000);
 	// the cable was B's edit, so B's history holds it
-	await B.page.evaluate(() => window.__stores.history.undo());
+	await B.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => dbg(page), (d) => d.cables.filter((c) => c.live).length === 1, '7.4 an undo on B removes B\'s cable on A too', 15000);
 	await h.eventually(() => dbg(B.page), (d) => d.cables.filter((c) => c.live).length === 1, '7.5 and on B itself');
 	const stale = await ap(B.page, 'const cur = ap.patchDebug(); const took = ap.applyRemotePatch({ cables: [], changedAt: cur.changedAt - 1 }); return { took, before: cur.cables.length, after: ap.patchDebug().cables.length }');
@@ -176,15 +176,15 @@ h.run(async () => {
 
 	// ---------------------------------------------------------------- section 8
 	console.log('\n=== 8. the autosave round trip ===');
-	await page.evaluate(() => window.__stores.autosave.saveNow());
+	await page.evaluate(() => window.__tp.test.v1.autosave.saveNow());
 	await h.freshReload(A);
-	A.id = await page.evaluate(() => new Promise((r) => window.__stores.peers.subscribe((p) => r(p?.peer?.id))()));
+	A.id = await page.evaluate(() => new Promise((r) => window.__tp.test.v1.peers.subscribe((p) => r(p?.peer?.id))()));
 	await h.eventually(
-		() => page.evaluate(() => new Promise((r) => window.__stores.autosave.restoreAvailable.subscribe((v) => r(!!v))())),
+		() => page.evaluate(() => new Promise((r) => window.__tp.test.v1.autosave.restoreAvailable.subscribe((v) => r(!!v))())),
 		(v) => v === true,
 		'8.1 the restore offer appears after the reload'
 	);
-	await page.evaluate(() => window.__stores.autosave.restoreSnapshot());
+	await page.evaluate(() => window.__tp.test.v1.autosave.restoreSnapshot());
 	await h.eventually(() => dbg(page), (d) => d.cables.length === 1 && d.cables[0].endpointsPresent === true, '8.2 the cable comes back naming the restored objects (their uuids survived)', 8000);
 	await ap(page, KINDS);
 	await h.eventually(() => dbg(page), (d) => d.cables[0].live === true, '8.3 once the kinds register the devices build and the cable routes');

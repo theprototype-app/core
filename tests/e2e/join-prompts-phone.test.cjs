@@ -45,14 +45,14 @@ const dial = async (from, to) => {
 		await from.page.getByRole('button', { name: 'Connect', exact: true }).click();
 		return;
 	}
-	await from.page.waitForFunction(() => !!window.__stores?.peerApproval?.requestConnect, null, { timeout: 30000 });
-	await from.page.evaluate((id) => window.__stores.peerApproval.requestConnect(id), to.id);
+	await from.page.waitForFunction(() => !!window.__tp?.test.v1?.peerApproval?.requestConnect, null, { timeout: 30000 });
+	await from.page.evaluate((id) => window.__tp.test.v1.peerApproval.requestConnect(id), to.id);
 };
 
 const addObject = async (p, command) => {
-	await p.page.evaluate((c) => window.__stores.commandsHandler.sceneCommand(c), command);
+	await p.page.evaluate((c) => window.__tp.test.v1.commandsHandler.sceneCommand(c), command);
 	await p.page.waitForTimeout(800);
-	await p.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await p.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 };
 
 /** Put the page in the background / foreground as a phone does (visibilitychange with document.hidden). */
@@ -66,7 +66,7 @@ const setHidden = (p, hidden) =>
 const awayOn = (p, id) =>
 	p.page.evaluate((peerId) => {
 		let peer;
-		window.__stores.peers.subscribe((v) => (peer = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (peer = v))();
 		return !!peer?.awayPeers?.has?.(peerId);
 	}, id);
 
@@ -92,7 +92,7 @@ h.run(async () => {
 		h.check(Object.values(cardFit).every((v) => v === 'ok'), `${shape}: the approval card's buttons are on screen and tappable ${JSON.stringify(cardFit)}`);
 		await approve.click();
 		await h.eventually(
-			() => Promise.all([D, P].map((x) => x.page.evaluate(() => { let p; window.__stores.peers.subscribe((v) => (p = v))(); return p?.openedPeers?.size ?? 0; }))),
+			() => Promise.all([D, P].map((x) => x.page.evaluate(() => { let p; window.__tp.test.v1.peers.subscribe((v) => (p = v))(); return p?.openedPeers?.size ?? 0; }))),
 			(n) => n.every((v) => v >= 1),
 			`${shape}: connected`,
 			45000
@@ -133,14 +133,14 @@ h.run(async () => {
 			() =>
 				M.page.evaluate(() => {
 					let list;
-					window.__stores.toastStore.subscribe((v) => (list = v))();
+					window.__tp.test.v1.toastStore.subscribe((v) => (list = v))();
 					const entry = list.find((e) => e && e.id === 'share-or-stash');
 					return entry ? (entry.actions ?? []).map((a) => a.label) : [];
 				}),
 			(v) => v.length >= 2,
 			`${shape}: the share-or-stash card is up on the phone joiner`,
 			30000
-		).then(() => M.page.evaluate(() => { let list; window.__stores.toastStore.subscribe((v) => (list = v))(); return (list.find((e) => e && e.id === 'share-or-stash')?.actions ?? []).map((a) => a.label); }));
+		).then(() => M.page.evaluate(() => { let list; window.__tp.test.v1.toastStore.subscribe((v) => (list = v))(); return (list.find((e) => e && e.id === 'share-or-stash')?.actions ?? []).map((a) => a.label); }));
 		await M.page.waitForTimeout(600);
 		const stash = await tappable(M, labels.map((l) => 'text=' + l));
 		h.check(Object.values(stash).every((v) => v === 'ok'), `${shape}: the share-or-stash buttons are on screen and tappable ${JSON.stringify(stash)}`);

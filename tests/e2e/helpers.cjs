@@ -334,13 +334,13 @@ async function setupPage(browser, name, options = {}) {
 	// This waits for the same state; it only stops calling a slow boot a dead one. The options are
 	// the THIRD argument: passed second (as this line did) they are the page-function's `arg`, and
 	// Playwright's default 30 s applied whatever the number said.
-	await page.waitForFunction(() => window.__stores && !!window.__stores.moduleSDK, null, { timeout: 90000 });
+	await page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.moduleSDK, null, { timeout: 90000 });
 	if (CLOUD_PLUGIN)
 		await page
-			.waitForFunction(() => window.__stores.cloudHooks?.hasCapabilityProvider?.(), null, { timeout: 30000 })
+			.waitForFunction(() => window.__tp.test.v1.cloudHooks?.hasCapabilityProvider?.(), null, { timeout: 30000 })
 			.catch(() => console.log(`[${name}] E2E_CLOUD_PLUGIN set, but no plugin registered within 30 s`));
 	const id = await page.evaluate(
-		() => new Promise((r) => window.__stores.peers.subscribe((p) => r(p?.peer?.id))())
+		() => new Promise((r) => window.__tp.test.v1.peers.subscribe((p) => r(p?.peer?.id))())
 	);
 	console.log(name + ' id: ' + id);
 	return { ctx, page, id };
@@ -357,11 +357,11 @@ async function setupPage(browser, name, options = {}) {
  * @param {any} browser @param {string} name @param {any[]} others @param {any=} options
  */
 async function setupPageQuiet(browser, name, others, options = {}) {
-	for (const peer of others) await peer.page.evaluate(() => window.__stores.overloadGuard.pauseRendering('e2e: another page boots'));
+	for (const peer of others) await peer.page.evaluate(() => window.__tp.test.v1.overloadGuard.pauseRendering('e2e: another page boots'));
 	try {
 		return await setupPage(browser, name, options);
 	} finally {
-		for (const peer of others) await peer.page.evaluate(() => window.__stores.overloadGuard.resumeRendering()).catch(() => {});
+		for (const peer of others) await peer.page.evaluate(() => window.__tp.test.v1.overloadGuard.resumeRendering()).catch(() => {});
 	}
 }
 
@@ -400,7 +400,7 @@ async function connect(from, to, settleMs = 9000) {
 			.waitForFunction(
 				() => {
 					/** @type {any} */ let p;
-					window.__stores.peers.subscribe((v) => (p = v))();
+					window.__tp.test.v1.peers.subscribe((v) => (p = v))();
 					return p?.peer?.open && p.peer.id ? p.peer.id : false;
 				},
 				null,
@@ -437,7 +437,7 @@ async function connect(from, to, settleMs = 9000) {
 	// dial-back took 15 s to open, so a suite's first edit raced a conn that was still negotiating.
 	// Wait (bounded, never failing here) until BOTH ends hold an open conn to the other.
 	const openTo = (page, id) =>
-		page.evaluate((peerId) => new Promise((r) => window.__stores.peers.subscribe((p) => r(!!p?.connections?.[peerId]?.open))()), id).catch(() => false);
+		page.evaluate((peerId) => new Promise((r) => window.__tp.test.v1.peers.subscribe((p) => r(!!p?.connections?.[peerId]?.open))()), id).catch(() => false);
 	const until = Date.now() + 45000;
 	while (Date.now() < until && !((await openTo(from.page, to.id)) && (await openTo(to.page, from.id)))) await from.page.waitForTimeout(250);
 }
@@ -466,7 +466,7 @@ async function step(peer, what, run) {
 						.map((b) => (b.textContent || '').trim())
 						.filter(Boolean)
 						.slice(0, 20),
-					booted: !!window.__stores
+					booted: !!window.__tp?.test.v1
 				}))
 			);
 		} catch {}
@@ -510,7 +510,7 @@ async function caughtUp(from, to, timeout = 120000) {
 			([peerId, ms]) =>
 				new Promise((resolve) => {
 					let p;
-					window.__stores.peers.subscribe((v) => (p = v))();
+					window.__tp.test.v1.peers.subscribe((v) => (p = v))();
 					const t0 = Date.now() + Math.random() / 1000;
 					const conns = new Set([p.connections?.[peerId], ...((p.peer?._connections?.get?.(peerId)) ?? p.peer?.connections?.[peerId] ?? [])].filter(Boolean));
 					const off = () => conns.forEach((c) => c.off?.('data', on));
@@ -553,9 +553,9 @@ function projectPoint(page, world) {
 	return page.evaluate(
 		(world) =>
 			new Promise((resolve) => {
-				window.__stores.globalScene.subscribe((scene) => {
-					window.__stores.globalCamera.subscribe((camera) => {
-						window.__stores.globalRenderer.subscribe((renderer) => {
+				window.__tp.test.v1.globalScene.subscribe((scene) => {
+					window.__tp.test.v1.globalCamera.subscribe((camera) => {
+						window.__tp.test.v1.globalRenderer.subscribe((renderer) => {
 							const rect = renderer?.domElement?.getBoundingClientRect?.();
 							const box =
 								rect && rect.width > 0 && rect.height > 0
@@ -579,7 +579,7 @@ function projectPoint(page, world) {
  *
  * WHY: the `debugStores` hook reaches singletons via dynamic `import()`. On a dev
  * server churned by HMR, that can bind a SECOND module instance, so a value set
- * through `window.__stores.<mod>` may NOT be the same store a component reads via
+ * through `window.__tp.test.v1.<mod>` may NOT be the same store a component reads via
  * its static import — the component renders stale (this bit the AI prompt-pill
  * check). A fresh navigation rebuilds one consistent module graph. Store state that
  * persists to localStorage (provider configs, toggles) survives the reload, so seed
@@ -596,7 +596,7 @@ async function freshReload(peer) {
 		await peer.page.waitForTimeout(500);
 		await peer.page.reload({ waitUntil: 'domcontentloaded' });
 	}
-	await peer.page.waitForFunction(() => window.__stores && !!window.__stores.moduleSDK, { timeout: 30000 });
+	await peer.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.moduleSDK, { timeout: 30000 });
 }
 
 /**
@@ -642,7 +642,7 @@ async function answerRestore(peer, choice = 'dismiss', timeout = 10000) {
 	const offered = await page
 		.waitForFunction(
 			async () => {
-				const m = window.__stores?.autosave;
+				const m = window.__tp?.test.v1?.autosave;
 				if (!m?.restoreAvailable) return false;
 				let v;
 				m.restoreAvailable.subscribe((x) => (v = x))();
@@ -658,7 +658,7 @@ async function answerRestore(peer, choice = 'dismiss', timeout = 10000) {
 	await page.waitForFunction(
 		() => {
 			let v;
-			window.__stores.autosave.restoreAvailable.subscribe((x) => (v = x))();
+			window.__tp.test.v1.autosave.restoreAvailable.subscribe((x) => (v = x))();
 			return !v && !document.querySelector('#restore-session-modal[open]');
 		},
 		null,
@@ -718,7 +718,7 @@ async function grabFrame(peer, clip) {
 		(await peer.page.evaluate(
 			() =>
 				new Promise((resolve) => {
-					window.__stores.globalRenderer.subscribe((renderer) => {
+					window.__tp.test.v1.globalRenderer.subscribe((renderer) => {
 						const element = renderer?.domElement;
 						if (!element) return resolve(null);
 						const box = element.getBoundingClientRect();
@@ -922,7 +922,7 @@ async function installModule(peer, id) {
 	const fs = require('fs');
 	const zip = moduleZipPath(id);
 	if (!fs.existsSync(zip)) return false;
-	await peer.page.evaluate(() => window.__stores.modulesOpen.set(true));
+	await peer.page.evaluate(() => window.__tp.test.v1.modulesOpen.set(true));
 	await peer.page.waitForTimeout(400);
 	await peer.page.getByRole('tab', { name: /^User/ }).click();
 	await peer.page.waitForTimeout(200);
@@ -932,12 +932,12 @@ async function installModule(peer, id) {
 		buffer: fs.readFileSync(zip)
 	});
 	await eventually(
-		() => peer.page.evaluate(() => window.__stores.moduleSDK.loadedModules.map((m) => m.id)),
+		() => peer.page.evaluate(() => window.__tp.test.v1.moduleSDK.loadedModules.map((m) => m.id)),
 		(ids) => ids.includes(id),
 		id + ' module installed for the suite',
 		20000
 	);
-	await peer.page.evaluate(() => window.__stores.modulesOpen.set(false));
+	await peer.page.evaluate(() => window.__tp.test.v1.modulesOpen.set(false));
 	await peer.page.waitForTimeout(300);
 	return true;
 }
@@ -948,13 +948,13 @@ async function installModule(peer, id) {
 // section steps out through here and asserts it did.
 async function leavePlay(peer) {
 	const page = peer.page ?? peer;
-	const locked = () => page.evaluate(() => { let v; window.__stores.isLocked.subscribe((x) => (v = x))(); return v; });
+	const locked = () => page.evaluate(() => { let v; window.__tp.test.v1.isLocked.subscribe((x) => (v = x))(); return v; });
 	if ((await locked()) !== true) return true;
 	await page.keyboard.press('Escape');
 	const back = page.locator('#game-shell-menu [data-shell-item="editor"]');
 	if (await back.waitFor({ state: 'visible', timeout: 2500 }).then(() => true, () => false)) await back.click();
 	for (let i = 0; i < 20 && (await locked()) === true; i++) await page.waitForTimeout(150);
-	if ((await locked()) === true) await page.evaluate(() => window.__stores.gameKit?.gameShell?.leaveToEditor?.());
+	if ((await locked()) === true) await page.evaluate(() => window.__tp.test.v1.gameKit?.gameShell?.leaveToEditor?.());
 	for (let i = 0; i < 20 && (await locked()) === true; i++) await page.waitForTimeout(150);
 	await page.waitForTimeout(300);
 	return (await locked()) !== true;
@@ -981,7 +981,7 @@ function run(body) {
 async function makeCollectibleChains(peer, uuids, opts = {}) {
 	return peer.page.evaluate(
 		({ uuids, opts }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const variable = String(opts.variable ?? 'gems').trim() || 'gems';
 			const respawn = Math.max(0, Number(opts.respawn) || 0);
 			const perPlayer = !!opts.perPlayer;
@@ -1342,4 +1342,48 @@ async function openWsMode(page, scope, mode, o = {}) {
 	if ((await tab.getAttribute('aria-selected').catch(() => null)) !== 'true') await (o.tap ? tab.tap() : tab.click());
 }
 
-module.exports = { URL, coverageKey, openDial, GPU_ARGS, N6_UA, PATIENT_CLICK_MS, APPROVE_LABEL, approveButton, watchPress, check, launch, setupPage, setupPageQuiet, connect, leavePlay, eventually, caughtUp, eventuallyAfter, projectPoint, freshReload, answerRestore, closePeer, finish, run, installModule, moduleZipPath, makeCollectibleChains, pageErrors, externalErrors, grabFrame, centeredClip, frameDelta, framePixelsOffColor, AUDIO_ARGS, audioMetrics, renderOffline, envelopeDelta, routeSkies, SKIES_DIR, openWsMode };
+/**
+ * 101 F5: the TEST FACADE from the runner side — `h.t(page)` reaches `window.__tp.test.v1` (the
+ * versioned, read-only name space the app publishes beside `__stores` when `debugStores` is on).
+ * Inside page code use `window.__tp.test.v1.<hook>` directly; from Node:
+ *   await h.t(page).ready()                       // the facade is installed
+ *   await h.t(page).run((t, a) => t.history.undoStack, arg)   // fn(t, arg) in the page
+ *   await h.t(page).get('isLocked')               // a svelte store's value (or a plain value)
+ *   await h.t(page).call('history.undo')          // call a facade function by path
+ * A path is dot-separated from the facade root.
+ * @param {any} page
+ */
+function t(page) {
+	return {
+		/** wait until the facade answers @param {number} [timeout] */
+		ready: (timeout = 90000) => page.waitForFunction(() => !!(/** @type {any} */ (window).__tp?.test?.v1), null, { timeout }),
+		/** run `fn(t, arg)` in the page with the facade as `t` (`arg` JSON-serialisable; a string
+		 * evaluate, so the page's CSP never sees an eval) @param {(t: any, arg?: any) => any} fn @param {any} [arg] */
+		run: (fn, arg) => page.evaluate(`(${fn.toString()})(window.__tp.test.v1, ${arg === undefined ? 'undefined' : JSON.stringify(arg)})`),
+		/** the value at `path` — a svelte store is read once (subscribe + unsubscribe) @param {string} path */
+		get: (path) =>
+			page.evaluate((p) => {
+				let v = /** @type {any} */ (window).__tp.test.v1;
+				for (const k of p.split('.')) v = v?.[k];
+				if (v && typeof v.subscribe === 'function') {
+					let out;
+					v.subscribe((/** @type {any} */ x) => (out = x))();
+					return out;
+				}
+				return v;
+			}, path),
+		/** call the function at `path` with `args` (awaited in the page) @param {string} path @param {...any} args */
+		call: (path, ...args) =>
+			page.evaluate(
+				async ([p, a]) => {
+					const keys = p.split('.');
+					let owner = /** @type {any} */ (window).__tp.test.v1;
+					for (const k of keys.slice(0, -1)) owner = owner?.[k];
+					return await owner[keys[keys.length - 1]](...a);
+				},
+				[path, args]
+			)
+	};
+}
+
+module.exports = { t, URL, coverageKey, openDial, GPU_ARGS, N6_UA, PATIENT_CLICK_MS, APPROVE_LABEL, approveButton, watchPress, check, launch, setupPage, setupPageQuiet, connect, leavePlay, eventually, caughtUp, eventuallyAfter, projectPoint, freshReload, answerRestore, closePeer, finish, run, installModule, moduleZipPath, makeCollectibleChains, pageErrors, externalErrors, grabFrame, centeredClip, frameDelta, framePixelsOffColor, AUDIO_ARGS, audioMetrics, renderOffline, envelopeDelta, routeSkies, SKIES_DIR, openWsMode };

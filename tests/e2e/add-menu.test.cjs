@@ -8,7 +8,7 @@ const names = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => r((g?.children ?? []).map((c) => c.name)))()
+				window.__tp.test.v1.objectsGroup.subscribe((g) => r((g?.children ?? []).map((c) => c.name)))()
 			)
 	);
 // A right TAP only opens the menu when it is short and stationary — Scene ignores a
@@ -35,9 +35,9 @@ h.run(async () => {
 	await h.connect(B, A);
 
 	// 125 made the object-search entry opt-in; enable it so the menu shows it
-	await A.page.evaluate(() => window.__stores.objectSearchEnabled.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.objectSearchEnabled.set(true));
 	// Shift+A quick add is opt-in too (Settings, default off)
-	await A.page.evaluate(() => window.__stores.enableShiftAdd.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.enableShiftAdd.set(true));
 
 	// right-click TAP on empty viewport opens the merged menu
 	await rightTap(A.page, 700, 400);
@@ -67,7 +67,7 @@ h.run(async () => {
 			page.evaluate(
 				() =>
 					new Promise((r) =>
-						window.__stores.objectsGroup.subscribe((g) =>
+						window.__tp.test.v1.objectsGroup.subscribe((g) =>
 							r(g?.children.find((c) => c.name === 'Torus')?.position.toArray())
 						)()
 					)
@@ -128,14 +128,14 @@ h.run(async () => {
 	// before the drag test below, which moves the camera. A box, not the torus:
 	// a ray through a torus center passes through the hole.
 	const boxScreen = await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 200));
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const box = g.children.filter((c) => c.name === 'Box').pop();
 		box.position.set(0, 0.5, 0);
-		window.__stores.objectsGroup.update((v) => v);
-		const cam = await new Promise((r) => window.__stores.globalCamera.subscribe(r)());
-		const v = new window.__stores.THREE.Vector3(0, 0.5, 0).project(cam);
+		window.__tp.test.v1.objectsGroup.update((v) => v);
+		const cam = await new Promise((r) => window.__tp.test.v1.globalCamera.subscribe(r)());
+		const v = new window.__tp.test.v1.THREE.Vector3(0, 0.5, 0).project(cam);
 		return [((v.x + 1) / 2) * window.innerWidth, ((1 - v.y) / 2) * window.innerHeight];
 	});
 	await A.page.waitForTimeout(200);

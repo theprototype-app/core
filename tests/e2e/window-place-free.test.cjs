@@ -30,7 +30,7 @@ const S = (page, fn, arg) => page.evaluate(fn, arg);
 const read = (page, path) =>
 	S(page, (path) => {
 		const [mod, name] = path.split('.');
-		const st = name ? window.__stores[mod]?.[name] : window.__stores[mod];
+		const st = name ? window.__tp.test.v1[mod]?.[name] : window.__tp.test.v1[mod];
 		if (!st?.subscribe) return null;
 		let v;
 		st.subscribe((x) => (v = x))();
@@ -88,7 +88,7 @@ h.run(async () => {
 	});
 	const page = D.page;
 	await S(page, () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.inspectorKind.set('scene');
 		s.inspectorClose.set(false);
 		s.flowGraphClose.set(false);
@@ -160,7 +160,7 @@ h.run(async () => {
 	h.check(!(await dockKeys(page)).includes('explorer') && !!(await rectOf(page, '#explorer-window')), `3.2 dropped: still floating (${await dockKeys(page)})`);
 
 	// ---- 4. the default is unchanged: no key, over the column → a sidebar tab -----------------------------
-	await S(page, () => window.__stores.objectActions?.deselectObject?.());
+	await S(page, () => window.__tp.test.v1.objectActions?.deselectObject?.());
 	head = await headOf(page, '#explorer-window .move-handle');
 	// park it mid-screen first (it may sit at the bottom edge)
 	await dragTo(page, head, { x: 500, y: 200 });
@@ -176,7 +176,7 @@ h.run(async () => {
 
 	// ---- 5. header merge -------------------------------------------------------------------------------
 	await S(page, () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.sceneBudget.statsOpen.set(true);
 		s.chatHidden.set('');
 	});

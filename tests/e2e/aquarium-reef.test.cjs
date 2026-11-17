@@ -27,12 +27,12 @@ async function loadScene(page, file) {
 	const b64 = fs.readFileSync(file).toString('base64');
 	await page.evaluate(async (b64) => {
 		const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-		const s = window.__stores.sessions;
+		const s = window.__tp.test.v1.sessions;
 		const payload = await s.readSessionZip(bytes.buffer);
 		await s.applySession(payload, { backup: false, quiet: true });
 	}, b64);
 	await h.eventually(
-		() => page.evaluate(() => { let v; window.__stores.sceneLoader.sceneLoad.subscribe((x) => (v = x))(); return v; }),
+		() => page.evaluate(() => { let v; window.__tp.test.v1.sceneLoader.sceneLoad.subscribe((x) => (v = x))(); return v; }),
 		(v) => v === null,
 		'the scene finished loading',
 		30000
@@ -42,7 +42,7 @@ async function loadScene(page, file) {
 /** in-page helpers, installed once per page */
 async function install(page) {
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const read = (store) => { let v; store.subscribe((x) => (v = x))(); return v; };
 		const T = s.THREE;
 		window.__aq = {
@@ -85,7 +85,7 @@ h.run(async () => {
 	h.check(fishNames.every((n) => roots.some((r) => r.name === n)), '0.1 the six reef fish are FALLBACK LOD groups (' + roots.map((r) => r.name).join(', ') + ')');
 	h.check(roots.length >= 12 && roots.every((r) => r.refs.every((ref) => ref.startsWith('aquarium-kit/'))), '0.2 fish, coral and plants (' + roots.length + ') name aquarium-kit levels');
 	const graphs = await page.evaluate(() => {
-		const all = window.__stores.allNodes();
+		const all = window.__tp.test.v1.allNodes();
 		return ['followpath', 'wander', 'orientvelocity', 'bodywave'].map((t) => all.filter((n) => n.type === t).length);
 	});
 	h.check(graphs[0] === 4 && graphs[1] === 2 && graphs[2] === 2 && graphs[3] === 6, '0.3 the fish graphs: Follow Path ×4, Wander ×2, Orient to Velocity ×2, Body Wave ×6 (' + graphs.join('/') + ')');
@@ -131,7 +131,7 @@ h.run(async () => {
 		cn++;
 	}
 	h.check(cn === 0 || cAlong / cn > 0.5, '1.7 Orient to Velocity points it where it goes (mean cos ' + (cn ? (cAlong / cn).toFixed(2) : 'n/a') + ' over ' + cn + ' moving samples)');
-	const waves = await page.evaluate(() => window.__stores.motionNodes.motionNodesDebug().waves);
+	const waves = await page.evaluate(() => window.__tp.test.v1.motionNodes.motionNodesDebug().waves);
 	h.check(waves.length === 6 && waves.every((w) => w.cloned && w.meshes > 0), '1.8 a Body Wave runs on every fish, each mesh on its own material copy (' + waves.map((w) => w.meshes).join(',') + ' meshes)');
 	const wave = await page.evaluate(() => {
 		const o = window.__aq.byName('Blue tang 1');
@@ -144,24 +144,24 @@ h.run(async () => {
 	// ---- 2 fallback LOD with the pack reachable -------------------------------------------------
 	// 2.0 the LOD pass keeps running frame after frame (the water reflection pass is a NESTED
 	// render; an after-hook that skipped the hook it wraps froze every LOD group after frame 1)
-	const p0 = await page.evaluate(() => window.__stores.lodGroup.lodGroupPasses());
+	const p0 = await page.evaluate(() => window.__tp.test.v1.lodGroup.lodGroupPasses());
 	await page.waitForTimeout(1500);
-	const p1 = await page.evaluate(() => window.__stores.lodGroup.lodGroupPasses());
+	const p1 = await page.evaluate(() => window.__tp.test.v1.lodGroup.lodGroupPasses());
 	h.check(p1 - p0 > 10, '2.0 the LOD group pass keeps running with water in the scene (' + p0 + ' -> ' + p1 + ' in 1.5 s)');
 	await page.evaluate(() => window.__aq.render());
 	await h.eventually(
-		() => page.evaluate(() => window.__aq.fallbackRoots().map((o) => window.__stores.lodTrees.lodTreesOf(o).length)),
+		() => page.evaluate(() => window.__aq.fallbackRoots().map((o) => window.__tp.test.v1.lodTrees.lodTreesOf(o).length)),
 		(n) => n.every((c) => c >= 1),
 		'2.1 every fallback group built its PACK model (a tree substitute)',
 		45000
 	);
 	const drawn = await page.evaluate(() => {
 		window.__aq.render();
-		return window.__aq.fallbackRoots().map((o) => ({ name: o.name, current: window.__stores.lodGroup.lodGroupInfo(o.uuid)?.current }));
+		return window.__aq.fallbackRoots().map((o) => ({ name: o.name, current: window.__tp.test.v1.lodGroup.lodGroupInfo(o.uuid)?.current }));
 	});
 	h.check(drawn.every((d) => d.current >= 1), '2.2 every group DRAWS a pack level, not its stand-in (' + drawn.map((d) => d.name.split(' ')[0] + ':' + d.current).join(' ') + ')');
 	const tri = await page.evaluate(() => {
-		const tree = window.__stores.lodTrees.lodTreesOf(window.__aq.byName('Clownfish 1'))[0];
+		const tree = window.__tp.test.v1.lodTrees.lodTreesOf(window.__aq.byName('Clownfish 1'))[0];
 		let n = 0;
 		tree.traverse((m) => m.isMesh && (n += (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3));
 		let irid = 0;
@@ -173,25 +173,25 @@ h.run(async () => {
 	h.check(tri.n > 1000, '2.3 the clownfish substitute is the Meshy model (' + tri.n + ' triangles)');
 	h.check(/bodywave/.test(tri.key), '2.4 the Body Wave bends the SUBSTITUTE too (' + tri.key + ')');
 	const saved = await page.evaluate(() => {
-		const payload = window.__stores.sessions.buildSessionPayload('probe');
+		const payload = window.__tp.test.v1.sessions.buildSessionPayload('probe');
 		const json = JSON.stringify(payload.objects ?? payload);
 		const fish = (payload.objects ?? []).find((o) => o.object?.name === 'Clownfish 1');
 		return { bytes: json.length, holders: json.includes('lod-group-holders'), kids: fish?.object?.children?.length ?? -1, lod: !!fish?.object?.userData?.lod?.fallback };
 	});
 	h.check(!saved.holders && saved.kids >= 5 && saved.kids <= 9 && saved.lod, '2.5 a SAVE carries only the stand-in (' + saved.kids + ' parts) and its fallback block — no model in the file');
 	const zipped = await page.evaluate(async () => {
-		const s = window.__stores.sessions;
+		const s = window.__tp.test.v1.sessions;
 		const bytes = await s.exportSessionZip(s.buildSessionPayload('probe'), { assets: false, packs: false, flow: true });
 		return bytes.byteLength ?? bytes.length ?? bytes.size;
 	});
 	h.check(zipped < 600_000, '2.6 the saved .tpscene stays small with the models drawn (' + Math.round(zipped / 1024) + ' KB zipped; the models are references)');
-	const film = await page.evaluate(() => window.__stores.materialTiers.materialTiersDebug());
+	const film = await page.evaluate(() => window.__tp.test.v1.materialTiers.materialTiersDebug());
 	h.check(film.tier === 'high' && tri.irid > 0.3, '2.7 a desktop draws the fish\'s thin film (tier ' + film.tier + ', iridescence ' + tri.irid + ')');
 	if (SHOTS) await page.screenshot({ path: SHOTS + '-desktop.png' });
 
 	// ---- 4 the look tier ------------------------------------------------------------------------
 	const lowered = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.materialTiers.pinMaterialTier('low');
 		const tree = s.lodTrees.lodTreesOf(window.__aq.byName('Clownfish 1'))[0];
 		let m0 = null;
@@ -200,7 +200,7 @@ h.run(async () => {
 	});
 	h.check(lowered.irid === 0 && lowered.authored?.iridescence > 0.3, '4.1 at the HEADSET tier the film is not drawn, the authored value rides beside it (' + JSON.stringify(lowered.authored) + ')');
 	const back = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.materialTiers.pinMaterialTier('high');
 		const tree = s.lodTrees.lodTreesOf(window.__aq.byName('Clownfish 1'))[0];
 		let m0 = null;
@@ -209,7 +209,7 @@ h.run(async () => {
 	});
 	h.check(back > 0.3, '4.2 back at the desktop tier the film returns (' + back + ')');
 	const preset = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const group = window.__aq.read(s.objectsGroup);
 		const box = group.getObjectByName('Rock big');
 		const starter = s.materialPresets.starterPresets().find((p) => p.id === 'fishscale').preset;
@@ -237,10 +237,10 @@ h.run(async () => {
 			window.__aq.render();
 			return window.__aq.fallbackRoots().map((o) => ({
 				name: o.name,
-				current: window.__stores.lodGroup.lodGroupInfo(o.uuid)?.current,
-				trees: window.__stores.lodTrees.lodTreesOf(o).length,
-				failed: (window.__stores.lodGroup.lodGroupInfo(o.uuid)?.levels ?? []).filter((l) => l.status === 'failed').length,
-				statuses: (window.__stores.lodGroup.lodGroupInfo(o.uuid)?.levels ?? []).map((l) => l.status)
+				current: window.__tp.test.v1.lodGroup.lodGroupInfo(o.uuid)?.current,
+				trees: window.__tp.test.v1.lodTrees.lodTreesOf(o).length,
+				failed: (window.__tp.test.v1.lodGroup.lodGroupInfo(o.uuid)?.levels ?? []).filter((l) => l.status === 'failed').length,
+				statuses: (window.__tp.test.v1.lodGroup.lodGroupInfo(o.uuid)?.levels ?? []).map((l) => l.status)
 			}));
 		});
 	await h.eventually(offlineProbe, (o) => o.some((d) => d.failed > 0), '3.2 …and says why on the level (failed levels reported, not thrown)', 20000);

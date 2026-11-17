@@ -25,7 +25,7 @@ const STORAGE = { mobileUndockAllowed: 'true', timelineDocked: 'false', animatio
 const groups = (page) =>
 	page.evaluate(() => {
 		let g;
-		window.__stores.windowTabs.tabGroups.subscribe((v) => (g = v))();
+		window.__tp.test.v1.windowTabs.tabGroups.subscribe((v) => (g = v))();
 		return g;
 	});
 
@@ -33,7 +33,7 @@ const groups = (page) =>
 async function makeGroup(page, at, extra = []) {
 	await page.evaluate(
 		async ({ at, extra }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.objectListClose.set(false);
 			s.timelineClose.set(false);
 			for (const k of extra) s[k].set(false);
@@ -188,8 +188,8 @@ h.run(async () => {
 		// the grip drag above moved the group right: park it back so its tabs are on a folded screen
 		await page.evaluate(() => {
 			let g;
-			window.__stores.windowTabs.tabGroups.subscribe((v) => (g = v))();
-			if (g[0]) window.__stores.windowTabs.moveGroup(g[0].id, 20 - g[0].rect.left, 300 - g[0].rect.top);
+			window.__tp.test.v1.windowTabs.tabGroups.subscribe((v) => (g = v))();
+			if (g[0]) window.__tp.test.v1.windowTabs.moveGroup(g[0].id, 20 - g[0].rect.left, 300 - g[0].rect.top);
 		});
 		await page.waitForTimeout(300);
 
@@ -219,8 +219,8 @@ h.run(async () => {
 		await page.waitForTimeout(600);
 		const dk = await page.evaluate(() => {
 			let o, a;
-			window.__stores.bottomDock.dockOccupants.subscribe((v) => (o = v))();
-			window.__stores.bottomDock.visibleDockKey.subscribe((v) => (a = v))();
+			window.__tp.test.v1.bottomDock.dockOccupants.subscribe((v) => (o = v))();
+			window.__tp.test.v1.bottomDock.visibleDockKey.subscribe((v) => (a = v))();
 			const ol = document.querySelector('#object-list');
 			return { present: !!o.timeline?.present, visible: a, strip: !!document.querySelector('.tab-strip'), ol: !!ol && getComputedStyle(ol).display !== 'none' };
 		});
@@ -228,7 +228,7 @@ h.run(async () => {
 
 		// Close (on a window that has no docked mode, Dock is offered but disabled)
 		await page.evaluate(() => localStorage.setItem('timelineDocked', 'false'));
-		await page.evaluate(() => window.__stores.bottomDock.armDockMode('timeline', false));
+		await page.evaluate(() => window.__tp.test.v1.bottomDock.armDockMode('timeline', false));
 		await page.waitForTimeout(700);
 		await makeGroup(page, { x: 20, y: 300 });
 		await longPress(page, cdp, await tabCentre(page, 'Objects'));
@@ -243,7 +243,7 @@ h.run(async () => {
 		await tapRow(page, cdp, 'Close');
 		const cl = await page.evaluate(() => {
 			let c;
-			window.__stores.objectListClose.subscribe((v) => (c = v))();
+			window.__tp.test.v1.objectListClose.subscribe((v) => (c = v))();
 			return { closed: c, strip: !!document.querySelector('.tab-strip') };
 		});
 		h.check(cl.closed === true && !cl.strip, `${name} 3.6 Close closes that tab's window (and a group of one dissolves) (${JSON.stringify(cl)})`);

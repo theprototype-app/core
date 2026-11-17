@@ -5,7 +5,7 @@ const strokeInfo = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const stroke = g?.children.find((c) => c.name === 'Stroke');
 					resolve(
 						stroke ? { uuid: stroke.uuid, geo: stroke.geometry?.type, mat: stroke.material?.type } : null
@@ -20,7 +20,7 @@ h.run(async () => {
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);
 
-	await A.page.evaluate(() => window.__stores.drawMode.toggleDrawMode());
+	await A.page.evaluate(() => window.__tp.test.v1.drawMode.toggleDrawMode());
 	await A.page.waitForTimeout(400);
 	h.check(await A.page.locator('#draw-toolbar').isVisible(), 'draw toolbar appears');
 
@@ -44,14 +44,14 @@ h.run(async () => {
 		'stroke replicated to B (same uuid)'
 	);
 
-	await A.page.evaluate(() => window.__stores.drawMode.toggleDrawMode());
+	await A.page.evaluate(() => window.__tp.test.v1.drawMode.toggleDrawMode());
 	await A.page.waitForTimeout(300);
 	h.check(!(await A.page.locator('#draw-toolbar').isVisible()), 'toggle exits draw mode');
 
 	const clickAt = await A.page.evaluate(() =>
 		new Promise((resolve) => {
-			window.__stores.objectsGroup.subscribe((g) => {
-				window.__stores.globalCamera.subscribe((camera) => {
+			window.__tp.test.v1.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.globalCamera.subscribe((camera) => {
 					const stroke = g.children.find((c) => c.name === 'Stroke');
 					const pts = stroke.geometry.parameters.path.points;
 					const mid = pts[Math.floor(pts.length / 2)].clone().project(camera);
@@ -65,14 +65,14 @@ h.run(async () => {
 	);
 	await A.page.mouse.click(clickAt.x, clickAt.y);
 	const selected = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.selectedObject.subscribe((s) => r(s?.uuid))())
+		() => new Promise((r) => window.__tp.test.v1.selectedObject.subscribe((s) => r(s?.uuid))())
 	);
 	h.check(selected === aStroke.uuid, 'stroke is selectable like any object');
 
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => strokeInfo(A.page), (s) => s === null, 'undo removes the stroke on A');
 	await h.eventually(() => strokeInfo(B.page), (s) => s === null, 'undo replicates to B');
-	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 	await h.eventually(() => strokeInfo(B.page), (s) => s?.uuid === aStroke.uuid, 'redo restores it on both');
 
 	await h.finish(browser);

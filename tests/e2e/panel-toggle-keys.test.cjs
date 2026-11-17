@@ -13,12 +13,12 @@ const reload = async (page, flowDocked, explorerDocked) => {
 		[flowDocked, explorerDocked]
 	);
 	await page.reload({ waitUntil: 'domcontentloaded' });
-	await page.waitForFunction(() => window.__stores && !!window.__stores.bottomDock, { timeout: 30000 });
+	await page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.bottomDock, { timeout: 30000 });
 };
 
 const dockState = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let visible, occupants, fc, ec;
 		s.bottomDock.visibleDockKey.subscribe((v) => (visible = v))();
 		s.bottomDock.dockOccupants.subscribe((v) => (occupants = v))();
@@ -34,7 +34,7 @@ const zOf = (page) =>
 			if (!n || getComputedStyle(n).display === 'none') return null;
 			return parseInt(getComputedStyle(n).zIndex);
 		};
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let fc, ec, oc;
 		s.flowGraphClose.subscribe((v) => (fc = v))();
 		s.explorerClose.subscribe((v) => (ec = v))();
@@ -58,7 +58,7 @@ h.run(async () => {
 	// The button brings its tab back; the key used to CLOSE it (the bare flip).
 	await reload(A.page, 'true', 'true');
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphClose.set(false);
 		s.explorerClose.set(false);
 		s.bottomDock.activateDock('explorer');
@@ -87,8 +87,8 @@ h.run(async () => {
 	// --- 2. N on a FLOATING Node editor buried under the floating Explorer ---
 	await reload(A.page, 'false', 'false');
 	await A.page.evaluate(() => {
-		window.__stores.flowGraphClose.set(false);
-		window.__stores.explorerClose.set(false);
+		window.__tp.test.v1.flowGraphClose.set(false);
+		window.__tp.test.v1.explorerClose.set(false);
 	});
 	await A.page.waitForTimeout(800);
 	let z = await zOf(A.page);
@@ -108,7 +108,7 @@ h.run(async () => {
 	h.check(z.ec === false, '2.4 the floating Explorer is untouched throughout');
 
 	// --- 3. O on a buried Object list (the same tree, the panel it came from) ---
-	await A.page.evaluate(() => window.__stores.objectListClose.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.objectListClose.set(false));
 	await A.page.waitForTimeout(500);
 	z = await zOf(A.page);
 	h.check(
@@ -129,7 +129,7 @@ h.run(async () => {
 	await press(A.page, 'o');
 	const reopened = await A.page.evaluate(() => {
 		let oc;
-		window.__stores.objectListClose.subscribe((v) => (oc = v))();
+		window.__tp.test.v1.objectListClose.subscribe((v) => (oc = v))();
 		const n = document.getElementById('object-list');
 		return { oc, z: parseInt(getComputedStyle(n).zIndex), expl: parseInt(getComputedStyle(document.getElementById('explorer-window')).zIndex) };
 	});
@@ -144,7 +144,7 @@ h.run(async () => {
 	// nothing at all.
 	await reload(A.page, 'false', 'false');
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphClose.set(false); // the floating Node editor
 		s.explorerClose.set(true);
 		s.objectListClose.set(false);
@@ -153,7 +153,7 @@ h.run(async () => {
 	await press(A.page, 'o'); // raise the Object list to the very top...
 	await press(A.page, 'o'); // ...and close it there, leaving a stale top-of-stack node
 	const stale = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let oc, fc;
 		s.objectListClose.subscribe((v) => (oc = v))();
 		s.flowGraphClose.subscribe((v) => (fc = v))();
@@ -170,7 +170,7 @@ h.run(async () => {
 	await press(A.page, 'n');
 	const closedAlone = await A.page.evaluate(() => {
 		let fc;
-		window.__stores.flowGraphClose.subscribe((v) => (fc = v))();
+		window.__tp.test.v1.flowGraphClose.subscribe((v) => (fc = v))();
 		return { fc, win: !!document.getElementById('flow-window') };
 	});
 	h.check(
@@ -188,7 +188,7 @@ h.run(async () => {
 	const camPos = () =>
 		A.page.evaluate(() => {
 			let c;
-			window.__stores.globalCamera.subscribe((x) => (c = x))();
+			window.__tp.test.v1.globalCamera.subscribe((x) => (c = x))();
 			return c ? [c.position.x, c.position.y, c.position.z] : null;
 		});
 	const hold = async (combo, ms) => {

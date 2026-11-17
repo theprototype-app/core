@@ -88,18 +88,18 @@ async function zipBytes(id, envKey) {
 }
 /** install zip bytes through the REAL manager (the helper only knows one folder) */
 async function installZip(peer, id, bytes, label) {
-	await peer.page.evaluate(() => window.__stores.modulesOpen.set(true));
+	await peer.page.evaluate(() => window.__tp.test.v1.modulesOpen.set(true));
 	await peer.page.waitForTimeout(400);
 	await peer.page.getByRole('tab', { name: /^User/ }).click();
 	await peer.page.waitForTimeout(200);
 	await peer.page.locator('#install-module-zip').setInputFiles({ name: id + '.zip', mimeType: 'application/zip', buffer: bytes });
 	await h.eventually(
-		() => peer.page.evaluate(() => window.__stores.moduleSDK.loadedModules.map((m) => m.id)),
+		() => peer.page.evaluate(() => window.__tp.test.v1.moduleSDK.loadedModules.map((m) => m.id)),
 		(ids) => ids.includes(id),
 		label + ': ' + id + ' installed from the real zip',
 		20000
 	);
-	await peer.page.evaluate(() => window.__stores.modulesOpen.set(false));
+	await peer.page.evaluate(() => window.__tp.test.v1.modulesOpen.set(false));
 	await peer.page.waitForTimeout(300);
 }
 
@@ -113,40 +113,40 @@ const healthSnap = (page) => page.evaluate(() => window.__health?.snapshot() ?? 
 const namesOf = (page) =>
 	page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return Object.fromEntries((g?.children ?? []).map((c) => [c.name, c.uuid]));
 	});
 const posOf = (page, uuid) =>
 	page.evaluate((uuid) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return g?.getObjectByProperty('uuid', uuid)?.position.toArray() ?? null;
 	}, uuid);
 const gameOf = (page) =>
 	page.evaluate(() => {
 		let g;
-		window.__stores.gameState.gameState.subscribe((v) => (g = v))();
+		window.__tp.test.v1.gameState.gameState.subscribe((v) => (g = v))();
 		return { state: g?.state ?? null, outcome: g?.outcome ?? '' };
 	});
 const gameStateOf = async (page) => (await gameOf(page)).state;
-const screenOf = (page) => page.evaluate(() => window.__stores.hudDocs.visibleScreen('scene')?.id ?? null);
+const screenOf = (page) => page.evaluate(() => window.__tp.test.v1.hudDocs.visibleScreen('scene')?.id ?? null);
 const hudText = async (page) => (await page.locator('#hud-layer').textContent().catch(() => '')) ?? '';
 const hudRuntime = (page) =>
 	page.evaluate(() => {
 		let r;
-		window.__stores.hudDocs.hudRuntime.subscribe((v) => (r = v))();
+		window.__tp.test.v1.hudDocs.hudRuntime.subscribe((v) => (r = v))();
 		return r ?? {};
 	});
 const simOf = (page) =>
 	page.evaluate(() => {
-		const p = window.__stores.physics;
+		const p = window.__tp.test.v1.physics;
 		let own, remote;
 		p.simulating.subscribe((v) => (own = v))();
 		p.remoteSimulating.subscribe((v) => (remote = v))();
 		return { own: !!own, remote: remote ?? null };
 	});
 const hudButton = (page, name) => page.getByRole('button', { name, exact: true });
-const myVar = (page, name) => page.evaluate((n) => window.__stores.peerVars.myPeerVar(n, null), name);
+const myVar = (page, name) => page.evaluate((n) => window.__tp.test.v1.peerVars.myPeerVar(n, null), name);
 
 const hpOf = async (page, uuid) => (await healthSnap(page)).find((s) => s.uuid === uuid)?.hp ?? null;
 
@@ -215,13 +215,13 @@ h.run(async () => {
 	});
 	// the counterfactual premise: the world is NOT empty before the card is picked
 	await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1200));
-		window.__stores.objectActions.deselectObject();
+		window.__tp.test.v1.objectActions.deselectObject();
 	});
 	const before = await namesOf(A.page);
 	h.check(Object.keys(before).length === 1, '1.0 (premise) one box stands before the card is picked');
-	await A.page.evaluate(() => window.__stores.templatesModalOpen.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.templatesModalOpen.set(true));
 	await A.page.waitForTimeout(400);
 	await A.page.locator('#templates-tab-games').click();
 	const card = A.page.locator('#templates-modal .tpl-card', { hasText: 'Waves' });
@@ -236,17 +236,17 @@ h.run(async () => {
 	h.check(OBJECTS.every((n) => !!names[n]), '1.4 the ground, the goal, three spawn pads, ten enemies (grunts, runners, tanks), the home pad and the arena (' + Object.keys(names).join(', ') + ')');
 	const modules = await A.page.evaluate(() => {
 		let m;
-		window.__stores.moduleRequirements.sceneModules.subscribe((v) => (m = v))();
+		window.__tp.test.v1.moduleRequirements.sceneModules.subscribe((v) => (m = v))();
 		return (m ?? []).map((e) => e.id + '@' + e.version);
 	});
 	h.check(modules.some((m) => m.startsWith('health@')) && modules.some((m) => /^waves@2\./.test(m)), '1.5 the file\'s requirement list names health and waves 2.x (' + modules.join(',') + ')');
 	const env = await A.page.evaluate(() => {
 		let e;
-		window.__stores.environment.environment.subscribe((v) => (e = v))();
+		window.__tp.test.v1.environment.environment.subscribe((v) => (e = v))();
 		return e?.preset ?? null;
 	});
 	h.check(env === 'custom', '1.6 the custom sky (' + env + ')');
-	const phys = await A.page.evaluate(() => window.__stores.scenePhysics.scenePhysicsDebug());
+	const phys = await A.page.evaluate(() => window.__tp.test.v1.scenePhysics.scenePhysicsDebug());
 	h.check(phys.play?.interaction === 'click' && phys.play?.grounded === true && phys.play?.simOnPlay === true, '1.7 play block: click, grounded, sim on play (' + JSON.stringify(phys.play) + ')');
 	h.check(
 		JSON.stringify(phys.play?.spawn?.position) === '[0,0,9]' && phys.play?.locomotion?.teleport === false && phys.play?.locomotion?.fly === false,
@@ -316,6 +316,6 @@ h.run(async () => {
 	await h.eventually(() => gameStateOf(C.page), (v) => v === 'playing', '5.3 C: the game shell reads playing');
 	h.check((await myVar(C.page, 'kills')) === null, '5.4 the joiner has no kills row yet');
 
-	for (const p of [A, B, C]) await p.page.evaluate(() => window.__stores.isLocked.set(false)).catch(() => {});
+	for (const p of [A, B, C]) await p.page.evaluate(() => window.__tp.test.v1.isLocked.set(false)).catch(() => {});
 	await h.finish(browser);
 });

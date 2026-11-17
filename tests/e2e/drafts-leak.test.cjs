@@ -11,12 +11,12 @@ const h = require('./helpers.cjs');
 const { unzipSync, strFromU8 } = require('fflate');
 
 const has = (page, uuid) =>
-	page.evaluate((u) => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(!!g.getObjectByProperty('uuid', u)))()), uuid);
+	page.evaluate((u) => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(!!g.getObjectByProperty('uuid', u)))()), uuid);
 // every toast seen since installToastLog (a toast can expire while a slow file build runs)
 const installToastLog = (page) =>
 	page.evaluate(() => {
 		window.__toastLog = [];
-		window.__stores.toastStore.subscribe((l) => {
+		window.__tp.test.v1.toastStore.subscribe((l) => {
 			for (const t of l) {
 				const text = typeof t === 'string' ? t : t.text;
 				if (!window.__toastLog.includes(text)) window.__toastLog.push(text);
@@ -28,7 +28,7 @@ const slotOf = (page, uuid) =>
 	page.evaluate(
 		(u) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const o = g.getObjectByProperty('uuid', u);
 					r(o ? { parent: o.parent?.uuid, index: o.parent?.children.indexOf(o), local: !!o.userData.__localOnly } : null);
 				})()
@@ -59,10 +59,10 @@ h.run(async () => {
 	const [shared, draft] = await A.page.evaluate(async () => {
 		const ids = [];
 		for (const name of ['Shared box', 'Draft box']) {
-			window.__stores.commandsHandler.sceneCommand('/create box');
-			const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+			window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+			const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 			const o = g.children[g.children.length - 1];
-			window.__stores.objectActions.renameObject(o.uuid, name);
+			window.__tp.test.v1.objectActions.renameObject(o.uuid, name);
 			ids.push(o.uuid);
 		}
 		return ids;
@@ -71,15 +71,15 @@ h.run(async () => {
 
 	// §1 move to Local objects: gone for B, kept (marked) on A
 	await A.page.evaluate(async (u) => {
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
-		window.__stores.objectPermissions.moveToLocalObjects(g.getObjectByProperty('uuid', u));
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.objectPermissions.moveToLocalObjects(g.getObjectByProperty('uuid', u));
 	}, draft);
 	await h.eventually(() => has(B.page, draft), (v) => v === false, '§1 the draft is removed for B');
 	h.check((await slotOf(A.page, draft))?.local === true, '§1 ... and kept on A, marked local');
 
 	// §2 edits to the draft: record what A sends that names it; B must never get it back
 	await A.page.evaluate(() => {
-		const peer = window.__stores.peers;
+		const peer = window.__tp.test.v1.peers;
 		const p = new Promise((r) => peer.subscribe(r)());
 		return p.then((conn) => {
 			window.__draftSent = [];
@@ -93,19 +93,19 @@ h.run(async () => {
 		});
 	});
 	await A.page.evaluate(async (u) => {
-		window.__stores.objectActions.renameObject(u, 'Secret draft name');
-		window.__stores.materialsHandler.setObjectColor(u, '#ff00aa');
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.objectActions.renameObject(u, 'Secret draft name');
+		window.__tp.test.v1.materialsHandler.setObjectColor(u, '#ff00aa');
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		g.getObjectByProperty('uuid', u).position.y = 3;
-		window.__stores.objectActions.applySelectionSet([u]);
-		window.__stores.align.dropSelection();
+		window.__tp.test.v1.objectActions.applySelectionSet([u]);
+		window.__tp.test.v1.align.dropSelection();
 	}, draft);
 	await A.page.waitForTimeout(1500);
 	const named = await A.page.evaluate((u) => window.__draftSent.filter((m) => m.includes(u)).map((m) => JSON.parse(m).type), draft);
 	console.log('FINDING messages that still name the draft after the move:', JSON.stringify(named));
 	h.check(!(await has(B.page, draft)), `§2 edits to the draft do not bring it back on B (${named.length} by-reference messages dropped)`);
 	const bNames = await B.page.evaluate(
-		() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => { const n = []; g.traverse((o) => o.name && n.push(o.name)); r(n); })())
+		() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => { const n = []; g.traverse((o) => o.name && n.push(o.name)); r(n); })())
 	);
 	h.check(!bNames.includes('Secret draft name'), '§2 B shows no object by the draft name');
 
@@ -119,7 +119,7 @@ h.run(async () => {
 
 	// §4 a downloaded .tpscene leaves the draft out, with a toast, and the scene keeps it
 	const slot = await slotOf(A.page, draft);
-	const file = await grabDownload(A, () => A.page.evaluate(() => window.__stores.fileHandler.save('tpscene')));
+	const file = await grabDownload(A, () => A.page.evaluate(() => window.__tp.test.v1.fileHandler.save('tpscene')));
 	const zip = file.bytes ? unzipSync(file.bytes) : {};
 	const sessionJson = zip['session.json'] ? strFromU8(zip['session.json']) : '';
 	h.check(sessionJson.includes(shared), '§4 the .tpscene carries the shared box');
@@ -137,7 +137,7 @@ h.run(async () => {
 	h.check(JSON.stringify(await slotOf(A.page, draft)) === JSON.stringify(slot), '§4 the draft is back in its slot afterwards');
 
 	// §5 the whole-scene JSON export leaves it out too
-	const json = await grabDownload(A, () => A.page.evaluate(() => window.__stores.fileHandler.save('json')));
+	const json = await grabDownload(A, () => A.page.evaluate(() => window.__tp.test.v1.fileHandler.save('json')));
 	const text = json.bytes ? Buffer.from(json.bytes).toString('utf8') : '';
 	h.check(text.includes('Shared box') && !text.includes('Secret draft name'), '§5 the JSON export carries the shared box and not the draft');
 	await A.page.waitForTimeout(300);
@@ -145,7 +145,7 @@ h.run(async () => {
 
 	// §6 the publish bundle (cloudApi.buildSceneBundle) leaves it out
 	const bundle = await A.page.evaluate(async () => {
-		const api = window.__stores.cloudPlugin.makeCloudApi();
+		const api = window.__tp.test.v1.cloudPlugin.makeCloudApi();
 		const { blob, meta } = await api.buildSceneBundle({ assets: false });
 		const buf = new Uint8Array(await blob.arrayBuffer());
 		let s = '';
@@ -159,11 +159,11 @@ h.run(async () => {
 
 	// §7 sharing it again makes it part of the file
 	await A.page.evaluate(async (u) => {
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
-		window.__stores.objectPermissions.shareObject(g.getObjectByProperty('uuid', u));
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.objectPermissions.shareObject(g.getObjectByProperty('uuid', u));
 	}, draft);
 	await h.eventually(() => has(B.page, draft), (v) => v === true, '§7 Share brings the draft to B');
-	const after = await A.page.evaluate(() => window.__stores.objectPermissions.withoutLocalObjects(() => 0).excluded);
+	const after = await A.page.evaluate(() => window.__tp.test.v1.objectPermissions.withoutLocalObjects(() => 0).excluded);
 	h.check(after === 0, '§7 ... and nothing is left out any more');
 
 	h.check(h.pageErrors(A).length === 0 && h.pageErrors(B).length === 0, 'no page errors');

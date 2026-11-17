@@ -11,7 +11,7 @@ const h = require('./helpers.cjs');
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
-	await A.page.waitForFunction(() => !!window.__stores?.cloudHooks, { timeout: 30000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.cloudHooks, { timeout: 30000 });
 
 	// ---- 1. INERT without a plugin: solo + no plugin = no popover host AT ALL --------
 	h.check(
@@ -24,7 +24,7 @@ h.run(async () => {
 	// being alone is exactly when "where is everyone" matters)
 	await A.page.evaluate(() => {
 		/** @type {any} */ (window).__inviteCalls = [];
-		window.__stores.cloudHooks.scenePresence.set({
+		window.__tp.test.v1.cloudHooks.scenePresence.set({
 			myRoomId: 'room-me',
 			rooms: [
 				{ id: 'room-me', name: 'My room', scene: 'Arena', hostPeerId: 'me', members: [{ peerId: 'x', name: 'ShouldNotShow', mode: 'playing' }] },
@@ -75,7 +75,7 @@ h.run(async () => {
 	);
 
 	// ---- 5. clearing the store clears the section -------------------------------------
-	await A.page.evaluate(() => window.__stores.cloudHooks.scenePresence.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.cloudHooks.scenePresence.set(null));
 	await A.page.waitForTimeout(200);
 	h.check((await A.page.locator('#cross-scene-presence').count()) === 0, 'a plugin sign-out clears the section');
 

@@ -10,9 +10,9 @@
 const h = require('./helpers.cjs');
 
 async function installToolbox(page, tallBody = false) {
-	await page.waitForFunction(() => !!window.__stores?.moduleToolboxes, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.moduleToolboxes, { timeout: 30000 });
 	await page.evaluate(async (tallBody) => {
-		await window.__stores.moduleSDK.initModules([
+		await window.__tp.test.v1.moduleSDK.initModules([
 			{
 				id: 'clamptbx',
 				name: 'Clamp toolbox',
@@ -39,7 +39,7 @@ async function installToolbox(page, tallBody = false) {
 				}
 			}
 		]);
-		window.__stores.moduleToolboxes.openModuleToolbox('mod-clamptbx-panel');
+		window.__tp.test.v1.moduleToolboxes.openModuleToolbox('mod-clamptbx-panel');
 	}, tallBody);
 	await page.waitForSelector('#mod-clamptbx-panel .move-handle', { timeout: 15000 });
 	await page.waitForTimeout(400);
@@ -84,7 +84,7 @@ const geometry = (page) =>
 			header: header ? { top: header.top, bottom: header.bottom, left: header.left, right: header.right } : null,
 			win: win ? { top: win.top, bottom: win.bottom, left: win.left, right: win.right, height: win.height } : null,
 			pill: pill && pill.height > 0 ? { top: pill.top, left: pill.left, right: pill.right } : null,
-			reserve: window.__stores.windowSizeReserve ?? null
+			reserve: window.__tp.test.v1.windowSizeReserve ?? null
 		};
 	});
 
@@ -162,7 +162,7 @@ h.run(async () => {
 			g.win.bottom <= g.innerHeight - 76 + 0.5,
 			`B: a tall toolbox caps itself above the band (window bottom ${g.win.bottom.toFixed(0)} <= ${g.innerHeight - 76})`
 		);
-		const cap = await B.page.evaluate(() => window.__stores.windowSize?.clampWinSize?.(9999, 9999) ?? null);
+		const cap = await B.page.evaluate(() => window.__tp.test.v1.windowSize?.clampWinSize?.(9999, 9999) ?? null);
 		if (cap) h.check(cap.h <= g.innerHeight - 76, `B: viewportCap subtracts the band too (h ${cap.h} <= ${g.innerHeight - 76})`);
 	}
 

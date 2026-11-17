@@ -21,7 +21,7 @@ const WRITERS = ['create_hud', 'edit_hud', 'hud_panel', 'set_sky', 'set_light', 
 
 const read = (page, expr) =>
 	page.evaluate(
-		(e) => new Promise((r) => e.split('.').reduce((o, k) => o[k], window.__stores).subscribe((v) => r(JSON.parse(JSON.stringify(v ?? null))))()),
+		(e) => new Promise((r) => e.split('.').reduce((o, k) => o[k], window.__tp?.test.v1).subscribe((v) => r(JSON.parse(JSON.stringify(v ?? null))))()),
 		expr
 	);
 const hudOnHost = async (page) => (await read(page, 'hudDocs.hudDocs'))?.scene ?? null;
@@ -136,7 +136,7 @@ h.run(async () => {
 			if (!line) throw new Error('no A8 line for ' + tool);
 			return line;
 		};
-		const undo = (tool) => A.page.evaluate((e) => window.__stores.agentLog.requestAgentUndo(e), lineOf(tool));
+		const undo = (tool) => A.page.evaluate((e) => window.__tp.test.v1.agentLog.requestAgentUndo(e), lineOf(tool));
 		await undo('hud_panel');
 		await h.eventually(() => hudElements(A.page), (els) => !els.some((e) => e.panel === pause.panel), '5. Undo hud_panel: the pause panel is gone', 20000);
 		await undo('set_light');
@@ -159,7 +159,7 @@ h.run(async () => {
 	await V.page.waitForFunction(() => !!window.tpAgent, null, { timeout: 30000 });
 	await h.connect(V, A);
 	await V.page.evaluate(() =>
-		window.__stores.cloudHooks.rolesInfo.set({ myId: '', myRole: 'viewer', amAdmin: false, order: [], roleOf: () => 'viewer', setRole: () => {}, synced: () => true })
+		window.__tp.test.v1.cloudHooks.rolesInfo.set({ myId: '', myRole: 'viewer', amAdmin: false, order: [], roleOf: () => 'viewer', setRole: () => {}, synced: () => true })
 	);
 	const exec = (page, t, a) => page.evaluate(([x, y]) => window.tpAgent.exec(x, y), [t, a]);
 	const hud0 = JSON.stringify(await hudOnHost(A.page));

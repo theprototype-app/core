@@ -11,16 +11,16 @@ h.run(async () => {
 
 	// --- author: box + object flow with one node, then snapshot ----------------
 	const uuid = await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const box = g.children[g.children.length - 1];
 		box.name = 'FlowBox';
-		window.__stores.flowGraphsCtl.createObjectGraph(box.uuid);
-		window.__stores.nodesHandler.createFlowNode(
+		window.__tp.test.v1.flowGraphsCtl.createObjectGraph(box.uuid);
+		window.__tp.test.v1.nodesHandler.createFlowNode(
 			{ id: 'spin-saved', type: 'spin', position: { x: 0, y: 0 }, data: { type: 'spin', axis: 'y', speed: 2 } },
 			box.uuid
 		);
-		await window.__stores.autosave.saveNow();
+		await window.__tp.test.v1.autosave.saveNow();
 		return box.uuid;
 	});
 	h.check(!!uuid, 'authored a box with an object flow and saved a snapshot');
@@ -28,17 +28,17 @@ h.run(async () => {
 	// --- reload + restore -------------------------------------------------------
 	await h.freshReload(A);
 	await h.eventually(
-		() => A.page.evaluate(() => new Promise((r) => window.__stores.autosave.restoreAvailable.subscribe((v) => r(!!v))())),
+		() => A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.autosave.restoreAvailable.subscribe((v) => r(!!v))())),
 		(v) => v === true,
 		'the restore offer appears after reload'
 	);
-	await A.page.evaluate(() => window.__stores.autosave.restoreSnapshot());
+	await A.page.evaluate(() => window.__tp.test.v1.autosave.restoreSnapshot());
 	await A.page.waitForTimeout(1500);
 
 	const state = await A.page.evaluate(async () => {
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const box = g.children.find((c) => c.name === 'FlowBox');
-		let graphs; window.__stores.flowGraphs.subscribe((v) => (graphs = v))();
+		let graphs; window.__tp.test.v1.flowGraphs.subscribe((v) => (graphs = v))();
 		return {
 			boxUuid: box?.uuid ?? null,
 			graphKeys: Object.keys(graphs).filter((k) => k !== 'scene'),
@@ -51,8 +51,8 @@ h.run(async () => {
 
 	// selecting it scopes the editor to a real graph, not the empty state
 	await A.page.evaluate(async (id) => {
-		window.__stores.flowGraphClose.set(false);
-		window.__stores.objectActions.selectObject(id);
+		window.__tp.test.v1.flowGraphClose.set(false);
+		window.__tp.test.v1.objectActions.selectObject(id);
 	}, state.boxUuid);
 	await A.page.waitForTimeout(500);
 	h.check((await A.page.locator('#flow-empty-state').count()) === 0, 'no empty state — the flow is attached');

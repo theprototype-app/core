@@ -36,7 +36,7 @@ const h = require('./helpers.cjs');
 
 const itemsOf = (peer) =>
 	peer.page.evaluate(() => {
-		const s = window.__stores.explorer;
+		const s = window.__tp.test.v1.explorer;
 		let vis, hid;
 		s.explorerItems.subscribe((v) => (vis = v))();
 		s.hiddenItems.subscribe((v) => (hid = v))();
@@ -49,42 +49,42 @@ const itemsOf = (peer) =>
 const manifestOf = (peer) =>
 	peer.page.evaluate(() => {
 		let m;
-		window.__stores.projectManifest.projectManifest.subscribe((v) => (m = v))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((v) => (m = v))();
 		return m;
 	});
 
 const currentLevelOf = (peer) =>
 	peer.page.evaluate(() => {
 		let v;
-		window.__stores.levels.currentLevel.subscribe((x) => (v = x))();
+		window.__tp.test.v1.levels.currentLevel.subscribe((x) => (v = x))();
 		return v;
 	});
 
 const worldUuids = (peer) =>
 	peer.page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return (g?.children ?? []).map((c) => c.uuid).sort();
 	});
 
 const toastsOf = (peer) =>
 	peer.page.evaluate(() => {
 		let t;
-		window.__stores.toastStore.subscribe((x) => (t = x))();
+		window.__tp.test.v1.toastStore.subscribe((x) => (t = x))();
 		return (t ?? []).map((x) => (typeof x === 'string' ? x : (x.text ?? '')));
 	});
 
-const clearToasts = (peer) => peer.page.evaluate(() => window.__stores.toastStore.set([]));
+const clearToasts = (peer) => peer.page.evaluate(() => window.__tp.test.v1.toastStore.set([]));
 
 const modeOf = (peer) =>
 	peer.page.evaluate(() => {
 		let m;
-		window.__stores.importDuplicates.duplicateImportMode.subscribe((v) => (m = v))();
+		window.__tp.test.v1.importDuplicates.duplicateImportMode.subscribe((v) => (m = v))();
 		return m;
 	});
 
 const setMode = (peer, mode) =>
-	peer.page.evaluate((m) => window.__stores.importDuplicates.setDuplicateImportMode(m), mode);
+	peer.page.evaluate((m) => window.__tp.test.v1.importDuplicates.setDuplicateImportMode(m), mode);
 
 // ---- driving ------------------------------------------------------------------------
 
@@ -93,7 +93,7 @@ const setMode = (peer, mode) =>
 const sceneBytes = (peer, name, boxes) =>
 	peer.page.evaluate(
 		async ({ n, count }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const payload = s.sessions.emptySessionPayload(n);
 			// give each file DIFFERENT content, so the two are genuinely different files
 			// rather than one file the hash dedupe would collapse
@@ -132,7 +132,7 @@ const dropFile = (peer, name, type, arr) =>
 /** wipe library + manifest + where-we-are: the "fresh profile" the report starts from */
 const freshProfile = async (peer) => {
 	await peer.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		await s.explorer.clearLibrary();
 		s.projectManifest.manifestRestore({ scenes: {}, assets: [], changedAt: 1 }, false);
 		s.levels.currentLevel.set(null);
@@ -178,7 +178,7 @@ h.run(async () => {
 
 	await A.page.locator('#explorer-slot').click();
 	await A.page.waitForTimeout(600);
-	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await A.page.waitForTimeout(300);
 
 	// two versions of ONE scene, exactly as "Download all versions (.zip)" produces them:
@@ -218,7 +218,7 @@ h.run(async () => {
 
 	// open the FIRST one, the way the report does
 	await clearToasts(A);
-	await A.page.evaluate((hash) => window.__stores.levels.travelToLevel(hash), fileOne.hash);
+	await A.page.evaluate((hash) => window.__tp.test.v1.levels.travelToLevel(hash), fileOne.hash);
 	await h.eventually(
 		() => currentLevelOf(A),
 		(c) => c?.hash === fileOne.hash,
@@ -237,15 +237,15 @@ h.run(async () => {
 	// edit it — the thing that used to make travel-away publish
 	const beforeEdit = (await worldUuids(A)).length;
 	await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1100));
-		window.__stores.objectActions.deselectObject();
+		window.__tp.test.v1.objectActions.deselectObject();
 	});
 	h.check((await worldUuids(A)).length === beforeEdit + 1, 'premise: the loose scene was edited');
 
 	// …then open the OTHER one. This is the exact moment the phantom file appeared.
 	const beforeTravel = (await itemsOf(A)).visible.length;
-	await A.page.evaluate((hash) => window.__stores.levels.travelToLevel(hash), fileTwo.hash);
+	await A.page.evaluate((hash) => window.__tp.test.v1.levels.travelToLevel(hash), fileTwo.hash);
 	await h.eventually(
 		() => currentLevelOf(A),
 		(c) => c?.hash === fileTwo.hash,
@@ -272,7 +272,7 @@ h.run(async () => {
 	await clearToasts(A);
 	await A.page.waitForTimeout(1800);
 	await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 900));
 	});
 	await h.eventually(
@@ -288,7 +288,7 @@ h.run(async () => {
 	// Now give the project a real scene called Drifter, so `hideOldVersions('Drifter')`
 	// has an entry to run against. The two dragged-in files must survive it.
 	await clearToasts(A);
-	await A.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Drifter'));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('Drifter'));
 	await A.page.waitForTimeout(1200);
 
 	let entry = (await manifestOf(A)).scenes['Drifter'];
@@ -324,7 +324,7 @@ h.run(async () => {
 	// evidence rather than a quiet pass, AND proves the 21-I1 migration still works for
 	// every item stored before the stamp existed.
 	const folded = await A.page.evaluate((id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.explorer.explorerItems.update((list) =>
 			list.map((i) => (i.id === id ? { ...i, imported: false } : i))
 		);
@@ -389,13 +389,13 @@ h.run(async () => {
 	);
 	// the copy is a real, readable scene with an identity of its own
 	const copyPayload = await A.page.evaluate(async (id) => {
-		const blob = await window.__stores.explorer.itemBlob(id);
-		const p = await window.__stores.sessions.readSessionZip(await blob.arrayBuffer());
+		const blob = await window.__tp.test.v1.explorer.itemBlob(id);
+		const p = await window.__tp.test.v1.sessions.readSessionZip(await blob.arrayBuffer());
 		return { id: p?.id, name: p?.name, notes: (p?.annotations ?? []).length };
 	}, copy.id);
 	const srcPayload = await A.page.evaluate(async (id) => {
-		const blob = await window.__stores.explorer.itemBlob(id);
-		const p = await window.__stores.sessions.readSessionZip(await blob.arrayBuffer());
+		const blob = await window.__tp.test.v1.explorer.itemBlob(id);
+		const p = await window.__tp.test.v1.sessions.readSessionZip(await blob.arrayBuffer());
 		return { id: p?.id, name: p?.name, notes: (p?.annotations ?? []).length };
 	}, items.visible.find((i) => i.name === 'Twin.tpscene').id);
 	h.check(
@@ -492,7 +492,7 @@ h.run(async () => {
 	// scroll it into view — belongs to the Explorer, which may not even be mounted. The
 	// seam is a request STORE, so this asserts the request is consumed end to end.
 	const shelf = await A.page.evaluate(() => {
-		const s = window.__stores.explorer;
+		const s = window.__tp.test.v1.explorer;
 		const folder = s.createFolder('Shelf', null);
 		let items;
 		s.explorerItems.subscribe((v) => (items = v))();
@@ -504,7 +504,7 @@ h.run(async () => {
 	h.check(
 		(await A.page.evaluate(() => {
 			let f;
-			window.__stores.explorer.activeFolder.subscribe((v) => (f = v))();
+			window.__tp.test.v1.explorer.activeFolder.subscribe((v) => (f = v))();
 			return f;
 		})) === null,
 		'premise: the file we already hold is in a folder we are NOT looking at'
@@ -515,7 +515,7 @@ h.run(async () => {
 	await h.eventually(
 		() =>
 			A.page.evaluate(() => {
-				const s = window.__stores.explorer;
+				const s = window.__tp.test.v1.explorer;
 				let f, insp;
 				s.activeFolder.subscribe((v) => (f = v))();
 				s.inspectedFile.subscribe((v) => (insp = v))();
@@ -558,7 +558,7 @@ h.run(async () => {
 	// index created[0], so a silent skip would break the picker rather than the import)
 	const reused = await A.page.evaluate(async (arr) => {
 		const file = new File([new Uint8Array(arr)], 'pic.png', { type: 'image/png' });
-		const created = await window.__stores.explorer.importFiles([file], null, {
+		const created = await window.__tp.test.v1.explorer.importFiles([file], null, {
 			duplicates: 'reuse'
 		});
 		return { count: created.length, hash: created[0]?.hash };
@@ -578,8 +578,8 @@ h.run(async () => {
 	await setMode(A, 'ask');
 	// the file rules live in Settings ▸ Explorer (R22 round 5 moved them out of Scene)
 	await A.page.evaluate(() => {
-		window.__stores.settingsSection.set('explorer');
-		window.__stores.settingsOpen.set(true);
+		window.__tp.test.v1.settingsSection.set('explorer');
+		window.__tp.test.v1.settingsOpen.set(true);
 	});
 	await A.page.waitForTimeout(900);
 	const rowText = await A.page.evaluate(() => {
@@ -611,7 +611,7 @@ h.run(async () => {
 		rowText.descChildren <= 1,
 		`…as ONE block of prose rather than a fragment per <strong> (${rowText.descChildren} children)`
 	);
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await A.page.waitForTimeout(400);
 
 	// "don't ask again" writes the same key
@@ -644,10 +644,10 @@ h.run(async () => {
 	await freshProfile(A);
 	await setMode(A, 'ask');
 	// a project file holding one scene, exported from this very app
-	await A.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Packed'));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('Packed'));
 	await A.page.waitForTimeout(1200);
 	const tpBytes = await A.page.evaluate(async () => {
-		const result = await window.__stores.projectFile.exportProject({});
+		const result = await window.__tp.test.v1.projectFile.exportProject({});
 		return result?.bytes ? Array.from(result.bytes) : null;
 	});
 	if (!tpBytes) {
@@ -659,7 +659,7 @@ h.run(async () => {
 		// RETURNS, and this import blocks on the modal — returning its promise deadlocks
 		// the suite against the very dialog it is here to answer.
 		await A.page.evaluate((arr) => {
-			void window.__stores.projectFile.importProjectAsFolder(new Uint8Array(arr).buffer, {
+			void window.__tp.test.v1.projectFile.importProjectAsFolder(new Uint8Array(arr).buffer, {
 				fileName: 'Packed project.tp'
 			});
 		}, tpBytes);

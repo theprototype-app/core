@@ -20,7 +20,7 @@ const H = Number(process.env.UIR_H || 800);
 const read = (p, store) =>
 	p.page.evaluate((s) => {
 		let v;
-		window.__stores[s].subscribe((x) => (v = x))();
+		window.__tp.test.v1[s].subscribe((x) => (v = x))();
 		return v;
 	}, store);
 const until = async (p, fn, ms = 30000) => {
@@ -55,7 +55,7 @@ h.run(async () => {
 	// ---- 1. the idle pill ------------------------------------------------------------------------------
 	console.log('\n=== 1. the Invite-first pill ===');
 	const A = await h.setupPage(browser, 'A', { ...ctx('dark'), storage: { username: 'Mira', usernameCustom: '1' } });
-	await until(A, async () => !!(await A.page.evaluate(() => { let p; window.__stores.peers.subscribe((v) => (p = v))(); return p?.peer?.open; })));
+	await until(A, async () => !!(await A.page.evaluate(() => { let p; window.__tp.test.v1.peers.subscribe((v) => (p = v))(); return p?.peer?.open; })));
 	const squeezed = A.page.locator('#connect-squeeze-dot');
 	if (await squeezed.isVisible().catch(() => false)) await squeezed.click();
 	h.check(await until(A, async () => (await A.page.locator('#connect-ready').innerText()).trim() === 'Ready', 15000), 'idle: the pill says Ready (not Offline) while the server answers');
@@ -113,7 +113,7 @@ h.run(async () => {
 	h.check((await A.page.locator('#person-card [data-testid="person-profile"]').count()) === 0, 'View profile is the card itself, not repeated');
 	await shot(A, '05-person-card-dark');
 	// Go to: the camera flies to B
-	const camAt = () => A.page.evaluate(() => { let c; window.__stores.globalCamera.subscribe((v) => (c = v))(); return c.position.toArray(); });
+	const camAt = () => A.page.evaluate(() => { let c; window.__tp.test.v1.globalCamera.subscribe((v) => (c = v))(); return c.position.toArray(); });
 	const before = await camAt();
 	const goto = A.page.locator('#person-card [data-testid="person-goto"]');
 	h.check(await until(A, async () => !(await goto.isDisabled()), 20000), 'Go to is enabled once B’s avatar is in the scene');
@@ -139,9 +139,9 @@ h.run(async () => {
 	await B.page.locator('#person-presence-away').click({ timeout: h.PATIENT_CLICK_MS });
 	await openCardOf(A, B.id);
 	h.check(await until(A, async () => (await cardPresence(A)) === 'away', 15000), 'A’s card follows B to Away');
-	await B.page.evaluate(() => window.__stores.peoplePresence.setPresenceEnabled(false));
+	await B.page.evaluate(() => window.__tp.test.v1.peoplePresence.setPresenceEnabled(false));
 	h.check(await until(A, async () => (await A.page.locator('#person-card-presence').count()) === 0, 15000), 'B turns it off: A’s card shows no status');
-	await B.page.evaluate(() => window.__stores.peoplePresence.setPresenceEnabled(true));
+	await B.page.evaluate(() => window.__tp.test.v1.peoplePresence.setPresenceEnabled(true));
 	h.check(await until(A, async () => (await cardPresence(A)) === 'away', 15000), 'B turns it back on: Away again');
 
 	// ---- 4. a late joiner ------------------------------------------------------------------------------

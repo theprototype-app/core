@@ -22,7 +22,7 @@ const h = require('./helpers.cjs');
 const objectOf = (page, uuid) =>
 	page.evaluate((uuid) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return !!g.getObjectByProperty('uuid', uuid);
 	}, uuid);
 
@@ -30,7 +30,7 @@ const objectOf = (page, uuid) =>
  * signed volume, stored face sizes */
 const facts = (page, uuid) =>
 	page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		const object = g.getObjectByProperty('uuid', uuid);
@@ -73,7 +73,7 @@ const facts = (page, uuid) =>
 
 const freshBox = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.faceEdit.exitFaceEdit?.();
 		s.meshEdit.exitEditMode?.();
 		// granularity is a PERSISTED pick setting — a section that switched to Object
@@ -91,7 +91,7 @@ const freshBox = (page) =>
 const pickVerts = (page, uuid, corners) =>
 	page.evaluate(
 		({ uuid, corners }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.meshEdit.enterEditMode(uuid);
 			let g;
 			s.objectsGroup.subscribe((v) => (g = v))();
@@ -124,11 +124,11 @@ const pickVerts = (page, uuid, corners) =>
 const adjustOp = (page) =>
 	page.evaluate(() => {
 		let v = null;
-		window.__stores.faceEdit.opAdjustState.subscribe((x) => (v = x))();
+		window.__tp.test.v1.faceEdit.opAdjustState.subscribe((x) => (v = x))();
 		return v?.op ?? null;
 	});
 
-const undo = (page) => page.evaluate(() => window.__stores.history.undo());
+const undo = (page) => page.evaluate(() => window.__tp.test.v1.history.undo());
 
 h.run(async () => {
 	const browser = await h.launch();
@@ -139,7 +139,7 @@ h.run(async () => {
 	// closed loop of valence-4 vertices — the case slide is for. (A LOOP CUT on a bare
 	// box is not this: its flanking quads keep their full edge, T-junctions by design.)
 	let uuid = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.faceEdit.exitFaceEdit?.();
 		s.meshEdit.exitEditMode?.();
 		s.commandsHandler.sceneCommand('/clear all');
@@ -151,9 +151,9 @@ h.run(async () => {
 		return uuid;
 	});
 	const ring = await A.page.evaluate((uuid) => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const tris = fe.readTriangles(g.getObjectByProperty('uuid', uuid).geometry);
 		const keyOf = (v) => `${Math.round(v.x * 1e4)},${Math.round(v.y * 1e4)},${Math.round(v.z * 1e4)}`;
 		const axis = 'x';
@@ -192,12 +192,12 @@ h.run(async () => {
 	h.check((await A.page.locator('#mesh-adjust-revert').count()) === 1, '...with ✕ Revert');
 	const slid = await A.page.evaluate(
 		({ uuid, axis }) => {
-			const fe = window.__stores.faceEdit;
+			const fe = window.__tp.test.v1.faceEdit;
 			fe.reapplyOpAdjust({ factor: 0.3 });
 			fe.reapplyOpAdjust({ factor: 0.5 });
 			fe.settleOpAdjust();
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const tris = fe.readTriangles(g.getObjectByProperty('uuid', uuid).geometry);
 			// every vertex is now on the 4 box planes ±0.5 OR on the slid ring
 			const levels = new Set();
@@ -223,14 +223,14 @@ h.run(async () => {
 	h.check((await facts(A.page, uuid)).soup === preSlide.soup, 'ONE undo restores the exact pre-slide soup');
 	const other = await A.page.evaluate(
 		({ uuid, edges, axis }) => {
-			const fe = window.__stores.faceEdit;
+			const fe = window.__tp.test.v1.faceEdit;
 			fe.clearEdgeSelection();
 			for (const k of edges) fe.pickEdge(k, true);
 			const ok = fe.beginOpAdjust('edge-slide', { factor: -0.5 });
 			fe.settleOpAdjust();
 			fe.endOpAdjust();
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const tris = fe.readTriangles(g.getObjectByProperty('uuid', uuid).geometry);
 			const levels = new Set();
 			for (const t of tris) for (const v of t) if (Math.abs(Math.abs(v[axis]) - 0.5) > 1e-6) levels.add(v[axis].toFixed(4));
@@ -242,7 +242,7 @@ h.run(async () => {
 		other.ok && other.levels.length === 1 && Number(other.levels[0]) === -Number(slid.levels[0]),
 		`factor -0.5 slides the OTHER way (${other.levels} vs ${slid.levels})`
 	);
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
 
 	// =========================================================== 2. CONNECT
 	uuid = await freshBox(A.page);
@@ -279,10 +279,10 @@ h.run(async () => {
 		[-0.5, 0.5, -0.5],
 		[0.5, 0.5, -0.5]
 	]);
-	const refused = await A.page.evaluate(() => window.__stores.meshEdit.connectSelectedVerts());
+	const refused = await A.page.evaluate(() => window.__tp.test.v1.meshEdit.connectSelectedVerts());
 	h.check(refused === false, 'two corners that already share an edge are refused');
 	h.check((await facts(A.page, uuid)).soup === pre.soup, '...and the mesh is untouched');
-	await A.page.evaluate(() => window.__stores.meshEdit.exitEditMode());
+	await A.page.evaluate(() => window.__tp.test.v1.meshEdit.exitEditMode());
 
 	// ========================================================== 3. DISSOLVE
 	uuid = await freshBox(A.page);
@@ -297,15 +297,15 @@ h.run(async () => {
 	h.check(f.odd === 0 && f.sameWay === 0 && f.volume > 0, 'still closed, consistently wound and outward');
 	await undo(A.page);
 	h.check((await facts(A.page, uuid)).soup === preD.soup, 'ONE undo restores the corner');
-	await A.page.evaluate(() => window.__stores.meshEdit.exitEditMode());
+	await A.page.evaluate(() => window.__tp.test.v1.meshEdit.exitEditMode());
 
 	// ========================================================= 4. FILL HOLE
 	uuid = await freshBox(A.page);
 	const opened = await A.page.evaluate((uuid) => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		fe.enterFaceEdit(uuid);
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const tris = fe.readTriangles(g.getObjectByProperty('uuid', uuid).geometry);
 		const top = tris.findIndex((t) => t.every((v) => Math.abs(v.y - 0.5) < 1e-6));
 		fe.highlightFaceByTriangle(top);
@@ -317,7 +317,7 @@ h.run(async () => {
 	h.check(holed.odd === 4 && holed.tris === 10, `premise: a 4-edge hole (${holed.odd} open edges)`);
 	const rimEdge = '-5000,5000,5000|5000,5000,5000';
 	await A.page.evaluate((k) => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		fe.setFaceSubmode('edges');
 		fe.clearEdgeSelection();
 		fe.pickEdge(k);
@@ -331,7 +331,7 @@ h.run(async () => {
 	await undo(A.page);
 	h.check((await facts(A.page, uuid)).odd === 4, 'ONE undo reopens the hole');
 	await A.page.evaluate((k) => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		fe.clearEdgeSelection();
 		fe.pickEdge(k);
 	}, rimEdge);
@@ -340,7 +340,7 @@ h.run(async () => {
 	h.check((await facts(A.page, uuid)).odd === 0, 'F fills it too (the hotkey path)');
 	await undo(A.page);
 	const interior = await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		fe.clearEdgeSelection();
 		fe.pickEdge('-5000,-5000,-5000|5000,-5000,-5000');
 		return fe.fillHole();
@@ -349,7 +349,7 @@ h.run(async () => {
 
 	// ========================================================== 5. SOLIDIFY
 	const preS = await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		fe.setFaceSubmode('faces');
 		fe.setFaceGranularity('object');
 		fe.selectAllFaces();
@@ -365,7 +365,7 @@ h.run(async () => {
 	h.check((await adjustOp(A.page)) === 'solidify', 'clicking Solidify applies through the adjust engine');
 	h.check((await A.page.locator('#solidify-params').count()) === 1, '...and opens its live pane');
 	await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		fe.reapplyOpAdjust({ thickness: 0.2 });
 		fe.reapplyOpAdjust({ thickness: 0.05 });
 		fe.settleOpAdjust();
@@ -378,13 +378,13 @@ h.run(async () => {
 	h.check(f.volume > 0 && f.volume < 1, `the shell encloses a positive volume under 1 (${f.volume.toFixed(4)})`);
 	await undo(A.page);
 	h.check((await facts(A.page, uuid)).soup === preSol.soup, 'ONE undo removes the back AND the rim');
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
 	uuid = await freshBox(A.page);
 	const patch = await A.page.evaluate((uuid) => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		fe.enterFaceEdit(uuid);
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const tris = fe.readTriangles(g.getObjectByProperty('uuid', uuid).geometry);
 		const top = tris.findIndex((t) => t.every((v) => Math.abs(v.y - 0.5) < 1e-6));
 		fe.highlightFaceByTriangle(top);
@@ -393,13 +393,13 @@ h.run(async () => {
 	}, uuid);
 	h.check(patch === false, 'a patch of a closed box is refused (its rim would make three-face edges)');
 	h.check((await facts(A.page, uuid)).tris === 12, '...and nothing changed');
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
 
 	// ===================================== 5b. P7c: mitered corner + vertex segments
 	// an octahedron has FOUR faces at every vertex — the case the edge bevel used to
 	// refuse. Through the real button at 3 segments: watertight and wound outward.
 	uuid = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.faceEdit.exitFaceEdit?.();
 		s.meshEdit.exitEditMode?.();
 		s.commandsHandler.sceneCommand('/clear all');
@@ -427,7 +427,7 @@ h.run(async () => {
 	h.check(f.odd === 0 && f.sameWay === 0, 'mitered at both ends: watertight and consistently wound');
 	h.check(f.volume > 0 && f.volume < preOct.volume, `the chamfer removed material (${preOct.volume.toFixed(4)} -> ${f.volume.toFixed(4)})`);
 	await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		for (const n of [1, 2, 5, 8]) fe.reapplyOpAdjust({ segments: n });
 		fe.settleOpAdjust();
 	});
@@ -435,12 +435,12 @@ h.run(async () => {
 	h.check(f.odd === 0 && f.sameWay === 0, 'scrubbed through 1/2/5/8 segments and settled at 8: still watertight');
 	await undo(A.page);
 	h.check((await facts(A.page, uuid)).soup === preOct.soup, 'ONE undo restores the octahedron');
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
 	// the vertex bevel's new SEGMENTS row, in vertex mode, on the octahedron's top
 	picked = await pickVerts(A.page, uuid, [[0, 1, 0]]);
 	h.check(picked.size === 1, 'the top vertex is picked');
 	h.check((await A.page.locator('#mesh-vertex-bevel').count()) === 1, 'the vertex bevel button is there');
-	await A.page.evaluate(() => window.__stores.meshToolParams.bevelProfile.set(1));
+	await A.page.evaluate(() => window.__tp.test.v1.meshToolParams.bevelProfile.set(1));
 	await A.page.click('#mesh-vertex-bevel');
 	await A.page.waitForTimeout(300);
 	h.check((await A.page.locator('#bevel-segments').count()) === 1, 'vertex mode shows a segments row now');
@@ -450,8 +450,8 @@ h.run(async () => {
 	h.check(f.odd === 0 && f.sameWay === 0, 'the rounded corner is watertight');
 	await undo(A.page);
 	await A.page.evaluate(() => {
-		window.__stores.meshEdit.exitEditMode();
-		window.__stores.meshToolParams.resetToolParams();
+		window.__tp.test.v1.meshEdit.exitEditMode();
+		window.__tp.test.v1.meshToolParams.resetToolParams();
 	});
 
 	// ========================================================= 6. TWO PEERS
@@ -460,10 +460,10 @@ h.run(async () => {
 	uuid = await freshBox(A.page);
 	await h.eventually(() => objectOf(B.page, uuid), (v) => v === true, 'B received the box (premise)', 20000);
 	await A.page.evaluate((uuid) => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		fe.enterFaceEdit(uuid);
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const tris = fe.readTriangles(g.getObjectByProperty('uuid', uuid).geometry);
 		const top = tris.findIndex((t) => t.every((v) => Math.abs(v.y - 0.5) < 1e-6));
 		fe.highlightFaceByTriangle(top);
@@ -485,7 +485,7 @@ h.run(async () => {
 	);
 	const bFaces = await facts(B.page, uuid);
 	h.check(bFaces.faces === finalA.faces, `...and A's authored partition rode the topology channel (${bFaces.faces})`);
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
 
 	// ============================================ 7. SEPARATE (P6b, replication)
 	// the top quad leaves the box as a NEW object: an `object` create + a source
@@ -495,17 +495,17 @@ h.run(async () => {
 	const childrenOf = (page) =>
 		page.evaluate(() => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			return g.children.filter((c) => c.isMesh).map((c) => c.uuid);
 		});
 	await A.page.evaluate((uuid) => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		fe.enterFaceEdit(uuid);
 		// the sub-mode is a persisted store: section 5b left the session in EDGES, where
 		// the faces Operations grid is not rendered at all
 		fe.setFaceSubmode('faces');
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const tris = fe.readTriangles(g.getObjectByProperty('uuid', uuid).geometry);
 		const top = tris.findIndex((t) => t.every((v) => Math.abs(v.y - 0.5) < 1e-6));
 		fe.highlightFaceByTriangle(top);
@@ -527,7 +527,7 @@ h.run(async () => {
 	const pose = await A.page.evaluate(
 		({ a, b }) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const x = g.getObjectByProperty('uuid', a);
 			const y = g.getObjectByProperty('uuid', b);
 			x.updateMatrixWorld();
@@ -557,17 +557,17 @@ h.run(async () => {
 	h.check((await facts(A.page, uuid)).soup === preSep.soup, '...and restores the box in the SAME step');
 	await h.eventually(() => objectOf(B.page, pieceUuid), (v) => v === false, 'B drops the piece on the undo', 20000);
 	await h.eventually(() => facts(B.page, uuid), (v) => v && v.tris === 12, "B's box is whole again", 20000);
-	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 	h.check(!!(await objectOf(A.page, pieceUuid)) && (await facts(A.page, uuid)).tris === 10, 'redo separates again (same uuid)');
 	await h.eventually(() => objectOf(B.page, pieceUuid), (v) => v === true, 'B gets the piece back on redo', 20000);
 	// Done seals the session: the mixed-kind run is ONE composite step after it
 	await A.page.evaluate(() => {
-		window.__stores.faceEdit.exitFaceEdit();
-		window.__stores.editSession?.sealEditHistorySession?.();
+		window.__tp.test.v1.faceEdit.exitFaceEdit();
+		window.__tp.test.v1.editSession?.sealEditHistorySession?.();
 	});
 	const sealed = await A.page.evaluate(() => {
 		let stack;
-		window.__stores.history.undoStack.subscribe((v) => (stack = v))();
+		window.__tp.test.v1.history.undoStack.subscribe((v) => (stack = v))();
 		return stack.length ? stack[stack.length - 1].kind : '';
 	});
 	h.check(['session', 'aibatch'].includes(sealed), `the sealed session is one composite entry (${sealed})`);
@@ -579,7 +579,7 @@ h.run(async () => {
 	await h.connect(C, A);
 	await h.eventually(() => facts(C.page, pieceUuid), (v) => v && v.tris === 2, 'a late joiner (C) gets the piece', 30000);
 	await h.eventually(() => facts(C.page, uuid), (v) => v && v.tris === 10, '...and the box without those faces', 30000);
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	h.check(!(await objectOf(A.page, pieceUuid)) && (await facts(A.page, uuid)).tris === 12, 'after Done, ONE undo still reverts both halves');
 	await h.eventually(() => objectOf(C.page, pieceUuid), (v) => v === false, '...on the late joiner too', 20000);
 

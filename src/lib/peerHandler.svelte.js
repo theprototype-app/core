@@ -325,7 +325,7 @@ function inviteRefusalLabel(reason, kind) {
  * metadata, which the joiner has at its `connection` event — the conn never needs to
  * open, and a joiner that closes it at once is the normal case. */
 const REFUSAL_DIAL_MS = 15000;
-/** 101 F1: protocol refusal dials, bounded (see mayRefusalDial) */
+/** 101: refusal dials (every result), bounded (see mayRefusalDial) */
 const PROTO_DIALS_PER_SEC = 5;
 const PROTO_DIALS_IN_FLIGHT = 20;
 /** 101 F1: proto/caps entries kept for peers with no open link */
@@ -935,7 +935,11 @@ export class PeerConnection {
 				const hears = !!conn?.metadata?.jr;
 				try { conn.close(); } catch {}
 				// a blocked peer is refused as blocked (below), and a protocol that is not a number is closed quietly
-				if (isBlocked(conn.peer) || !Number.isInteger(theirProto)) {
+				if (isBlocked(conn.peer)) {
+					if (hears) this.sendJoinResult(conn.peer, 'removed');
+					return;
+				}
+				if (!Number.isInteger(theirProto)) {
 					noteWireDrop(conn.peer, 'proto', 'dial');
 					return;
 				}
@@ -1251,7 +1255,8 @@ export class PeerConnection {
 					pc.addEventListener('datachannel', (/** @type {RTCDataChannelEvent} */ e) => meterChannel(e.channel));
 				}
 			};
-			if (conn.open) meterBytes();
+			// now (an outgoing conn already has its channel and RTCPeerConnection) and again on open
+			meterBytes();
 			conn.on('open', meterBytes);
 			conn.on('close', () => {
 				if (iceDropTimer) clearTimeout(iceDropTimer);
@@ -2410,6 +2415,7 @@ export class PeerConnection {
 	refuseProto(peerId, theirs, conn, opts = {}) {
 		const first = this.protoRefused.get(peerId) !== theirs;
 		this.protoRefused.set(peerId, theirs);
+		this.prunePeerProto();
 		if (conn) {
 			conn.__protoRefused = true;
 			conn.__protoOk = false;
@@ -2419,7 +2425,7 @@ export class PeerConnection {
 		}
 		const links = [...new Set([conn, this.connections[peerId], this.inboundDials.get(peerId)])].filter(Boolean);
 		if (!opts.told) {
-			if (opts.dial && this.mayRefusalDial(peerId)) this.sendJoinResult(peerId, 'denied', { refuse: { reason: 'proto', need: WIRE_PROTO } });
+			if (opts.dial) this.sendJoinResult(peerId, 'denied', { refuse: { reason: 'proto', need: WIRE_PROTO } });
 			for (const c of links) {
 				if (!c.open) continue;
 				try { c.send(refuseMessage()); } catch { /* already going */ }
@@ -2443,7 +2449,7 @@ export class PeerConnection {
 	}
 
 	/**
-	 * 101 F1: a refusal dial costs a peer connection for up to REFUSAL_DIAL_MS, so they are bounded:
+	 * 101: a refusal dial (any result) costs a peer connection for up to REFUSAL_DIAL_MS, so they are bounded:
 	 * one at a time per peer, at most PROTO_DIALS_PER_SEC a second and PROTO_DIALS_IN_FLIGHT at once.
 	 * @param {string} peerId @returns {boolean}
 	 */
@@ -2456,11 +2462,19 @@ export class PeerConnection {
 		return true;
 	}
 
-	/** 101 F1: proto/caps of peers that never got a link are not kept past PEER_PROTO_KEEP entries. */
+	/**
+	 * 101 F1: per-peer protocol records (proto, caps, refusals) are kept to PEER_PROTO_KEEP entries each:
+	 * past that the OLDEST go first, never a peer with a link open or in flight (ours or theirs).
+	 */
 	prunePeerProto() {
-		if (this.peerProto.size <= PEER_PROTO_KEEP && this.peerCaps.size <= PEER_PROTO_KEEP) return;
-		for (const map of [this.peerProto, this.peerCaps])
-			for (const id of [...map.keys()]) if (!this.openedPeers.has(id) && !this.connections[id]?.open) map.delete(id);
+		const live = (/** @type {string} */ id) => this.openedPeers.has(id) || !!this.connections[id] || this.inboundDials.has(id);
+		for (const map of [this.peerProto, this.peerCaps, this.protoRefused]) {
+			if (map.size <= PEER_PROTO_KEEP) continue;
+			for (const id of [...map.keys()]) {
+				if (map.size <= PEER_PROTO_KEEP) break;
+				if (!live(id)) map.delete(id);
+			}
+		}
 	}
 
 	/**
@@ -2508,7 +2522,7 @@ export class PeerConnection {
 	 * @returns {boolean} whether a dial went out
 	 */
 	sendJoinResult(peerId, result, extra) {
-		if (!isRefusal(result) || !this.peer?.open) return false;
+		if (!isRefusal(result) || !this.peer?.open || !this.mayRefusalDial(peerId)) return false;
 		const conn = this.peer.connect(peerId, dialOptions(result, undefined, extra));
 		if (!conn) return false;
 		this.refusalDials.add(peerId);

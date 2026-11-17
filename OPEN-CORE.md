@@ -402,7 +402,7 @@ and is **1**; a peer that sends no `proto` speaks 1 (every build up to 1.65).
   Only an answer to something this side asked for (a join request still waiting, or a link of ours to
   that peer) can latch the reload notice; the same claim in a stranger's dial shows a plain toast at
   most once a minute, a blocked peer or an unreadable number is closed without a word, and refusal
-  dials are bounded (one per peer at a time, 5 a second, 20 in flight).
+  dials of every kind are bounded (one per peer at a time, 5 a second, 20 in flight).
 - **Bump `proto` only** when a message changes meaning in a way an older build would apply wrongly.
   Additive fields and new message types do not bump it (an older build counts and drops a type it
   does not know); they become a **`caps` flag** instead — today `wb` (batch envelopes), `fc` (fast
@@ -411,7 +411,7 @@ and is **1**; a peer that sends no `proto` speaks 1 (every build up to 1.65).
 - **Inbound limits (F4):** each peer has a per-second budget of messages and bytes and an `object`
   size cap ([src/lib/wireBudget.js](src/lib/wireBudget.js) `LIMITS`, set at >= 4x the measured
   peaks); a message over budget is dropped and counted (`budget:*` in Diagnostics), the person is
-  told once a minute, and the link stays up. A `batch` envelope is charged per item and each `object`
+  told once a minute, and the link stays up. A `batch` envelope costs one message plus one per ten items, and each `object`
   item in it meets the size cap on its own; every data channel on the link is metered, and a goodbye
   or refusal passes the budget only a few times a second.
 

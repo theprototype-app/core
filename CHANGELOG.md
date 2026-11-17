@@ -6,6 +6,11 @@
      rendering, so maintainer notes stay out of the user-facing window. No emoji from
      1.64 on (owner rule: no emoji in the UI); the app strips them from older entries. -->
 
+## 1.66.1 — Safer loading, continued
+
+- **Every part of an object counts towards the load limits**, and messages from other people that are not plain data are set aside. Anything that does not pass loads like a missing file, and the rest of the scene is unchanged.
+- **.gltf files opened from the sidebar, and models from a model generator, get the same size check** as every other model file.
+
 ## 1.66.0 — Menus and panels, polished
 
 ### Sidebars and the dock

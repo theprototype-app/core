@@ -47,6 +47,9 @@ export const MAX_NUMBERS = 32_000_000;
 export const MAX_GENERATED_VERTICES = 16_000_000;
 /** How many nodes one object tree may hold. */
 export const MAX_NODES = 200_000;
+/** Node visits the loader's per-light and per-LOD-level tree searches may cost (lights or levels
+ * times nodes); a few hundred milliseconds of main thread at most. */
+export const MAX_TREE_SEARCH = 32_000_000;
 
 /** @param {unknown} url */
 export function isEmbeddedUrl(url) {
@@ -152,8 +155,10 @@ const embeddedImageUrl = (url) => isImageDataUrl(url);
 /** Keep a material's app data, minus a preview address that is not an embedded image.
  * @param {any} material @param {GuardCounts} counts */
 function guardMaterialUserData(material, counts) {
-	const ud = material?.userData;
+	let ud = material?.userData;
 	if (!ud || typeof ud !== 'object' || Array.isArray(ud)) return;
+	// own fields only, so the delete below cannot miss an inherited one
+	if (!isPlainRecord(ud)) ud = material.userData = { ...ud };
 	if ('mapDataUrl' in ud && !embeddedImageUrl(ud.mapDataUrl)) {
 		delete ud.mapDataUrl;
 		counts.images++;
@@ -213,6 +218,14 @@ function numericLength(value) {
 	if (Array.isArray(value)) return value.length;
 	if (ArrayBuffer.isView(value)) return /** @type {any} */ (value).byteLength / (/** @type {any} */ (value).BYTES_PER_ELEMENT || 1);
 	return -1;
+}
+
+/** A record as JSON (or a plain decoder) builds it: the standard prototype, no own `__proto__`
+ * key. Anything else would read differently to a check than to the loader. @param {object} o */
+function isPlainRecord(o) {
+	const proto = Object.getPrototypeOf(o);
+	if (proto === Array.prototype) return Array.isArray(o);
+	return proto === Object.prototype && !Object.hasOwn(o, '__proto__');
 }
 
 /** Size walk state. @typedef {{numbers: number, vertices: number, nodes: number, bad: string|null}} Size */
@@ -323,7 +336,13 @@ function imageNumbers(source, size) {
 export function measureObjectJson(json) {
 	/** @type {Size} */
 	const size = { numbers: 0, vertices: 0, nodes: 0, bad: null };
-	for (const key of LIST_KEYS) if (json?.[key] !== undefined && !Array.isArray(json[key])) size.bad ??= 'shape';
+	if (json && typeof json === 'object' && !isPlainRecord(json)) size.bad ??= 'shape';
+	for (const key of LIST_KEYS) {
+		const list = json?.[key];
+		if (list === undefined) continue;
+		if (!Array.isArray(list) || !isPlainRecord(list)) size.bad ??= 'shape';
+		else for (const entry of list) if (entry && typeof entry === 'object' && !isPlainRecord(entry)) size.bad ??= 'shape';
+	}
 	let shapeCurves = 0;
 	for (const shape of Array.isArray(json?.shapes) ? json.shapes : []) {
 		const paths = [shape, ...(Array.isArray(shape?.holes) ? shape.holes : [])];
@@ -363,16 +382,25 @@ export function measureObjectJson(json) {
 			}
 	}
 	for (const skeleton of Array.isArray(json?.skeletons) ? json.skeletons : []) {
-		countOptional(size, skeleton?.bones);
-		size.numbers += countOptional(size, skeleton?.boneInverses) * 15;
+		const bones = countOptional(size, skeleton?.bones);
+		const inverses = countOptional(size, skeleton?.boneInverses);
+		size.numbers += inverses * 15;
+		// three builds a bone (and its matrices) for every entry, found in the tree or not, and
+		// reads one inverse per bone
+		size.nodes += bones;
+		if (bones !== inverses) size.bad ??= 'shape';
 	}
 	if (json?.object !== undefined && (!json.object || typeof json.object !== 'object')) size.bad ??= 'shape';
 	const stack = json?.object ? [json.object] : [];
+	// three searches the whole tree once per directional or spot light (its target) and once per
+	// LOD level, so those searches cost their count times the tree's size
+	let searches = 0;
 	while (stack.length) {
 		const node = stack.pop();
 		size.nodes++;
 		if (size.nodes > MAX_NODES) break;
 		if (!node || typeof node !== 'object') continue;
+		if (!isPlainRecord(node)) size.bad ??= 'shape';
 		if (node.type === 'InstancedMesh') {
 			const count = node.count;
 			const matrices = countRequired(size, node.instanceMatrix?.array);
@@ -382,15 +410,31 @@ export function measureObjectJson(json) {
 		}
 		// nothing in this app makes one, and three sizes it from six counts it never checks
 		if (node.type === 'BatchedMesh') size.bad ??= 'count';
+		if (node.type === 'DirectionalLight' || node.type === 'SpotLight') searches++;
+		if (node.type === 'LOD') {
+			if (!Array.isArray(node.levels)) size.bad ??= 'shape';
+			else searches += node.levels.length;
+		}
 		// a light's shadow map is a GPU texture of mapSize squared; the app's own lights stay far under this
 		const mapSize = node.shadow?.mapSize;
 		if (mapSize !== undefined && !(Array.isArray(mapSize) && mapSize.length === 2 && mapSize.every((v) => Number.isInteger(v) && v >= 0 && v <= MAX_SHADOW_MAP)))
 			size.bad ??= 'count';
+		// three builds a light's shadow camera as a node of its own (children included), so it
+		// counts and is checked like any other node
+		const shadow = node.shadow;
+		if (shadow !== undefined && shadow !== null) {
+			if (typeof shadow !== 'object' || !isPlainRecord(shadow)) size.bad ??= 'shape';
+			else if (shadow.camera !== undefined) {
+				if (!shadow.camera || typeof shadow.camera !== 'object') size.bad ??= 'shape';
+				else stack.push(shadow.camera);
+			}
+		}
 		if (node.children !== undefined) {
 			if (!Array.isArray(node.children)) size.bad ??= 'shape';
 			else for (const child of node.children) stack.push(child);
 		}
 	}
+	if (searches * size.nodes > MAX_TREE_SEARCH) size.bad ??= 'count';
 	return size;
 }
 

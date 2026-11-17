@@ -37,6 +37,7 @@ import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo, rolesPendin
 // 27-A (audit H1): shape validation + per-peer failure counters. Both are LEAVES, so the
 // dispatcher can reject a malformed message before any applier sees it.
 import { validateWireMessage } from '$lib/wireValidate';
+import { isPlainMessage } from '$lib/wireShape';
 import { acceptedRosterRows, acceptedMeshIds, acceptsGoneReport, asSendersOwn, acceptedChatLines } from '$lib/rosterTrust';
 import { holdForWireBatch } from '$lib/wireBatch';
 // 60 Q2: the fast movement channel (an unordered, unreliable second channel for pose streams)
@@ -1925,6 +1926,11 @@ export class PeerConnection {
 				// only "is this a message at all".
 				if (!data || typeof data !== 'object') {
 					noteWireError(conn.peer, 'shape', typeof data);
+					return;
+				}
+				// plain data all the way down (wireShape.js), before any check reads it
+				if (!isPlainMessage(data)) {
+					noteWireError(conn.peer, 'shape', 'plain');
 					return;
 				}
 				// every gate below compares `type` as a string, and a Set lookup and `==` disagree on anything else

@@ -454,3 +454,108 @@ describe('glTF', () => {
 		expect(loadGuardTotals().refused).toBe(1);
 	});
 });
+
+describe('every node of an object counts, its shadow camera included', () => {
+	const M = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+	const groups = (n) => Array.from({ length: n }, (_, i) => ({ type: 'Group', uuid: 'g' + i, matrix: M }));
+	const light = (camChildren, extra = {}) => ({
+		metadata: { version: 4.7, type: 'Object' },
+		object: {
+			type: 'DirectionalLight', uuid: 'L', matrix: M, ...extra,
+			shadow: { mapSize: [512, 512], camera: { type: 'OrthographicCamera', uuid: 'C', children: camChildren } }
+		}
+	});
+
+	it('a real light round-trips', () => {
+		const l = new THREE.DirectionalLight();
+		l.castShadow = true;
+		const json = l.toJSON();
+		expect(guardObjectJson(json).ok).toBe(true);
+		expect(new THREE.ObjectLoader().parse(json).type).toBe('DirectionalLight');
+	});
+
+	it('counts the nodes under a shadow camera', () => {
+		expect(guardObjectJson(light(groups(200_001))).reason).toBe('nodes');
+		expect(guardObjectJson(light(groups(10))).ok).toBe(true);
+	});
+
+	it('walks lights nested inside a shadow camera, and checks those nodes too', () => {
+		const inner = light(groups(200_001)).object;
+		expect(guardObjectJson(light([{ ...inner, uuid: 'L2' }])).reason).toBe('nodes');
+		const im = { type: 'InstancedMesh', uuid: 'i', count: 1e9, instanceMatrix: { array: [] } };
+		expect(guardObjectJson(light([im])).reason).toBe('count');
+		expect(guardObjectJson(light([{ ...light([], {}).object, uuid: 'L3', shadow: { mapSize: [1e6, 1e6] } }])).reason).toBe('count');
+	});
+
+	it('refuses a shadow or camera that is not an object', () => {
+		const j = light([]);
+		j.object.shadow.camera = 5;
+		expect(guardObjectJson(j).reason).toBe('shape');
+		const k = light([]);
+		k.object.shadow = 'x';
+		expect(guardObjectJson(k).reason).toBe('shape');
+	});
+
+	it('refuses records whose prototype is not the standard one', () => {
+		const j = light([]);
+		j.object.shadow.camera = Object.assign(Object.create({ children: groups(5) }), { type: 'OrthographicCamera', uuid: 'C' });
+		expect(guardObjectJson(j).reason).toBe('shape');
+		const k = { metadata: { version: 4.7 }, object: { type: 'Group', uuid: 'r' }, materials: [Object.create({ type: 'ShaderMaterial' })] };
+		expect(guardObjectJson(k).reason).toBe('shape');
+		expect(guardObjectJson(JSON.parse('{"metadata":{},"object":{"type":"Group","uuid":"r","__proto__":{"children":[]}}}')).reason).toBe('shape');
+	});
+
+	it('drops an inherited non-embedded preview address from material userData', () => {
+		const ud = Object.create({ mapDataUrl: 'https://example.invalid/x.png' });
+		const set = { materials: [{ type: 'MeshStandardMaterial', uuid: 'm', userData: ud }] };
+		const r = guardMaterialSet(set);
+		expect(r.ok).toBe(true);
+		expect(set.materials[0].userData.mapDataUrl).toBeUndefined();
+	});
+});
+
+describe('the loader work an object asks for stays bounded', () => {
+	const M = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+	const wrap = (object, extra = {}) => ({ metadata: { version: 4.7, type: 'Object' }, object, ...extra });
+
+	it('counts every skeleton bone as a node, and wants one inverse per bone', () => {
+		const n = 200_001;
+		const bones = Array.from({ length: n }, (_, i) => 'b' + i);
+		const big = wrap({ type: 'Group', uuid: 'r' }, { skeletons: [{ uuid: 's', bones, boneInverses: bones.map(() => M) }] });
+		expect(guardObjectJson(big).reason).toBe('nodes');
+		const odd = wrap({ type: 'Group', uuid: 'r' }, { skeletons: [{ uuid: 's', bones: ['a', 'b'], boneInverses: [M] }] });
+		expect(guardObjectJson(odd).reason).toBe('shape');
+	});
+
+	it('a real skinned mesh round-trips', () => {
+		const bones = [new THREE.Bone(), new THREE.Bone()];
+		bones[0].add(bones[1]);
+		const geo = new THREE.BoxGeometry();
+		const count = geo.attributes.position.count;
+		geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(new Array(count * 4).fill(0), 4));
+		geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(new Array(count * 4).fill(0.25), 4));
+		const mesh = new THREE.SkinnedMesh(geo, new THREE.MeshStandardMaterial());
+		mesh.add(bones[0]);
+		mesh.bind(new THREE.Skeleton(bones));
+		const json = mesh.toJSON();
+		expect(guardObjectJson(json).ok).toBe(true);
+		expect(new THREE.ObjectLoader().parse(json).type).toBe('SkinnedMesh');
+	});
+
+	it('refuses many lights in a large tree, keeps ordinary ones', () => {
+		const lights = (n) => Array.from({ length: n }, (_, i) => ({ type: 'SpotLight', uuid: 'l' + i, matrix: M }));
+		expect(guardObjectJson(wrap({ type: 'Group', uuid: 'r', children: lights(8000) })).reason).toBe('count');
+		expect(guardObjectJson(wrap({ type: 'Group', uuid: 'r', children: lights(500) })).ok).toBe(true);
+	});
+
+	it('LOD levels must be a list, and their searches count', () => {
+		expect(guardObjectJson(wrap({ type: 'LOD', uuid: 'r', levels: 5 })).reason).toBe('shape');
+		const levels = Array.from({ length: 8000 }, () => ({ object: 'x', distance: 0 }));
+		const children = Array.from({ length: 8000 }, (_, i) => ({ type: 'Group', uuid: 'g' + i, matrix: M }));
+		expect(guardObjectJson(wrap({ type: 'LOD', uuid: 'r', levels, children })).reason).toBe('count');
+		const lod = new THREE.LOD();
+		lod.addLevel(new THREE.Object3D(), 0);
+		lod.addLevel(new THREE.Object3D(), 10);
+		expect(guardObjectJson(lod.toJSON()).ok).toBe(true);
+	});
+});

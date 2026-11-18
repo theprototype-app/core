@@ -6,6 +6,11 @@
      rendering, so maintainer notes stay out of the user-facing window. No emoji from
      1.64 on (owner rule: no emoji in the UI); the app strips them from older entries. -->
 
+## 1.67.1 — Steadier sessions
+
+- **Messages from other people are read within fixed limits**: a message whose stated sizes do not match the data that arrived, or that would need far more memory than its size, is skipped and counted in Diagnostics, and the connection stays up. Large messages sent in pieces are put back together within the same limits, also when their pieces arrive out of order.
+- **One data channel per connection**: an extra channel opened on an existing connection is closed.
+
 ## 1.67.0 — Foundations
 
 - **Sessions check versions**: when people join, their apps first agree that they speak the same session version. If one app is older, it is asked to reload (**This session uses a newer version. Reload to update.**) and People shows who still needs to; nothing from the scene is exchanged until they match. <!-- 101-proto F1 -->

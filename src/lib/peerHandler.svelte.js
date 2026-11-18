@@ -1,4 +1,5 @@
 import Peer from 'peerjs';
+import { peerSerializers, setFrameRefusalHandler } from './peerCodec.js';
 import { backoffDelay } from '$lib/netBackoff';
 import { sceneCommand, lockRestore, checkLocks, createObject, sendObjects, deleteObject, colorObject, createLoader, userData, handleDisconnected, specator, cameraSettings, objectParameters, applyClearScene, ROSTER_GRACE_MS } from './commandsHandler.svelte';
 import { gateCreationBroadcast } from './objectPermissions';
@@ -50,6 +51,8 @@ import { createFastLinks, createStaleFilter, createKeyframer, stampPose, poseKey
 import { registerDebugHook } from '$lib/debugHookRegistry.js';
 import { routePerfLive, perfLivePeerGone } from '$lib/perf/liveWire.js'; // 34 PF: the live perf stream (an import-free leaf)
 import { noteWireError, noteWireDrop } from '$lib/wireErrors';
+// a frame the data-channel codec refused (peerCodec) is counted like any other failing message
+setFrameRefusalHandler((peerId, reason) => noteWireError(peerId, 'frame', reason));
 import { composeAdmitNotice, shortPeer } from '$lib/admitNotice';
 import { ICE_DROP_GRACE_MS, LINK_POLL_MS, strikesNeeded, quietPeerError, unavailablePeerId, consentCounters, linkSilence, keepPeerId, silenceCloseAllowed, meshHosts } from '$lib/peerDrop';
 import { takeRejoin, rememberRejoin, settleRejoin, REJOIN_WINDOW_MS, REJOIN_DIAL_MS } from '$lib/rejoin'; // fix-agenttest 6
@@ -547,7 +550,9 @@ export class PeerConnection {
 			// Peer that never opens (`connect()` answers undefined, which every dial site already
 			// guards, the signaling-down rule), so `$peers.peer.id` and every send stay valid
 			// net-drop-1: the id stays readable through a signaling drop (peerDrop.keepPeerId)
-			this.peer = exportMode ? /** @type {Peer} */ (offlinePeer(this.myId)) : keepPeerId(new Peer(this.myId, options), this.myId);
+			// every link reads and writes through this app's own data-channel codec (peerCodec), whatever codec a
+			// dial asks for; the server options are unchanged
+			this.peer = exportMode ? /** @type {Peer} */ (offlinePeer(this.myId)) : keepPeerId(new Peer(this.myId, { ...(options ?? {}), serializers: peerSerializers() }), this.myId);
 		};
 
 		// 27-F (audit H2): THE recreate ritual, in one place. Four callers had their own

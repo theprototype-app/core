@@ -27,6 +27,19 @@ const TOAST_COOLDOWN_MS = 60_000;
 
 /** @type {Map<string, WireFailure>} keyed `<peerId>|<type>` */
 const failures = new Map();
+/** Rows kept at most: a dial from a stranger is counted under the stranger's id, and ids cost nothing to
+ * make, so the table forgets the row touched longest ago rather than growing with every id. */
+export const MAX_WIRE_ROWS = 512;
+/** Store a row as the most recently touched one, dropping the oldest past the cap. @param {string} key @param {WireFailure} entry */
+function remember(key, entry) {
+	failures.delete(key);
+	failures.set(key, entry);
+	while (failures.size > MAX_WIRE_ROWS) {
+		const oldest = failures.keys().next().value;
+		if (oldest === undefined) break;
+		failures.delete(oldest);
+	}
+}
 /** @type {Map<string, number>} last toast per peer, so one bad peer cannot spam */
 const lastToastAt = new Map();
 
@@ -51,7 +64,7 @@ export function noteWireError(peerId, type, error, opts) {
 	entry.count++;
 	entry.last = now;
 	if (error !== undefined && !entry.sample) entry.sample = String(error).slice(0, 200);
-	failures.set(key, entry);
+	remember(key, entry);
 	wireErrorCount.update((n) => n + 1);
 
 	// The first three carry the detail; after that the counter is the record.
@@ -85,7 +98,7 @@ export function noteWireDrop(peerId, reason, type) {
 	const entry = failures.get(key) ?? { count: 0, first: now, last: now, sample: '' };
 	entry.count++;
 	entry.last = now;
-	failures.set(key, entry);
+	remember(key, entry);
 	wireErrorCount.update((n) => n + 1);
 	if (entry.count <= 3) log('warn', 'wire', 'message from ' + shortId(peerId) + ' dropped (' + key.split('|')[1] + ')');
 	if (reason === 'proto') return;

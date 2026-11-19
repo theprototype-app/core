@@ -16,7 +16,11 @@
 // is easy to get subtly wrong, so they are testable with no runtime, no scene and no peer.
 
 /** the socket types a script may declare (flowSockets' vocabulary, minus 'effect') */
-export const SCRIPT_INPUT_TYPES = ['number', 'boolean', 'vector3', 'color', 'object', 'event'];
+export const SCRIPT_INPUT_TYPES = ['number', 'boolean', 'vector3', 'color', 'object', 'event', 'any'];
+// 2.0-n3c: 'any' hands the code the RAW wired value (text, a list, a number) and `undefined` when
+// nothing is wired and nothing is dialled — what a converted HUD Text's value and a converted
+// Math / Gate's extra sockets need to read exactly what the built-in read. An older build reads an
+// 'any' input as 'number' (normalizeSockets' fallback).
 /** an output carries a value; an EVENT output would need a stamp, which a pure function
  * of (inputs, time) cannot mint — so outputs are values only */
 export const SCRIPT_OUTPUT_TYPES = ['number', 'boolean', 'vector3', 'color', 'object', 'any'];
@@ -90,6 +94,7 @@ export function scriptSocketType(nodeType, data, handle, kind = 'input') {
 
 /** the typed zero an unwired, undialled input reads @param {string} type */
 export function typedZero(type) {
+	if (type === 'any') return undefined;
 	if (type === 'boolean' || type === 'event') return false;
 	if (type === 'vector3') return [0, 0, 0];
 	if (type === 'color') return '#ffffff';
@@ -111,6 +116,7 @@ const finite = (v) => {
  * @param {string} type @param {any} v
  */
 export function coerceInput(type, v) {
+	if (type === 'any') return v; // 2.0-n3c: raw, null included (a wired null is a value the built-ins read)
 	if (v === undefined || v === null) return typedZero(type);
 	if (type === 'number') return Array.isArray(v) ? finite(v[0]) : typeof v === 'boolean' ? (v ? 1 : 0) : finite(v);
 	if (type === 'boolean' || type === 'event') return Array.isArray(v) ? v.length > 0 : typeof v === 'number' ? v !== 0 : !!v;

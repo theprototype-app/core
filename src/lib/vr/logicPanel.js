@@ -60,7 +60,10 @@ import {
 	fieldText,
 	dropPoint
 } from './logicGraphCore.js';
-import { drawLogicPanel, drawLogicPad, hitAt, PANEL_PX, PAD_PX, GRAPH_AREA, PAD_ROWS, PAL_GROUPS, PAL_PAGE } from './logicPanelDraw.js';
+import { drawLogicPanel, drawLogicPad, hitAt, PANEL_PX, PAD_PX, GRAPH_AREA, PAD_ROWS, PAL_GROUPS, PAL_PAGE, CODE_ROWS } from './logicPanelDraw.js';
+// 2.0 N2: the read-only code sheet (both LEAVES — the code generator imports nothing, the flag only a store)
+import { graphToCode } from '../nodes/flowCode.js';
+import { codeViewFlag } from '../nodes/codeViewFlag.js';
 
 /** the radial entries: Tools ▸ Logic, Selected ▸ Edit logic */
 export const RADIAL_TOOLS = { id: 'logic', group: 'tools', order: 6.2 };
@@ -121,6 +124,8 @@ let selected = null;
 let padPage = 0;
 /** the add-a-node palette, or null @type {{group: number, gpage: number, page: number} | null} */
 let palette = null;
+/** 2.0 N2 (flag codeView): the read-only code sheet over the graph, or null @type {{page: number} | null} */
+let codeSheet = null;
 /** nodes added since the panel opened (staggers the drop point) */
 let added = 0;
 /** @type {'pinned' | 'held'} */
@@ -481,7 +486,14 @@ export function pressLogicButton(id, slot = -1) {
 	}
 	if (id === 'undo') return void historyRef?.undo?.();
 	if (id === 'redo') return void historyRef?.redo?.();
+	if (id === 'code') {
+		codeSheet = codeSheet || !get(codeViewFlag) ? null : { page: codePageOf(selected) };
+		palette = null;
+		return;
+	}
+	if (id.startsWith('code:')) return pressCode(id.slice(5));
 	if (id === 'add') {
+		codeSheet = null;
 		if (palette) palette = null;
 		else if (canWrite()) palette = { group: 0, gpage: 0, page: 0 };
 		return;
@@ -496,6 +508,56 @@ export function pressLogicButton(id, slot = -1) {
 	if (id === 'disconnect') return unwireSelected();
 	if (id === 'rename') return renameSelected();
 	if (id.startsWith('f:')) return pressField(id);
+}
+
+/** 2.0 N2: the graph's code, as the desktop Code tab prints it (catalog defaults left out) */
+function codeNow() {
+	const graph = graphOf(graphId) ?? { nodes: [], edges: [] };
+	return graphToCode(graph, {
+		defaults: (/** @type {string} */ t) => catalogRef?.findNodeSpec?.(t)?.defaults,
+		defaultLabel: (/** @type {string} */ t) => catalogRef?.findNodeSpec?.(t)?.label ?? '',
+		title: graphId === SCENE_GRAPH ? 'Scene flow' : objectName(graphId) + ' flow'
+	});
+}
+
+/** the sheet page holding a node's line (node -> line) @param {string | null} id */
+function codePageOf(id) {
+	if (!id) return 0;
+	const line = codeNow().lineOf[id];
+	return line ? Math.floor((line - 1) / CODE_ROWS) : 0;
+}
+
+/** @param {string} id `page:<±1>` | `line:<nodeId>` */
+function pressCode(id) {
+	if (!codeSheet) return;
+	if (id.startsWith('page:')) {
+		const pages = Math.max(1, Math.ceil(codeNow().code.split('\n').length / CODE_ROWS));
+		codeSheet.page = Math.max(0, Math.min(pages - 1, codeSheet.page + Number(id.slice(5))));
+	} else if (id.startsWith('line:')) {
+		// line -> node: select it, so the wrist pad shows (and edits) its values
+		selected = id.slice(5);
+		padPage = 0;
+	}
+}
+
+/** @returns {import('./logicPanelDraw.js').CodeSheet | null} */
+function codeSheetView() {
+	if (!codeSheet || !get(codeViewFlag)) return null;
+	const { code, nodeAt } = codeNow();
+	const all = code.replace(/\n$/, '').split('\n');
+	const pages = Math.max(1, Math.ceil(all.length / CODE_ROWS));
+	codeSheet.page = Math.min(codeSheet.page, pages - 1);
+	const first = codeSheet.page * CODE_ROWS;
+	return {
+		lines: all.slice(first, first + CODE_ROWS).map((text, i) => {
+			const n = first + i + 1;
+			const id = nodeAt[n] ?? null;
+			return { n, text, id, on: !!id && id === selected };
+		}),
+		page: codeSheet.page,
+		pages,
+		title: graphId === SCENE_GRAPH ? 'Scene flow' : objectName(graphId) + ' flow'
+	};
 }
 
 /** @param {string} id */
@@ -569,6 +631,7 @@ function switchGraph(id) {
 	graphId = id;
 	selected = null;
 	palette = null;
+	if (codeSheet) codeSheet.page = 0;
 	padPage = 0;
 	drag = null;
 	laid = null;
@@ -607,6 +670,7 @@ export function closeVRLogic() {
 	held = null;
 	drag = null;
 	palette = null;
+	codeSheet = null;
 }
 export function toggleVRLogic() {
 	if (get(vrLogicOpen)) closeVRLogic();
@@ -769,7 +833,7 @@ function readLaser(index) {
 	if (onPad && (!onPanel || onPad.distance < onPanel.distance)) return { on: 'pad', ...onPad, button: hitAt(padHits, onPad.x, onPad.y)?.id ?? null };
 	if (!onPanel) return { on: null };
 	const button = hitAt(panelHits, onPanel.x, onPanel.y)?.id ?? null;
-	const graph = !button && !palette && inGraph(onPanel) ? hitGraph(layout().cards, viewNow(), onPanel.x, onPanel.y) : null;
+	const graph = !button && !palette && !codeSheet && inGraph(onPanel) ? hitGraph(layout().cards, viewNow(), onPanel.x, onPanel.y) : null;
 	return { on: 'panel', ...onPanel, button, graph };
 }
 
@@ -956,7 +1020,9 @@ function panelView() {
 		readOnly: readOnly(),
 		canUndo: !!historyRef && get(historyRef.canUndo),
 		canRedo: !!historyRef && get(historyRef.canRedo),
-		palette: pal
+		palette: pal,
+		codeButton: get(codeViewFlag),
+		code: palette ? null : codeSheetView()
 	};
 }
 
@@ -1006,6 +1072,8 @@ function redraw() {
 		gh ? JSON.stringify(gh) : '',
 		selected,
 		palette ? JSON.stringify(palette) : '',
+		codeSheet ? 'code' + codeSheet.page : '',
+		get(codeViewFlag) ? 'cv' : '',
 		drag ? JSON.stringify({ k: drag.kind, m: drag.moved, e: drag.end, t: drag.target, ok: drag.ok, n: drag.node }) : '',
 		status.text && Date.now() < status.until ? status.text : '',
 		readOnly(),
@@ -1273,6 +1341,7 @@ export function vrLogicDebug() {
 		selected,
 		padPage,
 		palette: palette ? { ...palette } : null,
+		codeSheet: codeSheet ? { ...codeSheet } : null,
 		mode,
 		padHand: padHand(),
 		view: views.get(graphId) ?? null,

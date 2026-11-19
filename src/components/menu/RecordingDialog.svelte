@@ -8,6 +8,7 @@
 	// 68 V9: the pill is the progress (percent, frames, time left) with Cancel, and it can shrink to a
 	// chip so the render goes on in the background while you keep working in the panels.
 	import ModalDialog from '../ui/ModalDialog.svelte';
+	import ExportProgress from '../ui/ExportProgress.svelte';
 	import { get } from 'svelte/store';
 	import { untrack } from 'svelte';
 	import { recordingOpen, recordingState, recordingPrefs, setRecordingPrefs, exportJob } from '$lib/recording/recordingStores.js';
@@ -125,46 +126,20 @@
 </script>
 
 {#if busy}
-	<div id="recording-bar" class="rec-bar" class:rec-small={pillSmall} role="status" aria-live="polite" data-status={st.status} data-percent={percent}>
-		<span class="rec-dot" aria-hidden="true"></span>
-		{#if !pillSmall}
-			<span class="rec-label"
-				>{st.status === 'preparing' ? 'Getting ready…' : st.status === 'finishing' ? 'Finishing the file…' : exportTotal ? 'Rendering' : 'Recording'}</span
-			>
-		{/if}
-		<div
-			id="recording-progress"
-			class="rec-track"
-			role="progressbar"
-			aria-label={exportTotal ? 'Export progress' : 'Recording progress'}
-			aria-valuemin="0"
-			aria-valuemax="100"
-			aria-valuenow={percent}
-		>
-			<div class="rec-fill" style:width="{percent}%"></div>
-		</div>
-		<span id="recording-percent" class="rec-time">{percent}%</span>
-		{#if !pillSmall}
-			{#if exportTotal}
-				<span id="recording-time" class="rec-time" data-frames={st.frames} data-total={exportTotal}>frame {st.frames} / {exportTotal}{timeLeft ? ' · ' + timeLeft : ''}</span>
-			{:else}
-				<span id="recording-time" class="rec-time">{st.elapsed.toFixed(1)} / {st.duration.toFixed(1)} s</span>
-			{/if}
-		{/if}
-		{#if exportTotal}
-			<button
-				id="recording-shrink"
-				type="button"
-				class="rec-cancel"
-				aria-pressed={pillSmall}
-				title={pillSmall ? 'Show the render details' : 'Keep working: shrink this to a small chip while it renders'}
-				onclick={() => (pillSmall = !pillSmall)}>{pillSmall ? 'Details' : 'Hide'}</button
-			>
-		{/if}
-		{#if st.status !== 'finishing'}
-			<button id="recording-cancel" type="button" class="rec-cancel" onclick={cancelRecording}>Cancel</button>
-		{/if}
-	</div>
+	<!-- 95: the pill is the shared ExportProgress (Share a moment shows the same one) -->
+	<ExportProgress
+		status={st.status}
+		{percent}
+		label={st.status === 'preparing' ? 'Getting ready…' : st.status === 'finishing' ? 'Finishing the file…' : exportTotal ? 'Rendering' : 'Recording'}
+		ariaLabel={exportTotal ? 'Export progress' : 'Recording progress'}
+		detail={exportTotal ? `frame ${st.frames} / ${exportTotal}${timeLeft ? ' · ' + timeLeft : ''}` : `${st.elapsed.toFixed(1)} / ${st.duration.toFixed(1)} s`}
+		frames={exportTotal ? st.frames : undefined}
+		total={exportTotal || undefined}
+		shrinkable={!!exportTotal}
+		bind:small={pillSmall}
+		cancellable={st.status !== 'finishing'}
+		oncancel={cancelRecording}
+	/>
 {/if}
 
 <ModalDialog
@@ -400,78 +375,5 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 6px;
-	}
-	/* the progress pill: above the Controls HUD, under modals/toasts */
-	.rec-bar {
-		position: fixed;
-		left: 50%;
-		bottom: calc(var(--controls-inset, 0px) + 72px);
-		transform: translateX(-50%);
-		z-index: var(--z-hud, 45);
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		padding: 8px 12px;
-		border-radius: 999px;
-		background: var(--surface-1);
-		border: 1px solid var(--border);
-		color: var(--text);
-		font-size: 12px;
-		box-shadow: var(--shadow-window);
-		max-width: calc(100vw - 32px);
-	}
-	/* 68 V9: the chip form — out of the way at the bottom-right corner */
-	.rec-bar.rec-small {
-		left: auto;
-		right: 16px;
-		transform: none;
-		gap: 6px;
-		padding: 4px 8px;
-	}
-	.rec-bar.rec-small .rec-track {
-		width: 56px;
-		flex: none;
-	}
-	.rec-dot {
-		width: 10px;
-		height: 10px;
-		border-radius: 50%;
-		background: var(--live);
-		animation: rec-pulse 1.2s ease-in-out infinite;
-		flex: none;
-	}
-	@media (prefers-reduced-motion: reduce) {
-		.rec-dot {
-			animation: none;
-		}
-	}
-	@keyframes rec-pulse {
-		50% {
-			opacity: 0.35;
-		}
-	}
-	.rec-track {
-		width: 140px;
-		height: 6px;
-		border-radius: 3px;
-		background: var(--border-strong);
-		overflow: hidden;
-		flex: 1 1 80px;
-	}
-	.rec-fill {
-		height: 100%;
-		background: var(--accent);
-	}
-	.rec-time {
-		font-variant-numeric: tabular-nums;
-		white-space: nowrap;
-	}
-	.rec-cancel {
-		border: 1px solid var(--border);
-		background: transparent;
-		color: var(--text);
-		border-radius: 999px;
-		padding: 3px 10px;
-		cursor: pointer;
 	}
 </style>

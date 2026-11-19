@@ -67,6 +67,7 @@
   import { startKitInstancing } from './lib/kitInstancing'
   import PlayReticle from './components/play/PlayReticle.svelte'
   import PlayBanner from './components/play/PlayBanner.svelte'
+  import MomentHost from './components/moment/MomentHost.svelte' // 95 SM1/SM2: Share a moment (buffer + preview load lazily)
   import CommandPalette from './components/menu/CommandPalette.svelte'
   import TouchPlayControls from './components/play/TouchPlayControls.svelte'
   import DrawToolbar from './components/menu/DrawToolbar.svelte'
@@ -559,6 +560,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <PlayReticle />
 <!-- 38 R8 (NOTES-38 #4): "Playing · Press Esc to stop" — scene-configurable, play-only -->
 <PlayBanner />
+<MomentHost />
 <!-- W4: the touch play controls (virtual stick, look drag, exit). Beside PlayReticle
      and outside the {#if !$isLocked} block for the same reason: they exist ONLY while
      playing, which is exactly where that block draws nothing. -->

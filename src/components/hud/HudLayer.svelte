@@ -16,6 +16,7 @@
 	import HudElement from './HudElement.svelte';
 	import { hudDocs, hudRuntime, hudScreenOverride, hudPreviewInViewport, hudIsGame, visibleScreen, activeHudKeys, setHudValue, hudValueOf } from '$lib/hudDocs';
 	import { isVRMode, isLocked, playPointerFree, editorMode } from '../../stores/sceneStore';
+	import { momentOpen } from '$lib/moment/momentStores.js'; // 95 SM2
 	import { arTable } from '$lib/arTableState.js'; // 50 R1: a phone playing a scene on a table
 	import { hudEditorClose } from '../../stores/appStore.js';
 	import { viewportOverrides, renderLayer } from '$lib/viewportOverrides';
@@ -189,8 +190,9 @@
 	// stays the one writer of playPointerFree (it frees the pointer while the menu is open,
 	// and closing it by any path gives the game its pointer back by construction)
 	// 48 D1: ...and so is a debugger pause (its panel needs the pointer for Step / Resume)
+	// 95 SM2: ...and so is the Share a moment preview (its trim and buttons need the pointer)
 	const menuWanted = $derived(
-		((screens.some((entry) => entry.screen?.input === 'menu') && anyVisible) || ($shellMenu.open && !$isVRMode) || ($debugStatus.mode === 'paused' && !$isVRMode)) && playing
+		((screens.some((entry) => entry.screen?.input === 'menu') && anyVisible) || ($shellMenu.open && !$isVRMode) || ($debugStatus.mode === 'paused' && !$isVRMode) || ($momentOpen && !$isVRMode)) && playing
 	);
 	$effect(() => {
 		playPointerFree.set(menuWanted);

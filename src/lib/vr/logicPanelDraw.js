@@ -23,6 +23,8 @@ export const PAL_GROUPS = 9;
 export const PAL_COLS = 3;
 export const PAL_ROWS = 6;
 export const PAL_PAGE = PAL_COLS * PAL_ROWS;
+/** 2.0 N2: code-sheet lines per page (34 px rows in the graph area, under the page buttons) */
+export const CODE_ROWS = 15;
 
 /** @typedef {{id: string, x: number, y: number, w: number, h: number}} PanelHit */
 
@@ -170,7 +172,13 @@ function wirePath(g, a, b) {
  *   view: {s: number, ox: number, oy: number},
  *   rubber: {a: {x: number, y: number}, b: {x: number, y: number}, ok: boolean | null, type: string} | null,
  *   status: string, statusTone?: 'info' | 'warn' | 'bad', empty: string, readOnly: boolean, canUndo: boolean, canRedo: boolean,
- *   palette: null | {groups: string[], group: number, gpage: number, gpages: number, items: {type: string, label: string}[], page: number, pages: number}}} LogicView
+ *   palette: null | {groups: string[], group: number, gpage: number, gpages: number, items: {type: string, label: string}[], page: number, pages: number},
+ *   codeButton?: boolean, code?: CodeSheet | null}} LogicView
+ */
+/**
+ * 2.0 N2: the read-only code sheet (flag codeView) — one page of the graph's generated code; a line that
+ * declares a node carries its id (pressing it selects the node, so the pad shows its values).
+ * @typedef {{lines: {n: number, text: string, id: string | null, on: boolean}[], page: number, pages: number, title: string}} CodeSheet
  */
 
 /**
@@ -212,11 +220,13 @@ export function drawLogicPanel(g, view, opts) {
 	g.font = '500 26px system-ui, sans-serif';
 	let tx = 140;
 	for (const t of view.tabs) {
-		const tw = Math.min(260, Math.max(130, g.measureText(t.label).width + 40));
+		// 2.0 N2: the Code button costs the toolbar ~114 px, so the object tab gives up 30 (flag off: unchanged)
+		const tw = Math.min(view.codeButton ? 230 : 260, Math.max(130, g.measureText(t.label).width + 40));
 		button(t.id, t.label, tx, 18, tw, 60, { on: t.on });
 		tx += tw + 12;
 	}
 	const right = [
+		...(view.codeButton ? [['code', 'Code', 104, { on: !!view.code }]] : []),
 		['add', '+ Node', 150, { disabled: view.readOnly, on: !!view.palette }],
 		['undo', '↶', 64, { disabled: !view.canUndo }],
 		['redo', '↷', 64, { disabled: !view.canRedo }],
@@ -251,6 +261,7 @@ export function drawLogicPanel(g, view, opts) {
 		for (let x = x0; x < A.x + A.w; x += step) for (let y = y0; y < A.y + A.h; y += step) g.fillRect(x - 1.5, y - 1.5, 3, 3);
 	}
 	if (view.palette) drawPalette(g, view.palette, button, hot, hits);
+	else if (view.code) drawCodeSheet(g, view.code, button, hot, hits);
 	else {
 		const P = (/** @type {number} */ gx, /** @type {number} */ gy) => ({ x: gx * v.s + v.ox, y: gy * v.s + v.oy });
 		// notes first (a backdrop), then wires, then cards
@@ -382,6 +393,56 @@ function drawCard(g, c, v, P) {
 		}
 		socketGlyph(g, s.type, q.x, q.y, sr);
 	}
+}
+
+/**
+ * 2.0 N2: the graph's code over the graph area, read-only — line numbers, the statement, the node id dimmed.
+ * @param {CanvasRenderingContext2D} g @param {CodeSheet} sheet
+ * @param {(id: string, label: string, x: number, y: number, w: number, h: number, o?: any) => void} button
+ * @param {(id: string) => boolean} hot @param {PanelHit[]} hits
+ */
+function drawCodeSheet(g, sheet, button, hot, hits) {
+	const A = GRAPH_AREA;
+	const rowH = 34;
+	const x0 = A.x + 16;
+	const top = A.y + 14;
+	const w = A.w - 32;
+	g.textAlign = 'left';
+	sheet.lines.forEach((ln, i) => {
+		const y = top + i * rowH;
+		const id = ln.id ? 'code:line:' + ln.id : '';
+		if (ln.on || (id && hot(id))) {
+			roundRect(g, x0, y, w, rowH - 2, 8);
+			g.fillStyle = ln.on ? 'rgba(90, 162, 255, 0.22)' : C.cardHover;
+			g.fill();
+		}
+		g.font = '400 22px ui-monospace, Menlo, Consolas, monospace';
+		g.fillStyle = C.dim;
+		g.textAlign = 'right';
+		g.fillText(String(ln.n), x0 + 52, y + rowH / 2);
+		g.textAlign = 'left';
+		const cut = ln.text.lastIndexOf(' // #');
+		const body = cut >= 0 ? ln.text.slice(0, cut) : ln.text;
+		const isComment = /^\s*\/\//.test(ln.text);
+		g.fillStyle = isComment ? C.dim : C.body;
+		const bodyText = fitText(g, body.replace(/\t/g, '  '), w - 72 - (cut >= 0 ? 150 : 0));
+		g.fillText(bodyText, x0 + 68, y + rowH / 2);
+		if (cut >= 0) {
+			g.fillStyle = C.dim;
+			g.textAlign = 'right';
+			g.fillText(fitText(g, ln.text.slice(cut + 4), 140), x0 + w - 8, y + rowH / 2);
+			g.textAlign = 'left';
+		}
+		if (id) hits.push({ id, x: x0, y, w, h: rowH - 2 });
+	});
+	g.font = '500 26px system-ui, sans-serif';
+	if (sheet.pages > 1) {
+		button('code:page:-1', '‹ Prev', A.x + 16, A.y + A.h - 64, 160, 52, { disabled: sheet.page === 0 });
+		button('code:page:1', 'Next ›', A.x + A.w - 176, A.y + A.h - 64, 160, 52, { disabled: sheet.page >= sheet.pages - 1 });
+	}
+	g.fillStyle = C.dim;
+	g.textAlign = 'center';
+	g.fillText(fitText(g, sheet.title + ' · read-only' + (sheet.pages > 1 ? ` · ${sheet.page + 1} / ${sheet.pages}` : ''), A.w - 400), A.x + A.w / 2, A.y + A.h - 38);
 }
 
 /**

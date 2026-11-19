@@ -6,6 +6,13 @@
      rendering, so maintainer notes stay out of the user-facing window. No emoji from
      1.64 on (owner rule: no emoji in the UI); the app strips them from older entries. -->
 
+## 1.68.0 — Share a moment
+
+- **Share a moment**: while you play, the last 10 s of the game view is kept. Press **F8**, the clapperboard in the Play bar or a controller's View button to trim 3-10 s and save or share it as a GIF or MP4; **Copy picture** copies the frame on screen. Off in VR and on low-memory devices; **Settings ▸ Privacy ▸ Recording the last 10 s** turns it off. Players of a published game get it only when the author allows it (**Configure Scene ▸ Play**). The **Topple tower** starter is set up for sharing. <!-- 95 SM1-SM4 -->
+- **Node types live in one registry**: each built-in node is one definition (palette entry, sockets, card, value) in `src/lib/nodes/families/`. Adding a node type is one file, and a type missing a part fails the build. No change to saved scenes or to how graphs run. <!-- 2.0-n012 N1 -->
+- **Preview, off by default: the graph as code**: a read-only **Code** tab in the Nodes editor shows the graph as code (press a line to select its node, **Copy** copies it all). On a phone it is a full-width sheet; in VR the Logic panel has a **Code** button. Turn it on with `localStorage['flag:codeView']='1'`. <!-- 2.0-n012 N2 -->
+- **For AI agents**: agent contract 1.10.0 (additive): with the code view on, `list_scene {flow}` also returns `code`, and `describe_node_types` cards carry a `code` shape. <!-- 2.0-n012 N2 -->
+
 ## 1.67.1 — Steadier sessions
 
 - **Messages from other people are read within fixed limits**: a message whose stated sizes do not match the data that arrived, or that would need far more memory than its size, is skipped and counted in Diagnostics, and the connection stays up. Large messages sent in pieces are put back together within the same limits, also when their pieces arrive out of order.

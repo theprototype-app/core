@@ -15,7 +15,9 @@
 // {top, vsync}; new tools duplicate, import_shape, set_quality (all additive: optional fields, new tools)
 // 1.9.0 (98-finish): set_look {action: 'preset'} (set_look_preset: product / cinematic / stylised); set_post kinds
 // lensflare, godrays, volumetricfog (additive: a new tool behind an existing family, new effect kinds)
-export const TP_AGENT_VERSION = '1.9.0';
+// 1.10.0 (2.0 N2): behind the codeView flag, list_scene {flow} answers carry `code` (the graph as read-only code) and
+// describe_node_types cards a `code` shape (additive: optional fields, no tool renamed)
+export const TP_AGENT_VERSION = '1.10.0';
 
 /** Every method of the contract, in the order the docs list them. */
 export const TP_AGENT_METHODS = /** @type {const} */ ([

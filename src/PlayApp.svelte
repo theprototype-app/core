@@ -32,6 +32,7 @@
   import MadeWithBadge from './components/play/MadeWithBadge.svelte';
   import PlayReticle from './components/play/PlayReticle.svelte';
   import PlayBanner from './components/play/PlayBanner.svelte';
+  import MomentHost from './components/moment/MomentHost.svelte'; // 95 SM1/SM2: Share a moment (buffer + preview load lazily)
   import TouchPlayControls from './components/play/TouchPlayControls.svelte';
   import DungeonMinimap from './components/play/DungeonMinimap.svelte';
   import HudLayer from './components/hud/HudLayer.svelte';
@@ -171,6 +172,7 @@
 <DungeonMinimap />
 <PlayReticle />
 <PlayBanner />
+<MomentHost />
 <TouchPlayControls />
 <HudLayer />
 <!-- 93: the level-change cover, the game's loading screen, the checkpoint flash (LOCAL) -->

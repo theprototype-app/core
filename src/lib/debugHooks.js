@@ -42,6 +42,9 @@ export const DEBUG_HOOKS = [
 	['chunkReload', () => import('./chunkReload.js')],
 	['staleModules', () => import('./staleModules')],
 	['perfMoment', () => import('./perf/moment')],
+	// 95 SM1-SM3: Share a moment — the stores (setting, status, open); the buffer itself publishes
+	// `momentBuffer` through registerDebugHook when the first Play loads it
+	['momentStores', () => import('./moment/momentStores.js')],
 	['problemReport', () => import('./problemReport')],
 	['profilerView', () => import('./perf/profilerView')],
 	['profilerModel', () => import('./perf/profilerModel.js')],
@@ -297,6 +300,10 @@ export const DEBUG_HOOKS = [
 	['animationPreview', () => import('./animationPreview')],
 	['aiProviders', () => import('./ai/providers')],
 	['aiTools', () => import('./ai/tools')],
+	// 2.0 N1/N2: the node definition registry, the codeView flag and the code generator (flow-code-view suite)
+	['nodeRegistry', () => import('./nodes/index.js')],
+	['codeView', () => import('./nodes/codeViewFlag.js')],
+	['flowCode', () => import('./nodes/flowCodeView.js')],
 	['aiAssistant', () => import('./ai/assistant')],
 	['meshProviders', () => import('./ai/meshProviders')],
 	['toolStatus', () => import('./tools/toolStatus.js')],

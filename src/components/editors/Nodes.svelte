@@ -84,6 +84,15 @@
 	import GroupIONode from './nodes/GroupIONode.svelte';
 	import NodeUxProps from './NodeUxProps.svelte';
 	import { kitNodeTypes } from '$lib/kit/catalog.js';
+	// 2.0 N1: the core card map is generated from the node definitions
+	import { coreCardKeys } from '$lib/nodes/index.js';
+	import { CARD_KEYS } from '$lib/nodes/registry.js';
+	// 2.0 N2: the read-only Code tab, behind the codeView flag
+	import { codeViewFlag } from '$lib/nodes/codeViewFlag.js';
+	// 95-int: the Code tab (flag codeView, off by default) is a lazy chunk, off the editor's boot path
+	let codePaneLoad: Promise<typeof import('./FlowCodePane.svelte')> | null = null;
+	const codePane = () => (codePaneLoad ??= import('./FlowCodePane.svelte'));
+	type CardKey = (typeof CARD_KEYS)[number];
 	import { flowNodes as flowNodesStore, flowEdges as flowEdgesStore, customNodeDefs, nodeDesignerOpen, flowGraphs, activeGraphId, SCENE_GRAPH, setActiveGraph, updateGraph } from '../../stores/flowStore';
 	import { createObjectGraph, requestDeleteObjectGraph, recordFlowNodesEntry } from '$lib/flowGraphs';
 	import { deselectObject, applySelectionSet } from '$lib/objectActions';
@@ -191,180 +200,61 @@
 	//     node type. Core wins now, and a collision warns instead of vanishing.
 	// (3) A type nothing defines got xyflow's default card with no explanation.
 	//     UnknownNode says what is missing and offers to install it.
+	// 2.0 N1: the core rows are GENERATED from the node definitions (src/lib/nodes): each definition
+	// names its card by KEY, and this is the one place a key becomes a component. A key missing here is
+	// a svelte-check error (the Record below), and a definition naming an unknown key fails the build
+	// (CARD_KEYS + the node-registry-check plugin) — the "two registries, only one complains" trap is gone.
+	const CARDS: Record<CardKey, any> = {
+		AnimStateNode,
+		AnimationNode,
+		BehaviourNode,
+		BinaryNode,
+		BlendSpeedNode,
+		CodeRefNode,
+		ColliderNode,
+		ColorPickerNode,
+		ContactNode,
+		CounterNode,
+		EffectNode,
+		FlowIONode,
+		GameCameraNode,
+		GamepadNode,
+		HudNode,
+		KeyPressNode,
+		LoopNode,
+		MapRangeNode,
+		MoveInputNode,
+		NumberNode,
+		ObjectFlowNode,
+		ObjectPairNode,
+		ObjectSelectorNode,
+		OnClapNode,
+		OnClickNode,
+		OnHitNode,
+		ParticleNode,
+		PathEventNode,
+		PathPatrolNode,
+		PlayAnimNode,
+		RandomNode,
+		ScriptNode,
+		SelectNode,
+		SequenceNode,
+		SliderNode,
+		SoundNode,
+		SwitcherNode,
+		TimeNode,
+		TimelineSeqNode,
+		TimerNode,
+		ToggleAnimNode,
+		ToggleNode,
+		TravelNode,
+		Vector3Node,
+		VelocityNode
+	};
 	const CORE_NODE_TYPES: any = {
-		colorpicker: ColorPickerNode,
-		slider: SliderNode,
-		switcher: SwitcherNode,
-		objectselector: ObjectSelectorNode,
-		shake: AnimationNode,
-		spin: AnimationNode,
-		rotor: AnimationNode, // 36-fb F25
-		flowfloat: AnimationNode, // 36-fb F24
-		followpath: AnimationNode, // 40 F15
-		wander: AnimationNode,
-		orientvelocity: AnimationNode,
-		bodywave: AnimationNode,
-		oscillate: AnimationNode, // 85 N1
-		moveto: AnimationNode, // 85 N2
-		rotateto: AnimationNode,
-		scaleto: AnimationNode,
-		lightswitch: AnimationNode, // 85 N4
-		lightintensity: AnimationNode,
-		lightcycle: AnimationNode,
-		windsway: AnimationNode, // 85 N5
-		waterflow: AnimationNode,
-		ambientanimal: AnimationNode, // 85 N3
-		grabbable: AnimationNode, // 85 I1
-		highlight: AnimationNode, // 85 I2
-		pressbutton: AnimationNode,
-		sitspot: AnimationNode, // 85 I3
-		bounce: AnimationNode,
-		orbit: AnimationNode,
-		pulse: AnimationNode,
-		blink: AnimationNode,
-		script: ScriptNode,
-		behaviour: BehaviourNode, // 34 R3
-		coderef: CodeRefNode, // 36 (G1): a Main-graph link to module/kit code
-		maprange: MapRangeNode,
-		select: SelectNode,
+		...Object.fromEntries(Object.entries(coreCardKeys()).map(([type, key]) => [type, CARDS[key as CardKey]])),
+		// not palette nodes: user-designed custom nodes and a group's boundary card
 		customnode: CustomNode,
-		pathpatrol: PathPatrolNode,
-		onpathevent: PathEventNode, // 78 F4: On Path Event
-		sound: SoundNode,
-		particle: ParticleNode,
-		jiggle: AnimationNode, // 36-sim U2b
-		mass: AnimationNode,
-		bounciness: AnimationNode,
-		friction: AnimationNode,
-		angularvelocity: AnimationNode,
-		motor: AnimationNode,
-		// 23-B3 music: the spec-driven card, like the physics family above. A type in
-		// nodeCatalog but NOT here falls through to UnknownNode — "this node comes from a
-		// module that isn't installed" — which is what these four did from the palette.
-		deviceparam: AnimationNode,
-		devicelevel: AnimationNode,
-		transportbeat: AnimationNode,
-		notetrigger: AnimationNode,
-		number: NumberNode,
-		vector3: Vector3Node,
-		toggle: ToggleNode,
-		random: RandomNode,
-		time: TimeNode,
-		math: BinaryNode,
-		compare: BinaryNode,
-		gate: BinaryNode,
-		loop: LoopNode,
-		timer: TimerNode,
-		distance: ObjectPairNode,
-		proximity: ObjectPairNode,
-		lookat: EffectNode,
-		setcolor: EffectNode,
-		visibility: EffectNode,
-		setuniform: EffectNode,
-		onclick: OnClickNode,
-		ongrab: OnClickNode, // 30b (core-games): the same pulse card
-		onimpact: ContactNode, // 36 X6: filter input + other output
-		// 24-A A2: its own card — the pulse dot PLUS speed/byMe value rows (the MoveInput
-		// shape: several source handles need labelled rows, not one right-edge dot)
-		onhit: OnHitNode,
-		onenter: ContactNode, // CL-C sensor edges; 36 X6: the contact card
-		onexit: ContactNode,
-		collider: ColliderNode, // CL-C
-		velocity: VelocityNode, // CL-C
-		measure: AnimationNode, // B6
-		onrest: AnimationNode, // B6 (the onimpact precedent: a trigger with params)
-		impulse: AnimationNode, // B6
-		setvelocity: AnimationNode, // B6
-		joint: AnimationNode, // B6
-		// B7: spec-driven (named input rows, four ranges, and the catalog `note`). A new
-		// node type has TWO registries and only one of them complains — a `spawn` in the
-		// catalog and not here renders as UnknownNode ("install the module that ships it").
-		spawn: AnimationNode,
-		counter: CounterNode,
-		flowinput: FlowIONode,
-		flowoutput: FlowIONode,
-		objectflow: ObjectFlowNode,
-		keypress: KeyPressNode,
-		// 21-E5: ONE card for the pad group (the HudNode precedent)
-		gamepadbutton: GamepadNode,
-		gamepadaxis: GamepadNode,
-		playanim: PlayAnimNode, // 17-E A5
-		blendspeed: BlendSpeedNode, // 57 M3
-		setanimparam: AnimationNode, // 57 M11 (spec-driven: named inputs + text/select/range)
-		onanimstate: AnimationNode, // 57 M11 (the onrest precedent: a trigger with params)
-		attachsocket: AnimationNode, // 57 M12
-		animfinished: OnClickNode, // 17-E: a pulse when a clip ends
-		animmarker: OnClickNode, // 17-E F5: a pulse at a named point in a clip
-		animstate: AnimStateNode, // 17-E F3: the readable half of it
-		playseq: TimelineSeqNode, // 48 S2: Play Sequence
-		onseqevent: TimelineSeqNode, // 48 S2: On Sequence Event
-		setexpression: AnimationNode, // 57 M4: spec-driven (expression text + weight)
-		// A3: ONE generic card for the whole HUD group (the ShaderNode precedent)
-		hudscreen: HudNode,
-		hudtext: HudNode,
-		hudbar: HudNode,
-		hudbutton: HudNode,
-		hudtimer: HudNode,
-		hudlist: HudNode,
-		hudinput: HudNode,
-		// 21-G1 fix, PRE-EXISTING since 21-E7 (ea46a7d): `hudrows` reached `nodeCatalog`
-		// and never this map, so a node dragged out of the CORE HUD palette rendered as
-		// UnknownNode — "this node comes from a module that isn't installed". Exactly the
-		// two-registry gotcha, and `flow-unknown-node` was red on release/next for it.
-		hudrows: HudNode,
-		hudset: HudNode,
-		// 21-G4: the derived scoreboard names an element like every other HUD node
-		leaderboard: HudNode,
-		// 21-D6: the game shell. AnimationNode renders them from their catalog params;
-		// setcamera/gamestart/setlook get their own card for the camera picker.
-		setgamestate: AnimationNode,
-		ongamestate: AnimationNode,
-		onhover: AnimationNode, // 78 F2
-		hoveranimate: AnimationNode, // 78 F2
-		toggleanim: ToggleAnimNode, // 78 F3 / F8
-		onplaystart: AnimationNode, // 78 F13
-		onplaystop: AnimationNode,
-		setvariable: AnimationNode,
-		getvariable: AnimationNode,
-		// 30 P4: the device-local pair (the second registry — the catalog is the first)
-		storevalue: AnimationNode,
-		storedvalue: AnimationNode,
-		// 30b (core-games): Game Feel — spec-driven like the rest of the game shell
-		announce: AnimationNode,
-		gamesound: AnimationNode,
-		effectburst: AnimationNode,
-		hapticpulse: AnimationNode,
-		gamemusic: AnimationNode,
-		// 31 (Stars Room): a player's setting row, the pointing switch (both spec-driven) and
-		// the clap, whose `point`/`byMe` outputs need labelled rows (the On Hit card's shape)
-		gamesetting: AnimationNode,
-		pointgrab: AnimationNode,
-		onclap: OnClapNode,
-		gametime: AnimationNode,
-		// 21-F3's `collectcount` card MOVED to the collectible module (R3a) — an old
-		// scene's node renders as UnknownNode until the module is installed, honestly
-		// 21-G4: the per-player read, same shape
-		peervariable: AnimationNode,
-		setcamera: GameCameraNode,
-		gamestart: GameCameraNode,
-		setlook: GameCameraNode,
-		// 21-F4: travel gets its own card for the level picker; allplayers is spec-driven
-		travel: TravelNode,
-		allplayers: AnimationNode,
-		// 21-E4: the logic a game loop is made of. All spec-driven except Sequence,
-		// which is the only one with several OUTPUTS and so needs its own four rows.
-		latch: AnimationNode,
-		delay: AnimationNode,
-		once: AnimationNode,
-		sequence: SequenceNode,
-		// 21-E6: the character controller. All spec-driven except Move Input, which is
-		// the only one with several OUTPUTS and so needs its own labelled rows.
-		charcontroller: AnimationNode,
-		possessnode: AnimationNode,
-		camerafollow: AnimationNode,
-		camerarig: AnimationNode, // 37 (R8)
-		movespeed: AnimationNode,
-		moveinput: MoveInputNode,
 		// 34 R2 (T3): every generated kit node renders from its spec params (the card a node
 		// in nodeCatalog but NOT here would get is UnknownNode)
 		...Object.fromEntries(kitNodeTypes().map((type) => [type, AnimationNode])),
@@ -666,6 +556,8 @@
 	let propsOpen = $state(readPanelOpen('flowPropsOpen', false));
 	// 4.3: right-panel tab — 'info' (selected node's params) | 'settings' (graph + name/note)
 	let propsTab = $state(LS?.getItem('flowPropsTab') || 'settings');
+	// 2.0 N2: 'code' only while the codeView flag is on (a remembered 'code' with the flag off reads as settings)
+	const shownTab = $derived(propsTab === 'code' && !$codeViewFlag ? 'settings' : propsTab);
 	// 179: the properties panel auto-reflows to the side OPPOSITE the palette so
 	// their divider tabs never overlap (the palette-side toggle used to hide it)
 	const propsSide = $derived(paletteSide === 'right' ? 'left' : 'right');
@@ -2436,16 +2328,25 @@
 		/>
 	</div>
 	{#if propsOpen}
-		<div id="flow-props" class="relative flex h-full w-52 shrink-0 flex-col gap-2 overflow-y-auto bg-surface-1 p-2 text-xs text-text-2" use:minimalScroll style="order: {propsSide === 'left' ? -1 : 5}">
+		<div id="flow-props" class="relative flex h-full {shownTab === 'code' ? 'w-[min(26rem,88vw)]' : 'w-52'} shrink-0 flex-col gap-2 overflow-y-auto bg-surface-1 p-2 text-xs text-text-2" use:minimalScroll style="order: {propsSide === 'left' ? -1 : 5}">
 			<!-- 4.3: Explorer-style tabs — ⓘ = the selected node's PARAMETERS,
 			     the cog = graph settings + node name/note (as before) -->
 			<div class="flex gap-1">
-				<button id="flow-tab-info" class="flex-1 rounded-sm px-2 py-1 {propsTab === 'info' ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 hover:bg-surface-active'}"
+				<button id="flow-tab-info" class="flex-1 rounded-sm px-2 py-1 {shownTab === 'info' ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 hover:bg-surface-active'}"
 					onclick={() => { propsTab = 'info'; LS?.setItem('flowPropsTab', 'info'); }}>ⓘ Params</button>
-				<button id="flow-tab-settings" class="flex-1 rounded-sm px-2 py-1 {propsTab === 'settings' ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 hover:bg-surface-active'}"
+				<button id="flow-tab-settings" class="flex-1 rounded-sm px-2 py-1 {shownTab === 'settings' ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 hover:bg-surface-active'}"
 					onclick={() => { propsTab = 'settings'; LS?.setItem('flowPropsTab', 'settings'); }}><Icon name="settings" size={16} class="inline-block shrink-0 align-[-2px]" /> Settings</button>
+				{#if $codeViewFlag}
+					<button id="flow-tab-code" class="rounded-sm px-2 py-1 {shownTab === 'code' ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 hover:bg-surface-active'}"
+						title="The graph as code (read-only)" aria-label="Code" aria-pressed={shownTab === 'code'}
+						onclick={() => { propsTab = 'code'; LS?.setItem('flowPropsTab', 'code'); }}><Icon name="code" size={16} class="inline-block shrink-0 align-[-2px]" />{#if shownTab === 'code'} Code{/if}</button>
+				{/if}
 			</div>
-			{#if propsTab === 'info'}
+			{#if shownTab === 'code'}
+				{#await codePane() then { default: FlowCodePane }}
+					<FlowCodePane graph={$flowGraphs[activeId]} graphId={activeId} selectedId={selectedNode?.id ?? null} />
+				{/await}
+			{:else if shownTab === 'info'}
 				{#if selectedNode}
 					<p class="ui-section-label">{selectedNode.data?.label ?? selectedNode.type}</p>
 					{#if nodeDoc(selectedNode.type)}

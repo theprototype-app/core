@@ -2357,6 +2357,15 @@
 				>
 					Start the simulation when play mode opens
 				</InsToggle>
+				<!-- 95 SM3: Share a moment for a PUBLISHED game's players (default off). In the editor
+				     everyone in Play may share; a play link / embed / export only when this is on. -->
+				<InsToggle
+					id="physics-play-moments"
+					checked={$scenePlay.moments === true}
+					onchange={(e) => setScenePhysics({ play: { moments: e.currentTarget.checked ? true : null } })}
+				>
+					Players of the published game can share moments (the last 10 s)
+				</InsToggle>
 				<!-- 38 NOTES-38 #4 / #33: the "Playing · Press Esc to stop" banner — shown by default;
 				     a game or an advanced scene hides it or says its own words (phone too: the
 				     banner reads the same scene setting). A game's Menu · Esc button is not this. -->

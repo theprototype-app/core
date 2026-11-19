@@ -11,6 +11,7 @@ import { flowGraphs, mutedFlowObjects, syncedAnimations, flowValues, flowTrigger
 import { objectsGroup, isLocked, sceneRevision, globalScene } from '../stores/sceneStore';
 import { peers, showToast, showInfoToast, dismissToastById} from '../stores/appStore';
 import { animationTypes, findNodeSpec } from './nodeCatalog';
+import { nodeEvalOf } from './nodes/index.js'; // 2.0 N1: evalNodeBody dispatches through the definitions
 // 21-E7.6: hudKinds is a leaf (it reads only moduleHudKinds, itself svelte/store-only)
 import { isIndexValuedKind } from './hudKinds';
 import { moduleEffects, moduleFrameTasks } from './moduleSDK';
@@ -3085,617 +3086,29 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 		}
 		return fallback;
 	};
-	switch (node.type) {
-		case 'number':
-			return num(d.value ?? 0);
-		case 'slider': {
-			// 4.4: adjustable min/max (data-seeded) — clamp so stale values can't escape
-			const lo = num(d.min ?? 0);
-			const hi = num(d.max ?? 40);
-			return Math.min(Math.max(num(d.value ?? 20), Math.min(lo, hi)), Math.max(lo, hi));
-		}
-		case 'switcher': {
-			// 4.4: a real value source — the selected item INDEX (pairs with select/compare).
-			// 37 (R6): an N-way MULTIPLEXER as well. A wired `index` overrides the radio (rounded and
-			// clamped, the Select rule), and the named `value` output carries the selected item's
-			// input socket `in<i>`. The unnamed output stays the INDEX (`__default`), so every saved
-			// Switcher wire reads exactly what it read before. A switcher with nothing wired into it
-			// keeps returning the plain number, byte-identical.
-			const items = switcherItems(d);
-			const into = edgesInto(allEdges, node.id);
-			const indexWired = into.some((e) => e.targetHandle === 'index');
-			const at = indexWired
-				? Math.min(Math.max(Math.round(num(input('index', 0))), 0), items.length - 1)
-				: switcherRadioIndex(d);
-			if (!indexWired && !into.some((e) => switcherIndexOf(e.targetHandle) >= 0)) return at;
-			return { __handles: { value: input(switcherHandle(at), undefined), index: at }, __default: at };
-		}
-		case 'maprange': {
-			// 4.6: remap a from [inMin..inMax] to [outMin..outMax] (optional clamp)
-			const a = num(input('a', d.a ?? 0));
-			const inMin = num(d.inMin ?? 0);
-			const inMax = num(d.inMax ?? 1);
-			const outMin = num(d.outMin ?? 0);
-			const outMax = num(d.outMax ?? 1);
-			const span = inMax - inMin;
-			let t = span === 0 ? 0 : (a - inMin) / span;
-			if (d.clamp ?? true) t = Math.min(Math.max(t, 0), 1);
-			return outMin + t * (outMax - outMin);
-		}
-		case 'select': {
-			// 4.6: pick a or b by a wired index/boolean (switcher/compare pair-up).
-			// 21-E4: N-WAY. The index is ROUNDED, which reproduces the old `< 0.5 ? a : b`
-			// split exactly over the 0/1 range, and CLAMPED to the highest slot this node
-			// actually uses - so a saved 2-input Select handed an out-of-range index still
-			// lands on `b` the way it always did, while a graph that wires or sets c/d gets
-			// four. That pair of rules is what keeps every existing Select byte-identical
-			// (random -> select over four spawn points is the case it was grown for).
-			const keys = ['a', 'b', 'c', 'd'];
-			let last = 1;
-			for (let i = 2; i < keys.length; i++)
-				if (
-					d[keys[i]] !== undefined ||
-					allEdges.some((e) => e.target === node.id && e.targetHandle === keys[i])
-				)
-					last = i;
-			const at = Math.min(last, Math.max(0, Math.round(num(input('index', d.index ?? 0)))));
-			return input(keys[at], d[keys[at]] ?? 0);
-		}
-		case 'toggle':
-			return !!d.on;
-		case 'vector3':
-			return [num(d.x ?? 0), num(d.y ?? 0), num(d.z ?? 0)];
-		case 'colorpicker':
-			return d.color ?? '#ffffff';
-		case 'time': {
-			const t = time * num(d.rate ?? 1);
-			if (d.mode === 'sin') return Math.sin(t);
-			if (d.mode === 'saw') return ((t % 1) + 1) % 1;
-			if (d.mode === 'pingpong') {
-				const p = ((t % 2) + 2) % 2;
-				return p > 1 ? 2 - p : p;
-			}
-			return time;
-		}
-		case 'random': {
-			const lo = num(d.min ?? 0);
-			const hi = num(d.max ?? 1);
-			const interval = num(d.interval ?? 0);
-			const roll = interval > 0 ? Math.floor(time / interval) : 0;
-			// B6: it was ALREADY deterministic across peers (mulberry32 over the node
-			// id and the synced clock) — a wired SEED is all seeded procedural
-			// generation needed. A `reroll` event advances the sequence, so a graph
-			// can ask for a new value without waiting for an interval to elapse.
-			const seed = num(input('seed', d.seed ?? 0));
-			// 21-E4 follow-up: the reroll term is THE STAMP (in ms), not a count of
-			// rerolls, and the difference is the whole determinism story. A count is
-			// local: a LATE JOINER's log starts empty, so its count runs N behind for
-			// ever and its rolls never re-converge - two peers spawning a "random spawn
-			// point" in different places permanently, with nothing to heal it. The stamp
-			// is replicated, so every peer that holds the same last-reroll stamp computes
-			// the same number, and a joiner converges EXACTLY on the next reroll (the
-			// latch set/reset property rather than the latch toggle-parity one).
-			// Absent = 0, which is byte-identical to every graph saved before the input
-			// worked at all.
-			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
-			const rerolls = typeof trig?.lastT === 'number' ? Math.round(trig.lastT * 1000) >>> 0 : 0;
-			const value = lo + mulberry32(hashString(node.id) + roll + seed + rerolls) * (hi - lo);
-			return d.integer ? Math.floor(value) : value;
-		}
-		case 'math': {
-			const a = num(input('a', d.a ?? 0));
-			const b = num(input('b', d.b ?? 0));
-			// 37 (R6): a foldable op takes every WIRED extra socket (c..h) too; an unwired extra is
-			// skipped (it has no manual value). Two sockets = the 133 arithmetic, byte-identical.
-			if (socketCount(d) > 2 && opFolds('math', d.op)) return foldMath(d.op ?? 'add', [a, b, ...variadicExtras(node, allEdges, input).map(num)]);
-			switch (d.op ?? 'add') {
-				case 'sub': return a - b;
-				case 'mul': return a * b;
-				case 'div': return b !== 0 ? a / b : 0;
-				case 'min': return Math.min(a, b);
-				case 'max': return Math.max(a, b);
-				case 'mod': return b !== 0 ? ((a % b) + b) % b : 0;
-				// 36 (plan 56.4): the unary shapers a value graph needs between a slider and
-				// a param. `b` scales sin/cos (0 = 1, so a fresh node reads sin(a)); `clamp`
-				// keeps a inside [0, b] (b <= 0 = [0, 1]); `pow` is a^b.
-				case 'pow': return Math.pow(a, b);
-				case 'sin': return Math.sin(a) * (b || 1);
-				case 'cos': return Math.cos(a) * (b || 1);
-				case 'abs': return Math.abs(a);
-				case 'round': return Math.round(a);
-				case 'floor': return Math.floor(a);
-				case 'clamp': return Math.min(Math.max(a, 0), b > 0 ? b : 1);
-				case 'neg': return -a;
-				default: return a + b;
-			}
-		}
-		case 'compare': {
-			const a = num(input('a', d.a ?? 0));
-			const b = num(input('b', d.b ?? 0));
-			switch (d.op ?? 'gt') {
-				case 'lt': return a < b;
-				case 'eq': return a === b;
-				case 'gte': return a >= b;
-				case 'lte': return a <= b;
-				case 'neq': return a !== b;
-				default: return a > b;
-			}
-		}
-		case 'gate': {
-			const a = bool(input('a', d.a ?? false));
-			const b = bool(input('b', d.b ?? false));
-			// 37 (R6): AND/OR/XOR over every wired extra socket (XOR = odd parity)
-			if (socketCount(d) > 2 && opFolds('gate', d.op)) return foldGate(d.op ?? 'and', [a, b, ...variadicExtras(node, allEdges, input).map(bool)]);
-			switch (d.op ?? 'and') {
-				case 'or': return a || b;
-				case 'not': return !a;
-				case 'xor': return a !== b;
-				default: return a && b;
-			}
-		}
-		// --- 21-E6: the two readable halves of the character controller ---
-		case 'movespeed':
-			// the speed that is ACTUALLY in force, by the same precedence
-			// PointerLockControls uses: the live override, else the Character Controller's
-			// own param, else the built-in default. A readout that used a different order
-			// would show a number that does not move you.
-			// DOC: with no Character Controller node, the scroll wheel adjusts
-			// PointerLockControls' own local variable, which nothing exposes — so the
-			// readout stays at the default until something writes the store. `set` works
-			// either way, because PointerLockControls prefers the store when it is set.
-			return get(playMoveSpeed) ?? get(charControl)?.speed ?? num(d.value ?? DEFAULT_FLY_SPEED);
-		case 'moveinput': {
-			// LOCAL, and that is the design rather than a limitation: every peer reads its
-			// OWN keys, so a peer pressing nothing reads 0 and always will. Streaming a
-			// movement axis would be a 60Hz message AND wrong — two players are meant to
-			// move independently. Two number handles, the Sequence handle-map shape.
-			const codes = inputRuntimeRef ? inputRuntimeRef.getInput().codes : new Set();
-			// E5 owns the gamepad and the VR stick; when it lands it feeds these two axes
-			// here, so a graph wired to Move Input keeps working with a controller in hand.
-			const x = (codes.has('KeyD') ? 1 : 0) - (codes.has('KeyA') ? 1 : 0);
-			const y = (codes.has('KeyW') ? 1 : 0) - (codes.has('KeyS') ? 1 : 0);
-			return { __handles: { x, y } };
-		}
-		// --- 21-E4: pulses become STATE, and other pulses ---
-		case 'latch': {
-			// set/reset are a PURE most-recent-stamp-wins read of the replicated trigger
-			// log, so two peers holding the same stamps cannot disagree - and a late joiner,
-			// which arrives with an EMPTY log (the log is not part of the handshake),
-			// converges on the very next set or reset it sees. That is strictly better than
-			// counting, which would leave it permanently offset.
-			// 21-F2: with `perRound` on, a stamp from a PREVIOUS round did not happen, so
-			// the latch falls back to `initial` - which is what un-collects a collectible
-			// when the round bumps or the game returns to its menu. Purity is untouched:
-			// the extra input is the replicated round, not a state of our own.
-			const setT = freshStamp(node, handleStamp(node, 'set', ctx));
-			const resetT = freshStamp(node, handleStamp(node, 'reset', ctx));
-			const base =
-				setT === null && resetT === null
-					? !!d.initial
-					: (setT ?? -Infinity) >= (resetT ?? -Infinity); // a same-millisecond tie reads as SET
-			// toggle PARITY is the half a stamp cannot carry (a stamp is not a count), so it
-			// is counted in applyNodeTrigger - the counter precedent - and CLEARED there by
-			// any set/reset, which is what lets the two halves compose instead of fighting.
-			const own = ctx?.triggers?.[node.id];
-			const flips = roundStale(node, own?.lastT) ? 0 : (own?.count ?? 0);
-			return flips % 2 === 0 ? base : !base;
-		}
-		case 'delay':
-			// PURE, and it needs no state at all: the moment is stamp + seconds, the output
-			// is a pulse window around it, and `cancel` is a stamp comparison.
-			return pulseAt(scheduledFireAt(node, null, ctx), time, num(d.pulse ?? 0.3));
-		case 'sequence': {
-			// four outputs, so the value is a HANDLE MAP (the objectflow shape) that
-			// unwrapHandle picks apart by the reading edge's sourceHandle
-			/** @type {Record<string, number>} */
-			const handles = {};
-			for (const step of SEQUENCE_STEPS)
-				handles[step] = pulseAt(scheduledFireAt(node, step, ctx), time, num(d.pulse ?? 0.3));
-			return { __handles: handles };
-		}
-		case 'once': {
-			// the counter precedent: applyNodeTrigger writes this node's OWN entry on the
-			// first pulse and freezes it at count 1, and `rearm` deletes it. A frozen stamp
-			// is exactly what a downstream stamp-edge consumer needs in order to act once.
-			// 21-F2: a `perRound` Once frozen in a previous round reads as ARMED again
-			const entry = ctx?.triggers?.[node.id];
-			if (!entry || entry.count !== 1 || roundStale(node, entry.lastT)) return 0;
-			return pulseAt(entry.lastT, time, num(d.pulse ?? 0.3));
-		}
-		// --- 134: object reference, loops, timers, events ---
-		case 'objectselector':
-			return d.selected && d.selected !== '-None-' ? d.selected : undefined;
-		case 'loop': {
-			const from = num(d.from ?? 0);
-			const to = num(d.to ?? 1);
-			const span = to - from;
-			const phase = time * num(d.rate ?? 1);
-			if (d.mode === 'pingpong') {
-				const p = ((phase % 2) + 2) % 2;
-				return from + (p > 1 ? 2 - p : p) * span;
-			}
-			if (d.mode === 'once') return from + Math.min(Math.max(phase, 0), 1) * span;
-			return from + (((phase % 1) + 1) % 1) * span; // wrap
-		}
-		case 'timer': {
-			// delay line: re-evaluate the wired input at a clock-shifted time
-			const delay = num(d.delay ?? 1);
-			const edge = edgesInto(allEdges, node.id).find((e) => e.targetHandle === 'a');
-			if (edge) {
-				const v = evalNode(
-					nodeById(allNodes, edge.source),
-					allNodes,
-					allEdges,
-					time - delay,
-					new Set([node.id]),
-					ctx
-				);
-				return v !== undefined ? v : num(d.a ?? 0);
-			}
-			return num(d.a ?? 0);
-		}
-		case 'distance': {
-			// 4.1: also accept a wired Vector3 LITERAL as a world point (the coercion
-			// matrix allows vector3->object and lookat already honors it)
-			const pa = pointOf(input('a', d.a), ctx);
-			const pb = pointOf(input('b', d.b), ctx);
-			return pa && pb ? pa.distanceTo(pb) : 0;
-		}
-		case 'proximity': {
-			const pa = pointOf(input('a', d.a), ctx);
-			// 78 F10: `to: player` measures to THIS peer's player — its body (feet..eye, the reach
-			// rule), so a pad on the floor is near a standing player. LOCAL by design: each peer
-			// reads its own player (the gamepadaxis rule); a SHARED reaction goes through On Enter.
-			if (d.to === 'player') {
-				const body = gameFeelActive() ? localPlayerBody() : null;
-				return pa && body ? bodyDistance(pa, body.eye, body.feetY) <= num(d.radius ?? 3) : false;
-			}
-			const pb = pointOf(input('b', d.b), ctx);
-			return pa && pb ? pa.distanceTo(pb) <= num(d.radius ?? 3) : false;
-		}
-		case 'animfinished': // 17-E: fired locally when a clip reaches its end
-		case 'animmarker': // 17-E F5: fired locally when the playhead crosses one
-		case 'onanimstate': // 57 M11: fired locally when a state machine enters a state
-		case 'ongrab': // 30b (core-games): the On Click window, fired on a player's grab
-		case 'hudtimer':
-			// 36 audit: listed as a value source since A3 but never evaluated, so a wire from
-			// it read undefined everywhere but its own card
-			return hudTimerRemaining(node, { ...d, duration: input('duration', d.duration) }, time, ctx);
-		case 'onhover': {
-			// 78 F2: the On Click window; an "over" node holds while its re-stamps keep coming
-			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
-			const dt = trig ? time - trig.lastT : Infinity;
-			const hold = d.on === 'over' ? Math.max(OVER_WINDOW, num(d.pulse ?? 0.3)) : num(d.pulse ?? 0.3);
-			return dt >= 0 && dt < hold ? 1 : 0;
-		}
-		case 'toggleanim': {
-			// 78 F3: the door's state (computed where it is posed, read here a frame later)
-			const door = doors.get(node.id);
-			const pulse = (/** @type {string} */ name) => {
-				const trig = ctx && ctx.triggers ? ctx.triggers[node.id + '#' + name] : null;
-				const dt = trig ? time - trig.lastT : Infinity;
-				return dt >= 0 && dt < 0.3 ? 1 : 0;
-			};
-			const isOpen = !!door && door.st.to !== 0;
-			return { __handles: { isOpen, moving: !!door?.moving, pose: door ? door.st.to : 0, opened: pulse('opened'), closed: pulse('closed') }, __default: isOpen };
-		}
-		case 'hudbutton': // 36 / DEVX #22: the press is the onclick pulse window — a wire
-		case 'onplaystart': // 78 F13: local pulses, derived on every peer (updatePlayEdgeNodes)
-		case 'onplaystop':
-		case 'ongamestate': // into a module input or a Math read undefined before (silent)
-		case 'onclick': {
-			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
-			const dt = trig ? time - trig.lastT : Infinity;
-			return dt >= 0 && dt < num(d.pulse ?? 0.3) ? 1 : 0;
-		}
-		case 'keypress': {
-			// H3 + 21-E3: LOCAL keys arrive as replicated trigger stamps. `edge` picks the
-			// moment: 'down' pulses on press (held keys re-pulse, so it reads 1 while held -
-			// the original behavior, byte-identical for saved graphs); 'up' pulses on
-			// release; 'held' is the same window read but SAYS level - the re-stamp is its
-			// implementation, so a peer derives the level from stamp freshness with no new
-			// wire. All three are one window over one replicated stamp channel.
-			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
-			const dt = trig ? time - trig.lastT : Infinity;
-			return dt >= 0 && dt < num(d.pulse ?? 0.3) ? 1 : 0;
-		}
-		case 'gamepadbutton': {
-			// 21-E5: the KEYPRESS MODEL VERBATIM, and that is the whole design. A pad press is
-			// local hardware, so it publishes a replicated trigger STAMP and every peer reads the
-			// same pulse window off the shared clock — no new message type, no streamed level.
-			// 'down' pulses on press (the re-stamp below keeps it high while held), 'up' pulses on
-			// release, 'held' is the same window SAID as a level.
-			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
-			const dt = trig ? time - trig.lastT : Infinity;
-			return dt >= 0 && dt < num(d.pulse ?? 0.3) ? 1 : 0;
-		}
-		case 'gamepadaxis': {
-			// 21-E5: LOCAL, and NEVER streamed. My stick is not your stick — the value comes from
-			// hardware only this peer has, so each peer evaluates its OWN pad and a graph that
-			// reads this node computes a DIFFERENT number per peer BY DESIGN (the hudinput /
-			// velocity rule; golden rule 8 — never stream local state). A game that needs a
-			// SHARED axis routes it through the E6 controller/possess authority, which is an
-			// authoritative channel by construction. The node card says so out loud, because
-			// otherwise this gets filed as a sync bug.
-			if (!inputRuntimeRef) return 0;
-			const axes = inputRuntimeRef.getGamepadAxes();
-			// explicit locals rather than axes[d.axis]: dynamic string-indexing of a typed
-			// object is a standing svelte-check baseline trap in this repo
-			const which = String(d.axis ?? 'lx');
-			const raw = num(
-				which === 'ly' ? axes.ly : which === 'rx' ? axes.rx : which === 'ry' ? axes.ry : axes.lx
-			);
-			// the node's deadzone is the GAME's threshold ON TOP of the device's dead centre
-			// (Settings ▸ Input, already applied in the snapshot) — which is why it defaults to
-			// 0, so by default exactly one deadzone is in play. A hard gate, not a rescale: a
-			// game asking for "past half" means past half.
-			const dz = Math.min(0.95, Math.max(0, num(d.deadzone ?? 0)));
-			const gated = Math.abs(raw) <= dz ? 0 : raw;
-			const scaled = gated * num(d.scale ?? 1);
-			return d.invert ? -scaled : scaled;
-		}
-		case 'onimpact': {
-			// PFX-C: physics impacts arrive as replicated trigger stamps too; 36 X6: the
-			// OTHER body rides a named `other` output (the onhit shape)
-			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
-			const dt = trig ? time - trig.lastT : Infinity;
-			return {
-				__default: dt >= 0 && dt < num(d.pulse ?? 0.3) ? 1 : 0,
-				__handles: { other: contactOthers.get(node.id) ?? '' }
-			};
-		}
-		case 'onhit': {
-			// 24-A A2: the knock's trigger. fireObjectHit stamps this node on EVERY peer
-			// from the hit message's own `at`, so the pulse agrees everywhere with no second
-			// message; speed/byMe are the LAST accepted hit's, held until the next one.
-			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
-			const dt = trig ? time - trig.lastT : Infinity;
-			const info = hitInfo.get(node.id);
-			return {
-				__default: dt >= 0 && dt < num(d.pulse ?? 0.3) ? 1 : 0,
-				__handles: { speed: info ? info.speed : 0, byMe: info && info.byMe ? 1 : 0 }
-			};
-		}
-		case 'onclap': {
-			// 31: the clap's trigger. The stamp is the ordinary trigger log; `point` (where
-			// the hands met, in the objects group's frame) rode the same nodetrigger message,
-			// so every peer holds the same point with no message of its own.
-			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
-			const dt = trig ? time - trig.lastT : Infinity;
-			const info = triggerPoints.get(node.id);
-			return {
-				__default: dt >= 0 && dt < num(d.pulse ?? 0.3) ? 1 : 0,
-				__handles: { point: info ? [...info.at] : [0, 0, 0], byMe: info && info.byMe ? 1 : 0 }
-			};
-		}
-		case 'gamesetting': {
-			// 31: this DEVICE's value of the row the node declares (a toggle reads true/false,
-			// a range a number, a choice its option) — per player by design, never sent
-			const id = settingIdOf(d);
-			const v = id ? gameSettingValue(id) : undefined;
-			return v === undefined ? d.value ?? true : v;
-		}
-		case 'onenter':
-		case 'onexit': {
-			// CL-C: sensor overlap edges arrive as replicated trigger stamps
-			// (initiator-detected in physics, same as onimpact); 36 X6: + `other`
-			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
-			const dt = trig ? time - trig.lastT : Infinity;
-			return {
-				__default: dt >= 0 && dt < num(d.pulse ?? 0.3) ? 1 : 0,
-				__handles: { other: contactOthers.get(node.id) ?? '' }
-			};
-		}
-		case 'measure': {
-			// B6: the numbers a rule graph actually asks for — how tall is the
-			// stack, where is its top. Read from colliderSpecOf, the same spec
-			// physics builds the body from, rather than a per-frame Box3.
-			const target = input('target', null) || implicitOwnerOf(node);
-			if (typeof target !== 'string') return 0;
-			const read = d.read ?? 'top';
-			if (read === 'speed') return ctx && ctx.speed ? ctx.speed(target) : 0;
-			const object = sceneObjects?.getObjectByProperty('uuid', target);
-			if (!object) return 0;
-			if (read === 'y') return object.position.y;
-			// only the measured AABB is read, which every kind shares — asking for
-			// 'box' never builds a hull or a 20k-triangle trimesh per frame (36 X2)
-			const spec = colliderSpecOf(object, 'box');
-			if (!spec) return object.position.y;
-			const half = spec.halfExtents?.y ?? 0;
-			const centre = spec.center?.y ?? object.position.y;
-			if (read === 'bottom') return centre - half;
-			if (read === 'height') return half * 2;
-			return centre + half; // 'top'
-		}
-		case 'velocity': {
-			// CL-C: live speed (m/s) of the wired object (or the graph owner).
-			// APPROXIMATE on non-initiators: fed by ~10Hz move-message deltas,
-			// exact-ish on the stepping peer (per-step write-back deltas).
-			const target = input('target', null) || implicitOwnerOf(node);
-			return typeof target === 'string' && ctx && ctx.speed ? ctx.speed(target) : 0;
-		}
-		case 'animstate': {
-			// 17-E F3: the readable half of animfinished. ONE number output whose
-			// meaning the `read` param picks, rather than a multi-output handle map:
-			// a boolean rides a number socket already (the COERCE table), and this
-			// keeps the node in the same shape as math/select.
-			//
-			// LOCAL like velocity, and for a stronger reason — the transport itself
-			// replicates (animplay, a synced-clock stamp), so every peer computes the
-			// same reading from the same data with no message of its own.
-			const target = input('target', null) || implicitOwnerOf(node);
-			if (typeof target !== 'string' || !animRef?.transportOf) return 0;
-			const t = animRef.transportOf(target);
-			// an empty clip name means "whatever is loaded"; a named one reports 0
-			// unless THAT clip is the one on the transport
-			if (d.clip) {
-				const wanted = animRef.clipIdByName?.(target, d.clip);
-				if (!wanted || wanted !== t.clipId) return 0;
-			}
-			const span = t.rangeOut - t.rangeIn;
-			switch (d.read ?? 'progress') {
-				case 'playing':
-					return t.playing ? 1 : 0;
-				case 'position':
-					return t.position;
-				case 'duration':
-					return t.duration;
-				case 'remaining':
-					return Math.max(0, t.rangeOut - t.position);
-				default:
-					// progress through the A/B window, which is what the transport
-					// actually loops over — clamped, because a parked playhead can sit
-					// outside a window set after it was parked
-					return span > 1e-6 ? Math.min(1, Math.max(0, (t.position - t.rangeIn) / span)) : 0;
-			}
-		}
-		case 'counter':
-			return ctx && ctx.triggers && ctx.triggers[node.id] ? ctx.triggers[node.id].count : 0;
-		// --- 21-D4: the HUD as a SOURCE ---
-		case 'hudinput': {
-			// LOCAL read. A local value is per-peer BY DESIGN (my volume), and a shared one
-			// is already replicated, so in both cases every peer reads its own store and
-			// nothing about the read goes on the wire.
-			const held = hudValueOf(String(d.element ?? ''), undefined);
-			const fallback = d.fallback ?? 0;
-			if (held === undefined) return num(fallback);
-			switch (d.read ?? 'value') {
-				case 'on':
-					// a toggle as 1/0, so it can gate a Compare or scale a number
-					return held === true || held === 'true' || num(held) > 0 ? 1 : 0;
-				case 'text':
-					return String(held);
-				case 'index': {
-					// a dropdown's POSITION in its own option list, which is what a Switcher
-					// wants. The options live on the ELEMENT, not on this node - the node
-					// names an element and nothing more.
-					const id = String(d.element ?? '');
-					const el = findHudElement(id);
-					// 21-E7.6: a `tabs` element HOLDS the index, so looking a number up in a list
-					// of words would answer the fallback forever. The registry says which kinds
-					// are index-valued, so this is one read and not a kind list here.
-					if (isIndexValuedKind(String(el?.kind ?? ''))) return num(held);
-					// 21-E7.2: the LIVE list, not the authored one — a node feeding the options
-					// must move the index with them, or a Switcher reads a stale position.
-					const options = hudOptionsOf(id, el);
-					const at = options.indexOf(String(held));
-					return at < 0 ? num(fallback) : at;
-				}
-				default:
-					return typeof held === 'boolean' ? (held ? 1 : 0) : num(held);
-			}
-		}
-		// --- 21-D6: the game shell's readable half ---
-		case 'getvariable':
-			// LOCAL read of REPLICATED state, so every peer computes the same number and
-			// nothing about the read goes on the wire (48 D1: through the paused view's sandbox)
-			return num(viewGameVar(String(d.name ?? ''), d.fallback ?? 0));
-		// --- 30 P4: what THIS device saved (never replicated, legitimately per-peer) ---
-		case 'storedvalue': {
-			const key = String(d.key ?? '').trim();
-			const held = key ? readStored(storedKey(key), undefined) : undefined;
-			if (d.output === 'text') {
-				if (held === undefined) return String(d.fallback ?? '');
-				return typeof held === 'string' ? held : JSON.stringify(held);
-			}
-			return held === undefined ? num(d.fallback ?? 0) : num(held);
-		}
-		// --- 21-G4: the PER-PLAYER half of the same idea ---
-		case 'peervariable': {
-			// Also a LOCAL read of REPLICATED state — every peer holds every peer's row —
-			// so the only difference from Get Variable is WHICH replicated map it reads.
-			// `mine` is the reading that differs per peer BY DESIGN: it is the one number a
-			// player's own HUD wants, and it is the only value node in this file whose
-			// answer is legitimately allowed to disagree across peers.
-			const name = String(d.name ?? '').trim();
-			const fallback = num(d.fallback ?? 0);
-			switch (d.read ?? 'mine') {
-				case 'sum':
-					return peerVarSum(name);
-				case 'max':
-					return peerVarMax(name);
-				case 'peer':
-					return num(peerVarOf(String(d.peer ?? ''), name, fallback));
-				default:
-					return num(myPeerVar(name, fallback));
-			}
-		}
-		case 'gametime': {
-			// derived from the shared `startedAt` stamp — no clock of its own, so two peers
-			// mid-round agree, and a late joiner converges the moment the state arrives
-			const g = viewGame();
-			const elapsed = gameElapsed();
-			switch (d.read ?? 'elapsed') {
-				case 'remaining':
-					return Math.max(0, num(d.length ?? 60) - elapsed);
-				case 'round':
-					return g.round;
-				case 'playing':
-					return g.state === 'playing' ? 1 : 0;
-				default:
-					return elapsed;
-			}
-		}
-		// 21-F3's `collectcount` case MOVED to the collectible module (R3a)
-		// --- H5: object-flow composition ---
-		case 'flowinput': {
-			// value injected by the scene graph's embedded Object Flow node this
-			// tick; falls back to the node's own default param
-			const injected = graphInputs[node.__graph]?.[d.name ?? 'value'];
-			return injected !== undefined ? injected : d.fallback ?? typedFallback(d.vtype);
-		}
-		case 'flowoutput':
-			// a Flow Output IS its wired input (lets the tick + readouts reuse eval)
-			return input('value', d.fallback ?? 0);
-		case 'objectflow':
-			// the embedded node exposes the target flow's outputs as named handles,
-			// computed at the END of the previous tick (one-frame latency)
-			return { __handles: graphOutputs[d.flowUuid] ?? {} };
-		case 'behaviour':
-			// 36 (U10): a behaviour's VALUE outputs are its replicated state fields (the `bhv`
-			// document every peer holds), read by handle like objectflow's
-			return { __handles: behavioursRef?.behaviourState?.(node.id) ?? {} };
-		case 'script': {
-			// 34 D3: a Script node with declared OUTPUTS is a value node — a pure function of
-			// its declared inputs and the synced clock, read through a handle map exactly like
-			// objectflow's. Without outputs it is an effect (applyAnimation) and has no value.
-			const outputs = scriptOutputs(d);
-			if (!outputs.length) return undefined;
-			// one run per node per tick: the card readout, and every consumer of every
-			// handle, would otherwise each run the code again at the same instant
-			const memo = scriptValueMemo.get(node.id);
-			if (memo && memo.time === time && memo.data === node.data) return memo.value;
-			/** @type {Record<string, any>} */
-			const inputs = {};
-			for (const socket of scriptInputs(d) ?? [])
-				inputs[socket.name] = scriptInputValue(socket, input(socket.name, socket.value), ctx);
-			const value = runScriptValue(node.id, d.code ?? '', inputs, time, outputs, scriptApi(node.id, d.code ?? '', 'value'));
-			if (scriptValueMemo.size > 500) scriptValueMemo.clear(); // deleted nodes' entries
-			scriptValueMemo.set(node.id, { time, data: node.data, value });
-			return value;
-		}
-		default: {
-			// A1: a module VALUE node. Pure function of (data, time) — the script-node
-			// rule — so every peer computes the same value from the replicated node data
-			// and the shared clock, and nothing is sent. The PATH-based `seen` guard in
-			// evalNode already covers cycles through it.
-			if (!moduleValueNodes[node.type]) return undefined;
-			// resolve the module's DECLARED inputs the way a core node resolves its own,
-			// so data.<handle> is the wired value when wired and the node's param when not
-			const data = { ...d };
-			const declared = moduleNodeInputs[node.type];
-			if (declared)
-				for (const handle of Object.keys(declared)) data[handle] = input(handle, d[handle]);
-			// R3a: `trigger` mirrors the module-effect ctx — a value node can read its own
-			// round-aware pulse (a module collectcount reads its siblings through the SDK,
-			// its own state through this)
-			return evalModuleValueNode(node.type, data, time, {
-				id: node.id,
-				trigger: moduleTriggerInfo(node, ctx),
-				graphId: node.__graph ?? SCENE_GRAPH
-			});
-		}
-	}
+	// 2.0 N1: a core node's value comes from its DEFINITION (src/lib/nodes/families/<group>.js) —
+	// the old switch's case bodies, unchanged, handed these same locals and the helpers in RT.
+	const ev = nodeEvalOf(node.type);
+	if (ev) return ev(node, { d, input, time, ctx, allNodes, allEdges, seen }, RT);
+	// A1: a module VALUE node. Pure function of (data, time) — the script-node
+	// rule — so every peer computes the same value from the replicated node data
+	// and the shared clock, and nothing is sent. The PATH-based `seen` guard in
+	// evalNode already covers cycles through it.
+	if (!moduleValueNodes[node.type]) return undefined;
+	// resolve the module's DECLARED inputs the way a core node resolves its own,
+	// so data.<handle> is the wired value when wired and the node's param when not
+	const data = { ...d };
+	const declared = moduleNodeInputs[node.type];
+	if (declared)
+		for (const handle of Object.keys(declared)) data[handle] = input(handle, d[handle]);
+	// R3a: `trigger` mirrors the module-effect ctx — a value node can read its own
+	// round-aware pulse (a module collectcount reads its siblings through the SDK,
+	// its own state through this)
+	return evalModuleValueNode(node.type, data, time, {
+		id: node.id,
+		trigger: moduleTriggerInfo(node, ctx),
+		graphId: node.__graph ?? SCENE_GRAPH
+	});
 }
 
 /**
@@ -6363,3 +5776,90 @@ export function startFlowRuntime() {
 
 	requestAnimationFrame(tick);
 }
+
+/**
+ * 2.0 N1 — the helpers a node definition's `eval` reaches (`rt.<name>`), so the family files stay
+ * leaves and the case bodies moved verbatim. Built at the END of the module: several of these are
+ * consts declared below evalNodeBody, and the six reassigned `let`s are getters (a copy would go stale).
+ * @typedef {typeof RT} FlowRuntimeHelpers the type a definition's `eval` sees as `rt`
+ */
+const RT = {
+	DEFAULT_FLY_SPEED,
+	OVER_WINDOW,
+	SEQUENCE_STEPS,
+	bodyDistance,
+	bool,
+	charControl,
+	colliderSpecOf,
+	contactOthers,
+	doors,
+	edgesInto,
+	evalNode,
+	findHudElement,
+	foldGate,
+	foldMath,
+	freshStamp,
+	gameElapsed,
+	gameFeelActive,
+	gameSettingValue,
+	get,
+	handleStamp,
+	hashString,
+	hitInfo,
+	hudOptionsOf,
+	hudTimerRemaining,
+	hudValueOf,
+	implicitOwnerOf,
+	isIndexValuedKind,
+	localPlayerBody,
+	mulberry32,
+	myPeerVar,
+	nodeById,
+	num,
+	opFolds,
+	peerVarMax,
+	peerVarOf,
+	peerVarSum,
+	playMoveSpeed,
+	pointOf,
+	pulseAt,
+	readStored,
+	roundStale,
+	runScriptValue,
+	scheduledFireAt,
+	scriptApi,
+	scriptInputValue,
+	scriptInputs,
+	scriptOutputs,
+	scriptValueMemo,
+	settingIdOf,
+	socketCount,
+	storedKey,
+	switcherHandle,
+	switcherIndexOf,
+	switcherItems,
+	switcherRadioIndex,
+	triggerPoints,
+	typedFallback,
+	variadicExtras,
+	viewGame,
+	viewGameVar,
+	get animRef() {
+		return animRef;
+	},
+	get behavioursRef() {
+		return behavioursRef;
+	},
+	get graphInputs() {
+		return graphInputs;
+	},
+	get graphOutputs() {
+		return graphOutputs;
+	},
+	get inputRuntimeRef() {
+		return inputRuntimeRef;
+	},
+	get sceneObjects() {
+		return sceneObjects;
+	}
+};

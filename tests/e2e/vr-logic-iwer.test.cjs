@@ -15,6 +15,8 @@
 //   R. a desktop peer's edit (B renames a node) redraws the panel on A
 //   V. a VIEWER (cloud roles) gets the panel read-only: a pad press changes nothing and says why
 //   G. a grip on the panel carries it; letting go pins it there
+//   C. 2.0 N2: the read-only CODE sheet (flag codeView) — no Code button with the flag off; with it on, Code shows the
+//      graph's code over the graph area, pressing a node's line selects that node (the pad shows it), Code again closes
 //   K. the cost: the panel's frame hook per XR frame and its repaints while the laser sweeps the cards (CPU
 //      side; the Quest GPU is a device row)
 // Run: APP_URL=https://theprototype.app:5631/ node tests/e2e/vr-logic-iwer.test.cjs   (ONLY=O,M,… to pick rows; SHOTS_DIR=… for evidence)
@@ -305,6 +307,33 @@ h.run(async () => {
 		d = await dbg();
 		const moved = Math.hypot(d.position[0] - p0[0], d.position[1] - p0[1], d.position[2] - p0[2]);
 		h.check(d.mode === 'pinned' && moved > 0.2, `letting go pins it where it was carried (${moved.toFixed(2)} m)`);
+	}
+
+	// ---- C. the read-only code sheet (2.0 N2, flag codeView) --------------------------------------------------
+	if (want('C')) {
+		console.log('\n=== C. the code sheet ===');
+		await g(() => window.__tp.test.v1.codeView.codeViewFlag.set(false));
+		await settle(4);
+		h.check(!(await dbg()).buttons.includes('code'), 'flag off: the panel has no Code button');
+		await g(() => window.__tp.test.v1.codeView.codeViewFlag.set(true));
+		await settle(4);
+		h.check((await dbg()).buttons.includes('code'), 'flag on: the panel grows a Code button');
+		const graphKey = async () => {
+			const gr = await graphOn(page, ids.box);
+			return JSON.stringify({ n: gr.nodes.map((x) => [x.id, x.type, x.data]), e: gr.edges.map((x) => [x.source, x.sourceHandle, x.target, x.targetHandle]) });
+		};
+		const graphBefore = await graphKey();
+		await press('code');
+		d = await dbg();
+		h.check(!!d.codeSheet && d.buttons.includes('code:line:' + ids.n) && d.buttons.includes('code:line:' + ids.s), `Code shows the graph as code, one pressable line per node (${d.buttons.filter((b) => b.startsWith('code:')).join(' ')})`);
+		await shot('05-code-sheet');
+		await press('code:line:' + ids.s);
+		d = await dbg();
+		h.check(d.selected === ids.s && d.pad?.hasNode, "pressing a node's line selects that node, and the pad shows its values");
+		h.check((await graphKey()) === graphBefore, 'reading the code changed nothing in the graph (nodes, data and wires)');
+		await press('code');
+		h.check(!(await dbg()).codeSheet, 'Code again puts the graph back');
+		await g(() => window.__tp.test.v1.codeView.codeViewFlag.set(false));
 	}
 
 	// ---- K. the cost ----------------------------------------------------------------------------------------

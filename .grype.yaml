@@ -18,3 +18,6 @@ ignore:
   - vulnerability: GHSA-3r8g-jcqq-3p5j
     package: { name: "@sveltejs/kit", version: 2.70.3, type: npm }
     reason: "remote-functions form parsing only; core is adapter-static with no remote functions; fixed only in 3.1.1 (the SvelteKit 3 migration) (recheck 2026-11-24)"
+  - vulnerability: GHSA-fc5q-39xc-vjpf
+    package: { name: picomatch, version: 4.0.7, type: npm }
+    reason: "build/test tooling only (vite, tinyglobby, vitest, svelte-check, rollup pluginutils): globs come from our own config, never from users, and picomatch is not in the shipped bundle (build/_app); GitHub withdrew the advisory 2026-11-18 and no fixed release exists (4.0.7 is the newest) (recheck 2026-12-01)"

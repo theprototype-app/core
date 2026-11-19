@@ -210,9 +210,12 @@ export function normalizeScenePhysics(raw) {
 				// 36 F22: a game's rays skip water + triggers unless it opts back in here
 				...optional('rayHits', normalizeRayHits(playRaw.rayHits)),
 				// 38 R8: the play banner, present only when not the default hint
-				...optional('banner', normalizePlayBanner(playRaw.banner))
+				...optional('banner', normalizePlayBanner(playRaw.banner)),
+				// 95 SM3: a published game's players may share moments (the last 10 s) — present only
+				// when the author allowed it (absent = off, every scene before it)
+				...(playRaw.moments === true ? { moments: true } : {})
 			},
-			['interaction', 'grounded', 'simOnPlay', 'cursor', 'locomotion', 'spawn', 'bounds', 'reach', 'rayHits', 'banner']
+			['interaction', 'grounded', 'simOnPlay', 'cursor', 'locomotion', 'spawn', 'bounds', 'reach', 'rayHits', 'banner', 'moments']
 		),
 		// A1: the 20 ceiling is throwVelocity's MAX_LINVEL, restated rather than imported —
 		// this module is store-only and the response clamps through clampThrow anyway
@@ -284,7 +287,7 @@ scenePhysicsState_.subscribe((s) => sceneGravity.set(s.gravity));
 export const scenePhysicsGround = derived(scenePhysicsState_, (s) => s.ground);
 /** out-of-bounds config. NOT named `sceneBounds` — that is sceneBounds.js */
 export const scenePhysicsBounds = derived(scenePhysicsState_, (s) => s.bounds);
-/** play-mode block ({interaction, grounded, simOnPlay, cursor?: 'free', spawn?: {position, yaw}, banner?}) */
+/** play-mode block ({interaction, grounded, simOnPlay, cursor?: 'free', spawn?: {position, yaw}, banner?, moments?: true}) */
 export const scenePlay = derived(scenePhysicsState_, (s) => s.play);
 /** A1: the knock block ({enabled, gain, maxSpeed, minSpeed, radius, spin, predict}) */
 export const sceneKnock = derived(scenePhysicsState_, (s) => s.knock);

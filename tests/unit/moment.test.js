@@ -165,3 +165,12 @@ describe('frame-cost meter (SM3)', () => {
 	});
 });
 
+describe('the scene setting (SM3)', async () => {
+	const { normalizeScenePhysics } = await import('../../src/lib/scenePhysics.js');
+	it('play.moments is present only when the author allowed it', () => {
+		expect(normalizeScenePhysics({}).play.moments).toBeUndefined();
+		expect('moments' in normalizeScenePhysics({ play: { moments: null } }).play).toBe(false);
+		expect('moments' in normalizeScenePhysics({ play: { moments: 'yes' } }).play).toBe(false);
+		expect(normalizeScenePhysics({ play: { moments: true } }).play.moments).toBe(true);
+	});
+});

@@ -89,7 +89,9 @@
 	import { CARD_KEYS } from '$lib/nodes/registry.js';
 	// 2.0 N2: the read-only Code tab, behind the codeView flag
 	import { codeViewFlag } from '$lib/nodes/codeViewFlag.js';
-	import FlowCodePane from './FlowCodePane.svelte';
+	// 95-int: the Code tab (flag codeView, off by default) is a lazy chunk, off the editor's boot path
+	let codePaneLoad: Promise<typeof import('./FlowCodePane.svelte')> | null = null;
+	const codePane = () => (codePaneLoad ??= import('./FlowCodePane.svelte'));
 	type CardKey = (typeof CARD_KEYS)[number];
 	import { flowNodes as flowNodesStore, flowEdges as flowEdgesStore, customNodeDefs, nodeDesignerOpen, flowGraphs, activeGraphId, SCENE_GRAPH, setActiveGraph, updateGraph } from '../../stores/flowStore';
 	import { createObjectGraph, requestDeleteObjectGraph, recordFlowNodesEntry } from '$lib/flowGraphs';
@@ -2341,7 +2343,9 @@
 				{/if}
 			</div>
 			{#if shownTab === 'code'}
-				<FlowCodePane graph={$flowGraphs[activeId]} graphId={activeId} selectedId={selectedNode?.id ?? null} />
+				{#await codePane() then { default: FlowCodePane }}
+					<FlowCodePane graph={$flowGraphs[activeId]} graphId={activeId} selectedId={selectedNode?.id ?? null} />
+				{/await}
 			{:else if shownTab === 'info'}
 				{#if selectedNode}
 					<p class="ui-section-label">{selectedNode.data?.label ?? selectedNode.type}</p>

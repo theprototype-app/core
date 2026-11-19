@@ -20,6 +20,11 @@ done
 mkdir -p "$dir/scripts/ci" "$dir/tests/e2e"
 cp "$here/scripts/ci/battery-desk.cjs" "$here/scripts/ci/battery.cjs" "$here/scripts/ci/quarantine.cjs" "$dir/scripts/ci/"   # battery.cjs requires quarantine.cjs (test-health-1)
 cp "$here/tests/e2e/battery.json" "$here/tests/e2e/quarantine.json" "$dir/tests/e2e/"
+# tools/agent has its own lockfile and no slot installs it: without its node_modules every agent-* suite is red
+# for a reason no union shares (2.0-n012, 2026-11-18: 14 fake reds). BATTERY_SNAPSHOT_NO_AGENT=1 skips it.
+if [ -f "$dir/tools/agent/package-lock.json" ] && [ -z "${BATTERY_SNAPSHOT_NO_AGENT:-}" ]; then
+  (cd "$dir/tools/agent" && npm ci --no-audit --no-fund --loglevel=error) || { echo "battery-snapshot: npm ci in tools/agent failed" >&2; exit 3; }
+fi
 if git -C "$here" diff --quiet "$tag" HEAD -- package-lock.json; then lock=same; else lock=differs; fi
 echo "$tag $(git -C "$here" rev-parse --short "$tag^{commit}") (package-lock vs this tree: $lock)" > "$dir/.snap"
-echo "battery-snapshot: $dir = $tag + .env + certs + the desk tool; run it with BATTERY_COMMIT=$tag"
+echo "battery-snapshot: $dir = $tag + .env + certs + the desk tool + tools/agent deps; run it with BATTERY_COMMIT=$tag"

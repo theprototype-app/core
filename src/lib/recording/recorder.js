@@ -64,6 +64,17 @@ export function setFrameHooks(hooks) {
 	frameHooks = hooks;
 }
 
+/**
+ * 95 SM1: the moment buffer's tap (momentBuffer.js, loaded on the first Play) — called from the
+ * capture stage while no recording runs, so it reads the frame just drawn. One null check otherwise.
+ * @type {(() => void) | null}
+ */
+let momentTap = null;
+/** @param {(() => void) | null} fn */
+export function setMomentTap(fn) {
+	momentTap = fn;
+}
+
 /** @param {RecordingDriver | null} d @returns {() => void} */
 export function registerRecordingDriver(d) {
 	driver = d;
@@ -422,7 +433,7 @@ export function recordingBeforeRender() {
 export function recordingAfterRender() {
 	if (frameHooks) return frameHooks.after();
 	const s = session;
-	if (!s || s.phase !== 'recording') return;
+	if (!s || s.phase !== 'recording') return momentTap?.();
 	const renderer = /** @type {any} */ (get(globalRenderer));
 	if (!renderer) return;
 	const frameNo = renderer.info?.render?.frame ?? -1;

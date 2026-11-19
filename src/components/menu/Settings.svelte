@@ -55,6 +55,7 @@
 	import SaveOptionsSettingsSection from './SaveOptionsSettingsSection.svelte'; // 56 C13
 	import ImportSettingsSection from './ImportSettingsSection.svelte'; // 46 P2
 	import PrivacySettings from './settings/PrivacySettings.svelte'; // 48 O1
+	import MomentSettings from './settings/MomentSettings.svelte'; // 95 SM3
 	import ConnectedAppsSettings from './settings/ConnectedAppsSettings.svelte'; // 86 B5
 	import { connectorProvider, settingsSlots } from '$lib/cloudHooks';
 	import CloudSlot from '../CloudSlot.svelte';
@@ -630,6 +631,7 @@
 				<AccordionItem bind:open={privacyExpanded}>
 					{#snippet header()}Privacy{/snippet}
 					<PrivacySettings />
+					<MomentSettings />
 				</AccordionItem>
 				{#if $settingsSlots.account || $connectorProvider}
 					<!-- profile-notify: the cloud plugin draws its groups (Email, and since uir-account Sign-in methods + Devices);

@@ -42,6 +42,9 @@ export const DEBUG_HOOKS = [
 	['chunkReload', () => import('./chunkReload.js')],
 	['staleModules', () => import('./staleModules')],
 	['perfMoment', () => import('./perf/moment')],
+	// 95 SM1-SM3: Share a moment — the stores (setting, status, open); the buffer itself publishes
+	// `momentBuffer` through registerDebugHook when the first Play loads it
+	['momentStores', () => import('./moment/momentStores.js')],
 	['problemReport', () => import('./problemReport')],
 	['profilerView', () => import('./perf/profilerView')],
 	['profilerModel', () => import('./perf/profilerModel.js')],

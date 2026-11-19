@@ -4198,6 +4198,7 @@
 		"privacy": {
 			"rows": [
 				"Error reports",
+				"Recording the last 10 s",
 				"Usage counts"
 			],
 			"sections": [
@@ -4325,6 +4326,7 @@
 				"Offer to merge unsaved work on connect",
 				"Ping colour",
 				"Ping sound",
+				"Recording the last 10 s",
 				"Share materials",
 				"Sync animations",
 				"When you add files during a session",
@@ -4334,7 +4336,8 @@
 				"Scene",
 				"Explorer",
 				"Import",
-				"VR"
+				"VR",
+				"Privacy"
 			]
 		},
 		"delete": {

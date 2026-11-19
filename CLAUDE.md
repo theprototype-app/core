@@ -2819,6 +2819,27 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   chatTokens.js); WindowShell mode tabs take a Lucide NAME (lowercase-dash = an icon, anything else = a text glyph);
   `changelog.js stripEmoji` keeps the emoji-led older CHANGELOG entries out of What's new. Suites: unit `triggerWhy78`,
   `checkEmoji`; e2e `trigger-why-78`, `starter-recipes-78`.
+- **ROADMAP 95 SHARE A MOMENT (SM1-SM3).** `src/lib/moment/`: `momentCore.js` (PURE: the ring with a fake clock,
+  `momentBlocker` = the ONE eligibility rule in order player→setting→browser→memory→slow→vr→idle, `clampTrim` 3-10 s,
+  `resampleFrames` = output frame i shows the LATEST capture at or before start + i/fps, so the file is exactly
+  round(len × fps) frames at the game's speed whatever the capture rate), `momentStores.js` (LEAF: `momentRecording`
+  "Recording the last 10 s" LOCAL default ON, `momentStatus`, `momentOpen`, `openMoment`), `momentBuffer.js` (LAZY, loaded on
+  the first Play by `components/moment/MomentHost.svelte`; never in the boot graph). THE TAP: recorder.js `setMomentTap` —
+  the RecordingDriver capture stage calls it while no recording runs (one null check otherwise); at <= 15 fps it calls
+  `createImageBitmap(canvas, {resizeWidth/Height})` (a snapshot taken SYNCHRONOUSLY in the frame that drew it; 640 px long
+  side, 480 on a phone) and transfers it to `momentEncode.worker.js` (OffscreenCanvas → JPEG); 2D canvas + toBlob fallback.
+  The CANVAS only: no HUD DOM, editor, chat, voice or mic. Leaving Play / VR / setting off / a player of a published game
+  without `play.moments` = disarm AND forget. The preview TAKES the frames (`takeMoment`, the buffer is frozen while
+  `momentOpen`) and gives them back on close (`returnMoment`). SM3: `play.moments: true` in scenePhysics' play block
+  (present only when allowed; Configure Scene ▸ Play), `embedMode` = "a published game's player"; the frame-cost meter
+  disarms the buffer for the visit when its mean per-frame main-thread cost passes 1 ms (phone) / 2.5 ms (desktop).
+  SM2: `MomentDialog.svelte` is a MENU in Play (HudLayer's `menuWanted` frees the pointer) and eats Escape in a window
+  CAPTURE listener (else PLC's Escape also leaves Play); `momentExport.js` writes through the 68-V9 `createSink` +
+  `exportPlan` (no second encoder) and `components/ui/ExportProgress.svelte` is the Recording dialog's pill EXTRACTED
+  (ids `recording-*` unchanged; the moment's are `moment-*`). Keys: F8 (a window capture listener in the buffer — the
+  shortcut table stands down in Play), pad `GamepadSelect` via inputRuntime.onInput, the Play bar's `#moment-share`
+  (PlayBanner) / `#embed-moment` (EmbedChrome). Debug: `momentStores` row + `momentBuffer` registered at runtime
+  (`state()` carries the cost numbers). Suites: unit `moment`; e2e `moment-share`.
 
 ## UI design system (redesign epic)
 

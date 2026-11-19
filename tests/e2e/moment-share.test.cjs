@@ -12,12 +12,17 @@
 //   6. SM3 PRIVACY: a published game's player (`?embed=1`) — no button and nothing buffered while
 //      the scene does not allow moments; the author's switch (play.moments) turns both on
 //   7. VR: the buffer stands down and the button goes
+//   8. PHONE rows: N6 unfolded (770x850) and folded (390x896) emulation at 4x CPU — the frame cost is
+//      read (MOMENT-COST-N6), the buffer either records within budget at <= 480 px or turned itself off
+//      ('slow'); the Play bar button is on screen and a TAP opens the preview
+//   9. IWER row: a real (emulated) Quest session — nothing buffered, no button
 // Counterfactual (base v1.67.1): no `momentStores` hook, no #moment-share — section 1 is red there.
 // Evidence: MOMENT_SHOTS=<dir> writes screenshots and the two files there.
 const h = require('./helpers.cjs');
 const fs = require('fs');
 const path = require('path');
 const { Input, BufferSource, ALL_FORMATS } = require('mediabunny');
+const iwer = require('./iwer.cjs');
 
 const { check } = h;
 const SHOTS = process.env.MOMENT_SHOTS || '';
@@ -257,6 +262,59 @@ h.run(async () => {
 	const al = await bufferState(ep);
 	check(al.armed && al.frames > 0, `with the author's switch on, the player records (${al.frames} frames)`);
 	await shot(ep, '06-player-allowed.png');
+	await ep.context().close();
+	await A.page.context().close();
+
+	// ---------- 8. phone rows: N6 unfolded + folded at 4x CPU ----------
+	const UNFOLD = { viewport: { width: 770, height: 850 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2.9, userAgent: h.N6_UA };
+	const FOLD = { viewport: { width: 390, height: 896 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2.9, userAgent: h.N6_UA };
+	for (const [label, context] of /** @type {[string, any][]} */ ([
+		['unfolded', UNFOLD],
+		['folded', FOLD]
+	])) {
+		const P = await h.setupPage(browser, 'N6-' + label, { context });
+		const pp = P.page;
+		const cdp = await pp.context().newCDPSession(pp);
+		await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+		await pp.evaluate(() => /** @type {any} */ (window).__tp.test.v1.commandsHandler.sceneCommand('/create sphere'));
+		await setPlaying(pp, true);
+		await pp.waitForFunction(() => !!(/** @type {any} */ (window).__tp.test.v1.momentBuffer), null, { timeout: 60000 });
+		await pp.waitForTimeout(12000);
+		const ps = await bufferState(pp);
+		console.log(`MOMENT-COST-N6-${label} ` + JSON.stringify({ armed: ps.armed, reason: ps.reason, phone: ps.phone, frames: ps.frames, size: ps.size, cost: ps.cost, captureCost: ps.captureCost }));
+		check(ps.phone, `N6 ${label}: judged a phone`);
+		check((ps.armed && ps.reason === '' && ps.cost.mean <= 1 && ps.size.w <= 480 && ps.size.h <= 480) || (!ps.armed && ps.reason === 'slow' && ps.frames === 0), `N6 ${label}: within budget (${ps.cost.mean.toFixed(3)} ms a frame, ${ps.size.w} × ${ps.size.h}) or the buffer stays off (${ps.reason || 'armed'})`);
+		if (ps.armed) {
+			const btn = pp.locator('#play-banner #moment-share');
+			await btn.waitFor({ timeout: 5000 });
+			const box = await btn.boundingBox();
+			const vw = context.viewport.width;
+			check(!!box && box.width >= 44 && box.x >= 0 && box.x + box.width <= vw, `N6 ${label}: the Play bar button is on screen and 44 px (${JSON.stringify(box)})`);
+			await shot(pp, `07-n6-${label}-bar.png`);
+			await btn.tap();
+			await pp.waitForSelector('#moment-dialog #moment-preview', { timeout: 20000 });
+			const fits = await pp.evaluate(() => {
+				const r = /** @type {any} */ (document.querySelector('#moment-dialog')).getBoundingClientRect();
+				return r.left >= 0 && r.right <= innerWidth + 1;
+			});
+			check(fits, `N6 ${label}: a tap opens the preview and it fits the screen`);
+			await shot(pp, `08-n6-${label}-preview.png`);
+			await pp.locator('#moment-close').tap();
+			await pp.waitForFunction(() => !document.querySelector('#moment-dialog'), null, { timeout: 10000 });
+		}
+		await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
+		await pp.context().close();
+	}
+
+	// ---------- 9. IWER: a real (emulated) headset session ----------
+	const V = await h.setupPage(browser, 'VR', { init: iwer.initScript(), context: { viewport: { width: 1280, height: 800 } } });
+	await iwer.enter(V.page);
+	await iwer.frames(V.page, 30);
+	await V.page.waitForTimeout(2500);
+	const vs = await bufferState(V.page);
+	check(!vs || (!vs.armed && vs.frames === 0 && vs.reason === 'vr'), `in an IWER headset session nothing is buffered (${vs ? vs.frames + ' frames, ' + vs.reason : 'the buffer is not even loaded'})`);
+	check(!(await V.page.$('#moment-share')) && !(await V.page.$('#embed-moment')), 'and there is no Share a moment button');
+	await iwer.exit(V.page);
 
 	await h.finish(browser);
 });

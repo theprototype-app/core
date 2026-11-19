@@ -141,27 +141,8 @@ export function momentBlocker(s) {
 	return '';
 }
 
-/** the sentence for a blocker (the setting row and the button's tooltip) @param {string} reason */
-export function momentBlockerText(reason) {
-	switch (reason) {
-		case 'player':
-			return 'This game does not record moments.';
-		case 'setting':
-			return 'Recording the last 10 s is off (Settings ▸ Privacy).';
-		case 'browser':
-			return 'This browser cannot copy the game view.';
-		case 'memory':
-			return 'Off on this device: it has too little memory to keep the last 10 s.';
-		case 'slow':
-			return 'Off on this device: keeping the last 10 s slowed the game down.';
-		case 'vr':
-			return 'Not in VR: the headset owns the view.';
-		case 'idle':
-			return 'Records only while you play.';
-		default:
-			return '';
-	}
-}
+/** the sentence for a blocker: momentText.js (a leaf, so the settings row does not pull this module into the boot) */
+export { momentBlockerText } from './momentText.js';
 
 /** does this device report too little memory for the buffer? @param {any} nav a navigator-like */
 export function isLowMemory(nav) {

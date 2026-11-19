@@ -11,7 +11,7 @@
 	import SettingRow from '../../ui/SettingRow.svelte';
 	import Toggle from '../../ui/Toggle.svelte';
 	import { momentRecording, momentStatus, MOMENT_KEY } from '$lib/moment/momentStores.js';
-	import { momentBlockerText } from '$lib/moment/momentCore.js';
+	import { momentBlockerText } from '$lib/moment/momentText.js';
 
 	// a reason the buffer is off that this switch does not explain (VR, memory, a slow device)
 	const why = $derived(['vr', 'memory', 'slow', 'browser', 'player'].includes($momentStatus.reason) ? momentBlockerText($momentStatus.reason) : '');

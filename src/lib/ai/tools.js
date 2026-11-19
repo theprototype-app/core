@@ -1757,7 +1757,18 @@ function flowToolSchemas(physics) {
 								required: ['id', 'data']
 							}
 						},
-						remove: { type: 'array', items: { type: 'string' }, description: 'node ids to delete' }
+						remove: { type: 'array', items: { type: 'string' }, description: 'node ids to delete' },
+						// 2.0-n3c: Convert to code / Convert back (the node menu's action)
+						convert: {
+							type: 'array',
+							description:
+								'turn pure value nodes (math, compare, gate, select, maprange, random, hudtext) into a Script node holding the same logic as editable JS ("code"), same id and wires; "back" returns the built-in while that code is unchanged',
+							items: {
+								type: 'object',
+								properties: { id: { type: 'string' }, to: { type: 'string', enum: ['code', 'back'] } },
+								required: ['id', 'to']
+							}
+						}
 					},
 					required: ['graph']
 				}

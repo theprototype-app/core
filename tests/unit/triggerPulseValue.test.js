@@ -18,7 +18,7 @@ function valueOf(/** @type {string} */ type, /** @type {number|null} */ lastT, /
 	const ctx = { triggers: lastT === null ? {} : { n1: { lastT, count: 1 } } };
 	const ev = nodeEvalOf(type);
 	if (!ev) throw new Error(type + ' has no eval');
-	return ev(node, /** @type {any} */ ({ d: node.data, input: (_h, f) => f, time, ctx, allNodes: [node], allEdges: [], seen: new Set() }), rt);
+	return ev(node, /** @type {any} */ ({ d: node.data, input: (/** @type {string} */ _h, /** @type {any} */ f) => f, time, ctx, allNodes: [node], allEdges: [], seen: new Set() }), rt);
 }
 
 describe('2.0-n3c: the four local/grab triggers read the pulse window, not the HUD timer', () => {

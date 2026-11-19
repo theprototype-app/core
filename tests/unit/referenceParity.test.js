@@ -227,7 +227,7 @@ describe('2.0-n3c parity: reference JS == built-in', () => {
 						const data = { ...dialled, decimals };
 						const node = { id: 'h1', type: 'hudtext', data };
 						// the HUD Text's own path: resolveInputs (a wire overrides the param) -> hudFormat
-						const eff = { ...data };
+						const eff = /** @type {any} */ ({ ...data });
 						if (format !== MISSING && format !== undefined) eff.format = format;
 						if (value !== MISSING && value !== undefined) eff.value = value;
 						const want = hudFormat(eff.format, eff.value, num(eff.decimals));

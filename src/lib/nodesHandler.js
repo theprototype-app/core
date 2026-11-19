@@ -22,7 +22,9 @@ export function serializeNode(node) {
 		type: node.type,
 		position: { x: node.position.x, y: node.position.y },
 		data: { ...node.data },
-		...(node.class ? { class: node.class } : {})
+		...(node.class ? { class: node.class } : {}),
+		// 2.0-n3c: the definition version it was saved with (absent = 1, so every node today is unchanged)
+		...(node.v !== undefined ? { v: node.v } : {})
 	};
 }
 

@@ -424,12 +424,64 @@ async function teardown(reason) {
 	glGenerationStarting();
 	const restored = await restoreMainContext(g.gl);
 	const envBack = restoreEnvironment(g.gl, g.scene, g.env);
+	const shadowsBack = giveShadowMapsBack(g.scene);
+	const camerasBack = giveCamerasBack(g.gl, g.scene, [g.camera, app?.camera?.()]);
 	g.glCanvas.style.opacity = '';
 	const held = flushHeldDisposals();
 	patchState({ mode: 'off', notShown: '', dropped: 0 });
-	const rec = { dir: 'off', reason, restored, held, env: { kind: g.env?.kind, ...envBack }, ms: { dispose: t1 - t0, restore: now() - t1, total: now() - t0 } };
+	const rec = { dir: 'off', reason, restored, held, env: { kind: g.env?.kind, ...envBack }, shadowMaps: shadowsBack, cameras: camerasBack, ms: { dispose: t1 - t0, restore: now() - t1, total: now() - t0 } };
 	log.switches.push(rec);
 	return rec;
+}
+
+/**
+ * three's WebGPU shadow node writes ITS render target into `light.shadow.map`, and the WebGL shadow pass
+ * only makes its own when that is null: after a trip the WebGL renderer kept drawing shadows into the
+ * WebGPU renderer's (disposed) target. Every light that holds a non-WebGL map gets null back.
+ * @param {any} scene @returns {number} how many were handed back
+ */
+function giveShadowMapsBack(scene) {
+	let n = 0;
+	scene.traverse((/** @type {any} */ o) => {
+		const map = o.isLight ? o.shadow?.map : null;
+		if (!map || map.isWebGLRenderTarget) return;
+		try {
+			map.depthTexture?.dispose?.();
+			map.dispose?.();
+		} catch {
+			/* the WebGPU renderer that owned it is gone already */
+		}
+		o.shadow.map = null;
+		n++;
+	});
+	return n;
+}
+
+/**
+ * The WebGPU renderer moves every camera it draws through to ITS depth range ([0, 1]: `coordinateSystem` +
+ * a new projection matrix) — the view's camera, its sub-cameras and every light's shadow camera — and the
+ * WebGL renderer never moves them back. Left like that, the standard view drew its shadow maps with the
+ * wrong depth mapping and lost most of its shadows (Tavern: mean luma 39.4 -> 45.8 after one trip).
+ * @param {any} gl @param {any} scene @param {any[]} extra cameras outside the scene graph
+ * @returns {number} how many were moved back
+ */
+function giveCamerasBack(gl, scene, extra) {
+	const system = gl.coordinateSystem;
+	/** @type {Set<any>} */
+	const cams = new Set(extra.filter(Boolean));
+	scene.traverse((/** @type {any} */ o) => {
+		if (o.isCamera) cams.add(o);
+		if (o.isLight && o.shadow?.camera) cams.add(o.shadow.camera);
+	});
+	for (const c of [...cams]) for (const sub of c.cameras ?? []) cams.add(sub);
+	let n = 0;
+	for (const c of cams) {
+		if (!c?.isCamera || c.coordinateSystem === system) continue;
+		c.coordinateSystem = system;
+		c.updateProjectionMatrix?.();
+		n++;
+	}
+	return n;
 }
 
 /** the quality step changed in the menu */

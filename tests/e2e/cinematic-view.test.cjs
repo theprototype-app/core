@@ -64,6 +64,21 @@ const glLuma = (page) =>
 		for (let i = 0; i < d.length; i += 4) l += 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
 		return +(l / (d.length / 4)).toFixed(1);
 	});
+/** the main camera's projection and how many cameras (incl. shadow cameras) are not on the WebGL renderer's system */
+const camState = (page) =>
+	page.evaluate(() => {
+		const t = window.__tp.test.v1;
+		let r, sc, c;
+		t.globalRenderer.subscribe((x) => (r = x))();
+		t.globalScene.subscribe((x) => (sc = x))();
+		t.globalCamera.subscribe((x) => (c = x))();
+		let foreign = c.coordinateSystem !== r.coordinateSystem ? 1 : 0;
+		sc.traverse((o) => {
+			const cam = o.isLight ? o.shadow?.camera : o.isCamera && o !== c ? o : null;
+			if (cam && cam.coordinateSystem !== r.coordinateSystem) foreign++;
+		});
+		return { proj: c.projectionMatrix.elements.map((v) => v.toFixed(5)).join(','), foreign };
+	});
 const waitMode = (page, want, label, ms = 90000) => h.eventually(() => mode(page), (m) => m === want, label, ms);
 
 h.run(async () => {
@@ -238,6 +253,7 @@ h.run(async () => {
 	);
 	await page.waitForTimeout(1500);
 	const l0 = await glLuma(page);
+	const c0 = await camState(page);
 	await page.evaluate(() => window.__tp.test.v1.cinematicState.setCinematic(true));
 	await waitMode(page, 'on', '5b. on with the HDRI');
 	await page.waitForTimeout(1500);
@@ -245,6 +261,8 @@ h.run(async () => {
 	await waitMode(page, 'off', '5b. and off again');
 	await page.waitForTimeout(1000);
 	const l1 = await glLuma(page);
+	const c1 = await camState(page);
+	h.check(c1.proj === c0.proj && c1.foreign === 0, `   every camera is back on the WebGL depth range (projection ${c0.proj === c1.proj ? 'unchanged' : c0.proj + ' -> ' + c1.proj}, ${c1.foreign} camera(s) still on WebGPU's)`);
 	const back = (await debug(page)).switches.filter((x) => x.dir === 'off').pop();
 	h.check(back?.env?.kind === 'unrolled' && back?.env?.refilled >= 1 && Math.abs(l1 - l0) < Math.max(3, l0 * 0.05), `   the standard view looks the same after the trip (luma ${l0} -> ${l1}, ${JSON.stringify(back?.env)})`);
 	await page.evaluate(() => window.__tp.test.v1.cinematicState.setCinematic(true));

@@ -721,7 +721,12 @@ export async function objectParameters(data, from = 'peer') {
             const turn = bumpTextTurn(data.uuid);
             if (data.textPath) applyTextPathTo(mesh, data.textPath);
             // 64-text TX5: Bake — this peer bakes its own build of the record (the mesh never travels)
-            else if (data.bake === true && mesh.userData.textPath) void import('$lib/textPathEdit.js').then((m) => m.applyRemoteBake(mesh, turn));
+            // (fix-batch-4 G5: the bake probe notes every arrival, before the bake's own steps)
+            else if (data.bake === true && mesh.userData.textPath)
+                void import('$lib/textPathEdit.js').then((m) => {
+                    m.bakeNote(data.uuid, 'arrived', { turn });
+                    return m.applyRemoteBake(mesh, turn);
+                });
             else delete mesh.userData.textPath;
             pokeScene();
         }

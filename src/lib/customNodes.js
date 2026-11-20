@@ -120,9 +120,20 @@ export function sendNodeDefs(peerId, attempt = 0) {
 // load MERGES them by id (the handshake snapshot's rule: a definition somebody in the room made is
 // never dropped by opening a scene) and replicates them on the ordinary `nodedefs` snapshot.
 
-/** the definitions to save, or null when there are none @returns {any[] | null} */
-export function customNodeDefsSnapshot() {
-	const defs = get(customNodeDefs);
+/**
+ * The definitions to save: the ones some node in `graphs` RUNS (by `data.defId`), or null when none is.
+ * Only used ones, because the store also holds every installed module's seeded definitions
+ * (`mod-<id>-<key>`, sdk/nodes.js): saving the whole store wrote a module's nodes into every scene and
+ * made a scene with no custom node differ from a 1.68 save. Without `graphs`: every definition.
+ * @param {Record<string, {nodes?: any[]}>} [graphs] @returns {any[] | null}
+ */
+export function customNodeDefsSnapshot(graphs) {
+	let defs = get(customNodeDefs);
+	if (graphs) {
+		const used = new Set();
+		for (const g of Object.values(graphs)) for (const n of g?.nodes ?? []) if (typeof n?.data?.defId === 'string') used.add(n.data.defId);
+		defs = defs.filter((d) => used.has(d.id));
+	}
 	return defs.length ? structuredClone(defs) : null;
 }
 

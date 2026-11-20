@@ -90,3 +90,56 @@ describe('formatMinor 3: per-node v', () => {
 		expect(registryErrors([{ group: 'P', nodes: [/** @type {any} */ ({ ...whole, v: 0 })] }]).join()).toMatch(/v must be/);
 	});
 });
+
+describe('formatMinor 3: v heals through a resync snapshot', () => {
+	test('a node we already hold takes the snapshot v, so the nodesync hashes converge', async () => {
+		const { restoreGraphs, flowGraphs } = await import('../../src/stores/flowStore.js');
+		const { applyNodesSnapshot, graphHash } = await import('../../src/lib/nodesHandler.js');
+		const { get } = await import('svelte/store');
+		const node = { id: 'n2', type: 'number', position: { x: 0, y: 0 }, data: { type: 'number', value: 4 } };
+		restoreGraphs({ scene: { nodes: [node], edges: [] } });
+		const without = graphHash();
+		applyNodesSnapshot([], [], { scene: { nodes: [{ ...node, v: 2 }], edges: [] } });
+		expect(get(flowGraphs).scene.nodes[0].v).toBe(2);
+		expect(graphHash()).not.toBe(without);
+		restoreGraphs({ scene: { nodes: [{ ...node, v: 2 }], edges: [] } });
+		const fresh = graphHash();
+		restoreGraphs({ scene: { nodes: [node], edges: [] } });
+		applyNodesSnapshot([], [], { scene: { nodes: [{ ...node, v: 2 }], edges: [] } });
+		expect(graphHash()).toBe(fresh);
+	});
+});
+
+describe('a load that changed a node type converges', () => {
+	test('a peer holding the built-in takes the snapshot\'s script whole (type and data)', async () => {
+		const { restoreGraphs, flowGraphs } = await import('../../src/stores/flowStore.js');
+		const { applyNodesSnapshot, graphHash } = await import('../../src/lib/nodesHandler.js');
+		const { get } = await import('svelte/store');
+		const builtin = { id: 'm', type: 'math', position: { x: 0, y: 0 }, data: { type: 'math', op: 'mul', a: 0, b: 0 } };
+		const script = { id: 'm', type: 'script', position: { x: 0, y: 0 }, data: { type: 'script', code: 'return { out: 1 };', outputs: [{ name: 'out', type: 'number' }] } };
+		restoreGraphs({ scene: { nodes: [script], edges: [] } });
+		const want = graphHash();
+		restoreGraphs({ scene: { nodes: [builtin], edges: [] } });
+		applyNodesSnapshot([], [], { scene: { nodes: [script], edges: [] } });
+		const n = get(flowGraphs).scene.nodes[0];
+		expect(n.type).toBe('script');
+		expect(n.data.op).toBeUndefined();
+		expect(graphHash()).toBe(want);
+	});
+});
+
+describe('a merged node gets data.type the way a restored one does', () => {
+	test('a file node without data.type hashes the same on the loader and on a peer that merged it', async () => {
+		const { restoreGraphs } = await import('../../src/stores/flowStore.js');
+		const { applyNodesSnapshot, graphHash } = await import('../../src/lib/nodesHandler.js');
+		const raw = { id: 'q', type: 'number', position: { x: 0, y: 0 }, data: { value: 2 } };
+		restoreGraphs({ scene: { nodes: [raw], edges: [] } });
+		const loader = graphHash();
+		restoreGraphs({ scene: { nodes: [], edges: [] } });
+		applyNodesSnapshot([], [], { scene: { nodes: [raw], edges: [] } });
+		expect(graphHash()).toBe(loader);
+		restoreGraphs({ scene: { nodes: [{ ...raw, type: 'math', data: { type: 'math', op: 'add' } }], edges: [] } });
+		applyNodesSnapshot([], [], { scene: { nodes: [raw], edges: [] } });
+		expect(graphHash()).toBe(loader);
+	});
+});

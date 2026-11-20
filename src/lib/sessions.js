@@ -288,7 +288,6 @@ export function buildSessionPayload(name, opts = {}) {
 	const routing = patchSnapshot();
 	const mods = moduleRequirements();
 	const views = flowViewsSnapshot((id) => id === SCENE_GRAPH || !!group?.getObjectByProperty?.('uuid', id));
-	const defs = customNodeDefsSnapshot(); // 2.0-n3c
 	try {
 		return {
 			id: crypto.randomUUID(),
@@ -323,7 +322,7 @@ export function buildSessionPayload(name, opts = {}) {
 			}))),
 			// 2.0-n3c (formatMinor 3): the custom node definitions the graphs' instances run — OMITTED
 			// when there are none, so a scene without one is byte-identical
-			...(defs ? { nodeDefs: defs } : {}),
+			...usedNodeDefs(graphs),
 			nodes: graphs[SCENE_GRAPH]?.nodes ?? [],
 			edges: graphs[SCENE_GRAPH]?.edges ?? [],
 			// SH4: toJSON would write our injected material as the object's own, so the
@@ -652,10 +651,8 @@ export function exportSession(payload) {
 /** 2.0-n3c: `{nodeDefs}` holding the custom definitions some node in `graphs` runs (by `data.defId`), or {}
  * @param {Record<string, {nodes: any[]}>} graphs */
 function usedNodeDefs(graphs) {
-	const ids = new Set();
-	for (const g of Object.values(graphs ?? {})) for (const n of g?.nodes ?? []) if (typeof n?.data?.defId === 'string') ids.add(n.data.defId);
-	const defs = (customNodeDefsSnapshot() ?? []).filter((d) => ids.has(d.id));
-	return defs.length ? { nodeDefs: defs } : {};
+	const defs = customNodeDefsSnapshot(graphs ?? {});
+	return defs ? { nodeDefs: defs } : {};
 }
 
 /** V4: the .tpscene/.session format this build writes and knows how to read. */

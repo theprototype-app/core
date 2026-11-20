@@ -294,6 +294,7 @@ export const DEBUG_HOOKS = [
 	['networkQuality', () => import('./networkQuality')],
 	['packs', () => import('./packs')],
 	['customNodes', () => import('./customNodes')],
+	['convertToCode', () => import('./convertToCode')],
 	['nodesHandler', () => import('./nodesHandler')],
 	['nodeCatalog', () => import('./nodeCatalog')],
 	['objectMenu', () => import('./objectMenu')],

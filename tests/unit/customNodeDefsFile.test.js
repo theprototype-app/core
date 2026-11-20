@@ -29,6 +29,14 @@ describe('custom node definitions ride in the scene file', () => {
 		expect(defs.map((d) => d.id).sort()).toEqual(['a', 'room']);
 		expect(defs.find((d) => d.id === 'a')?.code).toBe('new');
 	});
+	test('only the definitions a saved node RUNS are saved (a module seed nobody uses is not scene data)', () => {
+		applyNodeDef(def('mod-hello-bobble'));
+		expect(customNodeDefsSnapshot({ scene: { nodes: [{ type: 'math', data: {} }] } })).toBeNull();
+		applyNodeDef(def('mine'));
+		const graphs = { scene: { nodes: [{ type: 'customnode', data: { defId: 'mine' } }] }, 'obj-1': { nodes: [{ type: 'customnode', data: { defId: 'mod-hello-bobble' } }] } };
+		expect(customNodeDefsSnapshot(graphs)?.map((d) => d.id).sort()).toEqual(['mine', 'mod-hello-bobble']);
+		expect(customNodeDefsSnapshot({ scene: { nodes: [{ type: 'customnode', data: { defId: 'mine' } }] } })?.map((d) => d.id)).toEqual(['mine']);
+	});
 	test('a broken entry is dropped and reported, the rest loads', () => {
 		const dropped = customNodeDefsRestore([def('ok'), { id: 'x' }, 'nope']);
 		expect(get(customNodeDefs).map((d) => d.id)).toEqual(['ok']);

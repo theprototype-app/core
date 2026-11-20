@@ -45,7 +45,7 @@ describe('2.0-n3c Convert to code (plan)', () => {
 			expect(script.data.convertedFrom.type).toBe(type);
 			expect(script.data.convertedFrom.v).toBe(1);
 			expect(script.data.label).toBe('mine');
-			expect(script.data.code).toMatch(/^\/\/ .*as code/);
+			expect(script.data.code).toMatch(new RegExp("^// convertedFrom: " + type + " "));
 			expect(script.data.code).toContain('const params = ');
 			const names = (scriptInputs(script.data) ?? []).map((s) => s.name);
 			for (const e of g.edges.filter((e) => e.target === 'X')) expect(names).toContain(e.targetHandle);

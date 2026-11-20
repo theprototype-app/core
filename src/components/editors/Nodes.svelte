@@ -99,7 +99,7 @@
 	import { flowMouseBindings } from '$lib/flowPrefs';
 	import Breadcrumbs from '../ui/Breadcrumbs.svelte'; // 41 G15
 	import { readPanelOpen, writePanelOpen, handheld } from '$lib/ui/handheldPanels.js'; // 41 G18 (+ 2.0-n3c: the read-only code sheet)
-	import { objectsGroup, selectedObject, selectedObjects } from '../../stores/sceneStore';
+	import { objectsGroup, selectedObject, selectedObjects, isVRMode } from '../../stores/sceneStore';
 	import { serializeNode, serializeEdge, deleteFlowNodes, deleteFlowEdges, setNodeData } from '$lib/nodesHandler';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import { defDefaults } from '$lib/customNodes';
@@ -2380,7 +2380,7 @@
 							><Icon name={sheetConv === 'convert' ? 'file-code' : 'undo-2'} size={16} class="shrink-0" />{sheetConv === 'convert' ? 'Convert to code' : 'Convert back'}</button
 						>
 					{/if}
-					{#if selectedNode.type === 'script' && selectedNode.data?.convertedFrom && handheld()}
+					{#if selectedNode.type === 'script' && selectedNode.data?.convertedFrom && (handheld() || $isVRMode)}
 						<p class="ui-section-label">Code · read-only on this device</p>
 						<pre id="flow-node-code-ro" use:minimalScroll class="max-h-64 overflow-auto whitespace-pre-wrap rounded-sm bg-surface-2 p-1 font-mono text-[length:var(--fs-badge)] text-text-2">{selectedNode.data.code}</pre>
 					{/if}

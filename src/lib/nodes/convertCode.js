@@ -79,7 +79,7 @@ function plainEdge(e) {
  */
 export function convertedCode(type, params) {
 	return (
-		`// ${TITLES[type] ?? type}, as code: the built-in's own reference, with this node's settings in \`params\`.\n` +
+		`// convertedFrom: ${type} (${TITLES[type] ?? type}): the built-in's own reference, with this node's settings in \`params\`.\n` +
 		`// Edit it freely. "Convert back" (node menu) returns the built-in node while this code is unchanged.\n` +
 		`const params = ${printLiteral(params)};\n` +
 		REFERENCE_JS[type]
@@ -163,7 +163,7 @@ export function planConvert(graph, id, opts = {}) {
 			id: sid,
 			type: 'script',
 			position: { x: (node.position?.x ?? 0) - 260, y: node.position?.y ?? 0 },
-			data: { name: TITLES.hudtext, code, inputs: shape.inputs, outputs: shape.outputs, convertedFrom: { ...convertedFrom, target: id } }
+			data: { type: 'script', name: TITLES.hudtext, code, inputs: shape.inputs, outputs: shape.outputs, convertedFrom: { ...convertedFrom, target: id } }
 		};
 		const movedIn = into.filter((e) => e.targetHandle === 'value' || e.targetHandle === 'format');
 		return {
@@ -183,7 +183,7 @@ export function planConvert(graph, id, opts = {}) {
 		id,
 		type: 'script',
 		position: { x: node.position?.x ?? 0, y: node.position?.y ?? 0 },
-		data: { ...keep, name: TITLES[node.type] + ' (code)', code, inputs: shape.inputs, outputs: shape.outputs, convertedFrom },
+		data: { ...keep, type: 'script', name: TITLES[node.type] + ' (code)', code, inputs: shape.inputs, outputs: shape.outputs, convertedFrom },
 		...(node.class ? { class: node.class } : {})
 	};
 	const handle = shape.outputs[0].name;

@@ -755,7 +755,7 @@ export function materialSetVerdict(payload) {
 //
 // Three additive fields. An older build ignores all three (a graph node keeps unknown keys, a payload's
 // unknown top-level key is never read), so a newer file still opens there: proven on v1.67.1 by the
-// `node-file-minor3` suite. Each is checked where it comes IN (a file, a peer): flowClean.cleanFlowNode
+// `node-file-minor3` suite (§5, N3C_OLD_URL). Each is checked where it comes IN (a file, a peer): flowClean.cleanFlowNode
 // for the two node fields, customNodes.customNodeDefsRestore for `nodeDefs`. A value that breaks its
 // rule is dropped, never the node or the scene.
 

@@ -130,7 +130,9 @@ export function dropPeerCursor(peerId) {
 /** Merge one graph's snapshot: known nodes update in place, unknown append. */
 /** @param {string} graphId @param {any[]} nodes @param {any[]} edges */
 function mergeGraphSnapshot(graphId, nodes, edges) {
-	if (Array.isArray(nodes)) nodes = nodes.map(cleanFlowNode);
+	// 2.0-n3c: `data.type` filled the way flowStore.restoreGraphs fills it (withDataType), or a node that came from
+	// a FILE lacking it differs between the peer that loaded it (filled) and every peer that merged it (not)
+	if (Array.isArray(nodes)) nodes = nodes.map(cleanFlowNode).map((n) => (n?.type && n.data && n.data.type === undefined ? { ...n, data: { ...n.data, type: n.type } } : n));
 	if (Array.isArray(edges)) edges = edges.map(cleanFlowEdge);
 	updateGraph(graphId, (g) => {
 		let nextNodes = g.nodes;
@@ -140,7 +142,13 @@ function mergeGraphSnapshot(graphId, nodes, edges) {
 				const update = incoming.get(n.id);
 				if (!update) return n;
 				incoming.delete(n.id);
-				return { ...n, position: update.position, data: { ...n.data, ...update.data } };
+				// 2.0-n3c: a node whose TYPE changed under the same id (a scene saved with a node converted to code,
+				// loaded into a room that holds the built-in) is a different node: take the snapshot's whole. The
+				// in-place merge kept our type and our data keys, so the nodesync hashes could never agree.
+				if (update.type !== undefined && update.type !== n.type) return { ...update, ...(n.selected ? { selected: true } : {}) };
+				// 2.0-n3c: `v` travels with the node (it is in serializeNode, so in the nodesync hash): a node we
+				// already hold takes the snapshot's, or a resync could never heal a v difference
+				return { ...n, position: update.position, data: { ...n.data, ...update.data }, ...(update.v !== undefined ? { v: update.v } : {}) };
 			});
 			nextNodes = [...nextNodes, ...incoming.values()];
 		}

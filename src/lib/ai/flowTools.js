@@ -29,7 +29,7 @@ import { scriptNodeWarnings } from './scriptNotes.js';
 import { isGroupId, normalizeCollidesWith } from '$lib/collisionGroups'; // 36 X5
 import { parseGraphText } from '$lib/graphText';
 import { scriptInputs, scriptOutputs } from '$lib/scriptIO';
-import { edgeHandleProblems, knownInputs, knownMapOutputs } from './edgeHandles.js';
+import { edgeHandleProblems, edgeTypeProblem, knownInputs, knownMapOutputs } from './edgeHandles.js';
 import { lockSkip } from './lockNote.js';
 import { activeAiConfig } from './providers.js';
 import { matchNodeType } from './nodeTypeMatch.js';
@@ -455,6 +455,7 @@ export function createFlowNodesTool(args, opts) {
 	}
 
 	/** @type {any[]} */ const createdEdges = [];
+	/** @type {string[]} 2.0-n3b: edges that work, but not the way they read */ const edgeNotes = [];
 	const edgeSpecs = [...(Array.isArray(args?.edges) ? args.edges : []), ...textEdges];
 	if (edgeSpecs.length) {
 		const graphNodes = graphOf(graphId)?.nodes ?? [];
@@ -484,6 +485,18 @@ export function createFlowNodesTool(args, opts) {
 				errors.push('edge "' + e?.from + '" -> "' + e?.to + '": ' + bad.join('; '));
 				continue;
 			}
+			// 2.0-n3b: a value into an event input (the editor refuses that drag; a pure value never fires it)
+			const typed = edgeTypeProblem(
+				graphNodes.find((/** @type {any} */ n) => n.id === source),
+				graphNodes.find((/** @type {any} */ n) => n.id === target),
+				sourceHandle,
+				targetHandle
+			);
+			if (typed?.refuse) {
+				errors.push('edge "' + e?.from + '" -> "' + e?.to + '": ' + typed.refuse);
+				continue;
+			}
+			if (typed?.warn) edgeNotes.push(typed.warn);
 			// id format MUST match the editor's (peer dedupe diverges otherwise)
 			const edge = {
 				id:
@@ -516,6 +529,7 @@ export function createFlowNodesTool(args, opts) {
 		.flatMap((/** @type {any} */ n) =>
 			scriptNodeWarnings(n.data, { unwired: graphId === SCENE_GRAPH && !graphOf(graphId)?.edges.some((/** @type {any} */ e) => e.source === n.id) })
 		);
+	scriptNotes.push(...edgeNotes); // 2.0-n3b: a latch / counter into an event input fires on every change
 	return {
 		graph: graphId,
 		created,

@@ -37,9 +37,15 @@ describe('85b validate_scene', () => {
 				nodes: [
 					{ id: 'c', type: 'onclick', __graph: 'gem' },
 					{ id: 'k', type: 'kit-pickups-collect', __graph: 'gem' },
+					// 2.0-n3b: a clean pickup also HIDES once taken (pickup-stays)
+					{ id: 'a', type: 'kit-pickups-available', __graph: 'gem' },
+					{ id: 'v', type: 'visibility', __graph: 'gem' },
 					{ id: 't', type: 'hudtext', data: { element: 'score' } }
 				],
-				edges: [{ source: 'c', target: 'k', targetHandle: 'trigger' }]
+				edges: [
+					{ source: 'c', target: 'k', targetHandle: 'trigger' },
+					{ source: 'a', target: 'v', targetHandle: 'on' }
+				]
 			})
 		);
 		expect(r.ok).toBe(true);
@@ -128,9 +134,14 @@ describe('85b validate_scene', () => {
 describe('85b inspect_runtime — why did it not fire', () => {
 	const nodes = [
 		{ id: 'c', type: 'onclick', __graph: 'gem', data: { label: 'Gem click' } },
-		{ id: 'k', type: 'kit-pickups-collect', __graph: 'gem' }
+		{ id: 'k', type: 'kit-pickups-collect', __graph: 'gem' },
+		{ id: 'a', type: 'kit-pickups-available', __graph: 'gem' },
+		{ id: 'v', type: 'visibility', __graph: 'gem' }
 	];
-	const edges = [{ source: 'c', target: 'k', targetHandle: 'trigger' }];
+	const edges = [
+		{ source: 'c', target: 'k', targetHandle: 'trigger' },
+		{ source: 'a', target: 'v', targetHandle: 'on' }
+	];
 
 	it('a source nobody triggered yet says what it waits for', () => {
 		const x = explainNode(world({ nodes, edges }), 'c');

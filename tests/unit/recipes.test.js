@@ -18,9 +18,15 @@ describe('2.0-n3b recipes', () => {
 	});
 	it('every node type a recipe names exists', () => {
 		const types = new Set();
-		for (const r of RECIPES) for (const step of r.steps.filter((s) => s.startsWith('create_flow_nodes'))) for (const m of step.matchAll(/= ([a-z][a-z0-9-]+) ?\{?/g)) types.add(m[1]);
+		for (const r of RECIPES) for (const step of r.steps.filter((s) => s.includes('create_flow_nodes'))) for (const m of step.matchAll(/= ([a-z][a-z0-9-]+) ?\{?/g)) types.add(m[1]);
 		const missing = [...types].filter((t) => !findNodeSpec(t));
 		expect(missing).toEqual([]);
 		expect(types.size).toBeGreaterThan(8);
+	});
+	it('edges stay in one graph: a step wiring a (scene) behaviour builds in the scene graph', () => {
+		// the N3b gate caught remembered-state wiring On Click in the lantern's graph into a scene behaviour (refused)
+		for (const r of RECIPES)
+			for (const step of r.steps.filter((s) => s.includes('create_flow_nodes') && s.includes('<behaviour>.')))
+				expect(step, r.name).toMatch(/create_flow_nodes scene\b/);
 	});
 });

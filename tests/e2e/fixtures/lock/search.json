@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-11-10T16:57:36.333Z",
+	"recordedAt": "2026-11-20T11:34:27.020Z",
 	"settings": {
 		"Theme": {
 			"rows": [
@@ -2431,6 +2431,7 @@
 		"light": {
 			"rows": [
 				"Allow text selection everywhere",
+				"Cinematic view on / off (bounced light and reflections)",
 				"Edit mesh wireframe colour",
 				"Invert look Y",
 				"LOD levels",
@@ -2447,6 +2448,7 @@
 				"Interface",
 				"Controls",
 				"Input",
+				"Shortcuts",
 				"Scene",
 				"Import",
 				"VR"
@@ -3374,6 +3376,7 @@
 				"Arm Move (in the timeline)",
 				"Back to the scene's start view",
 				"Bridge (faces)",
+				"Cinematic view on / off (bounced light and reflections)",
 				"Collapse / expand the selected nodes",
 				"Command palette — search every command and setting",
 				"Connect two corners of a face (vertices)",
@@ -3819,6 +3822,7 @@
 				"Arm Move (in the timeline)",
 				"Back to the scene's start view",
 				"Bridge (faces)",
+				"Cinematic view on / off (bounced light and reflections)",
 				"Collapse / expand the selected nodes",
 				"Command palette — search every command and setting",
 				"Connect two corners of a face (vertices)",
@@ -3942,6 +3946,7 @@
 				"Arm Move (in the timeline)",
 				"Back to the scene's start view",
 				"Bridge (faces)",
+				"Cinematic view on / off (bounced light and reflections)",
 				"Collapse / expand the selected nodes",
 				"Command palette — search every command and setting",
 				"Connect two corners of a face (vertices)",
@@ -4065,6 +4070,7 @@
 				"Arm Move (in the timeline)",
 				"Back to the scene's start view",
 				"Bridge (faces)",
+				"Cinematic view on / off (bounced light and reflections)",
 				"Collapse / expand the selected nodes",
 				"Command palette — search every command and setting",
 				"Connect two corners of a face (vertices)",

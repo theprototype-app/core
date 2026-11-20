@@ -10,6 +10,7 @@ import { packRefOf, packRefUrl, packAddress, loadPackFile } from './packRefs';
 import { PACKS_BASE } from './packs';
 import { fetchIndex } from './contentBase';
 import { explorerItems, itemByHash, itemBlob } from './explorer';
+import { disposeSharedGeometry } from './render/view.js'; // 100 C1 (W1): a shared interleaved buffer waits while the Cinematic view draws
 
 // 33 (K2/K6) — LOD GROUPS: a per-object `userData.lod` block, drawn at render time.
 //
@@ -439,7 +440,7 @@ function requestLevel(entry, i) {
 		// the entry was rebuilt (new meshes, removed) while this ran: drop the result
 		if (entries.get(entry.root) !== entry || entry.meshKey !== meshKey || entry.built.get(key)?.status !== 'loading') {
 			if (state.status === 'ready' && state.kind === 'swap') {
-				for (const g of state.owned) g.dispose();
+				for (const g of state.owned) disposeSharedGeometry(g);
 				for (const r of state.releases) r();
 			}
 			return;
@@ -515,7 +516,7 @@ function disposeBuilt(entry) {
 	for (const state of entry.built.values()) {
 		if (state.status !== 'ready') continue;
 		if (state.kind === 'swap') {
-			for (const g of state.owned) g.dispose();
+			for (const g of state.owned) disposeSharedGeometry(g);
 			for (const r of state.releases) r();
 		} else if (state.kind === 'tree') {
 			state.object.removeFromParent();
@@ -554,7 +555,7 @@ function ensureEntry(root, block, implicit) {
 			for (const [key, state] of [...existing.built]) {
 				if (keep.has(key)) continue;
 				if (state.status === 'ready' && state.kind === 'swap') {
-					for (const g of state.owned) g.dispose();
+					for (const g of state.owned) disposeSharedGeometry(g);
 					for (const r of state.releases) r();
 				} else if (state.status === 'ready' && state.kind === 'tree') {
 					state.object.removeFromParent();

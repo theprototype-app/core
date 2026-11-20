@@ -21,12 +21,13 @@ import { sameRoomOrUnknown } from '$lib/peerScenes.js';
 import { currentLevel } from '$lib/levels.js';
 import { isPhoneDevice } from '$lib/qualityGovernor.js';
 import { photoOpen, photoPrefs } from './photoOpen.js';
+import { cinematicState } from '$lib/cinematic/cinematicStore.js';
 import { photoPlace, photoPlan, photoFileName, isQuestUa, isPng, validPhotoRequest, validPhotoResult, personName } from './photoCore.js';
 
 /**
  * @typedef {{
  *   status: 'idle'|'rendering'|'done'|'error',
- *   place: 'here'|'peer'|'raster',
+ *   place: 'here'|'peer'|'raster'|'view',
  *   why: string,
  *   samples: number, target: number, fraction: number, elapsedMs: number, compiling: boolean,
  *   reason: string, error: string,
@@ -69,6 +70,8 @@ function roomPeers() {
 
 /** where a photo of this view would be made right now (the panel shows it before Start) */
 export async function photoWhere() {
+	// 100 C1: with the Cinematic view on, the still is the view's own frame (its lighting, its resolution rules)
+	if (get(cinematicState).mode === 'on') return { place: /** @type {const} */ ('view'), peer: undefined, peerName: undefined, why: 'A still through the Cinematic view, at the size below. Turn the view off for a path-traced photo.' };
 	const { canTraceHere } = await import('./photoRender.js');
 	const prefs = get(photoPrefs);
 	/** @type {any} */
@@ -118,6 +121,11 @@ export async function startPhoto(req = {}) {
 				onProgress: (p) => patch({ samples: p.samples, fraction: p.fraction, elapsedMs: p.elapsedMs, compiling: p.compiling })
 			});
 			patch({ status: 'done', samples: r.samples, fraction: 1, reason: r.reason, ms: r.ms, notes: r.notes, blob: r.blob, url: setResult(r.blob), width: r.width, height: r.height });
+		} else if (where.place === 'view') {
+			const { viewStill } = await import('$lib/cinematic/cinematicView.js');
+			const blob = await viewStill(plan);
+			if (!blob) throw new Error('The Cinematic view is not drawing.');
+			patch({ status: 'done', reason: 'cinematic', fraction: 1, blob, url: setResult(blob) });
 		} else if (where.place === 'peer' && where.peer) {
 			const r = await askPeer(where.peer, plan, ctl.signal);
 			patch({ status: 'done', samples: r.samples, fraction: 1, reason: r.reason, ms: r.ms, blob: r.blob, url: setResult(r.blob) });

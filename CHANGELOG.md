@@ -6,10 +6,15 @@
      rendering, so maintainer notes stay out of the user-facing window. No emoji from
      1.64 on (owner rule: no emoji in the UI); the app strips them from older entries. -->
 
-## 1.69.0 — SvelteKit 3
+## 1.70.0 — SvelteKit 3
 
 - **Under the hood**: moved to SvelteKit 3 and TypeScript 6. Nothing changes for you; the app starts the same. <!-- sk3-int -->
 - **For developers**: `svelte.config.js` is gone; the SvelteKit options live in `vite.config.ts` (`sveltekit({...})`). `$lib` imports still work (the project's own alias). SvelteKit's version poll is off, so the **New version — Reload** notice stays the one update prompt. The play and Back history entries go through `src/lib/shallowHistory.js`. <!-- sk3-int -->
+
+## 1.69.0 — Cinematic view
+
+- **Preview: the Cinematic view**: **Preview** at the top right of the 3D view (or **Shift+Z**) draws your scene with bounced light, reflections, softer shadows and glow, live while you keep editing, playing and working with other people. The arrow beside it picks **Basic**, **Standard** or **High**; when frames get slow it steps down by itself and says so. It is on this computer only: never sent to the people in your session and never saved in the scene. Offered on desktops with Chrome or Edge and a hardware graphics card; phones, tablets and headsets download nothing for it. <!-- 100-view C1 -->
+- **Not shown in the Cinematic view yet**: shader-graph materials and hand-written shaders, water and fluid tanks, particles, 3D text, painted terrain layers and jiggle show as plain stand-ins, and a note under the switch names the ones in your scene. If the graphics card fails, the view switches back by itself and says why. Photo mode and video takes go through it while it is on; VR turns it off. <!-- 100-view C1 -->
 
 ## 1.68.0 — Share a moment
 

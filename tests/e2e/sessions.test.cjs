@@ -115,11 +115,11 @@ h.run(async () => {
 	// the press is stamped by a document capture listener (the toast may re-render its button under us)
 	await B.page.evaluate(() =>
 		document.addEventListener(
-			'click',
+			'pointerdown',
 			(e) => {
 				const b = /** @type {any} */ (e.target)?.closest?.('button');
 				// @ts-ignore
-				if (b && b.textContent.trim() === 'Accept' && b.closest('.tp-toast') && !window.__b1.accept) window.__b1.accept = performance.now();
+				if (b && /Accept/.test(b.textContent) && !window.__b1.accept) window.__b1.accept = performance.now();
 			},
 			true
 		)

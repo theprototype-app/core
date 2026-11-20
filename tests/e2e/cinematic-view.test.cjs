@@ -130,6 +130,21 @@ h.run(async () => {
 	const st = await page.evaluate(() => { let s; window.__tp.test.v1.autosave.autosaveStatus.subscribe((v) => (s = v))(); return s; });
 	h.check(st.writes > w0 && !st.lastError, `   autosave writes with the view on (writes ${w0} -> ${st.writes}, error ${st.lastError})`);
 
+	// ---- 3b. a second peer edits; the change shows while the view is on -----------------------------------------
+	const B = await h.setupPageQuiet(browser, 'B', [A], { context: { viewport: { width: 1200, height: 800 } } });
+	try {
+		// B joins A: an empty joiner adopts the host's world (A joining B would put A's unnamed work behind the connect decision)
+		await h.connect(B, A);
+		const nA = await objectCount(page);
+		await B.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create sphere'));
+		await h.eventually(() => objectCount(page), (n) => n === nA + 1, "the peer's sphere reached A", 30000);
+		h.check((await mode(page)) === 'on', "3b. a peer's edit arrives and the view stays on");
+		const d6 = await debug(page);
+		h.check(d6.errors.length === 0, `   no view errors after the peer edit (${JSON.stringify(d6.errors).slice(0, 200)})`);
+	} finally {
+		await h.closePeer(B);
+	}
+
 	// ---- 4. photo and frame capture go through the view ---------------------------------------------------------
 	const still = await page.evaluate(async () => {
 		const v = await window.__tp.test.v1.cinematicState.cinematicView();
@@ -184,21 +199,12 @@ h.run(async () => {
 	h.check(!gl.lost && gl.opacity === '', `5. Shift+Z: off, the WebGL context is back and visible (${JSON.stringify(gl)})`);
 	await page.keyboard.press('Shift+Z');
 	await waitMode(page, 'on', 'Shift+Z turned it on again');
-	h.check(true, '   and Shift+Z turns it on again');
-
-	// ---- 6. a second peer edits; the change shows while the view is on -----------------------------------------
-	const B = await h.setupPageQuiet(browser, 'B', [A], { context: { viewport: { width: 1200, height: 800 } } });
-	try {
-		await h.connect(A, B);
-		const nA = await objectCount(page);
-		await B.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create sphere'));
-		await h.eventually(() => objectCount(page), (n) => n === nA + 1, "the peer's sphere reached A", 30000);
-		h.check((await mode(page)) === 'on', "6. a peer's edit arrives and the view stays on");
-		const d6 = await debug(page);
-		h.check(d6.errors.length === 0, `   no view errors after the peer edit (${JSON.stringify(d6.errors).slice(0, 200)})`);
-	} finally {
-		await h.closePeer(B);
+	if ((await mode(page)) !== 'on') {
+		const d5 = await debug(page);
+		const ae = await page.evaluate(() => { const a = /** @type {any} */ (document.activeElement); return a ? a.tagName + '#' + a.id + '.' + String(a.className).slice(0, 60) : null; });
+		console.log('  diag', JSON.stringify({ state: d5.state, switches: d5.switches?.slice(-4), errors: d5.errors?.slice(-4), active: ae }).slice(0, 1500));
 	}
+	h.check(true, '   and Shift+Z turns it on again');
 
 	// ---- 7. fallback: a compile failure turns it off with a toast; the switch stays off for the session -----------
 	const f = await page.evaluate(async () => (await window.__tp.test.v1.cinematicState.cinematicView()).failCompileForTest());

@@ -10,7 +10,7 @@
 //       env GPU_MEM=deck SCENE=tavern-interior node tests/e2e/cinematic-memory-100.cjs
 //
 // env: SCENE (tavern-interior), TRIPS (10), DWELL_MS (1500), GATE_PCT (5), OUT (test-results/100-view/memory),
-//      NOPRUNE=1 (the control: listeners left where three put them), SNAP=1 (heap snapshots A/B for heapdiff)
+//      WARM (2 warm-up trips), NOPRUNE=1 (the control: listeners left where three put them), SNAP=1 (heap snapshots A/B for heapdiff)
 const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
@@ -19,6 +19,7 @@ const URL = process.env.APP_URL || 'https://theprototype.app:7034/';
 const CDP = process.env.CDP || '';
 const SCENE = process.env.SCENE || 'tavern-interior';
 const TRIPS = Number(process.env.TRIPS || 10);
+const WARM = Number(process.env.WARM || 2);
 const DWELL = Number(process.env.DWELL_MS || 1500);
 const GATE = Number(process.env.GATE_PCT || 5);
 const GPU_MEM = process.env.GPU_MEM || (CDP ? 'pc' : 'deck');
@@ -26,8 +27,8 @@ const DEVICE = process.env.DEVICE || GPU_MEM;
 const OUT = process.env.OUT || path.join(process.cwd(), 'test-results/100-view/memory');
 fs.mkdirSync(OUT, { recursive: true });
 const log = (...a) => console.log('[mem]', ...a);
-const result = { noPrune: process.env.NOPRUNE === '1', device: DEVICE, scene: SCENE, trips: TRIPS, gatePct: GATE, at: new Date().toISOString(), trip: [], verdict: null };
-const save = () => fs.writeFileSync(path.join(OUT, `memory-${DEVICE}-${SCENE}${process.env.NOPRUNE === '1' ? '-control' : ''}.json`), JSON.stringify(result, null, 1));
+const result = { noPrune: process.env.NOPRUNE === '1', device: DEVICE, scene: SCENE, trips: TRIPS, warm: Number(process.env.WARM || 2), gatePct: GATE, at: new Date().toISOString(), trip: [], verdict: null };
+const save = () => fs.writeFileSync(path.join(OUT, `memory-${DEVICE}-${SCENE}${process.env.NOPRUNE === '1' ? '-control' : ''}-t${TRIPS}.json`), JSON.stringify(result, null, 1));
 
 /** SNAP=1: a heap snapshot after the warm-up and after the trips (diff them with heapdiff-100.cjs) */
 async function snapshot(cdp, file) {
@@ -156,7 +157,7 @@ async function trip(page) {
 		await cdp.send('HeapProfiler.enable');
 		const pid = await gpuPid(browser);
 		result.gpuPid = pid;
-		for (let i = 0; i < 2; i++) await trip(page);
+		for (let i = 0; i < WARM; i++) await trip(page);
 		await page.waitForTimeout(3000);
 		const h0 = await heap(cdp);
 		const g0 = await gpuBytes(pid);

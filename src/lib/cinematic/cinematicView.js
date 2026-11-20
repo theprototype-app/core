@@ -54,6 +54,31 @@ function drawnPixels(r, glCanvas) {
 }
 
 /**
+ * ONE bone-matrix layout for both renderers. The WebGL view pads `skeleton.boneMatrices` to its bone texture the
+ * first time it draws a skeleton (computeBoneTexture). The WebGPU view keeps last frame's bone matrices for TRAA in a
+ * MODULE-LEVEL cache keyed by skeleton (three's `_previousBoneMatricesData`), sized from the array it saw first. A
+ * skeleton the WebGPU view met unpadded (a peer's avatar arriving while the view is on) was later padded by WebGL,
+ * and the next entry threw "offset is out of bounds" copying the longer array into the cached one: the view turned
+ * itself off for the session. Padding every skeleton before the WebGPU view can meet it removes the mismatch: the
+ * ones already there on entry (scan) and every one made from then on (Skeleton.init). The texture is the one the
+ * WebGL view would make on its first draw anyway; WebGPU reads the first `bones.length` matrices of the array.
+ * @param {any} sk
+ */
+function padSkeleton(sk) {
+	if (sk && sk.boneTexture === null && sk.bones?.length) sk.computeBoneTexture();
+}
+let skeletonsPadded = false;
+function padNewSkeletons() {
+	if (skeletonsPadded) return;
+	skeletonsPadded = true;
+	const init = THREE.Skeleton.prototype.init;
+	THREE.Skeleton.prototype.init = function () {
+		init.call(this);
+		padSkeleton(this);
+	};
+}
+
+/**
  * Stand-ins for what the WebGPU renderer cannot draw, and the editor grid's twin (W2: its ShaderMaterial's
  * fallback is OPAQUE and wrote depth over the whole view). `scan()` runs on the way in and then about once
  * a second, so objects added while the view is on (a load, a peer's edit, a new emitter) get theirs too.
@@ -97,6 +122,7 @@ function createSwapper(W, scene) {
 		/** @type {Set<any>} */
 		const now = new Set();
 		scene.traverse((/** @type {any} */ o) => {
+			if (o.isSkinnedMesh) padSkeleton(o.skeleton);
 			if (o.name === 'editor-grid') {
 				if (o.visible && !grids.some((x) => x.g === o)) gridTwin(o);
 				return;
@@ -253,6 +279,7 @@ async function enter() {
 	r.shadowMap.enabled = gl.shadowMap.enabled;
 	r.shadowMap.type = THREE.PCFShadowMap;
 	useCopies(scene, env);
+	padNewSkeletons();
 	live.swap = createSwapper(W, scene);
 	live.swap.scan();
 	patchState({ notShown: notShownText(live.swap.kinds) });
@@ -260,7 +287,7 @@ async function enter() {
 		live.built = await build(targetQuality());
 		await compileAsync(r, scene, cam);
 	} catch (e) {
-		log.errors.push({ at: Math.round(now()), msg: String(/** @type {any} */ (e)?.message ?? e).slice(0, 300) });
+		log.errors.push({ at: Math.round(now()), msg: String(/** @type {any} */ (e)?.message ?? e).slice(0, 300), stack: String(/** @type {any} */ (e)?.stack ?? '').split('\n').slice(1, 7).join(' | ').slice(0, 900) });
 		await fail('its lighting does not compile on this graphics path.');
 		return null;
 	}

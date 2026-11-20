@@ -81,6 +81,53 @@ const camState = (page) =>
 	});
 const waitMode = (page, want, label, ms = 90000) => h.eventually(() => mode(page), (m) => m === want, label, ms);
 
+/** C2-1: every troika text in the scene and its canvas-texture cover (null when the view is off) @param {any} page */
+const labelState = (page) =>
+	page.evaluate(async () => {
+		const t = window.__tp.test.v1;
+		const live = (await t.cinematicState.cinematicView()).cinematicLiveForTest();
+		let sc;
+		t.globalScene.subscribe((x) => (sc = x))();
+		/** @type {any[]} */
+		const texts = [];
+		let quads = 0;
+		sc.traverse((/** @type {any} */ o) => {
+			if (o.name === 'cinematic-text-quad') quads++;
+			if (!o.isTroikaText) return;
+			const m = o.material;
+			texts.push({ text: String(o.text ?? ''), name: o.name, troikaDraws: Array.isArray(m) ? m.some((x) => x?.isTroikaTextMaterial) : !!m?.isTroikaTextMaterial, cover: live?.labels?.recordOf(o) ?? null });
+		});
+		return { stats: live?.labels?.stats() ?? null, texts, quads };
+	});
+/** the share of the view's pixels the text quads change (a frame with them minus a frame without) @param {any} page */
+const labelInk = (page) =>
+	page.evaluate(async () => {
+		const v = await window.__tp.test.v1.cinematicState.cinematicView();
+		const labels = v.cinematicLiveForTest()?.labels;
+		if (!labels) return -1;
+		const frames = (/** @type {number} */ n) => new Promise((r) => { const step = () => (n-- <= 0 ? r(undefined) : requestAnimationFrame(step)); step(); });
+		const grab = async () => {
+			const img = new Image();
+			img.src = /** @type {string} */ (await v.grabCinematic());
+			await img.decode();
+			const c = document.createElement('canvas');
+			c.width = 320;
+			c.height = 180;
+			const x = /** @type {CanvasRenderingContext2D} */ (c.getContext('2d'));
+			x.drawImage(img, 0, 0, 320, 180);
+			return x.getImageData(0, 0, 320, 180).data;
+		};
+		labels.hideForTest(true);
+		await frames(30);
+		const off = await grab();
+		labels.hideForTest(false);
+		await frames(30);
+		const on = await grab();
+		let n = 0;
+		for (let i = 0; i < on.length; i += 4) if (Math.abs(on[i] - off[i]) + Math.abs(on[i + 1] - off[i + 1]) + Math.abs(on[i + 2] - off[i + 2]) > 30) n++;
+		return n / (on.length / 4);
+	});
+
 h.run(async () => {
 	const browser = await h.launch({ args: ARGS });
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1440, height: 900 } }, storage: STORAGE });
@@ -130,6 +177,47 @@ h.run(async () => {
 	const prefs = await page.evaluate(() => JSON.parse(localStorage.getItem('cinematicView') || '{}'));
 	h.check(prefs.on === true, `   the choice is kept on this device (${JSON.stringify(prefs)})`);
 
+	// ---- 2b. C2-1: labels and flat text draw as canvas-texture quads ---------------------------------------------
+	const sign = await page.evaluate(() => {
+		const s = window.__tp.test.v1;
+		const o = s.addObjects.spawnAtPoint('/create Text', [0, 2.2, 0.8]);
+		if (o) s.textPathEdit.setTextPathFor(o.uuid, { text: 'Cinematic sign', size: 0.6 });
+		return o?.uuid ?? null;
+	});
+	const pinned = await page.evaluate((id) => {
+		const s = window.__tp.test.v1;
+		s.annotationsHandler.addAnnotation(id);
+		let cur;
+		s.annotationsHandler.activeAnnotation.subscribe((v) => (cur = v))();
+		if (!cur?.draft) return false;
+		s.annotationsHandler.setAnnotation({ ...cur.draft, name: 'A note in the view', text: 'pin' });
+		return true;
+	}, ids[1]);
+	h.check(!!sign && pinned, `2b. a flat text sign and a note pin join the scene with the view on (sign ${sign}, pin ${pinned})`);
+	const covered = (/** @type {any} */ st, /** @type {RegExp} */ re) => st.texts.filter((x) => re.test(x.text)).some((x) => x.cover?.visible && x.cover.w > 0 && !x.troikaDraws);
+	const ls1 = await h.eventually(() => labelState(page), (st) => covered(st, /^Cinematic sign$/) && covered(st, /^1$/), 'the sign and the pin number get their quads', 30000);
+	h.check(covered(ls1, /^Cinematic sign$/), `   the sign draws as a quad, troika's own draw off (${JSON.stringify(ls1.texts.filter((x) => /Cinematic/.test(x.text)))})`);
+	h.check(covered(ls1, /^1$/), `   the note pin's number draws as a quad (${JSON.stringify(ls1.texts.filter((x) => x.text === '1'))})`);
+	h.check(ls1.texts.every((x) => !x.troikaDraws), `   no troika text draws itself while the view is on (${ls1.texts.filter((x) => x.troikaDraws).map((x) => x.text).join(', ') || 'none'})`);
+	const ink = await labelInk(page);
+	h.check(ink > 0.002, `   the quads put pixels on the view (${(ink * 100).toFixed(2)} % of the frame changes with them)`);
+	const chip = (await state(page)).notShown;
+	h.check(!/text/i.test(chip ?? ''), `   the "Not shown" chip does not name text (${JSON.stringify(chip)})`);
+	// live: a longer text, a wider canvas
+	const signW = ls1.texts.find((x) => x.text === 'Cinematic sign')?.cover?.w ?? 0;
+	await page.evaluate((u) => window.__tp.test.v1.textPathEdit.setTextPathFor(u, { text: 'Cinematic sign, and some more words' }), sign);
+	const ls2 = await h.eventually(() => labelState(page), (st) => (st.texts.find((x) => /some more words/.test(x.text))?.cover?.w ?? 0) > signW * 1.5, 'the sign quad follows the new text', 30000);
+	h.check((ls2.texts.find((x) => /some more words/.test(x.text))?.cover?.w ?? 0) > signW * 1.5, `   it updates live: the sign's canvas grew with its text (${signW} -> ${ls2.texts.find((x) => /some more words/.test(x.text))?.cover?.w} px)`);
+	// a ping's name lives 4 s: its quad comes and goes with it
+	const q0 = ls2.stats?.quads ?? 0;
+	await page.evaluate(() => window.__tp.test.v1.ping.previewPing([1.6, 0, 0]));
+	const lp = await h.eventually(() => labelState(page), (st) => (st.stats?.quads ?? 0) > q0, 'a ping name gets a quad', 3500).catch(() => null);
+	h.check(!!lp && (lp.stats?.quads ?? 0) > q0, `   a ping's name gets a quad while it shows (${q0} -> ${lp?.stats?.quads})`);
+	const lg = await h.eventually(() => labelState(page), (st) => (st.stats?.quads ?? 0) === q0, "the ping's quad goes with it", 15000).catch(() => null);
+	h.check(!!lg && lg.quads === q0 && (lg.stats?.released ?? 0) >= 1, `   and is freed when the ping ends (${JSON.stringify(lg?.stats)})`);
+	const d2b = await debug(page);
+	h.check(d2b.errors.length === 0, `   no view errors with the labels (${JSON.stringify(d2b.errors).slice(0, 300)})`);
+
 	// ---- 3. editing keeps working while the view draws ----------------------------------------------------------
 	await page.evaluate((id) => window.__tp.test.v1.objectActions.selectObject(id), ids[0]);
 	const sel = await page.evaluate(async () => {
@@ -174,6 +262,11 @@ h.run(async () => {
 	try {
 		// B joins A: an empty joiner adopts the host's world (A joining B would put A's unnamed work behind the connect decision)
 		await h.connect(B, A);
+		// C2-1: a second peer's name label (when the editor shows one for them) is covered like every troika text
+		const bName = await B.page.evaluate(() => { let u; window.__tp.test.v1.username?.subscribe?.((x) => (u = x))(); return u ?? null; });
+		const lb = await h.eventually(() => labelState(page), (st) => st.texts.some((x) => x.text && x.text === bName), "B's name label", 8000).catch(() => null);
+		if (!lb) h.check(true, `3b. SKIPPED peer-name label: no 3D name label for B in this layout (${bName})`);
+		else h.check(lb.texts.filter((x) => x.text === bName).every((x) => x.cover?.visible && !x.troikaDraws), `3b. B's name label draws as a quad (${JSON.stringify(lb.texts.filter((x) => x.text === bName))})`);
 		const nA = await objectCount(page);
 		await B.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create sphere'));
 		await h.eventually(() => objectCount(page), (n) => n === nA + 1, "the peer's sphere reached A", 30000);
@@ -236,6 +329,8 @@ h.run(async () => {
 	await waitMode(page, 'off', 'Shift+Z turned the view off');
 	const gl = await page.evaluate(() => { let r; window.__tp.test.v1.globalRenderer.subscribe((x) => (r = x))(); const c = r.getContext(); return { lost: c.isContextLost(), opacity: r.domElement.style.opacity }; });
 	h.check(!gl.lost && gl.opacity === '', `5. Shift+Z: off, the WebGL context is back and visible (${JSON.stringify(gl)})`);
+	const lOff = await labelState(page);
+	h.check(lOff.quads === 0 && lOff.stats === null && lOff.texts.length > 0 && lOff.texts.every((x) => x.troikaDraws), `   C2-1: the text quads are gone and troika draws every text itself again (${lOff.quads} quads, ${lOff.texts.filter((x) => !x.troikaDraws).length} of ${lOff.texts.length} texts still covered)`);
 	await page.keyboard.press('Shift+Z');
 	await waitMode(page, 'on', 'Shift+Z turned it on again');
 	if ((await mode(page)) !== 'on') {

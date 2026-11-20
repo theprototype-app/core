@@ -6,7 +6,7 @@
 //        (render/view.js: lost on purpose, Scene.svelte does not report it) → a fresh canvas over the
 //        WebGL one (a canvas keeps one context type for life; pointer input still lands on the WebGL
 //        canvas underneath, so picking, gizmos and orbit are untouched) → WebGPURenderer → stand-ins for
-//        the GLSL materials it cannot run → the lighting pipeline → compiled off the frame (the seam's
+//        the GLSL materials it cannot run → troika text as canvas-texture quads (labelQuads) → the lighting pipeline → compiled off the frame (the seam's
 //        compileAsync, which closes the scene bracket three's WebGPU compile leaves open: L1a) → threlte's
 //        render task hands its frame to `draw` (render/view.js). Everything else keeps ticking: flows,
 //        physics, gizmos, undo, peers, autosave, the recorder's stages.
@@ -28,13 +28,14 @@ import { classifyMaterial, notShownText, effectiveQuality, createDropWatch, quan
 // the STORE leaf, never ./cinematicState.js (that one reaches the app's stores: this chunk's preload list)
 import { cinematicState, cinematicPrefs, disableCinematic } from './cinematicStore.js';
 import { deformersOf } from '../vertexDeform.js';
+import { createLabelQuads } from './labelQuads.js';
 
 /** @typedef {{ gl: any, scene: any, camera: () => any, toast: (msg: string) => void }} ViewCtx */
 /** @type {ViewCtx | null} what the app handed over (cinematicState.js) */
 let app = null;
 
 /** the stand-in colours by kind (a plain material in roughly the thing's colour) */
-const STAND_IN_COLOR = { water: 0x2f6f8f, fluid: 0x3a7fa8, particles: 0xd8dde6, text: 0xe8e8e8, custom: 0x8a8f98 };
+const STAND_IN_COLOR = { water: 0x2f6f8f, fluid: 0x3a7fa8, particles: 0xd8dde6, custom: 0x8a8f98 };
 
 /** @type {any} */
 let live = null;
@@ -244,7 +245,7 @@ async function enter() {
 	const gpuEra = gpuGenerationStarting();
 	/** @type {any} */
 	const r = new W.WebGPURenderer({ canvas, antialias: false, alpha: false, powerPreference: 'high-performance' });
-	live = { W, T, r, gpuEra, gl, scene, canvas, glCanvas, env, built: null, swap: null, ro: null, errors: [], frames: 0, last: 0, drop: createDropWatch(), drops: 0, rebuilding: false, failing: false, camera: cam, t };
+	live = { W, T, r, gpuEra, gl, scene, canvas, glCanvas, env, built: null, swap: null, labels: null, ro: null, errors: [], frames: 0, last: 0, drop: createDropWatch(), drops: 0, rebuilding: false, failing: false, camera: cam, t };
 	r.onDeviceLost = (/** @type {any} */ info) => {
 		log.errors.push({ at: Math.round(now()), lost: String(info?.message ?? info?.reason ?? '') });
 		void fail('the graphics device was lost.');
@@ -280,6 +281,11 @@ async function enter() {
 	r.shadowMap.type = THREE.PCFShadowMap;
 	useCopies(scene, env);
 	padNewSkeletons();
+	// C2-1: troika text draws as canvas-texture quads (troika's own SDF shader cannot run here); first, so
+	// the stand-in scan already sees troika's draw switched off
+	live.labels = createLabelQuads(W);
+	live.labels.scan(scene);
+	live.labels.tick();
 	live.swap = createSwapper(W, scene);
 	live.swap.scan();
 	patchState({ notShown: notShownText(live.swap.kinds) });
@@ -364,6 +370,11 @@ function draw(_delta) {
 	syncRenderer();
 	const a = now();
 	try {
+		g.labels?.tick();
+	} catch (e) {
+		if (log.errors.length < 200) log.errors.push({ at: Math.round(a), labels: String(/** @type {any} */ (e)?.message ?? e).slice(0, 300) });
+	}
+	try {
 		g.built.render();
 	} catch (e) {
 		if (log.errors.length < 200) log.errors.push({ at: Math.round(a), render: String(/** @type {any} */ (e)?.message ?? e).slice(0, 300) });
@@ -387,6 +398,7 @@ function draw(_delta) {
 function rescan(g) {
 	const before = notShownText(g.swap.kinds);
 	g.swap.scan();
+	g.labels?.scan(g.scene);
 	const after = notShownText(g.swap.kinds);
 	if (after !== before) patchState({ notShown: after });
 }
@@ -413,6 +425,7 @@ async function teardown(reason) {
 	g.ro?.disconnect();
 	g.built?.dispose();
 	g.swap?.undo();
+	g.labels?.undo();
 	try {
 		g.r.dispose();
 	} catch (e) {
@@ -543,6 +556,7 @@ export function cinematicDebug(reset = false) {
 		switches: log.switches.slice(-40),
 		errors: log.errors.slice(-60),
 		memory: live ? { ...live.r.info.memory } : null,
+		labels: live?.labels ? live.labels.stats() : null,
 		generations: generationStats(),
 		adapter: live?.r?.backend?.adapter?.info ? { vendor: live.r.backend.adapter.info.vendor, architecture: live.r.backend.adapter.info.architecture, description: live.r.backend.adapter.info.description } : null,
 		state: get(cinematicState)

@@ -9,6 +9,7 @@ import {
 	createDropWatch,
 	classifyMaterial,
 	notShownText,
+	STAND_IN_LABELS,
 	HIGH_MAX_PIXELS,
 	FRAME_BUDGET_MS
 } from '../../src/lib/cinematic/cinematicCore.js';
@@ -103,12 +104,14 @@ describe('classifyMaterial / notShownText', () => {
 		expect(classifyMaterial({}, patched, { deformed: () => true })).toEqual({ swap: false, kind: 'deform' });
 		expect(classifyMaterial({}, { ...patched, userData: { avatarUniforms: {} } })).toEqual({ swap: false, kind: null });
 	});
-	it('troika text is named even on its derived base material', () => {
-		expect(classifyMaterial({ isTroikaText: true }, { isMeshBasicMaterial: true })).toEqual({ swap: false, kind: 'text' });
+	it('troika text is not a stand-in any more (C2-1: it draws as canvas-texture quads)', () => {
+		expect(classifyMaterial({ isTroikaText: true }, { isMeshBasicMaterial: true })).toEqual({ swap: false, kind: null });
+		expect(classifyMaterial({ name: 'x', parent: { isTroikaText: true } }, { isShaderMaterial: true })).toEqual({ swap: true, kind: 'custom' });
+		expect(Object.values(STAND_IN_LABELS).some((w) => /text/i.test(w))).toBe(false);
 	});
 	it('the chip line lists each kind once, in a fixed order', () => {
 		expect(notShownText([])).toBe('');
-		expect(notShownText(['text', 'water', 'text'])).toBe('Not shown in Cinematic view: Water, 3D text');
+		expect(notShownText(['particles', 'water', 'particles'])).toBe('Not shown in Cinematic view: Water, Particles');
 	});
 });
 

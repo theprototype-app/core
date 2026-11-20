@@ -6,6 +6,8 @@
 // Results stay SMALL (a voice conversation reads them): no arguments = the type names by group; a
 // group = its types with their one-line docs; named types = the full card, at most MAX_TYPES per call.
 
+import { RECIPES, RECIPE_RULE, recipeAnswer } from './recipes.js';
+
 /** Most types described in full per call (a card is ~300-600 characters). */
 export const MAX_TYPES = 12;
 
@@ -124,6 +126,8 @@ export function codeShape(type, params, inputs, output) {
  * @param {any} args @param {NodeTypeSource} src
  */
 export function describeNodeTypes(args, src) {
+	// 2.0-n3b step 3: the six recipes (behaviour vs nodes) — `recipe: true` lists them, a name gives its steps
+	if (args?.recipe !== undefined && args?.recipe !== false && args?.recipe !== null) return recipeAnswer(args.recipe === true ? '' : args.recipe);
 	const groupOf = new Map();
 	for (const g of src.vocabulary) for (const t of g.types) groupOf.set(t, g.group);
 	const raw = Array.isArray(args?.types) ? args.types : typeof args?.types === 'string' ? [args.types] : [];
@@ -160,6 +164,8 @@ export function describeNodeTypes(args, src) {
 	}
 	return {
 		groups: Object.fromEntries(src.vocabulary.map((g) => [g.group, g.types])),
-		next: 'pass group:"<name>" for one-line docs, or types:[…] (up to ' + MAX_TYPES + ') for inputs, outputs and params'
+		rule: RECIPE_RULE,
+		recipes: RECIPES.map((r) => r.name),
+		next: 'pass group:"<name>" for one-line docs, types:[…] (up to ' + MAX_TYPES + ') for inputs, outputs and params, or recipe:"<name>" for a worked build'
 	};
 }

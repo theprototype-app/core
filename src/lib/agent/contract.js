@@ -17,7 +17,11 @@
 // lensflare, godrays, volumetricfog (additive: a new tool behind an existing family, new effect kinds)
 // 1.10.0 (2.0 N2): behind the codeView flag, list_scene {flow} answers carry `code` (the graph as read-only code) and
 // describe_node_types cards a `code` shape (additive: optional fields, no tool renamed)
-export const TP_AGENT_VERSION = '1.10.0';
+// 1.11.0 (2.0 N3b): describe_node_types {recipe} (six worked builds) + a `rule`/`recipes` line in its no-argument
+// answer; behaviour input handlers get {by}; validate_scene issue codes value-into-event, fires-on-every-change,
+// missing-handle, action-as-event, not-a-sensor, sensor-is-target, sensor-any, pickup-stays, toggle-per-person;
+// kit-pickups-collect param `hide` (additive: an optional argument, optional fields, new codes, no tool renamed)
+export const TP_AGENT_VERSION = '1.11.0';
 
 /** Every method of the contract, in the order the docs list them. */
 export const TP_AGENT_METHODS = /** @type {const} */ ([

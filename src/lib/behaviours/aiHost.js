@@ -59,7 +59,7 @@ export const BEHAVIOUR_EXAMPLE = `export default behaviour({
 /** the create_behaviour tool's description: what it is, the reference, the example */
 export function behaviourToolDescription() {
 	return [
-		'Create a code behaviour: game logic (rules, waves, scoring, timers, win/lose) as ONE JavaScript module, run on the session authority and replicated. Prefer it over large node graphs for game rules. Linted before it is applied; problems come back with line numbers. The result names the node id and its sockets — wire them with create_flow_nodes (an On Click / On Enter into an input; an output into HUD Text, Visibility, Announce…).',
+		'Create a code behaviour: game logic (rules, waves, scoring, timers, win/lose) as ONE JavaScript module, run on the session authority and replicated. Prefer it over large node graphs for game rules. Linted before it is applied; problems come back with line numbers. The result names the node id and its sockets — wire them with create_flow_nodes (an On Click / On Enter into an input; an output into HUD Text, Visibility, Announce…). Its state reaches a late joiner; a press says who made it (on.x({by})). Worked builds: describe_node_types {recipe: ""}.',
 		behaviourReference(),
 		'EXAMPLE (passes the lint; wire a trigger into input gemTouched, output left into a HUD Text, timeUp into a Visibility or Announce):',
 		BEHAVIOUR_EXAMPLE

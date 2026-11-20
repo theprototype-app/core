@@ -238,6 +238,9 @@ import { startMusicToolbox } from './lib/musicToolbox'
     // it keeps measuring while the canvas is remounting — which is exactly when a
     // report about the app freezing tends to be written.
     startSceneMetrics()
+    // 100 C1: is the Cinematic view offered here (a strong desktop on Chrome's WebGPU path)? Asked after the
+    // first load has had its turn; a device that left it on comes back to it (the probe mounts the lazy switch)
+    if (webglOk) setTimeout(() => void import('$lib/cinematic/cinematicState.js').then((m) => m.probeCinematic().then((ok) => { if (ok && get(m.cinematicPrefs).on) void m.setCinematic(true) })), 4000)
     // 78 F5: the viewport capture stack (one Esc owner, installed before any tool arms)
     startCaptureModes()
     // 34 PF/R1: the always-on light ring (moments, beacon windows) + user recordings

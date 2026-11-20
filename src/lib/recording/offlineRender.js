@@ -18,6 +18,7 @@
 // Loaded LAZILY (the dialog's Start): the encoders never reach the boot graph. Everything is LOCAL:
 // the camera, the scrub and the file are this viewer's; nothing is sent, nothing is undone.
 import { get } from 'svelte/store';
+import { frameCanvas, frameCount } from '../render/view.js'; // 100 C1: the Cinematic view's canvas when it draws
 import { globalRenderer, globalScene, isVRMode, isLocked } from '../../stores/sceneStore';
 import { isPhoneDevice, qualityState } from '../qualityGovernor';
 import { PHONE_START_LEVEL } from '../qualityGovernorCore';
@@ -68,7 +69,7 @@ export function exportCaps() {
 
 /** @param {import('./recordingCore.js').RecordingPrefs} prefs */
 function planFor(prefs) {
-	const dom = /** @type {any} */ (get(globalRenderer))?.domElement;
+	const dom = /** @type {any} */ (frameCanvas(get(globalRenderer)));
 	const seq = prefs.mode === 'timeline' ? findSequence(get(sequences), prefs.sequence) : null;
 	return { plan: exportPlan(prefs, exportCaps(), { w: dom?.width || 1280, h: dom?.height || 720 }, seq), seq };
 }
@@ -202,7 +203,7 @@ function before() {
 }
 
 function rendererFrame() {
-	return /** @type {any} */ (get(globalRenderer))?.info?.render?.frame ?? -1;
+	return frameCount(get(globalRenderer) ?? null);
 }
 
 /** the capture stage */
@@ -222,7 +223,7 @@ function after() {
 	const err = s.sink.error();
 	if (err) return fail('The encoder failed: ' + err.message);
 	if (!sinkHasRoom(s.sink.pending(), s.sink.limit)) return;
-	const dom = /** @type {any} */ (get(globalRenderer)).domElement;
+	const dom = /** @type {any} */ (frameCanvas(get(globalRenderer)));
 	const { w, h } = s.plan.size;
 	const crop = coverRect(dom.width, dom.height, w, h);
 	if (s.plan.alpha) s.ctx.clearRect(0, 0, w, h);

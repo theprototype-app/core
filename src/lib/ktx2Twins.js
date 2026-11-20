@@ -139,7 +139,8 @@ export function attachTwin(texture, bytes, compressed) {
 	twins.set(texture, twin);
 	live.add(new WeakRef(texture));
 	ownVersion.set(texture.source, texture.source.version);
-	texture.addEventListener('dispose', () => onDispose(texture));
+	// `__keep`: ours, never pruned with a renderer generation (render/generations.js)
+	texture.addEventListener('dispose', Object.assign(() => onDispose(texture), { __keep: 1 }));
 	stats.attached++;
 	registerTwinPass(twinPass);
 	const settle = (/** @type {any} */ c) => {

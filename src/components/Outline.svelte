@@ -64,6 +64,7 @@
 	// 37-hdri: half-float buffers + the environment's tone-mapping pass while an HDRI shows
 	import { envToneMapping } from '$lib/hdri/skyEnv';
 	import { setComposerHdr, syncEnvTonePass } from '$lib/hdri/composerHdr';
+	import { viewOwnsFrame, drawView, setViewSelection } from '$lib/render/view.js'; // 100 C1
 
 	let outlineEffectSelected: OutlineEffect | null = null;
 	let outlineEffectLocked: OutlineEffect | null = null;
@@ -117,6 +118,13 @@
 	// family as the meshEditOutline gotcha: an outline is composited after the
 	// scene, so nothing in-scene can beat it.) `rebuildStack` inserts stack passes
 	// at index 1.., never appends, which is what preserves this.
+	// 100 C1 (W14): the Cinematic view draws the same two outlines (TSL) over the same objects and colours
+	setViewSelection(() => ({
+		selected: [...(outlineEffectSelected?.selection ?? [])],
+		locked: [...(outlineEffectLocked?.selection ?? [])],
+		colors: { selected: outlineEffectSelected?.visibleEdgeColor, locked: outlineEffectLocked?.visibleEdgeColor }
+	}));
+	onDestroy(() => setViewSelection(null));
 	const outlinePassLocked = new EffectPass(camera.current, outlineEffectLocked);
 	const outlinePassSelected = new EffectPass(camera.current, outlineEffectSelected);
 	composer.addPass(outlinePassLocked);
@@ -497,6 +505,11 @@
 				const drawNow = performance.now();
 				if (drawNow - lastDrawAt < drawGapMs) return;
 				lastDrawAt = drawNow;
+			}
+			// 100 C1: the Cinematic view draws this frame (its own renderer, on its own canvas)
+			if (viewOwnsFrame() && !renderer.xr.isPresenting) {
+				drawView(delta);
+				return;
 			}
 			// In WebXR the EffectComposer can't be used: its passes render to canvas-sized
 			// targets, not the XR framebuffer, so blitting them mismatches sizes

@@ -37,7 +37,8 @@
  * flat normal per face, so keying on them would weld nothing at all.
  * @param {Float32Array} positions @param {Float32Array | null | undefined} uvs
  * @param {Float32Array | null | undefined} colors @param {number} colorSize
- * @returns {{positions: Float32Array, uvs: Float32Array | null, colors: Float32Array | null, index: Uint32Array}}
+ * @returns {{positions: Float32Array, uvs: Float32Array | null, colors: Float32Array | null, index: Uint32Array, firsts: Uint32Array}}
+ *   `firsts[j]` = the soup corner welded vertex j was taken from (carried channels gather by it)
  */
 export function weldSoup(positions, uvs, colors, colorSize = 3) {
 	const count = positions.length / 3;
@@ -72,7 +73,20 @@ export function weldSoup(positions, uvs, colors, colorSize = 3) {
 		}
 		if (outCol && colors) for (let c = 0; c < colorSize; c++) outCol[j * colorSize + c] = colors[i * colorSize + c];
 	}
-	return { positions: outPos, uvs: outUv, colors: outCol, index };
+	return { positions: outPos, uvs: outUv, colors: outCol, index, firsts: Uint32Array.from(firsts) };
+}
+
+/** Gather a channel's items at `at` into a fresh array of the same kind.
+ * @param {Extra} extra @param {ArrayLike<number>} at @param {number} count */
+function gatherExtra(extra, at, count) {
+	const size = extra.itemSize;
+	const Ctor = /** @type {any} */ (extra.array).constructor ?? Float32Array;
+	const out = new Ctor(count * size);
+	for (let j = 0; j < count; j++) {
+		const i = at[j];
+		for (let c = 0; c < size; c++) out[j * size + c] = extra.array[i * size + c];
+	}
+	return { name: extra.name, array: out, itemSize: size, ...(extra.normalized ? { normalized: true } : {}) };
 }
 
 /** Interleave the attribute channels meshoptimizer weighs alongside position.
@@ -120,6 +134,7 @@ export function simplifyMesh(simplifier, mesh) {
 	let colors = mesh.colors ?? null;
 	const colorSize = mesh.colorSize ?? 3;
 	let index = mesh.index ?? null;
+	let extras = mesh.extras ?? null;
 	let recomputeNormals = false;
 	const before = Math.floor((index ? index.length : positions.length / 3) / 3);
 	if (!index) {
@@ -128,6 +143,7 @@ export function simplifyMesh(simplifier, mesh) {
 		uvs = welded.uvs;
 		colors = welded.colors;
 		index = welded.index;
+		if (extras) extras = extras.map((e) => gatherExtra(e, welded.firsts, welded.firsts.length));
 		normals = null;
 		recomputeNormals = true;
 	} else {
@@ -190,7 +206,16 @@ export function simplifyMesh(simplifier, mesh) {
 		}
 		return dst;
 	};
+	/** @type {Extra[] | undefined} */
+	let outExtras;
+	if (extras) {
+		// the inverse of the remap: kept vertex `to` came from old vertex `v`
+		const from = new Uint32Array(unique);
+		for (let v = 0; v < remap.length; v++) if (remap[v] < unique) from[remap[v]] = v;
+		outExtras = extras.map((e) => gatherExtra(e, from, unique));
+	}
 	return {
+		...(outExtras ? { extras: outExtras } : {}),
 		key: mesh.key,
 		positions: /** @type {Float32Array} */ (pack(positions, 3)),
 		normals: pack(normals, 3),

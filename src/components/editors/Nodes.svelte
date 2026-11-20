@@ -99,7 +99,7 @@
 	import { flowMouseBindings } from '$lib/flowPrefs';
 	import Breadcrumbs from '../ui/Breadcrumbs.svelte'; // 41 G15
 	import { readPanelOpen, writePanelOpen } from '$lib/ui/handheldPanels.js'; // 41 G18
-	import { objectsGroup, selectedObject, selectedObjects } from '../../stores/sceneStore';
+	import { objectsGroup, selectedObject, selectedObjects, lockedObjects } from '../../stores/sceneStore';
 	import { serializeNode, serializeEdge, deleteFlowNodes, deleteFlowEdges, setNodeData } from '$lib/nodesHandler';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import { defDefaults } from '$lib/customNodes';
@@ -146,6 +146,11 @@
 		descendantsOf
 	} from '$lib/nodeGroups';
 	import { installNodeActions } from '$lib/nodeEditorActions';
+	// 80a K4: a held object's flow is view-only (banner, no edits; panning and framing still work)
+	import { lockedView, flowHolderOf, myLocks } from '$lib/lockHeld';
+	import { nameOf } from '$lib/lockControl';
+	import { heldReadOnly } from '$lib/ui/heldReadOnly';
+	import HeldBanner from '../menu/HeldBanner.svelte';
 	import { onScopeChange, lastScope, setLastScope } from '$lib/keyScope';
 	import { bindingOf } from '$lib/shortcuts';
 	import { beginHistoryBatch, endHistoryBatch } from '$lib/history';
@@ -620,9 +625,32 @@
 	$effect(() => {
 		const set = $selectedObjects as string[];
 		const primary = ($selectedObject as any)?.uuid;
-		const scopeUuid = set.length ? (primary && set.includes(primary) ? primary : set[set.length - 1]) : null;
+		// 80a K4: a held object being VIEWED (it cannot be selected) shows its flow, view-only
+		const scopeUuid = set.length ? (primary && set.includes(primary) ? primary : set[set.length - 1]) : $lockedView;
 		untrack(() => setActiveGraph(scopeUuid ?? SCENE_GRAPH));
 	});
+	// 80a K4: who holds the object whose flow is on screen (null = editable)
+	const flowHolder = $derived.by(() => {
+		$lockedObjects;
+		$myLocks;
+		$peers;
+		return flowHolderOf($activeGraphId);
+	});
+	/** the commands that only look: everything else is refused while the flow is held */
+	const VIEW_ACTIONS = new Set(['frame', 'frameAll', 'selectAll', 'copy', 'enterGroup', 'leaveGroup', 'openCode']);
+	/** @param {Record<string, (arg?: any) => void>} map */
+	function viewOnlyGuard(map: Record<string, (arg?: any) => void>) {
+		const out: Record<string, (arg?: any) => void> = {};
+		for (const [name, fn] of Object.entries(map))
+			out[name] = VIEW_ACTIONS.has(name)
+				? fn
+				: (arg?: any) => {
+						const holder = flowHolderOf(get(activeGraphId));
+						if (holder) return showToast(nameOf(holder) + ' is editing this flow: you can look, changes wait until they let go');
+						fn(arg);
+					};
+		return out;
+	}
 	const activeId = $derived($activeGraphId);
 	const hasActiveGraph = $derived(activeId === SCENE_GRAPH || !!$flowGraphs[activeId]);
 	const activeOwnerName = $derived(
@@ -1659,7 +1687,7 @@
 	// the registry's node rows reach these by name (nodeEditorActions)
 	onMount(() =>
 		installNodeActions(
-			{
+			viewOnlyGuard({
 				frame: frameSelected,
 				frameAll,
 				addSearch,
@@ -1688,7 +1716,7 @@
 				distributeH: () => arrangeSelection('distributeH'),
 				nudge: (d: [number, number]) => nudge(d),
 				openCode: () => openCode()
-			},
+			}),
 			{ insideGroup: () => !!level }
 		)
 	);
@@ -2164,9 +2192,14 @@
 				{/if}
 			{/snippet}
 		</Breadcrumbs>
+	{#if flowHolder}
+		<div class="flow-held"><HeldBanner id="flow-held-banner" uuid={$activeGraphId} holder={flowHolder} where="flow" /></div>
+	{/if}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		class="svelteFlow relative min-h-0 w-full flex-1"
+		data-flow-view-only={flowHolder ? '' : null}
+		use:heldReadOnly={{ held: !!flowHolder, pan: '.svelte-flow__pane, .svelte-flow__controls, .svelte-flow__minimap' }}
 		bind:this={paneEl}
 		class:tp-has-keys={hasKeys}
 		ondblclickcapture={onNodeDoubleClick}
@@ -2194,6 +2227,7 @@
 				</p>
 				<button
 					id="flow-create-btn"
+					disabled={!!flowHolder}
 					class="rounded-lg bg-accent-fill px-4 py-2 text-sm font-medium text-on-accent hover:brightness-110"
 					onclick={() => createObjectGraph(activeId)}
 				>
@@ -2209,6 +2243,8 @@
 			{snapGrid}
 			bind:viewport
 			{onbeforeconnect}
+			nodesDraggable={!flowHolder}
+			nodesConnectable={!flowHolder}
 			onconnectend={onConnectEnd}
 			{ondelete}
 			{isValidConnection}
@@ -2457,6 +2493,14 @@
 {/if}
 
 <style>
+	/* 80a K4: the held-flow banner sits above the pane, inside the editor's padding */
+	.flow-held {
+		padding: 6px 8px 0;
+	}
+	:global([data-flow-view-only] [aria-disabled='true']) {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
 	:global(.svelte-flow) {
 		background-color: transparent !important;
 	}

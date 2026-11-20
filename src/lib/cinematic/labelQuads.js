@@ -78,6 +78,9 @@ function fontStack(t) {
 
 // ---- the hidden troika draw ---------------------------------------------------------------------------
 
+/** a troika text (troika 0.52 sets no `isTroikaText` flag: the class is the test) @param {any} o */
+export const isTroikaText = (o) => o instanceof Text;
+
 /**
  * @param {any} W three/webgpu
  */
@@ -426,7 +429,7 @@ export function createLabelQuads(W) {
 	return {
 		/** one frame: new texts picked up, every quad in step, gone texts released */
 		tick() {
-			for (const t of asked) if (!records.has(t) && t.isTroikaText) track(t);
+			for (const t of asked) if (!records.has(t) && isTroikaText(t)) track(t);
 			asked.clear();
 			for (const r of [...records.values()]) {
 				// a text that left the scene (a label unmounted, a pin deleted) takes its quad with it
@@ -446,7 +449,7 @@ export function createLabelQuads(W) {
 			/** @type {Set<any>} */
 			const seen = new Set();
 			scene.traverse((/** @type {any} */ o) => {
-				if (!o.isTroikaText) return;
+				if (!isTroikaText(o)) return;
 				seen.add(o);
 				if (!records.has(o)) track(o);
 			});

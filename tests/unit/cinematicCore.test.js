@@ -105,8 +105,8 @@ describe('classifyMaterial / notShownText', () => {
 		expect(classifyMaterial({}, { ...patched, userData: { avatarUniforms: {} } })).toEqual({ swap: false, kind: null });
 	});
 	it('troika text is not a stand-in any more (C2-1: it draws as canvas-texture quads)', () => {
-		expect(classifyMaterial({ isTroikaText: true }, { isMeshBasicMaterial: true })).toEqual({ swap: false, kind: null });
-		expect(classifyMaterial({ name: 'x', parent: { isTroikaText: true } }, { isShaderMaterial: true })).toEqual({ swap: true, kind: 'custom' });
+		// while the view is on, a troika text answers labelQuads' hidden NODE material: never a stand-in
+		expect(classifyMaterial({}, { isNodeMaterial: true, visible: false })).toEqual({ swap: false, kind: null });
 		expect(Object.values(STAND_IN_LABELS).some((w) => /text/i.test(w))).toBe(false);
 	});
 	it('the chip line lists each kind once, in a fixed order', () => {

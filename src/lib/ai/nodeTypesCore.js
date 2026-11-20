@@ -82,7 +82,7 @@ export function paramValue(spec, key, value) {
 	const row = paramsOf(spec).find((p) => p.key === key);
 	if (!row) return null;
 	if (row.type === 'choice' && Array.isArray(row.options) && !row.options.includes(value))
-		return { ok: false, error: key + ' must be one of ' + row.options.map((o) => JSON.stringify(o)).join(', ') };
+		return { ok: false, error: key + ' must be one of ' + row.options.map((/** @type {any} */ o) => JSON.stringify(o)).join(', ') };
 	if (row.type === 'boolean' && typeof value !== 'boolean') {
 		if (value === 'true' || value === 'false') return { ok: true, value: value === 'true' };
 		return { ok: false, error: key + ' is true or false' };

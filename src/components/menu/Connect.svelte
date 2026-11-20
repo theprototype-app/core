@@ -526,6 +526,15 @@
 		}
 		connectToPeer(text);
 	}
+	/**
+	 * 80a-fix4-ui O3 (owner 2026-11-20, N6 unfolded): the DOCKED bar (a full-width top row) has the room the floating
+	 * pill does not, and 1.69 left half of it empty ("Ready" + a big Invite + "Join…", then nothing). Docked and idle,
+	 * the bar is the 1.46 one compact row again: the dial field is OPEN, filling the row with its own Connect; the
+	 * status word goes while all is well (the dot keeps it as tooltip and name; Offline / Connecting… still show);
+	 * Invite steps down to a quiet button so Connect is the row's one primary. The floating pill is unchanged.
+	 */
+	const inlineDial = $derived(docked && !$phoneShellActive && connState === 'idle');
+	const dialShown = $derived(dialOpen || inlineDial);
 	/** the idle pill's one word: Ready while the peer server answers (not "Offline"), else what is wrong */
 	const readyWord = $derived(
 		$connectionStatus.tone === 'failed' ? 'Offline' : $connectionStatus.tone === 'connecting' ? 'Connecting…' : 'Ready'
@@ -670,8 +679,9 @@
 			title={$connectionStatus.words + ($signalingRetry.retrying ? ' (' + formatElapsed(retryNow - ($signalingRetry.since ?? retryNow)) + ')' : '')}
 			aria-label={$connectionStatus.words}
 		></span>
-		{#if connState === 'idle' && !dialOpen}
-			<!-- uir-people (Connect B): the status in one word, beside its dot -->
+		{#if connState === 'idle' && !dialOpen && !(inlineDial && readyWord === 'Ready')}
+			<!-- uir-people (Connect B): the status in one word, beside its dot (O3: the docked row shows it only when
+			     something is wrong) -->
 			<span class="cx-ready" id="connect-ready" data-tone={$connectionStatus.tone}>{readyWord}</span>
 		{/if}
 		<!-- your invite id (click to copy the share link) — the FIRST button in the pill -->
@@ -685,6 +695,7 @@
 				type="button"
 				id="connect-invite"
 				class="cx-invite"
+				class:cx-invite-quiet={inlineDial}
 				class:on={!!$inviteSheet}
 				title="Invite a person or an AI agent — a link that joins without an approval card"
 				aria-label="Invite a person or an AI agent"
@@ -692,7 +703,7 @@
 				onclick={() => inviteSheet.set($inviteSheet ? null : 'person')}
 			><Icon name="user-plus" size={16} aria-hidden="true" /><span>Invite</span></button>
 		{/if}
-		{#if connState === 'idle' && !dialOpen}
+		{#if connState === 'idle' && !dialShown}
 			<button
 				type="button"
 				id="connect-join"
@@ -736,7 +747,7 @@
 					title="Cancel the connection request">Cancel</button
 				>
 			</div>
-		{:else if dialOpen}
+		{:else if dialShown}
 			<!-- idle: dial a peer — the field shrinks (down to cx-input's min-width) so the
 				 Connect button stays visible when the row is tight. autocomplete off + a
 				 non-loginish name: Chrome's password manager autofilled Settings keys here -->
@@ -756,9 +767,11 @@
 					onkeydown={(e) => { onDialEscape(e); onDialKey(e); }}
 				/>
 				<button type="button" class="cx-btn cx-btn-primary" onclick={dialSubmit}>Connect</button>
-				<button type="button" id="connect-join-close" class="cx-btn cx-btn-quiet cx-join-close" title="Close (Esc)" aria-label="Close the join field" onclick={closeDial}
-					><Icon name="x" size={16} aria-hidden="true" /></button
-				>
+				{#if !inlineDial}
+					<button type="button" id="connect-join-close" class="cx-btn cx-btn-quiet cx-join-close" title="Close (Esc)" aria-label="Close the join field" onclick={closeDial}
+						><Icon name="x" size={16} aria-hidden="true" /></button
+					>
+				{/if}
 			</div>
 		{/if}
 
@@ -971,6 +984,17 @@
 	.cx-invite:hover,
 	.cx-invite.on {
 		filter: brightness(1.1);
+	}
+	/* O3: the docked row's Invite is quiet (the field's Connect is the row's primary) */
+	.cx-invite.cx-invite-quiet {
+		border-color: var(--border-input);
+		background: var(--surface-inset);
+		color: var(--text);
+	}
+	.cx-invite.cx-invite-quiet:hover,
+	.cx-invite.cx-invite-quiet.on {
+		filter: none;
+		background: var(--surface-hover);
 	}
 	.cx-join {
 		border: 1px solid var(--border-input);

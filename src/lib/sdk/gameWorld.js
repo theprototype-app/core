@@ -4,6 +4,7 @@
 //
 //   paths.of(uuid) / paths.list()   78's Path object, through its ONE read api (path/pathRuntime.js
 //                                   pathOf, F9): a Patrol node never keeps a fourth list of points.
+//   paths.create({points, closed})  a new Path through 78's own createPath (one replicated undo step).
 //   colliderGeometry(opts)          the STATIC colliders + terrain as world triangles (a navmesh bake's
 //                                   input), plus the MOVING solids (dynamic bodies, flow-animated
 //                                   objects) a bake must treat as temporary obstacles, and a cheap
@@ -60,8 +61,9 @@ function pushBox(pos, idx, b) {
 
 /**
  * The navmesh bake input. Pure READ of the live scene; nothing is written.
- * @param {{exclude?: string[], maxTriangles?: number}} [opts] `exclude` = object uuids whose whole
- *   subtree is left out (the NPCs themselves)
+ * @param {{exclude?: string[], maxTriangles?: number, signatureOnly?: boolean}} [opts] `exclude` = object
+ *   uuids whose whole subtree is left out (the NPCs themselves); `signatureOnly` = the cheap poll: the
+ *   `signature` and the `moving` boxes, no triangles (a rebake watcher asks this once a second)
  * @returns {Promise<{positions: Float32Array, indices: Uint32Array, triangles: number, objects: number,
  *   truncated: boolean, moving: {uuid: string, name: string, min: number[], max: number[]}[], signature: string}>}
  */
@@ -110,6 +112,10 @@ async function colliderGeometry(opts = {}) {
 			const p = g.attributes.position;
 			objects++;
 			sig.push(o.uuid, g.uuid, p.version, o.matrixWorld.elements.map((/** @type {number} */ v) => v.toFixed(3)).join(','));
+			if (opts.signatureOnly) {
+				if (o.isInstancedMesh) sig.push(o.count, o.instanceMatrix?.version ?? 0);
+				return;
+			}
 			if (o.isInstancedMesh) {
 				if (!g.boundingBox) g.computeBoundingBox();
 				const n = Math.min(o.count, INSTANCE_CAP);
@@ -119,7 +125,7 @@ async function colliderGeometry(opts = {}) {
 					box.copy(g.boundingBox).applyMatrix4(mB);
 					pushBox(pos, idx, box);
 				}
-				sig.push(o.count);
+				sig.push(o.count, o.instanceMatrix?.version ?? 0);
 				return;
 			}
 			const tris = g.index ? g.index.count / 3 : p.count / 3;
@@ -183,7 +189,20 @@ export function sdkGameWorld(ctx) {
 			/** @param {string} uuid */
 			of: (uuid) => pathOf(get(objectsGroup), String(uuid ?? '')),
 			/** every Path object: `[{uuid, name}]` (a sheet's picker) */
-			list: () => pathObjectsIn(get(objectsGroup)).map((o) => ({ uuid: o.uuid, name: o.name || 'Path' }))
+			list: () => pathObjectsIn(get(objectsGroup)).map((o) => ({ uuid: o.uuid, name: o.name || 'Path' })),
+			/**
+			 * A new Path object through 78's own `createPath` (the replicated `/create Path` + one spline
+			 * edit, ONE undo step): `points` are WORLD `[x, y, z]` (2..200).
+			 * @param {{points: number[][], closed?: boolean, name?: string}} spec
+			 * @returns {Promise<string | null>} the new path's uuid
+			 */
+			async create(spec) {
+				const { createPath } = await import('../path/pathActions.js');
+				const points = (Array.isArray(spec?.points) ? spec.points : []).slice(0, 200).map((p) => [+p?.[0] || 0, +p?.[1] || 0, +p?.[2] || 0]);
+				if (points.length < 2) return null;
+				const r = /** @type {any} */ (createPath({ points, closed: !!spec?.closed, name: spec?.name ? String(spec.name).slice(0, 60) : undefined }));
+				return r?.object?.uuid ?? null;
+			}
 		}),
 		colliderGeometry,
 		players,
@@ -254,6 +273,7 @@ export function sdkGameWorld(ctx) {
 sdkGameWorld.surface = {
 	'paths.of': 'read',
 	'paths.list': 'read',
+	'paths.create': 'content',
 	colliderGeometry: 'read',
 	players: 'read',
 	isAuthority: 'read',

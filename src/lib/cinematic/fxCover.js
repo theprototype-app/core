@@ -22,12 +22,21 @@
 // copying its properties (NodeLibrary.fromMaterial), so a `positionNode` set on the clone is drawn, and the standard
 // view (WebGL) never reads it. Leaving the view takes all of it back.
 //
+// THE TWINS ARE DRAWN IN A PASS OF THEIR OWN (pipeline.js `fx`): on layer FX_LAYER, which the scene pass does not see.
+// In r186 only the scene pass's `output` target follows a material's blending; normal, velocity and diffuse are
+// written unblended, so a transparent sprite in the scene pass REPLACED the surface normals behind it and the AO went
+// black under every particle. In their own pass they never touch the lighting inputs: each twin tests itself against
+// the scene pass's depth in its fragment (when its source depth-tests: additive presets do not), the pass is cleared
+// to transparent and composited premultiplied after TRAA, before the bloom.
+//
 // `scan()` runs every frame (a burst fires and lives for half a second; a once-a-second pass would miss it whole).
 import { fxCoverKind, DEFORM_COVERED } from './cinematicCore.js';
 import { deformSpecsOf } from '../vertexDeform.js';
 
 const TAU = 6.2831853;
 const TWIN = 'cinematic-fx';
+/** the layer the twins are drawn on (28-31 are taken: studio, water selection, helpers, reduced) */
+export const FX_LAYER = 27;
 
 /**
  * @param {{ W: any, T: any, scene: any, glCanvas: HTMLCanvasElement }} o
@@ -36,9 +45,13 @@ export function createFxCover(o) {
 	const { W, T, scene, glCanvas } = o;
 	const {
 		uniform, attribute, bufferAttribute, positionGeometry, modelViewMatrix, cameraProjectionMatrix, cameraViewMatrix,
-		varying, select, texture, mrt, vec2, vec3, vec4, float, mix, clamp, pow, exp, sin, cos, sqrt, cross, length, dot, min, max,
-		smoothstep, fract, step, uv, vertexColor
+		varying, select, texture, screenUV, vec2, vec3, vec4, float, mix, clamp, pow, exp, sin, cos, sqrt, cross, length, dot, min, max,
+		smoothstep, fract, step, uv
 	} = T;
+
+	/** the scene pass's depth (the pipeline hands its texture over: setSceneDepth), for the twins' own depth test */
+	const placeholder = new W.DepthTexture(1, 1);
+	const sceneDepth = texture(placeholder);
 
 	/** the WebGL canvas's drawing-buffer size: gl_PointSize is in its pixels */
 	const viewPx = uniform(new W.Vector2(1, 1));
@@ -80,15 +93,24 @@ export function createFxCover(o) {
 	/** rotate v by quaternion q @param {any} q @param {any} v */
 	const qrot = (q, v) => v.add(cross(q.xyz, cross(q.xyz, v).add(q.w.mul(v))).mul(2));
 
-	/**
-	 * Every fx material writes its colour only: the other scene-pass targets (normal + roughness, velocity, diffuse +
-	 * metalness for the lighting) get alpha 0, so blending leaves the surface behind them untouched.
-	 * @param {any} m */
-	function colourOnly(m) {
-		const none = vec4(0, 0, 0, 0);
-		m.mrtNode = mrt({ normal: none, velocity: none, diffuseColor: none });
+	/** a twin material: unlit, its own clip position, and `occlude` (1 = test against the scene's depth) */
+	function fxMaterial() {
+		const m = new W.MeshBasicNodeMaterial();
 		m.lights = false;
+		m.userData.occlude = uniform(1);
 		return m;
+	}
+
+	/**
+	 * The clip position and the opacity, with the depth test the pass itself cannot do (it has no scene depth): z and w
+	 * interpolate perspective-correct, so z / w per fragment is the depth the scene pass would compare.
+	 * @param {any} m @param {any} clip @param {any} opacity */
+	function place(m, clip, opacity) {
+		m.vertexNode = clip;
+		const z = varying(clip.z);
+		const w = varying(clip.w);
+		const behind = m.userData.occlude.greaterThan(0.5).and(z.div(w).greaterThan(sceneDepth.sample(screenUV).x.add(1e-5)));
+		m.opacityNode = select(behind, float(0), opacity);
 	}
 
 	// ---- particles: particleShader.js SIM_COMMON in TSL ------------------------------------------------------
@@ -186,8 +208,8 @@ export function createFxCover(o) {
 		const clip = cameraProjectionMatrix.mul(mv);
 		const corner = positionGeometry.xy;
 		const at = clip.xy.add(corner.mul(px).mul(2).div(viewPx).mul(clip.w));
-		const m = colourOnly(new W.MeshBasicNodeMaterial());
-		m.vertexNode = select(alive.greaterThan(0.5), vec4(at, clip.zw), vec4(0, 0, 2, 1));
+		const m = fxMaterial();
+		const clipOut = select(alive.greaterThan(0.5), vec4(at, clip.zw), vec4(0, 0, 2, 1));
 		const life = varying(t);
 		const vLanded = varying(landed);
 		const vRot = varying(U.uSpin.mul(age).add(r.y.mul(TAU)));
@@ -199,7 +221,7 @@ export function createFxCover(o) {
 		const tex = map.sample(vec2(c.x.mul(co).sub(c.y.mul(s)), c.x.mul(s).add(c.y.mul(co))).add(0.5));
 		const { fade, col } = lifeLook(U, life, vSeed);
 		m.colorNode = col.mul(tex.rgb);
-		m.opacityNode = tex.a.mul(U.uOpacity).mul(fade).mul(splashFade(U, vLanded));
+		place(m, clipOut, tex.a.mul(U.uOpacity).mul(fade).mul(splashFade(U, vLanded)));
 		m.alphaTest = 0.01;
 		return { m, map };
 	}
@@ -222,7 +244,9 @@ export function createFxCover(o) {
 		const r2 = attribute('aRand2', 'vec4');
 		const S = sim(U);
 		const side = attribute('aSide', 'float');
-		const m = colourOnly(new W.MeshBasicNodeMaterial());
+		const m = fxMaterial();
+		/** @type {any} */
+		let clipOut;
 		/** @type {any} */
 		let life;
 		/** @type {any} */
@@ -249,7 +273,7 @@ export function createFxCover(o) {
 			const base = select(trails, mv.xyz, mv.xyz.add(fwd.mul(width).mul(float(0.5).sub(al))));
 			const w = select(trails, width.mul(float(1).sub(al.mul(0.7))), width);
 			const at = base.add(stripSide(path, base).mul(side).mul(w).mul(0.5));
-			m.vertexNode = select(alive.greaterThan(0.5), cameraProjectionMatrix.mul(vec4(at, 1)), vec4(0, 0, 2, 1));
+			clipOut = select(alive.greaterThan(0.5), cameraProjectionMatrix.mul(vec4(at, 1)), vec4(0, 0, 2, 1));
 			life = varying(t);
 			landedOut = varying(landed);
 			along = varying(al);
@@ -269,7 +293,7 @@ export function createFxCover(o) {
 			const t = clamp(A.age.div(A.li), 0, 1);
 			const width = mix(U.uSizeStart, U.uSizeEnd, t);
 			const at = mv.xyz.add(stripSide(path, mv.xyz).mul(side).mul(width).mul(0.5));
-			m.vertexNode = select(show, cameraProjectionMatrix.mul(vec4(at, 1)), vec4(0, 0, 2, 1));
+			clipOut = select(show, cameraProjectionMatrix.mul(vec4(at, 1)), vec4(0, 0, 2, 1));
 			life = varying(t);
 			landedOut = varying(landed);
 			along = varying(t);
@@ -281,7 +305,7 @@ export function createFxCover(o) {
 		const stretch = U.uRender.lessThan(1.5);
 		const band = float(1).sub(vSide.mul(vSide)).mul(select(U.uRender.lessThan(2.5), float(1).sub(along), float(1)));
 		m.colorNode = select(stretch, col.mul(tex.rgb), col);
-		m.opacityNode = select(stretch, tex.a, band).mul(U.uOpacity).mul(fade).mul(splashFade(U, landedOut));
+		place(m, clipOut, select(stretch, tex.a, band).mul(U.uOpacity).mul(fade).mul(splashFade(U, landedOut)));
 		m.alphaTest = 0.01;
 		return { m, map };
 	}
@@ -298,13 +322,15 @@ export function createFxCover(o) {
 		const clip = cameraProjectionMatrix.mul(modelViewMatrix.mul(vec4(pos, 1)));
 		// WebGL: gl_PointSize = size * pixelRatio * (cssHeight / 2) / depth, i.e. `size` across half the view height at depth 1
 		const corner = positionGeometry.xy;
-		const m = colourOnly(new W.MeshBasicNodeMaterial());
-		m.vertexNode = vec4(clip.xy.add(corner.mul(size).mul(vec2(viewPx.y.div(viewPx.x), 1))), clip.zw);
+		const m = fxMaterial();
+		const clipOut = vec4(clip.xy.add(corner.mul(size).mul(vec2(viewPx.y.div(viewPx.x), 1))), clip.zw);
 		const c = varying(colour);
 		// PointsMaterial samples (gl_PointCoord.x, 1 - gl_PointCoord.y): the quad's own uv
 		const tex = map.sample(uv());
 		m.colorNode = c.mul(tex.rgb);
-		m.opacityNode = tex.a.mul(opacity);
+		place(m, clipOut, tex.a.mul(opacity));
+		// PointsMaterial does not discard; a hair above zero only drops the texels that add nothing
+		m.alphaTest = 1e-4;
 		m.fog = src.fog;
 		return { m, map };
 	}
@@ -332,8 +358,8 @@ export function createFxCover(o) {
 		const ring = cameraProjectionMatrix.mul(cameraViewMatrix.mul(vec4(center.add(vec3(corner.x.mul(ringR), 0, corner.y.negate().mul(ringR))), 1)));
 		const mvC = cameraViewMatrix.mul(vec4(center, 1));
 		const bill = cameraProjectionMatrix.mul(vec4(mvC.xy.add(corner.mul(size)), mvC.zw));
-		const m = colourOnly(new W.MeshBasicNodeMaterial());
-		m.vertexNode = select(pop.greaterThan(0), ring, bill).mul(shown);
+		const m = fxMaterial();
+		const clipOut = select(pop.greaterThan(0), ring, bill).mul(shown);
 		const vPop = varying(pop);
 		const vFade = varying(smoothstep(float(0), float(0.15), age));
 		const q = uv().mul(2).sub(1);
@@ -346,7 +372,7 @@ export function createFxCover(o) {
 		const inside = d.lessThanEqual(1);
 		m.colorNode = select(popping, U.uColor, mix(U.uColor, U.uColor.mul(0.35), edge.mul(float(1).sub(glint))));
 		const a = select(popping, ringA, max(rim.mul(0.85).add(glint.mul(0.9)).add(0.08), edge.mul(0.75)));
-		m.opacityNode = select(inside, a.mul(U.uOpacity).mul(vFade), float(0));
+		place(m, clipOut, select(inside, a.mul(U.uOpacity).mul(vFade), float(0)));
 		m.alphaTest = 1e-4;
 		m.fog = false;
 		return { m, map: null };
@@ -405,6 +431,9 @@ export function createFxCover(o) {
 		m.name = TWIN;
 		m.transparent = true;
 		m.depthWrite = false;
+		m.depthTest = false;
+		// every twin faces the camera by construction (or is a strip whose face depends on its path)
+		m.side = W.DoubleSide;
 		const twin = new W.Mesh(geometry, m);
 		twin.name = TWIN;
 		twin.userData.localOnly = true;
@@ -413,10 +442,11 @@ export function createFxCover(o) {
 		twin.renderOrder = src.renderOrder;
 		twin.raycast = () => {};
 		twin.castShadow = twin.receiveShadow = false;
+		twin.layers.set(FX_LAYER);
 		src.add(twin);
 		sm.visible = false;
 		hidden.add(sm);
-		const rec = { src, sm, twin, m, map, kind, geometry, pairs, seen: frame, ownGeometry: geometry !== src.geometry };
+		const rec = { src, sm, twin, m, map, kind, geometry, pairs, seen: frame, ownGeometry: geometry !== src.geometry, additive: /** @type {boolean | null} */ (null) };
 		sync(rec);
 		twins.set(src, rec);
 		return rec;
@@ -425,15 +455,24 @@ export function createFxCover(o) {
 	/** the twin follows what the runtime changes on its source material every frame @param {any} rec */
 	function sync(rec) {
 		const { sm, m, src } = rec;
-		const blending = sm.blending ?? W.NormalBlending;
-		// every twin faces the camera by construction (or is a strip whose face depends on its path)
-		const side = W.DoubleSide;
-		if (m.blending !== blending || m.depthTest !== sm.depthTest || m.side !== side) {
-			m.blending = blending;
-			m.depthTest = sm.depthTest;
-			m.side = side;
+		// the fx pass is composited as PREMULTIPLIED colour over the lit image: normal blending already leaves rgb = c * a,
+		// alpha = coverage; additive must add colour and NO coverage (three's additive also adds alpha, which would
+		// darken the image under every spark), so it is spelled out as custom blending
+		const additive = sm.blending === W.AdditiveBlending;
+		if (rec.additive !== additive) {
+			rec.additive = additive;
+			if (additive) {
+				m.blending = W.CustomBlending;
+				m.blendEquation = m.blendEquationAlpha = W.AddEquation;
+				m.blendSrc = W.SrcAlphaFactor;
+				m.blendDst = W.OneFactor;
+				m.blendSrcAlpha = W.ZeroFactor;
+				m.blendDstAlpha = W.OneFactor;
+			} else m.blending = W.NormalBlending;
 			m.needsUpdate = true;
 		}
+		// the source's depth test, done in the twin's fragment (the fx pass has no scene depth of its own)
+		m.userData.occlude.value = sm.depthTest === false ? 0 : 1;
 		if (rec.map) {
 			const tex = sm.uniforms?.uMap?.value ?? sm.map;
 			if (tex && rec.map.value !== tex) rec.map.value = tex;
@@ -570,6 +609,15 @@ export function createFxCover(o) {
 
 	return {
 		scan,
+		layer: FX_LAYER,
+		/** how many twins exist (the fx pass skips its render while there are none) */
+		get count() {
+			return twins.size;
+		},
+		/** the pipeline's scene-pass depth texture (each rebuild hands over its own) @param {any} tex */
+		setSceneDepth(tex) {
+			if (tex) sceneDepth.value = tex;
+		},
 		/**
 		 * Does the view draw this (object, material) itself? The stand-in pass leaves it alone and the chip does not
 		 * list it. @param {any} obj @param {any} m */
@@ -586,6 +634,7 @@ export function createFxCover(o) {
 			for (const m of hidden) m.visible = true;
 			hidden.clear();
 			quad.dispose();
+			placeholder.dispose();
 		},
 		stats() {
 			return { ...stats, errors: coverErrors.slice(-10) };

@@ -11,7 +11,7 @@
 // GPU: real WebGPU wants the Deck (desk "local") or the PC through a remote slot; SwiftShader passes with
 // debugCinematicSoftware=1 (slow, same code). Evidence: test-results/100-cover-fx/ (sheet + numbers).
 //
-//   APP_URL=https://theprototype.app:7040/ e2e-slot --local --dev $PWD 7040 -- node tests/e2e/cinematic-fx.test.cjs
+//   APP_URL=https://theprototype.app:7040/ E2E_PC= e2e-slot --local --dev $PWD 7040 -- env E2E_GPU=1 node tests/e2e/cinematic-fx.test.cjs
 const fs = require('fs');
 const path = require('path');
 const h = require('./helpers.cjs');
@@ -98,7 +98,9 @@ h.run(async () => {
 	});
 	h.check(Object.values(ids).every(Boolean), `0. the scene: ${Object.keys(ids).join(', ')}`);
 	// the effects have started (emitters, bubbles, deformers on their materials)
-	const started = await h.eventually(
+	/** @type {any} */
+	let started = null;
+	await h.eventually(
 		() =>
 			page.evaluate((ids) => {
 				const s = window.__tp.test.v1;
@@ -112,7 +114,7 @@ h.run(async () => {
 				});
 				const deformed = ['plant', 'fish', 'jelly'].filter((k) => typeof g.getObjectByProperty('uuid', ids[k])?.material?.customProgramCacheKey === 'function' && /\|/.test(g.getObjectByProperty('uuid', ids[k]).material.customProgramCacheKey()));
 				return { particles, bubbles, deformed: deformed.length };
-			}, ids),
+			}, ids).then((r) => (started = r)),
 		(r) => r.particles >= 2 && r.bubbles >= 1 && r.deformed === 3,
 		'the emitters, the bubbles and three deformers are running',
 		30000
@@ -231,7 +233,30 @@ h.run(async () => {
 				};
 				const g = mask(S['gl:all'], S['gl:-' + piece]);
 				const v = mask(S['view:all'], S['view:-' + piece]);
+				// debug picture: gl footprint red, view footprint green, the noise floor blue
+				const mc = document.createElement('canvas');
+				mc.width = W;
+				mc.height = H;
+				const x = mc.getContext('2d');
+				const img = x.createImageData(W, H);
+				for (let j = 0; j < W * H; j++) {
+					img.data[j * 4] = g[j] * 255;
+					img.data[j * 4 + 1] = v[j] * 255;
+					img.data[j * 4 + 2] = window.__fxNoise?.[j] ? 255 : 0;
+					img.data[j * 4 + 3] = 255;
+				}
+				x.putImageData(img, 0, 0);
+				const maskUrl = mc.toDataURL('image/png');
 				const gg = grow(g), vg = grow(v);
+				// the mean luma the piece adds where it is drawn (a sprite drawn black adds a negative number)
+				const lum = (d, i) => 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+				const lift = (all, minus, m) => {
+					let sum = 0, n = 0;
+					for (let j = 0; j < m.length; j++) if (m[j]) { sum += lum(all, j * 4) - lum(minus, j * 4); n++; }
+					return n ? +(sum / n).toFixed(1) : 0;
+				};
+				const glLift = lift(S['gl:all'], S['gl:-' + piece], g);
+				const viewLift = lift(S['view:all'], S['view:-' + piece], v);
 				let ga = 0, va = 0, gIn = 0, vIn = 0;
 				let gx = 0, gy = 0, vx = 0, vy = 0;
 				for (let i = 0; i < W * H; i++) {
@@ -239,7 +264,7 @@ h.run(async () => {
 					if (v[i]) { va++; vx += i % W; vy += (i / W) | 0; if (gg[i]) vIn++; }
 				}
 				const c = (sx, sy, n) => (n ? [Math.round(sx / n), Math.round(sy / n)] : null);
-				return { gl: ga, view: va, glCovered: ga ? +(gIn / ga).toFixed(2) : 0, viewCovered: va ? +(vIn / va).toFixed(2) : 0, glCentre: c(gx, gy, ga), viewCentre: c(vx, vy, va) };
+				return { maskUrl, glLift, viewLift, gl: ga, view: va, glCovered: ga ? +(gIn / ga).toFixed(2) : 0, viewCovered: va ? +(vIn / va).toFixed(2) : 0, glCentre: c(gx, gy, ga), viewCentre: c(vx, vy, va) };
 			},
 			{ piece, W, H }
 		);
@@ -264,6 +289,17 @@ h.run(async () => {
 	const chip = (await state(page)).notShown;
 	h.check(!/Particles|Jiggle and sway/.test(chip), `   none of them is in the "Not shown" chip ("${chip}")`);
 	sheet.view = await grab('view:all', true);
+	// the noise floor: two shots of the same held moment (anything that changes here is not a piece's footprint)
+	await grab('view:again', true);
+	const floor = await page.evaluate(({ W, H }) => {
+		const a = window.__fxShots['view:all'], b = window.__fxShots['view:again'];
+		const m = new Uint8Array(W * H);
+		let n = 0;
+		for (let i = 0, j = 0; i < a.length; i += 4, j++) if (Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]) > 36) { m[j] = 1; n++; }
+		window.__fxNoise = m;
+		return n;
+	}, { W, H });
+	h.check(true, `   view noise floor: ${floor} px change between two shots of the same held moment`);
 	for (const p of PIECES) {
 		await show(p, false);
 		await page.waitForTimeout(120);
@@ -273,34 +309,59 @@ h.run(async () => {
 	}
 	await grab('view:all', true);
 
-	// ---- 4. footprints agree -----------------------------------------------------------------------------------------
+	// ---- 4. footprints agree
+	// The view's footprint runs larger (measured 1.0-2.0x): its bloom lays a halo round every bright sprite, which the
+	// standard view does not draw. So the size bound is loose (0.5-3x) and the two coverage numbers carry the claim:
+	// nearly every standard-view pixel is inside the view's footprint, and most of the view's lie within 2 px of it. -----------------------------------------------------------------------------------------
 	/** @type {Record<string, any>} */
 	const rows = {};
 	for (const p of PIECES) {
 		const r = await compare(p);
+		fs.writeFileSync(path.join(OUT, `mask-${p}.png`), Buffer.from(r.maskUrl.split(',')[1], 'base64'));
+		delete r.maskUrl;
 		rows[p] = r;
 		const ratio = r.gl ? r.view / r.gl : 0;
 		const near = r.glCentre && r.viewCentre ? Math.hypot(r.glCentre[0] - r.viewCentre[0], r.glCentre[1] - r.viewCentre[1]) : 999;
 		h.check(
-			r.gl > 30 && ratio > 0.5 && ratio < 2 && r.glCovered >= 0.6 && r.viewCovered >= 0.5 && near < 20,
+			r.gl > 30 && ratio > 0.5 && ratio < 3 && r.glCovered >= 0.6 && r.viewCovered >= 0.5 && near < 20,
 			`4. ${p}: the view draws it where and as large as the standard view (px gl ${r.gl} / view ${r.view}, ratio ${ratio.toFixed(2)}, ` +
 				`gl px inside the view's ${r.glCovered}, view px inside gl's ${r.viewCovered}, centres ${JSON.stringify(r.glCentre)} vs ${JSON.stringify(r.viewCentre)})`
 		);
 	}
 
+	for (const p of ['fire', 'trails', 'bubbles']) {
+		const r = rows[p];
+		h.check(r.glLift > 0 && r.viewLift > 0.3 * r.glLift, `   ${p} lightens the image in both views, as much within a factor of 3 (mean luma +${r.glLift} standard, +${r.viewLift} Cinematic)`);
+	}
+
 	// ---- 5. the frame cost with and without the effects ----------------------------------------------------------
+	// the rAF interval is capped by vsync; the GPU-bound number is 30 frames drawn back to back, timed to the queue
 	const cost = async (label) => {
 		await debug(page, true);
-		await page.waitForTimeout(4000);
+		await page.waitForTimeout(3000);
 		const d = await debug(page);
-		return { label, n: d.frames.n, median: +d.frames.median.toFixed(2), p95: +d.frames.p95.toFixed(2), scanMs: +(d.fx?.scanMs ?? 0).toFixed(3) };
+		const bound = await page.evaluate(async () => {
+			const v = await window.__tp.test.v1.cinematicState.cinematicView();
+			const g = v.cinematicLiveForTest();
+			const q = g.r.backend.device.queue;
+			const once = async () => {
+				const t0 = performance.now();
+				for (let i = 0; i < 30; i++) g.built.render();
+				await q.onSubmittedWorkDone();
+				return (performance.now() - t0) / 30;
+			};
+			await once();
+			const runs = [await once(), await once(), await once()].sort((a, b) => a - b);
+			return runs[1];
+		});
+		return { label, n: d.frames.n, median: +d.frames.median.toFixed(2), p95: +d.frames.p95.toFixed(2), bound: +bound.toFixed(2), scanMs: +(d.fx?.scanMs ?? 0).toFixed(3) };
 	};
 	const withFx = await cost('with');
 	for (const p of PIECES) await show(p, false);
 	const without = await cost('without');
 	for (const p of PIECES) await show(p, true);
 	const adapter = d0.adapter ? `${d0.adapter.vendor} ${d0.adapter.architecture} ${d0.adapter.description}`.trim() : 'unknown';
-	h.check(withFx.n > 20, `5. frame cost (${adapter}): with ${withFx.median} ms median / ${withFx.p95} p95, without ${without.median} / ${without.p95}; per-frame cover pass ${withFx.scanMs} ms`);
+	h.check(withFx.n > 20 && withFx.bound > 0, `5. frame cost (${adapter}): GPU-bound ${withFx.bound} ms with the effects, ${without.bound} ms with them hidden; rAF median ${withFx.median} / ${without.median} ms, p95 ${withFx.p95} / ${without.p95}; per-frame cover pass ${withFx.scanMs} ms`);
 
 	// ---- 6. time runs again: the effects move in the view -------------------------------------------------------------
 	await page.evaluate(() => {

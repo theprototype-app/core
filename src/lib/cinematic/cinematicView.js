@@ -324,7 +324,7 @@ function targetQuality() {
 
 /** @param {import('./cinematicCore.js').Quality} quality */
 function build(quality) {
-	return buildPipeline({ W: live.W, T: live.T, renderer: live.r, scene: live.scene, camera: live.camera, quality, outline: viewSelection });
+	return buildPipeline({ W: live.W, T: live.T, renderer: live.r, scene: live.scene, camera: live.camera, quality, outline: viewSelection, fx: live.fx });
 }
 
 /** a new pipeline beside the old one (the old keeps drawing until the new one is ready) */

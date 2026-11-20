@@ -55,6 +55,8 @@ const SCRIPT = opt('--script', '')
 // --replay <dir>: re-run the tool calls an earlier run RECORDED (<dir>/runs/<task>.r<k>.calls.jsonl) against
 // a fresh start scene, no model: how a changed check scores builds agents already made. Ids the old run got
 // back are mapped to the new ones by their order in each answer, start-scene uuids by object name.
+// --expect <score>: exit 1 when any row scores below it (the controls smoke: a hand build that fails = a broken check)
+const EXPECT = opt('--expect', '') === '' ? null : Number(opt('--expect', ''));
 const REPLAY = opt('--replay', '') ? path.resolve(opt('--replay', '')) : '';
 const CLOUD = opt('--cloud', path.resolve(CORE, '..', 'cloud'));
 const CLOUD_REF = opt('--cloud-ref', 'origin/main');
@@ -665,3 +667,14 @@ fs.writeFileSync(
 	JSON.stringify({ ...meta, finished: new Date().toISOString(), rows }, null, '\t')
 );
 console.log(md);
+if (EXPECT !== null) {
+	const low = rows.filter((r) => !(r.score >= EXPECT));
+	if (low.length) {
+		console.log(
+			`FAIL ${low.length} row(s) below ${EXPECT}: ` +
+				low.map((r) => r.task + ' ' + r.score + ' (' + r.why + ')').join('; ')
+		);
+		process.exit(1);
+	}
+	console.log(`PASS all ${rows.length} row(s) at ${EXPECT} or above`);
+}

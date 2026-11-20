@@ -17,6 +17,10 @@
 //       [--catalog-dir <dir with tools.json catalog.js relay.js>] [--max-turns 60] [--agent-timeout 1200]
 //       [--no-agent]   (the start scene only: every check must score 0 — the counterfactual)
 //       [--script <file.json>]   (instead of a model: a fixed list of {tool, args} per task id — proves a check can pass)
+//       [--replay <run dir>]   (re-score the builds a past run recorded, no model: ids mapped from its answers)
+//       [--expect <score>]   (exit 1 if any row scores below it — `npm run eval:smoke` = the hand-built controls)
+//
+// The gate number (v1.68.0, 3 runs x 15): eval/BASELINE.md.
 //
 // It costs model tokens: NOT part of the release battery. `npm run eval:results` in tools/agent.
 import fs from 'node:fs';
@@ -644,7 +648,17 @@ const meta = {
 	appUrl: h.URL,
 	catalog: FILES.ref,
 	catalogTools: CATALOG.tools?.length,
-	coreRef: CATALOG.generator?.coreRef,
+	// the catalog's own build stamp (which core it was generated from) vs the app actually under test
+	catalogBuiltFrom: CATALOG.generator?.coreRef,
+	app: (() => {
+		try {
+			return execFileSync('git', ['describe', '--tags'], { cwd: path.join(HERE, '..', '..', '..') })
+				.toString()
+				.trim();
+		} catch {
+			return undefined;
+		}
+	})(),
 	maxTurns: MAX_TURNS,
 	runs: RUNS,
 	started: new Date().toISOString()

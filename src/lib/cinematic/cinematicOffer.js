@@ -11,6 +11,18 @@ export function asQuality(q) {
 	return q === 'basic' || q === 'standard' || q === 'high' ? q : DEFAULT_QUALITY;
 }
 
+/** a Quest / headset browser */
+export const HEADSET_UA = /OculusBrowser|Quest|Pico/i;
+
+/**
+ * Is the probe worth downloading here? (100-int: phones, tablets and headsets download nothing new.) The boot
+ * path asks this before it imports the probe chunk; only a desktop browser with WebGPU goes on to the probe.
+ * @param {{ desktop: boolean, userAgent?: string, gpu: boolean }} f
+ */
+export function worthProbing(f) {
+	return !!f.desktop && !HEADSET_UA.test(String(f.userAgent || '')) && !!f.gpu;
+}
+
 /**
  * Is the switch offered here? Every fact is gathered by the caller (cinematicState.js).
  * @param {{

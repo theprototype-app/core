@@ -139,3 +139,14 @@ describe('render/view.js', () => {
 		expect(disposed).toBe(2);
 	});
 });
+
+// 100-int: the boot path's pre-check before the probe chunk is imported (phones / tablets / headsets download nothing)
+import { worthProbing } from '../../src/lib/cinematic/cinematicOffer.js';
+describe('worthProbing (100-int)', () => {
+	const chrome = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36';
+	const quest = 'Mozilla/5.0 (X11; Linux x86_64; Quest 3) AppleWebKit/537.36 (KHTML, like Gecko) OculusBrowser/38.0.0.0 Chrome/132.0.0.0 VR Safari/537.36';
+	it('a desktop with WebGPU goes on to the probe', () => expect(worthProbing({ desktop: true, userAgent: chrome, gpu: true })).toBe(true));
+	it('a phone or tablet stops here even with WebGPU', () => expect(worthProbing({ desktop: false, userAgent: chrome, gpu: true })).toBe(false));
+	it('a headset browser stops here even when it reports a desktop pointer', () => expect(worthProbing({ desktop: true, userAgent: quest, gpu: true })).toBe(false));
+	it('no WebGPU stops here', () => expect(worthProbing({ desktop: true, userAgent: chrome, gpu: false })).toBe(false));
+});

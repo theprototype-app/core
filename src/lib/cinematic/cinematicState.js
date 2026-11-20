@@ -9,7 +9,7 @@ import { deviceClass, browserSaysMobile } from '../deviceClass.js';
 import { isVRMode, globalRenderer, globalScene, globalCamera } from '../../stores/sceneStore';
 import { showToast } from '../../stores/appStore';
 import { safeStorage } from '../safeStorage';
-import { offerVerdict, asQuality } from './cinematicOffer.js';
+import { offerVerdict, asQuality, HEADSET_UA } from './cinematicOffer.js';
 import { cinematicPrefs, cinematicState, cinematicDisabled } from './cinematicStore.js';
 
 export { cinematicPrefs, cinematicState, disableCinematic } from './cinematicStore.js';
@@ -36,7 +36,7 @@ export function probeCinematic() {
 		const nav = typeof navigator !== 'undefined' ? navigator : {};
 		const facts = {
 			desktop: get(deviceClass) === 'desktop' && !browserSaysMobile(),
-			quest: /OculusBrowser|Quest|Pico/i.test(String(nav.userAgent || '')),
+			quest: HEADSET_UA.test(String(nav.userAgent || '')),
 			xr: !!get(isVRMode),
 			gpu: !!nav.gpu,
 			chromium: chromium(),

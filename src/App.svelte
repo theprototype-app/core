@@ -204,6 +204,8 @@ import { startMusicToolbox } from './lib/musicToolbox'
   import WindowsOverlay from './components/windows/WindowsOverlay.svelte'
   import { peers, userdata } from './stores/appStore'
   import { get } from 'svelte/store'
+  import { deviceClass, browserSaysMobile } from '$lib/deviceClass.js'
+  import { worthProbing } from '$lib/cinematic/cinematicOffer.js'
   import { initModules, disabledModules } from '$lib/moduleSDK'
   import { coreModules } from './modules/index.js'
   import ModulesManager from './components/menu/ModulesManager.svelte'
@@ -239,8 +241,12 @@ import { startMusicToolbox } from './lib/musicToolbox'
     // report about the app freezing tends to be written.
     startSceneMetrics()
     // 100 C1: is the Cinematic view offered here (a strong desktop on Chrome's WebGPU path)? Asked after the
-    // first load has had its turn; a device that left it on comes back to it (the probe mounts the lazy switch)
-    if (webglOk) setTimeout(() => void import('$lib/cinematic/cinematicState.js').then((m) => m.probeCinematic().then((ok) => { if (ok && get(m.cinematicPrefs).on) void m.setCinematic(true) })), 4000)
+    // first load has had its turn; a device that left it on comes back to it (the probe mounts the lazy switch).
+    // Phones, tablets and headsets stop at worthProbing and download nothing (100-int).
+    if (webglOk) setTimeout(() => {
+      if (!worthProbing({ desktop: get(deviceClass) === 'desktop' && !browserSaysMobile(), userAgent: navigator.userAgent, gpu: !!(/** @type {any} */ (navigator)).gpu })) return
+      void import('$lib/cinematic/cinematicState.js').then((m) => m.probeCinematic().then((ok) => { if (ok && get(m.cinematicPrefs).on) void m.setCinematic(true) }))
+    }, 4000)
     // 78 F5: the viewport capture stack (one Esc owner, installed before any tool arms)
     startCaptureModes()
     // 34 PF/R1: the always-on light ring (moments, beacon windows) + user recordings

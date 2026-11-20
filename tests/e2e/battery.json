@@ -324,6 +324,7 @@
 		"agent-room": 240,
 		"photo-mode": 420,
 		"cinematic-view": 600,
+		"cinematic-offer-net": 240,
 		"text-path": 360,
 		"text-object": 480,
 		"path-object": 480,

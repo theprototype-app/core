@@ -106,3 +106,28 @@ describe('B3/B4 server error bodies become one-line hints', () => {
 		expect(describeAiError(err)).toMatch(/No answer within 10 s/);
 	});
 });
+
+// sk3-int: the error half moved to the aiErrors.js leaf so the boot paths (stt.js in the play boot,
+// assistant.js + AiSettings in the editor's) stop pulling the whole chat client in (~5 KB gz: SvelteKit 3's
+// router growth fits under the boot-size gate). Counterfactual: on v1.68.0 stt.js and assistant.js import
+// './client.js' statically and the identity check has no second module to compare.
+describe('sk3-int aiErrors leaf', () => {
+	it('client.js re-exports the leaf: one AiHttpError class, one describeAiError', async () => {
+		const leaf = await import('../../src/lib/ai/aiErrors.js');
+		expect(leaf.AiHttpError).toBe(AiHttpError);
+		expect(leaf.describeAiError).toBe(describeAiError);
+		expect(leaf.serverErrorHint).toBe(serverErrorHint);
+		expect(new leaf.AiHttpError(401, '') instanceof AiHttpError).toBe(true);
+	});
+	it('the boot-path modules do not import the chat client statically', async () => {
+		const sources = {
+			stt: (await import('../../src/lib/ai/stt.js?raw')).default,
+			assistant: (await import('../../src/lib/ai/assistant.js?raw')).default,
+			AiSettings: (await import('../../src/components/menu/settings/AiSettings.svelte?raw')).default
+		};
+		for (const [f, src] of Object.entries(sources)) {
+			expect(src, f).not.toMatch(/^\s*import\s[^;]*from\s+['"](\.\/client(\.js)?|\$lib\/ai\/client(\.js)?)['"]/m);
+			expect(src.length, f).toBeGreaterThan(500);
+		}
+	});
+});

@@ -82,7 +82,7 @@ h.run(async () => {
 		6000
 	);
 	const marker = await page.evaluate(() => window.__tp.test.v1.playMode.playMarkerState?.() ?? false);
-	h.check(marker === true, 'the marker is a SvelteKit shallow entry (sveltekit:states.tpPlay)');
+	h.check(marker === true, 'the marker is a SvelteKit shallow entry (tpPlay on the current entry)');
 	await page.evaluate(() => window.__tp.test.v1.playMode.exitPlay());
 	await h.eventually(
 		() => page.evaluate(() => window.__tp.test.v1.playMode.playBackMarker()),

@@ -2,7 +2,8 @@ import { writable, get } from 'svelte/store';
 import { showToast } from '../../stores/appStore.js';
 import { activeAiConfig } from './providers.js';
 import { explainMissing } from '../tools/toolLinks.js';
-import { runChat, describeAiError, AiHttpError } from './client.js';
+// sk3-int: the chat client loads on the first prompt (~5 KB gz off the editor boot); the error half is a leaf
+import { describeAiError, AiHttpError } from './aiErrors.js';
 import { getAiTools, executeAiTool, buildSystemPrompt, summarizeScene, repairToolCall, setTurnPictures } from './tools.js';
 import { userContent, limitPictures, hasPictures, isVisionRefusal } from './visionParts.js';
 import { visionSupport } from './visionLimits.js'; // 73 AI4
@@ -235,6 +236,7 @@ export async function runPrompt(text, images = []) {
 	const appliedCount = () => tally.uuids.size + tally.other;
 	let failed = 0;
 	try {
+		const { runChat } = await import('./client.js');
 		const result = await runChat({
 			config,
 			messages: apiHistory,

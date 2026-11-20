@@ -1,6 +1,9 @@
 import { sveltekit } from '@sveltejs/kit/vite';
+import adapter from '@sveltejs/adapter-static';
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import tailwindcss from '@tailwindcss/vite';
-import { defineConfig, runnerImport, type Plugin } from 'vite';
+import { defineConfig, loadEnv, runnerImport, type Plugin } from 'vite';
+import { cspDirectives } from './csp.config.js';
 import pkg from './package.json';
 // @ts-ignore -- no @types/node in this project (adding them shifts the svelte-check baseline)
 import { execSync } from 'node:child_process';
@@ -8,6 +11,16 @@ import { execSync } from 'node:child_process';
 import { writeFileSync, readFileSync, rmSync } from 'node:fs';
 // @ts-ignore -- same node-types caveat
 import { createRequire } from 'node:module';
+// @ts-ignore -- same node-types caveat
+import { fileURLToPath } from 'node:url';
+
+// sk3: SvelteKit 3 reads its options from the sveltekit() plugin below (svelte.config.js is gone).
+// 69 T3: a build ships a Content Security Policy (csp.config.js); `npm run dev` does not
+// @ts-ignore -- same node-types caveat
+const building = process.argv.includes('build');
+// @ts-ignore -- same node-types caveat
+const buildEnv = { ...loadEnv(process.env.MODE || 'production', process.cwd(), 'VITE_'), ...process.env };
+const directives = building ? cspDirectives(buildEnv) : null;
 
 // Version identity is baked at build time (V1): `npm version` in package.json is the
 // single source of truth, the sha comes from the checkout. vite `define` reaches dev,
@@ -264,8 +277,25 @@ export default defineConfig({
 			emitVersionJson(),
 			thirdPartyNotices(),
 			nodeRegistryCheck(), // 2.0 N1: a node type missing a half fails the build
-			sveltekit()
+			sveltekit({
+				preprocess: vitePreprocess(),
+				adapter: adapter(),
+				// sk3: SvelteKit 3 polls /_app/version.json hourly by default and flips `updated.current`. The
+				// "New version … — Reload" prompt already exists (V8, src/lib/updateCheck.js: our own
+				// version.json every 15 min + on focus, with the release number and the content-stale mark),
+				// so the kit poll would be a second timer nobody reads. Off. (Kit 3 still checks once on each
+				// focus / visibility change; that cannot be configured and fails silently offline.)
+				version: { pollInterval: 0 },
+				// hash mode: the pages are prerendered, so the policy goes into each page's <meta> with the
+				// hash of SvelteKit's own inline boot script
+				...(directives ? { csp: { mode: 'hash' as const, directives } } : {})
+			})
 		],
+	// sk3: `$lib` is OUR alias now (SvelteKit 3 stopped generating it and moved to `#lib` subpath
+	// imports). The same mapping is in tsconfig.json `paths` (svelte-check) and vitest.config.ts.
+	resolve: {
+		alias: { $lib: fileURLToPath(new URL('./src/lib', import.meta.url)) }
+	},
 		// the transform above only reaches @shaderfrog/core if it is served as SOURCE:
 		// vite pre-bundles deps with esbuild, which a Rollup-style transform hook never
 		// sees (the guardThrelteXr lesson).
@@ -305,7 +335,9 @@ export default defineConfig({
 		})()
 	},
 	ssr: {
-		noExternal: ['three']
+		// sk3: cookie too — SvelteKit 3 needs cookie 2 (its own nested copy) but the root node_modules/cookie is
+		// express's 0.7 (the `peer` dev server); left external, the prerender imported 0.7 and died on parseCookie
+		noExternal: ['three', 'cookie']
 	},
 	// 94 SP3: `TP_SOURCEMAP=1 npm run build` maps every chunk back to its sources, so
 	// `node scripts/boot-size.cjs --sources <page>` can say WHICH modules a page's boot carries
@@ -316,9 +348,12 @@ export default defineConfig({
 		// left alone, the bundler splits that core into a chunk of its own, and the boot then fetches two
 		// chunks where it fetched one (+3 KB gzip of chunk overhead for every page). One group keeps the
 		// boot's three exactly as it was; the lazy WebGPU chunk imports its core from there.
+		// sk3-int: `codeSplitting`, not the deprecated `advancedChunks` alias -- SvelteKit 3 sets
+		// output.codeSplitting itself (its manifest group), which silently drops an advancedChunks group;
+		// Vite's config merge concatenates both group lists.
 		rolldownOptions: {
 			output: {
-				advancedChunks: {
+				codeSplitting: {
 					groups: [{ name: 'three.module', test: /[\\/]node_modules[\\/]three[\\/]build[\\/]three\.(core|module)\.js$/ }]
 				}
 			}

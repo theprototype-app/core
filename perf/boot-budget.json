@@ -4,12 +4,12 @@
 	"pages": {
 		"play": {
 			"html": "play.html",
-			"maxJsGzBytes": 2162688,
+			"maxJsGzBytes": 2163727,
 			"maxFirstFrameMs": 20000
 		},
 		"editor": {
 			"html": "index.html",
-			"maxJsGzBytes": 3540280,
+			"maxJsGzBytes": 3544646,
 			"maxFirstFrameMs": 32000
 		}
 	},
@@ -35,6 +35,13 @@
 			"play": "v1.68.0 2105.5 KB -> 2108.7 KB (+3.2), line 2112 KB unchanged",
 			"editor": "v1.68.0 3452.3 KB -> 3456.4 KB (+4.1) -> line 3457.3 KB = v1.68.0 + 5 KB, the brief's own boot allowance for the Cinematic view (offer probe, store, the view seam, the Shift+Z row; everything else is a lazy chunk)",
 			"note": "the old line left 3.7 KB over v1.68.0, and renamed-chunk churn alone moves the editor by about 1 KB between builds of the same code (+3 bytes in each of ~300 chunks), so the lane read 3455.4 to 3457.0 across builds; QUESTIONS-100-view 9, the integrator may veto"
+		},
+		{
+			"date": "2026-11-20",
+			"lane": "sk3-int (SvelteKit 3, 1.70.0)",
+			"play": "v1.69.0 2108.0 KB -> 2111.0 KB (+3.0) -> line 2113.0 KB = v1.69.0 + 5 KB",
+			"editor": "v1.69.0 3456.6 KB -> 3459.5 KB (+2.9) -> line 3461.6 KB = v1.69.0 + 5 KB",
+			"note": "the orchestrator's line for the SvelteKit 3 release: the 1.69.0 measurement (same machine, same run) + 5 KB. Kit 3's client runtime is bigger (navigation 14.6 + client 8.7 + client.svelte 1.9 KB vs kit 2's index-client 24.9 KB); the AI chat client left both boots to pay for it (sk3-int Q1). On kit 3 the 100 C1 three.core group must be output.codeSplitting (kit 3 sets that option itself and an advancedChunks group is dropped: three split again, +2 KB per page)"
 		}
 	],
 	"throttle": {

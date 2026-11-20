@@ -39,11 +39,12 @@
 		"access": "public"
 	},
 	"scripts": {
-		"test": "node test/chat.test.mjs && node test/messages.test.mjs && node test/bridge.test.mjs && node test/link.test.mjs && node test/mcp.test.mjs && node test/repl.test.mjs && node test/wire.test.mjs && node test/catalog.test.mjs && node test/http.test.mjs",
+		"test": "node test/eval.test.mjs && node test/chat.test.mjs && node test/messages.test.mjs && node test/bridge.test.mjs && node test/link.test.mjs && node test/mcp.test.mjs && node test/repl.test.mjs && node test/wire.test.mjs && node test/catalog.test.mjs && node test/http.test.mjs",
 		"spike": "node src/spike.js",
 		"smoke": "node src/cli.js smoke",
 		"repl": "node src/cli.js repl",
-		"mcp": "node src/cli.js mcp"
+		"mcp": "node src/cli.js mcp",
+		"eval:results": "node eval/results.mjs"
 	},
 	"dependencies": {
 		"@modelcontextprotocol/sdk": "^1.32.1",

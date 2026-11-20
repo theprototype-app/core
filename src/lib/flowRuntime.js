@@ -1853,7 +1853,9 @@ function updateBehaviourInputs(time, ctx) {
 				continue;
 			}
 			behaviourInputStats.offered++;
-			const ok = behavioursRef.behaviourInput?.(node.id, handle, stamp);
+			// 2.0-n3b step 1: the handler hears WHO fired it ({by}: a peer id, '' when unknown) — per-person
+			// results (a coin for the toucher, a score for the scorer) without guessing
+			const ok = behavioursRef.behaviourInput?.(node.id, handle, stamp, { by: stampOrigin(node.id, stamp, ctx, handle) });
 			if (!ok) behaviourInputStats.refused++;
 			behaviourInputStats.last = { key, stamp, seenAt: actionSeenAt.get(node.id), verdict: ok ? 'offered' : 'no such input' };
 		}

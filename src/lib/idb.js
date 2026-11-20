@@ -23,6 +23,12 @@
 //      `transaction()` that throws because the handle is closing), so the next call
 //      reopens rather than inheriting a dead handle.
 import { log } from './diagnostics';
+import { storageIsolated } from './safeStorage';
+
+// 61 G3: a "Test with players" bot frame shares this origin's IndexedDB with the tab that started it,
+// so it keeps its snapshots in memory instead (safeStorage.js says why). Nothing it saves survives Stop.
+/** @type {Map<string, any> | null} */
+const memoryStore = storageIsolated ? new Map() : null;
 
 const DB_NAME = 'theprototype';
 const STORE = 'snapshots';
@@ -229,6 +235,7 @@ function applyForcedFailure(tx, request) {
 
 /** @param {string} key */
 export function idbGet(key) {
+	if (memoryStore) return Promise.resolve(memoryStore.get(String(key)));
 	return withDb('get', (db) => {
 		const tx = db.transaction(STORE);
 		const request = tx.objectStore(STORE).get(key);
@@ -240,6 +247,7 @@ export function idbGet(key) {
 
 /** @param {string} key @param {any} value */
 export function idbPut(key, value) {
+	if (memoryStore) return Promise.resolve(void memoryStore.set(String(key), value));
 	return withDb('put', (db) => {
 		const tx = db.transaction(STORE, 'readwrite');
 		const request = tx.objectStore(STORE).put(value, key);
@@ -251,6 +259,7 @@ export function idbPut(key, value) {
 
 /** All keys in the store (used to list saved environment presets) */
 export function idbKeys() {
+	if (memoryStore) return Promise.resolve([...memoryStore.keys()]);
 	return withDb('keys', (db) => {
 		const tx = db.transaction(STORE);
 		const request = tx.objectStore(STORE).getAllKeys();
@@ -262,6 +271,7 @@ export function idbKeys() {
 
 /** @param {string} key */
 export function idbDelete(key) {
+	if (memoryStore) return Promise.resolve(void memoryStore.delete(String(key)));
 	return withDb('delete', (db) => {
 		const tx = db.transaction(STORE, 'readwrite');
 		const request = tx.objectStore(STORE).delete(key);

@@ -23,6 +23,113 @@
 // of the history-cycle family, so any import at all here is a future cycle. It is also
 // what lets the unit layer test it with no browser.
 
+// 61 G3 (Test with players) — A BOT FRAME KEEPS ITS OWN STORAGE. A simulated player is a whole app
+// instance in a hidden SAME-ORIGIN frame, so it shares this origin's localStorage, sessionStorage and
+// IndexedDB with the tab that started it. Left alone it would autosave over the host's session, write
+// its settings into the host's, and leave `tp:rejoin` (sessionStorage, per TOP-LEVEL tab) behind as its
+// pagehide goodbye — the host's next reload would then try to rejoin as the bot. A frame opened with
+// `?tpbot=` reads the real stores (it starts with this user's settings) and writes only to memory, so
+// stopping the test leaves nothing behind. idb.js keeps a memory store on the same flag.
+
+/** @returns {boolean} */
+function detectIsolated() {
+	try {
+		if (typeof window === 'undefined' || typeof location === 'undefined' || window.parent === window) return false;
+		return new URLSearchParams(location.search).has('tpbot');
+	} catch {
+		return false;
+	}
+}
+
+/** True in a "Test with players" bot frame: every write stays in this frame's memory. */
+export const storageIsolated = detectIsolated();
+
+/**
+ * A Storage that reads through to `real` and writes to memory only (a removal is remembered too).
+ * Exported for the unit test. @param {Storage | null} real @returns {Storage}
+ */
+export function overlayStorage(real) {
+	/** @type {Map<string, string | null>} null = removed here */
+	const mine = new Map();
+	let cleared = false;
+	const realKeys = () => {
+		/** @type {string[]} */
+		const out = [];
+		if (!real || cleared) return out;
+		try {
+			for (let i = 0; i < real.length; i++) {
+				const k = real.key(i);
+				if (k != null) out.push(k);
+			}
+		} catch {
+			/* unreachable: nothing to read through */
+		}
+		return out;
+	};
+	const allKeys = () => {
+		const out = new Set(realKeys().filter((k) => !mine.has(k)));
+		for (const [k, v] of mine) if (v !== null) out.add(k);
+		return [...out];
+	};
+	const store = {
+		/** @param {string} k */
+		getItem(k) {
+			k = String(k);
+			if (mine.has(k)) return mine.get(k) ?? null;
+			if (cleared || !real) return null;
+			try {
+				return real.getItem(k);
+			} catch {
+				return null;
+			}
+		},
+		/** @param {string} k @param {any} v */
+		setItem(k, v) {
+			mine.set(String(k), String(v));
+		},
+		/** @param {string} k */
+		removeItem(k) {
+			mine.set(String(k), null);
+		},
+		clear() {
+			mine.clear();
+			cleared = true;
+		},
+		/** @param {number} i */
+		key(i) {
+			return allKeys()[i] ?? null;
+		},
+		get length() {
+			return allKeys().length;
+		}
+	};
+	return /** @type {Storage} */ (/** @type {any} */ (store));
+}
+
+/** @type {Storage | null} the bot frame's localStorage overlay */
+let isolatedLocal = null;
+if (storageIsolated) {
+	for (const name of /** @type {const} */ (['localStorage', 'sessionStorage'])) {
+		/** @type {Storage | null} */
+		let real = null;
+		try {
+			real = window[name];
+		} catch {
+			real = null;
+		}
+		// sessionStorage does NOT read through: it holds this tab's `tp:rejoin`, and a bot that read it would
+		// rejoin the host's own last session on its first boot
+		const overlay = overlayStorage(name === 'localStorage' ? real : null);
+		if (name === 'localStorage') isolatedLocal = overlay;
+		// raw callers (rejoin.js, errorReports, the auto-quality notice) reach the overlay too
+		try {
+			Object.defineProperty(window, name, { value: overlay, configurable: true, writable: false });
+		} catch {
+			/* not replaceable here: safeStorage still uses the overlay below */
+		}
+	}
+}
+
 /** keys whose real write failed, or everything when storage is unreachable @type {Map<string, string>} */
 const memory = new Map();
 /** how many writes have fallen back — read by the diagnostics section and the suite */
@@ -37,6 +144,7 @@ let lastError = null;
  * @returns {Storage | null}
  */
 function backing() {
+	if (isolatedLocal) return isolatedLocal;
 	try {
 		return typeof localStorage === 'undefined' ? null : localStorage;
 	} catch {

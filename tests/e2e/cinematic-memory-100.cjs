@@ -3,9 +3,12 @@
 // chunk, the pipeline's shader cache, V8's JIT warm-up and the generation-0 sweep are one-time costs, not growth).
 // 100-int (orchestrator + claude:9, 2026-11-20): the run is 25 trips. The 5 % gate is judged on the steady state,
 // the last ten trips (trip 15 -> trip 25), and the TAIL SLOPE (least-squares heap slope over trips 16-25) must stay
-// under SLOPE_KB (100) KB per trip: a real per-trip leak keeps its slope, warm-up growth flattens out. Trips 1-10
+// small (SLOPE_KB, off by default, see below): a real per-trip leak keeps its slope, warm-up growth flattens out. Trips 1-10
 // after the warm-up and the whole run are printed too (not gates; the PC Product shot reads ~5 % on trips 1-10
 // from the JIT warm-up). With TRIPS < 20 the gate falls back to the whole run and no slope is judged.
+// One run's 10-point slope is noisy: unchanged code read 24-107 KB/trip on the PC Product shot over five runs (100-int
+// QUESTIONS 2), so the slope is REPORTED here and judged across runs by cinematic-memory-ab.cjs: union vs base, both
+// series interleaved (B U B U ...). SLOPE_KB=<n> turns a single-run line back on.
 //
 //   PC (real Chrome through the device lab, by day):
 //     cd ~/.code/lanes-30/100-light/lab && TREE=<tree> PORT=7035 GPU_MEM=pc SCENE=tavern-interior \
@@ -14,7 +17,7 @@
 //     APP_URL=https://theprototype.app:7034/ e2e-slot --local --exclusive --wait 9000 --dev $PWD 7034 -- \
 //       env GPU_MEM=deck SCENE=tavern-interior node tests/e2e/cinematic-memory-100.cjs
 //
-// env: SCENE (tavern-interior), TRIPS (25), SLOPE_KB (100), DWELL_MS (1500), GATE_PCT (5), OUT (test-results/100-view/memory),
+// env: SCENE (tavern-interior), TRIPS (25), SLOPE_KB (0 = report only), DWELL_MS (1500), GATE_PCT (5), OUT (test-results/100-view/memory),
 //      WARM (4 warm-up trips), NOPRUNE=1 (the control: listeners left where three put them), SNAP=1 (heap snapshots A/B for heapdiff)
 const { chromium } = require('playwright');
 const fs = require('fs');
@@ -25,7 +28,7 @@ const CDP = process.env.CDP || '';
 const SCENE = process.env.SCENE || 'tavern-interior';
 const TRIPS = Number(process.env.TRIPS || 25);
 const WARM = Number(process.env.WARM || 4);
-const SLOPE_KB = Number(process.env.SLOPE_KB || 100);
+const SLOPE_KB = Number(process.env.SLOPE_KB || 0); // 0 = report only (judged by cinematic-memory-ab.cjs)
 const GATE_TRIPS = 10;
 const DWELL = Number(process.env.DWELL_MS || 1500);
 const GATE = Number(process.env.GATE_PCT || 5);
@@ -216,12 +219,12 @@ async function trip(page) {
 		} else result.tailSlopeKB = null;
 		const heapOk = result.heapPct != null && result.heapPct <= GATE;
 		const gpuOk = result.gpuPct == null ? null : result.gpuPct <= GATE;
-		const slopeOk = result.tailSlopeKB == null ? null : result.tailSlopeKB < SLOPE_KB;
+		const slopeOk = result.tailSlopeKB == null || !SLOPE_KB ? null : result.tailSlopeKB < SLOPE_KB;
 		result.verdict =
 			heapOk && gpuOk !== false && slopeOk !== false
-				? `PASS${gpuOk === null ? ' (heap only: no GPU counter)' : ''}${slopeOk === null ? ' (no tail slope: < 20 trips)' : ''}`
+				? `PASS${gpuOk === null ? ' (heap only: no GPU counter)' : ''}${slopeOk === null ? (SLOPE_KB ? ' (no tail slope: < 20 trips)' : ' (tail slope reported, judged across runs)') : ''}`
 				: 'FAIL';
-		log(result.gateWindow + ': heap', result.heapPct, '% gpu', result.gpuPct, '% | tail slope', result.tailSlopeKB, 'KB/trip (<', SLOPE_KB, ') | trips 1-10 heap', result.heapPctFirst10, '% gpu', result.gpuPctFirst10, '% | whole run heap', result.heapPctRun, '% (', result.heapPerTripKB, 'KB/trip) gpu', result.gpuPctRun, '% ->', result.verdict);
+		log(result.gateWindow + ': heap', result.heapPct, '% gpu', result.gpuPct, '% | tail slope', result.tailSlopeKB, SLOPE_KB ? `KB/trip (< ${SLOPE_KB})` : 'KB/trip', '| trips 1-10 heap', result.heapPctFirst10, '% gpu', result.gpuPctFirst10, '% | whole run heap', result.heapPctRun, '% (', result.heapPerTripKB, 'KB/trip) gpu', result.gpuPctRun, '% ->', result.verdict);
 		log('generations', JSON.stringify(result.debug?.generations ?? null));
 		if (result.verdict === 'FAIL') rc = 1;
 	} catch (e) {

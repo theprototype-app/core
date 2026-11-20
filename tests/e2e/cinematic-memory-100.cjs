@@ -162,7 +162,7 @@ async function trip(page) {
 		const h1 = await heap(cdp);
 		const g1 = await gpuBytes(pid);
 		result.after = { heap: h1, gpu: g1 };
-		result.debug = await page.evaluate(async () => (await window.__stores.cinematicView).cinematicDebug?.() ?? null).catch(() => null);
+		result.debug = await page.evaluate(async () => (await window.__stores.cinematicState.cinematicView()).cinematicDebug?.() ?? null).catch(() => null);
 		const pct = (a, b) => (a == null || b == null || !a ? null : +(((b - a) / a) * 100).toFixed(2));
 		result.heapPct = pct(h0, h1);
 		result.gpuPct = pct(g0, g1);

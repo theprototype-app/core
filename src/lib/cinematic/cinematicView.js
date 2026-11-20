@@ -18,7 +18,8 @@
 // and the switch is disabled for the rest of the session with the reason.
 import * as THREE from 'three';
 import { get } from 'svelte/store';
-import { releaseMainContext, restoreMainContext, setViewOwner, flushHeldDisposals, viewSelection } from '../render/view.js';
+import { setViewOwner, flushHeldDisposals, viewSelection } from '../render/view.js';
+import { releaseMainContext, restoreMainContext } from './mainContext.js';
 import { glGenerationEnding, glGenerationStarting, gpuGenerationStarting, gpuGenerationEnded, generationStats } from '../render/generations.js';
 import { compileAsync } from '../render/compile.js';
 import { captureEnvironment, useCopies, restoreEnvironment } from './envHandover.js';
@@ -452,7 +453,7 @@ export function cinematicOn() {
 	return !!live?.built && !live.failing;
 }
 
-/** e2e / debug: what the view is doing and what it cost (the debug hook `__stores.cinematicView`) */
+/** e2e / debug: what the view is doing and what it cost (the debug hook: `__stores.cinematicState.cinematicView()`) */
 export function cinematicDebug(reset = false) {
 	const f = log.frames.filter((x) => x < 1000);
 	const out = {

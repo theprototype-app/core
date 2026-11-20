@@ -8,9 +8,9 @@
 //     (threlte's scheduler keeps running: flows, physics, gizmos, the recorder's stages);
 //   · `frameCanvas(renderer)` / `frameCount(renderer)`: the canvas a frame lands on and a counter
 //     that moves once per drawn frame, for whoever copies frames (video export, the moment buffer);
-//   · `releaseMainContext` / `restoreMainContext`: the WebGL half of the switch (context lost and
-//     restored ON PURPOSE — Scene.svelte's loss handler asks `mainContextReleased()` and does not
-//     report a lost 3D view for it);
+//   · `mainContextReleased()`: the WebGL half of the switch loses and restores the context ON PURPOSE
+//     (cinematic/mainContext.js, lazy); Scene.svelte's loss handler asks this and does not report a
+//     lost 3D view for it;
 //   · `setViewSelection` / `viewSelection()`: the outlined objects (Outline.svelte owns the sets).
 
 /** @type {{ draw: ((delta: number) => void) | null, canvas: HTMLCanvasElement | null, frames: number, released: boolean, selection: (() => { selected: any[], locked: any[] }) | null }} */
@@ -52,41 +52,9 @@ export function mainContextReleased() {
 	return owner.released;
 }
 
-/** @param {EventTarget} el @param {string} type @param {number} ms */
-function once(el, type, ms) {
-	return new Promise((resolve) => {
-		const t = setTimeout(() => (el.removeEventListener(type, on), resolve(false)), ms);
-		const on = () => (clearTimeout(t), el.removeEventListener(type, on), resolve(true));
-		el.addEventListener(type, on);
-	});
-}
-
-/**
- * Release the main WebGL renderer's GPU state: render lists dropped, the context lost on purpose
- * (every GL object goes with it). three keeps its JS state; `restoreMainContext` brings it back.
- * @param {any} renderer @param {number} [ms]
- */
-export async function releaseMainContext(renderer, ms = 10000) {
-	owner.released = true;
-	const canvas = renderer.domElement;
-	const lost = once(canvas, 'webglcontextlost', ms);
-	renderer.renderLists?.dispose?.();
-	renderer.forceContextLoss();
-	const ok = await lost;
-	// a TASK after the event: a loss nobody default-prevented cannot be restored, and the other
-	// listeners (three's, Scene.svelte's) run after ours resolved
-	await new Promise((resolve) => setTimeout(resolve, 0));
-	return ok;
-}
-
-/** @param {any} renderer @param {number} [ms] */
-export async function restoreMainContext(renderer, ms = 10000) {
-	const canvas = renderer.domElement;
-	const restored = once(canvas, 'webglcontextrestored', ms);
-	renderer.forceContextRestore();
-	const ok = await restored;
-	owner.released = false;
-	return ok;
+/** the switch marks the WebGL context's loss as deliberate (cinematic/mainContext.js) @param {boolean} on */
+export function setMainReleased(on) {
+	owner.released = on;
 }
 
 /** @type {any[]} geometry disposals held while the view draws */

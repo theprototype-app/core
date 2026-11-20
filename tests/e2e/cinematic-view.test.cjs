@@ -102,6 +102,10 @@ h.run(async () => {
 	await page.waitForSelector('#cinematic-toggle', { timeout: 30000 });
 	h.check(true, '1. offered here, and the "Preview" pill is on screen');
 	h.check((await page.getAttribute('#cinematic-toggle', 'aria-pressed')) === 'false', '   it starts off');
+	// 100-int: the first-use hint shows once on this device, and is remembered
+	const hintShown = await page.waitForSelector('#cinematic-hint', { timeout: 5000 }).then(() => true, () => false);
+	const hintSeen = await page.evaluate(() => localStorage.getItem('cinematic:hintSeen'));
+	h.check(hintShown && hintSeen === '1', `   the first-use hint shows once and is remembered (shown ${hintShown}, seen ${hintSeen})`);
 
 	// a small scene: two boxes and a sphere on a floor
 	const ids = await page.evaluate(() => {
@@ -117,6 +121,7 @@ h.run(async () => {
 	await page.click('#cinematic-toggle');
 	await waitMode(page, 'on', 'the view came on after the press');
 	h.check((await page.getAttribute('#cinematic-toggle', 'aria-pressed')) === 'true', '2. the pill reads pressed');
+	h.check((await page.locator('#cinematic-hint').count()) === 0, '   the first-use hint goes away once the view is on');
 	await page.waitForTimeout(1500);
 	const share = await drawnShare(page);
 	h.check(share > 0.02, `   the view's canvas holds a drawn frame (${(share * 100).toFixed(1)} % of pixels off the corner colour)`);

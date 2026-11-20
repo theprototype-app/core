@@ -11,6 +11,7 @@
 	import { embedMode } from '$lib/playMode';
 	import { cinematicState, cinematicPrefs, toggleCinematic, setCinematicQuality } from '$lib/cinematic/cinematicState.js';
 	import { QUALITY, QUALITY_HINT, QUALITY_STEPS, HIGH_MAX_PIXELS } from '$lib/cinematic/cinematicCore.js';
+	import { safeStorage } from '$lib/safeStorage';
 
 	let menuOpen = $state(false);
 	let pixels = $state(0);
@@ -37,6 +38,25 @@
 				? 'Cinematic view is on: back to the standard view (Shift+Z)'
 				: 'Cinematic view: bounced light and reflections, on this computer only (Shift+Z)'
 	);
+
+	// 100-int: the first time the switch shows on a device, one line says what it does (the 1.68 moment-hint shape)
+	const HINT_KEY = 'cinematic:hintSeen';
+	let hint = $state(false);
+	$effect(() => {
+		if (!visible || on) return;
+		try {
+			if (safeStorage.getItem(HINT_KEY) === '1') return;
+			safeStorage.setItem(HINT_KEY, '1');
+		} catch {
+			return;
+		}
+		hint = true;
+		const t = setTimeout(() => (hint = false), 8000);
+		return () => clearTimeout(t);
+	});
+	$effect(() => {
+		if (on || menuOpen) hint = false;
+	});
 
 	function measure() {
 		const v = document.getElementById('viewport');
@@ -109,6 +129,9 @@
 				/>
 				<p class="cine-hint">{QUALITY_HINT[$cinematicPrefs.quality]}. Only on this computer: nobody else's view changes.</p>
 			</div>
+		{/if}
+		{#if hint}
+			<p id="cinematic-hint" class="cine-first tp-ui hud-glass" role="status">New: Preview shows bounced light and reflections, on this computer only (Shift+Z)</p>
 		{/if}
 		{#if on && $cinematicState.notShown}
 			<div id="cinematic-not-shown" class="cine-chip"><Badge tone="warn" text={$cinematicState.notShown} /></div>
@@ -206,6 +229,15 @@
 	}
 	.cine-chip {
 		max-width: 100%;
+	}
+	.cine-first {
+		margin: 0;
+		padding: 4px 10px;
+		border-radius: var(--radius-window);
+		font-size: var(--fs-desc);
+		color: var(--text-2);
+		max-width: 280px;
+		text-align: right;
 	}
 	@media (prefers-reduced-motion: no-preference) {
 		.cine-toggle :global(.lucide-loader-circle) {

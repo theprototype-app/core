@@ -7,13 +7,14 @@
 // hundreds of modules do not push the late probe import out of it). All three pages run in one browser with
 // WebGPU exposed, so navigator.gpu is there on every one: the device check is what keeps the phone and the
 // headset out. The desktop page is the positive control (it does fetch the probe).
+// The pages are opened WITHOUT h.setupPage: its `debugStores` turns on the test hooks, which import every lazy
+// module (cinematicState included) and would hide the very request this suite looks for.
 //
 //   APP_URL=https://theprototype.app:7036/ e2e-slot --dev $PWD 7036 -- node tests/e2e/cinematic-offer-net.test.cjs
 const h = require('./helpers.cjs');
 
 const QUEST_UA =
 	'Mozilla/5.0 (X11; Linux x86_64; Quest 3) AppleWebKit/537.36 (KHTML, like Gecko) OculusBrowser/38.0.0.0 SamsungBrowser/4.0 Chrome/132.0.0.0 VR Safari/537.36';
-const BIG_BUFFER = () => performance.setResourceTimingBufferSize(100000);
 
 /** every resource the page asked for that belongs to the Cinematic view (dev: source paths; build: none expected) */
 const cinematicFetches = (/** @type {any} */ page) =>
@@ -25,26 +26,39 @@ const cinematicFetches = (/** @type {any} */ page) =>
 	);
 const hasGpu = (/** @type {any} */ page) => page.evaluate(() => !!(/** @type {any} */ (navigator).gpu));
 
+/** a page as a user gets it: no test hooks, the welcome and disclaimer already seen */
+async function bare(/** @type {any} */ browser, /** @type {any} */ context) {
+	const ctx = await browser.newContext({ ignoreHTTPSErrors: true, ...context });
+	await ctx.addInitScript(() => {
+		performance.setResourceTimingBufferSize(100000);
+		localStorage.setItem('hasSeenDisclaimer', 'true');
+		localStorage.setItem('hasSeenWelcome', 'true');
+	});
+	const page = await ctx.newPage();
+	await page.goto(h.URL, { waitUntil: 'domcontentloaded', timeout: 90000 });
+	await page.waitForSelector('canvas', { timeout: 120000 });
+	return page;
+}
+
 h.run(async () => {
 	const browser = await h.launch({ args: ['--enable-unsafe-webgpu'] });
-	const P = await h.setupPage(browser, 'phone', {
-		init: BIG_BUFFER,
-		context: { viewport: { width: 412, height: 915 }, deviceScaleFactor: 2.625, isMobile: true, hasTouch: true, userAgent: h.N6_UA }
-	});
-	const Q = await h.setupPage(browser, 'quest', { init: BIG_BUFFER, context: { viewport: { width: 1280, height: 720 }, userAgent: QUEST_UA } });
-	const D = await h.setupPage(browser, 'desk', { init: BIG_BUFFER, context: { viewport: { width: 1280, height: 720 } } });
+	const P = await bare(browser, { viewport: { width: 412, height: 915 }, deviceScaleFactor: 2.625, isMobile: true, hasTouch: true, userAgent: h.N6_UA });
+	const Q = await bare(browser, { viewport: { width: 1280, height: 720 }, userAgent: QUEST_UA });
+	const D = await bare(browser, { viewport: { width: 1280, height: 720 } });
 	// the probe is asked 4 s after the app starts; give every page well past that
-	await D.page.waitForTimeout(9000);
+	await D.waitForTimeout(10000);
 
-	const pGpu = await hasGpu(P.page);
-	const dGpu = await hasGpu(D.page);
+	const pGpu = await hasGpu(P);
+	const dGpu = await hasGpu(D);
 	h.check(pGpu, `premise: the phone page has navigator.gpu (so only the device check keeps it out)`);
-	const pc = await P.page.evaluate(() => matchMedia('(pointer: coarse)').matches);
+	const pc = await P.evaluate(() => matchMedia('(pointer: coarse)').matches);
 	h.check(pc, 'premise: the phone page has a coarse pointer');
+	const hooks = await P.evaluate(() => !!(/** @type {any} */ (window).__tp?.test));
+	h.check(!hooks, 'premise: no test hooks on the pages (they would import every lazy module)');
 
-	const p = await cinematicFetches(P.page);
-	const q = await cinematicFetches(Q.page);
-	const d = await cinematicFetches(D.page);
+	const p = await cinematicFetches(P);
+	const q = await cinematicFetches(Q);
+	const d = await cinematicFetches(D);
 	h.check(p.length === 0, `the phone downloaded nothing of the Cinematic view (${p.join(', ') || 'none'})`);
 	h.check(q.length === 0, `the Quest browser downloaded nothing of the Cinematic view (${q.join(', ') || 'none'})`);
 	// positive control: a desktop with WebGPU asks the probe (else the filter above would pass on anything)

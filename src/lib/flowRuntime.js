@@ -1898,6 +1898,22 @@ function shareGameVarOp(req) {
 	applyGameVarOp(req);
 }
 
+/** 2.0-n3b: nodeId -> the peer that made its newest stamp @type {Map<string, {t: number, peer: string}>} */
+const triggerOrigins = new Map();
+
+/** 2.0-n3b: the peer behind the stamp a node acts on ('' = not known: a derived pulse, or history)
+ * @param {string} nodeId @param {number} stamp @param {any} ctx @param {string} [handle] the input (default: the trigger) */
+function stampOrigin(nodeId, stamp, ctx, handle = 'trigger') {
+	for (const edge of edgesInto(edges, nodeId)) {
+		if (handle === 'trigger' ? edge.targetHandle && edge.targetHandle !== 'trigger' : (edge.targetHandle ?? null) !== handle) continue;
+		if (stampOfSource(edge, ctx, new Set()) !== stamp) continue;
+		const key = nodeById(nodes, edge.source)?.type === 'behaviour' && edge.sourceHandle ? edge.source + '#' + edge.sourceHandle : edge.source;
+		const o = triggerOrigins.get(key);
+		if (o && o.t === stamp && o.peer) return o.peer;
+	}
+	return '';
+}
+
 /** @param {number} time @param {any} ctx */
 function updateGameNodes(time, ctx) {
 	const game = viewGame(); // 48 D1: the paused view's own state while it holds a sandbox
@@ -1962,7 +1978,8 @@ function updateGameNodes(time, ctx) {
 			// 34 R2: a kit action. EVERY peer that sees the stamp asks the kit with an id derived
 			// from it (node + stamp), so the authority applies one press once however many peers
 			// saw it — and a perPlayer pulse, seen only by its player, still reaches it
-			runKitNodeAction(type, data, node.id, stamp, node.__graph && node.__graph !== SCENE_GRAPH ? node.__graph : null);
+			// 2.0-n3b: + the peer whose event it was, so "collect" credits the toucher, not the authority
+			runKitNodeAction(type, data, node.id, stamp, node.__graph && node.__graph !== SCENE_GRAPH ? node.__graph : null, stampOrigin(node.id, stamp, ctx));
 		} else if (GAME_FEEL_ACTIONS.includes(type)) {
 			// 30b (core-games): a banner, a sound, a burst or a buzz — LOCAL on every peer from
 			// the replicated stamp, inside the actionSeenAt family above like storevalue (a
@@ -3239,9 +3256,12 @@ function logicNow() {
  * @param {string|null} [sourceHandle]
  * @param {any} [at] 31: where it happened ([x, y, z], objects-group frame), for a received clap
  */
-export function applyNodeTrigger(nodeId, t, replicate = true, sourceHandle = null, at = null, other = undefined, received = false) {
+export function applyNodeTrigger(nodeId, t, replicate = true, sourceHandle = null, at = null, other = undefined, received = false, from = null) {
 	// 36 X6: a contact's other body, received with the stamp (see contactOthers)
 	if (typeof other === 'string') contactOthers.set(nodeId, other);
+	// 2.0-n3b: WHO made this stamp — this peer for a local fire, the sender for a received one — so a
+	// kit action it drives acts for that person (a coin walked into by B is B's coin)
+	triggerOrigins.set(nodeId, { t, peer: received ? String(from ?? '') : String(/** @type {any} */ (get(peers))?.peer?.id ?? '') });
 	// 36 (U10): `<node>#<output>` is a named output's own log entry; the PUSH consumers (a Counter,
 	// a Latch, a Once wired to that output) are found through the node's edges from that handle
 	const hash = typeof nodeId === 'string' ? nodeId.indexOf('#') : -1;

@@ -374,6 +374,9 @@ export const DEBUG_HOOKS = [
 	['viewportPip', () => import('./viewportPip')],
 	['inputDevice', () => import('./inputDevice')],
 	['sceneTemplates', () => import('./sceneTemplates')],
+	// 100 C1: the Cinematic view (state + the lazy switch's debug/e2e surface)
+	['cinematicState', () => import('./cinematic/cinematicState.js')],
+	['cinematicView', () => import('./cinematic/cinematicView.js')],
 	['bvhPicking', () => import('./bvhPicking')],
 	['multiTransform', () => import('./multiTransform')],
 	['objectOrigin', () => import('./objectOrigin')],

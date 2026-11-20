@@ -174,6 +174,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
   import { startSharedLibrary } from '$lib/sharedLibrary'
   import { startSceneIdentity } from '$lib/sceneIdentity'
   import GameChip from './components/hud/GameChip.svelte'
+  import { cinematicState, cinematicPrefs } from '$lib/cinematic/cinematicStore.js' // 100 C1 (a leaf; the probe is lazy)
   import AutoQualityNotice from './components/AutoQualityNotice.svelte' // 40 F12 (was SimplifiedWaterNotice)
   import ShortcutSheet from './components/menu/ShortcutSheet.svelte' // 36 I3
   import HudLayer from './components/hud/HudLayer.svelte'
@@ -238,6 +239,9 @@ import { startMusicToolbox } from './lib/musicToolbox'
     // it keeps measuring while the canvas is remounting — which is exactly when a
     // report about the app freezing tends to be written.
     startSceneMetrics()
+    // 100 C1: is the Cinematic view offered here (a strong desktop on Chrome's WebGPU path)? Asked after the
+    // first load has had its turn; a device that left it on comes back to it (the switch is a lazy chunk)
+    if (webglOk) setTimeout(() => void import('$lib/cinematic/cinematicState.js').then((m) => m.probeCinematic().then((ok) => { if (ok && get(cinematicPrefs).on) void m.setCinematic(true) })), 4000)
     // 78 F5: the viewport capture stack (one Esc owner, installed before any tool arms)
     startCaptureModes()
     // 34 PF/R1: the always-on light ring (moments, beacon windows) + user recordings
@@ -583,6 +587,10 @@ import { startMusicToolbox } from './lib/musicToolbox'
      editor's stand-in for a game's screens, which HudLayer no longer draws outside Play.
      Editor-only (it hides itself in Play, in VR and in embed mode). -->
 <GameChip />
+<!-- 100 C1: the Cinematic view switch, downloaded only where it is offered -->
+{#if $cinematicState.offered}
+  {#await import('./components/cinematic/CinematicSwitch.svelte') then m}<m.default />{/await}
+{/if}
 <AutoQualityNotice />
 <ShortcutSheet />
 <!-- 38 R8 (NOTES-38 #14): Ctrl+K -->

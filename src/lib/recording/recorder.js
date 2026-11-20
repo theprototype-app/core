@@ -17,6 +17,7 @@
 // Everything here is LOCAL: the camera is this viewer's, nothing is sent, nothing is undone. The
 // Explorer item is a local library file like any other (private until shared).
 import * as THREE from 'three';
+import { frameCanvas, frameCount } from '../render/view.js'; // 100 C1: the Cinematic view's canvas when it draws
 import { get } from 'svelte/store';
 import { globalCamera, globalRenderer, globalScene, objectsGroup, orbitControls, selectedObjects, isVRMode, isLocked, TControls, cameraClaim } from '../../stores/sceneStore';
 import { recordingState, recordingPrefs, IDLE_RECORDING } from './recordingStores.js';
@@ -289,7 +290,7 @@ export async function startRecording(override) {
 		return false;
 	}
 	const picked = /** @type {{mime: string, ext: string}} */ (pickMimeType((m) => MediaRecorder.isTypeSupported(m)));
-	const dom = /** @type {HTMLCanvasElement} */ (renderer.domElement);
+	const dom = /** @type {HTMLCanvasElement} */ (frameCanvas(renderer));
 	const out = outputSize(prefs.resolution, { w: dom.width, h: dom.height });
 
 	const restoreScene = takeOverScene(prefs, out);
@@ -436,7 +437,7 @@ export function recordingAfterRender() {
 	if (!s || s.phase !== 'recording') return momentTap?.();
 	const renderer = /** @type {any} */ (get(globalRenderer));
 	if (!renderer) return;
-	const frameNo = renderer.info?.render?.frame ?? -1;
+	const frameNo = frameCount(renderer);
 	const rendered = frameNo !== s.lastRenderFrame;
 	s.lastRenderFrame = frameNo;
 	const now = performance.now();
@@ -444,7 +445,7 @@ export function recordingAfterRender() {
 	const last = elapsed >= s.durationMs;
 	// capture at the requested rate; a 60 Hz display recording 30 fps takes every other frame
 	if (rendered && (now - s.lastCapture >= s.frameMs * 0.92 || last)) {
-		const dom = renderer.domElement;
+		const dom = frameCanvas(renderer);
 		const crop = coverRect(dom.width, dom.height, s.out.w, s.out.h);
 		s.ctx.drawImage(dom, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, s.out.w, s.out.h);
 		if (s.manual) s.track.requestFrame();

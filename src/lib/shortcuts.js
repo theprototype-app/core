@@ -744,6 +744,20 @@ export const shortcuts = [
 		}
 	},
 	{
+		// 100 C1: the Cinematic view (this device only; a strong desktop on Chrome's WebGPU path)
+		id: 'view.cinematic',
+		keys: 'Shift+Z',
+		group: 'View',
+		scope: 'viewport',
+		label: 'Cinematic view on / off (bounced light and reflections)',
+		action: () => {
+			void import('./cinematic/cinematicState.js').then(async (m) => {
+				if (await m.probeCinematic()) void m.toggleCinematic();
+				else showToast('Cinematic view: ' + (get(m.cinematicState).why || 'not on this device.'));
+			});
+		}
+	},
+	{
 		// 42 I14: FOCUS MODE, Blender's "maximize area" key. GLOBAL, so it answers over the dock and
 		// over chrome as well as the viewport — the area under the POINTER decides what maximizes
 		// (focusMode.areaAt). The UV editor and the animation timeline keep Ctrl+Space for keyboard

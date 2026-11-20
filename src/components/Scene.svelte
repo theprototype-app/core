@@ -1,6 +1,7 @@
 <script lang="ts">
 	import * as THREE from 'three';
 	import { mainPixelRatio, watchContextLoss } from '$lib/render/mainRenderer.js';
+	import { mainContextReleased } from '$lib/render/view.js';
 	import { onMount, onDestroy } from 'svelte';
 	import { qualityOverrides } from '$lib/qualityGovernor';
 	import { T, useTask, useThrelte } from '@threlte/core';
@@ -820,6 +821,8 @@
 		// is no way back short of a reload.
 		const onContextLost = (event: any) => {
 			event.preventDefault();
+			// 100 C1: the Cinematic view released the context on purpose (it draws on its own canvas)
+			if (mainContextReleased()) return;
 			$contextLost = true;
 		};
 		const onContextRestored = () => {

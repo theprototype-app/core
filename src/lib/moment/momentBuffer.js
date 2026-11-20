@@ -16,6 +16,7 @@
 //
 // Loaded LAZILY on the first Play (MomentHost.svelte), so none of it is in the boot graph.
 import { get } from 'svelte/store';
+import { frameCanvas, frameCount } from '../render/view.js'; // 100 C1: the Cinematic view's canvas when it draws
 import { globalRenderer, isLocked, isVRMode } from '../../stores/sceneStore';
 import { embedMode } from '../playMode';
 import { scenePlay } from '../scenePhysics';
@@ -128,9 +129,9 @@ function tap() {
 	if (!armed) return;
 	const t0 = performance.now();
 	const renderer = /** @type {any} */ (get(globalRenderer));
-	const dom = renderer?.domElement;
+	const dom = frameCanvas(renderer);
 	if (!dom) return;
-	const frameNo = renderer.info?.render?.frame ?? -1;
+	const frameNo = frameCount(renderer);
 	if (frameNo === lastRenderFrame) return; // nothing new was drawn
 	lastRenderFrame = frameNo;
 	let captured = false;

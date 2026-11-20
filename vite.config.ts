@@ -348,9 +348,12 @@ export default defineConfig({
 		// left alone, the bundler splits that core into a chunk of its own, and the boot then fetches two
 		// chunks where it fetched one (+3 KB gzip of chunk overhead for every page). One group keeps the
 		// boot's three exactly as it was; the lazy WebGPU chunk imports its core from there.
+		// sk3-int: `codeSplitting`, not the deprecated `advancedChunks` alias -- SvelteKit 3 sets
+		// output.codeSplitting itself (its manifest group), which silently drops an advancedChunks group;
+		// Vite's config merge concatenates both group lists.
 		rolldownOptions: {
 			output: {
-				advancedChunks: {
+				codeSplitting: {
 					groups: [{ name: 'three.module', test: /[\\/]node_modules[\\/]three[\\/]build[\\/]three\.(core|module)\.js$/ }]
 				}
 			}

@@ -17,22 +17,21 @@ const QUEST_UA =
 	'Mozilla/5.0 (X11; Linux x86_64; Quest 3) AppleWebKit/537.36 (KHTML, like Gecko) OculusBrowser/38.0.0.0 SamsungBrowser/4.0 Chrome/132.0.0.0 VR Safari/537.36';
 
 /**
- * every resource the page asked for that belongs to the Cinematic view's lazy half. Dev server: source paths. A built
- * app hashes its chunk names, so a built chunk is recognised by CONTENT: the probe (cinematicState) is the only chunk
- * with the 'debugCinematicSoftware' key, the switch the only one with its 'Cinematic view quality' label.
+ * every resource the page asked for that belongs to the Cinematic view's lazy half. Dev server: source paths (the
+ * page's own resource timing). A built app hashes its chunk names, so a built chunk is recognised by CONTENT, read
+ * from the response the page already got (bare() records it; no second download): the probe (cinematicState) is the
+ * only chunk with the 'debugCinematicSoftware' key, the switch the only one with its 'Cinematic view quality' label.
  */
-const cinematicFetches = (/** @type {any} */ page) =>
-	page.evaluate(async () => {
-		const names = performance.getEntriesByType('resource').map((e) => e.name);
-		const dev = names.filter((n) => /\/cinematic\/|three\.webgpu|CinematicSwitch/i.test(n) && !/cinematicOffer|cinematicStore/.test(n));
-		const built = [];
-		for (const n of names.filter((x) => /\/_app\/immutable\/.*\.js(\?|$)/.test(x))) {
-			const text = await fetch(n).then((r) => r.text(), () => '');
-			if (/debugCinematicSoftware/.test(text)) built.push(n + ' (cinematicState)');
-			else if (/Cinematic view quality/.test(text)) built.push(n + ' (CinematicSwitch)');
-		}
-		return [...dev, ...built];
-	});
+async function cinematicFetches(/** @type {any} */ page) {
+	const dev = await page.evaluate(() =>
+		performance
+			.getEntriesByType('resource')
+			.map((e) => e.name)
+			.filter((n) => /\/cinematic\/|three\.webgpu|CinematicSwitch/i.test(n) && !/cinematicOffer|cinematicStore/.test(n))
+	);
+	await Promise.all(page.__cinePending ?? []);
+	return [...dev, ...(page.__cineBuilt ?? [])];
+}
 const hasGpu = (/** @type {any} */ page) => page.evaluate(() => !!(/** @type {any} */ (navigator).gpu));
 
 /** a page as a user gets it: no test hooks, the welcome and disclaimer already seen */
@@ -44,6 +43,25 @@ async function bare(/** @type {any} */ browser, /** @type {any} */ context) {
 		localStorage.setItem('hasSeenWelcome', 'true');
 	});
 	const page = await ctx.newPage();
+	/** @type {string[]} */
+	const built = [];
+	/** @type {Promise<void>[]} */
+	const pending = [];
+	page.on('response', (/** @type {any} */ r) => {
+		const u = r.url();
+		if (!/\/_app\/immutable\/.*\.js(\?|$)/.test(u)) return;
+		pending.push(
+			r.text().then(
+				(/** @type {string} */ t) => {
+					if (/debugCinematicSoftware/.test(t)) built.push(u + ' (cinematicState)');
+					else if (/Cinematic view quality/.test(t)) built.push(u + ' (CinematicSwitch)');
+				},
+				() => {}
+			)
+		);
+	});
+	/** @type {any} */ (page).__cineBuilt = built;
+	/** @type {any} */ (page).__cinePending = pending;
 	await page.goto(h.URL, { waitUntil: 'domcontentloaded', timeout: 90000 });
 	// the 3D view's own canvas (a hidden minimap canvas comes first in the DOM)
 	await page.waitForSelector('#viewport canvas', { state: 'attached', timeout: 120000 });

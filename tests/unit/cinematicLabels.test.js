@@ -3,7 +3,7 @@
 import { describe, it, expect } from 'vitest';
 import { parsePercent, coverBounds, rasterPlan, glyphChars, glyphCells, charRuns, orientBasis, baselineY, bleed, PX_PER_EM, MAX_PX, MARGIN_EM } from '../../src/lib/cinematic/labelLayout.js';
 
-/** caret boxes for a line of `n` characters, each `w` wide, from x0, on the line [bottom, top] */
+/** caret boxes for a line of `n` characters, each `w` wide, from x0, on the line [bottom, top] @param {number} n @param {number} w */
 const line = (n, w, x0 = 0, bottom = -0.2, top = 0.8) => Array.from({ length: n }, (_, i) => [x0 + i * w, x0 + (i + 1) * w, bottom, top]).flat();
 
 describe('parsePercent', () => {

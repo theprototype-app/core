@@ -250,9 +250,9 @@ export function createLabelQuads(W) {
 		const m = ctx.measureText('Hg');
 		const ascent = m.fontBoundingBoxAscent ?? fontSize * px * 0.9;
 		const descent = m.fontBoundingBoxDescent ?? fontSize * px * 0.25;
-		/** @param {number} x @param {number} y local units -> canvas pixels */
-		const cx = (x) => (x - bounds[0]) * px;
-		const cy = (y) => (bounds[3] - y) * px;
+		// local units -> canvas pixels
+		const cx = (/** @type {number} */ x) => (x - bounds[0]) * px;
+		const cy = (/** @type {number} */ y) => (bounds[3] - y) * px;
 		const outlineColor = asColor(t.outlineColor ?? 0, null);
 		const ox = parsePercent(t.outlineOffsetX, fontSize);
 		const oy = parsePercent(t.outlineOffsetY, fontSize);

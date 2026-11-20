@@ -1869,13 +1869,6 @@ const behaviourActed = new Map();
 export const behaviourInputStats = { offered: 0, stale: 0, refused: 0, held: 0, last: /** @type {any} */ (null) };
 
 /**
- * 36 (U10): a trigger wired into a behaviour node's INPUT socket runs that input's handler — on a
- * FRESH stamp edge only, inside the actionSeenAt family (a stamp older than the node, or one that
- * arrived as history, is consumed and refused), so a press seen by every peer is offered once per
- * peer and the behaviour runtime runs it on the authority alone.
- * @param {number} time @param {any} ctx
- */
-/**
  * 2.0-n3b: is `stamp` on a behaviour input the held-key re-stamp of the press already delivered at
  * `prev`? Only for an input fed by Key Press / Gamepad Button nodes (not 'up' — it never re-stamps),
  * when the new stamp lands inside the source's pulse window. Every peer sees the same stamps, so the
@@ -1902,6 +1895,13 @@ function sourcesInto(node, handle) {
 		.map((/** @type {any} */ e) => nodes.find((/** @type {any} */ n) => n.id === e.source));
 }
 
+/**
+ * 36 (U10): a trigger wired into a behaviour node's INPUT socket runs that input's handler — on a
+ * FRESH stamp edge only, inside the actionSeenAt family (a stamp older than the node, or one that
+ * arrived as history, is consumed and refused), so a press seen by every peer is offered once per
+ * peer and the behaviour runtime runs it on the authority alone.
+ * @param {number} time @param {any} ctx
+ */
 function updateBehaviourInputs(time, ctx) {
 	if (!behavioursRef) return;
 	const live = new Set();

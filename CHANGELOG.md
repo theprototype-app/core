@@ -6,6 +6,11 @@
      rendering, so maintainer notes stay out of the user-facing window. No emoji from
      1.64 on (owner rule: no emoji in the UI); the app strips them from older entries. -->
 
+## 1.69.0 — SvelteKit 3
+
+- **Under the hood**: moved to SvelteKit 3 and TypeScript 6. Nothing changes for you; the app starts the same. <!-- sk3-int -->
+- **For developers**: `svelte.config.js` is gone; the SvelteKit options live in `vite.config.ts` (`sveltekit({...})`). `$lib` imports still work (the project's own alias). SvelteKit's version poll is off, so the **New version — Reload** notice stays the one update prompt. The play and Back history entries go through `src/lib/shallowHistory.js`. <!-- sk3-int -->
+
 ## 1.68.0 — Share a moment
 
 - **Share a moment**: while you play, the last 10 s of the game view is kept. Press **F8**, the clapperboard in the Play bar or a controller's View button to trim 3-10 s and save or share it as a GIF or MP4; **Copy picture** copies the frame on screen. Off in VR and on low-memory devices; **Settings ▸ Privacy ▸ Recording the last 10 s** turns it off. Players of a published game get it only when the author allows it (**Configure Scene ▸ Play**). The **Topple tower** starter is set up for sharing. <!-- 95 SM1-SM4 -->

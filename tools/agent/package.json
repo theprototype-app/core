@@ -45,7 +45,8 @@
 		"repl": "node src/cli.js repl",
 		"mcp": "node src/cli.js mcp",
 		"eval:results": "node eval/results.mjs",
-		"eval:smoke": "node eval/results.mjs --runs 1 --label smoke --script eval/controls.json --only door-near,star-once,hit-sound,health-respawn,pickup-own --expect 1"
+		"eval:shapes": "node eval/results.mjs --runs 1 --label shapes --script eval/controls-agent-shapes.json --only star-once,health-respawn,late-joiner,pickup-own --expect 1",
+		"eval:smoke": "node eval/results.mjs --runs 1 --label smoke --script eval/controls.json --only door-near,star-once,hit-sound,health-respawn,pickup-own,pause-p --expect 1"
 	},
 	"dependencies": {
 		"@modelcontextprotocol/sdk": "^1.32.1",

@@ -312,5 +312,27 @@
 				"action": "validate"
 			}
 		}
+	],
+	"pause-p": [
+		{
+			"tool": "create_behaviour",
+			"args": {
+				"name": "PauseKey",
+				"source": "export default behaviour({\n  name: 'PauseKey',\n  state: { paused: false },\n  inputs: ['key'],\n  outputs: ['pause', 'resume'],\n  on: {\n    key() {\n      this.state.paused = !this.state.paused;\n      this.emit(this.state.paused ? 'pause' : 'resume');\n    }\n  }\n});"
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "scene",
+				"text": "k = keypress {code: \"KeyP\"}\np = setgamestate {state: \"paused\"}\nr = setgamestate {state: \"playing\"}\nk -> $@0.created.0.id.key\n$@0.created.0.id.pause -> p.trigger\n$@0.created.0.id.resume -> r.trigger"
+			}
+		},
+		{
+			"tool": "run",
+			"args": {
+				"action": "validate"
+			}
+		}
 	]
 }

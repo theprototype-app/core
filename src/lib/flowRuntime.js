@@ -1866,7 +1866,7 @@ export function gamePausedNow() {
 /** 36 (U10): `<node>|<input>` -> the stamp a behaviour input last acted on @type {Map<string, number>} */
 const behaviourActed = new Map();
 /** 36 (U10): what the input pass did (the debug hook / suites) */
-export const behaviourInputStats = { offered: 0, stale: 0, refused: 0, last: /** @type {any} */ (null) };
+export const behaviourInputStats = { offered: 0, stale: 0, refused: 0, held: 0, last: /** @type {any} */ (null) };
 
 /**
  * 36 (U10): a trigger wired into a behaviour node's INPUT socket runs that input's handler — on a
@@ -1875,6 +1875,33 @@ export const behaviourInputStats = { offered: 0, stale: 0, refused: 0, last: /**
  * peer and the behaviour runtime runs it on the authority alone.
  * @param {number} time @param {any} ctx
  */
+/**
+ * 2.0-n3b: is `stamp` on a behaviour input the held-key re-stamp of the press already delivered at
+ * `prev`? Only for an input fed by Key Press / Gamepad Button nodes (not 'up' — it never re-stamps),
+ * when the new stamp lands inside the source's pulse window. Every peer sees the same stamps, so the
+ * verdict is the same everywhere. A second press inside one pulse (0.3 s) reads as the same press.
+ * PURE: `sources` = the nodes wired into that input.
+ * @param {any[]} sources @param {number} prev @param {number} stamp
+ */
+export function heldRestamp(sources, prev, stamp) {
+	if (!sources.length) return false;
+	let pulse = Infinity;
+	for (const src of sources) {
+		if (!src || (src.type !== 'keypress' && src.type !== 'gamepadbutton')) return false;
+		if ((src.data?.edge ?? 'down') === 'up') return false;
+		pulse = Math.min(pulse, Number(src.data?.pulse ?? 0.3) || 0.3);
+	}
+	const dt = stamp - prev;
+	return dt > 0 && dt < pulse;
+}
+
+/** the nodes wired into one input of `node` @param {any} node @param {string} handle */
+function sourcesInto(node, handle) {
+	return edgesInto(edges, node.id)
+		.filter((/** @type {any} */ e) => e.targetHandle === handle)
+		.map((/** @type {any} */ e) => nodes.find((/** @type {any} */ n) => n.id === e.source));
+}
+
 function updateBehaviourInputs(time, ctx) {
 	if (!behavioursRef) return;
 	const live = new Set();
@@ -1889,8 +1916,17 @@ function updateBehaviourInputs(time, ctx) {
 			const key = node.id + '|' + handle;
 			live.add(key);
 			const stamp = handleStamp(node, handle, ctx);
-			if (stamp === null || behaviourActed.get(key) === stamp) continue;
+			const prev = behaviourActed.get(key);
+			if (stamp === null || prev === stamp) continue;
 			behaviourActed.set(key, stamp);
+			// 2.0-n3b: a HELD key re-stamps its Key Press node ~3/s (that is how it reads 1 while held),
+			// and each re-stamp is a new stamp — so `keypress P -> behaviour.pressed` ran on.pressed twice
+			// for a press longer than ~0.2 s and a toggle (pause, resume) cancelled itself. A stamp that
+			// lands while the previous one from the same key is still alive is the SAME press.
+			if (prev !== undefined && heldRestamp(sourcesInto(node, handle), prev, stamp)) {
+				behaviourInputStats.held = (behaviourInputStats.held ?? 0) + 1;
+				continue;
+			}
 			if (staleTrigger(node, stamp)) {
 				behaviourInputStats.stale++;
 				behaviourInputStats.last = { key, stamp, seenAt: actionSeenAt.get(node.id), history: triggerHistoryAt, verdict: 'stale' };

@@ -47,12 +47,18 @@
 	const what = $derived(
 		$sceneLoad?.phase === 'fetching'
 			? 'downloading…'
-			: $sceneLoad?.phase === 'reading' || $sceneLoad?.phase === 'preparing'
-				? 'getting ready…'
-				: ($sceneLoad?.done ?? 0) + ' / ' + ($sceneLoad?.total ?? 0) + ' objects'
+			: $sceneLoad?.phase === 'backup'
+				? 'saving a backup of this scene…'
+				: $sceneLoad?.phase === 'reading' || $sceneLoad?.phase === 'preparing'
+					? 'getting ready…'
+					: ($sceneLoad?.done ?? 0) + ' / ' + ($sceneLoad?.total ?? 0) + ' objects'
 	);
 	const waiting = $derived(
-		$sceneLoad?.phase === 'fetching' || $sceneLoad?.phase === 'reading' || $sceneLoad?.phase === 'preparing' || $sceneLoad?.total === 0
+		$sceneLoad?.phase === 'fetching' ||
+			$sceneLoad?.phase === 'backup' ||
+			$sceneLoad?.phase === 'reading' ||
+			$sceneLoad?.phase === 'preparing' ||
+			$sceneLoad?.total === 0
 	);
 </script>
 

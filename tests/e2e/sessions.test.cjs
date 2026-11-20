@@ -89,9 +89,41 @@ h.run(async () => {
 		'A is told about the decline'
 	);
 
+	// fix-batch-4 B1: B holds many big saved sessions, the shape that made the 'Backup before' save slow
+	// (it re-read every saved session for the list: ~8 of ~10 s under load). Seeded straight into idb so
+	// the seeding itself reads nothing; the timer runs in B's page from the Accept press.
+	const SEED = Number(process.env.SESSIONS_B1_SEED ?? 24);
+	await B.page.evaluate(async (n) => {
+		const t = window.__tp.test.v1;
+		const pad = 'x'.repeat(1_500_000);
+		for (let i = 0; i < n; i++)
+			await t.idb.idbPut('session:b1-seed-' + i, { id: 'b1-seed-' + i, name: 'B1 seed ' + i, createdAt: Date.now() - 1e6 - i, format: 1, objects: [], pad });
+		// @ts-ignore
+		window.__b1 = { accept: 0, backup: 0, objects: 0 };
+		t.sessions.sessions.subscribe((list) => {
+			// @ts-ignore
+			if (window.__b1.accept && !window.__b1.backup && list.some((m) => /^Backup before/.test(m.name))) window.__b1.backup = performance.now();
+		});
+		t.sceneLoader.sceneLoad.subscribe((/** @type {any} */ l) => {
+			// @ts-ignore
+			if (window.__b1.accept && !window.__b1.objects && l?.phase === 'objects') window.__b1.objects = performance.now();
+		});
+	}, SEED);
 	// then B accepts: the load applies and replicates
 	await A.page.evaluate((id) => window.__tp.test.v1.sessions.requestLoadSession(id), target.id);
 	await B.page.waitForTimeout(800);
+	// the press is stamped by a document capture listener (the toast may re-render its button under us)
+	await B.page.evaluate(() =>
+		document.addEventListener(
+			'click',
+			(e) => {
+				const b = /** @type {any} */ (e.target)?.closest?.('button');
+				// @ts-ignore
+				if (b && b.textContent.trim() === 'Accept' && b.closest('.tp-toast') && !window.__b1.accept) window.__b1.accept = performance.now();
+			},
+			true
+		)
+	);
 	await B.page.locator('.tp-toast', { hasText: /wants to load session/ }).getByRole('button', { name: 'Accept', exact: true }).click();
 	let replaced = false;
 	await h.eventually(
@@ -108,6 +140,11 @@ h.run(async () => {
 		// objects after it, so a 15 s window read "nothing happened" while the load was still running
 		60000
 	);
+	// @ts-ignore
+	const b1 = await B.page.evaluate(() => window.__b1);
+	const ms = (/** @type {number} */ t) => (t ? Math.round(t - b1.accept) : -1);
+	console.log(`  B1: Accept -> backup saved ${ms(b1.backup)} ms, -> objects building ${ms(b1.objects)} ms (${SEED} seeded sessions of 1.5 MB)`);
+	h.check(b1.backup > 0 && b1.objects > 0 && b1.objects - b1.accept < 2000, `B1: Accept -> the load builds objects in < 2 s with ${SEED} big saved sessions (${ms(b1.objects)} ms)`);
 	// test-health-1: red since the toast check stopped masking it (e3edaee5) and not explained from the
 	// code (A clears and adds nothing, B applies nothing) — a red prints each side's link, load job and
 	// recent net/session diagnostics, so the next run says which path stopped

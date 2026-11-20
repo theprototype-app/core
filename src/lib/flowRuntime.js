@@ -1059,6 +1059,50 @@ function contactPasses(data, other) {
 	return other === filter || (!!other && spawnedFromOf(other) === filter);
 }
 
+/** @param {string} uuid */
+function isSensorObject(uuid) {
+	return !!sceneObjects?.getObjectByProperty('uuid', uuid)?.userData?.physics?.sensor;
+}
+
+/**
+ * 2.0-n3b: does an On Enter / On Exit with NO sensor of its own hear this contact? Only a scene-graph node
+ * whose output reaches no Object Selector at all (one that could never fire before, so no working graph
+ * changes), and only once per pair: physics reports a body pair in BOTH directions, so the direction whose
+ * first party is the sensor counts (both sensors: the lower uuid). The player arrives as (sensor, 'player').
+ * @param {any} node @param {string} uuid @param {string} other
+ */
+function sensorUnscoped(node, uuid, other) {
+	if (node.__graph && node.__graph !== SCENE_GRAPH) return false;
+	if (reachesAnyObjectSelector(node.id)) return false;
+	if (!isSensorObject(uuid)) return false;
+	return other === 'player' || !isSensorObject(other) || uuid < other;
+}
+
+/** @param {string} startId */
+function reachesAnyObjectSelector(startId) {
+	const seen = new Set([startId]);
+	const stack = [startId];
+	while (stack.length) {
+		const cur = stack.pop();
+		for (const edge of edges) {
+			if (edge.source !== cur || seen.has(edge.target)) continue;
+			if (nodeById(nodes, edge.target)?.type === 'objectselector') return true;
+			seen.add(edge.target);
+			stack.push(edge.target);
+		}
+	}
+	return false;
+}
+
+/** 2.0-n3b: contactPasses for a node with no sensor of its own — the filter may name EITHER party (the sensor
+ * that was entered, or what entered it) @param {any} data @param {string} uuid @param {string} other */
+function contactPassesEither(data, uuid, other) {
+	const filter = data?.filter;
+	if (typeof filter === 'string' && filter !== '' && filter !== '-None-' && (filter === uuid || spawnedFromOf(uuid) === filter))
+		return contactPasses({ ...data, filter: '' }, other);
+	return contactPasses(data, other);
+}
+
 /** 36 X6: pulse a contact node and carry the other body with the stamp.
  * @param {any} node @param {string} other */
 function fireContact(node, other) {
@@ -4172,12 +4216,17 @@ function fireSensorEdge(type, uuid, otherUuid) {
 	const ctx = runtimeCtx();
 	nodes.forEach((node) => {
 		if (node.type !== type) return;
-		if (!(reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid)) return;
+		const scoped = reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid;
+		// 2.0-n3b (N3a health-respawn): a SCENE-graph On Enter whose output reaches no Object Selector has no
+		// sensor of its own and could never fire. It listens to every sensor now; a wired filter narrows it to
+		// the contacts that object is part of (`Spikes -> On Enter.filter` = "something entered Spikes").
+		const free = !scoped && sensorUnscoped(node, uuid, otherUuid ?? '');
+		if (!scoped && !free) return;
 		// 36 X6: the filter input gates on the other body; the other rides the stamp
 		const data = resolveInputs(node, nodes, edges, syncedNow(), ctx);
 		const other = otherUuid ?? '';
 		const who = other === 'player' ? 'the player' : (objectNameOf(other) ?? 'an object');
-		if (!contactPasses(data, other)) {
+		if (!(free ? contactPassesEither(data, uuid, other) : contactPasses(data, other))) {
 			// 78 F26: say which rule refused it
 			noteCheck(node.id, { who, reason: data?.who === 'player' && other !== 'player' ? 'not-player' : data?.who === 'objects' && other === 'player' ? 'not-objects' : 'filter' });
 			return;

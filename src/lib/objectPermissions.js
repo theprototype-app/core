@@ -11,6 +11,7 @@ import { rolesInfo } from './cloudHooks';
 import { parkEditOverlays } from './editOverlays';
 import { showToast, showLocalObjects, peers } from '../stores/appStore';
 import { objectsGroup, pokeScene } from '../stores/sceneStore';
+import { scrubDrafts } from './draftGateCore.js';
 
 /** broadcast message `type`s that CREATE a scene object (peerHandler send-gate) */
 const CREATE_TYPES = new Set(['create', 'light', 'group', 'object', 'objectfile', 'duplicate']);
@@ -34,6 +35,7 @@ export function isLocalOnly(object) {
 export function markLocalOnly(object) {
 	if (object && object.userData) {
 		object.userData.__localOnly = true;
+		draftsChanged();
 		showLocalObjects.set(true);
 	}
 }
@@ -41,6 +43,7 @@ export function markLocalOnly(object) {
  * @param {any} object */
 export function clearLocalOnly(object) {
 	if (object?.userData) delete object.userData.__localOnly;
+	draftsChanged();
 }
 
 /** Promote a local-only object to a SHARED one: re-parent into `groupUuid` when given
@@ -236,3 +239,67 @@ export function noteLocalObjectsExcluded(excluded) {
 				'.'
 		);
 }
+
+// ---------------------------------------------------------------------------------------------
+// 80a D1 — THE DRAFT INDEX behind the one outbound gate (draftGateCore.js has the rule).
+//
+// A draft = a local-only object or anything inside one. The set is rebuilt LAZILY: marking or
+// clearing a draft, any scene poke (objectsGroup.set: loads, restores, creates) and a one-second age
+// all make it stale, and the next outgoing message rebuilds it. With no drafts at all the gate costs
+// one size check per message.
+
+let draftSet = /** @type {Set<string>} */ (new Set());
+let draftsStale = true;
+let draftsBuiltAt = 0;
+let draftWatch = false;
+
+function draftsChanged() {
+	draftsStale = true;
+}
+
+/** the uuids of every draft and everything inside one (rebuilt when stale) @returns {Set<string>} */
+export function draftUuids() {
+	if (!draftWatch) {
+		draftWatch = true;
+		// every structural change pokes this store (pokeScene); a subscribe is cheaper than a walk per message
+		objectsGroup.subscribe(() => draftsChanged());
+	}
+	const now = Date.now();
+	if (draftsStale || now - draftsBuiltAt > 1000) {
+		/** @type {Set<string>} */
+		const next = new Set();
+		for (const root of localOnlyRoots()) root.traverse?.((/** @type {any} */ o) => next.add(o.uuid));
+		draftSet = next;
+		draftsStale = false;
+		draftsBuiltAt = now;
+	}
+	return draftSet;
+}
+
+/** is this uuid a draft (or inside one)? @param {any} uuid */
+export function isDraftUuid(uuid) {
+	return typeof uuid === 'string' && draftUuids().has(uuid);
+}
+
+/**
+ * 80a D1: THE outbound gate. Every message that leaves this machine passes here — once in
+ * `PeerConnection.broadcast` (before batching and the fast channel) and once in the wrapper
+ * `handleData` puts on every connection's `send` (handshake replies and direct answers). A message
+ * about a draft is dropped, one that only contains a draft among other things is trimmed
+ * (draftGateCore.js). Counted per message type in `draftGateStats` for the debug hook.
+ * @param {any} payload @returns {any} what may be sent, or null
+ */
+export function gateDraftsOutbound(payload) {
+	if (!payload || typeof payload !== 'object') return payload;
+	const set = draftUuids();
+	if (!set.size) return payload;
+	const out = scrubDrafts(payload, (u) => set.has(u));
+	if (out !== payload) {
+		const key = String(payload.type ?? '?') + (out === null ? ':dropped' : ':trimmed');
+		draftGateStats[key] = (draftGateStats[key] ?? 0) + 1;
+	}
+	return out;
+}
+
+/** what the gate held back this page, keyed `<type>:dropped|trimmed` (debug hook, never sent) */
+export const draftGateStats = /** @type {Record<string, number>} */ ({});

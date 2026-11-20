@@ -2,7 +2,7 @@ import Peer from 'peerjs';
 import { peerSerializers, setFrameRefusalHandler } from './peerCodec.js';
 import { backoffDelay } from '$lib/netBackoff';
 import { sceneCommand, lockRestore, checkLocks, createObject, sendObjects, deleteObject, colorObject, createLoader, userData, handleDisconnected, specator, cameraSettings, objectParameters, applyClearScene, ROSTER_GRACE_MS } from './commandsHandler.svelte';
-import { gateCreationBroadcast } from './objectPermissions';
+import { gateCreationBroadcast, gateDraftsOutbound } from './objectPermissions';
 import { createGeometry, createLight, createGroup, changeName, moveGeometry, lockGeometry, moveCamera } from '$lib/geometries.svelte';
 import { sendNodes, applyNodesSnapshot, applyNodeSync, noteNodesSnapshot, noteNodeSyncHandshake, forgetNodeSyncPeer, createFlowNode, moveFlowNode, updateFlowNodeData, deleteFlowNodes, createFlowEdge, deleteFlowEdges, applyFlowCursor } from '$lib/nodesHandler';
 import { preloadSandboxFor } from '$lib/sandbox/preload.js';
@@ -1200,6 +1200,18 @@ export class PeerConnection {
 			// both invisible. This is the one function every creation site already calls —
 			// the four dials and the adopted inbound conn — so one listener pair covers all.
 			conn.on('error', (/** @type {any} */ err) => noteWireError(conn.peer, 'conn-error', err?.type ?? err));
+			// 80a D1: THE per-connection half of the draft gate. Handshake replies and direct answers call
+			// `conn.send` without passing `broadcast`; this one function sees every conn, so nothing that
+			// names a draft reaches any of them whichever path sent it.
+			if (!conn.__tpDraftGate && typeof conn.send === 'function') {
+				conn.__tpDraftGate = true;
+				const rawSend = conn.send.bind(conn);
+				conn.send = (/** @type {any} */ data, /** @type {any[]} */ ...rest) => {
+					const out = gateDraftsOutbound(data);
+					if (out === null) return;
+					return rawSend(out, ...rest);
+				};
+			}
 			// F-3: a peer that died without closing its channel (a killed process, a crashed tab)
 			// leaves the conn "open" — a ghost in Users. Two watches close it ourselves, and the
 			// close runs the ordinary reconnect window, which redials a live peer and drops a gone
@@ -3059,6 +3071,10 @@ export class PeerConnection {
 	 * have one. Only pose types honour it (`poseKey`); everything else is reliable whatever it says.
 	 */
 	broadcast(payload, opts) {
+		// 80a D1: a message about a draft never leaves (objectPermissions.gateDraftsOutbound) — judged
+		// here, ahead of the batch hold and the fast channel, and again per connection in `handleData`
+		payload = gateDraftsOutbound(payload);
+		if (payload === null) return;
 		// 60 Q2: every pose carries its sequence number — batched, fast or reliable alike
 		stampPose(payload);
 		// 37 R1: inside a multi-object edit, room content is HELD and leaves as one envelope

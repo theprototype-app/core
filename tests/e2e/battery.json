@@ -323,6 +323,7 @@
 		"nodes85-button-iwer": 240,
 		"agent-room": 240,
 		"photo-mode": 420,
+		"cinematic-view": 600,
 		"text-path": 360,
 		"text-object": 480,
 		"path-object": 480,
@@ -948,7 +949,7 @@
 		"untangle": 146
 	},
 	"desk": {
-		"gpu": ["MOD:fx-car-blocks","MOD:untangle"],
+		"gpu": ["MOD:fx-car-blocks","MOD:untangle","cinematic-view"],
 		"peer-self": ["arch-primitives","game-race"],
 		"prod-host": ["error-reports"],
 		"software": ["behaviours","community-seams","files-format-row","inspector","save-project-libraries"],

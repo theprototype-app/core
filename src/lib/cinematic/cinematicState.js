@@ -8,6 +8,7 @@ import { mount } from 'svelte';
 import { deviceClass, browserSaysMobile } from '../deviceClass.js';
 import { isVRMode, globalRenderer, globalScene, globalCamera } from '../../stores/sceneStore';
 import { showToast } from '../../stores/appStore';
+import { safeStorage } from '../safeStorage';
 import { offerVerdict, asQuality } from './cinematicOffer.js';
 import { cinematicPrefs, cinematicState, cinematicDisabled } from './cinematicStore.js';
 
@@ -48,6 +49,8 @@ export function probeCinematic() {
 				const adapter = await nav.gpu.requestAdapter();
 				facts.adapter = !!adapter;
 				facts.fallbackAdapter = !!(adapter?.info?.isFallbackAdapter ?? adapter?.isFallbackAdapter);
+				// e2e on software-GL runners (cinematic-view suite): a SwiftShader adapter counts, nothing else changes
+				if (safeStorage.getItem('debugCinematicSoftware') === '1') facts.fallbackAdapter = false;
 			} catch {
 				facts.adapter = false;
 			}

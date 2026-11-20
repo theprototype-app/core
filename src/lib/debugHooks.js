@@ -153,6 +153,7 @@ export const DEBUG_HOOKS = [
 	['nodeLiveState', () => import('./nodeLiveState')],
 	['flowLint', () => import('./flowLint.js')],
 	['lockControl', () => import('./lockControl')],
+	['lockHeld', () => import('./lockHeld')],
 	['prefabs', () => import('./prefabs')],
 	['prefabLinks', () => import('./prefabLinks')],
 	['prefabSync', () => import('./prefabSync')],

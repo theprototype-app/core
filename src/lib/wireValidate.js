@@ -206,6 +206,8 @@ export const VALIDATORS = {
 	userdata: (d) => isArray(d.userdata),
 	locked: (d) => isArray(d.lockeditems),
 	lock: (d) => isUuid(d.uuid) && (d.uuids === undefined || isArray(d.uuids)),
+	// 80a K3: the holder refused an edit of ours (only the holder's is acted on: lockControl)
+	lockreject: (d) => isUuid(d.uuid),
 	unlock: (d) => d.peerId === undefined || typeof d.peerId === 'string',
 	clearscene: (d) => typeof d.peerId === 'string',
 	delete: (d) => isUuid(d.uuid),

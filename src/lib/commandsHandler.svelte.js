@@ -15,7 +15,8 @@ import { dropPeerQuality } from '$lib/networkQuality'
 import { dropPeerClock } from '$lib/musicClock'
 import { applyRemoteDevice } from '$lib/audioDevices'
 import { sessionHost, dropPeerJoined, noteSnapshotAnswered } from '$lib/connectionState'
-import { acceptedLockRows, mergeLockRows } from '$lib/lockTrust'
+import { acceptedLockRows, mergeLockRows, sortLockTable } from '$lib/lockTrust'
+import { lockMessage } from '$lib/lockHeld'
 import { environment, editEnvSky } from '$lib/environment'
 import { hasAnimatedImport, sendAnimatedImport, setAnimationState, setClipRefs, setAnimGraph, attachToSocket, dropAllAnimatedImports, setVrmExpression } from '$lib/animatedImports'
 import { dropAllAnimations } from '$lib/animationPreview'
@@ -209,7 +210,7 @@ export function sceneCommand(command) {
                 peer.send({type: 'create', command: command, uuid: uuid});
                 recordObjectPresence('create', sceneObjects.getObjectByProperty('uuid', uuid));
                 }
-                peer.send({type: 'lock', uuid: uuid, peerId: peer.peer.id});
+                if (uuid != null) peer.send(lockMessage([uuid], peer.peer.id));
 
                 // the environment rig lights every preset except Classic —
                 // only nag about missing lights in Classic
@@ -229,7 +230,7 @@ export function sceneCommand(command) {
                 peer.send({type: 'light', command: command, uuid: uuid});
                 recordObjectPresence('create', sceneObjects.getObjectByProperty('uuid', uuid));
                 }
-                peer.send({type: 'lock', uuid: uuid, peerId: peer.peer.id});
+                if (uuid != null) peer.send(lockMessage([uuid], peer.peer.id));
         }
         else if (command.startsWith('/group')) {
                 let uuid = createGroup(command);
@@ -238,7 +239,7 @@ export function sceneCommand(command) {
                 peer.send({type: 'group', command: command, uuid: uuid});
                 recordObjectPresence('create', sceneObjects.getObjectByProperty('uuid', uuid));
                 }
-                peer.send({type: 'lock', uuid: uuid, peerId: peer.peer.id});
+                if (uuid != null) peer.send(lockMessage([uuid], peer.peer.id));
         }
         else if (command.startsWith('/transform')) {
             const regex = /(\translate|\.rotate|\.scale)/i;
@@ -255,13 +256,13 @@ export function sceneCommand(command) {
                     console.log(locked)
                     if(!locked.filter(lockedUuid => lockedUuid[1] === uuid)) {
                         controls.attach(sceneObjects.getObjectByProperty( 'uuid' , uuid));
-                        peer.send({type: 'lock', uuid: command.split(' ')[1], peerId: peer.peer.id});
+                        peer.send(lockMessage([command.split(' ')[1]], peer.peer.id));
                     } else {
                         console.log('Object ' + uuid + ' already locked by ' + locked.find(lockedUuid => lockedUuid[1] === uuid)[0]);
                     }
                 } else {
                     controls.attach(sceneObjects.getObjectByProperty( 'uuid' , uuid));
-                    peer.send({type: 'lock', uuid: command.split(' ')[1], peerId: peer.peer.id});
+                    peer.send(lockMessage([command.split(' ')[1]], peer.peer.id));
                 }
             }
             else
@@ -337,7 +338,7 @@ export function lockRestore(lockeditems, from, fromHost, mayLock) {
     if (!Array.isArray(lockeditems)) return;
     const rows = acceptedLockRows(lockeditems, { from, selfId: peer?.peer?.id, fromHost, mayLock });
     if (!rows.length) return;
-    locked = mergeLockRows(locked, rows);
+    locked = sortLockTable(mergeLockRows(locked, rows));
     lockedObjects.set(locked);
 }
 
@@ -1216,6 +1217,24 @@ function multiMaterialSyncable(element) {
     if (position && position.count * 3 > 45000) {
         showToast('"' + (element.name || element.type) + '" is too large to share its material slots');
         return false;
+    }
+    return true;
+}
+
+/**
+ * 80a K3: one object, as it is here, to one peer as an arrival heal (`override`: the receiver
+ * replaces its copy in place). The answer to an edit the lock gate refused. Its subtree goes too.
+ * @param {any} conn @param {string} uuid @returns {boolean} sent
+ */
+export function healObjectTo(conn, uuid) {
+    const target = sceneObjects?.getObjectByProperty('uuid', uuid);
+    if (!target || !conn?.open) return false;
+    // the same ritual as every serializer: animated objects at their base pose while we read them
+    const restore = parkAnimatedAtBase();
+    try {
+        sendObject(conn, { children: [target] }, target.parent && target.parent !== sceneObjects ? target.parent.uuid : undefined, { override: true });
+    } finally {
+        restore();
     }
     return true;
 }

@@ -1,5 +1,6 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
+import { lockMessage } from './lockHeld';
 import { writable, get } from 'svelte/store';
 import { globalScene, globalCamera, objectsGroup, TControls, lockedObjects, isVRMode, pokeScene } from '../stores/sceneStore';
 // 15-F: session-scoped undo — editSession imports ONLY history (an edge we
@@ -7677,7 +7678,7 @@ export function enterFaceEdit(uuid) {
 	controls?.detach?.();
 	/** @type {any} */
 	const peer = get(peers);
-	if (peer) peer.send({ type: 'lock', uuid: uuid, peerId: peer.peer.id });
+	if (peer) peer.send(lockMessage([uuid], peer.peer.id)); // 80a K3: stamped
 	faceEditObject.set(uuid);
 	noteEditEnter('face', uuid); // 15-F: opens (or continues) the undo barrier
 	refreshFaceWireframe(); // B2: face mode gets the same wireframe as vertex mode

@@ -1,5 +1,6 @@
 import { embeddedOnlyManager, checkFbx, refusal, checkStl, checkGltf } from './loadGuard.js';
 import { addProvenance } from '$lib/provenance';
+import { lockMessage } from './lockHeld';
 import { APP_VERSION } from '$lib/version';
 import { glbIsVrm } from '$lib/vrm/vrmDetect';
 import * as THREE from 'three';
@@ -486,7 +487,7 @@ function addAnimatedImport(result, buffer, name, kind, position) {
 	selectedObject.set(root);
 	// 15-K3: the selection SET drives the outline + Ctrl+D — keep it in sync
 	selectedObjects.set([root.uuid]);
-	peer.send({ type: 'lock', uuid: root.uuid, peerId: peer.peer.id });
+	peer.send(lockMessage([root.uuid], peer.peer.id));
 	// 33 P2: nothing autoplays any more (registerAnimatedImport); say what does play it
 	showToast(
 		root.userData.behavior
@@ -513,7 +514,7 @@ export function addImported(imported, name, position) {
 	selectedObject.set(sceneObjects.getObjectByProperty('uuid', imported.uuid));
 	// 15-K3: the selection SET drives the outline + Ctrl+D — keep it in sync
 	selectedObjects.set([imported.uuid]);
-	peer.send({ type: 'lock', uuid: imported.uuid, peerId: peer.peer.id });
+	peer.send(lockMessage([imported.uuid], peer.peer.id));
 
 	// the environment rig lights every preset except Classic — only nag about
 	// missing lights there (same guard as /create in commandsHandler; imports

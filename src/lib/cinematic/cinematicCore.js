@@ -6,6 +6,8 @@
 //   createDropWatch   the dynamic step down: frame p95 over budget for 2 s → one step lower, once per step
 //   standInKind       what a material the WebGPU renderer cannot draw is, in the words the chip uses
 //   notShownText      the one chip line: "Not shown in Cinematic view: Water, Text"
+//   fxCoverKind       which effects the view draws itself through TSL (C2-2 / C2-4: particles, bursts, bubbles,
+//                     vertex deformers), so they get no stand-in and the chip does not list them
 
 /** @typedef {import('./cinematicOffer.js').Quality} Quality */
 import { asQuality, DEFAULT_QUALITY } from './cinematicOffer.js';
@@ -131,11 +133,13 @@ export const STAND_IN_LABELS = Object.freeze({
  *   kind: what the chip names (null = drawn close enough that it is not news: avatars' outfit tint,
  *         a baked kit's AO atlas — the view lights the scene itself).
  * @param {any} o the drawn object @param {any} m its material
- * @param {{ deformed?: (o: any) => boolean }} [hints] facts only the owners know (vertexDeform's records)
+ * @param {{ deformed?: (o: any) => boolean, covered?: (o: any, m: any) => boolean }} [hints] facts only the owners
+ *   know (vertexDeform's records; `covered` = the view draws this itself, fxCover.js)
  * @returns {{ swap: boolean, kind: StandInKind | null }}
  */
 export function classifyMaterial(o, m, hints = {}) {
 	if (!m || m.isNodeMaterial) return { swap: false, kind: null };
+	if (hints.covered?.(o, m)) return { swap: false, kind: null };
 	const shader = !!(m.isShaderMaterial || m.isRawShaderMaterial);
 	const patched = typeof m.onBeforeCompile === 'function' && Object.prototype.hasOwnProperty.call(m, 'onBeforeCompile');
 	if (!shader && !patched && !o?.isTroikaText) return { swap: false, kind: null };
@@ -174,4 +178,36 @@ export function notShownText(kinds) {
 	const set = new Set(kinds);
 	const words = /** @type {StandInKind[]} */ (Object.keys(STAND_IN_LABELS)).filter((k) => set.has(k)).map((k) => STAND_IN_LABELS[k]);
 	return words.length ? 'Not shown in Cinematic view: ' + words.join(', ') : '';
+}
+
+/** the vertex deformers fxCover.js has a TSL twin for (vertexDeform.js kinds) */
+export const DEFORM_COVERED = Object.freeze(['jiggle', 'bodywave', 'windsway', 'waterflow']);
+
+/**
+ * Which effect the Cinematic view draws itself (fxCover.js), from the object and its CURRENT material:
+ *   particles      a particleRuntime emitter in point mode (THREE.Points + its analytic ShaderMaterial)
+ *   particleStrip  the same emitter in stretch / trails / ribbon mode (a Mesh)
+ *   burst          an effectsBurst system (THREE.Points + PointsMaterial over CPU buffers): WebGPU draws a Points
+ *                  at ONE pixel, so before C2-2 a burst showed as specks and was listed nowhere
+ *   bubbles        the water runtime's bubble mesh (standalone userData.bubbles and water-volume bubbles)
+ *   deform         a mesh whose material is a vertexDeform clone and every deformer on it is a covered kind
+ * null for everything else (a stand-in or the renderer's own conversion, as before).
+ * @param {any} o @param {any} m @param {(o: any) => string[]} [deformKinds] the deformer kinds on a mesh
+ * @returns {'particles' | 'particleStrip' | 'burst' | 'bubbles' | 'deform' | null}
+ */
+export function fxCoverKind(o, m, deformKinds) {
+	if (!o || !m || m.isNodeMaterial || Array.isArray(o.material)) return null;
+	const name = String(o.name || '');
+	if (m.isShaderMaterial && /^particles-/.test(name) && m.uniforms?.uSizeStart && m.uniforms?.uMap) {
+		if (o.isPoints) return 'particles';
+		if (o.isMesh) return 'particleStrip';
+		return null;
+	}
+	if (o.isPoints && m.isPointsMaterial && /^effects-burst-/.test(name) && o.geometry?.getAttribute?.('color')) return 'burst';
+	if (o.isMesh && m.isShaderMaterial && m.name === 'water-bubbles' && o.geometry?.isInstancedBufferGeometry) return 'bubbles';
+	if (o.isMesh && deformKinds) {
+		const kinds = deformKinds(o);
+		if (kinds.length && kinds.every((k) => DEFORM_COVERED.includes(k))) return 'deform';
+	}
+	return null;
 }

@@ -93,7 +93,7 @@ server.setRequestHandler(CallToolRequestSchema, async (/** @type {any} */ r) => 
 		args,
 		error: result?.isError ? text.slice(0, 400) : undefined,
 		bytes: JSON.stringify(result).length,
-		answer: text.slice(0, 600)
+		answer: text.slice(0, 60000)
 	};
 	fs.appendFileSync(logFile, JSON.stringify(row) + '\n');
 	return result;

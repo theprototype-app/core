@@ -69,6 +69,19 @@ export function evalInit() {
 			l.getWorldPosition(lp);
 			if (lp.distanceTo(p) <= 1.5) near = Math.max(near, l.intensity ?? 0);
 		});
+		// a glowing thing shown AT it (a flame, a halo sphere): visible meshes within 1.2 m that are not part of it
+		let glow = 0;
+		g?.traverse((/** @type {any} */ m) => {
+			if (!m.isMesh || m === o) return;
+			for (let x = m; x; x = x.parent) if (x === o || x.visible === false) return;
+			m.getWorldPosition(lp);
+			if (lp.distanceTo(p) > 1.2) return;
+			for (const mat of [].concat(m.material ?? [])) {
+				/** @type {any} */
+				const mm = mat;
+				glow = Math.max(glow, lum(mm.emissive) * (mm.emissiveIntensity ?? 1));
+			}
+		});
 		return {
 			uuid: o.uuid,
 			pos: p.toArray(),
@@ -79,19 +92,30 @@ export function evalInit() {
 			col: +col.toFixed(3),
 			opacity: +opacity.toFixed(3),
 			light: +Math.max(ownLight, near).toFixed(3),
+			glow: +glow.toFixed(3),
 			isLight: !!o.isLight,
 			intensity: o.isLight ? o.intensity : undefined
 		};
 	};
 	w.__n3aSounds = [];
 	const note = (/** @type {string} */ kind) => w.__n3aSounds.push({ t: performance.now(), kind });
-	try {
-		const start = AudioScheduledSourceNode.prototype.start;
-		AudioScheduledSourceNode.prototype.start = function (...a) {
-			note(this.constructor?.name ?? 'source');
-			return start.apply(this, a);
-		};
-	} catch {}
+	// every class that OWNS a start (Chromium puts AudioBufferSourceNode's own start on its prototype, so
+	// wrapping the base class alone misses every sample a game plays)
+	for (const C of [
+		'AudioScheduledSourceNode',
+		'AudioBufferSourceNode',
+		'OscillatorNode',
+		'ConstantSourceNode'
+	])
+		try {
+			const proto = w[C]?.prototype;
+			if (!proto || !Object.prototype.hasOwnProperty.call(proto, 'start')) continue;
+			const start = proto.start;
+			proto.start = function (/** @type {any[]} */ ...a) {
+				note(C);
+				return start.apply(this, a);
+			};
+		} catch {}
 	try {
 		const play = HTMLMediaElement.prototype.play;
 		HTMLMediaElement.prototype.play = function (...a) {
@@ -141,12 +165,12 @@ export async function leavePlay(page) {
 }
 
 /** the pause menu's Restart (a new round) @param {any} page */
-export async function restartRound(page) {
+export async function restartRound(page, settleMs = 1200) {
 	const r = await page.evaluate(() => {
 		const shell = window.__tp.test.v1.gameKit?.gameShell;
 		return shell?.restartGame ? shell.restartGame() : { ok: false, reason: 'no game shell' };
 	});
-	await sleep(page, 1200);
+	if (settleMs) await sleep(page, settleMs);
 	return r;
 }
 
@@ -287,7 +311,7 @@ export function click(page, ref) {
 }
 
 /** a real key press @param {any} page @param {string} key Playwright key name ("p", "KeyP") @param {number} [holdMs] */
-export async function press(page, key, holdMs = 150) {
+export async function press(page, key, holdMs = 300) {
 	await page.keyboard.down(key);
 	await sleep(page, holdMs);
 	await page.keyboard.up(key);
@@ -356,7 +380,12 @@ export function lit(/** @type {any} */ base, /** @type {any} */ now) {
 			(now.intensity ?? 0) > Math.max(0.05, (base.intensity ?? 0) * 1.5) ||
 			(!base.shown && now.shown)
 		);
-	return now.emis - base.emis >= 0.15 || now.light - base.light >= 0.3 || now.col - base.col >= 0.2;
+	return (
+		now.emis - base.emis >= 0.15 ||
+		now.light - base.light >= 0.3 ||
+		now.col - base.col >= 0.2 ||
+		(now.glow ?? 0) - (base.glow ?? 0) >= 0.3
+	);
 }
 
 /**
@@ -440,13 +469,52 @@ export function clocksIn(h) {
 	return out;
 }
 
+/** a world-visible scene object that SAYS something (3D text, a sign): its name, its userData or its geometry's text
+ * matches `re` (source) @param {any} page @param {string} re @returns {Promise<string[]>} the names that match */
+export function sceneSays(page, re) {
+	return page.evaluate((src) => {
+		const rx = new RegExp(src, 'i');
+		/** @type {any} */
+		let g;
+		window.__tp.test.v1.objectsGroup.subscribe((/** @type {any} */ x) => (g = x))();
+		/** @type {string[]} */
+		const out = [];
+		g?.traverse((/** @type {any} */ o) => {
+			let vis = true;
+			for (let x = o; x; x = x.parent) if (x.visible === false) vis = false;
+			if (!vis || o === g) return;
+			let ud = '';
+			try {
+				ud = JSON.stringify(o.userData ?? {}).slice(0, 4000);
+			} catch {}
+			if (
+				rx.test(String(o.name ?? '')) ||
+				rx.test(ud) ||
+				rx.test(String(o.geometry?.parameters?.text ?? ''))
+			)
+				out.push(String(o.name || o.uuid));
+		});
+		return out;
+	}, re);
+}
+
+/** a NEW round, as a player gets one: the pause menu's Restart (back to the start), then the game's Start (playing) */
+export async function newRound(page) {
+	const r = await restartRound(page);
+	const g = await game(page);
+	if (g?.state !== 'playing')
+		await page.evaluate(() => window.__tp.test.v1.gameState.setGameState('playing'));
+	await sleep(page, 1200);
+	return { restart: r, state: (await game(page))?.state, round: (await game(page))?.round };
+}
+
 /** the game shell's state @param {any} page */
 export const game = (page) => storeValue(page, 'gameState.gameState');
 
 /** sounds started since `since` (performance.now ms), merging starts closer than 40 ms into one @param {any} page @param {number} since */
 export function soundsSince(page, since) {
 	return page.evaluate((since) => {
-		const all = /** @type {any} */ ((window).__n3aSounds ?? [])
+		const all = /** @type {any} */ (window.__n3aSounds ?? [])
 			.filter((/** @type {any} */ s) => s.t >= since)
 			.map((/** @type {any} */ s) => s.t);
 		/** @type {number[]} */
@@ -468,4 +536,58 @@ export async function sample(page, fn, ms, stepMs = 200) {
 		await sleep(page, stepMs);
 	}
 	return out;
+}
+
+/** a diagnostic line: the round as the runtime sees it, and every latch/once's value and last trigger stamp
+ * @param {any} page */
+export function roundDiag(page) {
+	return page.evaluate(() => {
+		const t = /** @type {any} */ (window).__tp.test.v1;
+		const read = (/** @type {any} */ s) => {
+			let v;
+			s?.subscribe?.((/** @type {any} */ x) => (v = x))();
+			return v;
+		};
+		const g = read(t.gameState?.gameState) ?? {};
+		const values = read(t.flowValues) ?? {};
+		const trig = read(t.flowTriggers) ?? {};
+		const cut = t.gameState?.roundCutoff?.();
+		const nodes = (t.flowStore?.allNodes?.() ?? t.allNodes?.() ?? []).filter(
+			(/** @type {any} */ n) => ['latch', 'once', 'onclick'].includes(n.type)
+		);
+		return {
+			state: g.state,
+			round: g.round,
+			startedAt: g.startedAt,
+			cutoff: cut === Infinity ? 'inf' : cut,
+			cutoffSec:
+				typeof cut === 'number' && Number.isFinite(cut)
+					? +((cut % 86400000) / 1000).toFixed(2)
+					: null,
+			nodes: nodes.slice(0, 6).map((/** @type {any} */ n) => ({
+				t: n.type,
+				pr: !!n.data?.perRound,
+				v: values[n.id],
+				last: trig[n.id]?.lastT
+			}))
+		};
+	});
+}
+
+/** this page's frame time now (ms, a 1 s rAF sample): a timing rule finer than one frame cannot be judged
+ * @param {any} page @returns {Promise<number>} */
+export function frameMs(page) {
+	return page.evaluate(
+		() =>
+			new Promise((done) => {
+				const t0 = performance.now();
+				let n = 0;
+				const step = () => {
+					n++;
+					if (performance.now() - t0 >= 1000) done((performance.now() - t0) / n);
+					else requestAnimationFrame(step);
+				};
+				requestAnimationFrame(step);
+			})
+	);
 }

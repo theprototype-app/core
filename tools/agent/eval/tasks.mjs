@@ -33,6 +33,13 @@ async function room(S, objects, spawn = {}) {
 		position: spawn.at ?? [0, 0, 8],
 		facing: spawn.facing ?? [0, 1, 0]
 	});
+	// a GAME, the way every finished scene is one: pressing Play starts a round (the game shell's `playing`)
+	// a GAME, the way every kit game is one: pressing Play starts a round (kit.round, which drives the game
+	// shell's state, perRound latches, the pause menu's Restart and a behaviour's roundStart)
+	await S.call('create_flow_nodes', {
+		graph: 'scene',
+		text: 'p = onplaystart\nc = kit-round-configure {intro: 0}\ns = kit-round-start\np -> c.trigger\np -> s.trigger'
+	});
 }
 
 /** wait until `fn` says yes (polling) @param {any} page @param {() => Promise<boolean>} fn @param {number} ms @param {number} [step] */
@@ -66,12 +73,15 @@ const starRefs = (/** @type {Check} */ C) => [1, 2, 3, 4, 5].map((i) => C.refs['
 async function winShowing(/** @type {any} */ page) {
 	const h = await P.hud(page);
 	const g = await P.game(page);
-	return (
+	if (
 		/\b(you\s*win|you\s*won|win|won|victory)\b/i.test(
 			h.text + ' ' + Object.values(h.values).join(' ')
-		) ||
-		(g?.state === 'over' && /win|won/i.test(String(g?.outcome ?? '')))
-	);
+		)
+	)
+		return true;
+	if (g?.state === 'over' && /win|won/i.test(String(g?.outcome ?? ''))) return true;
+	// a 3D "You win!" sign in the scene counts too: a person sees it
+	return (await P.sceneSays(page, '\\byou\\s*(win|won)|\\bvictory|\\bwinner')).length > 0;
 }
 
 /** health as a fraction 0..1 (a bar), else the first number the HUD shows @param {any} h */
@@ -216,8 +226,10 @@ export const TASKS = [
 			await P.click(A, s3);
 			if ((await until(A, async () => P.lit(C.base['Star 3'], await P.look(A, s3)), 2500)) < 0)
 				return v(0, 'a second star did not light up');
-			const r = await P.restartRound(A);
+			C.note('before ' + JSON.stringify(await P.roundDiag(A)));
+			const r = await P.newRound(A);
 			C.note('restart ' + JSON.stringify(r));
+			C.note('after ' + JSON.stringify(await P.roundDiag(A)));
 			const dark = await until(
 				A,
 				async () =>
@@ -294,7 +306,7 @@ export const TASKS = [
 			);
 			if (!rose(n0, n1, 3))
 				return v(0, 'the score on screen did not go up by 3 after three clicks');
-			await P.restartRound(A);
+			await P.newRound(A);
 			const zeroed = await until(
 				A,
 				async () => {
@@ -319,7 +331,7 @@ export const TASKS = [
 		check: async (C) => {
 			const A = C.A;
 			if (!(await P.enterPlay(A))) return v(0, 'Play did not start');
-			await P.restartRound(A);
+			await P.newRound(A);
 			/** @type {number[]} */
 			let c1 = [];
 			await until(
@@ -420,7 +432,7 @@ export const TASKS = [
 		check: async (C) => {
 			const A = C.A;
 			if (!(await P.enterPlay(A))) return v(0, 'Play did not start');
-			await P.restartRound(A);
+			await P.newRound(A);
 			await P.stay(A, [0, 0, 8], 1000);
 			await P.walk(A, [[0, 0, -7.6]], 3);
 			await P.stay(A, [0, 0, -7.6], 2500);
@@ -663,8 +675,9 @@ export const TASKS = [
 			const base = C.base.Gate;
 			if (!(await P.enterPlay(A))) return v(0, 'Play did not start');
 			await P.sleep(A, 7000); // whatever the first entry started has run out
-			await P.restartRound(A);
-			const t0 = Date.now() - 1200; // restartRound waits 1.2 s after the press
+			// the pause menu's Restart, sampled from the press on (a countdown is over in 3 s)
+			await P.restartRound(A, 0);
+			const t0 = Date.now();
 			/** @type {string[]} */
 			const seen = [];
 			let openAt = -1;
@@ -731,14 +744,31 @@ export const TASKS = [
 				await P.click(A, bell);
 				await P.sleep(A, 80);
 			}
+			const span = (await P.pageNow(A)) - t;
 			await P.sleep(A, 400);
-			const burst = (await P.soundsSince(A, t)).length;
-			C.note(`background ${background}/1.5 s, one hit ${one}, 13 hits in ~1.1 s → ${burst} sounds`);
+			const frame = await P.frameMs(A);
+			const dings = await P.soundsSince(A, t);
+			const burst = dings.length;
+			// the rule as asked: never two dings closer than half a second. A sound starts on the frame after its
+			// pulse, so a gap is only known to within a frame: allow one frame (+60 ms) of slack, and a count over the
+			// measured span as well (at a few fps the clicks themselves come slower than the limit)
+			const gaps = dings.slice(1).map((x, i) => x - dings[i]);
+			const minGap = gaps.length ? Math.min(...gaps) : Infinity;
+			const floor = 500 - frame - 60;
+			C.note(
+				`background ${background}/1.5 s, one hit ${one}, 13 hits in ${(span / 1000).toFixed(1)} s → ${burst} sounds, closest ${Number.isFinite(minGap) ? Math.round(minGap) + ' ms' : '-'} apart; frame ${Math.round(frame)} ms`
+			);
+			if (frame > 120) C.note('low frame rate: the half-second rule is judged coarsely here');
 			if (background > 0) C.note('sounds play with nobody hitting the bell');
-			if (burst > 3 + background)
+			if (!background && minGap < floor)
 				return v(
 					0,
-					'more than one ding per half second when clicking fast (' + burst + ' in ~1.5 s)'
+					`two dings ${Math.round(minGap)} ms apart while clicking fast (${burst} in ${(span / 1000).toFixed(1)} s)`
+				);
+			if (burst > Math.floor(span / 500) + 2 + background)
+				return v(
+					0,
+					`more dings than one per half second (${burst} in ${(span / 1000).toFixed(1)} s)`
 				);
 			if (burst < 1) return v(0, 'no ding at all while clicking fast');
 			return v(1, 'dings, at most one per 0.5 s');
@@ -761,6 +791,8 @@ export const TASKS = [
 		check: async (C) => {
 			const A = C.A;
 			if (!(await P.enterPlay(A))) return v(0, 'Play did not start');
+			// the start is where Play puts you (the agent may have moved the spawn)
+			const start = await P.playerPos(A);
 			await P.sleep(A, 1000);
 			const h0 = healthOf(await P.hud(A));
 			if (h0 === null || !(h0 > 0))
@@ -777,7 +809,7 @@ export const TASKS = [
 			if (!(low < h0)) return v(0, 'standing on the spikes did not lower the health');
 			if (!movedTo)
 				return v(0, 'the player was not sent back when the health ran out (30 s on the spikes)');
-			if (Math.hypot(movedTo[0] - 0, movedTo[2] - 8) > 2.5)
+			if (Math.hypot(movedTo[0] - start[0], movedTo[2] - start[2]) > 2.5)
 				return v(0, 'the player was moved, but not back to the start');
 			let full = false;
 			await until(
@@ -822,10 +854,12 @@ export const TASKS = [
 		check: async (C) => {
 			const A = C.A;
 			if (!(await P.enterPlay(A))) return v(0, 'Play did not start');
+			// the start is where Play puts you (the agent may have moved the spawn)
+			const start = await P.playerPos(A);
 			await P.walk(A, [[0, 0, -5]]);
 			const first = await standUntilMoved(A, [0, 0, -5], 6000);
 			if (!first) return v(0, 'touching the lava did nothing');
-			if (Math.hypot(first[0], first[2] - 10) > 2.5)
+			if (Math.hypot(first[0] - start[0], first[2] - start[2]) > 2.5)
 				return v(
 					0,
 					'the lava sent the player somewhere other than the start before the checkpoint (' +
@@ -840,7 +874,9 @@ export const TASKS = [
 				'after lava: ' +
 					JSON.stringify(first.map((n) => +n.toFixed(1))) +
 					' then ' +
-					JSON.stringify(second?.map((n) => +n.toFixed(1)))
+					JSON.stringify(second?.map((n) => +n.toFixed(1))) +
+					'; start ' +
+					JSON.stringify(start.map((n) => +n.toFixed(1)))
 			);
 			if (!second) return v(0, 'the lava did nothing the second time');
 			if (Math.hypot(second[0] - 6, second[2] - 4) > 2.5)

@@ -53,6 +53,11 @@ check('a glowing star is lit', lit(door(), door({ emis: 0.6 })));
 check('a brighter-coloured star is lit', lit(door(), door({ col: 0.8 })));
 check('a light near the star lights it', lit(door(), door({ light: 2 })));
 check('a hidden star is not lit', !lit(door(), door({ emis: 0.6, shown: false })));
+check('a glowing thing shown at a lantern lights it', lit(door({ glow: 0 }), door({ glow: 2 })));
+check(
+	'a glow that was already there is not a light-up',
+	!lit(door({ glow: 2 }), door({ glow: 2 }))
+);
 check(
 	'a light object switched up is lit',
 	lit({ ...door(), isLight: true, intensity: 0 }, { ...door(), isLight: true, intensity: 3 })

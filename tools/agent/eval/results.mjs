@@ -25,7 +25,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn, execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { TASKS } from './tasks.mjs';
 import * as P from './player.mjs';
 
@@ -52,6 +52,10 @@ const NO_AGENT = flag('--no-agent');
 const SCRIPT = opt('--script', '')
 	? JSON.parse(fs.readFileSync(opt('--script', ''), 'utf8'))
 	: null;
+// --replay <dir>: re-run the tool calls an earlier run RECORDED (<dir>/runs/<task>.r<k>.calls.jsonl) against
+// a fresh start scene, no model: how a changed check scores builds agents already made. Ids the old run got
+// back are mapped to the new ones by their order in each answer, start-scene uuids by object name.
+const REPLAY = opt('--replay', '') ? path.resolve(opt('--replay', '')) : '';
 const CLOUD = opt('--cloud', path.resolve(CORE, '..', 'cloud'));
 const CLOUD_REF = opt('--cloud-ref', 'origin/main');
 /** a smaller page renders faster on a software-GL box; the checks read the scene, not pixels */
@@ -99,6 +103,18 @@ function systemPrompt(/** @type {string} */ instructions) {
 const FILES = catalogFiles();
 const CATALOG = JSON.parse(fs.readFileSync(FILES.tools, 'utf8'));
 const SYSTEM = systemPrompt(CATALOG.instructions ?? '');
+// scripts and replays call the tab the way the connector does: a family name (hud, run, set_look…) resolves to one
+// fine tool first, by the Worker's own catalog.js
+const POLICY = await import(pathToFileURL(path.resolve(FILES.policy)).href);
+const COMPILED = POLICY.compileCatalog(CATALOG);
+/** @param {any} tab @param {string} name @param {any} args */
+async function familyCall(tab, name, args) {
+	if (!COMPILED.byName.has(name))
+		return { type: 'error', error: { code: 'unknown_tool', message: 'Unknown tool: ' + name } };
+	const call = POLICY.resolveCall(COMPILED, name, args);
+	if ('error' in call) return { type: 'error', error: { code: 'refused', message: call.error } };
+	return tab.call(call.tool, call.args);
+}
 
 /** a bridge the connector stand-in posts fine calls to; `target` is the page's relay of the run in progress */
 function startBridge() {
@@ -361,30 +377,128 @@ async function runOne(browser, bridge, task, k) {
 		const base = {};
 		for (const [name, ref] of Object.entries(refs)) base[name] = await P.look(A.page, ref);
 		// the agent (or a fixed script, or nothing)
-		if (SCRIPT) {
+		if (REPLAY) {
+			const rec = [k, 1]
+				.map((n) => path.join(REPLAY, 'runs', `${task.id}.r${n}.calls.jsonl`))
+				.find((f) => fs.existsSync(f));
+			const old = rec
+				? fs
+						.readFileSync(rec, 'utf8')
+						.split('\n')
+						.filter(Boolean)
+						.map((l) => JSON.parse(l))
+				: [];
+			// uuids, and the HUD's own ids (text-1-1h8p, screen-1-azjk)
+			const UUID =
+				/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\b[a-z]+-\d+-[a-z0-9]{4}\b/g;
+			/** @type {Map<string, string>} */
+			const ids = new Map();
+			// start-scene objects by name: the old run's own refs (saved since validate2), else whatever an old answer listed
+			const oldRow = rec ? rec.replace(/\.calls\.jsonl$/, '.json') : '';
+			if (oldRow && fs.existsSync(oldRow))
+				for (const [name, r] of Object.entries(
+					JSON.parse(fs.readFileSync(oldRow, 'utf8')).refs ?? {}
+				))
+					if (refs[name] && /** @type {any} */ (r)?.uuid)
+						ids.set(/** @type {any} */ (r).uuid, refs[name].uuid);
+			// start-scene objects by name, wherever an old answer listed them
+			for (const c of old)
+				for (const m of String(c.answer ?? '').matchAll(
+					/"uuid":"([0-9a-f-]{36})","name":"([^"]+)"/g
+				))
+					if (refs[m[2]] && !ids.has(m[1])) ids.set(m[1], refs[m[2]].uuid);
+			const remap = (/** @type {any} */ x) =>
+				JSON.parse(JSON.stringify(x), (_k, val) =>
+					typeof val === 'string' ? val.replace(UUID, (u) => ids.get(u) ?? u) : val
+				);
+			const calls = [];
+			for (const c of old) {
+				if (['screenshot', 'describe_node_types', 'status'].includes(c.tool)) continue;
+				const f = await familyCall(tab, c.tool, remap(c.args));
+				const got = JSON.stringify(f.result ?? f).slice(
+					0,
+					Math.max(600, String(c.answer ?? '').length)
+				);
+				const was = String(c.answer ?? '').match(UUID) ?? [];
+				const now = got.match(UUID) ?? [];
+				was.forEach((u, i) => {
+					if (now[i] && !ids.has(u)) ids.set(u, now[i]);
+				});
+				calls.push({
+					tool: c.tool,
+					action: c.action,
+					args: c.args,
+					error:
+						f.type !== 'result' || f.result?.error ? JSON.stringify(f).slice(0, 300) : undefined
+				});
+			}
+			agent = { code: 0, wallS: 0, out: null, calls, replayed: rec ?? null };
+		} else if (SCRIPT) {
 			const steps = SCRIPT[task.id] ?? [];
 			const calls = [];
-			// "$Name" in a script's args = the uuid of the object called Name (start scene or created by the script)
+			// "$Name" in a script's args = the uuid of the object called Name (start scene or created by the script);
+			// "$@3.created.0.id" = a value from step 3's answer; "$@1:onclick" = the id of the first onclick node in it
+			/** @type {any[]} */
+			const answers = [];
+			const find = (/** @type {any} */ x, /** @type {string} */ type) => {
+				if (typeof x === 'string') {
+					// node text: "<id> = onclick+ {…}"
+					const m = x.match(new RegExp('([0-9a-f-]{36}) = ' + type + '\\b'));
+					return m ? m[1] : null;
+				}
+				if (!x || typeof x !== 'object') return null;
+				if (x.type === type && typeof x.id === 'string') return x.id;
+				for (const v of Object.values(x)) {
+					const hit = find(v, type);
+					if (hit) return hit;
+				}
+				return null;
+			};
 			const fill = (/** @type {any} */ x) =>
 				JSON.parse(JSON.stringify(x), (_k, val) => {
 					if (typeof val !== 'string' || !val.includes('$')) return val;
+					val = val
+						.replace(
+							/\$@(\d+):([a-z0-9-]+)/g,
+							(_m, i, type) => find(answers[Number(i)], type) ?? _m
+						)
+						.replace(/\$@(\d+)((?:\.[A-Za-z0-9_]+)+)/g, (_m, i, p) => {
+							// the path stops at the first string; what follows (".hit") is kept as written
+							let o = answers[Number(i)];
+							const keys = p.slice(1).split('.');
+							for (let j = 0; j < keys.length; j++) {
+								o = o?.[keys[j]];
+								if (typeof o === 'string')
+									return (
+										o +
+										keys
+											.slice(j + 1)
+											.map((x) => '.' + x)
+											.join('')
+									);
+							}
+							return _m;
+						});
 					for (const name of Object.keys(refs).sort((a, b) => b.length - a.length))
 						val = val.split('$' + name).join(refs[name].uuid);
 					return val;
 				});
 			for (const s of steps) {
-				const f = await tab.call(s.tool, fill(s.args));
+				const f = await familyCall(tab, s.tool, fill(s.args));
+				answers.push(f.result ?? null);
 				for (const c of f.result?.created ?? [])
 					if (c?.name && c?.uuid && !refs[c.name]) refs[c.name] = { uuid: c.uuid, name: c.name };
 				calls.push({
 					tool: s.tool,
 					args: s.args,
 					error:
-						f.type !== 'result' || f.result?.error ? JSON.stringify(f).slice(0, 300) : undefined
+						f.type !== 'result' || f.result?.error || f.result?.partial
+							? JSON.stringify(f).slice(0, 400)
+							: undefined
 				});
 			}
 			agent = { code: 0, wallS: 0, out: null, calls, scripted: true };
-		} else if (!NO_AGENT) {
+		} else if (!NO_AGENT && !REPLAY) {
 			bridge.set({ call: tab.call });
 			agent = await runAgent(task.say, bridge.url, stem);
 			bridge.set(null);
@@ -465,7 +579,11 @@ async function runOne(browser, bridge, task, k) {
 		agentSaid: String(agent?.out?.result ?? '').slice(0, 400),
 		tokens: tokensOf(agent?.out),
 		totalWallS: Math.round((Date.now() - t0) / 1000),
-		pageErrors: errors.slice(0, 5)
+		pageErrors: errors.slice(0, 5),
+		refs,
+		callErrors: calls
+			.filter((/** @type {any} */ c) => c.error)
+			.map((/** @type {any} */ c) => c.tool + ': ' + String(c.error).slice(0, 200))
 	};
 	fs.writeFileSync(stem + '.json', JSON.stringify(row, null, '\t'));
 	console.log(
@@ -520,7 +638,7 @@ const bridge = /** @type {any} */ (await startBridge());
 const browser = await h.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
 const meta = {
 	label: LABEL,
-	model: NO_AGENT ? null : SCRIPT ? 'script' : MODEL,
+	model: NO_AGENT ? null : REPLAY ? 'replay ' + REPLAY : SCRIPT ? 'script' : MODEL,
 	appUrl: h.URL,
 	catalog: FILES.ref,
 	catalogTools: CATALOG.tools?.length,

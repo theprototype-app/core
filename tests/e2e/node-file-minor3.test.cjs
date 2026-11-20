@@ -3,16 +3,15 @@
 // into a live room, the phone node sheet, and (N3C_OLD_URL set) an OLDER build opening the newer file.
 //
 // The bug this reproduces first: customNodeDefs had no save path, so a scene reloaded alone kept its custom
-// node instances and lost what they run (no sockets, nothing evaluated). On v1.68.0 §2 is red at "the custom
-// node's definition comes back after a real reload" and §3 at "the .tpscene carries nodeDefs".
+// node instances and lost what they run (no sockets, nothing evaluated).
 //
 // N3C_OLD_URL=https://theprototype.app:<port>/ (a v1.67.1 tree served by the lane, see STATUS) runs §5; without
 // it §5 says SKIP and the rest still runs (the battery has no old build to point at).
 //
-// Counterfactuals (broken by hand once, the named check went red):
-//   · sessions.js without customNodeDefsRestore -> "the .tpscene load brings the definition back"
-//   · autosave.js without nodeDefs in the snapshot -> "the custom node's definition comes back after a real reload"
-//   · flowClean.js keeping a broken `v` -> "a broken v is dropped at the boundary, the node stays"
+// Counterfactual (run 2026-11-20, evidence e2e-cf2-autosave-no-defs.log): autosave.js restoring no definitions ->
+// "the custom node's definition comes back after a real reload" and "its instance draws its two sockets again" red
+// (the v1.68.0 state of the reload path). The merge / v / data.type guards have unit counterfactuals
+// (tests/unit/nodeFileMinor3.test.js).
 const h = require('./helpers.cjs');
 const fs = require('fs');
 

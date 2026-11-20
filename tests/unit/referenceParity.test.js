@@ -166,10 +166,9 @@ describe('2.0-n3c parity: reference JS == built-in', () => {
 						/** @type {Record<string, any>} */
 						const wired = { index };
 						for (const k of wiredSlots) wired[k] = slot;
-						// the declared out socket is a number: compare after that coercion (the built-in
-						// passes the raw slot value on; every number consumer num()s it)
-						const want = coerceInput('number', builtIn(node, wired, 0));
-						expect(converted(node, wired, 0).value, `select ${JSON.stringify(data)} i=${String(index)} ${wiredSlots} ${String(slot)}`).toBe(want);
+						// planner Q5: 'any' slots and out, so EXACTLY the raw value the built-in passes on
+						const want = builtIn(node, wired, 0);
+						expect(converted(node, wired, 0).value, `select ${JSON.stringify(data)} i=${String(index)} ${wiredSlots} ${String(slot)}`).toStrictEqual(want);
 					}
 				}
 	});

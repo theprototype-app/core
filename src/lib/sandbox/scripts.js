@@ -312,6 +312,7 @@ const SCRIPT_PRELUDE = String.raw`
 	const lerp = (a, b, t) => a + (b - a) * t;
 	const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
 	const api = Object.freeze({
+		version: 2, // = scriptIO SCRIPT_API_VERSION (scriptApiVersion.test.js)
 		object: (ref) => B.call('api', 'object', [ref && typeof ref === 'object' ? { uuid: ref.uuid } : ref]),
 		raycast: (from, dir, max) => B.call('api', 'raycast', max === undefined ? [from, dir] : [from, dir, max]),
 		keys: () => B.call('api', 'keys', []),

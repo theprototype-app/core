@@ -16,6 +16,14 @@
 // is easy to get subtly wrong, so they are testable with no runtime, no scene and no peer.
 
 /** the socket types a script may declare (flowSockets' vocabulary, minus 'effect') */
+/**
+ * 2.0-n3c (planner Q3): the SCRIPT api's contract number, as `api.version` inside a Script node / behaviour.
+ * 1 (absent) = object, raycast, keys, spawn. 2 = + `self()` (this node's id) and `stamp(input)` (the newest
+ * trigger stamp on one of this node's inputs, synced seconds, null = never). Probe: `(api.version ?? 1) >= 2`.
+ * The sandbox guest's api (sandbox/scripts.js SCRIPT_PRELUDE) carries the same literal; scriptApiVersion.test.js
+ * holds the two together.
+ */
+export const SCRIPT_API_VERSION = 2;
 export const SCRIPT_INPUT_TYPES = ['number', 'boolean', 'vector3', 'color', 'object', 'event', 'any'];
 // 2.0-n3c: 'any' hands the code the RAW wired value (text, a list, a number) and `undefined` when
 // nothing is wired and nothing is dialled — what a converted HUD Text's value and a converted

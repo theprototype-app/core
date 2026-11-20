@@ -18,7 +18,7 @@ import { moduleEffects, moduleFrameTasks } from './moduleSDK';
 import { moduleValueNodes, moduleNodeInputs, evalModuleValueNode } from './moduleNodeIO';
 import { runScript, runScriptValue, runPlayerScript, reportScriptProblems, clearScriptError } from './scriptRuntime';
 import { builtinCodeActive, mergePlayerResult } from './builtinCode.js'; // 36-fb-code (F5): a leaf
-import { scriptInputs, scriptOutputs, isScriptValue, coerceInput } from './scriptIO'; // 34 D3: a leaf
+import { scriptInputs, scriptOutputs, isScriptValue, coerceInput, SCRIPT_API_VERSION } from './scriptIO'; // 34 D3: a leaf
 import { findNodeDef } from './customNodes';
 import { updateSounds } from './soundRuntime';
 import { colliderSpecOf } from './colliderSpec'; // B6: pure THREE leaf
@@ -2968,6 +2968,7 @@ function objectView(object) {
  */
 export function scriptApi(nodeId, code, kind, ctx = null) {
 	return Object.freeze({
+		version: SCRIPT_API_VERSION, // 2.0-n3c: probe `(api.version ?? 1) >= 2` for self / stamp
 		self() {
 			return Object.freeze({ id: nodeId });
 		},

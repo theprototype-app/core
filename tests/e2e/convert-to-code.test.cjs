@@ -8,11 +8,9 @@
 // joiner gets the same graph and value (Random's seeded number too); a saved .tpscene brings the script back
 // still convertible; Convert back returns the built-in with its exact data.
 //
-// Counterfactuals (broken by hand once, the named check went red):
-//   · convertToCode.js without the history batch (each record its own step) -> "ONE undo puts <type> back"
-//   · convertCode.js planConvert keeping `sourceHandle` undefined on outgoing edges -> "the downstream
-//     Math still reads 13"
-//   · reference.js RANDOM_JS hashing `id + 1` -> "the converted Random reads the built-in's seeded value"
+// Counterfactual (run 2026-11-20, evidence e2e-cf1-no-batch.log): convertToCode.js with each half its own
+// history step (no batch) -> "ONE undo puts <type> back with its wires" red for all seven (8 red in total).
+// The planner / parity halves have unit counterfactuals (tests/unit/referenceParity.test.js header).
 const h = require('./helpers.cjs');
 const fs = require('fs');
 
@@ -172,7 +170,7 @@ h.run(async () => {
 			h.check(touching(g, t.id) === edgesBefore, `${t.type}: every wire is kept (${touching(g, t.id)}/${edgesBefore})`);
 			h.check(g.edges.filter((e) => e.source === t.id).every((e) => e.sourceHandle === 'out'), `${t.type}: outgoing wires leave its out socket`);
 		}
-		await h.eventually(() => readings(p), (r) => Object.keys(baseline).every((k) => same(r[k], baseline[k])), `${t.type}: every reading is unchanged after Convert (${t.id})`, 15000);
+		await h.eventually(() => readings(p), (r) => Object.keys(baseline).every((k) => same(r[k], baseline[k])), `${t.type}: every reading is unchanged after Convert (${t.id})`, t.id === 'm' ? 45000 : 15000); // the first Script on a page boots the sandbox engine
 		if (t.id === 'm') h.check(same(await value(p, 'mx'), 13), 'the downstream Math still reads 13');
 		if (t.id === 'rnd') h.check(same(await value(p, 'rnd'), baseline.rnd), `the converted Random reads the built-in's seeded value (${baseline.rnd})`);
 		const ha = await hash(p);
@@ -204,7 +202,7 @@ h.run(async () => {
 	await h.connect(C, A);
 	const hc = await hash(p);
 	await h.eventually(() => hash(C.page), (x) => x === hc, 'the late joiner holds the same graph (nodesync hash)', 30000);
-	await h.eventually(() => readings(C.page), (r) => Object.keys(baseline).every((k) => same(r[k], baseline[k])), 'the late joiner reads every value, the seeded Random included', 20000);
+	await h.eventually(() => readings(C.page), (r) => Object.keys(baseline).every((k) => same(r[k], baseline[k])), 'the late joiner reads every value, the seeded Random included', 45000); // a fresh page boots the sandbox engine
 	await h.closePeer(C);
 
 	// --- 4. a .tpscene round trip keeps the scripts and their convert-back -------------------
@@ -242,6 +240,7 @@ h.run(async () => {
 		const orig = DOC.scene.nodes.find((n) => n.id === t.id);
 		const node = g.nodes.find((n) => n.id === t.id);
 		const dataSame = Object.keys(orig.data).every((k) => JSON.stringify(node?.data[k]) === JSON.stringify(orig.data[k]));
+		if (!dataSame) console.log('  data diff', t.id, JSON.stringify(Object.keys(orig.data).filter((k) => JSON.stringify(node?.data[k]) !== JSON.stringify(orig.data[k])).map((k) => [k, orig.data[k], node?.data[k]])));
 		h.check(node?.type === t.type && dataSame, `${t.type}: Convert back returns the built-in with its exact data`);
 		h.check(touching(g, t.id) === touching(before, t.id) && (t.type !== 'hudtext' || !scriptFor(g, 'ht')), `${t.type}: and its wires (${touching(g, t.id)})`);
 	}
@@ -269,7 +268,8 @@ h.run(async () => {
 	h.check((await convertHook(p, 'm', true))?.ok === false, 'Convert back refuses once the code was edited');
 	await selectNode(p, 'm');
 	await p.locator('#flow-tab-info').click();
-	h.check((await p.locator('#flow-node-convert').getAttribute('data-conversion')) === 'changed' && (await p.locator('#flow-node-convert').isDisabled()), 'and the sheet shows Convert back disabled with the reason');
+	const sheetState = await p.evaluate(() => ({ conv: document.querySelector('#flow-node-convert')?.getAttribute('data-conversion') ?? null, disabled: document.querySelector('#flow-node-convert')?.disabled ?? null, label: document.querySelector('#flow-props .ui-section-label')?.textContent ?? null }));
+	h.check(sheetState.conv === 'changed' && sheetState.disabled === true, `and the sheet shows Convert back disabled with the reason (${JSON.stringify(sheetState)})`);
 	await p.screenshot({ path: OUT + 'convert-02-changed.png' });
 
 	await h.closePeer(B);

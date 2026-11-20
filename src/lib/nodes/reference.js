@@ -199,9 +199,11 @@ export function referenceShape(type, data, wired = new Set()) {
 			params: { last },
 			inputs: [
 				{ name: 'index', type: 'number', value: d.index ?? 0 },
-				...keys.slice(0, last + 1).map((k) => ({ name: k, type: 'number', value: d[k] ?? 0 }))
+				// planner Q5: 'any' slots and out, so a consumer gets EXACTLY what the built-in passes on (the raw
+				// slot value: text, a list, a number), not a number-coerced copy
+				...keys.slice(0, last + 1).map((k) => ({ name: k, type: 'any', value: d[k] ?? 0 }))
 			],
-			outputs: [{ name: 'out', type: 'number' }]
+			outputs: [{ name: 'out', type: 'any' }]
 		};
 	}
 	if (type === 'maprange')

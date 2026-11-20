@@ -55,7 +55,7 @@ module.exports = { judge, median };
 
 if (require.main === module) {
 	const argv = process.argv.slice(2);
-	const pick = (flag) => {
+	const pick = (/** @type {string} */ flag) => {
 		const i = argv.indexOf(flag);
 		if (i < 0) return [];
 		const out = [];

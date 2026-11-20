@@ -130,9 +130,10 @@ export function dropPeerCursor(peerId) {
 /** Merge one graph's snapshot: known nodes update in place, unknown append. */
 /** @param {string} graphId @param {any[]} nodes @param {any[]} edges */
 function mergeGraphSnapshot(graphId, nodes, edges) {
-	// 2.0-n3c: `data.type` filled the way flowStore.restoreGraphs fills it (withDataType), or a node that came from
-	// a FILE lacking it differs between the peer that loaded it (filled) and every peer that merged it (not)
-	if (Array.isArray(nodes)) nodes = nodes.map(cleanFlowNode).map((n) => (n?.type && n.data && n.data.type === undefined ? { ...n, data: { ...n.data, type: n.type } } : n));
+	// the receiver mirrors the sender: nothing is filled in here (a fill on this side only - 2.0-n3c tried data.type -
+	// makes a live node created without it hash differently on every joiner for ever: nodesync-join). A file's nodes
+	// are filled by the SENDER (sessions.applySession sends what restoreGraphs made of them).
+	if (Array.isArray(nodes)) nodes = nodes.map(cleanFlowNode);
 	if (Array.isArray(edges)) edges = edges.map(cleanFlowEdge);
 	updateGraph(graphId, (g) => {
 		let nextNodes = g.nodes;

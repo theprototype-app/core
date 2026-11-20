@@ -132,7 +132,7 @@ h.run(async () => {
 		inScene.count === 1 && inScene.autoplay === true && inScene.tracks === 2,
 		`scene.tpscene carries the sequence (${JSON.stringify(inScene)})`
 	);
-	h.check(inScene.minor === 2, 'with formatMinor 2');
+	h.check(inScene.minor >= 2, 'with formatMinor >= 2'); // 2 brought sequences; 3 (2.0-n3c) keeps them
 	await A.ctx.close();
 
 	// ---------- 3. served elsewhere, it autoplays ----------

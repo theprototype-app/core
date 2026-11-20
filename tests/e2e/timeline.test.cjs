@@ -579,7 +579,7 @@ h.run(async () => {
 		return { json: JSON.stringify(payload), minor: payload.formatMinor, has: !!payload.sequences };
 	});
 	h.check(
-		saved.has && saved.minor === 2,
+		saved.has && saved.minor >= 2, // sequences arrived in formatMinor 2; a later minor (3: 2.0-n3c node defs) still carries them
 		`the save carries the sequences, formatMinor ${saved.minor}`
 	);
 	await pa.evaluate(async () => {

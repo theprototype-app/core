@@ -4,7 +4,7 @@ import { renderOffscreen } from './render/offscreen.js';
 import './threeFixes.js'; // 36-fb-water F14: transmissive materials survive a JSON trip (the export runtime loads scenes here too)
 import { writable, get } from 'svelte/store';
 import { objectsGroup, globalCamera, globalScene, globalRenderer, orbitControls, TControls, pokeScene, beginSceneBatch, endSceneBatch } from '../stores/sceneStore';
-import { restoreGraphs, clearGraphs, SCENE_GRAPH, allNodes } from '../stores/flowStore';
+import { restoreGraphs, clearGraphs, SCENE_GRAPH, allNodes, withDataType } from '../stores/flowStore';
 import { ensureMainGraph } from './mainGraph.js'; // 36 (G1): a leaf
 import { serializeGraphs, copyGraphFrom } from './flowGraphs';
 import { customNodeDefsSnapshot, customNodeDefsRestore } from './customNodes'; // 2.0-n3c
@@ -1714,13 +1714,19 @@ async function applySessionNow(payload, opts, job) {
 	customNodeDefsRestore(payload.nodeDefs, replicate);
 	if (graphsPayload) {
 		restoreGraphs(graphsPayload, { views: payload.flowViews });
-		if (replicate && peer)
+		if (replicate && peer) {
+			// 2.0-n3c: send the nodes as restoreGraphs made them (data.type filled, withDataType), not as the file
+			// held them, or a file node lacking data.type hashes differently here and on every peer that merged it
+			const sent = Object.fromEntries(
+				Object.entries(graphsPayload).map(([id, g]) => [id, { ...g, nodes: (g?.nodes ?? []).map(withDataType) }])
+			);
 			peer.send({
 				type: 'nodes',
-				graphs: graphsPayload,
-				nodes: graphsPayload[SCENE_GRAPH]?.nodes ?? [],
-				edges: graphsPayload[SCENE_GRAPH]?.edges ?? []
+				graphs: sent,
+				nodes: sent[SCENE_GRAPH]?.nodes ?? [],
+				edges: sent[SCENE_GRAPH]?.edges ?? []
 			});
+		}
 	}
 	// a scene LOAD replaces the world, so replace the documents too
 	shaderGraphsRestore(payload.shaderGraphs ?? {}, replicate);

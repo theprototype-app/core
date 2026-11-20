@@ -128,18 +128,26 @@ describe('a load that changed a node type converges', () => {
 	});
 });
 
-describe('a merged node gets data.type the way a restored one does', () => {
-	test('a file node without data.type hashes the same on the loader and on a peer that merged it', async () => {
-		const { restoreGraphs } = await import('../../src/stores/flowStore.js');
+describe('data.type: the receiver mirrors the sender, the file loader fills before it sends', () => {
+	test('a merge invents nothing: a live node without data.type hashes the same on sender and receiver', async () => {
+		const { restoreGraphs, flowGraphs } = await import('../../src/stores/flowStore.js');
+		const { applyNodesSnapshot, graphHash } = await import('../../src/lib/nodesHandler.js');
+		const live = { id: 'k1', type: 'keypress', position: { x: 0, y: 0 }, data: { key: 'KeyR' } };
+		// the sender's store holds the node as created (createFlowNode does not fill data.type)
+		flowGraphs.set({ scene: { nodes: [live], edges: [] } });
+		const sender = graphHash();
+		restoreGraphs({ scene: { nodes: [], edges: [] } });
+		applyNodesSnapshot([], [], { scene: { nodes: [live], edges: [] } });
+		expect(graphHash()).toBe(sender);
+	});
+	test('a file node: what the loader sends (withDataType) merges to the loader\'s own hash', async () => {
+		const { restoreGraphs, withDataType } = await import('../../src/stores/flowStore.js');
 		const { applyNodesSnapshot, graphHash } = await import('../../src/lib/nodesHandler.js');
 		const raw = { id: 'q', type: 'number', position: { x: 0, y: 0 }, data: { value: 2 } };
 		restoreGraphs({ scene: { nodes: [raw], edges: [] } });
 		const loader = graphHash();
-		restoreGraphs({ scene: { nodes: [], edges: [] } });
-		applyNodesSnapshot([], [], { scene: { nodes: [raw], edges: [] } });
-		expect(graphHash()).toBe(loader);
 		restoreGraphs({ scene: { nodes: [{ ...raw, type: 'math', data: { type: 'math', op: 'add' } }], edges: [] } });
-		applyNodesSnapshot([], [], { scene: { nodes: [raw], edges: [] } });
+		applyNodesSnapshot([], [], { scene: { nodes: [withDataType(raw)], edges: [] } });
 		expect(graphHash()).toBe(loader);
 	});
 });

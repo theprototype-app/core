@@ -323,6 +323,8 @@
 		"nodes85-button-iwer": 240,
 		"agent-room": 240,
 		"photo-mode": 420,
+		"cinematic-view": 600,
+		"cinematic-offer-net": 240,
 		"text-path": 360,
 		"text-object": 480,
 		"path-object": 480,
@@ -948,11 +950,11 @@
 		"untangle": 146
 	},
 	"desk": {
-		"gpu": ["MOD:fx-car-blocks","MOD:untangle"],
+		"gpu": ["MOD:fx-car-blocks","MOD:untangle","cinematic-view"],
 		"peer-self": ["arch-primitives","game-race"],
 		"prod-host": ["error-reports"],
 		"software": ["behaviours","community-seams","files-format-row","inspector","save-project-libraries"],
-		"local": ["fb-water-phone","fluid-gpu","net-stress","quality-phone","throw-peer"]
+		"local": ["cinematic-view","fb-water-phone","fluid-gpu","net-stress","quality-phone","throw-peer"]
 	},
 	"exclude": {
 		"test data of ~1.3 GB fetched on demand (scripts/fetch-wild-assets.cjs), ~1 h on the pc: run it when importing or Replace changes; SKIPs without the cache": ["import-wild"],

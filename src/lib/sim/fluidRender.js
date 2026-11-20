@@ -358,6 +358,8 @@ export class FluidVisual {
 	/** the SSF passes, run with the camera about to draw the composite @param {any} renderer @param {any} camera */
 	runPasses(renderer, camera) {
 		if (this.mode !== 'ssf') return;
+		// 100 C1 (W7): the Cinematic view's WebGPU renderer cannot run the GLSL passes (stand-in instead)
+		if (renderer?.isWebGPURenderer) return;
 		const target = renderer.getRenderTarget();
 		const tw = target ? target.width : renderer.getDrawingBufferSize(this.passSize).x;
 		const th = target ? target.height : renderer.getDrawingBufferSize(this.passSize).y;

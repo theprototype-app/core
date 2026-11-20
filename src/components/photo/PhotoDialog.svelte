@@ -141,7 +141,7 @@
 			{/if}
 			<span id="photo-progress-text" class="text-xs text-text-muted" aria-live="polite">
 				{#if rendering}
-					{#if $photoState.compiling}Preparing the renderer…{:else if $photoState.place === 'raster'}Taking the still…{:else}{$photoState.samples} / {$photoState.target} samples · {pct}%{/if}
+					{#if $photoState.compiling}Preparing the renderer…{:else if $photoState.place === 'raster' || $photoState.place === 'view'}Taking the still…{:else}{$photoState.samples} / {$photoState.target} samples · {pct}%{/if}
 				{:else if $photoState.status === 'done'}
 					{reasonText[$photoState.reason] ?? ''}
 					{doneText($photoState)}

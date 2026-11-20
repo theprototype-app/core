@@ -1024,6 +1024,9 @@ function ensureTarget(w, h) {
  * the Reflector/Refractor pattern). @param {any} renderer @param {any} scene @param {any} camera
  */
 function runPrepass(renderer, scene, camera) {
+	// 100 C1 (W6): the Cinematic view's WebGPU renderer cannot run these GLSL passes — a nested render
+	// there threw and left its target bound, so every later frame drew off-screen (the view went empty)
+	if (renderer?.isWebGPURenderer) return;
 	if (!needsPrepass() || renderer.xr.isPresenting) return;
 	if (prepass.frame === frameNo && prepass.camera === camera) return;
 	const rt = renderer.getRenderTarget();
@@ -1173,6 +1176,13 @@ const fogColor = new THREE.Color();
 function beforeSceneRender(renderer, scene, camera, target) {
 	prevBefore?.(renderer, scene, camera, target);
 	if (renderDepth++ > 0) return;
+	// 100 C1 (W6): under the Cinematic view's WebGPU renderer the water draws as its plain stand-in
+	// (no hand-off to the invisible placeholder, no underwater fog swap); the depth stays counted
+	if (renderer?.isWebGPURenderer) {
+		swapped.length = 0;
+		underwater = null;
+		return;
+	}
 	swapped.length = 0;
 	if (camera?.isCamera) lastCamera = camera;
 	if (!entries.size) return;

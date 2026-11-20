@@ -8,7 +8,7 @@
 //
 //   1. per device: the class, the handles, the button, before and after opening Configure Scene, and after closing
 //   2. a handle sits BELOW the logo / the profile button (never covers them), on its screen edge
-//   3. a handle press opens its column; the touch handle closes it again from the column's inner edge
+//   3. a handle press opens its column; the handle is gone while it is open (80a-fix4-ui O2), the strip's hide button closes it
 //   4. turning the handles ON by hand on the unfolded phone hides the button (the counterfactual: off = shown)
 //   5. the Panels button cycles left -> right -> hide all, skipping an empty side
 //   6. "Hide handles" (the setting Off) hides them; Auto brings them back
@@ -98,13 +98,10 @@ h.run(async () => {
 			await settle(page);
 			st = await state(page);
 			h.check(st.vis.right === true, `${tag('3.1')} the right handle opens the right column`);
-			if (dev.cls === 'desktop') {
-				h.check(!st.hr, `${tag('3.2')} desktop: the handle is gone while its column is open (the border closes it)`);
-				await page.evaluate(() => window.__tp.test.v1.sidebars.toggleSidebar('right', false));
-			} else {
-				h.check(!!st.hr && st.colR && Math.abs(st.hr.r - st.colR.x) <= 2, `${tag('3.2')} touch: the handle rides the column's inner edge (${st.hr?.r} ~ ${st.colR?.x})`);
-				await page.locator('#sidebar-handle-right').click();
-			}
+			// 80a-fix4-ui O2 (owner 2026-11-20): gone while its column is open on EVERY layout (touch used to keep it on
+			// the column's inner edge); the strip's hide button closes the column
+			h.check(!st.hr, `${tag('3.2')} the handle is gone while its column is open (${dev.cls})`);
+			await page.locator('#sidebar-hide-right').click();
 			await settle(page);
 			h.check((await state(page)).vis.right === false, `${tag('3.3')} ...and the column closes again`);
 		}

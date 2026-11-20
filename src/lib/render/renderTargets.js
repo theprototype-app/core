@@ -25,13 +25,20 @@ const live = new Set();
 export function createRenderTarget(width, height, options) {
 	const target = new THREE.WebGLRenderTarget(width, height, options);
 	live.add(target);
-	target.addEventListener('dispose', () => live.delete(target));
+	// `__keep`: the app's own listener, never pruned with a renderer generation (./generations.js)
+	const gone = Object.assign(() => live.delete(target), { __keep: 1 });
+	target.addEventListener('dispose', gone);
 	return target;
 }
 
 /** how many factory targets are alive (unit + e2e probe) */
 export function liveRenderTargets() {
 	return live.size;
+}
+
+/** the live factory targets (100 C1: the generation sweep) */
+export function renderTargetList() {
+	return [...live];
 }
 
 /** dispose every factory target still alive (disposeRenderer's half); returns how many */

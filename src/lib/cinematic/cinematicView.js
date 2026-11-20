@@ -19,6 +19,7 @@
 import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { releaseMainContext, restoreMainContext, setViewOwner, flushHeldDisposals, viewSelection } from '../render/view.js';
+import { glGenerationEnding, glGenerationStarting, gpuGenerationStarting, gpuGenerationEnded, generationStats } from '../render/generations.js';
 import { compileAsync } from '../render/compile.js';
 import { captureEnvironment, useCopies, restoreEnvironment } from './envHandover.js';
 import { buildPipeline } from './pipeline.js';
@@ -199,8 +200,11 @@ async function enter() {
 	t.imported = now();
 	// 1. what lives only on the WebGL context, copied out while it is alive
 	const env = captureEnvironment(gl, scene);
-	// 2. the WebGL renderer's GPU state goes (one renderer in memory at a time)
+	// 2. the WebGL renderer's GPU state goes (one renderer in memory at a time), and with it its generation's
+	//    dispose listeners on every live object (render/generations.js: the ~3 MB-per-trip leak)
+	const glDied = glGenerationEnding(gl, scene);
 	await releaseMainContext(gl);
+	glDied();
 	t.released = now();
 	// 3. a canvas of its own over the WebGL one
 	const glCanvas = gl.domElement;
@@ -210,9 +214,10 @@ async function enter() {
 	canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;display:block';
 	glCanvas.parentElement.appendChild(canvas);
 	glCanvas.style.opacity = '0';
+	const gpuEra = gpuGenerationStarting();
 	/** @type {any} */
 	const r = new W.WebGPURenderer({ canvas, antialias: false, alpha: false, powerPreference: 'high-performance' });
-	live = { W, T, r, gl, scene, canvas, glCanvas, env, built: null, swap: null, ro: null, errors: [], frames: 0, last: 0, drop: createDropWatch(), drops: 0, rebuilding: false, failing: false, camera: cam, t };
+	live = { W, T, r, gpuEra, gl, scene, canvas, glCanvas, env, built: null, swap: null, ro: null, errors: [], frames: 0, last: 0, drop: createDropWatch(), drops: 0, rebuilding: false, failing: false, camera: cam, t };
 	r.onDeviceLost = (/** @type {any} */ info) => {
 		log.errors.push({ at: Math.round(now()), lost: String(info?.message ?? info?.reason ?? '') });
 		void fail('the graphics device was lost.');
@@ -385,8 +390,10 @@ async function teardown(reason) {
 	} catch (e) {
 		log.errors.push({ at: Math.round(now()), msg: 'dispose: ' + String(e).slice(0, 200) });
 	}
+	gpuGenerationEnded(g.gpuEra);
 	g.canvas.remove();
 	const t1 = now();
+	glGenerationStarting();
 	const restored = await restoreMainContext(g.gl);
 	restoreEnvironment(g.gl, g.scene, g.env);
 	g.glCanvas.style.opacity = '';
@@ -456,6 +463,7 @@ export function cinematicDebug(reset = false) {
 		switches: log.switches.slice(-40),
 		errors: log.errors.slice(-60),
 		memory: live ? { ...live.r.info.memory } : null,
+		generations: generationStats(),
 		adapter: live?.r?.backend?.adapter?.info ? { vendor: live.r.backend.adapter.info.vendor, architecture: live.r.backend.adapter.info.architecture, description: live.r.backend.adapter.info.description } : null,
 		state: get(cinematicState)
 	};

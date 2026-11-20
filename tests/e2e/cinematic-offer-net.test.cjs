@@ -36,7 +36,8 @@ async function bare(/** @type {any} */ browser, /** @type {any} */ context) {
 	});
 	const page = await ctx.newPage();
 	await page.goto(h.URL, { waitUntil: 'domcontentloaded', timeout: 90000 });
-	await page.waitForSelector('canvas', { timeout: 120000 });
+	// the 3D view's own canvas (a hidden minimap canvas comes first in the DOM)
+	await page.waitForSelector('#viewport canvas', { state: 'attached', timeout: 120000 });
 	return page;
 }
 
@@ -45,8 +46,13 @@ h.run(async () => {
 	const P = await bare(browser, { viewport: { width: 412, height: 915 }, deviceScaleFactor: 2.625, isMobile: true, hasTouch: true, userAgent: h.N6_UA });
 	const Q = await bare(browser, { viewport: { width: 1280, height: 720 }, userAgent: QUEST_UA });
 	const D = await bare(browser, { viewport: { width: 1280, height: 720 } });
-	// the probe is asked 4 s after the app starts; give every page well past that
-	await D.waitForTimeout(10000);
+	// the probe is asked 4 s after the app's start code runs, which on a cold dev server is well after the canvas:
+	// wait for the DESKTOP page to ask it (the control), then give the earlier-started phone and Quest pages 8 s more
+	const dGpuEarly = await hasGpu(D);
+	const t0 = Date.now();
+	while (dGpuEarly && Date.now() - t0 < 120000 && !(await cinematicFetches(D)).some((n) => /cinematicState/.test(n))) await D.waitForTimeout(1000);
+	console.log(`[net] the desktop asked the probe after ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+	await D.waitForTimeout(8000);
 
 	const pGpu = await hasGpu(P);
 	const dGpu = await hasGpu(D);

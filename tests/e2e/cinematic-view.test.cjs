@@ -45,6 +45,25 @@ const drawnShare = (page) =>
 	});
 
 /** @param {any} page @param {string} want @param {string} label @param {number} [ms] */
+/** mean luma (0-255) of the WebGL view, drawn and read in one task */
+const glLuma = (page) =>
+	page.evaluate(() => {
+		const t = window.__tp.test.v1;
+		let r, sc, c;
+		t.globalRenderer.subscribe((x) => (r = x))();
+		t.globalScene.subscribe((x) => (sc = x))();
+		t.globalCamera.subscribe((x) => (c = x))();
+		r.render(sc, c);
+		const k = document.createElement('canvas');
+		k.width = 160;
+		k.height = 90;
+		const x = /** @type {CanvasRenderingContext2D} */ (k.getContext('2d'));
+		x.drawImage(r.domElement, 0, 0, 160, 90);
+		const d = x.getImageData(0, 0, 160, 90).data;
+		let l = 0;
+		for (let i = 0; i < d.length; i += 4) l += 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+		return +(l / (d.length / 4)).toFixed(1);
+	});
 const waitMode = (page, want, label, ms = 90000) => h.eventually(() => mode(page), (m) => m === want, label, ms);
 
 h.run(async () => {
@@ -205,6 +224,31 @@ h.run(async () => {
 		console.log('  diag', JSON.stringify({ state: d5.state, switches: d5.switches?.slice(-4), errors: d5.errors?.slice(-4), active: ae }).slice(0, 1500));
 	}
 	h.check(true, '   and Shift+Z turns it on again');
+
+	// ---- 5b. the standard view keeps its environment light across a trip (an HDRI's PMREM lives on the WebGL
+	//      context: it is unrolled before the release and drawn back into the SAME target after the restore) ---
+	await page.evaluate(() => window.__tp.test.v1.cinematicState.setCinematic(false));
+	await waitMode(page, 'off', '5b. off for the environment check');
+	await page.evaluate(() => window.__tp.test.v1.environment.setEnvironment('product'));
+	await h.eventually(
+		() => page.evaluate(() => { let sc; window.__tp.test.v1.globalScene.subscribe((x) => (sc = x))(); return !!sc?.environment?.isRenderTargetTexture; }),
+		(v) => v === true,
+		'5b. the Product shot preset gives the scene a PMREM environment',
+		60000
+	);
+	await page.waitForTimeout(1500);
+	const l0 = await glLuma(page);
+	await page.evaluate(() => window.__tp.test.v1.cinematicState.setCinematic(true));
+	await waitMode(page, 'on', '5b. on with the HDRI');
+	await page.waitForTimeout(1500);
+	await page.evaluate(() => window.__tp.test.v1.cinematicState.setCinematic(false));
+	await waitMode(page, 'off', '5b. and off again');
+	await page.waitForTimeout(1000);
+	const l1 = await glLuma(page);
+	const back = (await debug(page)).switches.filter((x) => x.dir === 'off').pop();
+	h.check(back?.env?.kind === 'unrolled' && back?.env?.refilled >= 1 && Math.abs(l1 - l0) < Math.max(3, l0 * 0.05), `   the standard view looks the same after the trip (luma ${l0} -> ${l1}, ${JSON.stringify(back?.env)})`);
+	await page.evaluate(() => window.__tp.test.v1.cinematicState.setCinematic(true));
+	await waitMode(page, 'on', '5b. on again for the fallback checks');
 
 	// ---- 7. fallback: a compile failure turns it off with a toast; the switch stays off for the session -----------
 	const f = await page.evaluate(async () => (await window.__tp.test.v1.cinematicState.cinematicView()).failCompileForTest());

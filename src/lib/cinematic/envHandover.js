@@ -107,6 +107,43 @@ export function unrollToEquirect(gl, tex) {
 }
 
 /**
+ * Draw `src` into `target` texel for texel (the same size: a PMREM atlas made from the unrolled copy of that
+ * very target); any other size is resampled. @param {any} gl @param {any} src @param {any} target
+ */
+function copyInto(gl, src, target) {
+	const same = src.image?.width === target.width && src.image?.height === target.height;
+	// three compiles a ShaderMaterial as GLSL 300 es on WebGL2 (varying / gl_FragColor defines), so texelFetch is there
+	const material = new THREE.ShaderMaterial({
+		uniforms: { src: { value: src } },
+		vertexShader: VERTEX,
+		fragmentShader: same
+			? 'uniform sampler2D src; varying vec2 vUv; void main() { gl_FragColor = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }'
+			: 'uniform sampler2D src; varying vec2 vUv; void main() { gl_FragColor = texture2D(src, vUv); }'
+	});
+	material.depthTest = false;
+	material.depthWrite = false;
+	material.toneMapped = false;
+	const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+	quad.frustumCulled = false;
+	const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+	const prevTarget = gl.getRenderTarget();
+	const prevXr = gl.xr?.enabled;
+	const prevAuto = gl.autoClear;
+	try {
+		if (gl.xr) gl.xr.enabled = false;
+		gl.autoClear = false;
+		gl.setRenderTarget(target);
+		gl.render(quad, cam);
+	} finally {
+		gl.setRenderTarget(prevTarget);
+		if (gl.xr) gl.xr.enabled = prevXr;
+		gl.autoClear = prevAuto;
+		material.dispose();
+		quad.geometry.dispose();
+	}
+}
+
+/**
  * Before the WebGL context goes: unroll what only lives on it, and point the scene at the copies.
  * @param {any} gl @param {any} scene
  * @returns {{ environment: any, background: any, eqEnv: any, eqBg: any, kind: string }}
@@ -138,6 +175,8 @@ export function useCopies(scene, rec) {
 export function restoreEnvironment(gl, scene, rec) {
 	/** @type {any[]} */
 	const refilled = [];
+	/** @type {string[]} */
+	const errors = [];
 	/** @param {any} tex @param {any} eq */
 	const refill = (tex, eq) => {
 		if (!eq || !livesOnGpu(tex) || refilled.includes(tex)) return;
@@ -145,15 +184,22 @@ export function restoreEnvironment(gl, scene, rec) {
 		if (!target) return;
 		try {
 			if (isCubeUv(tex)) {
+				// NOT gen.fromEquirectangular(eq, target): r186's PMREMGenerator builds its blur state only when it
+				// allocates its own target, so with ours passed in it threw on the unset state, the catch below kept
+				// the atlas EMPTY and the standard view lost its environment light after one trip (mean luma 92 -> 53
+				// on the Product shot). A fresh PMREM, copied texel for texel into the same target object.
 				const gen = new THREE.PMREMGenerator(gl);
-				gen.fromEquirectangular(eq, target);
+				const fresh = gen.fromEquirectangular(eq);
+				copyInto(gl, fresh.texture, target);
+				fresh.dispose();
 				gen.dispose();
 			} else if (typeof target.fromEquirectangularTexture === 'function') {
 				target.fromEquirectangularTexture(gl, eq);
 			}
 			refilled.push(tex);
-		} catch {
-			/* the original stays empty: the next environment change rebuilds it */
+		} catch (e) {
+			// the original stays empty: the next environment change rebuilds it (said in the switch record)
+			errors.push(String(/** @type {any} */ (e)?.message ?? e).slice(0, 200));
 		}
 	};
 	if (scene.environment === rec.eqEnv) scene.environment = rec.environment;
@@ -162,5 +208,5 @@ export function restoreEnvironment(gl, scene, rec) {
 	refill(rec.background, rec.eqBg);
 	rec.eqEnv?.dispose?.();
 	if (rec.eqBg !== rec.eqEnv) rec.eqBg?.dispose?.();
-	return { refilled: refilled.length };
+	return errors.length ? { refilled: refilled.length, errors } : { refilled: refilled.length };
 }

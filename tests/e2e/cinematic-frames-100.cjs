@@ -120,17 +120,18 @@ async function runScene(page, slug) {
 	await pin(page, pose);
 	await page.waitForTimeout(1500);
 	const wf = await sampleWebGL(page);
-	S.rows.webgl = { n: wf.length, median: q(wf, 0.5), p95: q(wf, 0.95), shot: await shot(page, `${slug}-webgl`) };
+	S.rows.webgl = { n: wf.length, median: q(wf, 0.5), p95: q(wf, 0.95), luma: await glLuma(page), shot: await shot(page, `${slug}-webgl`) };
 	log(slug, 'webgl', JSON.stringify(S.rows.webgl));
 	save();
 	for (const quality of QUALITIES) {
+		const key = S.rows[quality] ? quality + '-' + Object.keys(S.rows).filter((k) => k.startsWith(quality)).length : quality;
 		await page.evaluate((qq) => window.__stores.cinematicState.setCinematicQuality(qq), quality);
 		await pin(page, pose);
 		const on = await page.evaluate(() => window.__stores.cinematicState.setCinematic(true));
 		const s0 = await st(page);
 		if (s0.mode !== 'on') {
-			S.rows[quality] = { error: 'did not come on: ' + JSON.stringify({ on, mode: s0.mode, why: s0.why, error: s0.error }) };
-			log(slug, quality, S.rows[quality].error);
+			S.rows[key] = { error: 'did not come on: ' + JSON.stringify({ on, mode: s0.mode, why: s0.why, error: s0.error }) };
+			log(slug, key, S.rows[key].error);
 			break;
 		}
 		await page.waitForTimeout(3000);
@@ -146,16 +147,38 @@ async function runScene(page, slug) {
 			dropped: s1.dropped,
 			errors: d.errors.length,
 			x: null,
-			shot: await shot(page, `${slug}-${quality}`)
+			shot: await shot(page, `${slug}-${key}`)
 		};
 		row.x = row.median && S.rows.webgl.median ? +(row.median / S.rows.webgl.median).toFixed(2) : null;
-		S.rows[quality] = row;
-		log(slug, quality, JSON.stringify(row));
+		S.rows[key] = row;
+		log(slug, key, JSON.stringify(row));
 		await page.evaluate(() => window.__stores.cinematicState.setCinematic(false));
 		await page.waitForTimeout(1500);
+		// the standard view after the trip: the same image as before it (the environment came back)
+		S.rows[key].after = { luma: await glLuma(page), shot: await shot(page, `${slug}-${key}-webgl-after`), switches: (await dbg(page, false)).switches.slice(-2) };
+		log(slug, key, 'webgl after', JSON.stringify(S.rows[key].after).slice(0, 600));
 		save();
 	}
 }
+
+/** mean luma (0-255) of the WebGL view, drawn and read in one task */
+const glLuma = (page) =>
+	page.evaluate(() => {
+		let r, sc, c;
+		window.__stores.globalRenderer.subscribe((x) => (r = x))();
+		window.__stores.globalScene.subscribe((x) => (sc = x))();
+		window.__stores.globalCamera.subscribe((x) => (c = x))();
+		r.render(sc, c);
+		const k = document.createElement('canvas');
+		k.width = 160;
+		k.height = 90;
+		const x = /** @type {CanvasRenderingContext2D} */ (k.getContext('2d'));
+		x.drawImage(r.domElement, 0, 0, 160, 90);
+		const d = x.getImageData(0, 0, 160, 90).data;
+		let l = 0;
+		for (let i = 0; i < d.length; i += 4) l += 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+		return +(l / (d.length / 4)).toFixed(1);
+	});
 
 (async () => {
 	let browser, context;
@@ -188,7 +211,7 @@ async function runScene(page, slug) {
 		for (const slug of SCENES) await runScene(page, slug);
 		// the table
 		for (const [slug, S] of Object.entries(result.scenes)) {
-			for (const [k, r] of Object.entries(S.rows)) log('TABLE', DEVICE, slug, k, r.median ?? r.error, 'p95', r.p95 ?? '', r.x != null ? 'x' + r.x : '', r.quality && r.quality !== k ? '(now ' + r.quality + ')' : '');
+			for (const [k, r] of Object.entries(S.rows)) log('TABLE', DEVICE, slug, k, r.median ?? r.error, 'p95', r.p95 ?? '', r.x != null ? 'x' + r.x : '', r.quality && !k.startsWith(r.quality) ? '(now ' + r.quality + ')' : '');
 		}
 	} catch (e) {
 		rc = 1;

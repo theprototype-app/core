@@ -423,11 +423,11 @@ async function teardown(reason) {
 	const t1 = now();
 	glGenerationStarting();
 	const restored = await restoreMainContext(g.gl);
-	restoreEnvironment(g.gl, g.scene, g.env);
+	const envBack = restoreEnvironment(g.gl, g.scene, g.env);
 	g.glCanvas.style.opacity = '';
 	const held = flushHeldDisposals();
 	patchState({ mode: 'off', notShown: '', dropped: 0 });
-	const rec = { dir: 'off', reason, restored, held, ms: { dispose: t1 - t0, restore: now() - t1, total: now() - t0 } };
+	const rec = { dir: 'off', reason, restored, held, env: { kind: g.env?.kind, ...envBack }, ms: { dispose: t1 - t0, restore: now() - t1, total: now() - t0 } };
 	log.switches.push(rec);
 	return rec;
 }

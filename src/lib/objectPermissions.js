@@ -184,12 +184,20 @@ export function liftLocalObjects() {
 	/** @type {Set<string>} */
 	const uuids = new Set();
 	for (const { object } of lifted) object.traverse((/** @type {any} */ o) => uuids.add(o.uuid));
+	// 80a D1: a lifted draft is still a draft — the outbound gate keeps counting it while a slow
+	// (async GLTF) export has it out of the tree, or a message about it would pass in that window
+	if (lifted.length) {
+		liftedDrafts.add(uuids);
+		draftsChanged();
+	}
 	return {
 		excluded: lifted.length,
 		uuids,
 		restore: () => {
 			if (done) return;
 			done = true;
+			liftedDrafts.delete(uuids);
+			draftsChanged();
 			for (let i = lifted.length - 1; i >= 0; i--) {
 				const { parent, index, object } = lifted[i];
 				parent.children.splice(index, 0, object);
@@ -225,19 +233,28 @@ function scrubWorkspace(payload, uuids) {
 	return /** @type {T} */ ({ ...p, workspace: next });
 }
 
-/** fix-batch-2: the one line a publish/export says when it left local objects out
+/** fix-batch-2, 80a D2: the one line a publish / export / file save says when it left drafts out —
+ * "N drafts not included — share first?". An editor gets a Share button that shares every draft
+ * (then they save again); a viewer cannot share, so their line says the drafts stay here. Not a
+ * blocking question: exports are also driven by code (the connector, auto-versions, publish).
  * @param {number} excluded */
 export function noteLocalObjectsExcluded(excluded) {
-	if (excluded > 0)
-		showToast(
-			excluded +
-				(excluded === 1 ? ' local object was' : ' local objects were') +
-				' not included — share ' +
-				(excluded === 1 ? 'it' : 'them') +
-				' from the object list to include ' +
-				(excluded === 1 ? 'it' : 'them') +
-				'.'
-		);
+	if (!(excluded > 0)) return;
+	const what = excluded + (excluded === 1 ? ' draft' : ' drafts') + ' not included';
+	if (isViewer()) {
+		showToast(what + ' — ' + (excluded === 1 ? 'it stays' : 'they stay') + ' on this device.');
+		return;
+	}
+	showToast(what + ' — share first?', [
+		{
+			label: excluded === 1 ? 'Share it' : 'Share them',
+			action: () => {
+				const roots = localOnlyRoots();
+				for (const object of roots) shareObject(object);
+				if (roots.length) showToast('Shared ' + roots.length + (roots.length === 1 ? ' draft' : ' drafts') + ' with the session. Save again to include ' + (roots.length === 1 ? 'it.' : 'them.'));
+			}
+		}
+	]);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -249,6 +266,8 @@ export function noteLocalObjectsExcluded(excluded) {
 // one size check per message.
 
 let draftSet = /** @type {Set<string>} */ (new Set());
+/** uuid sets of drafts a `liftLocalObjects` has out of the scene tree right now */
+const liftedDrafts = /** @type {Set<Set<string>>} */ (new Set());
 let draftsStale = true;
 let draftsBuiltAt = 0;
 let draftWatch = false;
@@ -269,6 +288,7 @@ export function draftUuids() {
 		/** @type {Set<string>} */
 		const next = new Set();
 		for (const root of localOnlyRoots()) root.traverse?.((/** @type {any} */ o) => next.add(o.uuid));
+		for (const set of liftedDrafts) for (const u of set) next.add(u);
 		draftSet = next;
 		draftsStale = false;
 		draftsBuiltAt = now;
@@ -303,3 +323,22 @@ export function gateDraftsOutbound(payload) {
 
 /** what the gate held back this page, keyed `<type>:dropped|trimmed` (debug hook, never sent) */
 export const draftGateStats = /** @type {Record<string, number>} */ ({});
+
+/** 80a D2: how many drafts a selection holds — selected drafts plus drafts inside selected objects
+ * @param {string[]} uuids @returns {number} */
+export function draftsInSelection(uuids) {
+	const picked = new Set(uuids ?? []);
+	let n = 0;
+	for (const uuid of picked) if (isDraftUuid(uuid)) n++;
+	// a draft inside a selected (shared) group
+	for (const root of localOnlyRoots()) {
+		if (picked.has(root.uuid)) continue;
+		for (let o = root.parent; o; o = o.parent) {
+			if (picked.has(o.uuid)) {
+				n++;
+				break;
+			}
+		}
+	}
+	return n;
+}

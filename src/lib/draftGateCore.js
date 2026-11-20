@@ -113,8 +113,8 @@ export function scrubDrafts(payload, isDraft) {
 			const item = payload.items[i];
 			const next = scrubDrafts(item, isDraft);
 			if (next !== item) {
-				if (!items) items = payload.items.slice(0, i);
-				if (next !== null) items.push(next);
+				const kept = items ?? (items = payload.items.slice(0, i));
+				if (next !== null) kept.push(next);
 			} else if (items) items.push(item);
 		}
 		if (!items) return payload;

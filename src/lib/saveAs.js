@@ -44,6 +44,7 @@ import { objectsGroup } from '../stores/sceneStore';
 import { showToast } from '../stores/appStore';
 import { addPrefabRecord, prefabElementFor, prefabThumbnail, finishPrefabElement } from './prefabs';
 import { gltfBytesFor } from './fileHandler.svelte.js';
+import { draftsInSelection, isDraftUuid, liftLocalObjects, noteLocalObjectsExcluded } from './objectPermissions';
 
 /**
  * The catalog, as DATA — the `buildObjectMenuItems` / `hudActions` shape, so the menu
@@ -124,6 +125,24 @@ function rootsOf(uuids) {
  * @returns {Promise<any>} the prefab record, true for a download, or null
  */
 export async function saveSelectionAs(formatId, uuids, name) {
+	// 80a D2: a prefab or a selection export is a file — drafts in the selection (or inside a selected
+	// group) stay out, lifted from the tree for the whole build and said once
+	const all = (uuids ?? []).filter(Boolean);
+	const drafts = draftsInSelection(all);
+	if (!drafts) return saveSelectionAsInner(formatId, all, name);
+	noteLocalObjectsExcluded(drafts);
+	const list = all.filter((uuid) => !isDraftUuid(uuid));
+	if (!list.length) return null;
+	const lift = liftLocalObjects();
+	try {
+		return await saveSelectionAsInner(formatId, list, name);
+	} finally {
+		lift.restore();
+	}
+}
+
+/** @param {string} formatId @param {string[]} uuids @param {string} [name] @returns {Promise<any>} */
+async function saveSelectionAsInner(formatId, uuids, name) {
 	const format = saveAsFormat(formatId);
 	const list = (uuids ?? []).filter(Boolean);
 	if (!format) return null;

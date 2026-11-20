@@ -54,7 +54,7 @@ export default {
 			// 30b (core-games): the same pulse card
 			card: 'OnClickNode',
 			// 30b (core-games): the On Click window, fired on a player's grab
-			eval: shared.evalHudTimer
+			eval: shared.evalPulseWindow
 		},
 		// H3: keyboard trigger — LOCAL key presses replicate as trigger pulses
 		// (golden rule: never stream local state); held keys re-pulse so the

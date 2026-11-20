@@ -312,10 +312,14 @@ const SCRIPT_PRELUDE = String.raw`
 	const lerp = (a, b, t) => a + (b - a) * t;
 	const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
 	const api = Object.freeze({
+		version: 2, // = scriptIO SCRIPT_API_VERSION (scriptApiVersion.test.js)
 		object: (ref) => B.call('api', 'object', [ref && typeof ref === 'object' ? { uuid: ref.uuid } : ref]),
 		raycast: (from, dir, max) => B.call('api', 'raycast', max === undefined ? [from, dir] : [from, dir, max]),
 		keys: () => B.call('api', 'keys', []),
-		spawn: (command) => B.call('api', 'spawn', [command])
+		spawn: (command) => B.call('api', 'spawn', [command]),
+		// 2.0-n3c: reads of replicated state (a converted Random's id + reroll stamp)
+		self: () => B.call('api', 'self', []),
+		stamp: (input) => B.call('api', 'stamp', [input])
 	});
 
 	const fns = new Map();

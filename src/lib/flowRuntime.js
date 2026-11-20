@@ -18,7 +18,7 @@ import { moduleEffects, moduleFrameTasks } from './moduleSDK';
 import { moduleValueNodes, moduleNodeInputs, evalModuleValueNode } from './moduleNodeIO';
 import { runScript, runScriptValue, runPlayerScript, reportScriptProblems, clearScriptError } from './scriptRuntime';
 import { builtinCodeActive, mergePlayerResult } from './builtinCode.js'; // 36-fb-code (F5): a leaf
-import { scriptInputs, scriptOutputs, isScriptValue, coerceInput } from './scriptIO'; // 34 D3: a leaf
+import { scriptInputs, scriptOutputs, isScriptValue, coerceInput, SCRIPT_API_VERSION } from './scriptIO'; // 34 D3: a leaf
 import { findNodeDef } from './customNodes';
 import { updateSounds } from './soundRuntime';
 import { colliderSpecOf } from './colliderSpec'; // B6: pure THREE leaf
@@ -2961,10 +2961,21 @@ function objectView(object) {
 /**
  * The api object a script gets. Built per call (cheap: four closures) so a value script
  * and an effect script of the same node cannot share a refusal by accident.
- * @param {string} nodeId @param {string} code @param {'effect' | 'value'} kind
+ * 2.0-n3c: `self()` (this node's id) and `stamp(input)` (the newest trigger stamp, in synced seconds, on
+ * one of this node's inputs; null = never) are reads of REPLICATED state, so a value script may use
+ * them: a converted Random seeds itself from both, exactly as the built-in does.
+ * @param {string} nodeId @param {string} code @param {'effect' | 'value'} kind @param {any} [ctx] the tick's ctx (stamp reads its log)
  */
-export function scriptApi(nodeId, code, kind) {
+export function scriptApi(nodeId, code, kind, ctx = null) {
 	return Object.freeze({
+		version: SCRIPT_API_VERSION, // 2.0-n3c: probe `(api.version ?? 1) >= 2` for self / stamp
+		self() {
+			return Object.freeze({ id: nodeId });
+		},
+		stamp(/** @type {any} */ input) {
+			const node = nodeById(nodes, nodeId);
+			return node ? handleStamp(node, String(input ?? ''), ctx) : null;
+		},
 		object(/** @type {any} */ ref) {
 			if (!sceneObjects || ref === undefined || ref === null) return null;
 			const key = typeof ref === 'object' ? ref.uuid : String(ref);
@@ -4245,7 +4256,7 @@ function applyAnimation(object, base, anim, time, ctx) {
 			const inputs = {};
 			for (const socket of declared)
 				inputs[socket.name] = scriptInputValue(socket, data[socket.name] ?? socket.value, ctx);
-			runScript(anim.id, data.code ?? '', object, base, data, time, inputs, scriptApi(anim.id, data.code ?? '', 'effect'));
+			runScript(anim.id, data.code ?? '', object, base, data, time, inputs, scriptApi(anim.id, data.code ?? '', 'effect', ctx));
 		}
 		return;
 	}

@@ -6,6 +6,7 @@ import { get, writable } from 'svelte/store';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { objectsGroup, globalCamera, globalScene, orbitControls, pokeScene, beginSceneBatch, endSceneBatch } from '../stores/sceneStore';
+import { adoptLoadedDrafts } from './objectPermissions'; // 80a migration
 import { flowGraphs, restoreGraphs, SCENE_GRAPH } from '../stores/flowStore';
 import { serializeGraphs } from './flowGraphs';
 import { flowViewsSnapshot } from './flowView';
@@ -764,7 +765,9 @@ async function applyRestore(snapshot, offer = null) {
 				for (const child of children) {
 					await slice(job);
 					group.add(child);
-					if (connected)
+					// 80a: the autosave keeps drafts; restoring them makes them drafts here and sends none
+					const draft = adoptLoadedDrafts(child);
+					if (connected && !draft)
 						peer.send({ type: 'object', element: isPristinePackRef(child) ? stubElementOf(child) : child.toJSON() });
 					if (child.userData?.packStub) refills.push(fillPackRef(child).finally(() => progress(job)));
 					else progress(job);

@@ -14,7 +14,11 @@
 //   3. a list entry that is a draft uuid, or an object whose own fields name one (a batch item, an
 //      object's child, a joint, an annotation), is removed from the list;
 //   4. a draft uuid deeper inside a KEPT list entry is a reference inside shared content (a shared
-//      Object Selector node aiming at a draft) and stays — it carries nothing of the draft.
+//      Object Selector node aiming at a draft) and stays — it carries nothing of the draft;
+//   5. a SERIALIZED object that says it is local-only (`{uuid, userData: {__localOnly: true}}`, the
+//      toJSON shape) is a draft whatever the index says — the migration case, where a file's objects
+//      are on their way into the scene and no index has seen them yet: it takes the nearest list
+//      entry holding it with it, or the whole message when no list holds it.
 // A `batch` envelope's items are judged as whole messages (rule 1 per item); an envelope left empty
 // is dropped. A top-level `uuid` naming a draft while a top-level `uuids` list still names shared
 // objects (a lock over a mixed selection) moves to the last shared one instead of dropping them all.
@@ -43,6 +47,11 @@ function namesDraftDirectly(o, isDraft) {
 
 const DROP = Symbol('drop');
 
+/** rule 5: a toJSON object node marked local-only @param {any} o */
+function isDraftNode(o) {
+	return typeof o.uuid === 'string' && o.userData !== null && typeof o.userData === 'object' && o.userData.__localOnly === true;
+}
+
 /**
  * @param {any} value
  * @param {boolean} chain true while no list has been passed on the way down from the message
@@ -63,7 +72,7 @@ function walk(value, chain, isDraft) {
 				if (!Array.isArray(el) && namesDraftDirectly(el, isDraft)) remove = true;
 				else {
 					next = walk(el, false, isDraft);
-					if (next === DROP) remove = true; // cannot happen with chain=false; kept for safety
+					if (next === DROP) remove = true; // a local-only object somewhere inside this entry (rule 5)
 				}
 			}
 			if (remove || next !== el) {
@@ -73,6 +82,7 @@ function walk(value, chain, isDraft) {
 		}
 		return out ?? value;
 	}
+	if (isDraftNode(value)) return DROP;
 	/** @type {any} */
 	let out = null;
 	for (const key of Object.keys(value)) {

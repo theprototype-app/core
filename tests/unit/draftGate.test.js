@@ -136,3 +136,31 @@ describe('the gate sits on both send paths', () => {
 		expect(fn.slice(0, 2000)).toMatch(/conn\.send = [\s\S]*gateDraftsOutbound\(data\)/);
 	});
 });
+
+describe('rule 5: a serialized object that says it is local-only (the migration case)', () => {
+	const flagged = { uuid: 'from-an-old-file', userData: { __localOnly: true }, name: 'Old draft' };
+	it('an object message for it is dropped though no index has seen it', () => {
+		expect(scrubDrafts({ type: 'object', element: { metadata: {}, object: flagged } }, () => false)).toBe(null);
+	});
+	it('inside a shared group it leaves the children list, the group goes', () => {
+		const msg = { type: 'object', element: { object: { uuid: S, children: [flagged, { uuid: 'c2', userData: {} }] } } };
+		const out = scrubDrafts(msg, () => false);
+		expect(out.element.object.children.map((c) => c.uuid)).toEqual(['c2']);
+	});
+	it('a list of file elements loses the flagged one', () => {
+		const out = scrubDrafts({ type: 'x', objects: [{ object: flagged }, { object: { uuid: S, userData: {} } }] }, () => false);
+		expect(out.objects.length).toBe(1);
+	});
+	it('a shared object with an ordinary userData passes untouched', () => {
+		const msg = { type: 'object', element: { object: { uuid: S, userData: { __localOnly: false, tag: 1 } } } };
+		expect(scrubDrafts(msg, () => false)).toBe(msg);
+	});
+});
+
+describe('migration wiring', () => {
+	const src = (f) => readFileSync(new URL('../../src/lib/' + f, import.meta.url), 'utf8');
+	it('the scene loader and the autosave restore mark drafts and send none', () => {
+		expect(src('sessions.js')).toMatch(/const draft = adoptLoadedDrafts\(object\);\s*if \(replicate && peer && !draft\)/);
+		expect(src('autosave.js')).toMatch(/const draft = adoptLoadedDrafts\(child\);\s*if \(connected && !draft\)/);
+	});
+});

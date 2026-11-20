@@ -342,3 +342,15 @@ export function draftsInSelection(uuids) {
 	}
 	return n;
 }
+
+/** 80a migration: an object a LOAD just built (a scene file, a saved session, the autosave) that
+ * carries local-only flags is a draft here too — every flagged node is marked (the gate's index
+ * hears of it at once, the Local objects section shows), and the caller sends nothing for a draft
+ * root. Older builds saved drafts into files; they load as private drafts, never shared on load.
+ * @param {any} object @returns {boolean} true when the object itself is a draft */
+export function adoptLoadedDrafts(object) {
+	object?.traverse?.((/** @type {any} */ o) => {
+		if (o?.userData?.__localOnly === true) markLocalOnly(o);
+	});
+	return isLocalOnly(object);
+}

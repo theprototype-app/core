@@ -16,14 +16,23 @@ const h = require('./helpers.cjs');
 const QUEST_UA =
 	'Mozilla/5.0 (X11; Linux x86_64; Quest 3) AppleWebKit/537.36 (KHTML, like Gecko) OculusBrowser/38.0.0.0 SamsungBrowser/4.0 Chrome/132.0.0.0 VR Safari/537.36';
 
-/** every resource the page asked for that belongs to the Cinematic view (dev: source paths; build: none expected) */
+/**
+ * every resource the page asked for that belongs to the Cinematic view's lazy half. Dev server: source paths. A built
+ * app hashes its chunk names, so a built chunk is recognised by CONTENT: the probe (cinematicState) is the only chunk
+ * with the 'debugCinematicSoftware' key, the switch the only one with its 'Cinematic view quality' label.
+ */
 const cinematicFetches = (/** @type {any} */ page) =>
-	page.evaluate(() =>
-		performance
-			.getEntriesByType('resource')
-			.map((e) => e.name)
-			.filter((n) => /\/cinematic\/|three\.webgpu|CinematicSwitch/i.test(n) && !/cinematicOffer|cinematicStore/.test(n))
-	);
+	page.evaluate(async () => {
+		const names = performance.getEntriesByType('resource').map((e) => e.name);
+		const dev = names.filter((n) => /\/cinematic\/|three\.webgpu|CinematicSwitch/i.test(n) && !/cinematicOffer|cinematicStore/.test(n));
+		const built = [];
+		for (const n of names.filter((x) => /\/_app\/immutable\/.*\.js(\?|$)/.test(x))) {
+			const text = await fetch(n).then((r) => r.text(), () => '');
+			if (/debugCinematicSoftware/.test(text)) built.push(n + ' (cinematicState)');
+			else if (/Cinematic view quality/.test(text)) built.push(n + ' (CinematicSwitch)');
+		}
+		return [...dev, ...built];
+	});
 const hasGpu = (/** @type {any} */ page) => page.evaluate(() => !!(/** @type {any} */ (navigator).gpu));
 
 /** a page as a user gets it: no test hooks, the welcome and disclaimer already seen */
@@ -50,7 +59,7 @@ h.run(async () => {
 	// wait for the DESKTOP page to ask it (the control), then give the earlier-started phone and Quest pages 8 s more
 	const dGpuEarly = await hasGpu(D);
 	const t0 = Date.now();
-	while (dGpuEarly && Date.now() - t0 < 120000 && !(await cinematicFetches(D)).some((n) => /cinematicState/.test(n))) await D.waitForTimeout(1000);
+	while (dGpuEarly && Date.now() - t0 < 120000 && !(await cinematicFetches(D)).some((n) => /cinematicState/.test(n))) await D.waitForTimeout(2000);
 	console.log(`[net] the desktop asked the probe after ${((Date.now() - t0) / 1000).toFixed(0)} s`);
 	await D.waitForTimeout(8000);
 

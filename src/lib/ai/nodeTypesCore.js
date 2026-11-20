@@ -38,7 +38,9 @@ function paramType(p, def) {
 
 /**
  * The data params of a spec: every editor param (with its kind, range, options) plus every default
- * the editor does not draw (e.g. Path patrol's `points`). `legacy` params are left out.
+ * the editor does not draw (e.g. Path patrol's `points`). A `legacy: true` param is left out; a `legacy`
+ * VALUE (On Enter `who`, Distance `to`, On Impact `direction`) is what a node without the key reads, so it
+ * is that param's default here (2.0-n3b: these were hidden, so an agent never learnt `who: "player"`).
  * @param {any} spec @returns {any[]}
  */
 export function paramsOf(spec) {
@@ -46,10 +48,11 @@ export function paramsOf(spec) {
 	/** @type {Map<string, any>} */
 	const out = new Map();
 	for (const p of Array.isArray(spec?.params) ? spec.params : []) {
-		if (!p || typeof p.key !== 'string' || p.legacy || out.has(p.key)) continue;
+		if (!p || typeof p.key !== 'string' || p.legacy === true || out.has(p.key)) continue;
+		const def = p.key in defaults ? defaults[p.key] : 'legacy' in p ? p.legacy : undefined;
 		/** @type {any} */
-		const row = { key: p.key, type: paramType(p, defaults[p.key]) };
-		if (p.key in defaults) row.default = defaults[p.key];
+		const row = { key: p.key, type: paramType(p, def) };
+		if (def !== undefined) row.default = def;
 		if (Array.isArray(p.options)) row.options = p.options;
 		if (Number.isFinite(p.min)) row.min = p.min;
 		if (Number.isFinite(p.max)) row.max = p.max;
@@ -62,6 +65,27 @@ export function paramsOf(spec) {
 		out.set(key, { key, type: paramType(null, value), default: value });
 	}
 	return [...out.values()];
+}
+
+/**
+ * 2.0-n3b (N3a star-once): may an agent set `key` on a node of this spec, and to what? Every editor param
+ * and every default is settable (create_flow_nodes used to take DEFAULT keys only, so `latch {perRound: true}`
+ * arrived as false and On Enter's `who` was dropped). A choice outside its options and a toggle that is not a
+ * boolean are refused with the valid values, so the node keeps its default instead of a value it ignores.
+ * `null` = not a param of this type (the caller drops it, as before).
+ * @param {any} spec @param {string} key @param {any} value
+ * @returns {null | {ok: true, value: any} | {ok: false, error: string}}
+ */
+export function paramValue(spec, key, value) {
+	const row = paramsOf(spec).find((p) => p.key === key);
+	if (!row) return null;
+	if (row.type === 'choice' && Array.isArray(row.options) && !row.options.includes(value))
+		return { ok: false, error: key + ' must be one of ' + row.options.map((o) => JSON.stringify(o)).join(', ') };
+	if (row.type === 'boolean' && typeof value !== 'boolean') {
+		if (value === 'true' || value === 'false') return { ok: true, value: value === 'true' };
+		return { ok: false, error: key + ' is true or false' };
+	}
+	return { ok: true, value };
 }
 
 /** the full card for one known type @param {string} type @param {string} group @param {NodeTypeSource} src */

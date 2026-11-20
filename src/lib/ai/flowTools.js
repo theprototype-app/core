@@ -33,7 +33,7 @@ import { edgeHandleProblems, knownInputs, knownMapOutputs } from './edgeHandles.
 import { lockSkip } from './lockNote.js';
 import { activeAiConfig } from './providers.js';
 import { matchNodeType } from './nodeTypeMatch.js';
-import { describeNodeTypes, paramsOf } from './nodeTypesCore.js';
+import { describeNodeTypes, paramsOf, paramValue } from './nodeTypesCore.js';
 import { nodeDoc } from '$lib/nodeDocs';
 import { inputType, outputType, outputHandleType } from '$lib/flowSockets';
 import { codeViewOn } from '$lib/nodes/codeViewFlag.js'; // 2.0 N2
@@ -348,7 +348,10 @@ function buildNodeData(type, spec, raw, errors) {
 			else data.target = t;
 			continue;
 		}
-		if (key in (spec?.defaults ?? {})) data[key] = value;
+		// 2.0-n3b: every editor param, not only the ones with a default (perRound, who, to)
+		const v = paramValue(spec, key, value);
+		if (v?.ok) data[key] = v.value;
+		else if (v) errors.push(type + ' ' + v.error + ' — kept the default');
 		// unknown keys are dropped silently — defaults render fine without them
 	}
 	// mcp-fix: an assistant that asks for world space means world axes (a person's own nodes default to "with the object")
@@ -620,10 +623,16 @@ export function updateFlowNodesTool(args) {
 				patch.target = t;
 				continue;
 			}
-			const known = key === 'label' || key in (spec?.defaults ?? {}) || key in node.data;
+			// 2.0-n3b: every editor param of the type is settable (perRound, who, to had no default)
+			const v = key === 'label' ? null : paramValue(spec, key, value);
+			if (v && !v.ok) {
+				errors.push(node.type + ' ' + v.error);
+				continue;
+			}
+			const known = key === 'label' || !!v || key in node.data;
 			if (!known) continue;
 			before[key] = node.data[key];
-			patch[key] = value;
+			patch[key] = v ? v.value : value;
 		}
 		if (!Object.keys(patch).length) {
 			errors.push('no valid data keys for node "' + u?.id + '"');

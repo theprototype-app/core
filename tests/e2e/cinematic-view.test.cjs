@@ -22,7 +22,7 @@ const mode = async (page) => (await state(page)).mode;
 /** @param {any} page */
 const objectCount = (page) => page.evaluate(() => { let g; window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))(); return g.children.length; });
 /** @param {any} page */
-const toasts = (page) => page.evaluate(() => { let t; window.__tp.test.v1.toastStore.subscribe((x) => (t = x))(); return (t ?? []).map((/** @type {any} */ x) => String(x.message ?? x.text ?? '')); });
+const toasts = (page) => page.evaluate(() => { let t; window.__tp.test.v1.toastStore.subscribe((x) => (t = x))(); return (t ?? []).map((/** @type {any} */ x) => (typeof x === 'string' ? x : String(x?.text ?? ''))); });
 
 /** how much of the view's own canvas is not one flat colour (a drawn frame, not a blank one) @param {any} page */
 const drawnShare = (page) =>
@@ -140,6 +140,41 @@ h.run(async () => {
 	});
 	h.check(!!still && still.w === 640 && still.h === 360 && still.size > 2000, `4. a photo still through the view at the asked size (${JSON.stringify(still)})`);
 	h.check((await mode(page)) === 'on' && (await drawnShare(page)) > 0.02, '   the view draws on after the still');
+
+	// a short video take: the recorder copies the view's frame right after it is drawn
+	const take = await page.evaluate(async () => {
+		const t = window.__tp.test.v1;
+		const ok = await t.recording.startRecording({ mode: 'turntable', duration: 1.5, resolution: '720p' });
+		if (!ok) {
+			let s;
+			t.recordingStores.recordingState.subscribe((v) => (s = v))();
+			return { ok, error: s.error };
+		}
+		const s = await new Promise((resolve) => {
+			const stop = t.recordingStores.recordingState.subscribe((v) => {
+				if (v.status === 'done' || v.status === 'error') queueMicrotask(() => (stop(), resolve(v)));
+			});
+		});
+		if (!s.result?.blob) return { ok, status: s.status, error: s.error };
+		const v = document.createElement('video');
+		v.muted = true;
+		v.src = URL.createObjectURL(s.result.blob);
+		await new Promise((r) => v.addEventListener('loadeddata', r, { once: true }));
+		v.currentTime = Math.min(0.8, (s.result.durationMs ?? 1500) / 2000);
+		await new Promise((r) => v.addEventListener('seeked', r, { once: true }));
+		const c = document.createElement('canvas');
+		c.width = 160;
+		c.height = 90;
+		const x = /** @type {CanvasRenderingContext2D} */ (c.getContext('2d'));
+		x.drawImage(v, 0, 0, 160, 90);
+		const d = x.getImageData(0, 0, 160, 90).data;
+		let off = 0;
+		for (let i = 0; i < d.length; i += 4) if (Math.abs(d[i] - d[0]) + Math.abs(d[i + 1] - d[1]) + Math.abs(d[i + 2] - d[2]) > 24) off++;
+		return { ok, status: s.status, frames: s.frames, bytes: s.result.bytes ?? s.result.blob.size, share: off / (d.length / 4) };
+	});
+	h.check(take.status === 'done' && take.frames > 5 && take.share > 0.02, `   a video take through the view holds drawn frames (${JSON.stringify(take)})`);
+	await page.evaluate(() => window.__tp.test.v1.recording.resetRecording?.());
+	h.check((await mode(page)) === 'on', '   the view is still on after the take');
 
 	// ---- 5. Shift+Z turns it off; the WebGL view is back --------------------------------------------------------
 	await page.mouse.move(720, 450);

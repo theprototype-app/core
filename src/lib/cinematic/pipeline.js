@@ -120,7 +120,9 @@ export async function buildPipeline(o) {
 		const e2 = edge(lock);
 		/** @type {any} */
 		const rgb = final.rgb;
-		final = vec4(rgb.mix(lockColor, e2).mix(selColor, e1), final.a);
+		// the FUNCTION form: TSL's chained `x.mix(a, b)` is mix(a, b, x) (x is the factor), which blended the
+		// colours BY THE IMAGE and drew one flat grey over the whole view
+		final = vec4(T.mix(T.mix(rgb, lockColor, e2), selColor, e1), final.a);
 	}
 	pipeline.outputNode = final;
 	return {

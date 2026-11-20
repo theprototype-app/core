@@ -9,7 +9,8 @@
 //     APP_URL=https://theprototype.app:7034/ e2e-slot --local --exclusive --wait 9000 --dev $PWD 7034 -- \
 //       env GPU_MEM=deck SCENE=tavern-interior node tests/e2e/cinematic-memory-100.cjs
 //
-// env: SCENE (tavern-interior), TRIPS (10), DWELL_MS (1500), GATE_PCT (5), OUT (test-results/100-view/memory)
+// env: SCENE (tavern-interior), TRIPS (10), DWELL_MS (1500), GATE_PCT (5), OUT (test-results/100-view/memory),
+//      NOPRUNE=1 (the control: listeners left where three put them), SNAP=1 (heap snapshots A/B for heapdiff)
 const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
@@ -27,6 +28,17 @@ fs.mkdirSync(OUT, { recursive: true });
 const log = (...a) => console.log('[mem]', ...a);
 const result = { noPrune: process.env.NOPRUNE === '1', device: DEVICE, scene: SCENE, trips: TRIPS, gatePct: GATE, at: new Date().toISOString(), trip: [], verdict: null };
 const save = () => fs.writeFileSync(path.join(OUT, `memory-${DEVICE}-${SCENE}${process.env.NOPRUNE === '1' ? '-control' : ''}.json`), JSON.stringify(result, null, 1));
+
+/** SNAP=1: a heap snapshot after the warm-up and after the trips (diff them with heapdiff-100.cjs) */
+async function snapshot(cdp, file) {
+	const ws = fs.createWriteStream(file);
+	const on = (/** @type {any} */ m) => ws.write(m.chunk);
+	cdp.on('HeapProfiler.addHeapSnapshotChunk', on);
+	await cdp.send('HeapProfiler.takeHeapSnapshot', { reportProgress: false, captureNumericValue: false });
+	cdp.off('HeapProfiler.addHeapSnapshotChunk', on);
+	await new Promise((r) => ws.end(r));
+	return path.basename(file);
+}
 
 async function gc(cdp) {
 	for (let i = 0; i < 3; i++) await cdp.send('HeapProfiler.collectGarbage');
@@ -149,6 +161,7 @@ async function trip(page) {
 		const h0 = await heap(cdp);
 		const g0 = await gpuBytes(pid);
 		result.before = { heap: h0, gpu: g0 };
+		if (process.env.SNAP === '1') result.snapA = await snapshot(cdp, path.join(OUT, `A-${DEVICE}-${SCENE}.heapsnapshot`));
 		log('before: heap MB', (h0 / 1e6).toFixed(1), 'gpu MB', g0 == null ? 'n/a' : (g0 / 1e6).toFixed(1));
 		for (let i = 0; i < TRIPS; i++) {
 			const t0 = Date.now();
@@ -162,6 +175,10 @@ async function trip(page) {
 		const h1 = await heap(cdp);
 		const g1 = await gpuBytes(pid);
 		result.after = { heap: h1, gpu: g1 };
+		if (process.env.SNAP === '1') {
+			await gc(cdp);
+			result.snapB = await snapshot(cdp, path.join(OUT, `B-${DEVICE}-${SCENE}.heapsnapshot`));
+		}
 		result.debug = await page.evaluate(async () => (await window.__stores.cinematicState.cinematicView()).cinematicDebug?.() ?? null).catch(() => null);
 		const pct = (a, b) => (a == null || b == null || !a ? null : +(((b - a) / a) * 100).toFixed(2));
 		result.heapPct = pct(h0, h1);

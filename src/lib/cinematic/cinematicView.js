@@ -474,9 +474,10 @@ export function cinematicDebug(reset = false) {
 
 /** e2e: the view's canvas as a PNG data URL (the next frame) */
 export async function grabCinematic() {
-	if (!live) return null;
+	if (!live?.built) return null;
 	await nextFrame();
-	await nextFrame();
+	// a WebGPU canvas reads blank once its frame was presented: draw and read in the same task
+	live.built.render();
 	return live.canvas.toDataURL('image/png');
 }
 
@@ -495,4 +496,9 @@ export async function failCompileForTest() {
 	if (!live) return { error: 'not on' };
 	await fail('its lighting does not compile on this graphics path.');
 	return { state: get(cinematicState) };
+}
+
+/** e2e / debug: the live view's parts (renderer, pipeline, scene, camera) for bisecting a wrong image */
+export function cinematicLiveForTest() {
+	return live;
 }

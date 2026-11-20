@@ -1173,6 +1173,27 @@ function updateTouchPickupNodes(time, ctx) {
 }
 
 /**
+ * 2.0-n3b (G27): the Visibility effects "Hide when collected" adds — one per Collect node with `hide: true`
+ * and a pickup (wired, else the graph's owner), `on` = the kit's "is it there to take". Synthetic nodes:
+ * no edges lead into them, so applyAnimation reads `data` as it stands.
+ * @param {number} time @param {any} ctx @returns {{uuid: string, anim: any}[]}
+ */
+function pickupHideEffects(time, ctx) {
+	const available = kit.impls.pickups?.available;
+	if (!available) return [];
+	const out = [];
+	for (const node of nodes) {
+		if (node.type !== 'kit-pickups-collect' || node.data?.hide !== true) continue;
+		const d = resolveInputs(node, nodes, edges, time, ctx);
+		const wired = typeof d.pickup === 'string' && d.pickup && d.pickup !== '-None-' ? d.pickup : null;
+		const uuid = wired ?? (node.__graph && node.__graph !== SCENE_GRAPH ? node.__graph : null);
+		if (!uuid) continue;
+		out.push({ uuid, anim: { id: node.id + '#hide', type: 'visibility', data: { on: !!available(uuid) } } });
+	}
+	return out;
+}
+
+/**
  * THE POINT GRAB NODE: while any one reads `enabled` false, a player cannot pick objects up by
  * pointing at them (the VR grip ray, the desktop carry) — only a hand touching them moves them.
  * A DECLARATION evaluated per frame (the Game Music shape); no node = pointing allowed.
@@ -5143,6 +5164,13 @@ function runTick(now) {
 			if (!active.has(uuid)) active.set(uuid, []);
 			active.get(uuid).push(source);
 		});
+		// 2.0-n3b (G27): a Collect with "Hide when collected" hides its pickup while it is taken — a Visibility
+		// effect fed by "Pickup available?", so the restore loop hands the object back outside play and when
+		// the node goes. Only an explicit `hide: true` (a saved node without the key keeps showing).
+		if (playActive) for (const hide of pickupHideEffects(time, ctx)) {
+			if (!active.has(hide.uuid)) active.set(hide.uuid, []);
+			active.get(hide.uuid).push(hide.anim);
+		}
 		// H1: object-graph effects with no explicit selector target their owner
 		nodes.forEach((node) => {
 			if (!isEffectNode(node)) return;

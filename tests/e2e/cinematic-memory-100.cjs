@@ -1,6 +1,11 @@
 // 100 C1 — THE MEMORY GATE: 10 round trips through the Cinematic view keep the JS heap and the GPU memory
-// within 5 % (roadmap 100 C1 §1). Measured with the view OFF at both ends, after two warm-up trips (the lazy
-// chunk, the pipeline's shader cache and the generation-0 sweep are one-time costs, not growth).
+// within 5 % (roadmap 100 C1 §1). Measured with the view OFF at both ends, after four warm-up trips (the lazy
+// chunk, the pipeline's shader cache, V8's JIT warm-up and the generation-0 sweep are one-time costs, not growth).
+// 100-int (orchestrator + claude:9, 2026-11-20): the run is 25 trips. The 5 % gate is judged on the steady state,
+// the last ten trips (trip 15 -> trip 25), and the TAIL SLOPE (least-squares heap slope over trips 16-25) must stay
+// under SLOPE_KB (100) KB per trip: a real per-trip leak keeps its slope, warm-up growth flattens out. Trips 1-10
+// after the warm-up and the whole run are printed too (not gates; the PC Product shot reads ~5 % on trips 1-10
+// from the JIT warm-up). With TRIPS < 20 the gate falls back to the whole run and no slope is judged.
 //
 //   PC (real Chrome through the device lab, by day):
 //     cd ~/.code/lanes-30/100-light/lab && TREE=<tree> PORT=7035 GPU_MEM=pc SCENE=tavern-interior \
@@ -9,8 +14,8 @@
 //     APP_URL=https://theprototype.app:7034/ e2e-slot --local --exclusive --wait 9000 --dev $PWD 7034 -- \
 //       env GPU_MEM=deck SCENE=tavern-interior node tests/e2e/cinematic-memory-100.cjs
 //
-// env: SCENE (tavern-interior), TRIPS (10), DWELL_MS (1500), GATE_PCT (5), OUT (test-results/100-view/memory),
-//      WARM (2 warm-up trips), NOPRUNE=1 (the control: listeners left where three put them), SNAP=1 (heap snapshots A/B for heapdiff)
+// env: SCENE (tavern-interior), TRIPS (25), SLOPE_KB (100), DWELL_MS (1500), GATE_PCT (5), OUT (test-results/100-view/memory),
+//      WARM (4 warm-up trips), NOPRUNE=1 (the control: listeners left where three put them), SNAP=1 (heap snapshots A/B for heapdiff)
 const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
@@ -18,8 +23,10 @@ const path = require('path');
 const URL = process.env.APP_URL || 'https://theprototype.app:7034/';
 const CDP = process.env.CDP || '';
 const SCENE = process.env.SCENE || 'tavern-interior';
-const TRIPS = Number(process.env.TRIPS || 10);
-const WARM = Number(process.env.WARM || 2);
+const TRIPS = Number(process.env.TRIPS || 25);
+const WARM = Number(process.env.WARM || 4);
+const SLOPE_KB = Number(process.env.SLOPE_KB || 100);
+const GATE_TRIPS = 10;
 const DWELL = Number(process.env.DWELL_MS || 1500);
 const GATE = Number(process.env.GATE_PCT || 5);
 const GPU_MEM = process.env.GPU_MEM || (CDP ? 'pc' : 'deck');
@@ -27,7 +34,7 @@ const DEVICE = process.env.DEVICE || GPU_MEM;
 const OUT = process.env.OUT || path.join(process.cwd(), 'test-results/100-view/memory');
 fs.mkdirSync(OUT, { recursive: true });
 const log = (...a) => console.log('[mem]', ...a);
-const result = { noPrune: process.env.NOPRUNE === '1', device: DEVICE, scene: SCENE, trips: TRIPS, warm: Number(process.env.WARM || 2), gatePct: GATE, at: new Date().toISOString(), trip: [], verdict: null };
+const result = { noPrune: process.env.NOPRUNE === '1', device: DEVICE, scene: SCENE, trips: TRIPS, warm: WARM, gatePct: GATE, slopeGateKB: SLOPE_KB, at: new Date().toISOString(), trip: [], verdict: null };
 const save = () => fs.writeFileSync(path.join(OUT, `memory-${DEVICE}-${SCENE}${process.env.NOPRUNE === '1' ? '-control' : ''}-t${TRIPS}.json`), JSON.stringify(result, null, 1));
 
 /** SNAP=1: a heap snapshot after the warm-up and after the trips (diff them with heapdiff-100.cjs) */
@@ -182,14 +189,39 @@ async function trip(page) {
 		}
 		result.debug = await page.evaluate(async () => (await window.__stores.cinematicState.cinematicView()).cinematicDebug?.() ?? null).catch(() => null);
 		const pct = (a, b) => (a == null || b == null || !a ? null : +(((b - a) / a) * 100).toFixed(2));
-		result.heapPct = pct(h0, h1);
-		result.gpuPct = pct(g0, g1);
+		const rows = result.trip;
+		// the 5 % gate: the last ten trips when TRIPS >= 20 (rows[n-11] -> rows[n-1]), else the whole run
+		const steady = rows.length >= 20;
+		const gA = steady ? rows[rows.length - 1 - GATE_TRIPS] : { heap: h0, gpu: g0 };
+		const gB = steady ? rows[rows.length - 1] : { heap: h1, gpu: g1 };
+		result.gateWindow = steady ? `trips ${rows.length - GATE_TRIPS}-${rows.length}` : 'whole run';
+		result.heapPct = pct(gA.heap, gB.heap);
+		result.gpuPct = pct(gA.gpu, gB.gpu);
+		const first = rows[Math.min(GATE_TRIPS, rows.length) - 1];
+		result.heapPctFirst10 = pct(h0, first.heap);
+		result.gpuPctFirst10 = pct(g0, first.gpu);
+		result.heapPctRun = pct(h0, h1);
+		result.gpuPctRun = pct(g0, g1);
 		result.heapPerTripKB = Math.round((h1 - h0) / TRIPS / 1024);
 		result.gpuPerTripKB = g0 == null || g1 == null ? null : Math.round((g1 - g0) / TRIPS / 1024);
+		// the tail slope: least squares over the last ten trips (16-25 by default; none when TRIPS < 20)
+		const tail = steady ? rows.slice(-GATE_TRIPS) : [];
+		if (tail.length >= 5) {
+			const n = tail.length;
+			const mx = tail.reduce((a, r) => a + r.i, 0) / n;
+			const my = tail.reduce((a, r) => a + r.heap, 0) / n;
+			const sxy = tail.reduce((a, r) => a + (r.i - mx) * (r.heap - my), 0);
+			const sxx = tail.reduce((a, r) => a + (r.i - mx) ** 2, 0);
+			result.tailSlopeKB = Math.round(sxy / sxx / 1024);
+		} else result.tailSlopeKB = null;
 		const heapOk = result.heapPct != null && result.heapPct <= GATE;
 		const gpuOk = result.gpuPct == null ? null : result.gpuPct <= GATE;
-		result.verdict = heapOk && gpuOk !== false ? (gpuOk === null ? 'PASS (heap only: no GPU counter)' : 'PASS') : 'FAIL';
-		log('heap', result.heapPct, '% (', result.heapPerTripKB, 'KB/trip)', 'gpu', result.gpuPct, '% (', result.gpuPerTripKB, 'KB/trip)', '->', result.verdict);
+		const slopeOk = result.tailSlopeKB == null ? null : result.tailSlopeKB < SLOPE_KB;
+		result.verdict =
+			heapOk && gpuOk !== false && slopeOk !== false
+				? `PASS${gpuOk === null ? ' (heap only: no GPU counter)' : ''}${slopeOk === null ? ' (no tail slope: < 20 trips)' : ''}`
+				: 'FAIL';
+		log(result.gateWindow + ': heap', result.heapPct, '% gpu', result.gpuPct, '% | tail slope', result.tailSlopeKB, 'KB/trip (<', SLOPE_KB, ') | trips 1-10 heap', result.heapPctFirst10, '% gpu', result.gpuPctFirst10, '% | whole run heap', result.heapPctRun, '% (', result.heapPerTripKB, 'KB/trip) gpu', result.gpuPctRun, '% ->', result.verdict);
 		log('generations', JSON.stringify(result.debug?.generations ?? null));
 		if (result.verdict === 'FAIL') rc = 1;
 	} catch (e) {

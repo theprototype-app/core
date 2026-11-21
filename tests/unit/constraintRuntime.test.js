@@ -194,3 +194,19 @@ describe('Bake constraints (GLTF export)', () => {
 		r2();
 	});
 });
+
+describe('an open park (an async GLTF export)', () => {
+	it('holds the tick on the authored pose until the serializer restores', () => {
+		const { looker, target } = scene();
+		looker.userData.constraints = [{ id: 'a', kind: 'lookat', target: { uuid: target.uuid } }];
+		markConstraintsDirty();
+		tickConstraints({ now: 1 });
+		const restore = runParkHooks();
+		expect(tickConstraints({ now: 2 })).toBe(0); // a frame while the exporter is still reading
+		expect(looker.quaternion.w).toBeCloseTo(1, 9);
+		restore();
+		restore(); // a second call is harmless
+		expect(tickConstraints({ now: 3 })).toBe(1);
+		expect(fwd(looker).x).toBeCloseTo(1, 6);
+	});
+});

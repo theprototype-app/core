@@ -174,6 +174,10 @@ export function tickConstraints(opts = {}) {
 	const now = opts.now ?? performance.now();
 	if (dirty || now - lastScan > RESCAN_MS) rescan(group, now);
 	if (!owners.size) return 0;
+	if (parkedCount > 0) {
+		if (performance.now() - parkedAt < PARK_STALE_MS) return 0;
+		parkedCount = 0;
+	}
 	let ran = 0;
 	const resolve = (/** @type {any} */ ref) => resolveIn(group, ref);
 	for (const uuid of order) {
@@ -274,6 +278,12 @@ export function clearConstraintOverrides() {
 	overrides.clear();
 }
 
+/** open parks (a serializer holds the authored pose) and when the newest began */
+let parkedCount = 0;
+let parkedAt = 0;
+/** a park nobody restored (a serializer that threw) stops holding the tick after this */
+const PARK_STALE_MS = 15000;
+
 /** "Bake constraints" (a GLTF export): the next parks leave constrained poses in place */
 let keepPosed = false;
 /**
@@ -304,7 +314,15 @@ function park() {
 	if (!lifted.length) return null;
 	const group = /** @type {any} */ (get(objectsGroup));
 	group?.updateMatrixWorld?.(true);
+	// a GLTF export reads the parked pose ASYNCHRONOUSLY (frames run before it finishes): the tick
+	// stands still until the serializer puts the pose back, or it would re-pose what the file reads
+	parkedAt = performance.now();
+	parkedCount++;
+	let restored = false;
 	return () => {
+		if (restored) return;
+		restored = true;
+		parkedCount = Math.max(0, parkedCount - 1);
 		for (const [n, p, e] of lifted) {
 			put(n, p);
 			e.written = poseOf(n); // the posed pose is ours again: the next frame rebases from it
@@ -327,6 +345,7 @@ let unregister = registerParkHook(park);
 /** Test seam: forget everything (between unit runs). */
 export function resetConstraintRuntimeForTest() {
 	for (const n of [...bases.keys()]) letGo(n);
+	parkedCount = 0;
 	owners = new Map();
 	order = [];
 	dirty = true;

@@ -53,7 +53,9 @@
 //   modules          [{id, version}] — the card's module list (games only; must match installModules)
 //   installModules   ['<id>'] — zips installed from MODULES_REPO before the build (the game shows)
 //   generate         a /command, {menu, moduleId?, waitMs?}, {recipe, on, waitMs?} (78 F27: a starter recipe on
-//                    the object named `on`), or a list of them — run after the build
+//                    the object named `on`), {path: {name, points, closed, mode?, speed?}} (61: 78's createPath),
+//                    {tool, on, args} (61: an agent tool on the object `on`; '$<name>' args = that object's
+//                    uuid), or a list of them — run after the build
 //   generateWaitMs   default wait after each generate step (2500)
 //   layout           [{kind, index?, pos, yaw?}] — place generated devices by userData.device.kind
 //   objects*         the scene: OBJECTS below
@@ -1161,6 +1163,32 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 					if (!target) throw new Error('recipe "' + step.recipe + '": no object named "' + step.on + '"');
 					const res = s.starterRecipes.insertStarterRecipe(step.recipe, target.uuid);
 					if (!res.ok) throw new Error('recipe "' + step.recipe + '": ' + res.error);
+				} else if (step.path) {
+					// 61-int G9: a Path through 78's own createPath (WORLD points, one undo step), so the file holds
+					// exactly the Path a person draws
+					const res = s.pathActions.createPath({ ...step.path });
+					if (!res || 'error' in res) throw new Error('path "' + step.path.name + '": ' + (res?.error ?? 'not created'));
+				} else if (step.tool) {
+					// 61-int G9: an agent tool on the object named `on` (e.g. set_npc, the "Make this an enemy" recipe);
+					// an arg written '$<name>' becomes that object's uuid
+					/** @param {string} name */
+					const byName = (name) => {
+						/** @type {any} */ let hit = null;
+						group.traverse((/** @type {any} */ o) => { if (!hit && o.name === name) hit = o; });
+						return hit;
+					};
+					const target = byName(step.on);
+					if (!target) throw new Error('tool "' + step.tool + '": no object named "' + step.on + '"');
+					/** @type {Record<string, any>} */
+					const args = { object: target.uuid };
+					for (const [k, v] of Object.entries(step.args ?? {})) {
+						if (typeof v !== 'string' || !v.startsWith('$')) { args[k] = v; continue; }
+						const named = byName(v.slice(1));
+						if (!named) throw new Error('tool "' + step.tool + '": no object named "' + v.slice(1) + '"');
+						args[k] = named.uuid;
+					}
+					const res = await s.aiTools.executeAiTool(step.tool, args);
+					if (!res || res.error) throw new Error('tool "' + step.tool + '": ' + (res?.error ?? 'no result'));
 				}
 				await new Promise((r) => setTimeout(r, step.waitMs ?? d.generateWaitMs ?? 2500));
 				s.objectsGroup.update((v) => v);

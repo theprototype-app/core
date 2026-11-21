@@ -16,6 +16,7 @@
 	import { buildObjectMenuItems } from '$lib/objectMenu';
 	import { sendPing } from '$lib/ping';
 	import { moduleToolboxes, openToolboxes, buildToolboxItems } from '$lib/moduleToolboxes';
+	import { moduleViewToggles } from '$lib/moduleWorldItems.js'; // 61-nav: module overlays (navmesh, NPC debug)
 	import { togglePanel } from '$lib/panelToggles';
 	import { trackpadMode } from '$lib/trackpadNav';
 	import { helpersInPlay } from '$lib/helperLayer';
@@ -336,6 +337,16 @@
 					tooltip: 'Render light helpers, camera frustums and camera markers inside Play mode (a DEBUG chip marks the frame)',
 					action: () => helpersInPlay.update((v) => !v)
 				},
+				// 61-nav: module overlays (api.registerViewToggle) — LOCAL, read on every menu open
+				...$moduleViewToggles.map((t) => ({
+					label: t.label,
+					checked: t.get(),
+					tooltip: t.tooltip ?? '',
+					action: () => {
+						t.set(!t.get());
+						moduleViewToggles.update((list) => [...list]);
+					}
+				})),
 				{
 					// 24-A2.3: the per-device override, where the problem is. The classifier
 					// (trackpadNav.js) decides by device signature; a user whose wheel still

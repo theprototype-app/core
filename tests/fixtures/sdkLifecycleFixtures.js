@@ -575,6 +575,17 @@
 				call: (api) => api.registerHudElement('lc', { label: 'LC', mount: () => () => {} }),
 				present: (t) => !!M.moduleHudKinds.moduleHudKindDef('mod-' + t.id + '-lc')
 			},
+			// ---- gameWorld (61-nav) ---------------------------------------------------------
+			registerViewToggle: {
+				needs: ['moduleWorldItems'],
+				call: (api) => api.registerViewToggle({ id: 'lc', label: 'LC', get: () => false, set: () => {} }),
+				present: (t) => env.get(M.moduleWorldItems.moduleViewToggles).some((v) => v.moduleId === t.id)
+			},
+			registerObjectAction: {
+				needs: ['moduleWorldItems'],
+				call: (api) => api.registerObjectAction({ id: 'lc', label: 'LC', open: () => {} }),
+				present: (t) => env.get(M.moduleWorldItems.moduleObjectActions).some((a) => a.moduleId === t.id)
+			},
 			// ---- own (34 R6) ---------------------------------------------------------------
 			onUnload: {
 				call(api, t) {

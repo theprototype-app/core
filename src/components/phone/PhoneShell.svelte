@@ -91,6 +91,7 @@
 	import { openFilm } from '$lib/film/filmState';
 	import { AR_UNSUPPORTED_NOTE } from '$lib/arTableCore.js';
 	import { playHere, playHereItems } from '$lib/playHere'; // 60 Q1
+	import { testPlayersItems } from '$lib/testPlayers/testPlayers.js'; // 61 G3
 	import { visibleDockKey, DOCK_TITLES, dockMinimized, dockHeight } from '$lib/bottomDock';
 	import { micActive, pttActive, toggleMic } from '$lib/voiceChat';
 	import { canvasCenter } from '$lib/canvasRect';
@@ -464,6 +465,7 @@
 			// 50 R1: only where it can work — elsewhere the More tile carries the note (VH2: + Join the room)
 			...arPlayItems(),
 			...playHereItems(), // 60 Q1
+			...testPlayersItems(), // 61 G3
 			...($hudIsGame
 				? [
 						{ section: 'Game' },

@@ -161,6 +161,11 @@ const host = {
 /** THE kit of this app */
 export const kit = createKit(host, KIT_PIECES);
 
+/** 61-nav: is THIS peer the kit authority? (api.isAuthority — a module stepping a shared simulation) */
+export function kitIsAuthority() {
+	return host.isAuthority();
+}
+
 /** a `kit` / `kitreq` (or a piece's own) message from a peer (already through wireValidate)
  * @param {any} data @param {string | null} [from] the sending peer's id */
 export function receiveKitMessage(data, from = null) {

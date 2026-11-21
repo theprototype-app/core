@@ -15,6 +15,8 @@ import { freeRegion as freeRegionIn } from '../flowLayout';
 import {
 	createFlowNode,
 	createFlowEdge,
+	deleteFlowNodes,
+	deleteFlowEdges,
 	serializeNode,
 	serializeEdge,
 	setNodeData as sendNodeData
@@ -290,6 +292,10 @@ export function sdkFlow(ctx) {
 						};
 					})
 					.filter(Boolean);
+				// 61-nav: an object's graph that does not exist yet is CREATED (replicated, undoable) —
+				// a node sent into a graph a peer has never heard of would be dropped there
+				if (graphId !== SCENE_GRAPH && created.length && !get(flowGraphs)?.[graphId])
+					flowGraphsRef.createObjectGraph?.(graphId);
 				// nodes before edges, the editor's own order
 				for (const node of created) {
 					createFlowNode(node, graphId);
@@ -307,6 +313,34 @@ export function sdkFlow(ctx) {
 						edges: createdEdges.map(serializeEdge)
 					});
 				return created.map((n) => n.id);
+			},
+			/**
+			 * 61-nav: DELETE nodes (and every edge touching them) from one graph — replicated, ONE undo
+			 * entry, the editor's own delete. Ids not in that graph are ignored.
+			 * @param {string[]} ids @param {string} [graphId] 'scene' (default) or an object uuid
+			 * @returns {number} how many nodes were removed
+			 */
+			removeNodes(ids, graphId) {
+				if (!flowGraphsRef) return 0;
+				const g = graphId ?? SCENE_GRAPH;
+				const doc = get(flowGraphs)?.[g];
+				if (!doc) return 0;
+				const want = new Set((ids ?? []).map(String));
+				const nodes = doc.nodes.filter((/** @type {any} */ n) => want.has(n.id));
+				if (!nodes.length) return 0;
+				const dropIds = nodes.map((/** @type {any} */ n) => n.id);
+				const edges = doc.edges.filter((/** @type {any} */ e) => dropIds.includes(e.source) || dropIds.includes(e.target));
+				/** @type {any} */
+				const peer = get(peers);
+				// edges BEFORE nodes, the 'flownodes' applier's own order
+				deleteFlowEdges(edges.map((/** @type {any} */ e) => e.id), g);
+				deleteFlowNodes(dropIds, g);
+				if (peer) {
+					if (edges.length) peer.send({ type: 'edgedelete', ids: edges.map((/** @type {any} */ e) => e.id), graphId: g });
+					peer.send({ type: 'nodedelete', ids: dropIds, graphId: g });
+				}
+				flowGraphsRef.recordFlowNodesEntry({ op: 'delete', graphId: g, nodes: nodes.map(serializeNode), edges: edges.map(serializeEdge) });
+				return dropIds.length;
 			}
 		}
 	};
@@ -333,5 +367,6 @@ sdkFlow.surface = {
 	'flow.setNodeData': 'content',
 	'flow.setNodesData': 'content',
 	'flow.addNodes': 'content',
+	'flow.removeNodes': 'content', // 61-nav
 	'flow.seedGraph': 'content' // 36 (DEVX #10): graph content, the addNodes kind
 };

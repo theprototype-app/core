@@ -11,6 +11,7 @@
 // `filter`, On Impact's `filter`) is not this — that is how a filter is meant to be wired.
 //
 // Pure: nodes + edges in, findings out. No store, no DOM.
+import { isManySelector, describeSelector } from './selectorCore.js'; // 102b-flows (a pure leaf)
 
 /** Triggers that find their object through `reachesObjectSelector` (flowRuntime's fire* paths). */
 export const SELECTOR_TRIGGERS = new Set([
@@ -35,13 +36,15 @@ const TRIGGER_OBJECT_INPUTS = /** @type {Record<string, string[]>} */ ({
 
 /**
  * @typedef {{
- *   code: 'reversed-trigger',
+ *   code: 'reversed-trigger' | 'selector-matches-nothing',
  *   edgeId: string,
  *   source: string,
  *   target: string,
  *   message: string,
- *   fix: { kind: 'reverse', source: string, target: string, sourceHandle: null, targetHandle: null }
+ *   fix?: { kind: 'reverse', source: string, target: string, sourceHandle: null, targetHandle: null }
  * }} FlowLintFinding
+ *   102b-flows: `selector-matches-nothing` = an Object Selector picking by tag / group / name whose set is
+ *   empty, flagged on the first wire into it (no fix: the scene, not the wiring, is what changes)
  */
 
 /** a node's display name @param {any} node */
@@ -63,17 +66,33 @@ export function isReversedTriggerEdge(edge, source, target) {
 /**
  * Every lint finding in one graph. Order follows the edge list, so two peers (and a test)
  * read the same list.
- * @param {any[]} nodes @param {any[]} edges @returns {FlowLintFinding[]}
+ * @param {any[]} nodes @param {any[]} edges
+ * @param {{resolve?: (data: any) => string[]}} [opts] (102b-flows) what a many-target selector's data resolves to
+ *   (the scene's answer; absent = that rule is skipped, so the pure callers keep their old findings)
+ * @returns {FlowLintFinding[]}
  */
-export function lintFlowGraph(nodes, edges) {
+export function lintFlowGraph(nodes, edges, opts = {}) {
 	/** @type {Map<string, any>} */
 	const byId = new Map((nodes ?? []).map((n) => [n.id, n]));
 	/** @type {FlowLintFinding[]} */
 	const out = [];
+	/** 102b-flows: many-target selectors already flagged (one finding per selector) */
+	const emptySeen = new Set();
 	for (const edge of edges ?? []) {
 		if (edge?.data?.proxy) continue; // a group card's drawn stand-in, not a real wire
 		const source = byId.get(edge.source);
 		const target = byId.get(edge.target);
+		if (opts.resolve && target?.type === 'objectselector' && isManySelector(target.data) && !emptySeen.has(target.id)) {
+			emptySeen.add(target.id);
+			if (!opts.resolve(target.data).length)
+				out.push({
+					code: 'selector-matches-nothing',
+					edgeId: String(edge.id),
+					source: edge.source,
+					target: edge.target,
+					message: `The Object Selector picks objects ${describeSelector(target.data, () => null)} and matches none, so ${nameOf(source)} acts on nothing.`
+				});
+		}
 		if (!isReversedTriggerEdge(edge, source, target)) continue;
 		const trigger = nameOf(target);
 		out.push({

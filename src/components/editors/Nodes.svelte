@@ -99,7 +99,8 @@
 	import { flowMouseBindings } from '$lib/flowPrefs';
 	import Breadcrumbs from '../ui/Breadcrumbs.svelte'; // 41 G15
 	import { readPanelOpen, writePanelOpen, handheld } from '$lib/ui/handheldPanels.js'; // 41 G18 (+ 2.0-n3c: the read-only code sheet)
-	import { objectsGroup, selectedObject, selectedObjects, isVRMode } from '../../stores/sceneStore';
+	import { objectsGroup, selectedObject, selectedObjects, isVRMode, sceneRevision } from '../../stores/sceneStore';
+	import { resolveSelector } from '$lib/selectorCore.js'; // 102b-flows
 	import { serializeNode, serializeEdge, deleteFlowNodes, deleteFlowEdges, setNodeData } from '$lib/nodesHandler';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import { defDefaults } from '$lib/customNodes';
@@ -1792,7 +1793,11 @@
 	const lintFindings: FlowLintFinding[] = $derived.by(() => {
 		const drawn = (nodes as any[]).filter((n) => !n.hidden);
 		const ids = new Set(drawn.map((n) => n.id));
-		return lintFlowGraph(drawn, (edges as any[]).filter((e) => !e.hidden && ids.has(e.source) && ids.has(e.target)));
+		void $sceneRevision; // 102b-flows: a tag / group / name set follows the scene
+		const root = $objectsGroup;
+		return lintFlowGraph(drawn, (edges as any[]).filter((e) => !e.hidden && ids.has(e.source) && ids.has(e.target)), {
+			resolve: (data) => resolveSelector(data, root)
+		});
 	});
 	/** where a flagged wire's chip sits: halfway between the source's right edge and the target's left */
 	const lintChips = $derived.by(() => {
@@ -1815,6 +1820,7 @@
 	});
 	/** Apply a finding's fix: the flagged wire goes, the reversed one comes — ONE undo step. */
 	function reverseWire(f: FlowLintFinding) {
+		if (!f.fix) return;
 		const fresh = makeEdge(f.fix);
 		const exists = storeEdgesNow().some((e) => e.id === fresh.id);
 		inBatch('Reverse wire', () => {
@@ -1824,6 +1830,18 @@
 		showToast(exists ? 'Removed the backwards wire (the right one was already there)' : 'Wire reversed');
 	}
 	function lintMenu(f: FlowLintFinding, x: number, y: number) {
+		if (f.code === 'selector-matches-nothing') {
+			menu = {
+				x,
+				y,
+				items: [
+					{ header: { title: 'Matches no objects', badge: 'acts on nothing' } },
+					{ label: 'Disconnect', icon: 'x', tooltip: f.message, action: () => commitDelete([], [f.edgeId]) }
+				]
+			};
+			return;
+		}
+		if (!f.fix) return;
 		menu = {
 			x,
 			y,

@@ -208,3 +208,32 @@ describe('kitDocSummary', () => {
 		expect(kitDocSummary(null)).toEqual({});
 	});
 });
+
+// 102b-flows: an Object Selector picking a SET (tag / group / name) — the check sees its members
+describe('102b-flows validate_scene with a many-target selector', () => {
+	const set = (/** @type {any} */ data) => (data?.pick === 'tag' && data.match === 'gem' ? ['gem'] : []);
+	const graph = (/** @type {string} */ match) => ({
+		nodes: [
+			{ id: 'c', type: 'onclick', __graph: 'scene' },
+			{ id: 's', type: 'objectselector', __graph: 'scene', data: { pick: 'tag', match, selected: '-None-' } }
+		],
+		edges: [{ id: 'e', source: 'c', target: 's' }]
+	});
+	it('a scene-graph On Click into a tag selector reaches its members (no source-no-object)', () => {
+		const r = validateScene(world({ ...graph('gem'), selectorSet: set }));
+		expect(codes(r)).not.toContain('source-no-object');
+		expect(codes(r)).not.toContain('selector-empty');
+		expect(codes(r)).not.toContain('selector-matches-nothing');
+	});
+	it('a tag nobody carries is flagged, with the tag named', () => {
+		const r = validateScene(world({ ...graph('coin'), selectorSet: set }));
+		expect(codes(r)).toContain('selector-matches-nothing');
+		expect(r.issues.find((/** @type {any} */ i) => i.code === 'selector-matches-nothing').message).toContain('"coin"');
+	});
+	it('explain lists at most six members', () => {
+		const many = Array.from({ length: 9 }, (_, i) => 'o' + i);
+		const objects = Object.fromEntries(many.map((u) => [u, { name: 'Star ' + u }]));
+		const x = explainNode(world({ ...graph('gem'), objects, selectorSet: () => many }), 'c');
+		expect(x.why.join(' ')).toContain('and 3 more');
+	});
+});

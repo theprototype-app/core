@@ -11,6 +11,8 @@
 // reaches an object only DOWNSTREAM (On Click → … → Object Selector) or as the owner of its own object graph:
 // the selector wired INTO the On Click is the wrong way round and never fires (R8).
 
+import { isManySelector, describeSelector } from '../selectorCore.js'; // 102b-flows: a pure leaf, like this file
+
 /** a node's display name: its label, else its type @param {any} n */
 export const nodeName = (n) => String(n?.data?.label && n.data.label !== n.type ? n.data.label : n?.type ?? 'node');
 
@@ -31,6 +33,7 @@ const r1 = (n) => Math.round(n * 10) / 10;
  *   triggers?: Record<string, {lastT: number, count?: number}>,
  *   now?: number,
  *   objects?: Record<string, {name: string, type?: string, light?: boolean, visible?: boolean, sensor?: boolean}>,
+ *   selectorSet?: (data: any) => string[],
  *   hudElements?: string[],
  *   hudScreens?: string[],
  *   play?: {interaction?: string, grounded?: boolean, spawn?: any, simOnPlay?: boolean},
@@ -101,8 +104,9 @@ function sourcesUpstream(w, ix, id) {
 }
 
 /** the object an On Click / On Grab … answers to: selectors downstream, else the owner of its object graph
- * @param {ReturnType<typeof index>} ix @param {any} n @returns {{targets: string[], owner: string | null}} */
-function sourceTargets(ix, n) {
+ * @param {ReturnType<typeof index>} ix @param {any} n @param {World} [w] (102b-flows: resolves a many-target selector)
+ * @returns {{targets: string[], owner: string | null}} */
+function sourceTargets(ix, n, w) {
 	const seen = new Set([n.id]);
 	const stack = [n.id];
 	/** @type {string[]} */
@@ -113,7 +117,9 @@ function sourceTargets(ix, n) {
 			if (seen.has(e.target)) continue;
 			const t = ix.byId.get(e.target);
 			if (t?.type === 'objectselector') {
-				if (t.data?.selected) targets.push(String(t.data.selected));
+				// 102b-flows: a selector picking by tag / group / name answers for every member
+				if (isManySelector(t.data)) targets.push(...(w?.selectorSet?.(t.data) ?? []));
+				else if (t.data?.selected) targets.push(String(t.data.selected));
 				continue;
 			}
 			seen.add(e.target);
@@ -162,7 +168,7 @@ export function validateScene(w) {
 		}
 		// a source that reaches no object (a scene-graph On Click with no selector downstream)
 		if (OBJECT_SOURCES.has(n.type)) {
-			const { targets, owner } = sourceTargets(ix, n);
+			const { targets, owner } = sourceTargets(ix, n, w);
 			if (!owner && !targets.length)
 				add({
 					code: 'source-no-object',
@@ -206,7 +212,18 @@ export function validateScene(w) {
 				add({ code: 'hud-missing', level: 'error', node: n.id, message: name + ' points at the HUD ' + field + ' "' + ref.slice(0, 40) + '", which does not exist.', fix: 'Pick a real ' + field + ' (hud list), or create it.' });
 		}
 		// a selector naming nothing / a missing object
-		if (n.type === 'objectselector' && ix.into(n.id).length) {
+		if (n.type === 'objectselector' && ix.into(n.id).length && isManySelector(n.data)) {
+			// 102b-flows: a set that matches nothing acts on nothing
+			const set = w.selectorSet?.(n.data);
+			if (set && !set.length)
+				add({
+					code: 'selector-matches-nothing',
+					level: 'warning',
+					node: n.id,
+					message: 'An Object Selector picking objects ' + describeSelector(n.data, (u) => objects[u]?.name ?? null) + ' matches no objects, so what reaches it acts on nothing.',
+					fix: n.data?.pick === 'tag' ? 'Give objects the tag (update_objects {tags}) or fix the match.' : 'Fix its match (the group, or the name pattern).'
+				});
+		} else if (n.type === 'objectselector' && ix.into(n.id).length) {
 			const sel = String(n.data?.selected ?? '');
 			if (!sel) add({ code: 'selector-empty', level: 'warning', node: n.id, message: 'An Object Selector with wires in names no object, so what reaches it acts on nothing.' });
 			else if (!objects[sel]) add({ code: 'missing-object', level: 'error', node: n.id, object: sel, message: 'An Object Selector names an object that is not in the scene.' });
@@ -290,7 +307,7 @@ export function wiringIssues(w, ix, add) {
 	for (const n of w.nodes) {
 		const name = nodeName(n);
 		if (n.type === 'onenter' || n.type === 'onexit') {
-			const { targets, owner } = sourceTargets(ix, n);
+			const { targets, owner } = sourceTargets(ix, n, w);
 			const filtered = ix.into(n.id).some((e) => e.targetHandle === 'filter');
 			const sensors = targets.filter((t) => objects[t]?.sensor);
 			// physics reports a pair when ONE side is a sensor, but the player only ever as (sensor, 'player'):
@@ -374,9 +391,9 @@ export function explainNode(w, id) {
 	for (const i of own) why.push(i.message + (i.fix ? ' ' + i.fix : ''));
 	if (w.isSource(n.type)) {
 		if (OBJECT_SOURCES.has(n.type)) {
-			const { targets, owner } = sourceTargets(ix, n);
+			const { targets, owner } = sourceTargets(ix, n, w);
 			const on = owner ? [owner] : targets;
-			if (on.length && !rt.lastFired) why.push(name + ' waits for ' + on.map((u) => objName(w, u)).join(', ') + ' to be ' + (n.type === 'onclick' ? 'clicked' : n.type === 'ongrab' ? 'grabbed' : 'hit') + ' in Play; nobody has yet.');
+			if (on.length && !rt.lastFired) why.push(name + ' waits for ' + on.slice(0, 6).map((u) => objName(w, u)).join(', ') + (on.length > 6 ? ' and ' + (on.length - 6) + ' more' : '') + ' to be ' + (n.type === 'onclick' ? 'clicked' : n.type === 'ongrab' ? 'grabbed' : 'hit') + ' in Play; nobody has yet.');
 		} else if (!rt.lastFired) why.push(name + ' is a source: it fires when its event happens in Play (nothing has happened yet). playtest can make it happen.');
 	} else {
 		const sources = sourcesUpstream(w, ix, id);

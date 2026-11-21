@@ -10,6 +10,12 @@ export default {
 	nodes: [
 		{
 			type: 'objectselector', label: 'Object Selector', defaults: { selected: '-None-' },
+			// 102b-flows: what it picks — absent (`legacy`) = the one `selected` object, every saved selector
+			params: [
+				{ key: 'pick', kind: 'select', options: ['object', 'tag', 'group', 'name'], legacy: 'object', doc: 'object = the one `selected`; tag / group / name = every matching object' },
+				{ key: 'match', kind: 'text', placeholder: 'the tag, group uuid or name pattern (Star*, *coin*)', maxLength: 120, doc: 'pick tag: a tag; group: a group uuid; name: a glob (* any, ? one; no * = contains)' }
+			],
+			note: 'Pick by tag, group or name to drive many objects with one flow. Effects act on every match; a trigger fires for any of them (Fired Object says which).',
 			sockets: { out: 'object', in: { _default: 'effect' } },
 			card: 'ObjectSelectorNode',
 			eval(node, { d }, rt) {

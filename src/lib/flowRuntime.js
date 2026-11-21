@@ -136,7 +136,7 @@ import { runParkHooks } from './parkHooks.js'; // 68: extra parks (prop tracks),
 import { INPUT_LETTERS, socketCount, opFolds, foldMath, foldGate, switcherItems, switcherHandle, switcherIndexOf, switcherRadioIndex } from './variadicNodes.js';
 import { blendSpeedWeights, smoothWeights, clipForSlot } from './tpanim/blendSpeed.js'; // 57 M3 (a leaf)
 import { newTracker, trackPose } from './avatars/locomotion.js'; // 57 M3: a stream-safe speed (a leaf)
-import { isManySelector, resolveSelector, selectorKey } from './selectorCore.js'; // 102b-flows (a leaf)
+import { isManySelector, resolveSelector, selectorKey, describeSet } from './selectorCore.js'; // 102b-flows (a leaf)
 
 // H3: inputRuntime is reached via a PRIMED dynamic import (the moduleSDK
 // pattern) — a static edge would close the TDZ cycle history -> flowRuntime ->
@@ -5244,6 +5244,19 @@ function debugTickBegin(liveTime) {
 	if (!viewTriggers) lastLiveTime = liveTime;
 }
 
+/** 102b-flows: the debugger's line for a set — null for every node that touches no many-target selector @param {any} node */
+function debugSetText(node) {
+	const name = (/** @type {string} */ u) => objectNameOf(u);
+	if (node.type === 'objectselector') return isManySelector(node.data) ? 'Resolves to ' + describeSet([...selectorTargets(node)], name, 6) : null;
+	const sels = manySelectorsReached(node.id);
+	if (!sels.length) return null;
+	/** @type {Set<string>} */
+	const all = new Set();
+	for (const id of sels) for (const u of selectorTargets(nodeById(nodes, id))) all.add(u);
+	const fired = firedObjects.get(node.id);
+	return 'Acts on ' + describeSet([...all], name, 6) + (fired ? ' · fired last for ' + (objectNameOf(fired) ?? 'an object') : '');
+}
+
 /** a node's name as the panel shows it @param {any} node */
 function debugLabel(node) {
 	if (!node) return '?';
@@ -5334,7 +5347,9 @@ function publishDebug(time, ctx, now) {
 	const eventless = !!focus && outputType(focus.type) !== 'event' && !SCHEDULED_TYPES.includes(focus.type) && !inputs.some((r) => r.kind === 'event');
 	// 78 F26: a trigger node says when it was last checked and what blocks it
 	const why = focus && WHY_TYPES.has(focus.type) ? whySentence(lastCheck(focus.id), standingWhy(focus, time, ctx)) : null;
-	debugValues.set({ focus: focus ? { id: focus.id, label: debugLabel(focus), type: focus.type, eventless, why } : null, inputs, outputs, watches });
+	// 102b-flows: a many-target selector says what it resolves to; a node wired into one, what it acts on
+	const set = focus ? debugSetText(focus) : null;
+	debugValues.set({ focus: focus ? { id: focus.id, label: debugLabel(focus), type: focus.type, eventless, why, ...(set ? { set } : {}) } : null, inputs, outputs, watches });
 }
 
 /** test/debug view of the runtime half */

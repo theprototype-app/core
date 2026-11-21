@@ -13,6 +13,7 @@
 // Schemas live in the registry getAiTools builds, so the in-app assistant, the agent page, the bridge and the
 // connector catalog list one definition. Everything heavy loads on first use (flowRuntime, physics, the kit
 // and playMode are history-family; this module sits in the assistant's static graph and the catalog's SSR load).
+import { isManySelector, resolveSelector } from '../selectorCore.js'; // 102b-flows
 import { get } from 'svelte/store';
 import { objectsGroup, isLocked, globalCamera } from '../../stores/sceneStore.js';
 import { notifications } from '../../stores/appStore.js';
@@ -136,6 +137,7 @@ async function world() {
 		triggers: get(flowTriggers),
 		now: triggerNow(),
 		objects: sceneObjects(),
+		selectorSet: (/** @type {any} */ data) => resolveSelector(data, get(objectsGroup)), // 102b-flows
 		hudElements: hud.elements,
 		hudScreens: hud.screens,
 		play: scenePhysics ? get(scenePhysics.scenePlay) : undefined,
@@ -220,8 +222,9 @@ async function inspectRuntime(args) {
 		if (!o) return { error: 'no object with uuid "' + args.object.slice(0, 64) + '"' };
 		// its own graph + every source in the scene that reaches it through a selector
 		const mine = w.nodes.filter((n) => n.__graph === args.object);
+		// 102b-flows: or a selector whose tag / group / name set includes it
 		const viaSelector = w.nodes.filter(
-			(n) => n.type === 'objectselector' && n.data?.selected === args.object
+			(n) => n.type === 'objectselector' && (isManySelector(n.data) ? resolveSelector(n.data, get(objectsGroup)).includes(args.object) : n.data?.selected === args.object)
 		);
 		const feeding = new Set(w.edges.filter((e) => viaSelector.some((s) => s.id === e.target)).map((e) => e.source));
 		const related = [...mine, ...w.nodes.filter((n) => feeding.has(n.id))];

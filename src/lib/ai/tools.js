@@ -1,4 +1,5 @@
 import { parentTarget } from './parentTarget.js';
+import { setObjectTags } from '../objectTags.js'; // 102b-flows
 import { get } from 'svelte/store';
 import * as THREE from 'three';
 import { objectsGroup, lockedObjects, pokeScene } from '../../stores/sceneStore.js';
@@ -774,6 +775,11 @@ async function updateOne(spec) {
 		}
 	}
 	if (typeof spec.visible === 'boolean' && object.visible !== spec.visible) toggleObjectVisibility(uuid);
+	// 102b-flows: the object's tags (what an Object Selector set to pick: tag finds); [] clears them
+	if (spec.tags !== undefined) {
+		if (Array.isArray(spec.tags) && spec.tags.every((/** @type {any} */ t) => typeof t === 'string')) setObjectTags(uuid, spec.tags);
+		else errors.push('tags: takes a list of words like ["coin", "pickup"]');
+	}
 	// mcp-shapes: after the move, so a new position is where it looks from
 	if (spec.lookAt !== undefined) {
 		const why = lookAtTarget(object, spec.lookAt, spec.front);
@@ -1551,6 +1557,11 @@ export const AI_TOOLS = [
 								face_user: { description: 'turn it (yaw only) so its front faces a person: true = the person you act for, or a peer id / name from where_are_users' },
 								front: { type: 'string', enum: ['+z', '-z', '+x', '-x', '+y', '-y'], description: 'which local axis is its front for lookAt and face_user (default +z; many models face +x or -z — look at a screenshot)' },
 								visible: { type: 'boolean' },
+								tags: {
+									type: 'array',
+									items: { type: 'string' },
+									description: 'replace the object\'s tags (short words; [] clears). One flow then drives every object with a tag: an objectselector {pick: "tag", match: "<tag>"}'
+								},
 								parentUuid: {
 									type: 'string',
 									description: 'group uuid (or any object, not a light or camera) to nest under, or "root" to un-nest. The object keeps its world pose; a position given in the same update is LOCAL to the new parent. A uuid not in the scene is an error'

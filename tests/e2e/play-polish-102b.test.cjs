@@ -16,6 +16,13 @@
 const h = require('./helpers.cjs');
 
 const { check } = h;
+// bounded: a lost page or a stuck browser close must not hold the e2e slot (SIGKILL skips exit hooks)
+const SUITE_LIMIT_MS = Number(process.env.SUITE_LIMIT_MS || 300000);
+setTimeout(() => {
+	console.error(`SUITE TIMEOUT after ${SUITE_LIMIT_MS / 1000} s`);
+	process.kill(process.pid, 'SIGKILL');
+}, SUITE_LIMIT_MS).unref();
+process.on('exit', (c) => c && process.kill(process.pid, 'SIGKILL'));
 const read = `(s) => { let v; s.subscribe((x) => (v = x))(); return v; }`;
 const PNG =
 	'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR4nGP8z8DAwMDAxMDAwMDAAAANHQEDasKb6QAAAABJRU5ErkJggg==';
@@ -40,7 +47,7 @@ h.run(async () => {
 	// the init script lands on the next navigation; reload once so App's onMount sees EyeDropper
 	await E.page.reload({ waitUntil: 'domcontentloaded' });
 	await E.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.annotationsHandler, null, { timeout: 90000 });
-	await h.answerRestore?.(E.page);
+	await h.answerRestore(E);
 
 	const plain = await E.page.evaluate(() => {
 		const S = window.__tp.test.v1.sessions;
@@ -86,6 +93,8 @@ h.run(async () => {
 		return Array.from(zip);
 	});
 	const back = await E.page.evaluate(() => window.__e2eBack);
+	// the lane's file, for the compat suite (play-polish-102b-compat) to open in the newest release
+	if (process.env.PLAY_POLISH_OUT) require('fs').writeFileSync(process.env.PLAY_POLISH_OUT, Buffer.from(bytes));
 	check(
 		JSON.stringify(back.touch) === JSON.stringify(AUTHOR),
 		`1: the author layout survives the .tpscene round trip (${JSON.stringify(back.touch)})`
@@ -179,6 +188,12 @@ h.run(async () => {
 	await page.focus('#info-points-button');
 	await page.keyboard.press('Enter');
 	await page.waitForSelector('#info-points-list', { timeout: 5000 }).catch(() => {});
+	const probe = await page.evaluate(() => ({
+		list: !!document.getElementById('info-points-list'),
+		expanded: document.getElementById('info-points-button')?.getAttribute('aria-expanded'),
+		active: document.activeElement?.outerHTML?.slice(0, 120)
+	}));
+	console.log('after Enter', JSON.stringify(probe));
 	const listFocus = await page.evaluate(() => document.activeElement?.getAttribute('data-info-point'));
 	check(listFocus === made.visitor, `2: the list opens with focus on its first point (${listFocus})`);
 	await page.keyboard.press('Enter');

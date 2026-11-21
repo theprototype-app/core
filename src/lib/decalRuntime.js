@@ -241,6 +241,14 @@ function buildGeometry(boxWorld, meshes, angle, bake) {
 	geo.computeBoundingBox();
 	geo.userData.decalTris = out.tris;
 	geo.userData.decalCapped = out.capped;
+	// every toJSON (undo snapshots, the wire, a duplicate) writes the PLACEHOLDER: the surface is
+	// the record's, rebuilt by each peer; history snapshots do not run the park hooks
+	geo.toJSON = function () {
+		parkGeo ??= decalPlaceholderGeometry();
+		const json = parkGeo.toJSON();
+		json.uuid = this.uuid;
+		return json;
+	};
 	return geo;
 }
 

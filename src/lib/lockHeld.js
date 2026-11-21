@@ -43,6 +43,8 @@ export function claimLocks(uuids) {
 	const now = sessionNow();
 	for (const u of uuids) if (typeof u === 'string' && u && !next.has(u)) next.set(u, before.get(u) ?? now);
 	myLocks.set(next);
+	for (const u of next.keys()) if (!before.has(u)) touchMyLock(u);
+	for (const u of [...lastTouch.keys()]) if (!next.has(u)) lastTouch.delete(u);
 	return [...next.values()];
 }
 
@@ -51,11 +53,12 @@ export function dropMyLocks(uuids) {
 	const before = get(myLocks);
 	if (!uuids) {
 		if (before.size) myLocks.set(new Map());
+		lastTouch.clear();
 		return;
 	}
 	if (!uuids.some((u) => before.has(u))) return;
 	const next = new Map(before);
-	for (const u of uuids) next.delete(u);
+	for (const u of uuids) (next.delete(u), lastTouch.delete(u));
 	myLocks.set(next);
 }
 
@@ -134,4 +137,22 @@ export function flowEditBlocked(graphId, say) {
 		say(holder);
 	}
 	return true;
+}
+
+// ---------------------------------------------------------------------------------------------
+// 80a K6: an object we hold and stopped editing is let go after a while (lockIdle.js). "Editing" is
+// any edit of it we SEND (the gated message types, the K3 gate's own list) or taking it; Keep
+// holding restarts the count. Local clock: this is a fact about this tab, never on the wire.
+
+/** @type {Map<string, number>} uuid -> when we last edited or took it (Date.now) */
+const lastTouch = new Map();
+
+/** We edited (or kept) `uuid` now @param {string} uuid */
+export function touchMyLock(uuid) {
+	if (get(myLocks).has(uuid)) lastTouch.set(uuid, Date.now());
+}
+
+/** How long since we last edited each object we hold @param {number} [now] @returns {[string, number][]} */
+export function myLockIdle(now = Date.now()) {
+	return [...get(myLocks).keys()].map((u) => [u, now - (lastTouch.get(u) ?? now)]);
 }

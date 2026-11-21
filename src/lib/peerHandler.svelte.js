@@ -78,8 +78,9 @@ import { applyRemoteManifest, sendProjectManifest } from '$lib/projectManifest';
 import { applyRemotePeerVars, dropPeerVars, sendPeerVarsState } from '$lib/peerVars';
 import { applyModuleMessage, moduleVersions, checkModuleVersions, checkPeerAppVersion, sendModuleStates, applyModuleStates } from '$lib/moduleSDK';
 import { APP_VERSION, COMMIT_SHA } from '$lib/version.js';
-import { applyLockRequest, applyUnlock, applyLockDenied, applyRemoteLock, applyLockReject, yieldLostLocks, gateLockedEdit, dropPeerLockState } from '$lib/lockControl';
-import { myLockRows } from '$lib/lockHeld'; // 80a K3
+import { applyLockRequest, applyUnlock, applyLockDenied, applyRemoteLock, applyLockReject, yieldLostLocks, gateLockedEdit, dropPeerLockState, releaseOnHeal, startLockLifecycle, releaseEditLock } from '$lib/lockControl';
+import { applyLockMode, lockModeMessage, registerLockModeHooks, claimForEdit } from '$lib/lockMode'; // 80a K15
+import { myLockRows, touchMyLock } from '$lib/lockHeld'; // 80a K3 / K6
 import { gatedUuid } from '$lib/lockTrust';
 import { applyDrawLive, applyDrawEnd } from '$lib/drawMode';
 import { applySimulate, applySimVote, applySimHandoff, physicsExternalMove, applyThrow, applyHit, simulating, simPaused, remoteSimulating } from '$lib/physics';
@@ -379,6 +380,8 @@ function agentMadeObject(uuid) {
 export class PeerConnection {
 	constructor(id, updateIdFn) {
 		this.updateIdFn = updateIdFn;
+		startLockLifecycle(); // 80a K6: idle expiry of what we hold (idempotent)
+		registerLockModeHooks({ send: (data) => this.send(data) }); // 80a K15
 		// fix-agenttest 6: a reload while joined comes back on the SAME id and dials the host
 		// (rejoin.js); the host re-admits an id that left by unloading (unloadedPeers)
 		const rejoin = takeRejoin();
@@ -1698,6 +1701,9 @@ export class PeerConnection {
 				} else if(data.type == 'lockreject') {
 					// 80a K3: the holder refused an edit of ours (only the holder may say so)
 					applyLockReject(data, conn.peer);
+				} else if(data.type == 'lockmode') {
+					// 80a K15: the room's lock mode, from the host (or an admin) only
+					applyLockMode(data, conn.peer);
 				} else if(data.type == 'locked') {
 					// the host forwards the room's table; anyone else speaks for its own rows,
 					// and only if it may take locks at all (`locked` is on the canApply floor)
@@ -2221,6 +2227,9 @@ export class PeerConnection {
 	/** @param {any} conn @param {string} peerId @param {boolean} getobjects @param {string} id
 	 * @param {{heal?: boolean}} [opts] heal: this conn REPLACES one that dropped (the reconnect window) */
 	sendHandshake(conn, peerId, getobjects, id, opts = {}) {
+		// 80a K6: a healed link lets go of what was held across the drop, on both sides, before this
+		// handshake's `locked` is built (QUESTIONS-80a-locks Q1/Q2; fix4-net's heal paths all land here)
+		if (opts.heal) releaseOnHeal(peerId);
 		noteNodeSyncHandshake(peerId) // 54i row g: the nodesync join window runs from the link, not a later first nodesync
 		// 25-F: an approval dial-back SAYS it is one, ahead of everything else (the roadmap's
 		// "first message"). The metadata already carried it; this is the same answer for a
@@ -2256,6 +2265,9 @@ export class PeerConnection {
 		// `hostsPrivate` is read once here and reused by the content hold further down.
 		const hostsPrivate = amPrivate();
 		if (!hostsPrivate) conn.send({type: 'locked', lockeditems: locks})
+		// 80a K15: the host tells a joiner the room's lock mode (nothing while it was never changed)
+		const lockModeMsg = get(sessionHost) === null ? lockModeMessage() : null;
+		if (lockModeMsg) conn.send(lockModeMsg)
 		conn.send({type: 'hosts', hosts: hosts})
 		conn.send({type: 'userdata', userdata: users.filter((/** @type {any} */ u) => !isHeldOut(u[0]))})
 		// 55 A8: the newest agent log lines, so a late joiner's AI window shows what was built
@@ -3245,6 +3257,15 @@ export class PeerConnection {
 		// viewer perms: a viewer's object CREATIONS never leave this machine — mark
 		// them local-only + warn, and skip the broadcast (peers drop them anyway).
 		if (gateCreationBroadcast(data)) return;
+		// 80a K6: an edit we send of an object we hold is activity (the idle expiry counts from it)
+		for (const item of data?.type === 'batch' && Array.isArray(data.items) ? data.items : [data]) {
+			const u = item && gatedUuid(item);
+			if (!u) continue;
+			// 80a K15 "Lock only while editing": the first edit takes the object, its lock going out first
+			const claim = claimForEdit(u, releaseEditLock);
+			if (claim) this.broadcast(claim);
+			touchMyLock(u);
+		}
 		// 78-int PL13: a live scene-singleton edit says it is one (`by`, additive; older peers ignore it)
 		const by = noteLocalSceneEdit(data);
 		if (by) data.by = by;

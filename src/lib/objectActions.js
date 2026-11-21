@@ -39,6 +39,7 @@ import {
 } from '../stores/appStore';
 import { canEditObject, warnViewerReadOnly } from './objectPermissions';
 import { lockMessage, dropMyLocks, heldByOther, lockedView as lockedViewStore } from './lockHeld'; // 80a K3 / K4
+import { lockOnEdit, editLocksToDrop } from './lockMode'; // 80a K15
 import { stripEditOverlays, isEditOverlay } from './editOverlays';
 // B7: the transient marker (a LEAF — two stores only, so no cycle back through history)
 import { markTransient } from './transientObjects';
@@ -251,7 +252,17 @@ export function applySelectionSet(uuids, openProperties = false) {
 	}
 	// one lock message covers the whole set (receivers replace this peer's set)
 	// 80a K3: each uuid carries the moment we took it (`ats`), which is what settles two peers selecting at once
-	if (peer) peer.send(lockMessage(clean, peer.peer.id));
+	if (peer) {
+		if (lockOnEdit()) {
+			// 80a K15 "Lock only while editing": selecting takes nothing; edit locks on objects no
+			// longer selected are let go
+			const drop = editLocksToDrop(clean);
+			if (drop.length) {
+				dropMyLocks(drop);
+				for (const uuid of drop) peer.send({ type: 'unlock', peerId: peer.peer.id, uuid });
+			}
+		} else peer.send(lockMessage(clean, peer.peer.id));
+	}
 	// 15-O: explicit request (double-click / context menu / object list), a
 	// PINNED panel (follows every selection), or a panel already showing the
 	// selection. A plain viewport click alone no longer forces it open.

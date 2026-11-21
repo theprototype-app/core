@@ -1,9 +1,12 @@
 import { get, writable } from 'svelte/store';
 import { lockedObjects, objectsGroup, TControls, selectedObject, selectedObjects } from '../stores/sceneStore';
 import { peers, showToast, closeSelectionInspector } from '../stores/appStore';
-import { selectObject, applySelectionSet } from './objectActions';
+import { selectObject, applySelectionSet, deselectObject } from './objectActions';
+import { startLockIdle } from './lockIdle';
+import { registerLockModeHooks, clearEditTimers, resetLockMode, lockOnEdit, lockMode } from './lockMode';
+import { sessionHost } from './connectionState';
 import { createRequestLimiter, holdsLock, isHeld, holderOf, gatedUuid, lockGateVerdict } from './lockTrust';
-import { myLocks, myClaim, dropMyLocks, heldByMe, holderNow, nameOf } from './lockHeld';
+import { myLocks, myClaim, dropMyLocks, heldByMe, holderNow, nameOf, lockedView } from './lockHeld';
 import { lockGeometry } from './geometries.svelte';
 
 // Lock visibility + polite takeover: request control of a locked object, the
@@ -91,6 +94,11 @@ export function applyUnlock(data, from) {
 		stillHeld = isHeld(next, data.uuid);
 		return next;
 	});
+	// 80a K15: in "Lock only while editing" a VIEW of an object whose holder stopped editing becomes
+	// a selection again, so the gizmo is there for the next edit
+	if (held && !stillHeld && lockOnEdit() && get(lockedView) === data.uuid && pendingRequest !== data.uuid) {
+		selectObject(data.uuid);
+	}
 	if (pendingRequest === data.uuid && (held || !stillHeld)) {
 		const uuid = pendingRequest;
 		pendingRequest = null;
@@ -302,4 +310,98 @@ export function applyLockReject(data, from) {
 	if (now - (rejectToastAt.get(data.uuid) ?? -Infinity) < 3000) return;
 	rejectToastAt.set(data.uuid, now);
 	showToast(nameOf(from) + ' is editing "' + objectName(data.uuid) + '", so your change was not kept');
+}
+
+// ---------------------------------------------------------------------------------------------
+// 80a K6: letting go on purpose (Release, idle expiry, a healed connection).
+
+/**
+ * Let go of `uuids`: out of the selection (which re-sends our lock set) and an `unlock` for any we
+ * hold outside it (an Edit Mesh session, a view).
+ * @param {string[]} uuids
+ */
+export function letGoOf(uuids) {
+	const drop = new Set(uuids);
+	if (!drop.size) return;
+	const current = get(selectedObjects);
+	const rest = current.filter((u) => !drop.has(u));
+	if (rest.length !== current.length) {
+		if (rest.length) applySelectionSet(rest);
+		else deselectObject();
+	}
+	for (const u of drop) if (get(myLocks).has(u)) releaseLock(u);
+}
+
+/**
+ * A dropped connection to `peerId` came back (fix4-net's heal paths all end in sendHandshake with
+ * `heal`). Neither side knows which of us was offline, and a claim kept across the drop keeps its
+ * old stamp, which would win the tie-break against someone who took the object meanwhile. So both
+ * sides forget the healed peer's rows and let go of what they hold, BEFORE the heal handshake goes
+ * out (it then carries an empty held set). QUESTIONS-80a-locks Q2.
+ * @param {string} peerId
+ */
+export function releaseOnHeal(peerId) {
+	lockedObjects.update((locks) => {
+		const next = locks.filter((l) => l[0] !== peerId);
+		return next.length === locks.length ? locks : next;
+	});
+	dropPeerLockState(peerId);
+	const mine = [...get(myLocks).keys()];
+	if (!mine.length) return;
+	letGoOf(mine);
+	showToast(
+		'Connection to ' + nameOf(peerId) + ' came back: you let go of ' + (mine.length === 1 ? '"' + objectName(mine[0]) + '"' : mine.length + ' objects') + ', select again to keep editing'
+	);
+}
+
+/**
+ * 80a K15: an edit lock's 3 s are up: let go, and keep the selection (no gizmo detach, no panel close).
+ * @param {string} uuid
+ */
+export function releaseEditLock(uuid) {
+	/** @type {any} */
+	const peer = get(peers);
+	dropMyLocks([uuid]);
+	if (peer?.peer?.id) peer.send({ type: 'unlock', peerId: peer.peer.id, uuid });
+}
+
+/**
+ * 80a K15: the room's mode changed. To "only while editing": let go of every selection lock (keep
+ * the selection). Back to "while selected": take what is selected.
+ * @param {'select' | 'edit'} mode
+ */
+function lockModeChanged(mode) {
+	clearEditTimers();
+	if (mode === 'edit') {
+		for (const u of [...get(myLocks).keys()]) releaseEditLock(u);
+	} else {
+		const sel = get(selectedObjects);
+		if (sel.length) applySelectionSet(sel);
+	}
+	// a reset (we left, a new host) says nothing; a change somebody made does
+	if (get(lockMode).at) showToast(mode === 'edit' ? 'This room locks an object only while someone is editing it' : 'This room locks an object while someone has it selected');
+}
+
+let idleStarted = false;
+/** start the idle expiry once (peerHandler's constructor) */
+export function startLockLifecycle() {
+	if (idleStarted) return;
+	idleStarted = true;
+	registerLockModeHooks({ changed: lockModeChanged });
+	// a different host (or none: we left) means a different room: its mode comes with its handshake
+	let lastHost = /** @type {any} */ (undefined);
+	sessionHost.subscribe((hostId) => {
+		if (lastHost !== undefined && hostId !== lastHost) resetLockMode();
+		lastHost = hostId;
+	});
+	startLockIdle({
+		say: (text, actions) => showToast(text, actions),
+		letGo: letGoOf,
+		nameOf: objectName,
+		alone: () => {
+			/** @type {any} */
+			const p = get(peers);
+			return !Object.values(p?.connections ?? {}).some((c) => /** @type {any} */ (c)?.open);
+		}
+	});
 }

@@ -208,6 +208,8 @@ export const VALIDATORS = {
 	lock: (d) => isUuid(d.uuid) && (d.uuids === undefined || isArray(d.uuids)),
 	// 80a K3: the holder refused an edit of ours (only the holder's is acted on: lockControl)
 	lockreject: (d) => isUuid(d.uuid),
+	// 80a K15: the room's lock mode (only the host's or an admin's is followed: lockMode.js)
+	lockmode: (d) => (d.mode === 'select' || d.mode === 'edit') && Number.isFinite(d.at),
 	unlock: (d) => d.peerId === undefined || typeof d.peerId === 'string',
 	clearscene: (d) => typeof d.peerId === 'string',
 	delete: (d) => isUuid(d.uuid),

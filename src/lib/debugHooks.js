@@ -651,6 +651,8 @@ export const DEBUG_HOOKS = [
 	// 102b-arrange: arrays (runtime debug + actions), tidy, vertex snap
 	['arrayRuntime', () => import('./arrayRuntime.js')],
 	['arrayActions', () => import('./arrayActions.js')],
+	['tidyActions', () => import('./tidyActions.js')],
+	['layersRuntime', () => import('./layersRuntime.js')],
 	// 64-text: fonts (bundled + Library + Google), the solid build, the export licence walk
 	['textFonts', () => import('./textFonts.js')],
 	['text3dBuild', () => import('./text3dBuild.js')],

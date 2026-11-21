@@ -1114,7 +1114,11 @@
 			const area = $marqueeRect;
 			const picked = [];
 			const center = new THREE.Vector3();
+			// 102b-arrange: a box skips objects on a LOCKED layer and on a layer hidden here
+			const locked: Set<string> | undefined = (editorPass() as any).lockedLayers;
 			for (const object of $objectsGroup?.children ?? []) {
+				const layer = object.userData?.layer;
+				if (layer && (locked?.has(layer) || object.visible === false)) continue;
 				const box = new THREE.Box3().setFromObject(object);
 				if (!isFinite(box.min.x)) continue;
 				box.getCenter(center).project(camera.current);

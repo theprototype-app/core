@@ -2411,6 +2411,9 @@
 				</div>
 			</Section>
 
+			<!-- 102b-arrange row 2: the scene's layers (a lazy chunk) -->
+			<Section variant="panel" label="Layers" closed aliases={['Layer', 'Hide layer', 'Lock layer']}>{#await import('./inspector/LayersSection.svelte') then m}<m.default />{/await}</Section>
+
 			<Section variant="panel" label="Levels" closed aliases={['Level', 'Portals', 'Checkpoints', 'Loading screen', 'Keep across levels']} note={sectionNote('Levels')}><LevelsSection /></Section>
 
 			<Section variant="panel" label="Physics" closed note={sectionNote('Physics')}>
@@ -3779,6 +3782,11 @@
 			<!-- 47 M2: align / distribute / drop to ground over the set (its own file) -->
 			{#if multiCount}
 				<ArrangeSection count={multiCount} />
+			{/if}
+
+			<!-- 102b-arrange row 2: Tidy (layer, select similar, rename many, randomise) — a lazy chunk -->
+			{#if $selectedObjects?.length}
+				{#await import('./inspector/TidySection.svelte') then m}<m.default />{/await}
 			{/if}
 
 			{#if !isLight}

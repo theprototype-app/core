@@ -126,6 +126,9 @@ function hitTransparent(hit) {
  */
 export function isSeeThrough(hit, target, pass = PASS_DEFAULTS) {
 	if (target?.userData?.pick === 'through') return true;
+	// 102b-arrange: an object on a locked layer (the editor pass carries the set)
+	const locked = /** @type {any} */ (pass)?.lockedLayers;
+	if (locked && target?.userData?.layer && locked.has(target.userData.layer)) return true;
 	if (hitOpacity(hit) < SEE_THROUGH_OPACITY) return true;
 	const kind = nonBlockingKind(target);
 	if (kind === 'water' && pass.water) return true;

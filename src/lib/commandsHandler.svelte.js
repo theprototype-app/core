@@ -724,6 +724,14 @@ export async function objectParameters(data, from = 'peer') {
             else delete mesh.userData.textPath;
             pokeScene();
         }
+    } else if (data.parameter == 'layer') {
+        // 102b-arrange: which layer an object is on (an id from the scene's layer table) or null
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            if (typeof data.layer === 'string' && data.layer) mesh.userData.layer = data.layer;
+            else delete mesh.userData.layer;
+            pokeScene();
+        }
     } else if (data.parameter == 'array') {
         // 102b-arrange: an array record (wireValidate checked the shape; the runtime normalizes on
         // read) or null = the array is gone. Every peer draws the copies itself.

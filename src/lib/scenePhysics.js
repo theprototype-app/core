@@ -1,4 +1,5 @@
 import { writable, derived, get } from 'svelte/store';
+import { normalizeLayers } from './layersCore.js';
 import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import { peers } from '../stores/appStore';
 import { normalizeLocomotion, normalizeSpawn } from './locomotionPolicy'; // 30b P3/P4
@@ -253,6 +254,8 @@ export function normalizeScenePhysics(raw) {
 		// 93 LP0: the game's ONE Levels table (+ its keep list and loading screen) — present only when
 		// authored, so a scene that never used it stays byte-identical (gameLevels/table.js)
 		...optional('levels', normalizeLevelsTable(source.levels)),
+		// 102b-arrange: the scene's LAYERS (name, colour, lock) — present only when authored (layersCore.js)
+		...optional('layers', normalizeLayers(source.layers)),
 		changedAt: typeof source.changedAt === 'number' ? source.changedAt : 0
 	};
 	return withUnknown(source, state, [
@@ -271,6 +274,7 @@ export function normalizeScenePhysics(raw) {
 		'simOnLoad',
 		'fluidBudget',
 		'levels',
+		'layers',
 		'changedAt',
 		'type' // the wire envelope's own field, never state
 	]);

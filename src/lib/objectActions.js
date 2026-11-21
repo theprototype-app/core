@@ -938,6 +938,12 @@ registerHistoryKind('props', (entry, state) => {
 		if (peer)
 			peer.send({ type: 'objectParameters', parameter: 'textPath', uuid: entry.uuid, textPath: state.textPath ?? null, ...(state.bake ? { bake: true } : {}) });
 	}
+	if ('layer' in state) {
+		// 102b-arrange: the object's layer id (tidyActions.setObjectsLayer is the write path)
+		if (state.layer) object.userData.layer = state.layer;
+		else delete object.userData.layer;
+		if (peer) peer.send({ type: 'objectParameters', parameter: 'layer', uuid: entry.uuid, layer: state.layer ?? null });
+	}
 	if ('array' in state) {
 		// 102b-arrange: the array record (arrayActions.setArray is the write path)
 		if (state.array) object.userData.array = state.array;

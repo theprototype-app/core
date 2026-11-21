@@ -5,6 +5,7 @@
 	import { Text } from '@threlte/extras'
 	import {
 		annotations,
+		notePinFilter,
 		pinsGroup,
 		showNotePins,
 		noteMarkers,
@@ -100,6 +101,9 @@
 	// material from it, so the per-pin `color` still applies (see its material getter)
 	const numberBase = new THREE.MeshBasicMaterial({ depthTest: false, transparent: true })
 
+	// 102b-play: the play app pins only the notes shown to visitors (notePinFilter); the editor pins all
+	const pinned = $derived($notePinFilter ? $annotations.filter($notePinFilter) : $annotations)
+
 	const fillOf = (a: any) => a.color || DEFAULT_NOTE_COLOR
 
 	// H11: a follow session rides the pin. This runs in the MAIN stage, BEFORE
@@ -113,7 +117,7 @@
 	useTask(() => {
 		if (!$showNotePins) return
 		camera.current.getWorldPosition(cameraPosition)
-		$annotations.forEach((annotation) => {
+		pinned.forEach((annotation) => {
 			const pin = pinRefs[annotation.id]
 			if (!pin) return
 			// N1: resolve the owner from BOTH objectsGroup (normal objects) AND the scene
@@ -188,7 +192,7 @@
 			}
 			const cam = camera.current as any
 			const element = renderer?.domElement
-			if (!cam || !element || !$annotations.length) {
+			if (!cam || !element || !pinned.length) {
 				if ($noteMarkers.length) noteMarkers.set([])
 				return
 			}
@@ -199,7 +203,7 @@
 			cam.getWorldPosition(cameraPosition)
 
 			const views: any[] = []
-			$annotations.forEach((annotation, index) => {
+			pinned.forEach((annotation, index) => {
 				const pin = pinRefs[annotation.id]
 				if (!pin || !pin.visible) return
 				pin.getWorldPosition(anchor)
@@ -238,7 +242,7 @@
      Scene raycast branch is gated on the same store, so hidden pins can't be
      clicked either) -->
 <T.Group bind:ref={root} name="annotation-pins" visible={$showNotePins}>
-	{#each $annotations as annotation, index (annotation.id)}
+	{#each pinned as annotation, index (annotation.id)}
 		<T.Group oncreate={(ref) => (pinRefs[annotation.id] = ref)} name={`pin-${annotation.id}`}>
 			<!-- The pin GROUP stays exactly on the anchor (annotationWorldPosition and
 			     every test read it), while the visuals sit a hair toward the camera along

@@ -9,7 +9,7 @@
 		},
 		"editor": {
 			"html": "index.html",
-			"maxJsGzBytes": 3544646,
+			"maxJsGzBytes": 3545600,
 			"maxFirstFrameMs": 32000
 		}
 	},
@@ -42,6 +42,13 @@
 			"play": "v1.69.0 2108.0 KB -> 2111.0 KB (+3.0) -> line 2113.0 KB = v1.69.0 + 5 KB",
 			"editor": "v1.69.0 3456.6 KB -> 3459.5 KB (+2.9) -> line 3461.6 KB = v1.69.0 + 5 KB",
 			"note": "the orchestrator's line for the SvelteKit 3 release: the 1.69.0 measurement (same machine, same run) + 5 KB. Kit 3's client runtime is bigger (navigation 14.6 + client 8.7 + client.svelte 1.9 KB vs kit 2's index-client 24.9 KB); the AI chat client left both boots to pay for it (sk3-int Q1). On kit 3 the 100 C1 three.core group must be output.codeSplitting (kit 3 sets that option itself and an advancedChunks group is dropped: three split again, +2 KB per page)"
+		},
+		{
+			"date": "2026-11-21",
+			"lane": "102b-play",
+			"play": "v1.70.0 2110.8 KB -> 2112.2 KB (+1.4), line unchanged",
+			"editor": "v1.70.0 3459.0 KB -> 3461.2..3461.8 KB across builds of the same code (+2.2..+2.8) -> line 3462.5 KB",
+			"note": "inside the ~3 KB boot rule (claude:9, 21 Nov): the scene touch-layout validator, the info-point field normalizer and the note pin filter. The info points card, the picture downscaler, wake lock and the colour dropper are lazy chunks. Chunk-hash churn moves the editor ~0.6 KB between builds; the integrator may veto"
 		}
 	],
 	"throttle": {

@@ -311,6 +311,52 @@ export default {
 				return { __default: text === '' ? ' ' : text, __handles: { value: n ?? 0, max } };
 			}
 		},
+		// 102b-hud (row 19): GAME FEEL presentation — LOCAL to this device's view (never the scene or
+		// the simulation). `who: me` = only the player whose press / hit made the pulse; `everyone` =
+		// every peer. Reduced motion turns shake and flash down. Shake: the Play camera only, never VR.
+		{
+			type: 'camerashake',
+			label: 'Camera Shake',
+			defaults: { strength: 0.15, seconds: 0.35, frequency: 18, who: 'me' },
+			inputs: ['trigger'],
+			params: [
+				{ key: 'strength', kind: 'range', min: 0, max: 1, step: 0.01 },
+				{ key: 'seconds', kind: 'range', min: 0.05, max: 3, step: 0.05 },
+				{ key: 'frequency', kind: 'range', min: 2, max: 40, step: 1 },
+				{ key: 'who', kind: 'select', options: ['me', 'everyone'] }
+			],
+			note: 'Shakes the Play camera on this device (never in VR). me = the player who made the pulse.',
+			sockets: { out: 'effect', in: { trigger: 'event' } },
+			card: 'AnimationNode'
+		},
+		{
+			type: 'screenflash',
+			label: 'Screen Flash',
+			defaults: { color: '#ffffff', strength: 0.6, seconds: 0.25, who: 'me' },
+			inputs: ['trigger'],
+			params: [
+				{ key: 'color', kind: 'color' },
+				{ key: 'strength', kind: 'range', min: 0, max: 1, step: 0.05 },
+				{ key: 'seconds', kind: 'range', min: 0.05, max: 3, step: 0.05 },
+				{ key: 'who', kind: 'select', options: ['me', 'everyone'] }
+			],
+			note: 'A colour over the screen that fades out, on this device. Reduced motion keeps it faint.',
+			sockets: { out: 'effect', in: { trigger: 'event' } },
+			card: 'AnimationNode'
+		},
+		{
+			type: 'hitpause',
+			label: 'Hit Pause',
+			defaults: { ms: 80, who: 'me' },
+			inputs: ['trigger'],
+			params: [
+				{ key: 'ms', kind: 'range', min: 20, max: 500, step: 10 },
+				{ key: 'who', kind: 'select', options: ['me', 'everyone'] }
+			],
+			note: 'Holds this device\'s picture for a moment. The game and physics keep running.',
+			sockets: { out: 'effect', in: { trigger: 'event' } },
+			card: 'AnimationNode'
+		},
 		// 30b (core-games): GAME FEEL — the flow half of 30b-vr-play's module kit, so a
 		// graph-authored game (Towers, Stars Room, Jam Room) can say "Ring 2 reached",
 		// sparkle, chime, buzz and score itself. All LOCAL on every peer from the

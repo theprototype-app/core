@@ -91,3 +91,14 @@ describe('module api (DEVX #19, #39)', () => {
 		expect(sdkPhysics(ctx).physics.placeBody('u', [0, 1, 0])).toBe(false);
 	});
 });
+
+describe('game feel nodes (row 19)', () => {
+	it('declares shake, flash and hit pause as per-player effect actions', () => {
+		for (const type of ['camerashake', 'screenflash', 'hitpause']) {
+			const d = def(game, type);
+			expect(d.sockets).toEqual({ out: 'effect', in: { trigger: 'event' } });
+			expect(d.defaults.who).toBe('me');
+			expect(d.params.find((p) => p.key === 'who').options).toEqual(['me', 'everyone']);
+		}
+	});
+});

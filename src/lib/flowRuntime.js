@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 // `{v}` labels for the HUD — 'Gems: {v}' needs no string node and no string socket type
 import { hudFormat } from './hudFormat.js';
-import { gameValueOf, gameValueMax } from './gameValues.js'; // 102b-hud: the Game Value node's published source
+import { gameValueOf, gameValueMax } from './gameValues.js';
+import { cameraShake, screenFlash, hitPause } from './gameFeelFx.js'; // 102b-hud row 19 // 102b-hud: the Game Value node's published source
 import { sessionNow, onSessionClockJump } from './sessionClock'; // 25-E: the synced clock is the SESSION's
 import { elapsedNow } from './scriptElapsed.js';
 import { setScriptElapsed } from './sandbox/scripts.js';
@@ -1580,6 +1581,16 @@ function updateHudRuntime(time, ctx, now) {
 	hudRuntime.set(next);
 }
 
+/** 102b-hud: recent trigger stamps made on THIS peer (not received) @type {Set<number>} */
+const localStamps = new Set();
+/** 102b-hud (row 19): the game-feel presentation actions */
+const GAME_FEEL_FX = new Set(['camerashake', 'screenflash', 'hitpause']);
+/** @param {string} type @param {any} data */
+function runGameFeelFx(type, data) {
+	if (type === 'camerashake') cameraShake({ strength: num(data.strength), seconds: num(data.seconds), frequency: num(data.frequency) });
+	else if (type === 'screenflash') screenFlash({ color: String(data.color ?? ''), seconds: num(data.seconds), strength: num(data.strength) });
+	else if (type === 'hitpause') hitPause(num(data.ms));
+}
 /** 102b-hud: a HUD Button node id -> the element its last press came from (its `value` handle)
  * @type {Map<string, string>} */
 const hudButtonPressed = new Map();
@@ -1923,7 +1934,7 @@ function sandboxedWrite(stamp) {
  * it there — including the player of a perPlayer pulse, whose stamp nobody else sees — and the
  * authority's rid window makes the N copies of one event a single write. No authority reachable
  * (alone, or its conn not open yet): apply here.
- * @param {{rid: string, name: string, op: string, value: number}} req
+ * @param {{rid: string, name: string, op: string, value: number | string}} req (102b-hud: op text carries words)
  */
 function shareGameVarOp(req) {
 	/** @type {any} */
@@ -1949,7 +1960,7 @@ function updateGameNodes(time, ctx) {
 	// 1. the ACTIONS, on a fresh trigger stamp only
 	for (const node of nodes) {
 		const type = node.type;
-		if (type !== 'setgamestate' && type !== 'setcamera' && type !== 'setvariable' && type !== 'setlook' && type !== 'travel' && type !== 'storevalue' && type !== 'playseq' && !GAME_FEEL_ACTIONS.includes(type) && !KIT_ACTION_TYPES.has(type))
+		if (type !== 'setgamestate' && type !== 'setcamera' && type !== 'setvariable' && type !== 'setlook' && type !== 'travel' && type !== 'storevalue' && type !== 'playseq' && !GAME_FEEL_ACTIONS.includes(type) && !GAME_FEEL_FX.has(type) && !KIT_ACTION_TYPES.has(type))
 			continue;
 		seeActionNode(node, time);
 		const stamp = triggerStampFor(node.id, ctx);
@@ -2007,6 +2018,11 @@ function updateGameNodes(time, ctx) {
 			// from it (node + stamp), so the authority applies one press once however many peers
 			// saw it — and a perPlayer pulse, seen only by its player, still reaches it
 			runKitNodeAction(type, data, node.id, stamp, node.__graph && node.__graph !== SCENE_GRAPH ? node.__graph : null);
+		} else if (GAME_FEEL_FX.has(type)) {
+			// 102b-hud (row 19): shake / flash / hit pause — LOCAL presentation inside the actionSeenAt
+			// family above. `who: me` (the default) acts only where the pulse was MADE (this peer's
+			// press, its hit); `everyone` acts on every peer from the replicated stamp.
+			if (data.who === 'everyone' || localStamps.has(stamp)) runGameFeelFx(type, data);
 		} else if (GAME_FEEL_ACTIONS.includes(type)) {
 			// 30b (core-games): a banner, a sound, a burst or a buzz — LOCAL on every peer from
 			// the replicated stamp, inside the actionSeenAt family above like storevalue (a
@@ -3294,6 +3310,12 @@ export function applyNodeTrigger(nodeId, t, replicate = true, sourceHandle = nul
 	const hash = typeof nodeId === 'string' ? nodeId.indexOf('#') : -1;
 	const walkId = hash > 0 ? nodeId.slice(0, hash) : nodeId;
 	const walkHandle = hash > 0 ? nodeId.slice(hash + 1) : sourceHandle;
+	// 102b-hud: the stamps THIS peer made (a per-player Camera Shake / Flash / Hit Pause acts on them only)
+	if (!received && typeof t === 'number') {
+		localStamps.add(t);
+		const oldest = localStamps.values().next().value;
+		if (localStamps.size > 256 && oldest !== undefined) localStamps.delete(oldest);
+	}
 	// 102b-hud: a screen-mode HUD Button's press names its element
 	if (typeof walkHandle === 'string' && walkHandle.startsWith('press:')) hudButtonPressed.set(walkId, walkHandle.slice(6));
 	// 31: a trigger may carry WHERE it happened (the clap's meeting point). Kept beside the

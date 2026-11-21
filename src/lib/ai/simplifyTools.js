@@ -12,14 +12,14 @@ export const SIMPLIFY_AI_TOOLS = [
 		function: {
 			name: 'simplify_mesh',
 			description:
-				'Reduce the triangle count of a mesh or an imported model, keeping its look: UVs, normals, vertex colours, skin weights and material slots survive. Give percent (1-100, how much to KEEP) or triangles (a target count). A still-parametric primitive (box, sphere … whose Geometry settings drive it) is refused unless bake: true (its Geometry settings then lock). Instanced scatter, VRM avatars and meshes with morph targets are refused. One undo step; everyone in the session sees it. Returns the triangle counts before and after.',
+				'Lower a mesh or imported model\'s triangle count; UVs, normals, colours, skin weights and materials are kept. percent = how much to KEEP (1-100), or triangles = a target. Parametric primitives need bake: true; scatter, VRM and morph targets are refused. One undo step.',
 			parameters: {
 				type: 'object',
 				properties: {
 					uuid: { type: 'string', description: 'the object to simplify' },
-					percent: { type: 'number', description: 'how much to keep, 1-100 (25 = a quarter of the triangles)' },
-					triangles: { type: 'number', description: 'or: the triangle count to aim for' },
-					bake: { type: 'boolean', description: 'a parametric primitive: bake it to a mesh first (default false = refuse)' }
+					percent: { type: 'number', description: '1-100 to keep' },
+					triangles: { type: 'number', description: 'target count' },
+					bake: { type: 'boolean', description: 'bake a primitive first' }
 				},
 				required: ['uuid']
 			}

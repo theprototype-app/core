@@ -4,12 +4,12 @@
 	"pages": {
 		"play": {
 			"html": "play.html",
-			"maxJsGzBytes": 2180506,
+			"maxJsGzBytes": 2180301,
 			"maxFirstFrameMs": 20000
 		},
 		"editor": {
 			"html": "index.html",
-			"maxJsGzBytes": 3416064,
+			"maxJsGzBytes": 3415245,
 			"maxFirstFrameMs": 32000
 		}
 	},
@@ -53,9 +53,19 @@
 		{
 			"date": "2026-11-21",
 			"lane": "80a-int (Locks that hold + fix-batch-4)",
-			"play": "v1.71.0 2114.2 KB -> 2127.4 KB (+13.2; on v1.70.0 it was +12.2, the rest = the lock and drafts hardening) -> line 2129.4 KB = measured + 2 KB",
-			"editor": "v1.71.0 3315.1 KB -> 3334.0 KB (+18.9; on v1.70.0 +18.3) -> line 3336.0 KB = measured + 2 KB (v1.71.0 + #579 alone = 2114.2 / 3315.2 KB: the Cinematic fx cover is lazy)",
-			"note": "orchestrator OK (QUESTIONS-80a-int Q1), measured against a v1.70.0 build on the same machine and node_modules. Growth per module (gzip): peerHandler's chunk (lock receive gate, lockreject, held set in the handshake, drafts outbound gate, signaling hold) +2.85; lockHeld +1.95 (new); lockControl +1.12; objectPermissions (drafts scrub + adopt on load) +1.10; lockMode +0.89 (new); rosterOrigin +0.48 (new); editor only: HeldBanner +1.76, PeerAvatar +0.77, Flow +0.94, debugHooks +0.56. The play check: play joins sessions (PlayApp imports peerHandler) and its selection, session and cloud paths (objectActions, commandsHandler, cloudPlugin) call nearly every lock export; the editor-only exports left are a few lines each. lockIdle (the 5-minute idle ask) moved to a lazy import: -0.8 play / -1.1 editor. After the 1.71.0 merge (its editor line 3319.1 KB) re-measure and lower the editor line to the new measurement + 2 KB."
+			"play": "v1.71.0 (+#579) 2114.2 KB -> 2127.8 KB (+13.6) -> line 2129.2 KB = v1.71.0 + 15 KB (the int boot rule: tag + the union's sum rounded up to 5 KB)",
+			"editor": "v1.71.0 (+#579) 3315.2 KB -> 3334.3 KB (+19.1) -> line 3335.2 KB = v1.71.0 + 20 KB (over the ~15 KB tell line: orchestrator + claude:9 OK, no trim; next int claws back ~5 KB by making HeldBanner and the held-lock-only UI lazy)",
+			"note": "orchestrator OK (QUESTIONS-80a-int Q1), measured against a v1.70.0 build on the same machine and node_modules. Growth per module (gzip): peerHandler's chunk (lock receive gate, lockreject, held set in the handshake, drafts outbound gate, signaling hold) +2.85; lockHeld +1.95 (new); lockControl +1.12; objectPermissions (drafts scrub + adopt on load) +1.10; lockMode +0.89 (new); rosterOrigin +0.48 (new); editor only: HeldBanner +1.76, PeerAvatar +0.77, Flow +0.94, debugHooks +0.56. The play check: play joins sessions (PlayApp imports peerHandler) and its selection, session and cloud paths (objectActions, commandsHandler, cloudPlugin) call nearly every lock export; the editor-only exports left are a few lines each. lockIdle (the 5-minute idle ask) moved to a lazy import: -0.8 play / -1.1 editor. After the 1.71.0 merge (its editor line 3319.1 KB) re-measure and lower the editor line to the new measurement + 2 KB.",
+			"perLane": {
+				"basis": "each union merge built on v1.70.0 with v1.70.0's deps, same machine (play / editor KB, gzip -9)",
+				"80a-fix4-net #573": "+0.5 / +1.0",
+				"80a-locks #577": "+9.8 / +15.6",
+				"80a-drafts #571": "+1.1 / +0.9",
+				"80a-fix4-ui #576": "+0.7 / +2.0",
+				"102-stats #578": "+1.0 / -0.2",
+				"100-cover-fx #579": "+0.0 / +0.1 (on v1.71.0; the fx cover is lazy)",
+				"80a-int (gates hardening, heal keeps locks) + the v1.71.0 merge": "+0.5 / -0.2"
+			}
 		}
 	],
 	"throttle": {

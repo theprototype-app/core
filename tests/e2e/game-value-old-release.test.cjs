@@ -47,5 +47,5 @@ h.run(async () => {
 	h.check(r.gv?.read === 'variable' && r.gv?.format === 'fraction' && r.gv?.prefix === 'Coins ', 'Game Value data kept verbatim', JSON.stringify(r.gv));
 	h.check(r.button?.sound === 'click' && r.button?.value === '2', "the button's sound and value fields kept", JSON.stringify(r.button));
 	h.check(r.againHasGv && r.againHasFields, 'saved back by the older app: the new nodes and fields are still there');
-	await browser.close();
+	await h.finish(browser);
 });

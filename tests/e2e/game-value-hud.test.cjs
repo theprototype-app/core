@@ -30,9 +30,9 @@ const HUD = () => {
 	});
 };
 
-const N = (id, type, data, x = 0, y = 0) => ({ id, type, position: { x, y }, data: { type, ...data } });
 const GRAPH = () => {
 	const s = window.__tp.test.v1;
+	const N = (id, type, data, x = 0, y = 0) => ({ id, type, position: { x, y }, data: { type, ...data } });
 	s.flowNodes.set([
 		// 1. words from values
 		N('gvCoins', 'gamevalue', { read: 'variable', name: 'coins', format: 'fraction', max: 10, prefix: 'Coins ' }),
@@ -185,6 +185,10 @@ h.run(async () => {
 
 	console.log('\n=== 7. B reloads and rejoins: the graph, the variables and the words come back ===');
 	await h.freshReload(B);
+	// a reload is a new Peer: answer the restore offer, read the new id, join again
+	await h.answerRestore(B).catch(() => {});
+	B.id = await B.page.evaluate(() => new Promise((r) => window.__tp.test.v1.peers.subscribe((p) => r(p?.peer?.id))()));
+	await h.connect(A, B);
 	await h.eventually(
 		() => B.page.evaluate(() => { let n; window.__tp.test.v1.flowNodes.subscribe((v) => (n = v))(); return n.some((x) => x.id === 'gvCoins'); }),
 		(v) => v === true,
@@ -194,5 +198,5 @@ h.run(async () => {
 	await h.eventually(() => elText(B, 'coins'), (t) => t === 'Coins 7 / 10', 'B after reload: "Coins 7 / 10" from the replicated variable', 20000);
 	await h.eventually(() => elText(B, 'picked'), (t) => t === 'Level 1', 'B after reload: the text variable reads "Level 1"', 20000);
 
-	await browser.close();
+	await h.finish(browser);
 });

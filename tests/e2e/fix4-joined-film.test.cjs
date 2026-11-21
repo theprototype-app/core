@@ -56,6 +56,9 @@ async function tries(P, label) {
 	for (let i = 1; i <= 3; i++) {
 		if ((await sheet(page)) !== 'more') await page.locator('#ps-more').tap();
 		await page.waitForSelector('#ps-tile-film', { state: 'visible', timeout: 10000 }).catch(() => {});
+		// the tile sits in a lower row of the sheet's scrolling grid (y 1300 on an 844 screen): a person scrolls to it
+		await page.locator('#ps-tile-film').scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => {});
+		await page.waitForTimeout(300);
 		const at = await page.evaluate(() => {
 			const t = document.getElementById('ps-tile-film');
 			if (!t) return null;
@@ -83,6 +86,13 @@ async function tries(P, label) {
 h.run(async () => {
 	const browser = await h.launch();
 
+	// 0. control: the phone ALONE (the report: alone it worked)
+	{
+		const S = await h.setupPage(browser, 'solo', { context: FOLDED });
+		const ok = await tries(S, 'phone alone');
+		h.check(ok === 3, `G14 control: a phone on its own opens Film from More ${ok}/3`);
+		await S.ctx.close();
+	}
 	// 1. the phone JOINS a desktop host (the phone dials)
 	{
 		const A = await h.setupPage(browser, 'host', { context: { viewport: { width: 1280, height: 800 } } });

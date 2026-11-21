@@ -223,7 +223,24 @@ async function recoverUltraHdr(renderer, buffer, maxWidth) {
 		await nextTask();
 		renderer.initTexture?.(gain);
 		await nextTask();
-		await compileAsync(renderer, scene, camera);
+		// the program is keyed by the render target current at compile time (its colour space and tone mapping):
+		// compiled with none set, it was the screen's program, and the draw into the half-float target linked its own
+		// synchronously (the profile: onFirstUse -> getProgramInfoLog, 73 ms at 4x CPU). So compile WITH the target
+		// current — three fixes the program in compileAsync's synchronous part — and put the target back at once,
+		// before any frame can run, then wait for the driver
+		const was = renderer.getRenderTarget();
+		const xrOn = renderer.xr.enabled;
+		/** @type {Promise<any>} */
+		let compiled;
+		renderer.xr.enabled = false;
+		renderer.setRenderTarget(target);
+		try {
+			compiled = compileAsync(renderer, scene, camera);
+		} finally {
+			renderer.setRenderTarget(was);
+			renderer.xr.enabled = xrOn;
+		}
+		await compiled;
 		await nextTask();
 	} catch {
 		/* the draw below uploads and compiles what is left, as before */

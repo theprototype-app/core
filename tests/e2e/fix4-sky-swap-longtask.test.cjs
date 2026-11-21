@@ -34,7 +34,8 @@ h.run(async () => {
 		}).observe({ type: 'longtask', buffered: false });
 	});
 	// positive control: the observer reports a long task when there is one
-	await page.evaluate(() => { const t = performance.now(); while (performance.now() - t < 120); });
+	// (a task of the page's own: a busy loop run straight from evaluate is not an event-loop task and is not reported)
+	await page.evaluate(() => new Promise((r) => setTimeout(() => { const t = performance.now(); while (performance.now() - t < 120); r(null); }, 0)));
 	await page.waitForTimeout(300);
 	const control = await page.evaluate(() => /** @type {any} */ (window).__longTasks.reduce((/** @type {number} */ m, /** @type {any} */ t) => Math.max(m, t.ms), 0));
 	h.check(control >= 100, `premise: the long-task observer catches a 120 ms busy loop (${Math.round(control)} ms)`);

@@ -137,6 +137,37 @@ export function compactMeshState(state) {
 	return out;
 }
 
+/** @param {any} a @param {any} b */
+function sameInts(a, b) {
+	if (a === b) return true;
+	if (!a || !b || a.length !== b.length) return false;
+	for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+	return true;
+}
+
+/**
+ * 99 K3: share the kernel's ID channels BY REFERENCE with an earlier state that has the same
+ * ones. A step that does not change the topology (a move, a drag, a sculpt pass) keeps every
+ * vertex and face ID, so its channels equal the previous step's; history then holds — and
+ * `meshBudget.historyBytes` counts — them once. Mutates `state.ids` (a compactMeshState
+ * object, never the caller's own). Content-compared, so a step that DID change the topology
+ * keeps its own. @param {any} state @param {...any} candidates earlier states, nearest first
+ * @returns {any} state
+ */
+export function shareIds(state, ...candidates) {
+	const ids = state?.ids;
+	if (!ids) return state;
+	for (const other of candidates) {
+		const o = other?.ids;
+		if (!o || o === ids) continue;
+		if (sameInts(o.cornerVertex, ids.cornerVertex) && sameInts(o.triFace, ids.triFace)) {
+			state.ids = o;
+			break;
+		}
+	}
+	return state;
+}
+
 /**
  * The CSR topology a state carries, as the wire fields (`faces` packed, or the stored pair), or null.
  * @param {any} state @returns {FaceFields | null}

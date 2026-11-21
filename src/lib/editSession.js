@@ -29,9 +29,10 @@ let colliderSession = false;
  * An edit mode engaged. Same uuid = the session continues (Vertices↔Faces
  * switches, the collider piece-add exit/enter dance); a DIFFERENT uuid seals
  * the old session first, so entries never mix across objects.
- * @param {'vertex'|'face'} kind @param {string} uuid
+ * 99 K3: the same moments open and close the ONE edit session's shared part (`session`).
+ * @param {'vertex'|'face'} kind @param {string} uuid @param {any} [object] the edited mesh
  */
-export function noteEditEnter(kind, uuid) {
+export function noteEditEnter(kind, uuid, object) {
 	if (kind === 'vertex') vertexOn = uuid;
 	else faceOn = uuid;
 	if (active && sessionUuid !== uuid) sealEditHistorySession();
@@ -41,6 +42,7 @@ export function noteEditEnter(kind, uuid) {
 		colliderSession = false;
 		beginHistorySession();
 	}
+	if (session.uuid !== uuid) openSession(uuid, object);
 }
 
 /** An edit mode disengaged. Deferred a tick — mode switches and the collider
@@ -71,6 +73,7 @@ export function markColliderHistorySession() {
 export function sealEditHistorySession(mode) {
 	if (!active) return;
 	active = false;
+	closeSession();
 	const resolved = mode ?? (colliderSession ? 'discard' : 'collapse');
 	colliderSession = false;
 	sessionUuid = null;
@@ -79,5 +82,137 @@ export function sealEditHistorySession(mode) {
 
 /** test/debug view */
 export function editSessionDebug() {
-	return { active, sessionUuid, colliderSession, vertexOn, faceOn };
+	return {
+		active,
+		sessionUuid,
+		colliderSession,
+		vertexOn,
+		faceOn,
+		session: {
+			uuid: session.uuid,
+			hasEntry: !!session.entry,
+			edited: sessionEdited(),
+			kernel: !!session.kernelMaps,
+			kernelMs: session.kernelMaps?.ms ?? null,
+			selection: session.selection
+		},
+		lastLeave
+	};
+}
+
+// ---- 99 K3: the shared part of the session ----------------------------------------------------
+//
+// ENTRY IS LOSSLESS. The session keeps the geometry it was entered on (the object, and each
+// attribute with its `version`): a leave with nothing edited re-emits exactly those arrays —
+// never the kernel's welded rebuild of them, which is equal only within the weld. "Edited" is any
+// geometry swap (every commit, undo and peer apply goes through applyMeshGeo /
+// applyGeometrySnapshot, which build a new geometry) or any in-place write (a vertex drag, a UV
+// drag: their `needsUpdate` bumps the attribute's version).
+//
+// THE KERNEL is built after entry, off the main thread (meshSession.js, lazy), so entering costs
+// what it did before. It is kept only while the geometry is still the one it was built from.
+
+/** the last session's leave, for tests: { uuid, source: 'entry' | 'live', edited } */
+/** @type {any} */
+let lastLeave = null;
+/** @type {any} the lazy kernel module once loaded */
+let kernelModule = null;
+/** @type {Promise<any> | null} the open session's kernel build (null when none was started) */
+let kernelBuild = null;
+
+/** @param {any} geometry @returns {any} */
+export function captureEntry(geometry) {
+	if (!geometry?.attributes?.position) return null;
+	/** @type {Record<string, [any, number]>} */
+	const attributes = {};
+	for (const [name, attr] of Object.entries(geometry.attributes)) attributes[name] = [attr, /** @type {any} */ (attr).version];
+	return { geometry, attributes, index: geometry.index ? [geometry.index, geometry.index.version] : null };
+}
+
+/** has `geometry` moved on from the entry snapshot? @param {any} entry @param {any} geometry */
+export function geometryChanged(entry, geometry) {
+	if (!entry) return false;
+	if (geometry !== entry.geometry) return true;
+	const names = Object.keys(geometry.attributes);
+	if (names.length !== Object.keys(entry.attributes).length) return true;
+	for (const name of names) {
+		const held = entry.attributes[name];
+		const attr = geometry.attributes[name];
+		if (!held || held[0] !== attr || held[1] !== attr.version) return true;
+	}
+	const index = geometry.index;
+	if (!!index !== !!entry.index) return true;
+	return !!index && (entry.index[0] !== index || entry.index[1] !== index.version);
+}
+
+/** anything edited since the session opened */
+export function sessionEdited() {
+	return session.edited || geometryChanged(session.entry, session.object?.geometry);
+}
+
+/**
+ * What a leave emits: the ENTRY geometry when nothing was edited (byte-identical to what was
+ * entered, whatever the session built from it), else the live geometry.
+ * @returns {{ source: 'entry' | 'live', edited: boolean, geometry: any }}
+ */
+export function leaveOutput() {
+	const edited = sessionEdited();
+	return edited
+		? { source: 'live', edited, geometry: session.object?.geometry ?? null }
+		: { source: 'entry', edited, geometry: session.entry?.geometry ?? null };
+}
+
+/** @param {string} uuid @param {any} object */
+function openSession(uuid, object) {
+	session.uuid = uuid;
+	session.object = object ?? null;
+	session.entry = captureEntry(object?.geometry);
+	session.edited = false;
+	session.kernel = null;
+	session.kernelMaps = null;
+	session.selection = { faces: [], verts: [], edges: [] };
+	kernelBuild = null;
+	startKernel(uuid, object?.geometry);
+}
+
+function closeSession() {
+	if (!session.uuid) return;
+	// a leave with nothing edited re-emits the entry arrays. Until the operators work on the kernel
+	// (K4) nothing but an edit replaces the object's geometry, so they ARE the live geometry: the
+	// re-emit writes nothing, and K4's kernel-backed apply inherits the rule
+	const out = leaveOutput();
+	lastLeave = { uuid: session.uuid, source: out.source, edited: out.edited };
+	session.uuid = null;
+	session.object = null;
+	session.entry = null;
+	session.edited = false;
+	session.kernel = null;
+	session.kernelMaps = null;
+	kernelBuild = null;
+}
+
+/** the kernel build lives in the lazy meshSession.js (worker, size gate, keep-if-still-current)
+ * @param {string} uuid @param {any} geometry */
+function startKernel(uuid, geometry) {
+	if (!geometry?.attributes?.position || typeof Worker === 'undefined') return;
+	kernelBuild = import('./meshSession.js')
+		.then((m) => (kernelModule = m).startSessionKernel(session, uuid, geometry, geometryChanged))
+		.catch(() => null);
+}
+
+/** the open session's ID maps once built (null: none, superseded, or no Worker here) */
+export function whenSessionKernel() {
+	return kernelBuild ?? Promise.resolve(null);
+}
+
+/**
+ * Store the selection being stashed as element IDs (99 K3) — on the session, via the lazy
+ * meshSession.js. The index stash the caller keeps is still what restore reads (K4 moves restore
+ * onto the IDs); a no-op until the kernel is ready, and once the geometry moved on.
+ * @param {{ tris?: number[], handles?: number[][], edgeKeys?: string[] }} selection
+ * @param {(x: number, y: number, z: number) => string} [keyOf] the editor's position key (edges)
+ */
+export function noteSelectionIds(selection, keyOf) {
+	if (session.kernelMaps && kernelModule && !geometryChanged(session.entry, session.object?.geometry))
+		kernelModule.storeSelectionIds(session, selection, keyOf);
 }

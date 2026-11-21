@@ -116,3 +116,83 @@ it('meshgeo history bytes per undo step (node)', async () => {
 	console.log(table);
 	if (process.env.BENCH_OUT) fs.writeFileSync(process.env.BENCH_OUT, table + '\n');
 });
+
+// 99 K3 (claude:9's ask): undo steps per EDIT KIND once states carry the kernel's ID channels, with
+// the channels shared by reference between steps whose topology did not change (meshCommit
+// `shareIds`, counted once by meshBudget `historyBytes`) versus every side holding its own copy.
+// A real stack is built entry by entry the way faceEdit's meshGeoEntry builds it (before shares
+// the previous step's after, after shares its own before when the topology held) and trimmed the
+// way history.recordEntry trims it, so the step counts are the stack's, not arithmetic.
+it('undo steps per edit kind with shared ID channels (node)', async () => {
+	const { shareIds } = await import('$lib/meshCommit.js');
+	const { historyBytes } = await import('$lib/meshBudget.js');
+	const g = makeMesh('grid', process.env.BENCH_SIZE ?? '67k');
+	const tris = g.attributes.position.count / 3;
+	const { mesh } = fromBufferGeometry(g, { weld: 1e-4 });
+	const base = commitStateFromKernel(mesh, { ids: true });
+	// every array is a FRESH copy per side (a commit snapshots the geometry anew each time), so only
+	// what shareIds shares can be counted once
+	const copy = (v) => (ArrayBuffer.isView(v) ? v.slice() : v);
+	const side = (k, ids) => {
+		const s = {};
+		for (const [key, v] of Object.entries(base)) if (key !== 'ids') s[key] = copy(v);
+		s.positions = base.positions.map((v) => v + k * 1e-3);
+		if (ids) s.ids = { cornerVertex: ids.cornerVertex.slice(), triFace: ids.triFace.slice() };
+		return compactMeshState(s);
+	};
+	/** fill a stack under the budget the way history.recordEntry trims it. A step's BEFORE is the
+	 * state the previous step left (same IDs by value, a new copy); its AFTER keeps those IDs for a
+	 * positions-only edit and mints new ones for a topology edit. */
+	const fill = (topology, mode) => {
+		const stack = [];
+		let ids = base.ids;
+		/** @type {any} */ let prevAfter = null;
+		for (let k = 1; k < 400; k++) {
+			const before = side(k - 1, mode === 'none' ? null : ids);
+			if (topology) {
+				ids = { cornerVertex: ids.cornerVertex.slice(), triFace: ids.triFace.slice() };
+				ids.triFace[k % ids.triFace.length] = -k;
+			}
+			const after = side(k, mode === 'none' ? null : ids);
+			if (mode === 'shared') {
+				shareIds(before, prevAfter);
+				shareIds(after, before, prevAfter);
+			}
+			prevAfter = after;
+			stack.push({ kind: 'meshgeo', uuid: 'bench', before, after });
+			let bytes = historyBytes(stack);
+			while (bytes > HISTORY_BYTES && stack.length > 1) {
+				stack.shift();
+				bytes = historyBytes(stack);
+			}
+			if (stack.length < k) return { steps: stack.length, bytes };
+		}
+		return { steps: stack.length, bytes: historyBytes(stack) };
+	};
+	const rows = [];
+	for (const [kind, topology] of [
+		['positions only (move, drag, sculpt, snapshot)', false],
+		['topology (extrude, inset, cut, delete)', true]
+	]) {
+		const none = fill(topology, 'none');
+		const own = fill(topology, 'own');
+		const shared = fill(topology, 'shared');
+		rows.push({
+			'edit kind': kind,
+			'no ID channels (K3 as shipped)': none.steps,
+			'ID channels, own copy per side': own.steps,
+			'ID channels, shared when unchanged': shared.steps,
+			'stack MB (shared)': Math.round(shared.bytes / 2 ** 20)
+		});
+	}
+	const keys = Object.keys(rows[0]);
+	const table = [
+		`### undo steps in the unchanged 256 MB budget, ${tris} triangles, per edit kind`,
+		'',
+		'| ' + keys.join(' | ') + ' |',
+		'|' + keys.map(() => '---').join('|') + '|',
+		...rows.map((r) => '| ' + keys.map((k) => r[k]).join(' | ') + ' |')
+	].join('\n');
+	console.log(table);
+	if (process.env.BENCH_OUT) fs.appendFileSync(process.env.BENCH_OUT, '\n' + table + '\n');
+});

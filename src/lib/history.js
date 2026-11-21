@@ -4,7 +4,7 @@ import { objectsGroup, TControls, selectedObject, pokeScene } from '../stores/sc
 import { peers, showToast, closeSelectionInspector } from '../stores/appStore';
 import { notifyExternalMove } from '$lib/flowRuntime';
 import { parkEditOverlays, stripEditOverlays } from '$lib/editOverlays';
-import { HISTORY_BYTES, entryBytes } from '$lib/meshBudget';
+import { HISTORY_BYTES, historyBytes } from '$lib/meshBudget';
 import { withWireBatch } from '$lib/wireBatch';
 import { currentHistoryGesture } from '$lib/historyGesture';
 
@@ -256,10 +256,11 @@ export function recordEntry(entry) {
 		// total fits: the far past is what a user has already stopped wanting.
 		// The NEWEST entry is never evicted, however big it is — an undo that cannot
 		// undo the thing you just did would be worse than the memory.
-		let bytes = next.reduce((sum, e) => sum + entryBytes(e), 0);
+		// 99 K3: a typed array steps share by reference (ID channels) is counted once
+		let bytes = historyBytes(next);
 		while (bytes > HISTORY_BYTES && next.length > 1) {
-			bytes -= entryBytes(next[0]);
 			next.splice(0, 1);
+			bytes = historyBytes(next);
 		}
 		return next;
 	});

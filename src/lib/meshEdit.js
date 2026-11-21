@@ -12,7 +12,7 @@ import { peers, showToast } from '../stores/appStore';
 import { registerHistoryKind, recordEntry } from './history';
 // 15-F: session-scoped undo — editSession imports ONLY history (an edge we
 // already have), so this closes no cycle
-import { noteEditEnter, noteEditExit, sealEditHistorySession } from './editSession';
+import { noteEditEnter, noteEditExit, noteSelectionIds, sealEditHistorySession } from './editSession';
 import {
 	createFaceFromVerts,
 	lookupEditable,
@@ -510,7 +510,7 @@ export function enterEditMode(uuid) {
 	if (peer) peer.send({ type: 'lock', uuid: uuid, peerId: peer.peer.id });
 
 	editingObject.set(uuid);
-	noteEditEnter('vertex', uuid); // 15-F: opens (or continues) the undo barrier
+	noteEditEnter('vertex', uuid, object); // 15-F: opens (or continues) the undo barrier
 	window.addEventListener('keydown', onKeydown);
 	refreshMeshPivotMarker(object); // a saved pivot comes back with the session
 
@@ -578,6 +578,11 @@ export function exitEditMode() {
 			set: [...VS.selection],
 			count: VS.handles.length
 		};
+	// 99 K3: the same pick as vertex IDs on the session
+	if (VS.selectedHandle >= 0 || VS.selection.size)
+		noteSelectionIds({
+			handles: [...new Set([...VS.selection, VS.selectedHandle])].filter((i) => i >= 0 && VS.handles[i]).map((i) => VS.handles[i].indices)
+		});
 	const scene = get(globalScene);
 	/** @type {any} */
 	const controls = get(TControls);

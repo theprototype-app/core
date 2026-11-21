@@ -4,7 +4,7 @@
 	"pages": {
 		"play": {
 			"html": "play.html",
-			"maxJsGzBytes": 2170880,
+			"maxJsGzBytes": 2172928,
 			"maxFirstFrameMs": 20000
 		},
 		"editor": {
@@ -56,6 +56,13 @@
 			"play": "v1.71.0 2114.3 KB -> 2117.6 KB (+3.3: 61-test ~0.5 bot-frame storage guard; 61-nav ~2.4 SDK gameWorld slice, pathCore split, moduleWorldItems, modules; 61-int ~0.4 presence in api.players) -> line 2120.0 KB (the INT BOOT RULE: merged tag + the union, rounded up to the next 5 KB)",
 			"editor": "v1.71.0 3314.1 KB -> 3320.3 KB (+6.2: 61-test ~1.6 storage guard + the Test with players menu leaf; 61-nav ~4.2 the same SDK slice, pathCore, moduleWorldItems, modules; 61-int ~0.4 presence) -> line 3325.0 KB (the INT BOOT RULE)",
 			"note": "what 61 keeps on the boots after its lazy splits (the enemy sheet entry and the collider reader load on first use): the bot-frame storage guard (safeStorage overlay + idb memory store, it must run before any store is read), the SDK gameWorld slice (paths.of/list, players, isAuthority and the two registries, kept sync so makeApi stays sync), moduleWorldItems + the Test with players menu leaf, a pathCore chunk split, and api.players()[].playing (the peerPlayModes store moved into stores/appStore so the SDK reads presence without gamePresence's graph). The recast navmesh WASM is a module asset only scenes with NPCs download. QUESTIONS-61-int 2, accepted by the orchestrator; lane split approximate (per-chunk diff; renamed-chunk churn ~1 KB)"
+		},
+		{
+			"date": "2026-11-22",
+			"lane": "99-edit-core (roadmap 99 K2 + K3)",
+			"play": "feat/99-kernel 32bc25f8 2117.5 KB -> 2120.1 KB (+2.6: faceEdit +1.1 the one commit service commitMesh + meshGeoEntry with the ID-channel share and the session-state reads; editSession +0.9 the one session's sync half (entry capture, edited check, open/close, lossless leave); meshEdit +0.3, history +0.1 the shared-array stack count, meshBudget +0.1) -> line 2122.0 KB",
+			"editor": "3321.0 KB -> 3323.8 KB (+2.8), line 3325.0 KB unchanged",
+			"note": "the brief's boot allowance is about 3 KB; the 61-int line left 2.5 KB over the base, so the lane tips play by 0.1 KB. Everything kernel-side is lazy (meshSession.js + its worker load on the first edit-mode entry, meshSessionAdapters.js is K4's and unused by the app, meshCommitKernel.js only where the kernel is). +2 KB on the line covers renamed-chunk churn (~1 KB between builds of the same code). QUESTIONS-99-edit-core 7; the integrator re-lines by the INT BOOT RULE and may veto"
 		}
 	],
 	"throttle": {

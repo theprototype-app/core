@@ -4,7 +4,7 @@ import { writable, get } from 'svelte/store';
 import { globalScene, globalCamera, objectsGroup, TControls, lockedObjects, isVRMode, pokeScene } from '../stores/sceneStore';
 // 15-F: session-scoped undo — editSession imports ONLY history (an edge we
 // already have), so this closes no cycle
-import { noteEditEnter, noteEditExit, sealEditHistorySession } from './editSession';
+import { noteEditEnter, noteEditExit, noteSelectionIds, sealEditHistorySession } from './editSession';
 import { session as editSession } from './editSessionState';
 import { peers, showToast, settingsOpen, settingsSection } from '../stores/appStore';
 import {
@@ -13,7 +13,8 @@ import {
 	retractEntry,
 	recordObjectPresence,
 	beginHistoryBatch,
-	endHistoryBatch
+	endHistoryBatch,
+	undoStack
 } from './history';
 // STORED topology (phase 1). meshTopology imports nothing — no cycle to worry about.
 import {
@@ -36,7 +37,7 @@ import { canvasRect } from './canvasRect';
 // The size ceilings, and the measurement behind them. Another import-nothing leaf.
 import { MAX_SNAPSHOT, previewReplicable, tooLargeMessage } from './meshBudget';
 // 99 K2: the one commit shape + the one meshgeo sender (pure half of commitMesh)
-import { compactMeshState, sendMeshGeo, stateFaceFields } from './meshCommit';
+import { compactMeshState, sendMeshGeo, shareIds, stateFaceFields } from './meshCommit';
 import { editOverlaysParked } from './editOverlays';
 // 19-A P3: the desktop pane's extrude/inset extras, read at BEGIN so a click-
 // extrude matches the toolbox's Apply. meshToolParams is a svelte/store-only
@@ -2576,6 +2577,8 @@ export function stashSelections(mode) {
 		selectionStash = { uuid, sig, faces: [], edges: [] };
 	if (which === 'edges') selectionStash.edges = [...get(edgeEditSelected)];
 	else selectionStash.faces = [...get(faceEditSelectedTris)];
+	// 99 K3: the same pick as element IDs on the session (faces / vertex-ID pairs)
+	noteSelectionIds(which === 'edges' ? { edgeKeys: selectionStash.edges } : { tris: selectionStash.faces }, keyOf);
 }
 
 /**
@@ -7688,7 +7691,7 @@ export function enterFaceEdit(uuid) {
 	const peer = get(peers);
 	if (peer) peer.send({ type: 'lock', uuid: uuid, peerId: peer.peer.id });
 	faceEditObject.set(uuid);
-	noteEditEnter('face', uuid); // 15-F: opens (or continues) the undo barrier
+	noteEditEnter('face', uuid, object); // 15-F: opens (or continues) the undo barrier (99 K3: and the session)
 	refreshFaceWireframe(); // B2: face mode gets the same wireframe as vertex mode
 	refreshMeshPivotMarker(object); // a placed pivot comes back with the session
 	if (typeof window !== 'undefined') window.addEventListener('keydown', onFaceKeydown);
@@ -8275,13 +8278,41 @@ export function commitMesh(c) {
 		const now = c.carryColors ? lookupEditable(uuid)?.geometry?.attributes?.color : null;
 		if (now && after.colors == null) after = { ...after, colors: Array.from(now.array) };
 	}
+	// 99 K3: a commit on the object of the open edit session — from the session's own tools, VR,
+	// or an agent tool editing headless — marks the one session edited, so its leave keeps the
+	// live geometry and never re-emits the entry arrays
+	if (uuid === editSession.uuid) editSession.edited = true;
 	if (c.wireFaces === 'none') sendMeshGeo(uuid, positions, { groups, uvs });
 	else broadcastMeshGeo(uuid, positions, groups, uvs, bare ? undefined : after.colors);
 	if (c.stampFaces) after = withFacesOn(c.apply === 'session' ? FS.object : lookupEditable(uuid), { positions, groups, uvs });
-	const entry = /** @type {const} */ ({ kind: 'meshgeo', uuid, before: compactMeshState(before), after: compactMeshState(after) });
+	const entry = meshGeoEntry(uuid, before, after);
 	if (c.record === 'op') recordOp(entry);
 	else if (c.record === 'entry') recordEntry(entry);
 	return entry;
+}
+
+/**
+ * 99 K2/K3: one `meshgeo` history entry — both sides compact, and the kernel's ID channels (when
+ * a state carries them) shared by reference with this object's previous step wherever the
+ * topology did not change, so history holds them once (meshCommit `shareIds`).
+ * @param {string} uuid @param {any} before @param {any} after
+ * @returns {{ kind: 'meshgeo', uuid: string, before: any, after: any }}
+ */
+function meshGeoEntry(uuid, before, after) {
+	const b = compactMeshState(before);
+	const a = compactMeshState(after);
+	if (b?.ids || a?.ids) {
+		const stack = get(undoStack);
+		let prev = null;
+		for (let i = stack.length - 1; i >= 0 && i >= stack.length - 8; i--)
+			if (stack[i]?.kind === 'meshgeo' && stack[i].uuid === uuid) {
+				prev = stack[i];
+				break;
+			}
+		shareIds(b, prev?.after, prev?.before);
+		shareIds(a, b, prev?.after);
+	}
+	return { kind: 'meshgeo', uuid, before: b, after: a };
 }
 
 /**
@@ -8291,7 +8322,7 @@ export function commitMesh(c) {
  * @param {string} uuid @param {any} before @param {any} after @param {boolean} [op] (37 R11)
  */
 export function recordMeshGeo(uuid, before, after, op = false) {
-	const entry = { kind: 'meshgeo', uuid, before: compactMeshState(before), after: compactMeshState(after) };
+	const entry = meshGeoEntry(uuid, before, after);
 	(op ? recordOp : recordEntry)(entry);
 	return entry;
 }

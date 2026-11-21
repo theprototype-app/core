@@ -136,6 +136,7 @@ import { runParkHooks } from './parkHooks.js'; // 68: extra parks (prop tracks),
 import { INPUT_LETTERS, socketCount, opFolds, foldMath, foldGate, switcherItems, switcherHandle, switcherIndexOf, switcherRadioIndex } from './variadicNodes.js';
 import { blendSpeedWeights, smoothWeights, clipForSlot } from './tpanim/blendSpeed.js'; // 57 M3 (a leaf)
 import { newTracker, trackPose } from './avatars/locomotion.js'; // 57 M3: a stream-safe speed (a leaf)
+import { isManySelector, resolveSelector, selectorKey } from './selectorCore.js'; // 102b-flows (a leaf)
 
 // H3: inputRuntime is reached via a PRIMED dynamic import (the moduleSDK
 // pattern) — a static edge would close the TDZ cycle history -> flowRuntime ->
@@ -663,16 +664,18 @@ const playAnimEdge = new Map();
  * branch from the same shared timestamp and derives the same playback. Sending
  * here as well would fire the transport twice and let the two copies disagree
  * about who started it.
- * @param {{node: any, uuid: string}[]} pairs @param {any} ctx
+ * @param {{node: any, uuid: string, key?: string}[]} pairs @param {any} ctx
  */
 function updatePlayAnim(pairs, ctx) {
 	const seen = new Set();
-	for (const { node, uuid } of pairs) {
-		seen.add(node.id);
+	for (const { node, uuid, key } of pairs) {
+		// 102b-flows: a set member's pair carries its own key (node|uuid); a plain pair keys by node
+		const ek = key ?? node.id;
+		seen.add(ek);
 		const data = node.data ?? {};
 		const high = !!data.trigger;
-		const was = playAnimEdge.get(node.id) ?? false;
-		playAnimEdge.set(node.id, high);
+		const was = playAnimEdge.get(ek) ?? false;
+		playAnimEdge.set(ek, high);
 		if (!high || was) continue; // act on the rising edge only
 		const clip = typeof data.clip === 'string' ? data.clip.trim() : '';
 		const action = data.action ?? 'toggle';
@@ -728,16 +731,17 @@ const setExpressionEdge = new Map();
 /**
  * Set a VRM expression from a flow event. LOCAL on every peer (the trigger stamp replicated),
  * never broadcast — `setVrmExpression(…, false)` — the updatePlayAnim reasoning.
- * @param {{node: any, uuid: string}[]} pairs
+ * @param {{node: any, uuid: string, key?: string}[]} pairs
  */
 function updateSetExpression(pairs) {
 	const seen = new Set();
-	for (const { node, uuid } of pairs) {
-		seen.add(node.id);
+	for (const { node, uuid, key } of pairs) {
+		const ek = key ?? node.id; // 102b-flows: one slot per set member
+		seen.add(ek);
 		const data = node.data ?? {};
 		const high = !!data.trigger;
-		const was = setExpressionEdge.get(node.id) ?? false;
-		setExpressionEdge.set(node.id, high);
+		const was = setExpressionEdge.get(ek) ?? false;
+		setExpressionEdge.set(ek, high);
 		if (!high || was) continue;
 		const name = typeof data.expression === 'string' ? data.expression.trim() : '';
 		const weight = Number(data.weight);
@@ -867,7 +871,7 @@ const attachEdge = new Map();
  * 57 M12: ATTACH TO SOCKET — on the trigger's rising edge, the `item` object follows the model's
  * named node (or lets go). LOCAL on every peer, like Play Animation: the graph and the trigger
  * stamp replicate, so each peer makes the same attach itself (no message, no undo entry).
- * @param {{node: any, uuid: string}[]} pairs
+ * @param {{node: any, uuid: string, key?: string}[]} pairs
  */
 function updateAttachSockets(pairs) {
 	const seen = new Set();
@@ -912,12 +916,13 @@ export function fireAnimState(uuid, id, name) {
  * replicates as a shared `nodetrigger` stamp, so every peer runs the same rising
  * edge from the same synced timestamp — and applyImpulse / setBodyVelocity are
  * already initiator-gated. NO new message type for any of these.
- * @param {{node: any, uuid: string}[]} pairs @param {any} ctx @param {number} time
+ * @param {{node: any, uuid: string, key?: string}[]} pairs @param {any} ctx @param {number} time
  */
 function updatePhysicsActions(pairs, ctx, time) {
 	const seen = new Set();
-	for (const { node, uuid } of pairs) {
-		seen.add(node.id);
+	for (const { node, uuid, key } of pairs) {
+		const ek = key ?? node.id; // 102b-flows: one rising edge per set member
+		seen.add(ek);
 		// register the cutoff before ANY `continue` below, so a node that is skipped this
 		// tick (no target yet) still gets one — a node can also appear in `pairs` twice,
 		// and seeActionNode is idempotent
@@ -930,11 +935,11 @@ function updatePhysicsActions(pairs, ctx, time) {
 		// pair with no target that consumed the rising edge would leave the real one
 		// looking like a repeat — the trigger fires, the edge is spent, nothing moves.
 		if (!target) continue;
-		const was = physicsActionEdge.get(node.id) ?? false;
-		physicsActionEdge.set(node.id, high);
+		const was = physicsActionEdge.get(ek) ?? false;
+		physicsActionEdge.set(ek, high);
 		const stamp = triggerStampFor(node.id, ctx);
-		const lastStamp = physicsActionStamp.get(node.id);
-		physicsActionStamp.set(node.id, stamp);
+		const lastStamp = physicsActionStamp.get(ek);
+		physicsActionStamp.set(ek, stamp);
 		// a NEW stamp is a rising edge even when the pulse it made fell between two ticks; first sight
 		// (no last stamp) is not — that is a pulse from before this node, and staleTrigger has it
 		const freshStamp = typeof stamp === 'number' && lastStamp !== undefined && stamp !== lastStamp;
@@ -1105,15 +1110,18 @@ function contactPassesEither(data, uuid, other) {
 
 /** 36 X6: pulse a contact node and carry the other body with the stamp.
  * @param {any} node @param {string} other */
-function fireContact(node, other) {
+function fireContact(node, other, uuid = '') {
 	const t = syncedNow();
 	contactOthers.set(node.id, other);
 	const share = replicatesPulse(node);
+	noteFired(node, uuid); // 102b-flows: which watched object (a set member) the contact was on
+	const fresh = freshFired;
+	const obj = fresh && fresh.id === node.id ? fresh.uuid : null;
 	applyNodeTrigger(node.id, t, false);
 	if (share) {
 		/** @type {any} */
 		const peer = get(peers);
-		if (peer) peer.send({ type: 'nodetrigger', id: node.id, t, other });
+		if (peer) peer.send(obj ? { type: 'nodetrigger', id: node.id, t, other, obj } : { type: 'nodetrigger', id: node.id, t, other });
 	}
 }
 
@@ -2714,11 +2722,148 @@ function restoreBase(object, base) {
 function targetUuidOf(edge) {
 	const target = nodeById(nodes, edge.target);
 	if (target?.type !== 'objectselector') return null;
+	// 102b-flows: a many-target selector answers a ONE-object question with its first member
+	// (a character action, a single-object consumer); the effect pairs fan out via targetUuidsOf
+	if (isManySelector(target.data)) return selectorTargets(target)[0] ?? null;
 	const selected = target.data?.selected;
 	if (!selected || selected === '-None-') return null;
 	// per-object mute from the object list context menu
 	if (muted.includes(selected)) return null;
 	return selected;
+}
+
+// ---- 102b-flows: ONE FLOW, MANY OBJECTS ---------------------------------------------------------
+// An Object Selector may pick a SET (by tag, group or name pattern — selectorCore.js). An effect
+// wired into it acts on every member (targetUuidsOf, used by every pair collection below); a
+// trigger wired into it fires for any member (selectorHas, inside reachesObjectSelector) and
+// records WHICH member fired (noteFired), for the Fired Object node and the selector's own value.
+// A selector without `pick` takes none of these paths: one test of `data.pick` and the old code.
+
+/** @type {readonly string[]} */
+const NO_TARGETS = Object.freeze([]);
+/** bumped once per runTick: a set is resolved at most once per tick per question */
+let selectorEpoch = 0;
+/** selectorKey -> the resolved set @type {Map<string, {epoch: number, at: number, list: string[], set: Set<string>}>} */
+const selectorMemo = new Map();
+
+/** a many-target selector's set, memoised per tick (and for 250 ms between ticks) @param {any} selector */
+function manyTargetsOf(selector) {
+	const key = selectorKey(selector.data);
+	const at = performance.now();
+	let hit = selectorMemo.get(key);
+	if (!hit || hit.epoch !== selectorEpoch || at - hit.at > 250) {
+		const list = resolveSelector(selector.data, sceneObjects);
+		if (selectorMemo.size > 256) selectorMemo.clear();
+		hit = { epoch: selectorEpoch, at, list, set: new Set(list) };
+		selectorMemo.set(key, hit);
+	}
+	return hit;
+}
+
+/** every object a selector names (muted ones left out): one for a plain selector @param {any} selector @returns {readonly string[]} */
+function selectorTargets(selector) {
+	if (selector?.type !== 'objectselector') return NO_TARGETS;
+	if (!isManySelector(selector.data)) {
+		const s = selector.data?.selected;
+		return s && s !== '-None-' && !muted.includes(s) ? [s] : NO_TARGETS;
+	}
+	const { list } = manyTargetsOf(selector);
+	return muted.length ? list.filter((u) => !muted.includes(u)) : list;
+}
+
+/** the objects an edge into an Object Selector targets (the fan-out of targetUuidOf) @param {any} edge @returns {readonly string[]} */
+function targetUuidsOf(edge) {
+	const target = nodeById(nodes, edge.target);
+	if (target?.type !== 'objectselector') return NO_TARGETS;
+	if (!isManySelector(target.data)) {
+		const one = targetUuidOf(edge);
+		return one ? [one] : NO_TARGETS;
+	}
+	return selectorTargets(target);
+}
+
+/** does this selector name `uuid`? (a plain one: exactly its `selected`, the old test) @param {any} selector @param {string} uuid */
+function selectorHas(selector, uuid) {
+	if (!isManySelector(selector?.data)) return selector?.data?.selected === uuid;
+	return manyTargetsOf(selector).set.has(uuid);
+}
+
+/** sensor node id -> the watched object that fired it last @type {Map<string, string>} */
+const firedObjects = new Map();
+/** many-target selector id -> the member that fired a trigger into it last @type {Map<string, string>} */
+const selectorFiredBy = new Map();
+/** the fire being made right now, so applyNodeTrigger / fireContact carry it on the wire */
+let freshFired = /** @type {{id: string, uuid: string} | null} */ (null);
+
+/** the many-target selectors a trigger reaches (walking forward, as reachesObjectSelector does) @param {string} startId @returns {string[]} */
+function manySelectorsReached(startId) {
+	/** @type {string[]} */
+	const out = [];
+	const seen = new Set([startId]);
+	const stack = [startId];
+	while (stack.length) {
+		const cur = stack.pop();
+		for (const edge of edges) {
+			if (edge.source !== cur || seen.has(edge.target)) continue;
+			seen.add(edge.target);
+			const target = nodeById(nodes, edge.target);
+			if (target?.type === 'objectselector') {
+				if (isManySelector(target.data)) out.push(target.id);
+				continue;
+			}
+			stack.push(edge.target);
+		}
+	}
+	return out;
+}
+
+/** is anything listening for WHICH object fired this trigger? (else nothing is recorded or sent) @param {string} nodeId */
+function firedWanted(nodeId) {
+	for (const edge of edges) if (edge.source === nodeId && nodeById(nodes, edge.target)?.type === 'firedobject') return true;
+	return manySelectorsReached(nodeId).length > 0;
+}
+
+/** record which watched object fired `nodeId` (a local fire or a received `obj`) @param {string} nodeId @param {string} uuid */
+function recordFired(nodeId, uuid) {
+	firedObjects.set(nodeId, uuid);
+	for (const id of manySelectorsReached(nodeId)) selectorFiredBy.set(id, uuid);
+}
+
+/** a sensor is about to fire for `uuid`: remember it when someone asks, and mark it for the wire @param {any} node @param {string} uuid */
+function noteFired(node, uuid) {
+	freshFired = null;
+	if (typeof uuid !== 'string' || !uuid || !firedWanted(node.id)) return;
+	recordFired(node.id, uuid);
+	freshFired = { id: node.id, uuid };
+}
+
+/** the object that fired a trigger node last (the Fired Object node; debug / tests) @param {string} nodeId */
+export function firedObjectOf(nodeId) {
+	return firedObjects.get(nodeId) ?? null;
+}
+
+/** 102b-flows test / debug view: what a selector resolves to now @param {string} nodeId @returns {string[] | null} */
+export function selectorSetOf(nodeId) {
+	const node = nodeById(nodes, nodeId);
+	return node?.type === 'objectselector' ? [...selectorTargets(node)] : null;
+}
+
+/**
+ * 102b-flows: the action pairs ONE edge into an Object Selector makes. The inputs resolve once per
+ * edge (not once per member), and only when there is a target — exactly as before for a plain
+ * selector, whose pair keeps its old shape. A set's members each carry `key` = node|uuid, so the
+ * rising-edge maps hold one slot per member and every member acts on the same pulse.
+ * @param {any[]} out @param {any} edge @param {any} source @param {() => any} data @param {Record<string, any>} [extra]
+ */
+function pushSelectorPairs(out, edge, source, data, extra) {
+	const uuids = targetUuidsOf(edge);
+	if (!uuids.length) return;
+	const node = { ...source, data: data() };
+	if (!isManySelector(nodeById(nodes, edge.target)?.data)) {
+		out.push(extra ? { node, uuid: uuids[0], ...extra } : { node, uuid: uuids[0] });
+		return;
+	}
+	for (const uuid of uuids) out.push({ node, uuid, key: source.id + '|' + uuid, ...extra });
 }
 
 /** 85b R10: the effect nodes that may name their object directly (`data.target`, an object uuid) — a
@@ -2753,32 +2898,35 @@ function applyColors() {
 	edges.forEach((edge) => {
 		const source = nodeById(nodes, edge.source);
 		if (!source) return;
-		const uuid = targetUuidOf(edge);
-		if (!uuid) return;
-		const object = sceneObjects.getObjectByProperty('uuid', uuid);
-		if (!object) return;
-
-		if (source.type === 'colorpicker' && source.data?.color) {
-			if (object.material?.color) object.material.color.set(source.data.color);
-		} else if (source.type === 'slider') {
-			// slider scales its target (20 = neutral 1.0); animated targets scale via their base
-			const factor = Math.min(Math.max((source.data?.value ?? 20) / 20, 0.05), 5);
-			const base = baseState.get(uuid);
-			if (base) base.scale = [factor, factor, factor];
-			else object.scale.set(factor, factor, factor);
-		} else if (source.type === 'switcher' && object.geometry) {
-			// 4.4: items[index] drives the swap; legacy saved graphs fall back to shape
-			const items = Array.isArray(source.data?.items) && source.data.items.length ? source.data.items : ['cube', 'pyramid'];
-			const rawIdx = source.data?.index ?? Math.max(items.indexOf(source.data?.shape ?? 'cube'), 0);
-			const shape = items[Math.min(Math.max(num(rawIdx), 0), items.length - 1)] ?? 'cube';
-			if (object.userData.switcherShape !== shape) {
-				object.userData.switcherShape = shape;
-				object.geometry.dispose();
-				object.geometry =
-					shape === 'pyramid' ? new THREE.ConeGeometry(1.4, 2, 4) : new THREE.BoxGeometry(2, 2, 2);
-			}
-		}
+		for (const uuid of targetUuidsOf(edge)) applyColorTo(source, uuid); // 102b-flows: every member of a set
 	});
+}
+
+/** @param {any} source @param {string} uuid */
+function applyColorTo(source, uuid) {
+	const object = sceneObjects.getObjectByProperty('uuid', uuid);
+	if (!object) return;
+
+	if (source.type === 'colorpicker' && source.data?.color) {
+		if (object.material?.color) object.material.color.set(source.data.color);
+	} else if (source.type === 'slider') {
+		// slider scales its target (20 = neutral 1.0); animated targets scale via their base
+		const factor = Math.min(Math.max((source.data?.value ?? 20) / 20, 0.05), 5);
+		const base = baseState.get(uuid);
+		if (base) base.scale = [factor, factor, factor];
+		else object.scale.set(factor, factor, factor);
+	} else if (source.type === 'switcher' && object.geometry) {
+		// 4.4: items[index] drives the swap; legacy saved graphs fall back to shape
+		const items = Array.isArray(source.data?.items) && source.data.items.length ? source.data.items : ['cube', 'pyramid'];
+		const rawIdx = source.data?.index ?? Math.max(items.indexOf(source.data?.shape ?? 'cube'), 0);
+		const shape = items[Math.min(Math.max(num(rawIdx), 0), items.length - 1)] ?? 'cube';
+		if (object.userData.switcherShape !== shape) {
+			object.userData.switcherShape = shape;
+			object.geometry.dispose();
+			object.geometry =
+				shape === 'pyramid' ? new THREE.ConeGeometry(1.4, 2, 4) : new THREE.BoxGeometry(2, 2, 2);
+		}
+	}
 }
 
 /** Do the edges currently animate this object? @param {string} uuid */
@@ -3392,7 +3540,11 @@ function logicNow() {
  * @param {any} [other] 36 X6: a contact's other body @param {boolean} [received] @param {string|null} [from] the sender
  * @param {boolean} [held] 2.0-int: a held-key re-stamp (never a new press for a behaviour input)
  */
-export function applyNodeTrigger(nodeId, t, replicate = true, sourceHandle = null, at = null, other = undefined, received = false, from = null, held = false) {
+export function applyNodeTrigger(nodeId, t, replicate = true, sourceHandle = null, at = null, other = undefined, received = false, from = null, held = false, obj = undefined) {
+	// 102b-flows: WHICH watched object fired (a received `obj`, or this peer's own fire via noteFired)
+	if (received && typeof obj === 'string' && obj && typeof nodeId === 'string') recordFired(nodeId, obj);
+	const firedObj = !received && freshFired && freshFired.id === nodeId ? freshFired.uuid : null;
+	if (!received) freshFired = null;
 	// 2.0-int: a held-key re-stamp is marked so a behaviour input never reads it as a new press
 	if (held && typeof nodeId === 'string') heldStamps.set(nodeId, t);
 	// 36 X6: a contact's other body, received with the stamp (see contactOthers)
@@ -3417,7 +3569,10 @@ export function applyNodeTrigger(nodeId, t, replicate = true, sourceHandle = nul
 	if (replicate) {
 		/** @type {any} */
 		const peer = get(peers);
-		if (peer) peer.send(held ? { type: 'nodetrigger', id: nodeId, t, held: 1 } : { type: 'nodetrigger', id: nodeId, t });
+		/** @type {any} */
+		const msg = held ? { type: 'nodetrigger', id: nodeId, t, held: 1 } : { type: 'nodetrigger', id: nodeId, t };
+		if (firedObj) msg.obj = firedObj; // 102b-flows: additive, only when something listens for it
+		if (peer) peer.send(msg);
 	}
 }
 
@@ -3532,7 +3687,7 @@ function reachesObjectSelector(startId, uuid) {
 			const target = nodeById(nodes, edge.target);
 			// an Object Selector is a sink — check its target, don't traverse past it
 			if (target?.type === 'objectselector') {
-				if (target.data?.selected === uuid || (from && target.data?.selected === from)) return true;
+				if (selectorHas(target, uuid) || (from && selectorHas(target, from))) return true; // 102b-flows: or a member of its set
 				continue;
 			}
 			seen.add(edge.target);
@@ -3554,6 +3709,7 @@ export function fireAnimFinished(/** @type {string} */ uuid) {
 	nodes.forEach((node) => {
 		if (node.type !== 'animfinished') return;
 		if (!reachesObjectSelector(node.id, uuid) && implicitOwnerOf(node) !== uuid) return;
+		noteFired(node, uuid); // 102b-flows: local on every peer, like the pulse
 		applyNodeTrigger(node.id, syncedNow(), false);
 	});
 }
@@ -3573,6 +3729,7 @@ export function fireAnimMarker(uuid, name) {
 		const wanted = String(node.data?.name ?? '').trim();
 		if (wanted && wanted.toLowerCase() !== String(name).trim().toLowerCase()) return;
 		if (!reachesObjectSelector(node.id, uuid) && implicitOwnerOf(node) !== uuid) return;
+		noteFired(node, uuid); // 102b-flows
 		applyNodeTrigger(node.id, syncedNow(), false);
 	});
 }
@@ -3675,6 +3832,7 @@ export function fireObjectClick(uuid) {
 		// H1: an unwired OnClick inside the clicked object's own graph also fires
 		if (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid) {
 			noteCheck(node.id, { who: objectNameOf(uuid) ?? 'an object', fired: true }); // 78 F26
+			noteFired(node, uuid); // 102b-flows
 			// 21-G4: a perPlayer On Click keeps its pulse LOCAL — that one bit is the
 			// whole per-player collectible (see replicatesPulse)
 			applyNodeTrigger(node.id, syncedNow(), replicatesPulse(node));
@@ -3696,6 +3854,7 @@ export function fireObjectGrab(uuid) {
 	nodes.forEach((node) => {
 		if (node.type !== 'ongrab') return;
 		if (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid) {
+			noteFired(node, uuid); // 102b-flows
 			applyNodeTrigger(node.id, syncedNow(), replicatesPulse(node));
 			fired++;
 		}
@@ -3712,15 +3871,17 @@ export function fireObjectGrab(uuid) {
 
 /** node id -> the last time it fired (its cooldown) @type {Map<string, number>} */
 const hoverFiredAt = new Map();
-/** @type {{nodes: any, edges: any, set: Set<string>}} */
-let hoverTargetCache = { nodes: null, edges: null, set: new Set() };
+/** @type {{nodes: any, edges: any, set: Set<string>, epoch: number}} */
+let hoverTargetCache = { nodes: null, edges: null, set: new Set(), epoch: -1 };
 let hoverInputStarted = false;
 
 /** the objects some On Hover node watches (its owner, or the Object Selectors it reaches) @returns {Set<string>} */
 export function hoverTargetUuids() {
-	if (hoverTargetCache.nodes === nodes && hoverTargetCache.edges === edges) return hoverTargetCache.set;
+	if (hoverTargetCache.nodes === nodes && hoverTargetCache.edges === edges && (hoverTargetCache.epoch === -1 || hoverTargetCache.epoch === selectorEpoch))
+		return hoverTargetCache.set;
 	/** @type {Set<string>} */
 	const set = new Set();
+	let dyn = false;
 	for (const node of nodes) {
 		// 78-int (85 Q2 / Q7): an unwired Highlight glows under THIS person's pointer — the same
 		// sampler watches its object, and publishes what the mouse / tap is over into hoverState
@@ -3738,13 +3899,18 @@ export function hoverTargetUuids() {
 				const target = nodeById(nodes, edge.target);
 				seen.add(edge.target);
 				if (target?.type === 'objectselector') {
+					if (isManySelector(target.data)) {
+						dyn = true; // 102b-flows: a set follows the scene, so this cache lasts one tick
+						for (const u of selectorTargets(target)) set.add(u);
+						continue;
+					}
 					const sel = target.data?.selected;
 					if (sel && sel !== '-None-' && !muted.includes(sel)) set.add(sel);
 				} else stack.push(edge.target);
 			}
 		}
 	}
-	hoverTargetCache = { nodes, edges, set };
+	hoverTargetCache = { nodes, edges, set, epoch: dyn ? selectorEpoch : -1 };
 	if (set.size && !hoverInputStarted) {
 		hoverInputStarted = true;
 		// primed: hoverInput imports this module (the vrGameInput shape)
@@ -3807,6 +3973,7 @@ export function fireObjectHover(uuid, phase) {
 		}
 		if (phase !== 'over' || !lastCheck(node.id)?.fired) noteCheck(node.id, { who, fired: true });
 		hoverFiredAt.set(node.id, now);
+		noteFired(node, uuid); // 102b-flows
 		applyNodeTrigger(node.id, now, (data.who ?? 'anyone') === 'me' ? false : replicatesPulse(node));
 		fired++;
 	}
@@ -3834,8 +4001,11 @@ function watchedObjectsOf(node) {
 			seen.add(edge.target);
 			const target = nodeById(nodes, edge.target);
 			if (target?.type === 'objectselector') {
-				const sel = target.data?.selected;
-				if (sel && sel !== '-None-') set.add(sel);
+				if (isManySelector(target.data)) for (const u of selectorTargets(target)) set.add(u); // 102b-flows
+				else {
+					const sel = target.data?.selected;
+					if (sel && sel !== '-None-') set.add(sel);
+				}
 			} else stack.push(edge.target);
 		}
 	}
@@ -4165,7 +4335,7 @@ export function fireObjectImpact(uuid, down, otherUuid = '', speed = down) {
 		const strength = impactStrengthFor(data.direction, down, speed ?? null);
 		if (strength === null || strength < num(data.minStrength ?? 0)) return;
 		if (!contactPasses(data, otherUuid)) return;
-		if (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid) fireContact(node, otherUuid);
+		if (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid) fireContact(node, otherUuid, uuid);
 	});
 }
 
@@ -4216,6 +4386,7 @@ export function fireObjectHit(hit, local) {
 		if (who === 'me' && !byMe) return;
 		if (who === 'others' && byMe) return;
 		hitInfo.set(node.id, { speed, byMe, at: hit.at });
+		noteFired(node, hit.uuid); // 102b-flows: every peer applies the same hit, so each records it
 		applyNodeTrigger(node.id, stamp, false);
 		fired++;
 	});
@@ -4248,6 +4419,7 @@ export function fireObjectRest(uuid, resting) {
 		const data = resolveInputs(node, nodes, edges, syncedNow(), ctx);
 		if (resting < num(data.seconds ?? 0.5)) return;
 		restFired.set(key, true);
+		noteFired(node, uuid); // 102b-flows
 		applyNodeTrigger(node.id, syncedNow(), replicatesPulse(node));
 	});
 }
@@ -4303,7 +4475,7 @@ function fireSensorEdge(type, uuid, otherUuid) {
 			return;
 		}
 		noteCheck(node.id, { who, fired: true });
-		fireContact(node, other);
+		fireContact(node, other, uuid);
 	});
 }
 
@@ -5200,6 +5372,7 @@ function runTick(now) {
 	}
 	if (now - lastRunAt < 3) return;
 	lastRunAt = now;
+	selectorEpoch++; // 102b-flows: many-target selector sets re-resolve once this tick
 	// wall clock (wrapped daily to keep float noise low) -> same phase on every peer
 	// 21-E5: POLL THE GAMEPAD FIRST, ahead of runtimeCtx(). There is no event for a
 	// stick, so a pad must be polled — and doing it HERE rather than from a loop of
@@ -5281,10 +5454,11 @@ function runTick(now) {
 		edges.forEach((edge) => {
 			const source = nodeById(nodes, edge.source);
 			if (!source || !isEffectNode(source)) return;
-			const uuid = targetUuidOf(edge);
-			if (!uuid) return;
-			if (!active.has(uuid)) active.set(uuid, []);
-			active.get(uuid).push(source);
+			// 102b-flows: a many-target selector fans the effect out over its whole set
+			for (const uuid of targetUuidsOf(edge)) {
+				if (!active.has(uuid)) active.set(uuid, []);
+				active.get(uuid).push(source);
+			}
 		});
 		// 2.0-n3b (G27): a Collect with "Hide when collected" hides its pickup while it is taken — a Visibility
 		// effect fed by "Pickup available?", so the restore loop hands the object back outside play and when
@@ -5372,17 +5546,15 @@ function runTick(now) {
 	edges.forEach((edge) => {
 		const source = nodeById(nodes, edge.source);
 		if (source?.type !== 'sound') return;
-		const uuid = targetUuidOf(edge);
 		// resolve input-driven volume/radius (133) without touching soundRuntime
 		// 21-E4: `trigger` rides the pair as the STAMP, not as the pulse's 0/1 value -
 		// soundRuntime plays one shot per NEW stamp, and a pulse is high for ~0.3s, which
 		// at 60fps is eighteen copies of the same sound.
-		if (uuid)
-			soundPairs.push({
-				node: { ...source, data: resolveInputs(source, nodes, edges, time, ctx) },
-				uuid,
-				trigger: triggerStampFor(source.id, ctx)
-			});
+		/** @type {any[]} */
+		const made = [];
+		pushSelectorPairs(made, edge, source, () => resolveInputs(source, nodes, edges, time, ctx), { trigger: triggerStampFor(source.id, ctx) });
+		// 102b-flows: soundRuntime keys a voice by node.id — a set member's copy gets its own voice
+		for (const pair of made) soundPairs.push(pair.key ? { node: { ...pair.node, id: pair.key }, uuid: pair.uuid, trigger: pair.trigger } : pair);
 	});
 	// H1: sound nodes in object graphs attach to their owner when unwired
 	nodes.forEach((node) => {
@@ -5405,8 +5577,11 @@ function runTick(now) {
 	edges.forEach((edge) => {
 		const source = nodeById(nodes, edge.source);
 		if (source?.type !== 'particle') return;
-		const uuid = targetUuidOf(edge);
-		if (uuid) particlePairs.push({ node: { ...source, data: resolveInputs(source, nodes, edges, time, ctx) }, uuid });
+		/** @type {any[]} */
+		const made = [];
+		pushSelectorPairs(made, edge, source, () => resolveInputs(source, nodes, edges, time, ctx));
+		// 102b-flows: particleRuntime keys an emitter by node.id — a member's copy gets its own
+		for (const pair of made) particlePairs.push(pair.key ? { node: { ...pair.node, id: pair.key }, uuid: pair.uuid } : pair);
 	});
 	nodes.forEach((node) => {
 		if (node.type !== 'particle') return;
@@ -5422,8 +5597,7 @@ function runTick(now) {
 	edges.forEach((edge) => {
 		const source = nodeById(nodes, edge.source);
 		if (source?.type !== 'playanim') return;
-		const uuid = targetUuidOf(edge);
-		if (uuid) animPairs.push({ node: { ...source, data: resolveInputs(source, nodes, edges, time, ctx) }, uuid });
+		pushSelectorPairs(animPairs, edge, source, () => resolveInputs(source, nodes, edges, time, ctx));
 	});
 	nodes.forEach((node) => {
 		if (node.type !== 'playanim') return;
@@ -5437,8 +5611,7 @@ function runTick(now) {
 	edges.forEach((edge) => {
 		const source = nodeById(nodes, edge.source);
 		if (source?.type !== 'setexpression') return;
-		const uuid = targetUuidOf(edge);
-		if (uuid) exprPairs.push({ node: { ...source, data: resolveInputs(source, nodes, edges, time, ctx) }, uuid });
+		pushSelectorPairs(exprPairs, edge, source, () => resolveInputs(source, nodes, edges, time, ctx));
 	});
 	nodes.forEach((node) => {
 		if (node.type !== 'setexpression') return;
@@ -5454,8 +5627,7 @@ function runTick(now) {
 	edges.forEach((edge) => {
 		const source = nodeById(nodes, edge.source);
 		if (source?.type !== 'blendspeed') return;
-		const uuid = targetUuidOf(edge);
-		if (uuid) blendPairs.push({ node: { ...source, data: resolveInputs(source, nodes, edges, time, ctx) }, uuid, wired: speedWired(source.id) });
+		pushSelectorPairs(blendPairs, edge, source, () => resolveInputs(source, nodes, edges, time, ctx), { wired: speedWired(source.id) });
 	});
 	nodes.forEach((node) => {
 		if (node.type !== 'blendspeed') return;
@@ -5472,8 +5644,7 @@ function runTick(now) {
 	edges.forEach((edge) => {
 		const source = nodeById(nodes, edge.source);
 		if (source?.type !== 'ambientanimal' || source.data?.clips === false) return;
-		const uuid = targetUuidOf(edge);
-		if (uuid) ambientClips(source, uuid);
+		for (const uuid of targetUuidsOf(edge)) ambientClips(source, uuid);
 	});
 	nodes.forEach((node) => {
 		if (node.type !== 'ambientanimal' || node.data?.clips === false) return;
@@ -5489,8 +5660,7 @@ function runTick(now) {
 	edges.forEach((edge) => {
 		const source = nodeById(nodes, edge.source);
 		if (source?.type !== 'setanimparam') return;
-		const uuid = targetUuidOf(edge);
-		if (uuid) paramPairs.push({ node: { ...source, data: resolveInputs(source, nodes, edges, time, ctx) }, uuid, triggered: triggerWired(source.id) });
+		pushSelectorPairs(paramPairs, edge, source, () => resolveInputs(source, nodes, edges, time, ctx), { triggered: triggerWired(source.id) });
 	});
 	nodes.forEach((node) => {
 		if (node.type === 'onanimstate' && !animGraphRef) primeAnimGraph();
@@ -5506,8 +5676,7 @@ function runTick(now) {
 	edges.forEach((edge) => {
 		const source = nodeById(nodes, edge.source);
 		if (source?.type !== 'attachsocket') return;
-		const uuid = targetUuidOf(edge);
-		if (uuid) attachPairs.push({ node: { ...source, data: resolveInputs(source, nodes, edges, time, ctx) }, uuid });
+		pushSelectorPairs(attachPairs, edge, source, () => resolveInputs(source, nodes, edges, time, ctx));
 	});
 	nodes.forEach((node) => {
 		if (node.type !== 'attachsocket') return;
@@ -5528,9 +5697,7 @@ function runTick(now) {
 	edges.forEach((edge) => {
 		const source = nodeById(nodes, edge.source);
 		if (!source || !PHYSICS_ACTIONS.includes(source.type)) return;
-		const uuid = targetUuidOf(edge);
-		if (uuid)
-			physicsPairs.push({ node: { ...source, data: resolveInputs(source, nodes, edges, ownTime, ownCtx) }, uuid });
+		pushSelectorPairs(physicsPairs, edge, source, () => resolveInputs(source, nodes, edges, ownTime, ownCtx));
 	});
 	nodes.forEach((node) => {
 		if (!PHYSICS_ACTIONS.includes(node.type)) return;
@@ -5976,6 +6143,10 @@ const RT = {
 	handleStamp,
 	hashString,
 	hitInfo,
+	firedObjectOf, // 102b-flows
+	selectorFiredBy, // 102b-flows
+	selectorTargets, // 102b-flows
+	isManySelector, // 102b-flows
 	hudOptionsOf,
 	hudTimerRemaining,
 	hudValueOf,

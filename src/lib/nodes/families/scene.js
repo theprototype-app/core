@@ -13,7 +13,32 @@ export default {
 			sockets: { out: 'object', in: { _default: 'effect' } },
 			card: 'ObjectSelectorNode',
 			eval(node, { d }, rt) {
+				// 102b-flows: a selector picking a SET (tag / group / name) is, as a value, the member a
+				// trigger fired for last — else its first member. Always ONE uuid, so every object input
+				// keeps working; `pick` absent = the old single object, unchanged.
+				if (rt.isManySelector(d)) return rt.selectorFiredBy.get(node.id) ?? rt.selectorTargets(node)[0];
 				return d.selected && d.selected !== '-None-' ? d.selected : undefined;
+			}
+		},
+		// 102b-flows: WHICH object fired a trigger. Wire On Click (or any object trigger) into it; with a
+		// many-target Object Selector it says which member was clicked / entered / hit, so the action
+		// downstream can act on that one (an Impulse's `target`, a Look At, a Distance).
+		{
+			type: 'firedobject',
+			label: 'Fired Object',
+			defaults: {},
+			inputs: ['trigger'],
+			inputLabels: { trigger: 'trigger - wire On Click, On Enter, On Hit...' },
+			note: 'The object the wired trigger fired for last. Use it with an Object Selector that picks by tag, group or name.',
+			sockets: { out: 'object', in: { trigger: 'event' } },
+			card: 'AnimationNode',
+			eval(node, { allEdges }, rt) {
+				for (const e of allEdges) {
+					if (e.target !== node.id) continue;
+					const uuid = rt.firedObjectOf(e.source);
+					if (uuid) return uuid;
+				}
+				return undefined;
 			}
 		},
 		// CL-C C3: live speed (m/s) of the wired object — LOCAL feed, exact on

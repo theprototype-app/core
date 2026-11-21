@@ -59,7 +59,7 @@
 							aria-label="Remove tag {c.tag}"
 							title="Remove the tag {c.tag}{many ? ' from every selected object' : ''}"
 							{disabled}
-							onclick={() => removeTag(uuids, c.tag)}><Icon name="x" size={12} aria-hidden="true" /></button
+							onclick={() => removeTag(uuids, c.tag)}><Icon name="x" size={16} aria-hidden="true" /></button
 						>
 					</li>
 				{/each}
@@ -87,7 +87,7 @@
 				}}
 			/>
 			<button type="button" id="tags-add-button" class="tag-add" title="Add the tag (Enter)" aria-label="Add the tag" disabled={disabled || !draft.trim()} onclick={commit}
-				><Icon name="plus" size={14} aria-hidden="true" /></button
+				><Icon name="plus" size={16} aria-hidden="true" /></button
 			>
 		</label>
 		<datalist id="tags-known">

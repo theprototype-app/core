@@ -261,7 +261,9 @@ export const VALIDATORS = {
 		// 36 X6: a contact's OTHER body (a uuid, '' = the ground); older peers ignore it
 		(d.other === undefined || d.other === null || d.other === '' || isUuid(d.other)) &&
 		// 2.0-int: a held-key re-stamp is marked; older peers ignore the field
-		(d.held === undefined || d.held === 1),
+		(d.held === undefined || d.held === 1) &&
+		// 102b-flows: WHICH watched object fired (a many-target selector's member); older peers ignore it
+		(d.obj === undefined || d.obj === null || isUuid(d.obj)),
 	nodedefs: (d) => isArray(d.defs),
 	verts: (d) => isUuid(d.uuid) && isArray(d.indices),
 	meshgeo: (d) => isUuid(d.uuid) && (Array.isArray(d.positions) || d.positions instanceof ArrayBuffer || ArrayBuffer.isView(d.positions)),

@@ -44,7 +44,7 @@ import { log, registerDiagnosticsSection } from './diagnostics';
 // #20 P5: selection + edit session + panel layout, restored only on an EXPLICIT restore
 import { captureEditResume, applyEditResume } from './editResume';
 import { disposeTree, keepSet } from './disposeTree';
-import { safeStorage } from './safeStorage';
+import { safeStorage, storageIsolated } from './safeStorage';
 import { registerMetricSource } from './sceneBudget';
 
 // Crash safety: snapshots of the scene (GLTF json), the node graph and the
@@ -896,6 +896,8 @@ export async function clearSavedSession() {
 export function startAutosave() {
 	if (started || typeof window === 'undefined') return;
 	started = true;
+	// 61 G3: a "Test with players" bot keeps no autosave — Stop must leave no save behind (its idb is memory)
+	if (storageIsolated) return;
 	objectsGroup.subscribe(() => markDirty());
 	flowGraphs.subscribe(() => markDirty()); // H1: any graph document change
 	// authored animation is its own uuid-keyed store, so building a movement

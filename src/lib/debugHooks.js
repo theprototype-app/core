@@ -533,6 +533,9 @@ export const DEBUG_HOOKS = [
 	['arTable', () => import('./arTable')],
 	// 60 Q1: Play here
 	['playHere', () => import('./playHere')],
+	// 61 G3: Test with players — the runner (startTest / stopTest / testPlayersDebug) and the leaf (startTestPlayers)
+	['testPlayers', () => import('./testPlayers/host.js')],
+	['testPlayersUi', () => import('./testPlayers/testPlayers.js')],
 	// 60 Q5: reference image underlays
 	['underlays', () => import('./underlays')],
 	['underlayPose', () => import('./underlayPose')],

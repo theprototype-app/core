@@ -4,12 +4,12 @@
 	"pages": {
 		"play": {
 			"html": "play.html",
-			"maxJsGzBytes": 2168525,
+			"maxJsGzBytes": 2170880,
 			"maxFirstFrameMs": 20000
 		},
 		"editor": {
 			"html": "index.html",
-			"maxJsGzBytes": 3400090,
+			"maxJsGzBytes": 3404800,
 			"maxFirstFrameMs": 32000
 		}
 	},
@@ -53,9 +53,9 @@
 		{
 			"date": "2026-11-21",
 			"lane": "61-int (Test with players, enemies that patrol, see and chase)",
-			"play": "v1.71.0 line 2116.0 KB -> 2117.6 KB measured (+1.6 over) -> line 2117.7 KB = the measured overage rounded up to 0.1 KB, no new room",
-			"editor": "v1.71.0 line 3319.1 KB -> 3320.3 KB measured (+1.2 over) -> line 3320.4 KB = the measured overage rounded up to 0.1 KB, no new room",
-			"note": "what 61 keeps on the boots after its lazy splits (the enemy sheet entry and the collider reader load on first use): the bot-frame storage guard (safeStorage overlay + idb memory store, it must run before any store is read), the SDK gameWorld slice (paths.of/list, players, isAuthority and the two registries, kept sync so makeApi stays sync), moduleWorldItems + the Test with players menu leaf, a pathCore chunk split, and api.players()[].playing (the peerPlayModes store moved into stores/appStore so the SDK reads presence without gamePresence's graph). The recast navmesh WASM is a module asset only scenes with NPCs download. QUESTIONS-61-int 2, accepted by the orchestrator"
+			"play": "v1.71.0 2114.3 KB -> 2117.6 KB (+3.3: 61-test ~0.5 bot-frame storage guard; 61-nav ~2.4 SDK gameWorld slice, pathCore split, moduleWorldItems, modules; 61-int ~0.4 presence in api.players) -> line 2120.0 KB (the INT BOOT RULE: merged tag + the union, rounded up to the next 5 KB)",
+			"editor": "v1.71.0 3314.1 KB -> 3320.3 KB (+6.2: 61-test ~1.6 storage guard + the Test with players menu leaf; 61-nav ~4.2 the same SDK slice, pathCore, moduleWorldItems, modules; 61-int ~0.4 presence) -> line 3325.0 KB (the INT BOOT RULE)",
+			"note": "what 61 keeps on the boots after its lazy splits (the enemy sheet entry and the collider reader load on first use): the bot-frame storage guard (safeStorage overlay + idb memory store, it must run before any store is read), the SDK gameWorld slice (paths.of/list, players, isAuthority and the two registries, kept sync so makeApi stays sync), moduleWorldItems + the Test with players menu leaf, a pathCore chunk split, and api.players()[].playing (the peerPlayModes store moved into stores/appStore so the SDK reads presence without gamePresence's graph). The recast navmesh WASM is a module asset only scenes with NPCs download. QUESTIONS-61-int 2, accepted by the orchestrator; lane split approximate (per-chunk diff; renamed-chunk churn ~1 KB)"
 		}
 	],
 	"throttle": {

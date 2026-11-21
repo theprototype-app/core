@@ -11,6 +11,7 @@ import {
 	setNodeData
 } from '$lib/nodesHandler';
 import { createObjectGraph, recordFlowNodesEntry } from '$lib/flowGraphs';
+import { convertNode } from '$lib/convertToCode'; // 2.0-n3c
 import { nodeCatalog, findNodeSpec } from '$lib/nodeCatalog';
 import {
 	setPhysicsFor,
@@ -570,8 +571,8 @@ function textToSpecs(text) {
 }
 
 /**
- * update_flow_nodes: tune node data and/or remove nodes in ONE graph.
- * @param {any} args {graph, updates?: [{id, data}], remove?: [ids]}
+ * update_flow_nodes: tune node data, remove nodes and/or convert pure nodes to code (2.0-n3c) in ONE graph.
+ * @param {any} args {graph, updates?: [{id, data}], remove?: [ids], convert?: [{id, to: 'code'|'back'}]}
  * @returns {any}
  */
 export function updateFlowNodesTool(args) {
@@ -658,12 +659,27 @@ export function updateFlowNodesTool(args) {
 		recordFlowNodesEntry({ op: 'delete', graphId, nodes, edges });
 	}
 
-	if (!updated.length && !removeIds.length)
-		return { error: errors[0] ?? 'nothing to do — pass updates and/or remove', errors };
+	// 2.0-n3c: convert: [{id, to: 'code' | 'back'}] — the node menu's Convert to code / Convert back
+	/** @type {{id: string, to: string, node: string}[]} */
+	const converted = [];
+	for (const c of Array.isArray(args?.convert) ? args.convert : []) {
+		const to = c?.to === 'back' ? 'back' : c?.to === 'code' ? 'code' : null;
+		if (!to || typeof c?.id !== 'string') {
+			errors.push('convert takes [{ id, to: "code" | "back" }]');
+			continue;
+		}
+		const result = convertNode(c.id, { back: to === 'back', graphId });
+		if (!result.ok) errors.push(c.id + ': ' + result.error);
+		else converted.push({ id: c.id, to, node: result.focus });
+	}
+
+	if (!updated.length && !removeIds.length && !converted.length)
+		return { error: errors[0] ?? 'nothing to do — pass updates, remove and/or convert', errors };
 	return {
 		graph: graphId,
 		updated,
 		removed: removeIds.length,
+		...(converted.length ? { converted } : {}),
 		...(scriptNotes.length ? { warning: scriptNotes.join(' ') } : {}),
 		...(errors.length ? { errors } : {})
 	};

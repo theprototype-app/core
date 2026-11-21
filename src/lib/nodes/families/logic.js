@@ -4,6 +4,7 @@
 // Nodes.svelte component key) and `eval` (evalNodeBody's case; runtime helpers come in as `rt`).
 // A LEAF: nothing here imports the runtime. Adding a node = one entry in this file.
 import { BEHAVIOUR_STARTER } from '../../behaviours/starter.js';
+import { REFERENCE_JS } from '../reference.js';
 
 /** @type {import('../registry.js').NodeFamily} */
 export default {
@@ -35,7 +36,7 @@ export default {
 				const inputs = {};
 				for (const socket of rt.scriptInputs(d) ?? [])
 					inputs[socket.name] = rt.scriptInputValue(socket, input(socket.name, socket.value), ctx);
-				const value = rt.runScriptValue(node.id, d.code ?? '', inputs, time, outputs, rt.scriptApi(node.id, d.code ?? '', 'value'));
+				const value = rt.runScriptValue(node.id, d.code ?? '', inputs, time, outputs, rt.scriptApi(node.id, d.code ?? '', 'value', ctx));
 				if (rt.scriptValueMemo.size > 500) rt.scriptValueMemo.clear(); // deleted nodes' entries
 				rt.scriptValueMemo.set(node.id, { time, data: node.data, value });
 				return value;
@@ -87,6 +88,8 @@ export default {
 			// right type (an undeclared gate handle would type as 'number').
 			sockets: { out: 'number', in: { a: 'number', b: 'number', c: 'number', d: 'number', e: 'number', f: 'number', g: 'number', h: 'number' } },
 			card: 'BinaryNode',
+			// 2.0-n3c: the built-in's value as code (Convert to code; parity-tested)
+			referenceJs: REFERENCE_JS.math,
 			eval(node, { input, d, allEdges }, rt) {
 				const a = rt.num(input('a', d.a ?? 0));
 				const b = rt.num(input('b', d.b ?? 0));
@@ -126,6 +129,8 @@ export default {
 			],
 			sockets: { out: 'boolean', in: { a: 'number', b: 'number' } },
 			card: 'BinaryNode',
+			// 2.0-n3c: the built-in's value as code (Convert to code; parity-tested)
+			referenceJs: REFERENCE_JS.compare,
 			eval(node, { input, d }, rt) {
 				const a = rt.num(input('a', d.a ?? 0));
 				const b = rt.num(input('b', d.b ?? 0));
@@ -150,6 +155,8 @@ export default {
 			],
 			sockets: { out: 'boolean', in: { a: 'boolean', b: 'boolean', c: 'boolean', d: 'boolean', e: 'boolean', f: 'boolean', g: 'boolean', h: 'boolean' } },
 			card: 'BinaryNode',
+			// 2.0-n3c: the built-in's value as code (Convert to code; parity-tested)
+			referenceJs: REFERENCE_JS.gate,
 			eval(node, { input, d, allEdges }, rt) {
 				const a = rt.bool(input('a', d.a ?? false));
 				const b = rt.bool(input('b', d.b ?? false));
@@ -168,6 +175,8 @@ export default {
 			type: 'maprange', label: 'Map Range', defaults: { inMin: 0, inMax: 1, outMin: 0, outMax: 1, clamp: true, a: 0 },
 			sockets: { out: 'number', in: { a: 'number' } },
 			card: 'MapRangeNode',
+			// 2.0-n3c: the built-in's value as code (Convert to code; parity-tested)
+			referenceJs: REFERENCE_JS.maprange,
 			eval(node, { input, d }, rt) {
 				// 4.6: remap a from [inMin..inMax] to [outMin..outMax] (optional clamp)
 				const a = rt.num(input('a', d.a ?? 0));
@@ -189,6 +198,8 @@ export default {
 			// 21-E4: c/d are ADDITIVE - a/b keep their ids, so no saved edge moves
 			sockets: { out: 'number', in: { index: 'number', a: 'number', b: 'number', c: 'number', d: 'number' } },
 			card: 'SelectNode',
+			// 2.0-n3c: the built-in's value as code (Convert to code; parity-tested)
+			referenceJs: REFERENCE_JS.select,
 			eval(node, { d, allEdges, input }, rt) {
 				// 4.6: pick a or b by a wired index/boolean (switcher/compare pair-up).
 				// 21-E4: N-WAY. The index is ROUNDED, which reproduces the old `< 0.5 ? a : b`

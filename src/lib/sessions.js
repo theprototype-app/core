@@ -4,9 +4,11 @@ import { renderOffscreen } from './render/offscreen.js';
 import './threeFixes.js'; // 36-fb-water F14: transmissive materials survive a JSON trip (the export runtime loads scenes here too)
 import { writable, get } from 'svelte/store';
 import { objectsGroup, globalCamera, globalScene, globalRenderer, orbitControls, TControls, pokeScene, beginSceneBatch, endSceneBatch } from '../stores/sceneStore';
-import { restoreGraphs, clearGraphs, SCENE_GRAPH, allNodes } from '../stores/flowStore';
+import { restoreGraphs, clearGraphs, SCENE_GRAPH, allNodes, withDataType } from '../stores/flowStore';
 import { ensureMainGraph } from './mainGraph.js'; // 36 (G1): a leaf
 import { serializeGraphs, copyGraphFrom } from './flowGraphs';
+import { customNodeDefsSnapshot, customNodeDefsRestore } from './customNodes'; // 2.0-n3c
+import { stampNodeVersions } from './nodes/index.js'; // 2.0-n3c: per-node `v`
 import { flowViewsSnapshot } from './flowView';
 import { serializeNode, serializeEdge, sendNodes } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
@@ -315,9 +317,12 @@ export function buildSessionPayload(name, opts = {}) {
 				// authored movement tracks (the Animation window) were never saved
 				animations: animationsSnapshot(),
 				// H1: full graph map (+ legacy SCENE fields so old builds can load it)
-			graphs: (graphs = serializeGraphs(serializeNode, serializeEdge, {
+			graphs: (graphs = stampNodeVersions(serializeGraphs(serializeNode, serializeEdge, {
 				pruneMissing: (uuid) => !group?.getObjectByProperty?.('uuid', uuid)
-			})),
+			}))),
+			// 2.0-n3c (formatMinor 3): the custom node definitions the graphs' instances run — OMITTED
+			// when there are none, so a scene without one is byte-identical
+			...usedNodeDefs(graphs),
 			nodes: graphs[SCENE_GRAPH]?.nodes ?? [],
 			edges: graphs[SCENE_GRAPH]?.edges ?? [],
 			// SH4: toJSON would write our injected material as the object's own, so the
@@ -412,6 +417,8 @@ export function buildSelectionPayload(name, uuids) {
 		object?.traverse?.((/** @type {any} */ node) => inSet.add(node.uuid));
 	}
 	const missing = (/** @type {string} */ id) => !inSet.has(id);
+	/** @type {any} */
+	let selGraphs; // 2.0-n3c
 	const restore = parkAnimatedAtBase();
 	const animatedUuids = animatedImportUuids(group);
 	try {
@@ -440,11 +447,13 @@ export function buildSelectionPayload(name, uuids) {
 			// so it survives every predicate. Measured while building the counterfactual —
 			// the payload came out holding `{scene, <the box>}`, which would have travelled
 			// the author's whole scene logic inside a prefab.
-			graphs: Object.fromEntries(
+			graphs: (selGraphs = stampNodeVersions(Object.fromEntries(
 				Object.entries(serializeGraphs(serializeNode, serializeEdge, { pruneMissing: missing })).filter(
 					([key]) => key !== SCENE_GRAPH
 				)
-			),
+			))),
+			// 2.0-n3c: the custom node definitions THESE graphs use (a prefab carries its own nodes)
+			...usedNodeDefs(selGraphs),
 			nodes: [],
 			edges: [],
 			shaderGraphs: shaderGraphsSnapshot({ pruneMissing: missing }),
@@ -639,6 +648,13 @@ export function exportSession(payload) {
 	return JSON.stringify(payload);
 }
 
+/** 2.0-n3c: `{nodeDefs}` holding the custom definitions some node in `graphs` runs (by `data.defId`), or {}
+ * @param {Record<string, {nodes: any[]}>} graphs */
+function usedNodeDefs(graphs) {
+	const defs = customNodeDefsSnapshot(graphs ?? {});
+	return defs ? { nodeDefs: defs } : {};
+}
+
 /** V4: the .tpscene/.session format this build writes and knows how to read. */
 export const SESSION_FORMAT = 1;
 /** 47 T1/T2: the ADDITIVE revision inside a format — what an older reader can still load
@@ -647,7 +663,10 @@ export const SESSION_FORMAT = 1;
  * only `format` does — so bumping it never prompts an older app. Absent = 0.
  * 48 S2: 2 = the payload may carry `sequences` (the Timeline); an older reader ignores
  * the field and loads the scene without its cutscenes. */
-export const SESSION_FORMAT_MINOR = 2;
+// 2.0-n3c: 3 = custom node definitions are saved (`nodeDefs`), a graph node may carry `v` (its
+// definition's version; absent = 1) and a Script node `data.convertedFrom` (Convert to code). An older
+// reader ignores all three: the scene opens, its custom nodes without definitions (as before).
+export const SESSION_FORMAT_MINOR = 3;
 
 /** Parse + shape-validate a session JSON string. @param {string} json */
 function parseSessionJson(json) {
@@ -1691,15 +1710,23 @@ async function applySessionNow(payload, opts, job) {
 	// its object graphs) — here, before the restore, so the one 'nodes' snapshot below carries
 	// them to the room. A G1-authored or already-migrated scene comes back unchanged.
 	const graphsPayload = ensureMainGraph(loadedGraphs, { modules: payload.modules, sceneKey: SCENE_GRAPH }).graphs;
+	// 2.0-n3c (formatMinor 3): the definitions BEFORE their instances, so no instance renders unknown
+	customNodeDefsRestore(payload.nodeDefs, replicate);
 	if (graphsPayload) {
 		restoreGraphs(graphsPayload, { views: payload.flowViews });
-		if (replicate && peer)
+		if (replicate && peer) {
+			// 2.0-n3c: send the nodes as restoreGraphs made them (data.type filled, withDataType), not as the file
+			// held them, or a file node lacking data.type hashes differently here and on every peer that merged it
+			const sent = Object.fromEntries(
+				Object.entries(graphsPayload).map(([id, g]) => [id, { ...g, nodes: (g?.nodes ?? []).map(withDataType) }])
+			);
 			peer.send({
 				type: 'nodes',
-				graphs: graphsPayload,
-				nodes: graphsPayload[SCENE_GRAPH]?.nodes ?? [],
-				edges: graphsPayload[SCENE_GRAPH]?.edges ?? []
+				graphs: sent,
+				nodes: sent[SCENE_GRAPH]?.nodes ?? [],
+				edges: sent[SCENE_GRAPH]?.edges ?? []
 			});
+		}
 	}
 	// a scene LOAD replaces the world, so replace the documents too
 	shaderGraphsRestore(payload.shaderGraphs ?? {}, replicate);

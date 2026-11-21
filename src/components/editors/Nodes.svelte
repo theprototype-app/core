@@ -98,8 +98,8 @@
 	import { deselectObject, applySelectionSet } from '$lib/objectActions';
 	import { flowMouseBindings } from '$lib/flowPrefs';
 	import Breadcrumbs from '../ui/Breadcrumbs.svelte'; // 41 G15
-	import { readPanelOpen, writePanelOpen } from '$lib/ui/handheldPanels.js'; // 41 G18
-	import { objectsGroup, selectedObject, selectedObjects } from '../../stores/sceneStore';
+	import { readPanelOpen, writePanelOpen, handheld } from '$lib/ui/handheldPanels.js'; // 41 G18 (+ 2.0-n3c: the read-only code sheet)
+	import { objectsGroup, selectedObject, selectedObjects, isVRMode } from '../../stores/sceneStore';
 	import { serializeNode, serializeEdge, deleteFlowNodes, deleteFlowEdges, setNodeData } from '$lib/nodesHandler';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import { defDefaults } from '$lib/customNodes';
@@ -116,6 +116,8 @@
 	import KitButton from '../ui/Button.svelte'; // 37: the Switcher ⓘ rows on the redesign kit
 	import { moduleNodeGroups, moduleNodeComponents } from '$lib/moduleSDK';
 	import { peers, username, modulesOpen, flowFocus, showToast } from '../../stores/appStore';
+	import { convertNode, conversionOf } from '$lib/convertToCode';
+	import { conversionState } from '$lib/nodes/convertCode.js';
 	import { safeStorage } from '$lib/safeStorage';
 	// 48 D1: the node graph debugger — LOCAL breakpoints (a red dot on the card) + the panel
 	import { debugBreakpoints, toggleBreakpoint, setDebugOpen } from '$lib/flowDebug.js';
@@ -1976,6 +1978,13 @@
 		openPaneMenu(event.clientX, event.clientY);
 	};
 
+	/** 2.0-n3c: Convert to code / Convert back, one undo step; the converted node is selected after */
+	function runConvert(id: string, back: boolean) {
+		const result = convertNode(id, { back, graphId: activeId });
+		if (!result.ok) showToast(result.error);
+		else void tick().then(() => selectOnly([result.focus]));
+	}
+
 	/** The menu for a SET of nodes (a multi-selection, or one node). */
 	function selectionItems(list: any[]) {
 		const one = list.length === 1 ? list[0] : null;
@@ -1985,6 +1994,11 @@
 		const n = list.length;
 		const items: any[] = [];
 		if (one && (nodeHasCode(one, findNodeSpec(String(one.type))) || nodeUxHasCode(one))) items.push({ label: 'Open code', icon: 'file-text', action: () => openCode(one) });
+		// 2.0-n3c: a pure value node becomes a Script node holding its own reference JS; back while unchanged
+		const conv = one ? conversionOf(one, activeId) : null;
+		if (conv === 'convert') items.push({ label: 'Convert to code', icon: 'file-code', tooltip: 'Turn this node into a Script node that does the same thing, so you can edit how it works', action: () => runConvert(one.id, false) });
+		else if (conv === 'back') items.push({ label: 'Convert back', icon: 'undo-2', tooltip: 'Return the built-in node (its code is unchanged)', action: () => runConvert(one.id, true) });
+		else if (conv === 'changed') items.push({ label: 'Convert back', icon: 'undo-2', disabled: true, tooltip: 'The code was edited since Convert to code, so the built-in cannot do what it does now', action: () => {} });
 		if (one && isGroup(one)) items.push({ label: 'Open group', icon: 'folder-input', hint: hint('nodes.enter-group'), action: () => enterGroup(one.id) });
 		items.push({ label: n > 1 ? `Group ${n} nodes` : 'Group', icon: 'group', hint: hint('nodes.group'), action: groupSelection });
 		if (groups.length) items.push({ label: groups.length > 1 ? `Ungroup ${groups.length}` : 'Ungroup', icon: 'ungroup', hint: hint('nodes.ungroup'), action: () => ungroup() });
@@ -2351,6 +2365,24 @@
 					<p class="ui-section-label">{selectedNode.data?.label ?? selectedNode.type}</p>
 					{#if nodeDoc(selectedNode.type)}
 						<p id="flow-node-doc" class="text-[11px] leading-snug text-text-muted">{nodeDoc(selectedNode.type)}</p>
+					{/if}
+					{@const sheetConv = conversionState(selectedNode, $flowGraphs[activeId])}
+					{#if sheetConv}
+						<!-- 2.0-n3c: the node sheet's Convert action (phone, VR and desktop alike) -->
+						<button
+							id="flow-node-convert"
+							type="button"
+							class="flex items-center justify-center gap-1 rounded-sm bg-surface-2 px-2 py-1 hover:bg-surface-active disabled:opacity-60"
+							data-conversion={sheetConv}
+							disabled={sheetConv === 'changed'}
+							title={sheetConv === 'convert' ? 'Turn this node into a Script node that does the same thing' : sheetConv === 'back' ? 'Return the built-in node (its code is unchanged)' : 'The code was edited since Convert to code, so the built-in cannot do what it does now'}
+							onclick={() => runConvert(selectedNode.id, sheetConv !== 'convert')}
+							><Icon name={sheetConv === 'convert' ? 'file-code' : 'undo-2'} size={16} class="shrink-0" />{sheetConv === 'convert' ? 'Convert to code' : 'Convert back'}</button
+						>
+					{/if}
+					{#if selectedNode.type === 'script' && selectedNode.data?.convertedFrom && (handheld() || $isVRMode)}
+						<p class="ui-section-label">Code · read-only on this device</p>
+						<pre id="flow-node-code-ro" use:minimalScroll class="max-h-64 overflow-auto whitespace-pre-wrap rounded-sm bg-surface-2 p-1 font-mono text-[length:var(--fs-badge)] text-text-2">{selectedNode.data.code}</pre>
 					{/if}
 					{#if selectedNode.type === 'slider'}
 						<label class="flex items-center justify-between gap-2">Min

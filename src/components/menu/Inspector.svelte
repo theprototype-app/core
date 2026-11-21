@@ -3952,6 +3952,19 @@
 							>
 						{/if}
 					{:else}
+						{#snippet geoSlider(/** @type {any} */ spec, /** @type {string | undefined} */ rowId)}
+							<SliderRow
+								id={rowId}
+								label={spec.label}
+								min={spec.min ?? 0}
+								max={spec.max ?? 10}
+								step={spec.kind === 'int' ? 1 : spec.step ?? 0.05}
+								decimals={spec.kind === 'int' ? 0 : 2}
+								value={Number(geoParams.params[spec.key] ?? spec.def)}
+								mixed={geoMixed(spec.key, spec.def)}
+								onchange={(v) => editGeometry(spec.key, spec.kind === 'int' ? Math.round(v) : v)}
+							/>
+						{/snippet}
 						<div id="inspector-geometry" class="flex flex-col gap-1">
 							<!-- 37 R3: a row whose `show` says it does not apply (a door width on a wall
 							     with no doors) is hidden, not disabled -->
@@ -3984,30 +3997,9 @@
 									</div>
 								{:else if spec.optional}
 									<!-- 102b-papercuts: an optional row (a Box's corner radius) carries its own id and tooltip -->
-									<div title={spec.title ?? spec.label}>
-										<SliderRow
-											id={'geo-' + spec.key}
-											label={spec.label}
-											min={spec.min ?? 0}
-											max={spec.max ?? 10}
-											step={spec.kind === 'int' ? 1 : spec.step ?? 0.05}
-											decimals={spec.kind === 'int' ? 0 : 2}
-											value={Number(geoParams.params[spec.key] ?? spec.def)}
-											mixed={geoMixed(spec.key, spec.def)}
-											onchange={(v) => editGeometry(spec.key, spec.kind === 'int' ? Math.round(v) : v)}
-										/>
-									</div>
+									<div title={spec.title ?? spec.label}>{@render geoSlider(spec, 'geo-' + spec.key)}</div>
 								{:else}
-									<SliderRow
-										label={spec.label}
-										min={spec.min ?? 0}
-										max={spec.max ?? 10}
-										step={spec.kind === 'int' ? 1 : spec.step ?? 0.05}
-										decimals={spec.kind === 'int' ? 0 : 2}
-										value={Number(geoParams.params[spec.key] ?? spec.def)}
-										mixed={geoMixed(spec.key, spec.def)}
-										onchange={(v) => editGeometry(spec.key, spec.kind === 'int' ? Math.round(v) : v)}
-									/>
+									{@render geoSlider(spec, undefined)}
 								{/if}
 							{/each}
 						</div>
@@ -4017,23 +4009,7 @@
 				<!-- 102b-papercuts: a BAKED rounded box (a mesh of vertices that is exactly one) is OFFERED as a Box
 				     with a corner radius. Never automatic: the shape stays the same, the file gets smaller and the
 				     Geometry rows come back. One undo step. -->
-				<Section variant="panel" label="Geometry">
-					<p id="geometry-rounded-offer" class="px-1 text-[length:var(--fs-badge)] text-text-2">
-						This mesh is a rounded box ({roundOffer.width} x {roundOffer.height} x {roundOffer.depth} m, corner {roundOffer.radius} m).
-					</p>
-					<UiButton
-						id="geometry-convert-rounded"
-						size="sm"
-						variant="outline"
-						title="Make it a Box with a corner radius: it looks the same, saves as a few numbers instead of every vertex, and gets its Geometry rows back. Undo puts the mesh back."
-						onclick={() => {
-							const uuid = $selectedObject.uuid;
-							void import('$lib/roundedBoxConvert.js').then((m) => {
-								if (m.convertToRoundedBox(uuid)) geoTick++;
-							});
-						}}>Convert to a rounded Box</UiButton
-					>
-				</Section>
+				{#await import('./RoundedBoxOffer.svelte') then m}<m.default offer={roundOffer} uuid={$selectedObject.uuid} onconverted={() => geoTick++} />{/await}
 			{/if}
 
 			{#if $selectedObject?.userData?.terrain && !multiCount}

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { planTargets, planTextureCap } from './decimateCore';
+import { planTargets, planTextureCap } from './decimatePlan';
 import { trianglesOf, textureSizeOf, texturesOf } from './importBudget';
 
 // 26-F phase 2 — REDUCE A MODEL BEFORE IT ENTERS THE SCENE, OFF THE MAIN THREAD.

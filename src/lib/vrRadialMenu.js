@@ -17,7 +17,8 @@ import { setMicMode, vrMicMode } from './voiceChat';
 import { duplicateSelection, deleteSelection, groupSelection, selectionUuids } from './objectActions';
 import { savePrefab, savePrefabSelection } from './prefabs';
 import { perfContext } from './perf/perfMarks.js'; // 34 PF: an import-free leaf
-import { vrDollhouseOpen, vrSculptActive } from './vr/worldStores.js'; // 37: a leaf
+import { vrDollhouseOpen, vrSculptActive, vrPaintActive } from './vr/worldStores.js'; // 37: a leaf
+import { paintChannel, paintErase, paintMirror } from './meshPaintPrefs'; // 102 M6: a leaf
 import { sculptOp, sculptMode } from './terrainSculpt';
 import { paintLayer } from './terrainPaint';
 import { registerMeasureRings, registerArrangeRings } from './vr/buildRings.js'; // 52 V1/V2
@@ -517,6 +518,24 @@ function registerBuiltins() {
 			if (uuid) void import('./vr/sculpt.js').then((m) => m.startVRSculpt(uuid));
 		}
 	});
+	// 102 M6: paint the selected mesh (the desktop UV editor's Paint, on the model, with a controller)
+	registerVRMenuEntry({
+		id: 'obj:paint',
+		group: 'object',
+		label: 'Paint',
+		icon: 'paintbrush',
+		order: 1.5,
+		closes: true,
+		visible: () =>
+			selCount() <= 1 &&
+			!isSplineSelection() &&
+			!isTerrainSelection() &&
+			!!(/** @type {any} */ (get(selectedObject))?.uuid),
+		action: () => {
+			const uuid = /** @type {any} */ (get(selectedObject))?.uuid;
+			if (uuid) void import('./vr/meshPaint.js').then((m) => m.startVRPaint(uuid));
+		}
+	});
 	// 57.4: a SPLINE gets its own editor in the same slot
 	registerVRMenuEntry({
 		id: 'obj:editspline',
@@ -608,6 +627,36 @@ function registerBuiltins() {
 		order: 7,
 		closes: true,
 		action: () => deleteSelection()
+	});
+
+	// 102 M6: the Paint ring — the radial opens on it while a VR paint session is up (Back = the usual menu)
+	[
+		['color', 'Colour', 'palette'],
+		['roughness', 'Roughness', 'circle-dashed'],
+		['metalness', 'Metalness', 'circle-dot'],
+		['emissive', 'Glow', 'sun']
+	].forEach(([ch, label, icon], order) =>
+		registerVRMenuEntry({
+			id: 'paint:' + ch,
+			group: 'paint',
+			label,
+			icon,
+			order,
+			closes: true,
+			active: () => get(paintChannel) === ch,
+			action: () => paintChannel.set(/** @type {any} */ (ch))
+		})
+	);
+	registerVRMenuEntry({ id: 'paint:erase', group: 'paint', label: 'Eraser', icon: 'eraser', order: 4, closes: true, active: () => get(paintErase), action: () => paintErase.update((v) => !v) });
+	registerVRMenuEntry({ id: 'paint:mirror', group: 'paint', label: 'Mirror X', icon: 'flip-horizontal', order: 5, closes: true, active: () => get(paintMirror), action: () => paintMirror.update((v) => !v) });
+	registerVRMenuEntry({
+		id: 'paint:done',
+		group: 'paint',
+		label: 'Done',
+		icon: 'check',
+		order: 6,
+		closes: true,
+		action: () => void import('./vr/meshPaint.js').then((m) => m.stopVRPaint())
 	});
 
 	// 37 R9: the Sculpt ring — the radial opens on it while a VR sculpt session is up (Back = the usual menu)
@@ -743,4 +792,6 @@ vrMenuOpen.subscribe((open) => {
 	if (!open) resetRings();
 	// 37 R9: a sculpt session opens the menu on its own ring (Back pops to the base ring)
 	else if (get(vrSculptActive) && get(activeRing) === 'root') pushRing('sculpt');
+	// 102 M6: and a paint session on the Paint ring
+	else if (get(vrPaintActive) && get(activeRing) === 'root') pushRing('paint');
 });

@@ -1223,7 +1223,7 @@ export function hideChannelView() {
 let ring = null;
 
 /** the brush ring on the surface @param {any} point world @param {any} normal world @param {number} radius world */
-function showRing(point, normal, radius) {
+export function showRing(point, normal, radius) {
 	const scene = /** @type {any} */ (get(globalScene));
 	if (!scene) return;
 	if (!ring) {
@@ -1239,7 +1239,7 @@ function showRing(point, normal, radius) {
 	pokeScene();
 }
 
-function hideRing() {
+export function hideRing() {
 	if (ring?.visible) {
 		ring.visible = false;
 		pokeScene();
@@ -1263,19 +1263,19 @@ export function localHit(mesh, hit) {
 
 /** The material slot a hit landed on: its face's slot on a multi-material mesh, else 0 (a model stroke paints the
  * material under the brush, whichever slot the UV editor shows). @param {any} mesh @param {any} hit @param {number} fallback */
-function slotOfHit(mesh, hit, fallback) {
+export function slotOfHit(mesh, hit, fallback) {
 	if (!Array.isArray(mesh.material)) return 0;
 	const i = hit?.face?.materialIndex;
 	return Number.isInteger(i) ? i : fallback;
 }
 
 /** a hit's world normal @param {any} hit */
-function worldNormal(hit) {
+export function worldNormal(hit) {
 	return hit.face?.normal ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld) : new THREE.Vector3(0, 1, 0);
 }
 
 /** the ring's world radius for a stroke that would start here @param {any} mesh @param {number} slot @param {any} hit */
-function ringRadius(mesh, slot, hit) {
+export function ringRadius(mesh, slot, hit) {
 	const info = targetFor(mesh, slot);
 	const sp = info?.mode === 'vertex' ? 'vtx' : 'obj';
 	const r = strokeRadius(mesh, slot, sp, { local: localHit(mesh, hit).local });

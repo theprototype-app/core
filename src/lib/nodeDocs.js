@@ -92,7 +92,7 @@ export const NODE_DOCS = {
 	lookat: "Keeps the connected object facing a target - another object or a fixed point - every frame.",
 	setcolor: "Paints the connected object's material with a color, re-applied every frame.",
 	visibility: "Shows or hides the connected object based on a boolean.",
-	setuniform: "Writes one number inside an object's shader graph, so a trigger, a",
+	setuniform: "Writes a number, a colour or a vector inside an object's shader graph, so a trigger, a timer or a counter can drive how the material looks.",
 	onclick: "Fires a short pulse when its object is clicked - the bridge from user input into the graph.",
 	keypress: "Fires a pulse while a keyboard key is pressed - the bridge from your keyboard into the graph.",
 	onimpact: "Fires a pulse when the connected object hits something in a physics simulation - from any side (a wall, a target), or only when it lands with From: landing only.",

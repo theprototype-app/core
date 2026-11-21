@@ -1,3 +1,4 @@
+import { writeUniformSlot } from './uniformWrite.js';
 import * as THREE from 'three';
 // `{v}` labels for the HUD — 'Gems: {v}' needs no string node and no string socket type
 import { hudFormat } from './hudFormat.js';
@@ -4672,11 +4673,8 @@ function applyAnimation(object, base, anim, time, ctx) {
 		// uniform also needs no recompile — that is what the live uniform record is for.
 		const name = typeof data.uniform === 'string' ? data.uniform.trim() : '';
 		if (name && shaderRef?.shaderUniform) {
-			const slot = shaderRef.shaderUniform(object.uuid, name);
-			// NUMBERS only in v1: a flow number socket is what drives this, and a vecN would
-			// need an array that socket cannot carry
-			const value = Number(data.value);
-			if (slot && Number.isFinite(value)) slot.value = value;
+			// 102b-papercuts: a vecN slot now takes a vector or a colour too (uniformWrite.js)
+			writeUniformSlot(shaderRef.shaderUniform(object.uuid, name), data);
 		}
 	}
 }

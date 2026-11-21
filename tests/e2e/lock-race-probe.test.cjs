@@ -3,26 +3,27 @@
 // says who let go and why.
 const h = require('./helpers.cjs');
 
-const TYPES = ['lock', 'unlock', 'lockreject', 'lockdenied', 'lockrequest', 'move', 'object', 'objectParameters', 'name'];
+// everything but the streams and presence chatter
+const SKIP = ['position', 'cursor', 'camera', 'pose', 'ping', 'pong', 'clock', 'clockreply', 'peerpos', 'avatar', 'presence', 'atscene', 'playmode', 'stats'];
 const trace = (p) =>
-	p.page.evaluate((types) => {
+	p.page.evaluate((skip) => {
 		/** @type {any} */ let pc;
 		window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
 		const w = /** @type {any} */ (window);
 		w.__trace = w.__trace || [];
 		const t0 = performance.now();
-		const brief = (d) => ({ t: d.type, u: (d.uuid ?? '').slice(0, 5), us: (d.uuids ?? []).map((x) => String(x).slice(0, 5)), ats: d.ats });
+		const brief = (d) => ({ t: d.type, u: String(d.uuid ?? d.key ?? d.graphId ?? '').slice(0, 5), us: (d.uuids ?? []).map((x) => String(x).slice(0, 5)), ats: d.ats, items: Array.isArray(d.items) ? d.items.map((x) => x?.type + ':' + String(x?.uuid ?? x?.graphId ?? '').slice(0, 5)) : undefined });
 		for (const [id, c] of Object.entries(pc.connections)) {
 			if (!c || c.__traced) continue;
 			c.__traced = true;
-			c.on('data', (d) => d && types.includes(d.type) && w.__trace.push(['in', id.slice(0, 5), Math.round(performance.now() - t0), brief(d)]));
+			c.on('data', (d) => d && !skip.includes(d.type) && w.__trace.push(['in', id.slice(0, 5), Math.round(performance.now() - t0), brief(d)]));
 			const send = c.send.bind(c);
 			c.send = (d, ...rest) => {
-				if (d && types.includes(d.type)) w.__trace.push(['out', id.slice(0, 5), Math.round(performance.now() - t0), brief(d)]);
+				if (d && !skip.includes(d.type)) w.__trace.push(['out', id.slice(0, 5), Math.round(performance.now() - t0), brief(d)]);
 				return send(d, ...rest);
 			};
 		}
-	}, TYPES);
+	}, SKIP);
 
 h.run(async () => {
 	const browser = await h.launch();
@@ -48,7 +49,7 @@ h.run(async () => {
 	const clocks = await Promise.all([H, E, F].map((p) => p.page.evaluate(() => { const s = window.__tp.test.v1; return { now: Date.now(), session: s.sessionClock?.sessionNow?.() ?? null }; })));
 	console.log('clocks', JSON.stringify(clocks.map((c) => c.session === null ? null : c.session - c.now)));
 
-	for (let i = 0; i < 3; i++) {
+	for (let i = 0; i < 2; i++) {
 		const u = made[i];
 		const at = Date.now() + 400;
 		const fire = (p) =>

@@ -218,8 +218,10 @@ function exportGltf(format, input, opts = {}) {
 	exporter.parse(
 		payload,
 		function (result) {
-			restore();
+			// 102 M7: serialize BEFORE the unpark — GLTFExporter keeps a REFERENCE to each node's live
+			// `matrix.elements`, so restoring first wrote the posed pose into the file
 			const blob = new Blob([JSON.stringify(result)], { type: 'application/json' });
+			restore();
 			const a = document.createElement('a');
 			document.body.appendChild(a);
 			a.style.display = 'none';
@@ -303,13 +305,11 @@ export function gltfBytesFor(roots, opts = {}) {
 			exporter.parse(
 				payload,
 				(/** @type {any} */ result) => {
+					// binary hands back an ArrayBuffer; JSON hands back an object. Serialize BEFORE the
+					// unpark (102 M7): the JSON keeps references to each node's live `matrix.elements`
+					const bytes = result instanceof ArrayBuffer ? result : new TextEncoder().encode(JSON.stringify(result)).buffer;
 					restore();
-					// binary hands back an ArrayBuffer; JSON hands back an object
-					resolve(
-						result instanceof ArrayBuffer
-							? result
-							: new TextEncoder().encode(JSON.stringify(result)).buffer
-					);
+					resolve(bytes);
 				},
 				(/** @type {any} */ error) => {
 					restore();

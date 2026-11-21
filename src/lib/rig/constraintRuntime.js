@@ -358,5 +358,5 @@ export function resetConstraintRuntimeForTest() {
 
 /** Debug: what the runtime holds. */
 export function constraintRuntimeState() {
-	return { owners: [...owners.keys()], order: [...order], bases: bases.size, held: [...held], overrides: overrides.size };
+	return { owners: [...owners.keys()], order: [...order], bases: bases.size, held: [...held], overrides: overrides.size, parked: parkedCount };
 }

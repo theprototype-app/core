@@ -552,6 +552,9 @@ h.run(async () => {
 		rebuilt === late.hash,
 		`and rebuilding from those params on C reproduces A's terrain bit for bit (${rebuilt} vs ${late.hash})`
 	);
+	// 80a: A still has the terrain selected, so A holds it and would refuse C's edit: A lets go first
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
+	await h.eventually(() => C.page.evaluate((u) => window.__tp.test.v1.lockHeld.holderNow(u), late.uuid), (v) => !v, 'premise: nobody holds the terrain now');
 	const cEdit = await C.page.evaluate(
 		(uuid) => window.__tp.test.v1.geometryEdit.applyGeometry(uuid, { amplitude: 12 }),
 		late.uuid

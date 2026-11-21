@@ -86,11 +86,7 @@ h.run(async () => {
 	await until(Q.page, async () => (await worn(Q.page, shared)).gain === 0.5, 'a field edit reaches the other peer');
 	h.check((await worn(Q.page, shared)).id === qOn.id, 'as a value write there too');
 
-	// a new pair on Q reaches P. P made the cube, so P holds it (80a: a held object refuses another
-	// peer's edits): P lets go first, and Q waits until it sees nobody holding it
-	await P.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
-	console.log('DIAG holder of the cube on Q before P lets go:', await Q.page.evaluate((k) => window.__tp.test.v1.lockHeld.holderNow(k), shared));
-	await until(Q.page, async () => !(await Q.page.evaluate((k) => window.__tp.test.v1.lockHeld.holderNow(k), shared)), 'premise — P let go of the cube');
+	// a new pair on Q reaches P
 	await setCode(Q.page, shared, code('0.9'));
 	await until(P.page, async () => { const a = await worn(P.page, shared), b = await worn(Q.page, shared); return a.hash && a.hash === b.hash && a.hash !== qOn.hash; }, 'an edit on the joiner reaches the host');
 

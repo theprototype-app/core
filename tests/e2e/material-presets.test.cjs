@@ -375,6 +375,9 @@ h.run(async () => {
 	// the joiner receives the scene a moment after the handshake: select only once it holds the box
 	const hasB4 = await waitVal(() => matOf(B.page, b4), (v) => !!v, 20000);
 	h.check(!!hasB4, '7.1b premise: B holds A\'s box');
+	// 80a: A selected that box last, so A holds it and B's Properties would be read-only: A lets go first
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
+	await waitVal(() => B.page.evaluate((u) => window.__tp.test.v1.lockHeld.holderNow(u), b4), (v) => !v, 10000);
 	await selectSet(B.page, [b4]);
 	await B.page.locator('#material-presets').waitFor({ timeout: 15000 }).catch(() => {});
 	h.check((await B.page.locator('#material-presets .mp-peer').count()) === 1, '7.2 B shows a "From A" row');

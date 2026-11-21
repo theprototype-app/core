@@ -49,7 +49,8 @@ h.run(async () => {
 	await H.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), solo);
 	await H.page.waitForTimeout(4500);
 	h.check((await read(H.page, 'selectedObjects')).includes(solo), 'alone, a selection is never let go for being idle');
-	await H.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
+	// back to the real idle windows: section 5 holds on H for longer than these short ones
+	await H.page.evaluate(() => { const s = window.__tp.test.v1; s.objectActions.deselectObject(); s.lockIdle.setLockIdleWindows({}); });
 
 	const E = await h.setupPageQuiet(browser, 'E', [H], { context: { viewport: { width: 1440, height: 900 } } });
 	await h.connect(E, H);
@@ -131,6 +132,7 @@ h.run(async () => {
 	// a claim lost with a link is dated back at most LOCK_RACE_MS before the last message heard over it,
 	// so E's claim on X is older than that (the old-stamp re-lock below then has nothing to win against)
 	await E.page.waitForTimeout(3000);
+	h.check((await read(H.page, 'selectedObjects')).includes(Y) && (await read(E.page, 'selectedObjects')).includes(X), 'premise: right before the heal both still have their box selected');
 	const toastsBefore = new Set([...(await toasts(E.page)), ...(await toasts(H.page))]);
 	// the heal handshake, as reconnectDial / the inbound adoption / adoptRelink send it
 	await E.page.evaluate((hid) => {
@@ -146,8 +148,10 @@ h.run(async () => {
 	// both handshakes have landed once each side has re-sent its set (give them the round trip)
 	await H.page.waitForTimeout(2500);
 	h.check((await holderOn(H.page, X)) === E.id && (await holderOn(E.page, X)) === E.id, 'after the heal, X is still E\'s on both pages');
-	h.check((await holderOn(E.page, Y)) === H.id && (await holderOn(H.page, Y)) === H.id, 'and Y is still H\'s on both pages');
-	h.check((await read(E.page, 'selectedObjects')).includes(X) && (await read(H.page, 'selectedObjects')).includes(Y), 'both keep their selection');
+	const yOn = [await holderOn(E.page, Y), await holderOn(H.page, Y)];
+	h.check(yOn[0] === H.id && yOn[1] === H.id, `and Y is still H's on both pages (E sees ${yOn[0]}, H sees ${yOn[1]}; H = ${H.id})`);
+	const sel = [await read(E.page, 'selectedObjects'), await read(H.page, 'selectedObjects')];
+	h.check(sel[0].includes(X) && sel[1].includes(Y), `both keep their selection (E ${JSON.stringify(sel[0])}, H ${JSON.stringify(sel[1])})`);
 	const fresh = [...(await toasts(E.page)), ...(await toasts(H.page))].filter((x) => !toastsBefore.has(x));
 	h.check(!fresh.some((x) => /came back|select again|let go/.test(x)), 'nobody is told they let go: ' + JSON.stringify(fresh));
 	// a re-lock with an old stamp loses: H claims X as if it had taken it at the start of the clock

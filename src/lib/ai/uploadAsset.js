@@ -52,7 +52,19 @@ export async function uploadAssetTool(args) {
 			}
 		}
 	}
-	const name = uploadName(args.name, type.kind === 'sound' ? 'sound' : 'sky', type.ext);
+	let name = uploadName(args.name, type.kind === 'sound' ? 'sound' : 'sky', type.ext);
+	// 102b-papercuts: a sky in a cube layout (a cross or a strip of six faces) becomes an equirectangular .hdr
+	/** @type {string | null} */ let converted = null;
+	if (type.kind === 'hdri') {
+		const { prepareSky } = await import('../hdri/cubeImport.js');
+		const ready = await prepareSky([{ name, buffer: /** @type {ArrayBuffer} */ (bytes.slice().buffer) }]);
+		if ('error' in ready) return { error: ready.error };
+		if (ready.converted) {
+			bytes = ready.bytes;
+			name = ready.name;
+			converted = ready.converted;
+		}
+	}
 	const { fileIntoLibrary } = await import('./importFile.js');
 	try {
 		const filed = await fileIntoLibrary(bytes, name, args.folder ?? (type.kind === 'sound' ? 'Sounds' : 'Skies'));
@@ -63,6 +75,7 @@ export async function uploadAssetTool(args) {
 			bytes: bytes.length,
 			folder: filed.folder,
 			...(filed.created ? {} : { note: 'the library already had this file' }),
+			...(converted ? { converted: 'cube map (' + converted + ') -> equirectangular .hdr' } : {}),
 			use: uploadUse(type.kind)
 		};
 	} catch (e) {
@@ -75,7 +88,7 @@ export const UPLOAD_ASSET_TOOL = {
 	function: {
 		name: 'upload_asset',
 		description:
-			'Put a SOUND or an HDR SKY you hold as bytes into the library and get its hash: your own generated music or ambience, or a file you fetched yourself (any site — the bytes come from you, so nothing needs the site to allow cross-origin reads). data = base64; a big file goes as chunk: {id, index, total} parts (each a multiple of 4 base64 characters). Sounds: WAV, OGG, MP3, FLAC, M4A or WebM up to 16 MB (decoded once to prove it is audio) → place it with effects sound {asset: hash} or music {asset: hash}. Skies: Radiance .hdr or OpenEXR up to 25 MB → set_look sky {hdri: {hash}}. The type comes from the bytes, never the name. Images go through image instead. Everyone in the session can pull it by hash.',
+			'Put a SOUND or an HDR SKY you hold as bytes into the library and get its hash: your own generated music or ambience, or a file you fetched yourself (any site — the bytes come from you, so nothing needs the site to allow cross-origin reads). data = base64; a big file goes as chunk: {id, index, total} parts (each a multiple of 4 base64 characters). Sounds: WAV, OGG, MP3, FLAC, M4A or WebM up to 16 MB (decoded once to prove it is audio) → place it with effects sound {asset: hash} or music {asset: hash}. Skies: Radiance .hdr or OpenEXR up to 25 MB, equirectangular (2:1) or a cube map as a cross (4:3, 3:4) or a strip of six faces (6:1, 1:6), which is converted → set_look sky {hdri: {hash}}. The type comes from the bytes, never the name. Images go through image instead. Everyone in the session can pull it by hash.',
 		parameters: {
 			type: 'object',
 			properties: {

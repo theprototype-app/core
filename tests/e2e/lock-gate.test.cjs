@@ -200,13 +200,14 @@ h.run(async () => {
 						setTimeout(() => {
 							const s = window.__tp.test.v1;
 							s.objectActions.selectObject(uu);
-							r(!!s.lockHeld.myClaim(uu));
+							r(s.lockHeld.myClaim(uu)?.at ?? false);
 						}, Math.max(0, t - Date.now()))
 					),
 				[u, at]
 			);
 		const [eTook, fTook] = await Promise.all([fire(E.page), fire(F.page)]);
 		if (eTook && fTook) crossed++;
+		console.log('[race ' + i + '] stamps E', eTook, 'F', fTook);
 		const read = async () => {
 			const [a, b, c] = await Promise.all([holderOn(H.page, u), holderOn(E.page, u), holderOn(F.page, u)]);
 			const [se, sf] = await Promise.all([selection(E.page), selection(F.page)]);
@@ -215,6 +216,28 @@ h.run(async () => {
 		const good = (v) => !!v.a && v.a === v.b && v.b === v.c && v.e !== v.f && (v.e ? v.a === E.id : v.a === F.id);
 		await h.eventually(read, good, 'race ' + i + ': every peer names one holder and only the holder keeps it', 15000);
 		if (good(await read())) agreed++;
+		else
+			for (const p of [H, E, F])
+				console.log(
+					'[diag race ' + i + ']',
+					p === H ? 'H' : p === E ? 'E' : 'F',
+					JSON.stringify(
+						await p.page.evaluate((uu) => {
+							const s = window.__tp.test.v1;
+							let l, m, sel, t;
+							s.lockedObjects.subscribe((x) => (l = x))();
+							s.lockHeld.myLocks.subscribe((x) => (m = x))();
+							s.selectedObjects.subscribe((x) => (sel = x))();
+							s.toastStore.subscribe((x) => (t = x))();
+							return {
+								rows: l.filter((r) => r[1] === uu).map((r) => [String(r[0]).slice(0, 5), r[2]]),
+								mine: m.has(uu) ? m.get(uu) : null,
+								sel: sel.includes(uu),
+								toasts: (t ?? []).map((x) => (typeof x === 'string' ? x : x.text)).slice(-3)
+							};
+						}, u)
+					)
+				);
 		await E.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 		await F.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 		await h.eventually(() => locks(H.page), (l) => !l.some((r) => r[1] === u), 'race ' + i + ' released');

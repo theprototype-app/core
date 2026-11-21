@@ -747,13 +747,16 @@ export function importModelFiles(list) {
 	const files = [...(list ?? [])];
 	const models = files.filter((file) => MODEL_EXT.test(file.name ?? ''));
 	const companions = files.filter((file) => COMPANION_EXT.test(file.name ?? ''));
+	// 102: Gaussian splats go through the Explorer's splat gate, then into the scene at the origin
+	const splats = files.filter((file) => /\.(ply|spz|splat)$/i.test(file.name ?? ''));
+	if (splats.length) import('./splat/splatImport.js').then((m) => m.importSplatFiles(splats, null));
 	const skipped = files
-		.filter((file) => !models.includes(file) && !companions.includes(file))
+		.filter((file) => !models.includes(file) && !companions.includes(file) && !splats.includes(file))
 		.map((file) => file.name);
 	models.forEach((file) =>
 		importFile(file, file.name.replace(MODEL_EXT, ''), undefined, undefined, companions)
 	);
-	if (!models.length && companions.length)
+	if (!models.length && !splats.length && companions.length)
 		showToast('Select the model file too — a .mtl or texture cannot be imported on its own');
 	if (skipped.length) showToast('Unsupported: ' + skipped.join(', '));
 	return { models: models.length, companions: companions.length, skipped };

@@ -3846,6 +3846,11 @@
 				<ScatterSection object={$selectedObject} />
 			{/if}
 
+			{#if !isLight && !multiCount && $selectedObject?.uuid && $selectedObject?.isObject3D}
+				<!-- 102b-arrange row 1: Array (a lazy chunk — nothing here is paid at boot) -->
+				{#await import('./inspector/ArraySection.svelte') then m}<m.default object={$selectedObject} />{/await}
+			{/if}
+
 			{#if devPrimary}
 				<Section variant="panel" label="Device">
 					<!-- 23-B4: the device's declared params, fanned over the selection; presets and

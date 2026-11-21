@@ -160,6 +160,8 @@ function describeObject(object) {
 		if (material.color) out.color = '#' + material.color.getHexString();
 	}
 	if (object.userData?.physics) out.physics = { ...object.userData.physics };
+	// 102b-arrange: a live array, as stored (drawn copies, not objects — update_objects {array, makeReal})
+	if (object.userData?.array && typeof object.userData.array === 'object') out.array = { ...object.userData.array };
 	const pivot = originOf(object);
 	if (pivot) out.pivot = pivot.map(r3); // 85 set_pivot: object space
 	const geometry = geometrySummary(object);
@@ -773,6 +775,22 @@ async function updateOne(spec) {
 		}
 	}
 	if (typeof spec.visible === 'boolean' && object.visible !== spec.visible) toggleObjectVisibility(uuid);
+	// 102b-arrange: a live array (record only) and Make real objects — the Inspector's write path
+	/** @type {string[] | null} */
+	let made = null;
+	if (spec.array !== undefined || spec.makeReal === true) {
+		const arr = await import('../arrayActions.js');
+		if (spec.array === null) arr.setArray(uuid, null);
+		else if (spec.array !== undefined) {
+			if (!spec.array || typeof spec.array !== 'object' || Array.isArray(spec.array)) errors.push('array: takes an object like {"mode": "grid", "grid": [4, 1, 4]} or null');
+			else if (spec.array.mode !== undefined && !['line', 'grid', 'circle', 'path'].includes(spec.array.mode)) errors.push('array.mode: one of line, grid, circle, path');
+			else arr.setArray(uuid, spec.array);
+		}
+		if (spec.makeReal === true) {
+			if (!object.userData.array) errors.push('makeReal: this object has no array');
+			else made = arr.makeArrayReal(uuid);
+		}
+	}
 	// mcp-shapes: after the move, so a new position is where it looks from
 	if (spec.lookAt !== undefined) {
 		const why = lookAtTarget(object, spec.lookAt, spec.front);
@@ -786,7 +804,7 @@ async function updateOne(spec) {
 		applyAiTransform(object, was);
 		return { uuid, ok: false, errors: [...errors, clash + ' (it was put back)'] };
 	}
-	const extra = { ...(place.placed ? { placed: place.placed } : {}), ...(unitsOf.units ? { units: unitsOf.units } : {}) };
+	const extra = { ...(place.placed ? { placed: place.placed } : {}), ...(unitsOf.units ? { units: unitsOf.units } : {}), ...(made ? { made } : {}) };
 	return errors.length ? { uuid, ok: false, errors, ...extra } : { uuid, ok: true, ...extra };
 }
 
@@ -1545,6 +1563,11 @@ export const AI_TOOLS = [
 								face_user: { description: 'turn it (yaw only) so its front faces a person: true = the person you act for, or a peer id / name from where_are_users' },
 								front: { type: 'string', enum: ['+z', '-z', '+x', '-x', '+y', '-y'], description: 'which local axis is its front for lookAt and face_user (default +z; many models face +x or -z — look at a screenshot)' },
 								visible: { type: 'boolean' },
+								array: {
+									description:
+										'102b: repeat this object as a live ARRAY (drawn copies that follow every change to it; one undo, one message): {mode: line|grid|circle|path, count (2-500, the object included), step [x,y,z] (line), grid [nx,ny,nz] + gridStep [x,y,z] (grid), radius + arc degrees + faceOut (circle, centre radius m on -X), path (a Path uuid) + spacing (0 = even) + follow (path), rotStep [x,y,z] degrees per copy, scaleStep per copy}. Fields merge over the current array. null removes it. Copies have no physics or logic until makeReal'
+								},
+								makeReal: { type: 'boolean', description: '102b: true = turn the object\'s array copies into ordinary objects (one undo); the result lists their uuids' },
 								parentUuid: {
 									type: 'string',
 									description: 'group uuid (or any object, not a light or camera) to nest under, or "root" to un-nest. The object keeps its world pose; a position given in the same update is LOCAL to the new parent. A uuid not in the scene is an error'

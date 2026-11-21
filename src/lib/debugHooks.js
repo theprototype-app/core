@@ -648,6 +648,9 @@ export const DEBUG_HOOKS = [
 	// 64 D2: text on a path (textPathDebug, setLetterOverrides)
 	['textPath', () => import('./textPathRuntime.js')],
 	['textPathEdit', () => import('./textPathEdit.js')],
+	// 102b-arrange: arrays (runtime debug + actions), tidy, vertex snap
+	['arrayRuntime', () => import('./arrayRuntime.js')],
+	['arrayActions', () => import('./arrayActions.js')],
 	// 64-text: fonts (bundled + Library + Google), the solid build, the export licence walk
 	['textFonts', () => import('./textFonts.js')],
 	['text3dBuild', () => import('./text3dBuild.js')],

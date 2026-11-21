@@ -305,6 +305,7 @@
 	},
 	"suites": {
 		"render-seam": 180,
+		"array-tool": 300,
 		"load-check": 240,
 		"schema-two-peers": 360,
 		"uir-people": 300,

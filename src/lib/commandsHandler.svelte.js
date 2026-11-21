@@ -724,6 +724,15 @@ export async function objectParameters(data, from = 'peer') {
             else delete mesh.userData.textPath;
             pokeScene();
         }
+    } else if (data.parameter == 'array') {
+        // 102b-arrange: an array record (wireValidate checked the shape; the runtime normalizes on
+        // read) or null = the array is gone. Every peer draws the copies itself.
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            if (data.array) mesh.userData.array = JSON.parse(JSON.stringify(data.array));
+            else delete mesh.userData.array;
+            pokeScene();
+        }
     } else if (data.parameter == 'fluidInteraction') {
         // 36-fb F23: how a mesh meets particle fluid (absent = auto)
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);

@@ -22,8 +22,7 @@ import { setObjectColor, switchMaterialType, setMaterialParam } from '$lib/mater
 import { checkMaterialParam, toHexColor, isMapSlotKey } from '$lib/materialParamRules.js';
 import { lightStateOf, recordLightChange, sendLight } from '$lib/multiEdit';
 import { aimLight, setShadowMapSize } from '$lib/lightParams';
-import { itemByHash, itemBlob, explorerItems } from '$lib/explorer';
-import { placeDecalForAgent } from '../decalEdit.js'; // 102 M3
+import { itemByHash, itemBlob } from '$lib/explorer';
 import { animatedBaseOf, writingBasePose } from '$lib/flowRuntime';
 import { reportedPose } from './poseReport.js';
 import { meshGenReady, meshTakesImage, activeMeshConfig } from './meshProviders.js';
@@ -600,42 +599,10 @@ function duplicateFrom(args) {
 	return { from: uuid, created, uuids: created.filter((c) => c.uuid).map((c) => c.uuid) };
 }
 
-/**
- * 102 M3: create_objects {kind: 'decal'} — through decalEdit (one undo step, replicated).
- * @param {any} spec @returns {any}
- */
-function createDecalOne(spec) {
-	const on = typeof spec.on === 'string' ? spec.on : typeof spec.target === 'string' ? spec.target : '';
-	if (!on) return { error: 'kind decal needs on: the uuid of the object to put it on' };
-	let image = typeof spec.image === 'string' ? spec.image.trim() : '';
-	if (image && !/^[0-9a-f]{16,128}$/i.test(image)) {
-		const items = /** @type {any[]} */ (get(explorerItems) ?? []);
-		const want = image.toLowerCase();
-		const hit = items.find((it) => String(it?.name ?? '').toLowerCase() === want) ?? items.find((it) => String(it?.name ?? '').toLowerCase().replace(/\.[a-z0-9]+$/, '') === want);
-		if (!hit?.hash) return { error: 'image: no library image named "' + spec.image + '" (pass a hash, or upload one with import_file)' };
-		image = hit.hash;
-	}
-	const raw = spec.size;
-	const wh = Array.isArray(raw) ? [Number(raw[0]), Number(raw[1] ?? raw[0])] : Number.isFinite(Number(raw)) && raw !== undefined ? [Number(raw), Number(raw)] : [0.5, 0.5];
-	const depth = Number.isFinite(Number(spec.depth)) && spec.depth !== undefined ? Number(spec.depth) : 0.25;
-	const point = Array.isArray(spec.point) && spec.point.length >= 3 ? spec.point.slice(0, 3).map(Number) : undefined;
-	const normal = Array.isArray(spec.normal) && spec.normal.length >= 3 ? spec.normal.slice(0, 3).map(Number) : undefined;
-	const item = image ? /** @type {any} */ (itemByHash(image)) : null;
-	const out = placeDecalForAgent(on, {
-		point,
-		normal,
-		image,
-		imageName: item?.name ?? '',
-		size: [wh[0], wh[1], depth],
-		...(spec.opacity !== undefined ? { opacity: Number(spec.opacity) } : {}),
-		...(typeof spec.tint === 'string' ? { tint: spec.tint } : typeof spec.color === 'string' ? { tint: spec.color } : {}),
-		...(spec.roughness !== undefined ? { roughness: Number(spec.roughness) } : {}),
-		...(typeof spec.name === 'string' ? { name: spec.name } : {})
-	});
-	if (!out.object) return { error: out.error ?? 'the decal could not be placed' };
-	if (image) void import('../shaderTextures.js').then((m) => m.shareShaderTexture(image));
-	return { uuid: out.object.uuid, name: out.object.name, kind: 'decal', on };
-}
+/** 102 M3: the decal write path (lazy), loaded by create_objects when a decal is asked for @type {any} */
+let decalEditMod = null;
+/** @param {any} spec */
+const createDecalOne = (spec) => (decalEditMod ? decalEditMod.createDecalFromSpec(spec) : { error: 'the decal tools are still loading — try again' });
 
 /** @param {any} spec @returns {any} one created object's result */
 function createOne(spec, extraTypes = /** @type {string[]} */ ([])) {
@@ -1168,6 +1135,8 @@ async function runAiTool(rawName, rawArgs, opts) {
 				if (copies && !specs.length) return copies;
 				if (!specs.length)
 					return { error: 'no objects provided — pass objects: [{ kind: "primitive", primitive: "Box", ... }]' };
+				// 102 M3: the decal write path is a lazy chunk, loaded only when a decal is asked for
+				if (specs.some((/** @type {any} */ s) => s?.kind === 'decal')) decalEditMod = await import('../decalEdit.js');
 				const results = specs.map((/** @type {any} */ s) => createOne(s));
 				if (copies) return { created: results, copies };
 				// surface a total failure at the TOP level so the caller (and the undo

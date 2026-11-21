@@ -9,7 +9,7 @@
 		},
 		"editor": {
 			"html": "index.html",
-			"maxJsGzBytes": 3544646,
+			"maxJsGzBytes": 3547648,
 			"maxFirstFrameMs": 32000
 		}
 	},
@@ -42,6 +42,13 @@
 			"play": "v1.69.0 2108.0 KB -> 2111.0 KB (+3.0) -> line 2113.0 KB = v1.69.0 + 5 KB",
 			"editor": "v1.69.0 3456.6 KB -> 3459.5 KB (+2.9) -> line 3461.6 KB = v1.69.0 + 5 KB",
 			"note": "the orchestrator's line for the SvelteKit 3 release: the 1.69.0 measurement (same machine, same run) + 5 KB. Kit 3's client runtime is bigger (navigation 14.6 + client 8.7 + client.svelte 1.9 KB vs kit 2's index-client 24.9 KB); the AI chat client left both boots to pay for it (sk3-int Q1). On kit 3 the 100 C1 three.core group must be output.codeSplitting (kit 3 sets that option itself and an advancedChunks group is dropped: three split again, +2 KB per page)"
+		},
+		{
+			"date": "2026-11-21",
+			"lane": "102-decals (roadmap 102 M3)",
+			"play": "v1.70.0 2111.0 KB -> 2112.3 KB (+1.3), line 2113.0 KB unchanged",
+			"editor": "v1.70.0 3459.5 KB -> 3462.4 KB (+2.9) -> line 3464.5 KB = v1.70.0 + 5 KB",
+			"note": "decals: the projection maths, the runtime, the write path, the Inspector section and the agent's decal handling are all lazy chunks; what stays on the boot is wiring (the Stamp Decal node def + doc, the wire validators, the object-menu row, the On Impact contact point, the scene tick probe). QUESTIONS-102-decals, the integrator may veto"
 		}
 	],
 	"throttle": {

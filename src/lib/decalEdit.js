@@ -8,6 +8,7 @@ import { normalizeDecal, isDecalObject, targetRefusal, decalPoseMatrix, DECAL_DE
 import { makeDecalCarrier, applyDecalTo } from './decalObject.js';
 import { loadDecalRuntime } from './decalTick.js';
 import { hasAnimatedImport } from './animatedImports.js';
+import { explorerItems, itemByHash } from './explorer';
 
 // 102 M3: the ONE write path for decals — placing one (a carrier CHILD of the object it was
 // put on: the create message + one presence undo step) and changing its record (one `props`
@@ -222,4 +223,41 @@ export function placeDecalForAgent(targetUuid, spec) {
 	} finally {
 		if (own) endHistoryBatch('Add a decal');
 	}
+}
+
+/**
+ * 102 M3: create_objects {kind: 'decal'} (the agent's spec) -> placeDecalForAgent.
+ * @param {any} spec @returns {any}
+ */
+export function createDecalFromSpec(spec) {
+	const on = typeof spec.on === 'string' ? spec.on : typeof spec.target === 'string' ? spec.target : '';
+	if (!on) return { error: 'kind decal needs on: the uuid of the object to put it on' };
+	let image = typeof spec.image === 'string' ? spec.image.trim() : '';
+	if (image && !/^[0-9a-f]{16,128}$/i.test(image)) {
+		const items = /** @type {any[]} */ (get(explorerItems) ?? []);
+		const want = image.toLowerCase();
+		const hit = items.find((it) => String(it?.name ?? '').toLowerCase() === want) ?? items.find((it) => String(it?.name ?? '').toLowerCase().replace(/\.[a-z0-9]+$/, '') === want);
+		if (!hit?.hash) return { error: 'image: no library image named "' + spec.image + '" (pass a hash, or upload one with import_file)' };
+		image = hit.hash;
+	}
+	const raw = spec.size;
+	const wh = Array.isArray(raw) ? [Number(raw[0]), Number(raw[1] ?? raw[0])] : Number.isFinite(Number(raw)) && raw !== undefined ? [Number(raw), Number(raw)] : [0.5, 0.5];
+	const depth = Number.isFinite(Number(spec.depth)) && spec.depth !== undefined ? Number(spec.depth) : 0.25;
+	const point = Array.isArray(spec.point) && spec.point.length >= 3 ? spec.point.slice(0, 3).map(Number) : undefined;
+	const normal = Array.isArray(spec.normal) && spec.normal.length >= 3 ? spec.normal.slice(0, 3).map(Number) : undefined;
+	const item = image ? /** @type {any} */ (itemByHash(image)) : null;
+	const out = placeDecalForAgent(on, {
+		point,
+		normal,
+		image,
+		imageName: item?.name ?? '',
+		size: [wh[0], wh[1], depth],
+		...(spec.opacity !== undefined ? { opacity: Number(spec.opacity) } : {}),
+		...(typeof spec.tint === 'string' ? { tint: spec.tint } : typeof spec.color === 'string' ? { tint: spec.color } : {}),
+		...(spec.roughness !== undefined ? { roughness: Number(spec.roughness) } : {}),
+		...(typeof spec.name === 'string' ? { name: spec.name } : {})
+	});
+	if (!out.object) return { error: out.error ?? 'the decal could not be placed' };
+	if (image) void import('./shaderTextures.js').then((m) => m.shareShaderTexture(image));
+	return { uuid: out.object.uuid, name: out.object.name, kind: 'decal', on };
 }

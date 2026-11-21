@@ -5,7 +5,6 @@ import {
 	normalizeDecal,
 	isDecalObject,
 	isNewerDecalRecord,
-	projectDecal,
 	targetRefusal,
 	admitStamp,
 	expireStamps,
@@ -13,6 +12,7 @@ import {
 	stampCap,
 	DECAL_MAX_SOURCE_TRIS
 } from './decalCore.js';
+import { projectDecal } from './decalProject.js';
 import { applyDecalProxyLook, decalPlaceholderGeometry } from './decalObject.js';
 import { resolveShaderTexture, shaderTextureFor, registerShaderTextureListener, shareShaderTexture } from './shaderTextures.js';
 import { registerParkHook } from './parkHooks.js';

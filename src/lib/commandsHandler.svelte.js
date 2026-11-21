@@ -29,7 +29,6 @@ import { normalizeEmitter, normalizeInteraction } from '$lib/sim/fluidEmitterCor
 import { applyFlowPathTo } from '$lib/sim/flowPathObject.js'; // 36-fb F24
 import { normalizePortal, normalizeCheckpoint } from '$lib/gameLevels/objects.js'; // 93 LP1 / LP3
 import { applyTextPathTo, bumpTextTurn } from '$lib/textPathObject.js'; // 64 D2
-import { applyDecalTo } from '$lib/decalObject.js'; // 102 M3
 import { runSceneClearHandlers } from '$lib/moduleSDK'
 import { annotations } from '$lib/annotationsHandler'
 import { isViewer, warnViewerReadOnly } from '$lib/objectPermissions'
@@ -729,8 +728,11 @@ export async function objectParameters(data, from = 'peer') {
         // 102 M3: a decal's record, normalized at the boundary; every peer rebuilds the surface
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
         if (mesh && mesh.userData?.decal && data.decal) {
-            applyDecalTo(mesh, data.decal);
-            pokeScene();
+            // a lazy chunk (the boot never loads decals); one module promise keeps messages in order
+            void import('$lib/decalObject.js').then((m) => {
+                m.applyDecalTo(mesh, data.decal);
+                pokeScene();
+            });
         }
     } else if (data.parameter == 'fluidInteraction') {
         // 36-fb F23: how a mesh meets particle fluid (absent = auto)

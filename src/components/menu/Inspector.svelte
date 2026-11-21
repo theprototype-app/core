@@ -46,7 +46,6 @@
 	import FlowPathSection from '../sim/FlowPathSection.svelte'; // 36-fb F24
 	import LevelObjectSection from './inspector/LevelObjectSection.svelte'; // 93 LP1/LP3
 	import TextPathSection from './TextPathSection.svelte'; // 64 D2
-	import DecalSection from './DecalSection.svelte'; // 102 M3
 	import TextOnPathButton from './TextOnPathButton.svelte'; // 64 D2
 	import PathSection from './inspector/PathSection.svelte'; // 78 F4
 	import FluidTankSection from '../sim/FluidTankSection.svelte'; // 36-sim U2b
@@ -3394,7 +3393,12 @@
 			</div>
 			{/if}
 
-			{#if !multiCount && isReplaceableModel($selectedObject)}
+			<!-- 102 M3: a decal's look is its own section, first (where a model's source sits) -->
+			{#if !multiCount && $selectedObject.userData?.decal}
+				<!-- a lazy chunk: the boot never pays for decals -->
+				{#await import('./DecalSection.svelte') then m}<m.default object={$selectedObject} />{/await}
+			{/if}
+			{#if !multiCount && isReplaceableModel($selectedObject) && !$selectedObject.userData?.decal}
 				<!-- 59 T1/T2/T7a: Replace model… / Edit in Blender… / the watched file -->
 				<ModelSourceSection object={$selectedObject} />
 			{/if}
@@ -4178,7 +4182,8 @@
 			{/if}
 
 			<!-- 64 D2: a text's carrier draws nothing — its look is the Text section's -->
-			{#if material && !$selectedObject.userData?.textPath}
+			<!-- 102 M3: nor does a decal's — its look is the Decal section's -->
+			{#if material && !$selectedObject.userData?.textPath && !$selectedObject.userData?.decal}
 				<Section variant="panel" label="Material" clip={{ count: () => matTargets.length, fans: true }}>
 					{#if matCount}
 						<p id="material-multi-note" class="text-[length:var(--fs-badge)] italic text-text-muted">
@@ -4537,7 +4542,6 @@
 			{#if $selectedObject.userData?.flowPath}<FlowPathSection object={$selectedObject} />{/if}<!-- 36-fb F24 -->
 			{#if $selectedObject.userData?.portal || $selectedObject.userData?.checkpoint}<LevelObjectSection object={$selectedObject} />{/if}<!-- 93 LP1/LP3 -->
 			{#if $selectedObject.userData?.textPath}<TextPathSection object={$selectedObject} />{/if}<!-- 64 D2 -->
-			{#if $selectedObject.userData?.decal}<DecalSection object={$selectedObject} />{/if}<!-- 102 M3 -->
 			{#if !$selectedObject.isLight}
 				<Section variant="panel" label="Physics" clip={{ count: () => insTargets.length, fans: true }}>
 					{#if multiCount}

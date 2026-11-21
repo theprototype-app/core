@@ -1,5 +1,4 @@
 import { objectsGroup } from '../stores/sceneStore';
-import { isDecalObject } from './decalCore.js';
 
 // 102 M3: the per-frame entry for decals — ONE line in Scene's useTask (the textPathTick shape).
 // The runtime chunk loads only once a scene holds a decal (or a stamp arrives). A scene with none
@@ -25,7 +24,8 @@ objectsGroup.subscribe(() => {
 function holdsDecal(root) {
 	let found = false;
 	root?.traverse?.((/** @type {any} */ o) => {
-		if (!found && o.isMesh && isDecalObject(o)) found = true;
+		// (decalCore's isDecalObject, inlined: the boot never loads a decal module)
+		if (!found && o.isMesh && o.userData?.decal && typeof o.userData.decal === 'object') found = true;
 	});
 	return found;
 }

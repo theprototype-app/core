@@ -5,8 +5,6 @@ import {
 	DECAL_VERSION,
 	normalizeDecal,
 	isNewerDecalRecord,
-	clipPolygon,
-	projectDecal,
 	targetRefusal,
 	admitStamp,
 	expireStamps,
@@ -14,9 +12,9 @@ import {
 	stampCap,
 	stampLifetime,
 	decalPoseMatrix,
-	mul4,
 	STAMP_CAP_MAX
 } from '../../src/lib/decalCore.js';
+import { clipPolygon, projectDecal, mul4 } from '../../src/lib/decalProject.js';
 
 const I = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 /** column-major translate+scale */

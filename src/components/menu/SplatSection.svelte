@@ -48,7 +48,7 @@
 <div data-keywords={keywords} class="contents">
 	<Section variant="panel" label="Splat">
 		<p id="splat-facts" class="text-xs text-text-2">
-			{splatCountText(r.count)}{#if r.sh} · view-dependent colour (band {r.sh}){/if}{#if item} · {mbText(item.size)}{/if}
+			{[splatCountText(r.count), r.sh ? `view-dependent colour (band ${r.sh})` : '', item ? mbText(item.size) : ''].filter(Boolean).join(' · ')}
 		</p>
 		<p class="truncate text-[length:var(--fs-badge)] text-text-faint" title={r.file}>{r.file || 'Splat file'}</p>
 		{#if statusText}

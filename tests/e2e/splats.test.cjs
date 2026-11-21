@@ -146,12 +146,19 @@ const pick = (page, name, buffer) =>
 			for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
 			const dt = new DataTransfer();
 			dt.items.add(new File([bytes], n, { type: 'application/octet-stream' }));
-			const canvas = document.querySelector('canvas');
+			let renderer;
+			window.__tp.test.v1.globalRenderer.subscribe((r) => (renderer = r))();
+			const canvas = renderer.domElement; // the 3D view's own canvas (a panel's canvas is not the viewport)
 			const r = canvas.getBoundingClientRect();
-			canvas.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 }));
+			const ev = new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 });
+			canvas.dispatchEvent(ev);
+			return { handled: ev.defaultPrevented, files: dt.files.length, inDom: document.contains(canvas) };
 		},
 		[name, buffer.toString('base64')]
-	);
+	).then((r) => {
+		console.log(`  drop ${name}: ${JSON.stringify(r)}`);
+		return r;
+	});
 /** @param {any} page @param {string} uuid */
 const entry = async (page, uuid) => (await dbg(page)).entries.find((/** @type {any} */ e) => e.uuid === uuid) ?? null;
 const near = (/** @type {number} */ a, /** @type {number} */ b, eps = 0.06) => Math.abs(a - b) <= eps;
@@ -172,6 +179,10 @@ h.run(async () => {
 	A.page.on('request', (/** @type {any} */ r) => {
 		if (/spark/i.test(r.url())) sparkRequests.push(r.url());
 	});
+	A.page.on('console', (/** @type {any} */ m) => {
+		if (m.type() === 'error' || m.type() === 'warning') console.log(`  [A ${m.type()}] ${m.text().slice(0, 300)}`);
+	});
+	A.page.on('pageerror', (/** @type {any} */ e) => console.log(`  [A pageerror] ${String(e?.message ?? e).slice(0, 300)}`));
 	for (const P of [A, B]) P.page.on('crash', () => console.log(`  [${P === A ? 'A' : 'B'}] PAGE CRASHED`));
 	for (const P of [A, B])
 		P.page.on('console', (/** @type {any} */ m) => {
@@ -256,6 +267,19 @@ h.run(async () => {
 	h.check(!!undone && undone.splat.opacity === 0.5, '§3 ...one step: the opacity stays');
 
 	// ---- §4 the .ply gate --------------------------------------------------------------------
+	// look away from the scan: on a software-GL slot a screen full of splats makes every frame (and every
+	// timer and import behind it) crawl — measured 2.2 s for the gate to read a 200-byte file
+	await A.page.evaluate(() => {
+		const v1 = window.__tp.test.v1;
+		let cam, oc;
+		v1.globalCamera.subscribe((c) => (cam = c))();
+		v1.orbitControls?.subscribe?.((c) => (oc = c))?.();
+		cam.position.set(0, 3, 0);
+		if (oc?.target) {
+			oc.target.set(0, 30, 0.01);
+			oc.update?.();
+		} else cam.lookAt(0, 30, 0.01);
+	});
 	await A.page.screenshot({ path: `${OUT}/splats-before-s4.png` }).catch(() => {});
 	console.log(
 		'  open dialogs: ' +
@@ -270,10 +294,10 @@ h.run(async () => {
 	console.log(`  toasts now ${JSON.stringify(await toasts(A.page))}`);
 	const before = (await items(A.page)).length;
 	await pick(A.page, 'triangle.ply', MESH_PLY);
-	await h.eventually(() => toasts(A.page), (t) => t.some((x) => /triangle\.ply is a mesh, not a Gaussian splat/.test(x)), '§4 a mesh .ply is refused with the way out', 10000);
+	await h.eventually(() => toasts(A.page), (t) => t.some((x) => /triangle\.ply is a mesh, not a Gaussian splat/.test(x)), '§4 a mesh .ply is refused with the way out', 30000);
 	h.check((await items(A.page)).length === before, '§4 ...and nothing entered the Library');
 	await pick(A.page, 'small.ply', gaussianPly(500, 1));
-	await h.eventually(() => carriers(A.page), (c) => c.some((x) => x.splat.file === 'small.ply'), '§4 a small 3DGS .ply imports as it is', 20000);
+	await h.eventually(() => carriers(A.page), (c) => c.some((x) => x.splat.file === 'small.ply'), '§4 a small 3DGS .ply imports as it is', 60000);
 	const small = (await carriers(A.page)).find((x) => x.splat.file === 'small.ply');
 	h.check(small?.splat.count === 500 && small?.splat.sh === 1, `§4 ...500 splats, one colour band (${small?.splat.count}, sh ${small?.splat.sh})`);
 	// ---- §5 Photo parity + Cinematic ---------------------------------------------------------
@@ -313,7 +337,14 @@ h.run(async () => {
 		await window.__tp.test.v1.autosave.saveNow();
 	});
 	await h.freshReload(A);
-	await h.answerRestore(A, 'restore', 30000);
+	try {
+		await h.answerRestore(A, 'restore', 30000);
+	} catch (error) {
+		// measured: the restore had already landed (the carrier back and selected, no modal left) when the
+		// helper's click timed out — the checks below decide whether the scene came back
+		await A.page.screenshot({ path: `${OUT}/splats-restore-fail.png` }).catch(() => {});
+		console.log(`  answerRestore: ${String(/** @type {any} */ (error)?.message ?? error).split('\n')[0]}`);
+	}
 	const back = await until(() => carriers(A.page), (c) => c.length === 2, '§6 the reload restores both splat objects', 30000);
 	h.check(!!back && back.find((c) => c.uuid === cA.uuid)?.splat.opacity === 0.5, '§6 ...with their records');
 	const eR = await until(() => entry(A.page, cA.uuid), (e) => !!e && e.state === 'ready' && e.visible, '§6 the runtime draws it again from the Library', 30000);
@@ -325,7 +356,7 @@ h.run(async () => {
 	await A.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u, true), cA.uuid);
 	const insp = await until(
 		() => A.page.evaluate(() => ({ facts: document.querySelector('#splat-facts')?.textContent ?? '', opacity: !!document.querySelector('#splat-opacity') })),
-		(x) => /2,000 splats/.test(x.facts) && x.opacity,
+		(x) => /^2,000 splats · /.test(x.facts.trim()) && x.opacity,
 		'§7 the Inspector shows the Splat section',
 		15000
 	);
@@ -345,10 +376,10 @@ h.run(async () => {
 		}),
 		(d) => !!d && d.id === 'splat-reduce',
 		'§8 an over-cap .ply asks to make a smaller copy',
-		30000
+		90000
 	);
 	await A.page.evaluate(() => window.__tp.test.v1.confirmDialog.resolveConfirm('reduce'));
-	await h.eventually(() => carriers(A.page), (c) => c.some((x) => x.splat.file === 'big.spz'), '§8 the smaller copy is placed as big.spz', 90000);
+	await h.eventually(() => carriers(A.page), (c) => c.some((x) => x.splat.file === 'big.spz'), '§8 the smaller copy is placed as big.spz', 180000);
 	const bigItem = (await items(A.page)).find((it) => it.name === 'big.spz');
 	const bigRec = (await carriers(A.page)).find((x) => x.splat.file === 'big.spz');
 	h.check(!!bigItem && bigItem.size <= 25 * 1024 * 1024, `§8 ...under the 25 MB cap (${((bigItem?.size ?? 0) / 1048576).toFixed(1)} MB from ${(big.length / 1048576).toFixed(1)} MB)`);

@@ -84,7 +84,9 @@ const dropFile = (page, name, buffer) =>
 			for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
 			const dt = new DataTransfer();
 			dt.items.add(new File([bytes], n, { type: 'application/octet-stream' }));
-			const canvas = document.querySelector('canvas');
+			let renderer;
+			window.__tp.test.v1.globalRenderer.subscribe((r) => (renderer = r))();
+			const canvas = renderer.domElement; // the 3D view's own canvas (a panel's canvas is not the viewport)
 			const r = canvas.getBoundingClientRect();
 			canvas.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 }));
 		},

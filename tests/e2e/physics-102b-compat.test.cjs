@@ -161,7 +161,10 @@ async function clearScene(page) {
 			page.evaluate(() => {
 				let g;
 				window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
-				if (g.children.length) window.__tp.test.v1.commandsHandler.sceneCommand('/clear');
+				// '/clear all' is the real Clear; joints outlive it in every build (the store is only replaced by a
+				// load), so empty that list too or a cleared scene saves its old joints with no ends
+				if (g.children.length) window.__tp.test.v1.commandsHandler.sceneCommand('/clear all');
+				window.__tp.test.v1.joints.jointsRestore([]);
 				return g.children.length;
 			}),
 		(n) => n === 0,

@@ -39,6 +39,8 @@ export function hitOpacity(hit) {
 	// 64 D2: a text's carrier draws nothing (opacity 0) — it is the HIT PROXY of letters drawn
 	// at the scene root, and as solid as they are
 	if (object.userData?.textPath) return 1;
+	// 102 M3: a decal's carrier is the hit proxy of its visual (the text rule)
+	if (object.userData?.decal) return 1;
 	let material = object.material;
 	if (Array.isArray(material)) {
 		const index = hit.face?.materialIndex ?? 0;

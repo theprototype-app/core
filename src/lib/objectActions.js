@@ -50,6 +50,7 @@ import { desktopSpawn, spawnEyePose } from './playSpawn'; // 30b P4 (+ vrOnly: c
 import { shareDuplicatedMaterials, linkMaterials } from './materialSharing';
 import { applyFlowPathTo } from './sim/flowPathObject.js'; // 36-fb F24 (a three leaf)
 import { applyTextPathTo, bumpTextTurn } from './textPathObject.js'; // 64 D2 (a three leaf)
+import { applyDecalTo } from './decalObject.js'; // 102 M3 (a three leaf)
 import {
 	duplicateCarriesAnimation,
 	duplicateCarriesFlow,
@@ -598,6 +599,17 @@ export function topLevelObjectOf(object) {
 	return current.parent === group ? current : null;
 }
 
+/**
+ * 102 M3: the EDITOR's pick target — a decal (a child of the object it sits on) is selected
+ * itself; everything else resolves to its top-level object. Play mode keeps topLevelObjectOf,
+ * so a click on a sign still reaches the wall's own click graph.
+ * @param {any} object
+ */
+export function editorTargetOf(object) {
+	if (object?.userData?.decal && object.isMesh) return object;
+	return topLevelObjectOf(object);
+}
+
 /** Collect an object and all descendants in a stable depth-first order @param {any} object @param {any[]} list */
 function collectTree(object, list = []) {
 	list.push(object);
@@ -937,6 +949,11 @@ registerHistoryKind('props', (entry, state) => {
 		else delete object.userData.textPath;
 		if (peer)
 			peer.send({ type: 'objectParameters', parameter: 'textPath', uuid: entry.uuid, textPath: state.textPath ?? null, ...(state.bake ? { bake: true } : {}) });
+	}
+	if ('decal' in state) {
+		// 102 M3: a decal's record — every peer rebuilds the surface from it
+		if (state.decal) applyDecalTo(object, state.decal);
+		if (peer && state.decal) peer.send({ type: 'objectParameters', parameter: 'decal', uuid: entry.uuid, decal: object.userData.decal });
 	}
 	if ('fluidInteraction' in state) {
 		// 36-fb F23: how a mesh meets particle fluid (none / collide / float; absent = auto)

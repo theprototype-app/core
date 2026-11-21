@@ -174,6 +174,7 @@ export function setDecalSize(uuid, size) {
 export function placeDecalForAgent(targetUuid, spec) {
 	const target = objectOf(targetUuid);
 	if (!target) return { object: null, error: 'No object with uuid ' + targetUuid + ' to put the decal on.' };
+	/** @type {any} */
 	let hit = null;
 	let point = spec.point;
 	let normal = spec.normal;
@@ -190,7 +191,7 @@ export function placeDecalForAgent(targetUuid, spec) {
 		const h = hits[0];
 		hit = h.object;
 		point = h.point.toArray();
-		normal = h.face.normal.clone().transformDirection(h.object.matrixWorld).toArray();
+		normal = /** @type {any} */ (h.face).normal.clone().transformDirection(h.object.matrixWorld).toArray();
 	} else {
 		hit = target;
 		// a hit mesh inside the target: the first mesh under it (refusals read the whole tree anyway)

@@ -129,6 +129,19 @@ function prefabInstanceMenu(object, group) {
 }
 
 /**
+ * 102 M3: place a decal on the mesh hit and select it (the write path loads on demand).
+ * @param {string} hitUuid @param {number[]} point @param {number[]} normal
+ */
+function addDecalAt(hitUuid, point, normal) {
+	const hit = get(objectsGroup)?.getObjectByProperty('uuid', hitUuid);
+	if (!hit) return;
+	void import('./decalEdit.js').then((m) => {
+		const decal = m.placeDecalOn(hit, point, normal);
+		if (decal) selectObject(decal.uuid, true);
+	});
+}
+
+/**
  * The FULL object context menu, shared so the direct object menu (right-click an
  * object / an object-list row, Controls.svelte) and the empty-space menu's
  * "Selected" submenu (ViewportMenu.svelte) expose the SAME actions — they used to
@@ -139,7 +152,7 @@ function prefabInstanceMenu(object, group) {
  * selection AND the selection has 2+ members, set-oriented items act on the whole
  * SET with a counted label; a "Group selection" item appears. Object-specific
  * items (rename / edit mesh / add note / request control) stay on the clicked one.
- * @param {string} uuid @param {{ point?: number[] | null, locked?: boolean, selection?: string[] }} [opts]
+ * @param {string} uuid @param {{ point?: number[] | null, normal?: number[] | null, hitUuid?: string | null, locked?: boolean, selection?: string[] }} [opts]
  */
 export function buildObjectMenuItems(uuid, opts = {}) {
 	const point = opts.point ?? null;
@@ -294,6 +307,18 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 						icon: 'sticky-note',
 						tooltip: 'Pin a synced note exactly where you pointed',
 						action: () => addAnnotation(uuid, point)
+					}
+				]),
+		// 102 M3: a decal projected onto the surface right-clicked (the viewport path only: the
+		// list and the Selected submenu have no point to put it at)
+		...(multi || !point || !opts.normal || !opts.hitUuid || object?.userData?.decal
+			? []
+			: [
+					{
+						label: 'Add decal here',
+						icon: 'sticker',
+						tooltip: 'Project an image onto this surface (pick the image in Properties)',
+						action: () => addDecalAt(/** @type {string} */ (opts.hitUuid), /** @type {number[]} */ (point), /** @type {number[]} */ (opts.normal))
 					}
 				])
 	];

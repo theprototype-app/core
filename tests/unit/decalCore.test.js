@@ -1,3 +1,4 @@
+// @ts-nocheck - fixture-heavy test (checkJs covers tests/unit)
 import { describe, it, expect } from 'vitest';
 import {
 	DECAL_DEFAULTS,

@@ -448,14 +448,20 @@ export function defaultTouchLayout(spec, w, h) {
  * The layout the overlay draws: the default arrangement with the saved one laid over it,
  * item by item — a control the saved layout never placed (a new action) gets its default
  * slot instead of vanishing. @param {TouchControlsSpec} spec @param {TouchLayout | null} saved
- * @param {number} w @param {number} h @returns {TouchLayout}
+ * @param {number} w @param {number} h @param {TouchLayout | null} [author] the scene's shipped layout
+ * @returns {TouchLayout}
  */
-export function effectiveTouchLayout(spec, saved, w, h) {
+export function effectiveTouchLayout(spec, saved, w, h, author = null) {
 	const base = defaultTouchLayout(spec, w, h);
-	if (!saved) return base;
+	if (!saved && !author) return base;
 	/** @type {Record<string, TouchItem>} */
 	const items = {};
-	for (const [id, item] of Object.entries(base.items)) items[id] = saved.items[id] ? { ...saved.items[id] } : item;
+	// 102b-play: three layers, per item — the player's own (this device) > the scene author's
+	// (shipped in the scene, `play.touch`) > the default arrangement
+	for (const [id, item] of Object.entries(base.items)) {
+		const own = saved?.items[id] ?? author?.items[id];
+		items[id] = own ? { ...own } : item;
+	}
 	return { v: 1, items };
 }
 

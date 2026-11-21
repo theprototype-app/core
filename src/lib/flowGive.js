@@ -104,7 +104,8 @@ function writeGraph(uuid, doc) {
 		if (edgeIds.length) peer.send({ type: 'edgedelete', ids: edgeIds, graphId: uuid });
 		if (nodeIds.length) peer.send({ type: 'nodedelete', ids: nodeIds, graphId: uuid });
 	}
-	peer.send({ type: 'nodes', graphs: { [uuid]: { nodes: next.nodes.map(serializeNode), edges: next.edges.map(serializeEdge) } } });
+	// `nodes`/`edges` are the scene graph's slot in this message (the validator wants both arrays); empty = untouched
+	peer.send({ type: 'nodes', nodes: [], edges: [], graphs: { [uuid]: { nodes: next.nodes.map(serializeNode), edges: next.edges.map(serializeEdge) } } });
 }
 
 /** set / clear the family link on one object, replicated @param {string} uuid @param {string | null} root */

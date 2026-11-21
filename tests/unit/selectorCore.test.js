@@ -117,3 +117,17 @@ describe('selector picks', () => {
 		expect(describeSet(['a', 'b', 'c', 'd'], (u) => names[u])).toBe('4 objects: A, B, C and 1 more');
 	});
 });
+
+// 102b-flows row 3: every Object Selector in the 40 shipped scenes (160 of them, counted on scenes
+// main) has data keys label / selected / type only. That shape must stay a plain one-object selector
+// and resolve WITHOUT loading the resolver chunk.
+describe('shipped selector shape is unchanged', () => {
+	it('label/selected/type = one object, resolved by the boot half', async () => {
+		const pick = await import('../../src/lib/selectorPick.js');
+		const shipped = { label: 'Object Selector', selected: 'u-1', type: 'objectselector' };
+		expect(pick.isManySelector(shipped)).toBe(false);
+		expect(pick.resolveTargets(shipped, null)).toEqual(['u-1']);
+		expect(pick.resolveTargets({ ...shipped, selected: '-None-' }, null)).toEqual([]);
+		expect(pick.resolveTargets({ type: 'objectselector' }, null)).toEqual([]);
+	});
+});

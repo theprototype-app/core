@@ -1354,7 +1354,8 @@ export class PeerConnection {
 							noteWireError(conn.peer, data.type, error);
 						}
 					},
-					heal: (peerId, uuid, flow) => this.healLockedEdit(peerId, uuid, flow)
+					heal: (peerId, uuid, flow) => this.healLockedEdit(peerId, uuid, flow, conn),
+					conn
 				})) return;
 				// 55 A9: who did what, for the peer menu's "Show their recent changes" (LOCAL,
 				// past every gate — only what was actually applied here is recorded)
@@ -3312,10 +3313,10 @@ export class PeerConnection {
 	 * 80a K3: the answer to an edit we refused (we hold the object): the object as it is here, sent
 	 * to the peer that edited it, as an arrival heal (`override`), which replaces its copy in place.
 	 * A flow edit is answered with the flow documents. Nothing when the object is gone here.
-	 * @param {string} peerId @param {string} uuid @param {boolean} flow
+	 * @param {string} peerId @param {string} uuid @param {boolean} flow @param {any} [via] the connection the edit came on
 	 */
-	healLockedEdit(peerId, uuid, flow) {
-		const conn = this.connections[peerId];
+	healLockedEdit(peerId, uuid, flow, via) {
+		const conn = via?.open ? via : this.connections[peerId];
 		if (!conn?.open) return;
 		if (flow) {
 			sendNodes(peerId);

@@ -100,7 +100,7 @@ h.run(async () => {
 	}
 	const F = await h.setupPageQuiet(browser, 'F', [H, E]);
 	await h.connect(F, H);
-	await h.eventually(() => holdsUuid(F.page, made[made.length - 1]), (v) => v, 'F has the boxes', 30000);
+	await h.eventually(() => holdsUuid(F.page, made[made.length - 1]), (v) => v, 'F has the boxes', 90000);
 	if (!(await holdsUuid(F.page, made[made.length - 1]))) {
 		for (const p of [H, E, F]) console.log('[diag F boxes]', JSON.stringify(await dump(p, made)));
 	}

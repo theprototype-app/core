@@ -257,10 +257,11 @@ export const LOCK_HEAL_MS = 300;
  * a moment (`park`) and applied once that peer holds the object.
  * @param {string} from the connection it came on
  * @param {any} data the message
- * @param {{runtime: boolean, replay: () => void, heal: (peerId: string, uuid: string, flow: boolean) => void}} hooks
+ * @param {{runtime: boolean, replay: () => void, heal: (peerId: string, uuid: string, flow: boolean) => void, conn?: any}} hooks
+ *   `conn` = the connection the edit came on (the answer goes back on it)
  * @returns {boolean} true = apply it
  */
-export function gateLockedEdit(from, data, { runtime, replay, heal }) {
+export function gateLockedEdit(from, data, { runtime, replay, heal, conn: via }) {
 	const uuid = gatedUuid(data);
 	if (!uuid) return true;
 	/** @type {any} */
@@ -271,7 +272,7 @@ export function gateLockedEdit(from, data, { runtime, replay, heal }) {
 	else if (verdict === 'reject') {
 		const key = from + '\n' + uuid;
 		const now = Date.now();
-		const conn = peer?.connections?.[from];
+		const conn = via?.open ? via : peer?.connections?.[from];
 		if (conn?.open && now - (rejectAt.get(key) ?? -Infinity) >= LOCK_REJECT_GAP_MS) {
 			rejectAt.set(key, now);
 			conn.send({ type: 'lockreject', uuid, edit: data.type });

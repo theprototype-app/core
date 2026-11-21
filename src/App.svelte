@@ -85,7 +85,7 @@
   import { isLocked } from './stores/sceneStore'
   // 29-E: `?embed=1` — the editor windows and the dock inset stand down for the page's
   // life; a corner link and a ▶ button are the only chrome an embed draws
-  import { embedMode } from './lib/playMode'
+  import { embedMode, embedSceneId } from './lib/playMode'
   import EmbedChrome from './components/play/EmbedChrome.svelte'
   import MadeWithBadge from './components/play/MadeWithBadge.svelte'
   // 36-export: the Publish / Export modal (core owns the shell + Export tab; a cloud plugin mounts
@@ -235,6 +235,8 @@ import { startMusicToolbox } from './lib/musicToolbox'
     startWireErrors()
     // 48 O1: anonymous error + crash reports (default on, Settings ▸ Privacy; inert without VITE_ERROR_REPORTS_URL)
     startErrorReports()
+    // 102 M4: anonymous play statistics, only for a page opened on a published scene (?s=<id>) — lazy, sent by the cloud plugin
+    if (embedSceneId) void import('./lib/play/playStats').then((m) => m.startPlayStats(embedSceneId))
     if (!webglOk) reportNoWebGL()
     // 26-A: one rAF loop, ~2 samples a second. Started here rather than inside Scene so
     // it keeps measuring while the canvas is remounting — which is exactly when a

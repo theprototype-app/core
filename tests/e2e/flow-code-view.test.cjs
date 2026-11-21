@@ -215,6 +215,28 @@ h.run(async () => {
 		const codeA = await allCode(A.page);
 		h.check(Object.keys(codeA).length > 1, `premise: the host holds several graphs (${Object.keys(codeA).length})`);
 		await h.eventually(() => allCode(B.page), (c) => JSON.stringify(c) === JSON.stringify(codeA), "the late joiner's code is the host's for every graph, line for line", 30000);
+		{
+			// a red here says WHICH graph and line differ (the check above prints only B's side)
+			const codeB = await allCode(B.page);
+			for (const id of new Set([...Object.keys(codeA), ...Object.keys(codeB)])) {
+				if (codeA[id] === codeB[id]) continue;
+				const a = String(codeA[id] ?? '<none>').split('\n'), b = String(codeB[id] ?? '<none>').split('\n');
+				const i = a.findIndex((l, k) => l !== b[k]);
+				console.log(`  differs: ${id} line ${i + 1}\n    A: ${a[i] ?? '<end>'}\n    B: ${b[i] ?? '<end>'}`);
+				const probe = (page) => page.evaluate((u) => {
+					let g; window.__stores.objectsGroup.subscribe((v) => (g = v))();
+					const o = g?.getObjectByProperty?.('uuid', u);
+					return o ? `${o.type} name=${JSON.stringify(o.name)} parent=${o.parent?.type}` : 'NOT IN objectsGroup';
+				}, id);
+				console.log(`    object on A: ${await probe(A.page)}\n    object on B: ${await probe(B.page)}`);
+			}
+			const names = (page) => page.evaluate(() => {
+				let g; window.__stores.objectsGroup.subscribe((v) => (g = v))();
+				const out = []; g?.traverse?.((o) => { if (o !== g && o.isMesh) out.push(o.name || o.type); });
+				return out.sort().join(', ');
+			});
+			if (JSON.stringify(codeA) !== JSON.stringify(codeB)) console.log(`    meshes on A: ${await names(A.page)}\n    meshes on B: ${await names(B.page)}`);
+		}
 		await openEditor(B.page);
 		await B.page.locator('#flow-tab-code').click();
 		await B.page.waitForSelector('#flow-code', { timeout: 10000 });
